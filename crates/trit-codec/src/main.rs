@@ -2,7 +2,7 @@
 
 use std::process::ExitCode;
 
-use trit_codec::{balanced, hamming, pack, plan};
+use trit_codec::{balanced, checksum, hamming, interleave, pack, plan, quantize, sparse};
 use trit_core::value::Ternary;
 
 fn main() -> ExitCode {
@@ -14,6 +14,11 @@ fn main() -> ExitCode {
         Some("hamming") => hamming_cmd(&args[1..]),
         Some("stats") => stats_cmd(&args[1..]),
         Some("plan") => plan_cmd(&args[1..]),
+        Some("quantize") => quantize_cmd(&args[1..]),
+        Some("dequantize") => dequantize_cmd(&args[1..]),
+        Some("sparse") => sparse_cmd(&args[1..]),
+        Some("interleave") => interleave_cmd(&args[1..]),
+        Some("checksum") => checksum_cmd(&args[1..]),
         _ => Err(usage()),
     };
     match result {
@@ -26,7 +31,7 @@ fn main() -> ExitCode {
 }
 
 fn usage() -> String {
-    "用法：trit-codec <pack TRITS|unpack HEX --len N|balanced N|hamming TRITS|stats [--trits N]|plan [--trits N]>"
+    "用法：trit-codec <pack|unpack|balanced|hamming|stats|plan|quantize|dequantize|sparse|interleave|checksum>"
         .to_string()
 }
 
@@ -294,5 +299,208 @@ fn plan_cmd(args: &[String]) -> Result<(), String> {
     }
     let obj = serde_json::json!({"trits": trits, "rows": rows});
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
+    Ok(())
+}
+
+fn quantize_cmd(args: &[String]) -> Result<(), String> {
+    let raw = args.first().ok_or("quantize 需要逗号分隔的浮点数")?;
+    let beta = args
+        .iter()
+        .position(|a| a == "--beta")
+        .and_then(|i| args.get(i + 1))
+        .map(|s| s.parse::<f32>())
+        .transpose()
+        .map_err(|_| "beta 不是数字".to_string())?
+        .unwrap_or(quantize::DEFAULT_BETA);
+    let values: Vec<f32> = raw
+        .split(',')
+        .map(|s| {
+            s.trim()
+                .parse::<f32>()
+                .map_err(|e| format!("不是数字 {s:?}: {e}"))
+        })
+        .collect::<Result<_, _>>()?;
+    let q = quantize::quantize_with_beta(&values, beta);
+    let text: String = q.trits.iter().map(|t| t.as_char()).collect();
+    let err = quantize::quantization_error(&values, &q);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "trits": text,
+            "scale": q.scale,
+            "beta": q.beta,
+            "quantization_error_l2": err,
+        }))
+        .unwrap_or_default()
+    );
+    Ok(())
+}
+
+fn dequantize_cmd(args: &[String]) -> Result<(), String> {
+    let raw = args.first().ok_or("dequantize 需要 TRITS 串")?;
+    let scale = args
+        .iter()
+        .position(|a| a == "--scale")
+        .and_then(|i| args.get(i + 1))
+        .ok_or("--scale 需要一个数字")?
+        .parse::<f32>()
+        .map_err(|_| "scale 不是数字".to_string())?;
+    let trits = parse_trits(raw)?;
+    let back = quantize::dequantize(&trits, scale);
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "trits": raw,
+            "scale": scale,
+            "values": back,
+        }))
+        .unwrap_or_default()
+    );
+    Ok(())
+}
+
+fn sparse_cmd(args: &[String]) -> Result<(), String> {
+    if args.iter().any(|a| a == "--decode") {
+        let len: usize = args
+            .iter()
+            .position(|a| a == "--len")
+            .and_then(|j| args.get(j + 1))
+            .ok_or("sparse --decode 需要 --len N")?
+            .parse()
+            .map_err(|_| "len 不是整数".to_string())?;
+        // 位置参数 = 所有不是 "--flag" 也不是 flag 值的参数。
+        let positional = filter_positional(args);
+        let raw = positional.first().ok_or("--decode 需要 entries JSON")?;
+        // encode 输出的 entries 是 [[u32, "0"/"X"/"1"], ...]，先解 char 再 parse。
+        let raw_entries: Vec<(u32, char)> =
+            serde_json::from_str(raw).map_err(|e| format!("entries 不是合法 JSON: {e}"))?;
+        let entries: Result<Vec<(u32, Ternary)>, String> = raw_entries
+            .into_iter()
+            .map(|(i, c)| {
+                Ternary::parse_char(c)
+                    .map(|t| (i, t))
+                    .ok_or_else(|| format!("entries 里非法 trit 字符 {c:?}"))
+            })
+            .collect();
+        let entries = entries?;
+        let values = sparse::decode(&entries, len).map_err(|e| e.to_string())?;
+        let text: String = values.iter().map(|t| t.as_char()).collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({"trits": text, "len": len}))
+                .unwrap_or_default()
+        );
+        return Ok(());
+    }
+    let raw = args.first().ok_or("sparse 需要 TRITS 串")?;
+    let values = parse_trits(raw)?;
+    let entries = sparse::encode(&values);
+    let text_entries: Vec<(u32, char)> = entries.iter().map(|(i, v)| (*i, v.as_char())).collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "trits": raw,
+            "entries": text_entries,
+            "non_zero": entries.len(),
+            "len": values.len(),
+            "sparsity": sparse::sparsity(&entries, values.len()),
+        }))
+        .unwrap_or_default()
+    );
+    Ok(())
+}
+
+/// 有值 flag：遇到后连下一个参数一起跳过。
+const VALUED_FLAGS: &[&str] = &["--block", "--len", "--beta", "--scale"];
+
+/// 从 args 里去掉所有 flag 和 flag 的值，返回剩下的位置参数。
+fn filter_positional(args: &[String]) -> Vec<&String> {
+    let mut out = Vec::new();
+    let mut skip_next = false;
+    for a in args {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if a.starts_with("--") {
+            if VALUED_FLAGS.contains(&a.as_str()) {
+                skip_next = true;
+            }
+            continue;
+        }
+        out.push(a);
+    }
+    out
+}
+
+fn interleave_cmd(args: &[String]) -> Result<(), String> {
+    let block: usize = args
+        .iter()
+        .position(|a| a == "--block")
+        .and_then(|i| args.get(i + 1))
+        .ok_or("interleave 需要 --block N")?
+        .parse()
+        .map_err(|_| "block 不是整数".to_string())?;
+    let is_de = args.iter().any(|a| a == "--deinterleave");
+    let positional = filter_positional(args);
+    let raw = positional.first().ok_or("interleave 需要 TRITS 串")?;
+    let values = parse_trits(raw)?;
+    let out = if is_de {
+        let len: usize = args
+            .iter()
+            .position(|a| a == "--len")
+            .and_then(|j| args.get(j + 1))
+            .map(|s| s.parse())
+            .transpose()
+            .map_err(|_| "len 不是整数".to_string())?
+            .unwrap_or(values.len());
+        interleave::deinterleave(&values, block, len).map_err(|e| e.to_string())?
+    } else {
+        interleave::interleave(&values, block).map_err(|e| e.to_string())?
+    };
+    let text: String = out.iter().map(|t| t.as_char()).collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "block": block,
+            "deinterleave": is_de,
+            "trits": text,
+        }))
+        .unwrap_or_default()
+    );
+    Ok(())
+}
+
+fn checksum_cmd(args: &[String]) -> Result<(), String> {
+    let is_verify = args.iter().any(|a| a == "--verify");
+    let raw = args
+        .iter()
+        .find(|a| !a.starts_with("--"))
+        .ok_or("checksum 需要 TRITS 串")?;
+    let values = parse_trits(raw)?;
+    if is_verify {
+        let ok = checksum::verify(&values);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({"valid": ok})).unwrap_or_default()
+        );
+        if !ok {
+            return Err("校验失败".to_string());
+        }
+        return Ok(());
+    }
+    let c = checksum::compute(&values);
+    let ctext: String = c.iter().map(|t| t.as_char()).collect();
+    let appended = checksum::append(&values);
+    let atext: String = appended.iter().map(|t| t.as_char()).collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "data": raw,
+            "checksum": ctext,
+            "appended": atext,
+        }))
+        .unwrap_or_default()
+    );
     Ok(())
 }

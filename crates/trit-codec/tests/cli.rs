@@ -80,3 +80,59 @@ fn invalid_unpack_length_is_rejected() {
     assert_ne!(code, 0);
     assert!(stderr.contains("长度不足"), "{stderr}");
 }
+
+#[test]
+fn quantize_then_dequantize_round_trips_signs() {
+    let (stdout, _, code) = run(&["quantize", "1.0,-1.0,0.2"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["trits"], "10X");
+    let scale = v["scale"].as_f64().unwrap();
+
+    let (stdout, _, code) = run(&["dequantize", "10X", "--scale", &scale.to_string()]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["values"][0].as_f64().unwrap(), scale);
+    assert_eq!(v["values"][1].as_f64().unwrap(), -scale);
+    assert_eq!(v["values"][2].as_f64().unwrap(), 0.0);
+}
+
+#[test]
+fn sparse_encode_then_decode_round_trips() {
+    let (stdout, _, code) = run(&["sparse", "10XX0X1"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let entries = v["entries"].to_string();
+
+    let (stdout, _, code) = run(&["sparse", "--decode", "--len", "7", &entries]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["trits"], "10XX0X1");
+}
+
+#[test]
+fn interleave_then_deinterleave_round_trips_with_len() {
+    let (stdout, _, code) = run(&["interleave", "--block", "3", "10X10X1"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let shuffled = v["trits"].as_str().unwrap().to_string();
+
+    let (stdout, _, code) =
+        run(&["interleave", "--block", "3", "--deinterleave", "--len", "7", &shuffled]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["trits"], "10X10X1");
+}
+
+#[test]
+fn checksum_append_then_verify_passes() {
+    let (stdout, _, code) = run(&["checksum", "10X"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let appended = v["appended"].as_str().unwrap().to_string();
+
+    let (stdout, _, code) = run(&["checksum", "--verify", &appended]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["valid"], true);
+}
