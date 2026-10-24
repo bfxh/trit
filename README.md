@@ -413,7 +413,9 @@ trit check design.net --constraints io.json --min-coverage 0.9
   都取**最坏值**，`COND` 条件弧并入同一 celltype，最后**向上取整**为整数周期。
 - **per-instance**：`(INSTANCE u1)` 对齐层级展开后的门实例（`Gate::instance`，如 `u1` / `u1.u2`），
   该实例的所有 IOPATH 取最坏值，优先于 celltype；SDF 带顶层前缀（`top.u1`）也接受。
-  匹配不到时才回退到按 celltype（`AND2` / `NAND3` / `INV` / `BUF` ...）的最坏值。
+  匹配不到时才回退到按 celltype（`AND2` / `NAND3` / `INV` / `BUF` ...）的最坏值；
+  `XOR`/`XOR2`/`XOR3` 一律映射经典异或（Verilog `xor` ⇒ `XorClassic`）；三值强加门
+  没有对应的 SDF 单元名，不会靠 celltype 静默套用。
 - 仍未保留**引脚级**差异（实例内 rise/fall/条件弧合并成一个最坏值）；`TIMESCALE` 不换算，
   SDF 未覆盖的门类型回退到 `--delay`。
 - 未知 celltype（如触发器）忽略；一个可识别延迟都没有时明确报错。

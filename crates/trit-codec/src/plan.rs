@@ -182,12 +182,48 @@ impl<'a> View<'a> {
                         available: count,
                     });
                 }
-                let needed = 8 + count * 4 + count.div_ceil(8);
+                // 32 位目标上 `count * 4` 仍可能溢出（count 只被 `len` 限在 u32 域）。
+                let Some(needed) = count
+                    .checked_mul(4)
+                    .and_then(|index_bytes| index_bytes.checked_add(8))
+                    .and_then(|total| total.checked_add(count.div_ceil(8)))
+                else {
+                    return Err(CodecError::Length {
+                        expected: usize::MAX,
+                        available: bytes.len(),
+                    });
+                };
                 if bytes.len() < needed {
                     return Err(CodecError::Length {
                         expected: needed,
                         available: bytes.len(),
                     });
+                }
+                // H08：下标必须**严格递增且在域内**——`get` 的二分与 `copy_into`
+                // 的顺序写都以此为前提；越界下标会让 copy_into 越界 panic，
+                // 乱序/重复会让两条路径给出不同向量。构造期一次验完。
+                let mut previous: Option<u32> = None;
+                for position in 0..count {
+                    let index = u32::from_le_bytes(
+                        bytes[8 + position * 4..12 + position * 4]
+                            .try_into()
+                            .expect("4 字节"),
+                    );
+                    if index as usize >= len {
+                        return Err(CodecError::SparseIndexOutOfRange { index, len });
+                    }
+                    if previous.is_some_and(|prev| index <= prev) {
+                        return Err(CodecError::SparseIndexNotIncreasing {
+                            prev: previous.expect("刚检查过 Some"),
+                            found: index,
+                        });
+                    }
+                    previous = Some(index);
+                }
+                // 符号区末字节的高位填充必须为 0（编码器只写 count 个位）。
+                let used_bits = count % 8;
+                if used_bits != 0 && bytes[needed - 1] >> used_bits != 0 {
+                    return Err(CodecError::InvalidByte(bytes[needed - 1]));
                 }
             }
         }
@@ -510,6 +546,62 @@ mod tests {
             View::new(Encoding::Sparse, &[0u8; 4], 8),
             Err(CodecError::Length { .. })
         ));
+    }
+
+    /// 手搓一个 sparse 载荷：头 + 指定下标 + 符号字节。
+    fn sparse_payload(len: u32, indices: &[u32], signs: u8) -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&len.to_le_bytes());
+        bytes.extend_from_slice(&(indices.len() as u32).to_le_bytes());
+        for index in indices {
+            bytes.extend_from_slice(&index.to_le_bytes());
+        }
+        bytes.push(signs);
+        bytes
+    }
+
+    #[test]
+    fn sparse_view_rejects_out_of_range_unsorted_and_dirty_padding() {
+        // H08 复现探针一：len=1、count=1、index=1——曾让 copy_into 越界 panic。
+        let out_of_range = sparse_payload(1, &[1], 0b1);
+        assert!(matches!(
+            View::new(Encoding::Sparse, &out_of_range, 1),
+            Err(CodecError::SparseIndexOutOfRange { index: 1, len: 1 })
+        ));
+        // 探针二：乱序 [2,0]——曾让 get（二分）与 copy_into（顺序写）分叉。
+        let unsorted = sparse_payload(3, &[2, 0], 0b11);
+        assert!(matches!(
+            View::new(Encoding::Sparse, &unsorted, 3),
+            Err(CodecError::SparseIndexNotIncreasing { prev: 2, found: 0 })
+        ));
+        // 重复下标同样拒绝（严格递增 ⇒ 唯一）。
+        let duplicate = sparse_payload(4, &[1, 1], 0b11);
+        assert!(matches!(
+            View::new(Encoding::Sparse, &duplicate, 4),
+            Err(CodecError::SparseIndexNotIncreasing { prev: 1, found: 1 })
+        ));
+        // 符号区末字节的填充位必须为 0：count=1 只用 bit0，bit2 置位即脏。
+        let dirty = sparse_payload(4, &[1], 0b101);
+        assert!(matches!(
+            View::new(Encoding::Sparse, &dirty, 4),
+            Err(CodecError::InvalidByte(0b101))
+        ));
+        // 合法载荷照常通过，且三条读取路径语义一致。
+        let clean = sparse_payload(4, &[1], 0b1);
+        let view = View::new(Encoding::Sparse, &clean, 4).unwrap();
+        assert_eq!(view.get(1), Some(Ternary::True));
+        let mut out = vec![Ternary::Unknown; 4];
+        view.copy_into(&mut out).unwrap();
+        assert_eq!(
+            out,
+            vec![
+                Ternary::Unknown,
+                Ternary::True,
+                Ternary::Unknown,
+                Ternary::Unknown
+            ]
+        );
+        assert_eq!(view.iter().collect::<Vec<_>>(), out);
     }
 
     #[test]

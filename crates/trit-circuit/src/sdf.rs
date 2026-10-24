@@ -180,12 +180,15 @@ fn map_celltype(name: &str) -> Option<GateKind> {
     if upper.starts_with("XNOR") {
         return None;
     }
+    // SDF 的 celltype 来自标准单元库，`XOR2` 是**经典**二输入异或
+    // （对应 Verilog `xor` ⇒ `GateKind::XorClassic`），不是 trit 的三值强加 `Xor`。
+    // 映射错了会让按实例覆盖静默落空、回退到默认延迟（复审 H11）。
     const PREFIXES: [(&str, GateKind); 8] = [
         ("NAND", GateKind::Nand),
         ("NOR", GateKind::Nor),
         ("AND", GateKind::And),
         ("OR", GateKind::Or),
-        ("XOR", GateKind::Xor),
+        ("XOR", GateKind::XorClassic),
         ("INV", GateKind::Not),
         ("NOT", GateKind::Not),
         ("BUF", GateKind::Buf),
@@ -509,6 +512,24 @@ mod tests {
     }
 
     #[test]
+    fn xor_celltypes_map_to_the_classic_gate() {
+        // 复审 H11：`XOR2` 曾被映射成三值强加 `Xor`，经典 XOR 的时序覆盖静默落空。
+        assert_eq!(map_celltype("XOR2"), Some(GateKind::XorClassic));
+        assert_eq!(map_celltype("xor"), Some(GateKind::XorClassic));
+        assert_eq!(map_celltype("XOR"), Some(GateKind::XorClassic));
+        assert_eq!(map_celltype("XNOR2"), None);
+        let text = r#"
+        (DELAYFILE
+          (CELL (CELLTYPE "XOR2") (INSTANCE u1)
+            (DELAY (ABSOLUTE (IOPATH a y (3.0) (3.0)))))
+        )
+        "#;
+        let delays = parse_sdf(text).unwrap();
+        assert_eq!(delays[GateKind::XorClassic.as_str()], 3);
+        assert!(!delays.contains_key(GateKind::Xor.as_str()));
+    }
+
+    #[test]
     fn accepts_min_typ_max_and_ignores_unknown_cells() {
         let text = r#"
         (DELAYFILE
@@ -639,5 +660,36 @@ mod instance_tests {
         assert!(instance_matches("top.u1", "u1"));
         assert!(instance_matches("top/u1", "u1"));
         assert!(!instance_matches("top.u10", "u1"));
+    }
+
+    const CLASSIC_XOR: &str = "module leaf(input a, input b, output y);\n\
+        assign y = a ^ b;\n\
+        endmodule\n\
+        module top(input a, input b, output y);\n\
+        leaf u9 (.a(a), .b(b), .y(y));\n\
+        endmodule\n";
+
+    #[test]
+    fn sdf_instance_delay_applies_to_classic_xor() {
+        // 复审 H11 复现：Verilog `xor` 实例配 `XOR2` 延迟 100，修复前关键路径仍是默认 1。
+        let circuit = crate::parse_verilog(CLASSIC_XOR).unwrap();
+        assert!(
+            circuit
+                .gates
+                .iter()
+                .any(|gate| gate.kind == GateKind::XorClassic
+                    && gate.instance.as_deref() == Some("u9")),
+            "经典 XOR 实例没有展开成 XorClassic/u9"
+        );
+        let sdf = r#"
+        (DELAYFILE
+          (CELL (CELLTYPE "XOR2") (INSTANCE u9)
+            (DELAY (ABSOLUTE (IOPATH a y (100.0) (100.0)))))
+        )
+        "#;
+        let model = timing_model_from_sdf_for(sdf, &circuit).unwrap();
+        assert_eq!(model.instance_delays["y"], 100);
+        let report = analyze_timing(&circuit, model, None).unwrap();
+        assert_eq!(report.critical_path, 100);
     }
 }

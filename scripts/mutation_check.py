@@ -1171,8 +1171,8 @@ MUTANTS = [
     {
         "name": "index: 不解码 task id",
         "file": "crates/trit-schedule/src/checkpoint/file.rs",
-        "old": "                let task_id = hex_decode(name)?;\n",
-        "new": "                let task_id = name.to_string();\n",
+        "old": "                let Ok(task_id) = hex_decode(name) else {\n                    continue;\n                };",
+        "new": "                let task_id = name.to_string();",
         "pkg": "trit-schedule",
         "filter": "index_lists_latest_generations_sorted"
     },
@@ -1203,10 +1203,26 @@ MUTANTS = [
     {
         "name": "lock: Drop 不释放",
         "file": "crates/trit-schedule/src/checkpoint/lock.rs",
-        "old": "impl Drop for CheckpointLock {\n    fn drop(&mut self) {\n        let _ = fs::remove_dir_all(&self.path);\n    }\n}\n",
+        "old": "impl Drop for CheckpointLock {\n    fn drop(&mut self) {\n        // 只删仍是自己的那把：陈旧回收/人工删锁之后，同路径可能已是别人的锁目录。\n        if read_owner(&self.path).as_ref() == Some(&self.owner) {\n            let _ = fs::remove_dir_all(&self.path);\n        }\n    }\n}\n",
         "new": "impl Drop for CheckpointLock {\n    fn drop(&mut self) {\n        let _ = &self.path;\n    }\n}\n",
         "pkg": "trit-schedule",
         "filter": "cross_process_lock_excludes_and_releases"
+    },
+    {
+        "name": "lock: Drop 删掉别人的锁",
+        "file": "crates/trit-schedule/src/checkpoint/lock.rs",
+        "old": "        if read_owner(&self.path).as_ref() == Some(&self.owner) {\n            let _ = fs::remove_dir_all(&self.path);\n        }",
+        "new": "        let _ = fs::remove_dir_all(&self.path);",
+        "pkg": "trit-schedule",
+        "filter": "drop_does_not_delete_a_taken_over_lock"
+    },
+    {
+        "name": "checkpoint: 放行空 task id",
+        "file": "crates/trit-schedule/src/checkpoint/file.rs",
+        "old": "    if task_id.is_empty() {",
+        "new": "    if false {",
+        "pkg": "trit-schedule",
+        "filter": "empty_task_id_is_rejected_by_every_entry"
     },
     {
         "name": "restore: 忽略检查点",
@@ -1743,6 +1759,86 @@ MUTANTS = [
         "new": "                out.fill(Ternary::False);",
         "pkg": "trit-codec",
         "filter": "bulk_copy_matches_decode"
+    },
+    {
+        "name": "codec: sparse 视图放行越界下标",
+        "file": "crates/trit-codec/src/plan.rs",
+        "old": "                    if index as usize >= len {\n                        return Err(CodecError::SparseIndexOutOfRange { index, len });\n                    }",
+        "new": "                    if index as usize > len {\n                        return Err(CodecError::SparseIndexOutOfRange { index, len });\n                    }",
+        "pkg": "trit-codec",
+        "filter": "sparse_view_rejects_out_of_range_unsorted_and_dirty_padding"
+    },
+    {
+        "name": "codec: sparse 视图不查符号区填充位",
+        "file": "crates/trit-codec/src/plan.rs",
+        "old": "                if used_bits != 0 && bytes[needed - 1] >> used_bits != 0 {",
+        "new": "                if false && used_bits != 0 && bytes[needed - 1] >> used_bits != 0 {",
+        "pkg": "trit-codec",
+        "filter": "sparse_view_rejects_out_of_range_unsorted_and_dirty_padding"
+    },
+    {
+        "name": "net: forward 不校验手搓模型",
+        "file": "crates/trit-net/src/infer.rs",
+        "old": "pub fn forward(model: &Model, inputs: &[Ternary]) -> Result<Vec<Sign>, ModelError> {\n    model.validate()?;",
+        "new": "pub fn forward(model: &Model, inputs: &[Ternary]) -> Result<Vec<Sign>, ModelError> {",
+        "pkg": "trit-net",
+        "filter": "hand_built_invalid_model_is_rejected_instead_of_panicking"
+    },
+    {
+        "name": "net-train: 只校验第一条样本",
+        "file": "crates/trit-net/src/train.rs",
+        "old": "    for (index, sample) in inputs.iter().enumerate() {",
+        "new": "    for (index, sample) in inputs.iter().take(1).enumerate() {",
+        "pkg": "trit-net",
+        "filter": "rejects_inconsistent_model_and_late_short_samples"
+    },
+    {
+        "name": "net-train: 不校验模型就开训",
+        "file": "crates/trit-net/src/train.rs",
+        "old": "    model.validate()?;\n    for (index, sample) in inputs.iter().enumerate() {",
+        "new": "    for (index, sample) in inputs.iter().enumerate() {",
+        "pkg": "trit-net",
+        "filter": "rejects_inconsistent_model_and_late_short_samples"
+    },
+    {
+        "name": "sdf: XOR2 映射成三值强加门",
+        "file": "crates/trit-circuit/src/sdf.rs",
+        "old": "        (\"XOR\", GateKind::XorClassic),",
+        "new": "        (\"XOR\", GateKind::Xor),",
+        "pkg": "trit-circuit",
+        "filter": "xor_celltypes_map_to_the_classic_gate"
+    },
+    {
+        "name": "circuit: 预算耗尽仍宣称最优覆盖",
+        "file": "crates/trit-circuit/src/coverage.rs",
+        "old": "        if *budget == 0 && position + 1 < candidates.len() {\n            *exhausted = true;",
+        "new": "        if *budget == 0 && position + 1 < candidates.len() {",
+        "pkg": "trit-circuit",
+        "filter": "budget_exhaustion_with_unexplored_siblings_is_not_optimal"
+    },
+    {
+        "name": "schedule: 索引把锁目录当任务目录",
+        "file": "crates/trit-schedule/src/checkpoint/file.rs",
+        "old": "                let Ok(task_id) = hex_decode(name) else {\n                    continue;\n                };",
+        "new": "                let task_id = hex_decode(name)?;",
+        "pkg": "trit-schedule",
+        "filter": "index_ignores_the_lock_directory_while_held"
+    },
+    {
+        "name": "schedule: 死进程的陈旧锁不回收",
+        "file": "crates/trit-schedule/src/checkpoint/file.rs",
+        "old": "                owner.host == local_owner().host && matches!(process_alive(owner.pid), Some(false))",
+        "new": "                owner.host == local_owner().host && matches!(process_alive(owner.pid), Some(true))",
+        "pkg": "trit-schedule",
+        "filter": "stale_lock_from_a_dead_process_is_recovered"
+    },
+    {
+        "name": "schedule: 无主锁一律当残骸",
+        "file": "crates/trit-schedule/src/checkpoint/file.rs",
+        "old": "            None => dir_age(&path).is_some_and(|age| age >= OWNERLESS_STALE_AFTER),",
+        "new": "            None => true,",
+        "pkg": "trit-schedule",
+        "filter": "fresh_ownerless_lock_is_not_stolen"
     }
 ]
 

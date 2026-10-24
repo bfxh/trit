@@ -298,10 +298,53 @@ mod index_tests {
         assert!(store.index().unwrap().get("missing").is_none());
         let _ = fs::remove_dir_all(&root);
     }
+
+    #[test]
+    fn index_ignores_the_lock_directory_while_held() {
+        // 复审 M04：持锁时 `.lock/` 曾被当成任务目录，`hex_decode(".lock")` 让 index 报错。
+        let root = temp_root();
+        let store = FileCheckpointStore::new(&root);
+        store.save(&Checkpoint::new("t1", vec![9])).unwrap();
+        let lock = store.lock().unwrap();
+        let index = store.index().unwrap();
+        assert_eq!(index.len(), 1);
+        assert_eq!(index.get("t1").unwrap().generation, 1);
+        assert_eq!(store.len().unwrap(), 1);
+        assert_eq!(store.task_ids().unwrap(), vec!["t1"]);
+        drop(lock);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn empty_task_id_is_rejected_by_every_entry() {
+        // 空 id 的十六进制是空串 ⇒ `task_dir("")` 就是版本目录，`remove("")` 会删掉全部任务。
+        let root = temp_root();
+        let store = FileCheckpointStore::new(&root);
+        store.save(&Checkpoint::new("keep", vec![1])).unwrap();
+        assert!(matches!(
+            store.save(&Checkpoint::new("", vec![2])),
+            Err(CheckpointError::InvalidState(_))
+        ));
+        assert!(matches!(
+            store.load(""),
+            Err(CheckpointError::InvalidState(_))
+        ));
+        assert!(matches!(
+            store.remove(""),
+            Err(CheckpointError::InvalidState(_))
+        ));
+        assert!(matches!(
+            store.prune("", 1),
+            Err(CheckpointError::InvalidState(_))
+        ));
+        assert_eq!(store.task_ids().unwrap(), vec!["keep"], "既有任务必须还在");
+        let _ = fs::remove_dir_all(&root);
+    }
 }
 
 #[cfg(test)]
 mod lock_tests {
+    use super::super::lock::{LockOwner, local_owner, write_owner};
     use super::*;
     use std::sync::atomic::{AtomicU64, Ordering};
 
@@ -330,6 +373,72 @@ mod lock_tests {
         ));
         drop(lock);
         drop(second.try_lock().unwrap().expect("释放后可获取"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 一个确定已经退出的进程 pid。
+    fn dead_pid() -> u32 {
+        #[cfg(windows)]
+        let mut child = std::process::Command::new("cmd")
+            .args(["/C", "exit", "0"])
+            .spawn()
+            .expect("应能启动 cmd");
+        #[cfg(unix)]
+        let mut child = std::process::Command::new("true")
+            .spawn()
+            .expect("应能启动 true");
+        let pid = child.id();
+        child.wait().expect("等待子进程退出");
+        pid
+    }
+
+    #[test]
+    fn stale_lock_from_a_dead_process_is_recovered() {
+        // 复审 M05：崩溃/kill 之后 `.lock/` 永久残留，后续进程只能一直超时。
+        let root = temp_root();
+        let store = FileCheckpointStore::new(&root);
+        let path = store.lock_path();
+        fs::create_dir_all(&path).unwrap();
+        let owner = LockOwner {
+            pid: dead_pid(),
+            host: local_owner().host,
+            acquired_unix_ms: 0,
+        };
+        write_owner(&path, &owner).unwrap();
+        assert!(store.try_lock().unwrap().is_none(), "残留目录仍占位");
+        assert!(store.break_stale_lock().unwrap(), "死进程的锁应判为陈旧");
+        let lock = store.try_lock().unwrap().expect("清理后应拿得到锁");
+        assert_eq!(lock.owner_pid(), std::process::id());
+        drop(lock);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn fresh_ownerless_lock_is_not_stolen() {
+        // `create_dir` 成功、`owner.json` 未落盘的窗口里，绝不能把新锁当残骸删掉。
+        let root = temp_root();
+        let store = FileCheckpointStore::new(&root);
+        fs::create_dir_all(store.lock_path()).unwrap();
+        assert!(!store.break_stale_lock().unwrap(), "刚建的无主锁不能回收");
+        assert!(store.try_lock().unwrap().is_none());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn drop_does_not_delete_a_taken_over_lock() {
+        // 锁目录被别人重建后，旧持有者的 Drop 不能把新锁删掉。
+        let root = temp_root();
+        let store = FileCheckpointStore::new(&root);
+        let lock = store.try_lock().unwrap().unwrap();
+        let other = LockOwner {
+            pid: lock.owner_pid().wrapping_add(1),
+            host: local_owner().host,
+            acquired_unix_ms: 1,
+        };
+        fs::remove_file(store.lock_path().join(super::super::lock::OWNER_FILE)).unwrap();
+        write_owner(&store.lock_path(), &other).unwrap();
+        drop(lock);
+        assert!(store.lock_path().is_dir(), "别人的锁不能被 Drop 删掉");
         let _ = fs::remove_dir_all(&root);
     }
 }

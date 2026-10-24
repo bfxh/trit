@@ -49,6 +49,9 @@ pub struct TrainReport {
 /// 训练错误。
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TrainError {
+    /// 模型形状/取值不合法。
+    #[error("模型不合法：{0}")]
+    Model(#[from] crate::model::ModelError),
     /// 只支持两层模型。
     #[error("训练只支持两层模型（隐层 + 输出层），实际 {0} 层")]
     LayerCount(usize),
@@ -168,12 +171,22 @@ pub fn train(
     if inputs.is_empty() || inputs.len() != labels.len() {
         return Err(TrainError::Data("输入为空或与标签数量不一致".to_string()));
     }
-    if inputs[0].len() != model.inputs() {
-        return Err(TrainError::Data(format!(
-            "输入维数应为 {}，实际 {}",
-            model.inputs(),
-            inputs[0].len()
-        )));
+    // H09：入口先校验模型，再**逐条**校验样本；只查第一条会让后续短样本
+    // 在 `Shadow::forward` 里索引 panic。
+    model.validate()?;
+    for (index, sample) in inputs.iter().enumerate() {
+        if sample.len() != model.inputs() {
+            return Err(TrainError::Data(format!(
+                "第 {index} 条样本维数应为 {}，实际 {}",
+                model.inputs(),
+                sample.len()
+            )));
+        }
+        if let Some(position) = sample.iter().position(|value| !value.is_finite()) {
+            return Err(TrainError::Data(format!(
+                "第 {index} 条样本第 {position} 维不是有限值"
+            )));
+        }
     }
     for label in labels {
         if *label != 1.0 && *label != -1.0 {
@@ -354,6 +367,60 @@ mod tests {
             report.ternary_accuracy >= 0.75,
             "三值网络精度只有 {}",
             report.ternary_accuracy
+        );
+    }
+
+    #[test]
+    fn rejects_inconsistent_model_and_late_short_samples() {
+        // 复审 H09：只查第一条样本，第二条更短曾在 `Shadow::forward` 索引 panic。
+        let (inputs, labels) = majority_dataset(3);
+        let mut model = untrained(4, 3);
+        let mut samples = inputs.clone();
+        samples[1] = vec![1.0];
+        let error = train(&mut model, &samples, &labels, TrainOptions::default());
+        assert!(
+            matches!(&error, Err(TrainError::Data(message)) if message.contains("第 1 条")),
+            "短样本应在训练前被拒，实际 {error:?}"
+        );
+
+        // 手搓两层模型：隐层 outputs=2 但 weights 为空 ⇒ 模型校验错误，不是 panic。
+        // 用两层而不是一层，是为了让「去掉入口 validate」真的落到索引 panic 上，
+        // 而不是先被 LayerCount 拦下。
+        let mut broken = Model {
+            layers: vec![
+                crate::model::Layer {
+                    inputs: 2,
+                    outputs: 2,
+                    weights: Vec::new(),
+                    bias: vec![0, 0],
+                },
+                crate::model::Layer {
+                    inputs: 2,
+                    outputs: 1,
+                    weights: vec![vec![1, 1]],
+                    bias: vec![0],
+                },
+            ],
+        };
+        let error = train(
+            &mut broken,
+            &[vec![1.0, -1.0]],
+            &[1.0],
+            TrainOptions::default(),
+        );
+        assert!(
+            matches!(error, Err(TrainError::Model(_))),
+            "非法模型应在训练前被拒，实际 {error:?}"
+        );
+
+        // 非有限输入会让报告变成 NaN，同样在入口拒绝。
+        let mut model = untrained(4, 3);
+        let mut samples = inputs.clone();
+        samples[0][0] = f32::NAN;
+        let error = train(&mut model, &samples, &labels, TrainOptions::default());
+        assert!(
+            matches!(&error, Err(TrainError::Data(message)) if message.contains("有限值")),
+            "非有限样本应被拒，实际 {error:?}"
         );
     }
 

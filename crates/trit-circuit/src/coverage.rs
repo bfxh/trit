@@ -66,8 +66,8 @@ fn search_cover(
     candidates.sort_by_key(|(mask, faults)| {
         (std::cmp::Reverse((faults & uncovered).count_ones()), *mask)
     });
-    for (mask, faults) in candidates {
-        chosen.push(mask);
+    for (position, (mask, faults)) in candidates.iter().enumerate() {
+        chosen.push(*mask);
         search_cover(
             uncovered & !faults,
             chosen,
@@ -78,7 +78,10 @@ fn search_cover(
             exhausted,
         );
         chosen.pop();
-        if *budget == 0 {
+        // 预算在子调用里耗尽时，若还有**没试过的兄弟分支**，就不能声称已证明最优。
+        // 旧实现在这里直接 break 却不置 `exhausted`，于是「3 个向量」冒充最优（复审 M03）。
+        if *budget == 0 && position + 1 < candidates.len() {
+            *exhausted = true;
             break;
         }
     }
@@ -200,6 +203,32 @@ mod tests {
         let sets = vec![(1u64, 0b11u64), (2u64, 0b01u64)];
         let (_, proven) = minimum_cover(&sets, 0b11, 1);
         assert!(!proven, "预算耗尽不能宣称已证明最优");
+    }
+
+    #[test]
+    fn budget_exhaustion_with_unexplored_siblings_is_not_optimal() {
+        // 复审 M03 复现：full=63、budget=4。修复前返回 3 个向量却声称 proven，
+        // 而穷举最优是 2。
+        let sets = vec![
+            (1u64, 16u64),
+            (2, 57),
+            (3, 37),
+            (4, 29),
+            (5, 27),
+            (6, 5),
+            (7, 56),
+        ];
+        let (cover, proven) = minimum_cover(&sets, 63, 4);
+        assert_eq!(
+            cover.map(|masks| masks.len()),
+            Some(3),
+            "预算 4 下只能找到 3 个"
+        );
+        assert!(!proven, "预算触底且有未探索分支时不能声称最优");
+
+        let (cover, proven) = minimum_cover(&sets, 63, 100_000);
+        assert_eq!(cover.map(|masks| masks.len()), Some(2), "穷举最优应为 2");
+        assert!(proven, "穷举完必须能证明最优");
     }
 
     #[test]

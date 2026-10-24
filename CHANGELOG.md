@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Fixed（复审 P0/P1 批次 4：sparse 视图越界 H08 + P1 五项）
+
+- **H08 sparse `View::new` 越界/语义分叉**（`trit-codec/src/plan.rs`）：构造期完整验证
+  下标严格递增、域内、符号区未用填充位为 0。修复前 `len=1,index=1` 让 `copy_into`
+  在 `out[index]` 越界 panic；`[2,0]` 让 `get`（二分）与 `copy_into`（顺序写）给出
+  不同向量。三条读取路径现在同语义。
+- **H09 trit-net API 边界**（`infer.rs`/`train.rs`）：`forward`/`analyze`/`train` 入口
+  先 `Model::validate()`；训练**逐条**校验样本维数与非有限值（此前只查第一条，第二条
+  短样本在 `Shadow::forward` 索引时 panic）。手搓非法模型返回 `ModelError` /
+  `TrainError::Model`，不再靠索引 panic。
+- **H11 SDF 经典 XOR 映射**：`XOR2`/`XOR3` 此前映射成三值强加 `Xor`，与 Verilog `xor`
+  展开的 `XorClassic` 不相等 ⇒ 按实例覆盖静默落空、延迟回退默认 1。改为经典映射后
+  复审复现探针（SDF `XOR2` 延迟 100）关键路径 1 → **100**。
+- **M03 ATPG 最优性误报**：预算在子调用里耗尽、且还有未试的兄弟分支时置 `exhausted`
+  （旧实现只 `break` 不置位）。复审复现集合（full=63、budget=4）不再把 3 个向量冒充
+  最优；穷举仍给出 2 且 `proven=true`。
+- **M04 检查点索引把锁目录当任务目录**：`index()`/`len()` 只认「偶数长度全十六进制」目录，
+  锁目录（`.lock`、隔离目录）与噪声目录自然排除；持锁期间读索引不再 `InvalidState`。
+- **M05 锁在进程崩溃后永久残留**：锁目录写 `owner.json`（pid/主机/获取时间，`create_new`
+  抢记录，绝不覆盖别人的）；`break_stale_lock` 用 `ps`（unix）/`tasklist`（Windows）探测
+  持有进程，只清**确定已死**的锁（探测不可用、pid 无法判定、跨主机记录一律视为占有）；
+  清理走「先改名隔离 → 复核 owner」，回滚不覆盖已存在目录；`Drop` 也只删 owner 仍是自己
+  的那把。无新依赖、保持 `forbid(unsafe_code)`；已知局限（pid 复用只朝保守方向、命令
+  缺失时不恢复、跨主机不自动清理）写进模块文档。
+- **顺带封堵三处公开 API 隐患**：空 task id 的十六进制是空串（`task_dir("")` = 版本目录），
+  `save/load/remove/prune` 现在一律拒绝，`remove("")` 不再能一次删掉全部任务；`len()` 与
+  `index()` 用同一判据（十六进制且可解 UTF-8），不再对「有几个任务」给出不同答案；
+  sparse `View::new` 的 `8 + count*4 + …` 改 checked 运算（32 位目标上 count≈2^30 会溢出）。
+- 测试 +10；变异门 216 → **228**（新增 12 条：越界下标、填充位、forward/train 校验、
+  XOR 映射、最优性、索引判据、陈旧锁回收、无主锁不误杀、Drop 所有权、空 task id）；
+  workspace **721/0**；fmt/clippy/模块预算绿。
+
 ### Added（TTX 格式转换落地 + GPU 端到端接线——真机测试抓到双轨跨行真 bug）
 
 - **纯转换层 `trit_texture::convert`**（默认构建，零新依赖）：RGBA ↔ TTX1/TTX2、

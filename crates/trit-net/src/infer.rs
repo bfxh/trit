@@ -116,7 +116,11 @@ fn from_offset(value: i32) -> Sign {
 }
 
 /// 完整赋值下的前向（不允许 `X`；有 `X` 会被当作 `0`，请用 [`analyze`]）。
+///
+/// 字段是公开的——调用方手搓的模型**在此处强制校验**（H09：不合法形状
+/// 返回结构化错误，绝不靠索引 panic）。
 pub fn forward(model: &Model, inputs: &[Ternary]) -> Result<Vec<Sign>, ModelError> {
+    model.validate()?;
     if inputs.len() != model.inputs() {
         return Err(ModelError::Shape {
             layer: 0,
@@ -191,6 +195,7 @@ fn conservative(model: &Model, inputs: &[Ternary]) -> Result<Vec<Option<Sign>>, 
 
 /// 解析含 `X` 输入的一次推理。
 pub fn analyze(model: &Model, inputs: &[Ternary], budget: usize) -> Result<Analysis, ModelError> {
+    model.validate()?;
     if inputs.len() != model.inputs() {
         return Err(ModelError::Shape {
             layer: 0,
@@ -311,6 +316,48 @@ mod tests {
             forward(&model, &[Ternary::True, Ternary::True]).unwrap(),
             vec![Sign::Pos]
         );
+    }
+
+    #[test]
+    fn hand_built_invalid_model_is_rejected_instead_of_panicking() {
+        // 复审 H09：outputs=1 但 weights=[] 曾让 forward 在 weights[0] 处 panic。
+        let broken = Model {
+            layers: vec![Layer {
+                inputs: 1,
+                outputs: 1,
+                weights: Vec::new(),
+                bias: vec![0],
+            }],
+        };
+        assert!(matches!(
+            forward(&broken, &[Ternary::True]),
+            Err(ModelError::Shape { layer: 0, .. })
+        ));
+        assert!(matches!(
+            analyze(&broken, &[Ternary::True], 4),
+            Err(ModelError::Shape { layer: 0, .. })
+        ));
+        // 层间不衔接同样在入口拒绝，而不是在第二层索引错位。
+        let disconnected = Model {
+            layers: vec![
+                Layer {
+                    inputs: 2,
+                    outputs: 2,
+                    weights: vec![vec![1, 0], vec![0, 1]],
+                    bias: vec![0, 0],
+                },
+                Layer {
+                    inputs: 3,
+                    outputs: 1,
+                    weights: vec![vec![1, 0, 0]],
+                    bias: vec![0],
+                },
+            ],
+        };
+        assert!(matches!(
+            forward(&disconnected, &[Ternary::True, Ternary::True]),
+            Err(ModelError::Shape { layer: 1, .. })
+        ));
     }
 
     #[test]
