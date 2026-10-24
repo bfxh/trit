@@ -104,6 +104,11 @@ fn run_encode(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
     let variants = blob::padding_variants(&bytes)?;
     let distinct = variants.iter().filter(|variant| *variant != &bytes).count();
     let covert_bits = (variants.len() as f64).log2();
+    // 严格解码器（生产 Rust / C 运行时 / 本工具）只接受规范形；这条读数用来跟踪加固是否生效。
+    let accepted = variants
+        .iter()
+        .filter(|variant| blob::parse(variant).is_ok())
+        .count();
     let samples: Vec<serde_json::Value> = variants
         .iter()
         .filter(|variant| *variant != &bytes)
@@ -112,7 +117,7 @@ fn run_encode(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
             serde_json::json!({
                 "hex": hex(variant),
                 "fnv64": fnv64(variant),
-                "same_table": blob::parse(variant).map(|other| other.values == parsed.values).unwrap_or(false),
+                "accepted_by_strict_decoder": blob::parse(variant).is_ok(),
             })
         })
         .collect();
@@ -131,6 +136,7 @@ fn run_encode(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
             "canonical": canonical,
             "equivalent_encodings": variants.len(),
             "other_encodings": distinct,
+            "accepted_by_strict_decoder": accepted,
             "covert_bits": (covert_bits * 100.0).round() / 100.0,
         },
         "samples": samples,
@@ -139,13 +145,15 @@ fn run_encode(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
             "area": "format-design",
             "hint": "改 trit-build/src/trb.rs：写时清零闲置槽、读时拒非规范，或把哈希定义在语义层"
         },
-        "impact": if distinct > 0 {
-            "同一张真值表存在多个字节串：内容哈希不等于语义身份，闲置槽位可夹带数据"
+        "impact": if accepted > 1 {
+            "同一张真值表有多个字节串且解码器都接受：内容哈希不等于语义身份，闲置槽位可夹带数据"
+        } else if distinct > 0 {
+            "可构造多个等价字节串，但严格解码器只接受规范形（加固已生效）"
         } else {
             "载荷正好占满字节，没有多余编码空间"
         },
     });
-    Ok((report, distinct > 0))
+    Ok((report, accepted > 1))
 }
 
 fn run_crc(trits: usize, max_weight: usize) -> Result<(serde_json::Value, bool)> {

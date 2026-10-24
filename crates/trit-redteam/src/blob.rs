@@ -51,7 +51,8 @@ pub fn crc3(data: &[i8]) -> [i8; 3] {
     ]
 }
 
-pub fn parse(bytes: &[u8]) -> Result<Blob> {
+/// 头字段与长度校验（**不含**规范形检查，供攻击视角的枚举使用）。
+fn header(bytes: &[u8]) -> Result<(u8, u8, usize, usize, usize)> {
     if bytes.len() < HEADER + 1 {
         bail!("太短（{} 字节）", bytes.len());
     }
@@ -72,12 +73,23 @@ pub fn parse(bytes: &[u8]) -> Result<Blob> {
         bail!("表长 {len} 与 nvars={nvars} 不符（应为 3^{nvars}）");
     }
     let payload = len + 3;
-    let expected = HEADER + payload.div_ceil(5);
-    if bytes.len() != expected {
+    let payload_bytes = payload.div_ceil(5);
+    if bytes.len() != HEADER + payload_bytes {
         bail!(
-            "长度不符：头声明 {len} trit（应 {expected} 字节），实际 {}",
+            "长度不符：头声明 {len} trit（应 {} 字节），实际 {}",
+            HEADER + payload_bytes,
             bytes.len()
         );
+    }
+    Ok((bytes[5], nvars, len, payload, payload_bytes))
+}
+
+pub fn parse(bytes: &[u8]) -> Result<Blob> {
+    let (algebra, nvars, len, payload, payload_bytes) = header(bytes)?;
+    // 规范形：末字节里没用到的 trit 槽必须为 0。否则同一张表有多个字节串，
+    // 「内容哈希 = 身份」不成立（red-team 的 encode 检查实测出 27 种写法）。
+    if !canonical_tail(bytes, payload, payload_bytes) {
+        bail!("非规范编码：末字节闲置的 trit 槽非零");
     }
     let mut digits: Vec<i8> = Vec::with_capacity(payload);
     'outer: for byte in &bytes[HEADER..] {
@@ -93,12 +105,15 @@ pub fn parse(bytes: &[u8]) -> Result<Blob> {
             }
         }
     }
+    if digits.len() != payload {
+        bail!("载荷截断：需要 {payload} 个 trit，只有 {}", digits.len());
+    }
     let values = digits[..len].to_vec();
     if digits[len..] != crc3(&values) {
         bail!("CRC-3 不符");
     }
     Ok(Blob {
-        algebra: bytes[5],
+        algebra,
         nvars,
         values,
         payload_len: payload,
@@ -106,18 +121,22 @@ pub fn parse(bytes: &[u8]) -> Result<Blob> {
     })
 }
 
+/// 末字节的闲置槽是否全为 0。
+fn canonical_tail(bytes: &[u8], payload: usize, payload_bytes: usize) -> bool {
+    let used_in_last = payload - 5 * (payload_bytes - 1);
+    u32::from(*bytes.last().expect("非空")) < 3u32.pow(used_in_last as u32)
+}
+
 /// 末字节里没用完的 trit 槽位数（0 表示载荷正好占满）。
 pub fn unused_trits(bytes: &[u8]) -> Result<usize> {
-    let blob = parse(bytes)?;
-    let payload_bytes = blob.bytes.len() - HEADER;
-    Ok(payload_bytes * 5 - blob.payload_len)
+    let (_, _, _, payload, payload_bytes) = header(bytes)?;
+    Ok(payload_bytes * 5 - payload)
 }
 
 /// 末字节里「已用」的低位槽数（载荷正好占满时为 5）。
 fn used_in_last_byte(bytes: &[u8]) -> Result<u32> {
-    let blob = parse(bytes)?;
-    let payload_bytes = blob.bytes.len() - HEADER;
-    Ok((blob.payload_len - 5 * (payload_bytes - 1)) as u32)
+    let (_, _, _, payload, payload_bytes) = header(bytes)?;
+    Ok((payload - 5 * (payload_bytes - 1)) as u32)
 }
 
 /// 是否规范编码：末字节里没用到的槽位全为 0。
@@ -126,7 +145,6 @@ pub fn is_canonical(bytes: &[u8]) -> Result<bool> {
     let last = *bytes.last().expect("非空") as u32;
     Ok(last == last % 3u32.pow(filled))
 }
-
 /// 枚举与输入**逐 trit 等价**、但末字节不同的全部字节串（含输入自身）。
 pub fn padding_variants(bytes: &[u8]) -> Result<Vec<Vec<u8>>> {
     let unused = unused_trits(bytes)?;
@@ -186,22 +204,26 @@ mod tests {
     }
 
     #[test]
-    fn every_padding_variant_decodes_to_the_same_table() {
+    fn strict_decoders_accept_only_the_canonical_encoding() {
         let original = fixture();
         let variants = padding_variants(&original).unwrap();
         // 12 个载荷 trit 占 3 字节 = 15 槽 ⇒ 3 个闲置槽 ⇒ 3^3 = 27 个变体（都 < 243）。
         assert_eq!(variants.len(), 27, "闲置 3 trit 应有 27 种写法");
         assert_eq!(unused_trits(&original).unwrap(), 3);
-        let canonical = parse(&original).unwrap();
-        let mut distinct_bytes = 1usize;
-        for variant in &variants {
-            let decoded = parse(variant).unwrap();
-            assert_eq!(decoded.values, canonical.values, "变体必须解出同一张表");
-            if variant != &original {
-                distinct_bytes += 1;
-            }
-        }
-        assert_eq!(distinct_bytes, 27, "27 个变体应当是 27 个不同字节串");
+        let accepted: Vec<&Vec<u8>> = variants
+            .iter()
+            .filter(|variant| parse(variant).is_ok())
+            .collect();
+        assert_eq!(accepted.len(), 1, "严格解码器只接受规范形：{accepted:?}");
+        assert_eq!(accepted[0], &original, "被接受的必须是原字节串");
+        assert_eq!(
+            variants
+                .iter()
+                .filter(|variant| parse(variant).is_err())
+                .count(),
+            26,
+            "另外 26 种写法必须被拒"
+        );
         assert!(is_canonical(&original).unwrap(), "真实产物是规范编码");
         let tampered = {
             let mut bytes = original.clone();
@@ -213,7 +235,10 @@ mod tests {
             !is_canonical(&tampered).unwrap(),
             "加了闲置位就不是规范编码"
         );
-        assert_eq!(parse(&tampered).unwrap().values, canonical.values);
+        assert!(
+            parse(&tampered).is_err(),
+            "非规范写法必须被严格解码器拒绝（加固后同一张表只有一个字节串）"
+        );
     }
 
     #[test]

@@ -2134,7 +2134,7 @@ MUTANTS = [
         "old": '    Ok(last == last % 3u32.pow(filled))',
         "new": '    Ok(true)',
         "pkg": 'trit-redteam',
-        "filter": 'every_padding_variant_decodes_to_the_same_table'
+        "filter": 'strict_decoders_accept_only_the_canonical_encoding'
     },
     {
         "name": 'redteam: CRC 漏检不计数',
@@ -2223,6 +2223,30 @@ MUTANTS = [
         "new": '    let user_prefix = |_text: &str| true;',
         "pkg": 'trit-redteam',
         "filter": 'remapped_toolchain_paths_are_not_findings'
+    },
+    {
+        "name": 'trb: 生产解码器放行非规范编码',
+        "file": 'crates/trit-build/src/trb.rs',
+        "old": '    if u32::from(*blob.last().expect("非空")) >= 3u32.pow(used_in_last as u32) {',
+        "new": '    if false {',
+        "pkg": 'trit-build',
+        "filter": 'rejects_non_canonical_padding'
+    },
+    {
+        "name": 'runtime: C 解码器放行非规范编码',
+        "file": 'crates/trit-build/runtime/trit_runtime.c',
+        "old": '    if ((uint32_t)blob[len - 1] >= limit) {',
+        "new": '    if (0) {',
+        "pkg": 'trit-build',
+        "filter": 'both_decoders_reject_non_canonical_padding'
+    },
+    {
+        "name": 'redteam: 解析器放行非规范编码',
+        "file": 'crates/trit-redteam/src/blob.rs',
+        "old": '    if !canonical_tail(bytes, payload, payload_bytes) {',
+        "new": '    if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'strict_decoders_accept_only_the_canonical_encoding'
     }
 ]
 

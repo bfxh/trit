@@ -42,7 +42,7 @@ fn run(args: &[&str]) -> (String, String, i32) {
 }
 
 #[test]
-fn encode_reports_all_equivalent_encodings() {
+fn encode_reports_encodings_but_strict_decoder_accepts_one() {
     let dir = scratch("encode");
     let path = dir.join("truth.tritbin");
     fs::write(&path, blob()).expect("写 blob");
@@ -53,16 +53,20 @@ fn encode_reports_all_equivalent_encodings() {
     assert_eq!(report["padding"]["equivalent_encodings"], 27);
     assert_eq!(report["padding"]["other_encodings"], 26);
     assert_eq!(report["padding"]["canonical"], true);
+    assert_eq!(report["padding"]["accepted_by_strict_decoder"], 1);
     let samples = report["samples"].as_array().unwrap();
     assert!(!samples.is_empty());
     for sample in samples {
-        assert_eq!(sample["same_table"], true, "变体必须解出同一张表");
+        assert_eq!(
+            sample["accepted_by_strict_decoder"], false,
+            "非规范写法必须被拒"
+        );
         assert_ne!(sample["fnv64"], report["blob"]["fnv64"], "哈希必须不同");
     }
 
-    // `--strict`：有发现就非 0。
+    // 加固后严格解码器只认规范形 ⇒ 不再判红。
     let (_, _, code) = run(&["encode", path.to_str().unwrap(), "--strict"]);
-    assert_eq!(code, 1, "有非规范编码时 --strict 必须判红");
+    assert_eq!(code, 0, "严格解码器只接受一种写法时不算发现");
     let _ = fs::remove_dir_all(&dir);
 }
 
