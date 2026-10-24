@@ -47,6 +47,12 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+      # png feature（默认关）：单独测 + clippy，否则 CI 永远碰不到这些代码。
+      - name: Test (trit-texture png feature)
+        run: cargo test -p trit-texture --features png --locked
+      - name: Clippy (trit-texture png feature)
+        run: cargo clippy -p trit-texture --features png --all-targets --locked -- -D warnings
+
   module-budget:
     name: module budget (god objects)
     runs-on: ubuntu-latest

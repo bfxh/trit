@@ -176,8 +176,22 @@ digit 映射（权重与偏置同）：`-1→0，0→1，+1→2`（value+1）；
 无填充）依序 + 该层偏置 trit。约束：**层间衔接（第 i 层 inputs = 第 i-1 层
 outputs）由容器强制**（读写同一校验）；层内取值域由 digit 天然限定。
 
-## 7. 转换路线（下一步）
+## 7. 转换（已落地）
 
-容器定位是**交换**：入向（PNG/RGBA → TTX1/TTX2-TEX；三值矩阵/GGUF 风格权重 →
-MOD）与出向（TTX → RGBA/PNG 预览）按「先有格式、后有转换」的顺序做；转换器
-落在独立模块，不把 PNG 解码依赖塞进本 crate（实验层互不依赖的既有规矩）。
+分层（按本仓发布图门的规矩：**实验层之间禁止常规路径依赖**——独立转换 crate
+依赖 trit-texture 会被 `publish_graph` 门拦下，自测钉死；所以文件 I/O 以
+**可选 feature** 收进格式 crate，默认构建依旧零图像解码依赖）：
+
+1. **纯转换**（默认构建就有）：`trit_texture::convert`——RGBA ↔ TTX1/TTX2、
+   TTX1 ↔ TTX2 升降级（降级仅单级 TEX，mip 链显式拒绝）、盒式 mip 链构造。
+2. **PNG 文件 I/O**（`png` feature，默认关）：`trit_texture::pngio`——
+   RGBA8/RGB8 读入、RGBA8 写出。
+3. **CLI**：`cargo run -p trit-texture --features png --bin ttx-convert -- …`
+   ——`png-to-ttx`（`--v1`/`--mip`）、`ttx-to-png`、`ttx-upgrade`、`ttx-downgrade`。
+4. **GPU 端到端**（trit-gpu `forward`）：MOD 权重 `to_dual_rail()` 后直接上传
+   naive matmul 内核——真机测试逐元素对拍（含 inputs=33 跨行边界；
+   该测试曾抓到行起点不在字边界的真 bug，已修并钉死）。
+5. **trit-net 兼容**：`Model`/`Layer` ↔ `TritModelLayer` 经 `rows()` 无损往返，
+   断链两边同语义拒绝（trit-net 集成测试钉住）。
+
+GGUF 等量化模型格式 → MOD 的入向转换未做（需要读 GGUF 元数据层，体量另计）。

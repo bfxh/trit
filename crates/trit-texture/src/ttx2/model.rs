@@ -90,18 +90,23 @@ impl TritModelLayer {
             .collect()
     }
 
-    /// 转成 GPU 消费的双轨布局（trit-gpu `pack_rows`：行整字、bit = `1 << (col % 32)`，
-    /// pos 装 +1、neg 装 -1）。文件里不再存双轨——这是加载后的一次显式转换。
+    /// 转成 GPU 消费的双轨布局（trit-gpu `pack_rows`：**每行各自整字**、
+    /// 行内 bit = `1 << (col % 32)`，pos 装 +1、neg 装 -1）。文件里不再存双轨——
+    /// 这是加载后的一次显式转换。注意行起点在字边界：`inputs % 32 != 0` 时
+    /// 平面 `index/32` 会跨行错位（真机端到端测试抓到过）。
     pub fn to_dual_rail(&self) -> (Vec<u32>, Vec<u32>) {
         let words = self.inputs.div_ceil(TRITS_PER_WORD);
         let mut pos = vec![0u32; self.outputs * words];
         let mut neg = vec![0u32; self.outputs * words];
-        for (index, value) in self.weights.iter().enumerate() {
-            let bit = 1u32 << (index % TRITS_PER_WORD);
-            match value {
-                1 => pos[index / TRITS_PER_WORD] |= bit,
-                -1 => neg[index / TRITS_PER_WORD] |= bit,
-                _ => {}
+        for row in 0..self.outputs {
+            for col in 0..self.inputs {
+                let value = self.weights[row * self.inputs + col];
+                let bit = 1u32 << (col % TRITS_PER_WORD);
+                match value {
+                    1 => pos[row * words + col / TRITS_PER_WORD] |= bit,
+                    -1 => neg[row * words + col / TRITS_PER_WORD] |= bit,
+                    _ => {}
+                }
             }
         }
         (pos, neg)
@@ -247,17 +252,22 @@ mod tests {
 
     #[test]
     fn dual_rail_conversion_matches_the_gpu_layout() {
-        // 行 [ +1, -1, 0, +1, …第 32 列再一个 +1 ]（inputs=33 → W=2）：
+        // 第 0 行 [ +1, -1, 0, +1, …第 32 列再一个 +1 ]（inputs=33 → W=2）：
         // pos 字 0 = bit0|bit3 = 9、字 1 = 1；neg 字 0 = bit1 = 2。
-        let mut row = vec![0i8; 33];
-        row[0] = 1;
-        row[1] = -1;
-        row[3] = 1;
-        row[32] = 1;
-        let layer = TritModelLayer::new(&[row], &[0]).unwrap();
+        let mut row0 = vec![0i8; 33];
+        row0[0] = 1;
+        row0[1] = -1;
+        row0[3] = 1;
+        row0[32] = 1;
+        // 第 1 行只有 col0 = +1：**行起点在字边界**——必须落 pos[2]（第 1 行的
+        // 首字），绝不能是平面 index/32 算出的 pos[1]。跨行边界曾在此错位
+        //（真机端到端测试抓到的 bug 形态，这里钉死）。
+        let mut row1 = vec![0i8; 33];
+        row1[0] = 1;
+        let layer = TritModelLayer::new(&[row0, row1], &[0, 0]).unwrap();
         let (pos, neg) = layer.to_dual_rail();
-        assert_eq!(pos, vec![0b1001, 0b0000_0001]);
-        assert_eq!(neg, vec![0b0010, 0]);
+        assert_eq!(pos, vec![0b1001, 0b0000_0001, 0b1, 0]);
+        assert_eq!(neg, vec![0b0010, 0, 0, 0]);
     }
 
     #[test]

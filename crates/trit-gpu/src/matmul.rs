@@ -445,11 +445,11 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
     })
 }
 
-fn storage(binding: u32) -> wgpu::BindGroupLayoutEntry {
+pub(crate) fn storage(binding: u32) -> wgpu::BindGroupLayoutEntry {
     storage_with(binding, true)
 }
 
-fn storage_with(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+pub(crate) fn storage_with(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::COMPUTE,
@@ -462,7 +462,7 @@ fn storage_with(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     }
 }
 
-fn uniform(binding: u32) -> wgpu::BindGroupLayoutEntry {
+pub(crate) fn uniform(binding: u32) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
         visibility: wgpu::ShaderStages::COMPUTE,

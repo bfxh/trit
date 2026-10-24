@@ -165,6 +165,8 @@ pub struct Report {
 }
 
 #[cfg(feature = "gpu")]
+pub mod forward;
+#[cfg(feature = "gpu")]
 pub mod gpu;
 #[cfg(feature = "gpu")]
 pub mod matmul;

@@ -5,16 +5,28 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "三进制块纹理压缩实验层：4×8 块、RGB565 端点对、每纹素 1 trit 的 3 级调色板（不属于稳定 API）"
+description = "三进制块纹理压缩实验层：4×10 块、RGB565 端点对、每纹素 1 trit 的 3 级调色板（不属于稳定 API）"
 publish = false
+
+[features]
+# PNG 文件 I/O 与 ttx-convert CLI（默认关：格式层默认零图像解码依赖；
+# png 是 crates.io 可选依赖，发布图门只管 path 依赖，不受影响）。
+default = []
+png = ["dep:png"]
 
 [dependencies]
 trit-core.workspace = true
 thiserror = "2.0.21"
+png = { version = "0.17", optional = true }
 
 [[bin]]
 name = "trit-texture"
 path = "src/main.rs"
+
+[[bin]]
+name = "ttx-convert"
+path = "src/bin/ttx-convert.rs"
+required-features = ["png"]
 
 [[bench]]
 name = "texture"

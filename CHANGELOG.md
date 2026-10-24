@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Added（TTX 格式转换落地 + GPU 端到端接线——真机测试抓到双轨跨行真 bug）
+
+- **纯转换层 `trit_texture::convert`**（默认构建，零新依赖）：RGBA ↔ TTX1/TTX2、
+  TTX1 ↔ TTX2 升降级（降级仅单级 TEX，mip 链显式拒绝）、**盒式 mip 链构造**
+  （2×2 滤波、尺寸向下取到块对齐、不能严格递减即停）。
+- **PNG 文件 I/O（`png` feature，默认关）+ `ttx-convert` CLI**：png-to-ttx
+  （`--v1`/`--mip`）、ttx-to-png、ttx-upgrade、ttx-downgrade；CI 的 check 门补
+  `--features png` 的 test+clippy（feature 代码默认构建碰不到，不加门就是死角）。
+  **架构如实记**：原计划独立 trit-convert crate 被**发布图门**拦下——实验层之间
+  禁止常规路径依赖（政策带自测）；改为可选 feature 收进格式 crate，默认构建
+  依旧零图像解码依赖。CLI 真机冒烟：PNG→TTX(mip,96B)→PNG 往返、mip 链降级正确拒绝。
+- **GPU 端到端（trit-gpu `forward`，gpu feature）**：`matmul_packed` 预打包入口
+  （naive 内核，绑定与 matmul 同一套）——真机测试把 MOD 权重 `to_dual_rail()`
+  缓冲直上 GPU，与标量逐元素对拍（inputs=33 跨字边界 + 容器往返重跑一致性）。
+  **该测试抓到真 bug**：`to_dual_rail` 曾用平面 `index/32` 定字，`inputs % 32 != 0`
+  时第 2 行起点不在字边界（pack_rows 布局是每行整字）——单输出单元测试测不出，
+  真机多行立即失配。已按行×字布局修复，多行常量（第 1 行首字 = 字 2）钉死。
+- **trit-net 兼容测试**（dev-dep）：`Model`/`Layer` ↔ `TritModelLayer` 经
+  `rows()` 无损往返；断链（上层输出 ≠ 下层输入）两边同语义拒绝。
+- 测试 +11（trit-texture 26→31、trit-net 16→18、trit-gpu 真机 +1）；
+  变异门 216 → **220**（新增 4 条：双轨行界错位〔真 bug 形态〕、降级放行 mip、
+  v2 解码取末级、盒式滤波只取首像素），trit-texture 14/14 全灭；
+  workspace **710/0**；发布图/预算/docs 门绿。GGUF → MOD 入向转换未做
+  （需读 GGUF 元数据层，体量另计）。
+
 ### Changed（MOD 载荷按「兼容/强度/三进制原生」重构 + 溢出加固 + 扩展名规范）
 
 - **MOD 重构**（用户三优先级：兼容、强度、适合三进制本身；双轨 2 bit/权重

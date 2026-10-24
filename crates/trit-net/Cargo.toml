@@ -17,3 +17,7 @@ serde_json = "1.0.154"
 [[bench]]
 name = "net"
 harness = false
+
+[dev-dependencies]
+# 仅测试用：trit-net Model 与 TTX MOD 容器的兼容对拍（发布图门允许 dev-deps）。
+trit-texture = { path = "../trit-texture" }

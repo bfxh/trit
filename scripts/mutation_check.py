@@ -241,6 +241,38 @@ MUTANTS = [
         "filter": "model_container_bytes_are_pinned"
     },
     {
+        "name": "ttx2: 双轨行界错位（平面下标）",
+        "file": "crates/trit-texture/src/ttx2/model.rs",
+        "old": "                    1 => pos[row * words + col / TRITS_PER_WORD] |= bit,",
+        "new": "                    1 => pos[(row * self.inputs + col) / TRITS_PER_WORD] |= bit,",
+        "pkg": "trit-texture",
+        "filter": "dual_rail_conversion_matches_the_gpu_layout"
+    },
+    {
+        "name": "convert: 降级放行 mip 链",
+        "file": "crates/trit-texture/src/convert.rs",
+        "old": "    if levels.len() != 1 {",
+        "new": "    if levels.len() > 2 {",
+        "pkg": "trit-texture",
+        "filter": "downgrade_rejects_mip_chains_and_model_kind"
+    },
+    {
+        "name": "convert: v2 解码取末级",
+        "file": "crates/trit-texture/src/convert.rs",
+        "old": "    let texture = levels.first().ok_or(TextureError::TtxEmpty)?;",
+        "new": "    let texture = levels.last().ok_or(TextureError::TtxEmpty)?;",
+        "pkg": "trit-texture",
+        "filter": "downgrade_rejects_mip_chains_and_model_kind"
+    },
+    {
+        "name": "convert: 盒式滤波只取首像素",
+        "file": "crates/trit-texture/src/convert.rs",
+        "old": "            for (dy, dx) in [(0usize, 0usize), (0, 1), (1, 0), (1, 1)] {",
+        "new": "            for (dy, dx) in [(0usize, 0usize)] {",
+        "pkg": "trit-texture",
+        "filter": "mip_chain_dimensions_and_box_filter_are_exact"
+    },
+    {
         "name": "circuit: 引脚故障不注入",
         "file": "crates//trit-circuit//src//circuit//sim.rs",
         "old": "                ins[pin] = value;",
