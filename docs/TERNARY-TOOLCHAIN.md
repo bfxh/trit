@@ -94,12 +94,56 @@ trit build demo.tri --out out --check  # 校验产物哈希
 
 **判据**：如果某项在三进制世界里和二进制世界里"要做的事一样"，就不该自己写。
 
+## 9. 双轨并行：谁先、谁吃剩余（`--manifest`）
+
+用户 2026-10-25 的取舍：**三进制轨（本工具）优先**，二进制轨（cargo/rustc/LLVM）用剩余槽位并发，
+双方都别等对方；支持谁由 `--prefer` 决定。
+
+| `--prefer` | 谁先 | 行为 |
+|---|---|---|
+| `ternary`（默认） | 三进制轨 | 三进制待办且槽位未满 ⇒ 只派三进制；二进制只在三进制排空或槽位已满时上 |
+| `binary` | 二进制轨 | 镜像：三进制吃剩余 |
+| `balanced` | 清单顺序 | 单 FIFO，按提交顺序 |
+
+**不做抢占**：二进制任务跑起来不会被打断（cargo 没有安全挂起点）；
+"优先"的含义只是**不派发**，不是强杀。
+
+清单（路径相对清单文件）：
+
+```json
+{"jobs":[
+  {"name":"a","kind":"ternary","source":"a.tri"},
+  {"name":"lib","kind":"binary","cmd":["cargo","build","-q","-p","trit-core"]},
+  {"name":"b","kind":"ternary","source":"b.tri","out":"out/b"}
+]}
+```
+
+```bash
+trit-build --manifest jobs.json --jobs 4 --dry-run        # 只看分配
+trit-build --manifest jobs.json --jobs 4                  # 真并行
+trit-build --manifest jobs.json --jobs 4 --prefer binary  # 反过来支持二进制
+```
+
+实测（本机，7 个任务 / 4 槽位：6 个 `.tri` + 1 个 `cargo build -p trit-core`）：
+
+| 指标 | 值 |
+|---|---|
+| wall | **171 ms** |
+| busy（各任务耗时之和） | 205 ms |
+| speedup = busy/wall | 1.2× |
+| 三进制单任务 | 4–8 ms（与 163 ms 的 cargo 并行，不被阻塞） |
+| 失败 | 0 |
+
+**如实说明**：M0 的三进制任务只有毫秒级，所以"总加速"只有 1.2×——收益体现在
+"cargo 跑 163 ms 期间，6 个三进制构建已经全部完成"，而不是把 cargo 变快。
+两侧都重（大网表 + 大 crate）时才有明显加速，那要等 M1 的真实工程。
+
 ## 6. 阶段与验收
 
 | 阶段 | 内容 | 验收判据 |
 |---|---|---|
 | **M0（已完成）** | `.tri` → 化简 + 穷举复核 → TRB1/CSV/C + 缓存 | 3 条集成测试；C 主机 27/27 对拍；`--check` 篡改必红 |
-| M1 | Verilog 子集前端（复用 `trit-circuit`）+ 双导轨输出 | 同一设计 Verilog/TRB1 两条链路的真值表一致 |
+| M1 | Verilog 子集前端（复用 `trit-circuit`）+ 双导轨输出 + 双轨并行跑真实工程 | 同一设计 Verilog/TRB1 两条链路的真值表一致 |
 | M2 | 基 3 打包 + GF(3) CRC-3 接入（需 codec 稳定或下沉 core）、TRB1 解码器 + 运行时库、`--emit verilog,gpu` | 解码-重编码 round-trip 逐 trit 相等；非法字节显式报错；体积对比给基线 |
 | M3 | e-graph 重写（规则逐条 3^n 自证）+ 精确传播替代穷举 | 规则库自证通过率 100%；同结果下构建时间下降（给基线） |
 

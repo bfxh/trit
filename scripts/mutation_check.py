@@ -2039,6 +2039,22 @@ MUTANTS = [
         "new": '    let ok = true;',
         "pkg": "trit-build",
         "filter": "check_detects_tampered_artifact"
+    },
+    {
+        "name": "schedule: 二进制抢先于三进制",
+        "file": "crates/trit-build/src/schedule.rs",
+        "old": '    if primary_pending > 0 && primary_running < slots {',
+        "new": '    if false {',
+        "pkg": "trit-build",
+        "filter": "ternary_wins_while_slots_remain"
+    },
+    {
+        "name": "schedule: 允许超槽位",
+        "file": "crates/trit-build/src/schedule.rs",
+        "old": '    if slots == 0 || load.running() >= slots {',
+        "new": '    if slots == 0 {',
+        "pkg": "trit-build",
+        "filter": "never_exceeds_slots_or_returns_none_without_work"
     }
 
 ]

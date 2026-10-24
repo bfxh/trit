@@ -11,6 +11,10 @@
   基 3 打包/GF(3) CRC-3 因发布图门禁（实验 crate 不许互依）留到 M2。
 - `lookup.c` 是刻意边界：三值语义固化为查表，执行交给 cc/rustc（不重写二进制后端）。
 - 测试 +4（产物/缓存命中/篡改检测/重建不命中缓存）；变异门 251 → **253**（trit-build 3/3）。
+- **双轨并行**（`--manifest jobs.json [--jobs N] [--prefer ternary|binary|balanced] [--dry-run]`）：
+  三进制轨优先、二进制轨（外部 `cargo`/`rustc`）只吃剩余槽位，**不抢占**；分配策略是纯函数
+  `schedule::pick`（4 条单测），`--dry-run` 先出方案。实测 7 任务/4 槽：wall 171 ms、busy 205 ms，
+  6 个 `.tri` 在 cargo 的 163 ms 内全部完成。
 - 文档 `docs/TERNARY-TOOLCHAIN.md`：论文依据（LLVM/MLIR/egg/BitNet/平衡三进制，DOI 已核）、
   分层设计、M0–M3 验收判据、继续靠 LLVM/Rust 的职责表、未验证清单。
 

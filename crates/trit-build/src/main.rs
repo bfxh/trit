@@ -25,8 +25,15 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod schedule;
+
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
+use std::collections::VecDeque;
+use std::sync::{Condvar, Mutex};
+use std::time::Instant;
+
+use schedule::{Prefer, Track};
 use trit_core::Algebra;
 use trit_core::limits::Limits;
 use trit_core::value::Ternary;
@@ -247,31 +254,28 @@ fn cache_hit(manifest_path: &Path, out_dir: &Path) -> Option<Value> {
     Some(manifest)
 }
 
-/// 构造/校验入口。
-fn cmd_build(source: &str, out_dir: &str, algebra: &str, force: bool, check: bool) -> Result<()> {
-    let alg = resolve_algebra(algebra)?;
-    let source_path = PathBuf::from(source);
-    let source_text = fs::read_to_string(&source_path)
-        .with_context(|| format!("读 {} 失败", source_path.display()))?;
-    let expression_text = parse_source(&source_text, &source_path)?;
-    let out_dir = PathBuf::from(out_dir);
-    fs::create_dir_all(&out_dir)
+/// 构建单个 `.tri`：化简 + 穷举复核 + 产物 + 缓存，返回清单。
+fn build_source(source: &Path, out_dir: &Path, algebra: Algebra, force: bool) -> Result<Value> {
+    let source_text =
+        fs::read_to_string(source).with_context(|| format!("读 {} 失败", source.display()))?;
+    let expression_text = parse_source(&source_text, source)?;
+    fs::create_dir_all(out_dir)
         .with_context(|| format!("创建输出目录 {} 失败", out_dir.display()))?;
     let cache_dir = out_dir.join(".trit-cache");
     let key = hex(hash64(
-        format!("trit-build/{BUILD_VERSION}\n{}\n{}", algebra, source_text).as_bytes(),
+        format!(
+            "trit-build/{BUILD_VERSION}\n{}\n{}",
+            alg_name(algebra),
+            source_text
+        )
+        .as_bytes(),
     ));
     let manifest_path = cache_dir.join(format!("{key}.json"));
 
-    if check {
-        return check_artifacts(&manifest_path, &out_dir, &key);
-    }
-
-    if !force && let Some(manifest) = cache_hit(&manifest_path, &out_dir) {
+    if !force && let Some(manifest) = cache_hit(&manifest_path, out_dir) {
         let mut summary = manifest;
         summary["cached"] = json!(true);
-        println!("{summary}");
-        return Ok(());
+        return Ok(summary);
     }
 
     let expr = parse_expr(&expression_text)?;
@@ -286,8 +290,8 @@ fn cmd_build(source: &str, out_dir: &str, algebra: &str, force: bool, check: boo
     }
 
     // 阶段 1：化简；阶段 2：穷举复核（不等价 ⇒ 整个构建失败，不写任何产物）。
-    let simplified = simplify_with(&expr, alg, SimplifyOptions::default());
-    let equivalent = equivalent_within(&expr, &simplified, alg, Limits::default())
+    let simplified = simplify_with(&expr, algebra, SimplifyOptions::default());
+    let equivalent = equivalent_within(&expr, &simplified, algebra, Limits::default())
         .map_err(|error| anyhow::anyhow!("等价复核超出预算：{error}"))?;
     if !equivalent.equivalent {
         bail!(
@@ -296,20 +300,20 @@ fn cmd_build(source: &str, out_dir: &str, algebra: &str, force: bool, check: boo
             simplified.to_infix()
         );
     }
-    let values = enumerate(&simplified, &vars, alg)?;
+    let values = enumerate(&simplified, &vars, algebra)?;
 
     // 阶段 3：产物。
     let expr_text = format!(
         "# trit-build v{BUILD_VERSION}\n# algebra: {}\n# variables: {}\n# verified: exact ({})\noriginal: {}\nsimplified: {}\n",
-        alg_name(alg),
+        alg_name(algebra),
         vars.join(","),
         equivalent.variable_count,
         expr.to_infix(),
         simplified.to_infix()
     );
     let csv = truth_csv(&vars, &values);
-    let blob = tritbin(&values, alg);
-    let c_source = lookup_c(&vars, &values, alg);
+    let blob = tritbin(&values, algebra);
+    let c_source = lookup_c(&vars, &values, algebra);
 
     let mut outputs = serde_json::Map::new();
     for (name, bytes) in [
@@ -329,8 +333,8 @@ fn cmd_build(source: &str, out_dir: &str, algebra: &str, force: bool, check: boo
         "tool": "trit-build",
         "version": BUILD_VERSION,
         "cached": false,
-        "source": {"path": source_path.display().to_string(), "hash": hex(hash64(source_text.as_bytes()))},
-        "options": {"algebra": alg_name(alg), "variables": vars, "assignments": values.len()},
+        "source": {"path": source.display().to_string(), "hash": hex(hash64(source_text.as_bytes()))},
+        "options": {"algebra": alg_name(algebra), "variables": vars, "assignments": values.len()},
         "verified": {"equivalent": true, "variables": equivalent.variable_count},
         "outputs": outputs,
     });
@@ -338,7 +342,352 @@ fn cmd_build(source: &str, out_dir: &str, algebra: &str, force: bool, check: boo
     fs::write(&manifest_path, manifest.to_string()).with_context(|| "写缓存清单失败")?;
     fs::write(out_dir.join("build.json"), manifest.to_string())
         .with_context(|| "写 build.json 失败")?;
-    println!("{manifest}");
+    Ok(manifest)
+}
+
+/// 单文件构建入口。
+fn cmd_build(source: &str, out_dir: &str, algebra: &str, force: bool, check: bool) -> Result<()> {
+    let alg = resolve_algebra(algebra)?;
+    let source_path = PathBuf::from(source);
+    let out_dir = PathBuf::from(out_dir);
+    if check {
+        let source_text = fs::read_to_string(&source_path)
+            .with_context(|| format!("读 {} 失败", source_path.display()))?;
+        let key = hex(hash64(
+            format!(
+                "trit-build/{BUILD_VERSION}\n{}\n{}",
+                alg_name(alg),
+                source_text
+            )
+            .as_bytes(),
+        ));
+        return check_artifacts(
+            &out_dir.join(".trit-cache").join(format!("{key}.json")),
+            &out_dir,
+            &key,
+        );
+    }
+    let summary = build_source(&source_path, &out_dir, alg, force)?;
+    println!("{summary}");
+    Ok(())
+}
+
+// ---------- 双轨并行（--manifest） ----------
+
+#[derive(Debug, Clone)]
+struct JobSpec {
+    name: String,
+    track: Track,
+    source: Option<PathBuf>,
+    out: Option<PathBuf>,
+    cwd: Option<PathBuf>,
+    cmd: Option<Vec<String>>,
+}
+
+fn parse_prefer(name: &str) -> Result<Prefer> {
+    match name {
+        "ternary" => Ok(Prefer::Ternary),
+        "binary" => Ok(Prefer::Binary),
+        "balanced" => Ok(Prefer::Balanced),
+        other => bail!("未知的 --prefer {other:?}，可选：ternary / binary / balanced"),
+    }
+}
+
+fn load_jobs(path: &Path) -> Result<Vec<JobSpec>> {
+    let text =
+        fs::read_to_string(path).with_context(|| format!("读清单 {} 失败", path.display()))?;
+    let value: Value =
+        serde_json::from_str(&text).with_context(|| format!("{} 不是合法 JSON", path.display()))?;
+    let base = path.parent().unwrap_or_else(|| Path::new("."));
+    let jobs = value
+        .get("jobs")
+        .and_then(Value::as_array)
+        .context("清单缺少 jobs 数组")?;
+    let mut out = Vec::with_capacity(jobs.len());
+    for (index, job) in jobs.iter().enumerate() {
+        let name = job
+            .get("name")
+            .and_then(Value::as_str)
+            .with_context(|| format!("jobs[{index}] 缺少 name"))?
+            .to_string();
+        let kind = job
+            .get("kind")
+            .and_then(Value::as_str)
+            .with_context(|| format!("jobs[{index}] 缺少 kind"))?;
+        let rel = |key: &str| -> Option<PathBuf> {
+            job.get(key).and_then(Value::as_str).map(|p| base.join(p))
+        };
+        match kind {
+            "ternary" => {
+                let source = rel("source").context(format!("ternary 任务 {index} 缺 source"))?;
+                out.push(JobSpec {
+                    name,
+                    track: Track::Ternary,
+                    source: Some(source),
+                    out: rel("out"),
+                    cwd: None,
+                    cmd: None,
+                });
+            }
+            "binary" => {
+                let cmd: Vec<String> = job
+                    .get("cmd")
+                    .and_then(Value::as_array)
+                    .with_context(|| format!("binary 任务 {index} 缺 cmd 数组"))?
+                    .iter()
+                    .map(|v| {
+                        v.as_str()
+                            .map(str::to_string)
+                            .with_context(|| format!("binary 任务 {index} 的 cmd 含非字符串"))
+                    })
+                    .collect::<Result<_>>()?;
+                if cmd.is_empty() {
+                    bail!("binary 任务 {index} 的 cmd 为空");
+                }
+                out.push(JobSpec {
+                    name,
+                    track: Track::Binary,
+                    source: None,
+                    out: None,
+                    cwd: rel("cwd"),
+                    cmd: Some(cmd),
+                });
+            }
+            other => bail!("jobs[{index}] 未知 kind {other:?}（ternary / binary）"),
+        }
+    }
+    Ok(out)
+}
+
+/// 干跑：只给分配方案（不执行）。balanced = 清单顺序，其余 = 主轨在前。
+fn dry_run_plan(jobs: &[JobSpec], prefer: Prefer) -> Value {
+    let order: Vec<usize> = if prefer == Prefer::Balanced {
+        (0..jobs.len()).collect()
+    } else {
+        let (primary, secondary) = match prefer {
+            Prefer::Binary => (Track::Binary, Track::Ternary),
+            _ => (Track::Ternary, Track::Binary),
+        };
+        let mut out: Vec<usize> = (0..jobs.len())
+            .filter(|&i| jobs[i].track == primary)
+            .collect();
+        out.extend((0..jobs.len()).filter(|&i| jobs[i].track == secondary));
+        out
+    };
+    json!({
+        "mode": "dry-run",
+        "prefer": format!("{prefer:?}").to_lowercase(),
+        "plan": order
+            .iter()
+            .map(|&i| json!({
+                "name": jobs[i].name,
+                "track": match jobs[i].track { Track::Ternary => "ternary", Track::Binary => "binary" },
+                "owner": match jobs[i].track { Track::Ternary => "ternary-track", Track::Binary => "binary-track" },
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn execute_job(job: &JobSpec, algebra: Algebra, out_root: &Path) -> Value {
+    let started = Instant::now();
+    let result = match job.track {
+        Track::Ternary => {
+            let source = job.source.as_deref().expect("ternary 任务必有 source");
+            let out = job.out.clone().unwrap_or_else(|| out_root.join(&job.name));
+            build_source(source, &out, algebra, false).map(|summary| {
+                json!({
+                    "cached": summary.get("cached").cloned().unwrap_or(json!(false)),
+                    "out": out.display().to_string(),
+                })
+            })
+        }
+        Track::Binary => {
+            let cmd = job.cmd.as_ref().expect("binary 任务必有 cmd");
+            let mut command = std::process::Command::new(&cmd[0]);
+            command.args(&cmd[1..]);
+            if let Some(cwd) = &job.cwd {
+                command.current_dir(cwd);
+            }
+            // 捕获子进程输出，避免污染本工具的 JSON stdout；失败时带上尾部。
+            command
+                .output()
+                .map_err(|error| anyhow::anyhow!("启动 {} 失败：{error}", cmd[0]))
+                .and_then(|output| {
+                    let status = output.status;
+                    if status.success() {
+                        return Ok(json!({"exit": status.code()}));
+                    }
+                    let stderr = String::from_utf8_lossy(&output.stderr);
+                    let tail: String = stderr.chars().rev().take(400).collect::<String>();
+                    let tail: String = tail.chars().rev().collect();
+                    bail!("{} 失败（exit {:?}）：{}", cmd[0], status.code(), tail)
+                })
+        }
+    };
+    let ms = started.elapsed().as_millis() as u64;
+    match result {
+        Ok(extra) => {
+            let mut value = json!({
+                "name": job.name,
+                "track": match job.track { Track::Ternary => "ternary", Track::Binary => "binary" },
+                "ok": true,
+                "ms": ms,
+            });
+            if let (Some(map), Some(extra_map)) = (value.as_object_mut(), extra.as_object()) {
+                for (key, v) in extra_map {
+                    map.insert(key.clone(), v.clone());
+                }
+            }
+            value
+        }
+        Err(error) => json!({
+            "name": job.name,
+            "track": match job.track { Track::Ternary => "ternary", Track::Binary => "binary" },
+            "ok": false,
+            "ms": ms,
+            "error": format!("{error:#}"),
+        }),
+    }
+}
+
+struct Shared {
+    ternary: VecDeque<usize>,
+    binary: VecDeque<usize>,
+    fifo: VecDeque<usize>,
+    running_ternary: usize,
+    running_binary: usize,
+    results: Vec<Option<Value>>,
+    remaining: usize,
+    prefer: Prefer,
+    slots: usize,
+}
+
+fn take_next(shared: &mut Shared) -> Option<usize> {
+    if shared.prefer == Prefer::Balanced {
+        let index = shared.fifo.pop_front()?;
+        return Some(index);
+    }
+    let load = schedule::Load {
+        ternary_pending: shared.ternary.len(),
+        binary_pending: shared.binary.len(),
+        ternary_running: shared.running_ternary,
+        binary_running: shared.running_binary,
+    };
+    match schedule::pick(load, shared.prefer, shared.slots)? {
+        Track::Ternary => {
+            let index = shared.ternary.pop_front()?;
+            shared.running_ternary += 1;
+            Some(index)
+        }
+        Track::Binary => {
+            let index = shared.binary.pop_front()?;
+            shared.running_binary += 1;
+            Some(index)
+        }
+    }
+}
+
+fn run_parallel(
+    manifest: &Path,
+    out_root: &Path,
+    algebra: Algebra,
+    slots: usize,
+    prefer: Prefer,
+    dry_run: bool,
+) -> Result<()> {
+    let jobs = load_jobs(manifest)?;
+    if jobs.is_empty() {
+        bail!("清单里没有任务");
+    }
+    if dry_run {
+        println!("{}", dry_run_plan(&jobs, prefer));
+        return Ok(());
+    }
+    let slots = slots.max(1).min(jobs.len());
+    let shared = Mutex::new(Shared {
+        ternary: jobs
+            .iter()
+            .enumerate()
+            .filter(|(_, j)| j.track == Track::Ternary)
+            .map(|(i, _)| i)
+            .collect(),
+        binary: jobs
+            .iter()
+            .enumerate()
+            .filter(|(_, j)| j.track == Track::Binary)
+            .map(|(i, _)| i)
+            .collect(),
+        fifo: (0..jobs.len()).collect(),
+        running_ternary: 0,
+        running_binary: 0,
+        results: vec![None; jobs.len()],
+        remaining: jobs.len(),
+        prefer,
+        slots,
+    });
+    let cv = Condvar::new();
+    let wall_start = Instant::now();
+    std::thread::scope(|scope| {
+        for _ in 0..slots {
+            scope.spawn(|| {
+                loop {
+                    let index = {
+                        let mut guard = shared.lock().expect("调度锁中毒");
+                        loop {
+                            if let Some(index) = take_next(&mut guard) {
+                                break index;
+                            }
+                            if guard.remaining == 0 {
+                                cv.notify_all();
+                                return;
+                            }
+                            guard = cv.wait(guard).expect("调度等待中毒");
+                        }
+                    };
+                    let track = jobs[index].track;
+                    let value = execute_job(&jobs[index], algebra, out_root);
+                    let mut guard = shared.lock().expect("调度锁中毒");
+                    guard.results[index] = Some(value);
+                    guard.remaining -= 1;
+                    match track {
+                        Track::Ternary => guard.running_ternary -= 1,
+                        Track::Binary => guard.running_binary -= 1,
+                    }
+                    cv.notify_all();
+                }
+            });
+        }
+    });
+    let wall_ms = wall_start.elapsed().as_millis() as u64;
+    let mut guard = shared.lock().expect("调度锁中毒");
+    let results: Vec<Value> = guard
+        .results
+        .drain(..)
+        .map(|v| v.unwrap_or_else(|| json!({"ok": false, "error": "任务未执行"})))
+        .collect();
+    drop(guard);
+    let failed = results.iter().filter(|v| v["ok"] != json!(true)).count();
+    let busy_ms: u64 = results.iter().filter_map(|v| v["ms"].as_u64()).sum();
+    let speedup = if wall_ms == 0 {
+        json!(null)
+    } else {
+        json!((busy_ms as f64 / wall_ms as f64 * 100.0).round() / 100.0)
+    };
+    let summary = json!({
+        "mode": "parallel",
+        "prefer": format!("{prefer:?}").to_lowercase(),
+        "slots": slots,
+        "jobs": results,
+        "failed": failed,
+        "wall_ms": wall_ms,
+        "busy_ms": busy_ms,
+        "speedup_vs_serial": speedup,
+        "note": "speedup = busy_ms / wall_ms；仅统计本工具看到的耗时，外部命令的编译缓存不计",
+    });
+    println!("{summary}");
+    if failed > 0 {
+        bail!("{failed} 个任务失败");
+    }
     Ok(())
 }
 
@@ -385,9 +734,12 @@ fn check_artifacts(manifest_path: &Path, out_dir: &Path, key: &str) -> Result<()
     about = "三进制构建工具（M0）：化简 + 精确复核 + TRB1/CSV/C 产物"
 )]
 struct Cli {
-    /// `.tri` 源文件（第一行非注释内容 = 表达式）
-    source: String,
-    /// 输出目录
+    /// `.tri` 源文件（与 --manifest 二选一）
+    source: Option<String>,
+    /// 并行清单（JSON：jobs[{name,kind,source|cmd,cwd?,out?}]）
+    #[arg(long)]
+    manifest: Option<String>,
+    /// 输出根目录
     #[arg(long, default_value = "target/trit-build")]
     out: String,
     /// 三值语义：kleene / lukasiewicz / bochvar
@@ -399,11 +751,38 @@ struct Cli {
     /// 只校验已有产物/清单，不重建
     #[arg(long)]
     check: bool,
+    /// 并行槽位（线程数）
+    #[arg(long, default_value_t = 4)]
+    jobs: usize,
+    /// 优先支持的轨：ternary / binary / balanced
+    #[arg(long, default_value = "ternary")]
+    prefer: String,
+    /// 只打印分配方案，不执行
+    #[arg(long)]
+    dry_run: bool,
 }
 
 fn main() -> std::process::ExitCode {
     let cli = <Cli as clap::Parser>::parse();
-    match cmd_build(&cli.source, &cli.out, &cli.algebra, cli.force, cli.check) {
+    let result = if let Some(manifest) = &cli.manifest {
+        parse_prefer(&cli.prefer).and_then(|prefer| {
+            run_parallel(
+                Path::new(manifest),
+                Path::new(&cli.out),
+                resolve_algebra(&cli.algebra)?,
+                cli.jobs,
+                prefer,
+                cli.dry_run,
+            )
+        })
+    } else if let Some(source) = &cli.source {
+        cmd_build(source, &cli.out, &cli.algebra, cli.force, cli.check)
+    } else {
+        Err(anyhow::anyhow!(
+            "需要 <source.tri> 或 --manifest <jobs.json>"
+        ))
+    };
+    match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(error) => {
             eprintln!("error: {error:#}");
