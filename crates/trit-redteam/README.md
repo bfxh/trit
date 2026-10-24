@@ -17,6 +17,8 @@
 | `rail <design.v>` | 双导轨 `(1,1)` 非法态的传播：fail-open / 粘滞 | 27 个合法输入 → 输出非法态 **0**；37 个非法输入里 **14 个输出成了有效 True**（只看 `pos` 的消费端会读成 True）；全 `(1,1)` 输入锁死在非法态 |
 | `fuzz <blob>` | TRB2 **差分** fuzz：Rust 解析器 vs C 运行时（`trit-build/runtime/trit_runtime.c`） | 5 个种子 × 5000 个确定性变异 = **25,000 例，0 分歧**。第一轮就抓到本工具自己的解析器**比生产工具宽松**（漏了 `len == 3^nvars` 校验），已按契约收紧 |
 | `chain <jobs.json>` | `--manifest` 的执行面静态清点（`kind: binary` 会被直接执行，无 allowlist/沙箱） | 标出 shell 包装、网络工具、绝对路径、`cwd` 越界；ternary-only 清单无发现 |
+| `sidechannel <design.v>` | 双导轨的一阶静态模型：`True/False` 各拉高 1 根线、`Unknown` 0 根 | 真实导出 27 个合法输入：`H(输出)=1.506 bit`、`H(输出｜重量)=0.531 bit` ⇒ **泄漏 0.975 bit**；重量 0 的 11 行**全是 Unknown**（重量 1 的 16 行里 true/false 各 11/5，所以重量只能判"是否未知"，判不出取值） |
+| `binary <file>` | PE/ELF 硬化（ASLR/NX/执行栈/W+X/RELRO/BIND_NOW）+ 密钥形态 + 构建路径泄漏 | 自家 `trit-build.exe`（PE64）：ASLR ✓、NX ✓、无 W+X、CFG ✗；**嵌了 `C:\Users\<用户名>\.rustup\...`**（std 的 panic 路径）；修法：`--remap-path-prefix` |
 
 ```bash
 trit-build e.tri --out out --emit-verilog
@@ -25,6 +27,8 @@ trit-redteam crc --trits 9 --max-weight 4
 trit-redteam rail out/design.v
 trit-redteam fuzz out/truth.tritbin --iterations 5000 --seed 1
 trit-redteam chain jobs.json
+trit-redteam sidechannel out/design.v
+trit-redteam binary target/release/trit-build.exe
 # 每个子命令都支持 --strict：有发现就退出 1，可直接当 CI 门
 ```
 
@@ -41,5 +45,6 @@ trit-redteam chain jobs.json
 - 双导轨分析只覆盖 `trit-build --emit-verilog` 生成的 `~ ! & |` 子集；`^`（强加法）与蕴含
   目前不会出现在导出里，未分析。
 - `fuzz` 只做单字节/短结构变异，没有覆盖感知（coverage-guided）反馈；语料是确定性的。
-- 没有时序/侧信道模型（汉明重量泄漏那一档未做）。
+- `sidechannel` 是**静态一阶模型**：不含噪声、不含动态功耗/时序，不能推出"攻击成功率"。
+- `binary` 只看头字段与字符串，不做反汇编、不找漏洞；ELF 只认小端 32/64，PE 只认 32/64。
 - `chain` 只做静态清点，不执行、不沙箱；它回答"会跑什么"，不回答"跑了会怎样"。

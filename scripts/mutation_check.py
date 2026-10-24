@@ -2175,6 +2175,30 @@ MUTANTS = [
         "new": '        if false {',
         "pkg": 'trit-redteam',
         "filter": 'flags_shell_wrappers_network_and_absolute_paths'
+    },
+    {
+        "name": 'redteam: 侧信道泄漏恒为 0',
+        "file": 'crates/trit-redteam/src/sidechannel.rs',
+        "old": '        leakage_bits: (h_output - h_conditional).max(0.0),',
+        "new": '        leakage_bits: 0.0,',
+        "pkg": 'trit-redteam',
+        "filter": 'weight_directly_reveals_unknowns'
+    },
+    {
+        "name": 'redteam: 不报执行栈可执行',
+        "file": 'crates/trit-redteam/src/binary.rs',
+        "old": '        if self.exec_stack == Some(true) {',
+        "new": '        if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'elf_hardening_is_read_from_program_headers'
+    },
+    {
+        "name": 'redteam: 不扫密钥形态字符串',
+        "file": 'crates/trit-redteam/src/binary.rs',
+        "old": '        if count > 0 && plausible_secret(&text, needle) {',
+        "new": '        if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'detects_secret_shaped_strings_and_path_leaks'
     }
 ]
 
