@@ -2095,6 +2095,38 @@ MUTANTS = [
         "new": '            false,\n            verilog,',
         "pkg": "trit-build",
         "filter": "emit_verilog_is_not_served_from_a_plain_cache"
+    },
+    {
+        "name": "egraph: 规则加载不做自证",
+        "file": "crates/trit-build/src/egraph.rs",
+        "old": '        if eval(&lhs, &empty, alg) != eval(&rhs, &empty, alg) {',
+        "new": '        if false {',
+        "pkg": "trit-build",
+        "filter": "loader_filters_rules_by_algebra"
+    },
+    {
+        "name": "egraph: 重写结果没接进构建",
+        "file": "crates/trit-build/src/main.rs",
+        "old": '        let (rewritten, rules) = egraph::rewrite(&simplified, algebra, EGRAPH_ROUNDS);',
+        "new": '        let (rewritten, rules) = (simplified.clone(), Vec::<&\'static str>::new());',
+        "pkg": "trit-build",
+        "filter": "rewrite_fires_and_preserves_truth_table"
+    },
+    {
+        "name": "rail: 强加法按布尔异或导出",
+        "file": "crates/trit-build/src/rail.rs",
+        "old": '                    format!("((~{truth}) & ({lp} | {ln}) & ({rp} | {rn}))"),',
+        "new": '                    format!("(({ln} & {rp}) | ({lp} & {rn}))"),',
+        "pkg": "trit-build",
+        "filter": "emitted_two_rail_matches_truth_table_for_strong_add"
+    },
+    {
+        "name": "bitplan: 与门用错算子",
+        "file": "crates/trit-build/src/bitplan.rs",
+        "old": '                Expr::And(..) => alg.and(*a, *b),',
+        "new": '                Expr::And(..) => alg.or(*a, *b),',
+        "pkg": "trit-build",
+        "filter": "every_operator_matches_scalar"
     }
 
 ]

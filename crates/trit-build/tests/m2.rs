@@ -268,11 +268,18 @@ fn decode_rejects_tampered_blob() {
     let _ = fs::remove_dir_all(&dir);
 }
 
-#[test]
-fn emitted_two_rail_matches_truth_table() {
+/// 导出 `design.v` 后用测试内位级解释器求值，与 `truth.csv` 逐行比对。
+fn two_rail_matches_truth_table(source_text: &str, vars: &[&str]) {
     let dir = scratch("rail");
     let source = dir.join("e.tri");
-    fs::write(&source, "(a & b) | !c\n").expect("写源文件");
+    fs::write(
+        &source,
+        format!(
+            "{source_text}
+"
+        ),
+    )
+    .expect("写源文件");
     let out = dir.join("out");
     let (stdout, stderr, code) = run(&[
         source.to_str().unwrap(),
@@ -280,22 +287,26 @@ fn emitted_two_rail_matches_truth_table() {
         out.to_str().unwrap(),
         "--emit-verilog",
     ]);
-    assert_eq!(code, 0, "stdout={stdout}\nstderr={stderr}");
+    assert_eq!(
+        code, 0,
+        "stdout={stdout}
+stderr={stderr}"
+    );
     assert!(out.join("design.v").exists());
 
     let design = fs::read_to_string(out.join("design.v")).unwrap();
     let (inputs, assigns) = parse_design(&design);
-    assert_eq!(inputs.len(), 6, "3 个三值输入 → 6 根位线");
+    assert_eq!(inputs.len(), vars.len() * 2, "每个三值输入 → 两根位线");
     let csv = fs::read_to_string(out.join("truth.csv")).unwrap();
     let expected = verdicts(&csv);
-    assert_eq!(expected.len(), 27);
+    assert_eq!(expected.len(), 3usize.pow(vars.len() as u32));
 
     let mut wrong = 0usize;
     let mut illegal = 0usize;
     for (code, want) in expected.iter().enumerate() {
         let mut env = BTreeMap::new();
         let mut rest = code;
-        for var in ["a", "b", "c"] {
+        for var in vars {
             let digit = rest % 3;
             rest /= 3;
             let (pos, neg) = match digit {
@@ -324,9 +335,25 @@ fn emitted_two_rail_matches_truth_table() {
             wrong += 1;
         }
     }
-    assert_eq!(wrong, 0, "位级仿真与真值表不一致 {wrong} 行");
-    assert_eq!(illegal, 0, "出现 (1,1) 非法导轨组合 {illegal} 行");
+    assert_eq!(wrong, 0, "{source_text}：位级仿真与真值表不一致 {wrong} 行");
+    assert_eq!(
+        illegal, 0,
+        "{source_text}：出现 (1,1) 非法导轨组合 {illegal} 行"
+    );
     let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn emitted_two_rail_matches_truth_table() {
+    two_rail_matches_truth_table("(a & b) | !c", &["a", "b", "c"]);
+    two_rail_matches_truth_table("!(a | (b & !c))", &["a", "b", "c"]);
+}
+
+#[test]
+fn emitted_two_rail_matches_truth_table_for_strong_add() {
+    // `Expr::Xor` 是强加法 ⊕：K3 下 U 传播、双双为真才真（等价于 AND），不是布尔异或。
+    two_rail_matches_truth_table("a ^ b", &["a", "b"]);
+    two_rail_matches_truth_table("!(a ^ b) | (c ^ a)", &["a", "b", "c"]);
 }
 
 #[test]

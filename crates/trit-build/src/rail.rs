@@ -46,18 +46,21 @@ impl Gen {
                 let (rp, rn) = self.node(right)?;
                 self.wire(format!("({lp} & {rp})"), format!("({ln} | {rn})"))
             }
+            // `Expr::Xor` 在本仓是**强加法 ⊕**，不是布尔异或：K3/B3 下任意一侧 Unknown
+            // 就出 Unknown（`F ⊕ U = U`，而格运算 `F ∧ U = F`）。所以负轨要先排除未知。
+            Expr::Xor(left, right) => {
+                let (lp, ln) = self.node(left)?;
+                let (rp, rn) = self.node(right)?;
+                let truth = format!("({lp} & {rp})");
+                self.wire(
+                    truth.clone(),
+                    format!("((~{truth}) & ({lp} | {ln}) & ({rp} | {rn}))"),
+                )
+            }
             Expr::Or(left, right) => {
                 let (lp, ln) = self.node(left)?;
                 let (rp, rn) = self.node(right)?;
                 self.wire(format!("({lp} | {rp})"), format!("({ln} & {rn})"))
-            }
-            Expr::Xor(left, right) => {
-                let (lp, ln) = self.node(left)?;
-                let (rp, rn) = self.node(right)?;
-                self.wire(
-                    format!("(({lp} & {rn}) | ({ln} & {rp}))"),
-                    format!("(({lp} & {rp}) | ({ln} & {rn}))"),
-                )
             }
             // K3 蕴含 `a ⇒ b ≡ ¬a ∨ b`。
             Expr::Implies(left, right) => {

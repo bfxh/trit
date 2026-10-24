@@ -682,7 +682,8 @@ OK     free slot must not reject on unknown hopelessness
 
 - 三进制红利 / 模拟税 / 生态路径依赖 / 基数无关复杂度是四类不同问题，讨论前先归类：
   [docs/TERNARY-BOUNDARIES.md](docs/TERNARY-BOUNDARIES.md)。
-- 三进制构建工具（M0–M2）：`.tri`/Verilog 子集 → 化简 + 穷举复核 → `TRB2` blob/CSV/`lookup.c`，
+- 三进制构建工具（M0–M3）：`.tri`/Verilog 子集 → 化简 + e-graph 重写（规则逐条自证）
+  → 位并行真值表 → `TRB2` blob/CSV/`lookup.c`，
   `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog]`；为什么只做这一层、
   哪部分仍靠 LLVM/Rust 见 [docs/TERNARY-TOOLCHAIN.md](docs/TERNARY-TOOLCHAIN.md)。
 - 只做**真值函数**三值逻辑；硬件四态 `0/1/X/Z` 与 X-optimism 不在范围内。

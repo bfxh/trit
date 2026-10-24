@@ -25,6 +25,8 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
+mod bitplan;
+mod egraph;
 mod parallel;
 mod rail;
 mod schedule;
@@ -38,7 +40,7 @@ use parallel::{parse_prefer, run_parallel};
 use trit_core::Algebra;
 use trit_core::limits::Limits;
 use trit_core::value::Ternary;
-use trit_eval::eval::{Assignment, equivalent_within, eval};
+use trit_eval::eval::equivalent_within;
 use trit_eval::simplify::{SimplifyOptions, simplify_with};
 
 use trit_core::Parser as ExprParser;
@@ -53,9 +55,11 @@ fn resolve_algebra(name: &str) -> Result<Algebra> {
 }
 
 /// 构建工具版本（参与缓存键；产物格式变了就 bump）。
-const BUILD_VERSION: u32 = 2;
+const BUILD_VERSION: u32 = 3;
 /// 允许穷举的变量上限（3^12 = 531,441）。
 const MAX_BUILD_VARS: u32 = 12;
+/// e-graph 重写的最大轮数（每轮扫一遍所有 e-class × 规则）。
+const EGRAPH_ROUNDS: usize = 32;
 
 /// 解析 `.tri`：忽略空行与 `#` 注释，必须恰好一行表达式。
 fn parse_source(text: &str, path: &Path) -> Result<String> {
@@ -107,8 +111,13 @@ fn alg_name(alg: Algebra) -> &'static str {
     }
 }
 
-/// 穷举求值：返回按 base-3 编码排好序的输出序列（code 0..3^n）。
+/// 逐赋值穷举：返回按 base-3 编码排好序的输出序列（code 0..3^n）。
+///
+/// 生产路径走 [`bitplan::table`]（位并行）；这份标量实现保留为**对拍基准**，
+/// 位并行的测试拿它当 oracle，两边逐 trit 必须相同。
+#[cfg(test)]
 fn enumerate(expr: &trit_core::Expr, vars: &[String], alg: Algebra) -> Result<Vec<Ternary>> {
+    use trit_eval::eval::{Assignment, eval};
     let count = 3u64
         .checked_pow(vars.len() as u32)
         .context("变量太多，3^n 溢出")?;
@@ -294,6 +303,7 @@ pub(crate) fn build_source(
         return Ok(summary);
     }
 
+    let mut rewritten_expr: Option<trit_core::Expr> = None;
     let (vars, values, header, verified) = if verilog {
         let design = verilog::load(source, output, algebra, MAX_BUILD_VARS)?;
         if let Some(expr_text) = expect {
@@ -331,31 +341,40 @@ pub(crate) fn build_source(
                 vars.len()
             );
         }
-        // 阶段 1：化简；阶段 2：穷举复核（不等价 ⇒ 整个构建失败，不写任何产物）。
+        // 阶段 1：化简；阶段 2：e-graph 重写（规则已逐条自证）；阶段 3：整链穷举复核。
         let simplified = simplify_with(&expr, algebra, SimplifyOptions::default());
-        let equivalent = equivalent_within(&expr, &simplified, algebra, Limits::default())
+        let (rewritten, rules) = egraph::rewrite(&simplified, algebra, EGRAPH_ROUNDS);
+        // 自证只覆盖「单条规则」；整条链是否有实现 bug，仍由穷举复核兜底。
+        let equivalent = equivalent_within(&expr, &rewritten, algebra, Limits::default())
             .map_err(|error| anyhow::anyhow!("等价复核超出预算：{error}"))?;
         if !equivalent.equivalent {
             bail!(
-                "化简结果与原文不等价（内部错误）：{} -> {}",
+                "化简/重写结果与原文不等价（内部错误）：{} -> {}",
                 expr.to_infix(),
-                simplified.to_infix()
+                rewritten.to_infix()
             );
         }
-        let values = enumerate(&simplified, &vars, algebra)?;
+        let values = bitplan::table(&rewritten, &vars, algebra)?;
         let header = format!(
-            "# trit-build v{BUILD_VERSION}\n# algebra: {}\n# variables: {}\n# verified: exact ({})\noriginal: {}\nsimplified: {}\n",
+            "# trit-build v{BUILD_VERSION}\n# algebra: {}\n# variables: {}\n# verified: exact ({})\noriginal: {}\nsimplified: {}\nrewritten: {}\nrules: {}\n",
             alg_name(algebra),
             vars.join(","),
             equivalent.variable_count,
             expr.to_infix(),
-            simplified.to_infix()
+            simplified.to_infix(),
+            rewritten.to_infix(),
+            if rules.is_empty() {
+                "-".to_string()
+            } else {
+                rules.join(",")
+            }
         );
+        rewritten_expr = Some(rewritten);
         (
             vars,
             values,
             header,
-            json!({"equivalent": true, "variables": equivalent.variable_count}),
+            json!({"equivalent": true, "variables": equivalent.variable_count, "rules": rules}),
         )
     };
 
@@ -363,7 +382,11 @@ pub(crate) fn build_source(
         if verilog {
             bail!("--emit-verilog 目前只支持 .tri 表达式（Verilog 读入的设计请先转表达式）");
         }
-        let expr = parse_expr(&parse_source(&source_text, source)?)?;
+        // 导出用重写后的形态（更小，且已整链复核过等价）。
+        let expr = match rewritten_expr {
+            Some(expr) => expr,
+            None => parse_expr(&parse_source(&source_text, source)?)?,
+        };
         Some(rail::emit(&expr, &vars, "trit_module", algebra)?)
     } else {
         None
