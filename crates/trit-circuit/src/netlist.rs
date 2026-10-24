@@ -25,6 +25,9 @@ pub enum NetlistError {
     /// 超出解析预算（文本字节 / 网络数 / 门数）。
     #[error("网表超出预算：{0}")]
     Limit(String),
+    /// 电路结构不合法（元数/重复驱动/悬空/环）。
+    #[error("电路结构不合法：{0}")]
+    Structure(String),
 }
 
 /// 文本解析预算；默认值与 Verilog 同量级，服务端可显式收紧。
@@ -170,6 +173,8 @@ pub fn parse_netlist_with_limits(text: &str, limits: Limits) -> Result<Circuit, 
             limits.nets
         )));
     }
+    crate::circuit::validate(&circuit)
+        .map_err(|error| NetlistError::Structure(error.to_string()))?;
     Ok(circuit)
 }
 
@@ -244,6 +249,19 @@ pub fn to_netlist(circuit: &Circuit) -> Result<String, CircuitError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parser_rejects_structurally_invalid_input() {
+        // 输出没有任何驱动：旧实现会返回一个"能打印但导不回去"的电路。
+        assert!(matches!(
+            parse_netlist(
+                "input a
+output y
+"
+            ),
+            Err(NetlistError::Structure(_))
+        ));
+    }
 
     #[test]
     fn budgets_reject_oversized_input() {

@@ -116,13 +116,13 @@ fn bench(args: &[String]) -> Result<(), String> {
     let float_b: Vec<f32> = b.iter().map(|v| *v as f32).collect();
 
     let expected = scalar_dot(&a, &b);
-    let dense = bits_a.dot(&bits_b);
-    let sparse = sparse_bits_a.dot_sparse(&sparse_bits_b);
+    let dense = bits_a.dot(&bits_b).expect("同长度");
+    let sparse = sparse_bits_a.dot_sparse(&sparse_bits_b).expect("同长度");
     let sparse_expected = scalar_dot(&sparse_a, &sparse_b);
     let block_expected = scalar_dot(&block_sparse, &b);
     let bipolar = bipolar_dot(&packed_a, &packed_b, len);
     let bipolar_expected = scalar_dot(&bipolar_a, &bipolar_b);
-    let block_sparse_result = block_bits_a.dot_sparse(&block_bits_b);
+    let block_sparse_result = block_bits_a.dot_sparse(&block_bits_b).expect("同长度");
     if dense != expected
         || sparse != sparse_expected
         || block_sparse_result != block_expected
@@ -133,14 +133,18 @@ fn bench(args: &[String]) -> Result<(), String> {
         ));
     }
 
-    let ns_ternary = time(iters, || bits_a.dot(&bits_b));
-    let ns_portable = time(iters, || bits_a.dot_portable(&bits_b));
-    let ns_ternary_naive = time(iters, || bits_a.dot_naive(&bits_b));
+    let ns_ternary = time(iters, || bits_a.dot(&bits_b).expect("同长度"));
+    let ns_portable = time(iters, || bits_a.dot_portable(&bits_b).expect("同长度"));
+    let ns_ternary_naive = time(iters, || bits_a.dot_naive(&bits_b).expect("同长度"));
     let ns_unrolled = time(iters, || {
-        dot_words_unrolled(&bits_a.pos, &bits_a.neg, &bits_b.pos, &bits_b.neg)
+        dot_words_unrolled(bits_a.pos(), bits_a.neg(), bits_b.pos(), bits_b.neg()).expect("同长度")
     });
-    let ns_sparse = time(iters, || sparse_bits_a.dot_sparse(&sparse_bits_b));
-    let ns_block_sparse = time(iters, || block_bits_a.dot_sparse(&block_bits_b));
+    let ns_sparse = time(iters, || {
+        sparse_bits_a.dot_sparse(&sparse_bits_b).expect("同长度")
+    });
+    let ns_block_sparse = time(iters, || {
+        block_bits_a.dot_sparse(&block_bits_b).expect("同长度")
+    });
     let ns_bipolar = time(iters, || bipolar_dot(&packed_a, &packed_b, len));
     let ns_bipolar_portable = time(iters, || bipolar_dot_portable(&packed_a, &packed_b, len));
     let ns_float = time(iters, || float_dot(&float_a, &float_b));
@@ -192,7 +196,7 @@ fn bench(args: &[String]) -> Result<(), String> {
             "element_sparse_a": sparse_bits_a.nonzero_blocks(),
             "element_sparse_b": sparse_bits_b.nonzero_blocks(),
             "block_sparse_a": block_bits_a.nonzero_blocks(),
-            "total": sparse_bits_a.pos.len(),
+            "total": sparse_bits_a.pos().len(),
         },
         "checks": {
             "ternary_equals_scalar": true,

@@ -18,17 +18,103 @@ use trit_core::value::Ternary;
 pub const BLOCK_BITS: usize = 64;
 
 /// 双导轨三值向量（每 trit 2 bit，按 64 位块打包）。
+///
+/// 字段私有（复审 L01 前是公开的）：手工拼出「长度不一致 / 正负导轨重叠 / 尾部有脏位」
+/// 的向量会让 `dot` 与 `dot_portable` 给出不同结果（前者 panic，后者静默截断）。
+/// 现在只能经 [`TernaryBits::new`]（校验）或 `from_trits`/`from_ternary` 构造。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TernaryBits {
-    /// 正导轨：`+1` 的位为 1。
-    pub pos: Vec<u64>,
-    /// 负导轨：`-1` 的位为 1。
-    pub neg: Vec<u64>,
-    /// 有效 trit 数。
-    pub len: usize,
+    pos: Vec<u64>,
+    neg: Vec<u64>,
+    len: usize,
 }
 
+/// 双导轨向量的构造/点积错误。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DotError {
+    /// 平面长度不一致、正负导轨重叠或尾部有脏位。
+    Shape(String),
+    /// 两个向量的有效 trit 数不同。
+    LengthMismatch {
+        /// 左侧长度。
+        left: usize,
+        /// 右侧长度。
+        right: usize,
+    },
+}
+
+impl std::fmt::Display for DotError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Shape(message) => write!(formatter, "双导轨形状非法：{message}"),
+            Self::LengthMismatch { left, right } => {
+                write!(formatter, "点积长度不一致：{left} vs {right}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for DotError {}
+
 impl TernaryBits {
+    /// 从已打包的平面构造并校验。
+    ///
+    /// 规则：`pos`/`neg` 长度都必须等于 `len.div_ceil(BLOCK_BITS)`；同一 trit 的正负
+    /// 导轨不能同时为 1；`len` 之后的填充位必须为 0（否则会静默参与点积）。
+    pub fn new(pos: Vec<u64>, neg: Vec<u64>, len: usize) -> Result<Self, DotError> {
+        let expected = len.div_ceil(BLOCK_BITS);
+        if pos.len() != expected || neg.len() != expected {
+            return Err(DotError::Shape(format!(
+                "len={len} 需要 {expected} 个 64 位块，实际 pos={} neg={}",
+                pos.len(),
+                neg.len()
+            )));
+        }
+        if let Some((block, overlap)) = pos
+            .iter()
+            .zip(neg.iter())
+            .enumerate()
+            .map(|(block, (pos, neg))| (block, pos & neg))
+            .find(|(_, overlap)| *overlap != 0)
+        {
+            return Err(DotError::Shape(format!(
+                "第 {block} 块正负导轨重叠：{overlap:#x}"
+            )));
+        }
+        let used = len % BLOCK_BITS;
+        if used != 0 {
+            let mask = !((1u64 << used) - 1);
+            let dirty_pos = pos[expected - 1] & mask;
+            let dirty_neg = neg[expected - 1] & mask;
+            if dirty_pos != 0 || dirty_neg != 0 {
+                return Err(DotError::Shape(format!(
+                    "尾部填充位非零：pos={dirty_pos:#x} neg={dirty_neg:#x}"
+                )));
+            }
+        }
+        Ok(Self { pos, neg, len })
+    }
+
+    /// 有效 trit 数。
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// 是否为空向量。
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    /// 正导轨（只读）。
+    pub fn pos(&self) -> &[u64] {
+        &self.pos
+    }
+
+    /// 负导轨（只读）。
+    pub fn neg(&self) -> &[u64] {
+        &self.neg
+    }
+
     /// 从 `{-1,0,+1}` 构造。
     pub fn from_trits(values: &[i32]) -> Self {
         let blocks = values.len().div_ceil(BLOCK_BITS);
@@ -65,20 +151,20 @@ impl TernaryBits {
     /// 精确的三值点积：两组 POPC（`pp+nn` 与 `pn+np` 各合一次）。
     ///
     /// 内部走 [`dot_words`]，x86_64 上会派发到硬件 `popcnt`。
-    pub fn dot(&self, other: &Self) -> i64 {
-        assert_eq!(self.len, other.len, "点积长度必须一致");
+    pub fn dot(&self, other: &Self) -> Result<i64, DotError> {
+        self.check_length(other)?;
         dot_words(&self.pos, &self.neg, &other.pos, &other.neg)
     }
 
     /// 便携版三值点积（单累加器，默认代码生成），无派发的对照/回退路径。
-    pub fn dot_portable(&self, other: &Self) -> i64 {
-        assert_eq!(self.len, other.len, "点积长度必须一致");
+    pub fn dot_portable(&self, other: &Self) -> Result<i64, DotError> {
+        self.check_length(other)?;
         dot_words_portable(&self.pos, &self.neg, &other.pos, &other.neg)
     }
 
     /// 旧写法：四组 POPC（A/B 对照）。
-    pub fn dot_naive(&self, other: &Self) -> i64 {
-        assert_eq!(self.len, other.len, "点积长度必须一致");
+    pub fn dot_naive(&self, other: &Self) -> Result<i64, DotError> {
+        self.check_length(other)?;
         let mut total = 0i64;
         for block in 0..self.pos.len() {
             let pp = (self.pos[block] & other.pos[block]).count_ones();
@@ -87,12 +173,12 @@ impl TernaryBits {
             let nn = (self.neg[block] & other.neg[block]).count_ones();
             total += i64::from(pp) - i64::from(pn) - i64::from(np) + i64::from(nn);
         }
-        total
+        Ok(total)
     }
 
     /// 块级稀疏跳过：两边只要有一边整块为 0 就跳过（4 组 AND/POPC 全免）。
-    pub fn dot_sparse(&self, other: &Self) -> i64 {
-        assert_eq!(self.len, other.len, "点积长度必须一致");
+    pub fn dot_sparse(&self, other: &Self) -> Result<i64, DotError> {
+        self.check_length(other)?;
         let mut total = 0i64;
         for block in 0..self.pos.len() {
             let a = self.pos[block] | self.neg[block];
@@ -106,7 +192,17 @@ impl TernaryBits {
             let nn = (self.neg[block] & other.neg[block]).count_ones();
             total += i64::from(pp) - i64::from(pn) - i64::from(np) + i64::from(nn);
         }
-        total
+        Ok(total)
+    }
+
+    fn check_length(&self, other: &Self) -> Result<(), DotError> {
+        if self.len != other.len {
+            return Err(DotError::LengthMismatch {
+                left: self.len,
+                right: other.len,
+            });
+        }
+        Ok(())
     }
 
     /// 非零块数（稀疏度指标）。
@@ -157,17 +253,25 @@ fn unrolled_body(a_pos: &[u64], a_neg: &[u64], b_pos: &[u64], b_neg: &[u64]) -> 
 }
 
 /// 4 路展开的三值点积（不做派发，用来量「只改循环形状」的净收益）。
-pub fn dot_words_unrolled(a_pos: &[u64], a_neg: &[u64], b_pos: &[u64], b_neg: &[u64]) -> i64 {
-    unrolled_body(a_pos, a_neg, b_pos, b_neg)
+pub fn dot_words_unrolled(
+    a_pos: &[u64],
+    a_neg: &[u64],
+    b_pos: &[u64],
+    b_neg: &[u64],
+) -> Result<i64, DotError> {
+    check_planes(a_pos, a_neg, b_pos, b_neg)?;
+    Ok(unrolled_body(a_pos, a_neg, b_pos, b_neg))
 }
 
 /// 便携版三值点积：单累加器。
-pub fn dot_words_portable(a_pos: &[u64], a_neg: &[u64], b_pos: &[u64], b_neg: &[u64]) -> i64 {
-    let n = a_pos
-        .len()
-        .min(a_neg.len())
-        .min(b_pos.len())
-        .min(b_neg.len());
+pub fn dot_words_portable(
+    a_pos: &[u64],
+    a_neg: &[u64],
+    b_pos: &[u64],
+    b_neg: &[u64],
+) -> Result<i64, DotError> {
+    check_planes(a_pos, a_neg, b_pos, b_neg)?;
+    let n = a_pos.len();
     let mut total = 0i64;
     for block in 0..n {
         let matches = ((a_pos[block] & b_pos[block]) | (a_neg[block] & b_neg[block])).count_ones();
@@ -175,16 +279,37 @@ pub fn dot_words_portable(a_pos: &[u64], a_neg: &[u64], b_pos: &[u64], b_neg: &[
             ((a_pos[block] & b_neg[block]) | (a_neg[block] & b_pos[block])).count_ones();
         total += i64::from(matches) - i64::from(mismatches);
     }
-    total
+    Ok(total)
 }
 
 /// 默认三值点积入口：能派发就派发到硬件 `popcnt`，否则用便携版。
-pub fn dot_words(a_pos: &[u64], a_neg: &[u64], b_pos: &[u64], b_neg: &[u64]) -> i64 {
+pub fn dot_words(
+    a_pos: &[u64],
+    a_neg: &[u64],
+    b_pos: &[u64],
+    b_neg: &[u64],
+) -> Result<i64, DotError> {
+    check_planes(a_pos, a_neg, b_pos, b_neg)?;
     #[cfg(target_arch = "x86_64")]
     if let Some(total) = popcnt::dot_words(a_pos, a_neg, b_pos, b_neg) {
-        return total;
+        return Ok(total);
     }
     dot_words_portable(a_pos, a_neg, b_pos, b_neg)
+}
+
+/// 四个平面长度必须一致；不满足就返回 `LengthMismatch`（旧实现按最短长度静默截断）。
+fn check_planes(
+    a_pos: &[u64],
+    a_neg: &[u64],
+    b_pos: &[u64],
+    b_neg: &[u64],
+) -> Result<(), DotError> {
+    let left = a_pos.len().min(a_neg.len());
+    let right = b_pos.len().min(b_neg.len());
+    if a_pos.len() != a_neg.len() || b_pos.len() != b_neg.len() || left != right {
+        return Err(DotError::LengthMismatch { left, right });
+    }
+    Ok(())
 }
 
 /// 硬件 `POPCNT` 派发。
@@ -347,9 +472,13 @@ mod tests {
                 let bits_a = TernaryBits::from_trits(&a);
                 let bits_b = TernaryBits::from_trits(&b);
                 let expected = scalar_dot(&a, &b);
-                assert_eq!(bits_a.dot(&bits_b), expected, "len={len} seed={seed}");
                 assert_eq!(
-                    bits_a.dot_sparse(&bits_b),
+                    bits_a.dot(&bits_b).expect("同长度"),
+                    expected,
+                    "len={len} seed={seed}"
+                );
+                assert_eq!(
+                    bits_a.dot_sparse(&bits_b).expect("同长度"),
                     expected,
                     "sparse len={len} seed={seed}"
                 );
@@ -381,7 +510,7 @@ mod tests {
     fn zeros_contribute_nothing() {
         let a = TernaryBits::from_trits(&[1, 0, -1, 0]);
         let b = TernaryBits::from_trits(&[1, 1, -1, -1]);
-        assert_eq!(a.dot(&b), 2);
+        assert_eq!(a.dot(&b).expect("同长度"), 2);
         assert_eq!(a.nonzero_blocks(), 1);
     }
 
@@ -395,8 +524,8 @@ mod tests {
         b[255] = 1;
         let bits_a = TernaryBits::from_trits(&a);
         let bits_b = TernaryBits::from_trits(&b);
-        assert_eq!(bits_a.dot(&bits_b), 0);
-        assert_eq!(bits_a.dot_sparse(&bits_b), 0);
+        assert_eq!(bits_a.dot(&bits_b).expect("同长度"), 0);
+        assert_eq!(bits_a.dot_sparse(&bits_b).expect("同长度"), 0);
         // 256 个元素 = 4 块；非零落在块 0 和块 3。
         assert_eq!(bits_a.nonzero_blocks(), 2);
         assert_eq!(bits_b.nonzero_blocks(), 2);
@@ -415,11 +544,12 @@ mod tests {
                 let bits_b = TernaryBits::from_trits(&b);
                 let expected = scalar_dot(&a, &b);
                 assert_eq!(
-                    dot_words_unrolled(&bits_a.pos, &bits_a.neg, &bits_b.pos, &bits_b.neg),
+                    dot_words_unrolled(bits_a.pos(), bits_a.neg(), bits_b.pos(), bits_b.neg())
+                        .expect("同长度"),
                     expected,
                     "blocks={blocks} len={len} seed={seed}"
                 );
-                assert_eq!(bits_a.dot(&bits_b), expected);
+                assert_eq!(bits_a.dot(&bits_b).expect("同长度"), expected);
             }
         }
     }
@@ -441,7 +571,8 @@ mod tests {
         let bits_b = TernaryBits::from_trits(&b);
         assert_eq!(scalar_dot(&a, &b), 0);
         assert_eq!(
-            dot_words_unrolled(&bits_a.pos, &bits_a.neg, &bits_b.pos, &bits_b.neg),
+            dot_words_unrolled(bits_a.pos(), bits_a.neg(), bits_b.pos(), bits_b.neg())
+                .expect("同长度"),
             0
         );
     }
@@ -458,13 +589,15 @@ mod tests {
                 let bits_a = TernaryBits::from_trits(&a);
                 let bits_b = TernaryBits::from_trits(&b);
                 assert_eq!(
-                    dot_words(&bits_a.pos, &bits_a.neg, &bits_b.pos, &bits_b.neg),
-                    dot_words_portable(&bits_a.pos, &bits_a.neg, &bits_b.pos, &bits_b.neg),
+                    dot_words(bits_a.pos(), bits_a.neg(), bits_b.pos(), bits_b.neg())
+                        .expect("同长度"),
+                    dot_words_portable(bits_a.pos(), bits_a.neg(), bits_b.pos(), bits_b.neg())
+                        .expect("同长度"),
                     "blocks={blocks} seed={seed}"
                 );
                 assert_eq!(
-                    bipolar_dot(&bits_a.pos, &bits_b.pos, len),
-                    bipolar_dot_portable(&bits_a.pos, &bits_b.pos, len)
+                    bipolar_dot(bits_a.pos(), bits_b.pos(), len),
+                    bipolar_dot_portable(bits_a.pos(), bits_b.pos(), len)
                 );
             }
         }
@@ -474,6 +607,36 @@ mod tests {
     fn length_mismatch_is_rejected() {
         let a = TernaryBits::from_trits(&[1, 0]);
         let b = TernaryBits::from_trits(&[1]);
-        assert!(std::panic::catch_unwind(|| a.dot(&b)).is_err());
+        assert_eq!(
+            a.dot(&b),
+            Err(DotError::LengthMismatch { left: 2, right: 1 })
+        );
+        assert_eq!(
+            a.dot_portable(&b),
+            Err(DotError::LengthMismatch { left: 2, right: 1 })
+        );
+        assert_eq!(a.dot_naive(&b), a.dot_sparse(&b));
+    }
+
+    #[test]
+    fn invalid_planes_are_rejected_at_construction() {
+        // 复审 L01：字段公开时可以把平面长度/重叠/尾部脏位拼错，dot 与 dot_portable 各错一边。
+        assert!(matches!(
+            TernaryBits::new(vec![1], vec![0], 128),
+            Err(DotError::Shape(_))
+        ));
+        assert!(matches!(
+            TernaryBits::new(vec![0b11], vec![0b01], 2),
+            Err(DotError::Shape(_))
+        ));
+        assert!(matches!(
+            TernaryBits::new(vec![0b1000], vec![0], 2),
+            Err(DotError::Shape(_))
+        ));
+        let ok = TernaryBits::new(vec![0b11], vec![0], 2).expect("合法双导轨");
+        assert_eq!(ok.dot(&ok).expect("同长度"), 2);
+        assert_eq!(ok.len(), 2);
+        assert_eq!(ok.pos(), &[0b11]);
+        assert_eq!(ok.neg(), &[0]);
     }
 }

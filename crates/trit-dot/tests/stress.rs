@@ -60,9 +60,13 @@ fn ternary_dot_survives_adversarial_vectors() {
             let bits_a = TernaryBits::from_trits(&a);
             let bits_b = TernaryBits::from_trits(&b);
             let expected = scalar_dot(&a, &b);
-            assert_eq!(bits_a.dot(&bits_b), expected, "{name} len={len}");
             assert_eq!(
-                bits_a.dot_sparse(&bits_b),
+                bits_a.dot(&bits_b).expect("同长度"),
+                expected,
+                "{name} len={len}"
+            );
+            assert_eq!(
+                bits_a.dot_sparse(&bits_b).expect("同长度"),
                 expected,
                 "{name} len={len} sparse"
             );
@@ -97,8 +101,16 @@ fn large_random_matches_scalar_and_sparse_path() {
         let bits_a = TernaryBits::from_trits(&a);
         let bits_b = TernaryBits::from_trits(&b);
         let expected = scalar_dot(&a, &b);
-        assert_eq!(bits_a.dot(&bits_b), expected, "seed={seed}");
-        assert_eq!(bits_a.dot_sparse(&bits_b), expected, "seed={seed}");
+        assert_eq!(
+            bits_a.dot(&bits_b).expect("同长度"),
+            expected,
+            "seed={seed}"
+        );
+        assert_eq!(
+            bits_a.dot_sparse(&bits_b).expect("同长度"),
+            expected,
+            "seed={seed}"
+        );
     }
 }
 
@@ -113,8 +125,8 @@ fn sparse_skip_is_exact_when_blocks_are_empty() {
     let bits_a = TernaryBits::from_trits(&a);
     let bits_b = TernaryBits::from_trits(&b);
     let expected = scalar_dot(&a, &b);
-    assert_eq!(bits_a.dot(&bits_b), expected);
-    assert_eq!(bits_a.dot_sparse(&bits_b), expected);
+    assert_eq!(bits_a.dot(&bits_b).expect("同长度"), expected);
+    assert_eq!(bits_a.dot_sparse(&bits_b).expect("同长度"), expected);
     assert_eq!(bits_a.nonzero_blocks(), 64);
 }
 

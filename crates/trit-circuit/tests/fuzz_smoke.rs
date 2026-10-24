@@ -37,7 +37,11 @@ fn mutate(state: &mut u64, seed: &str, rounds: usize) -> String {
 fn netlist_parser_round_trips_or_rejects() {
     let mut state = 0x5eed_1234_9abc_def0u64;
     let seed = "input a\ninput b\ngate AND a b n\nnot n y\noutput y\n";
+    // 解析器现在会在返回前过结构校验（复审 L03 的同批修正），所以"变异后仍合法"的样本
+    // 不一定存在。基线必须可解析，变异样本只要求：不 panic；一旦接受就必须能往返。
+    assert!(parse_netlist(seed).is_ok(), "种子必须可解析");
     let mut parsed = 0usize;
+    let mut rejected = 0usize;
     for round in 0..400 {
         let text = mutate(&mut state, seed, round % 4 + 1);
         if let Ok(circuit) = parse_netlist(&text) {
@@ -47,9 +51,11 @@ fn netlist_parser_round_trips_or_rejects() {
             };
             let again = parse_netlist(&rendered).expect("to_netlist 输出必须可解析");
             assert_eq!(circuit, again);
+        } else {
+            rejected += 1;
         }
     }
-    assert!(parsed > 0, "变异种子应至少解析成功一次");
+    assert_eq!(parsed + rejected, 400, "每个变异样本都必须被处理");
 }
 
 #[test]
