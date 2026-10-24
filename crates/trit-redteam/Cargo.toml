@@ -1,0 +1,18 @@
+[package]
+name = "trit-redteam"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三进制产物的红队/加固检查器（只打本仓自己的 TRB2 与双导轨导出）"
+publish = false
+
+[[bin]]
+name = "trit-redteam"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+serde_json = "1.0.154"
