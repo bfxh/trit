@@ -150,6 +150,11 @@ pub fn to_json(report: &Report) -> Value {
         "leakage_bits": round(report.leakage_bits),
         "weight_histogram": histogram,
         "sample_unknown_input": report.unknown_case,
+        "attribution": {
+            "origin": "project",
+            "area": "encoding-overhead",
+            "hint": "双导轨天然无法隐藏 Unknown（重量 0）；要抗重量侧信道得用恒定重量编码"
+        },
         "note": "一阶静态模型：True/False 各贡献 1 根拉高，Unknown 贡献 0 根；只测总拉高线数即可区分 Unknown。不含噪声与动态功耗。",
     })
 }

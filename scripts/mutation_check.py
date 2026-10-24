@@ -2198,7 +2198,23 @@ MUTANTS = [
         "old": '        if count > 0 && plausible_secret(&text, needle) {',
         "new": '        if false {',
         "pkg": 'trit-redteam',
-        "filter": 'detects_secret_shaped_strings_and_path_leaks'
+        "filter": 'detects_secret_shaped_strings_and_attributes_them_to_us'
+    },
+    {
+        "name": 'redteam: 归属不认 Rust std 路径',
+        "file": 'crates/trit-redteam/src/attrib.rs',
+        "old": '    let lower = text.to_ascii_lowercase();',
+        "new": '    let lower = text.to_ascii_lowercase();\n    if !lower.is_empty() {\n        return false;\n    }',
+        "pkg": 'trit-redteam',
+        "filter": 'attributes_rust_std_paths_to_the_toolchain'
+    },
+    {
+        "name": 'redteam: CFG 归属固定按 MSVC 算',
+        "file": 'crates/trit-redteam/src/binary.rs',
+        "old": '            out.push(if msvc {',
+        "new": '            out.push(if true {',
+        "pkg": 'trit-redteam',
+        "filter": 'cfg_attribution_depends_on_the_pe_flavor'
     }
 ]
 

@@ -12,6 +12,8 @@ use std::collections::BTreeMap;
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
 
+use crate::attrib::{self, Finding};
+
 #[derive(Debug, Default, Clone)]
 pub struct Hardening {
     pub format: String,
@@ -22,34 +24,74 @@ pub struct Hardening {
     pub wx_segments: usize,
     pub relro: Option<bool>,
     pub bind_now: Option<bool>,
+    pub guard_cf: Option<bool>,
     pub gnu_stack: bool,
 }
 
 impl Hardening {
-    fn findings(&self) -> Vec<&'static str> {
+    fn findings(&self) -> Vec<Finding> {
         let mut out = Vec::new();
         if self.aslr == Some(false) {
-            out.push("aslr-missing");
+            out.push(Finding::project(
+                "aslr-missing",
+                "build-flags",
+                "链接参数：PE 加 /DYNAMICBASE，ELF 用 -pie -fPIE",
+            ));
         }
         if self.nx == Some(false) {
-            out.push("nx-missing");
+            out.push(Finding::project(
+                "nx-missing",
+                "build-flags",
+                "PE 加 /NXCOMPAT；ELF 让 GNU_STACK 非可执行",
+            ));
         }
         if self.exec_stack == Some(true) {
-            out.push("exec-stack");
+            out.push(Finding::project(
+                "exec-stack",
+                "build-flags",
+                "链接参数 -Wl,-z,noexecstack",
+            ));
         }
         if self.wx_segments > 0 {
-            out.push("wx-segment");
+            out.push(Finding::project(
+                "wx-segment",
+                "build-flags",
+                "检查链接脚本/段权限，别让同一段可写可执行",
+            ));
         }
         out
     }
 
-    fn warnings(&self) -> Vec<&'static str> {
+    fn warnings(&self, msvc: bool) -> Vec<Finding> {
         let mut out = Vec::new();
         if self.relro == Some(false) {
-            out.push("relro-missing");
+            out.push(Finding::project(
+                "relro-missing",
+                "build-flags",
+                "-Wl,-z,relro",
+            ));
         }
         if self.bind_now == Some(false) {
-            out.push("lazy-binding");
+            out.push(Finding::project(
+                "lazy-binding",
+                "build-flags",
+                "-Wl,-z,now",
+            ));
+        }
+        if self.format.starts_with("pe") && self.guard_cf == Some(false) {
+            out.push(if msvc {
+                Finding::project(
+                    "cfg-missing",
+                    "build-flags",
+                    "MSVC 链接器可加 /GUARD:CF",
+                )
+            } else {
+                Finding::rust(
+                    "cfg-missing",
+                    "toolchain-limits",
+                    "binutils 版 GNU ld 不支持 /GUARD:CF；要 CFG 得换 MSVC 工具链，这不是我们代码能补的",
+                )
+            });
         }
         out
     }
@@ -123,23 +165,17 @@ fn parse_pe(bytes: &[u8]) -> Option<Hardening> {
         wx_segments: wx,
         relro: None,
         bind_now: None,
+        guard_cf: Some(dll_characteristics & DLL_GUARD_CF != 0),
         gnu_stack: false,
         // CFG 只作为附加信息，不参与判定
         // （DLL_GUARD_CF 在 json 里单列）。
     })
 }
 
-fn pe_guard_cf(bytes: &[u8]) -> Option<bool> {
-    let pe_offset = u32_at(bytes, 0x3c)? as usize;
-    let coff = pe_offset + 4;
-    let optional = coff + 20;
-    let magic = u16_at(bytes, optional)?;
-    let offset = match magic {
-        0x10b => 0x42,
-        0x20b => 0x46,
-        _ => return None,
-    };
-    Some(u16_at(bytes, optional + offset)? & DLL_GUARD_CF != 0)
+/// PE 是 MSVC 运行时还是 MinGW？决定 CFG 缺失该算谁的问题。
+fn msvc_flavor(bytes: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(bytes);
+    text.contains("VCRUNTIME140") || text.contains("api-ms-win-crt")
 }
 
 const PT_LOAD: u32 = 1;
@@ -195,6 +231,7 @@ fn parse_elf(bytes: &[u8]) -> Option<Hardening> {
         wx_segments: 0,
         relro: Some(false),
         bind_now: Some(false),
+        guard_cf: None,
         gnu_stack: false,
     };
     let mut dynamic: Option<(usize, usize)> = None;
@@ -311,26 +348,19 @@ fn plausible_secret(text: &str, needle: &str) -> bool {
     false
 }
 
-fn path_leaks(bytes: &[u8]) -> (Vec<&'static str>, Vec<String>) {
-    let mut names: Vec<&'static str> = Vec::new();
+/// 路径泄漏：返回（归属发现，证据样本）。
+fn path_leaks(bytes: &[u8]) -> (Vec<Finding>, Vec<String>) {
     let mut samples: Vec<String> = Vec::new();
-    for (name, needle) in [
-        ("build-tree-path", "D:\\KF\\"),
-        ("absolute-user-path", "C:\\Users\\"),
-        ("absolute-user-path", "/home/"),
-    ] {
+    for needle in ["D:\\KF\\", "C:\\Users\\", "/home/", ".rustup", "/rustc/"] {
         let mut rest = bytes;
         while let Some(position) = find_bytes(rest, needle.as_bytes()) {
-            if !names.contains(&name) {
-                names.push(name);
-            }
             if samples.len() < 3 {
                 let tail = &rest[position..];
                 let end = tail
                     .iter()
                     .position(|byte| *byte == 0)
                     .unwrap_or(tail.len());
-                let text: String = tail[..end.min(100)]
+                let text: String = tail[..end.min(120)]
                     .iter()
                     .map(|byte| {
                         if (0x20..0x7f).contains(byte) {
@@ -347,9 +377,44 @@ fn path_leaks(bytes: &[u8]) -> (Vec<&'static str>, Vec<String>) {
             rest = &rest[position + needle.len()..];
         }
     }
-    (names, samples)
-}
 
+    let mut findings: Vec<Finding> = Vec::new();
+    for sample in &samples {
+        if attrib::rust_toolchain_path(sample) {
+            if !findings
+                .iter()
+                .any(|finding| finding.id == "rust-toolchain-path")
+            {
+                findings.push(Finding::rust(
+                    "rust-toolchain-path",
+                    "std-paths",
+                    "Rust std 的 panic 路径带进来的；可用 RUSTFLAGS=--remap-path-prefix=<前缀>=~ 抹掉（改构建参数即可）",
+                ));
+            }
+        } else if sample.contains("D:\\KF\\") {
+            if !findings
+                .iter()
+                .any(|finding| finding.id == "build-tree-path")
+            {
+                findings.push(Finding::project(
+                    "build-tree-path",
+                    "artifact-content",
+                    "产物嵌了构建树路径；检查是否把调试路径写进了产物",
+                ));
+            }
+        } else if !findings
+            .iter()
+            .any(|finding| finding.id == "absolute-user-path")
+        {
+            findings.push(Finding::project(
+                "absolute-user-path",
+                "artifact-content",
+                "产物嵌了绝对路径（非 Rust std 来源）",
+            ));
+        }
+    }
+    (findings, samples)
+}
 fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || haystack.len() < needle.len() {
         return None;
@@ -367,10 +432,19 @@ pub fn run(bytes: &[u8], file_name: &str) -> Result<Value> {
     } else {
         bail!("认不出格式（只支持 PE32/PE32+ 与 ELF32/ELF64 小端）");
     };
+    let msvc = msvc_flavor(bytes);
     let secrets = scan_strings(bytes);
-    let (leaks, leak_samples) = path_leaks(bytes);
-    let findings = hardening.findings();
-    let warnings = hardening.warnings();
+    let mut findings = hardening.findings();
+    for name in secrets.keys() {
+        findings.push(Finding::project(
+            format!("secret-{name}"),
+            "artifact-content",
+            "别把密钥/令牌嵌进产物；用运行时注入",
+        ));
+    }
+    let (leak_findings, leak_samples) = path_leaks(bytes);
+    findings.extend(leak_findings);
+    let warnings = hardening.warnings(msvc);
     let report = json!({
         "tool": "trit-redteam",
         "check": "artifact-hardening",
@@ -385,28 +459,24 @@ pub fn run(bytes: &[u8], file_name: &str) -> Result<Value> {
             "wx_segments": hardening.wx_segments,
             "relro": hardening.relro,
             "bind_now": hardening.bind_now,
-            "guard_cf": if hardening.format.starts_with("pe") { pe_guard_cf(bytes) } else { None },
+            "guard_cf": hardening.guard_cf,
             "gnu_stack": hardening.gnu_stack,
         },
-        "findings": findings,
-        "warnings": warnings,
+        "findings": attrib::list_to_json(&findings),
+        "warnings": attrib::list_to_json(&warnings),
+        "attribution": attrib::summary(&findings),
+        "warning_attribution": attrib::summary(&warnings),
         "secrets": secrets,
-        "path_leaks": leaks,
         "path_leak_samples": leak_samples,
-        "note": "只看硬化与泄密，不做反汇编、不给利用手段",
+        "note": "project = 我们能改（构建参数/产物内容）；rust-toolchain = Rust 工具链带来、只能绕过",
     });
     Ok(report)
 }
-
 pub fn has_findings(report: &Value) -> bool {
     report["findings"]
         .as_array()
         .is_some_and(|items| !items.is_empty())
-        || report["secrets"]
-            .as_object()
-            .is_some_and(|items| !items.is_empty())
 }
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -487,33 +557,67 @@ mod tests {
         bytes
     }
 
+    fn finding_ids(report: &Value, key: &str) -> Vec<String> {
+        report[key]
+            .as_array()
+            .expect("数组")
+            .iter()
+            .map(|item| item["id"].as_str().unwrap_or("?").to_string())
+            .collect()
+    }
+
+    fn finding<'a>(report: &'a Value, key: &str, id: &str) -> &'a Value {
+        report[key]
+            .as_array()
+            .expect("数组")
+            .iter()
+            .find(|item| item["id"] == id)
+            .unwrap_or_else(|| panic!("缺少 {id}：{}", report[key]))
+    }
+
     #[test]
     fn pe_hardening_is_read_from_dll_characteristics() {
-        let hardened = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT, 0x6000_0020);
+        let hardened = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT | DLL_GUARD_CF, 0x6000_0020);
         let report = run(&hardened, "ok.exe").unwrap();
         assert_eq!(report["format"], "pe");
         assert_eq!(report["hardening"]["aslr"], true);
         assert_eq!(report["hardening"]["nx"], true);
+        assert_eq!(report["hardening"]["guard_cf"], true);
         assert_eq!(report["hardening"]["wx_segments"], 0);
-        assert!(report["findings"].as_array().unwrap().is_empty());
+        assert!(finding_ids(&report, "findings").is_empty());
         assert!(!has_findings(&report));
 
         let soft = pe_image(0, SCN_MEM_EXECUTE | SCN_MEM_WRITE);
         let report = run(&soft, "soft.exe").unwrap();
-        let findings = report["findings"].as_array().unwrap();
-        assert!(
-            findings.iter().any(|item| item == "aslr-missing"),
-            "{findings:?}"
-        );
-        assert!(
-            findings.iter().any(|item| item == "nx-missing"),
-            "{findings:?}"
-        );
-        assert!(
-            findings.iter().any(|item| item == "wx-segment"),
-            "{findings:?}"
-        );
+        let ids = finding_ids(&report, "findings");
+        for expected in ["aslr-missing", "nx-missing", "wx-segment"] {
+            assert!(ids.iter().any(|id| id == expected), "{ids:?}");
+        }
+        for item in report["findings"].as_array().unwrap() {
+            assert_eq!(item["origin"], "project", "{item}");
+        }
+        assert_eq!(report["attribution"]["project"], 3, "{report}");
+        assert_eq!(report["attribution"]["rust-toolchain"], 0);
         assert!(has_findings(&report));
+    }
+
+    #[test]
+    fn cfg_attribution_depends_on_the_pe_flavor() {
+        // MinGW（没有 VCRUNTIME 字符串）：GNU ld 不支持 /GUARD:CF ⇒ 工具链的问题。
+        let gnu = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT, 0x6000_0020);
+        let report = run(&gnu, "gnu.exe").unwrap();
+        let cfg = finding(&report, "warnings", "cfg-missing");
+        assert_eq!(cfg["origin"], "rust-toolchain", "{cfg}");
+        assert_eq!(report["warning_attribution"]["rust-toolchain"], 1);
+        // 硬发现里不该有 CFG（它只是警告）
+        assert!(finding_ids(&report, "findings").is_empty());
+
+        // MSVC：加个 VCRUNTIME 导入串，CFG 就变成"我们能开"的问题。
+        let mut msvc = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT, 0x6000_0020);
+        msvc.extend_from_slice(b"\0VCRUNTIME140.dll\0");
+        let report = run(&msvc, "msvc.exe").unwrap();
+        let cfg = finding(&report, "warnings", "cfg-missing");
+        assert_eq!(cfg["origin"], "project", "{cfg}");
     }
 
     #[test]
@@ -530,43 +634,64 @@ mod tests {
 
         let weak = elf_image(true, false, false);
         let report = run(&weak, "weak.elf").unwrap();
-        let findings = report["findings"].as_array().unwrap();
         assert!(
-            findings.iter().any(|item| item == "exec-stack"),
-            "{findings:?}"
+            finding_ids(&report, "findings")
+                .iter()
+                .any(|id| id == "exec-stack")
         );
-        let warnings = report["warnings"].as_array().unwrap();
+        let warnings = finding_ids(&report, "warnings");
         assert!(
-            warnings.iter().any(|item| item == "relro-missing"),
+            warnings.iter().any(|id| id == "relro-missing"),
             "{warnings:?}"
         );
         assert!(
-            warnings.iter().any(|item| item == "lazy-binding"),
+            warnings.iter().any(|id| id == "lazy-binding"),
             "{warnings:?}"
         );
     }
 
     #[test]
-    fn detects_secret_shaped_strings_and_path_leaks() {
-        let mut bytes = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT, 0x6000_0020);
+    fn detects_secret_shaped_strings_and_attributes_them_to_us() {
+        let mut bytes = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT | DLL_GUARD_CF, 0x6000_0020);
         bytes.extend_from_slice(b"\0-----BEGIN RSA PRIVATE KEY-----\0");
         bytes.extend_from_slice(b"\0AKIAIOSFODNN7EXAMPLE\0");
-        bytes.extend_from_slice(b"\0D:\\KF\\trit\\target\\release\\trit-build.exe\0");
         let report = run(&bytes, "leaky.exe").unwrap();
-        let secrets = report["secrets"].as_object().unwrap();
-        assert!(secrets.contains_key("private-key"), "{secrets:?}");
-        assert!(secrets.contains_key("aws-access-key"), "{secrets:?}");
-        let leaks = report["path_leaks"].as_array().unwrap();
+        let ids = finding_ids(&report, "findings");
+        assert!(ids.iter().any(|id| id == "secret-private-key"), "{ids:?}");
         assert!(
-            leaks.iter().any(|item| item == "build-tree-path"),
-            "{leaks:?}"
+            ids.iter().any(|id| id == "secret-aws-access-key"),
+            "{ids:?}"
+        );
+        assert_eq!(
+            report["attribution"]["rust-toolchain"], 0,
+            "密钥是我们自己嵌的"
         );
         assert!(has_findings(&report));
     }
 
     #[test]
+    fn attributes_rust_std_paths_to_the_toolchain() {
+        let mut bytes = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT | DLL_GUARD_CF, 0x6000_0020);
+        bytes.extend_from_slice(
+            b"\0C:\\Users\\someone\\.rustup\\toolchains\\1.99.0\\lib\\rustlib\\src\\rust\\library\\core\\src\\cell\\once.rs\0",
+        );
+        let report = run(&bytes, "std.exe").unwrap();
+        let leak = finding(&report, "findings", "rust-toolchain-path");
+        assert_eq!(leak["origin"], "rust-toolchain", "{leak}");
+        assert!(leak["hint"].as_str().unwrap().contains("remap"), "{leak}");
+        assert_eq!(report["attribution"]["project"], 0);
+        assert_eq!(report["attribution"]["rust-toolchain"], 1);
+
+        let mut own = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT | DLL_GUARD_CF, 0x6000_0020);
+        own.extend_from_slice(b"\0D:\\KF\\trit\\target\\release\\trit-build.exe\0");
+        let report = run(&own, "own.exe").unwrap();
+        let leak = finding(&report, "findings", "build-tree-path");
+        assert_eq!(leak["origin"], "project", "{leak}");
+    }
+
+    #[test]
     fn short_prefixes_do_not_trigger_false_positives() {
-        let mut bytes = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT, 0x6000_0020);
+        let mut bytes = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT | DLL_GUARD_CF, 0x6000_0020);
         bytes.extend_from_slice(b"\0sk-learn\0AKIA\0ghp_short\0");
         let report = run(&bytes, "clean.exe").unwrap();
         assert!(

@@ -32,6 +32,28 @@ trit-redteam binary target/release/trit-build.exe
 # 每个子命令都支持 --strict：有发现就退出 1，可直接当 CI 门
 ```
 
+## 归属：是我们的问题，还是 Rust 工具链本身的问题
+
+每条发现都带 `origin`（`project` / `rust-toolchain`）、`area` 与 `hint`，报告顶层给计数。
+
+| 判据（证据） | 归属 |
+|---|---|
+| 硬化位缺失：ASLR / NX / 可执行栈 / W+X / RELRO / BIND_NOW | `project` — 链接参数能改 |
+| PE 上 CFG 缺失且是 MinGW 运行时（无 `VCRUNTIME140`） | `rust-toolchain` — binutils 版 GNU ld 不支持 `/GUARD:CF` |
+| PE 上 CFG 缺失且是 MSVC 运行时 | `project` — 加 `/GUARD:CF` 即可 |
+| 产物里有 `.rustup` / `/rustc/` / `library/core` 路径 | `rust-toolchain` — std 的 panic 路径，可用 `--remap-path-prefix` 抹掉 |
+| 产物里有构建树 / 绝对路径（非 std 来源） | `project` — 产物内容 |
+| 密钥/令牌形态字符串 | `project` — 产物内容 |
+| TRB2 可塑 / CRC-3 检出边界 / 双导轨 fail-open / 侧信道 / manifest 执行面 | `project` — 格式与工具设计 |
+| 差分 fuzz 出现分歧 | `project` — 两份实现里至少一边与格式契约不符 |
+
+真实读数（`target/release/trit-build.exe`，PE64）：`findings` 只有 1 条
+`rust-toolchain-path`（`.rustup/.../library/core/...`），CFG 缺失也在 `warnings` 里记为
+`rust-toolchain` ⇒ **这份产物当前没有属于我们代码的硬化/泄密发现**；唯一能动手的是
+用 `RUSTFLAGS=--remap-path-prefix` 把 std 路径抹掉。
+
+**限制**：归属是启发式（字符串证据 + 头字段），它回答"这段字节来自哪里"，不回答"风险该谁负责"。
+
 ## 为什么这些是"三进制独有"的
 
 - **5 trit/字节** 不是 2 的幂：每个字节都可能剩 1–4 个 trit 槽，闲置槽既不改语义也不进 CRC。
