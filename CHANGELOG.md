@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（GGUF → MOD 入向导入）
+
+- `trit-texture::gguf::import_gguf`：读 **GGUF v2/v3**，把未量化张量（`F32`/`F16`/`BF16`）
+  按 `v > ε → +1 / v < -ε → -1 / 其余 0` 三值化，组装成 `TritModel`（MOD 语义）；
+  `*.weight`（2D）+ 同名 `*.bias`（可选，缺省 0）按名排序成层，层间衔接复用 `TritModel::new`。
+- CLI：`trit-texture` 新增 bin `gguf-to-mod`（`--threshold` / `--tensor` / `--max-bytes`），
+  输出 TTX2 模型容器。
+- 硬边界：只支持未量化类型；`TQ1_0`/`TQ2_0`/`Q*_K` 等**显式拒绝**（位布局未在本仓验证，
+  猜错会静默产出错误权重）；预算：文件 256 MiB / 权重 5000 万 / KV 10 万 / 张量 10 万。
+- 测试 +8（GGUF 头/元数据/张量校验、F16/BF16 解码、阈值稀疏、NaN/截断/超预算、
+  层链不匹配、MOD 往返）；实测 232 字节 GGUF → 41 字节 MOD（2 层 8 权重）。
+  变异门 240 → **244**。
+
 ### Fixed（复审 P2 批次：AIGER 头 / 逻辑运算 / 平衡三进制精度 / 编码校验 / 训练与 SNN / 解析预算）
 
 - **M01 AIGER ASCII 头**：解析只接受 `aag`（标准 ASCII），`aig`（二进制）返回

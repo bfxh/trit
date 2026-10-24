@@ -194,4 +194,11 @@ outputs）由容器强制**（读写同一校验）；层内取值域由 digit �
 5. **trit-net 兼容**：`Model`/`Layer` ↔ `TritModelLayer` 经 `rows()` 无损往返，
    断链两边同语义拒绝（trit-net 集成测试钉住）。
 
-GGUF 等量化模型格式 → MOD 的入向转换未做（需要读 GGUF 元数据层，体量另计）。
+### GGUF → MOD 入向导入（`trit-texture::gguf`）
+
+- 支持 **GGUF v2/v3**、未量化张量 `F32`/`F16`/`BF16`；`*.weight`（2D）+ 同名 `*.bias`
+  （可选，缺省补 0）按名字排序成层，层间衔接由 `TritModel::new` 强制。
+- 三值化：`v > ε → +1`、`v < -ε → -1`、其余 `0`（默认 ε=0 即纯符号，`--threshold` 可加稀疏）。
+- CLI：`cargo run -p trit-texture --bin gguf-to-mod -- in.gguf out.ttx [--threshold F] [--tensor NAME ...]`。
+- **不支持** `TQ1_0`/`TQ2_0`/`Q*_K` 等量化类型（位布局未在本仓验证，显式拒绝而不是猜）；
+  只产出线性层链，不处理卷积/注意力/名字表。预算：文件 256 MiB、权重 5000 万个。

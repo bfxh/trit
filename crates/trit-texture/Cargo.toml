@@ -28,6 +28,10 @@ name = "ttx-convert"
 path = "src/bin/ttx-convert.rs"
 required-features = ["png"]
 
+[[bin]]
+name = "gguf-to-mod"
+path = "src/bin/gguf-to-mod.rs"
+
 [[bench]]
 name = "texture"
 harness = false

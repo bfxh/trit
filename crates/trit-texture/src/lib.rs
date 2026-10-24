@@ -23,6 +23,7 @@
 use trit_core::value::Ternary;
 
 pub mod convert;
+pub mod gguf;
 #[cfg(feature = "png")]
 pub mod pngio;
 pub mod ttx;
