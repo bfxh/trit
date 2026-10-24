@@ -32,7 +32,7 @@ fn format_cmd(args: &[String]) -> Result<(), String> {
             let text = std::fs::read_to_string(path)
                 .map_err(|error| format!("读取模型失败 {path}：{error}"))?;
             let model = Model::from_json(&text).map_err(|error| error.to_string())?;
-            let bytes = format::encode(&model);
+            let bytes = format::encode(&model).map_err(|error| error.to_string())?;
             let mut obj = serde_json::json!({
                 "model": path,
                 "bytes": bytes.len(),
@@ -123,7 +123,7 @@ fn train_cmd(args: &[String]) -> Result<(), String> {
         },
     )
     .map_err(|error| error.to_string())?;
-    let bytes = format::encode(&model);
+    let bytes = format::encode(&model).map_err(|error| error.to_string())?;
     let obj = serde_json::json!({
         "task": format!("majority of {inputs}"),
         "samples": samples.len(),

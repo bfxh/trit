@@ -108,10 +108,14 @@ impl RhsParser {
         loop {
             self.skip_ws();
             if self.peek() == Some('|') {
-                self.pos += 1;
-                if self.peek() == Some('|') {
-                    self.pos += 1;
+                // 复审 M02：`||` 是逻辑或（1 bit 结果），不是逐位 `|`。
+                // 子集不实现逻辑运算，就显式拒绝，不能静默按位解释。
+                if self.chars.get(self.pos + 1).copied() == Some('|') {
+                    return Err(VerilogError::unsupported(
+                        "逻辑或 `||` 不在 Verilog 子集；请用逐位 `|` 或显式三值判断",
+                    ));
                 }
+                self.pos += 1;
                 self.count_op()?;
                 let right = self.parse_xor()?;
                 left = VExpr::Or(Box::new(left), Box::new(right));
@@ -151,10 +155,13 @@ impl RhsParser {
         loop {
             self.skip_ws();
             if self.peek() == Some('&') {
-                self.pos += 1;
-                if self.peek() == Some('&') {
-                    self.pos += 1;
+                // 复审 M02：`&&` 是逻辑与，结果 1 bit；含 X 时的语义也不同。
+                if self.chars.get(self.pos + 1).copied() == Some('&') {
+                    return Err(VerilogError::unsupported(
+                        "逻辑与 `&&` 不在 Verilog 子集；请用逐位 `&` 或显式三值判断",
+                    ));
                 }
+                self.pos += 1;
                 self.count_op()?;
                 let right = self.parse_unary()?;
                 left = VExpr::And(Box::new(left), Box::new(right));

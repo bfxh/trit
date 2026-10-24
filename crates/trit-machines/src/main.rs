@@ -130,7 +130,8 @@ fn snn_demo(args: &[String]) -> Result<(), String> {
     } else {
         vec![kick]
     };
-    let stats = snn::simulate_with_drive(&network, ticks, &external);
+    let stats =
+        snn::simulate_with_drive(&network, ticks, &external).map_err(|error| error.to_string())?;
     let obj = serde_json::json!({
         "neurons": size,
         "ticks": ticks,

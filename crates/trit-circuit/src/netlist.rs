@@ -22,6 +22,29 @@ pub enum NetlistError {
     /// 没有声明主输出。
     #[error("网表没有主输出")]
     NoOutputs,
+    /// 超出解析预算（文本字节 / 网络数 / 门数）。
+    #[error("网表超出预算：{0}")]
+    Limit(String),
+}
+
+/// 文本解析预算；默认值与 Verilog 同量级，服务端可显式收紧。
+#[derive(Debug, Clone, Copy)]
+pub struct Limits {
+    /// 文本字节上限。
+    pub bytes: usize,
+    /// 网络（输入 + 输出）上限。
+    pub nets: usize,
+    /// 门数上限。
+    pub gates: usize,
+}
+
+impl Limits {
+    /// 默认预算：1 MiB / 10 万网络 / 10 万门。
+    pub const DEFAULT: Self = Self {
+        bytes: 1 << 20,
+        nets: 100_000,
+        gates: 100_000,
+    };
 }
 
 fn line_error(line: usize, message: impl Into<String>) -> NetlistError {
@@ -31,10 +54,34 @@ fn line_error(line: usize, message: impl Into<String>) -> NetlistError {
     }
 }
 
-/// 解析网表文本。
+/// 解析网表文本（默认预算）。
 pub fn parse_netlist(text: &str) -> Result<Circuit, NetlistError> {
+    parse_netlist_with_limits(text, Limits::DEFAULT)
+}
+
+/// 解析网表文本；分配前先过预算（复审 M11：两个公开文本 parser 都曾无上限）。
+pub fn parse_netlist_with_limits(text: &str, limits: Limits) -> Result<Circuit, NetlistError> {
+    if text.len() > limits.bytes {
+        return Err(NetlistError::Limit(format!(
+            "文本 {} 字节，超过上限 {}",
+            text.len(),
+            limits.bytes
+        )));
+    }
     let mut circuit = Circuit::new("netlist");
     for (lineno, raw) in text.lines().enumerate() {
+        if circuit.gates.len() > limits.gates {
+            return Err(NetlistError::Limit(format!(
+                "门数超过上限 {}",
+                limits.gates
+            )));
+        }
+        if circuit.inputs.len() + circuit.outputs.len() > limits.nets {
+            return Err(NetlistError::Limit(format!(
+                "网络数超过上限 {}",
+                limits.nets
+            )));
+        }
         let line = raw.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
@@ -110,6 +157,19 @@ pub fn parse_netlist(text: &str) -> Result<Circuit, NetlistError> {
     if circuit.outputs.is_empty() {
         return Err(NetlistError::NoOutputs);
     }
+    // 最后一行的新增也要复核（循环只在下一轮开头检查）。
+    if circuit.gates.len() > limits.gates {
+        return Err(NetlistError::Limit(format!(
+            "门数超过上限 {}",
+            limits.gates
+        )));
+    }
+    if circuit.inputs.len() + circuit.outputs.len() > limits.nets {
+        return Err(NetlistError::Limit(format!(
+            "网络数超过上限 {}",
+            limits.nets
+        )));
+    }
     Ok(circuit)
 }
 
@@ -184,6 +244,41 @@ pub fn to_netlist(circuit: &Circuit) -> Result<String, CircuitError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn budgets_reject_oversized_input() {
+        // 复审 M11：公开文本 parser 原先无任何字节/网络/门上界。
+        let text = "input a\noutput y\ngate AND a a y\n";
+        assert!(parse_netlist(text).is_ok(), "默认预算内必须能解析");
+        let tiny_bytes = Limits {
+            bytes: 8,
+            nets: 10,
+            gates: 10,
+        };
+        assert!(matches!(
+            parse_netlist_with_limits(text, tiny_bytes),
+            Err(NetlistError::Limit(_))
+        ));
+        let zero_gates = Limits {
+            bytes: 1 << 20,
+            nets: 10,
+            gates: 0,
+        };
+        assert!(matches!(
+            parse_netlist_with_limits(text, zero_gates),
+            Err(NetlistError::Limit(_))
+        ));
+        let one_net = Limits {
+            bytes: 1 << 20,
+            nets: 1,
+            gates: 10,
+        };
+        assert!(matches!(
+            parse_netlist_with_limits(text, one_net),
+            Err(NetlistError::Limit(_))
+        ));
+    }
+
     use crate::circuit::{GateKind, analyze};
     use trit_core::algebra::Algebra;
 

@@ -293,7 +293,7 @@ fn check_fails_closed_when_coverage_cannot_run() {
 #[test]
 fn netlist_parses_and_writes_aiger() {
     let dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
-    let aiger = dir.join("and2.aig");
+    let aiger = dir.join("and2.aag");
     let net = dir.join("and2.net");
     let (stdout, stderr, code) = run(&[
         "netlist",
@@ -308,7 +308,7 @@ fn netlist_parses_and_writes_aiger() {
 
     let (stdout, stderr, code) = run(&["netlist", net.to_str().unwrap(), "--to", "aiger"]);
     assert_eq!(code, 0, "stdout={stdout} stderr={stderr}");
-    assert!(stdout.starts_with("aig "), "{stdout}");
+    assert!(stdout.starts_with("aag "), "{stdout}");
     assert!(!stdout.contains(".end"), "{stdout}");
 
     let (stdout, stderr, code) = run(&["atpg", aiger.to_str().unwrap(), "--from", "aiger"]);

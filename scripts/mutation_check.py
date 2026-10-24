@@ -1411,8 +1411,8 @@ MUTANTS = [
     {
         "name": "snn: 抑制阈值写成严格小于",
         "file": "crates/trit-machines/src/snn.rs",
-        "old": "} else if potential <= -network.threshold {",
-        "new": "} else if potential < -network.threshold {",
+        "old": "} else if potential <= -i64::from(network.threshold) {",
+        "new": "} else if potential < -i64::from(network.threshold) {",
         "pkg": "trit-machines",
         "filter": "negative_drive_produces_inhibitory_spike"
     },
@@ -1513,12 +1513,12 @@ MUTANTS = [
         "filter": "quantize_clamps_to_ternary"
     },
     {
-        "name": "float: 舍入改成截断",
+        "name": "float: 平局取更小指数（背离约定）",
         "file": "crates/trit-float/src/lib.rs",
-        "old": "    if remainder <= 1 {",
-        "new": "    if remainder <= 2 {",
+        "old": "                    error < best_error || (error == best_error && dropped > best_dropped)",
+        "new": "                    error < best_error || (error == best_error && dropped < best_dropped)",
         "pkg": "trit-float",
-        "filter": "rounding_is_nearest_in_balanced_ternary"
+        "filter": "precision_bounds_follow_balanced_digits"
     },
     {
         "name": "float: 加法恒丢弃小项",
@@ -1537,20 +1537,20 @@ MUTANTS = [
         "filter": "adding_zero_returns_the_operand_unchanged"
     },
     {
-        "name": "float: digit_count 取回 abs",
+        "name": "float: digit_count 上界差一",
         "file": "crates/trit-float/src/lib.rs",
-        "old": "    let mut rest = value.unsigned_abs();",
-        "new": "    let mut rest = value.abs() as u128;",
+        "old": "        if magnitude <= limit {",
+        "new": "        if magnitude < limit {",
         "pkg": "trit-float",
-        "filter": "extreme_mantissa_and_exponent_do_not_panic"
+        "filter": "rounding_is_nearest_over_legal_mantissas"
     },
     {
-        "name": "float: 丢位除法回到先减后除",
+        "name": "float: 允许多一位有效位",
         "file": "crates/trit-float/src/lib.rs",
-        "old": "    let quotient = value.div_euclid(3);",
-        "new": "    let quotient = (value - remainder) / 3;",
+        "old": "    if digits > precision {",
+        "new": "    if digits > precision + 1 {",
         "pkg": "trit-float",
-        "filter": "extreme_mantissa_and_exponent_do_not_panic"
+        "filter": "precision_bounds_follow_balanced_digits"
     },
     {
         "name": "float: 相等把精度算进去",
@@ -1839,6 +1839,102 @@ MUTANTS = [
         "new": "            None => true,",
         "pkg": "trit-schedule",
         "filter": "fresh_ownerless_lock_is_not_stolen"
+    },
+    {
+        "name": "aiger: aig 二进制头被当文本接受",
+        "file": "crates/trit-circuit/src/aiger.rs",
+        "old": "    if parts[0] == \"aig\" {\n        return Err(AigerError::BinaryFormat);\n    }",
+        "new": "    if false {\n        return Err(AigerError::BinaryFormat);\n    }",
+        "pkg": "trit-circuit",
+        "filter": "ascii_header_is_aag_and_binary_aig_is_rejected"
+    },
+    {
+        "name": "verilog: && 静默按逐位与",
+        "file": "crates/trit-circuit/src/verilog/expr.rs",
+        "old": "                if self.chars.get(self.pos + 1).copied() == Some('&') {",
+        "new": "                if false {",
+        "pkg": "trit-circuit",
+        "filter": "logical_and_or_are_rejected_instead_of_bitwise"
+    },
+    {
+        "name": "verilog: || 静默按逐位或",
+        "file": "crates/trit-circuit/src/verilog/expr.rs",
+        "old": "                if self.chars.get(self.pos + 1).copied() == Some('|') {",
+        "new": "                if false {",
+        "pkg": "trit-circuit",
+        "filter": "logical_and_or_are_rejected_instead_of_bitwise"
+    },
+    {
+        "name": "netlist: 文本字节预算失效",
+        "file": "crates/trit-circuit/src/netlist.rs",
+        "old": "    if text.len() > limits.bytes {",
+        "new": "    if false {",
+        "pkg": "trit-circuit",
+        "filter": "budgets_reject_oversized_input"
+    },
+    {
+        "name": "blif: 文本字节预算失效",
+        "file": "crates/trit-circuit/src/blif.rs",
+        "old": "    if text.len() > limits.bytes {",
+        "new": "    if false {",
+        "pkg": "trit-circuit",
+        "filter": "budgets_reject_oversized_blif"
+    },
+    {
+        "name": "float: 舍入不 clamp 到合法尾数",
+        "file": "crates/trit-float/src/lib.rs",
+        "old": "            let rounded = round_quotient(mantissa, divisor).clamp(-limit, limit);",
+        "new": "            let rounded = round_quotient(mantissa, divisor);",
+        "pkg": "trit-float",
+        "filter": "precision_bounds_follow_balanced_digits"
+    },
+    {
+        "name": "net-format: encode 不校验模型",
+        "file": "crates/trit-net/src/format.rs",
+        "old": "    model\n        .validate()\n        .map_err(|error| FormatError::Model(error.to_string()))?;",
+        "new": "    let _ = &model;",
+        "pkg": "trit-net",
+        "filter": "encode_rejects_invalid_models_instead_of_truncating"
+    },
+    {
+        "name": "net-format: 维数按 u16 静默截断",
+        "file": "crates/trit-net/src/format.rs",
+        "old": "        let inputs = u16::try_from(layer.inputs).map_err(|_| {",
+        "new": "        let inputs = Ok::<u16, FormatError>((layer.inputs % 65536) as u16).map_err(|_| {",
+        "pkg": "trit-net",
+        "filter": "encode_rejects_invalid_models_instead_of_truncating"
+    },
+    {
+        "name": "net-train: 学习率不校验有限/正",
+        "file": "crates/trit-net/src/train.rs",
+        "old": "    if !options.learning_rate.is_finite() || options.learning_rate <= 0.0 {",
+        "new": "    if false {",
+        "pkg": "trit-net",
+        "filter": "rejects_non_finite_learning_rate_and_zero_epochs"
+    },
+    {
+        "name": "net-train: 放行 0 轮训练",
+        "file": "crates/trit-net/src/train.rs",
+        "old": "    if options.epochs == 0 {",
+        "new": "    if false {",
+        "pkg": "trit-net",
+        "filter": "rejects_non_finite_learning_rate_and_zero_epochs"
+    },
+    {
+        "name": "snn: 模拟前不校验网络",
+        "file": "crates/trit-machines/src/snn.rs",
+        "old": "    network.validate()?;",
+        "new": "    let _ = network;",
+        "pkg": "trit-machines",
+        "filter": "invalid_networks_are_rejected_instead_of_panicking"
+    },
+    {
+        "name": "snn: 不限制 tick 预算",
+        "file": "crates/trit-machines/src/snn.rs",
+        "old": "    if ticks > MAX_TICKS {",
+        "new": "    if false {",
+        "pkg": "trit-machines",
+        "filter": "invalid_networks_are_rejected_instead_of_panicking"
     }
 ]
 

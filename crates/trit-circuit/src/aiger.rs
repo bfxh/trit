@@ -21,9 +21,12 @@ pub enum AigerError {
         /// 说明。
         message: String,
     },
-    /// 头部不是 `aig M I L O A`。
-    #[error("AIGER 头部必须是 `aig M I L O A`")]
+    /// 头部不是 `aag M I L O A`。
+    #[error("AIGER 头部必须是 `aag M I L O A`（ASCII）")]
     Header,
+    /// 传进来的是二进制 AIGER（`aig`）。
+    #[error("`aig` 是二进制 AIGER，本解析器只接受 ASCII 的 `aag`")]
+    BinaryFormat,
     /// 时序锁存器不受支持。
     #[error("暂不支持时序（L = {0}）")]
     Latches(usize),
@@ -145,7 +148,15 @@ pub fn parse_aiger(text: &str) -> Result<Circuit, AigerError> {
         return Err(AigerError::Header);
     };
     let parts: Vec<&str> = header_text.split_whitespace().collect();
-    if parts.len() != 6 || parts[0] != "aig" {
+    if parts.len() != 6 {
+        return Err(AigerError::Header);
+    }
+    // AIGER 标准：`aag` 是 ASCII，`aig` 是二进制。按文本解析只能支持前者；
+    // 把 `aig` 当文本硬读会静默解出错内容（复审 M01）。
+    if parts[0] == "aig" {
+        return Err(AigerError::BinaryFormat);
+    }
+    if parts[0] != "aag" {
         return Err(AigerError::Header);
     }
     let m = parse_number(parts[1], header_line, "M")?;
@@ -365,7 +376,7 @@ pub fn to_aiger(circuit: &Circuit) -> Result<String, AigerError> {
         .collect::<Result<_, _>>()?;
     let ands = next_var - circuit.inputs.len() - 1;
     let mut out = format!(
-        "aig {} {} 0 {} {}\n",
+        "aag {} {} 0 {} {}\n",
         circuit.inputs.len() + ands,
         circuit.inputs.len(),
         circuit.outputs.len(),
@@ -448,7 +459,7 @@ mod tests {
 
     #[test]
     fn parses_plain_and() {
-        let text = "aig 3 2 0 1 1\n2\n4\n6\n6 2 4\n";
+        let text = "aag 3 2 0 1 1\n2\n4\n6\n6 2 4\n";
         let circuit = parse_aiger(text).unwrap();
         let mut assignment = std::collections::BTreeMap::new();
         assignment.insert("in1".to_string(), Ternary::True);
@@ -487,7 +498,7 @@ mod tests {
 
     #[test]
     fn rejects_latches_strong_xor_and_bad_header() {
-        let text = "aig 2 1 1 1 0\n2\n0\n4\n";
+        let text = "aag 2 1 1 1 0\n2\n0\n4\n";
         assert_eq!(parse_aiger(text).unwrap_err(), AigerError::Latches(1));
         assert_eq!(
             to_aiger(&gate(GateKind::Xor, &["a", "b"], "y")).unwrap_err(),
@@ -497,20 +508,57 @@ mod tests {
     }
 
     #[test]
+    fn ascii_header_is_aag_and_binary_aig_is_rejected() {
+        // 复审 M01：AIGER 标准里 ASCII 是 `aag`、`aig` 是二进制。
+        let text = "aag 3 2 0 1 1
+2
+4
+6
+6 2 4
+";
+        assert!(parse_aiger(text).is_ok(), "标准 aag 被拒绝");
+        assert_eq!(
+            parse_aiger(
+                "aig 3 2 0 1 1
+2
+4
+6
+6 2 4
+"
+            )
+            .unwrap_err(),
+            AigerError::BinaryFormat
+        );
+        assert_eq!(
+            parse_aiger(
+                "xor 1 0 0 1 0
+2
+2
+"
+            )
+            .unwrap_err(),
+            AigerError::Header
+        );
+        // 写回也必须是 `aag`，否则往返第一步就会自拒。
+        let circuit = parse_aiger(text).unwrap();
+        assert!(to_aiger(&circuit).unwrap().starts_with("aag "));
+    }
+
+    #[test]
     fn aiger_budget_rejects_huge_headers_and_oversized_input() {
         // 复审 H07：头部 O 计数曾直接 Vec::with_capacity——usize::MAX 触发
         // capacity overflow panic；I+A 相加也会溢出。现在都必须先过预算。
         assert!(matches!(
-            parse_aiger("aig 0 0 0 18446744073709551615 0"),
+            parse_aiger("aag 0 0 0 18446744073709551615 0"),
             Err(AigerError::Limit(_))
         ));
         assert!(matches!(
-            parse_aiger("aig 0 18446744073709551615 0 1 1"),
+            parse_aiger("aag 0 18446744073709551615 0 1 1"),
             Err(AigerError::Limit(_))
         ));
         // 声明数超过文本行数：必然解析不出来，提前拒绝。
         assert!(matches!(
-            parse_aiger("aig 5 1000 0 1 5\n2\n6\n8 2 4\n"),
+            parse_aiger("aag 5 1000 0 1 5\n2\n6\n8 2 4\n"),
             Err(AigerError::Limit(_))
         ));
         // 文本字节上限。
@@ -520,7 +568,7 @@ mod tests {
 
     #[test]
     fn rejects_out_of_range_literal() {
-        let text = "aig 3 2 0 1 1\n2\n4\n6\n6 2 8\n";
+        let text = "aag 3 2 0 1 1\n2\n4\n6\n6 2 8\n";
         assert!(matches!(
             parse_aiger(text).unwrap_err(),
             AigerError::Line { .. }

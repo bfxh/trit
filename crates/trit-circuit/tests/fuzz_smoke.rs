@@ -98,7 +98,7 @@ fn blif_parser_round_trips_or_rejects() {
 #[test]
 fn aiger_parser_round_trips_or_rejects() {
     let mut state = 0xa1ee_5eed_1234_9876u64;
-    let seed = "aig 3 2 0 1 1
+    let seed = "aag 3 2 0 1 1
 2
 4
 6

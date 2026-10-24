@@ -5,6 +5,84 @@
 //! 权重三值意味着连接只有「兴奋 / 无 / 抑制」三档，没有可调强度——这正是仿生侧
 //! 关心的稀疏性来源。
 
+/// 神经元数上限（`weights` 是方阵，平方增长）。
+pub const MAX_NEURONS: usize = 4096;
+/// 单次模拟的 tick 上限（`per_tick` 会按 tick 数分配）。
+pub const MAX_TICKS: usize = 1_000_000;
+
+/// 网络/模拟参数错误。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NetworkError {
+    /// `weights` 不是方阵。
+    Shape {
+        /// 行下标。
+        neuron: usize,
+        /// 期望列数（= 神经元数）。
+        expected: usize,
+        /// 实际列数。
+        actual: usize,
+    },
+    /// 权重不是 `-1/0/1`。
+    Weight {
+        /// 行下标。
+        neuron: usize,
+        /// 列下标。
+        synapse: usize,
+        /// 实际权重。
+        weight: i8,
+    },
+    /// 阈值非正。
+    Threshold(i32),
+    /// 泄漏系数非法。
+    Decay(i32, i32),
+    /// 规模超限。
+    Limit(String),
+    /// 膜电位超出 `i32`。
+    Overflow {
+        /// tick 下标。
+        tick: usize,
+        /// 神经元下标。
+        neuron: usize,
+    },
+}
+
+impl std::fmt::Display for NetworkError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Shape {
+                neuron,
+                expected,
+                actual,
+            } => write!(
+                formatter,
+                "第 {neuron} 行有 {actual} 个突触，应为 {expected}（weights 必须是方阵）"
+            ),
+            Self::Weight {
+                neuron,
+                synapse,
+                weight,
+            } => write!(
+                formatter,
+                "第 {neuron} 行第 {synapse} 个权重 {weight} 不在 {{-1,0,1}}"
+            ),
+            Self::Threshold(value) => write!(formatter, "threshold 必须为正，实际 {value}"),
+            Self::Decay(numerator, denominator) => write!(
+                formatter,
+                "decay 必须是非负分子与正分母，实际 {numerator}/{denominator}"
+            ),
+            Self::Limit(message) => write!(formatter, "规模超限：{message}"),
+            Self::Overflow { tick, neuron } => {
+                write!(
+                    formatter,
+                    "第 {tick} tick 第 {neuron} 个神经元膜电位溢出 i32"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for NetworkError {}
+
 /// 一个脉冲网络。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Network {
@@ -51,6 +129,45 @@ impl Network {
     pub fn size(&self) -> usize {
         self.weights.len()
     }
+
+    /// 校验结构：方阵、权重 `{-1,0,1}`、阈值 > 0、decay 非负分子/正分母、规模预算。
+    ///
+    /// `weights` 是公开字段，`simulate` 不能再假定调用方构造的是合法网络（复审 M10）。
+    pub fn validate(&self) -> Result<(), NetworkError> {
+        let size = self.size();
+        if size > MAX_NEURONS {
+            return Err(NetworkError::Limit(format!(
+                "神经元数 {size} 超过上限 {MAX_NEURONS}"
+            )));
+        }
+        for (neuron, row) in self.weights.iter().enumerate() {
+            if row.len() != size {
+                return Err(NetworkError::Shape {
+                    neuron,
+                    expected: size,
+                    actual: row.len(),
+                });
+            }
+            if let Some((synapse, weight)) = row
+                .iter()
+                .enumerate()
+                .find(|(_, weight)| !(-1..=1).contains(*weight))
+            {
+                return Err(NetworkError::Weight {
+                    neuron,
+                    synapse,
+                    weight: *weight,
+                });
+            }
+        }
+        if self.threshold <= 0 {
+            return Err(NetworkError::Threshold(self.threshold));
+        }
+        if self.decay.0 < 0 || self.decay.1 <= 0 {
+            return Err(NetworkError::Decay(self.decay.0, self.decay.1));
+        }
+        Ok(())
+    }
 }
 
 /// 一个 tick 之后的状态。
@@ -92,12 +209,25 @@ impl Stats {
 }
 
 /// 跑 `ticks` 步；初始膜电位全 0，无外部输入。
-pub fn simulate(network: &Network, ticks: usize) -> Stats {
+pub fn simulate(network: &Network, ticks: usize) -> Result<Stats, NetworkError> {
     simulate_with_drive(network, ticks, &[])
 }
 
 /// 同 [`simulate`]，但每个 tick 额外给所有神经元加一个外部驱动。
-pub fn simulate_with_drive(network: &Network, ticks: usize, external: &[i32]) -> Stats {
+///
+/// 复审 M10：先 `validate`，再用 `i64` 中间量算膜电位——非法网络/极端参数返回
+/// 结构化错误，而不是在 `weights[target]` 处 panic 或让 `i32` 静默溢出。
+pub fn simulate_with_drive(
+    network: &Network,
+    ticks: usize,
+    external: &[i32],
+) -> Result<Stats, NetworkError> {
+    network.validate()?;
+    if ticks > MAX_TICKS {
+        return Err(NetworkError::Limit(format!(
+            "ticks {ticks} 超过上限 {MAX_TICKS}"
+        )));
+    }
     let size = network.size();
     let mut state = State {
         membrane: vec![0; size],
@@ -114,12 +244,12 @@ pub fn simulate_with_drive(network: &Network, ticks: usize, external: &[i32]) ->
     };
     let mut ever_spiked = vec![false; size];
     for tick in 0..ticks {
-        let drive: Vec<i32> = (0..size)
+        let drive: Vec<i64> = (0..size)
             .map(|target| {
                 network.weights[target]
                     .iter()
                     .zip(state.spikes.iter())
-                    .map(|(weight, spike)| i32::from(*weight) * *spike)
+                    .map(|(weight, spike)| i64::from(*weight) * i64::from(*spike))
                     .sum()
             })
             .collect();
@@ -128,15 +258,19 @@ pub fn simulate_with_drive(network: &Network, ticks: usize, external: &[i32]) ->
             if state.refractory[neuron] > 0 {
                 state.refractory[neuron] -= 1;
                 state.spikes[neuron] = 0;
-                state.membrane[neuron] = state.membrane[neuron] * network.decay.0 / network.decay.1;
+                let leaked = i64::from(state.membrane[neuron]) * i64::from(network.decay.0)
+                    / i64::from(network.decay.1);
+                state.membrane[neuron] =
+                    i32::try_from(leaked).map_err(|_| NetworkError::Overflow { tick, neuron })?;
                 continue;
             }
-            let leaked = state.membrane[neuron] * network.decay.0 / network.decay.1;
-            let kick = external.get(tick).copied().unwrap_or(0);
+            let leaked = i64::from(state.membrane[neuron]) * i64::from(network.decay.0)
+                / i64::from(network.decay.1);
+            let kick = i64::from(external.get(tick).copied().unwrap_or(0));
             let potential = leaked + drive[neuron] + kick;
-            let spike = if potential >= network.threshold {
+            let spike = if potential >= i64::from(network.threshold) {
                 1
-            } else if potential <= -network.threshold {
+            } else if potential <= -i64::from(network.threshold) {
                 -1
             } else {
                 0
@@ -152,7 +286,8 @@ pub fn simulate_with_drive(network: &Network, ticks: usize, external: &[i32]) ->
                 state.membrane[neuron] = 0;
                 state.refractory[neuron] = network.refractory;
             } else {
-                state.membrane[neuron] = potential;
+                state.membrane[neuron] = i32::try_from(potential)
+                    .map_err(|_| NetworkError::Overflow { tick, neuron })?;
             }
             state.spikes[neuron] = spike;
         }
@@ -164,7 +299,7 @@ pub fn simulate_with_drive(network: &Network, ticks: usize, external: &[i32]) ->
     } else {
         ever_spiked.iter().filter(|fired| **fired).count() as f64 / size as f64
     };
-    stats
+    Ok(stats)
 }
 
 #[cfg(test)]
@@ -181,6 +316,62 @@ mod tests {
     }
 
     #[test]
+    fn invalid_networks_are_rejected_instead_of_panicking() {
+        // 复审 M10：ragged 矩阵曾在 weights[target] 处 panic；权重 2、decay 分母 0 都被静默接受。
+        let ragged = Network {
+            weights: vec![vec![0, 0], vec![0]],
+            threshold: 1,
+            decay: (1, 1),
+            refractory: 0,
+        };
+        assert!(matches!(ragged.validate(), Err(NetworkError::Shape { .. })));
+        assert!(matches!(
+            simulate(&ragged, 3),
+            Err(NetworkError::Shape { .. })
+        ));
+
+        let bad_weight = Network {
+            weights: vec![vec![2]],
+            threshold: 1,
+            decay: (1, 1),
+            refractory: 0,
+        };
+        assert!(matches!(
+            bad_weight.validate(),
+            Err(NetworkError::Weight { .. })
+        ));
+
+        let zero_denominator = Network {
+            weights: vec![vec![0]],
+            threshold: 1,
+            decay: (1, 0),
+            refractory: 0,
+        };
+        assert!(matches!(
+            zero_denominator.validate(),
+            Err(NetworkError::Decay(1, 0))
+        ));
+
+        let zero_threshold = Network {
+            weights: vec![vec![0]],
+            threshold: 0,
+            decay: (1, 1),
+            refractory: 0,
+        };
+        assert!(matches!(
+            zero_threshold.validate(),
+            Err(NetworkError::Threshold(0))
+        ));
+
+        // tick 预算：per_tick 按 tick 数分配，必须先拒。
+        assert!(matches!(
+            simulate(&single(0), MAX_TICKS + 1),
+            Err(NetworkError::Limit(_))
+        ));
+        assert_eq!(simulate(&single(0), 0).expect("0 tick 合法").ticks, 0);
+    }
+
+    #[test]
     fn quiet_network_stays_quiet() {
         let network = Network {
             weights: vec![vec![0, 0], vec![0, 0]],
@@ -188,14 +379,14 @@ mod tests {
             decay: (1, 2),
             refractory: 1,
         };
-        let stats = simulate(&network, 10);
+        let stats = simulate(&network, 10).expect("合法网络");
         assert_eq!(stats.spikes, 0);
         assert_eq!(stats.active_fraction, 0.0);
     }
 
     #[test]
     fn external_kick_starts_self_excitation() {
-        let stats = simulate_with_drive(&single(1), 3, &[1]);
+        let stats = simulate_with_drive(&single(1), 3, &[1]).expect("合法网络");
         assert_eq!(stats.per_tick, vec![1, 1, 1]);
         assert_eq!(stats.positive, 3);
         assert_eq!(stats.spikes_per_neuron_tick(1), 1.0);
@@ -203,7 +394,7 @@ mod tests {
 
     #[test]
     fn negative_drive_produces_inhibitory_spike() {
-        let stats = simulate_with_drive(&single(0), 3, &[-1, 0, 0]);
+        let stats = simulate_with_drive(&single(0), 3, &[-1, 0, 0]).expect("合法网络");
         assert_eq!(stats.per_tick, vec![1, 0, 0]);
         assert_eq!(stats.negative, 1);
         assert_eq!(stats.positive, 0);
@@ -213,7 +404,7 @@ mod tests {
     fn refractory_blocks_consecutive_spikes() {
         let mut network = single(0);
         network.refractory = 1;
-        let stats = simulate_with_drive(&network, 4, &[1, 1, 1, 1]);
+        let stats = simulate_with_drive(&network, 4, &[1, 1, 1, 1]).expect("合法网络");
         assert_eq!(stats.per_tick, vec![1, 0, 1, 0]);
     }
 }

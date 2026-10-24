@@ -3,7 +3,9 @@
 //! 表示：`value = mantissa · 3^exponent`，尾数用平衡三进制整数（数字 `{-1,0,1}`），
 //! 规格化后最高位是 `±1`，有效位数不超过 `precision`。
 //!
-//! 舍入：去掉最低位时余数只能是 `±1`（不到半个 ulp），所以**最近舍入就是平衡三进制的截断**。
+//! 舍入：规约到 `precision` 位时，在相邻两个指数上各取「最近的合法尾数」（`|尾数| ≤ (3^p-1)/2`），
+//! 取误差更小者；误差相同取更大指数（远离零）。合法尾数集合是离散的，直接取整再 clamp，
+//! 不能靠逐位截断（`5` 在 p=1 时最近是 `3`，截断进位会得到 `9`）。
 //!
 //! 关键结论（`trit-float stats` 可复算）：同样**存储比特**下，三值浮点的相对误差上界约是二进制的
 //! **3 倍**（`3^{1-p}` vs `2^{-B}`，其中 `B = p·log2 3`）——基数换了，信息量没变，白丢约 1.58 bit。
@@ -183,41 +185,97 @@ fn normalize(mut mantissa: i128, mut exponent: i32, precision: u32) -> (i128, i3
         mantissa /= 3;
         exponent = exponent.saturating_add(1);
     }
-    while digit_count(mantissa) > precision {
-        mantissa = drop_digit(mantissa);
+    let digits = digit_count(mantissa);
+    if digits > precision {
+        // 复审 M07：一次舍入到「precision 位平衡尾数」的最近值，而不是逐位截断。
+        // 逐位截断会把 5（p=1）带成 9，而最近的是 3。
+        let shift = digits - precision;
+        let limit = mantissa_limit(precision);
+        let mut best: Option<(u128, i128, u32)> = None; // (误差, 尾数, 丢掉的位数)
+        for dropped in shift.saturating_sub(1)..=shift {
+            let divisor = pow3(dropped);
+            let rounded = round_quotient(mantissa, divisor).clamp(-limit, limit);
+            if rounded == 0 {
+                continue;
+            }
+            let error = distance(mantissa, rounded, divisor);
+            // 误差相同取更大指数（远离零），与二进制浮点的进位习惯一致。
+            let better = match best {
+                None => true,
+                Some((best_error, _, best_dropped)) => {
+                    error < best_error || (error == best_error && dropped > best_dropped)
+                }
+            };
+            if better {
+                best = Some((error, rounded, dropped));
+            }
+        }
+        let (_, rounded, dropped) = best.unwrap_or((0, limit, shift));
+        mantissa = rounded;
+        exponent = exponent.saturating_add(dropped as i32);
+    }
+    while mantissa != 0 && mantissa % 3 == 0 {
+        mantissa /= 3;
         exponent = exponent.saturating_add(1);
-        if mantissa == 0 {
-            return (0, 0);
-        }
-        while mantissa % 3 == 0 {
-            mantissa /= 3;
-            exponent = exponent.saturating_add(1);
-        }
     }
     (mantissa, exponent)
 }
 
-/// 丢掉最低位并做最近舍入；平衡三进制的余数只有 `±1`，所以就是向零截断。
-fn drop_digit(value: i128) -> i128 {
-    let remainder = value.rem_euclid(3);
-    // div_euclid 等价于 `(value - remainder) / 3`，但后者对 ±i128 极值会先下溢。
-    let quotient = value.div_euclid(3);
-    if remainder <= 1 {
-        quotient
-    } else {
+/// `p` 位平衡三进制尾数的绝对值上界 `(3^p - 1) / 2`。
+fn mantissa_limit(precision: u32) -> i128 {
+    let power = 3i128.checked_pow(precision).unwrap_or(i128::MAX);
+    (power - 1) / 2
+}
+
+/// `3^exponent`；超出 `i128` 时饱和（调用方只在可表示区间内使用）。
+fn pow3(exponent: u32) -> i128 {
+    3i128.checked_pow(exponent).unwrap_or(i128::MAX)
+}
+
+/// 最接近 `value / divisor` 的整数（半步向上），不做 clamp。
+fn round_quotient(value: i128, divisor: i128) -> i128 {
+    let quotient = value.div_euclid(divisor);
+    let remainder = value.rem_euclid(divisor);
+    if remainder == 0 {
+        return quotient;
+    }
+    let twice = (remainder as u128) * 2;
+    let bound = divisor as u128;
+    if twice >= bound {
         quotient + 1
+    } else {
+        quotient
     }
 }
 
-fn digit_count(value: i128) -> u32 {
-    let mut count = 0;
-    // unsigned_abs：i128::MIN 的 |x| 不存在于 i128，abs() 会 panic。
-    let mut rest = value.unsigned_abs();
-    while rest > 0 {
-        rest /= 3;
-        count += 1;
+/// `|value - rounded * divisor|`；溢出时返回 `u128::MAX`（该候选随后被淘汰）。
+fn distance(value: i128, rounded: i128, divisor: i128) -> u128 {
+    match rounded.checked_mul(divisor) {
+        Some(product) => match value.checked_sub(product) {
+            Some(diff) => diff.unsigned_abs(),
+            None => u128::MAX,
+        },
+        None => u128::MAX,
     }
-    count
+}
+
+/// 平衡三进制 `{−1,0,1}` 表示 `|value|` 需要的**最少位数**。
+fn digit_count(value: i128) -> u32 {
+    // unsigned_abs：i128::MIN 的 |x| 不存在于 i128，abs() 会 panic。
+    let magnitude = value.unsigned_abs();
+    if magnitude == 0 {
+        return 0;
+    }
+    let mut digits = 0u32;
+    let mut limit = 0u128; // range(0) = 0
+    loop {
+        digits += 1;
+        // range(n+1) = 3 * range(n) + 1
+        limit = limit.saturating_mul(3).saturating_add(1);
+        if magnitude <= limit {
+            return digits;
+        }
+    }
 }
 
 /// 相等与全序都按**数值**（`mantissa · 3^exponent`）判定，不看 `precision`：
@@ -421,5 +479,57 @@ mod tests {
         let big = 3i128.pow(40) - 1;
         assert!(TritFloat::new(big, 41, 40) > TritFloat::new(1, 0, 5));
         assert!(TritFloat::new(-big, 41, 40) < TritFloat::new(-1, 0, 5));
+    }
+
+    #[test]
+    fn precision_bounds_follow_balanced_digits() {
+        // 复审 M07：1 位平衡尾数的合法值是 ±1·3^e，2 的最近表示是 3，不能保持尾数 2。
+        let two = TritFloat::new(2, 0, 1);
+        assert_eq!(two.significant_digits(), 1);
+        assert_eq!((two.mantissa(), two.exponent()), (1, 1));
+        // 5 的最近 1 位表示是 3（误差 2）；「取整后进位」的 9 误差是 4。
+        let five = TritFloat::new(5, 0, 1);
+        assert_eq!((five.mantissa(), five.exponent()), (1, 1));
+        // 8 的最近 1 位表示是 9。
+        let eight = TritFloat::new(8, 0, 1);
+        assert_eq!((eight.mantissa(), eight.exponent()), (1, 2));
+        // 负数对称。
+        let minus_two = TritFloat::new(-2, 0, 1);
+        assert_eq!((minus_two.mantissa(), minus_two.exponent()), (-1, 1));
+        // 精度足够时原样保留。
+        let exact = TritFloat::new(2, 0, 5);
+        assert_eq!((exact.mantissa(), exact.exponent()), (2, 0));
+        assert_eq!(exact.significant_digits(), 2);
+    }
+
+    #[test]
+    fn rounding_is_nearest_over_legal_mantissas() {
+        for precision in 1..=3u32 {
+            let limit = (3i128.pow(precision) - 1) / 2;
+            for value in -300i128..=300 {
+                let number = TritFloat::new(value, 0, precision);
+                let mantissa = number.mantissa();
+                let exponent = number.exponent();
+                assert!(mantissa.abs() <= limit, "尾数越界 {mantissa}");
+                assert!(number.significant_digits() <= precision);
+                let got = mantissa * 3i128.pow(exponent.max(0) as u32);
+                let got_error = (value - got).unsigned_abs();
+                // 穷举合法候选（指数 0..=4），确认没有更近的表示。
+                let mut best = u128::MAX;
+                for exp in 0..=4u32 {
+                    let unit = 3i128.pow(exp);
+                    for digit in -limit..=limit {
+                        let error = (value - digit * unit).unsigned_abs();
+                        if error < best {
+                            best = error;
+                        }
+                    }
+                }
+                assert!(
+                    got_error <= best,
+                    "{value} @ p={precision}: {got_error} > {best}"
+                );
+            }
+        }
     }
 }

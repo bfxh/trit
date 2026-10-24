@@ -34,6 +34,32 @@ pub enum BlifError {
     /// 该门无法写成二值 BLIF。
     #[error("门 {0:?} 不能写成二值 BLIF")]
     Unsupported(GateKind),
+    /// 超出解析预算（文本字节 / 网络数 / 门数 / cover 项数）。
+    #[error("BLIF 超出预算：{0}")]
+    Limit(String),
+}
+
+/// BLIF 文本解析预算。
+#[derive(Debug, Clone, Copy)]
+pub struct Limits {
+    /// 文本字节上限。
+    pub bytes: usize,
+    /// 网络数上限。
+    pub nets: usize,
+    /// 门数上限。
+    pub gates: usize,
+    /// cover 行总数上限。
+    pub cover_terms: usize,
+}
+
+impl Limits {
+    /// 默认预算：1 MiB / 10 万网络 / 10 万门 / 20 万 cover 行。
+    pub const DEFAULT: Self = Self {
+        bytes: 1 << 20,
+        nets: 100_000,
+        gates: 100_000,
+        cover_terms: 200_000,
+    };
 }
 
 fn line_error(line: usize, message: impl Into<String>) -> BlifError {
@@ -168,6 +194,19 @@ fn build_cover(
 
 /// 解析 BLIF 组合子集。`.latch` 等时序语句明确拒绝。
 pub fn parse_blif(text: &str) -> Result<Circuit, BlifError> {
+    parse_blif_with_limits(text, Limits::DEFAULT)
+}
+
+/// 解析 BLIF；分配前先过预算（复审 M11）。
+pub fn parse_blif_with_limits(text: &str, limits: Limits) -> Result<Circuit, BlifError> {
+    if text.len() > limits.bytes {
+        return Err(BlifError::Limit(format!(
+            "文本 {} 字节，超过上限 {}",
+            text.len(),
+            limits.bytes
+        )));
+    }
+    let mut cover_terms = 0usize;
     let mut circuit = Circuit::new("blif");
     let mut have_model = false;
     let mut declared: BTreeSet<String> = BTreeSet::new();
@@ -180,6 +219,12 @@ pub fn parse_blif(text: &str) -> Result<Circuit, BlifError> {
         index += 1;
         if line.is_empty() {
             continue;
+        }
+        if circuit.gates.len() > limits.gates {
+            return Err(BlifError::Limit(format!("门数超过上限 {}", limits.gates)));
+        }
+        if declared.len() > limits.nets {
+            return Err(BlifError::Limit(format!("网络数超过上限 {}", limits.nets)));
         }
         if let Some(rest) = line.strip_prefix(".model") {
             let name = rest.trim();
@@ -274,6 +319,13 @@ pub fn parse_blif(text: &str) -> Result<Circuit, BlifError> {
                         }
                     });
                 }
+                cover_terms += 1;
+                if cover_terms > limits.cover_terms {
+                    return Err(BlifError::Limit(format!(
+                        "cover 行超过上限 {}",
+                        limits.cover_terms
+                    )));
+                }
                 rows.push((literals, row_value));
             }
             if rows.is_empty() {
@@ -300,6 +352,12 @@ pub fn parse_blif(text: &str) -> Result<Circuit, BlifError> {
             return Err(line_error(line_no, format!("未知指令 {directive:?}")));
         }
         return Err(line_error(line_no, "cover 行必须跟在 .names 之后"));
+    }
+    if circuit.gates.len() > limits.gates {
+        return Err(BlifError::Limit(format!("门数超过上限 {}", limits.gates)));
+    }
+    if declared.len() > limits.nets {
+        return Err(BlifError::Limit(format!("网络数超过上限 {}", limits.nets)));
     }
     if !have_model {
         return Err(BlifError::NoModel);
@@ -353,6 +411,38 @@ pub fn to_blif(circuit: &Circuit) -> Result<String, BlifError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn budgets_reject_oversized_blif() {
+        // 复审 M11：cover 行与网络/门数原先无预算。
+        let text = ".model m\n.inputs a b\n.outputs y\n.names a b y\n11 1\n.end\n";
+        assert!(parse_blif(text).is_ok(), "默认预算内必须能解析");
+        let tiny_bytes = Limits {
+            bytes: 8,
+            ..Limits::DEFAULT
+        };
+        assert!(matches!(
+            parse_blif_with_limits(text, tiny_bytes),
+            Err(BlifError::Limit(_))
+        ));
+        let no_covers = Limits {
+            cover_terms: 0,
+            ..Limits::DEFAULT
+        };
+        assert!(matches!(
+            parse_blif_with_limits(text, no_covers),
+            Err(BlifError::Limit(_))
+        ));
+        let one_net = Limits {
+            nets: 1,
+            ..Limits::DEFAULT
+        };
+        assert!(matches!(
+            parse_blif_with_limits(text, one_net),
+            Err(BlifError::Limit(_))
+        ));
+    }
+
     use crate::circuit::propagate;
     use trit_core::algebra::Algebra;
     use trit_core::value::Ternary;

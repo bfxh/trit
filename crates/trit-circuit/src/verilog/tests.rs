@@ -547,6 +547,42 @@ fn sized_literal_zero_extends_to_wider_vector() {
 }
 
 #[test]
+fn logical_and_or_are_rejected_instead_of_bitwise() {
+    // 复审 M02：`&&` / `||` 曾被静默当成逐位 `&` / `|`，向量场景语义直接错。
+    for text in [
+        "module m(input a, input b, output y);
+assign y = a && b;
+endmodule
+",
+        "module m(input a, input b, output y);
+assign y = a || b;
+endmodule
+",
+    ] {
+        let err = parse_verilog(text).unwrap_err();
+        assert_eq!(err.kind, VerilogErrorKind::Unsupported, "{err:?}");
+        assert!(err.to_string().contains("逻辑"), "{err}");
+    }
+    // 逐位运算符仍然可用。
+    let circuit = parse_verilog(
+        "module m(input a, input b, output y);
+assign y = a & b;
+endmodule
+",
+    )
+    .expect("逐位与必须仍可解析");
+    assert!(circuit.gates.iter().any(|gate| gate.kind == GateKind::And));
+    let circuit = parse_verilog(
+        "module m(input a, input b, output y);
+assign y = a | b;
+endmodule
+",
+    )
+    .expect("逐位或必须仍可解析");
+    assert!(circuit.gates.iter().any(|gate| gate.kind == GateKind::Or));
+}
+
+#[test]
 fn unsupported_literal_base_is_reported() {
     let err =
         parse_verilog("module m(input a, output y);\nassign y = 4'sd3;\nendmodule\n").unwrap_err();

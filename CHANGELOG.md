@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Fixed（复审 P2 批次：AIGER 头 / 逻辑运算 / 平衡三进制精度 / 编码校验 / 训练与 SNN / 解析预算）
+
+- **M01 AIGER ASCII 头**：解析只接受 `aag`（标准 ASCII），`aig`（二进制）返回
+  `AigerError::BinaryFormat`；导出改为写 `aag`，CLI fixture 更名 `and2.aag`。
+  之前标准 ASCII 文件会被拒、二进制头被当文本硬读。
+- **M02 逻辑 vs 逐位**：`&&` / `||` 不再被静默当成逐位 `&` / `|`，返回
+  `VerilogErrorKind::Unsupported`（逐位运算保留）；向量逻辑表达式不再产出错误位宽。
+- **M06 平衡三进制 `range`**：`checked_pow` + 饱和（#113 已修），本批补回归记录。
+- **M07 浮点精度**：`digit_count` 改按**平衡三进制位数**（`(3^n-1)/2` 上界），
+  舍入改为「相邻指数两个候选、各自 clamp 到合法尾数、取误差小者」——
+  `5` 在 `p=1` 时得到 `3`（旧实现给 `9`）；补 `±2/±5/±8` 边界与穷举最近性测试。
+- **M08 模型编码**：`format::encode` 改为 `Result`，先 `Model::validate`，再查
+  `u16` 范围与乘积；非法模型/权重/空模型都拒绝，不再 `as u16` 截断或把 `2` 静默写成 `+1`。
+- **M09 训练输入**：`learning_rate` 必须有限且 > 0、`epochs ≥ 1`，逐轮 `loss` 非有限立即报错，
+  不再返回 NaN 报告或改写损坏模型。
+- **M10 SNN**：新增 `Network::validate`（方阵/权重 `{-1,0,1}`/阈值/decay/规模），
+  `simulate`/`simulate_with_drive` 改为 `Result`，膜电位用 `i64` 中间量并限制 tick 预算。
+- **M11 解析预算**：`parse_netlist` / `parse_blif` 增加字节/网络/门数（BLIF 另有 cover 行）
+  预算与 `*_with_limits` 入口，默认 1 MiB / 10 万 / 10 万 / 20 万，分配前拒绝。
+- 测试 +9（workspace **730/0**）；变异门 228 → **240**（本批 12 条新锚点 + 3 条随迁）。
+  兼容性：`aiger` 文本必须是 `aag`；`trit-net`/`trit-machines` 的 encode/simulate 变 fallible
+  （两者都是 `publish = false` 实验层，不进稳定 API）。
+
 ### Fixed（复审 P0/P1 批次 4：sparse 视图越界 H08 + P1 五项）
 
 - **H08 sparse `View::new` 越界/语义分叉**（`trit-codec/src/plan.rs`）：构造期完整验证

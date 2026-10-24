@@ -56,14 +56,44 @@ pub enum FormatError {
 }
 
 /// 编码为二进制。
-pub fn encode(model: &Model) -> Vec<u8> {
+///
+/// 复审 M08：对外格式 API 不再静默有损——先 `Model::validate`，再检查 `u16` 范围与
+/// 权重乘积，任何不合法的模型都返回 [`FormatError::Model`]，而不是靠 `as u16` 截断
+/// 或把任意整数 `trit()` 成 `+1` 造出不可逆数据。
+pub fn encode(model: &Model) -> Result<Vec<u8>, FormatError> {
+    model
+        .validate()
+        .map_err(|error| FormatError::Model(error.to_string()))?;
+    let layer_count = u16::try_from(model.layers.len())
+        .map_err(|_| FormatError::Model(format!("层数 {} 超过 u16 上限", model.layers.len())))?;
+    for (index, layer) in model.layers.iter().enumerate() {
+        let inputs = u16::try_from(layer.inputs).map_err(|_| {
+            FormatError::Model(format!(
+                "第 {index} 层 inputs={} 超过 u16 上限",
+                layer.inputs
+            ))
+        })?;
+        let outputs = u16::try_from(layer.outputs).map_err(|_| {
+            FormatError::Model(format!(
+                "第 {index} 层 outputs={} 超过 u16 上限",
+                layer.outputs
+            ))
+        })?;
+        if layer.outputs.checked_mul(layer.inputs).is_none() {
+            return Err(FormatError::Model(format!(
+                "第 {index} 层 outputs×inputs 溢出 usize"
+            )));
+        }
+        let _ = (inputs, outputs);
+    }
     let mut out = Vec::new();
     out.extend_from_slice(MAGIC);
     out.push(VERSION);
-    out.extend_from_slice(&(model.layers.len() as u16).to_le_bytes());
+    out.extend_from_slice(&layer_count.to_le_bytes());
     for layer in &model.layers {
         out.extend_from_slice(&(layer.inputs as u16).to_le_bytes());
         out.extend_from_slice(&(layer.outputs as u16).to_le_bytes());
+        // 上面的 try_from 已保证范围；这里保留 as 只用在本函数内部的已校验值。
         let weights: Vec<Ternary> = layer
             .weights
             .iter()
@@ -74,7 +104,7 @@ pub fn encode(model: &Model) -> Vec<u8> {
         let bias: Vec<Ternary> = layer.bias.iter().map(|value| trit(*value)).collect();
         out.extend_from_slice(&pack(&bias));
     }
-    out
+    Ok(out)
 }
 
 /// 从二进制解码并校验。
@@ -229,7 +259,7 @@ mod tests {
     #[test]
     fn round_trip_preserves_weights() {
         let model = sample();
-        let bytes = encode(&model);
+        let bytes = encode(&model).expect("合法模型必须能编码");
         assert_eq!(&bytes[..4], MAGIC);
         assert_eq!(decode(&bytes).unwrap(), model);
     }
@@ -237,7 +267,7 @@ mod tests {
     #[test]
     fn packed_size_beats_json() {
         let model = sample();
-        let bytes = encode(&model);
+        let bytes = encode(&model).expect("合法模型必须能编码");
         let json = serde_json::to_string(&model).unwrap();
         // 参数 13 个 -> 3 字节 + 头 7 + 每层 4 字节维度。
         assert!(
@@ -251,19 +281,55 @@ mod tests {
     }
 
     #[test]
+    fn encode_rejects_invalid_models_instead_of_truncating() {
+        // 复审 M08：inputs 越过 u16 曾经被 `as u16` 截断；权重 2 曾被静默写成 +1。
+        let too_wide = Model {
+            layers: vec![Layer {
+                inputs: 65_536,
+                outputs: 1,
+                weights: vec![vec![0; 65_536]],
+                bias: vec![0],
+            }],
+        };
+        assert!(
+            matches!(encode(&too_wide), Err(FormatError::Model(_))),
+            "超 u16 的维数必须拒绝"
+        );
+        let bad_weight = Model {
+            layers: vec![Layer {
+                inputs: 1,
+                outputs: 1,
+                weights: vec![vec![2]],
+                bias: vec![0],
+            }],
+        };
+        assert!(
+            matches!(encode(&bad_weight), Err(FormatError::Model(_))),
+            "非法权重必须拒绝"
+        );
+        assert!(
+            matches!(
+                encode(&Model { layers: vec![] }),
+                Err(FormatError::Model(_))
+            ),
+            "空模型必须拒绝"
+        );
+    }
+
+    #[test]
     fn bad_magic_is_rejected() {
-        let mut bytes = encode(&sample());
+        let mut bytes = encode(&sample()).expect("合法模型必须能编码");
         bytes[0] = b'X';
         assert!(matches!(decode(&bytes), Err(FormatError::Magic(_))));
     }
 
     #[test]
     fn wrong_version_and_truncation_are_rejected() {
-        let mut bytes = encode(&sample());
+        let mut bytes = encode(&sample()).expect("合法模型必须能编码");
         bytes[4] = 9;
         assert!(matches!(decode(&bytes), Err(FormatError::Version { .. })));
 
-        let bytes = encode(&sample());
+        let bytes = encode(&sample()).expect("合法模型必须能编码");
         assert!(matches!(
             decode(&bytes[..bytes.len() - 1]),
             Err(FormatError::Truncated { .. })

@@ -600,8 +600,8 @@ JSON 输出含每对的 `testable`/`witness` 与测试向量 `patterns`。
 先合并再取反，临时信号在全模块内唯一。`check` 在无法运行 ATPG 时，若用户给了 `--min-coverage` 则直接 FAIL，
 不会把“未检查”当 PASS。
 
-`trit netlist design.aig --from aiger --to text` 读 AIGER ASCII 组合子集（`L = 0`；字面量奇偶取反，
-`M/I/L/O/A` 头部校验；拒绝时序）。`--to aiger` 把组合网表编码成 AND + 取反：AND/NAND/OR/NOR/XOR
+`trit netlist design.aag --from aiger --to text` 读 AIGER **ASCII** 组合子集（头部必须是 `aag`，
+`aig` 是二进制格式、显式拒绝；`L = 0`；字面量奇偶取反，`M/I/L/O/A` 头部校验；拒绝时序）。`--to aiger` 把组合网表编码成 AND + 取反：AND/NAND/OR/NOR/XOR
 都会展开，BUF/NOT 用字面量取反表达。AIGER 同样是二值格式，只在 0/1 激励上保证往返等价。
 
 `trit netlist design.blif --from blif --to text` 读 BLIF 组合子集（`.model` / `.inputs` / `.outputs` /

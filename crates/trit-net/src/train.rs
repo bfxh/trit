@@ -171,6 +171,18 @@ pub fn train(
     if inputs.is_empty() || inputs.len() != labels.len() {
         return Err(TrainError::Data("输入为空或与标签数量不一致".to_string()));
     }
+    // M09：超参数也要显式校验——NaN 学习率会把整张网络变成 NaN，却仍然"训练成功"。
+    if !options.learning_rate.is_finite() || options.learning_rate <= 0.0 {
+        return Err(TrainError::Data(format!(
+            "learning_rate 必须是正的有限值，实际 {}",
+            options.learning_rate
+        )));
+    }
+    if options.epochs == 0 {
+        return Err(TrainError::Data(
+            "epochs 必须至少 1（0 轮会返回虚假的 0 损失并改写权重）".to_string(),
+        ));
+    }
     // H09：入口先校验模型，再**逐条**校验样本；只查第一条会让后续短样本
     // 在 `Shadow::forward` 里索引 panic。
     model.validate()?;
@@ -221,6 +233,12 @@ pub fn train(
                     grad_w1[unit * shadow.inputs + input] += d_hidden * value;
                 }
             }
+        }
+        // M09：一旦出现非有限值立刻停，避免把 NaN/Inf 写回模型。
+        if !loss.is_finite() {
+            return Err(TrainError::Data(format!(
+                "第 {epoch} 轮损失不是有限值（训练发散）"
+            )));
         }
         if epoch == 0 {
             initial_loss = loss / count;
@@ -367,6 +385,52 @@ mod tests {
             report.ternary_accuracy >= 0.75,
             "三值网络精度只有 {}",
             report.ternary_accuracy
+        );
+    }
+
+    #[test]
+    fn rejects_non_finite_learning_rate_and_zero_epochs() {
+        // 复审 M09：NaN 学习率曾让报告整体变 NaN 仍算"成功"。
+        let (inputs, labels) = majority_dataset(3);
+        let mut model = untrained(4, 3);
+        let error = train(
+            &mut model,
+            &inputs,
+            &labels,
+            TrainOptions {
+                learning_rate: f32::NAN,
+                ..TrainOptions::default()
+            },
+        );
+        assert!(
+            matches!(&error, Err(TrainError::Data(message)) if message.contains("learning_rate")),
+            "NaN 学习率必须拒绝，实际 {error:?}"
+        );
+        let error = train(
+            &mut model,
+            &inputs,
+            &labels,
+            TrainOptions {
+                learning_rate: 0.0,
+                ..TrainOptions::default()
+            },
+        );
+        assert!(
+            matches!(error, Err(TrainError::Data(_))),
+            "0 学习率必须拒绝"
+        );
+        let error = train(
+            &mut model,
+            &inputs,
+            &labels,
+            TrainOptions {
+                epochs: 0,
+                ..TrainOptions::default()
+            },
+        );
+        assert!(
+            matches!(&error, Err(TrainError::Data(message)) if message.contains("epochs")),
+            "0 轮必须拒绝，实际 {error:?}"
         );
     }
 
