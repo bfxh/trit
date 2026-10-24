@@ -2151,6 +2151,30 @@ MUTANTS = [
         "new": '            illegal |= false;',
         "pkg": 'trit-redteam',
         "filter": 'illegal_inputs_are_read_as_true_by_a_pos_only_consumer'
+    },
+    {
+        "name": 'redteam: 不校验 len 与 nvars',
+        "file": 'crates/trit-redteam/src/blob.rs',
+        "old": '    if 3usize.checked_pow(nvars as u32) != Some(len) {',
+        "new": '    if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'rejects_nvars_length_mismatch'
+    },
+    {
+        "name": 'redteam: 差分分歧不记账',
+        "file": 'crates/trit-redteam/src/fuzz.rs',
+        "old": '                if left != right {',
+        "new": '                if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'comparator_reports_both_kinds_of_disagreement'
+    },
+    {
+        "name": 'redteam: 不识别 shell 包装',
+        "file": 'crates/trit-redteam/src/chain.rs',
+        "old": '        if is_shell(&cmd[0]) {',
+        "new": '        if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'flags_shell_wrappers_network_and_absolute_paths'
     }
 ]
 
