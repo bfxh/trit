@@ -51,7 +51,7 @@ pub fn load_png_rgba(path: &Path) -> Result<RgbaImage, PngError> {
         }),
         3 => {
             let mut rgba = Vec::with_capacity(width * height * 4);
-            for pixel in buffer.chunks_exact(3) {
+            for pixel in buffer.as_chunks::<3>().0 {
                 rgba.extend_from_slice(pixel);
                 rgba.push(255);
             }
