@@ -100,6 +100,61 @@ fn rail_reports_fail_open_on_illegal_inputs() {
 }
 
 #[test]
+fn fuzz_agrees_with_the_c_runtime() {
+    let dir = scratch("fuzz");
+    let path = dir.join("truth.tritbin");
+    fs::write(&path, blob()).expect("写 blob");
+    let (stdout, stderr, code) = run(&[
+        "fuzz",
+        path.to_str().unwrap(),
+        "--iterations",
+        "200",
+        "--seed",
+        "3",
+    ]);
+    assert_eq!(code, 0, "{stderr}");
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    if report["skipped"] == true {
+        eprintln!("跳过：本机没有 C 编译器");
+        return;
+    }
+    assert_eq!(report["cases"], 200);
+    assert_eq!(report["disagreements"], 0, "Rust 与 C 必须一致：{report}");
+    assert!(report["rejected"].as_u64().unwrap() > 0, "{report}");
+    // 没有分歧 ⇒ --strict 不该判红。
+    let (_, _, code) = run(&[
+        "fuzz",
+        path.to_str().unwrap(),
+        "--iterations",
+        "200",
+        "--seed",
+        "3",
+        "--strict",
+    ]);
+    assert_eq!(code, 0);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn chain_flags_a_binary_job() {
+    let dir = scratch("chain");
+    let path = dir.join("jobs.json");
+    fs::write(
+        &path,
+        r#"{"jobs":[{"name":"x","kind":"binary","cmd":["curl","http://example.invalid"]}]}"#,
+    )
+    .expect("写 jobs.json");
+    let (stdout, stderr, code) = run(&["chain", path.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(report["binary_jobs"], 1);
+    let flags = report["binaries"][0]["flags"].as_array().unwrap();
+    assert!(flags.iter().any(|flag| flag == "network-tool"), "{flags:?}");
+    let (_, _, code) = run(&["chain", path.to_str().unwrap(), "--strict"]);
+    assert_eq!(code, 1, "有 binary 任务时 --strict 必须判红");
+    let _ = fs::remove_dir_all(&dir);
+}
+#[test]
 fn rejects_a_non_trb2_file() {
     let dir = scratch("bad");
     let path = dir.join("junk.bin");

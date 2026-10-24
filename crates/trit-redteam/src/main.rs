@@ -10,7 +10,9 @@
 //! - `rail`：双导轨 `(1,1)` 非法态的可达性、粘滞与 fail-open
 
 mod blob;
+mod chain;
 mod crc;
+mod fuzz;
 mod rail;
 
 use std::fs;
@@ -49,6 +51,22 @@ enum Command {
     Rail {
         /// `design.v` 路径
         design: PathBuf,
+    },
+    /// TRB2 差分 fuzz：Rust 解析器 vs C 运行时（需要 C 编译器）
+    Fuzz {
+        /// 起始 blob（通常是 `truth.tritbin`）
+        blob: PathBuf,
+        /// 变异用例数
+        #[arg(long, default_value_t = 500)]
+        iterations: usize,
+        /// 语料种子（同种子同语料）
+        #[arg(long, default_value_t = 1)]
+        seed: u64,
+    },
+    /// `--manifest jobs.json` 的执行面静态检查
+    Chain {
+        /// `jobs.json` 路径
+        manifest: PathBuf,
     },
 }
 
@@ -165,12 +183,28 @@ fn run_rail(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
     Ok((value, finding))
 }
 
+fn run_fuzz(path: &PathBuf, iterations: usize, seed: u64) -> Result<(serde_json::Value, bool)> {
+    let bytes = fs::read(path).with_context(|| format!("读 {} 失败", path.display()))?;
+    fuzz::run(&bytes, iterations, seed)
+}
+
+fn run_chain(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
+    let text = fs::read_to_string(path).with_context(|| format!("读 {} 失败", path.display()))?;
+    chain::run(&text)
+}
+
 fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
     let result = match &cli.command {
         Command::Encode { blob } => run_encode(blob),
         Command::Crc { trits, max_weight } => run_crc(*trits, *max_weight),
         Command::Rail { design } => run_rail(design),
+        Command::Fuzz {
+            blob,
+            iterations,
+            seed,
+        } => run_fuzz(blob, *iterations, *seed),
+        Command::Chain { manifest } => run_chain(manifest),
     };
     match result {
         Ok((report, finding)) => {

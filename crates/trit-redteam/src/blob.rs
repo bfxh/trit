@@ -66,6 +66,11 @@ pub fn parse(bytes: &[u8]) -> Result<Blob> {
     }
     let nvars = bytes[6];
     let len = u32::from_le_bytes([bytes[7], bytes[8], bytes[9], bytes[10]]) as usize;
+    // 表长必须恰好 3^nvars（与 `trit-build` 的 decode 和 C 运行时同一契约）：
+    // 查表函数按 nvars 组索引，不符就会越界。第一轮差分 fuzz 就是因为这里缺校验而红。
+    if 3usize.checked_pow(nvars as u32) != Some(len) {
+        bail!("表长 {len} 与 nvars={nvars} 不符（应为 3^{nvars}）");
+    }
     let payload = len + 3;
     let expected = HEADER + payload.div_ceil(5);
     if bytes.len() != expected {
@@ -209,6 +214,13 @@ mod tests {
             "加了闲置位就不是规范编码"
         );
         assert_eq!(parse(&tampered).unwrap().values, canonical.values);
+    }
+
+    #[test]
+    fn rejects_nvars_length_mismatch() {
+        let mut bytes = fixture();
+        bytes[6] = 3; // 声称 3 变量，但表长仍是 9
+        assert!(parse(&bytes).is_err(), "len 与 nvars 不符必须拒绝");
     }
 
     #[test]
