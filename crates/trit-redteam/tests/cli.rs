@@ -155,6 +155,51 @@ fn chain_flags_a_binary_job() {
     let _ = fs::remove_dir_all(&dir);
 }
 #[test]
+fn sidechannel_reports_weight_leakage() {
+    let design = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/three_rail.v");
+    let (stdout, stderr, code) = run(&["sidechannel", design.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(report["legal_inputs"], 27);
+    assert!(report["leakage_bits"].as_f64().unwrap() > 0.0, "{report}");
+    let histogram = report["weight_histogram"].as_array().unwrap();
+    let zero = histogram
+        .iter()
+        .find(|bucket| bucket["output_weight"] == 0)
+        .expect("应有重量 0 的行");
+    let classes = zero["classes"].as_object().unwrap();
+    assert_eq!(classes.len(), 1);
+    assert!(classes.contains_key("unknown"), "{classes:?}");
+    let (_, _, code) = run(&["sidechannel", design.to_str().unwrap(), "--strict"]);
+    assert_eq!(code, 1, "有泄漏时 --strict 必须判红");
+}
+
+#[test]
+fn binary_reads_the_running_test_binary() {
+    let exe = std::env::current_exe().expect("current exe");
+    let (stdout, stderr, code) = run(&["binary", exe.to_str().unwrap()]);
+    assert_eq!(code, 0, "{stderr}");
+    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    let format = report["format"].as_str().unwrap();
+    assert!(
+        format.starts_with("pe") || format.starts_with("elf"),
+        "{format}"
+    );
+    assert!(report["bits"] == 64 || report["bits"] == 32);
+    assert!(report["hardening"].is_object());
+}
+
+#[test]
+fn binary_rejects_a_non_executable() {
+    let dir = scratch("notpe");
+    let path = dir.join("x.bin");
+    fs::write(&path, b"hello, not an executable").unwrap();
+    let (_, stderr, code) = run(&["binary", path.to_str().unwrap()]);
+    assert_ne!(code, 0);
+    assert!(stderr.contains("认不出格式"), "{stderr}");
+    let _ = fs::remove_dir_all(&dir);
+}
+#[test]
 fn rejects_a_non_trb2_file() {
     let dir = scratch("bad");
     let path = dir.join("junk.bin");

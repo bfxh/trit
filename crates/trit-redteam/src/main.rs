@@ -9,11 +9,13 @@
 //! - `crc`：CRC-3 的检出矩阵与最小不可检重量
 //! - `rail`：双导轨 `(1,1)` 非法态的可达性、粘滞与 fail-open
 
+mod binary;
 mod blob;
 mod chain;
 mod crc;
 mod fuzz;
 mod rail;
+mod sidechannel;
 
 use std::fs;
 use std::path::PathBuf;
@@ -67,6 +69,16 @@ enum Command {
     Chain {
         /// `jobs.json` 路径
         manifest: PathBuf,
+    },
+    /// 双导轨一阶侧信道：汉明重量 → Unknown 泄漏量（bit）
+    Sidechannel {
+        /// `design.v` 路径
+        design: PathBuf,
+    },
+    /// 本仓产物的硬化与泄密检查（PE / ELF）
+    Binary {
+        /// 可执行文件路径
+        file: PathBuf,
     },
 }
 
@@ -193,6 +205,24 @@ fn run_chain(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
     chain::run(&text)
 }
 
+fn run_sidechannel(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
+    let text = fs::read_to_string(path).with_context(|| format!("读 {} 失败", path.display()))?;
+    let report = sidechannel::analyze(&text)?;
+    let finding = sidechannel::has_findings(&report);
+    Ok((sidechannel::to_json(&report), finding))
+}
+
+fn run_binary(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
+    let bytes = fs::read(path).with_context(|| format!("读 {} 失败", path.display()))?;
+    let name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("?");
+    let report = binary::run(&bytes, name)?;
+    let finding = binary::has_findings(&report);
+    Ok((report, finding))
+}
+
 fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
     let result = match &cli.command {
@@ -205,6 +235,8 @@ fn main() -> std::process::ExitCode {
             seed,
         } => run_fuzz(blob, *iterations, *seed),
         Command::Chain { manifest } => run_chain(manifest),
+        Command::Sidechannel { design } => run_sidechannel(design),
+        Command::Binary { file } => run_binary(file),
     };
     match result {
         Ok((report, finding)) => {
