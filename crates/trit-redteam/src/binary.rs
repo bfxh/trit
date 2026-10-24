@@ -348,8 +348,11 @@ fn plausible_secret(text: &str, needle: &str) -> bool {
     false
 }
 
-/// 路径泄漏：返回（归属发现，证据样本）。
-fn path_leaks(bytes: &[u8]) -> (Vec<Finding>, Vec<String>) {
+/// 路径泄漏：返回（发现，警告，证据样本）。
+///
+/// 分两档：路径里还有 `C:\\Users\\<用户名>` / `/home/<用户名>` ⇒ 真泄漏（finding）；
+/// 只剩 `~/.rustup/...` 这种工具链布局 ⇒ 已做过 remap，降级为提示（warning）。
+fn path_leaks(bytes: &[u8]) -> (Vec<Finding>, Vec<Finding>, Vec<String>) {
     let mut samples: Vec<String> = Vec::new();
     for needle in ["D:\\KF\\", "C:\\Users\\", "/home/", ".rustup", "/rustc/"] {
         let mut rest = bytes;
@@ -378,17 +381,30 @@ fn path_leaks(bytes: &[u8]) -> (Vec<Finding>, Vec<String>) {
         }
     }
 
+    let user_prefix = |text: &str| text.contains("C:\\Users\\") || text.contains("/home/");
     let mut findings: Vec<Finding> = Vec::new();
+    let mut warnings: Vec<Finding> = Vec::new();
     for sample in &samples {
         if attrib::rust_toolchain_path(sample) {
-            if !findings
+            if user_prefix(sample) {
+                if !findings
+                    .iter()
+                    .any(|finding| finding.id == "rust-toolchain-path")
+                {
+                    findings.push(Finding::rust(
+                        "rust-toolchain-path",
+                        "std-paths",
+                        "Rust std 的 panic 路径带构建机用户名；发布构建加 RUSTFLAGS=--remap-path-prefix=<HOME>=~",
+                    ));
+                }
+            } else if !warnings
                 .iter()
-                .any(|finding| finding.id == "rust-toolchain-path")
+                .any(|finding| finding.id == "toolchain-path-only")
             {
-                findings.push(Finding::rust(
-                    "rust-toolchain-path",
+                warnings.push(Finding::rust(
+                    "toolchain-path-only",
                     "std-paths",
-                    "Rust std 的 panic 路径带进来的；可用 RUSTFLAGS=--remap-path-prefix=<前缀>=~ 抹掉（改构建参数即可）",
+                    "只剩工具链布局（~/.rustup、/rustc/<hash>），不含用户名；已做过 remap",
                 ));
             }
         } else if sample.contains("D:\\KF\\") {
@@ -413,7 +429,7 @@ fn path_leaks(bytes: &[u8]) -> (Vec<Finding>, Vec<String>) {
             ));
         }
     }
-    (findings, samples)
+    (findings, warnings, samples)
 }
 fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     if needle.is_empty() || haystack.len() < needle.len() {
@@ -442,9 +458,10 @@ pub fn run(bytes: &[u8], file_name: &str) -> Result<Value> {
             "别把密钥/令牌嵌进产物；用运行时注入",
         ));
     }
-    let (leak_findings, leak_samples) = path_leaks(bytes);
+    let (leak_findings, leak_warnings, leak_samples) = path_leaks(bytes);
     findings.extend(leak_findings);
-    let warnings = hardening.warnings(msvc);
+    let mut warnings = hardening.warnings(msvc);
+    warnings.extend(leak_warnings);
     let report = json!({
         "tool": "trit-redteam",
         "check": "artifact-hardening",
@@ -687,6 +704,22 @@ mod tests {
         let report = run(&own, "own.exe").unwrap();
         let leak = finding(&report, "findings", "build-tree-path");
         assert_eq!(leak["origin"], "project", "{leak}");
+    }
+
+    #[test]
+    fn remapped_toolchain_paths_are_not_findings() {
+        // 做过 `--remap-path-prefix=<HOME>=~` 之后只剩工具链布局，不含用户名。
+        let mut bytes = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT | DLL_GUARD_CF, 0x6000_0020);
+        bytes.extend_from_slice(b"\0~\\.rustup\\toolchains\\1.99.0\\lib\\rustlib\\src\\rust\\library\\core\\src\\cell\\once.rs\0");
+        let report = run(&bytes, "remapped.exe").unwrap();
+        assert!(finding_ids(&report, "findings").is_empty(), "{report}");
+        assert!(
+            finding_ids(&report, "warnings")
+                .iter()
+                .any(|id| id == "toolchain-path-only"),
+            "{report}"
+        );
+        assert!(!has_findings(&report));
     }
 
     #[test]

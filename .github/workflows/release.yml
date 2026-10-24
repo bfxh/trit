@@ -59,6 +59,16 @@ jobs:
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
 
+      # 产物里别带构建机路径：Rust std 的 panic/diagnostic 会嵌 `$HOME\.rustup\...`（含用户名）。
+      - name: Remap build paths (unix)
+        if: runner.os != 'Windows'
+        run: echo "RUSTFLAGS=--remap-path-prefix=$HOME=~" >> "$GITHUB_ENV"
+
+      - name: Remap build paths (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '"RUSTFLAGS=--remap-path-prefix=$env:USERPROFILE=~" | Out-File -FilePath $env:GITHUB_ENV -Append'
+
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
 

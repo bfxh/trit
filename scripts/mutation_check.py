@@ -2215,6 +2215,14 @@ MUTANTS = [
         "new": '            out.push(if true {',
         "pkg": 'trit-redteam',
         "filter": 'cfg_attribution_depends_on_the_pe_flavor'
+    },
+    {
+        "name": 'redteam: remap 后仍判成用户名泄漏',
+        "file": 'crates/trit-redteam/src/binary.rs',
+        "old": '    let user_prefix = |text: &str| text.contains("C:\\\\Users\\\\") || text.contains("/home/");',
+        "new": '    let user_prefix = |_text: &str| true;',
+        "pkg": 'trit-redteam',
+        "filter": 'remapped_toolchain_paths_are_not_findings'
     }
 ]
 

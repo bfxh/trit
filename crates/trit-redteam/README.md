@@ -47,10 +47,14 @@ trit-redteam binary target/release/trit-build.exe
 | TRB2 可塑 / CRC-3 检出边界 / 双导轨 fail-open / 侧信道 / manifest 执行面 | `project` — 格式与工具设计 |
 | 差分 fuzz 出现分歧 | `project` — 两份实现里至少一边与格式契约不符 |
 
-真实读数（`target/release/trit-build.exe`，PE64）：`findings` 只有 1 条
-`rust-toolchain-path`（`.rustup/.../library/core/...`），CFG 缺失也在 `warnings` 里记为
-`rust-toolchain` ⇒ **这份产物当前没有属于我们代码的硬化/泄密发现**；唯一能动手的是
-用 `RUSTFLAGS=--remap-path-prefix` 把 std 路径抹掉。
+修复前（`target/release/trit-build.exe`，PE64）：`findings` 只有 1 条 `rust-toolchain-path`
+（`C:\Users\<用户名>\.rustup\...\library\core\...`），CFG 缺失在 `warnings` 里记为
+`rust-toolchain` ⇒ **没有属于我们代码的硬化/泄密发现**。
+
+**已修**：Release 工作流与本地发布构建都加 `RUSTFLAGS=--remap-path-prefix=$HOME=~`
+（`.github/workflows/release.yml` + README「开发」）。修完后同一个产物：
+`findings` **空**，只剩 `warnings: [cfg-missing(rust-toolchain), toolchain-path-only]`
+——路径降级成 `~/.rustup/...`，不再含用户名。
 
 **限制**：归属是启发式（字符串证据 + 头字段），它回答"这段字节来自哪里"，不回答"风险该谁负责"。
 
