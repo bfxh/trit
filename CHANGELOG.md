@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Fixed（复审 P3：双导轨封装 / BLIF 导出校验 / 解析方向结构门）
+
+- **L01 `trit-dot::TernaryBits` 封装**：字段改私有，新增 `TernaryBits::new(pos, neg, len)`
+  校验「平面长度 = ⌈len/64⌉、正负导轨不重叠、尾部填充位为 0」；`dot`/`dot_portable`/`dot_naive`/
+  `dot_sparse` 与 `dot_words*` 统一返回 `Result<i64, DotError>`，长度不一致不再 panic 或静默截断。
+  旧路径 `dot` 会索引越界 panic、`dot_portable` 按最短平面静默少算。
+- **L03 BLIF 导出校验**：`to_blif` 先跑 `circuit::validate`（元数/重复驱动/悬空/环），再检查
+  标识符（空、含空白、`.` 开头逐项拒绝）；新增 `BlifError::Structure` / `BlifError::Name`。
+- **同批修正（导出/解析对称）**：`parse_blif` / `parse_netlist` 返回前同样过 `validate`，
+  不再返回"能解析但导不回去"的电路；新增 `NetlistError::Structure`；fuzz 往返测试改为
+  「基线可解析 + 变异样本只要求不 panic、接受即可往返」。
+- 测试 +4（workspace **734/0**）；`cargo check -p trit-gpu --features gpu` 通过（编译门，
+  无硬件执行）。变异门 240 → **247**（本批 7 条：双导轨三处、BLIF 导出两处、双向解析各一）。
+
 ### Fixed（复审 P2 批次：AIGER 头 / 逻辑运算 / 平衡三进制精度 / 编码校验 / 训练与 SNN / 解析预算）
 
 - **M01 AIGER ASCII 头**：解析只接受 `aag`（标准 ASCII），`aig`（二进制）返回

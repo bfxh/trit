@@ -1595,8 +1595,8 @@ MUTANTS = [
     {
         "name": "dot: 稀疏路径漏掉负负项",
         "file": "crates/trit-dot/src/lib.rs",
-        "old": "            total += i64::from(pp) - i64::from(pn) - i64::from(np) + i64::from(nn);\n        }\n        total\n    }\n\n    /// 非零块数",
-        "new": "            total += i64::from(pp) - i64::from(pn) - i64::from(np);\n        }\n        total\n    }\n\n    /// 非零块数",
+        "old": "            let nn = (self.neg[block] & other.neg[block]).count_ones();\n            total += i64::from(pp) - i64::from(pn) - i64::from(np) + i64::from(nn);\n        }\n        Ok(total)\n    }\n\n    fn check_length(",
+        "new": "            let nn = (self.neg[block] & other.neg[block]).count_ones();\n            total += i64::from(pp) - i64::from(pn) - i64::from(np);\n        }\n        Ok(total)\n    }\n\n    fn check_length(",
         "pkg": "trit-dot",
         "filter": "ternary_dot_matches_scalar_across_block_boundaries"
     },
@@ -1935,7 +1935,65 @@ MUTANTS = [
         "new": "    if false {",
         "pkg": "trit-machines",
         "filter": "invalid_networks_are_rejected_instead_of_panicking"
-    }
+    },
+    {
+        "name": "dot: 长度不一致不报错",
+        "file": "crates/trit-dot/src/lib.rs",
+        "old": "        if self.len != other.len {",
+        "new": "        if false {",
+        "pkg": "trit-dot",
+        "filter": "length_mismatch_is_rejected"
+    },
+    {
+        "name": "dot: 放行重叠的双导轨",
+        "file": "crates/trit-dot/src/lib.rs",
+        "old": "            .find(|(_, overlap)| *overlap != 0)",
+        "new": "            .find(|_| false)",
+        "pkg": "trit-dot",
+        "filter": "invalid_planes_are_rejected_at_construction"
+    },
+    {
+        "name": "dot: 不查尾部填充位",
+        "file": "crates/trit-dot/src/lib.rs",
+        "old": "            if dirty_pos != 0 || dirty_neg != 0 {",
+        "new": "            if false {",
+        "pkg": "trit-dot",
+        "filter": "invalid_planes_are_rejected_at_construction"
+    },
+    {
+        "name": "blif: 导出前不校验结构",
+        "file": "crates/trit-circuit/src/blif.rs",
+        "old": "    crate::circuit::validate(circuit).map_err(|error| BlifError::Structure(error.to_string()))?;",
+        "new": "    let _ = circuit;",
+        "pkg": "trit-circuit",
+        "filter": "export_validates_structure_and_identifiers"
+    },
+    {
+        "name": "blif: 导出不查标识符",
+        "file": "crates/trit-circuit/src/blif.rs",
+        "old": "        if name.is_empty() || name.chars().any(char::is_whitespace) || name.starts_with('.') {",
+        "new": "        if false {",
+        "pkg": "trit-circuit",
+        "filter": "export_validates_structure_and_identifiers"
+    },
+    {
+        "name": "blif: 解析不做结构校验",
+        "file": "crates/trit-circuit/src/blif.rs",
+        "old": "    crate::circuit::validate(&circuit).map_err(|error| BlifError::Structure(error.to_string()))?;",
+        "new": "    let _ = &circuit;",
+        "pkg": "trit-circuit",
+        "filter": "parser_rejects_structurally_invalid_blif"
+    },
+    {
+        "name": "netlist: 解析不做结构校验",
+        "file": "crates/trit-circuit/src/netlist.rs",
+        "old": "    crate::circuit::validate(&circuit)\n        .map_err(|error| NetlistError::Structure(error.to_string()))?;",
+        "new": "    let _ = &circuit;",
+        "pkg": "trit-circuit",
+        "filter": "parser_rejects_structurally_invalid_input"
+    },
+
+
 ]
 
 
