@@ -2127,8 +2127,31 @@ MUTANTS = [
         "new": '                Expr::And(..) => alg.or(*a, *b),',
         "pkg": "trit-build",
         "filter": "every_operator_matches_scalar"
+    },
+    {
+        "name": 'redteam: 非规范编码永远判规范',
+        "file": 'crates/trit-redteam/src/blob.rs',
+        "old": '    Ok(last == last % 3u32.pow(filled))',
+        "new": '    Ok(true)',
+        "pkg": 'trit-redteam',
+        "filter": 'every_padding_variant_decodes_to_the_same_table'
+    },
+    {
+        "name": 'redteam: CRC 漏检不计数',
+        "file": 'crates/trit-redteam/src/crc.rs',
+        "old": '                if crc3(&broken) == base {',
+        "new": '                if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'minimum_undetected_weight_is_reachable_and_verified'
+    },
+    {
+        "name": 'redteam: 非法输入不算非法',
+        "file": 'crates/trit-redteam/src/rail.rs',
+        "old": '            illegal |= state == 3;',
+        "new": '            illegal |= false;',
+        "pkg": 'trit-redteam',
+        "filter": 'illegal_inputs_are_read_as_true_by_a_pos_only_consumer'
     }
-
 ]
 
 
