@@ -2055,6 +2055,14 @@ MUTANTS = [
         "new": '    if slots == 0 {',
         "pkg": "trit-build",
         "filter": "never_exceeds_slots_or_returns_none_without_work"
+    },
+    {
+        "name": "verilog: 对拍不一致不报错",
+        "file": "crates/trit-build/src/verilog.rs",
+        "old": '        if actual != *expected {',
+        "new": '        if false {',
+        "pkg": "trit-build",
+        "filter": "cross_check_rejects_wrong_expression"
     }
 
 ]

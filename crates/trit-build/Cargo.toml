@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 trit-core.workspace = true
 trit-eval.workspace = true
+trit-circuit.workspace = true
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 serde_json = "1.0.154"

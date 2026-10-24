@@ -138,12 +138,38 @@ trit-build --manifest jobs.json --jobs 4 --prefer binary  # 反过来支持二�
 "cargo 跑 163 ms 期间，6 个三进制构建已经全部完成"，而不是把 cargo 变快。
 两侧都重（大网表 + 大 crate）时才有明显加速，那要等 M1 的真实工程。
 
+## 10. M1 实测：Verilog 子集进三进制轨
+
+不自己写 Verilog 解析器：直接复用 `trit-circuit::parse_verilog`（与 BLIF/AIGER 共用同一套门模型），
+本工具只做"选主输出 → 3^n 仿真 → 与表达式链路对拍 → 出同样的四件产物"。
+
+```bash
+trit-build d.v --out out --expect "(a & b) | !c"   # 双链路对拍通过才产出
+trit-build multi.v --out out --output z             # 多输出必须点名
+```
+
+**对拍判据（硬）**：Verilog 链路（`propagate`，K3/Ł3/B3）与 `.tri` 链路（`simplify` + 穷举）的
+真值表必须**逐行相同**；不同即构建失败，不写 `build.json`。
+
+实测（`d.v` = `(a & b) | !c`，3 输入）：
+
+| 项 | 证据 |
+|---|---|
+| 行数 | 27（`options.assignments`） |
+| 两条链路 | `truth.csv` **逐字节相同** |
+| 错表达式 | `--expect "a | b | c"` ⇒ 退出 1、`两条链路不一致`、无 `build.json` |
+| 多输出 | 不给 `--output` ⇒ 报错并列出可选输出；`--output z` ⇒ 9 行 |
+| 并行清单 | `{"kind":"verilog"}` 归三进制轨，可与二进制任务同跑 |
+
+**M1 未做**：位级双导轨 Verilog **导出**（把三值门降成 pos/neg 两根位线）；现在只做"读 Verilog"，
+不写 Verilog。导出要等 M2 的解码器/运行时一起验，否则没有可信的对照物。
+
 ## 6. 阶段与验收
 
 | 阶段 | 内容 | 验收判据 |
 |---|---|---|
 | **M0（已完成）** | `.tri` → 化简 + 穷举复核 → TRB1/CSV/C + 缓存 | 3 条集成测试；C 主机 27/27 对拍；`--check` 篡改必红 |
-| M1 | Verilog 子集前端（复用 `trit-circuit`）+ 双导轨输出 + 双轨并行跑真实工程 | 同一设计 Verilog/TRB1 两条链路的真值表一致 |
+| M1（部分完成） | Verilog 子集**读入** + 双链路对拍 + 并行清单 ✅；位级双导轨**导出**未做 | 同一设计两条链路真值表逐行一致 ✅ / 导出待 M2 |
 | M2 | 基 3 打包 + GF(3) CRC-3 接入（需 codec 稳定或下沉 core）、TRB1 解码器 + 运行时库、`--emit verilog,gpu` | 解码-重编码 round-trip 逐 trit 相等；非法字节显式报错；体积对比给基线 |
 | M3 | e-graph 重写（规则逐条 3^n 自证）+ 精确传播替代穷举 | 规则库自证通过率 100%；同结果下构建时间下降（给基线） |
 

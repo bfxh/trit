@@ -15,6 +15,9 @@
   三进制轨优先、二进制轨（外部 `cargo`/`rustc`）只吃剩余槽位，**不抢占**；分配策略是纯函数
   `schedule::pick`（4 条单测），`--dry-run` 先出方案。实测 7 任务/4 槽：wall 171 ms、busy 205 ms，
   6 个 `.tri` 在 cargo 的 163 ms 内全部完成。
+- **M1：Verilog 子集读入**（`d.v / --output / --expect`）：复用 `trit-circuit::parse_verilog` +
+  `propagate`，与 `.tri` 链路真值表**逐行对拍**，不一致即失败、不写 `build.json`；清单新增
+  `{"kind":"verilog"}`（归三进制轨）。测试 +4；变异锚点 +1。
 - 文档 `docs/TERNARY-TOOLCHAIN.md`：论文依据（LLVM/MLIR/egg/BitNet/平衡三进制，DOI 已核）、
   分层设计、M0–M3 验收判据、继续靠 LLVM/Rust 的职责表、未验证清单。
 

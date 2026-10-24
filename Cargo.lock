@@ -1566,6 +1566,7 @@ dependencies = [
  "anyhow",
  "clap",
  "serde_json",
+ "trit-circuit",
  "trit-core",
  "trit-eval",
 ]
