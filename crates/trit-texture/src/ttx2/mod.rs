@@ -1,9 +1,11 @@
 //! **TTX2**——多载荷容器：kind=TEX（纹理 + mip 链）/ kind=MOD（三值模型）。
 //!
-//! 布局与竞争力对比见 `docs/TTX.md`；校验哲学与 TTX1 相同：GF(3) CRC-3 按
-//! **内容自己的基数**算，逐段验证，任何不一致都是结构化错误。
+//! 布局与竞争力对比见 `docs/TTX.md`；校验哲学与 TTX1 相同：GF(3) CRC 按
+//! **内容自己的基数**算，逐段验证，任何不一致都是结构化错误。TTX2 的校验尾
+//! 是 **GF(3) CRC-16**（生成多项式 x¹⁶+x⁷+2 本原，≤16 连续 trit 突发错全检）。
 //!
-//! 模型域（三值层/双轨打包/偏置打包）在私有 `model` 子模块，类型经本模块再导出。
+//! 模型域（三值层/基 3 打包/层间衔接/GPU 双轨转换）在私有 `model` 子模块，
+//! 类型经本模块再导出。
 
 mod model;
 
@@ -11,19 +13,19 @@ pub use model::{TRITS_PER_WORD, TritModel, TritModelLayer};
 
 use trit_core::value::Ternary;
 
-use crate::ttx::{block_trits, gf3_remainder};
+use crate::ttx::{block_trits, gf3_remainder_16};
 use crate::{BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TextureError, TritTexture};
-use model::{TRITS_PER_BIAS_BYTE, model_trits, pack_bias, unpack_bias};
+use model::{TRITS_PER_PACKED_BYTE, model_trits, pack_radix3, unpack_radix3};
 
 /// 容器魔数。
 pub const MAGIC: [u8; 4] = *b"TTX2";
 /// 定头字节数（magic + kind + flags + reserved + section_len）。
 pub const HEADER_BYTES: usize = 12;
-/// 校验尾字节数（3 trit 打进 1 字节）。
-pub const CHECKSUM_BYTES: usize = 1;
+/// 校验尾字节数：GF(3) CRC-16，16 trit 打进 4 字节小端。
+pub const CHECKSUM_BYTES: usize = 4;
 /// kind：纹理 + mip 链。
 pub const KIND_TEX: u8 = 0;
-/// kind：三值模型（双轨权重）。
+/// kind：三值模型（基 3 打包权重）。
 pub const KIND_MOD: u8 = 1;
 
 /// 一份 TTX2 文档。
@@ -34,7 +36,7 @@ pub enum TtxDocument {
         /// 从细到粗的各级纹理。
         levels: Vec<TritTexture>,
     },
-    /// 三值模型（线性层链，双轨 GPU-ready 权重）。
+    /// 三值模型（线性层链，层间衔接强制；GPU 经 `to_dual_rail` 转换）。
     Model(TritModel),
 }
 
@@ -59,7 +61,13 @@ fn level_blocks(width: usize, height: usize) -> Option<usize> {
     }
     (width / BLOCK_WIDTH)
         .checked_mul(height / BLOCK_HEIGHT)
-        .filter(|blocks| blocks * TRIT_BLOCK_BYTES <= u32::MAX as usize)
+        // checked 内层乘：32 位目标上 usize=u32，未检查的 blocks×12 会回绕
+        // 放行超大声明，后续切片越界 panic。
+        .filter(|blocks| {
+            blocks
+                .checked_mul(TRIT_BLOCK_BYTES)
+                .is_some_and(|bytes| bytes <= u32::MAX as usize)
+        })
 }
 
 fn validate_levels(levels: &[TritTexture]) -> Result<(), TextureError> {
@@ -106,17 +114,10 @@ fn encode_model_section(model: &TritModel) -> Vec<u8> {
     let mut section = Vec::new();
     section.extend_from_slice(&(model.layers.len() as u32).to_le_bytes());
     for layer in &model.layers {
-        let words = layer.words_per_row();
         section.extend_from_slice(&(layer.inputs as u32).to_le_bytes());
         section.extend_from_slice(&(layer.outputs as u32).to_le_bytes());
-        section.extend_from_slice(&(words as u32).to_le_bytes());
-        for word in &layer.pos {
-            section.extend_from_slice(&word.to_le_bytes());
-        }
-        for word in &layer.neg {
-            section.extend_from_slice(&word.to_le_bytes());
-        }
-        section.extend_from_slice(&pack_bias(&layer.bias));
+        section.extend_from_slice(&pack_radix3(&layer.weights));
+        section.extend_from_slice(&pack_radix3(&layer.bias));
     }
     section
 }
@@ -144,7 +145,7 @@ pub fn to_ttx2(document: &TtxDocument) -> Result<Vec<u8>, TextureError> {
     out.extend_from_slice(&0u16.to_le_bytes());
     out.extend_from_slice(&(section.len() as u32).to_le_bytes());
     out.extend_from_slice(&section);
-    out.push(gf3_remainder(&checksum_trits)[0]);
+    out.extend_from_slice(&gf3_remainder_16(&checksum_trits));
     Ok(out)
 }
 
@@ -162,16 +163,24 @@ fn decode_texture_section(section: &[u8]) -> Result<Vec<TritTexture>, TextureErr
     let mut cursor = 4usize;
     let mut levels: Vec<TritTexture> = Vec::new();
     for _ in 0..level_count {
-        if cursor + 8 > section.len() {
+        let head_end = cursor.checked_add(8).ok_or(TextureError::TtxTruncated {
+            actual: section.len(),
+        })?;
+        if head_end > section.len() {
             return Err(truncated());
         }
         let width = u32::from_le_bytes(section[cursor..cursor + 4].try_into().unwrap()) as usize;
         let height =
             u32::from_le_bytes(section[cursor + 4..cursor + 8].try_into().unwrap()) as usize;
-        cursor += 8;
+        cursor = head_end;
         let blocks = level_blocks(width, height).ok_or(TextureError::Shape { width, height })?;
         let payload = blocks * TRIT_BLOCK_BYTES;
-        if cursor + payload > section.len() {
+        let end = cursor
+            .checked_add(payload)
+            .ok_or(TextureError::TtxTruncated {
+                actual: section.len(),
+            })?;
+        if end > section.len() {
             return Err(truncated());
         }
         let mut block_list = Vec::with_capacity(blocks);
@@ -181,7 +190,7 @@ fn decode_texture_section(section: &[u8]) -> Result<Vec<TritTexture>, TextureErr
             block.copy_from_slice(&section[start..start + TRIT_BLOCK_BYTES]);
             block_list.push(block);
         }
-        cursor += payload;
+        cursor = end;
         levels.push(TritTexture {
             width,
             height,
@@ -194,6 +203,9 @@ fn decode_texture_section(section: &[u8]) -> Result<Vec<TritTexture>, TextureErr
 }
 
 fn decode_model_section(section: &[u8]) -> Result<TritModel, TextureError> {
+    let truncated = || TextureError::TtxTruncated {
+        actual: section.len(),
+    };
     let mut cursor = 0usize;
     let take_u32 = |cursor: &mut usize, section: &[u8]| -> Option<u32> {
         if *cursor + 4 > section.len() {
@@ -203,90 +215,50 @@ fn decode_model_section(section: &[u8]) -> Result<TritModel, TextureError> {
         *cursor += 4;
         Some(value)
     };
-    let layer_count = take_u32(&mut cursor, section).ok_or(TextureError::TtxTruncated {
-        actual: section.len(),
-    })?;
+    let layer_count = take_u32(&mut cursor, section).ok_or_else(truncated)?;
     if layer_count == 0 {
         return Err(TextureError::TtxEmpty);
     }
     let mut layers = Vec::new();
-    for layer in 0..layer_count as usize {
-        let inputs = take_u32(&mut cursor, section).ok_or(TextureError::TtxTruncated {
-            actual: section.len(),
-        })? as usize;
-        let outputs = take_u32(&mut cursor, section).ok_or(TextureError::TtxTruncated {
-            actual: section.len(),
-        })? as usize;
-        let declared_words = take_u32(&mut cursor, section).ok_or(TextureError::TtxTruncated {
-            actual: section.len(),
-        })? as usize;
+    for _ in 0..layer_count {
+        let inputs = take_u32(&mut cursor, section).ok_or_else(truncated)? as usize;
+        let outputs = take_u32(&mut cursor, section).ok_or_else(truncated)? as usize;
         if inputs == 0 || outputs == 0 {
             return Err(TextureError::TtxModelShape {
-                layer,
+                layer: 0,
                 message: "inputs/outputs 必须非零".to_string(),
             });
         }
-        if declared_words != inputs.div_ceil(TRITS_PER_WORD) {
-            return Err(TextureError::TtxModelShape {
-                layer,
-                message: format!(
-                    "字数应为 ceil(inputs/32) = {}",
-                    inputs.div_ceil(TRITS_PER_WORD)
-                ),
-            });
-        }
-        let words = outputs
-            .checked_mul(declared_words)
+        let count = outputs
+            .checked_mul(inputs)
             .ok_or(TextureError::TtxModelShape {
-                layer,
-                message: "outputs × words 溢出".to_string(),
+                layer: 0,
+                message: "outputs × inputs 溢出".to_string(),
             })?;
-        let rail_bytes = words.checked_mul(4).ok_or(TextureError::TtxModelShape {
-            layer,
-            message: "字节数溢出".to_string(),
-        })?;
-        if cursor + rail_bytes * 2 > section.len() {
-            return Err(TextureError::TtxTruncated {
-                actual: section.len(),
-            });
+        let weight_bytes = count.div_ceil(TRITS_PER_PACKED_BYTE);
+        let bias_bytes = outputs.div_ceil(TRITS_PER_PACKED_BYTE);
+        let payload = weight_bytes
+            .checked_add(bias_bytes)
+            .and_then(|bytes| cursor.checked_add(bytes))
+            .ok_or_else(truncated)?;
+        if payload > section.len() {
+            return Err(truncated());
         }
-        let read_rail = |section: &[u8], cursor: &mut usize| -> Vec<u32> {
-            let rail = section[*cursor..*cursor + rail_bytes]
-                .as_chunks::<4>()
-                .0
-                .iter()
-                .map(|chunk| u32::from_le_bytes(*chunk))
-                .collect();
-            *cursor += rail_bytes;
-            rail
-        };
-        let pos = read_rail(section, &mut cursor);
-        let neg = read_rail(section, &mut cursor);
-        for (word, (pos, neg)) in pos.iter().zip(&neg).enumerate() {
-            if pos & neg != 0 {
-                return Err(TextureError::TtxRailOverlap { layer, word });
-            }
-        }
-        let bias_bytes = outputs.div_ceil(TRITS_PER_BIAS_BYTE);
-        if cursor + bias_bytes > section.len() {
-            return Err(TextureError::TtxTruncated {
-                actual: section.len(),
-            });
-        }
-        let bias = unpack_bias(&section[cursor..cursor + bias_bytes], outputs);
-        cursor += bias_bytes;
+        let weights = unpack_radix3(&section[cursor..cursor + weight_bytes], count);
+        let bias = unpack_radix3(&section[cursor + weight_bytes..payload], outputs);
+        cursor = payload;
         layers.push(TritModelLayer {
             inputs,
             outputs,
-            pos,
-            neg,
+            weights,
             bias,
         });
     }
-    Ok(TritModel { layers })
+    // 层间衔接与取值域单一来源：与写侧共用 TritModel::new。
+    TritModel::new(layers)
 }
 
-/// 从 TTX2 容器加载：逐段校验（魔数/kind/flags/段长/形状/双轨不变式/校验和）。
+/// 从 TTX2 容器加载：逐段校验（魔数/kind/flags/段长/形状/层间衔接/GF(3) CRC-16）。
 ///
 /// TTX1 文件会得到 `TtxMagic(['T','T','X','1'])`——v2 读 v1 是显式拒绝，
 /// 读 v1 请用 [`crate::ttx::from_ttx`]。
@@ -309,7 +281,13 @@ pub fn from_ttx2(bytes: &[u8]) -> Result<TtxDocument, TextureError> {
         return Err(TextureError::TtxFlags { flags, reserved });
     }
     let section_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
-    if bytes.len() != HEADER_BYTES + section_len + CHECKSUM_BYTES {
+    let section_end = HEADER_BYTES
+        .checked_add(section_len)
+        .and_then(|end| end.checked_add(CHECKSUM_BYTES))
+        .ok_or(TextureError::TtxTruncated {
+            actual: bytes.len(),
+        })?;
+    if bytes.len() != section_end {
         return Err(TextureError::TtxTruncated {
             actual: bytes.len(),
         });
@@ -325,10 +303,15 @@ pub fn from_ttx2(bytes: &[u8]) -> Result<TtxDocument, TextureError> {
         TtxDocument::Texture { levels } => texture_trits(levels),
         TtxDocument::Model(model) => model_trits(model),
     };
-    let stored = bytes[HEADER_BYTES + section_len];
-    let expected = gf3_remainder(&trits)[0];
+    let stored: [u8; CHECKSUM_BYTES] = bytes[HEADER_BYTES + section_len..section_end]
+        .try_into()
+        .unwrap();
+    let expected = gf3_remainder_16(&trits);
     if stored != expected {
-        return Err(TextureError::TtxChecksum { stored, expected });
+        return Err(TextureError::TtxChecksum {
+            stored: stored[0],
+            expected: expected[0],
+        });
     }
     Ok(document)
 }
@@ -344,32 +327,17 @@ mod tests {
     }
 
     #[test]
-    fn model_container_rejects_word_count_lie_and_rail_overlap() {
-        // inputs=33 → 真 W=2、floor(33/32)=1：谎报 1 字只有对账（div_ceil）才抓得到。
-        let mut row = vec![0i8; 33];
-        row[0] = 1;
-        row[1] = -1;
-        let layer = TritModelLayer::new(&[row], &[1]).unwrap();
+    fn model_container_rejects_absurd_dims_without_allocation() {
+        // 谎报 outputs 巨大：载荷按 checked 对账后拒成 TtxTruncated，
+        // 不做任何按声明的分配。
+        let layer = TritModelLayer::new(&[vec![1, -1, 0, 1, 0]], &[1]).unwrap();
         let bytes = to_ttx2(&TtxDocument::Model(TritModel::new(vec![layer]).unwrap())).unwrap();
-        let words_field = HEADER_BYTES + 4 + 8; // 层头：inputs/outputs 之后
-        assert_eq!(
-            u32::from_le_bytes(bytes[words_field..words_field + 4].try_into().unwrap()),
-            2,
-            "33 输入应为 2 字"
-        );
-        let mut lie = bytes.clone();
-        lie[words_field..words_field + 4].copy_from_slice(&1u32.to_le_bytes());
+        let outputs_field = HEADER_BYTES + 4 + 4; // count + inputs 之后
+        let mut lie = bytes;
+        lie[outputs_field..outputs_field + 4].copy_from_slice(&0xFFFF_0000u32.to_le_bytes());
         assert!(matches!(
             from_ttx2(&lie),
-            Err(TextureError::TtxModelShape { layer: 0, .. })
-        ));
-        // 轨重叠（neg 添上与 pos 同位的 bit0）：解析先于校验和拒绝。
-        let mut overlap = bytes;
-        let neg_start = HEADER_BYTES + 4 + 12 + 2 * 4; // 头 + count + 层头 + pos 2 字
-        overlap[neg_start] |= 0x1;
-        assert!(matches!(
-            from_ttx2(&overlap),
-            Err(TextureError::TtxRailOverlap { layer: 0, word: 0 })
+            Err(TextureError::TtxTruncated { .. })
         ));
     }
 
@@ -377,23 +345,51 @@ mod tests {
     fn weight_and_bias_corruption_are_caught_by_checksum() {
         let layer = TritModelLayer::new(&[vec![1, -1, 0, 1, -1, 0, 1, 1]], &[1]).unwrap();
         let bytes = to_ttx2(&TtxDocument::Model(TritModel::new(vec![layer]).unwrap())).unwrap();
-        // 权重位翻转：pos 首字最低位。
+        let weights_start = HEADER_BYTES + 4 + 8; // count + inputs/outputs 之后
+        // 权重字节打翻。
         let mut bad_weight = bytes.clone();
-        let pos_start = HEADER_BYTES + 4 + 12;
-        bad_weight[pos_start] ^= 0x1;
+        bad_weight[weights_start] ^= 0x1;
         assert!(matches!(
             from_ttx2(&bad_weight),
             Err(TextureError::TtxChecksum { .. })
         ));
         // 偏置字节打翻也必须被抓到——证明偏置在规范校验流里。
         let mut bad_bias = bytes;
-        // pos 1 字 + neg 1 字（outputs=1，W=1）之后是 bias。
-        let bias_start = pos_start + 4 + 4;
+        let bias_start = weights_start + 8usize.div_ceil(TRITS_PER_PACKED_BYTE);
         bad_bias[bias_start] ^= 0x1;
         assert!(matches!(
             from_ttx2(&bad_bias),
             Err(TextureError::TtxChecksum { .. })
         ));
+    }
+
+    #[test]
+    fn contiguous_sixteen_trit_corruption_is_always_caught() {
+        // CRC-16 的强度主张：≤16 连续 trit 的突发错全检（错图样次数 < deg(g)，
+        // 不可能被 g 整除）。CRC-3 对此只有概率保证——这是升级的实义。
+        let base: Vec<i8> = (0..40).map(|i| [1i8, -1, 0][i % 3]).collect();
+        let clean = TritModelLayer::new(std::slice::from_ref(&base), &[0]).unwrap();
+        let clean_bytes =
+            to_ttx2(&TtxDocument::Model(TritModel::new(vec![clean]).unwrap())).unwrap();
+        for start in 0..=40 - 16 {
+            // 恰好连续 16 个权重翻转（v → -v），其余不变。
+            let mut perturbed = base.clone();
+            for value in perturbed.iter_mut().skip(start).take(16) {
+                *value = -*value;
+            }
+            let dirty = TritModelLayer::new(&[perturbed], &[0]).unwrap();
+            let dirty_bytes =
+                to_ttx2(&TtxDocument::Model(TritModel::new(vec![dirty]).unwrap())).unwrap();
+            // 干净容器的头 + 脏载荷 + 干净 CRC：必须被 CRC-16 抓到。
+            let mut spliced = clean_bytes.clone();
+            let n = clean_bytes.len();
+            spliced[HEADER_BYTES..n - CHECKSUM_BYTES]
+                .copy_from_slice(&dirty_bytes[HEADER_BYTES..n - CHECKSUM_BYTES]);
+            assert!(
+                matches!(from_ttx2(&spliced), Err(TextureError::TtxChecksum { .. })),
+                "16 连续 trit 突发错从位置 {start} 起漏检"
+            );
+        }
     }
 
     #[test]
@@ -491,33 +487,53 @@ mod tests {
 
     #[test]
     fn model_container_bytes_are_pinned() {
-        // 金样字节：杀死任何序列化漂移（位序/打包常数/头字段/校验流组成）。
-        // 手算核对：pos=[0b0001]（col0 的 +1）、neg=[0b1010]（col1/col3 的 -1）、
-        // bias digit = 1+1 = 2；段 = 4+12+4+4+1 = 25 字节。
+        // 金样字节：杀死任何序列化漂移（打包基/digit 映射/头字段/校验流组成/CRC 常数）。
+        // 手算核对：权重 [1,-1,0,-1] → digits [2,0,1,0] → 首字节 = 2+9 = 11；
+        // bias [1] → digit 2 → 字节 2；段 = 4+4+4+1+1 = 14 字节。
+        // CRC-16 尾 = [144, 81, 14, 1]（余数 u32 17715600 小端）——独立 Python
+        // GF(3) 长除法交叉验算，非取自本实现。
         let layer = TritModelLayer::new(&[vec![1, -1, 0, -1]], &[1]).unwrap();
         let bytes = to_ttx2(&TtxDocument::Model(TritModel::new(vec![layer]).unwrap())).unwrap();
         let expected = vec![
-            b'T', b'T', b'X', b'2', KIND_MOD, 0, 0, 0, 25, 0, 0, 0, // 头
+            b'T', b'T', b'X', b'2', KIND_MOD, 0, 0, 0, 14, 0, 0, 0, // 头
             1, 0, 0, 0, // layer_count
             4, 0, 0, 0, // inputs
-            1, 0, 0, 0, // outputs
-            1, 0, 0, 0, // words_per_row
-            0b0001, 0, 0, 0, // pos
-            0b1010, 0, 0, 0,  // neg
+            1, 0, 0, 0,  // outputs
+            11, // weights 基 3 打包（2·3⁰ + 1·3²）
             2,  // bias digit
-            10, // GF(3) CRC-3（独立 Python 实现交叉验算过）
+            144, 81, 14, 1, // GF(3) CRC-16（独立验算冻结）
         ];
         assert_eq!(bytes, expected);
-        // 双偏置打包基 3 的位值钉死：bias [1,0] → byte = 2·3⁰ + 1·3¹ = 5
-        //（基 2 打包变异体会写出 4）。
+        // 双偏置基 3 位值钉死：bias [1,0] → 2·3⁰ + 1·3¹ = 5（基 2 打包变异体写 4）。
         let two = TritModelLayer::new(&[vec![1, 0, -1, 0], vec![0, 1, 0, -1]], &[1, 0]).unwrap();
         let bytes = to_ttx2(&TtxDocument::Model(TritModel::new(vec![two]).unwrap())).unwrap();
-        let bias_byte = HEADER_BYTES + 4 + 12 + 4 * 2 + 4 * 2; // 层头 + pos/neg 各 2 字
-        assert_eq!(bytes[bias_byte], 5);
-        // 谎报 layer_count=0：显式拒绝（变异后走截断错误也能被这条抓住）。
+        let weights_end = HEADER_BYTES + 4 + 8 + 8usize.div_ceil(TRITS_PER_PACKED_BYTE);
+        assert_eq!(bytes[weights_end], 5);
+        // 谎报 layer_count=0：显式拒绝（变异后走校验错误也能被这条抓住）。
         let mut empty = bytes;
         empty[HEADER_BYTES..HEADER_BYTES + 4].copy_from_slice(&0u32.to_le_bytes());
         assert!(matches!(from_ttx2(&empty), Err(TextureError::TtxEmpty)));
+    }
+
+    #[test]
+    fn absurd_level_declarations_are_rejected_by_block_budget() {
+        // mip 级声明 8 亿×20（块数 ×12 > u32::MAX 的回绕区）：level_blocks 的
+        // checked 预算必须拒成 Shape，不进入任何按声明的分配/切片。
+        let bytes = to_ttx2(&TtxDocument::Texture {
+            levels: vec![encode_rgba(&sample(4, 10), 4, 10).unwrap()],
+        })
+        .unwrap();
+        let mut giant = bytes;
+        let level_head = HEADER_BYTES + 4; // level_count 之后第一级宽高
+        giant[level_head..level_head + 4].copy_from_slice(&800_000_000u32.to_le_bytes());
+        giant[level_head + 4..level_head + 8].copy_from_slice(&20u32.to_le_bytes());
+        assert!(matches!(
+            from_ttx2(&giant),
+            Err(TextureError::Shape {
+                width: 800_000_000,
+                height: 20
+            })
+        ));
     }
 
     #[test]

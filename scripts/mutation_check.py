@@ -209,58 +209,34 @@ MUTANTS = [
         "filter": "mip_chain_rejects_equal_misaligned_and_empty"
     },
     {
-        "name": "ttx2: 打包位序错 31",
+        "name": "ttx2: 基 3 打包换基 2",
         "file": "crates/trit-texture/src/ttx2/model.rs",
-        "old": "                let bit = 1u32 << (col % TRITS_PER_WORD);",
-        "new": "                let bit = 1u32 << (col % 31);",
-        "pkg": "trit-texture",
-        "filter": "model_roundtrip_pins_the_dual_rail_bit_layout"
-    },
-    {
-        "name": "ttx2: 解轨位序错 31",
-        "file": "crates/trit-texture/src/ttx2/model.rs",
-        "old": "        let mask = 1u32 << (col % TRITS_PER_WORD);",
-        "new": "        let mask = 1u32 << (col % 31);",
-        "pkg": "trit-texture",
-        "filter": "model_roundtrip_pins_the_dual_rail_bit_layout"
-    },
-    {
-        "name": "ttx2: 字数对账用 floor",
-        "file": "crates/trit-texture/src/ttx2/mod.rs",
-        "old": "        if declared_words != inputs.div_ceil(TRITS_PER_WORD) {",
-        "new": "        if declared_words != inputs / TRITS_PER_WORD {",
-        "pkg": "trit-texture",
-        "filter": "model_container_rejects_word_count_lie_and_rail_overlap"
-    },
-    {
-        "name": "ttx2: 空层照收",
-        "file": "crates/trit-texture/src/ttx2/mod.rs",
-        "old": "    if layer_count == 0 {",
-        "new": "    if layer_count > 100 {",
+        "old": "            (value_digit(*value) * 3u32.pow((index % TRITS_PER_PACKED_BYTE) as u32)) as u8;",
+        "new": "            (value_digit(*value) * 2u32.pow((index % TRITS_PER_PACKED_BYTE) as u32)) as u8;",
         "pkg": "trit-texture",
         "filter": "model_container_bytes_are_pinned"
     },
     {
-        "name": "ttx2: 写侧轨重叠失明",
+        "name": "ttx2: digit 映射偏移",
         "file": "crates/trit-texture/src/ttx2/model.rs",
-        "old": "        for (word, (pos, neg)) in self.pos.iter().zip(&self.neg).enumerate() {\n            if pos & neg != 0 {",
-        "new": "        for (word, (pos, neg)) in self.pos.iter().zip(&self.neg).enumerate() {\n            if pos & neg > u32::MAX {",
+        "old": "    (value + 1) as u32",
+        "new": "    (value + 2) as u32",
         "pkg": "trit-texture",
-        "filter": "model_layer_rejects_bad_rows_values_and_bias"
+        "filter": "model_container_bytes_are_pinned"
     },
     {
-        "name": "ttx2: 读侧轨重叠失明",
-        "file": "crates/trit-texture/src/ttx2/mod.rs",
-        "old": "        for (word, (pos, neg)) in pos.iter().zip(&neg).enumerate() {\n            if pos & neg != 0 {",
-        "new": "        for (word, (pos, neg)) in pos.iter().zip(&neg).enumerate() {\n            if pos & neg > u32::MAX {",
+        "name": "ttx2: 层间衔接放行",
+        "file": "crates/trit-texture/src/ttx2/model.rs",
+        "old": "            if index > 0 && layer.inputs != layers[index - 1].outputs {",
+        "new": "            if false && index > 0 && layer.inputs != layers[index - 1].outputs {",
         "pkg": "trit-texture",
-        "filter": "model_container_rejects_word_count_lie_and_rail_overlap"
+        "filter": "chain_dimensions_are_enforced_like_trit_net"
     },
     {
-        "name": "ttx2: 偏置打包换基 2",
-        "file": "crates/trit-texture/src/ttx2/model.rs",
-        "old": "        out[index / TRITS_PER_BIAS_BYTE] +=\n            (bias_digit(*value) * 3u32.pow((index % TRITS_PER_BIAS_BYTE) as u32)) as u8;",
-        "new": "        out[index / TRITS_PER_BIAS_BYTE] +=\n            (bias_digit(*value) * 2u32.pow((index % TRITS_PER_BIAS_BYTE) as u32)) as u8;",
+        "name": "ttx2: CRC 生成常数换轨",
+        "file": "crates/trit-texture/src/ttx.rs",
+        "old": "pub(crate) const GEN16: [i32; 17] = [2, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1];",
+        "new": "pub(crate) const GEN16: [i32; 17] = [2, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 1];",
         "pkg": "trit-texture",
         "filter": "model_container_bytes_are_pinned"
     },

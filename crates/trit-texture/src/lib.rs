@@ -78,7 +78,7 @@ pub enum TextureError {
         /// 期望块数。
         expected: usize,
     },
-    /// TTX 魔数不是 "TTX1"。
+    /// TTX 魔数不符（既非 "TTX1" 也非 "TTX2"；v2 读 v1 也走这条，带着实际字节）。
     #[error("TTX 魔数不符：{0:?}")]
     TtxMagic([u8; 4]),
     /// TTX 容器截断（不足头部/载荷/校验尾）。
@@ -130,14 +130,6 @@ pub enum TextureError {
         layer: usize,
         /// 说明。
         message: String,
-    },
-    /// TTX2 双轨不变式被破坏：pos 与 neg 同一字同一位同时置位。
-    #[error("TTX2 第 {layer} 层第 {word} 字 pos/neg 轨重叠")]
-    TtxRailOverlap {
-        /// 层下标。
-        layer: usize,
-        /// 字下标。
-        word: usize,
     },
 }
 
