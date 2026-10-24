@@ -33,6 +33,13 @@
 - 文档 `docs/TERNARY-TOOLCHAIN.md`：论文依据（LLVM/MLIR/egg/BitNet/平衡三进制，DOI 已核）、
   分层设计、M0–M3 验收判据、继续靠 LLVM/Rust 的职责表、未验证清单。
 
+### Added（trit-procscan：进程行为扫描 + MCP 体检）
+
+- `trit-procscan run -- <cmd>`：采样进程树/命令行/模块/TCP/目录写入/输出，落 JSONL；
+  `analyze <jsonl>` 离线重放（shell、网络工具、`-EncodedCommand`、Temp 模块、写可执行文件、外联等）；
+  `mcp <config.json>` 逐个 server 握手，量启动耗时、工具数与 `tools/list` schema 体积（≈ tokens）。
+  实测 `rea`：**207 工具 / 3.16 MB schema / ~79 万 tokens / 1682 ms**。
+  证据边界：非管理员拿不到内核 ETW，文件读取/注册表/DNS 未采集（报告里明写）。
 ### Added（GGUF → MOD 入向导入）
 
 - `trit-texture::gguf::import_gguf`：读 **GGUF v2/v3**，把未量化张量（`F32`/`F16`/`BF16`）

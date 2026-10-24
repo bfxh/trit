@@ -23,6 +23,7 @@ members = [
     "crates/trit-dot",
     "crates/trit-gpu",
     "crates/trit-texture",
+    "crates/trit-procscan",
 ]
 
 [workspace.package]

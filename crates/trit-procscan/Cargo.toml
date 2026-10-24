@@ -1,0 +1,18 @@
+[package]
+name = "trit-procscan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "进程行为扫描 + 自动分析 + MCP 配置优化（非管理员可用的证据面）"
+publish = false
+
+[[bin]]
+name = "trit-procscan"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+serde_json = "1.0.154"
