@@ -26,7 +26,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 mod parallel;
+mod rail;
 mod schedule;
+mod trb;
 mod verilog;
 
 use anyhow::{Context, Result, bail};
@@ -51,9 +53,7 @@ fn resolve_algebra(name: &str) -> Result<Algebra> {
 }
 
 /// 构建工具版本（参与缓存键；产物格式变了就 bump）。
-const BUILD_VERSION: u32 = 1;
-/// `truth.tritbin` 魔数。
-const BLOB_MAGIC: &[u8; 4] = b"TRB1";
+const BUILD_VERSION: u32 = 2;
 /// 允许穷举的变量上限（3^12 = 531,441）。
 const MAX_BUILD_VARS: u32 = 12;
 
@@ -96,14 +96,6 @@ fn trit_i8(value: Ternary) -> i8 {
         Ternary::True => 1,
         Ternary::Unknown => 0,
         Ternary::False => -1,
-    }
-}
-
-fn alg_byte(alg: Algebra) -> u8 {
-    match alg {
-        Algebra::Kleene => 0,
-        Algebra::Lukasiewicz => 1,
-        Algebra::Bochvar => 2,
     }
 }
 
@@ -173,35 +165,9 @@ fn truth_csv(vars: &[String], values: &[Ternary]) -> String {
     text
 }
 
-/// `TRB1`：魔数 + 版本 + 语义 + 变量数 + 长度 + 双导轨位平面 + FNV-64 尾部校验。
-///
-/// M0 用双导轨（2 bit/trit，pos/unknowns 各一层 u64 位平面）是为了**不依赖实验层**：
-/// 发布图门禁禁止实验 crate 之间互相依赖（`trit-codec` 是 `publish = false`）。
-/// 基 3 打包（1.6 bit/trit）与 GF(3) CRC-3 留到 M2，等打包能力下沉到 core 或 codec 稳定。
-fn tritbin(values: &[Ternary], alg: Algebra) -> Vec<u8> {
-    let words = values.len().div_ceil(64);
-    let mut ones = vec![0u64; words];
-    let mut unknowns = vec![0u64; words];
-    for (index, value) in values.iter().enumerate() {
-        let (word, bit) = (index / 64, index % 64);
-        match value {
-            Ternary::True => ones[word] |= 1 << bit,
-            Ternary::Unknown => unknowns[word] |= 1 << bit,
-            Ternary::False => {}
-        }
-    }
-    let mut out = Vec::with_capacity(19 + 16 * words);
-    out.extend_from_slice(BLOB_MAGIC);
-    out.push(BUILD_VERSION as u8);
-    out.push(alg_byte(alg));
-    out.push(values.len().min(255) as u8);
-    out.extend_from_slice(&(values.len() as u32).to_le_bytes());
-    for word in ones.iter().chain(unknowns.iter()) {
-        out.extend_from_slice(&word.to_le_bytes());
-    }
-    let checksum = hash64(&out);
-    out.extend_from_slice(&checksum.to_le_bytes());
-    out
+/// `TRB2`：基 3 打包（5 trit/字节）+ GF(3) CRC-3，见 `trb`。
+fn tritbin(values: &[Ternary], alg: Algebra, nvars: usize) -> Vec<u8> {
+    trb::encode(values, alg, nvars)
 }
 
 fn lookup_c(vars: &[String], values: &[Ternary], alg: Algebra) -> String {
@@ -267,17 +233,22 @@ fn emit_artifacts(
     vars: &[String],
     values: &[Ternary],
     algebra: Algebra,
+    rail: Option<&str>,
 ) -> Result<serde_json::Map<String, Value>> {
     let csv = truth_csv(vars, values);
-    let blob = tritbin(values, algebra);
+    let blob = tritbin(values, algebra, vars.len());
     let c_source = lookup_c(vars, values, algebra);
     let mut outputs = serde_json::Map::new();
-    for (name, bytes) in [
+    let mut artifacts = vec![
         ("expr.txt", header.as_bytes().to_vec()),
         ("truth.csv", csv.as_bytes().to_vec()),
         ("truth.tritbin", blob),
         ("lookup.c", c_source.as_bytes().to_vec()),
-    ] {
+    ];
+    if let Some(module) = rail {
+        artifacts.push(("design.v", module.as_bytes().to_vec()));
+    }
+    for (name, bytes) in artifacts {
         let hash = write_artifact(&out_dir.join(name), &bytes)?;
         outputs.insert(
             name.to_string(),
@@ -295,6 +266,7 @@ pub(crate) fn build_source(
     force: bool,
     output: Option<&str>,
     expect: Option<&str>,
+    emit_verilog: bool,
 ) -> Result<Value> {
     let source_text =
         fs::read_to_string(source).with_context(|| format!("读 {} 失败", source.display()))?;
@@ -304,10 +276,11 @@ pub(crate) fn build_source(
     let cache_dir = out_dir.join(".trit-cache");
     let key = hex(hash64(
         format!(
-            "trit-build/{BUILD_VERSION}\n{}\n{}\n{}\n{}\n{}",
+            "trit-build/{BUILD_VERSION}\n{}\n{}\n{}\n{}\n{}\n{}",
             alg_name(algebra),
             output.unwrap_or("-"),
             expect.unwrap_or("-"),
+            emit_verilog,
             verilog,
             source_text
         )
@@ -386,7 +359,23 @@ pub(crate) fn build_source(
         )
     };
 
-    let outputs = emit_artifacts(out_dir, &header, &vars, &values, algebra)?;
+    let rail_text = if emit_verilog {
+        if verilog {
+            bail!("--emit-verilog 目前只支持 .tri 表达式（Verilog 读入的设计请先转表达式）");
+        }
+        let expr = parse_expr(&parse_source(&source_text, source)?)?;
+        Some(rail::emit(&expr, &vars, "trit_module", algebra)?)
+    } else {
+        None
+    };
+    let outputs = emit_artifacts(
+        out_dir,
+        &header,
+        &vars,
+        &values,
+        algebra,
+        rail_text.as_deref(),
+    )?;
     let manifest = json!({
         "tool": "trit-build",
         "version": BUILD_VERSION,
@@ -408,15 +397,29 @@ pub(crate) fn build_source(
 }
 
 /// 单文件构建入口。
-fn cmd_build(
-    source: &str,
-    out_dir: &str,
-    algebra: &str,
+/// `cmd_build` 的入参：clap 字段直接映射（8 个裸参数会撞 clippy 的 7 参数上限）。
+struct BuildRequest<'a> {
+    source: &'a str,
+    out_dir: &'a str,
+    algebra: &'a str,
     force: bool,
     check: bool,
-    output: Option<&str>,
-    expect: Option<&str>,
-) -> Result<()> {
+    output: Option<&'a str>,
+    expect: Option<&'a str>,
+    emit_verilog: bool,
+}
+
+fn cmd_build(request: BuildRequest<'_>) -> Result<()> {
+    let BuildRequest {
+        source,
+        out_dir,
+        algebra,
+        force,
+        check,
+        output,
+        expect,
+        emit_verilog,
+    } = request;
     let alg = resolve_algebra(algebra)?;
     let source_path = PathBuf::from(source);
     let out_dir = PathBuf::from(out_dir);
@@ -425,10 +428,11 @@ fn cmd_build(
             .with_context(|| format!("读 {} 失败", source_path.display()))?;
         let key = hex(hash64(
             format!(
-                "trit-build/{BUILD_VERSION}\n{}\n{}\n{}\n{}\n{}",
+                "trit-build/{BUILD_VERSION}\n{}\n{}\n{}\n{}\n{}\n{}",
                 alg_name(alg),
                 output.unwrap_or("-"),
                 expect.unwrap_or("-"),
+                emit_verilog,
                 is_verilog(&source_path),
                 source_text
             )
@@ -440,8 +444,48 @@ fn cmd_build(
             &key,
         );
     }
-    let summary = build_source(&source_path, &out_dir, alg, force, output, expect)?;
+    let summary = build_source(
+        &source_path,
+        &out_dir,
+        alg,
+        force,
+        output,
+        expect,
+        emit_verilog,
+    )?;
     println!("{summary}");
+    Ok(())
+}
+
+/// 解码 TRB2：校验魔数/长度/CRC，重出 CSV 与 C 查表（不重建 blob）。
+fn cmd_decode(blob_path: &Path, out_dir: &Path) -> Result<()> {
+    let blob = fs::read(blob_path).with_context(|| format!("读 {} 失败", blob_path.display()))?;
+    let (values, nvars, alg) = trb::decode(&blob)?;
+    let vars: Vec<String> = (0..nvars).map(|i| format!("v{i}")).collect();
+    fs::create_dir_all(out_dir)
+        .with_context(|| format!("创建输出目录 {} 失败", out_dir.display()))?;
+    let header = format!(
+        "# trit-build decode (TRB2)
+# file: {}
+# variables: {}
+# assignments: {}
+# verified: crc3",
+        blob_path.display(),
+        vars.join(","),
+        values.len()
+    );
+    let outputs = emit_artifacts(out_dir, &header, &vars, &values, alg, None)?;
+    let manifest = json!({
+        "tool": "trit-build",
+        "mode": "decode",
+        "source": {"path": blob_path.display().to_string(), "kind": "trb2", "bytes": blob.len()},
+        "options": {"variables": vars, "assignments": values.len(), "algebra": alg_name(alg)},
+        "verified": {"crc3": true, "trits": values.len()},
+        "outputs": outputs,
+    });
+    fs::write(out_dir.join("build.json"), manifest.to_string())
+        .with_context(|| "写 build.json 失败")?;
+    println!("{manifest}");
     Ok(())
 }
 
@@ -511,6 +555,12 @@ struct Cli {
     /// 与表达式链路对拍（例：`--expect "(a & b) | !c"`）
     #[arg(long)]
     expect: Option<String>,
+    /// 额外导出双导轨 Verilog（`design.v`，仅 kleene + .tri）
+    #[arg(long)]
+    emit_verilog: bool,
+    /// 解码 TRB2 产物（`--decode truth.tritbin`），校验 CRC 并重出 CSV/lookup.c
+    #[arg(long)]
+    decode: Option<String>,
     /// 并行槽位（线程数）
     #[arg(long, default_value_t = 4)]
     jobs: usize,
@@ -524,7 +574,9 @@ struct Cli {
 
 fn main() -> std::process::ExitCode {
     let cli = <Cli as clap::Parser>::parse();
-    let result = if let Some(manifest) = &cli.manifest {
+    let result = if let Some(blob) = &cli.decode {
+        cmd_decode(Path::new(blob), Path::new(&cli.out))
+    } else if let Some(manifest) = &cli.manifest {
         parse_prefer(&cli.prefer).and_then(|prefer| {
             run_parallel(
                 Path::new(manifest),
@@ -536,15 +588,16 @@ fn main() -> std::process::ExitCode {
             )
         })
     } else if let Some(source) = &cli.source {
-        cmd_build(
+        cmd_build(BuildRequest {
             source,
-            &cli.out,
-            &cli.algebra,
-            cli.force,
-            cli.check,
-            cli.output.as_deref(),
-            cli.expect.as_deref(),
-        )
+            out_dir: &cli.out,
+            algebra: &cli.algebra,
+            force: cli.force,
+            check: cli.check,
+            output: cli.output.as_deref(),
+            expect: cli.expect.as_deref(),
+            emit_verilog: cli.emit_verilog,
+        })
     } else {
         Err(anyhow::anyhow!(
             "需要 <source.tri> 或 --manifest <jobs.json>"

@@ -18,6 +18,12 @@
 - **M1：Verilog 子集读入**（`d.v / --output / --expect`）：复用 `trit-circuit::parse_verilog` +
   `propagate`，与 `.tri` 链路真值表**逐行对拍**，不一致即失败、不写 `build.json`；清单新增
   `{"kind":"verilog"}`（归三进制轨）。测试 +4；变异锚点 +1。
+- **M2：TRB2 基 3 打包 + 运行时 + 双导轨导出**：`truth.tritbin` 改为 `TRB2`（5 trit/字节 +
+  GF(3) CRC-3，27 trit 由 35 B 降到 **17 B**；12 变量 132,883 → **106,300 B**，−20.00%）；
+  `--decode` 校验魔数/长度/CRC 并重出 CSV/`lookup.c`；`runtime/trit_runtime.{c,h}` 是
+  **独立的 C 解码实现**，逐 trit 与 Rust 端对拍；`--emit-verilog` 导出双导轨 `design.v`
+  （仅 kleene，非 kleene 显式报错），由测试内位级解释器与真值表逐行比对。
+  测试 +12（含解码-重编码逐字节回环、非法字节、缓存键区分 `--emit-verilog`）；变异锚点 +4。
 - 文档 `docs/TERNARY-TOOLCHAIN.md`：论文依据（LLVM/MLIR/egg/BitNet/平衡三进制，DOI 已核）、
   分层设计、M0–M3 验收判据、继续靠 LLVM/Rust 的职责表、未验证清单。
 

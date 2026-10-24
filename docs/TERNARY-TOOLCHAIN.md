@@ -46,20 +46,24 @@
       ▼
    产物层
    ├── truth.csv      真值表（人读/对拍）
-   ├── truth.tritbin  TRB1：魔数+版本+语义+nvars+长度 + 双导轨位平面 + FNV-64 尾校验
+   ├── truth.tritbin  TRB2：魔数+版本+语义+nvars+长度 + 5 trit/字节 + GF(3) CRC-3
    ├── lookup.c       主机查表函数（交给 cc/rustc 编译 —— 边界示范）
+   ├── design.v       双导轨 Verilog（仅 `--emit-verilog`，kleene）
    └── build.json     输入/选项/产物哈希/复核结论
       │
       └── 驱动：内容哈希缓存（FNV-1a）+ `--check` 产物完整性
 ```
 
-**产物格式（TRB1，v1）**：`TRB1` | version u8 | algebra u8 | nvars u8 | len u32 LE |
-`ones` 平面（⌈len/64⌉ × u64 LE）| `unknowns` 平面（同宽）| FNV-64 尾。
+**产物格式（TRB2，v2）**：`TRB2` | version u8 | algebra u8 | nvars u8 | len u32 LE |
+载荷 = `len` 个输出 trit ‖ CRC-3（3 个 trit），按 5 trit/字节小端打包（权重 1/3/9/27/81）。
 
-**为什么 M0 用双导轨而不是 1.6 bit/trit**：`trit-codec`（5 trit/字节 + GF(3) CRC-3）是
+**为什么 M0 用双导轨、M2 才换基 3**：`trit-codec`（5 trit/字节 + GF(3) CRC-3）是
 `publish = false` 的实验层，而本仓发布图门禁**禁止实验 crate 互相依赖**（`trit-build` 也是实验层）。
-这是实测撞到的硬约束，不是设计偏好：要么把打包下沉到 `trit-core`，要么等 codec 稳定。
-M0 选择"先把语义/复核/增量做对"，打包密度留到 M2——避免为了 20% 体积把依赖图弄坏。
+M0 先做"语义/复核/增量"，打包密度留到 M2。
+
+**M2 的取舍（如实）**：既没有把打包下沉 `trit-core`，也没有依赖 `trit-codec`，而是在
+`trit-build/src/trb.rs` 写了一份**同构的精简实现**。代价是同一格式有两份代码，必须靠
+`runtime/trit_runtime.c`（第三份、独立语言）交叉验证来兜底；codec 稳定后应统一，删掉这里的副本。
 
 ## 4. 现在能跑什么（实测，2026-10-25）
 
@@ -76,7 +80,7 @@ trit build demo.tri --out out --check  # 校验产物哈希
 | 项 | 证据 |
 |---|---|
 | 3 变量 → 27 行真值表 | `truth.csv` 28 行（含表头） |
-| `TRB1` 大小 | 11 字节头 + 双导轨 16 字节（27 trit → 每层 1 个 u64）+ 8 字节 FNV-64 = 35 B |
+| `TRB2` 大小 | 11 字节头 + 6 字节载荷 = **17 B**（27+3 trit，5 trit/字节）；M0 的 TRB1 是 35 B |
 | 主机对拍 | `lookup.c` 用 gcc 编译后 27/27 行与 `truth.csv` 一致 |
 | 增量 | 同源二次构建 `cached=true`，不重写产物 |
 | 完整性 | 篡改 `truth.tritbin` 后 `--check` 退出非 0 |
@@ -161,16 +165,42 @@ trit-build multi.v --out out --output z             # 多输出必须点名
 | 多输出 | 不给 `--output` ⇒ 报错并列出可选输出；`--output z` ⇒ 9 行 |
 | 并行清单 | `{"kind":"verilog"}` 归三进制轨，可与二进制任务同跑 |
 
-**M1 未做**：位级双导轨 Verilog **导出**（把三值门降成 pos/neg 两根位线）；现在只做"读 Verilog"，
-不写 Verilog。导出要等 M2 的解码器/运行时一起验，否则没有可信的对照物。
+**M1 遗留已由 M2 补上**：位级双导轨 Verilog **导出**（`--emit-verilog`）在 M2 落地，见 §11。
+
+## 11. M2 实测：TRB2 打包 + 解码 + 双导轨导出
+
+```bash
+trit-build e.tri --out out                        # truth.tritbin 现在是 TRB2（17 B）
+trit-build --decode out/truth.tritbin --out dec   # 校验 CRC-3，重出 truth.csv / lookup.c
+trit-build e.tri --out out --emit-verilog         # 多出 design.v（两根位线/信号）
+```
+
+| 项 | 证据（本机 `cargo test -p trit-build` + 实跑） |
+|---|---|
+| 体积 | 27 trit → **17 B**；12 变量（531,441 trit）→ **106,300 B** |
+| 与旧格式比 | 按 TRB1 位宽（11 + 16·⌈n/64⌉ + 8）算 **132,883 B** ⇒ **−20.00%**；TRB1 是算的，不是同机测得（M0 实现已被替换） |
+| 解码-重编码 | 3 种语义 × nvars 0..=4，`decode → encode` **逐字节相同**（含 5-trit 打包的 padding） |
+| 非法输入 | 字节 ≥243、短一字节、翻位后 CRC、`len ≠ 3^nvars` 全部显式报错 |
+| C 运行时 | `runtime/trit_runtime.c` **独立**实现解包 + CRC-3；解出的 27 trit 与 `truth.csv` 逐 trit 相同；篡改后退出非 0 |
+| 双导轨导出 | `design.v` 用测试内位级解释器求值，与真值表 **27/27** 一致；`(1,1)` 非法组合 **0 行** |
+| 门禁 | `trit-build` 26 条测试；变异 **9/9**（新增 4 条锚点：非法字节、语义字节、K3 与门负轨、`--emit-verilog` 缓存键） |
+
+**M2 未做/未证（如实）**
+- **没有 HDL 仿真器**：本机无 iverilog / verilator / yosys ⇒ `design.v` 只被测试内的位级解释器验过，
+  没进过真正的 Verilog 仿真或综合。
+- **GPU 导出未做**：M2 原计划里的 `--emit gpu` 没有目标格式可依（仓里还没有 GPU 三值后端）。
+- `--decode` 重建的 CSV 变量名只能是 `v0..vN`：TRB2 不存变量名，**值**逐 trit 相同、**列名**与原表不同。
+- 只有 kleene 能导出 Verilog；Ł3/B3 的蕴含/常量规则不同，直接报错而不是猜。
+- 格式实现现在有 Rust（`trb.rs`）+ C（`trit_runtime.c`）两份，靠交叉对拍兜底；统一到 `trit-codec` 是后账。
 
 ## 6. 阶段与验收
 
 | 阶段 | 内容 | 验收判据 |
 |---|---|---|
 | **M0（已完成）** | `.tri` → 化简 + 穷举复核 → TRB1/CSV/C + 缓存 | 3 条集成测试；C 主机 27/27 对拍；`--check` 篡改必红 |
-| M1（部分完成） | Verilog 子集**读入** + 双链路对拍 + 并行清单 ✅；位级双导轨**导出**未做 | 同一设计两条链路真值表逐行一致 ✅ / 导出待 M2 |
-| M2 | 基 3 打包 + GF(3) CRC-3 接入（需 codec 稳定或下沉 core）、TRB1 解码器 + 运行时库、`--emit verilog,gpu` | 解码-重编码 round-trip 逐 trit 相等；非法字节显式报错；体积对比给基线 |
+| **M1（已完成）** | Verilog 子集**读入** + 双链路对拍 + 并行清单 + 双导轨**导出** | 两条链路逐行一致 ✅；导出与真值表逐 trit 一致 ✅（§11） |
+| **M2（已完成，GPU 除外）** | 基 3 打包 + GF(3) CRC-3、TRB2 解码器（`--decode`）+ C 运行时、`--emit-verilog` | 解码-重编码逐字节相同 ✅；非法字节显式报错 ✅；体积基线 20% ↓ ✅；C 运行时逐 trit 对拍 ✅ |
+| M3 | e-graph 重写（规则逐条 3^n 自证）+ 精确传播替代穷举 | 规则库自证通过率 100%；同结果下构建时间下降（给基线） |
 | M3 | e-graph 重写（规则逐条 3^n 自证）+ 精确传播替代穷举 | 规则库自证通过率 100%；同结果下构建时间下降（给基线） |
 
 ## 7. 不做什么
@@ -184,7 +214,10 @@ trit-build multi.v --out out --output z             # 多输出必须点名
 
 - 真实 Verilog 工程的 M1 前端（端口/时序/多驱动）未做，只有设计。
 - e-graph 规则在 K3 下的完备性未证（M3）。
-- `TRB1` 跨语言解码器（Python/JS）未写；当前只有 rustdoc 描述的位布局与 C 查表两条路。
-- M0 没有基 3 打包/CRC-3（双导轨 + FNV；发布图约束见 §3），体积不是最优。
+- `TRB2` 的 Python/JS 解码器未写；当前只有 Rust（`trb.rs`）与 C（`runtime/trit_runtime.c`）两份实现。
+- `design.v` 未过真实 HDL 工具（iverilog / verilator / 综合器），只有测试内位级解释器（§11）。
+- 双导轨导出只覆盖 kleene；Ł3/B3 显式拒绝，未证明可无损降成两根位线。
+- GPU 导出（M2 原计划的 `--emit gpu`）未做。
+- `--decode` 不恢复变量名（TRB2 只有 nvars），重建的 CSV 列名是 `v0..vN`。
 - 性能只有构建时间（毫秒级），没有与 LLVM 同口径的对比——本阶段不主张性能优势。
 - Setun/平衡三进制的历史细节只引二手文献，未核原始论文。

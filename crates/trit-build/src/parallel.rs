@@ -28,6 +28,7 @@ pub(crate) struct JobSpec {
     cmd: Option<Vec<String>>,
     output: Option<String>,
     expect: Option<String>,
+    emit_verilog: bool,
 }
 
 pub(crate) fn parse_prefer(name: &str) -> Result<Prefer> {
@@ -79,6 +80,10 @@ pub(crate) fn load_jobs(path: &Path) -> Result<Vec<JobSpec>> {
                     cmd: None,
                     output: str_of("output"),
                     expect: str_of("expect"),
+                    emit_verilog: job
+                        .get("emitVerilog")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
                 });
             }
             "binary" => {
@@ -105,6 +110,7 @@ pub(crate) fn load_jobs(path: &Path) -> Result<Vec<JobSpec>> {
                     cmd: Some(cmd),
                     output: None,
                     expect: None,
+                    emit_verilog: false,
                 });
             }
             other => bail!("jobs[{index}] 未知 kind {other:?}（ternary / binary）"),
@@ -155,6 +161,7 @@ pub(crate) fn execute_job(job: &JobSpec, algebra: Algebra, out_root: &Path) -> V
                 false,
                 job.output.as_deref(),
                 job.expect.as_deref(),
+                job.emit_verilog,
             )
             .map(|summary| {
                 json!({

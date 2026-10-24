@@ -2063,6 +2063,38 @@ MUTANTS = [
         "new": '        if false {',
         "pkg": "trit-build",
         "filter": "cross_check_rejects_wrong_expression"
+    },
+    {
+        "name": "trb: 放行非法字节 243",
+        "file": "crates/trit-build/src/trb.rs",
+        "old": '        if *byte >= 243 {',
+        "new": '        if *byte > 243 {',
+        "pkg": "trit-build",
+        "filter": "pack_round_trips_every_byte"
+    },
+    {
+        "name": "trb: 解码丢掉语义字节（B3 当 K3）",
+        "file": "crates/trit-build/src/trb.rs",
+        "old": '        2 => Algebra::Bochvar,',
+        "new": '        2 => Algebra::Kleene,',
+        "pkg": "trit-build",
+        "filter": "decode_then_encode_is_byte_identical_for_any_length"
+    },
+    {
+        "name": "rail: K3 与门的负轨用 AND",
+        "file": "crates/trit-build/src/rail.rs",
+        "old": '                self.wire(format!("({lp} & {rp})"), format!("({ln} | {rn})"))',
+        "new": '                self.wire(format!("({lp} & {rp})"), format!("({ln} & {rn})"))',
+        "pkg": "trit-build",
+        "filter": "emitted_two_rail_matches_truth_table"
+    },
+    {
+        "name": "build: 缓存键漏掉 --emit-verilog",
+        "file": "crates/trit-build/src/main.rs",
+        "old": '            emit_verilog,\n            verilog,',
+        "new": '            false,\n            verilog,',
+        "pkg": "trit-build",
+        "filter": "emit_verilog_is_not_served_from_a_plain_cache"
     }
 
 ]
