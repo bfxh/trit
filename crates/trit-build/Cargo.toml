@@ -1,0 +1,20 @@
+[package]
+name = "trit-build"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三进制构建工具（M0）：.tri → 化简 + 精确复核 → TRB1/CSV/C"
+publish = false
+
+[[bin]]
+name = "trit-build"
+path = "src/main.rs"
+
+[dependencies]
+trit-core.workspace = true
+trit-eval.workspace = true
+anyhow = "1.0.104"
+clap = { version = "4.6.7", features = ["derive"] }
+serde_json = "1.0.154"

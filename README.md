@@ -682,6 +682,9 @@ OK     free slot must not reject on unknown hopelessness
 
 - 三进制红利 / 模拟税 / 生态路径依赖 / 基数无关复杂度是四类不同问题，讨论前先归类：
   [docs/TERNARY-BOUNDARIES.md](docs/TERNARY-BOUNDARIES.md)。
+- 三进制构建工具（M0）：`.tri` 表达式 → 化简 + 穷举复核 → `truth.tritbin`/CSV/`lookup.c`，
+  `trit-build <src> [--out DIR] [--check]`；为什么只做这一层、哪部分仍靠 LLVM/Rust 见
+  [docs/TERNARY-TOOLCHAIN.md](docs/TERNARY-TOOLCHAIN.md)。
 - 只做**真值函数**三值逻辑；硬件四态 `0/1/X/Z` 与 X-optimism 不在范围内。
 - 不做时序模型检验、通用 SMT、完整硬件仿真。
 - 穷举参考是逐赋值的，18 变量约 12.6 s，仅用于小规模对拍。

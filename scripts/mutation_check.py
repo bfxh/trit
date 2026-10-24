@@ -2023,6 +2023,22 @@ MUTANTS = [
         "new": '    if false {',
         "pkg": "trit-texture",
         "filter": "unsupported_nan_threshold_is_rejected"
+    },
+    {
+        "name": "build: 缓存不比对产物哈希",
+        "file": "crates/trit-build/src/main.rs",
+        "old": '        if hash64(&bytes) != u64::from_str_radix(info.get("hash")?.as_str()?, 16).ok()? {',
+        "new": '        if false {',
+        "pkg": "trit-build",
+        "filter": "cache_miss_when_artifact_was_tampered"
+    },
+    {
+        "name": "build: 校验忽略不一致",
+        "file": "crates/trit-build/src/main.rs",
+        "old": '    let ok = bad.is_empty();',
+        "new": '    let ok = true;',
+        "pkg": "trit-build",
+        "filter": "check_detects_tampered_artifact"
     }
 
 ]
