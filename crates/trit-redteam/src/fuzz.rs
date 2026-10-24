@@ -356,6 +356,15 @@ pub fn run(blob_bytes: &[u8], iterations: usize, seed: u64) -> Result<(Value, bo
         "rejected": comparison.rejected,
         "disagreements": comparison.disagreements.len(),
         "examples": examples,
+        "attribution": if comparison.disagreements.is_empty() {
+            Value::Null
+        } else {
+            json!({
+                "origin": "project",
+                "area": "implementation",
+                "hint": "两实现中至少一边与格式契约不符；先按生产契约（Rust trb.rs）定谁错"
+            })
+        },
         "note": "Rust 解析器与 C 运行时必须对每个畸形 blob 给出同一结论（接受/拒绝 + 逐 trit 相同）",
     });
     let _ = fs::remove_dir_all(&dir);

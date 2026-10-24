@@ -141,6 +141,11 @@ pub fn run(manifest_text: &str) -> Result<(Value, bool)> {
         "ternary_jobs": report.ternary,
         "binary_jobs": report.binaries.len(),
         "binaries": jobs,
+        "attribution": {
+            "origin": "project",
+            "area": "tool-design",
+            "hint": "manifest 即代码执行入口；要收口就加命令 allowlist 或沙箱"
+        },
         "note": "kind=binary 的任务会被直接执行（Command::new，无 allowlist/沙箱）；清单即代码执行入口",
     });
     Ok((value, !report.binaries.is_empty()))

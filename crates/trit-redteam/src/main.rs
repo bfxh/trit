@@ -9,6 +9,7 @@
 //! - `crc`：CRC-3 的检出矩阵与最小不可检重量
 //! - `rail`：双导轨 `(1,1)` 非法态的可达性、粘滞与 fail-open
 
+mod attrib;
 mod binary;
 mod blob;
 mod chain;
@@ -133,6 +134,11 @@ fn run_encode(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
             "covert_bits": (covert_bits * 100.0).round() / 100.0,
         },
         "samples": samples,
+        "attribution": {
+            "origin": "project",
+            "area": "format-design",
+            "hint": "改 trit-build/src/trb.rs：写时清零闲置槽、读时拒非规范，或把哈希定义在语义层"
+        },
         "impact": if distinct > 0 {
             "同一张真值表存在多个字节串：内容哈希不等于语义身份，闲置槽位可夹带数据"
         } else {
@@ -168,6 +174,11 @@ fn run_crc(trits: usize, max_weight: usize) -> Result<(serde_json::Value, bool)>
         "rows": rows,
         "detects_all_up_to_weight_3": scan.detects_all_up_to(3),
         "min_undetected": min,
+        "attribution": {
+            "origin": "project",
+            "area": "format-design",
+            "hint": "CRC 只是检错码，不能当对抗性完整性；要抗构造得换更强校验或外部签名"
+        },
         "note": "GF(3) 线性码：错误模式能否检出与载荷内容无关；冗余 3 trit ⇒ Singleton 上界 d ≤ 4",
     });
     Ok((report, finding))
@@ -190,6 +201,11 @@ fn run_rail(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
         "illegal_output_invalid": report.illegal_output_invalid,
         "all_illegal_output": report.all_illegal_output,
         "examples": report.examples,
+        "attribution": {
+            "origin": "project",
+            "area": "design-export",
+            "hint": "消费端必须把 (1,1) 判成错误；导出与仿真里加非法态断言"
+        },
         "note": "(1,1) 不是合法值；只看 pos 的消费端会把 (1,1) 读成 True ⇒ fail-open",
     });
     Ok((value, finding))
