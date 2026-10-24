@@ -2,7 +2,7 @@
 
 use std::process::ExitCode;
 
-use trit_codec::{balanced, checksum, hamming, interleave, pack, plan, quantize, sparse};
+use trit_codec::{balanced, checksum, hamming, interleave, layout, pack, plan, quantize, sparse};
 use trit_core::value::Ternary;
 
 fn main() -> ExitCode {
@@ -19,6 +19,7 @@ fn main() -> ExitCode {
         Some("sparse") => sparse_cmd(&args[1..]),
         Some("interleave") => interleave_cmd(&args[1..]),
         Some("checksum") => checksum_cmd(&args[1..]),
+        Some("layout") => layout_cmd(&args[1..]),
         _ => Err(usage()),
     };
     match result {
@@ -503,4 +504,31 @@ fn checksum_cmd(args: &[String]) -> Result<(), String> {
         .unwrap_or_default()
     );
     Ok(())
+}
+
+fn layout_cmd(args: &[String]) -> Result<(), String> {
+    if args.first().map(|s| s.as_str()) == Some("unpack") {
+        let bytes = from_hex(args.get(1).ok_or("layout unpack 需要 HEX")?)?;
+        let len: usize = args
+            .iter()
+            .position(|a| a == "--len")
+            .and_then(|i| args.get(i + 1))
+            .ok_or("--len N")?
+            .parse()
+            .map_err(|_| "len 不是整数".to_string())?;
+        let bp = layout::unpack_to_bitplanes(&bytes, len).map_err(|e| e.to_string())?;
+        let ones_hex: String = bp.ones.iter().map(|w| format!("{w:016x}")).collect();
+        let unk_hex: String = bp.unknowns.iter().map(|w| format!("{w:016x}")).collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "len": len,
+                "ones": ones_hex,
+                "unknowns": unk_hex,
+            }))
+            .unwrap_or_default()
+        );
+        return Ok(());
+    }
+    Err("layout 子命令: unpack HEX --len N".to_string())
 }

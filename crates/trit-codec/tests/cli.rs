@@ -117,8 +117,15 @@ fn interleave_then_deinterleave_round_trips_with_len() {
     let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     let shuffled = v["trits"].as_str().unwrap().to_string();
 
-    let (stdout, _, code) =
-        run(&["interleave", "--block", "3", "--deinterleave", "--len", "7", &shuffled]);
+    let (stdout, _, code) = run(&[
+        "interleave",
+        "--block",
+        "3",
+        "--deinterleave",
+        "--len",
+        "7",
+        &shuffled,
+    ]);
     assert_eq!(code, 0);
     let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(v["trits"], "10X10X1");
