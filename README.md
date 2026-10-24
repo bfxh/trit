@@ -48,6 +48,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-attn` | 注意力 = 快权重 FFN 的双视角、三值整数关联记忆 | `trit-attn demo` |
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |
+| `trit-texture` | TT3 块纹理压缩：8×8 块、trit 索引 3 级调色板（17 字节 = 2.125 bpp）+ 端点最小二乘精修 + TTX/TTX2 容器 | `trit-texture`（同机对比表） |
 
 ## 三态与三值拓扑
 

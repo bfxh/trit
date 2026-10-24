@@ -11,7 +11,7 @@ pub use model::{TRITS_PER_WORD, TritModel, TritModelLayer};
 
 use trit_core::value::Ternary;
 
-use crate::ttx::{block_trits, gf3_remainder};
+use crate::ttx::{block_trits_v2, gf3_remainder};
 use crate::{BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TextureError, TritTexture};
 use model::{TRITS_PER_BIAS_BYTE, model_trits, pack_bias, unpack_bias};
 
@@ -43,7 +43,7 @@ fn texture_trits(levels: &[TritTexture]) -> Vec<Ternary> {
     let mut trits = Vec::new();
     for level in levels {
         for block in &level.blocks {
-            trits.extend_from_slice(&block_trits(block));
+            trits.extend_from_slice(&block_trits_v2(block));
         }
     }
     trits
@@ -336,7 +336,6 @@ pub fn from_ttx2(bytes: &[u8]) -> Result<TtxDocument, TextureError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ttx;
     use crate::{decode_rgba, encode_rgba};
 
     fn sample(width: usize, height: usize) -> Vec<u8> {
@@ -398,8 +397,8 @@ mod tests {
 
     #[test]
     fn texture_mip_chain_roundtrips() {
-        let fine = encode_rgba(&sample(8, 20), 8, 20).unwrap();
-        let coarse = encode_rgba(&sample(4, 10), 4, 10).unwrap();
+        let fine = encode_rgba(&sample(16, 16), 16, 16).unwrap();
+        let coarse = encode_rgba(&sample(8, 8), 8, 8).unwrap();
         let bytes = to_ttx2(&TtxDocument::Texture {
             levels: vec![fine.clone(), coarse.clone()],
         })
@@ -409,25 +408,25 @@ mod tests {
             panic!("kind 漂移");
         };
         assert_eq!(levels, vec![fine, coarse]);
-        // 单级（无 mip）合法：内容与 TTX1 同源。
+        // 单级（无 mip）合法：与多级版同源实现，解码结果必须一致。
+        let source = encode_rgba(&sample(16, 16), 16, 16).unwrap();
         let single = to_ttx2(&TtxDocument::Texture {
-            levels: vec![encode_rgba(&sample(8, 20), 8, 20).unwrap()],
+            levels: vec![source.clone()],
         })
         .unwrap();
         let TtxDocument::Texture { levels } = from_ttx2(&single).unwrap() else {
             panic!()
         };
-        let via_v1 =
-            ttx::from_ttx(&ttx::to_ttx(&encode_rgba(&sample(8, 20), 8, 20).unwrap())).unwrap();
+        assert_eq!(levels, vec![source.clone()]);
         assert_eq!(
             decode_rgba(&levels[0]).unwrap(),
-            decode_rgba(&via_v1).unwrap()
+            decode_rgba(&source).unwrap()
         );
     }
 
     #[test]
     fn mip_chain_rejects_equal_misaligned_and_empty() {
-        let fine = encode_rgba(&sample(8, 20), 8, 20).unwrap();
+        let fine = encode_rgba(&sample(16, 16), 16, 16).unwrap();
         // 同级（宽高都不减）：拒绝。
         assert!(matches!(
             to_ttx2(&TtxDocument::Texture {
@@ -457,7 +456,7 @@ mod tests {
     #[test]
     fn header_fields_are_validated_before_payload() {
         let bytes = to_ttx2(&TtxDocument::Texture {
-            levels: vec![encode_rgba(&sample(4, 10), 4, 10).unwrap()],
+            levels: vec![encode_rgba(&sample(8, 8), 8, 8).unwrap()],
         })
         .unwrap();
         // 未知 kind。
@@ -522,8 +521,15 @@ mod tests {
 
     #[test]
     fn v1_files_are_rejected_with_explicit_magic() {
-        let texture = encode_rgba(&sample(4, 10), 4, 10).unwrap();
-        let v1 = ttx::to_ttx(&texture);
+        // v1 写器在当前布局下已拒绝写出（TTX1 冻结在 4×10），所以这里直接构造
+        // 一段合法的 TTX1 头字节：v2 读器必须按魔数显式拒绝，而不是当 TEX 去解。
+        let mut v1 = Vec::new();
+        v1.extend_from_slice(b"TTX1");
+        v1.extend_from_slice(&4u32.to_le_bytes());
+        v1.extend_from_slice(&10u32.to_le_bytes());
+        v1.extend_from_slice(&1u32.to_le_bytes());
+        v1.extend_from_slice(&[0u8; 12]);
+        v1.push(0);
         assert!(matches!(
             from_ttx2(&v1),
             Err(TextureError::TtxMagic([b'T', b'T', b'X', b'1']))
