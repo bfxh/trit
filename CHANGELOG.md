@@ -18,6 +18,11 @@
 - **M1：Verilog 子集读入**（`d.v / --output / --expect`）：复用 `trit-circuit::parse_verilog` +
   `propagate`，与 `.tri` 链路真值表**逐行对拍**，不一致即失败、不写 `build.json`；清单新增
   `{"kind":"verilog"}`（归三进制轨）。测试 +4；变异锚点 +1。
+- **`trit-procscan`（进程行为扫描 + MCP 体检）**：`run -- <cmd>` 起目标并采进程树/模块/
+  TCP/目录写入/输出，落 JSONL；`analyze` 离线重放（shell、网络工具、-EncodedCommand、
+  Temp 模块、写可执行文件、外联等规则）；`mcp <config.json>` 逐个 server 握手，量启动耗时、
+  工具数与 `tools/list` schema 体积（≈ tokens）。实测 `rea`：**207 工具 / 3.16 MB schema /
+  ~79 万 tokens / 1682 ms**。证据边界：非管理员拿不到内核 ETW，文件读取/注册表/DNS 未采集。
 - **TRB2 规范形（加固）**：末字节里没用到的 trit 槽必须为 0；Rust 解码器、C 运行时
   （新增 `TRIT_ERR_CANON`）与 red-team 解析器同一契约。此前同一张表有 27 种写法
   （red-team 实测），内容哈希不等于语义身份；现在严格解码器只接受一种。
