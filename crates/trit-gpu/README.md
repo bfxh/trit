@@ -150,7 +150,12 @@ cuda-oxide 的参考内核没做；若他们同样处理，差距会缩小（幅
   naga 30 的 WGSL 前端拒绝 `enable subgroups;`（`…not yet implemented in Naga`，gfx-rs/wgpu#5555）。
   复核结论：阻塞只在 WGSL/GLSL 前端；naga IR（`ir/mod.rs` 的 `SubgroupOperation`）、验证器、
   SPIR-V 出/入（`back/spv/subgroup.rs`、`front/spv/next_block.rs` 的 `OpGroupNonUniform*`）都已支持。
-  crates.io 上 naga 最新即 30.0.1（与钉住版本相同），issue 仍 open。解除路径：外部工具链
-  （glslang/shaderc/DXC）产出 SPIR-V 后用 `ShaderSource::SpirV` 加载，需显式开 wgpu 的
-  `spirv` feature（默认不含）；本机 Windows 与 WSL 都没有 glslang/spirv-as，故未实现。
+  crates.io 上 naga 最新即 30.0.1（与钉住版本相同），issue 仍 open。
+  **但绕行路径已实测可用（2026-10-25）**：GLSL → glslang 16.6.0 →
+  `glslang -V --target-env vulkan1.1` → 282 words SPIR-V → `wgpu::ShaderSource::SpirV`
+  （需显式开 wgpu 的 `spirv` feature，默认不含）。探针在 64 lane 上做
+  `subgroupAdd(float(id % 8))`，因 32 % 8 == 0，每 subgroup 覆盖 4 轮 0..7，期望恒为 112；
+  实测 64 个值全部 == 112，adapter = RTX 4060 Ti / Vulkan，`SUBGROUP = true`。
+  **尚未做**：matmul 本体搬迁——那要与 SIMT 版同等调优才有对照意义，且 `.spv` 需作为
+  二进制产物入库（CI 无 glslang）。故这里只声明路径可用，不给 subgroup 的性能结论。
 - `matmul.rs` 拆出 `matmul_f32.rs`（fp16）与 `popc.rs`（吞吐微基准），三者都在 800 行预算内。
