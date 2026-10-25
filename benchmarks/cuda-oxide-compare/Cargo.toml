@@ -1,0 +1,14 @@
+[package]
+name = "trit_gpu_compare"
+version = "0.1.0"
+edition = "2024"
+
+# 独立 workspace：需要 NVIDIA cuda-rust 的私有编译器（cargo oxide），
+# 故意不并入主 workspace，也不进 CI。
+[workspace]
+
+[dependencies]
+# 指向本地 cuda-rust checkout（见 README 的安装步骤）。
+cuda-device = { path = "__CUDA_RUST__/cuda-oxide/crates/cuda-device" }
+cuda-host = { path = "__CUDA_RUST__/cuda-oxide/crates/cuda-host" }
+cuda-core = { path = "__CUDA_RUST__/cuda-core" }
