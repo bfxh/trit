@@ -21,6 +21,17 @@ cargo test --workspace
 
 三条命令必须全部通过（退出码 0）才允许提交。
 
+完整检查矩阵与本地跑法：
+
+| 检查 | 判定 | 自证 |
+|---|---|---|
+| `module budget`（`python scripts/module_budget.py`） | 单文件 ≤ 800 行；超了必须登记，台账只允许变短 | `--self-test` 10 条（含四种红法） |
+| `publish graph`（`python scripts/publish_graph.py`） | 任何 crate 不许依赖 `publish = false` 的 crate；可发布 crate 必填字段齐全 | `--self-test` 5 条（2 正例 + 3 反证） |
+| `mutation`（`python scripts/mutation_check.py --pkg <crate>`） | 改动 crate 的变异必须被抓 | 全量每周跑一次 |
+| mutation 前置检查 | 锚点用正斜杠、唯一、不在测试代码里 | 跑测试前一次性报全 |
+| `stress`（`cargo test -p trit-core --release --test stress` 等） | 极端向量 / 跨字边界 / 10 万级载荷的不变量 | release 模式 |
+| 平台面 | Linux / Windows / macOS 三平台 fmt+clippy+test、MSRV 1.88、rustdoc `-D warnings`、package、wasm、action 自测 | CI |
+
 ## 代码约定
 
 - 公共 API 需要文档注释（`#![deny(missing_docs)]`）。

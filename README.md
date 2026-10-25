@@ -1,13 +1,56 @@
-# trit
+# trit —— Rust 三进制工具箱（balanced ternary / 三值逻辑 / 三值内核）
 
 [![CI](https://github.com/bfxh/trit/actions/workflows/ci.yml/badge.svg)](https://github.com/bfxh/trit/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/sansheng.svg)](https://crates.io/crates/sansheng)
 [![docs.rs](https://docs.rs/sansheng/badge.svg)](https://docs.rs/sansheng)
 
-Rust 原生的三值推理工具箱：Kleene K3 / Łukasiewicz Ł3 / Bochvar B3 语义、真值表、穷举参考、
-dual-rail + SAT 等价判定、组合网表 X 传播；二进制与三值的边界是**零拷贝视图**。
+**是什么**：在二进制机器上，把三进制真正能落地的那一层做成可复用 Rust crate——
+三值逻辑（Kleene K3 / Łukasiewicz Ł3 / Bochvar B3）、真值表与穷举等价、双导轨打包、
+CPU 掩码与 tryte 查表内核、GPU 三值内核、位平面 ALU、三值训练（STE/QAT）、
+TT3/TTX 资产容器、`.tri` 语言服务器、WASM Playground 与 `trit` CLI。
 
-定位与边界见 [docs/DESIGN.md](docs/DESIGN.md)。
+**搜索关键词**：Rust ternary · balanced ternary · trit · three-valued logic · Kleene K3 ·
+Łukasiewicz · Bochvar · BitNet · ternary weights · ternary GPU kernel · 5 trits per byte ·
+GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值逻辑。
+
+> 一句话：不是"把 float 换成三值"，而是把 `{-1,0,+1}` 能**省带宽**、能**去掉乘法**、
+> 能**表达"未知"**这三件事，分别做成有实测、可复算的 crate。
+
+## 一眼看强弱（同机实测，复算入口在每张图下面）
+
+![CPU 流式吞吐](docs/assets/speedup.svg)
+
+![每参数存储](docs/assets/bits.svg)
+
+![GPU 矩阵乘](docs/assets/gpu.svg)
+
+- **CPU 流式**：tryte 查表 **124.4 GMAC/s = 15.2× f32、2.0× Q4_0**，每参数只要 0.2 B。
+- **自动选核** **129.8 GMAC/s（15.8× f32）**，有效带宽 32.5 GB/s，已贴近本机 33 GB/s 的访存墙。
+- **GPU**：三值 3-popc **0.104 ps/MAC，2.9× f32 最优内核**（RTX 4060 Ti，512×4096×512）。
+- **精度**：三值权重是精确的 `±1/0`，流式 `max_err` 3e-5；Q4_0 是 1.2e-1。
+- **不是只省字节**：掩码内核把 `x·{-1,0,+1}` 变成按位加减，全程无浮点乘法。
+
+### 和谁比、不跟谁比
+
+| 对标 | 同机实测 | 结论 |
+|---|---|---|
+| f32 / f16 / Q4_0 | 是 | 上面三张图；Q4_0 是 0.5 B/参数，tryte 是 0.2 B |
+| llama.cpp | 否 | 不做同机对比，也不引用外部读数 |
+| BitNet b1.58 | 否 | 都是 ~1.6 bit/参数；没有同机模型读数，不宣称快慢 |
+
+## 三进制的代价（先看再决定用不用）
+
+- **浮点精度更差**：同比特存储，三值浮点误差上界是二进制的 **3 倍**（白丢约 1.58 bit）。
+- **GPU subgroup 路径更慢**：1.341 vs SIMT 0.298 ps/MAC（**4.5×**）。
+- **2-popcount 是负结果**：比 3-popcount 慢 1.9%。
+- **tryte 只在大行数赢**：49152 行仍比掩码慢 5.5%，反超点在 65536 行。
+- **CPU 三值内核没打满带宽墙**：掩码 21.5、tryte 24.9 GB/s vs 33 GB/s（65–75%）。
+- **STE 变体在小任务上同分**：选型需要更大/带噪任务。
+- **打包算术不划算**：三进制进位串行，本仓只做逻辑 + 位并行点积。
+
+完整清单与复算命令：[docs/LESSONS.md](docs/LESSONS.md)（经验与负结果）。
+
+定位与边界：[docs/DESIGN.md](docs/DESIGN.md)。
 
 ## 预编译产物
 
@@ -36,8 +79,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `sansheng` | 三生：统一入口伞包（re-export 以上能力） |
 | `trit-cli` | `trit` 命令行 |
 
-**实验层**（`publish = false`，不属于稳定 API；彼此**不许互相依赖**，否则 `cargo package` 会断，
-见下面的发布图门）：
+**实验层**（`publish = false`，不属于稳定 API；彼此**不许互相依赖**，否则 `cargo package` 会断）：
 
 | crate | 内容 | 入口 |
 |---|---|---|
@@ -48,6 +90,12 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-attn` | 注意力 = 快权重 FFN 的双视角、三值整数关联记忆 | `trit-attn demo` |
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |
+| `trit-ops` | 三值推理算子（双导轨掩码 / tryte 查表 / 自动选核）：流式 15.8× f32、0.2 B/参数 | `bench`（`crates/trit-ops`） |
+| `trit-texture` | TT3/TTX 三值纹理容器：2.40 bpp、GF(3) CRC-16、CPU/GPU 解码 | `trit-texture` |
+| `trit-unsafe` | 用 K3 审 unsafe：每个点判 Safe / Unknown / Risky 并按 crate 合成 | `trit-unsafe` |
+| `trit-procscan` | 进程行为扫描 + 自动分析 + MCP 配置优化（非管理员可用的证据面） | `trit-procscan` |
+| `trit-lsp` | `.tri` 语言服务器：诊断 / 悬停真值表 / 补全 / 文档符号 | `trit-lsp` |
+| `trit-train` | 三值训练 M0：STE 三变体 + 每行 scale + 位平面 ALU | `train-bench` |
 
 ## 三态与三值拓扑
 
@@ -244,7 +292,7 @@ cargo run --release -p trit-cli -- verify examples/policy.json
 | `TriVec -> bool[]`（纯二值） | 0.97 ms | 1.08 G elem/s |
 | `from_binary` 二进制视图 | 0.002 ms | 仅 move，无复制 |
 
-## 资源预算与变异门
+## 资源预算与质量数据
 
 所有子命令支持全局 `--timeout-ms N`：把本次调用重新执行为子进程，超时后杀掉并退出 **124**。
 这是**进程级硬超时**（能兜住整个 ATPG/验证/REPL），不是单故障取消；子进程用
@@ -255,29 +303,21 @@ cargo run --release -p trit-cli -- verify examples/policy.json
 - 解析器在**构造 AST 的过程中**扣节点预算：右结合蕴含链、扁平二元链、`!` 链与深括号
   都受深度上限约束；输入文本超过 1 MiB 在转 `Vec<char>` 之前拒绝。
 - `check_expr` 迭代遍历 AST；`Evaluator::assignment_count` / `chunk_planes` /
-  `evaluate_within` 用 checked 计数与行数上限，不再用饱和值冒充精确赋值数。
+  `evaluate_within` 用 checked 计数与行数上限，不用饱和值冒充精确赋值数。
 - `truth_table_within` / `eval_within` / `equivalent_within`：`trit-eval` 的带预算版本；
   Belnap `table_within` / `equivalent_within` 与电路 `combination_count` 使用同一套错误类型。
 - SAT / BDD / 策略入口先 `check_expr`（在收集变量之前）再编码，超限返回结构化
   `Limit`／`BudgetExceeded` 错误；策略展开在分配大子树之前扣节点预算。
 - CLI 在默认值上收紧：`table` / REPL 与 WASM 只允许 10 个变量，网表分析最多 10 个主输入。
 
-`python scripts/mutation_check.py` 对 **178** 条关键规则做单点文本变异并跑对应回归，
-测试必须变红才算抓住；`--pkg <crate>` 只跑改动过的 crate（PR 门），全量每周跑一次。
+**可复算的质量数据**：`scripts/mutation_check.py` 对 **178** 条关键规则做单点文本变异并跑回归；
+fuzz 目标 8 个（netlist / verilog / atpg / blif / aiger / expr / policy / netlist_json）；
+测试矩阵覆盖 Linux / Windows / macOS 三平台 + MSRV 1.88 + wasm32。贡献流程见
+[CONTRIBUTING.md](CONTRIBUTING.md)。
 
-### 六道门（每道一个判定，均带自证）
-
-| 门 | 判定 | 自证 |
-|---|---|---|
-| `module budget` | 单文件 ≤ 800 行；超了必须登记，台账**只允许变短** | `--self-test` 10 条（含四种红法） |
-| `publish graph` | 任何 crate 不许依赖 `publish = false` 的 crate；可发布 crate 必填字段齐全 | `--self-test` 5 条（2 正例 + 3 反证） |
-| `mutation`（PR 级） | 改动 crate 的变异必须全被抓 | 全量周常 |
-| `mutation preflight` | 路径用正斜杠、锚点唯一、锚点不在测试代码里 | 跑测试前一次性报全 |
-| `stress` | 极端向量 / 跨字边界 / 10 万级载荷的不变量 | release 模式跑四件套 |
-| CI 基础面 | 三平台 fmt+clippy+test、MSRV 1.88、rustdoc `-D warnings`、package、wasm、action 自测 | — |
-
-**对比与测量的硬规则**见 [`docs/TERNARY-BOUNDARIES.md`](docs/TERNARY-BOUNDARIES.md) §6/§7：
-任何对比必须同时给二进制基线（同机 f32/f64 或 1-bit 二值），并写明省的是带宽还是指令数。
+**对比与测量的规则**见 [`docs/TERNARY-BOUNDARIES.md`](docs/TERNARY-BOUNDARIES.md) §6/§7：
+任何对比必须同时给二进制基线（同机 f32/f64 或 1-bit 二值），并写明省的是带宽还是指令数；
+负结果统一记在 [`docs/LESSONS.md`](docs/LESSONS.md)。
 
 ## fuzz 与基准
 
@@ -566,7 +606,7 @@ SAT 给出测试向量；UNSAT 证明不可测（原因记 `proven`）。上限 
 | `--shared-cnf`，串行 | 2.1 s | 30.8 s | 未跑 |
 | `--shared-cnf`，jobs=8 | 0.08 s | 0.26 s | **2.6 s（40k 故障）** |
 
-（优化前 800 门串行 6.6 s；复用拓扑序后 2.5 s。绝对值与机器相关，CI 不做性能门禁。）
+（优化前 800 门串行 6.6 s；复用拓扑序后 2.5 s。绝对值与机器相关，CI 不设性能阈值。）
 
 ### 桥接故障（`trit bridge`）
 
@@ -708,11 +748,11 @@ cargo test --workspace
 `RUSTFLAGS="--remap-path-prefix=$HOME=~" cargo build --release`。Release 工作流已自动加这一步；
 `trit-redteam binary` 会把这些路径标成 `rust-toolchain`（而非我们的问题）。
 
-CI 另有五道门：`docs`（rustdoc `-D warnings`）、`action`（用 `examples/policy.json` 跑复合 Action 自测）、
-`MSRV`（1.88，`--locked`）、`wasm`（wasm32 构建）与 `package`（每个 crate 可打包）；
-Release 先过 `guard`：tag 去掉 `v` 后必须等于 `trit-cli` 的版本。
+CI 另外覆盖：`docs`（rustdoc `-D warnings`）、`action`（用 `examples/policy.json` 跑复合 Action 自测）、
+`MSRV`（1.88，`--locked`）、`wasm`（wasm32 构建）与 `package`（每个 crate 可打包）。
+Release 前会校验 tag 与 `trit-cli` 版本一致。
 
-`main` 受保护：只接受 PR + 8 个必需 check（三平台 + MSRV 1.88 + docs + action + wasm + package），线性历史。
+`main` 使用线性历史；贡献流程与本地检查见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 治理模型为 **BDFL**：架构变更、发布与关键路径审查由维护者最终拍板，详见 [GOVERNANCE.md](GOVERNANCE.md)
 与 `.github/CODEOWNERS`。
 

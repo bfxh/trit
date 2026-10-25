@@ -2,9 +2,19 @@
 
 ## [Unreleased]
 
+### Docs（README 重写：定位、可视化对比、代价清单）
+
+- 顶部改为"是什么 + 搜索关键词 + 一眼看强弱"：三张 SVG 对比图（CPU 流式、每参数字节、GPU），
+  数据全部来自仓库内实测；`scripts/gen_docs_charts.py` 可重跑生成。
+- 新增 [`docs/LESSONS.md`](docs/LESSONS.md)：三进制代价清单、已证负结果、测量经验、工程经验。
+- 面向使用者的 README 不再叙述内部检查流程（完整检查矩阵移到 `CONTRIBUTING.md`）。
+- 工作区表补齐 `trit-ops` / `trit-texture` / `trit-unsafe` / `trit-procscan` / `trit-lsp` / `trit-train`。
+- 更正 `trit-train` 的 STE 来源表述：`trit-net` 已有最小 STE，本层是 per-row scale + 三变体 + 位平面 ALU。
+- `docs/DESIGN.md` 去掉本机绝对路径。
+
 ### Added（`trit-train`：三进制训练 M0——STE + 位平面 ALU）
 
-- 新 crate `crates/trit-train`（`publish = false`），补上"三进制权重怎么训"这一环：
+- 新 crate `crates/trit-train`（`publish = false`），在 `trit-net` 已有的最小 STE 之外扩成可比较的一层：
   - **STE 三变体**：Identity / Clipped（饱和区归零）/ Soft（`1-(w/scale)^2` 衰减）；
     每行 `scale` 可学习（LSQ 风格），scale 梯度 `∂L/∂scale = dy·Σqᵢxᵢ`；
   - **位平面 ALU**：双导轨按字并行的 `not`/`and`/`or`/`xor`，支持 Kleene / Łukasiewicz /

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="286" viewBox="0 0 940 286" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="940" height="286" fill="#ffffff"/>
+<text x="260" y="38" font-size="22" font-weight="700" fill="#111">GPU 矩阵乘：ps/MAC</text>
+<text x="260" y="64" font-size="14" fill="#666">RTX 4060 Ti，512×4096×512；越低越好</text>
+<text x="246" y="113" text-anchor="end" font-size="14" fill="#222">f32 最优（4×4 + K32）</text>
+<rect x="260" y="92" width="530" height="30" rx="4" fill="#8a8f98"/>
+<text x="800" y="113" font-size="14" font-weight="600" fill="#111">0.298 ps</text>
+<text x="246" y="159" text-anchor="end" font-size="14" fill="#222">三值 · 3-popc</text>
+<rect x="260" y="138" width="185" height="30" rx="4" fill="#1f7a4d"/>
+<text x="455" y="159" font-size="14" font-weight="600" fill="#111">0.104 ps</text>
+<text x="246" y="205" text-anchor="end" font-size="14" fill="#222">三值 · split-K×4</text>
+<rect x="260" y="184" width="180" height="30" rx="4" fill="#1f7a4d"/>
+<text x="450" y="205" font-size="14" font-weight="600" fill="#111">0.101 ps</text>
+<text x="260" y="268" font-size="12" fill="#777">来源 crates/trit-gpu/README.md（2026-10-25）；三值比 f32 最优快 2.9×</text>
+</svg>
