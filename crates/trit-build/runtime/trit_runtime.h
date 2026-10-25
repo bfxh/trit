@@ -24,6 +24,7 @@
 #define TRIT_ERR_BYTE (-6)    /* 出现 243..255（不是合法 5-trit 组合） */
 #define TRIT_ERR_CRC (-7)     /* CRC-3 不匹配 */
 #define TRIT_ERR_COUNT (-8)   /* count != 3^nvars */
+#define TRIT_ERR_CANON (-10) /* 末字节闲置的 trit 槽非零（非规范编码） */
 #define TRIT_ERR_NOMEM (-9)
 
 typedef struct {

@@ -2129,6 +2129,7 @@ MUTANTS = [
         "filter": "every_operator_matches_scalar"
     },
     {
+
         "name": 'procscan: 不识别 shell 进程',
         "file": 'crates/trit-procscan/src/analyze.rs',
         "old": '                if SHELLS.contains(&lower.as_str()) {',
@@ -2151,8 +2152,128 @@ MUTANTS = [
         "new": '                out.insert(path, (mtime, 0u64));',
         "pkg": 'trit-procscan',
         "filter": 'snapshot_detects_new_and_changed_files'
-    }
+    },
+    {
+        "name": 'redteam: 非规范编码永远判规范',
+        "file": 'crates/trit-redteam/src/blob.rs',
+        "old": '    Ok(last == last % 3u32.pow(filled))',
+        "new": '    Ok(true)',
+        "pkg": 'trit-redteam',
+        "filter": 'strict_decoders_accept_only_the_canonical_encoding'
+    },
+    {
+        "name": 'redteam: CRC 漏检不计数',
+        "file": 'crates/trit-redteam/src/crc.rs',
+        "old": '                if crc3(&broken) == base {',
+        "new": '                if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'minimum_undetected_weight_is_reachable_and_verified'
+    },
+    {
+        "name": 'redteam: 非法输入不算非法',
+        "file": 'crates/trit-redteam/src/rail.rs',
+        "old": '            illegal |= state == 3;',
+        "new": '            illegal |= false;',
+        "pkg": 'trit-redteam',
+        "filter": 'illegal_inputs_are_read_as_true_by_a_pos_only_consumer'
+    },
+    {
+        "name": 'redteam: 不校验 len 与 nvars',
+        "file": 'crates/trit-redteam/src/blob.rs',
+        "old": '    if 3usize.checked_pow(nvars as u32) != Some(len) {',
+        "new": '    if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'rejects_nvars_length_mismatch'
+    },
+    {
+        "name": 'redteam: 差分分歧不记账',
+        "file": 'crates/trit-redteam/src/fuzz.rs',
+        "old": '                if left != right {',
+        "new": '                if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'comparator_reports_both_kinds_of_disagreement'
+    },
+    {
+        "name": 'redteam: 不识别 shell 包装',
+        "file": 'crates/trit-redteam/src/chain.rs',
+        "old": '        if is_shell(&cmd[0]) {',
+        "new": '        if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'flags_shell_wrappers_network_and_absolute_paths'
+    },
+    {
+        "name": 'redteam: 侧信道泄漏恒为 0',
+        "file": 'crates/trit-redteam/src/sidechannel.rs',
+        "old": '        leakage_bits: (h_output - h_conditional).max(0.0),',
+        "new": '        leakage_bits: 0.0,',
+        "pkg": 'trit-redteam',
+        "filter": 'weight_directly_reveals_unknowns'
+    },
+    {
+        "name": 'redteam: 不报执行栈可执行',
+        "file": 'crates/trit-redteam/src/binary.rs',
+        "old": '        if self.exec_stack == Some(true) {',
+        "new": '        if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'elf_hardening_is_read_from_program_headers'
+    },
+    {
+        "name": 'redteam: 不扫密钥形态字符串',
+        "file": 'crates/trit-redteam/src/binary.rs',
+        "old": '        if count > 0 && plausible_secret(&text, needle) {',
+        "new": '        if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'detects_secret_shaped_strings_and_attributes_them_to_us'
+    },
+    {
+        "name": 'redteam: 归属不认 Rust std 路径',
+        "file": 'crates/trit-redteam/src/attrib.rs',
+        "old": '    let lower = text.to_ascii_lowercase();',
+        "new": '    let lower = text.to_ascii_lowercase();\n    if !lower.is_empty() {\n        return false;\n    }',
+        "pkg": 'trit-redteam',
+        "filter": 'attributes_rust_std_paths_to_the_toolchain'
+    },
+    {
+        "name": 'redteam: CFG 归属固定按 MSVC 算',
+        "file": 'crates/trit-redteam/src/binary.rs',
+        "old": '            out.push(if msvc {',
+        "new": '            out.push(if true {',
+        "pkg": 'trit-redteam',
+        "filter": 'cfg_attribution_depends_on_the_pe_flavor'
+    },
+    {
+        "name": 'redteam: remap 后仍判成用户名泄漏',
+        "file": 'crates/trit-redteam/src/binary.rs',
+        "old": '    let user_prefix = |text: &str| text.contains("C:\\\\Users\\\\") || text.contains("/home/");',
+        "new": '    let user_prefix = |_text: &str| true;',
+        "pkg": 'trit-redteam',
+        "filter": 'remapped_toolchain_paths_are_not_findings'
+    },
+    {
+        "name": 'trb: 生产解码器放行非规范编码',
+        "file": 'crates/trit-build/src/trb.rs',
+        "old": '    if u32::from(*blob.last().expect("非空")) >= 3u32.pow(used_in_last as u32) {',
+        "new": '    if false {',
+        "pkg": 'trit-build',
+        "filter": 'rejects_non_canonical_padding'
+    },
+    {
+        "name": 'runtime: C 解码器放行非规范编码',
+        "file": 'crates/trit-build/runtime/trit_runtime.c',
+        "old": '    if ((uint32_t)blob[len - 1] >= limit) {',
+        "new": '    if (0) {',
+        "pkg": 'trit-build',
+        "filter": 'both_decoders_reject_non_canonical_padding'
+    },
+    {
+        "name": 'redteam: 解析器放行非规范编码',
+        "file": 'crates/trit-redteam/src/blob.rs',
+        "old": '    if !canonical_tail(bytes, payload, payload_bytes) {',
+        "new": '    if false {',
+        "pkg": 'trit-redteam',
+        "filter": 'strict_decoders_accept_only_the_canonical_encoding'
 
+    }
 ]
 
 

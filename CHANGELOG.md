@@ -18,6 +18,9 @@
 - **M1：Verilog 子集读入**（`d.v / --output / --expect`）：复用 `trit-circuit::parse_verilog` +
   `propagate`，与 `.tri` 链路真值表**逐行对拍**，不一致即失败、不写 `build.json`；清单新增
   `{"kind":"verilog"}`（归三进制轨）。测试 +4；变异锚点 +1。
+- **TRB2 规范形（加固）**：末字节里没用到的 trit 槽必须为 0；Rust 解码器、C 运行时
+  （新增 `TRIT_ERR_CANON`）与 red-team 解析器同一契约。此前同一张表有 27 种写法
+  （red-team 实测），内容哈希不等于语义身份；现在严格解码器只接受一种。
 - **M2：TRB2 基 3 打包 + 运行时 + 双导轨导出**：`truth.tritbin` 改为 `TRB2`（5 trit/字节 +
   GF(3) CRC-3，27 trit 由 35 B 降到 **17 B**；12 变量 132,883 → **106,300 B**，−20.00%）；
   `--decode` 校验魔数/长度/CRC 并重出 CSV/`lookup.c`；`runtime/trit_runtime.{c,h}` 是

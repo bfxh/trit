@@ -75,6 +75,17 @@ int trit_trb2_decode(const uint8_t *blob, size_t len, trit_table *out) {
         return TRIT_ERR_COUNT;
     }
 
+    /* 规范形：末字节里没用到的 trit 槽必须为 0（与 Rust 端同一契约）。 */
+    uint32_t payload_bytes = (uint32_t)(len - HEADER);
+    uint32_t used_in_last = payload - 5u * (payload_bytes - 1u);
+    uint32_t limit = 1u;
+    for (uint32_t i = 0; i < used_in_last; i++) {
+        limit *= 3u;
+    }
+    if ((uint32_t)blob[len - 1] >= limit) {
+        return TRIT_ERR_CANON;
+    }
+
     uint8_t *digits = malloc(payload);
     if (digits == NULL) {
         return TRIT_ERR_NOMEM;
