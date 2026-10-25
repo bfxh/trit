@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（`trit-graph` M3：三通道随机游走 / PageRank）
+
+- `tri_pagerank(view, seeds, damping, iters, tolerance)`：支持/反对/冻结三通道一起传播；
+  反对边交换 plus/minus，中立边把质量冻结为 unknown；阻尼向种子先验回流。
+- `TriScore { plus, minus, unknown }` + `state()`：未知占优或并列 → 悬置，否则多数通道。
+- 测试共 42 个（新增 7）：支持链传播、反对边翻转、中立边冻结、种子质量累加、
+  平票悬置、无种子为空、死端保质量与质量守恒（种子总质量不变）。
+- 变异新增 4 条（中立边不冻结、反对边不翻转、忽略阻尼、平票判真），**15/15 全部被抓住**。
+- 质量数据 302 条。
+
 ### Added（`trit-graph` M2：三态超图 + 树分解容器）
 
 - `TritHypergraph`：三态超边（成员位集 + 自身三态 + 关键位）；`incident` 关联查询；

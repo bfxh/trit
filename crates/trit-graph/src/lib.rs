@@ -1,4 +1,4 @@
-//! 三态结构基础层（M2）。
+//! 三态结构基础层（M3）。
 //!
 //! 给后面的 "TriMPNN / Tri-TreeOracle / Tri-TD-GNN / Tri-HyperGNN" 准备地基：
 //! - [`TritGraph`]：稠密位集图（三态节点 + 四态边 + 关键位）；
@@ -7,10 +7,11 @@
 //! - [`TreeDecomposition`]：树分解容器（袋 + 袋树 + 覆盖/运行交校验）；
 //! - [`Tree`]：DFS 生成树（父指针 + 先序 + 逆先序当后序）；
 //! - [`council`] / [`tally`]：三态议会（多数、强否决、平票悬置）；
-//! - [`wl_refine`]：三态 1-WL 颜色细化。
+//! - [`wl_refine`]：三态 1-WL 颜色细化；
+//! - [`tri_pagerank`] / [`TriScore`]：三通道随机游走 / PageRank。
 //!
 //! 共享逻辑都在 [`TriGraphView`] 上：稠密/稀疏只实现四个基本方法，
-//! 拓扑序、DFS 树、计数、议会、WL 从 trait 派生，避免两套实现分叉。
+//! 拓扑序、DFS 树、计数、议会、WL、随机游走从 trait 派生，避免两套实现分叉。
 //!
 //! 边界（仍然不做）：
 //! - 没有权重、节点特征、批处理；树分解只做容器与校验，**不做分解算法**；
@@ -25,6 +26,7 @@ mod hyper;
 mod nodes;
 mod tree;
 mod view;
+mod walk;
 mod wl;
 
 pub use council::{Council, council, tally};
@@ -34,4 +36,5 @@ pub use graph::TritGraph;
 pub use hyper::{Hyperedge, TritHypergraph};
 pub use tree::Tree;
 pub use view::TriGraphView;
+pub use walk::{TriScore, tri_pagerank};
 pub use wl::{color_count, wl_refine};

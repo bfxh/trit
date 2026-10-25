@@ -1881,6 +1881,38 @@ MUTANTS = [
         "filter": "budgets_reject_oversized_blif"
     },
     {
+        "name": "walk: 中立边不冻结",
+        "file": "crates/trit-graph/src/walk.rs",
+        "old": "                    Ternary::Unknown => (0.0, 0.0, mass.total()),",
+        "new": "                    Ternary::Unknown => (mass.plus, mass.minus, mass.unknown),",
+        "pkg": "trit-graph",
+        "filter": "neutral_edge_freezes_to_unknown"
+    },
+    {
+        "name": "walk: 反对边不翻转",
+        "file": "crates/trit-graph/src/walk.rs",
+        "old": "                    Ternary::False => (mass.minus, mass.plus, mass.unknown),",
+        "new": "                    Ternary::False => (mass.plus, mass.minus, mass.unknown),",
+        "pkg": "trit-graph",
+        "filter": "oppose_edge_flips_state"
+    },
+    {
+        "name": "walk: 忽略阻尼",
+        "file": "crates/trit-graph/src/walk.rs",
+        "old": "            let share = damping / degree as f64;",
+        "new": "            let share = 1.0 / degree as f64;",
+        "pkg": "trit-graph",
+        "filter": "support_edges_carry_true"
+    },
+    {
+        "name": "walk: 平票判真",
+        "file": "crates/trit-graph/src/walk.rs",
+        "old": "        } else if self.plus > self.minus {",
+        "new": "        } else if self.plus >= self.minus {",
+        "pkg": "trit-graph",
+        "filter": "tie_is_unknown"
+    },
+    {
         "name": "hyper: 超边判决忽略成员状态",
         "file": "crates/trit-graph/src/hyper.rs",
         "old": "            (self.nodes.get(node), self.nodes.is_critical(node))",

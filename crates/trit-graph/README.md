@@ -1,10 +1,10 @@
-# trit-graph：三态结构基础层（M2）
+# trit-graph：三态结构基础层（M3）
 
 给后面的三态图/树/超图模型（TriMPNN、Tri-TreeOracle、Tri-TD-GNN…）准备地基。
 **不训练、不推理**，只提供"结构 + 三态"的最小语义与位运算原语。
 
-M2 在 M1（稀疏 CSR + 1-WL）之上加了**三态超图**与**树分解容器**；议会规则抽成公共 `tally`，
-超边、袋、图邻居共用一份计票。
+M3 在 M2（超图 + 树分解容器）之上加了**三通道随机游走 / PageRank**；
+议会规则抽成公共 `tally`，超边、袋、图邻居共用一份计票。
 
 ## 数据结构
 
@@ -41,6 +41,7 @@ TritGraph
 | `TritHypergraph::add_hyperedge` / `incident` / `verdict` | 超边、关联查询、超边议会 | 建边 O(成员)；关联 O(超边数) |
 | `TreeDecomposition::validate` | 节点覆盖 / 边覆盖 / 运行交 | O(n + E + Σ袋) |
 | `TreeDecomposition::bag_verdict` | 袋内三态议会 | O(袋大小) |
+| `tri_pagerank(view, seeds, d, iters, tol)` | 三通道随机游走 / PageRank | O(轮数 × (n + E)) |
 
 ## 三态议会（M0 规则）
 
@@ -83,6 +84,14 @@ assert_eq!(tree.roots().collect::<Vec<_>>(), vec![0]);
   3. 运行交（running intersection）：同一节点的所有袋在袋树上连通。
 - `bag_verdict(i, graph)` 用袋内节点状态开议会（可给后续袋级判决做输入）。
 
+## 三通道随机游走 / PageRank
+
+- 每个节点带三份质量 `(plus, minus, unknown)`；每条出边均分源节点质量。
+- 边状态决定搬运方式：`+` 原样、`-` 交换 plus/minus、`0` **冻结**为 unknown。
+- 阻尼 `d`：每轮向种子先验回流 `(1-d)`，种子总质量守恒（可测）。
+- 输出 `TriScore::state()`：未知占优或三通道并列 → 悬置；否则多数通道。
+- 语义是**固定规则**（不是学出来的），也没有边权；要学的版本是 TriMPNN（路线图后续）。
+
 ## 三态 1-WL
 
 初始颜色来自节点三态；每轮把 `(当前颜色, 邻居的 (边状态, 颜色) 多重集)` 压成新颜色，
@@ -95,6 +104,7 @@ assert_eq!(tree.roots().collect::<Vec<_>>(), vec![0]);
 ## 限制（M2 仍然不做）
 
 - **不做树分解算法**（只校验给定的袋树）；没有超图→图展开 / 超边间的消息传递。
+- 随机游走是固定规则、没有边权；没有个性化向量的学习。
 - 没有权重、节点特征、批处理；稠密图仍是 `n²` 内存；CSR 只有出边。
 - 三态议会是固定规则表，不可学习；没有 STE/训练。
 - 拓扑序把所有存在的边都当方向边；三态语义在排序里不参与。
@@ -102,5 +112,5 @@ assert_eq!(tree.roots().collect::<Vec<_>>(), vec![0]);
 ## 测试
 
 ```bash
-cargo test -p trit-graph     # 35 个：稠密/稀疏一致性、跨字边界、拓扑/环、DFS、议会、WL、超图、树分解校验
+cargo test -p trit-graph     # 42 个：稠密/稀疏一致性、跨字边界、拓扑/环、DFS、议会、WL、超图、树分解、PageRank
 ```
