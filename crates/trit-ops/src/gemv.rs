@@ -466,7 +466,7 @@ impl TryteMatrix {
         }
     }
 
-    /// 同 [`gemv_with_split_tables`](Self::gemv_with_split_tables)，偏移改走 [`SPLIT_MAP`]。
+    /// 同 [`gemv_with_split_tables`](Self::gemv_with_split_tables)，偏移改走预计算的 243 项映射表。
     pub fn gemv_with_split_tables_map(&self, tables: &[f32], out: &mut [f32]) {
         assert_eq!(tables.len(), self.gpr * SPLIT_STATES, "拆表尺寸不符");
         assert_eq!(out.len(), self.rows, "输出长度必须是 rows");
