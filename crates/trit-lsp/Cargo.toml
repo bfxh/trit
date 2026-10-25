@@ -1,0 +1,18 @@
+[package]
+name = "trit-lsp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三进制语言服务器（.tri / TTIR-0）：诊断、悬停、补全、文档符号（M0）"
+publish = false
+
+[[bin]]
+name = "trit-lsp"
+path = "src/main.rs"
+
+[dependencies]
+trit-core.workspace = true
+trit-eval.workspace = true
+serde_json = "1.0.154"

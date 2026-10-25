@@ -686,6 +686,9 @@ OK     free slot must not reject on unknown hopelessness
   → 位并行真值表 → `TRB2` blob/CSV/`lookup.c`，
   `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog]`；为什么只做这一层、
   哪部分仍靠 LLVM/Rust 见 [docs/TERNARY-TOOLCHAIN.md](docs/TERNARY-TOOLCHAIN.md)。
+- 编辑器支持（M0）：`trit-lsp` 是 `.tri` 的语言服务器（诊断 / 悬停真值表 / 补全 / 文档符号），
+  语义直接复用 `trit-core` / `trit-eval`，不另写解析器。见
+  [crates/trit-lsp/README.md](crates/trit-lsp/README.md)。
 - 只做**真值函数**三值逻辑；硬件四态 `0/1/X/Z` 与 X-optimism 不在范围内。
 - 不做时序模型检验、通用 SMT、完整硬件仿真。
 - 穷举参考是逐赋值的，18 变量约 12.6 s，仅用于小规模对拍。

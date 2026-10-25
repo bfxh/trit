@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（`trit-lsp`：`.tri` 的三进制语言服务器 M0）
+
+- 新 crate `crates/trit-lsp`（`publish = false`，独立二进制），stdio + JSON-RPC，
+  把 `.tri` 关联到 `target/debug/trit-lsp` 即可用：
+  - **诊断**：与 `trit build` 前端同规则（单表达式文件、解析错误行列 → LSP range）；
+  - **悬停**：运算符名称/优先级/结合性 + 当前三值语义下**现算**的 3×3 真值表；变量/常量解释；
+  - **补全**：运算符（含 `∧∨⊕→≡` 等 Unicode 拼写）、常量词、本文件变量；
+  - **文档符号**：文件内变量。
+- 语义不复制：解析走 `trit_core::Parser`、真值表走 `trit_eval::eval`；
+  运算符表每个拼写都有 `operators_round_trip` 测试保证解析器接受。
+- 三值语义由 `initialize.initializationOptions.algebra` 选择（`kleene`/`k3`、
+  `lukasiewicz`/`l3`/`luk`、`bochvar`/`b3`），默认 Kleene。
+- 位置按 UTF-16 码元换算（中文注释不会错列）；同步方式 Full。
+- 验证：26 个单测 + `tests/wire.rs` 起真实子进程走完整会话（initialize → didOpen → hover
+  逐格断言 Bochvar 真值表 → completion → documentSymbol → didChange 诊断 → shutdown/exit）；
+  clippy/rustdoc `-D warnings`、fmt、模块预算全绿。
+
 ### Changed（`trit-ops`：掩码内核行阻塞 2，大行数 −4～10%）
 
 - 掩码内核两行共享一次 `x` 装载（`row_dot_mask2`）：每 8 trit 的装入从 3 次降到 2.5 次，

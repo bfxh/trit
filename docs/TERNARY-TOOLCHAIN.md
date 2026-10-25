@@ -90,6 +90,11 @@ trit build demo.tri --out out --check  # 校验产物哈希
 | 完整性 | 篡改 `truth.tritbin` 后 `--check` 退出非 0 |
 | 复核 | 化简不等价 ⇒ 构建失败，不写任何产物 |
 
+**编辑器支持（M0）**：`trit-lsp` 是 `.tri` 的语言服务器——诊断（与上面的前端同规则）、
+运算符悬停（按当前三值语义现算 3×3 真值表）、补全、文档符号。它不复制语法/语义：
+解析用 `trit_core::Parser`，真值表用 `trit_eval::eval`。用法见
+[crates/trit-lsp/README.md](../crates/trit-lsp/README.md)。
+
 ## 5. 继续靠 LLVM / Rust 的部分（刻意不自己写）
 
 | 职责 | 归谁 | 理由 |
