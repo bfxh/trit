@@ -30,6 +30,22 @@ pub enum Kernel {
 /// 行数达到这个量级时，tryte 查表的建表成本才被摊薄到值得用。
 pub const AUTO_LUT_ROWS: usize = 2048;
 
+/// 拆表方案：每个 5-trit 字节拆成「低 2 位」和「高 3 位」两张小表。
+///
+/// 整字节表每张 243 项（`3^5`），拆开是 9 + 27 = 36 项，建表便宜 6.75 倍；
+/// 代价是每个字节要查两次表。
+pub const SPLIT_LOW_STATES: usize = 9;
+/// 高 3 位表的项数（`3^3`）。
+pub const SPLIT_HIGH_STATES: usize = 27;
+/// 拆表每字节的总项数。
+pub const SPLIT_STATES: usize = SPLIT_LOW_STATES + SPLIT_HIGH_STATES;
+
+/// 行数低于这个值时用拆表（建表便宜），高于则用整字节表（查表便宜）。
+///
+/// 实测交叉点（`bench --split`，cols=576，各 3 次取中位）：
+/// `1792 → 0.41×`、`2048 → 1.16×`，所以阈值取 2048。
+pub const LUT_SPLIT_ROWS: usize = 2048;
+
 /// 双导轨三值矩阵（行主序，每行补齐到 64 的倍数）。
 #[derive(Clone, Debug)]
 pub struct TernaryMatrix {
@@ -289,13 +305,12 @@ impl TryteMatrix {
         }
     }
 
-    /// `out[r] = dot(row r, x)`，用 `3^5` 查表。
+    /// 建表：`gpr × 243` 项，`tables[g*243 + code]` = 第 `g` 组 5 个 trit 与 `x` 的加权和。
     ///
-    /// 每个 5-trit 组对应一张 243 项的表：表项就是该组 5 个 trit 的加权和。
-    /// 表在每次 gemv 时重建一次（激活变了），按行复用到所有行。
-    pub fn gemv(&self, x: &[f32], out: &mut [f32]) {
-        assert_eq!(x.len(), self.cols);
-        assert_eq!(out.len(), self.rows);
+    /// 表只依赖激活 `x`，与行数无关——同一 `x` 上多次 gemv 可复用。
+    /// 建表成本 `O(gpr × 243)` 与行数无关，所以行数少时它占的比例很高。
+    pub fn build_tables(&self, x: &[f32]) -> Vec<f32> {
+        assert_eq!(x.len(), self.cols, "激活长度必须是 cols");
         let gpr = self.gpr;
         let cols = self.cols;
 
@@ -332,6 +347,16 @@ impl TryteMatrix {
                 });
             }
         }
+        tables
+    }
+
+    /// 用已建好的表算 `out[r] = dot(row r, x)`。
+    ///
+    /// `tables` 必须来自同一 `x` 上的 [`build_tables`](Self::build_tables)。
+    pub fn gemv_with_tables(&self, tables: &[f32], out: &mut [f32]) {
+        assert_eq!(tables.len(), self.gpr * TRYTE_STATES, "表尺寸不符");
+        assert_eq!(out.len(), self.rows, "输出长度必须是 rows");
+        let gpr = self.gpr;
 
         let tab = Ptr::new(tables.as_ptr() as *mut f32);
         let data = Ptr::new(self.data.as_ptr() as *mut u8);
@@ -346,6 +371,104 @@ impl TryteMatrix {
                 *o = acc;
             });
         }
+    }
+
+    /// `out[r] = dot(row r, x)`，用 `3^5` 查表。
+    ///
+    /// 每个 5-trit 组对应一张 243 项的表：表项就是该组 5 个 trit 的加权和。
+    /// 表在每次 gemv 时重建一次（激活变了），按行复用到所有行。
+    pub fn gemv(&self, x: &[f32], out: &mut [f32]) {
+        assert_eq!(out.len(), self.rows, "输出长度必须是 rows");
+        let tables = self.build_tables(x);
+        self.gemv_with_tables(&tables, out);
+    }
+
+    /// 建拆表：每字节两张小表（低 2 位 9 项 + 高 3 位 27 项），共 36 项。
+    ///
+    /// 建表成本只有整字节表的 `36/243`，小行数时能显著压低固定开销。
+    pub fn build_tables_split(&self, x: &[f32]) -> Vec<f32> {
+        assert_eq!(x.len(), self.cols, "激活长度必须是 cols");
+        let gpr = self.gpr;
+        let cols = self.cols;
+        let mut tables = vec![0.0f32; gpr * SPLIT_STATES];
+        let xp = Ptr::new(x.as_ptr() as *mut f32);
+        let tp = Ptr::new(tables.as_mut_ptr());
+        let mut units = vec![0u8; gpr];
+        // SAFETY: units 有 gpr 个元素；每组只写自己那 36 项。
+        unsafe {
+            par_rows_mut(units.as_mut_ptr(), gpr, move |_, g| {
+                let mut xv = [0.0f32; TRITS_PER_BYTE];
+                for (i, slot) in xv.iter_mut().enumerate() {
+                    let c = g * TRITS_PER_BYTE + i;
+                    if c < cols {
+                        *slot = *xp.get().add(c);
+                    }
+                }
+                let base = tp.get().add(g * SPLIT_STATES);
+                build_pow3(base, &xv[..2]);
+                build_pow3(base.add(SPLIT_LOW_STATES), &xv[2..]);
+            });
+        }
+        tables
+    }
+
+    /// 用拆表算 `out[r] = dot(row r, x)`；`tables` 须来自同一 `x` 的 [`build_tables_split`](Self::build_tables_split)。
+    pub fn gemv_with_split_tables(&self, tables: &[f32], out: &mut [f32]) {
+        assert_eq!(tables.len(), self.gpr * SPLIT_STATES, "拆表尺寸不符");
+        assert_eq!(out.len(), self.rows, "输出长度必须是 rows");
+        let gpr = self.gpr;
+        let tab = Ptr::new(tables.as_ptr() as *mut f32);
+        let data = Ptr::new(self.data.as_ptr() as *mut u8);
+        // SAFETY: out 有 rows 个元素；codes 行内不越界；表已完整建立。
+        unsafe {
+            par_rows_mut(out.as_mut_ptr(), self.rows, move |o, r| {
+                let codes = std::slice::from_raw_parts(data.get().add(r * gpr), gpr);
+                let mut acc = 0.0f32;
+                for (g, &code) in codes.iter().enumerate() {
+                    let base = tab.get().add(g * SPLIT_STATES);
+                    let c = code as usize;
+                    acc += *base.add(c % SPLIT_LOW_STATES);
+                    acc += *base.add(SPLIT_LOW_STATES + c / SPLIT_LOW_STATES);
+                }
+                *o = acc;
+            });
+        }
+    }
+
+    /// 按行数自动选表粒度：小行数用拆表（省建表），大行数用整字节表（省查表）。
+    pub fn gemv_auto(&self, x: &[f32], out: &mut [f32]) {
+        if self.rows < LUT_SPLIT_ROWS {
+            let tables = self.build_tables_split(x);
+            self.gemv_with_split_tables(&tables, out);
+        } else {
+            self.gemv(x, out);
+        }
+    }
+
+    /// 强制走拆表，绕过 [`LUT_SPLIT_ROWS`]（诊断/基准用）。
+    pub fn gemv_auto_split(&self, x: &[f32], out: &mut [f32]) {
+        let tables = self.build_tables_split(x);
+        self.gemv_with_split_tables(&tables, out);
+    }
+}
+
+/// 把 `xs` 的 `3^len` 种加权和写进 `t`（`t[0]` 对应全 `-1` 组合）。
+///
+/// code 用 `0/1/2` 表示 trit `-1/0/+1`，所以全零组合的值是 `-sum(xs)`；
+/// 之后每加一个 trit，把已有表扩成「原值 / +x / +2x」三份。
+///
+/// # Safety
+/// `t` 必须指向至少 `3^xs.len()` 个连续 `f32`。
+unsafe fn build_pow3(t: *mut f32, xs: &[f32]) {
+    *t = -xs.iter().sum::<f32>();
+    let mut pow = 1usize;
+    for &xi in xs {
+        for c in 0..pow {
+            let base = *t.add(c);
+            *t.add(c + pow) = base + xi;
+            *t.add(c + 2 * pow) = base + 2.0 * xi;
+        }
+        pow *= 3;
     }
 }
 
@@ -444,6 +567,40 @@ mod tests {
             t.gemv(&x, &mut b);
             assert!(close(&a, &b), "cols={cols}");
         }
+    }
+
+    #[test]
+    fn lut_split_matches_whole_byte_table() {
+        // 拆表（2+3）必须与整字节表（5）给出同一结果，含 cols 不是 5 的倍数。
+        for cols in [1usize, 4, 5, 6, 13, 130, 131] {
+            let rows = 37usize;
+            let rows_v = make(rows, cols);
+            let m = TernaryMatrix::from_rows(&rows_v, cols);
+            let t = TryteMatrix::from_rail(&m);
+            let x: Vec<f32> = (0..cols).map(|i| (i % 11) as f32 * 0.13 - 0.6).collect();
+            let mut a = vec![0.0f32; rows];
+            let mut b = vec![0.0f32; rows];
+            t.gemv(&x, &mut a);
+            let tables = t.build_tables_split(&x);
+            t.gemv_with_split_tables(&tables, &mut b);
+            assert!(close(&a, &b), "拆表与整字节表不一致，cols={cols}");
+        }
+    }
+
+    #[test]
+    fn lut_auto_uses_split_below_threshold() {
+        // 行数低于阈值时 gemv_auto 走拆表；结果必须与整字节表一致。
+        let (rows, cols) = (13usize, 130usize);
+        assert!(rows < LUT_SPLIT_ROWS, "本用例依赖小行数走拆表");
+        let rows_v = make(rows, cols);
+        let m = TernaryMatrix::from_rows(&rows_v, cols);
+        let t = TryteMatrix::from_rail(&m);
+        let x: Vec<f32> = (0..cols).map(|i| (i % 7) as f32 * 0.21 - 0.7).collect();
+        let mut a = vec![0.0f32; rows];
+        let mut b = vec![0.0f32; rows];
+        t.gemv(&x, &mut a);
+        t.gemv_auto(&x, &mut b);
+        assert!(close(&a, &b), "gemv_auto 与整字节表不一致");
     }
 
     #[test]
