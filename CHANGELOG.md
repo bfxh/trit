@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed（`trit-ops`：非 x86_64 编译失败）
+
+- #147 合入后 main 的 macOS（arm64）CI 红了：`simd.rs` 只在 `x86_64` 下导出
+  `row_dot_{f32,f16,q4,mask}`，ARM 上没有定义。PR 矩阵只跑 ubuntu+windows（x86），
+  所以 PR 全绿、main 才炸。
+- 补 `scalar` 回退模块（语义与 AVX2 版逐项一致），非 x86_64 导出同一组函数；
+  `MASK_LUT` 只在 x86_64 编译，避免死代码告警。
+- 新增 3 条对拍测试（x86_64 上 scalar vs AVX2：mask / f32+f16 / q4），
+  `cargo test -p trit-ops` 31 passed；`cargo check/clippy --target aarch64-unknown-linux-gnu -D warnings` 干净。
+
 ### Changed（`trit-gpu`：2-popcount 点积，实测负结果）
 
 - 新增 `dot_word_2popc` 与入口 `main_tiled2o3` 的对照实现 `main_tiled2o2`
