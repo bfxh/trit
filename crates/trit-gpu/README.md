@@ -156,6 +156,20 @@ cuda-oxide 的参考内核没做；若他们同样处理，差距会缩小（幅
   （需显式开 wgpu 的 `spirv` feature，默认不含）。探针在 64 lane 上做
   `subgroupAdd(float(id % 8))`，因 32 % 8 == 0，每 subgroup 覆盖 4 轮 0..7，期望恒为 112；
   实测 64 个值全部 == 112，adapter = RTX 4060 Ti / Vulkan，`SUBGROUP = true`。
-  **尚未做**：matmul 本体搬迁——那要与 SIMT 版同等调优才有对照意义，且 `.spv` 需作为
-  二进制产物入库（CI 无 glslang）。故这里只声明路径可用，不给 subgroup 的性能结论。
+  **matmul 本体已试一版（负结果）**：16×32 tile / warp，lane 管一列，
+  每个 k 步用 `subgroupBroadcast` 把 16 个 A 行广播给全 warp。
+
+  | 版本 | ps/MAC | 相对 |
+  |---|---|---|
+  | SIMT `main_tiled4k32` | **0.301** | 1.00× |
+  | subgroup 16×32/warp | **1.341** | 4.5× 慢 |
+
+  正确性对拍通过（抽样 5 点，相对误差 0）。慢的原因是可算的：每 k 步每 lane
+  要 16 次 shuffle + 16 次 FMA，**shuffle:FMA = 1:1**；shuffle 与 FMA 同为
+  1 指令/周期，因此这种结构的天花板就是 **50% FMA 峰值**，而现版已达约 43%
+  ——理论余量只有 1.16×，实际还要再扣掉没有共享内存复用带来的 L2 放大
+  （B 被读约 32 次、A 约 16 次）。
+
+  结论：**在这个 f32 matmul 上 subgroup 难有胜算**，除非换成分片式寄存器布局
+  把 shuffle:FMA 压到 1:8 以下——那需要 64+ 个累加器/线程，寄存器放不下。
 - `matmul.rs` 拆出 `matmul_f32.rs`（fp16）与 `popc.rs`（吞吐微基准），三者都在 800 行预算内。
