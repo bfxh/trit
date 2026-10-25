@@ -25,6 +25,7 @@ members = [
     "crates/trit-gpu",
     "crates/trit-texture",
     "crates/trit-unsafe",
+    "crates/trit-procscan",
 ]
 
 [workspace.package]
