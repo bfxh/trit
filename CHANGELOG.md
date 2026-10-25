@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（`trit-float` M1：舍入模式、同比特范围/精度、锥形精度）
+
+- **舍入模式**：`RoundMode::HalfAway`（默认）/ `HalfEven`；`new_with` / `from_f64_with`。
+- **`Format { precision, exponent_digits, taper }`**：指数范围 `3^±((3^E−1)/2)`；
+  `quantize` 溢出返回 `None`、下溢为 0；`log10_range` / `log10_error` 用于避免溢出。
+- CLI 新增 `range`（16/32/64 比特，匹配尾数位 / 匹配指数位 / 范围优先）与
+  `rounding`（平局偏差，HalfAway vs HalfEven）。
+- 实测结论：
+  - 32 比特匹配指数位：log10 范围 **353.2 vs IEEE single 83.4**，但有效位 6.92 → **5.73**（≈15× 误差）；
+  - 16 比特匹配尾数位：范围 10^15 vs half 10^12（1000×），有效位 3.01 → 2.39；
+  - 平局偏差：p=4 时 HalfAway **+0.60%**、HalfEven **−0.52%**；p=12 均趋 0。
+    **"对称舍入 ⇒ 期望误差为零"在本仓取样口径下未复现**，记为未验证。
+- 锥形精度只是旋钮（精度随 `|e|` 递减，单测覆盖）；真正的 Takum 需要锥形指数编码，未做。
+- 新增 `crates/trit-float/README.md` 与两张对比图（`docs/assets/float-range.svg`、`float-precision.svg`）。
+
 ### Docs（README 重写：定位、可视化对比、代价清单）
 
 - 顶部改为"是什么 + 搜索关键词 + 一眼看强弱"：三张 SVG 对比图（CPU 流式、每参数字节、GPU），

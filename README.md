@@ -86,7 +86,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-net` | 三值权重前向 + `X` 输入「确定/弃权」+ `TRN1` 模型格式 + STE 反向传播 | `trit-net infer/train/format` |
 | `trit-machines` | 三值栈式解释器 / 一维元胞自动机 / `{-1,0,+1}` 突触脉冲神经元 | `trit-machines vm\|ca\|snn` |
 | `trit-codec` | 5 trits/byte、平衡三进制、GF(3) `[4,2,3]` 纠错、按分布选编码、零拷贝视图 | `trit-codec pack\|plan\|...` |
-| `trit-float` | 平衡三进制浮点（结论：同比特精度恒为二进制的 3 倍误差） | `trit-float stats` |
+| `trit-float` | 平衡三进制浮点：舍入模式、同比特范围/精度交换、Takum 式锥形精度原型（同比特精度仍是二进制的 3 倍误差） | `trit-float stats\|range\|rounding` |
 | `trit-attn` | 注意力 = 快权重 FFN 的双视角、三值整数关联记忆 | `trit-attn demo` |
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |

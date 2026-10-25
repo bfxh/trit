@@ -4,13 +4,16 @@
 //! 规格化后最高位是 `±1`，有效位数不超过 `precision`。
 //!
 //! 舍入：规约到 `precision` 位时，在相邻两个指数上各取「最近的合法尾数」（`|尾数| ≤ (3^p-1)/2`），
-//! 取误差更小者；误差相同取更大指数（远离零）。合法尾数集合是离散的，直接取整再 clamp，
-//! 不能靠逐位截断（`5` 在 p=1 时最近是 `3`，截断进位会得到 `9`）。
+//! 取误差更小者；平局由 [`RoundMode`] 决定（默认 `HalfAway` = 远离零，可选 `HalfEven` = 取偶尾数）。
+//! 合法尾数集合是离散的，直接取整再 clamp，不能靠逐位截断（`5` 在 p=1 时最近是 `3`，截断进位会得到 `9`）。
 //!
 //! 关键结论（`trit-float stats` 可复算）：同样**存储比特**下，三值浮点的相对误差上界约是二进制的
 //! **3 倍**（`3^{1-p}` vs `2^{-B}`，其中 `B = p·log2 3`）——基数换了，信息量没变，白丢约 1.58 bit。
 
 #![forbid(unsafe_code)]
+
+mod format;
+pub use format::Format;
 
 /// `log2(3)`。
 pub const LOG2_3: f64 = 1.584_962_500_721_156_2;
@@ -19,6 +22,15 @@ pub const LOG2_3: f64 = 1.584_962_500_721_156_2;
 pub const MIN_PRECISION: u32 = 1;
 /// 精度上限（尾数留在 `i128` 的乘法安全区）。
 pub const MAX_PRECISION: u32 = 40;
+
+/// 平局（恰好落在两个可表示值中间）的处理方式。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RoundMode {
+    /// 远离零（历史行为）：平局取更大量级。
+    HalfAway,
+    /// 取偶尾数：与二进制 IEEE 的 ties-to-even 对齐，方向偏差为零。
+    HalfEven,
+}
 
 /// 一个平衡三进制浮点数。
 #[derive(Debug, Clone, Copy)]
@@ -31,8 +43,13 @@ pub struct TritFloat {
 impl TritFloat {
     /// 用 `mantissa · 3^exponent` 构造并规格化；`precision` 会被夹到 `[1, 40]`。
     pub fn new(mantissa: i128, exponent: i32, precision: u32) -> Self {
+        Self::new_with(mantissa, exponent, precision, RoundMode::HalfAway)
+    }
+
+    /// 同 [`new`](Self::new)，显式指定平局处理方式。
+    pub fn new_with(mantissa: i128, exponent: i32, precision: u32, mode: RoundMode) -> Self {
         let precision = precision.clamp(MIN_PRECISION, MAX_PRECISION);
-        let (mantissa, exponent) = normalize(mantissa, exponent, precision);
+        let (mantissa, exponent) = normalize(mantissa, exponent, precision, mode);
         Self {
             mantissa,
             exponent,
@@ -47,6 +64,11 @@ impl TritFloat {
 
     /// 从 `f64` 转换；`NaN` / `±Inf` 返回 `None`。
     pub fn from_f64(value: f64, precision: u32) -> Option<Self> {
+        Self::from_f64_with(value, precision, RoundMode::HalfAway)
+    }
+
+    /// 同 [`from_f64`](Self::from_f64)，显式指定平局处理方式。
+    pub fn from_f64_with(value: f64, precision: u32, mode: RoundMode) -> Option<Self> {
         if !value.is_finite() {
             return None;
         }
@@ -76,17 +98,38 @@ impl TritFloat {
             if !scaled.is_finite() {
                 continue;
             }
-            let m = (scaled.round() as i128).clamp(-limit, limit);
+            let rounded = match mode {
+                RoundMode::HalfAway => scaled.round(),
+                RoundMode::HalfEven => scaled.round_ties_even(),
+            };
+            let m = (rounded as i128).clamp(-limit, limit);
             if m == 0 {
                 continue;
             }
             let err = (x - m as f64 * 3f64.powi(delta)).abs();
             let better = match best {
                 None => true,
-                // 误差相同（含浮点噪声）取更大指数（远离零），与 normalize 的进位习惯一致。
-                Some((best_err, _, best_e)) => {
+                // 误差相同时：HalfAway 取更大指数（远离零）；HalfEven 先取偶尾数。
+                Some((best_err, best_m, best_e)) => {
                     let tol = best_err * 1e-12 + 1e-300;
-                    err < best_err - tol || (err <= best_err + tol && cand_e > best_e)
+                    if err < best_err - tol {
+                        true
+                    } else if err <= best_err + tol {
+                        match mode {
+                            RoundMode::HalfAway => cand_e > best_e,
+                            RoundMode::HalfEven => {
+                                let new_even = m % 2 == 0;
+                                let old_even = best_m % 2 == 0;
+                                if new_even != old_even {
+                                    new_even
+                                } else {
+                                    cand_e > best_e
+                                }
+                            }
+                        }
+                    } else {
+                        false
+                    }
                 }
             };
             if better {
@@ -204,7 +247,12 @@ pub fn relative_error_bound(precision: u32) -> f64 {
     3f64.powi(1 - precision as i32)
 }
 
-fn normalize(mut mantissa: i128, mut exponent: i32, precision: u32) -> (i128, i32) {
+fn normalize(
+    mut mantissa: i128,
+    mut exponent: i32,
+    precision: u32,
+    mode: RoundMode,
+) -> (i128, i32) {
     if mantissa == 0 {
         return (0, 0);
     }
@@ -221,16 +269,33 @@ fn normalize(mut mantissa: i128, mut exponent: i32, precision: u32) -> (i128, i3
         let mut best: Option<(u128, i128, u32)> = None; // (误差, 尾数, 丢掉的位数)
         for dropped in shift.saturating_sub(1)..=shift {
             let divisor = pow3(dropped);
-            let rounded = round_quotient(mantissa, divisor).clamp(-limit, limit);
+            let rounded = round_quotient(mantissa, divisor, mode).clamp(-limit, limit);
             if rounded == 0 {
                 continue;
             }
             let error = distance(mantissa, rounded, divisor);
-            // 误差相同取更大指数（远离零），与二进制浮点的进位习惯一致。
+            // 平局：HalfAway 取更大指数（远离零）；HalfEven 先取偶尾数。
             let better = match best {
                 None => true,
-                Some((best_error, _, best_dropped)) => {
-                    error < best_error || (error == best_error && dropped > best_dropped)
+                Some((best_error, best_rounded, best_dropped)) => {
+                    if error < best_error {
+                        true
+                    } else if error == best_error {
+                        match mode {
+                            RoundMode::HalfAway => dropped > best_dropped,
+                            RoundMode::HalfEven => {
+                                let new_even = rounded % 2 == 0;
+                                let old_even = best_rounded % 2 == 0;
+                                if new_even != old_even {
+                                    new_even
+                                } else {
+                                    dropped > best_dropped
+                                }
+                            }
+                        }
+                    } else {
+                        false
+                    }
                 }
             };
             if better {
@@ -259,8 +324,8 @@ fn pow3(exponent: u32) -> i128 {
     3i128.checked_pow(exponent).unwrap_or(i128::MAX)
 }
 
-/// 最接近 `value / divisor` 的整数（半步向上），不做 clamp。
-fn round_quotient(value: i128, divisor: i128) -> i128 {
+/// 最接近 `value / divisor` 的整数，不做 clamp；平局按 `mode` 处理。
+fn round_quotient(value: i128, divisor: i128, mode: RoundMode) -> i128 {
     let quotient = value.div_euclid(divisor);
     let remainder = value.rem_euclid(divisor);
     if remainder == 0 {
@@ -268,10 +333,26 @@ fn round_quotient(value: i128, divisor: i128) -> i128 {
     }
     let twice = (remainder as u128) * 2;
     let bound = divisor as u128;
-    if twice >= bound {
-        quotient + 1
-    } else {
-        quotient
+    if twice > bound {
+        return quotient + 1;
+    }
+    if twice < bound {
+        return quotient;
+    }
+    match mode {
+        // 远离零：正数向上、负数向下（floor 已经是向下）。
+        RoundMode::HalfAway => {
+            if value >= 0 {
+                quotient + 1
+            } else {
+                quotient
+            }
+        }
+        // 取偶尾数。
+        RoundMode::HalfEven => {
+            let up = quotient + 1;
+            if up % 2 == 0 { up } else { quotient }
+        }
     }
 }
 

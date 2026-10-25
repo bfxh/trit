@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="286" viewBox="0 0 940 286" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="940" height="286" fill="#ffffff"/>
+<text x="260" y="38" font-size="22" font-weight="700" fill="#111">32 比特下的动态范围（log10）</text>
+<text x="260" y="64" font-size="14" fill="#666">越高越好；三值的指数范围增长快，但会挤占尾数</text>
+<text x="246" y="113" text-anchor="end" font-size="14" fill="#222">IEEE single</text>
+<rect x="260" y="92" width="125" height="30" rx="4" fill="#8a8f98"/>
+<text x="395" y="113" font-size="14" font-weight="600" fill="#111">83.4</text>
+<text x="246" y="159" text-anchor="end" font-size="14" fill="#222">三值 · 匹配尾数位</text>
+<rect x="260" y="138" width="68" height="30" rx="4" fill="#1f7a4d"/>
+<text x="338" y="159" font-size="14" font-weight="600" fill="#111">45.0</text>
+<text x="246" y="205" text-anchor="end" font-size="14" fill="#222">三值 · 匹配指数位</text>
+<rect x="260" y="184" width="530" height="30" rx="4" fill="#1f7a4d"/>
+<text x="800" y="205" font-size="14" font-weight="600" fill="#111">353.2</text>
+<text x="260" y="268" font-size="12" fill="#777">来源 crates/trit-float（trit-float range）；范围为 max/min 的十进制位数</text>
+</svg>

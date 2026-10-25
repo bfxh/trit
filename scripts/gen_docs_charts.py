@@ -106,5 +106,34 @@ def main() -> None:
     )
 
 
+
+    # trit-float range（32 比特口径，2026-10-26）：log10 动态范围与精度（十进制位）。
+    bar_chart(
+        "float-range.svg",
+        "32 比特下的动态范围（log10）",
+        "越高越好；三值的指数范围增长快，但会挤占尾数",
+        [
+            ("IEEE single", 83.4, GRAY),
+            ("三值 · 匹配尾数位", 45.0, GREEN),
+            ("三值 · 匹配指数位", 353.2, GREEN),
+        ],
+        "{:.1f}",
+        "来源 crates/trit-float（trit-float range）；范围为 max/min 的十进制位数",
+    )
+
+    bar_chart(
+        "float-precision.svg",
+        "32 比特下的精度（十进制有效位）",
+        "越高越好；动态范围是用这里换来的",
+        [
+            ("IEEE single", 6.92, GRAY),
+            ("三值 · 匹配尾数位", 6.68, GREEN),
+            ("三值 · 匹配指数位", 5.73, RED),
+        ],
+        "{:.2f}",
+        "来源同上；三值误差上界 3^{1-p}，折算成十进制位数 (p-1)·log10 3",
+    )
+
+
 if __name__ == "__main__":
     main()
