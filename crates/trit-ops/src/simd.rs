@@ -3,7 +3,7 @@
 //! 三值的两条主线在这里落地：
 //! - [`row_dot_mask`]：双导轨 × f32，用 8 位掩码表把 `x * {-1,0,+1}` 变成
 //!   `AND` + 加减，**不做任何浮点乘法**。
-//! - [`row_dot_rail`]：双导轨 × 双导轨，4 组 `AND + popcount`。
+//! - [`Rail::dot`](crate::pack::Rail::dot)：双导轨 × 双导轨，4 组 `AND + popcount`。
 
 /// 8 位掩码 -> 8 个 `i32`（0 或 -1）的查表。
 const fn build_mask_lut() -> [[i32; 8]; 256] {
@@ -77,21 +77,40 @@ mod imp {
     /// 需要 AVX2 + FMA；`x` 长度至少 `pos.len() * 64`。
     #[target_feature(enable = "avx2,fma")]
     pub unsafe fn row_dot_mask(pos: &[u64], neg: &[u64], x: &[f32]) -> f32 {
-        let mut acc = _mm256_setzero_ps();
-        for (b, (&p, &n)) in pos.iter().zip(neg).enumerate() {
-            let base = b * 64;
-            for k in 0..8 {
-                let pb = ((p >> (k * 8)) & 0xFF) as usize;
-                let nb = ((n >> (k * 8)) & 0xFF) as usize;
+        // 4 路独立累加器。单个 acc 会把每 64 trit 的 16 次 add/sub 串成一条依赖链
+        // （AVX 加法延迟约 4 周期 → 下限约 64 周期/64 trit），把内核锁在 ALU 上。
+        // 拆成 4 路后每路链长 4，瓶颈回到访存。
+        //
+        // 代价：浮点求和顺序改变，末位可能有 ulp 级差异；所有调用方按 1e-4 容差比较
+        // （见 gemv 的 `matches_scalar` / `row_dot_matches_gemv`）。
+        macro_rules! step {
+            ($acc:ident, $k:expr, $p:expr, $n:expr, $base:expr) => {{
+                let pb = (($p >> ($k * 8)) & 0xFF) as usize;
+                let nb = (($n >> ($k * 8)) & 0xFF) as usize;
                 // SAFETY: x 已补齐到 64 的倍数。
-                let xv = _mm256_loadu_ps(x.as_ptr().add(base + k * 8));
+                let xv = _mm256_loadu_ps(x.as_ptr().add($base + $k * 8));
                 let mp = _mm256_loadu_si256(MASK_LUT[pb].as_ptr() as *const __m256i);
                 let mn = _mm256_loadu_si256(MASK_LUT[nb].as_ptr() as *const __m256i);
-                acc = _mm256_add_ps(acc, _mm256_and_ps(xv, _mm256_castsi256_ps(mp)));
-                acc = _mm256_sub_ps(acc, _mm256_and_ps(xv, _mm256_castsi256_ps(mn)));
-            }
+                $acc = _mm256_add_ps($acc, _mm256_and_ps(xv, _mm256_castsi256_ps(mp)));
+                $acc = _mm256_sub_ps($acc, _mm256_and_ps(xv, _mm256_castsi256_ps(mn)));
+            }};
         }
-        hsum(acc)
+        let mut a0 = _mm256_setzero_ps();
+        let mut a1 = _mm256_setzero_ps();
+        let mut a2 = _mm256_setzero_ps();
+        let mut a3 = _mm256_setzero_ps();
+        for (b, (&p, &n)) in pos.iter().zip(neg).enumerate() {
+            let base = b * 64;
+            step!(a0, 0, p, n, base);
+            step!(a1, 1, p, n, base);
+            step!(a2, 2, p, n, base);
+            step!(a3, 3, p, n, base);
+            step!(a0, 4, p, n, base);
+            step!(a1, 5, p, n, base);
+            step!(a2, 6, p, n, base);
+            step!(a3, 7, p, n, base);
+        }
+        hsum(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3)))
     }
 
     /// f32 行 × f32 激活（基线）。
