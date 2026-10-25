@@ -1499,8 +1499,8 @@ MUTANTS = [
     {
         "name": "attn: 记忆编码符号写反",
         "file": "crates/trit-attn/src/memory.rs",
-        "old": "                self.weights[row * self.dim + col] += value * key;",
-        "new": "                self.weights[row * self.dim + col] -= value * key;",
+        "old": "                    .checked_add(delta)",
+        "new": "                    .checked_sub(delta)",
         "pkg": "trit-attn",
         "filter": "orthogonal_keys_recall_exactly"
     },
