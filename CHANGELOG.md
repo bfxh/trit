@@ -33,6 +33,17 @@
 - 文档 `docs/TERNARY-TOOLCHAIN.md`：论文依据（LLVM/MLIR/egg/BitNet/平衡三进制，DOI 已核）、
   分层设计、M0–M3 验收判据、继续靠 LLVM/Rust 的职责表、未验证清单。
 
+### Added（trit-unsafe：三值逻辑审 unsafe）
+
+- `trit-unsafe scan --root . [--deps] [--exclude …]`：识别 `unsafe { }` / `unsafe fn|impl|trait`
+  与 transmute、from_raw_parts、get_unchecked、set_len、assume_init、static mut 等高危形态；
+  用 `// SAFETY:` / `# Safety` 与断言/边界检查当证据，按 K3（复用 `trit_core::Algebra::Kleene`）
+  判 Safe/Unknown/Risky 并按 crate 合成；`--strict` 有 Risky 即退出 1。
+- 实测：本仓 209 文件 4 站点 **0 Risky**；含 193 个依赖 crate 时 224,696 站点 / 43,376 Risky，
+  其中 87% 来自机器生成绑定（`windows` 38,042、`linux-raw-sys` 3,730、`spirv` 414）；
+  排除绑定后 23,969 站点 / 1,138 Risky（`ash` 856 居首）。配合 `cargo audit`：已知漏洞 0。
+- 局限：`Safe` 只表示证据齐全，不是 UB 证明；词法级扫描，不展开宏、不做跨函数推理。
+
 ### Added（GGUF → MOD 入向导入）
 
 - `trit-texture::gguf::import_gguf`：读 **GGUF v2/v3**，把未量化张量（`F32`/`F16`/`BF16`）

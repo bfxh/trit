@@ -2127,6 +2127,30 @@ MUTANTS = [
         "new": '                Expr::And(..) => alg.or(*a, *b),',
         "pkg": "trit-build",
         "filter": "every_operator_matches_scalar"
+    },
+    {
+        "name": 'unsafe: 高危形态不再判 Risky',
+        "file": 'crates/trit-unsafe/src/scan.rs',
+        "old": '    if !documented && !guarded {',
+        "new": '    if false {',
+        "pkg": 'trit-unsafe',
+        "filter": 'undocumented_transmute_is_risky'
+    },
+    {
+        "name": 'unsafe: 不认 SAFETY/# Safety 文档',
+        "file": 'crates/trit-unsafe/src/scan.rs',
+        "old": '            .any(|line| line.contains("SAFETY") || line.contains("Safety"));',
+        "new": '            .any(|_line| false);',
+        "pkg": 'trit-unsafe',
+        "filter": 'documented_unsafe_fn_is_unknown_not_risky'
+    },
+    {
+        "name": 'unsafe: 注释里的 unsafe 也算站点',
+        "file": 'crates/trit-unsafe/src/lexer.rs',
+        "old": '                if ch == \'/\' && bytes.get(index + 1) == Some(&\'/\') {',
+        "new": '                if false {',
+        "pkg": 'trit-unsafe',
+        "filter": 'strips_line_and_block_comments'
     }
 
 ]

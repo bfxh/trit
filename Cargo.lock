@@ -1717,6 +1717,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-unsafe"
+version = "0.12.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "serde_json",
+ "trit-core",
+]
+
+[[package]]
 name = "trit-wasm"
 version = "0.12.0"
 dependencies = [
