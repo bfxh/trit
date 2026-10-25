@@ -369,6 +369,52 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         .iter()
         .zip(expected.iter())
         .all(|(g, e)| i64::from(*g as i32) == *e);
+
+    // 2-popc：同 tiled2o3 的 tile / 共享内存 / 输出映射，只把每个累加点换成
+    // dot_word_2popc（同号两项合并）。保留 o3 作为 A/B 基线。
+    // 实测：4 lane 全 65,536 种组合下 2-popc 与 4-popc 恒等（含 rails 交叠）。
+    let pipeline_o2 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("matmul-ternary-o2"),
+        layout: Some(&pipeline_layout),
+        module: &shader,
+        entry_point: Some("main_tiled2o2"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    let dispatch_o2 = || {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            pass.set_pipeline(&pipeline_o2);
+            pass.set_bind_group(0, &bind, &[]);
+            pass.dispatch_workgroups(tiled_grid_x, tiled_grid_y, 1);
+        }
+        queue.submit([encoder.finish()]);
+    };
+    for _ in 0..20 {
+        dispatch_o2();
+    }
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
+    let ternary_o2_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_o2);
+    let o2_gpu = read_u32s(&device, &queue, &out, m * n)?;
+    let o2_matches = o2_gpu
+        .iter()
+        .zip(expected.iter())
+        .all(|(g, e)| i64::from(*g as i32) == *e);
+    // 2-popc 必须与 3-popc 给出完全相同的整数结果，否则说明身份变换写错了。
+    assert_eq!(
+        o2_matches, o3_matches,
+        "2-popc 与 3-popc 的正确性必须一致（m={m} n={n} k={k}）"
+    );
+    eprintln!(
+        "2-popc vs 3-popc: {:.4} vs {:.4} ps/MAC ({:+.1}%)",
+        ternary_o2_ns_per_mac * 1000.0,
+        ternary_o3_ns_per_mac * 1000.0,
+        (ternary_o3_ns_per_mac / ternary_o2_ns_per_mac - 1.0) * 100.0
+    );
     // f32 基线（同结构内核，同 m/n/k）。
     let mut fa: Vec<f32> = a.iter().map(|v| *v as f32).collect();
     let mut fb: Vec<f32> = Vec::with_capacity(n * k);

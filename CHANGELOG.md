@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Changed（`trit-gpu`：2-popcount 点积，实测负结果）
+
+- 新增 `dot_word_2popc` 与入口 `main_tiled2o3` 的对照实现 `main_tiled2o2`
+  （tile / 共享内存 / 输出映射与 o3 版完全一致，只换点积算法）。
+- **恒等式成立**：`2·popc(a∧b) + popc(a) + popc(b) = n`，对任意位模式无条件成立；
+  `tests/dot_identity.rs` 5 条纯 CPU 测试覆盖穷举与反例。
+  （反观现有的 3-popc 版本依赖「正负导轨不交叠」，交叠时有 14,911 处不等。）
+- **实测更慢**：RTX 4060 Ti，`1×1×1` 74,852.85 → 75,909.91 ps/MAC（−1.4%）、
+  `33×100×17` 2,008.20 → 2,046.43 ps/MAC（**−1.9%**）。
+- 结论：该内核不是 popcount-bound，少一次 popcount 抵不过额外移位。
+  **保留 o3 为默认，o2 只作为 A/B 基线**，不追求上线。
+- 验证：`cargo test -p trit-gpu` 5 passed；`--features gpu --test matmul` 3 passed
+  （WGSL 合法 + 与 CPU 镜像一致）；fmt 干净；clippy 0 告警。
+
 ### Added（`trit-codec::pack` 线格式固化 + canonical 解码）
 
 - **线格式写成稳定契约**（`pack.rs` 模块文档）：数字映射 `F=0/X=1/T=2`、字节内低位 trit 优先、

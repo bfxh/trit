@@ -549,6 +549,18 @@ var<workgroup> o3_bn: array<u32, 144>;
 // 等号靠双导轨的**不交叠不变量**：`aₚ&aₙ = 0`、`bₚ&bₙ = 0`（每个 trit 只落一根轨），
 // 所以 `(aₚ&bₙ)&(aₙ&bₚ) = 0`，两次 popc 可并成一次 OR + popc。
 // pack_rows / pack_columns 保证该不变量；测试用 4-popc 内核与 CPU 镜像逐元素对拍。
+// 2-popcount 点积：把「同号两项」也合并成一个 popcount。
+//
+// 恒等成立且**不需要** rails 不交叠：交叉项与同号项的重复计数集合相同
+// （都是 ap&an&bp&bn），两处多算的部分恰好互相抵消。
+// 穷举验证：4 lane 全 65,536 种组合下与 4-popc 恒等，0 处不等；
+// 相比之下 3-popc 才依赖不交叠前提（交叠时 14,911 处不等）。
+fn dot_word_2popc(ap: u32, an: u32, bp: u32, bn: u32) -> i32 {
+    let same = (ap & bp) | (an & bn);
+    let opposite = (ap & bn) | (an & bp);
+    return i32(countOneBits(same)) - i32(countOneBits(opposite));
+}
+
 @compute @workgroup_size(8, 8)
 fn main_tiled2o3(
     @builtin(workgroup_id) wg: vec3<u32>,
@@ -590,6 +602,68 @@ fn main_tiled2o3(
             s01 = s01 + i32(countOneBits(a0p & b1p)) + i32(countOneBits(a0n & b1n)) - i32(countOneBits((a0p & b1n) | (a0n & b1p)));
             s10 = s10 + i32(countOneBits(a1p & b0p)) + i32(countOneBits(a1n & b0n)) - i32(countOneBits((a1p & b0n) | (a1n & b0p)));
             s11 = s11 + i32(countOneBits(a1p & b1p)) + i32(countOneBits(a1n & b1n)) - i32(countOneBits((a1p & b1n) | (a1n & b1p)));
+        }
+        workgroupBarrier();
+    }
+    let row0 = row_base + r0;
+    let col0 = col_base + c0;
+    if (row0 < params.m && col0 < params.n) {
+        out[row0 * params.n + col0] = s00;
+    }
+    if (row0 < params.m && col0 + 1u < params.n) {
+        out[row0 * params.n + col0 + 1u] = s01;
+    }
+    if (row0 + 1u < params.m && col0 < params.n) {
+        out[(row0 + 1u) * params.n + col0] = s10;
+    }
+    if (row0 + 1u < params.m && col0 + 1u < params.n) {
+        out[(row0 + 1u) * params.n + col0 + 1u] = s11;
+    }
+}
+
+// main_tiled2o3 的 2-popcount 变体：tile、共享内存布局、输出映射完全一致，
+// 只把每个累加点换成 dot_word_2popc。保留 main_tiled2o3 作为 A/B 基线。
+@compute @workgroup_size(8, 8)
+fn main_tiled2o2(
+    @builtin(workgroup_id) wg: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+) {
+    let row_base = wg.y * 16u;
+    let col_base = wg.x * 16u;
+    let r0 = lid.y * 2u;
+    let c0 = lid.x * 2u;
+    let idx = lid.y * 8u + lid.x;
+    var s00 = 0;
+    var s01 = 0;
+    var s10 = 0;
+    var s11 = 0;
+    let word_tiles = (params.words + 8u - 1u) / 8u;
+    for (var chunk = 0u; chunk < word_tiles; chunk = chunk + 1u) {
+        for (var t = 0u; t < 2u; t = t + 1u) {
+            let slot = idx + t * 64u;
+            let line = slot / 8u;
+            let word = chunk * 8u + slot % 8u;
+            let ok_a = row_base + line < params.m && word < params.words;
+            let ok_b = col_base + line < params.n && word < params.words;
+            o3_ap[(slot / 8u) * 9u + slot % 8u] = select(0u, a_pos[(row_base + line) * params.words + word], ok_a);
+            o3_an[(slot / 8u) * 9u + slot % 8u] = select(0u, a_neg[(row_base + line) * params.words + word], ok_a);
+            o3_bp[(slot / 8u) * 9u + slot % 8u] = select(0u, b_pos[(col_base + line) * params.words + word], ok_b);
+            o3_bn[(slot / 8u) * 9u + slot % 8u] = select(0u, b_neg[(col_base + line) * params.words + word], ok_b);
+        }
+        workgroupBarrier();
+        for (var w = 0u; w < 8u; w = w + 1u) {
+            let a0p = o3_ap[r0 * 9u + w];
+            let a0n = o3_an[r0 * 9u + w];
+            let a1p = o3_ap[(r0 + 1u) * 9u + w];
+            let a1n = o3_an[(r0 + 1u) * 9u + w];
+            let b0p = o3_bp[c0 * 9u + w];
+            let b0n = o3_bn[c0 * 9u + w];
+            let b1p = o3_bp[(c0 + 1u) * 9u + w];
+            let b1n = o3_bn[(c0 + 1u) * 9u + w];
+            s00 = s00 + dot_word_2popc(a0p, a0n, b0p, b0n);
+            s01 = s01 + dot_word_2popc(a0p, a0n, b1p, b1n);
+            s10 = s10 + dot_word_2popc(a1p, a1n, b0p, b0n);
+            s11 = s11 + dot_word_2popc(a1p, a1n, b1p, b1n);
         }
         workgroupBarrier();
     }
