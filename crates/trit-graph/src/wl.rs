@@ -13,7 +13,7 @@ use trit_core::value::Ternary;
 use crate::view::TriGraphView;
 
 /// 节点三态 → 初始颜色编号。
-fn state_code(value: Ternary) -> u32 {
+pub(crate) fn state_code(value: Ternary) -> u32 {
     match value {
         Ternary::True => 0,
         Ternary::Unknown => 1,
@@ -22,7 +22,7 @@ fn state_code(value: Ternary) -> u32 {
 }
 
 /// 边三态 → 签名里的码。
-fn edge_code(value: Ternary) -> u8 {
+pub(crate) fn edge_code(value: Ternary) -> u8 {
     match value {
         Ternary::True => 0,
         Ternary::Unknown => 1,

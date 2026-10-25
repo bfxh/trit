@@ -1881,6 +1881,30 @@ MUTANTS = [
         "filter": "budgets_reject_oversized_blif"
     },
     {
+        "name": "kernel: WL 核忽略边符号",
+        "file": "crates/trit-graph/src/kernel.rs",
+        "old": "        graph.for_each_out(u, |v, edge| neighbors.push((edge_code(edge), colors[v])));",
+        "new": "        graph.for_each_out(u, |v, _| neighbors.push((0, colors[v])));",
+        "pkg": "trit-graph",
+        "filter": "edge_signs_matter"
+    },
+    {
+        "name": "kernel: 路径核忽略边符号",
+        "file": "crates/trit-graph/src/kernel.rs",
+        "old": "        signature.push(edge_code(edge));",
+        "new": "        signature.push(0);",
+        "pkg": "trit-graph",
+        "filter": "edge_signs_matter"
+    },
+    {
+        "name": "kernel: 归一化分母错误",
+        "file": "crates/trit-graph/src/kernel.rs",
+        "old": "    k as f64 / ((self_a as f64).sqrt() * (self_b as f64).sqrt())",
+        "new": "    k as f64 / ((self_a * self_b) as f64)",
+        "pkg": "trit-graph",
+        "filter": "isomorphic_graphs_have_kernel_one"
+    },
+    {
         "name": "walk: 中立边不冻结",
         "file": "crates/trit-graph/src/walk.rs",
         "old": "                    Ternary::Unknown => (0.0, 0.0, mass.total()),",

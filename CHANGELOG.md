@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（`trit-graph` M4：三态图核）
+
+- `wl_subtree_kernel(a, b, rounds)`：两图**联合** WL 细化（共用签名→颜色表），
+  逐轮累加颜色直方图点积；节点三态与边状态都进签名。
+- `path_kernel(a, b, max_len)`：带标签有向路径核（节点码 + 每步边码/终点码），
+  长度 `0..=4`；组合爆炸在 M0 之外。
+- `normalized(k, kaa, kbb)`：核归一化到 `[0,1]`。
+- 测试共 48 个（新增 6）：同构 = 1；边符号/节点状态/结构不同 < 1；空图为 0；
+  两个正则环（C3/C6）两种核都为 1（WL 类核的已知上限，写进文档）。
+- 变异新增 3 条（WL 核忽略边符号、路径核忽略边符号、归一化分母错误），
+  **18/18 全部被抓住**；质量数据 305 条。
+
 ### Added（`trit-graph` M3：三通道随机游走 / PageRank）
 
 - `tri_pagerank(view, seeds, damping, iters, tolerance)`：支持/反对/冻结三通道一起传播；

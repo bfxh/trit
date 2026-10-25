@@ -1,9 +1,9 @@
-# trit-graph：三态结构基础层（M3）
+# trit-graph：三态结构基础层（M4）
 
 给后面的三态图/树/超图模型（TriMPNN、Tri-TreeOracle、Tri-TD-GNN…）准备地基。
 **不训练、不推理**，只提供"结构 + 三态"的最小语义与位运算原语。
 
-M3 在 M2（超图 + 树分解容器）之上加了**三通道随机游走 / PageRank**；
+M4 在 M3（三通道 PageRank）之上加了**三态图核**（WL 子树核 + 路径核）；
 议会规则抽成公共 `tally`，超边、袋、图邻居共用一份计票。
 
 ## 数据结构
@@ -42,6 +42,9 @@ TritGraph
 | `TreeDecomposition::validate` | 节点覆盖 / 边覆盖 / 运行交 | O(n + E + Σ袋) |
 | `TreeDecomposition::bag_verdict` | 袋内三态议会 | O(袋大小) |
 | `tri_pagerank(view, seeds, d, iters, tol)` | 三通道随机游走 / PageRank | O(轮数 × (n + E)) |
+| `wl_subtree_kernel(a, b, rounds)` | WL 子树核（联合颜色编号） | O(轮数 × (n + E)) |
+| `path_kernel(a, b, max_len)` | 带标签有向路径核 | 路径条数（`max_len ≤ 4`） |
+| `normalized(k, kaa, kbb)` | 核归一化到 `[0,1]` | O(1) |
 
 ## 三态议会（M0 规则）
 
@@ -84,6 +87,16 @@ assert_eq!(tree.roots().collect::<Vec<_>>(), vec![0]);
   3. 运行交（running intersection）：同一节点的所有袋在袋树上连通。
 - `bag_verdict(i, graph)` 用袋内节点状态开议会（可给后续袋级判决做输入）。
 
+## 三态图核
+
+- **WL 子树核**：两图**联合**做 WL 细化（共用签名→颜色表），每轮累加颜色直方图点积；
+  边状态与节点三态都在签名里。
+- **路径核**：枚举长度 `0..=max_len` 的带标签有向路径（节点码 + 每步边码/终点码），
+  按签名计数做点积；M0 只到 4，避免组合爆炸。
+- 用 `normalized` 归一化后比较：同构图 = 1；边符号/节点状态/结构不同 < 1。
+- 已知上限：两个正则环（C3/C6）的计数成比例，**两种核归一化后都是 1**——区分不了，
+  这是 WL 类核的性质，不是 bug。
+
 ## 三通道随机游走 / PageRank
 
 - 每个节点带三份质量 `(plus, minus, unknown)`；每条出边均分源节点质量。
@@ -105,6 +118,7 @@ assert_eq!(tree.roots().collect::<Vec<_>>(), vec![0]);
 
 - **不做树分解算法**（只校验给定的袋树）；没有超图→图展开 / 超边间的消息传递。
 - 随机游走是固定规则、没有边权；没有个性化向量的学习。
+- 路径核只到长度 4；没有子树核之外的高阶核（graphlet/Weisfeiler-Lehman O(1) 变体）。
 - 没有权重、节点特征、批处理；稠密图仍是 `n²` 内存；CSR 只有出边。
 - 三态议会是固定规则表，不可学习；没有 STE/训练。
 - 拓扑序把所有存在的边都当方向边；三态语义在排序里不参与。
@@ -112,5 +126,5 @@ assert_eq!(tree.roots().collect::<Vec<_>>(), vec![0]);
 ## 测试
 
 ```bash
-cargo test -p trit-graph     # 42 个：稠密/稀疏一致性、跨字边界、拓扑/环、DFS、议会、WL、超图、树分解、PageRank
+cargo test -p trit-graph     # 48 个：稠密/稀疏一致性、跨字边界、拓扑/环、DFS、议会、WL、超图、树分解、PageRank、图核
 ```

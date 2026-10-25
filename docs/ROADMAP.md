@@ -53,7 +53,7 @@
 - [x] **基础层** `trit-graph` M1：稠密位集图 + 稀疏 CSR、拓扑序、DFS 树、三态议会、三态 1-WL。
 - [x] 超图与树分解的最小容器（`TritHypergraph`、`TreeDecomposition` + 覆盖/运行交校验）。
 - [x] 三态随机游走 / PageRank（三通道 + 阻尼，质量守恒有测试）。
-- [ ] 三态图核（子树核 / 路径核 / 随机游走核）。
+- [x] 三态图核（WL 子树核 + 路径核，归一化与正反例测试）。
 - [ ] TriMPNN / BiTri-MPNN：位运算的三态消息传递（掩码 + popcount + 9 项 LUT）。
 - [ ] Tri-TreeOracle / Tri-TreeRNN：叶到根的三态递归与三叉判决。
 - [ ] Tri-TD-GNN：树分解（袋内消息传递 + 袋间三态树自动机）。
