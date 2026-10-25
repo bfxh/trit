@@ -80,3 +80,58 @@ pub(crate) fn uniform(binding: u32) -> wgpu::BindGroupLayoutEntry {
         count: None,
     }
 }
+
+/// 跑一个三值变体：建 pipeline → 预热 20 次 → 计时 → 读回 → 与期望比对。
+///
+/// `reg4` / `o3` / `o2` 三个变体只有 entry point 和 grid 不同，流程完全一致；
+/// 抽到这里既去掉三份重复，也让 `matmul.rs` 留在 800 行预算内。
+///
+/// 返回 `(ns/MAC, 是否与期望逐元素相等)`。
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn bench_variant(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    layout: &wgpu::PipelineLayout,
+    shader: &wgpu::ShaderModule,
+    bind: &wgpu::BindGroup,
+    out: &wgpu::Buffer,
+    label: &str,
+    entry: &str,
+    grid: (u32, u32),
+    macs: usize,
+    elems: usize,
+    expected: &[i64],
+) -> Option<(f64, bool)> {
+    let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some(label),
+        layout: Some(layout),
+        module: shader,
+        entry_point: Some(entry),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    let dispatch = || {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, bind, &[]);
+            pass.dispatch_workgroups(grid.0, grid.1, 1);
+        }
+        queue.submit([encoder.finish()]);
+    };
+    for _ in 0..20 {
+        dispatch();
+    }
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
+    let ns_per_mac = median_ns_per(device, macs, dispatch);
+    let got = read_u32s(device, queue, out, elems)?;
+    let matches = got
+        .iter()
+        .zip(expected.iter())
+        .all(|(g, e)| i64::from(*g as i32) == *e);
+    Some((ns_per_mac, matches))
+}

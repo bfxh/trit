@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use wgpu::util::DeviceExt;
 
-use crate::bench::{median_ns_per, read_u32s};
+use crate::bench::{bench_variant, median_ns_per, read_u32s};
 use crate::{pack_columns, pack_rows};
 
 const WORKGROUP: u32 = 64;
@@ -303,107 +303,57 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         .all(|(g, e)| i64::from(*g as i32) == *e);
 
     // 4×4 寄存器阻塞：32×32 tile、8×8 线程。
-    let pipeline_reg4 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("matmul-ternary-reg4"),
-        layout: Some(&pipeline_layout),
-        module: &shader,
-        entry_point: Some("main_tiled4"),
-        compilation_options: Default::default(),
-        cache: None,
-    });
+    // grid 在下面 f32 基线里复用，所以单独取名而不是内联。
     let reg4_grid_x = (n as u32).div_ceil(32);
     let reg4_grid_y = (m as u32).div_ceil(32);
-    let dispatch_reg4 = || {
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            pass.set_pipeline(&pipeline_reg4);
-            pass.set_bind_group(0, &bind, &[]);
-            pass.dispatch_workgroups(reg4_grid_x, reg4_grid_y, 1);
-        }
-        queue.submit([encoder.finish()]);
-    };
-    for _ in 0..20 {
-        dispatch_reg4();
-    }
-    device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .expect("poll");
-    let ternary_reg4_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_reg4);
-    let reg4_gpu = read_u32s(&device, &queue, &out, m * n)?;
-    let reg4_matches = reg4_gpu
-        .iter()
-        .zip(expected.iter())
-        .all(|(g, e)| i64::from(*g as i32) == *e);
+    let (ternary_reg4_ns_per_mac, reg4_matches) = bench_variant(
+        &device,
+        &queue,
+        &pipeline_layout,
+        &shader,
+        &bind,
+        &out,
+        "matmul-ternary-reg4",
+        "main_tiled4",
+        (reg4_grid_x, reg4_grid_y),
+        m * n * k,
+        m * n,
+        &expected,
+    )?;
 
     // 3-popc：同 tiled2 结构，把 4 次 popc 压到 3 次（靠双导轨不交叠不变量）。
-    let pipeline_o3 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("matmul-ternary-o3"),
-        layout: Some(&pipeline_layout),
-        module: &shader,
-        entry_point: Some("main_tiled2o3"),
-        compilation_options: Default::default(),
-        cache: None,
-    });
-    let dispatch_o3 = || {
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            pass.set_pipeline(&pipeline_o3);
-            pass.set_bind_group(0, &bind, &[]);
-            pass.dispatch_workgroups(tiled_grid_x, tiled_grid_y, 1);
-        }
-        queue.submit([encoder.finish()]);
-    };
-    for _ in 0..20 {
-        dispatch_o3();
-    }
-    device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .expect("poll");
-    let ternary_o3_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_o3);
-    let o3_gpu = read_u32s(&device, &queue, &out, m * n)?;
-    let o3_matches = o3_gpu
-        .iter()
-        .zip(expected.iter())
-        .all(|(g, e)| i64::from(*g as i32) == *e);
+    let (ternary_o3_ns_per_mac, o3_matches) = bench_variant(
+        &device,
+        &queue,
+        &pipeline_layout,
+        &shader,
+        &bind,
+        &out,
+        "matmul-ternary-o3",
+        "main_tiled2o3",
+        (tiled_grid_x, tiled_grid_y),
+        m * n * k,
+        m * n,
+        &expected,
+    )?;
 
     // 2-popc：同 tiled2o3 的 tile / 共享内存 / 输出映射，只把每个累加点换成
     // dot_word_2popc（同号两项合并）。保留 o3 作为 A/B 基线。
     // 实测：4 lane 全 65,536 种组合下 2-popc 与 4-popc 恒等（含 rails 交叠）。
-    let pipeline_o2 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("matmul-ternary-o2"),
-        layout: Some(&pipeline_layout),
-        module: &shader,
-        entry_point: Some("main_tiled2o2"),
-        compilation_options: Default::default(),
-        cache: None,
-    });
-    let dispatch_o2 = || {
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            pass.set_pipeline(&pipeline_o2);
-            pass.set_bind_group(0, &bind, &[]);
-            pass.dispatch_workgroups(tiled_grid_x, tiled_grid_y, 1);
-        }
-        queue.submit([encoder.finish()]);
-    };
-    for _ in 0..20 {
-        dispatch_o2();
-    }
-    device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .expect("poll");
-    let ternary_o2_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_o2);
-    let o2_gpu = read_u32s(&device, &queue, &out, m * n)?;
-    let o2_matches = o2_gpu
-        .iter()
-        .zip(expected.iter())
-        .all(|(g, e)| i64::from(*g as i32) == *e);
+    let (ternary_o2_ns_per_mac, o2_matches) = bench_variant(
+        &device,
+        &queue,
+        &pipeline_layout,
+        &shader,
+        &bind,
+        &out,
+        "matmul-ternary-o2",
+        "main_tiled2o2",
+        (tiled_grid_x, tiled_grid_y),
+        m * n * k,
+        m * n,
+        &expected,
+    )?;
     // 2-popc 必须与 3-popc 给出完全相同的整数结果，否则说明身份变换写错了。
     assert_eq!(
         o2_matches, o3_matches,
