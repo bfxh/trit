@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use wgpu::util::DeviceExt;
 
+use crate::bench::{median_ns_per, read_u32s};
 use crate::{pack_columns, pack_rows};
 
 const WORKGROUP: u32 = 64;
@@ -53,6 +54,10 @@ pub struct MatmulReport {
     pub ternary_vec_ns_per_mac: f64,
     /// vec2 内核结果与 CPU 位并行镜像是否一致。
     pub vec_matches: bool,
+    /// K 段 16 word（屏障减半）三值内核，ns / MAC。
+    pub ternary_w16_ns_per_mac: f64,
+    /// K 段 16 word 内核结果与 CPU 位并行镜像是否一致。
+    pub w16_matches: bool,
     /// split-K（4 片 + atomicAdd）三值内核，ns / MAC。
     pub ternary_splitk_ns_per_mac: f64,
     /// split-K 结果与 CPU 位并行镜像是否一致。
@@ -530,6 +535,39 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         .expect("poll");
     let f32_reg4_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_f32_reg4);
 
+    // K 段 16 word：屏障次数减半（128 word 从 32 次到 16 次）。
+    let pipeline_w16 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("matmul-ternary-w16"),
+        layout: Some(&pipeline_layout),
+        module: &shader,
+        entry_point: Some("main_tiled2w16"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    let dispatch_w16 = || {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            pass.set_pipeline(&pipeline_w16);
+            pass.set_bind_group(0, &bind, &[]);
+            pass.dispatch_workgroups(tiled_grid_x, tiled_grid_y, 1);
+        }
+        queue.submit([encoder.finish()]);
+    };
+    for _ in 0..20 {
+        dispatch_w16();
+    }
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
+    let ternary_w16_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_w16);
+    let w16_gpu = read_u32s(&device, &queue, &out, m * n)?;
+    let w16_matches = w16_gpu
+        .iter()
+        .zip(expected.iter())
+        .all(|(g, e)| i64::from(*g as i32) == *e);
+
     // split-K：沿 K 切 4 片、atomicAdd 汇总；workgroup 数 = tiled × 4。
     let pipeline_splitk = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("matmul-ternary-splitk"),
@@ -647,7 +685,8 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
     let best_ternary_ns = ternary_reg_ns_per_mac
         .min(ternary_reg4_ns_per_mac)
         .min(ternary_vec_ns_per_mac)
-        .min(ternary_splitk_ns_per_mac);
+        .min(ternary_splitk_ns_per_mac)
+        .min(ternary_w16_ns_per_mac);
     let achieved_popc = 1.0 / (best_ternary_ns * 1e-9) / 8.0;
     let ternary_popc_utilization = achieved_popc / popc_ceiling_per_s;
 
@@ -687,6 +726,8 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         vec_matches,
         ternary_splitk_ns_per_mac,
         splitk_matches,
+        ternary_w16_ns_per_mac,
+        w16_matches,
         popc_ceiling_per_s,
         ternary_popc_utilization,
         f32_relative_error,
@@ -721,52 +762,4 @@ pub(crate) fn uniform(binding: u32) -> wgpu::BindGroupLayoutEntry {
         },
         count: None,
     }
-}
-
-fn median_ns_per(device: &wgpu::Device, macs: usize, mut submit: impl FnMut()) -> f64 {
-    let iters = 20;
-    let mut samples = Vec::with_capacity(5);
-    for _ in 0..5 {
-        let start = Instant::now();
-        for _ in 0..iters {
-            submit();
-        }
-        device
-            .poll(wgpu::PollType::wait_indefinitely())
-            .expect("poll");
-        samples.push(start.elapsed().as_nanos() as f64 / (iters as f64 * macs as f64));
-    }
-    samples.sort_by(|a, b| a.partial_cmp(b).expect("有限值"));
-    samples[samples.len() / 2]
-}
-
-fn read_u32s(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    buffer: &wgpu::Buffer,
-    count: usize,
-) -> Option<Vec<u32>> {
-    let staging = device.create_buffer(&wgpu::BufferDescriptor {
-        label: None,
-        size: (count * 4) as u64,
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let mut encoder =
-        device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    encoder.copy_buffer_to_buffer(buffer, 0, &staging, 0, (count * 4) as u64);
-    queue.submit([encoder.finish()]);
-    let slice = staging.slice(..);
-    slice.map_async(wgpu::MapMode::Read, |_| {});
-    device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .expect("poll");
-    let mapped = slice.get_mapped_range().expect("map");
-    let (chunks, _) = mapped.as_chunks::<4>();
-    Some(
-        chunks
-            .iter()
-            .map(|bytes| u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
-            .collect(),
-    )
 }

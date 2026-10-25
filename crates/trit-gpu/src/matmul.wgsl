@@ -465,3 +465,74 @@ fn main_splitk(
         atomicAdd(&out_atomic[(row0 + 1u) * params.n + col0 + 1u], s11);
     }
 }
+
+// K 段加大到 16 word：与 main_tiled2 完全同结构（16×16 tile、8×8 线程、2×2 输出），
+// 只是每段的 word 数 8→16 ⇒ 屏障次数减半（128 word 从 32 次降到 16 次）。
+// 共享内存 4 张平面 × 256 槽 = 4 KB（16 行 × 16 word）。
+const W16_WORDS: u32 = 16u;
+
+var<workgroup> w16_ap: array<u32, 256>;
+var<workgroup> w16_an: array<u32, 256>;
+var<workgroup> w16_bp: array<u32, 256>;
+var<workgroup> w16_bn: array<u32, 256>;
+
+@compute @workgroup_size(8, 8)
+fn main_tiled2w16(
+    @builtin(workgroup_id) wg: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+) {
+    let row_base = wg.y * 16u;
+    let col_base = wg.x * 16u;
+    let r0 = lid.y * 2u;
+    let c0 = lid.x * 2u;
+    let idx = lid.y * 8u + lid.x;
+    var s00 = 0;
+    var s01 = 0;
+    var s10 = 0;
+    var s11 = 0;
+    let word_tiles = (params.words + W16_WORDS - 1u) / W16_WORDS;
+    for (var chunk = 0u; chunk < word_tiles; chunk = chunk + 1u) {
+        // 64 线程 × 4 槽 = 256 = 16 行/列 × 16 word。
+        for (var t = 0u; t < 4u; t = t + 1u) {
+            let slot = idx + t * 64u;
+            let line = slot / W16_WORDS;
+            let word = chunk * W16_WORDS + slot % W16_WORDS;
+            let ok_a = row_base + line < params.m && word < params.words;
+            let ok_b = col_base + line < params.n && word < params.words;
+            w16_ap[slot] = select(0u, a_pos[(row_base + line) * params.words + word], ok_a);
+            w16_an[slot] = select(0u, a_neg[(row_base + line) * params.words + word], ok_a);
+            w16_bp[slot] = select(0u, b_pos[(col_base + line) * params.words + word], ok_b);
+            w16_bn[slot] = select(0u, b_neg[(col_base + line) * params.words + word], ok_b);
+        }
+        workgroupBarrier();
+        for (var w = 0u; w < W16_WORDS; w = w + 1u) {
+            let a0p = w16_ap[r0 * W16_WORDS + w];
+            let a0n = w16_an[r0 * W16_WORDS + w];
+            let a1p = w16_ap[(r0 + 1u) * W16_WORDS + w];
+            let a1n = w16_an[(r0 + 1u) * W16_WORDS + w];
+            let b0p = w16_bp[c0 * W16_WORDS + w];
+            let b0n = w16_bn[c0 * W16_WORDS + w];
+            let b1p = w16_bp[(c0 + 1u) * W16_WORDS + w];
+            let b1n = w16_bn[(c0 + 1u) * W16_WORDS + w];
+            s00 = s00 + i32(countOneBits(a0p & b0p)) + i32(countOneBits(a0n & b0n)) - i32(countOneBits(a0p & b0n)) - i32(countOneBits(a0n & b0p));
+            s01 = s01 + i32(countOneBits(a0p & b1p)) + i32(countOneBits(a0n & b1n)) - i32(countOneBits(a0p & b1n)) - i32(countOneBits(a0n & b1p));
+            s10 = s10 + i32(countOneBits(a1p & b0p)) + i32(countOneBits(a1n & b0n)) - i32(countOneBits(a1p & b0n)) - i32(countOneBits(a1n & b0p));
+            s11 = s11 + i32(countOneBits(a1p & b1p)) + i32(countOneBits(a1n & b1n)) - i32(countOneBits(a1p & b1n)) - i32(countOneBits(a1n & b1p));
+        }
+        workgroupBarrier();
+    }
+    let row0 = row_base + r0;
+    let col0 = col_base + c0;
+    if (row0 < params.m && col0 < params.n) {
+        out[row0 * params.n + col0] = s00;
+    }
+    if (row0 < params.m && col0 + 1u < params.n) {
+        out[row0 * params.n + col0 + 1u] = s01;
+    }
+    if (row0 + 1u < params.m && col0 < params.n) {
+        out[(row0 + 1u) * params.n + col0] = s10;
+    }
+    if (row0 + 1u < params.m && col0 + 1u < params.n) {
+        out[(row0 + 1u) * params.n + col0 + 1u] = s11;
+    }
+}
