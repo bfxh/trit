@@ -19,10 +19,14 @@ struct Params {
 // 分块版（经典共享内存 tiling）：16×16 输出 tile。A、B 的 16×16 子块**都按 [行][k]**
 // 连续存放（B 的行就是输出列），于是内层一次 128 位共享读喂 4 个乘加——
 // 32 次标量共享读变成 8 次 vec4 读。
+//
+// 每行固定 8 个 vec4 槽（K 段只用前 4 个），槽位按 `part ^ (row & 7)` 打散：
+// 一行 128 B 正好覆盖全部 32 个 bank，不打散的话同一 warp 的 16 行会全落在同一组 bank 上。
+// A 侧同一 warp 只有 2 行（其余是广播），不需要打散。
 const TILE: u32 = 16u;
 
-var<workgroup> tiled_a4: array<vec4<f32>, 64>;
-var<workgroup> tiled_b4: array<vec4<f32>, 64>;
+var<workgroup> tiled_a4: array<vec4<f32>, 128>;
+var<workgroup> tiled_b4: array<vec4<f32>, 128>;
 var<workgroup> tail_a: array<f32, 256>;
 var<workgroup> tail_b: array<f32, 256>;
 
@@ -49,19 +53,19 @@ fn main_tiled(
             let part = tile_id % 4u;
             if vector_ok {
                 let seg_ok = (chunk * 4u + part) * 4u < params.k;
-                tiled_a4[tile_id] = select(vec4<f32>(0.0), fa4[(block_row + r) * k4 + chunk * 4u + part], block_row + r < params.m && seg_ok);
-                tiled_b4[tile_id] = select(vec4<f32>(0.0), fb4[(block_col + r) * k4 + chunk * 4u + part], block_col + r < params.n && seg_ok);
+                tiled_a4[r * 8u + part] = select(vec4<f32>(0.0), fa4[(block_row + r) * k4 + chunk * 4u + part], block_row + r < params.m && seg_ok);
+                tiled_b4[r * 8u + (part ^ (r & 7u))] = select(vec4<f32>(0.0), fb4[(block_col + r) * k4 + chunk * 4u + part], block_col + r < params.n && seg_ok);
             } else {
                 let k0 = chunk * TILE + part * 4u;
                 let a_ok = block_row + r < params.m;
                 let b_ok = block_col + r < params.n;
-                tiled_a4[tile_id] = vec4<f32>(
+                tiled_a4[r * 8u + part] = vec4<f32>(
                     select(0.0, fa[(block_row + r) * params.k + k0 + 0u], a_ok && k0 + 0u < params.k),
                     select(0.0, fa[(block_row + r) * params.k + k0 + 1u], a_ok && k0 + 1u < params.k),
                     select(0.0, fa[(block_row + r) * params.k + k0 + 2u], a_ok && k0 + 2u < params.k),
                     select(0.0, fa[(block_row + r) * params.k + k0 + 3u], a_ok && k0 + 3u < params.k),
                 );
-                tiled_b4[tile_id] = vec4<f32>(
+                tiled_b4[r * 8u + (part ^ (r & 7u))] = vec4<f32>(
                     select(0.0, fb[(block_col + r) * params.k + k0 + 0u], b_ok && k0 + 0u < params.k),
                     select(0.0, fb[(block_col + r) * params.k + k0 + 1u], b_ok && k0 + 1u < params.k),
                     select(0.0, fb[(block_col + r) * params.k + k0 + 2u], b_ok && k0 + 2u < params.k),
@@ -71,8 +75,8 @@ fn main_tiled(
         }
         workgroupBarrier();
         for (var w4 = 0u; w4 < 4u; w4 = w4 + 1u) {
-            let a0 = tiled_a4[lid.y * 4u + w4];
-            let b0 = tiled_b4[lid.x * 4u + w4];
+            let a0 = tiled_a4[lid.y * 8u + w4];
+            let b0 = tiled_b4[lid.x * 8u + (w4 ^ (lid.x & 7u))];
             sum = sum + a0.x * b0.x;
             sum = sum + a0.y * b0.y;
             sum = sum + a0.z * b0.z;
@@ -110,11 +114,13 @@ fn main_tiled(
 // 4×4 寄存器阻塞（与 matmul.wgsl 的 main_tiled4 同结构）：32×32 tile、8×8 线程、
 // 每线程 4×4 输出，K 方向每次搬 8 个元素。共享内存按 vec4 组织：
 // 内层每次 128 位读喂 4 个乘加，共享读次数是标量版的 1/4。
+// 每行 8 个 vec4 槽（K8 只用 2 个），槽位 `part ^ ((row >> 2) & 7)`：同一 warp 内
+// 行号相距 4，用 row>>2 做 key 才能让 8 个 bank 组都被用到。
 const T4: u32 = 32u;
 const K_CHUNK: u32 = 8u;
 
-var<workgroup> t4_a4: array<vec4<f32>, 64>;
-var<workgroup> t4_b4: array<vec4<f32>, 64>;
+var<workgroup> t4_a4: array<vec4<f32>, 256>;
+var<workgroup> t4_b4: array<vec4<f32>, 256>;
 
 @compute @workgroup_size(8, 8)
 fn main_tiled4(
@@ -151,21 +157,21 @@ fn main_tiled4(
             let part = idx % 2u;
             let k4 = params.k / 4u;
             let seg_ok = (chunk * 2u + part) * 4u < params.k;
-            t4_a4[idx] = select(vec4<f32>(0.0), fa4[(row_base + r) * k4 + chunk * 2u + part], row_base + r < params.m && seg_ok);
-            t4_b4[idx] = select(vec4<f32>(0.0), fb4[(col_base + r) * k4 + chunk * 2u + part], col_base + r < params.n && seg_ok);
+            t4_a4[r * 8u + (part ^ ((r >> 2u) & 7u))] = select(vec4<f32>(0.0), fa4[(row_base + r) * k4 + chunk * 2u + part], row_base + r < params.m && seg_ok);
+            t4_b4[r * 8u + (part ^ ((r >> 2u) & 7u))] = select(vec4<f32>(0.0), fb4[(col_base + r) * k4 + chunk * 2u + part], col_base + r < params.n && seg_ok);
         } else {
             let r = idx / 2u;
             let part = idx % 2u;
             let k0 = chunk * K_CHUNK + part * 4u;
             let a_ok = row_base + r < params.m;
             let b_ok = col_base + r < params.n;
-            t4_a4[idx] = vec4<f32>(
+            t4_a4[r * 8u + (part ^ ((r >> 2u) & 7u))] = vec4<f32>(
                 select(0.0, fa[(row_base + r) * params.k + k0 + 0u], a_ok && k0 + 0u < params.k),
                 select(0.0, fa[(row_base + r) * params.k + k0 + 1u], a_ok && k0 + 1u < params.k),
                 select(0.0, fa[(row_base + r) * params.k + k0 + 2u], a_ok && k0 + 2u < params.k),
                 select(0.0, fa[(row_base + r) * params.k + k0 + 3u], a_ok && k0 + 3u < params.k),
             );
-            t4_b4[idx] = vec4<f32>(
+            t4_b4[r * 8u + (part ^ ((r >> 2u) & 7u))] = vec4<f32>(
                 select(0.0, fb[(col_base + r) * params.k + k0 + 0u], b_ok && k0 + 0u < params.k),
                 select(0.0, fb[(col_base + r) * params.k + k0 + 1u], b_ok && k0 + 1u < params.k),
                 select(0.0, fb[(col_base + r) * params.k + k0 + 2u], b_ok && k0 + 2u < params.k),
@@ -174,14 +180,14 @@ fn main_tiled4(
         }
         workgroupBarrier();
         for (var w4 = 0u; w4 < 2u; w4 = w4 + 1u) {
-            let a0 = t4_a4[(r0 + 0u) * 2u + w4];
-            let a1 = t4_a4[(r0 + 1u) * 2u + w4];
-            let a2 = t4_a4[(r0 + 2u) * 2u + w4];
-            let a3 = t4_a4[(r0 + 3u) * 2u + w4];
-            let b0 = t4_b4[(c0 + 0u) * 2u + w4];
-            let b1 = t4_b4[(c0 + 1u) * 2u + w4];
-            let b2 = t4_b4[(c0 + 2u) * 2u + w4];
-            let b3 = t4_b4[(c0 + 3u) * 2u + w4];
+            let a0 = t4_a4[(r0 + 0u) * 8u + (w4 ^ (((r0 + 0u) >> 2u) & 7u))];
+            let a1 = t4_a4[(r0 + 1u) * 8u + (w4 ^ (((r0 + 1u) >> 2u) & 7u))];
+            let a2 = t4_a4[(r0 + 2u) * 8u + (w4 ^ (((r0 + 2u) >> 2u) & 7u))];
+            let a3 = t4_a4[(r0 + 3u) * 8u + (w4 ^ (((r0 + 3u) >> 2u) & 7u))];
+            let b0 = t4_b4[(c0 + 0u) * 8u + (w4 ^ (((c0 + 0u) >> 2u) & 7u))];
+            let b1 = t4_b4[(c0 + 1u) * 8u + (w4 ^ (((c0 + 1u) >> 2u) & 7u))];
+            let b2 = t4_b4[(c0 + 2u) * 8u + (w4 ^ (((c0 + 2u) >> 2u) & 7u))];
+            let b3 = t4_b4[(c0 + 3u) * 8u + (w4 ^ (((c0 + 3u) >> 2u) & 7u))];
             s00 = s00 + a0.x * b0.x;
             s00 = s00 + a0.y * b0.y;
             s00 = s00 + a0.z * b0.z;
@@ -296,9 +302,10 @@ fn main2d(@builtin(global_invocation_id) gid: vec3<u32>) {
 
 // 2×2 寄存器阻塞 + K 段 8（对齐 cuda-oxide 的 reg2 结构）。共享内存按 vec4 组织：
 // 每线程一次 128 位读喂 4 个乘加，共享读次数是标量版的 1/4（这是反超的关键）。
+// 每行 8 个 vec4 槽（只用 2 个），槽位 `part ^ ((row >> 1) & 7)`：warp 内行号相距 2。
 const K8: u32 = 8u;
-var<workgroup> t2k8_a4: array<vec4<f32>, 32>;
-var<workgroup> t2k8_b4: array<vec4<f32>, 32>;
+var<workgroup> t2k8_a4: array<vec4<f32>, 128>;
+var<workgroup> t2k8_b4: array<vec4<f32>, 128>;
 
 @compute @workgroup_size(8, 8)
 fn main_tiled2k8(
@@ -324,8 +331,8 @@ fn main_tiled2k8(
                 let part = idx % 2u;
                 let k4 = params.k / 4u;
                 let seg_ok = (chunk * 2u + part) * 4u < params.k;
-                t2k8_a4[idx] = select(vec4<f32>(0.0), fa4[(row_base + r) * k4 + chunk * 2u + part], row_base + r < params.m && seg_ok);
-                t2k8_b4[idx] = select(vec4<f32>(0.0), fb4[(col_base + r) * k4 + chunk * 2u + part], col_base + r < params.n && seg_ok);
+                t2k8_a4[r * 8u + (part ^ ((r >> 1u) & 7u))] = select(vec4<f32>(0.0), fa4[(row_base + r) * k4 + chunk * 2u + part], row_base + r < params.m && seg_ok);
+                t2k8_b4[r * 8u + (part ^ ((r >> 1u) & 7u))] = select(vec4<f32>(0.0), fb4[(col_base + r) * k4 + chunk * 2u + part], col_base + r < params.n && seg_ok);
             }
         } else {
             // 标量回退：前 32 线程各拼一个 vec4（16 行 × 2 段）。
@@ -335,13 +342,13 @@ fn main_tiled2k8(
                 let k0 = chunk * K8 + part * 4u;
                 let a_ok = row_base + r < params.m;
                 let b_ok = col_base + r < params.n;
-                t2k8_a4[idx] = vec4<f32>(
+                t2k8_a4[r * 8u + (part ^ ((r >> 1u) & 7u))] = vec4<f32>(
                     select(0.0, fa[(row_base + r) * params.k + k0 + 0u], a_ok && k0 + 0u < params.k),
                     select(0.0, fa[(row_base + r) * params.k + k0 + 1u], a_ok && k0 + 1u < params.k),
                     select(0.0, fa[(row_base + r) * params.k + k0 + 2u], a_ok && k0 + 2u < params.k),
                     select(0.0, fa[(row_base + r) * params.k + k0 + 3u], a_ok && k0 + 3u < params.k),
                 );
-                t2k8_b4[idx] = vec4<f32>(
+                t2k8_b4[r * 8u + (part ^ ((r >> 1u) & 7u))] = vec4<f32>(
                     select(0.0, fb[(col_base + r) * params.k + k0 + 0u], b_ok && k0 + 0u < params.k),
                     select(0.0, fb[(col_base + r) * params.k + k0 + 1u], b_ok && k0 + 1u < params.k),
                     select(0.0, fb[(col_base + r) * params.k + k0 + 2u], b_ok && k0 + 2u < params.k),
@@ -352,10 +359,10 @@ fn main_tiled2k8(
         workgroupBarrier();
         // 每次 128 位共享读喂 4 个乘加；累加次序与逐 kk 标量版一致（x,y,z,w）。
         for (var w4 = 0u; w4 < 2u; w4 = w4 + 1u) {
-            let a0 = t2k8_a4[r0 * 2u + w4];
-            let a1 = t2k8_a4[(r0 + 1u) * 2u + w4];
-            let b0 = t2k8_b4[c0 * 2u + w4];
-            let b1 = t2k8_b4[(c0 + 1u) * 2u + w4];
+            let a0 = t2k8_a4[r0 * 8u + (w4 ^ ((r0 >> 1u) & 7u))];
+            let a1 = t2k8_a4[(r0 + 1u) * 8u + (w4 ^ (((r0 + 1u) >> 1u) & 7u))];
+            let b0 = t2k8_b4[c0 * 8u + (w4 ^ ((c0 >> 1u) & 7u))];
+            let b1 = t2k8_b4[(c0 + 1u) * 8u + (w4 ^ (((c0 + 1u) >> 1u) & 7u))];
             s00 = s00 + a0.x * b0.x;
             s00 = s00 + a0.y * b0.y;
             s00 = s00 + a0.z * b0.z;
@@ -393,6 +400,7 @@ fn main_tiled2k8(
 
 // 4×4 寄存器阻塞 + K 段 32：32×32 tile、8×8 线程、共享 2×4KB（8 KB 总量，
 // 已是 16 KB workgroup 存储上限下的最宽段：再宽会超限）。K 段越宽屏障越少。
+// 8 个 vec4 槽全用，槽位 `part ^ ((row >> 2) & 7)`（行距 128 B 会全部同 bank 组）。
 const K32: u32 = 32u;
 var<workgroup> t4k32_a4: array<vec4<f32>, 256>;
 var<workgroup> t4k32_b4: array<vec4<f32>, 256>;
@@ -421,8 +429,8 @@ fn main_tiled4k32(
                 let part = g % 8u;
                 let k4 = params.k / 4u;
                 let seg_ok = (chunk * 8u + part) * 4u < params.k;
-                t4k32_a4[g] = select(vec4<f32>(0.0), fa4[(row_base + r) * k4 + chunk * 8u + part], row_base + r < params.m && seg_ok);
-                t4k32_b4[g] = select(vec4<f32>(0.0), fb4[(col_base + r) * k4 + chunk * 8u + part], col_base + r < params.n && seg_ok);
+                t4k32_a4[r * 8u + (part ^ ((r >> 2u) & 7u))] = select(vec4<f32>(0.0), fa4[(row_base + r) * k4 + chunk * 8u + part], row_base + r < params.m && seg_ok);
+                t4k32_b4[r * 8u + (part ^ ((r >> 2u) & 7u))] = select(vec4<f32>(0.0), fb4[(col_base + r) * k4 + chunk * 8u + part], col_base + r < params.n && seg_ok);
             }
         } else {
             for (var t = 0u; t < 4u; t = t + 1u) {
@@ -432,13 +440,13 @@ fn main_tiled4k32(
                 let k0 = chunk * K32 + part * 4u;
                 let a_ok = row_base + r < params.m;
                 let b_ok = col_base + r < params.n;
-                t4k32_a4[g] = vec4<f32>(
+                t4k32_a4[r * 8u + (part ^ ((r >> 2u) & 7u))] = vec4<f32>(
                     select(0.0, fa[(row_base + r) * params.k + k0 + 0u], a_ok && k0 + 0u < params.k),
                     select(0.0, fa[(row_base + r) * params.k + k0 + 1u], a_ok && k0 + 1u < params.k),
                     select(0.0, fa[(row_base + r) * params.k + k0 + 2u], a_ok && k0 + 2u < params.k),
                     select(0.0, fa[(row_base + r) * params.k + k0 + 3u], a_ok && k0 + 3u < params.k),
                 );
-                t4k32_b4[g] = vec4<f32>(
+                t4k32_b4[r * 8u + (part ^ ((r >> 2u) & 7u))] = vec4<f32>(
                     select(0.0, fb[(col_base + r) * params.k + k0 + 0u], b_ok && k0 + 0u < params.k),
                     select(0.0, fb[(col_base + r) * params.k + k0 + 1u], b_ok && k0 + 1u < params.k),
                     select(0.0, fb[(col_base + r) * params.k + k0 + 2u], b_ok && k0 + 2u < params.k),
@@ -448,14 +456,14 @@ fn main_tiled4k32(
         }
         workgroupBarrier();
         for (var w4 = 0u; w4 < 8u; w4 = w4 + 1u) {
-            let a0 = t4k32_a4[(r0 + 0u) * 8u + w4];
-            let a1 = t4k32_a4[(r0 + 1u) * 8u + w4];
-            let a2 = t4k32_a4[(r0 + 2u) * 8u + w4];
-            let a3 = t4k32_a4[(r0 + 3u) * 8u + w4];
-            let b0 = t4k32_b4[(c0 + 0u) * 8u + w4];
-            let b1 = t4k32_b4[(c0 + 1u) * 8u + w4];
-            let b2 = t4k32_b4[(c0 + 2u) * 8u + w4];
-            let b3 = t4k32_b4[(c0 + 3u) * 8u + w4];
+            let a0 = t4k32_a4[(r0 + 0u) * 8u + (w4 ^ (((r0 + 0u) >> 2u) & 7u))];
+            let a1 = t4k32_a4[(r0 + 1u) * 8u + (w4 ^ (((r0 + 1u) >> 2u) & 7u))];
+            let a2 = t4k32_a4[(r0 + 2u) * 8u + (w4 ^ (((r0 + 2u) >> 2u) & 7u))];
+            let a3 = t4k32_a4[(r0 + 3u) * 8u + (w4 ^ (((r0 + 3u) >> 2u) & 7u))];
+            let b0 = t4k32_b4[(c0 + 0u) * 8u + (w4 ^ (((c0 + 0u) >> 2u) & 7u))];
+            let b1 = t4k32_b4[(c0 + 1u) * 8u + (w4 ^ (((c0 + 1u) >> 2u) & 7u))];
+            let b2 = t4k32_b4[(c0 + 2u) * 8u + (w4 ^ (((c0 + 2u) >> 2u) & 7u))];
+            let b3 = t4k32_b4[(c0 + 3u) * 8u + (w4 ^ (((c0 + 3u) >> 2u) & 7u))];
             s00 = s00 + a0.x * b0.x;
             s00 = s00 + a0.y * b0.y;
             s00 = s00 + a0.z * b0.z;

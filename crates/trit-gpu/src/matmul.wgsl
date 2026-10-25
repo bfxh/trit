@@ -44,15 +44,16 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 
 // 分块版（共享内存）：16×16 的输出 tile，一次协作加载 8-word（256 trit）的
+// 共享行距是 9 word 而不是 8：32 B 行距会让 8 行落在同一 bank 组，9 是奇数、行间完全错开。
 // A 行段与 B 列段进 workgroup storage——A 段被 tile 内 16 个列线程复用、
 // B 段被 16 个行线程复用，把重复读砍 16×。同 bind group、同数据，只有映射不同。
 const TILED: u32 = 16u;
 const TILED_WORDS: u32 = 8u;
 
-var<workgroup> tile_ap: array<u32, 512>;
-var<workgroup> tile_an: array<u32, 512>;
-var<workgroup> tile_bp: array<u32, 512>;
-var<workgroup> tile_bn: array<u32, 512>;
+var<workgroup> tile_ap: array<u32, 144>;
+var<workgroup> tile_an: array<u32, 144>;
+var<workgroup> tile_bp: array<u32, 144>;
+var<workgroup> tile_bn: array<u32, 144>;
 
 @compute @workgroup_size(16, 16)
 fn main_tiled(
@@ -71,23 +72,23 @@ fn main_tiled(
         if (lid.x < TILED_WORDS) {
             let a_word = chunk * TILED_WORDS + lid.x;
             let a_ok = row < params.m && a_word < params.words;
-            let slot = lid.y * TILED_WORDS + lid.x;
+            let slot = lid.y * 9u + lid.x;
             tile_ap[slot] = select(0u, a_pos[row * params.words + a_word], a_ok);
             tile_an[slot] = select(0u, a_neg[row * params.words + a_word], a_ok);
         }
         if (lid.y < TILED_WORDS) {
             let b_word = chunk * TILED_WORDS + lid.y;
             let b_ok = col < params.n && b_word < params.words;
-            let slot = lid.x * TILED_WORDS + lid.y;
+            let slot = lid.x * 9u + lid.y;
             tile_bp[slot] = select(0u, b_pos[col * params.words + b_word], b_ok);
             tile_bn[slot] = select(0u, b_neg[col * params.words + b_word], b_ok);
         }
         workgroupBarrier();
         for (var w = 0u; w < TILED_WORDS; w = w + 1u) {
-            let ap = tile_ap[lid.y * TILED_WORDS + w];
-            let an = tile_an[lid.y * TILED_WORDS + w];
-            let bp = tile_bp[lid.x * TILED_WORDS + w];
-            let bn = tile_bn[lid.x * TILED_WORDS + w];
+            let ap = tile_ap[lid.y * 9u + w];
+            let an = tile_an[lid.y * 9u + w];
+            let bp = tile_bp[lid.x * 9u + w];
+            let bn = tile_bn[lid.x * 9u + w];
             sum = sum
                 + i32(countOneBits(ap & bp))
                 + i32(countOneBits(an & bn))
@@ -129,28 +130,28 @@ fn main_tiled2(
         let aw1 = chunk * TILED_WORDS + s1 % 8u;
         let ar2 = s2 / 8u;
         let aw2 = chunk * TILED_WORDS + s2 % 8u;
-        tile_ap[s1] = select(0u, a_pos[(row_base + ar1) * params.words + aw1], row_base + ar1 < params.m && aw1 < params.words);
-        tile_an[s1] = select(0u, a_neg[(row_base + ar1) * params.words + aw1], row_base + ar1 < params.m && aw1 < params.words);
-        tile_ap[s2] = select(0u, a_pos[(row_base + ar2) * params.words + aw2], row_base + ar2 < params.m && aw2 < params.words);
-        tile_an[s2] = select(0u, a_neg[(row_base + ar2) * params.words + aw2], row_base + ar2 < params.m && aw2 < params.words);
+        tile_ap[(s1 / 8u) * 9u + s1 % 8u] = select(0u, a_pos[(row_base + ar1) * params.words + aw1], row_base + ar1 < params.m && aw1 < params.words);
+        tile_an[(s1 / 8u) * 9u + s1 % 8u] = select(0u, a_neg[(row_base + ar1) * params.words + aw1], row_base + ar1 < params.m && aw1 < params.words);
+        tile_ap[(s2 / 8u) * 9u + s2 % 8u] = select(0u, a_pos[(row_base + ar2) * params.words + aw2], row_base + ar2 < params.m && aw2 < params.words);
+        tile_an[(s2 / 8u) * 9u + s2 % 8u] = select(0u, a_neg[(row_base + ar2) * params.words + aw2], row_base + ar2 < params.m && aw2 < params.words);
         let bc1 = col_base + (s1 / 8u);
         let bw1 = chunk * TILED_WORDS + s1 % 8u;
         let bc2 = col_base + (s2 / 8u);
         let bw2 = chunk * TILED_WORDS + s2 % 8u;
-        tile_bp[s1] = select(0u, b_pos[(bc1) * params.words + bw1], bc1 < params.n && bw1 < params.words);
-        tile_bn[s1] = select(0u, b_neg[(bc1) * params.words + bw1], bc1 < params.n && bw1 < params.words);
-        tile_bp[s2] = select(0u, b_pos[(bc2) * params.words + bw2], bc2 < params.n && bw2 < params.words);
-        tile_bn[s2] = select(0u, b_neg[(bc2) * params.words + bw2], bc2 < params.n && bw2 < params.words);
+        tile_bp[(s1 / 8u) * 9u + s1 % 8u] = select(0u, b_pos[(bc1) * params.words + bw1], bc1 < params.n && bw1 < params.words);
+        tile_bn[(s1 / 8u) * 9u + s1 % 8u] = select(0u, b_neg[(bc1) * params.words + bw1], bc1 < params.n && bw1 < params.words);
+        tile_bp[(s2 / 8u) * 9u + s2 % 8u] = select(0u, b_pos[(bc2) * params.words + bw2], bc2 < params.n && bw2 < params.words);
+        tile_bn[(s2 / 8u) * 9u + s2 % 8u] = select(0u, b_neg[(bc2) * params.words + bw2], bc2 < params.n && bw2 < params.words);
         workgroupBarrier();
         for (var w = 0u; w < TILED_WORDS; w = w + 1u) {
-            let a0p = tile_ap[r0 * TILED_WORDS + w];
-            let a0n = tile_an[r0 * TILED_WORDS + w];
-            let a1p = tile_ap[(r0 + 1u) * TILED_WORDS + w];
-            let a1n = tile_an[(r0 + 1u) * TILED_WORDS + w];
-            let b0p = tile_bp[c0 * TILED_WORDS + w];
-            let b0n = tile_bn[c0 * TILED_WORDS + w];
-            let b1p = tile_bp[(c0 + 1u) * TILED_WORDS + w];
-            let b1n = tile_bn[(c0 + 1u) * TILED_WORDS + w];
+            let a0p = tile_ap[r0 * 9u + w];
+            let a0n = tile_an[r0 * 9u + w];
+            let a1p = tile_ap[(r0 + 1u) * 9u + w];
+            let a1n = tile_an[(r0 + 1u) * 9u + w];
+            let b0p = tile_bp[c0 * 9u + w];
+            let b0n = tile_bn[c0 * 9u + w];
+            let b1p = tile_bp[(c0 + 1u) * 9u + w];
+            let b1n = tile_bn[(c0 + 1u) * 9u + w];
             s00 = s00 + i32(countOneBits(a0p & b0p)) + i32(countOneBits(a0n & b0n))
                 - i32(countOneBits(a0p & b0n)) - i32(countOneBits(a0n & b0p));
             s01 = s01 + i32(countOneBits(a0p & b1p)) + i32(countOneBits(a0n & b1n))
@@ -184,10 +185,10 @@ fn main_tiled2(
 const T4: u32 = 32u;
 const T4_WORDS: u32 = 8u;
 
-var<workgroup> t4_ap: array<u32, 256>;
-var<workgroup> t4_an: array<u32, 256>;
-var<workgroup> t4_bp: array<u32, 256>;
-var<workgroup> t4_bn: array<u32, 256>;
+var<workgroup> t4_ap: array<u32, 288>;
+var<workgroup> t4_an: array<u32, 288>;
+var<workgroup> t4_bp: array<u32, 288>;
+var<workgroup> t4_bn: array<u32, 288>;
 
 @compute @workgroup_size(8, 8)
 fn main_tiled4(
@@ -212,29 +213,29 @@ fn main_tiled4(
             let word = chunk * T4_WORDS + slot % T4_WORDS;
             let ok_a = row_base + line < params.m && word < params.words;
             let ok_b = col_base + line < params.n && word < params.words;
-            t4_ap[slot] = select(0u, a_pos[(row_base + line) * params.words + word], ok_a);
-            t4_an[slot] = select(0u, a_neg[(row_base + line) * params.words + word], ok_a);
-            t4_bp[slot] = select(0u, b_pos[(col_base + line) * params.words + word], ok_b);
-            t4_bn[slot] = select(0u, b_neg[(col_base + line) * params.words + word], ok_b);
+            t4_ap[(slot / 8u) * 9u + slot % 8u] = select(0u, a_pos[(row_base + line) * params.words + word], ok_a);
+            t4_an[(slot / 8u) * 9u + slot % 8u] = select(0u, a_neg[(row_base + line) * params.words + word], ok_a);
+            t4_bp[(slot / 8u) * 9u + slot % 8u] = select(0u, b_pos[(col_base + line) * params.words + word], ok_b);
+            t4_bn[(slot / 8u) * 9u + slot % 8u] = select(0u, b_neg[(col_base + line) * params.words + word], ok_b);
         }
         workgroupBarrier();
         for (var w = 0u; w < T4_WORDS; w = w + 1u) {
-            let a0p = t4_ap[(r0 + 0u) * T4_WORDS + w];
-            let a0n = t4_an[(r0 + 0u) * T4_WORDS + w];
-            let a1p = t4_ap[(r0 + 1u) * T4_WORDS + w];
-            let a1n = t4_an[(r0 + 1u) * T4_WORDS + w];
-            let a2p = t4_ap[(r0 + 2u) * T4_WORDS + w];
-            let a2n = t4_an[(r0 + 2u) * T4_WORDS + w];
-            let a3p = t4_ap[(r0 + 3u) * T4_WORDS + w];
-            let a3n = t4_an[(r0 + 3u) * T4_WORDS + w];
-            let b0p = t4_bp[(c0 + 0u) * T4_WORDS + w];
-            let b0n = t4_bn[(c0 + 0u) * T4_WORDS + w];
-            let b1p = t4_bp[(c0 + 1u) * T4_WORDS + w];
-            let b1n = t4_bn[(c0 + 1u) * T4_WORDS + w];
-            let b2p = t4_bp[(c0 + 2u) * T4_WORDS + w];
-            let b2n = t4_bn[(c0 + 2u) * T4_WORDS + w];
-            let b3p = t4_bp[(c0 + 3u) * T4_WORDS + w];
-            let b3n = t4_bn[(c0 + 3u) * T4_WORDS + w];
+            let a0p = t4_ap[(r0 + 0u) * 9u + w];
+            let a0n = t4_an[(r0 + 0u) * 9u + w];
+            let a1p = t4_ap[(r0 + 1u) * 9u + w];
+            let a1n = t4_an[(r0 + 1u) * 9u + w];
+            let a2p = t4_ap[(r0 + 2u) * 9u + w];
+            let a2n = t4_an[(r0 + 2u) * 9u + w];
+            let a3p = t4_ap[(r0 + 3u) * 9u + w];
+            let a3n = t4_an[(r0 + 3u) * 9u + w];
+            let b0p = t4_bp[(c0 + 0u) * 9u + w];
+            let b0n = t4_bn[(c0 + 0u) * 9u + w];
+            let b1p = t4_bp[(c0 + 1u) * 9u + w];
+            let b1n = t4_bn[(c0 + 1u) * 9u + w];
+            let b2p = t4_bp[(c0 + 2u) * 9u + w];
+            let b2n = t4_bn[(c0 + 2u) * 9u + w];
+            let b3p = t4_bp[(c0 + 3u) * 9u + w];
+            let b3n = t4_bn[(c0 + 3u) * 9u + w];
             s00 = s00 + i32(countOneBits(a0p & b0p)) + i32(countOneBits(a0n & b0n)) - i32(countOneBits(a0p & b0n)) - i32(countOneBits(a0n & b0p));
             s01 = s01 + i32(countOneBits(a0p & b1p)) + i32(countOneBits(a0n & b1n)) - i32(countOneBits(a0p & b1n)) - i32(countOneBits(a0n & b1p));
             s02 = s02 + i32(countOneBits(a0p & b2p)) + i32(countOneBits(a0n & b2n)) - i32(countOneBits(a0p & b2n)) - i32(countOneBits(a0n & b2p));
@@ -384,19 +385,19 @@ fn bench_popc(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 }
 
-// split-K：沿 K 切 4 片并行（workgroup_id.z = 切片号），每片算一部分再 atomicAdd 汇总。
-// 结构沿用 main_tiled2（16×16 tile、8×8 线程、2×2 输出）——它并行度最高；
-// split-K 在不减少 workgroup 数的前提下把 K 也切开，用来填满 SM。
+// split-K + 3-popc：沿 K 切 4 片并行（workgroup_id.z = 切片号），每片算一部分再 atomicAdd 汇总。
+// 结构沿用 main_tiled2（16×16 tile、8×8 线程、2×2 输出），内层用 o3 的 3-popc 恒等式
+// （双导轨不交叠 ⇒ popc(aₚ&bₙ)+popc(aₙ&bₚ) = popc((aₚ&bₙ)|(aₙ&bₚ))）。
 // 说明：模块级绑定不能重复声明，所以这里复用 a_pos/a_neg/b_pos/b_neg/params，
 // 输出走**另一个绑定（binding 6）的 atomic 视图**，指向同一个输出缓冲。
 const SLICES: u32 = 4u;
 
 @group(0) @binding(6) var<storage, read_write> out_atomic: array<atomic<i32>>;
 
-var<workgroup> k_ap: array<u32, 128>;
-var<workgroup> k_an: array<u32, 128>;
-var<workgroup> k_bp: array<u32, 128>;
-var<workgroup> k_bn: array<u32, 128>;
+var<workgroup> k_ap: array<u32, 144>;
+var<workgroup> k_an: array<u32, 144>;
+var<workgroup> k_bp: array<u32, 144>;
+var<workgroup> k_bn: array<u32, 144>;
 
 @compute @workgroup_size(8, 8)
 fn main_splitk(
@@ -424,28 +425,28 @@ fn main_splitk(
             let word = first + slot % 8u;
             let ok_a = row_base + line < params.m && word < chunk_end;
             let ok_b = col_base + line < params.n && word < chunk_end;
-            k_ap[slot] = select(0u, a_pos[(row_base + line) * params.words + word], ok_a);
-            k_an[slot] = select(0u, a_neg[(row_base + line) * params.words + word], ok_a);
-            k_bp[slot] = select(0u, b_pos[(col_base + line) * params.words + word], ok_b);
-            k_bn[slot] = select(0u, b_neg[(col_base + line) * params.words + word], ok_b);
+            k_ap[(slot / 8u) * 9u + slot % 8u] = select(0u, a_pos[(row_base + line) * params.words + word], ok_a);
+            k_an[(slot / 8u) * 9u + slot % 8u] = select(0u, a_neg[(row_base + line) * params.words + word], ok_a);
+            k_bp[(slot / 8u) * 9u + slot % 8u] = select(0u, b_pos[(col_base + line) * params.words + word], ok_b);
+            k_bn[(slot / 8u) * 9u + slot % 8u] = select(0u, b_neg[(col_base + line) * params.words + word], ok_b);
         }
         workgroupBarrier();
         for (var w = 0u; w < 8u; w = w + 1u) {
             if (first + w >= chunk_end) {
                 break;
             }
-            let a0p = k_ap[r0 * 8u + w];
-            let a0n = k_an[r0 * 8u + w];
-            let a1p = k_ap[(r0 + 1u) * 8u + w];
-            let a1n = k_an[(r0 + 1u) * 8u + w];
-            let b0p = k_bp[c0 * 8u + w];
-            let b0n = k_bn[c0 * 8u + w];
-            let b1p = k_bp[(c0 + 1u) * 8u + w];
-            let b1n = k_bn[(c0 + 1u) * 8u + w];
-            s00 = s00 + i32(countOneBits(a0p & b0p)) + i32(countOneBits(a0n & b0n)) - i32(countOneBits(a0p & b0n)) - i32(countOneBits(a0n & b0p));
-            s01 = s01 + i32(countOneBits(a0p & b1p)) + i32(countOneBits(a0n & b1n)) - i32(countOneBits(a0p & b1n)) - i32(countOneBits(a0n & b1p));
-            s10 = s10 + i32(countOneBits(a1p & b0p)) + i32(countOneBits(a1n & b0n)) - i32(countOneBits(a1p & b0n)) - i32(countOneBits(a1n & b0p));
-            s11 = s11 + i32(countOneBits(a1p & b1p)) + i32(countOneBits(a1n & b1n)) - i32(countOneBits(a1p & b1n)) - i32(countOneBits(a1n & b1p));
+            let a0p = k_ap[r0 * 9u + w];
+            let a0n = k_an[r0 * 9u + w];
+            let a1p = k_ap[(r0 + 1u) * 9u + w];
+            let a1n = k_an[(r0 + 1u) * 9u + w];
+            let b0p = k_bp[c0 * 9u + w];
+            let b0n = k_bn[c0 * 9u + w];
+            let b1p = k_bp[(c0 + 1u) * 9u + w];
+            let b1n = k_bn[(c0 + 1u) * 9u + w];
+            s00 = s00 + i32(countOneBits(a0p & b0p)) + i32(countOneBits(a0n & b0n)) - i32(countOneBits((a0p & b0n) | (a0n & b0p)));
+            s01 = s01 + i32(countOneBits(a0p & b1p)) + i32(countOneBits(a0n & b1n)) - i32(countOneBits((a0p & b1n) | (a0n & b1p)));
+            s10 = s10 + i32(countOneBits(a1p & b0p)) + i32(countOneBits(a1n & b0n)) - i32(countOneBits((a1p & b0n) | (a1n & b0p)));
+            s11 = s11 + i32(countOneBits(a1p & b1p)) + i32(countOneBits(a1n & b1n)) - i32(countOneBits((a1p & b1n) | (a1n & b1p)));
         }
         workgroupBarrier();
         first = chunk_end;
@@ -536,10 +537,10 @@ fn main_tiled2w16(
         out[(row0 + 1u) * params.n + col0 + 1u] = s11;
     }
 }
-var<workgroup> o3_ap: array<u32, 128>;
-var<workgroup> o3_an: array<u32, 128>;
-var<workgroup> o3_bp: array<u32, 128>;
-var<workgroup> o3_bn: array<u32, 128>;
+var<workgroup> o3_ap: array<u32, 144>;
+var<workgroup> o3_an: array<u32, 144>;
+var<workgroup> o3_bp: array<u32, 144>;
+var<workgroup> o3_bn: array<u32, 144>;
 // 3-popc：与 main_tiled2 完全同结构，把 4 次 popc 压到 3 次。
 //
 //   popc(aₚ&bₚ) + popc(aₙ&bₙ) − popc(aₚ&bₙ) − popc(aₙ&bₚ)
@@ -570,21 +571,21 @@ fn main_tiled2o3(
             let word = chunk * 8u + slot % 8u;
             let ok_a = row_base + line < params.m && word < params.words;
             let ok_b = col_base + line < params.n && word < params.words;
-            o3_ap[slot] = select(0u, a_pos[(row_base + line) * params.words + word], ok_a);
-            o3_an[slot] = select(0u, a_neg[(row_base + line) * params.words + word], ok_a);
-            o3_bp[slot] = select(0u, b_pos[(col_base + line) * params.words + word], ok_b);
-            o3_bn[slot] = select(0u, b_neg[(col_base + line) * params.words + word], ok_b);
+            o3_ap[(slot / 8u) * 9u + slot % 8u] = select(0u, a_pos[(row_base + line) * params.words + word], ok_a);
+            o3_an[(slot / 8u) * 9u + slot % 8u] = select(0u, a_neg[(row_base + line) * params.words + word], ok_a);
+            o3_bp[(slot / 8u) * 9u + slot % 8u] = select(0u, b_pos[(col_base + line) * params.words + word], ok_b);
+            o3_bn[(slot / 8u) * 9u + slot % 8u] = select(0u, b_neg[(col_base + line) * params.words + word], ok_b);
         }
         workgroupBarrier();
         for (var w = 0u; w < 8u; w = w + 1u) {
-            let a0p = o3_ap[r0 * 8u + w];
-            let a0n = o3_an[r0 * 8u + w];
-            let a1p = o3_ap[(r0 + 1u) * 8u + w];
-            let a1n = o3_an[(r0 + 1u) * 8u + w];
-            let b0p = o3_bp[c0 * 8u + w];
-            let b0n = o3_bn[c0 * 8u + w];
-            let b1p = o3_bp[(c0 + 1u) * 8u + w];
-            let b1n = o3_bn[(c0 + 1u) * 8u + w];
+            let a0p = o3_ap[r0 * 9u + w];
+            let a0n = o3_an[r0 * 9u + w];
+            let a1p = o3_ap[(r0 + 1u) * 9u + w];
+            let a1n = o3_an[(r0 + 1u) * 9u + w];
+            let b0p = o3_bp[c0 * 9u + w];
+            let b0n = o3_bn[c0 * 9u + w];
+            let b1p = o3_bp[(c0 + 1u) * 9u + w];
+            let b1n = o3_bn[(c0 + 1u) * 9u + w];
             s00 = s00 + i32(countOneBits(a0p & b0p)) + i32(countOneBits(a0n & b0n)) - i32(countOneBits((a0p & b0n) | (a0n & b0p)));
             s01 = s01 + i32(countOneBits(a0p & b1p)) + i32(countOneBits(a0n & b1n)) - i32(countOneBits((a0p & b1n) | (a0n & b1p)));
             s10 = s10 + i32(countOneBits(a1p & b0p)) + i32(countOneBits(a1n & b0n)) - i32(countOneBits((a1p & b0n) | (a1n & b0p)));
