@@ -92,21 +92,22 @@ fn bench(trits: usize) -> Result<(), String> {
         matmul.adapter, matmul.m, matmul.k, matmul.n
     );
     println!(
-        "  GPU 1 号（三值双导轨）naive {:>10.5}  tiled {:>10.5}  reg2×2 {:>10.5}  reg4×4 {:>10.5}  o3 {:>10.5}  split-K {:>10.5}  w16 {:>10.5} ps/MAC",
+        "  GPU 1 号（三值双导轨）naive {:>10.5}  tiled {:>10.5}  reg2×2 {:>10.5}  reg4×4 {:>10.5}  o3 {:>10.5}  split-K {:>10.5} ps/MAC",
         matmul.ternary_ns_per_mac * 1000.0,
         matmul.ternary_tiled_ns_per_mac * 1000.0,
         matmul.ternary_reg_ns_per_mac * 1000.0,
         matmul.ternary_reg4_ns_per_mac * 1000.0,
         matmul.ternary_o3_ns_per_mac * 1000.0,
-        matmul.ternary_splitk_ns_per_mac * 1000.0,
-        matmul.ternary_w16_ns_per_mac * 1000.0
+        matmul.ternary_splitk_ns_per_mac * 1000.0
     );
     println!(
-        "  GPU 2 号（二值 f32）  naive {:>10.5}  tiled {:>10.5}  reg2×2 {:>10.5}  reg4×4 {:>10.5} ps/MAC",
+        "  GPU 2 号（二值 f32）  naive {:>10.5}  tiled {:>10.5}  reg2×2 {:>10.5}  reg4×4 {:>10.5}  2D-naive {:>10.5}  reg2-K8 {:>10.5} ps/MAC",
         matmul.f32_ns_per_mac * 1000.0,
         matmul.f32_tiled_ns_per_mac * 1000.0,
         matmul.f32_reg_ns_per_mac * 1000.0,
-        matmul.f32_reg4_ns_per_mac * 1000.0
+        matmul.f32_reg4_ns_per_mac * 1000.0,
+        matmul.f32_2d_ns_per_mac * 1000.0,
+        matmul.f32_reg2k8_ns_per_mac * 1000.0
     );
     let tiled_speedup = matmul.f32_tiled_ns_per_mac / matmul.ternary_tiled_ns_per_mac;
     let reg_speedup = matmul.f32_reg_ns_per_mac / matmul.ternary_reg_ns_per_mac;
@@ -115,9 +116,12 @@ fn bench(trits: usize) -> Result<(), String> {
         .ternary_reg_ns_per_mac
         .min(matmul.ternary_reg4_ns_per_mac)
         .min(matmul.ternary_o3_ns_per_mac)
-        .min(matmul.ternary_splitk_ns_per_mac)
-        .min(matmul.ternary_w16_ns_per_mac);
-    let best_f32 = matmul.f32_reg_ns_per_mac.min(matmul.f32_reg4_ns_per_mac);
+        .min(matmul.ternary_splitk_ns_per_mac);
+    let best_f32 = matmul
+        .f32_reg_ns_per_mac
+        .min(matmul.f32_reg4_ns_per_mac)
+        .min(matmul.f32_2d_ns_per_mac)
+        .min(matmul.f32_reg2k8_ns_per_mac);
     let best_speedup = best_f32 / best_ternary;
     println!(
         "  最优对最优：reg4×4 {reg4_speedup:.1}× / reg2×2 {reg_speedup:.1}× / tiled {tiled_speedup:.1}× / naive {matmul_speedup:.1}×；当前最优 {best_speedup:.1}×"
@@ -129,15 +133,16 @@ fn bench(trits: usize) -> Result<(), String> {
         1.0 / matmul.ternary_popc_utilization.max(1e-9)
     );
     println!(
-        "  校验：naive {} / tiled {} / reg2×2 {} / reg4×4 {} / o3 {} / split-K {} / w16 {}（f32 相对误差 {:.2e}）",
+        "  校验：naive {} / tiled {} / reg2×2 {} / reg4×4 {} / o3 {} / split-K {}（f32 相对误差 {:.2e}；2D-naive {} / reg2-K8 {}）",
         matmul.matches,
         matmul.tiled_matches,
         matmul.reg_matches,
         matmul.reg4_matches,
         matmul.o3_matches,
         matmul.splitk_matches,
-        matmul.w16_matches,
-        matmul.f32_relative_error
+        matmul.f32_relative_error,
+        matmul.f32_2d_matches,
+        matmul.f32_reg2k8_matches
     );
     Ok(())
 }

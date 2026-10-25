@@ -53,6 +53,10 @@
   WSL2）：同卡 4060 Ti、512×4096×512、B 转置、5×20 中位数。四对同结构内核——naive 6.233 vs 我们 23.80、
   tiled 2.243 vs 2.378、reg2×2 1.328 vs 2.389、reg4×4 1.567 vs **1.349**。
   **如实结论：只赢 reg4×4**；唯一大幅领先是「三值 0.110 对 cuda-oxide 最优 f32 1.328 ≈ 12×」，但属不同表示。
+- **f32 基线对齐 cuda-oxide 结构**：新增 `main2d`（2D 16×16 线程块 naive）与 `main_tiled2k8`
+  （2×2 + K 段 8）。naive 23.4 → **6.238 ps/MAC**（与 cuda-oxide 6.233 打平，差距全部来自线程映射）；
+  reg2 2.36 → **1.431**（K 段 16→8）；tiled 2.372（落后 5.8%）、reg4×4 1.329（**领先 15%**）。
+  修了 f32 校验容差未取绝对值的 bug（负期望值时容差变负、判定恒假）。
 - 顺手修 `forward.rs` 里 gpu feature 下才可见的 clippy（`chunks_exact` → `as_chunks`）。
 
 ### Added（GGUF → MOD 入向导入）

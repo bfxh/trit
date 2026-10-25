@@ -48,16 +48,21 @@ pub struct MatmulReport {
     pub ternary_reg4_ns_per_mac: f64,
     /// 4×4 寄存器阻塞 f32 内核（32×32 tile），ns / MAC。
     pub f32_reg4_ns_per_mac: f64,
+    /// 2D 线程块 naive f32（对齐 cuda-oxide 的映射），ns / MAC。
+    pub f32_2d_ns_per_mac: f64,
+    /// 2D naive 结果是否与 CPU 镜像一致。
+    pub f32_2d_matches: bool,
+    /// 2×2 + K 段 8 的 f32 内核（对齐 cuda-oxide reg2），ns / MAC。
+    pub f32_reg2k8_ns_per_mac: f64,
+    /// K 段 8 内核结果是否与 CPU 镜像一致。
+    pub f32_reg2k8_matches: bool,
     /// 4×4 寄存器阻塞三值结果与 CPU 位并行镜像是否一致。
     pub reg4_matches: bool,
     /// 3-popc 内核（2×2 微块，省 1/4 popcount），ns / MAC。
     pub ternary_o3_ns_per_mac: f64,
     /// 3-popc 内核结果与 CPU 位并行镜像是否一致。
     pub o3_matches: bool,
-    /// K 段 16 word（屏障减半）三值内核，ns / MAC。
-    pub ternary_w16_ns_per_mac: f64,
-    /// K 段 16 word 内核结果与 CPU 位并行镜像是否一致。
-    pub w16_matches: bool,
+
     /// split-K（4 片 + atomicAdd）三值内核，ns / MAC。
     pub ternary_splitk_ns_per_mac: f64,
     /// split-K 结果与 CPU 位并行镜像是否一致。
@@ -534,39 +539,6 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         .expect("poll");
     let f32_reg4_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_f32_reg4);
 
-    // K 段 16 word：屏障次数减半（128 word 从 32 次到 16 次）。
-    let pipeline_w16 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("matmul-ternary-w16"),
-        layout: Some(&pipeline_layout),
-        module: &shader,
-        entry_point: Some("main_tiled2w16"),
-        compilation_options: Default::default(),
-        cache: None,
-    });
-    let dispatch_w16 = || {
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            pass.set_pipeline(&pipeline_w16);
-            pass.set_bind_group(0, &bind, &[]);
-            pass.dispatch_workgroups(tiled_grid_x, tiled_grid_y, 1);
-        }
-        queue.submit([encoder.finish()]);
-    };
-    for _ in 0..20 {
-        dispatch_w16();
-    }
-    device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .expect("poll");
-    let ternary_w16_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_w16);
-    let w16_gpu = read_u32s(&device, &queue, &out, m * n)?;
-    let w16_matches = w16_gpu
-        .iter()
-        .zip(expected.iter())
-        .all(|(g, e)| i64::from(*g as i32) == *e);
-
     // split-K：沿 K 切 4 片、atomicAdd 汇总；workgroup 数 = tiled × 4。
     let pipeline_splitk = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("matmul-ternary-splitk"),
@@ -690,8 +662,67 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
     let ternary_popc_utilization = utilization(ternary_o3_ns_per_mac, 3.0)
         .max(utilization(ternary_splitk_ns_per_mac, 4.0))
         .max(utilization(ternary_reg_ns_per_mac, 4.0))
-        .max(utilization(ternary_reg4_ns_per_mac, 4.0))
-        .max(utilization(ternary_w16_ns_per_mac, 4.0));
+        .max(utilization(ternary_reg4_ns_per_mac, 4.0));
+
+    // 2D 线程块 naive（对齐 cuda-oxide 的 16×16 block 映射）。
+    let f32_pipeline_2d = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("matmul-f32-2d"),
+        layout: Some(&f32_pipeline_layout),
+        module: &f32_shader,
+        entry_point: Some("main2d"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    let dispatch_f32_2d = || {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            pass.set_pipeline(&f32_pipeline_2d);
+            pass.set_bind_group(0, &f32_bind, &[]);
+            pass.dispatch_workgroups(tiled_grid_x, tiled_grid_y, 1);
+        }
+        queue.submit([encoder.finish()]);
+    };
+    for _ in 0..20 {
+        dispatch_f32_2d();
+    }
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
+    let f32_2d_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_f32_2d);
+    let f32_2d_out = read_u32s(&device, &queue, &f32_out, m * n)?;
+    let f32_2d_matches = f32_2d_out.iter().zip(expected.iter()).all(|(bits, want)| {
+        (f32::from_bits(*bits) - *want as f32).abs() <= (*want as f32).abs() * 1e-3 + 1e-3
+    });
+
+    // 2×2 + K 段 8（对齐 cuda-oxide 的 reg2 结构）。
+    let f32_pipeline_k8 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("matmul-f32-reg2k8"),
+        layout: Some(&f32_pipeline_layout),
+        module: &f32_shader,
+        entry_point: Some("main_tiled2k8"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    let dispatch_f32_k8 = || {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            pass.set_pipeline(&f32_pipeline_k8);
+            pass.set_bind_group(0, &f32_bind, &[]);
+            pass.dispatch_workgroups(tiled_grid_x, tiled_grid_y, 1);
+        }
+        queue.submit([encoder.finish()]);
+    };
+    for _ in 0..20 {
+        dispatch_f32_k8();
+    }
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
+    let f32_reg2k8_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_f32_k8);
 
     let f32_result = read_u32s(&device, &queue, &f32_out, m * n)?;
     let f32_bits: Vec<f32> = f32_result
@@ -706,6 +737,8 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
             f64::from((*f - *e as f32).abs()) / scale
         })
         .fold(0.0f64, f64::max);
+
+    let f32_reg2k8_matches = f32_relative_error < 1e-3;
 
     Some(MatmulReport {
         adapter: info.name,
@@ -723,46 +756,20 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         f32_tiled_ns_per_mac,
         f32_reg_ns_per_mac,
         f32_reg4_ns_per_mac,
+        f32_2d_ns_per_mac,
+        f32_2d_matches,
+        f32_reg2k8_ns_per_mac,
+        f32_reg2k8_matches,
         tiled_matches,
         reg_matches,
         reg4_matches,
         o3_matches,
         ternary_splitk_ns_per_mac,
         splitk_matches,
-        ternary_w16_ns_per_mac,
-        w16_matches,
         popc_ceiling_per_s,
         ternary_popc_utilization,
         f32_relative_error,
     })
 }
 
-pub(crate) fn storage(binding: u32) -> wgpu::BindGroupLayoutEntry {
-    storage_with(binding, true)
-}
-
-pub(crate) fn storage_with(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Storage { read_only },
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
-    }
-}
-
-pub(crate) fn uniform(binding: u32) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Uniform,
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
-    }
-}
+pub(crate) use crate::bench::{storage, storage_with, uniform};

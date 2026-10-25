@@ -48,3 +48,35 @@ pub(crate) fn read_u32s(
             .collect(),
     )
 }
+
+// 与 wgpu 绑定布局相关的共用 helper（从 matmul.rs 迁入，避免单文件超 800 行）。
+
+pub(crate) fn storage(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    storage_with(binding, true)
+}
+
+pub(crate) fn storage_with(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
+pub(crate) fn uniform(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}

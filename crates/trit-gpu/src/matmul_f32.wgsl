@@ -185,3 +185,81 @@ fn main_tiled4(
         }
     }
 }
+
+// 2D 版 naive（对齐 NVIDIA cuda-oxide 例子的 16×16 线程块映射）：
+// 与 main 数学完全一致，只有线程→输出的映射不同（线性 1D vs 2D block）。
+@compute @workgroup_size(16, 16)
+fn main2d(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let row = gid.y;
+    let col = gid.x;
+    if (row >= params.m || col >= params.n) {
+        return;
+    }
+    let a_base = row * params.k;
+    let b_base = col * params.k;
+    var sum = 0.0;
+    for (var kk = 0u; kk < params.k; kk = kk + 1u) {
+        sum = sum + fa[a_base + kk] * fb[b_base + kk];
+    }
+    out[row * params.n + col] = sum;
+}
+
+// 2×2 寄存器阻塞 + K 段 8（对齐 cuda-oxide 的 reg2 结构；我们的 main_tiled2 用的是 K 段 16）。
+const K8: u32 = 8u;
+var<workgroup> t2k8_a: array<f32, 128>;
+var<workgroup> t2k8_b: array<f32, 128>;
+
+@compute @workgroup_size(8, 8)
+fn main_tiled2k8(
+    @builtin(workgroup_id) wg: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+) {
+    let row_base = wg.y * 16u;
+    let col_base = wg.x * 16u;
+    let r0 = lid.y * 2u;
+    let c0 = lid.x * 2u;
+    let idx = lid.y * 8u + lid.x;
+    var s00 = 0.0;
+    var s01 = 0.0;
+    var s10 = 0.0;
+    var s11 = 0.0;
+    let k_tiles = (params.k + K8 - 1u) / K8;
+    for (var chunk = 0u; chunk < k_tiles; chunk = chunk + 1u) {
+        // 64 线程 × 2 槽 = 128 = 16 行/列 × 8 元素。
+        for (var i = 0u; i < 2u; i = i + 1u) {
+            let s = idx + i * 64u;
+            let r = s / K8;
+            let kk = chunk * K8 + s % K8;
+            let a_ok = row_base + r < params.m && kk < params.k;
+            let b_ok = col_base + r < params.n && kk < params.k;
+            t2k8_a[s] = select(0.0, fa[(row_base + r) * params.k + kk], a_ok);
+            t2k8_b[s] = select(0.0, fb[(col_base + r) * params.k + kk], b_ok);
+        }
+        workgroupBarrier();
+        for (var kk = 0u; kk < K8; kk = kk + 1u) {
+            let a0 = t2k8_a[r0 * K8 + kk];
+            let a1 = t2k8_a[(r0 + 1u) * K8 + kk];
+            let b0 = t2k8_b[c0 * K8 + kk];
+            let b1 = t2k8_b[(c0 + 1u) * K8 + kk];
+            s00 = s00 + a0 * b0;
+            s01 = s01 + a0 * b1;
+            s10 = s10 + a1 * b0;
+            s11 = s11 + a1 * b1;
+        }
+        workgroupBarrier();
+    }
+    let row0 = row_base + r0;
+    let col0 = col_base + c0;
+    if (row0 < params.m && col0 < params.n) {
+        out[row0 * params.n + col0] = s00;
+    }
+    if (row0 < params.m && col0 + 1u < params.n) {
+        out[row0 * params.n + col0 + 1u] = s01;
+    }
+    if (row0 + 1u < params.m && col0 < params.n) {
+        out[(row0 + 1u) * params.n + col0] = s10;
+    }
+    if (row0 + 1u < params.m && col0 + 1u < params.n) {
+        out[(row0 + 1u) * params.n + col0 + 1u] = s11;
+    }
+}

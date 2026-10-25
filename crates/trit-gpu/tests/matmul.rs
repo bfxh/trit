@@ -24,7 +24,11 @@ fn gpu_reg_matmul_tiny_case() {
     assert!(report.reg4_matches, "1×1×1 reg4 不一致：{report:?}");
     assert!(report.o3_matches, "1×1×1 o3 不一致：{report:?}");
     assert!(report.splitk_matches, "1×1×1 split-K 不一致：{report:?}");
-    assert!(report.w16_matches, "1×1×1 w16 不一致：{report:?}");
+    assert!(report.f32_2d_matches, "1×1×1 2D-naive 不一致：{report:?}");
+    assert!(
+        report.f32_reg2k8_matches,
+        "1×1×1 reg2-K8 不一致：{report:?}"
+    );
     assert!(report.matches);
     assert!(report.tiled_matches);
 }
@@ -65,6 +69,26 @@ fn gpu_matmul_matches_cpu_mirror() {
     assert!(
         report.reg_matches,
         "寄存器阻塞内核与 CPU 镜像不一致：{report:?}"
+    );
+    assert!(
+        report.reg4_matches,
+        "4×4 寄存器阻塞内核与 CPU 镜像不一致：{report:?}"
+    );
+    assert!(
+        report.o3_matches,
+        "3-popc 内核与 CPU 镜像不一致：{report:?}"
+    );
+    assert!(
+        report.splitk_matches,
+        "split-K 内核与 CPU 镜像不一致：{report:?}"
+    );
+    assert!(
+        report.f32_2d_matches,
+        "2D naive 与 CPU 镜像不一致：{report:?}"
+    );
+    assert!(
+        report.f32_reg2k8_matches,
+        "K 段 8 的 f32 内核与 CPU 镜像不一致：{report:?}"
     );
     assert_eq!(report.m, m);
     assert_eq!(report.n, n);
