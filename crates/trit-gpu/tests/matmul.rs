@@ -40,6 +40,10 @@ fn gpu_reg_matmul_tiny_case() {
     );
     assert!(report.matches);
     assert!(report.tiled_matches);
+    assert!(
+        report.f32_f16_relative_error <= 1e-3 || report.f32_f16_relative_error.is_nan(),
+        "fp16 变体误差过大：{report:?}"
+    );
 }
 
 #[test]
@@ -71,6 +75,10 @@ fn gpu_matmul_matches_cpu_mirror() {
         return;
     };
     assert!(report.matches, "GPU 与 CPU 镜像不一致：{report:?}");
+    assert!(
+        report.f32_f16_relative_error <= 1e-3 || report.f32_f16_relative_error.is_nan(),
+        "fp16 变体误差过大：{report:?}"
+    );
     assert!(
         report.tiled_matches,
         "分块内核与 CPU 镜像不一致：{report:?}"

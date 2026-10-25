@@ -1648,6 +1648,7 @@ name = "trit-gpu"
 version = "0.12.0"
 dependencies = [
  "bytemuck",
+ "half",
  "pollster",
  "serde_json",
  "trit-texture",

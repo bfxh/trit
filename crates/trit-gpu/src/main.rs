@@ -108,6 +108,11 @@ fn bench(trits: usize) -> Result<(), String> {
         matmul.f32_reg4_ns_per_mac * 1000.0,
         matmul.f32_reg4k32_ns_per_mac * 1000.0
     );
+    println!(
+        "  GPU 2 号 fp16 存储（同 reg2-K8 结构）{:>10.5} ps/MAC（相对 f32 误差 {:.2e}）",
+        matmul.f32_f16_ns_per_mac * 1000.0,
+        matmul.f32_f16_relative_error
+    );
     let tiled_speedup = matmul.f32_tiled_ns_per_mac / matmul.ternary_tiled_ns_per_mac;
     let reg_speedup = matmul.f32_reg2k8_ns_per_mac / matmul.ternary_reg_ns_per_mac;
     let reg4_speedup = matmul.f32_reg4_ns_per_mac / matmul.ternary_reg4_ns_per_mac;

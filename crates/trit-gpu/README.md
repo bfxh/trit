@@ -23,6 +23,7 @@ cargo run -p trit-gpu --features gpu -- bench --trits 1048576
 | `main2d`（f32） | 2D 16×16 线程块 naive | — | 3.117–3.121 |
 | `main_tiled2k8`（f32） | 2×2 + K 段 8 | — | **0.755–0.763** |
 | `main_tiled4k32`（f32） | 4×4 + K 段 32（共享 8 KB） | — | **0.298–0.300** |
+| `main_tiled2k8_f16`（f32） | 2×2 + K 段 8，**fp16 存储 + f32 累加** | — | **0.635–0.644** |
 
 **f32 侧两步，都是内存层的账**
 
@@ -85,4 +86,11 @@ cuda-oxide 的参考内核没做；若他们同样处理，差距会缩小（幅
   正确性靠 `tests/matmul.rs` 在本机对拍（1×1×1、33×100×17 非整字/非方阵、k=37 标量装载回退；
   三值与 f32 共 11 个内核全部逐元素校验）。
 - 三值的「3-popc + split-K 组合」**已做**（`main_splitk`，0.100–0.103 ps/MAC，POPC 利用率 88%，
-  理论余量约 1.1×）；`matmul.rs` 792/800 行预算仍是新增内核的硬约束。
+  理论余量约 1.1×）。
+- **fp16 存储变体已做**（`main_tiled2k8_f16`）：同结构 0.635 vs f32 reg2-K8 0.760 ps/MAC（约 −16%），
+  全局与共享带宽各减半、累加仍 f32。输入来自三值矩阵（−1/0/1），f16 可精确表示，所以误差为 0；
+  **这不代表任意 f32 输入下的精度**（一般 f16 相对误差约 5e-4）。
+- **subgroup 未做成**：本机 adapter 支持 `SUBGROUP`（32 lane，探针确认），但 wgpu 30 / naga 30
+  拒绝 `enable subgroups;`（`this enable-extension specifies standard functionality which is not yet
+  implemented in Naga`，gfx-rs/wgpu#5555），WGSL 路径无法做 subgroup 对照；未走 SPIR-V passthrough。
+- `matmul.rs` 拆出 `matmul_f32.rs`（fp16）与 `popc.rs`（吞吐微基准），三者都在 800 行预算内。

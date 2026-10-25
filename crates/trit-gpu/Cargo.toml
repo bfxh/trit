@@ -10,13 +10,14 @@ publish = false
 
 [features]
 default = []
-gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:half"]
 
 [dependencies]
 serde_json = "1.0.154"
 wgpu = { version = "30", optional = true }
 pollster = { version = "0.4", optional = true }
 bytemuck = { version = "1", features = ["derive"], optional = true }
+half = { version = "2", optional = true }
 
 [dev-dependencies]
 # 仅测试用：GPU 解码与 trit-texture 的 CPU 解码逐字节对拍（发布图门允许 dev-deps）。

@@ -173,6 +173,10 @@ pub mod gpu;
 #[cfg(feature = "gpu")]
 pub mod matmul;
 #[cfg(feature = "gpu")]
+mod matmul_f32;
+#[cfg(feature = "gpu")]
+mod popc;
+#[cfg(feature = "gpu")]
 pub mod texture;
 
 #[cfg(test)]
