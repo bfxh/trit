@@ -263,3 +263,123 @@ fn main_tiled2k8(
         out[(row0 + 1u) * params.n + col0 + 1u] = s11;
     }
 }
+
+// 4×4 寄存器阻塞 + K 段 16：32×32 tile、8×8 线程，每段 16 元素（共享 2×2KB）。
+// 与 main_tiled4 同结构，只是把 K 段从 8 加到 16（屏障减半、每次装载复用更多）。
+const K16: u32 = 16u;
+var<workgroup> t4k16_a: array<f32, 512>;
+var<workgroup> t4k16_b: array<f32, 512>;
+
+@compute @workgroup_size(8, 8)
+fn main_tiled4k16(
+    @builtin(workgroup_id) wg: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+) {
+    let row_base = wg.y * 32u;
+    let col_base = wg.x * 32u;
+    let r0 = lid.y * 4u;
+    let c0 = lid.x * 4u;
+    let idx = lid.y * 8u + lid.x;
+    var s00 = 0.0; var s01 = 0.0; var s02 = 0.0; var s03 = 0.0;
+    var s10 = 0.0; var s11 = 0.0; var s12 = 0.0; var s13 = 0.0;
+    var s20 = 0.0; var s21 = 0.0; var s22 = 0.0; var s23 = 0.0;
+    var s30 = 0.0; var s31 = 0.0; var s32 = 0.0; var s33 = 0.0;
+    let k_tiles = (params.k + K16 - 1u) / K16;
+    for (var chunk = 0u; chunk < k_tiles; chunk = chunk + 1u) {
+        // 64 线程 × 8 槽 = 512 = 32 行/列 × 16 元素。
+        for (var t = 0u; t < 8u; t = t + 1u) {
+            let slot = idx + t * 64u;
+            let line = slot / K16;
+            let kk = chunk * K16 + slot % K16;
+            let ok_a = row_base + line < params.m && kk < params.k;
+            let ok_b = col_base + line < params.n && kk < params.k;
+            t4k16_a[slot] = select(0.0, fa[(row_base + line) * params.k + kk], ok_a);
+            t4k16_b[slot] = select(0.0, fb[(col_base + line) * params.k + kk], ok_b);
+        }
+        workgroupBarrier();
+        for (var kk = 0u; kk < K16; kk = kk + 1u) {
+            let a0 = t4k16_a[(r0 + 0u) * K16 + kk];
+            let a1 = t4k16_a[(r0 + 1u) * K16 + kk];
+            let a2 = t4k16_a[(r0 + 2u) * K16 + kk];
+            let a3 = t4k16_a[(r0 + 3u) * K16 + kk];
+            let b0 = t4k16_b[(c0 + 0u) * K16 + kk];
+            let b1 = t4k16_b[(c0 + 1u) * K16 + kk];
+            let b2 = t4k16_b[(c0 + 2u) * K16 + kk];
+            let b3 = t4k16_b[(c0 + 3u) * K16 + kk];
+            s00 = s00 + a0 * b0; s01 = s01 + a0 * b1; s02 = s02 + a0 * b2; s03 = s03 + a0 * b3;
+            s10 = s10 + a1 * b0; s11 = s11 + a1 * b1; s12 = s12 + a1 * b2; s13 = s13 + a1 * b3;
+            s20 = s20 + a2 * b0; s21 = s21 + a2 * b1; s22 = s22 + a2 * b2; s23 = s23 + a2 * b3;
+            s30 = s30 + a3 * b0; s31 = s31 + a3 * b1; s32 = s32 + a3 * b2; s33 = s33 + a3 * b3;
+        }
+        workgroupBarrier();
+    }
+    let row0 = row_base + r0;
+    let col0 = col_base + c0;
+    let acc = array<f32, 16>(s00, s01, s02, s03, s10, s11, s12, s13, s20, s21, s22, s23, s30, s31, s32, s33);
+    for (var i = 0u; i < 4u; i = i + 1u) {
+        for (var j = 0u; j < 4u; j = j + 1u) {
+            if (row0 + i < params.m && col0 + j < params.n) {
+                out[(row0 + i) * params.n + col0 + j] = acc[i * 4u + j];
+            }
+        }
+    }
+}
+
+// 2×2 寄存器阻塞 + K 段 16：16×16 tile，共享 16×16（256 项/操作数）。
+var<workgroup> t2k16_a: array<f32, 256>;
+var<workgroup> t2k16_b: array<f32, 256>;
+
+@compute @workgroup_size(8, 8)
+fn main_tiled2k16(
+    @builtin(workgroup_id) wg: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+) {
+    let row_base = wg.y * 16u;
+    let col_base = wg.x * 16u;
+    let r0 = lid.y * 2u;
+    let c0 = lid.x * 2u;
+    let idx = lid.y * 8u + lid.x;
+    var s00 = 0.0;
+    var s01 = 0.0;
+    var s10 = 0.0;
+    var s11 = 0.0;
+    let k_tiles = (params.k + K16 - 1u) / K16;
+    for (var chunk = 0u; chunk < k_tiles; chunk = chunk + 1u) {
+        // 64 线程 × 4 槽 = 256 = 16 行/列 × 16 元素。
+        for (var t = 0u; t < 4u; t = t + 1u) {
+            let slot = idx + t * 64u;
+            let line = slot / K16;
+            let kk = chunk * K16 + slot % K16;
+            let ok_a = row_base + line < params.m && kk < params.k;
+            let ok_b = col_base + line < params.n && kk < params.k;
+            t2k16_a[slot] = select(0.0, fa[(row_base + line) * params.k + kk], ok_a);
+            t2k16_b[slot] = select(0.0, fb[(col_base + line) * params.k + kk], ok_b);
+        }
+        workgroupBarrier();
+        for (var w = 0u; w < K16; w = w + 1u) {
+            let a0 = t2k16_a[r0 * K16 + w];
+            let a1 = t2k16_a[(r0 + 1u) * K16 + w];
+            let b0 = t2k16_b[c0 * K16 + w];
+            let b1 = t2k16_b[(c0 + 1u) * K16 + w];
+            s00 = s00 + a0 * b0;
+            s01 = s01 + a0 * b1;
+            s10 = s10 + a1 * b0;
+            s11 = s11 + a1 * b1;
+        }
+        workgroupBarrier();
+    }
+    let row0 = row_base + r0;
+    let col0 = col_base + c0;
+    if (row0 < params.m && col0 < params.n) {
+        out[row0 * params.n + col0] = s00;
+    }
+    if (row0 < params.m && col0 + 1u < params.n) {
+        out[row0 * params.n + col0 + 1u] = s01;
+    }
+    if (row0 + 1u < params.m && col0 < params.n) {
+        out[(row0 + 1u) * params.n + col0] = s10;
+    }
+    if (row0 + 1u < params.m && col0 + 1u < params.n) {
+        out[(row0 + 1u) * params.n + col0 + 1u] = s11;
+    }
+}

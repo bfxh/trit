@@ -57,6 +57,9 @@
   （2×2 + K 段 8）。naive 23.4 → **6.238 ps/MAC**（与 cuda-oxide 6.233 打平，差距全部来自线程映射）；
   reg2 2.36 → **1.431**（K 段 16→8）；tiled 2.372（落后 5.8%）、reg4×4 1.329（**领先 15%**）。
   修了 f32 校验容差未取绝对值的 bug（负期望值时容差变负、判定恒假）。
+- **f32 再压一档**：新增 `main_tiled4k16`（4×4 + K 段 16）。读数（ps/MAC）：2D-naive 6.257（cuda-oxide 6.233，
+  差 0.4%）、tiled 2.369（落后 5.3%）、reg2-K8 1.452（落后 8.5%）、reg4-K8 1.340（领先 17%）、
+  **reg4-K16 1.277（最优对最优领先 cuda-oxide 4%）**。
 - 顺手修 `forward.rs` 里 gpu feature 下才可见的 clippy（`chunks_exact` → `as_chunks`）。
 
 ### Added（GGUF → MOD 入向导入）

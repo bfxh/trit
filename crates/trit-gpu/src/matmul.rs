@@ -32,16 +32,16 @@ pub struct MatmulReport {
     pub ternary_ns_per_mac: f64,
     /// 三值分块内核（共享内存 16×16 tile / 8-word 段），ns / MAC。
     pub ternary_tiled_ns_per_mac: f64,
-    /// 同结构 f32 内核，ns / MAC。
-    pub f32_ns_per_mac: f64,
     /// f32 分块内核（经典共享内存 tiling），ns / MAC。
     pub f32_tiled_ns_per_mac: f64,
     /// 分块三值结果与 CPU 位并行镜像是否一致。
     pub tiled_matches: bool,
     /// 寄存器阻塞三值内核（2×2 微块），ns / MAC。
     pub ternary_reg_ns_per_mac: f64,
-    /// 寄存器阻塞 f32 内核，ns / MAC。
-    pub f32_reg_ns_per_mac: f64,
+    /// 4×4 + K 段 16 的 f32 内核（32×32 tile），ns / MAC。
+    pub f32_reg4k16_ns_per_mac: f64,
+    /// K 段 16 内核结果是否与 CPU 镜像一致。
+    pub f32_reg4k16_matches: bool,
     /// 寄存器阻塞三值结果与 CPU 位并行镜像是否一致。
     pub reg_matches: bool,
     /// 4×4 寄存器阻塞三值内核（32×32 tile），ns / MAC。
@@ -403,14 +403,6 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         bind_group_layouts: &[Some(&f32_layout)],
         immediate_size: 0,
     });
-    let f32_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("matmul-f32"),
-        layout: Some(&f32_pipeline_layout),
-        module: &f32_shader,
-        entry_point: Some("main"),
-        compilation_options: Default::default(),
-        cache: None,
-    });
     let f32_params: [u32; 3] = [m as u32, n as u32, k as u32];
     let f32_params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
@@ -439,25 +431,6 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
             },
         ],
     });
-    let dispatch_f32 = || {
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            pass.set_pipeline(&f32_pipeline);
-            pass.set_bind_group(0, &f32_bind, &[]);
-            pass.dispatch_workgroups(grid, 1, 1);
-        }
-        queue.submit([encoder.finish()]);
-    };
-    for _ in 0..20 {
-        dispatch_f32();
-    }
-    device
-        .poll(wgpu::PollType::wait_indefinitely())
-        .expect("poll");
-    let f32_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_f32);
-
     let f32_pipeline_tiled = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("matmul-f32-tiled"),
         layout: Some(&f32_pipeline_layout),
@@ -485,32 +458,40 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         .expect("poll");
     let f32_tiled_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_f32_tiled);
 
-    let f32_pipeline_reg = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("matmul-f32-reg"),
+    // 4×4 + K 段 16（屏障减半）。
+    let f32_pipeline_reg4k16 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("matmul-f32-reg4k16"),
         layout: Some(&f32_pipeline_layout),
         module: &f32_shader,
-        entry_point: Some("main_tiled2"),
+        entry_point: Some("main_tiled4k16"),
         compilation_options: Default::default(),
         cache: None,
     });
-    let dispatch_f32_reg = || {
+    let dispatch_f32_reg4k16 = || {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            pass.set_pipeline(&f32_pipeline_reg);
+            pass.set_pipeline(&f32_pipeline_reg4k16);
             pass.set_bind_group(0, &f32_bind, &[]);
-            pass.dispatch_workgroups(tiled_grid_x, tiled_grid_y, 1);
+            pass.dispatch_workgroups(reg4_grid_x, reg4_grid_y, 1);
         }
         queue.submit([encoder.finish()]);
     };
     for _ in 0..20 {
-        dispatch_f32_reg();
+        dispatch_f32_reg4k16();
     }
     device
         .poll(wgpu::PollType::wait_indefinitely())
         .expect("poll");
-    let f32_reg_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_f32_reg);
+    let f32_reg4k16_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_f32_reg4k16);
+    let f32_reg4k16_out = read_u32s(&device, &queue, &f32_out, m * n)?;
+    let f32_reg4k16_matches = f32_reg4k16_out
+        .iter()
+        .zip(expected.iter())
+        .all(|(bits, want)| {
+            (f32::from_bits(*bits) - *want as f32).abs() <= (*want as f32).abs() * 1e-3 + 1e-3
+        });
 
     let f32_pipeline_reg4 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some("matmul-f32-reg4"),
@@ -752,9 +733,9 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         ternary_reg_ns_per_mac,
         ternary_reg4_ns_per_mac,
         ternary_o3_ns_per_mac,
-        f32_ns_per_mac,
         f32_tiled_ns_per_mac,
-        f32_reg_ns_per_mac,
+        f32_reg4k16_ns_per_mac,
+        f32_reg4k16_matches,
         f32_reg4_ns_per_mac,
         f32_2d_ns_per_mac,
         f32_2d_matches,
