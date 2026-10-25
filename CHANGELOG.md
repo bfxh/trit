@@ -13,6 +13,17 @@
   `gemv_auto` 改走映射；`gemv_with_split_tables`（`%9`/`/9`）保留为 A/B 基线。
 - 工具：`bench --split` 增加「拆表 + 映射查表」一行；新增 `bench --split-map` 配对模式。
 
+### Changed（`trit-gpu`：拆掉 655 行的 matmul 驱动函数）
+
+- `crates/trit-gpu/src/matmul.rs`（单函数 `run_async` 约 630 行）拆成
+  `matmul/{mod,gpu,inputs,ternary,baseline}.rs`：开设备 / 确定性数据 / 三值内核族 / f32 基线族。
+  最大文件 249 行，最长函数 <100 行（`clippy::too_many_lines` 对该目录 0 告警）。
+- `bench.rs::bench_variant` 泛化为统一变体执行器：3D grid（split-K 用 z=4）、可选清输出、
+  `Check::{Exact,F32}` 两种比对，去掉十份重复的「建管线 → 预热 → 计时 → 读回」。
+- 测量顺序刻意保留在 `mod.rs`：同内核换位置读数能差 25%，历史读数都是按这个顺序取的。
+- 读数回归（RTX 4060 Ti，512×4096×512）：o3 0.1044、split-K 0.1009、f32 最优 0.2992 ps/MAC，
+  与拆前同量级；全部 `matches=true`；GPU 测试 3 passed。
+
 ### Fixed（`trit-ops`：非 x86_64 编译失败）
 
 - #147 合入后 main 的 macOS（arm64）CI 红了：`simd.rs` 只在 `x86_64` 下导出
