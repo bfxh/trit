@@ -90,7 +90,11 @@ cuda-oxide 的参考内核没做；若他们同样处理，差距会缩小（幅
 - **fp16 存储变体已做**（`main_tiled2k8_f16`）：同结构 0.635 vs f32 reg2-K8 0.760 ps/MAC（约 −16%），
   全局与共享带宽各减半、累加仍 f32。输入来自三值矩阵（−1/0/1），f16 可精确表示，所以误差为 0；
   **这不代表任意 f32 输入下的精度**（一般 f16 相对误差约 5e-4）。
-- **subgroup 未做成**：本机 adapter 支持 `SUBGROUP`（32 lane，探针确认），但 wgpu 30 / naga 30
-  拒绝 `enable subgroups;`（`this enable-extension specifies standard functionality which is not yet
-  implemented in Naga`，gfx-rs/wgpu#5555），WGSL 路径无法做 subgroup 对照；未走 SPIR-V passthrough。
+- **subgroup 未做成（WGSL 路径）**：本机 adapter 支持 `SUBGROUP`（32 lane，探针确认），但 wgpu 30 /
+  naga 30 的 WGSL 前端拒绝 `enable subgroups;`（`…not yet implemented in Naga`，gfx-rs/wgpu#5555）。
+  复核结论：阻塞只在 WGSL/GLSL 前端；naga IR（`ir/mod.rs` 的 `SubgroupOperation`）、验证器、
+  SPIR-V 出/入（`back/spv/subgroup.rs`、`front/spv/next_block.rs` 的 `OpGroupNonUniform*`）都已支持。
+  crates.io 上 naga 最新即 30.0.1（与钉住版本相同），issue 仍 open。解除路径：外部工具链
+  （glslang/shaderc/DXC）产出 SPIR-V 后用 `ShaderSource::SpirV` 加载，需显式开 wgpu 的
+  `spirv` feature（默认不含）；本机 Windows 与 WSL 都没有 glslang/spirv-as，故未实现。
 - `matmul.rs` 拆出 `matmul_f32.rs`（fp16）与 `popc.rs`（吞吐微基准），三者都在 800 行预算内。

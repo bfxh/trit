@@ -93,7 +93,7 @@ sudo apt install -y cuda-toolkit-13-2          # 含 tileiras 13.2
 git clone https://github.com/NVIDIA/cuda-rust ~/cuda-rust
 export CUDA_HOME=/usr/local/cuda-13.2 CUDA_TOOLKIT_PATH=/usr/local/cuda-13.2
 export PATH=/usr/local/cuda-13.2/bin:$PATH
-# 在 cutile-rs workspace 内加带计时的 gemm example（形状 512×512×4096，tile 可参数化）
+# 在 cutile-rs workspace 内加带计时的 gemm example（形状 512×4096×512，tile 可参数化）
 cd ~/cuda-rust/cutile-rs && cargo +1.99.1 run --release --example gemm_bench
 ```
 
