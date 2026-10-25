@@ -131,6 +131,13 @@ pub fn decode(blob: &[u8]) -> Result<(Vec<Ternary>, usize, Algebra)> {
             blob.len()
         );
     }
+    // 规范形：末字节里没用到的 trit 槽必须为 0。否则同一张表有多个字节串，
+    // 「内容哈希 = 身份」就不成立（red-team 的 encode 检查实测出 27 种写法）。
+    let payload_bytes = expected - HEADER;
+    let used_in_last = payload_len - 5 * (payload_bytes - 1);
+    if u32::from(*blob.last().expect("非空")) >= 3u32.pow(used_in_last as u32) {
+        bail!("非规范编码：末字节闲置的 trit 槽非零（同一张表只允许一种字节串）");
+    }
     let mut all = unpack(&blob[HEADER..], payload_len)?;
     let checksum: Vec<Ternary> = all.split_off(len);
     let values = all;
@@ -202,6 +209,27 @@ mod tests {
         let mut short = blob.clone();
         short.pop();
         assert!(decode(&short).is_err());
+    }
+
+    #[test]
+    fn rejects_non_canonical_padding() {
+        let values: Vec<Ternary> = (0..9)
+            .map(|i| match i % 3 {
+                0 => Ternary::False,
+                1 => Ternary::Unknown,
+                _ => Ternary::True,
+            })
+            .collect();
+        let blob = encode(&values, Algebra::Kleene, 2);
+        // 9 + 3 = 12 trit 占 3 字节 = 15 槽 ⇒ 末字节有 3 个闲置槽（权重 9/27/81）。
+        let mut padded = blob.clone();
+        let last = padded.len() - 1;
+        padded[last] += 9;
+        assert!(u32::from(padded[last]) < 243, "仍是可表示字节");
+        assert!(
+            decode(&padded).is_err(),
+            "闲置槽非零的写法必须拒绝（否则同一张表有多个字节串）"
+        );
     }
 
     #[test]

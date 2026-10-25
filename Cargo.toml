@@ -9,6 +9,7 @@ members = [
     "crates/trit-circuit",
     "crates/trit-cli",
     "crates/trit-build",
+    "crates/trit-redteam",
     "crates/trit-bdd",
     "crates/trit-policy",
     "crates/trit-belnap",

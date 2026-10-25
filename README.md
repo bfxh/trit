@@ -698,6 +698,10 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
 ```
 
+发布二进制不要嵌构建机路径（Rust std 的 panic 路径会带 `$HOME`，含用户名）：
+`RUSTFLAGS="--remap-path-prefix=$HOME=~" cargo build --release`。Release 工作流已自动加这一步；
+`trit-redteam binary` 会把这些路径标成 `rust-toolchain`（而非我们的问题）。
+
 CI 另有五道门：`docs`（rustdoc `-D warnings`）、`action`（用 `examples/policy.json` 跑复合 Action 自测）、
 `MSRV`（1.88，`--locked`）、`wasm`（wasm32 构建）与 `package`（每个 crate 可打包）；
 Release 先过 `guard`：tag 去掉 `v` 后必须等于 `trit-cli` 的版本。

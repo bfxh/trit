@@ -174,6 +174,66 @@ fn c_runtime_decodes_the_blob_runtime_wrote() {
 }
 
 #[test]
+fn both_decoders_reject_non_canonical_padding() {
+    let Some(cc) = compiler() else {
+        eprintln!("跳过：本机没有 C 编译器");
+        return;
+    };
+    let dir = scratch("canonical");
+    let source = dir.join("a.tri");
+    // 2 变量：9 + 3 = 12 trit 占 3 字节 = 15 槽 ⇒ 末字节有 3 个闲置槽。
+    fs::write(&source, "a & b\n").expect("写源文件");
+    let out = dir.join("out");
+    let built = Command::new(bin())
+        .arg(&source)
+        .arg("--out")
+        .arg(&out)
+        .output()
+        .expect("运行 trit-build");
+    assert!(
+        built.status.success(),
+        "{}",
+        String::from_utf8_lossy(&built.stderr)
+    );
+
+    let blob_path = out.join("truth.tritbin");
+    let mut bytes = fs::read(&blob_path).unwrap();
+    let last = bytes.len() - 1;
+    bytes[last] += 9; // 只动闲置槽：解出的表不变，但不再规范
+    assert!(bytes[last] < 243, "仍是可表示字节");
+    fs::write(&blob_path, &bytes).unwrap();
+
+    // Rust 侧（生产解码器）
+    let rust = Command::new(bin())
+        .arg("--decode")
+        .arg(&blob_path)
+        .arg("--out")
+        .arg(dir.join("dec"))
+        .output()
+        .expect("运行 trit-build --decode");
+    assert!(!rust.status.success(), "Rust 解码器必须拒绝非规范编码");
+    assert!(
+        String::from_utf8_lossy(&rust.stderr).contains("非规范"),
+        "{}",
+        String::from_utf8_lossy(&rust.stderr)
+    );
+
+    // C 侧（运行时）
+    let harness = compile(&cc, &dir);
+    let run = Command::new(&harness)
+        .arg(&blob_path)
+        .output()
+        .expect("运行 harness");
+    assert!(!run.status.success(), "C 运行时必须拒绝非规范编码");
+    assert!(
+        String::from_utf8_lossy(&run.stdout).contains("error -10"),
+        "{}",
+        String::from_utf8_lossy(&run.stdout)
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn c_runtime_rejects_tampered_blob() {
     let Some(cc) = compiler() else {
         eprintln!("跳过：本机没有 C 编译器（CI 的 ubuntu-latest 有 cc）");
