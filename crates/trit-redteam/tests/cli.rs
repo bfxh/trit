@@ -182,15 +182,22 @@ fn sidechannel_reports_weight_leakage() {
 fn binary_reads_the_running_test_binary() {
     let exe = std::env::current_exe().expect("current exe");
     let (stdout, stderr, code) = run(&["binary", exe.to_str().unwrap()]);
-    assert_eq!(code, 0, "{stderr}");
-    let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    let format = report["format"].as_str().unwrap();
-    assert!(
-        format.starts_with("pe") || format.starts_with("elf"),
-        "{format}"
-    );
-    assert!(report["bits"] == 64 || report["bits"] == 32);
-    assert!(report["hardening"].is_object());
+    // 解析器只支持 PE/ELF；macOS 等平台的测试二进制是 Mach-O，
+    // 此时应友好拒绝（退出码 1 + 明确报错），而不是崩溃或误判。
+    if cfg!(any(target_os = "windows", target_os = "linux")) {
+        assert_eq!(code, 0, "{stderr}");
+        let report: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+        let format = report["format"].as_str().unwrap();
+        assert!(
+            format.starts_with("pe") || format.starts_with("elf"),
+            "{format}"
+        );
+        assert!(report["bits"] == 64 || report["bits"] == 32);
+        assert!(report["hardening"].is_object());
+    } else {
+        assert_eq!(code, 1, "{stdout}");
+        assert!(stderr.contains("认不出格式"), "{stderr}");
+    }
 }
 
 #[test]
