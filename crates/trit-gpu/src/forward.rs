@@ -160,8 +160,10 @@ async fn matmul_packed_async(
     device.poll(wgpu::PollType::wait_indefinitely()).ok()?;
     let data = slice.get_mapped_range().expect("map").to_vec();
     Some(
-        data.chunks_exact(4)
-            .map(|chunk| i32::from_le_bytes(chunk.try_into().unwrap()))
+        data.as_chunks::<4>()
+            .0
+            .iter()
+            .map(|chunk| i32::from_le_bytes(*chunk))
             .collect(),
     )
 }
