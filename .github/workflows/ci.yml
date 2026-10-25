@@ -56,8 +56,12 @@ jobs:
 
       # gpu feature（默认关）：同上。#149 的事故就是这块代码从没被门编译过
       # （matmul.rs 在内核 feature 后，PR 绿、main 的 macOS 红）。
-      - name: Test (trit-gpu gpu feature)
-        run: cargo test -p trit-gpu --features gpu --locked
+      #
+      # 只跑 1×1×1 冒烟用例：CI 的软件后端（Windows WARP 等）跑完整 matmul
+      # （512×4096×512）要十几分钟；而 1×1×1 同样会创建全部 shader module，
+      # f16 扩展缺失这类错照样能抓到。完整形状在开发者本机跑。
+      - name: Test (trit-gpu gpu feature, shader smoke)
+        run: cargo test -p trit-gpu --features gpu --locked --test matmul gpu_reg_matmul_tiny_case
       - name: Clippy (trit-gpu gpu feature)
         run: cargo clippy -p trit-gpu --features gpu --all-targets --locked -- -D warnings
 
