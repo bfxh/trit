@@ -18,7 +18,7 @@
 | `trit` | `Trit`（平衡 `{-1,0,+1}`）、乘/饱和加/Kleene `and`·`or`/Łukasiewicz、与 `trit_core::Ternary` 互转 |
 | `pack` | `Rail` 双导轨（2 bit/trit，`AND+popcount` 点积）、`Trytes`（5 trits/byte，base-3 编码） |
 | `quant` | `absmean` / `absmax` / 三电平 Lloyd-Max `1.224σ`，含 rel_err 与零占比报告 |
-| `gemv` | `TernaryMatrix`（标量/掩码内核）、`TryteMatrix`（`3^5` 查表内核）、`Kernel::Auto` 自动选核 |
+| `gemv` | `TernaryMatrix`（标量/掩码内核）、`TryteMatrix`（`3^5` 查表内核）、`Kernel::Auto`（双导轨矩阵上没有 tryte 视图，等价于掩码） |
 | `simd` | AVX2/FMA 内核；同时提供 f32 / f16 / Q4_0 基线，保证同一份代码、同一个线程池 |
 | `pool` | epoch 自旋线程池，单次派发约 1 µs |
 
@@ -85,7 +85,12 @@ SmolLM2-135M 的 decode 真实形状，按每 token 出现次数加权折算。
 - **查表内核在小行数上很吃亏。** 每次 gemv 都要重建 `gpr × 243` 项的表；
   576 行的 matvec 里建表成本盖过查表收益，掉到 105.8 tok/s。
   行数 ≥ 2048 才划算（输出层 49152 行时它是最快的）。
-- **`Kernel::Auto` 按行数选核**：小行数走掩码、大行数走查表，拿到两者上界。
+- **基准里的「自动选核」按行数选核**：小行数走掩码、大行数走查表。
+  注意这是 `bench` 自己的策略；库里的 `Kernel::Auto` 作用在 `TernaryMatrix` 上只能走掩码
+  （双导轨矩阵没有 tryte 视图），要查表得显式用 `TryteMatrix`。
+- ⚠️ **这一节的行不能横向比当精确排名。** 各内核是顺序测量的，同一段代码换个位置读数能差 ~25%：
+  实测输出层 `auto` 与 `tryte` 跑的是**同一段代码**，却测出 139.26 vs 109.18 GMAC/s。
+  要判定 A 比 B 快，必须用交替配对测量（见上面 4 路累加器那段），不要直接读表里两行的差。
 
 
 ## 接进引擎：端到端 tok/s（2026-10-25）

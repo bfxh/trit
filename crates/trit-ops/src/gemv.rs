@@ -163,12 +163,9 @@ impl TernaryMatrix {
             Kernel::Scalar => self.gemv_scalar(x, out),
             Kernel::Mask => self.gemv_mask(x, out),
             Kernel::Auto => {
-                if self.rows >= AUTO_LUT_ROWS {
-                    // 调用方给的是双导轨矩阵，Auto 没有 tryte 视图，退回掩码
-                    self.gemv_mask(x, out)
-                } else {
-                    self.gemv_mask(x, out)
-                }
+                // 双导轨矩阵没有 tryte 视图，Auto 只能走掩码；
+                // 要走查表请用 TryteMatrix::gemv_with(Kernel::Lut)。
+                self.gemv_mask(x, out)
             }
             Kernel::Lut => panic!("Lut 内核需要 TryteMatrix"),
         }
