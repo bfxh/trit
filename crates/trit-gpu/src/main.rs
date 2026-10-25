@@ -92,11 +92,13 @@ fn bench(trits: usize) -> Result<(), String> {
         matmul.adapter, matmul.m, matmul.k, matmul.n
     );
     println!(
-        "  GPU 1 号（三值双导轨）naive {:>10.5}  tiled {:>10.5}  reg2×2 {:>10.5}  reg4×4 {:>10.5} ps/MAC",
+        "  GPU 1 号（三值双导轨）naive {:>10.5}  tiled {:>10.5}  reg2×2 {:>10.5}  reg4×4 {:>10.5}  vec2 {:>10.5}  split-K {:>10.5} ps/MAC",
         matmul.ternary_ns_per_mac * 1000.0,
         matmul.ternary_tiled_ns_per_mac * 1000.0,
         matmul.ternary_reg_ns_per_mac * 1000.0,
-        matmul.ternary_reg4_ns_per_mac * 1000.0
+        matmul.ternary_reg4_ns_per_mac * 1000.0,
+        matmul.ternary_vec_ns_per_mac * 1000.0,
+        matmul.ternary_splitk_ns_per_mac * 1000.0
     );
     println!(
         "  GPU 2 号（二值 f32）  naive {:>10.5}  tiled {:>10.5}  reg2×2 {:>10.5}  reg4×4 {:>10.5} ps/MAC",
@@ -110,18 +112,28 @@ fn bench(trits: usize) -> Result<(), String> {
     let reg4_speedup = matmul.f32_reg4_ns_per_mac / matmul.ternary_reg4_ns_per_mac;
     let best_ternary = matmul
         .ternary_reg_ns_per_mac
-        .min(matmul.ternary_reg4_ns_per_mac);
+        .min(matmul.ternary_reg4_ns_per_mac)
+        .min(matmul.ternary_vec_ns_per_mac)
+        .min(matmul.ternary_splitk_ns_per_mac);
     let best_f32 = matmul.f32_reg_ns_per_mac.min(matmul.f32_reg4_ns_per_mac);
     let best_speedup = best_f32 / best_ternary;
     println!(
         "  最优对最优：reg4×4 {reg4_speedup:.1}× / reg2×2 {reg_speedup:.1}× / tiled {tiled_speedup:.1}× / naive {matmul_speedup:.1}×；当前最优 {best_speedup:.1}×"
     );
     println!(
-        "  校验：naive {} / tiled {} / reg2×2 {} / reg4×4 {}（f32 相对误差 {:.2e}）",
+        "  POPC 天花板 {:.2e}/s；三值最优内核达到 {:.0}%（还剩 {:.1}× 理论空间）",
+        matmul.popc_ceiling_per_s,
+        matmul.ternary_popc_utilization * 100.0,
+        1.0 / matmul.ternary_popc_utilization.max(1e-9)
+    );
+    println!(
+        "  校验：naive {} / tiled {} / reg2×2 {} / reg4×4 {} / vec2 {} / split-K {}（f32 相对误差 {:.2e}）",
         matmul.matches,
         matmul.tiled_matches,
         matmul.reg_matches,
         matmul.reg4_matches,
+        matmul.vec_matches,
+        matmul.splitk_matches,
         matmul.f32_relative_error
     );
     Ok(())

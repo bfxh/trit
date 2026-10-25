@@ -265,3 +265,203 @@ fn main_tiled4(
         }
     }
 }
+
+// 2×2 微块 + **pos/neg 打包成 vec2<u32>**：共享内存一次 64 位读拿两平面，
+// 把每步的 ld.shared 指令数从 8 降到 4（tiled2 是 8 次 u32 读）。
+// 结构仍与 main_tiled2 完全一致（16×16 tile、8×8 线程、2×2 输出、8-word 段）。
+const V_TILE: u32 = 16u;
+const V_WORDS: u32 = 8u;
+
+var<workgroup> v_a: array<vec2<u32>, 128>;
+var<workgroup> v_b: array<vec2<u32>, 128>;
+
+@compute @workgroup_size(8, 8)
+fn main_tiled2v(
+    @builtin(workgroup_id) wg: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+) {
+    let row_base = wg.y * V_TILE;
+    let col_base = wg.x * V_TILE;
+    let r0 = lid.y * 2u;
+    let c0 = lid.x * 2u;
+    let idx = lid.y * 8u + lid.x;
+    var s00 = 0;
+    var s01 = 0;
+    var s10 = 0;
+    var s11 = 0;
+    let word_tiles = (params.words + V_WORDS - 1u) / V_WORDS;
+    for (var chunk = 0u; chunk < word_tiles; chunk = chunk + 1u) {
+        // 64 线程 × 2 槽 = 128 = 16 行/列 × 8 word。
+        for (var t = 0u; t < 2u; t = t + 1u) {
+            let slot = idx + t * 64u;
+            let line = slot / V_WORDS;
+            let word = chunk * V_WORDS + slot % V_WORDS;
+            let ok_a = row_base + line < params.m && word < params.words;
+            let ok_b = col_base + line < params.n && word < params.words;
+            v_a[slot] = vec2<u32>(
+                select(0u, a_pos[(row_base + line) * params.words + word], ok_a),
+                select(0u, a_neg[(row_base + line) * params.words + word], ok_a),
+            );
+            v_b[slot] = vec2<u32>(
+                select(0u, b_pos[(col_base + line) * params.words + word], ok_b),
+                select(0u, b_neg[(col_base + line) * params.words + word], ok_b),
+            );
+        }
+        workgroupBarrier();
+        for (var w = 0u; w < V_WORDS; w = w + 1u) {
+            let a0 = v_a[r0 * V_WORDS + w];
+            let a1 = v_a[(r0 + 1u) * V_WORDS + w];
+            let b0 = v_b[c0 * V_WORDS + w];
+            let b1 = v_b[(c0 + 1u) * V_WORDS + w];
+            s00 = s00 + i32(countOneBits(a0.x & b0.x)) + i32(countOneBits(a0.y & b0.y))
+                - i32(countOneBits(a0.x & b0.y)) - i32(countOneBits(a0.y & b0.x));
+            s01 = s01 + i32(countOneBits(a0.x & b1.x)) + i32(countOneBits(a0.y & b1.y))
+                - i32(countOneBits(a0.x & b1.y)) - i32(countOneBits(a0.y & b1.x));
+            s10 = s10 + i32(countOneBits(a1.x & b0.x)) + i32(countOneBits(a1.y & b0.y))
+                - i32(countOneBits(a1.x & b0.y)) - i32(countOneBits(a1.y & b0.x));
+            s11 = s11 + i32(countOneBits(a1.x & b1.x)) + i32(countOneBits(a1.y & b1.y))
+                - i32(countOneBits(a1.x & b1.y)) - i32(countOneBits(a1.y & b1.x));
+        }
+        workgroupBarrier();
+    }
+    let row0 = row_base + r0;
+    let col0 = col_base + c0;
+    if (row0 < params.m && col0 < params.n) {
+        out[row0 * params.n + col0] = s00;
+    }
+    if (row0 < params.m && col0 + 1u < params.n) {
+        out[row0 * params.n + col0 + 1u] = s01;
+    }
+    if (row0 + 1u < params.m && col0 < params.n) {
+        out[(row0 + 1u) * params.n + col0] = s10;
+    }
+    if (row0 + 1u < params.m && col0 + 1u < params.n) {
+        out[(row0 + 1u) * params.n + col0 + 1u] = s11;
+    }
+}
+
+// popcount 吞吐微基准：每轮 8 次 countOneBits + 4 次廉价更新（约 2/3 是 popc），
+// 只碰寄存器、不碰存储（除最后一次防优化写）。测吞吐而非延迟：8 条独立累加链。
+struct PopcParams {
+    iters: u32,
+    seed: u32,
+};
+
+@group(0) @binding(0) var<storage, read_write> sink: array<u32>;
+@group(0) @binding(1) var<uniform> pp: PopcParams;
+
+@compute @workgroup_size(64)
+fn bench_popc(@builtin(global_invocation_id) gid: vec3<u32>) {
+    var a = pp.seed ^ (gid.x * 747796405u);
+    var b = a ^ 0x9E3779B9u;
+    var c = a + 0x85EBCA6Bu;
+    var d = b ^ 0xC2B2AE35u;
+    var acc0 = 0u;
+    var acc1 = 0u;
+    var acc2 = 0u;
+    var acc3 = 0u;
+    var acc4 = 0u;
+    var acc5 = 0u;
+    var acc6 = 0u;
+    var acc7 = 0u;
+    for (var i = 0u; i < pp.iters; i = i + 1u) {
+        acc0 = acc0 + countOneBits(a & b);
+        acc1 = acc1 + countOneBits(a | b);
+        acc2 = acc2 + countOneBits(a ^ b);
+        acc3 = acc3 + countOneBits(~a & b);
+        acc4 = acc4 + countOneBits(c & d);
+        acc5 = acc5 + countOneBits(c | d);
+        acc6 = acc6 + countOneBits(c ^ d);
+        acc7 = acc7 + countOneBits(~c & d);
+        a = a ^ b;
+        b = b + i;
+        c = c ^ d;
+        d = d + 1u;
+    }
+    let total = acc0 + acc1 + acc2 + acc3 + acc4 + acc5 + acc6 + acc7;
+    if (total == 0xFFFFFFFFu) {
+        sink[gid.x % arrayLength(&sink)] = total;
+    }
+}
+
+// split-K：沿 K 切 4 片并行（workgroup_id.z = 切片号），每片算一部分再 atomicAdd 汇总。
+// 结构沿用 main_tiled2（16×16 tile、8×8 线程、2×2 输出）——它并行度最高；
+// split-K 在不减少 workgroup 数的前提下把 K 也切开，用来填满 SM。
+// 说明：模块级绑定不能重复声明，所以这里复用 a_pos/a_neg/b_pos/b_neg/params，
+// 输出走**另一个绑定（binding 6）的 atomic 视图**，指向同一个输出缓冲。
+const SLICES: u32 = 4u;
+
+@group(0) @binding(6) var<storage, read_write> out_atomic: array<atomic<i32>>;
+
+var<workgroup> k_ap: array<u32, 128>;
+var<workgroup> k_an: array<u32, 128>;
+var<workgroup> k_bp: array<u32, 128>;
+var<workgroup> k_bn: array<u32, 128>;
+
+@compute @workgroup_size(8, 8)
+fn main_splitk(
+    @builtin(workgroup_id) wg: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+) {
+    let row_base = wg.y * 16u;
+    let col_base = wg.x * 16u;
+    let r0 = lid.y * 2u;
+    let c0 = lid.x * 2u;
+    let idx = lid.y * 8u + lid.x;
+    let words_per_slice = (params.words + SLICES - 1u) / SLICES;
+    let word_start = wg.z * words_per_slice;
+    let word_end = min(word_start + words_per_slice, params.words);
+    var s00 = 0;
+    var s01 = 0;
+    var s10 = 0;
+    var s11 = 0;
+    var first = word_start;
+    while (first < word_end) {
+        let chunk_end = min(first + 8u, word_end);
+        for (var t = 0u; t < 2u; t = t + 1u) {
+            let slot = idx + t * 64u;
+            let line = slot / 8u;
+            let word = first + slot % 8u;
+            let ok_a = row_base + line < params.m && word < chunk_end;
+            let ok_b = col_base + line < params.n && word < chunk_end;
+            k_ap[slot] = select(0u, a_pos[(row_base + line) * params.words + word], ok_a);
+            k_an[slot] = select(0u, a_neg[(row_base + line) * params.words + word], ok_a);
+            k_bp[slot] = select(0u, b_pos[(col_base + line) * params.words + word], ok_b);
+            k_bn[slot] = select(0u, b_neg[(col_base + line) * params.words + word], ok_b);
+        }
+        workgroupBarrier();
+        for (var w = 0u; w < 8u; w = w + 1u) {
+            if (first + w >= chunk_end) {
+                break;
+            }
+            let a0p = k_ap[r0 * 8u + w];
+            let a0n = k_an[r0 * 8u + w];
+            let a1p = k_ap[(r0 + 1u) * 8u + w];
+            let a1n = k_an[(r0 + 1u) * 8u + w];
+            let b0p = k_bp[c0 * 8u + w];
+            let b0n = k_bn[c0 * 8u + w];
+            let b1p = k_bp[(c0 + 1u) * 8u + w];
+            let b1n = k_bn[(c0 + 1u) * 8u + w];
+            s00 = s00 + i32(countOneBits(a0p & b0p)) + i32(countOneBits(a0n & b0n)) - i32(countOneBits(a0p & b0n)) - i32(countOneBits(a0n & b0p));
+            s01 = s01 + i32(countOneBits(a0p & b1p)) + i32(countOneBits(a0n & b1n)) - i32(countOneBits(a0p & b1n)) - i32(countOneBits(a0n & b1p));
+            s10 = s10 + i32(countOneBits(a1p & b0p)) + i32(countOneBits(a1n & b0n)) - i32(countOneBits(a1p & b0n)) - i32(countOneBits(a1n & b0p));
+            s11 = s11 + i32(countOneBits(a1p & b1p)) + i32(countOneBits(a1n & b1n)) - i32(countOneBits(a1p & b1n)) - i32(countOneBits(a1n & b1p));
+        }
+        workgroupBarrier();
+        first = chunk_end;
+    }
+    let row0 = row_base + r0;
+    let col0 = col_base + c0;
+    if (row0 < params.m && col0 < params.n) {
+        atomicAdd(&out_atomic[row0 * params.n + col0], s00);
+    }
+    if (row0 < params.m && col0 + 1u < params.n) {
+        atomicAdd(&out_atomic[row0 * params.n + col0 + 1u], s01);
+    }
+    if (row0 + 1u < params.m && col0 < params.n) {
+        atomicAdd(&out_atomic[(row0 + 1u) * params.n + col0], s10);
+    }
+    if (row0 + 1u < params.m && col0 + 1u < params.n) {
+        atomicAdd(&out_atomic[(row0 + 1u) * params.n + col0 + 1u], s11);
+    }
+}

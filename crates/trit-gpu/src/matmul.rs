@@ -49,6 +49,18 @@ pub struct MatmulReport {
     pub f32_reg4_ns_per_mac: f64,
     /// 4×4 寄存器阻塞三值结果与 CPU 位并行镜像是否一致。
     pub reg4_matches: bool,
+    /// 2×2 微块 + pos/neg 打包成 vec2 共享读，ns / MAC。
+    pub ternary_vec_ns_per_mac: f64,
+    /// vec2 内核结果与 CPU 位并行镜像是否一致。
+    pub vec_matches: bool,
+    /// split-K（4 片 + atomicAdd）三值内核，ns / MAC。
+    pub ternary_splitk_ns_per_mac: f64,
+    /// split-K 结果与 CPU 位并行镜像是否一致。
+    pub splitk_matches: bool,
+    /// 纯 countOneBits 微基准的吞吐（popc/s）。
+    pub popc_ceiling_per_s: f64,
+    /// 矩阵乘（三值最优内核）达到该天花板的百分比。
+    pub ternary_popc_utilization: f64,
     /// f32 相对误差（|f32−ternary| / max(1,|ternary|) 的最大值）。
     pub f32_relative_error: f64,
 }
@@ -104,7 +116,7 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
     let out = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
         size: (m * n * 4) as u64,
-        usage: usage | wgpu::BufferUsages::COPY_SRC,
+        usage: usage | wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
 
@@ -121,6 +133,7 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
             storage(3),
             storage_with(4, false),
             uniform(5),
+            storage_with(6, false),
         ],
     });
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -177,6 +190,10 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
             wgpu::BindGroupEntry {
                 binding: 5,
                 resource: params_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 6,
+                resource: out.as_entire_binding(),
             },
         ],
     });
@@ -302,6 +319,39 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
     let ternary_reg4_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_reg4);
     let reg4_gpu = read_u32s(&device, &queue, &out, m * n)?;
     let reg4_matches = reg4_gpu
+        .iter()
+        .zip(expected.iter())
+        .all(|(g, e)| i64::from(*g as i32) == *e);
+
+    // vec2 打包版：同 16×16 tile / 8×8 线程 / 2×2 输出，只有共享内存读换成一 次 64 位。
+    let pipeline_vec = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("matmul-ternary-vec"),
+        layout: Some(&pipeline_layout),
+        module: &shader,
+        entry_point: Some("main_tiled2v"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    let dispatch_vec = || {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            pass.set_pipeline(&pipeline_vec);
+            pass.set_bind_group(0, &bind, &[]);
+            pass.dispatch_workgroups(tiled_grid_x, tiled_grid_y, 1);
+        }
+        queue.submit([encoder.finish()]);
+    };
+    for _ in 0..20 {
+        dispatch_vec();
+    }
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
+    let ternary_vec_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_vec);
+    let vec_gpu = read_u32s(&device, &queue, &out, m * n)?;
+    let vec_matches = vec_gpu
         .iter()
         .zip(expected.iter())
         .all(|(g, e)| i64::from(*g as i32) == *e);
@@ -480,6 +530,127 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         .expect("poll");
     let f32_reg4_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_f32_reg4);
 
+    // split-K：沿 K 切 4 片、atomicAdd 汇总；workgroup 数 = tiled × 4。
+    let pipeline_splitk = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("matmul-ternary-splitk"),
+        layout: Some(&pipeline_layout),
+        module: &shader,
+        entry_point: Some("main_splitk"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    let dispatch_splitk = || {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.clear_buffer(&out, 0, None);
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            pass.set_pipeline(&pipeline_splitk);
+            pass.set_bind_group(0, &bind, &[]);
+            pass.dispatch_workgroups(tiled_grid_x, tiled_grid_y, 4);
+        }
+        queue.submit([encoder.finish()]);
+    };
+    for _ in 0..20 {
+        dispatch_splitk();
+    }
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
+    let ternary_splitk_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_splitk);
+    let splitk_gpu = read_u32s(&device, &queue, &out, m * n)?;
+    let splitk_matches = splitk_gpu
+        .iter()
+        .zip(expected.iter())
+        .all(|(g, e)| i64::from(*g as i32) == *e);
+
+    // ---- popcount 吞吐天花板：只做 countOneBits，判断矩阵乘还剩多少空间 ----
+    let popc_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("popc"),
+        entries: &[storage_with(0, false), uniform(1)],
+    });
+    let popc_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[Some(&popc_layout)],
+        immediate_size: 0,
+    });
+    let popc_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("popc-ceiling"),
+        layout: Some(&popc_pipeline_layout),
+        module: &shader,
+        entry_point: Some("bench_popc"),
+        compilation_options: Default::default(),
+        cache: None,
+    });
+    const POPC_ITERS: u32 = 4096;
+    const POPC_GROUPS: u32 = 4096;
+    let popc_params: [u32; 2] = [POPC_ITERS, 0x1234_5678];
+    let popc_params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: bytemuck::cast_slice(&popc_params),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let popc_sink = device.create_buffer(&wgpu::BufferDescriptor {
+        label: None,
+        size: 64 * 4,
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    let popc_bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
+        label: None,
+        layout: &popc_layout,
+        entries: &[
+            wgpu::BindGroupEntry {
+                binding: 0,
+                resource: popc_sink.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 1,
+                resource: popc_params_buf.as_entire_binding(),
+            },
+        ],
+    });
+    let dispatch_popc = || {
+        let mut encoder =
+            device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            pass.set_pipeline(&popc_pipeline);
+            pass.set_bind_group(0, &popc_bind, &[]);
+            pass.dispatch_workgroups(POPC_GROUPS, 1, 1);
+        }
+        queue.submit([encoder.finish()]);
+    };
+    for _ in 0..10 {
+        dispatch_popc();
+    }
+    device
+        .poll(wgpu::PollType::wait_indefinitely())
+        .expect("poll");
+    let mut popc_samples: Vec<f64> = Vec::with_capacity(5);
+    for _ in 0..5 {
+        let start = Instant::now();
+        for _ in 0..5 {
+            dispatch_popc();
+        }
+        device
+            .poll(wgpu::PollType::wait_indefinitely())
+            .expect("poll");
+        popc_samples.push(start.elapsed().as_secs_f64() / 5.0);
+    }
+    popc_samples.sort_by(|a, b| a.partial_cmp(b).expect("有限值"));
+    let popc_seconds = popc_samples[popc_samples.len() / 2].max(1e-12);
+    let popc_ops = f64::from(64 * POPC_GROUPS) * f64::from(POPC_ITERS) * 8.0;
+    let popc_ceiling_per_s = popc_ops / popc_seconds;
+
+    // 矩阵乘：每个 word-pair 4 次 popc 覆盖 32 个 MAC ⇒ popc/s = (MAC/s) / 8。
+    let best_ternary_ns = ternary_reg_ns_per_mac
+        .min(ternary_reg4_ns_per_mac)
+        .min(ternary_vec_ns_per_mac)
+        .min(ternary_splitk_ns_per_mac);
+    let achieved_popc = 1.0 / (best_ternary_ns * 1e-9) / 8.0;
+    let ternary_popc_utilization = achieved_popc / popc_ceiling_per_s;
+
     let f32_result = read_u32s(&device, &queue, &f32_out, m * n)?;
     let f32_bits: Vec<f32> = f32_result
         .iter()
@@ -505,6 +676,7 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         ternary_tiled_ns_per_mac,
         ternary_reg_ns_per_mac,
         ternary_reg4_ns_per_mac,
+        ternary_vec_ns_per_mac,
         f32_ns_per_mac,
         f32_tiled_ns_per_mac,
         f32_reg_ns_per_mac,
@@ -512,6 +684,11 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         tiled_matches,
         reg_matches,
         reg4_matches,
+        vec_matches,
+        ternary_splitk_ns_per_mac,
+        splitk_matches,
+        popc_ceiling_per_s,
+        ternary_popc_utilization,
         f32_relative_error,
     })
 }
