@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（`trit-graph` M2：三态超图 + 树分解容器）
+
+- `TritHypergraph`：三态超边（成员位集 + 自身三态 + 关键位）；`incident` 关联查询；
+  `verdict(id)` 对成员开议会（关键节点反对票强否决）。
+- `TreeDecomposition`：袋（节点位集）+ 袋树；`validate(graph)` 校验节点覆盖、边覆盖、
+  运行交（同一节点的袋在袋树上连通）；`bag_verdict` 袋内议会。**不做分解算法**。
+- 议会规则抽成公共 `tally(votes)`，图邻居/超边/袋共用一份计票。
+- 测试共 35 个（新增 11：超边构造/去重/多数/否决/空超边，分解覆盖/运行交/袋议会/多根 panic）。
+- 变异新增 3 条（超边判决忽略成员状态、不校验边覆盖、不校验运行交），**11/11 全部被抓住**。
+- 质量数据 298 条。
+
 ### Added（`trit-graph` M1：稀疏 CSR、共享视图、三态 1-WL）
 
 - `TriGraphView` 视图 trait：稠密 `TritGraph` 与稀疏 `TritCsr` 只实现四个基本方法，

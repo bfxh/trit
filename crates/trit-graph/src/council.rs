@@ -26,29 +26,36 @@ pub struct Council {
 
 /// 对 `node` 的出边开一次三态议会（稠密图与 CSR 共用）。
 pub fn council(graph: &impl TriGraphView, node: usize) -> Council {
+    let mut votes = Vec::new();
+    graph.for_each_out(node, |neighbor, edge| {
+        let vote = match edge {
+            Ternary::True => graph.node(neighbor),
+            Ternary::False => negate(graph.node(neighbor)),
+            Ternary::Unknown => Ternary::Unknown,
+        };
+        votes.push((vote, graph.is_critical(neighbor)));
+    });
+    tally(votes)
+}
+
+/// 公共计票：输入每张票 `(票值, 投票者是否关键)`，按固定规则合成判决。
+///
+/// 超图、树分解袋、图议会都用这一份规则，避免各处各写一遍。
+pub fn tally(votes: impl IntoIterator<Item = (Ternary, bool)>) -> Council {
     let mut plus = 0usize;
     let mut minus = 0usize;
     let mut abstain = 0usize;
     let mut vetoed = false;
-
-    graph.for_each_out(node, |neighbor, edge| {
-        let vote = match edge {
-            Ternary::True => Some(graph.node(neighbor)),
-            Ternary::False => Some(negate(graph.node(neighbor))),
-            Ternary::Unknown => None,
-        };
+    for (vote, critical) in votes {
         match vote {
-            Some(Ternary::True) => plus += 1,
-            Some(Ternary::False) => {
+            Ternary::True => plus += 1,
+            Ternary::False => {
                 minus += 1;
-                if graph.is_critical(neighbor) {
-                    vetoed = true;
-                }
+                vetoed |= critical;
             }
-            Some(Ternary::Unknown) | None => abstain += 1,
+            Ternary::Unknown => abstain += 1,
         }
-    });
-
+    }
     let outcome = if vetoed {
         Ternary::False
     } else if plus > minus {
@@ -58,7 +65,6 @@ pub fn council(graph: &impl TriGraphView, node: usize) -> Council {
     } else {
         Ternary::Unknown
     };
-
     Council {
         outcome,
         plus,

@@ -1881,6 +1881,30 @@ MUTANTS = [
         "filter": "budgets_reject_oversized_blif"
     },
     {
+        "name": "hyper: 超边判决忽略成员状态",
+        "file": "crates/trit-graph/src/hyper.rs",
+        "old": "            (self.nodes.get(node), self.nodes.is_critical(node))",
+        "new": "            (Ternary::True, self.nodes.is_critical(node))",
+        "pkg": "trit-graph",
+        "filter": "verdict_majority_and_veto"
+    },
+    {
+        "name": "decomp: 不校验边覆盖",
+        "file": "crates/trit-graph/src/decomp.rs",
+        "old": "            let covered = (0..self.bags.len())\n                .any(|bag| self.bag_contains(bag, u) && self.bag_contains(bag, v));",
+        "new": "            let covered = true;",
+        "pkg": "trit-graph",
+        "filter": "missing_edge_coverage_is_reported"
+    },
+    {
+        "name": "decomp: 不校验运行交",
+        "file": "crates/trit-graph/src/decomp.rs",
+        "old": "            if links + 1 != holders.len() {",
+        "new": "            if false {",
+        "pkg": "trit-graph",
+        "filter": "disconnected_running_intersection_is_reported"
+    },
+    {
         "name": "graph: CSR 偏移不累加",
         "file": "crates/trit-graph/src/csr.rs",
         "old": "            offsets[u + 1] = offsets[u] + graph.out_degree(u);",
@@ -1931,8 +1955,8 @@ MUTANTS = [
     {
         "name": "council: 关键否决失效",
         "file": "crates/trit-graph/src/council.rs",
-        "old": "                if graph.is_critical(neighbor) {",
-        "new": "                if false {",
+        "old": "                vetoed |= critical;",
+        "new": "                vetoed |= false;",
         "pkg": "trit-graph",
         "filter": "critical_false_vetoes_even_with_majority"
     },
