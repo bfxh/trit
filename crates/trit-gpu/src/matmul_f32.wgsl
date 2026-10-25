@@ -12,6 +12,9 @@ struct Params {
 @group(0) @binding(1) var<storage, read> fb: array<f32>;
 @group(0) @binding(2) var<storage, read_write> out: array<f32>;
 @group(0) @binding(3) var<uniform> params: Params;
+// 同一缓冲的 vec4 视图：一次 128 位装载替 4 次 32 位（仅装载用）。
+@group(0) @binding(4) var<storage, read> fa4: array<vec4<f32>>;
+@group(0) @binding(5) var<storage, read> fb4: array<vec4<f32>>;
 
 @compute @workgroup_size(64)
 fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -44,25 +47,74 @@ fn main_tiled(
 ) {
     let row = gid.y;
     let col = gid.x;
-    let linear = lid.y * TILE + lid.x;
+    let tile_id = lid.y * TILE + lid.x;
+    let row_ok = row < params.m;
+    let col_ok = col < params.n;
+    let block_row = row - lid.y;
+    let block_col = col - lid.x;
     var sum = 0.0;
-    let k_tiles = (params.k + TILE - 1u) / TILE;
-    for (var chunk = 0u; chunk < k_tiles; chunk = chunk + 1u) {
-        let a_col = chunk * TILE + lid.x;
-        tile_a[linear] = select(0.0, fa[row * params.k + a_col], row < params.m && a_col < params.k);
-        // B^T 行主序：fb[col * k + kk]。
-        let b_row = chunk * TILE + lid.y;
-        tile_b[linear] = select(0.0, fb[col * params.k + b_row], col < params.n && b_row < params.k);
+    let full = params.k / TILE;
+    // k 不是 4 的倍数时 vec4 的行步长对不上（k/4 会截断），走标量装载。
+    let vector_ok = params.k % 4u == 0u;
+    for (var chunk = 0u; chunk < full; chunk = chunk + 1u) {
+        if vector_ok {
+            // 向量化装载：前 64 个线程各装 1 个 vec4（16 行 × 4 段）。
+            if (tile_id < 64u) {
+                let r = tile_id / 4u;
+                let part = tile_id % 4u;
+                let a_index = (block_row + r) * (params.k / 4u) + chunk * 4u + part;
+                let av = select(vec4<f32>(0.0), fa4[a_index], block_row + r < params.m);
+                tile_a[r * TILE + part * 4u + 0u] = av.x;
+                tile_a[r * TILE + part * 4u + 1u] = av.y;
+                tile_a[r * TILE + part * 4u + 2u] = av.z;
+                tile_a[r * TILE + part * 4u + 3u] = av.w;
+                let b_index = (block_col + r) * (params.k / 4u) + chunk * 4u + part;
+                let bv = select(vec4<f32>(0.0), fb4[b_index], block_col + r < params.n);
+                // 累加按 tile_b[k][c] 读，所以 B 段要按 [k][列] 落位。
+                tile_b[(part * 4u + 0u) * TILE + r] = bv.x;
+                tile_b[(part * 4u + 1u) * TILE + r] = bv.y;
+                tile_b[(part * 4u + 2u) * TILE + r] = bv.z;
+                tile_b[(part * 4u + 3u) * TILE + r] = bv.w;
+            }
+        } else {
+            let a_col = chunk * TILE + lid.x;
+            tile_a[tile_id] = select(0.0, fa[row * params.k + a_col], row_ok && a_col < params.k);
+            let b_row = chunk * TILE + lid.y;
+            tile_b[tile_id] = select(0.0, fb[col * params.k + b_row], col_ok && b_row < params.k);
+        }
         workgroupBarrier();
         for (var kk = 0u; kk < TILE; kk = kk + 1u) {
             sum = sum + tile_a[lid.y * TILE + kk] * tile_b[kk * TILE + lid.x];
         }
         workgroupBarrier();
     }
-    if (row < params.m && col < params.n) {
+    // 尾段（k 不是 16 的倍数）：标量装载 + 守卫。
+    if (params.k % TILE != 0u) {
+        let a_k = full * TILE + lid.x;
+        let b_k = full * TILE + lid.y;
+        if row_ok && a_k < params.k {
+            tile_a[tile_id] = fa[row * params.k + a_k];
+        } else {
+            tile_a[tile_id] = 0.0;
+        }
+        if col_ok && b_k < params.k {
+            tile_b[tile_id] = fb[col * params.k + b_k];
+        } else {
+            tile_b[tile_id] = 0.0;
+        }
+        workgroupBarrier();
+        for (var kk = 0u; kk < TILE; kk = kk + 1u) {
+            if (full * TILE + kk < params.k) {
+                sum = sum + tile_a[lid.y * TILE + kk] * tile_b[kk * TILE + lid.x];
+            }
+        }
+        workgroupBarrier();
+    }
+    if (row_ok && col_ok) {
         out[row * params.n + col] = sum;
     }
 }
+
 
 // 寄存器阻塞版：workgroup 8×8，每线程 2×2 四个 FMA 累加器——
 // tile_a/tile_b 每次读取喂 4 个乘加，算术强度再翻倍。tile 仍 16×16。
@@ -125,12 +177,13 @@ fn main_tiled2(
 }
 
 // 4×4 寄存器阻塞（与 matmul.wgsl 的 main_tiled4 同结构）：32×32 tile、8×8 线程、
-// 每线程 4×4 输出，K 方向每次搬 8 个元素。
+// 每线程 4×4 输出，K 方向每次搬 8 个元素。共享内存按 vec4 组织：
+// 内层每次 128 位读喂 4 个乘加，共享读次数是标量版的 1/4。
 const T4: u32 = 32u;
 const K_CHUNK: u32 = 8u;
 
-var<workgroup> t4_a: array<f32, 256>;
-var<workgroup> t4_b: array<f32, 256>;
+var<workgroup> t4_a4: array<vec4<f32>, 64>;
+var<workgroup> t4_b4: array<vec4<f32>, 64>;
 
 @compute @workgroup_size(8, 8)
 fn main_tiled4(
@@ -142,35 +195,126 @@ fn main_tiled4(
     let r0 = lid.y * 4u;
     let c0 = lid.x * 4u;
     let idx = lid.y * 8u + lid.x;
-    var s00 = 0.0; var s01 = 0.0; var s02 = 0.0; var s03 = 0.0;
-    var s10 = 0.0; var s11 = 0.0; var s12 = 0.0; var s13 = 0.0;
-    var s20 = 0.0; var s21 = 0.0; var s22 = 0.0; var s23 = 0.0;
-    var s30 = 0.0; var s31 = 0.0; var s32 = 0.0; var s33 = 0.0;
+    var s00 = 0.0; 
+    var s01 = 0.0; 
+    var s02 = 0.0; 
+    var s03 = 0.0;  
+    var s10 = 0.0; 
+    var s11 = 0.0; 
+    var s12 = 0.0; 
+    var s13 = 0.0;  
+    var s20 = 0.0; 
+    var s21 = 0.0; 
+    var s22 = 0.0; 
+    var s23 = 0.0;  
+    var s30 = 0.0; 
+    var s31 = 0.0; 
+    var s32 = 0.0; 
+    var s33 = 0.0;  
     let k_tiles = (params.k + K_CHUNK - 1u) / K_CHUNK;
+    let vector_ok = params.k % 4u == 0u;
     for (var chunk = 0u; chunk < k_tiles; chunk = chunk + 1u) {
-        for (var t = 0u; t < 4u; t = t + 1u) {
-            let slot = idx + t * 64u;
-            let line = slot / K_CHUNK;
-            let kk = chunk * K_CHUNK + slot % K_CHUNK;
-            let ok_a = row_base + line < params.m && kk < params.k;
-            let ok_b = col_base + line < params.n && kk < params.k;
-            t4_a[slot] = select(0.0, fa[(row_base + line) * params.k + kk], ok_a);
-            t4_b[slot] = select(0.0, fb[(col_base + line) * params.k + kk], ok_b);
+        if vector_ok {
+            // 64 个 vec4 槽（32 行 × 2 段），每线程正好一个。
+            let r = idx / 2u;
+            let part = idx % 2u;
+            let k4 = params.k / 4u;
+            let seg_ok = (chunk * 2u + part) * 4u < params.k;
+            t4_a4[idx] = select(vec4<f32>(0.0), fa4[(row_base + r) * k4 + chunk * 2u + part], row_base + r < params.m && seg_ok);
+            t4_b4[idx] = select(vec4<f32>(0.0), fb4[(col_base + r) * k4 + chunk * 2u + part], col_base + r < params.n && seg_ok);
+        } else {
+            let r = idx / 2u;
+            let part = idx % 2u;
+            let k0 = chunk * K_CHUNK + part * 4u;
+            let a_ok = row_base + r < params.m;
+            let b_ok = col_base + r < params.n;
+            t4_a4[idx] = vec4<f32>(
+                select(0.0, fa[(row_base + r) * params.k + k0 + 0u], a_ok && k0 + 0u < params.k),
+                select(0.0, fa[(row_base + r) * params.k + k0 + 1u], a_ok && k0 + 1u < params.k),
+                select(0.0, fa[(row_base + r) * params.k + k0 + 2u], a_ok && k0 + 2u < params.k),
+                select(0.0, fa[(row_base + r) * params.k + k0 + 3u], a_ok && k0 + 3u < params.k),
+            );
+            t4_b4[idx] = vec4<f32>(
+                select(0.0, fb[(col_base + r) * params.k + k0 + 0u], b_ok && k0 + 0u < params.k),
+                select(0.0, fb[(col_base + r) * params.k + k0 + 1u], b_ok && k0 + 1u < params.k),
+                select(0.0, fb[(col_base + r) * params.k + k0 + 2u], b_ok && k0 + 2u < params.k),
+                select(0.0, fb[(col_base + r) * params.k + k0 + 3u], b_ok && k0 + 3u < params.k),
+            );
         }
         workgroupBarrier();
-        for (var kk = 0u; kk < K_CHUNK; kk = kk + 1u) {
-            let a0 = t4_a[(r0 + 0u) * K_CHUNK + kk];
-            let a1 = t4_a[(r0 + 1u) * K_CHUNK + kk];
-            let a2 = t4_a[(r0 + 2u) * K_CHUNK + kk];
-            let a3 = t4_a[(r0 + 3u) * K_CHUNK + kk];
-            let b0 = t4_b[(c0 + 0u) * K_CHUNK + kk];
-            let b1 = t4_b[(c0 + 1u) * K_CHUNK + kk];
-            let b2 = t4_b[(c0 + 2u) * K_CHUNK + kk];
-            let b3 = t4_b[(c0 + 3u) * K_CHUNK + kk];
-            s00 = s00 + a0 * b0; s01 = s01 + a0 * b1; s02 = s02 + a0 * b2; s03 = s03 + a0 * b3;
-            s10 = s10 + a1 * b0; s11 = s11 + a1 * b1; s12 = s12 + a1 * b2; s13 = s13 + a1 * b3;
-            s20 = s20 + a2 * b0; s21 = s21 + a2 * b1; s22 = s22 + a2 * b2; s23 = s23 + a2 * b3;
-            s30 = s30 + a3 * b0; s31 = s31 + a3 * b1; s32 = s32 + a3 * b2; s33 = s33 + a3 * b3;
+        for (var w4 = 0u; w4 < 2u; w4 = w4 + 1u) {
+            let a0 = t4_a4[(r0 + 0u) * 2u + w4];
+            let a1 = t4_a4[(r0 + 1u) * 2u + w4];
+            let a2 = t4_a4[(r0 + 2u) * 2u + w4];
+            let a3 = t4_a4[(r0 + 3u) * 2u + w4];
+            let b0 = t4_b4[(c0 + 0u) * 2u + w4];
+            let b1 = t4_b4[(c0 + 1u) * 2u + w4];
+            let b2 = t4_b4[(c0 + 2u) * 2u + w4];
+            let b3 = t4_b4[(c0 + 3u) * 2u + w4];
+            s00 = s00 + a0.x * b0.x;
+            s00 = s00 + a0.y * b0.y;
+            s00 = s00 + a0.z * b0.z;
+            s00 = s00 + a0.w * b0.w;
+            s01 = s01 + a0.x * b1.x;
+            s01 = s01 + a0.y * b1.y;
+            s01 = s01 + a0.z * b1.z;
+            s01 = s01 + a0.w * b1.w;
+            s02 = s02 + a0.x * b2.x;
+            s02 = s02 + a0.y * b2.y;
+            s02 = s02 + a0.z * b2.z;
+            s02 = s02 + a0.w * b2.w;
+            s03 = s03 + a0.x * b3.x;
+            s03 = s03 + a0.y * b3.y;
+            s03 = s03 + a0.z * b3.z;
+            s03 = s03 + a0.w * b3.w;
+            s10 = s10 + a1.x * b0.x;
+            s10 = s10 + a1.y * b0.y;
+            s10 = s10 + a1.z * b0.z;
+            s10 = s10 + a1.w * b0.w;
+            s11 = s11 + a1.x * b1.x;
+            s11 = s11 + a1.y * b1.y;
+            s11 = s11 + a1.z * b1.z;
+            s11 = s11 + a1.w * b1.w;
+            s12 = s12 + a1.x * b2.x;
+            s12 = s12 + a1.y * b2.y;
+            s12 = s12 + a1.z * b2.z;
+            s12 = s12 + a1.w * b2.w;
+            s13 = s13 + a1.x * b3.x;
+            s13 = s13 + a1.y * b3.y;
+            s13 = s13 + a1.z * b3.z;
+            s13 = s13 + a1.w * b3.w;
+            s20 = s20 + a2.x * b0.x;
+            s20 = s20 + a2.y * b0.y;
+            s20 = s20 + a2.z * b0.z;
+            s20 = s20 + a2.w * b0.w;
+            s21 = s21 + a2.x * b1.x;
+            s21 = s21 + a2.y * b1.y;
+            s21 = s21 + a2.z * b1.z;
+            s21 = s21 + a2.w * b1.w;
+            s22 = s22 + a2.x * b2.x;
+            s22 = s22 + a2.y * b2.y;
+            s22 = s22 + a2.z * b2.z;
+            s22 = s22 + a2.w * b2.w;
+            s23 = s23 + a2.x * b3.x;
+            s23 = s23 + a2.y * b3.y;
+            s23 = s23 + a2.z * b3.z;
+            s23 = s23 + a2.w * b3.w;
+            s30 = s30 + a3.x * b0.x;
+            s30 = s30 + a3.y * b0.y;
+            s30 = s30 + a3.z * b0.z;
+            s30 = s30 + a3.w * b0.w;
+            s31 = s31 + a3.x * b1.x;
+            s31 = s31 + a3.y * b1.y;
+            s31 = s31 + a3.z * b1.z;
+            s31 = s31 + a3.w * b1.w;
+            s32 = s32 + a3.x * b2.x;
+            s32 = s32 + a3.y * b2.y;
+            s32 = s32 + a3.z * b2.z;
+            s32 = s32 + a3.w * b2.w;
+            s33 = s33 + a3.x * b3.x;
+            s33 = s33 + a3.y * b3.y;
+            s33 = s33 + a3.z * b3.z;
+            s33 = s33 + a3.w * b3.w;
         }
         workgroupBarrier();
     }
@@ -198,16 +342,32 @@ fn main2d(@builtin(global_invocation_id) gid: vec3<u32>) {
     let a_base = row * params.k;
     let b_base = col * params.k;
     var sum = 0.0;
-    for (var kk = 0u; kk < params.k; kk = kk + 1u) {
-        sum = sum + fa[a_base + kk] * fb[b_base + kk];
+    // 每线程沿 K 连读：一次 128 位装载替 4 次 32 位（累加次序不变）。
+    if (params.k % 4u == 0u) {
+        let a4 = a_base / 4u;
+        let b4 = b_base / 4u;
+        let n4 = params.k / 4u;
+        for (var w = 0u; w < n4; w = w + 1u) {
+            let av = fa4[a4 + w];
+            let bv = fb4[b4 + w];
+            sum = sum + av.x * bv.x;
+            sum = sum + av.y * bv.y;
+            sum = sum + av.z * bv.z;
+            sum = sum + av.w * bv.w;
+        }
+    } else {
+        for (var kk = 0u; kk < params.k; kk = kk + 1u) {
+            sum = sum + fa[a_base + kk] * fb[b_base + kk];
+        }
     }
     out[row * params.n + col] = sum;
 }
 
-// 2×2 寄存器阻塞 + K 段 8（对齐 cuda-oxide 的 reg2 结构；我们的 main_tiled2 用的是 K 段 16）。
+// 2×2 寄存器阻塞 + K 段 8（对齐 cuda-oxide 的 reg2 结构）。共享内存按 vec4 组织：
+// 每线程一次 128 位读喂 4 个乘加，共享读次数是标量版的 1/4（这是反超的关键）。
 const K8: u32 = 8u;
-var<workgroup> t2k8_a: array<f32, 128>;
-var<workgroup> t2k8_b: array<f32, 128>;
+var<workgroup> t2k8_a4: array<vec4<f32>, 32>;
+var<workgroup> t2k8_b4: array<vec4<f32>, 32>;
 
 @compute @workgroup_size(8, 8)
 fn main_tiled2k8(
@@ -224,27 +384,63 @@ fn main_tiled2k8(
     var s10 = 0.0;
     var s11 = 0.0;
     let k_tiles = (params.k + K8 - 1u) / K8;
+    let vector_ok = params.k % 4u == 0u;
     for (var chunk = 0u; chunk < k_tiles; chunk = chunk + 1u) {
-        // 64 线程 × 2 槽 = 128 = 16 行/列 × 8 元素。
-        for (var i = 0u; i < 2u; i = i + 1u) {
-            let s = idx + i * 64u;
-            let r = s / K8;
-            let kk = chunk * K8 + s % K8;
-            let a_ok = row_base + r < params.m && kk < params.k;
-            let b_ok = col_base + r < params.n && kk < params.k;
-            t2k8_a[s] = select(0.0, fa[(row_base + r) * params.k + kk], a_ok);
-            t2k8_b[s] = select(0.0, fb[(col_base + r) * params.k + kk], b_ok);
+        if vector_ok {
+            // 32 个 vec4 槽（16 行 × 2 段），前 32 线程各装一个。
+            if (idx < 32u) {
+                let r = idx / 2u;
+                let part = idx % 2u;
+                let k4 = params.k / 4u;
+                let seg_ok = (chunk * 2u + part) * 4u < params.k;
+                t2k8_a4[idx] = select(vec4<f32>(0.0), fa4[(row_base + r) * k4 + chunk * 2u + part], row_base + r < params.m && seg_ok);
+                t2k8_b4[idx] = select(vec4<f32>(0.0), fb4[(col_base + r) * k4 + chunk * 2u + part], col_base + r < params.n && seg_ok);
+            }
+        } else {
+            // 标量回退：前 32 线程各拼一个 vec4（16 行 × 2 段）。
+            if (idx < 32u) {
+                let r = idx / 2u;
+                let part = idx % 2u;
+                let k0 = chunk * K8 + part * 4u;
+                let a_ok = row_base + r < params.m;
+                let b_ok = col_base + r < params.n;
+                t2k8_a4[idx] = vec4<f32>(
+                    select(0.0, fa[(row_base + r) * params.k + k0 + 0u], a_ok && k0 + 0u < params.k),
+                    select(0.0, fa[(row_base + r) * params.k + k0 + 1u], a_ok && k0 + 1u < params.k),
+                    select(0.0, fa[(row_base + r) * params.k + k0 + 2u], a_ok && k0 + 2u < params.k),
+                    select(0.0, fa[(row_base + r) * params.k + k0 + 3u], a_ok && k0 + 3u < params.k),
+                );
+                t2k8_b4[idx] = vec4<f32>(
+                    select(0.0, fb[(col_base + r) * params.k + k0 + 0u], b_ok && k0 + 0u < params.k),
+                    select(0.0, fb[(col_base + r) * params.k + k0 + 1u], b_ok && k0 + 1u < params.k),
+                    select(0.0, fb[(col_base + r) * params.k + k0 + 2u], b_ok && k0 + 2u < params.k),
+                    select(0.0, fb[(col_base + r) * params.k + k0 + 3u], b_ok && k0 + 3u < params.k),
+                );
+            }
         }
         workgroupBarrier();
-        for (var kk = 0u; kk < K8; kk = kk + 1u) {
-            let a0 = t2k8_a[r0 * K8 + kk];
-            let a1 = t2k8_a[(r0 + 1u) * K8 + kk];
-            let b0 = t2k8_b[c0 * K8 + kk];
-            let b1 = t2k8_b[(c0 + 1u) * K8 + kk];
-            s00 = s00 + a0 * b0;
-            s01 = s01 + a0 * b1;
-            s10 = s10 + a1 * b0;
-            s11 = s11 + a1 * b1;
+        // 每次 128 位共享读喂 4 个乘加；累加次序与逐 kk 标量版一致（x,y,z,w）。
+        for (var w4 = 0u; w4 < 2u; w4 = w4 + 1u) {
+            let a0 = t2k8_a4[r0 * 2u + w4];
+            let a1 = t2k8_a4[(r0 + 1u) * 2u + w4];
+            let b0 = t2k8_b4[c0 * 2u + w4];
+            let b1 = t2k8_b4[(c0 + 1u) * 2u + w4];
+            s00 = s00 + a0.x * b0.x;
+            s00 = s00 + a0.y * b0.y;
+            s00 = s00 + a0.z * b0.z;
+            s00 = s00 + a0.w * b0.w;
+            s01 = s01 + a0.x * b1.x;
+            s01 = s01 + a0.y * b1.y;
+            s01 = s01 + a0.z * b1.z;
+            s01 = s01 + a0.w * b1.w;
+            s10 = s10 + a1.x * b0.x;
+            s10 = s10 + a1.y * b0.y;
+            s10 = s10 + a1.z * b0.z;
+            s10 = s10 + a1.w * b0.w;
+            s11 = s11 + a1.x * b1.x;
+            s11 = s11 + a1.y * b1.y;
+            s11 = s11 + a1.z * b1.z;
+            s11 = s11 + a1.w * b1.w;
         }
         workgroupBarrier();
     }
@@ -264,11 +460,11 @@ fn main_tiled2k8(
     }
 }
 
-// 4×4 寄存器阻塞 + K 段 16：32×32 tile、8×8 线程，每段 16 元素（共享 2×2KB）。
+// 4×4 寄存器阻塞 + K 段 16：32×32 tile、8×8 线程，每段 16 元素（共享 4×1KB）。
 // 与 main_tiled4 同结构，只是把 K 段从 8 加到 16（屏障减半、每次装载复用更多）。
 const K16: u32 = 16u;
-var<workgroup> t4k16_a: array<f32, 512>;
-var<workgroup> t4k16_b: array<f32, 512>;
+var<workgroup> t4k16_a4: array<vec4<f32>, 128>;
+var<workgroup> t4k16_b4: array<vec4<f32>, 128>;
 
 @compute @workgroup_size(8, 8)
 fn main_tiled4k16(
@@ -280,36 +476,132 @@ fn main_tiled4k16(
     let r0 = lid.y * 4u;
     let c0 = lid.x * 4u;
     let idx = lid.y * 8u + lid.x;
-    var s00 = 0.0; var s01 = 0.0; var s02 = 0.0; var s03 = 0.0;
-    var s10 = 0.0; var s11 = 0.0; var s12 = 0.0; var s13 = 0.0;
-    var s20 = 0.0; var s21 = 0.0; var s22 = 0.0; var s23 = 0.0;
-    var s30 = 0.0; var s31 = 0.0; var s32 = 0.0; var s33 = 0.0;
+    var s00 = 0.0; 
+    var s01 = 0.0; 
+    var s02 = 0.0; 
+    var s03 = 0.0;  
+    var s10 = 0.0; 
+    var s11 = 0.0; 
+    var s12 = 0.0; 
+    var s13 = 0.0;  
+    var s20 = 0.0; 
+    var s21 = 0.0; 
+    var s22 = 0.0; 
+    var s23 = 0.0;  
+    var s30 = 0.0; 
+    var s31 = 0.0; 
+    var s32 = 0.0; 
+    var s33 = 0.0;  
     let k_tiles = (params.k + K16 - 1u) / K16;
+    let vector_ok = params.k % 4u == 0u;
     for (var chunk = 0u; chunk < k_tiles; chunk = chunk + 1u) {
-        // 64 线程 × 8 槽 = 512 = 32 行/列 × 16 元素。
-        for (var t = 0u; t < 8u; t = t + 1u) {
-            let slot = idx + t * 64u;
-            let line = slot / K16;
-            let kk = chunk * K16 + slot % K16;
-            let ok_a = row_base + line < params.m && kk < params.k;
-            let ok_b = col_base + line < params.n && kk < params.k;
-            t4k16_a[slot] = select(0.0, fa[(row_base + line) * params.k + kk], ok_a);
-            t4k16_b[slot] = select(0.0, fb[(col_base + line) * params.k + kk], ok_b);
+        if vector_ok {
+            // 128 个 vec4 槽（32 行 × 4 段），每线程装两个。
+            for (var t = 0u; t < 2u; t = t + 1u) {
+                let g = idx + t * 64u;
+                let r = g / 4u;
+                let part = g % 4u;
+                let k4 = params.k / 4u;
+                let seg_ok = (chunk * 4u + part) * 4u < params.k;
+                t4k16_a4[g] = select(vec4<f32>(0.0), fa4[(row_base + r) * k4 + chunk * 4u + part], row_base + r < params.m && seg_ok);
+                t4k16_b4[g] = select(vec4<f32>(0.0), fb4[(col_base + r) * k4 + chunk * 4u + part], col_base + r < params.n && seg_ok);
+            }
+        } else {
+            for (var t = 0u; t < 2u; t = t + 1u) {
+                let g = idx + t * 64u;
+                let r = g / 4u;
+                let part = g % 4u;
+                let k0 = chunk * K16 + part * 4u;
+                let a_ok = row_base + r < params.m;
+                let b_ok = col_base + r < params.n;
+                t4k16_a4[g] = vec4<f32>(
+                    select(0.0, fa[(row_base + r) * params.k + k0 + 0u], a_ok && k0 + 0u < params.k),
+                    select(0.0, fa[(row_base + r) * params.k + k0 + 1u], a_ok && k0 + 1u < params.k),
+                    select(0.0, fa[(row_base + r) * params.k + k0 + 2u], a_ok && k0 + 2u < params.k),
+                    select(0.0, fa[(row_base + r) * params.k + k0 + 3u], a_ok && k0 + 3u < params.k),
+                );
+                t4k16_b4[g] = vec4<f32>(
+                    select(0.0, fb[(col_base + r) * params.k + k0 + 0u], b_ok && k0 + 0u < params.k),
+                    select(0.0, fb[(col_base + r) * params.k + k0 + 1u], b_ok && k0 + 1u < params.k),
+                    select(0.0, fb[(col_base + r) * params.k + k0 + 2u], b_ok && k0 + 2u < params.k),
+                    select(0.0, fb[(col_base + r) * params.k + k0 + 3u], b_ok && k0 + 3u < params.k),
+                );
+            }
         }
         workgroupBarrier();
-        for (var kk = 0u; kk < K16; kk = kk + 1u) {
-            let a0 = t4k16_a[(r0 + 0u) * K16 + kk];
-            let a1 = t4k16_a[(r0 + 1u) * K16 + kk];
-            let a2 = t4k16_a[(r0 + 2u) * K16 + kk];
-            let a3 = t4k16_a[(r0 + 3u) * K16 + kk];
-            let b0 = t4k16_b[(c0 + 0u) * K16 + kk];
-            let b1 = t4k16_b[(c0 + 1u) * K16 + kk];
-            let b2 = t4k16_b[(c0 + 2u) * K16 + kk];
-            let b3 = t4k16_b[(c0 + 3u) * K16 + kk];
-            s00 = s00 + a0 * b0; s01 = s01 + a0 * b1; s02 = s02 + a0 * b2; s03 = s03 + a0 * b3;
-            s10 = s10 + a1 * b0; s11 = s11 + a1 * b1; s12 = s12 + a1 * b2; s13 = s13 + a1 * b3;
-            s20 = s20 + a2 * b0; s21 = s21 + a2 * b1; s22 = s22 + a2 * b2; s23 = s23 + a2 * b3;
-            s30 = s30 + a3 * b0; s31 = s31 + a3 * b1; s32 = s32 + a3 * b2; s33 = s33 + a3 * b3;
+        for (var w4 = 0u; w4 < 4u; w4 = w4 + 1u) {
+            let a0 = t4k16_a4[(r0 + 0u) * 4u + w4];
+            let a1 = t4k16_a4[(r0 + 1u) * 4u + w4];
+            let a2 = t4k16_a4[(r0 + 2u) * 4u + w4];
+            let a3 = t4k16_a4[(r0 + 3u) * 4u + w4];
+            let b0 = t4k16_b4[(c0 + 0u) * 4u + w4];
+            let b1 = t4k16_b4[(c0 + 1u) * 4u + w4];
+            let b2 = t4k16_b4[(c0 + 2u) * 4u + w4];
+            let b3 = t4k16_b4[(c0 + 3u) * 4u + w4];
+            s00 = s00 + a0.x * b0.x;
+            s00 = s00 + a0.y * b0.y;
+            s00 = s00 + a0.z * b0.z;
+            s00 = s00 + a0.w * b0.w;
+            s01 = s01 + a0.x * b1.x;
+            s01 = s01 + a0.y * b1.y;
+            s01 = s01 + a0.z * b1.z;
+            s01 = s01 + a0.w * b1.w;
+            s02 = s02 + a0.x * b2.x;
+            s02 = s02 + a0.y * b2.y;
+            s02 = s02 + a0.z * b2.z;
+            s02 = s02 + a0.w * b2.w;
+            s03 = s03 + a0.x * b3.x;
+            s03 = s03 + a0.y * b3.y;
+            s03 = s03 + a0.z * b3.z;
+            s03 = s03 + a0.w * b3.w;
+            s10 = s10 + a1.x * b0.x;
+            s10 = s10 + a1.y * b0.y;
+            s10 = s10 + a1.z * b0.z;
+            s10 = s10 + a1.w * b0.w;
+            s11 = s11 + a1.x * b1.x;
+            s11 = s11 + a1.y * b1.y;
+            s11 = s11 + a1.z * b1.z;
+            s11 = s11 + a1.w * b1.w;
+            s12 = s12 + a1.x * b2.x;
+            s12 = s12 + a1.y * b2.y;
+            s12 = s12 + a1.z * b2.z;
+            s12 = s12 + a1.w * b2.w;
+            s13 = s13 + a1.x * b3.x;
+            s13 = s13 + a1.y * b3.y;
+            s13 = s13 + a1.z * b3.z;
+            s13 = s13 + a1.w * b3.w;
+            s20 = s20 + a2.x * b0.x;
+            s20 = s20 + a2.y * b0.y;
+            s20 = s20 + a2.z * b0.z;
+            s20 = s20 + a2.w * b0.w;
+            s21 = s21 + a2.x * b1.x;
+            s21 = s21 + a2.y * b1.y;
+            s21 = s21 + a2.z * b1.z;
+            s21 = s21 + a2.w * b1.w;
+            s22 = s22 + a2.x * b2.x;
+            s22 = s22 + a2.y * b2.y;
+            s22 = s22 + a2.z * b2.z;
+            s22 = s22 + a2.w * b2.w;
+            s23 = s23 + a2.x * b3.x;
+            s23 = s23 + a2.y * b3.y;
+            s23 = s23 + a2.z * b3.z;
+            s23 = s23 + a2.w * b3.w;
+            s30 = s30 + a3.x * b0.x;
+            s30 = s30 + a3.y * b0.y;
+            s30 = s30 + a3.z * b0.z;
+            s30 = s30 + a3.w * b0.w;
+            s31 = s31 + a3.x * b1.x;
+            s31 = s31 + a3.y * b1.y;
+            s31 = s31 + a3.z * b1.z;
+            s31 = s31 + a3.w * b1.w;
+            s32 = s32 + a3.x * b2.x;
+            s32 = s32 + a3.y * b2.y;
+            s32 = s32 + a3.z * b2.z;
+            s32 = s32 + a3.w * b2.w;
+            s33 = s33 + a3.x * b3.x;
+            s33 = s33 + a3.y * b3.y;
+            s33 = s33 + a3.z * b3.z;
+            s33 = s33 + a3.w * b3.w;
         }
         workgroupBarrier();
     }
@@ -322,64 +614,5 @@ fn main_tiled4k16(
                 out[(row0 + i) * params.n + col0 + j] = acc[i * 4u + j];
             }
         }
-    }
-}
-
-// 2×2 寄存器阻塞 + K 段 16：16×16 tile，共享 16×16（256 项/操作数）。
-var<workgroup> t2k16_a: array<f32, 256>;
-var<workgroup> t2k16_b: array<f32, 256>;
-
-@compute @workgroup_size(8, 8)
-fn main_tiled2k16(
-    @builtin(workgroup_id) wg: vec3<u32>,
-    @builtin(local_invocation_id) lid: vec3<u32>,
-) {
-    let row_base = wg.y * 16u;
-    let col_base = wg.x * 16u;
-    let r0 = lid.y * 2u;
-    let c0 = lid.x * 2u;
-    let idx = lid.y * 8u + lid.x;
-    var s00 = 0.0;
-    var s01 = 0.0;
-    var s10 = 0.0;
-    var s11 = 0.0;
-    let k_tiles = (params.k + K16 - 1u) / K16;
-    for (var chunk = 0u; chunk < k_tiles; chunk = chunk + 1u) {
-        // 64 线程 × 4 槽 = 256 = 16 行/列 × 16 元素。
-        for (var t = 0u; t < 4u; t = t + 1u) {
-            let slot = idx + t * 64u;
-            let line = slot / K16;
-            let kk = chunk * K16 + slot % K16;
-            let ok_a = row_base + line < params.m && kk < params.k;
-            let ok_b = col_base + line < params.n && kk < params.k;
-            t2k16_a[slot] = select(0.0, fa[(row_base + line) * params.k + kk], ok_a);
-            t2k16_b[slot] = select(0.0, fb[(col_base + line) * params.k + kk], ok_b);
-        }
-        workgroupBarrier();
-        for (var w = 0u; w < K16; w = w + 1u) {
-            let a0 = t2k16_a[r0 * K16 + w];
-            let a1 = t2k16_a[(r0 + 1u) * K16 + w];
-            let b0 = t2k16_b[c0 * K16 + w];
-            let b1 = t2k16_b[(c0 + 1u) * K16 + w];
-            s00 = s00 + a0 * b0;
-            s01 = s01 + a0 * b1;
-            s10 = s10 + a1 * b0;
-            s11 = s11 + a1 * b1;
-        }
-        workgroupBarrier();
-    }
-    let row0 = row_base + r0;
-    let col0 = col_base + c0;
-    if (row0 < params.m && col0 < params.n) {
-        out[row0 * params.n + col0] = s00;
-    }
-    if (row0 < params.m && col0 + 1u < params.n) {
-        out[row0 * params.n + col0 + 1u] = s01;
-    }
-    if (row0 + 1u < params.m && col0 < params.n) {
-        out[(row0 + 1u) * params.n + col0] = s10;
-    }
-    if (row0 + 1u < params.m && col0 + 1u < params.n) {
-        out[(row0 + 1u) * params.n + col0 + 1u] = s11;
     }
 }

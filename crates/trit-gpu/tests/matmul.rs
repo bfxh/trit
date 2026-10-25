@@ -26,8 +26,17 @@ fn gpu_reg_matmul_tiny_case() {
     assert!(report.splitk_matches, "1×1×1 split-K 不一致：{report:?}");
     assert!(report.f32_2d_matches, "1×1×1 2D-naive 不一致：{report:?}");
     assert!(
+        report.f32_tiled_matches,
+        "1×1×1 f32 tiled 不一致：{report:?}"
+    );
+    assert!(
         report.f32_reg2k8_matches,
         "1×1×1 reg2-K8 不一致：{report:?}"
+    );
+    assert!(report.f32_reg4_matches, "1×1×1 reg4-K8 不一致：{report:?}");
+    assert!(
+        report.f32_reg4k16_matches,
+        "1×1×1 reg4-K16 不一致：{report:?}"
     );
     assert!(report.matches);
     assert!(report.tiled_matches);
@@ -87,8 +96,65 @@ fn gpu_matmul_matches_cpu_mirror() {
         "2D naive 与 CPU 镜像不一致：{report:?}"
     );
     assert!(
+        report.f32_tiled_matches,
+        "f32 分块内核与 CPU 镜像不一致：{report:?}"
+    );
+    assert!(
         report.f32_reg2k8_matches,
         "K 段 8 的 f32 内核与 CPU 镜像不一致：{report:?}"
+    );
+    assert!(
+        report.f32_reg4_matches,
+        "K 段 8 的 f32 4×4 内核与 CPU 镜像不一致：{report:?}"
+    );
+    assert!(
+        report.f32_reg4k16_matches,
+        "K 段 16 的 f32 4×4 内核与 CPU 镜像不一致：{report:?}"
+    );
+    assert_eq!(report.m, m);
+    assert_eq!(report.n, n);
+    assert_eq!(report.k, k);
+}
+
+#[test]
+fn gpu_matmul_scalar_load_fallback() {
+    // k=37 不是 4 的倍数：f32 的 vec4 装载全部退回标量路径（k=1 的 tiny 用例
+    // 只覆盖 full==0，碰不到装载循环本身）。
+    let m = 9usize;
+    let k = 37usize;
+    let n = 5usize;
+    let mut state = 0x2545_F491_4F6C_DD1Du64;
+    let mut next = || {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state % 3) as i32 - 1
+    };
+    let a: Vec<i32> = (0..m * k).map(|_| next()).collect();
+    let b: Vec<i32> = (0..k * n).map(|_| next()).collect();
+    let (a_pos, a_neg) = pack_rows(&a, k);
+    let (b_pos, b_neg) = pack_columns(&b, k, n);
+    let expected = matmul_words(m, n, &a_pos, &a_neg, &b_pos, &b_neg);
+    assert_eq!(expected.len(), m * n);
+
+    let report = matmul::run(m, k, n);
+    let Some(report) = report else {
+        eprintln!("没有可用 GPU adapter，对拍跳过");
+        return;
+    };
+    assert!(report.matches, "naive 不一致：{report:?}");
+    assert!(report.tiled_matches, "tiled 不一致：{report:?}");
+    assert!(report.reg_matches, "reg2×2 不一致：{report:?}");
+    assert!(report.reg4_matches, "reg4×4 不一致：{report:?}");
+    assert!(report.o3_matches, "o3 不一致：{report:?}");
+    assert!(report.splitk_matches, "split-K 不一致：{report:?}");
+    assert!(report.f32_2d_matches, "f32 2D-naive 不一致：{report:?}");
+    assert!(report.f32_tiled_matches, "f32 tiled 不一致：{report:?}");
+    assert!(report.f32_reg2k8_matches, "f32 reg2-K8 不一致：{report:?}");
+    assert!(report.f32_reg4_matches, "f32 reg4-K8 不一致：{report:?}");
+    assert!(
+        report.f32_reg4k16_matches,
+        "f32 reg4-K16 不一致：{report:?}"
     );
     assert_eq!(report.m, m);
     assert_eq!(report.n, n);

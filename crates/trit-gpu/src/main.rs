@@ -134,7 +134,7 @@ fn bench(trits: usize) -> Result<(), String> {
         1.0 / matmul.ternary_popc_utilization.max(1e-9)
     );
     println!(
-        "  校验：naive {} / tiled {} / reg2×2 {} / reg4×4 {} / o3 {} / split-K {}（f32 相对误差 {:.2e}；2D-naive {} / reg2-K8 {} / reg4-K16 {}）",
+        "  校验：naive {} / tiled {} / reg2×2 {} / reg4×4 {} / o3 {} / split-K {}（f32 相对误差 {:.2e}；2D-naive {} / tiled {} / reg2-K8 {} / reg4-K8 {} / reg4-K16 {}）",
         matmul.matches,
         matmul.tiled_matches,
         matmul.reg_matches,
@@ -143,7 +143,9 @@ fn bench(trits: usize) -> Result<(), String> {
         matmul.splitk_matches,
         matmul.f32_relative_error,
         matmul.f32_2d_matches,
+        matmul.f32_tiled_matches,
         matmul.f32_reg2k8_matches,
+        matmul.f32_reg4_matches,
         matmul.f32_reg4k16_matches
     );
     Ok(())

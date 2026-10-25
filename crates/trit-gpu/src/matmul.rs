@@ -34,6 +34,8 @@ pub struct MatmulReport {
     pub ternary_tiled_ns_per_mac: f64,
     /// f32 分块内核（经典共享内存 tiling），ns / MAC。
     pub f32_tiled_ns_per_mac: f64,
+    /// f32 分块内核结果是否与 CPU 镜像一致。
+    pub f32_tiled_matches: bool,
     /// 分块三值结果与 CPU 位并行镜像是否一致。
     pub tiled_matches: bool,
     /// 寄存器阻塞三值内核（2×2 微块），ns / MAC。
@@ -48,6 +50,8 @@ pub struct MatmulReport {
     pub ternary_reg4_ns_per_mac: f64,
     /// 4×4 寄存器阻塞 f32 内核（32×32 tile），ns / MAC。
     pub f32_reg4_ns_per_mac: f64,
+    /// 4×4 + K 段 8 的 f32 内核结果是否与 CPU 镜像一致。
+    pub f32_reg4_matches: bool,
     /// 2D 线程块 naive f32（对齐 cuda-oxide 的映射），ns / MAC。
     pub f32_2d_ns_per_mac: f64,
     /// 2D naive 结果是否与 CPU 镜像一致。
@@ -366,13 +370,16 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         .zip(expected.iter())
         .all(|(g, e)| i64::from(*g as i32) == *e);
     // f32 基线（同结构内核，同 m/n/k）。
-    let fa: Vec<f32> = a.iter().map(|v| *v as f32).collect();
+    let mut fa: Vec<f32> = a.iter().map(|v| *v as f32).collect();
     let mut fb: Vec<f32> = Vec::with_capacity(n * k);
     for col in 0..n {
         for row in 0..k {
             fb.push(b[row * n + col] as f32);
         }
     }
+    // vec4 视图要求绑定尺寸是 16 字节的倍数，小矩阵（如 1×1×1）必须补齐。
+    fa.resize(fa.len().next_multiple_of(4), 0.0);
+    fb.resize(fb.len().next_multiple_of(4), 0.0);
     let fa_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: None,
         contents: bytemuck::cast_slice(&fa),
@@ -396,7 +403,14 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
     let f32_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
         // f32 布局：binding 2 是输出，必须 read_write。
-        entries: &[storage(0), storage(1), storage_with(2, false), uniform(3)],
+        entries: &[
+            storage(0),
+            storage(1),
+            storage_with(2, false),
+            uniform(3),
+            storage(4),
+            storage(5),
+        ],
     });
     let f32_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         label: None,
@@ -429,6 +443,14 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
                 binding: 3,
                 resource: f32_params_buf.as_entire_binding(),
             },
+            wgpu::BindGroupEntry {
+                binding: 4,
+                resource: fa_buf.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 5,
+                resource: fb_buf.as_entire_binding(),
+            },
         ],
     });
     let f32_pipeline_tiled = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -457,6 +479,12 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         .poll(wgpu::PollType::wait_indefinitely())
         .expect("poll");
     let f32_tiled_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_f32_tiled);
+    let f32_tiled_matches = read_u32s(&device, &queue, &f32_out, m * n)?
+        .iter()
+        .zip(expected.iter())
+        .all(|(bits, want)| {
+            (f32::from_bits(*bits) - *want as f32).abs() <= (*want as f32).abs() * 1e-3 + 1e-3
+        });
 
     // 4×4 + K 段 16（屏障减半）。
     let f32_pipeline_reg4k16 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -519,6 +547,12 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         .poll(wgpu::PollType::wait_indefinitely())
         .expect("poll");
     let f32_reg4_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_f32_reg4);
+    let f32_reg4_matches = read_u32s(&device, &queue, &f32_out, m * n)?
+        .iter()
+        .zip(expected.iter())
+        .all(|(bits, want)| {
+            (f32::from_bits(*bits) - *want as f32).abs() <= (*want as f32).abs() * 1e-3 + 1e-3
+        });
 
     // split-K：沿 K 切 4 片、atomicAdd 汇总；workgroup 数 = tiled × 4。
     let pipeline_splitk = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -734,9 +768,11 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         ternary_reg4_ns_per_mac,
         ternary_o3_ns_per_mac,
         f32_tiled_ns_per_mac,
+        f32_tiled_matches,
         f32_reg4k16_ns_per_mac,
         f32_reg4k16_matches,
         f32_reg4_ns_per_mac,
+        f32_reg4_matches,
         f32_2d_ns_per_mac,
         f32_2d_matches,
         f32_reg2k8_ns_per_mac,
