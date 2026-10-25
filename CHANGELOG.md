@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（`trit-codec::pack` 线格式固化 + canonical 解码）
+
+- **线格式写成稳定契约**（`pack.rs` 模块文档）：数字映射 `F=0/X=1/T=2`、字节内低位 trit 优先、
+  `243..=255` 非法、尾部填充必须是 `False`、canonical 字节数 `len.div_ceil(5)`。
+- `unpack_canonical(bytes, len)`：字节数必须精确，尾部 padding 必须规范；否则返回
+  `NonCanonicalPadding` / `WrongByteCount`。这是唯一能保证「同一逻辑值只有一种字节串」的入口
+  （宽松的 `unpack` 会接受非规范输入，破坏哈希/签名稳定性）。
+- `Packed5`（单字节，构造期拒绝 `243..=255`）与 `Packed5Vec`（构造期一次校验字节数、非法码、padding，
+  之后 `get` 不再重复检查）。
+- `CodecError` 新增 `NonCanonicalPadding(u8)` 与 `WrongByteCount { expected, actual }`。
+- 测试 +7：243 个合法字节全穷举、非规范 padding 拒绝、字节数拒绝、200 组随机差分（严格 vs 宽松）、
+  越界 `get`、canonical 各长度往返。
+- **行为不变**：`pack` / `unpack` 语义与字节输出未改，宽松路径保留给既有调用方。
+- 验证：`cargo test -p trit-codec` 61 单测 + 9 CLI + 5 stress 全过；`cargo check --workspace --all-targets`
+  通过；`cargo fmt --check` 干净；`clippy --all-targets` 0 告警；`module_budget.py` 213 文件全在 800 行内。
+
 ### Added（三进制构建工具 M0：`trit build`）
 
 - `trit-build <src.tri> [--out DIR] [--algebra k3] [--force] [--check]`（独立实验 crate）：解析 → `simplify` → **穷举复核**

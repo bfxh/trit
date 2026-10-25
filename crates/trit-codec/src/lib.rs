@@ -31,6 +31,17 @@ pub enum CodecError {
     /// 字节落在 243..=255，不是合法的 5-trit 组合。
     #[error("非法字节 {0}：5 个 trit 只能表示 0..=242")]
     InvalidByte(u8),
+    /// 最后一个字节里未使用的 trit 槽位不是 `False`，不是 canonical 编码。
+    #[error("非规范尾部填充（字节 {0}）：未使用的 trit 槽位必须是 False")]
+    NonCanonicalPadding(u8),
+    /// 字节数与声明的 trit 长度不匹配。
+    #[error("字节数不符：期望 {expected} 字节，实际 {actual}")]
+    WrongByteCount {
+        /// 期望的字节数。
+        expected: usize,
+        /// 实际字节数。
+        actual: usize,
+    },
     /// 请求的 trit 数超过字节容量。
     #[error("长度不足：需要 {expected} 个 trit，容量只有 {available}")]
     Length {
