@@ -686,6 +686,9 @@ OK     free slot must not reject on unknown hopelessness
   → 位并行真值表 → `TRB2` blob/CSV/`lookup.c`，
   `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog]`；为什么只做这一层、
   哪部分仍靠 LLVM/Rust 见 [docs/TERNARY-TOOLCHAIN.md](docs/TERNARY-TOOLCHAIN.md)。
+- 三进制训练实验（`trit-train`）：三值 STE（Identity/Clipped/Soft）+ 每行 scale、
+  位平面 ALU（Kleene/Łukasiewicz/Bochvar）+ 并发/预取剖析。边界与读数见
+  [crates/trit-train/README.md](crates/trit-train/README.md)。
 - 编辑器支持（M0）：`trit-lsp` 是 `.tri` 的语言服务器（诊断 / 悬停真值表 / 补全 / 文档符号），
   语义直接复用 `trit-core` / `trit-eval`，不另写解析器。见
   [crates/trit-lsp/README.md](crates/trit-lsp/README.md)。

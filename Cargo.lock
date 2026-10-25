@@ -1752,6 +1752,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-train"
+version = "0.12.0"
+dependencies = [
+ "trit-core",
+]
+
+[[package]]
 name = "trit-unsafe"
 version = "0.12.0"
 dependencies = [

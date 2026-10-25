@@ -1,0 +1,12 @@
+[package]
+name = "trit-train"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三进制训练实验层（M0）：三值 STE + 每行 scale + 位平面 ALU + 并发/预取剖析"
+publish = false
+
+[dependencies]
+trit-core.workspace = true

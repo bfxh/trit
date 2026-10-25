@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（`trit-train`：三进制训练 M0——STE + 位平面 ALU）
+
+- 新 crate `crates/trit-train`（`publish = false`），补上"三进制权重怎么训"这一环：
+  - **STE 三变体**：Identity / Clipped（饱和区归零）/ Soft（`1-(w/scale)^2` 衰减）；
+    每行 `scale` 可学习（LSQ 风格），scale 梯度 `∂L/∂scale = dy·Σqᵢxᵢ`；
+  - **位平面 ALU**：双导轨按字并行的 `not`/`and`/`or`/`xor`，支持 Kleene / Łukasiewicz /
+    Bochvar；9 种操作数组合 × 3 语义 × 长度边界逐元素对拍；
+  - **`TernaryLinear`**：前向 `q+scale`、反向 STE，单样本 SGD；2×3 学习任务 14 个测试。
+- 实测（24 核，16 M trit，7 轮取最快）：位平面 ALU **4 线程 ~90–100 Gop/s**（峰值），
+  8 线程回落到 65–81（带宽/超线程争用）；**软件预取对顺序访问无收益**（±5% 噪声内）；
+  1 M trit 规模会把结论测反（线程创建开销压过计算），bench 默认 16 M。
+- 边界：不做三进制算术加法（进位串行，已证负结果）；点积是标量参考（2.4 GMAC/s），
+  快速掩码内核在 `trit-ops`，受发布图约束暂不能复用。
+
 ### Added（`trit-lsp`：`.tri` 的三进制语言服务器 M0）
 
 - 新 crate `crates/trit-lsp`（`publish = false`，独立二进制），stdio + JSON-RPC，
