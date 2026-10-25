@@ -1881,6 +1881,38 @@ MUTANTS = [
         "filter": "budgets_reject_oversized_blif"
     },
     {
+        "name": "graph: 拓扑序忽略环",
+        "file": "crates/trit-graph/src/graph.rs",
+        "old": "        (order.len() == self.n).then_some(order)",
+        "new": "        Some(order)",
+        "pkg": "trit-graph",
+        "filter": "cycle_is_detected"
+    },
+    {
+        "name": "graph: 邻居只看第一个字",
+        "file": "crates/trit-graph/src/graph.rs",
+        "old": "                bits &= bits - 1;",
+        "new": "                bits = 0;",
+        "pkg": "trit-graph",
+        "filter": "neighbor_iteration_crosses_words"
+    },
+    {
+        "name": "council: 关键否决失效",
+        "file": "crates/trit-graph/src/council.rs",
+        "old": "                if graph.is_critical(neighbor) {",
+        "new": "                if false {",
+        "pkg": "trit-graph",
+        "filter": "critical_false_vetoes_even_with_majority"
+    },
+    {
+        "name": "council: 平票判真",
+        "file": "crates/trit-graph/src/council.rs",
+        "old": "    } else if plus > minus {",
+        "new": "    } else if plus >= minus {",
+        "pkg": "trit-graph",
+        "filter": "tie_falls_back_to_unknown"
+    },
+    {
         "name": "float: 锥形精度不衰减",
         "file": "crates/trit-float/src/format.rs",
         "old": "        self.precision.saturating_sub(drop).max(MIN_PRECISION)",

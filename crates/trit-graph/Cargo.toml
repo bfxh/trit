@@ -1,0 +1,12 @@
+[package]
+name = "trit-graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三态结构基础层（M0）：三态节点/边的位集图、拓扑序、DFS 树、三态议会"
+publish = false
+
+[dependencies]
+trit-core.workspace = true

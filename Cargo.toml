@@ -4,6 +4,7 @@ resolver = "3"
 exclude = ["fuzz"]
 members = [
     "crates/trit-core",
+    "crates/trit-graph",
     "crates/trit-train",
     "crates/trit-lsp",
     "crates/trit-eval",

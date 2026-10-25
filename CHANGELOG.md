@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（`trit-graph`：三态结构基础层 M0）
+
+- 新 crate `crates/trit-graph`（`publish = false`），给后续 TriMPNN / Tri-TreeOracle /
+  Tri-TD-GNN 准备地基：
+  - `TritGraph`：三态节点（`+1/0/-1`）+ 四态边（支持/反对/中立/不存在）+ 关键节点掩码，
+    位集稠密邻接；`for_each_out` / `out_counts` / `topological_order` / `is_dag` / `dfs_tree`；
+  - `Tree`：DFS 生成树的父指针、先序、后序（逆先序）、子节点；
+  - `council`：三态议会——支持边投邻居状态、反对边投其反、中立弃权；
+    关键节点的反对票触发强否决，否则多数票、平票悬置。
+- 限制写明：稠密邻接（n² 内存）、无权重/特征/稀疏/超图、议会规则固定不可学习。
+- `docs/ROADMAP.md` 增加"三态结构模型"后期清单（TriMPNN/Tri-TD-GNN/Tri-HyperGNN/BiTri 栈等）。
+- 测试 15 个：跨字边界邻居、拓扑序与环、DFS 树父子/后序、议会的多数/否决/平票/弃权。
+
 ### Added（`trit-float` M1：舍入模式、同比特范围/精度、锥形精度）
 
 - **舍入模式**：`RoundMode::HalfAway`（默认）/ `HalfEven`；`new_with` / `from_f64_with`。

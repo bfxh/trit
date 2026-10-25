@@ -47,3 +47,14 @@
 - [x] trit 仓 README：定位 + 可视化强弱对比 + 代价清单 + 经验文档。
 - [ ] 其余仓库按同一口径改：ADV → BSHSQ → fmnr → lacbs/S → tools（一仓一 PR）。
 - [ ] 公开数据集与权重（Hugging Face）发布流程：许可、体积、校验、版本。
+
+## 7. 三态结构模型（后期：Tri-Struct Oracle 线）
+
+- [x] **基础层** `trit-graph` M0：三态节点/边的位集图、拓扑序、DFS 树、三态议会。
+- [ ] TriMPNN / BiTri-MPNN：位运算的三态消息传递（掩码 + popcount + 9 项 LUT）。
+- [ ] Tri-TreeOracle / Tri-TreeRNN：叶到根的三态递归与三叉判决。
+- [ ] Tri-TD-GNN：树分解（袋内消息传递 + 袋间三态树自动机）。
+- [ ] Tri-HyperGNN / Tri-ForestOracle：超边投票、森林议会。
+- [ ] Tri-Struct Oracle：统一三态结构语法（图/树/DAG/超图/分解袋），递归组合成三叉判决。
+- [ ] 训练：前向硬三值 + STE；悬置预算、三态一致性正则（别让模型靠"不知道"摆烂）。
+- [ ] 编码/系统层：BiTri 2-bit 编码、9-trit/uint16 打包、三态 CSR、TriVM 指令与三态图引擎。
