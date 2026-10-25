@@ -101,17 +101,17 @@ fn bench(trits: usize) -> Result<(), String> {
         matmul.ternary_splitk_ns_per_mac * 1000.0
     );
     println!(
-        "  GPU 2 号（二值 f32）  2D-naive {:>10.5}  tiled {:>10.5}  reg2-K8 {:>10.5}  reg4-K8 {:>10.5}  reg4-K16 {:>10.5} ps/MAC",
+        "  GPU 2 号（二值 f32）  2D-naive {:>10.5}  tiled {:>10.5}  reg2-K8 {:>10.5}  reg4-K8 {:>10.5}  reg4-K32 {:>10.5} ps/MAC",
         matmul.f32_2d_ns_per_mac * 1000.0,
         matmul.f32_tiled_ns_per_mac * 1000.0,
         matmul.f32_reg2k8_ns_per_mac * 1000.0,
         matmul.f32_reg4_ns_per_mac * 1000.0,
-        matmul.f32_reg4k16_ns_per_mac * 1000.0
+        matmul.f32_reg4k32_ns_per_mac * 1000.0
     );
     let tiled_speedup = matmul.f32_tiled_ns_per_mac / matmul.ternary_tiled_ns_per_mac;
     let reg_speedup = matmul.f32_reg2k8_ns_per_mac / matmul.ternary_reg_ns_per_mac;
     let reg4_speedup = matmul.f32_reg4_ns_per_mac / matmul.ternary_reg4_ns_per_mac;
-    let reg4k16_speedup = matmul.f32_reg4k16_ns_per_mac / matmul.ternary_reg4_ns_per_mac;
+    let reg4k32_speedup = matmul.f32_reg4k32_ns_per_mac / matmul.ternary_reg4_ns_per_mac;
     let best_ternary = matmul
         .ternary_reg_ns_per_mac
         .min(matmul.ternary_reg4_ns_per_mac)
@@ -122,10 +122,10 @@ fn bench(trits: usize) -> Result<(), String> {
         .min(matmul.f32_tiled_ns_per_mac)
         .min(matmul.f32_reg2k8_ns_per_mac)
         .min(matmul.f32_reg4_ns_per_mac)
-        .min(matmul.f32_reg4k16_ns_per_mac);
+        .min(matmul.f32_reg4k32_ns_per_mac);
     let best_speedup = best_f32 / best_ternary;
     println!(
-        "  三值/f32 逐结构：tiled {tiled_speedup:.1}× / reg2-K8 {reg_speedup:.1}× / reg4-K8 {reg4_speedup:.1}× / reg4-K16 {reg4k16_speedup:.1}×；最优对最优 {best_speedup:.1}×（2D-naive 口径 {matmul_speedup:.1}×）"
+        "  三值/f32 逐结构：tiled {tiled_speedup:.1}× / reg2-K8 {reg_speedup:.1}× / reg4-K8 {reg4_speedup:.1}× / reg4-K32 {reg4k32_speedup:.1}×；最优对最优 {best_speedup:.1}×（2D-naive 口径 {matmul_speedup:.1}×）"
     );
     println!(
         "  POPC 天花板 {:.2e}/s；三值最优内核达到 {:.0}%（还剩 {:.1}× 理论空间）",
@@ -134,7 +134,7 @@ fn bench(trits: usize) -> Result<(), String> {
         1.0 / matmul.ternary_popc_utilization.max(1e-9)
     );
     println!(
-        "  校验：naive {} / tiled {} / reg2×2 {} / reg4×4 {} / o3 {} / split-K {}（f32 相对误差 {:.2e}；2D-naive {} / tiled {} / reg2-K8 {} / reg4-K8 {} / reg4-K16 {}）",
+        "  校验：naive {} / tiled {} / reg2×2 {} / reg4×4 {} / o3 {} / split-K {}（f32 相对误差 {:.2e}；2D-naive {} / tiled {} / reg2-K8 {} / reg4-K8 {} / reg4-K32 {}）",
         matmul.matches,
         matmul.tiled_matches,
         matmul.reg_matches,
@@ -146,7 +146,7 @@ fn bench(trits: usize) -> Result<(), String> {
         matmul.f32_tiled_matches,
         matmul.f32_reg2k8_matches,
         matmul.f32_reg4_matches,
-        matmul.f32_reg4k16_matches
+        matmul.f32_reg4k32_matches
     );
     Ok(())
 }

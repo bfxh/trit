@@ -35,8 +35,8 @@ fn gpu_reg_matmul_tiny_case() {
     );
     assert!(report.f32_reg4_matches, "1×1×1 reg4-K8 不一致：{report:?}");
     assert!(
-        report.f32_reg4k16_matches,
-        "1×1×1 reg4-K16 不一致：{report:?}"
+        report.f32_reg4k32_matches,
+        "1×1×1 reg4-K32 不一致：{report:?}"
     );
     assert!(report.matches);
     assert!(report.tiled_matches);
@@ -108,7 +108,7 @@ fn gpu_matmul_matches_cpu_mirror() {
         "K 段 8 的 f32 4×4 内核与 CPU 镜像不一致：{report:?}"
     );
     assert!(
-        report.f32_reg4k16_matches,
+        report.f32_reg4k32_matches,
         "K 段 16 的 f32 4×4 内核与 CPU 镜像不一致：{report:?}"
     );
     assert_eq!(report.m, m);
@@ -153,8 +153,8 @@ fn gpu_matmul_scalar_load_fallback() {
     assert!(report.f32_reg2k8_matches, "f32 reg2-K8 不一致：{report:?}");
     assert!(report.f32_reg4_matches, "f32 reg4-K8 不一致：{report:?}");
     assert!(
-        report.f32_reg4k16_matches,
-        "f32 reg4-K16 不一致：{report:?}"
+        report.f32_reg4k32_matches,
+        "f32 reg4-K32 不一致：{report:?}"
     );
     assert_eq!(report.m, m);
     assert_eq!(report.n, n);

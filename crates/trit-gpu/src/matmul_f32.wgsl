@@ -460,14 +460,14 @@ fn main_tiled2k8(
     }
 }
 
-// 4×4 寄存器阻塞 + K 段 16：32×32 tile、8×8 线程，每段 16 元素（共享 4×1KB）。
-// 与 main_tiled4 同结构，只是把 K 段从 8 加到 16（屏障减半、每次装载复用更多）。
-const K16: u32 = 16u;
-var<workgroup> t4k16_a4: array<vec4<f32>, 128>;
-var<workgroup> t4k16_b4: array<vec4<f32>, 128>;
+// 4×4 寄存器阻塞 + K 段 32：32×32 tile、8×8 线程、共享 2×4KB（8 KB 总量，
+// 已是 16 KB workgroup 存储上限下的最宽段：再宽会超限）。K 段越宽屏障越少。
+const K32: u32 = 32u;
+var<workgroup> t4k32_a4: array<vec4<f32>, 256>;
+var<workgroup> t4k32_b4: array<vec4<f32>, 256>;
 
 @compute @workgroup_size(8, 8)
-fn main_tiled4k16(
+fn main_tiled4k32(
     @builtin(workgroup_id) wg: vec3<u32>,
     @builtin(local_invocation_id) lid: vec3<u32>,
 ) {
@@ -476,51 +476,38 @@ fn main_tiled4k16(
     let r0 = lid.y * 4u;
     let c0 = lid.x * 4u;
     let idx = lid.y * 8u + lid.x;
-    var s00 = 0.0; 
-    var s01 = 0.0; 
-    var s02 = 0.0; 
-    var s03 = 0.0;  
-    var s10 = 0.0; 
-    var s11 = 0.0; 
-    var s12 = 0.0; 
-    var s13 = 0.0;  
-    var s20 = 0.0; 
-    var s21 = 0.0; 
-    var s22 = 0.0; 
-    var s23 = 0.0;  
-    var s30 = 0.0; 
-    var s31 = 0.0; 
-    var s32 = 0.0; 
-    var s33 = 0.0;  
-    let k_tiles = (params.k + K16 - 1u) / K16;
+    var s00 = 0.0; var s01 = 0.0; var s02 = 0.0; var s03 = 0.0;
+    var s10 = 0.0; var s11 = 0.0; var s12 = 0.0; var s13 = 0.0;
+    var s20 = 0.0; var s21 = 0.0; var s22 = 0.0; var s23 = 0.0;
+    var s30 = 0.0; var s31 = 0.0; var s32 = 0.0; var s33 = 0.0;
+    let k_tiles = (params.k + K32 - 1u) / K32;
     let vector_ok = params.k % 4u == 0u;
     for (var chunk = 0u; chunk < k_tiles; chunk = chunk + 1u) {
         if vector_ok {
-            // 128 个 vec4 槽（32 行 × 4 段），每线程装两个。
-            for (var t = 0u; t < 2u; t = t + 1u) {
+            for (var t = 0u; t < 4u; t = t + 1u) {
                 let g = idx + t * 64u;
-                let r = g / 4u;
-                let part = g % 4u;
+                let r = g / 8u;
+                let part = g % 8u;
                 let k4 = params.k / 4u;
-                let seg_ok = (chunk * 4u + part) * 4u < params.k;
-                t4k16_a4[g] = select(vec4<f32>(0.0), fa4[(row_base + r) * k4 + chunk * 4u + part], row_base + r < params.m && seg_ok);
-                t4k16_b4[g] = select(vec4<f32>(0.0), fb4[(col_base + r) * k4 + chunk * 4u + part], col_base + r < params.n && seg_ok);
+                let seg_ok = (chunk * 8u + part) * 4u < params.k;
+                t4k32_a4[g] = select(vec4<f32>(0.0), fa4[(row_base + r) * k4 + chunk * 8u + part], row_base + r < params.m && seg_ok);
+                t4k32_b4[g] = select(vec4<f32>(0.0), fb4[(col_base + r) * k4 + chunk * 8u + part], col_base + r < params.n && seg_ok);
             }
         } else {
-            for (var t = 0u; t < 2u; t = t + 1u) {
+            for (var t = 0u; t < 4u; t = t + 1u) {
                 let g = idx + t * 64u;
-                let r = g / 4u;
-                let part = g % 4u;
-                let k0 = chunk * K16 + part * 4u;
+                let r = g / 8u;
+                let part = g % 8u;
+                let k0 = chunk * K32 + part * 4u;
                 let a_ok = row_base + r < params.m;
                 let b_ok = col_base + r < params.n;
-                t4k16_a4[g] = vec4<f32>(
+                t4k32_a4[g] = vec4<f32>(
                     select(0.0, fa[(row_base + r) * params.k + k0 + 0u], a_ok && k0 + 0u < params.k),
                     select(0.0, fa[(row_base + r) * params.k + k0 + 1u], a_ok && k0 + 1u < params.k),
                     select(0.0, fa[(row_base + r) * params.k + k0 + 2u], a_ok && k0 + 2u < params.k),
                     select(0.0, fa[(row_base + r) * params.k + k0 + 3u], a_ok && k0 + 3u < params.k),
                 );
-                t4k16_b4[g] = vec4<f32>(
+                t4k32_b4[g] = vec4<f32>(
                     select(0.0, fb[(col_base + r) * params.k + k0 + 0u], b_ok && k0 + 0u < params.k),
                     select(0.0, fb[(col_base + r) * params.k + k0 + 1u], b_ok && k0 + 1u < params.k),
                     select(0.0, fb[(col_base + r) * params.k + k0 + 2u], b_ok && k0 + 2u < params.k),
@@ -529,15 +516,15 @@ fn main_tiled4k16(
             }
         }
         workgroupBarrier();
-        for (var w4 = 0u; w4 < 4u; w4 = w4 + 1u) {
-            let a0 = t4k16_a4[(r0 + 0u) * 4u + w4];
-            let a1 = t4k16_a4[(r0 + 1u) * 4u + w4];
-            let a2 = t4k16_a4[(r0 + 2u) * 4u + w4];
-            let a3 = t4k16_a4[(r0 + 3u) * 4u + w4];
-            let b0 = t4k16_b4[(c0 + 0u) * 4u + w4];
-            let b1 = t4k16_b4[(c0 + 1u) * 4u + w4];
-            let b2 = t4k16_b4[(c0 + 2u) * 4u + w4];
-            let b3 = t4k16_b4[(c0 + 3u) * 4u + w4];
+        for (var w4 = 0u; w4 < 8u; w4 = w4 + 1u) {
+            let a0 = t4k32_a4[(r0 + 0u) * 8u + w4];
+            let a1 = t4k32_a4[(r0 + 1u) * 8u + w4];
+            let a2 = t4k32_a4[(r0 + 2u) * 8u + w4];
+            let a3 = t4k32_a4[(r0 + 3u) * 8u + w4];
+            let b0 = t4k32_b4[(c0 + 0u) * 8u + w4];
+            let b1 = t4k32_b4[(c0 + 1u) * 8u + w4];
+            let b2 = t4k32_b4[(c0 + 2u) * 8u + w4];
+            let b3 = t4k32_b4[(c0 + 3u) * 8u + w4];
             s00 = s00 + a0.x * b0.x;
             s00 = s00 + a0.y * b0.y;
             s00 = s00 + a0.z * b0.z;
