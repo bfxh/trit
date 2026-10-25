@@ -125,13 +125,13 @@ impl TernaryMatrix {
             unsafe { crate::simd::row_dot_mask(pos, neg, x) }
         } else {
             let mut acc = 0.0f32;
-            for c in 0..self.cols {
+            for (c, &xc) in x.iter().enumerate().take(self.cols) {
                 let w = c / TRITS_PER_WORD;
                 let bit = 1u64 << (c % TRITS_PER_WORD);
                 if pos[w] & bit != 0 {
-                    acc += x[c];
+                    acc += xc;
                 } else if neg[w] & bit != 0 {
-                    acc -= x[c];
+                    acc -= xc;
                 }
             }
             acc
@@ -458,8 +458,8 @@ mod tests {
         padded[..cols].copy_from_slice(&x);
         let mut out = vec![0.0f32; rows];
         m.gemv(&x, &mut out, Kernel::Mask);
-        for r in 0..rows {
-            assert!((m.row_dot(r, &padded) - out[r]).abs() < 1e-4, "第 {r} 行");
+        for (r, &o) in out.iter().enumerate() {
+            assert!((m.row_dot(r, &padded) - o).abs() < 1e-4, "第 {r} 行");
         }
     }
 
