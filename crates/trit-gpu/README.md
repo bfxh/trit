@@ -40,6 +40,21 @@ cargo run -p trit-gpu --features gpu -- bench --trits 1048576
    微基准本身还有约 1/3 的非 popc 指令，所以真实天花板更高；
    barriers / 并行度 / 共享内存宽度都试过不赢 ⇒ 剩余差距在**指令混合**（共享读 + 索引 + 累加）。
 
+## 对 NVIDIA cuda-oxide（Rust → PTX）的同尺对照
+
+同卡（4060 Ti）、同形状（512×4096×512）、同布局（B 转置）、同一计时口径：
+
+| 内核（同结构） | cuda-oxide | 本仓 WGSL | 谁快 |
+|---|---|---|---|
+| naive | **6.233** | 23.80 | NVIDIA 3.8× |
+| tiled 16×16 | **2.243** | 2.378 | NVIDIA ~6% |
+| reg2×2 | **1.328** | 2.389 | NVIDIA 1.8× |
+| reg4×4 | 1.567 | **1.349** | 本仓 14% |
+
+**如实结论**：四对里只赢 reg4×4。唯一能站住的大幅领先是"三值 vs 二进制"
+（`main_tiled2o3` 0.110 对 cuda-oxide 最优 1.328 ≈ 12×），但那是不同表示，不能当同尺结论。
+对照工程与安装步骤见 [`benchmarks/cuda-oxide-compare`](../../benchmarks/cuda-oxide-compare/README.md)。
+
 ## 局限
 
 - 只测这一张卡与一个规模档（512×4096×512）；没有 subgroup、fp16 基线、没有 K-split 的确定性归约版本。

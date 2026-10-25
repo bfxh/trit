@@ -49,6 +49,10 @@
 - **3-popc 内核**（`main_tiled2o3`）：利用双导轨不交叠不变量把 `popc(aₚ&bₙ)+popc(aₙ&bₚ)`
   合并成 `popc((aₚ&bₙ)|(aₙ&bₚ))`，每 word-pair 少 1/4 popc。实测 **0.110–0.114 ps/MAC**
   （比 reg2×2 快 ~12%，比 split-K 快 ~5%），popcount 利用率 79–82%。
+- **NVIDIA cuda-oxide 同尺对照**（`benchmarks/cuda-oxide-compare/`，cuda-oxide + CUDA 13 + LLVM 21 + Rust 1.99.1，
+  WSL2）：同卡 4060 Ti、512×4096×512、B 转置、5×20 中位数。四对同结构内核——naive 6.233 vs 我们 23.80、
+  tiled 2.243 vs 2.378、reg2×2 1.328 vs 2.389、reg4×4 1.567 vs **1.349**。
+  **如实结论：只赢 reg4×4**；唯一大幅领先是「三值 0.110 对 cuda-oxide 最优 f32 1.328 ≈ 12×」，但属不同表示。
 - 顺手修 `forward.rs` 里 gpu feature 下才可见的 clippy（`chunks_exact` → `as_chunks`）。
 
 ### Added（GGUF → MOD 入向导入）
