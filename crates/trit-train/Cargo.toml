@@ -8,5 +8,9 @@ repository.workspace = true
 description = "三进制训练实验层（M0）：三值 STE + 每行 scale + 位平面 ALU + 并发/预取剖析"
 publish = false
 
+[[bin]]
+name = "train-bench"
+path = "src/bin/bench.rs"
+
 [dependencies]
 trit-core.workspace = true

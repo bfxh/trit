@@ -1,8 +1,8 @@
-//! `trit-train bench`：位平面 ALU 与三值点积的并发 / 预取剖析，附 STE 收敛对照。
+//! `trit-train train-bench`：位平面 ALU 与三值点积的并发 / 预取剖析，附 STE 收敛对照。
 //!
 //! 用法：
 //! ```text
-//! bench [--mtrits 16] [--rounds 5] [--rows 4096] [--cols 576]
+//! train-bench [--mtrits 16] [--rounds 5] [--rows 4096] [--cols 576]
 //!       [--threads 1,2,4,8] [--ste-steps 3000]
 //! ```
 
