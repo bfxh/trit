@@ -24,6 +24,15 @@
 - 读数回归（RTX 4060 Ti，512×4096×512）：o3 0.1044、split-K 0.1009、f32 最优 0.2992 ps/MAC，
   与拆前同量级；全部 `matches=true`；GPU 测试 3 passed。
 
+### Fixed（`trit-gpu`：缺 f16 的 adapter 上 f32 基线也起不来）
+
+- #145 把 fp16 内核写进共享的 `matmul_f32.wgsl`，文件头的 `enable f16;` 是**模块级**开关：
+  不支持 `SHADER_F16` 的 adapter（CI 的 Windows 软件后端就是）连 f32 基线着色器都建不出来，
+  报 `Shader 'matmul-f32' parsing error: the f16 extension is not supported`。
+- 把 fp16 内核拆到独立文件 `matmul_f16.wgsl`（只在 `SHADER_F16` 可用时才创建）；
+  `matmul_f32.wgsl` 不再带 `enable f16;`。f16 变体的入口/绑定布局不变。
+- 由新增的 `trit-gpu --features gpu` CI 门抓到（此前该 feature 从未在 CI 编译/运行）。
+
 ### Fixed（`trit-ops`：非 x86_64 编译失败）
 
 - #147 合入后 main 的 macOS（arm64）CI 红了：`simd.rs` 只在 `x86_64` 下导出

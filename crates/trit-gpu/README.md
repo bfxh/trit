@@ -146,6 +146,9 @@ cuda-oxide 的参考内核没做；若他们同样处理，差距会缩小（幅
 - **fp16 存储变体已做**（`main_tiled2k8_f16`）：同结构 0.635 vs f32 reg2-K8 0.760 ps/MAC（约 −16%），
   全局与共享带宽各减半、累加仍 f32。输入来自三值矩阵（−1/0/1），f16 可精确表示，所以误差为 0；
   **这不代表任意 f32 输入下的精度**（一般 f16 相对误差约 5e-4）。
+  该内核在**独立着色器** `matmul_f16.wgsl` 里：`enable f16;` 是模块级开关，放在共享的
+  `matmul_f32.wgsl` 会让不支持 `SHADER_F16` 的 adapter（如 CI 的软件后端）连 f32 基线都建不出
+  shader；这类 adapter 上 f16 变体返回 NaN，其余内核照常。
 - **subgroup 未做成（WGSL 路径）**：本机 adapter 支持 `SUBGROUP`（32 lane，探针确认），但 wgpu 30 /
   naga 30 的 WGSL 前端拒绝 `enable subgroups;`（`…not yet implemented in Naga`，gfx-rs/wgpu#5555）。
   复核结论：阻塞只在 WGSL/GLSL 前端；naga IR（`ir/mod.rs` 的 `SubgroupOperation`）、验证器、
