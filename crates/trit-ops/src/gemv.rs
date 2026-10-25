@@ -106,6 +106,38 @@ impl TernaryMatrix {
         (self.pos.len() + self.neg.len()) * 8
     }
 
+    /// 每行占多少个 64 位字。
+    #[inline]
+    pub fn blocks_per_row(&self) -> usize {
+        self.bpr
+    }
+
+    /// 单行点积：`dot(row r, x)`。`x` 需补齐到 `blocks_per_row() * 64`。
+    ///
+    /// 这个入口让调用方用自己的线程池按行驱动，避免再引入第二套池。
+    pub fn row_dot(&self, r: usize, x: &[f32]) -> f32 {
+        assert!(r < self.rows, "行号越界");
+        assert!(x.len() >= self.bpr * TRITS_PER_WORD, "x 未补齐");
+        let pos = &self.pos[r * self.bpr..(r + 1) * self.bpr];
+        let neg = &self.neg[r * self.bpr..(r + 1) * self.bpr];
+        if crate::simd::avx2() {
+            // SAFETY: pos/neg 是行内切片，x 已补齐到 bpr*64。
+            unsafe { crate::simd::row_dot_mask(pos, neg, x) }
+        } else {
+            let mut acc = 0.0f32;
+            for c in 0..self.cols {
+                let w = c / TRITS_PER_WORD;
+                let bit = 1u64 << (c % TRITS_PER_WORD);
+                if pos[w] & bit != 0 {
+                    acc += x[c];
+                } else if neg[w] & bit != 0 {
+                    acc -= x[c];
+                }
+            }
+            acc
+        }
+    }
+
     /// 取一行 trit（测试/参考用）。
     pub fn row_trits(&self, r: usize) -> Vec<Trit> {
         let mut out = Vec::with_capacity(self.cols);
@@ -414,6 +446,20 @@ mod tests {
             m.gemv(&x, &mut a, Kernel::Scalar);
             t.gemv(&x, &mut b);
             assert!(close(&a, &b), "cols={cols}");
+        }
+    }
+
+    #[test]
+    fn row_dot_matches_gemv() {
+        let (rows, cols) = (13usize, 130usize);
+        let m = TernaryMatrix::from_rows(&make(rows, cols), cols);
+        let x: Vec<f32> = (0..cols).map(|i| (i % 9) as f32 * 0.2 - 0.8).collect();
+        let mut padded = vec![0.0f32; m.blocks_per_row() * 64];
+        padded[..cols].copy_from_slice(&x);
+        let mut out = vec![0.0f32; rows];
+        m.gemv(&x, &mut out, Kernel::Mask);
+        for r in 0..rows {
+            assert!((m.row_dot(r, &padded) - out[r]).abs() < 1e-4, "第 {r} 行");
         }
     }
 
