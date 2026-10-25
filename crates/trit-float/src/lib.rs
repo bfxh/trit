@@ -67,7 +67,7 @@ impl TritFloat {
         }
         // 复审 H1：尾数必须落在平衡三进制 p 位的合法区间 ±(3^p−1)/2 内。
         // 直接 `round(x·3^p)` 会越界（5.0/p=1 得 2），再交给 normalize 二次舍入会系统性偏大。
-        // 这里在 e−2..=e+2 上枚举候选指数，clamp 到 limit 后取误差最小者，只做一次舍入。
+        // 这里在 e−p..=e+2 上枚举候选指数，clamp 到 limit 后取误差最小者，只做一次舍入。
         let limit = mantissa_limit(precision);
         let mut best: Option<(f64, i128, i32)> = None; // (误差, 尾数, 指数)
         for delta in -(precision as i32)..=2 {
