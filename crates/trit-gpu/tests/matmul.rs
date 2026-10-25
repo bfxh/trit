@@ -21,6 +21,7 @@ fn gpu_reg_matmul_tiny_case() {
         return;
     };
     assert!(report.reg_matches, "1×1×1 reg 不一致：{report:?}");
+    assert!(report.reg4_matches, "1×1×1 reg4 不一致：{report:?}");
     assert!(report.matches);
     assert!(report.tiled_matches);
 }

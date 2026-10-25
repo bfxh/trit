@@ -33,6 +33,16 @@
 - 文档 `docs/TERNARY-TOOLCHAIN.md`：论文依据（LLVM/MLIR/egg/BitNet/平衡三进制，DOI 已核）、
   分层设计、M0–M3 验收判据、继续靠 LLVM/Rust 的职责表、未验证清单。
 
+### Added（trit-gpu：4×4 寄存器阻塞内核）
+
+- `main_tiled4`（三值）与同名 f32 内核：32×32 输出 tile、8×8 线程、每线程 4×4 累加器，
+  每个 K-chunk 只搬 32+32 行/列 × 8 word 进共享内存；`matmul` 报告与 `bench` 增加 reg4×4 读数。
+- 实测（RTX 4060 Ti，512×4096×512，ps/MAC）：三值 naive 1.52 / tiled 0.18 / reg2×2 **0.119–0.126** /
+  reg4×4 0.131–0.134；f32 23.28 / 2.41 / 2.41 / **1.36**。
+  **结论**：f32 侧 4×4 快 1.77×；三值侧反而慢约 8% —— 三值每 MAC 已经是 popc 主导，
+  再加寄存器阻塞只增压力，最快仍是 reg2×2。最优对最优 ≈ 10.8×。
+- 顺手修 `forward.rs` 里 gpu feature 下才可见的 clippy（`chunks_exact` → `as_chunks`）。
+
 ### Added（GGUF → MOD 入向导入）
 
 - `trit-texture::gguf::import_gguf`：读 **GGUF v2/v3**，把未量化张量（`F32`/`F16`/`BF16`）
