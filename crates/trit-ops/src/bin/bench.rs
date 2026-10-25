@@ -18,7 +18,7 @@
 use std::io::Write;
 
 use trit_ops::bench::{
-    Measurement, format_table, measure, measure_rounds, round_spread, tryte_split,
+    Measurement, format_table, mask_pair, measure, measure_rounds, round_spread, tryte_split,
     tryte_split_lookup,
 };
 use trit_ops::pool;
@@ -244,6 +244,52 @@ fn main() {
             b / a
         ));
         emit(&format!("符号检验：映射更快的轮数 {wins}/{rounds}"));
+        return;
+    }
+
+    // 掩码内核：单行 vs 两行共享 x
+    if args.iter().any(|a| a == "--mask-pair") {
+        let (rows, cols) = (
+            arg_usize(&args, "--rows").unwrap_or(1536),
+            arg_usize(&args, "--cols").unwrap_or(576),
+        );
+        let iters = arg_usize(&args, "--iters").unwrap_or(500);
+        let rounds = arg_usize(&args, "--rounds").unwrap_or(7);
+        let (single, pair) = mask_pair(rows, cols, iters, rounds);
+        emit(&format!(
+            "\n掩码行阻塞  {rows}×{cols}  {rounds} 轮 × {iters} 次（单次 gemv）"
+        ));
+        emit(&format!(
+            "{:<6}{:>14}{:>14}{:>12}",
+            "轮次", "单行 ns", "两行 ns", "两行/单行"
+        ));
+        let mut wins = 0usize;
+        for i in 0..rounds {
+            if pair[i] < single[i] {
+                wins += 1;
+            }
+            emit(&format!(
+                "{:<6}{:>14.1}{:>14.1}{:>11.3}x",
+                i + 1,
+                single[i],
+                pair[i],
+                pair[i] / single[i]
+            ));
+        }
+        let med = |v: &[f64]| {
+            let mut s = v.to_vec();
+            s.sort_by(|a, b| a.partial_cmp(b).expect("有限值"));
+            s[s.len() / 2]
+        };
+        let (a, b) = (med(&single), med(&pair));
+        emit(&format!(
+            "{:<6}{:>14.1}{:>14.1}{:>11.3}x",
+            "中位",
+            a,
+            b,
+            b / a
+        ));
+        emit(&format!("符号检验：两行更快的轮数 {wins}/{rounds}"));
         return;
     }
 

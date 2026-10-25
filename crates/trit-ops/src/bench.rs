@@ -450,6 +450,48 @@ pub fn tryte_split_lookup(
     (divmod_ns, map_ns)
 }
 
+/// 掩码内核行阻塞的配对测量：单行 vs 两行共享 `x`。
+///
+/// 每轮交替先后顺序；先断言两者输出逐位一致，否则读数没有意义。
+pub fn mask_pair(rows: usize, cols: usize, iters: usize, rounds: usize) -> (Vec<f64>, Vec<f64>) {
+    let p = prepare(rows, cols);
+    let mut out = vec![0.0f32; rows];
+    let mut single_out = vec![0.0f32; rows];
+    let mut pair_out = vec![0.0f32; rows];
+    p.rail.gemv_mask_single(&p.x, &mut single_out);
+    p.rail.gemv_mask(&p.x, &mut pair_out);
+    assert_eq!(single_out, pair_out, "两行共享 x 必须与单行逐位一致");
+
+    let time_one = |iters: usize, out: &mut [f32], f: &mut dyn FnMut(&mut [f32])| {
+        let t = Instant::now();
+        for _ in 0..iters {
+            f(out);
+        }
+        t.elapsed().as_secs_f64() * 1e9 / iters as f64
+    };
+
+    let rounds = rounds.max(1);
+    let mut single_ns = Vec::with_capacity(rounds);
+    let mut pair_ns = Vec::with_capacity(rounds);
+    for r in 0..rounds {
+        let mut single = |out: &mut [f32]| p.rail.gemv_mask_single(&p.x, out);
+        let mut pair = |out: &mut [f32]| p.rail.gemv_mask(&p.x, out);
+        let (a, b) = if r % 2 == 0 {
+            (
+                time_one(iters, &mut out, &mut single),
+                time_one(iters, &mut out, &mut pair),
+            )
+        } else {
+            let b = time_one(iters, &mut out, &mut pair);
+            let a = time_one(iters, &mut out, &mut single);
+            (a, b)
+        };
+        single_ns.push(a);
+        pair_ns.push(b);
+    }
+    (single_ns, pair_ns)
+}
+
 /// 把结果排成表。
 pub fn format_table(results: &[Measurement]) -> String {
     let base = results.first().map(|m| m.ns).unwrap_or(1.0);
