@@ -14,3 +14,4 @@ path = "src/bin/bench.rs"
 
 [dependencies]
 trit-core.workspace = true
+trit-learn.workspace = true

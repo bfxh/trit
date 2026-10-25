@@ -1881,6 +1881,38 @@ MUTANTS = [
         "filter": "budgets_reject_oversized_blif"
     },
     {
+        "name": "mpnn: 反对边不取反",
+        "file": "crates/trit-graph/src/mpnn.rs",
+        "old": "                _ => -1.0,",
+        "new": "                _ => 1.0,",
+        "pkg": "trit-graph",
+        "filter": "identity_table_votes_all_nine_pairs"
+    },
+    {
+        "name": "mpnn: 死区边界含等号",
+        "file": "crates/trit-graph/src/mpnn.rs",
+        "old": "        if latent > DEAD_ZONE {",
+        "new": "        if latent >= DEAD_ZONE {",
+        "pkg": "trit-graph",
+        "filter": "dead_zone_is_unknown"
+    },
+    {
+        "name": "mpnn: 拟合梯度反向",
+        "file": "crates/trit-graph/src/mpnn.rs",
+        "old": "            let grad_q = value_of(target) - value_of(current);",
+        "new": "            let grad_q = value_of(current) - value_of(target);",
+        "pkg": "trit-graph",
+        "filter": "fit_recovers_identity_table"
+    },
+    {
+        "name": "mpnn: 消息取错端点状态",
+        "file": "crates/trit-graph/src/mpnn.rs",
+        "old": "                votes[target].push(self.table.vote(edge, state));",
+        "new": "                votes[target].push(self.table.vote(edge, states[target]));",
+        "pkg": "trit-graph",
+        "filter": "propagates_along_support_edges"
+    },
+    {
         "name": "kernel: WL 核忽略边符号",
         "file": "crates/trit-graph/src/kernel.rs",
         "old": "        graph.for_each_out(u, |v, edge| neighbors.push((edge_code(edge), colors[v])));",

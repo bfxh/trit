@@ -1660,7 +1660,12 @@ name = "trit-graph"
 version = "0.12.0"
 dependencies = [
  "trit-core",
+ "trit-learn",
 ]
+
+[[package]]
+name = "trit-learn"
+version = "0.12.0"
 
 [[package]]
 name = "trit-lsp"
@@ -1763,6 +1768,7 @@ name = "trit-train"
 version = "0.12.0"
 dependencies = [
  "trit-core",
+ "trit-learn",
 ]
 
 [[package]]

@@ -14,4 +14,7 @@
 pub mod layer;
 pub mod plane;
 pub mod prefetch;
-pub mod quant;
+
+/// 训练原语已下沉到可发布的 [`trit_learn`]；这里保留旧路径 `trit_train::quant`。
+pub use trit_learn as quant;
+pub use trit_learn::{Quantized, Ste, quantize_with_scale, scale_grad, ternarize};

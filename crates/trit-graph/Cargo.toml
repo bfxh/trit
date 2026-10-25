@@ -10,3 +10,4 @@ publish = false
 
 [dependencies]
 trit-core.workspace = true
+trit-learn.workspace = true

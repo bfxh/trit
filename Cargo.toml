@@ -4,6 +4,7 @@ resolver = "3"
 exclude = ["fuzz"]
 members = [
     "crates/trit-core",
+    "crates/trit-learn",
     "crates/trit-graph",
     "crates/trit-train",
     "crates/trit-lsp",
@@ -41,6 +42,7 @@ repository = "https://github.com/bfxh/trit"
 
 [workspace.dependencies]
 trit-core = { path = "crates/trit-core", version = "0.12.0" }
+trit-learn = { path = "crates/trit-learn", version = "0.12.0" }
 trit-eval = { path = "crates/trit-eval", version = "0.12.0" }
 trit-sat = { path = "crates/trit-sat", version = "0.12.0" }
 trit-circuit = { path = "crates/trit-circuit", version = "0.12.0" }

@@ -1,9 +1,9 @@
-# trit-graph：三态结构基础层（M4）
+# trit-graph：三态结构基础层（M5）
 
 给后面的三态图/树/超图模型（TriMPNN、Tri-TreeOracle、Tri-TD-GNN…）准备地基。
 **不训练、不推理**，只提供"结构 + 三态"的最小语义与位运算原语。
 
-M4 在 M3（三通道 PageRank）之上加了**三态图核**（WL 子树核 + 路径核）；
+M5 在 M4（三态图核）之上加了 **TriMPNN M0**：可学习 3×3 三态转移表 + 一层消息传递；
 议会规则抽成公共 `tally`，超边、袋、图邻居共用一份计票。
 
 ## 数据结构
@@ -45,6 +45,8 @@ TritGraph
 | `wl_subtree_kernel(a, b, rounds)` | WL 子树核（联合颜色编号） | O(轮数 × (n + E)) |
 | `path_kernel(a, b, max_len)` | 带标签有向路径核 | 路径条数（`max_len ≤ 4`） |
 | `normalized(k, kaa, kbb)` | 核归一化到 `[0,1]` | O(1) |
+| `TransitionTable::identity` / `vote` / `fit_step` | 3×3 可学习转移表（硬票 + STE 拟合） | 9 个参数 |
+| `TriMpnn::step` / `run` | 一层/多轮三态消息传递（入边投票 + 议会） | O(轮数 × (n + E)) |
 
 ## 三态议会（M0 规则）
 
@@ -87,6 +89,15 @@ assert_eq!(tree.roots().collect::<Vec<_>>(), vec![0]);
   3. 运行交（running intersection）：同一节点的所有袋在袋树上连通。
 - `bag_verdict(i, graph)` 用袋内节点状态开议会（可给后续袋级判决做输入）。
 
+## TriMPNN（M0）
+
+- 固定规则议会换成 **3×3 转移表**：`(边状态, 邻居节点状态) → 投票`。
+- 前向硬三票（死区 `±0.5` 内弃权）；反向用 `trit_learn::Ste` 把梯度直通回 9 个 latent 表项。
+- `fit_step` 用 `(边状态, 邻居状态, 目标票)` 样本做表级监督拟合；`identity()` 是
+  "支持复制 / 反对取反 / 中立弃权" 的手工基线。
+- `TriMpnn::step` 收集**入边**消息开议会；没有入边的节点保持原状态。
+- 仍是 M0：没有整图标签的端到端训练、没有多头/多层/边特征。
+
 ## 三态图核
 
 - **WL 子树核**：两图**联合**做 WL 细化（共用签名→颜色表），每轮累加颜色直方图点积；
@@ -118,6 +129,7 @@ assert_eq!(tree.roots().collect::<Vec<_>>(), vec![0]);
 
 - **不做树分解算法**（只校验给定的袋树）；没有超图→图展开 / 超边间的消息传递。
 - 随机游走是固定规则、没有边权；没有个性化向量的学习。
+- TriMPNN 只做一层传播 + 表级监督拟合，整图端到端训练还没做。
 - 路径核只到长度 4；没有子树核之外的高阶核（graphlet/Weisfeiler-Lehman O(1) 变体）。
 - 没有权重、节点特征、批处理；稠密图仍是 `n²` 内存；CSR 只有出边。
 - 三态议会是固定规则表，不可学习；没有 STE/训练。
@@ -126,5 +138,5 @@ assert_eq!(tree.roots().collect::<Vec<_>>(), vec![0]);
 ## 测试
 
 ```bash
-cargo test -p trit-graph     # 48 个：稠密/稀疏一致性、跨字边界、拓扑/环、DFS、议会、WL、超图、树分解、PageRank、图核
+cargo test -p trit-graph     # 55 个：稠密/稀疏一致性、跨字边界、拓扑/环、DFS、议会、WL、超图、树分解、PageRank、图核、TriMPNN
 ```

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（`trit-learn` 可发布 + `trit-graph` TriMPNN M0）
+
+- 新 crate `trit-learn`（**可发布**）：把三值量化、STE 三变体、scale 梯度从 `trit-train`
+  下沉；`trit-train` 与 `trit-graph` 共用，避免实验层互相依赖（发布图约束）。
+  `trit-train` 保留旧路径 `trit_train::quant` 的 re-export。
+- `trit-graph` **TriMPNN M0**：
+  - `TransitionTable`：3×3 转移表（边状态 × 邻居状态 → 投票），前向硬三票、死区 ±0.5；
+  - `fit_step`：`(边状态, 邻居状态, 目标票)` 监督拟合，反向用 STE 直通到 9 个 latent；
+  - `TriMpnn`：收集入边消息 → 议会合成；无入边节点保持原状态；支持多轮。
+- 测试：`trit-graph` 55 个（新增 7）、`trit-learn` 6 个（迁移）；`trit-train` 仍 8 个。
+- 变异新增 4 条（反对边不取反、死区边界含等号、拟合梯度反向、消息取错端点），
+  **22/22 全部被抓住**；质量数据 309 条。
+
 ### Added（`trit-graph` M4：三态图核）
 
 - `wl_subtree_kernel(a, b, rounds)`：两图**联合** WL 细化（共用签名→颜色表），

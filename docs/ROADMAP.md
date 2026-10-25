@@ -54,7 +54,8 @@
 - [x] 超图与树分解的最小容器（`TritHypergraph`、`TreeDecomposition` + 覆盖/运行交校验）。
 - [x] 三态随机游走 / PageRank（三通道 + 阻尼，质量守恒有测试）。
 - [x] 三态图核（WL 子树核 + 路径核，归一化与正反例测试）。
-- [ ] TriMPNN / BiTri-MPNN：位运算的三态消息传递（掩码 + popcount + 9 项 LUT）。
+- [x] TriMPNN M0：可学习 3×3 三态转移表 + 一层消息传递 + 表级 STE 拟合（`trit-graph`）。
+- [ ] TriMPNN 整图端到端训练（图标签 → 表/多层参数）；BiTri-MPNN 位运算版。
 - [ ] Tri-TreeOracle / Tri-TreeRNN：叶到根的三态递归与三叉判决。
 - [ ] Tri-TD-GNN：树分解（袋内消息传递 + 袋间三态树自动机）。
 - [ ] Tri-HyperGNN / Tri-ForestOracle：超边投票、森林议会。

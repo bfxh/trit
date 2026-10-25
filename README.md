@@ -76,6 +76,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-bdd` | BDD（canonical）等价判定、三值量化 |
 | `trit-policy` | 三值决策表的构建期验证 |
 | `trit-schedule` | 三值依赖的静态 DAG 调度（True/False/Unknown） |
+| `trit-learn` | 三值训练原语：量化、STE 三变体、scale 梯度（两个实验层共用） |
 | `sansheng` | 三生：统一入口伞包（re-export 以上能力） |
 | `trit-cli` | `trit` 命令行 |
 
@@ -96,7 +97,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-procscan` | 进程行为扫描 + 自动分析 + MCP 配置优化（非管理员可用的证据面） | `trit-procscan` |
 | `trit-lsp` | `.tri` 语言服务器：诊断 / 悬停真值表 / 补全 / 文档符号 | `trit-lsp` |
 | `trit-train` | 三值训练 M0：STE 三变体 + 每行 scale + 位平面 ALU | `train-bench` |
-| `trit-graph` | 三态结构基础：稠密/CSR 三态图、超图、树分解容器、议会、1-WL、图核、三通道 PageRank | 库（无二进制） |
+| `trit-graph` | 三态结构基础：稠密/CSR 三态图、超图、树分解容器、议会、1-WL、图核、PageRank、TriMPNN | 库（无二进制） |
 
 ## 三态与三值拓扑
 
@@ -311,7 +312,7 @@ cargo run --release -p trit-cli -- verify examples/policy.json
   `Limit`／`BudgetExceeded` 错误；策略展开在分配大子树之前扣节点预算。
 - CLI 在默认值上收紧：`table` / REPL 与 WASM 只允许 10 个变量，网表分析最多 10 个主输入。
 
-**可复算的质量数据**：`scripts/mutation_check.py` 对 **305** 条关键规则做单点文本变异并跑回归；
+**可复算的质量数据**：`scripts/mutation_check.py` 对 **309** 条关键规则做单点文本变异并跑回归；
 fuzz 目标 8 个（netlist / verilog / atpg / blif / aiger / expr / policy / netlist_json）；
 测试矩阵覆盖 Linux / Windows / macOS 三平台 + MSRV 1.88 + wasm32。贡献流程见
 [CONTRIBUTING.md](CONTRIBUTING.md)。

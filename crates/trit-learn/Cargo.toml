@@ -1,0 +1,10 @@
+[package]
+name = "trit-learn"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三值训练原语：三值量化、直通估计器（STE）与 scale 梯度"
+
+[dependencies]

@@ -85,7 +85,7 @@ scale 的梯度会绕回量化门控，训练不稳。
 ## 跑
 
 ```bash
-cargo test -p trit-train                       # 14 个测试（含块内逐元素对拍与收敛）
+cargo test -p trit-train                       # 8 个（plane + layer；量化/STE 的 6 个测试在 trit-learn）
 cargo run -p trit-train --release --bin train-bench -- --mtrits 16 --rounds 7 --ste-steps 3000
 ```
 
