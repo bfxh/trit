@@ -38,6 +38,12 @@ pub(crate) fn cmd_topology(
         .with_context(|| format!("读取拓扑文件失败：{}", path.display()))?;
     let input: TopologyInput = serde_json::from_str(&text)
         .with_context(|| format!("解析拓扑 JSON 失败：{}", path.display()))?;
+    // 复审 M3：节点数直接来自外部 JSON，`vec![Vec::new(); nodes]` 会按声明值分配；
+    // 没有上限时一个 {"nodes": 1000000000} 就能打爆内存。
+    const MAX_NODES: usize = 100_000;
+    if input.nodes > MAX_NODES {
+        bail!("拓扑节点数 {} 超过上限 {MAX_NODES}", input.nodes);
+    }
     let mut graph = TernaryTopology::new(input.nodes);
     for edge in &input.edges {
         let value = parse_value(&edge.value)?;

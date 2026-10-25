@@ -65,9 +65,36 @@ impl TritFloat {
             x *= 3.0;
             exponent -= 1;
         }
-        let scaled = x * 3f64.powi(precision as i32);
-        let mantissa = (scaled.round() as i128) * sign;
-        Some(Self::new(mantissa, exponent - precision as i32, precision))
+        // 复审 H1：尾数必须落在平衡三进制 p 位的合法区间 ±(3^p−1)/2 内。
+        // 直接 `round(x·3^p)` 会越界（5.0/p=1 得 2），再交给 normalize 二次舍入会系统性偏大。
+        // 这里在 e−2..=e+2 上枚举候选指数，clamp 到 limit 后取误差最小者，只做一次舍入。
+        let limit = mantissa_limit(precision);
+        let mut best: Option<(f64, i128, i32)> = None; // (误差, 尾数, 指数)
+        for delta in -(precision as i32)..=2 {
+            let cand_e = exponent + delta;
+            let scaled = x * 3f64.powi(-delta);
+            if !scaled.is_finite() {
+                continue;
+            }
+            let m = (scaled.round() as i128).clamp(-limit, limit);
+            if m == 0 {
+                continue;
+            }
+            let err = (x - m as f64 * 3f64.powi(delta)).abs();
+            let better = match best {
+                None => true,
+                // 误差相同（含浮点噪声）取更大指数（远离零），与 normalize 的进位习惯一致。
+                Some((best_err, _, best_e)) => {
+                    let tol = best_err * 1e-12 + 1e-300;
+                    err < best_err - tol || (err <= best_err + tol && cand_e > best_e)
+                }
+            };
+            if better {
+                best = Some((err, m * sign, cand_e));
+            }
+        }
+        let (_, mantissa, cand_e) = best?;
+        Some(Self::new(mantissa, cand_e, precision))
     }
 
     /// 转回 `f64`（可能溢出为 `±Inf` 或下溢为 `0`）。

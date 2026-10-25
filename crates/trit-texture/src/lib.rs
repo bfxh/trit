@@ -74,6 +74,14 @@ pub enum TextureError {
         /// 纹素数。
         pixels: usize,
     },
+    /// 调色板索引越界（baseline 调色板只有 3 色，合法索引 0..=2）。
+    #[error("块 {block} 的调色板索引 {index} 越界（只支持 0..=2）")]
+    InvalidPaletteIndex {
+        /// 块序号。
+        block: usize,
+        /// 非法索引。
+        index: u8,
+    },
     /// 解码数据的块数与宽高不符。
     #[error("块数 {actual} 与宽高要求的 {expected} 不符")]
     BlockCount {
@@ -454,7 +462,13 @@ pub fn decode_rgba_baseline(texture: &BinaryTexture) -> Result<Vec<u8>, TextureE
             let x = block_col * BLOCK_WIDTH + index % BLOCK_WIDTH;
             let y = block_row * BLOCK_HEIGHT + index / BLOCK_WIDTH;
             let offset = (y * texture.width + x) * 4;
-            let (r, g, b) = palette[palette_index as usize];
+            // 复审 M1：2-bit 字段可以取 3，而 palette 只有 3 色；越界必须返回错误而不是 panic。
+            let Some(&(r, g, b)) = palette.get(palette_index as usize) else {
+                return Err(TextureError::InvalidPaletteIndex {
+                    block: block_index,
+                    index: palette_index as u8,
+                });
+            };
             out[offset] = r;
             out[offset + 1] = g;
             out[offset + 2] = b;

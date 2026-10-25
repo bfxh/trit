@@ -30,6 +30,40 @@ pub struct TernaryMemory {
     weights: Vec<i32>,
 }
 
+/// 三值记忆的输入错误。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MemoryError {
+    /// 键/值/查询长度与 `dim` 不符。
+    Dimension {
+        /// 记忆维数。
+        expected: usize,
+        /// 传入的键（或查询）长度。
+        key: usize,
+        /// 传入的值长度；`decode` 时为 0。
+        value: usize,
+    },
+    /// 权重累加溢出 `i32`。
+    Overflow,
+}
+
+impl std::fmt::Display for MemoryError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Dimension {
+                expected,
+                key,
+                value,
+            } => write!(
+                f,
+                "维度不符：记忆 {expected}×{expected}，键 {key}，值 {value}"
+            ),
+            Self::Overflow => write!(f, "权重累加溢出 i32"),
+        }
+    }
+}
+
+impl std::error::Error for MemoryError {}
+
 impl TernaryMemory {
     /// 建一个 `dim × dim` 的零矩阵。
     pub fn new(dim: usize) -> Self {
@@ -40,24 +74,48 @@ impl TernaryMemory {
     }
 
     /// 编码一条「键 → 值」：`W += v kᵀ`（键、值都必须已三值化）。
-    pub fn encode(&mut self, key: &[i32], value: &[i32]) {
+    ///
+    /// 复审 M2：长度必须等于 `dim`，累加用 `checked_*` 防 `i32` 溢出。
+    pub fn encode(&mut self, key: &[i32], value: &[i32]) -> Result<(), MemoryError> {
+        if key.len() != self.dim || value.len() != self.dim {
+            return Err(MemoryError::Dimension {
+                expected: self.dim,
+                key: key.len(),
+                value: value.len(),
+            });
+        }
         for (row, value) in value.iter().enumerate() {
             for (col, key) in key.iter().enumerate() {
-                self.weights[row * self.dim + col] += value * key;
+                let index = row * self.dim + col;
+                let delta = value.checked_mul(*key).ok_or(MemoryError::Overflow)?;
+                self.weights[index] = self.weights[index]
+                    .checked_add(delta)
+                    .ok_or(MemoryError::Overflow)?;
             }
         }
+        Ok(())
     }
 
-    /// 解码：`out = W q`，再取符号。
-    pub fn decode(&self, query: &[i32]) -> Vec<i32> {
-        (0..self.dim)
+    /// 解码：`out = W q`，再取符号。查询长度必须等于 `dim`。
+    pub fn decode(&self, query: &[i32]) -> Result<Vec<i32>, MemoryError> {
+        if query.len() != self.dim {
+            return Err(MemoryError::Dimension {
+                expected: self.dim,
+                key: query.len(),
+                value: 0,
+            });
+        }
+        Ok((0..self.dim)
             .map(|row| {
-                let acc: i32 = (0..self.dim)
-                    .map(|col| self.weights[row * self.dim + col] * query[col])
+                // 中间量用 i64，避免 dim 很大时 i32 乘法先溢出。
+                let acc: i64 = (0..self.dim)
+                    .map(|col| {
+                        i64::from(self.weights[row * self.dim + col]) * i64::from(query[col])
+                    })
                     .sum();
-                sign(acc)
+                sign(acc.clamp(i64::from(i32::MIN), i64::from(i32::MAX)) as i32)
             })
-            .collect()
+            .collect())
     }
 
     /// 维数。
@@ -79,12 +137,12 @@ pub fn recall_experiment(seed: u64, pairs: usize, dim: usize) -> RecallReport {
 
     let mut ternary = TernaryMemory::new(dim);
     for (key, value) in keys.iter().zip(values.iter()) {
-        ternary.encode(key, value);
+        ternary.encode(key, value).expect("内部键值长度与 dim 一致");
     }
     // 逐分量精度：整向量精确匹配在 dim=16 时会被 (1-ε)^16 稀释到看不出差异。
     let mut ternary_hits = 0usize;
     for (key, value) in keys.iter().zip(values.iter()) {
-        let decoded = ternary.decode(key);
+        let decoded = ternary.decode(key).expect("内部查询长度与 dim 一致");
         ternary_hits += decoded
             .iter()
             .zip(value.iter())
@@ -202,10 +260,10 @@ mod tests {
         let keys = [vec![1, 0, 0], vec![0, 1, 0], vec![0, 0, 1]];
         let values = [vec![1, -1, 0], vec![0, 1, -1], vec![-1, 0, 1]];
         for (key, value) in keys.iter().zip(values.iter()) {
-            memory.encode(key, value);
+            memory.encode(key, value).expect("测试维度一致");
         }
         for (key, value) in keys.iter().zip(values.iter()) {
-            assert_eq!(memory.decode(key), *value);
+            assert_eq!(memory.decode(key).expect("测试维度一致"), *value);
         }
     }
 
@@ -222,6 +280,29 @@ mod tests {
         ] {
             assert!((0.0..=1.0).contains(&accuracy));
         }
+    }
+
+    #[test]
+    fn dimension_mismatch_is_an_error() {
+        let mut memory = TernaryMemory::new(8);
+        assert!(matches!(
+            memory.encode(&[0; 5], &[1; 9]),
+            Err(MemoryError::Dimension {
+                expected: 8,
+                key: 5,
+                value: 9
+            })
+        ));
+        assert!(matches!(
+            memory.decode(&[0; 3]),
+            Err(MemoryError::Dimension {
+                expected: 8,
+                key: 3,
+                value: 0
+            })
+        ));
+        assert!(memory.encode(&[0; 8], &[1; 8]).is_ok());
+        assert!(memory.decode(&[0; 8]).is_ok());
     }
 
     #[test]
