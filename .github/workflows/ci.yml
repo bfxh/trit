@@ -24,10 +24,11 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      # macOS 按 10×、Windows 按 2× 计费；PR 门跑 ubuntu+windows，
-      # macOS（aarch64 信号）在每次合并后的 main push 上全量跑，覆盖不减。
+      # macOS 按 10×、Windows 按 2× 计费，但 #147 的事故证明「PR 不跑 macOS ⇒
+      # 合入后 main 才红」的代价更高：aarch64 缺实现只能在 macOS 上暴露。
+      # 三个 OS 都跑，PR 与 main 同矩阵。
       matrix:
-        os: ${{ fromJSON(github.event_name == 'push' && '["ubuntu-latest", "windows-latest", "macos-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
+        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
 
@@ -52,6 +53,13 @@ jobs:
         run: cargo test -p trit-texture --features png --locked
       - name: Clippy (trit-texture png feature)
         run: cargo clippy -p trit-texture --features png --all-targets --locked -- -D warnings
+
+      # gpu feature（默认关）：同上。#149 的事故就是这块代码从没被门编译过
+      # （matmul.rs 在内核 feature 后，PR 绿、main 的 macOS 红）。
+      - name: Test (trit-gpu gpu feature)
+        run: cargo test -p trit-gpu --features gpu --locked
+      - name: Clippy (trit-gpu gpu feature)
+        run: cargo clippy -p trit-gpu --features gpu --all-targets --locked -- -D warnings
 
   module-budget:
     name: module budget (god objects)

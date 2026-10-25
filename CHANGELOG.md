@@ -45,6 +45,14 @@
   `matmul_f32.wgsl` 不再带 `enable f16;`。f16 变体的入口/绑定布局不变。
 - 由新增的 `trit-gpu --features gpu` CI 门抓到（此前该 feature 从未在 CI 编译/运行）。
 
+### CI（PR 矩阵补 macOS + gpu feature 门）
+
+- PR 矩阵由 ubuntu+windows 扩为 **ubuntu+windows+macOS**：与 main 同矩阵。
+  #147 的教训是「PR 门看不见 aarch64 ⇒ 合入后 main 才红」，macOS 的 10× 计费
+  低于一次 main 变红的代价。
+- 新增 `trit-gpu --features gpu` 的 test + clippy arm（与 `trit-texture --features png` 同形）：
+  该 feature 默认关，此前 CI 从未编译 `matmul.rs`/`gpu.rs` 等内核代码。
+
 ### Fixed（`trit-ops`：非 x86_64 编译失败）
 
 - #147 合入后 main 的 macOS（arm64）CI 红了：`simd.rs` 只在 `x86_64` 下导出
