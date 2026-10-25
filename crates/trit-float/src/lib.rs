@@ -269,7 +269,7 @@ fn normalize(
         let mut best: Option<(u128, i128, u32)> = None; // (误差, 尾数, 丢掉的位数)
         for dropped in shift.saturating_sub(1)..=shift {
             let divisor = pow3(dropped);
-            let rounded = round_quotient(mantissa, divisor, mode).clamp(-limit, limit);
+            let rounded = round_quotient(mantissa, divisor).clamp(-limit, limit);
             if rounded == 0 {
                 continue;
             }
@@ -324,8 +324,11 @@ fn pow3(exponent: u32) -> i128 {
     3i128.checked_pow(exponent).unwrap_or(i128::MAX)
 }
 
-/// 最接近 `value / divisor` 的整数，不做 clamp；平局按 `mode` 处理。
-fn round_quotient(value: i128, divisor: i128, mode: RoundMode) -> i128 {
+/// 最接近 `value / divisor` 的整数，不做 clamp。
+///
+/// `divisor` 是 3 的幂（奇数），`2·remainder == divisor` 不可能成立：
+/// 所以这里**不存在**平局，平局只可能发生在不同指数的候选之间（[`from_f64_with`]）。
+fn round_quotient(value: i128, divisor: i128) -> i128 {
     let quotient = value.div_euclid(divisor);
     let remainder = value.rem_euclid(divisor);
     if remainder == 0 {
@@ -334,25 +337,9 @@ fn round_quotient(value: i128, divisor: i128, mode: RoundMode) -> i128 {
     let twice = (remainder as u128) * 2;
     let bound = divisor as u128;
     if twice > bound {
-        return quotient + 1;
-    }
-    if twice < bound {
-        return quotient;
-    }
-    match mode {
-        // 远离零：正数向上、负数向下（floor 已经是向下）。
-        RoundMode::HalfAway => {
-            if value >= 0 {
-                quotient + 1
-            } else {
-                quotient
-            }
-        }
-        // 取偶尾数。
-        RoundMode::HalfEven => {
-            let up = quotient + 1;
-            if up % 2 == 0 { up } else { quotient }
-        }
+        quotient + 1
+    } else {
+        quotient
     }
 }
 

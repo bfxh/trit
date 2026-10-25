@@ -16,6 +16,8 @@
     **"对称舍入 ⇒ 期望误差为零"在本仓取样口径下未复现**，记为未验证。
 - 锥形精度只是旋钮（精度随 `|e|` 递减，单测覆盖）；真正的 Takum 需要锥形指数编码，未做。
 - 新增 `crates/trit-float/README.md` 与两张对比图（`docs/assets/float-range.svg`、`float-precision.svg`）。
+- 变异名单同步：`trit-float` 11 条（新增锥形精度/格式下溢两条，修正两处因重构失效的锚点）；
+  README 的质量数据从 178 修正为脚本实测的 **287** 条。
 
 ### Docs（README 重写：定位、可视化对比、代价清单）
 

@@ -1515,8 +1515,8 @@ MUTANTS = [
     {
         "name": "float: 平局取更小指数（背离约定）",
         "file": "crates/trit-float/src/lib.rs",
-        "old": "                    error < best_error || (error == best_error && dropped > best_dropped)",
-        "new": "                    error < best_error || (error == best_error && dropped < best_dropped)",
+        "old": "                            RoundMode::HalfAway => dropped > best_dropped,",
+        "new": "                            RoundMode::HalfAway => dropped < best_dropped,",
         "pkg": "trit-float",
         "filter": "precision_bounds_follow_balanced_digits"
     },
@@ -1879,6 +1879,22 @@ MUTANTS = [
         "new": "    if false {",
         "pkg": "trit-circuit",
         "filter": "budgets_reject_oversized_blif"
+    },
+    {
+        "name": "float: 锥形精度不衰减",
+        "file": "crates/trit-float/src/format.rs",
+        "old": "        self.precision.saturating_sub(drop).max(MIN_PRECISION)",
+        "new": "        self.precision",
+        "pkg": "trit-float",
+        "filter": "taper_reduces_precision_away_from_one"
+    },
+    {
+        "name": "float: 格式下溢不归零",
+        "file": "crates/trit-float/src/format.rs",
+        "old": "            return Some(TritFloat::zero(self.precision));\n        }\n        let precision = self.precision_at(exponent);",
+        "new": "            return None;\n        }\n        let precision = self.precision_at(exponent);",
+        "pkg": "trit-float",
+        "filter": "quantize_clamps_to_format"
     },
     {
         "name": "float: 舍入不 clamp 到合法尾数",
