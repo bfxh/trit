@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed（`trit-ops`：拆表查表改用映射表，快 13.6–19.1%）
+
+- 拆表的两次查表原用 `code % 9` / `code / 9` 定位，换成 243 项 `u16` 映射
+  （`SPLIT_MAP`，486 B）后压成一次装入；两种写法累加顺序相同，结果逐位一致
+  （`split_map_matches_divmod_bitwise` 单测锁住）。
+- 实测（`bench --split-map`，cols=576，4 个行数档 × 7 轮配对，每档 7/7 胜）：
+  中位比 576→0.864、1024→0.809、1536→0.824、2048→0.830。
+- **交叉点没动**：`1792 → 0.349×`、`2048 → 1.067×`，`LUT_SPLIT_ROWS = 2048` 不变。
+  `gemv_auto` 改走映射；`gemv_with_split_tables`（`%9`/`/9`）保留为 A/B 基线。
+- 工具：`bench --split` 增加「拆表 + 映射查表」一行；新增 `bench --split-map` 配对模式。
+
 ### Fixed（`trit-ops`：非 x86_64 编译失败）
 
 - #147 合入后 main 的 macOS（arm64）CI 红了：`simd.rs` 只在 `x86_64` 下导出

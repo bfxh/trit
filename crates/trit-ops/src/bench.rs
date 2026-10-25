@@ -332,8 +332,10 @@ pub struct SplitCost {
     pub lookup_whole: f64,
     /// 拆表（36 项）建表。
     pub build_split: f64,
-    /// 拆表查表。
+    /// 拆表查表（`% 9` / `/ 9`）。
     pub lookup_split: f64,
+    /// 拆表查表（预计算映射）。
+    pub lookup_split_map: f64,
 }
 
 /// 把 tryte 的一次 gemv 拆成「建表」和「查表」两段分别计时，两种表粒度都测。
@@ -381,12 +383,71 @@ pub fn tryte_split(rows: usize, cols: usize, iters: usize) -> SplitCost {
     }
     let lookup_split = t.elapsed().as_secs_f64() * 1e9 / iters as f64;
 
+    // 拆表：只查表（映射）
+    let t = Instant::now();
+    for _ in 0..iters {
+        trytes.gemv_with_split_tables_map(&tables, &mut out);
+    }
+    let lookup_split_map = t.elapsed().as_secs_f64() * 1e9 / iters as f64;
+
     SplitCost {
         build_whole: (full_whole - lookup_whole).max(0.0),
         lookup_whole,
-        build_split: (full_split - lookup_split).max(0.0),
+        build_split: (full_split - lookup_split_map).max(0.0),
         lookup_split,
+        lookup_split_map,
     }
+}
+
+/// 拆表查表的两种实现逐轮配对：`% 9` / `/ 9` vs 预计算 243 项映射。
+///
+/// 每轮交替先后顺序（奇数轮 A→B，偶数轮 B→A），把顺序偏差摊到两边。
+/// 返回 `(除法 ns, 映射 ns)`，均为单次 gemv。
+pub fn tryte_split_lookup(
+    rows: usize,
+    cols: usize,
+    iters: usize,
+    rounds: usize,
+) -> (Vec<f64>, Vec<f64>) {
+    let p = prepare(rows, cols);
+    let tables = p.trytes.build_tables_split(&p.x);
+    let mut out = vec![0.0f32; rows];
+
+    // 先验证两种写法逐位一致；不一致时后面所有读数都没意义。
+    let mut o_div = vec![0.0f32; rows];
+    let mut o_map = vec![0.0f32; rows];
+    p.trytes.gemv_with_split_tables(&tables, &mut o_div);
+    p.trytes.gemv_with_split_tables_map(&tables, &mut o_map);
+    assert_eq!(o_div, o_map, "映射表与 %9//9 结果必须逐位一致");
+
+    let time_one = |iters: usize, out: &mut [f32], f: &mut dyn FnMut(&mut [f32])| {
+        let t = Instant::now();
+        for _ in 0..iters {
+            f(out);
+        }
+        t.elapsed().as_secs_f64() * 1e9 / iters as f64
+    };
+
+    let rounds = rounds.max(1);
+    let mut divmod_ns = Vec::with_capacity(rounds);
+    let mut map_ns = Vec::with_capacity(rounds);
+    for r in 0..rounds {
+        let mut divmod = |out: &mut [f32]| p.trytes.gemv_with_split_tables(&tables, out);
+        let mut map = |out: &mut [f32]| p.trytes.gemv_with_split_tables_map(&tables, out);
+        let (a, b) = if r % 2 == 0 {
+            (
+                time_one(iters, &mut out, &mut divmod),
+                time_one(iters, &mut out, &mut map),
+            )
+        } else {
+            let b = time_one(iters, &mut out, &mut map);
+            let a = time_one(iters, &mut out, &mut divmod);
+            (a, b)
+        };
+        divmod_ns.push(a);
+        map_ns.push(b);
+    }
+    (divmod_ns, map_ns)
 }
 
 /// 把结果排成表。

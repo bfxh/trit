@@ -12,12 +12,14 @@
 //! bench --rows 576 --cols 576 --rounds 5  # 轮转测量，逐轮打印
 //! bench --rows 576 --cols 576 --rounds 5 --pair 掩码 tryte
 //! bench --rows 576 --cols 576 --split     # tryte 建表 vs 查表
+//! bench --rows 1024 --cols 576 --split-map --rounds 7   # 拆表查表：%9//9 vs 映射
 //! ```
 
 use std::io::Write;
 
 use trit_ops::bench::{
     Measurement, format_table, measure, measure_rounds, round_spread, tryte_split,
+    tryte_split_lookup,
 };
 use trit_ops::pool;
 
@@ -163,6 +165,7 @@ fn main() {
         let c = tryte_split(rows, cols, iters);
         let whole = c.build_whole + c.lookup_whole;
         let split = c.build_split + c.lookup_split;
+        let split_map = c.build_split + c.lookup_split_map;
         emit(&format!("\ntryte 成本分解  {rows}×{cols}  {iters} 次/测"));
         emit(&format!(
             "{:<20}{:>12}{:>10}{:>12}{:>12}{:>10}",
@@ -186,6 +189,61 @@ fn main() {
             split,
             split / whole
         ));
+        emit(&format!(
+            "{:<20}{:>12.1}{:>9.1}%{:>12.1}{:>12.1}{:>9.3}x",
+            "拆表 + 映射查表",
+            c.build_split,
+            c.build_split / split_map * 100.0,
+            c.lookup_split_map,
+            split_map,
+            split_map / whole
+        ));
+        return;
+    }
+
+    // 拆表查表：%9//9 vs 预计算映射
+    if args.iter().any(|a| a == "--split-map") {
+        let (rows, cols) = (
+            arg_usize(&args, "--rows").unwrap_or(1024),
+            arg_usize(&args, "--cols").unwrap_or(576),
+        );
+        let iters = arg_usize(&args, "--iters").unwrap_or(200);
+        let rounds = arg_usize(&args, "--rounds").unwrap_or(7);
+        let (divmod, map) = tryte_split_lookup(rows, cols, iters, rounds);
+        emit(&format!(
+            "\n拆表查表  {rows}×{cols}  {rounds} 轮 × {iters} 次（单次 gemv）"
+        ));
+        emit(&format!(
+            "{:<6}{:>14}{:>14}{:>12}",
+            "轮次", "除法 ns", "映射 ns", "映射/除法"
+        ));
+        let mut wins = 0usize;
+        for i in 0..rounds {
+            if map[i] < divmod[i] {
+                wins += 1;
+            }
+            emit(&format!(
+                "{:<6}{:>14.1}{:>14.1}{:>11.3}x",
+                i + 1,
+                divmod[i],
+                map[i],
+                map[i] / divmod[i]
+            ));
+        }
+        let med = |v: &[f64]| {
+            let mut s = v.to_vec();
+            s.sort_by(|a, b| a.partial_cmp(b).expect("有限值"));
+            s[s.len() / 2]
+        };
+        let (a, b) = (med(&divmod), med(&map));
+        emit(&format!(
+            "{:<6}{:>14.1}{:>14.1}{:>11.3}x",
+            "中位",
+            a,
+            b,
+            b / a
+        ));
+        emit(&format!("符号检验：映射更快的轮数 {wins}/{rounds}"));
         return;
     }
 

@@ -57,9 +57,25 @@ pub const SPLIT_STATES: usize = SPLIT_LOW_STATES + SPLIT_HIGH_STATES;
 
 /// 行数低于这个值时用拆表（建表便宜），高于则用整字节表（查表便宜）。
 ///
-/// 实测交叉点（`bench --split`，cols=576，各 3 次取中位）：
-/// `1792 → 0.41×`、`2048 → 1.16×`，所以阈值取 2048。
+/// 实测交叉点（`bench --split`，cols=576，各 5–7 次取中位，拆表+映射/整表耗时比）：
+/// `1792 → 0.349×`、`2048 → 1.067×`，所以阈值仍取 2048。
 pub const LUT_SPLIT_ROWS: usize = 2048;
+
+/// `code -> 拆表偏移`：低字节 = `code % 9`，高字节 = `code / 9`。
+///
+/// 拆表查表每字节原本要做一次 `% 9` 和一次 `/ 9`；换成 243 项映射（486 B，
+/// 常驻 L1）后压成一次装入。两种写法累加顺序相同，结果逐位一致。
+const SPLIT_MAP: [u16; TRYTE_STATES] = build_split_map();
+
+const fn build_split_map() -> [u16; TRYTE_STATES] {
+    let mut t = [0u16; TRYTE_STATES];
+    let mut c = 0;
+    while c < TRYTE_STATES {
+        t[c] = (c % SPLIT_LOW_STATES) as u16 | (((c / SPLIT_LOW_STATES) as u16) << 8);
+        c += 1;
+    }
+    t
+}
 
 /// 双导轨三值矩阵（行主序，每行补齐到 64 的倍数）。
 #[derive(Clone, Debug)]
@@ -450,11 +466,43 @@ impl TryteMatrix {
         }
     }
 
+    /// 同 [`gemv_with_split_tables`](Self::gemv_with_split_tables)，偏移改走 [`SPLIT_MAP`]。
+    pub fn gemv_with_split_tables_map(&self, tables: &[f32], out: &mut [f32]) {
+        assert_eq!(tables.len(), self.gpr * SPLIT_STATES, "拆表尺寸不符");
+        assert_eq!(out.len(), self.rows, "输出长度必须是 rows");
+        let gpr = self.gpr;
+        let tab = Ptr::new(tables.as_ptr() as *mut f32);
+        let data = Ptr::new(self.data.as_ptr() as *mut u8);
+        // SAFETY: out 有 rows 个元素；codes 行内不越界；表已完整建立。
+        unsafe {
+            par_rows_mut(out.as_mut_ptr(), self.rows, move |o, r| {
+                let codes = std::slice::from_raw_parts(data.get().add(r * gpr), gpr);
+                let mut acc = 0.0f32;
+                for (g, &code) in codes.iter().enumerate() {
+                    let base = tab.get().add(g * SPLIT_STATES);
+                    // SAFETY: code 是 u8，SPLIT_MAP 覆盖 0..=242；243..=255 只在
+                    // 构造期被拒绝，这里仍用 unchecked 省掉边界检查（越界是 UB 的
+                    // 前提是 code > 242，TryteMatrix 的构造函数保证不会出现）。
+                    let off = *SPLIT_MAP.get_unchecked(code as usize) as usize;
+                    acc += *base.add(off & 0xFF);
+                    acc += *base.add(SPLIT_LOW_STATES + (off >> 8));
+                }
+                *o = acc;
+            });
+        }
+    }
+
+    /// 建拆表 + 映射查表。
+    pub fn gemv_split_map(&self, x: &[f32], out: &mut [f32]) {
+        let tables = self.build_tables_split(x);
+        self.gemv_with_split_tables_map(&tables, out);
+    }
+
     /// 按行数自动选表粒度：小行数用拆表（省建表），大行数用整字节表（省查表）。
     pub fn gemv_auto(&self, x: &[f32], out: &mut [f32]) {
         if self.rows < LUT_SPLIT_ROWS {
             let tables = self.build_tables_split(x);
-            self.gemv_with_split_tables(&tables, out);
+            self.gemv_with_split_tables_map(&tables, out);
         } else {
             self.gemv(x, out);
         }
@@ -463,7 +511,7 @@ impl TryteMatrix {
     /// 强制走拆表，绕过 [`LUT_SPLIT_ROWS`]（诊断/基准用）。
     pub fn gemv_auto_split(&self, x: &[f32], out: &mut [f32]) {
         let tables = self.build_tables_split(x);
-        self.gemv_with_split_tables(&tables, out);
+        self.gemv_with_split_tables_map(&tables, out);
     }
 }
 
@@ -512,6 +560,19 @@ mod tests {
             && a.iter()
                 .zip(b)
                 .all(|(x, y)| (x - y).abs() <= 1e-3 * (1.0 + y.abs()))
+    }
+
+    #[test]
+    fn split_map_matches_divmod_bitwise() {
+        let (rows, cols) = (37usize, 83usize);
+        let m = TryteMatrix::from_rows(&make(rows, cols), cols);
+        let x: Vec<f32> = (0..cols).map(|i| ((i % 13) as f32 - 6.0) * 0.1).collect();
+        let tables = m.build_tables_split(&x);
+        let mut a = vec![0.0f32; rows];
+        let mut b = vec![0.0f32; rows];
+        m.gemv_with_split_tables(&tables, &mut a);
+        m.gemv_with_split_tables_map(&tables, &mut b);
+        assert_eq!(a, b, "映射表与 %9//9 必须逐位一致");
     }
 
     #[test]
