@@ -22,7 +22,7 @@ fn gpu_reg_matmul_tiny_case() {
     };
     assert!(report.reg_matches, "1×1×1 reg 不一致：{report:?}");
     assert!(report.reg4_matches, "1×1×1 reg4 不一致：{report:?}");
-    assert!(report.vec_matches, "1×1×1 vec2 不一致：{report:?}");
+    assert!(report.o3_matches, "1×1×1 o3 不一致：{report:?}");
     assert!(report.splitk_matches, "1×1×1 split-K 不一致：{report:?}");
     assert!(report.w16_matches, "1×1×1 w16 不一致：{report:?}");
     assert!(report.matches);

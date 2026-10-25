@@ -50,10 +50,10 @@ pub struct MatmulReport {
     pub f32_reg4_ns_per_mac: f64,
     /// 4×4 寄存器阻塞三值结果与 CPU 位并行镜像是否一致。
     pub reg4_matches: bool,
-    /// 2×2 微块 + pos/neg 打包成 vec2 共享读，ns / MAC。
-    pub ternary_vec_ns_per_mac: f64,
-    /// vec2 内核结果与 CPU 位并行镜像是否一致。
-    pub vec_matches: bool,
+    /// 3-popc 内核（2×2 微块，省 1/4 popcount），ns / MAC。
+    pub ternary_o3_ns_per_mac: f64,
+    /// 3-popc 内核结果与 CPU 位并行镜像是否一致。
+    pub o3_matches: bool,
     /// K 段 16 word（屏障减半）三值内核，ns / MAC。
     pub ternary_w16_ns_per_mac: f64,
     /// K 段 16 word 内核结果与 CPU 位并行镜像是否一致。
@@ -328,39 +328,38 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         .zip(expected.iter())
         .all(|(g, e)| i64::from(*g as i32) == *e);
 
-    // vec2 打包版：同 16×16 tile / 8×8 线程 / 2×2 输出，只有共享内存读换成一 次 64 位。
-    let pipeline_vec = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-        label: Some("matmul-ternary-vec"),
+    // 3-popc：同 tiled2 结构，把 4 次 popc 压到 3 次（靠双导轨不交叠不变量）。
+    let pipeline_o3 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+        label: Some("matmul-ternary-o3"),
         layout: Some(&pipeline_layout),
         module: &shader,
-        entry_point: Some("main_tiled2v"),
+        entry_point: Some("main_tiled2o3"),
         compilation_options: Default::default(),
         cache: None,
     });
-    let dispatch_vec = || {
+    let dispatch_o3 = || {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            pass.set_pipeline(&pipeline_vec);
+            pass.set_pipeline(&pipeline_o3);
             pass.set_bind_group(0, &bind, &[]);
             pass.dispatch_workgroups(tiled_grid_x, tiled_grid_y, 1);
         }
         queue.submit([encoder.finish()]);
     };
     for _ in 0..20 {
-        dispatch_vec();
+        dispatch_o3();
     }
     device
         .poll(wgpu::PollType::wait_indefinitely())
         .expect("poll");
-    let ternary_vec_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_vec);
-    let vec_gpu = read_u32s(&device, &queue, &out, m * n)?;
-    let vec_matches = vec_gpu
+    let ternary_o3_ns_per_mac = median_ns_per(&device, m * n * k, dispatch_o3);
+    let o3_gpu = read_u32s(&device, &queue, &out, m * n)?;
+    let o3_matches = o3_gpu
         .iter()
         .zip(expected.iter())
         .all(|(g, e)| i64::from(*g as i32) == *e);
-
     // f32 基线（同结构内核，同 m/n/k）。
     let fa: Vec<f32> = a.iter().map(|v| *v as f32).collect();
     let mut fb: Vec<f32> = Vec::with_capacity(n * k);
@@ -681,14 +680,18 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
     let popc_ops = f64::from(64 * POPC_GROUPS) * f64::from(POPC_ITERS) * 8.0;
     let popc_ceiling_per_s = popc_ops / popc_seconds;
 
-    // 矩阵乘：每个 word-pair 4 次 popc 覆盖 32 个 MAC ⇒ popc/s = (MAC/s) / 8。
-    let best_ternary_ns = ternary_reg_ns_per_mac
-        .min(ternary_reg4_ns_per_mac)
-        .min(ternary_vec_ns_per_mac)
-        .min(ternary_splitk_ns_per_mac)
-        .min(ternary_w16_ns_per_mac);
-    let achieved_popc = 1.0 / (best_ternary_ns * 1e-9) / 8.0;
-    let ternary_popc_utilization = achieved_popc / popc_ceiling_per_s;
+    // 利用率要按各内核自己的 popc 密度算：普通内核每个 word-pair 4 次 popc（32 MAC），
+    // 3-popc 内核是 3 次。取所有内核里最高的那个作为「离天花板最近」的读数。
+    let utilization = |ns_per_mac: f64, popc_per_word: f64| {
+        let macs_per_s = 1.0 / (ns_per_mac * 1e-9);
+        (macs_per_s * popc_per_word / 32.0) / popc_ceiling_per_s
+    };
+
+    let ternary_popc_utilization = utilization(ternary_o3_ns_per_mac, 3.0)
+        .max(utilization(ternary_splitk_ns_per_mac, 4.0))
+        .max(utilization(ternary_reg_ns_per_mac, 4.0))
+        .max(utilization(ternary_reg4_ns_per_mac, 4.0))
+        .max(utilization(ternary_w16_ns_per_mac, 4.0));
 
     let f32_result = read_u32s(&device, &queue, &f32_out, m * n)?;
     let f32_bits: Vec<f32> = f32_result
@@ -715,7 +718,7 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         ternary_tiled_ns_per_mac,
         ternary_reg_ns_per_mac,
         ternary_reg4_ns_per_mac,
-        ternary_vec_ns_per_mac,
+        ternary_o3_ns_per_mac,
         f32_ns_per_mac,
         f32_tiled_ns_per_mac,
         f32_reg_ns_per_mac,
@@ -723,7 +726,7 @@ async fn run_async(m: usize, k: usize, n: usize) -> Option<MatmulReport> {
         tiled_matches,
         reg_matches,
         reg4_matches,
-        vec_matches,
+        o3_matches,
         ternary_splitk_ns_per_mac,
         splitk_matches,
         ternary_w16_ns_per_mac,

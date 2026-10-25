@@ -46,6 +46,9 @@
   **split-K×4 + atomicAdd** 连测 5 轮稳定 **快 3–5%**（0.120–0.122 vs 0.125–0.126）⇒ 目前最快；
   **纯 `countOneBits` 微基准** 1.33–1.44e12 popc/s，矩阵乘达到 **71–75%**。
   结论：剩余差距在指令混合（共享读/索引/累加），并行度/共享内存宽度/屏障都已排除。
+- **3-popc 内核**（`main_tiled2o3`）：利用双导轨不交叠不变量把 `popc(aₚ&bₙ)+popc(aₙ&bₚ)`
+  合并成 `popc((aₚ&bₙ)|(aₙ&bₚ))`，每 word-pair 少 1/4 popc。实测 **0.110–0.114 ps/MAC**
+  （比 reg2×2 快 ~12%，比 split-K 快 ~5%），popcount 利用率 79–82%。
 - 顺手修 `forward.rs` 里 gpu feature 下才可见的 clippy（`chunks_exact` → `as_chunks`）。
 
 ### Added（GGUF → MOD 入向导入）

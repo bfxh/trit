@@ -536,3 +536,74 @@ fn main_tiled2w16(
         out[(row0 + 1u) * params.n + col0 + 1u] = s11;
     }
 }
+var<workgroup> o3_ap: array<u32, 128>;
+var<workgroup> o3_an: array<u32, 128>;
+var<workgroup> o3_bp: array<u32, 128>;
+var<workgroup> o3_bn: array<u32, 128>;
+// 3-popc：与 main_tiled2 完全同结构，把 4 次 popc 压到 3 次。
+//
+//   popc(aₚ&bₚ) + popc(aₙ&bₙ) − popc(aₚ&bₙ) − popc(aₙ&bₚ)
+// = popc(aₚ&bₚ) + popc(aₙ&bₙ) − popc((aₚ&bₙ) | (aₙ&bₚ))
+//
+// 等号靠双导轨的**不交叠不变量**：`aₚ&aₙ = 0`、`bₚ&bₙ = 0`（每个 trit 只落一根轨），
+// 所以 `(aₚ&bₙ)&(aₙ&bₚ) = 0`，两次 popc 可并成一次 OR + popc。
+// pack_rows / pack_columns 保证该不变量；测试用 4-popc 内核与 CPU 镜像逐元素对拍。
+@compute @workgroup_size(8, 8)
+fn main_tiled2o3(
+    @builtin(workgroup_id) wg: vec3<u32>,
+    @builtin(local_invocation_id) lid: vec3<u32>,
+) {
+    let row_base = wg.y * 16u;
+    let col_base = wg.x * 16u;
+    let r0 = lid.y * 2u;
+    let c0 = lid.x * 2u;
+    let idx = lid.y * 8u + lid.x;
+    var s00 = 0;
+    var s01 = 0;
+    var s10 = 0;
+    var s11 = 0;
+    let word_tiles = (params.words + 8u - 1u) / 8u;
+    for (var chunk = 0u; chunk < word_tiles; chunk = chunk + 1u) {
+        for (var t = 0u; t < 2u; t = t + 1u) {
+            let slot = idx + t * 64u;
+            let line = slot / 8u;
+            let word = chunk * 8u + slot % 8u;
+            let ok_a = row_base + line < params.m && word < params.words;
+            let ok_b = col_base + line < params.n && word < params.words;
+            o3_ap[slot] = select(0u, a_pos[(row_base + line) * params.words + word], ok_a);
+            o3_an[slot] = select(0u, a_neg[(row_base + line) * params.words + word], ok_a);
+            o3_bp[slot] = select(0u, b_pos[(col_base + line) * params.words + word], ok_b);
+            o3_bn[slot] = select(0u, b_neg[(col_base + line) * params.words + word], ok_b);
+        }
+        workgroupBarrier();
+        for (var w = 0u; w < 8u; w = w + 1u) {
+            let a0p = o3_ap[r0 * 8u + w];
+            let a0n = o3_an[r0 * 8u + w];
+            let a1p = o3_ap[(r0 + 1u) * 8u + w];
+            let a1n = o3_an[(r0 + 1u) * 8u + w];
+            let b0p = o3_bp[c0 * 8u + w];
+            let b0n = o3_bn[c0 * 8u + w];
+            let b1p = o3_bp[(c0 + 1u) * 8u + w];
+            let b1n = o3_bn[(c0 + 1u) * 8u + w];
+            s00 = s00 + i32(countOneBits(a0p & b0p)) + i32(countOneBits(a0n & b0n)) - i32(countOneBits((a0p & b0n) | (a0n & b0p)));
+            s01 = s01 + i32(countOneBits(a0p & b1p)) + i32(countOneBits(a0n & b1n)) - i32(countOneBits((a0p & b1n) | (a0n & b1p)));
+            s10 = s10 + i32(countOneBits(a1p & b0p)) + i32(countOneBits(a1n & b0n)) - i32(countOneBits((a1p & b0n) | (a1n & b0p)));
+            s11 = s11 + i32(countOneBits(a1p & b1p)) + i32(countOneBits(a1n & b1n)) - i32(countOneBits((a1p & b1n) | (a1n & b1p)));
+        }
+        workgroupBarrier();
+    }
+    let row0 = row_base + r0;
+    let col0 = col_base + c0;
+    if (row0 < params.m && col0 < params.n) {
+        out[row0 * params.n + col0] = s00;
+    }
+    if (row0 < params.m && col0 + 1u < params.n) {
+        out[row0 * params.n + col0 + 1u] = s01;
+    }
+    if (row0 + 1u < params.m && col0 < params.n) {
+        out[(row0 + 1u) * params.n + col0] = s10;
+    }
+    if (row0 + 1u < params.m && col0 + 1u < params.n) {
+        out[(row0 + 1u) * params.n + col0 + 1u] = s11;
+    }
+}
