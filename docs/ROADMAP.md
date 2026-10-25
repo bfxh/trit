@@ -50,7 +50,9 @@
 
 ## 7. 三态结构模型（后期：Tri-Struct Oracle 线）
 
-- [x] **基础层** `trit-graph` M0：三态节点/边的位集图、拓扑序、DFS 树、三态议会。
+- [x] **基础层** `trit-graph` M1：稠密位集图 + 稀疏 CSR、拓扑序、DFS 树、三态议会、三态 1-WL。
+- [ ] 超图与树分解的最小容器（超边位集、袋-树结构）。
+- [ ] 三态图核 / 三态 PageRank / 三态随机游走（基于 1-WL 与 CSR）。
 - [ ] TriMPNN / BiTri-MPNN：位运算的三态消息传递（掩码 + popcount + 9 项 LUT）。
 - [ ] Tri-TreeOracle / Tri-TreeRNN：叶到根的三态递归与三叉判决。
 - [ ] Tri-TD-GNN：树分解（袋内消息传递 + 袋间三态树自动机）。

@@ -1881,9 +1881,41 @@ MUTANTS = [
         "filter": "budgets_reject_oversized_blif"
     },
     {
+        "name": "graph: CSR 偏移不累加",
+        "file": "crates/trit-graph/src/csr.rs",
+        "old": "            offsets[u + 1] = offsets[u] + graph.out_degree(u);",
+        "new": "            offsets[u + 1] = offsets[u];",
+        "pkg": "trit-graph",
+        "filter": "conversion_preserves_edges_and_states"
+    },
+    {
+        "name": "graph: CSR 丢掉边状态",
+        "file": "crates/trit-graph/src/csr.rs",
+        "old": "                states[cursor] = state;",
+        "new": "                states[cursor] = Ternary::Unknown;",
+        "pkg": "trit-graph",
+        "filter": "conversion_preserves_edges_and_states"
+    },
+    {
+        "name": "graph: WL 忽略边符号",
+        "file": "crates/trit-graph/src/wl.rs",
+        "old": "            view.for_each_out(u, |v, edge| neighbors.push((edge_code(edge), colors[v])));",
+        "new": "            view.for_each_out(u, |v, _| neighbors.push((0, colors[v])));",
+        "pkg": "trit-graph",
+        "filter": "edge_signs_change_colors"
+    },
+    {
+        "name": "graph: WL 一轮就停",
+        "file": "crates/trit-graph/src/wl.rs",
+        "old": "        let stable = partition_stable(&colors, &next);",
+        "new": "        let stable = true;",
+        "pkg": "trit-graph",
+        "filter": "distinguishes_path_from_star"
+    },
+    {
         "name": "graph: 拓扑序忽略环",
-        "file": "crates/trit-graph/src/graph.rs",
-        "old": "        (order.len() == self.n).then_some(order)",
+        "file": "crates/trit-graph/src/view.rs",
+        "old": "        (order.len() == self.len()).then_some(order)",
         "new": "        Some(order)",
         "pkg": "trit-graph",
         "filter": "cycle_is_detected"

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（`trit-graph` M1：稀疏 CSR、共享视图、三态 1-WL）
+
+- `TriGraphView` 视图 trait：稠密 `TritGraph` 与稀疏 `TritCsr` 只实现四个基本方法，
+  出度/三态计数/拓扑序/DFS 树/议会/WL 全部从 trait 派生，避免两套逻辑分叉。
+- `TritCsr`：`n + nnz` 稀疏邻接；`from_dense` 保留节点三态与关键位；`neighbors` / `edge`。
+- `wl_refine`：三态 1-WL 颜色细化（有向、边符号参与签名）；`color_count` 便于比较划分。
+- 实测/测试：路径 vs 星形 5 色 vs 2 色；菱形把一片边改成反对 → 3 色变 4 色；
+  C3/C6 同为单色（1-WL 已知上限）；稠密与 CSR 的邻域/拓扑/议会/WL 结果一致。
+- 变异：新增 4 条（CSR 偏移、CSR 丢状态、WL 忽略边符号、WL 一轮就停），**8/8 全部被抓住**。
+- 限制：仍无超图/树分解容器、无权重/特征/反向索引；议会规则固定不可学习。
+
 ### Added（`trit-graph`：三态结构基础层 M0）
 
 - 新 crate `crates/trit-graph`（`publish = false`），给后续 TriMPNN / Tri-TreeOracle /

@@ -1,19 +1,31 @@
-//! 三态结构基础层（M0）。
+//! 三态结构基础层（M1）。
 //!
 //! 给后面的 "TriMPNN / Tri-TreeOracle / Tri-TD-GNN" 准备地基：
-//! - [`TritGraph`]：**三态节点 + 三态边**（支持 / 反对 / 中立 / 不存在），位集邻接；
-//! - [`Tree`]：从图上跑 DFS 得到的生成树（父指针 + DFS 先序 + 逆先序当后序）；
-//! - [`council`]：三态议会——邻居投票合成一个三态判决（多数、强否决、平票悬置）。
+//! - [`TritGraph`]：稠密位集图（三态节点 + 四态边 + 关键位）；
+//! - [`TritCsr`]：同一语义的稀疏 CSR，`n + nnz` 存储；
+//! - [`Tree`]：DFS 生成树（父指针 + 先序 + 逆先序当后序）；
+//! - [`council`]：三态议会（多数、强否决、平票悬置）；
+//! - [`wl_refine`]：三态 1-WL 颜色细化。
 //!
-//! 边界（M0 刻意不做）：
-//! - 邻接是**稠密位集**（n×n 位），适合千级节点；稀疏 CSR、权重、节点特征都不在 M0；
-//! - 边只有四种状态，没有边类型/多重边/自环限制；
-//! - 议会规则是**固定表**（多数 + 强否决），还不是可学习的三态转移表。
+//! 共享逻辑都在 [`TriGraphView`] 上：稠密/稀疏只实现四个基本方法，
+//! 拓扑序、DFS 树、计数、议会、WL 从 trait 派生，避免两套实现分叉。
+//!
+//! 边界（仍然不做）：
+//! - 没有权重、节点特征、批处理；没有超图/树分解容器（见 `docs/ROADMAP.md`）；
+//! - 议会规则是固定表，还不可学习；
+//! - 1-WL 区分不了正则图（已知上限，见 [`wl_refine`]）。
 
 mod council;
+mod csr;
 mod graph;
+mod nodes;
 mod tree;
+mod view;
+mod wl;
 
 pub use council::{Council, council};
+pub use csr::TritCsr;
 pub use graph::TritGraph;
 pub use tree::Tree;
+pub use view::TriGraphView;
+pub use wl::{color_count, wl_refine};

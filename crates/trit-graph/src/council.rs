@@ -7,7 +7,7 @@
 
 use trit_core::value::Ternary;
 
-use crate::TritGraph;
+use crate::view::TriGraphView;
 
 /// 一次议会的读数。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -24,8 +24,8 @@ pub struct Council {
     pub vetoed: bool,
 }
 
-/// 对 `node` 的出边开一次三态议会。
-pub fn council(graph: &TritGraph, node: usize) -> Council {
+/// 对 `node` 的出边开一次三态议会（稠密图与 CSR 共用）。
+pub fn council(graph: &impl TriGraphView, node: usize) -> Council {
     let mut plus = 0usize;
     let mut minus = 0usize;
     let mut abstain = 0usize;
@@ -79,6 +79,7 @@ fn negate(value: Ternary) -> Ternary {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::TritGraph;
 
     fn graph(n: usize, edges: &[(usize, usize, Ternary)], nodes: &[(usize, Ternary)]) -> TritGraph {
         let mut g = TritGraph::new(n);
