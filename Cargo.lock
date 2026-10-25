@@ -1674,6 +1674,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-ops"
+version = "0.12.0"
+dependencies = [
+ "trit-core",
+]
+
+[[package]]
 name = "trit-policy"
 version = "0.12.0"
 dependencies = [
