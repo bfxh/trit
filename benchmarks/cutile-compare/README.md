@@ -1,45 +1,82 @@
 # NVIDIA cuTile（cutile-rs）对照（f32 矩阵乘）
 
 同卡（RTX 4060 Ti）、同形状（512×4096×512）、同一计时口径（warmup 5；5 组 × 20 次取中位数；
-读数统一 **ps/MAC**），把 NVIDIA 的 **cuTile（Tile 模型，Rust → CUDA Tile IR）** 与
-本仓 `crates/trit-gpu` 的 WGSL 内核放在一起比。
+读数统一 **ps/MAC**），把 NVIDIA 的 **cuTile（Tile 模型，Rust → CUDA Tile IR）** 与本仓
+`crates/trit-gpu` 的 WGSL 内核放在一起比。
 
-## 实测（2026-10-25）
+## 调优后的读数（2026-10-25）
 
-| 实现 | tile | ps/MAC | 相对本仓 f32 最优 |
-|---|---|---|---|
-| cuTile `gemm`（示例内核） | 16×16×8 | **2.613** | 慢 8.7× |
-| cuTile `gemm`（示例内核） | 64×64×16 | 2.707 | 慢 9.0× |
-| 本仓 f32 `main_tiled4k32` | 4×4 + K32 | **0.301** | — |
-| 本仓 f32 `main_tiled2k8_f16`（fp16 存储） | 2×2 + K8 | 0.635 | — |
-| cuda-oxide 最优（reg2-K8） | 2×2 + K8 | 1.348 | — |
+| 实现 | 配置 | ps/MAC |
+|---|---|---|
+| cuTile `gemm`（**tile 搜索最优**） | 32×256×8 | **0.492** |
+| cuTile `gemm`（官方示例默认） | 16×16×8 | 2.711 |
+| cuTile `gemm` + split-K×2/×4/×8 | 32×256×8 | 0.693 / 0.684 / 0.727（**负收益**） |
+| 本仓 f32 `main_tiled4k32` | 4×4 + K32 | **0.301** |
+| 本仓 f32 `main_tiled2k8_f16`（fp16 存储） | 2×2 + K8 | 0.635 |
+| cuda-oxide 最优（reg2-K8） | 2×2 + K8 | 1.348 |
+
+**结论**：把 tile 搜索做完后，cuTile 从 2.71 降到 **0.492**（5.5×）；本仓 f32 最优仍是 0.301，
+即本仓约快 **1.63×**（此前按默认 tile 算是 8.7×——那个倍数不再成立）。
+
+## tile 搜索（全部实测）
+
+| BM×BN×BK | ps/MAC | | BM×BN×BK | ps/MAC |
+|---|---|---|---|---|
+| 16×16×8 | 2.711 | | 64×64×4 | 1.279 |
+| 16×16×16 | 4.128 | | 64×64×8 | 1.076 |
+| 32×32×8 | 2.184 | | 128×64×8 | 1.120 |
+| 32×32×16 | 2.045 | | 64×128×8 | 1.031 |
+| 64×32×16 | 1.178 | | 128×128×8 | 2.523 |
+| 32×64×16 | 1.155 | | 128×128×16 | 3.392 |
+| 64×64×8 | 1.152 | | 128×64×16 | 1.598 |
+| 64×64×16 | 2.842 | | 64×128×16 | 1.370 |
+| 64×64×32 | 2.134 | | 32×128×8 | 0.833 |
+| 128×32×8 | 1.156 | | 64×128×4 | 0.725 |
+| 64×256×8 | 1.958 | | **32×256×8** | **0.492** |
+| 32×256×4 | 0.615 | | 16×256×8 | 0.519 |
+| 32×512×8 | 1.275 | | 16×512×8 | 1.077 |
+| 64×256×4 | 2.491 | | | |
+
+规律：`BN` 大、`BM` 小（32×256）明显更好；`BK=8` 稳定优于 16/32/4；
+128×128 反而退化（寄存器/共享内存压力）。
+
+## split-K（负结果）
+
+两阶段实现：`gemm_split` 按 K 段写 `[S*m, n]`，`reduce_splits` 对 S 段求和（32×256×8）。
+
+| S | ps/MAC |
+|---|---|
+| 1（等价单段） | 0.664 |
+| 2 | 0.693 |
+| 4 | 0.684 |
+| 8 | 0.727 |
+
+S=1 反而最快 ⇒ 这个形状（32 tiles，22 SM）并行度已经够，split-K 只增加 reduce 与访存开销。
+注意 S=1 的 0.664 比单 kernel 的 0.492 慢，说明两阶段本身有固定开销。
+
+## 流水
+
+cuTile 没有显式的软件流水 API；`mma` 的 load/compute 重叠由 **CUDA Tile IR 编译器**自动调度
+（`#[cutile::entry]` 的 `optimization_hints` 只暴露 occupancy / CGA 等提示）。
+因此本对照里「流水」这一项不是手工调参，而是编译器默认行为；没有可对照的手工流水版本。
 
 ## 口径（不回避）
 
-- cuTile 是 **Tile 模型**（`partition` + `mma`，由 CUDA Tile IR JIT 编译），与本仓的 SIMT
-  逐线程内核**不是同结构**；这里比的是「同一问题的两种实现模型」，不是同结构实现赛跑。
-- 用的是 cuTile 官方 `gemm` 示例内核，只把形状改成 512×4096×512 并加计时；**没有**做
-  tile 形状搜索、pipeline/多级流水、split-K 等调优。16×16×8 与 64×64×16 两档都试过，
-  后者没有更快。
-- cuTile 的 `mma` 在 f32 上走 Tensor Core 路径（TF32 或等价），本仓 f32 是标量 FMA；
-  精度口径不同，这里只比吞吐。
+- cuTile 是 **Tile 模型**（`partition` + `mma`，CUDA Tile IR JIT），与本仓的 SIMT 逐线程内核
+  不是同结构；比的是「同一问题的两种实现模型」。
+- 用的是 cuTile 官方 `gemm` 内核，只改 tile 形状与加计时；**没有**改 kernel 体、没有手写流水。
+- cuTile 的 f32 `mma` 走 Tensor Core（TF32 或等价）路径，本仓 f32 是标量 FMA；只比吞吐不比精度。
 - 单卡单形状；换卡或换形状需要重测。
+- 未做逐元素正确性校验：用的是官方 gemm 内核，只改 tile 常量；官方 `gemm.rs` 自带校验路径。
 
 ## 复现步骤（WSL2）
 
 ```bash
-# 1) CUDA 13.2+（cuTile 运行时需要 tileiras，13.0 的 tileiras 拒绝 13.2 的 IR）
-sudo apt install -y cuda-toolkit-13-2
-
-# 2) cuda-rust 仓库（含 cuda-oxide 与 cutile-rs）
+sudo apt install -y cuda-toolkit-13-2          # 含 tileiras 13.2
 git clone https://github.com/NVIDIA/cuda-rust ~/cuda-rust
-
-# 3) 用 13.2 全套环境（CUDA_HOME/PATH 都指向 13.2）
 export CUDA_HOME=/usr/local/cuda-13.2 CUDA_TOOLKIT_PATH=/usr/local/cuda-13.2
 export PATH=/usr/local/cuda-13.2/bin:$PATH
-
-# 4) 在 cutile-rs workspace 内加一个带计时的 gemm example（形状 512×512×4096），
-#    用已安装的 1.99.1 工具链（rust-toolchain.toml 钉的 1.98.0 会触发下载）：
+# 在 cutile-rs workspace 内加带计时的 gemm example（形状 512×512×4096，tile 可参数化）
 cd ~/cuda-rust/cutile-rs && cargo +1.99.1 run --release --example gemm_bench
 ```
 
