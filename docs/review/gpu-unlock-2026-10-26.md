@@ -53,6 +53,9 @@
 
 ## 4. 技术卡点：为什么 wgpu 现在吃不到
 
+> 先回答一个前置问题：**trit 有没有张量核路径？没有。** 四条计算路径的指令类型逐条核查见
+> [`tensor-core-path-audit-2026-10-26.md`](tensor-core-path-audit-2026-10-26.md)（`file:line` 级反证）。
+
 1. **WGSL 没有 bf16**。naga 30.0.1 全仓 `grep -ri bf16` **0 命中**——IR 里根本没有 bf16 标量类型。
    因此带 `BFloat16Type` 的 SPIR-V 模块进不了 naga，bf16 张量核这条路当前是**硬阻塞**。
 2. **f16 张量核有理论通道，但未验证**。naga 有 `TypeInner::CooperativeMatrix`，SPIR-V 后端也实现了
