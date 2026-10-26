@@ -173,6 +173,8 @@ pub mod gpu;
 #[cfg(feature = "gpu")]
 pub mod matmul;
 #[cfg(feature = "gpu")]
+pub mod matmul_wf32;
+#[cfg(feature = "gpu")]
 mod matmul_f32;
 #[cfg(feature = "gpu")]
 mod popc;
