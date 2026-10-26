@@ -85,7 +85,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | crate | 内容 | 入口 |
 |---|---|---|
 | `trit-net` | 三值权重前向 + `X` 输入「确定/弃权」+ `TRN1` 模型格式 + STE 反向传播 | `trit-net infer/train/format` |
-| `trit-machines` | 三值栈式解释器 / 一维元胞自动机 / `{-1,0,+1}` 突触脉冲神经元 | `trit-machines vm\|ca\|snn` |
+| `trit-machines` | 三值栈式解释器 / 一维元胞自动机 / `{-1,0,+1}` 突触脉冲神经元 / 分级回路（自主搜寻→等待→双向或散布交流→收敛） | `trit-machines vm\|ca\|snn\|graded` |
 | `trit-codec` | 5 trits/byte、平衡三进制、GF(3) `[4,2,3]` 纠错、按分布选编码、零拷贝视图 | `trit-codec pack\|plan\|...` |
 | `trit-float` | 平衡三进制浮点：舍入模式、同比特范围/精度交换、Takum 式锥形精度原型（同比特精度仍是二进制的 3 倍误差） | `trit-float stats\|range\|rounding` |
 | `trit-attn` | 注意力 = 快权重 FFN 的双视角、三值整数关联记忆 | `trit-attn demo` |

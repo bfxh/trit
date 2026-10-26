@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（`trit-machines` 分级回路 M0：Issue #166）
+
+- 新模块 `graded`：把 `snn` 当场地，四档流水线 `Find → Wait → Exchange → Conclude`。
+  - **自主搜寻**：按 `seeds` 切块逐块探针，用**块外被带动的脉冲数**打分，取最高 `groups` 块——
+    不需要指定目标；得分全 0 就停在 `Find`，结论 `Unknown`（不猜）。
+  - **等待**：命中后静默 `wait_ticks`，末态跨阶段续跑（不是每段从零开始）。
+  - **双向 / 散布**：`groups = 2` 轮转对答，`> 2` 散布轮转；可选三值 Hebbian 强化
+    （只把空连接 `0` 补成 `±1`，不翻已有符号、不改阈值/泄漏/不应期）。
+  - **收敛**：每组按脉冲极性投票，合成三态判决；连续 `quorum` 轮不变才判 `Conclude`，
+    否则轮数耗尽判 `Unknown`。
+- `snn` 新增 `simulate_with_input` / `simulate_with_input_from`（逐神经元驱动 + 末态续跑）
+  与 `Run`（`fired` / `polarity`）；`simulate_with_drive` 改为其薄包装，旧行为逐字不变。
+- 测试：`trit-machines` 23 个（新增 6：找不到停在 Find、搜寻选中驱动块、双向收敛、
+  散布四组、强化只补空边、非法参数全拒）。
+- CLI：`trit-machines graded [--size N] [--seed N] [--groups N] [--rounds N]`。
+
 ### Added（`trit-graph` M6：端到端三态节点分类 M0）
 
 - `TernaryClassifier`：一层消息传递 + 三叉头；训练用软松弛（`tanh(latent)` + one-hot/均匀邻居状态），

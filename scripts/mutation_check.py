@@ -2515,6 +2515,30 @@ MUTANTS = [
         "pkg": 'trit-redteam',
         "filter": 'strict_decoders_accept_only_the_canonical_encoding'
 
+    },
+    {
+        "name": "machines: 搜寻取最低分块而不是最高分",
+        "file": "crates/trit-machines/src/graded.rs",
+        "old": "    scored.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.cmp(&right.1)));",
+        "new": "    scored.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));",
+        "pkg": "trit-machines",
+        "filter": "search_picks_the_block_that_drives_the_rest"
+    },
+    {
+        "name": "machines: 收敛计数把相同判成不同",
+        "file": "crates/trit-machines/src/graded.rs",
+        "old": "        } else if outcome == last {",
+        "new": "        } else if outcome != last {",
+        "pkg": "trit-machines",
+        "filter": "two_groups_converge_to_positive"
+    },
+    {
+        "name": "machines: 强化把同号写成抑制",
+        "file": "crates/trit-machines/src/graded.rs",
+        "old": "                let sign = polarity[source].signum() * polarity[listener].signum();",
+        "new": "                let sign = -polarity[source].signum() * polarity[listener].signum();",
+        "pkg": "trit-machines",
+        "filter": "reinforcement_only_fills_empty_links"
     }
 ]
 

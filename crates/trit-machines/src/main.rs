@@ -3,7 +3,7 @@
 use std::process::ExitCode;
 
 use trit_core::value::Ternary;
-use trit_machines::{ca, snn, vm};
+use trit_machines::{ca, graded, snn, vm};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -11,6 +11,7 @@ fn main() -> ExitCode {
         Some("vm") => vm_demo(),
         Some("ca") => ca_demo(&args[1..]),
         Some("snn") => snn_demo(&args[1..]),
+        Some("graded") => graded_demo(&args[1..]),
         _ => Err(usage()),
     };
     match result {
@@ -23,7 +24,7 @@ fn main() -> ExitCode {
 }
 
 fn usage() -> String {
-    "用法：trit-machines <vm|ca|snn> [--width N] [--steps N] [--size N] [--ticks N] [--seed N] [--kick N] [--drive N] [--threshold N]"
+    "用法：trit-machines <vm|ca|snn|graded> [--width N] [--steps N] [--size N] [--ticks N] [--seed N] [--kick N] [--drive N] [--threshold N] [--groups N] [--rounds N]"
         .to_string()
 }
 
@@ -147,4 +148,57 @@ fn snn_demo(args: &[String]) -> Result<(), String> {
     });
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
     Ok(())
+}
+
+fn graded_demo(args: &[String]) -> Result<(), String> {
+    let size = number(args, "--size", 64)?;
+    let seed = number(args, "--seed", 7)? as u64;
+    let groups = number(args, "--groups", 2)?;
+    let rounds = number(args, "--rounds", 16)?;
+    let network = snn::Network::random(size, seed);
+    let config = graded::GradeConfig {
+        groups,
+        rounds,
+        quorum: rounds.clamp(1, 3),
+        ..graded::GradeConfig::default()
+    };
+    let verdict = graded::run(&network, &config).map_err(|error| error.to_string())?;
+    let assemblies: Vec<serde_json::Value> = verdict
+        .assemblies
+        .iter()
+        .map(|assembly| serde_json::json!({"neurons": assembly.neurons, "score": assembly.score}))
+        .collect();
+    let votes: Vec<serde_json::Value> = verdict
+        .votes
+        .iter()
+        .map(|vote| {
+            serde_json::json!({
+                "round": vote.round,
+                "outcome": vote.outcome.as_char().to_string(),
+                "votes": vote.votes.iter().map(|v| v.as_char().to_string()).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    let obj = serde_json::json!({
+        "neurons": size,
+        "seed": seed,
+        "groups": config.groups,
+        "grade": grade_name(verdict.grade),
+        "outcome": verdict.outcome.as_char().to_string(),
+        "rounds": verdict.rounds,
+        "stable_rounds": verdict.stable_rounds,
+        "assemblies": assemblies,
+        "votes": votes,
+    });
+    println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
+    Ok(())
+}
+
+fn grade_name(grade: graded::Grade) -> &'static str {
+    match grade {
+        graded::Grade::Find => "find",
+        graded::Grade::Wait => "wait",
+        graded::Grade::Exchange => "exchange",
+        graded::Grade::Conclude => "conclude",
+    }
 }
