@@ -55,7 +55,8 @@
 - [x] 三态随机游走 / PageRank（三通道 + 阻尼，质量守恒有测试）。
 - [x] 三态图核（WL 子树核 + 路径核，归一化与正反例测试）。
 - [x] TriMPNN M0：可学习 3×3 三态转移表 + 一层消息传递 + 表级 STE 拟合（`trit-graph`）。
-- [ ] TriMPNN 整图端到端训练（图标签 → 表/多层参数）；BiTri-MPNN 位运算版。
+- [x] 端到端三态分类 M0：单目标节点、一层传播、软松弛训练 + 硬推理（准确率 1.000 vs 符号盲基线 0.357）。
+- [ ] 图级池化 + 多层 TriMPNN 的端到端训练；BiTri-MPNN 位运算版。
 - [ ] Tri-TreeOracle / Tri-TreeRNN：叶到根的三态递归与三叉判决。
 - [ ] Tri-TD-GNN：树分解（袋内消息传递 + 袋间三态树自动机）。
 - [ ] Tri-HyperGNN / Tri-ForestOracle：超边投票、森林议会。

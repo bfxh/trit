@@ -21,6 +21,7 @@
 //! - TriMPNN 只做一层传播 + 表级监督拟合，整图标签的端到端训练还没做；
 //! - 路径核只到长度 4；1-WL 与 WL 子树核区分不了正则图（已知上限）。
 
+pub mod classifier;
 mod council;
 mod csr;
 mod decomp;
@@ -34,6 +35,7 @@ mod view;
 mod walk;
 mod wl;
 
+pub use classifier::{ClassifierSample, TernaryClassifier};
 pub use council::{Council, council, tally};
 pub use csr::TritCsr;
 pub use decomp::TreeDecomposition;

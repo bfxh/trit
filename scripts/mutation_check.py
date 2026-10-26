@@ -1881,6 +1881,30 @@ MUTANTS = [
         "filter": "budgets_reject_oversized_blif"
     },
     {
+        "name": "classifier: 标签梯度符号反",
+        "file": "crates/trit-graph/src/classifier.rs",
+        "old": "        dlogits[index_of(sample.label)] -= 1.0;",
+        "new": "        dlogits[index_of(sample.label)] += 1.0;",
+        "pkg": "trit-graph",
+        "filter": "gradients_match_finite_differences"
+    },
+    {
+        "name": "classifier: 头梯度漏掉特征",
+        "file": "crates/trit-graph/src/classifier.rs",
+        "old": "            dhead[0][k] = dlogits[k] * feature;",
+        "new": "            dhead[0][k] = dlogits[k];",
+        "pkg": "trit-graph",
+        "filter": "gradients_match_finite_differences"
+    },
+    {
+        "name": "classifier: 聚合梯度少除入度",
+        "file": "crates/trit-graph/src/classifier.rs",
+        "old": "            let scale = dfeature / incoming.len() as f32;",
+        "new": "            let scale = dfeature;",
+        "pkg": "trit-graph",
+        "filter": "gradients_match_finite_differences"
+    },
+    {
         "name": "mpnn: 反对边不取反",
         "file": "crates/trit-graph/src/mpnn.rs",
         "old": "                _ => -1.0,",

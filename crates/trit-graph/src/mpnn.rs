@@ -48,6 +48,11 @@ impl TransitionTable {
         &self.latent
     }
 
+    /// latent 矩阵（训练用；调用方负责保证数值有限）。
+    pub fn latent_mut(&mut self) -> &mut [[f32; 3]; 3] {
+        &mut self.latent
+    }
+
     /// 前向硬票：`latent > 0.5 → +1`、`< -0.5 → -1`、否则 `0`。
     pub fn vote(&self, edge: Ternary, state: Ternary) -> Ternary {
         let latent = self.latent[index_of(edge)][index_of(state)];
