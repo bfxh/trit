@@ -3,6 +3,15 @@
 > 只记"还没做/做到哪"的事实，不写内部流程。每项给出**边界**和**验收口径**，
 > 做完就挪到对应 crate 的 README 或 [LESSONS](LESSONS.md)（负结果）。
 
+## 0. 容量预测扫描器（设计完成，待实现）
+
+- [x] **设计文档** `docs/CAPACITY.md`：执行前闭式资源账（RAM/显存/CPU/GPU
+  四面判决 OK/WARN/REJECT）——方法论五件套（闭式记账、Roofline、外存模型、
+  网络演算、GPU 分析模型），TTX3/TTX2-MOD/扫描器自身的资源账草表，
+  procscan 校准回路，诚实边界（静态上界非运行时保证）。
+- [ ] M1：`capacity` 模块（DeviceProfile / WorkloadDescriptor / 公式库）。
+- [ ] M2：判决器 + CLI；M3：procscan 校准回路；M4：GPU 显存账接入。
+
 ## 1. 三进制浮点（进行中）
 
 - [x] 平衡三进制浮点基础（`mantissa·3^exp`、最近合法尾数舍入）：`trit-float`。

@@ -52,6 +52,8 @@ GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值
 
 定位与边界：[docs/DESIGN.md](docs/DESIGN.md)。
 
+容量预测扫描器（防爆满）设计：[docs/CAPACITY.md](docs/CAPACITY.md)——执行前用闭式资源账回答「这个负载会不会打爆 RAM/显存/CPU/GPU」（文献与实施路线在内）。
+
 ## 预编译产物
 
 GitHub Releases（`v0.3.1` 起）提供：
