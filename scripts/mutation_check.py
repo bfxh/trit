@@ -2571,6 +2571,38 @@ MUTANTS = [
         "new": "                let sign = -polarity[source].signum() * polarity[listener].signum();",
         "pkg": "trit-machines",
         "filter": "reinforcement_only_fills_empty_links"
+    },
+    {
+        "name": "lsp: 律 lint 不比较否定差异",
+        "file": "crates/trit-lsp/src/semantics.rs",
+        "old": "        if left.name != right.name || left.negated == right.negated {",
+        "new": "        if true {",
+        "pkg": "trit-lsp",
+        "filter": "contradiction_is_flagged_in_all_spellings"
+    },
+    {
+        "name": "lsp: 语义分歧对拍恒不触发",
+        "file": "crates/trit-lsp/src/semantics.rs",
+        "old": "        if kleene != lukasiewicz {",
+        "new": "        if false {",
+        "pkg": "trit-lsp",
+        "filter": "lukasiewicz_implies_self_diverges"
+    },
+    {
+        "name": "lsp: 重命名不校验新名",
+        "file": "crates/trit-lsp/src/nav.rs",
+        "old": "    if !is_identifier(new_name) || analysis::constant(new_name).is_some() {",
+        "new": "    if false {",
+        "pkg": "trit-lsp",
+        "filter": "rename_rejects_invalid_and_constant_names"
+    },
+    {
+        "name": "unsafe: extern 声明块不是站点",
+        "file": "crates/trit-unsafe/src/scan.rs",
+        "old": '    } else if trimmed.starts_with("extern") {',
+        "new": '    } else if false {',
+        "pkg": "trit-unsafe",
+        "filter": "extern_block_is_a_site_and_stays_unknown"
     }
 ]
 

@@ -2,6 +2,37 @@
 
 ## [Unreleased]
 
+### Added（`trit-lsp` 深层三值诊断 + 导航；`trit-unsafe` 扫描面加深；Mimosa 深度扫描复核）
+
+- `trit-lsp`（编辑期「更深层次的三进制扫描」）：
+  - **深层三值诊断**（新模块 `semantics`）：
+    - 矛盾律 / 排中律陷阱 lint：`a & !a`、`!a | a`（含 `&&`/`∧`/`∨`/括号变体）——
+      CONTRIBUTING 红线的「矛盾律在三套语义下都不成立」在写代码时就报警
+      （a = X 时结果为 X，不是 False/True）；不同变量、双侧同否定、常量词不误报；
+    - **语义分歧对拍**：穷举赋值（≤4 变量）对 K3 与 Ł3 各求值一次，
+      结果不同就给出带具体反例的 Information 诊断（如 `a => a`：K3=X、Ł3=1）。
+      边界：B3 的毒值吸收使含 X 的求值几乎必然与它们不同，不参与对拍（否则是噪音），
+      B3 规则差异靠悬停真值表呈现。
+  - **变量导航**（新模块 `nav`）：`definition`（首次出现）/ `references` /
+    `documentHighlight` / `rename`（WorkspaceEdit；新名必须是合法标识符且非常量词）。
+    `.tri` 是单表达式文件，「定义」= 变量首次出现。
+  - 诊断新增 severity 字段（lint=Warning、分歧=Information，原错误仍为 Error）。
+  - 测试：lib 21 → 44、wire 1 → 2（definition/references/rename 走真 stdio 会话）。
+  - 修复过程记录：律 lint 的词法匹配曾有三处 bug（`(x)` 形态 token 数、
+    `!a & !a` 被从 `!` 内部重扫成 `a & !a`、一元算子夹在操作数间死循环），
+    各有回归测试；变异门新增 3 条锚点全部被抓住。
+- `trit-unsafe`（扫描面加深）：
+  - RISKY_APIS 补 `MaybeUninit` / `mem::forget` / `write_bytes`（14 → 17）；
+  - `unsafe extern`（edition 2024）声明块纳入扫描面（新 kind `extern`，
+    与 fn/impl/trait 同为「承诺面」，不判 Risky 只记账）；
+  - 修复存量死模式：`extern "C"` 因 scrub 抹掉字符串内容**从未匹配过**，
+    改为 scrub 后仍可命中的 `extern`；
+  - GUARDS 补 `is_aligned` / `NonNull` / `size_of`（16 → 19）。测试 12 → 15。
+- 安全扫描复核：docs/review/mimosa-deep-scan-2026-10-28.md——Mimosa deep 扫描
+  （inconclusive）6 条发现逐条人工复核全部为误报/构建产物（含 `eval` HIGH 是
+  变异锚点字符串、`ternary_corpus.rs` 不存在、MongoDB 在 rustdoc 产物里）；
+  不宣称项目安全。变异锚点新增 4 条。
+
 ### Added（`trit-learn` 神经组件基座 + `trit-attn` 注意力/残差/FFN 训练集成 M0）
 
 - `trit-learn`（可发布）从「量化 + STE」扩成神经组件基座，四个新模块：
