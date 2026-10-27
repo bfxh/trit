@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Fixed（工具链自审：用自己的扫描器挖自己，docs/review/self-audit-2026-10-28.md）
+
+- `trit-redteam binary` 自检挖到自己 4 个 project 发现，全部是真问题：
+  - 泄密 needle 表（`AKIA`/`sk-`/`-----BEGIN `…）以连续字面量编进自家产物，
+    扫自己必然命中自己 → needle 改**运行时逆序片段拼装**
+    （直接分段仍被链接器相邻布局拼回明文，实测又命中一次才升级）；
+  - `plausible_secret` 的比较字面量 `-----BEGIN ` 是第二层自指 → 改按 name 分支；
+  - `path_leaks` 硬编码维护者本机构建目录 **`D:\KF\`** 魔法路径 → 移除，
+    抽取器加通用盘符前缀（26 个 `X:\`，运行时拼装）+ ≥3 路径段过滤
+    （needle 短常量滤在门外），泄漏的构建树路径归入通用 `absolute-user-path`，
+    按机器细分留给将来的 `--build-tree` 参数；
+  - 重扫验证：trit-redteam.exe 自检 `project: 0`、`secrets: {}`。
+- `trit-dot`：2 个 `#[target_feature] unsafe fn` 有安全契约但缺 `# Safety`
+  标记，被自家 `trit-unsafe` 计为未文档化签名 → 补齐，重扫归零。
+- 动态链路自测（build→rail/sidechannel 吃自己导出的网表、procscan 观察自己
+  运行）：rail 报出的导出 fail-open 与双导轨重量侧信道为**已知边界**，
+  如实记录在自审报告，不在本 PR 修。
+
+
 ### Added（`trit-procscan` 动态追溯/追踪：事件流离线重放）
 
 - 新模块 `trace` + 新子命令 `trit-procscan trace <events.jsonl> --pid N`：
