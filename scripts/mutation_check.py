@@ -2619,6 +2619,30 @@ MUTANTS = [
         "new": "            entry.last_seen_ms = entry.last_seen_ms.min(*ts_ms);",
         "pkg": "trit-procscan",
         "filter": "repeated_samples_merge_into_one_step"
+    },
+    {
+        "name": "net: 私网误判成公网外联",
+        "file": "crates/trit-procscan/src/net.rs",
+        "old": "        [10, ..] => AddrClass::Private,",
+        "new": "        [10, ..] => AddrClass::Public,",
+        "pkg": "trit-procscan",
+        "filter": "public_egress_is_flagged_private_is_not"
+    },
+    {
+        "name": "net: 监听全部网卡不报",
+        "file": "crates/trit-procscan/src/net.rs",
+        "old": '            let is_listen_all = *state == "listen" && matches!(host.as_str(), "0.0.0.0" | "::" | "*");',
+        "new": '            let is_listen_all = false;',
+        "pkg": "trit-procscan",
+        "filter": "listen_all_interfaces_is_flagged_loopback_is_not"
+    },
+    {
+        "name": "net: 外联扇出阈值失效",
+        "file": "crates/trit-procscan/src/net.rs",
+        "old": "        if hosts_reachable.len() >= SCAN_FANOUT_HOSTS {",
+        "new": "        if false {",
+        "pkg": "trit-procscan",
+        "filter": "egress_fanout_needs_eight_distinct_hosts"
     }
 ]
 

@@ -1,4 +1,5 @@
 //! 把事件流压成「它到底干了什么」：进程树、外联、写盘、可疑模式。
+//! 网络面的分类与发现规则在 [`crate::net`]（本模块只负责进程/模块/写盘侧）。
 //!
 //! 规则只陈述**采到的证据**：比如"起了 cmd.exe 并带 -EncodedCommand"是事实，
 //! "它在横向移动"不是——那需要更多证据面，报告里不下这种结论。
@@ -42,29 +43,6 @@ const NET_TOOLS: [&str; 6] = [
 ];
 const EXEC_EXT: [&str; 6] = [".exe", ".dll", ".ps1", ".bat", ".cmd", ".scr"];
 
-fn is_loopback(remote: &str) -> bool {
-    let host = remote
-        .rsplit_once(':')
-        .map(|(host, _)| host)
-        .unwrap_or(remote);
-    host.is_empty()
-        || host == "-"
-        || host.starts_with("127.")
-        || host == "0.0.0.0"
-        || host == "::"
-        || host == "::1"
-        || host.starts_with("fe80:")
-        || host.starts_with("192.168.")
-        || host.starts_with("10.")
-        || host.starts_with("172.16.")
-        || host.starts_with("172.17.")
-        || host.starts_with("172.18.")
-        || host.starts_with("172.19.")
-        || host.starts_with("172.2")
-        || host.starts_with("172.30.")
-        || host.starts_with("172.31.")
-}
-
 pub fn analyze(events: &[Event]) -> Report {
     let mut report = Report::default();
     let mut pids: BTreeSet<u32> = BTreeSet::new();
@@ -75,7 +53,6 @@ pub fn analyze(events: &[Event]) -> Report {
     let mut net_tools: Vec<String> = Vec::new();
     let mut temp_modules: Vec<String> = Vec::new();
     let mut exec_writes: Vec<String> = Vec::new();
-    let mut outbound: Vec<String> = Vec::new();
     let mut encoded_commands: Vec<String> = Vec::new();
     let mut cpu: BTreeMap<String, u64> = BTreeMap::new();
     let mut first_ts = u64::MAX;
@@ -126,10 +103,8 @@ pub fn analyze(events: &[Event]) -> Report {
                 }
             }
             Event::Connection { pid, remote, .. } => {
+                // 连接只计数；网络面发现（外联/监听/扇出/连接失败）在 net.rs 统一判定。
                 connections.insert((*pid, remote.clone()));
-                if !is_loopback(remote) {
-                    outbound.push(format!("pid {pid} → {remote}"));
-                }
             }
             Event::FileWrite { path, bytes, .. } => {
                 report.writes += 1;
@@ -206,14 +181,6 @@ pub fn analyze(events: &[Event]) -> Report {
             exec_writes,
         );
     }
-    if !outbound.is_empty() {
-        push(
-            "outbound-connection",
-            "high",
-            format!("有 {} 条非回环/非内网连接", outbound.len()),
-            outbound,
-        );
-    }
     if report.processes > 50 {
         push(
             "many-processes",
@@ -222,6 +189,8 @@ pub fn analyze(events: &[Event]) -> Report {
             Vec::new(),
         );
     }
+    // 网络面：地址分类 + 外联/监听/扇出/连接失败（见 net 模块的口径与边界）。
+    report.findings.extend(crate::net::network_findings(events));
     report
 }
 

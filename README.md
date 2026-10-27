@@ -94,7 +94,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-ops` | 三值推理算子（双导轨掩码 / tryte 查表 / 自动选核）：流式 15.8× f32、0.2 B/参数 | `bench`（`crates/trit-ops`） |
 | `trit-texture` | TT3/TTX 三值纹理容器：2.40 bpp、GF(3) CRC-16、CPU/GPU 解码 | `trit-texture` |
 | `trit-unsafe` | 用 K3 审 unsafe：Safe / Unknown / Risky 按 crate 合成；17 类高危形态 + extern 声明块 | `trit-unsafe` |
-| `trit-procscan` | 进程行为扫描 + 自动分析 + 动态追溯/追踪（ppid 链回溯 + 后代子树 + 证据绑定） + MCP 配置优化（非管理员可用的证据面） | `trit-procscan` |
+| `trit-procscan` | 进程行为扫描 + 网络面检查（地址分类/外联/监听面/扇出/SYN_SENT） + 动态追溯/追踪（ppid 链回溯 + 后代子树 + 证据绑定） + MCP 配置优化（非管理员可用的证据面） | `trit-procscan` |
 | `trit-lsp` | `.tri` 语言服务器：诊断 / 悬停真值表 / 补全 / 文档符号 / 定义-引用-高亮-重命名 / 矛盾律-排中律-语义分歧深层诊断 | `trit-lsp` |
 | `trit-train` | 三值训练 M0：STE 三变体 + 每行 scale + 位平面 ALU | `train-bench` |
 | `trit-graph` | 三态结构基础：稠密/CSR 三态图、超图、树分解容器、议会、1-WL、图核、PageRank、TriMPNN、端到端三态分类 | 库（无二进制） |

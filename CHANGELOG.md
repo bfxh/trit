@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added（`trit-procscan` 网络面检查：地址分类 + 外联/监听/扇出/连接失败）
+
+- 新模块 `net`，接入 `run`/`analyze` 的报告（`network_findings`）：
+  - **地址分类器**：RFC 作用域分类（Loopback/Private/CGNAT/LinkLocal/Multicast/
+    Unspecified/Public/Invalid），IPv4 严格四段十进制；IPv6 前缀级
+    （`::1`、`fe80::/10`、`fc00::/7`、`ff00::/8`、`::`），带括号写法可剥，
+    `::ffff:a.b.c.d` 映射回落 v4 分类。采集端拼法 `{addr}:{port}`（IPv6 无括号）。
+  - **四类发现**（只陈述证据形态，不下「恶意」结论）：
+    - `outbound-connection`（high）：连到 Public / CGNAT（CGNAT 按外部算，口径已写明）；
+    - `listen-all-interfaces`（high）：`0.0.0.0` / `::` 上的监听（面向所有网卡；
+      只听回环或内网单卡不报）；
+    - `egress-fanout`（medium）：同一 pid 对 ≥8 个不同非本机主机发起连接
+      （扫描/信标重试的常见形态）；
+    - `connect-failures`（medium）：同一 pid ≥4 个不同目标停在 SYN_SENT。
+  - **重复采样去重**：同一条连接每个采样间隔重拍一次，先按 (host, port, state)
+    去重再判阈值（10 次采样 ≠ 扇出 10 主机，有测试）。
+- 修复：原 `is_loopback` 手搓前缀匹配既混了私网、又漏 CGNAT/link-local IPv4，
+  IPv6 带括号写法会误判成外联——职责并入分类器后按 RFC 口径重写。
+- 边界（不猜）：DNS 未采集 ⇒ 只能对 IP 字面量分类，回答不了域名；
+  TCP 表是瞬时快照，看见 LISTEN 不代表一直在听。
+- 测试：`trit-procscan` 17 → 26（分类表/畸形地址/四类发现/去重）。
+- 变异新增 3 条（私网误判成外联、监听全部网卡不报、扇出阈值失效），全部被抓住。
+
 ### Added（`trit-procscan` 动态追溯/追踪：事件流离线重放）
 
 - 新模块 `trace` + 新子命令 `trit-procscan trace <events.jsonl> --pid N`：
