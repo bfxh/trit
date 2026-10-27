@@ -1,9 +1,11 @@
 //! 进程行为扫描 + 自动分析 + MCP 配置体检。
 //!
-//! 三个子命令：
+//! 四个子命令：
 //! - `run -- <cmd...>`：起目标、采样它和子进程干了什么（进程/模块/TCP/目录写入/输出），
 //!   落成 JSONL 并当场给分析结论；
 //! - `analyze <events.jsonl>`：对已有事件流重放分析（离线、可复算）；
+//! - `trace <events.jsonl> --pid N`：**动态追溯/追踪**——沿 ppid 链回溯来源、
+//!   正向收后代子树、把模块/连接证据绑到链上成员（离线、确定性）；
 //! - `mcp <config.json>`：逐个起 MCP server 做 stdio 握手，量启动耗时、工具数、schema
 //!   体积，并给出"关谁/换直连"的建议。
 //!
@@ -14,6 +16,7 @@ mod analyze;
 mod collector;
 mod event;
 mod mcp;
+mod trace;
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -54,6 +57,14 @@ enum Command {
     },
     /// 对已有事件 JSONL 做分析
     Analyze { input: PathBuf },
+    /// 动态追溯/追踪：沿 ppid 链回溯一个 pid，并收它的后代子树
+    Trace {
+        /// 事件 JSONL（`run --events` 的产物）
+        input: PathBuf,
+        /// 要追溯的进程 id
+        #[arg(long)]
+        pid: u32,
+    },
     /// MCP 配置体检：逐个 server 握手，量启动/工具数/schema 体积
     Mcp {
         config: PathBuf,
@@ -71,7 +82,7 @@ fn run_command(
     watch: &[PathBuf],
     interval_ms: u64,
     events_path: Option<&PathBuf>,
-) -> Result<(serde_json::Value, bool)> {
+) -> Result<(serde_json::Value, Option<bool>)> {
     let options = collector::Options {
         watch: watch.to_vec(),
         interval_ms: interval_ms.max(100),
@@ -88,10 +99,13 @@ fn run_command(
         fs::write(path, text).with_context(|| format!("写 {} 失败", path.display()))?;
     }
     let report = analyze::analyze(&events);
-    Ok((analyze::to_json(&report), analyze::has_findings(&report)))
+    Ok((
+        analyze::to_json(&report),
+        Some(analyze::has_findings(&report)),
+    ))
 }
 
-fn analyze_file(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
+fn read_events(path: &PathBuf) -> Result<Vec<Event>> {
     let text = fs::read_to_string(path).with_context(|| format!("读 {} 失败", path.display()))?;
     let mut events = Vec::new();
     for line in text.lines() {
@@ -104,15 +118,28 @@ fn analyze_file(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
             events.push(event);
         }
     }
+    Ok(events)
+}
+
+fn analyze_file(path: &PathBuf) -> Result<(serde_json::Value, Option<bool>)> {
+    let events = read_events(path)?;
     let report = analyze::analyze(&events);
-    Ok((analyze::to_json(&report), analyze::has_findings(&report)))
+    Ok((
+        analyze::to_json(&report),
+        Some(analyze::has_findings(&report)),
+    ))
+}
+
+fn trace_command(path: &PathBuf, pid: u32) -> Result<serde_json::Value> {
+    let events = read_events(path)?;
+    Ok(trace::to_json(&trace::trace(&events, pid)))
 }
 
 fn mcp_command(
     path: &PathBuf,
     timeout_ms: u64,
     only: &[String],
-) -> Result<(serde_json::Value, bool)> {
+) -> Result<(serde_json::Value, Option<bool>)> {
     let text = fs::read_to_string(path).with_context(|| format!("读 {} 失败", path.display()))?;
     let configs = mcp::load_config(&text)?;
     let selected: Vec<&mcp::ServerConfig> = configs
@@ -142,7 +169,7 @@ fn mcp_command(
         .map(|(tool, servers)| format!("{tool}: {}", servers.join(",")))
         .collect();
     let finding = mcp::has_findings(&reports, &cross);
-    Ok((mcp::report_to_json(&reports, &cross), finding))
+    Ok((mcp::report_to_json(&reports, &cross), Some(finding)))
 }
 
 fn main() -> std::process::ExitCode {
@@ -155,6 +182,7 @@ fn main() -> std::process::ExitCode {
             target,
         } => run_command(target, watch, *interval_ms, events.as_ref()),
         Command::Analyze { input } => analyze_file(input),
+        Command::Trace { input, pid } => trace_command(input, *pid).map(|report| (report, None)),
         Command::Mcp {
             config,
             timeout_ms,
@@ -164,7 +192,7 @@ fn main() -> std::process::ExitCode {
     match result {
         Ok((report, finding)) => {
             println!("{report}");
-            if cli.strict && finding {
+            if cli.strict && finding == Some(true) {
                 return std::process::ExitCode::FAILURE;
             }
             std::process::ExitCode::SUCCESS

@@ -2603,6 +2603,22 @@ MUTANTS = [
         "new": '    } else if false {',
         "pkg": "trit-unsafe",
         "filter": "extern_block_is_a_site_and_stays_unknown"
+    },
+    {
+        "name": "procscan: 后代追踪漏掉间接子树",
+        "file": "crates/trit-procscan/src/trace.rs",
+        "old": "            worklist.extend(children.get(&current).cloned().unwrap_or_default());",
+        "new": "            worklist.clear();",
+        "pkg": "trit-procscan",
+        "filter": "descendants_follow_multi_level_tree"
+    },
+    {
+        "name": "procscan: 画像末次时间不更新",
+        "file": "crates/trit-procscan/src/trace.rs",
+        "old": "            entry.last_seen_ms = entry.last_seen_ms.max(*ts_ms);",
+        "new": "            entry.last_seen_ms = entry.last_seen_ms.min(*ts_ms);",
+        "pkg": "trit-procscan",
+        "filter": "repeated_samples_merge_into_one_step"
     }
 ]
 

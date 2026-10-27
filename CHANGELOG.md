@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（`trit-procscan` 动态追溯/追踪：事件流离线重放）
+
+- 新模块 `trace` + 新子命令 `trit-procscan trace <events.jsonl> --pid N`：
+  对 `run --events` 采集到的 JSONL 做**离线、确定性**的动态追溯：
+  - **追溯**：沿 ppid 链回溯到采样里能看到的根（root → target 方向），
+    每环带首末出现时间/采样次数/命令行；父进程不在采样里**显式说明（不猜）**；
+    ppid 环（采样伪影或伪装）检测并停止，不死循环；
+  - **追踪**：正向收齐目标 pid 的多级后代子树，按首次出现排序；
+  - **证据绑定**：模块 / TCP 连接按 pid 绑到链上成员；目录写入没有 pid，
+    单列全程时间线；采集器 Note 原样带出。
+- 同一份 JSONL 重放结果位相同一（JSONL 往返对拍有测试），可当复算门。
+- CLI：`Analyze` 与 `Trace` 共用事件读取；`trace` 不参与 `--strict` 判定
+  （它没有发现语义，只有证据链）。
+- 测试：`trit-procscan` 3 → 16（追溯/追踪/缺口说明/环/证据绑定/JSONL 往返/JSON 形状）。
+- 变异新增 2 条（后代漏间接子树、末次时间不更新），全部被抓住。
+
 ### Added（`trit-lsp` 深层三值诊断 + 导航；`trit-unsafe` 扫描面加深；Mimosa 深度扫描复核）
 
 - `trit-lsp`（编辑期「更深层次的三进制扫描」）：
