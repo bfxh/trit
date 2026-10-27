@@ -7,9 +7,9 @@
 //! 0     4    magic "TTX1"
 //! 4     4    width  (u32，BLOCK_WIDTH 的倍数)
 //! 8     4    height (u32，BLOCK_HEIGHT 的倍数)
-//! 12    4    blocks (u32，块数 = (width/4)·(height/10))
-//! 16    N    块载荷：每块 TRIT_BLOCK_BYTES(12) 字节
-//! 16+N  1    GF(3) CRC-3：对全部块的 40·blocks 个**索引 trit** 计算
+//! 12    4    blocks (u32，块数 = (width/4)·(height/8))
+//! 16    N    块载荷：每块 TRIT_BLOCK_BYTES(11) 字节
+//! 16+N  1    GF(3) CRC-3：对全部块的 32·blocks 个**索引 trit** 计算
 //! ```
 //!
 //! 与二进制容器（PNG 等）的差异：校验和不是比特 CRC，而是 **GF(3) 上的
