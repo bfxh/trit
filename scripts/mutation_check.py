@@ -1523,8 +1523,8 @@ MUTANTS = [
     {
         "name": "learn: softmax 不归一化",
         "file": "crates/trit-learn/src/loss.rs",
-        "old": "    let sum: f32 = exps.iter().sum();",
-        "new": "    let sum: f32 = 1.0;",
+        "old": "    let sum: f64 = exps.iter().sum();",
+        "new": "    let sum: f64 = 1.0;",
         "pkg": "trit-learn",
         "filter": "softmax_sums_to_one_and_is_stable"
     },

@@ -40,12 +40,16 @@ pub fn hinge(y: &[f32], target: &[f32]) -> (f32, Vec<f32>) {
 }
 
 /// softmax（数值稳定：先减行最大值）。
+///
+/// 指数在 **f64 内部求值再落回 f32**：各平台 libm 的 f32 `exp` 相差可达 1 ulp，
+/// 多轮训练会放大成不同轨迹；f64 内部计算是训练读数「可复算」的前提
+/// （与 [`crate::activation`] 的约定一致）。
 pub fn softmax(logits: &[f32]) -> Vec<f32> {
     assert!(!logits.is_empty(), "softmax：logits 不能为空");
     let max = logits.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let exps: Vec<f32> = logits.iter().map(|&z| (z - max).exp()).collect();
-    let sum: f32 = exps.iter().sum();
-    exps.into_iter().map(|e| e / sum).collect()
+    let exps: Vec<f64> = logits.iter().map(|&z| ((z - max) as f64).exp()).collect();
+    let sum: f64 = exps.iter().sum();
+    exps.into_iter().map(|e| (e / sum) as f32).collect()
 }
 
 /// softmax 交叉熵：`loss = -ln(p[label])`，`dL/dz = p - onehot(label)`。
@@ -55,7 +59,7 @@ pub fn cross_entropy(logits: &[f32], label: usize) -> (f32, Vec<f32>) {
         .get(label)
         .copied()
         .unwrap_or_else(|| panic!("cross_entropy：label {label} 越界（共 {} 类）", p.len()));
-    let loss = -prob.max(f32::MIN_POSITIVE).ln();
+    let loss = -((prob.max(f32::MIN_POSITIVE)) as f64).ln() as f32;
     let grad = p
         .iter()
         .enumerate()

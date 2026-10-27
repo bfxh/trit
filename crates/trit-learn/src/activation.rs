@@ -2,6 +2,11 @@
 //!
 //! 约定：导数由**激活后的输出** `y` 给出（`tanh` 的导数是 `1 - y²`），
 //! 这样调用方只需缓存前向输出，不必另存 pre-activation。
+//!
+//! 跨平台约定：`tanh` / `sigmoid` 在 **f64 内部求值再落回 f32**。
+//! 各平台 libm 的 f32 超越函数相差可达 1 ulp，多轮梯度下降会放大成
+//! 不同训练轨迹（本仓 PR 门在 Linux/macOS/MSRV 三平台跑同一批测试）；
+//! f64 内部计算把落点分歧压到 f32 舍入边界情形，训练读数才谈得上"可复算"。
 
 /// 激活函数（前向 + 由输出求导）。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -18,9 +23,9 @@ impl Activation {
     /// 前向。
     pub fn forward(self, x: f32) -> f32 {
         match self {
-            Self::Tanh => x.tanh(),
+            Self::Tanh => (x as f64).tanh() as f32,
             Self::Relu => x.max(0.0),
-            Self::Sigmoid => 1.0 / (1.0 + (-x).exp()),
+            Self::Sigmoid => (1.0 / (1.0 + (-(x as f64)).exp())) as f32,
         }
     }
 
