@@ -139,6 +139,11 @@ pub fn classify_ipv6(host: &str) -> AddrClass {
     AddrClass::Public
 }
 
+/// 监听绑定在所有网卡上（`0.0.0.0` / `::` / `*`）。
+fn is_wildcard_host(host: &str) -> bool {
+    matches!(host, "0.0.0.0" | "::" | "*")
+}
+
 /// 网络面全部发现（确定性：pid 升序、证据去重）。
 ///
 /// 检查项：
@@ -181,8 +186,7 @@ pub fn network_findings(events: &[Event]) -> Vec<Finding> {
                 }
                 _ => {}
             }
-            let is_listen_all =
-                *state == "listen" && matches!(host.as_str(), "0.0.0.0" | "::" | "*");
+            let is_listen_all = *state == "listen" && is_wildcard_host(host);
             if is_listen_all {
                 listeners.push(format!("pid {pid} listen {endpoint}（所有网卡）"));
             }

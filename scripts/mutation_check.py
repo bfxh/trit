@@ -2631,8 +2631,8 @@ MUTANTS = [
     {
         "name": "net: 监听全部网卡不报",
         "file": "crates/trit-procscan/src/net.rs",
-        "old": '            let is_listen_all = *state == "listen" && matches!(host.as_str(), "0.0.0.0" | "::" | "*");',
-        "new": '            let is_listen_all = false;',
+        "old": '    matches!(host, "0.0.0.0" | "::" | "*")',
+        "new": '    false',
         "pkg": "trit-procscan",
         "filter": "listen_all_interfaces_is_flagged_loopback_is_not"
     },
