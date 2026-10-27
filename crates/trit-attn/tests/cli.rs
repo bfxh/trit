@@ -55,3 +55,43 @@ fn zero_dimension_is_rejected() {
     assert_ne!(code, 0);
     assert!(stderr.contains("大于 0"), "{stderr}");
 }
+
+#[test]
+fn train_reports_learning() {
+    let (stdout, stderr, code) = run(&["train", "--epochs", "200", "--hidden", "16"]);
+    assert_eq!(code, 0, "stderr={stderr}");
+    let value: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert_eq!(value["task"], "associative_recall");
+    assert_eq!(value["samples"].as_u64().unwrap(), 24);
+    assert_eq!(value["dim"].as_u64().unwrap(), 8);
+    assert_eq!(value["seq_len"].as_u64().unwrap(), 5);
+    let initial = value["initial_loss"].as_f64().unwrap();
+    let final_loss = value["final_loss"].as_f64().unwrap();
+    assert!(final_loss < initial, "{initial} -> {final_loss}");
+    let attention = value["attention_on_value_position"].as_f64().unwrap();
+    assert!((0.0..=1.0).contains(&attention), "{attention}");
+}
+
+#[test]
+fn train_is_deterministic() {
+    let args = ["train", "--epochs", "60", "--hidden", "16"];
+    let (first, _, code) = run(&args);
+    assert_eq!(code, 0);
+    let (second, _, _) = run(&args);
+    assert_eq!(first, second);
+}
+
+#[test]
+fn train_rejects_zero_epochs() {
+    let (_, stderr, code) = run(&["train", "--epochs", "0"]);
+    assert_ne!(code, 0);
+    assert!(stderr.contains("大于 0"), "{stderr}");
+}
+
+#[test]
+fn usage_lists_both_subcommands() {
+    let (_, stderr, code) = run(&[]);
+    assert_ne!(code, 0);
+    assert!(stderr.contains("demo"), "{stderr}");
+    assert!(stderr.contains("train"), "{stderr}");
+}
