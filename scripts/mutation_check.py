@@ -1513,6 +1513,38 @@ MUTANTS = [
         "filter": "quantize_clamps_to_ternary"
     },
     {
+        "name": "learn: STE 饱和门失效",
+        "file": "crates/trit-learn/src/quant.rs",
+        "old": "                if ratio.abs() <= limit {",
+        "new": "                if true {",
+        "pkg": "trit-learn",
+        "filter": "clipped_ste_zeroes_saturated_gradients"
+    },
+    {
+        "name": "learn: softmax 不归一化",
+        "file": "crates/trit-learn/src/loss.rs",
+        "old": "    let sum: f32 = exps.iter().sum();",
+        "new": "    let sum: f32 = 1.0;",
+        "pkg": "trit-learn",
+        "filter": "softmax_sums_to_one_and_is_stable"
+    },
+    {
+        "name": "attn: 注意力丢 1/sqrt(d) 缩放",
+        "file": "crates/trit-attn/src/block.rs",
+        "old": "                        / scale",
+        "new": "                        / 1.0",
+        "pkg": "trit-attn",
+        "filter": "forward_matches_independent_attention_reference"
+    },
+    {
+        "name": "attn: 残差一丢输入 X",
+        "file": "crates/trit-attn/src/block.rs",
+        "old": "        let mut h = seq.to_vec();",
+        "new": "        let mut h = vec![0.0; seq.len()];",
+        "pkg": "trit-attn",
+        "filter": "input_gradients_match_finite_differences"
+    },
+    {
         "name": "float: 平局取更小指数（背离约定）",
         "file": "crates/trit-float/src/lib.rs",
         "old": "                            RoundMode::HalfAway => dropped > best_dropped,",
