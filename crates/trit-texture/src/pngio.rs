@@ -101,7 +101,7 @@ mod tests {
         assert_eq!(load_png_rgba(&png_path).unwrap(), image);
 
         let ttx_path = dir.join("out.ttx");
-        std::fs::write(&ttx_path, rgba_to_ttx2(&image.rgba, 8, 20).unwrap()).unwrap();
+        std::fs::write(&ttx_path, rgba_to_ttx2(&image.rgba, 8, 16).unwrap()).unwrap();
         let back = ttx2_to_rgba(&std::fs::read(&ttx_path).unwrap()).unwrap();
         let back_png = dir.join("back.png");
         save_png_rgba(&back_png, &back).unwrap();

@@ -142,6 +142,7 @@ pub fn rgba_to_ttx2_mips(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::BLOCK_HEIGHT;
 
     fn sample(width: usize, height: usize) -> Vec<u8> {
         (0..width * height * 4).map(|i| (i % 251) as u8).collect()
@@ -149,14 +150,14 @@ mod tests {
 
     #[test]
     fn rgba_roundtrips_through_both_containers() {
-        let pixels = sample(8, 20);
+        let pixels = sample(8, 16);
         // 参考值：直接编解码（不过容器）。
-        let reference = crate::decode_rgba(&crate::encode_rgba(&pixels, 8, 20).unwrap()).unwrap();
-        let v1_bytes = rgba_to_ttx1(&pixels, 8, 20).unwrap();
-        let v2_bytes = rgba_to_ttx2(&pixels, 8, 20).unwrap();
+        let reference = crate::decode_rgba(&crate::encode_rgba(&pixels, 8, 16).unwrap()).unwrap();
+        let v1_bytes = rgba_to_ttx1(&pixels, 8, 16).unwrap();
+        let v2_bytes = rgba_to_ttx2(&pixels, 8, 16).unwrap();
         assert_eq!(ttx1_to_rgba(&v1_bytes).unwrap().rgba, reference);
         assert_eq!(ttx2_to_rgba(&v2_bytes).unwrap().rgba, reference);
-        for (bytes, w, h) in [(v1_bytes, 8, 20), (v2_bytes, 8, 20)] {
+        for (bytes, w, h) in [(v1_bytes, 8, 16), (v2_bytes, 8, 16)] {
             let back = if bytes[..4] == *b"TTX1" {
                 ttx1_to_rgba(&bytes).unwrap()
             } else {
@@ -168,8 +169,8 @@ mod tests {
 
     #[test]
     fn containers_upgrade_and_downgrade_losslessly() {
-        let pixels = sample(8, 20);
-        let v1_bytes = rgba_to_ttx1(&pixels, 8, 20).unwrap();
+        let pixels = sample(8, 16);
+        let v1_bytes = rgba_to_ttx1(&pixels, 8, 16).unwrap();
         let upgraded = ttx1_to_ttx2(&v1_bytes).unwrap();
         assert_eq!(&upgraded[..4], &v2::MAGIC);
         // 升级不碰块数据：解码结果与直读 v1 逐字节一致。
@@ -184,16 +185,16 @@ mod tests {
 
     #[test]
     fn downgrade_rejects_mip_chains_and_model_kind() {
-        let pixels = sample(8, 20);
-        let mips = rgba_to_ttx2_mips(&pixels, 8, 20).unwrap();
-        // 8×20 的下一级 4×10 仍对齐 ⇒ 至少两级；降级必须拒绝。
+        let pixels = sample(8, 16);
+        let mips = rgba_to_ttx2_mips(&pixels, 8, 16).unwrap();
+        // 8×16 的下一级 4×8 仍对齐 ⇒ 至少两级；降级必须拒绝。
         assert!(matches!(
             ttx2_to_ttx1(&mips),
             Err(TextureError::TtxMip { level: 1 })
         ));
         // 取级钉死：mip 链解码取**第 0 级**（8×20），不是末级。
         let level0 = ttx2_to_rgba(&mips).unwrap();
-        assert_eq!((level0.width, level0.height), (8, 20));
+        assert_eq!((level0.width, level0.height), (8, 16));
         // MOD 不是图：ttx2_to_rgba 显式拒绝。
         use crate::ttx2::{TritModel, TritModelLayer};
         let layer = TritModelLayer::new(&[vec![1, -1, 0]], &[0]).unwrap();
@@ -207,7 +208,7 @@ mod tests {
 
     #[test]
     fn mip_chain_dimensions_and_box_filter_are_exact() {
-        let mut pixels = sample(8, 20);
+        let mut pixels = sample(8, 16);
         pixels[0] = 255;
         pixels[1] = 255;
         pixels[2] = 255;
@@ -216,12 +217,12 @@ mod tests {
         pixels[6] = 200;
         let image = RgbaImage {
             width: 8,
-            height: 20,
+            height: 16,
             rgba: pixels.clone(),
         };
         // 滤波器直测（不经有损的 TT3 编码）：粗像素 = 源左上 2×2 逐通道平均。
-        let coarse = downsample(&image, 4, 10);
-        assert_eq!((coarse.width, coarse.height), (4, 10));
+        let coarse = downsample(&image, 4, BLOCK_HEIGHT);
+        assert_eq!((coarse.width, coarse.height), (4, BLOCK_HEIGHT));
         let at = |x: usize, y: usize| {
             let o = (y * 8 + x) * 4;
             [pixels[o], pixels[o + 1], pixels[o + 2]]
@@ -239,14 +240,14 @@ mod tests {
             );
             assert_eq!(coarse.rgba[3], 255, "alpha 恒 255");
         }
-        // 8×20 → 4×10 →（2 或 5 不再对齐）停：恰好两级。
-        let levels = build_mip_chain(&pixels, 8, 20).unwrap();
+        // 8×16 → 4×8 →（2×4 不再对齐）停：恰好两级。
+        let levels = build_mip_chain(&pixels, 8, 16).unwrap();
         assert_eq!(
             levels
                 .iter()
                 .map(|t| (t.width, t.height))
                 .collect::<Vec<_>>(),
-            vec![(8, 20), (4, 10)]
+            vec![(8, 16), (4, BLOCK_HEIGHT)]
         );
     }
 }

@@ -394,8 +394,8 @@ mod tests {
 
     #[test]
     fn texture_mip_chain_roundtrips() {
-        let fine = encode_rgba(&sample(8, 20), 8, 20).unwrap();
-        let coarse = encode_rgba(&sample(4, 10), 4, 10).unwrap();
+        let fine = encode_rgba(&sample(8, 16), 8, 16).unwrap();
+        let coarse = encode_rgba(&sample(4, BLOCK_HEIGHT), 4, BLOCK_HEIGHT).unwrap();
         let bytes = to_ttx2(&TtxDocument::Texture {
             levels: vec![fine.clone(), coarse.clone()],
         })
@@ -407,14 +407,14 @@ mod tests {
         assert_eq!(levels, vec![fine, coarse]);
         // 单级（无 mip）合法：内容与 TTX1 同源。
         let single = to_ttx2(&TtxDocument::Texture {
-            levels: vec![encode_rgba(&sample(8, 20), 8, 20).unwrap()],
+            levels: vec![encode_rgba(&sample(8, 16), 8, 16).unwrap()],
         })
         .unwrap();
         let TtxDocument::Texture { levels } = from_ttx2(&single).unwrap() else {
             panic!()
         };
         let via_v1 =
-            ttx::from_ttx(&ttx::to_ttx(&encode_rgba(&sample(8, 20), 8, 20).unwrap())).unwrap();
+            ttx::from_ttx(&ttx::to_ttx(&encode_rgba(&sample(8, 16), 8, 16).unwrap())).unwrap();
         assert_eq!(
             decode_rgba(&levels[0]).unwrap(),
             decode_rgba(&via_v1).unwrap()
@@ -423,7 +423,7 @@ mod tests {
 
     #[test]
     fn mip_chain_rejects_equal_misaligned_and_empty() {
-        let fine = encode_rgba(&sample(8, 20), 8, 20).unwrap();
+        let fine = encode_rgba(&sample(8, 16), 8, 16).unwrap();
         // 同级（宽高都不减）：拒绝。
         assert!(matches!(
             to_ttx2(&TtxDocument::Texture {
@@ -453,7 +453,7 @@ mod tests {
     #[test]
     fn header_fields_are_validated_before_payload() {
         let bytes = to_ttx2(&TtxDocument::Texture {
-            levels: vec![encode_rgba(&sample(4, 10), 4, 10).unwrap()],
+            levels: vec![encode_rgba(&sample(4, BLOCK_HEIGHT), 4, BLOCK_HEIGHT).unwrap()],
         })
         .unwrap();
         // 未知 kind。
@@ -520,7 +520,7 @@ mod tests {
         // mip 级声明 8 亿×20（块数 ×12 > u32::MAX 的回绕区）：level_blocks 的
         // checked 预算必须拒成 Shape，不进入任何按声明的分配/切片。
         let bytes = to_ttx2(&TtxDocument::Texture {
-            levels: vec![encode_rgba(&sample(4, 10), 4, 10).unwrap()],
+            levels: vec![encode_rgba(&sample(4, BLOCK_HEIGHT), 4, BLOCK_HEIGHT).unwrap()],
         })
         .unwrap();
         let mut giant = bytes;
@@ -538,7 +538,7 @@ mod tests {
 
     #[test]
     fn v1_files_are_rejected_with_explicit_magic() {
-        let texture = encode_rgba(&sample(4, 10), 4, 10).unwrap();
+        let texture = encode_rgba(&sample(4, BLOCK_HEIGHT), 4, BLOCK_HEIGHT).unwrap();
         let v1 = ttx::to_ttx(&texture);
         assert!(matches!(
             from_ttx2(&v1),

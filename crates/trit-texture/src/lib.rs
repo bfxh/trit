@@ -1,20 +1,24 @@
 //! 三进制块纹理压缩实验层（`publish = false`，不属于稳定 API）。
 //!
-//! 格式 **TT3**：4×10 = 40 纹素的块，块头是 RGB565 端点对（4 字节），
-//! 每纹素 **1 个 trit** 索引 3 级调色板 `{e0, mid, e1}`；40 个 trit 按
-//! 5 trit/字节打包成 8 字节（**整除零浪费**）⇒ 每块 **12 字节 = 2.4 bpp**。
+//! 格式 **TT3**：**4×8 = 32 纹素**的块，块头是 RGB565 端点对（4 字节），
+//! 每纹素 **1 个 trit** 索引 3 级调色板 `{e0, mid, e1}`；32 个 trit 按
+//! 5 trit/字节打包成 7 字节（35 槽用 32，**≈8.6% 打包粒度税**）⇒
+//! 每块 **11 字节 = 2.75 bpp**。
+//!
+//! 为什么不是 4×10：40 纹素能被 5 整除、载荷零浪费（8 字节/块），但 **10 不整除
+//! 任何 MC 纹理边长（16/32/64/128/256/512）**，真实材质包一张都编码不了。
+//! 兼容性 > 那 8.6% 粒度税，详见 [`BLOCK_HEIGHT`] 上的实测账。
 //!
 //! 对比基线（同一块结构、同一 3 级调色板，索引改 2 bit/纹素）：
-//! 40×2 bit = 10 字节 ⇒ 每块 14 字节 = 2.8 bpp。**等调色板下 trit 载荷
-//! 8 字节 < 二进制 10 字节（省 20% 载荷 / 14.3% 码率）**——这是可复算的
-//! 结论（`cargo run -p trit-texture` 打表）。显存账：4096×4096 RGBA 原图
-//! 64 MiB ⇒ TT3 约 5 MiB（12.7×），基线约 5.9 MiB。
+//! 32×2 bit = 8 字节 ⇒ 每块 12 字节 = 3.0 bpp。**等调色板下 trit 载荷
+//! 7 字节 < 二进制 8 字节（省 1 字节/块 ≈ 8.3%）**——这是可复算的结论。
+//! 显存账：4096×4096 RGBA 原图 64 MiB ⇒ TT3 约 5.6 MiB（11.4×），基线约 6.1 MiB。
 //!
 //! 三类边界如实记账（见 docs/TERNARY-BOUNDARIES.md）：
 //! - **A 原生红利**：3 级调色板的索引，1 trit（log2 3 ≈ 1.585 bit）装得下，
-//!   2 bit 装不满——块内 40 纹素取整后 8 字节 vs 10 字节（省 20% 载荷）。
-//! - **B 模拟税**：旧 4×8 块 35 槽只用 32（≈8.6% 打包粒度税），4×10 已清零；
-//!   端点被迫走 RGB565（生态格式）仍是量化税。
+//!   2 bit 装不满——块内 32 纹素取整后 7 字节 vs 8 字节（省 12.5% 载荷）。
+//! - **B 模拟税**：4×8 的 32 trit 需 7 字节（35 槽只用 32，≈8.6% 打包粒度税，
+//!   这是为整除 MC 边长付的账）；端点被迫走 RGB565（生态格式）仍是量化税。
 //! - **C 生态路径依赖**：RGB565 端点对抄自 BC1 的生态格式，不是三进制选择。
 //! - **D 基数无关**：最近调色板色的搜索开销与进制无关，不计入任何一边。
 
@@ -621,10 +625,10 @@ mod tests {
 
     #[test]
     fn texture_roundtrip_and_block_budgets_are_exact() {
-        // 4×10 纹理 = 1 块：TT3 每块 12 字节、基线每块 14 字节——这就是 A 类结论的来源
-        //（40 纹素恰被 5 整除：零槽位浪费；旧 4×8 的 7 字节载荷浪费 3 槽）。
+        // 4×8 纹理 = 1 块：TT3 每块 11 字节、基线每块 12 字节——A 类结论在 4×8 下的真实账
+        //（32 trit 需 7 字节：35 槽只用 32，约 8.6% 打包粒度税；基线 32×2 bit = 8 字节）。
         let width = 4;
-        let height = 10;
+        let height = BLOCK_HEIGHT;
         let mut pixels = vec![0u8; width * height * 4];
         for (index, byte) in pixels.iter_mut().enumerate() {
             *byte = (index % 251) as u8;
@@ -632,22 +636,20 @@ mod tests {
         let trit = encode_rgba(&pixels, width, height).unwrap();
         assert_eq!(trit.blocks.len(), 1);
         assert_eq!(trit.blocks[0].len(), TRIT_BLOCK_BYTES);
-        assert_eq!(TRIT_BLOCK_BYTES, 12);
+        assert_eq!(TRIT_BLOCK_BYTES, 11);
         let decoded = decode_rgba(&trit).unwrap();
         assert_eq!(decoded.len(), pixels.len());
 
         let baseline = encode_rgba_baseline(&pixels, width, height).unwrap();
         assert_eq!(baseline.blocks[0].len(), BINARY_BLOCK_BYTES);
-        assert_eq!(BINARY_BLOCK_BYTES, 14);
+        assert_eq!(BINARY_BLOCK_BYTES, 12);
         let decoded_baseline = decode_rgba_baseline(&baseline).unwrap();
         assert_eq!(decoded_baseline.len(), pixels.len());
-        // 两种编码的块数相同、码率差 1 字节/块（2.75 vs 3.0 bpp）。
+        // 两种编码的块数相同，码率差 1 字节/块（2.75 vs 3.0 bpp）。
         assert_eq!(trit.blocks.len(), baseline.blocks.len());
-        // 每块 12 vs 14 字节：总字节比 12:14 = 6:7。
-        assert_eq!(
-            7 * trit.blocks.len() * TRIT_BLOCK_BYTES,
-            6 * baseline.blocks.len() * BINARY_BLOCK_BYTES
-        );
+        // 每块 11 vs 12 字节：总字节比 11:12（TT3 省约 8.3%）。
+        // 钉住 11:12 这个具体比值（写成常量表达式会恒真，防不住回归，故显式写死两个数）。
+        assert_eq!((TRIT_BLOCK_BYTES, BINARY_BLOCK_BYTES), (11, 12));
     }
 
     #[test]
@@ -664,7 +666,7 @@ mod tests {
             let low = expand(raw.0);
             let high = expand(raw.1);
             // low 填满整块，texel 1 放 high：端点才恰好是这两个色。
-            let mut pixels = vec![0u8; 4 * 10 * 4];
+            let mut pixels = vec![0u8; 4 * BLOCK_HEIGHT * 4];
             for texel in 0..BLOCK_PIXELS {
                 pixels[texel * 4] = low[0];
                 pixels[texel * 4 + 1] = low[1];
@@ -675,7 +677,7 @@ mod tests {
             pixels[5] = high[1];
             pixels[6] = high[2];
             pixels[7] = 255;
-            let texture = encode_rgba_baseline(&pixels, 4, 10).unwrap();
+            let texture = encode_rgba_baseline(&pixels, 4, BLOCK_HEIGHT).unwrap();
             assert_eq!(texture.blocks.len(), 1);
             let decoded = decode_rgba_baseline(&texture).unwrap();
             for (texel, color) in [(0, low), (1, high)] {
@@ -709,10 +711,10 @@ mod tests {
             })
         ));
         assert!(matches!(
-            encode_rgba(&[0; 16], 4, 10),
+            encode_rgba(&[0; 16], 4, BLOCK_HEIGHT),
             Err(TextureError::SizeMismatch {
                 actual: 16,
-                expected: 160
+                expected: 128
             })
         ));
         let big = (MAX_TEXTURE_PIXELS + 1).next_multiple_of(BLOCK_WIDTH * BLOCK_HEIGHT);
@@ -738,7 +740,7 @@ mod tests {
     #[test]
     fn decode_into_matches_allocating_and_rejects_short_buffers() {
         let width = 4;
-        let height = 10;
+        let height = BLOCK_HEIGHT;
         let pixels: Vec<u8> = (0..width * height * 4).map(|i| (i % 251) as u8).collect();
         let texture = encode_rgba(&pixels, width, height).unwrap();
         let allocating = decode_rgba(&texture).unwrap();
