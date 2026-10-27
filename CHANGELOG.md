@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added（高危门：并发/内存的编译期静态门禁，比 rustc 更狠且按设计分级）
+
+- 新门禁 `scripts/hazard_gate.py` + 政策文档 `docs/HAZARD-POLICY.md`，接入 CI
+  （hazard job：`--self-test` + 默认严格检查）。三档设计：
+  - **放行**：提高能力上限且有成文防护的高危原语——登记进 ALLOW 表，
+    每条带设计理由（现状：trit-ops 裸指针 SIMD GEMV（15.8× f32）、
+    `Ptr<T>` 的 `unsafe impl Send/Sync`（按行切分 + join 屏障）、
+    POPCNT 位并行、SIMD 对照基准）；
+  - **有条件**：可用但必须带成文不变量（`from_raw_parts`/`set_len`/
+    `assume_init`/`forget`/`target_feature`/`Ordering::Relaxed`——
+    SAFETY 检索覆盖匹配点向上 8 行与所在 unsafe 边界上方）；
+  - **禁止**：`static mut`、`transmute`——产品代码零放行条目
+    （本仓设计不需要：线程局部用 `OnceLock<Arc<Pool>>`，跨类型用显式转换）。
+- 实现要点：源码先剥注释/字符串/char 字面量/原始字符串再匹配——文档示例与
+  检测 needle 不会「复活」成匹配（trit-redteam 自审教训的直接应用）；
+  `#[cfg(test)]` 与 tests/ 属演练区只计数不拦截；匹配点向上找不到 unsafe
+  边界与 SAFETY 就红。
+- 自测：5 条反证（每条规则都能红）+ needle/char/内联测试不自指 +
+  登记+SAFETY 两种正例放行；仓库现状 0 findings、41 处放行/豁免。
+
 ### Added（`trit-procscan` 动态追溯/追踪：事件流离线重放）
 
 - 新模块 `trace` + 新子命令 `trit-procscan trace <events.jsonl> --pid N`：
