@@ -76,7 +76,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-bdd` | BDD（canonical）等价判定、三值量化 |
 | `trit-policy` | 三值决策表的构建期验证 |
 | `trit-schedule` | 三值依赖的静态 DAG 调度（True/False/Unknown） |
-| `trit-learn` | 三值训练原语：量化、STE 三变体、scale 梯度（两个实验层共用） |
+| `trit-learn` | 三值训练原语与神经组件：量化、STE 三变体、scale 梯度；批量 QAT 全连接层、损失/激活/优化器（实验层共用） |
 | `sansheng` | 三生：统一入口伞包（re-export 以上能力） |
 | `trit-cli` | `trit` 命令行 |
 
@@ -88,7 +88,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-machines` | 三值栈式解释器 / 一维元胞自动机 / `{-1,0,+1}` 突触脉冲神经元 / 分级回路（自主搜寻→等待→双向或散布交流→收敛） | `trit-machines vm\|ca\|snn\|graded` |
 | `trit-codec` | 5 trits/byte、平衡三进制、GF(3) `[4,2,3]` 纠错、按分布选编码、零拷贝视图 | `trit-codec pack\|plan\|...` |
 | `trit-float` | 平衡三进制浮点：舍入模式、同比特范围/精度交换、Takum 式锥形精度原型（同比特精度仍是二进制的 3 倍误差） | `trit-float stats\|range\|rounding` |
-| `trit-attn` | 注意力 = 快权重 FFN 的双视角、三值整数关联记忆 | `trit-attn demo` |
+| `trit-attn` | 注意力 = 快权重 FFN 的双视角、三值整数关联记忆、可训练三值注意力块（注意力+残差+FFN，QAT + 全链 STE） | `trit-attn demo\|train` |
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |
 | `trit-ops` | 三值推理算子（双导轨掩码 / tryte 查表 / 自动选核）：流式 15.8× f32、0.2 B/参数 | `bench`（`crates/trit-ops`） |

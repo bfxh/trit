@@ -26,7 +26,12 @@
 
 - [ ] **三值 KV cache**：per-channel scale、按层/头量化；验收：同样显存下上下文长度，
       与 f16 KV 的质量差（困惑度/采样一致率）和吞吐。
-- [ ] 注意力/残差/FFN 的训练集成（`trit-attn` 目前只有等价视角与快权重记忆的 demo）。
+- [x] 注意力/残差/FFN 的训练集成（M0，`trit-attn` 的 `block`/`train`：三值 QKV 投影 +
+      softmax 注意力 + 双残差 + 三值 FFN 的全链 STE 反向；关联回忆任务
+      loss 0.964 → 0.043、召回 1.000，全程三值前向。**边界**：单头、无偏置、
+      无 LayerNorm/KV-cache/因果掩码；配对固定的任务里 FFN 支路可背答案，
+      `attention_on_value_position ≈ 0.16`（均匀 0.2）——注意力必要性要靠
+      「置换随样本变化」的数据集另证）。
 
 ## 4. 通信
 

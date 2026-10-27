@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Added（`trit-learn` 神经组件基座 + `trit-attn` 注意力/残差/FFN 训练集成 M0）
+
+- `trit-learn`（可发布）从「量化 + STE」扩成神经组件基座，四个新模块：
+  - `dense`：**批量三值 QAT 全连接层**（per-row scale、STE 反向、梯度层内累积、
+    外部优化器接口；与 `trit-train` 的单样本探针层互补，面向多层堆叠 + 批训练）；
+  - `loss`：MSE / hinge / softmax 交叉熵的解析梯度、数值稳定的 `softmax`
+    与注意力反向要用的 `softmax_backward`（Jacobian-向量积，有独立数值对拍）；
+  - `opt`：平面向量优化器（带动量 SGD / Adam，含偏差修正）与全局范数裁剪；
+  - `activation`：tanh / ReLU / sigmoid 及其「由输出求导」的实现。
+  `trit-learn` 测试 6 → 29（新增 23，含 **STE 代理前向梯度检查**：对 latent 的解析
+  梯度与光滑代理的有限差分对拍——真前向对 latent 分片常量，直接对拍恒为 0，是伪检查）。
+- `trit-attn` 训练集成（ROADMAP §3 项）：新模块 `block` + `train`。
+  - `AttentionBlock`：三值 QKV 投影 → `softmax(QKᵀ/√d)` → 残差 → 三值 FFN（tanh/ReLU）
+    → 残差；前向始终用三值权重（QAT，无「导出再量化」落差）；反向是全链 STE
+    （softmax 用 `softmax_backward`，残差分双路，激活用 `Activation::backward`）。
+    权重/尺度梯度由 `BlockOptimizers`（每参数张量一个 SGD/Adam 实例）统一应用。
+  - 验证：`dX` 端到端有限差分对拍（接线检查）；块内 `A·V` 与 `scores::attention`
+    独立实现逐元素对拍；ReLU 变体同拍；批累积翻倍检查。
+  - `train` 模块：关联回忆任务（`[k1, v1, k2, v2, q]`，`q` 可指任一键，值位置 1 或 3，
+    24 样本；bipolar one-hot token，置换由种子固定）。**实测（1200 轮、lr=0.3、
+    动量 0.9）：loss 0.964 → 0.043，末位 top-1 召回 1.000**，全程三值前向。
+    读数 `attention_on_value_position ≈ 0.16`（均匀 0.2）——本配置下 FFN 支路
+    主导记忆（配对固定 ⇒ 可背答案），注意力未被逼成内容寻址；要证注意力必要性
+    需要「置换随样本变化」的数据集，M0 不做。
+  - 死区教训（记入初始化注释）：latent 零均值小扰动 + scale 0.25 ⇒ `q` 全 0，
+    前向分片常量，训练空转；改为随机符号、幅值 `U(0.1, 0.3)`（`|w/s| ∈ [0.4, 1.2]`）
+    混合三值起步。
+- CLI：`trit-attn train [--epochs N] [--lr F] [--hidden N] [--seed N]`（JSON 报告）。
+- 测试：`trit-attn` lib 8 → 21、CLI 3 → 7。
+- 变异新增 4 条（STE 饱和门失效、softmax 不归一化、注意力丢 1/√d、残差一丢 X），
+  见 `scripts/mutation_check.py`。
+
 ### Added（`trit-machines` 分级回路 M0：Issue #166）
 
 - 新模块 `graded`：把 `snn` 当场地，四档流水线 `Find → Wait → Exchange → Conclude`。
