@@ -5,6 +5,8 @@
 //! - [`text`]：LSP 位置（UTF-16 码元）与字节偏移；
 //! - [`lex`]：`.tri` 的最小词法扫描与运算符表（拼写/优先级/结合性）；
 //! - [`analysis`]：诊断、悬停（真值表）、补全、文档符号；
+//! - [`semantics`]：深层三值诊断——矛盾律/排中律陷阱、K3/Ł3/B3 语义分歧对拍；
+//! - [`nav`]：变量导航——定义 / 引用 / 高亮 / 重命名；
 //! - [`server`]：JSON-RPC 分发与文档状态。
 //!
 //! 语义不在本 crate 复制：解析用 [`trit_core::Parser`]，真值表用 [`trit_eval::eval::eval`]。
@@ -13,5 +15,7 @@
 pub mod analysis;
 pub mod framing;
 pub mod lex;
+pub mod nav;
+pub mod semantics;
 pub mod server;
 pub mod text;

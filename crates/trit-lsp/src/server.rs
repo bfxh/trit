@@ -1,7 +1,8 @@
 //! JSON-RPC 分发与文档状态。
 //!
 //! 只实现 `.tri` 需要的最小方法集：`initialize` / `shutdown` / `didOpen` /
-//! `didChange` / `didClose` / `didSave` / `hover` / `completion` / `documentSymbol`。
+//! `didChange` / `didClose` / `didSave` / `hover` / `completion` / `documentSymbol` /
+//! `definition` / `references` / `documentHighlight` / `rename`。
 //! 未实现的方法按 JSON-RPC 返回 `-32601`，未知通知静默忽略。
 
 use std::collections::HashMap;
@@ -65,6 +66,10 @@ impl Server {
                             "resolveProvider": false,
                         },
                         "documentSymbolProvider": true,
+                        "definitionProvider": true,
+                        "referencesProvider": true,
+                        "documentHighlightProvider": true,
+                        "renameProvider": true,
                     },
                     "serverInfo": {
                         "name": "trit-lsp",
@@ -79,6 +84,10 @@ impl Server {
             "textDocument/hover" => self.hover(params),
             "textDocument/completion" => self.completion(params),
             "textDocument/documentSymbol" => self.symbols(params),
+            "textDocument/definition" => self.definition(params),
+            "textDocument/references" => self.references(params),
+            "textDocument/documentHighlight" => self.highlight(params),
+            "textDocument/rename" => self.rename(params),
             other => Err(RpcError {
                 code: -32601,
                 message: format!("未实现的方法：{other}"),
@@ -206,6 +215,80 @@ impl Server {
         let analysis = analysis::analyze(text);
         Ok(Value::Array(analysis::symbols(text, &analysis)))
     }
+
+    fn position_of(params: &Value) -> Position {
+        params
+            .get("position")
+            .map(Position::from_json)
+            .unwrap_or(Position::new(0, 0))
+    }
+
+    fn definition(&self, params: &Value) -> Result<Value, RpcError> {
+        let Some(uri) = uri_of(params) else {
+            return Ok(Value::Null);
+        };
+        let Some(text) = self.texts.get(uri) else {
+            return Ok(Value::Null);
+        };
+        let analysis = analysis::analyze(text);
+        let position = Self::position_of(params);
+        Ok(match crate::nav::definition(text, position, &analysis) {
+            Some(range) => json!({
+                "uri": uri,
+                "range": range.to_json(),
+            }),
+            None => Value::Null,
+        })
+    }
+
+    fn references(&self, params: &Value) -> Result<Value, RpcError> {
+        let Some(uri) = uri_of(params) else {
+            return Ok(json!([]));
+        };
+        let Some(text) = self.texts.get(uri) else {
+            return Ok(json!([]));
+        };
+        let analysis = analysis::analyze(text);
+        let position = Self::position_of(params);
+        let include_declaration = params
+            .get("context")
+            .and_then(|context| context.get("includeDeclaration"))
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        let locations: Vec<Value> =
+            crate::nav::references(text, position, include_declaration, &analysis)
+                .into_iter()
+                .map(|range| json!({"uri": uri, "range": range.to_json()}))
+                .collect();
+        Ok(Value::Array(locations))
+    }
+
+    fn highlight(&self, params: &Value) -> Result<Value, RpcError> {
+        let Some(uri) = uri_of(params) else {
+            return Ok(Value::Null);
+        };
+        let Some(text) = self.texts.get(uri) else {
+            return Ok(Value::Null);
+        };
+        let analysis = analysis::analyze(text);
+        let position = Self::position_of(params);
+        Ok(Value::Array(crate::nav::highlight(
+            text, position, &analysis,
+        )))
+    }
+
+    fn rename(&self, params: &Value) -> Result<Value, RpcError> {
+        let Some(uri) = uri_of(params) else {
+            return Ok(Value::Null);
+        };
+        let Some(text) = self.texts.get(uri) else {
+            return Ok(Value::Null);
+        };
+        let analysis = analysis::analyze(text);
+        let position = Self::position_of(params);
+        let new_name = params.get("newName").and_then(Value::as_str).unwrap_or("");
+        Ok(crate::nav::rename(text, uri, position, new_name, &analysis).unwrap_or(Value::Null))
+    }
 }
 
 fn uri_of(params: &Value) -> Option<&str> {
@@ -282,7 +365,7 @@ mod tests {
     fn unknown_request_is_method_not_found() {
         let mut server = Server::new();
         let error = server
-            .request("textDocument/definition", &json!({}))
+            .request("textDocument/formatting", &json!({}))
             .expect_err("应报错");
         assert_eq!(error.code, -32601);
     }

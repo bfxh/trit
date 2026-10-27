@@ -177,3 +177,102 @@ fn speaks_lsp_over_stdio() {
     let status = child.wait().expect("等待子进程");
     assert!(status.success(), "退出码 {:?}", status.code());
 }
+
+#[test]
+fn navigation_and_rename_over_stdio() {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_trit-lsp"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("启动 trit-lsp");
+    let mut stdin = child.stdin.take().expect("stdin");
+    let mut stdout = BufReader::new(child.stdout.take().expect("stdout"));
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}}),
+    );
+    let init = read_until_id(&mut stdout, 1);
+    assert_eq!(init["result"]["capabilities"]["definitionProvider"], true);
+    assert_eq!(init["result"]["capabilities"]["referencesProvider"], true);
+    assert_eq!(
+        init["result"]["capabilities"]["documentHighlightProvider"],
+        true
+    );
+    assert_eq!(init["result"]["capabilities"]["renameProvider"], true);
+    send(
+        &mut stdin,
+        json!({"jsonrpc": "2.0", "method": "initialized", "params": {}}),
+    );
+
+    // `(alpha & beta) | !alpha`：第 2 行（0 基）列 19 是第二个 alpha。
+    let doc = json!({"uri": "file:///nav.tri"});
+    send(
+        &mut stdin,
+        json!({
+            "jsonrpc": "2.0", "method": "textDocument/didOpen",
+            "params": {"textDocument": {"uri": "file:///nav.tri", "text": "# demo
+(alpha & beta) | !alpha
+"}},
+        }),
+    );
+    // didOpen 的诊断通知可能先到，跳过。
+    send(
+        &mut stdin,
+        json!({
+            "jsonrpc": "2.0", "id": 2, "method": "textDocument/definition",
+            "params": {"textDocument": doc, "position": {"line": 1, "character": 19}},
+        }),
+    );
+    let definition = read_until_id(&mut stdout, 2);
+    assert_eq!(definition["result"]["uri"], "file:///nav.tri");
+    assert_eq!(
+        definition["result"]["range"]["start"]["character"], 1,
+        "跳到第一个 alpha"
+    );
+
+    send(
+        &mut stdin,
+        json!({
+            "jsonrpc": "2.0", "id": 3, "method": "textDocument/references",
+            "params": {"textDocument": doc, "position": {"line": 1, "character": 19},
+                        "context": {"includeDeclaration": true}},
+        }),
+    );
+    let references = read_until_id(&mut stdout, 3);
+    assert_eq!(references["result"].as_array().unwrap().len(), 2);
+
+    send(
+        &mut stdin,
+        json!({
+            "jsonrpc": "2.0", "id": 4, "method": "textDocument/rename",
+            "params": {"textDocument": doc, "position": {"line": 1, "character": 19}, "newName": "gamma"},
+        }),
+    );
+    let rename = read_until_id(&mut stdout, 4);
+    let edits = rename["result"]["changes"]["file:///nav.tri"]
+        .as_array()
+        .expect("changes 数组");
+    assert_eq!(edits.len(), 2);
+    assert!(edits.iter().all(|edit| edit["newText"] == "gamma"));
+
+    // 重命名到常量词：返回 null（不是错误）。
+    send(
+        &mut stdin,
+        json!({
+            "jsonrpc": "2.0", "id": 5, "method": "textDocument/rename",
+            "params": {"textDocument": doc, "position": {"line": 1, "character": 19}, "newName": "X"},
+        }),
+    );
+    let rejected = read_until_id(&mut stdout, 5);
+    assert!(rejected["result"].is_null());
+
+    send(
+        &mut stdin,
+        json!({"jsonrpc": "2.0", "id": 6, "method": "shutdown", "params": null}),
+    );
+    let _ = read_until_id(&mut stdout, 6);
+    drop(stdin);
+    let _ = child.wait().expect("等待退出");
+}

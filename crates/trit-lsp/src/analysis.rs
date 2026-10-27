@@ -11,6 +11,13 @@ use trit_eval::eval::{Assignment, eval};
 use crate::lex::{self, Kind, Token};
 use crate::text::{LineIndex, Position, Range};
 
+/// LSP 诊断严重级：错误（既有诊断用这个）。
+pub const SEV_ERROR: u8 = 1;
+/// LSP 诊断严重级：警告（深层三值 lint 用这个）。
+pub const SEV_WARNING: u8 = 2;
+/// LSP 诊断严重级：提示（语义分歧用这个）。
+pub const SEV_INFORMATION: u8 = 3;
+
 /// 一条诊断（字节区间）。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Diagnostic {
@@ -20,6 +27,20 @@ pub struct Diagnostic {
     pub start: usize,
     /// 结束字节（不含）。
     pub end: usize,
+    /// LSP severity（1=Error、2=Warning、3=Information）。
+    pub severity: u8,
+}
+
+impl Diagnostic {
+    /// 错误级诊断（`trit build` 前端同款规则）。
+    fn error(message: impl Into<String>, start: usize, end: usize) -> Self {
+        Self {
+            message: message.into(),
+            start,
+            end,
+            severity: SEV_ERROR,
+        }
+    }
 }
 
 /// 一次分析的产物。
@@ -53,11 +74,11 @@ pub fn analyze(text: &str) -> Analysis {
         let leading = raw.len() - raw.trim_start().len();
         let begin = start + leading;
         if expression.is_some() {
-            diagnostics.push(Diagnostic {
-                message: "一个 .tri 文件只能有一条表达式（多行表达式暂不支持）".into(),
-                start: begin,
-                end: begin + trimmed.len(),
-            });
+            diagnostics.push(Diagnostic::error(
+                "一个 .tri 文件只能有一条表达式（多行表达式暂不支持）",
+                begin,
+                begin + trimmed.len(),
+            ));
         } else {
             expression = Some((line as usize, begin, trimmed.to_string()));
         }
@@ -68,20 +89,25 @@ pub fn analyze(text: &str) -> Analysis {
 
     let mut expr = None;
     match expression {
-        None => diagnostics.push(Diagnostic {
-            message: "文件里没有表达式".into(),
-            start: 0,
-            end: 0,
-        }),
+        None => diagnostics.push(Diagnostic::error("文件里没有表达式", 0, 0)),
         Some((_, base, src)) => match ExprParser::parse(&src) {
-            Ok(parsed) => expr = Some(parsed),
+            Ok(parsed) => {
+                // 深层三值诊断：布尔化简陷阱（全文档 token，多行文件的额外
+                // 表达式行同样要报）+ 首条表达式的三语义对拍。
+                diagnostics.extend(crate::semantics::law_lints(&tokens));
+                if let Some(message) = crate::semantics::semantic_divergence(&parsed) {
+                    diagnostics.push(Diagnostic {
+                        message,
+                        severity: SEV_INFORMATION,
+                        start: base,
+                        end: base + src.len(),
+                    });
+                }
+                expr = Some(parsed);
+            }
             Err(err) => {
                 let (start, end) = error_span(&err, &src, base);
-                diagnostics.push(Diagnostic {
-                    message: err.to_string(),
-                    start,
-                    end,
-                });
+                diagnostics.push(Diagnostic::error(err.to_string(), start, end));
             }
         },
     }
@@ -222,15 +248,6 @@ fn truth_table(sample: &str, arity: u8, algebra: Algebra) -> String {
     out
 }
 
-fn constant(text: &str) -> Option<Ternary> {
-    match text {
-        "0" | "False" | "false" | "FALSE" => Some(Ternary::False),
-        "1" | "True" | "true" | "TRUE" => Some(Ternary::True),
-        "?" | "X" | "x" | "Unknown" | "unknown" => Some(Ternary::Unknown),
-        _ => None,
-    }
-}
-
 fn describe(value: Ternary) -> &'static str {
     match value {
         Ternary::False => "假",
@@ -304,12 +321,27 @@ pub fn diagnostics_json(text: &str, analysis: &Analysis) -> Vec<Value> {
         .map(|d| {
             json!({
                 "range": idx.range(text, d.start, d.end).to_json(),
-                "severity": 1,
+                "severity": d.severity,
                 "source": "trit-lsp",
                 "message": d.message,
             })
         })
         .collect()
+}
+
+/// 常量词 → 三值（`0/1/?`、`true/false/X` 等）。
+pub(crate) fn constant(text: &str) -> Option<Ternary> {
+    match text {
+        "0" | "False" | "false" | "FALSE" => Some(Ternary::False),
+        "1" | "True" | "true" | "TRUE" => Some(Ternary::True),
+        "?" | "X" | "x" | "Unknown" | "unknown" => Some(Ternary::Unknown),
+        _ => None,
+    }
+}
+
+/// 是不是变量标识符（`Ident` 且不是常量词）。
+pub(crate) fn is_variable(token: &Token) -> bool {
+    token.kind == Kind::Ident && constant(&token.text).is_none()
 }
 
 #[cfg(test)]
