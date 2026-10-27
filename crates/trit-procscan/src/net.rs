@@ -259,6 +259,92 @@ pub fn network_findings(events: &[Event]) -> Vec<Finding> {
     findings
 }
 
+/// 一次采样里进程的**网络角色**：在当后端（监听）还是在当前端（发起连接）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NetRole {
+    /// 只有监听：在当后端（服务端面）。
+    Server,
+    /// 只有发起的连接：在当前端（客户端面）。
+    Client,
+    /// 既有监听又有连接：双角色（典型：反向代理/隧道的两侧）。
+    Both,
+}
+
+impl NetRole {
+    /// JSON/报告用的稳定标识。
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Server => "server",
+            Self::Client => "client",
+            Self::Both => "both",
+        }
+    }
+}
+
+/// 一个进程的角色条目。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NetRoleEntry {
+    /// 进程 id。
+    pub pid: u32,
+    /// 网络 角色。
+    pub role: NetRole,
+    /// 监听的 (主机, 端口) 数（去重）。
+    pub listens: usize,
+    /// 发起连接的目标数（去重，含回环——连本机服务也是客户端行为）。
+    pub connects: usize,
+}
+
+/// 网络角色分类：扫描回答「这次采样里谁在当后端、谁在当前端」。
+///
+/// 判定（对 (host, port, state) 去重后）：
+/// - 有 Listen 行 ⇒ 监听面；有非 Listen 行 ⇒ 连接面；
+/// - 两者都有 ⇒ `Both`（双角色）；只有连接 ⇒ `Client`；只有监听 ⇒ `Server`。
+///
+/// 边界（不猜）：这是**采样窗口内的行为角色**，不是进程的永久身份——
+/// 一个平时只外联的进程被恰好采到一次 Listen 也算监听面。
+/// 一条去重后的连接键（主机, 端口）。
+type Endpoint = (String, u16);
+
+/// pid →（监听面集合, 连接面集合）。
+type Posture = BTreeMap<u32, (BTreeSet<Endpoint>, BTreeSet<Endpoint>)>;
+
+pub fn network_roles(events: &[Event]) -> Vec<NetRoleEntry> {
+    let mut by_pid: Posture = BTreeMap::new();
+    for event in events {
+        if let Event::Connection {
+            pid, remote, state, ..
+        } = event
+        {
+            let parsed = parse_remote(remote);
+            let key = (parsed.host, parsed.port);
+            let entry = by_pid.entry(*pid).or_default();
+            if state.eq_ignore_ascii_case("listen") {
+                entry.0.insert(key);
+            } else {
+                entry.1.insert(key);
+            }
+        }
+    }
+    by_pid
+        .into_iter()
+        .filter(|(_, (listens, connects))| !listens.is_empty() || !connects.is_empty())
+        .map(|(pid, (listens, connects))| {
+            let role = match (!listens.is_empty(), !connects.is_empty()) {
+                (true, true) => NetRole::Both,
+                (true, false) => NetRole::Server,
+                (false, true) => NetRole::Client,
+                (false, false) => unreachable!("过滤后不会出现"),
+            };
+            NetRoleEntry {
+                pid,
+                role,
+                listens: listens.len(),
+                connects: connects.len(),
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -446,5 +532,38 @@ mod tests {
         assert!(network_findings(&[]).is_empty());
         let events = vec![conn(1, "127.0.0.1:3425", "Established")];
         assert!(network_findings(&events).is_empty());
+    }
+
+    #[test]
+    fn roles_separate_backend_from_frontend() {
+        let events = vec![
+            conn(1, "0.0.0.0:8080", "Listen"),        // 后端面：监听
+            conn(1, "8.8.8.8:53", "Established"),     // 双角色：它还外联
+            conn(2, "10.0.0.5:443", "Established"),   // 前端面：只发起
+            conn(2, "127.0.0.1:6379", "Established"), // 连本机服务也是客户端行为
+            conn(3, "192.168.1.2:5432", "Listen"),    // 只监听内网单卡：仍是后端面
+        ];
+        let roles = network_roles(&events);
+        assert_eq!(roles.len(), 3);
+        let by_pid: std::collections::BTreeMap<u32, &NetRoleEntry> =
+            roles.iter().map(|e| (e.pid, e)).collect();
+        let one = by_pid[&1];
+        assert_eq!(one.role.as_str(), "both");
+        assert_eq!(one.listens, 1);
+        assert_eq!(one.connects, 1);
+        assert_eq!(by_pid[&2].role.as_str(), "client");
+        assert_eq!(by_pid[&2].connects, 2);
+        assert_eq!(by_pid[&3].role.as_str(), "server");
+        // 重复采样去重：同一监听采 5 次仍是 1 个端口。
+        let mut repeated = vec![conn(9, "0.0.0.0:9000", "Listen"); 5];
+        repeated.push(conn(9, "23.1.1.1:443", "Established"));
+        let roles = network_roles(&repeated);
+        assert_eq!(roles[0].listens, 1);
+        assert_eq!(roles[0].connects, 1);
+    }
+
+    #[test]
+    fn no_connections_no_roles() {
+        assert!(network_roles(&[]).is_empty());
     }
 }

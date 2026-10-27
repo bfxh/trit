@@ -28,6 +28,8 @@ pub struct Report {
     pub findings: Vec<Finding>,
     pub top_cpu: Vec<(String, u64)>,
     pub notes: Vec<String>,
+    /// 每个有网络行为的进程的角色（后端=监听 / 前端=外联 / 双角色）。
+    pub network_roles: Vec<crate::net::NetRoleEntry>,
 }
 
 const SHELLS: [&str; 6] = [
@@ -191,6 +193,8 @@ pub fn analyze(events: &[Event]) -> Report {
     }
     // 网络面：地址分类 + 外联/监听/扇出/连接失败（见 net 模块的口径与边界）。
     report.findings.extend(crate::net::network_findings(events));
+    // 网络角色：扫描回答「这次采样里谁在当后端（监听）、谁在当前端（外联）」。
+    report.network_roles = crate::net::network_roles(events);
     report
 }
 
@@ -203,6 +207,12 @@ pub fn to_json(report: &Report) -> Value {
         "modules": report.modules,
         "connections": report.connections,
         "file_writes": report.writes,
+        "network_roles": report.network_roles.iter().map(|entry| json!({
+            "pid": entry.pid,
+            "role": entry.role.as_str(),
+            "listens": entry.listens,
+            "connects": entry.connects,
+        })).collect::<Vec<_>>(),
         "top_cpu": report.top_cpu.iter().map(|(name, ms)| json!({"process": name, "cpu_ms": ms})).collect::<Vec<_>>(),
         "findings": report.findings.iter().map(|finding| json!({
             "id": finding.id,
