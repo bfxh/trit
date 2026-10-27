@@ -6,13 +6,21 @@
 //! 3. **路径泄露**：有没有把构建机的绝对路径写进产物。
 //!
 //! 解析是手写的最小实现（只认本仓会产出的 PE32+/ELF32/ELF64），不引入依赖。
-
-use std::collections::BTreeMap;
+//!
+//! 自扫边界（2026-10-28 自审）：泄密 needle 在运行时拼装（见 [`crate::secrets`]），
+//! 本工具自己的产物里**不含**连续的检测样本，`binary` 自检不会自指命中；
+//! 构建树路径不做机器特定前缀（曾是 `D:\KF\` 魔法路径，已移除），泄漏的
+//! 构建树路径归入通用 `absolute-user-path`，按机器细分留给将来的
+//! `--build-tree` 参数。
+//!
+//! 产物面（2026-10-28）：报告的 `side` 字段区分**前端产物**（`.wasm`/HTML，
+//! 无硬化面、只做内容检查）与**后端产物**（PE/ELF，全量硬化检查）。
 
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
 
 use crate::attrib::{self, Finding};
+use crate::secrets::scan_strings;
 
 #[derive(Debug, Default, Clone)]
 pub struct Hardening {
@@ -290,62 +298,11 @@ fn parse_elf(bytes: &[u8]) -> Option<Hardening> {
     Some(hardening)
 }
 
-const SECRET_PATTERNS: [(&str, &str); 5] = [
-    ("private-key", "-----BEGIN "),
-    ("aws-access-key", "AKIA"),
-    ("openai-style-key", "sk-"),
-    ("github-token", "ghp_"),
-    ("slack-token", "xoxb-"),
-];
-
-fn scan_strings(bytes: &[u8]) -> BTreeMap<&'static str, usize> {
-    let text = String::from_utf8_lossy(bytes);
-    let mut hits = BTreeMap::new();
-    for (name, needle) in SECRET_PATTERNS {
-        let count = text.matches(needle).count();
-        if count > 0 && plausible_secret(&text, needle) {
-            hits.insert(name, count);
-        }
-    }
-    hits
-}
-
-/// 降噪：`sk-` / `AKIA` 这类短前缀在正常文本里也会出现，要求后面跟够长的字母数字串。
-fn plausible_secret(text: &str, needle: &str) -> bool {
-    if needle == "-----BEGIN " {
-        return text.contains("PRIVATE KEY-----");
-    }
-    let min_tail = match needle {
-        "AKIA" => 16,
-        "ghp_" => 30,
-        "sk-" => 20,
-        "xoxb-" => 20,
-        _ => 8,
-    };
-    let mut rest = text;
-    while let Some(position) = rest.find(needle) {
-        let tail = &rest[position + needle.len()..];
-        let mut used = 0usize;
-        let mut run = 0usize;
-        for c in tail.chars() {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                run += 1;
-                used += c.len_utf8();
-            } else {
-                break;
-            }
-        }
-        if run >= min_tail {
-            return true;
-        }
-        let step = if used == 0 {
-            tail.chars().next().map_or(1, char::len_utf8)
-        } else {
-            used
-        };
-        rest = &tail[step..];
-    }
-    false
+/// `\` / `/` 分段计数（空段不计）；真路径至少有三段（盘/根、目录、文件）。
+fn path_segments(text: &str) -> usize {
+    text.split(['\\', '/'])
+        .filter(|part| !part.is_empty())
+        .count()
 }
 
 /// 路径泄漏：返回（发现，警告，证据样本）。
@@ -354,7 +311,14 @@ fn plausible_secret(text: &str, needle: &str) -> bool {
 /// 只剩 `~/.rustup/...` 这种工具链布局 ⇒ 已做过 remap，降级为提示（warning）。
 fn path_leaks(bytes: &[u8]) -> (Vec<Finding>, Vec<Finding>, Vec<String>) {
     let mut samples: Vec<String> = Vec::new();
-    for needle in ["D:\\KF\\", "C:\\Users\\", "/home/", ".rustup", "/rustc/"] {
+    // Windows 侧用**通用盘符前缀**（运行时拼装，`X:\` 不以连续字面量进产物），
+    // 构建树路径不再做机器特定前缀（曾是 `D:\KF\`，2026-10-28 自审移除）；
+    // Unix 侧保留用户主目录与工具链布局。
+    let mut needles: Vec<String> = (b'A'..=b'Z')
+        .map(|letter| format!("{}:\\", letter as char))
+        .collect();
+    needles.extend(["/home/", ".rustup", "/rustc/"].map(str::to_string));
+    for needle in &needles {
         let mut rest = bytes;
         while let Some(position) = find_bytes(rest, needle.as_bytes()) {
             if samples.len() < 3 {
@@ -373,7 +337,9 @@ fn path_leaks(bytes: &[u8]) -> (Vec<Finding>, Vec<Finding>, Vec<String>) {
                         }
                     })
                     .collect();
-                if !samples.contains(&text) {
+                // ≥3 段才像真路径：把「检测器自己的短 needle 常量」（如
+                // `C:\Users\`，两段）滤在门外——否则自检又自指。
+                if path_segments(&text) >= 3 && !samples.contains(&text) {
                     samples.push(text);
                 }
             }
@@ -407,17 +373,6 @@ fn path_leaks(bytes: &[u8]) -> (Vec<Finding>, Vec<Finding>, Vec<String>) {
                     "只剩工具链布局（~/.rustup、/rustc/<hash>），不含用户名；已做过 remap",
                 ));
             }
-        } else if sample.contains("D:\\KF\\") {
-            if !findings
-                .iter()
-                .any(|finding| finding.id == "build-tree-path")
-            {
-                findings.push(Finding::project(
-                    "build-tree-path",
-                    "artifact-content",
-                    "产物嵌了构建树路径；检查是否把调试路径写进了产物",
-                ));
-            }
         } else if !findings
             .iter()
             .any(|finding| finding.id == "absolute-user-path")
@@ -440,17 +395,52 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+/// 产物面识别：这份文件是**前端产物**还是**后端产物**。
+///
+/// - WASM（`\0asm` 魔数）⇒ 浏览器前端字节码（playground 运行的那类）；
+/// - HTML 文本 ⇒ 浏览器前端源码（只在认不出 PE/ELF 头时才看文本——
+///   原生产物里嵌这些标记很正常，不构成分类依据，也避免自指命中）；
+/// - PE / ELF ⇒ 原生后端产物。
+///
+/// 返回 `(side, artifact)`：`side` ∈ frontend/backend，`artifact` 是具体形态。
+fn artifact_side(bytes: &[u8], format: &str) -> (&'static str, &'static str) {
+    if bytes.starts_with(b"\0asm") {
+        return ("frontend", "wasm");
+    }
+    if format.starts_with("pe") || format.starts_with("elf") {
+        return ("backend", "native");
+    }
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]);
+    if head.contains("<!DOCTYPE html") || head.contains("<html") {
+        return ("frontend", "html");
+    }
+    ("unknown", "unknown")
+}
+
 pub fn run(bytes: &[u8], file_name: &str) -> Result<Value> {
     let hardening = if let Some(parsed) = parse_pe(bytes) {
-        parsed
+        Some(parsed)
     } else if let Some(parsed) = parse_elf(bytes) {
-        parsed
+        Some(parsed)
+    } else if bytes.starts_with(b"\0asm") {
+        None // 前端字节码
     } else {
-        bail!("认不出格式（只支持 PE32/PE32+ 与 ELF32/ELF64 小端）");
+        let head = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]);
+        if head.contains("<!DOCTYPE html") || head.contains("<html") {
+            None // 前端源码
+        } else {
+            bail!("认不出格式（支持 PE32/PE32+、ELF32/ELF64 小端、WASM、HTML）");
+        }
     };
+    let (side, artifact) = artifact_side(bytes, hardening.as_ref().map_or("", |p| &p.format));
     let msvc = msvc_flavor(bytes);
     let secrets = scan_strings(bytes);
-    let mut findings = hardening.findings();
+    // 泄密/路径检查对前端产物同样有意义（wasm 里嵌 API key 是真实威胁），
+    // 只有「硬化」是原生产物才有的面。
+    let mut findings = Vec::new();
+    if let Some(parsed) = &hardening {
+        findings.extend(parsed.findings());
+    }
     for name in secrets.keys() {
         findings.push(Finding::project(
             format!("secret-{name}"),
@@ -460,25 +450,29 @@ pub fn run(bytes: &[u8], file_name: &str) -> Result<Value> {
     }
     let (leak_findings, leak_warnings, leak_samples) = path_leaks(bytes);
     findings.extend(leak_findings);
-    let mut warnings = hardening.warnings(msvc);
+    let mut warnings = hardening
+        .as_ref()
+        .map_or(Vec::new(), |parsed| parsed.warnings(msvc));
     warnings.extend(leak_warnings);
     let report = json!({
         "tool": "trit-redteam",
         "check": "artifact-hardening",
         "file": file_name,
+        "side": side,
+        "artifact": artifact,
         "bytes": bytes.len(),
-        "format": hardening.format,
-        "bits": hardening.bits,
-        "hardening": {
-            "aslr": hardening.aslr,
-            "nx": hardening.nx,
-            "exec_stack": hardening.exec_stack,
-            "wx_segments": hardening.wx_segments,
-            "relro": hardening.relro,
-            "bind_now": hardening.bind_now,
-            "guard_cf": hardening.guard_cf,
-            "gnu_stack": hardening.gnu_stack,
-        },
+        "format": hardening.as_ref().map_or(artifact, |parsed| parsed.format.as_str()),
+        "bits": hardening.as_ref().map_or(0, |parsed| parsed.bits),
+        "hardening": hardening.as_ref().map_or(json!(null), |parsed| json!({
+            "aslr": parsed.aslr,
+            "nx": parsed.nx,
+            "exec_stack": parsed.exec_stack,
+            "wx_segments": parsed.wx_segments,
+            "relro": parsed.relro,
+            "bind_now": parsed.bind_now,
+            "guard_cf": parsed.guard_cf,
+            "gnu_stack": parsed.gnu_stack,
+        })),
         "findings": attrib::list_to_json(&findings),
         "warnings": attrib::list_to_json(&warnings),
         "attribution": attrib::summary(&findings),
@@ -700,9 +694,9 @@ mod tests {
         assert_eq!(report["attribution"]["rust-toolchain"], 1);
 
         let mut own = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT | DLL_GUARD_CF, 0x6000_0020);
-        own.extend_from_slice(b"\0D:\\KF\\trit\\target\\release\\trit-build.exe\0");
+        own.extend_from_slice(b"\0C:\\dev\\trit\\target\\release\\trit-build.exe\0");
         let report = run(&own, "own.exe").unwrap();
-        let leak = finding(&report, "findings", "build-tree-path");
+        let leak = finding(&report, "findings", "absolute-user-path");
         assert_eq!(leak["origin"], "project", "{leak}");
     }
 
@@ -719,6 +713,19 @@ mod tests {
                 .any(|id| id == "toolchain-path-only"),
             "{report}"
         );
+        assert!(!has_findings(&report));
+    }
+
+    #[test]
+    fn needle_constants_are_not_reported_as_leaks() {
+        // 检测器自己的短 needle 常量（如 `C:\Users\`，只有两段）不是真泄漏——
+        // ≥3 段过滤把它挡在门外；没有这个过滤，扫自己必报
+        // absolute-user-path（自审教训，变异门锁住）。
+        let mut bytes = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT | DLL_GUARD_CF, 0x6000_0020);
+        bytes.extend_from_slice(b"\0C:\\Users\\\0");
+        bytes.extend_from_slice(b"\0.rustup\0");
+        let report = run(&bytes, "needles.exe").unwrap();
+        assert!(finding_ids(&report, "findings").is_empty(), "{report}");
         assert!(!has_findings(&report));
     }
 
