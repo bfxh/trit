@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "三进制块纹理压缩实验层：4×10 块、RGB565 端点对、每纹素 1 trit 的 3 级调色板（不属于稳定 API）"
+description = "纹理优化实验层——三进制块纹理压缩（TTX1/TTX2/TT3）：4×10 块、RGB565 端点对、每纹素 1 trit 的 3 级调色板。定位为『纹理优化/压缩容器』而非稳定 GPU 格式：实测相对 PNG 无体积优势（平坦层差 10–39×），单层解码约快 1.44×，产物暂只有 1 级 mip。（不属于稳定 API）"
 publish = false
 
 [features]
