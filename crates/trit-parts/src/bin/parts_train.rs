@@ -130,10 +130,12 @@ fn main() {
     let hw = (res * res) as usize;
     let ch = k * 3 + 1;
 
+    let mut resumed_step = 0u64;
     let mut net = match &args.resume {
         Some(p) => match Net::load_state(p) {
             Ok((n, step)) => {
                 println!("续跑自 {}（step {step}）", p.display());
+                resumed_step = step;
                 n
             }
             Err(e) => {
@@ -215,7 +217,7 @@ fn main() {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        match net.save_state(&path, args.steps as u64) {
+        match net.save_state(&path, resumed_step + args.steps as u64) {
             Ok(()) => println!("断点已存 {}", path.display()),
             Err(e) => {
                 eprintln!("断点保存失败: {e}");
