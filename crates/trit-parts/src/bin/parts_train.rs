@@ -35,6 +35,7 @@ struct Args {
     seed: u64,
     limit: usize,
     report: usize,
+    save_every: usize,
 }
 
 fn parse() -> Result<Args, String> {
@@ -54,6 +55,7 @@ fn parse() -> Result<Args, String> {
         seed: 1,
         limit: 0,
         report: 10,
+        save_every: 1000,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -78,6 +80,7 @@ fn parse() -> Result<Args, String> {
             "--seed" => a.seed = val()?.parse().map_err(|_| "--seed 非整数")?,
             "--limit" => a.limit = val()?.parse().map_err(|_| "--limit 非整数")?,
             "--report" => a.report = val()?.parse().map_err(|_| "--report 非整数")?,
+            "--save-every" => a.save_every = val()?.parse().map_err(|_| "--save-every 非整数")?,
             "--ste" => {
                 a.ste = match val()?.as_str() {
                     "identity" => Ste::Identity,
@@ -180,6 +183,18 @@ fn main() {
         args.ste
     );
 
+    let save_path = args.save.as_ref().map(|dir| {
+        if dir.extension().is_some() {
+            dir.clone()
+        } else {
+            dir.join("state.bin")
+        }
+    });
+    if let Some(p) = &save_path
+        && let Some(parent) = p.parent()
+    {
+        std::fs::create_dir_all(parent).ok();
+    }
     let mut rng = args.seed | 1;
     let mut best = f32::INFINITY;
     for step in 0..args.steps {
@@ -201,10 +216,18 @@ fn main() {
         let dout = gpu.buf(&out.grad, "dout");
         net.backward(&gpu, &tr, &dout, res);
         if (step + 1) % args.accum == 0 {
-            net.scale_grads(1.0 / args.accum as f32);
-            net.update(&gpu, args.lr, args.ste, args.adam);
+            net.update(&gpu, args.lr, args.ste, args.adam, 1.0 / args.accum as f32);
         }
         best = best.min(out.loss);
+        if args.save_every > 0
+            && (step + 1) % args.save_every == 0
+            && let Some(p) = &save_path
+        {
+            match net.save_state(p, resumed_step + (step + 1) as u64) {
+                Ok(()) => println!("  [断点] step {} 已存", step + 1),
+                Err(e) => eprintln!("  [断点] 保存失败: {e}"),
+            }
+        }
         if step % args.report == 0 || step + 1 == args.steps {
             println!(
                 "step {:>5}  loss {:.4}  平面(部件像素) {:?}  valid {:.4}",
@@ -220,16 +243,8 @@ fn main() {
     }
     println!("最小 loss {best:.4}");
 
-    if let Some(dir) = &args.save {
-        let path = if dir.extension().is_some() {
-            dir.clone()
-        } else {
-            dir.join("state.bin")
-        };
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).ok();
-        }
-        match net.save_state(&path, resumed_step + args.steps as u64) {
+    if let Some(path) = &save_path {
+        match net.save_state(path, resumed_step + args.steps as u64) {
             Ok(()) => println!("断点已存 {}", path.display()),
             Err(e) => {
                 eprintln!("断点保存失败: {e}");

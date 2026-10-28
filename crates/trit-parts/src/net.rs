@@ -47,6 +47,13 @@ pub struct Layer {
     v_b: Vec<f32>,
     pub t: u32,
     dev: Option<Dev>,
+    /// 设备侧梯度累加器（每 accum 个样本才读回一次，省掉逐样本同步）。
+    acc_e: Option<Buffer>,
+    acc_b: Option<Buffer>,
+    /// 转置后的有效权重（dx 用；只读，随 upload 重建）。
+    dev_t: Option<Buffer>,
+    /// 是否是转置卷积（决定转置布局）。
+    pub convt: bool,
 }
 
 struct Dev {
@@ -83,6 +90,10 @@ impl Layer {
             v_b: vec![0.0; slots],
             t: 0,
             dev: None,
+            acc_e: None,
+            acc_b: None,
+            dev_t: None,
+            convt: false,
         }
     }
 
@@ -129,6 +140,29 @@ impl Layer {
             v_b: vec![0.0; slots],
             t: 0,
             dev: None,
+            acc_e: None,
+            acc_b: None,
+            dev_t: None,
+            convt: false,
+        }
+    }
+
+    fn ensure_acc(&mut self, gpu: &Gpu, n_e: usize, n_b: usize) {
+        if self.acc_e.is_none() {
+            self.acc_e = Some(gpu.zeros(n_e, "acc-e"));
+            self.acc_b = Some(gpu.zeros(n_b, "acc-b"));
+        }
+    }
+
+    /// 把设备累加器里的梯度读回主机并清零（每个更新周期一次）。
+    pub fn pull_grads(&mut self, gpu: &Gpu) {
+        if let Some(b) = &self.acc_e {
+            self.grad_e = gpu.read(b, self.latent.len());
+            gpu.clear(b, self.latent.len());
+        }
+        if let Some(b) = &self.acc_b {
+            self.grad_b = gpu.read(b, self.scale.len());
+            gpu.clear(b, self.scale.len());
         }
     }
 
@@ -143,6 +177,7 @@ impl Layer {
     /// 把参数推到设备（量化值变了就要重推）。
     pub fn upload(&mut self, gpu: &Gpu) {
         let eff = self.effective();
+        let transposed = self.transposed(&eff);
         let ones = vec![1.0f32; self.cout as usize];
         match &mut self.dev {
             Some(d) => {
@@ -150,6 +185,9 @@ impl Layer {
                 gpu.write_i32(&d.wt, &self.q);
                 gpu.write(&d.ws, &self.scale);
                 gpu.write(&d.b, &self.bias);
+                if let Some(t) = &self.dev_t {
+                    gpu.write(t, &transposed);
+                }
                 let _ = ones;
             }
             None => {
@@ -159,8 +197,43 @@ impl Layer {
                     ws: gpu.buf(&self.scale, "ws"),
                     b: gpu.buf(&self.bias, "b"),
                 });
+                self.dev_t = Some(gpu.buf(&transposed, "we-t"));
             }
         }
+    }
+
+    /// 把有效权重转成 dx 内核要的「oc 外、ic 内」布局。
+    fn transposed(&self, eff: &[f32]) -> Vec<f32> {
+        let (cin, cout) = (self.cin as usize, self.cout as usize);
+        if self.convt {
+            // E: [(sub)*cin + ci]*cout + co  →  [(sub)*cout + co]*cin + ci
+            let sub = 4usize;
+            let mut out = vec![0f32; eff.len()];
+            for s in 0..sub {
+                for ci in 0..cin {
+                    for co in 0..cout {
+                        out[(s * cout + co) * cin + ci] = eff[(s * cin + ci) * cout + co];
+                    }
+                }
+            }
+            out
+        } else {
+            // E: [((ky·kk+kx)·cin + ic)·cout + oc  →  [((ky·kk+kx)·cout + oc)·cin + ic
+            let kk2 = (self.kk * self.kk) as usize;
+            let mut out = vec![0f32; eff.len()];
+            for k in 0..kk2 {
+                for ic in 0..cin {
+                    for oc in 0..cout {
+                        out[(k * cout + oc) * cin + ic] = eff[(k * cin + ic) * cout + oc];
+                    }
+                }
+            }
+            out
+        }
+    }
+
+    pub fn transposed_dev(&self) -> &Buffer {
+        self.dev_t.as_ref().expect("层未上传")
     }
 
     pub fn dev(&self) -> (&Buffer, &Buffer, &Buffer, &Buffer) {
@@ -283,6 +356,9 @@ impl Net {
             Layer::from_conv_w(&cw("d1.3.weight", Some("d1.4"), true)?, true),
             Layer::from_conv_w(&cw("head.weight", None, false)?, false),
         ];
+        let mut layers = layers;
+        layers[U3].convt = true;
+        layers[U2].convt = true;
         Ok(Self { layers })
     }
 
@@ -305,6 +381,9 @@ impl Net {
             mk(32, 32, 3, true),
             mk(32, 16, 1, false),
         ];
+        let mut layers = layers;
+        layers[U3].convt = true;
+        layers[U2].convt = true;
         Self { layers }
     }
 
@@ -411,17 +490,16 @@ impl Net {
         w: u32,
     ) -> Buffer {
         let l = &self.layers[i];
-        let (wf, wt, ws, _b) = l.dev();
         let spec = spec_of(l);
-        let dx = gpu.bwd_conv_dx(h, w, &spec, 1, l.relu as u32, y, dy, wf, wt, ws);
-        let dw = gpu.bwd_conv_dw(h, w, &spec, l.relu as u32, x, y, dy);
-        let db = gpu.bwd_conv_db(h, w, &spec, l.relu as u32, y, dy);
+        let dx = gpu.bwd_conv_dx(h, w, &spec, l.relu as u32, y, dy, l.transposed_dev());
+        let dw = gpu.bwd_conv_dw_split(h, w, &spec, l.relu as u32, x, y, dy);
+        let db = gpu.bwd_conv_db_split(h, w, &spec, l.relu as u32, y, dy);
         let layer = &mut self.layers[i];
-        layer.grad_e = gpu.read(&dw, layer.grad_e.len());
-        let dbv = gpu.read(&db, layer.grad_b.len());
-        for (slot, v) in layer.grad_b.iter_mut().zip(dbv) {
-            *slot += v;
-        }
+        let (n_e, n_b) = (layer.latent.len(), layer.scale.len());
+        layer.ensure_acc(gpu, n_e, n_b);
+        let (ae, ab) = (layer.acc_e.as_ref().unwrap(), layer.acc_b.as_ref().unwrap());
+        gpu.add_into(ae, &dw, n_e);
+        gpu.add_into(ab, &db, n_b);
         dx
     }
 
@@ -435,23 +513,31 @@ impl Net {
         w: u32,
     ) -> Buffer {
         let l = &self.layers[i];
-        let (wf, wt, ws, _b) = l.dev();
         let spec = spec_of(l);
-        let dx = gpu.bwd_convt_dx(h, w, &spec, 1, dy, wf, wt, ws);
+        let dx = gpu.bwd_convt_dx(h, w, &spec, 1, dy, l.transposed_dev());
         let dw = gpu.bwd_convt_dw(h, w, &spec, x, dy);
         let db = gpu.bwd_convt_db(h, w, &spec, dy);
         let layer = &mut self.layers[i];
-        layer.grad_e = gpu.read(&dw, layer.grad_e.len());
-        let dbv = gpu.read(&db, layer.grad_b.len());
-        for (slot, v) in layer.grad_b.iter_mut().zip(dbv) {
-            *slot += v;
-        }
+        let (n_e, n_b) = (layer.latent.len(), layer.scale.len());
+        layer.ensure_acc(gpu, n_e, n_b);
+        let (ae, ab) = (layer.acc_e.as_ref().unwrap(), layer.acc_b.as_ref().unwrap());
+        gpu.add_into(ae, &dw, n_e);
+        gpu.add_into(ab, &db, n_b);
         dx
     }
 
-    /// 一步参数更新（STE + Adam/SGD），并重推量化值。
-    pub fn update(&mut self, gpu: &Gpu, lr: f32, ste: Ste, adam: bool) {
+    /// 一步参数更新：先从显存取回梯度（可带 1/accum 缩放），再 STE + Adam/SGD。
+    pub fn update(&mut self, gpu: &Gpu, lr: f32, ste: Ste, adam: bool, grad_scale: f32) {
         for l in &mut self.layers {
+            l.pull_grads(gpu);
+            if grad_scale != 1.0 {
+                for g in &mut l.grad_e {
+                    *g *= grad_scale;
+                }
+                for g in &mut l.grad_b {
+                    *g *= grad_scale;
+                }
+            }
             l.update(lr, ste, adam);
             l.upload(gpu);
         }
@@ -581,6 +667,10 @@ impl Net {
                 v_b,
                 t,
                 dev: None,
+                acc_e: None,
+                acc_b: None,
+                dev_t: None,
+                convt: false,
             });
         }
         Ok((Self { layers }, step))

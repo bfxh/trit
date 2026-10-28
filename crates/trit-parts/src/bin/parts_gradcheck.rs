@@ -106,7 +106,18 @@ fn main() {
     let y64 = conv_f64(&x64, &e64, &b64, &spec);
     let grad = conv_backward_f64(&x64, &y64, &dy64, &e64, &spec);
 
-    let dxb = gpu.bwd_conv_dx(h, w, &cw, 1, 1, &yb, &dyb, &wfb, &wtb, &wsb);
+    // dx 走转置权重布局 [k·cout + oc]·cin + ic
+    let mut et = vec![0f32; nw];
+    for k in 0..(kk * kk) as usize {
+        for ic in 0..cin as usize {
+            for oc in 0..cout as usize {
+                et[(k * cout as usize + oc) * cin as usize + ic] =
+                    e[(k * cin as usize + ic) * cout as usize + oc];
+            }
+        }
+    }
+    let etb = gpu.buf(&et, "et");
+    let dxb = gpu.bwd_conv_dx(h, w, &cw, 1, &yb, &dyb, &etb);
     let dwb = gpu.bwd_conv_dw(h, w, &cw, 1, &xb, &yb, &dyb);
     let dbb = gpu.bwd_conv_db(h, w, &cw, 1, &yb, &dyb);
     checks.push(Check {
@@ -122,6 +133,28 @@ fn main() {
         worst: max_rel(&gpu.read(&dbb, cout as usize), &grad.db),
     });
 
+    // split-K 版 dw/db 必须与 CPU 参考一致（训练走的就是这条路径）
+    let dwk = gpu.bwd_conv_dw_split(h, w, &cw, 1, &xb, &yb, &dyb);
+    let dbk = gpu.bwd_conv_db_split(h, w, &cw, 1, &yb, &dyb);
+    checks.push(Check {
+        name: "conv dE (split-K)",
+        worst: max_rel(&gpu.read(&dwk, nw), &grad.dw),
+    });
+    checks.push(Check {
+        name: "conv db (split-K)",
+        worst: max_rel(&gpu.read(&dbk, cout as usize), &grad.db),
+    });
+    // 累加器语义：add_into 两次 == 两份梯度之和
+    let acc = gpu.zeros(nw, "acc");
+    gpu.add_into(&acc, &dwb, nw);
+    gpu.add_into(&acc, &dwk, nw);
+    let sum_gpu = gpu.read(&acc, nw);
+    let want: Vec<f64> = grad.dw.iter().map(|v| v * 2.0).collect();
+    checks.push(Check {
+        name: "add_into 两次 = 2×dw",
+        worst: max_rel(&sum_gpu, &want),
+    });
+
     // 稠密路径：同一个 E，mode=0 必须给出同一组梯度
     let cw0 = ConvW {
         wf: e.clone(),
@@ -133,7 +166,7 @@ fn main() {
         kk,
     };
     let y0b = gpu.conv(&xb, h, w, &cw0, 0, 1, &wfb, &wtb, &wsb, &bb);
-    let dx0 = gpu.bwd_conv_dx(h, w, &cw0, 0, 1, &y0b, &dyb, &wfb, &wtb, &wsb);
+    let dx0 = gpu.bwd_conv_dx(h, w, &cw0, 1, &y0b, &dyb, &etb);
     let dx0v = gpu.read(&dx0, (h * w * cin) as usize);
     let dxv = gpu.read(&dxb, (h * w * cin) as usize);
     let worst_mode = dxv
@@ -202,7 +235,17 @@ fn main() {
         ccout as usize,
     );
     let _ = cy64;
-    let cdxb = gpu.bwd_convt_dx(ch, cw_, &cwv, 1, &cdyb, &cwfb, &cwtb, &cwsb);
+    let mut cet = vec![0f32; cnw];
+    for s in 0..4usize {
+        for ci in 0..ccin as usize {
+            for co in 0..ccout as usize {
+                cet[(s * ccout as usize + co) * ccin as usize + ci] =
+                    ce[(s * ccin as usize + ci) * ccout as usize + co];
+            }
+        }
+    }
+    let cetb = gpu.buf(&cet, "cet");
+    let cdxb = gpu.bwd_convt_dx(ch, cw_, &cwv, 1, &cdyb, &cetb);
     let cdwb = gpu.bwd_convt_dw(ch, cw_, &cwv, &cxb, &cdyb);
     let cdbb = gpu.bwd_convt_db(ch, cw_, &cwv, &cdyb);
     checks.push(Check {

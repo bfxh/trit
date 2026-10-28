@@ -22,6 +22,8 @@ pub struct Gpu {
     up_bgl: wgpu::BindGroupLayout,
     /// 反向管线（与上面四条前向管线共用同一个 device）。
     pub bwd: crate::gpu_bwd::Bwd,
+    /// 实际选中的适配器（排查「跑在核显/软渲染上」用）。
+    pub adapter: String,
 }
 
 fn entry(read_only: bool, binding: u32) -> wgpu::BindGroupLayoutEntry {
@@ -58,6 +60,7 @@ impl Gpu {
             ..Default::default()
         }))
         .ok()?;
+        let adapter_name = adapter.get_info().name;
         let alim = adapter.limits();
         let limits = wgpu::Limits {
             max_storage_buffer_binding_size: alim.max_storage_buffer_binding_size,
@@ -128,6 +131,7 @@ impl Gpu {
             up_pl: pipe("convt", &up_bgl),
             up_bgl,
             bwd,
+            adapter: adapter_name,
             device,
             queue,
         })
@@ -183,6 +187,11 @@ impl Gpu {
                 contents: bytemuck::bytes_of(v),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             })
+    }
+
+    /// 等 GPU 做完（计时/调试用）。
+    pub fn sync(&self) {
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
     }
 
     /// 覆盖写入一段 f32（训练时参数更新用）。

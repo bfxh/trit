@@ -55,6 +55,11 @@ pub struct Bwd {
     convt_dw: Pipe,
     convt_db: Pipe,
     add: Pipe,
+    conv_dw_k: Pipe,
+    conv_db_k: Pipe,
+    reduce: Pipe,
+    add_into: Pipe,
+    clear: Pipe,
 }
 
 impl Bwd {
@@ -88,8 +93,6 @@ impl Bwd {
                     Bind::Read,
                     Bind::Read,
                     Bind::Read,
-                    Bind::Read,
-                    Bind::Read,
                     Bind::Write,
                 ],
             ),
@@ -117,14 +120,7 @@ impl Bwd {
             ),
             convt_dx: mk(
                 "convt_dx",
-                &[
-                    Bind::Uniform,
-                    Bind::Read,
-                    Bind::Read,
-                    Bind::Read,
-                    Bind::Read,
-                    Bind::Write,
-                ],
+                &[Bind::Uniform, Bind::Read, Bind::Read, Bind::Write],
             ),
             convt_dw: mk(
                 "convt_dw",
@@ -132,6 +128,23 @@ impl Bwd {
             ),
             convt_db: mk("convt_db", &[Bind::Uniform, Bind::Read, Bind::Write]),
             add: mk("add", &[Bind::Uniform, Bind::Read, Bind::Read, Bind::Write]),
+            conv_dw_k: mk(
+                "conv_dw_k",
+                &[
+                    Bind::Uniform,
+                    Bind::Read,
+                    Bind::Read,
+                    Bind::Read,
+                    Bind::Write,
+                ],
+            ),
+            conv_db_k: mk(
+                "conv_db_k",
+                &[Bind::Uniform, Bind::Read, Bind::Read, Bind::Write],
+            ),
+            reduce: mk("reduce_chunks", &[Bind::Uniform, Bind::Read, Bind::Write]),
+            add_into: mk("add_into", &[Bind::Uniform, Bind::Read, Bind::Write]),
+            clear: mk("clear_buf", &[Bind::Uniform, Bind::Write]),
         }
     }
 }
@@ -182,6 +195,30 @@ struct UpU {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct DwU {
+    h: u32,
+    w: u32,
+    cin: u32,
+    cout: u32,
+    kk: u32,
+    pad: u32,
+    relu: u32,
+    chunk: u32,
+    chunks: u32,
+    _pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct RedU {
+    n: u32,
+    chunks: u32,
+    _a: u32,
+    _b: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct AddU {
     n: u32,
     _a: u32,
@@ -214,7 +251,7 @@ impl Gpu {
         self.queue.submit([enc.finish()]);
     }
 
-    fn zeros(&self, n: usize, label: &str) -> wgpu::Buffer {
+    pub fn zeros(&self, n: usize, label: &str) -> wgpu::Buffer {
         self.device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(label),
@@ -238,24 +275,21 @@ impl Gpu {
         })
     }
 
-    /// 卷积输入梯度 `∂L/∂x`（`y` 是前向输出，用于 ReLU 掩码）。
+    /// 卷积输入梯度 `∂L/∂x`（`y` 是前向输出，用于 ReLU 掩码；`we_t` 是转置后的有效权重）。
     #[allow(clippy::too_many_arguments)]
     pub fn bwd_conv_dx(
         &self,
         h: u32,
         w: u32,
         cw: &ConvW,
-        mode: u32,
         relu: u32,
         y: &wgpu::Buffer,
         dy: &wgpu::Buffer,
-        wf: &wgpu::Buffer,
-        wt: &wgpu::Buffer,
-        ws: &wgpu::Buffer,
+        we_t: &wgpu::Buffer,
     ) -> wgpu::Buffer {
-        let u = self.conv_u(h, w, cw, mode, relu);
+        let u = self.conv_u(h, w, cw, 0, relu);
         let dx = self.zeros((h * w * cw.cin) as usize, "conv-dx");
-        let bufs = [&u, y, dy, wf, wt, ws, &dx];
+        let bufs = [&u, y, dy, we_t, &dx];
         self.dispatch(&self.bwd.conv_dx, &bufs, dx.size() as usize / 4);
         dx
     }
@@ -332,7 +366,6 @@ impl Gpu {
     }
 
     /// 转置卷积输入梯度。
-    #[allow(clippy::too_many_arguments)]
     pub fn bwd_convt_dx(
         &self,
         h: u32,
@@ -340,9 +373,7 @@ impl Gpu {
         cw: &ConvW,
         mode: u32,
         dy: &wgpu::Buffer,
-        wf: &wgpu::Buffer,
-        wt: &wgpu::Buffer,
-        ws: &wgpu::Buffer,
+        we_t: &wgpu::Buffer,
     ) -> wgpu::Buffer {
         let u = self.ubuf(&UpU {
             h,
@@ -355,7 +386,7 @@ impl Gpu {
             _c: 0,
         });
         let dx = self.zeros((h * w * cw.cin) as usize, "convt-dx");
-        let bufs = [&u, dy, wf, wt, ws, &dx];
+        let bufs = [&u, dy, we_t, &dx];
         self.dispatch(&self.bwd.convt_dx, &bufs, dx.size() as usize / 4);
         dx
     }
@@ -402,6 +433,114 @@ impl Gpu {
         let bufs = [&u, dy, &db];
         self.dispatch(&self.bwd.convt_db, &bufs, cw.cout as usize);
         db
+    }
+
+    /// split-K 版权重梯度：并行度 = 权重数 × 分片数，先写分片再归约。
+    #[allow(clippy::too_many_arguments)]
+    pub fn bwd_conv_dw_split(
+        &self,
+        h: u32,
+        w: u32,
+        cw: &ConvW,
+        relu: u32,
+        x: &wgpu::Buffer,
+        y: &wgpu::Buffer,
+        dy: &wgpu::Buffer,
+    ) -> wgpu::Buffer {
+        let nw = (cw.kk * cw.kk * cw.cin * cw.cout) as usize;
+        let p = (h * w) as usize;
+        let chunk = (p / 48).max(256);
+        let chunks = p.div_ceil(chunk) as u32;
+        let u = self.ubuf(&DwU {
+            h,
+            w,
+            cin: cw.cin,
+            cout: cw.cout,
+            kk: cw.kk,
+            pad: cw.kk / 2,
+            relu,
+            chunk: chunk as u32,
+            chunks,
+            _pad: 0,
+        });
+        let part = self.zeros(nw * chunks as usize, "dw-part");
+        let bufs = [&u, x, dy, y, &part];
+        self.dispatch(&self.bwd.conv_dw_k, &bufs, nw * chunks as usize);
+        let out = self.zeros(nw, "dw");
+        let ru = self.ubuf(&RedU {
+            n: nw as u32,
+            chunks,
+            _a: 0,
+            _b: 0,
+        });
+        let rbufs = [&ru, &part, &out];
+        self.dispatch(&self.bwd.reduce, &rbufs, nw);
+        out
+    }
+
+    /// split-K 版偏置梯度。
+    pub fn bwd_conv_db_split(
+        &self,
+        h: u32,
+        w: u32,
+        cw: &ConvW,
+        relu: u32,
+        y: &wgpu::Buffer,
+        dy: &wgpu::Buffer,
+    ) -> wgpu::Buffer {
+        let n = cw.cout as usize;
+        let p = (h * w) as usize;
+        let chunk = (p / 48).max(256);
+        let chunks = p.div_ceil(chunk) as u32;
+        let u = self.ubuf(&DwU {
+            h,
+            w,
+            cin: cw.cin,
+            cout: cw.cout,
+            kk: cw.kk,
+            pad: cw.kk / 2,
+            relu,
+            chunk: chunk as u32,
+            chunks,
+            _pad: 0,
+        });
+        let part = self.zeros(n * chunks as usize, "db-part");
+        let bufs = [&u, dy, y, &part];
+        self.dispatch(&self.bwd.conv_db_k, &bufs, n * chunks as usize);
+        let out = self.zeros(n, "db");
+        let ru = self.ubuf(&RedU {
+            n: n as u32,
+            chunks,
+            _a: 0,
+            _b: 0,
+        });
+        let rbufs = [&ru, &part, &out];
+        self.dispatch(&self.bwd.reduce, &rbufs, n);
+        out
+    }
+
+    /// 就地累加 `dst += src`（训练时把每样本梯度攒在显存里，每 accum 次才读回）。
+    pub fn add_into(&self, dst: &wgpu::Buffer, src: &wgpu::Buffer, n: usize) {
+        let u = self.ubuf(&RedU {
+            n: n as u32,
+            chunks: 1,
+            _a: 0,
+            _b: 0,
+        });
+        let bufs = [&u, src, dst];
+        self.dispatch(&self.bwd.add_into, &bufs, n);
+    }
+
+    /// 清零一段缓冲。
+    pub fn clear(&self, dst: &wgpu::Buffer, n: usize) {
+        let u = self.ubuf(&RedU {
+            n: n as u32,
+            chunks: 1,
+            _a: 0,
+            _b: 0,
+        });
+        let bufs = [&u, dst];
+        self.dispatch(&self.bwd.clear, &bufs, n);
     }
 
     /// 逐元素相加（两路梯度汇合）。
