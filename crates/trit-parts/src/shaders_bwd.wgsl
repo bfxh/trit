@@ -285,3 +285,21 @@ fn convt_db(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     hdb[co] = acc;
 }
+
+// ---------------------------------------------------------------- 逐元素相加
+
+// 两路梯度汇合（例如 b 同时进 cat 与 pool，反向要把两路加起来）。
+struct AddU { n: u32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<uniform> nu: AddU;
+@group(0) @binding(1) var<storage, read> nax: array<f32>;
+@group(0) @binding(2) var<storage, read> nay: array<f32>;
+@group(0) @binding(3) var<storage, read_write> naz: array<f32>;
+
+@compute @workgroup_size(64)
+fn add(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x + gid.y * ROW;
+    if (idx >= nu.n) {
+        return;
+    }
+    naz[idx] = nax[idx] + nay[idx];
+}

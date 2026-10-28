@@ -10,6 +10,8 @@
 #![forbid(unsafe_code)]
 
 pub mod backward;
+pub mod data;
+pub mod loss;
 pub mod weights;
 
 #[cfg(feature = "gpu")]
@@ -18,3 +20,5 @@ pub mod forward;
 pub mod gpu;
 #[cfg(feature = "gpu")]
 pub mod gpu_bwd;
+#[cfg(feature = "gpu")]
+pub mod net;

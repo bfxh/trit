@@ -18,6 +18,8 @@ pollster = { version = "0.4", optional = true }
 bytemuck = { version = "1", features = ["derive"], optional = true }
 # STE / 量化口径的唯一来源（与 trit-train 共用，不另立一套）。
 trit-train = { path = "../trit-train" }
+# 训练数据是 PNG（384² RGB）；纯 Rust 解码，不借 Python。
+png = "0.17"
 
 [[bin]]
 name = "parts-parity"
@@ -27,4 +29,9 @@ required-features = ["gpu"]
 [[bin]]
 name = "parts-gradcheck"
 path = "src/bin/parts_gradcheck.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "parts-train"
+path = "src/bin/parts_train.rs"
 required-features = ["gpu"]

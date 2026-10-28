@@ -161,7 +161,9 @@ impl Gpu {
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(label),
                 contents: bytes,
-                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_SRC
+                    | wgpu::BufferUsages::COPY_DST,
             })
     }
 
@@ -181,6 +183,16 @@ impl Gpu {
                 contents: bytemuck::bytes_of(v),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             })
+    }
+
+    /// 覆盖写入一段 f32（训练时参数更新用）。
+    pub fn write(&self, buf: &wgpu::Buffer, data: &[f32]) {
+        self.queue.write_buffer(buf, 0, bytemuck::cast_slice(data));
+    }
+
+    /// 覆盖写入一段 i32。
+    pub fn write_i32(&self, buf: &wgpu::Buffer, data: &[i32]) {
+        self.queue.write_buffer(buf, 0, bytemuck::cast_slice(data));
     }
 
     #[allow(clippy::too_many_arguments)]

@@ -54,6 +54,7 @@ pub struct Bwd {
     convt_dx: Pipe,
     convt_dw: Pipe,
     convt_db: Pipe,
+    add: Pipe,
 }
 
 impl Bwd {
@@ -130,6 +131,7 @@ impl Bwd {
                 &[Bind::Uniform, Bind::Read, Bind::Read, Bind::Write],
             ),
             convt_db: mk("convt_db", &[Bind::Uniform, Bind::Read, Bind::Write]),
+            add: mk("add", &[Bind::Uniform, Bind::Read, Bind::Read, Bind::Write]),
         }
     }
 }
@@ -173,6 +175,15 @@ struct UpU {
     cin: u32,
     cout: u32,
     mode: u32,
+    _a: u32,
+    _b: u32,
+    _c: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct AddU {
+    n: u32,
     _a: u32,
     _b: u32,
     _c: u32,
@@ -391,5 +402,19 @@ impl Gpu {
         let bufs = [&u, dy, &db];
         self.dispatch(&self.bwd.convt_db, &bufs, cw.cout as usize);
         db
+    }
+
+    /// 逐元素相加（两路梯度汇合）。
+    pub fn add(&self, a: &wgpu::Buffer, b: &wgpu::Buffer, n: usize) -> wgpu::Buffer {
+        let u = self.ubuf(&AddU {
+            n: n as u32,
+            _a: 0,
+            _b: 0,
+            _c: 0,
+        });
+        let out = self.zeros(n, "add-out");
+        let bufs = [&u, a, b, &out];
+        self.dispatch(&self.bwd.add, &bufs, n);
+        out
     }
 }

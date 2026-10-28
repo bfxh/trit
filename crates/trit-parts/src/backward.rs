@@ -243,7 +243,7 @@ pub fn convt_backward_f64(
 /// `grad_scale[oc] = Σ dE·q`（q 对 scale 视为常数）。
 pub fn ste_apply(
     latent: &[f32],
-    q: &[i8],
+    q: &[i32],
     scale: &[f32],
     d_e: &[f32],
     ste: Ste,
@@ -257,7 +257,7 @@ pub fn ste_apply(
         let oc = wi % cout;
         let s = scale[oc];
         d_latent[wi] = ste.backward(latent[wi], s, de * s);
-        d_scale[oc] += de * f32::from(qi);
+        d_scale[oc] += de * qi as f32;
     }
     (d_latent, d_scale)
 }
@@ -469,14 +469,14 @@ mod tests {
                 .collect();
             let dy: Vec<f32> = (0..rows).map(|r| y[r] - target[r]).collect();
             let mut d_e = vec![0.0f32; rows * cols];
-            let mut q_cw = vec![0i8; rows * cols];
+            let mut q_cw = vec![0i32; rows * cols];
             let mut latent_cw = vec![0.0f32; rows * cols];
             for r in 0..rows {
                 let q = trit_train::quantize_with_scale(&latent[r * cols..(r + 1) * cols], scale0);
                 for c in 0..cols {
                     let wi = c * rows + r;
                     d_e[wi] = dy[r] * x[c];
-                    q_cw[wi] = q[c];
+                    q_cw[wi] = i32::from(q[c]);
                     latent_cw[wi] = latent[r * cols + c];
                 }
             }

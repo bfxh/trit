@@ -1708,6 +1708,7 @@ name = "trit-parts"
 version = "0.12.0"
 dependencies = [
  "bytemuck",
+ "png",
  "pollster",
  "trit-train",
  "wgpu",
