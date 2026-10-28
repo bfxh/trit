@@ -60,6 +60,9 @@ pub struct Bwd {
     reduce: Pipe,
     add_into: Pipe,
     clear: Pipe,
+    mask_dy: Pipe,
+    reduce4: Pipe,
+    conv_dx4: Pipe,
 }
 
 impl Bwd {
@@ -88,13 +91,7 @@ impl Bwd {
         Self {
             conv_dx: mk(
                 "conv_dx",
-                &[
-                    Bind::Uniform,
-                    Bind::Read,
-                    Bind::Read,
-                    Bind::Read,
-                    Bind::Write,
-                ],
+                &[Bind::Uniform, Bind::Read, Bind::Read, Bind::Write],
             ),
             conv_dw: mk(
                 "conv_dw",
@@ -130,21 +127,21 @@ impl Bwd {
             add: mk("add", &[Bind::Uniform, Bind::Read, Bind::Read, Bind::Write]),
             conv_dw_k: mk(
                 "conv_dw_k",
-                &[
-                    Bind::Uniform,
-                    Bind::Read,
-                    Bind::Read,
-                    Bind::Read,
-                    Bind::Write,
-                ],
-            ),
-            conv_db_k: mk(
-                "conv_db_k",
                 &[Bind::Uniform, Bind::Read, Bind::Read, Bind::Write],
             ),
+            conv_db_k: mk("conv_db_k", &[Bind::Uniform, Bind::Read, Bind::Write]),
             reduce: mk("reduce_chunks", &[Bind::Uniform, Bind::Read, Bind::Write]),
             add_into: mk("add_into", &[Bind::Uniform, Bind::Read, Bind::Write]),
             clear: mk("clear_buf", &[Bind::Uniform, Bind::Write]),
+            mask_dy: mk(
+                "mask_dy",
+                &[Bind::Uniform, Bind::Read, Bind::Read, Bind::Write],
+            ),
+            reduce4: mk("reduce_chunks4", &[Bind::Uniform, Bind::Read, Bind::Write]),
+            conv_dx4: mk(
+                "conv_dx4",
+                &[Bind::Uniform, Bind::Read, Bind::Read, Bind::Write],
+            ),
         }
     }
 }
@@ -210,6 +207,15 @@ struct DwU {
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct MaskU {
+    n: u32,
+    relu: u32,
+    _a: u32,
+    _b: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct RedU {
     n: u32,
     chunks: u32,
@@ -251,6 +257,18 @@ impl Gpu {
         self.queue.submit([enc.finish()]);
     }
 
+    /// 分配但不初始化（只用于「每个元素都会被写满」的输出，省掉一次主机→显存拷贝）。
+    pub fn alloc(&self, n: usize, label: &str) -> wgpu::Buffer {
+        self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some(label),
+            size: (n * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        })
+    }
+
     pub fn zeros(&self, n: usize, label: &str) -> wgpu::Buffer {
         self.device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -275,7 +293,27 @@ impl Gpu {
         })
     }
 
-    /// 卷积输入梯度 `∂L/∂x`（`y` 是前向输出，用于 ReLU 掩码；`we_t` 是转置后的有效权重）。
+    /// 把 ReLU 掩码预先乘进 dy（dx/dw/db 三个内核就不用再读 y）。
+    pub fn mask_dy(
+        &self,
+        y: &wgpu::Buffer,
+        dy: &wgpu::Buffer,
+        n: usize,
+        relu: bool,
+    ) -> wgpu::Buffer {
+        let u = self.ubuf(&MaskU {
+            n: n as u32,
+            relu: relu as u32,
+            _a: 0,
+            _b: 0,
+        });
+        let out = self.alloc(n, "dy-masked");
+        let bufs = [&u, y, dy, &out];
+        self.dispatch(&self.bwd.mask_dy, &bufs, n);
+        out
+    }
+
+    /// 卷积输入梯度 `∂L/∂x`（`dy` 已含 ReLU 掩码）。
     #[allow(clippy::too_many_arguments)]
     pub fn bwd_conv_dx(
         &self,
@@ -283,14 +321,22 @@ impl Gpu {
         w: u32,
         cw: &ConvW,
         relu: u32,
-        y: &wgpu::Buffer,
         dy: &wgpu::Buffer,
+        wf: &wgpu::Buffer,
         we_t: &wgpu::Buffer,
     ) -> wgpu::Buffer {
+        assert!(cw.cout.is_multiple_of(4), "vec4 内核要求 cout 是 4 的倍数");
         let u = self.conv_u(h, w, cw, 0, relu);
-        let dx = self.zeros((h * w * cw.cin) as usize, "conv-dx");
-        let bufs = [&u, y, dy, we_t, &dx];
-        self.dispatch(&self.bwd.conv_dx, &bufs, dx.size() as usize / 4);
+        let dx = self.alloc((h * w * cw.cin) as usize, "conv-dx");
+        if cw.cin.is_multiple_of(4) {
+            // 转置权重 [k·cout+oc]·cin+ic，按 ic4 向量化
+            let bufs = [&u, dy, we_t, &dx];
+            self.dispatch(&self.bwd.conv_dx4, &bufs, (h * w * cw.cin / 4) as usize);
+        } else {
+            // 标量路径用原始布局 [k·cin+ic]·cout+oc，按 oc4 向量化
+            let bufs = [&u, dy, wf, &dx];
+            self.dispatch(&self.bwd.conv_dx, &bufs, dx.size() as usize / 4);
+        }
         dx
     }
 
@@ -385,7 +431,7 @@ impl Gpu {
             _b: 0,
             _c: 0,
         });
-        let dx = self.zeros((h * w * cw.cin) as usize, "convt-dx");
+        let dx = self.alloc((h * w * cw.cin) as usize, "convt-dx");
         let bufs = [&u, dy, we_t, &dx];
         self.dispatch(&self.bwd.convt_dx, &bufs, dx.size() as usize / 4);
         dx
@@ -411,7 +457,7 @@ impl Gpu {
             _c: 0,
         });
         let n = (4 * cw.cin * cw.cout) as usize;
-        let dw = self.zeros(n, "convt-dw");
+        let dw = self.alloc(n, "convt-dw");
         let bufs = [&u, x, dy, &dw];
         self.dispatch(&self.bwd.convt_dw, &bufs, n);
         dw
@@ -429,7 +475,7 @@ impl Gpu {
             _b: 0,
             _c: 0,
         });
-        let db = self.zeros(cw.cout as usize, "convt-db");
+        let db = self.alloc(cw.cout as usize, "convt-db");
         let bufs = [&u, dy, &db];
         self.dispatch(&self.bwd.convt_db, &bufs, cw.cout as usize);
         db
@@ -444,9 +490,9 @@ impl Gpu {
         cw: &ConvW,
         relu: u32,
         x: &wgpu::Buffer,
-        y: &wgpu::Buffer,
         dy: &wgpu::Buffer,
     ) -> wgpu::Buffer {
+        assert!(cw.cout.is_multiple_of(4), "vec4 内核要求 cout 是 4 的倍数");
         let nw = (cw.kk * cw.kk * cw.cin * cw.cout) as usize;
         let p = (h * w) as usize;
         let chunk = (p / 48).max(256);
@@ -463,18 +509,20 @@ impl Gpu {
             chunks,
             _pad: 0,
         });
-        let part = self.zeros(nw * chunks as usize, "dw-part");
-        let bufs = [&u, x, dy, y, &part];
-        self.dispatch(&self.bwd.conv_dw_k, &bufs, nw * chunks as usize);
-        let out = self.zeros(nw, "dw");
+        let part = self.alloc(nw * chunks as usize, "dw-part");
+        let bufs = [&u, x, dy, &part];
+        // vec4 分片：线程数 = (权重数/4) × 分片数；分片在浮点下标上与标量布局一致
+        let nw4 = nw / 4;
+        self.dispatch(&self.bwd.conv_dw_k, &bufs, nw4 * chunks as usize);
+        let out = self.alloc(nw, "dw");
         let ru = self.ubuf(&RedU {
-            n: nw as u32,
+            n: nw4 as u32,
             chunks,
             _a: 0,
             _b: 0,
         });
         let rbufs = [&ru, &part, &out];
-        self.dispatch(&self.bwd.reduce, &rbufs, nw);
+        self.dispatch(&self.bwd.reduce4, &rbufs, nw4);
         out
     }
 
@@ -485,7 +533,6 @@ impl Gpu {
         w: u32,
         cw: &ConvW,
         relu: u32,
-        y: &wgpu::Buffer,
         dy: &wgpu::Buffer,
     ) -> wgpu::Buffer {
         let n = cw.cout as usize;
@@ -504,10 +551,10 @@ impl Gpu {
             chunks,
             _pad: 0,
         });
-        let part = self.zeros(n * chunks as usize, "db-part");
-        let bufs = [&u, dy, y, &part];
+        let part = self.alloc(n * chunks as usize, "db-part");
+        let bufs = [&u, dy, &part];
         self.dispatch(&self.bwd.conv_db_k, &bufs, n * chunks as usize);
-        let out = self.zeros(n, "db");
+        let out = self.alloc(n, "db");
         let ru = self.ubuf(&RedU {
             n: n as u32,
             chunks,

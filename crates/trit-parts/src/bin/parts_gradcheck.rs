@@ -55,7 +55,8 @@ fn main() {
     let mut seed = 0x5eed_1234_9abc_def1u64;
 
     // ---------------- 卷积（kk=3、有 ReLU、三值权重路径）
-    let (h, w, cin, cout, kk) = (4u32, 5u32, 2u32, 3u32, 3u32);
+    // vec4 内核要求 cout 是 4 的倍数（真实网络的 cout ∈ {16,32,64,128}）
+    let (h, w, cin, cout, kk) = (4u32, 5u32, 4u32, 4u32, 3u32);
     let spec = ConvSpec {
         h: h as usize,
         w: w as usize,
@@ -117,7 +118,8 @@ fn main() {
         }
     }
     let etb = gpu.buf(&et, "et");
-    let dxb = gpu.bwd_conv_dx(h, w, &cw, 1, &yb, &dyb, &etb);
+    let dym = gpu.mask_dy(&yb, &dyb, (h * w * cout) as usize, true);
+    let dxb = gpu.bwd_conv_dx(h, w, &cw, 1, &dym, &wfb, &etb);
     let dwb = gpu.bwd_conv_dw(h, w, &cw, 1, &xb, &yb, &dyb);
     let dbb = gpu.bwd_conv_db(h, w, &cw, 1, &yb, &dyb);
     checks.push(Check {
@@ -134,8 +136,8 @@ fn main() {
     });
 
     // split-K 版 dw/db 必须与 CPU 参考一致（训练走的就是这条路径）
-    let dwk = gpu.bwd_conv_dw_split(h, w, &cw, 1, &xb, &yb, &dyb);
-    let dbk = gpu.bwd_conv_db_split(h, w, &cw, 1, &yb, &dyb);
+    let dwk = gpu.bwd_conv_dw_split(h, w, &cw, 1, &xb, &dym);
+    let dbk = gpu.bwd_conv_db_split(h, w, &cw, 1, &dym);
     checks.push(Check {
         name: "conv dE (split-K)",
         worst: max_rel(&gpu.read(&dwk, nw), &grad.dw),
@@ -165,8 +167,8 @@ fn main() {
         cout,
         kk,
     };
-    let y0b = gpu.conv(&xb, h, w, &cw0, 0, 1, &wfb, &wtb, &wsb, &bb);
-    let dx0 = gpu.bwd_conv_dx(h, w, &cw0, 1, &y0b, &dyb, &etb);
+    let _ = gpu.conv(&xb, h, w, &cw0, 0, 1, &wfb, &wtb, &wsb, &bb);
+    let dx0 = gpu.bwd_conv_dx(h, w, &cw0, 1, &dym, &wfb, &etb);
     let dx0v = gpu.read(&dx0, (h * w * cin) as usize);
     let dxv = gpu.read(&dxb, (h * w * cin) as usize);
     let worst_mode = dxv
@@ -180,7 +182,7 @@ fn main() {
     });
 
     // ---------------- 转置卷积（三值）
-    let (ch, cw_, ccin, ccout) = (3u32, 4u32, 2u32, 3u32);
+    let (ch, cw_, ccin, ccout) = (3u32, 4u32, 4u32, 4u32);
     let cx = fill(&mut seed, (ch * cw_ * ccin) as usize);
     let cbias = fill(&mut seed, ccout as usize);
     let cnw = (4 * ccin * ccout) as usize;

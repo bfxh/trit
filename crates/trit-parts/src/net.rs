@@ -490,10 +490,13 @@ impl Net {
         w: u32,
     ) -> Buffer {
         let l = &self.layers[i];
+        let (wf, _, _, _) = l.dev();
         let spec = spec_of(l);
-        let dx = gpu.bwd_conv_dx(h, w, &spec, l.relu as u32, y, dy, l.transposed_dev());
-        let dw = gpu.bwd_conv_dw_split(h, w, &spec, l.relu as u32, x, y, dy);
-        let db = gpu.bwd_conv_db_split(h, w, &spec, l.relu as u32, y, dy);
+        // ReLU 掩码只算一次，三个内核共用（原来每个内核都要再读一遍 y）
+        let dy_m = gpu.mask_dy(y, dy, (h * w * l.cout) as usize, l.relu);
+        let dx = gpu.bwd_conv_dx(h, w, &spec, l.relu as u32, &dy_m, wf, l.transposed_dev());
+        let dw = gpu.bwd_conv_dw_split(h, w, &spec, l.relu as u32, x, &dy_m);
+        let db = gpu.bwd_conv_db_split(h, w, &spec, l.relu as u32, &dy_m);
         let layer = &mut self.layers[i];
         let (n_e, n_b) = (layer.latent.len(), layer.scale.len());
         layer.ensure_acc(gpu, n_e, n_b);

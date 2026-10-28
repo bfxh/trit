@@ -21,12 +21,11 @@ struct ConvU {
 // ---------------------------------------------------------------- 卷积：输入梯度
 
 @group(0) @binding(0) var<uniform> u: ConvU;
-@group(0) @binding(1) var<storage, read> y: array<f32>; // 前向输出（ReLU 掩码用）
-@group(0) @binding(2) var<storage, read> dy: array<f32>;
-// 转置后的有效权重 E：[(ky·kk+kx)·cout + oc]·cin + ic
-// 线程按 ic 相邻 ⇒ 权重读连续、dy 读广播（原布局跨 128B，完全没合并）
-@group(0) @binding(3) var<storage, read> we_t: array<f32>;
-@group(0) @binding(4) var<storage, read_write> dx: array<f32>;
+// dy 已由 mask_dy 预乘 ReLU 掩码；按 vec4 读（cout 恒为 4 的倍数）
+@group(0) @binding(1) var<storage, read> dy4: array<vec4<f32>>;
+// 有效权重 E，布局 [(k·cin + ic)·cout + oc]，按 vec4 读
+@group(0) @binding(2) var<storage, read> wf4: array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read_write> dx: array<f32>;
 
 @compute @workgroup_size(64)
 fn conv_dx(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -38,6 +37,7 @@ fn conv_dx(@builtin(global_invocation_id) gid: vec3<u32>) {
     let p = idx / u.cin;
     let ix = p % u.w;
     let iy = p / u.w;
+    let co4 = u.cout / 4u;
     var acc: f32 = 0.0;
     let half = i32(u.pad);
     for (var ky: u32 = 0u; ky < u.kk; ky = ky + 1u) {
@@ -50,19 +50,54 @@ fn conv_dx(@builtin(global_invocation_id) gid: vec3<u32>) {
             if (ox < 0 || ox >= i32(u.w)) {
                 continue;
             }
-            let ob = (u32(oy) * u.w + u32(ox)) * u.cout;
-            let wbase = ((ky * u.kk + kx) * u.cout) * u.cin;
-            for (var oc: u32 = 0u; oc < u.cout; oc = oc + 1u) {
-                let yi = ob + oc;
-                var g = dy[yi];
-                if (u.relu == 1u && y[yi] <= 0.0) {
-                    g = 0.0;
-                }
-                acc = acc + we_t[wbase + oc * u.cin + ic] * g;
+            let ob4 = (u32(oy) * u.w + u32(ox)) * co4;
+            let wb = ((ky * u.kk + kx) * u.cin + ic) * co4;
+            for (var q: u32 = 0u; q < co4; q = q + 1u) {
+                acc = acc + dot(wf4[wb + q], dy4[ob4 + q]);
             }
         }
     }
     dx[idx] = acc;
+}
+
+// conv_dx 的 vec4 版：权重用转置布局 [k·cout + oc]·cin + ic，线程按 ic4 相邻
+// ⇒ 权重 vec4 连续、dy 广播、dx 写 vec4。cin 不是 4 的倍数时用上面的标量版。
+@group(0) @binding(0) var<uniform> u4: ConvU;
+@group(0) @binding(1) var<storage, read> dy4b: array<f32>;
+@group(0) @binding(2) var<storage, read> we_t4: array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read_write> dx4b: array<vec4<f32>>;
+
+@compute @workgroup_size(64)
+fn conv_dx4(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let ci4 = u4.cin / 4u;
+    let idx = gid.x + gid.y * ROW;
+    if (idx >= u4.h * u4.w * ci4) {
+        return;
+    }
+    let ic4 = idx % ci4;
+    let p = idx / ci4;
+    let ix = p % u4.w;
+    let iy = p / u4.w;
+    var acc = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    let half = i32(u4.pad);
+    for (var ky: u32 = 0u; ky < u4.kk; ky = ky + 1u) {
+        let oy = i32(iy) - i32(ky) + half;
+        if (oy < 0 || oy >= i32(u4.h)) {
+            continue;
+        }
+        for (var kx: u32 = 0u; kx < u4.kk; kx = kx + 1u) {
+            let ox = i32(ix) - i32(kx) + half;
+            if (ox < 0 || ox >= i32(u4.w)) {
+                continue;
+            }
+            let ob = (u32(oy) * u4.w + u32(ox)) * u4.cout;
+            let wbase = (ky * u4.kk + kx) * u4.cout;
+            for (var oc: u32 = 0u; oc < u4.cout; oc = oc + 1u) {
+                acc = acc + we_t4[(wbase + oc) * ci4 + ic4] * dy4b[ob + oc];
+            }
+        }
+    }
+    dx4b[idx] = acc;
 }
 
 // ---------------------------------------------------------------- 卷积：权重梯度
@@ -313,28 +348,28 @@ struct DwU {
 
 @group(0) @binding(0) var<uniform> du: DwU;
 @group(0) @binding(1) var<storage, read> dx_in: array<f32>;
-@group(0) @binding(2) var<storage, read> dy_in: array<f32>;
-@group(0) @binding(3) var<storage, read> dw_y: array<f32>;
-@group(0) @binding(4) var<storage, read_write> dw_part: array<f32>;
+@group(0) @binding(2) var<storage, read> dy_in4: array<vec4<f32>>; // 已掩码
+@group(0) @binding(3) var<storage, read_write> dw_part4: array<vec4<f32>>;
 
 @compute @workgroup_size(64)
 fn conv_dw_k(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let nw = du.kk * du.kk * du.cin * du.cout;
+    let co4 = du.cout / 4u;
+    let nw4 = du.kk * du.kk * du.cin * co4;
     let idx = gid.x + gid.y * ROW;
-    if (idx >= nw * du.chunks) {
+    if (idx >= nw4 * du.chunks) {
         return;
     }
-    let wi = idx % nw;
-    let c = idx / nw;
-    let oc = wi % du.cout;
-    let t = wi / du.cout;
+    let w4 = idx % nw4;
+    let c = idx / nw4;
+    let oc4 = w4 % co4;
+    let t = w4 / co4;
     let ic = t % du.cin;
     let ik = t / du.cin;
     let ky = ik / du.kk;
     let kx = ik % du.kk;
     let p0 = c * du.chunk;
     let p1 = min(p0 + du.chunk, du.h * du.w);
-    var acc: f32 = 0.0;
+    var acc = vec4<f32>(0.0, 0.0, 0.0, 0.0);
     let half = i32(du.pad);
     for (var p: u32 = p0; p < p1; p = p + 1u) {
         let oy = p / du.w;
@@ -344,14 +379,10 @@ fn conv_dw_k(@builtin(global_invocation_id) gid: vec3<u32>) {
         if (iy < 0 || iy >= i32(du.h) || ix < 0 || ix >= i32(du.w)) {
             continue;
         }
-        let oi = p * du.cout + oc;
-        var g = dy_in[oi];
-        if (du.relu == 1u && dw_y[oi] <= 0.0) {
-            g = 0.0;
-        }
-        acc = acc + dx_in[(u32(iy) * du.w + u32(ix)) * du.cin + ic] * g;
+        let xv = dx_in[(u32(iy) * du.w + u32(ix)) * du.cin + ic];
+        acc = acc + xv * dy_in4[p * co4 + oc4];
     }
-    dw_part[idx] = acc;
+    dw_part4[idx] = acc;
 }
 
 // 分片归约：out[i] = Σ_c part[c·n + i]
@@ -376,9 +407,8 @@ fn reduce_chunks(@builtin(global_invocation_id) gid: vec3<u32>) {
 // ---------------------------------------------------------------- split-K 偏置梯度
 
 @group(0) @binding(0) var<uniform> bu2: DwU;
-@group(0) @binding(1) var<storage, read> bdy2: array<f32>;
-@group(0) @binding(2) var<storage, read> by2: array<f32>;
-@group(0) @binding(3) var<storage, read_write> bp_part: array<f32>;
+@group(0) @binding(1) var<storage, read> bdy2: array<f32>; // 已掩码
+@group(0) @binding(2) var<storage, read_write> bp_part: array<f32>;
 
 @compute @workgroup_size(64)
 fn conv_db_k(@builtin(global_invocation_id) gid: vec3<u32>) {
@@ -392,12 +422,7 @@ fn conv_db_k(@builtin(global_invocation_id) gid: vec3<u32>) {
     let p1 = min(p0 + bu2.chunk, bu2.h * bu2.w);
     var acc: f32 = 0.0;
     for (var p: u32 = p0; p < p1; p = p + 1u) {
-        let oi = p * bu2.cout + oc;
-        var g = bdy2[oi];
-        if (bu2.relu == 1u && by2[oi] <= 0.0) {
-            g = 0.0;
-        }
-        acc = acc + g;
+        acc = acc + bdy2[p * bu2.cout + oc];
     }
     bp_part[idx] = acc;
 }
@@ -427,4 +452,47 @@ fn clear_buf(@builtin(global_invocation_id) gid: vec3<u32>) {
         return;
     }
     zbuf[i] = 0.0;
+}
+
+
+// ---------------------------------------------------------------- ReLU 掩码预计算
+
+// 反向里 dx/dw/db 三个内核都要读前向输出 y 做 ReLU 掩码（每 MAC 多一次读）。
+// 先把 dy 掩一次，后面三个内核就只需读一份梯度。
+struct MaskU { n: u32, relu: u32, _a: u32, _b: u32 };
+@group(0) @binding(0) var<uniform> mu: MaskU;
+@group(0) @binding(1) var<storage, read> m_y: array<f32>;
+@group(0) @binding(2) var<storage, read> m_dy: array<f32>;
+@group(0) @binding(3) var<storage, read_write> m_out: array<f32>;
+
+@compute @workgroup_size(64)
+fn mask_dy(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * ROW;
+    if (i >= mu.n) {
+        return;
+    }
+    var g = m_dy[i];
+    if (mu.relu == 1u && m_y[i] <= 0.0) {
+        g = 0.0;
+    }
+    m_out[i] = g;
+}
+
+
+// vec4 分片归约（权重梯度分片）
+@group(0) @binding(0) var<uniform> ru4: RedU;
+@group(0) @binding(1) var<storage, read> red4_in: array<vec4<f32>>;
+@group(0) @binding(2) var<storage, read_write> red4_out: array<vec4<f32>>;
+
+@compute @workgroup_size(64)
+fn reduce_chunks4(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * ROW;
+    if (i >= ru4.n) {
+        return;
+    }
+    var acc = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    for (var c: u32 = 0u; c < ru4.chunks; c = c + 1u) {
+        acc = acc + red4_in[c * ru4.n + i];
+    }
+    red4_out[i] = acc;
 }

@@ -79,5 +79,70 @@ fn main() {
         net.update(&gpu, 1e-3, trit_train::Ste::Identity, true, 1.0 / 6.0);
         gpu.sync();
     });
+    // ---- 逐层分解（用 trace 的真实缓冲；dy 用同形状常量）
+    let layers = [
+        (0usize, res, res, &tr.input, &tr.act_e1a),
+        (1, res, res, &tr.act_e1a, &tr.a),
+        (2, res / 2, res / 2, &tr.p1, &tr.act_e2a),
+        (3, res / 2, res / 2, &tr.act_e2a, &tr.b),
+        (4, res / 4, res / 4, &tr.p2, &tr.act_e3a),
+        (5, res / 4, res / 4, &tr.act_e3a, &tr.c),
+        (7, res / 2, res / 2, &tr.cat1, &tr.act_d2a),
+        (8, res / 2, res / 2, &tr.act_d2a, &tr.y),
+        (10, res, res, &tr.cat2, &tr.act_d1a),
+        (11, res, res, &tr.act_d1a, &tr.z),
+        (12, res, res, &tr.z, &tr.out),
+    ];
+    println!("\n逐层（dx / dw / db，各含一次 sync）：");
+    let mut tot = [0f64; 3];
+    for (idx, h, w, x, _y) in layers {
+        let l = &net.layers[idx];
+        let spec = trit_parts::weights::ConvW {
+            wf: Vec::new(),
+            wt: Vec::new(),
+            ws: Vec::new(),
+            bias: Vec::new(),
+            cin: l.cin,
+            cout: l.cout,
+            kk: l.kk,
+        };
+        let dy = gpu.buf(&vec![0.01f32; (h * h * l.cout) as usize], "dy");
+        let mut t = [0f64; 3];
+        for (k, slot) in t.iter_mut().enumerate() {
+            let t0 = Instant::now();
+            match k {
+                0 => {
+                    let _ = gpu.bwd_conv_dx(
+                        h,
+                        w,
+                        &spec,
+                        l.relu as u32,
+                        &dy,
+                        l.dev().0,
+                        l.transposed_dev(),
+                    );
+                }
+                1 => {
+                    let _ = gpu.bwd_conv_dw_split(h, w, &spec, l.relu as u32, x, &dy);
+                }
+                _ => {
+                    let _ = gpu.bwd_conv_db_split(h, w, &spec, l.relu as u32, &dy);
+                }
+            }
+            gpu.sync();
+            *slot = t0.elapsed().as_secs_f64() * 1000.0;
+        }
+        for (slot, v) in tot.iter_mut().zip(t) {
+            *slot += v;
+        }
+        println!(
+            "  layer{idx:>2} {h:>3}²  dx {:>6.2}  dw {:>6.2}  db {:>6.2} ms",
+            t[0], t[1], t[2]
+        );
+    }
+    println!(
+        "  合计 dx {:.1} / dw {:.1} / db {:.1} ms",
+        tot[0], tot[1], tot[2]
+    );
     println!("\n注：update 每 accum 次调用一次；backward 里的梯度已在 GPU 累加。");
 }
