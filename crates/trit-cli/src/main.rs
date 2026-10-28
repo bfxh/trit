@@ -73,6 +73,26 @@ enum Commands {
         #[arg(long)]
         require: bool,
     },
+    /// 先算账再启动子进程（M5.2 自壳）：判决不过时子进程**不启动**。
+    ///
+    /// 退出码：子进程的退出码原样透传；**3 = 容量拒绝（子进程未运行）**。
+    Exec {
+        /// 负载峰值需求（MiB）。省略则不做判决，直接执行（会提示）。
+        #[arg(long, value_name = "MIB")]
+        need_mb: Option<u64>,
+        /// 竞争余量倍数（≥1.0；小于 1 会被夹到 1.0）。
+        #[arg(long, default_value_t = 2.0)]
+        headroom: f32,
+        /// 越过判决强制启动（逃生口；读数照常打印）。
+        #[arg(long)]
+        force: bool,
+        /// 严格模式：读数不可用也拒跑（fail-closed）。
+        #[arg(long)]
+        strict: bool,
+        /// 要执行的命令与参数：`trit exec --need-mb 4096 -- prog arg...`。
+        #[arg(last = true, required = true, value_name = "CMD")]
+        argv: Vec<String>,
+    },
     /// 在指定赋值下求值表达式。
     Eval {
         /// 待求值的表达式，例如 `a & b | !c`。
@@ -426,6 +446,13 @@ fn main() -> Result<()> {
             headroom,
             require,
         } => commands::capacity::cmd_capacity(need_mb, headroom, require),
+        Commands::Exec {
+            need_mb,
+            headroom,
+            force,
+            strict,
+            argv,
+        } => commands::exec::cmd_exec(need_mb, headroom, force, strict, &argv),
         Commands::Eval { expression, assign } => {
             commands::eval::cmd_eval(&expression, &assign, &cli.algebra)
         }
