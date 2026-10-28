@@ -1704,6 +1704,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-parts"
+version = "0.12.0"
+dependencies = [
+ "bytemuck",
+ "pollster",
+ "wgpu",
+]
+
+[[package]]
 name = "trit-policy"
 version = "0.12.0"
 dependencies = [

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（`trit-parts`：部件平面头进仓，模型不再寄居 `.yanagent`）
+
+- 新实验 crate `crates/trit-parts`（`publish = false`，GPU 在 `gpu` feature 后）：
+  权重加载 + BN 折叠、WGSL conv/pool/cat/ConvT、UNet 前向（f32 与每通道三值双模），
+  以及 `parts-parity` 对拍二进制。按工作区死命令，模型归本仓，训练与推理一律 Rust 三进制。
+- 判据（本机 RTX 4060 Ti / Vulkan，384²，与搬迁前逐位一致）：
+  f32 `max|Δlogit| = 2.608e-4`、平面 argmax **737280/737280**；
+  三值 vs PyTorch 同套量化 `max|Δ| = 1.367e-1`、argmax **0.999688**；
+  三值 vs f32 argmax 0.987118、幅值 4.78→1.25 ⇒ 事后三值化不可用，必须 QAT+STE。
+- **未做**：反向内核、训练循环、清单约束 argmax。交付模型仍缺，等这三件。
+- 夹具不进 git：`D:\KF\trit-data\parts-parity`（22 MB）。
+
 ### Added（`trit-procscan` 动态追溯/追踪：事件流离线重放）
 
 - 新模块 `trace` + 新子命令 `trit-procscan trace <events.jsonl> --pid N`：

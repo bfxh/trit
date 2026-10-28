@@ -1,0 +1,23 @@
+[package]
+name = "trit-parts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "部件平面头（k 位三进制 + valid）的 Rust 三进制 GPU 实现（不属于稳定 API）"
+publish = false
+
+[features]
+default = []
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+
+[dependencies]
+wgpu = { version = "30", optional = true }
+pollster = { version = "0.4", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
+
+[[bin]]
+name = "parts-parity"
+path = "src/bin/parts_parity.rs"
+required-features = ["gpu"]

@@ -21,6 +21,7 @@ members = [
     "crates/sansheng",
     "crates/trit-schedule",
     "crates/trit-net",
+    "crates/trit-parts",
     "crates/trit-machines",
     "crates/trit-codec",
     "crates/trit-attn",
