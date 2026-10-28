@@ -18,6 +18,8 @@ pub struct Gpu {
     pool_bgl: wgpu::BindGroupLayout,
     cat_pl: wgpu::ComputePipeline,
     cat_bgl: wgpu::BindGroupLayout,
+    conv_t4_pl: wgpu::ComputePipeline,
+    conv_t4_bgl: wgpu::BindGroupLayout,
     up_pl: wgpu::ComputePipeline,
     up_bgl: wgpu::BindGroupLayout,
     /// 反向管线（与上面四条前向管线共用同一个 device）。
@@ -96,6 +98,13 @@ impl Gpu {
         ]);
         let pool_bgl = mk(&[unif(0), entry(true, 1), entry(false, 2)]);
         let cat_bgl = mk(&[unif(0), entry(true, 1), entry(true, 2), entry(false, 3)]);
+        let conv_t4_bgl = mk(&[
+            unif(0),
+            entry(true, 1),
+            entry(true, 2),
+            entry(true, 3),
+            entry(false, 4),
+        ]);
         let up_bgl = mk(&[
             unif(0),
             entry(true, 1),
@@ -128,6 +137,8 @@ impl Gpu {
             pool_bgl,
             cat_pl: pipe("cat", &cat_bgl),
             cat_bgl,
+            conv_t4_pl: pipe("conv_f4", &conv_t4_bgl),
+            conv_t4_bgl,
             up_pl: pipe("convt", &up_bgl),
             up_bgl,
             bwd,
@@ -270,7 +281,68 @@ impl Gpu {
             let mut pass = enc.begin_compute_pass(&Default::default());
             pass.set_pipeline(&self.conv_pl);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
+            pass.dispatch_workgroups(256, div_up((total / 4) as u32, ROW), 1);
+        }
+        self.queue.submit([enc.finish()]);
+        out
+    }
+
+    /// 前向卷积的 vec4 版：线程按 oc4，权重用原布局（`[k·cin+ic]·cout+oc`），`cout` 须是 4 的倍数。
+    pub fn conv_t(
+        &self,
+        x: &wgpu::Buffer,
+        h: u32,
+        w: u32,
+        cw: &ConvW,
+        relu: bool,
+        wf: &wgpu::Buffer,
+        bias: &wgpu::Buffer,
+    ) -> wgpu::Buffer {
+        let u = ConvU {
+            h,
+            w,
+            cin: cw.cin,
+            cout: cw.cout,
+            kk: cw.kk,
+            pad: cw.kk / 2,
+            mode: 0,
+            relu: relu as u32,
+        };
+        let ub = self.ubuf(&u);
+        let total = (h * w * cw.cout) as usize;
+        let out = self.empty_out(total, "conv-out");
+        let bg = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &self.conv_t4_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ub.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: x.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: bias.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: out.as_entire_binding(),
+                },
+            ],
+        });
+        let mut enc = self.device.create_command_encoder(&Default::default());
+        {
+            let mut pass = enc.begin_compute_pass(&Default::default());
+            pass.set_pipeline(&self.conv_t4_pl);
+            pass.set_bind_group(0, &bg, &[]);
+            pass.dispatch_workgroups(256, div_up((total / 4) as u32, ROW), 1);
         }
         self.queue.submit([enc.finish()]);
         out
@@ -304,7 +376,7 @@ impl Gpu {
             let mut pass = enc.begin_compute_pass(&Default::default());
             pass.set_pipeline(&self.pool_pl);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
+            pass.dispatch_workgroups(256, div_up((total / 4) as u32, ROW), 1);
         }
         self.queue.submit([enc.finish()]);
         out
@@ -349,7 +421,7 @@ impl Gpu {
             let mut pass = enc.begin_compute_pass(&Default::default());
             pass.set_pipeline(&self.cat_pl);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
+            pass.dispatch_workgroups(256, div_up((total / 4) as u32, ROW), 1);
         }
         self.queue.submit([enc.finish()]);
         out
@@ -420,7 +492,7 @@ impl Gpu {
             let mut pass = enc.begin_compute_pass(&Default::default());
             pass.set_pipeline(&self.up_pl);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
+            pass.dispatch_workgroups(256, div_up((total / 4) as u32, ROW), 1);
         }
         self.queue.submit([enc.finish()]);
         out

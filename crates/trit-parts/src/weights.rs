@@ -229,3 +229,29 @@ pub fn convt_w(t: &Tensors, wname: &str) -> Result<ConvW, String> {
         kk: 2,
     })
 }
+
+/// 把卷积有效权重转成「oc 外、ic 内」布局：`[(k·cout + oc)·cin + ic]`。
+pub fn transpose_conv(eff: &[f32], cin: usize, cout: usize, kk: usize) -> Vec<f32> {
+    let mut out = vec![0f32; eff.len()];
+    for k in 0..kk * kk {
+        for ic in 0..cin {
+            for oc in 0..cout {
+                out[(k * cout + oc) * cin + ic] = eff[(k * cin + ic) * cout + oc];
+            }
+        }
+    }
+    out
+}
+
+/// 转置卷积有效权重：`[(sub·cin + ci)·cout + co]` → `[(sub·cout + co)·cin + ci]`。
+pub fn transpose_convt(eff: &[f32], cin: usize, cout: usize) -> Vec<f32> {
+    let mut out = vec![0f32; eff.len()];
+    for sub in 0..4usize {
+        for ci in 0..cin {
+            for co in 0..cout {
+                out[(sub * cout + co) * cin + ci] = eff[(sub * cin + ci) * cout + co];
+            }
+        }
+    }
+    out
+}

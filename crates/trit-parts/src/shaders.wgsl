@@ -162,3 +162,50 @@ fn convt(@builtin(global_invocation_id) gid: vec3<u32>) {
     // ⚠️ 转置卷积也有 bias（ConvTranspose2d 默认 bias=True）；漏掉会造成整体偏移
     uy[idx] = acc + ubs[co];
 }
+
+// ---------------------------------------------------------------- 前向 vec4（oc 方向）
+
+// 线程处理 (p, oc4)：权重用原布局 [(k·cin+ic)·cout+oc]，oc 连续 ⇒ vec4 读合并；
+// x[p,ic] 标量广播；输出按 vec4 写。与 conv_dx 同构（那边是 ic 方向）。
+@group(0) @binding(0) var<uniform> u4: ConvU;
+@group(0) @binding(1) var<storage, read> xs: array<f32>;
+@group(0) @binding(2) var<storage, read> wf4: array<vec4<f32>>;
+@group(0) @binding(3) var<storage, read> b4: array<vec4<f32>>;
+@group(0) @binding(4) var<storage, read_write> y4v: array<vec4<f32>>;
+
+@compute @workgroup_size(64)
+fn conv_f4(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let co4 = u4.cout / 4u;
+    let idx = gid.x + gid.y * ROW;
+    if (idx >= u4.h * u4.w * co4) {
+        return;
+    }
+    let oc4 = idx % co4;
+    let p = idx / co4;
+    let ox = p % u4.w;
+    let oy = p / u4.w;
+    var acc = vec4<f32>(0.0, 0.0, 0.0, 0.0);
+    let half = i32(u4.pad);
+    for (var ky: u32 = 0u; ky < u4.kk; ky = ky + 1u) {
+        let iy = i32(oy) + i32(ky) - half;
+        if (iy < 0 || iy >= i32(u4.h)) {
+            continue;
+        }
+        for (var kx: u32 = 0u; kx < u4.kk; kx = kx + 1u) {
+            let ix = i32(ox) + i32(kx) - half;
+            if (ix < 0 || ix >= i32(u4.w)) {
+                continue;
+            }
+            let xb = (u32(iy) * u4.w + u32(ix)) * u4.cin;
+            let wbase = (ky * u4.kk + kx) * u4.cin;
+            for (var ic: u32 = 0u; ic < u4.cin; ic = ic + 1u) {
+                acc = acc + xs[xb + ic] * wf4[(wbase + ic) * co4 + oc4];
+            }
+        }
+    }
+    var v = acc + b4[oc4];
+    if (u4.relu == 1u) {
+        v = max(v, vec4<f32>(0.0, 0.0, 0.0, 0.0));
+    }
+    y4v[idx] = v;
+}

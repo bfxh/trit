@@ -202,33 +202,17 @@ impl Layer {
         }
     }
 
-    /// 把有效权重转成 dx 内核要的「oc 外、ic 内」布局。
+    /// 把有效权重转成「oc 外、ic 内」布局（dx 与 vec4 前向共用）。
     fn transposed(&self, eff: &[f32]) -> Vec<f32> {
-        let (cin, cout) = (self.cin as usize, self.cout as usize);
         if self.convt {
-            // E: [(sub)*cin + ci]*cout + co  →  [(sub)*cout + co]*cin + ci
-            let sub = 4usize;
-            let mut out = vec![0f32; eff.len()];
-            for s in 0..sub {
-                for ci in 0..cin {
-                    for co in 0..cout {
-                        out[(s * cout + co) * cin + ci] = eff[(s * cin + ci) * cout + co];
-                    }
-                }
-            }
-            out
+            crate::weights::transpose_convt(eff, self.cin as usize, self.cout as usize)
         } else {
-            // E: [((ky·kk+kx)·cin + ic)·cout + oc  →  [((ky·kk+kx)·cout + oc)·cin + ic
-            let kk2 = (self.kk * self.kk) as usize;
-            let mut out = vec![0f32; eff.len()];
-            for k in 0..kk2 {
-                for ic in 0..cin {
-                    for oc in 0..cout {
-                        out[(k * cout + oc) * cin + ic] = eff[(k * cin + ic) * cout + oc];
-                    }
-                }
-            }
-            out
+            crate::weights::transpose_conv(
+                eff,
+                self.cin as usize,
+                self.cout as usize,
+                self.kk as usize,
+            )
         }
     }
 
@@ -396,7 +380,11 @@ impl Net {
     fn conv(&self, gpu: &Gpu, i: usize, x: &Buffer, h: u32, w: u32) -> Buffer {
         let l = &self.layers[i];
         let (wf, wt, ws, b) = l.dev();
-        gpu.conv(x, h, w, &spec_of(l), 1, l.relu as u32, wf, wt, ws, b)
+        if l.cout.is_multiple_of(4) {
+            gpu.conv_t(x, h, w, &spec_of(l), l.relu, wf, b)
+        } else {
+            gpu.conv(x, h, w, &spec_of(l), 1, l.relu as u32, wf, wt, ws, b)
+        }
     }
 
     fn convt(&self, gpu: &Gpu, i: usize, x: &Buffer, h: u32, w: u32) -> Buffer {
