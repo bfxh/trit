@@ -233,4 +233,13 @@ MUTANTS = [
         "filter": 'durable_sending_mark_is_in_doubt_even_if_the_call_never_ran',
         "diagnostic": 'ORCH_CRASH_SENDING_IN_DOUBT',
     },
+    {
+        "name": "orch: cli exit code reflects failure",
+        "file": "crates/trit-orch/src/bin/trit-orch.rs",
+        "old": "    std::process::exit(1);",
+        "new": "    std::process::exit(0);",
+        "pkg": "trit-orch",
+        "filter": "plan_accepts_valid_graph_and_rejects_cycles",
+        "diagnostic": "ORCH_CLI_EXIT_ON_ERROR",
+    },
 ]

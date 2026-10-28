@@ -7,6 +7,10 @@ license.workspace = true
 repository.workspace = true
 description = "三值准入与当前快照的可派发批次选择"
 
+[[bin]]
+name = "trit-orch"
+path = "src/bin/trit-orch.rs"
+
 [dependencies]
 trit-core.workspace = true
 trit-schedule.workspace = true

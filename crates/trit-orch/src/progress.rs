@@ -34,6 +34,11 @@ impl Progress {
         Self::default()
     }
 
+    /// 从已有的轮次记录恢复（例如宿主重放日志）。
+    pub fn from_rounds(rounds: Vec<RoundReport>) -> Self {
+        Self { rounds }
+    }
+
     /// 记录一轮选择结果。
     pub fn record(&mut self, selection: &Selection) -> RoundReport {
         let counts = selection.counts();

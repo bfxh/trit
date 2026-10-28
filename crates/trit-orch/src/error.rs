@@ -108,6 +108,8 @@ pub enum Error {
         prepared: u64,
         expected: u64,
     },
+    #[error("bad input json: {message}")]
+    InputParse { message: String },
     #[error("{operation}: cannot move from {from} to {to}")]
     InvalidTransition {
         operation: String,
@@ -122,4 +124,47 @@ pub(crate) fn add_tokens(left: u64, right: u64, task: Option<&str>) -> Result<u6
         left,
         right,
     })
+}
+
+impl Error {
+    /// 稳定的机器可读分类（CLI/宿主用它判红，不解析展示文案）。
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Error::TooManyTasks { .. } => "too_many_tasks",
+            Error::BlankTaskId { .. } => "blank_task_id",
+            Error::DuplicateTask { .. } => "duplicate_task",
+            Error::DuplicateDependency { .. } => "duplicate_dependency",
+            Error::UnknownDependency { .. } => "unknown_dependency",
+            Error::Cycle { .. } => "cycle",
+            Error::RevisionMismatch { .. } => "revision_mismatch",
+            Error::ObservationMismatch { .. } => "observation_mismatch",
+            Error::NoWorkers => "no_workers",
+            Error::TaskTokenLimitExceeded { .. } => "task_token_limit_exceeded",
+            Error::WorkerLimitExceeded { .. } => "worker_limit_exceeded",
+            Error::ResourceLimitExceeded { .. } => "resource_limit_exceeded",
+            Error::TokenLimitExceeded { .. } => "token_limit_exceeded",
+            Error::TokenOverflow { .. } => "token_overflow",
+            Error::ResourceOverflow { .. } => "resource_overflow",
+            Error::WorkerOverflow { .. } => "worker_overflow",
+            Error::StalePatch { .. } => "stale_patch",
+            Error::PatchDuplicate { .. } => "patch_duplicate",
+            Error::PatchAddExists { .. } => "patch_add_exists",
+            Error::PatchTargetMissing { .. } => "patch_target_missing",
+            Error::ProtectedInFlight { .. } => "protected_in_flight",
+            Error::EpochOverflow { .. } => "epoch_overflow",
+            Error::RevisionOverflow => "revision_overflow",
+            Error::EffectInDoubt { .. } => "effect_in_doubt",
+            Error::EffectAlreadyApplied { .. } => "effect_already_applied",
+            Error::StaleFence { .. } => "stale_fence",
+            Error::AttemptMismatch { .. } => "attempt_mismatch",
+            Error::UnknownOperation { .. } => "unknown_operation",
+            Error::Incomplete { .. } => "incomplete",
+            Error::LedgerIo { .. } => "ledger_io",
+            Error::LedgerParse { .. } => "ledger_parse",
+            Error::NotPrepared { .. } => "not_prepared",
+            Error::PreparedEpochMismatch { .. } => "prepared_epoch_mismatch",
+            Error::InputParse { .. } => "input_parse",
+            Error::InvalidTransition { .. } => "invalid_transition",
+        }
+    }
 }
