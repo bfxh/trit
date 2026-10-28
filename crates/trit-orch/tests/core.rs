@@ -496,3 +496,33 @@ fn empty_plan_returns_empty_batch() {
     assert_eq!(result.reserved_tokens, 0);
     assert_eq!(result.occupied_workers, 0);
 }
+
+#[test]
+fn status_counts_keep_inflight_and_settled_out_of_held() {
+    let mut tasks = vec![
+        task("run", 0, vec![]),
+        task("done", 0, vec![]),
+        task("blocked", 0, vec![edge("run", Ternary::True)]),
+        task("large", 0, vec![]),
+        task("ok", 1, vec![]),
+    ];
+    tasks[3].requirements = Resources::new(999, 999);
+    let mut state = snapshot(&tasks);
+    state.observations.get_mut("run").unwrap().phase = Phase::InFlight;
+    state.observations.get_mut("done").unwrap().phase = Phase::Settled;
+    let plan = Plan::new(7, tasks).unwrap();
+    let result = plan.select(&state, &limits(2)).unwrap();
+    let counts = result.counts();
+    assert_eq!(counts.in_flight, 1);
+    assert_eq!(counts.settled, 1);
+    assert_eq!(counts.selected, result.selected.len());
+    assert_eq!(counts.held, 1, "ORCH_STATUS_HELD_COUNTS");
+    assert_eq!(counts.denied, 1, "ORCH_STATUS_DENIED_COUNTS");
+    assert_eq!(counts.selected, 1);
+    let line = result.brief();
+    assert!(
+        line.starts_with("rev=7 selected=1 held=1 denied=1 inflight=1 settled=1 workers=2"),
+        "{line}"
+    );
+    assert!(line.contains("tokens=0+200"), "{line}");
+}

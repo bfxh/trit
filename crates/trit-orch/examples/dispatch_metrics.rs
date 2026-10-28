@@ -99,18 +99,11 @@ fn main() -> Result<(), Box<dyn Error>> {
             .fits_in(limits.capacity, Resources::default())
     );
     times.sort_unstable();
-    let held = expected
-        .decisions
-        .iter()
-        .filter(|d| d.admission == Ternary::Unknown)
-        .count();
-    let denied = expected
-        .decisions
-        .iter()
-        .filter(|d| d.admission == Ternary::False)
-        .count();
+    let counts = expected.counts();
+    let (held, denied, inflight, settled) =
+        (counts.held, counts.denied, counts.in_flight, counts.settled);
     println!(
-        "{{\"source\":\"synthetic_not_agent_evaluation\",\"tasks\":{count},\"rounds\":{rounds},\"plan_us\":{plan_us},\"select_p50_us\":{},\"select_p95_us\":{},\"selected\":{},\"held\":{held},\"denied\":{denied},\"occupied_workers\":{},\"cpu_units\":{},\"memory_units\":{},\"fixture_fresh_tokens\":{},\"fixture_cached_tokens\":{},\"fixture_output_tokens\":{},\"reserved_tokens\":{},\"model_calls\":0}}",
+        "{{\"source\":\"synthetic_not_agent_evaluation\",\"tasks\":{count},\"rounds\":{rounds},\"plan_us\":{plan_us},\"select_p50_us\":{},\"select_p95_us\":{},\"selected\":{},\"held\":{held},\"denied\":{denied},\"inflight\":{inflight},\"settled\":{settled},\"occupied_workers\":{},\"cpu_units\":{},\"memory_units\":{},\"fixture_fresh_tokens\":{},\"fixture_cached_tokens\":{},\"fixture_output_tokens\":{},\"reserved_tokens\":{},\"model_calls\":0,\"brief\":\"{}\"}}",
         times[(rounds - 1) / 2],
         times[(rounds * 95).div_ceil(100) - 1],
         expected.selected.len(),
@@ -121,6 +114,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         expected.observed_tokens.cached,
         expected.observed_tokens.output,
         expected.reserved_tokens,
+        expected.brief(),
     );
     Ok(())
 }
