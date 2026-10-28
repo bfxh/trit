@@ -57,7 +57,7 @@ fn default_observation_is_unproven_not_false_or_authorized() {
 #[test]
 fn evidence_requires_current_revision_and_nonzero_checks() {
     let mut report = CheckReport {
-        revision: 7,
+        epoch: 7,
         checks: 1,
         result: CheckResult::Passed,
     };

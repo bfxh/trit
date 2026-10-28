@@ -13,8 +13,8 @@ pub use admission::{admit, dependency_gate};
 pub use error::Error;
 pub use evidence::{EvidenceSpec, Exit, Receipt};
 pub use model::{
-    BlockReason, CheckReport, CheckResult, Decision, Limits, Observation, Phase, Selection,
-    Snapshot, TaskSpec, TokenUsage,
+    BlockReason, CheckReport, CheckResult, Decision, Limits, Observation, Phase, PlanPatch,
+    Selection, Snapshot, TaskSpec, TokenUsage,
 };
 pub use plan::Plan;
 pub use status::Counts;

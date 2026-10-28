@@ -39,8 +39,13 @@ jobs:
           pkgs=$(printf '%s\n' "$files" | awk -F/ 'NF > 1 && $1 == "crates" { print $2 }' | sort -u)
           args=""
           for pkg in $pkgs; do args="$args --pkg $pkg"; done
+          # 只改变异登记/判别器时，也要跑 trit-orch 的定向变异，否则改错锚点会静默变绿。
+          scripts=$(git diff --name-only "$BASE_SHA"...HEAD -- 'scripts/orch_mutants.py' 'scripts/mutation_assertions.py')
+          if [ -n "$scripts" ] && ! printf '%s' "$args" | grep -q -- '--pkg trit-orch'; then
+            args="$args --pkg trit-orch"
+          fi
           echo "args=$args" >> "$GITHUB_OUTPUT"
-          echo "changed crates: ${pkgs:-none}"
+          echo "changed crates: ${pkgs:-none}; scripts: ${scripts:-none}"
       - name: Mutation gate (changed crates only)
         if: steps.crates.outputs.args != ''
         run: python3 scripts/mutation_check.py ${{ steps.crates.outputs.args }}

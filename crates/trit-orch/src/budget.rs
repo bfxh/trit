@@ -10,6 +10,9 @@ pub(crate) struct Budget {
     pub resources: Resources,
     pub workers: usize,
     observed_total: u64,
+    /// 每个任务还能花多少 token（`max_tokens - 已用`），与 `observed` 对齐，
+    /// 避免「已花的部分既算 observed 又按整额再预留」的双计。
+    remaining: Vec<u64>,
 }
 
 impl Budget {
@@ -19,17 +22,23 @@ impl Budget {
         limits: &Limits,
     ) -> Result<Self, Error> {
         let mut budget = Self::default();
+        budget.remaining.reserve(tasks.len());
         for (spec, observation) in tasks.iter().zip(observations) {
             let id = spec.task.id.as_str();
             let used = observation.usage.total_for(Some(id))?;
-            let remaining =
-                spec.max_tokens
-                    .checked_sub(used)
-                    .ok_or_else(|| Error::TaskTokenLimitExceeded {
+            let remaining = match spec.max_tokens.checked_sub(used) {
+                Some(remaining) => remaining,
+                // 已结算的超支是既成事实：不能让它永久卡死整张计划。
+                None if observation.phase == Phase::Settled => 0,
+                None => {
+                    return Err(Error::TaskTokenLimitExceeded {
                         task: id.to_owned(),
                         used,
                         max_tokens: spec.max_tokens,
-                    })?;
+                    });
+                }
+            };
+            budget.remaining.push(remaining);
             budget.observed = budget.observed.checked_add(observation.usage, id)?;
             if observation.phase == Phase::InFlight {
                 budget.reserve(spec, remaining)?;
@@ -38,6 +47,11 @@ impl Budget {
         budget.observed_total = budget.observed.total()?;
         budget.validate(limits)?;
         Ok(budget)
+    }
+
+    /// 该任务本次还可申请的 token 额度。
+    pub fn remaining(&self, position: usize) -> u64 {
+        self.remaining[position]
     }
 
     fn validate(&self, limits: &Limits) -> Result<(), Error> {
@@ -84,6 +98,7 @@ impl Budget {
     pub fn gate(
         &self,
         spec: &TaskSpec,
+        remaining: u64,
         limits: &Limits,
         reasons: &mut Vec<BlockReason>,
     ) -> Result<Ternary, Error> {
@@ -113,15 +128,15 @@ impl Budget {
             });
             gate = gate & Ternary::Unknown;
         }
-        if spec.max_tokens > limits.tokens {
+        if remaining > limits.tokens {
             reasons.push(BlockReason::TokenCapacity {
-                required: spec.max_tokens,
+                required: remaining,
                 limit: limits.tokens,
             });
             gate = gate & Ternary::False;
-        } else if spec.max_tokens > tokens {
+        } else if remaining > tokens {
             reasons.push(BlockReason::Tokens {
-                required: spec.max_tokens,
+                required: remaining,
                 available: tokens,
             });
             gate = gate & Ternary::Unknown;

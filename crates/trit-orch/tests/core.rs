@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use trit_orch::{
-    CheckReport, CheckResult, Dependency, Limits, Observation, Phase, Plan, Resources, Snapshot,
-    Task, TaskSpec, Ternary, TokenUsage,
+    BlockReason, CheckReport, CheckResult, Dependency, Limits, Observation, Phase, Plan, Resources,
+    Snapshot, Task, TaskSpec, Ternary, TokenUsage,
 };
 
 fn task(id: &str, priority: i32, deps: Vec<Dependency>) -> TaskSpec {
@@ -15,6 +15,7 @@ fn task(id: &str, priority: i32, deps: Vec<Dependency>) -> TaskSpec {
         },
         requirements: Resources::new(1, 1),
         max_tokens: 100,
+        epoch: 0,
     }
 }
 
@@ -54,7 +55,7 @@ fn limits(workers: usize) -> Limits {
 
 fn passed() -> CheckReport {
     CheckReport {
-        revision: 7,
+        epoch: 0,
         checks: 1,
         result: CheckResult::Passed,
     }
@@ -122,7 +123,7 @@ fn unverified_refuted_and_stale_results_do_not_unlock_dependents() {
         (None, Ternary::Unknown),
         (
             Some(CheckReport {
-                revision: 6,
+                epoch: 1,
                 ..passed()
             }),
             Ternary::Unknown,
@@ -525,4 +526,132 @@ fn status_counts_keep_inflight_and_settled_out_of_held() {
         "{line}"
     );
     assert!(line.contains("tokens=0+200"), "{line}");
+}
+
+#[test]
+fn stale_or_missing_predecessor_evidence_is_never_refuted() {
+    let tasks = vec![
+        task("a", 0, vec![]),
+        task("b", 0, vec![edge("a", Ternary::True)]),
+    ];
+    let mut state = snapshot(&tasks);
+    state.observations.get_mut("a").unwrap().phase = Phase::Settled;
+    let plan = Plan::new(7, tasks).unwrap();
+    for (report, freshness, expected) in [
+        (None, Ternary::False, Ternary::Unknown),
+        (
+            Some(CheckReport {
+                result: CheckResult::Refuted,
+                ..passed()
+            }),
+            Ternary::Unknown,
+            Ternary::Unknown,
+        ),
+        (
+            Some(CheckReport {
+                result: CheckResult::Refuted,
+                ..passed()
+            }),
+            Ternary::True,
+            Ternary::False,
+        ),
+        (
+            Some(CheckReport {
+                checks: 0,
+                ..passed()
+            }),
+            Ternary::True,
+            Ternary::Unknown,
+        ),
+    ] {
+        let a = state.observations.get_mut("a").unwrap();
+        a.evidence = report;
+        a.freshness = freshness;
+        let result = plan.select(&state, &limits(2)).unwrap();
+        let b = result.decisions.iter().find(|d| d.task == "b").unwrap();
+        assert_eq!(
+            b.admission, expected,
+            "ORCH_PREDECESSOR_FRESHNESS: freshness={freshness:?}"
+        );
+        assert_eq!(result.selected.len(), 0);
+    }
+}
+
+#[test]
+fn stale_inputs_on_dispatchable_task_are_unknown_not_denied() {
+    let tasks = vec![task("a", 0, vec![])];
+    let mut state = snapshot(&tasks);
+    state.observations.get_mut("a").unwrap().freshness = Ternary::False;
+    let plan = Plan::new(7, tasks).unwrap();
+    let result = plan.select(&state, &limits(1)).unwrap();
+    assert_eq!(
+        result.decisions[0].admission,
+        Ternary::Unknown,
+        "ORCH_OWN_FRESHNESS"
+    );
+    assert_eq!(
+        result.decisions[0].reasons,
+        [BlockReason::Freshness {
+            verdict: Ternary::False
+        }]
+    );
+}
+
+#[test]
+fn settled_valid_result_is_not_counted_as_denied() {
+    let tasks = vec![task("a", 0, vec![])];
+    let mut state = snapshot(&tasks);
+    let a = state.observations.get_mut("a").unwrap();
+    a.phase = Phase::Settled;
+    a.evidence = Some(passed());
+    let plan = Plan::new(7, tasks).unwrap();
+    let result = plan.select(&state, &limits(1)).unwrap();
+    assert_eq!(result.decisions[0].admission, Ternary::Unknown);
+    assert_eq!(result.counts().settled, 1);
+    assert_eq!(result.counts().denied, 0, "ORCH_SETTLED_NOT_DENIED");
+    assert_eq!(result.selected.len(), 0);
+}
+
+#[test]
+fn pending_task_with_prior_usage_reserves_only_the_remaining_budget() {
+    let mut tasks = vec![task("a", 0, vec![])];
+    tasks[0].max_tokens = 80;
+    let mut state = snapshot(&tasks);
+    state.observations.get_mut("a").unwrap().usage = TokenUsage {
+        fresh: 10,
+        cached: 0,
+        output: 0,
+    };
+    let plan = Plan::new(7, tasks).unwrap();
+    let exact = Limits {
+        tokens: 80,
+        ..limits(1)
+    };
+    let result = plan.select(&state, &exact).unwrap();
+    assert_eq!(result.selected, vec!["a"], "ORCH_TOKEN_REMAINING");
+    assert_eq!(result.reserved_tokens, 70);
+    assert_eq!(result.observed_tokens.total().unwrap(), 10);
+    let tight = Limits {
+        tokens: 79,
+        ..limits(1)
+    };
+    assert!(
+        plan.select(&state, &tight).unwrap().selected.is_empty(),
+        "ORCH_TOKEN_REMAINING"
+    );
+}
+
+#[test]
+fn settled_over_budget_is_a_fact_not_a_fatal_error() {
+    let mut tasks = vec![task("a", 0, vec![]), task("b", 0, vec![])];
+    tasks[0].max_tokens = 10;
+    let mut state = snapshot(&tasks);
+    let a = state.observations.get_mut("a").unwrap();
+    a.phase = Phase::Settled;
+    a.usage.output = 50;
+    a.evidence = Some(passed());
+    let plan = Plan::new(7, tasks).unwrap();
+    let result = plan.select(&state, &limits(2)).unwrap();
+    assert_eq!(result.selected, vec!["b"]);
+    assert_eq!(result.observed_tokens.output, 50);
 }

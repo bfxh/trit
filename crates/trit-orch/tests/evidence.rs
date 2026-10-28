@@ -2,7 +2,7 @@ use trit_orch::{CheckReport, CheckResult, EvidenceSpec, Exit, Receipt, Ternary};
 
 fn receipt(exit: Exit, passed: u32, failed: u32) -> Receipt {
     Receipt {
-        revision: 9,
+        epoch: 9,
         exit,
         assertions_passed: passed,
         assertions_failed: failed,
@@ -80,7 +80,7 @@ fn insufficient_assertions_never_pass() {
 #[test]
 fn stale_revision_cannot_become_support() {
     let report: CheckReport = receipt(Exit::Completed { code: 0 }, 3, 0).report(&spec());
-    assert_eq!(report.revision, 9);
+    assert_eq!(report.epoch, 9);
     assert_eq!(report.checks, 3);
     assert_eq!(report.result, CheckResult::Passed);
     assert_eq!(

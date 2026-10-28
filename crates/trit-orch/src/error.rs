@@ -56,6 +56,20 @@ pub enum Error {
     },
     #[error("task {task} overflows worker count: {occupied} + 1")]
     WorkerOverflow { task: String, occupied: usize },
+    #[error("patch base revision {base} is stale, plan is at {current}")]
+    StalePatch { base: u64, current: u64 },
+    #[error("patch touches task {id} more than once")]
+    PatchDuplicate { id: String },
+    #[error("patch adds task {id} that already exists")]
+    PatchAddExists { id: String },
+    #[error("patch targets task {id} that is not in the plan")]
+    PatchTargetMissing { id: String },
+    #[error("task {id} is in flight; it cannot be removed or redefined")]
+    ProtectedInFlight { id: String },
+    #[error("task {id} epoch overflows u64")]
+    EpochOverflow { id: String },
+    #[error("plan revision overflows u64")]
+    RevisionOverflow,
 }
 
 pub(crate) fn add_tokens(left: u64, right: u64, task: Option<&str>) -> Result<u64, Error> {

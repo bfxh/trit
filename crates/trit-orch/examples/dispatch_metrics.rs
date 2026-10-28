@@ -29,6 +29,7 @@ fn fixture(count: usize) -> (Vec<TaskSpec>, Snapshot) {
             },
             requirements: Resources::new(1, 8),
             max_tokens: 1024,
+            epoch: 0,
         });
         let mut observation = Observation {
             authorization: Ternary::True,
@@ -45,7 +46,7 @@ fn fixture(count: usize) -> (Vec<TaskSpec>, Snapshot) {
         } else if i % 7 == 0 {
             observation.phase = Phase::Settled;
             observation.evidence = Some(CheckReport {
-                revision: 1,
+                epoch: 0,
                 checks: 1,
                 result: CheckResult::Passed,
             });

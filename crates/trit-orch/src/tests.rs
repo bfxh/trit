@@ -10,6 +10,7 @@ fn spec(id: &str) -> TaskSpec {
         },
         requirements: Resources::new(1, 1),
         max_tokens: 10,
+        epoch: 0,
     }
 }
 
@@ -96,7 +97,7 @@ fn evidence_requires_checks_and_matching_revision() {
         (CheckResult::Inconclusive, Ternary::Unknown),
     ] {
         let mut report = CheckReport {
-            revision: 7,
+            epoch: 7,
             checks: 1,
             result,
         };
@@ -211,7 +212,7 @@ fn only_settled_current_evidence_can_unlock_successors() {
     let plan = Plan::new(7, tasks.to_vec()).unwrap();
     let mut state = snapshot(&tasks);
     let passed = CheckReport {
-        revision: 7,
+        epoch: 0,
         checks: 1,
         result: CheckResult::Passed,
     };
@@ -231,31 +232,31 @@ fn only_settled_current_evidence_can_unlock_successors() {
     state.observations.get_mut("a").unwrap().evidence = None;
     let batch = plan.select(&state, &limits()).unwrap();
     assert!(batch.selected.is_empty());
-    assert_eq!(batch.decisions[0].admission, Ternary::False);
+    assert_eq!(batch.decisions[0].admission, Ternary::Unknown);
     assert_eq!(batch.decisions[0].reasons, [BlockReason::Settled]);
-    for (revision, checks, result, freshness, expected) in [
+    for (epoch, checks, result, freshness, expected) in [
         (6, 1, CheckResult::Passed, Ternary::True, Ternary::Unknown),
-        (7, 0, CheckResult::Passed, Ternary::True, Ternary::Unknown),
+        (0, 0, CheckResult::Passed, Ternary::True, Ternary::Unknown),
         (
-            7,
+            0,
             1,
             CheckResult::Inconclusive,
             Ternary::True,
             Ternary::Unknown,
         ),
-        (7, 1, CheckResult::Refuted, Ternary::True, Ternary::False),
+        (0, 1, CheckResult::Refuted, Ternary::True, Ternary::False),
         (
-            7,
+            0,
             1,
             CheckResult::Passed,
             Ternary::Unknown,
             Ternary::Unknown,
         ),
-        (7, 1, CheckResult::Passed, Ternary::False, Ternary::False),
+        (0, 1, CheckResult::Passed, Ternary::False, Ternary::Unknown),
     ] {
         let predecessor = state.observations.get_mut("a").unwrap();
         predecessor.evidence = Some(CheckReport {
-            revision,
+            epoch,
             checks,
             result,
         });
@@ -348,7 +349,7 @@ fn observed_and_reserved_tokens_are_separate_and_complete() {
     };
     let plan = Plan::new(7, tasks.to_vec()).unwrap();
     let mut limit = Limits {
-        tokens: 200,
+        tokens: 190,
         ..limits()
     };
     let batch = plan.select(&state, &limit).unwrap();
@@ -357,11 +358,12 @@ fn observed_and_reserved_tokens_are_separate_and_complete() {
     assert_eq!(
         batch.decisions[0].reasons,
         [BlockReason::Tokens {
-            required: 80,
-            available: 70
-        }]
+            required: 70,
+            available: 60
+        }],
+        "已花掉的 10 计入 observed，剩余额度只按 70 申请"
     );
-    limit.tokens = 210;
+    limit.tokens = 200;
     let batch = plan.select(&state, &limit).unwrap();
     assert_eq!(batch.selected, ["pending"]);
     assert_eq!(
@@ -372,7 +374,7 @@ fn observed_and_reserved_tokens_are_separate_and_complete() {
             output: 35
         }
     );
-    assert_eq!(batch.reserved_tokens, 120);
+    assert_eq!(batch.reserved_tokens, 110);
     assert_eq!(batch.reserved_resources, Resources::new(2, 2));
     assert_eq!(batch.occupied_workers, 2);
 }

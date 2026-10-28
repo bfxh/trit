@@ -13,6 +13,8 @@ import re
 import subprocess
 import sys
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+
 from mutation_assertions import assertion_caught, baseline_has_tests
 from orch_mutants import MUTANTS as ORCH_MUTANTS
 
@@ -2363,7 +2365,7 @@ def preflight(mutants: list[dict]) -> list[str]:
 
 
 def self_test() -> int:
-    """门自检：判别器本身必须有正例与反例，否则"全绿"可能只是尺子坏了。"""
+    """门自检：判别器正反例 + 变异登记与锚点预检，否则"全绿"可能只是尺子坏了。"""
     failures: list[str] = []
     if not baseline_has_tests("test result: ok. 3 passed; 0 failed"):
         failures.append("baseline: 有测试被判成空")
@@ -2371,42 +2373,35 @@ def self_test() -> int:
         failures.append("baseline: 零测试未被判空")
     if assertion_caught(101, "error[E0308]: mismatched types", "t", "ORCH_X"):
         failures.append("判别器: 编译错误被当成断言判红")
-    if assertion_caught(
-        -1073741819,
-        "test t ... FAILED\ntest result: FAILED. 1 passed; 1 failed\npanicked at a",
-        "t",
-        "ORCH_X",
-    ):
+    if assertion_caught(-1073741819, 'test t ... FAILED\ntest result: FAILED. 1 passed; 1 failed\npanicked at a', "t", "ORCH_X"):
         failures.append("判别器: 崩溃被当成断言判红")
-    if assertion_caught(
-        101,
-        "test t ... FAILED\ntest result: FAILED. 1 passed; 1 failed\npanicked at a: ORCH_X",
-        "other",
-        "ORCH_X",
-    ):
-        failures.append("判别器: 别的测试判红也算检出")
-    if not assertion_caught(
-        101,
-        "test t ... FAILED\npanicked at a: ORCH_X\ntest result: FAILED. 4 passed; 1 failed",
-        "t",
-        "ORCH_X",
-    ):
-        failures.append("判别器: 真断言判红未被认出")
+    if assertion_caught(101, 'test t ... FAILED\n---- other stdout ----\npanicked at a: ORCH_X\ntest result: FAILED. 1 passed; 1 failed', "t", "ORCH_X"):
+        failures.append("判别器: 别的测试块里的诊断串算了进来")
+    if assertion_caught(101, 'test t ... FAILED\n---- t stdout ----\npanicked at a: OTHER\n---- other stdout ----\npanicked at b: ORCH_X\ntest result: FAILED. 4 passed; 1 failed', "t", "ORCH_X"):
+        failures.append("判别器: 诊断串不在目标测试块里也算检出")
+    if not assertion_caught(101, 'test tests::t ... FAILED\n---- tests::t stdout ----\npanicked at a: ORCH_X\ntest result: FAILED. 4 passed; 1 failed', "t", "ORCH_X"):
+        failures.append("判别器: 带命名空间的真断言判红未被认出")
     tests_dir = ROOT / "crates" / "trit-orch" / "tests"
-    corpus = "\n".join(
-        path.read_text(encoding="utf-8") for path in sorted(tests_dir.glob("*.rs"))
+    corpus = chr(10).join(
+        [
+            *(path.read_text(encoding="utf-8") for path in sorted(tests_dir.glob("*.rs"))),
+            (ROOT / "crates" / "trit-orch" / "src" / "tests.rs").read_text(encoding="utf-8"),
+        ]
     )
     for mutant in ORCH_MUTANTS:
         if mutant["diagnostic"] not in corpus:
             failures.append(f"变异登记: {mutant['name']} 的诊断串不在测试里")
+        if mutant["filter"] not in corpus:
+            failures.append(f"变异登记: {mutant['name']} 的 filter 不在测试语料里")
         if not (ROOT / mutant["file"]).is_file():
             failures.append(f"变异登记: 文件不存在 {mutant['file']}")
+    failures.extend(f"锚点预检: {problem}" for problem in preflight(ORCH_MUTANTS))
     if failures:
         print("SELF-TEST FAILED:")
         for failure in failures:
             print(f"  {failure}")
         return 1
-    print(f"SELF-TEST OK（判别器 5 项 + {len(ORCH_MUTANTS)} 条 trit-orch 变异登记）")
+    print(f"SELF-TEST OK（判别器 7 项 + {len(ORCH_MUTANTS)} 条 trit-orch 变异登记与锚点预检）")
     return 0
 
 
@@ -2454,8 +2449,8 @@ def main(pkgs: list[str]) -> int:
             print(f"BAD MUTANT {mutant['name']}: anchor 出现 {count} 次")
             return 1
 
-        path.write_text(
-            original.replace(mutant["old"], mutant["new"]), encoding="utf-8"
+        path.write_bytes(
+            original.replace(mutant["old"], mutant["new"]).encode("utf-8")
         )
         try:
             result = run_tests(*key)

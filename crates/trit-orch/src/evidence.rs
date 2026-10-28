@@ -14,7 +14,7 @@ pub enum Exit {
 /// 受信 executor 返回的回执；不是模型自述。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Receipt {
-    pub revision: u64,
+    pub epoch: u64,
     pub exit: Exit,
     pub assertions_passed: u32,
     pub assertions_failed: u32,
@@ -47,7 +47,7 @@ impl Receipt {
             }
         };
         CheckReport {
-            revision: self.revision,
+            epoch: self.epoch,
             checks,
             result,
         }
