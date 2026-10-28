@@ -14,11 +14,16 @@
 | WGSL conv 3×3 / 1×1（三值 + f32 双模） | ✅ | `mid_a/b/c` 差 ≤ 2.3e-5 |
 | WGSL 2×2 最大池化 / 通道拼接 / ConvT(k=2,s=2) | ✅ | 同上 |
 | **f32 前向整体** | ✅ | `max|Δlogit| = 2.6e-4`，平面 argmax 100%（737280/737280） |
-| **三值前向整体** | ✅ | vs PyTorch 同套量化 argmax 0.99969 |
+| **三值前向整体** | ✅ | vs PyTorch 同套量化 argmax 0.99969（**全像素口径**） |
+| 三值在**部件像素**上的判读 | ⚠️ | 平面准确率 **0.28–0.52**（f32 是 0.74–0.91）⇒ 事后三值化是崩的，必须 QAT |
 | 反向内核（conv/ConvT 权重与输入梯度、池化、拼接） | ✅ | GPU↔CPU（f64）max rel **≤ 2.1e-6**；3 个变异全判红 |
 | STE：`E → latent / scale` | ✅ | 与 `trit-train` 的三种 STE 逐位一致（单步更新对拍） |
-| 训练循环（CE(5 平面) + BCE(valid) + 优化器） | ❌ **未做** | — |
+| 训练循环（CE(5 平面) + BCE(valid) + Adam/SGD + 累加 + 断点） | ✅ | 4 帧过拟合：loss 0.70→0.024、valid 0.04→0.997；断点往返逐字节一致 |
 | 清单约束 argmax 解码 | ❌ **未做** | — |
+
+> ⚠️ **口径更正（2026-10-29）**：此前写的「三值 vs f32 argmax 0.9871，只掉 1.3%」是被 98% 背景像素
+> 灌水的结论。只看 GT 部件像素时，三值 ckpt 的平面准确率是 0.28–0.52，而 f32 是 0.74–0.91。
+> 这正是 QAT 存在的理由；训练循环已能把它拉回来（见过拟合读数）。
 
 > 前向用的权重来自既有 ckpt（`D:\KF\trit-data\parts-baseline\`），只作**对齐基线**；
 > 交付模型必须由本仓的 Rust 三进制训练产出，目前还没有。
@@ -35,6 +40,13 @@ E:/cargo-target/trit-parts/release/parts-parity --mode trit
 
 # 反向内核对拍（GPU vs f64 CPU 参考，10 项；任一 > 2e-3 判红）
 cargo run -p trit-parts --features gpu --bin parts-gradcheck
+
+# 整网前向自检（对 parity 夹具，应得 0.999688）
+cargo run -p trit-parts --features gpu --bin parts-train -- --selfcheck D:/KF/trit-data/parts-parity
+
+# 训练（过拟合自检：4 帧 150 步）
+cargo run -p trit-parts --features gpu --bin parts-train -- --data <场景目录> \
+  --init D:/KF/trit-data/parts-parity --limit 4 --steps 150 --lr 1e-3 --report 25
 ```
 
 夹具文件：
@@ -55,6 +67,6 @@ cargo run -p trit-parts --features gpu --bin parts-gradcheck
 
 ## 下一步
 
-1. 训练循环：CE(5 平面) + BCE(valid)、SGD/Adam、断点续跑（反向内核已就绪）；
-2. 清单约束 argmax 解码，从结构上把「清单外 id」压到 0；
-3. 用 900 帧 384² 数据训练，读数对照 Python 基线（d0 0.9729 / id 0.7097 / IoU 0.4343）。
+1. 清单约束 argmax 解码，从结构上把「清单外 id」压到 0；
+2. 正式训练（900 帧 384²），读数对照 Python 基线（d0 0.9729 / id 0.7097 / IoU 0.4343）；
+   开跑前先报任务与预计耗时。
