@@ -9,9 +9,12 @@
 
 #![forbid(unsafe_code)]
 
+pub mod backward;
 pub mod weights;
 
 #[cfg(feature = "gpu")]
 pub mod forward;
 #[cfg(feature = "gpu")]
 pub mod gpu;
+#[cfg(feature = "gpu")]
+pub mod gpu_bwd;

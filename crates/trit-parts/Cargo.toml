@@ -16,8 +16,15 @@ gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 wgpu = { version = "30", optional = true }
 pollster = { version = "0.4", optional = true }
 bytemuck = { version = "1", features = ["derive"], optional = true }
+# STE / 量化口径的唯一来源（与 trit-train 共用，不另立一套）。
+trit-train = { path = "../trit-train" }
 
 [[bin]]
 name = "parts-parity"
 path = "src/bin/parts_parity.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "parts-gradcheck"
+path = "src/bin/parts_gradcheck.rs"
 required-features = ["gpu"]

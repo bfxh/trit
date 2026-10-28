@@ -15,7 +15,8 @@
 | WGSL 2×2 最大池化 / 通道拼接 / ConvT(k=2,s=2) | ✅ | 同上 |
 | **f32 前向整体** | ✅ | `max|Δlogit| = 2.6e-4`，平面 argmax 100%（737280/737280） |
 | **三值前向整体** | ✅ | vs PyTorch 同套量化 argmax 0.99969 |
-| 反向内核（conv 权重/输入梯度 + STE） | ❌ **未做** | — |
+| 反向内核（conv/ConvT 权重与输入梯度、池化、拼接） | ✅ | GPU↔CPU（f64）max rel **≤ 2.1e-6**；3 个变异全判红 |
+| STE：`E → latent / scale` | ✅ | 与 `trit-train` 的三种 STE 逐位一致（单步更新对拍） |
 | 训练循环（CE(5 平面) + BCE(valid) + 优化器） | ❌ **未做** | — |
 | 清单约束 argmax 解码 | ❌ **未做** | — |
 
@@ -31,6 +32,9 @@ CARGO_TARGET_DIR=E:/cargo-target/trit-parts cargo build -p trit-parts --features
 # 默认目录是 ../trit-data/parts-parity；也可用 --dir 或 TRIT_PARTS_DIR 指定
 E:/cargo-target/trit-parts/release/parts-parity --mode f32
 E:/cargo-target/trit-parts/release/parts-parity --mode trit
+
+# 反向内核对拍（GPU vs f64 CPU 参考，10 项；任一 > 2e-3 判红）
+cargo run -p trit-parts --features gpu --bin parts-gradcheck
 ```
 
 夹具文件：
@@ -51,6 +55,6 @@ E:/cargo-target/trit-parts/release/parts-parity --mode trit
 
 ## 下一步
 
-1. 反向内核：conv 权重梯度 + 输入梯度（三值 STE），有限差分数值梯度对拍；
-2. 训练循环：CE(5 平面) + BCE(valid)，复用 `trit-train` 的 STE / 量化口径；
-3. 清单约束 argmax 解码，从结构上把「清单外 id」压到 0。
+1. 训练循环：CE(5 平面) + BCE(valid)、SGD/Adam、断点续跑（反向内核已就绪）；
+2. 清单约束 argmax 解码，从结构上把「清单外 id」压到 0；
+3. 用 900 帧 384² 数据训练，读数对照 Python 基线（d0 0.9729 / id 0.7097 / IoU 0.4343）。

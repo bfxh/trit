@@ -20,6 +20,8 @@ pub struct Gpu {
     cat_bgl: wgpu::BindGroupLayout,
     up_pl: wgpu::ComputePipeline,
     up_bgl: wgpu::BindGroupLayout,
+    /// 反向管线（与上面四条前向管线共用同一个 device）。
+    pub bwd: crate::gpu_bwd::Bwd,
 }
 
 fn entry(read_only: bool, binding: u32) -> wgpu::BindGroupLayoutEntry {
@@ -115,6 +117,7 @@ impl Gpu {
                 cache: None,
             })
         };
+        let bwd = crate::gpu_bwd::Bwd::new(&device);
         Some(Self {
             conv_pl: pipe("conv", &conv_bgl),
             conv_bgl,
@@ -124,6 +127,7 @@ impl Gpu {
             cat_bgl,
             up_pl: pipe("convt", &up_bgl),
             up_bgl,
+            bwd,
             device,
             queue,
         })
