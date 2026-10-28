@@ -36,6 +36,7 @@ struct Args {
     limit: usize,
     report: usize,
     save_every: usize,
+    eval_every: usize,
 }
 
 fn parse() -> Result<Args, String> {
@@ -56,6 +57,7 @@ fn parse() -> Result<Args, String> {
         limit: 0,
         report: 10,
         save_every: 1000,
+        eval_every: 0,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -81,6 +83,7 @@ fn parse() -> Result<Args, String> {
             "--limit" => a.limit = val()?.parse().map_err(|_| "--limit 非整数")?,
             "--report" => a.report = val()?.parse().map_err(|_| "--report 非整数")?,
             "--save-every" => a.save_every = val()?.parse().map_err(|_| "--save-every 非整数")?,
+            "--eval-every" => a.eval_every = val()?.parse().map_err(|_| "--eval-every 非整数")?,
             "--ste" => {
                 a.ste = match val()?.as_str() {
                     "identity" => Ste::Identity,
@@ -197,6 +200,7 @@ fn main() {
     }
     let mut rng = args.seed | 1;
     let mut best = f32::INFINITY;
+    let mut ma = f32::NAN; // 损失的指数移动平均（单帧噪声大，直接打最后一帧会误导）
     for step in 0..args.steps {
         rng ^= rng << 13;
         rng ^= rng >> 7;
@@ -219,6 +223,30 @@ fn main() {
             net.update(&gpu, args.lr, args.ste, args.adam, 1.0 / args.accum as f32);
         }
         best = best.min(out.loss);
+        ma = if ma.is_nan() {
+            out.loss
+        } else {
+            0.95 * ma + 0.05 * out.loss
+        };
+        if args.eval_every > 0 && (step + 1) % args.eval_every == 0 {
+            let (scene0, file0) = &paths[0];
+            if let Ok(s0) = load_frame(scene0, file0, k) {
+                let xb0 = gpu.buf(&s0.rgb, "x");
+                let tr0 = net.forward(&gpu, xb0, res);
+                let lg0 = gpu.read(&tr0.out, hw * ch);
+                let ev = loss_and_grad(&lg0, &s0.planes, &s0.valid, hw, k, &w);
+                println!(
+                    "  [固定帧] step {}  loss {:.4}  平面 {:?}  valid {:.4}",
+                    step + 1,
+                    ev.loss,
+                    ev.plane_acc
+                        .iter()
+                        .map(|v| (v * 1000.0).round() / 1000.0)
+                        .collect::<Vec<_>>(),
+                    ev.valid_acc
+                );
+            }
+        }
         if args.save_every > 0
             && (step + 1) % args.save_every == 0
             && let Some(p) = &save_path
@@ -230,9 +258,10 @@ fn main() {
         }
         if step % args.report == 0 || step + 1 == args.steps {
             println!(
-                "step {:>5}  loss {:.4}  平面(部件像素) {:?}  valid {:.4}",
+                "step {:>5}  loss {:.4} (ma {:.4})  平面(部件像素) {:?}  valid {:.4}",
                 step + 1,
                 out.loss,
+                ma,
                 out.plane_acc
                     .iter()
                     .map(|v| (v * 1000.0).round() / 1000.0)
