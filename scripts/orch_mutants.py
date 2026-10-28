@@ -224,4 +224,13 @@ MUTANTS = [
         "filter": "corrupt_ledger_is_reported_not_guessed",
         "diagnostic": "ORCH_LEDGER_PARSE",
     },
+    {
+        "name": 'orch: recovery treats a durable sending mark as in-doubt',
+        "file": 'crates/trit-orch/src/effects.rs',
+        "old": '                Effect::Prepared => recovery.ready.push(operation.clone()),\n                Effect::Sending | Effect::Sent | Effect::Unknown => {',
+        "new": '                Effect::Prepared | Effect::Sending => recovery.ready.push(operation.clone()),\n                Effect::Sent | Effect::Unknown => {',
+        "pkg": "trit-orch",
+        "filter": 'durable_sending_mark_is_in_doubt_even_if_the_call_never_ran',
+        "diagnostic": 'ORCH_CRASH_SENDING_IN_DOUBT',
+    },
 ]

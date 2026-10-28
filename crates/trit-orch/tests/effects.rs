@@ -4,6 +4,10 @@ fn prepared(ledger: &mut Ledger, op: &str, fence: u64) -> Attempt {
     ledger.prepare("task-a", 1, op, fence).unwrap()
 }
 
+fn sending(ledger: &mut Ledger, attempt: &Attempt) {
+    ledger.mark_sending(attempt, attempt.fence).unwrap();
+}
+
 #[test]
 fn fresh_operation_starts_prepared_and_retryable() {
     let ledger = Ledger::new();
@@ -18,10 +22,25 @@ fn fresh_operation_starts_prepared_and_retryable() {
 }
 
 #[test]
+fn sending_must_be_durable_before_the_call_and_blocks_prepare() {
+    let mut ledger = Ledger::new();
+    let attempt = prepared(&mut ledger, "pay", 1);
+    sending(&mut ledger, &attempt);
+    assert_eq!(ledger.state("pay"), Some(Effect::Sending));
+    assert_eq!(
+        ledger.prepare("task-a", 1, "pay", 2),
+        Err(Error::EffectInDoubt {
+            operation: "pay".into()
+        }),
+        "ORCH_EFFECT_NO_BLIND_RETRY"
+    );
+}
+
+#[test]
 fn in_doubt_effect_cannot_be_re_prepared() {
     let mut ledger = Ledger::new();
     let attempt = prepared(&mut ledger, "pay", 1);
-    ledger.mark_sent(&attempt, 1).unwrap();
+    sending(&mut ledger, &attempt);
     ledger.mark_unknown(&attempt).unwrap();
     assert_eq!(ledger.state("pay"), Some(Effect::Unknown));
     assert!(!ledger.may_retry("pay"), "ORCH_EFFECT_NO_BLIND_RETRY");
@@ -38,7 +57,7 @@ fn in_doubt_effect_cannot_be_re_prepared() {
 fn reconcile_absent_marks_refuted_then_retry_is_allowed() {
     let mut ledger = Ledger::new();
     let first = prepared(&mut ledger, "pay", 1);
-    ledger.mark_sent(&first, 1).unwrap();
+    sending(&mut ledger, &first);
     ledger.mark_unknown(&first).unwrap();
     assert_eq!(
         ledger.reconcile(&first, Reconcile::Absent).unwrap(),
@@ -55,7 +74,7 @@ fn reconcile_absent_marks_refuted_then_retry_is_allowed() {
 fn reconcile_present_confirms_and_blocks_further_attempts() {
     let mut ledger = Ledger::new();
     let attempt = prepared(&mut ledger, "pay", 1);
-    ledger.mark_sent(&attempt, 1).unwrap();
+    sending(&mut ledger, &attempt);
     assert_eq!(
         ledger.reconcile(&attempt, Reconcile::Present).unwrap(),
         Effect::Confirmed,
@@ -83,7 +102,7 @@ fn reconcile_present_confirms_and_blocks_further_attempts() {
 fn definitive_failure_refutes_and_allows_new_attempt() {
     let mut ledger = Ledger::new();
     let attempt = prepared(&mut ledger, "pay", 1);
-    ledger.mark_sent(&attempt, 1).unwrap();
+    sending(&mut ledger, &attempt);
     ledger.record_result(&attempt, false).unwrap();
     assert_eq!(ledger.state("pay"), Some(Effect::Refuted));
     let next = ledger.prepare("task-a", 1, "pay", 1).unwrap();
@@ -95,7 +114,7 @@ fn stale_fence_cannot_send_or_prepare_over_newer_owner() {
     let mut ledger = Ledger::new();
     let attempt = prepared(&mut ledger, "pay", 5);
     assert_eq!(
-        ledger.mark_sent(&attempt, 4),
+        ledger.mark_sending(&attempt, 4),
         Err(Error::StaleFence {
             operation: "pay".into(),
             given: 4,
@@ -103,7 +122,7 @@ fn stale_fence_cannot_send_or_prepare_over_newer_owner() {
         }),
         "ORCH_EFFECT_FENCE"
     );
-    ledger.mark_sent(&attempt, 5).unwrap();
+    ledger.mark_sending(&attempt, 5).unwrap();
     ledger.record_result(&attempt, false).unwrap();
     assert_eq!(
         ledger.prepare("task-a", 1, "pay", 3),
@@ -124,30 +143,23 @@ fn attempt_identity_must_match() {
     let mut forged = attempt.clone();
     forged.attempt = 2;
     assert_eq!(
-        ledger.mark_sent(&forged, 1),
+        ledger.mark_sending(&forged, 1),
         Err(Error::AttemptMismatch {
             operation: "pay".into(),
             given: 2,
             current: 1
         })
     );
-    assert_eq!(ledger.mark_sent(&attempt, 1).err(), None);
-    assert_eq!(ledger.state("pay"), Some(Effect::Sent));
+    assert_eq!(ledger.mark_sending(&attempt, 1).err(), None);
+    assert_eq!(ledger.state("pay"), Some(Effect::Sending));
 }
 
 #[test]
-fn sent_cannot_skip_unknown_or_reconcile_by_prepare() {
+fn sent_cannot_reconcile_by_prepare() {
     let mut ledger = Ledger::new();
     let attempt = prepared(&mut ledger, "pay", 1);
+    sending(&mut ledger, &attempt);
     ledger.mark_sent(&attempt, 1).unwrap();
-    assert_eq!(
-        ledger.mark_sent(&attempt, 1),
-        Err(Error::InvalidTransition {
-            operation: "pay".into(),
-            from: "Sent".into(),
-            to: "Sent".into()
-        })
-    );
     assert_eq!(
         ledger.prepare("task-a", 1, "pay", 2),
         Err(Error::EffectInDoubt {
@@ -169,7 +181,7 @@ fn unknown_operation_is_reported_not_guessed() {
         fence: 1,
     };
     assert_eq!(
-        ledger.mark_sent(&ghost, 1),
+        ledger.mark_sending(&ghost, 1),
         Err(Error::UnknownOperation {
             operation: "ghost".into()
         })

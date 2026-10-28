@@ -68,7 +68,7 @@ fn ledger_roundtrips_through_disk() {
 
     let mut ledger = Ledger::new();
     let attempt = ledger.prepare("task-a", 3, "task-a", 7).unwrap();
-    ledger.mark_sent(&attempt, 7).unwrap();
+    ledger.mark_sending(&attempt, 7).unwrap();
     ledger.mark_unknown(&attempt).unwrap();
     store.save(&ledger).unwrap();
 
@@ -173,6 +173,7 @@ fn sent_or_confirmed_intents_are_not_dispatchable_again() {
     let selection = plan.select(&snapshot(&tasks), &limits()).unwrap();
     let mut ledger = Ledger::new();
     let attempt = ledger.prepare("a", 0, "a", 1).unwrap();
+    ledger.mark_sending(&attempt, 1).unwrap();
     ledger.mark_sent(&attempt, 1).unwrap();
     assert!(
         matches!(
@@ -184,7 +185,7 @@ fn sent_or_confirmed_intents_are_not_dispatchable_again() {
 
     let mut done = Ledger::new();
     let attempt = done.prepare("a", 0, "a", 1).unwrap();
-    done.mark_sent(&attempt, 1).unwrap();
+    done.mark_sending(&attempt, 1).unwrap();
     done.reconcile(&attempt, Reconcile::Present).unwrap();
     assert!(matches!(
         dispatch_ready(&selection, &tasks, &done),
@@ -198,6 +199,7 @@ fn replayed_ledger_still_blocks_blind_retry() {
     let store = LedgerStore::new(&path);
     let mut ledger = Ledger::new();
     let attempt = ledger.prepare("task-a", 0, "task-a", 1).unwrap();
+    ledger.mark_sending(&attempt, 1).unwrap();
     ledger.mark_sent(&attempt, 1).unwrap();
     ledger.mark_unknown(&attempt).unwrap();
     store.save(&ledger).unwrap();

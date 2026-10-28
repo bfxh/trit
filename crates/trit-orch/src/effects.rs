@@ -7,9 +7,11 @@ use crate::{Error, Selection, TaskSpec};
 /// 外部副作用的生命周期。`Unknown` 表示「已经可能发出，但结果不明」。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Effect {
-    /// 意图已落账，尚未发送。
+    /// 意图已落账，尚未发送。只有这个状态允许真正发起调用。
     Prepared,
-    /// 已发送，等结果。
+    /// 发送标记已落盘，副作用**可能**已经发生；重启后一律按在途处理。
+    Sending,
+    /// 调用已被受理，等结果。
     Sent,
     /// 外部已确认发生。
     Confirmed,
@@ -131,7 +133,7 @@ impl Ledger {
                     Effect::Confirmed => Err(Error::EffectAlreadyApplied {
                         operation: operation.to_owned(),
                     }),
-                    Effect::Prepared | Effect::Sent | Effect::Unknown => {
+                    Effect::Prepared | Effect::Sending | Effect::Sent | Effect::Unknown => {
                         Err(Error::EffectInDoubt {
                             operation: operation.to_owned(),
                         })
@@ -141,16 +143,22 @@ impl Ledger {
         }
     }
 
-    /// Prepared → Sent。
+    /// Prepared → Sending。**必须在真正发起外部调用之前落盘**：
+    /// 崩溃后看到 Sending 就知道副作用可能已经发生。
+    pub fn mark_sending(&mut self, attempt: &Attempt, fence: u64) -> Result<(), Error> {
+        self.transition(attempt, fence, Effect::Prepared, Effect::Sending)
+    }
+
+    /// Sending → Sent：调用已被受理。
     pub fn mark_sent(&mut self, attempt: &Attempt, fence: u64) -> Result<(), Error> {
-        self.transition(attempt, fence, Effect::Prepared, Effect::Sent)
+        self.transition(attempt, fence, Effect::Sending, Effect::Sent)
     }
 
     /// 已发送但没拿到可靠结果：进入 `Unknown`，此后必须先对账。
     pub fn mark_unknown(&mut self, attempt: &Attempt) -> Result<(), Error> {
         let record = self.checked(attempt)?;
         match record.state {
-            Effect::Prepared | Effect::Sent => {
+            Effect::Prepared | Effect::Sending | Effect::Sent => {
                 record.state = Effect::Unknown;
                 Ok(())
             }
@@ -169,18 +177,27 @@ impl Ledger {
         } else {
             Effect::Refuted
         };
-        self.transition(attempt, attempt.fence, Effect::Sent, target)
+        let record = self.checked(attempt)?;
+        if !matches!(record.state, Effect::Sending | Effect::Sent) {
+            return Err(Error::InvalidTransition {
+                operation: attempt.operation.clone(),
+                from: format!("{:?}", record.state),
+                to: format!("{target:?}"),
+            });
+        }
+        record.state = target;
+        Ok(())
     }
 
     /// 对账：只有 `Sent/Unknown` 需要对账。`Present` 说明效果已发生，`Absent` 说明没发生。
     pub fn reconcile(&mut self, attempt: &Attempt, observed: Reconcile) -> Result<Effect, Error> {
         let record = self.checked(attempt)?;
         match (record.state, observed) {
-            (Effect::Sent | Effect::Unknown, Reconcile::Present) => {
+            (Effect::Sending | Effect::Sent | Effect::Unknown, Reconcile::Present) => {
                 record.state = Effect::Confirmed;
                 Ok(record.state)
             }
-            (Effect::Sent | Effect::Unknown, Reconcile::Absent) => {
+            (Effect::Sending | Effect::Sent | Effect::Unknown, Reconcile::Absent) => {
                 record.state = Effect::Refuted;
                 Ok(record.state)
             }
@@ -306,6 +323,37 @@ impl Ledger {
         serde_json::from_str(text).map_err(|error| Error::LedgerParse {
             message: error.to_string(),
         })
+    }
+}
+
+/// 重启后的分类：只按**落盘事实**，不看内存里没保存的进度。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Recovery {
+    /// 从未发出，可安全发起。
+    pub ready: Vec<String>,
+    /// 可能已经发出，必须先对账。
+    pub in_doubt: Vec<String>,
+    /// 已确认未发生，可重试。
+    pub retryable: Vec<String>,
+    /// 已确认发生。
+    pub done: Vec<String>,
+}
+
+impl Ledger {
+    /// 重启后的恢复分类；顺序按 operation ID 升序，保证可复现。
+    pub fn recover(&self) -> Recovery {
+        let mut recovery = Recovery::default();
+        for (operation, record) in &self.records {
+            match record.state {
+                Effect::Prepared => recovery.ready.push(operation.clone()),
+                Effect::Sending | Effect::Sent | Effect::Unknown => {
+                    recovery.in_doubt.push(operation.clone());
+                }
+                Effect::Refuted => recovery.retryable.push(operation.clone()),
+                Effect::Confirmed => recovery.done.push(operation.clone()),
+            }
+        }
+        recovery
     }
 }
 
