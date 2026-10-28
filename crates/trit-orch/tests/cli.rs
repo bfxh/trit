@@ -222,3 +222,30 @@ fn bad_input_and_unknown_commands_fail_closed() {
     assert_eq!(value["kind"], "input_parse");
     assert!(value["error"].as_str().unwrap().contains("未知子命令"));
 }
+
+#[test]
+fn shadow_replay_reports_unsafe_proposals_without_dispatching() {
+    let spec = json!({
+        "task": {"id": "a", "priority": 0, "duration": 1, "deps": []},
+        "requirements": {"cpu": 1, "memory": 1},
+        "max_tokens": 100,
+        "epoch": 0
+    });
+    let mut observation = observation();
+    observation["phase"] = json!("InFlight");
+    let step = json!({
+        "revision": 1,
+        "tasks": [spec],
+        "snapshot": {"revision": 1, "observations": {"a": observation}},
+        "limits": limits(),
+        "ledger": {"records": {"a": {
+            "attempt": {"operation": "a", "task": "a", "epoch": 0, "attempt": 1, "fence": 1},
+            "state": "Sending"
+        }}}
+    });
+    let (code, value) = run("shadow", &json!({"policy": "eager", "steps": [step]}));
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["safe"], false, "ORCH_CLI_SHADOW_SAFE");
+    assert_eq!(value["report"]["unsafe_extra"], json!(["0:a"]));
+    assert_eq!(value["report"]["steps"], 1);
+}

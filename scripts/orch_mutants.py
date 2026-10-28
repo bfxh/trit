@@ -242,4 +242,22 @@ MUTANTS = [
         "filter": "plan_accepts_valid_graph_and_rejects_cycles",
         "diagnostic": "ORCH_CLI_EXIT_ON_ERROR",
     },
+    {
+        "name": "orch: shadow flags unsafe resend proposals",
+        "file": "crates/trit-orch/src/shadow.rs",
+        "old": "        if matches!(",
+        "new": "        if false && matches!(",
+        "pkg": "trit-orch",
+        "filter": "proposing_to_resend_an_in_doubt_effect_is_flagged_unsafe",
+        "diagnostic": "ORCH_SHADOW_UNSAFE",
+    },
+    {
+        "name": "orch: shadow counts order mismatches",
+        "file": "crates/trit-orch/src/shadow.rs",
+        "old": "            report.order_mismatches += 1;",
+        "new": "            report.order_mismatches += 0;",
+        "pkg": "trit-orch",
+        "filter": "order_only_proposals_do_not_change_the_dispatched_set",
+        "diagnostic": "ORCH_SHADOW_ORDER",
+    },
 ]

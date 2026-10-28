@@ -7,8 +7,10 @@ mod error;
 mod evidence;
 mod model;
 mod plan;
+mod policy;
 mod progress;
 mod selection;
+mod shadow;
 mod status;
 
 pub use admission::{admit, dependency_gate};
@@ -20,7 +22,9 @@ pub use model::{
     Selection, Snapshot, TaskSpec, TokenUsage,
 };
 pub use plan::Plan;
+pub use policy::{Baseline, Eager, LongestFirst, Proposal, ShadowContext, ShadowPolicy, builtin};
 pub use progress::{Progress, RoundReport, Summary};
+pub use shadow::{ShadowReport, TraceStep, replay};
 pub use status::Counts;
 pub use trit_core::value::Ternary;
 pub use trit_schedule::{Dependency, MAX_TASKS, Resources, Task};

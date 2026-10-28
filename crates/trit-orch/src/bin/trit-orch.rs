@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use trit_orch::{
     Ledger, Limits, Plan, PlanPatch, Progress, RoundReport, Selection, Snapshot, TaskSpec,
-    dispatch_ready,
+    TraceStep, builtin, dispatch_ready, replay,
 };
 
 #[derive(Deserialize)]
@@ -36,6 +36,12 @@ struct DispatchInput {
     selection: Selection,
     tasks: Vec<TaskSpec>,
     ledger: Ledger,
+}
+
+#[derive(Deserialize)]
+struct ShadowInput {
+    policy: String,
+    steps: Vec<TraceStep>,
 }
 
 #[derive(Deserialize)]
@@ -124,6 +130,21 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                 "brief": progress.brief(),
             }))
         }
+        "shadow" => {
+            let request: ShadowInput = parse(input)?;
+            let policy = builtin(&request.policy).ok_or_else(|| trit_orch::Error::InputParse {
+                message: format!(
+                    "未知策略 {:?}（可用：baseline/longest_first/eager）",
+                    request.policy
+                ),
+            })?;
+            let report = replay(policy.as_ref(), &request.steps)?;
+            Ok(json!({
+                "ok": true,
+                "safe": report.is_safe(),
+                "report": report,
+            }))
+        }
         "recover" => {
             let ledger: Ledger = parse(input)?;
             Ok(json!({
@@ -132,7 +153,9 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
             }))
         }
         other => Err(trit_orch::Error::InputParse {
-            message: format!("未知子命令 {other:?}（可用：plan/select/dispatch/finish/recover）"),
+            message: format!(
+                "未知子命令 {other:?}（可用：plan/select/dispatch/finish/recover/shadow）"
+            ),
         }),
     }
 }
