@@ -24,6 +24,8 @@ struct Args {
     init: Option<PathBuf>,
     resume: Option<PathBuf>,
     save: Option<PathBuf>,
+    /// 进程存档目录：存在则自动续跑，运行中按 save-every 原子落盘。
+    state: Option<PathBuf>,
     selfcheck: Option<PathBuf>,
     eval: Option<PathBuf>,
     manifest: Option<PathBuf>,
@@ -45,6 +47,7 @@ fn parse() -> Result<Args, String> {
         init: None,
         resume: None,
         save: None,
+        state: None,
         selfcheck: None,
         eval: None,
         manifest: None,
@@ -73,6 +76,7 @@ fn parse() -> Result<Args, String> {
             "--init" => a.init = Some(PathBuf::from(val()?)),
             "--resume" => a.resume = Some(PathBuf::from(val()?)),
             "--save" => a.save = Some(PathBuf::from(val()?)),
+            "--state" => a.state = Some(PathBuf::from(val()?)),
             "--selfcheck" => a.selfcheck = Some(PathBuf::from(val()?)),
             "--eval" => a.eval = Some(PathBuf::from(val()?)),
             "--manifest" => a.manifest = Some(PathBuf::from(val()?)),
@@ -97,7 +101,12 @@ fn parse() -> Result<Args, String> {
         }
         i += 2;
     }
-    if a.data.is_empty() && a.resume.is_none() && a.selfcheck.is_none() && a.eval.is_none() {
+    if a.data.is_empty()
+        && a.resume.is_none()
+        && a.state.is_none()
+        && a.selfcheck.is_none()
+        && a.eval.is_none()
+    {
         return Err("需要 --data / --resume / --selfcheck".into());
     }
     Ok(a)
@@ -128,6 +137,25 @@ fn main() {
         return;
     }
 
+    // --state DIR：存在 state.bin 就续跑，否则按 --init/--random 新建；始终存回这里
+    let mut resume_path = args.resume.clone();
+    let mut save_path = args.save.as_ref().map(|dir| {
+        if dir.extension().is_some() {
+            dir.clone()
+        } else {
+            dir.join("state.bin")
+        }
+    });
+    if let Some(dir) = &args.state {
+        std::fs::create_dir_all(dir).ok();
+        let p = dir.join("state.bin");
+        if p.exists() {
+            println!("发现进程存档，自动续跑：{}", p.display());
+            resume_path = Some(p.clone());
+        }
+        save_path = Some(p);
+    }
+
     // 数据：按目录列帧，--limit 截断
     let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
     for scene in &args.data {
@@ -149,11 +177,19 @@ fn main() {
     let ch = k * 3 + 1;
 
     let mut resumed_step = 0u64;
-    let mut net = match &args.resume {
+    let mut resumed_rng: Option<u64> = None;
+    let mut net = match &resume_path {
         Some(p) => match Net::load_state(p) {
-            Ok((n, step)) => {
-                println!("续跑自 {}（step {step}）", p.display());
+            Ok((n, step, rng)) => {
+                match rng {
+                    Some(_) => println!("续跑自 {}（step {step}，RNG 已恢复）", p.display()),
+                    None => println!(
+                        "续跑自 {}（step {step}；老存档无 RNG，取样顺序重排）",
+                        p.display()
+                    ),
+                }
                 resumed_step = step;
+                resumed_rng = rng;
                 n
             }
             Err(e) => {
@@ -186,19 +222,12 @@ fn main() {
         args.ste
     );
 
-    let save_path = args.save.as_ref().map(|dir| {
-        if dir.extension().is_some() {
-            dir.clone()
-        } else {
-            dir.join("state.bin")
-        }
-    });
     if let Some(p) = &save_path
         && let Some(parent) = p.parent()
     {
         std::fs::create_dir_all(parent).ok();
     }
-    let mut rng = args.seed | 1;
+    let mut rng = resumed_rng.unwrap_or(args.seed | 1);
     let mut best = f32::INFINITY;
     let mut ma = f32::NAN; // 损失的指数移动平均（单帧噪声大，直接打最后一帧会误导）
     for step in 0..args.steps {
@@ -251,7 +280,7 @@ fn main() {
             && (step + 1) % args.save_every == 0
             && let Some(p) = &save_path
         {
-            match net.save_state(p, resumed_step + (step + 1) as u64) {
+            match net.save_state(p, resumed_step + (step + 1) as u64, rng) {
                 Ok(()) => println!("  [断点] step {} 已存", step + 1),
                 Err(e) => eprintln!("  [断点] 保存失败: {e}"),
             }
@@ -273,7 +302,7 @@ fn main() {
     println!("最小 loss {best:.4}");
 
     if let Some(path) = &save_path {
-        match net.save_state(path, resumed_step + args.steps as u64) {
+        match net.save_state(path, resumed_step + args.steps as u64, rng) {
             Ok(()) => println!("断点已存 {}", path.display()),
             Err(e) => {
                 eprintln!("断点保存失败: {e}");
@@ -371,7 +400,7 @@ fn eval_only(gpu: &Gpu, args: &Args) {
     println!("清单 k={k}，部件 {} 个", m.parts.len());
 
     let mut net = match &args.resume {
-        Some(p) => Net::load_state(p).map(|(n, _)| n),
+        Some(p) => Net::load_state(p).map(|(n, _, _)| n),
         None => match &args.init {
             Some(dir) => Tensors::load(dir).and_then(|t| Net::from_tensors(&t)),
             None => {

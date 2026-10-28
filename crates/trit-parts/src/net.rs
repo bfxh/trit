@@ -700,11 +700,12 @@ fn spec_of(l: &Layer) -> ConvW {
 
 impl Net {
     /// 存断点（含 Adam 状态，可续跑）。布局：magic + 层数 + step + 每层参数。
-    pub fn save_state(&self, path: &std::path::Path, step: u64) -> std::io::Result<()> {
+    pub fn save_state(&self, path: &std::path::Path, step: u64, rng: u64) -> std::io::Result<()> {
         let mut b: Vec<u8> = Vec::new();
-        b.extend_from_slice(b"TPNT2\0\0\0");
+        b.extend_from_slice(b"TPNT3\0\0\0");
         b.extend_from_slice(&(self.layers.len() as u32).to_le_bytes());
         b.extend_from_slice(&step.to_le_bytes());
+        b.extend_from_slice(&rng.to_le_bytes());
         for l in &self.layers {
             for v in [
                 l.cin,
@@ -745,23 +746,32 @@ impl Net {
             }
             b.extend_from_slice(&l.t.to_le_bytes());
         }
-        std::fs::write(path, b)
+        let tmp = path.with_extension("tmp");
+        std::fs::write(&tmp, b)?;
+        std::fs::rename(&tmp, path)
     }
 
     /// 读断点，返回 `(网, step)`；层形状与当前代码不一致时报错（不猜）。
-    pub fn load_state(path: &std::path::Path) -> Result<(Self, u64), String> {
+    /// 读进程存档，返回 `(网, step, RNG)`；TPNT1/TPNT2 老存档没有 RNG（返回 None）。
+    pub fn load_state(path: &std::path::Path) -> Result<(Self, u64, Option<u64>), String> {
         let b = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
         if b.len() < 8 {
             return Err("不是 trit-parts 断点文件".into());
         }
         // TPNT1 没有 affine；TPNT2 起带 γ/β 与其 Adam 状态
-        let v2 = &b[0..8] == b"TPNT2\0\0\0";
+        let v3 = &b[0..8] == b"TPNT3\0\0\0";
+        let v2 = v3 || &b[0..8] == b"TPNT2\0\0\0";
         if !v2 && &b[0..8] != b"TPNT1\0\0\0" {
             return Err("不是 trit-parts 断点文件".into());
         }
         let mut at = 8usize;
         let n_layers = take_u32(&b, &mut at)? as usize;
         let step = take_u64(&b, &mut at)?;
+        let rng = if v3 {
+            Some(take_u64(&b, &mut at)?)
+        } else {
+            None
+        };
         let mut layers = Vec::with_capacity(n_layers);
         for _ in 0..n_layers {
             let cin = take_u32(&b, &mut at)?;
@@ -847,7 +857,7 @@ impl Net {
                 convt: false,
             });
         }
-        Ok((Self { layers }, step))
+        Ok((Self { layers }, step, rng))
     }
 }
 
