@@ -104,12 +104,92 @@ impl ShadowPolicy for Eager {
     }
 }
 
+/// 每个任务的 bottom-level：自身 duration + 下游最长链。
+///
+/// 边规则：`required` 为 True/False 的边都算「后继预计会跑」；`Unknown` 的边不计——
+/// 需求未定，不能拿它给任务加权。缺 ID 的边忽略（策略是只读建议，不能因此 panic）。
+pub fn bottom_levels(tasks: &[TaskSpec]) -> std::collections::BTreeMap<String, u64> {
+    use std::collections::BTreeMap;
+    let index: BTreeMap<&str, usize> = tasks
+        .iter()
+        .enumerate()
+        .map(|(position, spec)| (spec.task.id.as_str(), position))
+        .collect();
+    let mut successors: Vec<Vec<usize>> = vec![Vec::new(); tasks.len()];
+    for (position, spec) in tasks.iter().enumerate() {
+        for dependency in &spec.task.deps {
+            if dependency.required == crate::Ternary::Unknown {
+                continue;
+            }
+            if let Some(&predecessor) = index.get(dependency.task.as_str()) {
+                successors[predecessor].push(position);
+            }
+        }
+    }
+    let mut bottom: Vec<Option<u64>> = vec![None; tasks.len()];
+    for root in 0..tasks.len() {
+        // 迭代式后序，避免长链递归爆栈；遇到环（结构上不应出现）按 0 贡献处理。
+        let mut stack: Vec<(usize, usize)> = vec![(root, 0)];
+        let mut on_stack = vec![false; tasks.len()];
+        on_stack[root] = true;
+        while let Some(&mut (node, ref mut child)) = stack.last_mut() {
+            if *child < successors[node].len() {
+                let next = successors[node][*child];
+                *child += 1;
+                if bottom[next].is_none() && !on_stack[next] {
+                    on_stack[next] = true;
+                    stack.push((next, 0));
+                }
+                continue;
+            }
+            let longest = successors[node]
+                .iter()
+                .filter_map(|&next| bottom[next])
+                .max()
+                .unwrap_or(0);
+            bottom[node] = Some(u64::from(tasks[node].task.duration).saturating_add(longest));
+            on_stack[node] = false;
+            stack.pop();
+        }
+    }
+    tasks
+        .iter()
+        .zip(bottom)
+        .map(|(spec, level)| (spec.task.id.clone(), level.unwrap_or(0)))
+        .collect()
+}
+
+/// 关键路径优先：下游链越长越先派（同长度按 ID 升序）。只调顺序，不改批次。
+pub struct CriticalPath;
+
+impl ShadowPolicy for CriticalPath {
+    fn name(&self) -> &'static str {
+        "critical_path"
+    }
+
+    fn propose(&self, context: &ShadowContext<'_>) -> Proposal {
+        let levels = bottom_levels(context.tasks);
+        let mut order: Vec<(u64, &str)> = context
+            .selection
+            .selected
+            .iter()
+            .map(|id| (levels.get(id).copied().unwrap_or(0), id.as_str()))
+            .collect();
+        order.sort_unstable_by(|left, right| right.0.cmp(&left.0).then(left.1.cmp(right.1)));
+        Proposal {
+            order: Some(order.into_iter().map(|(_, id)| id.to_owned()).collect()),
+            ..Proposal::default()
+        }
+    }
+}
+
 /// 按名字取内置策略。
 pub fn builtin(name: &str) -> Option<Box<dyn ShadowPolicy>> {
     match name {
         "baseline" => Some(Box::new(Baseline)),
         "longest_first" => Some(Box::new(LongestFirst)),
         "eager" => Some(Box::new(Eager)),
+        "critical_path" => Some(Box::new(CriticalPath)),
         _ => None,
     }
 }

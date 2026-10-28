@@ -260,4 +260,22 @@ MUTANTS = [
         "filter": "order_only_proposals_do_not_change_the_dispatched_set",
         "diagnostic": "ORCH_SHADOW_ORDER",
     },
+    {
+        "name": "orch: critical path ignores unknown edges but keeps optional",
+        "file": "crates/trit-orch/src/policy.rs",
+        "old": "            if dependency.required == crate::Ternary::Unknown {",
+        "new": "            if dependency.required != crate::Ternary::Unknown {",
+        "pkg": "trit-orch",
+        "filter": "critical_path_counts_optional_edges_but_not_unknown_ones",
+        "diagnostic": "ORCH_SHADOW_CP_EDGES",
+    },
+    {
+        "name": 'orch: critical path orders by bottom level',
+        "file": 'crates/trit-orch/src/policy.rs',
+        "old": '        let mut order: Vec<(u64, &str)> = context\n            .selection\n            .selected\n            .iter()\n            .map(|id| (levels.get(id).copied().unwrap_or(0), id.as_str()))',
+        "new": '        let mut order: Vec<(u64, &str)> = context\n            .selection\n            .selected\n            .iter()\n            .map(|id| (0u64, id.as_str()))',
+        "pkg": "trit-orch",
+        "filter": 'critical_path_prioritises_the_deeper_chain',
+        "diagnostic": 'ORCH_SHADOW_CP_ORDER',
+    },
 ]

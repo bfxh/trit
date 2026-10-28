@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use trit_orch::{
-    Attempt, Baseline, Eager, Effect, Ledger, Limits, LongestFirst, Observation, Phase, Reconcile,
-    Resources, ShadowPolicy, Snapshot, Task, TaskSpec, Ternary, TraceStep, replay,
+    Attempt, Baseline, Eager, Effect, Ledger, Limits, LongestFirst, Observation, Phase, Plan,
+    Reconcile, Resources, ShadowPolicy, Snapshot, Task, TaskSpec, Ternary, TraceStep, replay,
 };
 
 fn task(id: &str, duration: u32) -> TaskSpec {
@@ -130,4 +130,153 @@ fn policy_names_are_stable() {
     assert_eq!(Baseline.name(), "baseline");
     assert_eq!(LongestFirst.name(), "longest_first");
     assert_eq!(Eager.name(), "eager");
+}
+
+fn task_with(id: &str, duration: u32, deps: Vec<(&str, Ternary)>) -> TaskSpec {
+    TaskSpec {
+        task: Task {
+            id: id.into(),
+            priority: 0,
+            duration,
+            deps: deps
+                .into_iter()
+                .map(|(task, required)| trit_orch::Dependency {
+                    task: task.into(),
+                    required,
+                })
+                .collect(),
+        },
+        requirements: Resources::new(1, 1),
+        max_tokens: 100,
+        epoch: 0,
+    }
+}
+
+fn ready_step(tasks: Vec<TaskSpec>) -> TraceStep {
+    let ids: Vec<String> = tasks.iter().map(|spec| spec.task.id.clone()).collect();
+    let observations = ids
+        .into_iter()
+        .map(|id| {
+            (
+                id,
+                Observation {
+                    authorization: Ternary::True,
+                    freshness: Ternary::True,
+                    ..Observation::default()
+                },
+            )
+        })
+        .collect();
+    TraceStep {
+        revision: 1,
+        tasks,
+        snapshot: Snapshot {
+            revision: 1,
+            observations,
+        },
+        limits: Limits {
+            workers: 8,
+            capacity: Resources::new(8, 8),
+            tokens: 10_000,
+        },
+        ledger: Ledger::new(),
+    }
+}
+
+#[test]
+fn critical_path_prioritises_the_deeper_chain() {
+    // m 解锁 3 步链；a 与 z 是叶子（z 更长，内核按 duration 先选 z）。
+    let build = || {
+        vec![
+            task_with("m", 1, vec![]),
+            task_with("a", 1, vec![]),
+            task_with("z", 1, vec![]),
+            task_with("m2", 1, vec![("m", Ternary::True)]),
+            task_with("m3", 1, vec![("m2", Ternary::True)]),
+        ]
+    };
+    let levels = trit_orch::bottom_levels(&build());
+    assert_eq!(levels["m"], 3, "ORCH_SHADOW_CP_LEVELS");
+    assert_eq!(levels["m2"], 2);
+    assert_eq!(levels["z"], 1);
+
+    // 直接检查建议本身：顺序只能是 m 先，且不增删任务。
+    let trace = ready_step(build());
+    let plan = Plan::new(trace.revision, trace.tasks.clone()).unwrap();
+    let selection = plan.select(&trace.snapshot, &trace.limits).unwrap();
+    assert_eq!(
+        selection.selected,
+        vec!["z", "m", "a"],
+        "内核按 duration/id 排"
+    );
+    let context = trit_orch::ShadowContext {
+        selection: &selection,
+        tasks: &trace.tasks,
+        ledger: &trace.ledger,
+        limits: &trace.limits,
+    };
+    let proposal = trit_orch::CriticalPath.propose(&context);
+    assert_eq!(
+        proposal.order.as_deref(),
+        Some(&["m".to_string(), "a".to_string(), "z".to_string()][..]),
+        "ORCH_SHADOW_CP_ORDER"
+    );
+
+    let report = replay(&trit_orch::CriticalPath, &[trace]).unwrap();
+    assert_eq!(report.rejected, Vec::<String>::new());
+    assert_eq!(report.order_mismatches, 1);
+    assert!(report.is_safe());
+}
+
+#[test]
+fn critical_path_counts_optional_edges_but_not_unknown_ones() {
+    let optional = vec![
+        task_with("a", 1, vec![]),
+        task_with("tail", 5, vec![("a", Ternary::False)]),
+    ];
+    let levels = trit_orch::bottom_levels(&optional);
+    assert_eq!(
+        levels["a"], 6,
+        "ORCH_SHADOW_CP_EDGES: 可选边预计会跑，要计入"
+    );
+
+    let unknown = vec![
+        task_with("a", 1, vec![]),
+        task_with("tail", 5, vec![("a", Ternary::Unknown)]),
+    ];
+    let levels = trit_orch::bottom_levels(&unknown);
+    assert_eq!(levels["a"], 1, "ORCH_SHADOW_CP_EDGES");
+}
+
+#[test]
+fn critical_path_order_is_deterministic_and_keeps_the_set() {
+    let build = || {
+        vec![
+            task_with("a", 1, vec![]),
+            task_with("b", 1, vec![]),
+            task_with("c", 1, vec![]),
+            task_with("a2", 1, vec![("a", Ternary::True)]),
+            task_with("a3", 1, vec![("a2", Ternary::True)]),
+        ]
+    };
+    let first = replay(&trit_orch::CriticalPath, &[ready_step(build())]).unwrap();
+    let second = replay(&trit_orch::CriticalPath, &[ready_step(build())]).unwrap();
+    assert_eq!(first, second, "ORCH_SHADOW_CP_DETERMINISTIC");
+    assert_eq!(first.rejected, Vec::<String>::new());
+    assert_eq!(first.skipped, Vec::<String>::new());
+}
+
+#[test]
+fn critical_path_handles_a_long_chain_without_recursion() {
+    let mut tasks = vec![task_with("t0000", 1, vec![])];
+    for index in 1..5_000u32 {
+        let previous = format!("t{:04}", index - 1);
+        tasks.push(task_with(
+            &format!("t{index:04}"),
+            1,
+            vec![(previous.as_str(), Ternary::True)],
+        ));
+    }
+    let levels = trit_orch::bottom_levels(&tasks);
+    assert_eq!(levels["t0000"], 5_000, "ORCH_SHADOW_CP_LONG_CHAIN");
 }

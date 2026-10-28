@@ -134,7 +134,7 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
             let request: ShadowInput = parse(input)?;
             let policy = builtin(&request.policy).ok_or_else(|| trit_orch::Error::InputParse {
                 message: format!(
-                    "未知策略 {:?}（可用：baseline/longest_first/eager）",
+                    "未知策略 {:?}（可用：baseline/longest_first/eager/critical_path）",
                     request.policy
                 ),
             })?;

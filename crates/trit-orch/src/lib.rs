@@ -22,7 +22,10 @@ pub use model::{
     Selection, Snapshot, TaskSpec, TokenUsage,
 };
 pub use plan::Plan;
-pub use policy::{Baseline, Eager, LongestFirst, Proposal, ShadowContext, ShadowPolicy, builtin};
+pub use policy::{
+    Baseline, CriticalPath, Eager, LongestFirst, Proposal, ShadowContext, ShadowPolicy,
+    bottom_levels, builtin,
+};
 pub use progress::{Progress, RoundReport, Summary};
 pub use shadow::{ShadowReport, TraceStep, replay};
 pub use status::Counts;
