@@ -3,6 +3,7 @@
 pub(crate) mod atpg;
 pub(crate) mod belnap;
 pub(crate) mod bridge;
+pub(crate) mod capacity;
 pub(crate) mod check;
 pub(crate) mod circuit;
 pub(crate) mod equiv;

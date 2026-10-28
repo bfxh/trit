@@ -1573,6 +1573,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-capacity"
+version = "0.12.0"
+
+[[package]]
 name = "trit-circuit"
 version = "0.12.0"
 dependencies = [
@@ -1593,6 +1597,7 @@ dependencies = [
  "serde_json",
  "trit-bdd",
  "trit-belnap",
+ "trit-capacity",
  "trit-circuit",
  "trit-core",
  "trit-eval",

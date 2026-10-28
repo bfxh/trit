@@ -59,6 +59,20 @@ struct Cli {
 /// CLI 子命令。
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// 系统容量观测与准入判决（M5.1）：这台机器的显存够不够这个负载。
+    ///
+    /// 只观测与判决，不拦截；`--require` 时 WARN/REJECT/读数不可用 一律退出码 1。
+    Capacity {
+        /// 负载峰值需求（MiB）。省略则只打印快照，不做判决。
+        #[arg(long, value_name = "MIB")]
+        need_mb: Option<u64>,
+        /// 竞争余量倍数（≥1.0；小于 1 会被夹到 1.0）。
+        #[arg(long, default_value_t = 2.0)]
+        headroom: f32,
+        /// 严格模式：非 OK 即退出码 1（给 CI / 启动脚本用）。
+        #[arg(long)]
+        require: bool,
+    },
     /// 在指定赋值下求值表达式。
     Eval {
         /// 待求值的表达式，例如 `a & b | !c`。
@@ -407,6 +421,11 @@ fn main() -> Result<()> {
         }
     }
     match cli.command {
+        Commands::Capacity {
+            need_mb,
+            headroom,
+            require,
+        } => commands::capacity::cmd_capacity(need_mb, headroom, require),
         Commands::Eval { expression, assign } => {
             commands::eval::cmd_eval(&expression, &assign, &cli.algebra)
         }

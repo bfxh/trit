@@ -1,0 +1,10 @@
+[package]
+name = "trit-capacity"
+description = "系统容量观测与准入判决：执行前回答「会不会把显存打爆」"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
