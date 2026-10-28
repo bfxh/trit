@@ -7,7 +7,7 @@
 //! 跑法见 crate README；`--dir` 指向对拍夹具目录（默认取 `TRIT_PARTS_DIR`，
 //! 否则 `../trit-data/parts-parity`）。
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use trit_parts::forward::forward;
 use trit_parts::gpu::Gpu;
@@ -41,11 +41,7 @@ fn main() {
         eprintln!("权重读取失败: {e}");
         std::process::exit(1)
     });
-    let raw = std::fs::read(dir.join("input.bin")).expect("input.bin");
-    let xin: Vec<f32> = raw
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect();
+    let xin = read_f32(&dir.join("input.bin")).expect("input.bin");
     let res = (xin.len() / 3).isqrt() as u32;
     println!(
         "输入 {res}² ×3，权重张量 {} 个，模式 {}",
@@ -58,11 +54,7 @@ fn main() {
     let dump = std::env::var("TRIT_PARTS_DUMP").ok().map(PathBuf::from);
     let out = forward(&gpu, &t, &xb, res, mode, dump.as_deref());
 
-    let pyraw = std::fs::read(dir.join("logits_py.bin")).expect("logits_py.bin");
-    let py: Vec<f32> = pyraw
-        .chunks_exact(4)
-        .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-        .collect();
+    let py = read_f32(&dir.join("logits_py.bin")).expect("logits_py.bin");
     assert_eq!(out.len(), py.len(), "logits 长度不一致");
 
     let n = (res * res) as usize;
@@ -117,26 +109,21 @@ fn main() {
 
     // 三值模式还要与「PyTorch 里同一套量化」对拍：两个实现必须一致，
     // 与 f32 的差才是量化代价本身，而不是实现 bug。
-    if mode == 1 {
-        if let Ok(b) = std::fs::read(dir.join("logits_trit_py.bin")) {
-            let qt: Vec<f32> = b
-                .chunks_exact(4)
-                .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-                .collect();
-            if qt.len() == out.len() {
-                let mut d2 = 0f32;
-                for c in 0..16usize {
-                    for p in 0..n {
-                        d2 = d2.max((out[p * 16 + c] - qt[c * n + p]).abs());
-                    }
-                }
-                let (ag2, tot2) = plane_agreement(&out, &qt, n);
-                println!(
-                    "vs PyTorch 三值: max|Δ|={d2:.3e}  平面 argmax 一致率={:.6}",
-                    ag2 as f64 / tot2 as f64
-                );
+    if mode == 1
+        && let Ok(qt) = read_f32(&dir.join("logits_trit_py.bin"))
+        && qt.len() == out.len()
+    {
+        let mut d2 = 0f32;
+        for c in 0..16usize {
+            for p in 0..n {
+                d2 = d2.max((out[p * 16 + c] - qt[c * n + p]).abs());
             }
         }
+        let (ag2, tot2) = plane_agreement(&out, &qt, n);
+        println!(
+            "vs PyTorch 三值: max|Δ|={d2:.3e}  平面 argmax 一致率={:.6}",
+            ag2 as f64 / tot2 as f64
+        );
     }
 
     println!(
@@ -154,6 +141,17 @@ fn main() {
             "三值前向有明显偏差（这就是量化损失）"
         }
     );
+}
+
+/// 读一份小端 f32 裸数组（夹具统一格式）。
+fn read_f32(path: &Path) -> std::io::Result<Vec<f32>> {
+    let raw = std::fs::read(path)?;
+    Ok(raw
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
+        .collect())
 }
 
 /// 每个平面在 3 个通道上取 argmax，返回 (一致数, 总数)。

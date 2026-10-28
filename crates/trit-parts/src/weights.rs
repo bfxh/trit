@@ -29,8 +29,8 @@ impl Tensors {
                 .get(off * 4..(off + n) * 4)
                 .ok_or_else(|| format!("{name}: 越界"))?;
             let mut v = Vec::with_capacity(n);
-            for c in bytes.chunks_exact(4) {
-                v.push(f32::from_le_bytes([c[0], c[1], c[2], c[3]]));
+            for c in bytes.as_chunks::<4>().0 {
+                v.push(f32::from_le_bytes(*c));
             }
             data.insert(name, (v, shape));
         }
@@ -38,9 +38,7 @@ impl Tensors {
     }
 
     pub fn get(&self, name: &str) -> Result<&(Vec<f32>, Vec<usize>), String> {
-        self.data
-            .get(name)
-            .ok_or_else(|| format!("缺张量 {name}"))
+        self.data.get(name).ok_or_else(|| format!("缺张量 {name}"))
     }
 
     pub fn v(&self, name: &str) -> Result<&[f32], String> {

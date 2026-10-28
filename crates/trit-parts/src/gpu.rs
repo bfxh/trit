@@ -57,9 +57,11 @@ impl Gpu {
         }))
         .ok()?;
         let alim = adapter.limits();
-        let mut limits = wgpu::Limits::default();
-        limits.max_storage_buffer_binding_size = alim.max_storage_buffer_binding_size;
-        limits.max_buffer_size = alim.max_buffer_size;
+        let limits = wgpu::Limits {
+            max_storage_buffer_binding_size: alim.max_storage_buffer_binding_size,
+            max_buffer_size: alim.max_buffer_size,
+            ..Default::default()
+        };
         let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             required_features: wgpu::Features::empty(),
             required_limits: limits,
@@ -129,7 +131,11 @@ impl Gpu {
 
     pub fn buf(&self, data: &[f32], label: &str) -> wgpu::Buffer {
         let bytes: &[u8] = bytemuck::cast_slice(data);
-        let bytes = if bytes.is_empty() { &[0u8; 4][..] } else { bytes };
+        let bytes = if bytes.is_empty() {
+            &[0u8; 4][..]
+        } else {
+            bytes
+        };
         self.device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(label),
@@ -142,7 +148,11 @@ impl Gpu {
 
     pub fn ibuf(&self, data: &[i32], label: &str) -> wgpu::Buffer {
         let bytes: &[u8] = bytemuck::cast_slice(data);
-        let bytes = if bytes.is_empty() { &[0u8; 4][..] } else { bytes };
+        let bytes = if bytes.is_empty() {
+            &[0u8; 4][..]
+        } else {
+            bytes
+        };
         self.device
             .create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(label),
@@ -200,13 +210,34 @@ impl Gpu {
             label: None,
             layout: &self.conv_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: ub.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: x.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: wf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: wt.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: ws.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: bs.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 6, resource: out.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ub.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: x.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wt.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: ws.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: bs.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: out.as_entire_binding(),
+                },
             ],
         });
         let mut enc = self.device.create_command_encoder(&Default::default());
@@ -229,9 +260,18 @@ impl Gpu {
             label: None,
             layout: &self.pool_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: ub.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: x.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: out.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ub.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: x.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: out.as_entire_binding(),
+                },
             ],
         });
         let mut enc = self.device.create_command_encoder(&Default::default());
@@ -245,7 +285,14 @@ impl Gpu {
         out
     }
 
-    pub fn cat(&self, a: &wgpu::Buffer, b: &wgpu::Buffer, hw: u32, ca: u32, cb: u32) -> wgpu::Buffer {
+    pub fn cat(
+        &self,
+        a: &wgpu::Buffer,
+        b: &wgpu::Buffer,
+        hw: u32,
+        ca: u32,
+        cb: u32,
+    ) -> wgpu::Buffer {
         let u = CatU { hw, ca, cb, _p: 0 };
         let ub = self.ubuf(&u);
         let total = (hw * (ca + cb)) as usize;
@@ -254,10 +301,22 @@ impl Gpu {
             label: None,
             layout: &self.cat_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: ub.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: a.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: b.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: out.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ub.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: a.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: b.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: out.as_entire_binding(),
+                },
             ],
         });
         let mut enc = self.device.create_command_encoder(&Default::default());
@@ -301,13 +360,34 @@ impl Gpu {
             label: None,
             layout: &self.up_bgl,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: ub.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: x.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: wf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: wt.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: ws.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 5, resource: bs.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 6, resource: out.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ub.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: x.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: wf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: wt.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: ws.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: bs.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: out.as_entire_binding(),
+                },
             ],
         });
         let mut enc = self.device.create_command_encoder(&Default::default());
@@ -336,8 +416,10 @@ impl Gpu {
         slice.map_async(wgpu::MapMode::Read, |_| {});
         let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
         let data = slice.get_mapped_range().expect("map").to_vec();
-        data.chunks_exact(4)
-            .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
+        data.as_chunks::<4>()
+            .0
+            .iter()
+            .map(|c| f32::from_le_bytes(*c))
             .collect()
     }
 }

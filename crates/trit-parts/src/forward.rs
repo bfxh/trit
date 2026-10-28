@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use crate::gpu::Gpu;
-use crate::weights::{conv_w, convt_w, Tensors};
+use crate::weights::{Tensors, conv_w, convt_w};
 
 /// 跑一帧 `res × res × 3` 输入，返回 NHWC 的 `res × res × 16` logits。
 ///
