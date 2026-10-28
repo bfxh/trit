@@ -15,6 +15,7 @@ use trit_parts::data::{Sample, frames, load_frame};
 use trit_parts::gpu::Gpu;
 use trit_parts::loss::{loss_and_grad, plane_weights};
 use trit_parts::net::Net;
+use trit_parts::parts::{PartList, evaluate_frame};
 use trit_parts::weights::Tensors;
 use trit_train::Ste;
 
@@ -24,6 +25,8 @@ struct Args {
     resume: Option<PathBuf>,
     save: Option<PathBuf>,
     selfcheck: Option<PathBuf>,
+    eval: Option<PathBuf>,
+    manifest: Option<PathBuf>,
     steps: usize,
     lr: f32,
     accum: usize,
@@ -41,6 +44,8 @@ fn parse() -> Result<Args, String> {
         resume: None,
         save: None,
         selfcheck: None,
+        eval: None,
+        manifest: None,
         steps: 100,
         lr: 1e-3,
         accum: 1,
@@ -65,6 +70,8 @@ fn parse() -> Result<Args, String> {
             "--resume" => a.resume = Some(PathBuf::from(val()?)),
             "--save" => a.save = Some(PathBuf::from(val()?)),
             "--selfcheck" => a.selfcheck = Some(PathBuf::from(val()?)),
+            "--eval" => a.eval = Some(PathBuf::from(val()?)),
+            "--manifest" => a.manifest = Some(PathBuf::from(val()?)),
             "--steps" => a.steps = val()?.parse().map_err(|_| "--steps 非整数")?,
             "--lr" => a.lr = val()?.parse().map_err(|_| "--lr 非数字")?,
             "--accum" => a.accum = val()?.parse().map_err(|_| "--accum 非整数")?,
@@ -84,7 +91,7 @@ fn parse() -> Result<Args, String> {
         }
         i += 2;
     }
-    if a.data.is_empty() && a.resume.is_none() && a.selfcheck.is_none() {
+    if a.data.is_empty() && a.resume.is_none() && a.selfcheck.is_none() && a.eval.is_none() {
         return Err("需要 --data / --resume / --selfcheck".into());
     }
     Ok(a)
@@ -109,6 +116,11 @@ fn main() {
             std::process::exit(2);
         }
     };
+
+    if args.eval.is_some() {
+        eval_only(&gpu, &args);
+        return;
+    }
 
     // 数据：按目录列帧，--limit 截断
     let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
@@ -298,4 +310,150 @@ fn read_f32(path: &std::path::Path) -> Vec<f32> {
         .iter()
         .map(|c| f32::from_le_bytes(*c))
         .collect()
+}
+
+/// 评估：同一模型分别用「无约束 argmax」与「清单约束 argmax」解码，指标并排。
+fn eval_only(gpu: &Gpu, args: &Args) {
+    let scene = args.eval.as_ref().expect("--eval");
+    let manifest_path = args.manifest.as_ref().unwrap_or_else(|| {
+        eprintln!("--eval 需要 --manifest <parts.json>");
+        std::process::exit(2);
+    });
+    let m = PartList::load(manifest_path).unwrap_or_else(|e| {
+        eprintln!("清单读取失败: {e}");
+        std::process::exit(1);
+    });
+    let k = m.k;
+    println!("清单 k={k}，部件 {} 个", m.parts.len());
+
+    let mut net = match &args.resume {
+        Some(p) => Net::load_state(p).map(|(n, _)| n),
+        None => match &args.init {
+            Some(dir) => Tensors::load(dir).and_then(|t| Net::from_tensors(&t)),
+            None => {
+                eprintln!("--eval 需要 --resume 或 --init");
+                std::process::exit(2);
+            }
+        },
+    }
+    .unwrap_or_else(|e| {
+        eprintln!("模型加载失败: {e}");
+        std::process::exit(1);
+    });
+    net.upload_all(gpu);
+
+    let mut paths = frames(scene);
+    if args.limit > 0 {
+        paths.truncate(args.limit);
+    }
+    let res = 384u32;
+    let hw = (res * res) as usize;
+    let ch = k * 3 + 1;
+
+    let mut plane_sum = vec![0f64; k];
+    let mut exact = [0f64; 2];
+    let mut exact_n = [0usize; 2];
+    let mut iou = [0f64; 2];
+    let mut iou_n = [0usize; 2];
+    let mut unk_ids = [0f64; 2];
+    let mut unk_px = [0f64; 2];
+    let mut unk_px_n = [0f64; 2];
+
+    for (n, file) in paths.iter().enumerate() {
+        let s = load_frame(scene, file, k).unwrap_or_else(|e| {
+            eprintln!("读帧失败: {e}");
+            std::process::exit(1);
+        });
+        let xb = gpu.buf(&s.rgb, "x");
+        let tr = net.forward(gpu, xb, res);
+        let logits = gpu.read(&tr.out, hw * ch);
+        for (slot, constrained) in [false, true].into_iter().enumerate() {
+            let fm = evaluate_frame(&logits, &s.planes, &s.valid, &m, constrained, true);
+            for (acc, v) in fm.plane_acc.iter().enumerate() {
+                if !constrained {
+                    plane_sum[acc] += f64::from(*v);
+                }
+            }
+            if let Some(e) = fm.id_exact {
+                exact[slot] += f64::from(e);
+                exact_n[slot] += 1;
+            }
+            for v in &fm.part_iou {
+                iou[slot] += f64::from(*v);
+                iou_n[slot] += 1;
+            }
+            let (bad, total) = fm.unknown_ids;
+            if total > 0 {
+                unk_ids[slot] += bad as f64 / total as f64;
+            }
+            let (up, vp) = fm.unknown_pixels;
+            unk_px[slot] += up as f64;
+            unk_px_n[slot] += vp as f64;
+        }
+        if std::env::var("TRIT_EVAL_DEBUG").is_ok() && n == 0 {
+            let dbg = evaluate_frame(&logits, &s.planes, &s.valid, &m, false, true);
+            let vp = logits.chunks_exact(ch).filter(|c| c[k * 3] > 0.0).count();
+            let gt_px = s.valid.iter().filter(|v| **v == 1).count();
+            let mut gt = std::collections::BTreeSet::new();
+            for p in 0..hw {
+                if s.valid[p] == 1 {
+                    let d: Vec<u8> = (0..k).map(|i| s.planes[i][p]).collect();
+                    gt.insert(m.id_of(&d));
+                }
+            }
+            println!(
+                "  [dbg] 帧0: GT 部件像素 {gt_px}, 预测 valid 像素 {vp}, GT 不同 id {}, id_exact {:?}, iou {} 项, 未知 {:?}/{:?}",
+                gt.len(),
+                dbg.id_exact,
+                dbg.part_iou.len(),
+                dbg.unknown_ids,
+                dbg.unknown_pixels
+            );
+        }
+        if (n + 1) % 10 == 0 || n + 1 == paths.len() {
+            println!("  已评估 {}/{}", n + 1, paths.len());
+        }
+    }
+    let nf = paths.len() as f64;
+    let planes: Vec<f64> = plane_sum.iter().map(|v| v / nf).collect();
+    let mean = |s: f64, n: usize| if n > 0 { s / n as f64 } else { 0.0 };
+    println!("帧数 {}", paths.len());
+    let plane_show: Vec<f64> = planes
+        .iter()
+        .map(|v| (v * 1000.0).round() / 1000.0)
+        .collect();
+    println!("平面准确率(GT 部件像素) {plane_show:?}");
+    println!("{:<18}{:>10}{:>10}", "指标", "无约束", "清单约束");
+    println!(
+        "{:<18}{:>10.4}{:>10.4}",
+        "id 一致",
+        mean(exact[0], exact_n[0]),
+        mean(exact[1], exact_n[1])
+    );
+    println!(
+        "{:<18}{:>10.4}{:>10.4}",
+        "部件 IoU",
+        mean(iou[0], iou_n[0]),
+        mean(iou[1], iou_n[1])
+    );
+    println!(
+        "{:<18}{:>10.3}{:>10.3}",
+        "清单外 id 率",
+        unk_ids[0] / nf,
+        unk_ids[1] / nf
+    );
+    println!(
+        "{:<18}{:>10.4}{:>10.4}",
+        "清单外像素占比",
+        if unk_px_n[0] > 0.0 {
+            unk_px[0] / unk_px_n[0]
+        } else {
+            0.0
+        },
+        if unk_px_n[1] > 0.0 {
+            unk_px[1] / unk_px_n[1]
+        } else {
+            0.0
+        }
+    );
 }

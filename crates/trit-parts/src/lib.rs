@@ -12,6 +12,7 @@
 pub mod backward;
 pub mod data;
 pub mod loss;
+pub mod parts;
 pub mod weights;
 
 #[cfg(feature = "gpu")]
