@@ -288,6 +288,7 @@ impl Gpu {
     }
 
     /// 前向卷积的 vec4 版：线程按 oc4，权重用原布局（`[k·cin+ic]·cout+oc`），`cout` 须是 4 的倍数。
+    #[allow(clippy::too_many_arguments)]
     pub fn conv_t(
         &self,
         x: &wgpu::Buffer,
