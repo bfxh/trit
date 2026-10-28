@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（`trit-parts` 清单约束 argmax + 评估）
+
+- `parts.rs`：清单解析（k/id/digits，已用真实清单 135 部件验证）、`id↔digits`、
+  `decode_free` 与 **`decode_constrained`**（在清单上取 `Σ logit[i][digit_i]` 最大，同分取小 id）。
+  约束解码**结构上不可能**输出清单外 id——单测构造「无约束落到 id 8（清单外）」的 logits，约束返回合法 id。
+- `evaluate_frame`：平面准确率（仅 GT 部件像素）、id 一致、部件 IoU、清单外 id 率（不同 id 个数）与
+  清单外像素占比；`parts-train --eval --manifest` 把无约束/约束两组指标并排打印。
+- 单测：4 passed（约束必在清单内 / 约束取最优合法 id / id↔digits 往返 / 指标行为）。
+- **注意**：约束的实际收益要等正式模型；当前坏 ckpt 只预测 10 种 id（恰好都在清单内），两组指标相同。
+
 ### Added（`trit-parts` 训练循环 + 三值判读口径更正）
 
 - `data.rs`：PNG(RGB)→NHWC f32、`.npy` int32→三进制平面 + valid（编码与 `part_index.encode` 同口径）。

@@ -19,7 +19,12 @@
 | 反向内核（conv/ConvT 权重与输入梯度、池化、拼接） | ✅ | GPU↔CPU（f64）max rel **≤ 2.1e-6**；3 个变异全判红 |
 | STE：`E → latent / scale` | ✅ | 与 `trit-train` 的三种 STE 逐位一致（单步更新对拍） |
 | 训练循环（CE(5 平面) + BCE(valid) + Adam/SGD + 累加 + 断点） | ✅ | 4 帧过拟合：loss 0.70→0.024、valid 0.04→0.997；断点往返逐字节一致 |
-| 清单约束 argmax 解码 | ❌ **未做** | — |
+| 清单约束 argmax 解码 | ✅ | 在清单上取 `Σ logit[i][digit_i]` 最大 ⇒ 结构上不可能输出清单外 id（单测钉住） |
+| 评估（无约束 vs 约束并排） | ✅ | `parts-train --eval --manifest <parts.json>`：id 一致 / 部件 IoU / 清单外 id 率 |
+
+> ⚠️ 约束解码的**收益**要等训练出正式模型才能量：当前 ckpt 是坏的三值基线，
+> 它只预测 10 种 id（恰好都在清单里），所以两组指标相同。机制本身由单测钉住
+> （构造「无约束 = 清单外 id 8」，约束返回合法 id）。
 
 > ⚠️ **口径更正（2026-10-29）**：此前写的「三值 vs f32 argmax 0.9871，只掉 1.3%」是被 98% 背景像素
 > 灌水的结论。只看 GT 部件像素时，三值 ckpt 的平面准确率是 0.28–0.52，而 f32 是 0.74–0.91。
@@ -47,6 +52,10 @@ cargo run -p trit-parts --features gpu --bin parts-train -- --selfcheck D:/KF/tr
 # 训练（过拟合自检：4 帧 150 步）
 cargo run -p trit-parts --features gpu --bin parts-train -- --data <场景目录> \
   --init D:/KF/trit-data/parts-parity --limit 4 --steps 150 --lr 1e-3 --report 25
+
+# 评估（无约束 / 清单约束并排）
+cargo run -p trit-parts --features gpu --bin parts-train -- --eval <场景目录> \
+  --manifest <parts.json> --resume <state.bin>
 ```
 
 夹具文件：
@@ -67,6 +76,6 @@ cargo run -p trit-parts --features gpu --bin parts-train -- --data <场景目录
 
 ## 下一步
 
-1. 清单约束 argmax 解码，从结构上把「清单外 id」压到 0；
-2. 正式训练（900 帧 384²），读数对照 Python 基线（d0 0.9729 / id 0.7097 / IoU 0.4343）；
-   开跑前先报任务与预计耗时。
+1. 正式训练（900 帧 384²，2500 步 / batch 6，≈1 小时），读数对照 Python 基线
+   （d0 0.9729 / id 0.7097 / IoU 0.4343）；开跑前先报任务与预计耗时。
+2. 训练后复跑 `--eval`，量清单约束的实际收益。
