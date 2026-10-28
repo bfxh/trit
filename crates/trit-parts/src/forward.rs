@@ -53,10 +53,10 @@ pub fn forward(
 
     // e1: 3→32, 32→32 @ res
     let w = conv_w(t, "e1.0.weight", Some("e1.1"), true).expect("e1.0");
-    let (a1, b1, c1, d1) = up(&w, "e1a");
+    let (a1, _b1, _c1, d1) = up(&w, "e1a");
     let mut cur = conv_layer(gpu, x, res, res, &w, 1, &a1, &d1);
     let w = conv_w(t, "e1.3.weight", Some("e1.4"), true).expect("e1.3");
-    let (a1, b1, c1, d1) = up(&w, "e1b");
+    let (a1, _b1, _c1, d1) = up(&w, "e1b");
     let a = conv_layer(gpu, &cur, res, res, &w, 1, &a1, &d1);
     snap("a", &a, (res * res * 32) as usize);
 
@@ -64,10 +64,10 @@ pub fn forward(
     let p = gpu.pool(&a, res, res, 32);
     let h2 = res / 2;
     let w = conv_w(t, "e2.0.weight", Some("e2.1"), true).expect("e2.0");
-    let (a1, b1, c1, d1) = up(&w, "e2a");
+    let (a1, _b1, _c1, d1) = up(&w, "e2a");
     cur = conv_layer(gpu, &p, h2, h2, &w, 1, &a1, &d1);
     let w = conv_w(t, "e2.3.weight", Some("e2.4"), true).expect("e2.3");
-    let (a1, b1, c1, d1) = up(&w, "e2b");
+    let (a1, _b1, _c1, d1) = up(&w, "e2b");
     let b = conv_layer(gpu, &cur, h2, h2, &w, 1, &a1, &d1);
     snap("b", &b, (h2 * h2 * 64) as usize);
 
@@ -75,10 +75,10 @@ pub fn forward(
     let p = gpu.pool(&b, h2, h2, 64);
     let h4 = res / 4;
     let w = conv_w(t, "e3.0.weight", Some("e3.1"), true).expect("e3.0");
-    let (a1, b1, c1, d1) = up(&w, "e3a");
+    let (a1, _b1, _c1, d1) = up(&w, "e3a");
     cur = conv_layer(gpu, &p, h4, h4, &w, 1, &a1, &d1);
     let w = conv_w(t, "e3.3.weight", Some("e3.4"), true).expect("e3.3");
-    let (a1, b1, c1, d1) = up(&w, "e3b");
+    let (a1, _b1, _c1, d1) = up(&w, "e3b");
     let c = conv_layer(gpu, &cur, h4, h4, &w, 1, &a1, &d1);
     snap("c", &c, (h4 * h4 * 128) as usize);
 
@@ -91,10 +91,10 @@ pub fn forward(
     // d2: cat(u3,b) 128→64, 64→64
     let cat = gpu.cat(&u3, &b, h2 * h2, 64, 64);
     let w = conv_w(t, "d2.0.weight", Some("d2.1"), true).expect("d2.0");
-    let (a1, b1, c1, d1) = up(&w, "d2a");
+    let (a1, _b1, _c1, d1) = up(&w, "d2a");
     cur = conv_layer(gpu, &cat, h2, h2, &w, 1, &a1, &d1);
     let w = conv_w(t, "d2.3.weight", Some("d2.4"), true).expect("d2.3");
-    let (a1, b1, c1, d1) = up(&w, "d2b");
+    let (a1, _b1, _c1, d1) = up(&w, "d2b");
     let y = conv_layer(gpu, &cur, h2, h2, &w, 1, &a1, &d1);
     snap("y", &y, (h2 * h2 * 64) as usize);
 
@@ -107,21 +107,22 @@ pub fn forward(
     // d1: cat(u2,a) 64→32, 32→32
     let cat = gpu.cat(&u2, &a, res * res, 32, 32);
     let w = conv_w(t, "d1.0.weight", Some("d1.1"), true).expect("d1.0");
-    let (a1, b1, c1, d1) = up(&w, "d1a");
+    let (a1, _b1, _c1, d1) = up(&w, "d1a");
     cur = conv_layer(gpu, &cat, res, res, &w, 1, &a1, &d1);
     let w = conv_w(t, "d1.3.weight", Some("d1.4"), true).expect("d1.3");
-    let (a1, b1, c1, d1) = up(&w, "d1b");
+    let (a1, _b1, _c1, d1) = up(&w, "d1b");
     let z = conv_layer(gpu, &cur, res, res, &w, 1, &a1, &d1);
     snap("z", &z, (res * res * 32) as usize);
 
     // head: 1x1 32→16，无 ReLU
     let w = conv_w(t, "head.weight", None, false).expect("head");
-    let (a1, b1, c1, d1) = up(&w, "head");
+    let (a1, _b1, _c1, d1) = up(&w, "head");
     let out = conv_layer(gpu, &z, res, res, &w, 0, &a1, &d1);
     gpu.read(&out, (res * res * 16) as usize)
 }
 
 /// 一层卷积：`cout` 是 4 的倍数走 vec4 内核，否则退回标量（`eff` 已按 mode 折好）。
+#[allow(clippy::too_many_arguments)]
 fn conv_layer(
     gpu: &Gpu,
     x: &wgpu::Buffer,
