@@ -63,6 +63,9 @@ pub struct Bwd {
     mask_dy: Pipe,
     reduce4: Pipe,
     conv_dx4: Pipe,
+    affine_fwd: Pipe,
+    affine_gv: Pipe,
+    affine_grad: Pipe,
 }
 
 impl Bwd {
@@ -142,6 +145,38 @@ impl Bwd {
                 "conv_dx4",
                 &[Bind::Uniform, Bind::Read, Bind::Read, Bind::Write],
             ),
+            affine_fwd: mk(
+                "affine_fwd",
+                &[
+                    Bind::Uniform,
+                    Bind::Read,
+                    Bind::Read,
+                    Bind::Read,
+                    Bind::Write,
+                ],
+            ),
+            affine_gv: mk(
+                "affine_gv",
+                &[
+                    Bind::Uniform,
+                    Bind::Read,
+                    Bind::Read,
+                    Bind::Read,
+                    Bind::Read,
+                    Bind::Write,
+                ],
+            ),
+            affine_grad: mk(
+                "affine_grad",
+                &[
+                    Bind::Uniform,
+                    Bind::Read,
+                    Bind::Read,
+                    Bind::Read,
+                    Bind::Read,
+                    Bind::Write,
+                ],
+            ),
         }
     }
 }
@@ -203,6 +238,28 @@ struct DwU {
     chunk: u32,
     chunks: u32,
     _pad: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct AffU {
+    n: u32,
+    cout: u32,
+    relu: u32,
+    _p: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct AffG {
+    n: u32,
+    cout: u32,
+    relu: u32,
+    chunk: u32,
+    chunks: u32,
+    _a: u32,
+    _b: u32,
+    _c: u32,
 }
 
 #[repr(C)]
@@ -588,6 +645,93 @@ impl Gpu {
         });
         let bufs = [&u, dst];
         self.dispatch(&self.bwd.clear, &bufs, n);
+    }
+
+    /// `y = relu(γ_c·v + β_c)`（relu 可关）。
+    pub fn affine_fwd(
+        &self,
+        v: &wgpu::Buffer,
+        gamma: &wgpu::Buffer,
+        beta: &wgpu::Buffer,
+        n: usize,
+        cout: u32,
+        relu: bool,
+    ) -> wgpu::Buffer {
+        let u = self.ubuf(&AffU {
+            n: n as u32,
+            cout,
+            relu: relu as u32,
+            _p: 0,
+        });
+        let out = self.alloc(n, "affine-y");
+        let bufs = [&u, v, gamma, beta, &out];
+        self.dispatch(&self.bwd.affine_fwd, &bufs, n);
+        out
+    }
+
+    /// `dL/dv = dy·mask·γ`。
+    #[allow(clippy::too_many_arguments)]
+    pub fn affine_gv(
+        &self,
+        v: &wgpu::Buffer,
+        gamma: &wgpu::Buffer,
+        beta: &wgpu::Buffer,
+        dy: &wgpu::Buffer,
+        n: usize,
+        cout: u32,
+        relu: bool,
+    ) -> wgpu::Buffer {
+        let u = self.ubuf(&AffU {
+            n: n as u32,
+            cout,
+            relu: relu as u32,
+            _p: 0,
+        });
+        let out = self.alloc(n, "affine-gv");
+        let bufs = [&u, v, gamma, beta, dy, &out];
+        self.dispatch(&self.bwd.affine_gv, &bufs, n);
+        out
+    }
+
+    /// `(dγ, dβ)` 归约后的结果，长度 `2·cout`（前 cout 是 dγ）。
+    #[allow(clippy::too_many_arguments)]
+    pub fn affine_grad(
+        &self,
+        v: &wgpu::Buffer,
+        gamma: &wgpu::Buffer,
+        beta: &wgpu::Buffer,
+        dy: &wgpu::Buffer,
+        n: usize,
+        cout: u32,
+        relu: bool,
+    ) -> wgpu::Buffer {
+        let p = n / cout as usize;
+        let chunk = (p / 32).max(256);
+        let chunks = p.div_ceil(chunk) as u32;
+        let u = self.ubuf(&AffG {
+            n: n as u32,
+            cout,
+            relu: relu as u32,
+            chunk: chunk as u32,
+            chunks,
+            _a: 0,
+            _b: 0,
+            _c: 0,
+        });
+        let two = cout as usize * 2;
+        let part = self.alloc(two * chunks as usize, "affine-part");
+        let bufs = [&u, v, gamma, beta, dy, &part];
+        self.dispatch(&self.bwd.affine_grad, &bufs, two * chunks as usize);
+        let out = self.alloc(two, "affine-grad");
+        let ru = self.ubuf(&RedU {
+            n: two as u32,
+            chunks,
+            _a: 0,
+            _b: 0,
+        });
+        let rbufs = [&ru, &part, &out];
+        self.dispatch(&self.bwd.reduce, &rbufs, two);
+        out
     }
 
     /// 逐元素相加（两路梯度汇合）。

@@ -496,3 +496,91 @@ fn reduce_chunks4(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
     red4_out[i] = acc;
 }
+
+// ---------------------------------------------------------------- per-channel affine
+
+// y = relu(γ_c·v + β_c)（relu 可关）。γ 初值 1、β 初值 0 ⇒ 与无 affine 的前向逐位相同。
+struct AffU { n: u32, cout: u32, relu: u32, _p: u32 };
+@group(0) @binding(0) var<uniform> af: AffU;
+@group(0) @binding(1) var<storage, read> af_v: array<f32>;
+@group(0) @binding(2) var<storage, read> af_g: array<f32>;
+@group(0) @binding(3) var<storage, read> af_b: array<f32>;
+@group(0) @binding(4) var<storage, read_write> af_y: array<f32>;
+
+@compute @workgroup_size(64)
+fn affine_fwd(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * ROW;
+    if (i >= af.n) {
+        return;
+    }
+    let oc = i % af.cout;
+    var t = af_g[oc] * af_v[i] + af_b[oc];
+    if (af.relu == 1u) {
+        t = max(t, 0.0);
+    }
+    af_y[i] = t;
+}
+
+// dL/dv = dy · mask · γ（mask = γv+β>0；无 relu 时恒 1）
+@group(0) @binding(0) var<uniform> ag: AffU;
+@group(0) @binding(1) var<storage, read> ag_v: array<f32>;
+@group(0) @binding(2) var<storage, read> ag_gamma: array<f32>;
+@group(0) @binding(3) var<storage, read> ag_beta: array<f32>;
+@group(0) @binding(4) var<storage, read> ag_dy: array<f32>;
+@group(0) @binding(5) var<storage, read_write> ag_gv: array<f32>;
+
+@compute @workgroup_size(64)
+fn affine_gv(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x + gid.y * ROW;
+    if (i >= ag.n) {
+        return;
+    }
+    let oc = i % ag.cout;
+    let t = ag_gamma[oc] * ag_v[i] + ag_beta[oc];
+    var m = 1.0;
+    if (ag.relu == 1u && t <= 0.0) {
+        m = 0.0;
+    }
+    ag_gv[i] = ag_dy[i] * m * ag_gamma[oc];
+}
+
+// dγ/dβ 的分片求和：线程 (oc, chunk)；partial[c·2·cout + oc] = dγ，+cout = dβ
+struct AffG { n: u32, cout: u32, relu: u32, chunk: u32, chunks: u32, _a: u32, _b: u32, _c: u32 };
+@group(0) @binding(0) var<uniform> gg: AffG;
+@group(0) @binding(1) var<storage, read> gg_v: array<f32>;
+@group(0) @binding(2) var<storage, read> gg_gamma: array<f32>;
+@group(0) @binding(3) var<storage, read> gg_beta: array<f32>;
+@group(0) @binding(4) var<storage, read> gg_dy: array<f32>;
+@group(0) @binding(5) var<storage, read_write> gg_part: array<f32>;
+
+@compute @workgroup_size(64)
+fn affine_grad(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let idx = gid.x + gid.y * ROW;
+    let two = gg.cout * 2u;
+    if (idx >= two * gg.chunks) {
+        return;
+    }
+    let slot = idx % two;
+    let c = idx / two;
+    let oc = slot % gg.cout;
+    let which = slot / gg.cout; // 0 = dγ, 1 = dβ
+    let p0 = c * gg.chunk;
+    let p1 = min(p0 + gg.chunk, gg.n / gg.cout);
+    var acc: f32 = 0.0;
+    for (var p: u32 = p0; p < p1; p = p + 1u) {
+        let i = p * gg.cout + oc;
+        let t = gg_gamma[oc] * gg_v[i] + gg_beta[oc];
+        var m = 1.0;
+        if (gg.relu == 1u && t <= 0.0) {
+            m = 0.0;
+        }
+        if (m > 0.0) {
+            if (which == 0u) {
+                acc = acc + gg_dy[i] * gg_v[i];
+            } else {
+                acc = acc + gg_dy[i];
+            }
+        }
+    }
+    gg_part[idx] = acc;
+}

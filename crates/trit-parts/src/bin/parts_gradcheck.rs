@@ -7,8 +7,8 @@
 //! 跑法：`cargo run -p trit-parts --features gpu --bin parts-gradcheck`
 
 use trit_parts::backward::{
-    ConvSpec, cat_backward_f64, cat_f64, conv_backward_f64, conv_f64, convt_backward_f64,
-    convt_f64, pool_backward_f64, pool_f64,
+    ConvSpec, affine_backward_f64, cat_backward_f64, cat_f64, conv_backward_f64, conv_f64,
+    convt_backward_f64, convt_f64, pool_backward_f64, pool_f64,
 };
 use trit_parts::gpu::Gpu;
 use trit_parts::weights::ConvW;
@@ -170,6 +170,41 @@ fn main() {
     checks.push(Check {
         name: "add_into 两次 = 2×dw",
         worst: max_rel(&sum_gpu, &want),
+    });
+
+    // affine：GPU vs CPU（γ/β 梯度走分片归约）
+    let af_cout = 4usize;
+    let af_n = (h * w * cout) as usize;
+    let v_af = fill(&mut seed, af_n);
+    let gamma_af = fill(&mut seed, af_cout);
+    let beta_af = fill(&mut seed, af_cout);
+    let dy_af = fill(&mut seed, af_n);
+    let (dv_ref, dg_ref, db_ref) = affine_backward_f64(
+        &to_f64(&v_af),
+        &to_f64(&gamma_af),
+        &to_f64(&beta_af),
+        &to_f64(&dy_af),
+        af_cout,
+        true,
+    );
+    let vb = gpu.buf(&v_af, "v");
+    let gb = gpu.buf(&gamma_af, "g");
+    let bb2 = gpu.buf(&beta_af, "be");
+    let dyb2 = gpu.buf(&dy_af, "dy");
+    let gvb = gpu.affine_gv(&vb, &gb, &bb2, &dyb2, af_n, af_cout as u32, true);
+    let dgb = gpu.affine_grad(&vb, &gb, &bb2, &dyb2, af_n, af_cout as u32, true);
+    checks.push(Check {
+        name: "affine dL/dv",
+        worst: max_rel(&gpu.read(&gvb, af_n), &dv_ref),
+    });
+    let dgbv = gpu.read(&dgb, 2 * af_cout);
+    checks.push(Check {
+        name: "affine dγ",
+        worst: max_rel(&dgbv[..af_cout], &dg_ref),
+    });
+    checks.push(Check {
+        name: "affine dβ",
+        worst: max_rel(&dgbv[af_cout..], &db_ref),
     });
 
     // 稠密路径：同一个 E，mode=0 必须给出同一组梯度

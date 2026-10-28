@@ -515,3 +515,116 @@ mod tests {
         assert_eq!(db, b);
     }
 }
+
+/// per-channel affine 前向（参考实现）：`y = relu(γ_c·v + β_c)`。
+pub fn affine_f64(v: &[f64], gamma: &[f64], beta: &[f64], cout: usize, relu: bool) -> Vec<f64> {
+    v.iter()
+        .enumerate()
+        .map(|(i, &x)| {
+            let t = gamma[i % cout] * x + beta[i % cout];
+            if relu { t.max(0.0) } else { t }
+        })
+        .collect()
+}
+
+/// affine 反向：返回 `(dL/dv, dγ, dβ)`。
+pub fn affine_backward_f64(
+    v: &[f64],
+    gamma: &[f64],
+    beta: &[f64],
+    dy: &[f64],
+    cout: usize,
+    relu: bool,
+) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    let mut dv = vec![0.0; v.len()];
+    let mut dg = vec![0.0; cout];
+    let mut db = vec![0.0; cout];
+    for (i, &x) in v.iter().enumerate() {
+        let oc = i % cout;
+        let t = gamma[oc] * x + beta[oc];
+        let m = if relu && t <= 0.0 { 0.0 } else { 1.0 };
+        dv[i] = dy[i] * m * gamma[oc];
+        dg[oc] += dy[i] * m * x;
+        db[oc] += dy[i] * m;
+    }
+    (dv, dg, db)
+}
+
+#[cfg(test)]
+mod affine_tests {
+    use super::*;
+
+    #[test]
+    fn affine_grad_matches_finite_difference() {
+        let (cout, hw) = (3usize, 5usize);
+        let n = cout * hw;
+        let mut seed = 0x1234_9876_abcd_0001u64;
+        let mut fill = |k: usize| {
+            (0..k)
+                .map(|_| {
+                    seed ^= seed << 13;
+                    seed ^= seed >> 7;
+                    seed ^= seed << 17;
+                    ((seed % 2001) as f64 - 1000.0) / 700.0
+                })
+                .collect::<Vec<f64>>()
+        };
+        let v = fill(n);
+        let gamma = fill(cout);
+        let beta = fill(cout);
+        let dy = fill(n);
+        let t = fill(n);
+        let (dv, dg, db) = affine_backward_f64(&v, &gamma, &beta, &dy, cout, true);
+
+        let loss = |v: &[f64], g: &[f64], b: &[f64]| -> f64 {
+            affine_f64(v, g, b, cout, true)
+                .iter()
+                .zip(&t)
+                .map(|(y, tt)| 0.5 * (y - tt) * (y - tt))
+                .sum()
+        };
+        let h = 1e-6;
+        // dL/dv = dy (MSE) 再乘 affine 的雅可比 —— 用链式关系验证：把 dy 设成 (y-t)
+        let y = affine_f64(&v, &gamma, &beta, cout, true);
+        let dy2: Vec<f64> = y.iter().zip(&t).map(|(a, b)| a - b).collect();
+        let (dv2, dg2, db2) = affine_backward_f64(&v, &gamma, &beta, &dy2, cout, true);
+        for i in 0..n {
+            let mut up = v.clone();
+            up[i] += h;
+            let mut dn = v.clone();
+            dn[i] -= h;
+            let num = (loss(&up, &gamma, &beta) - loss(&dn, &gamma, &beta)) / (2.0 * h);
+            assert!(
+                (num - dv2[i]).abs() < 1e-5,
+                "dv[{i}]: {} vs {}",
+                dv2[i],
+                num
+            );
+        }
+        for oc in 0..cout {
+            let mut up = gamma.clone();
+            up[oc] += h;
+            let mut dn = gamma.clone();
+            dn[oc] -= h;
+            let num = (loss(&v, &up, &beta) - loss(&v, &dn, &beta)) / (2.0 * h);
+            assert!(
+                (num - dg2[oc]).abs() < 1e-5,
+                "dg[{oc}]: {} vs {}",
+                dg2[oc],
+                num
+            );
+            let mut up = beta.clone();
+            up[oc] += h;
+            let mut dn = beta.clone();
+            dn[oc] -= h;
+            let num = (loss(&v, &gamma, &up) - loss(&v, &gamma, &dn)) / (2.0 * h);
+            assert!(
+                (num - db2[oc]).abs() < 1e-5,
+                "db[{oc}]: {} vs {}",
+                db2[oc],
+                num
+            );
+        }
+        let _ = (dv, dg, db);
+    }
+}
