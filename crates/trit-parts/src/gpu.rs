@@ -281,7 +281,7 @@ impl Gpu {
             let mut pass = enc.begin_compute_pass(&Default::default());
             pass.set_pipeline(&self.conv_pl);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(256, div_up((total / 4) as u32, ROW), 1);
+            pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
         }
         self.queue.submit([enc.finish()]);
         out
@@ -377,7 +377,7 @@ impl Gpu {
             let mut pass = enc.begin_compute_pass(&Default::default());
             pass.set_pipeline(&self.pool_pl);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(256, div_up((total / 4) as u32, ROW), 1);
+            pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
         }
         self.queue.submit([enc.finish()]);
         out
@@ -422,7 +422,7 @@ impl Gpu {
             let mut pass = enc.begin_compute_pass(&Default::default());
             pass.set_pipeline(&self.cat_pl);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(256, div_up((total / 4) as u32, ROW), 1);
+            pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
         }
         self.queue.submit([enc.finish()]);
         out
@@ -493,7 +493,7 @@ impl Gpu {
             let mut pass = enc.begin_compute_pass(&Default::default());
             pass.set_pipeline(&self.up_pl);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(256, div_up((total / 4) as u32, ROW), 1);
+            pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
         }
         self.queue.submit([enc.finish()]);
         out

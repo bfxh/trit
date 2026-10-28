@@ -135,6 +135,21 @@ fn main() {
         worst: max_rel(&gpu.read(&dbb, cout as usize), &grad.db),
     });
 
+    // 前向 vec4 vs 标量：同一个 E 必须一致（parity 门曾抓到过不一致）
+    let y_scalar = gpu.conv(&xb, h, w, &cw, 0, 1, &wfb, &wtb, &wsb, &bb);
+    let y_vec4 = gpu.conv_t(&xb, h, w, &cw, true, &wfb, &bb);
+    let ys = gpu.read(&y_scalar, (h * w * cout) as usize);
+    let yv = gpu.read(&y_vec4, (h * w * cout) as usize);
+    let mut worst_fwd = 0f64;
+    for (a, b) in ys.iter().zip(&yv) {
+        let sc = (a.abs().max(b.abs()).max(1e-6)) as f64;
+        worst_fwd = worst_fwd.max((*a as f64 - *b as f64).abs() / sc);
+    }
+    checks.push(Check {
+        name: "forward vec4 ≡ scalar",
+        worst: worst_fwd,
+    });
+
     // split-K 版 dw/db 必须与 CPU 参考一致（训练走的就是这条路径）
     let dwk = gpu.bwd_conv_dw_split(h, w, &cw, 1, &xb, &dym);
     let dbk = gpu.bwd_conv_db_split(h, w, &cw, 1, &dym);

@@ -31,9 +31,20 @@ pub fn forward(
         }
     };
 
+    // 前向统一走「有效权重 E」：mode=0 取折叠后的稠密权重，mode=1 取 q·scale。
+    // cout 是 4 的倍数时用 vec4 内核（与训练同一条），否则退回标量路径。
     let up = |cw: &crate::weights::ConvW, tag: &str| {
+        let eff: Vec<f32> = (0..cw.wf.len())
+            .map(|wi| {
+                if mode == 0 {
+                    cw.wf[wi]
+                } else {
+                    cw.wt[wi] as f32 * cw.ws[wi % cw.cout as usize]
+                }
+            })
+            .collect();
         (
-            gpu.buf(&cw.wf, &format!("{tag}.wf")),
+            gpu.buf(&eff, &format!("{tag}.e")),
             gpu.ibuf(&cw.wt, &format!("{tag}.wt")),
             gpu.buf(&cw.ws, &format!("{tag}.ws")),
             gpu.buf(&cw.bias, &format!("{tag}.b")),
@@ -43,10 +54,10 @@ pub fn forward(
     // e1: 3→32, 32→32 @ res
     let w = conv_w(t, "e1.0.weight", Some("e1.1"), true).expect("e1.0");
     let (a1, b1, c1, d1) = up(&w, "e1a");
-    let mut cur = gpu.conv(x, res, res, &w, mode, 1, &a1, &b1, &c1, &d1);
+    let mut cur = conv_layer(gpu, x, res, res, &w, 1, &a1, &d1);
     let w = conv_w(t, "e1.3.weight", Some("e1.4"), true).expect("e1.3");
     let (a1, b1, c1, d1) = up(&w, "e1b");
-    let a = gpu.conv(&cur, res, res, &w, mode, 1, &a1, &b1, &c1, &d1);
+    let a = conv_layer(gpu, &cur, res, res, &w, 1, &a1, &d1);
     snap("a", &a, (res * res * 32) as usize);
 
     // e2 @ res/2
@@ -54,10 +65,10 @@ pub fn forward(
     let h2 = res / 2;
     let w = conv_w(t, "e2.0.weight", Some("e2.1"), true).expect("e2.0");
     let (a1, b1, c1, d1) = up(&w, "e2a");
-    cur = gpu.conv(&p, h2, h2, &w, mode, 1, &a1, &b1, &c1, &d1);
+    cur = conv_layer(gpu, &p, h2, h2, &w, 1, &a1, &d1);
     let w = conv_w(t, "e2.3.weight", Some("e2.4"), true).expect("e2.3");
     let (a1, b1, c1, d1) = up(&w, "e2b");
-    let b = gpu.conv(&cur, h2, h2, &w, mode, 1, &a1, &b1, &c1, &d1);
+    let b = conv_layer(gpu, &cur, h2, h2, &w, 1, &a1, &d1);
     snap("b", &b, (h2 * h2 * 64) as usize);
 
     // e3 @ res/4
@@ -65,10 +76,10 @@ pub fn forward(
     let h4 = res / 4;
     let w = conv_w(t, "e3.0.weight", Some("e3.1"), true).expect("e3.0");
     let (a1, b1, c1, d1) = up(&w, "e3a");
-    cur = gpu.conv(&p, h4, h4, &w, mode, 1, &a1, &b1, &c1, &d1);
+    cur = conv_layer(gpu, &p, h4, h4, &w, 1, &a1, &d1);
     let w = conv_w(t, "e3.3.weight", Some("e3.4"), true).expect("e3.3");
     let (a1, b1, c1, d1) = up(&w, "e3b");
-    let c = gpu.conv(&cur, h4, h4, &w, mode, 1, &a1, &b1, &c1, &d1);
+    let c = conv_layer(gpu, &cur, h4, h4, &w, 1, &a1, &d1);
     snap("c", &c, (h4 * h4 * 128) as usize);
 
     // u3: 128→64 @ res/2
@@ -81,10 +92,10 @@ pub fn forward(
     let cat = gpu.cat(&u3, &b, h2 * h2, 64, 64);
     let w = conv_w(t, "d2.0.weight", Some("d2.1"), true).expect("d2.0");
     let (a1, b1, c1, d1) = up(&w, "d2a");
-    cur = gpu.conv(&cat, h2, h2, &w, mode, 1, &a1, &b1, &c1, &d1);
+    cur = conv_layer(gpu, &cat, h2, h2, &w, 1, &a1, &d1);
     let w = conv_w(t, "d2.3.weight", Some("d2.4"), true).expect("d2.3");
     let (a1, b1, c1, d1) = up(&w, "d2b");
-    let y = gpu.conv(&cur, h2, h2, &w, mode, 1, &a1, &b1, &c1, &d1);
+    let y = conv_layer(gpu, &cur, h2, h2, &w, 1, &a1, &d1);
     snap("y", &y, (h2 * h2 * 64) as usize);
 
     // u2: 64→32 @ res
@@ -97,15 +108,35 @@ pub fn forward(
     let cat = gpu.cat(&u2, &a, res * res, 32, 32);
     let w = conv_w(t, "d1.0.weight", Some("d1.1"), true).expect("d1.0");
     let (a1, b1, c1, d1) = up(&w, "d1a");
-    cur = gpu.conv(&cat, res, res, &w, mode, 1, &a1, &b1, &c1, &d1);
+    cur = conv_layer(gpu, &cat, res, res, &w, 1, &a1, &d1);
     let w = conv_w(t, "d1.3.weight", Some("d1.4"), true).expect("d1.3");
     let (a1, b1, c1, d1) = up(&w, "d1b");
-    let z = gpu.conv(&cur, res, res, &w, mode, 1, &a1, &b1, &c1, &d1);
+    let z = conv_layer(gpu, &cur, res, res, &w, 1, &a1, &d1);
     snap("z", &z, (res * res * 32) as usize);
 
     // head: 1x1 32→16，无 ReLU
     let w = conv_w(t, "head.weight", None, false).expect("head");
     let (a1, b1, c1, d1) = up(&w, "head");
-    let out = gpu.conv(&z, res, res, &w, mode, 0, &a1, &b1, &c1, &d1);
+    let out = conv_layer(gpu, &z, res, res, &w, 0, &a1, &d1);
     gpu.read(&out, (res * res * 16) as usize)
+}
+
+/// 一层卷积：`cout` 是 4 的倍数走 vec4 内核，否则退回标量（`eff` 已按 mode 折好）。
+fn conv_layer(
+    gpu: &Gpu,
+    x: &wgpu::Buffer,
+    h: u32,
+    w: u32,
+    cw: &crate::weights::ConvW,
+    relu: u32,
+    eff: &wgpu::Buffer,
+    bias: &wgpu::Buffer,
+) -> wgpu::Buffer {
+    if cw.cout.is_multiple_of(4) && std::env::var_os("TRIT_SCALAR").is_none() {
+        gpu.conv_t(x, h, w, cw, relu == 1, eff, bias)
+    } else {
+        let ones = vec![1.0f32; cw.cout as usize];
+        let ws = gpu.buf(&ones, "ones");
+        gpu.conv(x, h, w, cw, 0, relu, eff, eff, &ws, bias)
+    }
 }
