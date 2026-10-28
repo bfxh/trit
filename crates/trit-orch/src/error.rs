@@ -70,6 +70,30 @@ pub enum Error {
     EpochOverflow { id: String },
     #[error("plan revision overflows u64")]
     RevisionOverflow,
+    #[error("effect {operation} is in doubt; reconcile before retrying")]
+    EffectInDoubt { operation: String },
+    #[error("effect {operation} already happened")]
+    EffectAlreadyApplied { operation: String },
+    #[error("stale fence {given} for {operation}, current is {current}")]
+    StaleFence {
+        operation: String,
+        given: u64,
+        current: u64,
+    },
+    #[error("attempt {given} of {operation} does not match current attempt {current}")]
+    AttemptMismatch {
+        operation: String,
+        given: u64,
+        current: u64,
+    },
+    #[error("unknown effect operation {operation}")]
+    UnknownOperation { operation: String },
+    #[error("{operation}: cannot move from {from} to {to}")]
+    InvalidTransition {
+        operation: String,
+        from: String,
+        to: String,
+    },
 }
 
 pub(crate) fn add_tokens(left: u64, right: u64, task: Option<&str>) -> Result<u64, Error> {

@@ -2,6 +2,7 @@
 
 mod admission;
 mod budget;
+mod effects;
 mod error;
 mod evidence;
 mod model;
@@ -10,6 +11,7 @@ mod selection;
 mod status;
 
 pub use admission::{admit, dependency_gate};
+pub use effects::{Attempt, Effect, Ledger, Reconcile};
 pub use error::Error;
 pub use evidence::{EvidenceSpec, Exit, Receipt};
 pub use model::{
