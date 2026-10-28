@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（`trit-parts` 反向内核：四类算子 + STE 口径对齐）
+
+- `backward.rs`：卷积 / 转置卷积 / 最大池化 / 通道拼接的 f64 参考实现（前向 + 反向），
+  中心差分逐元素对拍（conv 1×1 与 3×3、有/无 ReLU）最大相对误差 < 1e-6。
+- `ste_apply`：`E = q·scale` 的梯度经 STE 回落到 latent 与每通道 scale；与 `trit-train`
+  的 `Identity / Clipped / Soft` 三种 STE 做单步更新对拍，逐位一致。
+- `shaders_bwd.wgsl` + `gpu_bwd.rs`：8 条反向管线（conv_dx/dw/db、pool_dx、cat_dx、convt_dx/dw/db）。
+- `parts-gradcheck` 二进制：GPU ↔ f64 CPU 对拍 10 项，判据 `max rel < 2e-3`，实测 ≤ **2.1e-6**。
+  变异自检：conv_dx 权重×2 / convt_dw×2 / pool_dx 减半，三个变异全部判红（rel = 0.5）。
+- **未做**：训练循环（CE/BCE/优化器）、清单约束 argmax。
+
 ### Added（`trit-parts`：部件平面头进仓，模型不再寄居 `.yanagent`）
 
 - 新实验 crate `crates/trit-parts`（`publish = false`，GPU 在 `gpu` feature 后）：
