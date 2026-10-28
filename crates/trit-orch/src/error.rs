@@ -96,6 +96,18 @@ pub enum Error {
         in_flight: usize,
         inconclusive: usize,
     },
+    #[error("ledger io at {path}: {message}")]
+    LedgerIo { path: String, message: String },
+    #[error("ledger parse: {message}")]
+    LedgerParse { message: String },
+    #[error("{operation} is not ready to dispatch: {reason}")]
+    NotPrepared { operation: String, reason: String },
+    #[error("{operation} was prepared for epoch {prepared}, plan expects {expected}")]
+    PreparedEpochMismatch {
+        operation: String,
+        prepared: u64,
+        expected: u64,
+    },
     #[error("{operation}: cannot move from {from} to {to}")]
     InvalidTransition {
         operation: String,

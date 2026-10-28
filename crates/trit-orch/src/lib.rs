@@ -12,7 +12,7 @@ mod selection;
 mod status;
 
 pub use admission::{admit, dependency_gate};
-pub use effects::{Attempt, Effect, Ledger, Reconcile};
+pub use effects::{Attempt, Effect, Ledger, LedgerStore, Reconcile, dispatch_ready};
 pub use error::Error;
 pub use evidence::{EvidenceSpec, Exit, Receipt};
 pub use model::{

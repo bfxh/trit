@@ -12,3 +12,4 @@ trit-core.workspace = true
 trit-schedule.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"
+serde_json = "1.0.154"

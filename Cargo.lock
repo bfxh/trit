@@ -1686,6 +1686,7 @@ name = "trit-orch"
 version = "0.12.0"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror 2.0.21",
  "trit-core",
  "trit-schedule",
