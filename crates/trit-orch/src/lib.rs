@@ -7,6 +7,7 @@ mod error;
 mod evidence;
 mod model;
 mod plan;
+mod progress;
 mod selection;
 mod status;
 
@@ -19,6 +20,7 @@ pub use model::{
     Selection, Snapshot, TaskSpec, TokenUsage,
 };
 pub use plan::Plan;
+pub use progress::{Progress, RoundReport, Summary};
 pub use status::Counts;
 pub use trit_core::value::Ternary;
 pub use trit_schedule::{Dependency, MAX_TASKS, Resources, Task};

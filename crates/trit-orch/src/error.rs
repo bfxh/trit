@@ -88,6 +88,14 @@ pub enum Error {
     },
     #[error("unknown effect operation {operation}")]
     UnknownOperation { operation: String },
+    #[error(
+        "cannot report completion: pending {pending}, in flight {in_flight}, inconclusive {inconclusive}"
+    )]
+    Incomplete {
+        pending: usize,
+        in_flight: usize,
+        inconclusive: usize,
+    },
     #[error("{operation}: cannot move from {from} to {to}")]
     InvalidTransition {
         operation: String,

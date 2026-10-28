@@ -50,6 +50,11 @@ impl Plan {
         self.revision
     }
 
+    /// 按 ID 升序的任务定义（构造器已排好序）。
+    pub fn tasks(&self) -> &[TaskSpec] {
+        &self.tasks
+    }
+
     /// 按 ID 取任务定义。
     pub fn task(&self, id: &str) -> Option<&TaskSpec> {
         self.tasks
