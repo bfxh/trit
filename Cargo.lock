@@ -1682,6 +1682,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-orch"
+version = "0.12.0"
+dependencies = [
+ "serde",
+ "thiserror 2.0.21",
+ "trit-core",
+ "trit-schedule",
+]
+
+[[package]]
 name = "trit-policy"
 version = "0.12.0"
 dependencies = [

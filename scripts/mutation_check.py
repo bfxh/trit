@@ -13,6 +13,9 @@ import re
 import subprocess
 import sys
 
+from mutation_assertions import assertion_caught, baseline_has_tests
+from orch_mutants import MUTANTS as ORCH_MUTANTS
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
 MUTANTS = [
@@ -2303,6 +2306,9 @@ MUTANTS = [
 ]
 
 
+MUTANTS.extend(ORCH_MUTANTS)
+
+
 def ran_any(output: str) -> bool:
     match = re.search(r"test result: ok\. (\d+) passed", output)
     return bool(match and int(match.group(1)) > 0)
@@ -2356,6 +2362,54 @@ def preflight(mutants: list[dict]) -> list[str]:
     return problems
 
 
+def self_test() -> int:
+    """门自检：判别器本身必须有正例与反例，否则"全绿"可能只是尺子坏了。"""
+    failures: list[str] = []
+    if not baseline_has_tests("test result: ok. 3 passed; 0 failed"):
+        failures.append("baseline: 有测试被判成空")
+    if baseline_has_tests("test result: ok. 0 passed; 0 failed"):
+        failures.append("baseline: 零测试未被判空")
+    if assertion_caught(101, "error[E0308]: mismatched types", "t", "ORCH_X"):
+        failures.append("判别器: 编译错误被当成断言判红")
+    if assertion_caught(
+        -1073741819,
+        "test t ... FAILED\ntest result: FAILED. 1 passed; 1 failed\npanicked at a",
+        "t",
+        "ORCH_X",
+    ):
+        failures.append("判别器: 崩溃被当成断言判红")
+    if assertion_caught(
+        101,
+        "test t ... FAILED\ntest result: FAILED. 1 passed; 1 failed\npanicked at a: ORCH_X",
+        "other",
+        "ORCH_X",
+    ):
+        failures.append("判别器: 别的测试判红也算检出")
+    if not assertion_caught(
+        101,
+        "test t ... FAILED\npanicked at a: ORCH_X\ntest result: FAILED. 4 passed; 1 failed",
+        "t",
+        "ORCH_X",
+    ):
+        failures.append("判别器: 真断言判红未被认出")
+    tests_dir = ROOT / "crates" / "trit-orch" / "tests"
+    corpus = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(tests_dir.glob("*.rs"))
+    )
+    for mutant in ORCH_MUTANTS:
+        if mutant["diagnostic"] not in corpus:
+            failures.append(f"变异登记: {mutant['name']} 的诊断串不在测试里")
+        if not (ROOT / mutant["file"]).is_file():
+            failures.append(f"变异登记: 文件不存在 {mutant['file']}")
+    if failures:
+        print("SELF-TEST FAILED:")
+        for failure in failures:
+            print(f"  {failure}")
+        return 1
+    print(f"SELF-TEST OK（判别器 5 项 + {len(ORCH_MUTANTS)} 条 trit-orch 变异登记）")
+    return 0
+
+
 def main(pkgs: list[str]) -> int:
     # Windows 控制台默认可能是 GBK；变异名里有中国字与 Ł，统一按 UTF-8 输出。
     if hasattr(sys.stdout, "reconfigure"):
@@ -2387,9 +2441,13 @@ def main(pkgs: list[str]) -> int:
             if result.returncode != 0:
                 print(f"BASELINE RED: {key}\n{result.stdout[-2000:]}")
                 return 1
+            if mutant.get("diagnostic") and not baseline_has_tests(result.stdout):
+                print(f"BASELINE EMPTY: {key}\n{result.stdout[-2000:]}")
+                return 1
             baseline[key] = True
 
         path = ROOT / mutant["file"]
+        original_bytes = path.read_bytes()
         original = path.read_text(encoding="utf-8")
         count = original.count(mutant["old"])
         if count != 1:
@@ -2402,10 +2460,20 @@ def main(pkgs: list[str]) -> int:
         try:
             result = run_tests(*key)
         finally:
-            path.write_text(original, encoding="utf-8")
-            assert path.read_text(encoding="utf-8") == original, "恢复失败"
+            path.write_bytes(original_bytes)
+            assert path.read_bytes() == original_bytes, "恢复失败"
 
-        if result.returncode == 0:
+        diagnostic = mutant.get("diagnostic")
+        if diagnostic:
+            if assertion_caught(result.returncode, result.stdout, key[1], diagnostic):
+                print(f"caught    {mutant['name']}  [{diagnostic} 断言判红]")
+            else:
+                survived += 1
+                print(
+                    f"SURVIVED  {mutant['name']}  "
+                    f"[未由 {key[1]} 的 {diagnostic} 断言判红：编译错/崩溃/零测试都不算]"
+                )
+        elif result.returncode == 0:
             survived += 1
             print(f"SURVIVED  {mutant['name']}")
         else:
@@ -2434,4 +2502,6 @@ def parse_args(argv: list[str]) -> list[str]:
 
 
 if __name__ == "__main__":
+    if "--self-test" in sys.argv[1:]:
+        sys.exit(self_test())
     sys.exit(main(parse_args(sys.argv[1:])))

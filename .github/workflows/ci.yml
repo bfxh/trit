@@ -47,6 +47,10 @@ jobs:
       - name: Test
         run: cargo test --workspace --locked
 
+      - name: Core dispatch contract and metrics fixture
+        if: matrix.os == 'ubuntu-latest'
+        run: cargo run --locked -p trit-orch --example dispatch_metrics -j 1 -- 1000 20
+
       # png feature（默认关）：单独测 + clippy，否则 CI 永远碰不到这些代码。
       - name: Test (trit-texture png feature)
         run: cargo test -p trit-texture --features png --locked
