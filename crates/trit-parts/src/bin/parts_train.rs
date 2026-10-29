@@ -41,6 +41,8 @@ struct Args {
     report: usize,
     save_every: usize,
     eval_every: usize,
+    /// 从零训练时的通道宽度倍数（1.0 = 32/64/128；1.5 = 48/96/192）。
+    width: f32,
 }
 
 fn parse() -> Result<Args, String> {
@@ -64,6 +66,7 @@ fn parse() -> Result<Args, String> {
         report: 10,
         save_every: 1000,
         eval_every: 0,
+        width: 1.0,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -92,6 +95,7 @@ fn parse() -> Result<Args, String> {
             "--report" => a.report = val()?.parse().map_err(|_| "--report 非整数")?,
             "--save-every" => a.save_every = val()?.parse().map_err(|_| "--save-every 非整数")?,
             "--eval-every" => a.eval_every = val()?.parse().map_err(|_| "--eval-every 非整数")?,
+            "--width" => a.width = val()?.parse().map_err(|_| "--width 非数字")?,
             "--ste" => {
                 a.ste = match val()?.as_str() {
                     "identity" => Ste::Identity,
@@ -212,7 +216,18 @@ fn main() {
                     std::process::exit(1)
                 })
             }
-            None => Net::random(args.seed),
+            None => {
+                if (args.width - 1.0).abs() > 1e-6 {
+                    println!(
+                        "从零训练，宽度 {:.2}×（通道 {} / {} / {}）",
+                        args.width,
+                        ((32.0 * args.width).round() as u32).div_ceil(4) * 4,
+                        ((64.0 * args.width).round() as u32).div_ceil(4) * 4,
+                        ((128.0 * args.width).round() as u32).div_ceil(4) * 4
+                    );
+                }
+                Net::random_w(args.seed, args.width)
+            }
         },
     };
     net.upload_all(&gpu);

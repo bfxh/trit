@@ -118,15 +118,21 @@ impl Layer {
         }
     }
 
-    /// 随机初始化（overfit 自检用）。
+    /// 随机初始化（He 均匀：`U(-a, a)`，`a = sqrt(6 / fan_in)`）。
+    ///
+    /// 早期版本用 `U(-1.43, 1.43)` 不按 fan-in 缩放，从零训练时逐层放大到 1e10 量级（实测），
+    /// 只能配 `--init` 用；现在按 He 缩放，从零训练可用。
     pub fn random(cin: u32, cout: u32, kk: u32, relu: bool, seed: &mut u64) -> Self {
         let n = (kk * kk * cin * cout) as usize;
+        let fan_in = (cin * kk * kk) as f32;
+        let a = (6.0 / fan_in.max(1.0)).sqrt();
         let mut latent = Vec::with_capacity(n);
         for _ in 0..n {
             *seed ^= *seed << 13;
             *seed ^= *seed >> 7;
             *seed ^= *seed << 17;
-            latent.push(((*seed % 2001) as f32 - 1000.0) / 700.0);
+            let u = (*seed % 2001) as f32 / 2000.0; // [0,1]
+            latent.push(a * (2.0 * u - 1.0));
         }
         let slots = cout as usize;
         let mut scale = vec![0f32; slots];
@@ -451,29 +457,41 @@ impl Net {
         Ok(Self { layers })
     }
 
-    /// 随机初始化（形状与 ckpt 一致：3→32→32, 32→64→64, 64→128→128, 128→64, 64→32, 32→16）。
-    pub fn random(seed: u64) -> Self {
+    /// 随机初始化（按宽度倍数缩放通道：1.0 ⇒ 32/64/128；1.5 ⇒ 48/96/192）。
+    pub fn random_w(seed: u64, width: f32) -> Self {
         let mut s = seed | 1;
+        let q = |c: u32| -> u32 {
+            let v = (c as f32 * width).round() as u32;
+            (v.div_ceil(4) * 4).max(4)
+        };
+        let (c32, c64, c128, out) = (q(32), q(64), q(128), 16u32);
         let mut mk = |ci, co, kk, relu| Layer::random(ci, co, kk, relu, &mut s);
         let layers = vec![
-            mk(3, 32, 3, true),
-            mk(32, 32, 3, true),
-            mk(32, 64, 3, true),
-            mk(64, 64, 3, true),
-            mk(64, 128, 3, true),
-            mk(128, 128, 3, true),
-            mk(128, 64, 2, false),
-            mk(128, 64, 3, true),
-            mk(64, 64, 3, true),
-            mk(64, 32, 2, false),
-            mk(64, 32, 3, true),
-            mk(32, 32, 3, true),
-            mk(32, 16, 1, false),
+            mk(3, c32, 3, true),
+            mk(c32, c32, 3, true),
+            mk(c32, c64, 3, true),
+            mk(c64, c64, 3, true),
+            mk(c64, c128, 3, true),
+            mk(c128, c128, 3, true),
+            mk(c128, c64, 2, false),
+            mk(c128 + c64, c64, 3, true),
+            mk(c64, c64, 3, true),
+            mk(c64, c32, 2, false),
+            mk(c64 + c32, c32, 3, true),
+            mk(c32, c32, 3, true),
+            mk(c32, out, 1, false),
         ];
         let mut layers = layers;
         layers[U3].convt = true;
         layers[U2].convt = true;
-        Self { layers }
+        let mut net = Self { layers };
+        net.mark_convt();
+        net
+    }
+
+    /// 默认宽度（32/64/128）。
+    pub fn random(seed: u64) -> Self {
+        Self::random_w(seed, 1.0)
     }
 
     /// 标记两个转置卷积层（读断点时用）。
@@ -522,24 +540,36 @@ impl Net {
         pre[E1A] = Some(v_e1a);
         let (v_e1b, a) = self.conv_affine(gpu, E1B, &act_e1a, res, res);
         pre[E1B] = Some(v_e1b);
-        let p1 = gpu.pool(&a, res, res, 32);
+        let p1 = gpu.pool(&a, res, res, self.layers[E1B].cout);
         let (v_e2a, act_e2a) = self.conv_affine(gpu, E2A, &p1, h2, h2);
         pre[E2A] = Some(v_e2a);
         let (v_e2b, b) = self.conv_affine(gpu, E2B, &act_e2a, h2, h2);
         pre[E2B] = Some(v_e2b);
-        let p2 = gpu.pool(&b, h2, h2, 64);
+        let p2 = gpu.pool(&b, h2, h2, self.layers[E2B].cout);
         let (v_e3a, act_e3a) = self.conv_affine(gpu, E3A, &p2, h4, h4);
         pre[E3A] = Some(v_e3a);
         let (v_e3b, c) = self.conv_affine(gpu, E3B, &act_e3a, h4, h4);
         pre[E3B] = Some(v_e3b);
         let u3 = self.convt(gpu, U3, &c, h4, h4);
-        let cat1 = gpu.cat(&u3, &b, h2 * h2, 64, 64);
+        let cat1 = gpu.cat(
+            &u3,
+            &b,
+            h2 * h2,
+            self.layers[U3].cout,
+            self.layers[E2B].cout,
+        );
         let (v_d2a, act_d2a) = self.conv_affine(gpu, D2A, &cat1, h2, h2);
         pre[D2A] = Some(v_d2a);
         let (v_d2b, y) = self.conv_affine(gpu, D2B, &act_d2a, h2, h2);
         pre[D2B] = Some(v_d2b);
         let u2 = self.convt(gpu, U2, &y, h2, h2);
-        let cat2 = gpu.cat(&u2, &a, res * res, 32, 32);
+        let cat2 = gpu.cat(
+            &u2,
+            &a,
+            res * res,
+            self.layers[U2].cout,
+            self.layers[E1B].cout,
+        );
         let (v_d1a, act_d1a) = self.conv_affine(gpu, D1A, &cat2, res, res);
         pre[D1A] = Some(v_d1a);
         let (v_d1b, z) = self.conv_affine(gpu, D1B, &act_d1a, res, res);
@@ -581,30 +611,48 @@ impl Net {
         let d_act1 = self.bwd_conv(gpu, D1B, &tr.act_d1a, &dv, res, res);
         let dv = self.affine_bwd(gpu, D1A, pre(D1A), &d_act1, res, res);
         let d_cat2 = self.bwd_conv(gpu, D1A, &tr.cat2, &dv, res, res);
-        let (d_u2, d_a_cat) = gpu.bwd_cat_dx(res * res, 32, 32, &d_cat2);
+        let (d_u2, d_a_cat) = gpu.bwd_cat_dx(
+            res * res,
+            self.layers[U2].cout,
+            self.layers[E1B].cout,
+            &d_cat2,
+        );
 
         let d_y = self.bwd_convt(gpu, U2, &tr.y, &d_u2, h2, h2);
         let dv = self.affine_bwd(gpu, D2B, pre(D2B), &d_y, h2, h2);
         let d_act2 = self.bwd_conv(gpu, D2B, &tr.act_d2a, &dv, h2, h2);
         let dv = self.affine_bwd(gpu, D2A, pre(D2A), &d_act2, h2, h2);
         let d_cat1 = self.bwd_conv(gpu, D2A, &tr.cat1, &dv, h2, h2);
-        let (d_u3, d_b_cat) = gpu.bwd_cat_dx(h2 * h2, 64, 64, &d_cat1);
+        let (d_u3, d_b_cat) = gpu.bwd_cat_dx(
+            h2 * h2,
+            self.layers[U3].cout,
+            self.layers[E2B].cout,
+            &d_cat1,
+        );
 
         let d_c = self.bwd_convt(gpu, U3, &tr.c, &d_u3, h4, h4);
         let dv = self.affine_bwd(gpu, E3B, pre(E3B), &d_c, h4, h4);
         let d_act3 = self.bwd_conv(gpu, E3B, &tr.act_e3a, &dv, h4, h4);
         let dv = self.affine_bwd(gpu, E3A, pre(E3A), &d_act3, h4, h4);
         let d_p2 = self.bwd_conv(gpu, E3A, &tr.p2, &dv, h4, h4);
-        let d_b_pool = gpu.bwd_pool_dx(h2, h2, 64, &tr.b, &d_p2);
+        let d_b_pool = gpu.bwd_pool_dx(h2, h2, self.layers[E2B].cout, &tr.b, &d_p2);
 
-        let d_b = gpu.add(&d_b_cat, &d_b_pool, (h2 * h2 * 64) as usize);
+        let d_b = gpu.add(
+            &d_b_cat,
+            &d_b_pool,
+            (h2 * h2 * self.layers[E2B].cout) as usize,
+        );
         let dv = self.affine_bwd(gpu, E2B, pre(E2B), &d_b, h2, h2);
         let d_act2e = self.bwd_conv(gpu, E2B, &tr.act_e2a, &dv, h2, h2);
         let dv = self.affine_bwd(gpu, E2A, pre(E2A), &d_act2e, h2, h2);
         let d_p1 = self.bwd_conv(gpu, E2A, &tr.p1, &dv, h2, h2);
-        let d_a_pool = gpu.bwd_pool_dx(res, res, 32, &tr.a, &d_p1);
+        let d_a_pool = gpu.bwd_pool_dx(res, res, self.layers[E1B].cout, &tr.a, &d_p1);
 
-        let d_a = gpu.add(&d_a_cat, &d_a_pool, (res * res * 32) as usize);
+        let d_a = gpu.add(
+            &d_a_cat,
+            &d_a_pool,
+            (res * res * self.layers[E1B].cout) as usize,
+        );
         let dv = self.affine_bwd(gpu, E1B, pre(E1B), &d_a, res, res);
         let d_act1e = self.bwd_conv(gpu, E1B, &tr.act_e1a, &dv, res, res);
         let dv = self.affine_bwd(gpu, E1A, pre(E1A), &d_act1e, res, res);
