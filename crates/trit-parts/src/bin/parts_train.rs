@@ -50,8 +50,10 @@ struct Args {
     /// 可拆卸加速层（opt-in）：把单样本内的所有 dispatch 收进一个 encoder 再提交。
     /// 数学完全不变；实测在 GPU 被占用时无加速，默认关，GPU 空闲时再评估。
     batch: bool,
-    /// 合成数据：光度抖动 + 噪声 + 带标签平移（0 = 关闭）。
-    augment: i32,
+    /// 合成数据：光度抖动 + 噪声（开关）。
+    augment: bool,
+    /// 额外做带标签平移（像素上限，0 = 不做）。
+    augment_shift: i32,
 }
 
 fn parse() -> Result<Args, String> {
@@ -79,7 +81,8 @@ fn parse() -> Result<Args, String> {
         expand_from: None,
         residual: false,
         batch: false,
-        augment: 0,
+        augment: false,
+        augment_shift: 0,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -112,7 +115,10 @@ fn parse() -> Result<Args, String> {
             "--expand-from" => a.expand_from = Some(PathBuf::from(val()?)),
             "--residual" => a.residual = true,
             "--batch" => a.batch = true,
-            "--augment" => a.augment = val()?.parse().map_err(|_| "--augment 非整数")?,
+            "--augment" => a.augment = true,
+            "--augment-shift" => {
+                a.augment_shift = val()?.parse().map_err(|_| "--augment-shift 非整数")?
+            }
             "--ste" => {
                 a.ste = match val()?.as_str() {
                     "identity" => Ste::Identity,
@@ -126,7 +132,7 @@ fn parse() -> Result<Args, String> {
         }
         // 纯开关类参数只前进 1，否则会吞掉下一个参数（`--residual --steps 4000` 会把 --steps 吃掉）
         i += match key {
-            "--sgd" | "--residual" | "--batch" => 1,
+            "--sgd" | "--residual" | "--batch" | "--augment" => 1,
             _ => 2,
         };
     }
@@ -284,7 +290,7 @@ fn main() {
     {
         std::fs::create_dir_all(parent).ok();
     }
-    let mut aug = trit_parts::augment::Augment::new(args.seed ^ 0x5eed, args.augment);
+    let mut aug = trit_parts::augment::Augment::new(args.seed ^ 0x5eed, args.augment_shift);
     let mut rng = resumed_rng.unwrap_or(args.seed | 1);
     let mut best = f32::INFINITY;
     let mut ma = f32::NAN; // 损失的指数移动平均（单帧噪声大，直接打最后一帧会误导）
@@ -300,7 +306,7 @@ fn main() {
                 std::process::exit(1);
             }
         };
-        if args.augment > 0 {
+        if args.augment {
             aug.apply(res, &mut s);
         }
         let xb = gpu.buf(&s.rgb, "x");

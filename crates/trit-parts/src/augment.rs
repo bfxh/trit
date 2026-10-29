@@ -66,7 +66,9 @@ impl Augment {
             }
         }
 
-        // ---- 平移（RGB 边缘复制，标签零填充 + valid=0）----
+        // ---- 平移（默认关：`shift=0`）----
+        // 注意：平移会在边界制造 valid=0 的窄带，而评测帧没有这条带；shift=8 时起手 loss
+        // 从 0.0055 跳到 0.752（实测），所以默认关，只有显式给 `--augment-shift` 才开。
         if self.shift > 0 {
             let lim = self.shift;
             let dx = (self.next_u32() % (2 * lim as u32 + 1)) as i32 - lim;
