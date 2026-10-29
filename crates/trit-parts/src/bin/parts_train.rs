@@ -43,6 +43,8 @@ struct Args {
     eval_every: usize,
     /// 从零训练时的通道宽度倍数（1.0 = 32/64/128；1.5 = 48/96/192）。
     width: f32,
+    /// net2net：从这份断点把通道搬进按 `--width` 放大的新网络（再精调）。
+    expand_from: Option<PathBuf>,
 }
 
 fn parse() -> Result<Args, String> {
@@ -67,6 +69,7 @@ fn parse() -> Result<Args, String> {
         save_every: 1000,
         eval_every: 0,
         width: 1.0,
+        expand_from: None,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -96,6 +99,7 @@ fn parse() -> Result<Args, String> {
             "--save-every" => a.save_every = val()?.parse().map_err(|_| "--save-every 非整数")?,
             "--eval-every" => a.eval_every = val()?.parse().map_err(|_| "--eval-every 非整数")?,
             "--width" => a.width = val()?.parse().map_err(|_| "--width 非数字")?,
+            "--expand-from" => a.expand_from = Some(PathBuf::from(val()?)),
             "--ste" => {
                 a.ste = match val()?.as_str() {
                     "identity" => Ste::Identity,
@@ -230,6 +234,19 @@ fn main() {
             }
         },
     };
+    if let Some(src) = &args.expand_from {
+        let (old, _, _) = trit_parts::state::load(src).unwrap_or_else(|e| {
+            eprintln!("扩展源读取失败: {e}");
+            std::process::exit(1);
+        });
+        net = old.expand_width(args.width);
+        resumed_step = 0;
+        println!(
+            "net2net：从 {} 扩展为宽度 {:.2}×（新通道 E=0，保持原输出）",
+            src.display(),
+            args.width
+        );
+    }
     net.upload_all(&gpu);
     let w = plane_weights(k);
     println!(

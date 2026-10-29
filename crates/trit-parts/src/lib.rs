@@ -19,6 +19,8 @@ pub mod weights;
 #[cfg(feature = "gpu")]
 pub mod backend_wgpu;
 #[cfg(feature = "gpu")]
+pub mod expand;
+#[cfg(feature = "gpu")]
 pub mod forward;
 #[cfg(feature = "gpu")]
 pub mod gpu;

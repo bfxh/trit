@@ -474,10 +474,10 @@ impl Net {
             mk(c64, c128, 3, true),
             mk(c128, c128, 3, true),
             mk(c128, c64, 2, false),
-            mk(c128 + c64, c64, 3, true),
+            mk(c64 + c64, c64, 3, true), // d2a 的输入是 cat(u3|c64, b|c64)
             mk(c64, c64, 3, true),
             mk(c64, c32, 2, false),
-            mk(c64 + c32, c32, 3, true),
+            mk(c32 + c32, c32, 3, true), // d1a 的输入是 cat(u2|c32, a|c32)
             mk(c32, c32, 3, true),
             mk(c32, out, 1, false),
         ];
