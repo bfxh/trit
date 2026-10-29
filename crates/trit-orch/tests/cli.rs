@@ -249,3 +249,51 @@ fn shadow_replay_reports_unsafe_proposals_without_dispatching() {
     assert_eq!(value["report"]["unsafe_extra"], json!(["0:a"]));
     assert_eq!(value["report"]["steps"], 1);
 }
+
+fn run_with_args(command: &str, extra: &[&str], input: &Value) -> (i32, Value) {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_trit-orch"))
+        .arg(command)
+        .args(extra)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("binary should start");
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(input.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    let value: Value =
+        serde_json::from_str(String::from_utf8(output.stdout).unwrap().trim()).unwrap();
+    (output.status.code().unwrap_or(-1), value)
+}
+
+#[test]
+fn select_can_record_traces_and_shadow_replays_them() {
+    let mut trace = std::env::temp_dir();
+    trace.push(format!("trit-orch-cli-trace-{}.jsonl", std::process::id()));
+    let _ = std::fs::remove_file(&trace);
+    let trace_arg = trace.to_string_lossy().to_string();
+
+    let request = json!({
+        "revision": 1,
+        "tasks": [task("a")],
+        "snapshot": snapshot(&["a"]),
+        "limits": limits()
+    });
+    for _ in 0..2 {
+        let (code, value) = run_with_args("select", &["--capture", &trace_arg], &request);
+        assert_eq!(code, 0, "{value}");
+    }
+    let text = std::fs::read_to_string(&trace).unwrap_or_default();
+    let lines = text.lines().count();
+    assert_eq!(lines, 2, "ORCH_CLI_CAPTURE: 每次 select 追加一行");
+
+    let (code, value) = run_with_args("shadow-jsonl", &["critical_path", &trace_arg], &json!({}));
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["report"]["steps"], 2);
+    assert_eq!(value["safe"], true);
+    let _ = std::fs::remove_file(&trace);
+}

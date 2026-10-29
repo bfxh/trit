@@ -108,6 +108,14 @@ pub enum Error {
         prepared: u64,
         expected: u64,
     },
+    #[error("trace io at {path}: {message}")]
+    TraceIo { path: String, message: String },
+    #[error("trace parse at {path}:{line}: {message}")]
+    TraceParse {
+        path: String,
+        line: usize,
+        message: String,
+    },
     #[error("bad input json: {message}")]
     InputParse { message: String },
     #[error("{operation}: cannot move from {from} to {to}")]
@@ -163,6 +171,8 @@ impl Error {
             Error::LedgerParse { .. } => "ledger_parse",
             Error::NotPrepared { .. } => "not_prepared",
             Error::PreparedEpochMismatch { .. } => "prepared_epoch_mismatch",
+            Error::TraceIo { .. } => "trace_io",
+            Error::TraceParse { .. } => "trace_parse",
             Error::InputParse { .. } => "input_parse",
             Error::InvalidTransition { .. } => "invalid_transition",
         }

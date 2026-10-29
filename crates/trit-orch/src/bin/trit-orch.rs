@@ -9,7 +9,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use trit_orch::{
     Ledger, Limits, Plan, PlanPatch, Progress, RoundReport, Selection, Snapshot, TaskSpec,
-    TraceStep, builtin, dispatch_ready, replay,
+    TraceStep, TraceStore, builtin, dispatch_ready, replay,
 };
 
 #[derive(Deserialize)]
@@ -74,6 +74,26 @@ fn fail(error: &trit_orch::Error) -> ! {
     std::process::exit(1);
 }
 
+/// `select --capture <path>`：把这一步追加进轨迹文件（路径由宿主给，模型无法注入）。
+fn capture_path() -> Option<String> {
+    let mut args = std::env::args().skip(2);
+    while let Some(arg) = args.next() {
+        if arg == "--capture" {
+            return args.next();
+        }
+    }
+    None
+}
+
+/// `shadow-jsonl <policy> <path>`。
+fn jsonl_args() -> (String, String) {
+    let mut args = std::env::args().skip(2);
+    (
+        args.next().unwrap_or_default(),
+        args.next().unwrap_or_default(),
+    )
+}
+
 fn parse<T: for<'de> Deserialize<'de>>(input: &str) -> Result<T, trit_orch::Error> {
     serde_json::from_str(input).map_err(|error| trit_orch::Error::InputParse {
         message: error.to_string(),
@@ -93,6 +113,7 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
         }
         "select" => {
             let request: SelectInput = parse(input)?;
+            let capture = capture_path();
             let plan = Plan::new(request.revision, request.tasks)?;
             let plan = match request.patch {
                 Some(patch) => {
@@ -106,6 +127,16 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                 None => plan,
             };
             let selection = plan.select(&request.snapshot, &request.limits)?;
+            if let Some(path) = &capture {
+                TraceStore::new(path).append(&TraceStep {
+                    revision: selection.revision,
+                    // 记录**补丁后**的计划，这样单步回放不依赖 patch。
+                    tasks: plan.tasks().to_vec(),
+                    snapshot: request.snapshot.clone(),
+                    limits: request.limits.clone(),
+                    ledger: Ledger::new(),
+                })?;
+            }
             Ok(json!({
                 "ok": true,
                 "brief": selection.brief(),
@@ -145,6 +176,20 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                 "report": report,
             }))
         }
+        "shadow-jsonl" => {
+            let (policy_name, path) = jsonl_args();
+            let policy = builtin(&policy_name).ok_or_else(|| trit_orch::Error::InputParse {
+                message: format!("未知策略 {policy_name:?}"),
+            })?;
+            let steps = TraceStore::new(&path).load()?;
+            let report = replay(policy.as_ref(), &steps)?;
+            Ok(json!({
+                "ok": true,
+                "safe": report.is_safe(),
+                "trace": path,
+                "report": report,
+            }))
+        }
         "recover" => {
             let ledger: Ledger = parse(input)?;
             Ok(json!({
@@ -154,7 +199,7 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
         }
         other => Err(trit_orch::Error::InputParse {
             message: format!(
-                "未知子命令 {other:?}（可用：plan/select/dispatch/finish/recover/shadow）"
+                "未知子命令 {other:?}（可用：plan/select/dispatch/finish/recover/shadow/shadow-jsonl）"
             ),
         }),
     }

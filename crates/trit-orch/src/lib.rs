@@ -27,7 +27,7 @@ pub use policy::{
     bottom_levels, builtin,
 };
 pub use progress::{Progress, RoundReport, Summary};
-pub use shadow::{ShadowReport, TraceStep, replay};
+pub use shadow::{ShadowReport, TraceStep, TraceStore, replay};
 pub use status::Counts;
 pub use trit_core::value::Ternary;
 pub use trit_schedule::{Dependency, MAX_TASKS, Resources, Task};

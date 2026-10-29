@@ -121,3 +121,73 @@ fn accumulate(
 
     agreed
 }
+
+/// 轨迹文件（JSONL，一行一个 `TraceStep`）。
+///
+/// 宿主在每次 `select` 后追加一行，就得到可回放的真实轨迹。
+/// 缺文件视为空；坏行报**行号**，不跳过、不猜。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TraceStore {
+    path: std::path::PathBuf,
+}
+
+impl TraceStore {
+    pub fn new(path: impl Into<std::path::PathBuf>) -> Self {
+        Self { path: path.into() }
+    }
+
+    pub fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+
+    /// 追加一步。目录不存在会被创建。
+    pub fn append(&self, step: &TraceStep) -> Result<(), crate::Error> {
+        use std::io::Write;
+        if let Some(parent) = self.path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent).map_err(|error| self.io(error))?;
+        }
+        let line = serde_json::to_string(step).map_err(|error| crate::Error::TraceParse {
+            path: self.path.display().to_string(),
+            line: 0,
+            message: error.to_string(),
+        })?;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)
+            .map_err(|error| self.io(error))?;
+        writeln!(file, "{line}").map_err(|error| self.io(error))
+    }
+
+    /// 读全部步骤；行号从 1 开始。
+    pub fn load(&self) -> Result<Vec<TraceStep>, crate::Error> {
+        let text = match std::fs::read_to_string(&self.path) {
+            Ok(text) => text,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+            Err(error) => return Err(self.io(error)),
+        };
+        let mut steps = Vec::new();
+        for (index, line) in text.lines().enumerate() {
+            let line = line.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let step = serde_json::from_str(line).map_err(|error| crate::Error::TraceParse {
+                path: self.path.display().to_string(),
+                line: index + 1,
+                message: error.to_string(),
+            })?;
+            steps.push(step);
+        }
+        Ok(steps)
+    }
+
+    fn io(&self, error: std::io::Error) -> crate::Error {
+        crate::Error::TraceIo {
+            path: self.path.display().to_string(),
+            message: error.to_string(),
+        }
+    }
+}

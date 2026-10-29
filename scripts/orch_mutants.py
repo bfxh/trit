@@ -278,4 +278,22 @@ MUTANTS = [
         "filter": 'critical_path_prioritises_the_deeper_chain',
         "diagnostic": 'ORCH_SHADOW_CP_ORDER',
     },
+    {
+        "name": "orch: malformed trace reports its line number",
+        "file": "crates/trit-orch/src/shadow.rs",
+        "old": "                line: index + 1,",
+        "new": "                line: 0,",
+        "pkg": "trit-orch",
+        "filter": "malformed_line_reports_its_line_number",
+        "diagnostic": "ORCH_TRACE_PARSE",
+    },
+    {
+        "name": "orch: select capture appends one line per call",
+        "file": "crates/trit-orch/src/bin/trit-orch.rs",
+        "old": "            if let Some(path) = &capture {",
+        "new": "            if let Some(path) = &capture.filter(|_| false) {",
+        "pkg": "trit-orch",
+        "filter": "select_can_record_traces_and_shadow_replays_them",
+        "diagnostic": "ORCH_CLI_CAPTURE",
+    },
 ]
