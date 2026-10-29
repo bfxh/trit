@@ -150,6 +150,7 @@ pub fn load(path: &Path) -> Result<(Net, u64, Option<u64>), String> {
             acc_gb: None,
             dev_t: None,
             convt: false,
+            residual: false,
         });
     }
     let mut net = Net { layers };

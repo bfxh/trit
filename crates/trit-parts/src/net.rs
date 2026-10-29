@@ -65,6 +65,8 @@ pub struct Layer {
     pub(crate) dev_t: Option<Buffer>,
     /// 是否是转置卷积（决定转置布局）。
     pub convt: bool,
+    /// 残差：`y = relu(γ·v+β) + x`（要求 cin == cout）。
+    pub residual: bool,
 }
 
 pub(crate) struct Dev {
@@ -115,6 +117,7 @@ impl Layer {
             acc_gb: None,
             dev_t: None,
             convt: false,
+            residual: false,
         }
     }
 
@@ -181,6 +184,7 @@ impl Layer {
             acc_gb: None,
             dev_t: None,
             convt: false,
+            residual: false,
         }
     }
 
@@ -494,6 +498,14 @@ impl Net {
         Self::random_w(seed, 1.0)
     }
 
+    /// 开启/关闭块内残差（只对 `cin == cout` 的卷积层生效：e1b/e2b/e3b/d2b/d1b）。
+    pub fn set_residual(&mut self, on: bool) {
+        for i in [E1B, E2B, E3B, D2B, D1B] {
+            let l = &mut self.layers[i];
+            l.residual = on && l.cin == l.cout && !l.convt;
+        }
+    }
+
     /// 标记两个转置卷积层（读断点时用）。
     pub fn mark_convt(&mut self) {
         if self.layers.len() > U3 {
@@ -521,7 +533,10 @@ impl Net {
         };
         let (g, be) = l.affine_dev();
         let n = (h * w * l.cout) as usize;
-        let y = gpu.affine_fwd(&v, g, be, n, l.cout, l.relu);
+        let mut y = gpu.affine_fwd(&v, g, be, n, l.cout, l.relu);
+        if l.residual {
+            y = gpu.add(&y, x, n);
+        }
         (v, y)
     }
 
@@ -668,6 +683,12 @@ impl Net {
         let dx = gpu.bwd_conv_dx(h, w, &spec, 0, dv, wf, l.transposed_dev());
         let dw = gpu.bwd_conv_dw_split(h, w, &spec, 0, x, dv);
         let db = gpu.bwd_conv_db_split(h, w, &spec, 0, dv);
+        // 残差：`y = a + x` ⇒ dL/dx 还要加上 dL/dy
+        let dx = if l.residual {
+            gpu.add(&dx, dv, (h * w * l.cout) as usize)
+        } else {
+            dx
+        };
         let layer = &mut self.layers[i];
         let (n_e, n_b) = (layer.latent.len(), layer.scale.len());
         layer.ensure_acc(gpu, n_e, n_b);

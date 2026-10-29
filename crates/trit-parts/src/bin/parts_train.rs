@@ -45,6 +45,8 @@ struct Args {
     width: f32,
     /// net2net：从这份断点把通道搬进按 `--width` 放大的新网络（再精调）。
     expand_from: Option<PathBuf>,
+    /// 块内残差（cin==cout 的卷积层）。
+    residual: bool,
 }
 
 fn parse() -> Result<Args, String> {
@@ -70,6 +72,7 @@ fn parse() -> Result<Args, String> {
         eval_every: 0,
         width: 1.0,
         expand_from: None,
+        residual: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -100,6 +103,7 @@ fn parse() -> Result<Args, String> {
             "--eval-every" => a.eval_every = val()?.parse().map_err(|_| "--eval-every 非整数")?,
             "--width" => a.width = val()?.parse().map_err(|_| "--width 非数字")?,
             "--expand-from" => a.expand_from = Some(PathBuf::from(val()?)),
+            "--residual" => a.residual = true,
             "--ste" => {
                 a.ste = match val()?.as_str() {
                     "identity" => Ste::Identity,
@@ -246,6 +250,10 @@ fn main() {
             src.display(),
             args.width
         );
+    }
+    if args.residual {
+        net.set_residual(true);
+        println!("块内残差：开（e1b/e2b/e3b/d2b/d1b）");
     }
     net.upload_all(&gpu);
     let w = plane_weights(k);
