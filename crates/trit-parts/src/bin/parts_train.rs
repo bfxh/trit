@@ -31,6 +31,8 @@ struct Args {
     manifest: Option<PathBuf>,
     steps: usize,
     lr: f32,
+    /// 终值学习率（线性衰减）；缺省等于 lr。
+    lr_final: Option<f32>,
     accum: usize,
     ste: Ste,
     adam: bool,
@@ -53,6 +55,7 @@ fn parse() -> Result<Args, String> {
         manifest: None,
         steps: 100,
         lr: 1e-3,
+        lr_final: None,
         accum: 1,
         ste: Ste::Identity,
         adam: true,
@@ -82,6 +85,7 @@ fn parse() -> Result<Args, String> {
             "--manifest" => a.manifest = Some(PathBuf::from(val()?)),
             "--steps" => a.steps = val()?.parse().map_err(|_| "--steps 非整数")?,
             "--lr" => a.lr = val()?.parse().map_err(|_| "--lr 非数字")?,
+            "--lr-final" => a.lr_final = Some(val()?.parse().map_err(|_| "--lr-final 非数字")?),
             "--accum" => a.accum = val()?.parse().map_err(|_| "--accum 非整数")?,
             "--seed" => a.seed = val()?.parse().map_err(|_| "--seed 非整数")?,
             "--limit" => a.limit = val()?.parse().map_err(|_| "--limit 非整数")?,
@@ -249,7 +253,17 @@ fn main() {
         let dout = gpu.buf(&out.grad, "dout");
         net.backward(&gpu, &tr, &dout, res);
         if (step + 1) % args.accum == 0 {
-            net.update(&gpu, args.lr, args.ste, args.adam, 1.0 / args.accum as f32);
+            // 线性衰减到 --lr-final（缺省恒定）
+            let frac = if args.steps > 1 {
+                step as f32 / (args.steps - 1) as f32
+            } else {
+                0.0
+            };
+            let lr = match args.lr_final {
+                Some(end) => args.lr + (end - args.lr) * frac,
+                None => args.lr,
+            };
+            net.update(&gpu, lr, args.ste, args.adam, 1.0 / args.accum as f32);
         }
         best = best.min(out.loss);
         ma = if ma.is_nan() {
@@ -387,7 +401,15 @@ fn read_f32(path: &std::path::Path) -> Vec<f32> {
 
 /// 评估：同一模型分别用「无约束 argmax」与「清单约束 argmax」解码，指标并排。
 fn eval_only(gpu: &Gpu, args: &Args) {
-    let scene = args.eval.as_ref().expect("--eval");
+    let scenes: Vec<PathBuf> = args
+        .eval
+        .as_ref()
+        .expect("--eval")
+        .to_string_lossy()
+        .split(',')
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+        .collect();
     let manifest_path = args.manifest.as_ref().unwrap_or_else(|| {
         eprintln!("--eval 需要 --manifest <parts.json>");
         std::process::exit(2);
@@ -415,15 +437,13 @@ fn eval_only(gpu: &Gpu, args: &Args) {
     });
     net.upload_all(gpu);
 
-    let mut paths = frames(scene);
-    if args.limit > 0 {
-        paths.truncate(args.limit);
-    }
     let res = 384u32;
     let hw = (res * res) as usize;
     let ch = k * 3 + 1;
 
     let mut plane_sum = vec![0f64; k];
+    // [无约束, 约束]：帧级累加（id 一致按帧取均值，IoU 按 (帧,部件) 对取均值，清单外按帧取均值）
+    let mut frames_n = 0usize;
     let mut exact = [0f64; 2];
     let mut exact_n = [0usize; 2];
     let mut iou = [0f64; 2];
@@ -432,69 +452,60 @@ fn eval_only(gpu: &Gpu, args: &Args) {
     let mut unk_px = [0f64; 2];
     let mut unk_px_n = [0f64; 2];
 
-    for (n, file) in paths.iter().enumerate() {
-        let s = load_frame(scene, file, k).unwrap_or_else(|e| {
-            eprintln!("读帧失败: {e}");
-            std::process::exit(1);
-        });
-        let xb = gpu.buf(&s.rgb, "x");
-        let tr = net.forward(gpu, xb, res);
-        let logits = gpu.read(&tr.out, hw * ch);
-        for (slot, constrained) in [false, true].into_iter().enumerate() {
-            let fm = evaluate_frame(&logits, &s.planes, &s.valid, &m, constrained, true);
-            for (acc, v) in fm.plane_acc.iter().enumerate() {
+    for scene in &scenes {
+        let mut paths = frames(scene);
+        let cap = if args.limit > 0 {
+            args.limit
+        } else {
+            usize::MAX
+        };
+        paths.truncate(cap);
+        for (n, file) in paths.iter().enumerate() {
+            let s = load_frame(scene, file, k).unwrap_or_else(|e| {
+                eprintln!("读帧失败: {e}");
+                std::process::exit(1);
+            });
+            let xb = gpu.buf(&s.rgb, "x");
+            let tr = net.forward(gpu, xb, res);
+            let logits = gpu.read(&tr.out, hw * ch);
+            frames_n += 1;
+            for (slot, constrained) in [false, true].into_iter().enumerate() {
+                let fm = evaluate_frame(&logits, &s.planes, &s.valid, &m, constrained, true);
                 if !constrained {
-                    plane_sum[acc] += f64::from(*v);
+                    for (acc, v) in fm.plane_acc.iter().enumerate() {
+                        plane_sum[acc] += f64::from(*v);
+                    }
                 }
-            }
-            if let Some(e) = fm.id_exact {
-                exact[slot] += f64::from(e);
-                exact_n[slot] += 1;
-            }
-            for v in &fm.part_iou {
-                iou[slot] += f64::from(*v);
-                iou_n[slot] += 1;
-            }
-            let (bad, total) = fm.unknown_ids;
-            if total > 0 {
-                unk_ids[slot] += bad as f64 / total as f64;
-            }
-            let (up, vp) = fm.unknown_pixels;
-            unk_px[slot] += up as f64;
-            unk_px_n[slot] += vp as f64;
-        }
-        if std::env::var("TRIT_EVAL_DEBUG").is_ok() && n == 0 {
-            let dbg = evaluate_frame(&logits, &s.planes, &s.valid, &m, false, true);
-            let vp = logits.chunks_exact(ch).filter(|c| c[k * 3] > 0.0).count();
-            let gt_px = s.valid.iter().filter(|v| **v == 1).count();
-            let mut gt = std::collections::BTreeSet::new();
-            for p in 0..hw {
-                if s.valid[p] == 1 {
-                    let d: Vec<u8> = (0..k).map(|i| s.planes[i][p]).collect();
-                    gt.insert(m.id_of(&d));
+                if let Some(e) = fm.id_exact {
+                    exact[slot] += f64::from(e);
+                    exact_n[slot] += 1;
                 }
+                for v in &fm.part_iou {
+                    iou[slot] += f64::from(*v);
+                    iou_n[slot] += 1;
+                }
+                let (bad, total) = fm.unknown_ids;
+                if total > 0 {
+                    unk_ids[slot] += bad as f64 / total as f64;
+                }
+                let (up, vp) = fm.unknown_pixels;
+                unk_px[slot] += up as f64;
+                unk_px_n[slot] += vp as f64;
             }
-            println!(
-                "  [dbg] 帧0: GT 部件像素 {gt_px}, 预测 valid 像素 {vp}, GT 不同 id {}, id_exact {:?}, iou {} 项, 未知 {:?}/{:?}",
-                gt.len(),
-                dbg.id_exact,
-                dbg.part_iou.len(),
-                dbg.unknown_ids,
-                dbg.unknown_pixels
-            );
-        }
-        if (n + 1) % 10 == 0 || n + 1 == paths.len() {
-            println!("  已评估 {}/{}", n + 1, paths.len());
+            if (n + 1) % 50 == 0 || n + 1 == paths.len() {
+                println!("  {}: {}/{}", scene.display(), n + 1, paths.len());
+            }
         }
     }
-    let nf = paths.len() as f64;
+
+    let nf = frames_n as f64;
     let planes: Vec<f64> = plane_sum.iter().map(|v| v / nf).collect();
     let mean = |s: f64, n: usize| if n > 0 { s / n as f64 } else { 0.0 };
-    println!("帧数 {}", paths.len());
     let plane_show: Vec<f64> = planes
         .iter()
         .map(|v| (v * 1000.0).round() / 1000.0)
         .collect();
+    println!("帧数 {frames_n}");
     println!("平面准确率(GT 部件像素) {plane_show:?}");
     println!("{:<18}{:>10}{:>10}", "指标", "无约束", "清单约束");
     println!(
