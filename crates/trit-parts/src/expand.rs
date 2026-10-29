@@ -2,7 +2,7 @@
 //!
 //! 独立成模块是为了守住「单文件 ≤800 行」的门。
 
-use crate::net::{E1B, E2B, Net, U2, U3};
+use crate::net::{E1B, E2B, Layer, Net, U2, U3};
 
 impl Net {
     /// 宽度扩展（net2net）：把窄模型的通道搬进按 `width` 放大的新网络。
@@ -99,5 +99,53 @@ impl Net {
             let _ = &old_e;
         }
         new
+    }
+
+    /// 从部署包（`TPM1`）建网：`latent = q·scale`，`scale/q` 原样保留（E 逐位不变）。
+    pub fn from_tpm(m: &crate::tpm::TpmModel) -> Self {
+        let layers = m
+            .layers
+            .iter()
+            .map(|l| {
+                let slots = l.cout as usize;
+                let n = l.q.len();
+                Layer {
+                    latent: l.effective(),
+                    scale: l.scale.clone(),
+                    q: l.q.iter().map(|&v| v as i32).collect(),
+                    bias: l.bias.clone(),
+                    cin: l.cin,
+                    cout: l.cout,
+                    kk: l.kk,
+                    relu: l.relu,
+                    grad_e: vec![0.0; n],
+                    grad_b: vec![0.0; slots],
+                    m_w: vec![0.0; n],
+                    v_w: vec![0.0; n],
+                    m_s: vec![0.0; slots],
+                    v_s: vec![0.0; slots],
+                    m_b: vec![0.0; slots],
+                    v_b: vec![0.0; slots],
+                    t: 0,
+                    dev: None,
+                    acc_e: None,
+                    acc_b: None,
+                    gamma: l.gamma.clone(),
+                    beta: l.beta.clone(),
+                    grad_gamma: vec![0.0; slots],
+                    grad_beta: vec![0.0; slots],
+                    m_g: vec![0.0; slots],
+                    v_g: vec![0.0; slots],
+                    m_be: vec![0.0; slots],
+                    v_be: vec![0.0; slots],
+                    dev_gb: None,
+                    acc_gb: None,
+                    dev_t: None,
+                    convt: l.convt,
+                    residual: false,
+                }
+            })
+            .collect();
+        Self { layers }
     }
 }

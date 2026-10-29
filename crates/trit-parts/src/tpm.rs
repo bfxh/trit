@@ -111,7 +111,7 @@ impl TpmModel {
             let qs = b.get(at..at + nw).ok_or("TPM1 截断（q）")?;
             let q: Vec<i8> = qs.iter().map(|&v| v as i8).collect();
             at += nw;
-            let mut take_f = |count: usize, b: &[u8], at: &mut usize| -> Result<Vec<f32>, String> {
+            let take_f = |count: usize, b: &[u8], at: &mut usize| -> Result<Vec<f32>, String> {
                 let mut v = vec![0.0f32; count];
                 for x in &mut v {
                     *x = f32::from_bits(take_u32(b, at)?);
