@@ -76,7 +76,7 @@ fn main() {
         gpu.sync();
     });
     bench("update(拉回+STE+Adam+上传)", &mut || {
-        net.update(&gpu, 1e-3, trit_train::Ste::Identity, true, 1.0 / 6.0);
+        net.update(&gpu, 1e-3, trit_learn::Ste::Identity, true, 1.0 / 6.0);
         gpu.sync();
     });
     // ---- 逐层分解（用 trace 的真实缓冲；dy 用同形状常量）

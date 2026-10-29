@@ -3,12 +3,12 @@
 //! 为什么先有 CPU 版：**有限差分只能验证「直通前向」的梯度**（三值量化对 `w` 的导数几乎处处为 0），
 //! 所以判据拆成两层：
 //! 1. 对**有效权重** `E`（`E = q·scale`）做解析反向，用中心差分逐元素对拍 `∂L/∂x / ∂L/∂E / ∂L/∂b`；
-//! 2. `E → latent` 的映射按 `trit-train` 的口径（[`trit_train::Ste`]）单独验证：
+//! 2. `E → latent` 的映射按 `trit-learn` 的口径（[`trit_learn::Ste`]）单独验证：
 //!    `grad_latent = Ste::backward(w, s, s·dE)`、`grad_scale = Σ dE·q`。
 //!
 //! GPU 内核只负责第 1 层（`dE / dx / db`），第 2 层在主机侧做——权重数量远小于激活，没必要上卡。
 
-use trit_train::Ste;
+use trit_learn::Ste;
 
 /// 一个 3×3 / 1×1 卷积的形状（`pad = kk/2`，NHWC，N=1）。
 #[derive(Clone, Copy, Debug)]

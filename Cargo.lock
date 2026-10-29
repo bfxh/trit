@@ -1710,6 +1710,7 @@ dependencies = [
  "bytemuck",
  "png",
  "pollster",
+ "trit-learn",
  "trit-train",
  "wgpu",
 ]

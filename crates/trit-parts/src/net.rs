@@ -9,7 +9,7 @@ use wgpu::Buffer;
 use crate::backward::ste_apply;
 use crate::gpu::Gpu;
 use crate::weights::{ConvW, Tensors, conv_w, convt_w};
-use trit_train::Ste;
+use trit_learn::Ste;
 
 /// 层序号（与 `forward` 的顺序一致）。
 pub const E1A: usize = 0;

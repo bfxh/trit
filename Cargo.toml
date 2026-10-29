@@ -54,4 +54,3 @@ trit-codec = { path = "crates/trit-codec", version = "0.12.0" }
 trit-wasm = { path = "crates/trit-wasm", version = "0.12.0" }
 sansheng = { path = "crates/sansheng", version = "0.12.0" }
 trit-schedule = { path = "crates/trit-schedule", version = "0.12.0" }
-trit-train = { path = "crates/trit-train", version = "0.12.0" }

@@ -11,13 +11,13 @@
 
 use std::path::PathBuf;
 
+use trit_learn::Ste;
 use trit_parts::data::{Sample, frames, load_frame};
 use trit_parts::gpu::Gpu;
 use trit_parts::loss::{loss_and_grad, plane_weights};
 use trit_parts::net::Net;
 use trit_parts::parts::{PartList, evaluate_frame};
 use trit_parts::weights::Tensors;
-use trit_train::Ste;
 
 struct Args {
     data: Vec<PathBuf>,
