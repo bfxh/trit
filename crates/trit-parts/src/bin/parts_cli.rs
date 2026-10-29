@@ -8,7 +8,9 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use trit_parts::model::{Backend, RefCpu, TriModel, compare, compare_nhwc};
+#[cfg(feature = "gpu")]
 use trit_parts::parts::PartList;
+#[cfg(feature = "gpu")]
 use trit_parts::tpm::TpmModel;
 use trit_parts::weights::Tensors;
 

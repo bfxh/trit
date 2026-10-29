@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 /// 一帧的输入与标签。
 pub struct Sample {
-    /// RGB，NHWC，`h*w*3`，值域 [0,1]。
+    /// RGB，NHWC，`h*w*3`，值域 `[0,1]`。
     pub rgb: Vec<f32>,
     /// `k` 条平面，每条 `h*w`，取值 0/1/2。
     pub planes: Vec<Vec<u8>>,

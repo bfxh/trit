@@ -6,6 +6,7 @@
 
 use crate::model::Backend;
 use crate::parts::PartList;
+#[cfg(feature = "gpu")]
 use crate::tpm::TpmModel;
 
 /// 跑一帧并解成 id 图（清单约束解码；预测为"无部件"的像素置 0）。
