@@ -296,4 +296,22 @@ MUTANTS = [
         "filter": "select_can_record_traces_and_shadow_replays_them",
         "diagnostic": "ORCH_CLI_CAPTURE",
     },
+    {
+        "name": 'orch: whitespace lines are skipped',
+        "file": 'crates/trit-orch/src/shadow.rs',
+        "old": '            let line = line.trim();',
+        "new": '            let line = line;',
+        "pkg": "trit-orch",
+        "filter": 'whitespace_only_lines_are_skipped',
+        "diagnostic": 'ORCH_TRACE_WHITESPACE',
+    },
+    {
+        "name": 'orch: non-utf8 trace is an io error',
+        "file": 'crates/trit-orch/src/shadow.rs',
+        "old": '        let text = match std::fs::read_to_string(&self.path) {',
+        "new": '        let text = match Ok::<String, std::io::Error>(String::from_utf8_lossy(&std::fs::read(&self.path).unwrap_or_default()).into_owned()) {',
+        "pkg": "trit-orch",
+        "filter": 'non_utf8_bytes_report_io_not_a_silent_empty_trace',
+        "diagnostic": 'ORCH_TRACE_NON_UTF8',
+    },
 ]
