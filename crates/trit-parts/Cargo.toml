@@ -40,3 +40,7 @@ required-features = ["gpu"]
 name = "parts-bench"
 path = "src/bin/parts_bench.rs"
 required-features = ["gpu"]
+
+[[bin]]
+name = "parts-cli"
+path = "src/bin/parts_cli.rs"

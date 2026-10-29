@@ -183,7 +183,7 @@ fn main() {
     let mut resumed_step = 0u64;
     let mut resumed_rng: Option<u64> = None;
     let mut net = match &resume_path {
-        Some(p) => match Net::load_state(p) {
+        Some(p) => match trit_parts::state::load(p) {
             Ok((n, step, rng)) => {
                 match rng {
                     Some(_) => println!("续跑自 {}（step {step}，RNG 已恢复）", p.display()),
@@ -294,7 +294,7 @@ fn main() {
             && (step + 1) % args.save_every == 0
             && let Some(p) = &save_path
         {
-            match net.save_state(p, resumed_step + (step + 1) as u64, rng) {
+            match trit_parts::state::save(&net, p, resumed_step + (step + 1) as u64, rng) {
                 Ok(()) => println!("  [断点] step {} 已存", step + 1),
                 Err(e) => eprintln!("  [断点] 保存失败: {e}"),
             }
@@ -316,7 +316,7 @@ fn main() {
     println!("最小 loss {best:.4}");
 
     if let Some(path) = &save_path {
-        match net.save_state(path, resumed_step + args.steps as u64, rng) {
+        match trit_parts::state::save(&net, path, resumed_step + args.steps as u64, rng) {
             Ok(()) => println!("断点已存 {}", path.display()),
             Err(e) => {
                 eprintln!("断点保存失败: {e}");
@@ -422,7 +422,7 @@ fn eval_only(gpu: &Gpu, args: &Args) {
     println!("清单 k={k}，部件 {} 个", m.parts.len());
 
     let mut net = match &args.resume {
-        Some(p) => Net::load_state(p).map(|(n, _, _)| n),
+        Some(p) => trit_parts::state::load(p).map(|(n, _, _)| n),
         None => match &args.init {
             Some(dir) => Tensors::load(dir).and_then(|t| Net::from_tensors(&t)),
             None => {

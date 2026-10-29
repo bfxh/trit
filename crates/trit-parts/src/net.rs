@@ -39,35 +39,35 @@ pub struct Layer {
     /// `∂L/∂E` 与 `∂L/∂b`（一次反向的累加结果）。
     pub grad_e: Vec<f32>,
     pub grad_b: Vec<f32>,
-    m_w: Vec<f32>,
-    v_w: Vec<f32>,
-    m_s: Vec<f32>,
-    v_s: Vec<f32>,
-    m_b: Vec<f32>,
-    v_b: Vec<f32>,
+    pub(crate) m_w: Vec<f32>,
+    pub(crate) v_w: Vec<f32>,
+    pub(crate) m_s: Vec<f32>,
+    pub(crate) v_s: Vec<f32>,
+    pub(crate) m_b: Vec<f32>,
+    pub(crate) v_b: Vec<f32>,
     pub t: u32,
-    dev: Option<Dev>,
+    pub(crate) dev: Option<Dev>,
     /// 设备侧梯度累加器（每 accum 个样本才读回一次，省掉逐样本同步）。
-    acc_e: Option<Buffer>,
-    acc_b: Option<Buffer>,
+    pub(crate) acc_e: Option<Buffer>,
+    pub(crate) acc_b: Option<Buffer>,
     /// per-channel affine（可学习 BN 的等价物，无 running stats）。
     pub gamma: Vec<f32>,
     pub beta: Vec<f32>,
     pub grad_gamma: Vec<f32>,
     pub grad_beta: Vec<f32>,
-    m_g: Vec<f32>,
-    v_g: Vec<f32>,
-    m_be: Vec<f32>,
-    v_be: Vec<f32>,
-    dev_gb: Option<(Buffer, Buffer)>,
-    acc_gb: Option<Buffer>,
+    pub(crate) m_g: Vec<f32>,
+    pub(crate) v_g: Vec<f32>,
+    pub(crate) m_be: Vec<f32>,
+    pub(crate) v_be: Vec<f32>,
+    pub(crate) dev_gb: Option<(Buffer, Buffer)>,
+    pub(crate) acc_gb: Option<Buffer>,
     /// 转置后的有效权重（dx 用；只读，随 upload 重建）。
-    dev_t: Option<Buffer>,
+    pub(crate) dev_t: Option<Buffer>,
     /// 是否是转置卷积（决定转置布局）。
     pub convt: bool,
 }
 
-struct Dev {
+pub(crate) struct Dev {
     wf: Buffer,
     wt: Buffer,
     ws: Buffer,
@@ -476,6 +476,16 @@ impl Net {
         Self { layers }
     }
 
+    /// 标记两个转置卷积层（读断点时用）。
+    pub fn mark_convt(&mut self) {
+        if self.layers.len() > U3 {
+            self.layers[U3].convt = true;
+        }
+        if self.layers.len() > U2 {
+            self.layers[U2].convt = true;
+        }
+    }
+
     pub fn upload_all(&mut self, gpu: &Gpu) {
         for l in &mut self.layers {
             l.upload(gpu);
@@ -695,196 +705,5 @@ fn spec_of(l: &Layer) -> ConvW {
         cin: l.cin,
         cout: l.cout,
         kk: l.kk,
-    }
-}
-
-impl Net {
-    /// 存断点（含 Adam 状态，可续跑）。布局：magic + 层数 + step + 每层参数。
-    pub fn save_state(&self, path: &std::path::Path, step: u64, rng: u64) -> std::io::Result<()> {
-        let mut b: Vec<u8> = Vec::new();
-        b.extend_from_slice(b"TPNT3\0\0\0");
-        b.extend_from_slice(&(self.layers.len() as u32).to_le_bytes());
-        b.extend_from_slice(&step.to_le_bytes());
-        b.extend_from_slice(&rng.to_le_bytes());
-        for l in &self.layers {
-            for v in [
-                l.cin,
-                l.cout,
-                l.kk,
-                l.relu as u32,
-                l.latent.len() as u32,
-                l.scale.len() as u32,
-            ] {
-                b.extend_from_slice(&v.to_le_bytes());
-            }
-            for v in &l.latent {
-                b.extend_from_slice(&v.to_le_bytes());
-            }
-            for v in &l.scale {
-                b.extend_from_slice(&v.to_le_bytes());
-            }
-            for v in &l.q {
-                b.extend_from_slice(&v.to_le_bytes());
-            }
-            for v in &l.bias {
-                b.extend_from_slice(&v.to_le_bytes());
-            }
-            for arr in [&l.m_w, &l.v_w] {
-                for v in arr {
-                    b.extend_from_slice(&v.to_le_bytes());
-                }
-            }
-            for arr in [&l.m_s, &l.v_s, &l.m_b, &l.v_b] {
-                for v in arr {
-                    b.extend_from_slice(&v.to_le_bytes());
-                }
-            }
-            for arr in [&l.gamma, &l.beta, &l.m_g, &l.v_g, &l.m_be, &l.v_be] {
-                for v in arr {
-                    b.extend_from_slice(&v.to_le_bytes());
-                }
-            }
-            b.extend_from_slice(&l.t.to_le_bytes());
-        }
-        let tmp = path.with_extension("tmp");
-        std::fs::write(&tmp, b)?;
-        std::fs::rename(&tmp, path)
-    }
-
-    /// 读断点，返回 `(网, step)`；层形状与当前代码不一致时报错（不猜）。
-    /// 读进程存档，返回 `(网, step, RNG)`；TPNT1/TPNT2 老存档没有 RNG（返回 None）。
-    pub fn load_state(path: &std::path::Path) -> Result<(Self, u64, Option<u64>), String> {
-        let b = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        if b.len() < 8 {
-            return Err("不是 trit-parts 断点文件".into());
-        }
-        // TPNT1 没有 affine；TPNT2 起带 γ/β 与其 Adam 状态
-        let v3 = &b[0..8] == b"TPNT3\0\0\0";
-        let v2 = v3 || &b[0..8] == b"TPNT2\0\0\0";
-        if !v2 && &b[0..8] != b"TPNT1\0\0\0" {
-            return Err("不是 trit-parts 断点文件".into());
-        }
-        let mut at = 8usize;
-        let n_layers = take_u32(&b, &mut at)? as usize;
-        let step = take_u64(&b, &mut at)?;
-        let rng = if v3 {
-            Some(take_u64(&b, &mut at)?)
-        } else {
-            None
-        };
-        let mut layers = Vec::with_capacity(n_layers);
-        for _ in 0..n_layers {
-            let cin = take_u32(&b, &mut at)?;
-            let cout = take_u32(&b, &mut at)?;
-            let kk = take_u32(&b, &mut at)?;
-            let relu = take_u32(&b, &mut at)? != 0;
-            let n = take_u32(&b, &mut at)? as usize;
-            let slots = take_u32(&b, &mut at)? as usize;
-            let mut latent = vec![0.0f32; n];
-            for v in &mut latent {
-                *v = f32::from_bits(take_u32(&b, &mut at)?);
-            }
-            let mut scale = vec![0.0f32; slots];
-            for v in &mut scale {
-                *v = f32::from_bits(take_u32(&b, &mut at)?);
-            }
-            let mut q = vec![0i32; n];
-            for v in &mut q {
-                *v = take_u32(&b, &mut at)? as i32;
-            }
-            let mut bias = vec![0.0f32; slots];
-            for v in &mut bias {
-                *v = f32::from_bits(take_u32(&b, &mut at)?);
-            }
-            let take_f = |count: usize, b: &[u8], at: &mut usize| -> Result<Vec<f32>, String> {
-                let mut v = vec![0.0f32; count];
-                for x in &mut v {
-                    *x = f32::from_bits(take_u32(b, at)?);
-                }
-                Ok(v)
-            };
-            let m_w = take_f(n, &b, &mut at)?;
-            let v_w = take_f(n, &b, &mut at)?;
-            let m_s = take_f(slots, &b, &mut at)?;
-            let v_s = take_f(slots, &b, &mut at)?;
-            let m_b = take_f(slots, &b, &mut at)?;
-            let v_b = take_f(slots, &b, &mut at)?;
-            let (mut gamma, mut beta) = (vec![1.0f32; slots], vec![0.0f32; slots]);
-            let (mut m_g, mut v_g) = (vec![0.0f32; slots], vec![0.0f32; slots]);
-            let (mut m_be, mut v_be) = (vec![0.0f32; slots], vec![0.0f32; slots]);
-            if v2 {
-                for arr in [
-                    &mut gamma, &mut beta, &mut m_g, &mut v_g, &mut m_be, &mut v_be,
-                ] {
-                    for v in arr.iter_mut() {
-                        *v = f32::from_bits(take_u32(&b, &mut at)?);
-                    }
-                }
-            }
-            let t = take_u32(&b, &mut at)?;
-            layers.push(Layer {
-                latent,
-                scale,
-                q,
-                bias,
-                cin,
-                cout,
-                kk,
-                relu,
-                grad_e: vec![0.0; n],
-                grad_b: vec![0.0; slots],
-                m_w,
-                v_w,
-                m_s,
-                v_s,
-                m_b,
-                v_b,
-                gamma,
-                beta,
-                grad_gamma: vec![0.0; slots],
-                grad_beta: vec![0.0; slots],
-                m_g,
-                v_g,
-                m_be,
-                v_be,
-                dev_gb: None,
-                acc_gb: None,
-                t,
-                dev: None,
-                acc_e: None,
-                acc_b: None,
-                dev_t: None,
-                convt: false,
-            });
-        }
-        Ok((Self { layers }, step, rng))
-    }
-}
-
-fn take_u32(b: &[u8], at: &mut usize) -> Result<u32, String> {
-    let s = b.get(*at..*at + 4).ok_or("断点文件截断")?;
-    *at += 4;
-    Ok(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
-}
-
-fn take_u64(b: &[u8], at: &mut usize) -> Result<u64, String> {
-    let s = b.get(*at..*at + 8).ok_or("断点文件截断")?;
-    *at += 8;
-    let mut a = [0u8; 8];
-    a.copy_from_slice(s);
-    Ok(u64::from_le_bytes(a))
-}
-
-impl Net {
-    /// 梯度除以累加步数（多帧取平均）。
-    pub fn scale_grads(&mut self, f: f32) {
-        for l in &mut self.layers {
-            for g in &mut l.grad_e {
-                *g *= f;
-            }
-            for g in &mut l.grad_b {
-                *g *= f;
-            }
-        }
     }
 }
