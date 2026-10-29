@@ -158,7 +158,8 @@ impl Dp4aGpu {
             });
             pass.set_pipeline(&self.pipeline);
             pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(m.div_ceil(8), n.div_ceil(8), 1);
+            // tiled：64×64 输出 tile / workgroup
+            pass.dispatch_workgroups(m.div_ceil(32), n.div_ceil(32), 1);
         }
         self.queue.submit(Some(enc.finish()));
         let staging = dev.create_buffer(&wgpu::BufferDescriptor {
@@ -199,7 +200,8 @@ mod tests {
             println!("[dp4a] 无 GPU adapter ⇒ 跳过（不是通过）");
             return;
         };
-        let (m, k, n) = (512usize, 512usize, 512usize);
+        // 与 f32 分块基线同形状（512×4096×512）：512³ 太小，受发射/访存支配，不能拿来比 ps/MAC
+        let (m, k, n) = (512usize, 4096usize, 512usize);
         let a: Vec<i8> = (0..m * k).map(|i| [1i8, 0, -1][i % 3]).collect();
         let b: Vec<i8> = (0..k * n).map(|i| [1i8, -1, 0][i % 3]).collect();
         let (aw, btw, kw) = pack_for_kernel(&a, &b, m, k, n);
@@ -208,10 +210,10 @@ mod tests {
         let mut samples = Vec::new();
         for _ in 0..5 {
             let t0 = std::time::Instant::now();
-            for _ in 0..20 {
+            for _ in 0..10 {
                 let _ = g.run(&aw, &btw, m as u32, n as u32, kw as u32);
             }
-            samples.push(t0.elapsed().as_secs_f64() / 20.0);
+            samples.push(t0.elapsed().as_secs_f64() / 10.0);
         }
         samples.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         let med = samples[samples.len() / 2];
