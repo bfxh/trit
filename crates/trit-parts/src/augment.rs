@@ -53,10 +53,10 @@ impl Augment {
         ];
         let noise = self.range(0.0, 0.02);
         for p in 0..r * r {
-            for c in 0..3 {
+            for (c, &g) in gain.iter().enumerate() {
                 let i = p * 3 + c;
                 let v = (s.rgb[i] * bright - 0.5) * contrast + 0.5;
-                let v = v * gain[c];
+                let v = v * g;
                 let n = if noise > 0.0 {
                     (self.unit() * 2.0 - 1.0) * noise
                 } else {
