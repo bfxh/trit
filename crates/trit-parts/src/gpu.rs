@@ -12,6 +12,9 @@ pub const ROW: u32 = 16384;
 pub struct Gpu {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
+    /// 可拆卸的「批提交」会话：Some 时所有 dispatch 记进同一个 encoder，flush 时一次提交。
+    /// 数学完全不变（同样的 kernel、同样的顺序），只是少了提交次数。
+    batch: std::cell::RefCell<Option<wgpu::CommandEncoder>>,
     conv_pl: wgpu::ComputePipeline,
     conv_bgl: wgpu::BindGroupLayout,
     pool_pl: wgpu::ComputePipeline,
@@ -142,6 +145,7 @@ impl Gpu {
             up_pl: pipe("convt", &up_bgl),
             up_bgl,
             bwd,
+            batch: std::cell::RefCell::new(None),
             adapter: adapter_name,
             device,
             queue,
@@ -198,6 +202,43 @@ impl Gpu {
                 contents: bytemuck::bytes_of(v),
                 usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             })
+    }
+
+    /// 开始一次批提交会话（可拆卸加速层）。之后所有 dispatch 进同一个 encoder。
+    pub fn begin_batch(&self) {
+        debug_assert!(self.batch.borrow().is_none(), "批提交会话不可重入");
+        *self.batch.borrow_mut() = Some(self.device.create_command_encoder(&Default::default()));
+    }
+
+    /// 结束会话并提交（没有会话时无操作）。
+    pub fn end_batch(&self) {
+        if let Some(enc) = self.batch.borrow_mut().take() {
+            self.queue.submit([enc.finish()]);
+        }
+    }
+
+    /// 提交当前批次并**重开**会话（读回前必须调用，保证 copy 排在 dispatch 之后）。
+    pub fn flush_batch(&self) {
+        let mut slot = self.batch.borrow_mut();
+        if let Some(enc) = slot.take() {
+            self.queue.submit([enc.finish()]);
+            *slot = Some(self.device.create_command_encoder(&Default::default()));
+        }
+    }
+
+    /// 把一段 dispatch 记进当前会话（没有会话时自成一次提交）。
+    pub(crate) fn record(&self, f: impl FnOnce(&mut wgpu::ComputePass<'_>)) {
+        if let Some(enc) = self.batch.borrow_mut().as_mut() {
+            let mut pass = enc.begin_compute_pass(&Default::default());
+            f(&mut pass);
+        } else {
+            let mut enc = self.device.create_command_encoder(&Default::default());
+            {
+                let mut pass = enc.begin_compute_pass(&Default::default());
+                f(&mut pass);
+            }
+            self.queue.submit([enc.finish()]);
+        }
     }
 
     /// 等 GPU 做完（计时/调试用）。
@@ -276,14 +317,11 @@ impl Gpu {
                 },
             ],
         });
-        let mut enc = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = enc.begin_compute_pass(&Default::default());
+        self.record(|pass| {
             pass.set_pipeline(&self.conv_pl);
             pass.set_bind_group(0, &bg, &[]);
             pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
-        }
-        self.queue.submit([enc.finish()]);
+        });
         out
     }
 
@@ -338,14 +376,11 @@ impl Gpu {
                 },
             ],
         });
-        let mut enc = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = enc.begin_compute_pass(&Default::default());
+        self.record(|pass| {
             pass.set_pipeline(&self.conv_t4_pl);
             pass.set_bind_group(0, &bg, &[]);
             pass.dispatch_workgroups(256, div_up((total / 4) as u32, ROW), 1);
-        }
-        self.queue.submit([enc.finish()]);
+        });
         out
     }
 
@@ -372,14 +407,11 @@ impl Gpu {
                 },
             ],
         });
-        let mut enc = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = enc.begin_compute_pass(&Default::default());
+        self.record(|pass| {
             pass.set_pipeline(&self.pool_pl);
             pass.set_bind_group(0, &bg, &[]);
             pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
-        }
-        self.queue.submit([enc.finish()]);
+        });
         out
     }
 
@@ -417,14 +449,11 @@ impl Gpu {
                 },
             ],
         });
-        let mut enc = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = enc.begin_compute_pass(&Default::default());
+        self.record(|pass| {
             pass.set_pipeline(&self.cat_pl);
             pass.set_bind_group(0, &bg, &[]);
             pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
-        }
-        self.queue.submit([enc.finish()]);
+        });
         out
     }
 
@@ -488,18 +517,16 @@ impl Gpu {
                 },
             ],
         });
-        let mut enc = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = enc.begin_compute_pass(&Default::default());
+        self.record(|pass| {
             pass.set_pipeline(&self.up_pl);
             pass.set_bind_group(0, &bg, &[]);
             pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
-        }
-        self.queue.submit([enc.finish()]);
+        });
         out
     }
 
     pub fn read(&self, src: &wgpu::Buffer, n: usize) -> Vec<f32> {
+        self.flush_batch();
         let bytes = (n * 4) as u64;
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("staging"),

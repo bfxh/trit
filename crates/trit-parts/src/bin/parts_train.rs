@@ -47,6 +47,9 @@ struct Args {
     expand_from: Option<PathBuf>,
     /// 块内残差（cin==cout 的卷积层）。
     residual: bool,
+    /// 可拆卸加速层（opt-in）：把单样本内的所有 dispatch 收进一个 encoder 再提交。
+    /// 数学完全不变；实测在 GPU 被占用时无加速，默认关，GPU 空闲时再评估。
+    batch: bool,
 }
 
 fn parse() -> Result<Args, String> {
@@ -73,6 +76,7 @@ fn parse() -> Result<Args, String> {
         width: 1.0,
         expand_from: None,
         residual: false,
+        batch: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -104,6 +108,7 @@ fn parse() -> Result<Args, String> {
             "--width" => a.width = val()?.parse().map_err(|_| "--width 非数字")?,
             "--expand-from" => a.expand_from = Some(PathBuf::from(val()?)),
             "--residual" => a.residual = true,
+            "--batch" => a.batch = true,
             "--ste" => {
                 a.ste = match val()?.as_str() {
                     "identity" => Ste::Identity,
@@ -117,7 +122,7 @@ fn parse() -> Result<Args, String> {
         }
         // 纯开关类参数只前进 1，否则会吞掉下一个参数（`--residual --steps 4000` 会把 --steps 吃掉）
         i += match key {
-            "--sgd" | "--residual" => 1,
+            "--sgd" | "--residual" | "--batch" => 1,
             _ => 2,
         };
     }
@@ -291,11 +296,17 @@ fn main() {
             }
         };
         let xb = gpu.buf(&s.rgb, "x");
+        if args.batch {
+            gpu.begin_batch();
+        }
         let tr = net.forward(&gpu, xb, res);
         let logits = gpu.read(&tr.out, hw * ch);
         let out = loss_and_grad(&logits, &s.planes, &s.valid, hw, k, &w);
         let dout = gpu.buf(&out.grad, "dout");
         net.backward(&gpu, &tr, &dout, res);
+        if args.batch {
+            gpu.end_batch();
+        }
         if (step + 1) % args.accum == 0 {
             // 线性衰减到 --lr-final（缺省恒定）
             let frac = if args.steps > 1 {

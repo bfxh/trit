@@ -304,14 +304,11 @@ impl Gpu {
             layout: &pipe.bgl,
             entries: &entries,
         });
-        let mut enc = self.device.create_command_encoder(&Default::default());
-        {
-            let mut pass = enc.begin_compute_pass(&Default::default());
+        self.record(|pass| {
             pass.set_pipeline(&pipe.pl);
             pass.set_bind_group(0, &bg, &[]);
             pass.dispatch_workgroups(256, div_up(total as u32, ROW), 1);
-        }
-        self.queue.submit([enc.finish()]);
+        });
     }
 
     /// 分配但不初始化（只用于「每个元素都会被写满」的输出，省掉一次主机→显存拷贝）。
