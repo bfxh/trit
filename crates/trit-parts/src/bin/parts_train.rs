@@ -115,7 +115,11 @@ fn parse() -> Result<Args, String> {
             "--sgd" => a.adam = false,
             other => return Err(format!("未知参数 {other}")),
         }
-        i += 2;
+        // 纯开关类参数只前进 1，否则会吞掉下一个参数（`--residual --steps 4000` 会把 --steps 吃掉）
+        i += match key {
+            "--sgd" | "--residual" => 1,
+            _ => 2,
+        };
     }
     if a.data.is_empty()
         && a.resume.is_none()
