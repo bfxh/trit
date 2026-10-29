@@ -27,7 +27,7 @@ fn read_f32(path: &std::path::Path) -> Vec<f32> {
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let cmd = argv.first().map(String::as_str).unwrap_or("");
-    if !matches!(cmd, "infer" | "export" | "run") {
+    if !matches!(cmd, "infer" | "export" | "run" | "batch") {
         eprintln!(
             "用法:
   parts-cli infer --dir <夹具> [--backends refcpu,wgpu]
@@ -42,6 +42,10 @@ fn main() {
     }
     if cmd == "run" {
         run(&argv);
+        return;
+    }
+    if cmd == "batch" {
+        batch(&argv);
         return;
     }
     let mut dir = PathBuf::from("../trit-data/parts-parity");
@@ -310,5 +314,108 @@ fn run(argv: &[String]) {
 #[cfg(not(feature = "gpu"))]
 fn run(_argv: &[String]) {
     eprintln!("本构建未启用 gpu feature；请用带 gpu 的构建，或 --backend refcpu");
+    std::process::exit(2);
+}
+
+/// `batch --model <TPM1> --dir <rgb 目录> --manifest <json> --out <dir>`：
+/// 整目录批量推理（管线用）。每帧写 `<stem>.ids.bin`（u32 LE）。
+#[cfg(feature = "gpu")]
+fn batch(argv: &[String]) {
+    use trit_parts::api::{infer_ids, wgpu_from_tpm};
+    use trit_parts::data::read_rgb;
+
+    let mut model = None;
+    let mut dir = None;
+    let mut manifest = None;
+    let mut outdir = PathBuf::from(".");
+    let mut i = 1;
+    while i < argv.len() {
+        match argv[i].as_str() {
+            "--model" => {
+                model = Some(PathBuf::from(&argv[i + 1]));
+                i += 2;
+            }
+            "--dir" => {
+                dir = Some(PathBuf::from(&argv[i + 1]));
+                i += 2;
+            }
+            "--manifest" => {
+                manifest = Some(PathBuf::from(&argv[i + 1]));
+                i += 2;
+            }
+            "--out" => {
+                outdir = PathBuf::from(&argv[i + 1]);
+                i += 2;
+            }
+            other => {
+                eprintln!("未知参数 {other}");
+                std::process::exit(2);
+            }
+        }
+    }
+    let (model, dir, manifest) = match (model, dir, manifest) {
+        (Some(a), Some(b), Some(c)) => (a, b, c),
+        _ => {
+            eprintln!("batch 需要 --model / --dir / --manifest");
+            std::process::exit(2);
+        }
+    };
+    let tpm = TpmModel::load(&model).unwrap_or_else(|e| {
+        eprintln!("读部署包失败: {e}");
+        std::process::exit(1);
+    });
+    let parts = PartList::load(&manifest).unwrap_or_else(|e| {
+        eprintln!("读清单失败: {e}");
+        std::process::exit(1);
+    });
+    let mut b = wgpu_from_tpm(&tpm).unwrap_or_else(|e| panic!("wgpu 后端不可用: {e}"));
+    std::fs::create_dir_all(&outdir).ok();
+    let mut pngs: Vec<PathBuf> = std::fs::read_dir(&dir)
+        .map(|it| {
+            it.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|x| x == "png"))
+                .collect()
+        })
+        .unwrap_or_default();
+    pngs.sort();
+    let t0 = std::time::Instant::now();
+    let (mut frames, mut parts_px) = (0usize, 0usize);
+    for p in &pngs {
+        let (w, _h, rgb) = match read_rgb(p) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("跳过 {}: {e}", p.display());
+                continue;
+            }
+        };
+        let ids = match infer_ids(&mut b, &rgb, w as u32, &parts) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("推理失败 {}: {e}", p.display());
+                continue;
+            }
+        };
+        parts_px += ids.iter().filter(|&&v| v > 0).count();
+        let bin: Vec<u8> = ids.iter().flat_map(|v| v.to_le_bytes()).collect();
+        let stem = p
+            .file_stem()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
+        std::fs::write(outdir.join(format!("{stem}.ids.bin")), bin).ok();
+        frames += 1;
+    }
+    let ms = t0.elapsed().as_secs_f64() * 1000.0;
+    println!(
+        "批处理 {frames} 帧（{:.1} ms/帧），部件像素合计 {parts_px}，输出 {}",
+        if frames > 0 { ms / frames as f64 } else { 0.0 },
+        outdir.display()
+    );
+}
+
+#[cfg(not(feature = "gpu"))]
+fn batch(_argv: &[String]) {
+    eprintln!("本构建未启用 gpu feature");
     std::process::exit(2);
 }
