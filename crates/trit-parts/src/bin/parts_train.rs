@@ -50,6 +50,8 @@ struct Args {
     /// 可拆卸加速层（opt-in）：把单样本内的所有 dispatch 收进一个 encoder 再提交。
     /// 数学完全不变；实测在 GPU 被占用时无加速，默认关，GPU 空闲时再评估。
     batch: bool,
+    /// 合成数据：光度抖动 + 噪声 + 带标签平移（0 = 关闭）。
+    augment: i32,
 }
 
 fn parse() -> Result<Args, String> {
@@ -77,6 +79,7 @@ fn parse() -> Result<Args, String> {
         expand_from: None,
         residual: false,
         batch: false,
+        augment: 0,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -109,6 +112,7 @@ fn parse() -> Result<Args, String> {
             "--expand-from" => a.expand_from = Some(PathBuf::from(val()?)),
             "--residual" => a.residual = true,
             "--batch" => a.batch = true,
+            "--augment" => a.augment = val()?.parse().map_err(|_| "--augment 非整数")?,
             "--ste" => {
                 a.ste = match val()?.as_str() {
                     "identity" => Ste::Identity,
@@ -280,6 +284,7 @@ fn main() {
     {
         std::fs::create_dir_all(parent).ok();
     }
+    let mut aug = trit_parts::augment::Augment::new(args.seed ^ 0x5eed, args.augment);
     let mut rng = resumed_rng.unwrap_or(args.seed | 1);
     let mut best = f32::INFINITY;
     let mut ma = f32::NAN; // 损失的指数移动平均（单帧噪声大，直接打最后一帧会误导）
@@ -288,13 +293,16 @@ fn main() {
         rng ^= rng >> 7;
         rng ^= rng << 17;
         let (scene, file) = &paths[(rng % paths.len() as u64) as usize];
-        let s: Sample = match load_frame(scene, file, k) {
+        let mut s: Sample = match load_frame(scene, file, k) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("读帧失败: {e}");
                 std::process::exit(1);
             }
         };
+        if args.augment > 0 {
+            aug.apply(res, &mut s);
+        }
         let xb = gpu.buf(&s.rgb, "x");
         if args.batch {
             gpu.begin_batch();

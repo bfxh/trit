@@ -9,6 +9,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod augment;
 pub mod backward;
 pub mod data;
 pub mod loss;
