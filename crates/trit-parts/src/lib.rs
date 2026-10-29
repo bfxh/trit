@@ -15,6 +15,7 @@ pub mod data;
 pub mod loss;
 pub mod model;
 pub mod parts;
+pub mod tpm;
 pub mod weights;
 
 #[cfg(feature = "gpu")]

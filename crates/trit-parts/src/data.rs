@@ -71,6 +71,11 @@ pub fn encode(labels: &[i32], w: usize, h: usize, k: usize) -> (Vec<Vec<u8>>, Ve
     (planes, valid)
 }
 
+/// 只读 RGB（推理用，不需要 seg 标签）。
+pub fn read_rgb(path: &Path) -> Result<(usize, usize, Vec<f32>), String> {
+    read_png_rgb(path)
+}
+
 /// 读 PNG，返回 `(宽, 高, RGB 的 f32 NHWC)`。
 fn read_png_rgb(path: &Path) -> Result<(usize, usize, Vec<f32>), String> {
     let file = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;

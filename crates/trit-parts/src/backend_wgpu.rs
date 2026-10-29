@@ -20,6 +20,15 @@ impl WgpuBackend {
         Ok(Self { gpu, net })
     }
 
+    /// 从部署包建（与 `new` 等价，只是权重来源不同）。
+    pub fn from_tpm(m: &crate::tpm::TpmModel) -> Result<Self, String> {
+        let gpu = Gpu::new().ok_or("没有可用的 GPU 适配器")?;
+        let mut net = Net::from_tpm(m);
+        net.upload_all(&gpu);
+        println!("[wgpu] 适配器：{}", gpu.adapter);
+        Ok(Self { gpu, net })
+    }
+
     pub fn adapter(&self) -> &str {
         &self.gpu.adapter
     }
