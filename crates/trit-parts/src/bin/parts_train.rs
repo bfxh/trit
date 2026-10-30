@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use trit_learn::Ste;
 use trit_parts::data::{Sample, frames, load_frame};
 use trit_parts::gpu::Gpu;
-use trit_parts::loss::{loss_and_grad, plane_weights};
+use trit_parts::loss::{DepthSupervision, loss_and_grad_full, plane_weights};
 use trit_parts::net::Net;
 use trit_parts::parts::{PartList, evaluate_frame};
 use trit_parts::weights::Tensors;
@@ -54,6 +54,13 @@ struct Args {
     augment: bool,
     /// 额外做带标签平移（像素上限，0 = 不做）。
     augment_shift: i32,
+    /// 深度头：附加的三值平面数（0 = 关）。
+    depth_planes: usize,
+    /// 深度项权重。
+    depth_weight: f32,
+    /// 视差区间（1/米）。
+    depth_lo: f32,
+    depth_hi: f32,
 }
 
 fn parse() -> Result<Args, String> {
@@ -83,6 +90,10 @@ fn parse() -> Result<Args, String> {
         batch: false,
         augment: false,
         augment_shift: 0,
+        depth_planes: 0,
+        depth_weight: 0.5,
+        depth_lo: 0.15,
+        depth_hi: 0.65,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -127,6 +138,14 @@ fn parse() -> Result<Args, String> {
                     other => return Err(format!("未知 STE {other}")),
                 }
             }
+            "--depth-planes" => {
+                a.depth_planes = val()?.parse().map_err(|_| "--depth-planes 非整数")?
+            }
+            "--depth-weight" => {
+                a.depth_weight = val()?.parse().map_err(|_| "--depth-weight 非数字")?
+            }
+            "--depth-lo" => a.depth_lo = val()?.parse().map_err(|_| "--depth-lo 非数字")?,
+            "--depth-hi" => a.depth_hi = val()?.parse().map_err(|_| "--depth-hi 非数字")?,
             "--sgd" => a.adam = false,
             other => return Err(format!("未知参数 {other}")),
         }
@@ -209,7 +228,6 @@ fn main() {
     let k = 5usize;
     let res = 384u32;
     let hw = (res * res) as usize;
-    let ch = k * 3 + 1;
 
     let mut resumed_step = 0u64;
     let mut resumed_rng: Option<u64> = None;
@@ -270,11 +288,35 @@ fn main() {
             args.width
         );
     }
+    // head 要 4 的倍数（vec4 反向内核）；多余的补零通道不参与损失。
+    let need = 16 + args.depth_planes as u32 * 3;
+    let want_ch = need + (4 - need % 4) % 4;
+    if net.head_cout() != want_ch {
+        if net.head_cout() == 16 && args.depth_planes > 0 {
+            net.expand_head(want_ch - net.head_cout());
+            println!(
+                "深度平面头：head → {} 通道（{} 条平面，{} 级；含 {} 个补零通道）",
+                net.head_cout(),
+                args.depth_planes,
+                3usize.pow(args.depth_planes as u32),
+                want_ch - need
+            );
+        } else {
+            eprintln!(
+                "head 通道 {} 与 --depth-planes {} 不匹配（期望 {}）",
+                net.head_cout(),
+                args.depth_planes,
+                want_ch
+            );
+            std::process::exit(2);
+        }
+    }
     if args.residual {
         net.set_residual(true);
         println!("块内残差：开（e1b/e2b/e3b/d2b/d1b）");
     }
     net.upload_all(&gpu);
+    let ch = net.head_cout() as usize;
     let w = plane_weights(k);
     println!(
         "帧 {}，k={k}，res={res}，lr={}，accum={}，opt={}，ste={:?}",
@@ -309,13 +351,38 @@ fn main() {
         if args.augment {
             aug.apply(res, &mut s);
         }
+        let dep = if args.depth_planes > 0 {
+            match trit_parts::data::depth_planes(
+                scene,
+                file,
+                hw,
+                args.depth_planes,
+                args.depth_lo,
+                args.depth_hi,
+            ) {
+                Ok(v) => Some(v),
+                Err(e) => {
+                    eprintln!("读深度失败: {e}");
+                    std::process::exit(1);
+                }
+            }
+        } else {
+            None
+        };
         let xb = gpu.buf(&s.rgb, "x");
         if args.batch {
             gpu.begin_batch();
         }
         let tr = net.forward(&gpu, xb, res);
         let logits = gpu.read(&tr.out, hw * ch);
-        let out = loss_and_grad(&logits, &s.planes, &s.valid, hw, k, &w);
+        let dw = trit_parts::loss::plane_weights(args.depth_planes.max(1));
+        let sup = dep.as_ref().map(|(p, v)| DepthSupervision {
+            planes: p,
+            valid: v,
+            w: &dw,
+            weight: args.depth_weight,
+        });
+        let out = loss_and_grad_full(&logits, &s.planes, &s.valid, hw, k, &w, sup.as_ref());
         let dout = gpu.buf(&out.grad, "dout");
         net.backward(&gpu, &tr, &dout, res);
         if args.batch {
@@ -346,7 +413,26 @@ fn main() {
                 let xb0 = gpu.buf(&s0.rgb, "x");
                 let tr0 = net.forward(&gpu, xb0, res);
                 let lg0 = gpu.read(&tr0.out, hw * ch);
-                let ev = loss_and_grad(&lg0, &s0.planes, &s0.valid, hw, k, &w);
+                let dep0 = if args.depth_planes > 0 {
+                    trit_parts::data::depth_planes(
+                        scene0,
+                        file0,
+                        hw,
+                        args.depth_planes,
+                        args.depth_lo,
+                        args.depth_hi,
+                    )
+                    .ok()
+                } else {
+                    None
+                };
+                let sup0 = dep0.as_ref().map(|(p, v)| DepthSupervision {
+                    planes: p,
+                    valid: v,
+                    w: &dw,
+                    weight: args.depth_weight,
+                });
+                let ev = loss_and_grad_full(&lg0, &s0.planes, &s0.valid, hw, k, &w, sup0.as_ref());
                 println!(
                     "  [固定帧] step {}  loss {:.4}  平面 {:?}  valid {:.4}",
                     step + 1,
@@ -369,8 +455,19 @@ fn main() {
             }
         }
         if step % args.report == 0 || step + 1 == args.steps {
+            let dstr = if out.depth_acc.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "  深度平面 {:?}",
+                    out.depth_acc
+                        .iter()
+                        .map(|v| (v * 1000.0).round() / 1000.0)
+                        .collect::<Vec<_>>()
+                )
+            };
             println!(
-                "step {:>5}  loss {:.4} (ma {:.4})  平面(部件像素) {:?}  valid {:.4}",
+                "step {:>5}  loss {:.4} (ma {:.4})  平面(部件像素) {:?}  valid {:.4}{dstr}",
                 step + 1,
                 out.loss,
                 ma,
@@ -505,10 +602,10 @@ fn eval_only(gpu: &Gpu, args: &Args) {
         std::process::exit(1);
     });
     net.upload_all(gpu);
+    let ch = net.head_cout() as usize;
 
     let res = 384u32;
     let hw = (res * res) as usize;
-    let ch = k * 3 + 1;
 
     let mut plane_sum = vec![0f64; k];
     // [无约束, 约束]：帧级累加（id 一致按帧取均值，IoU 按 (帧,部件) 对取均值，清单外按帧取均值）
@@ -520,6 +617,10 @@ fn eval_only(gpu: &Gpu, args: &Args) {
     let mut unk_ids = [0f64; 2];
     let mut unk_px = [0f64; 2];
     let mut unk_px_n = [0f64; 2];
+    let mut dep_abs = 0f64;
+    let mut dep_rel = 0f64;
+    let mut dep_d1 = 0f64;
+    let mut dep_n = 0usize;
 
     for scene in &scenes {
         let mut paths = frames(scene);
@@ -538,6 +639,48 @@ fn eval_only(gpu: &Gpu, args: &Args) {
             let tr = net.forward(gpu, xb, res);
             let logits = gpu.read(&tr.out, hw * ch);
             frames_n += 1;
+            if ch > 16 {
+                let dplanes = (ch - 16) / 3;
+                let levels = 3usize.pow(dplanes as u32) - 1;
+                let stem = file
+                    .file_stem()
+                    .map(|v| v.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                let (dep, _) =
+                    trit_parts::geo::read_npy_f32(&scene.join("depth").join(format!("{stem}.npy")))
+                        .unwrap_or_else(|e| {
+                            eprintln!("读深度失败: {e}");
+                            std::process::exit(1);
+                        });
+                for (p, &gd) in dep.iter().enumerate().take(hw) {
+                    if s.valid[p] == 0 {
+                        continue;
+                    }
+                    if !(gd.is_finite() && gd > 0.05 && gd < 50.0) {
+                        continue;
+                    }
+                    let mut lvl = 0usize;
+                    for i in 0..dplanes {
+                        let b = p * ch + 16 + i * 3;
+                        let z = [logits[b], logits[b + 1], logits[b + 2]];
+                        let mut best = 0usize;
+                        for c in 1..3 {
+                            if z[c] > z[best] {
+                                best = c;
+                            }
+                        }
+                        lvl = lvl * 3 + best;
+                    }
+                    let t = lvl as f32 / levels.max(1) as f32;
+                    let disp = args.depth_lo + t * (args.depth_hi - args.depth_lo);
+                    let pd = 1.0 / disp.max(1e-3);
+                    let e = (pd - gd).abs() as f64;
+                    dep_abs += e;
+                    dep_rel += e / gd as f64;
+                    dep_d1 += f64::from(u8::from((pd.max(gd) / pd.min(gd)) < 1.25));
+                    dep_n += 1;
+                }
+            }
             for (slot, constrained) in [false, true].into_iter().enumerate() {
                 let fm = evaluate_frame(&logits, &s.planes, &s.valid, &m, constrained, true);
                 if !constrained {
@@ -575,6 +718,15 @@ fn eval_only(gpu: &Gpu, args: &Args) {
         .map(|v| (v * 1000.0).round() / 1000.0)
         .collect();
     println!("帧数 {frames_n}");
+    if dep_n > 0 {
+        println!(
+            "深度（预测 vs GT）：MAE {:.1} mm，相对误差 {:.2}%，δ<1.25 {:.3}（{} 像素）",
+            dep_abs / dep_n as f64 * 1000.0,
+            dep_rel / dep_n as f64 * 100.0,
+            dep_d1 / dep_n as f64,
+            dep_n
+        );
+    }
     println!("平面准确率(GT 部件像素) {plane_show:?}");
     println!("{:<18}{:>10}{:>10}", "指标", "无约束", "清单约束");
     println!(

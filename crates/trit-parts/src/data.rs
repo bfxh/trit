@@ -52,6 +52,44 @@ pub fn load_frame(scene: &Path, rgb: &Path, k: usize) -> Result<Sample, String> 
 }
 
 /// id 图 → (k 条平面, valid)。
+/// GT 深度 → 视差三值平面（`dplanes` 条，`3^dplanes` 级，区间 `[lo, hi]`）。
+/// 只在 `seg > 0` 且深度合法的像素上有标签。
+pub fn depth_planes(
+    scene: &Path,
+    file: &Path,
+    npix: usize,
+    dplanes: usize,
+    lo: f32,
+    hi: f32,
+) -> Result<(Vec<Vec<u8>>, Vec<u8>), String> {
+    let stem = file
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .ok_or("文件名缺 stem")?;
+    let (dep, _) = crate::geo::read_npy_f32(&scene.join("depth").join(format!("{stem}.npy")))?;
+    let (seg, _) = read_npy_i32(&scene.join("seg").join(format!("{stem}.npy")))?;
+    if dep.len() < npix || seg.len() < npix {
+        return Err("深度/分割比图像小".into());
+    }
+    let levels = 3usize.pow(dplanes as u32) - 1;
+    let span = (hi - lo).max(1e-6);
+    let mut planes = vec![vec![0u8; npix]; dplanes];
+    let mut valid = vec![0u8; npix];
+    for p in 0..npix {
+        let d = dep[p];
+        if seg[p] <= 0 || !(d.is_finite() && d > 0.05 && d < 50.0) {
+            continue;
+        }
+        let t = ((1.0 / d - lo) / span).clamp(0.0, 1.0);
+        let lvl = ((t * levels as f32).round() as usize).min(levels);
+        valid[p] = 1;
+        for (i, plane) in planes.iter_mut().enumerate() {
+            plane[p] = ((lvl / 3usize.pow((dplanes - 1 - i) as u32)) % 3) as u8;
+        }
+    }
+    Ok((planes, valid))
+}
+
 pub fn encode(labels: &[i32], w: usize, h: usize, k: usize) -> (Vec<Vec<u8>>, Vec<u8>) {
     let n = w * h;
     let mut planes = vec![vec![0u8; n]; k];

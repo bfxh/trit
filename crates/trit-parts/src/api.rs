@@ -24,8 +24,10 @@ pub fn infer_ids(
 pub fn decode_ids(logits: &[f32], res: u32, parts: &PartList) -> Vec<u32> {
     let hw = (res * res) as usize;
     let k = parts.k;
-    let ch = k * 3 + 1;
-    assert_eq!(logits.len(), hw * ch, "logits 长度应为 hw*(k*3+1)");
+    let base = k * 3 + 1;
+    assert_eq!(logits.len() % hw, 0, "logits 长度应为 hw 的整数倍");
+    let ch = logits.len() / hw;
+    assert!(ch > k * 3, "通道数少于 k*3+1（{ch} < {base}）");
     let mut ids = vec![0u32; hw];
     for p in 0..hw {
         if logits[p * ch + k * 3] <= 0.0 {

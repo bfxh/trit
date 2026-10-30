@@ -121,6 +121,59 @@ impl Layer {
         }
     }
 
+    /// 通道扩展：输出通道从 `cout` 扩到 `cout+extra`，旧通道原样保留，新通道权重为 0。
+    ///
+    /// 三值权重按 `[wb + ic*cout + oc]` 排布，扩通道必须重排，不能简单追加。
+    pub fn expand_cout(&mut self, extra: u32) {
+        if extra == 0 {
+            return;
+        }
+        let (cin, kk) = (self.cin as usize, self.kk as usize);
+        let old = self.cout as usize;
+        let new = old + extra as usize;
+        let wb_n = kk * kk * cin;
+        let mut latent = vec![0f32; wb_n * new];
+        let mut q = vec![0i32; wb_n * new];
+        for wb in 0..wb_n {
+            let o = wb * old;
+            let n = wb * new;
+            latent[n..n + old].copy_from_slice(&self.latent[o..o + old]);
+            q[n..n + old].copy_from_slice(&self.q[o..o + old]);
+        }
+        let grow = |v: &[f32], fill: f32| {
+            let mut out = v.to_vec();
+            out.resize(new, fill);
+            out
+        };
+        self.latent = latent;
+        self.q = q;
+        self.grad_e = vec![0.0; wb_n * new];
+        self.m_w = vec![0.0; wb_n * new];
+        self.v_w = vec![0.0; wb_n * new];
+        self.scale = grow(&self.scale, 1.0);
+        self.bias = grow(&self.bias, 0.0);
+        self.grad_b = grow(&self.grad_b, 0.0);
+        self.m_s = grow(&self.m_s, 0.0);
+        self.v_s = grow(&self.v_s, 0.0);
+        self.m_b = grow(&self.m_b, 0.0);
+        self.v_b = grow(&self.v_b, 0.0);
+        self.gamma = grow(&self.gamma, 1.0);
+        self.beta = grow(&self.beta, 0.0);
+        self.grad_gamma = grow(&self.grad_gamma, 0.0);
+        self.grad_beta = grow(&self.grad_beta, 0.0);
+        self.m_g = grow(&self.m_g, 0.0);
+        self.v_g = grow(&self.v_g, 0.0);
+        self.m_be = grow(&self.m_be, 0.0);
+        self.v_be = grow(&self.v_be, 0.0);
+        self.cout = new as u32;
+        self.dev = None;
+        self.dev_gb = None;
+        self.dev_t = None;
+        self.acc_e = None;
+        self.acc_b = None;
+        self.acc_gb = None;
+    }
+
     /// 随机初始化（He 均匀：`U(-a, a)`，`a = sqrt(6 / fan_in)`）。
     ///
     /// 早期版本用 `U(-1.43, 1.43)` 不按 fan-in 缩放，从零训练时逐层放大到 1e10 量级（实测），
@@ -459,6 +512,16 @@ impl Net {
         layers[U3].convt = true;
         layers[U2].convt = true;
         Ok(Self { layers })
+    }
+
+    /// head 追加 `extra` 个输出通道（深度平面头用）。
+    pub fn expand_head(&mut self, extra: u32) {
+        self.layers[HEAD].expand_cout(extra);
+    }
+
+    /// head 的输出通道数（16 + 深度平面数）。
+    pub fn head_cout(&self) -> u32 {
+        self.layers[HEAD].cout
     }
 
     /// 随机初始化（按宽度倍数缩放通道：1.0 ⇒ 32/64/128；1.5 ⇒ 48/96/192）。

@@ -138,9 +138,10 @@ pub fn evaluate_frame(
     use_pred_valid: bool,
 ) -> FrameMetrics {
     let k = manifest.k;
-    let ch = k * 3 + 1;
     let hw = valid_gt.len();
-    assert_eq!(logits.len(), hw * ch);
+    assert_eq!(logits.len() % hw, 0, "logits 长度应为 hw 的整数倍");
+    let ch = logits.len() / hw;
+    assert!(ch > k * 3, "通道数少于 k*3+1");
 
     let mut hit = vec![0usize; k];
     let mut seen = 0usize;

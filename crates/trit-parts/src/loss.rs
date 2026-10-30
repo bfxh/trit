@@ -12,6 +12,17 @@ pub struct LossOut {
     pub plane_acc: Vec<f32>,
     /// valid 通道在全部像素上的准确率。
     pub valid_acc: f32,
+    /// 深度平面在深度有效像素上的 argmax 准确率（没开深度头时为空）。
+    pub depth_acc: Vec<f32>,
+}
+
+/// 深度平面监督：`planes` 是额外通道上的三值平面，`w` 是这些平面的归一化权重。
+pub struct DepthSupervision<'a> {
+    pub planes: &'a [Vec<u8>],
+    pub valid: &'a [u8],
+    pub w: &'a [f32],
+    /// 深度项在总损失里的权重。
+    pub weight: f32,
 }
 
 /// 层级权重：`w_i ∝ 1/(1+i)` 归一化（高位平面权重更大），与 Python 一致。
@@ -33,8 +44,28 @@ pub fn loss_and_grad(
     k: usize,
     w: &[f32],
 ) -> LossOut {
+    loss_and_grad_full(logits, planes, valid, hw, k, w, None)
+}
+
+/// 带可选深度平面的完整损失。
+pub fn loss_and_grad_full(
+    logits: &[f32],
+    planes: &[Vec<u8>],
+    valid: &[u8],
+    hw: usize,
+    k: usize,
+    w: &[f32],
+    depth: Option<&DepthSupervision>,
+) -> LossOut {
     let ch = k * 3 + 1;
-    assert_eq!(logits.len(), hw * ch);
+    let dplanes = depth.map(|d| d.planes.len()).unwrap_or(0);
+    assert_eq!(logits.len() % hw, 0);
+    let stride = logits.len() / hw;
+    assert!(
+        stride >= ch + dplanes * 3,
+        "通道不足：{stride} < {}",
+        ch + dplanes * 3
+    );
     assert_eq!(planes.len(), k);
     let inv = 1.0f32 / hw as f32;
     let mut grad = vec![0.0f32; logits.len()];
@@ -44,7 +75,7 @@ pub fn loss_and_grad(
     let mut vhit = 0usize;
 
     for p in 0..hw {
-        let base = p * ch;
+        let base = p * stride;
         if valid[p] == 1 {
             seen += 1;
         }
@@ -88,6 +119,57 @@ pub fn loss_and_grad(
         }
     }
 
+    let mut depth_hit = vec![0usize; dplanes];
+    let mut depth_seen = 0usize;
+    if let Some(d) = depth {
+        // 先数有效像素，梯度用固定归一化（逐像素变化的 1/n 会把前几个像素放大上千倍）。
+        let dcount = d.valid.iter().filter(|&&v| v == 1).count();
+        let dinv = 1.0 / dcount.max(1) as f32;
+        for p in 0..hw {
+            if d.valid[p] != 1 {
+                continue;
+            }
+            depth_seen += 1;
+            let base = p * stride + ch;
+            for i in 0..dplanes {
+                let z = [
+                    logits[base + i * 3],
+                    logits[base + i * 3 + 1],
+                    logits[base + i * 3 + 2],
+                ];
+                let m = z[0].max(z[1]).max(z[2]);
+                let e = [(z[0] - m).exp(), (z[1] - m).exp(), (z[2] - m).exp()];
+                let sum = e[0] + e[1] + e[2];
+                let t = d.planes[i][p] as usize;
+                let prob = e[t] / sum;
+                loss += f64::from(d.weight * d.w[i] * -prob.max(1e-12).ln());
+                for c in 0..3 {
+                    let onehot = if c == t { 1.0 } else { 0.0 };
+                    grad[base + i * 3 + c] += d.weight * d.w[i] * (e[c] / sum - onehot) * dinv;
+                }
+                let mut best = 0usize;
+                for c in 1..3 {
+                    if z[c] > z[best] {
+                        best = c;
+                    }
+                }
+                if best == t {
+                    depth_hit[i] += 1;
+                }
+            }
+        }
+    }
+    let depth_acc = depth_hit
+        .iter()
+        .map(|&h| {
+            if depth_seen > 0 {
+                h as f32 / depth_seen as f32
+            } else {
+                0.0
+            }
+        })
+        .collect();
+
     let plane_acc = hit
         .iter()
         .map(|&h| {
@@ -104,6 +186,7 @@ pub fn loss_and_grad(
         grad,
         plane_acc,
         valid_acc: vhit as f32 / hw as f32,
+        depth_acc,
     }
 }
 
