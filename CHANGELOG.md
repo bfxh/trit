@@ -87,15 +87,18 @@
 - **`netsec::dataset`**：CICIDS2017 与 CSE-CIC-IDS2018 两套列名（全称/缩写）按名对齐到 24 维特征，
   处理前导空格、`Infinity`/`NaN`、单位换算（µs → s/ms）；超上限时**等距抽样**而不是截前缀。
 - **`netsec::calibrate`**：阈值取训练集分位数带 `[P(0.5-b), P(0.5+b)]`，`b` 为弃权旋钮；
-  训练集多数类下采样到 1:1（否则三值 STE 塌成常数负例）；输出 coverage / abstain / FPR / TPR /
-  precision / 分方向弃权率，以及训练损失与影子/三值精度。
-- **CLI**：`trit-net calibrate CSV [--rows N] [--epochs N] [--hidden N] [--lr F] [--bands …] [--json]`。
+  选维按训练集点二列相关取前 `k` 维、方向由符号定；训练集多数类下采样到 1:1
+  （否则三值 STE 塌成常数负例）；支持外部测试集做跨日评估。输出 coverage / abstain /
+  FPR / TPR / precision / 分方向弃权率，以及训练损失与影子/三值精度。
+- **CLI**：`trit-net calibrate CSV [--rows N] [--epochs N] [--hidden N] [--lr F] [--features K]
+  [--test CSV] [--bands …] [--json]`。
 - **真实读数**（CSE-CIC-IDS2018）：
-  - DoS/DDoS 日（16-02，17 万流）：`b=0.05` 时 TPR 0.916 / FPR 0.082 / 弃权 22.8%；
-    弃权主要吸收良性（band=0 时良性 27.6% vs 攻击 6.6%）。
+  - DoS/DDoS 日（16-02，17 万流，数据驱动选 8 维，|r| 0.64–0.77）：`b=0.20` 时
+    TPR 0.938 / FPR 0.141 / 弃权 14.2%，弃权主要吸收良性（19.5% vs 7.7%）。
+  - 跨日（16-02 → 01-03）：**基本失效**，FPR 0.50–0.67、precision 0.31–0.39。
   - Infiltration 日（01-03，33 万行）：**负结果**——线性基线 AUC 0.4984、三值模型等同随机，
     单特征中位切分最大差 0.13，说明该场景下 CICFlowMeter 流特征无信号。
-- 测试 **9 → 26**（新增 dataset/calibrate/IDS2018 列名/曲线形状；netsec 由 11 增到 17）。
+- 测试 **9 → 27**（新增 dataset/calibrate/选维/IDS2018 列名/曲线形状；netsec 由 11 增到 18）。
 
 ### Added（`trit-net` 网络安全面 M0：pcap → 双向流 → 三值弃权判决）
 
