@@ -82,6 +82,15 @@
   说明行直接给出 `call X / jmp Y`。真实读数：Node x64 148 = call 25 / jmp 123；
   Deno x64 156 = call 24 / jmp 132——绝大多数是无 `.pdata` 的导入跳板，而非漏归属的调用。
 - 变异新增 2 条（mov 搬运链断开、call 记成 jmp），本地 **10/10 全抓**；测试 **71**。
+### Added（`trit-net` 网络安全面 M0：pcap → 双向流 → 三值弃权判决）
+
+- **`netsec` 模块**（`pcap` / `packet` / `flow` / `features` / `decision`）：经典 pcap 四种 magic
+  （LE/BE × 微秒/纳秒）、linktype 1/101；Ethernet（≤2 层 VLAN）、IPv4（非首片跳过）、
+  IPv6（扩展头 0/43/60/51/44）、TCP/UDP；无向五元组 + 首包定向 + 24 维特征（Welford 方差）。
+- **弃权是一等公民**：8 条规则的死区判 `X`，`analyze` 精确枚举后输出
+  `malicious / benign / undetermined`；预算不足报 `budget-exceeded`，不降级成猜测。
+- **CLI**：`trit-net flow PCAP [--model MODEL] [--budget N]`，每流一行 JSONL，跳过原因计数进 stderr。
+- 测试 **9 → 20**（新增 11 条 netsec）；`docs/SECURITY-NET.md` 记录管线、读数与未校准声明。
 
 ### Fixed（`trit-re` N1 续：真实 ARM64 / x64 共享库校准）
 
