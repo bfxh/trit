@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use trit_learn::Ste;
 use trit_parts::data::{Sample, frames, load_frame};
 use trit_parts::gpu::Gpu;
-use trit_parts::loss::{DepthSupervision, loss_and_grad_full, plane_weights};
+use trit_parts::loss::{depth_loss_grad, loss_and_grad, plane_weights};
 use trit_parts::net::Net;
 use trit_parts::parts::{PartList, evaluate_frame};
 use trit_parts::weights::Tensors;
@@ -63,6 +63,8 @@ struct Args {
     depth_hi: f32,
     /// head 的学习率倍率。
     head_lr: f32,
+    /// 冻结除最后一层外的所有层。
+    freeze: bool,
 }
 
 fn parse() -> Result<Args, String> {
@@ -97,6 +99,7 @@ fn parse() -> Result<Args, String> {
         depth_lo: 0.15,
         depth_hi: 0.65,
         head_lr: 1.0,
+        freeze: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -150,12 +153,13 @@ fn parse() -> Result<Args, String> {
             "--depth-lo" => a.depth_lo = val()?.parse().map_err(|_| "--depth-lo 非数字")?,
             "--depth-hi" => a.depth_hi = val()?.parse().map_err(|_| "--depth-hi 非数字")?,
             "--head-lr" => a.head_lr = val()?.parse().map_err(|_| "--head-lr 非数字")?,
+            "--freeze-backbone" => a.freeze = true,
             "--sgd" => a.adam = false,
             other => return Err(format!("未知参数 {other}")),
         }
         // 纯开关类参数只前进 1，否则会吞掉下一个参数（`--residual --steps 4000` 会把 --steps 吃掉）
         i += match key {
-            "--sgd" | "--residual" | "--batch" | "--augment" => 1,
+            "--sgd" | "--residual" | "--batch" | "--augment" | "--freeze-backbone" => 1,
             _ => 2,
         };
     }
@@ -292,30 +296,21 @@ fn main() {
             args.width
         );
     }
-    // head 要 4 的倍数（vec4 反向内核）；多余的补零通道不参与损失。
-    let need = 16 + args.depth_planes as u32 * 3;
-    let want_ch = need + (4 - need % 4) % 4;
-    if net.head_cout() != want_ch {
-        if net.head_cout() == 16 && args.depth_planes > 0 {
-            net.expand_head(want_ch - net.head_cout());
-            println!(
-                "深度平面头：head → {} 通道（{} 条平面，{} 级；含 {} 个补零通道）",
-                net.head_cout(),
-                args.depth_planes,
-                3usize.pow(args.depth_planes as u32),
-                want_ch - need
-            );
-        } else {
-            eprintln!(
-                "head 通道 {} 与 --depth-planes {} 不匹配（期望 {}）",
-                net.head_cout(),
-                args.depth_planes,
-                want_ch
-            );
-            std::process::exit(2);
-        }
+    if args.depth_planes > 0 && net.depth_cout() == 0 {
+        net.add_depth_head(args.depth_planes as u32, args.seed);
+        println!(
+            "独立深度头：{} 条平面（{} 级），输入 {} 通道、输出 {} 通道",
+            args.depth_planes,
+            3usize.pow(args.depth_planes as u32),
+            net.layers[trit_parts::net::D1B].cout,
+            net.depth_cout()
+        );
     }
     net.head_lr_mult = args.head_lr;
+    if args.freeze {
+        net.freeze_until = net.layers.len() - 1;
+        println!("冻结骨干：只更新第 {} 层（深度头）", net.freeze_until);
+    }
     if args.residual {
         net.set_residual(true);
         println!("块内残差：开（e1b/e2b/e3b/d2b/d1b）");
@@ -341,6 +336,7 @@ fn main() {
     let mut rng = resumed_rng.unwrap_or(args.seed | 1);
     let mut best = f32::INFINITY;
     let mut ma = f32::NAN; // 损失的指数移动平均（单帧噪声大，直接打最后一帧会误导）
+    let mut dep_out: Option<trit_parts::loss::DepthOut>;
     for step in 0..args.steps {
         rng ^= rng << 13;
         rng ^= rng >> 7;
@@ -380,14 +376,23 @@ fn main() {
         }
         let tr = net.forward(&gpu, xb, res);
         let logits = gpu.read(&tr.out, hw * ch);
+        let out = loss_and_grad(&logits, &s.planes, &s.valid, hw, k, &w);
         let dw = trit_parts::loss::plane_weights(args.depth_planes.max(1));
-        let sup = dep.as_ref().map(|(p, v)| DepthSupervision {
-            planes: p,
-            valid: v,
-            w: &dw,
-            weight: args.depth_weight,
-        });
-        let out = loss_and_grad_full(&logits, &s.planes, &s.valid, hw, k, &w, sup.as_ref());
+        let dout_depth = match (&dep, &tr.depth_out) {
+            (Some((p, v)), Some(buf)) => {
+                let dlogits = gpu.read(buf, hw * args.depth_planes * 3);
+                let dout = depth_loss_grad(&dlogits, p, v, &dw, args.depth_weight);
+                let b = gpu.buf(&dout.grad, "dout_depth");
+                dep_out = Some(dout);
+                Some(b)
+            }
+            _ => {
+                dep_out = None;
+                None
+            }
+        };
+        let dout = gpu.buf(&out.grad, "dout");
+        net.backward_full(&gpu, &tr, &dout, dout_depth.as_ref(), res);
         let dout = gpu.buf(&out.grad, "dout");
         net.backward(&gpu, &tr, &dout, res);
         if args.batch {
@@ -431,22 +436,27 @@ fn main() {
                 } else {
                     None
                 };
-                let sup0 = dep0.as_ref().map(|(p, v)| DepthSupervision {
-                    planes: p,
-                    valid: v,
-                    w: &dw,
-                    weight: args.depth_weight,
-                });
-                let ev = loss_and_grad_full(&lg0, &s0.planes, &s0.valid, hw, k, &w, sup0.as_ref());
+                let ev = loss_and_grad(&lg0, &s0.planes, &s0.valid, hw, k, &w);
+                let dacc = match (&dep0, &tr0.depth_out) {
+                    (Some((p, v)), Some(buf)) => {
+                        let dl = gpu.read(buf, hw * args.depth_planes * 3);
+                        Some(depth_loss_grad(&dl, p, v, &dw, args.depth_weight).acc)
+                    }
+                    _ => None,
+                };
                 println!(
-                    "  [固定帧] step {}  loss {:.4}  平面 {:?}  valid {:.4}",
+                    "  [固定帧] step {}  loss {:.4}  平面 {:?}  valid {:.4}  深度 {:?}",
                     step + 1,
                     ev.loss,
                     ev.plane_acc
                         .iter()
                         .map(|v| (v * 1000.0).round() / 1000.0)
                         .collect::<Vec<_>>(),
-                    ev.valid_acc
+                    ev.valid_acc,
+                    dacc.map(|a| a
+                        .iter()
+                        .map(|v| (v * 1000.0).round() / 1000.0)
+                        .collect::<Vec<_>>())
                 );
             }
         }
@@ -460,16 +470,16 @@ fn main() {
             }
         }
         if step % args.report == 0 || step + 1 == args.steps {
-            let dstr = if out.depth_acc.is_empty() {
-                String::new()
-            } else {
-                format!(
-                    "  深度平面 {:?}",
-                    out.depth_acc
+            let dstr = match &dep_out {
+                Some(d) => format!(
+                    "  深度平面 {:?}  (l1 {:.4})",
+                    d.acc
                         .iter()
                         .map(|v| (v * 1000.0).round() / 1000.0)
-                        .collect::<Vec<_>>()
-                )
+                        .collect::<Vec<_>>(),
+                    d.loss
+                ),
+                None => String::new(),
             };
             println!(
                 "step {:>5}  loss {:.4} (ma {:.4})  平面(部件像素) {:?}  valid {:.4}{dstr}",
@@ -644,9 +654,10 @@ fn eval_only(gpu: &Gpu, args: &Args) {
             let tr = net.forward(gpu, xb, res);
             let logits = gpu.read(&tr.out, hw * ch);
             frames_n += 1;
-            if ch > 16 {
-                let dplanes = (ch - 16) / 3;
+            if let Some(buf) = &tr.depth_out {
+                let dplanes = (net.depth_cout() as usize) / 3;
                 let levels = 3usize.pow(dplanes as u32) - 1;
+                let dl = gpu.read(buf, hw * dplanes * 3);
                 let stem = file
                     .file_stem()
                     .map(|v| v.to_string_lossy().into_owned())
@@ -666,8 +677,8 @@ fn eval_only(gpu: &Gpu, args: &Args) {
                     }
                     let mut lvl = 0usize;
                     for i in 0..dplanes {
-                        let b = p * ch + 16 + i * 3;
-                        let z = [logits[b], logits[b + 1], logits[b + 2]];
+                        let b = p * dplanes * 3 + i * 3;
+                        let z = [dl[b], dl[b + 1], dl[b + 2]];
                         let mut best = 0usize;
                         for c in 1..3 {
                             if z[c] > z[best] {

@@ -16,6 +16,77 @@ pub struct LossOut {
     pub depth_acc: Vec<f32>,
 }
 
+/// 深度头单独的损失结果。
+pub struct DepthOut {
+    pub loss: f32,
+    pub grad: Vec<f32>,
+    pub acc: Vec<f32>,
+}
+
+/// 深度平面损失（独立深度头的输出，布局 `hw × planes*3`）。
+pub fn depth_loss_grad(
+    logits: &[f32],
+    planes: &[Vec<u8>],
+    valid: &[u8],
+    w: &[f32],
+    weight: f32,
+) -> DepthOut {
+    let hw = valid.len();
+    let dp = planes.len();
+    assert_eq!(logits.len(), hw * dp * 3);
+    let mut grad = vec![0.0f32; logits.len()];
+    let mut hit = vec![0usize; dp];
+    let mut seen = 0usize;
+    let mut loss = 0f64;
+    let dinv = 1.0 / valid.iter().filter(|&&v| v == 1).count().max(1) as f32;
+    for p in 0..hw {
+        if valid[p] != 1 {
+            continue;
+        }
+        seen += 1;
+        let base = p * dp * 3;
+        for i in 0..dp {
+            let z = [
+                logits[base + i * 3],
+                logits[base + i * 3 + 1],
+                logits[base + i * 3 + 2],
+            ];
+            let m = z[0].max(z[1]).max(z[2]);
+            let e = [(z[0] - m).exp(), (z[1] - m).exp(), (z[2] - m).exp()];
+            let sum = e[0] + e[1] + e[2];
+            let t = planes[i][p] as usize;
+            loss += f64::from(weight * w[i] * -(e[t] / sum).max(1e-12).ln());
+            for c in 0..3 {
+                let onehot = if c == t { 1.0 } else { 0.0 };
+                grad[base + i * 3 + c] += weight * w[i] * (e[c] / sum - onehot) * dinv;
+            }
+            let mut best = 0usize;
+            for c in 1..3 {
+                if z[c] > z[best] {
+                    best = c;
+                }
+            }
+            if best == t {
+                hit[i] += 1;
+            }
+        }
+    }
+    DepthOut {
+        loss: (loss * f64::from(dinv)) as f32,
+        grad,
+        acc: hit
+            .iter()
+            .map(|&h| {
+                if seen > 0 {
+                    h as f32 / seen as f32
+                } else {
+                    0.0
+                }
+            })
+            .collect(),
+    }
+}
+
 /// 深度平面监督：`planes` 是额外通道上的三值平面，`w` 是这些平面的归一化权重。
 pub struct DepthSupervision<'a> {
     pub planes: &'a [Vec<u8>],

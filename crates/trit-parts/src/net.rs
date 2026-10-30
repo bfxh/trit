@@ -25,6 +25,8 @@ pub const U2: usize = 9;
 pub const D1A: usize = 10;
 pub const D1B: usize = 11;
 pub const HEAD: usize = 12;
+/// 可选深度头（独立的第 14 层，从 d1 特征 `z` 分叉；存在时 `layers.len() == 14`）。
+pub const DEPTH: usize = 13;
 
 /// 一层的可训练参数与（可选的）设备缓冲。
 pub struct Layer {
@@ -479,6 +481,8 @@ pub struct Trace {
     pub act_d1a: Buffer,
     pub z: Buffer,
     pub out: Buffer,
+    /// 深度头的输出（没有深度头时为 None）。
+    pub depth_out: Option<Buffer>,
 }
 
 /// 整网。
@@ -486,6 +490,8 @@ pub struct Net {
     pub layers: Vec<Layer>,
     /// head 的学习率倍率（深度头用：新通道从 0 起，需要更快的学习速度）。
     pub head_lr_mult: f32,
+    /// 序号小于该值的层不更新（冻结骨干做深度头专用训练）。
+    pub freeze_until: usize,
 }
 
 impl Net {
@@ -516,7 +522,29 @@ impl Net {
         Ok(Self {
             layers,
             head_lr_mult: 1.0,
+            freeze_until: 0,
         })
+    }
+
+    /// 追加独立深度头：1×1 卷积，输入取 `D1B` 的输出，输出 `planes*3` 通道。
+    pub fn add_depth_head(&mut self, planes: u32, seed: u64) {
+        if self.layers.len() > DEPTH {
+            return;
+        }
+        let cin = self.layers[D1B].cout;
+        let mut s = seed | 1;
+        // 实测 1×1 在留出集上比 3×3 好（MAE 1.09/1.31 m vs 1.20/1.48 m，3000 步）。
+        self.layers
+            .push(Layer::random(cin, planes * 3, 1, false, &mut s));
+    }
+
+    /// 深度头输出通道数（没有时 0）。
+    pub fn depth_cout(&self) -> u32 {
+        if self.layers.len() > DEPTH {
+            self.layers[DEPTH].cout
+        } else {
+            0
+        }
     }
 
     /// head 追加 `extra` 个输出通道（深度平面头用）。
@@ -559,6 +587,7 @@ impl Net {
         let mut net = Self {
             layers,
             head_lr_mult: 1.0,
+            freeze_until: 0,
         };
         net.mark_convt();
         net
@@ -662,6 +691,13 @@ impl Net {
         pre[D1B] = Some(v_d1b);
         let (v_head, out) = self.conv_affine(gpu, HEAD, &z, res, res);
         pre[HEAD] = Some(v_head);
+        let depth_out = if self.layers.len() > DEPTH {
+            let (v_depth, d_out) = self.conv_affine(gpu, DEPTH, &z, res, res);
+            pre[DEPTH] = Some(v_depth);
+            Some(d_out)
+        } else {
+            None
+        };
         Trace {
             pre,
             input,
@@ -682,17 +718,42 @@ impl Net {
             act_d1a,
             z,
             out,
+            depth_out,
         }
     }
 
     /// 反向：`dout` 是 `∂L/∂out`（NHWC，16 通道）。结果累加到各层梯度缓冲。
     pub fn backward(&mut self, gpu: &Gpu, tr: &Trace, dout: &Buffer, res: u32) {
+        self.backward_full(gpu, tr, dout, None, res);
+    }
+
+    /// 反向：主 head + 可选深度头，两路梯度在 `z` 处相加后继续回传。
+    pub fn backward_full(
+        &mut self,
+        gpu: &Gpu,
+        tr: &Trace,
+        dout: &Buffer,
+        dout_depth: Option<&Buffer>,
+        res: u32,
+    ) {
         let h2 = res / 2;
         let h4 = res / 4;
         let pre = |i: usize| tr.pre[i].as_ref().expect("缺预激活");
 
         let dv = self.affine_bwd(gpu, HEAD, pre(HEAD), dout, res, res);
-        let dz = self.bwd_conv(gpu, HEAD, &tr.z, &dv, res, res);
+        let dz_main = self.bwd_conv(gpu, HEAD, &tr.z, &dv, res, res);
+        let dz = match dout_depth {
+            Some(dd) => {
+                let dv2 = self.affine_bwd(gpu, DEPTH, pre(DEPTH), dd, res, res);
+                let dz2 = self.bwd_conv(gpu, DEPTH, &tr.z, &dv2, res, res);
+                gpu.add(
+                    &dz_main,
+                    &dz2,
+                    (res * res) as usize * self.layers[D1B].cout as usize,
+                )
+            }
+            None => dz_main,
+        };
         let dv = self.affine_bwd(gpu, D1B, pre(D1B), &dz, res, res);
         let d_act1 = self.bwd_conv(gpu, D1B, &tr.act_d1a, &dv, res, res);
         let dv = self.affine_bwd(gpu, D1A, pre(D1A), &d_act1, res, res);
@@ -819,7 +880,10 @@ impl Net {
     /// 一步参数更新：先从显存取回梯度（可带 1/accum 缩放），再 STE + Adam/SGD。
     pub fn update(&mut self, gpu: &Gpu, lr: f32, ste: Ste, adam: bool, grad_scale: f32) {
         for (i, l) in self.layers.iter_mut().enumerate() {
-            let lr = if i == HEAD {
+            if i < self.freeze_until {
+                continue;
+            }
+            let lr = if i == HEAD || i == DEPTH {
                 lr * self.head_lr_mult
             } else {
                 lr
