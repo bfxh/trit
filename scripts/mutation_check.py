@@ -2494,6 +2494,7 @@ MUTANTS = [
     {
         "name": 'redteam: 不扫密钥形态字符串',
         "file": 'crates/trit-redteam/src/secrets.rs',
+        "file": 'crates/trit-redteam/src/binary.rs',
         "old": '        if count > 0 && plausible_secret(&text, name, &needle) {',
         "new": '        if false {',
         "pkg": 'trit-redteam',
@@ -2651,6 +2652,7 @@ MUTANTS = [
         "new": "                if path_segments(&text) >= 0 && !samples.contains(&text) {",
         "pkg": "trit-redteam",
         "filter": "needle_constants_are_not_reported_as_leaks"
+
     },
     {
         "name": 'trit-re: JSON 引号不转义',
