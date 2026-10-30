@@ -64,6 +64,37 @@ impl Default for RenderOptions {
     }
 }
 
+/// 把渲染参数摊平成逐像素的 `(u, v, lod)`——GPU 路径复用同一套公式，避免两边漂移。
+///
+/// 只有能用**三线性**表达的口径才返回 `Some`：`Nearest` 与 `split` 会返回 `None`
+/// （它们不是单次三线性采样，GPU 侧要单独实现，不做静默近似）。
+pub type SamplePlan = (usize, usize, Vec<(f32, f32, f32)>);
+
+pub fn plan_points(doc: &TtxDocument, opts: &RenderOptions) -> Option<SamplePlan> {
+    let levels = doc.levels()?;
+    let base = levels.first()?;
+    if opts.width == 0 || opts.height == 0 || opts.split || opts.mode == SampleMode::Nearest {
+        return None;
+    }
+    let (w, h) = (opts.width, opts.height);
+    let (tiles, du, dv) = (opts.tiles, opts.tiles / w as f32, opts.tiles / h as f32);
+    let mut points = Vec::with_capacity(w * h);
+    for y in 0..h {
+        let v = (y as f32 + 0.5) / h as f32 * tiles;
+        for x in 0..w {
+            let u = (x as f32 + 0.5) / w as f32 * tiles;
+            let lod = match opts.mode {
+                SampleMode::Auto => lod_from_derivatives(base.width, base.height, du, 0.0, 0.0, dv),
+                SampleMode::Trilinear(lod) => lod,
+                SampleMode::Bilinear => 0.0,
+                SampleMode::Nearest => return None,
+            };
+            points.push((u, v, lod));
+        }
+    }
+    Some((w, h, points))
+}
+
 /// 渲染结果：(宽, 高, RGBA 字节)。
 pub fn render(doc: &TtxDocument, opts: &RenderOptions) -> Result<(usize, usize, Vec<u8>), String> {
     let levels = doc.levels().ok_or("不是纹理文档（kind=MOD），无法渲染")?;
@@ -79,6 +110,7 @@ pub fn render(doc: &TtxDocument, opts: &RenderOptions) -> Result<(usize, usize, 
     // 屏幕空间导数：一个输出像素跨多少 uv
     let du = tiles / w as f32;
     let dv = tiles / h as f32;
+    let _ = (du, dv);
     let mut out = vec![0u8; w * h * 4];
     let mut samplers: Vec<Sampler> = levels
         .iter()

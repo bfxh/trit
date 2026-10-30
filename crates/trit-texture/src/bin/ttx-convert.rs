@@ -10,7 +10,8 @@
 //!   stats         in.ttx [--level N]  # 逐级 mip 账单 + 第 N 级调色板跨度直方图
 //!
 //! `render` 的选项：`--size WxH` `--mode nearest|bilinear|trilinear|auto` `--lod F`
-//! `--wrap clamp|repeat|mirror` `--tiles F` `--split` `--level N` `--blocks` `--atlas x,y,w,h`。
+//! `--wrap clamp|repeat|mirror` `--tiles F` `--split` `--level N` `--blocks` `--atlas x,y,w,h`
+
 //! ```
 #![forbid(unsafe_code)]
 

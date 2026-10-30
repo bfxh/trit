@@ -25,5 +25,6 @@ harness = false
 required-features = ["gpu"]
 
 [dev-dependencies]
-# 仅测试用：GPU 解码与 trit-texture 的 CPU 解码逐字节对拍（发布图门允许 dev-deps）。
-trit-texture = { path = "../trit-texture" }
+# 仅测试/示例用：GPU 侧与 trit-texture 的 CPU 参考对拍、出图示例读 TTX
+#（发布图门允许 dev-deps：`cargo package` 会剥离 path dev-deps）。
+trit-texture = { path = "../trit-texture", features = ["png"] }

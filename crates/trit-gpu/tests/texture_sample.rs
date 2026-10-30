@@ -6,7 +6,7 @@
 
 #![cfg(feature = "gpu")]
 
-use trit_gpu::sampler::{MipLevel, sample_tt3_mips};
+use trit_gpu::sampler::{AnisoSample, GpuSampler, MipLevel, sample_tt3_mips};
 use trit_gpu::sampler::{Wrap as GpuWrap, sample_tt3};
 use trit_texture::convert::build_mip_chain;
 use trit_texture::encode_rgba;
@@ -364,5 +364,85 @@ fn gpu_render_matches_cpu_preview() {
         mismatched * 20 <= pts.len(),
         "render: {mismatched}/{} 像素不一致",
         pts.len()
+    );
+}
+
+/// GPU 各向异性：与 CPU `sample_aniso` 同一批导数/`taps`，逐像素 ≤1 LSB。
+#[test]
+fn gpu_aniso_matches_cpu() {
+    let (width, height) = (128usize, 60usize);
+    let pixels = synthetic(width, height);
+    let chain = build_mip_chain(&pixels, width, height).expect("mip chain");
+    let flat: Vec<Vec<u8>> = chain.iter().map(|t| t.blocks.concat()).collect();
+    let doc = TtxDocument::Texture {
+        levels: chain.clone(),
+    };
+    let levels: Vec<MipLevel> = chain
+        .iter()
+        .zip(&flat)
+        .map(|(t, blocks)| MipLevel {
+            blocks,
+            width: t.width,
+            height: t.height,
+            rect: None,
+        })
+        .collect();
+
+    // 强斜视：u 走 6 纹素/像素、v 走 0.05 纹素/像素
+    let du = 6.0 / width as f32;
+    let dv = 0.05 * 0.02 / height as f32 * height as f32 / height as f32;
+    let (w, h) = (48usize, 12usize);
+    let (dw, dh) = (w as f32, h as f32);
+    let mut samples: Vec<AnisoSample> = Vec::with_capacity(w * h);
+    let mut expect: Vec<[u8; 4]> = Vec::with_capacity(w * h);
+    for y in 0..h {
+        for x in 0..w {
+            let u = x as f32 * du;
+            let v = 0.4 + y as f32 * dv;
+            let px = trit_texture::sample::sample_aniso(&doc, u, v, du, 0.0, 0.0, dv, 8)
+                .expect("cpu aniso");
+            expect.push(px);
+            // 与 CPU 同一条 lod/taps 公式（taps=8 固定，lod 由 ρ_minor 推）
+            let minor = (dv * height as f32).max(1.0);
+            samples.push(AnisoSample {
+                u,
+                v,
+                lod: minor.log2(),
+                taps: 8,
+                step_u: du,
+                step_v: 0.0,
+            });
+        }
+    }
+    let _ = (dw, dh);
+
+    let Some(mut sampler) = GpuSampler::new(&levels, GpuWrap::Clamp) else {
+        eprintln!("没有可用 adapter，跳过 aniso");
+        return;
+    };
+    let some = sampler.sample_aniso(&samples);
+    let Some(gpu) = some else {
+        eprintln!("GPU 采样返回 None，跳过");
+        return;
+    };
+    let mut mismatched = 0usize;
+    let mut max_delta = 0i32;
+    for (index, chunk) in gpu.as_chunks::<4>().0.iter().enumerate() {
+        let cpu = expect[index];
+        if chunk != &cpu {
+            mismatched += 1;
+            if mismatched <= 3 {
+                eprintln!("#{index} cpu={cpu:?} gpu={chunk:?}");
+            }
+            for c in 0..4 {
+                max_delta = max_delta.max((chunk[c] as i32 - cpu[c] as i32).abs());
+            }
+        }
+    }
+    assert!(max_delta <= 1, "aniso: 最大通道差 {max_delta}");
+    assert!(
+        mismatched * 20 <= samples.len(),
+        "aniso: {mismatched}/{} 个样点不一致",
+        samples.len()
     );
 }

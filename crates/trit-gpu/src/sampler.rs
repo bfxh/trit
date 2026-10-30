@@ -52,6 +52,23 @@ struct Params {
     pad0: u32,
 }
 
+/// 各向异性采样点：`taps` 个三线性点沿 `(step_u, step_v)` 在半像素跨度内均匀取。
+#[derive(Clone, Copy, Debug)]
+pub struct AnisoSample {
+    /// u（[0,1]，越界按 wrap 处理）。
+    pub u: f32,
+    /// v。
+    pub v: f32,
+    /// 三线性 LOD。
+    pub lod: f32,
+    /// 采样点数（≥1；1 = 退化为一次三线性）。
+    pub taps: u32,
+    /// 单像素在 u 上的跨度（长轴方向）。
+    pub step_u: f32,
+    /// 单像素在 v 上的跨度（长轴方向）。
+    pub step_v: f32,
+}
+
 /// 图集子矩形（该级纹素坐标）。`None` = 整级。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rect {
@@ -252,33 +269,53 @@ impl GpuSampler {
         self.level_count
     }
 
-    /// 采样一批 `(u, v, lod)`，返回 RGBA8（每样点 4 字节）。缓冲按需扩容、跨调用复用。
+    /// 三线性采样一批 `(u, v, lod)`，返回 RGBA8（每样点 4 字节）。
     pub fn sample(&mut self, points: &[(f32, f32, f32)]) -> Option<Vec<u8>> {
-        if points.is_empty() {
+        let raw: Vec<[f32; 8]> = points
+            .iter()
+            .map(|(u, v, lod)| [*u, *v, *lod, 1.0, 0.0, 0.0, 0.0, 0.0])
+            .collect();
+        self.submit(&raw)
+    }
+
+    /// 各向异性采样一批 [`AnisoSample`]（每点 `taps` 个三线性点平均）。
+    pub fn sample_aniso(&mut self, samples: &[AnisoSample]) -> Option<Vec<u8>> {
+        let raw: Vec<[f32; 8]> = samples
+            .iter()
+            .map(|s| {
+                [
+                    s.u,
+                    s.v,
+                    s.lod,
+                    s.taps.max(1) as f32,
+                    s.step_u,
+                    s.step_v,
+                    0.0,
+                    0.0,
+                ]
+            })
+            .collect();
+        self.submit(&raw)
+    }
+
+    /// 每样点 32 字节：`(u, v, lod, taps) + (step_u, step_v, _, _)`。
+    fn submit(&mut self, raw: &[[f32; 8]]) -> Option<Vec<u8>> {
+        if raw.is_empty() {
             return None;
         }
-        let count = points.len();
+        let count = raw.len();
         if self.points_cap < count {
-            // WGSL 里是 array<vec3<f32>>：stride 16，所以每点补一个 pad 分量
-            let mut uv: Vec<f32> = Vec::with_capacity(count * 4);
-            for (u, v, lod) in points {
-                uv.extend_from_slice(&[*u, *v, *lod, 0.0]);
-            }
             self.points_buf = Some(self.device.create_buffer_init(
                 &wgpu::util::BufferInitDescriptor {
                     label: Some("tt3-sample-points"),
-                    contents: bytemuck::cast_slice(&uv),
+                    contents: bytemuck::cast_slice(raw),
                     usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
                 },
             ));
             self.points_cap = count;
         } else {
-            let mut uv: Vec<f32> = Vec::with_capacity(count * 4);
-            for (u, v, lod) in points {
-                uv.extend_from_slice(&[*u, *v, *lod, 0.0]);
-            }
             self.queue
-                .write_buffer(self.points_buf.as_ref()?, 0, bytemuck::cast_slice(&uv));
+                .write_buffer(self.points_buf.as_ref()?, 0, bytemuck::cast_slice(raw));
         }
         let size = (count * 4) as u64;
         if self.out_cap < count {
