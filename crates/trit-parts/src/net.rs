@@ -484,6 +484,8 @@ pub struct Trace {
 /// 整网。
 pub struct Net {
     pub layers: Vec<Layer>,
+    /// head 的学习率倍率（深度头用：新通道从 0 起，需要更快的学习速度）。
+    pub head_lr_mult: f32,
 }
 
 impl Net {
@@ -511,7 +513,10 @@ impl Net {
         let mut layers = layers;
         layers[U3].convt = true;
         layers[U2].convt = true;
-        Ok(Self { layers })
+        Ok(Self {
+            layers,
+            head_lr_mult: 1.0,
+        })
     }
 
     /// head 追加 `extra` 个输出通道（深度平面头用）。
@@ -551,7 +556,10 @@ impl Net {
         let mut layers = layers;
         layers[U3].convt = true;
         layers[U2].convt = true;
-        let mut net = Self { layers };
+        let mut net = Self {
+            layers,
+            head_lr_mult: 1.0,
+        };
         net.mark_convt();
         net
     }
@@ -810,7 +818,12 @@ impl Net {
 
     /// 一步参数更新：先从显存取回梯度（可带 1/accum 缩放），再 STE + Adam/SGD。
     pub fn update(&mut self, gpu: &Gpu, lr: f32, ste: Ste, adam: bool, grad_scale: f32) {
-        for l in &mut self.layers {
+        for (i, l) in self.layers.iter_mut().enumerate() {
+            let lr = if i == HEAD {
+                lr * self.head_lr_mult
+            } else {
+                lr
+            };
             l.pull_grads(gpu);
             l.pull_affine_grads(gpu);
             if grad_scale != 1.0 {

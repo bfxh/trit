@@ -61,6 +61,8 @@ struct Args {
     /// 视差区间（1/米）。
     depth_lo: f32,
     depth_hi: f32,
+    /// head 的学习率倍率。
+    head_lr: f32,
 }
 
 fn parse() -> Result<Args, String> {
@@ -94,6 +96,7 @@ fn parse() -> Result<Args, String> {
         depth_weight: 0.5,
         depth_lo: 0.15,
         depth_hi: 0.65,
+        head_lr: 1.0,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -146,6 +149,7 @@ fn parse() -> Result<Args, String> {
             }
             "--depth-lo" => a.depth_lo = val()?.parse().map_err(|_| "--depth-lo 非数字")?,
             "--depth-hi" => a.depth_hi = val()?.parse().map_err(|_| "--depth-hi 非数字")?,
+            "--head-lr" => a.head_lr = val()?.parse().map_err(|_| "--head-lr 非数字")?,
             "--sgd" => a.adam = false,
             other => return Err(format!("未知参数 {other}")),
         }
@@ -311,6 +315,7 @@ fn main() {
             std::process::exit(2);
         }
     }
+    net.head_lr_mult = args.head_lr;
     if args.residual {
         net.set_residual(true);
         println!("块内残差：开（e1b/e2b/e3b/d2b/d1b）");

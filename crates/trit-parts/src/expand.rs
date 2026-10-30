@@ -146,6 +146,9 @@ impl Net {
                 }
             })
             .collect();
-        Self { layers }
+        Self {
+            layers,
+            head_lr_mult: 1.0,
+        }
     }
 }

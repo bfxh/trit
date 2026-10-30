@@ -153,7 +153,10 @@ pub fn load(path: &Path) -> Result<(Net, u64, Option<u64>), String> {
             residual: false,
         });
     }
-    let mut net = Net { layers };
+    let mut net = Net {
+        layers,
+        head_lr_mult: 1.0,
+    };
     net.mark_convt();
     Ok((net, step, rng))
 }

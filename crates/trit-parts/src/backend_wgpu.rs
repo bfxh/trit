@@ -48,6 +48,7 @@ impl Backend for WgpuBackend {
         let hw = (res * res) as usize;
         let xb = self.gpu.buf(x, "x");
         let tr = self.net.forward(&self.gpu, xb, res);
-        Ok(self.gpu.read(&tr.out, hw * 16))
+        let ch = self.net.head_cout() as usize;
+        Ok(self.gpu.read(&tr.out, hw * ch))
     }
 }
