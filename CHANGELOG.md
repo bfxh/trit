@@ -18,6 +18,10 @@
   13,218 函数、2782 归属、22 未归属；`curl.exe` / `certutil.exe` / `rundll32.exe` /
   `powershell.exe` 的 `fn_*` 为 `False`（powershell 的 `fn_stager` 因相关未归属点为 `Unknown`）。
   合成 PE 夹具（`.pdata` + 两个同函数调用）稳定给出 `fn_stager = True`。
+- **真实正例**：用 mingw gcc 16.2.0 `-O1` 编译 `tests/fixtures/inject_sample.c`（`OpenProcess` +
+  `VirtualAllocEx` + `WriteProcessMemory` + `CreateRemoteThread`），`trit-re triage inject.exe`
+  读出 `injection = True`，且 `fn_injection = True`——命中函数 `0x14d0+0xe5` 同时带
+  `imports.inj.alloc / inj.write / inj.exec` 三个桶。
 - 测试 51 条（39 lib + 5 ELF + 4 PE + 2 CLI + 1 doctest）。
 
 ### Added（`trit-re` M1：导入函数交叉引用）
