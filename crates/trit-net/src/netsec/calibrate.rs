@@ -1,16 +1,20 @@
-//! 分位数阈值校准：训练三值模型，并量出「弃权率 vs 误报率」曲线。
+//! 分位数阈值校准 + 数据驱动特征选择 + 弃权/误报曲线。
 //!
-//! 阈值不再手调常数：每个方向规则的下界/上界取**训练集该特征分位数的中间带**
-//! `[P(0.5-b), P(0.5+b)]`，带内判 `X`。`b` 就是弃权旋钮——`b` 越大，判成
-//! `Unknown` 的样本越多，曲线右移。
+//! 两条纪律：
 //!
-//! 纪律：训练/测试按样本下标哈希切分，测试集只用来出读数；任何指标都带分母。
+//! - 阈值不手调：每个方向规则取**训练集分位数的中间带** `[P(0.5-b), P(0.5+b)]`，
+//!   带内判 `X`。`b` 是弃权旋钮。
+//! - 选哪几维不靠猜：按训练集上的点二列相关绝对值排序取前 `k` 维，方向由相关符号定。
+//!
+//! 训练/测试默认按下标哈希切分；也支持外部测试集（跨日泛化）。
+//! 每个 band 独立重训一个模型，所以曲线**不保证单调**。
 
 use trit_core::value::Ternary;
 
 use super::dataset::{Label, Sample, quantile, sorted_by_feature};
 use super::decision::{Verdict, decide};
-use super::features::{DEFAULT_RULES, Rule, ternarize};
+use super::features::{Bias, Rule, ternarize};
+use super::flow::{N, NAMES};
 use crate::{DEFAULT_BUDGET, Layer, Model, TrainOptions, train};
 
 /// 校准参数。
@@ -24,12 +28,16 @@ pub struct Config {
     pub hidden: usize,
     /// 随机种子。
     pub seed: u64,
-    /// 训练集占比。
+    /// 训练集占比（外部测试集时忽略）。
     pub train_fraction: f64,
     /// 训练集是否按类别下采样到 1:1。
     pub balance: bool,
     /// 学习率。
     pub learning_rate: f32,
+    /// 选入的规则维数。
+    pub features: usize,
+    /// 是否按相关性选特征（关掉则用 `features::DEFAULT_RULES`）。
+    pub select_features: bool,
 }
 
 impl Default for Config {
@@ -42,7 +50,27 @@ impl Default for Config {
             train_fraction: 0.75,
             balance: true,
             learning_rate: 0.3,
+            features: 8,
+            select_features: true,
         }
+    }
+}
+
+/// 一个入选特征及其方向与相关性。
+#[derive(Debug, Clone, Copy)]
+pub struct Selected {
+    /// 特征下标。
+    pub feature: usize,
+    /// 方向。
+    pub bias: Bias,
+    /// 点二列相关系数（`log1p` 变换后）。
+    pub correlation: f64,
+}
+
+impl Selected {
+    /// 特征名。
+    pub fn name(&self) -> &'static str {
+        NAMES.get(self.feature).copied().unwrap_or("?")
     }
 }
 
@@ -93,6 +121,72 @@ pub struct BandReport {
     pub shadow_accuracy: f64,
 }
 
+/// 按标签与特征的相关系数选前 `k` 维，方向由符号定。
+pub fn select_features(train: &[Sample], k: usize) -> Vec<Selected> {
+    let mut scored: Vec<Selected> = (0..N)
+        .map(|feature| {
+            let correlation = correlation(train, feature);
+            Selected {
+                feature,
+                bias: if correlation >= 0.0 {
+                    Bias::High
+                } else {
+                    Bias::Low
+                },
+                correlation,
+            }
+        })
+        .collect();
+    scored.sort_by(|a, b| {
+        b.correlation
+            .abs()
+            .total_cmp(&a.correlation.abs())
+            .then_with(|| a.feature.cmp(&b.feature))
+    });
+    scored.truncate(k.max(1));
+    scored
+}
+
+fn correlation(train: &[Sample], feature: usize) -> f64 {
+    let n = train.len() as f64;
+    if n == 0.0 {
+        return 0.0;
+    }
+    let mut mean_x = 0.0;
+    let mut mean_y = 0.0;
+    for sample in train {
+        mean_x += transform(sample.features[feature]);
+        mean_y += label_value(sample.label);
+    }
+    mean_x /= n;
+    mean_y /= n;
+    let (mut cov, mut var_x, mut var_y) = (0.0, 0.0, 0.0);
+    for sample in train {
+        let dx = transform(sample.features[feature]) - mean_x;
+        let dy = label_value(sample.label) - mean_y;
+        cov += dx * dy;
+        var_x += dx * dx;
+        var_y += dy * dy;
+    }
+    if var_x <= 0.0 || var_y <= 0.0 {
+        0.0
+    } else {
+        cov / (var_x.sqrt() * var_y.sqrt())
+    }
+}
+
+/// 重尾特征先压一遍，避免个别极端值主导相关系数。
+fn transform(value: f64) -> f64 {
+    value.signum() * (1.0 + value.abs()).ln()
+}
+
+fn label_value(label: Label) -> f64 {
+    match label {
+        Label::Malicious => 1.0,
+        Label::Benign => -1.0,
+    }
+}
+
 /// 切分下标：按下标哈希，确定性且不依赖输入顺序。
 pub fn split(samples: &[Sample], fraction: f64, seed: u64) -> (Vec<usize>, Vec<usize>) {
     let threshold = (fraction.clamp(0.0, 1.0) * 10_000.0) as u64;
@@ -108,24 +202,27 @@ pub fn split(samples: &[Sample], fraction: f64, seed: u64) -> (Vec<usize>, Vec<u
     (train, test)
 }
 
-/// 用训练集分位数造规则。
-pub fn rules_from_quantiles(sorted: &[Vec<f64>], band: f64) -> Vec<Rule> {
+/// 用训练集分位数把选中的特征变成规则。
+pub fn rules_from_quantiles(sorted: &[Vec<f64>], band: f64, selected: &[Selected]) -> Vec<Rule> {
     let low_q = (0.5 - band).clamp(0.0, 1.0);
     let high_q = (0.5 + band).clamp(0.0, 1.0);
-    DEFAULT_RULES
+    selected
         .iter()
         .zip(sorted.iter())
-        .map(|(base, values)| Rule {
-            feature: base.feature,
+        .map(|(picked, values)| Rule {
+            feature: picked.feature,
             low: quantile(values, low_q),
             high: quantile(values, high_q),
-            bias: base.bias,
+            bias: picked.bias,
         })
         .collect()
 }
 
-/// 跑完整条曲线。
-pub fn run(samples: &[Sample], config: &Config) -> Result<Vec<BandReport>, String> {
+/// 在同一天上切分后跑曲线。
+pub fn run(
+    samples: &[Sample],
+    config: &Config,
+) -> Result<(Vec<BandReport>, Vec<Selected>), String> {
     if samples.is_empty() {
         return Err("数据集为空".to_string());
     }
@@ -137,24 +234,48 @@ pub fn run(samples: &[Sample], config: &Config) -> Result<Vec<BandReport>, Strin
             test_idx.len()
         ));
     }
-    let train_idx = if config.balance {
-        balanced(train_idx, samples)
+    let train: Vec<Sample> = train_idx.iter().map(|index| samples[*index]).collect();
+    let test: Vec<Sample> = test_idx.iter().map(|index| samples[*index]).collect();
+    run_split(&train, &test, config)
+}
+
+/// 用给定训练集训练、在给定测试集上出读数（跨日泛化用这个）。
+pub fn run_split(
+    train_set: &[Sample],
+    test_set: &[Sample],
+    config: &Config,
+) -> Result<(Vec<BandReport>, Vec<Selected>), String> {
+    if train_set.is_empty() || test_set.is_empty() {
+        return Err("训练集或测试集为空".to_string());
+    }
+    let selected = if config.select_features {
+        select_features(train_set, config.features)
     } else {
-        train_idx
+        super::features::DEFAULT_RULES
+            .iter()
+            .map(|rule| Selected {
+                feature: rule.feature,
+                bias: rule.bias,
+                correlation: 0.0,
+            })
+            .collect()
     };
-    let train_set: Vec<Sample> = train_idx.iter().map(|index| samples[*index]).collect();
-    let sorted: Vec<Vec<f64>> = DEFAULT_RULES
+    let train_set = if config.balance {
+        balanced(train_set)
+    } else {
+        train_set.to_vec()
+    };
+    let sorted: Vec<Vec<f64>> = selected
         .iter()
-        .map(|rule| sorted_by_feature(&train_set, rule.feature))
+        .map(|picked| sorted_by_feature(&train_set, picked.feature))
         .collect();
 
     let mut reports = Vec::with_capacity(config.bands.len());
     for band in &config.bands {
-        let rules = rules_from_quantiles(&sorted, *band);
+        let rules = rules_from_quantiles(&sorted, *band, &selected);
         let (model, report) = fit(&train_set, &rules, config)?;
         reports.push(evaluate(
-            samples,
-            &test_idx,
+            test_set,
             &rules,
             &model,
             *band,
@@ -162,32 +283,35 @@ pub fn run(samples: &[Sample], config: &Config) -> Result<Vec<BandReport>, Strin
             &report,
         )?);
     }
-    Ok(reports)
+    Ok((reports, selected))
 }
 
 /// 多数类下采样到少数类数量（等距取）。三值 STE 全批训练在不平衡数据上
 /// 会塌成常数负例——实测良性占比 71.8% 时 TPR 恒为 0。
-fn balanced(indices: Vec<usize>, samples: &[Sample]) -> Vec<usize> {
+fn balanced(samples: &[Sample]) -> Vec<Sample> {
     let mut malicious = Vec::new();
     let mut benign = Vec::new();
-    for index in indices {
-        if samples[index].label == Label::Malicious {
-            malicious.push(index);
+    for sample in samples {
+        if sample.label == Label::Malicious {
+            malicious.push(*sample);
         } else {
-            benign.push(index);
+            benign.push(*sample);
         }
     }
     let target = malicious.len().min(benign.len());
     if target == 0 {
-        return malicious.into_iter().chain(benign).collect();
+        let mut out = malicious;
+        out.extend(benign);
+        return out;
     }
-    let keep = |pool: Vec<usize>| -> Vec<usize> {
-        let stride = pool.len().div_ceil(target);
-        pool.into_iter().step_by(stride).take(target).collect()
-    };
-    let mut out = keep(malicious);
-    out.extend(keep(benign));
+    let mut out = subsample(&malicious, target);
+    out.extend(subsample(&benign, target));
     out
+}
+
+fn subsample(pool: &[Sample], target: usize) -> Vec<Sample> {
+    let stride = pool.len().div_ceil(target).max(1);
+    pool.iter().step_by(stride).take(target).copied().collect()
 }
 
 fn fit(
@@ -210,13 +334,7 @@ fn fit(
         .collect();
     let labels: Vec<f32> = train_set
         .iter()
-        .map(|sample| {
-            if sample.label == Label::Malicious {
-                1.0
-            } else {
-                -1.0
-            }
-        })
+        .map(|sample| label_value(sample.label) as f32)
         .collect();
     let mut model = init_model(config.hidden, config.seed);
     let report = train(
@@ -234,8 +352,7 @@ fn fit(
 }
 
 fn evaluate(
-    samples: &[Sample],
-    test: &[usize],
+    test_set: &[Sample],
     rules: &[Rule],
     model: &Model,
     band: f64,
@@ -249,8 +366,7 @@ fn evaluate(
     let mut attack_abstain = 0usize;
     let mut benign_abstain = 0usize;
     let mut attack = 0usize;
-    for index in test {
-        let sample = &samples[*index];
+    for sample in test_set {
         let inputs = ternarize(&sample.features, rules);
         let decision = decide(model, &inputs, DEFAULT_BUDGET).map_err(|error| error.to_string())?;
         let malicious = sample.label == Label::Malicious;
@@ -266,7 +382,7 @@ fn evaluate(
             (Verdict::Undetermined, false) => benign_abstain += 1,
         }
     }
-    let total = test.len();
+    let total = test_set.len();
     let decided = tp + fp + tn + fn_;
     let benign = total.saturating_sub(attack);
     let ratio = |numerator: usize, denominator: usize| {
@@ -305,8 +421,8 @@ fn init_model(hidden: usize, seed: u64) -> Model {
     let mut rng = Rng { state: seed | 1 };
     let mut first_weights = Vec::with_capacity(hidden);
     for _ in 0..hidden {
-        let mut row = Vec::with_capacity(super::flow::N);
-        for _ in 0..super::flow::N {
+        let mut row = Vec::with_capacity(N);
+        for _ in 0..N {
             row.push(rng.next());
         }
         first_weights.push(row);
@@ -318,7 +434,7 @@ fn init_model(hidden: usize, seed: u64) -> Model {
     Model {
         layers: vec![
             Layer {
-                inputs: super::flow::N,
+                inputs: N,
                 outputs: hidden,
                 weights: first_weights,
                 bias: vec![0; hidden],

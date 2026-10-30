@@ -194,6 +194,9 @@ fn calibrate_cmd(args: &[String]) -> Result<(), String> {
     let mut epochs = 120usize;
     let mut hidden = 8usize;
     let mut learning_rate = 0.3f32;
+    let mut features = 8usize;
+    let mut select_features = true;
+    let mut test_path: Option<String> = None;
     let mut bands = vec![0.0, 0.1, 0.2, 0.3, 0.4];
     let mut fraction = 0.75f64;
     let mut json = false;
@@ -201,7 +204,9 @@ fn calibrate_cmd(args: &[String]) -> Result<(), String> {
     while index < args.len() {
         let flag = args[index].clone();
         match flag.as_str() {
-            "--rows" | "--epochs" | "--hidden" | "--train-fraction" | "--bands" | "--lr" => {
+            "--no-select" => select_features = false,
+            "--rows" | "--epochs" | "--hidden" | "--train-fraction" | "--bands" | "--lr"
+            | "--features" | "--test" => {
                 index += 1;
                 let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
                 match flag.as_str() {
@@ -220,6 +225,10 @@ fn calibrate_cmd(args: &[String]) -> Result<(), String> {
                             .parse()
                             .map_err(|_| "--train-fraction 不是数字".to_string())?
                     }
+                    "--features" => {
+                        features = raw.parse().map_err(|_| "--features 不是整数".to_string())?
+                    }
+                    "--test" => test_path = Some(raw.clone()),
                     _ => {
                         bands = raw
                             .split(',')
@@ -258,8 +267,30 @@ fn calibrate_cmd(args: &[String]) -> Result<(), String> {
         train_fraction: fraction,
         balance: true,
         learning_rate,
+        features,
+        select_features,
     };
-    let reports = netsec::calibrate::run(&dataset.samples, &config)?;
+    let (reports, selected) = match test_path.as_deref() {
+        Some(test_path) => {
+            let text = std::fs::read_to_string(test_path)
+                .map_err(|error| format!("读取 {test_path} 失败：{error}"))?;
+            let test = netsec::dataset::parse(&text, rows).map_err(|error| error.to_string())?;
+            println!(
+                "训练 {} 样本 → 测试 {} 样本（跨集）",
+                dataset.samples.len(),
+                test.samples.len()
+            );
+            netsec::calibrate::run_split(&dataset.samples, &test.samples, &config)?
+        }
+        None => netsec::calibrate::run(&dataset.samples, &config)?,
+    };
+    let picks: Vec<String> = selected
+        .iter()
+        .map(|picked| format!("{}({:+.3})", picked.name(), picked.correlation))
+        .collect();
+    if !json {
+        println!("选定特征 {} 个：{}", selected.len(), picks.join(", "));
+    }
     if json {
         let bands: Vec<serde_json::Value> = reports
             .iter()
@@ -295,6 +326,14 @@ fn calibrate_cmd(args: &[String]) -> Result<(), String> {
             "hidden": config.hidden,
             "train_fraction": config.train_fraction,
             "seed": config.seed,
+            "selected": selected.iter().map(|picked| serde_json::json!({
+                "feature": picked.name(),
+                "bias": match picked.bias {
+                    netsec::features::Bias::High => "high",
+                    netsec::features::Bias::Low => "low",
+                },
+                "correlation": picked.correlation,
+            })).collect::<Vec<_>>(),
             "bands": bands,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());

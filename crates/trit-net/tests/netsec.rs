@@ -395,8 +395,10 @@ fn calibration_curve_is_well_formed() {
         train_fraction: 0.75,
         ..Config::default()
     };
-    let reports = run(&samples, &config).expect("校准可运行");
+    let (reports, selected) = run(&samples, &config).expect("校准可运行");
     assert_eq!(reports.len(), 2);
+    assert_eq!(selected.len(), config.features);
+    assert!(selected.iter().all(|picked| picked.correlation.is_finite()));
     for report in &reports {
         assert!((report.coverage + report.abstain - 1.0).abs() < 1e-9);
         let decided = report.tp + report.fp + report.tn + report.fn_;
@@ -422,4 +424,32 @@ PSH Flag Cnt,ACK Flag Cnt,Label";
     assert_eq!((features[1], features[2]), (4.0, 4.0));
     assert_eq!((features[20], features[22], features[23]), (2.0, 1.0, 3.0));
     assert_eq!(dataset.samples[0].label, Label::Benign);
+}
+
+#[test]
+fn feature_selection_ranks_by_correlation() {
+    use trit_net::netsec::calibrate::select_features;
+    use trit_net::netsec::dataset::{Label, Sample};
+
+    let mut samples = Vec::new();
+    for index in 0..200usize {
+        let malicious = index % 2 == 0;
+        let mut features = [0.0f64; N];
+        features[4] = if malicious { 100.0 } else { 1.0 };
+        features[7] = if malicious { 2.0 } else { 1.0 };
+        samples.push(Sample {
+            features,
+            label: if malicious {
+                Label::Malicious
+            } else {
+                Label::Benign
+            },
+        });
+    }
+    let picked = select_features(&samples, 3);
+    assert_eq!(picked.len(), 3);
+    assert_eq!(picked[0].feature, 4, "强相关特征应排第一");
+    assert_eq!(picked[1].feature, 7, "次相关特征排第二");
+    assert!(picked[0].correlation > 0.9);
+    assert!(picked[2].correlation.abs() < 1e-9, "零方差特征相关性为 0");
 }
