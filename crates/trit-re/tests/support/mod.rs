@@ -342,7 +342,8 @@ fn write_shdr(
 /// - `socket`（JUMP_SLOT）：`E8` 打到 PLT 桩、`call *0x8(%ebx)`、`jmp *abs32` 三个引用；
 /// - `printf`（GLOB_DAT，`.rel.dyn`）：有 PLT 桩、被 `E8` 调用 ⇒ 必须判 `True`
 ///   （只收 JUMP_SLOT 的旧实现会把它当成"没有槽位"）；
-/// - `getenv`（JUMP_SLOT）：只有一次 `push $getenv@plt`（立即数取址）⇒ 降级 `Unknown`。
+/// - `getenv`（JUMP_SLOT）：只有一次 `push $getenv@plt`（立即数取址）⇒ 降级 `Unknown`；
+/// - `memcmp`（JUMP_SLOT）：只有一次 `mov ecx,[eax+0x1C]`——基址在 **EAX**（`get_pc_thunk.ax`）⇒ 降级 `Unknown`。
 ///
 /// `thunk = false` 时去掉 `call get_pc_thunk.bx; add $imm,%ebx`：`(%ebx)` 引用解析不了，
 /// 报告必须标不完整，而不是判"没有调用点"。
@@ -398,6 +399,20 @@ pub fn elf32_sample(thunk: bool) -> Vec<u8> {
     put_u32(&mut file, 0x123, 0x29);
     // 0x128: __x86.get_pc_thunk.bx
     file[0x128..0x12C].copy_from_slice(&[0x8B, 0x1C, 0x24, 0xC3]);
+    if thunk {
+        // 0x12C: call 0x13C（get_pc_thunk.ax；0x13C - 0x131 = 0x0B）
+        file[0x12C] = 0xE8;
+        put_u32(&mut file, 0x12D, 0x0B);
+        // 0x131: add $imm,%eax ⇒ eax = 0x08048131 + imm = 0x08048FF8
+        file[0x131] = 0x05;
+        put_u32(&mut file, 0x132, 0x0804_8FF8u32.wrapping_sub(TEXT + 0x31));
+        // 0x136: mov ecx,[eax+0x1C]（memcmp 槽位 = 0x08048FF8 + 0x1C = GOT + 0x14）
+        file[0x136] = 0x8B;
+        file[0x137] = 0x88;
+        put_u32(&mut file, 0x138, 0x1C);
+        // 0x13C: __x86.get_pc_thunk.ax
+        file[0x13C..0x140].copy_from_slice(&[0x8B, 0x04, 0x24, 0xC3]);
+    }
 
     // .plt：0x140 → VA 0x08048140；两个桩（socket 走 JUMP_SLOT，printf 走 GLOB_DAT）
     file[0x140] = 0xFF;
@@ -415,6 +430,7 @@ pub fn elf32_sample(thunk: bool) -> Vec<u8> {
     file[0x181..0x188].copy_from_slice(b"socket\0");
     file[0x188..0x18F].copy_from_slice(b"printf\0");
     file[0x18F..0x196].copy_from_slice(b"getenv\0");
+    file[0x196..0x19D].copy_from_slice(b"memcmp\0");
     // .dynsym：0 号空，1 socket、2 printf、3 getenv（STT_FUNC | STB_GLOBAL，未定义）
     put_u32(&mut file, 0x1B0, 1);
     file[0x1BC] = 0x12;
@@ -422,26 +438,30 @@ pub fn elf32_sample(thunk: bool) -> Vec<u8> {
     file[0x1CC] = 0x12;
     put_u32(&mut file, 0x1D0, 15);
     file[0x1DC] = 0x12;
+    put_u32(&mut file, 0x1E0, 22);
+    file[0x1EC] = 0x12;
 
-    // .rel.plt：2 条 JUMP_SLOT（类型 7）；.rel.dyn：1 条 GLOB_DAT（类型 6）
-    put_u32(&mut file, 0x1E0, GOT + 8);
-    put_u32(&mut file, 0x1E4, (1 << 8) | 7);
-    put_u32(&mut file, 0x1E8, GOT + 0x10);
-    put_u32(&mut file, 0x1EC, (3 << 8) | 7);
-    put_u32(&mut file, 0x1F0, GOT + 0xC);
-    put_u32(&mut file, 0x1F4, (2 << 8) | 6);
+    // .rel.plt：3 条 JUMP_SLOT（类型 7）；.rel.dyn：1 条 GLOB_DAT（类型 6）
+    put_u32(&mut file, 0x1F0, GOT + 8);
+    put_u32(&mut file, 0x1F4, (1 << 8) | 7);
+    put_u32(&mut file, 0x1F8, GOT + 0x10);
+    put_u32(&mut file, 0x1FC, (3 << 8) | 7);
+    put_u32(&mut file, 0x200, GOT + 0x14);
+    put_u32(&mut file, 0x204, (4 << 8) | 7);
+    put_u32(&mut file, 0x208, GOT + 0xC);
+    put_u32(&mut file, 0x20C, (2 << 8) | 6);
 
     // .shstrtab
     let shstrtab = b"\0.text\0.plt\0.dynstr\0.dynsym\0.rel.plt\0.rel.dyn\0.shstrtab\0";
-    file[0x200..0x200 + shstrtab.len()].copy_from_slice(shstrtab);
+    file[0x220..0x220 + shstrtab.len()].copy_from_slice(shstrtab);
 
     let sh = 0x400;
-    write_shdr32(&mut file, sh + 40, 1, 1, 6, TEXT, 0x100, 0x30, 0, 0);
+    write_shdr32(&mut file, sh + 40, 1, 1, 6, TEXT, 0x100, 0x40, 0, 0);
     write_shdr32(&mut file, sh + 80, 7, 1, 6, PLT, 0x140, 0x30, 0, 0);
-    write_shdr32(&mut file, sh + 120, 12, 3, 2, 0, 0x180, 0x16, 0, 0);
-    write_shdr32(&mut file, sh + 160, 20, 11, 2, 0, 0x1A0, 0x40, 3, 16);
-    write_shdr32(&mut file, sh + 200, 28, 9, 2, 0, 0x1E0, 0x10, 4, 8);
-    write_shdr32(&mut file, sh + 240, 37, 9, 2, 0, 0x1F0, 0x08, 4, 8);
+    write_shdr32(&mut file, sh + 120, 12, 3, 2, 0, 0x180, 0x1D, 0, 0);
+    write_shdr32(&mut file, sh + 160, 20, 11, 2, 0, 0x1A0, 0x50, 3, 16);
+    write_shdr32(&mut file, sh + 200, 28, 9, 2, 0, 0x1F0, 0x18, 4, 8);
+    write_shdr32(&mut file, sh + 240, 37, 9, 2, 0, 0x208, 0x08, 4, 8);
     write_shdr32(
         &mut file,
         sh + 280,
@@ -449,7 +469,7 @@ pub fn elf32_sample(thunk: bool) -> Vec<u8> {
         3,
         0,
         0,
-        0x200,
+        0x220,
         shstrtab.len() as u32,
         0,
         0,

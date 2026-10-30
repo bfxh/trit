@@ -81,7 +81,7 @@ fn elf32_pic_stub_is_resolved_through_get_pc_thunk() {
     assert_eq!(printf.status, Ternary::True);
     assert_eq!(printf.sites.len(), 1);
     assert_eq!(printf.sites[0].kind, trit_re::SiteKind::Call);
-    // getenv 只被 `mov eax,[ebx+disp]` 取过地址：不能判"没有引用"。
+    // getenv 只被 `push $getenv@plt` 取过地址：不能判"没有引用"。
     let getenv = report
         .imports
         .iter()
@@ -89,6 +89,14 @@ fn elf32_pic_stub_is_resolved_through_get_pc_thunk() {
         .expect("getenv row");
     assert_eq!(getenv.status, Ternary::Unknown);
     assert!(getenv.sites.is_empty());
+    // memcmp 只有一次 `mov ecx,[eax+disp32]`：基址在 EAX（get_pc_thunk.ax），同上。
+    let memcmp = report
+        .imports
+        .iter()
+        .find(|row| row.import == "memcmp")
+        .expect("memcmp row");
+    assert_eq!(memcmp.status, Ternary::Unknown);
+    assert!(memcmp.sites.is_empty());
 }
 
 #[test]

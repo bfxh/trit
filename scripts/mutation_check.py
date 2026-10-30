@@ -2817,8 +2817,8 @@ MUTANTS = [
     {
         "name": 'trit-re: GOT 基址忽略 add 立即数',
         "file": 'crates/trit-re/src/xref/x86.rs',
-        "old": '                    bases.insert(return_address.wrapping_add(imm as i64 as u64));',
-        "new": '                    let _ = imm;\n                    bases.insert(return_address);',
+        "old": '                    .insert(return_address.wrapping_add(imm as i64 as u64));',
+        "new": '                    .insert(return_address);',
         "pkg": "trit-re",
         "filter": 'elf32_pic_stub_is_resolved_through_get_pc_thunk',
     },
@@ -2845,6 +2845,22 @@ MUTANTS = [
         "new": '            } else if let Some(symbol) = stubs.get(&value).filter(|_| false)',
         "pkg": "trit-re",
         "filter": 'elf32_pic_stub_is_resolved_through_get_pc_thunk',
+    },
+    {
+        "name": 'trit-re: GOT 基址只认 EBX',
+        "file": 'crates/trit-re/src/xref/x86.rs',
+        "old": '        .get(&register)?',
+        "new": '        .get(&3u8)?',
+        "pkg": "trit-re",
+        "filter": 'eax_relative_got_access_is_recognised',
+    },
+    {
+        "name": 'trit-re: EAX 的短 add 编码不认',
+        "file": 'crates/trit-re/src/xref/x86.rs',
+        "old": '    if register == 0 && data.get(at) == Some(&0x05) {',
+        "new": '    if false && data.get(at) == Some(&0x05) {',
+        "pkg": "trit-re",
+        "filter": 'pc_thunk_ax_uses_the_short_add_encoding',
     },
     {
         "name": 'trit-re: C7 立即数偏移少 1',
