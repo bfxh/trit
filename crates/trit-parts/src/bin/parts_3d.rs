@@ -1,7 +1,8 @@
 //! `parts-3d`：部件 id 图 + 深度 → 3D 点云（PLY），以及逐部件 3D IoU 评估。
 //!
-//! 两个子命令：
-//! - `cloud`：GT seg + GT depth → 逐部件着色的 `.ply`；
+//! 三个子命令：
+//! - `cloud`：GT seg + depth → 逐部件着色的 `.ply`；
+//! - `infer`：模型预测 id + **外部深度**（任意来源，默认取 scene/depth）→ `.ply`（生产路径）；
 //! - `eval`：模型预测 id + GT depth → 与 GT 反投影逐部件比对（3D IoU / 质心误差）。
 
 use std::path::{Path, PathBuf};
@@ -36,6 +37,51 @@ fn cloud(argv: &[String]) {
     write_ply(&out, &parts).unwrap_or_else(|e| fail(&format!("写 PLY 失败: {e}")));
     let n: usize = parts.values().map(Vec::len).sum();
     println!("部件 {} 个，点 {} 个 → {}", parts.len(), n, out.display());
+}
+
+/// `infer --model <tpm> --scene <dir> --frame N --manifest <json> --out <ply> [--depth <npy>]`
+/// 模型出部件 id，深度由外部提供（本仓不预测深度），反投影后写逐部件 PLY。
+#[cfg(feature = "gpu")]
+fn infer(argv: &[String]) {
+    use trit_parts::api::{infer_ids, wgpu_from_tpm};
+    use trit_parts::data::read_rgb;
+    use trit_parts::parts::PartList;
+    use trit_parts::tpm::TpmModel;
+
+    let model = PathBuf::from(arg(argv, "--model").unwrap_or_else(|| usage()));
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let manifest = PathBuf::from(arg(argv, "--manifest").unwrap_or_else(|| usage()));
+    let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+    let frame: usize = arg(argv, "--frame")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let depth_path = arg(argv, "--depth").map(PathBuf::from);
+
+    let tpm = TpmModel::load(&model).unwrap_or_else(|e| fail(&e));
+    let parts = PartList::load(&manifest).unwrap_or_else(|e| fail(&e));
+    let mut backend = wgpu_from_tpm(&tpm).unwrap_or_else(|e| panic!("wgpu 后端不可用: {e}"));
+
+    let rgb_p = frame_path(&scene, "rgb", frame, "png");
+    let (w, _h, rgb) = read_rgb(&rgb_p).unwrap_or_else(|e| fail(&e));
+    let ids = match infer_ids(&mut backend, &rgb, w as u32, &parts) {
+        Ok(v) => v,
+        Err(e) => fail(&format!("推理失败: {e}")),
+    };
+    let depth = depth_path.unwrap_or_else(|| frame_path(&scene, "depth", frame, "npy"));
+    let (dep, shape) = read_npy_f32(&depth).unwrap_or_else(|e| fail(&e));
+    if shape.len() != 2 || shape[0] * shape[1] != ids.len() {
+        fail("深度与 id 图尺寸不一致");
+    }
+    let cam = Camera::load(&frame_path(&scene, "meta", frame, "json")).unwrap_or_else(|e| fail(&e));
+    let parts3 = clouds(&ids, &dep, &cam, shape[1], shape[0]);
+    write_ply(&out, &parts3).unwrap_or_else(|e| fail(&format!("写 PLY 失败: {e}")));
+    let n: usize = parts3.values().map(Vec::len).sum();
+    println!(
+        "帧 {frame}：部件 {} 个，点 {} 个 → {}",
+        parts3.len(),
+        n,
+        out.display()
+    );
 }
 
 #[cfg(feature = "gpu")]
@@ -149,6 +195,7 @@ fn usage() -> ! {
     eprintln!(
         "用法:
   parts-3d cloud --seg <npy> --depth <npy> --meta <json> --out <ply>
+  parts-3d infer --model <tpm> --scene <dir> --frame N --manifest <json> --out <ply> [--depth <npy>]
   parts-3d eval --model <tpm> --scene <dir> --manifest <json> [--limit N] [--voxel 0.01] [--min-vox 30]"
     );
     std::process::exit(2);
@@ -163,6 +210,12 @@ fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     match argv.first().map(String::as_str) {
         Some("cloud") => cloud(&argv),
+        Some("infer") => {
+            #[cfg(feature = "gpu")]
+            infer(&argv);
+            #[cfg(not(feature = "gpu"))]
+            fail("本构建未启用 gpu feature");
+        }
         Some("eval") => {
             #[cfg(feature = "gpu")]
             eval(&argv);
