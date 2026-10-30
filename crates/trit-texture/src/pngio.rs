@@ -92,16 +92,16 @@ mod tests {
         let dir = std::env::temp_dir().join("trit-texture-png-test");
         std::fs::create_dir_all(&dir).unwrap();
         let image = RgbaImage {
-            width: 8,
-            height: 20,
-            rgba: (0..8 * 20 * 4).map(|i| (i % 251) as u8).collect(),
+            width: 16,
+            height: 16,
+            rgba: (0..16 * 16 * 4).map(|i| (i % 251) as u8).collect(),
         };
         let png_path = dir.join("src.png");
         save_png_rgba(&png_path, &image).unwrap();
         assert_eq!(load_png_rgba(&png_path).unwrap(), image);
 
         let ttx_path = dir.join("out.ttx");
-        std::fs::write(&ttx_path, rgba_to_ttx2(&image.rgba, 8, 20).unwrap()).unwrap();
+        std::fs::write(&ttx_path, rgba_to_ttx2(&image.rgba, 16, 16).unwrap()).unwrap();
         let back = ttx2_to_rgba(&std::fs::read(&ttx_path).unwrap()).unwrap();
         let back_png = dir.join("back.png");
         save_png_rgba(&back_png, &back).unwrap();

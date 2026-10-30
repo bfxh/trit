@@ -1,0 +1,10 @@
+[package]
+name = "t3-kernel"
+description = "Hot loops for the t3 triage engine: byte search and Shannon entropy, with scalar baselines kept for honest comparison"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+t3-core.workspace = true

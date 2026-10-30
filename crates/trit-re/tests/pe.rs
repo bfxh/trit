@@ -124,6 +124,26 @@ fn xref_finds_the_iat_call_site() {
 }
 
 #[test]
+fn parses_clr_and_tls_facts() {
+    let bytes = support::pe_sample();
+    let info = pe::parse(&bytes).expect("parse");
+    let clr = info.clr.as_ref().expect("clr header");
+    assert_eq!(clr.runtime_version.as_deref(), Some("v4.0.30319"));
+    assert_eq!(clr.flags, 1);
+    assert_eq!(clr.entry_token, 0x0600_0001);
+    assert!(info.clr_dir_present);
+    assert!(info.tls_dir_present);
+    assert_eq!(
+        info.tls_callbacks.as_deref(),
+        Some([0x1010u32, 0x1020].as_slice())
+    );
+
+    let triage = analyze(&bytes);
+    assert_eq!(triage.facts.get("pe.managed"), Some(Ternary::True));
+    assert_eq!(triage.facts.get("pe.tls_callbacks"), Some(Ternary::True));
+}
+
+#[test]
 fn every_truncation_is_an_error_or_a_parse_never_a_panic() {
     let bytes = support::pe_sample();
     for cut in [
@@ -133,4 +153,43 @@ fn every_truncation_is_an_error_or_a_parse_never_a_panic() {
         let _ = pe::parse(slice);
         let _ = analyze(slice);
     }
+}
+
+/// 真实的 Authenticode 证书位于**所有节区之后**，它不是叠加段。
+///
+/// `pe_sample()` 把证书摆在 0x7A0（`.rdata` 内部），而真实布局里它必须在文件尾部；
+/// 正因为样本不真实，这个误报才一直没被测出来。
+#[test]
+fn authenticode_certificate_is_not_overlay() {
+    let mut bytes = support::pe_sample();
+    // 节区在 0xC00 结束。截到那里，按真实布局重新追加证书，再追加真正的尾巴。
+    let cert_start = 0xC00usize;
+    let cert_len = 0x60usize;
+    let trailing = 0x400usize;
+    bytes.truncate(cert_start);
+    bytes.resize(cert_start + cert_len, 0xAA);
+    bytes.resize(cert_start + cert_len + trailing, 0);
+    for (i, slot) in bytes[cert_start + cert_len..].iter_mut().enumerate() {
+        *slot = (i * 37 % 251) as u8;
+    }
+    // PE32+ 可选头 = 0x84 + 20 = 0x98；数据目录基址 = 0x98 + 112 = 0x108；
+    // 安全目录是第 4 项 = 0x108 + 4 * 8 = 0x128。
+    support::put_u32(&mut bytes, 0x128, cert_start as u32);
+    support::put_u32(&mut bytes, 0x12C, cert_len as u32);
+
+    let info = pe::parse(&bytes).expect("synthetic PE must parse");
+    assert!(info.has_security_dir, "证书目录必须被认出来");
+    let overlay = info.overlay.expect("证书之后的 1 KiB 尾巴是叠加段");
+    assert_eq!(
+        overlay.offset,
+        cert_start + cert_len,
+        "叠加段必须从证书之后开始"
+    );
+    assert_eq!(overlay.size, trailing, "证书的 0x60 字节不得计入叠加段");
+
+    // 证书是文件最后一块时，叠加段应为空。
+    bytes.truncate(cert_start + cert_len);
+    let info = pe::parse(&bytes).expect("synthetic PE must still parse");
+    assert!(info.has_security_dir);
+    assert!(info.overlay.is_none(), "只有证书、没有尾巴时不应报叠加段");
 }

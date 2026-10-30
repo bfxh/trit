@@ -2,6 +2,49 @@
 
 ## [Unreleased]
 
+### Changed（`trit-texture`：TTX2 布局版本位 + 8×8 块形状）
+
+- **TTX2 头部新增布局位**：`flags` 的 bit0 = `FLAG_LAYOUT_8X8`。写入端置位；读到 `flags == 0`
+  （旧 4×10 文件）时在**头部**返回 `TextureError::UnsupportedLayout { rev: 0 }`，
+  不再拖到块数/校验和才报一个看不出是版本问题的错。未知 flags 位仍按 `TtxFlags` 拒绝。
+- 块形状 4×10 → 8×8（17 字节 = 2.125 bpp）：消除 mip 链 25% 补边税，
+  实际 bpp 3.00 → 2.125，真实照片 PSNR 还涨。
+- 测试夹具随之改为 8 对齐尺寸；`trit-texture` 44 条全过。
+
+### Fixed（`trit-re`：CFI 来源按调用点覆盖选择 + 真实 `.debug_frame` 校准）
+
+- 同时存在 `.eh_frame` 与 `.debug_frame` 时，不再"`.eh_frame` 非空就用它"，而是按
+  **覆盖的交叉引用调用点数**选择（平手再比字节数）；实测 `c-df` 的 `.eh_frame` 只有 CRT 的
+  4 个 FDE、覆盖 0 个调用点，`.debug_frame` 覆盖 4 个——修复前 4 个调用点全部未归属，
+  修复后 0 未归属。
+- 真实 `.debug_frame` 样本（WSL gcc 13.3，`-O0 -g -fno-asynchronous-unwind-tables`，
+  objcopy 移除 CRT 的 `.eh_frame`）：readelf 的 3 个 FDE 与 trit-re 的 3 个函数区间
+  **逐条一致**（0x11a9..0x11fa / 0x11fa..0x1233 / 0x1233..0x12cc）。
+- 测试 **79**；变异 **17/17**。
+
+### Added（`trit-re`：ELF `.debug_frame` 函数边界）
+
+- 新增 `crates/trit-re/src/elf/debug_frame.rs`：解析 DWARF CFI——CIE 标记为全 1、
+  FDE 的 CIE 指针是**节内偏移**、`initial_location`/`address_range` 是**绝对地址**，
+  宽度按 CIE `address_size`（v4+）或 ELF class 推断；带 augmentation 的 CIE 跳过。
+- 边界来源选择顺序：`STT_FUNC` 覆盖 ≥90% → `.eh_frame` → `.debug_frame` → 启发式。
+- 单元测试覆盖 v4/address_size=8 与带 augmentation 跳过两路；功能测试锁住来源标记
+  `debug_frame` 与归属。测试 **78**；变异 **16/16**。
+- **未证**：当前语料（ripgrep/glibc）只有 `.eh_frame`，没有真实 `.debug_frame` 样本，
+  这条路径只有合成夹具。
+
+### Added（`trit-re`：PE CLR / TLS 回调事实）
+
+- 解析 CLR 目录（data dir 14）：`cb`、元数据 RVA、`Flags`、入口 token；从元数据根
+  （`BSJB`）读运行时版本串（如 `v4.0.30319`）。
+- 解析 TLS 目录（data dir 9）：`AddressOfCallBacks`（VA→RVA），最多 64 个回调，
+  每个都校验能映射回映像内。
+- 新事实 `pe.managed` / `pe.tls_callbacks`，保持三值：目录缺失 `False`、
+  目录存在但解析失败 `Unknown`、解析成功按有无给 `True`/`False`。
+- 真实读数：`System.Management.Automation.dll` → managed `v4.0.30319`、flags `0xc`；
+  `powershell.exe` → TLS 目录存在但 0 回调；`notepad.exe` → 两者都无。
+- 测试 **75**；变异 **14/14**。
+
 ### Added（`trit-re`：ELF `.eh_frame` 函数边界 + NUL 清理）
 
 - 新增 `crates/trit-re/src/elf/eh.rs`：解析 `.eh_frame` 的 CIE/FDE（支持 `pcrel|sdata4`、
@@ -758,16 +801,18 @@
 ### Added（TTX v2：多载荷容器——GPU 纹理 mip 链 + 三值模型双轨权重，先写定位文档）
 
 - **`docs/TTX.md`**（先于实现）：TTX 对业界格式的竞争力定位——纹理侧对比
-  PNG/QOI/BC1/BC7/ETC2/ASTC/BasisU（TTX 2.40 bpp < BC1 4.0，3 色调色板天花板、
-  无硬件采样器如实记），模型侧对比 safetensors/GGUF Q2_K/BitNet b1.58
+  PNG/QOI/BC1/BC7/ETC2/ASTC/BasisU（当时 4×10 的 TTX 2.40 bpp < BC1 4.0，3 色调色板
+  天花板、无硬件采样器如实记；**bpp 数字后被同版本内「块形状 8×8」条目更新为 2.125**），
+  模型侧对比 safetensors/GGUF Q2_K/BitNet b1.58
   （双轨 2 bit/权重 < Q2_K ≈2.56，比理论下限 1.585 多付的 26% 是 B 类税），
   特点清单 + TTX1/TTX2 字节级规范 + 转换路线。
 - **TTX2 容器**（trit-texture::ttx2，拆 `mod.rs` 容器 / `model.rs` 模型域）：
   魔数 `TTX2` + kind（TEX/MOD）/flags（非零显式拒绝，前向兼容不猜）/段长头 +
   kind 段 + GF(3) CRC-3 尾（对 kind 的**规范 trit 流**算，与 TTX1 同哲学）。
 - **kind=TEX**：纹理 + mip 链——每级自带宽高与块载荷，宽高不增且至少一维
-  严格递减（同级/未对齐/空链都是结构化错误）；4×10 块高的 mip 只能降 2–3 级
-  是方块格式没有的诚实约束，写进文档。读写共用 `validate_levels` 单一来源。
+  严格递减（同级/未对齐/空链都是结构化错误）；当时 4×10 块高的 mip 只能降 2–3 级
+  是方块格式没有的诚实约束，写进文档（**该约束已随本版本内改块为 8×8 消失**：
+  现在 2 的幂尺寸可一路减半到 1×1）。读写共用 `validate_levels` 单一来源。
 - **kind=MOD**：三值模型（`TritModel`/`TritModelLayer`）——权重 {-1,0,+1} 存
   **双轨位平面**（行整字、bit = `1<<(i%32)`），与 trit-gpu matmul 内核的
   storage buffer 布局逐位一致（手算常量钉死），**上传零重排**；偏置基 3 打包
@@ -793,6 +838,28 @@
   （此前无 concurrency 组，多 push 的 PR 每次都全额跑完）；定时/手动运行用唯一
   run_id 分组不受影响。其余 9 个 Linux 门（module-budget/stress/publish-graph/
   docs/action/msrv/package/wasm/release）与 PR 变异门全部保持原样。
+### Added（trit-codec：游程/差分/格雷/QM 化简/#SAT 五个小编解码组件）
+
+又一批独立小编解码器（每个一个文件、只依赖 trit-core、`forbid(unsafe_code)`）：
+
+- `rle`：三值游程编码，连续相同 trit 压成 `(value, count)` 对，可逆；
+  两遍法解码（先校验 `count==0` 与总长再分配），垃圾 `expected_len` 不再 OOM-panic；
+  超长游程 saturating。
+- `delta`：三值差分编码，`d[i]=(t[i]-t[i-1]) mod 3`（signed i8 `rem_euclid(3)`，无下溢），
+  适合缓变序列；穷举长度 ≤6 的全部 1093 条序列 + 2 万长序列往返钉死。
+- `gray`：三值反射格雷码，n 个 trit 表 3ⁿ 个状态、相邻 index 码字恰差一位
+  （n=2/3 穷举汉明距离==1 + k=0 全 False 锚点）；decode 改 checked Horner 累加，
+  超长码字饱和不 panic。
+- `sop`：三值 Quine-McCluskey 化简（真值表 → 最简积之和，`Unknown`=wildcard）；
+  修掉两处真缺陷——合并 parents 标记遗漏导致非质蕴含残留、以及非盒并真值表的
+  **静默过覆盖**（现在末尾枚举 3ⁿ 精确校验，不可表示的输入返回结构化错误）；
+  300+150 个随机盒并真值表等价性测试。
+- `count`：三值 #SAT，容斥数 SOP 积项在 3ⁿ 立方体里的覆盖并集；
+  修掉两处真 bug——`1u64 << m` 在 m≥64 panic、3^w 溢出被静默截断成错误答案
+  （现在 n>40 / m>63 显式报错）；与 `sop` 三条交叉验证（含重叠质蕴含 3+3−1=5）。
+- CLI 新增 rle / delta / gray / sop / count 子命令（5 个端到端测试）。
+- 测试：codec lib 66 → **110**（+44），cli 9 → **14**。外部贡献（bamboo-echo），
+  五路并行独立审查（worktree 隔离），clippy `-D warnings` 零警告。
 
 ### Added（trit-codec：量化/稀疏/交织/校验四个小编解码组件，PR #116 修后合入）
 
@@ -869,6 +936,8 @@ trit-gpu 新增两个三进制 GPU 内核（`gpu` feature 后），全部与 CPU
   的 CPU 解码在 256×60 合成纹理上**逐字节一致**（真机验证）。修掉两个真 bug：
   基 3 打包曾被当 3-bit 位段解；块映射曾按平铺扫描序（只有 block 0 的构造
   测试测不出——随机纹理首差 texel 4 暴露）。
+  （**后续已改**：本版本内块形状 4×10 → 8×8、块字节 12 → 17，内核改为按全局字节
+  偏移取字节、块映射 `(x/8, y/8)`，见 [Unreleased] 顶部「块形状 8×8」条目。）
 - **CPU 镜像进默认构建**（CI 可测）：`pack_columns`（B 转置列打包）、`pack_rows`
   （A 行打包）、`matmul_words`（复用 `dot_words`）；非整字边界（k=100）+ 非方阵
   与标量参考对拍。

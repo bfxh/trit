@@ -313,6 +313,42 @@ fn fill_pe(bytes: &[u8], info: &pe::PeInfo, triage: &mut Triage) {
         None => facts.set_bool("debug.pdb_present", false, "无 CodeView 调试记录"),
     }
 
+    match (&info.clr, info.clr_dir_present) {
+        (Some(header), _) => facts.set(
+            "pe.managed",
+            Ternary::True,
+            format!(
+                "CLR {}（flags=0x{:x}，entry=0x{:x}）",
+                header.runtime_version.as_deref().unwrap_or("?"),
+                header.flags,
+                header.entry_token
+            ),
+        ),
+        (None, true) => facts.set("pe.managed", Ternary::Unknown, "CLR 目录存在但头无法解析"),
+        (None, false) => facts.set("pe.managed", Ternary::False, "无 CLR 目录"),
+    }
+    match &info.tls_callbacks {
+        Some(callbacks) if !callbacks.is_empty() => {
+            let list: Vec<String> = callbacks
+                .iter()
+                .take(8)
+                .map(|rva| format!("0x{rva:x}"))
+                .collect();
+            facts.set(
+                "pe.tls_callbacks",
+                Ternary::True,
+                format!("{} 个 TLS 回调：{}", callbacks.len(), list.join(", ")),
+            );
+        }
+        Some(_) => facts.set_bool("pe.tls_callbacks", false, "TLS 目录存在但没有回调"),
+        None if info.tls_dir_present => facts.set(
+            "pe.tls_callbacks",
+            Ternary::Unknown,
+            "TLS 目录存在但回调数组无法解析",
+        ),
+        None => facts.set_bool("pe.tls_callbacks", false, "无 TLS 目录"),
+    }
+
     let flattened: Option<Vec<String>> = info.imports.as_ref().map(|dlls| {
         dlls.iter()
             .flat_map(|dll| {

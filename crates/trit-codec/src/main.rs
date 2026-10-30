@@ -2,7 +2,10 @@
 
 use std::process::ExitCode;
 
-use trit_codec::{balanced, checksum, hamming, interleave, pack, plan, quantize, sparse};
+use trit_codec::{
+    balanced, checksum, count, delta, gray, hamming, interleave, pack, plan, quantize, rle, sop,
+    sparse,
+};
 use trit_core::value::Ternary;
 
 fn main() -> ExitCode {
@@ -19,6 +22,11 @@ fn main() -> ExitCode {
         Some("sparse") => sparse_cmd(&args[1..]),
         Some("interleave") => interleave_cmd(&args[1..]),
         Some("checksum") => checksum_cmd(&args[1..]),
+        Some("rle") => rle_cmd(&args[1..]),
+        Some("delta") => delta_cmd(&args[1..]),
+        Some("gray") => gray_cmd(&args[1..]),
+        Some("sop") => sop_cmd(&args[1..]),
+        Some("count") => count_cmd(&args[1..]),
         _ => Err(usage()),
     };
     match result {
@@ -31,7 +39,7 @@ fn main() -> ExitCode {
 }
 
 fn usage() -> String {
-    "用法：trit-codec <pack|unpack|balanced|hamming|stats|plan|quantize|dequantize|sparse|interleave|checksum>"
+    "用法：trit-codec <pack|unpack|balanced|hamming|stats|plan|quantize|dequantize|sparse|interleave|checksum|rle|delta|gray|sop|count>"
         .to_string()
 }
 
@@ -411,7 +419,7 @@ fn sparse_cmd(args: &[String]) -> Result<(), String> {
 }
 
 /// 有值 flag：遇到后连下一个参数一起跳过。
-const VALUED_FLAGS: &[&str] = &["--block", "--len", "--beta", "--scale"];
+const VALUED_FLAGS: &[&str] = &["--block", "--len", "--beta", "--scale", "--index", "--n"];
 
 /// 从 args 里去掉所有 flag 和 flag 的值，返回剩下的位置参数。
 fn filter_positional(args: &[String]) -> Vec<&String> {
@@ -499,6 +507,170 @@ fn checksum_cmd(args: &[String]) -> Result<(), String> {
             "data": raw,
             "checksum": ctext,
             "appended": atext,
+        }))
+        .unwrap_or_default()
+    );
+    Ok(())
+}
+
+fn rle_cmd(args: &[String]) -> Result<(), String> {
+    if args.iter().any(|a| a == "--decode") {
+        let len: usize = args
+            .iter()
+            .position(|a| a == "--len")
+            .and_then(|j| args.get(j + 1))
+            .ok_or("rle --decode 需要 --len N")?
+            .parse()
+            .map_err(|_| "len 不是整数".to_string())?;
+        let positional = filter_positional(args);
+        let raw = positional.first().ok_or("--decode 需要 runs JSON")?;
+        let raw_runs: Vec<(char, u32)> =
+            serde_json::from_str(raw).map_err(|e| format!("runs 不是合法 JSON: {e}"))?;
+        let runs: Result<Vec<(Ternary, u32)>, String> = raw_runs
+            .into_iter()
+            .map(|(c, n)| {
+                Ternary::parse_char(c)
+                    .map(|t| (t, n))
+                    .ok_or_else(|| format!("runs 里非法 trit 字符 {c:?}"))
+            })
+            .collect();
+        let runs = runs?;
+        let values = rle::decode(&runs, len).map_err(|e| e.to_string())?;
+        let text: String = values.iter().map(|t| t.as_char()).collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({"trits": text, "len": len}))
+                .unwrap_or_default()
+        );
+        return Ok(());
+    }
+    let raw = args.first().ok_or("rle 需要 TRITS 串")?;
+    let values = parse_trits(raw)?;
+    let runs = rle::encode(&values);
+    let text_runs: Vec<(char, u32)> = runs.iter().map(|(v, n)| (v.as_char(), *n)).collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "trits": raw,
+            "runs": text_runs,
+            "run_count": runs.len(),
+            "compression_ratio": rle::compression_ratio(&runs, values.len()),
+            "average_run_len": rle::average_run_len(&runs),
+        }))
+        .unwrap_or_default()
+    );
+    Ok(())
+}
+
+fn delta_cmd(args: &[String]) -> Result<(), String> {
+    let positional = filter_positional(args);
+    let raw = positional.first().ok_or("delta 需要 TRITS 串")?;
+    let values = parse_trits(raw)?;
+    if args.iter().any(|a| a == "--decode") {
+        let back = delta::decode(&values);
+        let text: String = back.iter().map(|t| t.as_char()).collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({"deltas": raw, "trits": text}))
+                .unwrap_or_default()
+        );
+        return Ok(());
+    }
+    let d = delta::encode(&values);
+    let dtext: String = d.iter().map(|t| t.as_char()).collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({"trits": raw, "deltas": dtext}))
+            .unwrap_or_default()
+    );
+    Ok(())
+}
+
+fn gray_cmd(args: &[String]) -> Result<(), String> {
+    if args.iter().any(|a| a == "--decode") {
+        let positional = filter_positional(args);
+        let raw = positional.first().ok_or("gray --decode 需要 WORD")?;
+        let word = parse_trits(raw)?;
+        let idx = gray::decode(&word);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({"word": raw, "index": idx}))
+                .unwrap_or_default()
+        );
+        return Ok(());
+    }
+    let index: usize = args
+        .iter()
+        .position(|a| a == "--index")
+        .and_then(|i| args.get(i + 1))
+        .ok_or("gray 需要 --index N")?
+        .parse()
+        .map_err(|_| "index 不是整数".to_string())?;
+    let n: usize = args
+        .iter()
+        .position(|a| a == "--n")
+        .and_then(|i| args.get(i + 1))
+        .ok_or("gray 需要 --n M")?
+        .parse()
+        .map_err(|_| "n 不是整数".to_string())?;
+    let word = gray::encode(index, n).map_err(|e| e.to_string())?;
+    let text: String = word.iter().map(|t| t.as_char()).collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "index": index,
+            "n": n,
+            "codeword": text,
+        }))
+        .unwrap_or_default()
+    );
+    Ok(())
+}
+
+fn sop_cmd(args: &[String]) -> Result<(), String> {
+    let positional = filter_positional(args);
+    let raw = positional.first().ok_or("sop 需要 rows JSON")?;
+    // rows: [[input_string, output_char], ...]
+    let raw_rows: Vec<(String, char)> =
+        serde_json::from_str(raw).map_err(|e| format!("rows 不是合法 JSON: {e}"))?;
+    let mut rows: Vec<(Vec<Ternary>, Ternary)> = Vec::new();
+    for (input_s, out_c) in raw_rows {
+        let input = parse_trits(&input_s)?;
+        let out = Ternary::parse_char(out_c)
+            .ok_or_else(|| format!("输出字符 {out_c:?} 非法（只接受 0/1/X）"))?;
+        rows.push((input, out));
+    }
+    let terms = sop::minimize(&rows).map_err(|e| e.to_string())?;
+    let text_terms: Vec<String> = terms
+        .iter()
+        .map(|t| t.iter().map(|x| x.as_char()).collect())
+        .collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "terms": text_terms,
+            "term_count": terms.len(),
+        }))
+        .unwrap_or_default()
+    );
+    Ok(())
+}
+
+fn count_cmd(args: &[String]) -> Result<(), String> {
+    let positional = filter_positional(args);
+    let raw = positional.first().ok_or("count 需要 terms JSON")?;
+    let raw_terms: Vec<String> =
+        serde_json::from_str(raw).map_err(|e| format!("terms 不是合法 JSON: {e}"))?;
+    let mut terms: Vec<Vec<Ternary>> = Vec::new();
+    for s in &raw_terms {
+        terms.push(parse_trits(s)?);
+    }
+    let n = count::count(&terms).map_err(|e| e.to_string())?;
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "terms": raw_terms,
+            "count": n,
         }))
         .unwrap_or_default()
     );

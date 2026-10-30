@@ -72,6 +72,10 @@ pub fn pe_sample() -> Vec<u8> {
     put_u32(&mut file, dirs + 36, 0x60);
     put_u32(&mut file, dirs + 48, 0x2100); // debug
     put_u32(&mut file, dirs + 52, 28);
+    put_u32(&mut file, dirs + 72, 0x2300); // TLS
+    put_u32(&mut file, dirs + 76, 40);
+    put_u32(&mut file, dirs + 112, 0x2380); // CLR
+    put_u32(&mut file, dirs + 116, 72);
 
     // 节表
     let sections = opt + 0xF0;
@@ -161,6 +165,27 @@ pub fn pe_sample() -> Vec<u8> {
     put_u16(&mut file, 0x7A4, 0x0200);
     put_u16(&mut file, 0x7A6, 0x0002);
     file[0x7A8..0x7A8 + CERT_OID_SIGNED_DATA.len()].copy_from_slice(CERT_OID_SIGNED_DATA);
+
+    // TLS 目录（RVA 0x2300）：AddressOfCallBacks = base + 0x2340
+    put_u64(&mut file, 0x900 + 24, 0x1_4000_2340);
+    // 回调数组（RVA 0x2340）：两个回调指向 .text 内
+    put_u64(&mut file, 0x940, 0x1_4000_1010);
+    put_u64(&mut file, 0x948, 0x1_4000_1020);
+    // CLR 头（RVA 0x2380）
+    put_u32(&mut file, 0x980, 72);
+    put_u16(&mut file, 0x984, 2);
+    put_u16(&mut file, 0x986, 5);
+    put_u32(&mut file, 0x988, 0x23C0); // metadata RVA
+    put_u32(&mut file, 0x98C, 0x40);
+    put_u32(&mut file, 0x990, 1); // ILONLY
+    put_u32(&mut file, 0x994, 0x0600_0001);
+    // 元数据根（RVA 0x23C0）：BSJB + 版本串
+    put_u32(&mut file, 0x9C0, 0x424A_5342);
+    put_u16(&mut file, 0x9C4, 1);
+    put_u16(&mut file, 0x9C6, 1);
+    put_u32(&mut file, 0x9CC, 16);
+    let version = b"v4.0.30319\0";
+    file[0x9D0..0x9D0 + version.len()].copy_from_slice(version);
 
     fill_noise(&mut file[0xC00..], 0x1234_5678);
     file

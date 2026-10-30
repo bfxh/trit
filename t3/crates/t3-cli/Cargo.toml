@@ -1,0 +1,16 @@
+[package]
+name = "t3-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "t3"
+path = "src/main.rs"
+
+[dependencies]
+t3-core.workspace = true
+t3-kernel.workspace = true
+t3-format.workspace = true
+t3-sig.workspace = true

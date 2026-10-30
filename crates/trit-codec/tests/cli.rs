@@ -143,3 +143,82 @@ fn checksum_append_then_verify_passes() {
     let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
     assert_eq!(v["valid"], true);
 }
+
+#[test]
+fn rle_cli_round_trips() {
+    // 111XX00001 → runs [["1",3],["X",2],["0",4],["1",1]]，总长 10。
+    let (stdout, _, code) = run(&["rle", "111XX00001"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["run_count"], 4);
+    let runs = v["runs"].to_string();
+    let trits = v["trits"].as_str().unwrap().to_string();
+
+    let (stdout, _, code) = run(&["rle", "--decode", "--len", &trits.len().to_string(), &runs]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["trits"], "111XX00001");
+}
+
+#[test]
+fn delta_cli_round_trips() {
+    let raw = "10X01XX10";
+    let (stdout, _, code) = run(&["delta", raw]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert_eq!(v["trits"], raw);
+    let deltas = v["deltas"].as_str().unwrap().to_string();
+
+    let (stdout, _, code) = run(&["delta", "--decode", &deltas]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert_eq!(v["deltas"], deltas);
+    assert_eq!(v["trits"], raw);
+}
+
+#[test]
+fn gray_cli_round_trips() {
+    // encode：gray --index 5 --n 2。手算 n=2 时 index 5 的码字应为 "XX"（锚点）。
+    let (stdout, _, code) = run(&["gray", "--index", "5", "--n", "2"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert_eq!(v["index"], 5);
+    assert_eq!(v["n"], 2);
+    let codeword = v["codeword"].as_str().unwrap().to_string();
+    assert_eq!(codeword, "XX");
+
+    // decode：gray --decode <codeword>，index 必须往返回 5。
+    let (stdout, _, code) = run(&["gray", "--decode", &codeword]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("valid json");
+    assert_eq!(v["word"], codeword);
+    assert_eq!(v["index"], 5);
+}
+
+#[test]
+fn count_cli_basic() {
+    // 手算："0X1" 覆盖 3 个赋值，"100" 覆盖 1 个，两者在首位 0/1 冲突无交集。
+    // 并集 = 3 + 1 = 4。
+    let (stdout, _, code) = run(&["count", "[\"0X1\",\"100\"]"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["count"], 4);
+    assert_eq!(v["terms"], serde_json::json!(["0X1", "100"]));
+
+    // 重叠情形："X0X"（9 个）完全包含 "X00"（3 个）→ 并集仍为 9。
+    let (stdout, _, code) = run(&["count", "[\"X0X\",\"X00\"]"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).unwrap();
+    assert_eq!(v["count"], 9);
+}
+
+#[test]
+fn sop_cli_basic() {
+    // rows JSON：[[input_string, output_char], ...]。
+    // True 行 = (a,b=False) 的全部三个具体赋值 → 应化简成单条 "X0"。
+    let (stdout, _, code) = run(&["sop", "[[\"00\",\"1\"],[\"x0\",\"1\"],[\"10\",\"1\"]]"]);
+    assert_eq!(code, 0);
+    let v: serde_json::Value = serde_json::from_str(&stdout).expect("sop 输出必须是合法 JSON");
+    assert_eq!(v["term_count"], 1);
+    assert_eq!(v["terms"], serde_json::json!(["X0"]));
+}
