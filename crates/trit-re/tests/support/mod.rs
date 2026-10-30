@@ -337,19 +337,22 @@ fn write_shdr(
 
 // ---------- ELF32（i386）夹具 ----------
 
-/// 最小 ELF32：2 个 JUMP_SLOT 导入、PIC PLT 桩 + `get_pc_thunk` 基址。
+/// 最小 ELF32：3 个导入，覆盖 JUMP_SLOT / GLOB_DAT、PIC 桩、基址解析与"只取地址"。
 ///
-/// `socket` 有三个引用（`E8` 打到 PLT 桩、`call *disp(%ebx)`、`jmp *abs32`）；
-/// `printf` 只有一次 `mov eax,[ebx+disp]`（取地址），必须降级成 `Unknown`。
-/// `thunk = false` 时去掉 `call get_pc_thunk.bx; add $imm,%ebx`，`(%ebx)` 形式的引用
-/// 就无法解析——报告必须标不完整，而不是判"没有调用点"。
+/// - `socket`（JUMP_SLOT）：`E8` 打到 PLT 桩、`call *0x8(%ebx)`、`jmp *abs32` 三个引用；
+/// - `printf`（GLOB_DAT，`.rel.dyn`）：有 PLT 桩、被 `E8` 调用 ⇒ 必须判 `True`
+///   （只收 JUMP_SLOT 的旧实现会把它当成"没有槽位"）；
+/// - `getenv`（JUMP_SLOT）：只有一次 `mov eax,[ebx+0x10]`（取地址）⇒ 降级 `Unknown`。
+///
+/// `thunk = false` 时去掉 `call get_pc_thunk.bx; add $imm,%ebx`：`(%ebx)` 引用解析不了，
+/// 报告必须标不完整，而不是判"没有调用点"。
 pub fn elf32_sample(thunk: bool) -> Vec<u8> {
     const TEXT: u32 = 0x0804_8100;
     const PLT: u32 = 0x0804_8140;
     const GOT: u32 = 0x0804_9000;
-    let mut file = vec![0u8; 0x520];
+    let mut file = vec![0u8; 0x560];
 
-    file[..4].copy_from_slice(b"\x7fELF");
+    file[..4].copy_from_slice(b"ELF");
     file[4] = 1; // ELF32
     file[5] = 1; // 小端
     file[6] = 1;
@@ -363,72 +366,84 @@ pub fn elf32_sample(thunk: bool) -> Vec<u8> {
     put_u16(&mut file, 42, 32);
     put_u16(&mut file, 44, 0); // phnum
     put_u16(&mut file, 46, 40);
-    put_u16(&mut file, 48, 7);
-    put_u16(&mut file, 50, 6);
+    put_u16(&mut file, 48, 8);
+    put_u16(&mut file, 50, 7);
 
     // .text：0x100 → VA 0x08048100
     if thunk {
-        // 0x100: call 0x124（0x124 - 0x105 = 0x1F）
+        // 0x100: call 0x128（0x128 - 0x105 = 0x23）
         file[0x100] = 0xE8;
-        put_u32(&mut file, 0x101, 0x1F);
+        put_u32(&mut file, 0x101, 0x23);
         // 0x105: add $imm,%ebx ⇒ ebx = 0x08048105 + imm = GOT
         file[0x105] = 0x81;
         file[0x106] = 0xC3;
         put_u32(&mut file, 0x107, GOT.wrapping_sub(TEXT + 5));
     }
-    // 0x10B: call 0x140（PLT 桩；0x140 - 0x110 = 0x30）
+    // 0x10B: call 0x140（socket 的 PLT 桩；0x140 - 0x110 = 0x30）
     file[0x10B] = 0xE8;
     put_u32(&mut file, 0x10C, 0x30);
     // 0x110: call *0x8(%ebx)（socket 槽位 = GOT + 8）
     file[0x110] = 0xFF;
     file[0x111] = 0x93;
     put_u32(&mut file, 0x112, 8);
-    // 0x116: mov eax,[ebx+0xC]（printf 槽位被取地址）
+    // 0x116: mov eax,[ebx+0x10]（getenv 槽位被取地址）
     file[0x116] = 0x8B;
     file[0x117] = 0x83;
-    put_u32(&mut file, 0x118, 0xC);
+    put_u32(&mut file, 0x118, 0x10);
     // 0x11C: jmp *abs32（非 PIC 风格，直接给出 socket 槽位）
     file[0x11C] = 0xFF;
     file[0x11D] = 0x25;
     put_u32(&mut file, 0x11E, GOT + 8);
-    // 0x124: __x86.get_pc_thunk.bx
-    file[0x124..0x128].copy_from_slice(&[0x8B, 0x1C, 0x24, 0xC3]);
+    // 0x122: call 0x150（printf 的 PLT 桩；0x150 - 0x127 = 0x29）
+    file[0x122] = 0xE8;
+    put_u32(&mut file, 0x123, 0x29);
+    // 0x128: __x86.get_pc_thunk.bx
+    file[0x128..0x12C].copy_from_slice(&[0x8B, 0x1C, 0x24, 0xC3]);
 
-    // .plt：0x140 → VA 0x08048140，`jmp *0x8(%ebx)`
+    // .plt：0x140 → VA 0x08048140；两个桩（socket 走 JUMP_SLOT，printf 走 GLOB_DAT）
     file[0x140] = 0xFF;
     file[0x141] = 0xA3;
     put_u32(&mut file, 0x142, 8);
+    file[0x150] = 0xFF;
+    file[0x151] = 0xA3;
+    put_u32(&mut file, 0x152, 0xC);
 
-    // .dynstr："\0socket\0printf\0"
+    // .dynstr："\0socket\0printf\0getenv\0"
     file[0x180] = 0;
     file[0x181..0x188].copy_from_slice(b"socket\0");
     file[0x188..0x18F].copy_from_slice(b"printf\0");
-    // .dynsym：0 号空，1 号 socket、2 号 printf（STT_FUNC | STB_GLOBAL，未定义）
+    file[0x18F..0x196].copy_from_slice(b"getenv\0");
+    // .dynsym：0 号空，1 socket、2 printf、3 getenv（STT_FUNC | STB_GLOBAL，未定义）
     put_u32(&mut file, 0x1B0, 1);
     file[0x1BC] = 0x12;
     put_u32(&mut file, 0x1C0, 8);
     file[0x1CC] = 0x12;
+    put_u32(&mut file, 0x1D0, 15);
+    file[0x1DC] = 0x12;
 
-    // .rel.plt：2 条 SHT_REL（8 字节/条），类型 7 = R_386_JUMP_SLOT
+    // .rel.plt：2 条 JUMP_SLOT（类型 7）；.rel.dyn：1 条 GLOB_DAT（类型 6）
     put_u32(&mut file, 0x1E0, GOT + 8);
     put_u32(&mut file, 0x1E4, (1 << 8) | 7);
-    put_u32(&mut file, 0x1E8, GOT + 0xC);
-    put_u32(&mut file, 0x1EC, (2 << 8) | 7);
+    put_u32(&mut file, 0x1E8, GOT + 0x10);
+    put_u32(&mut file, 0x1EC, (3 << 8) | 7);
+    put_u32(&mut file, 0x1F0, GOT + 0xC);
+    put_u32(&mut file, 0x1F4, (2 << 8) | 6);
 
     // .shstrtab
-    let shstrtab = b"\0.text\0.plt\0.dynstr\0.dynsym\0.rel.plt\0.shstrtab\0";
+    let shstrtab = b"\0.text\0.plt\0.dynstr\0.dynsym\0.rel.plt\0.rel.dyn\0.shstrtab\0";
     file[0x200..0x200 + shstrtab.len()].copy_from_slice(shstrtab);
 
     let sh = 0x400;
     write_shdr32(&mut file, sh + 40, 1, 1, 6, TEXT, 0x100, 0x30, 0, 0);
-    write_shdr32(&mut file, sh + 80, 7, 1, 6, PLT, 0x140, 0x10, 0, 0);
-    write_shdr32(&mut file, sh + 120, 12, 3, 2, 0, 0x180, 0x0F, 0, 0);
-    write_shdr32(&mut file, sh + 160, 21, 11, 2, 0, 0x1A0, 0x30, 3, 16);
-    write_shdr32(&mut file, sh + 200, 30, 9, 2, 0, 0x1E0, 0x10, 4, 8);
+    write_shdr32(&mut file, sh + 80, 7, 1, 6, PLT, 0x140, 0x20, 0, 0);
+    write_shdr32(&mut file, sh + 120, 12, 3, 2, 0, 0x180, 0x16, 0, 0);
+    write_shdr32(&mut file, sh + 160, 20, 11, 2, 0, 0x1A0, 0x40, 3, 16);
+    write_shdr32(&mut file, sh + 200, 28, 9, 2, 0, 0x1E0, 0x10, 4, 8);
+    write_shdr32(&mut file, sh + 240, 37, 9, 2, 0, 0x1F0, 0x08, 4, 8);
     write_shdr32(
         &mut file,
-        sh + 240,
-        39,
+        sh + 280,
+        46,
         3,
         0,
         0,
