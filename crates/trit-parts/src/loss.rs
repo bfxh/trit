@@ -33,7 +33,9 @@ pub fn depth_loss_grad(
 ) -> DepthOut {
     let hw = valid.len();
     let dp = planes.len();
-    assert_eq!(logits.len(), hw * dp * 3);
+    assert_eq!(logits.len() % hw, 0, "logits 长度应为 hw 的整数倍");
+    let stride = logits.len() / hw;
+    assert!(stride >= dp * 3, "通道不足：{stride} < {}", dp * 3);
     let mut grad = vec![0.0f32; logits.len()];
     let mut hit = vec![0usize; dp];
     let mut seen = 0usize;
@@ -44,7 +46,7 @@ pub fn depth_loss_grad(
             continue;
         }
         seen += 1;
-        let base = p * dp * 3;
+        let base = p * stride;
         for i in 0..dp {
             let z = [
                 logits[base + i * 3],

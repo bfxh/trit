@@ -380,7 +380,7 @@ fn main() {
         let dw = trit_parts::loss::plane_weights(args.depth_planes.max(1));
         let dout_depth = match (&dep, &tr.depth_out) {
             (Some((p, v)), Some(buf)) => {
-                let dlogits = gpu.read(buf, hw * args.depth_planes * 3);
+                let dlogits = gpu.read(buf, hw * net.depth_cout() as usize);
                 let dout = depth_loss_grad(&dlogits, p, v, &dw, args.depth_weight);
                 let b = gpu.buf(&dout.grad, "dout_depth");
                 dep_out = Some(dout);
@@ -439,7 +439,7 @@ fn main() {
                 let ev = loss_and_grad(&lg0, &s0.planes, &s0.valid, hw, k, &w);
                 let dacc = match (&dep0, &tr0.depth_out) {
                     (Some((p, v)), Some(buf)) => {
-                        let dl = gpu.read(buf, hw * args.depth_planes * 3);
+                        let dl = gpu.read(buf, hw * net.depth_cout() as usize);
                         Some(depth_loss_grad(&dl, p, v, &dw, args.depth_weight).acc)
                     }
                     _ => None,
@@ -655,9 +655,14 @@ fn eval_only(gpu: &Gpu, args: &Args) {
             let logits = gpu.read(&tr.out, hw * ch);
             frames_n += 1;
             if let Some(buf) = &tr.depth_out {
-                let dplanes = (net.depth_cout() as usize) / 3;
+                if args.depth_planes == 0 {
+                    eprintln!("--eval 读带深度头的模型需要 --depth-planes");
+                    std::process::exit(2);
+                }
+                let dplanes = args.depth_planes;
+                let dstride = net.depth_cout() as usize;
                 let levels = 3usize.pow(dplanes as u32) - 1;
-                let dl = gpu.read(buf, hw * dplanes * 3);
+                let dl = gpu.read(buf, hw * dstride);
                 let stem = file
                     .file_stem()
                     .map(|v| v.to_string_lossy().into_owned())
@@ -677,7 +682,7 @@ fn eval_only(gpu: &Gpu, args: &Args) {
                     }
                     let mut lvl = 0usize;
                     for i in 0..dplanes {
-                        let b = p * dplanes * 3 + i * 3;
+                        let b = p * dstride + i * 3;
                         let z = [dl[b], dl[b + 1], dl[b + 2]];
                         let mut best = 0usize;
                         for c in 1..3 {

@@ -533,9 +533,12 @@ impl Net {
         }
         let cin = self.layers[D1B].cout;
         let mut s = seed | 1;
+        // 输出通道要补到 4 的倍数（vec4 反向内核）；多出来的补零通道不参与损失。
+        let need = planes * 3;
+        let cout = need + (4 - need % 4) % 4;
         // 实测 1×1 在留出集上比 3×3 好（MAE 1.09/1.31 m vs 1.20/1.48 m，3000 步）。
         self.layers
-            .push(Layer::random(cin, planes * 3, 1, false, &mut s));
+            .push(Layer::random(cin, cout, 1, false, &mut s));
     }
 
     /// 深度头输出通道数（没有时 0）。
