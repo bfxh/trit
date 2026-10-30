@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 # cargo-fuzz 需要 nightly 与独立 target，不并入 workspace。
-exclude = ["fuzz"]
+exclude = ["fuzz", "t3"]
 members = [
     "crates/trit-core",
     "crates/trit-learn",
@@ -32,6 +32,7 @@ members = [
     "crates/trit-procscan",
     "crates/trit-ops",
     "crates/trit-capacity",
+    "crates/trit-re",
 ]
 
 [workspace.package]
