@@ -7,7 +7,7 @@
 //!   ttx-upgrade   in.ttx out.ttx    # TTX1 → TTX2
 //!   ttx-downgrade in.ttx out.ttx    # TTX2 → TTX1（仅单级 TEX）
 //!   render        in.ttx out.png    # 渲染预览（采样口径/寻址/平铺可调，--split 并排对拍）
-//!   stats         in.ttx            # 逐级 mip 账单：尺寸/块数/字节/压缩比/载荷槽
+//!   stats         in.ttx [--level N]  # 逐级 mip 账单 + 第 N 级调色板跨度直方图
 //!
 //! `render` 的选项：`--size WxH` `--mode nearest|bilinear|trilinear|auto` `--lod F`
 //! `--wrap clamp|repeat|mirror` `--tiles F` `--split` `--level N` `--blocks` `--atlas x,y,w,h`。
@@ -23,7 +23,7 @@ use trit_texture::convert::{
     ttx2_to_rgba, ttx2_to_ttx1,
 };
 use trit_texture::pngio::{load_png_rgba, save_png_rgba};
-use trit_texture::preview::{RenderOptions, SampleMode, level_stats, render};
+use trit_texture::preview::{RenderOptions, SampleMode, level_stats, palette_histogram, render};
 use trit_texture::sample::{Rect, Wrap};
 use trit_texture::ttx2::{TtxDocument, from_ttx2};
 
@@ -129,11 +129,24 @@ fn run() -> Result<String, String> {
             ))
         }
         "stats" => {
-            if rest.len() != 1 {
-                return Err("stats 需要一个路径参数：<in.ttx>".to_string());
+            let mut level = 0usize;
+            let mut path: Option<&String> = None;
+            let mut index = 0;
+            while index < rest.len() {
+                if rest[index] == "--level" {
+                    index += 1;
+                    let value = rest.get(index).ok_or("--level 缺少取值")?;
+                    level = value
+                        .parse()
+                        .map_err(|_| format!("--level 不是整数：{value}"))?;
+                } else {
+                    path = Some(&rest[index]);
+                }
+                index += 1;
             }
-            let bytes = std::fs::read(Path::new(&rest[0])).map_err(|e| e.to_string())?;
-            let doc = load_doc(&bytes, &rest[0])?;
+            let path = path.ok_or("stats 需要一个路径参数：<in.ttx>")?;
+            let bytes = std::fs::read(Path::new(path)).map_err(|e| e.to_string())?;
+            let doc = load_doc(&bytes, path)?;
             let stats = level_stats(&doc).map_err(|e| e.to_string())?;
             let mut out = String::from(
                 "级别  尺寸        块数    块流字节  RGBA字节  压缩比  载荷槽
@@ -155,6 +168,29 @@ fn run() -> Result<String, String> {
             }
             let total: usize = stats.iter().map(|s| s.bytes).sum();
             out.push_str(&format!("合计块流 {total} 字节（{} 级）", stats.len()));
+
+            let hist = palette_histogram(&doc, level).map_err(|e| e.to_string())?;
+            out.push_str(&format!(
+                "
+
+调色板跨度分布（第 {level} 级，{} 块）
+",
+                hist.blocks
+            ));
+            for (bin, count) in hist.bins.iter().enumerate() {
+                let lo = bin * 56;
+                let hi = (bin + 1) * 56;
+                let share = *count as f64 * 100.0 / hist.blocks.max(1) as f64;
+                let bar = "#".repeat((share / 2.0) as usize);
+                out.push_str(&format!(
+                    "  [{lo:>3},{hi:>3}) {count:>6} {bar:<25} {share:>5.1}%
+"
+                ));
+            }
+            out.push_str(&format!(
+                "索引使用：1 色 {} 块 / 2 色 {} 块 / 3 色 {} 块",
+                hist.index_usage[0], hist.index_usage[1], hist.index_usage[2]
+            ));
             Ok(out)
         }
         other => Err(format!("未知子命令 {other}")),

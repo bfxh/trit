@@ -6,7 +6,11 @@
 
 use crate::sample::{Rect, Sampler, Wrap, lod_from_derivatives};
 use crate::ttx2::TtxDocument;
-use crate::{BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TRIT_PAYLOAD_BYTES, TRITS_PER_BLOCK};
+use crate::{
+    BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TRIT_PAYLOAD_BYTES, TRITS_PER_BLOCK,
+    palette_from_endpoints, unpack_trits,
+};
+use trit_core::value::Ternary;
 
 /// 采样口径。
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -197,6 +201,58 @@ pub fn level_stats(doc: &TtxDocument) -> Result<Vec<LevelStat>, String> {
     Ok(out)
 }
 
+/// 调色板跨度直方图：看压缩在**哪类块**上吃亏。
+///
+/// 跨度 = 块内两端点 `e0`/`e1` 解码后的 RGB 欧氏距离（0..≈441）。跨度大 ⇒ 块内颜色
+/// 差异大 ⇒ 3 级调色板要么丢细节（只用 1 个索引）要么端点量化误差大。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PaletteHistogram {
+    /// 8 个等宽区间：`[0,56)`、`[56,112)`、…、`[392,448]`。
+    pub bins: [usize; 8],
+    /// 块内实际用到 1 / 2 / 3 个索引的块数。
+    pub index_usage: [usize; 3],
+    /// 参与统计的块总数。
+    pub blocks: usize,
+}
+
+/// 统计第 `level` 级的调色板跨度分布。
+pub fn palette_histogram(doc: &TtxDocument, level: usize) -> Result<PaletteHistogram, String> {
+    let levels = doc.levels().ok_or("不是纹理文档（kind=MOD），无块可统计")?;
+    let tex = levels.get(level).ok_or("mip 级越界")?;
+    let mut hist = PaletteHistogram {
+        bins: [0; 8],
+        index_usage: [0; 3],
+        blocks: tex.blocks.len(),
+    };
+    for block in &tex.blocks {
+        let e0 = u16::from_be_bytes([block[0], block[1]]);
+        let e1 = u16::from_be_bytes([block[2], block[3]]);
+        let palette = palette_from_endpoints(e0, e1);
+        let (r0, g0, b0) = palette[0];
+        let (r1, g1, b1) = palette[2];
+        let dr = f32::from(r0) - f32::from(r1);
+        let dg = f32::from(g0) - f32::from(g1);
+        let db = f32::from(b0) - f32::from(b1);
+        let spread = (dr * dr + dg * dg + db * db).sqrt();
+        let bin = ((spread / 56.0) as usize).min(7);
+        hist.bins[bin] += 1;
+
+        let mut payload = [0u8; TRIT_PAYLOAD_BYTES];
+        payload.copy_from_slice(&block[4..]);
+        let trits = unpack_trits(&payload);
+        let mut seen = [false; 3];
+        for trit in trits.iter() {
+            seen[match trit {
+                Ternary::False => 0,
+                Ternary::Unknown => 1,
+                Ternary::True => 2,
+            }] = true;
+        }
+        hist.index_usage[seen.iter().filter(|s| **s).count() - 1] += 1;
+    }
+    Ok(hist)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -321,6 +377,55 @@ mod tests {
             assert!(pair[1].width <= pair[0].width && pair[1].height <= pair[0].height);
             assert!(pair[1].bytes < pair[0].bytes);
         }
+    }
+
+    #[test]
+    fn histogram_flat_blocks_use_one_index() {
+        let doc = solid(16, 20, [40, 80, 120]);
+        let hist = palette_histogram(&doc, 0).expect("hist");
+        assert_eq!(
+            hist.blocks,
+            (16 / crate::BLOCK_WIDTH) * (20 / crate::BLOCK_HEIGHT)
+        );
+        assert_eq!(hist.bins[0], hist.blocks, "纯色块跨度应落在最低档");
+        assert_eq!(
+            hist.index_usage,
+            [hist.blocks, 0, 0],
+            "纯色块只该用一个索引"
+        );
+    }
+
+    #[test]
+    fn histogram_gradient_blocks_span_and_use_three() {
+        // 水平渐变：每块内 4 级灰度 ⇒ 跨度大、且 3 个索引都会用到
+        let (w, h) = (16usize, 20usize);
+        let mut px = vec![0u8; w * h * 4];
+        for y in 0..h {
+            for x in 0..w {
+                let o = (y * w + x) * 4;
+                let c = (x * 16) as u8;
+                px[o] = c;
+                px[o + 1] = c;
+                px[o + 2] = c;
+                px[o + 3] = 255;
+            }
+        }
+        let bytes = rgba_to_ttx2_mips(&px, w, h).expect("encode");
+        let doc = from_ttx2(&bytes).expect("parse");
+        let hist = palette_histogram(&doc, 0).expect("hist");
+        // 块宽 4、渐变步长 16 ⇒ 每块跨度 ≈48·√3 ≈ 83，落在第 1 档而不是第 0 档
+        assert_eq!(hist.bins[0], 0, "渐变块不该落在零跨度档：{:?}", hist.bins);
+        assert_eq!(
+            hist.bins.iter().sum::<usize>(),
+            hist.blocks,
+            "所有块都要入箱"
+        );
+        assert!(hist.bins[1] > 0, "应有块落在低跨度档：{:?}", hist.bins);
+        assert!(
+            hist.index_usage[2] > 0,
+            "应有块用满 3 个索引：{:?}",
+            hist.index_usage
+        );
     }
 
     #[test]
