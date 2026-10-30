@@ -32,7 +32,7 @@ pub enum PcapError {
         /// 文件剩余字节数。
         remaining: usize,
     },
-    /// `incl_len` 超过 [`MAX_RECORD`]。
+    /// `incl_len` 超过 256 KiB 上限。
     OversizedRecord {
         /// 记录序号。
         index: usize,

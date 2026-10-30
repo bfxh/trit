@@ -22,7 +22,7 @@ pub enum Bias {
 /// 一条阈值规则。`low < high` 必须成立，中间是死区。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Rule {
-    /// 特征下标，对应 [`NAMES`]。
+    /// 特征下标，对应 [`super::flow::NAMES`]。
     pub feature: usize,
     /// 下界。
     pub low: f64,
