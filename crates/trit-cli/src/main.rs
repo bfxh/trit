@@ -15,6 +15,7 @@
 
 mod commands;
 mod output;
+mod timeout;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
@@ -59,6 +60,40 @@ struct Cli {
 /// CLI 子命令。
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// 系统容量观测与准入判决（M5.1）：这台机器的显存够不够这个负载。
+    ///
+    /// 只观测与判决，不拦截；`--require` 时 WARN/REJECT/读数不可用 一律退出码 1。
+    Capacity {
+        /// 负载峰值需求（MiB）。省略则只打印快照，不做判决。
+        #[arg(long, value_name = "MIB")]
+        need_mb: Option<u64>,
+        /// 竞争余量倍数（≥1.0；小于 1 会被夹到 1.0）。
+        #[arg(long, default_value_t = 2.0)]
+        headroom: f32,
+        /// 严格模式：非 OK 即退出码 1（给 CI / 启动脚本用）。
+        #[arg(long)]
+        require: bool,
+    },
+    /// 先算账再启动子进程（M5.2 自壳）：判决不过时子进程**不启动**。
+    ///
+    /// 退出码：子进程的退出码原样透传；**3 = 容量拒绝（子进程未运行）**。
+    Exec {
+        /// 负载峰值需求（MiB）。省略则不做判决，直接执行（会提示）。
+        #[arg(long, value_name = "MIB")]
+        need_mb: Option<u64>,
+        /// 竞争余量倍数（≥1.0；小于 1 会被夹到 1.0）。
+        #[arg(long, default_value_t = 2.0)]
+        headroom: f32,
+        /// 越过判决强制启动（逃生口；读数照常打印）。
+        #[arg(long)]
+        force: bool,
+        /// 严格模式：读数不可用也拒跑（fail-closed）。
+        #[arg(long)]
+        strict: bool,
+        /// 要执行的命令与参数：`trit exec --need-mb 4096 -- prog arg...`。
+        #[arg(last = true, required = true, value_name = "CMD")]
+        argv: Vec<String>,
+    },
     /// 在指定赋值下求值表达式。
     Eval {
         /// 待求值的表达式，例如 `a & b | !c`。
@@ -369,32 +404,6 @@ enum Commands {
     },
 }
 
-/// 重新执行自身，并在 `timeout_ms` 后杀掉整个子进程。
-///
-/// 子进程通过 `TRIT_TIMEOUT_CHILD` 跳过包装，避免递归；输出直接继承终端。
-fn run_with_timeout(timeout_ms: u64) -> Result<()> {
-    let exe = std::env::current_exe().context("无法定位 trit 可执行文件")?;
-    let mut child = std::process::Command::new(exe)
-        .args(std::env::args_os().skip(1))
-        .env("TRIT_TIMEOUT_CHILD", "1")
-        .spawn()
-        .context("无法启动超时子进程")?;
-    let started = std::time::Instant::now();
-    let limit = std::time::Duration::from_millis(timeout_ms);
-    loop {
-        if let Some(status) = child.try_wait()? {
-            std::process::exit(status.code().unwrap_or(1));
-        }
-        if started.elapsed() >= limit {
-            let _ = child.kill();
-            let _ = child.wait();
-            eprintln!("超时：{timeout_ms} ms 内未完成，已终止");
-            std::process::exit(124);
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
-    }
-}
-
 fn main() -> Result<()> {
     let cli = Cli::parse();
     if let Some(timeout_ms) = cli.timeout_ms {
@@ -402,11 +411,23 @@ fn main() -> Result<()> {
             bail!("--timeout-ms 必须大于 0");
         }
         if std::env::var_os("TRIT_TIMEOUT_CHILD").is_none() {
-            run_with_timeout(timeout_ms)?;
+            timeout::run_with_timeout(timeout_ms)?;
             return Ok(());
         }
     }
     match cli.command {
+        Commands::Capacity {
+            need_mb,
+            headroom,
+            require,
+        } => commands::capacity::cmd_capacity(need_mb, headroom, require),
+        Commands::Exec {
+            need_mb,
+            headroom,
+            force,
+            strict,
+            argv,
+        } => commands::exec::cmd_exec(need_mb, headroom, force, strict, &argv),
         Commands::Eval { expression, assign } => {
             commands::eval::cmd_eval(&expression, &assign, &cli.algebra)
         }
