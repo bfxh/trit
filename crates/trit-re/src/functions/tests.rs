@@ -146,11 +146,11 @@ fn debug_frame_boundaries_enable_attribution() {
     put32(&mut bytes, 4, 0xffff_ffff);
     bytes[8] = 4;
     bytes[9] = 0;
-    bytes[10] = 1;
-    bytes[11] = 0x78;
-    bytes[12] = 30;
-    bytes[13] = 8;
-    bytes[14] = 0;
+    bytes[10] = 8;
+    bytes[11] = 0;
+    bytes[12] = 1;
+    bytes[13] = 0x78;
+    bytes[14] = 30;
     put32(&mut bytes, 15, 20);
     put32(&mut bytes, 19, 0);
     put64(&mut bytes, 23, 0x1100);

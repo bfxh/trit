@@ -2727,10 +2727,10 @@ MUTANTS = [
     {
         "name": 'trit-re: debug_frame 地址宽度写死 4',
         "file": 'crates/trit-re/src/elf/debug_frame.rs',
-        "old": '    let begin = read_address(data, &mut cursor, address_size)?;',
-        "new": '    let begin = read_address(data, &mut cursor, 4)?;',
+        "old": '    let (begin, _) = read_encoded(\n        data,\n        &mut cursor,\n        info.encoding,\n        info.address_size,\n        field_addr,\n    )?;',
+        "new": '    let (begin, _) = read_encoded(\n        data,\n        &mut cursor,\n        info.encoding,\n        4,\n        field_addr,\n    )?;',
         "pkg": "trit-re",
-        "filter": 'debug_frame_fde_gives_exact_range',
+        "filter": 'address_size_eight_reads_full_width_addresses',
     },
     {
         "name": 'trit-re: 不用 debug_frame 边界',
@@ -2747,6 +2747,22 @@ MUTANTS = [
         "new": '            let pick_debug = false && debug_sites > eh_sites',
         "pkg": "trit-re",
         "filter": 'frame_source_prefers_the_one_covering_call_sites',
+    },
+    {
+        "name": 'trit-re: debug_frame 忽略 address_size',
+        "file": 'crates/trit-re/src/elf/debug_frame.rs',
+        "old": '        address_size = *data.get(cursor)? as usize;',
+        "new": '        address_size = 4;',
+        "pkg": "trit-re",
+        "filter": 'address_size_eight_reads_full_width_addresses',
+    },
+    {
+        "name": 'trit-re: debug_frame 忽略指针编码',
+        "file": 'crates/trit-re/src/elf/debug_frame.rs',
+        "old": '    let (begin, _) = read_encoded(\n        data,\n        &mut cursor,\n        info.encoding,\n        info.address_size,\n        field_addr,\n    )?;',
+        "new": '    let (begin, _) = read_encoded(\n        data,\n        &mut cursor,\n        0,\n        info.address_size,\n        field_addr,\n    )?;',
+        "pkg": "trit-re",
+        "filter": 'augmentation_zr_pcrel_pointer',
     },
     {
         "name": 'trit-re: x64 取地址不记录',
