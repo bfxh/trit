@@ -687,10 +687,10 @@ mod tests {
     #[test]
     fn imports_exclude_object_symbols() {
         use super::{ElfSection, parse_imports};
-        // .dynstr: " socket environ "；.dynsym: 0 号空、1 号 FUNC、2 号 OBJECT。
+        // .dynstr: "\0socket\0environ\0"；.dynsym: 0 号空、1 号 FUNC、2 号 OBJECT。
         let mut bytes = vec![0u8; 0x80];
-        bytes[1..8].copy_from_slice(b"socket ");
-        bytes[8..16].copy_from_slice(b"environ ");
+        bytes[1..8].copy_from_slice(b"socket\0");
+        bytes[8..16].copy_from_slice(b"environ\0");
         let base = 0x40usize;
         let entry = |index: usize| base + index * 24;
         bytes[entry(1)..entry(1) + 4].copy_from_slice(&1u32.to_le_bytes());
@@ -728,10 +728,10 @@ mod tests {
     #[test]
     fn reads_sized_function_symbols() {
         use super::{ElfSection, read_function_symbols};
-        // .strtab: " foo "；.symtab: 1 个 STT_FUNC（0x400100 + 0x200）。
+        // .strtab: "\0foo\0"；.symtab: 1 个 STT_FUNC（0x400100 + 0x200）。
         let mut bytes = vec![0u8; 0x40];
         bytes[0] = 0;
-        bytes[1..5].copy_from_slice(b"foo ");
+        bytes[1..5].copy_from_slice(b"foo\0");
         let sym = 0x10usize;
         bytes[sym..sym + 4].copy_from_slice(&1u32.to_le_bytes());
         bytes[sym + 4] = 0x12; // STT_FUNC | STB_GLOBAL
