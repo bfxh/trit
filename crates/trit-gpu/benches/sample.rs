@@ -12,7 +12,7 @@
 
 use std::time::Instant;
 
-use trit_gpu::sampler::{GpuSampler, MipLevel, Wrap, sample_tt3_mips};
+use trit_gpu::sampler::{AnisoSample, GpuSampler, MipLevel, Wrap, sample_tt3_mips};
 use trit_texture::convert::build_mip_chain;
 use trit_texture::sample::Wrap as CpuWrap;
 use trit_texture::ttx2::TtxDocument;
@@ -133,6 +133,32 @@ fn main() {
         gpu_ns.push(t.elapsed().as_secs_f64() * 1e9 / n);
     }
 
+    // 各向异性成本曲线：长轴 64 纹素/像素，taps 直接生效
+    let du_ani = 64.0 / width as f32;
+    let dv_ani = 0.25 / height as f32;
+    let mut ani_rows: Vec<(u32, f64)> = Vec::new();
+    for &taps in &[1u32, 2, 4, 8] {
+        let samples: Vec<AnisoSample> = pts
+            .iter()
+            .map(|(u, v, _)| AnisoSample {
+                u: u.rem_euclid(1.0),
+                v: v.rem_euclid(1.0),
+                lod: ((dv_ani * height as f32).max(1.0)).log2(),
+                taps,
+                step_u: du_ani,
+                step_v: 0.0,
+            })
+            .collect();
+        let mut runs: Vec<f64> = Vec::new();
+        for _ in 0..5 {
+            let t = Instant::now();
+            let out = sampler.sample_aniso(&samples).expect("aniso");
+            std::hint::black_box(out);
+            runs.push(t.elapsed().as_secs_f64() * 1e9 / n);
+        }
+        ani_rows.push((taps, median(runs)));
+    }
+
     let blocks: usize = chain.iter().map(|t| t.blocks.len() * 12).sum();
     let rgba = width * height * 4;
     let oneshot_med = median(oneshot_ns);
@@ -150,6 +176,9 @@ fn main() {
         "  GPU 持久采样器    {:8.2} ns/样点（setup 一次 ≈ {setup_ms:.0} ms）",
         median(gpu_ns)
     );
+    for (taps, ns) in &ani_rows {
+        println!("  GPU 各向异性 taps={taps:<2} {ns:8.2} ns/样点");
+    }
     println!(
         "  常驻：块流 {:.0} KiB vs RGBA {:.0} KiB（{:.1}×）",
         blocks as f64 / 1024.0,

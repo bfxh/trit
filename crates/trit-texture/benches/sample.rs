@@ -14,7 +14,7 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use trit_texture::convert::{rgba_to_ttx2_mips, ttx2_to_rgba};
-use trit_texture::sample::{Sampler, sample_bilinear, texel};
+use trit_texture::sample::{Sampler, Wrap, sample_aniso, sample_bilinear, texel};
 use trit_texture::ttx2::from_ttx2;
 use trit_texture::{BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TritTexture};
 
@@ -160,6 +160,36 @@ fn run(width: usize, height: usize) {
         near.push(t.elapsed().as_secs_f64() * 1e9 / n);
     }
 
+    // 各向异性成本曲线：导数取强各向异性（长轴 64 纹素/像素），让 taps 真正生效
+    let du_ani = 64.0 / width as f32;
+    let dv_ani = 0.25 / height as f32;
+    let mut ani_rows: Vec<(u32, f64)> = Vec::new();
+    for &taps in &[1u32, 2, 4, 8] {
+        let mut runs: Vec<f64> = Vec::new();
+        for _ in 0..5 {
+            let t = Instant::now();
+            let mut acc = 0u64;
+            for &(u, v) in &pts {
+                let c = sample_aniso(
+                    &doc,
+                    u % 1.0,
+                    v % 1.0,
+                    du_ani,
+                    0.0,
+                    0.0,
+                    dv_ani,
+                    taps,
+                    Wrap::Repeat,
+                )
+                .expect("aniso");
+                acc += c[0] as u64 + c[1] as u64 + c[2] as u64;
+            }
+            black_box(acc);
+            runs.push(t.elapsed().as_secs_f64() * 1e9 / n);
+        }
+        ani_rows.push((taps, median(runs)));
+    }
+
     let blocks = (width / BLOCK_WIDTH) * (height / BLOCK_HEIGHT) * TRIT_BLOCK_BYTES;
     let rgba = width * height * 4;
     println!(
@@ -170,6 +200,9 @@ fn run(width: usize, height: usize) {
     println!("  双线性（压缩域按需解） {:8.2} ns/样点", median(tri));
     println!("  双线性（采样器+块缓存） {:8.2} ns/样点", median(cached));
     println!("  双线性（整图 RGBA）    {:8.2} ns/样点", median(whole));
+    for (taps, ns) in &ani_rows {
+        println!("  各向异性 taps={taps:<2}      {ns:8.2} ns/样点");
+    }
     println!(
         "  显存：块流 {:.0} KiB vs RGBA {:.0} KiB（{:.1}×）",
         blocks as f64 / 1024.0,
