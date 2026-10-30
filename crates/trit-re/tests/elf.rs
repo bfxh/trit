@@ -42,6 +42,13 @@ fn xref_follows_plt_to_the_caller() {
         .find(|j| j.id == "xref_gaps")
         .unwrap();
     assert_eq!(gaps.value, Ternary::False);
+    // 合成 ELF 没有 STT_FUNC 符号 ⇒ 函数边界是启发式，共现必须保持未知。
+    let functions = triage.functions.as_ref().expect("function report");
+    assert!(!functions.exact);
+    assert_eq!(
+        triage.facts.get("fn.stager_cooccur"),
+        Some(Ternary::Unknown)
+    );
 }
 
 #[test]

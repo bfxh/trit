@@ -35,6 +35,9 @@ enum Command {
         /// 打印每个导入的调用点明细
         #[arg(long)]
         xref: bool,
+        /// 打印函数级调用与能力桶
+        #[arg(long)]
+        functions: bool,
     },
 }
 
@@ -46,11 +49,12 @@ fn main() -> ExitCode {
             jsonl,
             facts,
             xref,
-        } => run(&paths, jsonl, facts, xref),
+            functions,
+        } => run(&paths, jsonl, facts, xref, functions),
     }
 }
 
-fn run(paths: &[PathBuf], jsonl: bool, facts: bool, xref: bool) -> ExitCode {
+fn run(paths: &[PathBuf], jsonl: bool, facts: bool, xref: bool, functions: bool) -> ExitCode {
     let stdout = io::stdout();
     let mut out = io::BufWriter::new(stdout.lock());
     let mut failed = false;
@@ -61,7 +65,7 @@ fn run(paths: &[PathBuf], jsonl: bool, facts: bool, xref: bool) -> ExitCode {
                 if jsonl {
                     emit_jsonl(&mut out, &triage)
                 } else {
-                    emit_human(&mut out, path, &triage, facts, xref)
+                    emit_human(&mut out, path, &triage, facts, xref, functions)
                 }
             }
             Err(error) => {
@@ -99,6 +103,7 @@ fn emit_human(
     triage: &Triage,
     facts: bool,
     xref: bool,
+    functions: bool,
 ) -> io::Result<()> {
     writeln!(out, "== {}", path.display())?;
     writeln!(out, "   sha256    {}", triage.sha256)?;
@@ -125,6 +130,16 @@ fn emit_human(
             report.referenced(),
             report.unreferenced(),
             report.unknown()
+        )?;
+    }
+    if let Some(report) = &triage.functions {
+        writeln!(
+            out,
+            "   functions {} 个  边界={}  归属调用点 {}  未归属 {}",
+            report.total_functions,
+            if report.exact { "exact" } else { "heuristic" },
+            report.attributed_sites,
+            report.unattributed_sites
         )?;
     }
     writeln!(out, "   judgments")?;
@@ -155,6 +170,21 @@ fn emit_human(
                 row.import,
                 row.sites.len(),
                 sites.join(", ")
+            )?;
+        }
+    }
+    if functions && let Some(report) = &triage.functions {
+        writeln!(out, "   function detail")?;
+        for calls in &report.functions {
+            writeln!(
+                out,
+                "     [{}] 0x{:x}+0x{:x} {} imports={} buckets={}",
+                calls.function.source.as_str(),
+                calls.function.start,
+                calls.function.end.saturating_sub(calls.function.start),
+                calls.function.name.as_deref().unwrap_or("-"),
+                calls.imports.len(),
+                calls.buckets.join(",")
             )?;
         }
     }

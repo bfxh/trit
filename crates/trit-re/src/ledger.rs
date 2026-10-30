@@ -11,7 +11,7 @@ use crate::json;
 use crate::triage::Triage;
 
 /// 台账结构版本。
-pub const SCHEMA: u32 = 2;
+pub const SCHEMA: u32 = 3;
 
 /// 三值的稳定字符串（进台账，不要改）。
 pub fn ternary_label(value: Ternary) -> &'static str {
@@ -102,6 +102,31 @@ pub fn jsonl(triage: &Triage) -> Vec<String> {
             ("value", json::string(ternary_label(witness.value))),
             ("detail", json::string(&witness.detail)),
         ]));
+    }
+    if let Some(report) = &triage.functions {
+        for calls in &report.functions {
+            let imports: Vec<&str> = calls.imports.iter().take(32).map(String::as_str).collect();
+            lines.push(json::object(&[
+                ("kind", json::string("function")),
+                ("sha256", json::string(&triage.sha256)),
+                ("addr", format!("0x{:x}", calls.function.start)),
+                (
+                    "size",
+                    json::number(calls.function.end.saturating_sub(calls.function.start)),
+                ),
+                (
+                    "name",
+                    match &calls.function.name {
+                        Some(name) => json::string(name),
+                        None => "null".to_string(),
+                    },
+                ),
+                ("source", json::string(calls.function.source.as_str())),
+                ("import_count", json::number(calls.imports.len())),
+                ("imports", json::array(imports)),
+                ("buckets", json::array(calls.buckets.iter().copied())),
+            ]));
+        }
     }
     for judgment in &triage.judgments {
         lines.push(json::object(&[

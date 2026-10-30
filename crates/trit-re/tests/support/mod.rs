@@ -33,7 +33,8 @@ const CERT_OID_SIGNED_DATA: &[u8] = &[
 /// 一个 PE32+ 样本：2 节、1 个导入、1 个导出、PDB、安全目录、8 KiB 高熵叠加段。
 pub fn pe_sample() -> Vec<u8> {
     let overlay_len = 8192usize;
-    let mut file = vec![0u8; 0xA00 + overlay_len];
+    // .text 0x200..0x600；.rdata 0x600..0xA00；.pdata 0xA00..0xC00；叠加段其后。
+    let mut file = vec![0u8; 0xC00 + overlay_len];
 
     // DOS 头 + stub
     file[..2].copy_from_slice(b"MZ");
@@ -44,7 +45,7 @@ pub fn pe_sample() -> Vec<u8> {
     file[0x80..0x84].copy_from_slice(b"PE\0\0");
     let coff = 0x84;
     put_u16(&mut file, coff, 0x8664);
-    put_u16(&mut file, coff + 2, 2);
+    put_u16(&mut file, coff + 2, 3);
     put_u32(&mut file, coff + 4, 0x6000_0000);
     put_u16(&mut file, coff + 16, 0xF0);
     put_u16(&mut file, coff + 18, 0x22);
@@ -65,6 +66,8 @@ pub fn pe_sample() -> Vec<u8> {
     put_u32(&mut file, dirs + 4, 40);
     put_u32(&mut file, dirs + 8, 0x2000); // import
     put_u32(&mut file, dirs + 12, 40);
+    put_u32(&mut file, dirs + 24, 0x3000); // exception (.pdata)
+    put_u32(&mut file, dirs + 28, 12);
     put_u32(&mut file, dirs + 32, 0x7A0); // security（文件偏移）
     put_u32(&mut file, dirs + 36, 0x60);
     put_u32(&mut file, dirs + 48, 0x2100); // debug
@@ -92,19 +95,43 @@ pub fn pe_sample() -> Vec<u8> {
         0x600,
         0x4000_0040,
     );
+    write_section(
+        &mut file,
+        sections + 80,
+        b".pdata\0\0",
+        0x18,
+        0x3000,
+        0x200,
+        0xA00,
+        0x4000_0040,
+    );
+    // .pdata：一个函数 0x1000..0x1030，包含两个调用点。
+    put_u32(&mut file, 0xA00, 0x1000);
+    put_u32(&mut file, 0xA04, 0x1030);
+    put_u32(&mut file, 0xA08, 0);
 
     // .text 偏移 0x10（RVA 0x1010）：FF 15 [IAT 0x2040]，下一条 RVA 0x1016
     file[0x210] = 0xFF;
     file[0x211] = 0x15;
     file[0x212..0x216].copy_from_slice(&0x102Au32.to_le_bytes());
+    // 偏移 0x20（RVA 0x1020）：FF 15 [IAT 0x2048]，下一条 RVA 0x1026
+    file[0x220] = 0xFF;
+    file[0x221] = 0x15;
+    file[0x222..0x226].copy_from_slice(&0x1022u32.to_le_bytes());
 
     // 导入表：KERNEL32.dll!LoadLibraryA
     put_u32(&mut file, 0x600, 0x2040);
     put_u32(&mut file, 0x60C, 0x2080);
     put_u32(&mut file, 0x610, 0x2040);
     put_u64(&mut file, 0x640, 0x2060);
+    put_u64(&mut file, 0x648, 0x2070);
     put_u16(&mut file, 0x660, 0);
-    file[0x662..0x66F].copy_from_slice(b"LoadLibraryA\0");
+    let load_library = b"LoadLibraryA\0";
+    file[0x662..0x662 + load_library.len()].copy_from_slice(load_library);
+    // 第二个导入：hint/name 在 0x670（RVA 0x2070），槽位 0x2048。
+    put_u16(&mut file, 0x670, 0);
+    let connect = b"connect\0";
+    file[0x672..0x672 + connect.len()].copy_from_slice(connect);
     file[0x680..0x68D].copy_from_slice(b"KERNEL32.dll\0");
 
     // 导出表：DemoExport
@@ -135,7 +162,7 @@ pub fn pe_sample() -> Vec<u8> {
     put_u16(&mut file, 0x7A6, 0x0002);
     file[0x7A8..0x7A8 + CERT_OID_SIGNED_DATA.len()].copy_from_slice(CERT_OID_SIGNED_DATA);
 
-    fill_noise(&mut file[0xA00..], 0x1234_5678);
+    fill_noise(&mut file[0xC00..], 0x1234_5678);
     file
 }
 

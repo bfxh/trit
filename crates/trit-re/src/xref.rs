@@ -249,6 +249,7 @@ pub fn scan_pe(bytes: &[u8], info: &pe::PeInfo) -> XrefReport {
     }
 
     let mut sites: Vec<BTreeSet<RawSite>> = vec![BTreeSet::new(); report.imports.len()];
+    let mut exec: Vec<(u32, usize, &[u8])> = Vec::new();
     for section in &info.sections {
         if !section.executable() {
             continue;
@@ -279,7 +280,12 @@ pub fn scan_pe(bytes: &[u8], info: &pe::PeInfo) -> XrefReport {
             &mut sites,
         );
         report.scanned_bytes += data.len();
+        exec.push((section.virtual_address, section.raw_ptr as usize, data));
     }
+
+    // 第二层：导入跳板（`jmp [IAT]`）会被调用方用 `E8`/`E9` 直接调用。
+    // 找到调用方就以调用方为准，避免把跳板本身算成"归不到函数"的调用点。
+    expand_pe_thunks(&exec, &mut sites);
 
     for (index, row) in report.imports.iter_mut().enumerate() {
         row.sites = to_sites(&sites[index]);
@@ -324,6 +330,53 @@ fn scan_pe_section(
             }
         }
         index += 1;
+    }
+}
+
+/// 把 `jmp [IAT]` 跳板展开成真正的调用方。
+fn expand_pe_thunks(exec: &[(u32, usize, &[u8])], sites: &mut [BTreeSet<RawSite>]) {
+    let mut thunks: BTreeMap<u64, usize> = BTreeMap::new();
+    for (row, set) in sites.iter().enumerate() {
+        for (addr, kind, _) in set {
+            if *kind == SiteKind::Jump {
+                thunks.insert(*addr, row);
+            }
+        }
+    }
+    if thunks.is_empty() {
+        return;
+    }
+    let mut callers: BTreeMap<usize, BTreeSet<RawSite>> = BTreeMap::new();
+    for (section_rva, file_base, data) in exec {
+        let mut index = 0usize;
+        while index + 5 <= data.len() {
+            if data[index] == 0xE8 || data[index] == 0xE9 {
+                let rel = i32::from_le_bytes([
+                    data[index + 1],
+                    data[index + 2],
+                    data[index + 3],
+                    data[index + 4],
+                ]);
+                let here = *section_rva as u64 + index as u64;
+                let target = here.wrapping_add(5).wrapping_add(rel as i64 as u64);
+                if let Some(row) = thunks.get(&target) {
+                    let kind = if data[index] == 0xE8 {
+                        SiteKind::Call
+                    } else {
+                        SiteKind::Jump
+                    };
+                    callers
+                        .entry(*row)
+                        .or_default()
+                        .insert((here, kind, file_base + index));
+                }
+            }
+            index += 1;
+        }
+    }
+    for (row, found) in callers {
+        sites[row].retain(|(_, kind, _)| *kind != SiteKind::Jump);
+        sites[row].extend(found);
     }
 }
 
@@ -611,6 +664,25 @@ mod tests {
         assert_eq!(row.sites.len(), 1);
         assert_eq!(row.sites[0].addr, 0x1010);
         assert_eq!(row.sites[0].file_offset, 0x210);
+        assert_eq!(row.sites[0].kind, SiteKind::Call);
+    }
+
+    #[test]
+    fn follows_import_thunk_to_caller() {
+        // 0x1010: call 0x1100（跳板）；0x1100: jmp [IAT 0x2040]
+        let mut file = tiny_pe(0);
+        file[0x210] = 0xE8;
+        file[0x211..0x215].copy_from_slice(&0xEBu32.to_le_bytes());
+        let thunk = 0x300usize;
+        file[thunk] = 0xFF;
+        file[thunk + 1] = 0x25;
+        file[thunk + 2..thunk + 6].copy_from_slice(&0xF3Au32.to_le_bytes());
+        let info = pe::parse(&file).expect("parse");
+        let report = scan_pe(&file, &info);
+        let row = &report.imports[0];
+        assert_eq!(row.status, Ternary::True);
+        assert_eq!(row.sites.len(), 1);
+        assert_eq!(row.sites[0].addr, 0x1010);
         assert_eq!(row.sites[0].kind, SiteKind::Call);
     }
 

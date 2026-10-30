@@ -82,6 +82,15 @@ pub struct ImportDll {
     pub functions: Vec<ImportThunk>,
 }
 
+/// `.pdata` 里的一条运行时函数记录（x86-64 的精确函数边界）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeFunction {
+    /// 起始 RVA。
+    pub begin: u32,
+    /// 结束 RVA（不含）。
+    pub end: u32,
+}
+
 /// 叠加段（最后一个节之后的数据）。
 #[derive(Debug, Clone)]
 pub struct Overlay {
@@ -122,6 +131,8 @@ pub struct PeInfo {
     pub has_signed_data: bool,
     /// DOS stub 里是否有 Rich 头。
     pub rich_header: bool,
+    /// `.pdata` 函数表；`None` 表示没有异常目录或无法解析。
+    pub runtime_functions: Option<Vec<RuntimeFunction>>,
     /// 叠加段。
     pub overlay: Option<Overlay>,
     /// 头部大小（SizeOfHeaders）。
@@ -201,6 +212,7 @@ pub fn parse(bytes: &[u8]) -> Result<PeInfo, ParseError> {
     let imports = parse_imports(bytes, dirs[1], &sections, headers_size, plus);
     let exports = parse_exports(bytes, dirs[0], &sections, headers_size);
     let debug_pdb = parse_debug_pdb(bytes, dirs[6], &sections, headers_size);
+    let runtime_functions = parse_runtime_functions(bytes, dirs[3], &sections, headers_size);
     let (has_security_dir, has_signed_data) = parse_security(bytes, dirs[4]);
     let rich_header = bytes
         .get(0x40..pe_off)
@@ -219,6 +231,7 @@ pub fn parse(bytes: &[u8]) -> Result<PeInfo, ParseError> {
         imports,
         exports,
         debug_pdb,
+        runtime_functions,
         has_security_dir,
         has_signed_data,
         rich_header,
@@ -451,6 +464,37 @@ fn parse_debug_pdb(
         }
     }
     None
+}
+
+fn parse_runtime_functions(
+    bytes: &[u8],
+    dir: (u32, u32),
+    sections: &[Section],
+    headers_size: u32,
+) -> Option<Vec<RuntimeFunction>> {
+    if dir.0 == 0 {
+        return None;
+    }
+    let base = rva_to_offset(dir.0, sections, headers_size)?;
+    let count = (dir.1 as usize / 12).min(65_536);
+    if count == 0 {
+        return None;
+    }
+    let mut functions = Vec::with_capacity(count);
+    for index in 0..count {
+        let off = base + index * 12;
+        let begin = u32_at(bytes, off)?;
+        let end = u32_at(bytes, off + 4)?;
+        if begin == 0 && end == 0 {
+            break;
+        }
+        if end <= begin {
+            // 坏条目：整表不可信，宁可退回"没有精确边界"。
+            return None;
+        }
+        functions.push(RuntimeFunction { begin, end });
+    }
+    Some(functions)
 }
 
 fn parse_security(bytes: &[u8], dir: (u32, u32)) -> (bool, bool) {

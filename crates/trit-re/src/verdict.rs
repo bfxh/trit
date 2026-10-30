@@ -141,6 +141,24 @@ pub fn default_hypotheses() -> Vec<Hypothesis> {
             benign: None,
         },
         Hypothesis {
+            id: "fn_injection",
+            title: "同一函数内完成注入三件套（申请 + 写 + 执行）",
+            expr: var("fn.injection_cooccur"),
+            benign: None,
+        },
+        Hypothesis {
+            id: "fn_stager",
+            title: "同一函数内装载 + 网络（典型 stager）",
+            expr: var("fn.stager_cooccur"),
+            benign: None,
+        },
+        Hypothesis {
+            id: "fn_credential_exfil",
+            title: "同一函数内读凭据并外发",
+            expr: var("fn.credential_cooccur"),
+            benign: None,
+        },
+        Hypothesis {
             id: "xref_gaps",
             title: "存在没有静态调用点的导入（可能动态解析或死导入）",
             expr: var("xref.has_unreferenced"),

@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（`trit-re` M2：函数级归属与同函数能力共现）
+
+- 函数边界：PE x86-64 读 `.pdata` 的 `RUNTIME_FUNCTION`（精确）；ELF 读 `STT_FUNC`
+  （要求 `st_size > 0`，精确）；都没有时用「入口 + 直接调用目标」启发式，**只用于展示**。
+- 调用点归属：把 xref 的调用点按区间二分归到函数，并补一层 **PE 导入跳板展开**
+  （`jmp [IAT]` 找 `E8`/`E9` 调用方）——实测本仓 `trit-re.exe` 归属调用点 14 → 2782。
+- 三条共现判定，全部三值：`fn_injection`（申请+写+执行同一函数）、`fn_stager`
+  （装载+网络同一函数）、`fn_credential_exfil`（凭据+网络同一函数）。
+  规则：找到 → `True`；边界不精确 / 交叉引用不完整 / 未归属调用点**涉及本组能力** → `Unknown`；
+  证据完整且没找到 → `False`。正证据优先，不会被别处的不确定性抹掉。
+- 台账 `schema=3`：新增 `kind:"function"` 行（地址 / 大小 / 名字 / 边界来源 / 导入 / 能力桶）；
+  新事实 `fn.exact_boundaries`、`fn.*_cooccur`；CLI 新增 `--functions`。
+- 真实读数：`notepad.exe` 388 函数、1719 个调用点归属、8 个未归属；`trit-re.exe`（26 MB）
+  13,218 函数、2782 归属、22 未归属；`curl.exe` / `certutil.exe` / `rundll32.exe` /
+  `powershell.exe` 的 `fn_*` 为 `False`（powershell 的 `fn_stager` 因相关未归属点为 `Unknown`）。
+  合成 PE 夹具（`.pdata` + 两个同函数调用）稳定给出 `fn_stager = True`。
+- 测试 51 条（39 lib + 5 ELF + 4 PE + 2 CLI + 1 doctest）。
+
 ### Added（`trit-re` M1：导入函数交叉引用）
 
 - 新模块 `xref`：给每个导入函数判定「有没有静态调用点」，三值而不是布尔——

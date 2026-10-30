@@ -6,6 +6,7 @@
 use trit_core::value::Ternary;
 
 use crate::elf;
+use crate::functions::{self, FunctionReport};
 use crate::hash;
 use crate::imports;
 use crate::pe;
@@ -64,6 +65,8 @@ pub struct Triage {
     pub facts: Facts,
     /// 导入函数交叉引用；架构不支持时为 `Some` 但状态全为未知。
     pub xref: Option<XrefReport>,
+    /// 函数级归属与共现。
+    pub functions: Option<FunctionReport>,
     /// 判定结果。
     pub judgments: Vec<Judgment>,
     /// 补充说明（不参与判定）。
@@ -81,6 +84,7 @@ pub fn analyze(bytes: &[u8]) -> Triage {
         imported_functions: None,
         facts: Facts::new(),
         xref: None,
+        functions: None,
         judgments: Vec::new(),
         notes: Vec::new(),
     };
@@ -89,7 +93,9 @@ pub fn analyze(bytes: &[u8]) -> Triage {
         match pe::parse(bytes) {
             Ok(info) => {
                 fill_pe(bytes, &info, &mut triage);
-                triage.xref = Some(xref::scan_pe(bytes, &info));
+                let xref_report = xref::scan_pe(bytes, &info);
+                triage.functions = Some(functions::build_pe(bytes, &info, &xref_report));
+                triage.xref = Some(xref_report);
             }
             Err(error) => triage
                 .notes
@@ -99,7 +105,9 @@ pub fn analyze(bytes: &[u8]) -> Triage {
         match elf::parse(bytes) {
             Ok(info) => {
                 fill_elf(bytes, &info, &mut triage);
-                triage.xref = Some(xref::scan_elf(bytes, &info));
+                let xref_report = xref::scan_elf(bytes, &info);
+                triage.functions = Some(functions::build_elf(bytes, &info, &xref_report));
+                triage.xref = Some(xref_report);
             }
             Err(error) => triage
                 .notes
@@ -145,6 +153,67 @@ pub fn analyze(bytes: &[u8]) -> Triage {
             report.referenced(),
             report.unreferenced(),
             report.unknown()
+        ));
+        triage.notes.extend(report.notes.iter().cloned());
+    }
+
+    let xref_complete = triage.xref.as_ref().is_some_and(|report| report.complete);
+    if let Some(report) = &triage.functions {
+        triage.facts.set(
+            "fn.exact_boundaries",
+            if report.exact {
+                Ternary::True
+            } else {
+                Ternary::Unknown
+            },
+            format!(
+                "函数 {} 个（{}）",
+                report.total_functions,
+                if report.exact {
+                    "精确边界"
+                } else {
+                    "启发式边界，仅用于展示"
+                }
+            ),
+        );
+        const GROUPS: [(&str, &[&str], &str); 3] = [
+            (
+                "fn.injection_cooccur",
+                &["imports.inj.alloc", "imports.inj.write", "imports.inj.exec"],
+                "注入三件套",
+            ),
+            (
+                "fn.stager_cooccur",
+                &["imports.loader", "imports.network"],
+                "装载 + 网络",
+            ),
+            (
+                "fn.credential_cooccur",
+                &["imports.credential", "imports.network"],
+                "凭据 + 网络",
+            ),
+        ];
+        for (id, required, label) in GROUPS {
+            let value = report.cooccurrence(required, xref_complete);
+            let detail = match value {
+                Ternary::True => format!("同一函数内出现{label}"),
+                Ternary::False => {
+                    let mut detail = format!("精确边界下未见同一函数内的{label}");
+                    if report.unattributed_sites > 0 {
+                        detail.push_str(&format!(
+                            "；{} 个未归属调用点不涉及本组能力",
+                            report.unattributed_sites
+                        ));
+                    }
+                    detail
+                }
+                Ternary::Unknown => format!("无法排除{label}共现（边界或交叉引用不完整）"),
+            };
+            triage.facts.set(id, value, detail);
+        }
+        triage.notes.push(format!(
+            "函数归属：{} 个函数，归属 {} 个调用点，{} 个未归属",
+            report.total_functions, report.attributed_sites, report.unattributed_sites
         ));
         triage.notes.extend(report.notes.iter().cloned());
     }

@@ -95,7 +95,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-texture` | TT3/TTX 三值纹理容器：2.40 bpp、GF(3) CRC-16、CPU/GPU 解码 | `trit-texture` |
 | `trit-unsafe` | 用 K3 审 unsafe：Safe / Unknown / Risky 按 crate 合成；17 类高危形态 + extern 声明块 | `trit-unsafe` |
 | `trit-procscan` | 进程行为扫描 + 自动分析 + 动态追溯/追踪（ppid 链回溯 + 后代子树 + 证据绑定） + MCP 配置优化（非管理员可用的证据面） | `trit-procscan` |
-| `trit-re` | PE/ELF 逆向台账：节熵 / 导入能力面 / 叠加段 / PDB 与编译器指纹 / build-id；导入函数交叉引用（IAT 与 ELF PLT/GOT，三值）→ 三值判定 + 四值冲突，JSONL 输出 | `trit-re triage <PATH> [--jsonl] [--xref]` |
+| `trit-re` | PE/ELF 逆向台账：节熵 / 导入能力面 / 叠加段 / PDB 与编译器指纹 / build-id；导入函数交叉引用（IAT 与 ELF PLT/GOT，三值）、函数级归属与同函数能力共现 → 三值判定 + 四值冲突，JSONL 输出 | `trit-re triage <PATH> [--jsonl] [--xref] [--functions]` |
 | `trit-lsp` | `.tri` 语言服务器：诊断 / 悬停真值表 / 补全 / 文档符号 / 定义-引用-高亮-重命名 / 矛盾律-排中律-语义分歧深层诊断 | `trit-lsp` |
 | `trit-train` | 三值训练 M0：STE 三变体 + 每行 scale + 位平面 ALU | `train-bench` |
 | `trit-graph` | 三态结构基础：稠密/CSR 三态图、超图、树分解容器、议会、1-WL、图核、PageRank、TriMPNN、端到端三态分类 | 库（无二进制） |

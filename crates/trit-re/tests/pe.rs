@@ -13,16 +13,21 @@ fn parses_headers_imports_exports_debug_and_overlay() {
     assert!(info.plus);
     assert_eq!(info.arch(), "x86-64");
     assert_eq!(info.format(), "pe32+");
-    assert_eq!(info.sections.len(), 2);
+    assert_eq!(info.sections.len(), 3);
     assert_eq!(info.sections[0].name, ".text");
     assert!(info.sections[0].executable());
 
     let dlls = info.imports.as_ref().expect("imports parsed");
     assert_eq!(dlls.len(), 1);
     assert_eq!(dlls[0].name, "KERNEL32.dll");
-    assert_eq!(dlls[0].functions.len(), 1);
+    assert_eq!(dlls[0].functions.len(), 2);
     assert_eq!(dlls[0].functions[0].name, "LoadLibraryA");
     assert_eq!(dlls[0].functions[0].slot_rva, Some(0x2040));
+    assert_eq!(dlls[0].functions[1].name, "connect");
+    assert_eq!(dlls[0].functions[1].slot_rva, Some(0x2048));
+    let pdata = info.runtime_functions.as_ref().expect("pdata parsed");
+    assert_eq!(pdata.len(), 1);
+    assert_eq!((pdata[0].begin, pdata[0].end), (0x1000, 0x1030));
 
     assert_eq!(info.exports, vec!["DemoExport"]);
     assert_eq!(info.debug_pdb.as_deref(), Some("D:\\build\\demo.pdb"));
@@ -41,7 +46,7 @@ fn triage_flags_packed_structure_and_signature_conflict() {
     let triage = analyze(&support::pe_sample());
     assert_eq!(triage.format, "pe32+");
     assert_eq!(triage.facts.get("imports.loader"), Some(Ternary::True));
-    assert_eq!(triage.facts.get("imports.network"), Some(Ternary::False));
+    assert_eq!(triage.facts.get("imports.network"), Some(Ternary::True));
     assert_eq!(
         triage.facts.get("overlay.high_entropy"),
         Some(Ternary::True)
@@ -69,15 +74,22 @@ fn xref_finds_the_iat_call_site() {
     let triage = analyze(&support::pe_sample());
     let report = triage.xref.as_ref().expect("pe sample has xref");
     assert!(report.complete);
-    let row = report
+    let loader = report
         .imports
         .iter()
         .find(|row| row.import == "KERNEL32.dll!LoadLibraryA")
-        .expect("import row");
-    assert_eq!(row.status, Ternary::True);
-    assert_eq!(row.sites.len(), 1);
-    assert_eq!(row.sites[0].addr, 0x1010);
-    assert_eq!(row.sites[0].kind, trit_re::SiteKind::Call);
+        .expect("loader row");
+    assert_eq!(loader.status, Ternary::True);
+    assert_eq!(loader.sites.len(), 1);
+    assert_eq!(loader.sites[0].addr, 0x1010);
+    assert_eq!(loader.sites[0].kind, trit_re::SiteKind::Call);
+    let network = report
+        .imports
+        .iter()
+        .find(|row| row.import == "KERNEL32.dll!connect")
+        .expect("network row");
+    assert_eq!(network.status, Ternary::True);
+    assert_eq!(network.sites[0].addr, 0x1020);
     // 事实与判定都要能吃到交叉引用结果。
     assert_eq!(triage.facts.get("xref.scan_complete"), Some(Ternary::True));
     let gaps = triage
@@ -86,6 +98,29 @@ fn xref_finds_the_iat_call_site() {
         .find(|j| j.id == "xref_gaps")
         .unwrap();
     assert_eq!(gaps.value, Ternary::False);
+
+    // 两个调用点都在 .pdata 的 0x1000..0x1030 里 ⇒ 同函数共现可判定。
+    assert_eq!(triage.facts.get("fn.exact_boundaries"), Some(Ternary::True));
+    assert_eq!(triage.facts.get("fn.stager_cooccur"), Some(Ternary::True));
+    assert_eq!(
+        triage.facts.get("fn.injection_cooccur"),
+        Some(Ternary::False)
+    );
+    let stager = triage
+        .judgments
+        .iter()
+        .find(|j| j.id == "fn_stager")
+        .unwrap();
+    assert_eq!(stager.value, Ternary::True);
+    let injection = triage
+        .judgments
+        .iter()
+        .find(|j| j.id == "fn_injection")
+        .unwrap();
+    assert_eq!(injection.value, Ternary::False);
+    let functions = triage.functions.as_ref().expect("function report");
+    assert!(functions.exact);
+    assert_eq!(functions.unattributed_sites, 0);
 }
 
 #[test]

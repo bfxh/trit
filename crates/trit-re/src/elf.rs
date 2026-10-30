@@ -95,6 +95,17 @@ pub struct DynamicSymbol {
     pub defined: bool,
 }
 
+/// 带大小的函数符号（`st_size > 0`，可当精确函数边界）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FunctionSymbol {
+    /// 起始虚拟地址。
+    pub start: u64,
+    /// 字节大小。
+    pub size: u64,
+    /// 符号名。
+    pub name: String,
+}
+
 /// 叠加段。
 #[derive(Debug, Clone)]
 pub struct Overlay {
@@ -445,6 +456,82 @@ pub fn read_dynamic_symbols(
     Some(symbols)
 }
 
+/// 读取 SYMTAB / DYNSYM 里 `STT_FUNC` 且 `st_size > 0` 的符号。
+pub fn read_function_symbols(
+    bytes: &[u8],
+    sections: &[ElfSection],
+    sixty_four: bool,
+) -> Vec<FunctionSymbol> {
+    let mut symbols = Vec::new();
+    for section in sections {
+        if section.sh_type != 2 && section.sh_type != SHT_DYNSYM {
+            continue;
+        }
+        let Some(strtab) = sections.get(section.link as usize) else {
+            continue;
+        };
+        let Some(strings) = bytes.get(strtab.offset as usize..) else {
+            continue;
+        };
+        let default_size = if sixty_four { 24 } else { 16 };
+        let entry_size = if section.entsize > 0 {
+            section.entsize as usize
+        } else {
+            default_size
+        };
+        if entry_size < default_size {
+            continue;
+        }
+        let count = (section.size as usize / entry_size).min(MAX_SYMBOLS);
+        for index in 0..count {
+            let base = section.offset as usize + index * entry_size;
+            let Some(info) = bytes.get(base + if sixty_four { 4 } else { 12 }).copied() else {
+                break;
+            };
+            if info & 0xf != 2 {
+                continue;
+            }
+            let shndx = if sixty_four {
+                u16_at(bytes, base + 6)
+            } else {
+                u16_at(bytes, base + 14)
+            };
+            let Some(shndx) = shndx else {
+                break;
+            };
+            if shndx == 0 {
+                continue;
+            }
+            let (value, size) = if sixty_four {
+                (u64_at(bytes, base + 8), u64_at(bytes, base + 16))
+            } else {
+                (
+                    u32_at(bytes, base + 4).map(|value| value as u64),
+                    u32_at(bytes, base + 8).map(|value| value as u64),
+                )
+            };
+            let (Some(value), Some(size)) = (value, size) else {
+                break;
+            };
+            if value == 0 || size == 0 {
+                continue;
+            }
+            let name_off = u32_at(bytes, base)
+                .map(|offset| offset as usize)
+                .unwrap_or(0);
+            let name = cstr(strings, name_off, 512).unwrap_or_default();
+            symbols.push(FunctionSymbol {
+                start: value,
+                size,
+                name,
+            });
+        }
+    }
+    symbols.sort_by_key(|symbol| (symbol.start, symbol.size));
+    symbols.dedup_by(|left, right| left.start == right.start && left.size == right.size);
+    symbols
+}
+
 fn note_build_id(bytes: &[u8], section: &ElfSection) -> Option<String> {
     let data =
         bytes.get(section.offset as usize..section.offset as usize + section.size as usize)?;
@@ -494,6 +581,11 @@ impl ElfInfo {
                 && self.entry >= phdr.vaddr
                 && self.entry < phdr.vaddr.saturating_add(phdr.memsz)
         }))
+    }
+
+    /// 读取带大小的函数符号（EXEC 段里的 STT_FUNC）。
+    pub fn function_symbols(&self, bytes: &[u8]) -> Vec<FunctionSymbol> {
+        read_function_symbols(bytes, &self.sections, self.class == 2)
     }
 
     /// 读取全部动态符号（供交叉引用解重定位用）。
@@ -584,6 +676,50 @@ mod tests {
         bytes[4] = 2;
         bytes[5] = 2;
         assert_eq!(parse(&bytes).unwrap_err(), ParseError("大端 ELF 暂不支持"));
+    }
+
+    #[test]
+    fn reads_sized_function_symbols() {
+        use super::{ElfSection, read_function_symbols};
+        // .strtab: " foo "；.symtab: 1 个 STT_FUNC（0x400100 + 0x200）。
+        let mut bytes = vec![0u8; 0x40];
+        bytes[0] = 0;
+        bytes[1..5].copy_from_slice(b"foo ");
+        let sym = 0x10usize;
+        bytes[sym..sym + 4].copy_from_slice(&1u32.to_le_bytes());
+        bytes[sym + 4] = 0x12; // STT_FUNC | STB_GLOBAL
+        bytes[sym + 6..sym + 8].copy_from_slice(&1u16.to_le_bytes());
+        bytes[sym + 8..sym + 16].copy_from_slice(&0x40_0100u64.to_le_bytes());
+        bytes[sym + 16..sym + 24].copy_from_slice(&0x200u64.to_le_bytes());
+        let sections = vec![
+            ElfSection {
+                name: ".strtab".into(),
+                sh_type: 3,
+                flags: 0,
+                addr: 0,
+                offset: 0,
+                size: 5,
+                link: 0,
+                entsize: 0,
+                entropy: None,
+            },
+            ElfSection {
+                name: ".symtab".into(),
+                sh_type: 2,
+                flags: 0,
+                addr: 0,
+                offset: 0x10,
+                size: 24,
+                link: 0,
+                entsize: 24,
+                entropy: None,
+            },
+        ];
+        let symbols = read_function_symbols(&bytes, &sections, true);
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].start, 0x40_0100);
+        assert_eq!(symbols[0].size, 0x200);
+        assert_eq!(symbols[0].name, "foo");
     }
 
     #[test]

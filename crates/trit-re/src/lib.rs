@@ -18,6 +18,7 @@
 
 pub mod elf;
 pub mod entropy;
+pub mod functions;
 pub mod hash;
 pub mod imports;
 pub mod json;
@@ -28,6 +29,7 @@ pub mod verdict;
 pub mod witness;
 pub mod xref;
 
+pub use functions::{FuncSource, Function, FunctionCalls, FunctionReport};
 pub use triage::{Triage, analyze};
 pub use verdict::{Hypothesis, Judgment, default_hypotheses, evaluate};
 pub use witness::{Facts, Witness};
