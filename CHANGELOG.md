@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added（`trit-re`：ARM64 `mov` 搬运链 + 未归属调用点分类）
+
+- **ARM64 寄存器搬运**：引用识别支持 `mov Xd, Xm`（ORR 别名）。地址（`adrp→mov→ldr`）与
+  已加载指针（`ldr→mov→blr`）都能跨 `mov` 继续追踪；真实 Node ARM64 的归属调用点 6,611 → 6,613。
+- **未归属调用点分类**：`FunctionReport` 新增 `unattributed_calls` / `unattributed_jumps`，
+  说明行直接给出 `call X / jmp Y`。真实读数：Node x64 148 = call 25 / jmp 123；
+  Deno x64 156 = call 24 / jmp 132——绝大多数是无 `.pdata` 的导入跳板，而非漏归属的调用。
+- 变异新增 2 条（mov 搬运链断开、call 记成 jmp），本地 **10/10 全抓**；测试 **71**。
+
 ### Fixed（`trit-re` N1 续：真实 ARM64 / x64 共享库校准）
 
 - **共享库的"导入"口径**：本文件已定义的符号（glibc 自己的 `malloc`/`free`）虽然带 `JUMP_SLOT`，

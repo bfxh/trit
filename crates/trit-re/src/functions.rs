@@ -79,6 +79,10 @@ pub struct FunctionReport {
     pub attributed_sites: usize,
     /// 归不到任何函数的调用点数。
     pub unattributed_sites: usize,
+    /// 其中 `call` 类别的数量。
+    pub unattributed_calls: usize,
+    /// 其中 `jmp`（跳板/尾跳）类别的数量。
+    pub unattributed_jumps: usize,
     /// 这些未归属调用点涉及的能力桶（只有可能影响该组的桶才会拖成 `Unknown`）。
     pub unattributed_buckets: Vec<&'static str>,
     /// 说明。
@@ -357,6 +361,8 @@ fn attribute(
         vec![(BTreeSet::new(), BTreeSet::new()); ranges.len()];
     let mut attributed = 0usize;
     let mut unattributed = 0usize;
+    let mut unattributed_calls = 0usize;
+    let mut unattributed_jumps = 0usize;
     let mut unattributed_samples: Vec<u64> = Vec::new();
     let mut unattributed_buckets: BTreeSet<&'static str> = BTreeSet::new();
     for row in &xref.imports {
@@ -373,6 +379,10 @@ fn attribute(
                 }
                 None => {
                     unattributed += 1;
+                    match site.kind {
+                        crate::xref::SiteKind::Call => unattributed_calls += 1,
+                        crate::xref::SiteKind::Jump => unattributed_jumps += 1,
+                    }
                     if unattributed_samples.len() < 8 {
                         unattributed_samples.push(site.addr);
                     }
@@ -405,7 +415,7 @@ fn attribute(
             .map(|addr| format!("0x{addr:x}"))
             .collect();
         notes.push(format!(
-            "{unattributed} 个调用点不在任何精确函数区间内（可能是无 .pdata 的叶函数/跳板），示例 {}",
+            "{unattributed} 个调用点不在任何精确函数区间内（call {unattributed_calls} / jmp {unattributed_jumps}；跳板与无 .pdata 的叶函数都会落在这里），示例 {}",
             samples.join(", ")
         ));
     }
@@ -416,6 +426,8 @@ fn attribute(
         exact,
         attributed_sites: attributed,
         unattributed_sites: unattributed,
+        unattributed_calls,
+        unattributed_jumps,
         unattributed_buckets: unattributed_buckets.into_iter().collect(),
         notes,
     }
@@ -446,6 +458,8 @@ mod tests {
             exact: true,
             attributed_sites: 2,
             unattributed_sites: 0,
+            unattributed_calls: 0,
+            unattributed_jumps: 0,
             unattributed_buckets: vec![],
             notes: vec![],
         }
@@ -471,6 +485,45 @@ mod tests {
     }
 
     #[test]
+    fn unattributed_sites_are_split_by_kind() {
+        use super::attribute;
+        use crate::xref::{CallSite, ImportXref, SiteKind as Kind, XrefReport};
+        let xref = XrefReport {
+            arch: "test".into(),
+            scanned_bytes: 0,
+            complete: true,
+            imports: vec![ImportXref {
+                import: "a!VirtualAllocEx".into(),
+                slot: 1,
+                sites: vec![
+                    CallSite {
+                        addr: 0x100,
+                        file_offset: 0,
+                        kind: Kind::Call,
+                    },
+                    CallSite {
+                        addr: 0x200,
+                        file_offset: 0,
+                        kind: Kind::Jump,
+                    },
+                ],
+                status: Ternary::True,
+                note: String::new(),
+            }],
+            notes: vec![],
+        };
+        let report = attribute(&xref, &[], true, vec![]);
+        assert_eq!(report.unattributed_calls, 1);
+        assert_eq!(report.unattributed_jumps, 1);
+        assert!(
+            report
+                .notes
+                .iter()
+                .any(|note| note.contains("call 1 / jmp 1"))
+        );
+    }
+
+    #[test]
     fn locate_respects_half_open_ranges() {
         let ranges = vec![function(0x1000, 0x1100), function(0x1100, 0x1200)];
         assert_eq!(locate(&ranges, 0x1000), Some(0));
@@ -488,6 +541,8 @@ mod tests {
             exact: true,
             attributed_sites: 0,
             unattributed_sites: 0,
+            unattributed_calls: 0,
+            unattributed_jumps: 0,
             unattributed_buckets: vec![],
             notes: vec![],
         };
@@ -510,6 +565,7 @@ mod tests {
         // 与本组无关的未归属调用点不影响结论。
         let irrelevant_gap = FunctionReport {
             unattributed_sites: 1,
+            unattributed_calls: 1,
             unattributed_buckets: vec!["other"],
             ..report.clone()
         };
@@ -522,6 +578,7 @@ mod tests {
         // 正证据优先：即使有未归属调用点，找到共现仍然给 True。
         let hit_with_gap = FunctionReport {
             unattributed_sites: 3,
+            unattributed_calls: 3,
             unattributed_buckets: vec!["a"],
             ..cooccurrence_case()
         };

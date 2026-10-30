@@ -2677,6 +2677,22 @@ MUTANTS = [
         "filter": 'defined_symbols_with_jump_slots_are_not_imports',
     },
     {
+        "name": 'trit-re: mov 搬运链断开',
+        "file": 'crates/trit-re/src/xref/aarch64.rs',
+        "old": '            if let Some((dst, src)) = mov_alias(insn)\n                && src == register\n            {',
+        "new": '            if let Some((dst, src)) = mov_alias(insn)\n                && src == register && false\n            {',
+        "pkg": "trit-re",
+        "filter": 'mov_alias_carries_the_address',
+    },
+    {
+        "name": 'trit-re: 未归属 call 记成 jmp',
+        "file": 'crates/trit-re/src/functions.rs',
+        "old": '                        crate::xref::SiteKind::Call => unattributed_calls += 1,',
+        "new": '                        crate::xref::SiteKind::Call => unattributed_jumps += 1,',
+        "pkg": "trit-re",
+        "filter": 'unattributed_sites_are_split_by_kind',
+    },
+    {
         "name": 'trit-re: x64 取地址不记录',
         "file": 'crates/trit-re/src/xref/mod.rs',
         "old": '                    taken.insert(target.wrapping_sub(image_base));',

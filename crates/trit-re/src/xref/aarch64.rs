@@ -103,6 +103,16 @@ fn ldr_imm(insn: u32, register: u32) -> Option<(u32, u64)> {
     Some((insn & 0x1F, imm12 as u64 * 8))
 }
 
+/// `mov Xd, Xm`（ORR 别名）：返回 `(目标, 源)`。
+fn mov_alias(insn: u32) -> Option<(u32, u32)> {
+    // ORR (shifted register) 的 MOV 别名：Rn=31、shift=0、imm6=0（sf 位忽略）。
+    if insn & 0x7FE0_FFE0 == 0x2A00_03E0 {
+        Some((insn & 0x1F, (insn >> 16) & 0x1F))
+    } else {
+        None
+    }
+}
+
 fn blr_register(insn: u32) -> Option<u32> {
     if insn & BLR_MASK == BLR_OP {
         Some((insn >> 5) & 0x1F)
@@ -222,6 +232,14 @@ fn references(data: &[u8], base: u64) -> (Vec<Reference>, BTreeSet<u64>) {
                 cursor += 1;
                 break;
             }
+            if let Some((dst, src)) = mov_alias(insn)
+                && src == register
+            {
+                register = dst;
+                cursor += 1;
+                steps += 1;
+                continue;
+            }
             match writes(insn, register) {
                 Some(false) => {
                     cursor += 1;
@@ -236,10 +254,19 @@ fn references(data: &[u8], base: u64) -> (Vec<Reference>, BTreeSet<u64>) {
         let slot = address.wrapping_add(offset);
         let mut steps = 0usize;
         let mut called = false;
+        let mut call_register = target_register;
         while cursor < insns.len() && steps < MAX_CALL_STEPS {
             let insn = insns[cursor];
             let at = base + cursor as u64 * 4;
-            if blr_register(insn) == Some(target_register) {
+            if let Some((dst, src)) = mov_alias(insn)
+                && src == call_register
+            {
+                call_register = dst;
+                cursor += 1;
+                steps += 1;
+                continue;
+            }
+            if blr_register(insn) == Some(call_register) {
                 out.push(Reference {
                     site: at,
                     slot,
@@ -248,7 +275,7 @@ fn references(data: &[u8], base: u64) -> (Vec<Reference>, BTreeSet<u64>) {
                 called = true;
                 break;
             }
-            if br_register(insn) == Some(target_register) {
+            if br_register(insn) == Some(call_register) {
                 out.push(Reference {
                     site: pc,
                     slot,
@@ -257,7 +284,7 @@ fn references(data: &[u8], base: u64) -> (Vec<Reference>, BTreeSet<u64>) {
                 called = true;
                 break;
             }
-            match writes(insn, target_register) {
+            match writes(insn, call_register) {
                 Some(false) => {
                     cursor += 1;
                     steps += 1;
@@ -505,6 +532,37 @@ mod tests {
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].slot, 0x2040);
         assert_eq!(refs[0].site, 0x1014);
+    }
+
+    fn mov(dst: u32, src: u32) -> u32 {
+        0xAA00_03E0 | (src << 16) | dst
+    }
+
+    #[test]
+    fn mov_alias_carries_the_address() {
+        let mut data = vec![0u8; 20];
+        put(&mut data, 0, adrp(0x1000, 0x2000, 9));
+        put(&mut data, 1, mov(10, 9));
+        put(&mut data, 2, ldr(10, 0x40, 10));
+        put(&mut data, 3, 0xD503201F); // nop
+        put(&mut data, 4, blr(10));
+        let (refs, _) = references(&data, 0x1000);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].slot, 0x2040);
+        assert_eq!(refs[0].site, 0x1010);
+    }
+
+    #[test]
+    fn mov_alias_carries_the_loaded_pointer() {
+        let mut data = vec![0u8; 20];
+        put(&mut data, 0, adrp(0x1000, 0x2000, 9));
+        put(&mut data, 1, ldr(9, 0x40, 9));
+        put(&mut data, 2, mov(10, 9));
+        put(&mut data, 3, 0xD503201F); // nop
+        put(&mut data, 4, blr(10));
+        let (refs, _) = references(&data, 0x1000);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].slot, 0x2040);
     }
 
     #[test]
