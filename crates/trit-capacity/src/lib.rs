@@ -19,6 +19,9 @@ pub enum MemSource {
     NvidiaSmi,
     /// Linux DRM sysfs（`/sys/class/drm/card*/device/mem_info_vram_*`）。
     LinuxDrm,
+    /// 测试桩：`TRIT_CAPACITY_FAKE` 注入的假读数。**输出里必须显示为 `fake`**，
+    /// 任何真机读数都不会是这个来源。
+    Fake,
 }
 
 impl MemSource {
@@ -26,6 +29,7 @@ impl MemSource {
         match self {
             MemSource::NvidiaSmi => "nvidia-smi",
             MemSource::LinuxDrm => "linux-drm-sysfs",
+            MemSource::Fake => "fake(测试桩)",
         }
     }
 }
@@ -172,8 +176,65 @@ pub fn judge_unknown(need: u64, why: &str, headroom: f32) -> Judgment {
     }
 }
 
-/// 探测系统级显存。顺序：`nvidia-smi` → Linux DRM sysfs → Unknown。
+/// 把判决落成「跑不跑」（M5.2 自壳用）。
+///
+/// 规则（`docs/CAPACITY.md` §10.5）：
+/// - `REJECT` ⇒ **拒跑**；`force` 是逃生口。
+/// - `WARN` + 有实测读数 ⇒ 跑（只提示）。
+/// - `WARN` + 读数不可用 ⇒ 默认跑（不阻断非 NVIDIA 机器），`strict` 时拒跑（fail-closed）。
+///
+/// 注意：`force` 越过的是**判决**，不是观测——读数照常打印，便于事后复盘。
+#[derive(Debug, Clone)]
+pub enum Decision {
+    Run(Judgment),
+    Refuse(Judgment),
+}
+
+pub fn decide(j: Judgment, force: bool, strict: bool) -> Decision {
+    if force {
+        return Decision::Run(j);
+    }
+    match j.verdict {
+        Verdict::Ok => Decision::Run(j),
+        Verdict::Warn => {
+            if j.free.is_none() && strict {
+                Decision::Refuse(j)
+            } else {
+                Decision::Run(j)
+            }
+        }
+        Verdict::Reject => Decision::Refuse(j),
+    }
+}
+
+/// 测试/演练用的假读数注入：`TRIT_CAPACITY_FAKE=total,used,free`（MiB），
+/// 或 `TRIT_CAPACITY_FAKE=unknown` 强制「测不到」。
+///
+/// 它是**唯一**能让读数脱离真机的事实源，所以输出必须带 `fake(测试桩)` 标签。
+const FAKE_ENV: &str = "TRIT_CAPACITY_FAKE";
+
+fn probe_fake() -> Option<Probe> {
+    let raw = std::env::var(FAKE_ENV).ok()?;
+    if raw.trim().eq_ignore_ascii_case("unknown") {
+        return Some(Probe::Unknown("TRIT_CAPACITY_FAKE=unknown（测试桩）"));
+    }
+    let mut it = raw.split(',').map(|s| s.trim().parse::<u64>().ok());
+    let total = it.next()??;
+    let used = it.next()??;
+    let free = it.next()??;
+    Some(Probe::Known(GpuMemory {
+        total: total * MIB,
+        used: used * MIB,
+        free: free * MIB,
+        source: MemSource::Fake,
+    }))
+}
+
+/// 探测系统级显存。顺序：测试桩 → `nvidia-smi` → Linux DRM sysfs → Unknown。
 pub fn probe_gpu() -> Probe {
+    if let Some(p) = probe_fake() {
+        return p;
+    }
     if let Some(m) = probe_nvidia_smi() {
         return Probe::Known(m);
     }
@@ -349,5 +410,77 @@ mod tests {
             }
             Probe::Unknown(why) => assert!(!why.is_empty(), "unknown 必须给出原因"),
         }
+    }
+
+    // ---- M5.2：判决 → 执行决定 ----
+
+    fn j(verdict: Verdict, free: Option<u64>) -> Judgment {
+        Judgment {
+            verdict,
+            need: 1,
+            free,
+            headroom: 1.0,
+            required: 1,
+            reason: String::from("test"),
+        }
+    }
+
+    #[test]
+    fn reject_refuses_by_default_and_force_overrides() {
+        assert!(matches!(
+            decide(j(Verdict::Reject, Some(1)), false, false),
+            Decision::Refuse(_)
+        ));
+        assert!(matches!(
+            decide(j(Verdict::Reject, Some(1)), true, false),
+            Decision::Run(_)
+        ));
+    }
+
+    #[test]
+    fn warn_with_real_reading_runs() {
+        assert!(matches!(
+            decide(j(Verdict::Warn, Some(1)), false, false),
+            Decision::Run(_)
+        ));
+        assert!(
+            matches!(
+                decide(j(Verdict::Warn, Some(1)), false, true),
+                Decision::Run(_)
+            ),
+            "有实测读数的 WARN 不受 strict 影响：strict 只针对「测不到」"
+        );
+    }
+
+    #[test]
+    fn unknown_runs_by_default_but_strict_refuses() {
+        assert!(
+            matches!(
+                decide(j(Verdict::Warn, None), false, false),
+                Decision::Run(_)
+            ),
+            "非 NVIDIA 机器上默认不阻断，否则工具不可用"
+        );
+        assert!(
+            matches!(
+                decide(j(Verdict::Warn, None), false, true),
+                Decision::Refuse(_)
+            ),
+            "--strict 下测不到必须拒跑（fail-closed）"
+        );
+    }
+
+    #[test]
+    fn ok_always_runs() {
+        assert!(matches!(
+            decide(j(Verdict::Ok, Some(100)), false, true),
+            Decision::Run(_)
+        ));
+    }
+
+    /// 测试桩必须自标来源，否则假的读数会被当成真机读数。
+    #[test]
+    fn fake_source_is_labeled() {
+        assert!(MemSource::Fake.as_str().contains("fake"));
     }
 }

@@ -8,6 +8,7 @@ pub(crate) mod check;
 pub(crate) mod circuit;
 pub(crate) mod equiv;
 pub(crate) mod eval;
+pub(crate) mod exec;
 pub(crate) mod map;
 pub(crate) mod netlist;
 pub(crate) mod quantify;
