@@ -31,6 +31,7 @@ members = [
     "crates/trit-unsafe",
     "crates/trit-procscan",
     "crates/trit-ops",
+    "crates/trit-re",
 ]
 
 [workspace.package]

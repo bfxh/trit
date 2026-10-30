@@ -1,0 +1,22 @@
+[package]
+name = "trit-re"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "二进制逆向台账：PE/ELF 结构与导入能力面 → 三值判定 + 四值冲突（不属于稳定 API）"
+publish = false
+
+[[bin]]
+name = "trit-re"
+path = "src/main.rs"
+
+[dependencies]
+trit-core.workspace = true
+trit-eval.workspace = true
+trit-belnap.workspace = true
+clap = { version = "4.6.7", features = ["derive"] }
+
+[dev-dependencies]
+# 端到端用例直接驱动 bin，不需要额外依赖。

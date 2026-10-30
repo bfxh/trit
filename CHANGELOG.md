@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（`trit-re` 二进制逆向台账 M0）
+
+- 新 crate `trit-re`（实验层，`publish = false`）：手写 PE32/PE32+ 与小端 ELF32/ELF64
+  解析（节表、导入/导出、调试 PDB、安全目录、Rich 头、`.comment`、GNU build-id、
+  叠加段、入口可执行性），库本体零第三方依赖。
+- 判定不是布尔：每条观测是 `Ternary` 事实，假设写成 `Expr` 交给 `trit-eval`
+  在 Kleene 语义下求值；解析不出的证据保持 `Unknown` 并显式说明原因。
+- 四值冲突：假设与良性解释同时成立时给 Belnap `B`（实测形态：结构像加壳但存在
+  Authenticode signedData），子判定回注赋值表，冲突可沿 `needs_review` 向上传播。
+- 输出：`trit-re triage <PATH>` 人读摘要；`--jsonl` 输出 append-only 台账
+  （`file` / `fact` / `judgment` 三类行，`sha256` 作主键，`schema=1`）。
+- SHA-256 自实现（FIPS 180-4，含标准向量测试）。
+- 测试 41 条：合成 PE/ELF 夹具走真实解析分支、逐级截断不 panic、删节表把导入
+  证据降级为 `Unknown`、四值冲突、CLI 端到端（JSONL 与人读一致、缺文件非零退出）。
+- 真实样本校准：`notepad.exe` 的 315 个导入解析正确、判定全 `False`；据此收紧
+  `staged_loader`（去掉 `IsDebuggerPresent`，该 API 在正常 Windows 程序里普遍存在）。
+
 ### Added（`trit-procscan` 动态追溯/追踪：事件流离线重放）
 
 - 新模块 `trace` + 新子命令 `trit-procscan trace <events.jsonl> --pid N`：
