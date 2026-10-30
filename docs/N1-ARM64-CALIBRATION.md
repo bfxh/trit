@@ -119,7 +119,7 @@ IAT 槽位按 8 字节紧邻排列，一个寄存器判错就会把调用记到�
   相关能力组保持 `Unknown`；IFUNC 密集的库（如 libm）未覆盖。
 - **ELF 槽位表收 `JUMP_SLOT` + `GLOB_DAT`**，但只对 NOTYPE/FUNC/IFUNC 符号建行；
   纯数据导入（`OBJECT`）不进台账，因此"没看到引用"不会落到它们头上。
-  取址识别覆盖见 §10.2；**已知假阴性**：`get_pc_thunk.ax` 把 GOT 基址放进 EAX 时识别不到。
+  取址识别见 §10.2，基址寄存器跟踪见 §10.3（eax/ebx/cx/dx/si/di 都认，无数据流跟踪）。
 - **PE32**（无 `.pdata`）的同函数共现仍恒为 `Unknown`。
 - x64 的未归属调用点已按类别拆开：Node 148 = call 25 / jmp 123，Deno 156 = call 24 / jmp 132。
   其中 jmp 绝大多数是无 `.pdata` 的导入跳板（结构性）；**call 的 24–25 个尚未逐条裁定**，
@@ -264,10 +264,9 @@ libdbg32.so  fclose 0x120f   strlen 0x11b1   fopen 0x11e3   __fprintf_chk 0x1206
   `cmp … imm` 的 `80/81/83 BB`（EBX 相对）与 `80/81/83 3D`（绝对），以及立即数形式
   `B8..BF imm32` / `68 imm32` / `C7 45|85|05 imm32`（见 §10.2）。**未覆盖**：
   `C7 83`（存到 `[ebx+disp]`）、x64 的 `48 C7 C0 imm32`、以及把地址先算进寄存器再传的链条。
-- **GOT 基址只认 EBX**：`get_pc_thunk.bx` + `add $imm,%ebx`。**已实测的缺口**：
-  `get_pc_thunk.ax` 把基址放进 EAX，随后 `mov 0x10(%eax),%ecx` 这种访问识别不到
-  ⇒ 该导入会落 `False`（见 §10.2 的 `c32-fptr-pie`，这是**已知假阴性**）。
-  `pop %ebx` 变体、`-mcmodel` 其它写法同样未覆盖（遇到时 `.plt` 有 `FF A3` 但无基址 ⇒ `complete=false`）。
+- **GOT 基址按寄存器跟踪**（§10.3）：`get_pc_thunk.{ax,bx,cx,dx,si,di}` + `add $imm,<reg>`。
+  **没有数据流**：同一寄存器后来被改写成别的指针时仍按 GOT 基址算（只影响"取址"判定，
+  方向偏保守）。`pop %ebx` 变体、`-mcmodel` 其它写法未覆盖（`.plt` 有 `FF A3` 但无基址 ⇒ `complete=false`）。
 - 32 位 PE（无 `.pdata`）与本主题无关，函数共现仍恒 `Unknown`。
 
 ### 10.1 `GLOB_DAT` 槽位（2026-10-30 补）
@@ -286,12 +285,13 @@ ARM64 = 1025）。此前只收前者，`__cxa_finalize` 这类"有 PLT 桩、也
 | x86-64 glibc | 13 → 13 | 0 → 0 | 0 → 0 |
 | AArch64 glibc / ripgrep | 13 / 133 → 不变 | 0 / 0 | 0 / 5 |
 
-`c32-pie` 里变成 `False` 的两个是 `_ITM_deregisterTMCloneTable` / `_ITM_registerTMCloneTable`：
-槽位已知、可执行节扫全、函数体内确实没有对 `0x20(%ebx)` / `0x30(%ebx)` 的任何引用
-（objdump 计数 0）⇒ "本文件不引用它"是有证据的结论，而不是缺省。
+`c32-pie` 里当时变成 `False` 的两个是 `_ITM_deregisterTMCloneTable` / `_ITM_registerTMCloneTable`。
+**这条结论后来被推翻**（见 §10.3）：crt 的 `*_tm_clones` 用 `get_pc_thunk.dx` 把 GOT 基址放进
+**EDX**，再 `mov 0x20(%edx),%eax; …; call *%eax` 间接调用它们——当时只认 EBX，所以没看见。
+现在这两个是 `Unknown`（地址被取用），不是 `False`。
 
-**注意**：这会让"数据型 GLOB_DAT 导入"从 `Unknown` 变成 `False`，前提是上面那组取址形式
-已经覆盖；新增形式必须同时补单元测试，否则会把"漏检"伪装成"没有引用"。
+**教训**：GLOB_DAT 让"数据型导入"有机会落 `False`，但**前提是取址形式覆盖到位**；
+只要基址寄存器还没覆盖全，`False` 就可能只是"我没看见"。
 
 ### 10.2 立即数取址与"函数指针"（2026-10-31 补）
 
@@ -317,8 +317,34 @@ gcc -m32 -O0 -o c32-fptr-pie fptr.c                  # 另一个构建
 | 样本 | 结构 | 工具读数 | 结论 |
 |---|---|---|---|
 | `c32-fptr` | 非 PIE：`movl $strcmp@plt,-0x4(%ebp)`（`C7 45`） | `strcmp` / `memcmp` = **`Unknown`**（改前 `False`） | ✅ 立即数 = 桩地址 ⇒ 取址已知 |
-| `c32-fptr-pie` | PIE：`call __x86.get_pc_thunk.ax; add $0x2e41,%eax; mov 0x10(%eax),%ecx` | 仍是 **`False`** | ❌ **已知假阴性**：基址在 EAX，不在 EBX |
+| `c32-fptr-pie` | PIE：`call __x86.get_pc_thunk.ax; add $0x2e41,%eax; mov 0x10(%eax),%ecx` | `strcmp` / `memcmp` = **`Unknown`**（§10.3 修前是 `False`） | ✅ 基址在 EAX 也能认 |
 
-`c32-fptr-pie` 这条就是下一片要补的：`get_pc_thunk.{ax,cx,dx,si,di}` + 按寄存器解码
-`modrm`（`8B 80|81|83|88…`），而不是只认 `83`（EBX）。它现在写成 `False` 是有风险的
-——"没看到引用"并不等于"没有引用"，所以这里必须显式登记，不能当成良性通过。
+修法见 §10.3：原来的缺陷是"只认 `83`（EBX 相对）"，而 PIE 里 GCC 会把基址放进 EAX。
+
+### 10.3 GOT 基址按寄存器跟踪（2026-10-31 补）
+
+此前只认 `call __x86.get_pc_thunk.bx; add $imm,%ebx`。实测 PIE 构建里 GCC 会按函数挑寄存器
+（`get_pc_thunk.ax` / `.dx` 都出现了），于是 `mov 0x10(%eax),%ecx` 这类访问被漏掉，
+**进而把"被间接调用"的导入判成 `False`**。
+
+现在的做法：
+
+- thunk 体按字节识别：`mov (%esp), %reg; ret` = `8B 04|0C|14|1C|34|3C 24 C3`，取出寄存器号；
+- 紧随其后的 `add $imm, %reg`：eax 用短编码 `05 imm32`，其余用 `81 C0|reg imm32`；
+- 基址表按寄存器分组（`BTreeMap<u8, BTreeSet<u64>>`），访问侧按 `modrm` 的 `rm` 字段取寄存器：
+  `8B/8D/39/3B/85`、`80/81/83`（cmp imm）、`FF /2`（call）、`FF /4`（jmp）、`FF /6`（push），
+  `mod=10` 且 `rm != 4` 即 `disp32(%reg)`；
+- 只接受"基址 + 位移 == 已知 GOT 槽位"的结果，基址猜错不会产生假引用。
+
+真实读数（`c32-pie` 的 crt 代码，改前 → 改后）：
+
+| 指令 | 改前 | 改后 |
+|---|---|---|
+| `mov 0x20(%edx),%eax; …; call *%eax`（`deregister_tm_clones`） | `_ITM_deregisterTMCloneTable` = `False` | **`Unknown`**（地址被取用） |
+| `mov 0x30(%edx),%eax; …; call *%eax`（`register_tm_clones`） | `_ITM_registerTMCloneTable` = `False` | **`Unknown`** |
+| `mov 0x10(%eax),%ecx`（`c32-fptr-pie` 的 `strcmp`） | `False` | **`Unknown`** |
+| 其余样本（c32-nopie / glibc x64+arm64 / ripgrep） | — | 不变 |
+
+**已知局限**：这是字节级扫描，不做数据流。同一个寄存器后续被改写成普通指针时，
+`disp(%reg)` 仍会和该寄存器的 GOT 基址相加；只有"结果恰好等于某个槽位"才会误判，
+方向是"多判 `Unknown`"而不是"多判 `True`"。要更准得上局部活跃性分析，目前不做。
