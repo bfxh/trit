@@ -146,3 +146,32 @@ cargo run -q -p trit-re -- triage node-arm64.exe --xref | head
 - 读数表、修复前后值、独立复算：**A**（本机实测，命令在 §7）；
 - "Node 构建差异导致锁调用数量不同"：**B**（两侧静态引用都复算过，但未对照构建参数/源码）；
 - "取地址但无直接调用 ⇒ Unknown"：**A**（地址计算与调用窗口都复算过），但"这些导入是否真的被间接调用"仍是 **C**（未逐条动态确认）。
+
+## 9. 真实 `.debug_frame` 校准（2026-10-30）
+
+发行版二进制（ripgrep、glibc）只带 `.eh_frame`，所以这条路径改用**现场编译**：
+
+```bash
+# WSL Ubuntu 24.04 + gcc 13.3.0
+gcc -O0 -g -fno-asynchronous-unwind-tables -o c-df dbg.c
+# CRT 仍会写入 .eh_frame；只移除它，保留真实的 .debug_frame
+objcopy --remove-section=.eh_frame --remove-section=.eh_frame_hdr c-df c-df-debugframe
+```
+
+| 样本 | 大小 | sha256 | 内容 |
+|---|---|---|---|
+| `c-df` | 19,408 | `66aa4a46fe5f42288e9eb05ae46f39a6bae37e3b3ec654dffab7b079158d3e2c` | `.eh_frame`（CRT 4 FDE）+ `.debug_frame`（用户 3 FDE） |
+| `c-df-debugframe` | 19,176 | `32ae2f988585d29f63bb07a470b53baafed0c70d0d18665c4f03a5abcd5c218f` | 只剩 `.debug_frame` |
+
+独立对账（`readelf --debug-dump=frames`）与 trit-re 的函数区间**逐条相同**：
+
+```text
+0x11a9..0x11fa   0x11fa..0x1233   0x1233..0x12cc
+```
+
+**发现的缺陷**：原先只要 `.eh_frame` 非空就选它。`c-df` 的 `.eh_frame` 只覆盖 CRT，
+4 个用户调用点全部落在外面（未归属 4）；改为按**调用点覆盖率**选择后改选 `.debug_frame`，
+4 个调用点全部归属、未归属 0。`c-df-debugframe` 与 `c-df` 现在读数一致。
+
+**未证**：32 位（无 multilib）与 ARM64（无交叉编译器）的 `.debug_frame` 仍只有合成夹具。
+

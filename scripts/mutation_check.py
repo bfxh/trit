@@ -2703,8 +2703,8 @@ MUTANTS = [
     {
         "name": 'trit-re: 不用 eh_frame 边界',
         "file": 'crates/trit-re/src/functions/mod.rs',
-        "old": '    } else if !eh_frame.is_empty() {',
-        "new": '    } else if false {',
+        "old": '        (false, true) => Some((FuncSource::EhFrame, eh_frame, None)),',
+        "new": '        (false, true) => None,',
         "pkg": "trit-re",
         "filter": 'eh_frame_boundaries_enable_attribution',
     },
@@ -2735,10 +2735,18 @@ MUTANTS = [
     {
         "name": 'trit-re: 不用 debug_frame 边界',
         "file": 'crates/trit-re/src/functions/mod.rs',
-        "old": '    } else if !debug_frame.is_empty() {',
-        "new": '    } else if false {',
+        "old": '        (true, false) => Some((FuncSource::DebugFrame, debug_frame, None)),',
+        "new": '        (true, false) => None,',
         "pkg": "trit-re",
         "filter": 'debug_frame_boundaries_enable_attribution',
+    },
+    {
+        "name": 'trit-re: 不看调用点覆盖，永远选 eh_frame',
+        "file": 'crates/trit-re/src/functions/mod.rs',
+        "old": '            let pick_debug = debug_sites > eh_sites',
+        "new": '            let pick_debug = false && debug_sites > eh_sites',
+        "pkg": "trit-re",
+        "filter": 'frame_source_prefers_the_one_covering_call_sites',
     },
     {
         "name": 'trit-re: x64 取地址不记录',

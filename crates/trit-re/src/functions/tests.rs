@@ -226,6 +226,46 @@ fn debug_frame_boundaries_enable_attribution() {
 }
 
 #[test]
+fn frame_source_prefers_the_one_covering_call_sites() {
+    use super::{FuncSource, choose_frame_source};
+    use crate::elf::FunctionSymbol;
+    use crate::xref::{CallSite, ImportXref, SiteKind as Kind, XrefReport};
+    let eh = vec![FunctionSymbol {
+        start: 0x2000,
+        size: 0x100,
+        name: String::new(),
+    }];
+    let debug = vec![FunctionSymbol {
+        start: 0x1000,
+        size: 0x100,
+        name: String::new(),
+    }];
+    let xref = |addr: u64| XrefReport {
+        arch: "x86-64".into(),
+        scanned_bytes: 0,
+        complete: true,
+        imports: vec![ImportXref {
+            import: "socket".into(),
+            slot: 1,
+            sites: vec![CallSite {
+                addr,
+                file_offset: 0,
+                kind: Kind::Call,
+            }],
+            status: Ternary::True,
+            note: String::new(),
+        }],
+        notes: vec![],
+    };
+    let (source, _, other) = choose_frame_source(&eh, &debug, &xref(0x1010)).unwrap();
+    assert_eq!(source, FuncSource::DebugFrame);
+    assert_eq!(other, Some(0));
+    let (source, _, other) = choose_frame_source(&eh, &debug, &xref(0x2010)).unwrap();
+    assert_eq!(source, FuncSource::EhFrame);
+    assert_eq!(other, Some(0));
+}
+
+#[test]
 fn unattributed_sites_are_split_by_kind() {
     use super::attribute;
     use crate::xref::{CallSite, ImportXref, SiteKind as Kind, XrefReport};

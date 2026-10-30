@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed（`trit-re`：CFI 来源按调用点覆盖选择 + 真实 `.debug_frame` 校准）
+
+- 同时存在 `.eh_frame` 与 `.debug_frame` 时，不再"`.eh_frame` 非空就用它"，而是按
+  **覆盖的交叉引用调用点数**选择（平手再比字节数）；实测 `c-df` 的 `.eh_frame` 只有 CRT 的
+  4 个 FDE、覆盖 0 个调用点，`.debug_frame` 覆盖 4 个——修复前 4 个调用点全部未归属，
+  修复后 0 未归属。
+- 真实 `.debug_frame` 样本（WSL gcc 13.3，`-O0 -g -fno-asynchronous-unwind-tables`，
+  objcopy 移除 CRT 的 `.eh_frame`）：readelf 的 3 个 FDE 与 trit-re 的 3 个函数区间
+  **逐条一致**（0x11a9..0x11fa / 0x11fa..0x1233 / 0x1233..0x12cc）。
+- 测试 **79**；变异 **17/17**。
+
 ### Added（`trit-re`：ELF `.debug_frame` 函数边界）
 
 - 新增 `crates/trit-re/src/elf/debug_frame.rs`：解析 DWARF CFI——CIE 标记为全 1、

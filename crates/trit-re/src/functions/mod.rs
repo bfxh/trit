@@ -172,10 +172,15 @@ pub fn build_elf(bytes: &[u8], info: &elf::ElfInfo, xref: &XrefReport) -> Functi
     } else {
         info.eh_frame_ranges(bytes)
     };
-    let debug_frame = if symtab_exact || !eh_frame.is_empty() {
+    let debug_frame = if symtab_exact {
         Vec::new()
     } else {
         info.debug_frame_ranges(bytes)
+    };
+    let chosen = if symtab_exact {
+        None
+    } else {
+        choose_frame_source(&eh_frame, &debug_frame, xref)
     };
     let (mut ranges, exact) = if symtab_exact {
         (
@@ -190,37 +195,29 @@ pub fn build_elf(bytes: &[u8], info: &elf::ElfInfo, xref: &XrefReport) -> Functi
                 .collect(),
             true,
         )
-    } else if !eh_frame.is_empty() {
+    } else if let Some((source, chosen, other_sites)) = chosen {
+        let label = match source {
+            FuncSource::EhFrame => ".eh_frame",
+            FuncSource::DebugFrame => ".debug_frame",
+            _ => "?",
+        };
         notes.push(format!(
-            "边界来自 .eh_frame（{} 个 FDE）；STT_FUNC 只覆盖 {}%",
-            eh_frame.len(),
-            covered.saturating_mul(100) / exec_bytes.max(1)
+            "边界来自 {label}（{} 个 FDE，覆盖 {} 个调用点）{}",
+            chosen.len(),
+            site_coverage(chosen, xref),
+            match other_sites {
+                Some(sites) => format!("；另一来源覆盖 {sites} 个调用点"),
+                None => String::new(),
+            }
         ));
         (
-            eh_frame
+            chosen
                 .iter()
                 .map(|symbol| Function {
                     start: symbol.start,
                     end: symbol.start.saturating_add(symbol.size),
                     name: None,
-                    source: FuncSource::EhFrame,
-                })
-                .collect(),
-            true,
-        )
-    } else if !debug_frame.is_empty() {
-        notes.push(format!(
-            "边界来自 .debug_frame（{} 个 FDE）；没有可用的 .eh_frame",
-            debug_frame.len()
-        ));
-        (
-            debug_frame
-                .iter()
-                .map(|symbol| Function {
-                    start: symbol.start,
-                    end: symbol.start.saturating_add(symbol.size),
-                    name: None,
-                    source: FuncSource::DebugFrame,
+                    source,
                 })
                 .collect(),
             true,
@@ -241,6 +238,57 @@ pub fn build_elf(bytes: &[u8], info: &elf::ElfInfo, xref: &XrefReport) -> Functi
     };
     normalize(&mut ranges);
     attribute(xref, &ranges, exact, notes)
+}
+
+/// 边界候选覆盖了多少个交叉引用调用点。
+fn site_coverage(symbols: &[elf::FunctionSymbol], xref: &XrefReport) -> usize {
+    if symbols.is_empty() {
+        return 0;
+    }
+    let mut ranges: Vec<Function> = symbols
+        .iter()
+        .map(|symbol| Function {
+            start: symbol.start,
+            end: symbol.start.saturating_add(symbol.size),
+            name: None,
+            source: FuncSource::EhFrame,
+        })
+        .collect();
+    ranges.sort_by_key(|function| function.start);
+    xref.imports
+        .iter()
+        .flat_map(|row| row.sites.iter())
+        .filter(|site| locate(&ranges, site.addr).is_some())
+        .count()
+}
+
+fn frame_bytes(symbols: &[elf::FunctionSymbol]) -> u64 {
+    symbols.iter().map(|symbol| symbol.size).sum()
+}
+
+/// 同时有 `.eh_frame` 与 `.debug_frame` 时，按实际覆盖的调用点选择；
+/// 平手再比字节数，最后偏向 `.eh_frame`（标准异步表）。
+fn choose_frame_source<'a>(
+    eh_frame: &'a [elf::FunctionSymbol],
+    debug_frame: &'a [elf::FunctionSymbol],
+    xref: &XrefReport,
+) -> Option<(FuncSource, &'a [elf::FunctionSymbol], Option<usize>)> {
+    match (eh_frame.is_empty(), debug_frame.is_empty()) {
+        (true, true) => None,
+        (false, true) => Some((FuncSource::EhFrame, eh_frame, None)),
+        (true, false) => Some((FuncSource::DebugFrame, debug_frame, None)),
+        (false, false) => {
+            let eh_sites = site_coverage(eh_frame, xref);
+            let debug_sites = site_coverage(debug_frame, xref);
+            let pick_debug = debug_sites > eh_sites
+                || (debug_sites == eh_sites && frame_bytes(debug_frame) > frame_bytes(eh_frame));
+            if pick_debug {
+                Some((FuncSource::DebugFrame, debug_frame, Some(eh_sites)))
+            } else {
+                Some((FuncSource::EhFrame, eh_frame, Some(debug_sites)))
+            }
+        }
+    }
 }
 
 /// 符号覆盖的可执行字节是否足够撑起"精确边界"。
