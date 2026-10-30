@@ -20,6 +20,8 @@ use trit_core::value::Ternary;
 use crate::elf;
 use crate::pe;
 
+mod aarch64;
+
 /// 单次扫描的字节上限，防止超大文件把 CLI 拖死。
 pub const MAX_SCAN_BYTES: usize = 64 * 1024 * 1024;
 /// 单个导入最多保留的调用点，超过只保留前 N 个。
@@ -123,7 +125,7 @@ impl XrefReport {
 }
 
 /// 一个内部调用点：地址、类型、文件偏移。
-type RawSite = (u64, SiteKind, usize);
+pub(super) type RawSite = (u64, SiteKind, usize);
 
 fn empty_report(arch: &str, note: &str) -> XrefReport {
     XrefReport {
@@ -147,7 +149,7 @@ fn unknown_rows(names: impl Iterator<Item = String>, note: &str) -> Vec<ImportXr
         .collect()
 }
 
-fn to_sites(set: &BTreeSet<RawSite>) -> Vec<CallSite> {
+pub(super) fn to_sites(set: &BTreeSet<RawSite>) -> Vec<CallSite> {
     set.iter()
         .take(MAX_SITES)
         .map(|(addr, kind, file_offset)| CallSite {
@@ -158,7 +160,7 @@ fn to_sites(set: &BTreeSet<RawSite>) -> Vec<CallSite> {
         .collect()
 }
 
-fn finalize(row: &mut ImportXref, complete: bool) {
+pub(super) fn finalize(row: &mut ImportXref, complete: bool) {
     row.status = if !row.sites.is_empty() {
         Ternary::True
     } else if complete && row.note.is_empty() {
@@ -176,7 +178,7 @@ fn finalize(row: &mut ImportXref, complete: bool) {
     }
 }
 
-fn slice_at(bytes: &[u8], start: usize, len: usize) -> Option<&[u8]> {
+pub(super) fn slice_at(bytes: &[u8], start: usize, len: usize) -> Option<&[u8]> {
     if len == 0 {
         return Some(&[]);
     }
@@ -186,8 +188,8 @@ fn slice_at(bytes: &[u8], start: usize, len: usize) -> Option<&[u8]> {
 /// 扫描 PE 的 IAT 交叉引用。
 pub fn scan_pe(bytes: &[u8], info: &pe::PeInfo) -> XrefReport {
     let arch = info.arch();
-    if !matches!(info.machine, 0x8664 | 0x014c) {
-        let mut report = empty_report(arch, "只支持 x86 / x86-64 的 IAT 模式扫描");
+    if !matches!(info.machine, 0x8664 | 0x014c | 0xaa64) {
+        let mut report = empty_report(arch, "只支持 x86 / x86-64 / ARM64 的 IAT 模式扫描");
         if let Some(dlls) = &info.imports {
             report.imports = unknown_rows(
                 dlls.iter().flat_map(|dll| {
@@ -270,22 +272,34 @@ pub fn scan_pe(bytes: &[u8], info: &pe::PeInfo) -> XrefReport {
             ));
             break;
         }
-        scan_pe_section(
-            data,
-            section.virtual_address,
-            section.raw_ptr as usize,
-            info.plus,
-            info.image_base,
-            &slots,
-            &mut sites,
-        );
         report.scanned_bytes += data.len();
         exec.push((section.virtual_address, section.raw_ptr as usize, data));
     }
 
-    // 第二层：导入跳板（`jmp [IAT]`）会被调用方用 `E8`/`E9` 直接调用。
-    // 找到调用方就以调用方为准，避免把跳板本身算成"归不到函数"的调用点。
-    expand_pe_thunks(&exec, &mut sites);
+    if info.machine == 0xaa64 {
+        // ARM64 扫描全程在 RVA 空间（ADRP 的页运算与 image base 无关），
+        // 所以把槽位表也从 VA 折回 RVA。
+        let slots_rva: BTreeMap<u64, usize> = slots
+            .iter()
+            .map(|(va, row)| (va.wrapping_sub(info.image_base), *row))
+            .collect();
+        aarch64::scan_pe_sections(&exec, &slots_rva, &mut sites);
+    } else {
+        for (section_rva, file_base, data) in &exec {
+            scan_pe_section(
+                data,
+                *section_rva,
+                *file_base,
+                info.plus,
+                info.image_base,
+                &slots,
+                &mut sites,
+            );
+        }
+        // 第二层：导入跳板（`jmp [IAT]`）会被调用方用 `E8`/`E9` 直接调用。
+        // 找到调用方就以调用方为准，避免把跳板本身算成"归不到函数"的调用点。
+        expand_pe_thunks(&exec, &mut sites);
+    }
 
     for (index, row) in report.imports.iter_mut().enumerate() {
         row.sites = to_sites(&sites[index]);
@@ -383,8 +397,8 @@ fn expand_pe_thunks(exec: &[(u32, usize, &[u8])], sites: &mut [BTreeSet<RawSite>
 /// 扫描 ELF x86-64 的 PLT/GOT 交叉引用。
 pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
     let arch = info.arch();
-    if !(info.class == 2 && info.machine == 62) {
-        let mut report = empty_report(arch, "只支持 x86-64 的 PLT/GOT 交叉引用");
+    if !(info.class == 2 && matches!(info.machine, 62 | 183)) {
+        let mut report = empty_report(arch, "只支持 x86-64 / ARM64 的 PLT/GOT 交叉引用");
         if let Some(imports) = &info.imports {
             report.imports = unknown_rows(imports.iter().cloned(), "架构不支持，无法判定调用点");
         }
@@ -397,7 +411,8 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
         }
         return report;
     };
-    let Some(jump_slots) = elf_jump_slots(bytes, info, &symbols) else {
+    let slot_type = if info.machine == 183 { 1026 } else { 7 };
+    let Some(jump_slots) = elf_jump_slots(bytes, info, &symbols, slot_type) else {
         let mut report = empty_report(arch, "没有 JUMP_SLOT 重定位（静态链接或节表缺失）");
         if let Some(imports) = &info.imports {
             report.imports = unknown_rows(imports.iter().cloned(), "没有 JUMP_SLOT 重定位");
@@ -429,6 +444,10 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
         }
         scanned += data.len();
         exec_data.push((section, data));
+    }
+
+    if info.machine == 183 {
+        return aarch64::scan_elf(arch, &symbols, &jump_slots, &exec_data, complete, scanned);
     }
 
     // 第一遍：PLT 桩（`FF /4` 经 GOT）→ 桩地址 → 符号。
@@ -508,9 +527,21 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
         }
     }
 
+    build_elf_report(arch, &symbols, &jump_slots, &sites, complete, scanned)
+}
+
+/// 各架构 ELF 扫描共用的报告构造。
+pub(super) fn build_elf_report(
+    arch: &str,
+    symbols: &[elf::DynamicSymbol],
+    jump_slots: &[(u64, usize)],
+    sites: &BTreeMap<usize, BTreeSet<RawSite>>,
+    complete: bool,
+    scanned: usize,
+) -> XrefReport {
     let mut rows = Vec::new();
     let mut seen: BTreeSet<usize> = BTreeSet::new();
-    for (got, symbol) in &jump_slots {
+    for (got, symbol) in jump_slots {
         if !seen.insert(*symbol) {
             continue;
         }
@@ -563,6 +594,7 @@ fn elf_jump_slots(
     bytes: &[u8],
     info: &elf::ElfInfo,
     symbols: &[elf::DynamicSymbol],
+    slot_type: u32,
 ) -> Option<Vec<(u64, usize)>> {
     let known: BTreeSet<usize> = symbols.iter().map(|symbol| symbol.index).collect();
     let mut slots = Vec::new();
@@ -571,7 +603,7 @@ fn elf_jump_slots(
         if section.sh_type != 4 && section.sh_type != 9 {
             continue;
         }
-        // RELA 24 字节 / REL 16 字节，只认 x86-64 的 JUMP_SLOT(=7)。
+        // RELA 24 字节 / REL 16 字节；JUMP_SLOT 的编号按架构传入（x86-64=7，ARM64=1026）。
         let entry_size = if section.sh_type == 4 { 24 } else { 16 };
         let count = section.size as usize / entry_size;
         let Some(data) = slice_at(bytes, section.offset as usize, count * entry_size) else {
@@ -583,7 +615,7 @@ fn elf_jump_slots(
             let info_word = u64::from_le_bytes(data[base + 8..base + 16].try_into().ok()?);
             let kind = info_word as u32;
             let symbol = (info_word >> 32) as usize;
-            if kind == 7 && known.contains(&symbol) {
+            if kind == slot_type && known.contains(&symbol) {
                 found_table = true;
                 slots.push((got, symbol));
             }
@@ -698,7 +730,8 @@ mod tests {
     #[test]
     fn unsupported_arch_stays_unknown() {
         let mut file = tiny_pe(0x102a);
-        file[0x44..0x46].copy_from_slice(&0xaa64u16.to_le_bytes());
+        // ARM32 目前不在 xref 支持面内（ARM64 已支持）。
+        file[0x44..0x46].copy_from_slice(&0x01c0u16.to_le_bytes());
         let info = pe::parse(&file).expect("parse");
         let report = scan_pe(&file, &info);
         assert!(!report.complete);

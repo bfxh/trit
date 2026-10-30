@@ -212,7 +212,8 @@ pub fn parse(bytes: &[u8]) -> Result<PeInfo, ParseError> {
     let imports = parse_imports(bytes, dirs[1], &sections, headers_size, plus);
     let exports = parse_exports(bytes, dirs[0], &sections, headers_size);
     let debug_pdb = parse_debug_pdb(bytes, dirs[6], &sections, headers_size);
-    let runtime_functions = parse_runtime_functions(bytes, dirs[3], &sections, headers_size);
+    let runtime_functions =
+        parse_runtime_functions(bytes, dirs[3], &sections, headers_size, machine);
     let (has_security_dir, has_signed_data) = parse_security(bytes, dirs[4]);
     let rich_header = bytes
         .get(0x40..pe_off)
@@ -471,28 +472,65 @@ fn parse_runtime_functions(
     dir: (u32, u32),
     sections: &[Section],
     headers_size: u32,
+    machine: u16,
 ) -> Option<Vec<RuntimeFunction>> {
     if dir.0 == 0 {
         return None;
     }
     let base = rva_to_offset(dir.0, sections, headers_size)?;
-    let count = (dir.1 as usize / 12).min(65_536);
+    // x86-64 的条目 12 字节（begin/end/unwind）；ARM64/ARM 是 8 字节（begin/unwind），
+    // 结束地址要靠下一条的 begin 推。
+    let entry_size = match machine {
+        0x8664 => 12,
+        0xaa64 | 0x01c0 | 0x01c4 => 8,
+        _ => return None,
+    };
+    let count = (dir.1 as usize / entry_size).min(65_536);
     if count == 0 {
         return None;
     }
-    let mut functions = Vec::with_capacity(count);
+    let mut begins = Vec::with_capacity(count);
     for index in 0..count {
-        let off = base + index * 12;
+        let off = base + index * entry_size;
         let begin = u32_at(bytes, off)?;
-        let end = u32_at(bytes, off + 4)?;
-        if begin == 0 && end == 0 {
+        if begin == 0 {
             break;
         }
-        if end <= begin {
-            // 坏条目：整表不可信，宁可退回"没有精确边界"。
+        begins.push(begin);
+    }
+    if begins.is_empty() {
+        return None;
+    }
+    if entry_size == 12 {
+        let mut functions = Vec::with_capacity(begins.len());
+        for (index, begin) in begins.iter().enumerate() {
+            let end = u32_at(bytes, base + index * 12 + 4)?;
+            if end <= *begin {
+                return None;
+            }
+            functions.push(RuntimeFunction { begin: *begin, end });
+        }
+        return Some(functions);
+    }
+    // ARM 系：end = 下一函数 begin；最后一个用可执行节末尾兜底。
+    begins.sort_unstable();
+    begins.dedup();
+    let image_end = sections
+        .iter()
+        .filter(|section| section.executable())
+        .map(|section| {
+            section
+                .virtual_address
+                .saturating_add(section.mapped_size())
+        })
+        .max()?;
+    let mut functions = Vec::with_capacity(begins.len());
+    for (index, begin) in begins.iter().enumerate() {
+        let end = begins.get(index + 1).copied().unwrap_or(image_end);
+        if end <= *begin {
             return None;
         }
-        functions.push(RuntimeFunction { begin, end });
+        functions.push(RuntimeFunction { begin: *begin, end });
     }
     Some(functions)
 }

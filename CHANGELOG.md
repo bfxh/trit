@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（`trit-re` M3：ARM64 交叉引用与函数边界）
+
+- **PE ARM64**：`.pdata` 条目是 8 字节（`begin + unwind`），结束地址由下一条的 `begin` 推出、
+  最后一条用可执行节末尾兜底；x86-64 仍是 12 字节（`begin/end/unwind`），按 machine 分派。
+- **ARM64 交叉引用**：识别 `adrp + [add] + ldr + blr`（直接调用）与 `adrp + ldr + br`
+  （导入跳板），槽位必须精确命中 IAT；跳板再用 `bl`/`b` 的目标展开到真正的调用方。
+  PE 的扫描全程在 RVA 空间（ADRP 的页运算与 image base 无关）。
+- **ELF ARM64**：`JUMP_SLOT` 编号 1026、PLT 桩 `adrp + ldr + br`、调用方 `bl`/`b`，
+  以及非 PLT 的直接 `blr` 经 GOT；x86-64 的 7 与 ARM64 的 1026 共用同一套报告构造。
+- **启发式函数边界**同步支持 ARM64（`bl`/`b` 目标），仍只用于展示。
+- `xref` 拆成目录模块（`xref/mod.rs` + `xref/aarch64.rs`），单文件行数保持预算内。
+- 测试 **59** 条（44 lib + 3 ARM64 集成 + 5 ELF + 4 PE + 2 CLI + 1 doctest）：
+  合成 PE ARM64 的直接 `blr`、跳板展开、`.pdata` 8 字节边界；合成 ELF ARM64 的 PLT→`bl` 链路。
+- **局限**：本机是 x64，**没有真实 ARM64 样本校准**；`adrp` 窗口最多 3 条指令，
+  寄存器经 `mov` 搬运的间接调用会漏（该导入可能保持 `False`），仍未做完整解码。
+
 ### Added（`trit-re` M2：函数级归属与同函数能力共现）
 
 - 函数边界：PE x86-64 读 `.pdata` 的 `RUNTIME_FUNCTION`（精确）；ELF 读 `STT_FUNC`

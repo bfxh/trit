@@ -309,3 +309,200 @@ fn write_shdr(
     put_u64(file, base + 48, 1);
     put_u64(file, base + 56, entsize);
 }
+
+// ---------- ARM64（AArch64）夹具 ----------
+
+/// `adrp xR, page_of(target)`。
+pub fn arm64_adrp(pc: u64, target: u64, register: u32) -> u32 {
+    let delta = ((target & !0xFFF) as i64 - (pc & !0xFFF) as i64) >> 12;
+    let imm = delta as u32 & 0x1F_FFFF;
+    0x9000_0000 | ((imm & 0x3) << 29) | (((imm >> 2) & 0x7_FFFF) << 5) | register
+}
+
+/// `ldr xT, [xR, #offset]`（64 位无符号偏移，offset 必须是 8 的倍数）。
+pub fn arm64_ldr(register: u32, offset: u64, target: u32) -> u32 {
+    assert_eq!(offset % 8, 0);
+    0xF940_0000 | (((offset / 8) as u32) << 10) | (register << 5) | target
+}
+
+/// `blr xR`。
+pub fn arm64_blr(register: u32) -> u32 {
+    0xD63F_0000 | (register << 5)
+}
+
+/// `br xR`。
+pub fn arm64_br(register: u32) -> u32 {
+    0xD61F_0000 | (register << 5)
+}
+
+/// `bl target`。
+pub fn arm64_bl(pc: u64, target: u64) -> u32 {
+    let delta = ((target as i64 - pc as i64) >> 2) as u32 & 0x03FF_FFFF;
+    0x9400_0000 | delta
+}
+
+pub fn put_insn(buf: &mut [u8], off: usize, insn: u32) {
+    buf[off..off + 4].copy_from_slice(&insn.to_le_bytes());
+}
+
+/// 最小 PE32+ ARM64：1 个导入、`.pdata` 8 字节条目（0x1000 起）。
+///
+/// `thunk` 为真时 `.text` 先 `bl` 到 0x1020 的导入跳板；否则直接在 0x1008 `blr`。
+pub fn pe_arm64_sample(thunk: bool) -> Vec<u8> {
+    let mut file = vec![0u8; 0xC00];
+    file[..2].copy_from_slice(b"MZ");
+    put_u32(&mut file, 0x3c, 0x40);
+    file[0x40..0x44].copy_from_slice(b"PE\0\0");
+    let coff = 0x44;
+    put_u16(&mut file, coff, 0xaa64);
+    put_u16(&mut file, coff + 2, 3);
+    put_u16(&mut file, coff + 16, 0xF0);
+    let opt = coff + 20;
+    put_u16(&mut file, opt, 0x20b);
+    put_u32(&mut file, opt + 16, 0x1000);
+    put_u64(&mut file, opt + 24, 0x1_4000_0000);
+    put_u32(&mut file, opt + 32, 0x1000);
+    put_u32(&mut file, opt + 36, 0x200);
+    put_u32(&mut file, opt + 56, 0x4000);
+    put_u32(&mut file, opt + 60, 0x200);
+    put_u16(&mut file, opt + 68, 3);
+    put_u32(&mut file, opt + 108, 16);
+    let dirs = opt + 112;
+    put_u32(&mut file, dirs + 8, 0x2000);
+    put_u32(&mut file, dirs + 12, 40);
+    put_u32(&mut file, dirs + 24, 0x3000);
+    put_u32(&mut file, dirs + 28, 8);
+
+    let sections = opt + 0xF0;
+    write_section(
+        &mut file,
+        sections,
+        b".text\0\0\0",
+        0x400,
+        0x1000,
+        0x400,
+        0x200,
+        0x6000_0020,
+    );
+    write_section(
+        &mut file,
+        sections + 40,
+        b".rdata\0\0",
+        0x400,
+        0x2000,
+        0x400,
+        0x600,
+        0x4000_0040,
+    );
+    write_section(
+        &mut file,
+        sections + 80,
+        b".pdata\0\0",
+        0x8,
+        0x3000,
+        0x200,
+        0xA00,
+        0x4000_0040,
+    );
+    // ARM64 .pdata 条目：begin + unwind（8 字节），结束地址由下一条推。
+    put_u32(&mut file, 0xA00, 0x1000);
+    put_u32(&mut file, 0xA04, 0);
+
+    // 导入表：KERNEL32.dll!LoadLibraryA，IAT 槽位 0x2040
+    let descriptor = 0x600usize;
+    put_u32(&mut file, descriptor, 0x2040);
+    put_u32(&mut file, descriptor + 12, 0x2080);
+    put_u32(&mut file, descriptor + 16, 0x2040);
+    put_u64(&mut file, 0x640, 0x2060);
+    put_u16(&mut file, 0x660, 0);
+    let load_library = b"LoadLibraryA\0";
+    file[0x662..0x662 + load_library.len()].copy_from_slice(load_library);
+    file[0x680..0x68D].copy_from_slice(b"KERNEL32.dll\0");
+
+    if thunk {
+        // 0x1000: bl 0x1020；0x1020: 跳板 adrp/ldr/br
+        put_insn(&mut file, 0x200, arm64_bl(0x1000, 0x1020));
+        put_insn(&mut file, 0x220, arm64_adrp(0x1020, 0x2000, 16));
+        put_insn(&mut file, 0x224, arm64_ldr(16, 0x40, 17));
+        put_insn(&mut file, 0x228, arm64_br(17));
+    } else {
+        put_insn(&mut file, 0x200, arm64_adrp(0x1000, 0x2000, 9));
+        put_insn(&mut file, 0x204, arm64_ldr(9, 0x40, 9));
+        put_insn(&mut file, 0x208, arm64_blr(9));
+    }
+    file
+}
+
+/// 最小 ELF64 ARM64：1 个导入（`socket`）、JUMP_SLOT(1026)、PLT 桩 + `bl` 调用方。
+pub fn elf_arm64_sample() -> Vec<u8> {
+    let mut file = vec![0u8; 0x740 + 512];
+    file[..4].copy_from_slice(b"\x7fELF");
+    file[4] = 2;
+    file[5] = 1;
+    file[6] = 1;
+    put_u16(&mut file, 16, 2);
+    put_u16(&mut file, 18, 183);
+    put_u32(&mut file, 20, 1);
+    put_u64(&mut file, 24, 0x40_0100);
+    put_u64(&mut file, 32, 0x40);
+    put_u64(&mut file, 40, 0x500);
+    put_u16(&mut file, 52, 64);
+    put_u16(&mut file, 54, 56);
+    put_u16(&mut file, 56, 1);
+    put_u16(&mut file, 58, 64);
+    put_u16(&mut file, 60, 9);
+    put_u16(&mut file, 62, 8);
+    put_u32(&mut file, 0x40, 1);
+    put_u32(&mut file, 0x44, 5);
+    put_u64(&mut file, 0x50, 0x40_0000);
+    put_u64(&mut file, 0x60, 0x400);
+    put_u64(&mut file, 0x68, 0x1000);
+
+    // .text：0x400110 处 bl → PLT 桩 0x400500
+    put_insn(&mut file, 0x110, arm64_bl(0x40_0110, 0x40_0500));
+
+    // .dynstr: "\0socket\0"
+    file[0x300] = 0;
+    file[0x301..0x308].copy_from_slice(b"socket\0");
+    put_u32(&mut file, 0x398, 1);
+    file[0x39C] = 0x12;
+    let comment = b"GCC: (GNU) 13.2.0\0";
+    file[0x3B0..0x3B0 + comment.len()].copy_from_slice(comment);
+    put_u32(&mut file, 0x400, 4);
+    put_u32(&mut file, 0x404, 8);
+    put_u32(&mut file, 0x408, 3);
+    file[0x40C..0x410].copy_from_slice(b"GNU\0");
+    file[0x410..0x418].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef, 1, 2, 3, 4]);
+    file[0x440..0x440 + SHSTRTAB.len()].copy_from_slice(SHSTRTAB);
+
+    // .plt：adrp x16, 0x400000; ldr x17, [x16, #0x600]; br x17
+    put_insn(&mut file, 0x4A0, arm64_adrp(0x40_0500, 0x40_0600, 16));
+    put_insn(&mut file, 0x4A4, arm64_ldr(16, 0x600, 17));
+    put_insn(&mut file, 0x4A8, arm64_br(17));
+    // .rela.plt：JUMP_SLOT(1026)，GOT 0x400600 → 符号 1（socket）
+    put_u64(&mut file, 0x4C0, 0x40_0600);
+    put_u64(&mut file, 0x4C8, (1u64 << 32) | 1026);
+    put_u64(&mut file, 0x4D0, 0);
+
+    let sh = 0x500;
+    write_shdr(&mut file, sh + 64, 1, 1, 6, 0x40_0100, 0x100, 0x200, 0, 0);
+    write_shdr(&mut file, sh + 128, 7, 3, 2, 0x40_0300, 0x300, 0x80, 0, 0);
+    write_shdr(
+        &mut file,
+        sh + 192,
+        15,
+        11,
+        2,
+        0x40_0380,
+        0x380,
+        0x30,
+        2,
+        24,
+    );
+    write_shdr(&mut file, sh + 256, 23, 1, 0, 0, 0x3B0, 0x20, 0, 0);
+    write_shdr(&mut file, sh + 320, 32, 7, 2, 0x40_0400, 0x400, 0x24, 0, 0);
+    write_shdr(&mut file, sh + 384, 51, 1, 6, 0x40_0500, 0x4A0, 0x20, 0, 16);
+    write_shdr(&mut file, sh + 448, 56, 4, 2, 0x40_04C0, 0x4C0, 0x18, 3, 24);
+    write_shdr(&mut file, sh + 512, 67, 3, 0, 0, 0x440, 0x60, 0, 0);
+    file
+}

@@ -137,7 +137,10 @@ pub fn build_pe(bytes: &[u8], info: &pe::PeInfo, xref: &XrefReport) -> FunctionR
         ),
         _ => {
             notes.push("没有 .pdata：函数边界退化为启发式，只用于展示".to_string());
-            (heuristic_ranges(&exec, info.entry_rva as u64), false)
+            (
+                heuristic_ranges(&exec, info.entry_rva as u64, arch_of_pe(info.machine)),
+                false,
+            )
         }
     };
     normalize(&mut ranges);
@@ -151,7 +154,10 @@ pub fn build_elf(bytes: &[u8], info: &elf::ElfInfo, xref: &XrefReport) -> Functi
     let symbols = info.function_symbols(bytes);
     let (mut ranges, exact) = if symbols.is_empty() {
         notes.push("没有带大小的 STT_FUNC：函数边界退化为启发式，只用于展示".to_string());
-        (heuristic_ranges(&exec, info.entry), false)
+        (
+            heuristic_ranges(&exec, info.entry, arch_of_elf(info.machine)),
+            false,
+        )
     } else {
         (
             symbols
@@ -197,7 +203,29 @@ fn elf_exec_sections<'a>(bytes: &'a [u8], info: &elf::ElfInfo) -> Vec<(u64, &'a 
 }
 
 /// 启发式边界：入口 + 直接 `E8`/`E9` 的目标；区间截到下一个起点或所在节末尾。
-fn heuristic_ranges(exec: &[(u64, &[u8])], entry: u64) -> Vec<Function> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Arch {
+    X86,
+    Arm64,
+}
+
+fn arch_of_pe(machine: u16) -> Arch {
+    if machine == 0xaa64 {
+        Arch::Arm64
+    } else {
+        Arch::X86
+    }
+}
+
+fn arch_of_elf(machine: u16) -> Arch {
+    if machine == 183 {
+        Arch::Arm64
+    } else {
+        Arch::X86
+    }
+}
+
+fn heuristic_ranges(exec: &[(u64, &[u8])], entry: u64, arch: Arch) -> Vec<Function> {
     let bounds: Vec<(u64, u64)> = exec
         .iter()
         .map(|(base, data)| (*base, base.saturating_add(data.len() as u64)))
@@ -207,23 +235,48 @@ fn heuristic_ranges(exec: &[(u64, &[u8])], entry: u64) -> Vec<Function> {
         starts.insert(entry);
     }
     for (base, data) in exec {
-        let mut index = 0usize;
-        while index + 5 <= data.len() {
-            if data[index] == 0xE8 || data[index] == 0xE9 {
-                let rel = i32::from_le_bytes([
-                    data[index + 1],
-                    data[index + 2],
-                    data[index + 3],
-                    data[index + 4],
-                ]);
-                let target = base
-                    .wrapping_add(index as u64 + 5)
-                    .wrapping_add(rel as i64 as u64);
-                if in_exec(target, &bounds) {
-                    starts.insert(target);
+        match arch {
+            Arch::X86 => {
+                let mut index = 0usize;
+                while index + 5 <= data.len() {
+                    if data[index] == 0xE8 || data[index] == 0xE9 {
+                        let rel = i32::from_le_bytes([
+                            data[index + 1],
+                            data[index + 2],
+                            data[index + 3],
+                            data[index + 4],
+                        ]);
+                        let target = base
+                            .wrapping_add(index as u64 + 5)
+                            .wrapping_add(rel as i64 as u64);
+                        if in_exec(target, &bounds) {
+                            starts.insert(target);
+                        }
+                    }
+                    index += 1;
                 }
             }
-            index += 1;
+            Arch::Arm64 => {
+                let mut index = 0usize;
+                while index + 4 <= data.len() {
+                    let word = u32::from_le_bytes([
+                        data[index],
+                        data[index + 1],
+                        data[index + 2],
+                        data[index + 3],
+                    ]);
+                    let opcode = word & 0xFC00_0000;
+                    if opcode == 0x9400_0000 || opcode == 0x1400_0000 {
+                        let imm = sign_extend_28(((word & 0x03FF_FFFF) as i64) << 2);
+                        let pc = base + index as u64;
+                        let target = pc.wrapping_add(imm as u64);
+                        if in_exec(target, &bounds) {
+                            starts.insert(target);
+                        }
+                    }
+                    index += 4;
+                }
+            }
         }
     }
     let mut ranges = Vec::new();
@@ -248,6 +301,10 @@ fn heuristic_ranges(exec: &[(u64, &[u8])], entry: u64) -> Vec<Function> {
         }
     }
     ranges
+}
+
+fn sign_extend_28(value: i64) -> i64 {
+    (value << 36) >> 36
 }
 
 fn in_exec(addr: u64, bounds: &[(u64, u64)]) -> bool {
