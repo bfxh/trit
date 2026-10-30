@@ -2709,6 +2709,22 @@ MUTANTS = [
         "filter": 'eh_frame_boundaries_enable_attribution',
     },
     {
+        "name": 'trit-re: TLS 只读一个回调',
+        "file": 'crates/trit-re/src/pe.rs',
+        "old": '    for _ in 0..64 {',
+        "new": '    for _ in 0..1 {',
+        "pkg": "trit-re",
+        "filter": 'parses_clr_and_tls_facts',
+    },
+    {
+        "name": 'trit-re: CLR 入口 token 读成 flags',
+        "file": 'crates/trit-re/src/pe.rs',
+        "old": '    let entry_token = u32_at(bytes, base + 20).unwrap_or(0);',
+        "new": '    let entry_token = u32_at(bytes, base + 16).unwrap_or(0);',
+        "pkg": "trit-re",
+        "filter": 'parses_clr_and_tls_facts',
+    },
+    {
         "name": 'trit-re: x64 取地址不记录',
         "file": 'crates/trit-re/src/xref/mod.rs',
         "old": '                    taken.insert(target.wrapping_sub(image_base));',

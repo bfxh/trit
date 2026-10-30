@@ -124,6 +124,26 @@ fn xref_finds_the_iat_call_site() {
 }
 
 #[test]
+fn parses_clr_and_tls_facts() {
+    let bytes = support::pe_sample();
+    let info = pe::parse(&bytes).expect("parse");
+    let clr = info.clr.as_ref().expect("clr header");
+    assert_eq!(clr.runtime_version.as_deref(), Some("v4.0.30319"));
+    assert_eq!(clr.flags, 1);
+    assert_eq!(clr.entry_token, 0x0600_0001);
+    assert!(info.clr_dir_present);
+    assert!(info.tls_dir_present);
+    assert_eq!(
+        info.tls_callbacks.as_deref(),
+        Some([0x1010u32, 0x1020].as_slice())
+    );
+
+    let triage = analyze(&bytes);
+    assert_eq!(triage.facts.get("pe.managed"), Some(Ternary::True));
+    assert_eq!(triage.facts.get("pe.tls_callbacks"), Some(Ternary::True));
+}
+
+#[test]
 fn every_truncation_is_an_error_or_a_parse_never_a_panic() {
     let bytes = support::pe_sample();
     for cut in [

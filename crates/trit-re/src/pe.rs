@@ -133,10 +133,29 @@ pub struct PeInfo {
     pub rich_header: bool,
     /// `.pdata` 函数表；`None` 表示没有异常目录或无法解析。
     pub runtime_functions: Option<Vec<RuntimeFunction>>,
+    /// 是否存在 CLR（.NET）目录。
+    pub clr_dir_present: bool,
+    /// CLR 头；`None` 表示目录存在但无法解析。
+    pub clr: Option<ClrHeader>,
+    /// 是否存在 TLS 目录。
+    pub tls_dir_present: bool,
+    /// TLS 回调 RVA 列表；`None` 表示目录存在但回调数组无法解析。
+    pub tls_callbacks: Option<Vec<u32>>,
     /// 叠加段。
     pub overlay: Option<Overlay>,
     /// 头部大小（SizeOfHeaders）。
     pub headers_size: u32,
+}
+
+/// CLR（.NET）头摘录。
+#[derive(Debug, Clone)]
+pub struct ClrHeader {
+    /// 元数据里的运行时版本串（如 `v4.0.30319`）。
+    pub runtime_version: Option<String>,
+    /// `IMAGE_COR20_HEADER.Flags`。
+    pub flags: u32,
+    /// 入口 token（托管入口）或 RVA。
+    pub entry_token: u32,
 }
 
 /// 解析 PE；不是 PE 或结构损坏时返回错误。
@@ -214,6 +233,9 @@ pub fn parse(bytes: &[u8]) -> Result<PeInfo, ParseError> {
     let debug_pdb = parse_debug_pdb(bytes, dirs[6], &sections, headers_size);
     let runtime_functions =
         parse_runtime_functions(bytes, dirs[3], &sections, headers_size, machine);
+    let (clr_dir_present, clr) = parse_clr(bytes, dirs[14], &sections, headers_size);
+    let (tls_dir_present, tls_callbacks) =
+        parse_tls(bytes, dirs[9], &sections, headers_size, image_base, plus);
     let (has_security_dir, has_signed_data) = parse_security(bytes, dirs[4]);
     let rich_header = bytes
         .get(0x40..pe_off)
@@ -233,6 +255,10 @@ pub fn parse(bytes: &[u8]) -> Result<PeInfo, ParseError> {
         exports,
         debug_pdb,
         runtime_functions,
+        clr_dir_present,
+        clr,
+        tls_dir_present,
+        tls_callbacks,
         has_security_dir,
         has_signed_data,
         rich_header,
@@ -465,6 +491,122 @@ fn parse_debug_pdb(
         }
     }
     None
+}
+
+fn parse_clr(
+    bytes: &[u8],
+    dir: (u32, u32),
+    sections: &[Section],
+    headers_size: u32,
+) -> (bool, Option<ClrHeader>) {
+    if dir.0 == 0 {
+        return (false, None);
+    }
+    let Some(base) = rva_to_offset(dir.0, sections, headers_size) else {
+        return (true, None);
+    };
+    let Some(cb) = u32_at(bytes, base) else {
+        return (true, None);
+    };
+    if cb < 72 {
+        return (true, None);
+    }
+    let metadata_rva = u32_at(bytes, base + 8).unwrap_or(0);
+    let flags = u32_at(bytes, base + 16).unwrap_or(0);
+    let entry_token = u32_at(bytes, base + 20).unwrap_or(0);
+    let runtime_version = metadata_version(bytes, metadata_rva, sections, headers_size);
+    (
+        true,
+        Some(ClrHeader {
+            runtime_version,
+            flags,
+            entry_token,
+        }),
+    )
+}
+
+fn metadata_version(
+    bytes: &[u8],
+    rva: u32,
+    sections: &[Section],
+    headers_size: u32,
+) -> Option<String> {
+    if rva == 0 {
+        return None;
+    }
+    let base = rva_to_offset(rva, sections, headers_size)?;
+    if u32_at(bytes, base)? != 0x424a_5342 {
+        return None;
+    }
+    let length = u32_at(bytes, base + 12)? as usize;
+    if length == 0 || length > 4096 {
+        return None;
+    }
+    let raw = bytes.get(base + 16..base + 16 + length)?;
+    let text = String::from_utf8_lossy(raw)
+        .trim_end_matches(['\0', ' '])
+        .to_string();
+    if text.is_empty() { None } else { Some(text) }
+}
+
+fn parse_tls(
+    bytes: &[u8],
+    dir: (u32, u32),
+    sections: &[Section],
+    headers_size: u32,
+    image_base: u64,
+    plus: bool,
+) -> (bool, Option<Vec<u32>>) {
+    if dir.0 == 0 {
+        return (false, None);
+    }
+    let Some(base) = rva_to_offset(dir.0, sections, headers_size) else {
+        return (true, None);
+    };
+    let callbacks = if plus {
+        u64_at(bytes, base + 24)
+    } else {
+        u32_at(bytes, base + 12).map(|value| value as u64)
+    };
+    let Some(callbacks) = callbacks else {
+        return (true, None);
+    };
+    if callbacks == 0 {
+        return (true, Some(Vec::new()));
+    }
+    let Some(callbacks_rva) = callbacks
+        .checked_sub(image_base)
+        .and_then(|value| u32::try_from(value).ok())
+    else {
+        return (true, None);
+    };
+    let Some(mut offset) = rva_to_offset(callbacks_rva, sections, headers_size) else {
+        return (true, None);
+    };
+    let width = if plus { 8 } else { 4 };
+    let mut out = Vec::new();
+    for _ in 0..64 {
+        let value = if plus {
+            u64_at(bytes, offset)
+        } else {
+            u32_at(bytes, offset).map(|value| value as u64)
+        };
+        let Some(value) = value else {
+            break;
+        };
+        if value == 0 {
+            return (true, Some(out));
+        }
+        if let Some(callback) = value
+            .checked_sub(image_base)
+            .and_then(|value| u32::try_from(value).ok())
+            && rva_to_offset(callback, sections, headers_size).is_some()
+        {
+            out.push(callback);
+        }
+        offset += width;
+    }
+    (true, Some(out))
 }
 
 fn parse_runtime_functions(

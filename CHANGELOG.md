@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（`trit-re`：PE CLR / TLS 回调事实）
+
+- 解析 CLR 目录（data dir 14）：`cb`、元数据 RVA、`Flags`、入口 token；从元数据根
+  （`BSJB`）读运行时版本串（如 `v4.0.30319`）。
+- 解析 TLS 目录（data dir 9）：`AddressOfCallBacks`（VA→RVA），最多 64 个回调，
+  每个都校验能映射回映像内。
+- 新事实 `pe.managed` / `pe.tls_callbacks`，保持三值：目录缺失 `False`、
+  目录存在但解析失败 `Unknown`、解析成功按有无给 `True`/`False`。
+- 真实读数：`System.Management.Automation.dll` → managed `v4.0.30319`、flags `0xc`；
+  `powershell.exe` → TLS 目录存在但 0 回调；`notepad.exe` → 两者都无。
+- 测试 **75**；变异 **14/14**。
+
 ### Added（`trit-re`：ELF `.eh_frame` 函数边界 + NUL 清理）
 
 - 新增 `crates/trit-re/src/elf/eh.rs`：解析 `.eh_frame` 的 CIE/FDE（支持 `pcrel|sdata4`、
