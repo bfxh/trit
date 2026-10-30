@@ -35,3 +35,7 @@ path = "src/bin/gguf-to-mod.rs"
 [[bench]]
 name = "texture"
 harness = false
+
+[[bench]]
+name = "sample"
+harness = false

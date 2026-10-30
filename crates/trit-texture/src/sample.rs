@@ -7,15 +7,31 @@
 //! 只在 3 级调色板上取值 ⇒ 双线性必须解 4 个纹素（可能跨 2×2 个块），
 //! 但不需要把整张图展开成 RGBA：一次采样最多碰 4 个块。块形状**不写死**，
 //! 统一取 `BLOCK_WIDTH` / `BLOCK_HEIGHT`（当前 4×10，见 lib.rs）。
+//!
+//! ## 实测（本机，`cargo bench -p trit-texture --bench sample`，光栅顺序，5 轮中位数）
+//!
+//! | 路径 | 512×520 | 2048×2040 |
+//! |---|---:|---:|
+//! | 最近邻（压缩域） | 12.8 ns | 12.8 ns |
+//! | 双线性（压缩域按需解） | 69.6 ns | 67.8 ns |
+//! | 双线性（`Sampler` + 块缓存） | 59.8 ns | 58.2 ns |
+//! | 双线性（整图 RGBA） | 32.7 ns | 29.9 ns |
+//!
+//! **结论（如实记）：CPU 上压缩域双线性比「整图解码一次再过滤」慢约 2×**，
+//! 换来 **13.3× 的常驻内存**（2048×2040：1.2 MB vs 16 MB）。所以：
+//! - 这个模块在 CPU 侧是**参考实现 / GPU 对拍基线**，不是快路径；
+//! - 真正的收益在 GPU——那里瓶颈是带宽，RGBA 路径要多搬 13× 的数据；
+//! - 别把「压缩域采样更快」写进宣传：CPU 上不成立，实测会打脸。
 
 use crate::ttx2::TtxDocument;
-use crate::{
-    BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_PAYLOAD_BYTES, TritTexture, palette_from_endpoints,
-    unpack_trits,
-};
-use trit_core::value::Ternary;
+use crate::{BLOCK_HEIGHT, BLOCK_WIDTH, TritTexture, palette_from_endpoints};
+
+/// 3^k 查表：5 trit/字节是 `Σ digit·3^k`，取第 k 位就是 `(byte / 3^k) % 3`。
+const POW3: [u32; 5] = [1, 3, 9, 27, 81];
 
 /// 取一个纹素的 RGBA（最近邻，越界 clamp-to-edge）。TT3 不存 alpha，恒 255。
+///
+/// **只解这一个 trit**：整块 `unpack_trits` 是 40 次除法，采样热路径付不起。
 pub fn texel(texture: &TritTexture, x: usize, y: usize) -> [u8; 4] {
     let x = x.min(texture.width.saturating_sub(1));
     let y = y.min(texture.height.saturating_sub(1));
@@ -24,17 +40,11 @@ pub fn texel(texture: &TritTexture, x: usize, y: usize) -> [u8; 4] {
     let block = &texture.blocks[block_index];
     let e0 = u16::from_be_bytes([block[0], block[1]]);
     let e1 = u16::from_be_bytes([block[2], block[3]]);
-    let mut payload = [0u8; TRIT_PAYLOAD_BYTES];
-    payload.copy_from_slice(&block[4..]);
-    let indices = unpack_trits(&payload);
     let palette = palette_from_endpoints(e0, e1);
     let local = (y % BLOCK_HEIGHT) * BLOCK_WIDTH + (x % BLOCK_WIDTH);
-    let slot = match indices[local] {
-        Ternary::False => 0,
-        Ternary::Unknown => 1,
-        Ternary::True => 2,
-    };
-    let (r, g, b) = palette[slot];
+    let byte = block[4 + local / 5] as u32;
+    let slot = (byte / POW3[local % 5]) % 3;
+    let (r, g, b) = palette[slot as usize];
     [r, g, b, 255]
 }
 
@@ -70,6 +80,88 @@ pub fn sample_bilinear(texture: &TritTexture, u: f32, v: f32) -> [u8; 4] {
     }
     out[3] = 255;
     out
+}
+
+/// 有状态的采样器：带一块**块调色板缓存**。
+///
+/// 光栅扫描下同一块会被连采 `BLOCK_PIXELS` 次（4×10 = 40 次），每次重解端点+调色板
+/// 是纯浪费；直接映射 4 槽缓存把「每样点 4 次解码」压到「每块一次」。
+pub struct Sampler<'a> {
+    texture: &'a TritTexture,
+    cache: [CacheSlot; 4],
+}
+
+/// (块下标, 该块的 3 级调色板)。
+type CacheSlot = (usize, [(u8, u8, u8); 3]);
+
+impl<'a> Sampler<'a> {
+    /// 绑定一张纹理。
+    pub fn new(texture: &'a TritTexture) -> Self {
+        Self {
+            texture,
+            cache: [(usize::MAX, [(0, 0, 0); 3]); 4],
+        }
+    }
+
+    #[inline]
+    fn palette(&mut self, block_index: usize) -> [(u8, u8, u8); 3] {
+        let slot = block_index & 3;
+        if self.cache[slot].0 == block_index {
+            return self.cache[slot].1;
+        }
+        let block = &self.texture.blocks[block_index];
+        let e0 = u16::from_be_bytes([block[0], block[1]]);
+        let e1 = u16::from_be_bytes([block[2], block[3]]);
+        let palette = palette_from_endpoints(e0, e1);
+        self.cache[slot] = (block_index, palette);
+        palette
+    }
+
+    /// 最近邻取纹素（越界 clamp-to-edge）。
+    pub fn texel(&mut self, x: usize, y: usize) -> [u8; 4] {
+        let tex = self.texture;
+        let x = x.min(tex.width.saturating_sub(1));
+        let y = y.min(tex.height.saturating_sub(1));
+        let block_cols = tex.width / BLOCK_WIDTH;
+        let block_index = (y / BLOCK_HEIGHT) * block_cols + (x / BLOCK_WIDTH);
+        let local = (y % BLOCK_HEIGHT) * BLOCK_WIDTH + (x % BLOCK_WIDTH);
+        let byte = tex.blocks[block_index][4 + local / 5] as u32;
+        let slot = (byte / POW3[local % 5]) % 3;
+        let (r, g, b) = self.palette(block_index)[slot as usize];
+        [r, g, b, 255]
+    }
+
+    /// 双线性采样（语义与 [`sample_bilinear`] 完全一致，只是复用调色板缓存）。
+    pub fn sample_bilinear(&mut self, u: f32, v: f32) -> [u8; 4] {
+        let tex = self.texture;
+        if tex.width == 0 || tex.height == 0 || tex.blocks.is_empty() {
+            return [0, 0, 0, 255];
+        }
+        let fx = u.clamp(0.0, 1.0) * tex.width as f32 - 0.5;
+        let fy = v.clamp(0.0, 1.0) * tex.height as f32 - 0.5;
+        let x0 = fx.floor();
+        let y0 = fy.floor();
+        let tx = fx - x0;
+        let ty = fy - y0;
+        let w = tex.width as i64;
+        let h = tex.height as i64;
+        let xi = |i: i64| i.clamp(0, w - 1) as usize;
+        let yi = |i: i64| i.clamp(0, h - 1) as usize;
+        let (ix0, ix1) = (xi(x0 as i64), xi(x0 as i64 + 1));
+        let (iy0, iy1) = (yi(y0 as i64), yi(y0 as i64 + 1));
+        let p00 = self.texel(ix0, iy0);
+        let p10 = self.texel(ix1, iy0);
+        let p01 = self.texel(ix0, iy1);
+        let p11 = self.texel(ix1, iy1);
+        let mut out = [0u8; 4];
+        for c in 0..3 {
+            let top = p00[c] as f32 * (1.0 - tx) + p10[c] as f32 * tx;
+            let bottom = p01[c] as f32 * (1.0 - tx) + p11[c] as f32 * tx;
+            out[c] = (top * (1.0 - ty) + bottom * ty).round().clamp(0.0, 255.0) as u8;
+        }
+        out[3] = 255;
+        out
+    }
 }
 
 impl TtxDocument {
