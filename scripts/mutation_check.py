@@ -2805,6 +2805,30 @@ MUTANTS = [
         "filter": 'x64_address_only_import_is_unknown',
     },
 
+    {
+        "name": 'trit-re: ELF32 重定位把 r_info 当偏移',
+        "file": 'crates/trit-re/src/xref/mod.rs',
+        "old": '        let offset = u32::from_le_bytes(data.get(base..base + 4)?.try_into().ok()?);',
+        "new": '        let offset = u32::from_le_bytes(data.get(base + 4..base + 8)?.try_into().ok()?);',
+        "pkg": "trit-re",
+        "filter": 'elf32_pic_stub_is_resolved_through_get_pc_thunk',
+    },
+    {
+        "name": 'trit-re: GOT 基址忽略 add 立即数',
+        "file": 'crates/trit-re/src/xref/x86.rs',
+        "old": '                    bases.insert(return_address.wrapping_add(imm as i64 as u64));',
+        "new": '                    let _ = imm;\n                    bases.insert(return_address);',
+        "pkg": "trit-re",
+        "filter": 'elf32_pic_stub_is_resolved_through_get_pc_thunk',
+    },
+    {
+        "name": 'trit-re: ELF32 PLT 跳板算成调用点',
+        "file": 'crates/trit-re/src/xref/x86.rs',
+        "old": '                if kind == SiteKind::Jump && in_plt {',
+        "new": '                if false && in_plt {',
+        "pkg": "trit-re",
+        "filter": 'elf32_pic_stub_is_resolved_through_get_pc_thunk',
+    },
 ]
 
 
