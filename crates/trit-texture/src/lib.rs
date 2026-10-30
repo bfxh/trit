@@ -37,8 +37,12 @@ pub mod convert;
 mod endpoints;
 pub mod error;
 pub mod gguf;
+pub mod mip;
 #[cfg(feature = "png")]
 pub mod pngio;
+pub mod preview;
+pub mod raster;
+pub mod sample;
 pub mod ttx;
 pub mod ttx2;
 pub mod ttx3;
@@ -116,7 +120,7 @@ fn pack_trits(values: &[Ternary]) -> [u8; TRIT_PAYLOAD_BYTES] {
     out
 }
 
-fn unpack_trits(bytes: &[u8; TRIT_PAYLOAD_BYTES]) -> [Ternary; TRITS_PER_BLOCK] {
+pub(crate) fn unpack_trits(bytes: &[u8; TRIT_PAYLOAD_BYTES]) -> [Ternary; TRITS_PER_BLOCK] {
     let mut out = [Ternary::False; TRITS_PER_BLOCK];
     for (index, slot) in out.iter_mut().enumerate() {
         let digit = (bytes[index / 5] as u32 / 3u32.pow((index % 5) as u32)) % 3;

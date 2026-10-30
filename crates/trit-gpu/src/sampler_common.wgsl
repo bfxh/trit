@@ -1,0 +1,158 @@
+// TT3 块纹理解码的**公共部分**：计算内核与光栅化片元着色器共用一份，
+// 避免两边解码逻辑漂移（漂移会让 CPU↔GPU 对拍失效，却查不出原因）。
+//
+// 绑定约定（两个入口点都用这一套）：
+//   group(0) binding(0) = 块流（u32 数组，LE）
+//   group(0) binding(1) = 各级描述符
+//   group(0) binding(2) = Params
+// 计算内核另有 binding(3) 采样点、binding(4) 输出，见 `sampler_entry.wgsl`。
+//
+// 块几何必须与 `trit_texture::{BLOCK_WIDTH, BLOCK_HEIGHT}` 一致——
+// `trit-gpu` 里有一条测试直接读本文件做断言，改常量时两边一起改。
+const BLOCK_W: u32 = 8u;
+const BLOCK_H: u32 = 8u;
+//
+// 块布局（每块 12 字节 = 3 个 u32）：
+//   word0: e0hi e0lo e1hi e1lo（e0/e1 为 RGB565 的 BE u16）
+//   word1-2: 40 纹素 × 1 trit，5 trit/字节（基 3 打包，低位在前）
+
+struct Level {
+    // 该级在块流里的起始块序号
+    block_offset: u32,
+    width: u32,
+    height: u32,
+    block_cols: u32,
+    // 图集子矩形（该级纹素坐标）；rect_w/rect_h = 0 表示整级
+    rect_x: u32,
+    rect_y: u32,
+    rect_w: u32,
+    rect_h: u32,
+};
+
+struct Params {
+    level_count: u32,
+    // 0 = clamp, 1 = repeat, 2 = mirror
+    wrap: u32,
+    count: u32,
+    pad0: u32,
+};
+
+@group(0) @binding(0) var<storage, read> blocks: array<u32>;
+@group(0) @binding(1) var<storage, read> levels: array<Level>;
+@group(0) @binding(2) var<uniform> params: Params;
+
+fn expand5(v: u32) -> u32 {
+    return (v << 3u) | (v >> 2u);
+}
+
+fn expand6(v: u32) -> u32 {
+    return (v << 2u) | (v >> 4u);
+}
+
+// 块在 GPU 侧按 5 个 u32 存放（17 字节补齐到 20 字节）：前 4 字节是端点对，
+// 后面 13 字节是 64 个索引 trit 的基 3 打包。
+const BLOCK_WORDS: u32 = 5u;
+
+fn payload_byte(base: u32, k: u32) -> u32 {
+    let offset = 4u + k; // 跳过 4 字节端点
+    let word = blocks[base + offset / 4u];
+    return (word >> ((offset % 4u) * 8u)) & 0xffu;
+}
+
+// 与 CPU 的 wrap_index 同一套规则（负数先抬到非负再取模）。
+fn wrap_index(i: i32, n: i32, mode: u32) -> i32 {
+    if (mode == 0u) {
+        return clamp(i, 0, n - 1);
+    }
+    if (mode == 1u) {
+        return ((i % n) + n) % n;
+    }
+    let period = 2 * n;
+    let m = ((i % period) + period) % period;
+    if (m < n) {
+        return m;
+    }
+    return period - 1 - m;
+}
+
+fn texel_rgb(level: u32, x_in: i32, y_in: i32) -> vec3<f32> {
+    let lvl = levels[level];
+    // 有子矩形时 wrap 只在矩形内循环，避免采到邻居图集条目
+    let rw = select(lvl.width, lvl.rect_w, lvl.rect_w > 0u);
+    let rh = select(lvl.height, lvl.rect_h, lvl.rect_h > 0u);
+    let rx = select(0u, lvl.rect_x, lvl.rect_w > 0u);
+    let ry = select(0u, lvl.rect_y, lvl.rect_h > 0u);
+    let x = i32(rx) + wrap_index(x_in, i32(rw), params.wrap);
+    let y = i32(ry) + wrap_index(y_in, i32(rh), params.wrap);
+    let block_col = u32(x) / BLOCK_W;
+    let block_row = u32(y) / BLOCK_H;
+    let block_id = block_row * lvl.block_cols + block_col;
+    let index = (u32(y) % BLOCK_H) * BLOCK_W + (u32(x) % BLOCK_W);
+    let base = (lvl.block_offset + block_id) * BLOCK_WORDS;
+    let b0 = blocks[base] & 0xffu;
+    let b1 = (blocks[base] >> 8u) & 0xffu;
+    let b2 = (blocks[base] >> 16u) & 0xffu;
+    let b3 = (blocks[base] >> 24u) & 0xffu;
+    let e0 = (b0 << 8u) | b1;
+    let e1 = (b2 << 8u) | b3;
+    let r0 = expand5((e0 >> 11u) & 0x1fu);
+    let g0 = expand6((e0 >> 5u) & 0x3fu);
+    let b0c = expand5(e0 & 0x1fu);
+    let r1 = expand5((e1 >> 11u) & 0x1fu);
+    let g1 = expand6((e1 >> 5u) & 0x3fu);
+    let b1c = expand5(e1 & 0x1fu);
+    // 5 trit/字节是基 3 打包：第 i 个 trit = byte / 3^i % 3
+    var pow3 = 1u;
+    for (var i = 0u; i < index % 5u; i = i + 1u) {
+        pow3 = pow3 * 3u;
+    }
+    let trit = (payload_byte(base, index / 5u) / pow3) % 3u;
+    if (trit == 0u) {
+        return vec3<f32>(f32(r0), f32(g0), f32(b0c));
+    }
+    if (trit == 1u) {
+        return vec3<f32>(
+            f32((r0 + r1) / 2u),
+            f32((g0 + g1) / 2u),
+            f32((b0c + b1c) / 2u),
+        );
+    }
+    return vec3<f32>(f32(r1), f32(g1), f32(b1c));
+}
+
+// 回 8 位（ties-to-even），与 CPU 的逐级量化对齐
+fn quantize(c: vec3<f32>) -> vec3<f32> {
+    return clamp(
+        vec3<f32>(round(c.x), round(c.y), round(c.z)),
+        vec3<f32>(0.0),
+        vec3<f32>(255.0),
+    );
+}
+
+fn bilinear(level: u32, u_in: f32, v_in: f32) -> vec3<f32> {
+    let lvl = levels[level];
+    var u = u_in;
+    var v = v_in;
+    if (params.wrap == 0u) {
+        u = clamp(u, 0.0, 1.0);
+        v = clamp(v, 0.0, 1.0);
+    }
+    let rw = select(lvl.width, lvl.rect_w, lvl.rect_w > 0u);
+    let rh = select(lvl.height, lvl.rect_h, lvl.rect_h > 0u);
+    let fx = u * f32(rw) - 0.5;
+    let fy = v * f32(rh) - 0.5;
+    let x0 = floor(fx);
+    let y0 = floor(fy);
+    let tx = fx - x0;
+    let ty = fy - y0;
+    let xi = i32(x0);
+    let yi = i32(y0);
+    let p00 = texel_rgb(level, xi, yi);
+    let p10 = texel_rgb(level, xi + 1, yi);
+    let p01 = texel_rgb(level, xi, yi + 1);
+    let p11 = texel_rgb(level, xi + 1, yi + 1);
+    // 与 CPU 完全同一套融合式：fma(a, 1-t, b*t)，每层单次舍入
+    let top = fma(p00, vec3<f32>(1.0 - tx), p10 * tx);
+    let bottom = fma(p01, vec3<f32>(1.0 - tx), p11 * tx);
+    return fma(top, vec3<f32>(1.0 - ty), bottom * ty);
+}
