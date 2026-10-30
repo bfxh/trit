@@ -3,7 +3,8 @@
 > 目的：用**真实** Windows ARM64 二进制验证 `trit-re` 的 ARM64 交叉引用与函数边界，
 > 并把发现的问题修到代码里。此前 ARM64 只有合成夹具，属于"未证"。
 >
-> 结论：在 5 个真实 ARM64 PE 与 1 个真实 ARM64 ELF 上，导入引用覆盖率 **91%–98%**，
+> 结论：在 5 个真实 ARM64 PE 与 2 个真实 ELF（ripgrep 可执行文件、glibc 2.44 共享库）上，
+> 导入引用覆盖率 **91%–100%**，
 > 与同源 x64 构建的 95%–100% 在同一量级；过程中修掉 5 个真实缺陷
 > （其中 1 个会让台账输出**不是合法 JSON**，2 个会把"取地址"或"数据符号"误判成"没有引用"）。
 > 仍未证的面写在 §6。
@@ -24,6 +25,8 @@
 | `pwsh.exe` | PowerShell 7.6.9，`PowerShell-7.6.9-win-arm64.zip` | 323,072 | `bbdf538aea81c09f60732219b451a26c64f6f2b22bee05eeece13dba909d36e4` |
 | `coreclr.dll` | 同上（原生 ARM64 DLL） | 5,380,904 | `c8d6680d8580e60fd78d977391902cca6846a91a38770df067c9ff7becd03611` |
 | `rg`（ELF arm64） | ripgrep 15.2.0，`ripgrep-15.2.0-aarch64-unknown-linux-gnu.tar.gz` | 4,506,992 | `e36d0eb52e70696bdf1781392722e05a21bb91d3b7b762ef5ec20e5df2ec687b` |
+| `aarch64-libc.so.6` | Debian glibc 2.44-3，`libc6_2.44-3_arm64.deb` | 1,788,312 | `3d9fb822f7126eab39dfe0c0a5abe79043d02086c88cb5f2a63eabe09e95b2be` |
+| `x86_64-libc.so.6` | 同上 `amd64` 包 | 2,046,960 | `6e8481bffbeca764ca114dfd130c67ff1fc745a3abc624bc7c86025f9ca08813` |
 
 选择理由：
 - **成对**：Node / Deno / ripgrep 都有同版本 x64 与 ARM64 构建，可做同源对照；
@@ -45,6 +48,8 @@
 | pwsh 7.6.9 | arm64 | 120 | 117（98%） | 1 | 2 | 444 | 256 | 0 | <0.1 s |
 | coreclr.dll 7.6.9 | arm64 | 353 | 342（97%） | 1 | 10 | 32,517 | 3,516 | 0 | 0.3 s |
 | ripgrep 15.2.0 | **ELF arm64** | 138 | 133（96%） | 0 | 5 | 19,709（启发式） | 7,352 | 0 | 0.2 s |
+| glibc 2.44 | **ELF arm64** | 13 | 13（100%） | 0 | 0 | 9,894（启发式） | 40 | 0 | <0.1 s |
+| glibc 2.44 | ELF x86-64 | 13 | 13（100%） | 0 | 0 | 8,027（启发式） | 40 | 0 | <0.1 s |
 
 **"无调用点"变少、"未知"变多不是退步**：真实二进制里大量导入只是被**取地址**
 （函数指针，或只在间接调用里用），把它们记成 `False`（确定没引用）是错的。
@@ -86,6 +91,7 @@ ARM64 侧包含跳板展开（`adrp+ldr+br` 桩 → `bl`/`b` 调用方），x64 
 | 5 | **只取地址**的导入被记成"无调用点" | 新增 `mark_taken`：地址被计算但无直接调用 → `Unknown` + note | PE ARM64 未引用：Node 23→2、ripgrep 12→2、coreclr 11→1；对应未知 21/10/10 |
 | 6 | ELF：只要有带大小符号就标 `exact`；数据符号也当导入；无 JUMP_SLOT 记 `False` | 符号覆盖 <90% 退化启发式；只收 FUNC/NOTYPE/IFUNC；无槽位一律 `Unknown` | 真实 ARM64 ELF：3 个符号 → 19,709 个启发式函数；`environ` 等 3 个 OBJECT 不再出现；无槽位 8 → 5（弱符号） |
 | 7 | x64 的 `lea/mov [rip+slot]` 未纳入"取地址" | 补 64 位 `48/4C/49/4D 8B/8D 05` 与 32 位绝对寻址；同 ARM64 降 `Unknown` | x64 Node/Deno/ripgrep 的"无调用点" 2/11/6 → 0，未知 2/11/6 |
+| 8 | 共享库把自己导出的函数（`malloc`/`free`）的 JUMP_SLOT 也当"导入" | 只保留未定义 + FUNC/NOTYPE/IFUNC | glibc ARM64 行数 18→13、x64 15→13，与导入数一致；两架构读数对称（各 13 导入 / 40 调用点） |
 
 修复 3 的做法：`adrp` 后允许最多 12 条、`ldr` 后允许最多 8 条夹杂指令；
 对目标寄存器执行保守的写判定（`ADR/ADRP`、`ADD/SUB`、`LDR/STR`、`LDP/STP`、
@@ -107,8 +113,8 @@ IAT 槽位按 8 字节紧邻排列，一个寄存器判错就会把调用记到�
   `ReadConsoleW`、`GetFinalPathNameByHandleW`；Node 的 `SymGetModuleBase64`、`WSASendTo`）。
   它们可能是间接调用（寄存器/函数指针）或仅 x64 代码路径使用；**本报告不把它们当缺陷**，
   也不当"死导入"结论。
-- **ARM64 ELF 只有一个可执行文件样本**（ripgrep）：`.so` 共享库的 PLT/GOT 路径仍未校准，
-  且该样本被裁剪（`STT_FUNC` 覆盖 0%），函数级共现只能保持 `Unknown`。
+- **ELF 只有两个样本**（ripgrep 可执行文件、glibc 共享库），且都被裁剪（`STT_FUNC` 覆盖
+  0%/38%，x64 31%），函数级共现只能保持 `Unknown`；IFUNC 密集的库（如 libm）未覆盖。
 - **PE32**（无 `.pdata`）的同函数共现仍恒为 `Unknown`。
 - 字节级模式匹配的固有边界不变：寄存器经多次搬运、跳转表、运行时生成的代码都看不到。
 

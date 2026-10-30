@@ -2669,6 +2669,14 @@ MUTANTS = [
         "filter": 'taken_slot_downgrades_false_to_unknown',
     },
     {
+        "name": 'trit-re: 已定义符号当导入',
+        "file": 'crates/trit-re/src/xref/mod.rs',
+        "old": '        if symbol_info.defined || !matches!(symbol_info.kind, 0 | 2 | 10) {',
+        "new": '        if false {',
+        "pkg": "trit-re",
+        "filter": 'defined_symbols_with_jump_slots_are_not_imports',
+    },
+    {
         "name": 'trit-re: x64 取地址不记录',
         "file": 'crates/trit-re/src/xref/mod.rs',
         "old": '                    taken.insert(target.wrapping_sub(image_base));',

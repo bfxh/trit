@@ -115,6 +115,28 @@ fn unsupported_arch_stays_unknown() {
 }
 
 #[test]
+fn defined_symbols_with_jump_slots_are_not_imports() {
+    let symbols = vec![
+        DynamicSymbol {
+            index: 1,
+            name: "malloc".into(),
+            defined: true,
+            kind: 2,
+        },
+        DynamicSymbol {
+            index: 2,
+            name: "__tls_get_addr".into(),
+            defined: false,
+            kind: 2,
+        },
+    ];
+    let slots = vec![(0x2000u64, 1usize), (0x2008, 2)];
+    let report = build_elf_report("elf64", &symbols, &slots, &BTreeMap::new(), true, 0);
+    assert_eq!(report.imports.len(), 1);
+    assert_eq!(report.imports[0].import, "__tls_get_addr");
+}
+
+#[test]
 fn taken_slot_downgrades_false_to_unknown() {
     let mut rows = vec![ImportXref {
         import: "a!b".into(),

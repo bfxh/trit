@@ -590,12 +590,17 @@ pub(super) fn build_elf_report(
     let mut rows = Vec::new();
     let mut seen: BTreeSet<usize> = BTreeSet::new();
     for (got, symbol) in jump_slots {
-        if !seen.insert(*symbol) {
-            continue;
-        }
         let Some(symbol_info) = symbols.iter().find(|entry| entry.index == *symbol) else {
             continue;
         };
+        // 只保留"外部导入"：本文件已定义的符号（如 libc 自己的 malloc/free）虽有 JUMP_SLOT，
+        // 那是内部 PLT 调用，不是导入。
+        if symbol_info.defined || !matches!(symbol_info.kind, 0 | 2 | 10) {
+            continue;
+        }
+        if !seen.insert(*symbol) {
+            continue;
+        }
         let mut row = ImportXref {
             import: symbol_info.name.clone(),
             slot: *got,

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed（`trit-re` N1 续：真实 ARM64 / x64 共享库校准）
+
+- **共享库的"导入"口径**：本文件已定义的符号（glibc 自己的 `malloc`/`free`）虽然带 `JUMP_SLOT`，
+  但那是内部 PLT 调用，不是导入。只保留「未定义 + FUNC/NOTYPE/IFUNC」：
+  glibc ARM64 的 xref 行数 18→13、x64 15→13，与导入数一致。
+- **真实 `libc.so.6` 读数**（glibc 2.44-3，arm64 与 amd64 各一份）：13 导入全部有调用点、
+  40 个调用点、0 未归属；两架构读数对称。函数边界因 `STT_FUNC` 覆盖率 38%/31% 退化为启发式，
+  `fn_*` 保持 `Unknown`。
+- 变异新增第 8 条（"已定义符号当导入"），本地 **8/8 全抓**；测试 **68** 条。
+- `docs/N1-ARM64-CALIBRATION.md` 增补共享库语料、哈希与读数。
+
 ### Fixed（`trit-re` P0：x64 取地址语义 + 变异门接入）
 
 - **x64 只取地址**：新增 `lea/mov reg,[rip+slot]`（x64）与绝对寻址（PE32）识别，
