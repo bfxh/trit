@@ -20,7 +20,7 @@
 //! ## 光栅化器需要的那一对
 //!
 //! - **越界寻址**：[`Wrap::Clamp`] / [`Wrap::Repeat`] / [`Wrap::Mirror`]，
-//!   对 `Sampler` 与自由函数都生效；索引解析是精确的整数运算（[`wrap_index`]）。
+//!   对 `Sampler` 与自由函数都生效；索引解析是精确的整数运算（`wrap_index`）。
 //! - **自动 LOD**：[`lod_from_derivatives`] 按 `ρ = max(|∂/∂x|, |∂/∂y|)` 求 `log2`，
 //!   [`TtxDocument::sample_auto`] 直接吃 `dpdx`/`dpdy` 风格的四元导数。
 //!
