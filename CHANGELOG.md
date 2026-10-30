@@ -82,6 +82,33 @@
   说明行直接给出 `call X / jmp Y`。真实读数：Node x64 148 = call 25 / jmp 123；
   Deno x64 156 = call 24 / jmp 132——绝大多数是无 `.pdata` 的导入跳板，而非漏归属的调用。
 - 变异新增 2 条（mov 搬运链断开、call 记成 jmp），本地 **10/10 全抓**；测试 **71**。
+### Added（`trit-net` 网络安全面 M1：分位数校准与弃权 / 误报曲线）
+
+- **`netsec::dataset`**：CICIDS2017 与 CSE-CIC-IDS2018 两套列名（全称/缩写）按名对齐到 24 维特征，
+  处理前导空格、`Infinity`/`NaN`、单位换算（µs → s/ms）；超上限时**等距抽样**而不是截前缀。
+- **`netsec::calibrate`**：阈值取训练集分位数带 `[P(0.5-b), P(0.5+b)]`，`b` 为弃权旋钮；
+  选维按训练集点二列相关取前 `k` 维、方向由符号定；训练集多数类下采样到 1:1
+  （否则三值 STE 塌成常数负例）；支持外部测试集做跨日评估。输出 coverage / abstain /
+  FPR / TPR / precision / 分方向弃权率，以及训练损失与影子/三值精度。
+- **CLI**：`trit-net calibrate CSV [--rows N] [--epochs N] [--hidden N] [--lr F] [--features K]
+  [--test CSV] [--bands …] [--json]`。
+- **真实读数**（CSE-CIC-IDS2018）：
+  - DoS/DDoS 日（16-02，17 万流，数据驱动选 8 维，|r| 0.64–0.77）：`b=0.20` 时
+    TPR 0.938 / FPR 0.141 / 弃权 14.2%，弃权主要吸收良性（19.5% vs 7.7%）。
+  - 跨日（16-02 → 01-03）：**基本失效**，FPR 0.50–0.67、precision 0.31–0.39。
+  - Infiltration 日（01-03，33 万行）：**负结果**——线性基线 AUC 0.4984、三值模型等同随机，
+    单特征中位切分最大差 0.13，说明该场景下 CICFlowMeter 流特征无信号。
+- 测试 **9 → 27**（新增 dataset/calibrate/选维/IDS2018 列名/曲线形状；netsec 由 11 增到 18）。
+
+### Added（`trit-net` 网络安全面 M0：pcap → 双向流 → 三值弃权判决）
+
+- **`netsec` 模块**（`pcap` / `packet` / `flow` / `features` / `decision`）：经典 pcap 四种 magic
+  （LE/BE × 微秒/纳秒）、linktype 1/101；Ethernet（≤2 层 VLAN）、IPv4（非首片跳过）、
+  IPv6（扩展头 0/43/60/51/44）、TCP/UDP；无向五元组 + 首包定向 + 24 维特征（Welford 方差）。
+- **弃权是一等公民**：8 条规则的死区判 `X`，`analyze` 精确枚举后输出
+  `malicious / benign / undetermined`；预算不足报 `budget-exceeded`，不降级成猜测。
+- **CLI**：`trit-net flow PCAP [--model MODEL] [--budget N]`，每流一行 JSONL，跳过原因计数进 stderr。
+- 测试 **9 → 20**（新增 11 条 netsec）；`docs/SECURITY-NET.md` 记录管线、读数与未校准声明。
 
 ### Fixed（`trit-re` N1 续：真实 ARM64 / x64 共享库校准）
 
