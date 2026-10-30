@@ -93,6 +93,8 @@ pub struct DynamicSymbol {
     pub name: String,
     /// 是否有定义（`st_shndx != 0`）。
     pub defined: bool,
+    /// 符号类型（`st_info & 0xf`）：2=FUNC、0=NOTYPE、1=OBJECT…
+    pub kind: u8,
 }
 
 /// 带大小的函数符号（`st_size > 0`，可当精确函数边界）。
@@ -396,9 +398,11 @@ pub fn parse(bytes: &[u8]) -> Result<ElfInfo, ParseError> {
 fn parse_imports(bytes: &[u8], sections: &[ElfSection], sixty_four: bool) -> Option<Vec<String>> {
     let symbols = read_dynamic_symbols(bytes, sections, sixty_four)?;
     Some(
+        // 只把函数类符号当"导入"：OBJECT（如 environ/__stack_chk_guard）是数据，
+        // 拿它问"有没有调用点"没有意义。
         symbols
             .into_iter()
-            .filter(|symbol| !symbol.defined)
+            .filter(|symbol| !symbol.defined && matches!(symbol.kind, 0 | 2 | 10))
             .map(|symbol| symbol.name)
             .collect(),
     )
@@ -440,6 +444,7 @@ pub fn read_dynamic_symbols(
     for index in 0..count {
         let off = base + index * entry_size;
         let name_off = u32_at(bytes, off)? as usize;
+        let info = bytes.get(off + if sixty_four { 4 } else { 12 }).copied()?;
         let shndx = if sixty_four {
             u16_at(bytes, off + 6)?
         } else {
@@ -450,6 +455,7 @@ pub fn read_dynamic_symbols(
                 index,
                 name,
                 defined: shndx != 0,
+                kind: info & 0xf,
             });
         }
     }
@@ -676,6 +682,47 @@ mod tests {
         bytes[4] = 2;
         bytes[5] = 2;
         assert_eq!(parse(&bytes).unwrap_err(), ParseError("大端 ELF 暂不支持"));
+    }
+
+    #[test]
+    fn imports_exclude_object_symbols() {
+        use super::{ElfSection, parse_imports};
+        // .dynstr: " socket environ "；.dynsym: 0 号空、1 号 FUNC、2 号 OBJECT。
+        let mut bytes = vec![0u8; 0x80];
+        bytes[1..8].copy_from_slice(b"socket ");
+        bytes[8..16].copy_from_slice(b"environ ");
+        let base = 0x40usize;
+        let entry = |index: usize| base + index * 24;
+        bytes[entry(1)..entry(1) + 4].copy_from_slice(&1u32.to_le_bytes());
+        bytes[entry(1) + 4] = 0x12; // STT_FUNC | STB_GLOBAL
+        bytes[entry(2)..entry(2) + 4].copy_from_slice(&8u32.to_le_bytes());
+        bytes[entry(2) + 4] = 0x11; // STT_OBJECT | STB_GLOBAL
+        let sections = vec![
+            ElfSection {
+                name: ".dynstr".into(),
+                sh_type: 3,
+                flags: 0,
+                addr: 0,
+                offset: 0,
+                size: 0x10,
+                link: 0,
+                entsize: 0,
+                entropy: None,
+            },
+            ElfSection {
+                name: ".dynsym".into(),
+                sh_type: 11,
+                flags: 0,
+                addr: 0,
+                offset: base as u64,
+                size: 72,
+                link: 0,
+                entsize: 24,
+                entropy: None,
+            },
+        ];
+        let imports = parse_imports(&bytes, &sections, true).expect("parsed");
+        assert_eq!(imports, vec!["socket".to_string()]);
     }
 
     #[test]

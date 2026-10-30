@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed（`trit-re` N1 复核：取地址语义、ELF 边界与符号面）
+
+- **只取地址的导入不再判"无引用"**：`adrp+ldr` 算出了槽位地址但窗口内没有 `blr`/`br` 时，
+  状态从 `False` 降为 `Unknown`（note：地址被取用但未见直接调用）。PE ARM64 未引用数：
+  Node 23→2、ripgrep 12→2、coreclr 11→1；对应未知 21/10/10。
+- **ELF 精确边界按覆盖率判定**：`STT_FUNC` 覆盖可执行字节 < 90% 时退回启发式边界。
+  真实 ARM64 ELF（ripgrep）只有 3 个带大小符号，此前被标 `exact` 且有 7,325 个调用点
+  未归属；现在 19,709 个启发式函数、7,352 个调用点全部归属，`fn_*` 回到 `Unknown`。
+- **ELF 符号面收紧**：只把 `FUNC/NOTYPE/IFUNC` 当导入（`environ`、`__stack_chk_guard`
+  等 OBJECT 不再出现）；没有 `JUMP_SLOT` 槽位的弱符号一律 `Unknown` 而不是 `False`。
+- 真实 ARM64 ELF 读数：138 导入 / 133 有调用点 / 0 无 / 5 未知；测试 **65** 条。
+- `docs/N1-ARM64-CALIBRATION.md` 增补 ELF 语料、符号哈希与新读数。
+
 ### Fixed（`trit-re` N1：真实 ARM64 语料校准，修 3 个缺陷）
 
 - **台账 JSON 合法性**：`xref` 的 `slot` 与 `function` 的 `addr` 曾写成十六进制裸值

@@ -152,13 +152,12 @@ pub fn build_elf(bytes: &[u8], info: &elf::ElfInfo, xref: &XrefReport) -> Functi
     let exec = elf_exec_sections(bytes, info);
     let mut notes = Vec::new();
     let symbols = info.function_symbols(bytes);
-    let (mut ranges, exact) = if symbols.is_empty() {
-        notes.push("没有带大小的 STT_FUNC：函数边界退化为启发式，只用于展示".to_string());
-        (
-            heuristic_ranges(&exec, info.entry, arch_of_elf(info.machine)),
-            false,
-        )
-    } else {
+    let exec_bytes: u64 = exec.iter().map(|(_, data)| data.len() as u64).sum();
+    let covered: u64 = symbols.iter().map(|symbol| symbol.size).sum();
+    // 带大小的符号不等于"边界完整"：裁剪过的二进制只剩几个导出符号，
+    // 覆盖率不够时必须退回启发式，否则会把绝大多数调用点算成"未归属"。
+    let exact = coverage_is_complete(covered, exec_bytes);
+    let (mut ranges, exact) = if exact {
         (
             symbols
                 .iter()
@@ -171,9 +170,27 @@ pub fn build_elf(bytes: &[u8], info: &elf::ElfInfo, xref: &XrefReport) -> Functi
                 .collect(),
             true,
         )
+    } else {
+        if symbols.is_empty() {
+            notes.push("没有带大小的 STT_FUNC：函数边界退化为启发式，只用于展示".to_string());
+        } else {
+            notes.push(format!(
+                "STT_FUNC 只覆盖可执行字节的 {}%：边界退化为启发式，只用于展示",
+                covered.saturating_mul(100) / exec_bytes.max(1)
+            ));
+        }
+        (
+            heuristic_ranges(&exec, info.entry, arch_of_elf(info.machine)),
+            false,
+        )
     };
     normalize(&mut ranges);
     attribute(xref, &ranges, exact, notes)
+}
+
+/// 符号覆盖的可执行字节是否足够撑起"精确边界"。
+fn coverage_is_complete(covered: u64, exec_bytes: u64) -> bool {
+    exec_bytes > 0 && covered.saturating_mul(10) >= exec_bytes.saturating_mul(9)
 }
 
 fn pe_exec_sections<'a>(bytes: &'a [u8], info: &pe::PeInfo) -> Vec<(u64, &'a [u8])> {
@@ -441,6 +458,16 @@ mod tests {
             name: None,
             source: FuncSource::Pdata,
         }
+    }
+
+    #[test]
+    fn exact_coverage_needs_ninety_percent() {
+        use super::coverage_is_complete;
+        assert!(coverage_is_complete(900, 1000));
+        assert!(coverage_is_complete(1000, 1000));
+        assert!(!coverage_is_complete(899, 1000));
+        assert!(!coverage_is_complete(0, 0));
+        assert!(!coverage_is_complete(10, 0));
     }
 
     #[test]

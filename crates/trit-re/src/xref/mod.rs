@@ -160,7 +160,17 @@ pub(super) fn to_sites(set: &BTreeSet<RawSite>) -> Vec<CallSite> {
         .collect()
 }
 
-pub(super) fn finalize(row: &mut ImportXref, complete: bool) {
+/// 槽位地址被计算过、但没有直接调用：不能判"没有引用"，降级为未知。
+pub(super) fn mark_taken(rows: &mut [ImportXref], taken: &BTreeSet<u64>) {
+    for row in rows.iter_mut() {
+        if row.status == Ternary::False && taken.contains(&row.slot) {
+            row.status = Ternary::Unknown;
+            row.note = "地址被取用但未见直接调用".to_string();
+        }
+    }
+}
+
+fn finalize(row: &mut ImportXref, complete: bool) {
     row.status = if !row.sites.is_empty() {
         Ternary::True
     } else if complete && row.note.is_empty() {
@@ -276,6 +286,7 @@ pub fn scan_pe(bytes: &[u8], info: &pe::PeInfo) -> XrefReport {
         exec.push((section.virtual_address, section.raw_ptr as usize, data));
     }
 
+    let mut taken: BTreeSet<u64> = BTreeSet::new();
     if info.machine == 0xaa64 {
         // ARM64 扫描全程在 RVA 空间（ADRP 的页运算与 image base 无关），
         // 所以把槽位表也从 VA 折回 RVA。
@@ -283,7 +294,7 @@ pub fn scan_pe(bytes: &[u8], info: &pe::PeInfo) -> XrefReport {
             .iter()
             .map(|(va, row)| (va.wrapping_sub(info.image_base), *row))
             .collect();
-        aarch64::scan_pe_sections(&exec, &slots_rva, &mut sites);
+        aarch64::scan_pe_sections(&exec, &slots_rva, &mut sites, &mut taken);
     } else {
         for (section_rva, file_base, data) in &exec {
             scan_pe_section(
@@ -305,6 +316,7 @@ pub fn scan_pe(bytes: &[u8], info: &pe::PeInfo) -> XrefReport {
         row.sites = to_sites(&sites[index]);
         finalize(row, report.complete);
     }
+    mark_taken(&mut report.imports, &taken);
     report
 }
 
@@ -558,18 +570,18 @@ pub(super) fn build_elf_report(
         finalize(&mut row, complete);
         rows.push(row);
     }
-    for symbol in symbols.iter().filter(|entry| !entry.defined) {
+    for symbol in symbols
+        .iter()
+        .filter(|entry| !entry.defined && matches!(entry.kind, 0 | 2 | 10))
+    {
         if !seen.contains(&symbol.index) {
             rows.push(ImportXref {
                 import: symbol.name.clone(),
                 slot: 0,
                 sites: Vec::new(),
-                status: if complete {
-                    Ternary::False
-                } else {
-                    Ternary::Unknown
-                },
-                note: "没有 JUMP_SLOT 重定位".to_string(),
+                // 没有槽位就没有证据："没有重定位"不等于"没有调用点"。
+                status: Ternary::Unknown,
+                note: "没有 JUMP_SLOT 重定位（可能是动态解析或弱符号）".to_string(),
             });
         }
     }
@@ -626,8 +638,10 @@ fn elf_jump_slots(
 
 #[cfg(test)]
 mod tests {
-    use super::{SiteKind, scan_pe};
+    use super::{SiteKind, build_elf_report, scan_pe};
+    use crate::elf::DynamicSymbol;
     use crate::pe;
+    use std::collections::BTreeMap;
     use trit_core::value::Ternary;
 
     fn tiny_pe(call_disp: i32) -> Vec<u8> {
@@ -735,6 +749,29 @@ mod tests {
         let info = pe::parse(&file).expect("parse");
         let report = scan_pe(&file, &info);
         assert!(!report.complete);
+        assert_eq!(report.imports[0].status, Ternary::Unknown);
+    }
+
+    #[test]
+    fn elf_report_skips_object_symbols_without_slots() {
+        let symbols = vec![
+            DynamicSymbol {
+                index: 1,
+                name: "socket".into(),
+                defined: false,
+                kind: 2,
+            },
+            DynamicSymbol {
+                index: 2,
+                name: "environ".into(),
+                defined: false,
+                kind: 1,
+            },
+        ];
+        let report = build_elf_report("elf64", &symbols, &[], &BTreeMap::new(), true, 0);
+        assert_eq!(report.imports.len(), 1);
+        assert_eq!(report.imports[0].import, "socket");
+        // 没有 JUMP_SLOT 槽位 ⇒ 不能判"没有调用点"。
         assert_eq!(report.imports[0].status, Ternary::Unknown);
     }
 }

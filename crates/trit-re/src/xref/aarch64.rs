@@ -16,7 +16,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use super::{RawSite, SiteKind, XrefReport, build_elf_report};
+use super::{RawSite, SiteKind, XrefReport, build_elf_report, mark_taken};
 use crate::elf;
 
 const ADRP_MASK: u32 = 0x9F00_0000;
@@ -193,9 +193,11 @@ fn writes(insn: u32, register: u32) -> Option<bool> {
 /// 扫描一段代码里的 `adrp + [add] + ldr + blr/br` 序列。
 ///
 /// 允许中间夹杂其他指令（参数准备很常见），但会被对目标寄存器的破坏性写入打断。
-fn references(data: &[u8], base: u64) -> Vec<Reference> {
+/// 返回值第二项是"槽位地址被计算过但没有直接调用"的槽位——它们不能被判成"没有引用"。
+fn references(data: &[u8], base: u64) -> (Vec<Reference>, BTreeSet<u64>) {
     let insns = instructions(data);
     let mut out = Vec::new();
+    let mut taken = BTreeSet::new();
     for index in 0..insns.len() {
         let pc = base + index as u64 * 4;
         let Some(page) = adrp_page(insns[index], pc) else {
@@ -233,6 +235,7 @@ fn references(data: &[u8], base: u64) -> Vec<Reference> {
         };
         let slot = address.wrapping_add(offset);
         let mut steps = 0usize;
+        let mut called = false;
         while cursor < insns.len() && steps < MAX_CALL_STEPS {
             let insn = insns[cursor];
             let at = base + cursor as u64 * 4;
@@ -242,6 +245,7 @@ fn references(data: &[u8], base: u64) -> Vec<Reference> {
                     slot,
                     kind: SiteKind::Call,
                 });
+                called = true;
                 break;
             }
             if br_register(insn) == Some(target_register) {
@@ -250,6 +254,7 @@ fn references(data: &[u8], base: u64) -> Vec<Reference> {
                     slot,
                     kind: SiteKind::Jump,
                 });
+                called = true;
                 break;
             }
             match writes(insn, target_register) {
@@ -260,8 +265,11 @@ fn references(data: &[u8], base: u64) -> Vec<Reference> {
                 _ => break,
             }
         }
+        if !called {
+            taken.insert(slot);
+        }
     }
-    out
+    (out, taken)
 }
 
 /// PE ARM64：直接调用 + 跳板展开。
@@ -269,13 +277,20 @@ pub(super) fn scan_pe_sections(
     exec: &[(u32, usize, &[u8])],
     slots: &BTreeMap<u64, usize>,
     sites: &mut [BTreeSet<RawSite>],
+    taken: &mut BTreeSet<u64>,
 ) {
     for (section_rva, file_base, data) in exec {
         let base = *section_rva as u64;
-        for reference in references(data, base) {
+        let (references, referenced) = references(data, base);
+        for reference in references {
             if let Some(&row) = slots.get(&reference.slot) {
                 let offset = (reference.site - base) as usize;
                 sites[row].insert((reference.site, reference.kind, file_base + offset));
+            }
+        }
+        for slot in referenced {
+            if slots.contains_key(&slot) {
+                taken.insert(slot);
             }
         }
     }
@@ -337,8 +352,13 @@ pub(super) fn scan_elf(
 
     let mut stub_to_symbol: BTreeMap<u64, usize> = BTreeMap::new();
     let mut stub_ranges: Vec<(u64, u64)> = Vec::new();
+    let mut taken: BTreeSet<u64> = BTreeSet::new();
     for (section, data) in exec_data {
-        for reference in references(data, section.addr) {
+        let (references, referenced) = references(data, section.addr);
+        for slot in referenced {
+            taken.insert(slot);
+        }
+        for reference in references {
             if reference.kind != SiteKind::Jump {
                 continue;
             }
@@ -353,7 +373,8 @@ pub(super) fn scan_elf(
     let mut sites: BTreeMap<usize, BTreeSet<RawSite>> = BTreeMap::new();
     for (section, data) in exec_data {
         let base = section.addr;
-        for reference in references(data, base) {
+        let (references, _) = references(data, base);
+        for reference in references {
             if reference.kind != SiteKind::Call {
                 continue;
             }
@@ -392,7 +413,9 @@ pub(super) fn scan_elf(
         }
     }
 
-    build_elf_report(arch, symbols, jump_slots, &sites, complete, scanned)
+    let mut report = build_elf_report(arch, symbols, jump_slots, &sites, complete, scanned);
+    mark_taken(&mut report.imports, &taken);
+    report
 }
 
 #[cfg(test)]
@@ -449,7 +472,7 @@ mod tests {
         put(&mut data, 0, adrp(0x1000, 0x2000, 9));
         put(&mut data, 1, ldr(9, 0x40, 9));
         put(&mut data, 2, blr(9));
-        let refs = references(&data, 0x1000);
+        let (refs, _) = references(&data, 0x1000);
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].slot, 0x2040);
         assert_eq!(refs[0].site, 0x1008);
@@ -463,7 +486,7 @@ mod tests {
         put(&mut data, 1, add(9, 0x48, 9));
         put(&mut data, 2, ldr(9, 0x0, 9));
         put(&mut data, 3, blr(9));
-        let refs = references(&data, 0x1000);
+        let (refs, _) = references(&data, 0x1000);
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].slot, 0x2048);
         assert_eq!(refs[0].site, 0x100c);
@@ -478,7 +501,7 @@ mod tests {
         put(&mut data, 3, 0xD2800041); // movz x1, #2
         put(&mut data, 4, 0xD2800062); // movz x2, #3
         put(&mut data, 5, blr(9));
-        let refs = references(&data, 0x1000);
+        let (refs, _) = references(&data, 0x1000);
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].slot, 0x2040);
         assert_eq!(refs[0].site, 0x1014);
@@ -491,7 +514,18 @@ mod tests {
         put(&mut data, 1, 0xD2800009); // movz x9, #0
         put(&mut data, 2, ldr(9, 0x40, 9));
         put(&mut data, 3, blr(9));
-        assert!(references(&data, 0x1000).is_empty());
+        let (refs, _) = references(&data, 0x1000);
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn address_only_reference_is_marked_taken() {
+        let mut data = vec![0u8; 24];
+        put(&mut data, 0, adrp(0x1000, 0x2000, 9));
+        put(&mut data, 1, ldr(9, 0x40, 9));
+        let (refs, taken) = references(&data, 0x1000);
+        assert!(refs.is_empty());
+        assert!(taken.contains(&0x2040));
     }
 
     #[test]
@@ -500,7 +534,7 @@ mod tests {
         put(&mut data, 0, adrp(0x1020, 0x2000, 16));
         put(&mut data, 1, ldr(16, 0x40, 17));
         put(&mut data, 2, br(17));
-        let refs = references(&data, 0x1020);
+        let (refs, _) = references(&data, 0x1020);
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].kind, SiteKind::Jump);
         assert_eq!(refs[0].site, 0x1020);
