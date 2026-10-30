@@ -2638,7 +2638,7 @@ MUTANTS = [
     },
     {
         "name": 'trit-re: 覆盖率阈值由 >= 变 >',
-        "file": 'crates/trit-re/src/functions.rs',
+        "file": 'crates/trit-re/src/functions/mod.rs',
         "old": '    exec_bytes > 0 && covered.saturating_mul(10) >= exec_bytes.saturating_mul(9)',
         "new": '    exec_bytes > 0 && covered.saturating_mul(10) > exec_bytes.saturating_mul(9)',
         "pkg": "trit-re",
@@ -2686,7 +2686,7 @@ MUTANTS = [
     },
     {
         "name": 'trit-re: 未归属 call 记成 jmp',
-        "file": 'crates/trit-re/src/functions.rs',
+        "file": 'crates/trit-re/src/functions/mod.rs',
         "old": '                        crate::xref::SiteKind::Call => unattributed_calls += 1,',
         "new": '                        crate::xref::SiteKind::Call => unattributed_jumps += 1,',
         "pkg": "trit-re",
@@ -2702,7 +2702,7 @@ MUTANTS = [
     },
     {
         "name": 'trit-re: 不用 eh_frame 边界',
-        "file": 'crates/trit-re/src/functions.rs',
+        "file": 'crates/trit-re/src/functions/mod.rs',
         "old": '    } else if !eh_frame.is_empty() {',
         "new": '    } else if false {',
         "pkg": "trit-re",
@@ -2723,6 +2723,22 @@ MUTANTS = [
         "new": '    let entry_token = u32_at(bytes, base + 16).unwrap_or(0);',
         "pkg": "trit-re",
         "filter": 'parses_clr_and_tls_facts',
+    },
+    {
+        "name": 'trit-re: debug_frame 地址宽度写死 4',
+        "file": 'crates/trit-re/src/elf/debug_frame.rs',
+        "old": '    let begin = read_address(data, &mut cursor, address_size)?;',
+        "new": '    let begin = read_address(data, &mut cursor, 4)?;',
+        "pkg": "trit-re",
+        "filter": 'debug_frame_fde_gives_exact_range',
+    },
+    {
+        "name": 'trit-re: 不用 debug_frame 边界',
+        "file": 'crates/trit-re/src/functions/mod.rs',
+        "old": '    } else if !debug_frame.is_empty() {',
+        "new": '    } else if false {',
+        "pkg": "trit-re",
+        "filter": 'debug_frame_boundaries_enable_attribution',
     },
     {
         "name": 'trit-re: x64 取地址不记录',

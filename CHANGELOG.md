@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（`trit-re`：ELF `.debug_frame` 函数边界）
+
+- 新增 `crates/trit-re/src/elf/debug_frame.rs`：解析 DWARF CFI——CIE 标记为全 1、
+  FDE 的 CIE 指针是**节内偏移**、`initial_location`/`address_range` 是**绝对地址**，
+  宽度按 CIE `address_size`（v4+）或 ELF class 推断；带 augmentation 的 CIE 跳过。
+- 边界来源选择顺序：`STT_FUNC` 覆盖 ≥90% → `.eh_frame` → `.debug_frame` → 启发式。
+- 单元测试覆盖 v4/address_size=8 与带 augmentation 跳过两路；功能测试锁住来源标记
+  `debug_frame` 与归属。测试 **78**；变异 **16/16**。
+- **未证**：当前语料（ripgrep/glibc）只有 `.eh_frame`，没有真实 `.debug_frame` 样本，
+  这条路径只有合成夹具。
+
 ### Added（`trit-re`：PE CLR / TLS 回调事实）
 
 - 解析 CLR 目录（data dir 14）：`cb`、元数据 RVA、`Flags`、入口 token；从元数据根

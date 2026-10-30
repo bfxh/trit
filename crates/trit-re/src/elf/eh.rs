@@ -1,6 +1,6 @@
 //! `.eh_frame` FDE 解析：裁剪 ELF 的精确函数边界。
 
-use super::{ElfSection, FunctionSymbol, u32_at, u64_at};
+use super::{ElfSection, FunctionSymbol, read_sleb, read_uleb, u32_at, u64_at};
 
 /// 解析 `.eh_frame` 里的 FDE，得到带精确大小的函数区间。
 ///
@@ -80,43 +80,6 @@ pub fn read_eh_frame(
     symbols.sort_by_key(|symbol| (symbol.start, symbol.size));
     symbols.dedup_by(|left, right| left.start == right.start && left.size == right.size);
     symbols
-}
-
-fn read_uleb(data: &[u8], cursor: &mut usize) -> Option<u64> {
-    let mut result = 0u64;
-    let mut shift = 0u32;
-    loop {
-        let byte = *data.get(*cursor)?;
-        *cursor += 1;
-        result |= ((byte & 0x7f) as u64) << shift;
-        if byte & 0x80 == 0 {
-            return Some(result);
-        }
-        shift += 7;
-        if shift >= 64 {
-            return None;
-        }
-    }
-}
-
-fn read_sleb(data: &[u8], cursor: &mut usize) -> Option<i64> {
-    let mut result = 0i64;
-    let mut shift = 0u32;
-    loop {
-        let byte = *data.get(*cursor)?;
-        *cursor += 1;
-        result |= ((byte & 0x7f) as i64) << shift;
-        shift += 7;
-        if byte & 0x80 == 0 {
-            if shift < 64 && byte & 0x40 != 0 {
-                result |= -1i64 << shift;
-            }
-            return Some(result);
-        }
-        if shift >= 64 {
-            return None;
-        }
-    }
 }
 
 fn parse_eh_cie(data: &[u8], mut cursor: usize, sixty_four: bool) -> Option<u8> {
