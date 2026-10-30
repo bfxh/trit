@@ -117,14 +117,15 @@ async fn sample_async(
         if level.blocks.len() != blocks * BLOCK_BYTES {
             return None;
         }
-        if let Some(r) = level.rect {
-            if r.width == 0
+        let rect_bad = matches!(
+            level.rect,
+            Some(r) if r.width == 0
                 || r.height == 0
                 || r.x + r.width > level.width
                 || r.y + r.height > level.height
-            {
-                return None;
-            }
+        );
+        if rect_bad {
+            return None;
         }
         let rect = level.rect;
         descriptors.push([
