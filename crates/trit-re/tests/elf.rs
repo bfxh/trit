@@ -72,14 +72,23 @@ fn elf32_pic_stub_is_resolved_through_get_pc_thunk() {
             .count(),
         2
     );
-    // printf 只被 `mov eax,[ebx+disp]` 取过地址：不能判"没有引用"。
+    // printf 只有 GLOB_DAT 槽位（.rel.dyn），但确有 PLT 桩与调用：必须判 True。
     let printf = report
         .imports
         .iter()
         .find(|row| row.import == "printf")
         .expect("printf row");
-    assert_eq!(printf.status, Ternary::Unknown);
-    assert!(printf.sites.is_empty());
+    assert_eq!(printf.status, Ternary::True);
+    assert_eq!(printf.sites.len(), 1);
+    assert_eq!(printf.sites[0].kind, trit_re::SiteKind::Call);
+    // getenv 只被 `mov eax,[ebx+disp]` 取过地址：不能判"没有引用"。
+    let getenv = report
+        .imports
+        .iter()
+        .find(|row| row.import == "getenv")
+        .expect("getenv row");
+    assert_eq!(getenv.status, Ternary::Unknown);
+    assert!(getenv.sites.is_empty());
 }
 
 #[test]

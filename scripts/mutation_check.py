@@ -2806,6 +2806,14 @@ MUTANTS = [
         "pkg": "trit-re",
         "filter": 'elf32_pic_stub_is_resolved_through_get_pc_thunk',
     },
+    {
+        "name": 'trit-re: GLOB_DAT 槽位被忽略',
+        "file": 'crates/trit-re/src/xref/mod.rs',
+        "old": '            if (kind == slot_type || kind == glob_dat_type) && known.contains(&symbol) {',
+        "new": '            if kind == slot_type && known.contains(&symbol) {',
+        "pkg": "trit-re",
+        "filter": 'elf32_pic_stub_is_resolved_through_get_pc_thunk',
+    },
 ]
 
 
