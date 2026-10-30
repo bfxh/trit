@@ -11,13 +11,15 @@
 //! **不含**连续的检测样本，`binary` 自检不会自指命中；构建树路径不做机器特定
 //! 前缀（曾是 `D:\KF\` 魔法路径，已移除），泄漏的构建树路径归入通用
 //! `absolute-user-path`，按机器细分留给将来的 `--build-tree` 参数。
-
-use std::collections::BTreeMap;
+//!
+//! 产物面（2026-10-28）：报告的 `side` 字段区分**前端产物**（`.wasm`/HTML，
+//! 无硬化面、只做内容检查）与**后端产物**（PE/ELF，全量硬化检查）。
 
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
 
 use crate::attrib::{self, Finding};
+use crate::secrets::scan_strings;
 
 #[derive(Debug, Default, Clone)]
 pub struct Hardening {
@@ -295,84 +297,6 @@ fn parse_elf(bytes: &[u8]) -> Option<Hardening> {
     Some(hardening)
 }
 
-/// 泄密检测 needle 在**运行时**拼装：连续字面量（`AKIA`、`sk-`…）一旦编进
-/// 本工具自己的产物，`binary` 自检就会命中自己——检测样本表的自指误报
-/// （2026-10-28 自审发现）。
-///
-/// 表里存**逆序片段**：直接分段（`["AK","IA"]`）仍可能被链接器的字符串
-/// 相邻布局拼回明文（实测命中过），逆序后即使相邻也是 `IAAK` 这种乱序，
-/// 运行时 `rev()` 还原。
-fn secret_patterns() -> Vec<(&'static str, String)> {
-    [
-        ("private-key", &["BEGIN ", "-----"][..]),
-        ("aws-access-key", &["IA", "AK"][..]),
-        ("openai-style-key", &["k-", "s"][..]),
-        ("github-token", &["p_", "gh"][..]),
-        ("slack-token", &["xb-", "xo"][..]),
-    ]
-    .into_iter()
-    .map(|(name, parts)| {
-        let mut text = String::new();
-        for part in parts.iter().rev() {
-            text.push_str(part);
-        }
-        (name, text)
-    })
-    .collect()
-}
-
-fn scan_strings(bytes: &[u8]) -> BTreeMap<&'static str, usize> {
-    let text = String::from_utf8_lossy(bytes);
-    let mut hits = BTreeMap::new();
-    for (name, needle) in secret_patterns() {
-        let count = text.matches(&needle).count();
-        if count > 0 && plausible_secret(&text, name, &needle) {
-            hits.insert(name, count);
-        }
-    }
-    hits
-}
-
-/// 降噪：`sk-` / `AKIA` 这类短前缀在正常文本里也会出现，要求后面跟够长的字母数字串。
-/// 分支按 **name** 匹配而不是 needle 文本——needle 字面量出现在比较里
-/// 就又成了自指样本（自审教训）。
-fn plausible_secret(text: &str, name: &str, needle: &str) -> bool {
-    if name == "private-key" {
-        return text.contains("PRIVATE KEY-----");
-    }
-    let min_tail = match name {
-        "aws-access-key" => 16,
-        "github-token" => 30,
-        "openai-style-key" => 20,
-        "slack-token" => 20,
-        _ => 8,
-    };
-    let mut rest = text;
-    while let Some(position) = rest.find(needle) {
-        let tail = &rest[position + needle.len()..];
-        let mut used = 0usize;
-        let mut run = 0usize;
-        for c in tail.chars() {
-            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-                run += 1;
-                used += c.len_utf8();
-            } else {
-                break;
-            }
-        }
-        if run >= min_tail {
-            return true;
-        }
-        let step = if used == 0 {
-            tail.chars().next().map_or(1, char::len_utf8)
-        } else {
-            used
-        };
-        rest = &tail[step..];
-    }
-    false
-}
-
 /// `\` / `/` 分段计数（空段不计）；真路径至少有三段（盘/根、目录、文件）。
 fn path_segments(text: &str) -> usize {
     text.split(['\\', '/'])
@@ -470,17 +394,52 @@ fn find_bytes(haystack: &[u8], needle: &[u8]) -> Option<usize> {
         .position(|window| window == needle)
 }
 
+/// 产物面识别：这份文件是**前端产物**还是**后端产物**。
+///
+/// - WASM（`\0asm` 魔数）⇒ 浏览器前端字节码（playground 运行的那类）；
+/// - HTML 文本 ⇒ 浏览器前端源码（只在认不出 PE/ELF 头时才看文本——
+///   原生产物里嵌这些标记很正常，不构成分类依据，也避免自指命中）；
+/// - PE / ELF ⇒ 原生后端产物。
+///
+/// 返回 `(side, artifact)`：`side` ∈ frontend/backend，`artifact` 是具体形态。
+fn artifact_side(bytes: &[u8], format: &str) -> (&'static str, &'static str) {
+    if bytes.starts_with(b"\0asm") {
+        return ("frontend", "wasm");
+    }
+    if format.starts_with("pe") || format.starts_with("elf") {
+        return ("backend", "native");
+    }
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]);
+    if head.contains("<!DOCTYPE html") || head.contains("<html") {
+        return ("frontend", "html");
+    }
+    ("unknown", "unknown")
+}
+
 pub fn run(bytes: &[u8], file_name: &str) -> Result<Value> {
     let hardening = if let Some(parsed) = parse_pe(bytes) {
-        parsed
+        Some(parsed)
     } else if let Some(parsed) = parse_elf(bytes) {
-        parsed
+        Some(parsed)
+    } else if bytes.starts_with(b"\0asm") {
+        None // 前端字节码
     } else {
-        bail!("认不出格式（只支持 PE32/PE32+ 与 ELF32/ELF64 小端）");
+        let head = String::from_utf8_lossy(&bytes[..bytes.len().min(4096)]);
+        if head.contains("<!DOCTYPE html") || head.contains("<html") {
+            None // 前端源码
+        } else {
+            bail!("认不出格式（支持 PE32/PE32+、ELF32/ELF64 小端、WASM、HTML）");
+        }
     };
+    let (side, artifact) = artifact_side(bytes, hardening.as_ref().map_or("", |p| &p.format));
     let msvc = msvc_flavor(bytes);
     let secrets = scan_strings(bytes);
-    let mut findings = hardening.findings();
+    // 泄密/路径检查对前端产物同样有意义（wasm 里嵌 API key 是真实威胁），
+    // 只有「硬化」是原生产物才有的面。
+    let mut findings = Vec::new();
+    if let Some(parsed) = &hardening {
+        findings.extend(parsed.findings());
+    }
     for name in secrets.keys() {
         findings.push(Finding::project(
             format!("secret-{name}"),
@@ -490,25 +449,29 @@ pub fn run(bytes: &[u8], file_name: &str) -> Result<Value> {
     }
     let (leak_findings, leak_warnings, leak_samples) = path_leaks(bytes);
     findings.extend(leak_findings);
-    let mut warnings = hardening.warnings(msvc);
+    let mut warnings = hardening
+        .as_ref()
+        .map_or(Vec::new(), |parsed| parsed.warnings(msvc));
     warnings.extend(leak_warnings);
     let report = json!({
         "tool": "trit-redteam",
         "check": "artifact-hardening",
         "file": file_name,
+        "side": side,
+        "artifact": artifact,
         "bytes": bytes.len(),
-        "format": hardening.format,
-        "bits": hardening.bits,
-        "hardening": {
-            "aslr": hardening.aslr,
-            "nx": hardening.nx,
-            "exec_stack": hardening.exec_stack,
-            "wx_segments": hardening.wx_segments,
-            "relro": hardening.relro,
-            "bind_now": hardening.bind_now,
-            "guard_cf": hardening.guard_cf,
-            "gnu_stack": hardening.gnu_stack,
-        },
+        "format": hardening.as_ref().map_or(artifact, |parsed| parsed.format.as_str()),
+        "bits": hardening.as_ref().map_or(0, |parsed| parsed.bits),
+        "hardening": hardening.as_ref().map_or(json!(null), |parsed| json!({
+            "aslr": parsed.aslr,
+            "nx": parsed.nx,
+            "exec_stack": parsed.exec_stack,
+            "wx_segments": parsed.wx_segments,
+            "relro": parsed.relro,
+            "bind_now": parsed.bind_now,
+            "guard_cf": parsed.guard_cf,
+            "gnu_stack": parsed.gnu_stack,
+        })),
         "findings": attrib::list_to_json(&findings),
         "warnings": attrib::list_to_json(&warnings),
         "attribution": attrib::summary(&findings),
