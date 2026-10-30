@@ -52,6 +52,14 @@ GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值
 
 定位与边界：[docs/DESIGN.md](docs/DESIGN.md)。
 
+网安/逆向技术调研（PYAS、KSword 与静态二进制分析的对照、证据等级与路线图）：
+[docs/SECURITY-RE.md](docs/SECURITY-RE.md)。
+
+网络安全面 M0（pcap → 双向流 → 三值弃权判决，含授权边界与未校准声明）：
+[docs/SECURITY-NET.md](docs/SECURITY-NET.md)。
+
+ARM64 真实样本校准（语料哈希、修复前后读数、独立复算）：[docs/N1-ARM64-CALIBRATION.md](docs/N1-ARM64-CALIBRATION.md)。
+
 ## 预编译产物
 
 GitHub Releases（`v0.3.1` 起）提供：
@@ -92,10 +100,11 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |
 | `trit-ops` | 三值推理算子（双导轨掩码 / tryte 查表 / 自动选核）：流式 15.8× f32、0.2 B/参数 | `bench`（`crates/trit-ops`） |
-| `trit-texture` | TT3/TTX 三值纹理容器：2.40 bpp、GF(3) CRC-16、CPU/GPU 解码 | `trit-texture` |
+| `trit-texture` | TT3 块纹理压缩：8×8 块、trit 索引 3 级调色板（17 字节 = 2.125 bpp）+ 端点最小二乘精修 + TTX/TTX2 容器 | `trit-texture`（同机对比表） |
 | `trit-unsafe` | 用 K3 审 unsafe：Safe / Unknown / Risky 按 crate 合成；17 类高危形态 + extern 声明块 | `trit-unsafe` |
 | `trit-redteam` | 产物红队：硬化/泄密/双导轨/fuzz/侧信道 + 前端/后端产物识别（wasm/html = 前端，PE/ELF = 后端） | `trit-redteam` |
 | `trit-procscan` | 进程行为扫描 + 网络面检查（地址分类/外联/监听面/扇出/SYN_SENT/前后端角色） + 动态追溯/追踪（ppid 链回溯 + 后代子树 + 证据绑定） + MCP 配置优化（非管理员可用的证据面） | `trit-procscan` |
+| `trit-re` | PE/ELF 逆向台账：节熵 / 导入能力面 / 叠加段 / PDB 与编译器指纹 / build-id；导入函数交叉引用（x86/x86-64/ARM64 的 IAT 与 ELF PLT/GOT，三值）、函数边界（`.pdata` / 符号表 / `.eh_frame` / `.debug_frame`）、函数级归属与同函数能力共现 → 三值判定 + 四值冲突，JSONL 输出 | `trit-re triage <PATH> [--jsonl] [--xref] [--functions]` |
 | `trit-lsp` | `.tri` 语言服务器：诊断 / 悬停真值表 / 补全 / 文档符号 / 定义-引用-高亮-重命名 / 矛盾律-排中律-语义分歧深层诊断 | `trit-lsp` |
 | `trit-train` | 三值训练 M0：STE 三变体 + 每行 scale + 位平面 ALU | `train-bench` |
 | `trit-graph` | 三态结构基础：稠密/CSR 三态图、超图、树分解容器、议会、1-WL、图核、PageRank、TriMPNN、端到端三态分类 | 库（无二进制） |

@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "三进制块纹理压缩实验层：4×10 块、RGB565 端点对、每纹素 1 trit 的 3 级调色板（不属于稳定 API）"
+description = "三进制块纹理压缩实验层：8×8 块、RGB565 端点对、每纹素 1 trit 的 3 级调色板、端点最小二乘精修（不属于稳定 API）"
 publish = false
 
 [features]

@@ -1,0 +1,33 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/t3-core",
+    "crates/t3-kernel",
+    "crates/t3-format",
+    "crates/t3-sig",
+    "crates/t3-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+license = "MIT OR Apache-2.0"
+repository = "local"
+
+[workspace.dependencies]
+t3-core = { path = "crates/t3-core" }
+t3-kernel = { path = "crates/t3-kernel" }
+t3-format = { path = "crates/t3-format" }
+t3-sig = { path = "crates/t3-sig" }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = true
+
+[profile.bench]
+opt-level = 3
+lto = "thin"
+codegen-units = 1

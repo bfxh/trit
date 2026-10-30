@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use trit_core::value::Ternary;
 use trit_net::{
     Analysis, DEFAULT_BUDGET, Layer, Model, Outcome, TrainOptions, analyze, format,
-    majority_dataset, train,
+    majority_dataset, netsec, train,
 };
 
 fn main() -> ExitCode {
@@ -14,6 +14,8 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("format") => format_cmd(&args[1..]),
         Some("train") => train_cmd(&args[1..]),
+        Some("flow") => flow_cmd(&args[1..]),
+        Some("calibrate") => calibrate_cmd(&args[1..]),
         _ => run(),
     };
     match result {
@@ -183,7 +185,326 @@ fn parse_args() -> Result<Args, String> {
 }
 
 fn usage() -> String {
-    "用法：trit-net <infer MODEL.json --inputs 1,X,0 [--budget N] [--json] | format encode|decode | train [--epochs N]>".to_string()
+    "用法：trit-net <infer MODEL.json --inputs 1,X,0 [--budget N] [--json] | format encode|decode | train [--epochs N] | flow PCAP [--model MODEL] [--budget N] | calibrate CSV [--rows N] [--epochs N] [--hidden N] [--bands 0,0.1,…] [--train-fraction F] [--json]>".to_string()
+}
+
+fn calibrate_cmd(args: &[String]) -> Result<(), String> {
+    let mut path: Option<String> = None;
+    let mut rows = 200_000usize;
+    let mut epochs = 120usize;
+    let mut hidden = 8usize;
+    let mut learning_rate = 0.3f32;
+    let mut features = 8usize;
+    let mut select_features = true;
+    let mut test_path: Option<String> = None;
+    let mut bands = vec![0.0, 0.1, 0.2, 0.3, 0.4];
+    let mut fraction = 0.75f64;
+    let mut json = false;
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].clone();
+        match flag.as_str() {
+            "--no-select" => select_features = false,
+            "--rows" | "--epochs" | "--hidden" | "--train-fraction" | "--bands" | "--lr"
+            | "--features" | "--test" => {
+                index += 1;
+                let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
+                match flag.as_str() {
+                    "--rows" => rows = raw.parse().map_err(|_| "--rows 不是整数".to_string())?,
+                    "--epochs" => {
+                        epochs = raw.parse().map_err(|_| "--epochs 不是整数".to_string())?
+                    }
+                    "--hidden" => {
+                        hidden = raw.parse().map_err(|_| "--hidden 不是整数".to_string())?
+                    }
+                    "--lr" => {
+                        learning_rate = raw.parse().map_err(|_| "--lr 不是数字".to_string())?
+                    }
+                    "--train-fraction" => {
+                        fraction = raw
+                            .parse()
+                            .map_err(|_| "--train-fraction 不是数字".to_string())?
+                    }
+                    "--features" => {
+                        features = raw.parse().map_err(|_| "--features 不是整数".to_string())?
+                    }
+                    "--test" => test_path = Some(raw.clone()),
+                    _ => {
+                        bands = raw
+                            .split(',')
+                            .map(|item| item.trim().parse::<f64>())
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|_| format!("--bands 需要逗号分隔的数字: {raw}"))?
+                    }
+                }
+            }
+            "--json" => json = true,
+            other if other.starts_with("--") => return Err(format!("未知参数 {other}")),
+            other => {
+                if path.is_some() {
+                    return Err(format!("多余的参数 {other}"));
+                }
+                path = Some(other.to_string());
+            }
+        }
+        index += 1;
+    }
+    let path = path.ok_or("calibrate 需要 CICIDS CSV 路径")?;
+    let text =
+        std::fs::read_to_string(&path).map_err(|error| format!("读取 {path} 失败：{error}"))?;
+    let dataset = netsec::dataset::parse(&text, rows).map_err(|error| error.to_string())?;
+    if dataset.samples.is_empty() {
+        return Err(format!(
+            "CSV 里没有可用样本（行 {}，跳过 {}）",
+            dataset.rows, dataset.skipped
+        ));
+    }
+    let config = netsec::calibrate::Config {
+        bands,
+        epochs,
+        hidden,
+        seed: 0x5eed_1234,
+        train_fraction: fraction,
+        balance: true,
+        learning_rate,
+        features,
+        select_features,
+    };
+    let (reports, selected) = match test_path.as_deref() {
+        Some(test_path) => {
+            let text = std::fs::read_to_string(test_path)
+                .map_err(|error| format!("读取 {test_path} 失败：{error}"))?;
+            let test = netsec::dataset::parse(&text, rows).map_err(|error| error.to_string())?;
+            println!(
+                "训练 {} 样本 → 测试 {} 样本（跨集）",
+                dataset.samples.len(),
+                test.samples.len()
+            );
+            netsec::calibrate::run_split(&dataset.samples, &test.samples, &config)?
+        }
+        None => netsec::calibrate::run(&dataset.samples, &config)?,
+    };
+    let picks: Vec<String> = selected
+        .iter()
+        .map(|picked| format!("{}({:+.3})", picked.name(), picked.correlation))
+        .collect();
+    if !json {
+        println!("选定特征 {} 个：{}", selected.len(), picks.join(", "));
+    }
+    if json {
+        let bands: Vec<serde_json::Value> = reports
+            .iter()
+            .map(|report| {
+                serde_json::json!({
+                    "band": report.band,
+                    "low_q": report.low_q,
+                    "high_q": report.high_q,
+                    "train": report.train,
+                    "test": report.test,
+                    "attack": report.attack,
+                    "coverage": report.coverage,
+                    "abstain": report.abstain,
+                    "fpr": report.fpr,
+                    "tpr": report.tpr,
+                    "precision": report.precision,
+                    "accuracy": report.accuracy,
+                    "tp": report.tp,
+                    "fp": report.fp,
+                    "tn": report.tn,
+                    "fn": report.fn_,
+                    "attack_abstain": report.attack_abstain,
+                    "benign_abstain": report.benign_abstain,
+                })
+            })
+            .collect();
+        let obj = serde_json::json!({
+            "rows": dataset.rows,
+            "samples": dataset.samples.len(),
+            "skipped": dataset.skipped,
+            "attacks": dataset.attacks,
+            "epochs": config.epochs,
+            "hidden": config.hidden,
+            "train_fraction": config.train_fraction,
+            "seed": config.seed,
+            "selected": selected.iter().map(|picked| serde_json::json!({
+                "feature": picked.name(),
+                "bias": match picked.bias {
+                    netsec::features::Bias::High => "high",
+                    netsec::features::Bias::Low => "low",
+                },
+                "correlation": picked.correlation,
+            })).collect::<Vec<_>>(),
+            "bands": bands,
+        });
+        println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
+        return Ok(());
+    }
+    println!(
+        "数据集：行 {}，样本 {}，跳过 {}，攻击 {}（{:.2}%）；epochs {}，hidden {}",
+        dataset.rows,
+        dataset.samples.len(),
+        dataset.skipped,
+        dataset.attacks,
+        100.0 * dataset.attacks as f64 / dataset.samples.len() as f64,
+        config.epochs,
+        config.hidden
+    );
+    println!(
+        "{:>5}  {:>11}  {:>8}  {:>8}  {:>8}  {:>8}  {:>9}  {:>8}  {:>7}  {:>7}",
+        "band",
+        "quantile",
+        "coverage",
+        "abstain",
+        "FPR",
+        "TPR",
+        "precision",
+        "accuracy",
+        "atk-abs",
+        "ben-abs"
+    );
+    for report in &reports {
+        println!(
+            "{:>5.2}  [{:.2},{:.2}]  {:>8.4}  {:>8.4}  {:>8.4}  {:>8.4}  {:>9.4}  {:>8.4}  {:>7.4}  {:>7.4}  {:>9.5}  {:>8.4}  {:>8.4}",
+            report.band,
+            report.low_q,
+            report.high_q,
+            report.coverage,
+            report.abstain,
+            report.fpr,
+            report.tpr,
+            report.precision,
+            report.accuracy,
+            report.attack_abstain,
+            report.benign_abstain,
+            report.train_loss,
+            report.train_accuracy,
+            report.shadow_accuracy
+        );
+    }
+    if let Some(last) = reports.last() {
+        println!(
+            "测试集计分（band={:.2}）：tp {} / fp {} / tn {} / fn {}；攻击 {} 条",
+            last.band, last.tp, last.fp, last.tn, last.fn_, last.attack
+        );
+    }
+    Ok(())
+}
+
+fn flow_cmd(args: &[String]) -> Result<(), String> {
+    let mut path: Option<String> = None;
+    let mut model_path: Option<String> = None;
+    let mut budget = DEFAULT_BUDGET;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--model" => {
+                index += 1;
+                model_path = Some(args.get(index).ok_or("--model 缺少参数")?.clone());
+            }
+            "--budget" => {
+                index += 1;
+                let raw = args.get(index).ok_or("--budget 缺少参数")?;
+                budget = raw
+                    .parse()
+                    .map_err(|_| format!("--budget 不是整数: {raw}"))?;
+            }
+            other if other.starts_with("--") => return Err(format!("未知参数 {other}")),
+            other => {
+                if path.is_some() {
+                    return Err(format!("多余的参数 {other}"));
+                }
+                path = Some(other.to_string());
+            }
+        }
+        index += 1;
+    }
+    let path = path.ok_or("flow 需要 PCAP 路径")?;
+    let data = std::fs::read(&path).map_err(|error| format!("读取 {path} 失败：{error}"))?;
+    let model = match model_path.as_deref() {
+        Some(model_path) => {
+            let bytes = std::fs::read(model_path)
+                .map_err(|error| format!("读取模型失败 {model_path}：{error}"))?;
+            let model = if model_path.ends_with(".trn") {
+                format::decode(&bytes).map_err(|error| error.to_string())?
+            } else {
+                let text = String::from_utf8(bytes)
+                    .map_err(|_| format!("模型 {model_path} 不是 UTF-8 JSON"))?;
+                Model::from_json(&text).map_err(|error| error.to_string())?
+            };
+            if model.inputs() != netsec::flow::N {
+                return Err(format!(
+                    "模型输入维数 {} 与特征维数 {} 不一致",
+                    model.inputs(),
+                    netsec::flow::N
+                ));
+            }
+            Some(model)
+        }
+        None => None,
+    };
+
+    let reader = netsec::pcap::Reader::new(&data).map_err(|error| error.to_string())?;
+    let link = reader.link_type();
+    let nanos = reader.nanos();
+    let mut table = netsec::flow::FlowTable::new();
+    let mut packets = 0usize;
+    let mut skips: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    for record in reader {
+        let record = record.map_err(|error| error.to_string())?;
+        let ts = record.timestamp_seconds(nanos);
+        match netsec::packet::decode(link, record.data) {
+            Ok(packet) => {
+                table.ingest(ts, &packet);
+                packets += 1;
+            }
+            Err(skip) => *skips.entry(skip.as_str()).or_default() += 1,
+        }
+    }
+    let flows = table.finish();
+    for flow in &flows {
+        let values = flow.features.values();
+        let inputs = netsec::features::ternarize(&values, &netsec::features::DEFAULT_RULES);
+        let features = netsec::flow::NAMES
+            .iter()
+            .zip(values.iter())
+            .map(|(name, value)| (name.to_string(), serde_json::json!(value)))
+            .collect::<serde_json::Map<String, serde_json::Value>>();
+        let mut obj = serde_json::json!({
+            "src": flow.src().to_string(),
+            "dst": flow.dst().to_string(),
+            "proto": flow.key.proto,
+            "first_ts": flow.first_ts,
+            "packets": flow.features.fwd_pkts + flow.features.bwd_pkts,
+            "inputs": netsec::features::encode(&inputs),
+            "features": features,
+        });
+        if let Some(model) = &model {
+            let decision = netsec::decision::decide(model, &inputs, budget)
+                .map_err(|error| error.to_string())?;
+            obj["verdict"] = serde_json::json!(decision.verdict.as_str());
+            obj["reason"] = serde_json::json!(decision.reason);
+            obj["exact"] = serde_json::json!(decision.exact);
+            obj["completions"] = serde_json::json!(decision.completions);
+            obj["unknown_inputs"] = serde_json::json!(decision.unknown_inputs);
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&obj).map_err(|error| format!("JSON 序列化失败：{error}"))?
+        );
+    }
+    let mut summary = format!("报文 {packets} 条，流 {} 条", flows.len());
+    if model.is_some() {
+        summary.push_str("；规则集 DEFAULT_RULES（未校准）");
+    }
+    if !skips.is_empty() {
+        summary.push_str("；跳过：");
+        for (reason, count) in &skips {
+            summary.push_str(&format!(" {reason}={count}"));
+        }
+    }
+    eprintln!("{summary}");
+    Ok(())
 }
 
 fn parse_inputs(raw: &str) -> Result<Vec<Ternary>, String> {
