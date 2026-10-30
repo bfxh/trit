@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed（`trit-re`：ELF 槽位表收 `GLOB_DAT`）
+
+- 槽位表原来只收 `JUMP_SLOT`，`__cxa_finalize` / `__gmon_start__` 这类 `GLOB_DAT` 导入
+  明明有 PLT 桩、也被调用，却记"没有槽位" ⇒ `Unknown`。现在两种都收
+  （x86-64/i386 = 类型 6，ARM64 = 1025），`ELF` 三条路径（x64 / i386 / AArch64）语义一致。
+- 取地址识别补上 `cmp` / `test` 的 `[ebx+disp32]`、`[abs32]` 形式（原来只有 `mov`/`lea`/`push`），
+  以免把"被比较过"误判成"没有引用"；单元测试逐条锁形式。
+- 真实读数（同批样本）：`c32-pie` 有调用点 5→**6**、无调用点 0→**2**、未知 4→1；
+  `libdbg32.so` 5、2、1；`c32-nopie` 不变；x86-64 / AArch64 glibc 与 ripgrep 不变
+  （13/0/0、13/0/0、133/0/5）。
+- 那两个新 `False` 是 `_ITM_*`：槽位已知、可执行节扫全、objdump 计数 0 次引用
+  ⇒ "本文件不引用它"是有证据的结论。**前提**是取址形式覆盖到位——新增形式必须补单元测试。
+- 测试 **89 → 90**；变异 **22 → 23/23**（新增"GLOB_DAT 槽位被忽略"）。
+- **未证**：字节比较类取址（`80/81/83 BB` 等）未计入；只对 NOTYPE/FUNC/IFUNC 建行。
+
 ### Added（高危门：并发/内存的编译期静态门禁，比 rustc 更狠且按设计分级）
 
 - 新门禁 `scripts/hazard_gate.py` + 政策文档 `docs/HAZARD-POLICY.md`，接入 CI
@@ -21,6 +36,7 @@
   边界与 SAFETY 就红。
 - 自测：5 条反证（每条规则都能红）+ needle/char/内联测试不自指 +
   登记+SAFETY 两种正例放行；仓库现状 0 findings、41 处放行/豁免。
+
 ### Fixed（工具链自审：用自己的扫描器挖自己，docs/review/self-audit-2026-10-28.md）
 
 - `trit-redteam binary` 自检挖到自己 4 个 project 发现，全部是真问题：
@@ -38,6 +54,7 @@
 - 动态链路自测（build→rail/sidechannel 吃自己导出的网表、procscan 观察自己
   运行）：rail 报出的导出 fail-open 与双导轨重量侧信道为**已知边界**，
   如实记录在自审报告，不在本 PR 修。
+
 ### Added（`trit-re`：ELF32 / i386 的 PLT-GOT 交叉引用）
 
 - 重定位按 class 读：64 位 `RELA` 24 / `REL` 16 字节，32 位 `RELA` 12 / `REL` 8 字节；

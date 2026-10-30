@@ -7,9 +7,9 @@
 //! 扫描方式是**字节模式匹配，不是完整反汇编**：
 //! - PE x86-64：`FF /2`(call)、`FF /4`(jmp) 的 RIP 相对编码；
 //! - PE x86：同两个操作码的 32 位绝对寻址编码；
-//! - ELF x86-64：`.rela.plt` 的 `JUMP_SLOT` → GOT 槽位，PLT 桩里的 `FF /4`，
+//! - ELF x86-64：`.rela.plt`/`.rela.dyn` 的 `JUMP_SLOT`/`GLOB_DAT` → GOT 槽位，PLT 桩里的 `FF /4`，
 //!   以及调用方的 `E8`(call rel32)、`FF /2` 经 GOT；
-//! - ELF i386：`SHT_REL`（8 字节/条）的 `JUMP_SLOT`，PIC 桩 `FF A3 disp32`
+//! - ELF i386：`SHT_REL`（8 字节/条）的 `JUMP_SLOT`/`GLOB_DAT`，PIC 桩 `FF A3 disp32`
 //!   （`jmp *disp(%ebx)`，基址由 `call __x86.get_pc_thunk.bx; add $imm,%ebx` 解出）
 //!   与非 PIC 桩 `FF 25 abs32`。
 //!
@@ -466,10 +466,22 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
         return report;
     };
     let slot_type = if info.machine == 183 { 1026 } else { 7 };
-    let Some(jump_slots) = elf_jump_slots(bytes, info, &symbols, slot_type, info.class == 2) else {
-        let mut report = empty_report(arch, "没有 JUMP_SLOT 重定位（静态链接或节表缺失）");
+    let glob_dat_type = if info.machine == 183 { 1025 } else { 6 };
+    let Some(jump_slots) = elf_got_slots(
+        bytes,
+        info,
+        &symbols,
+        slot_type,
+        glob_dat_type,
+        info.class == 2,
+    ) else {
+        let mut report = empty_report(
+            arch,
+            "没有 JUMP_SLOT / GLOB_DAT 重定位（静态链接或节表缺失）",
+        );
         if let Some(imports) = &info.imports {
-            report.imports = unknown_rows(imports.iter().cloned(), "没有 JUMP_SLOT 重定位");
+            report.imports =
+                unknown_rows(imports.iter().cloned(), "没有 JUMP_SLOT / GLOB_DAT 重定位");
         }
         return report;
     };
@@ -631,7 +643,7 @@ pub(super) fn build_elf_report(
                 sites: Vec::new(),
                 // 没有槽位就没有证据："没有重定位"不等于"没有调用点"。
                 status: Ternary::Unknown,
-                note: "没有 JUMP_SLOT 重定位（可能是动态解析或弱符号）".to_string(),
+                note: "没有 GOT 槽位（可能是动态解析或弱符号）".to_string(),
             });
         }
     }
@@ -651,12 +663,17 @@ pub(super) fn build_elf_report(
     report
 }
 
-/// 解析 ELF 的 `JUMP_SLOT` 重定位：`(GOT 虚拟地址, 符号下标)`。
-fn elf_jump_slots(
+/// 解析 ELF 的 GOT 槽位：`JUMP_SLOT` 与 `GLOB_DAT`，得到 `(GOT 虚拟地址, 符号下标)`。
+///
+/// 两者都要收：`JUMP_SLOT` 是 PLT 桩用的槽位，`GLOB_DAT` 是"直接取函数/数据地址"的槽位
+/// （如 glibc 的 `__cxa_finalize`、GCC 的 `__gmon_start__`）。只收前者会把明明被调用过的
+/// 导入记成"没有槽位"。
+fn elf_got_slots(
     bytes: &[u8],
     info: &elf::ElfInfo,
     symbols: &[elf::DynamicSymbol],
     slot_type: u32,
+    glob_dat_type: u32,
     sixty_four: bool,
 ) -> Option<Vec<(u64, usize)>> {
     let known: BTreeSet<usize> = symbols.iter().map(|symbol| symbol.index).collect();
@@ -687,7 +704,7 @@ fn elf_jump_slots(
             let Some((got, symbol, kind)) = read_rel_entry(data, base, sixty_four) else {
                 continue;
             };
-            if kind == slot_type && known.contains(&symbol) {
+            if (kind == slot_type || kind == glob_dat_type) && known.contains(&symbol) {
                 found_table = true;
                 slots.push((got, symbol));
             }
