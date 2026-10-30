@@ -4,6 +4,10 @@
 //! 每纹素 **1 个 trit** 索引 3 级调色板 `{e0, mid, e1}`；64 个 trit 按
 //! 5 trit/字节打包成 13 字节 ⇒ 每块 **17 字节 = 2.125 bpp**。
 //!
+//! **TTX3**（万级大纹理档案）：在 TT3 之上做瓦片化 + 层级混搭 + 流式瓦片解码——
+//! 基面 10240×10240（1.05 亿纹素）、细层容量档 / 粗层强度档（双写冗余）、
+//! 逐瓦片 GF(3) CRC-16、u64 偏移，见 [`ttx3`] 与 docs/ATLAS.md。
+//!
 //! 对比基线（同一块结构、同一 3 级调色板，索引改 2 bit/纹素）：
 //! 64×2 bit = 16 字节 ⇒ 每块 20 字节 = 2.5 bpp。**等调色板下 trit 载荷
 //! 13 字节 < 二进制 16 字节（省 18.75% 载荷 / 15% 码率）**——可复算，
@@ -31,11 +35,19 @@ use trit_core::value::Ternary;
 
 pub mod convert;
 mod endpoints;
+pub mod error;
 pub mod gguf;
 #[cfg(feature = "png")]
 pub mod pngio;
 pub mod ttx;
 pub mod ttx2;
+pub mod ttx3;
+
+pub use error::TextureError;
+pub use ttx3::{
+    LargeTexture, LevelPolicy, TILE_BLOCKS, TILE_DATA_BYTES, TILE_HEIGHT, TILE_TEXELS, TILE_WIDTH,
+    TileRgba, Ttx3Archive, level_storage_bytes, suggest_chain,
+};
 
 use endpoints::{block_endpoints, nearest_index, palette_from_endpoints, refine_endpoints};
 
@@ -67,128 +79,6 @@ pub const BINARY_PAYLOAD_BYTES: usize = BLOCK_PIXELS * 2 / 8;
 pub const BINARY_BLOCK_BYTES: usize = 4 + BINARY_PAYLOAD_BYTES;
 /// 纹素数上限（解析/分配之前拒绝）。
 pub const MAX_TEXTURE_PIXELS: usize = 1 << 22;
-
-/// 纹理压缩错误。
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TextureError {
-    /// 宽高都必须等于 `BLOCK_WIDTH` / `BLOCK_HEIGHT`（当前是 8×8 方块）的倍数。
-    #[error("宽 {width} 必须是 {BLOCK_WIDTH} 的倍数，高 {height} 必须是 {BLOCK_HEIGHT} 的倍数")]
-    Shape {
-        /// 传入的宽。
-        width: usize,
-        /// 传入的高。
-        height: usize,
-    },
-    /// 输入长度与宽高不符（RGBA，每纹素 4 字节）。
-    #[error("输入 {actual} 字节，宽高要求 {expected} 字节（RGBA）")]
-    SizeMismatch {
-        /// 实际字节数。
-        actual: usize,
-        /// 期望字节数。
-        expected: usize,
-    },
-    /// 纹理过大。
-    #[error("纹理 {pixels} 纹素，超过上限 {MAX_TEXTURE_PIXELS}")]
-    TooLarge {
-        /// 纹素数。
-        pixels: usize,
-    },
-    /// 调色板索引越界（baseline 调色板只有 3 色，合法索引 0..=2）。
-    #[error("块 {block} 的调色板索引 {index} 越界（只支持 0..=2）")]
-    InvalidPaletteIndex {
-        /// 块序号。
-        block: usize,
-        /// 非法索引。
-        index: u8,
-    },
-    /// 解码数据的块数与宽高不符。
-    #[error("块数 {actual} 与宽高要求的 {expected} 不符")]
-    BlockCount {
-        /// 实际块数。
-        actual: usize,
-        /// 期望块数。
-        expected: usize,
-    },
-    /// TTX 魔数不符（既非 "TTX1" 也非 "TTX2"；v2 读 v1 也走这条，带着实际字节）。
-    #[error("TTX 魔数不符：{0:?}")]
-    TtxMagic([u8; 4]),
-    /// TTX 容器截断（不足头部/载荷/校验尾）。
-    #[error("TTX 容器只有 {actual} 字节，长度不符")]
-    TtxTruncated {
-        /// 实际字节数。
-        actual: usize,
-    },
-    /// TTX 头部声明的块数与宽高推出的块数不符。
-    #[error("TTX 声明 {declared} 块，宽高要求 {expected} 块")]
-    TtxBlockCount {
-        /// 声明的块数。
-        declared: u32,
-        /// 期望块数。
-        expected: usize,
-    },
-    /// TTX 的 GF(3) 校验和不符。
-    #[error("TTX 校验和不符：存 {stored:#04x}，算得 {expected:#04x}")]
-    TtxChecksum {
-        /// 存的校验字节。
-        stored: u8,
-        /// 重算的校验字节。
-        expected: u8,
-    },
-    /// TTX1 是 v1（4×10 / 12 字节块）的冻结格式，当前块布局已不是 v1。
-    ///
-    /// 用新布局读写 "TTX1" 会让旧文件被静默误读——按「绝不猜」的纪律显式拒绝。
-    /// v2 的纹理请走 TTX2（kind=TEX）。
-    #[error(
-        "TTX1 只支持 v1 的 4×10 / 12 字节块，当前块是 {width}×{height} / {bytes} 字节；v2 纹理请用 TTX2"
-    )]
-    TtxV1LayoutMismatch {
-        /// 当前块宽。
-        width: usize,
-        /// 当前块高。
-        height: usize,
-        /// 当前块字节数。
-        bytes: usize,
-    },
-    /// TTX2 容器是旧布局（4×10 块），当前解码器只认 8×8。
-    #[error(
-        "TTX2 旧布局（rev={rev}）：4×10 块需要 v0.12 之前的解码器；TT3 无跨布局无损转换，请从源重编码"
-    )]
-    UnsupportedLayout {
-        /// 文件声明的布局版本（旧文件为 0）。
-        rev: u8,
-    },
-    /// TTX1 容器已不再支持（块布局已从 4×10 改为 8×8）。
-    #[error("TTX1 已不再支持：块布局从 4×10 改为 8×8，无跨布局无损转换，请从源图重新编码为 TTX2")]
-    UnsupportedLegacyFormat,
-    /// TTX2 的 kind 不是 0（TEX）/ 1（MOD）。
-    #[error("TTX2 未知 kind：{0}")]
-    TtxKind(u8),
-    /// TTX2 的 flags/reserved 非零（前向兼容显式拒绝，不静默猜）。
-    #[error("TTX2 flags/reserved 必须为零，实际 flags={flags} reserved={reserved}")]
-    TtxFlags {
-        /// flags 字节。
-        flags: u8,
-        /// reserved 双字节。
-        reserved: u16,
-    },
-    /// TTX2 段没有任何 mip 级 / 层。
-    #[error("TTX2 段没有任何 mip 级/层")]
-    TtxEmpty,
-    /// TTX2 的 mip 级未严格小于上一级。
-    #[error("TTX2 第 {level} 级 mip 未严格小于上一级（宽高须不增且至少一维递减）")]
-    TtxMip {
-        /// 违规的 mip 级下标。
-        level: usize,
-    },
-    /// TTX2 模型层形状不合法。
-    #[error("TTX2 第 {layer} 层形状不合法：{message}")]
-    TtxModelShape {
-        /// 层下标。
-        layer: usize,
-        /// 说明。
-        message: String,
-    },
-}
 
 /// RGB565 打包：R 高 5 位、G 中 6 位、B 低 5 位。
 fn pack_rgb565(r: u8, g: u8, b: u8) -> u16 {
