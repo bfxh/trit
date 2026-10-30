@@ -52,6 +52,9 @@ GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值
 
 定位与边界：[docs/DESIGN.md](docs/DESIGN.md)。
 
+网安/逆向技术调研（PYAS、KSword 与静态二进制分析的对照、证据等级与路线图）：
+[docs/SECURITY-RE.md](docs/SECURITY-RE.md)。
+
 ## 预编译产物
 
 GitHub Releases（`v0.3.1` 起）提供：
