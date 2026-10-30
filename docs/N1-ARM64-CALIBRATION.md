@@ -119,7 +119,7 @@ IAT 槽位按 8 字节紧邻排列，一个寄存器判错就会把调用记到�
   相关能力组保持 `Unknown`；IFUNC 密集的库（如 libm）未覆盖。
 - **ELF 槽位表收 `JUMP_SLOT` + `GLOB_DAT`**，但只对 NOTYPE/FUNC/IFUNC 符号建行；
   纯数据导入（`OBJECT`）不进台账，因此"没看到引用"不会落到它们头上。
-  字节比较类取址尚未计入（见 §10 的未证项）。
+  取址识别覆盖见 §10.2；**已知假阴性**：`get_pc_thunk.ax` 把 GOT 基址放进 EAX 时识别不到。
 - **PE32**（无 `.pdata`）的同函数共现仍恒为 `Unknown`。
 - x64 的未归属调用点已按类别拆开：Node 148 = call 25 / jmp 123，Deno 156 = call 24 / jmp 132。
   其中 jmp 绝大多数是无 `.pdata` 的导入跳板（结构性）；**call 的 24–25 个尚未逐条裁定**，
@@ -260,11 +260,14 @@ libdbg32.so  fclose 0x120f   strlen 0x11b1   fopen 0x11e3   __fprintf_chk 0x1206
 
 **未证 / 不做**：
 
-- 字节比较类取址（`80/81/83 BB disp32`、`B8 imm32` 搬常量等）不计入"取地址"：
-  若某个导入只被这类指令碰过，仍可能落 `False`。目前覆盖的是
-  `mov`/`lea`/`cmp`/`test`/`push` 的 `[ebx+disp32]` 与 `[abs32]` 形式（有单元测试逐个锁）。
-- 基址解析只认 `get_pc_thunk.bx` + `add $imm,%ebx` 这一种序言；`pop %ebx` 变体、
-  `-mcmodel` 其它写法未覆盖（遇到时 `.plt` 有 `FF A3` 但无基址 ⇒ `complete=false`）。
+- **取址覆盖**：`mov`/`lea`/`cmp`/`test`/`push` 的 `[ebx+disp32]`、`[abs32]`，加上
+  `cmp … imm` 的 `80/81/83 BB`（EBX 相对）与 `80/81/83 3D`（绝对），以及立即数形式
+  `B8..BF imm32` / `68 imm32` / `C7 45|85|05 imm32`（见 §10.2）。**未覆盖**：
+  `C7 83`（存到 `[ebx+disp]`）、x64 的 `48 C7 C0 imm32`、以及把地址先算进寄存器再传的链条。
+- **GOT 基址只认 EBX**：`get_pc_thunk.bx` + `add $imm,%ebx`。**已实测的缺口**：
+  `get_pc_thunk.ax` 把基址放进 EAX，随后 `mov 0x10(%eax),%ecx` 这种访问识别不到
+  ⇒ 该导入会落 `False`（见 §10.2 的 `c32-fptr-pie`，这是**已知假阴性**）。
+  `pop %ebx` 变体、`-mcmodel` 其它写法同样未覆盖（遇到时 `.plt` 有 `FF A3` 但无基址 ⇒ `complete=false`）。
 - 32 位 PE（无 `.pdata`）与本主题无关，函数共现仍恒 `Unknown`。
 
 ### 10.1 `GLOB_DAT` 槽位（2026-10-30 补）
@@ -289,3 +292,33 @@ ARM64 = 1025）。此前只收前者，`__cxa_finalize` 这类"有 PLT 桩、也
 
 **注意**：这会让"数据型 GLOB_DAT 导入"从 `Unknown` 变成 `False`，前提是上面那组取址形式
 已经覆盖；新增形式必须同时补单元测试，否则会把"漏检"伪装成"没有引用"。
+
+### 10.2 立即数取址与"函数指针"（2026-10-31 补）
+
+非 PIC 下取导入函数地址，编译器给的是 **PLT 桩地址**（不是 GOT 槽位），所以只把立即数和
+GOT 槽位比是打不中的。现在第三遍扫描会读这几类立即数，并同时比对 **GOT 槽位** 与 **已知 PLT 桩地址**：
+
+| 编码 | 指令 | 立即数位置 |
+|---|---|---|
+| `B8..BF imm32` | `mov r32, imm32` | +1 |
+| `68 imm32` | `push imm32` | +1 |
+| `C7 45 disp8 imm32` | `mov [ebp+d8], imm32` | +3 |
+| `C7 85 disp32 imm32` | `mov [ebp+d32], imm32` | +6 |
+| `C7 05 disp32 imm32` | `mov [abs32], imm32` | +6 |
+
+命中只把对应导入降级成 `Unknown`（不产生调用点）。真实样本：
+
+```bash
+# fptr.c：cmp_fn f = strcmp; if (argc > 2) f = memcmp; return f(...) == 0;
+gcc -m32 -O0 -no-pie -fno-pic -o c32-fptr fptr.c     # 1 个导入
+gcc -m32 -O0 -o c32-fptr-pie fptr.c                  # 另一个构建
+```
+
+| 样本 | 结构 | 工具读数 | 结论 |
+|---|---|---|---|
+| `c32-fptr` | 非 PIE：`movl $strcmp@plt,-0x4(%ebp)`（`C7 45`） | `strcmp` / `memcmp` = **`Unknown`**（改前 `False`） | ✅ 立即数 = 桩地址 ⇒ 取址已知 |
+| `c32-fptr-pie` | PIE：`call __x86.get_pc_thunk.ax; add $0x2e41,%eax; mov 0x10(%eax),%ecx` | 仍是 **`False`** | ❌ **已知假阴性**：基址在 EAX，不在 EBX |
+
+`c32-fptr-pie` 这条就是下一片要补的：`get_pc_thunk.{ax,cx,dx,si,di}` + 按寄存器解码
+`modrm`（`8B 80|81|83|88…`），而不是只认 `83`（EBX）。它现在写成 `False` 是有风险的
+——"没看到引用"并不等于"没有引用"，所以这里必须显式登记，不能当成良性通过。

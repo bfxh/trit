@@ -342,7 +342,7 @@ fn write_shdr(
 /// - `socket`（JUMP_SLOT）：`E8` 打到 PLT 桩、`call *0x8(%ebx)`、`jmp *abs32` 三个引用；
 /// - `printf`（GLOB_DAT，`.rel.dyn`）：有 PLT 桩、被 `E8` 调用 ⇒ 必须判 `True`
 ///   （只收 JUMP_SLOT 的旧实现会把它当成"没有槽位"）；
-/// - `getenv`（JUMP_SLOT）：只有一次 `mov eax,[ebx+0x10]`（取地址）⇒ 降级 `Unknown`。
+/// - `getenv`（JUMP_SLOT）：只有一次 `push $getenv@plt`（立即数取址）⇒ 降级 `Unknown`。
 ///
 /// `thunk = false` 时去掉 `call get_pc_thunk.bx; add $imm,%ebx`：`(%ebx)` 引用解析不了，
 /// 报告必须标不完整，而不是判"没有调用点"。
@@ -386,10 +386,9 @@ pub fn elf32_sample(thunk: bool) -> Vec<u8> {
     file[0x110] = 0xFF;
     file[0x111] = 0x93;
     put_u32(&mut file, 0x112, 8);
-    // 0x116: mov eax,[ebx+0x10]（getenv 槽位被取地址）
-    file[0x116] = 0x8B;
-    file[0x117] = 0x83;
-    put_u32(&mut file, 0x118, 0x10);
+    // 0x116: push $0x08048160（getenv 的 PLT 桩地址——非 PIC 下取函数地址即取桩地址）
+    file[0x116] = 0x68;
+    put_u32(&mut file, 0x117, PLT + 0x20);
     // 0x11C: jmp *abs32（非 PIC 风格，直接给出 socket 槽位）
     file[0x11C] = 0xFF;
     file[0x11D] = 0x25;
@@ -407,6 +406,9 @@ pub fn elf32_sample(thunk: bool) -> Vec<u8> {
     file[0x150] = 0xFF;
     file[0x151] = 0xA3;
     put_u32(&mut file, 0x152, 0xC);
+    file[0x160] = 0xFF;
+    file[0x161] = 0xA3;
+    put_u32(&mut file, 0x162, 0x10);
 
     // .dynstr："\0socket\0printf\0getenv\0"
     file[0x180] = 0;
@@ -435,7 +437,7 @@ pub fn elf32_sample(thunk: bool) -> Vec<u8> {
 
     let sh = 0x400;
     write_shdr32(&mut file, sh + 40, 1, 1, 6, TEXT, 0x100, 0x30, 0, 0);
-    write_shdr32(&mut file, sh + 80, 7, 1, 6, PLT, 0x140, 0x20, 0, 0);
+    write_shdr32(&mut file, sh + 80, 7, 1, 6, PLT, 0x140, 0x30, 0, 0);
     write_shdr32(&mut file, sh + 120, 12, 3, 2, 0, 0x180, 0x16, 0, 0);
     write_shdr32(&mut file, sh + 160, 20, 11, 2, 0, 0x1A0, 0x40, 3, 16);
     write_shdr32(&mut file, sh + 200, 28, 9, 2, 0, 0x1E0, 0x10, 4, 8);

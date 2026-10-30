@@ -2838,6 +2838,22 @@ MUTANTS = [
         "pkg": "trit-re",
         "filter": 'elf32_pic_stub_is_resolved_through_get_pc_thunk',
     },
+    {
+        "name": 'trit-re: 取址不认 PLT 桩地址',
+        "file": 'crates/trit-re/src/xref/x86.rs',
+        "old": '            } else if let Some(symbol) = stubs.get(&value)',
+        "new": '            } else if let Some(symbol) = stubs.get(&value).filter(|_| false)',
+        "pkg": "trit-re",
+        "filter": 'elf32_pic_stub_is_resolved_through_get_pc_thunk',
+    },
+    {
+        "name": 'trit-re: C7 立即数偏移少 1',
+        "file": 'crates/trit-re/src/xref/x86.rs',
+        "old": '            0x45 => index + 3, // [ebp+disp8]',
+        "new": '            0x45 => index + 4, // [ebp+disp8]',
+        "pkg": "trit-re",
+        "filter": 'immediate_reference_reads_each_encoding',
+    },
 ]
 
 
