@@ -2494,7 +2494,6 @@ MUTANTS = [
     {
         "name": 'redteam: 不扫密钥形态字符串',
         "file": 'crates/trit-redteam/src/secrets.rs',
-        "file": 'crates/trit-redteam/src/binary.rs',
         "old": '        if count > 0 && plausible_secret(&text, name, &needle) {',
         "new": '        if false {',
         "pkg": 'trit-redteam',
