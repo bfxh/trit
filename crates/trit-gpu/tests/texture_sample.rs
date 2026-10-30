@@ -399,8 +399,9 @@ fn gpu_aniso_matches_cpu() {
         for x in 0..w {
             let u = x as f32 * du;
             let v = 0.4 + y as f32 * dv;
-            let px = trit_texture::sample::sample_aniso(&doc, u, v, du, 0.0, 0.0, dv, 8)
-                .expect("cpu aniso");
+            let px =
+                trit_texture::sample::sample_aniso(&doc, u, v, du, 0.0, 0.0, dv, 8, CpuWrap::Clamp)
+                    .expect("cpu aniso");
             expect.push(px);
             // 与 CPU 同一条 lod/taps 公式（taps=8 固定，lod 由 ρ_minor 推）
             let minor = (dv * height as f32).max(1.0);
