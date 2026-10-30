@@ -26,7 +26,9 @@ pub mod pe;
 pub mod triage;
 pub mod verdict;
 pub mod witness;
+pub mod xref;
 
 pub use triage::{Triage, analyze};
 pub use verdict::{Hypothesis, Judgment, default_hypotheses, evaluate};
 pub use witness::{Facts, Witness};
+pub use xref::{CallSite, ImportXref, SiteKind, XrefReport};

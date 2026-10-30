@@ -84,6 +84,17 @@ pub struct ElfSection {
     pub entropy: Option<f64>,
 }
 
+/// 动态符号表里的一条（`xref` 需要下标来解重定位）。
+#[derive(Debug, Clone)]
+pub struct DynamicSymbol {
+    /// 符号下标。
+    pub index: usize,
+    /// 符号名。
+    pub name: String,
+    /// 是否有定义（`st_shndx != 0`）。
+    pub defined: bool,
+}
+
 /// 叠加段。
 #[derive(Debug, Clone)]
 pub struct Overlay {
@@ -372,6 +383,22 @@ pub fn parse(bytes: &[u8]) -> Result<ElfInfo, ParseError> {
 }
 
 fn parse_imports(bytes: &[u8], sections: &[ElfSection], sixty_four: bool) -> Option<Vec<String>> {
+    let symbols = read_dynamic_symbols(bytes, sections, sixty_four)?;
+    Some(
+        symbols
+            .into_iter()
+            .filter(|symbol| !symbol.defined)
+            .map(|symbol| symbol.name)
+            .collect(),
+    )
+}
+
+/// 读取全部动态符号（含下标）；没有节表时返回 `None`。
+pub fn read_dynamic_symbols(
+    bytes: &[u8],
+    sections: &[ElfSection],
+    sixty_four: bool,
+) -> Option<Vec<DynamicSymbol>> {
     let Some(dynsym) = sections
         .iter()
         .find(|section| section.sh_type == SHT_DYNSYM)
@@ -398,7 +425,7 @@ fn parse_imports(bytes: &[u8], sections: &[ElfSection], sixty_four: bool) -> Opt
     }
     let count = (dynsym.size as usize / entry_size).min(MAX_SYMBOLS);
     let base = dynsym.offset as usize;
-    let mut imports = Vec::new();
+    let mut symbols = Vec::new();
     for index in 0..count {
         let off = base + index * entry_size;
         let name_off = u32_at(bytes, off)? as usize;
@@ -407,14 +434,15 @@ fn parse_imports(bytes: &[u8], sections: &[ElfSection], sixty_four: bool) -> Opt
         } else {
             u16_at(bytes, off + 14)?
         };
-        if shndx != 0 {
-            continue;
-        }
         if let Some(name) = cstr(strings, name_off, 512) {
-            imports.push(name);
+            symbols.push(DynamicSymbol {
+                index,
+                name,
+                defined: shndx != 0,
+            });
         }
     }
-    Some(imports)
+    Some(symbols)
 }
 
 fn note_build_id(bytes: &[u8], section: &ElfSection) -> Option<String> {
@@ -466,6 +494,11 @@ impl ElfInfo {
                 && self.entry >= phdr.vaddr
                 && self.entry < phdr.vaddr.saturating_add(phdr.memsz)
         }))
+    }
+
+    /// 读取全部动态符号（供交叉引用解重定位用）。
+    pub fn dynamic_symbols(&self, bytes: &[u8]) -> Option<Vec<DynamicSymbol>> {
+        read_dynamic_symbols(bytes, &self.sections, self.class == 2)
     }
 
     /// 最大的可执行/可写段熵。

@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（`trit-re` M1：导入函数交叉引用）
+
+- 新模块 `xref`：给每个导入函数判定「有没有静态调用点」，三值而不是布尔——
+  找到 `True`、完整扫过且没有 `False`、架构不支持/节数据越界/重定位缺失 `Unknown`。
+- PE x86-64：`FF /2`(call)、`FF /4`(jmp) 的 RIP 相对编码，目标必须精确等于 IAT 槽位；
+  PE x86：同操作码的 32 位绝对寻址。导入表现在带 `FirstThunk` 槽位 RVA。
+- ELF x86-64：解析 `JUMP_SLOT` 重定位 → GOT 槽位，PLT 桩 `FF /4`，调用方 `E8`/`E9`
+  到桩、`FF /2` 经 GOT；无节表的样本不会假装「没有调用点」。
+- 台账 `schema=2`：`file` 行新增 `xref_complete/xref_referenced/xref_unreferenced/xref_unknown`，
+  新行 `kind:"xref"`（导入 / 槽位 / 状态 / 前 32 个调用点 / 说明）。CLI 新增 `--xref` 明细。
+- 新判定 `xref_gaps`（存在无静态调用点的导入），事实 `xref.scan_complete`、`xref.has_unreferenced`。
+- 真实样本：`notepad.exe` 314/315 个导入有调用点（唯一未引用的 `DelayLoadFailureHook`
+  由延迟加载桩间接引用）；本仓 `trit-re.exe`（26 MB）181/185，扫描 2.8 MB，耗时 0.9 s。
+- 修复 `trit-re ... | head` 因 EPIPE panic 的问题：写 stdout 失败时对 `BrokenPipe` 静默退出 0。
+- 测试 47 条（35 lib + 5 ELF + 4 PE + 2 CLI + 1 doctest）：PE 命中/落空/不支持架构三种状态、
+  ELF PLT→调用方链路、删节表保持 `Unknown`、JSONL 行数与 `kind:"xref"`。
+
 ### Added（`trit-re` 二进制逆向台账 M0）
 
 - 新 crate `trit-re`（实验层，`publish = false`）：手写 PE32/PE32+ 与小端 ELF32/ELF64

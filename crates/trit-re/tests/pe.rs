@@ -20,7 +20,9 @@ fn parses_headers_imports_exports_debug_and_overlay() {
     let dlls = info.imports.as_ref().expect("imports parsed");
     assert_eq!(dlls.len(), 1);
     assert_eq!(dlls[0].name, "KERNEL32.dll");
-    assert_eq!(dlls[0].functions, vec!["LoadLibraryA"]);
+    assert_eq!(dlls[0].functions.len(), 1);
+    assert_eq!(dlls[0].functions[0].name, "LoadLibraryA");
+    assert_eq!(dlls[0].functions[0].slot_rva, Some(0x2040));
 
     assert_eq!(info.exports, vec!["DemoExport"]);
     assert_eq!(info.debug_pdb.as_deref(), Some("D:\\build\\demo.pdb"));
@@ -60,6 +62,30 @@ fn triage_flags_packed_structure_and_signature_conflict() {
         .find(|j| j.id == "needs_review")
         .unwrap();
     assert_eq!(review.value, Ternary::True);
+}
+
+#[test]
+fn xref_finds_the_iat_call_site() {
+    let triage = analyze(&support::pe_sample());
+    let report = triage.xref.as_ref().expect("pe sample has xref");
+    assert!(report.complete);
+    let row = report
+        .imports
+        .iter()
+        .find(|row| row.import == "KERNEL32.dll!LoadLibraryA")
+        .expect("import row");
+    assert_eq!(row.status, Ternary::True);
+    assert_eq!(row.sites.len(), 1);
+    assert_eq!(row.sites[0].addr, 0x1010);
+    assert_eq!(row.sites[0].kind, trit_re::SiteKind::Call);
+    // 事实与判定都要能吃到交叉引用结果。
+    assert_eq!(triage.facts.get("xref.scan_complete"), Some(Ternary::True));
+    let gaps = triage
+        .judgments
+        .iter()
+        .find(|j| j.id == "xref_gaps")
+        .unwrap();
+    assert_eq!(gaps.value, Ternary::False);
 }
 
 #[test]

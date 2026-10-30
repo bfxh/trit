@@ -11,6 +11,7 @@ use crate::imports;
 use crate::pe;
 use crate::verdict::{self, Judgment};
 use crate::witness::Facts;
+use crate::xref::{self, XrefReport};
 
 /// 高熵阈值：8 bit/byte 里 7.2 已经接近压缩/加密数据的典型值。
 pub const HIGH_ENTROPY: f64 = 7.2;
@@ -61,6 +62,8 @@ pub struct Triage {
     pub imported_functions: Option<usize>,
     /// 事实表。
     pub facts: Facts,
+    /// 导入函数交叉引用；架构不支持时为 `Some` 但状态全为未知。
+    pub xref: Option<XrefReport>,
     /// 判定结果。
     pub judgments: Vec<Judgment>,
     /// 补充说明（不参与判定）。
@@ -77,20 +80,27 @@ pub fn analyze(bytes: &[u8]) -> Triage {
         sections: 0,
         imported_functions: None,
         facts: Facts::new(),
+        xref: None,
         judgments: Vec::new(),
         notes: Vec::new(),
     };
 
     if bytes.starts_with(b"MZ") {
         match pe::parse(bytes) {
-            Ok(info) => fill_pe(bytes, &info, &mut triage),
+            Ok(info) => {
+                fill_pe(bytes, &info, &mut triage);
+                triage.xref = Some(xref::scan_pe(bytes, &info));
+            }
             Err(error) => triage
                 .notes
                 .push(format!("PE 解析失败：{error}（判定保持未知）")),
         }
     } else if bytes.starts_with(b"\x7fELF") {
         match elf::parse(bytes) {
-            Ok(info) => fill_elf(bytes, &info, &mut triage),
+            Ok(info) => {
+                fill_elf(bytes, &info, &mut triage);
+                triage.xref = Some(xref::scan_elf(bytes, &info));
+            }
             Err(error) => triage
                 .notes
                 .push(format!("ELF 解析失败：{error}（判定保持未知）")),
@@ -99,6 +109,44 @@ pub fn analyze(bytes: &[u8]) -> Triage {
         triage
             .notes
             .push("未识别的格式：只支持 PE32/PE32+ 与小端 ELF".to_string());
+    }
+
+    if let Some(report) = &triage.xref {
+        triage.facts.set(
+            "xref.scan_complete",
+            if report.complete {
+                Ternary::True
+            } else {
+                Ternary::Unknown
+            },
+            format!(
+                "扫描 {} 字节，导入 {} 条",
+                report.scanned_bytes,
+                report.imports.len()
+            ),
+        );
+        triage.facts.set(
+            "xref.has_unreferenced",
+            if report.complete {
+                Ternary::from(report.unreferenced() > 0)
+            } else {
+                Ternary::Unknown
+            },
+            format!(
+                "有调用点 {} / 无调用点 {} / 未知 {}",
+                report.referenced(),
+                report.unreferenced(),
+                report.unknown()
+            ),
+        );
+        triage.notes.push(format!(
+            "交叉引用：{} 字节；有调用点 {}，无调用点 {}，未知 {}",
+            report.scanned_bytes,
+            report.referenced(),
+            report.unreferenced(),
+            report.unknown()
+        ));
+        triage.notes.extend(report.notes.iter().cloned());
     }
 
     triage.judgments = verdict::evaluate(&verdict::default_hypotheses(), &triage.facts);
@@ -201,7 +249,7 @@ fn fill_pe(bytes: &[u8], info: &pe::PeInfo, triage: &mut Triage) {
             .flat_map(|dll| {
                 dll.functions
                     .iter()
-                    .map(move |function| format!("{}!{}", dll.name, function))
+                    .map(move |function| format!("{}!{}", dll.name, function.name))
             })
             .collect()
     });

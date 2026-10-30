@@ -29,15 +29,20 @@ fn jsonl_and_human_modes_agree_on_the_sample() {
     )));
     assert!(text.contains("\"id\":\"packed\""));
     assert!(text.contains("\"four\":\"B\""));
+    assert!(text.contains("\"kind\":\"xref\""));
+    assert!(text.contains("\"import\":\"KERNEL32.dll!LoadLibraryA\""));
 
     let human = Command::new(env!("CARGO_BIN_EXE_trit-re"))
         .arg("triage")
         .arg(&path)
+        .arg("--xref")
         .output()
         .expect("run trit-re");
     let text = String::from_utf8_lossy(&human.stdout);
     assert!(text.contains("[B] packed"), "{text}");
     assert!(text.contains("pe32+"), "{text}");
+    assert!(text.contains("xref detail"), "{text}");
+    assert!(text.contains("KERNEL32.dll!LoadLibraryA"), "{text}");
 
     std::fs::remove_file(&path).ok();
 }

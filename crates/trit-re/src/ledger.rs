@@ -11,7 +11,7 @@ use crate::json;
 use crate::triage::Triage;
 
 /// 台账结构版本。
-pub const SCHEMA: u32 = 1;
+pub const SCHEMA: u32 = 2;
 
 /// 三值的稳定字符串（进台账，不要改）。
 pub fn ternary_label(value: Ternary) -> &'static str {
@@ -45,7 +45,55 @@ pub fn jsonl(triage: &Triage) -> Vec<String> {
                 None => "null".to_string(),
             },
         ),
+        (
+            "xref_complete",
+            match &triage.xref {
+                Some(report) => json::boolean(report.complete),
+                None => "null".to_string(),
+            },
+        ),
+        (
+            "xref_referenced",
+            match &triage.xref {
+                Some(report) => json::number(report.referenced()),
+                None => "null".to_string(),
+            },
+        ),
+        (
+            "xref_unreferenced",
+            match &triage.xref {
+                Some(report) => json::number(report.unreferenced()),
+                None => "null".to_string(),
+            },
+        ),
+        (
+            "xref_unknown",
+            match &triage.xref {
+                Some(report) => json::number(report.unknown()),
+                None => "null".to_string(),
+            },
+        ),
     ]));
+    if let Some(report) = &triage.xref {
+        for row in &report.imports {
+            let sites: Vec<String> = row
+                .sites
+                .iter()
+                .take(32)
+                .map(|site| format!("0x{:x}:{}", site.addr, site.kind.as_str()))
+                .collect();
+            lines.push(json::object(&[
+                ("kind", json::string("xref")),
+                ("sha256", json::string(&triage.sha256)),
+                ("import", json::string(&row.import)),
+                ("slot", format!("0x{:x}", row.slot)),
+                ("status", json::string(ternary_label(row.status))),
+                ("site_count", json::number(row.sites.len())),
+                ("sites", json::array(sites.iter().map(String::as_str))),
+                ("note", json::string(&row.note)),
+            ]));
+        }
+    }
     for witness in triage.facts.iter() {
         lines.push(json::object(&[
             ("kind", json::string("fact")),
@@ -97,7 +145,14 @@ mod tests {
     fn every_line_is_a_self_contained_object() {
         let triage = analyze(b"format unknown");
         let lines = jsonl(&triage);
-        assert_eq!(lines.len(), 1 + triage.facts.len() + triage.judgments.len());
+        let xref_rows = triage
+            .xref
+            .as_ref()
+            .map_or(0, |report| report.imports.len());
+        assert_eq!(
+            lines.len(),
+            1 + triage.facts.len() + triage.judgments.len() + xref_rows
+        );
         for line in &lines {
             assert!(line.starts_with('{') && line.ends_with('}'), "{line}");
             assert!(line.contains("\"sha256\":\""), "{line}");

@@ -141,6 +141,12 @@ pub fn default_hypotheses() -> Vec<Hypothesis> {
             benign: None,
         },
         Hypothesis {
+            id: "xref_gaps",
+            title: "存在没有静态调用点的导入（可能动态解析或死导入）",
+            expr: var("xref.has_unreferenced"),
+            benign: None,
+        },
+        Hypothesis {
             id: "needs_review",
             title: "需要人工复核",
             expr: needs_review,

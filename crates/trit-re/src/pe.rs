@@ -64,13 +64,22 @@ impl Section {
     }
 }
 
+/// 一个导入函数；槽位是 IAT 里那一格（调用点按它匹配）。
+#[derive(Debug, Clone)]
+pub struct ImportThunk {
+    /// 函数名；按序号导入的记为 `#<序号>`。
+    pub name: String,
+    /// IAT 槽位 RVA（由 FirstThunk 起算）；FirstThunk 缺失时为 `None`。
+    pub slot_rva: Option<u32>,
+}
+
 /// 一个导入 DLL 及其函数。
 #[derive(Debug, Clone)]
 pub struct ImportDll {
     /// DLL 名（按导入表原样）。
     pub name: String,
-    /// 函数名；按序号导入的记为 `#<序号>`。
-    pub functions: Vec<String>,
+    /// 函数表。
+    pub functions: Vec<ImportThunk>,
 }
 
 /// 叠加段（最后一个节之后的数据）。
@@ -309,12 +318,19 @@ fn parse_imports(
         }
         let name_off = rva_to_offset(name_rva, sections, headers_size)?;
         let name = cstr(bytes, name_off, 256)?;
-        let thunk_rva = if original_first_thunk != 0 {
+        let name_thunk_rva = if original_first_thunk != 0 {
             original_first_thunk
         } else {
             first_thunk
         };
-        let functions = parse_thunks(bytes, thunk_rva, sections, headers_size, plus)?;
+        let functions = parse_thunks(
+            bytes,
+            name_thunk_rva,
+            first_thunk,
+            sections,
+            headers_size,
+            plus,
+        )?;
         dlls.push(ImportDll { name, functions });
     }
     // 描述符表没遇到全零结束标记：视为不可信。
@@ -323,15 +339,16 @@ fn parse_imports(
 
 fn parse_thunks(
     bytes: &[u8],
-    thunk_rva: u32,
+    name_thunk_rva: u32,
+    first_thunk_rva: u32,
     sections: &[Section],
     headers_size: u32,
     plus: bool,
-) -> Option<Vec<String>> {
-    if thunk_rva == 0 {
+) -> Option<Vec<ImportThunk>> {
+    if name_thunk_rva == 0 {
         return Some(Vec::new());
     }
-    let base = rva_to_offset(thunk_rva, sections, headers_size)?;
+    let base = rva_to_offset(name_thunk_rva, sections, headers_size)?;
     let width = if plus { 8 } else { 4 };
     let mut functions = Vec::new();
     for index in 0..MAX_THUNKS {
@@ -345,13 +362,24 @@ fn parse_thunks(
             return Some(functions);
         }
         let ordinal_bit = if plus { 1u64 << 63 } else { 1u64 << 31 };
+        let slot_rva = if first_thunk_rva == 0 {
+            None
+        } else {
+            Some(first_thunk_rva.checked_add(index as u32 * width as u32)?)
+        };
         if raw & ordinal_bit != 0 {
-            functions.push(format!("#{}", raw & 0xffff));
+            functions.push(ImportThunk {
+                name: format!("#{}", raw & 0xffff),
+                slot_rva,
+            });
             continue;
         }
         let name_off = rva_to_offset(raw as u32, sections, headers_size)?;
         // hint(2) + 名字
-        functions.push(cstr(bytes, name_off.checked_add(2)?, 256)?);
+        functions.push(ImportThunk {
+            name: cstr(bytes, name_off.checked_add(2)?, 256)?,
+            slot_rva,
+        });
     }
     None
 }

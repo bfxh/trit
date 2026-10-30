@@ -93,6 +93,11 @@ pub fn pe_sample() -> Vec<u8> {
         0x4000_0040,
     );
 
+    // .text 偏移 0x10（RVA 0x1010）：FF 15 [IAT 0x2040]，下一条 RVA 0x1016
+    file[0x210] = 0xFF;
+    file[0x211] = 0x15;
+    file[0x212..0x216].copy_from_slice(&0x102Au32.to_le_bytes());
+
     // 导入表：KERNEL32.dll!LoadLibraryA
     put_u32(&mut file, 0x600, 0x2040);
     put_u32(&mut file, 0x60C, 0x2080);
@@ -153,14 +158,15 @@ fn write_section(
     put_u32(file, base + 36, characteristics);
 }
 
-const SHSTRTAB: &[u8] = b"\0.text\0.dynstr\0.dynsym\0.comment\0.note.gnu.build-id\0.shstrtab\0";
+const SHSTRTAB: &[u8] =
+    b"\0.text\0.dynstr\0.dynsym\0.comment\0.note.gnu.build-id\0.plt\0.rela.plt\0.shstrtab\0";
 
 /// 一个 ELF64 样本：7 节、`socket` 动态导入、GCC 指纹、GNU build-id。
 ///
 /// `packed` 为真时追加 8 KiB 高熵叠加段；`stripped` 为真时删掉节表。
 pub fn elf_sample(packed: bool, stripped: bool) -> Vec<u8> {
     let overlay_len = if packed { 8192 } else { 512 };
-    let mut file = vec![0u8; 0x6C0 + overlay_len];
+    let mut file = vec![0u8; 0x740 + overlay_len];
 
     file[..4].copy_from_slice(b"\x7fELF");
     file[4] = 2; // ELF64
@@ -176,20 +182,24 @@ pub fn elf_sample(packed: bool, stripped: bool) -> Vec<u8> {
     put_u16(&mut file, 54, 56);
     put_u16(&mut file, 56, 1);
     put_u16(&mut file, 58, 64);
-    put_u16(&mut file, 60, if stripped { 0 } else { 7 });
-    put_u16(&mut file, 62, if stripped { 0 } else { 6 });
+    put_u16(&mut file, 60, if stripped { 0 } else { 9 });
+    put_u16(&mut file, 62, if stripped { 0 } else { 8 });
 
     // PT_LOAD：可读可执行，覆盖 0x400000..0x400400
     put_u32(&mut file, 0x40, 1);
     put_u32(&mut file, 0x44, 5);
     put_u64(&mut file, 0x48, 0);
     put_u64(&mut file, 0x50, 0x40_0000);
+    // 文件内只覆盖到 0x400（.text），内存里覆盖到 0x1000（含 .plt）。
     put_u64(&mut file, 0x60, 0x400);
-    put_u64(&mut file, 0x68, 0x400);
+    put_u64(&mut file, 0x68, 0x1000);
 
     if packed {
         fill_noise(&mut file[0x100..0x300], 0x9E37_79B9);
     }
+    // .text 偏移 0x10（VA 0x400110）：E8 rel32 → PLT 桩 0x400500
+    file[0x110] = 0xE8;
+    file[0x111..0x115].copy_from_slice(&0x3EBu32.to_le_bytes());
 
     // .dynstr："\0socket\0"
     file[0x300] = 0;
@@ -207,6 +217,14 @@ pub fn elf_sample(packed: bool, stripped: bool) -> Vec<u8> {
     put_u32(&mut file, 0x408, 3);
     file[0x40C..0x410].copy_from_slice(b"GNU\0");
     file[0x410..0x418].copy_from_slice(&[0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03, 0x04]);
+    // .plt：FF 25 [GOT 0x400600]，下一条 VA 0x400506
+    file[0x4A0] = 0xFF;
+    file[0x4A1] = 0x25;
+    file[0x4A2..0x4A6].copy_from_slice(&0xFAu32.to_le_bytes());
+    // .rela.plt：R_X86_64_JUMP_SLOT，GOT 0x400600 → 符号 1（socket）
+    file[0x4C0..0x4C8].copy_from_slice(&0x40_0600u64.to_le_bytes());
+    file[0x4C8..0x4D0].copy_from_slice(&((1u64 << 32) | 7).to_le_bytes());
+    file[0x4D0..0x4D8].copy_from_slice(&0i64.to_le_bytes());
     // .shstrtab
     file[0x440..0x440 + SHSTRTAB.len()].copy_from_slice(SHSTRTAB);
 
@@ -229,11 +247,13 @@ pub fn elf_sample(packed: bool, stripped: bool) -> Vec<u8> {
         );
         write_shdr(&mut file, sh + 256, 23, 1, 0, 0, 0x3B0, 0x20, 0, 0);
         write_shdr(&mut file, sh + 320, 32, 7, 2, 0x40_0400, 0x400, 0x24, 0, 0);
-        write_shdr(&mut file, sh + 384, 51, 3, 0, 0, 0x440, 0x60, 0, 0);
+        write_shdr(&mut file, sh + 384, 51, 1, 6, 0x40_0500, 0x4A0, 0x20, 0, 16);
+        write_shdr(&mut file, sh + 448, 56, 4, 2, 0x40_04C0, 0x4C0, 0x18, 3, 24);
+        write_shdr(&mut file, sh + 512, 67, 3, 0, 0, 0x440, 0x60, 0, 0);
     }
 
     if packed {
-        fill_noise(&mut file[0x6C0..], 0x0BAD_F00D);
+        fill_noise(&mut file[0x740..], 0x0BAD_F00D);
     }
     file
 }
