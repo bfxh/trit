@@ -103,8 +103,63 @@ pub(super) fn scan_elf(
     }
 
     let mut report = build_elf_report(arch, symbols, jump_slots, &sites, complete, scanned);
+    mark_immediate_addresses(exec, &stub_to_symbol, &symbol_of_got, &mut taken);
     mark_taken(&mut report.imports, &taken);
     report
+}
+
+/// 第三遍：立即数取址。
+///
+/// 非 PIC 下取导入函数地址拿到的是 **PLT 桩地址**（不是 GOT 槽位）：
+/// `push $printf@plt`（`68 imm32`）、`mov r32, imm32`（`B8..BF`）、
+/// `mov [ebp+d8], imm32`（`C7 45`）、`mov [ebp+d32], imm32`（`C7 85`）、
+/// `mov [abs32], imm32`（`C7 05`）。立即数等于已知桩地址或 GOT 槽位才采信，
+/// 只把对应行降级为 `Unknown`，不产生调用点。
+fn mark_immediate_addresses(
+    exec: &[(&elf::ElfSection, &[u8])],
+    stubs: &BTreeMap<u64, usize>,
+    symbol_of_got: &BTreeMap<u64, usize>,
+    taken: &mut BTreeSet<u64>,
+) {
+    let mut slot_of_symbol: BTreeMap<usize, u64> = BTreeMap::new();
+    for (slot, symbol) in symbol_of_got {
+        slot_of_symbol.entry(*symbol).or_insert(*slot);
+    }
+    for (_, data) in exec {
+        let mut index = 0usize;
+        while index + 5 <= data.len() {
+            let Some(immediate) = immediate_reference(data, index) else {
+                index += 1;
+                continue;
+            };
+            let value = immediate as u64;
+            if symbol_of_got.contains_key(&value) {
+                taken.insert(value);
+            } else if let Some(symbol) = stubs.get(&value)
+                && let Some(slot) = slot_of_symbol.get(symbol)
+            {
+                taken.insert(*slot);
+            }
+            index += 1;
+        }
+    }
+}
+
+/// 取一条指令里可能被当作地址的 32 位立即数（只认已列出的编码）。
+fn immediate_reference(data: &[u8], index: usize) -> Option<u32> {
+    let at = match data[index] {
+        0x68 | 0xB8..=0xBF => index + 1,
+        0xC7 => match data.get(index + 1)? {
+            // C7 /0：modrm + 寻址之后才是 imm32。
+            0x45 => index + 3, // [ebp+disp8]
+            0x85 => index + 6, // [ebp+disp32]
+            0x05 => index + 6, // [abs32]
+            _ => return None,
+        },
+        _ => return None,
+    };
+    let bytes = data.get(at..at + 4)?;
+    Some(u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
 }
 
 /// `FF 25 abs32` / `FF 15 abs32`（非 PIC）与 `FF A3` / `FF 93 disp32`（PIC）解析出的槽位。
@@ -169,6 +224,36 @@ fn taken_operand(
                 data[index + 5],
             ]);
             resolve_ebx(bases, got, disp).filter(|slot| got.contains_key(slot))
+        }
+        // cmp r/m8|32, imm8|32：`80/81/83 BB disp32 imm…`（EBX 相对）
+        // 与 `80/81/83 3D disp32 imm…`（绝对）。立即数不参与判定，只取位移/地址。
+        (0x80 | 0x81 | 0x83, 0xBB) => {
+            let disp = i32::from_le_bytes([
+                data[index + 2],
+                data[index + 3],
+                data[index + 4],
+                data[index + 5],
+            ]);
+            resolve_ebx(bases, got, disp).filter(|slot| got.contains_key(slot))
+        }
+        (0x80 | 0x81 | 0x83, 0x3D) => {
+            let absolute = u32::from_le_bytes([
+                data[index + 2],
+                data[index + 3],
+                data[index + 4],
+                data[index + 5],
+            ]) as u64;
+            got.contains_key(&absolute).then_some(absolute)
+        }
+        // mov r32, imm32（B8..BF）：立即数恰好等于槽位地址 ⇒ 也是取址。
+        (0xB8..=0xBF, _) => {
+            let immediate = u32::from_le_bytes([
+                data[index + 1],
+                data[index + 2],
+                data[index + 3],
+                data[index + 4],
+            ]) as u64;
+            got.contains_key(&immediate).then_some(immediate)
         }
         _ => None,
     }
@@ -310,6 +395,87 @@ mod tests {
                 "{first:#x} {second:#x}"
             );
         }
+    }
+
+    #[test]
+    fn byte_compare_and_immediate_forms_count_as_taken() {
+        // 槽位 0x3010 = 基址 0x3005 + 0xB。
+        let got = BTreeMap::from([(0x3010u64, 1usize)]);
+        let bases = BTreeSet::from([0x3005u64]);
+
+        // cmp r/m8|32, imm：`80/81/83 BB disp32 imm…`（EBX 相对）。
+        for opcode in [0x80u8, 0x81, 0x83] {
+            let mut data = vec![opcode, 0xBB];
+            data.extend_from_slice(&0x0Bu32.to_le_bytes());
+            data.extend_from_slice(&[0, 0, 0, 0]); // 立即数（不参与判定）
+            assert_eq!(
+                taken_operand(&bases, &got, &data, 0),
+                Some(0x3010),
+                "cmp ebx+disp, {opcode:#x}"
+            );
+        }
+        // 同一组指令的绝对形式 `disp32`。
+        for opcode in [0x80u8, 0x81, 0x83] {
+            let mut data = vec![opcode, 0x3D];
+            data.extend_from_slice(&0x3010u32.to_le_bytes());
+            data.extend_from_slice(&[0, 0, 0, 0]);
+            assert_eq!(
+                taken_operand(&bases, &got, &data, 0),
+                Some(0x3010),
+                "cmp abs, {opcode:#x}"
+            );
+        }
+        // mov r32, imm32：B8..BF，立即数在 +1。
+        for register in 0xB8u8..=0xBF {
+            let mut data = vec![register];
+            data.extend_from_slice(&0x3010u32.to_le_bytes());
+            assert_eq!(
+                taken_operand(&bases, &got, &data, 0),
+                Some(0x3010),
+                "mov {register:#x}, imm32"
+            );
+        }
+        // 反例：位移/立即数不是槽位。
+        let mut data = vec![0x83, 0xBB];
+        data.extend_from_slice(&0x10u32.to_le_bytes());
+        data.extend_from_slice(&[0, 0, 0, 0]);
+        assert_eq!(taken_operand(&bases, &got, &data, 0), None);
+        let mut data = vec![0xB8];
+        data.extend_from_slice(&0x3014u32.to_le_bytes());
+        assert_eq!(taken_operand(&bases, &got, &data, 0), None);
+    }
+
+    #[test]
+    fn immediate_reference_reads_each_encoding() {
+        let immediate = 0x08048160u32.to_le_bytes();
+        // `push imm32` 与 `mov r32, imm32`（B8..BF）：立即数紧跟操作码。
+        for opcode in [0x68u8, 0xB8, 0xBC, 0xBF] {
+            let mut data = vec![opcode; 5];
+            data[1..5].copy_from_slice(&immediate);
+            assert_eq!(
+                immediate_reference(&data, 0),
+                Some(0x08048160),
+                "{opcode:#x}"
+            );
+        }
+        // `C7 /0` 的三种内存形式：立即数在 modrm + 寻址之后。
+        let cases: Vec<([u8; 11], usize)> = vec![
+            ([0xC7, 0x45, 0xF4, 0, 0, 0, 0, 0, 0, 0, 0], 3), // [ebp+disp8]
+            ([0xC7, 0x85, 0, 0, 0, 0, 0, 0, 0, 0, 0], 6),    // [ebp+disp32]
+            ([0xC7, 0x05, 0, 0, 0, 0, 0, 0, 0, 0, 0], 6),    // [abs32]
+        ];
+        for (mut data, at) in cases {
+            data[at..at + 4].copy_from_slice(&immediate);
+            assert_eq!(
+                immediate_reference(&data, 0),
+                Some(0x08048160),
+                "C7 at {at}"
+            );
+        }
+        // 不认识的编码与越界。
+        assert_eq!(immediate_reference(&[0x90; 6], 0), None);
+        assert_eq!(immediate_reference(&[0xC7, 0x83, 0, 0, 0, 0, 0], 0), None);
+        assert_eq!(immediate_reference(&[0xB8, 0, 0], 0), None);
     }
 
     #[test]
