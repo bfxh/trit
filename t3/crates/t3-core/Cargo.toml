@@ -1,0 +1,13 @@
+[package]
+name = "t3-core"
+description = "Ternary decision core: Kleene K3, Belnap FOUR, monotone hypothesis algebra with sound interval semantics"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
