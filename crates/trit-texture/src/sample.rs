@@ -19,6 +19,9 @@
 //!
 //! ## 光栅化器需要的那一对
 //!
+//! **取整口径**：过滤结果按 **ties-to-even** 回 8 位（`f32::round_ties_even`），
+//! 与 WGSL `round()` 一致——GPU 侧 `trit-gpu/src/sampler.wgsl` 与这里逐字节对拍。
+//!
 //! - **越界寻址**：[`Wrap::Clamp`] / [`Wrap::Repeat`] / [`Wrap::Mirror`]，
 //!   对 `Sampler` 与自由函数都生效；索引解析是精确的整数运算（`wrap_index`）。
 //! - **自动 LOD**：[`lod_from_derivatives`] 按 `ρ = max(|∂/∂x|, |∂/∂y|)` 求 `log2`，
@@ -262,9 +265,13 @@ impl<'a> Sampler<'a> {
         let p11 = self.texel_at(x0i + 1, y0i + 1);
         let mut out = [0u8; 4];
         for c in 0..3 {
-            let top = p00[c] as f32 * (1.0 - tx) + p10[c] as f32 * tx;
-            let bottom = p01[c] as f32 * (1.0 - tx) + p11[c] as f32 * tx;
-            out[c] = (top * (1.0 - ty) + bottom * ty).round().clamp(0.0, 255.0) as u8;
+            // 显式 fma + 固定结合顺序：GPU 侧写同样的 fma()，两边才能逐字节一致
+            let top = (p00[c] as f32).mul_add(1.0 - tx, p10[c] as f32 * tx);
+            let bottom = (p01[c] as f32).mul_add(1.0 - tx, p11[c] as f32 * tx);
+            out[c] = top
+                .mul_add(1.0 - ty, bottom * ty)
+                .round_ties_even()
+                .clamp(0.0, 255.0) as u8;
         }
         out[3] = 255;
         out
@@ -353,8 +360,9 @@ impl TtxDocument {
         let b = sample_bilinear_with(&levels[l1], u, v, wrap);
         let mut out = [0u8; 4];
         for c in 0..3 {
-            out[c] = (a[c] as f32 * (1.0 - t) + b[c] as f32 * t)
-                .round()
+            out[c] = (a[c] as f32)
+                .mul_add(1.0 - t, b[c] as f32 * t)
+                .round_ties_even()
                 .clamp(0.0, 255.0) as u8;
         }
         out[3] = 255;
@@ -438,7 +446,7 @@ mod tests {
         let b = texel(tex, x + 1, y);
         let got = sample_bilinear(tex, u, v);
         for c in 0..3 {
-            let want = ((a[c] as f32 + b[c] as f32) / 2.0).round() as u8;
+            let want = ((a[c] as f32 + b[c] as f32) / 2.0).round_ties_even() as u8;
             assert_eq!(got[c], want, "通道 {c} 中点应为四舍五入均值");
         }
     }
@@ -488,7 +496,7 @@ mod tests {
         // u = 1.0 正好落在最后一列与第 0 列之间（fx = W - 0.5，tx = 0.5）
         let seam = sample_bilinear_with(tex, 1.0, 3.5 / tex.height as f32, Wrap::Repeat);
         for c in 0..3 {
-            let want = ((left[c] as f32 + right[c] as f32) / 2.0).round() as i32;
+            let want = ((left[c] as f32 + right[c] as f32) / 2.0).round_ties_even() as i32;
             assert!(
                 (seam[c] as i32 - want).abs() <= 1,
                 "seam 处通道 {c}: 得到 {}，期望 ≈ {want}",
@@ -640,7 +648,7 @@ mod tests {
         let b = sample_bilinear(&levels[1], 0.4, 0.6);
         let got = d.sample_trilinear(0.4, 0.6, 0.5).unwrap();
         for c in 0..3 {
-            let want = ((a[c] as f32 + b[c] as f32) / 2.0).round() as u8;
+            let want = ((a[c] as f32 + b[c] as f32) / 2.0).round_ties_even() as u8;
             assert_eq!(got[c], want, "通道 {c} 应为两级均值");
         }
     }

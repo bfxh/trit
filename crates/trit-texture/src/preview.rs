@@ -153,8 +153,9 @@ fn trilinear(samplers: &mut [Sampler], u: f32, v: f32, lod: f32) -> Option<[u8; 
     let b = samplers[l1].sample_bilinear(u, v);
     let mut out = [255u8; 4];
     for (c, slot) in out.iter_mut().enumerate().take(3) {
-        *slot = (a[c] as f32 * (1.0 - t) + b[c] as f32 * t)
-            .round()
+        *slot = (a[c] as f32)
+            .mul_add(1.0 - t, b[c] as f32 * t)
+            .round_ties_even()
             .clamp(0.0, 255.0) as u8;
     }
     Some(out)
