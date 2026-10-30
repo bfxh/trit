@@ -26,6 +26,7 @@ pub mod convert;
 pub mod gguf;
 #[cfg(feature = "png")]
 pub mod pngio;
+pub mod sample;
 pub mod ttx;
 pub mod ttx2;
 
@@ -181,7 +182,7 @@ fn pack_trits(values: &[Ternary]) -> [u8; TRIT_PAYLOAD_BYTES] {
     out
 }
 
-fn unpack_trits(bytes: &[u8; TRIT_PAYLOAD_BYTES]) -> [Ternary; TRITS_PER_BLOCK] {
+pub(crate) fn unpack_trits(bytes: &[u8; TRIT_PAYLOAD_BYTES]) -> [Ternary; TRITS_PER_BLOCK] {
     let mut out = [Ternary::False; TRITS_PER_BLOCK];
     for (index, slot) in out.iter_mut().enumerate() {
         let digit = (bytes[index / 5] as u32 / 3u32.pow((index % 5) as u32)) % 3;
@@ -197,7 +198,7 @@ fn unpack_trits(bytes: &[u8; TRIT_PAYLOAD_BYTES]) -> [Ternary; TRITS_PER_BLOCK] 
 /// 3 级调色板：`[e0, mid, e1]`，8 位 RGB。
 type Palette = [(u8, u8, u8); 3];
 
-fn palette_from_endpoints(e0: u16, e1: u16) -> Palette {
+pub(crate) fn palette_from_endpoints(e0: u16, e1: u16) -> Palette {
     let (r0, g0, b0) = unpack_rgb565(e0);
     let (r1, g1, b1) = unpack_rgb565(e1);
     let mid = |a: u8, b: u8| ((u16::from(a) + u16::from(b)) / 2) as u8;
