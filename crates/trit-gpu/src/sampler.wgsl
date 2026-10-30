@@ -16,6 +16,11 @@ struct Level {
     width: u32,
     height: u32,
     block_cols: u32,
+    // 图集子矩形（该级纹素坐标）；rect_w/rect_h = 0 表示整级
+    rect_x: u32,
+    rect_y: u32,
+    rect_w: u32,
+    rect_h: u32,
 };
 
 struct Params {
@@ -63,8 +68,13 @@ fn wrap_index(i: i32, n: i32, mode: u32) -> i32 {
 
 fn texel_rgb(level: u32, x_in: i32, y_in: i32) -> vec3<f32> {
     let lvl = levels[level];
-    let x = wrap_index(x_in, i32(lvl.width), params.wrap);
-    let y = wrap_index(y_in, i32(lvl.height), params.wrap);
+    // 有子矩形时 wrap 只在矩形内循环，避免采到邻居图集条目
+    let rw = select(lvl.width, lvl.rect_w, lvl.rect_w > 0u);
+    let rh = select(lvl.height, lvl.rect_h, lvl.rect_h > 0u);
+    let rx = select(0u, lvl.rect_x, lvl.rect_w > 0u);
+    let ry = select(0u, lvl.rect_y, lvl.rect_h > 0u);
+    let x = i32(rx) + wrap_index(x_in, i32(rw), params.wrap);
+    let y = i32(ry) + wrap_index(y_in, i32(rh), params.wrap);
     let block_col = u32(x / 4);
     let block_row = u32(y / 10);
     let block_id = block_row * lvl.block_cols + block_col;
@@ -118,8 +128,10 @@ fn bilinear(level: u32, u_in: f32, v_in: f32) -> vec3<f32> {
         u = clamp(u, 0.0, 1.0);
         v = clamp(v, 0.0, 1.0);
     }
-    let fx = u * f32(lvl.width) - 0.5;
-    let fy = v * f32(lvl.height) - 0.5;
+    let rw = select(lvl.width, lvl.rect_w, lvl.rect_w > 0u);
+    let rh = select(lvl.height, lvl.rect_h, lvl.rect_h > 0u);
+    let fx = u * f32(rw) - 0.5;
+    let fy = v * f32(rh) - 0.5;
     let x0 = floor(fx);
     let y0 = floor(fy);
     let tx = fx - x0;

@@ -36,7 +36,20 @@ struct Params {
     pad0: u32,
 }
 
-/// 一级 mip：块流 + 尺寸。
+/// 图集子矩形（该级纹素坐标）。`None` = 整级。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rect {
+    /// 左边界。
+    pub x: usize,
+    /// 上边界。
+    pub y: usize,
+    /// 宽（> 0）。
+    pub width: usize,
+    /// 高（> 0）。
+    pub height: usize,
+}
+
+/// 一级 mip：块流 + 尺寸（+ 可选图集子矩形）。
 #[derive(Clone, Copy, Debug)]
 pub struct MipLevel<'a> {
     /// 逐块拼接的块字节流（每块 12 字节）。
@@ -45,6 +58,8 @@ pub struct MipLevel<'a> {
     pub width: usize,
     /// 高（须为 10 的倍数）。
     pub height: usize,
+    /// 只采这一块子矩形（纹素坐标，**按级给**，调用方自己按 2^level 缩放）；`None` = 整级。
+    pub rect: Option<Rect>,
 }
 
 /// 单级采样（`lod = 0`）：等价于 [`sample_tt3_mips`] 只给一级。
@@ -61,6 +76,7 @@ pub fn sample_tt3(
             blocks,
             width,
             height,
+            rect: None,
         }],
         &pts,
         wrap,
@@ -87,7 +103,7 @@ async fn sample_async(
     if levels.is_empty() || points.is_empty() {
         return None;
     }
-    let mut descriptors: Vec<[u32; 4]> = Vec::with_capacity(levels.len());
+    let mut descriptors: Vec<[u32; 8]> = Vec::with_capacity(levels.len());
     let mut packed: Vec<u8> = Vec::new();
     for level in levels {
         if level.width == 0
@@ -101,11 +117,25 @@ async fn sample_async(
         if level.blocks.len() != blocks * BLOCK_BYTES {
             return None;
         }
+        if let Some(r) = level.rect {
+            if r.width == 0
+                || r.height == 0
+                || r.x + r.width > level.width
+                || r.y + r.height > level.height
+            {
+                return None;
+            }
+        }
+        let rect = level.rect;
         descriptors.push([
             (packed.len() / BLOCK_BYTES) as u32,
             level.width as u32,
             level.height as u32,
             (level.width / BLOCK_WIDTH) as u32,
+            rect.map_or(0, |r| r.x as u32),
+            rect.map_or(0, |r| r.y as u32),
+            rect.map_or(0, |r| r.width as u32),
+            rect.map_or(0, |r| r.height as u32),
         ]);
         packed.extend_from_slice(level.blocks);
     }
