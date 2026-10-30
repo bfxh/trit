@@ -4,7 +4,9 @@ use trit_texture::ttx3::{
     LargeTexture, LevelPolicy, TILE_BLOCKS, TILE_DATA_BYTES, TILE_ENTRY_BYTES, TILE_HEIGHT,
     TILE_TEXELS, TILE_WIDTH, TileRgba, Ttx3Archive, level_storage_bytes, suggest_chain,
 };
-use trit_texture::{BLOCK_PIXELS, TRIT_BLOCK_BYTES, TextureError, decode_rgba, decode_rgba_into, encode_rgba};
+use trit_texture::{
+    BLOCK_PIXELS, TRIT_BLOCK_BYTES, TextureError, decode_rgba, decode_rgba_into, encode_rgba,
+};
 
 fn gradient_rgba(width: usize, height: usize) -> Vec<u8> {
     let mut out = vec![0u8; width * height * 4];
