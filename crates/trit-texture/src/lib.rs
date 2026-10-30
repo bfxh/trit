@@ -24,6 +24,7 @@ use trit_core::value::Ternary;
 
 pub mod convert;
 pub mod gguf;
+pub mod mip;
 #[cfg(feature = "png")]
 pub mod pngio;
 pub mod preview;

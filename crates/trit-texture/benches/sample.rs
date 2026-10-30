@@ -14,6 +14,7 @@ use std::hint::black_box;
 use std::time::Instant;
 
 use trit_texture::convert::{rgba_to_ttx2_mips, ttx2_to_rgba};
+use trit_texture::mip::MipSampler;
 use trit_texture::sample::{Sampler, Wrap, sample_aniso, sample_bilinear, texel};
 use trit_texture::ttx2::from_ttx2;
 use trit_texture::{BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TritTexture};
@@ -98,6 +99,7 @@ fn run(width: usize, height: usize) {
     let levels = doc.levels().expect("texture");
     let tex: &TritTexture = &levels[0];
     assert_eq!((tex.width, tex.height), (width, height));
+    let mut mip = MipSampler::with_wrap(levels, Wrap::Repeat);
 
     let pts = samples(width, height);
     let n = pts.len() as f64;
@@ -160,34 +162,73 @@ fn run(width: usize, height: usize) {
         near.push(t.elapsed().as_secs_f64() * 1e9 / n);
     }
 
-    // 各向异性成本曲线：导数取强各向异性（长轴 64 纹素/像素），让 taps 真正生效
-    let du_ani = 64.0 / width as f32;
-    let dv_ani = 0.25 / height as f32;
-    let mut ani_rows: Vec<(u32, f64)> = Vec::new();
-    for &taps in &[1u32, 2, 4, 8] {
-        let mut runs: Vec<f64> = Vec::new();
+    // 单点基线：级别数（1 级 vs 2 级）× wrap 模式。用来解释下面 aniso 曲线的斜率，
+    // 别把「taps=1 比双线性贵 2 倍」归因到缓存上——Repeat 每纹素一次 i64 rem_euclid 才是大头。
+    let modes = [
+        ("三线性 lod=0.0 clamp ", 0.0f32, Wrap::Clamp),
+        ("三线性 lod=0.0 repeat", 0.0, Wrap::Repeat),
+        ("三线性 lod=1.5 clamp ", 1.5, Wrap::Clamp),
+        ("三线性 lod=1.5 repeat", 1.5, Wrap::Repeat),
+    ];
+    let mut base_rows: Vec<(&str, f64)> = Vec::new();
+    for (label, lod, wrap) in modes {
+        let mut runs = Vec::new();
         for _ in 0..5 {
             let t = Instant::now();
             let mut acc = 0u64;
             for &(u, v) in &pts {
-                let c = sample_aniso(
-                    &doc,
-                    u % 1.0,
-                    v % 1.0,
-                    du_ani,
-                    0.0,
-                    0.0,
-                    dv_ani,
-                    taps,
-                    Wrap::Repeat,
-                )
-                .expect("aniso");
+                let c = doc.sample_trilinear_with(u, v, lod, wrap).expect("tri");
                 acc += c[0] as u64 + c[1] as u64 + c[2] as u64;
             }
             black_box(acc);
             runs.push(t.elapsed().as_secs_f64() * 1e9 / n);
         }
-        ani_rows.push((taps, median(runs)));
+        base_rows.push((label, median(runs)));
+    }
+    let mut mip_runs = Vec::new();
+    for _ in 0..5 {
+        let t = Instant::now();
+        let mut acc = 0u64;
+        for &(u, v) in &pts {
+            let c = mip.sample_trilinear(u, v, 1.5).expect("mip tri");
+            acc += c[0] as u64 + c[1] as u64 + c[2] as u64;
+        }
+        black_box(acc);
+        mip_runs.push(t.elapsed().as_secs_f64() * 1e9 / n);
+    }
+    let mip_tri = median(mip_runs);
+
+    // 各向异性成本曲线：导数取强各向异性（长轴 64 纹素/像素），让 taps 真正生效。
+    // 自由函数与 MipSampler（每级块缓存）在同一轮里交替跑，热漂移对两边一样。
+    let du_ani = 64.0 / width as f32;
+    let dv_ani = 0.25 / height as f32;
+    let mut ani_rows: Vec<(u32, f64, f64)> = Vec::new();
+    for &taps in &[1u32, 2, 4, 8] {
+        let (mut free_runs, mut mip_runs) = (Vec::new(), Vec::new());
+        for _ in 0..5 {
+            for which in 0..2 {
+                let t = Instant::now();
+                let mut acc = 0u64;
+                for &(u, v) in &pts {
+                    let c = if which == 0 {
+                        sample_aniso(&doc, u, v, du_ani, 0.0, 0.0, dv_ani, taps, Wrap::Repeat)
+                            .expect("aniso")
+                    } else {
+                        mip.sample_aniso(u, v, du_ani, 0.0, 0.0, dv_ani, taps)
+                            .expect("mip aniso")
+                    };
+                    acc += c[0] as u64 + c[1] as u64 + c[2] as u64;
+                }
+                black_box(acc);
+                let ns = t.elapsed().as_secs_f64() * 1e9 / n;
+                if which == 0 {
+                    free_runs.push(ns);
+                } else {
+                    mip_runs.push(ns);
+                }
+            }
+        }
+        ani_rows.push((taps, median(free_runs), median(mip_runs)));
     }
 
     let blocks = (width / BLOCK_WIDTH) * (height / BLOCK_HEIGHT) * TRIT_BLOCK_BYTES;
@@ -200,8 +241,15 @@ fn run(width: usize, height: usize) {
     println!("  双线性（压缩域按需解） {:8.2} ns/样点", median(tri));
     println!("  双线性（采样器+块缓存） {:8.2} ns/样点", median(cached));
     println!("  双线性（整图 RGBA）    {:8.2} ns/样点", median(whole));
-    for (taps, ns) in &ani_rows {
-        println!("  各向异性 taps={taps:<2}      {ns:8.2} ns/样点");
+    for (label, ns) in &base_rows {
+        println!("  {label}  {ns:8.2} ns/样点");
+    }
+    println!("  三线性 lod=1.5 repeat（MipSampler 缓存）{mip_tri:8.2} ns/样点");
+    for (taps, free, mip) in &ani_rows {
+        println!(
+            "  各向异性 taps={taps:<2}   自由 {free:8.2} / 缓存 {mip:8.2} ns/样点（{:4.2}×）",
+            free / mip
+        );
     }
     println!(
         "  显存：块流 {:.0} KiB vs RGBA {:.0} KiB（{:.1}×）",
