@@ -1,9 +1,9 @@
-//! TT3 块纹理的 GPU **采样**（WGSL `sampler.wgsl`）：块内解码 + 双线性 + wrap。
+//! TT3 块纹理的 GPU **采样**（WGSL `sampler.wgsl`）：mip 链 + 双线性 + wrap。
 //!
 //! 与 [`crate::texture`] 的区别：那条把整图解成 RGBA；这条只解采样点附近的 4 个纹素，
-//! 块流常驻显存。语义与 trit-texture 的 CPU 参考 `sample::sample_bilinear_with` 对齐
-//! （纹素中心、clamp/repeat/mirror、f32 权重、round 后夹到 0..255），
-//! 正确性由 `tests/texture_sample.rs` 逐字节对拍钉住。
+//! 块流常驻显存。语义与 trit-texture 的 CPU 参考 `sample::sample_bilinear_with` /
+//! `TtxDocument::sample_trilinear_with` 对齐（纹素中心、clamp/repeat/mirror、
+//! 显式 fma、round ties-to-even），正确性由 `tests/texture_sample.rs` 对拍钉住。
 //!
 //! 没有 adapter 时返回 `None`（与 [`crate::gpu::run`] 同约定）。
 
@@ -30,20 +30,24 @@ pub enum Wrap {
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct Params {
-    width: u32,
-    height: u32,
-    block_cols: u32,
+    level_count: u32,
     wrap: u32,
     count: u32,
     pad0: u32,
-    pad1: u32,
-    pad2: u32,
 }
 
-/// 在 GPU 上按 `points`（每个 `(u, v)`）采样 TT3 纹理，返回 RGBA8（每样点 4 字节）。
-///
-/// `blocks` 是逐块拼接的字节流；`width` 须为 4 的倍数、`height` 须为 10 的倍数。
-/// 形状或长度不符、或没有可用 adapter 时返回 `None`。
+/// 一级 mip：块流 + 尺寸。
+#[derive(Clone, Copy, Debug)]
+pub struct MipLevel<'a> {
+    /// 逐块拼接的块字节流（每块 12 字节）。
+    pub blocks: &'a [u8],
+    /// 宽（须为 4 的倍数）。
+    pub width: usize,
+    /// 高（须为 10 的倍数）。
+    pub height: usize,
+}
+
+/// 单级采样（`lod = 0`）：等价于 [`sample_tt3_mips`] 只给一级。
 pub fn sample_tt3(
     blocks: &[u8],
     width: usize,
@@ -51,26 +55,59 @@ pub fn sample_tt3(
     points: &[(f32, f32)],
     wrap: Wrap,
 ) -> Option<Vec<u8>> {
-    pollster::block_on(sample_async(blocks, width, height, points, wrap))
+    let pts: Vec<(f32, f32, f32)> = points.iter().map(|(u, v)| (*u, *v, 0.0)).collect();
+    sample_tt3_mips(
+        &[MipLevel {
+            blocks,
+            width,
+            height,
+        }],
+        &pts,
+        wrap,
+    )
+}
+
+/// 在 GPU 上按 `(u, v, lod)` **三线性**采样 mip 链，返回 RGBA8（每样点 4 字节）。
+///
+/// 各级块流按顺序拼进一个缓冲，级内偏移由 host 算好；`lod` 夹到 `[0, 级数-1]`、
+/// NaN 按 0 处理（与 CPU 同口径）。形状或长度不符、或没有可用 adapter 时返回 `None`。
+pub fn sample_tt3_mips(
+    levels: &[MipLevel<'_>],
+    points: &[(f32, f32, f32)],
+    wrap: Wrap,
+) -> Option<Vec<u8>> {
+    pollster::block_on(sample_async(levels, points, wrap))
 }
 
 async fn sample_async(
-    blocks: &[u8],
-    width: usize,
-    height: usize,
-    points: &[(f32, f32)],
+    levels: &[MipLevel<'_>],
+    points: &[(f32, f32, f32)],
     wrap: Wrap,
 ) -> Option<Vec<u8>> {
-    if width == 0
-        || !width.is_multiple_of(BLOCK_WIDTH)
-        || height == 0
-        || !height.is_multiple_of(BLOCK_HEIGHT)
-    {
+    if levels.is_empty() || points.is_empty() {
         return None;
     }
-    let expected_blocks = (width / BLOCK_WIDTH) * (height / BLOCK_HEIGHT);
-    if blocks.len() != expected_blocks * BLOCK_BYTES || points.is_empty() {
-        return None;
+    let mut descriptors: Vec<[u32; 4]> = Vec::with_capacity(levels.len());
+    let mut packed: Vec<u8> = Vec::new();
+    for level in levels {
+        if level.width == 0
+            || !level.width.is_multiple_of(BLOCK_WIDTH)
+            || level.height == 0
+            || !level.height.is_multiple_of(BLOCK_HEIGHT)
+        {
+            return None;
+        }
+        let blocks = (level.width / BLOCK_WIDTH) * (level.height / BLOCK_HEIGHT);
+        if level.blocks.len() != blocks * BLOCK_BYTES {
+            return None;
+        }
+        descriptors.push([
+            (packed.len() / BLOCK_BYTES) as u32,
+            level.width as u32,
+            level.height as u32,
+            (level.width / BLOCK_WIDTH) as u32,
+        ]);
+        packed.extend_from_slice(level.blocks);
     }
 
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -90,13 +127,18 @@ async fn sample_async(
     let count = points.len() as u32;
     let blocks_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("tt3-sample-blocks"),
-        contents: blocks,
+        contents: &packed,
         usage: wgpu::BufferUsages::STORAGE,
     });
-    let mut uv = Vec::with_capacity(points.len() * 2);
-    for (u, v) in points {
-        uv.push(*u);
-        uv.push(*v);
+    let levels_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("tt3-sample-levels"),
+        contents: bytemuck::cast_slice(&descriptors),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+    // WGSL 里是 array<vec3<f32>>：**stride 16**，所以每点补一个 pad 分量
+    let mut uv: Vec<f32> = Vec::with_capacity(points.len() * 4);
+    for (u, v, lod) in points {
+        uv.extend_from_slice(&[*u, *v, *lod, 0.0]);
     }
     let points_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("tt3-sample-points"),
@@ -110,14 +152,10 @@ async fn sample_async(
         mapped_at_creation: false,
     });
     let params = Params {
-        width: width as u32,
-        height: height as u32,
-        block_cols: (width / BLOCK_WIDTH) as u32,
+        level_count: levels.len() as u32,
         wrap: wrap as u32,
         count,
         pad0: 0,
-        pad1: 0,
-        pad2: 0,
     };
     let params_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("tt3-sample-params"),
@@ -134,9 +172,10 @@ async fn sample_async(
         entries: &[
             storage_entry(0, true),
             storage_entry(1, true),
-            storage_entry(2, false),
+            storage_entry(2, true),
+            storage_entry(3, false),
             wgpu::BindGroupLayoutEntry {
-                binding: 3,
+                binding: 4,
                 visibility: wgpu::ShaderStages::COMPUTE,
                 ty: wgpu::BindingType::Buffer {
                     ty: wgpu::BufferBindingType::Uniform,
@@ -170,14 +209,18 @@ async fn sample_async(
             },
             wgpu::BindGroupEntry {
                 binding: 1,
-                resource: points_buf.as_entire_binding(),
+                resource: levels_buf.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 2,
-                resource: out.as_entire_binding(),
+                resource: points_buf.as_entire_binding(),
             },
             wgpu::BindGroupEntry {
                 binding: 3,
+                resource: out.as_entire_binding(),
+            },
+            wgpu::BindGroupEntry {
+                binding: 4,
                 resource: params_buf.as_entire_binding(),
             },
         ],

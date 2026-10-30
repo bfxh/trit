@@ -1,29 +1,36 @@
-// TT3 块纹理的**采样**（块内解码 + 双线性 + wrap），与 trit-texture 的 CPU 参考对拍。
+// TT3 块纹理的**三线性采样**（mip 链 + 双线性 + wrap），与 trit-texture 的 CPU 参考对拍。
 //
-// 与 `texture.wgsl` 的区别：那条解码整图；这条只解采样点附近的 4 个纹素，
-// 块流常驻显存、片元/计算着色器按需取。语义必须与 CPU `sample::sample_bilinear_with`
-// 完全一致：纹素中心约定、clamp-to-edge/repeat/mirror、f32 权重、round 后夹到 0..255。
+// 块流按级拼接上传一次；每级带 (块偏移, 宽, 高, 块列数)。采样点带 `lod`：
+// 在相邻两级各做一次双线性，再按 `lod` 的小数部分融合。
+//
+// 语义必须与 CPU `TtxDocument::sample_trilinear_with` 完全一致：
+// 纹素中心、clamp/repeat/mirror、显式 fma（单次舍入）、round ties-to-even。
 //
 // 块布局（每块 12 字节 = 3 个 u32，GPU 按 LE 读）：
 //   word0: e0hi e0lo e1hi e1lo（e0/e1 为 RGB565 的 BE u16）
 //   word1-2: 40 纹素 × 1 trit，5 trit/字节（基 3 打包，低位在前）
 
-struct Params {
+struct Level {
+    // 该级在块流里的起始块序号
+    block_offset: u32,
     width: u32,
     height: u32,
     block_cols: u32,
+};
+
+struct Params {
+    level_count: u32,
     // 0 = clamp, 1 = repeat, 2 = mirror
     wrap: u32,
     count: u32,
     pad0: u32,
-    pad1: u32,
-    pad2: u32,
 };
 
 @group(0) @binding(0) var<storage, read> blocks: array<u32>;
-@group(0) @binding(1) var<storage, read> points: array<vec2<f32>>;
-@group(0) @binding(2) var<storage, read_write> out: array<u32>;
-@group(0) @binding(3) var<uniform> params: Params;
+@group(0) @binding(1) var<storage, read> levels: array<Level>;
+@group(0) @binding(2) var<storage, read> points: array<vec3<f32>>;
+@group(0) @binding(3) var<storage, read_write> out: array<u32>;
+@group(0) @binding(4) var<uniform> params: Params;
 
 fn expand5(v: u32) -> u32 {
     return (v << 3u) | (v >> 2u);
@@ -54,16 +61,15 @@ fn wrap_index(i: i32, n: i32, mode: u32) -> i32 {
     return period - 1 - m;
 }
 
-fn texel_rgb(x_in: i32, y_in: i32) -> vec3<f32> {
-    let w = i32(params.width);
-    let h = i32(params.height);
-    let x = wrap_index(x_in, w, params.wrap);
-    let y = wrap_index(y_in, h, params.wrap);
+fn texel_rgb(level: u32, x_in: i32, y_in: i32) -> vec3<f32> {
+    let lvl = levels[level];
+    let x = wrap_index(x_in, i32(lvl.width), params.wrap);
+    let y = wrap_index(y_in, i32(lvl.height), params.wrap);
     let block_col = u32(x / 4);
     let block_row = u32(y / 10);
-    let block_id = block_row * params.block_cols + block_col;
+    let block_id = block_row * lvl.block_cols + block_col;
     let index = u32(y % 10) * 4u + u32(x % 4);
-    let base = block_id * 3u;
+    let base = (lvl.block_offset + block_id) * 3u;
     let b0 = blocks[base] & 0xffu;
     let b1 = (blocks[base] >> 8u) & 0xffu;
     let b2 = (blocks[base] >> 16u) & 0xffu;
@@ -95,34 +101,66 @@ fn texel_rgb(x_in: i32, y_in: i32) -> vec3<f32> {
     return vec3<f32>(f32(r1), f32(g1), f32(b1c));
 }
 
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
-    if (i >= params.count) {
-        return;
-    }
-    var u = points[i].x;
-    var v = points[i].y;
+// 回 8 位（ties-to-even），与 CPU 的逐级量化对齐
+fn quantize(c: vec3<f32>) -> vec3<f32> {
+    return clamp(
+        vec3<f32>(round(c.x), round(c.y), round(c.z)),
+        vec3<f32>(0.0),
+        vec3<f32>(255.0),
+    );
+}
+
+fn bilinear(level: u32, u_in: f32, v_in: f32) -> vec3<f32> {
+    let lvl = levels[level];
+    var u = u_in;
+    var v = v_in;
     if (params.wrap == 0u) {
         u = clamp(u, 0.0, 1.0);
         v = clamp(v, 0.0, 1.0);
     }
-    let fx = u * f32(params.width) - 0.5;
-    let fy = v * f32(params.height) - 0.5;
+    let fx = u * f32(lvl.width) - 0.5;
+    let fy = v * f32(lvl.height) - 0.5;
     let x0 = floor(fx);
     let y0 = floor(fy);
     let tx = fx - x0;
     let ty = fy - y0;
     let xi = i32(x0);
     let yi = i32(y0);
-    let p00 = texel_rgb(xi, yi);
-    let p10 = texel_rgb(xi + 1, yi);
-    let p01 = texel_rgb(xi, yi + 1);
-    let p11 = texel_rgb(xi + 1, yi + 1);
-    // 与 CPU 完全同一套融合式：fma(a, 1-t, b*t)，两层都是单次舍入
+    let p00 = texel_rgb(level, xi, yi);
+    let p10 = texel_rgb(level, xi + 1, yi);
+    let p01 = texel_rgb(level, xi, yi + 1);
+    let p11 = texel_rgb(level, xi + 1, yi + 1);
+    // 与 CPU 完全同一套融合式：fma(a, 1-t, b*t)，每层单次舍入
     let top = fma(p00, vec3<f32>(1.0 - tx), p10 * tx);
     let bottom = fma(p01, vec3<f32>(1.0 - tx), p11 * tx);
-    let c = fma(top, vec3<f32>(1.0 - ty), bottom * ty);
+    return fma(top, vec3<f32>(1.0 - ty), bottom * ty);
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let i = gid.x;
+    if (i >= params.count) {
+        return;
+    }
+    let sample = points[i];
+    let last = f32(params.level_count - 1u);
+    var lod = sample.z;
+    // NaN 归零（与 CPU 同口径）
+    if (lod != lod) {
+        lod = 0.0;
+    }
+    lod = clamp(lod, 0.0, last);
+    let base_level = floor(lod);
+    let l0 = u32(base_level);
+    let l1 = min(l0 + 1u, params.level_count - 1u);
+    let t = lod - base_level;
+    // 每级先回 8 位再融合——与 CPU 参考的量化时机一致（先量化、后混、再量化）
+    let a = quantize(bilinear(l0, sample.x, sample.y));
+    var c = a;
+    if (l1 != l0) {
+        let b = quantize(bilinear(l1, sample.x, sample.y));
+        c = fma(a, vec3<f32>(1.0 - t), b * t);
+    }
     let r = u32(clamp(round(c.x), 0.0, 255.0));
     let g = u32(clamp(round(c.y), 0.0, 255.0));
     let b = u32(clamp(round(c.z), 0.0, 255.0));

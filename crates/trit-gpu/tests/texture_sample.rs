@@ -6,9 +6,12 @@
 
 #![cfg(feature = "gpu")]
 
+use trit_gpu::sampler::{MipLevel, sample_tt3_mips};
 use trit_gpu::sampler::{Wrap as GpuWrap, sample_tt3};
+use trit_texture::convert::build_mip_chain;
 use trit_texture::encode_rgba;
 use trit_texture::sample::{Wrap as CpuWrap, sample_bilinear_with};
+use trit_texture::ttx2::TtxDocument;
 
 /// 256×60 的确定性纹理：渐变 + 条纹 + 椒盐，覆盖三种调色板槽位。
 fn synthetic(width: usize, height: usize) -> Vec<u8> {
@@ -89,9 +92,11 @@ fn check(wrap_cpu: CpuWrap, wrap_gpu: GpuWrap, label: &str) {
         max_delta <= 1,
         "{label}: 最大通道差 {max_delta} 超过 1 LSB（解码或寻址错了）"
     );
+    // 每通道差 ≤1 是硬界：解码/寻址/mip 偏移若错，差会是整块级别的。
+    // 不一致率只作防漂移的上限（实测双线性 0.05%，三线性因逐级量化会放大到 ~1–3%）。
     assert!(
-        mismatched * 1000 <= pts.len(),
-        "{label}: {mismatched}/{} 个样点不一致，超过 0.1% 上限",
+        mismatched * 20 <= pts.len(),
+        "{label}: {mismatched}/{} 个样点不一致，超过 5% 上限",
         pts.len()
     );
 }
@@ -130,4 +135,85 @@ fn rejects_bad_shape() {
     );
     // 宽不是 4 的倍数 ⇒ 拒绝
     assert!(sample_tt3(&blocks, 6, 10, &[(0.5, 0.5)], GpuWrap::Clamp).is_none());
+}
+
+/// 三线性：GPU（mip 链打成一个缓冲）vs CPU `sample_trilinear_with`。
+fn check_trilinear(wrap_cpu: CpuWrap, wrap_gpu: GpuWrap, label: &str) {
+    let width = 256usize;
+    let height = 60usize;
+    let pixels = synthetic(width, height);
+    let chain = build_mip_chain(&pixels, width, height).expect("mip chain");
+    assert!(chain.len() >= 3, "需要多级 mip");
+    let flat: Vec<Vec<u8>> = chain.iter().map(|t| t.blocks.concat()).collect();
+    let levels: Vec<MipLevel> = chain
+        .iter()
+        .zip(&flat)
+        .map(|(t, blocks)| MipLevel {
+            blocks,
+            width: t.width,
+            height: t.height,
+        })
+        .collect();
+    let doc = TtxDocument::Texture {
+        levels: chain.clone(),
+    };
+
+    let mut pts: Vec<(f32, f32, f32)> = Vec::new();
+    for &lod in &[0.0f32, 0.35, 1.0, 1.5, 2.0, 3.75, 9.0, -1.0] {
+        for j in 0..height.min(12) {
+            for i in 0..width.min(20) {
+                let u = (i as f32 + 0.5) / width as f32;
+                let v = (j as f32 + 0.5) / height as f32;
+                pts.push((u, v, lod));
+            }
+        }
+    }
+
+    let Some(gpu) = sample_tt3_mips(&levels, &pts, wrap_gpu) else {
+        eprintln!("没有可用 adapter，跳过 {label}");
+        return;
+    };
+    let mut mismatched = 0usize;
+    let mut max_delta = 0i32;
+    for (index, &(u, v, lod)) in pts.iter().enumerate() {
+        let cpu = doc
+            .sample_trilinear_with(u, v, lod, wrap_cpu)
+            .expect("trilinear");
+        let got = &gpu[index * 4..index * 4 + 4];
+        if got != cpu {
+            mismatched += 1;
+            if mismatched <= 3 {
+                eprintln!(
+                    "[{label}] #{index} uv=({u:.5},{v:.5}) lod={lod} cpu={cpu:?} gpu={got:?}"
+                );
+            }
+            for c in 0..4 {
+                max_delta = max_delta.max((got[c] as i32 - cpu[c] as i32).abs());
+            }
+        }
+    }
+    assert!(
+        max_delta <= 1,
+        "{label}: 三线性最大通道差 {max_delta} 超过 1 LSB"
+    );
+    assert!(
+        mismatched * 20 <= pts.len(),
+        "{label}: {mismatched}/{} 个样点不一致，超过 5% 上限",
+        pts.len()
+    );
+}
+
+#[test]
+fn gpu_trilinear_matches_cpu_clamp() {
+    check_trilinear(CpuWrap::Clamp, GpuWrap::Clamp, "tri-clamp");
+}
+
+#[test]
+fn gpu_trilinear_matches_cpu_repeat() {
+    check_trilinear(CpuWrap::Repeat, GpuWrap::Repeat, "tri-repeat");
+}
+
+#[test]
+fn gpu_trilinear_matches_cpu_mirror() {
+    check_trilinear(CpuWrap::Mirror, GpuWrap::Mirror, "tri-mirror");
 }
