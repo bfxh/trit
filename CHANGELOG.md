@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（`trit-re`：`.debug_frame` augmentation + 32 位/ARM64 真实样本）
+
+- CIE augmentation 按 DWARF 规范解释：`z` 长度前缀、`R` 指针编码、`L`、`P`（personality
+  指针按自身编码跳过）、`S`/`B`/`G` 无数据；未知字母**失败**而不是猜。
+- 指针编码支持 `absptr`/`uleb`/`sleb`/`udata2,4,8`/`sdata2,4,8`，应用位支持绝对与 `pcrel`
+  （`indirect`/`datarel`/`textrel` 失败）。
+- 修 v4 CIE 字段顺序：`address_size`/`segment_selector_size` 在 augmentation 之后、
+  `code_alignment_factor` 之前（clang 实测如此）；改正后 clang 的 3 个 FDE 才解析出来。
+- 新增真实校准样本：`c32-df-only`（ELF32, gcc `-m32`，5 FDE）、`c-arm64-df-only`
+  （AArch64 交叉 gcc，3 FDE）、`c-clang-df-only`（clang 21, CIE v4，3 FDE）；
+  readelf 区间与工具输出逐条相同（见 `docs/N1-ARM64-CALIBRATION.md` §9）。
+- `address_size_eight_reads_full_width_addresses` 用超 32 位地址（`0x1_0000_1100`）锁住
+  地址宽度：旧夹具的值落在 32 位内，写死 4 字节也能通过。
+- 测试 **83**；变异 **19/19**。**未证**：四个真实 `.debug_frame` 的 augmentation 都是空串，
+  `zR` 路径仍只有合成夹具；ELF32 的 xref 尚未实现（`complete=false scanned=0`）。
+
 ### Changed（`trit-texture`：TTX2 布局版本位 + 8×8 块形状）
 
 - **TTX2 头部新增布局位**：`flags` 的 bit0 = `FLAG_LAYOUT_8X8`。写入端置位；读到 `flags == 0`

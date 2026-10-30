@@ -117,6 +117,8 @@ IAT 槽位按 8 字节紧邻排列，一个寄存器判错就会把调用记到�
 - **ELF 只有两个样本**（ripgrep 可执行文件、glibc 共享库）。函数边界现在来自 `.eh_frame`，
   但 `panic=abort` 构建（如 ripgrep）缺 FDE 的函数仍落在未归属里（1,496 个调用点），
   相关能力组保持 `Unknown`；IFUNC 密集的库（如 libm）未覆盖。
+- **ELF32 的交叉引用尚未实现**：32 位 ELF 的导入全部记 `未知`（`complete=false scanned=0`），
+  函数边界仍可由 `.debug_frame` 给出（`c32-df-only` 5 个精确区间），但不会产生归属。
 - **PE32**（无 `.pdata`）的同函数共现仍恒为 `Unknown`。
 - x64 的未归属调用点已按类别拆开：Node 148 = call 25 / jmp 123，Deno 156 = call 24 / jmp 132。
   其中 jmp 绝大多数是无 `.pdata` 的导入跳板（结构性）；**call 的 24–25 个尚未逐条裁定**，
@@ -162,16 +164,55 @@ objcopy --remove-section=.eh_frame --remove-section=.eh_frame_hdr c-df c-df-debu
 |---|---|---|---|
 | `c-df` | 19,408 | `66aa4a46fe5f42288e9eb05ae46f39a6bae37e3b3ec654dffab7b079158d3e2c` | `.eh_frame`（CRT 4 FDE）+ `.debug_frame`（用户 3 FDE） |
 | `c-df-debugframe` | 19,176 | `32ae2f988585d29f63bb07a470b53baafed0c70d0d18665c4f03a5abcd5c218f` | 只剩 `.debug_frame` |
+| `c32-df-only` | 17,980 | `ed0f43d59304fd222ec189ac5ad50fbf11878e9f685e3df81fcf679892001532` | ELF32（`gcc -m32`），CIE v1，`address_size` 按 ELF class 推断为 4 |
+| `c-arm64-df-only` | 73,560 | `07b3362a956395a88d8c026cea85765a0cfa0a141d8ddef7d89422e5de436940` | AArch64（`aarch64-linux-gnu-gcc`），CIE v1 |
+| `c-clang-df-only` | 19,328 | `76dfa0f2ed20c8708afa09c54b3a8e202e3bef77bb4cd6e913c6fa96bd551ccb` | x86-64 clang 21，CIE **v4**（`Pointer Size: 8 / Segment Size: 0` 紧跟 augmentation） |
 
 独立对账（`readelf --debug-dump=frames`）与 trit-re 的函数区间**逐条相同**：
 
 ```text
-0x11a9..0x11fa   0x11fa..0x1233   0x1233..0x12cc
+c-df/c-df-debugframe  (x86-64, gcc)  0x11a9..0x11fa  0x11fa..0x1233  0x1233..0x12cc
+c32-df-only           (ELF32, gcc)   0x11bd..0x120f  0x120f..0x1240  0x1240..0x12e9
+                                     0x12e9..0x12ed  0x10c0..0x10c4
+c-arm64-df-only       (AArch64)      0x858..0x8c0    0x8c0..0x8f8    0x8f8..0x998
+c-clang-df-only       (x86-64, clang) 0x1170..0x1216  0x1220..0x1281  0x1290..0x12c2
 ```
+
+工具读数（`trit-re triage --functions`）：
+
+| 样本 | 函数数 | 边界 | 归属调用点 / 调用点总数 | 未归属 |
+|---|---|---|---|---|
+| `c-df-debugframe` | 3 | exact | 4 / 4 | 0 |
+| `c32-df-only` | 5 | exact | 0 / 0 | 0 |
+| `c-arm64-df-only` | 3 | exact | 4 / 8 | 4（全在 PLT/CRT 与库函数间隙） |
+| `c-clang-df-only` | 3 | exact | 4 / 4 | 0 |
+
+`c32-df-only` 的交叉引用是 `complete=false scanned=0`：**ELF32 的 xref 还没实现**，
+9 个导入全部记 `未知`，因此不产生归属——这是已知缺口，不是边界解析失败。
 
 **发现的缺陷**：原先只要 `.eh_frame` 非空就选它。`c-df` 的 `.eh_frame` 只覆盖 CRT，
 4 个用户调用点全部落在外面（未归属 4）；改为按**调用点覆盖率**选择后改选 `.debug_frame`，
 4 个调用点全部归属、未归属 0。`c-df-debugframe` 与 `c-df` 现在读数一致。
 
-**未证**：32 位（无 multilib）与 ARM64（无交叉编译器）的 `.debug_frame` 仍只有合成夹具。
+**v4 字段顺序**：clang 的 `.debug_frame` 把 `address_size`/`segment_selector_size` 放在
+**augmentation 之后、`code_alignment_factor` 之前**。原先按"返回地址寄存器之后"读，
+clang 样本上 3 个 FDE 全部解析失败；改正后与 readelf 逐条一致。单元测试
+`address_size_eight_reads_full_width_addresses` 用 `0x1_0000_1100` 这种超出 32 位的地址，
+把"写死 4 字节"的变异打红（此前用 0x1100 的夹具打不红——值落在 32 位内，读 4 字节也对）。
+
+### 9.1 augmentation（`zR` 等）
+
+CIE 的 augmentation 现在按 DWARF 规范解释，不再"遇到就跳过整条"：
+
+- `z` 后跟 uleb 长度，按长度裁剪后续字段；
+- `R` 读 1 字节指针编码，`L` 跳过 1 字节，`P` 读编码字节 + 按编码跳过 personality 指针，
+  `S`/`B`/`G` 无数据；其余字母**返回失败**而不是猜；
+- 指针编码支持格式 `absptr`/`uleb`/`sleb`/`udata2,4,8`/`sdata2,4,8`，应用位支持绝对（`0x00`）
+  与 `pcrel`（`0x10`）；`indirect`/`datarel`/`textrel` 一律失败；
+- `parse_fde` 的初址用完整编码（含 `pcrel`，基准是节地址 + 字段偏移），范围字段只取低 4 位格式
+  （按无符号读）。
+
+**未证（诚实边界）**：本机四个真实 `.debug_frame` 样本的 augmentation 全是空串
+（`readelf` 的 `Augmentation: ""`），真实 `zR` 只在 `.eh_frame` 里见到；
+所以 `zR`/`pcrel`/`P` 这条路径只有**合成夹具**覆盖，尚未在真实 `.debug_frame` 上校准。
 
