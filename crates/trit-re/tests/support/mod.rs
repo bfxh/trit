@@ -335,6 +335,136 @@ fn write_shdr(
     put_u64(file, base + 56, entsize);
 }
 
+// ---------- ELF32（i386）夹具 ----------
+
+/// 最小 ELF32：2 个 JUMP_SLOT 导入、PIC PLT 桩 + `get_pc_thunk` 基址。
+///
+/// `socket` 有三个引用（`E8` 打到 PLT 桩、`call *disp(%ebx)`、`jmp *abs32`）；
+/// `printf` 只有一次 `mov eax,[ebx+disp]`（取地址），必须降级成 `Unknown`。
+/// `thunk = false` 时去掉 `call get_pc_thunk.bx; add $imm,%ebx`，`(%ebx)` 形式的引用
+/// 就无法解析——报告必须标不完整，而不是判"没有调用点"。
+pub fn elf32_sample(thunk: bool) -> Vec<u8> {
+    const TEXT: u32 = 0x0804_8100;
+    const PLT: u32 = 0x0804_8140;
+    const GOT: u32 = 0x0804_9000;
+    let mut file = vec![0u8; 0x520];
+
+    file[..4].copy_from_slice(b"\x7fELF");
+    file[4] = 1; // ELF32
+    file[5] = 1; // 小端
+    file[6] = 1;
+    put_u16(&mut file, 16, 2); // ET_EXEC
+    put_u16(&mut file, 18, 3); // EM_386
+    put_u32(&mut file, 20, 1);
+    put_u32(&mut file, 24, TEXT);
+    put_u32(&mut file, 28, 0); // phoff
+    put_u32(&mut file, 32, 0x400); // shoff
+    put_u16(&mut file, 40, 52);
+    put_u16(&mut file, 42, 32);
+    put_u16(&mut file, 44, 0); // phnum
+    put_u16(&mut file, 46, 40);
+    put_u16(&mut file, 48, 7);
+    put_u16(&mut file, 50, 6);
+
+    // .text：0x100 → VA 0x08048100
+    if thunk {
+        // 0x100: call 0x124（0x124 - 0x105 = 0x1F）
+        file[0x100] = 0xE8;
+        put_u32(&mut file, 0x101, 0x1F);
+        // 0x105: add $imm,%ebx ⇒ ebx = 0x08048105 + imm = GOT
+        file[0x105] = 0x81;
+        file[0x106] = 0xC3;
+        put_u32(&mut file, 0x107, GOT.wrapping_sub(TEXT + 5));
+    }
+    // 0x10B: call 0x140（PLT 桩；0x140 - 0x110 = 0x30）
+    file[0x10B] = 0xE8;
+    put_u32(&mut file, 0x10C, 0x30);
+    // 0x110: call *0x8(%ebx)（socket 槽位 = GOT + 8）
+    file[0x110] = 0xFF;
+    file[0x111] = 0x93;
+    put_u32(&mut file, 0x112, 8);
+    // 0x116: mov eax,[ebx+0xC]（printf 槽位被取地址）
+    file[0x116] = 0x8B;
+    file[0x117] = 0x83;
+    put_u32(&mut file, 0x118, 0xC);
+    // 0x11C: jmp *abs32（非 PIC 风格，直接给出 socket 槽位）
+    file[0x11C] = 0xFF;
+    file[0x11D] = 0x25;
+    put_u32(&mut file, 0x11E, GOT + 8);
+    // 0x124: __x86.get_pc_thunk.bx
+    file[0x124..0x128].copy_from_slice(&[0x8B, 0x1C, 0x24, 0xC3]);
+
+    // .plt：0x140 → VA 0x08048140，`jmp *0x8(%ebx)`
+    file[0x140] = 0xFF;
+    file[0x141] = 0xA3;
+    put_u32(&mut file, 0x142, 8);
+
+    // .dynstr："\0socket\0printf\0"
+    file[0x180] = 0;
+    file[0x181..0x188].copy_from_slice(b"socket\0");
+    file[0x188..0x18F].copy_from_slice(b"printf\0");
+    // .dynsym：0 号空，1 号 socket、2 号 printf（STT_FUNC | STB_GLOBAL，未定义）
+    put_u32(&mut file, 0x1B0, 1);
+    file[0x1BC] = 0x12;
+    put_u32(&mut file, 0x1C0, 8);
+    file[0x1CC] = 0x12;
+
+    // .rel.plt：2 条 SHT_REL（8 字节/条），类型 7 = R_386_JUMP_SLOT
+    put_u32(&mut file, 0x1E0, GOT + 8);
+    put_u32(&mut file, 0x1E4, (1 << 8) | 7);
+    put_u32(&mut file, 0x1E8, GOT + 0xC);
+    put_u32(&mut file, 0x1EC, (2 << 8) | 7);
+
+    // .shstrtab
+    let shstrtab = b"\0.text\0.plt\0.dynstr\0.dynsym\0.rel.plt\0.shstrtab\0";
+    file[0x200..0x200 + shstrtab.len()].copy_from_slice(shstrtab);
+
+    let sh = 0x400;
+    write_shdr32(&mut file, sh + 40, 1, 1, 6, TEXT, 0x100, 0x30, 0, 0);
+    write_shdr32(&mut file, sh + 80, 7, 1, 6, PLT, 0x140, 0x10, 0, 0);
+    write_shdr32(&mut file, sh + 120, 12, 3, 2, 0, 0x180, 0x0F, 0, 0);
+    write_shdr32(&mut file, sh + 160, 21, 11, 2, 0, 0x1A0, 0x30, 3, 16);
+    write_shdr32(&mut file, sh + 200, 30, 9, 2, 0, 0x1E0, 0x10, 4, 8);
+    write_shdr32(
+        &mut file,
+        sh + 240,
+        39,
+        3,
+        0,
+        0,
+        0x200,
+        shstrtab.len() as u32,
+        0,
+        0,
+    );
+    file
+}
+
+#[allow(clippy::too_many_arguments)]
+fn write_shdr32(
+    file: &mut [u8],
+    base: usize,
+    name: u32,
+    sh_type: u32,
+    flags: u32,
+    addr: u32,
+    offset: u32,
+    size: u32,
+    link: u32,
+    entsize: u32,
+) {
+    put_u32(file, base, name);
+    put_u32(file, base + 4, sh_type);
+    put_u32(file, base + 8, flags);
+    put_u32(file, base + 12, addr);
+    put_u32(file, base + 16, offset);
+    put_u32(file, base + 20, size);
+    put_u32(file, base + 24, link);
+    put_u32(file, base + 28, 0);
+    put_u32(file, base + 32, 4);
+    put_u32(file, base + 36, entsize);
+}
+
 // ---------- ARM64（AArch64）夹具 ----------
 
 /// `adrp xR, page_of(target)`。

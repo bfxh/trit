@@ -52,6 +52,59 @@ fn xref_follows_plt_to_the_caller() {
 }
 
 #[test]
+fn elf32_pic_stub_is_resolved_through_get_pc_thunk() {
+    let triage = analyze(&support::elf32_sample(true));
+    let report = triage.xref.as_ref().expect("elf32 sample has xref");
+    assert!(report.complete);
+    let socket = report
+        .imports
+        .iter()
+        .find(|row| row.import == "socket")
+        .expect("socket row");
+    assert_eq!(socket.status, Ternary::True);
+    // E8 → PLT 桩（call）、call *disp(%ebx)、jmp *abs32。
+    assert_eq!(socket.sites.len(), 3);
+    assert_eq!(
+        socket
+            .sites
+            .iter()
+            .filter(|site| site.kind == trit_re::SiteKind::Call)
+            .count(),
+        2
+    );
+    // printf 只被 `mov eax,[ebx+disp]` 取过地址：不能判"没有引用"。
+    let printf = report
+        .imports
+        .iter()
+        .find(|row| row.import == "printf")
+        .expect("printf row");
+    assert_eq!(printf.status, Ternary::Unknown);
+    assert!(printf.sites.is_empty());
+}
+
+#[test]
+fn elf32_missing_got_base_marks_scan_incomplete() {
+    let triage = analyze(&support::elf32_sample(false));
+    let report = triage.xref.as_ref().expect("elf32 sample has xref");
+    // `(%ebx)` 引用解析不了 ⇒ 不能声称扫全了。
+    assert!(!report.complete);
+    let printf = report
+        .imports
+        .iter()
+        .find(|row| row.import == "printf")
+        .expect("printf row");
+    assert_eq!(printf.status, Ternary::Unknown);
+    // 绝对寻址的 `jmp *abs32` 仍能给出证据。
+    let socket = report
+        .imports
+        .iter()
+        .find(|row| row.import == "socket")
+        .expect("socket row");
+    assert_eq!(socket.status, Ternary::True);
+    assert_eq!(socket.sites.len(), 1);
+}
+
+#[test]
 fn plain_binary_is_not_packed() {
     let triage = analyze(&support::elf_sample(false, false));
     assert_eq!(triage.facts.get("imports.network"), Some(Ternary::True));

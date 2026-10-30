@@ -8,7 +8,10 @@
 //! - PE x86-64：`FF /2`(call)、`FF /4`(jmp) 的 RIP 相对编码；
 //! - PE x86：同两个操作码的 32 位绝对寻址编码；
 //! - ELF x86-64：`.rela.plt` 的 `JUMP_SLOT` → GOT 槽位，PLT 桩里的 `FF /4`，
-//!   以及调用方的 `E8`(call rel32)、`FF /2` 经 GOT。
+//!   以及调用方的 `E8`(call rel32)、`FF /2` 经 GOT；
+//! - ELF i386：`SHT_REL`（8 字节/条）的 `JUMP_SLOT`，PIC 桩 `FF A3 disp32`
+//!   （`jmp *disp(%ebx)`，基址由 `call __x86.get_pc_thunk.bx; add $imm,%ebx` 解出）
+//!   与非 PIC 桩 `FF 25 abs32`。
 //!
 //! 因此**数据段里恰好长得像指令的字节仍可能被误报**。降低误报的唯一手段是
 //! 目标地址必须精确等于某个导入槽位；做不到这一点的地方一律不给 `False`。
@@ -21,6 +24,7 @@ use crate::elf;
 use crate::pe;
 
 mod aarch64;
+mod x86;
 
 /// 单次扫描的字节上限，防止超大文件把 CLI 拖死。
 pub const MAX_SCAN_BYTES: usize = 64 * 1024 * 1024;
@@ -442,11 +446,13 @@ fn expand_pe_thunks(exec: &[(u32, usize, &[u8])], sites: &mut [BTreeSet<RawSite>
     }
 }
 
-/// 扫描 ELF x86-64 的 PLT/GOT 交叉引用。
+/// 扫描 ELF x86-64 / i386 / ARM64 的 PLT/GOT 交叉引用。
 pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
     let arch = info.arch();
-    if !(info.class == 2 && matches!(info.machine, 62 | 183)) {
-        let mut report = empty_report(arch, "只支持 x86-64 / ARM64 的 PLT/GOT 交叉引用");
+    let supported = (info.class == 2 && matches!(info.machine, 62 | 183))
+        || (info.class == 1 && info.machine == 3);
+    if !supported {
+        let mut report = empty_report(arch, "只支持 x86-64 / ARM64 / i386 的 PLT/GOT 交叉引用");
         if let Some(imports) = &info.imports {
             report.imports = unknown_rows(imports.iter().cloned(), "架构不支持，无法判定调用点");
         }
@@ -460,7 +466,7 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
         return report;
     };
     let slot_type = if info.machine == 183 { 1026 } else { 7 };
-    let Some(jump_slots) = elf_jump_slots(bytes, info, &symbols, slot_type) else {
+    let Some(jump_slots) = elf_jump_slots(bytes, info, &symbols, slot_type, info.class == 2) else {
         let mut report = empty_report(arch, "没有 JUMP_SLOT 重定位（静态链接或节表缺失）");
         if let Some(imports) = &info.imports {
             report.imports = unknown_rows(imports.iter().cloned(), "没有 JUMP_SLOT 重定位");
@@ -496,6 +502,9 @@ pub fn scan_elf(bytes: &[u8], info: &elf::ElfInfo) -> XrefReport {
 
     if info.machine == 183 {
         return aarch64::scan_elf(arch, &symbols, &jump_slots, &exec_data, complete, scanned);
+    }
+    if info.class == 1 {
+        return x86::scan_elf(arch, &symbols, &jump_slots, &exec_data, complete, scanned);
     }
 
     // 第一遍：PLT 桩（`FF /4` 经 GOT）→ 桩地址 → 符号。
@@ -648,6 +657,7 @@ fn elf_jump_slots(
     info: &elf::ElfInfo,
     symbols: &[elf::DynamicSymbol],
     slot_type: u32,
+    sixty_four: bool,
 ) -> Option<Vec<(u64, usize)>> {
     let known: BTreeSet<usize> = symbols.iter().map(|symbol| symbol.index).collect();
     let mut slots = Vec::new();
@@ -656,18 +666,27 @@ fn elf_jump_slots(
         if section.sh_type != 4 && section.sh_type != 9 {
             continue;
         }
-        // RELA 24 字节 / REL 16 字节；JUMP_SLOT 的编号按架构传入（x86-64=7，ARM64=1026）。
-        let entry_size = if section.sh_type == 4 { 24 } else { 16 };
+        // 64 位：RELA 24 字节 / REL 16 字节；32 位：RELA 12 / REL 8。
+        // 节头里的 entsize 优先，缺失或偏小时回落到按 class+type 的默认值。
+        let minimum = match (sixty_four, section.sh_type == 4) {
+            (true, true) => 24,
+            (true, false) => 16,
+            (false, true) => 12,
+            (false, false) => 8,
+        };
+        let entry_size = usize::try_from(section.entsize)
+            .ok()
+            .filter(|size| *size >= minimum)
+            .unwrap_or(minimum);
         let count = section.size as usize / entry_size;
         let Some(data) = slice_at(bytes, section.offset as usize, count * entry_size) else {
             continue;
         };
         for index in 0..count {
             let base = index * entry_size;
-            let got = u64::from_le_bytes(data[base..base + 8].try_into().ok()?);
-            let info_word = u64::from_le_bytes(data[base + 8..base + 16].try_into().ok()?);
-            let kind = info_word as u32;
-            let symbol = (info_word >> 32) as usize;
+            let Some((got, symbol, kind)) = read_rel_entry(data, base, sixty_four) else {
+                continue;
+            };
             if kind == slot_type && known.contains(&symbol) {
                 found_table = true;
                 slots.push((got, symbol));
@@ -675,6 +694,20 @@ fn elf_jump_slots(
         }
     }
     if found_table { Some(slots) } else { None }
+}
+
+/// 读一条重定位：`(偏移, 符号下标, 类型)`。64 位的 `r_info` 是「符号:类型 = 32:32」，
+/// 32 位是「符号:类型 = 24:8」。
+fn read_rel_entry(data: &[u8], base: usize, sixty_four: bool) -> Option<(u64, usize, u32)> {
+    if sixty_four {
+        let offset = u64::from_le_bytes(data.get(base..base + 8)?.try_into().ok()?);
+        let info = u64::from_le_bytes(data.get(base + 8..base + 16)?.try_into().ok()?);
+        Some((offset, (info >> 32) as usize, info as u32))
+    } else {
+        let offset = u32::from_le_bytes(data.get(base..base + 4)?.try_into().ok()?);
+        let info = u32::from_le_bytes(data.get(base + 4..base + 8)?.try_into().ok()?);
+        Some((offset as u64, (info >> 8) as usize, info & 0xff))
+    }
 }
 
 #[cfg(test)]

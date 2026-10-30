@@ -19,6 +19,21 @@
 - 动态链路自测（build→rail/sidechannel 吃自己导出的网表、procscan 观察自己
   运行）：rail 报出的导出 fail-open 与双导轨重量侧信道为**已知边界**，
   如实记录在自审报告，不在本 PR 修。
+### Added（`trit-re`：ELF32 / i386 的 PLT-GOT 交叉引用）
+
+- 重定位按 class 读：64 位 `RELA` 24 / `REL` 16 字节，32 位 `RELA` 12 / `REL` 8 字节；
+  32 位的 `r_info` 是「符号:类型 = 24:8」（此前一律按 8 字节字段读，32 位重定位整表读错）。
+- 32 位扫描（新模块 `xref/x86.rs`）：PIC 桩 `FF A3 disp32`（`jmp *disp(%ebx)`）+
+  非 PIC 桩 `FF 25 abs32`；GOT 基址靠 `call __x86.get_pc_thunk.bx; add $imm,%ebx` 解出
+  （thunk 体必须是 `8B 1C 24 C3`，否则不采信）。`call *disp(%ebx)` / `call *abs32` 记调用点，
+  `mov`/`lea`/`push` 取槽位地址则降级 `Unknown`。
+- 解析不出基址但 `.plt` 里确有 `FF A3` 时，报告标 `complete=false` ——不判"没有调用点"。
+- 真实校准（`docs/N1-ARM64-CALIBRATION.md` §10）：PIE / 非 PIE / 共享库三个 32 位样本，
+  `complete=true`，`objdump -d` 的调用地址与工具 `sites` **逐条相同**；
+  旧的 `c32-df-only` 从"0 归属"变成 4/5 归属（余 1 个只有 `GLOB_DAT` 槽位）。
+- 测试 **83 → 89**；变异 **19 → 22/22**（新增：32 位重定位字段、GOT 基址立即数、跳板算调用点）。
+- **未证**：`GLOB_DAT` 槽位不纳入槽位表（与 x64 一致）；只认 `get_pc_thunk.bx` 一种基址序言。
+
 ### Added（`trit-re`：`.debug_frame` augmentation + 32 位/ARM64 真实样本）
 
 - CIE augmentation 按 DWARF 规范解释：`z` 长度前缀、`R` 指针编码、`L`、`P`（personality
