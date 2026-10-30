@@ -7,9 +7,10 @@
 //!   ttx-upgrade   in.ttx out.ttx    # TTX1 → TTX2
 //!   ttx-downgrade in.ttx out.ttx    # TTX2 → TTX1（仅单级 TEX）
 //!   render        in.ttx out.png    # 渲染预览（采样口径/寻址/平铺可调，--split 并排对拍）
+//!   stats         in.ttx            # 逐级 mip 账单：尺寸/块数/字节/压缩比/载荷槽
 //!
 //! `render` 的选项：`--size WxH` `--mode nearest|bilinear|trilinear|auto` `--lod F`
-//! `--wrap clamp|repeat|mirror` `--tiles F` `--split`。
+//! `--wrap clamp|repeat|mirror` `--tiles F` `--split` `--level N` `--blocks`。
 //! ```
 #![forbid(unsafe_code)]
 
@@ -22,7 +23,7 @@ use trit_texture::convert::{
     ttx2_to_rgba, ttx2_to_ttx1,
 };
 use trit_texture::pngio::{load_png_rgba, save_png_rgba};
-use trit_texture::preview::{RenderOptions, SampleMode, render};
+use trit_texture::preview::{RenderOptions, SampleMode, level_stats, render};
 use trit_texture::sample::Wrap;
 use trit_texture::ttx2::{TtxDocument, from_ttx2};
 
@@ -110,16 +111,7 @@ fn run() -> Result<String, String> {
         "render" => {
             let (input, output, opts) = parse_render(rest)?;
             let bytes = std::fs::read(Path::new(&input)).map_err(|e| e.to_string())?;
-            let doc = if bytes.starts_with(b"TTX2") {
-                from_ttx2(&bytes).map_err(|e| format!("{input} 解析失败：{e}"))?
-            } else {
-                // TTX1 没有 mip 链字段 ⇒ 单级纹理
-                let texture = trit_texture::ttx::from_ttx(&bytes)
-                    .map_err(|e| format!("{input} 不是 TTX 纹理：{e}"))?;
-                TtxDocument::Texture {
-                    levels: vec![texture],
-                }
-            };
+            let doc = load_doc(&bytes, &input)?;
             let (w, h, rgba) = render(&doc, &opts).map_err(|e| format!("渲染失败：{e}"))?;
             let image = RgbaImage {
                 width: w,
@@ -136,7 +128,50 @@ fn run() -> Result<String, String> {
                 if opts.split { "，左右对拍" } else { "" }
             ))
         }
+        "stats" => {
+            if rest.len() != 1 {
+                return Err("stats 需要一个路径参数：<in.ttx>".to_string());
+            }
+            let bytes = std::fs::read(Path::new(&rest[0])).map_err(|e| e.to_string())?;
+            let doc = load_doc(&bytes, &rest[0])?;
+            let stats = level_stats(&doc).map_err(|e| e.to_string())?;
+            let mut out = String::from(
+                "级别  尺寸        块数    块流字节  RGBA字节  压缩比  载荷槽
+",
+            );
+            for s in &stats {
+                out.push_str(&format!(
+                    "{:<5} {:<10} {:>6} {:>9} {:>9}  {:>6.1}×  {}/{}
+",
+                    s.level,
+                    format!("{}×{}", s.width, s.height),
+                    s.blocks,
+                    s.bytes,
+                    s.rgba_bytes,
+                    s.rgba_bytes as f64 / s.bytes.max(1) as f64,
+                    s.payload_used,
+                    s.payload_slots
+                ));
+            }
+            let total: usize = stats.iter().map(|s| s.bytes).sum();
+            out.push_str(&format!("合计块流 {total} 字节（{} 级）", stats.len()));
+            Ok(out)
+        }
         other => Err(format!("未知子命令 {other}")),
+    }
+}
+
+/// 读入 TTX（v2 走容器解析，v1 包成单级文档）。
+fn load_doc(bytes: &[u8], name: &str) -> Result<TtxDocument, String> {
+    if bytes.starts_with(b"TTX2") {
+        from_ttx2(bytes).map_err(|e| format!("{name} 解析失败：{e}"))
+    } else {
+        // TTX1 没有 mip 链字段 ⇒ 单级纹理
+        let texture =
+            trit_texture::ttx::from_ttx(bytes).map_err(|e| format!("{name} 不是 TTX 纹理：{e}"))?;
+        Ok(TtxDocument::Texture {
+            levels: vec![texture],
+        })
     }
 }
 
@@ -157,6 +192,13 @@ fn parse_render(rest: &[String]) -> Result<(String, String, RenderOptions), Stri
         }
         match arg.as_str() {
             "--split" => opts.split = true,
+            "--blocks" => opts.overlay_blocks = true,
+            "--level" => {
+                let value = take!();
+                opts.level = value
+                    .parse()
+                    .map_err(|_| format!("--level 不是整数：{value}"))?;
+            }
             "--size" => {
                 let value = take!();
                 let (w, h) = value
