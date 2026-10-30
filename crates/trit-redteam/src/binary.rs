@@ -325,18 +325,6 @@ fn secret_patterns() -> Vec<(&'static str, String)> {
     .collect()
 }
 
-fn scan_strings(bytes: &[u8]) -> BTreeMap<&'static str, usize> {
-    let text = String::from_utf8_lossy(bytes);
-    let mut hits = BTreeMap::new();
-    for (name, needle) in secret_patterns() {
-        let count = text.matches(&needle).count();
-        if count > 0 && plausible_secret(&text, name, &needle) {
-            hits.insert(name, count);
-        }
-    }
-    hits
-}
-
 /// 降噪：`sk-` / `AKIA` 这类短前缀在正常文本里也会出现，要求后面跟够长的字母数字串。
 /// 分支按 **name** 匹配而不是 needle 文本——needle 字面量出现在比较里
 /// 就又成了自指样本（自审教训）。
