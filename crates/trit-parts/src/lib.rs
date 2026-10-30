@@ -13,6 +13,7 @@ pub mod api;
 pub mod augment;
 pub mod backward;
 pub mod data;
+pub mod depth;
 pub mod geo;
 pub mod loss;
 pub mod model;
