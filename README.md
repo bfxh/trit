@@ -55,6 +55,9 @@ GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值
 网安/逆向技术调研（PYAS、KSword 与静态二进制分析的对照、证据等级与路线图）：
 [docs/SECURITY-RE.md](docs/SECURITY-RE.md)。
 
+网络安全面 M0（pcap → 双向流 → 三值弃权判决，含授权边界与未校准声明）：
+[docs/SECURITY-NET.md](docs/SECURITY-NET.md)。
+
 ARM64 真实样本校准（语料哈希、修复前后读数、独立复算）：[docs/N1-ARM64-CALIBRATION.md](docs/N1-ARM64-CALIBRATION.md)。
 
 ## 预编译产物

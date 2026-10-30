@@ -6,7 +6,7 @@ use std::process::ExitCode;
 use trit_core::value::Ternary;
 use trit_net::{
     Analysis, DEFAULT_BUDGET, Layer, Model, Outcome, TrainOptions, analyze, format,
-    majority_dataset, train,
+    majority_dataset, netsec, train,
 };
 
 fn main() -> ExitCode {
@@ -14,6 +14,7 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("format") => format_cmd(&args[1..]),
         Some("train") => train_cmd(&args[1..]),
+        Some("flow") => flow_cmd(&args[1..]),
         _ => run(),
     };
     match result {
@@ -183,7 +184,124 @@ fn parse_args() -> Result<Args, String> {
 }
 
 fn usage() -> String {
-    "用法：trit-net <infer MODEL.json --inputs 1,X,0 [--budget N] [--json] | format encode|decode | train [--epochs N]>".to_string()
+    "用法：trit-net <infer MODEL.json --inputs 1,X,0 [--budget N] [--json] | format encode|decode | train [--epochs N] | flow PCAP [--model MODEL] [--budget N]>".to_string()
+}
+
+fn flow_cmd(args: &[String]) -> Result<(), String> {
+    let mut path: Option<String> = None;
+    let mut model_path: Option<String> = None;
+    let mut budget = DEFAULT_BUDGET;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--model" => {
+                index += 1;
+                model_path = Some(args.get(index).ok_or("--model 缺少参数")?.clone());
+            }
+            "--budget" => {
+                index += 1;
+                let raw = args.get(index).ok_or("--budget 缺少参数")?;
+                budget = raw
+                    .parse()
+                    .map_err(|_| format!("--budget 不是整数: {raw}"))?;
+            }
+            other if other.starts_with("--") => return Err(format!("未知参数 {other}")),
+            other => {
+                if path.is_some() {
+                    return Err(format!("多余的参数 {other}"));
+                }
+                path = Some(other.to_string());
+            }
+        }
+        index += 1;
+    }
+    let path = path.ok_or("flow 需要 PCAP 路径")?;
+    let data = std::fs::read(&path).map_err(|error| format!("读取 {path} 失败：{error}"))?;
+    let model = match model_path.as_deref() {
+        Some(model_path) => {
+            let bytes = std::fs::read(model_path)
+                .map_err(|error| format!("读取模型失败 {model_path}：{error}"))?;
+            let model = if model_path.ends_with(".trn") {
+                format::decode(&bytes).map_err(|error| error.to_string())?
+            } else {
+                let text = String::from_utf8(bytes)
+                    .map_err(|_| format!("模型 {model_path} 不是 UTF-8 JSON"))?;
+                Model::from_json(&text).map_err(|error| error.to_string())?
+            };
+            if model.inputs() != netsec::flow::N {
+                return Err(format!(
+                    "模型输入维数 {} 与特征维数 {} 不一致",
+                    model.inputs(),
+                    netsec::flow::N
+                ));
+            }
+            Some(model)
+        }
+        None => None,
+    };
+
+    let reader = netsec::pcap::Reader::new(&data).map_err(|error| error.to_string())?;
+    let link = reader.link_type();
+    let nanos = reader.nanos();
+    let mut table = netsec::flow::FlowTable::new();
+    let mut packets = 0usize;
+    let mut skips: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    for record in reader {
+        let record = record.map_err(|error| error.to_string())?;
+        let ts = record.timestamp_seconds(nanos);
+        match netsec::packet::decode(link, record.data) {
+            Ok(packet) => {
+                table.ingest(ts, &packet);
+                packets += 1;
+            }
+            Err(skip) => *skips.entry(skip.as_str()).or_default() += 1,
+        }
+    }
+    let flows = table.finish();
+    for flow in &flows {
+        let values = flow.features.values();
+        let inputs = netsec::features::ternarize(&values, &netsec::features::DEFAULT_RULES);
+        let features = netsec::flow::NAMES
+            .iter()
+            .zip(values.iter())
+            .map(|(name, value)| (name.to_string(), serde_json::json!(value)))
+            .collect::<serde_json::Map<String, serde_json::Value>>();
+        let mut obj = serde_json::json!({
+            "src": flow.src().to_string(),
+            "dst": flow.dst().to_string(),
+            "proto": flow.key.proto,
+            "first_ts": flow.first_ts,
+            "packets": flow.features.fwd_pkts + flow.features.bwd_pkts,
+            "inputs": netsec::features::encode(&inputs),
+            "features": features,
+        });
+        if let Some(model) = &model {
+            let decision = netsec::decision::decide(model, &inputs, budget)
+                .map_err(|error| error.to_string())?;
+            obj["verdict"] = serde_json::json!(decision.verdict.as_str());
+            obj["reason"] = serde_json::json!(decision.reason);
+            obj["exact"] = serde_json::json!(decision.exact);
+            obj["completions"] = serde_json::json!(decision.completions);
+            obj["unknown_inputs"] = serde_json::json!(decision.unknown_inputs);
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&obj).map_err(|error| format!("JSON 序列化失败：{error}"))?
+        );
+    }
+    let mut summary = format!("报文 {packets} 条，流 {} 条", flows.len());
+    if model.is_some() {
+        summary.push_str("；规则集 DEFAULT_RULES（未校准）");
+    }
+    if !skips.is_empty() {
+        summary.push_str("；跳过：");
+        for (reason, count) in &skips {
+            summary.push_str(&format!(" {reason}={count}"));
+        }
+    }
+    eprintln!("{summary}");
+    Ok(())
 }
 
 fn parse_inputs(raw: &str) -> Result<Vec<Ternary>, String> {
