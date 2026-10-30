@@ -19,8 +19,8 @@
 
 use crate::ttx::{block_trits, gf3_remainder_16};
 use crate::{
-    BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TextureError, TritBlock, TritTexture,
-    decode_rgba_into,
+    BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TRITS_PER_BLOCK, TextureError, TritBlock,
+    TritTexture, decode_rgba_into,
 };
 
 /// 容器魔数。
@@ -105,7 +105,7 @@ pub struct Level {
 /// 一个瓦片的块数据。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Tile {
-    /// [`TILE_BLOCKS`] 个 4×10 块（行主序，块内纹素按 TT3 规则排布）。
+    /// [`TILE_BLOCKS`] 个 8×8 块（行主序，块内纹素按 TT3 规则排布）。
     pub blocks: Vec<TritBlock>,
 }
 
@@ -396,7 +396,7 @@ pub type TileRgba = Vec<u8>;
 /// 同源），RGB565 端点字节是二进制内容，用 FNV-1a 折进同一个 u32——
 /// 只盖载荷的话端点损坏检不出来（自审发现）。
 fn tile_crc(slice: &[u8]) -> u32 {
-    let mut trits = Vec::with_capacity(slice.len() / TRIT_BLOCK_BYTES * 40);
+    let mut trits = Vec::with_capacity(slice.len() / TRIT_BLOCK_BYTES * TRITS_PER_BLOCK);
     let mut fnv: u32 = 0x811c_9dc5;
     for block_index in 0..slice.len() / TRIT_BLOCK_BYTES {
         let mut block = [0u8; TRIT_BLOCK_BYTES];

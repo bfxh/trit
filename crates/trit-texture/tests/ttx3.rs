@@ -4,7 +4,7 @@ use trit_texture::ttx3::{
     LargeTexture, LevelPolicy, TILE_BLOCKS, TILE_DATA_BYTES, TILE_ENTRY_BYTES, TILE_HEIGHT,
     TILE_TEXELS, TILE_WIDTH, TileRgba, Ttx3Archive, level_storage_bytes, suggest_chain,
 };
-use trit_texture::{TextureError, decode_rgba, decode_rgba_into, encode_rgba};
+use trit_texture::{BLOCK_PIXELS, TRIT_BLOCK_BYTES, TextureError, decode_rgba, decode_rgba_into, encode_rgba};
 
 fn gradient_rgba(width: usize, height: usize) -> Vec<u8> {
     let mut out = vec![0u8; width * height * 4];
@@ -215,8 +215,8 @@ fn encode_decode_matches_crate_path_bit_exact() {
     }
     // 瓦片维度常量自洽。
     assert_eq!(TILE_TEXELS, TILE_WIDTH * TILE_HEIGHT);
-    assert_eq!(TILE_BLOCKS, TILE_TEXELS / 40);
-    assert_eq!(TILE_DATA_BYTES, TILE_BLOCKS * 12);
+    assert_eq!(TILE_BLOCKS, TILE_TEXELS / BLOCK_PIXELS);
+    assert_eq!(TILE_DATA_BYTES, TILE_BLOCKS * TRIT_BLOCK_BYTES);
     let _ =
         decode_rgba_into as fn(&trit_texture::TritTexture, &mut [u8]) -> Result<(), TextureError>;
     let _ = TileRgba::default();

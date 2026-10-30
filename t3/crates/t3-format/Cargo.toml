@@ -1,0 +1,10 @@
+[package]
+name = "t3-format"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+t3-core.workspace = true
+t3-kernel.workspace = true
