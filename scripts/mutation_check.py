@@ -2494,7 +2494,7 @@ MUTANTS = [
     {
         "name": 'redteam: 不扫密钥形态字符串',
         "file": 'crates/trit-redteam/src/binary.rs',
-        "old": '        if count > 0 && plausible_secret(&text, needle) {',
+        "old": '        if count > 0 && plausible_secret(&text, name, &needle) {',
         "new": '        if false {',
         "pkg": 'trit-redteam',
         "filter": 'detects_secret_shaped_strings_and_attributes_them_to_us'
@@ -2619,6 +2619,15 @@ MUTANTS = [
         "new": "            entry.last_seen_ms = entry.last_seen_ms.min(*ts_ms);",
         "pkg": "trit-procscan",
         "filter": "repeated_samples_merge_into_one_step"
+    },
+    {
+        "name": "redteam: 路径段数过滤失效（needle 常量报成泄漏）",
+        "file": "crates/trit-redteam/src/binary.rs",
+        "old": "                if path_segments(&text) >= 3 && !samples.contains(&text) {",
+        "new": "                if path_segments(&text) >= 0 && !samples.contains(&text) {",
+        "pkg": "trit-redteam",
+        "filter": "needle_constants_are_not_reported_as_leaks"
+
     },
     {
         "name": 'trit-re: JSON 引号不转义',
@@ -2772,6 +2781,7 @@ MUTANTS = [
         "pkg": "trit-re",
         "filter": 'x64_address_only_import_is_unknown',
     },
+
     {
         "name": 'trit-re: ELF32 重定位把 r_info 当偏移',
         "file": 'crates/trit-re/src/xref/mod.rs',

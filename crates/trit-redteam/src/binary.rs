@@ -6,6 +6,11 @@
 //! 3. **路径泄露**：有没有把构建机的绝对路径写进产物。
 //!
 //! 解析是手写的最小实现（只认本仓会产出的 PE32+/ELF32/ELF64），不引入依赖。
+//!
+//! 自扫边界（2026-10-28 自审）：泄密 needle 在运行时拼装，本工具自己的产物里
+//! **不含**连续的检测样本，`binary` 自检不会自指命中；构建树路径不做机器特定
+//! 前缀（曾是 `D:\KF\` 魔法路径，已移除），泄漏的构建树路径归入通用
+//! `absolute-user-path`，按机器细分留给将来的 `--build-tree` 参数。
 
 use std::collections::BTreeMap;
 
@@ -290,20 +295,38 @@ fn parse_elf(bytes: &[u8]) -> Option<Hardening> {
     Some(hardening)
 }
 
-const SECRET_PATTERNS: [(&str, &str); 5] = [
-    ("private-key", "-----BEGIN "),
-    ("aws-access-key", "AKIA"),
-    ("openai-style-key", "sk-"),
-    ("github-token", "ghp_"),
-    ("slack-token", "xoxb-"),
-];
+/// 泄密检测 needle 在**运行时**拼装：连续字面量（`AKIA`、`sk-`…）一旦编进
+/// 本工具自己的产物，`binary` 自检就会命中自己——检测样本表的自指误报
+/// （2026-10-28 自审发现）。
+///
+/// 表里存**逆序片段**：直接分段（`["AK","IA"]`）仍可能被链接器的字符串
+/// 相邻布局拼回明文（实测命中过），逆序后即使相邻也是 `IAAK` 这种乱序，
+/// 运行时 `rev()` 还原。
+fn secret_patterns() -> Vec<(&'static str, String)> {
+    [
+        ("private-key", &["BEGIN ", "-----"][..]),
+        ("aws-access-key", &["IA", "AK"][..]),
+        ("openai-style-key", &["k-", "s"][..]),
+        ("github-token", &["p_", "gh"][..]),
+        ("slack-token", &["xb-", "xo"][..]),
+    ]
+    .into_iter()
+    .map(|(name, parts)| {
+        let mut text = String::new();
+        for part in parts.iter().rev() {
+            text.push_str(part);
+        }
+        (name, text)
+    })
+    .collect()
+}
 
 fn scan_strings(bytes: &[u8]) -> BTreeMap<&'static str, usize> {
     let text = String::from_utf8_lossy(bytes);
     let mut hits = BTreeMap::new();
-    for (name, needle) in SECRET_PATTERNS {
-        let count = text.matches(needle).count();
-        if count > 0 && plausible_secret(&text, needle) {
+    for (name, needle) in secret_patterns() {
+        let count = text.matches(&needle).count();
+        if count > 0 && plausible_secret(&text, name, &needle) {
             hits.insert(name, count);
         }
     }
@@ -311,15 +334,17 @@ fn scan_strings(bytes: &[u8]) -> BTreeMap<&'static str, usize> {
 }
 
 /// 降噪：`sk-` / `AKIA` 这类短前缀在正常文本里也会出现，要求后面跟够长的字母数字串。
-fn plausible_secret(text: &str, needle: &str) -> bool {
-    if needle == "-----BEGIN " {
+/// 分支按 **name** 匹配而不是 needle 文本——needle 字面量出现在比较里
+/// 就又成了自指样本（自审教训）。
+fn plausible_secret(text: &str, name: &str, needle: &str) -> bool {
+    if name == "private-key" {
         return text.contains("PRIVATE KEY-----");
     }
-    let min_tail = match needle {
-        "AKIA" => 16,
-        "ghp_" => 30,
-        "sk-" => 20,
-        "xoxb-" => 20,
+    let min_tail = match name {
+        "aws-access-key" => 16,
+        "github-token" => 30,
+        "openai-style-key" => 20,
+        "slack-token" => 20,
         _ => 8,
     };
     let mut rest = text;
@@ -348,13 +373,27 @@ fn plausible_secret(text: &str, needle: &str) -> bool {
     false
 }
 
+/// `\` / `/` 分段计数（空段不计）；真路径至少有三段（盘/根、目录、文件）。
+fn path_segments(text: &str) -> usize {
+    text.split(['\\', '/'])
+        .filter(|part| !part.is_empty())
+        .count()
+}
+
 /// 路径泄漏：返回（发现，警告，证据样本）。
 ///
 /// 分两档：路径里还有 `C:\\Users\\<用户名>` / `/home/<用户名>` ⇒ 真泄漏（finding）；
 /// 只剩 `~/.rustup/...` 这种工具链布局 ⇒ 已做过 remap，降级为提示（warning）。
 fn path_leaks(bytes: &[u8]) -> (Vec<Finding>, Vec<Finding>, Vec<String>) {
     let mut samples: Vec<String> = Vec::new();
-    for needle in ["D:\\KF\\", "C:\\Users\\", "/home/", ".rustup", "/rustc/"] {
+    // Windows 侧用**通用盘符前缀**（运行时拼装，`X:\` 不以连续字面量进产物），
+    // 构建树路径不再做机器特定前缀（曾是 `D:\KF\`，2026-10-28 自审移除）；
+    // Unix 侧保留用户主目录与工具链布局。
+    let mut needles: Vec<String> = (b'A'..=b'Z')
+        .map(|letter| format!("{}:\\", letter as char))
+        .collect();
+    needles.extend(["/home/", ".rustup", "/rustc/"].map(str::to_string));
+    for needle in &needles {
         let mut rest = bytes;
         while let Some(position) = find_bytes(rest, needle.as_bytes()) {
             if samples.len() < 3 {
@@ -373,7 +412,9 @@ fn path_leaks(bytes: &[u8]) -> (Vec<Finding>, Vec<Finding>, Vec<String>) {
                         }
                     })
                     .collect();
-                if !samples.contains(&text) {
+                // ≥3 段才像真路径：把「检测器自己的短 needle 常量」（如
+                // `C:\Users\`，两段）滤在门外——否则自检又自指。
+                if path_segments(&text) >= 3 && !samples.contains(&text) {
                     samples.push(text);
                 }
             }
@@ -405,17 +446,6 @@ fn path_leaks(bytes: &[u8]) -> (Vec<Finding>, Vec<Finding>, Vec<String>) {
                     "toolchain-path-only",
                     "std-paths",
                     "只剩工具链布局（~/.rustup、/rustc/<hash>），不含用户名；已做过 remap",
-                ));
-            }
-        } else if sample.contains("D:\\KF\\") {
-            if !findings
-                .iter()
-                .any(|finding| finding.id == "build-tree-path")
-            {
-                findings.push(Finding::project(
-                    "build-tree-path",
-                    "artifact-content",
-                    "产物嵌了构建树路径；检查是否把调试路径写进了产物",
                 ));
             }
         } else if !findings
@@ -700,9 +730,9 @@ mod tests {
         assert_eq!(report["attribution"]["rust-toolchain"], 1);
 
         let mut own = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT | DLL_GUARD_CF, 0x6000_0020);
-        own.extend_from_slice(b"\0D:\\KF\\trit\\target\\release\\trit-build.exe\0");
+        own.extend_from_slice(b"\0C:\\dev\\trit\\target\\release\\trit-build.exe\0");
         let report = run(&own, "own.exe").unwrap();
-        let leak = finding(&report, "findings", "build-tree-path");
+        let leak = finding(&report, "findings", "absolute-user-path");
         assert_eq!(leak["origin"], "project", "{leak}");
     }
 
@@ -719,6 +749,19 @@ mod tests {
                 .any(|id| id == "toolchain-path-only"),
             "{report}"
         );
+        assert!(!has_findings(&report));
+    }
+
+    #[test]
+    fn needle_constants_are_not_reported_as_leaks() {
+        // 检测器自己的短 needle 常量（如 `C:\Users\`，只有两段）不是真泄漏——
+        // ≥3 段过滤把它挡在门外；没有这个过滤，扫自己必报
+        // absolute-user-path（自审教训，变异门锁住）。
+        let mut bytes = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT | DLL_GUARD_CF, 0x6000_0020);
+        bytes.extend_from_slice(b"\0C:\\Users\\\0");
+        bytes.extend_from_slice(b"\0.rustup\0");
+        let report = run(&bytes, "needles.exe").unwrap();
+        assert!(finding_ids(&report, "findings").is_empty(), "{report}");
         assert!(!has_findings(&report));
     }
 
