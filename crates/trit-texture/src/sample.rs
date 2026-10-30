@@ -17,6 +17,13 @@
 //! | 双线性（`Sampler` + 块缓存） | 59.8 ns | 58.2 ns |
 //! | 双线性（整图 RGBA） | 32.7 ns | 29.9 ns |
 //!
+//! ## 光栅化器需要的那一对
+//!
+//! - **越界寻址**：[`Wrap::Clamp`] / [`Wrap::Repeat`] / [`Wrap::Mirror`]，
+//!   对 `Sampler` 与自由函数都生效；索引解析是精确的整数运算（[`wrap_index`]）。
+//! - **自动 LOD**：[`lod_from_derivatives`] 按 `ρ = max(|∂/∂x|, |∂/∂y|)` 求 `log2`，
+//!   [`TtxDocument::sample_auto`] 直接吃 `dpdx`/`dpdy` 风格的四元导数。
+//!
 //! **结论（如实记）：CPU 上压缩域双线性比「整图解码一次再过滤」慢约 2×**，
 //! 换来 **13.3× 的常驻内存**（2048×2040：1.2 MB vs 16 MB）。所以：
 //! - 这个模块在 CPU 侧是**参考实现 / GPU 对拍基线**，不是快路径；
@@ -25,6 +32,36 @@
 
 use crate::ttx2::TtxDocument;
 use crate::{BLOCK_HEIGHT, BLOCK_WIDTH, TritTexture, palette_from_endpoints};
+
+/// 越界寻址：与图形 API 的三档对齐。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Wrap {
+    /// 夹到边缘纹素（默认）。
+    #[default]
+    Clamp,
+    /// 平铺重复。
+    Repeat,
+    /// 镜像重复（`GL_MIRRORED_REPEAT`，边缘不重复）。
+    Mirror,
+}
+
+/// 把越界下标按 `wrap` 解析成 `[0, n)`。`n` 必须 > 0。
+#[inline]
+fn wrap_index(i: i64, n: i64, wrap: Wrap) -> usize {
+    match wrap {
+        Wrap::Clamp => i.clamp(0, n - 1) as usize,
+        Wrap::Repeat => i.rem_euclid(n) as usize,
+        Wrap::Mirror => {
+            let period = 2 * n;
+            let r = i.rem_euclid(period);
+            if r < n {
+                r as usize
+            } else {
+                (period - 1 - r) as usize
+            }
+        }
+    }
+}
 
 /// 3^k 查表：5 trit/字节是 `Σ digit·3^k`，取第 k 位就是 `(byte / 3^k) % 3`。
 const POW3: [u32; 5] = [1, 3, 9, 27, 81];
@@ -53,33 +90,12 @@ pub fn texel(texture: &TritTexture, x: usize, y: usize) -> [u8; 4] {
 /// 返回值与 [`crate::decode_rgba`] 同一色彩空间（8 位 RGB，alpha 恒 255）；
 /// 权重在 f32 里算完再四舍五入回 8 位。
 pub fn sample_bilinear(texture: &TritTexture, u: f32, v: f32) -> [u8; 4] {
-    if texture.width == 0 || texture.height == 0 || texture.blocks.is_empty() {
-        return [0, 0, 0, 255];
-    }
-    let fx = u.clamp(0.0, 1.0) * texture.width as f32 - 0.5;
-    let fy = v.clamp(0.0, 1.0) * texture.height as f32 - 0.5;
-    let x0 = fx.floor();
-    let y0 = fy.floor();
-    let tx = fx - x0;
-    let ty = fy - y0;
-    let w = texture.width as i64;
-    let h = texture.height as i64;
-    let xi = |i: i64| i.clamp(0, w - 1) as usize;
-    let yi = |i: i64| i.clamp(0, h - 1) as usize;
-    let (ix0, ix1) = (xi(x0 as i64), xi(x0 as i64 + 1));
-    let (iy0, iy1) = (yi(y0 as i64), yi(y0 as i64 + 1));
-    let p00 = texel(texture, ix0, iy0);
-    let p10 = texel(texture, ix1, iy0);
-    let p01 = texel(texture, ix0, iy1);
-    let p11 = texel(texture, ix1, iy1);
-    let mut out = [0u8; 4];
-    for c in 0..3 {
-        let top = p00[c] as f32 * (1.0 - tx) + p10[c] as f32 * tx;
-        let bottom = p01[c] as f32 * (1.0 - tx) + p11[c] as f32 * tx;
-        out[c] = (top * (1.0 - ty) + bottom * ty).round().clamp(0.0, 255.0) as u8;
-    }
-    out[3] = 255;
-    out
+    sample_bilinear_with(texture, u, v, Wrap::Clamp)
+}
+
+/// 双线性采样，越界按 `wrap` 解析（一次性调用用这个；循环里用 [`Sampler`] 更省）。
+pub fn sample_bilinear_with(texture: &TritTexture, u: f32, v: f32, wrap: Wrap) -> [u8; 4] {
+    Sampler::with_wrap(texture, wrap).sample_bilinear(u, v)
 }
 
 /// 有状态的采样器：带一块**块调色板缓存**。
@@ -89,18 +105,35 @@ pub fn sample_bilinear(texture: &TritTexture, u: f32, v: f32) -> [u8; 4] {
 pub struct Sampler<'a> {
     texture: &'a TritTexture,
     cache: [CacheSlot; 4],
+    wrap: Wrap,
 }
 
 /// (块下标, 该块的 3 级调色板)。
 type CacheSlot = (usize, [(u8, u8, u8); 3]);
 
 impl<'a> Sampler<'a> {
-    /// 绑定一张纹理。
+    /// 绑定一张纹理（默认 [`Wrap::Clamp`]）。
     pub fn new(texture: &'a TritTexture) -> Self {
+        Self::with_wrap(texture, Wrap::Clamp)
+    }
+
+    /// 绑定一张纹理并指定越界寻址。
+    pub fn with_wrap(texture: &'a TritTexture, wrap: Wrap) -> Self {
         Self {
             texture,
             cache: [(usize::MAX, [(0, 0, 0); 3]); 4],
+            wrap,
         }
+    }
+
+    /// 当前越界寻址。
+    pub fn wrap(&self) -> Wrap {
+        self.wrap
+    }
+
+    /// 切换越界寻址（缓存不清：缓存键是块下标，与寻址无关）。
+    pub fn set_wrap(&mut self, wrap: Wrap) {
+        self.wrap = wrap;
     }
 
     #[inline]
@@ -117,11 +150,16 @@ impl<'a> Sampler<'a> {
         palette
     }
 
-    /// 最近邻取纹素（越界 clamp-to-edge）。
+    /// 最近邻取纹素（越界按 [`Sampler::wrap`] 解析）。
     pub fn texel(&mut self, x: usize, y: usize) -> [u8; 4] {
+        self.texel_at(x as i64, y as i64)
+    }
+
+    #[inline]
+    fn texel_at(&mut self, xi: i64, yi: i64) -> [u8; 4] {
         let tex = self.texture;
-        let x = x.min(tex.width.saturating_sub(1));
-        let y = y.min(tex.height.saturating_sub(1));
+        let x = wrap_index(xi, tex.width as i64, self.wrap);
+        let y = wrap_index(yi, tex.height as i64, self.wrap);
         let block_cols = tex.width / BLOCK_WIDTH;
         let block_index = (y / BLOCK_HEIGHT) * block_cols + (x / BLOCK_WIDTH);
         let local = (y % BLOCK_HEIGHT) * BLOCK_WIDTH + (x % BLOCK_WIDTH);
@@ -137,22 +175,21 @@ impl<'a> Sampler<'a> {
         if tex.width == 0 || tex.height == 0 || tex.blocks.is_empty() {
             return [0, 0, 0, 255];
         }
-        let fx = u.clamp(0.0, 1.0) * tex.width as f32 - 0.5;
-        let fy = v.clamp(0.0, 1.0) * tex.height as f32 - 0.5;
+        let (u, v) = match self.wrap {
+            Wrap::Clamp => (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)),
+            _ => (u, v),
+        };
+        let fx = u * tex.width as f32 - 0.5;
+        let fy = v * tex.height as f32 - 0.5;
         let x0 = fx.floor();
         let y0 = fy.floor();
         let tx = fx - x0;
         let ty = fy - y0;
-        let w = tex.width as i64;
-        let h = tex.height as i64;
-        let xi = |i: i64| i.clamp(0, w - 1) as usize;
-        let yi = |i: i64| i.clamp(0, h - 1) as usize;
-        let (ix0, ix1) = (xi(x0 as i64), xi(x0 as i64 + 1));
-        let (iy0, iy1) = (yi(y0 as i64), yi(y0 as i64 + 1));
-        let p00 = self.texel(ix0, iy0);
-        let p10 = self.texel(ix1, iy0);
-        let p01 = self.texel(ix0, iy1);
-        let p11 = self.texel(ix1, iy1);
+        let (x0i, y0i) = (x0 as i64, y0 as i64);
+        let p00 = self.texel_at(x0i, y0i);
+        let p10 = self.texel_at(x0i + 1, y0i);
+        let p01 = self.texel_at(x0i, y0i + 1);
+        let p11 = self.texel_at(x0i + 1, y0i + 1);
         let mut out = [0u8; 4];
         for c in 0..3 {
             let top = p00[c] as f32 * (1.0 - tx) + p10[c] as f32 * tx;
@@ -164,7 +201,50 @@ impl<'a> Sampler<'a> {
     }
 }
 
+/// 由屏幕空间导数推 LOD（各向同性近似，与 GPU 的 `ρ = max(|∂/∂x|, |∂/∂y|)` 同式）。
+///
+/// `du_x`/`dv_x` 是 uv 对屏幕 x 的偏导，`du_y`/`dv_y` 对屏幕 y；返回未夹取的
+/// `log2(ρ)`（ρ ≤ 1 时返回 0，放大不改 LOD）。
+pub fn lod_from_derivatives(
+    width: usize,
+    height: usize,
+    du_x: f32,
+    dv_x: f32,
+    du_y: f32,
+    dv_y: f32,
+) -> f32 {
+    let w = width as f32;
+    let h = height as f32;
+    let dx = ((du_x * w) * (du_x * w) + (dv_x * h) * (dv_x * h)).sqrt();
+    let dy = ((du_y * w) * (du_y * w) + (dv_y * h) * (dv_y * h)).sqrt();
+    let rho = dx.max(dy);
+    if !rho.is_finite() || rho <= 0.0 {
+        0.0
+    } else {
+        rho.log2().max(0.0)
+    }
+}
+
 impl TtxDocument {
+    /// 按屏幕空间导数自动选 LOD 并三线性采样（光栅化器的默认取法）。
+    ///
+    /// 导数由调用方从顶点/像素差分算好（GPU 里是 `dpdx`/`dpdy`）；本函数只做
+    /// `lod = log2(max(ρ_x, ρ_y))` 然后转给 [`TtxDocument::sample_trilinear`]。
+    pub fn sample_auto(
+        &self,
+        u: f32,
+        v: f32,
+        du_x: f32,
+        dv_x: f32,
+        du_y: f32,
+        dv_y: f32,
+    ) -> Option<[u8; 4]> {
+        let levels = self.levels()?;
+        let base = levels.first()?;
+        let lod = lod_from_derivatives(base.width, base.height, du_x, dv_x, du_y, dv_y);
+        self.sample_trilinear(u, v, lod)
+    }
+
     /// mip 链（从细到粗）；`kind=MOD` 返回 `None`。
     pub fn levels(&self) -> Option<&[TritTexture]> {
         match self {
@@ -178,6 +258,11 @@ impl TtxDocument {
     /// `lod` 会被夹到 `[0, 级数-1]`；只有一级时退化为该级的双线性。
     /// 非纹理文档返回 `None`（不静默给 0）。
     pub fn sample_trilinear(&self, u: f32, v: f32, lod: f32) -> Option<[u8; 4]> {
+        self.sample_trilinear_with(u, v, lod, Wrap::Clamp)
+    }
+
+    /// 三线性 + 指定越界寻址。
+    pub fn sample_trilinear_with(&self, u: f32, v: f32, lod: f32, wrap: Wrap) -> Option<[u8; 4]> {
         let levels = self.levels()?;
         if levels.is_empty() {
             return None;
@@ -191,11 +276,11 @@ impl TtxDocument {
         let l0 = lod.floor() as usize;
         let l1 = (l0 + 1).min(levels.len() - 1);
         let t = lod - l0 as f32;
-        let a = sample_bilinear(&levels[l0], u, v);
+        let a = sample_bilinear_with(&levels[l0], u, v, wrap);
         if l1 == l0 || t <= 0.0 {
             return Some(a);
         }
-        let b = sample_bilinear(&levels[l1], u, v);
+        let b = sample_bilinear_with(&levels[l1], u, v, wrap);
         let mut out = [0u8; 4];
         for c in 0..3 {
             out[c] = (a[c] as f32 * (1.0 - t) + b[c] as f32 * t)
@@ -307,6 +392,98 @@ mod tests {
             let got = d.sample_trilinear(0.31, 0.67, l as f32).unwrap();
             assert_eq!(got, sample_bilinear(level, 0.31, 0.67));
         }
+    }
+
+    #[test]
+    fn wrap_index_rules() {
+        // 索引解析是精确的，先钉这一层
+        assert_eq!(wrap_index(-1, 8, Wrap::Clamp), 0);
+        assert_eq!(wrap_index(8, 8, Wrap::Clamp), 7);
+        assert_eq!(wrap_index(-1, 8, Wrap::Repeat), 7);
+        assert_eq!(wrap_index(8, 8, Wrap::Repeat), 0);
+        // mirror：边缘不重复（-1 映到 0，8 映到 7，-2 映到 1）
+        assert_eq!(wrap_index(-1, 8, Wrap::Mirror), 0);
+        assert_eq!(wrap_index(8, 8, Wrap::Mirror), 7);
+        assert_eq!(wrap_index(-2, 8, Wrap::Mirror), 1);
+        assert_eq!(wrap_index(9, 8, Wrap::Mirror), 6);
+    }
+
+    #[test]
+    fn wrap_repeat_tiles_the_seam() {
+        let d = doc();
+        let tex = &d.levels().unwrap()[0];
+        // 跨 seam 的中点应≈最右列与最左列的平均（u 的浮点在 seam 处不精确，留 ±1）
+        let left = texel(tex, 0, 3);
+        let right = texel(tex, tex.width - 1, 3);
+        // u = 1.0 正好落在最后一列与第 0 列之间（fx = W - 0.5，tx = 0.5）
+        let seam = sample_bilinear_with(tex, 1.0, 3.5 / tex.height as f32, Wrap::Repeat);
+        for c in 0..3 {
+            let want = ((left[c] as f32 + right[c] as f32) / 2.0).round() as i32;
+            assert!(
+                (seam[c] as i32 - want).abs() <= 1,
+                "seam 处通道 {c}: 得到 {}，期望 ≈ {want}",
+                seam[c]
+            );
+        }
+    }
+
+    #[test]
+    fn wrap_mirror_reflects_without_duplicating_edge() {
+        let d = doc();
+        let tex = &d.levels().unwrap()[0];
+        let edge = texel(tex, 0, 2);
+        // u 略小于 0：镜像后仍是最左列（不是最右列）
+        let a = sample_bilinear_with(
+            tex,
+            -0.5 / tex.width as f32,
+            2.5 / tex.height as f32,
+            Wrap::Mirror,
+        );
+        assert_eq!(a, edge, "mirror 下 u<0 应映到第 0 列");
+        // repeat 在同一位置应映到最右列
+        let b = sample_bilinear_with(
+            tex,
+            -0.5 / tex.width as f32,
+            2.5 / tex.height as f32,
+            Wrap::Repeat,
+        );
+        assert_eq!(
+            b,
+            texel(tex, tex.width - 1, 2),
+            "repeat 下 u<0 应映到最后一列"
+        );
+    }
+
+    #[test]
+    fn lod_from_derivatives_basics() {
+        let (w, h) = (64usize, 40usize);
+        // 一个像素走一个纹素 ⇒ lod 0
+        assert_eq!(
+            lod_from_derivatives(w, h, 1.0 / w as f32, 0.0, 0.0, 1.0 / h as f32),
+            0.0
+        );
+        // 一个像素走 8 个纹素 ⇒ lod 3
+        let lod = lod_from_derivatives(w, h, 8.0 / w as f32, 0.0, 0.0, 8.0 / h as f32);
+        assert!((lod - 3.0).abs() < 1e-5, "lod={lod}");
+        // 放大（导数 0）不出现负 LOD
+        assert_eq!(lod_from_derivatives(w, h, 0.0, 0.0, 0.0, 0.0), 0.0);
+        // 只有 y 方向变化也参与 ρ
+        let lod_y = lod_from_derivatives(w, h, 0.0, 0.0, 0.0, 16.0 / h as f32);
+        assert!((lod_y - 4.0).abs() < 1e-5, "lod_y={lod_y}");
+    }
+
+    #[test]
+    fn sample_auto_matches_trilinear_at_same_lod() {
+        let d = doc();
+        let (w, h) = {
+            let t = &d.levels().unwrap()[0];
+            (t.width, t.height)
+        };
+        let (u, v) = (0.37, 0.61);
+        let (du_x, dv_y) = (2.0 / w as f32, 2.0 / h as f32);
+        let auto = d.sample_auto(u, v, du_x, 0.0, 0.0, dv_y).unwrap();
+        let manual = d.sample_trilinear(u, v, 1.0).unwrap();
+        assert_eq!(auto, manual, "lod=1 时 auto 应与显式 lod=1 一致");
     }
 
     #[test]
