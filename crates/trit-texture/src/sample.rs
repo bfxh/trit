@@ -45,6 +45,44 @@ pub enum Wrap {
     Mirror,
 }
 
+/// 图集里的子矩形（纹素坐标：左上角 + 宽高）。
+///
+/// 采样器带矩形时，**UV 的 `[0,1]` 映射到矩形内**，`wrap` 也只在矩形内循环——
+/// 否则边界双线性会采到相邻图集条目（经典 bleed）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rect {
+    /// 左边界（纹素）。
+    pub x: usize,
+    /// 上边界（纹素）。
+    pub y: usize,
+    /// 宽（纹素，> 0）。
+    pub width: usize,
+    /// 高（纹素，> 0）。
+    pub height: usize,
+}
+
+impl Rect {
+    /// 构造；宽或高为 0 返回 `None`。
+    pub fn new(x: usize, y: usize, width: usize, height: usize) -> Option<Self> {
+        (width > 0 && height > 0).then_some(Self {
+            x,
+            y,
+            width,
+            height,
+        })
+    }
+
+    /// 取第 `level` 级 mip 上对应的子矩形（每级尺寸减半，至少 1×1）。
+    pub fn at_level(&self, level: u32) -> Self {
+        Self {
+            x: self.x >> level,
+            y: self.y >> level,
+            width: (self.width >> level).max(1),
+            height: (self.height >> level).max(1),
+        }
+    }
+}
+
 /// 把越界下标按 `wrap` 解析成 `[0, n)`。`n` 必须 > 0。
 #[inline]
 fn wrap_index(i: i64, n: i64, wrap: Wrap) -> usize {
@@ -106,6 +144,7 @@ pub struct Sampler<'a> {
     texture: &'a TritTexture,
     cache: [CacheSlot; 4],
     wrap: Wrap,
+    rect: Option<Rect>,
 }
 
 /// (块下标, 该块的 3 级调色板)。
@@ -123,6 +162,35 @@ impl<'a> Sampler<'a> {
             texture,
             cache: [(usize::MAX, [(0, 0, 0); 3]); 4],
             wrap,
+            rect: None,
+        }
+    }
+
+    /// 绑定图集子矩形（`None` = 整张纹理）。越界的矩形会被夹到纹理内。
+    pub fn set_rect(&mut self, rect: Option<Rect>) {
+        self.rect = rect.map(|r| {
+            let x = r.x.min(self.texture.width.saturating_sub(1));
+            let y = r.y.min(self.texture.height.saturating_sub(1));
+            Rect {
+                x,
+                y,
+                width: r.width.min(self.texture.width - x).max(1),
+                height: r.height.min(self.texture.height - y).max(1),
+            }
+        });
+    }
+
+    /// 当前子矩形（`None` = 整张）。
+    pub fn rect(&self) -> Option<Rect> {
+        self.rect
+    }
+
+    /// 采样域：`(x0, y0, w, h)`，无矩形时就是整张纹理。
+    #[inline]
+    fn bounds(&self) -> (usize, usize, usize, usize) {
+        match self.rect {
+            Some(r) => (r.x, r.y, r.width, r.height),
+            None => (0, 0, self.texture.width, self.texture.height),
         }
     }
 
@@ -158,8 +226,9 @@ impl<'a> Sampler<'a> {
     #[inline]
     fn texel_at(&mut self, xi: i64, yi: i64) -> [u8; 4] {
         let tex = self.texture;
-        let x = wrap_index(xi, tex.width as i64, self.wrap);
-        let y = wrap_index(yi, tex.height as i64, self.wrap);
+        let (x0, y0, w, h) = self.bounds();
+        let x = x0 + wrap_index(xi, w as i64, self.wrap);
+        let y = y0 + wrap_index(yi, h as i64, self.wrap);
         let block_cols = tex.width / BLOCK_WIDTH;
         let block_index = (y / BLOCK_HEIGHT) * block_cols + (x / BLOCK_WIDTH);
         let local = (y % BLOCK_HEIGHT) * BLOCK_WIDTH + (x % BLOCK_WIDTH);
@@ -179,8 +248,9 @@ impl<'a> Sampler<'a> {
             Wrap::Clamp => (u.clamp(0.0, 1.0), v.clamp(0.0, 1.0)),
             _ => (u, v),
         };
-        let fx = u * tex.width as f32 - 0.5;
-        let fy = v * tex.height as f32 - 0.5;
+        let (_, _, w, h) = self.bounds();
+        let fx = u * w as f32 - 0.5;
+        let fy = v * h as f32 - 0.5;
         let x0 = fx.floor();
         let y0 = fy.floor();
         let tx = fx - x0;
@@ -484,6 +554,81 @@ mod tests {
         let auto = d.sample_auto(u, v, du_x, 0.0, 0.0, dv_y).unwrap();
         let manual = d.sample_trilinear(u, v, 1.0).unwrap();
         assert_eq!(auto, manual, "lod=1 时 auto 应与显式 lod=1 一致");
+    }
+
+    /// 左半红、右半绿的 32×40 图（每块 4 宽，块内纯色 ⇒ 编码后仍然是纯红/纯绿）。
+    fn two_halves() -> TtxDocument {
+        let (w, h) = (32usize, 40usize);
+        let mut px = vec![0u8; w * h * 4];
+        for y in 0..h {
+            for x in 0..w {
+                let o = (y * w + x) * 4;
+                let c = if x < 16 { [220, 30, 30] } else { [30, 200, 30] };
+                px[o..o + 3].copy_from_slice(&c);
+                px[o + 3] = 255;
+            }
+        }
+        let bytes = rgba_to_ttx2_mips(&px, w, h).expect("encode");
+        from_ttx2(&bytes).expect("parse")
+    }
+
+    #[test]
+    fn rect_maps_uv_into_sub_rect() {
+        let d = two_halves();
+        let tex = &d.levels().unwrap()[0];
+        let rect = Rect::new(0, 0, 16, 40).unwrap();
+        let mut s = Sampler::with_wrap(tex, Wrap::Clamp);
+        s.set_rect(Some(rect));
+        // 纹素中心逐一对照绝对坐标
+        for j in 0..rect.height {
+            for i in 0..rect.width {
+                let u = (i as f32 + 0.5) / rect.width as f32;
+                let v = (j as f32 + 0.5) / rect.height as f32;
+                assert_eq!(s.sample_bilinear(u, v), texel(tex, i, j), "({i},{j})");
+            }
+        }
+        // 矩形外的纹素绝不该出现（全是绿）
+        for v in [0.0f32, 0.5, 1.0] {
+            let px = s.sample_bilinear(0.0, v);
+            assert!(px[0] > 200 && px[1] < 60, "左半矩形应保持红：{px:?}");
+        }
+    }
+
+    #[test]
+    fn rect_clamp_does_not_bleed_into_neighbour() {
+        let d = two_halves();
+        let tex = &d.levels().unwrap()[0];
+        let rect = Rect::new(0, 0, 16, 40).unwrap();
+        let mut with_rect = Sampler::with_wrap(tex, Wrap::Clamp);
+        with_rect.set_rect(Some(rect));
+        let mut full = Sampler::with_wrap(tex, Wrap::Clamp);
+        // 不带矩形：u=1.0 落在最右列（绿）
+        let a = full.sample_bilinear(1.0, 0.5);
+        assert!(a[1] > 200 && a[0] < 60, "无矩形时应采到右半绿：{a:?}");
+        // 带矩形：u=1.0 仍停在矩形右边缘（红）
+        let b = with_rect.sample_bilinear(1.0, 0.5);
+        assert!(b[0] > 200 && b[1] < 60, "带矩形时不应跨条目 bleed：{b:?}");
+    }
+
+    #[test]
+    fn rect_repeat_wraps_inside_rect() {
+        let d = two_halves();
+        let tex = &d.levels().unwrap()[0];
+        let rect = Rect::new(0, 0, 16, 40).unwrap();
+        let mut s = Sampler::with_wrap(tex, Wrap::Repeat);
+        s.set_rect(Some(rect));
+        // u 跨过 1.0 后在矩形内回卷，仍应是红
+        let px = s.sample_bilinear(1.5, 0.5);
+        assert!(px[0] > 200 && px[1] < 60, "repeat 应在矩形内回卷：{px:?}");
+    }
+
+    #[test]
+    fn rect_at_level_halves() {
+        let r = Rect::new(16, 20, 8, 10).unwrap();
+        assert_eq!(r.at_level(0), r);
+        assert_eq!(r.at_level(1), Rect::new(8, 10, 4, 5).unwrap());
+        let tiny = Rect::new(1, 1, 1, 1).unwrap();
+        assert_eq!(tiny.at_level(3), Rect::new(0, 0, 1, 1).unwrap());
     }
 
     #[test]

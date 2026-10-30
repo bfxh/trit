@@ -10,7 +10,7 @@
 //!   stats         in.ttx            # 逐级 mip 账单：尺寸/块数/字节/压缩比/载荷槽
 //!
 //! `render` 的选项：`--size WxH` `--mode nearest|bilinear|trilinear|auto` `--lod F`
-//! `--wrap clamp|repeat|mirror` `--tiles F` `--split` `--level N` `--blocks`。
+//! `--wrap clamp|repeat|mirror` `--tiles F` `--split` `--level N` `--blocks` `--atlas x,y,w,h`。
 //! ```
 #![forbid(unsafe_code)]
 
@@ -24,7 +24,7 @@ use trit_texture::convert::{
 };
 use trit_texture::pngio::{load_png_rgba, save_png_rgba};
 use trit_texture::preview::{RenderOptions, SampleMode, level_stats, render};
-use trit_texture::sample::Wrap;
+use trit_texture::sample::{Rect, Wrap};
 use trit_texture::ttx2::{TtxDocument, from_ttx2};
 
 const USAGE: &str = "用法：ttx-convert <png-to-ttx|ttx-to-png|ttx-upgrade|ttx-downgrade|render> <输入> <输出> [png-to-ttx 选项：--v1 --mip] [render 选项：--size WxH --mode nearest|bilinear|trilinear|auto --lod F --wrap clamp|repeat|mirror --tiles F --split]";
@@ -193,6 +193,23 @@ fn parse_render(rest: &[String]) -> Result<(String, String, RenderOptions), Stri
         match arg.as_str() {
             "--split" => opts.split = true,
             "--blocks" => opts.overlay_blocks = true,
+            "--atlas" => {
+                let value = take!();
+                let parts: Vec<&str> = value.split(',').collect();
+                if parts.len() != 4 {
+                    return Err(format!("--atlas 要写成 x,y,w,h：{value}"));
+                }
+                let mut nums = [0usize; 4];
+                for (slot, text) in nums.iter_mut().zip(&parts) {
+                    *slot = text
+                        .parse()
+                        .map_err(|_| format!("--atlas 数值不合法：{text}"))?;
+                }
+                opts.atlas = Some(
+                    Rect::new(nums[0], nums[1], nums[2], nums[3])
+                        .ok_or("--atlas 的宽高必须 > 0")?,
+                );
+            }
             "--level" => {
                 let value = take!();
                 opts.level = value

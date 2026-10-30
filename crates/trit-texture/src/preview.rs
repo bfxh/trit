@@ -4,7 +4,7 @@
 //! 自动 LOD）渲出来，肉眼就能看出缩小时的走样与 mip 的作用。逻辑放库里，
 //! 不塞进 bin——这样默认测试就能覆盖，不用开 `png` feature。
 
-use crate::sample::{Sampler, Wrap, lod_from_derivatives};
+use crate::sample::{Rect, Sampler, Wrap, lod_from_derivatives};
 use crate::ttx2::TtxDocument;
 use crate::{BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TRIT_PAYLOAD_BYTES, TRITS_PER_BLOCK};
 
@@ -40,6 +40,8 @@ pub struct RenderOptions {
     pub level: usize,
     /// 叠加块边界网格（洋红），用来核对块尺寸/对齐。
     pub overlay_blocks: bool,
+    /// 只渲染图集的某个子矩形（第 0 级纹素坐标）；`None` = 整张。
+    pub atlas: Option<Rect>,
 }
 
 impl Default for RenderOptions {
@@ -53,6 +55,7 @@ impl Default for RenderOptions {
             split: false,
             level: 0,
             overlay_blocks: false,
+            atlas: None,
         }
     }
 }
@@ -75,7 +78,13 @@ pub fn render(doc: &TtxDocument, opts: &RenderOptions) -> Result<(usize, usize, 
     let mut out = vec![0u8; w * h * 4];
     let mut samplers: Vec<Sampler> = levels
         .iter()
-        .map(|tex| Sampler::with_wrap(tex, opts.wrap))
+        .enumerate()
+        .map(|(index, tex)| {
+            let mut sampler = Sampler::with_wrap(tex, opts.wrap);
+            // 子矩形按级缩放（每级减半），否则高层 mip 会指到图集外
+            sampler.set_rect(opts.atlas.map(|r| r.at_level(index as u32)));
+            sampler
+        })
         .collect();
     for y in 0..h {
         let v = (y as f32 + 0.5) / h as f32 * tiles;
@@ -271,6 +280,7 @@ mod tests {
             split: false,
             level: 0,
             overlay_blocks: true,
+            ..RenderOptions::default()
         };
         let (_, _, rgba) = render(&doc, &opts).expect("render");
         let pixels: Vec<[u8; 4]> = rgba
