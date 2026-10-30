@@ -19,4 +19,5 @@ trit-belnap.workspace = true
 clap = { version = "4.6.7", features = ["derive"] }
 
 [dev-dependencies]
-# 端到端用例直接驱动 bin，不需要额外依赖。
+# 端到端用例直接驱动 bin；JSONL 逐行解析校验需要 serde_json。
+serde_json = "1.0.154"

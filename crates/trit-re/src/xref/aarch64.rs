@@ -30,6 +30,10 @@ const BLR_OP: u32 = 0xD63F_0000;
 const BR_MASK: u32 = 0xFFFF_FC1F;
 const BR_OP: u32 = 0xD61F_0000;
 const BRANCH_OP_MASK: u32 = 0xFC00_0000;
+/// `adrp` 与 `ldr` 之间允许夹杂的指令数（真实代码常见把参数准备插在中间）。
+const MAX_ADDR_STEPS: usize = 12;
+/// `ldr` 与 `blr`/`br` 之间允许夹杂的指令数。
+const MAX_CALL_STEPS: usize = 8;
 const BL_OP: u32 = 0x9400_0000;
 const B_OP: u32 = 0x1400_0000;
 
@@ -125,7 +129,70 @@ fn branch_target(insn: u32, pc: u64) -> Option<(u64, bool)> {
     Some((pc.wrapping_add(imm as u64), opcode == BL_OP))
 }
 
+/// 这条指令是否写 `register`：`Some(true/false)` 是能判定的常见类别，
+/// `None` 表示"不认识"——调用方按**覆盖**处理（宁可断链，不给错归属）。
+fn writes(insn: u32, register: u32) -> Option<bool> {
+    let rd = insn & 0x1F;
+    let rt2 = (insn >> 10) & 0x1F;
+    // ADR / ADRP
+    if insn & 0x9F00_0000 == 0x9000_0000 || insn & 0x9F00_0000 == 0x1000_0000 {
+        return Some(rd == register);
+    }
+    // ADD/SUB（立即数或寄存器）、逻辑移位运算、位域、条件选择：目标在 Rd。
+    if insn & 0x1F00_0000 == 0x1100_0000
+        || insn & 0x1F00_0000 == 0x0B00_0000
+        || insn & 0x1F00_0000 == 0x0A00_0000
+        || insn & 0x1F80_0000 == 0x1300_0000
+        || insn & 0x1FE0_0000 == 0x1A80_0000
+    {
+        return Some(rd == register);
+    }
+    // MOVZ / MOVK
+    if insn & 0x7F80_0000 == 0x5280_0000 || insn & 0x7F80_0000 == 0x7280_0000 {
+        return Some(rd == register);
+    }
+    // 载入/存储：无符号偏移、非缩放偏移、寄存器偏移、字面量。
+    if insn & 0x3B00_0000 == 0x3900_0000
+        || insn & 0x3B00_0000 == 0x3800_0000
+        || insn & 0x3B00_0000 == 0x1800_0000
+    {
+        return Some(rd == register);
+    }
+    // LDP/STP：Rt 与 Rt2 都算写。
+    if insn & 0x3A00_0000 == 0x2800_0000 {
+        return Some(rd == register || rt2 == register);
+    }
+    // 调用会破坏调用者保存寄存器 x0–x18 与 x30；x19–x29 跨调用保留。
+    let opcode = insn & 0xFC00_0000;
+    if opcode == 0x9400_0000 {
+        return Some(register <= 18 || register == 30);
+    }
+    if insn & 0xFFFF_FC1F == 0xD63F_0000 {
+        return Some(register <= 18 || register == 30);
+    }
+    // 无条件跳转/返回：本路径到此为止，后续指令不可达，按"未知"断链。
+    if opcode == 0x1400_0000
+        || insn & 0xFFFF_FC1F == 0xD61F_0000
+        || insn & 0xFFFF_FC1F == 0xD65F_0000
+    {
+        return None;
+    }
+    // HINT / 屏障 / PAC：不写通用寄存器；MRS 写 Rt，MSR 只读 Rt。
+    if insn & 0xFFFF_0000 == 0xD503_0000 {
+        return Some(false);
+    }
+    if insn & 0xFFF0_0000 == 0xD530_0000 {
+        return Some(rd == register);
+    }
+    if insn & 0xFFF0_0000 == 0xD510_0000 {
+        return Some(false);
+    }
+    None
+}
+
 /// 扫描一段代码里的 `adrp + [add] + ldr + blr/br` 序列。
+///
+/// 允许中间夹杂其他指令（参数准备很常见），但会被对目标寄存器的破坏性写入打断。
 fn references(data: &[u8], base: u64) -> Vec<Reference> {
     let insns = instructions(data);
     let mut out = Vec::new();
@@ -137,30 +204,39 @@ fn references(data: &[u8], base: u64) -> Vec<Reference> {
         let mut register = insns[index] & 0x1F;
         let mut address = page;
         let mut cursor = index + 1;
-        let mut steps = 0;
+        let mut steps = 1usize;
         let mut loaded = None;
-        while cursor < insns.len() && steps < 3 {
-            if let Some((next_register, immediate)) = add_imm(insns[cursor], register) {
+        while cursor < insns.len() && steps < MAX_ADDR_STEPS {
+            let insn = insns[cursor];
+            if let Some((next_register, immediate)) = add_imm(insn, register) {
                 address = address.wrapping_add(immediate);
                 register = next_register;
                 cursor += 1;
                 steps += 1;
                 continue;
             }
-            if let Some((target_register, offset)) = ldr_imm(insns[cursor], register) {
+            if let Some((target_register, offset)) = ldr_imm(insn, register) {
                 loaded = Some((target_register, offset));
                 cursor += 1;
                 break;
             }
-            break;
+            match writes(insn, register) {
+                Some(false) => {
+                    cursor += 1;
+                    steps += 1;
+                }
+                _ => break,
+            }
         }
         let Some((target_register, offset)) = loaded else {
             continue;
         };
         let slot = address.wrapping_add(offset);
-        for (offset, candidate) in insns[cursor.min(insns.len())..].iter().take(2).enumerate() {
-            let at = base + (cursor + offset) as u64 * 4;
-            if blr_register(*candidate) == Some(target_register) {
+        let mut steps = 0usize;
+        while cursor < insns.len() && steps < MAX_CALL_STEPS {
+            let insn = insns[cursor];
+            let at = base + cursor as u64 * 4;
+            if blr_register(insn) == Some(target_register) {
                 out.push(Reference {
                     site: at,
                     slot,
@@ -168,13 +244,20 @@ fn references(data: &[u8], base: u64) -> Vec<Reference> {
                 });
                 break;
             }
-            if br_register(*candidate) == Some(target_register) {
+            if br_register(insn) == Some(target_register) {
                 out.push(Reference {
                     site: pc,
                     slot,
                     kind: SiteKind::Jump,
                 });
                 break;
+            }
+            match writes(insn, target_register) {
+                Some(false) => {
+                    cursor += 1;
+                    steps += 1;
+                }
+                _ => break,
             }
         }
     }
@@ -384,6 +467,31 @@ mod tests {
         assert_eq!(refs.len(), 1);
         assert_eq!(refs[0].slot, 0x2048);
         assert_eq!(refs[0].site, 0x100c);
+    }
+
+    #[test]
+    fn interleaved_instructions_do_not_hide_the_reference() {
+        let mut data = vec![0u8; 40];
+        put(&mut data, 0, adrp(0x1000, 0x2000, 9));
+        put(&mut data, 1, 0xD2800020); // movz x0, #1
+        put(&mut data, 2, ldr(9, 0x40, 9));
+        put(&mut data, 3, 0xD2800041); // movz x1, #2
+        put(&mut data, 4, 0xD2800062); // movz x2, #3
+        put(&mut data, 5, blr(9));
+        let refs = references(&data, 0x1000);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].slot, 0x2040);
+        assert_eq!(refs[0].site, 0x1014);
+    }
+
+    #[test]
+    fn clobbered_register_breaks_the_chain() {
+        let mut data = vec![0u8; 16];
+        put(&mut data, 0, adrp(0x1000, 0x2000, 9));
+        put(&mut data, 1, 0xD2800009); // movz x9, #0
+        put(&mut data, 2, ldr(9, 0x40, 9));
+        put(&mut data, 3, blr(9));
+        assert!(references(&data, 0x1000).is_empty());
     }
 
     #[test]

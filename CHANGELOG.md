@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Fixed（`trit-re` N1：真实 ARM64 语料校准，修 3 个缺陷）
+
+- **台账 JSON 合法性**：`xref` 的 `slot` 与 `function` 的 `addr` 曾写成十六进制裸值
+  （`0x2a0378`），不是合法 JSON。改为数字，并在台账测试里逐行用 `serde_json` 解析。
+- **`.pdata` 截断**：条目上限 65,536 会让 Node/Deno 这类大二进制的函数表被截断。
+  上限提到 1,048,576：Node 函数 65,536 → 93,643，归属调用点未归属 1,039 → 148。
+- **ARM64 交叉引用窗口**：真实代码在 `adrp` 与 `ldr` 之间、`ldr` 与 `blr` 之间常夹参数准备。
+  放宽为 12/8 条，并加入**保守写寄存器判定**（不认识就断链；`BL`/`BLR` 破坏 x0–x18 与 x30）。
+  5 个真实 ARM64 PE 的覆盖率从 52%–80% 升到 **91%–98%**（同源 x64 为 95%–100%）。
+- 新增 [docs/N1-ARM64-CALIBRATION.md](docs/N1-ARM64-CALIBRATION.md)：语料来源与 `sha256`、
+  读数、独立 Python 复算（8 个样本偏差 ≤4%）、残余未证面。样本不入库。
+- 测试 61 条（46 lib + 3 ARM64 集成 + 5 ELF + 4 PE + 2 CLI + 1 doctest）。
+
 ### Added（`trit-re` M3：ARM64 交叉引用与函数边界）
 
 - **PE ARM64**：`.pdata` 条目是 8 字节（`begin + unwind`），结束地址由下一条的 `begin` 推出、

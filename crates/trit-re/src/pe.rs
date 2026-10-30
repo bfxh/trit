@@ -485,7 +485,8 @@ fn parse_runtime_functions(
         0xaa64 | 0x01c0 | 0x01c4 => 8,
         _ => return None,
     };
-    let count = (dir.1 as usize / entry_size).min(65_536);
+    // 上限只防坏目录：真实大二进制（Node/Deno）的 `.pdata` 远超 6.5 万条。
+    let count = (dir.1 as usize / entry_size).min(1_048_576);
     if count == 0 {
         return None;
     }

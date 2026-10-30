@@ -86,7 +86,7 @@ pub fn jsonl(triage: &Triage) -> Vec<String> {
                 ("kind", json::string("xref")),
                 ("sha256", json::string(&triage.sha256)),
                 ("import", json::string(&row.import)),
-                ("slot", format!("0x{:x}", row.slot)),
+                ("slot", json::number(row.slot)),
                 ("status", json::string(ternary_label(row.status))),
                 ("site_count", json::number(row.sites.len())),
                 ("sites", json::array(sites.iter().map(String::as_str))),
@@ -109,7 +109,7 @@ pub fn jsonl(triage: &Triage) -> Vec<String> {
             lines.push(json::object(&[
                 ("kind", json::string("function")),
                 ("sha256", json::string(&triage.sha256)),
-                ("addr", format!("0x{:x}", calls.function.start)),
+                ("addr", json::number(calls.function.start)),
                 (
                     "size",
                     json::number(calls.function.end.saturating_sub(calls.function.start)),
@@ -184,5 +184,14 @@ mod tests {
         }
         assert!(lines[0].contains(&format!("\"schema\":{SCHEMA}")));
         assert!(lines[0].contains("\"kind\":\"file\""));
+        // 每一行必须是合法 JSON（十六进制裸值曾经混进来过）。
+        for line in &lines {
+            serde_json::from_str::<serde_json::Value>(line).unwrap_or_else(|error| {
+                panic!(
+                    "invalid json line: {error}
+{line}"
+                )
+            });
+        }
     }
 }
