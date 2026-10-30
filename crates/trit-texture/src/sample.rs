@@ -311,6 +311,7 @@ pub fn lod_from_derivatives(
 /// `ρ_major / ρ_minor` 决定 tap 数，`lod` 取 `log2(ρ_minor)`，沿长轴均匀取点再平均。
 ///
 /// `taps = clamp(ceil(ratio), 1, max_taps)`；`ratio ≤ 1` 时退化为一次三线性。
+/// `wrap` 对每个 tap 都生效（`Repeat` 下 uv 可以超出 `[0,1]`）。
 #[allow(clippy::too_many_arguments)]
 pub fn sample_aniso(
     doc: &TtxDocument,
@@ -321,6 +322,7 @@ pub fn sample_aniso(
     du_y: f32,
     dv_y: f32,
     max_taps: u32,
+    wrap: Wrap,
 ) -> Option<[u8; 4]> {
     let levels = doc.levels()?;
     let base = levels.first()?;
@@ -338,7 +340,7 @@ pub fn sample_aniso(
     let minor = taps[0].min(taps[1]);
     let max_taps = max_taps.max(1);
     if !major.is_finite() || major <= 0.0 {
-        return doc.sample_trilinear(u, v, 0.0);
+        return doc.sample_trilinear_with(u, v, 0.0, wrap);
     }
     let ratio = if minor > 0.0 {
         major / minor
@@ -352,7 +354,7 @@ pub fn sample_aniso(
         major.log2()
     };
     if count == 1 {
-        return doc.sample_trilinear(u, v, lod);
+        return doc.sample_trilinear_with(u, v, lod, wrap);
     }
     // 长轴方向（屏幕 dx 或 dy 中较长的那个）在半像素跨度内均匀取样
     let axis = if taps[0] >= taps[1] { 0 } else { 1 };
@@ -366,7 +368,7 @@ pub fn sample_aniso(
         let t = (tap as f32 + 0.5) / count as f32 - 0.5;
         let tu = u + step_u * t;
         let tv = v + step_v * t;
-        let px = doc.sample_trilinear(tu, tv, lod)?;
+        let px = doc.sample_trilinear_with(tu, tv, lod, wrap)?;
         for (slot, value) in acc.iter_mut().enumerate() {
             *value += px[slot] as f32;
         }

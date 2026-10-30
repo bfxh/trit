@@ -23,6 +23,8 @@ pub enum SampleMode {
     Trilinear(f32),
     /// 由屏幕空间导数自动选 LOD（光栅化器的默认）。
     Auto,
+    /// 各向异性：沿长轴最多 `taps` 个三线性点平均（`sample_aniso`）。
+    Aniso(u32),
 }
 
 /// 渲染参数。
@@ -73,7 +75,11 @@ pub type SamplePlan = (usize, usize, Vec<(f32, f32, f32)>);
 pub fn plan_points(doc: &TtxDocument, opts: &RenderOptions) -> Option<SamplePlan> {
     let levels = doc.levels()?;
     let base = levels.first()?;
-    if opts.width == 0 || opts.height == 0 || opts.split || opts.mode == SampleMode::Nearest {
+    if opts.width == 0
+        || opts.height == 0
+        || opts.split
+        || matches!(opts.mode, SampleMode::Nearest | SampleMode::Aniso(_))
+    {
         return None;
     }
     let (w, h) = (opts.width, opts.height);
@@ -87,7 +93,7 @@ pub fn plan_points(doc: &TtxDocument, opts: &RenderOptions) -> Option<SamplePlan
                 SampleMode::Auto => lod_from_derivatives(base.width, base.height, du, 0.0, 0.0, dv),
                 SampleMode::Trilinear(lod) => lod,
                 SampleMode::Bilinear => 0.0,
-                SampleMode::Nearest => return None,
+                SampleMode::Nearest | SampleMode::Aniso(_) => return None,
             };
             points.push((u, v, lod));
         }
@@ -142,6 +148,10 @@ pub fn render(doc: &TtxDocument, opts: &RenderOptions) -> Result<(usize, usize, 
                         let lod =
                             lod_from_derivatives(active.width, active.height, du, 0.0, 0.0, dv);
                         trilinear(&mut samplers, u, v, lod).unwrap_or([0, 0, 0, 255])
+                    }
+                    SampleMode::Aniso(taps) => {
+                        crate::sample::sample_aniso(doc, u, v, du, 0.0, 0.0, dv, taps, opts.wrap)
+                            .unwrap_or([0, 0, 0, 255])
                     }
                 }
             };

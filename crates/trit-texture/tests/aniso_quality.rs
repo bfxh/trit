@@ -4,7 +4,7 @@
 //! 若 aniso 与三线性的 RMSE 接近，说明实现没起作用（例如 tap 方向或 lod 取错）。
 
 use trit_texture::convert::rgba_to_ttx2_mips;
-use trit_texture::sample::{lod_from_derivatives, sample_aniso};
+use trit_texture::sample::{Wrap as CpuWrap, lod_from_derivatives, sample_aniso};
 use trit_texture::ttx2::from_ttx2;
 
 /// 竖向细条纹（周期 4 纹素）：沿 x 高频、沿 y 平坦 —— 典型的斜视受害图案。
@@ -79,7 +79,8 @@ fn aniso_beats_trilinear_on_oblique_minification() {
             let iso = doc.sample_trilinear(u, v, lod_iso).expect("iso");
 
             // 各向异性：沿长轴 8 tap
-            let aniso = sample_aniso(&doc, u, v, du, 0.0, 0.0, dv, 8).expect("aniso");
+            let aniso =
+                sample_aniso(&doc, u, v, du, 0.0, 0.0, dv, 8, CpuWrap::Clamp).expect("aniso");
 
             for c in 0..3 {
                 let d_iso = iso[c] as f64 - truth[c] as f64;
@@ -111,6 +112,6 @@ fn aniso_degrades_to_trilinear_when_isotropic() {
     let dv = d * width as f32 / height as f32;
     let lod = 2.0f32.log2();
     let iso = doc.sample_trilinear(0.37, 0.61, lod).expect("iso");
-    let an = sample_aniso(&doc, 0.37, 0.61, d, 0.0, 0.0, dv, 8).expect("aniso");
+    let an = sample_aniso(&doc, 0.37, 0.61, d, 0.0, 0.0, dv, 8, CpuWrap::Clamp).expect("aniso");
     assert_eq!(an, iso, "各向同性输入下 aniso 必须与三线性逐位一致");
 }

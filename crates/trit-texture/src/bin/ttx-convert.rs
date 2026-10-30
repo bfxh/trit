@@ -273,6 +273,15 @@ fn parse_render(rest: &[String]) -> Result<(String, String, RenderOptions), Stri
                 let lod: f32 = take!().parse().map_err(|_| "--lod 不是数值".to_string())?;
                 opts.mode = SampleMode::Trilinear(lod);
             }
+            "--aniso" => {
+                let taps: u32 = take!()
+                    .parse()
+                    .map_err(|_| "--aniso 不是整数".to_string())?;
+                if taps == 0 {
+                    return Err("--aniso 必须 ≥ 1".to_string());
+                }
+                opts.mode = SampleMode::Aniso(taps);
+            }
             "--mode" => {
                 let value = take!();
                 opts.mode = match value.as_str() {
