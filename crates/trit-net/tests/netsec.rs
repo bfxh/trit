@@ -5,6 +5,7 @@
 use std::process::Command;
 
 use trit_net::netsec::{
+    dataset::{Label, parse},
     decision::{Verdict, decide},
     features::{DEFAULT_RULES, encode, ternarize},
     flow::{FlowTable, N, NAMES},
@@ -306,4 +307,119 @@ fn cli_flow_emits_one_json_line_per_flow() {
     assert_eq!(value["dst"], "10.1.2.4:53");
     assert_eq!(value["proto"], 6);
     assert_eq!(value["inputs"].as_str().map(str::len), Some(NAMES.len()));
+}
+
+const CICIDS_HEADER: &str = " Destination Port, Flow Duration, Total Fwd Packets, \
+Total Backward Packets, Total Length of Fwd Packets, Total Length of Bwd Packets, \
+Fwd Packet Length Max, Fwd Packet Length Min, Fwd Packet Length Mean, Fwd Packet Length Std, \
+Bwd Packet Length Max, Bwd Packet Length Min, Bwd Packet Length Mean, Bwd Packet Length Std, \
+Flow Bytes/s, Flow Packets/s, Flow IAT Mean, Flow IAT Std, Flow IAT Max, Flow IAT Min, \
+FIN Flag Count, SYN Flag Count, RST Flag Count, PSH Flag Count, ACK Flag Count, Label";
+
+#[test]
+fn cicids_columns_align_and_units_convert() {
+    let benign = " 80, 1000000, 4, 4, 400, 600, 100, 50, 100, 10, 200, 100, 150, 20, \
+1000, 4, 5000, 100, 9000, 100, 1, 2, 0, 3, 8, BENIGN";
+    let attack = " 443, 2000000, 2, 0, 200, 0, 100, 100, 100, 0, 0, 0, 0, 0, \
+500, 1, 7000, 0, 7000, 0, 0, 1, 5, 0, 1, DoS Hulk";
+    let text = format!("{CICIDS_HEADER}\n{benign}\n{attack}\n");
+    let dataset = parse(&text, 0).expect("解析成功");
+    assert_eq!(dataset.rows, 2);
+    assert_eq!(dataset.skipped, 0);
+    assert_eq!(dataset.attacks, 1);
+    let first = dataset.samples[0].features;
+    assert!((first[0] - 1.0).abs() < 1e-12, "微秒 → 秒");
+    assert!((first[13] - 5.0).abs() < 1e-12, "IAT 微秒 → 毫秒");
+    assert!((first[19] - 0.5).abs() < 1e-12, "正向包占比");
+    assert_eq!(
+        (first[20], first[21], first[22], first[23]),
+        (2.0, 0.0, 1.0, 3.0)
+    );
+    assert_eq!(dataset.samples[0].label, Label::Benign);
+    assert_eq!(dataset.samples[1].label, Label::Malicious);
+}
+
+#[test]
+fn non_finite_rows_are_skipped_and_counted() {
+    let bad = " 80, 1000000, 4, 4, 400, 600, 100, 50, 100, 10, 200, 100, 150, 20, \
+Infinity, 4, 5000, 100, 9000, 100, 1, 2, 0, 3, 8, BENIGN";
+    let text = format!("{CICIDS_HEADER}\n{bad}\n");
+    let dataset = parse(&text, 0).expect("解析成功");
+    assert_eq!(dataset.rows, 1);
+    assert_eq!(dataset.skipped, 1);
+    assert!(dataset.samples.is_empty());
+}
+
+#[test]
+fn missing_column_is_named() {
+    let text = " Destination Port, Flow Duration\n 80, 1000\n";
+    let error = parse(text, 0).expect_err("应当报缺列");
+    assert!(error.to_string().contains("Total Fwd Packets"), "{error}");
+}
+
+#[test]
+fn quantile_interpolates() {
+    let sorted = [1.0, 2.0, 3.0, 4.0];
+    assert!((trit_net::netsec::dataset::quantile(&sorted, 0.5) - 2.5).abs() < 1e-12);
+    assert!((trit_net::netsec::dataset::quantile(&sorted, 0.0) - 1.0).abs() < 1e-12);
+    assert!((trit_net::netsec::dataset::quantile(&sorted, 1.0) - 4.0).abs() < 1e-12);
+}
+
+#[test]
+fn calibration_curve_is_well_formed() {
+    use trit_net::netsec::calibrate::{Config, run};
+    use trit_net::netsec::dataset::{Label, Sample};
+
+    let mut samples = Vec::new();
+    for index in 0..240usize {
+        let malicious = index % 2 == 0;
+        let mut features = [0.0f64; N];
+        for (feature, slot) in features.iter_mut().enumerate() {
+            let base = (index * 7 + feature * 13) % 97;
+            *slot = if malicious { 40.0 } else { 5.0 } + base as f64;
+        }
+        samples.push(Sample {
+            features,
+            label: if malicious {
+                Label::Malicious
+            } else {
+                Label::Benign
+            },
+        });
+    }
+    let config = Config {
+        bands: vec![0.0, 0.2],
+        epochs: 5,
+        hidden: 4,
+        seed: 7,
+        train_fraction: 0.75,
+        ..Config::default()
+    };
+    let reports = run(&samples, &config).expect("校准可运行");
+    assert_eq!(reports.len(), 2);
+    for report in &reports {
+        assert!((report.coverage + report.abstain - 1.0).abs() < 1e-9);
+        let decided = report.tp + report.fp + report.tn + report.fn_;
+        assert!(decided <= report.test);
+        assert!((decided as f64 / report.test as f64 - report.coverage).abs() < 1e-9);
+        assert!(report.fpr >= 0.0 && report.fpr <= 1.0);
+    }
+}
+
+#[test]
+fn ids2018_abbreviated_headers_are_accepted() {
+    let header = "Dst Port,Protocol,Timestamp,Flow Duration,Tot Fwd Pkts,Tot Bwd Pkts,\
+TotLen Fwd Pkts,TotLen Bwd Pkts,Fwd Pkt Len Max,Fwd Pkt Len Min,Fwd Pkt Len Mean,Fwd Pkt Len Std,\
+Bwd Pkt Len Max,Bwd Pkt Len Min,Bwd Pkt Len Mean,Bwd Pkt Len Std,Flow Byts/s,Flow Pkts/s,\
+Flow IAT Mean,Flow IAT Std,Flow IAT Max,Flow IAT Min,FIN Flag Cnt,SYN Flag Cnt,RST Flag Cnt,\
+PSH Flag Cnt,ACK Flag Cnt,Label";
+    let row = "443,TCP,02/03/2018 0:00,1000000,4,4,400,600,100,50,100,10,200,100,150,20,\
+1000,4,5000,100,9000,100,1,2,0,3,8,Benign";
+    let dataset = parse(&format!("{header}\n{row}\n"), 0).expect("IDS2018 列名解析成功");
+    assert_eq!(dataset.samples.len(), 1);
+    let features = dataset.samples[0].features;
+    assert!((features[0] - 1.0).abs() < 1e-12);
+    assert_eq!((features[1], features[2]), (4.0, 4.0));
+    assert_eq!((features[20], features[22], features[23]), (2.0, 1.0, 3.0));
+    assert_eq!(dataset.samples[0].label, Label::Benign);
 }

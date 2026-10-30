@@ -34,6 +34,25 @@ pub struct Rule {
 
 impl Rule {
     fn apply(&self, value: f64) -> Ternary {
+        // 带宽为 0 时低上界相等，退化成硬阈值；否则等号会同时落进两侧。
+        if self.high <= self.low {
+            return match self.bias {
+                Bias::High => {
+                    if value >= self.high {
+                        Ternary::True
+                    } else {
+                        Ternary::False
+                    }
+                }
+                Bias::Low => {
+                    if value <= self.low {
+                        Ternary::True
+                    } else {
+                        Ternary::False
+                    }
+                }
+            };
+        }
         let (suspicious, benign) = match self.bias {
             Bias::High => (value >= self.high, value <= self.low),
             Bias::Low => (value <= self.low, value >= self.high),
