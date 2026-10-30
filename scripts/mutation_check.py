@@ -2693,6 +2693,22 @@ MUTANTS = [
         "filter": 'unattributed_sites_are_split_by_kind',
     },
     {
+        "name": 'trit-re: eh_frame pcrel 基准偏移 4',
+        "file": 'crates/trit-re/src/elf/eh.rs',
+        "old": '            field_addr.wrapping_add(relative as i64 as u64)',
+        "new": '            field_addr.wrapping_add(relative as i64 as u64).wrapping_add(4)',
+        "pkg": "trit-re",
+        "filter": 'eh_frame_fde_gives_exact_range',
+    },
+    {
+        "name": 'trit-re: 不用 eh_frame 边界',
+        "file": 'crates/trit-re/src/functions.rs',
+        "old": '    } else if !eh_frame.is_empty() {',
+        "new": '    } else if false {',
+        "pkg": "trit-re",
+        "filter": 'eh_frame_boundaries_enable_attribution',
+    },
+    {
         "name": 'trit-re: x64 取地址不记录',
         "file": 'crates/trit-re/src/xref/mod.rs',
         "old": '                    taken.insert(target.wrapping_sub(image_base));',

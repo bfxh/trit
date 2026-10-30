@@ -27,6 +27,8 @@ pub enum FuncSource {
     Pdata,
     /// ELF `STT_FUNC`。
     Symtab,
+    /// ELF `.eh_frame`（FDE 区间）。
+    EhFrame,
     /// 启发式（入口 + 直接调用目标）。
     Heuristic,
 }
@@ -37,6 +39,7 @@ impl FuncSource {
         match self {
             Self::Pdata => "pdata",
             Self::Symtab => "symtab",
+            Self::EhFrame => "eh_frame",
             Self::Heuristic => "heuristic",
         }
     }
@@ -159,9 +162,14 @@ pub fn build_elf(bytes: &[u8], info: &elf::ElfInfo, xref: &XrefReport) -> Functi
     let exec_bytes: u64 = exec.iter().map(|(_, data)| data.len() as u64).sum();
     let covered: u64 = symbols.iter().map(|symbol| symbol.size).sum();
     // 带大小的符号不等于"边界完整"：裁剪过的二进制只剩几个导出符号，
-    // 覆盖率不够时必须退回启发式，否则会把绝大多数调用点算成"未归属"。
-    let exact = coverage_is_complete(covered, exec_bytes);
-    let (mut ranges, exact) = if exact {
+    // 覆盖率不够时先看 `.eh_frame`（FDE 是链接器写下的真实函数区间），再退回启发式。
+    let symtab_exact = coverage_is_complete(covered, exec_bytes);
+    let eh_frame = if symtab_exact {
+        Vec::new()
+    } else {
+        info.eh_frame_ranges(bytes)
+    };
+    let (mut ranges, exact) = if symtab_exact {
         (
             symbols
                 .iter()
@@ -170,6 +178,24 @@ pub fn build_elf(bytes: &[u8], info: &elf::ElfInfo, xref: &XrefReport) -> Functi
                     end: symbol.start.saturating_add(symbol.size),
                     name: Some(symbol.name.clone()),
                     source: FuncSource::Symtab,
+                })
+                .collect(),
+            true,
+        )
+    } else if !eh_frame.is_empty() {
+        notes.push(format!(
+            "边界来自 .eh_frame（{} 个 FDE）；STT_FUNC 只覆盖 {}%",
+            eh_frame.len(),
+            covered.saturating_mul(100) / exec_bytes.max(1)
+        ));
+        (
+            eh_frame
+                .iter()
+                .map(|symbol| Function {
+                    start: symbol.start,
+                    end: symbol.start.saturating_add(symbol.size),
+                    name: None,
+                    source: FuncSource::EhFrame,
                 })
                 .collect(),
             true,
@@ -415,7 +441,7 @@ fn attribute(
             .map(|addr| format!("0x{addr:x}"))
             .collect();
         notes.push(format!(
-            "{unattributed} 个调用点不在任何精确函数区间内（call {unattributed_calls} / jmp {unattributed_jumps}；跳板与无 .pdata 的叶函数都会落在这里），示例 {}",
+            "{unattributed} 个调用点不在任何精确函数区间内（call {unattributed_calls} / jmp {unattributed_jumps}；跳板或缺少边界信息的函数（PE 叶函数 / ELF 缺 FDE）都会落在这里），示例 {}",
             samples.join(", ")
         ));
     }
@@ -482,6 +508,95 @@ mod tests {
         assert!(!coverage_is_complete(899, 1000));
         assert!(!coverage_is_complete(0, 0));
         assert!(!coverage_is_complete(10, 0));
+    }
+
+    #[test]
+    fn eh_frame_boundaries_enable_attribution() {
+        use super::build_elf;
+        use crate::elf::{ElfInfo, ElfSection};
+        use crate::xref::{CallSite, ImportXref, SiteKind as Kind, XrefReport};
+        let mut bytes = vec![0u8; 0x140];
+        let put32 = |bytes: &mut [u8], off: usize, value: u32| {
+            bytes[off..off + 4].copy_from_slice(&value.to_le_bytes());
+        };
+        // CIE（同上）与 FDE：.eh_frame 的地址是 0x2000，pcrel 目标 0x1100。
+        put32(&mut bytes, 0, 13);
+        bytes[8] = 1;
+        bytes[9] = b'z';
+        bytes[10] = b'R';
+        bytes[12] = 1;
+        bytes[13] = 0x78;
+        bytes[14] = 30;
+        bytes[15] = 1;
+        bytes[16] = 0x1b;
+        put32(&mut bytes, 17, 12);
+        put32(&mut bytes, 21, 21);
+        put32(&mut bytes, 25, 0x1100u32.wrapping_sub(0x2019));
+        put32(&mut bytes, 29, 0x40);
+        let info = ElfInfo {
+            class: 2,
+            etype: 2,
+            machine: 62,
+            entry: 0x1100,
+            phdrs: Vec::new(),
+            sections: vec![
+                ElfSection {
+                    name: ".text".into(),
+                    sh_type: 1,
+                    flags: 6,
+                    addr: 0x1000,
+                    offset: 0x40,
+                    size: 0x100,
+                    link: 0,
+                    entsize: 0,
+                    entropy: None,
+                },
+                ElfSection {
+                    name: ".eh_frame".into(),
+                    sh_type: 1,
+                    flags: 2,
+                    addr: 0x2000,
+                    offset: 0,
+                    size: 0x40,
+                    link: 0,
+                    entsize: 0,
+                    entropy: None,
+                },
+            ],
+            imports: None,
+            comment: None,
+            build_id: None,
+            interp: None,
+            overlay: None,
+            has_section_headers: true,
+        };
+        let xref = XrefReport {
+            arch: "arm64".into(),
+            scanned_bytes: 0,
+            complete: true,
+            imports: vec![ImportXref {
+                import: "socket".into(),
+                slot: 1,
+                sites: vec![CallSite {
+                    addr: 0x1108,
+                    file_offset: 0x48,
+                    kind: Kind::Call,
+                }],
+                status: Ternary::True,
+                note: String::new(),
+            }],
+            notes: vec![],
+        };
+        let report = build_elf(&bytes, &info, &xref);
+        assert!(report.exact);
+        assert_eq!(report.total_functions, 1);
+        assert_eq!(report.functions.len(), 1);
+        assert_eq!(
+            report.functions[0].function.source,
+            super::FuncSource::EhFrame
+        );
+        assert_eq!(report.attributed_sites, 1);
+        assert!(report.notes.iter().any(|note| note.contains(".eh_frame")));
     }
 
     #[test]

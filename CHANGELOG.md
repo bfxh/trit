@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（`trit-re`：ELF `.eh_frame` 函数边界 + NUL 清理）
+
+- 新增 `crates/trit-re/src/elf/eh.rs`：解析 `.eh_frame` 的 CIE/FDE（支持 `pcrel|sdata4`、
+  `udata4`、`absptr`），得到**精确函数区间**；ELF 的 `STT_FUNC` 覆盖不足时优先使用，
+  边界来源标 `eh_frame`。
+- 实测：ripgrep ELF ARM64 从 19,709 个启发式函数变为 **3,480 个 FDE 函数**（覆盖 80% `.text`），
+  调用点归属 5,856 / 7,352；glibc arm64/x64 各 3,500 / 3,858 个函数，13 导入的 40 个调用点全部归属。
+- 缺 FDE 的函数（`panic=abort` 构建常见）会落在未归属里，说明行按 call/jmp 分类；
+  相关能力组因此保持 `Unknown`，不臆断。
+- `elf.rs` 拆为 `elf/{mod,eh}.rs`（789 / 296 行，回到 800 预算内）。
+- 顺带修掉 `elf.rs` 源码里误写入的 **8 个裸 NUL 字节**（grep 曾把文件当二进制）。
+- 测试 **74**；变异 **12/12**。
+
 ### Added（`trit-re`：ARM64 `mov` 搬运链 + 未归属调用点分类）
 
 - **ARM64 寄存器搬运**：引用识别支持 `mov Xd, Xm`（ORR 别名）。地址（`adrp→mov→ldr`）与

@@ -5,6 +5,10 @@
 
 use std::fmt;
 
+mod eh;
+
+pub use eh::read_eh_frame;
+
 use crate::entropy;
 
 /// ELF 解析失败原因。
@@ -594,6 +598,11 @@ impl ElfInfo {
         read_function_symbols(bytes, &self.sections, self.class == 2)
     }
 
+    /// 读取 `.eh_frame` 里的函数区间（裁剪 ELF 的精确边界来源）。
+    pub fn eh_frame_ranges(&self, bytes: &[u8]) -> Vec<FunctionSymbol> {
+        read_eh_frame(bytes, &self.sections, self.class == 2)
+    }
+
     /// 读取全部动态符号（供交叉引用解重定位用）。
     pub fn dynamic_symbols(&self, bytes: &[u8]) -> Option<Vec<DynamicSymbol>> {
         read_dynamic_symbols(bytes, &self.sections, self.class == 2)
@@ -640,12 +649,12 @@ fn u16_at(bytes: &[u8], off: usize) -> Option<u16> {
     Some(u16::from_le_bytes([slice[0], slice[1]]))
 }
 
-fn u32_at(bytes: &[u8], off: usize) -> Option<u32> {
+pub(super) fn u32_at(bytes: &[u8], off: usize) -> Option<u32> {
     let slice = bytes.get(off..off.checked_add(4)?)?;
     Some(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
 }
 
-fn u64_at(bytes: &[u8], off: usize) -> Option<u64> {
+pub(super) fn u64_at(bytes: &[u8], off: usize) -> Option<u64> {
     let slice = bytes.get(off..off.checked_add(8)?)?;
     let mut word = [0u8; 8];
     word.copy_from_slice(slice);
