@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Fixed（`trit-re`：GOT 基址按寄存器跟踪——`get_pc_thunk.ax` 等不再漏检）
+
+- 此前只认 `call __x86.get_pc_thunk.bx; add $imm,%ebx`；PIE 构建里 GCC 会按函数挑寄存器
+  （实测 `get_pc_thunk.ax` / `.dx` 都出现），`mov 0x10(%eax),%ecx` 这类访问被漏掉。
+- 现在 thunk 体按字节识别（`8B 04|0C|14|1C|34|3C 24 C3`）取出寄存器号，`add $imm`
+  支持 eax 短编码 `05 imm32` 与 `81 C0|reg imm32`；基址表按寄存器分组；访问侧按 `modrm`
+  的 `rm` 取寄存器（`8B/8D/39/3B/85`、`80/81/83`、`FF /2|/4|/6`）。
+- **更正上一片的结论**：`c32-pie` 的 `_ITM_deregisterTMCloneTable` / `_ITM_registerTMCloneTable`
+  上一片被判 `False`（"本文件不引用"），实际 crt 用 `get_pc_thunk.dx` + `call *%eax` 间接调用它们
+  ⇒ 现在正确为 `Unknown`。`c32-fptr-pie` 的 `strcmp`/`memcmp` 同样由 `False` → `Unknown`。
+- 其余样本（c32-nopie / x86-64 与 AArch64 glibc / ripgrep）读数不变。
+- 测试 **92 → 94**；变异 **25 → 27/27**（新增"GOT 基址只认 EBX""EAX 的短 add 编码不认"）。
+- **未证**：不做数据流——寄存器后来被改写成普通指针时仍按 GOT 基址相加，
+  方向只会多判 `Unknown`（不会多判 `True`）。
+
 ### Fixed（`trit-re`：i386 立即数取址——函数指针不再被判"没有引用"）
 
 - 取导入函数地址时，非 PIC 给的是 **PLT 桩地址**（`push $strcmp@plt` / `movl $…,-0x4(%ebp)`），
