@@ -65,6 +65,10 @@ struct Args {
     head_lr: f32,
     /// 冻结除最后一层外的所有层。
     freeze: bool,
+    /// 只保留最后 N 层可训练（0 = 不额外冻结）。
+    unfreeze_last: usize,
+    /// 冻结分割 head。
+    freeze_head: bool,
 }
 
 fn parse() -> Result<Args, String> {
@@ -100,6 +104,8 @@ fn parse() -> Result<Args, String> {
         depth_hi: 0.65,
         head_lr: 1.0,
         freeze: false,
+        unfreeze_last: 0,
+        freeze_head: false,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -154,12 +160,17 @@ fn parse() -> Result<Args, String> {
             "--depth-hi" => a.depth_hi = val()?.parse().map_err(|_| "--depth-hi 非数字")?,
             "--head-lr" => a.head_lr = val()?.parse().map_err(|_| "--head-lr 非数字")?,
             "--freeze-backbone" => a.freeze = true,
+            "--freeze-head" => a.freeze_head = true,
+            "--unfreeze-last" => {
+                a.unfreeze_last = val()?.parse().map_err(|_| "--unfreeze-last 非整数")?
+            }
             "--sgd" => a.adam = false,
             other => return Err(format!("未知参数 {other}")),
         }
         // 纯开关类参数只前进 1，否则会吞掉下一个参数（`--residual --steps 4000` 会把 --steps 吃掉）
         i += match key {
-            "--sgd" | "--residual" | "--batch" | "--augment" | "--freeze-backbone" => 1,
+            "--sgd" | "--residual" | "--batch" | "--augment" | "--freeze-backbone"
+            | "--freeze-head" => 1,
             _ => 2,
         };
     }
@@ -307,6 +318,14 @@ fn main() {
         );
     }
     net.head_lr_mult = args.head_lr;
+    if args.unfreeze_last > 0 {
+        net.freeze_until = net.layers.len().saturating_sub(args.unfreeze_last);
+        println!(
+            "只训练最后 {} 层（从第 {} 层起）",
+            args.unfreeze_last, net.freeze_until
+        );
+    }
+    net.freeze_head = args.freeze_head;
     if args.freeze {
         net.freeze_until = net.layers.len() - 1;
         println!("冻结骨干：只更新第 {} 层（深度头）", net.freeze_until);

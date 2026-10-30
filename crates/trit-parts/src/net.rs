@@ -492,6 +492,8 @@ pub struct Net {
     pub head_lr_mult: f32,
     /// 序号小于该值的层不更新（冻结骨干做深度头专用训练）。
     pub freeze_until: usize,
+    /// 冻结分割 head（只适配特征 + 深度头时用）。
+    pub freeze_head: bool,
 }
 
 impl Net {
@@ -523,6 +525,7 @@ impl Net {
             layers,
             head_lr_mult: 1.0,
             freeze_until: 0,
+            freeze_head: false,
         })
     }
 
@@ -537,8 +540,7 @@ impl Net {
         let need = planes * 3;
         let cout = need + (4 - need % 4) % 4;
         // 实测 1×1 在留出集上比 3×3 好（MAE 1.09/1.31 m vs 1.20/1.48 m，3000 步）。
-        self.layers
-            .push(Layer::random(cin, cout, 1, false, &mut s));
+        self.layers.push(Layer::random(cin, cout, 1, false, &mut s));
     }
 
     /// 深度头输出通道数（没有时 0）。
@@ -591,6 +593,7 @@ impl Net {
             layers,
             head_lr_mult: 1.0,
             freeze_until: 0,
+            freeze_head: false,
         };
         net.mark_convt();
         net
@@ -883,7 +886,7 @@ impl Net {
     /// 一步参数更新：先从显存取回梯度（可带 1/accum 缩放），再 STE + Adam/SGD。
     pub fn update(&mut self, gpu: &Gpu, lr: f32, ste: Ste, adam: bool, grad_scale: f32) {
         for (i, l) in self.layers.iter_mut().enumerate() {
-            if i < self.freeze_until {
+            if i < self.freeze_until || (self.freeze_head && i == HEAD) {
                 continue;
             }
             let lr = if i == HEAD || i == DEPTH {

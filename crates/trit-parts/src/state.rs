@@ -157,6 +157,7 @@ pub fn load(path: &Path) -> Result<(Net, u64, Option<u64>), String> {
         layers,
         head_lr_mult: 1.0,
         freeze_until: 0,
+        freeze_head: false,
     };
     net.mark_convt();
     Ok((net, step, rng))

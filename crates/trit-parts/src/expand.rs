@@ -150,6 +150,7 @@ impl Net {
             layers,
             head_lr_mult: 1.0,
             freeze_until: 0,
+            freeze_head: false,
         }
     }
 }
