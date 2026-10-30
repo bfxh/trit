@@ -117,8 +117,9 @@ IAT 槽位按 8 字节紧邻排列，一个寄存器判错就会把调用记到�
 - **ELF 只有两个样本**（ripgrep 可执行文件、glibc 共享库）。函数边界现在来自 `.eh_frame`，
   但 `panic=abort` 构建（如 ripgrep）缺 FDE 的函数仍落在未归属里（1,496 个调用点），
   相关能力组保持 `Unknown`；IFUNC 密集的库（如 libm）未覆盖。
-- **ELF32 的交叉引用尚未实现**：32 位 ELF 的导入全部记 `未知`（`complete=false scanned=0`），
-  函数边界仍可由 `.debug_frame` 给出（`c32-df-only` 5 个精确区间），但不会产生归属。
+- **ELF32 只覆盖了 JUMP_SLOT 导入**：`GLOB_DAT` 槽位（如 `__cxa_finalize`）仍记 `Unknown`
+  ——它能被 PLT 桩调用，但我们不把它当槽位表成员（与 x64 路径保持一致）。
+  32 位 ELF 的交叉引用已实现（见 §10），`complete=true`。
 - **PE32**（无 `.pdata`）的同函数共现仍恒为 `Unknown`。
 - x64 的未归属调用点已按类别拆开：Node 148 = call 25 / jmp 123，Deno 156 = call 24 / jmp 132。
   其中 jmp 绝大多数是无 `.pdata` 的导入跳板（结构性）；**call 的 24–25 个尚未逐条裁定**，
@@ -183,12 +184,13 @@ c-clang-df-only       (x86-64, clang) 0x1170..0x1216  0x1220..0x1281  0x1290..0x
 | 样本 | 函数数 | 边界 | 归属调用点 / 调用点总数 | 未归属 |
 |---|---|---|---|---|
 | `c-df-debugframe` | 3 | exact | 4 / 4 | 0 |
-| `c32-df-only` | 5 | exact | 0 / 0 | 0 |
+| `c32-df-only` | 5 | exact | 4 / 5 | 1（`__cxa_finalize` 只有 GLOB_DAT 槽位） |
 | `c-arm64-df-only` | 3 | exact | 4 / 8 | 4（全在 PLT/CRT 与库函数间隙） |
 | `c-clang-df-only` | 3 | exact | 4 / 4 | 0 |
 
-`c32-df-only` 的交叉引用是 `complete=false scanned=0`：**ELF32 的 xref 还没实现**，
-9 个导入全部记 `未知`，因此不产生归属——这是已知缺口，不是边界解析失败。
+`c32-df-only` 的交叉引用在补上 i386 路径后是 `complete=true`：5 个 JUMP_SLOT 导入里
+4 个有调用点，第 5 个（`__cxa_finalize`）只有 `GLOB_DAT` 槽位 ⇒ `Unknown`；
+函数归属 4 / 5，剩下 1 个就是它。见 §10。
 
 **发现的缺陷**：原先只要 `.eh_frame` 非空就选它。`c-df` 的 `.eh_frame` 只覆盖 CRT，
 4 个用户调用点全部落在外面（未归属 4）；改为按**调用点覆盖率**选择后改选 `.debug_frame`，
@@ -216,3 +218,50 @@ CIE 的 augmentation 现在按 DWARF 规范解释，不再"遇到就跳过整条
 （`readelf` 的 `Augmentation: ""`），真实 `zR` 只在 `.eh_frame` 里见到；
 所以 `zR`/`pcrel`/`P` 这条路径只有**合成夹具**覆盖，尚未在真实 `.debug_frame` 上校准。
 
+
+## 10. i386（ELF32）交叉引用校准（2026-10-30）
+
+32 位 ELF 与 64 位路径有三处结构差异，都是实测确认的：
+
+- 重定位是 `SHT_REL`（8 字节/条）：`r_offset` 4 字节，`r_info` 是「符号:类型 = 24:8」；
+- PIE（Ubuntu 的 `gcc -m32` 默认产物）的 PLT 桩是 `FF A3 disp32`（`jmp *disp(%ebx)`），
+  槽位 = GOT 基址 + disp；基址来自 `call __x86.get_pc_thunk.bx; add $imm,%ebx`，
+  两条都要按字节确认（thunk 体必须是 `8B 1C 24 C3`），否则不采信；
+- 非 PIE 的桩是 `FF 25 abs32`，地址就是槽位。
+
+```bash
+# WSL Ubuntu 24.04 + gcc 13.3（已装 gcc-multilib）
+gcc -m32 -O0 -o c32-pie dbg.c
+gcc -m32 -O0 -no-pie -fno-pic -o c32-nopie dbg.c
+gcc -m32 -O1 -shared -fPIC -o libdbg32.so dbg.c
+```
+
+| 样本 | 大小 | sha256 | 结构 | 工具读数 |
+|---|---|---|---|---|
+| `c32-pie` | 15,092 | `87b986d4…` | ET_DYN（PIE），`FF A3` 桩 + thunk | `complete=true`，5 个 JUMP_SLOT 全有调用点 |
+| `c32-nopie` | 14,972 | `5a4a5077…` | ET_EXEC，`FF 25 abs32` 桩 | `complete=true`，5 个全有调用点 |
+| `libdbg32.so` | 14,688 | `2d842a13…` | ET_DYN 共享库 | `complete=true`，4 个 JUMP_SLOT 全有调用点 |
+
+逐条对账（`objdump -d` 的调用地址 vs 工具给的 `sites`）：
+
+```text
+c32-pie      __libc_start_main 0x10b2   fclose 0x12cd   strlen 0x11fa
+             fprintf 0x1232            fopen 0x1297
+c32-nopie    __libc_start_main 0x80490a3  fclose 0x8049272  strlen 0x80491c7
+             fprintf 0x80491ed            fopen 0x804923e
+libdbg32.so  fclose 0x120f   strlen 0x11b1   fopen 0x11e3   __fprintf_chk 0x1206
+```
+
+三个样本**逐条相同**（同一行的地址集合完全一致），没有多报也没有漏报。
+
+**语义**：`(%ebx)` 引用只在"基址 + disp 恰好等于已知 JUMP_SLOT"时才算数；
+`.plt` 里的 `FF A3` 只登记为跳板、不算调用点（调用点归到 `E8` 的调用方）。
+`mov`/`lea`/`push` 只取地址 ⇒ 该导入降级 `Unknown`（夹具里 `printf` 就是这条路）。
+
+**未证 / 不做**：
+
+- `GLOB_DAT` 槽位（`__cxa_finalize`、`_ITM_*`）不纳入槽位表 ⇒ 即使有 PLT 桩也记 `Unknown`
+  （与 x64 路径一致；这是"宁可 Unknown 不猜"的取舍，不是遗漏）。
+- 基址解析只认 `get_pc_thunk.bx` + `add $imm,%ebx` 这一种序言；`pop %ebx` 变体、
+  `-mcmodel` 其它写法未覆盖（遇到时 `.plt` 有 `FF A3` 但无基址 ⇒ `complete=false`）。
+- 32 位 PE（无 `.pdata`）与本主题无关，函数共现仍恒 `Unknown`。

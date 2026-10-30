@@ -167,6 +167,10 @@ pub struct Report {
 #[cfg(feature = "gpu")]
 mod bench;
 #[cfg(feature = "gpu")]
+pub mod dp4a;
+#[cfg(feature = "gpu")]
+pub mod dp4a_gpu;
+#[cfg(feature = "gpu")]
 pub mod forward;
 #[cfg(feature = "gpu")]
 pub mod gpu;
