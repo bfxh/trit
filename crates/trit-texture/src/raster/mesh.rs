@@ -12,7 +12,7 @@ pub struct Vertex {
     pub uv: [f32; 2],
 }
 
-/// 三角网格：顶点表 + 索引表。两条三角形绕向都接受（见 [`crate::rasterize`]）。
+/// 三角网格：顶点表 + 索引表。两条三角形绕向都接受（见 [`crate::raster::rasterize`]）。
 #[derive(Clone, Debug, Default)]
 pub struct Mesh {
     /// 顶点。
