@@ -177,21 +177,21 @@ fn quad_covered_exactly_once() {
 #[test]
 fn z_buffer_keeps_nearest_in_either_order() {
     let (width, height) = (8usize, 8usize);
-    // 16×20 = 4×2 个块，每块一种纯色：编码后仍是可区分的纯色（红/绿/蓝/白）
-    let (tex_w, tex_h) = (16usize, 20usize);
+    // 16×16 = 2×2 个块，每块一种纯色：编码后仍是可区分的纯色（红/绿/蓝/白）
+    let (tex_w, tex_h) = (16usize, 16usize);
     let mut px = vec![0u8; tex_w * tex_h * 4];
     let colors = [[220, 20, 20], [20, 220, 20], [20, 20, 220], [220, 220, 220]];
     for y in 0..tex_h {
         for x in 0..tex_w {
             let o = (y * tex_w + x) * 4;
-            let c = colors[x / 4];
+            let c = colors[x / 8];
             px[o..o + 3].copy_from_slice(&c);
             px[o + 3] = 255;
         }
     }
     let doc = doc_from(px, tex_w, tex_h);
 
-    // 近处（z=0.4）取第 0 块（红），远处（z=0.8）取第 3 块（白）
+    // 近处（z=0.4）取第 0 块（红），远处（z=0.8）取第 1 块（白）
     let build = |near_first: bool| {
         let mut mesh = Mesh::new();
         let mut quads = vec![(0.8f32, [0.9f32, 0.1]), (0.4, [0.1, 0.1])];
@@ -488,7 +488,8 @@ fn repeat_is_periodic_clamp_is_not() {
 #[test]
 fn atlas_rect_never_leaks_neighbours() {
     let (tex_w, tex_h) = (64usize, 40usize);
-    let rect = Rect::new(16, 10, 32, 20).expect("rect");
+    // 图集子矩形必须与块边界对齐（8×8 块）：旧值 (16,10,32,20) 是按 4×10 对齐的。
+    let rect = Rect::new(16, 8, 32, 24).expect("rect");
     let mut px = vec![0u8; tex_w * tex_h * 4];
     for y in 0..tex_h {
         for x in 0..tex_w {

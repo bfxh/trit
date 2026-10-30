@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn solid_texture_renders_solid_in_every_mode() {
-        let doc = solid(16, 20, [90, 140, 200]);
+        let doc = solid(16, 16, [90, 140, 200]);
         // 期望值要取**解码后**的颜色：RGB565 端点会量化（90,140,200 → 90,142,206）
         let want = {
             let tex = &doc.levels().unwrap()[0];
@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn split_keeps_geometry_and_alpha() {
-        let doc = solid(16, 20, [10, 20, 30]);
+        let doc = solid(16, 16, [10, 20, 30]);
         let opts = RenderOptions {
             width: 40,
             height: 24,
@@ -365,14 +365,14 @@ mod tests {
 
     #[test]
     fn overlay_marks_only_block_boundaries() {
-        let doc = solid(16, 20, [90, 140, 200]);
+        let doc = solid(16, 16, [90, 140, 200]);
         let want = {
             let tex = &doc.levels().unwrap()[0];
             crate::sample::texel(tex, 1, 1)
         };
         let opts = RenderOptions {
             width: 16,
-            height: 20,
+            height: 16,
             tiles: 1.0,
             mode: SampleMode::Nearest,
             wrap: Wrap::Clamp,
@@ -402,17 +402,17 @@ mod tests {
 
     #[test]
     fn level_stats_accounting() {
-        let doc = solid(16, 20, [1, 2, 3]);
+        let doc = solid(16, 16, [1, 2, 3]);
         let stats = level_stats(&doc).expect("stats");
         assert!(stats.len() >= 2, "mip 链应有多级");
         assert_eq!(stats[0].level, 0);
-        assert_eq!((stats[0].width, stats[0].height), (16, 20));
+        assert_eq!((stats[0].width, stats[0].height), (16, 16));
         assert_eq!(
             stats[0].blocks,
-            (16 / crate::BLOCK_WIDTH) * (20 / crate::BLOCK_HEIGHT)
+            (16 / crate::BLOCK_WIDTH) * (16 / crate::BLOCK_HEIGHT)
         );
         assert_eq!(stats[0].bytes, stats[0].blocks * crate::TRIT_BLOCK_BYTES);
-        assert_eq!(stats[0].rgba_bytes, 16 * 20 * 4);
+        assert_eq!(stats[0].rgba_bytes, 16 * 16 * 4);
         assert_eq!(stats[0].payload_used, crate::TRITS_PER_BLOCK);
         assert_eq!(stats[0].payload_slots, crate::TRIT_PAYLOAD_BYTES * 5);
         // 每级都在严格变小
@@ -424,11 +424,11 @@ mod tests {
 
     #[test]
     fn histogram_flat_blocks_use_one_index() {
-        let doc = solid(16, 20, [40, 80, 120]);
+        let doc = solid(16, 16, [40, 80, 120]);
         let hist = palette_histogram(&doc, 0).expect("hist");
         assert_eq!(
             hist.blocks,
-            (16 / crate::BLOCK_WIDTH) * (20 / crate::BLOCK_HEIGHT)
+            (16 / crate::BLOCK_WIDTH) * (16 / crate::BLOCK_HEIGHT)
         );
         assert_eq!(hist.bins[0], hist.blocks, "纯色块跨度应落在最低档");
         assert_eq!(
@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn histogram_gradient_blocks_span_and_use_three() {
         // 水平渐变：每块内 4 级灰度 ⇒ 跨度大、且 3 个索引都会用到
-        let (w, h) = (16usize, 20usize);
+        let (w, h) = (16usize, 16usize);
         let mut px = vec![0u8; w * h * 4];
         for y in 0..h {
             for x in 0..w {
@@ -456,14 +456,18 @@ mod tests {
         let bytes = rgba_to_ttx2_mips(&px, w, h).expect("encode");
         let doc = from_ttx2(&bytes).expect("parse");
         let hist = palette_histogram(&doc, 0).expect("hist");
-        // 块宽 4、渐变步长 16 ⇒ 每块跨度 ≈48·√3 ≈ 83，落在第 1 档而不是第 0 档
+        // 块宽 8、渐变步长 16 ⇒ 每块跨度 ≈96·√3 ≈ 166，落在高档而不是零跨度档
         assert_eq!(hist.bins[0], 0, "渐变块不该落在零跨度档：{:?}", hist.bins);
         assert_eq!(
             hist.bins.iter().sum::<usize>(),
             hist.blocks,
             "所有块都要入箱"
         );
-        assert!(hist.bins[1] > 0, "应有块落在低跨度档：{:?}", hist.bins);
+        assert!(
+            hist.bins.iter().skip(1).any(|&n| n > 0),
+            "应有块落在非零跨度档：{:?}",
+            hist.bins
+        );
         assert!(
             hist.index_usage[2] > 0,
             "应有块用满 3 个索引：{:?}",

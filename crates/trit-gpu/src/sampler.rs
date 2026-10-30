@@ -26,11 +26,13 @@
 use wgpu::util::DeviceExt;
 
 const WORKGROUP: u32 = 64;
-/// 每块字节数（与 trit-texture 的 `TRIT_BLOCK_BYTES` 对齐）。
-const BLOCK_BYTES: usize = 12;
-/// 块宽 / 块高（与 trit-texture 的 `BLOCK_WIDTH` / `BLOCK_HEIGHT` 对齐）。
-const BLOCK_WIDTH: usize = 4;
-const BLOCK_HEIGHT: usize = 10;
+/// 每块字节数（必须等于 trit-texture 的 `TRIT_BLOCK_BYTES`，有测试钉住）。
+const BLOCK_BYTES: usize = 17;
+/// 每块在 GPU 侧占的 u32 数（17 字节补齐到 20 字节）。
+const BLOCK_WORDS: usize = 5;
+/// 块宽 / 块高（必须等于 `trit-texture` 的同名常量，有测试钉住）。
+const BLOCK_WIDTH: usize = 8;
+const BLOCK_HEIGHT: usize = 8;
 
 /// 越界寻址，数值与 WGSL 里的 `wrap` 参数一致。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -175,7 +177,7 @@ impl GpuSampler {
             }
             let rect = level.rect;
             descriptors.push([
-                (packed.len() / BLOCK_BYTES) as u32,
+                (packed.len() / (BLOCK_WORDS * 4)) as u32,
                 level.width as u32,
                 level.height as u32,
                 (level.width / BLOCK_WIDTH) as u32,
@@ -184,7 +186,9 @@ impl GpuSampler {
                 rect.map_or(0, |r| r.width as u32),
                 rect.map_or(0, |r| r.height as u32),
             ]);
-            packed.extend_from_slice(level.blocks);
+            for block in level.blocks.as_chunks::<BLOCK_BYTES>().0 {
+                push_block(&mut packed, block);
+            }
         }
 
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -432,5 +436,23 @@ fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
             min_binding_size: None,
         },
         count: None,
+    }
+}
+
+/// 把一块原始字节补到整字（4 字节）边界：GPU 侧按 `u32` 数组寻址，
+/// 17 字节的块必须补齐到 20 字节（5 个字），否则跨块索引会错位。
+fn push_block(packed: &mut Vec<u8>, block: &[u8]) {
+    let mut word = [0u8; BLOCK_WORDS * 4];
+    word[..BLOCK_BYTES].copy_from_slice(&block[..BLOCK_BYTES]);
+    packed.extend_from_slice(&word);
+}
+
+#[cfg(test)]
+mod const_guard {
+    #[test]
+    fn block_geometry_matches_texture_crate() {
+        assert_eq!(super::BLOCK_BYTES, trit_texture::TRIT_BLOCK_BYTES);
+        assert_eq!(super::BLOCK_WIDTH, trit_texture::BLOCK_WIDTH);
+        assert_eq!(super::BLOCK_HEIGHT, trit_texture::BLOCK_HEIGHT);
     }
 }

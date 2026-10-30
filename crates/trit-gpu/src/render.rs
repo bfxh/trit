@@ -16,9 +16,12 @@ use wgpu::util::DeviceExt;
 
 use crate::sampler::{MipLevel, Wrap};
 
-const BLOCK_BYTES: usize = 12;
-const BLOCK_WIDTH: usize = 4;
-const BLOCK_HEIGHT: usize = 10;
+// 与 trit-texture 的块几何一致（sampler.rs 里的 const_guard 测试钉住）。
+const BLOCK_BYTES: usize = 17;
+/// 每块在 GPU 侧占的 u32 数（17 字节补齐到 20 字节）。
+const BLOCK_WORDS: usize = 5;
+const BLOCK_WIDTH: usize = 8;
+const BLOCK_HEIGHT: usize = 8;
 
 /// 顶点：裁剪空间位置 + UV（与 CPU 参考同构）。
 #[repr(C)]
@@ -454,7 +457,7 @@ fn pack_levels(levels: &[MipLevel<'_>]) -> Option<(Vec<u8>, Vec<[u32; 8]>)> {
         }
         let rect = level.rect;
         descriptors.push([
-            (packed.len() / BLOCK_BYTES) as u32,
+            (packed.len() / (BLOCK_WORDS * 4)) as u32,
             level.width as u32,
             level.height as u32,
             (level.width / BLOCK_WIDTH) as u32,
@@ -463,7 +466,9 @@ fn pack_levels(levels: &[MipLevel<'_>]) -> Option<(Vec<u8>, Vec<[u32; 8]>)> {
             rect.map_or(0, |r| r.width as u32),
             rect.map_or(0, |r| r.height as u32),
         ]);
-        packed.extend_from_slice(level.blocks);
+        for block in level.blocks.as_chunks::<BLOCK_BYTES>().0 {
+            push_block(&mut packed, block);
+        }
     }
     Some((packed, descriptors))
 }
@@ -484,4 +489,12 @@ fn uniform_or_storage(binding: u32, storage: bool) -> wgpu::BindGroupLayoutEntry
         },
         count: None,
     }
+}
+
+/// 把一块原始字节补到整字（4 字节）边界：GPU 侧按 `u32` 数组寻址，
+/// 17 字节的块必须补齐到 20 字节（5 个字），否则跨块索引会错位。
+fn push_block(packed: &mut Vec<u8>, block: &[u8]) {
+    let mut word = [0u8; BLOCK_WORDS * 4];
+    word[..BLOCK_BYTES].copy_from_slice(&block[..BLOCK_BYTES]);
+    packed.extend_from_slice(&word);
 }

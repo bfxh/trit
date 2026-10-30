@@ -7,7 +7,9 @@ use trit_texture::convert::rgba_to_ttx2_mips;
 use trit_texture::sample::{Wrap as CpuWrap, lod_from_derivatives, sample_aniso};
 use trit_texture::ttx2::from_ttx2;
 
-/// 竖向细条纹（周期 4 纹素）：沿 x 高频、沿 y 平坦 —— 典型的斜视受害图案。
+/// 竖向 1 纹素细条纹：沿 x 高频、沿 y 平坦 —— 典型的斜视受害图案。
+/// 纹理高 8（只有 1 级 mip）：三线性的 lod 会被钳在 0、按 8 纹素步长欠采样；
+/// aniso 沿长轴 8 tap 才能平均回来。
 fn stripes(width: usize, height: usize) -> Vec<u8> {
     let mut px = vec![0u8; width * height * 4];
     for y in 0..height {
@@ -53,14 +55,14 @@ fn reference(
 
 #[test]
 fn aniso_beats_trilinear_on_oblique_minification() {
-    let (width, height) = (256usize, 40usize);
+    let (width, height) = (256usize, 8usize);
     let pixels = stripes(width, height);
     let bytes = rgba_to_ttx2_mips(&pixels, width, height).expect("encode");
     let doc = from_ttx2(&bytes).expect("parse");
 
     // 屏幕一个像素 = 沿 u 走 8 个纹素、沿 v 走 0.2 个纹素（强各向异性）
     let (w, h) = (24usize, 6usize);
-    let du = 8.0 / width as f32;
+    let du = 8.5 / width as f32; // 步长取 8.5 纹素：落在纹素之间，三线性只做相邻平均（欠采样）
     let dv = 0.02 / height as f32;
 
     let mut sum_iso = 0f64;
@@ -102,7 +104,7 @@ fn aniso_beats_trilinear_on_oblique_minification() {
 
 #[test]
 fn aniso_degrades_to_trilinear_when_isotropic() {
-    let (width, height) = (256usize, 40usize);
+    let (width, height) = (256usize, 8usize);
     let pixels = stripes(width, height);
     let bytes = rgba_to_ttx2_mips(&pixels, width, height).expect("encode");
     let doc = from_ttx2(&bytes).expect("parse");

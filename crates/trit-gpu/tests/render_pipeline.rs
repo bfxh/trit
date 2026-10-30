@@ -242,13 +242,13 @@ fn auto_lod_is_close_and_actually_uses_mips() {
 
 #[test]
 fn depth_test_keeps_near_quad() {
-    let (tex_w, tex_h) = (16usize, 20usize);
+    let (tex_w, tex_h) = (16usize, 16usize);
     let colors = [[220, 20, 20], [20, 220, 20], [20, 20, 220], [220, 220, 220]];
     let mut px = vec![0u8; tex_w * tex_h * 4];
     for y in 0..tex_h {
         for x in 0..tex_w {
             let o = (y * tex_w + x) * 4;
-            px[o..o + 3].copy_from_slice(&colors[x / 4]);
+            px[o..o + 3].copy_from_slice(&colors[x / 8]);
             px[o + 3] = 255;
         }
     }
@@ -264,7 +264,7 @@ fn depth_test_keeps_near_quad() {
             .map(|v| Vertex { clip: v.clip, uv })
             .collect::<Vec<_>>()
     };
-    // 远（z=0.8，白色块）先画，近（z=0.4，红色块）后画
+    // 远（z=0.8，第 1 块白色）先画，近（z=0.4，第 0 块红色）后画（8×8 块：16 宽 = 2 块）
     let mesh = Mesh {
         vertices: {
             let mut v = quad(0.8, [0.9, 0.1]);
@@ -296,7 +296,7 @@ fn depth_test_keeps_near_quad() {
 
 #[test]
 fn v_axis_is_not_flipped() {
-    let (tex_w, tex_h) = (16usize, 20usize);
+    let (tex_w, tex_h) = (16usize, 16usize);
     let mut px = vec![0u8; tex_w * tex_h * 4];
     for y in 0..tex_h {
         for x in 0..tex_w {

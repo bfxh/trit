@@ -485,7 +485,7 @@ mod tests {
     }
 
     fn doc() -> TtxDocument {
-        let (w, h) = (16usize, 20usize);
+        let (w, h) = (16usize, 16usize);
         let px = checker(w, h);
         let bytes = rgba_to_ttx2_mips(&px, w, h).expect("encode");
         from_ttx2(&bytes).expect("parse")
@@ -723,9 +723,9 @@ mod tests {
 
     #[test]
     fn rect_at_level_halves() {
-        let r = Rect::new(16, 20, 8, 10).unwrap();
+        let r = Rect::new(16, 16, 8, 10).unwrap();
         assert_eq!(r.at_level(0), r);
-        assert_eq!(r.at_level(1), Rect::new(8, 10, 4, 5).unwrap());
+        assert_eq!(r.at_level(1), Rect::new(8, 8, 4, 5).unwrap());
         let tiny = Rect::new(1, 1, 1, 1).unwrap();
         assert_eq!(tiny.at_level(3), Rect::new(0, 0, 1, 1).unwrap());
     }

@@ -7,6 +7,11 @@
 //   group(0) binding(2) = Params
 // 计算内核另有 binding(3) 采样点、binding(4) 输出，见 `sampler_entry.wgsl`。
 //
+// 块几何必须与 `trit_texture::{BLOCK_WIDTH, BLOCK_HEIGHT}` 一致——
+// `trit-gpu` 里有一条测试直接读本文件做断言，改常量时两边一起改。
+const BLOCK_W: u32 = 8u;
+const BLOCK_H: u32 = 8u;
+//
 // 块布局（每块 12 字节 = 3 个 u32）：
 //   word0: e0hi e0lo e1hi e1lo（e0/e1 为 RGB565 的 BE u16）
 //   word1-2: 40 纹素 × 1 trit，5 trit/字节（基 3 打包，低位在前）
@@ -44,9 +49,14 @@ fn expand6(v: u32) -> u32 {
     return (v << 2u) | (v >> 4u);
 }
 
+// 块在 GPU 侧按 5 个 u32 存放（17 字节补齐到 20 字节）：前 4 字节是端点对，
+// 后面 13 字节是 64 个索引 trit 的基 3 打包。
+const BLOCK_WORDS: u32 = 5u;
+
 fn payload_byte(base: u32, k: u32) -> u32 {
-    let word = blocks[base + 1u + k / 4u];
-    return (word >> ((k % 4u) * 8u)) & 0xffu;
+    let offset = 4u + k; // 跳过 4 字节端点
+    let word = blocks[base + offset / 4u];
+    return (word >> ((offset % 4u) * 8u)) & 0xffu;
 }
 
 // 与 CPU 的 wrap_index 同一套规则（负数先抬到非负再取模）。
@@ -74,11 +84,11 @@ fn texel_rgb(level: u32, x_in: i32, y_in: i32) -> vec3<f32> {
     let ry = select(0u, lvl.rect_y, lvl.rect_h > 0u);
     let x = i32(rx) + wrap_index(x_in, i32(rw), params.wrap);
     let y = i32(ry) + wrap_index(y_in, i32(rh), params.wrap);
-    let block_col = u32(x / 4);
-    let block_row = u32(y / 10);
+    let block_col = u32(x) / BLOCK_W;
+    let block_row = u32(y) / BLOCK_H;
     let block_id = block_row * lvl.block_cols + block_col;
-    let index = u32(y % 10) * 4u + u32(x % 4);
-    let base = (lvl.block_offset + block_id) * 3u;
+    let index = (u32(y) % BLOCK_H) * BLOCK_W + (u32(x) % BLOCK_W);
+    let base = (lvl.block_offset + block_id) * BLOCK_WORDS;
     let b0 = blocks[base] & 0xffu;
     let b1 = (blocks[base] >> 8u) & 0xffu;
     let b2 = (blocks[base] >> 16u) & 0xffu;

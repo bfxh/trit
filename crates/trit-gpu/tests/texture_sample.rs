@@ -13,7 +13,7 @@ use trit_texture::encode_rgba;
 use trit_texture::sample::{Wrap as CpuWrap, sample_bilinear_with};
 use trit_texture::ttx2::TtxDocument;
 
-/// 256×60 的确定性纹理：渐变 + 条纹 + 椒盐，覆盖三种调色板槽位。
+/// 256×64 的确定性纹理：渐变 + 条纹 + 椒盐，覆盖三种调色板槽位。
 fn synthetic(width: usize, height: usize) -> Vec<u8> {
     let mut state = 0x9E37_79B9_7F4A_7C15u64;
     let mut pixels = vec![0u8; width * height * 4];
@@ -59,7 +59,7 @@ fn points(width: usize, height: usize) -> Vec<(f32, f32)> {
 
 fn check(wrap_cpu: CpuWrap, wrap_gpu: GpuWrap, label: &str) {
     let width = 256usize;
-    let height = 60usize;
+    let height = 64usize;
     let pixels = synthetic(width, height);
     let texture = encode_rgba(&pixels, width, height).expect("encode");
     let blocks: Vec<u8> = texture.blocks.concat();
@@ -118,16 +118,16 @@ fn gpu_sampling_matches_cpu_mirror() {
 
 #[test]
 fn rejects_bad_shape() {
-    let pixels = synthetic(8, 10);
-    let texture = encode_rgba(&pixels, 8, 10).expect("encode");
+    let pixels = synthetic(8, 8);
+    let texture = encode_rgba(&pixels, 8, 8).expect("encode");
     let blocks: Vec<u8> = texture.blocks.concat();
-    assert!(sample_tt3(&blocks, 8, 10, &[(0.5, 0.5)], GpuWrap::Clamp).is_some());
+    assert!(sample_tt3(&blocks, 8, 8, &[(0.5, 0.5)], GpuWrap::Clamp).is_some());
     // 长度少一个字节 ⇒ 拒绝
     assert!(
         sample_tt3(
             &blocks[..blocks.len() - 1],
             8,
-            10,
+            8,
             &[(0.5, 0.5)],
             GpuWrap::Clamp
         )
@@ -140,7 +140,7 @@ fn rejects_bad_shape() {
 /// 三线性：GPU（mip 链打成一个缓冲）vs CPU `sample_trilinear_with`。
 fn check_trilinear(wrap_cpu: CpuWrap, wrap_gpu: GpuWrap, label: &str) {
     let width = 256usize;
-    let height = 60usize;
+    let height = 64usize;
     let pixels = synthetic(width, height);
     let chain = build_mip_chain(&pixels, width, height).expect("mip chain");
     assert!(chain.len() >= 3, "需要多级 mip");
@@ -295,7 +295,7 @@ fn gpu_render_matches_cpu_preview() {
     use trit_texture::preview::{RenderOptions, SampleMode, render};
     use trit_texture::sample::Wrap as CpuWrapAgain;
 
-    let (width, height) = (128usize, 60usize);
+    let (width, height) = (128usize, 64usize);
     let pixels = synthetic(width, height);
     let chain = build_mip_chain(&pixels, width, height).expect("mip chain");
     let flat: Vec<Vec<u8>> = chain.iter().map(|t| t.blocks.concat()).collect();
@@ -370,7 +370,7 @@ fn gpu_render_matches_cpu_preview() {
 /// GPU 各向异性：与 CPU `sample_aniso` 同一批导数/`taps`，逐像素 ≤1 LSB。
 #[test]
 fn gpu_aniso_matches_cpu() {
-    let (width, height) = (128usize, 60usize);
+    let (width, height) = (128usize, 64usize);
     let pixels = synthetic(width, height);
     let chain = build_mip_chain(&pixels, width, height).expect("mip chain");
     let flat: Vec<Vec<u8>> = chain.iter().map(|t| t.blocks.concat()).collect();
@@ -445,5 +445,22 @@ fn gpu_aniso_matches_cpu() {
         mismatched * 20 <= samples.len(),
         "aniso: {mismatched}/{} 个样点不一致",
         samples.len()
+    );
+}
+
+#[test]
+fn wgsl_block_geometry_matches_texture_crate() {
+    // 着色器里的块宽高是手写常量（WGSL 不能引用 Rust 常量）——这里钉住两边一致，
+    // 改块形状时不会留下一个悄悄按旧几何寻址的 GPU 采样器。
+    let shader = include_str!("../src/sampler_common.wgsl");
+    let width = format!("const BLOCK_W: u32 = {}u;", trit_texture::BLOCK_WIDTH);
+    let height = format!("const BLOCK_H: u32 = {}u;", trit_texture::BLOCK_HEIGHT);
+    assert!(
+        shader.contains(&width),
+        "sampler_common.wgsl 的 BLOCK_W 与 BLOCK_WIDTH 不一致"
+    );
+    assert!(
+        shader.contains(&height),
+        "sampler_common.wgsl 的 BLOCK_H 与 BLOCK_HEIGHT 不一致"
     );
 }
