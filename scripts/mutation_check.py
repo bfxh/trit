@@ -2619,7 +2619,63 @@ MUTANTS = [
         "new": "            entry.last_seen_ms = entry.last_seen_ms.min(*ts_ms);",
         "pkg": "trit-procscan",
         "filter": "repeated_samples_merge_into_one_step"
-    }
+    },
+    {
+        "name": 'trit-re: JSON 引号不转义',
+        "file": 'crates/trit-re/src/json.rs',
+        "old": '            \'"\' => out.push_str("\\\\\\""),',
+        "new": '            \'"\' => out.push(\'"\'),',
+        "pkg": "trit-re",
+        "filter": 'escapes_controls_and_quotes',
+    },
+    {
+        "name": 'trit-re: 熵符号写反',
+        "file": 'crates/trit-re/src/entropy.rs',
+        "old": '            entropy -= p * p.log2();',
+        "new": '            entropy += p * p.log2();',
+        "pkg": "trit-re",
+        "filter": 'uniform_full_byte_range_is_eight_bits',
+    },
+    {
+        "name": 'trit-re: 覆盖率阈值由 >= 变 >',
+        "file": 'crates/trit-re/src/functions.rs',
+        "old": '    exec_bytes > 0 && covered.saturating_mul(10) >= exec_bytes.saturating_mul(9)',
+        "new": '    exec_bytes > 0 && covered.saturating_mul(10) > exec_bytes.saturating_mul(9)',
+        "pkg": "trit-re",
+        "filter": 'exact_coverage_needs_ninety_percent',
+    },
+    {
+        "name": 'trit-re: 单调用点不判 True',
+        "file": 'crates/trit-re/src/xref/mod.rs',
+        "old": '    row.status = if !row.sites.is_empty() {',
+        "new": '    row.status = if row.sites.len() > 1 {',
+        "pkg": "trit-re",
+        "filter": 'finds_call_through_iat',
+    },
+    {
+        "name": 'trit-re: ARM64 地址窗口缩到 2',
+        "file": 'crates/trit-re/src/xref/aarch64.rs',
+        "old": 'const MAX_ADDR_STEPS: usize = 12;',
+        "new": 'const MAX_ADDR_STEPS: usize = 2;',
+        "pkg": "trit-re",
+        "filter": 'interleaved_instructions_do_not_hide_the_reference',
+    },
+    {
+        "name": 'trit-re: 取地址不再降级',
+        "file": 'crates/trit-re/src/xref/mod.rs',
+        "old": '        if row.status == Ternary::False && taken.contains(&row.slot) {',
+        "new": '        if row.status == Ternary::True && taken.contains(&row.slot) {',
+        "pkg": "trit-re",
+        "filter": 'taken_slot_downgrades_false_to_unknown',
+    },
+    {
+        "name": 'trit-re: x64 取地址不记录',
+        "file": 'crates/trit-re/src/xref/mod.rs',
+        "old": '                    taken.insert(target.wrapping_sub(image_base));',
+        "new": '                    let _ = target;',
+        "pkg": "trit-re",
+        "filter": 'x64_address_only_import_is_unknown',
+    },
 ]
 
 

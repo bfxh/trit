@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed（`trit-re` P0：x64 取地址语义 + 变异门接入）
+
+- **x64 只取地址**：新增 `lea/mov reg,[rip+slot]`（x64）与绝对寻址（PE32）识别，
+  地址被计算但无直接调用时状态从 `False` 降为 `Unknown`。真实 x64 样本的"无调用点"
+  2/11/6 → **0**，对应未知 2/11/6（Node/Deno/ripgrep）。
+- **变异门空转修复**：`scripts/mutation_check.py` 新增 **7 条 trit-re 变异**（JSON 转义、熵符号、
+  覆盖率阈值、单调用点终态、ARM64 地址窗口、取地址降级、x64 取地址记录）。
+  此前 `mutation (changed crates)` 对 trit-re 输出"没有登记变异"并 rc=0；现在本地 **7/7 全抓**。
+- 测试 **67** 条（52 lib + 3 ARM64 + 5 ELF + 4 PE + 2 CLI + 1 doctest）。
+
 ### Fixed（`trit-re` N1 复核：取地址语义、ELF 边界与符号面）
 
 - **只取地址的导入不再判"无引用"**：`adrp+ldr` 算出了槽位地址但窗口内没有 `blr`/`br` 时，
