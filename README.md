@@ -97,7 +97,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |
 | `trit-ops` | 三值推理算子（双导轨掩码 / tryte 查表 / 自动选核）：流式 15.8× f32、0.2 B/参数 | `bench`（`crates/trit-ops`） |
-| `trit-texture` | TT3/TTX 三值纹理容器：2.40 bpp、GF(3) CRC-16、CPU/GPU 解码 | `trit-texture` |
+| `trit-texture` | TT3 块纹理压缩：8×8 块、trit 索引 3 级调色板（17 字节 = 2.125 bpp）+ 端点最小二乘精修 + TTX/TTX2 容器 | `trit-texture`（同机对比表） |
 | `trit-unsafe` | 用 K3 审 unsafe：Safe / Unknown / Risky 按 crate 合成；17 类高危形态 + extern 声明块 | `trit-unsafe` |
 | `trit-procscan` | 进程行为扫描 + 自动分析 + 动态追溯/追踪（ppid 链回溯 + 后代子树 + 证据绑定） + MCP 配置优化（非管理员可用的证据面） | `trit-procscan` |
 | `trit-re` | PE/ELF 逆向台账：节熵 / 导入能力面 / 叠加段 / PDB 与编译器指纹 / build-id；导入函数交叉引用（x86/x86-64/ARM64 的 IAT 与 ELF PLT/GOT，三值）、函数级归属与同函数能力共现 → 三值判定 + 四值冲突，JSONL 输出 | `trit-re triage <PATH> [--jsonl] [--xref] [--functions]` |

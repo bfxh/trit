@@ -170,7 +170,7 @@ MUTANTS = [
     },
     {
         "name": "texture: 调色板中点写成 1/3",
-        "file": "crates/trit-texture/src/lib.rs",
+        "file": "crates/trit-texture/src/endpoints.rs",
         "old": "    let mid = |a: u8, b: u8| ((u16::from(a) + u16::from(b)) / 2) as u8;",
         "new": "    let mid = |a: u8, b: u8| ((u16::from(a) + u16::from(b)) / 3) as u8;",
         "pkg": "trit-texture",
@@ -178,7 +178,7 @@ MUTANTS = [
     },
     {
         "name": "texture: 最近色并列取大下标",
-        "file": "crates/trit-texture/src/lib.rs",
+        "file": "crates/trit-texture/src/endpoints.rs",
         "old": "        if dist < best_dist {",
         "new": "        if dist <= best_dist {",
         "pkg": "trit-texture",

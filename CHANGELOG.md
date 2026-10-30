@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed（`trit-texture`：TTX2 布局版本位 + 8×8 块形状）
+
+- **TTX2 头部新增布局位**：`flags` 的 bit0 = `FLAG_LAYOUT_8X8`。写入端置位；读到 `flags == 0`
+  （旧 4×10 文件）时在**头部**返回 `TextureError::UnsupportedLayout { rev: 0 }`，
+  不再拖到块数/校验和才报一个看不出是版本问题的错。未知 flags 位仍按 `TtxFlags` 拒绝。
+- 块形状 4×10 → 8×8（17 字节 = 2.125 bpp）：消除 mip 链 25% 补边税，
+  实际 bpp 3.00 → 2.125，真实照片 PSNR 还涨。
+- 测试夹具随之改为 8 对齐尺寸；`trit-texture` 44 条全过。
+
 ### Fixed（`trit-re`：CFI 来源按调用点覆盖选择 + 真实 `.debug_frame` 校准）
 
 - 同时存在 `.eh_frame` 与 `.debug_frame` 时，不再"`.eh_frame` 非空就用它"，而是按
@@ -765,16 +774,18 @@
 ### Added（TTX v2：多载荷容器——GPU 纹理 mip 链 + 三值模型双轨权重，先写定位文档）
 
 - **`docs/TTX.md`**（先于实现）：TTX 对业界格式的竞争力定位——纹理侧对比
-  PNG/QOI/BC1/BC7/ETC2/ASTC/BasisU（TTX 2.40 bpp < BC1 4.0，3 色调色板天花板、
-  无硬件采样器如实记），模型侧对比 safetensors/GGUF Q2_K/BitNet b1.58
+  PNG/QOI/BC1/BC7/ETC2/ASTC/BasisU（当时 4×10 的 TTX 2.40 bpp < BC1 4.0，3 色调色板
+  天花板、无硬件采样器如实记；**bpp 数字后被同版本内「块形状 8×8」条目更新为 2.125**），
+  模型侧对比 safetensors/GGUF Q2_K/BitNet b1.58
   （双轨 2 bit/权重 < Q2_K ≈2.56，比理论下限 1.585 多付的 26% 是 B 类税），
   特点清单 + TTX1/TTX2 字节级规范 + 转换路线。
 - **TTX2 容器**（trit-texture::ttx2，拆 `mod.rs` 容器 / `model.rs` 模型域）：
   魔数 `TTX2` + kind（TEX/MOD）/flags（非零显式拒绝，前向兼容不猜）/段长头 +
   kind 段 + GF(3) CRC-3 尾（对 kind 的**规范 trit 流**算，与 TTX1 同哲学）。
 - **kind=TEX**：纹理 + mip 链——每级自带宽高与块载荷，宽高不增且至少一维
-  严格递减（同级/未对齐/空链都是结构化错误）；4×10 块高的 mip 只能降 2–3 级
-  是方块格式没有的诚实约束，写进文档。读写共用 `validate_levels` 单一来源。
+  严格递减（同级/未对齐/空链都是结构化错误）；当时 4×10 块高的 mip 只能降 2–3 级
+  是方块格式没有的诚实约束，写进文档（**该约束已随本版本内改块为 8×8 消失**：
+  现在 2 的幂尺寸可一路减半到 1×1）。读写共用 `validate_levels` 单一来源。
 - **kind=MOD**：三值模型（`TritModel`/`TritModelLayer`）——权重 {-1,0,+1} 存
   **双轨位平面**（行整字、bit = `1<<(i%32)`），与 trit-gpu matmul 内核的
   storage buffer 布局逐位一致（手算常量钉死），**上传零重排**；偏置基 3 打包
@@ -898,6 +909,8 @@ trit-gpu 新增两个三进制 GPU 内核（`gpu` feature 后），全部与 CPU
   的 CPU 解码在 256×60 合成纹理上**逐字节一致**（真机验证）。修掉两个真 bug：
   基 3 打包曾被当 3-bit 位段解；块映射曾按平铺扫描序（只有 block 0 的构造
   测试测不出——随机纹理首差 texel 4 暴露）。
+  （**后续已改**：本版本内块形状 4×10 → 8×8、块字节 12 → 17，内核改为按全局字节
+  偏移取字节、块映射 `(x/8, y/8)`，见 [Unreleased] 顶部「块形状 8×8」条目。）
 - **CPU 镜像进默认构建**（CI 可测）：`pack_columns`（B 转置列打包）、`pack_rows`
   （A 行打包）、`matmul_words`（复用 `dot_words`）；非整字边界（k=100）+ 非方阵
   与标量参考对拍。
