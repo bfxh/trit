@@ -177,6 +177,8 @@ mod matmul_f32;
 #[cfg(feature = "gpu")]
 mod popc;
 #[cfg(feature = "gpu")]
+pub mod render;
+#[cfg(feature = "gpu")]
 pub mod sampler;
 #[cfg(feature = "gpu")]
 pub mod texture;

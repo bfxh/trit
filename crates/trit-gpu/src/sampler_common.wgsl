@@ -1,12 +1,13 @@
-// TT3 块纹理的**三线性采样**（mip 链 + 双线性 + wrap），与 trit-texture 的 CPU 参考对拍。
+// TT3 块纹理解码的**公共部分**：计算内核与光栅化片元着色器共用一份，
+// 避免两边解码逻辑漂移（漂移会让 CPU↔GPU 对拍失效，却查不出原因）。
 //
-// 块流按级拼接上传一次；每级带 (块偏移, 宽, 高, 块列数)。采样点带 `lod`：
-// 在相邻两级各做一次双线性，再按 `lod` 的小数部分融合。
+// 绑定约定（两个入口点都用这一套）：
+//   group(0) binding(0) = 块流（u32 数组，LE）
+//   group(0) binding(1) = 各级描述符
+//   group(0) binding(2) = Params
+// 计算内核另有 binding(3) 采样点、binding(4) 输出，见 `sampler_entry.wgsl`。
 //
-// 语义必须与 CPU `TtxDocument::sample_trilinear_with` 完全一致：
-// 纹素中心、clamp/repeat/mirror、显式 fma（单次舍入）、round ties-to-even。
-//
-// 块布局（每块 12 字节 = 3 个 u32，GPU 按 LE 读）：
+// 块布局（每块 12 字节 = 3 个 u32）：
 //   word0: e0hi e0lo e1hi e1lo（e0/e1 为 RGB565 的 BE u16）
 //   word1-2: 40 纹素 × 1 trit，5 trit/字节（基 3 打包，低位在前）
 
@@ -33,16 +34,7 @@ struct Params {
 
 @group(0) @binding(0) var<storage, read> blocks: array<u32>;
 @group(0) @binding(1) var<storage, read> levels: array<Level>;
-// 每样点：(u, v, lod, taps) + (step_u, step_v, _, _)。
-// taps = 1 时 step 无意义（退化为单次三线性）；taps > 1 即各向异性多点平均。
-struct Sample {
-    uv_lod_taps: vec4<f32>,
-    step: vec4<f32>,
-};
-
-@group(0) @binding(2) var<storage, read> points: array<Sample>;
-@group(0) @binding(3) var<storage, read_write> out: array<u32>;
-@group(0) @binding(4) var<uniform> params: Params;
+@group(0) @binding(2) var<uniform> params: Params;
 
 fn expand5(v: u32) -> u32 {
     return (v << 3u) | (v >> 2u);
@@ -153,50 +145,4 @@ fn bilinear(level: u32, u_in: f32, v_in: f32) -> vec3<f32> {
     let top = fma(p00, vec3<f32>(1.0 - tx), p10 * tx);
     let bottom = fma(p01, vec3<f32>(1.0 - tx), p11 * tx);
     return fma(top, vec3<f32>(1.0 - ty), bottom * ty);
-}
-
-@compute @workgroup_size(64)
-fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
-    let i = gid.x;
-    if (i >= params.count) {
-        return;
-    }
-    let sample = points[i];
-    let last = f32(params.level_count - 1u);
-    var lod = sample.uv_lod_taps.z;
-    // NaN 归零（与 CPU 同口径）
-    if (lod != lod) {
-        lod = 0.0;
-    }
-    lod = clamp(lod, 0.0, last);
-    let base_level = floor(lod);
-    let l0 = u32(base_level);
-    let l1 = min(l0 + 1u, params.level_count - 1u);
-    let t = lod - base_level;
-    // 每级先回 8 位再融合——与 CPU 参考的量化时机一致（先量化、后混、再量化）
-    // 各向异性：沿长轴在半个像素跨度内均匀取 taps 个三线性点，**每点先回 8 位再平均**
-    //（与 CPU `sample_aniso` 的量化时机一致）
-    let taps = max(1u, u32(sample.uv_lod_taps.w));
-    var acc = vec3<f32>(0.0);
-    for (var k = 0u; k < taps; k = k + 1u) {
-        let off = (f32(k) + 0.5) / f32(taps) - 0.5;
-        let su = sample.uv_lod_taps.x + sample.step.x * off;
-        let sv = sample.uv_lod_taps.y + sample.step.y * off;
-        let a = quantize(bilinear(l0, su, sv));
-        var tap_color = a;
-        if (l1 != l0) {
-            let b = quantize(bilinear(l1, su, sv));
-            tap_color = fma(a, vec3<f32>(1.0 - t), b * t);
-        }
-        acc = acc + clamp(
-            vec3<f32>(round(tap_color.x), round(tap_color.y), round(tap_color.z)),
-            vec3<f32>(0.0),
-            vec3<f32>(255.0),
-        );
-    }
-    let c = acc / f32(taps);
-    let r = u32(clamp(round(c.x), 0.0, 255.0));
-    let g = u32(clamp(round(c.y), 0.0, 255.0));
-    let b = u32(clamp(round(c.z), 0.0, 255.0));
-    out[i] = r | (g << 8u) | (b << 16u) | 0xff000000u;
 }

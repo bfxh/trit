@@ -55,7 +55,7 @@ struct Params {
 /// 各向异性采样点：`taps` 个三线性点沿 `(step_u, step_v)` 在半像素跨度内均匀取。
 #[derive(Clone, Copy, Debug)]
 pub struct AnisoSample {
-    /// u（[0,1]，越界按 wrap 处理）。
+    /// u（`[0,1]`，越界按 wrap 处理）。
     pub u: f32,
     /// v。
     pub v: f32,
@@ -213,17 +213,22 @@ impl GpuSampler {
         });
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("tt3-sample"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("sampler.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(
+                concat!(
+                    include_str!("sampler_common.wgsl"),
+                    include_str!("sampler_entry.wgsl")
+                )
+                .into(),
+            ),
         });
         let bind_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
             entries: &[
+                // 0/1/2 = 块流 / 各级描述符 / Params（与光栅化片元共用同一份 WGSL）
                 storage_entry(0, true),
                 storage_entry(1, true),
-                storage_entry(2, true),
-                storage_entry(3, false),
                 wgpu::BindGroupLayoutEntry {
-                    binding: 4,
+                    binding: 2,
                     visibility: wgpu::ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
@@ -232,6 +237,8 @@ impl GpuSampler {
                     },
                     count: None,
                 },
+                storage_entry(3, true),
+                storage_entry(4, false),
             ],
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -362,15 +369,15 @@ impl GpuSampler {
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: self.points_buf.as_ref()?.as_entire_binding(),
+                    resource: params_buf.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
-                    resource: self.out_buf.as_ref()?.as_entire_binding(),
+                    resource: self.points_buf.as_ref()?.as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 4,
-                    resource: params_buf.as_entire_binding(),
+                    resource: self.out_buf.as_ref()?.as_entire_binding(),
                 },
             ],
         });

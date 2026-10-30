@@ -23,6 +23,10 @@ half = { version = "2", optional = true }
 name = "ttx_render_gpu"
 required-features = ["gpu"]
 
+[[example]]
+name = "render_scene_gpu"
+required-features = ["gpu"]
+
 [[bench]]
 name = "sample"
 harness = false
