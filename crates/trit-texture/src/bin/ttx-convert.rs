@@ -6,19 +6,27 @@
 //!   ttx-to-png    in.ttx out.png
 //!   ttx-upgrade   in.ttx out.ttx    # TTX1 → TTX2
 //!   ttx-downgrade in.ttx out.ttx    # TTX2 → TTX1（仅单级 TEX）
+//!   render        in.ttx out.png    # 渲染预览（采样口径/寻址/平铺可调，--split 并排对拍）
+//!
+//! `render` 的选项：`--size WxH` `--mode nearest|bilinear|trilinear|auto` `--lod F`
+//! `--wrap clamp|repeat|mirror` `--tiles F` `--split`。
 //! ```
 #![forbid(unsafe_code)]
 
 use std::path::Path;
 use std::process::ExitCode;
 
+use trit_texture::convert::RgbaImage;
 use trit_texture::convert::{
     build_mip_chain, rgba_to_ttx1, rgba_to_ttx2, rgba_to_ttx2_mips, ttx1_to_rgba, ttx1_to_ttx2,
     ttx2_to_rgba, ttx2_to_ttx1,
 };
 use trit_texture::pngio::{load_png_rgba, save_png_rgba};
+use trit_texture::preview::{RenderOptions, SampleMode, render};
+use trit_texture::sample::Wrap;
+use trit_texture::ttx2::{TtxDocument, from_ttx2};
 
-const USAGE: &str = "用法：ttx-convert <png-to-ttx|ttx-to-png|ttx-upgrade|ttx-downgrade> <输入> <输出> [png-to-ttx 选项：--v1 --mip]";
+const USAGE: &str = "用法：ttx-convert <png-to-ttx|ttx-to-png|ttx-upgrade|ttx-downgrade|render> <输入> <输出> [png-to-ttx 选项：--v1 --mip] [render 选项：--size WxH --mode nearest|bilinear|trilinear|auto --lod F --wrap clamp|repeat|mirror --tiles F --split]";
 
 fn main() -> ExitCode {
     match run() {
@@ -99,8 +107,104 @@ fn run() -> Result<String, String> {
                 downgraded.len()
             ))
         }
+        "render" => {
+            let (input, output, opts) = parse_render(rest)?;
+            let bytes = std::fs::read(Path::new(&input)).map_err(|e| e.to_string())?;
+            let doc = if bytes.starts_with(b"TTX2") {
+                from_ttx2(&bytes).map_err(|e| format!("{input} 解析失败：{e}"))?
+            } else {
+                // TTX1 没有 mip 链字段 ⇒ 单级纹理
+                let texture = trit_texture::ttx::from_ttx(&bytes)
+                    .map_err(|e| format!("{input} 不是 TTX 纹理：{e}"))?;
+                TtxDocument::Texture {
+                    levels: vec![texture],
+                }
+            };
+            let (w, h, rgba) = render(&doc, &opts).map_err(|e| format!("渲染失败：{e}"))?;
+            let image = RgbaImage {
+                width: w,
+                height: h,
+                rgba,
+            };
+            save_png_rgba(Path::new(&output), &image).map_err(|e| e.to_string())?;
+            let levels = doc.levels().map(|l| l.len()).unwrap_or(0);
+            Ok(format!(
+                "{input} → {output}（{w}×{h}，{} 级，mode {:?}，wrap {:?}{}）",
+                levels,
+                opts.mode,
+                opts.wrap,
+                if opts.split { "，左右对拍" } else { "" }
+            ))
+        }
         other => Err(format!("未知子命令 {other}")),
     }
+}
+
+fn parse_render(rest: &[String]) -> Result<(String, String, RenderOptions), String> {
+    let mut opts = RenderOptions::default();
+    let mut paths: Vec<String> = Vec::new();
+    let mut index = 0;
+    while index < rest.len() {
+        let arg = rest[index].clone();
+        // 取选项值的辅助：消费下一个参数
+        macro_rules! take {
+            () => {{
+                index += 1;
+                rest.get(index)
+                    .cloned()
+                    .ok_or_else(|| format!("{arg} 缺少取值"))?
+            }};
+        }
+        match arg.as_str() {
+            "--split" => opts.split = true,
+            "--size" => {
+                let value = take!();
+                let (w, h) = value
+                    .split_once('x')
+                    .ok_or_else(|| format!("--size 要写成 WxH：{value}"))?;
+                opts.width = w.parse().map_err(|_| format!("宽度不是整数：{w}"))?;
+                opts.height = h.parse().map_err(|_| format!("高度不是整数：{h}"))?;
+            }
+            "--tiles" => {
+                opts.tiles = take!()
+                    .parse()
+                    .map_err(|_| "--tiles 不是数值".to_string())?;
+                if opts.tiles <= 0.0 || !opts.tiles.is_finite() {
+                    return Err("--tiles 必须 > 0".to_string());
+                }
+            }
+            "--lod" => {
+                let lod: f32 = take!().parse().map_err(|_| "--lod 不是数值".to_string())?;
+                opts.mode = SampleMode::Trilinear(lod);
+            }
+            "--mode" => {
+                let value = take!();
+                opts.mode = match value.as_str() {
+                    "nearest" => SampleMode::Nearest,
+                    "bilinear" => SampleMode::Bilinear,
+                    "trilinear" => SampleMode::Trilinear(0.0),
+                    "auto" => SampleMode::Auto,
+                    other => return Err(format!("未知 --mode {other}")),
+                };
+            }
+            "--wrap" => {
+                let value = take!();
+                opts.wrap = match value.as_str() {
+                    "clamp" => Wrap::Clamp,
+                    "repeat" => Wrap::Repeat,
+                    "mirror" => Wrap::Mirror,
+                    other => return Err(format!("未知 --wrap {other}")),
+                };
+            }
+            other if other.starts_with("--") => return Err(format!("未知选项 {other}")),
+            other => paths.push(other.to_string()),
+        }
+        index += 1;
+    }
+    if paths.len() != 2 {
+        return Err("render 需要恰好两个路径参数：<in.ttx> <out.png>".to_string());
+    }
+    Ok((paths[0].clone(), paths[1].clone(), opts))
 }
 
 fn parse_two(rest: &[String]) -> Result<(String, String), String> {

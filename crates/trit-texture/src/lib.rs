@@ -26,6 +26,7 @@ pub mod convert;
 pub mod gguf;
 #[cfg(feature = "png")]
 pub mod pngio;
+pub mod preview;
 pub mod sample;
 pub mod ttx;
 pub mod ttx2;
