@@ -117,9 +117,9 @@ IAT 槽位按 8 字节紧邻排列，一个寄存器判错就会把调用记到�
 - **ELF 只有两个样本**（ripgrep 可执行文件、glibc 共享库）。函数边界现在来自 `.eh_frame`，
   但 `panic=abort` 构建（如 ripgrep）缺 FDE 的函数仍落在未归属里（1,496 个调用点），
   相关能力组保持 `Unknown`；IFUNC 密集的库（如 libm）未覆盖。
-- **ELF32 只覆盖了 JUMP_SLOT 导入**：`GLOB_DAT` 槽位（如 `__cxa_finalize`）仍记 `Unknown`
-  ——它能被 PLT 桩调用，但我们不把它当槽位表成员（与 x64 路径保持一致）。
-  32 位 ELF 的交叉引用已实现（见 §10），`complete=true`。
+- **ELF 槽位表收 `JUMP_SLOT` + `GLOB_DAT`**，但只对 NOTYPE/FUNC/IFUNC 符号建行；
+  纯数据导入（`OBJECT`）不进台账，因此"没看到引用"不会落到它们头上。
+  字节比较类取址尚未计入（见 §10 的未证项）。
 - **PE32**（无 `.pdata`）的同函数共现仍恒为 `Unknown`。
 - x64 的未归属调用点已按类别拆开：Node 148 = call 25 / jmp 123，Deno 156 = call 24 / jmp 132。
   其中 jmp 绝大多数是无 `.pdata` 的导入跳板（结构性）；**call 的 24–25 个尚未逐条裁定**，
@@ -184,13 +184,13 @@ c-clang-df-only       (x86-64, clang) 0x1170..0x1216  0x1220..0x1281  0x1290..0x
 | 样本 | 函数数 | 边界 | 归属调用点 / 调用点总数 | 未归属 |
 |---|---|---|---|---|
 | `c-df-debugframe` | 3 | exact | 4 / 4 | 0 |
-| `c32-df-only` | 5 | exact | 4 / 5 | 1（`__cxa_finalize` 只有 GLOB_DAT 槽位） |
+| `c32-df-only` | 5 | exact | 4 / 6 | 2（都在 CRT，该样本只保留用户函数 FDE） |
 | `c-arm64-df-only` | 3 | exact | 4 / 8 | 4（全在 PLT/CRT 与库函数间隙） |
 | `c-clang-df-only` | 3 | exact | 4 / 4 | 0 |
 
-`c32-df-only` 的交叉引用在补上 i386 路径后是 `complete=true`：5 个 JUMP_SLOT 导入里
-4 个有调用点，第 5 个（`__cxa_finalize`）只有 `GLOB_DAT` 槽位 ⇒ `Unknown`；
-函数归属 4 / 5，剩下 1 个就是它。见 §10。
+`c32-df-only` 的交叉引用是 `complete=true`：9 个导入里 6 个有调用点、2 个确证无引用、
+1 个 `Unknown`（`__gmon_start__` 被 `mov 0x24(%ebx)` 取过地址）。函数归属 4 / 6，
+2 个未归属都在 CRT（该样本只保留用户函数的 FDE）。见 §10。
 
 **发现的缺陷**：原先只要 `.eh_frame` 非空就选它。`c-df` 的 `.eh_frame` 只覆盖 CRT，
 4 个用户调用点全部落在外面（未归属 4）；改为按**调用点覆盖率**选择后改选 `.debug_frame`，
@@ -260,8 +260,32 @@ libdbg32.so  fclose 0x120f   strlen 0x11b1   fopen 0x11e3   __fprintf_chk 0x1206
 
 **未证 / 不做**：
 
-- `GLOB_DAT` 槽位（`__cxa_finalize`、`_ITM_*`）不纳入槽位表 ⇒ 即使有 PLT 桩也记 `Unknown`
-  （与 x64 路径一致；这是"宁可 Unknown 不猜"的取舍，不是遗漏）。
+- 字节比较类取址（`80/81/83 BB disp32`、`B8 imm32` 搬常量等）不计入"取地址"：
+  若某个导入只被这类指令碰过，仍可能落 `False`。目前覆盖的是
+  `mov`/`lea`/`cmp`/`test`/`push` 的 `[ebx+disp32]` 与 `[abs32]` 形式（有单元测试逐个锁）。
 - 基址解析只认 `get_pc_thunk.bx` + `add $imm,%ebx` 这一种序言；`pop %ebx` 变体、
   `-mcmodel` 其它写法未覆盖（遇到时 `.plt` 有 `FF A3` 但无基址 ⇒ `complete=false`）。
 - 32 位 PE（无 `.pdata`）与本主题无关，函数共现仍恒 `Unknown`。
+
+### 10.1 `GLOB_DAT` 槽位（2026-10-30 补）
+
+槽位表现在同时收 `JUMP_SLOT`（PLT 桩用）与 `GLOB_DAT`（直接取函数地址用；x86-64/i386 = 类型 6，
+ARM64 = 1025）。此前只收前者，`__cxa_finalize` 这类"有 PLT 桩、也被调用"的导入会被记成
+"没有槽位" ⇒ `Unknown`。
+
+读数变化（同一批样本，改前 → 改后）：
+
+| 样本 | 有调用点 | 无调用点 | 未知 |
+|---|---|---|---|
+| `c32-pie` | 5 → **6** | 0 → **2** | 4 → 1 |
+| `libdbg32.so` | 4 → **5** | 0 → **2** | 4 → 1 |
+| `c32-nopie` | 5 → 5 | 0 → 0 | 1 → 1 |
+| x86-64 glibc | 13 → 13 | 0 → 0 | 0 → 0 |
+| AArch64 glibc / ripgrep | 13 / 133 → 不变 | 0 / 0 | 0 / 5 |
+
+`c32-pie` 里变成 `False` 的两个是 `_ITM_deregisterTMCloneTable` / `_ITM_registerTMCloneTable`：
+槽位已知、可执行节扫全、函数体内确实没有对 `0x20(%ebx)` / `0x30(%ebx)` 的任何引用
+（objdump 计数 0）⇒ "本文件不引用它"是有证据的结论，而不是缺省。
+
+**注意**：这会让"数据型 GLOB_DAT 导入"从 `Unknown` 变成 `False`，前提是上面那组取址形式
+已经覆盖；新增形式必须同时补单元测试，否则会把"漏检"伪装成"没有引用"。

@@ -150,8 +150,8 @@ fn taken_operand(
     index: usize,
 ) -> Option<u64> {
     match (data[index], data[index + 1]) {
-        // mov/lea reg, [abs32]；A1 = mov eax, moffs32；FF 35 = push [abs32]
-        (0x8B | 0x8D, 0x05) | (0xA1, _) | (0xFF, 0x35) => {
+        // mov/lea/cmp/test reg, [abs32]；A1 = mov eax, moffs32；FF 35 = push [abs32]
+        (0x8B | 0x8D | 0x39 | 0x3B | 0x85, 0x05) | (0xA1, _) | (0xFF, 0x35) => {
             let absolute = u32::from_le_bytes([
                 data[index + 2],
                 data[index + 3],
@@ -160,8 +160,8 @@ fn taken_operand(
             ]) as u64;
             got.contains_key(&absolute).then_some(absolute)
         }
-        // mov/lea/push 的 EBX 相对形式。
-        (0x8B | 0x8D, 0x83) | (0xFF, 0xB3) => {
+        // 同一组指令的 EBX 相对形式。
+        (0x8B | 0x8D | 0x39 | 0x3B | 0x85, 0x83) | (0xFF, 0xB3) => {
             let disp = i32::from_le_bytes([
                 data[index + 2],
                 data[index + 3],
@@ -277,6 +277,39 @@ mod tests {
         assert_eq!(resolve_ebx(&bases, &got, 0xC), Some(0x3FD8));
         assert_eq!(resolve_ebx(&bases, &got, 0x10), None);
         assert_eq!(resolve_ebx(&BTreeSet::new(), &got, 0xC), None);
+    }
+
+    #[test]
+    fn taken_operand_recognises_read_only_forms() {
+        // 槽位 0x3010，基址 0x3005 ⇒ EBX 相对位移 0xB。
+        let got = BTreeMap::from([(0x3010u64, 1usize)]);
+        let bases = BTreeSet::from([0x3005u64]);
+        let mut cases: Vec<(u8, u8, [u8; 4], bool)> = vec![
+            (0x8B, 0x83, 0x0Bu32.to_le_bytes(), true), // mov reg, [ebx+disp]
+            (0x8D, 0x83, 0x0Bu32.to_le_bytes(), true), // lea reg, [ebx+disp]
+            (0x39, 0x83, 0x0Bu32.to_le_bytes(), true), // cmp [ebx+disp], reg
+            (0x3B, 0x83, 0x0Bu32.to_le_bytes(), true), // cmp reg, [ebx+disp]
+            (0x85, 0x83, 0x0Bu32.to_le_bytes(), true), // test [ebx+disp], reg
+            (0xFF, 0xB3, 0x0Bu32.to_le_bytes(), true), // push [ebx+disp]
+            (0x8B, 0x83, 0x10u32.to_le_bytes(), false), // 不是槽位
+            (0x8B, 0x84, 0x0Bu32.to_le_bytes(), false), // mov 但不是 [ebx+disp32]
+        ];
+        for (first, second, disp, expected) in cases.drain(..) {
+            let mut data = vec![first, second];
+            data.extend_from_slice(&disp);
+            let found = taken_operand(&bases, &got, &data, 0);
+            assert_eq!(found.is_some(), expected, "{first:#x} {second:#x}");
+        }
+        // 绝对寻址：mov/cmp/test reg, [abs32] 与 `A1`。
+        for (first, second) in [(0x8B, 0x05), (0x3B, 0x05), (0x85, 0x05), (0xA1, 0x00)] {
+            let mut data = vec![first, second];
+            data.extend_from_slice(&0x3010u32.to_le_bytes());
+            assert_eq!(
+                taken_operand(&bases, &got, &data, 0),
+                Some(0x3010),
+                "{first:#x} {second:#x}"
+            );
+        }
     }
 
     #[test]
