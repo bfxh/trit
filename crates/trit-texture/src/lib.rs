@@ -28,6 +28,7 @@ pub mod mip;
 #[cfg(feature = "png")]
 pub mod pngio;
 pub mod preview;
+pub mod raster;
 pub mod sample;
 pub mod ttx;
 pub mod ttx2;

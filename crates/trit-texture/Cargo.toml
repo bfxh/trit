@@ -36,6 +36,10 @@ path = "src/bin/gguf-to-mod.rs"
 name = "texture"
 harness = false
 
+[[example]]
+name = "render_scene"
+required-features = ["png"]
+
 [[bench]]
 name = "sample"
 harness = false

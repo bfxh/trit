@@ -229,6 +229,17 @@ impl<'a> Sampler<'a> {
         self.texel_at(x as i64, y as i64)
     }
 
+    /// 最近邻采样：`u/v` 落在哪个纹素就取哪个（矩形与 wrap 生效）。
+    pub fn sample_nearest(&mut self, u: f32, v: f32) -> [u8; 4] {
+        let (_, _, w, h) = self.bounds();
+        if w == 0 || h == 0 || self.texture.blocks.is_empty() {
+            return [0, 0, 0, 255];
+        }
+        let x = (u * w as f32).floor();
+        let y = (v * h as f32).floor();
+        self.texel_at(x as i64, y as i64)
+    }
+
     #[inline]
     fn texel_at(&mut self, xi: i64, yi: i64) -> [u8; 4] {
         let tex = self.texture;

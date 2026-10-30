@@ -151,6 +151,11 @@ impl<'a> MipSampler<'a> {
         }
     }
 
+    /// 最近邻（第 0 级；矩形与 wrap 生效）。
+    pub fn sample_nearest(&mut self, u: f32, v: f32) -> Option<[u8; 4]> {
+        self.levels.first_mut().map(|s| s.sample_nearest(u, v))
+    }
+
     /// 三线性采样：相邻两级各一次双线性再融合。
     ///
     /// `lod` 夹到 `[0, 级数-1]`；`NaN` 按 0 处理；只有一级时退化为双线性。
