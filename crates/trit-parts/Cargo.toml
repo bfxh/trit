@@ -48,3 +48,8 @@ required-features = ["gpu"]
 [[bin]]
 name = "parts-cli"
 path = "src/bin/parts_cli.rs"
+
+[[bin]]
+name = "parts-3d"
+path = "src/bin/parts_3d.rs"
+required-features = ["gpu"]
