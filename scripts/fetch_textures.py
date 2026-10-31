@@ -62,10 +62,14 @@ def one_k_zip(asset: dict) -> str | None:
         dl = asset["downloadFolders"]["default"]["downloadFiletypeCategories"]["zip"]["downloads"]
     except KeyError:
         return None
-    for x in dl:
+    # 实测部分素材的 downloads 是 dict（或混着字符串），不是统一的 list[dict]
+    if isinstance(dl, dict):
+        dl = list(dl.values())
+    items = [x for x in dl if isinstance(x, dict) and x.get("fullDownloadPath")]
+    for x in items:
         if x.get("attribute", "").startswith("1K"):
             return x["fullDownloadPath"]
-    return dl[0]["fullDownloadPath"] if dl else None
+    return items[0]["fullDownloadPath"] if items else None
 
 
 def disk_free_gb(p: Path) -> float:

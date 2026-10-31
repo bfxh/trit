@@ -20,17 +20,21 @@ def main() -> int:
     size = int(sys.argv[3]) if len(sys.argv) > 3 else 256
     dst.mkdir(parents=True, exist_ok=True)
     n = 0
+    skipped = 0
     for p in sorted(src.rglob("*")):
         if not p.is_file() or "color" not in p.name.lower():
             continue
         if p.suffix.lower() not in (".jpg", ".jpeg", ".png"):
             continue
-        im = Image.open(p).convert("L").resize((size, size), Image.LANCZOS)
         out = dst / (p.parent.name + "_" + p.stem + ".png")
+        if out.exists() and out.stat().st_size > 0:
+            skipped += 1
+            continue
+        im = Image.open(p).convert("L").resize((size, size), Image.LANCZOS)
         im.save(out)
         n += 1
-    print(f"PREP {n} 张 {size}² 灰度 → {dst}")
-    return 0 if n > 0 else 1
+    print(f"PREP {n} 张 {size}x{size} 灰度 -> {dst}（跳过已存在 {skipped}）")
+    return 0 if n + skipped > 0 else 1
 
 
 if __name__ == "__main__":
