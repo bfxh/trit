@@ -1,0 +1,23 @@
+[package]
+name = "trit-immune"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "三进制免疫系统核心：{-1,0,+1} 渗透测试裁决 + DeltaDB 式因果 DAG（Kleene K3）"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[features]
+default = []
+tls = ["dep:rustls", "dep:rustls-pemfile", "dep:rcgen"]
+
+[lints.rust]
+# Kani 模型检查的 cfg 门（src/kani_proofs.rs，cargo kani 才编译）
+unexpected_cfgs = { level = "allow", check-cfg = ['cfg(kani)'] }
+
+[dependencies]
+# trit-core 互操作（compat 模块：Trit ↔ Ternary 双向映射 + 同构穷举测试）
+trit-core = { path = "../trit-core" }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+rustls-pemfile = { version = "2", optional = true }
+rcgen = { version = "0.13", optional = true }
