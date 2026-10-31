@@ -6,6 +6,7 @@
 //!   - `--components`：只学前景，前景连通域当实例（经典基线）；
 //!   - 缺省：直接按模型 id 图当实例（学出来的实例头）。
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use trit_parts::data::{read_npy_i32, read_rgb, write_npy_i32};
@@ -98,6 +99,7 @@ fn prep(argv: &[String]) {
     let limit: usize = arg(argv, "--limit")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    let part_bnd = argv.iter().any(|a| a == "--part-bnd");
     let bnd_r: usize = arg(argv, "--bnd-radius")
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
@@ -146,6 +148,23 @@ fn prep(argv: &[String]) {
                 eprintln!("{e}");
                 std::process::exit(2)
             });
+            if part_bnd {
+                // 部件边界：直接用 seg 的部件 id（不折成实例）
+                let pbnd = boundary_of(
+                    &ids.iter().map(|&v| v.max(0) as u32).collect::<Vec<_>>(),
+                    shape[1],
+                    shape[0],
+                    bnd_r,
+                );
+                let d = rd.join("pbnd");
+                std::fs::create_dir_all(&d).ok();
+                let pv: Vec<i32> = pbnd.iter().map(|&v| v as i32).collect();
+                write_npy_i32(&d.join(f.file_name().unwrap()), &pv, shape[1], shape[0])
+                    .unwrap_or_else(|e| {
+                        eprintln!("{e}");
+                        std::process::exit(2)
+                    });
+            }
             let bnd = boundary_of(&inst, shape[1], shape[0], bnd_r);
             let bnd_i: Vec<i32> = bnd.iter().map(|&v| v as i32).collect();
             write_npy_i32(
@@ -186,6 +205,9 @@ fn eval(argv: &[String]) {
     let scenes = PathBuf::from(arg(argv, "--scenes").unwrap_or_else(|| usage()));
     let comps = argv.iter().any(|a| a == "--components");
     let bnd_mode = argv.iter().any(|a| a == "--boundary");
+    // --gt part：GT 用 seg 的部件 id（部件级评测）；缺省 = 实例级（按可见实例重编号）
+    let gt_part = arg(argv, "--gt").is_some_and(|v| v == "part");
+    let oracle = argv.iter().any(|a| a == "--oracle");
     let res: u32 = arg(argv, "--res")
         .and_then(|v| v.parse().ok())
         .unwrap_or(384);
@@ -266,8 +288,18 @@ fn eval(argv: &[String]) {
             let x = pix;
             let (ids, _) = read_npy_i32(f).unwrap();
             // GT 也只算**该帧可见**的实例（不可见实例无法被预测，不该进分母）
-            let gt = order_by_x(&ids, &ranges, res as usize);
-            let n_gt = gt.iter().max().copied().unwrap_or(0) as usize;
+            let gt: Vec<u32> = if gt_part {
+                ids.iter().map(|&v| v.max(0) as u32).collect()
+            } else {
+                order_by_x(&ids, &ranges, res as usize)
+            };
+            let n_gt = if gt_part {
+                let mut seen: HashSet<u32> = HashSet::new();
+                seen.extend(gt.iter().copied().filter(|&v| v != 0));
+                seen.len()
+            } else {
+                gt.iter().max().copied().unwrap_or(0) as usize
+            };
             let logits = be.forward(&x, res).unwrap_or_else(|e| {
                 eprintln!("{e}");
                 std::process::exit(2)
@@ -278,7 +310,12 @@ fn eval(argv: &[String]) {
                 eprintln!("模型输出 {ch} 通道，不够 k={k}（需 {}）", k * 3 + 1);
                 std::process::exit(2);
             }
-            let pred: Vec<u32> = if comps {
+            let pred: Vec<u32> = if oracle {
+                let fg: Vec<u32> = gt.iter().map(|&v| (v != 0) as u32).collect();
+                let bd = trit_parts::inst::boundary_of(&gt, res as usize, res as usize, 2);
+                let bd: Vec<u32> = bd.iter().map(|&v| (v == 2) as u32).collect();
+                trit_parts::inst::split_by_boundary_min(&fg, &bd, res as usize, res as usize, min_size)
+            } else if comps {
                 let fg: Vec<u32> = (0..hw)
                     .map(|p| (logits[p * ch + k * 3] > 0.0) as u32)
                     .collect();
