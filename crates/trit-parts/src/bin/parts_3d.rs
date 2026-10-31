@@ -108,6 +108,9 @@ fn eval(argv: &[String]) {
     let fuse: usize = arg(argv, "--fuse")
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
+    let min_votes: u32 = arg(argv, "--min-votes")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
     let mut gt_acc: std::collections::HashMap<
         u32,
         std::collections::HashSet<trit_parts::geo::Voxel>,
@@ -192,8 +195,10 @@ fn eval(argv: &[String]) {
             std::collections::HashSet<trit_parts::geo::Voxel>,
         > = std::collections::HashMap::new();
         for (v, cnt) in &votes {
-            if let Some((&id, _)) = cnt.iter().max_by_key(|(_, c)| **c) {
-                pred_acc.entry(id).or_default().insert(*v);
+            if let Some((&id, c)) = cnt.iter().max_by_key(|(_, c)| **c) {
+                if *c >= min_votes {
+                    pred_acc.entry(id).or_default().insert(*v);
+                }
             }
         }
         for (id, gvox) in &gt_acc {
