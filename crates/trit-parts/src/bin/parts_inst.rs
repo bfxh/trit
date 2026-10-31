@@ -249,6 +249,8 @@ fn eval(argv: &[String]) {
     let mut ngt: Vec<usize> = Vec::new();
     let mut cnt_ok = 0usize;
     let mut cnt_exact = 0usize;
+    let mut mixed = 0usize; // 跨物体混合的 pred 部件实例数
+    let mut pred_total = 0usize;
     let mut b_inter = 0usize; // 边界像素：预测∩GT / 预测 / GT
     let mut b_pred = 0usize;
     let mut b_gt = 0usize;
@@ -362,6 +364,35 @@ fn eval(argv: &[String]) {
                 let vals: Vec<i32> = pred.iter().map(|&v| v as i32).collect();
                 let _ = write_npy_i32(&out, &vals, res as usize, res as usize);
             }
+            if gt_part {
+                // 跨物体混算：每个 pred 实例里出现的物体数 > 1 记为混合（部件不能跨物体）
+                let mut own: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+                for (j, &(a, b)) in ranges.iter().enumerate() {
+                    for id in a..=b {
+                        own.insert(id as i32, j);
+                    }
+                }
+                let mut seen: std::collections::HashMap<u32, (usize, usize)> =
+                    std::collections::HashMap::new(); // pred 标签 -> (首个物体, 物体掩码)
+                for (&p, &g) in pred.iter().zip(ids.iter()) {
+                    if p == 0 || g <= 0 {
+                        continue;
+                    }
+                    let obj = *own.get(&g).unwrap_or(&usize::MAX);
+                    match seen.get_mut(&p) {
+                        Some((first, mask)) => {
+                            if *first != obj {
+                                *mask |= 1usize;
+                            }
+                        }
+                        None => {
+                            seen.insert(p, (obj, 0usize));
+                        }
+                    }
+                }
+                pred_total += seen.len();
+                mixed += seen.values().filter(|(_, m)| *m != 0).count();
+            }
             let mt = match_labels(&pred, &gt, n_gt);
             miou.push(mt.miou);
             fgis.push(fg_iou(&pred, &gt));
@@ -387,7 +418,7 @@ fn eval(argv: &[String]) {
         if v.is_empty() { 0.0 } else { v[v.len() / 2] }
     };
     println!(
-        "frames={frames} 实例 mIoU mean {:.4} median {:.4}（p10 {:.4}）| 前景 IoU mean {:.4} | pred/gt {:.2} | 计数±1 {:.1}% | 计数全对 {:.1}% | 边界 P {:.3} R {:.3} F1 {:.3}",
+        "frames={frames} 实例 mIoU mean {:.4} median {:.4}（p10 {:.4}）| 前景 IoU mean {:.4} | pred/gt {:.2} | 计数±1 {:.1}% | 计数全对 {:.1}% | 边界 P {:.3} R {:.3} F1 {:.3} | 跨物体混合 {:.1}%",
         mean(&miou),
         median(&mut miou.clone()),
         {
@@ -401,7 +432,8 @@ fn eval(argv: &[String]) {
         100.0 * cnt_exact as f64 / frames.max(1) as f64,
         b_inter as f64 / b_pred.max(1) as f64,
         b_inter as f64 / b_gt.max(1) as f64,
-        2.0 * b_inter as f64 / (b_pred + b_gt).max(1) as f64
+        2.0 * b_inter as f64 / (b_pred + b_gt).max(1) as f64,
+        100.0 * mixed as f64 / pred_total.max(1) as f64
     );
 }
 
