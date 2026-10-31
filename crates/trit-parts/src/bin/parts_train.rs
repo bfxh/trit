@@ -237,25 +237,7 @@ fn main() {
     // 也可以是「场景的父目录」（其子目录各含 rgb/）。
     let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
     for root in &args.data {
-        if root.join("rgb").is_dir() {
-            for p in frames(root) {
-                paths.push((root.clone(), p));
-            }
-            continue;
-        }
-        let mut subs: Vec<PathBuf> = std::fs::read_dir(root)
-            .map(|it| {
-                it.filter_map(|e| e.ok())
-                    .map(|e| e.path())
-                    .filter(|p| p.join("rgb").is_dir())
-                    .collect()
-            })
-            .unwrap_or_default();
-        subs.sort();
-        if subs.is_empty() {
-            eprintln!("{}: 既不是场景（无 rgb/），也没有含 rgb/ 的子目录", root.display());
-        }
-        for scene in subs {
+        for scene in expand_scenes(root) {
             for p in frames(&scene) {
                 paths.push((scene.clone(), p));
             }
@@ -612,6 +594,29 @@ fn selfcheck(dir: &std::path::Path) {
     }
 }
 
+/// `--data` / `--eval` 的目录：单场景（含 `rgb/`）或「场景的父目录」（子目录各含 `rgb/`）。
+fn expand_scenes(root: &std::path::Path) -> Vec<PathBuf> {
+    if root.join("rgb").is_dir() {
+        return vec![root.to_path_buf()];
+    }
+    let mut subs: Vec<PathBuf> = std::fs::read_dir(root)
+        .map(|it| {
+            it.filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.join("rgb").is_dir())
+                .collect()
+        })
+        .unwrap_or_default();
+    subs.sort();
+    if subs.is_empty() {
+        eprintln!(
+            "{}: 既不是场景（无 rgb/），也没有含 rgb/ 的子目录",
+            root.display()
+        );
+    }
+    subs
+}
+
 fn read_f32(path: &std::path::Path) -> Vec<f32> {
     let raw = std::fs::read(path).unwrap_or_else(|e| {
         eprintln!("{}: {e}", path.display());
@@ -634,6 +639,7 @@ fn eval_only(gpu: &Gpu, args: &Args) {
         .split(',')
         .filter(|s| !s.trim().is_empty())
         .map(PathBuf::from)
+        .flat_map(|p| expand_scenes(&p))
         .collect();
     let manifest_path = args.manifest.as_ref().unwrap_or_else(|| {
         eprintln!("--eval 需要 --manifest <parts.json>");
