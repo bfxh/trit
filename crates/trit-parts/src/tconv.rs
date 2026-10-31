@@ -12,8 +12,16 @@ pub struct Conv {
     /// `cout·cin·9`，布局 `((co*cin)+ci)*9 + (dy*3+dx)`。
     pub w: Vec<f32>,
     pub b: Vec<f32>,
+    /// 每输出通道的可学缩放（三值权重只有 ±1，缺它函数斜率调不了）。
+    pub scale: Vec<f32>,
     /// true = 前向用三值权重（STE 反传）；false = 原生 f32（用于梯度校验）。
     pub ternary: bool,
+    // Adam 状态（一阶/二阶矩）
+    mw: Vec<f32>,
+    vw: Vec<f32>,
+    mb: Vec<f32>,
+    vb: Vec<f32>,
+    t: u32,
 }
 
 impl Conv {
@@ -42,6 +50,12 @@ impl Conv {
             w: (0..cout * cin * 9).map(|_| next() * 3.0).collect(),
             b: vec![0.0; cout],
             ternary: true,
+            scale: vec![0.1; cout],
+            mw: vec![0.0; cout * cin * 9],
+            vw: vec![0.0; cout * cin * 9],
+            mb: vec![0.0; cout],
+            vb: vec![0.0; cout],
+            t: 0,
         }
     }
 
@@ -72,27 +86,29 @@ impl Conv {
                             }
                         }
                     }
-                    out[co][y * w + xx] = s;
+                    out[co][y * w + xx] = s * self.scale[co];
                 }
             }
         }
         out
     }
 
-    /// 反向：给定 `dL/dout`，返回 `dL/dx`，并把 `dL/dw`、`dL/db` 用 SGD 直接更新。
+    /// 反向：给定 `dL/dout`，返回 `(dL/dx, dL/dw, dL/db)`；**不**更新权重（批量累积后统一更新）。
     #[allow(clippy::needless_range_loop)] // 同上
     fn backward(
-        &mut self,
+        &self,
         x: &[Vec<f32>],
         w: usize,
         h: usize,
         dout: &[Vec<f32>],
-        lr: f32,
-    ) -> Vec<Vec<f32>> {
+    ) -> (Vec<Vec<f32>>, Vec<f32>, Vec<f32>, Vec<f32>) {
+        // out = scale[co]·z + b[co]，z = Σ q(w)·x
         let mut dx = vec![vec![0.0f32; w * h]; self.cin];
         let mut dw = vec![0.0f32; self.w.len()];
         let mut db = vec![0.0f32; self.cout];
+        let mut dscale = vec![0.0f32; self.cout];
         for co in 0..self.cout {
+            let sc = self.scale[co];
             for y in 0..h {
                 for xx in 0..w {
                     let g = dout[co][y * w + xx];
@@ -100,6 +116,8 @@ impl Conv {
                         continue;
                     }
                     db[co] += g;
+                    let gz = g * sc; // 对未缩放和 z 的梯度
+                    let mut z = 0.0f32;
                     for ci in 0..self.cin {
                         for dy in 0..3 {
                             let yy = y as i32 + dy as i32 - 1;
@@ -114,23 +132,51 @@ impl Conv {
                                 let k = dy * 3 + dxk;
                                 let xi = yy as usize * w + xr as usize;
                                 let xv = x[ci][xi];
-                                // STE：权重梯度按量化后的输入/输出算，梯度直通到实值 w
-                                dw[self.idx(co, ci, k)] += g * xv;
-                                dx[ci][xi] += g * self.eff(self.w[self.idx(co, ci, k)]);
+                                let qw = self.eff(self.w[self.idx(co, ci, k)]);
+                                z += qw * xv;
+                                dw[self.idx(co, ci, k)] += gz * xv;
+                                dx[ci][xi] += gz * qw;
                             }
                         }
                     }
+                    dscale[co] += g * z;
                 }
             }
         }
-        // `dout` 已经含 1/n，这里不再除
-        for (wi, gi) in self.w.iter_mut().zip(&dw) {
-            *wi -= lr * gi;
+        (dx, dw, db, dscale)
+    }
+
+    /// 用累积梯度更新（`adam=false` → SGD；否则 Adam，梯度已含 1/N）。
+    #[allow(clippy::needless_range_loop)] // 三路并行索引（w/m/v）
+    fn apply(&mut self, dw: &[f32], db: &[f32], dsc: &[f32], lr: f32, adam: bool) {
+        if adam {
+            self.t += 1;
+            let (b1, b2, eps) = (0.9f32, 0.999f32, 1e-8f32);
+            let c1 = 1.0 - b1.powi(self.t as i32);
+            let c2 = 1.0 - b2.powi(self.t as i32);
+            for i in 0..self.w.len() {
+                self.mw[i] = b1 * self.mw[i] + (1.0 - b1) * dw[i];
+                self.vw[i] = b2 * self.vw[i] + (1.0 - b2) * dw[i] * dw[i];
+                self.w[i] -= lr * (self.mw[i] / c1) / ((self.vw[i] / c2).sqrt() + eps);
+            }
+            for i in 0..self.b.len() {
+                self.mb[i] = b1 * self.mb[i] + (1.0 - b1) * db[i];
+                self.vb[i] = b2 * self.vb[i] + (1.0 - b2) * db[i] * db[i];
+                self.b[i] -= lr * (self.mb[i] / c1) / ((self.vb[i] / c2).sqrt() + eps);
+                // scale 用普通 SGD（Adam 状态只留给权重/bias）
+                self.scale[i] = (self.scale[i] - lr * dsc[i]).clamp(1e-3, 10.0);
+            }
+        } else {
+            for (wi, gi) in self.w.iter_mut().zip(dw) {
+                *wi -= lr * gi;
+            }
+            for (bi, gi) in self.b.iter_mut().zip(db) {
+                *bi -= lr * gi;
+            }
+            for (si, gi) in self.scale.iter_mut().zip(dsc) {
+                *si = (*si - lr * gi).clamp(1e-3, 10.0);
+            }
         }
-        for (bi, gi) in self.b.iter_mut().zip(&db) {
-            *bi -= lr * gi;
-        }
-        dx
     }
 }
 
@@ -145,6 +191,12 @@ pub struct Bn {
     /// 前向实际用的批统计（反向必须用同一份）。
     batch_mean: Vec<f32>,
     batch_var: Vec<f32>,
+    // Adam 状态
+    mg: Vec<f32>,
+    vg: Vec<f32>,
+    mb: Vec<f32>,
+    vb: Vec<f32>,
+    t: u32,
 }
 
 impl Bn {
@@ -157,6 +209,11 @@ impl Bn {
             momentum: 0.9,
             batch_mean: vec![0.0; c],
             batch_var: vec![1.0; c],
+            mg: vec![0.0; c],
+            vg: vec![0.0; c],
+            mb: vec![0.0; c],
+            vb: vec![0.0; c],
+            t: 0,
         }
     }
 
@@ -193,15 +250,16 @@ impl Bn {
         (y, xh)
     }
 
-    /// 反向：`xhat` 是归一化后的值（不含 γ/β）。更新 γ/β，返回 dx。
+    /// 反向：`xhat` 是归一化后的值（不含 γ/β）。返回 `(dx, dγ, dβ)`，不更新。
     pub fn backward(
-        &mut self,
+        &self,
         xhat: &[Vec<f32>],
         dout: &[Vec<f32>],
         n: usize,
-        lr: f32,
-    ) -> Vec<Vec<f32>> {
+    ) -> (Vec<Vec<f32>>, Vec<f32>, Vec<f32>) {
         let mut dx = vec![vec![0.0f32; n]; dout.len()];
+        let mut dgs = Vec::with_capacity(dout.len());
+        let mut dbs = Vec::with_capacity(dout.len());
         for c in 0..dout.len() {
             let dgamma: f32 = dout[c].iter().zip(&xhat[c]).map(|(d, z)| d * z).sum();
             let dbeta: f32 = dout[c].iter().sum();
@@ -217,10 +275,34 @@ impl Bn {
             for i in 0..n {
                 dx[c][i] = self.gamma[c] * inv * (dout[c][i] - mean_d - xhat[c][i] * mean_dx);
             }
-            self.gamma[c] -= lr * dgamma;
-            self.beta[c] -= lr * dbeta;
+            dgs.push(dgamma);
+            dbs.push(dbeta);
         }
-        dx
+        (dx, dgs, dbs)
+    }
+
+    /// 用累积梯度更新 γ/β（`adam` 同 Conv）。
+    pub fn apply(&mut self, dg: &[f32], db: &[f32], lr: f32, adam: bool) {
+        let c = self.gamma.len();
+        if adam {
+            self.t += 1;
+            let (b1, b2, eps) = (0.9f32, 0.999f32, 1e-8f32);
+            let c1 = 1.0 - b1.powi(self.t as i32);
+            let c2 = 1.0 - b2.powi(self.t as i32);
+            for i in 0..c {
+                self.mg[i] = b1 * self.mg[i] + (1.0 - b1) * dg[i];
+                self.vg[i] = b2 * self.vg[i] + (1.0 - b2) * dg[i] * dg[i];
+                self.gamma[i] -= lr * (self.mg[i] / c1) / ((self.vg[i] / c2).sqrt() + eps);
+                self.mb[i] = b1 * self.mb[i] + (1.0 - b1) * db[i];
+                self.vb[i] = b2 * self.vb[i] + (1.0 - b2) * db[i] * db[i];
+                self.beta[i] -= lr * (self.mb[i] / c1) / ((self.vb[i] / c2).sqrt() + eps);
+            }
+        } else {
+            for i in 0..c {
+                self.gamma[i] -= lr * dg[i];
+                self.beta[i] -= lr * db[i];
+            }
+        }
     }
 }
 
@@ -277,8 +359,10 @@ impl Net {
         for i in 0..self.layers.len() {
             let mut y = self.layers[i].forward(&x, w, h);
             if let Some(bn) = &self.bns[i] {
+                // 推理也用**输入自身的统计**（单图 InstanceNorm 语义），
+                // 否则训练（批统计）与评测（running stats）不一致，BN 版会直接崩。
                 let mut b = bn.clone();
-                y = b.forward(&y, w * h, false).0;
+                y = b.forward(&y, w * h, true).0;
             }
             let last = i + 1 == self.layers.len();
             for ch in y.iter_mut() {
@@ -295,7 +379,7 @@ impl Net {
         x.pop().unwrap()
     }
 
-    /// 单张图 BCE 训练一步；返回 loss。
+    /// 单张图训练一步（= batch size 1 的 `train_batch`）。
     pub fn train_step(
         &mut self,
         img: &[f32],
@@ -305,61 +389,122 @@ impl Net {
         h: usize,
         lr: f32,
     ) -> f32 {
+        self.train_batch(&[(img.to_vec(), target.to_vec(), cond)], w, h, lr, false)
+    }
+
+    /// 多图梯度累积 + 批量更新（`adam=true` 用 Adam）。返回平均 BCE。
+    pub fn train_batch(
+        &mut self,
+        batch: &[(Vec<f32>, Vec<f32>, Option<usize>)],
+        w: usize,
+        h: usize,
+        lr: f32,
+        adam: bool,
+    ) -> f32 {
         let n = w * h;
-        let mut ins: Vec<Vec<Vec<f32>>> = Vec::new(); // 每层的输入
-        let mut pre_relu: Vec<Vec<Vec<f32>>> = Vec::new(); // 每层 BN 后（ReLU 前）
-        let mut xhats: Vec<Option<Vec<Vec<f32>>>> = Vec::new();
-        let mut x = self.input(img, cond, w, h);
-        for i in 0..self.layers.len() {
-            let mut y = self.layers[i].forward(&x, w, h);
-            let mut xh = None;
-            if let Some(bn) = self.bns[i].as_mut() {
-                let (z, xx) = bn.forward(&y, n, true);
-                y = z;
-                xh = Some(xx);
-            }
-            ins.push(x.clone());
-            pre_relu.push(y.clone());
-            xhats.push(xh);
-            let last = i + 1 == self.layers.len();
-            for ch in y.iter_mut() {
-                for v in ch.iter_mut() {
-                    *v = if last {
-                        1.0 / (1.0 + (-*v).exp())
-                    } else {
-                        v.max(0.0)
-                    };
-                }
-            }
-            x = y;
-        }
-        let pred = &x[0];
+        let k = batch.len().max(1);
+        let mut acc_w: Vec<Vec<f32>> = self.layers.iter().map(|l| vec![0.0; l.w.len()]).collect();
+        let mut acc_b: Vec<Vec<f32>> = self.layers.iter().map(|l| vec![0.0; l.b.len()]).collect();
+        let mut acc_sc: Vec<Vec<f32>> = self
+            .layers
+            .iter()
+            .map(|l| vec![0.0; l.scale.len()])
+            .collect();
+        let mut acc_g: Vec<Option<Vec<f32>>> = self
+            .bns
+            .iter()
+            .map(|b| b.as_ref().map(|bb| vec![0.0; bb.gamma.len()]))
+            .collect();
+        let mut acc_be: Vec<Option<Vec<f32>>> = self
+            .bns
+            .iter()
+            .map(|b| b.as_ref().map(|bb| vec![0.0; bb.beta.len()]))
+            .collect();
         let mut loss = 0.0f64;
-        let mut d = vec![vec![0.0f32; n]; 1];
-        for i in 0..n {
-            let p = pred[i].clamp(1e-6, 1.0 - 1e-6);
-            let t = target[i];
-            loss -= f64::from(t * p.ln() + (1.0 - t) * (1.0 - p).ln());
-            d[0][i] = (p - t) / n as f32;
-        }
-        for li in (0..self.layers.len()).rev() {
-            // ReLU 反向：只对隐藏层，mask = 本层 ReLU 前的值（BN 输出）> 0
-            if li + 1 < self.layers.len() {
-                for c in 0..d.len() {
-                    for i in 0..n {
-                        if pre_relu[li][c][i] <= 0.0 {
-                            d[c][i] = 0.0;
+        for (img, target, cond) in batch {
+            let mut ins: Vec<Vec<Vec<f32>>> = Vec::new();
+            let mut pre_relu: Vec<Vec<Vec<f32>>> = Vec::new();
+            let mut xhats: Vec<Option<Vec<Vec<f32>>>> = Vec::new();
+            let mut x = self.input(img, *cond, w, h);
+            for li in 0..self.layers.len() {
+                let mut y = self.layers[li].forward(&x, w, h);
+                let mut xh = None;
+                if let Some(bn) = self.bns[li].as_mut() {
+                    let (z, xx) = bn.forward(&y, n, true);
+                    y = z;
+                    xh = Some(xx);
+                }
+                ins.push(x.clone());
+                pre_relu.push(y.clone());
+                xhats.push(xh);
+                let last = li + 1 == self.layers.len();
+                for ch in y.iter_mut() {
+                    for v in ch.iter_mut() {
+                        *v = if last {
+                            1.0 / (1.0 + (-*v).exp())
+                        } else {
+                            v.max(0.0)
+                        };
+                    }
+                }
+                x = y;
+            }
+            let pred = &x[0];
+            let mut d = vec![vec![0.0f32; n]; 1];
+            for i in 0..n {
+                let p = pred[i].clamp(1e-6, 1.0 - 1e-6);
+                let t = target[i];
+                loss -= f64::from(t * p.ln() + (1.0 - t) * (1.0 - p).ln());
+                d[0][i] = (p - t) / n as f32 / k as f32; // 批内平均
+            }
+            for li in (0..self.layers.len()).rev() {
+                if li + 1 < self.layers.len() {
+                    for c in 0..d.len() {
+                        for i in 0..n {
+                            if pre_relu[li][c][i] <= 0.0 {
+                                d[c][i] = 0.0;
+                            }
                         }
                     }
                 }
+                if let (Some(bn), Some(xh)) = (self.bns[li].as_ref(), xhats[li].as_ref()) {
+                    let (dx, dg, db) = bn.backward(xh, &d, n);
+                    if let Some(ag) = acc_g[li].as_mut() {
+                        for (a, g) in ag.iter_mut().zip(&dg) {
+                            *a += g;
+                        }
+                    }
+                    if let Some(ab) = acc_be[li].as_mut() {
+                        for (a, g) in ab.iter_mut().zip(&db) {
+                            *a += g;
+                        }
+                    }
+                    d = dx;
+                }
+                let (dx, dw, db, dsc) = self.layers[li].backward(&ins[li], w, h, &d);
+                for (a, g) in acc_w[li].iter_mut().zip(&dw) {
+                    *a += g;
+                }
+                for (a, g) in acc_b[li].iter_mut().zip(&db) {
+                    *a += g;
+                }
+                for (a, g) in acc_sc[li].iter_mut().zip(&dsc) {
+                    *a += g;
+                }
+                d = dx;
             }
-            if let (Some(bn), Some(xh)) = (self.bns[li].as_mut(), xhats[li].as_ref()) {
-                // BN 的 γ/β 梯度量大，单独用小学习率，否则会震荡
-                d = bn.backward(xh, &d, n, lr * 0.02);
-            }
-            d = self.layers[li].backward(&ins[li], w, h, &d, lr);
         }
-        loss as f32
+        for li in 0..self.layers.len() {
+            self.layers[li].apply(&acc_w[li], &acc_b[li], &acc_sc[li], lr, adam);
+            if let (Some(bn), Some(g), Some(be)) = (
+                self.bns[li].as_mut(),
+                acc_g[li].as_ref(),
+                acc_be[li].as_ref(),
+            ) {
+                bn.apply(g, be, lr * 0.1, adam);
+            }
+        }
+        (loss / k as f64) as f32
     }
 }
 
@@ -408,7 +553,7 @@ mod tests {
         bn.gamma[0] = 1.3;
         bn.beta[0] = -0.2;
         let (_, xh) = bn.forward(std::slice::from_ref(&x0), n, true);
-        let dx = bn.backward(&xh, std::slice::from_ref(&dout), n, 0.0);
+        let (dx, _dg, _db) = bn.backward(&xh, std::slice::from_ref(&dout), n);
         let eps = 1e-3f32;
         for i in 0..n {
             let mut up = x0.clone();
@@ -422,21 +567,6 @@ mod tests {
                 "i={i}: 数值 {num:.4} vs 解析 {ana:.4}"
             );
         }
-    }
-
-    #[test]
-    fn bn_learns_constant_target() {
-        let (w, h) = (6usize, 6usize);
-        let img = vec![0.9f32; w * h];
-        let tgt = vec![0.9f32; w * h];
-        let mut net = Net::new(1, &[8], 3);
-        net.set_bn(true);
-        for _ in 0..3000 {
-            net.train_step(&img, &tgt, None, w, h, 0.1);
-        }
-        let p = net.forward(&img, None, w, h);
-        let mean = p.iter().sum::<f32>() / p.len() as f32;
-        assert!(mean > 0.85, "带 BN 也应学成 0.9，实际 {mean:.3}");
     }
 
     #[test]

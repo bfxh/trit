@@ -1705,6 +1705,10 @@ fn tex_conv_cmd(argv: &[String]) {
         .unwrap_or(0.05);
     let cond = argv.iter().any(|a| a == "--cond");
     let use_bn = argv.iter().any(|a| a == "--bn");
+    let adam = argv.iter().any(|a| a == "--adam");
+    let bsz: usize = arg(argv, "--batch")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
     let hidden: Vec<usize> = arg(argv, "--hidden")
         .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
         .unwrap_or_else(|| vec![8, 8]);
@@ -1740,14 +1744,17 @@ fn tex_conv_cmd(argv: &[String]) {
     net.set_bn(use_bn);
     let mut loss = 0.0f64;
     for step in 0..iters {
-        let ki = (step * 7919) % kinds.len();
-        let sd = seed + ki as u64;
-        let clean = gray(kinds[ki], sd);
-        let inp = noisy(&clean, &mut nxt);
-        let c = if cond { Some(ki) } else { None };
-        loss += net.train_step(&inp, &clean, c, n, n, lr) as f64;
-        if (step + 1) % 5000 == 0 {
-            println!("  step {} loss {:.4}", step + 1, loss / 5000.0);
+        let mut batch = Vec::with_capacity(bsz);
+        for b in 0..bsz {
+            let ki = (step * 7919 + b * 104729) % kinds.len();
+            let sd = seed + ki as u64 + (step / kinds.len()) as u64; // 同种类换种子
+            let clean = gray(kinds[ki], sd);
+            let inp = noisy(&clean, &mut nxt);
+            batch.push((inp, clean, if cond { Some(ki) } else { None }));
+        }
+        loss += net.train_batch(&batch, n, n, lr, adam) as f64;
+        if (step + 1) % 2000 == 0 {
+            println!("  step {} loss {:.4}", step + 1, loss / 2000.0);
             loss = 0.0;
         }
     }
@@ -1785,9 +1792,11 @@ fn tex_conv_cmd(argv: &[String]) {
         }
     }
     println!(
-        "三值卷积栈 hidden {:?}，BN {}，条件 {}，{} 步；留出 PSNR 均值 {:.2} dB{}",
+        "三值卷积栈 hidden {:?}，BN {}，Adam {}，batch {}，条件 {}，{} 步；留出 PSNR 均值 {:.2} dB{}",
         hidden,
         if use_bn { "开" } else { "关" },
+        if adam { "开" } else { "关" },
+        bsz,
         if cond { "开" } else { "关" },
         iters,
         avg(&good),
