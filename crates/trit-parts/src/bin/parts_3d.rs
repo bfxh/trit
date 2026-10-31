@@ -512,7 +512,7 @@ fn splat_cmd(argv: &[String]) {
             .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
             .unwrap_or(d)
     };
-    let mut frames = parse_list("--frames", vec![0, 2, 4, 6]);
+    let mut frames = parse_list("--frames", vec![0, 1, 2, 3, 4, 5, 6, 7]);
     let n_views: usize = arg(argv, "--views")
         .and_then(|v| v.parse().ok())
         .unwrap_or(frames.len());
@@ -783,7 +783,7 @@ fn occ_cmd(argv: &[String]) {
     };
     let train = parse_list("--train", Vec::new());
     let eval = parse_list("--eval", Vec::new());
-    let mut frames = parse_list("--frames", vec![0, 2, 4, 6]);
+    let mut frames = parse_list("--frames", vec![0, 1, 2, 3, 4, 5, 6, 7]);
     let n_views: usize = arg(argv, "--views")
         .and_then(|v| v.parse().ok())
         .unwrap_or(frames.len());
@@ -809,7 +809,7 @@ fn occ_cmd(argv: &[String]) {
     let selfsup = argv.iter().any(|a| a == "--selfsup");
     let tau: f32 = arg(argv, "--tau")
         .and_then(|v| v.parse().ok())
-        .unwrap_or(0.03);
+        .unwrap_or(0.01);
     if train.is_empty() || eval.is_empty() {
         fail("需要 --train 与 --eval（场景编号列表）");
     }
