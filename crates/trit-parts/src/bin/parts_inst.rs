@@ -220,6 +220,9 @@ fn eval(argv: &[String]) {
     let close_r: usize = arg(argv, "--close")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    let bnd_margin: f32 = arg(argv, "--bnd-margin")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
     let min_size: usize = arg(argv, "--min-size")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
@@ -322,9 +325,16 @@ fn eval(argv: &[String]) {
                 let fg = trit_parts::inst::close(&fg, res as usize, res as usize, close_r);
                 components(&fg, res as usize, res as usize).0
             } else if bnd_mode {
-                let dec = decode_ids(&logits, res, &pl);
-                let fg: Vec<u32> = dec.iter().map(|&v| (v > 0) as u32).collect();
-                let bd: Vec<u32> = dec.iter().map(|&v| (v == 2) as u32).collect();
+                // 边界 = 最后一维平面 digit 1；用 logit 边际阈值直接调工作点（0 = argmax）
+                let fg: Vec<u32> = (0..hw)
+                    .map(|p| (logits[p * ch + k * 3] > 0.0) as u32)
+                    .collect();
+                let bd: Vec<u32> = (0..hw)
+                    .map(|p| {
+                        let o = p * ch + (k - 1) * 3;
+                        (logits[o + 1] - logits[o] > bnd_margin) as u32
+                    })
+                    .collect();
                 if let Ok((gb, _)) = read_npy_i32(&rd.join("bnd").join(format!("{stem}.npy"))) {
                     for (i, &g) in gb.iter().enumerate() {
                         let g = (g == 2) as usize;
