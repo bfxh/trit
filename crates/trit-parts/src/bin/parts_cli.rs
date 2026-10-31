@@ -33,7 +33,7 @@ fn main() {
         eprintln!(
             "用法:
   parts-cli infer --dir <夹具> [--backends refcpu,wgpu]
-  parts-cli export --state <state.bin> --out <model.tpm>
+  parts-cli export --state <state.bin> --out <model.tpm> [--channels 16]
   parts-cli run --model <model.tpm> --image <png> --manifest <parts.json> --out <dir>"
         );
         std::process::exit(2);
@@ -135,6 +135,7 @@ fn main() {
 fn export(argv: &[String]) {
     let mut state = None;
     let mut out = None;
+    let mut channels: Option<u32> = None;
     let mut i = 1;
     while i < argv.len() {
         match argv[i].as_str() {
@@ -144,6 +145,13 @@ fn export(argv: &[String]) {
             }
             "--out" => {
                 out = Some(PathBuf::from(&argv[i + 1]));
+                i += 2;
+            }
+            "--channels" => {
+                channels = Some(argv[i + 1].parse().unwrap_or_else(|_| {
+                    eprintln!("--channels 非整数");
+                    std::process::exit(2);
+                }));
                 i += 2;
             }
             other => {
@@ -163,7 +171,10 @@ fn export(argv: &[String]) {
         eprintln!("读存档失败: {e}");
         std::process::exit(1);
     });
-    let m = trit_parts::tpm::from_net(&net);
+    let mut m = trit_parts::tpm::from_net(&net);
+    if let Some(c) = channels {
+        m = m.truncate_head(c);
+    }
     m.save(&out).unwrap_or_else(|e| {
         eprintln!("写部署包失败: {e}");
         std::process::exit(1);
@@ -264,7 +275,19 @@ fn run(argv: &[String]) {
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
 
     let hw = (res * res) as usize;
-    let ch = pl.k * 3 + 1;
+    assert_eq!(out.len() % hw, 0, "输出长度不是 hw 的整数倍");
+    let ch = out.len() / hw;
+    assert!(ch > pl.k * 3, "输出通道 {ch} 少于 k*3+1");
+    if std::env::var("DEBUG_CLI").is_ok() {
+        let vpos = (0..hw).filter(|&p| out[p * ch + pl.k * 3] > 0.0).count();
+        println!(
+            "dbg: out.len {} (hw*ch {}), valid>0 {}，首像素 logits {:?}",
+            out.len(),
+            hw * ch,
+            vpos,
+            &out[0..ch.min(out.len())]
+        );
+    }
     let mut ids = vec![0u32; hw];
     let mut parts = 0usize;
     let mut unk = 0usize;

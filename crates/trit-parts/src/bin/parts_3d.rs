@@ -152,6 +152,19 @@ fn eval(argv: &[String]) {
                 Err(e) => fail(&format!("推理失败: {e}")),
             }
         };
+        if std::env::var("DEBUG_3D").is_ok() {
+            let np = pred.len();
+            let k = pred.iter().filter(|&&v| v > 0).count();
+            let hit = (0..np)
+                .filter(|&i| pred[i] > 0 && pred[i] == gt_ids[i])
+                .count();
+            println!(
+                "dbg frame {n}: pred px {} ({:.3}), id-hit {}",
+                k,
+                k as f64 / np as f64,
+                hit
+            );
+        }
         let gt_parts = clouds(&gt_ids, &dep, &cam, sw, h);
         let pred_parts = clouds(&pred, &dep, &cam, sw, h);
         if fuse > 1 {

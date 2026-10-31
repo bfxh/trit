@@ -59,6 +59,38 @@ impl TpmModel {
         }
     }
 
+    /// 把最后一层（head）裁到 `cout` 个通道（多出来的空转通道会拖慢推理，也容易踩跨步 bug）。
+    pub fn truncate_head(&self, cout: u32) -> TpmModel {
+        let mut layers = self.layers.clone();
+        let old = layers.len() - 1;
+        let l = &layers[old];
+        let (cin, kk, old_cout) = (l.cin as usize, l.kk as usize, l.cout as usize);
+        let new_cout = cout as usize;
+        if new_cout >= old_cout {
+            return TpmModel { layers };
+        }
+        let wb_n = kk * kk * cin;
+        let mut q = vec![0i8; wb_n * new_cout];
+        for wb in 0..wb_n {
+            for oc in 0..new_cout {
+                q[wb * new_cout + oc] = l.q[wb * old_cout + oc];
+            }
+        }
+        layers[old] = TpmLayer {
+            q,
+            scale: l.scale[..new_cout].to_vec(),
+            gamma: l.gamma[..new_cout].to_vec(),
+            beta: l.beta[..new_cout].to_vec(),
+            bias: l.bias[..new_cout].to_vec(),
+            cin: l.cin,
+            cout,
+            kk: l.kk,
+            relu: l.relu,
+            convt: l.convt,
+        };
+        TpmModel { layers }
+    }
+
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         let mut b = Vec::new();
         b.extend_from_slice(b"TPM1\0\0\0\0");
