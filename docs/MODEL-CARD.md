@@ -147,6 +147,12 @@ parts-ood check --model crates/trit-parts/models/parts_id8118.tpm   --manifest p
 `c83bb4e5997975cfe44df2fdc80492c431c69b4b341348e6485d48e33307c5b8`）。
 
 
+一条命令（闸门 → id 图 → 可选点云；域外退出码 4）：
+
+```bash
+parts-cli pipeline --model models/parts_id8118.tpm --manifest parts.json   --bank models/parts_id8118.ood --image photo.png --out out/ [--depth d.npy --meta m.json]
+```
+
 ```bash
 # 训练断点 → 部署包
 parts-cli export --state state.bin --out model.tpm

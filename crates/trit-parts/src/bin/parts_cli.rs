@@ -29,12 +29,13 @@ fn read_f32(path: &std::path::Path) -> Vec<f32> {
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let cmd = argv.first().map(String::as_str).unwrap_or("");
-    if !matches!(cmd, "infer" | "export" | "run" | "batch") {
+    if !matches!(cmd, "infer" | "export" | "run" | "batch" | "pipeline") {
         eprintln!(
             "用法:
   parts-cli infer --dir <夹具> [--backends refcpu,wgpu]
   parts-cli export --state <state.bin> --out <model.tpm> [--channels 16]
-  parts-cli run --model <model.tpm> --image <png> --manifest <parts.json> --out <dir>"
+  parts-cli run --model <model.tpm> --image <png> --manifest <parts.json> --out <dir>
+  parts-cli pipeline --model <tpm> --manifest <json> --image <png> --out <dir> [--bank <ood>] [--depth <npy> --meta <json>]"
         );
         std::process::exit(2);
     }
@@ -48,6 +49,10 @@ fn main() {
     }
     if cmd == "batch" {
         batch(&argv);
+        return;
+    }
+    if cmd == "pipeline" {
+        pipeline(&argv);
         return;
     }
     let mut dir = PathBuf::from("../trit-data/parts-parity");
@@ -458,6 +463,153 @@ fn batch(argv: &[String]) {
 
 #[cfg(not(feature = "gpu"))]
 fn batch(_argv: &[String]) {
+    eprintln!("本构建未启用 gpu feature");
+    std::process::exit(2);
+}
+
+/// `pipeline`：一次跑完「域外闸门 → 部件 id 图 →（可选）点云」。
+/// 域外时打印拒绝并以退出码 4 返回（`--force` 可强制继续）。
+#[cfg(feature = "gpu")]
+fn pipeline(argv: &[String]) {
+    use trit_parts::api::{decode_ids, forward_logits_feats};
+    use trit_parts::data::{read_rgb, resize_rgb};
+    use trit_parts::geo::{Camera, clouds, write_ply};
+    use trit_parts::net::Net;
+    use trit_parts::ood::{OodBank, features_from_logits};
+
+    let mut model = None;
+    let mut manifest = None;
+    let mut image = None;
+    let mut outdir = PathBuf::from(".");
+    let mut bank_p = None;
+    let mut depth_p = None;
+    let mut meta_p = None;
+    let mut force = false;
+    let mut threshold = 0.5f32;
+    let mut i = 1;
+    while i < argv.len() {
+        match argv[i].as_str() {
+            "--model" => {
+                model = Some(PathBuf::from(&argv[i + 1]));
+                i += 2;
+            }
+            "--manifest" => {
+                manifest = Some(PathBuf::from(&argv[i + 1]));
+                i += 2;
+            }
+            "--image" => {
+                image = Some(PathBuf::from(&argv[i + 1]));
+                i += 2;
+            }
+            "--out" => {
+                outdir = PathBuf::from(&argv[i + 1]);
+                i += 2;
+            }
+            "--bank" => {
+                bank_p = Some(PathBuf::from(&argv[i + 1]));
+                i += 2;
+            }
+            "--depth" => {
+                depth_p = Some(PathBuf::from(&argv[i + 1]));
+                i += 2;
+            }
+            "--meta" => {
+                meta_p = Some(PathBuf::from(&argv[i + 1]));
+                i += 2;
+            }
+            "--threshold" => {
+                threshold = argv[i + 1].parse().unwrap_or(threshold);
+                i += 2;
+            }
+            "--force" => {
+                force = true;
+                i += 1;
+            }
+            other => {
+                eprintln!("未知参数 {other}");
+                std::process::exit(2);
+            }
+        }
+    }
+    let (model, manifest, image) = match (model, manifest, image) {
+        (Some(a), Some(b), Some(c)) => (a, b, c),
+        _ => {
+            eprintln!("pipeline 需要 --model / --manifest / --image");
+            std::process::exit(2);
+        }
+    };
+
+    let tpm = TpmModel::load(&model).unwrap_or_else(|e| {
+        eprintln!("读部署包失败: {e}");
+        std::process::exit(1);
+    });
+    let pl = PartList::load(&manifest).unwrap_or_else(|e| {
+        eprintln!("读清单失败: {e}");
+        std::process::exit(1);
+    });
+    let (w0, h0, pix) = read_rgb(&image).unwrap_or_else(|e| {
+        eprintln!("读图失败: {e}");
+        std::process::exit(1);
+    });
+    let res = 384usize;
+    let rgb = resize_rgb(w0, h0, &pix, res);
+
+    let gpu = trit_parts::gpu::Gpu::new().expect("GPU 初始化失败");
+    let mut net = Net::from_tpm(&tpm);
+    net.upload_all(&gpu);
+    let t0 = std::time::Instant::now();
+    let (logits, z) = forward_logits_feats(&net, &gpu, &rgb, res as u32);
+    let ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let hw = res * res;
+
+    if let Some(bp) = &bank_p {
+        let bank = OodBank::load(bp).unwrap_or_else(|e| {
+            eprintln!("读闸门失败: {e}");
+            std::process::exit(1);
+        });
+        let score = bank.score(&features_from_logits(&logits, &z, hw, pl.k));
+        println!("域内概率 {score:.4}（阈值 {threshold:.3}）");
+        if score < threshold && !force {
+            eprintln!("⇒ 拒绝（域外）：不写输出。加 --force 可强制继续。");
+            std::process::exit(4);
+        }
+    }
+
+    let ids = decode_ids(&logits, res as u32, &pl);
+    std::fs::create_dir_all(&outdir).ok();
+    let bin: Vec<u8> = ids.iter().flat_map(|v| v.to_le_bytes()).collect();
+    std::fs::write(outdir.join("ids.bin"), bin).ok();
+    let parts_px = ids.iter().filter(|&&v| v > 0).count();
+    println!(
+        "{}  {w0}×{h0} → {res}²  {ms:.1} ms  部件像素 {parts_px}（{:.2}%）",
+        image.display(),
+        100.0 * parts_px as f64 / hw as f64
+    );
+
+    if let (Some(dp), Some(mp)) = (&depth_p, &meta_p) {
+        let (dep, shape) = trit_parts::geo::read_npy_f32(dp).unwrap_or_else(|e| {
+            eprintln!("读深度失败: {e}");
+            std::process::exit(1);
+        });
+        let cam = Camera::load(mp).unwrap_or_else(|e| {
+            eprintln!("读相机失败: {e}");
+            std::process::exit(1);
+        });
+        let (h, w) = (shape[0], shape[1]);
+        let clouds = clouds(&ids, &dep, &cam, w, h);
+        let ply = outdir.join("parts.ply");
+        write_ply(&ply, &clouds).unwrap_or_else(|e| {
+            eprintln!("写 PLY 失败: {e}");
+            std::process::exit(1);
+        });
+        let n: usize = clouds.values().map(Vec::len).sum();
+        println!("点云：{} 部件 / {n} 点 → {}", clouds.len(), ply.display());
+    }
+    println!("输出目录：{}", outdir.display());
+}
+
+#[cfg(not(feature = "gpu"))]
+fn pipeline(_argv: &[String]) {
     eprintln!("本构建未启用 gpu feature");
     std::process::exit(2);
 }

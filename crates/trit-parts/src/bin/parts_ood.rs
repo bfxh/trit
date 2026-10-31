@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use trit_parts::data::read_rgb;
 use trit_parts::gpu::Gpu;
 use trit_parts::net::Net;
-use trit_parts::ood::{NFEAT, OodBank, auc, features, tpr_at_fpr};
+use trit_parts::ood::{NFEAT, OodBank, auc, tpr_at_fpr};
 use trit_parts::parts::PartList;
 use trit_parts::tpm::TpmModel;
 
@@ -46,30 +46,8 @@ fn images(dir: &Path) -> Vec<PathBuf> {
     v
 }
 
-/// 双线性缩放到 `res²`（负样本尺寸任意）。
 fn to_res(w: usize, h: usize, pix: &[f32], res: usize) -> Vec<f32> {
-    if w == res && h == res {
-        return pix.to_vec();
-    }
-    let mut out = vec![0f32; res * res * 3];
-    for y in 0..res {
-        let fy = (y as f32 + 0.5) * h as f32 / res as f32 - 0.5;
-        let y0 = fy.floor().max(0.0) as usize;
-        let y1 = (y0 + 1).min(h - 1);
-        let ty = (fy - y0 as f32).clamp(0.0, 1.0);
-        for x in 0..res {
-            let fx = (x as f32 + 0.5) * w as f32 / res as f32 - 0.5;
-            let x0 = fx.floor().max(0.0) as usize;
-            let x1 = (x0 + 1).min(w - 1);
-            let tx = (fx - x0 as f32).clamp(0.0, 1.0);
-            for c in 0..3 {
-                let a = pix[(y0 * w + x0) * 3 + c] * (1.0 - tx) + pix[(y0 * w + x1) * 3 + c] * tx;
-                let b = pix[(y1 * w + x0) * 3 + c] * (1.0 - tx) + pix[(y1 * w + x1) * 3 + c] * tx;
-                out[(y * res + x) * 3 + c] = a * (1.0 - ty) + b * ty;
-            }
-        }
-    }
-    out
+    trit_parts::data::resize_rgb(w, h, pix, res)
 }
 
 fn flip(pix: &[f32], res: usize, vertical: bool) -> Vec<f32> {
@@ -94,33 +72,8 @@ fn brighten(pix: &[f32], k: f32) -> Vec<f32> {
 }
 
 fn infer_feats(net: &Net, gpu: &Gpu, rgb: &[f32], res: usize, k: usize) -> Vec<f32> {
-    let xb = gpu.buf(rgb, "x");
-    let tr = net.forward(gpu, xb, res as u32);
-    let hw = res * res;
-    let ch = net.head_cout() as usize;
-    let logits = gpu.read(&tr.out, hw * ch);
-    let z = gpu.read(&tr.z, hw * net.layers[trit_parts::net::D1B].cout as usize);
-    let mut ids = vec![0u32; hw];
-    for p in 0..hw {
-        if logits[p * ch + k * 3] <= 0.0 {
-            continue;
-        }
-        let mut id = 0u32;
-        for i in 0..k {
-            let b = p * ch + i * 3;
-            let (a, b2, c) = (logits[b], logits[b + 1], logits[b + 2]);
-            let d = if a >= b2 && a >= c {
-                0
-            } else if b2 >= c {
-                1
-            } else {
-                2
-            };
-            id = id * 3 + d;
-        }
-        ids[p] = id + 1;
-    }
-    features(&ids, &logits, &z, hw, k)
+    let (logits, z) = trit_parts::api::forward_logits_feats(net, gpu, rgb, res as u32);
+    trit_parts::ood::features_from_logits(&logits, &z, res * res, k)
 }
 
 fn load_model(path: &Path) -> (Gpu, Net) {

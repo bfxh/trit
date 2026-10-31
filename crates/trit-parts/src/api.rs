@@ -39,6 +39,24 @@ pub fn decode_ids(logits: &[f32], res: u32, parts: &PartList) -> Vec<u32> {
 }
 
 /// 便捷构造：从部署包 + GPU 起一个后端（`gpu` feature 下可用）。
+/// 一次前向拿到 `(logits, d1 特征)`；域外闸门与分割共用同一次推理。
+#[cfg(feature = "gpu")]
+pub fn forward_logits_feats(
+    net: &crate::net::Net,
+    gpu: &crate::gpu::Gpu,
+    rgb: &[f32],
+    res: u32,
+) -> (Vec<f32>, Vec<f32>) {
+    let xb = gpu.buf(rgb, "x");
+    let tr = net.forward(gpu, xb, res);
+    let hw = (res * res) as usize;
+    let ch = net.head_cout() as usize;
+    let logits = gpu.read(&tr.out, hw * ch);
+    let zc = net.layers[crate::net::D1B].cout as usize;
+    let z = gpu.read(&tr.z, hw * zc);
+    (logits, z)
+}
+
 #[cfg(feature = "gpu")]
 pub fn wgpu_from_tpm(m: &TpmModel) -> Result<crate::backend_wgpu::WgpuBackend, String> {
     crate::backend_wgpu::WgpuBackend::from_tpm(m)

@@ -13,10 +13,14 @@
 | ⚠️ 域外行为 | 对**任何**图像都会把 96–99% 像素判成部件（域内只有 1.7%），**没有 OOD 拒识**；生产必须外挂「是不是这个物体」的闸门 |
 | ⚠️ 拒识 | **没有**。域外图像会被标成 96–99% 部件（见模型卡 §4c），管线需自己加检测门槛 |
 
-用法（先过闸门，再分割）：
+用法（一条命令：闸门 → 部件 id 图 → 可选点云）：
 
 ```bash
-# 域外闸门（域外返回退出码 4）
+# 一条命令：闸门 + id 图 (+ 点云)
+parts-cli pipeline --model crates/trit-parts/models/parts_id8118.tpm   --manifest parts.json --bank crates/trit-parts/models/parts_id8118.ood   --image photo.png --out out/ [--depth d.npy --meta m.json]
+#   域外 ⇒ 退出码 4 且不写输出；--force 可强制继续
+
+# 只做域外闸门（域外返回退出码 4）
 parts-ood check --model crates/trit-parts/models/parts_id8118.tpm   --manifest parts.json --bank crates/trit-parts/models/parts_id8118.ood --image photo.png
 
 # 单帧 id 图

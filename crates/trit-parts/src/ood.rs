@@ -100,7 +100,39 @@ pub fn features(ids: &[u32], logits: &[f32], z: &[f32], hw: usize, k: usize) -> 
     f
 }
 
-/// 标准化 + 逻辑回归（L2）。
+/// 无约束 argmax 解出 id 图（不依赖清单；域外判定要用原始行为）。
+pub fn unconstrained_ids(logits: &[f32], hw: usize, k: usize) -> Vec<u32> {
+    let ch = k * 3 + 1;
+    let mut ids = vec![0u32; hw];
+    for (p, slot) in ids.iter_mut().enumerate() {
+        if logits[p * ch + k * 3] <= 0.0 {
+            continue;
+        }
+        let mut id = 0u32;
+        for i in 0..k {
+            let b = p * ch + i * 3;
+            let (a, b2, c) = (logits[b], logits[b + 1], logits[b + 2]);
+            let d = if a >= b2 && a >= c {
+                0
+            } else if b2 >= c {
+                1
+            } else {
+                2
+            };
+            id = id * 3 + d;
+        }
+        *slot = id + 1;
+    }
+    ids
+}
+
+/// 一步到特征：从 logits + `d1` 特征直接算 15 维（内部做无约束解码）。
+pub fn features_from_logits(logits: &[f32], z: &[f32], hw: usize, k: usize) -> Vec<f32> {
+    let ids = unconstrained_ids(logits, hw, k);
+    features(&ids, logits, z, hw, k)
+}
+
+/// 标准化 + 逻辑回归（L2）。/// 标准化 + 逻辑回归（L2）。
 #[derive(Clone, Debug)]
 pub struct OodBank {
     pub mu: Vec<f32>,

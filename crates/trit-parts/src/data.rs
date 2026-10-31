@@ -109,6 +109,32 @@ pub fn encode(labels: &[i32], w: usize, h: usize, k: usize) -> (Vec<Vec<u8>>, Ve
     (planes, valid)
 }
 
+/// 双线性把 RGB 缩放到 `res²`（外部图片尺寸任意；已是目标尺寸时原样返回）。
+pub fn resize_rgb(w: usize, h: usize, pix: &[f32], res: usize) -> Vec<f32> {
+    if w == res && h == res {
+        return pix.to_vec();
+    }
+    let mut out = vec![0f32; res * res * 3];
+    for y in 0..res {
+        let fy = (y as f32 + 0.5) * h as f32 / res as f32 - 0.5;
+        let y0 = fy.floor().max(0.0) as usize;
+        let y1 = (y0 + 1).min(h.saturating_sub(1));
+        let ty = (fy - y0 as f32).clamp(0.0, 1.0);
+        for x in 0..res {
+            let fx = (x as f32 + 0.5) * w as f32 / res as f32 - 0.5;
+            let x0 = fx.floor().max(0.0) as usize;
+            let x1 = (x0 + 1).min(w.saturating_sub(1));
+            let tx = (fx - x0 as f32).clamp(0.0, 1.0);
+            for c in 0..3 {
+                let a = pix[(y0 * w + x0) * 3 + c] * (1.0 - tx) + pix[(y0 * w + x1) * 3 + c] * tx;
+                let b = pix[(y1 * w + x0) * 3 + c] * (1.0 - tx) + pix[(y1 * w + x1) * 3 + c] * tx;
+                out[(y * res + x) * 3 + c] = a * (1.0 - ty) + b * ty;
+            }
+        }
+    }
+    out
+}
+
 /// 只读 RGB（推理用，不需要 seg 标签）。
 pub fn read_rgb(path: &Path) -> Result<(usize, usize, Vec<f32>), String> {
     read_png_rgb(path)
