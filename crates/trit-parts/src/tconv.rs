@@ -134,9 +134,101 @@ impl Conv {
     }
 }
 
-/// 全卷积栈：隐藏层 ReLU，最后一层 sigmoid。
+/// 批归一化（单图训练 ⇒ 按通道在**空间维**归一化），带 running stats 供评测。
+#[derive(Clone)]
+pub struct Bn {
+    pub gamma: Vec<f32>,
+    pub beta: Vec<f32>,
+    pub mean: Vec<f32>,
+    pub var: Vec<f32>,
+    pub momentum: f32,
+    /// 前向实际用的批统计（反向必须用同一份）。
+    batch_mean: Vec<f32>,
+    batch_var: Vec<f32>,
+}
+
+impl Bn {
+    pub fn new(c: usize) -> Self {
+        Bn {
+            gamma: vec![1.0; c],
+            beta: vec![0.0; c],
+            mean: vec![0.0; c],
+            var: vec![1.0; c],
+            momentum: 0.9,
+            batch_mean: vec![0.0; c],
+            batch_var: vec![1.0; c],
+        }
+    }
+
+    /// 前向：返回 `(γ·x̂+β, x̂)`；`train` 时更新 running stats。
+    pub fn forward(
+        &mut self,
+        x: &[Vec<f32>],
+        n: usize,
+        train: bool,
+    ) -> (Vec<Vec<f32>>, Vec<Vec<f32>>) {
+        let mut xh = vec![vec![0.0f32; n]; x.len()];
+        let mut y = vec![vec![0.0f32; n]; x.len()];
+        for c in 0..x.len() {
+            let mu = x[c].iter().sum::<f32>() / n as f32;
+            let var = x[c].iter().map(|v| (v - mu) * (v - mu)).sum::<f32>() / n as f32;
+            if train {
+                self.mean[c] = self.momentum * self.mean[c] + (1.0 - self.momentum) * mu;
+                self.var[c] = self.momentum * self.var[c] + (1.0 - self.momentum) * var;
+            }
+            self.batch_mean[c] = mu;
+            self.batch_var[c] = var;
+            let (m, v) = if train {
+                (mu, var)
+            } else {
+                (self.mean[c], self.var[c])
+            };
+            let inv = 1.0 / (v + 1e-5).sqrt();
+            for i in 0..n {
+                let z = (x[c][i] - m) * inv;
+                xh[c][i] = z;
+                y[c][i] = self.gamma[c] * z + self.beta[c];
+            }
+        }
+        (y, xh)
+    }
+
+    /// 反向：`xhat` 是归一化后的值（不含 γ/β）。更新 γ/β，返回 dx。
+    pub fn backward(
+        &mut self,
+        xhat: &[Vec<f32>],
+        dout: &[Vec<f32>],
+        n: usize,
+        lr: f32,
+    ) -> Vec<Vec<f32>> {
+        let mut dx = vec![vec![0.0f32; n]; dout.len()];
+        for c in 0..dout.len() {
+            let dgamma: f32 = dout[c].iter().zip(&xhat[c]).map(|(d, z)| d * z).sum();
+            let dbeta: f32 = dout[c].iter().sum();
+            let mean_d = dbeta / n as f32;
+            let mean_dx: f32 = dout[c]
+                .iter()
+                .zip(&xhat[c])
+                .map(|(d, z)| d * z)
+                .sum::<f32>()
+                / n as f32;
+            // 用前向的**批**方差（不是 running var）
+            let inv = 1.0 / (self.batch_var[c] + 1e-5).sqrt();
+            for i in 0..n {
+                dx[c][i] = self.gamma[c] * inv * (dout[c][i] - mean_d - xhat[c][i] * mean_dx);
+            }
+            self.gamma[c] -= lr * dgamma;
+            self.beta[c] -= lr * dbeta;
+        }
+        dx
+    }
+}
+
+/// 全卷积栈：隐藏层（可选 BN）+ ReLU，最后一层 sigmoid。
 pub struct Net {
     pub layers: Vec<Conv>,
+    /// 与 `layers` 等长；只有隐藏层可能启用。
+    pub bns: Vec<Option<Bn>>,
     /// 条件通道数（追加在输入后面，常数图）。
     pub cond: usize,
 }
@@ -150,10 +242,28 @@ impl Net {
             c = h;
         }
         layers.push(Conv::new(c, 1, seed + hidden.len() as u64 * 7919));
-        Net { layers, cond: 0 }
+        let n = layers.len();
+        // 默认不加 BN；`set_bn(true)` 时只给隐藏层
+        let bns = (0..n).map(|_| None).collect();
+        Net {
+            layers,
+            bns,
+            cond: 0,
+        }
     }
 
-    /// 把条件拼成常数通道。
+    /// 开关 BN（隐藏层；最后一层不加）。
+    pub fn set_bn(&mut self, on: bool) {
+        let n = self.layers.len();
+        for (i, b) in self.bns.iter_mut().enumerate() {
+            *b = if on && i + 1 < n {
+                Some(Bn::new(self.layers[i].cout))
+            } else {
+                None
+            };
+        }
+    }
+
     fn input(&self, img: &[f32], cond: Option<usize>, w: usize, h: usize) -> Vec<Vec<f32>> {
         let mut x = vec![img.to_vec()];
         for k in 0..self.cond {
@@ -162,22 +272,22 @@ impl Net {
         x
     }
 
-    /// 前向：返回 (输出图, 每层激活（含 ReLU 后）)。
     pub fn forward(&self, img: &[f32], cond: Option<usize>, w: usize, h: usize) -> Vec<f32> {
         let mut x = self.input(img, cond, w, h);
-        for (i, l) in self.layers.iter().enumerate() {
-            let mut y = l.forward(&x, w, h);
-            if i + 1 < self.layers.len() {
-                for ch in y.iter_mut() {
-                    for v in ch.iter_mut() {
-                        *v = v.max(0.0);
-                    }
-                }
-            } else {
-                for ch in y.iter_mut() {
-                    for v in ch.iter_mut() {
-                        *v = 1.0 / (1.0 + (-*v).exp());
-                    }
+        for i in 0..self.layers.len() {
+            let mut y = self.layers[i].forward(&x, w, h);
+            if let Some(bn) = &self.bns[i] {
+                let mut b = bn.clone();
+                y = b.forward(&y, w * h, false).0;
+            }
+            let last = i + 1 == self.layers.len();
+            for ch in y.iter_mut() {
+                for v in ch.iter_mut() {
+                    *v = if last {
+                        1.0 / (1.0 + (-*v).exp())
+                    } else {
+                        v.max(0.0)
+                    };
                 }
             }
             x = y;
@@ -195,49 +305,59 @@ impl Net {
         h: usize,
         lr: f32,
     ) -> f32 {
-        let mut acts: Vec<Vec<Vec<f32>>> = Vec::new();
+        let n = w * h;
+        let mut ins: Vec<Vec<Vec<f32>>> = Vec::new(); // 每层的输入
+        let mut pre_relu: Vec<Vec<Vec<f32>>> = Vec::new(); // 每层 BN 后（ReLU 前）
+        let mut xhats: Vec<Option<Vec<Vec<f32>>>> = Vec::new();
         let mut x = self.input(img, cond, w, h);
-        for (i, l) in self.layers.iter().enumerate() {
-            let mut y = l.forward(&x, w, h);
-            if i + 1 < self.layers.len() {
-                for ch in y.iter_mut() {
-                    for v in ch.iter_mut() {
-                        *v = v.max(0.0);
-                    }
-                }
-            } else {
-                for ch in y.iter_mut() {
-                    for v in ch.iter_mut() {
-                        *v = 1.0 / (1.0 + (-*v).exp());
-                    }
+        for i in 0..self.layers.len() {
+            let mut y = self.layers[i].forward(&x, w, h);
+            let mut xh = None;
+            if let Some(bn) = self.bns[i].as_mut() {
+                let (z, xx) = bn.forward(&y, n, true);
+                y = z;
+                xh = Some(xx);
+            }
+            ins.push(x.clone());
+            pre_relu.push(y.clone());
+            xhats.push(xh);
+            let last = i + 1 == self.layers.len();
+            for ch in y.iter_mut() {
+                for v in ch.iter_mut() {
+                    *v = if last {
+                        1.0 / (1.0 + (-*v).exp())
+                    } else {
+                        v.max(0.0)
+                    };
                 }
             }
-            acts.push(x.clone());
             x = y;
         }
         let pred = &x[0];
         let mut loss = 0.0f64;
-        let mut d = vec![vec![0.0f32; w * h]; 1];
-        for i in 0..w * h {
+        let mut d = vec![vec![0.0f32; n]; 1];
+        for i in 0..n {
             let p = pred[i].clamp(1e-6, 1.0 - 1e-6);
             let t = target[i];
             loss -= f64::from(t * p.ln() + (1.0 - t) * (1.0 - p).ln());
-            d[0][i] = (p - t) / (w * h) as f32;
+            d[0][i] = (p - t) / n as f32;
         }
-        // 反向
         for li in (0..self.layers.len()).rev() {
-            let mut dx = self.layers[li].backward(&acts[li], w, h, &d, lr);
-            if li > 0 {
-                // 穿过 ReLU：mask = 该层输入（= 上一层 ReLU 输出）> 0
-                for c in 0..dx.len() {
-                    for i in 0..w * h {
-                        if acts[li][c][i] <= 0.0 {
-                            dx[c][i] = 0.0;
+            // ReLU 反向：只对隐藏层，mask = 本层 ReLU 前的值（BN 输出）> 0
+            if li + 1 < self.layers.len() {
+                for c in 0..d.len() {
+                    for i in 0..n {
+                        if pre_relu[li][c][i] <= 0.0 {
+                            d[c][i] = 0.0;
                         }
                     }
                 }
             }
-            d = dx;
+            if let (Some(bn), Some(xh)) = (self.bns[li].as_mut(), xhats[li].as_ref()) {
+                // BN 的 γ/β 梯度量大，单独用小学习率，否则会震荡
+                d = bn.backward(xh, &d, n, lr * 0.02);
+            }
+            d = self.layers[li].backward(&ins[li], w, h, &d, lr);
         }
         loss as f32
     }
@@ -269,6 +389,54 @@ mod tests {
         let p = net.forward(&img, None, w, h);
         let mean = p.iter().sum::<f32>() / p.len() as f32;
         assert!(mean > 0.85, "应学成 0.9，实际 {mean:.3}");
+    }
+
+    #[test]
+    fn bn_backward_matches_numeric() {
+        // 纯 BN：y = γ·x̂+β，loss = Σ dout·y，检查 dx 与有限差分一致
+        let n = 6usize;
+        let x0 = vec![0.2f32, 0.9, 0.4, 0.7, 0.1, 0.5];
+        let dout = vec![0.3f32, -0.2, 0.5, 0.1, -0.4, 0.2];
+        let loss = |x: &[f32]| -> f64 {
+            let mut bn = Bn::new(1);
+            bn.gamma[0] = 1.3;
+            bn.beta[0] = -0.2;
+            let (y, _) = bn.forward(&[x.to_vec()], n, true);
+            y[0].iter().zip(&dout).map(|(a, b)| f64::from(a * b)).sum()
+        };
+        let mut bn = Bn::new(1);
+        bn.gamma[0] = 1.3;
+        bn.beta[0] = -0.2;
+        let (_, xh) = bn.forward(std::slice::from_ref(&x0), n, true);
+        let dx = bn.backward(&xh, std::slice::from_ref(&dout), n, 0.0);
+        let eps = 1e-3f32;
+        for i in 0..n {
+            let mut up = x0.clone();
+            up[i] += eps;
+            let mut dn = x0.clone();
+            dn[i] -= eps;
+            let num = (loss(&up) - loss(&dn)) / (2.0 * f64::from(eps));
+            let ana = f64::from(dx[0][i]);
+            assert!(
+                (num - ana).abs() < 0.05 * ana.abs().max(1e-2),
+                "i={i}: 数值 {num:.4} vs 解析 {ana:.4}"
+            );
+        }
+    }
+
+    #[test]
+    fn bn_learns_constant_target() {
+        let (w, h) = (6usize, 6usize);
+        let img = vec![0.9f32; w * h];
+        let tgt = vec![0.9f32; w * h];
+        let mut net = Net::new(1, &[8], 3);
+        net.set_bn(true);
+        for _ in 0..3000 {
+            net.train_step(&img, &tgt, None, w, h, 0.1);
+        }
+        let p = net.forward(&img, None, w, h);
+        let mean = p.iter().sum::<f32>() / p.len() as f32;
+        assert!(mean > 0.85, "带 BN 也应学成 0.9，实际 {mean:.3}");
     }
 
     #[test]

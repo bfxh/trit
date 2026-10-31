@@ -1704,6 +1704,7 @@ fn tex_conv_cmd(argv: &[String]) {
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.05);
     let cond = argv.iter().any(|a| a == "--cond");
+    let use_bn = argv.iter().any(|a| a == "--bn");
     let hidden: Vec<usize> = arg(argv, "--hidden")
         .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
         .unwrap_or_else(|| vec![8, 8]);
@@ -1736,6 +1737,7 @@ fn tex_conv_cmd(argv: &[String]) {
     let cin = 1 + if cond { kinds.len() } else { 0 };
     let mut net = Net::new(cin, &hidden, seed);
     net.cond = if cond { kinds.len() } else { 0 };
+    net.set_bn(use_bn);
     let mut loss = 0.0f64;
     for step in 0..iters {
         let ki = (step * 7919) % kinds.len();
@@ -1783,8 +1785,9 @@ fn tex_conv_cmd(argv: &[String]) {
         }
     }
     println!(
-        "三值卷积栈 hidden {:?}，条件 {}，{} 步；留出 PSNR 均值 {:.2} dB{}",
+        "三值卷积栈 hidden {:?}，BN {}，条件 {}，{} 步；留出 PSNR 均值 {:.2} dB{}",
         hidden,
+        if use_bn { "开" } else { "关" },
         if cond { "开" } else { "关" },
         iters,
         avg(&good),
