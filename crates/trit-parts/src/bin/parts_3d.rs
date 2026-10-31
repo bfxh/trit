@@ -195,10 +195,10 @@ fn eval(argv: &[String]) {
             std::collections::HashSet<trit_parts::geo::Voxel>,
         > = std::collections::HashMap::new();
         for (v, cnt) in &votes {
-            if let Some((&id, c)) = cnt.iter().max_by_key(|(_, c)| **c) {
-                if *c >= min_votes {
-                    pred_acc.entry(id).or_default().insert(*v);
-                }
+            if let Some((&id, c)) = cnt.iter().max_by_key(|(_, c)| **c)
+                && *c >= min_votes
+            {
+                pred_acc.entry(id).or_default().insert(*v);
             }
         }
         for (id, gvox) in &gt_acc {
