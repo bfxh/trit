@@ -25,7 +25,7 @@ unexpected_cfgs = { level = "allow", check-cfg = ['cfg(kani)'] }
 
 [dependencies]
 # trit-core 互操作（compat 模块：Trit ↔ Ternary 双向映射 + 3×3 同构穷举测试）
-trit-core = { path = "../trit-core", version = "0.12" }
+trit-core.workspace = true
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
 rustls-pemfile = { version = "2", optional = true }
 rcgen = { version = "0.13", optional = true }
