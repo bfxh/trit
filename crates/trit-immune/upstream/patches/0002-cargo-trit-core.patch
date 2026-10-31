@@ -1,0 +1,10 @@
+diff --git a/crates/trit-immune/Cargo.toml b/crates/trit-immune/Cargo.toml
+--- a/crates/trit-immune/Cargo.toml
++++ b/crates/trit-immune/Cargo.toml
+@@ -27,3 +27,6 @@
+ [dependencies]
++# trit-core 互操作（compat 模块：Trit ↔ Ternary 双向映射 + 3×3 同构穷举测试）
++trit-core.workspace = true
+ rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
+ rustls-pemfile = { version = "2", optional = true }
+ rcgen = { version = "0.13", optional = true }

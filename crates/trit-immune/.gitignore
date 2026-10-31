@@ -1,0 +1,11 @@
+/target
+fuzz/target
+fuzz/coverage
+*.journal
+*.journal.backup
+*.journal.snapshot
+*.journal.migrate-tmp
+*.events
+*.links
+*.snapshot.tmp
+.mimosa/
