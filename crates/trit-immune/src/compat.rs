@@ -3,7 +3,7 @@
 //! 两个类型**完全同构**（映射 `Vulnerable↔False`、`Unknown↔Unknown`、
 //! `Hardened↔True` 下，K3 AND ≡ Kleene BitAnd——False/Vulnerable 都是
 //! 支配元，Ord 都是坏→好）：本模块提供双向 `From` 与穷举同构测试
-//! （3×3 全空间对拍 [`Trit::and`] 与 [`Ternary::bitand`]）。
+//! （3×3 全空间对拍 [`Trit::and`] 与 Ternary 的 Kleene 合取）。
 //!
 //! 设计立场（PR.md）：trit-immune 是 trit-core `Ternary` 的**消费者**，
 //! 不是竞品——内核逻辑用本地 `Trit` 保持零依赖，边界处经本模块与
@@ -35,6 +35,7 @@ impl From<Ternary> for Trit {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ops::BitAnd;
 
     #[test]
     fn roundtrip_is_identity() {
