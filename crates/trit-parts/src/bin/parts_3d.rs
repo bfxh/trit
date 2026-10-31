@@ -1619,11 +1619,7 @@ fn tex_prior_cmd(argv: &[String]) {
             files.sort();
             for f in files {
                 let (w0, h0, pix) = trit_parts::data::read_rgb(&f).unwrap_or_else(|e| fail(&e));
-                let rgb = if w0 == n && h0 == n {
-                    pix
-                } else {
-                    trit_parts::data::resize_rgb(w0, h0, &pix, n)
-                };
+                let rgb = fit_rgb(w0, h0, &pix, n);
                 let g: Vec<f32> = rgb
                     .as_chunks::<3>()
                     .0
@@ -1963,11 +1959,7 @@ fn tex_gen_cmd(argv: &[String]) {
     // 数据源：--data <dir> 用真实材质（每张图一个样本，无条件）；否则程序化材质
     let gray_img = |f: &PathBuf| -> Vec<f32> {
         let (w0, h0, pix) = trit_parts::data::read_rgb(f).unwrap_or_else(|e| fail(&e));
-        let rgb = if w0 == n && h0 == n {
-            pix
-        } else {
-            trit_parts::data::resize_rgb(w0, h0, &pix, n)
-        };
+        let rgb = fit_rgb(w0, h0, &pix, n);
         rgb.as_chunks::<3>()
             .0
             .iter()
@@ -2049,6 +2041,8 @@ fn tex_gen_cmd(argv: &[String]) {
         .unwrap_or_default();
     let use_bn = argv.iter().any(|a| a == "--bn");
     let use_adam = argv.iter().any(|a| a == "--adam");
+    // ε-预测：目标是噪声而不是 x0；线性输出 + 平方误差（x0-预测会把细纹理平均掉）
+    let eps_mode = argv.iter().any(|a| a == "--eps");
     let batch: usize = arg(argv, "--batch")
         .and_then(|v| v.parse().ok())
         .unwrap_or(4);
@@ -2080,13 +2074,16 @@ fn tex_gen_cmd(argv: &[String]) {
             None => Net::new(2, &conv_hidden, seed),
         };
         net.set_bn(use_bn && load_path.is_none());
+        if eps_mode && load_path.is_none() {
+            net.linear_out = true;
+        }
         let tmax = sched.steps().max(1);
         for step in 0..iters {
             let mut items: Vec<(Vec<Vec<f32>>, Vec<f32>)> = Vec::with_capacity(batch);
             for _ in 0..batch {
                 let ki = (next_u() * images.len() as f32) as usize % images.len();
                 let t = 1 + (next_u() * tmax as f32) as usize % tmax;
-                let eps: Vec<f32> = (0..n * n)
+                let noise: Vec<f32> = (0..n * n)
                     .map(|_| {
                         let u1 = next_u().max(1e-6);
                         let u2 = next_u();
@@ -2094,10 +2091,11 @@ fn tex_gen_cmd(argv: &[String]) {
                     })
                     .collect();
                 let x0 = &images[ki];
-                let xt = trit_parts::diffuse::add_noise(x0, &eps, abar[t]);
+                let xt = trit_parts::diffuse::add_noise(x0, &noise, abar[t]);
                 let tf = t as f32 / tmax as f32;
                 let maps = vec![xt, vec![tf; n * n]];
-                items.push((maps, x0.clone()));
+                let target = if eps_mode { noise } else { x0.clone() };
+                items.push((maps, target));
             }
             loss += net.train_batch_x(&items, n, n, lr, use_adam) as f64;
             if (step + 1) % 2000 == 0 {
@@ -2109,7 +2107,14 @@ fn tex_gen_cmd(argv: &[String]) {
             net.save(p).unwrap_or_else(|e| fail(&e));
             println!("权重已存 {}", p.display());
         }
-        Box::new(net)
+        if eps_mode {
+            Box::new(trit_parts::tconv::EpsDen {
+                net,
+                abar: abar.clone(),
+            })
+        } else {
+            Box::new(net)
+        }
     };
 
     // 诊断：在 t/T = 0.2/0.5/0.8 上加噪，看 x0 预测的 MAE（应随时间步增大而变大）
@@ -2354,6 +2359,24 @@ fn look_cmd(argv: &[String]) {
 /// `AcousticFoam001_AcousticFoam001_1K-JPG_Color` → `AcousticFoam001`（报告里不用整串）。
 fn strip_stem(s: &str) -> String {
     s.split('_').next().unwrap_or(s).to_string()
+}
+
+/// 取 n×n 训练/评测图：源图够大时**按原分辨率中心裁剪**，不做重采样。
+/// 重采样会把细纹理（如沥青颗粒）直接抹平，模型就永远学不到 1 像素级的细节。
+fn fit_rgb(w0: usize, h0: usize, pix: &[f32], n: usize) -> Vec<f32> {
+    if w0 == n && h0 == n {
+        return pix.to_vec();
+    }
+    if w0 >= n && h0 >= n {
+        let (x0, y0) = ((w0 - n) / 2, (h0 - n) / 2);
+        let mut out = Vec::with_capacity(n * n * 3);
+        for y in 0..n {
+            let base = ((y0 + y) * w0 + x0) * 3;
+            out.extend_from_slice(&pix[base..base + n * 3]);
+        }
+        return out;
+    }
+    trit_parts::data::resize_rgb(w0, h0, pix, n)
 }
 
 fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {

@@ -313,6 +313,8 @@ pub struct Net {
     pub bns: Vec<Option<Bn>>,
     /// 条件通道数（追加在输入后面，常数图）。
     pub cond: usize,
+    /// 输出层是否线性（ε-预测需要无界输出；默认 sigmoid 给 x0 用）。
+    pub linear_out: bool,
 }
 
 impl Net {
@@ -331,6 +333,7 @@ impl Net {
             layers,
             bns,
             cond: 0,
+            linear_out: false,
         }
     }
 
@@ -371,9 +374,12 @@ impl Net {
                 y = b.forward(&y, w * h, true).0;
             }
             let last = i + 1 == self.layers.len();
+            let linear = last && self.linear_out;
             for ch in y.iter_mut() {
                 for v in ch.iter_mut() {
-                    *v = if last {
+                    *v = if linear {
+                        *v
+                    } else if last {
                         1.0 / (1.0 + (-*v).exp())
                     } else {
                         v.max(0.0)
@@ -460,9 +466,12 @@ impl Net {
                 pre_relu.push(y.clone());
                 xhats.push(xh);
                 let last = li + 1 == self.layers.len();
+                let linear = last && self.linear_out;
                 for ch in y.iter_mut() {
                     for v in ch.iter_mut() {
-                        *v = if last {
+                        *v = if linear {
+                            *v
+                        } else if last {
                             1.0 / (1.0 + (-*v).exp())
                         } else {
                             v.max(0.0)
@@ -474,10 +483,17 @@ impl Net {
             let pred = &x[0];
             let mut d = vec![vec![0.0f32; n]; 1];
             for i in 0..n {
-                let p = pred[i].clamp(1e-6, 1.0 - 1e-6);
                 let t = target[i];
-                loss -= f64::from(t * p.ln() + (1.0 - t) * (1.0 - p).ln());
-                d[0][i] = (p - t) / n as f32 / k as f32; // 批内平均
+                if self.linear_out {
+                    // ε-预测：平方误差（输出无界）
+                    let e = pred[i] - t;
+                    loss += 0.5 * f64::from(e * e);
+                    d[0][i] = e / n as f32 / k as f32;
+                } else {
+                    let p = pred[i].clamp(1e-6, 1.0 - 1e-6);
+                    loss -= f64::from(t * p.ln() + (1.0 - t) * (1.0 - p).ln());
+                    d[0][i] = (p - t) / n as f32 / k as f32; // 批内平均
+                }
             }
             for li in (0..self.layers.len()).rev() {
                 if li + 1 < self.layers.len() {
@@ -535,7 +551,13 @@ impl Net {
     pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
         use std::fmt::Write as _;
         let mut out = String::new();
-        let _ = writeln!(out, "TPC1 {} {}", self.layers.len(), self.cond);
+        let _ = writeln!(
+            out,
+            "TPC2 {} {} {}",
+            self.layers.len(),
+            self.cond,
+            self.linear_out as u8
+        );
         for l in &self.layers {
             let _ = writeln!(out, "{} {}", l.cin, l.cout);
             for v in [&l.w, &l.b, &l.scale] {
@@ -579,11 +601,13 @@ impl Net {
                 .map_err(|e| format!("{}: {what} 解析失败 {e}", path.display()))
         }
         let mut it = txt.split_whitespace();
-        if it.next() != Some("TPC1") {
-            return Err(format!("{}: 不是 TPC1", path.display()));
+        let head = it.next();
+        if head != Some("TPC1") && head != Some("TPC2") {
+            return Err(format!("{}: 不是 TPC1/TPC2", path.display()));
         }
         let nl = take(&mut it, path, "层数")? as usize;
         let cond = take(&mut it, path, "cond")? as usize;
+        let linear_out = head == Some("TPC2") && take(&mut it, path, "linear")? != 0.0;
         let mut layers = Vec::with_capacity(nl);
         for _ in 0..nl {
             let cin = take(&mut it, path, "cin")? as usize;
@@ -621,7 +645,48 @@ impl Net {
             }
             bns[idx] = Some(b);
         }
-        Ok(Net { layers, bns, cond })
+        Ok(Net {
+            layers,
+            bns,
+            cond,
+            linear_out,
+        })
+    }
+}
+
+/// ε-预测网络的 DDIM 适配：内部算 ε̂，再换算成 `x̂0 = (x_t − √(1−ᾱ)·ε̂)/√ᾱ`。
+/// 为什么需要它：x0-预测的目标是条件均值，细纹理会被平均掉；ε 不含这个偏置。
+pub struct EpsDen {
+    pub net: Net,
+    pub abar: Vec<f32>,
+}
+
+impl crate::diffuse::Denoiser for EpsDen {
+    fn predict_x0(
+        &self,
+        xt: &[f32],
+        t_frac: f32,
+        cond: Option<usize>,
+        w: usize,
+        h: usize,
+    ) -> Vec<f32> {
+        let mut maps = vec![xt.to_vec(), vec![t_frac; w * h]];
+        for k in 0..self.net.cond {
+            maps.push(vec![(cond == Some(k)) as u8 as f32; w * h]);
+        }
+        let eps = self.net.forward_x(&maps, w, h);
+        let tmax = self.abar.len().saturating_sub(1).max(1);
+        let idx = ((t_frac * tmax as f32).round() as usize).min(tmax);
+        let a = self.abar[idx].max(1e-4);
+        let (sa, se) = (a.sqrt(), (1.0 - a).sqrt());
+        xt.iter()
+            .zip(&eps)
+            .map(|(x, e)| ((x - se * e) / sa).clamp(0.0, 1.0))
+            .collect()
+    }
+
+    fn input_dim(&self) -> usize {
+        2 + self.net.cond
     }
 }
 
@@ -690,7 +755,36 @@ mod tests {
             assert!((p - q).abs() < 1e-5, "存读应逐位一致 {p} vs {q}");
         }
         assert_eq!(back.cond, 0);
+        assert!(!back.linear_out);
         let _ = std::fs::remove_file(p);
+    }
+
+    #[test]
+    fn eps_denoiser_maps_noise_to_x0() {
+        use crate::diffuse::Denoiser;
+        // 网络输出恒 0 的 ε ⇒ x0 应等于 x_t/√ᾱ
+        let (w, h) = (4usize, 4usize);
+        let mut net = Net::new(2, &[], 3);
+        net.linear_out = true;
+        for l in net.layers.iter_mut() {
+            l.b.fill(0.0);
+            l.w.fill(0.0);
+            l.scale.fill(0.0);
+        }
+        let abar = vec![1.0f32, 0.5, 0.0];
+        let d = EpsDen {
+            net,
+            abar: abar.clone(),
+        };
+        let xt = vec![0.4f32; w * h];
+        let x0 = d.predict_x0(&xt, 1.0, None, w, h); // t_frac=1 ⇒ ᾱ=0 ⇒ 走 clamp
+        assert_eq!(x0.len(), w * h);
+        let x0b = d.predict_x0(&xt, 0.5, None, w, h); // ᾱ=0.5 ⇒ 0.4/√0.5≈0.566
+        assert!(
+            (x0b[0] - 0.4 / 0.5f32.sqrt()).abs() < 1e-4,
+            "实际 {}",
+            x0b[0]
+        );
     }
 
     #[test]
