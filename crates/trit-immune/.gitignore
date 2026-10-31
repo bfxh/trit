@@ -1,4 +1,6 @@
 /target
+fuzz/target
+fuzz/coverage
 *.journal
 *.journal.backup
 *.journal.snapshot
