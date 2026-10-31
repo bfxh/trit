@@ -57,14 +57,30 @@ def list_assets(count: int, cat: str, page: int = 100, cache: Path | None = None
     return out
 
 
+def folder_entry(asset: dict) -> dict | None:
+    """`downloadFolders` 实测有两种形状：dict（按名字键）和 list（每项带 folderName）。"""
+    dfs = asset.get("downloadFolders")
+    if isinstance(dfs, dict):
+        return dfs.get("default") or next(iter(dfs.values()), None)
+    if isinstance(dfs, list):
+        for f in dfs:
+            if isinstance(f, dict) and f.get("folderName") == "default":
+                return f
+        return next((f for f in dfs if isinstance(f, dict)), None)
+    return None
+
+
 def one_k_zip(asset: dict) -> str | None:
     try:
-        dl = asset["downloadFolders"]["default"]["downloadFiletypeCategories"]["zip"]["downloads"]
-    except KeyError:
+        folder = folder_entry(asset) or {}
+        dl = folder["downloadFiletypeCategories"]["zip"]["downloads"]
+    except (KeyError, TypeError):
         return None
-    # 实测部分素材的 downloads 是 dict（或混着字符串），不是统一的 list[dict]
+    # 部分素材的 downloads 是 dict（或混着字符串），不是统一的 list[dict]
     if isinstance(dl, dict):
         dl = list(dl.values())
+    if not isinstance(dl, list):
+        return None
     items = [x for x in dl if isinstance(x, dict) and x.get("fullDownloadPath")]
     for x in items:
         if x.get("attribute", "").startswith("1K"):
@@ -117,33 +133,37 @@ def main() -> int:
     print(f"清单 {len(assets)} 个", flush=True)
 
     def one(a: dict) -> bool:
-        aid = a["assetId"]
-        dst = out / aid
-        if any(dst.glob("*Color*")):
-            return True
-        zurl = one_k_zip(a)
-        if not zurl:
-            print(f"{aid} 无 zip 下载项", flush=True)
-            return False
-        tmp = out / f"{aid}.zip"
-        if not download(zurl, tmp):
-            print(f"{aid} FAIL", flush=True)
-            return False
+        aid = a.get("assetId", "?")
         try:
-            with zipfile.ZipFile(tmp) as z:
-                members = z.namelist()
-                keep = [m for m in members if "color" in m.lower() and not m.endswith("/")]
-                if not keep:
-                    print(f"{aid} zip 里没有 Color（{len(members)} 项）", flush=True)
-                    return False
-                dst.mkdir(parents=True, exist_ok=True)
-                for m in keep:
-                    with z.open(m) as f, open(dst / Path(m).name, "wb") as g:
-                        shutil.copyfileobj(f, g)
-            print(f"{aid} ok", flush=True)
-            return True
-        finally:
-            tmp.unlink(missing_ok=True)
+            dst = out / aid
+            if any(dst.glob("*Color*")):
+                return True
+            zurl = one_k_zip(a)
+            if not zurl:
+                print(f"{aid} 无 zip 下载项", flush=True)
+                return False
+            tmp = out / f"{aid}.zip"
+            if not download(zurl, tmp):
+                print(f"{aid} FAIL", flush=True)
+                return False
+            try:
+                with zipfile.ZipFile(tmp) as z:
+                    members = z.namelist()
+                    keep = [m for m in members if "color" in m.lower() and not m.endswith("/")]
+                    if not keep:
+                        print(f"{aid} zip 里没有 Color（{len(members)} 项）", flush=True)
+                        return False
+                    dst.mkdir(parents=True, exist_ok=True)
+                    for m in keep:
+                        with z.open(m) as f, open(dst / Path(m).name, "wb") as g:
+                            shutil.copyfileobj(f, g)
+                print(f"{aid} ok", flush=True)
+                return True
+            finally:
+                tmp.unlink(missing_ok=True)
+        except Exception as e:  # 单个素材的脏数据不该让整轮下载崩掉
+            print(f"{aid} SKIP {type(e).__name__}: {e}", flush=True)
+            return False
 
     import time as _t
 
