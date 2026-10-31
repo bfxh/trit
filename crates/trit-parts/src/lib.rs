@@ -24,6 +24,7 @@ pub mod occ;
 pub mod ood;
 pub mod parts;
 pub mod splat;
+pub mod tex;
 pub mod tpm;
 pub mod weights;
 

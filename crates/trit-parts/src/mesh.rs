@@ -492,6 +492,45 @@ pub fn boundary_edges(m: &Mesh) -> usize {
     cnt.values().filter(|&&c| c == 1).count()
 }
 
+/// 写带顶点颜色的 ASCII PLY（`None` = 未观测，写成灰色 128）。
+pub fn write_ply_rgb(path: &Path, m: &Mesh, colors: &[Option<[u8; 3]>]) -> Result<(), String> {
+    use std::fmt::Write as _;
+    if colors.len() != m.verts.len() {
+        return Err(format!(
+            "颜色数 {} != 顶点数 {}",
+            colors.len(),
+            m.verts.len()
+        ));
+    }
+    let mut s = String::new();
+    writeln!(
+        s,
+        "ply
+format ascii 1.0
+element vertex {}
+property float x
+property float y
+property float z
+property uchar red
+property uchar green
+property uchar blue
+element face {}
+property list uchar int vertex_indices
+end_header",
+        m.verts.len(),
+        m.tris.len()
+    )
+    .map_err(|e| e.to_string())?;
+    for (v, c) in m.verts.iter().zip(colors) {
+        let [r, g, b] = c.unwrap_or([128, 128, 128]);
+        writeln!(s, "{} {} {} {r} {g} {b}", v[0], v[1], v[2]).map_err(|e| e.to_string())?;
+    }
+    for t in &m.tris {
+        writeln!(s, "3 {} {} {}", t[0], t[1], t[2]).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(path, s).map_err(|e| format!("{}: {e}", path.display()))
+}
+
 /// 写 ASCII PLY。
 pub fn write_ply(path: &Path, m: &Mesh) -> Result<(), String> {
     use std::fmt::Write as _;

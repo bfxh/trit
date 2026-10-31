@@ -1388,6 +1388,144 @@ fn model_solid(
     pred.occ
 }
 
+/// `mesh-tex --scene <dir> --frames ... --out <ply>`：网格 + 顶点颜色烘焙。
+/// 颜色从最近的高斯取（观测面），没有近邻的顶点标灰（不可见/推断面）。
+fn mesh_tex_cmd(argv: &[String]) {
+    use trit_parts::mesh::{non_manifold_edges, surface_nets, write_ply_rgb};
+    use trit_parts::occ::selfsup_solid;
+    use trit_parts::splat::build;
+
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+    let frames: Vec<usize> = arg(argv, "--frames")
+        .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![0, 1, 2, 3, 4, 5, 6, 7]);
+    let cell: f32 = arg(argv, "--cell")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.01);
+    let tau: f32 = arg(argv, "--tau")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.01);
+
+    let load = |f: usize| -> trit_parts::fuse::View {
+        let (ids, shape) =
+            read_npy_i32(&frame_path(&scene, "seg", f, "npy")).unwrap_or_else(|e| fail(&e));
+        let (d, _) =
+            read_npy_f32(&frame_path(&scene, "depth", f, "npy")).unwrap_or_else(|e| fail(&e));
+        trit_parts::fuse::View {
+            ids: ids.iter().map(|&v| v.max(0) as u32).collect(),
+            depth: d,
+            w: shape[1],
+            h: shape[0],
+            cam: Camera::load(&frame_path(&scene, "meta", f, "json")).unwrap_or_else(|e| fail(&e)),
+        }
+    };
+    let views: Vec<_> = frames.iter().map(|&f| load(f)).collect();
+    let rgbs: Vec<Vec<f32>> = frames
+        .iter()
+        .map(|&f| {
+            trit_parts::data::read_rgb(&frame_path(&scene, "rgb", f, "png"))
+                .map(|(_, _, p)| p)
+                .unwrap_or_else(|e| fail(&e))
+        })
+        .collect();
+    let pts = view_points(&views);
+    let g = trit_parts::mesh::Grid::from_points(&pts, cell, 3).unwrap_or_else(|| fail("无有效点"));
+    let solid = close_solid(&g, selfsup_solid(&views, &g, tau));
+    let sg = trit_parts::mesh::Grid {
+        occ: solid,
+        nx: g.nx,
+        ny: g.ny,
+        nz: g.nz,
+        origin: g.origin,
+        cell: g.cell,
+    };
+    let m = surface_nets(&sg);
+    let splats = build(&views, &rgbs, cell, 0.6);
+    // 高斯按格建索引，顶点找半径 ≤3 格的最近颜色
+    let key = |p: [f32; 3]| {
+        [
+            ((p[0] - g.origin[0]) / g.cell).floor() as i64,
+            ((p[1] - g.origin[1]) / g.cell).floor() as i64,
+            ((p[2] - g.origin[2]) / g.cell).floor() as i64,
+        ]
+    };
+    let mut colmap: std::collections::HashMap<[i64; 3], [u8; 3]> = std::collections::HashMap::new();
+    for sp in &splats {
+        let c = [
+            (sp.color[0].clamp(0.0, 1.0) * 255.0) as u8,
+            (sp.color[1].clamp(0.0, 1.0) * 255.0) as u8,
+            (sp.color[2].clamp(0.0, 1.0) * 255.0) as u8,
+        ];
+        colmap.insert(key(sp.pos), c);
+    }
+    let mut colors: Vec<Option<[u8; 3]>> = Vec::with_capacity(m.verts.len());
+    let mut hit = 0usize;
+    for v in &m.verts {
+        let k = key(*v);
+        let mut found = None;
+        'search: for r in 0..=3i64 {
+            for dz in -r..=r {
+                for dy in -r..=r {
+                    for dx in -r..=r {
+                        if dx.abs().max(dy.abs()).max(dz.abs()) != r {
+                            continue;
+                        }
+                        if let Some(c) = colmap.get(&[k[0] + dx, k[1] + dy, k[2] + dz]) {
+                            found = Some(*c);
+                            break 'search;
+                        }
+                    }
+                }
+            }
+        }
+        if found.is_some() {
+            hit += 1;
+        }
+        colors.push(found);
+    }
+    write_ply_rgb(&out, &m, &colors).unwrap_or_else(|e| fail(&e));
+    println!(
+        "网格 {} 顶点 / {} 面（边界边 {} 非流形 {}）；顶点着色 {:.1}%（{} 个未观测标灰）→ {}",
+        m.verts.len(),
+        m.tris.len(),
+        trit_parts::mesh::boundary_edges(&m),
+        non_manifold_edges(&m),
+        100.0 * hit as f32 / m.verts.len().max(1) as f32,
+        m.verts.len() - hit,
+        out.display()
+    );
+}
+
+/// `tex --kind wood|marble|rust|grid --size 256 --out <ppm>`：程序化可平铺材质 + 无缝度。
+fn tex_cmd(argv: &[String]) {
+    let kind = arg(argv, "--kind").unwrap_or_else(|| "wood".into());
+    let n: usize = arg(argv, "--size")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(256);
+    let seed: u64 = arg(argv, "--seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+    let px = trit_parts::tex::tile(&kind, n, seed);
+    let r = trit_parts::tex::seam_ratio(&px, n);
+    let mut bytes = format!(
+        "P6
+{n} {n}
+255
+"
+    )
+    .into_bytes();
+    for p in &px {
+        bytes.extend_from_slice(p);
+    }
+    std::fs::write(&out, bytes).unwrap_or_else(|e| fail(&format!("{}: {e}", out.display())));
+    println!(
+        "{kind}: {n}×{n} 接缝比 {r:.2}（≈1 无缝）→ {}",
+        out.display()
+    );
+}
+
 fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
     let mut a = Vec::new();
     let mut b = Vec::new();
@@ -1417,7 +1555,9 @@ fn usage() -> ! {
   parts-3d splat --scene <dir> --frames 0,2,4,6 --eval 1,3,5,7 [--cells 0.04,0.02,0.01] [--scale-k 2] [--alpha 0.6]
   parts-3d occ --root <renders 根> --scenes <scenes 根> --train 80,81 --eval 84,85 [--cell 0.01] [--steps 20000] [--selfsup] [--views N] [--tau 0.01]
   parts-3d align --scene <dir> --frames 0,1,2,3,4,5,6,7 [--cell 0.01] [--tau 0.01] [--fill]
-  parts-3d obs-split --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]"
+  parts-3d obs-split --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]
+  parts-3d mesh-tex --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]
+  parts-3d tex --kind wood|marble|rust|grid --size 256 --out <ppm>"
     );
     std::process::exit(2);
 }
@@ -1437,6 +1577,8 @@ fn main() {
         Some("occ") => occ_cmd(&argv),
         Some("align") => align_cmd(&argv),
         Some("obs-split") => obs_split_cmd(&argv),
+        Some("mesh-tex") => mesh_tex_cmd(&argv),
+        Some("tex") => tex_cmd(&argv),
         Some("infer") => {
             #[cfg(feature = "gpu")]
             infer(&argv);
