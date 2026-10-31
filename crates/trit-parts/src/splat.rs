@@ -735,6 +735,63 @@ pub fn gradients(splats: &[Splat], views: &[FitView], bg: [f32; 3]) -> Grads {
     (gc, gp, gs, ga, cnt)
 }
 
+/// 自适应增删（3DGS 的 densify/prune 简化版）。
+/// 每轮先渲染拟合视角：前景里残差 > `err` 的像素，在观测表面（深度反投影）补一个高斯
+/// （颜色取 GT、半径 = `scale`）；然后删掉 alpha < `prune` 的高斯。
+/// 返回 (补的个数, 删的个数)。
+pub fn densify(
+    splats: &mut Vec<Splat>,
+    views: &[FitView],
+    depths: &[Vec<f32>],
+    scale: f32,
+    err: f32,
+    prune: f32,
+    max_add: usize,
+) -> (usize, usize) {
+    let mut add: HashMap<(i64, i64, i64), Splat> = HashMap::new();
+    let inv = 1.0 / (scale.max(1e-5) * 2.0);
+    for (vi, (cam, w, h, gt, ids)) in views.iter().enumerate() {
+        let dep = &depths[vi];
+        let cache = build_cache(splats, cam, *w, *h);
+        let img = render_cached(splats, &cache, *w, *h, [0.0; 3]);
+        for p in 0..*w * *h {
+            if ids[p] == 0 || !(dep[p].is_finite() && dep[p] > 0.0) {
+                continue;
+            }
+            let mut e = 0.0f32;
+            for k in 0..3 {
+                e = e.max((img[p * 3 + k] - gt[p * 3 + k]).abs());
+            }
+            if e <= err {
+                continue;
+            }
+            let pos = cam.unproject((p % *w) as f64, (p / *w) as f64, dep[p]);
+            let key = (
+                (pos[0] / (scale * 2.0)).floor() as i64,
+                (pos[1] / (scale * 2.0)).floor() as i64,
+                (pos[2] / (scale * 2.0)).floor() as i64,
+            );
+            add.entry(key).or_insert(Splat {
+                pos,
+                scale,
+                color: [gt[p * 3], gt[p * 3 + 1], gt[p * 3 + 2]],
+                alpha: 0.6,
+            });
+            let _ = inv;
+        }
+    }
+    // 删：alpha 太低
+    let before = splats.len();
+    splats.retain(|s| s.alpha >= prune);
+    let pruned = before - splats.len();
+    let mut added = 0;
+    for s in add.into_values().take(max_add) {
+        splats.push(s);
+        added += 1;
+    }
+    (added, pruned)
+}
+
 /// 全参数拟合（颜色 + 位置 + 尺度 + alpha）。
 pub fn fit_all(splats: &mut [Splat], views: &[FitView], opt: FitOpts, bg: [f32; 3]) {
     if splats.is_empty() || views.is_empty() {

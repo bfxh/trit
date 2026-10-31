@@ -540,6 +540,12 @@ fn splat_cmd(argv: &[String]) {
     let fit_reg: f32 = arg(argv, "--fit-reg")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.0);
+    let densify_rounds: usize = arg(argv, "--densify")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let densify_err: f32 = arg(argv, "--densify-err")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.15);
 
     let load = |f: usize| -> View {
         let (ids, shape) =
@@ -613,7 +619,38 @@ fn splat_cmd(argv: &[String]) {
                 let img = render(&splats, &v.cam, v.w, v.h, [0.0, 0.0, 0.0]);
                 fit0.push(masked_psnr(&img, gt, &v.ids));
             }
-            if fit_all_mode {
+            if densify_rounds > 0 {
+                let depths: Vec<Vec<f32>> = fit_views.iter().map(|v| v.depth.clone()).collect();
+                for r in 0..densify_rounds {
+                    let (a, pr) = trit_parts::splat::densify(
+                        &mut splats,
+                        &sets,
+                        &depths,
+                        cell * 0.6,
+                        densify_err,
+                        0.02,
+                        20000,
+                    );
+                    println!(
+                        "  densify 第 {} 轮：+{a} / -{pr} → {} 个",
+                        r + 1,
+                        splats.len()
+                    );
+                    trit_parts::splat::fit_all(
+                        &mut splats,
+                        &sets,
+                        trit_parts::splat::FitOpts {
+                            iters: fit.max(1),
+                            lr_color: fit_lr,
+                            lr_pos,
+                            lr_scale,
+                            lr_alpha,
+                            reg: fit_reg,
+                        },
+                        [0.0, 0.0, 0.0],
+                    );
+                }
+            } else if fit_all_mode {
                 trit_parts::splat::fit_all(
                     &mut splats,
                     &sets,
