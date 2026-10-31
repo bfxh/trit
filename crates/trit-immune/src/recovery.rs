@@ -83,7 +83,15 @@ impl BackupVault {
         for f in files {
             rels.push(self.relativize(base, f)?);
         }
-        let stamp = now_ms();
+        // 2) 选一个未被占用的时间戳目录：同毫秒内两次 capture（Linux 高精度
+        //    时钟下常见）会让 rename 撞上已存在的目标目录（ENOTEMPTY）——顺延
+        //    到下一个空闲毫秒（stamp 语义仍是"不早于真实时刻的时间标记"）
+        let mut stamp = now_ms();
+        while self.root.join(stamp.to_string()).exists()
+            || self.root.join(format!("{stamp}.tmp")).exists()
+        {
+            stamp += 1;
+        }
         let dir = self.root.join(stamp.to_string());
         let tmp = self.root.join(format!("{stamp}.tmp"));
         // 2) 后写：原子目录出现（先写 .tmp 再改名）
