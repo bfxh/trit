@@ -292,6 +292,70 @@ impl Mlp {
         loss
     }
 
+    /// 存盘（文本：首行 dims，随后 w1/b1/w2/b2）。
+    pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
+        let mut out = format!("OCC1 {} {}\n", self.nin, self.nhid);
+        let push = |out: &mut String, v: &[f32]| {
+            for x in v {
+                out.push_str(&format!("{x} "));
+            }
+            out.push('\n');
+        };
+        push(&mut out, &self.w1);
+        push(&mut out, &self.b1);
+        push(&mut out, &self.w2);
+        out.push_str(&format!("{}\n", self.b2));
+        std::fs::write(path, out).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    pub fn load(path: &std::path::Path) -> Result<Self, String> {
+        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut lines = text.lines();
+        let head = lines.next().ok_or("模型文件为空")?;
+        let mut it = head.split_whitespace();
+        if it.next() != Some("OCC1") {
+            return Err("不是 OCC1 模型".into());
+        }
+        let nin: usize = it
+            .next()
+            .ok_or("缺 nin")?
+            .parse()
+            .map_err(|_| "nin 解析失败")?;
+        let nhid: usize = it
+            .next()
+            .ok_or("缺 nhid")?
+            .parse()
+            .map_err(|_| "nhid 解析失败")?;
+        let mut take = |n: usize, what: &str| -> Result<Vec<f32>, String> {
+            let line = lines.next().ok_or(format!("缺 {what}"))?;
+            let v: Vec<f32> = line
+                .split_whitespace()
+                .filter_map(|x| x.parse().ok())
+                .collect();
+            if v.len() != n {
+                return Err(format!("{what} 长度 {} != {n}", v.len()));
+            }
+            Ok(v)
+        };
+        let w1 = take(nin * nhid, "w1")?;
+        let b1 = take(nhid, "b1")?;
+        let w2 = take(nhid, "w2")?;
+        let b2: f32 = lines
+            .next()
+            .ok_or("缺 b2")?
+            .trim()
+            .parse()
+            .map_err(|_| "b2 解析失败")?;
+        Ok(Mlp {
+            nin,
+            nhid,
+            w1,
+            b1,
+            w2,
+            b2,
+        })
+    }
+
     /// 权重三值化后的稀疏度（0 的占比），用于报告。
     pub fn sparsity(&self) -> f32 {
         let z = self.w1.iter().filter(|v| quant(**v) == 0.0).count();

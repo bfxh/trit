@@ -803,6 +803,7 @@ fn occ_cmd(argv: &[String]) {
     let cap: usize = arg(argv, "--cap")
         .and_then(|v| v.parse().ok())
         .unwrap_or(20000);
+    let save_model = arg(argv, "--save-model").map(PathBuf::from);
     let seal: usize = arg(argv, "--seal")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
@@ -897,6 +898,11 @@ fn occ_cmd(argv: &[String]) {
             );
             loss_acc = 0.0;
         }
+    }
+
+    if let Some(p) = &save_model {
+        mlp.save(p).unwrap_or_else(|e| fail(&e));
+        println!("模型已存 {}", p.display());
     }
 
     // 评测：体积 IoU（vs 原语实心）+ 网格闭合率
@@ -1055,7 +1061,13 @@ fn align_cmd(argv: &[String]) {
         .collect();
     let pts = view_points(&views);
     let g = trit_parts::mesh::Grid::from_points(&pts, cell, 3).unwrap_or_else(|| fail("无有效点"));
-    let solid = selfsup_solid(&views, &g, tau);
+    let solid = match arg(argv, "--model") {
+        Some(p) => {
+            let m = trit_parts::occ::Mlp::load(Path::new(&p)).unwrap_or_else(|e| fail(&e));
+            model_solid(&m, &views, &g)
+        }
+        None => close_solid(&g, selfsup_solid(&views, &g, tau)),
+    };
     let mut surface = vec![false; solid.len()];
     for z in 0..g.nz {
         for y in 0..g.ny {
@@ -1255,7 +1267,13 @@ fn obs_split_cmd(argv: &[String]) {
     let views: Vec<_> = frames.iter().map(|&f| load(f)).collect();
     let pts = view_points(&views);
     let g = trit_parts::mesh::Grid::from_points(&pts, cell, 3).unwrap_or_else(|| fail("无有效点"));
-    let solid = selfsup_solid(&views, &g, tau);
+    let solid = match arg(argv, "--model") {
+        Some(p) => {
+            let m = trit_parts::occ::Mlp::load(Path::new(&p)).unwrap_or_else(|e| fail(&e));
+            model_solid(&m, &views, &g)
+        }
+        None => close_solid(&g, selfsup_solid(&views, &g, tau)),
+    };
     let sg = trit_parts::mesh::Grid {
         occ: solid.clone(),
         nx: g.nx,
@@ -1315,6 +1333,59 @@ fn obs_split_cmd(argv: &[String]) {
         non_manifold_edges(&m)
     );
     println!("  → {} / {}", ps.display(), pu.display());
+}
+
+/// 闭合后处理：清边界 → 填实 → 修对角（自举标签与模型输出共用）。
+fn close_solid(g: &trit_parts::mesh::Grid, occ: Vec<u8>) -> Vec<u8> {
+    let mut pred = g.clone();
+    pred.occ = occ;
+    for z in 0..g.nz {
+        for y in 0..g.ny {
+            for x in 0..g.nx {
+                if x == 0 || y == 0 || z == 0 || x + 1 == g.nx || y + 1 == g.ny || z + 1 == g.nz {
+                    pred.occ[x + g.nx * (y + g.ny * z)] = 0;
+                }
+            }
+        }
+    }
+    trit_parts::mesh::fill_solid(&mut pred);
+    trit_parts::mesh::fix_diagonals(&mut pred);
+    pred.occ
+}
+
+/// 用训练好的占据模型对整格推理，并做「清边界 → 填实 → 修对角」得到闭合实心。
+fn model_solid(
+    model: &trit_parts::occ::Mlp,
+    views: &[trit_parts::fuse::View],
+    g: &trit_parts::mesh::Grid,
+) -> Vec<u8> {
+    use trit_parts::occ::features;
+    let mut pred = g.clone();
+    for z in 0..g.nz {
+        for y in 0..g.ny {
+            for x in 0..g.nx {
+                let p = [
+                    g.origin[0] + (x as f32 + 0.5) * g.cell,
+                    g.origin[1] + (y as f32 + 0.5) * g.cell,
+                    g.origin[2] + (z as f32 + 0.5) * g.cell,
+                ];
+                let (zlogit, _) = model.forward(&features(views, p));
+                pred.occ[x + g.nx * (y + g.ny * z)] = (zlogit > 0.0) as u8;
+            }
+        }
+    }
+    for z in 0..g.nz {
+        for y in 0..g.ny {
+            for x in 0..g.nx {
+                if x == 0 || y == 0 || z == 0 || x + 1 == g.nx || y + 1 == g.ny || z + 1 == g.nz {
+                    pred.occ[x + g.nx * (y + g.ny * z)] = 0;
+                }
+            }
+        }
+    }
+    trit_parts::mesh::fill_solid(&mut pred);
+    trit_parts::mesh::fix_diagonals(&mut pred);
+    pred.occ
 }
 
 fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
