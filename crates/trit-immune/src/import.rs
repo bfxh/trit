@@ -12,7 +12,6 @@
 //! 为固定字面量，无注入面；仓库路径必须是存在的目录）。解析器
 //! [`parse_git_log`] 本身是纯函数，可直接对接 GitHub API 导出的等价文本。
 
-use crate::dag::ImmuneDag;
 use crate::journal::Journal;
 use std::io;
 use std::path::Path;
@@ -131,6 +130,7 @@ pub use crate::journal::export_dag_tsv;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dag::ImmuneDag;
 
     #[test]
     fn parse_git_log_roundtrip() {

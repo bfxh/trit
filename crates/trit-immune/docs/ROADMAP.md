@@ -52,6 +52,7 @@
 | 43 | **TriPack：三值序列紧凑存储**（压缩态评估结论：上游 trit-codec 是三值序列编码器，压 journal 文本不适用——文本用快照+归档兜底；三值数据压缩自写零依赖实现） | ✅ | `bitparallel::tri_pack/tri_unpack` + `PackError`（5 trit/byte = **1.6 bit/trit**，比双导轨省 20% 且无块尾浪费；槽位序 3⁵ 进制；13 个非法字节值全部显式报错零静默损坏）；测试：全长度往返 / 3⁵ 全空间 / 非法值拒绝 / 与 TriWord 同语义对拍（评估全文见 RESEARCH.md §七） |
 | 44 | **git 共存桥**（"原来的 git 怎么办"的答案：git 继续管代码文件，trit 管裁决账本——桥 = 提交历史吸收进账本参与审计） | ✅ | `trit sync-git <repo> [--open]`：`import::collect_git_log` + `import_commits`——每条 commit 立 Message 节点 **0 态入账**（作者声称≠已验证）+ **默认整批隔离**（外部导入防污染协议）；吸收后扫描器/红队/门禁即可指着 commit 节点干活；`--open` 解除隔离等人逐条放行 |
 | 45 | **上游收录边界**（"该要什么不要什么写清楚 + 让拆分变简单"：两层结构 feature 门控钉死，一条命令验证收录形态） | ✅ | `feature = full`（默认开）：**内核层**（--no-default-features 留下：账本/裁决/同步/计算验证/生产线/裁决源与出口）+ **工具层**（recovery/import/template/server/daemon/lsp/taskmd/intake/fleet/harvest/adoption + trit CLI，不随上游收）；反向依赖解耦三处（json_escape 归 json.rs、export_dag_tsv 归 journal.rs、adoption 归工具层——跨仓运维域）；`docs/UPSTREAM.md`（定位一句话 + 三分类 + **性价比中性哲学**：进制是参数不是信仰，3/4/5-trit 与二进制按性价比选）+ `template.rs` 收录规则骨架随模板走；双形态验证 full 221 / 内核 146 全绿 |
+| 46 | **同步过程纪律**（"搞底层有些智能体任务会停"的答案：同步脚本化 + 幂等 + 分层验证 + 性价比看未来） | ✅ | `scripts/sync-upstream.sh`（幂等：补丁先 `-R --check` 已应用则跳过、中断重跑即恢复；分层验证 `cargo check` 秒级内建、`cargo test` 分钟级**不自动跑**由人定时；外向动作 commit/push 只打印建议人工执行）+ `upstream/patches/*.patch`（上游专属内容 git 化——read-tree 清掉的工作区永远可从 patch 重建，无孤本）+ UPSTREAM.md 补**性价比 = 当前收益 + 未来可演进 − 未来迁移成本**（"三年后换掉它要付多少？"可逆/可并存/可导出的设计永远优先）；脚本已自举验证（幂等分支 + 快验通过） |
 
 ### 标签语义澄清（2026-10-31）
 

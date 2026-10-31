@@ -60,7 +60,7 @@ fn statement_json(title: &str, verdict: Trit, note: &str) -> String {
 /// 那是 [`crate::vex`] 的派生职责）。
 pub fn attest(dag: &ImmuneDag, author: &str, product: &str, key: &[u8], key_id: &str) -> Attestation {
     // subject digest：账本全量 TSV 的 SHA-256（内容变 → digest 变）
-    let ledger_tsv = crate::export_dag_tsv(dag);
+    let ledger_tsv = export_dag_tsv(dag);
     let digest_hex = {
         let d = sha256(ledger_tsv.as_bytes());
         let mut s = String::with_capacity(64);
