@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use trit_parts::data::{read_npy_i32, read_rgb, write_npy_i32};
-use trit_parts::inst::{components, fg_iou, match_labels, order_by_x};
+use trit_parts::inst::{boundary_of, components, fg_iou, match_labels, order_by_x};
 
 fn arg(argv: &[String], key: &str) -> Option<String> {
     let i = argv.iter().position(|a| a == key)?;
@@ -95,7 +95,9 @@ fn seg_files(rd: &Path) -> Vec<PathBuf> {
 fn prep(argv: &[String]) {
     let renders = PathBuf::from(arg(argv, "--renders").unwrap_or_else(|| usage()));
     let scenes = PathBuf::from(arg(argv, "--scenes").unwrap_or_else(|| usage()));
-    let limit: usize = arg(argv, "--limit").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let limit: usize = arg(argv, "--limit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let (mut nframes, mut unmapped) = (0usize, 0usize);
     for sd in scene_dirs(&scenes) {
         let name = sd.file_name().unwrap().to_string_lossy().to_string();
@@ -105,10 +107,13 @@ fn prep(argv: &[String]) {
         });
         let rd = renders.join(&name);
         let out = rd.join("inst");
-        std::fs::create_dir_all(&out).unwrap_or_else(|e| {
-            eprintln!("建不了 {}: {e}", out.display());
-            std::process::exit(2)
-        });
+        let out_bnd = rd.join("bnd");
+        for d in [&out, &out_bnd] {
+            std::fs::create_dir_all(d).unwrap_or_else(|e| {
+                eprintln!("建不了 {}: {e}", d.display());
+                std::process::exit(2)
+            });
+        }
         for (i, f) in seg_files(&rd).iter().enumerate() {
             if limit > 0 && i >= limit {
                 break;
@@ -127,14 +132,28 @@ fn prep(argv: &[String]) {
                 .zip(&inst)
                 .filter(|(a, b)| **a > 0 && **b == 0)
                 .count();
-            write_npy_i32(&out.join(f.file_name().unwrap()), &inst.iter().map(|&v| v as i32).collect::<Vec<_>>(), shape[1], shape[0])
+            let inst_i: Vec<i32> = inst.iter().map(|&v| v as i32).collect();
+            write_npy_i32(&out.join(f.file_name().unwrap()), &inst_i, shape[1], shape[0])
+                .unwrap_or_else(|e| {
+                    eprintln!("{e}");
+                    std::process::exit(2)
+                });
+            let bnd = boundary_of(&inst, shape[1], shape[0], 2);
+            let bnd_i: Vec<i32> = bnd.iter().map(|&v| v as i32).collect();
+            write_npy_i32(&out_bnd.join(f.file_name().unwrap()), &bnd_i, shape[1], shape[0])
                 .unwrap_or_else(|e| {
                     eprintln!("{e}");
                     std::process::exit(2)
                 });
             nframes += 1;
         }
-        println!("{name}: 实例 {}，帧 {}", ranges.len(), seg_files(&rd).len().min(if limit > 0 { limit } else { usize::MAX }));
+        println!(
+            "{name}: 实例 {}，帧 {}",
+            ranges.len(),
+            seg_files(&rd)
+                .len()
+                .min(if limit > 0 { limit } else { usize::MAX })
+        );
     }
     println!("PREP frames={nframes} 未映射前景像素={unmapped}");
     if unmapped > 0 {
@@ -153,12 +172,26 @@ fn eval(argv: &[String]) {
     let renders = PathBuf::from(arg(argv, "--renders").unwrap_or_else(|| usage()));
     let scenes = PathBuf::from(arg(argv, "--scenes").unwrap_or_else(|| usage()));
     let comps = argv.iter().any(|a| a == "--components");
-    let res: u32 = arg(argv, "--res").and_then(|v| v.parse().ok()).unwrap_or(384);
+    let bnd_mode = argv.iter().any(|a| a == "--boundary");
+    let res: u32 = arg(argv, "--res")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(384);
     let k: usize = arg(argv, "--k")
         .and_then(|v| v.parse().ok())
         .unwrap_or(if comps { 5 } else { 2 });
-    let limit: usize = arg(argv, "--limit").and_then(|v| v.parse().ok()).unwrap_or(0);
-    let report: usize = arg(argv, "--report").and_then(|v| v.parse().ok()).unwrap_or(20);
+    let limit: usize = arg(argv, "--limit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let close_r: usize = arg(argv, "--close")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let dump = arg(argv, "--dump").map(PathBuf::from);
+    let dump_n: usize = arg(argv, "--dump-n")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let report: usize = arg(argv, "--report")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20);
 
     let m = TpmModel::load(&model).unwrap_or_else(|e| {
         eprintln!("{e}");
@@ -173,6 +206,8 @@ fn eval(argv: &[String]) {
     let mut fgis: Vec<f64> = Vec::new();
     let mut npred: Vec<usize> = Vec::new();
     let mut ngt: Vec<usize> = Vec::new();
+    let mut cnt_ok = 0usize;
+    let mut cnt_exact = 0usize;
     let mut frames = 0usize;
     for sd in scene_dirs(&scenes) {
         let name = sd.file_name().unwrap().to_string_lossy().to_string();
@@ -182,7 +217,7 @@ fn eval(argv: &[String]) {
         });
         let pl = PartList {
             k,
-            parts: (1..=ranges.len() as u32)
+            parts: (1..=if bnd_mode { 2 } else { ranges.len() as u32 })
                 .map(|id| {
                     let mut t = id - 1;
                     let mut d = vec![0u8; k];
@@ -228,17 +263,33 @@ fn eval(argv: &[String]) {
                 let fg: Vec<u32> = (0..hw)
                     .map(|p| (logits[p * ch + k * 3] > 0.0) as u32)
                     .collect();
+                let fg = trit_parts::inst::close(&fg, res as usize, res as usize, close_r);
                 components(&fg, res as usize, res as usize).0
+            } else if bnd_mode {
+                let dec = decode_ids(&logits, res, &pl);
+                let fg: Vec<u32> = dec.iter().map(|&v| (v > 0) as u32).collect();
+                let bd: Vec<u32> = dec.iter().map(|&v| (v == 2) as u32).collect();
+                trit_parts::inst::split_by_boundary(&fg, &bd, res as usize, res as usize)
             } else {
                 decode_ids(&logits, res, &pl)
             };
+            if let Some(dd) = &dump
+                && i < dump_n
+            {
+                std::fs::create_dir_all(dd).ok();
+                let out = dd.join(format!("{name}_{stem}.npy"));
+                let vals: Vec<i32> = pred.iter().map(|&v| v as i32).collect();
+                let _ = write_npy_i32(&out, &vals, res as usize, res as usize);
+            }
             let mt = match_labels(&pred, &gt, n_gt);
             miou.push(mt.miou);
             fgis.push(fg_iou(&pred, &gt));
             npred.push(mt.n_pred);
             ngt.push(n_gt);
+            cnt_ok += ((mt.n_pred as i64 - n_gt as i64).abs() <= 1) as usize;
+            cnt_exact += (mt.n_pred == n_gt) as usize;
             frames += 1;
-            if report > 0 && frames % report == 0 {
+            if report > 0 && frames.is_multiple_of(report) {
                 println!(
                     "[{frames}] {name}/{stem} mIoU {:.3} fg {:.3} pred {} / gt {}",
                     mt.miou,
@@ -252,14 +303,10 @@ fn eval(argv: &[String]) {
     let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len().max(1) as f64;
     let median = |v: &mut Vec<f64>| {
         v.sort_by(f64::total_cmp);
-        if v.is_empty() {
-            0.0
-        } else {
-            v[v.len() / 2]
-        }
+        if v.is_empty() { 0.0 } else { v[v.len() / 2] }
     };
     println!(
-        "frames={frames} 实例 mIoU mean {:.4} median {:.4}（p10 {:.4}）| 前景 IoU mean {:.4} | pred/gt {:.2}",
+        "frames={frames} 实例 mIoU mean {:.4} median {:.4}（p10 {:.4}）| 前景 IoU mean {:.4} | pred/gt {:.2} | 计数±1 {:.1}% | 计数全对 {:.1}%",
         mean(&miou),
         median(&mut miou.clone()),
         {
@@ -268,7 +315,9 @@ fn eval(argv: &[String]) {
             if s.is_empty() { 0.0 } else { s[s.len() / 10] }
         },
         mean(&fgis),
-        npred.iter().sum::<usize>() as f64 / ngt.iter().sum::<usize>().max(1) as f64
+        npred.iter().sum::<usize>() as f64 / ngt.iter().sum::<usize>().max(1) as f64,
+        100.0 * cnt_ok as f64 / frames.max(1) as f64,
+        100.0 * cnt_exact as f64 / frames.max(1) as f64
     );
 }
 
