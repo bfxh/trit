@@ -148,6 +148,7 @@ pub fn loss_and_grad_full(
     loss_and_grad_inner(logits, planes, valid, hw, k, w, None, depth)
 }
 
+#[allow(clippy::too_many_arguments)] // 纯内部融合循环：逐像素权重与深度头共用同一趟
 fn loss_and_grad_inner(
     logits: &[f32],
     planes: &[Vec<u8>],
