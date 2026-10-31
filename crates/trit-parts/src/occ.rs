@@ -140,6 +140,46 @@ pub fn solid(prims: &[Primitive], g: &crate::mesh::Grid) -> Vec<u8> {
     out
 }
 
+/// 自监督实心标签（不需要物体定义）：
+/// 任一视角里「投到背景像素」或「在观测表面前方 τ 之外」⇒ 自由空间；
+/// 在所有视角都落在剪影内、且从未被判为自由 ⇒ 实心；从未进入任何视野 ⇒ 空（防远场全实）。
+pub fn selfsup_solid(views: &[View], g: &crate::mesh::Grid, tau: f32) -> Vec<u8> {
+    let mut out = vec![0u8; g.occ.len()];
+    for z in 0..g.nz {
+        for y in 0..g.ny {
+            for x in 0..g.nx {
+                let p = [
+                    g.origin[0] + (x as f32 + 0.5) * g.cell,
+                    g.origin[1] + (y as f32 + 0.5) * g.cell,
+                    g.origin[2] + (z as f32 + 0.5) * g.cell,
+                ];
+                let mut seen = false;
+                let mut free = false;
+                for v in views {
+                    let Some((u, vv, d)) = v.cam.project(p) else {
+                        continue;
+                    };
+                    if u < 0.0 || vv < 0.0 || u >= v.w as f64 || vv >= v.h as f64 {
+                        continue;
+                    }
+                    seen = true;
+                    let i = vv as usize * v.w + u as usize;
+                    if v.ids[i] == 0 {
+                        free = true; // 该视角射线打到空处 ⇒ 这个体素是自由空间
+                        break;
+                    }
+                    if d < v.depth[i] as f64 - f64::from(tau) {
+                        free = true; // 在观测表面前方 ⇒ 自由空间
+                        break;
+                    }
+                }
+                out[x + g.nx * (y + g.ny * z)] = (seen && !free) as u8;
+            }
+        }
+    }
+    out
+}
+
 /// 多视角特征维度：每视角 3 个（剪影、深度差、有效），外加 1 个体素中心偏置项。
 pub const FPER: usize = 3;
 
@@ -319,6 +359,52 @@ mod tests {
             let p = 1.0 / (1.0 + (-z).exp());
             assert!((p - y).abs() < 0.2, "x={x:?} p={p}");
         }
+    }
+
+    #[test]
+    fn selfsup_carves_free_space_only() {
+        // 100×100 视野，中央 20×20 是前景、深度 2 m；tau=0.05
+        let (w, h) = (100usize, 100usize);
+        let mut ids = vec![0u32; w * h];
+        for y in 40..60 {
+            for x in 40..60 {
+                ids[y * w + x] = 1;
+            }
+        }
+        let view = View {
+            ids,
+            depth: vec![2.0; w * h],
+            w,
+            h,
+            cam: crate::geo::Camera {
+                k: [[100.0, 0.0, 50.0], [0.0, 100.0, 50.0], [0.0, 0.0, 1.0]],
+                t_cw: [
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0],
+                    [0.0, 0.0, 1.0, 0.0],
+                    [0.0, 0.0, 0.0, 1.0],
+                ],
+            },
+        };
+        let (nx, ny, nz) = (100usize, 100usize, 190usize);
+        let g = crate::mesh::Grid {
+            occ: vec![0u8; nx * ny * nz],
+            nx,
+            ny,
+            nz,
+            origin: [-0.5, -0.5, -2.6],
+            cell: 0.01,
+        };
+        let lab = selfsup_solid(std::slice::from_ref(&view), &g, 0.05);
+        let at = |p: [f32; 3]| {
+            let c = [0, 1, 2].map(|a| ((p[a] - g.origin[a]) / g.cell).round() as usize);
+            lab[c[0] + nx * (c[1] + ny * c[2])]
+        };
+        assert_eq!(at([0.0, 0.0, -1.0]), 0, "表面前方 = 自由");
+        assert_eq!(at([0.0, 0.0, -2.0]), 1, "贴着表面 = 实心");
+        assert_eq!(at([0.0, 0.0, -2.5]), 1, "剪影内、被遮挡 ⇒ 实心（视觉外壳）");
+        assert_eq!(at([0.3, 0.0, -2.5]), 0, "剪影外 ⇒ 自由");
+        assert_eq!(at([0.45, 0.45, -0.9]), 0, "视野外（画幅之外）⇒ 空");
     }
 
     #[test]

@@ -731,7 +731,7 @@ fn parse_objects(path: &Path) -> Vec<trit_parts::occ::Primitive> {
 /// 学习式占据（三值 MLP）：训练用解析原语当 GT 实心，评测报体积 IoU 与网格闭合率。
 fn occ_cmd(argv: &[String]) {
     use trit_parts::mesh::{boundary_edges, fix_diagonals, non_manifold_edges, surface_nets};
-    use trit_parts::occ::{FPER, Mlp, Primitive, features, grid_for, solid};
+    use trit_parts::occ::{FPER, Mlp, Primitive, features, grid_for, selfsup_solid, solid};
 
     let root = PathBuf::from(arg(argv, "--root").unwrap_or_else(|| usage()));
     let scenes = PathBuf::from(arg(argv, "--scenes").unwrap_or_else(|| usage()));
@@ -761,6 +761,10 @@ fn occ_cmd(argv: &[String]) {
     let seal: usize = arg(argv, "--seal")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    let selfsup = argv.iter().any(|a| a == "--selfsup");
+    let tau: f32 = arg(argv, "--tau")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.03);
     if train.is_empty() || eval.is_empty() {
         fail("需要 --train 与 --eval（场景编号列表）");
     }
@@ -794,10 +798,23 @@ fn occ_cmd(argv: &[String]) {
         let prims: Vec<Primitive> =
             parse_objects(&scenes.join(format!("scene{idx:04}/objects.json")));
         let views = load_views(idx);
-        let Some(g) = grid_for(&prims, cell, 2) else {
-            continue;
+        let g = if selfsup {
+            let pts = view_points(&views);
+            match trit_parts::mesh::Grid::from_points(&pts, cell, 3) {
+                Some(g) => g,
+                None => continue,
+            }
+        } else {
+            match grid_for(&prims, cell, 2) {
+                Some(g) => g,
+                None => continue,
+            }
         };
-        let gt = solid(&prims, &g);
+        let gt = if selfsup {
+            selfsup_solid(&views, &g, tau)
+        } else {
+            solid(&prims, &g)
+        };
         let mut pos = Vec::new();
         let mut neg = Vec::new();
         for (i, &label) in gt.iter().enumerate() {
@@ -843,11 +860,33 @@ fn occ_cmd(argv: &[String]) {
         let prims: Vec<Primitive> =
             parse_objects(&scenes.join(format!("scene{idx:04}/objects.json")));
         let views = load_views(idx);
-        let Some(g) = grid_for(&prims, cell, 2) else {
-            continue;
+        let g = if selfsup {
+            let pts = view_points(&views);
+            match trit_parts::mesh::Grid::from_points(&pts, cell, 3) {
+                Some(g) => g,
+                None => continue,
+            }
+        } else {
+            match grid_for(&prims, cell, 2) {
+                Some(g) => g,
+                None => continue,
+            }
         };
-        let gt = solid(&prims, &g);
+        let gt = solid(&prims, &g); // 评测仍用解析实心（仅测量）
         let mut pred = g.clone();
+        if selfsup {
+            let lab = selfsup_solid(&views, &g, tau);
+            let (mut li, mut lu) = (0usize, 0usize);
+            for (a, b) in lab.iter().zip(gt.iter()) {
+                let (a, b) = (*a != 0, *b != 0);
+                li += (a && b) as usize;
+                lu += (a || b) as usize;
+            }
+            println!(
+                "  [自监督标签 vs 解析实心] IoU {:.3}",
+                li as f32 / lu.max(1) as f32
+            );
+        }
         for z in 0..g.nz {
             for y in 0..g.ny {
                 for x in 0..g.nx {
@@ -910,6 +949,20 @@ fn occ_cmd(argv: &[String]) {
         n,
         100.0 * closed as f64 / n.max(1) as f64
     );
+}
+
+fn view_points(views: &[trit_parts::fuse::View]) -> Vec<[f32; 3]> {
+    let mut out = Vec::new();
+    for v in views {
+        for i in 0..v.ids.len().min(v.w * v.h) {
+            let d = v.depth[i];
+            if v.ids[i] == 0 || !(d.is_finite() && d > 0.0 && d < 50.0) {
+                continue;
+            }
+            out.push(v.cam.unproject((i % v.w) as f64, (i / v.w) as f64, d));
+        }
+    }
+    out
 }
 
 fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
