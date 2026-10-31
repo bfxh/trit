@@ -67,3 +67,8 @@ path = "src/bin/parts_guard.rs"
 name = "parts-ood"
 path = "src/bin/parts_ood.rs"
 required-features = ["gpu"]
+
+[[bin]]
+name = "parts-inst"
+path = "src/bin/parts_inst.rs"
+required-features = ["gpu"]

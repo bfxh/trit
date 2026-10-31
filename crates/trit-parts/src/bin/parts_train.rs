@@ -12,7 +12,7 @@
 use std::path::PathBuf;
 
 use trit_learn::Ste;
-use trit_parts::data::{Sample, frames, load_frame};
+use trit_parts::data::{Sample, frames, load_frame_sub};
 use trit_parts::gpu::Gpu;
 use trit_parts::loss::{depth_loss_grad, loss_and_grad, plane_weights};
 use trit_parts::net::Net;
@@ -69,6 +69,8 @@ struct Args {
     unfreeze_last: usize,
     /// 冻结分割 head。
     freeze_head: bool,
+    /// 标签子目录（缺省 `seg`；实例标签用 `inst`）。
+    seg_sub: String,
 }
 
 fn parse() -> Result<Args, String> {
@@ -106,6 +108,7 @@ fn parse() -> Result<Args, String> {
         freeze: false,
         unfreeze_last: 0,
         freeze_head: false,
+        seg_sub: "seg".into(),
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -164,6 +167,7 @@ fn parse() -> Result<Args, String> {
             "--unfreeze-last" => {
                 a.unfreeze_last = val()?.parse().map_err(|_| "--unfreeze-last 非整数")?
             }
+            "--seg-sub" => a.seg_sub = val()?,
             "--sgd" => a.adam = false,
             other => return Err(format!("未知参数 {other}")),
         }
@@ -229,11 +233,32 @@ fn main() {
         save_path = Some(p);
     }
 
-    // 数据：按目录列帧，--limit 截断
+    // 数据：按目录列帧，--limit 截断。`--data` 可以是单场景（含 rgb/），
+    // 也可以是「场景的父目录」（其子目录各含 rgb/）。
     let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
-    for scene in &args.data {
-        for p in frames(scene) {
-            paths.push((scene.clone(), p));
+    for root in &args.data {
+        if root.join("rgb").is_dir() {
+            for p in frames(root) {
+                paths.push((root.clone(), p));
+            }
+            continue;
+        }
+        let mut subs: Vec<PathBuf> = std::fs::read_dir(root)
+            .map(|it| {
+                it.filter_map(|e| e.ok())
+                    .map(|e| e.path())
+                    .filter(|p| p.join("rgb").is_dir())
+                    .collect()
+            })
+            .unwrap_or_default();
+        subs.sort();
+        if subs.is_empty() {
+            eprintln!("{}: 既不是场景（无 rgb/），也没有含 rgb/ 的子目录", root.display());
+        }
+        for scene in subs {
+            for p in frames(&scene) {
+                paths.push((scene.clone(), p));
+            }
         }
     }
     if args.limit > 0 {
@@ -361,7 +386,7 @@ fn main() {
         rng ^= rng >> 7;
         rng ^= rng << 17;
         let (scene, file) = &paths[(rng % paths.len() as u64) as usize];
-        let mut s: Sample = match load_frame(scene, file, k) {
+        let mut s: Sample = match load_frame_sub(scene, file, k, &args.seg_sub) {
             Ok(s) => s,
             Err(e) => {
                 eprintln!("读帧失败: {e}");
@@ -438,7 +463,7 @@ fn main() {
         };
         if args.eval_every > 0 && (step + 1) % args.eval_every == 0 {
             let (scene0, file0) = &paths[0];
-            if let Ok(s0) = load_frame(scene0, file0, k) {
+            if let Ok(s0) = load_frame_sub(scene0, file0, k, &args.seg_sub) {
                 let xb0 = gpu.buf(&s0.rgb, "x");
                 let tr0 = net.forward(&gpu, xb0, res);
                 let lg0 = gpu.read(&tr0.out, hw * ch);
@@ -665,7 +690,7 @@ fn eval_only(gpu: &Gpu, args: &Args) {
         };
         paths.truncate(cap);
         for (n, file) in paths.iter().enumerate() {
-            let s = load_frame(scene, file, k).unwrap_or_else(|e| {
+            let s = load_frame_sub(scene, file, k, &args.seg_sub).unwrap_or_else(|e| {
                 eprintln!("读帧失败: {e}");
                 std::process::exit(1);
             });

@@ -15,6 +15,7 @@ pub mod backward;
 pub mod data;
 pub mod depth;
 pub mod geo;
+pub mod inst;
 pub mod loss;
 pub mod model;
 pub mod ood;

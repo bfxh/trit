@@ -34,12 +34,17 @@ pub fn frames(scene: &Path) -> Vec<PathBuf> {
 
 /// 读一帧：RGB + 同名的 `seg/*.npy`。
 pub fn load_frame(scene: &Path, rgb: &Path, k: usize) -> Result<Sample, String> {
+    load_frame_sub(scene, rgb, k, "seg")
+}
+
+/// 同 `load_frame`，但标签取自 `<scene>/<seg_sub>/*.npy`（如实例标签 `inst`）。
+pub fn load_frame_sub(scene: &Path, rgb: &Path, k: usize, seg_sub: &str) -> Result<Sample, String> {
     let (w, h, pix) = read_png_rgb(rgb)?;
     let stem = rgb
         .file_stem()
         .and_then(|s| s.to_str())
         .ok_or("文件名非法")?;
-    let (labels, shape) = read_npy_i32(&scene.join("seg").join(format!("{stem}.npy")))?;
+    let (labels, shape) = read_npy_i32(&scene.join(seg_sub).join(format!("{stem}.npy")))?;
     if shape.len() != 2 || shape[1] != w || shape[0] != h {
         return Err(format!("{stem}: PNG {w}x{h} 与 seg {shape:?} 不一致"));
     }
@@ -212,8 +217,26 @@ pub fn read_npy_i32(path: &Path) -> Result<(Vec<i32>, Vec<usize>), String> {
     Ok((data, shape))
 }
 
-fn field<'a>(header: &'a str, key: &str) -> Option<&'a str> {
-    let i = header.find(&format!("'{key}'"))? + key.len() + 2;
+/// 写 int32 二维 `.npy`（v1.0，小端），布局与 `read_npy_i32` 互补。
+pub fn write_npy_i32(path: &Path, data: &[i32], w: usize, h: usize) -> Result<(), String> {
+    if data.len() != w * h {
+        return Err(format!("长度 {} != {w}×{h}", data.len()));
+    }
+    let mut hdr = format!("{{'descr': '<i4', 'fortran_order': False, 'shape': ({h}, {w}), }}");
+    let pad = (64 - (10 + hdr.len() + 1) % 64) % 64;
+    hdr.push_str(&" ".repeat(pad));
+    hdr.push('\n');
+    let mut bytes = Vec::with_capacity(10 + hdr.len() + data.len() * 4);
+    bytes.extend_from_slice(b"\x93NUMPY\x01\x00");
+    bytes.extend_from_slice(&(hdr.len() as u16).to_le_bytes());
+    bytes.extend_from_slice(hdr.as_bytes());
+    for v in data {
+        bytes.extend_from_slice(&v.to_le_bytes());
+    }
+    std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+fn field<'a>(header: &'a str, key: &str) -> Option<&'a str> {    let i = header.find(&format!("'{key}'"))? + key.len() + 2;
     let rest = header[i..].trim_start();
     let rest = rest.strip_prefix(':')?.trim_start();
     if let Some(r) = rest.strip_prefix('\'') {
@@ -230,6 +253,18 @@ fn field<'a>(header: &'a str, key: &str) -> Option<&'a str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn npy_i32_roundtrip() {
+        let dir = std::env::temp_dir().join("trit_parts_npy_rt");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("t.npy");
+        let data: Vec<i32> = (0..12).map(|i| i * 3 - 7).collect();
+        write_npy_i32(&p, &data, 4, 3).unwrap();
+        let (back, shape) = read_npy_i32(&p).unwrap();
+        assert_eq!(shape, vec![3, 4]);
+        assert_eq!(back, data);
+    }
 
     #[test]
     fn encode_matches_base3_digits() {
