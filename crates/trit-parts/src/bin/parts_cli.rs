@@ -475,7 +475,7 @@ fn pipeline(argv: &[String]) {
     use trit_parts::data::{read_rgb, resize_rgb};
     use trit_parts::geo::{Camera, clouds, write_ply};
     use trit_parts::net::Net;
-    use trit_parts::ood::{OodBank, features_from_logits};
+    use trit_parts::ood::{Bank, features_from_logits, features_v2};
 
     let mut model = None;
     let mut manifest = None;
@@ -563,11 +563,16 @@ fn pipeline(argv: &[String]) {
     let hw = res * res;
 
     if let Some(bp) = &bank_p {
-        let bank = OodBank::load(bp).unwrap_or_else(|e| {
+        let bank = Bank::load(bp).unwrap_or_else(|e| {
             eprintln!("读闸门失败: {e}");
             std::process::exit(1);
         });
-        let score = bank.score(&features_from_logits(&logits, &z, hw, pl.k));
+        let feats = if bank.needs_v2() {
+            features_v2(&logits, &z, hw, pl.k)
+        } else {
+            features_from_logits(&logits, &z, hw, pl.k)
+        };
+        let score = bank.score(&feats);
         println!("域内概率 {score:.4}（阈值 {threshold:.3}）");
         if score < threshold && !force {
             eprintln!("⇒ 拒绝（域外）：不写输出。加 --force 可强制继续。");

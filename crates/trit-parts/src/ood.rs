@@ -132,7 +132,228 @@ pub fn features_from_logits(logits: &[f32], z: &[f32], hw: usize, k: usize) -> V
     features(&ids, logits, z, hw, k)
 }
 
-/// 标准化 + 逻辑回归（L2）。/// 标准化 + 逻辑回归（L2）。
+/// 阶段 2 的输入维度：15 手工特征 + `d1` 的 32 通道全局均值。
+pub const NIN2: usize = NFEAT + 32;
+
+/// 阶段 2 的特征：手工特征 + `z` 的通道均值（全局池化的线性版）。
+pub fn features_v2(logits: &[f32], z: &[f32], hw: usize, k: usize) -> Vec<f32> {
+    let mut f = features_from_logits(logits, z, hw, k);
+    let zc = z.len() / hw;
+    let inv = 1.0 / hw as f32;
+    for c in 0..32 {
+        let mut s = 0f32;
+        if c < zc {
+            for p in 0..hw {
+                s += z[p * zc + c];
+            }
+        }
+        f.push(s * inv);
+    }
+    f
+}
+
+/// 学习式拒识头（阶段 2）：单隐层 MLP，输入 `NIN2` 维。
+#[derive(Clone, Debug)]
+pub struct MlpBank {
+    pub mu: Vec<f32>,
+    pub sd: Vec<f32>,
+    pub w1: Vec<f32>,
+    pub b1: Vec<f32>,
+    pub w2: Vec<f32>,
+    pub b2: f32,
+    pub hidden: usize,
+}
+
+impl MlpBank {
+    pub fn new(hidden: usize) -> Self {
+        Self {
+            mu: vec![0.0; NIN2],
+            sd: vec![1.0; NIN2],
+            w1: vec![0.0; NIN2 * hidden],
+            b1: vec![0.0; hidden],
+            w2: vec![0.0; hidden],
+            b2: 0.0,
+            hidden,
+        }
+    }
+
+    fn norm(&self, x: &[f32]) -> Vec<f32> {
+        (0..NIN2)
+            .map(|i| ((x[i] - self.mu[i]) / self.sd[i]).clamp(-8.0, 8.0))
+            .collect()
+    }
+
+    fn forward(&self, x: &[f32]) -> (Vec<f32>, f32) {
+        let h = self.hidden;
+        let mut act = vec![0f32; h];
+        for (j, a) in act.iter_mut().enumerate() {
+            let mut acc = self.b1[j];
+            for (i, xv) in x.iter().enumerate().take(NIN2) {
+                acc += self.w1[i * h + j] * xv;
+            }
+            *a = acc.max(0.0);
+        }
+        let mut o = self.b2;
+        for (j, a) in act.iter().enumerate() {
+            o += self.w2[j] * a;
+        }
+        (act, o)
+    }
+
+    pub fn score(&self, x: &[f32]) -> f32 {
+        let xn = self.norm(x);
+        let (_, o) = self.forward(&xn);
+        1.0 / (1.0 + (-o).exp())
+    }
+
+    /// 全批 Adam 训练（二元交叉熵 + L2 + 输入标准化）。
+    pub fn fit(&mut self, xs: &[Vec<f32>], ys: &[f32], l2: f32, epochs: usize, seed: u64) {
+        for i in 0..NIN2 {
+            let n = xs.len().max(1) as f64;
+            let m: f64 = xs.iter().map(|x| f64::from(x[i])).sum::<f64>() / n;
+            let v: f64 = xs
+                .iter()
+                .map(|x| {
+                    let d = f64::from(x[i]) - m;
+                    d * d
+                })
+                .sum::<f64>()
+                / n;
+            self.mu[i] = m as f32;
+            self.sd[i] = (v.sqrt() as f32).max(1e-4);
+        }
+        let h = self.hidden;
+        let mut st = seed | 1;
+        let mut rnd = || {
+            st ^= st << 13;
+            st ^= st >> 7;
+            st ^= st << 17;
+            (st % 2001) as f32 / 1000.0 - 1.0
+        };
+        let a = (6.0 / NIN2 as f32).sqrt();
+        for v in self.w1.iter_mut() {
+            *v = rnd() * a;
+        }
+        for v in self.w2.iter_mut() {
+            *v = rnd() * (6.0 / h as f32).sqrt();
+        }
+        let (b1, b2, eps) = (0.9f32, 0.999f32, 1e-8f32);
+        let mut mw1 = vec![0f32; self.w1.len()];
+        let mut vw1 = vec![0f32; self.w1.len()];
+        let mut mb1 = vec![0f32; h];
+        let mut vb1 = vec![0f32; h];
+        let mut mw2 = vec![0f32; h];
+        let mut vw2 = vec![0f32; h];
+        let (mut mb2, mut vb2) = (0f32, 0f32);
+        let lr = 3e-3f32;
+        let n = xs.len().max(1) as f32;
+        for ep in 0..epochs {
+            let bc1 = 1.0 - b1.powf(ep as f32 + 1.0);
+            let bc2 = 1.0 - b2.powf(ep as f32 + 1.0);
+            let mut gw1 = vec![0f32; self.w1.len()];
+            let mut gb1 = vec![0f32; h];
+            let mut gw2 = vec![0f32; h];
+            let mut gb2 = 0f32;
+            for (x, &y) in xs.iter().zip(ys) {
+                let xn = self.norm(x);
+                let (act, o) = self.forward(&xn);
+                let p = 1.0 / (1.0 + (-o).exp());
+                let d = (p - y) / n;
+                for j in 0..h {
+                    gw2[j] += d * act[j];
+                    if act[j] > 0.0 {
+                        let dj = d * self.w2[j];
+                        gb1[j] += dj;
+                        for i in 0..NIN2 {
+                            gw1[i * h + j] += dj * xn[i];
+                        }
+                    }
+                }
+                gb2 += d;
+            }
+            let step = |p: &mut f32, g: f32, m: &mut f32, v: &mut f32, wd: f32| {
+                *m = b1 * *m + (1.0 - b1) * g;
+                *v = b2 * *v + (1.0 - b2) * g * g;
+                *p -= lr * ((*m / bc1) / ((*v / bc2).sqrt() + eps) + wd * *p);
+            };
+            for i in 0..self.w1.len() {
+                step(&mut self.w1[i], gw1[i], &mut mw1[i], &mut vw1[i], l2);
+            }
+            for j in 0..h {
+                step(&mut self.b1[j], gb1[j], &mut mb1[j], &mut vb1[j], 0.0);
+                step(&mut self.w2[j], gw2[j], &mut mw2[j], &mut vw2[j], l2);
+            }
+            step(&mut self.b2, gb2, &mut mb2, &mut vb2, 0.0);
+        }
+    }
+
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        use std::fmt::Write as _;
+        let mut s = String::from(
+            "TPO2
+",
+        );
+        let _ = writeln!(s, "{} {} {}", self.hidden, self.b2, NIN2);
+        for i in 0..NIN2 {
+            let _ = writeln!(s, "{} {}", self.mu[i], self.sd[i]);
+        }
+        for j in 0..self.hidden {
+            let _ = writeln!(s, "{} {}", self.w2[j], self.b1[j]);
+        }
+        for i in 0..NIN2 {
+            for j in 0..self.hidden {
+                let _ = write!(s, "{} ", self.w1[i * self.hidden + j]);
+            }
+            let _ = writeln!(s);
+        }
+        std::fs::write(path, s)
+    }
+
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let s = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut it = s.lines();
+        if it.next() != Some("TPO2") {
+            return Err("不是 TPO2".into());
+        }
+        let head = it.next().ok_or("缺头")?;
+        let v: Vec<&str> = head.split_whitespace().collect();
+        let hidden: usize = v.first().and_then(|x| x.parse().ok()).ok_or("缺 hidden")?;
+        let b2: f32 = v.get(1).and_then(|x| x.parse().ok()).ok_or("缺 b2")?;
+        let mut m = MlpBank::new(hidden);
+        m.b2 = b2;
+        for i in 0..NIN2 {
+            let l = it.next().ok_or("行数不足（标准化）")?;
+            let p: Vec<f32> = l
+                .split_whitespace()
+                .filter_map(|x| x.parse().ok())
+                .collect();
+            m.mu[i] = p[0];
+            m.sd[i] = p[1];
+        }
+        for j in 0..hidden {
+            let l = it.next().ok_or("行数不足（隐层）")?;
+            let p: Vec<f32> = l
+                .split_whitespace()
+                .filter_map(|x| x.parse().ok())
+                .collect();
+            m.w2[j] = p[0];
+            m.b1[j] = p[1];
+        }
+        for j in 0..NIN2 {
+            let l = it.next().ok_or("行数不足（w1）")?;
+            let p: Vec<f32> = l
+                .split_whitespace()
+                .filter_map(|x| x.parse().ok())
+                .collect();
+            for (k, v) in p.iter().enumerate().take(hidden) {
+                m.w1[j * hidden + k] = *v;
+            }
+        }
+        Ok(m)
+    }
+}
+
+/// 标准化 + 逻辑回归（L2）。/// 标准化 + 逻辑回归（L2）。/// 标准化 + 逻辑回归（L2）。
 #[derive(Clone, Debug)]
 pub struct OodBank {
     pub mu: Vec<f32>,
@@ -243,7 +464,41 @@ impl OodBank {
     }
 }
 
-/// ROC-AUC（`scores` 越正越域内）。
+/// 闸门银行：线性（TPOD1）或 MLP（TPO2），按文件首行自动识别。
+pub enum Bank {
+    Lr(OodBank),
+    Mlp(MlpBank),
+}
+
+impl Bank {
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let head = std::fs::read_to_string(path)
+            .map_err(|e| format!("{}: {e}", path.display()))?
+            .lines()
+            .next()
+            .unwrap_or("")
+            .to_string();
+        if head == "TPO2" {
+            Ok(Bank::Mlp(MlpBank::load(path)?))
+        } else {
+            Ok(Bank::Lr(OodBank::load(path)?))
+        }
+    }
+
+    pub fn score(&self, x: &[f32]) -> f32 {
+        match self {
+            Bank::Lr(b) => b.score(x),
+            Bank::Mlp(m) => m.score(x),
+        }
+    }
+
+    /// MLP 需要 47 维输入（15 手工 + 32 个 z 通道均值）；线性门只用 15 维。
+    pub fn needs_v2(&self) -> bool {
+        matches!(self, Bank::Mlp(_))
+    }
+}
+
+/// ROC-AUC（`scores` 越正越域内）。/// ROC-AUC（`scores` 越正越域内）。
 pub fn auc(scores: &[f32], pos: &[bool]) -> f32 {
     let ps: Vec<f32> = scores
         .iter()

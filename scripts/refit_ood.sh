@@ -2,7 +2,10 @@
 # 域外闸门定期重拟合：确定性切分 → 训练 → 留出评估 → 过门才允许覆盖随仓闸门。
 #
 # 用法：
-#   scripts/refit_ood.sh <model.tpm> <manifest.json> <pos dirs(逗号)> <neg dir> [--apply]
+#   scripts/refit_ood.sh <model.tpm> <manifest.json> <pos dirs(逗号)> <neg dir> [--apply] [--lr]
+#
+# 默认拟合学习式头（MLP，47 维 = 15 手工特征 + 32 个 d1 通道均值）；
+# 加 `--lr` 退回线性门（15 维），便于对照。
 #
 # 判红门（任一不过就退出 1，且不写随仓文件）：
 #   · 留出 AUC ≥ 0.99
@@ -14,7 +17,16 @@ MODEL=${1:?需要 model.tpm}
 MANIFEST=${2:?需要 manifest.json}
 POS=${3:?需要正样本目录（逗号分隔）}
 NEG=${4:?需要负样本目录}
-APPLY=${5:-}
+shift 4 || true
+APPLY=""
+USE="--mlp"
+for a in "$@"; do
+  case "$a" in
+    --apply) APPLY="--apply" ;;
+    --lr) USE="" ;;
+    *) echo "未知参数 $a"; exit 2 ;;
+  esac
+done
 
 BIN=${PARTS_OOD:-target/release/parts-ood}
 [ -x "$BIN" ] || BIN=./target/release/parts-ood
@@ -37,7 +49,7 @@ echo "负样本 $total 张 ⇒ 训练 $n_train / 留出 $n_test"
 [ "$n_train" -ge 5 ] && [ "$n_test" -ge 5 ] || { echo "负样本太少（训练/留出各需 ≥5）"; exit 2; }
 
 BANK=$WORK/gate.tpod
-"$BIN" train --model "$MODEL" --manifest "$MANIFEST" --pos "$POS" \
+"$BIN" train $USE --model "$MODEL" --manifest "$MANIFEST" --pos "$POS" \
   --neg "$WORK/train" --per-dir 3 --out "$BANK" | tee "$WORK/train.log"
 "$BIN" eval --model "$MODEL" --manifest "$MANIFEST" --bank "$BANK" \
   --pos "$POS" --neg "$WORK/test" --per-dir 40 | tee "$WORK/eval.log"

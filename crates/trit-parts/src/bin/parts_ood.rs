@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use trit_parts::data::read_rgb;
 use trit_parts::gpu::Gpu;
 use trit_parts::net::Net;
-use trit_parts::ood::{NFEAT, OodBank, auc, tpr_at_fpr};
+use trit_parts::ood::{Bank, MlpBank, NFEAT, NIN2, OodBank, auc, features_v2, tpr_at_fpr};
 use trit_parts::parts::PartList;
 use trit_parts::tpm::TpmModel;
 
@@ -71,9 +71,13 @@ fn brighten(pix: &[f32], k: f32) -> Vec<f32> {
     pix.iter().map(|v| (v * k).clamp(0.0, 1.0)).collect()
 }
 
-fn infer_feats(net: &Net, gpu: &Gpu, rgb: &[f32], res: usize, k: usize) -> Vec<f32> {
+fn infer_feats(net: &Net, gpu: &Gpu, rgb: &[f32], res: usize, k: usize, v2: bool) -> Vec<f32> {
     let (logits, z) = trit_parts::api::forward_logits_feats(net, gpu, rgb, res as u32);
-    trit_parts::ood::features_from_logits(&logits, &z, res * res, k)
+    if v2 {
+        features_v2(&logits, &z, res * res, k)
+    } else {
+        trit_parts::ood::features_from_logits(&logits, &z, res * res, k)
+    }
 }
 
 fn load_model(path: &Path) -> (Gpu, Net) {
@@ -84,6 +88,11 @@ fn load_model(path: &Path) -> (Gpu, Net) {
     (gpu, net)
 }
 
+struct Cfg {
+    aug: bool,
+    v2: bool,
+}
+
 fn collect(
     net: &Net,
     gpu: &Gpu,
@@ -91,7 +100,7 @@ fn collect(
     dirs: &[PathBuf],
     neg: bool,
     per_dir: usize,
-    aug: bool,
+    cfg: &Cfg,
 ) -> Vec<Vec<f32>> {
     let mut out = Vec::new();
     for d in dirs {
@@ -108,12 +117,26 @@ fn collect(
                 }
             };
             let base = to_res(w, h, &pix, 384);
-            out.push(infer_feats(net, gpu, &base, 384, k));
-            if aug {
-                out.push(infer_feats(net, gpu, &flip(&base, 384, false), 384, k));
-                out.push(infer_feats(net, gpu, &flip(&base, 384, true), 384, k));
-                out.push(infer_feats(net, gpu, &brighten(&base, 1.2), 384, k));
-                out.push(infer_feats(net, gpu, &brighten(&base, 0.8), 384, k));
+            out.push(infer_feats(net, gpu, &base, 384, k, cfg.v2));
+            if cfg.aug {
+                out.push(infer_feats(
+                    net,
+                    gpu,
+                    &flip(&base, 384, false),
+                    384,
+                    k,
+                    cfg.v2,
+                ));
+                out.push(infer_feats(
+                    net,
+                    gpu,
+                    &flip(&base, 384, true),
+                    384,
+                    k,
+                    cfg.v2,
+                ));
+                out.push(infer_feats(net, gpu, &brighten(&base, 1.2), 384, k, cfg.v2));
+                out.push(infer_feats(net, gpu, &brighten(&base, 0.8), 384, k, cfg.v2));
             }
         }
     }
@@ -143,13 +166,15 @@ fn train(argv: &[String]) {
         .and_then(|v| v.parse().ok())
         .unwrap_or(2000);
     let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+    let mlp = argv.iter().any(|a| a == "--mlp");
 
     let parts = PartList::load(&manifest).unwrap_or_else(|e| panic!("{e}"));
     let (gpu, net) = load_model(&model);
     let k = parts.k;
 
-    let xs_pos = collect(&net, &gpu, k, &pos, false, per_dir, true);
-    let xs_neg = collect(&net, &gpu, k, &neg, true, usize::MAX, true);
+    let cfg = Cfg { aug: true, v2: mlp };
+    let xs_pos = collect(&net, &gpu, k, &pos, false, per_dir, &cfg);
+    let xs_neg = collect(&net, &gpu, k, &neg, true, usize::MAX, &cfg);
     println!("训练样本：域内 {} / 域外 {}", xs_pos.len(), xs_neg.len());
 
     let mut xs: Vec<Vec<f32>> = Vec::new();
@@ -162,16 +187,23 @@ fn train(argv: &[String]) {
         xs.push(x.clone());
         ys.push(0.0);
     }
-    let mut bank = OodBank::zeros();
-    bank.fit(&xs, &ys, l2, epochs);
-    bank.save(&out).unwrap_or_else(|e| panic!("{e}"));
-
-    let sc: Vec<f32> = xs.iter().map(|x| bank.score(x)).collect();
+    let (sc, dim): (Vec<f32>, usize) = if mlp {
+        let mut bank = MlpBank::new(16);
+        bank.fit(&xs, &ys, l2, epochs.max(200), 7);
+        bank.save(&out).unwrap_or_else(|e| panic!("{e}"));
+        (xs.iter().map(|x| bank.score(x)).collect(), NIN2)
+    } else {
+        let mut bank = OodBank::zeros();
+        bank.fit(&xs, &ys, l2, epochs);
+        bank.save(&out).unwrap_or_else(|e| panic!("{e}"));
+        (xs.iter().map(|x| bank.score(x)).collect(), NFEAT)
+    };
     let lab: Vec<bool> = ys.iter().map(|&v| v > 0.5).collect();
     println!(
-        "训练集 AUC {:.4}；特征维 {}；已存 {}",
+        "训练集 AUC {:.4}；特征维 {}；{}；已存 {}",
         auc(&sc, &lab),
-        NFEAT,
+        dim,
+        if mlp { "MLP" } else { "LR" },
         out.display()
     );
 }
@@ -188,11 +220,16 @@ fn eval(argv: &[String]) {
 
     let parts = PartList::load(&manifest).unwrap_or_else(|e| panic!("{e}"));
     let (gpu, net) = load_model(&model);
-    let bank = OodBank::load(&bank_p).unwrap_or_else(|e| panic!("{e}"));
+    let bank = Bank::load(&bank_p).unwrap_or_else(|e| panic!("{e}"));
+    let mlp = bank.needs_v2();
     let k = parts.k;
 
-    let xs_pos = collect(&net, &gpu, k, &pos, false, per_dir, false);
-    let xs_neg = collect(&net, &gpu, k, &neg, true, usize::MAX, false);
+    let cfg = Cfg {
+        aug: false,
+        v2: mlp,
+    };
+    let xs_pos = collect(&net, &gpu, k, &pos, false, per_dir, &cfg);
+    let xs_neg = collect(&net, &gpu, k, &neg, true, usize::MAX, &cfg);
 
     let mut sc: Vec<f32> = Vec::new();
     let mut lab: Vec<bool> = Vec::new();
@@ -254,10 +291,11 @@ fn check(argv: &[String]) {
 
     let parts = PartList::load(&manifest).unwrap_or_else(|e| panic!("{e}"));
     let (gpu, net) = load_model(&model);
-    let bank = OodBank::load(&bank_p).unwrap_or_else(|e| panic!("{e}"));
+    let bank = Bank::load(&bank_p).unwrap_or_else(|e| panic!("{e}"));
+    let mlp = bank.needs_v2();
     let (w, h, pix) = read_rgb(&image).unwrap_or_else(|e| panic!("{e}"));
     let base = to_res(w, h, &pix, 384);
-    let f = infer_feats(&net, &gpu, &base, 384, parts.k);
+    let f = infer_feats(&net, &gpu, &base, 384, parts.k, mlp);
     let score = bank.score(&f);
     let ok = score >= th;
     println!(
