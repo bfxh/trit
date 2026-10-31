@@ -2170,8 +2170,9 @@ fn tex_gen_cmd(argv: &[String]) {
                 loss = 0.0;
             }
         }
-        // --diag：判 ε 预测器是「只在真实输入上好」还是「自由运行也稳」
-        if argv.iter().any(|a| a == "--diag") && eps_mode {
+        // --diag：线性输出（ε/v）时，判预测器对输入 x_t 的依赖强度。
+        // 只换噪声、同 t、同 x0：若 v̂/ε̂ 几乎不变，说明输入被 STE 分流掉了（种子不变性的根因）。
+        if argv.iter().any(|a| a == "--diag") && linear_mode {
             let mut r = 0x5EED_1234u64;
             let mut g = |k: usize| -> Vec<f32> {
                 (0..k)
@@ -2204,57 +2205,32 @@ fn tex_gen_cmd(argv: &[String]) {
                 (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt()
             };
             let x0 = &images[0];
-            for tf in [0.2f32, 0.5, 0.8] {
+            for tf in [0.2f32, 0.5, 0.8, 1.0] {
                 let t = ((tf * tmax as f32).round() as usize).clamp(1, tmax);
-                let e = g(n * n);
-                let xt = trit_parts::diffuse::add_noise(x0, &e, abar[t]);
-                let hat = net.forward_x(&[xt, vec![tf; n * n]], n, n);
-                let diff: Vec<f32> = hat.iter().zip(&e).map(|(a, b)| a - b).collect();
+                let e1 = g(n * n);
+                let e2 = g(n * n);
+                let xt1 = trit_parts::diffuse::add_noise(x0, &e1, abar[t]);
+                let xt2 = trit_parts::diffuse::add_noise(x0, &e2, abar[t]);
+                let h1 = net.forward_x(&[xt1.clone(), vec![tf; n * n]], n, n);
+                let h2 = net.forward_x(&[xt2, vec![tf; n * n]], n, n);
+                // 目标：ε 或 v
+                let (sa, se) = (abar[t].sqrt(), (1.0 - abar[t]).sqrt());
+                let target: Vec<f32> = if v_mode {
+                    e1.iter()
+                        .zip(x0.iter())
+                        .map(|(e, c)| sa * e - se * c)
+                        .collect()
+                } else {
+                    e1.clone()
+                };
+                let d: Vec<f32> = h1.iter().zip(&h2).map(|(a, b)| a - b).collect();
+                let dt: Vec<f32> = h1.iter().zip(&target).map(|(a, b)| a - b).collect();
                 println!(
-                    "  教师强制 t={tf:.1}: corr(ε̂,ε)={:.3} 残差 {:.3}（ε 的 std {:.3}）",
-                    corr(&hat, &e),
-                    rms(&diff),
-                    rms(&e)
-                );
-            }
-            // 自由运行：两个种子各跑 5 步，比较同一步的 ε̂ 相对差
-            let steps = 5usize;
-            let mut runs = Vec::new();
-            for seed in [7u64, 99] {
-                let mut x = trit_parts::diffuse::initial_noise(n * n, seed);
-                let mut hats = Vec::new();
-                for t in (0..steps).rev() {
-                    let idx_t = ((t + 1) as f32 / steps as f32 * tmax as f32).round() as usize;
-                    let idx_p = ((t as f32 / steps as f32) * tmax as f32).round() as usize;
-                    let (at, atp) = (abar[idx_t.min(tmax)], abar[idx_p.min(tmax)]);
-                    let tf = (t + 1) as f32 / steps as f32;
-                    let ehat = net.forward_x(&[x.clone(), vec![tf; n * n]], n, n);
-                    hats.push(ehat.clone());
-                    let s0 = at.sqrt();
-                    let se = (1.0 - at).sqrt().max(1e-6);
-                    let x0h: Vec<f32> = x
-                        .iter()
-                        .zip(&ehat)
-                        .map(|(xt, e)| (xt - se * e) / s0)
-                        .collect();
-                    let s0p = atp.sqrt();
-                    let sep = (1.0 - atp).sqrt();
-                    x = x0h
-                        .iter()
-                        .zip(&ehat)
-                        .map(|(a, e)| s0p * a + sep * e)
-                        .collect();
-                }
-                runs.push(hats);
-            }
-            for (i, (a, b)) in runs[0].iter().zip(&runs[1]).enumerate() {
-                let d: Vec<f32> = a.iter().zip(b).map(|(p, q)| p - q).collect();
-                println!(
-                    "  自由运行 第 {} 步：两种子 ε̂ 相对差 {:.1}%（rms {:.3} vs {:.3}）",
-                    i + 1,
-                    100.0 * rms(&d) / rms(a).max(1e-6),
-                    rms(a),
-                    rms(b)
+                    "  依赖 t={tf:.1}: corr(ĥ,目标)={:.3} 残差 {:.3} | 换噪声后相对变化 **{:.1}%** | corr(ĥ,x_t)={:.3}",
+                    corr(&h1, &target),
+                    rms(&dt),
+                    100.0 * rms(&d) / rms(&h1).max(1e-6),
+                    corr(&h1, &xt1)
                 );
             }
         }
