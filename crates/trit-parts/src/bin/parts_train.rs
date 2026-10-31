@@ -412,13 +412,13 @@ fn main() {
         let out = if args.bnd_weight > 0.0 {
             // 稀疏类（如实例边界）加权：标签 id == --bnd-label 的像素损失 × bnd_weight
             let mut pw = vec![1.0f32; hw];
-            for p in 0..hw {
+            for (p, wp) in pw.iter_mut().enumerate() {
                 let mut id = 0u32;
-                for i in 0..k {
-                    id = id * 3 + s.planes[i][p] as u32;
+                for plane in &s.planes {
+                    id = id * 3 + plane[p] as u32;
                 }
                 if id + 1 == args.bnd_label {
-                    pw[p] = args.bnd_weight;
+                    *wp = args.bnd_weight;
                 }
             }
             trit_parts::loss::loss_and_grad_weighted(&logits, &s.planes, &s.valid, hw, k, &w, &pw)
