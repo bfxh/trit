@@ -251,8 +251,8 @@ git 的每个核心操作在账本上都有对应物，且大多更强：
 | `git sync`（桥） | `trit sync-git` | git 提交历史吸收进账本参与裁决（0 态+隔离防污染） |
 
 ```bash
-cargo run --bin trit -- init ./my-repo
-cargo run --bin trit -- commit -m "回归通过" -v +1 -f ./my-repo/repo.tritj
+cargo run --bin trit-immune -- init ./my-repo
+cargo run --bin trit-immune -- commit -m "回归通过" -v +1 -f ./my-repo/repo.tritj
 ```
 
 ## 许可
