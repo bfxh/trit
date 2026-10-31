@@ -26,8 +26,35 @@ API = "https://ambientcg.com/api/v2/full_json"
 
 def get_json(url: str) -> dict:
     req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=60) as r:
+    with urllib.request.urlopen(req, timeout=180) as r:
         return json.load(r)
+
+
+def list_assets(count: int, cat: str, page: int = 100, cache: Path | None = None) -> list:
+    """分页拉清单：单次 limit=1300 的响应约 8.4 MB，服务端要 2–3 分钟（实测 >120 s 才传完），
+    分页到 100 条一次才稳定。清单落盘缓存——重跑时不该再花 10 分钟拉一遍。"""
+    import json as _json
+
+    if cache is not None and cache.exists():
+        got = _json.loads(cache.read_text(encoding="utf-8"))
+        if len(got) >= count:
+            print(f"清单缓存命中 {len(got)} 个", flush=True)
+            return got[:count]
+    out: list = []
+    offset = 0
+    while len(out) < count:
+        n = min(page, count - len(out))
+        url = f"{API}?type=Material&limit={n}&offset={offset}&include=downloadData"
+        if cat:
+            url += f"&category={cat}"
+        got = get_json(url).get("foundAssets", [])
+        if not got:
+            break
+        out.extend(got)
+        offset += len(got)
+        if len(got) < n:
+            break
+    return out
 
 
 def one_k_zip(asset: dict) -> str | None:
@@ -79,8 +106,11 @@ def main() -> int:
         flush=True,
     )
 
-    url = f"{API}?type=Material&limit={count}&include=downloadData" + (f"&category={cat}" if cat else "")
-    assets = get_json(url).get("foundAssets", [])
+    assets = list_assets(count, cat, cache=out / f"api_{count}_{cat or 'all'}.json")
+    (out / f"api_{count}_{cat or 'all'}.json").write_text(
+        __import__("json").dumps(assets), encoding="utf-8"
+    )
+    print(f"清单 {len(assets)} 个", flush=True)
 
     def one(a: dict) -> bool:
         aid = a["assetId"]
@@ -111,10 +141,14 @@ def main() -> int:
         finally:
             tmp.unlink(missing_ok=True)
 
+    import time as _t
+
+    t0 = _t.time()
     with ThreadPoolExecutor(max_workers=max(1, jobs)) as ex:
         results = list(ex.map(one, assets))
     ok = sum(results)
-    print(f"FETCH_DONE {ok}/{count}")
+    dt = _t.time() - t0
+    print(f"FETCH_DONE {ok}/{len(assets)}（{dt / 60:.1f} 分钟，{60 * len(assets) / max(dt, 1e-9):.1f} 个/分钟）")
     return 0 if ok == count else 1
 
 

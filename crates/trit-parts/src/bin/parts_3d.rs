@@ -1606,9 +1606,10 @@ fn tex_prior_cmd(argv: &[String]) {
     };
 
     // 数据源：--data <dir> 用真实材质（PNG，灰度，缩放到 n），否则用程序化材质
-    let images: Vec<Vec<f32>> = match &data_dir {
+    let (images, names): (Vec<Vec<f32>>, Vec<String>) = match &data_dir {
         Some(dir) => {
             let mut v = Vec::new();
+            let mut nm = Vec::new();
             let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
                 .unwrap_or_else(|e| fail(&format!("读不了 {}: {e}", dir.display())))
                 .filter_map(|e| e.ok())
@@ -1629,29 +1630,63 @@ fn tex_prior_cmd(argv: &[String]) {
                     .iter()
                     .map(|c| 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2])
                     .collect();
+                nm.push(
+                    f.file_stem()
+                        .map(|x| x.to_string_lossy().into_owned())
+                        .unwrap_or_default(),
+                );
                 v.push(g);
             }
             if v.len() < 3 {
                 fail("--data 至少要 3 张 PNG");
             }
-            v
+            (v, nm)
         }
-        None => kinds.iter().map(|k| gray(k, seed)).collect(),
+        None => (
+            kinds.iter().map(|k| gray(k, seed)).collect(),
+            kinds.iter().map(|k| (*k).to_string()).collect(),
+        ),
     };
-    // **固定留出最前 2 张**（按文件名排序）：换数据量时评测集不变，数字才可比
+    // **固定留出**：默认按文件名排序取最前 2 张；扩数据集时新文件可能排到前面，
+    // 所以跨规模实验要用 `--holdout-names` 显式钉住评测集（文件名前缀逗号分隔）。
+    let hold_names: Vec<String> = arg(argv, "--holdout-names")
+        .map(|v| {
+            v.split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
     let n_eval = 2usize.min(images.len() - 1);
-    let (eval_imgs, all_train) = images.split_at(n_eval);
+    let (eval_idx, all_train_idx): (Vec<usize>, Vec<usize>) = if hold_names.is_empty() {
+        ((0..n_eval).collect(), (n_eval..images.len()).collect())
+    } else {
+        let mut ev = Vec::new();
+        let mut tr = Vec::new();
+        for (i, nm) in names.iter().enumerate() {
+            if hold_names.iter().any(|h| nm.starts_with(h.as_str())) {
+                ev.push(i);
+            } else {
+                tr.push(i);
+            }
+        }
+        if ev.is_empty() || tr.len() < 2 {
+            fail("--holdout-names 没匹配到文件（或训练集不足）");
+        }
+        (ev, tr)
+    };
     let train_cap: usize = arg(argv, "--train-imgs")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
-    let train_imgs: &[Vec<f32>] = if train_cap > 0 && train_cap < all_train.len() {
-        &all_train[..train_cap]
+    let train_idx: Vec<usize> = if train_cap > 0 && train_cap < all_train_idx.len() {
+        all_train_idx[..train_cap].to_vec()
     } else {
-        all_train
+        all_train_idx
     };
 
     let mut train: Vec<(Vec<f32>, f32)> = Vec::new();
-    for (ki, g) in train_imgs.iter().enumerate() {
+    for (ki, &ii) in train_idx.iter().enumerate() {
+        let g = &images[ii];
         for y in 0..n {
             for x in 0..n {
                 let (f, t) = feats(
@@ -1696,18 +1731,17 @@ fn tex_prior_cmd(argv: &[String]) {
     };
     let mut good = Vec::new();
     let mut wrong = Vec::new();
-    let eval_list: Vec<(String, &Vec<f32>)> = match &data_dir {
-        Some(_) => eval_imgs
-            .iter()
-            .enumerate()
-            .map(|(i, g)| (format!("holdout{i}"), g))
-            .collect(),
-        None => kinds
-            .iter()
-            .enumerate()
-            .map(|(ki, k)| (k.to_string(), &images[ki]))
-            .collect(),
-    };
+    let eval_list: Vec<(String, &Vec<f32>)> = eval_idx
+        .iter()
+        .enumerate()
+        .map(|(i, &ii)| {
+            if data_dir.is_some() {
+                (names[ii].clone(), &images[ii])
+            } else {
+                (format!("holdout{i}"), &images[ii])
+            }
+        })
+        .collect();
     for (ki, (name, g)) in eval_list.iter().enumerate() {
         let g = *g;
         let p_ok = psnr_of(&mlp, g, if cond { Some(ki) } else { None }, &mut nxt);
@@ -1904,7 +1938,9 @@ fn tex_gen_cmd(argv: &[String]) {
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
     // 0.003 是实测能收敛的档；0.01 在真实材质上会从 loss 0.62 涨到 6.48（GENERAL-PLAN §6.21）
-    let lr: f32 = arg(argv, "--lr").and_then(|v| v.parse().ok()).unwrap_or(0.003);
+    let lr: f32 = arg(argv, "--lr")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.003);
     let hid: usize = arg(argv, "--hid")
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
