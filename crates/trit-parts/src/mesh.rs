@@ -478,6 +478,20 @@ pub fn non_manifold_edges(m: &Mesh) -> usize {
     cnt.values().filter(|&&c| c != 2).count()
 }
 
+/// 边界边数：只被 1 个三角面使用的无向边。**= 0 才是“没有洞”的闭合网格**。
+/// （非流形边 >0 表示 4 个面共边——naive Surface Nets 在复杂体上必然出现，不等于有洞。）
+pub fn boundary_edges(m: &Mesh) -> usize {
+    use std::collections::HashMap;
+    let mut cnt: HashMap<(u32, u32), usize> = HashMap::new();
+    for t in &m.tris {
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            let e = if a < b { (a, b) } else { (b, a) };
+            *cnt.entry(e).or_insert(0) += 1;
+        }
+    }
+    cnt.values().filter(|&&c| c == 1).count()
+}
+
 /// 写 ASCII PLY。
 pub fn write_ply(path: &Path, m: &Mesh) -> Result<(), String> {
     use std::fmt::Write as _;

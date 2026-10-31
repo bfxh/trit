@@ -20,6 +20,7 @@ pub mod inst;
 pub mod loss;
 pub mod mesh;
 pub mod model;
+pub mod occ;
 pub mod ood;
 pub mod parts;
 pub mod splat;
