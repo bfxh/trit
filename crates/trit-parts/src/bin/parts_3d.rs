@@ -9,7 +9,9 @@
 use std::path::{Path, PathBuf};
 
 use trit_parts::data::read_npy_i32;
+use trit_parts::diffuse::{Denoiser, PatchMlp, Schedule, ddim_sample};
 use trit_parts::geo::{Camera, centroid, clouds, iou3d, read_npy_f32, voxelize, write_ply};
+use trit_parts::tconv::Net;
 
 fn arg(argv: &[String], key: &str) -> Option<String> {
     let i = argv.iter().position(|a| a == key)?;
@@ -1914,9 +1916,58 @@ fn tex_conv_cmd(argv: &[String]) {
 /// `tex-gen`：N5 生成第一块——DDIM 采样器 + 3×3 补丁去噪器，条件 = 材质 one-hot。
 /// 训练在程序化材质上（随机像素 + 随机时间步），采样后用三项统计量对照真实材质：
 /// 像素均值/方差、平铺接缝比、离最近真实补丁的距离（太小 = 抄训练集）。
+/// tex-gen 里的三种去噪器；ε 模式要用**ε-空间的稳定采样器**，不能走 x0 形式的 DDIM。
+enum Den {
+    M(PatchMlp),
+    C(Net),
+    E(trit_parts::tconv::EpsDen),
+}
+
+impl Denoiser for Den {
+    fn predict_x0(
+        &self,
+        xt: &[f32],
+        t_frac: f32,
+        cond: Option<usize>,
+        w: usize,
+        h: usize,
+    ) -> Vec<f32> {
+        match self {
+            Den::M(d) => d.predict_x0(xt, t_frac, cond, w, h),
+            Den::C(d) => d.predict_x0(xt, t_frac, cond, w, h),
+            Den::E(d) => d.predict_x0(xt, t_frac, cond, w, h),
+        }
+    }
+    fn input_dim(&self) -> usize {
+        match self {
+            Den::M(d) => d.input_dim(),
+            Den::C(d) => d.input_dim(),
+            Den::E(d) => d.input_dim(),
+        }
+    }
+}
+
+impl Den {
+    /// `eps_space=true` 走 ε-空间更新（高 t 系数放大误差，实测会饱和，仅作对照）。
+    fn sample(
+        &self,
+        sched: &Schedule,
+        w: usize,
+        h: usize,
+        seed: u64,
+        cond: Option<usize>,
+        eps_space: bool,
+    ) -> Vec<f32> {
+        match self {
+            Den::E(e) if eps_space => {
+                trit_parts::tconv::ddim_sample_eps(&e.net, &e.abar, w, h, seed, e.eps_scale)
+            }
+            _ => ddim_sample(self, sched, cond, w, h, seed),
+        }
+    }
+}
+
 fn tex_gen_cmd(argv: &[String]) {
-    use trit_parts::diffuse::{Denoiser, PatchMlp, Schedule, ddim_sample};
-    use trit_parts::tconv::Net;
     use trit_parts::tex::{seam_ratio, tile};
 
     let iters: usize = arg(argv, "--iters")
@@ -2055,7 +2106,7 @@ fn tex_gen_cmd(argv: &[String]) {
         (rng >> 11) as f32 / (1u64 << 53) as f32
     };
     let mut loss = 0.0f64;
-    let den: Box<dyn Denoiser> = if conv_hidden.is_empty() {
+    let den: Den = if conv_hidden.is_empty() {
         let mut d = PatchMlp::new(patch, conds, hid, seed);
         for step in 0..iters {
             let ki = (step * 7919) % images.len();
@@ -2066,7 +2117,7 @@ fn tex_gen_cmd(argv: &[String]) {
                 loss = 0.0;
             }
         }
-        Box::new(d)
+        Den::M(d)
     } else {
         let mut net = match &load_path {
             Some(p) => Net::load(p).unwrap_or_else(|e| fail(&e)),
@@ -2102,12 +2153,100 @@ fn tex_gen_cmd(argv: &[String]) {
                 loss = 0.0;
             }
         }
+        // --diag：判 ε 预测器是「只在真实输入上好」还是「自由运行也稳」
+        if argv.iter().any(|a| a == "--diag") && eps_mode {
+            let mut r = 0x5EED_1234u64;
+            let mut g = |k: usize| -> Vec<f32> {
+                (0..k)
+                    .map(|_| {
+                        r ^= r << 13;
+                        r ^= r >> 7;
+                        r ^= r << 17;
+                        let u1 = ((r >> 11) as f32 / (1u64 << 53) as f32).max(1e-6);
+                        r ^= r << 13;
+                        r ^= r >> 7;
+                        r ^= r << 17;
+                        let u2 = (r >> 11) as f32 / (1u64 << 53) as f32;
+                        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
+                    })
+                    .collect()
+            };
+            let corr = |a: &[f32], b: &[f32]| -> f32 {
+                let n = a.len() as f32;
+                let (ma, mb) = (a.iter().sum::<f32>() / n, b.iter().sum::<f32>() / n);
+                let (mut sab, mut sa, mut sb) = (0.0f32, 0.0f32, 0.0f32);
+                for (x, y) in a.iter().zip(b) {
+                    let (dx, dy) = (x - ma, y - mb);
+                    sab += dx * dy;
+                    sa += dx * dx;
+                    sb += dy * dy;
+                }
+                sab / (sa * sb).sqrt().max(1e-9)
+            };
+            let rms = |v: &[f32]| -> f32 {
+                (v.iter().map(|x| x * x).sum::<f32>() / v.len() as f32).sqrt()
+            };
+            let x0 = &images[0];
+            for tf in [0.2f32, 0.5, 0.8] {
+                let t = ((tf * tmax as f32).round() as usize).clamp(1, tmax);
+                let e = g(n * n);
+                let xt = trit_parts::diffuse::add_noise(x0, &e, abar[t]);
+                let hat = net.forward_x(&[xt, vec![tf; n * n]], n, n);
+                let diff: Vec<f32> = hat.iter().zip(&e).map(|(a, b)| a - b).collect();
+                println!(
+                    "  教师强制 t={tf:.1}: corr(ε̂,ε)={:.3} 残差 {:.3}（ε 的 std {:.3}）",
+                    corr(&hat, &e),
+                    rms(&diff),
+                    rms(&e)
+                );
+            }
+            // 自由运行：两个种子各跑 5 步，比较同一步的 ε̂ 相对差
+            let steps = 5usize;
+            let mut runs = Vec::new();
+            for seed in [7u64, 99] {
+                let mut x = trit_parts::diffuse::initial_noise(n * n, seed);
+                let mut hats = Vec::new();
+                for t in (0..steps).rev() {
+                    let idx_t = ((t + 1) as f32 / steps as f32 * tmax as f32).round() as usize;
+                    let idx_p = ((t as f32 / steps as f32) * tmax as f32).round() as usize;
+                    let (at, atp) = (abar[idx_t.min(tmax)], abar[idx_p.min(tmax)]);
+                    let tf = (t + 1) as f32 / steps as f32;
+                    let ehat = net.forward_x(&[x.clone(), vec![tf; n * n]], n, n);
+                    hats.push(ehat.clone());
+                    let s0 = at.sqrt();
+                    let se = (1.0 - at).sqrt().max(1e-6);
+                    let x0h: Vec<f32> = x
+                        .iter()
+                        .zip(&ehat)
+                        .map(|(xt, e)| (xt - se * e) / s0)
+                        .collect();
+                    let s0p = atp.sqrt();
+                    let sep = (1.0 - atp).sqrt();
+                    x = x0h
+                        .iter()
+                        .zip(&ehat)
+                        .map(|(a, e)| s0p * a + sep * e)
+                        .collect();
+                }
+                runs.push(hats);
+            }
+            for (i, (a, b)) in runs[0].iter().zip(&runs[1]).enumerate() {
+                let d: Vec<f32> = a.iter().zip(b).map(|(p, q)| p - q).collect();
+                println!(
+                    "  自由运行 第 {} 步：两种子 ε̂ 相对差 {:.1}%（rms {:.3} vs {:.3}）",
+                    i + 1,
+                    100.0 * rms(&d) / rms(a).max(1e-6),
+                    rms(a),
+                    rms(b)
+                );
+            }
+        }
         if let Some(p) = &save_path {
             net.save(p).unwrap_or_else(|e| fail(&e));
             println!("权重已存 {}", p.display());
         }
         if eps_mode {
-            Box::new(trit_parts::tconv::EpsDen {
+            Den::E(trit_parts::tconv::EpsDen {
                 net,
                 abar: abar.clone(),
                 eps_scale: arg(argv, "--eps-scale")
@@ -2115,7 +2254,7 @@ fn tex_gen_cmd(argv: &[String]) {
                     .unwrap_or(1.0f32),
             })
         } else {
-            Box::new(net)
+            Den::C(net)
         }
     };
 
@@ -2211,13 +2350,13 @@ fn tex_gen_cmd(argv: &[String]) {
     for (ki, (k, data)) in eval_items.iter().enumerate() {
         let data = data.clone();
         let (dm, ds) = stat(&data);
-        let sample = ddim_sample(
-            &*den,
+        let sample = den.sample(
             &sched,
-            if data_dir.is_some() { None } else { Some(ki) },
             n,
             n,
             eval_seed * 131 + ki as u64 + 7,
+            if data_dir.is_some() { None } else { Some(ki) },
+            argv.iter().any(|a| a == "--eps-space"),
         );
         let (gm, gs) = stat(&sample);
         let sr = seam_ratio(
