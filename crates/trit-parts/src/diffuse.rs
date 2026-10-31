@@ -228,6 +228,20 @@ pub fn ddim_sample(
     h: usize,
     seed: u64,
 ) -> Vec<f32> {
+    ddim_sample_opts(d, sched, cond, w, h, seed, true)
+}
+
+/// 同 `ddim_sample`，但可关掉最后一步的 [0,1] 裁剪——**归一化（z-score）训练时必须关**，
+/// 否则把标准正态尺度的 x0 硬压进 [0,1]。
+pub fn ddim_sample_opts(
+    d: &dyn Denoiser,
+    sched: &Schedule,
+    cond: Option<usize>,
+    w: usize,
+    h: usize,
+    seed: u64,
+    clamp: bool,
+) -> Vec<f32> {
     let abar = sched.abar();
     let t_max = abar.len() - 1;
     if t_max == 0 {
@@ -257,7 +271,11 @@ pub fn ddim_sample(
             .map(|(x0, e)| s0p * x0 + sep * e)
             .collect();
     }
-    x.iter().map(|v| v.clamp(0.0, 1.0)).collect()
+    if clamp {
+        x.iter().map(|v| v.clamp(0.0, 1.0)).collect()
+    } else {
+        x
+    }
 }
 
 #[cfg(test)]

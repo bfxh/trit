@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 
 use trit_parts::data::read_npy_i32;
-use trit_parts::diffuse::{Denoiser, PatchMlp, Schedule, ddim_sample};
+use trit_parts::diffuse::{Denoiser, PatchMlp, Schedule};
 use trit_parts::geo::{Camera, centroid, clouds, iou3d, read_npy_f32, voxelize, write_ply};
 use trit_parts::tconv::Net;
 
@@ -1952,6 +1952,7 @@ impl Denoiser for Den {
 
 impl Den {
     /// `eps_space=true` 走 ε-空间更新（高 t 系数放大误差，实测会饱和，仅作对照）。
+    #[allow(clippy::too_many_arguments)]
     fn sample(
         &self,
         sched: &Schedule,
@@ -1960,12 +1961,13 @@ impl Den {
         seed: u64,
         cond: Option<usize>,
         eps_space: bool,
+        clamp: bool,
     ) -> Vec<f32> {
         match self {
             Den::E(e) if eps_space => {
                 trit_parts::tconv::ddim_sample_eps(&e.net, &e.abar, w, h, seed, e.eps_scale)
             }
-            _ => ddim_sample(self, sched, cond, w, h, seed),
+            _ => trit_parts::diffuse::ddim_sample_opts(self, sched, cond, w, h, seed, clamp),
         }
     }
 }
@@ -2000,6 +2002,8 @@ fn tex_gen_cmd(argv: &[String]) {
     let patch: usize = arg(argv, "--patch")
         .and_then(|v| v.parse().ok())
         .unwrap_or(3);
+    // --normalize：按图 z-score 到单位方差（扩散噪声表按单位方差设计；也顺带得到显式亮度/对比控制）
+    let normalize = argv.iter().any(|a| a == "--normalize");
 
     let kinds = ["wood", "marble", "rust", "grid"];
     let gray = |kind: &str, sd: u64| -> Vec<f32> {
@@ -2087,6 +2091,24 @@ fn tex_gen_cmd(argv: &[String]) {
         .sum::<f32>()
         / images.len() as f32;
     println!("训练图 {} 张，均值 {data_mean:.3}", images.len());
+    // 归一化：每张图减去自身均值、除以自身标准差（保留反归一化参数）
+    let img_norm: Vec<(f32, f32)> = images
+        .iter()
+        .map(|g| {
+            let m = g.iter().sum::<f32>() / g.len() as f32;
+            let v = g.iter().map(|x| (x - m) * (x - m)).sum::<f32>() / g.len() as f32;
+            (m, v.sqrt().max(1e-4))
+        })
+        .collect();
+    let images: Vec<Vec<f32>> = if normalize {
+        images
+            .iter()
+            .zip(&img_norm)
+            .map(|(g, (m, s))| g.iter().map(|x| (x - m) / s).collect())
+            .collect()
+    } else {
+        images
+    };
     let conds = if data_dir.is_some() { 0 } else { kinds.len() };
     // 去噪器：默认 3×3/7×7 补丁 MLP；`--conv 8,8` 换成三值卷积栈（输入 = [x_t, t/T] 两张图）
     let conv_hidden: Vec<usize> = arg(argv, "--conv")
@@ -2096,6 +2118,9 @@ fn tex_gen_cmd(argv: &[String]) {
     let use_adam = argv.iter().any(|a| a == "--adam");
     // ε-预测：目标是噪声而不是 x0；线性输出 + 平方误差（x0-预测会把细纹理平均掉）
     let v_mode = argv.iter().any(|a| a == "--v");
+    // --cond-stats：把「这张图的均值 + 对比(p95−p5)」作为两路常数条件图，治外观单模
+    let cond_stats = argv.iter().any(|a| a == "--cond-stats");
+    // --normalize：按图 z-score 到单位方差（扩散噪声表是按单位方差设计的；也顺带得到显式的亮度/对比控制）
     let eps_mode = argv.iter().any(|a| a == "--eps") && !v_mode;
     let linear_mode = eps_mode || v_mode;
     let batch: usize = arg(argv, "--batch")
@@ -2126,13 +2151,24 @@ fn tex_gen_cmd(argv: &[String]) {
     } else {
         let mut net = match &load_path {
             Some(p) => Net::load(p).unwrap_or_else(|e| fail(&e)),
-            None => Net::new(2, &conv_hidden, seed),
+            None => Net::new(2 + 2 * usize::from(cond_stats), &conv_hidden, seed),
         };
         net.set_bn(use_bn && load_path.is_none());
         if linear_mode && load_path.is_none() {
             net.linear_out = true;
         }
         let tmax = sched.steps().max(1);
+        // 每张图的 (均值, 对比) —— 条件通道的取值
+        let img_stats: Vec<(f32, f32)> = images
+            .iter()
+            .map(|g| {
+                let mean = g.iter().sum::<f32>() / g.len() as f32;
+                let mut v = g.clone();
+                v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                let p = |q: f32| v[((v.len() - 1) as f32 * q).round() as usize];
+                (mean, p(0.95) - p(0.05))
+            })
+            .collect();
         for step in 0..iters {
             let mut items: Vec<(Vec<Vec<f32>>, Vec<f32>)> = Vec::with_capacity(batch);
             for _ in 0..batch {
@@ -2148,7 +2184,12 @@ fn tex_gen_cmd(argv: &[String]) {
                 let x0 = &images[ki];
                 let xt = trit_parts::diffuse::add_noise(x0, &noise, abar[t]);
                 let tf = t as f32 / tmax as f32;
-                let maps = vec![xt, vec![tf; n * n]];
+                let mut maps = vec![xt, vec![tf; n * n]];
+                if cond_stats {
+                    let (m, c) = img_stats[ki];
+                    maps.push(vec![m; n * n]);
+                    maps.push(vec![c; n * n]);
+                }
                 let target = if eps_mode {
                     noise
                 } else if v_mode {
@@ -2239,9 +2280,29 @@ fn tex_gen_cmd(argv: &[String]) {
             println!("权重已存 {}", p.display());
         }
         if v_mode {
+            let extra = if cond_stats {
+                let want_mean: f32 = arg(argv, "--want-mean")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| {
+                        img_stats.iter().map(|s| s.0).sum::<f32>() / img_stats.len() as f32
+                    });
+                let want_contrast: f32 = arg(argv, "--want-contrast")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or_else(|| {
+                        let mut c: Vec<f32> = img_stats.iter().map(|s| s.1).collect();
+                        c.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                        c[c.len() / 2]
+                    });
+                println!("条件: 目标均值 {want_mean:.3}、目标对比 {want_contrast:.3}");
+                vec![want_mean, want_contrast]
+            } else {
+                Vec::new()
+            };
             Den::V(trit_parts::tconv::VDen {
                 net,
                 abar: abar.clone(),
+                extra,
+                clamp: !normalize,
             })
         } else if eps_mode {
             Den::E(trit_parts::tconv::EpsDen {
@@ -2355,7 +2416,28 @@ fn tex_gen_cmd(argv: &[String]) {
             eval_seed * 131 + ki as u64 + 7,
             if data_dir.is_some() { None } else { Some(ki) },
             argv.iter().any(|a| a == "--eps-space"),
+            !normalize,
         );
+        let sample: Vec<f32> = if normalize {
+            let want_mean: f32 = arg(argv, "--want-mean")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or_else(|| {
+                    let mut m: Vec<f32> = img_norm.iter().map(|s| s.0).collect();
+                    m.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    m[m.len() / 2]
+                });
+            let want_std: f32 = arg(argv, "--want-std")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or_else(|| {
+                    let mut s: Vec<f32> = img_norm.iter().map(|s| s.1).collect();
+                    s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                    s[s.len() / 2]
+                });
+            println!("反归一化: 目标均值 {want_mean:.3}、目标标准差 {want_std:.3}");
+            sample.iter().map(|x| x * want_std + want_mean).collect()
+        } else {
+            sample
+        };
         let (gm, gs) = stat(&sample);
         let sr = seam_ratio(
             &sample

@@ -659,6 +659,10 @@ impl Net {
 pub struct VDen {
     pub net: Net,
     pub abar: Vec<f32>,
+    /// 追加在 `[x_t, t/T]` 之后的常数条件图（如目标均值/对比）；空 = 无条件。
+    pub extra: Vec<f32>,
+    /// 是否把 x̂0 裁到 [0,1]；归一化（z-score）训练时必须为 false。
+    pub clamp: bool,
 }
 
 impl crate::diffuse::Denoiser for VDen {
@@ -671,6 +675,9 @@ impl crate::diffuse::Denoiser for VDen {
         h: usize,
     ) -> Vec<f32> {
         let mut maps = vec![xt.to_vec(), vec![t_frac; w * h]];
+        for e in &self.extra {
+            maps.push(vec![*e; w * h]);
+        }
         for k in 0..self.net.cond {
             maps.push(vec![(cond == Some(k)) as u8 as f32; w * h]);
         }
@@ -681,7 +688,10 @@ impl crate::diffuse::Denoiser for VDen {
         let (sa, se) = (a.sqrt(), (1.0 - a).sqrt());
         xt.iter()
             .zip(&v)
-            .map(|(x, vv)| (sa * x - se * vv).clamp(0.0, 1.0))
+            .map(|(x, vv)| {
+                let x0 = sa * x - se * vv;
+                if self.clamp { x0.clamp(0.0, 1.0) } else { x0 }
+            })
             .collect()
     }
 
@@ -894,6 +904,8 @@ mod tests {
         let d = VDen {
             net,
             abar: abar.clone(),
+            extra: Vec::new(),
+            clamp: true,
         };
         let xt = vec![0.8f32; w * h];
         let x0 = d.predict_x0(&xt, 0.5, None, w, h); // ᾱ=0.25 ⇒ 0.5*0.8=0.4
