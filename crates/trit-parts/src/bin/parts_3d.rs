@@ -1526,8 +1526,10 @@ fn tex_cmd(argv: &[String]) {
     );
 }
 
-/// `tex-prior --iters 30000 --sigma 0.1`：N5 学习版地基——用程序化材质当数据，
-/// 训一个三值 3×3 去噪算子（9→16→1，灰度），在**留出材质种子**上量 PSNR 提升。
+/// `tex-prior [--patch 3|7] [--cond]`：N5 学习地基——用程序化材质当数据训三值小算子。
+/// - 无 `--cond`：按像素回归（局部去噪），`nin = patch²`；
+/// - 加 `--cond`：输入拼上材质 one-hot（4 维），验证「条件能否被学到」：
+///   评测时同时报「正确条件」与「错误条件」的 PSNR，差得越多说明条件用得越实。
 fn tex_prior_cmd(argv: &[String]) {
     use trit_parts::occ::Mlp;
     use trit_parts::tex::tile;
@@ -1540,7 +1542,7 @@ fn tex_prior_cmd(argv: &[String]) {
         .unwrap_or(0.1);
     let n: usize = arg(argv, "--size")
         .and_then(|v| v.parse().ok())
-        .unwrap_or(96);
+        .unwrap_or(64);
     let seed: u64 = arg(argv, "--seed")
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
@@ -1550,8 +1552,17 @@ fn tex_prior_cmd(argv: &[String]) {
     let lr: f32 = arg(argv, "--lr")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.03);
+    let patch: usize = arg(argv, "--patch")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+    let cond = argv.iter().any(|a| a == "--cond");
+    let r = (patch / 2) as i32;
+    let kinds = ["wood", "marble", "rust", "grid"];
+    let nin = patch * patch + if cond { kinds.len() } else { 0 };
+    let hid: usize = arg(argv, "--hid")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(16);
 
-    // 灰度化 + 3×3 取样（边缘按环绕，保证平铺一致）
     let gray = |kind: &str, sd: u64| -> Vec<f32> {
         tile(kind, n, sd)
             .iter()
@@ -1565,32 +1576,44 @@ fn tex_prior_cmd(argv: &[String]) {
         rng ^= rng << 17;
         (rng >> 11) as f32 / (1u64 << 53) as f32
     };
-    let kinds = ["wood", "marble", "rust", "grid"];
+    let gauss = |nxt: &mut dyn FnMut() -> f32| {
+        let u1 = nxt().max(1e-6);
+        let u2 = nxt();
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
+    };
+    let feats = |g: &[f32],
+                 x: usize,
+                 y: usize,
+                 cond_idx: Option<usize>,
+                 nxt: &mut dyn FnMut() -> f32|
+     -> (Vec<f32>, f32) {
+        let mut f = Vec::with_capacity(nin);
+        for dy in -r..=r {
+            for dx in -r..=r {
+                let xx = ((x as i32 + dx).rem_euclid(n as i32)) as usize;
+                let yy = ((y as i32 + dy).rem_euclid(n as i32)) as usize;
+                f.push((g[yy * n + xx] + sigma * gauss(nxt)).clamp(0.0, 1.0));
+            }
+        }
+        if let Some(ci) = cond_idx {
+            for k in 0..kinds.len() {
+                f.push((k == ci) as u8 as f32);
+            }
+        }
+        (f, g[y * n + x])
+    };
+
     let mut train: Vec<(Vec<f32>, f32)> = Vec::new();
-    for (i, k) in kinds.iter().enumerate() {
-        let g = gray(k, seed + i as u64);
+    for (ki, k) in kinds.iter().enumerate() {
+        let g = gray(k, seed + ki as u64);
         for y in 0..n {
             for x in 0..n {
-                let mut f = Vec::with_capacity(9);
-                for dy in -1i32..=1 {
-                    for dx in -1i32..=1 {
-                        let (xx, yy) = (
-                            ((x as i32 + dx).rem_euclid(n as i32)) as usize,
-                            ((y as i32 + dy).rem_euclid(n as i32)) as usize,
-                        );
-                        let v = g[yy * n + xx];
-                        // 加高斯噪声（Box-Muller 近似：两次均匀）
-                        let u1 = nxt().max(1e-6);
-                        let u2 = nxt();
-                        let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
-                        f.push((v + sigma * z).clamp(0.0, 1.0));
-                    }
-                }
-                train.push((f, g[y * n + x]));
+                let (f, t) = feats(&g, x, y, if cond { Some(ki) } else { None }, &mut nxt);
+                train.push((f, t));
             }
         }
     }
-    let mut mlp = Mlp::new(9, 16, seed);
+    let mut mlp = Mlp::new(nin, hid, seed);
     let mut loss = 0.0f64;
     for step in 0..iters {
         let (x, y) = &train[(step * 7919) % train.len()];
@@ -1605,48 +1628,54 @@ fn tex_prior_cmd(argv: &[String]) {
             loss = 0.0;
         }
     }
-    // 留出种子 + 留出材质方向：只评 wood/marble（训练见过种类，但换种子）
-    let mut psnr_in = Vec::new();
-    let mut psnr_out = Vec::new();
-    for (i, k) in ["wood", "marble"].iter().enumerate() {
-        let g = gray(k, eval_seed + i as u64);
+
+    let psnr_of = |mlp: &Mlp, g: &[f32], ci: Option<usize>, nxt: &mut dyn FnMut() -> f32| -> f64 {
         let (mut se_in, mut se_out, mut cnt) = (0.0f64, 0.0f64, 0usize);
         for y in 0..n {
             for x in 0..n {
-                let mut f = Vec::with_capacity(9);
-                for dy in -1i32..=1 {
-                    for dx in -1i32..=1 {
-                        let (xx, yy) = (
-                            ((x as i32 + dx).rem_euclid(n as i32)) as usize,
-                            ((y as i32 + dy).rem_euclid(n as i32)) as usize,
-                        );
-                        let u1 = nxt().max(1e-6);
-                        let u2 = nxt();
-                        let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
-                        f.push((g[yy * n + xx] + sigma * z).clamp(0.0, 1.0));
-                    }
-                }
-                let clean = g[y * n + x];
+                let (f, clean) = feats(g, x, y, ci, nxt);
                 let (logit, _) = mlp.forward(&f);
                 let pred = 1.0 / (1.0 + (-logit).exp());
-                let noisy = f[4];
-                se_in += f64::from((noisy - clean).powi(2));
+                se_in += f64::from((f[(patch * patch) / 2] - clean).powi(2));
                 se_out += f64::from((pred - clean).powi(2));
                 cnt += 1;
             }
         }
-        let p_in = 10.0 * (1.0 / (se_in / cnt as f64)).log10();
-        let p_out = 10.0 * (1.0 / (se_out / cnt as f64)).log10();
-        println!("留出 {k}（seed {eval_seed}）: 噪声 PSNR {p_in:.2} → 去噪 {p_out:.2}");
-        psnr_in.push(p_in);
-        psnr_out.push(p_out);
+        10.0 * (1.0 / (se_in / cnt as f64)).log10() * 0.0
+            + 10.0 * (1.0 / (se_out / cnt as f64)).log10()
+    };
+    let mut good = Vec::new();
+    let mut wrong = Vec::new();
+    for (ki, k) in kinds.iter().enumerate() {
+        let g = gray(k, eval_seed + ki as u64);
+        let p_ok = psnr_of(&mlp, &g, if cond { Some(ki) } else { None }, &mut nxt);
+        let p_bad = if cond {
+            psnr_of(&mlp, &g, Some((ki + 1) % kinds.len()), &mut nxt)
+        } else {
+            f64::NAN
+        };
+        println!("留出 {k}（seed {eval_seed}）: 正确条件 {p_ok:.2} dB  错误条件 {p_bad:.2} dB");
+        good.push(p_ok);
+        if cond {
+            wrong.push(p_bad);
+        }
     }
     println!(
-        "N5 学习地基：3×3 三值去噪算子 {} 步；PSNR 均值 {:.2} → {:.2}（+{:.2} dB）",
+        "N5 学习地基：patch {}×{}，条件 {}，{} 步；留出 PSNR 均值 {:.2} dB{}",
+        patch,
+        patch,
+        if cond { "开" } else { "关" },
         iters,
-        avg(&psnr_in),
-        avg(&psnr_out),
-        avg(&psnr_out) - avg(&psnr_in)
+        avg(&good),
+        if cond {
+            format!(
+                "；错条件 {:.2} dB（差 {:.2}）",
+                avg(&wrong),
+                avg(&good) - avg(&wrong)
+            )
+        } else {
+            String::new()
+        }
     );
 }
 
