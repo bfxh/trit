@@ -1549,6 +1549,7 @@ fn tex_prior_cmd(argv: &[String]) {
     let eval_seed: u64 = arg(argv, "--eval-seed")
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
+    let _ = eval_seed; // --data 模式下评测用留出图片，不再需要 seed
     let lr: f32 = arg(argv, "--lr")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.03);
@@ -1558,6 +1559,7 @@ fn tex_prior_cmd(argv: &[String]) {
     let cond = argv.iter().any(|a| a == "--cond");
     let r = (patch / 2) as i32;
     let kinds = ["wood", "marble", "rust", "grid"];
+    let data_dir = arg(argv, "--data").map(PathBuf::from);
     let nin = patch * patch + if cond { kinds.len() } else { 0 };
     let hid: usize = arg(argv, "--hid")
         .and_then(|v| v.parse().ok())
@@ -1603,12 +1605,53 @@ fn tex_prior_cmd(argv: &[String]) {
         (f, g[y * n + x])
     };
 
+    // 数据源：--data <dir> 用真实材质（PNG，灰度，缩放到 n），否则用程序化材质
+    let images: Vec<Vec<f32>> = match &data_dir {
+        Some(dir) => {
+            let mut v = Vec::new();
+            let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
+                .unwrap_or_else(|e| fail(&format!("读不了 {}: {e}", dir.display())))
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|x| x == "png"))
+                .collect();
+            files.sort();
+            for f in files {
+                let (w0, h0, pix) = trit_parts::data::read_rgb(&f).unwrap_or_else(|e| fail(&e));
+                let rgb = if w0 == n && h0 == n {
+                    pix
+                } else {
+                    trit_parts::data::resize_rgb(w0, h0, &pix, n)
+                };
+                let g: Vec<f32> = rgb
+                    .as_chunks::<3>()
+                    .0
+                    .iter()
+                    .map(|c| 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2])
+                    .collect();
+                v.push(g);
+            }
+            if v.len() < 3 {
+                fail("--data 至少要 3 张 PNG");
+            }
+            v
+        }
+        None => kinds.iter().map(|k| gray(k, seed)).collect(),
+    };
+    let n_eval = 2usize.min(images.len() - 1);
+    let (train_imgs, eval_imgs) = images.split_at(images.len() - n_eval);
+
     let mut train: Vec<(Vec<f32>, f32)> = Vec::new();
-    for (ki, k) in kinds.iter().enumerate() {
-        let g = gray(k, seed + ki as u64);
+    for (ki, g) in train_imgs.iter().enumerate() {
         for y in 0..n {
             for x in 0..n {
-                let (f, t) = feats(&g, x, y, if cond { Some(ki) } else { None }, &mut nxt);
+                let (f, t) = feats(
+                    g,
+                    x,
+                    y,
+                    if cond { Some(ki % kinds.len()) } else { None },
+                    &mut nxt,
+                );
                 train.push((f, t));
             }
         }
@@ -1646,15 +1689,27 @@ fn tex_prior_cmd(argv: &[String]) {
     };
     let mut good = Vec::new();
     let mut wrong = Vec::new();
-    for (ki, k) in kinds.iter().enumerate() {
-        let g = gray(k, eval_seed + ki as u64);
-        let p_ok = psnr_of(&mlp, &g, if cond { Some(ki) } else { None }, &mut nxt);
+    let eval_list: Vec<(String, &Vec<f32>)> = match &data_dir {
+        Some(_) => eval_imgs
+            .iter()
+            .enumerate()
+            .map(|(i, g)| (format!("holdout{i}"), g))
+            .collect(),
+        None => kinds
+            .iter()
+            .enumerate()
+            .map(|(ki, k)| (k.to_string(), &images[ki]))
+            .collect(),
+    };
+    for (ki, (name, g)) in eval_list.iter().enumerate() {
+        let g = *g;
+        let p_ok = psnr_of(&mlp, g, if cond { Some(ki) } else { None }, &mut nxt);
         let p_bad = if cond {
-            psnr_of(&mlp, &g, Some((ki + 1) % kinds.len()), &mut nxt)
+            psnr_of(&mlp, g, Some((ki + 1) % kinds.len()), &mut nxt)
         } else {
             f64::NAN
         };
-        println!("留出 {k}（seed {eval_seed}）: 正确条件 {p_ok:.2} dB  错误条件 {p_bad:.2} dB");
+        println!("留出 {name}: 正确条件 {p_ok:.2} dB  错误条件 {p_bad:.2} dB");
         good.push(p_ok);
         if cond {
             wrong.push(p_bad);
