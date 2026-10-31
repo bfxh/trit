@@ -355,7 +355,13 @@ impl Net {
     }
 
     pub fn forward(&self, img: &[f32], cond: Option<usize>, w: usize, h: usize) -> Vec<f32> {
-        let mut x = self.input(img, cond, w, h);
+        let x = self.input(img, cond, w, h);
+        self.forward_x(&x, w, h)
+    }
+
+    /// 直接吃一组通道图（扩散去噪器要把 `t/T` 当第二通道，`input` 造不出来）。
+    pub fn forward_x(&self, x: &[Vec<f32>], w: usize, h: usize) -> Vec<f32> {
+        let mut x = x.to_vec();
         for i in 0..self.layers.len() {
             let mut y = self.layers[i].forward(&x, w, h);
             if let Some(bn) = &self.bns[i] {
@@ -401,6 +407,22 @@ impl Net {
         lr: f32,
         adam: bool,
     ) -> f32 {
+        let maps: Vec<(Vec<Vec<f32>>, Vec<f32>)> = batch
+            .iter()
+            .map(|(img, tgt, cond)| (self.input(img, *cond, w, h), tgt.clone()))
+            .collect();
+        self.train_batch_x(&maps, w, h, lr, adam)
+    }
+
+    /// 多通道输入版的批量训练：`batch[i] = (输入通道图, 目标图)`。
+    pub fn train_batch_x(
+        &mut self,
+        batch: &[(Vec<Vec<f32>>, Vec<f32>)],
+        w: usize,
+        h: usize,
+        lr: f32,
+        adam: bool,
+    ) -> f32 {
         let n = w * h;
         let k = batch.len().max(1);
         let mut acc_w: Vec<Vec<f32>> = self.layers.iter().map(|l| vec![0.0; l.w.len()]).collect();
@@ -421,11 +443,11 @@ impl Net {
             .map(|b| b.as_ref().map(|bb| vec![0.0; bb.beta.len()]))
             .collect();
         let mut loss = 0.0f64;
-        for (img, target, cond) in batch {
+        for (maps_in, target) in batch {
             let mut ins: Vec<Vec<Vec<f32>>> = Vec::new();
             let mut pre_relu: Vec<Vec<Vec<f32>>> = Vec::new();
             let mut xhats: Vec<Option<Vec<Vec<f32>>>> = Vec::new();
-            let mut x = self.input(img, *cond, w, h);
+            let mut x = maps_in.clone();
             for li in 0..self.layers.len() {
                 let mut y = self.layers[li].forward(&x, w, h);
                 let mut xh = None;
@@ -508,6 +530,123 @@ impl Net {
     }
 }
 
+impl Net {
+    /// 存盘（文本，`TPC1`）：层维度 + 权重 + bias + scale，再跟 BN 的 γ/β。
+    pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
+        use std::fmt::Write as _;
+        let mut out = String::new();
+        let _ = writeln!(out, "TPC1 {} {}", self.layers.len(), self.cond);
+        for l in &self.layers {
+            let _ = writeln!(out, "{} {}", l.cin, l.cout);
+            for v in [&l.w, &l.b, &l.scale] {
+                for x in v.iter() {
+                    let _ = write!(out, "{x} ");
+                }
+                let _ = writeln!(out);
+            }
+        }
+        let nbn = self.bns.iter().filter(|b| b.is_some()).count();
+        let _ = writeln!(out, "BN {nbn}");
+        for i in 0..self.layers.len() {
+            match &self.bns[i] {
+                Some(b) => {
+                    let _ = writeln!(out, "{i} 1");
+                    for v in [&b.gamma, &b.beta] {
+                        for x in v.iter() {
+                            let _ = write!(out, "{x} ");
+                        }
+                        let _ = writeln!(out);
+                    }
+                }
+                None => {
+                    let _ = writeln!(out, "{i} 0");
+                }
+            }
+        }
+        std::fs::write(path, out).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    pub fn load(path: &std::path::Path) -> Result<Self, String> {
+        let txt = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        fn take<'a>(
+            it: &mut impl Iterator<Item = &'a str>,
+            path: &std::path::Path,
+            what: &str,
+        ) -> Result<f32, String> {
+            it.next()
+                .ok_or_else(|| format!("{}: 缺 {what}", path.display()))?
+                .parse::<f32>()
+                .map_err(|e| format!("{}: {what} 解析失败 {e}", path.display()))
+        }
+        let mut it = txt.split_whitespace();
+        if it.next() != Some("TPC1") {
+            return Err(format!("{}: 不是 TPC1", path.display()));
+        }
+        let nl = take(&mut it, path, "层数")? as usize;
+        let cond = take(&mut it, path, "cond")? as usize;
+        let mut layers = Vec::with_capacity(nl);
+        for _ in 0..nl {
+            let cin = take(&mut it, path, "cin")? as usize;
+            let cout = take(&mut it, path, "cout")? as usize;
+            let mut l = Conv::new(cin, cout, 1);
+            for v in l.w.iter_mut() {
+                *v = take(&mut it, path, "w")?;
+            }
+            for v in l.b.iter_mut() {
+                *v = take(&mut it, path, "b")?;
+            }
+            for v in l.scale.iter_mut() {
+                *v = take(&mut it, path, "scale")?;
+            }
+            layers.push(l);
+        }
+        let mut bns: Vec<Option<Bn>> = (0..nl).map(|_| None).collect();
+        if it.next() != Some("BN") {
+            return Err(format!("{}: 缺 BN 段", path.display()));
+        }
+        let _n = take(&mut it, path, "BN 数量")? as usize;
+        for _ in 0..nl {
+            let idx = take(&mut it, path, "BN 层号")? as usize;
+            let on = take(&mut it, path, "BN 开关")? != 0.0;
+            if !on {
+                continue;
+            }
+            let c = layers[idx].cout;
+            let mut b = Bn::new(c);
+            for v in b.gamma.iter_mut() {
+                *v = take(&mut it, path, "gamma")?;
+            }
+            for v in b.beta.iter_mut() {
+                *v = take(&mut it, path, "beta")?;
+            }
+            bns[idx] = Some(b);
+        }
+        Ok(Net { layers, bns, cond })
+    }
+}
+
+/// 当扩散去噪器用：输入通道 = `[x_t, t/T, 条件 one-hot…]`（`Net::new(2 + cond, …)`）。
+impl crate::diffuse::Denoiser for Net {
+    fn predict_x0(
+        &self,
+        xt: &[f32],
+        t_frac: f32,
+        cond: Option<usize>,
+        w: usize,
+        h: usize,
+    ) -> Vec<f32> {
+        let mut maps = vec![xt.to_vec(), vec![t_frac; w * h]];
+        for k in 0..self.cond {
+            maps.push(vec![(cond == Some(k)) as u8 as f32; w * h]);
+        }
+        self.forward_x(&maps, w, h)
+    }
+
+    fn input_dim(&self) -> usize {
+        2 + self.cond
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -534,6 +673,37 @@ mod tests {
         let p = net.forward(&img, None, w, h);
         let mean = p.iter().sum::<f32>() / p.len() as f32;
         assert!(mean > 0.85, "应学成 0.9，实际 {mean:.3}");
+    }
+
+    #[test]
+    fn net_save_load_roundtrip() {
+        let mut net = Net::new(2, &[4, 3], 11);
+        net.set_bn(true);
+        let (w, h) = (5usize, 5usize);
+        let x = vec![vec![0.4f32; w * h], vec![0.25f32; w * h]];
+        let a = net.forward_x(&x, w, h);
+        let p = std::env::temp_dir().join("tconv_roundtrip.tpc");
+        net.save(&p).unwrap();
+        let back = Net::load(&p).unwrap();
+        let b = back.forward_x(&x, w, h);
+        for (p, q) in a.iter().zip(&b) {
+            assert!((p - q).abs() < 1e-5, "存读应逐位一致 {p} vs {q}");
+        }
+        assert_eq!(back.cond, 0);
+        let _ = std::fs::remove_file(p);
+    }
+
+    #[test]
+    fn denoiser_api_feeds_t_channel() {
+        use crate::diffuse::Denoiser;
+        let (w, h) = (4usize, 4usize);
+        let mut net = Net::new(2, &[4], 5);
+        net.set_bn(false);
+        let xt = vec![0.3f32; w * h];
+        let p = net.predict_x0(&xt, 0.5, None, w, h);
+        assert_eq!(p.len(), w * h);
+        assert!(p.iter().all(|v| (0.0..=1.0).contains(v)));
+        assert_eq!(Denoiser::input_dim(&net), 2);
     }
 
     #[test]

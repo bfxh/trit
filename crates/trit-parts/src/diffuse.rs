@@ -200,7 +200,26 @@ impl Denoiser for PatchMlp {
     }
 }
 
-/// DDIM 采样（η=0）。`x_T` 为初始噪声（0..1 尺度），返回 x₀。
+/// 采样起点 `x_T ≈ ε ~ N(0,1)`——必须与训练加噪的分布一致。
+/// 曾写成 `0.5 + 0.5z`（均值 0.5、std 0.5），去噪器把偏暗输入当亮图，采样均值系统性偏高。
+pub fn initial_noise(n: usize, seed: u64) -> Vec<f32> {
+    let mut rng = seed | 1;
+    let mut next = || {
+        rng ^= rng << 13;
+        rng ^= rng >> 7;
+        rng ^= rng << 17;
+        (rng >> 11) as f32 / (1u64 << 53) as f32
+    };
+    (0..n)
+        .map(|_| {
+            let u1 = next().max(1e-6);
+            let u2 = next();
+            (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
+        })
+        .collect()
+}
+
+/// DDIM 采样（η=0）。`x_T` 为初始噪声（标准正态），返回 x₀（裁到 0..1）。
 pub fn ddim_sample(
     d: &dyn Denoiser,
     sched: &Schedule,
@@ -214,21 +233,7 @@ pub fn ddim_sample(
     if t_max == 0 {
         return vec![0.0; w * h];
     }
-    let mut rng = seed | 1;
-    let mut next = || {
-        rng ^= rng << 13;
-        rng ^= rng >> 7;
-        rng ^= rng << 17;
-        (rng >> 11) as f32 / (1u64 << 53) as f32
-    };
-    let mut x: Vec<f32> = (0..w * h)
-        .map(|_| {
-            let u1 = next().max(1e-6);
-            let u2 = next();
-            let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
-            (0.5 + 0.5 * z).clamp(0.0, 1.0)
-        })
-        .collect();
+    let mut x = initial_noise(w * h, seed);
     for t in (0..t_max).rev() {
         let at = abar[t + 1];
         let at_prev = abar[t];
@@ -245,13 +250,14 @@ pub fn ddim_sample(
         // DDIM η=0：x_{t−1} = √ᾱ_{t−1} x̂₀ + √(1−ᾱ_{t−1}) ε̂
         let s0p = at_prev.sqrt();
         let sep = (1.0 - at_prev).sqrt();
+        // 不要 clamp：训练时的 x_t 本来就能落在 [0,1] 之外（ε 是标准正态）
         x = x0
             .iter()
             .zip(&eps)
-            .map(|(x0, e)| (s0p * x0 + sep * e).clamp(0.0, 1.0))
+            .map(|(x0, e)| s0p * x0 + sep * e)
             .collect();
     }
-    x
+    x.iter().map(|v| v.clamp(0.0, 1.0)).collect()
 }
 
 #[cfg(test)]
@@ -267,6 +273,19 @@ mod tests {
             assert!(ab[i] <= ab[i - 1] + 1e-6, "ᾱ 应单调不增");
         }
         assert!(ab.last().unwrap() < &0.05);
+    }
+
+    #[test]
+    fn initial_noise_is_standard_normal() {
+        let v = super::initial_noise(4096, 7);
+        let m = v.iter().sum::<f32>() / v.len() as f32;
+        let var = v.iter().map(|x| (x - m) * (x - m)).sum::<f32>() / v.len() as f32;
+        assert!(m.abs() < 0.1, "均值应 ~0，实际 {m:.3}");
+        assert!(
+            (0.8..1.2).contains(&var.sqrt()),
+            "std 应 ~1，实际 {:.3}",
+            var.sqrt()
+        );
     }
 
     #[test]

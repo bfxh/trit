@@ -1920,6 +1920,7 @@ fn tex_conv_cmd(argv: &[String]) {
 /// 像素均值/方差、平铺接缝比、离最近真实补丁的距离（太小 = 抄训练集）。
 fn tex_gen_cmd(argv: &[String]) {
     use trit_parts::diffuse::{Denoiser, PatchMlp, Schedule, ddim_sample};
+    use trit_parts::tconv::Net;
     use trit_parts::tex::{seam_ratio, tile};
 
     let iters: usize = arg(argv, "--iters")
@@ -1960,6 +1961,28 @@ fn tex_gen_cmd(argv: &[String]) {
     let sched = Schedule::cosine(steps);
     let abar = sched.abar();
     // 数据源：--data <dir> 用真实材质（每张图一个样本，无条件）；否则程序化材质
+    let gray_img = |f: &PathBuf| -> Vec<f32> {
+        let (w0, h0, pix) = trit_parts::data::read_rgb(f).unwrap_or_else(|e| fail(&e));
+        let rgb = if w0 == n && h0 == n {
+            pix
+        } else {
+            trit_parts::data::resize_rgb(w0, h0, &pix, n)
+        };
+        rgb.as_chunks::<3>()
+            .0
+            .iter()
+            .map(|c| 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2])
+            .collect()
+    };
+    // 评测图必须钉死：`--holdout-names` 按文件名前缀匹配（扩数据集时排序会变，`take(2)` 会漂）
+    let hold_names: Vec<String> = arg(argv, "--holdout-names")
+        .map(|v| {
+            v.split(',')
+                .map(|x| x.trim().to_string())
+                .filter(|x| !x.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
     let images: Vec<Vec<f32>> = match &data_dir {
         Some(dir) => {
             let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
@@ -1972,42 +1995,129 @@ fn tex_gen_cmd(argv: &[String]) {
             if files.len() < 3 {
                 fail("--data 至少 3 张 PNG");
             }
-            files
-                .iter()
-                .map(|f| {
-                    let (w0, h0, pix) = trit_parts::data::read_rgb(f).unwrap_or_else(|e| fail(&e));
-                    let rgb = if w0 == n && h0 == n {
-                        pix
-                    } else {
-                        trit_parts::data::resize_rgb(w0, h0, &pix, n)
-                    };
-                    rgb.as_chunks::<3>()
-                        .0
-                        .iter()
-                        .map(|c| 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2])
-                        .collect()
-                })
-                .collect()
+            files.retain(|f| {
+                let stem = f
+                    .file_stem()
+                    .map(|x| x.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                !hold_names.iter().any(|h| stem.starts_with(h.as_str()))
+            });
+            if !hold_names.is_empty() && files.len() < 3 {
+                fail("--holdout-names 之后训练集不足 3 张");
+            }
+            files.iter().map(gray_img).collect()
         }
         None => kinds.iter().map(|k| gray(k, seed)).collect(),
     };
-    let conds = if data_dir.is_some() { 0 } else { kinds.len() };
-    let mut d = PatchMlp::new(patch, conds, hid, seed);
-    let mut rng: u64 = 0x9E37_79B9_7F4A_7C15 ^ seed;
-    let mut loss = 0.0f64;
-    for step in 0..iters {
-        let ki = (step * 7919) % images.len();
-        let g = images[ki].clone();
-        loss += d.train_shard(&g, &abar, None, n, n, lr, 64, &mut rng) as f64;
-        if (step + 1) % 2000 == 0 {
-            println!("  step {} loss {:.4}", step + 1, loss / 2000.0);
-            loss = 0.0;
+    // 评测集：真实材质时用留出名单里的那几张
+    let eval_real: Vec<(String, Vec<f32>)> = match &data_dir {
+        Some(dir) if !hold_names.is_empty() => {
+            let mut v = Vec::new();
+            for f in std::fs::read_dir(dir)
+                .unwrap_or_else(|e| fail(&format!("读不了 {}: {e}", dir.display())))
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|x| x == "png"))
+            {
+                let stem = f
+                    .file_stem()
+                    .map(|x| x.to_string_lossy().into_owned())
+                    .unwrap_or_default();
+                if let Some(h) = hold_names.iter().find(|h| stem.starts_with(h.as_str())) {
+                    v.push((strip_stem(&stem), f.clone()));
+                    let _ = h;
+                }
+            }
+            v.sort_by(|a, b| a.0.cmp(&b.0));
+            v.into_iter()
+                .map(|(name, f)| (name, gray_img(&f)))
+                .collect()
         }
-    }
+        _ => Vec::new(),
+    };
+    // 训练集均值是有用的校准读数（采样塌成常数时先看它是不是偏了）
+    let data_mean = images
+        .iter()
+        .map(|g| g.iter().sum::<f32>() / g.len() as f32)
+        .sum::<f32>()
+        / images.len() as f32;
+    println!("训练图 {} 张，均值 {data_mean:.3}", images.len());
+    let conds = if data_dir.is_some() { 0 } else { kinds.len() };
+    // 去噪器：默认 3×3/7×7 补丁 MLP；`--conv 8,8` 换成三值卷积栈（输入 = [x_t, t/T] 两张图）
+    let conv_hidden: Vec<usize> = arg(argv, "--conv")
+        .map(|v| v.split(',').filter_map(|x| x.trim().parse().ok()).collect())
+        .unwrap_or_default();
+    let use_bn = argv.iter().any(|a| a == "--bn");
+    let use_adam = argv.iter().any(|a| a == "--adam");
+    let batch: usize = arg(argv, "--batch")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let save_path = arg(argv, "--save").map(PathBuf::from);
+    let load_path = arg(argv, "--load").map(PathBuf::from);
+    let mut rng: u64 = 0x9E37_79B9_7F4A_7C15 ^ seed;
+    let mut next_u = || {
+        rng ^= rng << 13;
+        rng ^= rng >> 7;
+        rng ^= rng << 17;
+        (rng >> 11) as f32 / (1u64 << 53) as f32
+    };
+    let mut loss = 0.0f64;
+    let den: Box<dyn Denoiser> = if conv_hidden.is_empty() {
+        let mut d = PatchMlp::new(patch, conds, hid, seed);
+        for step in 0..iters {
+            let ki = (step * 7919) % images.len();
+            let g = images[ki].clone();
+            loss += d.train_shard(&g, &abar, None, n, n, lr, 64, &mut rng) as f64;
+            if (step + 1) % 2000 == 0 {
+                println!("  step {} loss {:.4}", step + 1, loss / 2000.0);
+                loss = 0.0;
+            }
+        }
+        Box::new(d)
+    } else {
+        let mut net = match &load_path {
+            Some(p) => Net::load(p).unwrap_or_else(|e| fail(&e)),
+            None => Net::new(2, &conv_hidden, seed),
+        };
+        net.set_bn(use_bn && load_path.is_none());
+        let tmax = sched.steps().max(1);
+        for step in 0..iters {
+            let mut items: Vec<(Vec<Vec<f32>>, Vec<f32>)> = Vec::with_capacity(batch);
+            for _ in 0..batch {
+                let ki = (next_u() * images.len() as f32) as usize % images.len();
+                let t = 1 + (next_u() * tmax as f32) as usize % tmax;
+                let eps: Vec<f32> = (0..n * n)
+                    .map(|_| {
+                        let u1 = next_u().max(1e-6);
+                        let u2 = next_u();
+                        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
+                    })
+                    .collect();
+                let x0 = &images[ki];
+                let xt = trit_parts::diffuse::add_noise(x0, &eps, abar[t]);
+                let tf = t as f32 / tmax as f32;
+                let maps = vec![xt, vec![tf; n * n]];
+                items.push((maps, x0.clone()));
+            }
+            loss += net.train_batch_x(&items, n, n, lr, use_adam) as f64;
+            if (step + 1) % 2000 == 0 {
+                println!("  step {} loss {:.4}", step + 1, loss / 2000.0);
+                loss = 0.0;
+            }
+        }
+        if let Some(p) = &save_path {
+            net.save(p).unwrap_or_else(|e| fail(&e));
+            println!("权重已存 {}", p.display());
+        }
+        Box::new(net)
+    };
 
     // 诊断：在 t/T = 0.2/0.5/0.8 上加噪，看 x0 预测的 MAE（应随时间步增大而变大）
     {
-        let g = gray(kinds[0], eval_seed);
+        let g = match (&data_dir, eval_real.first()) {
+            (Some(_), Some((_, im))) => im.clone(),
+            _ => gray(kinds[0], eval_seed),
+        };
         let mut rng2: u64 = 999;
         let mut next = || {
             rng2 ^= rng2 << 13;
@@ -2025,7 +2135,7 @@ fn tex_gen_cmd(argv: &[String]) {
                 })
                 .collect();
             let xt = trit_parts::diffuse::add_noise(&g, &eps, abar[t]);
-            let pred = d.predict_x0(&xt, tf, Some(0), n, n);
+            let pred = den.predict_x0(&xt, tf, if conds == 0 { None } else { Some(0) }, n, n);
             let mae = pred.iter().zip(&g).map(|(a, b)| (a - b).abs()).sum::<f32>() / (n * n) as f32;
             let pmid = pred.iter().sum::<f32>() / pred.len() as f32;
             println!(
@@ -2078,6 +2188,7 @@ fn tex_gen_cmd(argv: &[String]) {
 
     println!("材质     生成(均值±std)      真实(均值±std)     接缝比  最近补丁距（patch {patch}）");
     let eval_items: Vec<(String, Vec<f32>)> = match &data_dir {
+        Some(_) if !eval_real.is_empty() => eval_real.clone(),
         Some(_) => images
             .iter()
             .take(2)
@@ -2094,7 +2205,7 @@ fn tex_gen_cmd(argv: &[String]) {
         let data = data.clone();
         let (dm, ds) = stat(&data);
         let sample = ddim_sample(
-            &d,
+            &*den,
             &sched,
             if data_dir.is_some() { None } else { Some(ki) },
             n,
@@ -2129,6 +2240,11 @@ fn tex_gen_cmd(argv: &[String]) {
         }
     }
     println!("（接缝比 ≈1 表示边界与内部同量级；最近补丁距太小 = 在抄训练集）");
+}
+
+/// `AcousticFoam001_AcousticFoam001_1K-JPG_Color` → `AcousticFoam001`（报告里不用整串）。
+fn strip_stem(s: &str) -> String {
+    s.split('_').next().unwrap_or(s).to_string()
 }
 
 fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
