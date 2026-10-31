@@ -245,7 +245,7 @@ pub fn split_by_boundary_min(
     }
     while let Some(p) = q.pop_front() {
         let (x, y) = (p % w, p / w);
-        let mut push = |r: usize, lab: &mut Vec<u32>, q: &mut std::collections::VecDeque<usize>| {
+        let push = |r: usize, lab: &mut Vec<u32>, q: &mut std::collections::VecDeque<usize>| {
             if fg[r] != 0 && lab[r] == 0 {
                 lab[r] = lab[p];
                 q.push_back(r);
