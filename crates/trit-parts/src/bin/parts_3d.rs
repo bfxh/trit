@@ -1812,6 +1812,168 @@ fn tex_conv_cmd(argv: &[String]) {
     );
 }
 
+/// `tex-gen`：N5 生成第一块——DDIM 采样器 + 3×3 补丁去噪器，条件 = 材质 one-hot。
+/// 训练在程序化材质上（随机像素 + 随机时间步），采样后用三项统计量对照真实材质：
+/// 像素均值/方差、平铺接缝比、离最近真实补丁的距离（太小 = 抄训练集）。
+fn tex_gen_cmd(argv: &[String]) {
+    use trit_parts::diffuse::{Denoiser, PatchMlp, Schedule, ddim_sample};
+    use trit_parts::tex::{seam_ratio, tile};
+
+    let iters: usize = arg(argv, "--iters")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200000);
+    let n: usize = arg(argv, "--size")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(64);
+    let steps: usize = arg(argv, "--steps-t")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50);
+    let seed: u64 = arg(argv, "--seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let eval_seed: u64 = arg(argv, "--eval-seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+    let lr: f32 = arg(argv, "--lr")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.01);
+    let hid: usize = arg(argv, "--hid")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(32);
+    let outdir = arg(argv, "--out").map(PathBuf::from);
+    let patch: usize = arg(argv, "--patch")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+
+    let kinds = ["wood", "marble", "rust", "grid"];
+    let gray = |kind: &str, sd: u64| -> Vec<f32> {
+        tile(kind, n, sd)
+            .iter()
+            .map(|p| (0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32) / 255.0)
+            .collect()
+    };
+    let sched = Schedule::cosine(steps);
+    let abar = sched.abar();
+    let mut d = PatchMlp::new(patch, kinds.len(), hid, seed);
+    let mut rng: u64 = 0x9E37_79B9_7F4A_7C15 ^ seed;
+    let mut loss = 0.0f64;
+    for step in 0..iters {
+        let ki = (step * 7919) % kinds.len();
+        let sd = seed + ki as u64 + (step / 97) as u64 % 7;
+        let g = gray(kinds[ki], sd);
+        loss += d.train_shard(&g, &abar, Some(ki), n, n, lr, 64, &mut rng) as f64;
+        if (step + 1) % 2000 == 0 {
+            println!("  step {} loss {:.4}", step + 1, loss / 2000.0);
+            loss = 0.0;
+        }
+    }
+
+    // 诊断：在 t/T = 0.2/0.5/0.8 上加噪，看 x0 预测的 MAE（应随时间步增大而变大）
+    {
+        let g = gray(kinds[0], eval_seed);
+        let mut rng2: u64 = 999;
+        let mut next = || {
+            rng2 ^= rng2 << 13;
+            rng2 ^= rng2 >> 7;
+            rng2 ^= rng2 << 17;
+            (rng2 >> 11) as f32 / (1u64 << 53) as f32
+        };
+        for &tf in &[0.2f32, 0.5, 0.8] {
+            let t = ((tf * (abar.len() - 1) as f32) as usize).min(abar.len() - 1);
+            let eps: Vec<f32> = (0..n * n)
+                .map(|_| {
+                    let u1 = next().max(1e-6);
+                    let u2 = next();
+                    (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos()
+                })
+                .collect();
+            let xt = trit_parts::diffuse::add_noise(&g, &eps, abar[t]);
+            let pred = d.predict_x0(&xt, tf, Some(0), n, n);
+            let mae = pred.iter().zip(&g).map(|(a, b)| (a - b).abs()).sum::<f32>() / (n * n) as f32;
+            let pmid = pred.iter().sum::<f32>() / pred.len() as f32;
+            println!(
+                "  诊断 t={tf:.1}: 预测 MAE {mae:.3}，预测均值 {pmid:.3}（真值均值 {:.3}）",
+                g.iter().sum::<f32>() / g.len() as f32
+            );
+        }
+    }
+
+    let stat = |v: &[f32]| -> (f32, f32) {
+        let m = v.iter().sum::<f32>() / v.len() as f32;
+        let var = v.iter().map(|x| (x - m) * (x - m)).sum::<f32>() / v.len() as f32;
+        (m, var.sqrt())
+    };
+    let patch_dist = |img: &[f32], data: &[f32]| -> f32 {
+        // 每 8 像素取一个 3×3 补丁，报生成补丁到真实补丁的最小 L2 均值
+        let stride = 8usize;
+        let mut refs: Vec<[f32; 9]> = Vec::new();
+        for y in (1..n - 1).step_by(stride) {
+            for x in (1..n - 1).step_by(stride) {
+                let mut p = [0.0f32; 9];
+                for dy in 0..3 {
+                    for dx in 0..3 {
+                        p[dy * 3 + dx] = data[(y + dy - 1) * n + x + dx - 1];
+                    }
+                }
+                refs.push(p);
+            }
+        }
+        let mut sum = 0.0f32;
+        let mut cnt = 0usize;
+        for y in (1..n - 1).step_by(stride) {
+            for x in (1..n - 1).step_by(stride) {
+                let mut best = f32::INFINITY;
+                for r in &refs {
+                    let mut d2 = 0.0f32;
+                    for dy in 0..3 {
+                        for dx in 0..3 {
+                            let d0 = img[(y + dy - 1) * n + x + dx - 1] - r[dy * 3 + dx];
+                            d2 += d0 * d0;
+                        }
+                    }
+                    best = best.min(d2);
+                }
+                sum += best.sqrt();
+                cnt += 1;
+            }
+        }
+        sum / cnt.max(1) as f32
+    };
+
+    println!("材质     生成(均值±std)      真实(均值±std)     接缝比  最近补丁距（patch {patch}）");
+    for (ki, k) in kinds.iter().enumerate() {
+        let data = gray(k, eval_seed + ki as u64);
+        let (dm, ds) = stat(&data);
+        let sample = ddim_sample(&d, &sched, Some(ki), n, n, eval_seed * 131 + ki as u64 + 7);
+        let (gm, gs) = stat(&sample);
+        let sr = seam_ratio(
+            &sample
+                .iter()
+                .map(|v| [(v * 255.0) as u8; 3])
+                .collect::<Vec<_>>(),
+            n,
+        );
+        let pd = patch_dist(&sample, &data);
+        println!("{k:<8} {gm:.3}±{gs:.3}      {dm:.3}±{ds:.3}      {sr:.2}    {pd:.3}");
+        if let Some(dir) = &outdir {
+            std::fs::create_dir_all(dir).ok();
+            let mut bytes = format!(
+                "P6
+{n} {n}
+255
+"
+            )
+            .into_bytes();
+            for v in &sample {
+                let c = (v.clamp(0.0, 1.0) * 255.0) as u8;
+                bytes.extend_from_slice(&[c, c, c]);
+            }
+            std::fs::write(dir.join(format!("gen_{k}.ppm")), bytes).ok();
+        }
+    }
+    println!("（接缝比 ≈1 表示边界与内部同量级；最近补丁距太小 = 在抄训练集）");
+}
+
 fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
     let mut a = Vec::new();
     let mut b = Vec::new();
@@ -1845,7 +2007,8 @@ fn usage() -> ! {
   parts-3d mesh-tex --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]
   parts-3d tex --kind wood|marble|rust|grid --size 256 --out <ppm>
   parts-3d tex-prior [--iters 30000] [--patch 3|7] [--cond] [--hid 16]
-  parts-3d tex-conv  [--iters 20000] [--hidden 8,8] [--cond] [--size 64]"
+  parts-3d tex-conv  [--iters 20000] [--hidden 8,8] [--cond] [--size 64] [--adam] [--batch K] [--bn]
+  parts-3d tex-gen   [--iters 200000] [--steps-t 50] [--size 64] [--hid 32] [--out <dir>]"
     );
     std::process::exit(2);
 }
@@ -1869,6 +2032,7 @@ fn main() {
         Some("tex") => tex_cmd(&argv),
         Some("tex-prior") => tex_prior_cmd(&argv),
         Some("tex-conv") => tex_conv_cmd(&argv),
+        Some("tex-gen") => tex_gen_cmd(&argv),
         Some("infer") => {
             #[cfg(feature = "gpu")]
             infer(&argv);
