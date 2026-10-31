@@ -1679,6 +1679,127 @@ fn tex_prior_cmd(argv: &[String]) {
     );
 }
 
+/// `tex-conv --hidden 8,8 --iters 20000 [--cond]`：三值卷积栈（3×3、same、ReLU、sigmoid）去噪，
+/// 与 `tex-prior` 的 3×3 MLP 基线在同一任务/同一协议下对照（留出材质种子、正确 vs 错误条件）。
+fn tex_conv_cmd(argv: &[String]) {
+    use trit_parts::tconv::Net;
+    use trit_parts::tex::tile;
+
+    let iters: usize = arg(argv, "--iters")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20000);
+    let sigma: f32 = arg(argv, "--sigma")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.1);
+    let n: usize = arg(argv, "--size")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(64);
+    let seed: u64 = arg(argv, "--seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let eval_seed: u64 = arg(argv, "--eval-seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+    let lr: f32 = arg(argv, "--lr")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.05);
+    let cond = argv.iter().any(|a| a == "--cond");
+    let hidden: Vec<usize> = arg(argv, "--hidden")
+        .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![8, 8]);
+
+    let kinds = ["wood", "marble", "rust", "grid"];
+    let gray = |kind: &str, sd: u64| -> Vec<f32> {
+        tile(kind, n, sd)
+            .iter()
+            .map(|p| (0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32) / 255.0)
+            .collect()
+    };
+    let mut rng: u64 = 0x9E37_79B9_7F4A_7C15 ^ seed;
+    let mut nxt = || {
+        rng ^= rng << 13;
+        rng ^= rng >> 7;
+        rng ^= rng << 17;
+        (rng >> 11) as f32 / (1u64 << 53) as f32
+    };
+    let noisy = |clean: &[f32], nxt: &mut dyn FnMut() -> f32| -> Vec<f32> {
+        clean
+            .iter()
+            .map(|v| {
+                let u1 = nxt().max(1e-6);
+                let u2 = nxt();
+                let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
+                (v + sigma * z).clamp(0.0, 1.0)
+            })
+            .collect()
+    };
+    let cin = 1 + if cond { kinds.len() } else { 0 };
+    let mut net = Net::new(cin, &hidden, seed);
+    net.cond = if cond { kinds.len() } else { 0 };
+    let mut loss = 0.0f64;
+    for step in 0..iters {
+        let ki = (step * 7919) % kinds.len();
+        let sd = seed + ki as u64;
+        let clean = gray(kinds[ki], sd);
+        let inp = noisy(&clean, &mut nxt);
+        let c = if cond { Some(ki) } else { None };
+        loss += net.train_step(&inp, &clean, c, n, n, lr) as f64;
+        if (step + 1) % 5000 == 0 {
+            println!("  step {} loss {:.4}", step + 1, loss / 5000.0);
+            loss = 0.0;
+        }
+    }
+    // 参考图由**图像种类**决定，条件只影响模型输入（正确/错误条件对比必须保持参考不变）
+    let eval = |net: &Net,
+                img_kind: usize,
+                cond_idx: Option<usize>,
+                sd: u64,
+                nxt: &mut dyn FnMut() -> f32|
+     -> f64 {
+        let clean = gray(kinds[img_kind], sd);
+        let inp = noisy(&clean, nxt);
+        let pred = net.forward(&inp, cond_idx, n, n);
+        let (mut se, mut cnt) = (0.0f64, 0usize);
+        for i in 0..n * n {
+            se += f64::from((pred[i] - clean[i]).powi(2));
+            cnt += 1;
+        }
+        10.0 * (1.0 / (se / cnt as f64)).log10()
+    };
+    let mut good = Vec::new();
+    let mut wrong = Vec::new();
+    for (ki, k) in kinds.iter().enumerate() {
+        let sd = eval_seed + ki as u64;
+        let p_ok = eval(&net, ki, if cond { Some(ki) } else { None }, sd, &mut nxt);
+        let p_bad = if cond {
+            eval(&net, ki, Some((ki + 1) % kinds.len()), sd, &mut nxt)
+        } else {
+            f64::NAN
+        };
+        println!("留出 {k}（seed {eval_seed}）: 正确条件 {p_ok:.2} dB  错误条件 {p_bad:.2} dB");
+        good.push(p_ok);
+        if cond {
+            wrong.push(p_bad);
+        }
+    }
+    println!(
+        "三值卷积栈 hidden {:?}，条件 {}，{} 步；留出 PSNR 均值 {:.2} dB{}",
+        hidden,
+        if cond { "开" } else { "关" },
+        iters,
+        avg(&good),
+        if cond {
+            format!(
+                "；错条件 {:.2} dB（差 {:.2}）",
+                avg(&wrong),
+                avg(&good) - avg(&wrong)
+            )
+        } else {
+            String::new()
+        }
+    );
+}
+
 fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
     let mut a = Vec::new();
     let mut b = Vec::new();
@@ -1711,7 +1832,8 @@ fn usage() -> ! {
   parts-3d obs-split --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]
   parts-3d mesh-tex --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]
   parts-3d tex --kind wood|marble|rust|grid --size 256 --out <ppm>
-  parts-3d tex-prior [--iters 30000] [--sigma 0.1] [--size 96] [--seed 1] [--eval-seed 2]"
+  parts-3d tex-prior [--iters 30000] [--patch 3|7] [--cond] [--hid 16]
+  parts-3d tex-conv  [--iters 20000] [--hidden 8,8] [--cond] [--size 64]"
     );
     std::process::exit(2);
 }
@@ -1734,6 +1856,7 @@ fn main() {
         Some("mesh-tex") => mesh_tex_cmd(&argv),
         Some("tex") => tex_cmd(&argv),
         Some("tex-prior") => tex_prior_cmd(&argv),
+        Some("tex-conv") => tex_conv_cmd(&argv),
         Some("infer") => {
             #[cfg(feature = "gpu")]
             infer(&argv);
