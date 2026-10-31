@@ -132,6 +132,87 @@ pub fn fill_solid(g: &mut Grid) {
     }
 }
 
+/// 占用栅格膨胀 `r` 格（26 邻域，封住体素化小孔）。
+pub fn dilate_occ(g: &mut Grid, r: usize) {
+    for _ in 0..r {
+        let src = g.occ.clone();
+        let (nx, ny, nz) = (g.nx, g.ny, g.nz);
+        for z in 0..nz {
+            for y in 0..ny {
+                for x in 0..nx {
+                    if src[x + nx * (y + ny * z)] != 0 {
+                        continue;
+                    }
+                    let mut hit = false;
+                    'nb: for dz in -1i32..=1 {
+                        for dy in -1i32..=1 {
+                            for dx in -1i32..=1 {
+                                let (xx, yy, zz) = (x as i32 + dx, y as i32 + dy, z as i32 + dz);
+                                if xx < 0
+                                    || yy < 0
+                                    || zz < 0
+                                    || xx >= nx as i32
+                                    || yy >= ny as i32
+                                    || zz >= nz as i32
+                                {
+                                    continue;
+                                }
+                                if src[xx as usize + nx * (yy as usize + ny * zz as usize)] != 0 {
+                                    hit = true;
+                                    break 'nb;
+                                }
+                            }
+                        }
+                    }
+                    if hit {
+                        g.occ[x + nx * (y + ny * z)] = 1;
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// 消除「只靠对角/棱接触」的实心体素：每个 2×2×2 块里若只有两个对角实心，
+/// 补上另两个中的一个，避免 Surface Nets 在棱/角处产生非流形边。
+pub fn fix_diagonals(g: &mut Grid) {
+    let (nx, ny, nz) = (g.nx, g.ny, g.nz);
+    let src = g.occ.clone();
+    for z in 0..nz.saturating_sub(1) {
+        for y in 0..ny.saturating_sub(1) {
+            for x in 0..nx.saturating_sub(1) {
+                let mut cnt = 0;
+                for dz in 0..2 {
+                    for dy in 0..2 {
+                        for dx in 0..2 {
+                            cnt += src[x + dx + nx * (y + dy + ny * (z + dz))] as i32;
+                        }
+                    }
+                }
+                if cnt != 2 {
+                    continue;
+                }
+                // 对角对判定：两两对角
+                let idx = |dx: usize, dy: usize, dz: usize| x + dx + nx * (y + dy + ny * (z + dz));
+                let v = |dx, dy, dz| src[idx(dx, dy, dz)] != 0;
+                let pairs = [
+                    (v(0, 0, 0) && v(1, 1, 1), [(1, 0, 0), (0, 1, 0), (0, 0, 1)]),
+                    (v(1, 0, 0) && v(0, 1, 1), [(0, 0, 0), (0, 1, 0), (0, 0, 1)]),
+                    (v(0, 1, 0) && v(1, 0, 1), [(1, 1, 0), (1, 0, 0), (0, 0, 0)]),
+                    (v(0, 0, 1) && v(1, 1, 0), [(1, 0, 1), (1, 0, 0), (0, 1, 1)]),
+                ];
+                for (yes, fills) in pairs {
+                    if yes {
+                        let (fdx, fdy, fdz) = fills[0];
+                        g.occ[idx(fdx, fdy, fdz)] = 1;
+                        break;
+                    }
+                }
+            }
+        }
+    }
+}
+
 /// Surface Nets：对实心栅格提等值面（iso = 0.5）。
 /// 每个跨面的格子放一个顶点（边交点均值），每个跨面的栅格棱生成一对三角形。
 pub fn surface_nets(g: &Grid) -> Mesh {
@@ -516,6 +597,42 @@ mod tests {
             non_manifold_edges(&s),
             0,
             "聚合后仍应闭合（这块球没有细结构）"
+        );
+    }
+}
+
+#[cfg(test)]
+mod box_test {
+    use super::*;
+
+    #[test]
+    fn full_inner_box_is_watertight() {
+        // 12³ 栅格，内部 [2..10)³ 实，外圈留空：应得到水密盒子
+        let n = 12usize;
+        let mut occ = vec![0u8; n * n * n];
+        for z in 2..10 {
+            for y in 2..10 {
+                for x in 2..10 {
+                    occ[x + n * (y + n * z)] = 1;
+                }
+            }
+        }
+        let g = Grid {
+            occ,
+            nx: n,
+            ny: n,
+            nz: n,
+            origin: [0.0; 3],
+            cell: 1.0,
+        };
+        let m = surface_nets(&g);
+        assert!(!m.tris.is_empty());
+        assert_eq!(non_manifold_edges(&m), 0, "内部实心盒应水密");
+        let want = 8.0f64.powi(3);
+        let got = mesh_volume(&m);
+        assert!(
+            (got - want).abs() / want < 0.2,
+            "体积 {got:.1} vs {want:.1}"
         );
     }
 }

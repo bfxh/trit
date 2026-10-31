@@ -236,7 +236,8 @@ pub fn write_npy_i32(path: &Path, data: &[i32], w: usize, h: usize) -> Result<()
     std::fs::write(path, bytes).map_err(|e| format!("{}: {e}", path.display()))
 }
 
-fn field<'a>(header: &'a str, key: &str) -> Option<&'a str> {    let i = header.find(&format!("'{key}'"))? + key.len() + 2;
+fn field<'a>(header: &'a str, key: &str) -> Option<&'a str> {
+    let i = header.find(&format!("'{key}'"))? + key.len() + 2;
     let rest = header[i..].trim_start();
     let rest = rest.strip_prefix(':')?.trim_start();
     if let Some(r) = rest.strip_prefix('\'') {

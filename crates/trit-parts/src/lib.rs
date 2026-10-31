@@ -14,6 +14,7 @@ pub mod augment;
 pub mod backward;
 pub mod data;
 pub mod depth;
+pub mod fuse;
 pub mod geo;
 pub mod inst;
 pub mod loss;

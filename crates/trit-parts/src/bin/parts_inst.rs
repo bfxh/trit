@@ -319,7 +319,13 @@ fn eval(argv: &[String]) {
                 let fg: Vec<u32> = gt.iter().map(|&v| (v != 0) as u32).collect();
                 let bd = trit_parts::inst::boundary_of(&gt, res as usize, res as usize, 2);
                 let bd: Vec<u32> = bd.iter().map(|&v| (v == 2) as u32).collect();
-                trit_parts::inst::split_by_boundary_min(&fg, &bd, res as usize, res as usize, min_size)
+                trit_parts::inst::split_by_boundary_min(
+                    &fg,
+                    &bd,
+                    res as usize,
+                    res as usize,
+                    min_size,
+                )
             } else if comps {
                 let fg: Vec<u32> = (0..hw)
                     .map(|p| (logits[p * ch + k * 3] > 0.0) as u32)
@@ -366,7 +372,8 @@ fn eval(argv: &[String]) {
             }
             if gt_part {
                 // 跨物体混算：每个 pred 实例里出现的物体数 > 1 记为混合（部件不能跨物体）
-                let mut own: std::collections::HashMap<i32, usize> = std::collections::HashMap::new();
+                let mut own: std::collections::HashMap<i32, usize> =
+                    std::collections::HashMap::new();
                 for (j, &(a, b)) in ranges.iter().enumerate() {
                     for id in a..=b {
                         own.insert(id as i32, j);

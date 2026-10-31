@@ -6,7 +6,9 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
-/// 相机：`K` 内参；`T_cw` 相机→世界（与渲染 meta 里的字段同名同义）。
+/// 相机：`K` 内参；`t_cw` 存的是**相机→世界**（渲染 meta 里叫 `T_wc`）。
+/// ⚠️ meta 的 `T_cw` 是它的逆（世界→相机）；早先版本误把 `T_cw` 当正变换，
+/// 单帧自洽看不出来，跨视角融合时才会暴露（2026-10-31 N1 实测 IoU≈0）。
 #[derive(Clone, Debug)]
 pub struct Camera {
     pub k: [[f64; 3]; 3],
@@ -17,7 +19,11 @@ impl Camera {
     pub fn load(path: &Path) -> Result<Self, String> {
         let s = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let k = matrix(&s, "K")?;
-        let t = matrix(&s, "T_cw")?;
+        let t = if s.contains("\"T_wc\"") {
+            matrix(&s, "T_wc")?
+        } else {
+            matrix(&s, "T_cw")?
+        };
         if k.len() != 3 || k.iter().any(|r| r.len() != 3) {
             return Err("K 不是 3×3".into());
         }
@@ -41,19 +47,49 @@ impl Camera {
         Ok(cam)
     }
 
-    /// 像素 + 深度（相机系 z，米）→ 世界坐标。
+    /// 像素 + 深度（沿视线，米）→ 世界坐标。
+    ///
+    /// 约定：Blender 相机**看 −Z、+Y 朝上**，像素 y 向下 ⇒ 相机系向量是
+    /// `(x, −y, −d)`（OpenCV 的 y/z 与 Blender 反号）。不翻这两个号，点会落到
+    /// 相机背后——单帧自洽发现不了，多视角融合时会散开（2026-10-31 实测）。
     pub fn unproject(&self, u: f64, v: f64, d: f32) -> [f32; 3] {
         let (fx, fy) = (self.k[0][0], self.k[1][1]);
         let (cx, cy) = (self.k[0][2], self.k[1][2]);
         let z = f64::from(d);
         let xc = (u - cx) * z / fx;
-        let yc = (v - cy) * z / fy;
+        let yc = -(v - cy) * z / fy;
+        let zc = -z;
         let t = &self.t_cw;
         [
-            (t[0][0] * xc + t[0][1] * yc + t[0][2] * z + t[0][3]) as f32,
-            (t[1][0] * xc + t[1][1] * yc + t[1][2] * z + t[1][3]) as f32,
-            (t[2][0] * xc + t[2][1] * yc + t[2][2] * z + t[2][3]) as f32,
+            (t[0][0] * xc + t[0][1] * yc + t[0][2] * zc + t[0][3]) as f32,
+            (t[1][0] * xc + t[1][1] * yc + t[1][2] * zc + t[1][3]) as f32,
+            (t[2][0] * xc + t[2][1] * yc + t[2][2] * zc + t[2][3]) as f32,
         ]
+    }
+}
+
+impl Camera {
+    /// 世界点 → 像素 + 深度（沿视线，米）；在相机背后返回 `None`。
+    pub fn project(&self, p: [f32; 3]) -> Option<(f64, f64, f64)> {
+        let t = &self.t_cw;
+        let (dx, dy, dz) = (
+            p[0] as f64 - t[0][3],
+            p[1] as f64 - t[1][3],
+            p[2] as f64 - t[2][3],
+        );
+        // R^T (p − t)：t_cw 的旋转部分是 world→camera 的 R
+        let xb = t[0][0] * dx + t[1][0] * dy + t[2][0] * dz;
+        let yb = t[0][1] * dx + t[1][1] * dy + t[2][1] * dz;
+        let zb = t[0][2] * dx + t[1][2] * dy + t[2][2] * dz;
+        if zb >= 0.0 {
+            return None; // Blender 相机看 −Z；zb ≥ 0 表示在背后
+        }
+        let d = -zb;
+        let x = xb;
+        let y = -yb;
+        let (fx, fy) = (self.k[0][0], self.k[1][1]);
+        let (cx, cy) = (self.k[0][2], self.k[1][2]);
+        Some((fx * x / d + cx, fy * y / d + cy, d))
     }
 }
 
@@ -266,10 +302,14 @@ mod tests {
                 [0.0, 0.0, 0.0, 1.0],
             ],
         };
+        // Blender 约定：相机看 −Z、像素 y 向下 ⇒ 相机系向量 (x, −y, −d)
         let p = cam.unproject(10.0, 20.0, 2.0);
         assert!((p[0] - 0.2).abs() < 1e-6, "{p:?}");
-        assert!((p[1] - 0.4).abs() < 1e-6, "{p:?}");
-        assert!((p[2] - 2.0).abs() < 1e-6, "{p:?}");
+        assert!((p[1] + 0.4).abs() < 1e-6, "{p:?}");
+        assert!((p[2] + 2.0).abs() < 1e-6, "{p:?}");
+        // project 与 unproject 必须互为逆（否则多视角融合会散）
+        let (u, v, d) = cam.project(p).expect("在相机前方");
+        assert!((u - 10.0).abs() < 1e-6 && (v - 20.0).abs() < 1e-6 && (d - 2.0).abs() < 1e-6, "{u} {v} {d}");
     }
 
     #[test]

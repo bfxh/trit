@@ -319,13 +319,193 @@ fn mesh_cmd(argv: &[String]) {
     }
 }
 
+/// `fuse --scene <dir> --frames 0,1,2,3 [--eval 4,5,6,7] --cell 0.01 --out <ply>`：
+/// 多视角体素融合 → 场景网格 + 逐部件网格；给了 `--eval` 就用这些视角的 GT 点云
+/// 算逐部件 3D IoU（重建只用 `--frames`，评测视角不参与）。
+fn fuse_cmd(argv: &[String]) {
+    use trit_parts::fuse::{FuseCfg, View, fuse};
+    use trit_parts::geo::clouds;
+    use trit_parts::mesh::{
+        downsample_occupancy, non_manifold_edges, surface_nets, write_ply as write_mesh,
+    };
+
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+    let parse_list = |k: &str, d: Vec<usize>| -> Vec<usize> {
+        arg(argv, k)
+            .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+            .unwrap_or(d)
+    };
+    let frames = parse_list("--frames", vec![0, 1, 2, 3]);
+    let eval_frames = parse_list("--eval", Vec::new());
+    let cell: f32 = arg(argv, "--cell")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.01);
+    let min_votes: f32 = arg(argv, "--min-votes")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1.0);
+    let seal: usize = arg(argv, "--seal")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let voxel: f32 = arg(argv, "--voxel")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(cell);
+    let levels = parse_list("--levels", vec![0]);
+
+    let load = |f: usize| -> View {
+        let seg = frame_path(&scene, "seg", f, "npy");
+        let dep = frame_path(&scene, "depth", f, "npy");
+        let meta = frame_path(&scene, "meta", f, "json");
+        let (ids, shape) = read_npy_i32(&seg).unwrap_or_else(|e| fail(&e));
+        let (d, dshape) = read_npy_f32(&dep).unwrap_or_else(|e| fail(&e));
+        if shape != dshape || shape.len() != 2 {
+            fail("seg 与 depth 形状不一致");
+        }
+        View {
+            ids: ids.iter().map(|&v| v.max(0) as u32).collect(),
+            depth: d,
+            w: shape[1],
+            h: shape[0],
+            cam: Camera::load(&meta).unwrap_or_else(|e| fail(&e)),
+        }
+    };
+    let views: Vec<View> = frames.iter().map(|&f| load(f)).collect();
+    let fused = fuse(
+        &views,
+        &FuseCfg {
+            cell,
+            margin: 2,
+            min_votes,
+            seal,
+        },
+    )
+    .unwrap_or_else(|| fail("融合失败：没有有效深度"));
+
+    // 场景网格 + LOD
+    let sg = fused.scene_grid();
+    for f in &levels {
+        let gg = if *f <= 1 {
+            sg.clone()
+        } else {
+            downsample_occupancy(&sg, *f)
+        };
+        let m = surface_nets(&gg);
+        let name = if *f <= 1 {
+            out.clone()
+        } else {
+            let stem = out.file_stem().and_then(|s| s.to_str()).unwrap_or("scene");
+            out.with_file_name(format!("{stem}.lod{f}.ply"))
+        };
+        write_mesh(&name, &m).unwrap_or_else(|e| fail(&e));
+        println!(
+            "scene lod{f}: cell {:.3} m 顶点 {} 面 {} 非流形边 {} → {}",
+            gg.cell,
+            m.verts.len(),
+            m.tris.len(),
+            non_manifold_edges(&m),
+            name.display()
+        );
+    }
+
+    // 逐部件网格 + 闭合率
+    let parts = fused.hull_meshes(&views);
+    let closed = parts.iter().filter(|p| p.closed).count();
+    let stem = out.file_stem().and_then(|s| s.to_str()).unwrap_or("scene");
+    for p in &parts {
+        let f = out.with_file_name(format!("{stem}.part{:03}.ply", p.id));
+        write_mesh(&f, &p.mesh).unwrap_or_else(|e| fail(&e));
+        if !p.closed {
+            println!("  部件 {}: 面 {} **不闭合**", p.id, p.mesh.tris.len());
+        }
+    }
+    println!(
+        "部件网格 {} 个，闭合 {} 个（{:.1}%）",
+        parts.len(),
+        closed,
+        100.0 * closed as f64 / parts.len().max(1) as f64
+    );
+
+    // 逐部件 3D IoU（留出视角 GT 点云 vs 融合出的壳体素）
+    if !eval_frames.is_empty() {
+        let mut gt: std::collections::BTreeMap<u32, Vec<[f32; 3]>> =
+            std::collections::BTreeMap::new();
+        for f in &eval_frames {
+            let v = load(*f);
+            for (id, pts) in clouds(&v.ids, &v.depth, &v.cam, v.w, v.h) {
+                gt.entry(id).or_default().extend(pts);
+            }
+        }
+        let _ = voxel;
+        let mut ious: Vec<(u32, f32)> = Vec::new();
+        for (&id, pts) in &gt {
+            // GT 点投到融合栅格（同一格子索引空间）
+            let gset: std::collections::HashSet<(i32, i32, i32)> =
+                pts.iter().filter_map(|p| fused.cell_index(*p)).collect();
+            // 几何口径：**投票壳体素**（这才是多视角融合出来的表面）
+            let rset = fused.part_cells(id);
+            let hull = parts.iter().find(|p| p.id == id);
+            let inter = gset.intersection(&rset).count() as f32;
+            let union = (gset.len() + rset.len()) as f32 - inter;
+            let iou = if union > 0.0 { inter / union } else { f32::NAN };
+
+            // 体积 IoU：GT 壳填实的实体 vs 外壳体积
+            let (nx, ny) = (fused.grid.nx, fused.grid.ny);
+            let mut gt_solid = fused.grid.clone();
+            for v in gt_solid.occ.iter_mut() {
+                *v = 0;
+            }
+            for &(x, y, z) in &gset {
+                gt_solid.occ[x as usize + nx * (y as usize + ny * z as usize)] = 1;
+            }
+            trit_parts::mesh::fill_solid(&mut gt_solid);
+            let gvol: std::collections::HashSet<(i32, i32, i32)> = gt_solid
+                .occ
+                .iter()
+                .enumerate()
+                .filter(|(_, v)| **v != 0)
+                .map(|(i, _)| {
+                    (
+                        (i % nx) as i32,
+                        ((i / nx) % ny) as i32,
+                        (i / (nx * ny)) as i32,
+                    )
+                })
+                .collect();
+            let rvol = hull.map(|p| p.volume.clone()).unwrap_or_default();
+            let vi = gvol.intersection(&rvol).count() as f32;
+            let vu = (gvol.len() + rvol.len()) as f32 - vi;
+            let viou = if vu > 0.0 { vi / vu } else { f32::NAN };
+            ious.push((id, iou));
+            println!(
+                "  part {id}: 壳 IoU {iou:.3}（GT {} / 重建 {} 格） 外壳体积 IoU {viou:.3}",
+                gset.len(),
+                rset.len()
+            );
+        }
+        let vals: Vec<f32> = ious
+            .iter()
+            .map(|(_, v)| *v)
+            .filter(|v| v.is_finite())
+            .collect();
+        let mean = vals.iter().sum::<f32>() / vals.len().max(1) as f32;
+        let min = vals.iter().cloned().fold(f32::INFINITY, f32::min);
+        println!(
+            "逐部件 3D IoU：均值 {:.3}（{} 个部件）最差 {:.3}；门：均值 ≥0.5 / 闭合率 ≥80%",
+            mean,
+            vals.len(),
+            min
+        );
+    }
+}
+
 fn usage() -> ! {
     eprintln!(
         "用法:
   parts-3d cloud --seg <npy> --depth <npy> --meta <json> --out <ply>
   parts-3d infer --model <tpm> --scene <dir> --frame N --manifest <json> --out <ply> [--depth <npy>]
   parts-3d eval --model <tpm> --scene <dir> --manifest <json> [--limit N] [--voxel 0.01] [--min-vox 30]
-  parts-3d mesh --seg <npy> --depth <npy> --meta <json> --out <ply> [--cell 0.01] [--levels 0,2,4]"
+  parts-3d mesh --seg <npy> --depth <npy> --meta <json> --out <ply> [--cell 0.01] [--levels 0,2,4]
+  parts-3d fuse --scene <dir> --frames 0,1,2,3 [--eval 4,5,6,7] --out <ply> [--cell 0.01] [--min-votes 1] [--voxel 0.01] [--levels 0,2]"
     );
     std::process::exit(2);
 }
@@ -340,6 +520,7 @@ fn main() {
     match argv.first().map(String::as_str) {
         Some("cloud") => cloud(&argv),
         Some("mesh") => mesh_cmd(&argv),
+        Some("fuse") => fuse_cmd(&argv),
         Some("infer") => {
             #[cfg(feature = "gpu")]
             infer(&argv);
