@@ -659,6 +659,8 @@ impl Net {
 pub struct EpsDen {
     pub net: Net,
     pub abar: Vec<f32>,
+    /// ε 的温度系数：<1 抑制过冲（推断期旋钮，不用重训）。
+    pub eps_scale: f32,
 }
 
 impl crate::diffuse::Denoiser for EpsDen {
@@ -674,7 +676,12 @@ impl crate::diffuse::Denoiser for EpsDen {
         for k in 0..self.net.cond {
             maps.push(vec![(cond == Some(k)) as u8 as f32; w * h]);
         }
-        let eps = self.net.forward_x(&maps, w, h);
+        let mut eps = self.net.forward_x(&maps, w, h);
+        if (self.eps_scale - 1.0).abs() > 1e-6 {
+            for e in eps.iter_mut() {
+                *e *= self.eps_scale;
+            }
+        }
         let tmax = self.abar.len().saturating_sub(1).max(1);
         let idx = ((t_frac * tmax as f32).round() as usize).min(tmax);
         let a = self.abar[idx].max(1e-4);
@@ -775,6 +782,7 @@ mod tests {
         let d = EpsDen {
             net,
             abar: abar.clone(),
+            eps_scale: 1.0,
         };
         let xt = vec![0.4f32; w * h];
         let x0 = d.predict_x0(&xt, 1.0, None, w, h); // t_frac=1 ⇒ ᾱ=0 ⇒ 走 clamp

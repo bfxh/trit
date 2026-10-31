@@ -2111,6 +2111,9 @@ fn tex_gen_cmd(argv: &[String]) {
             Box::new(trit_parts::tconv::EpsDen {
                 net,
                 abar: abar.clone(),
+                eps_scale: arg(argv, "--eps-scale")
+                    .and_then(|v| v.parse().ok())
+                    .unwrap_or(1.0f32),
             })
         } else {
             Box::new(net)
