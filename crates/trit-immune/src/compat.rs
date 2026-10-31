@@ -6,8 +6,8 @@
 //! （3×3 全空间对拍 [`Trit::and`] 与 Ternary 的 Kleene 合取）。
 //!
 //! 设计立场（PR.md）：trit-immune 是 trit-core `Ternary` 的**消费者**，
-//! 不是竞品——内核逻辑用本地 `Trit` 保持零依赖，边界处经本模块与
-//! trit-core 生态互换值。
+//! 不是竞品——内核逻辑用本地 `Trit` 保有安全域命名，边界处经本模块
+//! 与 trit-core 生态互换值。
 
 use crate::trit::Trit;
 use trit_core::Ternary;

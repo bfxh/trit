@@ -88,6 +88,26 @@ true/false/undefined——与 K3 的 +1/-1/0 对应）；McSherry 2018
 0 态驻留的语义学根据——这给 GOAL.md 的理论章提供一个"我们不是发明三值，
 我们是站在 WFS 肩上"的定位。无需代码，等论文写作时引用。
 
+## 七、上游 trit-codec 压缩态 → 性价比评估（2026-10-31 追加）
+
+**来源**：bfxh/trit workspace 的 `crates/trit-codec`（publish=false 实验层）：
+`pack`（5 trit/byte = 1.6 bit/trit 二进制打包）、`plan`（按分布选编码）、
+`rle`/`delta`/`sparse`/`hamming`/`checksum`（GF(3) 纠错/校验）。
+
+**评估结论：压 journal 文本 = 性价比不行**。trit-codec 的全部编码器作用在
+**三值序列**（`&[Ternary]`）上；journal 是文本行（大头是 title/note 字符串
+与 HLC 时间戳），三值编码器对文本无能为力——journal 的体积问题正确解法是
+已有的快照缓存（重放成本）+ backup 归档（体积上限），不是压缩。
+
+**采纳的部分（"不行就自己写"）**：三值数据的存储压缩是真需求
+（裁决批量序列化），自写零依赖 `TriPack`（`bitparallel::tri_pack/tri_unpack`，
+5 trit/byte、槽位序 3⁵ 进制、13 个非法字节值全部显式报错）——
+比双导轨 TriWord（2 bit/trit、32-trit 块对齐）省 20% 且无块尾浪费；
+与上游 pack 同构（PR 分支内可对拍互认，独立仓库保持零依赖）。
+
+**🔜 触发条件**：TriWord/TriWord 批量裁决导出（VEX/attestation 的二进制
+载体）需求出现时，TriPack 即插即用。
+
 ## 研究方法备忘
 
 判断咬合的三条标准（本轮实际使用）：

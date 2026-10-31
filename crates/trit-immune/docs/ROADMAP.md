@@ -49,6 +49,8 @@
 | 40 | **Kani 模型检查 harness**（GOAL.md 升级①完全体：符号执行穷举输入空间，超越随机采样） | ✅（待触发） | `kani_proofs.rs`（`#[cfg(kani)]` 门控，常规编译零影响 + Cargo.toml check-cfg 登记）：K3 AND 交换/结合/单调/幂等（3×3、3³ 全空间）+ 门禁单调（任意三裁决列表追加 -1 不升级）；`cargo install kani-verifier && cargo kani` 即跑（本机未装，触发条件就绪） |
 | 41 | **上游 PR 正式化**（并入 bfxh/trit workspace：crates/trit-immune + compat 对接） | ✅ | **PR #197**（bfxh/trit）：`crates/trit-immune` 加入 workspace members + `compat.rs`（Trit ↔ Ternary 双向 From + **3×3 同构穷举**：K3 AND ≡ Kleene BitAnd，False/Vulnerable 同为支配元）；上游 workspace 内 `cargo test -p trit-immune` 217 全绿 |
 | 42 | **`trit` CLI：journal 代替 git 的命令行**（git 的每个核心操作在账本上都有对应物，大多更强） | ✅ | `src/bin/trit.rs`：`init`（建账本）/`log`（HLC 全序历史）/`status`（收敛+门禁）/`branch`（spawn 分叉——DAG 天生多分支）/`commit -m -v -n`（记录裁决，默认 0 未测不可信）/`merge`（**δ-CRDT 无冲突合并**，与顺序无关——比 git merge 强的地方：没有冲突标记，只有收敛）/`checkout`（**时间旅行**：重放到任意节点，日志不可变历史永不丢）/`clone`（账本即工件）/`gate`（三值门禁+打穿来源——git 只知道冲突不知道风险）/`suspects`（0 态待办）；全工作流端到端测试（含克隆侧增量经 δ-CRDT 合并回主账本） |
+| 43 | **TriPack：三值序列紧凑存储**（压缩态评估结论：上游 trit-codec 是三值序列编码器，压 journal 文本不适用——文本用快照+归档兜底；三值数据压缩自写零依赖实现） | ✅ | `bitparallel::tri_pack/tri_unpack` + `PackError`（5 trit/byte = **1.6 bit/trit**，比双导轨省 20% 且无块尾浪费；槽位序 3⁵ 进制；13 个非法字节值全部显式报错零静默损坏）；测试：全长度往返 / 3⁵ 全空间 / 非法值拒绝 / 与 TriWord 同语义对拍（评估全文见 RESEARCH.md §七） |
+| 44 | **git 共存桥**（"原来的 git 怎么办"的答案：git 继续管代码文件，trit 管裁决账本——桥 = 提交历史吸收进账本参与审计） | ✅ | `trit sync-git <repo> [--open]`：`import::collect_git_log` + `import_commits`——每条 commit 立 Message 节点 **0 态入账**（作者声称≠已验证）+ **默认整批隔离**（外部导入防污染协议）；吸收后扫描器/红队/门禁即可指着 commit 节点干活；`--open` 解除隔离等人逐条放行 |
 
 ### 标签语义澄清（2026-10-31）
 

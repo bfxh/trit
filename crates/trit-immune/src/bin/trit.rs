@@ -76,6 +76,7 @@ fn run(args: &[String]) -> Result<(), CliError> {
         "clone" => cmd_clone(rest),
         "gate" => cmd_gate(rest),
         "suspects" => cmd_suspects(rest),
+        "sync-git" => cmd_sync_git(rest),
         "help" | "--help" | "-h" => {
             println!("{}", help_text());
             Ok(())
@@ -392,6 +393,40 @@ fn cmd_suspects(args: &[String]) -> Result<(), CliError> {
     Ok(())
 }
 
+/// `trit sync-git <repo> [-f file] [--open]`：**git 共存桥**——git 继续管
+/// 代码文件（内容寻址、生态工具），账本把 git 提交历史吸收进来参与裁决。
+/// 每条 commit 立一个 Message 节点：**0 态入账**（作者声称≠已验证），
+/// 默认整批隔离（外部导入防污染协议；`--open` 解除隔离等人逐条放行）。
+/// 返回账本后，扫描器/红队/门禁就可以指着这些节点干活。
+fn cmd_sync_git(args: &[String]) -> Result<(), CliError> {
+    let mut quarantine = true;
+    let mut rest: Vec<String> = Vec::new();
+    for a in args {
+        match a.as_str() {
+            "--open" => quarantine = false,
+            other => rest.push(other.to_string()),
+        }
+    }
+    let (repo, ledger_args) = rest
+        .split_first()
+        .ok_or_else(|| CliError::Usage("sync-git 需要 <repo 路径>".into()))?;
+    let repo_path = PathBuf::from(repo);
+    let (mut j, path) = open_ledger(&ledger_args)?;
+    let commits = trit_immune::collect_git_log(&repo_path)
+        .map_err(|e| CliError::Runtime(format!("读 git 历史失败：{e}")))?;
+    let parent = NodeId((j.dag().nodes().len() - 1) as u32);
+    let n = trit_immune::import_commits(&mut j, parent, &commits, quarantine)?;
+    drop(j.into_dag().map_err(|e| CliError::Runtime(e.to_string()))?);
+    println!(
+        "导入 {} 条提交 → {} 个 0 态节点（隔离={}，账本 {}）",
+        commits.len(),
+        n,
+        quarantine,
+        path.display()
+    );
+    Ok(())
+}
+
 fn help_text() -> String {
     "trit —— journal 代替 git 的命令行（三进制免疫账本）
 
@@ -407,6 +442,8 @@ fn help_text() -> String {
   clone <src> <dst>         账本即工件，复制即克隆
   gate [-n node] [-f file]  三值门禁 + 打穿来源
   suspects [-f file]        0 态待办队列
+  sync-git <repo> [-f file] [--open]
+                            git 共存桥：提交历史吸收进账本（0 态+默认隔离）
   help                      本帮助
 
 默认账本：当前目录 repo.tritj（-f 可指定）。".to_string()
@@ -508,6 +545,13 @@ mod tests {
             n1.history
         );
         drop(j.into_dag().unwrap());
+
+        // sync-git：非 git 目录在 spawn 之前被拒（错误路径，零进程创建）
+        let missing = dir.join("not-a-repo");
+        assert!(matches!(
+            run(&[s("sync-git"), s(missing.to_string_lossy().to_string())]),
+            Err(CliError::Runtime(_))
+        ));
 
         // 用法错误路径
         assert!(matches!(
