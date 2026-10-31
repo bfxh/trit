@@ -654,6 +654,42 @@ impl Net {
     }
 }
 
+/// v-预测适配：`v ≡ √ᾱ·ε − √(1−ᾱ)·x0`，换算 `x̂0 = √ᾱ·x_t − √(1−ᾱ)·v̂`。
+/// 高 t（ᾱ→0）时 x̂0 ≈ −v̂，**没有 1/√ᾱ**，这条参数化就是为稳定而生的。
+pub struct VDen {
+    pub net: Net,
+    pub abar: Vec<f32>,
+}
+
+impl crate::diffuse::Denoiser for VDen {
+    fn predict_x0(
+        &self,
+        xt: &[f32],
+        t_frac: f32,
+        cond: Option<usize>,
+        w: usize,
+        h: usize,
+    ) -> Vec<f32> {
+        let mut maps = vec![xt.to_vec(), vec![t_frac; w * h]];
+        for k in 0..self.net.cond {
+            maps.push(vec![(cond == Some(k)) as u8 as f32; w * h]);
+        }
+        let v = self.net.forward_x(&maps, w, h);
+        let tmax = self.abar.len().saturating_sub(1).max(1);
+        let idx = ((t_frac * tmax as f32).round() as usize).min(tmax);
+        let a = self.abar[idx].clamp(0.0, 1.0);
+        let (sa, se) = (a.sqrt(), (1.0 - a).sqrt());
+        xt.iter()
+            .zip(&v)
+            .map(|(x, vv)| (sa * x - se * vv).clamp(0.0, 1.0))
+            .collect()
+    }
+
+    fn input_dim(&self) -> usize {
+        2 + self.net.cond
+    }
+}
+
 /// ε-空间 DDIM（数值稳定）：**不显式构造 x̂0**，避免高 t 时除以 √ᾱ 爆炸。
 ///   x_{t−1} = √(ᾱ_{t−1}/ᾱ_t)·x_t + [√(1−ᾱ_{t−1}) − √(ᾱ_{t−1}/ᾱ_t)·√(1−ᾱ_t)]·ε̂
 /// 最后一步（t=0）才换算 x̂0 并裁到 0..1。
@@ -840,6 +876,30 @@ mod tests {
             "实际 {}",
             x0b[0]
         );
+    }
+
+    #[test]
+    fn v_denoiser_maps_v_to_x0() {
+        use crate::diffuse::Denoiser;
+        // 网络输出恒 0 的 v ⇒ x̂0 = √ᾱ·x_t
+        let (w, h) = (4usize, 4usize);
+        let mut net = Net::new(2, &[], 3);
+        net.linear_out = true;
+        for l in net.layers.iter_mut() {
+            l.b.fill(0.0);
+            l.w.fill(0.0);
+            l.scale.fill(0.0);
+        }
+        let abar = vec![1.0f32, 0.25, 0.0];
+        let d = VDen {
+            net,
+            abar: abar.clone(),
+        };
+        let xt = vec![0.8f32; w * h];
+        let x0 = d.predict_x0(&xt, 0.5, None, w, h); // ᾱ=0.25 ⇒ 0.5*0.8=0.4
+        assert!((x0[0] - 0.4).abs() < 1e-4, "实际 {}", x0[0]);
+        let x0b = d.predict_x0(&xt, 0.0, None, w, h); // ᾱ=1 ⇒ x_t
+        assert!((x0b[0] - 0.8).abs() < 1e-4, "实际 {}", x0b[0]);
     }
 
     #[test]

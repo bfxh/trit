@@ -1921,6 +1921,7 @@ enum Den {
     M(PatchMlp),
     C(Net),
     E(trit_parts::tconv::EpsDen),
+    V(trit_parts::tconv::VDen),
 }
 
 impl Denoiser for Den {
@@ -1936,6 +1937,7 @@ impl Denoiser for Den {
             Den::M(d) => d.predict_x0(xt, t_frac, cond, w, h),
             Den::C(d) => d.predict_x0(xt, t_frac, cond, w, h),
             Den::E(d) => d.predict_x0(xt, t_frac, cond, w, h),
+            Den::V(d) => d.predict_x0(xt, t_frac, cond, w, h),
         }
     }
     fn input_dim(&self) -> usize {
@@ -1943,6 +1945,7 @@ impl Denoiser for Den {
             Den::M(d) => d.input_dim(),
             Den::C(d) => d.input_dim(),
             Den::E(d) => d.input_dim(),
+            Den::V(d) => d.input_dim(),
         }
     }
 }
@@ -2092,7 +2095,9 @@ fn tex_gen_cmd(argv: &[String]) {
     let use_bn = argv.iter().any(|a| a == "--bn");
     let use_adam = argv.iter().any(|a| a == "--adam");
     // ε-预测：目标是噪声而不是 x0；线性输出 + 平方误差（x0-预测会把细纹理平均掉）
-    let eps_mode = argv.iter().any(|a| a == "--eps");
+    let v_mode = argv.iter().any(|a| a == "--v");
+    let eps_mode = argv.iter().any(|a| a == "--eps") && !v_mode;
+    let linear_mode = eps_mode || v_mode;
     let batch: usize = arg(argv, "--batch")
         .and_then(|v| v.parse().ok())
         .unwrap_or(4);
@@ -2124,7 +2129,7 @@ fn tex_gen_cmd(argv: &[String]) {
             None => Net::new(2, &conv_hidden, seed),
         };
         net.set_bn(use_bn && load_path.is_none());
-        if eps_mode && load_path.is_none() {
+        if linear_mode && load_path.is_none() {
             net.linear_out = true;
         }
         let tmax = sched.steps().max(1);
@@ -2144,7 +2149,19 @@ fn tex_gen_cmd(argv: &[String]) {
                 let xt = trit_parts::diffuse::add_noise(x0, &noise, abar[t]);
                 let tf = t as f32 / tmax as f32;
                 let maps = vec![xt, vec![tf; n * n]];
-                let target = if eps_mode { noise } else { x0.clone() };
+                let target = if eps_mode {
+                    noise
+                } else if v_mode {
+                    // v = √ᾱ·ε − √(1−ᾱ)·x0
+                    let (sa, se) = (abar[t].sqrt(), (1.0 - abar[t]).sqrt());
+                    noise
+                        .iter()
+                        .zip(x0.iter())
+                        .map(|(e, c)| sa * e - se * c)
+                        .collect()
+                } else {
+                    x0.clone()
+                };
                 items.push((maps, target));
             }
             loss += net.train_batch_x(&items, n, n, lr, use_adam) as f64;
@@ -2245,7 +2262,12 @@ fn tex_gen_cmd(argv: &[String]) {
             net.save(p).unwrap_or_else(|e| fail(&e));
             println!("权重已存 {}", p.display());
         }
-        if eps_mode {
+        if v_mode {
+            Den::V(trit_parts::tconv::VDen {
+                net,
+                abar: abar.clone(),
+            })
+        } else if eps_mode {
             Den::E(trit_parts::tconv::EpsDen {
                 net,
                 abar: abar.clone(),
@@ -2556,6 +2578,8 @@ fn usage() -> ! {
   parts-3d tex-prior [--iters 30000] [--patch 3|7] [--cond] [--hid 16]
   parts-3d tex-conv  [--iters 20000] [--hidden 8,8] [--cond] [--size 64] [--adam] [--batch K] [--bn]
   parts-3d tex-gen   [--iters 200000] [--steps-t 50] [--size 64] [--hid 32] [--out <dir>]
+                     [--conv 8,8] [--batch 4] [--adam] [--eps|--v] [--eps-space] [--diag]
+                     [--save w.tpc] [--load w.tpc] [--holdout-names A,B]
   parts-3d look <图或目录>… [--out features.csv]"
     );
     std::process::exit(2);
