@@ -22,6 +22,7 @@ pub mod mesh;
 pub mod model;
 pub mod ood;
 pub mod parts;
+pub mod splat;
 pub mod tpm;
 pub mod weights;
 

@@ -498,6 +498,130 @@ fn fuse_cmd(argv: &[String]) {
     }
 }
 
+/// `splat --scene <dir> --frames 0,2,4,6 --eval 1,3,5,7 --cells 0.04,0.02,0.01`：
+/// 精度阶梯：每个采样格同时给出「体素/网格/高斯」三档的数量与留出视角 PSNR。
+fn splat_cmd(argv: &[String]) {
+    use trit_parts::data::read_rgb;
+    use trit_parts::fuse::{FuseCfg, View, fuse};
+    use trit_parts::mesh::{non_manifold_edges, surface_nets};
+    use trit_parts::splat::{build, psnr, render};
+
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let parse_list = |k: &str, d: Vec<usize>| -> Vec<usize> {
+        arg(argv, k)
+            .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+            .unwrap_or(d)
+    };
+    let frames = parse_list("--frames", vec![0, 2, 4, 6]);
+    let eval_frames = parse_list("--eval", vec![1, 3, 5, 7]);
+    let cells: Vec<f32> = arg(argv, "--cells")
+        .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![0.04, 0.02, 0.01]);
+    let scale_k: f32 = arg(argv, "--scale-k")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2.0);
+    let alpha: f32 = arg(argv, "--alpha")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.6);
+
+    let load = |f: usize| -> View {
+        let (ids, shape) =
+            read_npy_i32(&frame_path(&scene, "seg", f, "npy")).unwrap_or_else(|e| fail(&e));
+        let (d, _) =
+            read_npy_f32(&frame_path(&scene, "depth", f, "npy")).unwrap_or_else(|e| fail(&e));
+        View {
+            ids: ids.iter().map(|&v| v.max(0) as u32).collect(),
+            depth: d,
+            w: shape[1],
+            h: shape[0],
+            cam: Camera::load(&frame_path(&scene, "meta", f, "json")).unwrap_or_else(|e| fail(&e)),
+        }
+    };
+    let fit_views: Vec<View> = frames.iter().map(|&f| load(f)).collect();
+    let fit_rgbs: Vec<Vec<f32>> = frames
+        .iter()
+        .map(|&f| {
+            read_rgb(&frame_path(&scene, "rgb", f, "png"))
+                .map(|(_, _, p)| p)
+                .unwrap_or_else(|e| fail(&e))
+        })
+        .collect();
+    let eval_views: Vec<View> = eval_frames.iter().map(|&f| load(f)).collect();
+    let eval_rgbs: Vec<Vec<f32>> = eval_frames
+        .iter()
+        .map(|&f| {
+            read_rgb(&frame_path(&scene, "rgb", f, "png"))
+                .map(|(_, _, p)| p)
+                .unwrap_or_else(|e| fail(&e))
+        })
+        .collect();
+
+    println!("cell(m)  体素      网格顶点/面        外壳非流形边   高斯数   PSNR(fg,dB)");
+    for &cell in &cells {
+        // 体素/网格档
+        let fused = fuse(
+            &fit_views,
+            &FuseCfg {
+                cell,
+                margin: 2,
+                min_votes: 1.0,
+                seal: 1,
+            },
+        )
+        .unwrap_or_else(|| fail("融合失败"));
+        let vox = fused.grid.occ.iter().filter(|&&v| v != 0).count();
+        let sg = fused.scene_grid();
+        let m = surface_nets(&sg);
+        // 高斯档（颜色取源像素；不做梯度拟合）
+        let mut splats = build(&fit_views, &fit_rgbs, cell, scale_k);
+        for s in splats.iter_mut() {
+            s.alpha = alpha;
+        }
+        let n = splats.len();
+        let mut ps = Vec::new();
+        for (v, gt) in eval_views.iter().zip(&eval_rgbs) {
+            let img = render(&splats, &v.cam, v.w, v.h, [0.0, 0.0, 0.0]);
+            // 只在 GT 前景像素上算（地板/背景不在喷溅表示里）
+            let mut a = Vec::new();
+            let mut b = Vec::new();
+            for p in 0..v.w * v.h {
+                if v.ids[p] == 0 {
+                    continue;
+                }
+                a.extend_from_slice(&img[p * 3..p * 3 + 3]);
+                b.extend_from_slice(&gt[p * 3..p * 3 + 3]);
+            }
+            ps.push(psnr(&a, &b));
+            if let Some(dir) = arg(argv, "--dump") {
+                let d = PathBuf::from(dir);
+                std::fs::create_dir_all(&d).ok();
+                let mut bytes = format!(
+                    "P6
+{} {}
+255
+",
+                    v.w, v.h
+                )
+                .into_bytes();
+                for p in 0..v.w * v.h {
+                    for c in 0..3 {
+                        bytes.push((img[p * 3 + c].clamp(0.0, 1.0) * 255.0) as u8);
+                    }
+                }
+                let _ = std::fs::write(d.join(format!("splat_{cell:.3}.ppm")), bytes);
+            }
+        }
+        let mean = ps.iter().filter(|v| v.is_finite()).sum::<f64>()
+            / ps.iter().filter(|v| v.is_finite()).count().max(1) as f64;
+        println!(
+            "{cell:.3}     {vox:<9} {}/{}            {}            {n:<6}  {mean:.2}",
+            m.verts.len(),
+            m.tris.len(),
+            non_manifold_edges(&m)
+        );
+    }
+}
+
 fn usage() -> ! {
     eprintln!(
         "用法:
@@ -505,7 +629,8 @@ fn usage() -> ! {
   parts-3d infer --model <tpm> --scene <dir> --frame N --manifest <json> --out <ply> [--depth <npy>]
   parts-3d eval --model <tpm> --scene <dir> --manifest <json> [--limit N] [--voxel 0.01] [--min-vox 30]
   parts-3d mesh --seg <npy> --depth <npy> --meta <json> --out <ply> [--cell 0.01] [--levels 0,2,4]
-  parts-3d fuse --scene <dir> --frames 0,1,2,3 [--eval 4,5,6,7] --out <ply> [--cell 0.01] [--min-votes 1] [--voxel 0.01] [--levels 0,2]"
+  parts-3d fuse --scene <dir> --frames 0,1,2,3 [--eval 4,5,6,7] --out <ply> [--cell 0.01] [--min-votes 1] [--voxel 0.01] [--levels 0,2]
+  parts-3d splat --scene <dir> --frames 0,2,4,6 --eval 1,3,5,7 [--cells 0.04,0.02,0.01] [--scale-k 2] [--alpha 0.6]"
     );
     std::process::exit(2);
 }
@@ -521,6 +646,7 @@ fn main() {
         Some("cloud") => cloud(&argv),
         Some("mesh") => mesh_cmd(&argv),
         Some("fuse") => fuse_cmd(&argv),
+        Some("splat") => splat_cmd(&argv),
         Some("infer") => {
             #[cfg(feature = "gpu")]
             infer(&argv);
