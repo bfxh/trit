@@ -69,8 +69,11 @@ struct Args {
     unfreeze_last: usize,
     /// 冻结分割 head。
     freeze_head: bool,
-    /// 标签子目录（缺省 `seg`；实例标签用 `inst`）。
+    /// 标签子目录（缺省 `seg`；实例标签用 `inst`、边界标签用 `bnd`）。
     seg_sub: String,
+    /// 稀疏类加权：标签 id 等于该值的像素 loss × 倍数（0 = 不加权）。
+    bnd_label: u32,
+    bnd_weight: f32,
 }
 
 fn parse() -> Result<Args, String> {
@@ -109,6 +112,8 @@ fn parse() -> Result<Args, String> {
         unfreeze_last: 0,
         freeze_head: false,
         seg_sub: "seg".into(),
+        bnd_label: 0,
+        bnd_weight: 0.0,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -168,6 +173,8 @@ fn parse() -> Result<Args, String> {
                 a.unfreeze_last = val()?.parse().map_err(|_| "--unfreeze-last 非整数")?
             }
             "--seg-sub" => a.seg_sub = val()?,
+            "--bnd-label" => a.bnd_label = val()?.parse().map_err(|_| "--bnd-label 非整数")?,
+            "--bnd-weight" => a.bnd_weight = val()?.parse().map_err(|_| "--bnd-weight 非数字")?,
             "--sgd" => a.adam = false,
             other => return Err(format!("未知参数 {other}")),
         }
@@ -402,7 +409,22 @@ fn main() {
         }
         let tr = net.forward(&gpu, xb, res);
         let logits = gpu.read(&tr.out, hw * ch);
-        let out = loss_and_grad(&logits, &s.planes, &s.valid, hw, k, &w);
+        let out = if args.bnd_weight > 0.0 {
+            // 稀疏类（如实例边界）加权：标签 id == --bnd-label 的像素损失 × bnd_weight
+            let mut pw = vec![1.0f32; hw];
+            for p in 0..hw {
+                let mut id = 0u32;
+                for i in 0..k {
+                    id = id * 3 + s.planes[i][p] as u32;
+                }
+                if id + 1 == args.bnd_label {
+                    pw[p] = args.bnd_weight;
+                }
+            }
+            trit_parts::loss::loss_and_grad_weighted(&logits, &s.planes, &s.valid, hw, k, &w, &pw)
+        } else {
+            loss_and_grad(&logits, &s.planes, &s.valid, hw, k, &w)
+        };
         let dw = trit_parts::loss::plane_weights(args.depth_planes.max(1));
         let dout_depth = match (&dep, &tr.depth_out) {
             (Some((p, v)), Some(buf)) => {

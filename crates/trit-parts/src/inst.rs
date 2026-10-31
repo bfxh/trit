@@ -192,7 +192,8 @@ pub fn split_by_boundary(fg: &[u32], boundary: &[u32], w: usize, h: usize) -> Ve
         .map(|(&f, &b)| (f != 0 && b == 0) as u32)
         .collect();
     let (mut lab, _n) = components(&interior, w, h);
-    let mut q: std::collections::VecDeque<usize> = (0..lab.len()).filter(|&p| lab[p] != 0).collect();
+    let mut q: std::collections::VecDeque<usize> =
+        (0..lab.len()).filter(|&p| lab[p] != 0).collect();
     while let Some(p) = q.pop_front() {
         let (x, y) = (p % w, p / w);
         let push = |r: usize, lab: &mut Vec<u32>, q: &mut std::collections::VecDeque<usize>| {
@@ -391,10 +392,17 @@ mod tests {
         let right = lab[4];
         assert!(left != 0 && right != 0);
         assert_ne!(left, right, "边界应把相接的两块切开");
-        assert_eq!(lab.iter().filter(|&&v| v > 0).count(), 24, "所有前景像素都要有实例号");
+        assert_eq!(
+            lab.iter().filter(|&&v| v > 0).count(),
+            24,
+            "所有前景像素都要有实例号"
+        );
         // 没有边界时退化为连通域：1 个实例
         let none = vec![0u32; 32];
-        assert_eq!(split_by_boundary(&fg, &none, w, 4).iter().max().copied(), Some(1));
+        assert_eq!(
+            split_by_boundary(&fg, &none, w, 4).iter().max().copied(),
+            Some(1)
+        );
     }
 
     #[test]

@@ -120,6 +120,21 @@ pub fn loss_and_grad(
     loss_and_grad_full(logits, planes, valid, hw, k, w, None)
 }
 
+/// 带**逐像素权重**的损失：`pw[p]` 同时缩放该像素的平面项损失与梯度（缺省全 1）。
+/// 用途：边界这类稀疏类别（约占前景 4%）在普通 CE 下会被淹没，需要加权。
+pub fn loss_and_grad_weighted(
+    logits: &[f32],
+    planes: &[Vec<u8>],
+    valid: &[u8],
+    hw: usize,
+    k: usize,
+    w: &[f32],
+    pw: &[f32],
+) -> LossOut {
+    assert_eq!(pw.len(), hw, "逐像素权重长度应为 hw");
+    loss_and_grad_inner(logits, planes, valid, hw, k, w, Some(pw), None)
+}
+
 /// 带可选深度平面的完整损失。
 pub fn loss_and_grad_full(
     logits: &[f32],
@@ -128,6 +143,19 @@ pub fn loss_and_grad_full(
     hw: usize,
     k: usize,
     w: &[f32],
+    depth: Option<&DepthSupervision>,
+) -> LossOut {
+    loss_and_grad_inner(logits, planes, valid, hw, k, w, None, depth)
+}
+
+fn loss_and_grad_inner(
+    logits: &[f32],
+    planes: &[Vec<u8>],
+    valid: &[u8],
+    hw: usize,
+    k: usize,
+    w: &[f32],
+    pw: Option<&[f32]>,
     depth: Option<&DepthSupervision>,
 ) -> LossOut {
     let ch = k * 3 + 1;
@@ -163,10 +191,11 @@ pub fn loss_and_grad_full(
             let sum = e[0] + e[1] + e[2];
             let sm = [e[0] / sum, e[1] / sum, e[2] / sum];
             let t = planes[i][p] as usize;
-            loss += f64::from(w[i]) * f64::from(-sm[t].max(1e-12).ln());
+            let g = pw.map(|v| v[p]).unwrap_or(1.0);
+            loss += f64::from(w[i]) * f64::from(g) * f64::from(-sm[t].max(1e-12).ln());
             for c in 0..3 {
                 let onehot = if c == t { 1.0 } else { 0.0 };
-                grad[base + i * 3 + c] += w[i] * (sm[c] - onehot) * inv;
+                grad[base + i * 3 + c] += w[i] * g * (sm[c] - onehot) * inv;
             }
             if valid[p] == 1 {
                 let mut best = 0usize;
@@ -276,6 +305,48 @@ mod tests {
                 ((*seed % 2001) as f32 - 1000.0) / 900.0
             })
             .collect()
+    }
+
+    #[test]
+    fn pixel_weight_scales_plane_term_only() {
+        // 单像素、k=1：pw=3 时平面项损失与梯度应为 1 倍时的 3 倍，valid(BCE) 项不变
+        let (k, hw) = (1usize, 1usize);
+        let logits = vec![0.5f32, -0.2, 0.1, 0.7];
+        let planes = vec![vec![2u8]];
+        let valid = vec![1u8];
+        let w = plane_weights(k);
+        let base = loss_and_grad(&logits, &planes, &valid, hw, k, &w);
+        let weighted = loss_and_grad_weighted(&logits, &planes, &valid, hw, k, &w, &[3.0]);
+        // BCE 项（第 k*3 个梯度分量）不随 pw 变
+        assert!((base.grad[3] - weighted.grad[3]).abs() < 1e-9);
+        // 平面项梯度按 3 倍
+        for c in 0..3 {
+            assert!(
+                (weighted.grad[c] - 3.0 * base.grad[c]).abs() < 1e-6,
+                "c={c}: {} vs {}",
+                weighted.grad[c],
+                3.0 * base.grad[c]
+            );
+        }
+        // 损失：加权只放大平面项
+        let z = [0.5f32, -0.2, 0.1];
+        let m = z[0].max(z[1]).max(z[2]);
+        let e: Vec<f32> = z.iter().map(|v| (v - m).exp()).collect();
+        let s: f32 = e.iter().sum();
+        let pl = -((e[2] / s) as f64).ln();
+        let v = logits[3];
+        let bce = 0.5 * f64::from(v.max(0.0) - v + (1.0 + (-v.abs()).exp()).ln());
+        assert!(
+            (f64::from(base.loss) - (pl + bce)).abs() < 1e-5,
+            "{}",
+            base.loss
+        );
+        let want = 3.0 * pl + bce;
+        assert!(
+            (f64::from(weighted.loss) - want).abs() < 1e-5,
+            "{} vs {want}",
+            weighted.loss
+        );
     }
 
     #[test]

@@ -98,6 +98,9 @@ fn prep(argv: &[String]) {
     let limit: usize = arg(argv, "--limit")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    let bnd_r: usize = arg(argv, "--bnd-radius")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
     let (mut nframes, mut unmapped) = (0usize, 0usize);
     for sd in scene_dirs(&scenes) {
         let name = sd.file_name().unwrap().to_string_lossy().to_string();
@@ -133,18 +136,28 @@ fn prep(argv: &[String]) {
                 .filter(|(a, b)| **a > 0 && **b == 0)
                 .count();
             let inst_i: Vec<i32> = inst.iter().map(|&v| v as i32).collect();
-            write_npy_i32(&out.join(f.file_name().unwrap()), &inst_i, shape[1], shape[0])
-                .unwrap_or_else(|e| {
-                    eprintln!("{e}");
-                    std::process::exit(2)
-                });
-            let bnd = boundary_of(&inst, shape[1], shape[0], 2);
+            write_npy_i32(
+                &out.join(f.file_name().unwrap()),
+                &inst_i,
+                shape[1],
+                shape[0],
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("{e}");
+                std::process::exit(2)
+            });
+            let bnd = boundary_of(&inst, shape[1], shape[0], bnd_r);
             let bnd_i: Vec<i32> = bnd.iter().map(|&v| v as i32).collect();
-            write_npy_i32(&out_bnd.join(f.file_name().unwrap()), &bnd_i, shape[1], shape[0])
-                .unwrap_or_else(|e| {
-                    eprintln!("{e}");
-                    std::process::exit(2)
-                });
+            write_npy_i32(
+                &out_bnd.join(f.file_name().unwrap()),
+                &bnd_i,
+                shape[1],
+                shape[0],
+            )
+            .unwrap_or_else(|e| {
+                eprintln!("{e}");
+                std::process::exit(2)
+            });
             nframes += 1;
         }
         println!(
@@ -208,6 +221,9 @@ fn eval(argv: &[String]) {
     let mut ngt: Vec<usize> = Vec::new();
     let mut cnt_ok = 0usize;
     let mut cnt_exact = 0usize;
+    let mut b_inter = 0usize; // 边界像素：预测∩GT / 预测 / GT
+    let mut b_pred = 0usize;
+    let mut b_gt = 0usize;
     let mut frames = 0usize;
     for sd in scene_dirs(&scenes) {
         let name = sd.file_name().unwrap().to_string_lossy().to_string();
@@ -269,6 +285,15 @@ fn eval(argv: &[String]) {
                 let dec = decode_ids(&logits, res, &pl);
                 let fg: Vec<u32> = dec.iter().map(|&v| (v > 0) as u32).collect();
                 let bd: Vec<u32> = dec.iter().map(|&v| (v == 2) as u32).collect();
+                if let Ok((gb, _)) = read_npy_i32(&rd.join("bnd").join(format!("{stem}.npy"))) {
+                    for (i, &g) in gb.iter().enumerate() {
+                        let g = (g == 2) as usize;
+                        let q = bd[i] as usize;
+                        b_gt += g;
+                        b_pred += q;
+                        b_inter += (g == 1 && q == 1) as usize;
+                    }
+                }
                 trit_parts::inst::split_by_boundary(&fg, &bd, res as usize, res as usize)
             } else {
                 decode_ids(&logits, res, &pl)
@@ -306,7 +331,7 @@ fn eval(argv: &[String]) {
         if v.is_empty() { 0.0 } else { v[v.len() / 2] }
     };
     println!(
-        "frames={frames} 实例 mIoU mean {:.4} median {:.4}（p10 {:.4}）| 前景 IoU mean {:.4} | pred/gt {:.2} | 计数±1 {:.1}% | 计数全对 {:.1}%",
+        "frames={frames} 实例 mIoU mean {:.4} median {:.4}（p10 {:.4}）| 前景 IoU mean {:.4} | pred/gt {:.2} | 计数±1 {:.1}% | 计数全对 {:.1}% | 边界 P {:.3} R {:.3} F1 {:.3}",
         mean(&miou),
         median(&mut miou.clone()),
         {
@@ -317,7 +342,10 @@ fn eval(argv: &[String]) {
         mean(&fgis),
         npred.iter().sum::<usize>() as f64 / ngt.iter().sum::<usize>().max(1) as f64,
         100.0 * cnt_ok as f64 / frames.max(1) as f64,
-        100.0 * cnt_exact as f64 / frames.max(1) as f64
+        100.0 * cnt_exact as f64 / frames.max(1) as f64,
+        b_inter as f64 / b_pred.max(1) as f64,
+        b_inter as f64 / b_gt.max(1) as f64,
+        2.0 * b_inter as f64 / (b_pred + b_gt).max(1) as f64
     );
 }
 
