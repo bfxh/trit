@@ -10,6 +10,7 @@
 | 留出（r3.6 / r3.9，各 60 帧） | id **0.8118 / 0.7653**，部件 IoU **0.6609 / 0.6142** |
 | 3D（GT 深度反投影，10 mm 体素） | 逐部件 IoU **0.6397**，质心误差 30.0 mm |
 | 适用边界 | 只对训练过的装配摆放有效；换装配需重训，且 id 必须沿结构密集编号（见 `docs/MODEL-CARD.md`）|
+| 取景带 | `parts_id8118.framing`（TPF1，两条统计的接受区间）|
 | ⚠️ 域外行为 | 对**任何**图像都会把 96–99% 像素判成部件（域内只有 1.7%），**没有 OOD 拒识**；生产必须外挂「是不是这个物体」的闸门 |
 | ⚠️ 拒识 | **没有**。域外图像会被标成 96–99% 部件（见模型卡 §4c），管线需自己加检测门槛 |
 
@@ -17,8 +18,8 @@
 
 ```bash
 # 一条命令：闸门 + id 图 (+ 点云)
-parts-cli pipeline --model crates/trit-parts/models/parts_id8118.tpm   --manifest parts.json --bank crates/trit-parts/models/parts_id8118.ood   --image photo.png --out out/ [--depth d.npy --meta m.json]
-#   域外 ⇒ 退出码 4 且不写输出；--force 可强制继续
+parts-cli pipeline --model crates/trit-parts/models/parts_id8118.tpm   --manifest parts.json --bank crates/trit-parts/models/parts_id8118.ood   --framing crates/trit-parts/models/parts_id8118.framing   --image photo.png --out out/ [--depth d.npy --meta m.json]
+#   域外 ⇒ 退出码 4；取景不可用 ⇒ 退出码 5；两者都不写输出（--force 可强制）
 
 # 只做域外闸门（域外返回退出码 4）
 parts-ood check --model crates/trit-parts/models/parts_id8118.tpm   --manifest parts.json --bank crates/trit-parts/models/parts_id8118.ood --image photo.png

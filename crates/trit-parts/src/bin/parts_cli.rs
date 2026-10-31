@@ -35,7 +35,7 @@ fn main() {
   parts-cli infer --dir <夹具> [--backends refcpu,wgpu]
   parts-cli export --state <state.bin> --out <model.tpm> [--channels 16]
   parts-cli run --model <model.tpm> --image <png> --manifest <parts.json> --out <dir>
-  parts-cli pipeline --model <tpm> --manifest <json> --image <png> --out <dir> [--bank <ood>] [--depth <npy> --meta <json>]"
+  parts-cli pipeline --model <tpm> --manifest <json> --image <png> --out <dir> [--bank <ood>] [--framing <tpf>] [--depth <npy> --meta <json>]"
         );
         std::process::exit(2);
     }
@@ -475,7 +475,7 @@ fn pipeline(argv: &[String]) {
     use trit_parts::data::{read_rgb, resize_rgb};
     use trit_parts::geo::{Camera, clouds, write_ply};
     use trit_parts::net::Net;
-    use trit_parts::ood::{Bank, features_from_logits, features_v2};
+    use trit_parts::ood::{Bank, FramingBand, features_from_logits, features_v2, framing_stats};
 
     let mut model = None;
     let mut manifest = None;
@@ -486,6 +486,7 @@ fn pipeline(argv: &[String]) {
     let mut meta_p = None;
     let mut force = false;
     let mut threshold = 0.5f32;
+    let mut framing_p = None;
     let mut i = 1;
     while i < argv.len() {
         match argv[i].as_str() {
@@ -519,6 +520,10 @@ fn pipeline(argv: &[String]) {
             }
             "--threshold" => {
                 threshold = argv[i + 1].parse().unwrap_or(threshold);
+                i += 2;
+            }
+            "--framing" => {
+                framing_p = Some(PathBuf::from(&argv[i + 1]));
                 i += 2;
             }
             "--force" => {
@@ -590,6 +595,30 @@ fn pipeline(argv: &[String]) {
         image.display(),
         100.0 * parts_px as f64 / hw as f64
     );
+
+    if let Some(fp) = &framing_p {
+        let band = FramingBand::load(fp).unwrap_or_else(|e| {
+            eprintln!("读取景带失败: {e}");
+            std::process::exit(1);
+        });
+        let st = framing_stats(&ids, res, pl.parts.len());
+        let bad = band.check(&st);
+        println!(
+            "取景：占比 {:.4} / 可见部件 {:.3} / 贴边 {:.3}（{}）",
+            st.frac,
+            st.n_parts,
+            st.border,
+            if bad.is_empty() {
+                "通过".to_string()
+            } else {
+                format!("越界 {}", bad.join(","))
+            }
+        );
+        if !bad.is_empty() && !force {
+            eprintln!("⇒ 拒绝（取景不可用）：不写输出。--force 可强制。");
+            std::process::exit(5);
+        }
+    }
 
     if let (Some(dp), Some(mp)) = (&depth_p, &meta_p) {
         let (dep, shape) = trit_parts::geo::read_npy_f32(dp).unwrap_or_else(|e| {

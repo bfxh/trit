@@ -464,7 +464,119 @@ impl OodBank {
     }
 }
 
-/// 闸门银行：线性（TPOD1）或 MLP（TPO2），按文件首行自动识别。
+/// 取景统计：(部件像素占比, 可见部件数/总槽位, 触边部件像素占比)。
+pub struct FramingStats {
+    pub frac: f32,
+    pub n_parts: f32,
+    pub border: f32,
+}
+
+/// 从 id 图算取景统计。`cap` 是清单里可用部件数（用来归一化可见部件数）。
+pub fn framing_stats(ids: &[u32], w: usize, cap: usize) -> FramingStats {
+    let hw = ids.len();
+    let h = hw / w.max(1);
+    let mut seen = std::collections::HashSet::new();
+    let mut part_px = 0usize;
+    let mut border_val = 0usize;
+    for (i, &id) in ids.iter().enumerate() {
+        if id == 0 {
+            continue;
+        }
+        part_px += 1;
+        seen.insert(id);
+        let x = i % w;
+        let y = i / w;
+        if x == 0 || y == 0 || x + 1 == w || y + 1 == h {
+            border_val += 1;
+        }
+    }
+    FramingStats {
+        frac: part_px as f32 / hw.max(1) as f32,
+        n_parts: seen.len() as f32 / cap.max(1) as f32,
+        border: border_val as f32 / part_px.max(1) as f32,
+    }
+}
+
+/// 取景接受带（三条统计量的区间，按训练域的分位数拟合）。
+#[derive(Clone, Debug)]
+pub struct FramingBand {
+    pub frac: (f32, f32),
+    pub n_parts: (f32, f32),
+    pub border: (f32, f32),
+}
+
+impl FramingBand {
+    /// 用一批统计量按分位数拟合（`lo`/`hi` 例如 0.02/0.98）。
+    pub fn fit(samples: &[FramingStats], lo: f32, hi: f32) -> Self {
+        let q = |v: &mut Vec<f32>, q: f32| {
+            if v.is_empty() {
+                return 0.0;
+            }
+            v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            v[((v.len() - 1) as f32 * q) as usize]
+        };
+        let mut f: Vec<f32> = samples.iter().map(|s| s.frac).collect();
+        let mut n: Vec<f32> = samples.iter().map(|s| s.n_parts).collect();
+        let mut b: Vec<f32> = samples.iter().map(|s| s.border).collect();
+        Self {
+            frac: (q(&mut f, lo), q(&mut f, hi)),
+            n_parts: (q(&mut n, lo), q(&mut n, hi)),
+            border: (q(&mut b, lo), q(&mut b, hi)),
+        }
+    }
+
+    /// 是否在带内；返回违规项名字（空 = 通过）。
+    pub fn check(&self, s: &FramingStats) -> Vec<&'static str> {
+        let mut bad = Vec::new();
+        if s.frac < self.frac.0 || s.frac > self.frac.1 {
+            bad.push("frac");
+        }
+        if s.n_parts < self.n_parts.0 || s.n_parts > self.n_parts.1 {
+            bad.push("n_parts");
+        }
+        if s.border < self.border.0 || s.border > self.border.1 {
+            bad.push("border");
+        }
+        bad
+    }
+
+    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+        use std::fmt::Write as _;
+        let mut s = String::from(
+            "TPF1
+",
+        );
+        let _ = writeln!(
+            s,
+            "{} {} {} {} {} {}",
+            self.frac.0, self.frac.1, self.n_parts.0, self.n_parts.1, self.border.0, self.border.1
+        );
+        std::fs::write(path, s)
+    }
+
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let s = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut it = s.lines();
+        if it.next() != Some("TPF1") {
+            return Err("不是 TPF1".into());
+        }
+        let l = it.next().ok_or("缺数值行")?;
+        let v: Vec<f32> = l
+            .split_whitespace()
+            .filter_map(|x| x.parse().ok())
+            .collect();
+        if v.len() != 6 {
+            return Err("TPF1 需要 6 个数".into());
+        }
+        Ok(Self {
+            frac: (v[0], v[1]),
+            n_parts: (v[2], v[3]),
+            border: (v[4], v[5]),
+        })
+    }
+}
+
+/// 闸门银行：线性（TPOD1）或 MLP（TPO2），按文件首行自动识别。/// 闸门银行：线性（TPOD1）或 MLP（TPO2），按文件首行自动识别。
 pub enum Bank {
     Lr(OodBank),
     Mlp(MlpBank),

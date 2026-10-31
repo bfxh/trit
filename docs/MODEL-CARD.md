@@ -137,6 +137,28 @@ parts-ood check --model crates/trit-parts/models/parts_id8118.tpm   --manifest p
 `scripts/refit_ood.sh <model> <manifest> <pos-dirs> <neg-dir> [--apply]`（按文件名哈希确定性切分，
 留出 **AUC≥0.99 且 TPR@1%FPR≥0.95** 才允许覆盖随仓闸门，否则退出码 1）。
 
+## 4e. 取景有效性门（同物体但不可分割的取景）
+
+域外门分不清「同一个装配体、但相机钻进物体/贴脸/太远」。第二道门用**输出统计**判：
+部件像素占比、可见部件数（除以清单容量）、触边部件像素占比。接受带用训练域（14 个距离 × 25 帧）
+的 min/max 包络拟合成 `TPF1`：
+
+```
+frac [0.0121, 0.0815]   n_parts [0.756, 1.000]   border [0.000, 0.0044]
+```
+
+| 数据 | 逐帧拒绝率 |
+|---|---|
+| 域内 r2.0 / r4.2（距离两端） | **0% / 0%** |
+| 相机钻进（r=0.3） | **100%**（违规项 frac,n_parts,border） |
+| 贴脸（r=0.6） | **100%**（frac,border） |
+| 太远（r=8.0） | **100%**（frac,n_parts） |
+
+用法：`parts-cli pipeline ... --framing crates/trit-parts/models/parts_id8118.framing`；
+越界时**退出码 5**且不写输出（`--force` 可强制）。伴生文件
+`models/parts_id8118.framing`（TPF1，SHA-256 前缀 `8d7755d4`）。
+⚠️ 包络是**训练域拟合**的；换装配体/换分辨率必须重新 `parts-ood fit-framing`。
+
 ## 5. 局限（必须读）
 
 1. **只对训练过的装配摆放有效**。换一套部件坐标必须重训——零样本 id 0.0176（≈随机）。

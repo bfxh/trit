@@ -5,10 +5,14 @@
 
 use std::path::{Path, PathBuf};
 
+use trit_parts::api::decode_ids;
 use trit_parts::data::read_rgb;
 use trit_parts::gpu::Gpu;
 use trit_parts::net::Net;
-use trit_parts::ood::{Bank, MlpBank, NFEAT, NIN2, OodBank, auc, features_v2, tpr_at_fpr};
+use trit_parts::ood::{
+    Bank, FramingBand, FramingStats, MlpBank, NFEAT, NIN2, OodBank, auc, features_v2,
+    framing_stats, tpr_at_fpr,
+};
 use trit_parts::parts::PartList;
 use trit_parts::tpm::TpmModel;
 
@@ -310,12 +314,157 @@ fn check(argv: &[String]) {
     }
 }
 
+/// 单个目录的取景统计：跑模型 → 约束解码 → 三条统计量。
+fn dir_stats(
+    net: &Net,
+    gpu: &Gpu,
+    parts: &PartList,
+    dir: &Path,
+    per_dir: usize,
+) -> Vec<FramingStats> {
+    let mut out = Vec::new();
+    let mut files = frames(dir);
+    if files.is_empty() {
+        files = images(dir);
+    }
+    for p in files.into_iter().take(per_dir) {
+        let (w, h, pix) = match read_rgb(&p) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+        let base = to_res(w, h, &pix, 384);
+        let (logits, _z) = trit_parts::api::forward_logits_feats(net, gpu, &base, 384);
+        let ids = decode_ids(&logits, 384, parts);
+        out.push(framing_stats(&ids, 384, parts.parts.len()));
+    }
+    out
+}
+
+fn stats(argv: &[String]) {
+    let model = PathBuf::from(arg(argv, "--model").unwrap_or_else(|| usage()));
+    let manifest = PathBuf::from(arg(argv, "--manifest").unwrap_or_else(|| usage()));
+    let dirs = split_dirs(arg(argv, "--dir"));
+    let per_dir: usize = arg(argv, "--per-dir")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(150);
+    let parts = PartList::load(&manifest).unwrap_or_else(|e| panic!("{e}"));
+    let (gpu, net) = load_model(&model);
+    for d in &dirs {
+        let v = dir_stats(&net, &gpu, &parts, d, per_dir);
+        if v.is_empty() {
+            println!("{}: 无帧", d.display());
+            continue;
+        }
+        let (mut f, mut n, mut b) = (f32::MAX, f32::MAX, f32::MAX);
+        let (mut f2, mut n2, mut b2) = (f32::MIN, f32::MIN, f32::MIN);
+        let (mut fa, mut na, mut ba) = (0f32, 0f32, 0f32);
+        for s in &v {
+            f = f.min(s.frac);
+            f2 = f2.max(s.frac);
+            fa += s.frac;
+            n = n.min(s.n_parts);
+            n2 = n2.max(s.n_parts);
+            na += s.n_parts;
+            b = b.min(s.border);
+            b2 = b2.max(s.border);
+            ba += s.border;
+        }
+        let k = v.len() as f32;
+        println!(
+            "{}  n={}  frac {:.4}~{:.4} (均值 {:.4})  n_parts {:.3}~{:.3} (均值 {:.3})  border {:.3}~{:.3} (均值 {:.3})",
+            d.file_name()
+                .map(|x| x.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            v.len(),
+            f,
+            f2,
+            fa / k,
+            n,
+            n2,
+            na / k,
+            b,
+            b2,
+            ba / k
+        );
+    }
+}
+
+fn fit_framing(argv: &[String]) {
+    let model = PathBuf::from(arg(argv, "--model").unwrap_or_else(|| usage()));
+    let manifest = PathBuf::from(arg(argv, "--manifest").unwrap_or_else(|| usage()));
+    let dirs = split_dirs(arg(argv, "--dir"));
+    let per_dir: usize = arg(argv, "--per-dir")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(150);
+    let lo: f32 = arg(argv, "--lo")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.02);
+    let hi: f32 = arg(argv, "--hi")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.98);
+    let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+    let parts = PartList::load(&manifest).unwrap_or_else(|e| panic!("{e}"));
+    let (gpu, net) = load_model(&model);
+    let mut all = Vec::new();
+    for d in &dirs {
+        all.extend(dir_stats(&net, &gpu, &parts, d, per_dir));
+    }
+    println!("样本 {}", all.len());
+    let band = FramingBand::fit(&all, lo, hi);
+    println!(
+        "接受带：frac [{:.4}, {:.4}]  n_parts [{:.3}, {:.3}]  border [{:.3}, {:.3}]",
+        band.frac.0, band.frac.1, band.n_parts.0, band.n_parts.1, band.border.0, band.border.1
+    );
+    band.save(&out).unwrap_or_else(|e| panic!("{e}"));
+    println!("已存 {}", out.display());
+}
+
+/// 逐帧按取景带判别，打印每个目录的拒绝率。
+fn eval_framing(argv: &[String]) {
+    let model = PathBuf::from(arg(argv, "--model").unwrap_or_else(|| usage()));
+    let manifest = PathBuf::from(arg(argv, "--manifest").unwrap_or_else(|| usage()));
+    let band_p = PathBuf::from(arg(argv, "--band").unwrap_or_else(|| usage()));
+    let dirs = split_dirs(arg(argv, "--dir"));
+    let per_dir: usize = arg(argv, "--per-dir")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(150);
+    let parts = PartList::load(&manifest).unwrap_or_else(|e| panic!("{e}"));
+    let band = FramingBand::load(&band_p).unwrap_or_else(|e| panic!("{e}"));
+    let (gpu, net) = load_model(&model);
+    for d in &dirs {
+        let v = dir_stats(&net, &gpu, &parts, d, per_dir);
+        if v.is_empty() {
+            println!("{}: 无帧", d.display());
+            continue;
+        }
+        let mut rej = 0usize;
+        for s in &v {
+            if !band.check(s).is_empty() {
+                rej += 1;
+            }
+        }
+        println!(
+            "{}  n={}  拒绝 {}/{} ({:.0}%)",
+            d.file_name()
+                .map(|x| x.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            v.len(),
+            rej,
+            v.len(),
+            100.0 * rej as f32 / v.len() as f32
+        );
+    }
+}
+
 fn usage() -> ! {
     eprintln!(
         "用法:
   parts-ood train --model <tpm> --manifest <json> --pos <dir,...> --neg <dir,...> --out <tpod>
   parts-ood eval  --model <tpm> --manifest <json> --bank <tpod> --pos <dir,...> --neg <dir,...>
-  parts-ood check --model <tpm> --manifest <json> --bank <tpod> --image <png> [--threshold 0.5]"
+  parts-ood check --model <tpm> --manifest <json> --bank <tpod> --image <png> [--threshold 0.5]
+  parts-ood stats --model <tpm> --manifest <json> --dir <dir,...> [--per-dir N]
+  parts-ood fit-framing --model <tpm> --manifest <json> --dir <dir,...> --out <tpf> [--lo 0.02] [--hi 0.98]
+  parts-ood eval-framing --model <tpm> --manifest <json> --band <tpf> --dir <dir,...>"
     );
     std::process::exit(2);
 }
@@ -326,6 +475,9 @@ fn main() {
         Some("train") => train(&argv),
         Some("eval") => eval(&argv),
         Some("check") => check(&argv),
+        Some("stats") => stats(&argv),
+        Some("fit-framing") => fit_framing(&argv),
+        Some("eval-framing") => eval_framing(&argv),
         _ => usage(),
     }
 }
