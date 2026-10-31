@@ -226,7 +226,7 @@ fn route(
                     let mut n = 0usize;
                     for d in &deltas {
                         j.append_delta(d)
-                            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                            .map_err(|e| io::Error::other(e.to_string()))?;
                         n += 1;
                     }
                     Ok(n)
@@ -346,7 +346,10 @@ fn parse_scan_body(body: &str) -> Result<Vec<(crate::NodeId, String)>, String> {
     Ok(snippets)
 }
 
-fn read_request(stream: &mut TcpStream) -> io::Result<(String, String, Vec<(String, String)>, String)> {
+/// 一次 HTTP 请求解析结果：方法 / 路径 / 查询对 / 请求体。
+type ParsedRequest = (String, String, Vec<(String, String)>, String);
+
+fn read_request(stream: &mut TcpStream) -> io::Result<ParsedRequest> {
     let mut buf = Vec::new();
     let mut chunk = [0u8; 4096];
     let header_end = loop {

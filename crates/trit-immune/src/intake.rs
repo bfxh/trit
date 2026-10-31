@@ -93,7 +93,7 @@ pub fn intake_pr(
     for d in scan_report.to_deltas(source) {
         journal
             .append_delta(&d)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
     }
 
     let dead_deps = if let Some(toml) = cargo_toml {
@@ -109,7 +109,7 @@ pub fn intake_pr(
     for dd in &dead_deps {
         let node = journal
             .spawn(parent, crate::NodeKind::Message, &format!("死依赖: {}", dd.name))
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
         journal
             .record(
                 node,
@@ -120,7 +120,7 @@ pub fn intake_pr(
                     dd.name, dd.declared_at
                 ),
             )
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
     }
 
     let mut q = 0usize;
@@ -140,7 +140,7 @@ pub fn intake_pr(
         for id in to_quarantine {
             journal
                 .quarantine(id, "外部代码自动隔离（intake 管线）")
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| io::Error::other(e.to_string()))?;
             q += 1;
         }
     }
@@ -174,7 +174,7 @@ pub fn intake_supply(
                 crate::NodeKind::AttackVector,
                 &format!("供应链: {} @ {}", f.name, f.version),
             )
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
         journal
             .record(
                 node,
@@ -182,7 +182,7 @@ pub fn intake_supply(
                 None,
                 &format!("{source}: {:?}", f.kind),
             )
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+            .map_err(|e| io::Error::other(e.to_string()))?;
         n += 1;
     }
     Ok(n)

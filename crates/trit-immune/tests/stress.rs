@@ -472,7 +472,6 @@ fn server_hundred_concurrent_requests() {
     let success = Arc::new(AtomicUsize::new(0));
     let mut handles = Vec::new();
     for t in 0..10u32 {
-        let addr = addr;
         let success = Arc::clone(&success);
         let nodes = nodes.clone();
         handles.push(std::thread::spawn(move || {

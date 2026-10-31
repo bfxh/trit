@@ -38,7 +38,7 @@
 ## 快速开始
 
 ```bash
-cargo test                      # 真值表 + 免疫网络行为全对拍
+cargo test                      # 221 全绿（full 默认形态）
 cargo run --example scenario    # 端到端红蓝对抗场景演示
 ```
 
@@ -93,7 +93,8 @@ trit-immune-journal v2
 尾部增量，快照损坏/不匹配自动回退全量重放。前缀校验用 FNV-1a（只防意外损坏，不防
 篡改）。日志本体仍只增不减——它是审计链；快照约束的是重放成本。
 
-尚未做：副本发现/传输协议（同步的合并内核 [`merge_replicas`](src/sync.rs) 已就位）。
+跨副本同步已完成：`merge_replicas`（δ-CRDT 无冲突合并，与顺序无关）+ `anti_entropy`
+（双向反熵，日志逐字节一致）+ `transport`（TCP/Memory 可插拔）——见 `src/sync.rs`。
 
 ## 三值传播算法
 
@@ -220,6 +221,39 @@ assert_eq!(m.deferred.len(), 0);
 - `tests/trit_tables.rs`：K3 `¬/∧/∨/→/⊕` 全 9 组合逐项对拍，Ł3 蕴含对照（分岔点 `0=>0`）；
 - `tests/immune.rs`：门禁三态、攻击回链、隔离传播与人工解除、沙盒确定性、0 态队列、
   兄弟分支不殃及。
+
+## 两层结构与收录边界
+
+**内核 = 给上游生态的；工具集 = 给本工具用户的。** `--no-default-features`
+一条命令即得上游收录形态（feature 门控钉死边界，不靠人记）：
+
+```bash
+cargo test                        # 221（full 默认：内核 + 工具层）
+cargo test --no-default-features  # 146（内核形态 = 上游将收到的）
+cargo test --all-features         # 221（含 tls feature 编译验证）
+cargo test --release              # 221（优化模式）
+cargo clippy --all-targets        # 0 警告
+```
+
+收录规则全文（三分类 + **性价比中性**：进制是参数不是信仰，且要看未来）、
+同步过程纪律（幂等脚本 + 分层验证）：[docs/UPSTREAM.md](docs/UPSTREAM.md)。
+
+## `trit` CLI：journal 代替 git 的命令行
+
+git 的每个核心操作在账本上都有对应物，且大多更强：
+
+| git | trit | 强在哪 |
+|-----|------|--------|
+| `git merge` | `trit merge` | δ-CRDT 无冲突合并——没有冲突标记，只有收敛 |
+| `git checkout` | `trit checkout` | 时间旅行——日志不可变，重放到任意节点 |
+| （不存在） | `trit gate` | 三值门禁 + 打穿来源——git 只知道冲突，这里知道风险 |
+| `git commit` | `trit commit` | 默认 0 态——未测不可信 |
+| `git sync`（桥） | `trit sync-git` | git 提交历史吸收进账本参与裁决（0 态+隔离防污染） |
+
+```bash
+cargo run --bin trit -- init ./my-repo
+cargo run --bin trit -- commit -m "回归通过" -v +1 -f ./my-repo/repo.tritj
+```
 
 ## 许可
 

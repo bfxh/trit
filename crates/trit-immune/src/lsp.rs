@@ -157,7 +157,7 @@ impl LspBridge<'_> {
             let first = group.first().map(|d| d.message.as_str()).unwrap_or("");
             self.journal
                 .record(node, verdict, None, &format!("LSP {uri}: {ecount}E/{wcount}W　{first}"))
-                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
+                .map_err(|e| io::Error::other(e.to_string()))?;
             report.verdicts.push((node, verdict));
         }
         Ok(report)

@@ -80,7 +80,7 @@ pub fn pull_merge_via(
     let frame = sync::encode_frame(w, &mine);
     let frame = match auth_key {
         Some(k) => {
-            sync::sign_frame(&frame, k).map_err(|e| io::Error::new(io::ErrorKind::Other, e))?
+            sync::sign_frame(&frame, k).map_err(io::Error::other)?
         }
         None => frame,
     };

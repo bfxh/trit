@@ -57,11 +57,11 @@ fn polyglot_scan_catches_across_languages() {
     assert!(total >= 6, "14 个样本总发现数 {total} 应 >= 6");
 
     // 逐语言精确断言
-    let py_mal = scan::run_scan(&vec![(NodeId(1), "subprocess.call('ls', shell=True)\npassword = \"hunter2\"")], scan::RULES, &[]);
+    let py_mal = scan::run_scan(&[(NodeId(1), "subprocess.call('ls', shell=True)\npassword = \"hunter2\"")], scan::RULES, &[]);
     assert!(py_mal.findings.len() >= 2, "Python 恶意应有 >= 2 发现");
-    let go_mal = scan::run_scan(&vec![(NodeId(2), "package main\nimport \"os/exec\"\nfunc main() { cmd := exec.Command(\"curl\") }")], scan::RULES, &[]);
-    assert!(go_mal.findings.len() >= 1, "Go exec 应被检出");
-    let safe = scan::run_scan(&vec![(NodeId(3), "fn add(a: i64, b: i64) -> i64 { a + b }")], scan::RULES, &[]);
+    let go_mal = scan::run_scan(&[(NodeId(2), "package main\nimport \"os/exec\"\nfunc main() { cmd := exec.Command(\"curl\") }")], scan::RULES, &[]);
+    assert!(!go_mal.findings.is_empty(), "Go exec 应被检出");
+    let safe = scan::run_scan(&[(NodeId(3), "fn add(a: i64, b: i64) -> i64 { a + b }")], scan::RULES, &[]);
     assert_eq!(safe.findings.len(), 0, "正常代码零发现");
     // 正常样本零发现
     // 正常代码零发现（上面已断言）
@@ -248,10 +248,7 @@ fn stress_ten_thousand_nodes_and_operations() {
     let gate_start = std::time::Instant::now();
     let mut block = 0;
     for i in (0..100u32).step_by(10) {
-        match dag.merge_gate(NodeId(i)) {
-            GateDecision::Block => block += 1,
-            _ => {}
-        }
+        if dag.merge_gate(NodeId(i)) == GateDecision::Block { block += 1 }
     }
     let gate_time = gate_start.elapsed();
 

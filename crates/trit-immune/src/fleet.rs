@@ -404,7 +404,8 @@ impl Fleet {
     /// note 自动附加溯源（`← 仓:节点`），账目可追溯。
     pub fn sync_cross_repo(&mut self, note: &str) -> io::Result<Vec<CrossRepoDelta>> {
         // 阶段 1：收集计划
-        let mut plan: Vec<((String, NodeId), (String, NodeId), Trit)> = Vec::new();
+        type Plan = Vec<((String, NodeId), (String, NodeId), Trit)>;
+        let mut plan: Plan = Vec::new();
         for link in &self.cross_links {
             let Some(src) = self.get(&link.from.0) else {
                 continue;
@@ -598,8 +599,8 @@ impl Fleet {
             }
         }
         for l in &fleet.cross_links {
-            if l.to.0 == repo && l.to.1 == id && l.pass == Trit::Vulnerable {
-                if fleet.get(&l.from.0).is_some() {
+            if l.to.0 == repo && l.to.1 == id && l.pass == Trit::Vulnerable
+                && fleet.get(&l.from.0).is_some() {
                     nodes.push(l.from.clone());
                     edges.push(ChainVia::CrossLink);
                     Self::walk(
@@ -617,7 +618,6 @@ impl Fleet {
                     nodes.pop();
                     edges.pop();
                 }
-            }
         }
         visited.remove(&(repo.to_string(), id.0));
     }

@@ -214,7 +214,6 @@ fn server_handles_concurrent_readers_and_writers() {
     // 4 个读者线程 × 15 个请求，与写者并发
     let mut readers = Vec::new();
     for t in 0..4u32 {
-        let addr = addr;
         readers.push(std::thread::spawn(move || {
             for i in 0..15u32 {
                 let path = match (t + i) % 3 {

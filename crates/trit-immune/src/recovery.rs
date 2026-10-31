@@ -206,11 +206,10 @@ impl BackupVault {
         }
         let kept: std::collections::BTreeSet<u64> = keep.into_iter().collect();
         for s in &inv.snapshots {
-            if !kept.contains(&s.stamp_ms) {
-                if fs::remove_dir_all(self.root.join(s.stamp_ms.to_string())).is_ok() {
+            if !kept.contains(&s.stamp_ms)
+                && fs::remove_dir_all(self.root.join(s.stamp_ms.to_string())).is_ok() {
                     removed += 1;
                 }
-            }
         }
         // 残留 .tmp 目录
         if let Ok(entries) = fs::read_dir(&self.root) {

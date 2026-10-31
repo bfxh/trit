@@ -148,14 +148,12 @@ fn prop_merge_commutative_random_replicas() {
         // B：克隆 A 的日志（前缀共享 → 同戳去重），以写者 1 追加自己的增量
         std::fs::copy(&pa, &pb).unwrap();
         let mut b = Journal::open_as(&pb, 1).unwrap();
-        let mut b_view = a_view;
         let b_spawns = 1 + rng.below(4) as usize;
         let mut reverify = Vec::new();
-        for i in 0..b_spawns {
+        for (i, b_view) in (a_view..a_view + b_spawns).enumerate() {
             let parent = NodeId(rng.below(b_view as u64) as u32);
             let title = format!("B{i}");
             let id = b.spawn(parent, NodeKind::Delta, &title).unwrap();
-            b_view += 1;
             if rng.below(4) == 0 {
                 reverify.push(id);
             }

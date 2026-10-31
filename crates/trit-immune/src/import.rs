@@ -79,8 +79,7 @@ pub fn collect_git_log(repo: &Path) -> io::Result<Vec<CommitRecord>> {
         .arg("--pretty=format:%x1e%H%x1f%an%x1f%at%x1f%s")
         .output()?;
     if !out.status.success() {
-        return Err(io::Error::new(
-            io::ErrorKind::Other,
+        return Err(io::Error::other(
             String::from_utf8_lossy(&out.stderr).trim().to_string(),
         ));
     }

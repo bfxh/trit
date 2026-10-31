@@ -75,7 +75,7 @@ pub struct Stamped {
 /// 同写者戳严格递增 + 稳定排序 ⇒ 流内相对顺序保留，结果与归并输入顺序无关。
 pub fn merge_order(streams: Vec<Vec<Stamped>>) -> Vec<Stamped> {
     let mut all: Vec<Stamped> = streams.into_iter().flatten().collect();
-    all.sort_by(|a, b| a.ts.cmp(&b.ts));
+    all.sort_by_key(|a| a.ts);
     all
 }
 

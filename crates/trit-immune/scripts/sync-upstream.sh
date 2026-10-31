@@ -29,8 +29,10 @@ step "1/5 fetch 本仓库 $BRANCH"
 git -C "$UPSTREAM" fetch "$IMMUNE" "$BRANCH" || die "fetch 失败"
 
 step "2/5 清空 prefix 并树级叠加（read-tree）"
-# 幂等：rm --cached 对未跟踪文件报错属正常，忽略其退出码
-git -C "$UPSTREAM" rm -r -q --cached crates/trit-immune 2>/dev/null
+# 幂等：rm --cached 对"staged 中间态"会拒删（数据丢失保护）——但 staged
+# 中间态可从 upstream/patches 重建（补丁是真源，工作区不是孤本），故 -f 兜底
+git -C "$UPSTREAM" rm -r -q --cached crates/trit-immune 2>/dev/null \
+  || git -C "$UPSTREAM" rm -r -q -f --cached crates/trit-immune 2>/dev/null
 git -C "$UPSTREAM" clean -q -fd crates/trit-immune
 git -C "$UPSTREAM" read-tree --prefix=crates/trit-immune/ -u "FETCH_HEAD^{tree}" \
   || die "read-tree 失败（工作区可重跑本脚本恢复）"

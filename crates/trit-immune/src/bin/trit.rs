@@ -324,12 +324,7 @@ fn cmd_checkout(args: &[String]) -> Result<(), CliError> {
     // 重放：只保留 n0..=n（含父链闭包），打印时间旅行视图
     let mut view = trit_immune::ImmuneDag::root("时间旅行视图");
     for node in &dag.nodes()[..=n as usize] {
-        let kind = match node.kind {
-            NodeKind::Delta => NodeKind::Delta,
-            NodeKind::AttackVector => NodeKind::AttackVector,
-            NodeKind::Patch => NodeKind::Patch,
-            NodeKind::Message => NodeKind::Message,
-        };
+        let kind = node.kind;
         let parent = node
             .parent
             .map(|p| NodeId(p.0.min(view.nodes().len() as u32 - 1)))
@@ -411,7 +406,7 @@ fn cmd_sync_git(args: &[String]) -> Result<(), CliError> {
         .split_first()
         .ok_or_else(|| CliError::Usage("sync-git 需要 <repo 路径>".into()))?;
     let repo_path = PathBuf::from(repo);
-    let (mut j, path) = open_ledger(&ledger_args)?;
+    let (mut j, path) = open_ledger(ledger_args)?;
     let commits = trit_immune::collect_git_log(&repo_path)
         .map_err(|e| CliError::Runtime(format!("读 git 历史失败：{e}")))?;
     let parent = NodeId((j.dag().nodes().len() - 1) as u32);

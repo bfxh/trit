@@ -77,7 +77,7 @@ fn snapshot_roundtrip_preserves_exact_state() {
     assert_eq!(j4.dag(), &r1, "快照路径与全量重放殊途同归");
 
     let _ = std::fs::remove_file(&path);
-    let _ = std::fs::remove_file(&sidecar(&path));
+    let _ = std::fs::remove_file(sidecar(&path));
 }
 
 #[test]
@@ -106,7 +106,7 @@ fn corrupt_snapshot_falls_back_to_full_replay() {
     assert_eq!(j3.dag(), &saved);
 
     let _ = std::fs::remove_file(&path);
-    let _ = std::fs::remove_file(&sidecar(&path));
+    let _ = std::fs::remove_file(sidecar(&path));
 }
 
 #[test]

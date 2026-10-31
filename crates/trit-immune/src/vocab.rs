@@ -215,7 +215,7 @@ impl Vocabulary {
     /// 给已有概念收编一个别名（外面换的词进来，规范名不变）。
     pub fn add_alias(&mut self, name: &str, alias: &str) -> Result<(), String> {
         for existing in &self.concepts {
-            if existing.name == alias || existing.aliases.iter().any(|a| a == &alias) {
+            if existing.name == alias || existing.aliases.iter().any(|a| a == alias) {
                 return Err(format!("撞名：{alias:?} 已被 {:?} 占用", existing.name));
             }
         }

@@ -80,7 +80,9 @@ impl Trit {
 
     // ── Kleene K3 连接词 ────────────────────────────────────────
 
-    /// K3 非：`0` 的否定仍是 `0`。
+    /// K3 非：`0` 的否定仍是 `0`。（固有方法与下方 `Not` trait 实现并存：
+    /// 语义相同，保留方法形式让 K3 连接词 and/or/not/xor 呈现完整代数面）
+    #[allow(clippy::should_implement_trait)]
     pub fn not(self) -> Trit {
         match self {
             Self::Vulnerable => Self::Hardened,

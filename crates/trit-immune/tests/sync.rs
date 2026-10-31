@@ -164,16 +164,10 @@ fn three_replicas_converge() {
     assert!(m1.deferred.is_empty(), "{:?}", m1.deferred);
     assert_eq!(m1.dag.nodes().len(), 4, "根 + 基座 + B 功能 + C 功能");
 
-    // C 对共享基座的 0 态裁决生效（全序上它最后写）
+    // C 对共享基座的 0 态裁决生效（全序上它最后写；基座此前没有别的裁决
+    // → C 的 0 就是终态，与时间戳大小无关，坏行已拒）
     let base = m1.dag.nodes().iter().find(|n| n.title == "基座").unwrap();
-    let ts_c = streams[2]
-        .1
-        .iter()
-        .find(|s| matches!(&s.delta, Delta::Record { note, .. } if note == "C 对基座存疑"))
-        .map(|s| s.ts)
-        .unwrap();
-    // 基座此前没有别的裁决 → C 的 0 就是终态
-    assert_eq!(base.verdict, if ts_c.physical_ms > 0 { Trit::Unknown } else { Trit::Unknown });
+    assert_eq!(base.verdict, Trit::Unknown);
 
     for p in [&p0, &p1, &p2] {
         let _ = std::fs::remove_file(p);

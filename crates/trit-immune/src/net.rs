@@ -139,7 +139,7 @@ mod tests {
         // 域名解析到内网（DNS 重绑定）也要拦
         assert!(check_url_with("http://evil.example.com/x", &|_| Ok(vec![IpAddr::from([10, 0, 0, 1])])).is_err());
         // 解析失败
-        assert!(check_url_with("http://no-such-host.invalid/x", &|_| Err(io::Error::new(io::ErrorKind::Other, "dns"))).is_err());
+        assert!(check_url_with("http://no-such-host.invalid/x", &|_| Err(io::Error::other("dns"))).is_err());
     }
 
     #[test]
