@@ -315,7 +315,9 @@ mod tests {
         assert_eq!(n, 2);
         assert_eq!(fs::read_to_string(base.join("a.txt")).unwrap(), "原始A");
         assert_eq!(fs::read_to_string(base.join("sub/b.txt")).unwrap(), "原始B");
-        fs::remove_dir_all(&base).unwrap();
+        // 清理失败不炸测试（Linux 并发环境 remove_dir_all 有 ENOTEMPTY 竞态），
+        // 目录留 temp 由 OS 回收——测试 hygiene：清理是礼貌不是断言
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -339,7 +341,7 @@ mod tests {
         let inv = vault.list().unwrap();
         assert!(inv.snapshots.len() >= 3, "恢复前的现场应也被 capture");
         let _ = s1;
-        fs::remove_dir_all(&base).unwrap();
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -383,7 +385,7 @@ mod tests {
         assert_eq!(removed2, 1, "超龄 1 份应清 1 份");
         let inv2 = vault2.list().unwrap();
         assert_eq!(inv2.snapshots.len(), 1);
-        fs::remove_dir_all(&base).unwrap();
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]
@@ -402,6 +404,6 @@ mod tests {
         fs::create_dir_all(base.join(".trit/backup/not-a-stamp")).unwrap();
         let inv = vault.list().unwrap();
         assert_eq!(inv.corrupt, vec!["not-a-stamp".to_string()]);
-        fs::remove_dir_all(&base).unwrap();
+        let _ = fs::remove_dir_all(&base);
     }
 }
