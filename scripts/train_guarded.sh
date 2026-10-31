@@ -24,6 +24,8 @@ GUARD=${PARTS_GUARD:-target/release/parts-guard}
 mkdir -p "$RUN"
 STALL=${STALL_SEC:-1800}
 RETRIES=${RETRIES:-3}
+DISK_MIN=${DISK_MIN_GB:-5}
+REGISTRY=${RUNS_REGISTRY:-D:/KF/_handoff/RUNS.md}
 
 echo "== 托管：$RUN（stall ${STALL}s，重试 $RETRIES 次）"
 exec "$GUARD" --stall-sec "$STALL" --poll-sec 5 --retries "$RETRIES" \

@@ -24,10 +24,43 @@ scripts/train_guarded.sh E:/runs/exp1 -- \
 | 训练崩溃（非 0 退出） | 按 `--retries` 重启用同一命令（配 `--state` 自动续跑） | `RESTART` → `DONE` / `FAILED` |
 | 机器重启 | 看门狗自身不驻留；**重启后重跑同一条 `train_guarded.sh` 即从断点继续** | — |
 
+## agent-first（默认不吵人）
+
+响铃/弹窗默认**关**（加 `--notify` 才开）。默认行为只写两个文件：
+`status.json` 与 `RUNS.md`。理由：这是给**智能体**用的仪表，不是给机器前的人用的闹钟。
+
+## 智能体自己的等待：`parts-guard wait`
+
+```bash
+parts-guard wait --status <run>/status.json --timeout-sec 3600
+# 退出码：0=DONE  1=FAILED/STALL_STOP/DISK_LOW  3=超时
+```
+
+智能体可以在一次调用里同步等到终态再行动，不需要用户转述「好像跑完了」。
+
+## 智能体可见（关键）
+
+看门狗除了响铃**给机器前的人**，还会把每次状态变化追加到
+`D:/KF/_handoff/RUNS.md`（`--registry`）。`NOW.md` 的首行要求「开工先读 RUNS.md」——
+这样换会话/换智能体时，**训练跑完这件事不会只留在日志里**。
+
+```
+- 06:09:53 `gt3` **RUN** pid=5920
+- 06:10:03 `gt3` **DONE** 训练结束
+```
+
+## 磁盘预检（`--disk-min-gb`，默认 5）
+
+启动前检查状态目录所在盘的剩余空间；运行中每 30 秒复查一次：
+低于下限 → **杀掉进程**、写 `DISK_LOW`、响铃。理由：磁盘写满时 Blender/训练会
+「rc=0 但产物是 0 字节」，静默失败比报错危险（2026-10-31 实际踩过：E 盘满，
+48 个渲染场景静默失败）。
+
 ## 参数
 
 `--stall-sec`（默认 900）、`--poll-sec`（5）、`--retries`（0）、
-`--status <json>`、`--log <path>`、`--attach <pid>`（托管已在跑的进程）、`--quiet`。
+`--status <json>`、`--log <path>`、`--registry <md>`、`--disk-min-gb <GB>`、
+`--attach <pid>`（托管已在跑的进程）、`--quiet`。
 
 ## 边界（必须知道）
 
