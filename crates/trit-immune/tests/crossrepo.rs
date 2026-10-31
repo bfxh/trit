@@ -1,3 +1,4 @@
+#![cfg(feature = "full")]
 //! 跨仓 Delta 完整协议测试：`Fleet::sync_cross_repo`。
 //!
 //! 语义纪律（每条一个用例）：

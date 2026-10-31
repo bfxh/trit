@@ -36,7 +36,20 @@
 //!
 //! 与 [bfxh/trit](https://github.com/bfxh/trit) 的关系：本 crate 复用同一套 K3 语义
 //! （`trit-core` 的 `Ternary`），聚焦安全裁决域；可作为该工作区的新成员接入。
+//!
+//! # 两层结构与上游收录边界
+//!
+//! **内核层**（默认构建即含，`--no-default-features` 只剩这层）：账本
+//! （delta/journal/hlc/snapshot/migrate）+ 裁决（trit/dag/verdict/sandbox/
+//! propagate/policy/cull）+ 同步（sync/transport）+ 计算与验证
+//! （bitparallel/auth/kani_proofs）+ 生产线（lifecycle/scheduler/design/
+//! vocab）+ 裁决源与出口（scan/diag/json/net/supply/vex/attest）。
+//! **工具层**（`full` feature，默认开启）：recovery/import/template/server/
+//! daemon/lsp/taskmd/intake/fleet/harvest/adoption——人体工程与集成面，
+//! 跨仓运维域（六态落地以 Fleet 为数据源），是本工具专属，**不随上游收录**。
+//! 收录规则全文见 `docs/UPSTREAM.md`。
 
+#[cfg(feature = "full")]
 pub mod adoption;
 pub mod attest;
 pub mod auth;
@@ -44,34 +57,44 @@ pub mod bitparallel;
 pub mod compat;
 pub mod cull;
 pub mod dag;
+#[cfg(feature = "full")]
 pub mod daemon;
 pub mod delta;
 pub mod design;
 pub mod diag;
+#[cfg(feature = "full")]
 pub mod fleet;
+#[cfg(feature = "full")]
 pub mod harvest;
 pub mod hlc;
+#[cfg(feature = "full")]
 pub mod import;
+#[cfg(feature = "full")]
 pub mod intake;
 pub mod json;
 #[cfg(kani)]
 pub mod kani_proofs;
 pub mod journal;
 pub mod lifecycle;
+#[cfg(feature = "full")]
 pub mod lsp;
 pub mod migrate;
 pub mod net;
 pub mod policy;
 pub mod propagate;
+#[cfg(feature = "full")]
 pub mod recovery;
 pub mod sandbox;
 pub mod scan;
 pub mod scheduler;
+#[cfg(feature = "full")]
 pub mod server;
 pub mod snapshot;
 pub mod supply;
 pub mod sync;
+#[cfg(feature = "full")]
 pub mod taskmd;
+#[cfg(feature = "full")]
 pub mod template;
 #[cfg(feature = "tls")]
 pub mod tls;
@@ -81,12 +104,14 @@ pub mod verdict;
 pub mod vex;
 pub mod vocab;
 
+#[cfg(feature = "full")]
 pub use adoption::{Adoption, AdoptionState, Blast, ChangePackage, Impact, Receiver};
 pub use auth::{ct_eq, hmac_sha256, sha256};
 pub use attest::{attest, verify, PREDICATE_TYPE, STATEMENT_TYPE};
 pub use bitparallel::{tri_pack, tri_unpack, PackError, TriWord};
 pub use cull::{cull, CullAction, CullRules};
-pub use daemon::{encode_frame, json_escape, read_frame, LspSession};
+#[cfg(feature = "full")]
+pub use daemon::{encode_frame, read_frame, LspSession};
 pub use dag::{BreachKind, Convergence, Coupling, CrossLink, ImmuneDag, Node, NodeId, NodeKind, VerdictEvent};
 pub use delta::{merge_order, ApplyError, Delta, Stamped};
 pub use design::{
@@ -94,28 +119,38 @@ pub use design::{
     Routing, Statute, Statutes, Tier, TierPolicy, Violation,
 };
 pub use diag::{layer_verdict, parse_rustc_stream, Diagnostic, Severity};
+#[cfg(feature = "full")]
 pub use fleet::{AttackChain, AttackChains, ChainStep, ChainVia, CrossRepoDelta, Fleet, FleetRow};
+#[cfg(feature = "full")]
 pub use harvest::{harvest, HarvestReport, Registry};
 pub use hlc::{Clock, Hlc};
-pub use import::{collect_git_log, export_dag_tsv, import_commits, parse_git_log, CommitRecord};
+#[cfg(feature = "full")]
+#[cfg(feature = "full")]
+pub use import::{collect_git_log, import_commits, parse_git_log, CommitRecord};
+#[cfg(feature = "full")]
 pub use intake::{find_dead_deps, intake_pr, parse_cargo_deps, DeadDep, IntakeReport};
-pub use json::Json;
-pub use journal::{parse_stamped_line, BackupMode, Journal, JournalError, OpenError};
+pub use json::{json_escape, Json};
+pub use journal::{export_dag_tsv, parse_stamped_line, BackupMode, Journal, JournalError, OpenError};
 pub use lifecycle::{Lifecycle, LifecycleNode};
+#[cfg(feature = "full")]
 pub use lsp::{parse_lsp_stream, LspDiagnostic};
 pub use migrate::{detect_version, migrate_to_current, verify_after_migration, MigrationReport};
 pub use net::check_url;
 pub use policy::{decide, next_layer, Action, Channel, Decision, MergePolicy, PrSnapshot};
 pub use propagate::Contagion;
+#[cfg(feature = "full")]
 pub use recovery::{BackupVault, Inventory, Retention, SnapshotInfo};
 pub use sandbox::{FuzzReport, Sandbox};
 pub use scan::{run_scan, Evidence, Finding, NodeFold, Rule, ScanReport};
 pub use scheduler::{drain_plan, Handler, JournalHandler, Scheduler, Task, WorkReport};
+#[cfg(feature = "full")]
 pub use server::{FleetServer, Server};
 pub use snapshot::SnapshotMeta;
 pub use supply::{audit, encode_baseline, fingerprint, parse_baseline, parse_lock, Pin, SupplyFinding, SupplyKind};
 pub use sync::{anti_entropy, merge_replicas, DeferredDelta, LogFrame, MergeOutcome};
+#[cfg(feature = "full")]
 pub use taskmd::{ingest as ingest_md, parse as parse_md_tasks, taskbar, IngestReport, MdTask};
+#[cfg(feature = "full")]
 pub use template::{audit_discipline, scaffold, Discipline, DisciplineViolation, ViolationKind};
 pub use transport::{pull_merge_via, MemoryTransport, TcpTransport, Transport};
 pub use trit::Trit;

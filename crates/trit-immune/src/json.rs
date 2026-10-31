@@ -53,6 +53,26 @@ impl Json {
     }
 }
 
+/// JSON 字符串字面量转义（带引号）——序列化拼装用（与 [`parse`] 配对：
+/// 这里逃出去的字符，parse 都能解析回来）。
+pub fn json_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// 解析一段 JSON 文本；尾随内容视为错误。
 pub fn parse(text: &str) -> Result<Json, String> {
     let chars: Vec<char> = text.chars().collect();

@@ -1,3 +1,4 @@
+#![cfg(feature = "full")]
 //! 预测合并端到端：免疫网络（门禁 + 传播）作为预测器，喂给策略引擎。
 
 use std::net::SocketAddr;

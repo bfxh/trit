@@ -1,3 +1,4 @@
+#![cfg(feature = "full")]
 //! 本地 HTTP 服务器：端点、扫描入账、双服务器 HTTP 同步收敛、并发读写。
 
 use std::net::SocketAddr;

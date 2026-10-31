@@ -51,6 +51,7 @@
 | 42 | **`trit` CLI：journal 代替 git 的命令行**（git 的每个核心操作在账本上都有对应物，大多更强） | ✅ | `src/bin/trit.rs`：`init`（建账本）/`log`（HLC 全序历史）/`status`（收敛+门禁）/`branch`（spawn 分叉——DAG 天生多分支）/`commit -m -v -n`（记录裁决，默认 0 未测不可信）/`merge`（**δ-CRDT 无冲突合并**，与顺序无关——比 git merge 强的地方：没有冲突标记，只有收敛）/`checkout`（**时间旅行**：重放到任意节点，日志不可变历史永不丢）/`clone`（账本即工件）/`gate`（三值门禁+打穿来源——git 只知道冲突不知道风险）/`suspects`（0 态待办）；全工作流端到端测试（含克隆侧增量经 δ-CRDT 合并回主账本） |
 | 43 | **TriPack：三值序列紧凑存储**（压缩态评估结论：上游 trit-codec 是三值序列编码器，压 journal 文本不适用——文本用快照+归档兜底；三值数据压缩自写零依赖实现） | ✅ | `bitparallel::tri_pack/tri_unpack` + `PackError`（5 trit/byte = **1.6 bit/trit**，比双导轨省 20% 且无块尾浪费；槽位序 3⁵ 进制；13 个非法字节值全部显式报错零静默损坏）；测试：全长度往返 / 3⁵ 全空间 / 非法值拒绝 / 与 TriWord 同语义对拍（评估全文见 RESEARCH.md §七） |
 | 44 | **git 共存桥**（"原来的 git 怎么办"的答案：git 继续管代码文件，trit 管裁决账本——桥 = 提交历史吸收进账本参与审计） | ✅ | `trit sync-git <repo> [--open]`：`import::collect_git_log` + `import_commits`——每条 commit 立 Message 节点 **0 态入账**（作者声称≠已验证）+ **默认整批隔离**（外部导入防污染协议）；吸收后扫描器/红队/门禁即可指着 commit 节点干活；`--open` 解除隔离等人逐条放行 |
+| 45 | **上游收录边界**（"该要什么不要什么写清楚 + 让拆分变简单"：两层结构 feature 门控钉死，一条命令验证收录形态） | ✅ | `feature = full`（默认开）：**内核层**（--no-default-features 留下：账本/裁决/同步/计算验证/生产线/裁决源与出口）+ **工具层**（recovery/import/template/server/daemon/lsp/taskmd/intake/fleet/harvest/adoption + trit CLI，不随上游收）；反向依赖解耦三处（json_escape 归 json.rs、export_dag_tsv 归 journal.rs、adoption 归工具层——跨仓运维域）；`docs/UPSTREAM.md`（定位一句话 + 三分类 + **性价比中性哲学**：进制是参数不是信仰，3/4/5-trit 与二进制按性价比选）+ `template.rs` 收录规则骨架随模板走；双形态验证 full 221 / 内核 146 全绿 |
 
 ### 标签语义澄清（2026-10-31）
 

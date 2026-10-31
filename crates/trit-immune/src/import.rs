@@ -124,34 +124,9 @@ pub fn import_commits(
     Ok(n)
 }
 
-/// 导出：DAG 全量 → TSV（id/parent/kind/verdict/quarantined/title）。
-/// 行序 = 节点 id 升序；title 内的制表符已替换为空格（TSV 保持可解析）。
-pub fn export_dag_tsv(dag: &ImmuneDag) -> String {
-    let mut s = String::from("# trit-immune dag export v1\n# id\tparent\tkind\tverdict\tquarantined\ttitle\n");
-    for n in dag.nodes() {
-        let parent = match n.parent {
-            Some(p) => p.0.to_string(),
-            None => "-".to_string(),
-        };
-        let kind = match n.kind {
-            crate::NodeKind::Delta => "delta",
-            crate::NodeKind::AttackVector => "attack",
-            crate::NodeKind::Patch => "patch",
-            crate::NodeKind::Message => "message",
-        };
-        let verdict = match n.verdict {
-            crate::Trit::Vulnerable => "-1",
-            crate::Trit::Unknown => "0",
-            crate::Trit::Hardened => "+1",
-        };
-        let title = n.title.replace(['\t', '\n', '\r'], " ");
-        s.push_str(&format!(
-            "{}\t{}\t{}\t{}\t{}\t{}\n",
-            n.id.0, parent, kind, verdict, n.quarantined, title
-        ));
-    }
-    s
-}
+/// 导出：DAG 全量 → TSV——实现已归位 [`crate::journal`]（内核：账本导出
+/// 是 journal 域职责，attest 等内核模块依赖它），此处保留路径兼容既有调用方。
+pub use crate::journal::export_dag_tsv;
 
 #[cfg(test)]
 mod tests {

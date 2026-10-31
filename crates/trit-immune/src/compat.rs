@@ -1,11 +1,11 @@
-//! trit-core 互操作：[`Trit`] ↔ [`Ternary`] 双向映射。
+//! trit-core 互操作：`Trit` ↔ `Ternary` 双向映射。
 //!
-//! 两个类型**完全同构**（映射 `Vulnerable↔False`、`Unknown↔Unknown`、
-//! `Hardened↔True` 下，K3 AND ≡ Kleene BitAnd——False/Vulnerable 都是
-//! 支配元，Ord 都是坏→好）：本模块提供双向 `From` 与穷举同构测试
-//! （3×3 全空间对拍 [`Trit::and`] 与 Ternary 的 Kleene 合取）。
+//! 两个类型完全同构：映射 Vulnerable 对 False、Unknown 对 Unknown、
+//! Hardened 对 True 之后，K3 AND 恰是 Ternary 的 Kleene 合取
+//! （False 与 Vulnerable 都是支配元，Ord 都是坏到好）。
+//! 本模块提供双向 From 与 3×3 全空间同构穷举测试。
 //!
-//! 设计立场（PR.md）：trit-immune 是 trit-core `Ternary` 的**消费者**，
+//! 设计立场（PR.md）：trit-immune 是 trit-core `Ternary` 的消费者，
 //! 不是竞品——内核逻辑用本地 `Trit` 保有安全域命名，边界处经本模块
 //! 与 trit-core 生态互换值。
 
@@ -35,27 +35,23 @@ impl From<Ternary> for Trit {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ops::BitAnd;
 
     #[test]
     fn roundtrip_is_identity() {
-        for t in [Trit::Vulnerable, Trit::Unknown, Trit::Hardened] {
-            assert_eq!(Trit::from(Ternary::from(t)), t, "双向往返恒等");
+        let all = [Trit::Vulnerable, Trit::Unknown, Trit::Hardened];
+        for t in all {
+            assert_eq!(Trit::from(Ternary::from(t)), t);
         }
     }
 
-    /// K3 AND ≡ Kleene BitAnd 在映射下同构（3×3 全空间穷举）。
+    /// K3 AND 与 Kleene 合取同构（3x3 全空间穷举）。
     #[test]
     fn and_is_homomorphic_to_bitand() {
         let trits = [Trit::Vulnerable, Trit::Unknown, Trit::Hardened];
         let terns = [Ternary::False, Ternary::Unknown, Ternary::True];
         for (&a, &ta) in trits.iter().zip(terns.iter()) {
             for (&b, &tb) in trits.iter().zip(terns.iter()) {
-                assert_eq!(
-                    Ternary::from(a.and(b)),
-                    ta & tb,
-                    "{a:?}∧{b:?} 应与 Ternary bitand 同构"
-                );
+                assert_eq!(Ternary::from(a.and(b)), ta & tb);
             }
         }
     }

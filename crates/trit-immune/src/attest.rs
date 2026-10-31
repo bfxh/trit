@@ -18,8 +18,9 @@
 //! 消费方 `verify(&att, key)` 验签（payload 任何一字节被改都拒绝）。
 
 use crate::auth::{ct_eq, hmac_sha256, sha256};
-use crate::daemon::json_escape;
+use crate::json::json_escape;
 use crate::dag::ImmuneDag;
+use crate::journal::export_dag_tsv;
 use crate::trit::Trit;
 
 /// 本系统的 predicate 类型标识。

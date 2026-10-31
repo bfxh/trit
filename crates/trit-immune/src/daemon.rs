@@ -66,24 +66,9 @@ pub fn read_frame<R: BufRead>(r: &mut R) -> io::Result<Option<String>> {
     Ok(Some(String::from_utf8_lossy(&buf).into_owned()))
 }
 
-/// JSON 字符串字面量转义（带引号）——params 拼装用。
-pub fn json_escape(s: &str) -> String {
-    let mut out = String::with_capacity(s.len() + 2);
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
-    out
-}
+/// JSON 字符串字面量转义——实现已归位 [`crate::json`]（内核），
+/// 此处保留路径以兼容既有调用方。
+pub use crate::json::json_escape;
 
 /// 泛型 IO 的 LSP 会话：发通知/请求 + 泵读通知流。
 /// `pending` 缓存请求应答途中混入的通知（不丢消息，下次 pump 先吐）。

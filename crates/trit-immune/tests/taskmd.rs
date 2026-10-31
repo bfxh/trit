@@ -1,3 +1,4 @@
+#![cfg(feature = "full")]
 //! MD → 任务栏：调度器有界 drain 消费任务栏 + 服务器端点。
 
 use std::net::SocketAddr;

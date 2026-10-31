@@ -176,6 +176,7 @@ fn supply_findings_drive_merge_gate_block() {
 
 // ── 场景 8：intake 管线端到端（Journal 落盘 + 门禁） ─────────────────────
 
+#[cfg(feature = "full")]
 #[test]
 fn supply_intake_pipeline_records_findings_and_blocks_gate() {
     let p = std::env::temp_dir().join(format!(

@@ -209,6 +209,7 @@ fn prop_merge_commutative_random_replicas() {
 
 // ── 性质 3：传播单调性 ──────────────────────────────────────────────────
 
+#[cfg(feature = "full")]
 #[test]
 fn prop_propagation_confirmed_breach_never_improves_target() {
     for round in 0..5u64 {

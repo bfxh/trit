@@ -145,6 +145,12 @@ path = "src/lib.rs"
     ));
 
     files.push((
+        "docs/UPSTREAM.md".into(),
+        // 上游收录规则骨架：与 trit-immune 的 docs/UPSTREAM.md 同一纪律
+        "# 上游收录规则\n\n> 定位一句话：（你的项目一句话——写不出来说明还没想清楚）\n>\n> 内核 = 给上游生态的；工具集 = 给本工具用户的。`--no-default-features`\n> 编译通过 = 上游收录形态（feature 门控钉死边界，不靠人记）。\n\n## 收录三分类\n\n| 层 | 模块 | 立场 |\n|---|---|---|\n| 内核（必收） | （删掉它项目就不完整的模块） | ✅ |\n| 工具（不收） | （人体工程/集成面：CLI、server、桥接器……） | ❌ |\n| 特例 | （本来就可选的 feature） | 按上下文 |\n\n## 选型哲学：性价比中性\n\n技术选型看性价比，不看出身：哪个进制/编码/算法好用用哪个——\n5-trit、4-trit、二进制位平面都是参数。检验问题：**这个设计换成\n二进制还成立吗？** 成立且更省 → 用更省的；不成立（语义必需）→\n这才是它该在的地方。\n\n## 检验清单\n\n- [ ] 新模块落在哪层？（删掉它内核还完整吗）\n- [ ] 内核形态编译过吗？（--no-default-features）\n- [ ] 新依赖零依赖吗？\n- [ ] 性价比检验过吗？\n".into(),
+    ));
+
+    files.push((
         "src/lib.rs".into(),
         format!(
             r#"//! {n} —— 一句话定位。
@@ -303,11 +309,12 @@ mod tests {
     fn scaffold_shape_is_modular() {
         let files = scaffold("demo");
         let paths: Vec<&String> = files.iter().map(|(p, _)| p).collect();
-        // 装配层 + 两个小模块 + 测试 + 文档
+        // 装配层 + 两个小模块 + 测试 + 文档（含上游收录规则骨架）
         assert!(paths.contains(&&"src/lib.rs".to_string()));
         assert!(paths.contains(&&"src/core_logic.rs".to_string()));
         assert!(paths.contains(&&"src/storage.rs".to_string()));
         assert!(paths.contains(&&"tests/smoke.rs".to_string()));
         assert!(paths.contains(&&"docs/GOAL.md".to_string()));
+        assert!(paths.contains(&&"docs/UPSTREAM.md".to_string()), "收录规则随模板走");
     }
 }

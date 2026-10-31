@@ -8,8 +8,15 @@ license = "MIT OR Apache-2.0"
 publish = false
 
 [features]
-default = []
+default = ["full"]
+# 工具层（人体工程与集成面）：--no-default-features = 内核形态（上游收录形态）
+full = []
 tls = ["dep:rustls", "dep:rustls-pemfile", "dep:rcgen"]
+
+[[bin]]
+name = "trit"
+path = "src/bin/trit.rs"
+required-features = ["full"]
 
 [lints.rust]
 # Kani 模型检查的 cfg 门（src/kani_proofs.rs，cargo kani 才编译）

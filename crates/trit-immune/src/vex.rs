@@ -15,11 +15,11 @@
 //! fixed——这与"作者打勾 ≠ +1"同一条纪律，VEX 文档不许比账本更乐观。
 //!
 //! 输出为 OpenVEX v0.2.0 JSON 文本（[`export_vex`]）；手写序列化、
-//! 字符串转义复用 [`crate::daemon::json_escape`]（零依赖）。
+//! 字符串转义复用 [`crate::json::json_escape`]（零依赖）。
 
 use crate::dag::ImmuneDag;
 use crate::trit::Trit;
-use crate::daemon::json_escape;
+use crate::json::json_escape;
 
 /// OpenVEX 上下文标识（v0.2.0）。
 pub const OPENVEX_CONTEXT: &str = "https://openvex.dev/ns/v0.2.0";

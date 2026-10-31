@@ -1,3 +1,4 @@
+#![cfg(feature = "full")]
 //! 落地状态机：六态快乐路径、超时默认策略（小自动/大降级）、验签纪律、账本重放。
 
 use trit_immune::adoption::{Adoption, AdoptionState, Blast, ChangePackage, Impact};
