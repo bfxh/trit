@@ -504,7 +504,7 @@ fn splat_cmd(argv: &[String]) {
     use trit_parts::data::read_rgb;
     use trit_parts::fuse::{FuseCfg, View, fuse};
     use trit_parts::mesh::{non_manifold_edges, surface_nets};
-    use trit_parts::splat::{build, psnr, render};
+    use trit_parts::splat::{build, render};
 
     let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
     let parse_list = |k: &str, d: Vec<usize>| -> Vec<usize> {
@@ -523,6 +523,10 @@ fn splat_cmd(argv: &[String]) {
     let alpha: f32 = arg(argv, "--alpha")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.6);
+    let fit: usize = arg(argv, "--fit").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let fit_lr: f32 = arg(argv, "--fit-lr")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.5);
 
     let load = |f: usize| -> View {
         let (ids, shape) =
@@ -556,7 +560,7 @@ fn splat_cmd(argv: &[String]) {
         })
         .collect();
 
-    println!("cell(m)  体素      网格顶点/面        外壳非流形边   高斯数   PSNR(fg,dB)");
+    println!("cell(m)  体素      网格顶点/面        外壳非流形边   高斯数  PSNR(fg) 拟合前→后");
     for &cell in &cells {
         // 体素/网格档
         let fused = fuse(
@@ -578,20 +582,37 @@ fn splat_cmd(argv: &[String]) {
             s.alpha = alpha;
         }
         let n = splats.len();
+        // 可微拟合：只更新颜色（位置/尺度/alpha 固定），梯度精确
+        let mut ps0 = Vec::new();
+        for (v, gt) in eval_views.iter().zip(&eval_rgbs) {
+            let img = render(&splats, &v.cam, v.w, v.h, [0.0, 0.0, 0.0]);
+            ps0.push(masked_psnr(&img, gt, &v.ids));
+        }
+        let mean0 = avg(&ps0);
+        if fit > 0 {
+            let sets: Vec<trit_parts::splat::FitView> = fit_views
+                .iter()
+                .zip(&fit_rgbs)
+                .map(|(v, rgb)| (v.cam.clone(), v.w, v.h, rgb.clone(), v.ids.clone()))
+                .collect();
+            let mut fit0 = Vec::new();
+            for (v, gt) in fit_views.iter().zip(&fit_rgbs) {
+                let img = render(&splats, &v.cam, v.w, v.h, [0.0, 0.0, 0.0]);
+                fit0.push(masked_psnr(&img, gt, &v.ids));
+            }
+            trit_parts::splat::fit_colors(&mut splats, &sets, fit, fit_lr, [0.0, 0.0, 0.0]);
+            let mut fit1 = Vec::new();
+            for (v, gt) in fit_views.iter().zip(&fit_rgbs) {
+                let img = render(&splats, &v.cam, v.w, v.h, [0.0, 0.0, 0.0]);
+                fit1.push(masked_psnr(&img, gt, &v.ids));
+            }
+            println!("  拟合视角 PSNR {:.2} → {:.2}", avg(&fit0), avg(&fit1));
+        }
         let mut ps = Vec::new();
         for (v, gt) in eval_views.iter().zip(&eval_rgbs) {
             let img = render(&splats, &v.cam, v.w, v.h, [0.0, 0.0, 0.0]);
             // 只在 GT 前景像素上算（地板/背景不在喷溅表示里）
-            let mut a = Vec::new();
-            let mut b = Vec::new();
-            for p in 0..v.w * v.h {
-                if v.ids[p] == 0 {
-                    continue;
-                }
-                a.extend_from_slice(&img[p * 3..p * 3 + 3]);
-                b.extend_from_slice(&gt[p * 3..p * 3 + 3]);
-            }
-            ps.push(psnr(&a, &b));
+            ps.push(masked_psnr(&img, gt, &v.ids));
             if let Some(dir) = arg(argv, "--dump") {
                 let d = PathBuf::from(dir);
                 std::fs::create_dir_all(&d).ok();
@@ -611,10 +632,9 @@ fn splat_cmd(argv: &[String]) {
                 let _ = std::fs::write(d.join(format!("splat_{cell:.3}.ppm")), bytes);
             }
         }
-        let mean = ps.iter().filter(|v| v.is_finite()).sum::<f64>()
-            / ps.iter().filter(|v| v.is_finite()).count().max(1) as f64;
+        let mean = avg(&ps);
         println!(
-            "{cell:.3}     {vox:<9} {}/{}            {}            {n:<6}  {mean:.2}",
+            "{cell:.3}     {vox:<9} {}/{}            {}            {n:<6}  {mean0:.2} → {mean:.2}",
             m.verts.len(),
             m.tris.len(),
             non_manifold_edges(&m)
@@ -861,6 +881,24 @@ fn occ_cmd(argv: &[String]) {
         n,
         100.0 * closed as f64 / n.max(1) as f64
     );
+}
+
+fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
+    let mut a = Vec::new();
+    let mut b = Vec::new();
+    for (p, &id) in ids.iter().enumerate() {
+        if id == 0 {
+            continue;
+        }
+        a.extend_from_slice(&img[p * 3..p * 3 + 3]);
+        b.extend_from_slice(&gt[p * 3..p * 3 + 3]);
+    }
+    trit_parts::splat::psnr(&a, &b)
+}
+
+fn avg(v: &[f64]) -> f64 {
+    let f: Vec<f64> = v.iter().copied().filter(|x| x.is_finite()).collect();
+    f.iter().sum::<f64>() / f.len().max(1) as f64
 }
 
 fn usage() -> ! {

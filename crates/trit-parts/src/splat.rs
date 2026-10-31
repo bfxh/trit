@@ -12,6 +12,12 @@ use crate::geo::Camera;
 /// 体素去重累加器：(位置和, 颜色和, 计数)。
 type Acc = ([f64; 3], [f64; 3], u32);
 
+/// 一帧拟合输入：(相机, 宽, 高, GT 颜色, 前景掩码)。
+pub type FitView = (Camera, usize, usize, Vec<f32>, Vec<u32>);
+
+/// 拟合用的预收集权重：(相机, 宽, 高, GT, 掩码, 权重)。
+type Pre = (Camera, usize, usize, Vec<f32>, Vec<u32>, SplatWeights);
+
 /// 一个各向同性高斯。
 #[derive(Clone, Debug)]
 pub struct Splat {
@@ -64,39 +70,46 @@ pub fn build(views: &[View], rgbs: &[Vec<f32>], cell: f32, scale_k: f32) -> Vec<
         .collect()
 }
 
-/// 渲染一帧：近到远 alpha 合成（EWA 的简化：屏幕空间各向同性高斯）。
-pub fn render(splats: &[Splat], cam: &Camera, w: usize, h: usize, bg: [f32; 3]) -> Vec<f32> {
+/// 每个高斯在每个像素上的权重（已按近到远合成、含透射率），供渲染与梯度复用。
+pub struct SplatWeights {
+    /// (高斯序号, 像素序号, 权重)。
+    pub entries: Vec<(u32, u32, f32)>,
+    /// 每像素被覆盖的比例（0..1）。
+    pub coverage: Vec<f32>,
+}
+
+/// 收集权重：几何/alpha 决定，与颜色无关 ⇒ 颜色可以精确求梯度。
+pub fn collect(splats: &[Splat], cam: &Camera, w: usize, h: usize) -> SplatWeights {
     let fx = cam.k[0][0];
     struct Item {
+        idx: u32,
         depth: f64,
         u: f64,
         v: f64,
         sigma: f64,
-        color: [f32; 3],
         alpha: f32,
     }
     let mut items: Vec<Item> = Vec::with_capacity(splats.len());
-    for s in splats {
+    for (i, s) in splats.iter().enumerate() {
         let Some((u, v, d)) = cam.project(s.pos) else {
             continue;
         };
         if u < -2.0 || v < -2.0 || u >= w as f64 + 2.0 || v >= h as f64 + 2.0 {
             continue;
         }
-        // 世界半径 → 像素：sigma ≈ f * r / z
         let sigma = (fx * s.scale as f64 / d).max(0.35);
         items.push(Item {
+            idx: i as u32,
             depth: d,
             u,
             v,
             sigma,
-            color: s.color,
             alpha: s.alpha,
         });
     }
     items.sort_by(|a, b| a.depth.total_cmp(&b.depth));
-    let mut acc = vec![0.0f32; w * h * 3];
-    let mut t = vec![0.0f32; w * h]; // 透射率累积的“已覆盖”量
+    let mut coverage = vec![0.0f32; w * h];
+    let mut entries = Vec::new();
     for it in &items {
         let r = (it.sigma * 2.5).ceil() as i64;
         let cx = it.u.round() as i64;
@@ -111,22 +124,92 @@ pub fn render(splats: &[Splat], cam: &Camera, w: usize, h: usize, bg: [f32; 3]) 
                 }
                 let p = y as usize * w + x as usize;
                 let a = (it.alpha as f64 * g) as f32;
-                let trans = 1.0 - t[p];
-                let wgt = a * trans;
-                for c in 0..3 {
-                    acc[p * 3 + c] += wgt * it.color[c];
-                }
-                t[p] += wgt;
+                let wgt = a * (1.0 - coverage[p]).max(0.0);
+                coverage[p] += wgt;
+                entries.push((it.idx, p as u32, wgt));
             }
         }
     }
-    for p in 0..w * h {
-        let rest = (1.0 - t[p]).max(0.0);
-        for c in 0..3 {
-            acc[p * 3 + c] += rest * bg[c];
+    SplatWeights { entries, coverage }
+}
+
+/// 用已收集的权重渲染（`bg` 用来填没覆盖到的像素）。
+pub fn render_from(
+    splats: &[Splat],
+    cw: &SplatWeights,
+    w: usize,
+    h: usize,
+    bg: [f32; 3],
+) -> Vec<f32> {
+    let mut img = vec![0.0f32; w * h * 3];
+    for &(i, p, wt) in &cw.entries {
+        let c = splats[i as usize].color;
+        for k in 0..3 {
+            img[p as usize * 3 + k] += wt * c[k];
         }
     }
-    acc
+    for p in 0..w * h {
+        let rest = (1.0 - cw.coverage[p]).max(0.0);
+        for k in 0..3 {
+            img[p * 3 + k] += rest * bg[k];
+        }
+    }
+    img
+}
+
+/// 渲染一帧：近到远 alpha 合成（EWA 的简化：屏幕空间各向同性高斯）。
+pub fn render(splats: &[Splat], cam: &Camera, w: usize, h: usize, bg: [f32; 3]) -> Vec<f32> {
+    let cw = collect(splats, cam, w, h);
+    render_from(splats, &cw, w, h, bg)
+}
+
+/// 只拟合**颜色**（位置/尺度/alpha 固定）：颜色对渲染是线性的，
+/// `∂L/∂c_i = Σ_p 2·(img_p − gt_p)·w_{i,p}` 是精确梯度。返回每轮留出 PSNR（由调用方算）。
+pub fn fit_colors(splats: &mut [Splat], views: &[FitView], iters: usize, lr: f32, bg: [f32; 3]) {
+    if splats.is_empty() || views.is_empty() {
+        return;
+    }
+    let pre: Vec<Pre> = views
+        .iter()
+        .map(|(cam, w, h, gt, ids)| {
+            (
+                cam.clone(),
+                *w,
+                *h,
+                gt.clone(),
+                ids.clone(),
+                collect(splats, cam, *w, *h),
+            )
+        })
+        .collect();
+    for _ in 0..iters {
+        let mut grad = vec![[0.0f64; 3]; splats.len()];
+        let mut cnt = vec![0u32; splats.len()];
+        for (cam, w, h, gt, ids, cw) in &pre {
+            let img = render_from(splats, cw, *w, *h, bg);
+            for &(i, p, wt) in &cw.entries {
+                if wt <= 0.0 || ids[p as usize] == 0 {
+                    continue; // 只拟合前景像素（和 PSNR 口径一致）
+                }
+                for k in 0..3 {
+                    let r = f64::from(img[p as usize * 3 + k] - gt[p as usize * 3 + k]);
+                    grad[i as usize][k] += 2.0 * r * f64::from(wt);
+                }
+                cnt[i as usize] += 1;
+            }
+            let _ = (cam, w, h);
+        }
+        for (i, s) in splats.iter_mut().enumerate() {
+            if cnt[i] == 0 {
+                continue;
+            }
+            let n = f64::from(cnt[i]) as f64;
+            for (k, c) in s.color.iter_mut().enumerate() {
+                let g = (grad[i][k] / n) as f32;
+                *c = (*c - lr * g).clamp(0.0, 1.0);
+            }
+        }
+    }
 }
 
 /// PSNR（输入 0..1）。
@@ -223,7 +306,12 @@ mod tests {
             cam: cam(),
         };
         let rgb = vec![1.0f32; w * h * 3];
-        let fine = build(std::slice::from_ref(&view), std::slice::from_ref(&rgb), 0.01, 2.0);
+        let fine = build(
+            std::slice::from_ref(&view),
+            std::slice::from_ref(&rgb),
+            0.01,
+            2.0,
+        );
         assert!(fine.len() > 10, "细格子应有很多高斯：{}", fine.len());
         let view2 = View {
             ids: vec![1u32; w * h],

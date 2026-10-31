@@ -309,7 +309,10 @@ mod tests {
         assert!((p[2] + 2.0).abs() < 1e-6, "{p:?}");
         // project 与 unproject 必须互为逆（否则多视角融合会散）
         let (u, v, d) = cam.project(p).expect("在相机前方");
-        assert!((u - 10.0).abs() < 1e-6 && (v - 20.0).abs() < 1e-6 && (d - 2.0).abs() < 1e-6, "{u} {v} {d}");
+        assert!(
+            (u - 10.0).abs() < 1e-6 && (v - 20.0).abs() < 1e-6 && (d - 2.0).abs() < 1e-6,
+            "{u} {v} {d}"
+        );
     }
 
     #[test]
