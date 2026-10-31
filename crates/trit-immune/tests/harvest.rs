@@ -77,25 +77,48 @@ fn harvest_refuses_symlinks_without_deleting() {
     fs::write(root.join("keep.rs"), "fn main() {}").unwrap();
     fs::create_dir_all(root.join("src")).unwrap();
     fs::write(root.join("src/main.rs"), "fn main() {}").unwrap();
+    // 围栏外的诱饵目录：普查若跟随符号链接，会把这里的 .rs 也数进来
+    let outside = temp_root("harvest-symlink-outside");
+    fs::write(outside.join("evil.rs"), "fn main() {}").unwrap();
     #[cfg(unix)]
     {
-        std::os::unix::fs::symlink("/etc", root.join("target")).unwrap();
+        std::os::unix::fs::symlink(&outside, root.join("target")).unwrap();
         let report = harvest(&root).unwrap();
         assert_eq!(report.refused.len(), 1, "符号链接必须如实上报且不删");
         assert!(root.join("keep.rs").exists());
+        assert_eq!(
+            rust_count(&report),
+            2,
+            "普查不跟随符号链接（根外 evil.rs 不得计数）"
+        );
     }
     #[cfg(windows)]
     {
         // Windows 上创建目录联接（junction）不需要特权，且不是符号链接文件类型——
         // 这里退而验证围栏：删除被拒时至少不越界。junction 用 symlink_dir 创建，
         // 若无特权则跳过该断言。
-        if std::os::windows::fs::symlink_dir(root.join("src"), root.join("target")).is_ok() {
+        if std::os::windows::fs::symlink_dir(&outside, root.join("target")).is_ok() {
             let report = harvest(&root).unwrap();
             assert_eq!(report.refused.len(), 1, "目录符号链接应被拒");
             assert!(root.join("src").exists(), "符号链接被拒，源码不受影响");
+            assert_eq!(
+                rust_count(&report),
+                2,
+                "普查不跟随 junction（根外 evil.rs 不得计数）"
+            );
         }
     }
+    let _ = fs::remove_dir_all(&outside);
     let _ = fs::remove_dir_all(&root);
+}
+
+fn rust_count(report: &trit_immune::harvest::HarvestReport) -> usize {
+    report
+        .languages
+        .iter()
+        .find(|(l, _)| l == "Rust")
+        .map(|(_, c)| *c)
+        .unwrap_or(0)
 }
 
 #[test]

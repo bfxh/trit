@@ -148,6 +148,11 @@ fn census(root: &Path) -> io::Result<Vec<(String, usize)>> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             seen += 1;
+            // 与 clean_dir 同一条围栏：符号链接不跟随（path.is_dir() 会跟，
+            // 跟着 target → /etc 一类链接会把普查带出根、再因权限报错）
+            if entry.file_type()?.is_symlink() {
+                continue;
+            }
             let path = entry.path();
             if path.is_dir() {
                 stack.push(path);
