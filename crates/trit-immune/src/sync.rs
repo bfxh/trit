@@ -73,7 +73,8 @@ pub fn merge_replicas(replicas: Vec<(u32, Vec<Stamped>)>) -> MergeOutcome {
         }
         own_local.insert(*w, list);
     }
-    let mut own_global: HashMap<u32, Vec<u32>> = own_local.keys().map(|w| (*w, Vec::new())).collect();
+    let mut own_global: HashMap<u32, Vec<u32>> =
+        own_local.keys().map(|w| (*w, Vec::new())).collect();
 
     // 3) 全序重放 + 本地 id → 全局 id 改写
     let mut dag = ImmuneDag::empty();
@@ -187,7 +188,12 @@ fn translate_delta(
             verdict: *verdict,
             note: note.clone(),
         },
-        Delta::CrossLink { from, to, pass, note } => Delta::CrossLink {
+        Delta::CrossLink {
+            from,
+            to,
+            pass,
+            note,
+        } => Delta::CrossLink {
             from: NodeId(translate(own_local, own_global, w, from.0)?),
             to: NodeId(translate(own_local, own_global, w, to.0)?),
             pass: *pass,
@@ -232,7 +238,11 @@ pub fn parse_frame(text: &str) -> Result<LogFrame, String> {
     if wf.next() != Some("WRITER") {
         return Err(bad());
     }
-    let writer = wf.next().ok_or_else(bad)?.parse::<u32>().map_err(|_| bad())?;
+    let writer = wf
+        .next()
+        .ok_or_else(bad)?
+        .parse::<u32>()
+        .map_err(|_| bad())?;
     if wf.next().is_some() {
         return Err(bad());
     }
@@ -307,8 +317,9 @@ pub fn parse_log_file(path: &Path) -> io::Result<Vec<Stamped>> {
         if i == 0 || line.trim().is_empty() {
             continue; // 头部行 / 空行
         }
-        let (ts, d) = journal::parse_stamped_line(line)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("第 {} 行：{e}", i + 1)))?;
+        let (ts, d) = journal::parse_stamped_line(line).map_err(|e| {
+            io::Error::new(io::ErrorKind::InvalidData, format!("第 {} 行：{e}", i + 1))
+        })?;
         out.push(Stamped { ts, delta: d });
     }
     Ok(out)
@@ -367,11 +378,15 @@ pub mod tcp {
         stream.read_exact(&mut buf)?;
         let len = u64::from_be_bytes(buf);
         if len > MAX_FRAME {
-            return Err(io::Error::new(io::ErrorKind::InvalidData, "帧超过 64 MiB 上限"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "帧超过 64 MiB 上限",
+            ));
         }
         let mut body = vec![0u8; len as usize];
         stream.read_exact(&mut body)?;
-        String::from_utf8(body).map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "帧非 UTF-8"))
+        String::from_utf8(body)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "帧非 UTF-8"))
     }
 
     /// 客户端（无认证）。
@@ -457,14 +472,66 @@ mod tests {
     fn independent_roots_are_deduped_and_namespaces_do_not_collide() {
         // 两个各自独立建库的副本：各自的 ROOT 戳不同
         let s0 = vec![
-            sd(0, 100, 0, Delta::Root { title: "main".into() }),
-            sd(0, 101, 0, Delta::Spawn { parent: NodeId(0), kind: crate::NodeKind::Delta, title: "A 模块".into() }),
-            sd(0, 102, 0, Delta::Record { id: NodeId(1), verdict: Trit::Vulnerable, evidence: None, note: "A 打穿自己的模块".into() }),
+            sd(
+                0,
+                100,
+                0,
+                Delta::Root {
+                    title: "main".into(),
+                },
+            ),
+            sd(
+                0,
+                101,
+                0,
+                Delta::Spawn {
+                    parent: NodeId(0),
+                    kind: crate::NodeKind::Delta,
+                    title: "A 模块".into(),
+                },
+            ),
+            sd(
+                0,
+                102,
+                0,
+                Delta::Record {
+                    id: NodeId(1),
+                    verdict: Trit::Vulnerable,
+                    evidence: None,
+                    note: "A 打穿自己的模块".into(),
+                },
+            ),
         ];
         let s1 = vec![
-            sd(1, 200, 0, Delta::Root { title: "main".into() }),
-            sd(1, 201, 0, Delta::Spawn { parent: NodeId(0), kind: crate::NodeKind::Delta, title: "B 模块".into() }),
-            sd(1, 202, 0, Delta::Record { id: NodeId(1), verdict: Trit::Hardened, evidence: None, note: "B 放行自己的模块".into() }),
+            sd(
+                1,
+                200,
+                0,
+                Delta::Root {
+                    title: "main".into(),
+                },
+            ),
+            sd(
+                1,
+                201,
+                0,
+                Delta::Spawn {
+                    parent: NodeId(0),
+                    kind: crate::NodeKind::Delta,
+                    title: "B 模块".into(),
+                },
+            ),
+            sd(
+                1,
+                202,
+                0,
+                Delta::Record {
+                    id: NodeId(1),
+                    verdict: Trit::Hardened,
+                    evidence: None,
+                    note: "B 放行自己的模块".into(),
+                },
+            ),
         ];
         let m = merge_replicas(vec![(0, s0), (1, s1)]);
         assert_eq!(m.skipped_roots, 1, "第二个独立根被跳过");
@@ -479,9 +546,23 @@ mod tests {
 
     #[test]
     fn unknown_local_reference_is_deferred_not_applied() {
-        let s0 = vec![sd(0, 50, 0, Delta::Root { title: "main".into() })];
+        let s0 = vec![sd(
+            0,
+            50,
+            0,
+            Delta::Root {
+                title: "main".into(),
+            },
+        )];
         let s1 = vec![
-            sd(1, 100, 0, Delta::Root { title: "main".into() }),
+            sd(
+                1,
+                100,
+                0,
+                Delta::Root {
+                    title: "main".into(),
+                },
+            ),
             sd(
                 1,
                 101,
@@ -496,7 +577,10 @@ mod tests {
         ];
         let m = merge_replicas(vec![(0, s0), (1, s1)]);
         assert_eq!(m.deferred.len(), 1, "悬空引用进隔离区，不静默丢弃");
-        assert!(m.deferred[0].reason.contains("未知本地节点") || m.deferred[0].reason.contains("不存在"));
+        assert!(
+            m.deferred[0].reason.contains("未知本地节点")
+                || m.deferred[0].reason.contains("不存在")
+        );
         assert_eq!(m.dag.nodes().len(), 1);
         assert!(m
             .canonical
@@ -507,12 +591,24 @@ mod tests {
     #[test]
     fn frame_roundtrip() {
         let stamps = vec![
-            sd(0, 100, 0, Delta::Root { title: "main\t带制表".into() }),
-            sd(1, 200, 3, Delta::Spawn {
-                parent: NodeId(0),
-                kind: crate::NodeKind::Message,
-                title: "标题\n含换行".into(),
-            }),
+            sd(
+                0,
+                100,
+                0,
+                Delta::Root {
+                    title: "main\t带制表".into(),
+                },
+            ),
+            sd(
+                1,
+                200,
+                3,
+                Delta::Spawn {
+                    parent: NodeId(0),
+                    kind: crate::NodeKind::Message,
+                    title: "标题\n含换行".into(),
+                },
+            ),
         ];
         let text = encode_frame(7, &stamps);
         let f = parse_frame(&text).unwrap();
@@ -524,7 +620,14 @@ mod tests {
 
     #[test]
     fn frame_sign_verify_and_tamper() {
-        let stamps = vec![sd(0, 100, 0, Delta::Root { title: "main".into() })];
+        let stamps = vec![sd(
+            0,
+            100,
+            0,
+            Delta::Root {
+                title: "main".into(),
+            },
+        )];
         let unsigned = encode_frame(3, &stamps);
         let signed = sign_frame(&unsigned, b"k1").expect("sign");
         let f = verify_frame(&signed, b"k1").expect("verify");

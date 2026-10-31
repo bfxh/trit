@@ -9,9 +9,9 @@
 //! 零依赖、进常规测试套件。正式的 cargo-fuzz targets 见 `fuzz/` 目录
 //! （触发条件：nightly 工具链，结构相同——invariant 一致）。
 
-use trit_immune::{parse_stamped_line, parse_lock};
 #[cfg(feature = "full")]
 use trit_immune::{parse_git_log, parse_lsp_stream};
+use trit_immune::{parse_lock, parse_stamped_line};
 
 /// xorshift64：与性质测试同一 RNG（同种子同序列，失败可复现）。
 struct Rng(u64);
@@ -96,9 +96,11 @@ fn fuzz_lock_random_bytes_never_panics() {
 
 // ── 结构化污损（真实样本变异——比纯随机更毒） ────────────────────────────
 
-const REAL_JSON: &str = r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{"textDocumentSync":1}}}"#;
+const REAL_JSON: &str =
+    r#"{"jsonrpc":"2.0","id":1,"result":{"capabilities":{"textDocumentSync":1}}}"#;
 const REAL_GIT: &str = "\u{1e}abc123def456\u{1f}alice\u{1f}1700000000\u{1f}feat: 登录模块\n";
-const REAL_LOCK: &str = "[[package]]\nname = \"libc\"\nversion = \"0.2.150\"\nchecksum = \"abc123\"\n";
+const REAL_LOCK: &str =
+    "[[package]]\nname = \"libc\"\nversion = \"0.2.150\"\nchecksum = \"abc123\"\n";
 const REAL_JOURNAL: &str = "1740000000000:0:0\tRECORD\t1\t+1\t-\t-\t-\t-\t回归通过";
 
 #[test]

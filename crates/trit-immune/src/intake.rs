@@ -108,7 +108,11 @@ pub fn intake_pr(
 
     for dd in &dead_deps {
         let node = journal
-            .spawn(parent, crate::NodeKind::Message, &format!("死依赖: {}", dd.name))
+            .spawn(
+                parent,
+                crate::NodeKind::Message,
+                &format!("死依赖: {}", dd.name),
+            )
             .map_err(|e| io::Error::other(e.to_string()))?;
         journal
             .record(
@@ -176,12 +180,7 @@ pub fn intake_supply(
             )
             .map_err(|e| io::Error::other(e.to_string()))?;
         journal
-            .record(
-                node,
-                f.verdict,
-                None,
-                &format!("{source}: {:?}", f.kind),
-            )
+            .record(node, f.verdict, None, &format!("{source}: {:?}", f.kind))
             .map_err(|e| io::Error::other(e.to_string()))?;
         n += 1;
     }
@@ -211,7 +210,10 @@ pub fn scan_dir_for_dead_deps(dir: &Path) -> io::Result<Vec<DeadDep>> {
                 }
                 stack.push(p);
             } else if p.extension().map(|e| e == "rs").unwrap_or(false) {
-                rs_sources.push((p.to_string_lossy().to_string(), std::fs::read_to_string(&p)?));
+                rs_sources.push((
+                    p.to_string_lossy().to_string(),
+                    std::fs::read_to_string(&p)?,
+                ));
             }
         }
     }
@@ -245,13 +247,13 @@ mod tests {
 
     #[test]
     fn intake_pipeline_end_to_end() {
-        let pa = std::env::temp_dir().join(format!(
-            "trit-immune-intake-{}.journal",
-            std::process::id()
-        ));
+        let pa =
+            std::env::temp_dir().join(format!("trit-immune-intake-{}.journal", std::process::id()));
         let _ = std::fs::remove_file(&pa);
         let mut j = Journal::create_as(&pa, "main", 0).unwrap();
-        let inbox = j.spawn(NodeId(0), crate::NodeKind::Message, "收件箱").unwrap();
+        let inbox = j
+            .spawn(NodeId(0), crate::NodeKind::Message, "收件箱")
+            .unwrap();
         j.into_dag().unwrap();
 
         let mut j = Journal::open_as(&pa, 0).unwrap();
@@ -259,7 +261,8 @@ mod tests {
             (1u32, "use serde::Serialize;\ndb.password = \"hunter2\";"),
             (2u32, "use tokio::runtime;\nfn clean() {}"),
         ];
-        let toml = "[dependencies]\nserde = \"1.0\"\ntokio = { version = \"1\" }\nphantom-dep = \"0.1\"\n";
+        let toml =
+            "[dependencies]\nserde = \"1.0\"\ntokio = { version = \"1\" }\nphantom-dep = \"0.1\"\n";
         let report = intake_pr(&mut j, inbox, "github/pr/42", &snippets, Some(toml), true).unwrap();
         assert!(report.scan_findings > 0, "硬编码凭据应被扫到");
         assert_eq!(report.dead_deps, 1, "phantom-dep 应被判死");

@@ -251,10 +251,7 @@ impl Adoption {
     }
 
     /// 以变更节点为源的影响分析：全局编号传播，返回 仓 → 受影响节点。
-    fn impact_from(
-        fleet: &Fleet,
-        changed: &[(String, NodeId)],
-    ) -> BTreeMap<String, Vec<NodeId>> {
+    fn impact_from(fleet: &Fleet, changed: &[(String, NodeId)]) -> BTreeMap<String, Vec<NodeId>> {
         let mut base: BTreeMap<String, usize> = BTreeMap::new();
         let mut total = 0usize;
         for (n, j) in fleet.repos() {
@@ -272,11 +269,14 @@ impl Adoption {
             let (Some(fo), Some(to)) = (base.get(&l.from.0), base.get(&l.to.0)) else {
                 continue;
             };
-            g.link(fo + l.from.1.0 as usize, to + l.to.1.0 as usize, l.pass);
+            g.link(fo + l.from.1 .0 as usize, to + l.to.1 .0 as usize, l.pass);
         }
         let sources: Vec<(usize, Trit)> = changed
             .iter()
-            .filter_map(|(r, n)| base.get(r).map(|off| (off + n.0 as usize, Trit::Vulnerable)))
+            .filter_map(|(r, n)| {
+                base.get(r)
+                    .map(|off| (off + n.0 as usize, Trit::Vulnerable))
+            })
             .collect();
         let dist = g.spread(&sources);
         let mut out: BTreeMap<String, Vec<NodeId>> = BTreeMap::new();
@@ -360,9 +360,7 @@ impl Adoption {
             r.verified.push(signal.to_string());
         }
         let acceptance = &self.packages[pi].acceptance;
-        if !acceptance.is_empty()
-            && acceptance.iter().all(|a| r.verified.iter().any(|v| v == a))
-        {
+        if !acceptance.is_empty() && acceptance.iter().all(|a| r.verified.iter().any(|v| v == a)) {
             r.state = AdoptionState::Verified;
         }
         let state = r.state;
@@ -571,8 +569,7 @@ impl Adoption {
                     let adr_raw = unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
                     let rollback = unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
                     let areas_raw = unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
-                    let acceptance_raw =
-                        unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
+                    let acceptance_raw = unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
                     out.packages.push(ChangePackage {
                         id,
                         title,
@@ -601,19 +598,16 @@ impl Adoption {
                     let pkg_id = unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
                     let repo = unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
                     let owner = unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
-                    let state = AdoptionState::parse(f.next().ok_or_else(bad)?)
-                        .ok_or_else(bad)?;
+                    let state = AdoptionState::parse(f.next().ok_or_else(bad)?).ok_or_else(bad)?;
                     let sla_remaining = f
                         .next()
                         .ok_or_else(bad)?
                         .parse::<u32>()
                         .map_err(|e| conv(e.to_string()))?;
                     let impact = Impact::parse(f.next().ok_or_else(bad)?);
-                    let verified_raw =
-                        unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
+                    let verified_raw = unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
                     let degraded = f.next().ok_or_else(bad)? == "1";
-                    let affected_raw =
-                        unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
+                    let affected_raw = unesc(f.next().ok_or_else(bad)?).map_err(conv)?;
                     let Some(pi) = out.packages.iter().position(|p| p.id == pkg_id) else {
                         continue; // 包未重载：跳过（与仓状态解耦）
                     };

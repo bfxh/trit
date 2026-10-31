@@ -39,10 +39,7 @@ impl TriWord {
         zeros: u32::MAX,
     };
     /// 全 0。
-    pub const ALL_UNKNOWN: TriWord = TriWord {
-        ones: 0,
-        zeros: 0,
-    };
+    pub const ALL_UNKNOWN: TriWord = TriWord { ones: 0, zeros: 0 };
 
     pub fn new(ones: u32, zeros: u32) -> Self {
         Self { ones, zeros }
@@ -199,11 +196,7 @@ mod tests {
                 // NOT
                 let scalar_not = a.not();
                 let parallel_not = wa.not();
-                assert_eq!(
-                    parallel_not.unpack()[0],
-                    scalar_not,
-                    "NOT({a:?}) 不匹配"
-                );
+                assert_eq!(parallel_not.unpack()[0], scalar_not, "NOT({a:?}) 不匹配");
             }
         }
     }
@@ -361,11 +354,18 @@ mod pack_tests {
     #[test]
     fn invalid_bytes_and_counts_are_rejected() {
         for b in 243u8..=255 {
-            assert_eq!(tri_unpack(&[b], 5), Err(PackError::InvalidByte(b)), "13 个非法值全部报错");
+            assert_eq!(
+                tri_unpack(&[b], 5),
+                Err(PackError::InvalidByte(b)),
+                "13 个非法值全部报错"
+            );
         }
         assert!(matches!(
             tri_unpack(&[0, 0], 5),
-            Err(PackError::WrongByteCount { expected: 1, actual: 2 })
+            Err(PackError::WrongByteCount {
+                expected: 1,
+                actual: 2
+            })
         ));
     }
 

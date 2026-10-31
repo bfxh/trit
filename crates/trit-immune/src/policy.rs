@@ -198,7 +198,10 @@ mod tests {
     fn gate_block_vetoes_everything() {
         let mut pr = green();
         pr.gate = GateDecision::Block;
-        assert!(matches!(decide(&MergePolicy::default(), &pr), Decision::Block(_)));
+        assert!(matches!(
+            decide(&MergePolicy::default(), &pr),
+            Decision::Block(_)
+        ));
     }
 
     #[test]

@@ -105,12 +105,20 @@ fn contains_any(code: &str, needles: &[&str]) -> bool {
 fn r_hardcoded_secret(code: &str) -> bool {
     contains_any(
         code,
-        &["password = \"", "api_key = \"", "secret = \"", "PRIVATE KEY"],
+        &[
+            "password = \"",
+            "api_key = \"",
+            "secret = \"",
+            "PRIVATE KEY",
+        ],
     )
 }
 
 fn r_insecure_tls(code: &str) -> bool {
-    contains_any(code, &["InsecureSkipVerify: true", "verify = False", "CERT_NONE"])
+    contains_any(
+        code,
+        &["InsecureSkipVerify: true", "verify = False", "CERT_NONE"],
+    )
 }
 
 fn r_eval(code: &str) -> bool {
@@ -126,14 +134,32 @@ fn r_sql_concat(code: &str) -> bool {
 }
 
 fn r_command_injection(code: &str) -> bool {
-    contains_any(code, &["os.system(", "subprocess.call(", "subprocess.Popen(",
-        "child_process.exec", "Command::new(", "Runtime.getRuntime().exec(",
-        "os/exec.Run(", "exec.Command("])
+    contains_any(
+        code,
+        &[
+            "os.system(",
+            "subprocess.call(",
+            "subprocess.Popen(",
+            "child_process.exec",
+            "Command::new(",
+            "Runtime.getRuntime().exec(",
+            "os/exec.Run(",
+            "exec.Command(",
+        ],
+    )
 }
 
 fn r_deserialize(code: &str) -> bool {
-    contains_any(code, &["pickle.loads(", "yaml.load(", "deserialize(",
-        "ObjectInputStream", "unsafe.Deserialize"])
+    contains_any(
+        code,
+        &[
+            "pickle.loads(",
+            "yaml.load(",
+            "deserialize(",
+            "ObjectInputStream",
+            "unsafe.Deserialize",
+        ],
+    )
 }
 
 fn clip(code: &str) -> String {
@@ -147,11 +173,7 @@ fn clip(code: &str) -> String {
 
 /// 扫描一组代码片段（调用方持有每个节点的代码）。
 /// `suppressed` 里的节点整点跳过（范围外/已豁免）——跳过不是"洗白"，不产生任何记录。
-pub fn run_scan(
-    snippets: &[(NodeId, &str)],
-    rules: &[Rule],
-    suppressed: &[NodeId],
-) -> ScanReport {
+pub fn run_scan(snippets: &[(NodeId, &str)], rules: &[Rule], suppressed: &[NodeId]) -> ScanReport {
     let mut findings = Vec::new();
     let mut suppressed_count = 0usize;
     for (node, code) in snippets {

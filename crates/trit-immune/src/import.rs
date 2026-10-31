@@ -45,8 +45,7 @@ pub fn parse_git_log(text: &str) -> Vec<CommitRecord> {
         else {
             continue;
         };
-        let (hash, author, subject) =
-            (hash.trim(), author.trim(), subject.trim());
+        let (hash, author, subject) = (hash.trim(), author.trim(), subject.trim());
         if hash.is_empty() || author.is_empty() {
             continue;
         }
@@ -115,7 +114,9 @@ pub fn import_commits(
                 .quarantine(node, &format!("外部导入自动隔离 {note}"))
                 .map_err(io::Error::other)?;
         } else {
-            journal.record(node, crate::Trit::Unknown, None, &note).map_err(io::Error::other)?;
+            journal
+                .record(node, crate::Trit::Unknown, None, &note)
+                .map_err(io::Error::other)?;
         }
         n += 1;
     }
@@ -151,16 +152,33 @@ mod tests {
         let _ = std::fs::remove_file(&p);
         let mut j = Journal::create_as(&p, "import", 0).unwrap();
         let commits = vec![
-            CommitRecord { hash: "a".repeat(40), author: "alice".into(), timestamp_ms: 1, subject: "feat: x".into() },
-            CommitRecord { hash: "b".repeat(40), author: "bob".into(), timestamp_ms: 2, subject: "fix: y".into() },
+            CommitRecord {
+                hash: "a".repeat(40),
+                author: "alice".into(),
+                timestamp_ms: 1,
+                subject: "feat: x".into(),
+            },
+            CommitRecord {
+                hash: "b".repeat(40),
+                author: "bob".into(),
+                timestamp_ms: 2,
+                subject: "fix: y".into(),
+            },
         ];
         // 外部仓库 → 隔离
         let n = import_commits(&mut j, crate::NodeId(0), &commits, true).unwrap();
         assert_eq!(n, 2);
         let dag = j.dag().clone();
-        let msgs: Vec<_> = dag.nodes().iter().filter(|nd| nd.kind == crate::NodeKind::Message).collect();
+        let msgs: Vec<_> = dag
+            .nodes()
+            .iter()
+            .filter(|nd| nd.kind == crate::NodeKind::Message)
+            .collect();
         assert_eq!(msgs.len(), 2);
-        assert!(msgs.iter().all(|nd| nd.verdict == crate::Trit::Unknown), "导入历史一律 0 态");
+        assert!(
+            msgs.iter().all(|nd| nd.verdict == crate::Trit::Unknown),
+            "导入历史一律 0 态"
+        );
         assert!(msgs.iter().all(|nd| nd.quarantined), "外部导入应隔离");
         drop(j.into_dag().unwrap());
         let _ = std::fs::remove_file(&p);
@@ -169,7 +187,11 @@ mod tests {
     #[test]
     fn export_tsv_shape() {
         let mut dag = ImmuneDag::root("x");
-        let n = dag.spawn(crate::NodeId(0), crate::NodeKind::AttackVector, "SQLi\t注入");
+        let n = dag.spawn(
+            crate::NodeId(0),
+            crate::NodeKind::AttackVector,
+            "SQLi\t注入",
+        );
         dag.record(n, crate::Trit::Vulnerable, None, "打穿");
         let tsv = export_dag_tsv(&dag);
         let lines: Vec<&str> = tsv.lines().collect();

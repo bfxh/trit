@@ -80,7 +80,7 @@ pub fn is_forbidden_ip(ip: IpAddr) -> bool {
                 || (o[0] == 198 && o[1] == 51 && o[2] == 100) // TEST-NET-2
                 || (o[0] == 203 && o[1] == 0 && o[2] == 113) // TEST-NET-3
                 || (o[0] == 198 && (o[1] == 18 || o[1] == 19)) // 198.18/15 基准
-                || o[0] >= 224                          // 224/4 组播 + 240/4 保留 + 广播
+                || o[0] >= 224 // 224/4 组播 + 240/4 保留 + 广播
         }
         IpAddr::V6(v6) => {
             let s = v6.segments();
@@ -137,9 +137,19 @@ mod tests {
         assert!(check_url_with("ftp://example.com", &resolve_ok).is_err());
         assert!(check_url_with("example.com/x", &resolve_ok).is_err());
         // 域名解析到内网（DNS 重绑定）也要拦
-        assert!(check_url_with("http://evil.example.com/x", &|_| Ok(vec![IpAddr::from([10, 0, 0, 1])])).is_err());
+        assert!(
+            check_url_with("http://evil.example.com/x", &|_| Ok(vec![IpAddr::from([
+                10, 0, 0, 1
+            ])]))
+            .is_err()
+        );
         // 解析失败
-        assert!(check_url_with("http://no-such-host.invalid/x", &|_| Err(io::Error::other("dns"))).is_err());
+        assert!(
+            check_url_with("http://no-such-host.invalid/x", &|_| Err(io::Error::other(
+                "dns"
+            )))
+            .is_err()
+        );
     }
 
     #[test]

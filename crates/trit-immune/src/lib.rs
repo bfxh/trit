@@ -51,19 +51,23 @@
 
 #[cfg(feature = "full")]
 pub mod adoption;
+#[cfg(feature = "full")]
+pub mod attack;
 pub mod attest;
 pub mod auth;
 pub mod bitparallel;
 pub mod compat;
 pub mod cull;
-pub mod dag;
 #[cfg(feature = "full")]
 pub mod daemon;
+pub mod dag;
 pub mod delta;
 pub mod design;
 pub mod diag;
 #[cfg(feature = "full")]
 pub mod fleet;
+#[cfg(feature = "full")]
+pub mod fleet_server;
 #[cfg(feature = "full")]
 pub mod harvest;
 pub mod hlc;
@@ -71,10 +75,10 @@ pub mod hlc;
 pub mod import;
 #[cfg(feature = "full")]
 pub mod intake;
+pub mod journal;
 pub mod json;
 #[cfg(kani)]
 pub mod kani_proofs;
-pub mod journal;
 pub mod lifecycle;
 #[cfg(feature = "full")]
 pub mod lsp;
@@ -106,17 +110,19 @@ pub mod vocab;
 
 #[cfg(feature = "full")]
 pub use adoption::{Adoption, AdoptionState, Blast, ChangePackage, Impact, Receiver};
-pub use auth::{ct_eq, hmac_sha256, sha256};
 pub use attest::{attest, verify, PREDICATE_TYPE, STATEMENT_TYPE};
+pub use auth::{ct_eq, hmac_sha256, sha256};
 pub use bitparallel::{tri_pack, tri_unpack, PackError, TriWord};
 pub use cull::{cull, CullAction, CullRules};
 #[cfg(feature = "full")]
 pub use daemon::{encode_frame, read_frame, LspSession};
-pub use dag::{BreachKind, Convergence, Coupling, CrossLink, ImmuneDag, Node, NodeId, NodeKind, VerdictEvent};
+pub use dag::{
+    BreachKind, Convergence, Coupling, CrossLink, ImmuneDag, Node, NodeId, NodeKind, VerdictEvent,
+};
 pub use delta::{merge_order, ApplyError, Delta, Stamped};
 pub use design::{
-    classify, grade, ArchTest, DesignArea, DesignQueue, PrIntake, QueueEntry, QueueStatus,
-    Routing, Statute, Statutes, Tier, TierPolicy, Violation,
+    classify, grade, ArchTest, DesignArea, DesignQueue, PrIntake, QueueEntry, QueueStatus, Routing,
+    Statute, Statutes, Tier, TierPolicy, Violation,
 };
 pub use diag::{layer_verdict, parse_rustc_stream, Diagnostic, Severity};
 #[cfg(feature = "full")]
@@ -129,8 +135,10 @@ pub use hlc::{Clock, Hlc};
 pub use import::{collect_git_log, import_commits, parse_git_log, CommitRecord};
 #[cfg(feature = "full")]
 pub use intake::{find_dead_deps, intake_pr, parse_cargo_deps, DeadDep, IntakeReport};
+pub use journal::{
+    export_dag_tsv, parse_stamped_line, BackupMode, Journal, JournalError, OpenError,
+};
 pub use json::{json_escape, Json};
-pub use journal::{export_dag_tsv, parse_stamped_line, BackupMode, Journal, JournalError, OpenError};
 pub use lifecycle::{Lifecycle, LifecycleNode};
 #[cfg(feature = "full")]
 pub use lsp::{parse_lsp_stream, LspDiagnostic};
@@ -146,7 +154,9 @@ pub use scheduler::{drain_plan, Handler, JournalHandler, Scheduler, Task, WorkRe
 #[cfg(feature = "full")]
 pub use server::{FleetServer, Server};
 pub use snapshot::SnapshotMeta;
-pub use supply::{audit, encode_baseline, fingerprint, parse_baseline, parse_lock, Pin, SupplyFinding, SupplyKind};
+pub use supply::{
+    audit, encode_baseline, fingerprint, parse_baseline, parse_lock, Pin, SupplyFinding, SupplyKind,
+};
 pub use sync::{anti_entropy, merge_replicas, DeferredDelta, LogFrame, MergeOutcome};
 #[cfg(feature = "full")]
 pub use taskmd::{ingest as ingest_md, parse as parse_md_tasks, taskbar, IngestReport, MdTask};
@@ -155,5 +165,5 @@ pub use template::{audit_discipline, scaffold, Discipline, DisciplineViolation, 
 pub use transport::{pull_merge_via, MemoryTransport, TcpTransport, Transport};
 pub use trit::Trit;
 pub use verdict::{merge_gate, AttackVector, ExploitEvidence, GateDecision};
-pub use vex::{export_vex, OPENVEX_CONTEXT, VexStatus};
+pub use vex::{export_vex, VexStatus, OPENVEX_CONTEXT};
 pub use vocab::{Absorption, Concept, Registration, Vocabulary};

@@ -54,13 +54,15 @@ pub fn read_frame<R: BufRead>(r: &mut R) -> io::Result<Option<String>> {
         }
         if let Some(v) = line.strip_prefix("Content-Length:") {
             content_length = Some(v.trim().parse::<usize>().map_err(|e| {
-                io::Error::new(io::ErrorKind::InvalidData, format!("坏 Content-Length：{e}"))
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("坏 Content-Length：{e}"),
+                )
             })?);
         }
     }
-    let len = content_length.ok_or_else(|| {
-        io::Error::new(io::ErrorKind::InvalidData, "帧缺少 Content-Length 头")
-    })?;
+    let len = content_length
+        .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "帧缺少 Content-Length 头"))?;
     let mut buf = vec![0u8; len];
     r.read_exact(&mut buf)?;
     Ok(Some(String::from_utf8_lossy(&buf).into_owned()))
@@ -250,7 +252,9 @@ mod tests {
         let p = std::env::temp_dir().join(format!("trit-daemon-{}.journal", std::process::id()));
         let _ = std::fs::remove_file(&p);
         let mut j = Journal::create_as(&p, "daemon", 0).unwrap();
-        let lib = j.spawn(NodeId(0), crate::NodeKind::Delta, "lib.rs").unwrap();
+        let lib = j
+            .spawn(NodeId(0), crate::NodeKind::Delta, "lib.rs")
+            .unwrap();
         j.record(lib, Trit::Unknown, None, "打开待检").unwrap();
         {
             let mut bridge = LspBridge {

@@ -21,7 +21,10 @@ pub enum Task {
     /// 0 态/被隔离节点：复核（human_review 是唯一出口）。
     Review { node: NodeId, title: String },
     /// 确证漏洞：出补丁 + 复验。
-    Fix { node: NodeId, evidence: Option<String> },
+    Fix {
+        node: NodeId,
+        evidence: Option<String>,
+    },
     /// 设计 smell：重构建议（不改裁决，只留痕）。
     Refactor { node: NodeId, fan_in: usize },
 }
@@ -47,7 +50,7 @@ pub fn drain_plan(dag: &ImmuneDag, max_fan_in: usize) -> Vec<Task> {
                     .rev()
                     .find_map(|e| e.evidence.as_ref())
                     .map(|e| format!("{}", e.vector)),
-                }),
+            }),
             Trit::Unknown => tasks.push(Task::Review {
                 node: n.id,
                 title: n.title.clone(),
@@ -89,7 +92,9 @@ impl Default for Scheduler {
 
 impl Scheduler {
     pub fn new(workers: usize) -> Self {
-        Self { workers: workers.max(1) }
+        Self {
+            workers: workers.max(1),
+        }
     }
 
     /// 并发执行一轮任务（scoped threads：处理器可借用本地状态）。
@@ -108,23 +113,21 @@ impl Scheduler {
                 scope.spawn(move || loop {
                     let task = { queue.lock().expect("任务队列锁中毒").pop_front() };
                     let Some(task) = task else { break };
-                    let ok = handler
-                        .lock()
-                        .expect("处理器锁中毒")
-                        .handle(&task)
-                        .is_ok();
+                    let ok = handler.lock().expect("处理器锁中毒").handle(&task).is_ok();
+                    // SeqCst 而非 Relaxed：上游 hazard gate 政策（docs/HAZARD-POLICY.md）
+                    // 对"登记文件外"的 Relaxed 一律红——计数不在热路径，零成本从严
                     if ok {
-                        executed.fetch_add(1, Ordering::Relaxed);
+                        executed.fetch_add(1, Ordering::SeqCst);
                     } else {
-                        failed.fetch_add(1, Ordering::Relaxed);
+                        failed.fetch_add(1, Ordering::SeqCst);
                     }
                 });
             }
         });
         WorkReport {
             total,
-            executed: executed.load(Ordering::Relaxed),
-            failed: failed.load(Ordering::Relaxed),
+            executed: executed.load(Ordering::SeqCst),
+            failed: failed.load(Ordering::SeqCst),
         }
     }
 }

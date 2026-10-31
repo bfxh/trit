@@ -82,9 +82,7 @@ impl Lifecycle {
                 if *to == id && self.nodes[*from].verdict != Trit::Hardened {
                     return Err(format!(
                         "前置 {} 尚未通过（{}），不能通过 {}",
-                        self.nodes[*from].name,
-                        self.nodes[*from].verdict,
-                        self.nodes[id].name
+                        self.nodes[*from].name, self.nodes[*from].verdict, self.nodes[id].name
                     ));
                 }
             }
@@ -148,10 +146,26 @@ impl Lifecycle {
     /// 收敛度量。
     pub fn convergence(&self) -> crate::dag::Convergence {
         let total = self.nodes.len();
-        let hardened = self.nodes.iter().filter(|n| n.verdict == Trit::Hardened).count();
-        let unknown = self.nodes.iter().filter(|n| n.verdict == Trit::Unknown).count();
-        let vulnerable = self.nodes.iter().filter(|n| n.verdict == Trit::Vulnerable).count();
-        let ratio = if total == 0 { 1.0 } else { hardened as f64 / total as f64 };
+        let hardened = self
+            .nodes
+            .iter()
+            .filter(|n| n.verdict == Trit::Hardened)
+            .count();
+        let unknown = self
+            .nodes
+            .iter()
+            .filter(|n| n.verdict == Trit::Unknown)
+            .count();
+        let vulnerable = self
+            .nodes
+            .iter()
+            .filter(|n| n.verdict == Trit::Vulnerable)
+            .count();
+        let ratio = if total == 0 {
+            1.0
+        } else {
+            hardened as f64 / total as f64
+        };
         crate::dag::Convergence {
             total,
             hardened,
@@ -206,10 +220,8 @@ impl Lifecycle {
             );
         }
         for (from, to) in &self.edges {
-            let _ = std::fmt::Write::write_fmt(
-                &mut out,
-                format_args!("  #{:02} → #{:02}\n", from, to),
-            );
+            let _ =
+                std::fmt::Write::write_fmt(&mut out, format_args!("  #{:02} → #{:02}\n", from, to));
         }
         out
     }
@@ -270,7 +282,11 @@ mod tests {
         lc.depends_on(ci, adopt_a).unwrap();
         lc.depends_on(ci, adopt_b).unwrap();
 
-        assert_eq!(lc.actionable(), vec![design], "ci 依赖 design，只有 design 可执行");
+        assert_eq!(
+            lc.actionable(),
+            vec![design],
+            "ci 依赖 design，只有 design 可执行"
+        );
         lc.set(design, Trit::Hardened).unwrap();
         lc.set(ci, Trit::Hardened).unwrap();
         assert_eq!(lc.actionable(), vec![adopt_a, adopt_b]);

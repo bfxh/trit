@@ -266,7 +266,10 @@ fn cmd_merge(args: &[String]) -> Result<(), CliError> {
     let (mut local, path) = open_ledger(rest)?;
     let other_path = PathBuf::from(other);
     if !other_path.is_file() {
-        return Err(CliError::Runtime(format!("{} 不是文件", other_path.display())));
+        return Err(CliError::Runtime(format!(
+            "{} 不是文件",
+            other_path.display()
+        )));
     }
     // 读入对方日志（跳过头部），以写者 id=1 的身份参与合并
     let text = std::fs::read_to_string(&other_path)
@@ -348,8 +351,7 @@ fn cmd_clone(args: &[String]) -> Result<(), CliError> {
         .split_first()
         .and_then(|(s, r)| r.first().map(|d| (s, d)))
         .ok_or_else(|| CliError::Usage("clone 需要 <src> <dst>".into()))?;
-    std::fs::copy(src, dst)
-        .map_err(|e| CliError::Runtime(format!("克隆失败：{e}")))?;
+    std::fs::copy(src, dst).map_err(|e| CliError::Runtime(format!("克隆失败：{e}")))?;
     println!("克隆 {src} → {dst}（含全部历史，追加式日志天然完整）");
     Ok(())
 }
@@ -441,7 +443,8 @@ fn help_text() -> String {
                             git 共存桥：提交历史吸收进账本（0 态+默认隔离）
   help                      本帮助
 
-默认账本：当前目录 repo.tritj（-f 可指定）。".to_string()
+默认账本：当前目录 repo.tritj（-f 可指定）。"
+        .to_string()
 }
 
 #[cfg(test)]
@@ -469,8 +472,13 @@ mod tests {
         run(&[s("init"), s(dir.to_string_lossy().to_string())]).unwrap();
         assert!(ledger.is_file(), "init 应产生账本");
 
-        run(&[s("branch"), s("feat-login"), s("-f"), s(ledger.to_string_lossy().to_string())])
-            .unwrap();
+        run(&[
+            s("branch"),
+            s("feat-login"),
+            s("-f"),
+            s(ledger.to_string_lossy().to_string()),
+        ])
+        .unwrap();
         run(&[
             s("commit"),
             s("-m"),
@@ -491,12 +499,34 @@ mod tests {
         .unwrap();
 
         // status 与 gate 不炸且输出非空（走 std::io 捕获太重，只验证 Ok）
-        run(&[s("status"), s("-f"), s(ledger.to_string_lossy().to_string())]).unwrap();
+        run(&[
+            s("status"),
+            s("-f"),
+            s(ledger.to_string_lossy().to_string()),
+        ])
+        .unwrap();
         run(&[s("gate"), s("-f"), s(ledger.to_string_lossy().to_string())]).unwrap();
-        run(&[s("suspects"), s("-f"), s(ledger.to_string_lossy().to_string())]).unwrap();
-        run(&[s("checkout"), s("1"), s("-f"), s(ledger.to_string_lossy().to_string())]).unwrap();
-        run(&[s("log"), s("-n"), s("3"), s("-f"), s(ledger.to_string_lossy().to_string())])
-            .unwrap();
+        run(&[
+            s("suspects"),
+            s("-f"),
+            s(ledger.to_string_lossy().to_string()),
+        ])
+        .unwrap();
+        run(&[
+            s("checkout"),
+            s("1"),
+            s("-f"),
+            s(ledger.to_string_lossy().to_string()),
+        ])
+        .unwrap();
+        run(&[
+            s("log"),
+            s("-n"),
+            s("3"),
+            s("-f"),
+            s(ledger.to_string_lossy().to_string()),
+        ])
+        .unwrap();
 
         // clone：副本内容一致
         let dst = dir.join("clone.tritj");

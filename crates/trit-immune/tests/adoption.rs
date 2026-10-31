@@ -24,7 +24,9 @@ fn build_fleet(tag: &str) -> Fleet {
     b.record(pay, Trit::Hardened, None, "通过").unwrap();
     b.into_dag().unwrap();
 
-    fleet.add("auth", Journal::open_as(&pa, 0).unwrap()).unwrap();
+    fleet
+        .add("auth", Journal::open_as(&pa, 0).unwrap())
+        .unwrap();
     fleet.add("pay", Journal::open_as(&pb, 1).unwrap()).unwrap();
     fleet
         .add_cross_link(
@@ -169,16 +171,18 @@ fn decommission_counts_down_after_align() {
     assert_eq!(ad.decommission(), vec![("CHG-D".into(), "pay".into(), 2)]);
     ad.tick();
     ad.tick();
-    assert_eq!(ad.decommission(), vec![("CHG-D".into(), "pay".into(), 0)], "旧路径下线到期");
+    assert_eq!(
+        ad.decommission(),
+        vec![("CHG-D".into(), "pay".into(), 0)],
+        "旧路径下线到期"
+    );
 }
 
 #[test]
 fn ledger_replay_restores_state() {
     let fleet = build_fleet("replay");
-    let ledger = std::env::temp_dir().join(format!(
-        "trit-immune-adopt-{}.events",
-        std::process::id()
-    ));
+    let ledger =
+        std::env::temp_dir().join(format!("trit-immune-adopt-{}.events", std::process::id()));
     let _ = std::fs::remove_file(&ledger);
 
     let mut ad = Adoption::new();

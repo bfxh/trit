@@ -5,8 +5,8 @@
 //! LSP 行号 0 基，此处统一转为 1 基（与 rustc 对齐）。
 
 use crate::diag::{self, Diagnostic, Severity};
-use crate::json::{self, Json};
 use crate::journal::Journal;
+use crate::json::{self, Json};
 use crate::trit::Trit;
 use crate::NodeId;
 use std::collections::BTreeMap;
@@ -67,11 +67,11 @@ fn parse_notification(v: &Json) -> Vec<LspDiagnostic> {
         .and_then(|u| u.as_str())
         .unwrap_or("")
         .to_string();
-    diags.iter()
+    diags
+        .iter()
         .map(|d| {
-            let severity = map_severity(
-                d.get("severity").and_then(|s| s.as_f64()).map(|f| f as u32),
-            );
+            let severity =
+                map_severity(d.get("severity").and_then(|s| s.as_f64()).map(|f| f as u32));
             let line = d
                 .get("range")
                 .and_then(|r| r.get("start"))
@@ -152,11 +152,22 @@ impl LspBridge<'_> {
             } else {
                 Trit::Hardened
             };
-            let ecount = group.iter().filter(|d| d.severity == Severity::Error).count();
-            let wcount = group.iter().filter(|d| d.severity == Severity::Warning).count();
+            let ecount = group
+                .iter()
+                .filter(|d| d.severity == Severity::Error)
+                .count();
+            let wcount = group
+                .iter()
+                .filter(|d| d.severity == Severity::Warning)
+                .count();
             let first = group.first().map(|d| d.message.as_str()).unwrap_or("");
             self.journal
-                .record(node, verdict, None, &format!("LSP {uri}: {ecount}E/{wcount}W　{first}"))
+                .record(
+                    node,
+                    verdict,
+                    None,
+                    &format!("LSP {uri}: {ecount}E/{wcount}W　{first}"),
+                )
                 .map_err(|e| io::Error::other(e.to_string()))?;
             report.verdicts.push((node, verdict));
         }

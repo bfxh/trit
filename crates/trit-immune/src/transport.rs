@@ -79,9 +79,7 @@ pub fn pull_merge_via(
     let w = local.clock().writer();
     let frame = sync::encode_frame(w, &mine);
     let frame = match auth_key {
-        Some(k) => {
-            sync::sign_frame(&frame, k).map_err(io::Error::other)?
-        }
+        Some(k) => sync::sign_frame(&frame, k).map_err(io::Error::other)?,
         None => frame,
     };
     let resp = transport.exchange(&frame)?;

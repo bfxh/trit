@@ -65,7 +65,11 @@ mod proofs {
         let a: Trit = kani::any();
         let b: Trit = kani::any();
         let c: Trit = kani::any();
-        assert_eq!(a.and(b).and(c), a.and(b.and(c)), "K3 AND 结合律（全 3³ 空间）");
+        assert_eq!(
+            a.and(b).and(c),
+            a.and(b.and(c)),
+            "K3 AND 结合律（全 3³ 空间）"
+        );
     }
 
     #[kani::proof]

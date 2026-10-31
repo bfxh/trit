@@ -4,9 +4,18 @@ use trit_immune::*;
 
 #[test]
 fn gate_block_freeze_allow() {
-    assert_eq!(merge_gate([Trit::Hardened, Trit::Hardened]), GateDecision::Allow);
-    assert_eq!(merge_gate([Trit::Hardened, Trit::Unknown]), GateDecision::Freeze);
-    assert_eq!(merge_gate([Trit::Unknown, Trit::Vulnerable]), GateDecision::Block);
+    assert_eq!(
+        merge_gate([Trit::Hardened, Trit::Hardened]),
+        GateDecision::Allow
+    );
+    assert_eq!(
+        merge_gate([Trit::Hardened, Trit::Unknown]),
+        GateDecision::Freeze
+    );
+    assert_eq!(
+        merge_gate([Trit::Unknown, Trit::Vulnerable]),
+        GateDecision::Block
+    );
     assert_eq!(merge_gate([Trit::Vulnerable]), GateDecision::Block);
 }
 
@@ -107,7 +116,10 @@ fn sandbox_is_deterministic_and_consistent() {
     assert_eq!(r1.rounds, r2.rounds);
     // 结论与证据自洽：打穿必有 finding + payload，加固必无
     assert_eq!(r1.finding.is_some(), r1.verdict == Trit::Vulnerable);
-    assert_eq!(sb.will_break("评论区", "反射输出"), r1.verdict == Trit::Vulnerable);
+    assert_eq!(
+        sb.will_break("评论区", "反射输出"),
+        r1.verdict == Trit::Vulnerable
+    );
     if let Some(v) = &r1.finding {
         assert_eq!(*v, AttackVector::Xss);
         assert!(!r1.payload.as_deref().unwrap_or_default().is_empty());

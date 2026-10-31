@@ -124,7 +124,10 @@ impl BackupVault {
             match name.parse::<u64>() {
                 Ok(stamp) => {
                     let files = count_files(&path)?;
-                    inv.snapshots.push(SnapshotInfo { stamp_ms: stamp, files });
+                    inv.snapshots.push(SnapshotInfo {
+                        stamp_ms: stamp,
+                        files,
+                    });
                 }
                 Err(_) => inv.corrupt.push(name),
             }
@@ -207,9 +210,10 @@ impl BackupVault {
         let kept: std::collections::BTreeSet<u64> = keep.into_iter().collect();
         for s in &inv.snapshots {
             if !kept.contains(&s.stamp_ms)
-                && fs::remove_dir_all(self.root.join(s.stamp_ms.to_string())).is_ok() {
-                    removed += 1;
-                }
+                && fs::remove_dir_all(self.root.join(s.stamp_ms.to_string())).is_ok()
+            {
+                removed += 1;
+            }
         }
         // 残留 .tmp 目录
         if let Ok(entries) = fs::read_dir(&self.root) {
@@ -282,10 +286,7 @@ mod tests {
     use super::*;
 
     fn tmpdir(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "trit-recovery-{tag}-{}",
-            std::process::id()
-        ));
+        let d = std::env::temp_dir().join(format!("trit-recovery-{tag}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).unwrap();
         d
@@ -390,7 +391,11 @@ mod tests {
         let base = tmpdir("fence");
         let vault = BackupVault::open(base.join(".trit"), Retention::default());
         // 绝对路径在围栏外 → 拒绝
-        let outside = if cfg!(windows) { Path::new("C:/Windows") } else { Path::new("/etc") };
+        let outside = if cfg!(windows) {
+            Path::new("C:/Windows")
+        } else {
+            Path::new("/etc")
+        };
         assert!(vault.capture(&base, &[outside]).is_err());
 
         // 损坏目录如实上报

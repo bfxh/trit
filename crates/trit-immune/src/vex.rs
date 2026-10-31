@@ -18,8 +18,8 @@
 //! 字符串转义复用 [`crate::json::json_escape`]（零依赖）。
 
 use crate::dag::ImmuneDag;
-use crate::trit::Trit;
 use crate::json::json_escape;
+use crate::trit::Trit;
 
 /// OpenVEX 上下文标识（v0.2.0）。
 pub const OPENVEX_CONTEXT: &str = "https://openvex.dev/ns/v0.2.0";
@@ -146,12 +146,27 @@ mod tests {
 
     #[test]
     fn status_mapping_includes_ledger_derived_fixed() {
-        assert_eq!(VexStatus::from_verdict(Trit::Vulnerable, false), VexStatus::Affected);
-        assert_eq!(VexStatus::from_verdict(Trit::Unknown, false), VexStatus::UnderInvestigation);
-        assert_eq!(VexStatus::from_verdict(Trit::Hardened, false), VexStatus::NotAffected);
-        assert_eq!(VexStatus::from_verdict(Trit::Hardened, true), VexStatus::Fixed);
+        assert_eq!(
+            VexStatus::from_verdict(Trit::Vulnerable, false),
+            VexStatus::Affected
+        );
+        assert_eq!(
+            VexStatus::from_verdict(Trit::Unknown, false),
+            VexStatus::UnderInvestigation
+        );
+        assert_eq!(
+            VexStatus::from_verdict(Trit::Hardened, false),
+            VexStatus::NotAffected
+        );
+        assert_eq!(
+            VexStatus::from_verdict(Trit::Hardened, true),
+            VexStatus::Fixed
+        );
         // 纪律：没有 -1 历史就不得声明 fixed（VEX 不许比账本乐观）
-        assert_ne!(VexStatus::from_verdict(Trit::Hardened, false), VexStatus::Fixed);
+        assert_ne!(
+            VexStatus::from_verdict(Trit::Hardened, false),
+            VexStatus::Fixed
+        );
     }
 
     #[test]
@@ -185,9 +200,16 @@ mod tests {
     #[test]
     fn export_escapes_hostile_titles() {
         let mut dag = ImmuneDag::root("lib");
-        let n = dag.spawn(NodeId(0), NodeKind::Delta, "title with \"quote\" and \\slash");
+        let n = dag.spawn(
+            NodeId(0),
+            NodeKind::Delta,
+            "title with \"quote\" and \\slash",
+        );
         dag.record(n, Trit::Vulnerable, None, "note \"also\" quoted");
         let json = export_vex(&dag, "author \"x\"", "prod");
-        assert!(crate::json::parse(&json).is_ok(), "恶意标题仍须产出合法 JSON");
+        assert!(
+            crate::json::parse(&json).is_ok(),
+            "恶意标题仍须产出合法 JSON"
+        );
     }
 }

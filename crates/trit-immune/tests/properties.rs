@@ -50,7 +50,10 @@ fn gate_rank(g: GateDecision) -> u8 {
 
 /// 临时日志路径（进程 id + 轮次去重；开始前清残留）。
 fn tmp_path(tag: &str, n: u64) -> PathBuf {
-    std::env::temp_dir().join(format!("trit-prop-{tag}-{}-{n}.journal", std::process::id()))
+    std::env::temp_dir().join(format!(
+        "trit-prop-{tag}-{}-{n}.journal",
+        std::process::id()
+    ))
 }
 
 /// 读日志正文（跳过头部），与 tests/sync.rs 的 read_log 同一逻辑。
@@ -170,10 +173,7 @@ fn prop_merge_commutative_random_replicas() {
         // 交换律：两种输入顺序收敛出同一份 DAG
         let m_ab = merge_replicas(vec![(0, sa.clone()), (1, sb.clone())]);
         let m_ba = merge_replicas(vec![(1, sb.clone()), (0, sa.clone())]);
-        assert_eq!(
-            m_ab.dag, m_ba.dag,
-            "round {round}: 合并结果与输入顺序无关"
-        );
+        assert_eq!(m_ab.dag, m_ba.dag, "round {round}: 合并结果与输入顺序无关");
         assert!(
             m_ab.deferred.is_empty() && m_ba.deferred.is_empty(),
             "round {round}: 克隆+追加模型下不应有隔离项"
@@ -198,7 +198,10 @@ fn prop_merge_commutative_random_replicas() {
                 .find(|n| &n.title == title)
                 .unwrap_or_else(|| panic!("round {round}: 节点 {title} 丢失"));
             assert!(
-                matches!(node.verdict, Trit::Vulnerable | Trit::Unknown | Trit::Hardened),
+                matches!(
+                    node.verdict,
+                    Trit::Vulnerable | Trit::Unknown | Trit::Hardened
+                ),
                 "round {round}: {title} 裁决损坏"
             );
         }

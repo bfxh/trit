@@ -282,15 +282,15 @@ mod tests {
         // 模板的无上帝对象承诺是可测的：生成物必须过自身检查
         let files = scaffold("demo-app");
         let violations = audit_discipline(&files, &Discipline::default());
-        assert!(
-            violations.is_empty(),
-            "模板自身违规：{violations:?}"
-        );
+        assert!(violations.is_empty(), "模板自身违规：{violations:?}");
     }
 
     #[test]
     fn discipline_catches_god_file_and_god_module() {
-        let big = (0..500).map(|i| format!("fn filler{i}() {{}}")).collect::<Vec<_>>().join("\n");
+        let big = (0..500)
+            .map(|i| format!("fn filler{i}() {{}}"))
+            .collect::<Vec<_>>()
+            .join("\n");
         let god_mod = (0..20)
             .map(|i| format!("pub fn f{i}() {{}}"))
             .collect::<Vec<_>>()
@@ -301,8 +301,12 @@ mod tests {
         ];
         let v = audit_discipline(&files, &Discipline::default());
         assert_eq!(v.len(), 2);
-        assert!(v.iter().any(|x| x.kind == ViolationKind::GodFile && x.path == "src/big.rs"));
-        assert!(v.iter().any(|x| x.kind == ViolationKind::GodModule && x.actual == 20));
+        assert!(v
+            .iter()
+            .any(|x| x.kind == ViolationKind::GodFile && x.path == "src/big.rs"));
+        assert!(v
+            .iter()
+            .any(|x| x.kind == ViolationKind::GodModule && x.actual == 20));
     }
 
     #[test]
@@ -315,6 +319,9 @@ mod tests {
         assert!(paths.contains(&&"src/storage.rs".to_string()));
         assert!(paths.contains(&&"tests/smoke.rs".to_string()));
         assert!(paths.contains(&&"docs/GOAL.md".to_string()));
-        assert!(paths.contains(&&"docs/UPSTREAM.md".to_string()), "收录规则随模板走");
+        assert!(
+            paths.contains(&&"docs/UPSTREAM.md".to_string()),
+            "收录规则随模板走"
+        );
     }
 }

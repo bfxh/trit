@@ -235,10 +235,7 @@ mod tests {
             "5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843"
         );
         // 广为引用的示例向量
-        let tag = hmac_sha256(
-            b"key",
-            b"The quick brown fox jumps over the lazy dog",
-        );
+        let tag = hmac_sha256(b"key", b"The quick brown fox jumps over the lazy dog");
         assert_eq!(
             hex(&tag),
             "f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8"

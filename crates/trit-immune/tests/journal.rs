@@ -93,8 +93,10 @@ fn journal_roundtrip_recovers_state() {
     assert_eq!(j2.dag(), &snapshot, "重放状态必须与实时状态一致");
     // 未修复的 -1 仍应堵死合并
     assert_eq!(j2.dag().merge_gate(login), GateDecision::Block);
-    j2.record(atk, Trit::Hardened, None, "重放失败").expect("record");
-    j2.record(login, Trit::Hardened, None, "复验").expect("record");
+    j2.record(atk, Trit::Hardened, None, "重放失败")
+        .expect("record");
+    j2.record(login, Trit::Hardened, None, "复验")
+        .expect("record");
     let after = j2.dag().clone();
     j2.into_dag().expect("flush");
 
@@ -136,10 +138,7 @@ fn corrupt_journal_reports_line() {
 
     // 头部不对：直接拒绝
     std::fs::write(&path, "not-a-journal\n").unwrap();
-    assert!(matches!(
-        Journal::open(&path),
-        Err(OpenError::Header(_))
-    ));
+    assert!(matches!(Journal::open(&path), Err(OpenError::Header(_))));
     let _ = std::fs::remove_file(&path);
 }
 
@@ -216,9 +215,7 @@ fn apply_validates_dag_invariants() {
             kind: NodeKind::Delta,
             title: "x".into(),
         }),
-        Err(ApplyError::UnknownParent {
-            parent: NodeId(0)
-        })
+        Err(ApplyError::UnknownParent { parent: NodeId(0) })
     );
     dag.apply(&Delta::Root {
         title: "main".into(),

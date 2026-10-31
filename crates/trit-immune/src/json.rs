@@ -76,7 +76,11 @@ pub fn json_escape(s: &str) -> String {
 /// 解析一段 JSON 文本；尾随内容视为错误。
 pub fn parse(text: &str) -> Result<Json, String> {
     let chars: Vec<char> = text.chars().collect();
-    let mut p = Parser { b: &chars, i: 0, depth: 0 };
+    let mut p = Parser {
+        b: &chars,
+        i: 0,
+        depth: 0,
+    };
     p.skip_ws();
     let v = p.value()?;
     p.skip_ws();
@@ -229,9 +233,7 @@ impl<'a> Parser<'a> {
                     }
                     other => return Err(format!("非法转义 {other:?}")),
                 },
-                Some(c) if (c as u32) < 0x20 => {
-                    return Err("字符串含裸控制字符（必须转义）".into())
-                }
+                Some(c) if (c as u32) < 0x20 => return Err("字符串含裸控制字符（必须转义）".into()),
                 Some(c) => s.push(c),
             }
         }
@@ -274,10 +276,7 @@ mod tests {
         let v = parse(r#"{"a":1,"b":[true,null,"x"],"c":{"d":-2.5e2}}"#).unwrap();
         assert_eq!(v.get("a").unwrap().as_f64(), Some(1.0));
         assert_eq!(v.get("b").unwrap().as_arr().unwrap().len(), 3);
-        assert_eq!(
-            v.get("c").unwrap().get("d").unwrap().as_f64(),
-            Some(-250.0)
-        );
+        assert_eq!(v.get("c").unwrap().get("d").unwrap().as_f64(), Some(-250.0));
     }
 
     #[test]

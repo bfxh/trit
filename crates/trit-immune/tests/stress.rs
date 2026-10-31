@@ -131,7 +131,9 @@ fn scheduler_thousand_tasks_eight_workers() {
 
     let mut dag = ImmuneDag::root("main");
     // 500 个 0 态节点（Review 任务）
-    for i in 0..500 { dag.spawn(NodeId(0), NodeKind::Delta, &format!("任务{i:04}")); }
+    for i in 0..500 {
+        dag.spawn(NodeId(0), NodeKind::Delta, &format!("任务{i:04}"));
+    }
 
     struct NoOpHandler {
         counter: Arc<AtomicUsize>,
@@ -185,9 +187,7 @@ fn scheduler_thousand_tasks_eight_workers() {
 fn six_replicas_sync_and_cross_repo_propagation() {
     let start = Instant::now();
     let mut fleet = Fleet::new();
-    let paths: Vec<std::path::PathBuf> = (0..6u32)
-        .map(|w| temp(&format!("6r-w{w}")))
-        .collect();
+    let paths: Vec<std::path::PathBuf> = (0..6u32).map(|w| temp(&format!("6r-w{w}"))).collect();
 
     // 建 6 个仓：root + 若干节点
     for w in 0..6u32 {
@@ -199,7 +199,9 @@ fn six_replicas_sync_and_cross_repo_propagation() {
             .unwrap();
         j.record(f, Trit::Hardened, None, "通过").unwrap();
         j.into_dag().unwrap();
-        fleet.add(&format!("repo{w}"), Journal::open_as(p, w).unwrap()).unwrap();
+        fleet
+            .add(&format!("repo{w}"), Journal::open_as(p, w).unwrap())
+            .unwrap();
     }
 
     // 跨仓边：repo0 的节点 → repo1..5
@@ -226,11 +228,7 @@ fn six_replicas_sync_and_cross_repo_propagation() {
     for i in 1..6u32 {
         let repo_name = format!("repo{i}");
         let c = &cont[&repo_name];
-        assert_eq!(
-            c[1],
-            Trit::Vulnerable,
-            "repo{i} 的依赖节点应被传染为 -1"
-        );
+        assert_eq!(c[1], Trit::Vulnerable, "repo{i} 的依赖节点应被传染为 -1");
     }
 
     // 合并日志
@@ -243,10 +241,7 @@ fn six_replicas_sync_and_cross_repo_propagation() {
     assert!(!merged.is_empty());
 
     let elapsed = start.elapsed();
-    println!(
-        "六副本：跨仓传播 + 合并 {:?}（6 仓、5 条跨仓边）",
-        elapsed
-    );
+    println!("六副本：跨仓传播 + 合并 {:?}（6 仓、5 条跨仓边）", elapsed);
 
     // 清理
     for p in paths.iter() {
@@ -266,7 +261,11 @@ fn lifecycle_hundred_nodes_cascade_rollback() {
     // 线性链：100 个节点依次依赖
     let ids: Vec<usize> = (0..100)
         .map(|i| {
-            let name = if i == 0 { "设计" } else { &format!("阶段{i}")[..] };
+            let name = if i == 0 {
+                "设计"
+            } else {
+                &format!("阶段{i}")[..]
+            };
             let track = if i < 50 { "ci" } else { "adoption" };
             lc.node(name, track, "PR-1")
         })
@@ -362,7 +361,9 @@ fn full_pipeline_end_to_end() {
         } else {
             format!("fn safe{i}() {{}}")
         };
-        let id = j.spawn(root, NodeKind::Message, &format!("片段{i:02}")).unwrap();
+        let id = j
+            .spawn(root, NodeKind::Message, &format!("片段{i:02}"))
+            .unwrap();
         snippets.push((id.0, code));
     }
     let refs: Vec<(u32, &str)> = snippets.iter().map(|(n, c)| (*n, c.as_str())).collect();
@@ -458,7 +459,9 @@ fn server_hundred_concurrent_requests() {
     let mut j = Journal::create_as(&pa, "main", 0).unwrap();
     let nodes: Vec<NodeId> = (0..10)
         .map(|i| {
-            let n = j.spawn(NodeId(0), NodeKind::Delta, &format!("节点{i}")).unwrap();
+            let n = j
+                .spawn(NodeId(0), NodeKind::Delta, &format!("节点{i}"))
+                .unwrap();
             j.record(n, Trit::Hardened, None, "通过").unwrap();
             n
         })
@@ -491,9 +494,6 @@ fn server_hundred_concurrent_requests() {
     let elapsed = start.elapsed();
     assert_eq!(success.load(Ordering::Relaxed), 100);
 
-    println!(
-        "并发 HTTP：100 请求（10 线程 × 10）{:?}",
-        elapsed
-    );
+    println!("并发 HTTP：100 请求（10 线程 × 10）{:?}", elapsed);
     let _ = std::fs::remove_file(&pa);
 }

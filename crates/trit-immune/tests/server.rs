@@ -64,7 +64,8 @@ fn endpoints_basic_and_scan_ingest() {
     assert!(b.contains("gate=BLOCK"), "扫描证伪后应 BLOCK：{b}");
 
     // 启发式 → 0 → 进待办队列
-    let (s, _) = server::client::post(addr, "/v1/scan", "SNIP\t1\tel.innerHTML = userInput;").unwrap();
+    let (s, _) =
+        server::client::post(addr, "/v1/scan", "SNIP\t1\tel.innerHTML = userInput;").unwrap();
     assert_eq!(s, 200);
     let (s, b) = server::client::get(addr, "/v1/suspects").unwrap();
     assert_eq!(s, 200);
@@ -230,7 +231,8 @@ fn server_handles_concurrent_readers_and_writers() {
     // 写者：两次扫描入账（一次确证 / 一次启发式）+ 一次自帧合并（幂等）
     let (s, _) = server::client::post(addr, "/v1/scan", "SNIP\t1\tsecret = \"k\";").unwrap();
     assert_eq!(s, 200);
-    let (s, _) = server::client::post(addr, "/v1/scan", "SNIP\t2\tSELECT * FROM t\" + user;").unwrap();
+    let (s, _) =
+        server::client::post(addr, "/v1/scan", "SNIP\t2\tSELECT * FROM t\" + user;").unwrap();
     assert_eq!(s, 200);
     let frame = sync::encode_frame(0, &sync::parse_log_file(&pa).unwrap());
     let (s, _) = server::client::post(addr, "/v1/deltas", &frame).unwrap();

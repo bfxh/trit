@@ -191,10 +191,8 @@ mod tests {
 
     #[test]
     fn ingest_creates_zero_state_and_never_plus1() {
-        let pa = std::env::temp_dir().join(format!(
-            "trit-immune-taskmd-{}.journal",
-            std::process::id()
-        ));
+        let pa =
+            std::env::temp_dir().join(format!("trit-immune-taskmd-{}.journal", std::process::id()));
         let _ = std::fs::remove_file(&pa);
         let mut j = Journal::create_as(&pa, "main", 0).unwrap();
         let inbox = j.spawn(NodeId(0), NodeKind::Message, "收件箱").unwrap();
@@ -245,7 +243,8 @@ mod tests {
         assert_eq!(j.dag().node(id).verdict, Trit::Unknown);
 
         // 人工放行后回任务栏
-        j.human_review(id, Trit::Unknown, "人工：确为本人的任务").unwrap();
+        j.human_review(id, Trit::Unknown, "人工：确为本人的任务")
+            .unwrap();
         assert_eq!(taskbar(&j, inbox).len(), 1);
 
         j.into_dag().unwrap();

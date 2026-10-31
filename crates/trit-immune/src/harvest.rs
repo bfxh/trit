@@ -199,7 +199,10 @@ impl Registry {
             esc(&census),
             report.removed.len()
         );
-        let mut f = fs::OpenOptions::new().create(true).append(true).open(&self.path)?;
+        let mut f = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&self.path)?;
         f.write_all(line.as_bytes())?;
         f.write_all(b"\n")?;
         f.flush()?;

@@ -18,9 +18,9 @@
 //! 消费方 `verify(&att, key)` 验签（payload 任何一字节被改都拒绝）。
 
 use crate::auth::{ct_eq, hmac_sha256, sha256};
-use crate::json::json_escape;
 use crate::dag::ImmuneDag;
 use crate::journal::export_dag_tsv;
+use crate::json::json_escape;
 use crate::trit::Trit;
 
 /// 本系统的 predicate 类型标识。
@@ -58,7 +58,13 @@ fn statement_json(title: &str, verdict: Trit, note: &str) -> String {
 /// 产出签名 attestation：subject digest 绑定账本内容，predicate 照实转写
 /// 全部非根节点的当前裁决（`+1` 记 `verified`——不区分 not_affected/fixed，
 /// 那是 [`crate::vex`] 的派生职责）。
-pub fn attest(dag: &ImmuneDag, author: &str, product: &str, key: &[u8], key_id: &str) -> Attestation {
+pub fn attest(
+    dag: &ImmuneDag,
+    author: &str,
+    product: &str,
+    key: &[u8],
+    key_id: &str,
+) -> Attestation {
     // subject digest：账本全量 TSV 的 SHA-256（内容变 → digest 变）
     let ledger_tsv = export_dag_tsv(dag);
     let digest_hex = {
@@ -172,8 +178,7 @@ mod tests {
         );
         // digest 绑定账本：改一个裁决 → digest 变 → payload 变 → 原签名失效
         let mut dag2 = dag.clone();
-        let b = dag2
-            .spawn(NodeId(0), NodeKind::Delta, "TRI003-新发现");
+        let b = dag2.spawn(NodeId(0), NodeKind::Delta, "TRI003-新发现");
         dag2.record(b, Trit::Vulnerable, None, "新漏洞");
         let att2 = attest(&dag2, "red-team", "my-lib", b"k", "k1");
         assert_ne!(att.payload, att2.payload, "账本变了 payload 必须变");

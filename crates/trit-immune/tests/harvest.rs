@@ -23,7 +23,11 @@ fn harvest_cleans_build_artifacts_and_registers() {
     fs::create_dir_all(root.join("target/debug")).unwrap();
     fs::write(root.join("target/debug/app.exe"), b"\x00\x01").unwrap();
     fs::create_dir_all(root.join("node_modules/left-pad")).unwrap();
-    fs::write(root.join("node_modules/left-pad/index.js"), "module.exports=1").unwrap();
+    fs::write(
+        root.join("node_modules/left-pad/index.js"),
+        "module.exports=1",
+    )
+    .unwrap();
     fs::create_dir_all(root.join("__pycache__")).unwrap();
     fs::write(root.join("__pycache__/lib.cpython-311.pyc"), b"\x00").unwrap();
 

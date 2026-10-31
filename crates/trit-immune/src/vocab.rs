@@ -95,7 +95,11 @@ impl Vocabulary {
                 &["混合逻辑时钟", "Hybrid Logical Clock", "物理逻辑混合时钟"],
                 "sync",
                 "物理毫秒 + 逻辑计数 + 写者 id 的因果戳；同写者严格单调",
-                &[("causal", "hlc"), ("ordering", "total"), ("clock", "hybrid")],
+                &[
+                    ("causal", "hlc"),
+                    ("ordering", "total"),
+                    ("clock", "hybrid"),
+                ],
             ),
             Concept::new(
                 "K3",
@@ -156,10 +160,7 @@ impl Vocabulary {
                 &["predictive merge", "合并预测"],
                 "policy",
                 "合并门禁 + 传播后有效裁决作为策略输入，纯函数决策",
-                &[
-                    ("predictor", "immune-dag"),
-                    ("decision", "auto-hold-block"),
-                ],
+                &[("predictor", "immune-dag"), ("decision", "auto-hold-block")],
             ),
         ];
         for c in seeds {
@@ -230,9 +231,9 @@ impl Vocabulary {
 
     /// **标签是解释用的**：按规范名或任意别名查出概念（规范名 + 定义 + 属性）。
     pub fn explain(&self, term: &str) -> Option<&Concept> {
-        self.concepts.iter().find(|c| {
-            c.name == term || c.aliases.iter().any(|a| a == term)
-        })
+        self.concepts
+            .iter()
+            .find(|c| c.name == term || c.aliases.iter().any(|a| a == term))
     }
 
     pub fn concepts(&self) -> &[Concept] {
@@ -296,7 +297,11 @@ mod tests {
             &["SuperStamp"],
             "sync",
             "物理加逻辑的超级因果时间",
-            &[("ordering", "total"), ("causal", "hlc"), ("clock", "hybrid")],
+            &[
+                ("ordering", "total"),
+                ("causal", "hlc"),
+                ("clock", "hybrid"),
+            ],
         );
         match v.register(renamed) {
             Ok(Registration::Duplicate { of }) => assert_eq!(of, "HLC"),
@@ -314,7 +319,11 @@ mod tests {
             &["Vector Clock", "向量钟"],
             "sync",
             "每写者计数的因果戳（无物理混合）",
-            &[("causal", "vector"), ("ordering", "partial"), ("clock", "logical")],
+            &[
+                ("causal", "vector"),
+                ("ordering", "partial"),
+                ("clock", "logical"),
+            ],
         );
         match v.register(partial) {
             // 与 HLC 共享 ("clock","hybrid")? 否——共享的是因果域相关项；

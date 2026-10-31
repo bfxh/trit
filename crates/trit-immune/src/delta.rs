@@ -1,6 +1,6 @@
 //! Delta 编码：DAG 的每次变更都是一条一等公民操作，含文本编解码与应用校验。
 //!
-//! 实时写入与日志重放共用 [`ImmuneDag::apply`] 同一条代码路径；
+//! 实时写入与日志重放共用 `ImmuneDag::apply` 同一条代码路径；
 //! 文本格式为**一行一条 Delta、制表符分字段、字符串转义**（`\\` `\t` `\n` `\r`），
 //! 因此标题/Payload 可以安全携带空格、换行、引号与中文。
 
@@ -31,7 +31,11 @@ pub enum Delta {
     /// 因果链隔离（Prompt 注入污染，沿子树传播）。
     Quarantine { id: NodeId, note: String },
     /// 人工裁决（解除隔离 + 落锤）。
-    HumanReview { id: NodeId, verdict: Trit, note: String },
+    HumanReview {
+        id: NodeId,
+        verdict: Trit,
+        note: String,
+    },
     /// 跨树因果边（依赖 / 污染通道），参与三值传播。
     CrossLink {
         from: NodeId,
@@ -45,10 +49,16 @@ pub enum Delta {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ApplyError {
     RootAlreadyExists,
-    UnknownParent { parent: NodeId },
-    UnknownNode { id: NodeId },
+    UnknownParent {
+        parent: NodeId,
+    },
+    UnknownNode {
+        id: NodeId,
+    },
     /// `ExploitEvidence.target` 指向不存在的节点。
-    UnknownTarget { id: NodeId },
+    UnknownTarget {
+        id: NodeId,
+    },
 }
 
 impl fmt::Display for ApplyError {
@@ -83,7 +93,11 @@ pub fn merge_order(streams: Vec<Vec<Stamped>>) -> Vec<Stamped> {
 pub fn encode(delta: &Delta) -> String {
     match delta {
         Delta::Root { title } => format!("ROOT\t{}", esc(title)),
-        Delta::Spawn { parent, kind, title } => {
+        Delta::Spawn {
+            parent,
+            kind,
+            title,
+        } => {
             format!("SPAWN\t{}\t{}\t{}", parent.0, kind.as_str(), esc(title))
         }
         Delta::Record {
@@ -142,7 +156,11 @@ pub fn parse_line(line: &str) -> Result<Delta, String> {
             let parent = NodeId(num(field(&mut f)?)?);
             let kind = field(&mut f)?.parse::<NodeKind>()?;
             let title = unesc(field(&mut f)?)?;
-            Delta::Spawn { parent, kind, title }
+            Delta::Spawn {
+                parent,
+                kind,
+                title,
+            }
         }
         "RECORD" => {
             let id = NodeId(num(field(&mut f)?)?);

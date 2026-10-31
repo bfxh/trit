@@ -171,10 +171,7 @@ impl ImmuneDag {
         }
         for l in &links {
             if l.from.0 as usize >= nodes.len() || l.to.0 as usize >= nodes.len() {
-                return Err(format!(
-                    "跨树边 #{:02}→#{:02} 端点不存在",
-                    l.from.0, l.to.0
-                ));
+                return Err(format!("跨树边 #{:02}→#{:02} 端点不存在", l.from.0, l.to.0));
             }
         }
         Ok(Self { nodes, links })
@@ -293,7 +290,11 @@ impl ImmuneDag {
                 });
                 Ok(())
             }
-            Delta::Spawn { parent, kind, title } => {
+            Delta::Spawn {
+                parent,
+                kind,
+                title,
+            } => {
                 if parent.0 as usize >= self.nodes.len() {
                     return Err(ApplyError::UnknownParent { parent: *parent });
                 }
@@ -580,7 +581,11 @@ impl ImmuneDag {
             .iter()
             .filter(|n| n.verdict == Trit::Hardened)
             .count();
-        let unknown = self.nodes.iter().filter(|n| n.verdict == Trit::Unknown).count();
+        let unknown = self
+            .nodes
+            .iter()
+            .filter(|n| n.verdict == Trit::Unknown)
+            .count();
         let vulnerable = self
             .nodes
             .iter()

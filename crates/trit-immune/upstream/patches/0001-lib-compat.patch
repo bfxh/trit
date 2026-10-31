@@ -1,9 +1,8 @@
 diff --git a/crates/trit-immune/src/lib.rs b/crates/trit-immune/src/lib.rs
 --- a/crates/trit-immune/src/lib.rs
 +++ b/crates/trit-immune/src/lib.rs
-@@ -42,4 +42,5 @@
+@@ -57,3 +57,4 @@
  pub mod auth;
  pub mod bitparallel;
 +pub mod compat;
  pub mod cull;
- pub mod dag;

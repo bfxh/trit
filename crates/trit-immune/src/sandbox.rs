@@ -30,7 +30,7 @@ impl Sandbox {
 
     /// 确定性预判：该 (标题, 疑点) 组合是否会被打穿（暴露给测试与上层规划用）。
     pub fn will_break(&self, title: &str, suspicion: &str) -> bool {
-        fnv1a(title, suspicion) % 4 == 0
+        fnv1a(title, suspicion).is_multiple_of(4)
     }
 
     /// 对一个 0 态（可疑）节点跑 `rounds` 轮模糊测试。
@@ -45,7 +45,7 @@ impl Sandbox {
     ) -> FuzzReport {
         let h = fnv1a(title, suspicion);
         let rounds = rounds.max(1);
-        if h % 4 == 0 {
+        if h.is_multiple_of(4) {
             let k = (1 + (h / 4) % u64::from(rounds)) as u32;
             let payload = payload_for(&suspected, h);
             FuzzReport {

@@ -377,11 +377,7 @@ mod tests {
     fn classify_routes_three_kinds() {
         // ① 执行既有决策：快速通道 + 契约检查
         assert_eq!(
-            classify(&intake(
-                &[DesignArea::PublicApi],
-                false,
-                Some("ADR-7")
-            )),
+            classify(&intake(&[DesignArea::PublicApi], false, Some("ADR-7"))),
             Routing::ExecuteAdr {
                 adr: "ADR-7".into()
             }
@@ -409,10 +405,7 @@ mod tests {
         assert_eq!(grade(&[]), Tier::LocalReversible);
         assert_eq!(grade(&[DesignArea::PublicApi]), Tier::LightReview);
         assert_eq!(grade(&[DesignArea::DataModel]), Tier::LightReview);
-        assert_eq!(
-            grade(&[DesignArea::IrreversibleMigration]),
-            Tier::FormalRfc
-        );
+        assert_eq!(grade(&[DesignArea::IrreversibleMigration]), Tier::FormalRfc);
         // 混合触及取最高档
         assert_eq!(
             grade(&[DesignArea::PublicApi, DesignArea::CrossTeamContract]),
@@ -435,36 +428,45 @@ mod tests {
             default_approve: false,
             sla: 3,
         });
-        q.route(
-            intake(&[DesignArea::PublicApi], true, None),
-            "author",
-        )
-        .unwrap();
+        q.route(intake(&[DesignArea::PublicApi], true, None), "author")
+            .unwrap();
         q.route(
             intake(&[DesignArea::SecurityBoundary], true, None),
             "author",
         )
         .unwrap();
         // 第二条 Light：不拍板，留给 SLA 默认通过
-        q.route(
-            intake(&[DesignArea::DataModel], true, None),
-            "author",
-        )
-        .unwrap();
+        q.route(intake(&[DesignArea::DataModel], true, None), "author")
+            .unwrap();
         assert_eq!(q.pending().len(), 3);
 
         // owner 拍板：有权
         assert_eq!(q.approve(0, "lead").unwrap(), QueueStatus::Approved);
         // 非 owner 拍板：拒绝（所有权不可代理）
-        assert!(q.approve(1, "lead").is_err(), "LightReview 的 owner 不能拍 FormalRfc");
+        assert!(
+            q.approve(1, "lead").is_err(),
+            "LightReview 的 owner 不能拍 FormalRfc"
+        );
 
         // SLA 走完：未拍板的 Light 默认通过；Formal 升级
         q.tick();
         q.tick();
         q.tick();
-        assert_eq!(q.entries()[0].status, QueueStatus::Approved, "手拍板的不受 SLA 影响");
-        assert_eq!(q.entries()[1].status, QueueStatus::Escalated, "Formal 不默认通过");
-        assert_eq!(q.entries()[2].status, QueueStatus::DefaultApproved, "Light 限时默认通过");
+        assert_eq!(
+            q.entries()[0].status,
+            QueueStatus::Approved,
+            "手拍板的不受 SLA 影响"
+        );
+        assert_eq!(
+            q.entries()[1].status,
+            QueueStatus::Escalated,
+            "Formal 不默认通过"
+        );
+        assert_eq!(
+            q.entries()[2].status,
+            QueueStatus::DefaultApproved,
+            "Light 限时默认通过"
+        );
         assert!(q.pending().is_empty());
     }
 

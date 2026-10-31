@@ -236,11 +236,10 @@ impl Journal {
             if line.trim().is_empty() {
                 continue;
             }
-            let (ts, d) = parse_stamped_line(line)
-                .map_err(|message| OpenError::Parse {
-                    line: line_offset + i + 1,
-                    message,
-                })?;
+            let (ts, d) = parse_stamped_line(line).map_err(|message| OpenError::Parse {
+                line: line_offset + i + 1,
+                message,
+            })?;
             if let Some(prev) = prev_stamp {
                 if ts <= prev {
                     return Err(OpenError::Parse {
@@ -482,7 +481,9 @@ pub fn parse_stamped_line(line: &str) -> Result<(Hlc, Delta), String> {
 /// 行序 = 节点 id 升序；title 内的制表符已替换为空格（TSV 保持可解析）。
 /// 账本导出归 journal 域：内核模块（attest 等）依赖它，不随工具层门控。
 pub fn export_dag_tsv(dag: &ImmuneDag) -> String {
-    let mut s = String::from("# trit-immune dag export v1\n# id\tparent\tkind\tverdict\tquarantined\ttitle\n");
+    let mut s = String::from(
+        "# trit-immune dag export v1\n# id\tparent\tkind\tverdict\tquarantined\ttitle\n",
+    );
     for n in dag.nodes() {
         let parent = match n.parent {
             Some(p) => p.0.to_string(),

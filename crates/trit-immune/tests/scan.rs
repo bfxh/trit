@@ -51,7 +51,11 @@ fn fold_takes_the_worst_across_rules() {
     );
     let folds = report.fold_by_node();
     assert_eq!(folds.len(), 1);
-    assert_eq!(folds[0].verdict, Trit::Vulnerable, "Dispositive 压过 Heuristic");
+    assert_eq!(
+        folds[0].verdict,
+        Trit::Vulnerable,
+        "Dispositive 压过 Heuristic"
+    );
     assert_eq!(folds[0].rules.len(), 2);
 }
 

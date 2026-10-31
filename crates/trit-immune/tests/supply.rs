@@ -22,7 +22,10 @@ fn pin(name: &str, ver: &str, sum: Option<&str>) -> Pin {
 
 #[test]
 fn supply_added_dependency_is_vulnerable() {
-    let base = vec![pin("serde", "1.0.200", Some("aa11")), pin("libc", "0.2.150", Some("bb22"))];
+    let base = vec![
+        pin("serde", "1.0.200", Some("aa11")),
+        pin("libc", "0.2.150", Some("bb22")),
+    ];
     // 半夜多出一个包
     let now = vec![
         pin("serde", "1.0.200", Some("aa11")),
@@ -94,8 +97,14 @@ fn supply_baseline_roundtrip_and_fingerprint() {
     // 清单指纹：改一个字节即可检测
     let toml_before = b"[dependencies]\nserde = \"1.0.200\"\n";
     let toml_after = b"[dependencies]\nserde = \"1.0.999\"\n";
-    assert_eq!(supply::fingerprint(toml_before), supply::fingerprint(toml_before));
-    assert_ne!(supply::fingerprint(toml_before), supply::fingerprint(toml_after));
+    assert_eq!(
+        supply::fingerprint(toml_before),
+        supply::fingerprint(toml_before)
+    );
+    assert_ne!(
+        supply::fingerprint(toml_before),
+        supply::fingerprint(toml_after)
+    );
 }
 
 // ── 场景 6：解析真实形态 Cargo.lock（多行 dependencies 数组、其它段） ────
@@ -132,7 +141,11 @@ checksum = "def456"
 "#;
     let pins = supply::parse_lock(text);
     let names: Vec<&str> = pins.iter().map(|p| p.name.as_str()).collect();
-    assert_eq!(names, vec!["my-app", "libc", "serde"], "[[patch.unused]] 不计入");
+    assert_eq!(
+        names,
+        vec!["my-app", "libc", "serde"],
+        "[[patch.unused]] 不计入"
+    );
     assert_eq!(pins[0].checksum, None, "workspace 成员无 checksum");
     assert_eq!(pins[1].checksum.as_deref(), Some("abc123"));
 }
@@ -154,7 +167,12 @@ fn supply_findings_drive_merge_gate_block() {
     let now = vec![pin("serde", "1.0.200", Some("EVIL"))];
     for f in supply::audit(&now, &base) {
         if f.verdict == Trit::Vulnerable {
-            dag.record(tip, Trit::Vulnerable, None, &format!("supply:{}:{}", f.name, f.kind as u8 as char));
+            dag.record(
+                tip,
+                Trit::Vulnerable,
+                None,
+                &format!("supply:{}:{}", f.name, f.kind as u8 as char),
+            );
         }
     }
 
@@ -179,10 +197,7 @@ fn supply_findings_drive_merge_gate_block() {
 #[cfg(feature = "full")]
 #[test]
 fn supply_intake_pipeline_records_findings_and_blocks_gate() {
-    let p = std::env::temp_dir().join(format!(
-        "trit-supply-intake-{}.journal",
-        std::process::id()
-    ));
+    let p = std::env::temp_dir().join(format!("trit-supply-intake-{}.journal", std::process::id()));
     let _ = std::fs::remove_file(&p);
 
     let mut j = Journal::create_as(&p, "supply-intake", 0).unwrap();
@@ -191,10 +206,22 @@ fn supply_intake_pipeline_records_findings_and_blocks_gate() {
     j.record(rel, Trit::Hardened, None, "基线审计通过").unwrap();
 
     // 基线：serde 已锁定；当前锁文件：serde 被换 checksum + 多出未知包
-    let baseline = vec![Pin { name: "serde".into(), version: "1.0.200".into(), checksum: Some("good".into()) }];
+    let baseline = vec![Pin {
+        name: "serde".into(),
+        version: "1.0.200".into(),
+        checksum: Some("good".into()),
+    }];
     let lock_now = vec![
-        Pin { name: "serde".into(), version: "1.0.200".into(), checksum: Some("EVIL".into()) },
-        Pin { name: "mystery".into(), version: "0.0.1".into(), checksum: None },
+        Pin {
+            name: "serde".into(),
+            version: "1.0.200".into(),
+            checksum: Some("EVIL".into()),
+        },
+        Pin {
+            name: "mystery".into(),
+            version: "0.0.1".into(),
+            checksum: None,
+        },
     ];
 
     let n = intake::intake_supply(&mut j, rel, "nightly-audit", &lock_now, &baseline).unwrap();
@@ -214,7 +241,11 @@ fn supply_intake_pipeline_records_findings_and_blocks_gate() {
 
     // 门禁：release 节点的因果链含两条 -1 → 不得放行
     let gate = dag.merge_gate(rel);
-    assert_ne!(gate, GateDecision::Allow, "供应链投毒后不得放行，实际 {gate:?}");
+    assert_ne!(
+        gate,
+        GateDecision::Allow,
+        "供应链投毒后不得放行，实际 {gate:?}"
+    );
     drop(j2);
     let _ = std::fs::remove_file(&p);
 }

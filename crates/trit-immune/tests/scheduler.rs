@@ -27,8 +27,12 @@ impl scheduler::Handler for DagHandler<'_> {
             }
             Task::Refactor { node, fan_in } => {
                 let v = self.dag.node(*node).verdict;
-                self.dag
-                    .record(*node, v, None, &format!("调度：重构建议（扇入 {fan_in}）已记录"));
+                self.dag.record(
+                    *node,
+                    v,
+                    None,
+                    &format!("调度：重构建议（扇入 {fan_in}）已记录"),
+                );
                 Ok(())
             }
         }
@@ -60,9 +64,7 @@ fn drain_reaches_fixed_point_on_dag() {
         assert!(rounds <= 3, "有界：破模块轮 → 攻击轮 → 收尾轮");
         let plan = drain_plan(&dag, 2);
         // 收敛判据只看 Review/Fix——Refactor 是给人看的设计建议（0 态主权），不阻断
-        let has_work = plan
-            .iter()
-            .any(|t| !matches!(t, Task::Refactor { .. }));
+        let has_work = plan.iter().any(|t| !matches!(t, Task::Refactor { .. }));
         if !has_work {
             assert!(
                 plan.iter().any(|t| matches!(t, Task::Refactor { .. })),
@@ -85,10 +87,7 @@ fn drain_reaches_fixed_point_on_dag() {
 
 #[test]
 fn journal_handler_drains_suspects_end_to_end() {
-    let pa = std::env::temp_dir().join(format!(
-        "trit-immune-sched-{}.journal",
-        std::process::id()
-    ));
+    let pa = std::env::temp_dir().join(format!("trit-immune-sched-{}.journal", std::process::id()));
     let _ = std::fs::remove_file(&pa);
 
     let mut j = Journal::create_as(&pa, "main", 0).unwrap();
@@ -97,8 +96,7 @@ fn journal_handler_drains_suspects_end_to_end() {
     let atk = j.spawn(v, NodeKind::AttackVector, "攻击").unwrap();
     j.record(atk, Trit::Vulnerable, None, "打穿")
         .expect("record");
-    j.record(v, Trit::Vulnerable, None, "证伪")
-        .expect("record");
+    j.record(v, Trit::Vulnerable, None, "证伪").expect("record");
     j.into_dag().unwrap();
 
     let mut j = Journal::open_as(&pa, 0).unwrap();
@@ -110,10 +108,7 @@ fn journal_handler_drains_suspects_end_to_end() {
         rounds += 1;
         assert!(rounds <= 3, "有界：破模块轮 → 攻击轮");
         let plan = drain_plan(j.dag(), 10);
-        if plan
-            .iter()
-            .all(|t| matches!(t, Task::Refactor { .. }))
-        {
+        if plan.iter().all(|t| matches!(t, Task::Refactor { .. })) {
             break;
         }
         let mut h = JournalHandler { journal: &mut j };

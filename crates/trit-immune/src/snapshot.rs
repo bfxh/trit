@@ -150,7 +150,12 @@ pub fn parse(text: &str) -> Result<(ImmuneDag, SnapshotMeta), String> {
         match f.next().unwrap_or("") {
             "NODE" => {
                 let bad = || format!("第 {line_no} 行 NODE 不合法");
-                let id = NodeId(f.next().ok_or_else(bad)?.parse::<u32>().map_err(|_| bad())?);
+                let id = NodeId(
+                    f.next()
+                        .ok_or_else(bad)?
+                        .parse::<u32>()
+                        .map_err(|_| bad())?,
+                );
                 if id.0 as usize != nodes.len() {
                     return Err(format!(
                         "节点 id 不连续：期望 #{:02}，遇到 #{:02}",
@@ -196,14 +201,29 @@ pub fn parse(text: &str) -> Result<(ImmuneDag, SnapshotMeta), String> {
             }
             "LINK" => {
                 let bad = || format!("第 {line_no} 行 LINK 不合法");
-                let from = NodeId(f.next().ok_or_else(bad)?.parse::<u32>().map_err(|_| bad())?);
-                let to = NodeId(f.next().ok_or_else(bad)?.parse::<u32>().map_err(|_| bad())?);
+                let from = NodeId(
+                    f.next()
+                        .ok_or_else(bad)?
+                        .parse::<u32>()
+                        .map_err(|_| bad())?,
+                );
+                let to = NodeId(
+                    f.next()
+                        .ok_or_else(bad)?
+                        .parse::<u32>()
+                        .map_err(|_| bad())?,
+                );
                 let pass = f.next().ok_or_else(bad)?.parse::<Trit>()?;
                 let note = delta::unesc(f.next().ok_or_else(bad)?)?;
                 if f.next().is_some() {
                     return Err(bad());
                 }
-                links.push(CrossLink { from, to, pass, note });
+                links.push(CrossLink {
+                    from,
+                    to,
+                    pass,
+                    note,
+                });
             }
             other => return Err(format!("未知快照记录 {other:?}")),
         }
@@ -275,9 +295,11 @@ mod tests {
         };
         let text = encode(&dag, &meta);
         // 单行承诺：EV 里的多行 payload/note 不能把记录劈开
-        assert!(text
-            .lines()
-            .all(|l| l.starts_with("trit-immune") || l.starts_with("COVERED") || l.starts_with("NODE") || l.starts_with("EV") || l.starts_with("LINK")));
+        assert!(text.lines().all(|l| l.starts_with("trit-immune")
+            || l.starts_with("COVERED")
+            || l.starts_with("NODE")
+            || l.starts_with("EV")
+            || l.starts_with("LINK")));
         let (dag2, meta2) = parse(&text).unwrap();
         assert_eq!(dag2, dag);
         assert_eq!(meta2, meta);

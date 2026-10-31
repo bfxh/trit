@@ -37,13 +37,15 @@ fn snapshot_roundtrip_preserves_exact_state() {
     )
     .expect("record");
     let pay = j.spawn(NodeId(0), NodeKind::Delta, "支付").expect("spawn");
-    j.record(pay, Trit::Hardened, None, "自身通过").expect("record");
+    j.record(pay, Trit::Hardened, None, "自身通过")
+        .expect("record");
     j.cross_link(login, pay, Trit::Vulnerable, "支付复用登录会话解析")
         .expect("link");
     let docs = j.spawn(NodeId(0), NodeKind::Delta, "文档").expect("spawn");
     let page = j.spawn(docs, NodeKind::Message, "外部网页").expect("spawn");
     j.quarantine(page, "注入模式").expect("quarantine");
-    j.human_review(page, Trit::Hardened, "复核无注入").expect("review");
+    j.human_review(page, Trit::Hardened, "复核无注入")
+        .expect("review");
 
     j.snapshot().expect("写快照");
     let saved = j.into_dag().expect("flush");
@@ -58,8 +60,10 @@ fn snapshot_roundtrip_preserves_exact_state() {
     );
 
     // 快照之后追加 → 下次打开只重放尾部增量
-    j2.record(atk, Trit::Hardened, None, "重放失败").expect("record");
-    j2.record(login, Trit::Hardened, None, "补丁复验").expect("record");
+    j2.record(atk, Trit::Hardened, None, "重放失败")
+        .expect("record");
+    j2.record(login, Trit::Hardened, None, "补丁复验")
+        .expect("record");
     let after = j2.dag().clone();
     j2.into_dag().expect("flush");
 

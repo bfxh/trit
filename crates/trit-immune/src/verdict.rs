@@ -83,8 +83,17 @@ mod tests {
 
     #[test]
     fn gate_is_kleene_and() {
-        assert_eq!(merge_gate([Trit::Hardened, Trit::Hardened]), GateDecision::Allow);
-        assert_eq!(merge_gate([Trit::Hardened, Trit::Unknown]), GateDecision::Freeze);
-        assert_eq!(merge_gate([Trit::Unknown, Trit::Vulnerable]), GateDecision::Block);
+        assert_eq!(
+            merge_gate([Trit::Hardened, Trit::Hardened]),
+            GateDecision::Allow
+        );
+        assert_eq!(
+            merge_gate([Trit::Hardened, Trit::Unknown]),
+            GateDecision::Freeze
+        );
+        assert_eq!(
+            merge_gate([Trit::Unknown, Trit::Vulnerable]),
+            GateDecision::Block
+        );
     }
 }

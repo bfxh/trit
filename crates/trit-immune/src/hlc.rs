@@ -56,9 +56,21 @@ impl FromStr for Hlc {
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let bad = || format!("非法 HLC 戳 {s:?}（应为 物理:计数:写者）");
         let mut f = s.splitn(3, ':');
-        let physical_ms = f.next().ok_or_else(bad)?.parse::<u64>().map_err(|_| bad())?;
-        let counter = f.next().ok_or_else(bad)?.parse::<u32>().map_err(|_| bad())?;
-        let writer = f.next().ok_or_else(bad)?.parse::<u32>().map_err(|_| bad())?;
+        let physical_ms = f
+            .next()
+            .ok_or_else(bad)?
+            .parse::<u64>()
+            .map_err(|_| bad())?;
+        let counter = f
+            .next()
+            .ok_or_else(bad)?
+            .parse::<u32>()
+            .map_err(|_| bad())?;
+        let writer = f
+            .next()
+            .ok_or_else(bad)?
+            .parse::<u32>()
+            .map_err(|_| bad())?;
         Ok(Self {
             physical_ms,
             counter,
@@ -176,7 +188,10 @@ mod tests {
     fn physical_jump_forward_resets_counter() {
         let ms = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1000));
         let ms2 = std::sync::Arc::clone(&ms);
-        let mut c = Clock::with_now(1, Box::new(move || ms2.load(std::sync::atomic::Ordering::Relaxed)));
+        let mut c = Clock::with_now(
+            1,
+            Box::new(move || ms2.load(std::sync::atomic::Ordering::Relaxed)),
+        );
         let t1 = c.tick();
         ms.store(2000, std::sync::atomic::Ordering::Relaxed);
         let t2 = c.tick();
@@ -189,7 +204,10 @@ mod tests {
     fn physical_backwards_keeps_causality() {
         let ms = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1000));
         let ms2 = std::sync::Arc::clone(&ms);
-        let mut c = Clock::with_now(1, Box::new(move || ms2.load(std::sync::atomic::Ordering::Relaxed)));
+        let mut c = Clock::with_now(
+            1,
+            Box::new(move || ms2.load(std::sync::atomic::Ordering::Relaxed)),
+        );
         let t1 = c.tick();
         ms.store(500, std::sync::atomic::Ordering::Relaxed);
         let t2 = c.tick();

@@ -165,7 +165,9 @@ mod tests {
         let rules = CullRules::default();
         let actions = cull(&mut dag, &rules);
         assert!(
-            actions.iter().any(|a| matches!(a, CullAction::QuarantineChronic { node, .. } if *node == n)),
+            actions
+                .iter()
+                .any(|a| matches!(a, CullAction::QuarantineChronic { node, .. } if *node == n)),
             "3 次 -1 应触发自动隔离"
         );
         assert!(dag.node(n).quarantined, "隔离标记生效");
@@ -182,7 +184,9 @@ mod tests {
         let rules = CullRules::default();
         let actions = cull(&mut dag, &rules);
         assert!(
-            !actions.iter().any(|a| matches!(a, CullAction::QuarantineChronic { node, .. } if *node == n)),
+            !actions
+                .iter()
+                .any(|a| matches!(a, CullAction::QuarantineChronic { node, .. } if *node == n)),
             "阈值未到不应隔离"
         );
     }
@@ -198,10 +202,18 @@ mod tests {
         let rules = CullRules::default();
         let actions = cull(&mut dag, &rules);
         assert!(
-            actions.iter().any(|a| matches!(a, CullAction::EscalateStale { node, .. } if *node == n)),
+            actions
+                .iter()
+                .any(|a| matches!(a, CullAction::EscalateStale { node, .. } if *node == n)),
             "5 次 0 应升级人工"
         );
         // 历史 +1（升级留痕）
-        assert!(dag.node(n).history.last().unwrap().note.contains("升级人工"));
+        assert!(dag
+            .node(n)
+            .history
+            .last()
+            .unwrap()
+            .note
+            .contains("升级人工"));
     }
 }

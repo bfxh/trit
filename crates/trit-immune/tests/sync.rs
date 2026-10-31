@@ -32,21 +32,25 @@ fn two_replicas_converge_regardless_of_merge_order() {
     let atk = a
         .spawn(login, NodeKind::AttackVector, "SQLi")
         .expect("spawn");
-    a.record(atk, Trit::Vulnerable, None, "打穿").expect("record");
+    a.record(atk, Trit::Vulnerable, None, "打穿")
+        .expect("record");
     a.into_dag().expect("flush");
 
     // 副本 B = 克隆 A 的日志文件，写者 1，继续追加自己的工作
     std::fs::copy(&pa, &pb).expect("克隆日志");
     let mut b = Journal::open_as(&pb, 1).expect("open B");
     let pay = b.spawn(NodeId(0), NodeKind::Delta, "支付").expect("spawn");
-    b.record(pay, Trit::Hardened, None, "自身通过").expect("record");
-    b.record(login, Trit::Hardened, None, "B 复验共享节点").expect("record");
+    b.record(pay, Trit::Hardened, None, "自身通过")
+        .expect("record");
+    b.record(login, Trit::Hardened, None, "B 复验共享节点")
+        .expect("record");
     b.into_dag().expect("flush");
 
     // A 继续追加
     let mut a = Journal::open_as(&pa, 0).expect("reopen A");
     let docs = a.spawn(NodeId(0), NodeKind::Delta, "文档").expect("spawn");
-    a.record(docs, Trit::Hardened, None, "A 的文档模块").expect("record");
+    a.record(docs, Trit::Hardened, None, "A 的文档模块")
+        .expect("record");
     a.into_dag().expect("flush");
 
     let sa = read_log(&pa);
@@ -55,7 +59,11 @@ fn two_replicas_converge_regardless_of_merge_order() {
     let m2 = merge_replicas(vec![(1, sb), (0, sa)]);
 
     assert_eq!(m1.dag, m2.dag, "合并结果与输入顺序无关（确定性收敛）");
-    assert!(m1.deferred.is_empty(), "克隆+追加模型下不应有隔离项：{:?}", m1.deferred);
+    assert!(
+        m1.deferred.is_empty(),
+        "克隆+追加模型下不应有隔离项：{:?}",
+        m1.deferred
+    );
     assert_eq!(m1.skipped_roots, 0, "克隆副本的根与原根同戳，去重即消");
     // 节点数 = 根 + A 的 3 个（登录/SQLi/文档）+ B 的 1 个（支付）
     assert_eq!(m1.dag.nodes().len(), 5);
@@ -63,7 +71,11 @@ fn two_replicas_converge_regardless_of_merge_order() {
 
     // 共享节点复验落在正确的全局节点上（B 的裁决没有串到别人头上）
     let login_node = m1.dag.nodes().iter().find(|n| n.title == "登录").unwrap();
-    assert_eq!(login_node.verdict, Trit::Hardened, "B 对共享节点的复验应生效");
+    assert_eq!(
+        login_node.verdict,
+        Trit::Hardened,
+        "B 对共享节点的复验应生效"
+    );
     // 各自的新节点各得其所
     let pay = m1.dag.nodes().iter().find(|n| n.title == "支付").unwrap();
     assert_eq!(pay.verdict, Trit::Hardened);
@@ -89,11 +101,13 @@ fn concurrent_verdicts_last_write_wins_keeps_both_events() {
 
     std::fs::copy(&pa, &pb).expect("克隆日志");
     let mut b = Journal::open_as(&pb, 1).expect("open B");
-    b.record(login, Trit::Hardened, None, "B 判安全").expect("record");
+    b.record(login, Trit::Hardened, None, "B 判安全")
+        .expect("record");
     b.into_dag().expect("flush");
 
     let mut a = Journal::open_as(&pa, 0).expect("reopen A");
-    a.record(login, Trit::Vulnerable, None, "A 判漏洞").expect("record");
+    a.record(login, Trit::Vulnerable, None, "A 判漏洞")
+        .expect("record");
     a.into_dag().expect("flush");
 
     let sa = read_log(&pa);
@@ -114,10 +128,13 @@ fn concurrent_verdicts_last_write_wins_keeps_both_events() {
         .find(|s| matches!(&s.delta, Delta::Record { note, .. } if note == "B 判安全"))
         .map(|s| s.ts)
         .unwrap();
-    let expected = if ts_a > ts_b { Trit::Vulnerable } else { Trit::Hardened };
+    let expected = if ts_a > ts_b {
+        Trit::Vulnerable
+    } else {
+        Trit::Hardened
+    };
     assert_eq!(
-        login_node.verdict,
-        expected,
+        login_node.verdict, expected,
         "后到者胜（ts_a={ts_a}, ts_b={ts_b}）"
     );
 
@@ -266,7 +283,8 @@ fn anti_entropy_makes_files_identical_and_repeats() {
     let atk = a
         .spawn(login, NodeKind::AttackVector, "SQLi")
         .expect("spawn");
-    a.record(atk, Trit::Vulnerable, None, "打穿").expect("record");
+    a.record(atk, Trit::Vulnerable, None, "打穿")
+        .expect("record");
     a.into_dag().unwrap();
 
     // 副本 B = 克隆 + 自己的支付模块
@@ -320,7 +338,8 @@ fn tcp_roundtrip_converges() {
 
     let mut a = Journal::create_as(&pa, "main", 0).expect("create A");
     let login = a.spawn(NodeId(0), NodeKind::Delta, "登录").expect("spawn");
-    a.record(login, Trit::Hardened, None, "A 通过").expect("record");
+    a.record(login, Trit::Hardened, None, "A 通过")
+        .expect("record");
     a.into_dag().unwrap();
 
     std::fs::copy(&pa, &pb).unwrap();
@@ -426,7 +445,11 @@ fn tcp_with_wrong_psk_is_rejected_both_ways() {
     assert!(handle.join().unwrap(), "服务端应拒绝错钥帧");
     // 双方文件都没被污染：B 未采纳任何东西
     let b_log = std::fs::read_to_string(&pb).unwrap();
-    assert_eq!(b_log.lines().count(), 4, "B 的日志保持克隆时的 3 条 Delta + 头");
+    assert_eq!(
+        b_log.lines().count(),
+        4,
+        "B 的日志保持克隆时的 3 条 Delta + 头"
+    );
 
     let _ = std::fs::remove_file(&pa);
     let _ = std::fs::remove_file(&pb);

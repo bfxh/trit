@@ -147,11 +147,13 @@ fn strip_toml_str(after_key: &str) -> Option<String> {
 /// 基线 vs 当前锁文件比对。主键 = (name, version)（Cargo.lock 允许同名多版本并存）。
 pub fn audit(lock: &[Pin], baseline: &[Pin]) -> Vec<SupplyFinding> {
     let key = |p: &Pin| (p.name.clone(), p.version.clone());
-    let mut base: std::collections::BTreeMap<(String, String), &Pin> = std::collections::BTreeMap::new();
+    let mut base: std::collections::BTreeMap<(String, String), &Pin> =
+        std::collections::BTreeMap::new();
     for p in baseline {
         base.entry(key(p)).or_insert(p);
     }
-    let mut now: std::collections::BTreeMap<(String, String), &Pin> = std::collections::BTreeMap::new();
+    let mut now: std::collections::BTreeMap<(String, String), &Pin> =
+        std::collections::BTreeMap::new();
     for p in lock {
         now.entry(key(p)).or_insert(p);
     }
