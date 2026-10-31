@@ -205,6 +205,8 @@ fn run(argv: &[String]) {
     let mut manifest = None;
     let mut outdir = PathBuf::from(".");
     let mut backend = String::from("wgpu");
+    let mut max_part: f64 = 0.6;
+    let mut min_part: f64 = 0.003;
     let mut i = 1;
     while i < argv.len() {
         match argv[i].as_str() {
@@ -226,6 +228,14 @@ fn run(argv: &[String]) {
             }
             "--backend" => {
                 backend = argv[i + 1].clone();
+                i += 2;
+            }
+            "--max-part" => {
+                max_part = argv[i + 1].parse().unwrap_or(max_part);
+                i += 2;
+            }
+            "--min-part" => {
+                min_part = argv[i + 1].parse().unwrap_or(min_part);
                 i += 2;
             }
             other => {
@@ -302,6 +312,13 @@ fn run(argv: &[String]) {
         if !pl.contains(id) {
             unk += 1;
         }
+    }
+    let frac = parts as f64 / hw as f64;
+    if frac > max_part || frac < min_part {
+        eprintln!(
+            "⚠️ 域外嫌疑：部件像素占比 {:.3} 不在 [{:.3}, {:.3}] —— 这张图很可能不是训练过的装配体；输出仍写出，但勿直接下游使用",
+            frac, min_part, max_part
+        );
     }
     std::fs::create_dir_all(&outdir).ok();
     let bin: Vec<u8> = ids.iter().flat_map(|v| v.to_le_bytes()).collect();
