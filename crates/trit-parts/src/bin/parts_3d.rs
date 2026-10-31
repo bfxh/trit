@@ -1638,8 +1638,17 @@ fn tex_prior_cmd(argv: &[String]) {
         }
         None => kinds.iter().map(|k| gray(k, seed)).collect(),
     };
+    // **固定留出最前 2 张**（按文件名排序）：换数据量时评测集不变，数字才可比
     let n_eval = 2usize.min(images.len() - 1);
-    let (train_imgs, eval_imgs) = images.split_at(images.len() - n_eval);
+    let (eval_imgs, all_train) = images.split_at(n_eval);
+    let train_cap: usize = arg(argv, "--train-imgs")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let train_imgs: &[Vec<f32>] = if train_cap > 0 && train_cap < all_train.len() {
+        &all_train[..train_cap]
+    } else {
+        all_train
+    };
 
     let mut train: Vec<(Vec<f32>, f32)> = Vec::new();
     for (ki, g) in train_imgs.iter().enumerate() {
@@ -1673,19 +1682,17 @@ fn tex_prior_cmd(argv: &[String]) {
     }
 
     let psnr_of = |mlp: &Mlp, g: &[f32], ci: Option<usize>, nxt: &mut dyn FnMut() -> f32| -> f64 {
-        let (mut se_in, mut se_out, mut cnt) = (0.0f64, 0.0f64, 0usize);
+        let (mut se_out, mut cnt) = (0.0f64, 0usize);
         for y in 0..n {
             for x in 0..n {
                 let (f, clean) = feats(g, x, y, ci, nxt);
                 let (logit, _) = mlp.forward(&f);
                 let pred = 1.0 / (1.0 + (-logit).exp());
-                se_in += f64::from((f[(patch * patch) / 2] - clean).powi(2));
                 se_out += f64::from((pred - clean).powi(2));
                 cnt += 1;
             }
         }
-        10.0 * (1.0 / (se_in / cnt as f64)).log10() * 0.0
-            + 10.0 * (1.0 / (se_out / cnt as f64)).log10()
+        10.0 * (1.0 / (se_out / cnt as f64)).log10()
     };
     let mut good = Vec::new();
     let mut wrong = Vec::new();
@@ -1709,7 +1716,14 @@ fn tex_prior_cmd(argv: &[String]) {
         } else {
             f64::NAN
         };
-        println!("留出 {name}: 正确条件 {p_ok:.2} dB  错误条件 {p_bad:.2} dB");
+        println!(
+            "留出 {name}: 正确条件 {p_ok:.2} dB{}",
+            if cond {
+                format!("  错误条件 {p_bad:.2} dB")
+            } else {
+                String::new()
+            }
+        );
         good.push(p_ok);
         if cond {
             wrong.push(p_bad);
@@ -1889,13 +1903,13 @@ fn tex_gen_cmd(argv: &[String]) {
     let eval_seed: u64 = arg(argv, "--eval-seed")
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
-    let lr: f32 = arg(argv, "--lr")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.01);
+    // 0.003 是实测能收敛的档；0.01 在真实材质上会从 loss 0.62 涨到 6.48（GENERAL-PLAN §6.21）
+    let lr: f32 = arg(argv, "--lr").and_then(|v| v.parse().ok()).unwrap_or(0.003);
     let hid: usize = arg(argv, "--hid")
         .and_then(|v| v.parse().ok())
         .unwrap_or(32);
     let outdir = arg(argv, "--out").map(PathBuf::from);
+    let data_dir = arg(argv, "--data").map(PathBuf::from);
     let patch: usize = arg(argv, "--patch")
         .and_then(|v| v.parse().ok())
         .unwrap_or(3);
@@ -1909,14 +1923,46 @@ fn tex_gen_cmd(argv: &[String]) {
     };
     let sched = Schedule::cosine(steps);
     let abar = sched.abar();
-    let mut d = PatchMlp::new(patch, kinds.len(), hid, seed);
+    // 数据源：--data <dir> 用真实材质（每张图一个样本，无条件）；否则程序化材质
+    let images: Vec<Vec<f32>> = match &data_dir {
+        Some(dir) => {
+            let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
+                .unwrap_or_else(|e| fail(&format!("读不了 {}: {e}", dir.display())))
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|p| p.extension().is_some_and(|x| x == "png"))
+                .collect();
+            files.sort();
+            if files.len() < 3 {
+                fail("--data 至少 3 张 PNG");
+            }
+            files
+                .iter()
+                .map(|f| {
+                    let (w0, h0, pix) = trit_parts::data::read_rgb(f).unwrap_or_else(|e| fail(&e));
+                    let rgb = if w0 == n && h0 == n {
+                        pix
+                    } else {
+                        trit_parts::data::resize_rgb(w0, h0, &pix, n)
+                    };
+                    rgb.as_chunks::<3>()
+                        .0
+                        .iter()
+                        .map(|c| 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2])
+                        .collect()
+                })
+                .collect()
+        }
+        None => kinds.iter().map(|k| gray(k, seed)).collect(),
+    };
+    let conds = if data_dir.is_some() { 0 } else { kinds.len() };
+    let mut d = PatchMlp::new(patch, conds, hid, seed);
     let mut rng: u64 = 0x9E37_79B9_7F4A_7C15 ^ seed;
     let mut loss = 0.0f64;
     for step in 0..iters {
-        let ki = (step * 7919) % kinds.len();
-        let sd = seed + ki as u64 + (step / 97) as u64 % 7;
-        let g = gray(kinds[ki], sd);
-        loss += d.train_shard(&g, &abar, Some(ki), n, n, lr, 64, &mut rng) as f64;
+        let ki = (step * 7919) % images.len();
+        let g = images[ki].clone();
+        loss += d.train_shard(&g, &abar, None, n, n, lr, 64, &mut rng) as f64;
         if (step + 1) % 2000 == 0 {
             println!("  step {} loss {:.4}", step + 1, loss / 2000.0);
             loss = 0.0;
@@ -1959,33 +2005,32 @@ fn tex_gen_cmd(argv: &[String]) {
         (m, var.sqrt())
     };
     let patch_dist = |img: &[f32], data: &[f32]| -> f32 {
-        // 每 8 像素取一个 3×3 补丁，报生成补丁到真实补丁的最小 L2 均值
+        // 每 8 像素取一个 patch² 补丁，报生成补丁到真实补丁的最小 L2 均值
         let stride = 8usize;
-        let mut refs: Vec<[f32; 9]> = Vec::new();
-        for y in (1..n - 1).step_by(stride) {
-            for x in (1..n - 1).step_by(stride) {
-                let mut p = [0.0f32; 9];
-                for dy in 0..3 {
-                    for dx in 0..3 {
-                        p[dy * 3 + dx] = data[(y + dy - 1) * n + x + dx - 1];
-                    }
+        let half = patch / 2;
+        let grab = |src: &[f32], x: usize, y: usize| -> Vec<f32> {
+            let mut p = Vec::with_capacity(patch * patch);
+            for dy in 0..patch {
+                for dx in 0..patch {
+                    p.push(src[(y + dy - half) * n + x + dx - half]);
                 }
-                refs.push(p);
+            }
+            p
+        };
+        let mut refs: Vec<Vec<f32>> = Vec::new();
+        for y in (half..n - half).step_by(stride) {
+            for x in (half..n - half).step_by(stride) {
+                refs.push(grab(data, x, y));
             }
         }
         let mut sum = 0.0f32;
         let mut cnt = 0usize;
-        for y in (1..n - 1).step_by(stride) {
-            for x in (1..n - 1).step_by(stride) {
+        for y in (half..n - half).step_by(stride) {
+            for x in (half..n - half).step_by(stride) {
+                let p = grab(img, x, y);
                 let mut best = f32::INFINITY;
                 for r in &refs {
-                    let mut d2 = 0.0f32;
-                    for dy in 0..3 {
-                        for dx in 0..3 {
-                            let d0 = img[(y + dy - 1) * n + x + dx - 1] - r[dy * 3 + dx];
-                            d2 += d0 * d0;
-                        }
-                    }
+                    let d2: f32 = p.iter().zip(r).map(|(a, b)| (a - b) * (a - b)).sum();
                     best = best.min(d2);
                 }
                 sum += best.sqrt();
@@ -1996,10 +2041,30 @@ fn tex_gen_cmd(argv: &[String]) {
     };
 
     println!("材质     生成(均值±std)      真实(均值±std)     接缝比  最近补丁距（patch {patch}）");
-    for (ki, k) in kinds.iter().enumerate() {
-        let data = gray(k, eval_seed + ki as u64);
+    let eval_items: Vec<(String, Vec<f32>)> = match &data_dir {
+        Some(_) => images
+            .iter()
+            .take(2)
+            .enumerate()
+            .map(|(i, g)| (format!("data{i}"), g.clone()))
+            .collect(),
+        None => kinds
+            .iter()
+            .enumerate()
+            .map(|(ki, k)| ((*k).to_string(), gray(k, eval_seed + ki as u64)))
+            .collect(),
+    };
+    for (ki, (k, data)) in eval_items.iter().enumerate() {
+        let data = data.clone();
         let (dm, ds) = stat(&data);
-        let sample = ddim_sample(&d, &sched, Some(ki), n, n, eval_seed * 131 + ki as u64 + 7);
+        let sample = ddim_sample(
+            &d,
+            &sched,
+            if data_dir.is_some() { None } else { Some(ki) },
+            n,
+            n,
+            eval_seed * 131 + ki as u64 + 7,
+        );
         let (gm, gs) = stat(&sample);
         let sr = seam_ratio(
             &sample
@@ -2010,6 +2075,7 @@ fn tex_gen_cmd(argv: &[String]) {
         );
         let pd = patch_dist(&sample, &data);
         println!("{k:<8} {gm:.3}±{gs:.3}      {dm:.3}±{ds:.3}      {sr:.2}    {pd:.3}");
+        let _ = &data;
         if let Some(dir) = &outdir {
             std::fs::create_dir_all(dir).ok();
             let mut bytes = format!(
