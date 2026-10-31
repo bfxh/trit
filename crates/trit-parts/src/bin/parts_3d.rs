@@ -105,6 +105,18 @@ fn eval(argv: &[String]) {
         .unwrap_or(30);
     // 自检：用 GT 当预测（度量应给 1.0）。度量本身不准时这里会先红。
     let gt_as_pred = argv.iter().any(|a| a == "--gt");
+    let fuse: usize = arg(argv, "--fuse")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let mut gt_acc: std::collections::HashMap<
+        u32,
+        std::collections::HashSet<trit_parts::geo::Voxel>,
+    > = std::collections::HashMap::new();
+    // 预测侧按体素投票（union 会把逐帧噪声越积越多，实测 IoU 反而下降）。
+    let mut votes: std::collections::HashMap<
+        trit_parts::geo::Voxel,
+        std::collections::HashMap<u32, u32>,
+    > = std::collections::HashMap::new();
 
     let tpm = TpmModel::load(&model).unwrap_or_else(|e| fail(&e));
     let parts = PartList::load(&manifest).unwrap_or_else(|e| fail(&e));
@@ -139,9 +151,20 @@ fn eval(argv: &[String]) {
         };
         let gt_parts = clouds(&gt_ids, &dep, &cam, sw, h);
         let pred_parts = clouds(&pred, &dep, &cam, sw, h);
+        if fuse > 1 {
+            for (id, ppts) in &pred_parts {
+                for v in voxelize(ppts, voxel) {
+                    *votes.entry(v).or_default().entry(*id).or_insert(0) += 1;
+                }
+            }
+        }
 
         for (id, gpts) in &gt_parts {
             let gvox = voxelize(gpts, voxel);
+            if fuse > 1 {
+                gt_acc.entry(*id).or_default().extend(gvox);
+                continue;
+            }
             if gvox.len() < min_vox {
                 continue;
             }
@@ -163,6 +186,28 @@ fn eval(argv: &[String]) {
         frames += 1;
     }
 
+    if fuse > 1 {
+        let mut pred_acc: std::collections::HashMap<
+            u32,
+            std::collections::HashSet<trit_parts::geo::Voxel>,
+        > = std::collections::HashMap::new();
+        for (v, cnt) in &votes {
+            if let Some((&id, _)) = cnt.iter().max_by_key(|(_, c)| **c) {
+                pred_acc.entry(id).or_default().insert(*v);
+            }
+        }
+        for (id, gvox) in &gt_acc {
+            if gvox.len() < min_vox {
+                continue;
+            }
+            let empty = std::collections::HashSet::new();
+            let pvox = pred_acc.get(id).unwrap_or(&empty);
+            let i = iou3d(gvox, pvox);
+            if i.is_finite() {
+                ious.push(i);
+            }
+        }
+    }
     let mean = |v: &[f32]| v.iter().sum::<f32>() / v.len().max(1) as f32;
     let mut sorted = ious.clone();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
