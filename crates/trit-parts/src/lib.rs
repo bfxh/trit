@@ -17,6 +17,7 @@ pub mod depth;
 pub mod geo;
 pub mod inst;
 pub mod loss;
+pub mod mesh;
 pub mod model;
 pub mod ood;
 pub mod parts;

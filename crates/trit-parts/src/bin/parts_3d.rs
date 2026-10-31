@@ -1,9 +1,10 @@
 //! `parts-3d`：部件 id 图 + 深度 → 3D 点云（PLY），以及逐部件 3D IoU 评估。
 //!
-//! 三个子命令：
+//! 四个子命令：
 //! - `cloud`：GT seg + depth → 逐部件着色的 `.ply`；
 //! - `infer`：模型预测 id + **外部深度**（任意来源，默认取 scene/depth）→ `.ply`（生产路径）；
-//! - `eval`：模型预测 id + GT depth → 与 GT 反投影逐部件比对（3D IoU / 质心误差）。
+//! - `eval`：模型预测 id + GT depth → 与 GT 反投影逐部件比对（3D IoU / 质心误差）；
+//! - `mesh`：点云 → 实心占用 → Surface Nets 网格，并按 `--levels` 出 LOD 金字塔。
 
 use std::path::{Path, PathBuf};
 
@@ -254,12 +255,77 @@ fn eval(argv: &[String]) {
     }
 }
 
+/// `mesh --seg <npy> --depth <npy> --meta <json> --out <ply> [--cell 0.01] [--levels 0,2,4]`：
+/// 单帧点云 → 实心占用 → Surface Nets；`--levels` 是降采样倍数序列（0=原始精度），
+/// 每个都在 `<out>` 旁写 `<stem>.lod<K>.ply`，并打印顶点/三角面/体积/非流形边数。
+fn mesh_cmd(argv: &[String]) {
+    use trit_parts::mesh::{
+        Grid, downsample_occupancy, fill_solid, non_manifold_edges, surface_nets,
+        write_ply as write_mesh,
+    };
+
+    let seg = PathBuf::from(arg(argv, "--seg").unwrap_or_else(|| usage()));
+    let depth = PathBuf::from(arg(argv, "--depth").unwrap_or_else(|| usage()));
+    let meta = PathBuf::from(arg(argv, "--meta").unwrap_or_else(|| usage()));
+    let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+    let cell: f32 = arg(argv, "--cell")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.01);
+    let levels: Vec<usize> = arg(argv, "--levels")
+        .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![0]);
+
+    let cam = Camera::load(&meta).unwrap_or_else(|e| fail(&e));
+    let (ids, shape) = read_npy_i32(&seg).unwrap_or_else(|e| fail(&e));
+    let (dep, dshape) = read_npy_f32(&depth).unwrap_or_else(|e| fail(&e));
+    if shape != dshape || shape.len() != 2 {
+        fail("seg 与 depth 形状不一致");
+    }
+    let (h, w) = (shape[0], shape[1]);
+    let ids: Vec<u32> = ids.iter().map(|&v| v.max(0) as u32).collect();
+    let parts = clouds(&ids, &dep, &cam, w, h);
+    let pts: Vec<[f32; 3]> = parts
+        .values()
+        .flat_map(|v| v.iter().map(|p| [p[0], p[1], p[2]]))
+        .collect();
+    let mut g = Grid::from_points(&pts, cell, 2).unwrap_or_else(|| fail("点云为空"));
+    fill_solid(&mut g);
+    for f in levels {
+        let gg = if f <= 1 {
+            g.clone()
+        } else {
+            downsample_occupancy(&g, f)
+        };
+        let m = surface_nets(&gg);
+        let name = if f <= 1 {
+            out.clone()
+        } else {
+            let stem = out.file_stem().and_then(|s| s.to_str()).unwrap_or("mesh");
+            out.with_file_name(format!("{stem}.lod{f}.ply"))
+        };
+        write_mesh(&name, &m).unwrap_or_else(|e| fail(&e));
+        println!(
+            "lod{f}: 栅格 {}×{}×{} cell {:.4} m → 顶点 {} 三角面 {} 体积 {:.4} m³ 非流形边 {} → {}",
+            gg.nx,
+            gg.ny,
+            gg.nz,
+            gg.cell,
+            m.verts.len(),
+            m.tris.len(),
+            trit_parts::mesh::mesh_volume(&m),
+            non_manifold_edges(&m),
+            name.display()
+        );
+    }
+}
+
 fn usage() -> ! {
     eprintln!(
         "用法:
   parts-3d cloud --seg <npy> --depth <npy> --meta <json> --out <ply>
   parts-3d infer --model <tpm> --scene <dir> --frame N --manifest <json> --out <ply> [--depth <npy>]
-  parts-3d eval --model <tpm> --scene <dir> --manifest <json> [--limit N] [--voxel 0.01] [--min-vox 30]"
+  parts-3d eval --model <tpm> --scene <dir> --manifest <json> [--limit N] [--voxel 0.01] [--min-vox 30]
+  parts-3d mesh --seg <npy> --depth <npy> --meta <json> --out <ply> [--cell 0.01] [--levels 0,2,4]"
     );
     std::process::exit(2);
 }
@@ -273,6 +339,7 @@ fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
     match argv.first().map(String::as_str) {
         Some("cloud") => cloud(&argv),
+        Some("mesh") => mesh_cmd(&argv),
         Some("infer") => {
             #[cfg(feature = "gpu")]
             infer(&argv);
