@@ -12,6 +12,7 @@
 //! ```
 //! 也可以 `--attach <pid> --log <path>` 托管一个已经在跑的进程。
 
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant, SystemTime};
@@ -227,18 +228,50 @@ fn log_mtime(p: &Path) -> Option<SystemTime> {
     std::fs::metadata(p).ok()?.modified().ok()
 }
 
-fn spawn(cmd: &[String]) -> std::io::Result<Child> {
+fn spawn(cmd: &[String], log: Option<&Path>) -> std::io::Result<Child> {
     if cmd.is_empty() {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "缺少训练命令（放在 -- 之后）",
         ));
     }
-    Command::new(&cmd[0])
-        .args(&cmd[1..])
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .spawn()
+    let mut c = Command::new(&cmd[0]);
+    c.args(&cmd[1..]);
+    if let Some(p) = log {
+        let mut child = c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
+        if let Some(out) = child.stdout.take() {
+            tee(out, p.to_path_buf());
+        }
+        if let Some(err) = child.stderr.take() {
+            tee(err, p.to_path_buf());
+        }
+        Ok(child)
+    } else {
+        c.stdout(Stdio::inherit()).stderr(Stdio::inherit()).spawn()
+    }
+}
+
+/// 把子进程输出原样追加进日志——日志 mtime 就是看门狗的心跳源。
+fn tee(r: impl Read + Send + 'static, log: PathBuf) {
+    std::thread::spawn(move || {
+        let mut r = std::io::BufReader::new(r);
+        let mut buf = [0u8; 4096];
+        loop {
+            match r.read(&mut buf) {
+                Ok(0) | Err(_) => break,
+                Ok(n) => {
+                    if let Ok(mut f) = std::fs::OpenOptions::new()
+                        .create(true)
+                        .append(true)
+                        .open(&log)
+                    {
+                        let _ = f.write_all(&buf[..n]);
+                        let _ = f.flush();
+                    }
+                }
+            }
+        }
+    });
 }
 
 fn alive_pid(pid: u32) -> bool {
@@ -369,7 +402,7 @@ fn main() {
             watched_pid = pid;
             event(&a, "ATTACH", &format!("pid={pid}"));
         } else {
-            match spawn(&a.cmd) {
+            match spawn(&a.cmd, a.log.as_deref()) {
                 Ok(c) => {
                     watched_pid = c.id();
                     child = Some(c);
