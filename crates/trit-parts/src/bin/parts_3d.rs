@@ -512,7 +512,11 @@ fn splat_cmd(argv: &[String]) {
             .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
             .unwrap_or(d)
     };
-    let frames = parse_list("--frames", vec![0, 2, 4, 6]);
+    let mut frames = parse_list("--frames", vec![0, 2, 4, 6]);
+    let n_views: usize = arg(argv, "--views")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(frames.len());
+    frames.truncate(n_views.max(1));
     let eval_frames = parse_list("--eval", vec![1, 3, 5, 7]);
     let cells: Vec<f32> = arg(argv, "--cells")
         .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
@@ -779,7 +783,11 @@ fn occ_cmd(argv: &[String]) {
     };
     let train = parse_list("--train", Vec::new());
     let eval = parse_list("--eval", Vec::new());
-    let frames = parse_list("--frames", vec![0, 2, 4, 6]);
+    let mut frames = parse_list("--frames", vec![0, 2, 4, 6]);
+    let n_views: usize = arg(argv, "--views")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(frames.len());
+    frames.truncate(n_views.max(1));
     let cell: f32 = arg(argv, "--cell")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.01);
@@ -893,6 +901,7 @@ fn occ_cmd(argv: &[String]) {
 
     // 评测：体积 IoU（vs 原语实心）+ 网格闭合率
     let (mut ious, mut closed, mut n) = (Vec::new(), 0usize, 0usize);
+    let mut lab_ious: Vec<f32> = Vec::new();
     for &idx in &eval {
         let prims: Vec<Primitive> =
             parse_objects(&scenes.join(format!("scene{idx:04}/objects.json")));
@@ -919,10 +928,9 @@ fn occ_cmd(argv: &[String]) {
                 li += (a && b) as usize;
                 lu += (a || b) as usize;
             }
-            println!(
-                "  [自监督标签 vs 解析实心] IoU {:.3}",
-                li as f32 / lu.max(1) as f32
-            );
+            let lv = li as f32 / lu.max(1) as f32;
+            lab_ious.push(lv);
+            println!("  [自监督标签 vs 解析实心] IoU {lv:.3}");
         }
         for z in 0..g.nz {
             for y in 0..g.ny {
@@ -979,6 +987,10 @@ fn occ_cmd(argv: &[String]) {
         );
     }
     let mean = ious.iter().sum::<f32>() / ious.len().max(1) as f32;
+    if !lab_ious.is_empty() {
+        let lm = lab_ious.iter().sum::<f32>() / lab_ious.len() as f32;
+        println!("标签 IoU 均值 {lm:.3}（{} 场景）", lab_ious.len());
+    }
     println!(
         "N2 汇总：体积 IoU 均值 {mean:.3}（{} 场景）；闭合 {}/{}（{:.0}%）；门：IoU≥0.5 且 闭合率≥80%",
         ious.len(),
@@ -1000,6 +1012,163 @@ fn view_points(views: &[trit_parts::fuse::View]) -> Vec<[f32; 3]> {
         }
     }
     out
+}
+
+/// `align --scene <dir> --frames 0,1,... --cell 0.01`：网格（自监督实心）与高斯的一致性。
+/// 报三项：高斯落在实心内的比例、落在表面 1 格内的比例、网格表面被高斯覆盖的比例。
+fn align_cmd(argv: &[String]) {
+    use trit_parts::occ::selfsup_solid;
+    use trit_parts::splat::{build, collect};
+
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let frames: Vec<usize> = arg(argv, "--frames")
+        .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![0, 1, 2, 3, 4, 5, 6, 7]);
+    let cell: f32 = arg(argv, "--cell")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.01);
+    let tau: f32 = arg(argv, "--tau")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.01);
+
+    let load = |f: usize| -> trit_parts::fuse::View {
+        let (ids, shape) =
+            read_npy_i32(&frame_path(&scene, "seg", f, "npy")).unwrap_or_else(|e| fail(&e));
+        let (d, _) =
+            read_npy_f32(&frame_path(&scene, "depth", f, "npy")).unwrap_or_else(|e| fail(&e));
+        trit_parts::fuse::View {
+            ids: ids.iter().map(|&v| v.max(0) as u32).collect(),
+            depth: d,
+            w: shape[1],
+            h: shape[0],
+            cam: Camera::load(&frame_path(&scene, "meta", f, "json")).unwrap_or_else(|e| fail(&e)),
+        }
+    };
+    let views: Vec<_> = frames.iter().map(|&f| load(f)).collect();
+    let rgbs: Vec<Vec<f32>> = frames
+        .iter()
+        .map(|&f| {
+            trit_parts::data::read_rgb(&frame_path(&scene, "rgb", f, "png"))
+                .map(|(_, _, p)| p)
+                .unwrap_or_else(|e| fail(&e))
+        })
+        .collect();
+    let pts = view_points(&views);
+    let g = trit_parts::mesh::Grid::from_points(&pts, cell, 3).unwrap_or_else(|| fail("无有效点"));
+    let solid = selfsup_solid(&views, &g, tau);
+    let mut surface = vec![false; solid.len()];
+    for z in 0..g.nz {
+        for y in 0..g.ny {
+            for x in 0..g.nx {
+                let i = x + g.nx * (y + g.ny * z);
+                if solid[i] == 0 {
+                    continue;
+                }
+                let edge = [
+                    (1i32, 0i32, 0i32),
+                    (-1, 0, 0),
+                    (0, 1, 0),
+                    (0, -1, 0),
+                    (0, 0, 1),
+                    (0, 0, -1),
+                ]
+                .iter()
+                .any(|&(dx, dy, dz)| {
+                    let (xx, yy, zz) = (x as i32 + dx, y as i32 + dy, z as i32 + dz);
+                    xx < 0
+                        || yy < 0
+                        || zz < 0
+                        || xx as usize >= g.nx
+                        || yy as usize >= g.ny
+                        || zz as usize >= g.nz
+                        || solid[xx as usize + g.nx * (yy as usize + g.ny * zz as usize)] == 0
+                });
+                surface[i] = edge;
+            }
+        }
+    }
+    let splats = build(&views, &rgbs, cell, 0.6);
+    let mut inside = 0usize;
+    let mut d1 = 0usize;
+    let mut d2 = 0usize;
+    let mut covered = vec![false; solid.len()];
+    for s in &splats {
+        let c = [0, 1, 2].map(|a| ((s.pos[a] - g.origin[a]) / g.cell).round() as i64);
+        if c.iter().any(|&v| v < 0)
+            || c[0] as usize >= g.nx
+            || c[1] as usize >= g.ny
+            || c[2] as usize >= g.nz
+        {
+            continue;
+        }
+        let (x, y, z) = (c[0] as usize, c[1] as usize, c[2] as usize);
+        let i = x + g.nx * (y + g.ny * z);
+        if solid[i] != 0 {
+            inside += 1;
+        }
+        if surface[i] {
+            covered[i] = true;
+        }
+        let mut best = 3i32;
+        for dz in -2i32..=2 {
+            for dy in -2i32..=2 {
+                for dx in -2i32..=2 {
+                    let (xx, yy, zz) = (x as i32 + dx, y as i32 + dy, z as i32 + dz);
+                    if xx < 0
+                        || yy < 0
+                        || zz < 0
+                        || xx as usize >= g.nx
+                        || yy as usize >= g.ny
+                        || zz as usize >= g.nz
+                    {
+                        continue;
+                    }
+                    if surface[xx as usize + g.nx * (yy as usize + g.ny * zz as usize)] {
+                        best = best.min(dx.abs() + dy.abs() + dz.abs());
+                    }
+                }
+            }
+        }
+        if best <= 1 {
+            d1 += 1;
+        }
+        if best <= 2 {
+            d2 += 1;
+        }
+    }
+    let n_surf = surface.iter().filter(|&&v| v).count();
+    let n_cov = covered.iter().filter(|&&v| v).count();
+    let n = splats.len().max(1) as f32;
+    println!(
+        "网格↔高斯（cell {cell:.3}，τ {tau:.3}，{} 视角）：高斯 {} 个",
+        views.len(),
+        splats.len()
+    );
+    println!(
+        "  高斯在实心内 {:.1}%  |  距网格面 ≤1 格 {:.1}%  ≤2 格 {:.1}%",
+        100.0 * inside as f32 / n,
+        100.0 * d1 as f32 / n,
+        100.0 * d2 as f32 / n
+    );
+    println!(
+        "  网格表面被高斯覆盖 {:.1}%（{n_cov}/{n_surf}）",
+        100.0 * n_cov as f32 / n_surf.max(1) as f32
+    );
+    // 第 0 视角：GS 覆盖像素里有多少落在前景（越低说明高斯漂到背景）
+    let cw = collect(&splats, &views[0].cam, views[0].w, views[0].h);
+    let (mut on_fg, mut cov_px) = (0usize, 0usize);
+    for p in 0..views[0].w * views[0].h {
+        if cw.coverage[p] > 0.5 {
+            cov_px += 1;
+            if views[0].ids[p] != 0 {
+                on_fg += 1;
+            }
+        }
+    }
+    println!(
+        "  第 0 视角：高斯覆盖像素 {cov_px}，其中落在前景 {:.1}%",
+        100.0 * on_fg as f32 / cov_px.max(1) as f32
+    );
 }
 
 fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
@@ -1029,7 +1198,8 @@ fn usage() -> ! {
   parts-3d mesh --seg <npy> --depth <npy> --meta <json> --out <ply> [--cell 0.01] [--levels 0,2,4]
   parts-3d fuse --scene <dir> --frames 0,1,2,3 [--eval 4,5,6,7] --out <ply> [--cell 0.01] [--min-votes 1] [--voxel 0.01] [--levels 0,2]
   parts-3d splat --scene <dir> --frames 0,2,4,6 --eval 1,3,5,7 [--cells 0.04,0.02,0.01] [--scale-k 2] [--alpha 0.6]
-  parts-3d occ --root <renders 根> --scenes <scenes 根> --train 80,81 --eval 84,85 [--cell 0.01] [--steps 20000]"
+  parts-3d occ --root <renders 根> --scenes <scenes 根> --train 80,81 --eval 84,85 [--cell 0.01] [--steps 20000] [--selfsup] [--views N] [--tau 0.01]
+  parts-3d align --scene <dir> --frames 0,1,2,3,4,5,6,7 [--cell 0.01] [--tau 0.01]"
     );
     std::process::exit(2);
 }
@@ -1047,6 +1217,7 @@ fn main() {
         Some("fuse") => fuse_cmd(&argv),
         Some("splat") => splat_cmd(&argv),
         Some("occ") => occ_cmd(&argv),
+        Some("align") => align_cmd(&argv),
         Some("infer") => {
             #[cfg(feature = "gpu")]
             infer(&argv);
