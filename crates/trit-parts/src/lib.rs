@@ -18,6 +18,7 @@ pub mod diffuse;
 pub mod fuse;
 pub mod geo;
 pub mod inst;
+pub mod look;
 pub mod loss;
 pub mod mesh;
 pub mod model;

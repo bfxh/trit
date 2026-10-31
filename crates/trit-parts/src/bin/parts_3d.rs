@@ -2242,6 +2242,115 @@ fn tex_gen_cmd(argv: &[String]) {
     println!("（接缝比 ≈1 表示边界与内部同量级；最近补丁距太小 = 在抄训练集）");
 }
 
+/// `look <图或目录>… [--out csv]`：量「观感」——亮度/对比/饱和/色相熵/细节/平涂/雾感/发光/UI 边条。
+/// 启发式描述量，不训练；同一输入两次跑逐位一致（见 `look` 模块单测）。
+fn look_cmd(argv: &[String]) {
+    use std::io::Write as _;
+    use trit_parts::look;
+
+    let csv = arg(argv, "--out").map(PathBuf::from);
+    let mut inputs: Vec<PathBuf> = Vec::new();
+    let mut skip_next = false;
+    for a in argv.iter().skip(1) {
+        if skip_next {
+            skip_next = false;
+            continue;
+        }
+        if a == "--out" {
+            skip_next = true;
+            continue;
+        }
+        if a.starts_with("--") {
+            continue;
+        }
+        let p = PathBuf::from(a);
+        if p.is_dir() {
+            let mut v: Vec<PathBuf> = std::fs::read_dir(&p)
+                .unwrap_or_else(|e| fail(&format!("读不了 {}: {e}", p.display())))
+                .filter_map(|e| e.ok())
+                .map(|e| e.path())
+                .filter(|q| q.extension().is_some_and(|x| x == "png"))
+                .collect();
+            v.sort();
+            inputs.extend(v);
+        } else {
+            inputs.push(p);
+        }
+    }
+    if inputs.is_empty() {
+        fail("用法: parts-3d look <图.png 或目录>… [--out features.csv]");
+    }
+
+    // 用 writeln! 吞掉 BrokenPipe：`parts-3d look … | head` 时不该 panic
+    let mut out_h = std::io::stdout().lock();
+    let _ = writeln!(
+        out_h,
+        "{:<22} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>5} {:>5} {:>5}  启发式",
+        "样本",
+        "亮度",
+        "对比",
+        "饱和",
+        "色相熵",
+        "细纹",
+        "硬边",
+        "平坦",
+        "级数",
+        "雾感",
+        "发光",
+        "边条",
+        "冷暖",
+        "主光°",
+        "光比",
+        "高光"
+    );
+    let mut rows: Vec<(String, look::Look)> = Vec::new();
+    for f in &inputs {
+        let name = f
+            .file_stem()
+            .map(|x| x.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        let (w, h, rgb) = trit_parts::data::read_rgb(f).unwrap_or_else(|e| fail(&e));
+        let l = look::analyze(&rgb, w, h);
+        let _ = writeln!(
+            out_h,
+            "{:<22} {:>5.2} {:>5.2} {:>5.2} {:>5.2} {:>5.3} {:>5.3} {:>5.2} {:>5.0} {:>5.2} {:>5.3} {:>5.2} {:>6.2} {:>5.0} {:>5.2} {:>5.3}  {}",
+            name,
+            l.luma,
+            l.contrast,
+            l.sat,
+            l.hue_entropy,
+            l.fine,
+            l.strong,
+            l.flat,
+            l.levels,
+            l.haze,
+            l.emissive,
+            l.bars,
+            l.warmth,
+            l.key_dir,
+            l.key_fill_dwarm,
+            l.highlights,
+            look::guess(&l)
+        );
+        rows.push((name, l));
+    }
+
+    if let Some(p) = csv {
+        let mut out = String::from("name,luma,contrast,sat,hue_entropy,edge,fine,strong,flat,levels,haze,emissive,bars,warmth,key_dir,key_fill_dwarm,highlights
+");
+        for (n, l) in &rows {
+            out.push_str(&format!(
+                "{n},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.4},{:.4}
+",
+                l.luma, l.contrast, l.sat, l.hue_entropy, l.edge, l.fine, l.strong, l.flat, l.levels,
+                l.haze, l.emissive, l.bars, l.warmth, l.key_dir, l.key_fill_dwarm, l.highlights
+            ));
+        }
+        std::fs::write(&p, out).unwrap_or_else(|e| fail(&format!("{}: {e}", p.display())));
+        println!("特征已写 {}", p.display());
+    }
+}
+
 /// `AcousticFoam001_AcousticFoam001_1K-JPG_Color` → `AcousticFoam001`（报告里不用整串）。
 fn strip_stem(s: &str) -> String {
     s.split('_').next().unwrap_or(s).to_string()
@@ -2281,7 +2390,8 @@ fn usage() -> ! {
   parts-3d tex --kind wood|marble|rust|grid --size 256 --out <ppm>
   parts-3d tex-prior [--iters 30000] [--patch 3|7] [--cond] [--hid 16]
   parts-3d tex-conv  [--iters 20000] [--hidden 8,8] [--cond] [--size 64] [--adam] [--batch K] [--bn]
-  parts-3d tex-gen   [--iters 200000] [--steps-t 50] [--size 64] [--hid 32] [--out <dir>]"
+  parts-3d tex-gen   [--iters 200000] [--steps-t 50] [--size 64] [--hid 32] [--out <dir>]
+  parts-3d look <图或目录>… [--out features.csv]"
     );
     std::process::exit(2);
 }
@@ -2306,6 +2416,7 @@ fn main() {
         Some("tex-prior") => tex_prior_cmd(&argv),
         Some("tex-conv") => tex_conv_cmd(&argv),
         Some("tex-gen") => tex_gen_cmd(&argv),
+        Some("look") => look_cmd(&argv),
         Some("infer") => {
             #[cfg(feature = "gpu")]
             infer(&argv);
