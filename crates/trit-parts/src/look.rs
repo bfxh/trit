@@ -44,6 +44,11 @@ pub struct Look {
     pub key_fill_dwarm: f32,
     /// 高光占比：亮度 >0.9 且低饱和（镜面/灯）。
     pub highlights: f32,
+    /// 多尺度细节剖面：1×/2×/4× 下采样后的平均 |Laplacian| ÷ 该尺度亮度均值。
+    /// 细颗粒纹理 hf1 高；低频斑块 hf4/hf1 偏高。用来区分「统计像但结构不像」。
+    pub hf1: f32,
+    pub hf2: f32,
+    pub hf4: f32,
 }
 
 fn luma_of(r: f32, g: f32, b: f32) -> f32 {
@@ -105,6 +110,50 @@ fn content_box(lum: &[f32], w: usize, h: usize) -> (usize, usize, usize, usize, 
         let bars = 1.0 - keep as f32 / total as f32;
         (left, top, right, bot, bars)
     }
+}
+
+/// 平均 |Laplacian| ÷ 亮度均值（尺度敏感度：越小越粗）。
+fn lap_energy(img: &[f32], w: usize, h: usize) -> f32 {
+    if w < 3 || h < 3 {
+        return 0.0;
+    }
+    let mut s = 0.0f32;
+    let mut m = 0.0f32;
+    let mut n = 0usize;
+    for y in 1..h - 1 {
+        for x in 1..w - 1 {
+            let c = img[y * w + x];
+            let l = 4.0 * c
+                - img[y * w + x - 1]
+                - img[y * w + x + 1]
+                - img[(y - 1) * w + x]
+                - img[(y + 1) * w + x];
+            s += l.abs();
+            m += c;
+            n += 1;
+        }
+    }
+    if n == 0 {
+        return 0.0;
+    }
+    let mean = m / n as f32;
+    s / n as f32 / mean.max(1e-3)
+}
+
+/// 2× 盒式下采样（均值池化）。
+fn half(img: &[f32], w: usize, h: usize) -> (Vec<f32>, usize, usize) {
+    let (w2, h2) = (w / 2, h / 2);
+    let mut out = vec![0.0f32; w2 * h2];
+    for y in 0..h2 {
+        for x in 0..w2 {
+            out[y * w2 + x] = 0.25
+                * (img[(2 * y) * w + 2 * x]
+                    + img[(2 * y) * w + 2 * x + 1]
+                    + img[(2 * y + 1) * w + 2 * x]
+                    + img[(2 * y + 1) * w + 2 * x + 1]);
+        }
+    }
+    (out, w2, h2)
 }
 
 /// 主入口：`rgb` 是 3 通道、0..1、行优先。
@@ -291,6 +340,17 @@ fn analyze_region(
     let min_mass = (n as f32 * 0.002).ceil() as usize;
     let levels = hist.iter().filter(|&&c| c >= min_mass.max(1)).count() as f32;
 
+    // 多尺度细节剖面：在内容区上做 1×/2×/4×（先裁出来，避免带进边条）
+    let crop: Vec<f32> = (0..ch)
+        .flat_map(|y| (0..cw).map(move |x| (y, x)))
+        .map(|(y, x)| lum[at(x, y)])
+        .collect();
+    let hf1 = lap_energy(&crop, cw, ch);
+    let (c2, w2, h2) = half(&crop, cw, ch);
+    let hf2 = lap_energy(&c2, w2, h2);
+    let (c4, w4, h4) = half(&c2, w2, h2);
+    let hf4 = lap_energy(&c4, w4, h4);
+
     let key_dir = if ori_w > 1e-6 {
         (0.5 * ori_sin.atan2(ori_cos))
             .to_degrees()
@@ -352,6 +412,9 @@ fn analyze_region(
         key_dir,
         key_fill_dwarm,
         highlights: highlights as f32 / n as f32,
+        hf1,
+        hf2,
+        hf4,
     }
 }
 
@@ -432,6 +495,49 @@ mod tests {
         let l = analyze(&v, w, h);
         let d = l.key_dir.min(180.0 - l.key_dir);
         assert!(d < 10.0, "梯度应基本沿水平，实际 {}°", l.key_dir);
+    }
+
+    #[test]
+    fn multiscale_profile_separates_fine_and_coarse() {
+        let (w, h) = (64usize, 64usize);
+        let mut fine = vec![0.0f32; w * h * 3];
+        for y in 0..h {
+            for x in 0..w {
+                let c = if (x + y) % 2 == 0 { 0.4 } else { 0.6 };
+                let p = (y * w + x) * 3;
+                fine[p] = c;
+                fine[p + 1] = c;
+                fine[p + 2] = c;
+            }
+        }
+        let mut coarse = vec![0.0f32; w * h * 3];
+        for y in 0..h {
+            for x in 0..w {
+                let c = if ((x / 16) + (y / 16)) % 2 == 0 {
+                    0.4
+                } else {
+                    0.6
+                };
+                let p = (y * w + x) * 3;
+                coarse[p] = c;
+                coarse[p + 1] = c;
+                coarse[p + 2] = c;
+            }
+        }
+        let a = analyze(&fine, w, h);
+        let b = analyze(&coarse, w, h);
+        assert!(
+            a.hf1 > 2.0 * b.hf1,
+            "细棋盘 hf1 应明显更大：{} vs {}",
+            a.hf1,
+            b.hf1
+        );
+        assert!(
+            a.hf4 / a.hf1 < b.hf4 / b.hf1,
+            "细纹理的能量更靠细尺度：{:.3} vs {:.3}",
+            a.hf4 / a.hf1,
+            b.hf4 / b.hf1
+        );
     }
 
     #[test]
