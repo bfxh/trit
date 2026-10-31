@@ -90,6 +90,10 @@ r3.9 留出：id **0.7653** / IoU **0.6142**（上一版 0.7389 / 0.5835）。
 
 ## 6. 部署
 
+交付权重已随仓：**`crates/trit-parts/models/parts_id8118.tpm`**（479,208 B，SHA-256
+`c83bb4e5997975cfe44df2fdc80492c431c69b4b341348e6485d48e33307c5b8`）。
+
+
 ```bash
 # 训练断点 → 部署包
 parts-cli export --state state.bin --out model.tpm
