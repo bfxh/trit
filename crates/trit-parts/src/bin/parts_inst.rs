@@ -198,6 +198,9 @@ fn eval(argv: &[String]) {
     let close_r: usize = arg(argv, "--close")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    let min_size: usize = arg(argv, "--min-size")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let dump = arg(argv, "--dump").map(PathBuf::from);
     let dump_n: usize = arg(argv, "--dump-n")
         .and_then(|v| v.parse().ok())
@@ -294,7 +297,13 @@ fn eval(argv: &[String]) {
                         b_inter += (g == 1 && q == 1) as usize;
                     }
                 }
-                trit_parts::inst::split_by_boundary(&fg, &bd, res as usize, res as usize)
+                trit_parts::inst::split_by_boundary_min(
+                    &fg,
+                    &bd,
+                    res as usize,
+                    res as usize,
+                    min_size,
+                )
             } else {
                 decode_ids(&logits, res, &pl)
             };

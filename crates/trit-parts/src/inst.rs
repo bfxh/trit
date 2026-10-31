@@ -3,7 +3,7 @@
 //! 标签图口径：0 = 背景，1..=n 为实例编号。匹配**与编号无关**（pred 的 7 号可以匹配
 //! GT 的 2 号），只按 IoU；每个 pred / GT 标签最多用一次，按 IoU 从大到小贪心。
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 /// 4 邻域连通域：前景 = `labels[i] != 0`，返回 `(新标签图, 实例数)`，新标签 1..=n。
 pub fn components(labels: &[u32], w: usize, h: usize) -> (Vec<u32>, usize) {
@@ -218,6 +218,55 @@ pub fn split_by_boundary(fg: &[u32], boundary: &[u32], w: usize, h: usize) -> Ve
     lab
 }
 
+/// `split_by_boundary` + 小碎片合并：面积 < `min_size` 的连通块不保留，
+/// 其像素按多源 BFS 归给最近的大块（`min_size = 0` 时与上面的函数等价）。
+pub fn split_by_boundary_min(
+    fg: &[u32],
+    boundary: &[u32],
+    w: usize,
+    h: usize,
+    min_size: usize,
+) -> Vec<u32> {
+    let mut lab = split_by_boundary(fg, boundary, w, h);
+    if min_size == 0 {
+        return lab;
+    }
+    let mut area: HashMap<u32, usize> = HashMap::new();
+    for &v in lab.iter().filter(|&&v| v != 0) {
+        *area.entry(v).or_insert(0) += 1;
+    }
+    let mut q: std::collections::VecDeque<usize> = VecDeque::new();
+    for (p, v) in lab.iter_mut().enumerate() {
+        if *v != 0 && area[v] < min_size {
+            *v = 0;
+        } else if *v != 0 {
+            q.push_back(p);
+        }
+    }
+    while let Some(p) = q.pop_front() {
+        let (x, y) = (p % w, p / w);
+        let mut push = |r: usize, lab: &mut Vec<u32>, q: &mut std::collections::VecDeque<usize>| {
+            if fg[r] != 0 && lab[r] == 0 {
+                lab[r] = lab[p];
+                q.push_back(r);
+            }
+        };
+        if x > 0 {
+            push(p - 1, &mut lab, &mut q);
+        }
+        if x + 1 < w {
+            push(p + 1, &mut lab, &mut q);
+        }
+        if y > 0 {
+            push(p - w, &mut lab, &mut q);
+        }
+        if y + 1 < h {
+            push(p + w, &mut lab, &mut q);
+        }
+    }
+    lab
+}
+
 /// 实例边界标签：`0` 背景、`1` 实例内部、`2` **实例之间的边界像素**
 /// （前景且 `radius` 邻域里存在不同实例号的像素；`radius≥1` 加粗，便于下采样网络学到）。
 /// 物体外沿不算边界。
@@ -403,6 +452,34 @@ mod tests {
             split_by_boundary(&fg, &none, w, 4).iter().max().copied(),
             Some(1)
         );
+    }
+
+    #[test]
+    fn min_size_merges_confetti_only() {
+        // 两行 12 px 前景，边界落在 x=5、x=9 ⇒ 三段；最右段（4 px）小于 min_size ⇒ 被并掉。
+        let (w, h) = (12usize, 2usize);
+        let fg = vec![1u32; w * h];
+        let mut bnd = vec![0u32; w * h];
+        for y in 0..h {
+            bnd[y * w + 5] = 1;
+            bnd[y * w + 9] = 1;
+        }
+        let raw = split_by_boundary(&fg, &bnd, w, h);
+        assert_eq!(
+            raw.iter()
+                .filter(|&&v| v != 0)
+                .collect::<HashSet<_>>()
+                .len(),
+            3
+        );
+        let merged = split_by_boundary_min(&fg, &bnd, w, h, 5);
+        let distinct: HashSet<u32> = merged.iter().copied().filter(|&v| v != 0).collect();
+        assert_eq!(
+            distinct.len(),
+            2,
+            "小段被并入邻块：raw={raw:?} merged={merged:?}"
+        );
+        assert!(merged.iter().all(|&v| v != 0), "前景像素不能丢");
     }
 
     #[test]
