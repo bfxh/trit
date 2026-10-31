@@ -735,6 +735,87 @@ pub fn gradients(splats: &[Splat], views: &[FitView], bg: [f32; 3]) -> Grads {
     (gc, gp, gs, ga, cnt)
 }
 
+/// 用实心表面的「未覆盖格」补高斯（补背面/底面）。
+/// 颜色取最近的已观测高斯；找不到就取全局平均。返回补的个数。
+pub fn fill_unobserved(
+    splats: &mut Vec<Splat>,
+    solid: &crate::mesh::Grid,
+    surface: &[bool],
+    scale: f32,
+    alpha: f32,
+) -> usize {
+    use std::collections::HashSet;
+    let cell = solid.cell;
+    let key = |p: [f32; 3]| {
+        (
+            ((p[0] - solid.origin[0]) / cell).floor() as i32,
+            ((p[1] - solid.origin[1]) / cell).floor() as i32,
+            ((p[2] - solid.origin[2]) / cell).floor() as i32,
+        )
+    };
+    let mut occupied: HashSet<(i32, i32, i32)> = HashSet::new();
+    let mut colmap: HashMap<(i32, i32, i32), [f32; 3]> = HashMap::new();
+    let mut sum = [0.0f64; 3];
+    for s in splats.iter() {
+        let k = key(s.pos);
+        occupied.insert(k);
+        colmap.insert(k, s.color);
+        for (acc, c) in sum.iter_mut().zip(s.color.iter()) {
+            *acc += *c as f64;
+        }
+    }
+    let mean = if splats.is_empty() {
+        [0.5; 3]
+    } else {
+        [0, 1, 2].map(|a| (sum[a] / splats.len() as f64) as f32)
+    };
+    let mut added = 0usize;
+    for z in 0..solid.nz {
+        for y in 0..solid.ny {
+            for x in 0..solid.nx {
+                let i = x + solid.nx * (y + solid.ny * z);
+                if !surface[i] {
+                    continue;
+                }
+                let k = (x as i32, y as i32, z as i32);
+                if occupied.contains(&k) {
+                    continue;
+                }
+                let mut color = None;
+                'search: for r in 1..=4i32 {
+                    for dz in -r..=r {
+                        for dy in -r..=r {
+                            for dx in -r..=r {
+                                if dx.abs() + dy.abs() + dz.abs() != r {
+                                    continue;
+                                }
+                                if let Some(c) =
+                                    colmap.get(&(x as i32 + dx, y as i32 + dy, z as i32 + dz))
+                                {
+                                    color = Some(*c);
+                                    break 'search;
+                                }
+                            }
+                        }
+                    }
+                }
+                splats.push(Splat {
+                    pos: [
+                        solid.origin[0] + (x as f32 + 0.5) * cell,
+                        solid.origin[1] + (y as f32 + 0.5) * cell,
+                        solid.origin[2] + (z as f32 + 0.5) * cell,
+                    ],
+                    scale,
+                    color: color.unwrap_or(mean),
+                    alpha,
+                });
+                added += 1;
+            }
+        }
+    }
+    added
+}
+
 /// 自适应增删（3DGS 的 densify/prune 简化版）。
 /// 每轮先渲染拟合视角：前景里残差 > `err` 的像素，在观测表面（深度反投影）补一个高斯
 /// （颜色取 GT、半径 = `scale`）；然后删掉 alpha < `prune` 的高斯。
