@@ -282,6 +282,200 @@ mod tests {
         assert!(img[p * 3 + 1] > img[p * 3 + 2], "近处绿色应盖住远处蓝色");
     }
 
+    fn loss_of(splats: &[Splat], views: &[FitView]) -> f64 {
+        let mut l = 0.0;
+        for (cam, w, h, gt, ids) in views {
+            let c = build_cache(splats, cam, *w, *h);
+            let img = render_cached(splats, &c, *w, *h, [0.0, 0.0, 0.0]);
+            for p in 0..*w * *h {
+                if ids[p] == 0 {
+                    continue;
+                }
+                for k in 0..3 {
+                    let d = f64::from(img[p * 3 + k] - gt[p * 3 + k]);
+                    l += d * d;
+                }
+            }
+        }
+        l
+    }
+
+    #[test]
+    fn jacobian_of_projection_matches_numeric() {
+        let c = cam();
+        let s = Splat {
+            pos: [0.3, -0.2, -2.0],
+            scale: 0.05,
+            color: [1.0; 3],
+            alpha: 0.8,
+        };
+        let base = c.project(s.pos).unwrap();
+        let eps = 1e-3; // f32 位置：差分步要够大
+        for a in 0..3 {
+            let mut q = s.pos;
+            q[a] += eps as f32;
+            let up = c.project(q).unwrap();
+            for (name, num, ana) in [
+                ("u", (up.0 - base.0) / eps, {
+                    // 解析：fx·(R[a][0]·D + xb·R[a][2])/D²
+                    let t = &c.t_cw;
+                    let (xb, _yb) = (
+                        t[0][0] * q[0] as f64 + t[1][0] * q[1] as f64 + t[2][0] * q[2] as f64,
+                        t[0][1] * q[0] as f64 + t[1][1] * q[1] as f64 + t[2][1] * q[2] as f64,
+                    );
+                    let d = base.2;
+                    c.k[0][0] * (t[a][0] * d + xb * t[a][2]) / (d * d)
+                }),
+                ("v", (up.1 - base.1) / eps, {
+                    let t = &c.t_cw;
+                    let (_xb, yb) = (
+                        t[0][0] * q[0] as f64 + t[1][0] * q[1] as f64 + t[2][0] * q[2] as f64,
+                        t[0][1] * q[0] as f64 + t[1][1] * q[1] as f64 + t[2][1] * q[2] as f64,
+                    );
+                    let d = base.2;
+                    c.k[1][1] * (-t[a][1] * d + (-yb) * t[a][2]) / (d * d)
+                }),
+                ("d", (up.2 - base.2) / eps, -c.t_cw[a][2]),
+            ] {
+                assert!(
+                    (num - ana).abs() < 5e-3 * ana.abs().max(1.0),
+                    "axis {a} {name}: 数值 {num} vs 解析 {ana}"
+                );
+            }
+        }
+        let _ = s;
+    }
+
+    #[test]
+    fn analytic_geometry_gradients_match_finite_difference() {
+        let c = cam();
+        let (w, h) = (100usize, 100usize);
+        let s0 = Splat {
+            pos: [0.0, 0.0, -2.0],
+            scale: 0.05,
+            color: [1.0, 0.2, 0.2],
+            alpha: 0.8,
+        };
+        let gt = [0.1f32, 0.9, 0.2].repeat(w * h);
+        let ids = vec![1u32; w * h];
+        let views = vec![(c.clone(), w, h, gt, ids)];
+        let (_gc, gp, gs, ga, cnt) = gradients(std::slice::from_ref(&s0), &views, [0.0, 0.0, 0.0]);
+        assert!(cnt[0] > 0, "高斯应覆盖到像素");
+        let _ = cnt;
+        let eps = 1e-4;
+        // 位置 x
+        for (a, &ana) in gp[0].iter().enumerate() {
+            let mut up = s0.clone();
+            up.pos[a] += eps as f32;
+            let mut dn = s0.clone();
+            dn.pos[a] -= eps as f32;
+            let num = (loss_of(&[up], &views) - loss_of(&[dn], &views)) / (2.0 * eps);
+            assert!(
+                (num - ana).abs() < 5e-2 * ana.abs().max(1e-3) + 1e-3,
+                "pos[{a}]: 数值 {num:.6} vs 解析 {ana:.6}"
+            );
+        }
+        // 尺度
+        let mut up = s0.clone();
+        up.scale += eps as f32;
+        let mut dn = s0.clone();
+        dn.scale -= eps as f32;
+        let num = (loss_of(&[up], &views) - loss_of(&[dn], &views)) / (2.0 * eps);
+        let ana = gs[0];
+        assert!(
+            (num - ana).abs() < 5e-2 * ana.abs().max(1e-3) + 1e-3,
+            "scale: 数值 {num:.6} vs 解析 {ana:.6}"
+        );
+        // alpha
+        let mut up = s0.clone();
+        up.alpha += eps as f32;
+        let mut dn = s0.clone();
+        dn.alpha -= eps as f32;
+        let num = (loss_of(&[up], &views) - loss_of(&[dn], &views)) / (2.0 * eps);
+        let ana = ga[0];
+        assert!(
+            (num - ana).abs() < 5e-2 * ana.abs().max(1e-3) + 1e-3,
+            "alpha: 数值 {num:.6} vs 解析 {ana:.6}"
+        );
+    }
+
+    #[test]
+    fn two_splat_transmittance_chain_matches_numeric() {
+        let c = cam();
+        let (w, h) = (100usize, 100usize);
+        let near = Splat {
+            pos: [0.0, 0.0, -1.6],
+            scale: 0.06,
+            color: [0.9, 0.1, 0.1],
+            alpha: 0.7,
+        };
+        let far = Splat {
+            pos: [0.05, 0.0, -2.2],
+            scale: 0.06,
+            color: [0.1, 0.1, 0.9],
+            alpha: 0.7,
+        };
+        let gt = [0.3f32, 0.7, 0.3].repeat(w * h);
+        let ids = vec![1u32; w * h];
+        let views = vec![(c.clone(), w, h, gt, ids)];
+        let (_gc, gp, _gs, _ga, cnt) =
+            gradients(&[near.clone(), far.clone()], &views, [0.0, 0.0, 0.0]);
+        let eps = 1e-3f32;
+        for i in 0..2 {
+            for a in [0usize, 2] {
+                let mut up = [near.clone(), far.clone()];
+                up[i].pos[a] += eps;
+                let mut dn = [near.clone(), far.clone()];
+                dn[i].pos[a] -= eps;
+                let num = (loss_of(&up, &views) - loss_of(&dn, &views)) / (2.0 * f64::from(eps));
+                let ana = gp[i][a];
+                assert!(cnt[i] > 0);
+                assert!(
+                    (num - ana).abs() < 0.05 * ana.abs().max(1.0),
+                    "splat {i} pos[{a}]: 数值 {num:.4} vs 解析 {ana:.4}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn five_splat_descent_reduces_loss() {
+        // 多高斯重叠时，解析梯度与有限差分有偏差（离散的条目集/排序），
+        // 但**方向必须能下降**：这里直接检查 20 步位置更新后损失变小。
+        let c = cam();
+        let (w, h) = (60usize, 60usize);
+        let mut pts = Vec::new();
+        for i in 0..5 {
+            pts.push(Splat {
+                pos: [0.02 * i as f32, 0.0, -1.8 + 0.1 * i as f32],
+                scale: 0.07,
+                color: [0.2 + 0.15 * i as f32, 0.8 - 0.1 * i as f32, 0.3],
+                alpha: 0.6,
+            });
+        }
+        let gt = [0.4f32, 0.5, 0.4].repeat(w * h);
+        let ids = vec![1u32; w * h];
+        let views = vec![(c.clone(), w, h, gt, ids)];
+        let before = loss_of(&pts, &views);
+        for _ in 0..50 {
+            let (_gc, gp, _gs, _ga, cnt) = gradients(&pts, &views, [0.0, 0.0, 0.0]);
+            for (i, p) in pts.iter_mut().enumerate() {
+                if cnt[i] == 0 {
+                    continue;
+                }
+                let n = f64::from(cnt[i]);
+                for (k, pk) in p.pos.iter_mut().enumerate() {
+                    *pk -= 5e-3 * (gp[i][k] / n) as f32;
+                }
+            }
+        }
+        let after = loss_of(&pts, &views);
+        assert!(
+            after < before * 0.99,
+            "位置更新应降损（方向检查）：{before:.2} → {after:.2}"
+        );
+    }
+
     #[test]
     fn psnr_identical_is_infinite() {
         let a = vec![0.5f32; 12];
@@ -328,5 +522,258 @@ mod tests {
             fine.len()
         );
         assert!((coarse[0].color[0] - 1.0).abs() < 1e-6);
+    }
+}
+
+/// 投影结果（供反传复用）。
+#[derive(Clone, Copy)]
+pub struct Proj {
+    pub u: f64,
+    pub v: f64,
+    pub d: f64,
+    pub sigma: f64,
+}
+
+/// 一条「高斯 → 像素」的合成记录：权重 w = alpha · g · pre。
+#[derive(Clone, Copy)]
+pub struct Entry {
+    pub i: u32,
+    pub p: u32,
+    pub w: f32,
+    pub g: f32,
+    pub pre: f32,
+}
+
+/// 一帧的几何缓存：投影 + 权重记录（位置变化后必须重建）。
+/// 一次梯度累加的结果：(颜色, 位置, 尺度, alpha, 每高斯贡献像素数)。
+pub type Grads = (Vec<[f64; 3]>, Vec<[f64; 3]>, Vec<f64>, Vec<f64>, Vec<u32>);
+
+pub struct GeomCache {
+    pub proj: Vec<Option<Proj>>,
+    pub entries: Vec<Entry>,
+    pub coverage: Vec<f32>,
+}
+
+/// 建缓存（与 `collect` 同一套排序/合成规则，但保留反传所需分量）。
+pub fn build_cache(splats: &[Splat], cam: &Camera, w: usize, h: usize) -> GeomCache {
+    let fx = cam.k[0][0];
+    let mut proj: Vec<Option<Proj>> = vec![None; splats.len()];
+    let mut order: Vec<(usize, f64)> = Vec::new();
+    for (i, s) in splats.iter().enumerate() {
+        let Some((u, v, d)) = cam.project(s.pos) else {
+            continue;
+        };
+        if u < -2.0 || v < -2.0 || u >= w as f64 + 2.0 || v >= h as f64 + 2.0 {
+            continue;
+        }
+        let sigma = (fx * s.scale as f64 / d).max(0.35);
+        proj[i] = Some(Proj { u, v, d, sigma });
+        order.push((i, d));
+    }
+    order.sort_by(|a, b| a.1.total_cmp(&b.1));
+    let mut coverage = vec![0.0f32; w * h];
+    let mut entries = Vec::new();
+    for (i, _) in order {
+        let Some(pr) = proj[i] else { continue };
+        let r = (pr.sigma * 2.5).ceil() as i64;
+        let (cx, cy) = (pr.u.round() as i64, pr.v.round() as i64);
+        for y in (cy - r).max(0)..=(cy + r).min(h as i64 - 1) {
+            for x in (cx - r).max(0)..=(cx + r).min(w as i64 - 1) {
+                let dx = (x as f64 - pr.u) / pr.sigma;
+                let dy = (y as f64 - pr.v) / pr.sigma;
+                let g = (-0.5 * (dx * dx + dy * dy)).exp();
+                if g < 1e-3 {
+                    continue;
+                }
+                let p = y as usize * w + x as usize;
+                let pre = (1.0 - coverage[p]).max(0.0);
+                let wgt = splats[i].alpha as f64 * g * pre as f64;
+                coverage[p] += wgt as f32;
+                entries.push(Entry {
+                    i: i as u32,
+                    p: p as u32,
+                    w: wgt as f32,
+                    g: g as f32,
+                    pre,
+                });
+            }
+        }
+    }
+    GeomCache {
+        proj,
+        entries,
+        coverage,
+    }
+}
+
+/// 用缓存渲染。
+pub fn render_cached(
+    splats: &[Splat],
+    c: &GeomCache,
+    w: usize,
+    h: usize,
+    bg: [f32; 3],
+) -> Vec<f32> {
+    let mut img = vec![0.0f32; w * h * 3];
+    for e in &c.entries {
+        let col = splats[e.i as usize].color;
+        for k in 0..3 {
+            img[e.p as usize * 3 + k] += e.w * col[k];
+        }
+    }
+    for p in 0..w * h {
+        let rest = (1.0 - c.coverage[p]).max(0.0);
+        for k in 0..3 {
+            img[p * 3 + k] += rest * bg[k];
+        }
+    }
+    img
+}
+
+/// 拟合开关：哪些量进梯度。
+#[derive(Clone, Copy)]
+pub struct FitOpts {
+    pub iters: usize,
+    pub lr_color: f32,
+    pub lr_pos: f32,
+    pub lr_scale: f32,
+    pub lr_alpha: f32,
+    /// 位置锚定正则（把高斯拉回初始壳）：0 = 不锚定。
+    pub reg: f32,
+}
+
+impl Default for FitOpts {
+    fn default() -> Self {
+        FitOpts {
+            iters: 30,
+            lr_color: 0.5,
+            lr_pos: 0.0015,
+            lr_scale: 0.02,
+            lr_alpha: 0.05,
+            reg: 0.0,
+        }
+    }
+}
+
+/// 一次全参数梯度累加：返回 (颜色, 位置, 尺度, alpha, 每高斯的贡献像素数)。
+/// 排序视为局部固定（与 3DGS 同策略），只对合成权重链求导。
+pub fn gradients(splats: &[Splat], views: &[FitView], bg: [f32; 3]) -> Grads {
+    let mut gc = vec![[0.0f64; 3]; splats.len()];
+    let mut gp = vec![[0.0f64; 3]; splats.len()];
+    let mut gs = vec![0.0f64; splats.len()];
+    let mut ga = vec![0.0f64; splats.len()];
+    let mut cnt = vec![0u32; splats.len()];
+    let mut acc_pix: HashMap<u32, f64> = HashMap::new();
+    for (cam, w, h, gt, ids) in views {
+        {
+            acc_pix.clear();
+            let cache = build_cache(splats, cam, *w, *h);
+            let img = render_cached(splats, &cache, *w, *h, bg);
+            let r = cam_k(cam);
+            for e in cache.entries.iter().rev() {
+                let p = e.p as usize;
+                if ids[p] == 0 || e.w <= 0.0 {
+                    continue;
+                }
+                let i = e.i as usize;
+                let s = &splats[i];
+                // dL/dw = Σ_k 2·r_k·(c_k − bg_k)
+                let mut dldw = 0.0f64;
+                for k in 0..3 {
+                    let rk = f64::from(img[p * 3 + k] - gt[p * 3 + k]);
+                    gc[i][k] += 2.0 * rk * f64::from(e.w);
+                    dldw += 2.0 * rk * f64::from(s.color[k] - bg[k]);
+                }
+                // 透射率链（逆序）：acc = Σ_{j>i} a_j g_j·direct_j·Π(1−a_l g_l)
+                let ag = f64::from(s.alpha) * f64::from(e.g);
+                let acc = acc_pix.entry(e.p).or_insert(0.0);
+                let dw = dldw - *acc;
+                *acc = ag * dldw + (1.0 - ag) * *acc;
+                let Some(pr) = cache.proj[i] else { continue };
+                let (px, py) = ((p % *w) as f64, (p / *w) as f64);
+                let ex = (px - pr.u) / pr.sigma;
+                let ey = (py - pr.v) / pr.sigma;
+                let g = f64::from(e.g);
+                let a = s.alpha as f64;
+                let pre = f64::from(e.pre);
+                // 权重链：w = a·g·pre
+                ga[i] += dw * g * pre;
+                let dg = dw * a * pre;
+                // g 对 (u, v, σ) 的导数
+                let du = dg * g * ex / pr.sigma;
+                let dv = dg * g * ey / pr.sigma;
+                let dsigma = dg * g * (ex * ex + ey * ey) / pr.sigma;
+                gs[i] += dsigma * r.fx / pr.d;
+                // σ 也依赖深度；u,v 也依赖深度（见下方雅可比里的 D）
+                let dd = -dsigma * pr.sigma / pr.d;
+                // u = fx·xb/D, v = fy·(−yb)/D, D = −zb
+                let (xb, yb) = {
+                    let t = &cam.t_cw;
+                    let dx = s.pos[0] as f64 - t[0][3];
+                    let dy = s.pos[1] as f64 - t[1][3];
+                    let dz = s.pos[2] as f64 - t[2][3];
+                    (
+                        t[0][0] * dx + t[1][0] * dy + t[2][0] * dz,
+                        t[0][1] * dx + t[1][1] * dy + t[2][1] * dz,
+                    )
+                };
+                let ddepth = dd;
+                for (a_axis, gpa) in gp[i].iter_mut().enumerate() {
+                    let ra0 = cam.t_cw[a_axis][0];
+                    let ra1 = cam.t_cw[a_axis][1];
+                    let ra2 = cam.t_cw[a_axis][2];
+                    let d2 = pr.d * pr.d;
+                    let dud = r.fx * (ra0 * pr.d + xb * ra2) / d2;
+                    let dvd = r.fy * (-ra1 * pr.d + (-yb) * ra2) / d2;
+                    let ddd = -ra2; // D = −zb, ∂D/∂pos_a = −R[a][2]
+                    *gpa += du * dud + dv * dvd + ddepth * ddd;
+                }
+                cnt[i] += 1;
+            }
+        }
+    }
+    (gc, gp, gs, ga, cnt)
+}
+
+/// 全参数拟合（颜色 + 位置 + 尺度 + alpha）。
+pub fn fit_all(splats: &mut [Splat], views: &[FitView], opt: FitOpts, bg: [f32; 3]) {
+    if splats.is_empty() || views.is_empty() {
+        return;
+    }
+    let anchors: Vec<[f32; 3]> = splats.iter().map(|s| s.pos).collect();
+    for _ in 0..opt.iters {
+        let (gc, mut gp, gs, ga, cnt) = gradients(splats, views, bg);
+        if opt.reg > 0.0 {
+            for (i, s) in splats.iter().enumerate() {
+                for k in 0..3 {
+                    gp[i][k] += f64::from(opt.reg) * f64::from(s.pos[k] - anchors[i][k]);
+                }
+            }
+        }
+        for (i, s) in splats.iter_mut().enumerate() {
+            if cnt[i] == 0 {
+                continue;
+            }
+            let n = f64::from(cnt[i]);
+            for k in 0..3 {
+                s.color[k] = (s.color[k] - opt.lr_color * (gc[i][k] / n) as f32).clamp(0.0, 1.0);
+                s.pos[k] -= opt.lr_pos * (gp[i][k] / n) as f32;
+            }
+            s.scale = (s.scale - opt.lr_scale * (gs[i] / n) as f32).max(1e-4);
+            s.alpha = (s.alpha - opt.lr_alpha * (ga[i] / n) as f32).clamp(1e-3, 0.999);
+        }
+    }
+}
+
+/// 取相机内参里渲染要用的量（fx, fy）。
+struct CamK {
+    fx: f64,
+    fy: f64,
+}
+
+fn cam_k(cam: &Camera) -> CamK {
+    CamK {
+        fx: cam.k[0][0],
+        fy: cam.k[1][1],
     }
 }

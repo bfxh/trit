@@ -527,6 +527,19 @@ fn splat_cmd(argv: &[String]) {
     let fit_lr: f32 = arg(argv, "--fit-lr")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.5);
+    let fit_all_mode = argv.iter().any(|a| a == "--fit-all");
+    let lr_pos: f32 = arg(argv, "--fit-pos")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.02);
+    let lr_scale: f32 = arg(argv, "--fit-scale")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1e-4);
+    let lr_alpha: f32 = arg(argv, "--fit-alpha")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.05);
+    let fit_reg: f32 = arg(argv, "--fit-reg")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
 
     let load = |f: usize| -> View {
         let (ids, shape) =
@@ -600,7 +613,23 @@ fn splat_cmd(argv: &[String]) {
                 let img = render(&splats, &v.cam, v.w, v.h, [0.0, 0.0, 0.0]);
                 fit0.push(masked_psnr(&img, gt, &v.ids));
             }
-            trit_parts::splat::fit_colors(&mut splats, &sets, fit, fit_lr, [0.0, 0.0, 0.0]);
+            if fit_all_mode {
+                trit_parts::splat::fit_all(
+                    &mut splats,
+                    &sets,
+                    trit_parts::splat::FitOpts {
+                        iters: fit,
+                        lr_color: fit_lr,
+                        lr_pos,
+                        lr_scale,
+                        lr_alpha,
+                        reg: fit_reg,
+                    },
+                    [0.0, 0.0, 0.0],
+                );
+            } else {
+                trit_parts::splat::fit_colors(&mut splats, &sets, fit, fit_lr, [0.0, 0.0, 0.0]);
+            }
             let mut fit1 = Vec::new();
             for (v, gt) in fit_views.iter().zip(&fit_rgbs) {
                 let img = render(&splats, &v.cam, v.w, v.h, [0.0, 0.0, 0.0]);
