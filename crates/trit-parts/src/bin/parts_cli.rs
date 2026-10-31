@@ -487,6 +487,8 @@ fn pipeline(argv: &[String]) {
     let mut force = false;
     let mut threshold = 0.5f32;
     let mut framing_p = None;
+    let mut mesh = false;
+    let mut cell = 0.01f32;
     let mut i = 1;
     while i < argv.len() {
         match argv[i].as_str() {
@@ -529,6 +531,14 @@ fn pipeline(argv: &[String]) {
             "--force" => {
                 force = true;
                 i += 1;
+            }
+            "--mesh" => {
+                mesh = true;
+                i += 1;
+            }
+            "--cell" => {
+                cell = argv[i + 1].parse().unwrap_or(cell);
+                i += 2;
             }
             other => {
                 eprintln!("未知参数 {other}");
@@ -638,6 +648,60 @@ fn pipeline(argv: &[String]) {
         });
         let n: usize = clouds.values().map(Vec::len).sum();
         println!("点云：{} 部件 / {n} 点 → {}", clouds.len(), ply.display());
+
+        if mesh {
+            use trit_parts::mesh::{boundary_edges, fill_solid, non_manifold_edges, surface_nets};
+            let pts: Vec<[f32; 3]> = clouds.values().flatten().copied().collect();
+            let mut g = trit_parts::mesh::Grid::from_points(&pts, cell, 2).unwrap_or_else(|| {
+                eprintln!("点云为空，无法建网格");
+                std::process::exit(1);
+            });
+            fill_solid(&mut g);
+            let m = surface_nets(&g);
+            // 顶点着色：投回本视角，前景且深度一致才上色
+            let mut colors: Vec<Option<[u8; 3]>> = Vec::with_capacity(m.verts.len());
+            let mut colored = 0usize;
+            for v in &m.verts {
+                let mut c = None;
+                if let Some((u, vv, d)) = cam.project(*v)
+                    && u >= 0.0
+                    && vv >= 0.0
+                    && (u as usize) < w
+                    && (vv as usize) < h
+                {
+                    let (xi, yi) = (u as usize, vv as usize);
+                    let i = yi * w + xi;
+                    if ids[i] != 0 && (d - dep[i] as f64).abs() <= f64::from(2.0 * cell) {
+                        let sx = ((xi as f64 * w0 as f64 / w as f64) as usize).min(w0 - 1);
+                        let sy = ((yi as f64 * h0 as f64 / h as f64) as usize).min(h0 - 1);
+                        let j = (sy * w0 + sx) * 3;
+                        c = Some([
+                            (pix[j].clamp(0.0, 1.0) * 255.0) as u8,
+                            (pix[j + 1].clamp(0.0, 1.0) * 255.0) as u8,
+                            (pix[j + 2].clamp(0.0, 1.0) * 255.0) as u8,
+                        ]);
+                    }
+                }
+                if c.is_some() {
+                    colored += 1;
+                }
+                colors.push(c);
+            }
+            let mpth = outdir.join("mesh.ply");
+            trit_parts::mesh::write_ply_rgb(&mpth, &m, &colors).unwrap_or_else(|e| {
+                eprintln!("写网格失败: {e}");
+                std::process::exit(1);
+            });
+            println!(
+                "网格：{} 顶点 / {} 面（边界边 {} 非流形 {}）；顶点着色 {:.1}% → {}",
+                m.verts.len(),
+                m.tris.len(),
+                boundary_edges(&m),
+                non_manifold_edges(&m),
+                100.0 * colored as f32 / m.verts.len().max(1) as f32,
+                mpth.display()
+            );
+        }
     }
     println!("输出目录：{}", outdir.display());
 }

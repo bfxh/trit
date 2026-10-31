@@ -1526,6 +1526,130 @@ fn tex_cmd(argv: &[String]) {
     );
 }
 
+/// `tex-prior --iters 30000 --sigma 0.1`：N5 学习版地基——用程序化材质当数据，
+/// 训一个三值 3×3 去噪算子（9→16→1，灰度），在**留出材质种子**上量 PSNR 提升。
+fn tex_prior_cmd(argv: &[String]) {
+    use trit_parts::occ::Mlp;
+    use trit_parts::tex::tile;
+
+    let iters: usize = arg(argv, "--iters")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30000);
+    let sigma: f32 = arg(argv, "--sigma")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.1);
+    let n: usize = arg(argv, "--size")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(96);
+    let seed: u64 = arg(argv, "--seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let eval_seed: u64 = arg(argv, "--eval-seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+    let lr: f32 = arg(argv, "--lr")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.03);
+
+    // 灰度化 + 3×3 取样（边缘按环绕，保证平铺一致）
+    let gray = |kind: &str, sd: u64| -> Vec<f32> {
+        tile(kind, n, sd)
+            .iter()
+            .map(|p| (0.299 * p[0] as f32 + 0.587 * p[1] as f32 + 0.114 * p[2] as f32) / 255.0)
+            .collect()
+    };
+    let mut rng: u64 = 0x9E37_79B9_7F4A_7C15 ^ seed;
+    let mut nxt = || {
+        rng ^= rng << 13;
+        rng ^= rng >> 7;
+        rng ^= rng << 17;
+        (rng >> 11) as f32 / (1u64 << 53) as f32
+    };
+    let kinds = ["wood", "marble", "rust", "grid"];
+    let mut train: Vec<(Vec<f32>, f32)> = Vec::new();
+    for (i, k) in kinds.iter().enumerate() {
+        let g = gray(k, seed + i as u64);
+        for y in 0..n {
+            for x in 0..n {
+                let mut f = Vec::with_capacity(9);
+                for dy in -1i32..=1 {
+                    for dx in -1i32..=1 {
+                        let (xx, yy) = (
+                            ((x as i32 + dx).rem_euclid(n as i32)) as usize,
+                            ((y as i32 + dy).rem_euclid(n as i32)) as usize,
+                        );
+                        let v = g[yy * n + xx];
+                        // 加高斯噪声（Box-Muller 近似：两次均匀）
+                        let u1 = nxt().max(1e-6);
+                        let u2 = nxt();
+                        let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
+                        f.push((v + sigma * z).clamp(0.0, 1.0));
+                    }
+                }
+                train.push((f, g[y * n + x]));
+            }
+        }
+    }
+    let mut mlp = Mlp::new(9, 16, seed);
+    let mut loss = 0.0f64;
+    for step in 0..iters {
+        let (x, y) = &train[(step * 7919) % train.len()];
+        loss += mlp.train_step(x, *y, lr) as f64;
+        if (step + 1) % 5000 == 0 {
+            println!(
+                "  step {} loss {:.4} 三值零占比 {:.2}",
+                step + 1,
+                loss / 5000.0,
+                mlp.sparsity()
+            );
+            loss = 0.0;
+        }
+    }
+    // 留出种子 + 留出材质方向：只评 wood/marble（训练见过种类，但换种子）
+    let mut psnr_in = Vec::new();
+    let mut psnr_out = Vec::new();
+    for (i, k) in ["wood", "marble"].iter().enumerate() {
+        let g = gray(k, eval_seed + i as u64);
+        let (mut se_in, mut se_out, mut cnt) = (0.0f64, 0.0f64, 0usize);
+        for y in 0..n {
+            for x in 0..n {
+                let mut f = Vec::with_capacity(9);
+                for dy in -1i32..=1 {
+                    for dx in -1i32..=1 {
+                        let (xx, yy) = (
+                            ((x as i32 + dx).rem_euclid(n as i32)) as usize,
+                            ((y as i32 + dy).rem_euclid(n as i32)) as usize,
+                        );
+                        let u1 = nxt().max(1e-6);
+                        let u2 = nxt();
+                        let z = (-2.0 * u1.ln()).sqrt() * (2.0 * std::f32::consts::PI * u2).cos();
+                        f.push((g[yy * n + xx] + sigma * z).clamp(0.0, 1.0));
+                    }
+                }
+                let clean = g[y * n + x];
+                let (logit, _) = mlp.forward(&f);
+                let pred = 1.0 / (1.0 + (-logit).exp());
+                let noisy = f[4];
+                se_in += f64::from((noisy - clean).powi(2));
+                se_out += f64::from((pred - clean).powi(2));
+                cnt += 1;
+            }
+        }
+        let p_in = 10.0 * (1.0 / (se_in / cnt as f64)).log10();
+        let p_out = 10.0 * (1.0 / (se_out / cnt as f64)).log10();
+        println!("留出 {k}（seed {eval_seed}）: 噪声 PSNR {p_in:.2} → 去噪 {p_out:.2}");
+        psnr_in.push(p_in);
+        psnr_out.push(p_out);
+    }
+    println!(
+        "N5 学习地基：3×3 三值去噪算子 {} 步；PSNR 均值 {:.2} → {:.2}（+{:.2} dB）",
+        iters,
+        avg(&psnr_in),
+        avg(&psnr_out),
+        avg(&psnr_out) - avg(&psnr_in)
+    );
+}
+
 fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
     let mut a = Vec::new();
     let mut b = Vec::new();
@@ -1557,7 +1681,8 @@ fn usage() -> ! {
   parts-3d align --scene <dir> --frames 0,1,2,3,4,5,6,7 [--cell 0.01] [--tau 0.01] [--fill]
   parts-3d obs-split --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]
   parts-3d mesh-tex --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]
-  parts-3d tex --kind wood|marble|rust|grid --size 256 --out <ppm>"
+  parts-3d tex --kind wood|marble|rust|grid --size 256 --out <ppm>
+  parts-3d tex-prior [--iters 30000] [--sigma 0.1] [--size 96] [--seed 1] [--eval-seed 2]"
     );
     std::process::exit(2);
 }
@@ -1579,6 +1704,7 @@ fn main() {
         Some("obs-split") => obs_split_cmd(&argv),
         Some("mesh-tex") => mesh_tex_cmd(&argv),
         Some("tex") => tex_cmd(&argv),
+        Some("tex-prior") => tex_prior_cmd(&argv),
         Some("infer") => {
             #[cfg(feature = "gpu")]
             infer(&argv);
