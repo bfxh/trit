@@ -1910,6 +1910,38 @@ fn mesh_tex_cmd(argv: &[String]) {
         trit_parts::data::write_rgb(&png_p, tw, th, &tpix).unwrap_or_else(|e| fail(&e));
         trit_parts::uv::write_obj(&obj_path, &m, &uvs, &format!("{stem}.png"))
             .unwrap_or_else(|e| fail(&e));
+        if let Some(lp) = arg(argv, "--light-out") {
+            let fr: usize = arg(argv, "--light-frame")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let (rw, rh, rpx) = trit_parts::data::read_rgb(&frame_path(&scene, "rgb", fr, "png"))
+                .unwrap_or_else(|e| fail(&e));
+            let (nrm, nshape) =
+                trit_parts::geo::read_npy_f32(&frame_path(&scene, "normal", fr, "npy"))
+                    .unwrap_or_else(|e| fail(&e));
+            let (seg, _) = trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", fr, "npy"))
+                .unwrap_or_else(|e| fail(&e));
+            if nshape.len() == 3 {
+                let mut lum = vec![0.0f32; rw * rh];
+                for i in 0..rw * rh {
+                    lum[i] = 0.299 * rpx[i * 3] + 0.587 * rpx[i * 3 + 1] + 0.114 * rpx[i * 3 + 2];
+                }
+                let mask: Vec<bool> = (0..rw * rh).map(|i| seg[i] > 0).collect();
+                if let Some((l, k, a)) =
+                    trit_parts::light::fit_from_normals(&lum, &nrm, &mask, rw, rh)
+                {
+                    let json = format!(
+                        "{{\n  \"method\": \"lambert-normal-fit\",\n  \"frame\": {fr},\n  \"dir_world\": [{:.6}, {:.6}, {:.6}],\n  \"intensity\": {:.6},\n  \"ambient\": {:.6}\n}}\n",
+                        l[0], l[1], l[2], k, a
+                    );
+                    std::fs::write(&lp, json).unwrap_or_else(|e| fail(&format!("{lp}: {e}")));
+                    println!(
+                        "光照侧车 → {lp}：方向 ({:.2},{:.2},{:.2}) 强度 {k:.3} 环境 {a:.3}",
+                        l[0], l[1], l[2]
+                    );
+                }
+            }
+        }
         println!(
             "OBJ {}：{} 顶点 / {} 三角形，投影 UV，贴图 {}×{}（一张覆盖 {:.3} 世界单位）⇒ {}",
             obj_path.display(),
