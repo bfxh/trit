@@ -186,6 +186,145 @@ fn train(argv: &[String]) {
 /// `mesh-single --model <tpm> --head <tpdh> --scene <dir> --frame N --cell 0.02 [--gt] --out <ply>`：
 /// **单图 → 3D 网格**：预测（或 GT）深度 → 反投影点云 → 体素填实 → 表面网 → PLY。
 /// 前景遮罩目前取 GT seg（真实照片要靠背景分割/深度阈值，见文档）。
+/// 一条训练样本：RGB 平面 / 归一化视差 / 有效掩码 / 该图的 med、iqr。
+type DepthSample = (Vec<Vec<f32>>, Vec<f32>, Vec<bool>, f32, f32);
+
+/// 读一张图 + 深度，返回 `(rgb 平面, 归一化视差, 掩码, med, iqr)`。
+fn load_sample(scene: &Path, frame: usize, size: usize) -> Option<DepthSample> {
+    let p = scene.join("rgb").join(format!("{frame:06}.png"));
+    if !p.exists() {
+        return None;
+    }
+    let (w, h, rgb) = read_rgb(&p).ok()?;
+    let (dep, _) =
+        trit_parts::geo::read_npy_f32(&scene.join("depth").join(format!("{frame:06}.npy"))).ok()?;
+    let (seg, _) =
+        trit_parts::data::read_npy_i32(&scene.join("seg").join(format!("{frame:06}.npy"))).ok()?;
+    // 中心裁剪到 size
+    let (x0, y0) = ((w - size) / 2, (h - size) / 2);
+    let mut planes = vec![vec![0.0f32; size * size]; 3];
+    let mut disp = vec![0.0f32; size * size];
+    let mut mask = vec![false; size * size];
+    let mut vals: Vec<f32> = Vec::new();
+    for y in 0..size {
+        for x in 0..size {
+            let si = (y0 + y) * w + x0 + x;
+            for c in 0..3 {
+                planes[c][y * size + x] = rgb[si * 3 + c];
+            }
+            let d = dep[si];
+            let dv = if d.is_finite() && d > 0.05 && d < 50.0 && seg[si] > 0 {
+                1.0 / d
+            } else {
+                0.0
+            };
+            disp[y * size + x] = dv;
+            mask[y * size + x] = dv > 0.0;
+            if dv > 0.0 {
+                vals.push(dv);
+            }
+        }
+    }
+    if vals.len() < size * size / 20 {
+        return None;
+    }
+    vals.sort_by(f32::total_cmp);
+    let q = |f: f32| vals[((vals.len() as f32 - 1.0) * f).round() as usize];
+    let med = q(0.5);
+    let iqr = (q(0.75) - q(0.25)).max(1e-3);
+    for v in disp.iter_mut() {
+        // 裁剪到 [-4,4]：近处像素的视差能大出中位数两个数量级，不裁会把 L1 全吃掉
+        *v = ((*v - med) / iqr).clamp(-4.0, 4.0);
+    }
+    Some((planes, disp, mask, med, iqr))
+}
+
+/// `cnn-train --data <场景目录,…> --holdout a,b --size 64 --epochs 3 --out model.dcn`：
+/// 三值卷积逐像素深度头（归一化视差），留出场景评估相对误差。
+fn cnn_train(argv: &[String]) {
+    use trit_parts::depthnet::DepthNet;
+    let data: Vec<PathBuf> = arg(argv, "--data")
+        .unwrap_or_else(|| usage())
+        .split(',')
+        .map(PathBuf::from)
+        .collect();
+    let size: usize = arg(argv, "--size")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(64);
+    let epochs: usize = arg(argv, "--epochs")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
+    let lr: f32 = arg(argv, "--lr")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.01);
+    let hidden: usize = arg(argv, "--hidden")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8);
+    let stride: usize = arg(argv, "--stride")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+    let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+    let mut net = DepthNet::new(hidden, 7);
+    type TrainSample = (PathBuf, usize, Vec<Vec<f32>>, Vec<f32>, Vec<bool>);
+    let mut samples: Vec<TrainSample> = Vec::new();
+    let mut med_sum = 0.0f32;
+    let mut iqr_sum = 0.0f32;
+    let mut cnt = 0usize;
+    for d in &data {
+        let mut fr = 0usize;
+        while let Some((x, y, mk, med, iqr)) = load_sample(d, fr, size) {
+            if fr.is_multiple_of(stride.max(1)) {
+                samples.push((d.clone(), fr, x, y, mk));
+                med_sum += med;
+                iqr_sum += iqr;
+                cnt += 1;
+            }
+            fr += 1;
+            if fr > 24 {
+                break;
+            }
+        }
+    }
+    if samples.is_empty() {
+        panic!("没有可用样本");
+    }
+    net.med = med_sum / cnt as f32;
+    net.iqr = iqr_sum / cnt as f32;
+    println!(
+        "样本 {}（{} 场景，{}²，hidden {}），med {:.4} iqr {:.4}",
+        samples.len(),
+        data.len(),
+        size,
+        hidden,
+        net.med,
+        net.iqr
+    );
+    for ep in 0..epochs {
+        let mut loss = 0.0f32;
+        for (_, _, x, y, mk) in &samples {
+            loss += net.train_step(x, size, size, y, mk, lr);
+        }
+        let (_, _, x0, _, _) = &samples[0];
+        let p0 = net.forward(x0, size, size);
+        let (mut lo, mut hi, mut mean) = (f32::INFINITY, f32::NEG_INFINITY, 0.0f32);
+        for v in &p0 {
+            lo = lo.min(*v);
+            hi = hi.max(*v);
+            mean += v;
+        }
+        println!(
+            "epoch {}/{}：平均 |误差| {:.4}；首样本预测 范围 [{lo:.2}, {hi:.2}] 均值 {:.2}",
+            ep + 1,
+            epochs,
+            loss / samples.len() as f32,
+            mean / p0.len().max(1) as f32
+        );
+        let _ = &out;
+    }
+    net.save(&out).unwrap_or_else(|e| panic!("{e}"));
+    println!("已存 {}", out.display());
+}
+
 fn mesh_single(argv: &[String]) {
     use trit_parts::mesh::{boundary_edges, fill_solid, surface_nets, write_ply};
 
@@ -402,6 +541,7 @@ fn main() {
         Some("train") => train(&argv),
         Some("eval") => eval(&argv),
         Some("mesh-single") => mesh_single(&argv),
+        Some("cnn-train") => cnn_train(&argv),
         _ => usage(),
     }
 }

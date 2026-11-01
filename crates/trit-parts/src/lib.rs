@@ -15,6 +15,7 @@ pub mod augment;
 pub mod backward;
 pub mod data;
 pub mod depth;
+pub mod depthnet;
 pub mod diffuse;
 pub mod fuse;
 pub mod geo;

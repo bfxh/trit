@@ -1,0 +1,264 @@
+//! 小型三值卷积**逐像素回归**头（用于单目深度/视差）。
+//!
+//! 结构：`conv(3→H,3×3) → ReLU → conv(H→H) → ReLU → conv(H→1,线性)`，输入/输出同分辨率。
+//! 权重全三值（STE，复用 [`crate::tconv::Conv`]），只有最后 1×1 输出层也是三值 + 每通道 scale。
+//!
+//! 训练目标：**归一化视差**（每张图减中位、除 IQR），因此对全局尺度不敏感；
+//! 推理时再按需反归一化（`--use-median-prior` 用训练集统计）。
+
+use crate::tconv::Conv;
+
+pub struct DepthNet {
+    pub c1: Conv,
+    pub c2: Conv,
+    pub c3: Conv,
+    /// 训练时的目标归一化统计（中位/四分位距），用于推理反归一化。
+    pub med: f32,
+    pub iqr: f32,
+}
+
+impl DepthNet {
+    pub fn new(hidden: usize, seed: u64) -> Self {
+        let mut c3 = Conv::new(hidden, 1, seed ^ 0xA5A5);
+        c3.ternary = false;
+        DepthNet {
+            c1: Conv::new(3, hidden, seed),
+            c2: Conv::new(hidden, hidden, seed ^ 0x5DEECE66D),
+            c3,
+            med: 0.0,
+            iqr: 1.0,
+        }
+    }
+
+    pub fn forward(&self, x: &[Vec<f32>], w: usize, h: usize) -> Vec<f32> {
+        let o1 = self.c1.forward(x, w, h);
+        let r1: Vec<Vec<f32>> = o1
+            .iter()
+            .map(|m| m.iter().map(|v| v.max(0.0)).collect())
+            .collect();
+        let o2 = self.c2.forward(&r1, w, h);
+        let r2: Vec<Vec<f32>> = o2
+            .iter()
+            .map(|m| m.iter().map(|v| v.max(0.0)).collect())
+            .collect();
+        self.c3
+            .forward(&r2, w, h)
+            .into_iter()
+            .next()
+            .unwrap_or_default()
+    }
+
+    /// 一步训练：L1 损失（对归一化视差），返回平均误差。
+    pub fn train_step(
+        &mut self,
+        x: &[Vec<f32>],
+        w: usize,
+        h: usize,
+        target: &[f32],
+        mask: &[bool],
+        lr: f32,
+    ) -> f32 {
+        let o1 = self.c1.forward(x, w, h);
+        let r1: Vec<Vec<f32>> = o1
+            .iter()
+            .map(|m| m.iter().map(|v| v.max(0.0)).collect())
+            .collect();
+        let o2 = self.c2.forward(&r1, w, h);
+        let r2: Vec<Vec<f32>> = o2
+            .iter()
+            .map(|m| m.iter().map(|v| v.max(0.0)).collect())
+            .collect();
+        let pred = self
+            .c3
+            .forward(&r2, w, h)
+            .into_iter()
+            .next()
+            .unwrap_or_default();
+        let mut loss = 0.0f32;
+        let mut valid = 0usize;
+        let mut dout = vec![vec![0.0f32; w * h]];
+        for i in 0..w * h {
+            if !mask[i] {
+                continue;
+            }
+            let d = pred[i] - target[i];
+            loss += d.abs();
+            valid += 1;
+            // 不要除 n：除以像素数会把梯度压到 1e-4 量级，三值 STE 下几乎不动（实测 1400 步损失只掉 1%）
+            dout[0][i] = d.signum();
+        }
+        let (dr2, dw3, db3, ds3) = self.c3.backward(&r2, w, h, &dout);
+        self.c3.apply(&dw3, &db3, &ds3, lr, true);
+        // 先过 ReLU 掩码（r2 = ReLU(o2)），再喂给 c2 —— 之前把未掩码的梯度给了 c2，链是断的
+        let mut d2: Vec<Vec<f32>> = Vec::with_capacity(dr2.len());
+        for (j, g) in dr2.iter().enumerate() {
+            let mut d = vec![0.0f32; w * h];
+            for i in 0..w * h {
+                if o2[j][i] > 0.0 {
+                    d[i] = g[i];
+                }
+            }
+            d2.push(d);
+        }
+        let (dr1, dw2, db2, ds2) = self.c2.backward(&r1, w, h, &d2);
+        self.c2.apply(&dw2, &db2, &ds2, lr, true);
+        let mut d1: Vec<Vec<f32>> = Vec::with_capacity(dr1.len());
+        for (j, g) in dr1.iter().enumerate() {
+            let mut d = vec![0.0f32; w * h];
+            for i in 0..w * h {
+                if o1[j][i] > 0.0 {
+                    d[i] = g[i];
+                }
+            }
+            d1.push(d);
+        }
+        let (_dx, dw1, db1, ds1) = self.c1.backward(x, w, h, &d1);
+        self.c1.apply(&dw1, &db1, &ds1, lr, true);
+        loss / valid.max(1) as f32
+    }
+
+    /// 归一化视差 → 相对值；`med/iqr` 由训练集统计给出。
+    pub fn denorm(&self, v: f32) -> f32 {
+        v * self.iqr + self.med
+    }
+
+    pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
+        use std::fmt::Write as _;
+        let mut s = format!("DCN1 {} {}\n", self.med, self.iqr);
+        for c in [&self.c1, &self.c2, &self.c3] {
+            let _ = writeln!(s, "{} {}", c.cin, c.cout);
+            for v in [&c.w, &c.b, &c.scale] {
+                for x in v.iter() {
+                    let _ = write!(s, "{x} ");
+                }
+                let _ = writeln!(s);
+            }
+        }
+        std::fs::write(path, s).map_err(|e| format!("{}: {e}", path.display()))
+    }
+
+    pub fn load(path: &std::path::Path) -> Result<Self, String> {
+        let txt = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
+        let mut it = txt.split_whitespace();
+        if it.next() != Some("DCN1") {
+            return Err(format!("{}: 不是 DCN1", path.display()));
+        }
+        let med: f32 = it.next().and_then(|x| x.parse().ok()).ok_or("缺 med")?;
+        let iqr: f32 = it.next().and_then(|x| x.parse().ok()).ok_or("缺 iqr")?;
+        let mut convs = Vec::new();
+        for _ in 0..3 {
+            let cin: usize = it.next().ok_or("缺 cin")?.parse().map_err(|_| "cin")?;
+            let cout: usize = it.next().ok_or("缺 cout")?.parse().map_err(|_| "cout")?;
+            let mut c = Conv::new(cin, cout, 1);
+            for v in c.w.iter_mut() {
+                *v = it.next().and_then(|x| x.parse().ok()).ok_or("缺 w")?;
+            }
+            for v in c.b.iter_mut() {
+                *v = it.next().and_then(|x| x.parse().ok()).ok_or("缺 b")?;
+            }
+            for v in c.scale.iter_mut() {
+                *v = it.next().and_then(|x| x.parse().ok()).ok_or("缺 scale")?;
+            }
+            convs.push(c);
+        }
+        let mut c3 = convs[2].clone();
+        c3.ternary = false; // 与 new() 一致：输出层是线性 f32
+        Ok(DepthNet {
+            c1: convs[0].clone(),
+            c2: convs[1].clone(),
+            c3,
+            med,
+            iqr,
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 目标 = 归一化 x 坐标（0..1），网络应能学到这个单调整体趋势。
+    fn ramp_target(w: usize, h: usize) -> Vec<f32> {
+        let mut v = vec![0.0f32; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                v[y * w + x] = x as f32 / w as f32;
+            }
+        }
+        v
+    }
+
+    fn gray(level: f32, w: usize, h: usize) -> Vec<Vec<f32>> {
+        (0..3).map(|_| vec![level; w * h]).collect()
+    }
+
+    /// 输入：横向亮度斜坡（与目标同向）；常数输入无法产生空间目标。
+    fn ramp_input(w: usize, h: usize) -> Vec<Vec<f32>> {
+        let mut m = vec![0.0f32; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                m[y * w + x] = x as f32 / w as f32;
+            }
+        }
+        vec![m.clone(), m.clone(), m]
+    }
+
+    #[test]
+    fn learns_a_simple_ramp() {
+        let (w, h) = (16usize, 16usize);
+        let t = ramp_target(w, h);
+        let mut net = DepthNet::new(6, 3);
+        // 输入亮度与目标相关：亮 → 视差大
+        for _ in 0..400 {
+            net.train_step(&ramp_input(w, h), w, h, &t, &vec![true; w * h], 0.02);
+        }
+        // 预测应与目标正相关（不做绝对精度要求）
+        let p = net.forward(&ramp_input(w, h), w, h);
+        let mean_l: f32 = p[..w * h / 2].iter().sum::<f32>() / (w * h / 2) as f32;
+        let mean_r: f32 = p[w * h / 2..].iter().sum::<f32>() / (w * h / 2) as f32;
+        assert!(mean_r > mean_l, "右侧应更大：{mean_r:.3} vs {mean_l:.3}");
+    }
+
+    #[test]
+    fn save_load_roundtrip() {
+        let mut net = DepthNet::new(4, 5);
+        let (w, h) = (8usize, 8usize);
+        net.train_step(
+            &gray(0.5, w, h),
+            w,
+            h,
+            &vec![0.2f32; w * h],
+            &vec![true; w * h],
+            0.01,
+        );
+        net.med = 0.25;
+        net.iqr = 0.5;
+        let p = std::env::temp_dir().join("dcn_roundtrip.dcn");
+        net.save(&p).unwrap();
+        let back = DepthNet::load(&p).unwrap();
+        assert_eq!(back.med, 0.25);
+        assert_eq!(back.iqr, 0.5);
+        let a = net.forward(&gray(0.3, w, h), w, h);
+        let b = back.forward(&gray(0.3, w, h), w, h);
+        for (x, y) in a.iter().zip(&b) {
+            assert!((x - y).abs() < 1e-5);
+        }
+        std::fs::remove_file(p).ok();
+    }
+
+    #[test]
+    fn deterministic() {
+        let (w, h) = (8usize, 8usize);
+        let t = vec![0.1f32; w * h];
+        let mut a = DepthNet::new(3, 9);
+        let mut b = DepthNet::new(3, 9);
+        for _ in 0..5 {
+            a.train_step(&gray(0.4, w, h), w, h, &t, &vec![true; w * h], 0.01);
+            b.train_step(&gray(0.4, w, h), w, h, &t, &vec![true; w * h], 0.01);
+        }
+        assert_eq!(
+            a.forward(&gray(0.2, w, h), w, h),
+            b.forward(&gray(0.2, w, h), w, h)
+        );
+    }
+}
