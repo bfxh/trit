@@ -2306,6 +2306,292 @@ impl Den {
 
 /// `tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 3] [--seed 1]`：
 /// 非参数 patch 合成（搬真实 patch，结构/统计由构造保证；与 `tex-gen` 的学出来的合成对照用）。
+/// look 的 22 个描述量（顺序固定；CSV 与训练都用它）。
+const LOOK_FEATURES: [&str; 22] = [
+    "luma",
+    "contrast",
+    "sat",
+    "hue_entropy",
+    "edge",
+    "fine",
+    "strong",
+    "flat",
+    "levels",
+    "haze",
+    "emissive",
+    "bars",
+    "warmth",
+    "key_dir",
+    "key_fill_dwarm",
+    "highlights",
+    "hf1",
+    "hf2",
+    "hf4",
+    "border",
+    "stroke",
+    "coherence",
+];
+
+fn look_vec(l: &trit_parts::look::Look) -> Vec<f32> {
+    vec![
+        l.luma,
+        l.contrast,
+        l.sat,
+        l.hue_entropy,
+        l.edge,
+        l.fine,
+        l.strong,
+        l.flat,
+        l.levels,
+        l.haze,
+        l.emissive,
+        l.bars,
+        l.warmth,
+        l.key_dir,
+        l.key_fill_dwarm,
+        l.highlights,
+        l.hf1,
+        l.hf2,
+        l.hf4,
+        l.border,
+        l.stroke,
+        l.coherence,
+    ]
+}
+
+/// `material-data --scene <dir> --frames 0,1,2 --out csv [--min-px 200]`：
+/// 按 seg 取每个部件的**掩码裁剪**，算 look 的 22 个描述量 + manifest 材质标签，写 CSV（训练用）。
+fn material_data_cmd(argv: &[String]) {
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+    let frames: Vec<usize> = arg(argv, "--frames")
+        .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![0]);
+    let min_px: usize = arg(argv, "--min-px")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
+    let txt = std::fs::read_to_string(scene.join("manifest.json"))
+        .unwrap_or_else(|e| fail(&format!("{}: {e}", scene.display())));
+    let by_pass = materials_by_pass(&txt);
+    let mut csv = String::from("scene,frame,part,material");
+    for f in LOOK_FEATURES {
+        csv.push(',');
+        csv.push_str(f);
+    }
+    csv.push('\n');
+    let mut n = 0usize;
+    for &fr in &frames {
+        let (ids, shape) = trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", fr, "npy"))
+            .unwrap_or_else(|e| fail(&e));
+        let (rgbw, rgbh, rgb) = trit_parts::data::read_rgb(&frame_path(&scene, "rgb", fr, "png"))
+            .unwrap_or_else(|e| fail(&e));
+        let (h, w) = (shape[0], shape[1]);
+        if (w, h) != (rgbw, rgbh) {
+            fail("seg 与 rgb 尺寸不一致");
+        }
+        let mut present: std::collections::BTreeMap<u32, (usize, usize, usize, usize, usize)> =
+            std::collections::BTreeMap::new();
+        for y in 0..h {
+            for x in 0..w {
+                let id = ids[y * w + x];
+                if id <= 0 {
+                    continue;
+                }
+                let e = present.entry(id as u32).or_insert((x, y, x, y, 0));
+                e.0 = e.0.min(x);
+                e.1 = e.1.min(y);
+                e.2 = e.2.max(x);
+                e.3 = e.3.max(y);
+                e.4 += 1;
+            }
+        }
+        for (id, (x0, y0, x1, y1, cnt)) in present {
+            if cnt < min_px {
+                continue;
+            }
+            let Some(mat) = by_pass.get(id as usize).and_then(|m| m.clone()) else {
+                continue;
+            };
+            let mut mean = [0.0f32; 3];
+            for y in y0..=y1 {
+                for x in x0..=x1 {
+                    if ids[y * w + x] == id as i32 {
+                        for c in 0..3 {
+                            mean[c] += rgb[(y * w + x) * 3 + c];
+                        }
+                    }
+                }
+            }
+            for m in mean.iter_mut() {
+                *m /= cnt as f32;
+            }
+            let (cw, ch) = (x1 - x0 + 1, y1 - y0 + 1);
+            let mut crop = vec![0.0f32; cw * ch * 3];
+            for y in 0..ch {
+                for x in 0..cw {
+                    let inside = ids[(y0 + y) * w + x0 + x] == id as i32;
+                    for c in 0..3 {
+                        crop[(y * cw + x) * 3 + c] = if inside {
+                            rgb[((y0 + y) * w + x0 + x) * 3 + c]
+                        } else {
+                            mean[c]
+                        };
+                    }
+                }
+            }
+            let l = trit_parts::look::analyze(&crop, cw, ch);
+            let name = scene
+                .file_name()
+                .and_then(|x| x.to_str())
+                .unwrap_or("scene")
+                .to_string();
+            csv.push_str(&format!("{name},{fr},{id},{mat}"));
+            for v in look_vec(&l) {
+                csv.push_str(&format!(",{v:.6}"));
+            }
+            csv.push('\n');
+            n += 1;
+        }
+    }
+    std::fs::write(&out, csv).unwrap_or_else(|e| fail(&format!("{}: {e}", out.display())));
+    println!("material-data：{n} 个「帧×部件」样本 → {}", out.display());
+}
+
+/// `material-fit --csv <csv> --holdout-every 5 --lambda 1 [--out model.txt]`：
+/// 按**场景**分组留出（每第 k 个场景留出，避免同场景泄漏），特征 z-score 后做一对多岭回归，报混淆矩阵。
+fn material_fit_cmd(argv: &[String]) {
+    use trit_parts::ridge;
+    let csvp = PathBuf::from(arg(argv, "--csv").unwrap_or_else(|| usage()));
+    let every: usize = arg(argv, "--holdout-every")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+    let lambda: f32 = arg(argv, "--lambda")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1.0);
+    let txt = std::fs::read_to_string(&csvp)
+        .unwrap_or_else(|e| fail(&format!("{}: {e}", csvp.display())));
+    const MATS: [&str; 4] = ["wood", "metal", "stone", "fabric"];
+    let mut scenes: Vec<String> = Vec::new();
+    let mut xs: Vec<Vec<f32>> = Vec::new();
+    let mut ys: Vec<usize> = Vec::new();
+    for (i, line) in txt.lines().enumerate() {
+        if i == 0 || line.trim().is_empty() {
+            continue;
+        }
+        let cols: Vec<&str> = line.split(',').collect();
+        if cols.len() < 4 + LOOK_FEATURES.len() {
+            continue;
+        }
+        let Some(k) = MATS.iter().position(|m| *m == cols[3]) else {
+            continue;
+        };
+        xs.push(
+            cols[4..4 + LOOK_FEATURES.len()]
+                .iter()
+                .map(|v| v.parse::<f32>().unwrap_or(0.0))
+                .collect(),
+        );
+        ys.push(k);
+        scenes.push(cols[0].to_string());
+    }
+    if xs.is_empty() {
+        fail("CSV 里没有可用样本");
+    }
+    let mut order: Vec<String> = Vec::new();
+    for s in &scenes {
+        if !order.contains(s) {
+            order.push(s.clone());
+        }
+    }
+    let idx_of = |s: &str| order.iter().position(|x| x == s).unwrap_or(0);
+    let is_test: Vec<bool> = scenes.iter().map(|s| idx_of(s) % every == 0).collect();
+    let tr: Vec<usize> = (0..xs.len()).filter(|&i| !is_test[i]).collect();
+    let te: Vec<usize> = (0..xs.len()).filter(|&i| is_test[i]).collect();
+    if tr.is_empty() || te.is_empty() {
+        fail("留出集或训练集为空：调大样本或改 --holdout-every");
+    }
+    let d = xs[0].len();
+    let mut mu = vec![0.0f32; d];
+    let mut sd = vec![0.0f32; d];
+    for &i in &tr {
+        for j in 0..d {
+            mu[j] += xs[i][j];
+        }
+    }
+    for m in mu.iter_mut() {
+        *m /= tr.len() as f32;
+    }
+    for &i in &tr {
+        for j in 0..d {
+            sd[j] += (xs[i][j] - mu[j]).powi(2);
+        }
+    }
+    for v in sd.iter_mut() {
+        *v = (*v / tr.len() as f32).sqrt().max(1e-6);
+    }
+    let norm = |v: &Vec<f32>| -> Vec<f32> { (0..d).map(|j| (v[j] - mu[j]) / sd[j]).collect() };
+    let xtr: Vec<Vec<f32>> = tr.iter().map(|&i| norm(&xs[i])).collect();
+    let mut head: Vec<Vec<f32>> = Vec::new();
+    for k in 0..MATS.len() {
+        let y: Vec<f32> = tr
+            .iter()
+            .map(|&i| if ys[i] == k { 1.0 } else { -1.0 })
+            .collect();
+        head.push(ridge::fit_ridge(&xtr, &y, lambda));
+    }
+    let mut conf = [[0usize; 4]; 4];
+    for &i in &te {
+        let xn = norm(&xs[i]);
+        let mut best = (f32::NEG_INFINITY, 0usize);
+        for (k, w) in head.iter().enumerate() {
+            let sc = ridge::predict(w, &xn);
+            if sc > best.0 {
+                best = (sc, k);
+            }
+        }
+        conf[ys[i]][best.1] += 1;
+    }
+    println!(
+        "样本 {}（训练 {} / 留出 {}，按场景留出 every={every}）",
+        xs.len(),
+        tr.len(),
+        te.len()
+    );
+    print!("{:>8}", "真/预测");
+    for m in MATS {
+        print!("{:>8}", m);
+    }
+    println!();
+    let (mut correct, mut total) = (0usize, 0usize);
+    for k in 0..4 {
+        print!("{:>8}", MATS[k]);
+        for v in conf[k].iter() {
+            print!("{:>8}", v);
+        }
+        println!();
+        correct += conf[k][k];
+        total += conf[k].iter().sum::<usize>();
+    }
+    println!(
+        "留出准确率 {correct}/{total} = {:.1}%",
+        100.0 * correct as f32 / total.max(1) as f32
+    );
+    if let Some(p) = arg(argv, "--out") {
+        let mut s = format!("lambda {lambda}\n");
+        for (j, f) in LOOK_FEATURES.iter().enumerate() {
+            s.push_str(&format!("mu {f} {:.6}\n", mu[j]));
+            s.push_str(&format!("sd {f} {:.6}\n", sd[j]));
+        }
+        for (k, w) in head.iter().enumerate() {
+            for (j, v) in w.iter().enumerate() {
+                s.push_str(&format!("w {k} {j} {v:.6}\n"));
+            }
+        }
+        std::fs::write(&p, s).unwrap_or_else(|e| fail(&format!("{p}: {e}")));
+        println!("模型写出 {p}");
+    }
+}
+
 fn tex_quilt_cmd(argv: &[String]) {
     use trit_parts::tex::quilt;
     let Some(p) = argv.get(1).filter(|a| !a.starts_with("--")) else {
@@ -3480,6 +3766,8 @@ fn main() {
         Some("tex-conv") => tex_conv_cmd(&argv),
         Some("tex-gen") => tex_gen_cmd(&argv),
         Some("tex-quilt") => tex_quilt_cmd(&argv),
+        Some("material-data") => material_data_cmd(&argv),
+        Some("material-fit") => material_fit_cmd(&argv),
         Some("tex-stylize") => tex_stylize_cmd(&argv),
         Some("look") => look_cmd(&argv),
         Some("style") => style_cmd(&argv),

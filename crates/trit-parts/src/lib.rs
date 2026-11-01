@@ -27,6 +27,7 @@ pub mod model;
 pub mod occ;
 pub mod ood;
 pub mod parts;
+pub mod ridge;
 pub mod splat;
 pub mod tconv;
 pub mod tex;
