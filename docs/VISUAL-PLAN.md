@@ -228,7 +228,10 @@ parts-3d look D:/KF/trit-data/style-frames --out features.csv
 > ② **显式重参数化才可控**（z-score 训练 + 反归一化请求：std 0.02/0.08 → 实测 0.019/0.076）。
 > ⇒ S6 里凡是「要控制」的量，都优先做**显式参数**，不要指望网络把条件学进去。
 
-**S6.1 · 因子定义与测量（已完成，2026-11-01）**
+**S6.1 · 因子定义与测量（已完成，2026-11-01；正本在独立仓 `bfxh/trit-look`）**
+
+> 代码位置：`github.com/bfxh/trit-look`（私有，先不公开）。`parts-3d style` 是仓内冻结副本，
+> 迁移计划见 LEDGER A153。新仓自带 `selfcheck` 门（7 条不变量）与 CI：fmt→clippy→test→selfcheck。
 - 做：`parts-3d style <A…> [--vs <B…>] [--out csv]`，六因子
   = **笔触尺度**（带符号自相关降到 1/e 的位移，`look.stroke`）、**色阶数**（`levels`）、
   **边缘强度**（`strong`）、**局部对比**（`contrast`）、**色温**（`warmth`）、**饱和度**（`sat`）；
