@@ -28,6 +28,8 @@ struct Args {
     state: Option<PathBuf>,
     selfcheck: Option<PathBuf>,
     eval: Option<PathBuf>,
+    k: usize,
+    dump: Option<PathBuf>,
     manifest: Option<PathBuf>,
     steps: usize,
     lr: f32,
@@ -85,6 +87,8 @@ fn parse() -> Result<Args, String> {
         state: None,
         selfcheck: None,
         eval: None,
+        k: 5,
+        dump: None,
         manifest: None,
         steps: 100,
         lr: 1e-3,
@@ -132,6 +136,8 @@ fn parse() -> Result<Args, String> {
             "--state" => a.state = Some(PathBuf::from(val()?)),
             "--selfcheck" => a.selfcheck = Some(PathBuf::from(val()?)),
             "--eval" => a.eval = Some(PathBuf::from(val()?)),
+            "--k" => a.k = val()?.parse().map_err(|_| "--k 非整数")?,
+            "--dump" => a.dump = Some(PathBuf::from(val()?)),
             "--manifest" => a.manifest = Some(PathBuf::from(val()?)),
             "--steps" => a.steps = val()?.parse().map_err(|_| "--steps 非整数")?,
             "--lr" => a.lr = val()?.parse().map_err(|_| "--lr 非数字")?,
@@ -258,7 +264,7 @@ fn main() {
         std::process::exit(2);
     }
 
-    let k = 5usize;
+    let k = args.k;
     let res = 384u32;
     let hw = (res * res) as usize;
 
@@ -678,7 +684,13 @@ fn eval_only(gpu: &Gpu, args: &Args) {
         eprintln!("清单读取失败: {e}");
         std::process::exit(1);
     });
-    let k = m.k;
+    let k = args.k;
+    if m.k != k {
+        eprintln!(
+            "注意：清单 k={} 与模型 k={} 不一致；解码按模型 k，清单只用于允许 id 集",
+            m.k, k
+        );
+    }
     println!("清单 k={k}，部件 {} 个", m.parts.len());
 
     let mut net = match &args.resume {
@@ -779,6 +791,33 @@ fn eval_only(gpu: &Gpu, args: &Args) {
                     dep_rel += e / gd as f64;
                     dep_d1 += f64::from(u8::from((pd.max(gd) / pd.min(gd)) < 1.25));
                     dep_n += 1;
+                }
+            }
+            if let Some(dir) = &args.dump {
+                std::fs::create_dir_all(dir).unwrap_or_else(|e| {
+                    eprintln!("{}: {e}", dir.display());
+                    std::process::exit(1);
+                });
+                // 真实 stride = logits.len()/hw（含末尾 valid 通道），不是 k*3
+                let stride = logits.len() / hw;
+                let mut out = vec![0i32; hw];
+                for (p, slot) in out.iter_mut().enumerate() {
+                    let base = p * stride;
+                    *slot = m.decode_constrained(&logits[base..base + k * 3]) as i32;
+                }
+                let name = format!(
+                    "{}_{:06}.npy",
+                    scene.file_name().unwrap_or_default().to_string_lossy(),
+                    n
+                );
+                if let Err(e) = trit_parts::data::write_npy_i32(
+                    &dir.join(name),
+                    &out,
+                    res as usize,
+                    res as usize,
+                ) {
+                    eprintln!("写预测失败: {e}");
+                    std::process::exit(1);
                 }
             }
             for (slot, constrained) in [false, true].into_iter().enumerate() {
