@@ -118,6 +118,8 @@ pub enum Error {
     },
     #[error("bad input json: {message}")]
     InputParse { message: String },
+    #[error("bad context-compaction config: {message}")]
+    ContextConfig { message: String },
     #[error("{operation}: cannot move from {from} to {to}")]
     InvalidTransition {
         operation: String,
@@ -174,6 +176,7 @@ impl Error {
             Error::TraceIo { .. } => "trace_io",
             Error::TraceParse { .. } => "trace_parse",
             Error::InputParse { .. } => "input_parse",
+            Error::ContextConfig { .. } => "context_config",
             Error::InvalidTransition { .. } => "invalid_transition",
         }
     }

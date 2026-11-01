@@ -1,6 +1,6 @@
 //! `trit-orch` 的宿主桥：stdin 收一份 JSON，stdout 回一份 JSON。
 //!
-//! 子命令：`plan` / `select` / `dispatch` / `finish` / `recover`。成功退出码 0，
+//! 子命令：`plan` / `select` / `dispatch` / `finish` / `recover` / `shadow` / `compact-gate`。成功退出码 0，
 //! 失败退出码 1 并输出 `{"ok":false,"kind":"...","error":"..."}`；成功输出永远带 `"ok":true`。
 
 use std::io::Read;
@@ -8,8 +8,8 @@ use std::io::Read;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use trit_orch::{
-    Ledger, Limits, Plan, PlanPatch, Progress, RoundReport, Selection, Snapshot, TaskSpec,
-    TraceStep, TraceStore, builtin, dispatch_ready, replay,
+    ContextFacts, Ledger, Limits, Plan, PlanPatch, Progress, RoundReport, Selection, Snapshot,
+    TaskSpec, TraceStep, TraceStore, builtin, compaction_gate, dispatch_ready, replay,
 };
 
 #[derive(Deserialize)]
@@ -197,9 +197,16 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                 "recovery": ledger.recover(),
             }))
         }
+        "compact-gate" => {
+            let facts: ContextFacts = parse(input)?;
+            Ok(json!({
+                "ok": true,
+                "decision": compaction_gate(&facts)?,
+            }))
+        }
         other => Err(trit_orch::Error::InputParse {
             message: format!(
-                "未知子命令 {other:?}（可用：plan/select/dispatch/finish/recover/shadow/shadow-jsonl）"
+                "未知子命令 {other:?}（可用：plan/select/dispatch/finish/recover/shadow/shadow-jsonl/compact-gate）"
             ),
         }),
     }

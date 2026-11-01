@@ -2,6 +2,7 @@
 
 mod admission;
 mod budget;
+mod context;
 mod effects;
 mod error;
 mod evidence;
@@ -14,6 +15,10 @@ mod shadow;
 mod status;
 
 pub use admission::{admit, dependency_gate};
+pub use context::{
+    CompactionBlock, CompactionDecision, ContextFacts, DEFAULT_THRESHOLD_BP, MAX_THRESHOLD_BP,
+    MIN_THRESHOLD_BP, Obligation, Overflow, Tier, compaction_gate,
+};
 pub use effects::{Attempt, Effect, Ledger, LedgerStore, Reconcile, Recovery, dispatch_ready};
 pub use error::Error;
 pub use evidence::{EvidenceSpec, Exit, Receipt};

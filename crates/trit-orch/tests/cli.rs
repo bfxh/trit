@@ -273,7 +273,11 @@ fn run_with_args(command: &str, extra: &[&str], input: &Value) -> (i32, Value) {
 #[test]
 fn select_can_record_traces_and_shadow_replays_them() {
     let mut trace = std::env::temp_dir();
-    trace.push(format!("trit-orch-cli-trace-{}.jsonl", std::process::id()));
+    trace.push(format!(
+        "trit-orch-cli-trace-{}-{:?}.jsonl",
+        std::process::id(),
+        std::thread::current().id()
+    ));
     let _ = std::fs::remove_file(&trace);
     let trace_arg = trace.to_string_lossy().to_string();
 
@@ -296,4 +300,61 @@ fn select_can_record_traces_and_shadow_replays_them() {
     assert_eq!(value["report"]["steps"], 2);
     assert_eq!(value["safe"], true);
     let _ = std::fs::remove_file(&trace);
+}
+
+fn context_facts(extra: Value) -> Value {
+    let mut facts = json!({
+        "measured_tokens": 60000,
+        "context_window": 100000,
+        "threshold_bp": 5100,
+        "prunable_tokens": 0,
+        "overflow": "not_reported",
+        "durable_flushed": "Unknown",
+        "recall_reachable": "Unknown",
+        "constraints_pinned": "Unknown",
+        "progress_since_compaction": "Unknown"
+    });
+    for (key, value) in extra.as_object().unwrap() {
+        facts[key] = value.clone();
+    }
+    facts
+}
+
+#[test]
+fn compact_gate_reports_unapproved_without_touching_history() {
+    let (code, value) = run("compact-gate", &context_facts(json!({})));
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["ok"], true, "ORCH_CTX_CLI");
+    assert_eq!(value["decision"]["admission"], "Unknown", "ORCH_CTX_CLI");
+    assert_eq!(value["decision"]["tier"], "keep", "ORCH_CTX_CLI");
+    assert_eq!(value["decision"]["need"], "True", "ORCH_CTX_CLI: 压力仍在");
+    assert!(
+        value["decision"]["blocks"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("facts_not_flushed")),
+        "ORCH_CTX_CLI"
+    );
+}
+
+#[test]
+fn compact_gate_approves_prune_over_the_lossy_tier() {
+    let (code, value) = run(
+        "compact-gate",
+        &context_facts(json!({"prunable_tokens": 9000, "recall_reachable": "True"})),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["decision"]["tier"], "prune", "ORCH_CTX_CLI_PRUNE");
+    assert_eq!(value["decision"]["admission"], "True", "ORCH_CTX_CLI_PRUNE");
+}
+
+#[test]
+fn compact_gate_bad_config_uses_stable_error_kind() {
+    let (code, value) = run(
+        "compact-gate",
+        &context_facts(json!({"threshold_bp": 4999})),
+    );
+    assert_eq!(code, 1, "ORCH_CTX_CLI_CONFIG");
+    assert_eq!(value["ok"], false, "ORCH_CTX_CLI_CONFIG");
+    assert_eq!(value["kind"], "context_config", "ORCH_CTX_CLI_CONFIG");
 }
