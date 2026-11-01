@@ -65,13 +65,215 @@ fn tri_area(m: &Mesh, t: &[u32; 3]) -> f32 {
     0.5 * norm(tri_normal(m, t))
 }
 
+/// CGNR（最小二乘的共轭梯度正规方程）：解 `min ||A x − b||`，纯浮点、确定性。
+/// `rows` 为稀疏行（列号, 系数）；`x0` 给初值（用平面投影当初值收敛很快）。
+fn cgnr(rows: &[(Vec<(usize, f32)>, f32)], ncol: usize, x0: Vec<f32>, iters: usize) -> Vec<f32> {
+    let n = rows.len();
+    let ax = |x: &[f32]| -> Vec<f32> {
+        let mut y = vec![0.0f32; n];
+        for (i, (r, _)) in rows.iter().enumerate() {
+            let mut s = 0.0f32;
+            for &(c, v) in r {
+                s += v * x[c];
+            }
+            y[i] = s;
+        }
+        y
+    };
+    let atv = |y: &[f32]| -> Vec<f32> {
+        let mut o = vec![0.0f32; ncol];
+        for (i, (r, _)) in rows.iter().enumerate() {
+            if y[i] == 0.0 {
+                continue;
+            }
+            for &(c, v) in r {
+                o[c] += v * y[i];
+            }
+        }
+        o
+    };
+    let b: Vec<f32> = rows.iter().map(|(_, b)| *b).collect();
+    let mut x = x0;
+    let mut r = b.clone();
+    let axv = ax(&x);
+    for i in 0..n {
+        r[i] -= axv[i];
+    }
+    let mut p = atv(&r);
+    let mut gamma: f32 = p.iter().map(|v| v * v).sum();
+    let bb: f32 = b.iter().map(|v| v * v).sum::<f32>().max(1e-12);
+    for _ in 0..iters {
+        let q = ax(&p);
+        let qq: f32 = q.iter().map(|v| v * v).sum();
+        if qq < 1e-20 || gamma < 1e-12 * bb {
+            break;
+        }
+        let alpha = gamma / qq;
+        for i in 0..ncol {
+            x[i] += alpha * p[i];
+        }
+        for i in 0..n {
+            r[i] -= alpha * q[i];
+        }
+        let s2 = atv(&r);
+        let g2: f32 = s2.iter().map(|v| v * v).sum();
+        let beta = g2 / gamma.max(1e-20);
+        for i in 0..ncol {
+            p[i] = s2[i] + beta * p[i];
+        }
+        gamma = g2;
+    }
+    x
+}
+
+/// 单个 chart 的 LSCM：把 `pts3d`（该 chart 的局部顶点）映到 2D，保角优先。
+///
+/// 做法：用面积加权平均法线建切平面得到「局部 2D 坐标」（同时给 CR 系统当参照系），
+/// 每个三角形写两条 Cauchy–Riemann 约束（按 √面积 加权），钉住相距最远的两个点，
+/// 用 CGNR 解最小二乘。返回每个顶点在**世界尺度**下的 (u, v)。
+fn lscm_chart(pts3d: &[[f32; 3]], tris: &[[u32; 3]]) -> Vec<[f32; 2]> {
+    let nv = pts3d.len();
+    if nv < 3 || tris.is_empty() {
+        return pts3d.iter().map(|p| [p[0], p[1]]).collect();
+    }
+    // 切平面（面积加权平均法线）
+    let mut acc = [0.0f32; 3];
+    for t in tris {
+        let (a, b, c) = (
+            pts3d[t[0] as usize],
+            pts3d[t[1] as usize],
+            pts3d[t[2] as usize],
+        );
+        let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        let n = [
+            e1[1] * e2[2] - e1[2] * e2[1],
+            e1[2] * e2[0] - e1[0] * e2[2],
+            e1[0] * e2[1] - e1[1] * e2[0],
+        ];
+        for d in 0..3 {
+            acc[d] += n[d];
+        }
+    }
+    let l = norm(acc).max(1e-12);
+    let nv3 = [acc[0] / l, acc[1] / l, acc[2] / l];
+    let up = if nv3[1].abs() < 0.9 {
+        [0.0, 1.0, 0.0]
+    } else {
+        [1.0, 0.0, 0.0]
+    };
+    let mut ux = [
+        up[1] * nv3[2] - up[2] * nv3[1],
+        up[2] * nv3[0] - up[0] * nv3[2],
+        up[0] * nv3[1] - up[1] * nv3[0],
+    ];
+    let lu = norm(ux).max(1e-12);
+    ux = [ux[0] / lu, ux[1] / lu, ux[2] / lu];
+    let vx = [
+        nv3[1] * ux[2] - nv3[2] * ux[1],
+        nv3[2] * ux[0] - nv3[0] * ux[2],
+        nv3[0] * ux[1] - nv3[1] * ux[0],
+    ];
+    let frame: Vec<[f32; 2]> = pts3d
+        .iter()
+        .map(|p| {
+            [
+                p[0] * ux[0] + p[1] * ux[1] + p[2] * ux[2],
+                p[0] * vx[0] + p[1] * vx[1] + p[2] * vx[2],
+            ]
+        })
+        .collect();
+    // 未知量：每个顶点的 (u, v)
+    let idx = |v: usize| 2 * v;
+    let mut rows: Vec<(Vec<(usize, f32)>, f32)> = Vec::with_capacity(tris.len() * 2 + 4);
+    let mut area_sum = 0.0f32;
+    for t in tris {
+        let (i0, i1, i2) = (t[0] as usize, t[1] as usize, t[2] as usize);
+        // **每个三角形自己的等距局部坐标**（不是全 chart 统一切平面）：
+        // 用统一切平面的话，恒等映射天然满足 CR，LSCM 会退回原投影（实测 spread 完全不变）。
+        let (a, b, c) = (pts3d[i0], pts3d[i1], pts3d[i2]);
+        let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+        let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+        let l1 = norm(e1);
+        if l1 < 1e-12 {
+            continue;
+        }
+        let ax = [e1[0] / l1, e1[1] / l1, e1[2] / l1];
+        let d = e2[0] * ax[0] + e2[1] * ax[1] + e2[2] * ax[2];
+        let h2 = norm(e2) * norm(e2) - d * d;
+        if h2 < 1e-16 {
+            continue;
+        }
+        let p0 = [0.0f32, 0.0f32];
+        let p1 = [l1, 0.0f32];
+        let p2 = [d, h2.sqrt()];
+        let area2 = l1 * p2[1];
+        let w = (0.5 * area2).sqrt();
+        let inv = 1.0 / area2;
+        // 线性基函数梯度（未除以 2A 时是 (y_j−y_k, x_k−x_j)，再乘 1/area2）
+        let g = [
+            [(p1[1] - p2[1]) * inv, (p2[0] - p1[0]) * inv],
+            [(p2[1] - p0[1]) * inv, (p0[0] - p2[0]) * inv],
+            [(p0[1] - p1[1]) * inv, (p1[0] - p0[0]) * inv],
+        ];
+        let ids = [i0, i1, i2];
+        // CR: ∂u/∂x − ∂v/∂y = 0 ；∂u/∂y + ∂v/∂x = 0
+        let mut r1: Vec<(usize, f32)> = Vec::with_capacity(6);
+        let mut r2: Vec<(usize, f32)> = Vec::with_capacity(6);
+        for k in 0..3 {
+            let v = ids[k];
+            r1.push((idx(v), g[k][0] * w));
+            r1.push((idx(v) + 1, -g[k][1] * w));
+            r2.push((idx(v), g[k][1] * w));
+            r2.push((idx(v) + 1, g[k][0] * w));
+        }
+        rows.push((r1, 0.0));
+        rows.push((r2, 0.0));
+        area_sum += 0.5 * area2.abs();
+    }
+    // 钉两点：切平面里相距最远的两个顶点（用粗采样找，避免 O(n²)）
+    let step = (nv / 256).max(1);
+    let mut best = (0usize, 0usize, -1.0f32);
+    let mut i = 0;
+    while i < nv {
+        let mut j = i + step;
+        while j < nv {
+            let d = (frame[i][0] - frame[j][0]).powi(2) + (frame[i][1] - frame[j][1]).powi(2);
+            if d > best.2 {
+                best = (i, j, d);
+            }
+            j += step * 4;
+        }
+        i += step;
+    }
+    let pin_w = 1e3 * area_sum.sqrt().max(1e-6);
+    for (v, frame_uv) in [(best.0, frame[best.0]), (best.1, frame[best.1])] {
+        rows.push((
+            vec![(idx(v), pin_w), (idx(v) + 1, pin_w * 0.0 + pin_w * 0.0)],
+            pin_w * frame_uv[0],
+        ));
+        // 上面那行只钉了 u；v 单独一行（分开写，别让 0 系数进矩阵）
+        rows.pop();
+        rows.push((vec![(idx(v), pin_w)], pin_w * frame_uv[0]));
+        rows.push((vec![(idx(v) + 1, pin_w)], pin_w * frame_uv[1]));
+    }
+    let mut x0 = vec![0.0f32; 2 * nv];
+    for v in 0..nv {
+        x0[2 * v] = frame[v][0];
+        x0[2 * v + 1] = frame[v][1];
+    }
+    let x = cgnr(&rows, 2 * nv, x0, 800);
+    (0..nv).map(|v| [x[2 * v], x[2 * v + 1]]).collect()
+}
+
 /// 切 chart + 打包 + 烘焙。
 ///
-/// chart 用**法线相似度**聚类（相邻面法线夹角 <= `normal_deg` 才合并），
-/// 每个 chart 用面积加权平均法线建切平面做正交投影——光滑区域 chart 很大，
-/// 不会像「按主轴硬切」那样在噪声表面上碎成一堆几像素的小岛。
+/// chart 用**法线相似度**聚类（相邻面法线夹角 <= `normal_deg` 才合并）。
+/// `use_lscm=false` 时每 chart 用面积加权平均法线做**正交投影**（快，曲面会拉伸）；
+/// `use_lscm=true` 时每 chart 解 **LSCM**（保角，密度更均匀，代价是慢几十倍）。
 ///
 /// `texels_per_unit <= 0` 时按总面积自动定密度（目标填充 60%）；放不下会减半重排。
+#[allow(clippy::too_many_arguments)]
 pub fn bake_atlas(
     m: &Mesh,
     tex: &[f32],
@@ -80,6 +282,7 @@ pub fn bake_atlas(
     atlas_px: usize,
     texels_per_unit: f32,
     normal_deg: f32,
+    use_lscm: bool,
 ) -> Result<Atlas, String> {
     if m.tris.is_empty() {
         return Err("空网格".into());
@@ -129,52 +332,141 @@ pub fn bake_atlas(
     let mut group_list: Vec<Vec<usize>> = groups.into_values().collect();
     group_list.sort_by_key(|g| g[0]);
 
-    let frames: Vec<([f32; 3], [f32; 3], [f32; 3])> = group_list
-        .iter()
-        .map(|g| {
-            let mut acc = [0.0f32; 3];
+    // 每个 chart 的三条角点 2D 坐标（世界尺度）
+    let mut coords: Vec<Vec<[[f32; 2]; 3]>> = Vec::with_capacity(group_list.len());
+    for g in &group_list {
+        // 切平面（LSCM 也用它当局部参照系与初值）
+        let mut acc = [0.0f32; 3];
+        for &fi in g {
+            for c in 0..3 {
+                acc[c] += nrm[fi][c] * areas[fi].max(1e-12);
+            }
+        }
+        let l = norm(acc).max(1e-12);
+        let nv3 = [acc[0] / l, acc[1] / l, acc[2] / l];
+        let up = if nv3[1].abs() < 0.9 {
+            [0.0, 1.0, 0.0]
+        } else {
+            [1.0, 0.0, 0.0]
+        };
+        let mut ux = [
+            up[1] * nv3[2] - up[2] * nv3[1],
+            up[2] * nv3[0] - up[0] * nv3[2],
+            up[0] * nv3[1] - up[1] * nv3[0],
+        ];
+        let lu = norm(ux).max(1e-12);
+        ux = [ux[0] / lu, ux[1] / lu, ux[2] / lu];
+        let vx = [
+            nv3[1] * ux[2] - nv3[2] * ux[1],
+            nv3[2] * ux[0] - nv3[0] * ux[2],
+            nv3[0] * ux[1] - nv3[1] * ux[0],
+        ];
+        let proj_p = |p: [f32; 3]| -> [f32; 2] {
+            [
+                p[0] * ux[0] + p[1] * ux[1] + p[2] * ux[2],
+                p[0] * vx[0] + p[1] * vx[1] + p[2] * vx[2],
+            ]
+        };
+        let mut per_tri: Vec<[[f32; 2]; 3]> = Vec::with_capacity(g.len());
+        if use_lscm {
+            // 局部顶点编号 → LSCM 结果
+            let mut local: HashMap<u32, usize> = HashMap::new();
+            let mut pts: Vec<[f32; 3]> = Vec::new();
+            let mut ltris: Vec<[u32; 3]> = Vec::with_capacity(g.len());
             for &fi in g {
-                for c in 0..3 {
-                    acc[c] += nrm[fi][c] * areas[fi].max(1e-12);
+                let mut t = [0u32; 3];
+                for (k, slot) in t.iter_mut().enumerate() {
+                    let vid = m.tris[fi][k];
+                    let id = *local.entry(vid).or_insert_with(|| {
+                        pts.push(m.verts[vid as usize]);
+                        pts.len() - 1
+                    });
+                    *slot = id as u32;
+                }
+                ltris.push(t);
+            }
+            let mut puv = lscm_chart(&pts, &ltris);
+            // LSCM 只保角、不保尺度，且逐 chart 解的绝对尺度会漂 ⇒ 按面积归一到世界尺度
+            {
+                let mut a3 = 0.0f32;
+                let mut a2 = 0.0f32;
+                for (li, &fi) in g.iter().enumerate() {
+                    a3 += areas[fi];
+                    let t = ltris[li];
+                    let (p0, p1, p2) = (puv[t[0] as usize], puv[t[1] as usize], puv[t[2] as usize]);
+                    a2 += 0.5
+                        * ((p1[0] - p0[0]) * (p2[1] - p0[1]) + (p2[0] - p0[0]) * (p0[1] - p1[1]))
+                            .abs();
+                }
+                if a2 > 1e-12 && a3 > 1e-12 {
+                    let k = (a3 / a2).sqrt();
+                    for p in puv.iter_mut() {
+                        p[0] *= k;
+                        p[1] *= k;
+                    }
                 }
             }
-            let l = norm(acc).max(1e-12);
-            let nv = [acc[0] / l, acc[1] / l, acc[2] / l];
-            let up = if nv[1].abs() < 0.9 {
-                [0.0, 1.0, 0.0]
-            } else {
-                [1.0, 0.0, 0.0]
+            let mut lscm_tri: Vec<[[f32; 2]; 3]> = Vec::with_capacity(g.len());
+            for &fi in g {
+                let mut tri = [[0.0f32; 2]; 3];
+                for k in 0..3 {
+                    tri[k] = puv[local[&m.tris[fi][k]]];
+                }
+                lscm_tri.push(tri);
+            }
+            let mut planar_tri: Vec<[[f32; 2]; 3]> = Vec::with_capacity(g.len());
+            for &fi in g {
+                planar_tri.push([
+                    proj_p(m.verts[m.tris[fi][0] as usize]),
+                    proj_p(m.verts[m.tris[fi][1] as usize]),
+                    proj_p(m.verts[m.tris[fi][2] as usize]),
+                ]);
+            }
+            // 逐 chart 择优：CG 在病态 chart 上会塌缩，LSCM 不比平面好就退回平面（保证不劣化）
+            let spread = |tris2: &[Vec<[[f32; 2]; 3]>]| -> f32 {
+                let mut d: Vec<f32> = Vec::new();
+                for (li, &fi) in g.iter().enumerate() {
+                    let wa = areas[fi];
+                    if wa < 1e-12 {
+                        continue;
+                    }
+                    let p = &tris2[0][li];
+                    let au = 0.5
+                        * ((p[1][0] - p[0][0]) * (p[2][1] - p[0][1])
+                            + (p[2][0] - p[0][0]) * (p[0][1] - p[1][1]))
+                            .abs();
+                    if au > 0.0 {
+                        d.push(au / wa);
+                    }
+                }
+                d.sort_by(f32::total_cmp);
+                if d.len() < 4 {
+                    return f32::INFINITY;
+                }
+                let q = |f: f32| d[((d.len() as f32 - 1.0) * f).round() as usize];
+                let (lo, hi) = (q(0.1), q(0.9));
+                if lo > 0.0 { hi / lo } else { f32::INFINITY }
             };
-            let mut u = [
-                up[1] * nv[2] - up[2] * nv[1],
-                up[2] * nv[0] - up[0] * nv[2],
-                up[0] * nv[1] - up[1] * nv[0],
-            ];
-            let lu = norm(u).max(1e-12);
-            u = [u[0] / lu, u[1] / lu, u[2] / lu];
-            let v = [
-                nv[1] * u[2] - nv[2] * u[1],
-                nv[2] * u[0] - nv[0] * u[2],
-                nv[0] * u[1] - nv[1] * u[0],
-            ];
-            (nv, u, v)
-        })
-        .collect();
-    let proj = |fi: usize, k: usize, fr: ([f32; 3], [f32; 3], [f32; 3])| -> [f32; 2] {
-        let p = m.verts[m.tris[fi][k] as usize];
-        [
-            p[0] * fr.1[0] + p[1] * fr.1[1] + p[2] * fr.1[2],
-            p[0] * fr.2[0] + p[1] * fr.2[1] + p[2] * fr.2[2],
-        ]
-    };
+            let sp_l = spread(std::slice::from_ref(&lscm_tri));
+            let sp_p = spread(std::slice::from_ref(&planar_tri));
+            per_tri = if sp_l <= sp_p { lscm_tri } else { planar_tri };
+        } else {
+            for &fi in g {
+                per_tri.push([
+                    proj_p(m.verts[m.tris[fi][0] as usize]),
+                    proj_p(m.verts[m.tris[fi][1] as usize]),
+                    proj_p(m.verts[m.tris[fi][2] as usize]),
+                ]);
+            }
+        }
+        coords.push(per_tri);
+    }
 
     let mut bounds: Vec<([f32; 2], [f32; 2])> = Vec::with_capacity(group_list.len());
-    for (gi, g) in group_list.iter().enumerate() {
-        let fr = frames[gi];
+    for c in &coords {
         let (mut lo, mut hi) = ([f32::INFINITY; 2], [f32::NEG_INFINITY; 2]);
-        for &fi in g {
-            for k in 0..3 {
-                let p = proj(fi, k, fr);
+        for tri in c {
+            for p in tri {
                 for d in 0..2 {
                     lo[d] = lo[d].min(p[d]);
                     hi[d] = hi[d].max(p[d]);
@@ -237,8 +529,8 @@ pub fn bake_atlas(
         }
     }
     let cnt = (tex.len() / 3) as f32;
-    for m in mean.iter_mut() {
-        *m /= cnt;
+    for mv in mean.iter_mut() {
+        *mv /= cnt;
     }
     let mut img = Vec::with_capacity(atlas_px * atlas_px * 3);
     for _ in 0..atlas_px * atlas_px {
@@ -248,7 +540,6 @@ pub fn bake_atlas(
     let mut charts = Vec::with_capacity(group_list.len());
     for (gi, g) in group_list.iter().enumerate() {
         let (lo, _) = bounds[gi];
-        let fr = frames[gi];
         let [rx, ry, _, _] = rects[gi];
         let to_px = |p: [f32; 2]| -> [f32; 2] {
             [
@@ -256,15 +547,15 @@ pub fn bake_atlas(
                 atlas_px as f32 - (ry as f32 + (p[1] - lo[1]) * scale),
             ]
         };
-        for &fi in g {
-            for (k, slot) in uv[fi].iter_mut().enumerate() {
-                let p = to_px(proj(fi, k, fr));
-                // 图集行是从上往下、OBJ 的 v 是从下往上 ⇒ v 要翻转，否则采样会落到 padding
-                *slot = [p[0] / atlas_px as f32, 1.0 - p[1] / atlas_px as f32];
+        for (li, &fi) in g.iter().enumerate() {
+            for k in 0..3 {
+                let p = to_px(coords[gi][li][k]);
+                // 图集行从上往下、OBJ 的 v 从下往上 ⇒ v 翻转，否则采样落到 padding
+                uv[fi][k] = [p[0] / atlas_px as f32, 1.0 - p[1] / atlas_px as f32];
             }
         }
-        for &fi in g {
-            let src: Vec<[f32; 2]> = (0..3).map(|k| proj(fi, k, fr)).collect();
+        for (li, _fi) in g.iter().enumerate() {
+            let src = coords[gi][li];
             let ps: Vec<[f32; 2]> = src.iter().map(|&p| to_px(p)).collect();
             let minx = (ps
                 .iter()
@@ -332,7 +623,7 @@ pub fn bake_atlas(
                     continue;
                 }
                 let mut acc = [0.0f32; 3];
-                let mut cnt = 0.0f32;
+                let mut cnt2 = 0.0f32;
                 for (dx, dy) in [(-1, 0), (1, 0), (0, -1), (0, 1)] {
                     let j =
                         (((y as isize + dy) as usize) * atlas_px + (x as isize + dx) as usize) * 3;
@@ -340,12 +631,12 @@ pub fn bake_atlas(
                         for c in 0..3 {
                             acc[c] += prev[j + c];
                         }
-                        cnt += 1.0;
+                        cnt2 += 1.0;
                     }
                 }
-                if cnt > 0.0 {
+                if cnt2 > 0.0 {
                     for c in 0..3 {
-                        img[i + c] = acc[c] / cnt;
+                        img[i + c] = acc[c] / cnt2;
                     }
                 }
             }
@@ -444,7 +735,7 @@ mod tests {
     fn atlas_uvs_are_normalized_and_charts_do_not_overlap() {
         let m = cube();
         let tex = vec![0.5f32; 32 * 32 * 3];
-        let a = bake_atlas(&m, &tex, 32, 32, 256, 60.0, 45.0).unwrap();
+        let a = bake_atlas(&m, &tex, 32, 32, 256, 60.0, 45.0, false).unwrap();
         assert_eq!(a.uv.len(), m.tris.len());
         for tri in &a.uv {
             for p in tri {
@@ -475,7 +766,7 @@ mod tests {
         let m = cube();
         let (tw, th) = (16usize, 16usize);
         let tex: Vec<f32> = (0..tw * th).flat_map(|_| [0.25, 0.5, 0.75]).collect();
-        let a = bake_atlas(&m, &tex, tw, th, 128, 40.0, 45.0).unwrap();
+        let a = bake_atlas(&m, &tex, tw, th, 128, 40.0, 45.0, false).unwrap();
         // 所有被覆盖的纹素都必须等于源色（padding 处是 0，用 >0 判定被覆盖）
         let mut covered = 0usize;
         for px in a.img.chunks(3) {
@@ -505,7 +796,7 @@ mod tests {
             tris: vec![[0, 1, 2], [0, 2, 3]],
         };
         let tex = vec![0.5f32; 8 * 8 * 3];
-        let a = bake_atlas(&m, &tex, 8, 8, 128, 50.0, 45.0).unwrap();
+        let a = bake_atlas(&m, &tex, 8, 8, 128, 50.0, 45.0, false).unwrap();
         let st = uv_stats(&m, &a);
         assert_eq!(st.charts, 1, "共面应只出一个 chart");
         assert!(
@@ -515,12 +806,62 @@ mod tests {
         );
     }
 
+    fn cylinder_patch(nu: usize, nv: usize) -> Mesh {
+        // 半圆柱面（弧 180°、半径 1、高 1）：平面投影会在两侧压缩，LSCM 应更均匀
+        let mut verts = Vec::new();
+        for j in 0..=nv {
+            for i in 0..=nu {
+                let th = std::f32::consts::PI * i as f32 / nu as f32;
+                verts.push([th.cos(), j as f32 / nv as f32, th.sin()]);
+            }
+        }
+        let mut tris = Vec::new();
+        for j in 0..nv {
+            for i in 0..nu {
+                let a = (j * (nu + 1) + i) as u32;
+                let b = (j * (nu + 1) + i + 1) as u32;
+                let c = ((j + 1) * (nu + 1) + i) as u32;
+                let d = ((j + 1) * (nu + 1) + i + 1) as u32;
+                tris.push([a, b, c]);
+                tris.push([b, d, c]);
+            }
+        }
+        Mesh { verts, tris }
+    }
+
+    #[test]
+    fn lscm_flattens_a_curved_patch_better_than_planar_projection() {
+        let m = cylinder_patch(32, 8);
+        let tex = vec![0.5f32; 8 * 8 * 3];
+        let planar = bake_atlas(&m, &tex, 8, 8, 512, 0.0, 89.0, false).unwrap();
+        let lscm = bake_atlas(&m, &tex, 8, 8, 512, 0.0, 89.0, true).unwrap();
+        let sp = uv_stats(&m, &planar);
+        let sl = uv_stats(&m, &lscm);
+        assert_eq!(
+            sp.charts, 1,
+            "半圆柱应是一个 chart（阈值 89°），实际 {}",
+            sp.charts
+        );
+        assert_eq!(sl.charts, 1);
+        assert!(
+            sl.spread < 3.0,
+            "LSCM 后密度应接近均匀，实际 spread {:.2}",
+            sl.spread
+        );
+        assert!(
+            sl.spread < sp.spread * 0.6,
+            "LSCM 应显著优于平面投影：planar {:.2} vs lscm {:.2}",
+            sp.spread,
+            sl.spread
+        );
+    }
+
     #[test]
     fn atlas_is_deterministic() {
         let m = cube();
         let tex = vec![0.3f32; 16 * 16 * 3];
-        let a = bake_atlas(&m, &tex, 16, 16, 128, 40.0, 45.0).unwrap();
-        let b = bake_atlas(&m, &tex, 16, 16, 128, 40.0, 45.0).unwrap();
+        let a = bake_atlas(&m, &tex, 16, 16, 128, 40.0, 45.0, false).unwrap();
+        let b = bake_atlas(&m, &tex, 16, 16, 128, 40.0, 45.0, false).unwrap();
         assert_eq!(a.uv, b.uv);
         assert_eq!(a.img, b.img);
         assert_eq!(a.charts.len(), b.charts.len());

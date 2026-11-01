@@ -1500,8 +1500,15 @@ fn mesh_tex_cmd(argv: &[String]) {
             let ndeg: f32 = arg(argv, "--atlas-deg")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(45.0);
-            let a = trit_parts::atlas::bake_atlas(&m, &tpix, tw, th, atlas_px, texels, ndeg)
+            let lscm = argv.iter().any(|a| a == "--lscm");
+            let t0 = std::time::Instant::now();
+            let a = trit_parts::atlas::bake_atlas(&m, &tpix, tw, th, atlas_px, texels, ndeg, lscm)
                 .unwrap_or_else(|e| fail(&e));
+            println!(
+                "展开 {}：{:.1} s",
+                if lscm { "LSCM" } else { "平面投影" },
+                t0.elapsed().as_secs_f32()
+            );
             trit_parts::data::write_rgb(&png_p, a.w, a.h, &a.img).unwrap_or_else(|e| fail(&e));
             trit_parts::uv::write_obj(&obj_path, &m, &a.uv, &format!("{stem}.png"))
                 .unwrap_or_else(|e| fail(&e));
@@ -1511,7 +1518,7 @@ fn mesh_tex_cmd(argv: &[String]) {
                 st.median, st.p05, st.p95, st.spread
             );
             println!(
-                "OBJ {}：{} 顶点 / {} 三角形，**图集** {}×{}（{} 个 chart，法线聚类 {:.0}°）⇒ {}",
+                "OBJ {}：{} 顶点 / {} 三角形，**图集** {}×{}（{} 个 chart，法线聚类 {:.0}°{}）⇒ {}",
                 obj_path.display(),
                 m.verts.len(),
                 m.tris.len(),
@@ -1519,6 +1526,7 @@ fn mesh_tex_cmd(argv: &[String]) {
                 a.h,
                 a.charts.len(),
                 ndeg,
+                if lscm { "，LSCM" } else { "" },
                 png_p.display()
             );
             return;
