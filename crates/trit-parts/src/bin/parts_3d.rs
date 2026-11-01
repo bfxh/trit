@@ -87,6 +87,63 @@ fn infer(argv: &[String]) {
     );
 }
 
+/// `infer-ids --model <tpm> --scene <dir> --manifest <parts.json> --frames 0,1,… [--out <dir>]`：
+/// 逐帧跑部件头，**输出预测 id 图**（npy）并与 seg 对拍（只在前景像素上算）。
+/// 供时序 id 抖动量测用：`python scripts/id_jitter.py <pred_dir> <scene>`。
+#[cfg(feature = "gpu")]
+fn infer_ids_cmd(argv: &[String]) {
+    use trit_parts::api::{infer_ids, wgpu_from_tpm};
+    use trit_parts::data::{read_npy_i32, read_rgb, write_npy_i32};
+    use trit_parts::parts::PartList;
+    use trit_parts::tpm::TpmModel;
+
+    let model = PathBuf::from(arg(argv, "--model").unwrap_or_else(|| usage()));
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let manifest = PathBuf::from(arg(argv, "--manifest").unwrap_or_else(|| usage()));
+    let frames: Vec<usize> = arg(argv, "--frames")
+        .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![0]);
+    let out_dir = arg(argv, "--out").map(PathBuf::from);
+
+    let tpm = TpmModel::load(&model).unwrap_or_else(|e| fail(&e));
+    let parts = PartList::load(&manifest).unwrap_or_else(|e| fail(&e));
+    let mut backend = wgpu_from_tpm(&tpm).unwrap_or_else(|e| panic!("wgpu 后端不可用: {e}"));
+    if let Some(d) = &out_dir {
+        std::fs::create_dir_all(d).unwrap_or_else(|e| fail(&format!("{}: {e}", d.display())));
+    }
+    for &fr in &frames {
+        let (w, h, rgb) =
+            read_rgb(&frame_path(&scene, "rgb", fr, "png")).unwrap_or_else(|e| fail(&e));
+        let ids = match infer_ids(&mut backend, &rgb, w as u32, &parts) {
+            Ok(v) => v,
+            Err(e) => fail(&format!("推理失败: {e}")),
+        };
+        let (gt, shape) =
+            read_npy_i32(&frame_path(&scene, "seg", fr, "npy")).unwrap_or_else(|e| fail(&e));
+        if shape.len() != 2 || shape[0] != h || shape[1] != w {
+            fail("seg 与 rgb 尺寸不一致");
+        }
+        let mut ok = 0usize;
+        let mut fg = 0usize;
+        for i in 0..w * h {
+            if gt[i] > 0 {
+                fg += 1;
+                if ids[i] == gt[i] as u32 {
+                    ok += 1;
+                }
+            }
+        }
+        println!(
+            "帧 {fr}：前景 {fg} 像素，逐像素一致 {ok} = {:.3}",
+            ok as f32 / fg.max(1) as f32
+        );
+        if let Some(d) = &out_dir {
+            let v: Vec<i32> = ids.iter().map(|&x| x as i32).collect();
+            write_npy_i32(&d.join(format!("{fr:06}.npy")), &v, w, h).unwrap_or_else(|e| fail(&e));
+        }
+    }
+}
+
 #[cfg(feature = "gpu")]
 fn eval(argv: &[String]) {
     use trit_parts::api::{infer_ids, wgpu_from_tpm};
@@ -4313,6 +4370,12 @@ fn main() {
         Some("infer") => {
             #[cfg(feature = "gpu")]
             infer(&argv);
+            #[cfg(not(feature = "gpu"))]
+            fail("本构建未启用 gpu feature");
+        }
+        Some("infer-ids") => {
+            #[cfg(feature = "gpu")]
+            infer_ids_cmd(&argv);
             #[cfg(not(feature = "gpu"))]
             fail("本构建未启用 gpu feature");
         }
