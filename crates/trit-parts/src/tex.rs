@@ -27,6 +27,7 @@ pub fn quilt(
     patch: usize,
     overlap: usize,
     seed: u64,
+    tone_match: bool,
 ) -> Vec<f32> {
     assert!(patch >= 2 && patch <= sw.min(sh), "patch 必须 ≤ 源图短边");
     assert!(out_w >= patch && out_h >= patch, "输出不能小于一个 patch");
@@ -50,6 +51,36 @@ pub fn quilt(
     ys.push(out_h - patch);
     let mut state = seed;
     let tries = 64u64;
+    // 源图逐通道均值/方差：tone-match 时把每个 patch 拉到同一均值/方差，
+    // 抵消「不同区域的光照梯度在拼接时被抹平」（实测 contrast p95−p5 可掉 65–78%）
+    let gmean = if tone_match {
+        let n = (sw * sh) as f32;
+        let mut m = [0.0f32; 3];
+        for p in src.chunks(3) {
+            for c in 0..3 {
+                m[c] += p[c];
+            }
+        }
+        for v in m.iter_mut() {
+            *v /= n;
+        }
+        Some(m)
+    } else {
+        None
+    };
+    let mut src_std = [0.0f32; 3];
+    if let Some(gm) = gmean {
+        let n = (sw * sh) as f32;
+        let mut v = [0.0f32; 3];
+        for p in src.chunks(3) {
+            for c in 0..3 {
+                v[c] += (p[c] - gm[c]).powi(2);
+            }
+        }
+        for c in 0..3 {
+            src_std[c] = (v[c] / n).sqrt().max(1e-4);
+        }
+    }
     for &oy in &ys {
         for &ox in &xs {
             let mut best = (f32::INFINITY, 0usize, 0usize);
@@ -77,6 +108,38 @@ pub fn quilt(
                 }
             }
             let (_, cx, cy) = best;
+            // 选定 patch 的逐通道均值/方差（tone-match 用）
+            let pstat = if tone_match {
+                let n = (patch * patch) as f32;
+                let mut m = [0.0f32; 3];
+                for dy in 0..patch {
+                    for dx in 0..patch {
+                        let s0 = ((cy + dy) * sw + cx + dx) * 3;
+                        for c in 0..3 {
+                            m[c] += src[s0 + c];
+                        }
+                    }
+                }
+                for v in m.iter_mut() {
+                    *v /= n;
+                }
+                let mut vv = [0.0f32; 3];
+                for dy in 0..patch {
+                    for dx in 0..patch {
+                        let s0 = ((cy + dy) * sw + cx + dx) * 3;
+                        for c in 0..3 {
+                            vv[c] += (src[s0 + c] - m[c]).powi(2);
+                        }
+                    }
+                }
+                let mut sd = [0.0f32; 3];
+                for c in 0..3 {
+                    sd[c] = (vv[c] / n).sqrt().max(1e-4);
+                }
+                Some((m, sd))
+            } else {
+                None
+            };
             let ramp = |i: usize| (i + 1) as f32 / (ov + 1) as f32;
             for dy in 0..patch {
                 let gy = oy + dy;
@@ -95,7 +158,13 @@ pub fn quilt(
                         a = 1.0;
                     }
                     for c in 0..3 {
-                        out[o + c] = out[o + c] * (1.0 - a) + src[s + c] * a;
+                        let mut v = src[s + c];
+                        if let (Some((pm, ps)), Some(gm)) = (pstat, gmean) {
+                            // 放大倍数 clamp 到 [0.5, 2]：否则低方差 patch 会把噪声放大成"结构"（实测 coherence 0.865→0.326）
+                            let k = (src_std[c] / ps[c]).clamp(0.5, 2.0);
+                            v = (v - pm[c]) * k + gm[c];
+                        }
+                        out[o + c] = out[o + c] * (1.0 - a) + v * a;
                     }
                     placed[gy * out_w + gx] = true;
                 }
@@ -759,7 +828,7 @@ mod tests {
     #[test]
     fn quilt_outputs_the_requested_size_and_stays_in_range() {
         let src = stripes(32, 8);
-        let out = quilt(&src, 32, 32, 64, 48, 8, 4, 7);
+        let out = quilt(&src, 32, 32, 64, 48, 8, 4, 7, false);
         assert_eq!(out.len(), 64 * 48 * 3);
         assert!(out.iter().all(|v| (0.0..=1.0).contains(v)));
         // 源只有两档灰度 ⇒ 输出也只应落在两档附近（羽化区允许中间值）
@@ -773,10 +842,10 @@ mod tests {
     #[test]
     fn quilt_is_deterministic_and_seed_sensitive() {
         let src = stripes(32, 8);
-        let a = quilt(&src, 32, 32, 64, 64, 8, 4, 1);
-        let b = quilt(&src, 32, 32, 64, 64, 8, 4, 1);
+        let a = quilt(&src, 32, 32, 64, 64, 8, 4, 1, false);
+        let b = quilt(&src, 32, 32, 64, 64, 8, 4, 1, false);
         assert_eq!(a, b, "同 seed 必须逐位一致");
-        let c = quilt(&src, 32, 32, 64, 64, 8, 4, 2);
+        let c = quilt(&src, 32, 32, 64, 64, 8, 4, 2, false);
         assert_ne!(a, c, "不同 seed 应给出不同拼法");
     }
 
@@ -784,7 +853,7 @@ mod tests {
     fn quilt_preserves_directionality_where_diffusion_does_not() {
         // 竖条纹源：合成图必须仍是大幅各向异性；随机噪声源作对照必须是各向同性
         let src = stripes(48, 8);
-        let out = quilt(&src, 48, 48, 64, 64, 12, 6, 3);
+        let out = quilt(&src, 48, 48, 64, 64, 12, 6, 3, false);
         let l = crate::look::analyze(&out, 64, 64);
         assert!(
             l.coherence > 0.6,
