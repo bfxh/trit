@@ -200,6 +200,134 @@ pub fn seam_ratio(px: &[[u8; 3]], n: usize) -> f32 {
     if p95 <= 1e-6 { f32::INFINITY } else { e / p95 }
 }
 
+/// 五个**显式**风格旋钮（S6.5）：不做生成，只做可测、可逆的图像变换。
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Style {
+    /// 对比度倍数（围绕均值缩放；1.0 = 不变）
+    pub contrast: f32,
+    /// 色阶数（量化为 N 档；0 或 1 = 不变）
+    pub levels: u32,
+    /// 色温（R/B 反向增益；0 = 不变，正 = 偏暖）
+    pub warmth: f32,
+    /// 饱和度（0 = 灰度，1 = 不变）
+    pub sat: f32,
+    /// 笔触尺度（模糊半径，像素；0 = 不变，负值 = 锐化）
+    pub stroke: f32,
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Style {
+            contrast: 1.0,
+            levels: 0,
+            warmth: 0.0,
+            sat: 1.0,
+            stroke: 0.0,
+        }
+    }
+}
+
+impl Style {
+    pub fn is_identity(&self) -> bool {
+        *self == Style::default()
+    }
+}
+
+fn box_blur(px: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
+    if r == 0 {
+        return px.to_vec();
+    }
+    let mut tmp = vec![0.0f32; px.len()];
+    let n = (2 * r + 1) as f32;
+    for y in 0..h {
+        for x in 0..w {
+            for c in 0..3 {
+                let mut s = 0.0f32;
+                for k in 0..=2 * r {
+                    let xx = (x + k).saturating_sub(r).min(w - 1);
+                    s += px[(y * w + xx) * 3 + c];
+                }
+                tmp[(y * w + x) * 3 + c] = s / n;
+            }
+        }
+    }
+    let mut out = vec![0.0f32; px.len()];
+    for y in 0..h {
+        for x in 0..w {
+            for c in 0..3 {
+                let mut s = 0.0f32;
+                for k in 0..=2 * r {
+                    let yy = (y + k).saturating_sub(r).min(h - 1);
+                    s += tmp[(yy * w + x) * 3 + c];
+                }
+                out[(y * w + x) * 3 + c] = s / n;
+            }
+        }
+    }
+    out
+}
+
+/// 按 [`Style`] 做**显式**变换（顺序固定：笔触 → 对比度 → 色阶 → 色温 → 饱和）。
+///
+/// 每一步都是可逆/单调的闭式变换，不引入随机性；参数为默认值时逐位不变。
+pub fn stylize(px: &[f32], w: usize, h: usize, s: &Style) -> Vec<f32> {
+    let mut out = px.to_vec();
+    if s.stroke > 0.0 {
+        out = box_blur(&out, w, h, s.stroke.round() as usize);
+    } else if s.stroke < 0.0 {
+        // 负值 = 锐化：原图 + (原图 − 模糊)
+        let r = (-s.stroke).round().max(1.0) as usize;
+        let b = box_blur(px, w, h, r);
+        for i in 0..out.len() {
+            out[i] = (px[i] * 2.0 - b[i]).clamp(0.0, 1.0);
+        }
+    }
+    if (s.contrast - 1.0).abs() > 1e-6 {
+        let n = (w * h) as f32;
+        let mut mean = [0.0f32; 3];
+        for p in out.chunks(3) {
+            for c in 0..3 {
+                mean[c] += p[c];
+            }
+        }
+        for m in mean.iter_mut() {
+            *m /= n;
+        }
+        for p in out.chunks_mut(3) {
+            for c in 0..3 {
+                p[c] = ((p[c] - mean[c]) * s.contrast + mean[c]).clamp(0.0, 1.0);
+            }
+        }
+    }
+    if s.levels >= 2 {
+        // 在**图自身**的 [lo, hi] 里量化：按 0..1 量化会把深色图压成 1–2 档（实测 8 档只剩 2 档）
+        let lo = out.iter().cloned().fold(f32::INFINITY, f32::min);
+        let hi = out.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        if hi - lo > 1e-6 {
+            let n = s.levels as f32 - 1.0;
+            for v in out.iter_mut() {
+                let t = ((*v - lo) / (hi - lo) * n).round() / n;
+                *v = lo + t * (hi - lo);
+            }
+        }
+    }
+    if s.warmth.abs() > 1e-6 {
+        for p in out.chunks_mut(3) {
+            p[0] = (p[0] * (1.0 + s.warmth)).clamp(0.0, 1.0);
+            p[2] = (p[2] * (1.0 - s.warmth)).clamp(0.0, 1.0);
+        }
+    }
+    if (s.sat - 1.0).abs() > 1e-6 {
+        for p in out.chunks_mut(3) {
+            let y = 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
+            for v in p.iter_mut() {
+                *v = (y + (*v - y) * s.sat).clamp(0.0, 1.0);
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,6 +368,148 @@ mod tests {
             }
         }
         v
+    }
+
+    fn sample_img(n: usize) -> Vec<f32> {
+        // 有方向性 + 多色阶的合成图（亮条纹 + 噪声），便于测因子
+        let mut st = 12345u64;
+        let mut v = Vec::with_capacity(n * n * 3);
+        for y in 0..n {
+            for x in 0..n {
+                let stripe = if (x / 6) % 2 == 0 { 0.75 } else { 0.35 };
+                let g = sm64(&mut st) % 1000;
+                let noise = (g as f32 / 1000.0 - 0.5) * 0.08;
+                let base = (stripe + noise).clamp(0.0, 1.0);
+                v.extend_from_slice(&[base, base * 0.9 + 0.05, base * 0.75 + 0.1]);
+            }
+            let _ = y;
+        }
+        v
+    }
+
+    #[test]
+    fn stylize_identity_is_bit_exact() {
+        let img = sample_img(32);
+        let out = stylize(&img, 32, 32, &Style::default());
+        assert_eq!(out, img, "默认参数必须逐位不变");
+    }
+
+    #[test]
+    fn stylize_knobs_move_their_own_factor_monotonically() {
+        let (n, w, h) = (48usize, 48usize, 48usize);
+        let img = sample_img(n);
+        let look = |s: &Style| {
+            let o = stylize(&img, w, h, s);
+            crate::look::analyze(&o, w, h)
+        };
+        let base = look(&Style::default());
+
+        let lo = look(&Style {
+            levels: 4,
+            ..Default::default()
+        });
+        let hi = look(&Style {
+            levels: 32,
+            ..Default::default()
+        });
+        assert!(
+            hi.levels > lo.levels,
+            "色阶：32 档应比 4 档测出更多级数（{} vs {}）",
+            hi.levels,
+            lo.levels
+        );
+
+        let c1 = look(&Style {
+            contrast: 0.6,
+            ..Default::default()
+        });
+        let c2 = look(&Style {
+            contrast: 1.8,
+            ..Default::default()
+        });
+        assert!(
+            c2.contrast > c1.contrast,
+            "对比度应单调（{} vs {}）",
+            c2.contrast,
+            c1.contrast
+        );
+
+        let warm = look(&Style {
+            warmth: 0.25,
+            ..Default::default()
+        });
+        assert!(
+            warm.warmth > base.warmth,
+            "色温应上升（{} vs {}）",
+            warm.warmth,
+            base.warmth
+        );
+
+        let sat = look(&Style {
+            sat: 1.6,
+            ..Default::default()
+        });
+        assert!(
+            sat.sat > base.sat,
+            "饱和度应上升（{} vs {}）",
+            sat.sat,
+            base.sat
+        );
+
+        // 笔触尺度要看「相关长度」：条纹图的相关长度被条纹周期主导，改用纯噪声图
+        let mut st = 999u64;
+        let noise: Vec<f32> = (0..n * n * 3)
+            .map(|_| (sm64(&mut st) >> 40) as f32 / (1u64 << 24) as f32)
+            .collect();
+        let s0 = crate::look::analyze(&noise, w, h).stroke;
+        let s2 = crate::look::analyze(
+            &stylize(
+                &noise,
+                w,
+                h,
+                &Style {
+                    stroke: 3.0,
+                    ..Default::default()
+                },
+            ),
+            w,
+            h,
+        )
+        .stroke;
+        let s_sharp = crate::look::analyze(
+            &stylize(
+                &noise,
+                w,
+                h,
+                &Style {
+                    stroke: -1.0,
+                    ..Default::default()
+                },
+            ),
+            w,
+            h,
+        )
+        .stroke;
+        assert!(s2 > s0, "模糊应拉长相关长度（{} vs {}）", s2, s0);
+        assert!(
+            s_sharp <= s0 + 1e-3,
+            "锐化不该拉长相关长度（{} vs {}）",
+            s_sharp,
+            s0
+        );
+    }
+
+    #[test]
+    fn stylize_is_deterministic() {
+        let img = sample_img(24);
+        let s = Style {
+            contrast: 1.3,
+            levels: 12,
+            warmth: 0.1,
+            sat: 1.2,
+            stroke: 1.0,
+        };
+        assert_eq!(stylize(&img, 24, 24, &s), stylize(&img, 24, 24, &s));
     }
 
     #[test]

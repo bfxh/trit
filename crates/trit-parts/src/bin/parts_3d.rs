@@ -2123,6 +2123,46 @@ fn tex_quilt_cmd(argv: &[String]) {
     }
 }
 
+/// `tex-stylize <in.png> --contrast 1.2 --levels 8 --warmth 0.1 --sat 1.5 --stroke 2 --out o.png`：
+/// S6.5 的**显式**风格旋钮（不训练）；打印变换前后 trit-look 的对应因子，便于验收单调性。
+fn tex_stylize_cmd(argv: &[String]) {
+    use trit_parts::tex::{Style, stylize};
+    let Some(p) = argv.get(1).filter(|a| !a.starts_with("--")) else {
+        fail(
+            "用法: parts-3d tex-stylize <in.png> [--contrast 1.2] [--levels 8] [--warmth 0.1] [--sat 1.5] [--stroke 2] --out o.png",
+        );
+    };
+    let (w, h, px) =
+        trit_parts::data::read_rgb(std::path::Path::new(p)).unwrap_or_else(|e| fail(&e));
+    let num = |k: &str, d: f32| -> f32 { arg(argv, k).and_then(|v| v.parse().ok()).unwrap_or(d) };
+    let st = Style {
+        contrast: num("--contrast", 1.0),
+        levels: num("--levels", 0.0).max(0.0) as u32,
+        warmth: num("--warmth", 0.0),
+        sat: num("--sat", 1.0),
+        stroke: num("--stroke", 0.0),
+    };
+    let out = stylize(&px, w, h, &st);
+    let a = trit_parts::look::analyze(&px, w, h);
+    let b = trit_parts::look::analyze(&out, w, h);
+    println!("{:<10} {:>9} -> {:>9}", "factor", "before", "after");
+    for (name, x, y) in [
+        ("stroke", a.stroke, b.stroke),
+        ("levels", a.levels, b.levels),
+        ("strong", a.strong, b.strong),
+        ("contrast", a.contrast, b.contrast),
+        ("warmth", a.warmth, b.warmth),
+        ("sat", a.sat, b.sat),
+    ] {
+        println!("{name:<10} {x:>9.3} -> {y:>9.3}");
+    }
+    if let Some(o) = arg(argv, "--out") {
+        trit_parts::data::write_rgb(std::path::Path::new(&o), w, h, &out)
+            .unwrap_or_else(|e| fail(&e));
+        println!("写出 {o}");
+    }
+}
+
 fn tex_gen_cmd(argv: &[String]) {
     use trit_parts::tex::{seam_ratio, tile};
 
@@ -3131,6 +3171,7 @@ fn usage() -> ! {
   parts-3d tex-prior [--iters 30000] [--patch 3|7] [--cond] [--hid 16]
   parts-3d tex-conv  [--iters 20000] [--hidden 8,8] [--cond] [--size 64] [--adam] [--batch K] [--bn]
   parts-3d tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 3] [--seed 1]
+  parts-3d tex-stylize <in.png> [--contrast K] [--levels N] [--warmth T] [--sat S] [--stroke R] --out o.png
   parts-3d tex-gen   [--iters 200000] [--steps-t 50] [--size 64] [--hid 32] [--out <dir>]
                      [--conv 8,8] [--batch 4] [--adam] [--eps|--v] [--eps-space] [--diag]
                      [--dil N] [--save w.tpc] [--load w.tpc] [--holdout-names A,B]
@@ -3160,6 +3201,7 @@ fn main() {
         Some("tex-conv") => tex_conv_cmd(&argv),
         Some("tex-gen") => tex_gen_cmd(&argv),
         Some("tex-quilt") => tex_quilt_cmd(&argv),
+        Some("tex-stylize") => tex_stylize_cmd(&argv),
         Some("look") => look_cmd(&argv),
         Some("style") => style_cmd(&argv),
         Some("infer") => {
