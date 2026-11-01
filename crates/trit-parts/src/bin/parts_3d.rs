@@ -2213,6 +2213,11 @@ fn tex_gen_cmd(argv: &[String]) {
         .unwrap_or(4);
     let save_path = arg(argv, "--save").map(PathBuf::from);
     let load_path = arg(argv, "--load").map(PathBuf::from);
+    // 没有 --conv 时走的是 MLP 分支，那里根本不看 --save/--load：
+    // 曾经 `--load` 被静默忽略，采到的是未训练 MLP 的常数图（2026-11-01 实测三份不同 checkpoint 输出逐位相同）。
+    if conv_hidden.is_empty() && (load_path.is_some() || save_path.is_some()) {
+        fail("--load/--save 只对卷积去噪器生效：请同时给 --conv（隐藏宽度，如 --conv 8,8）");
+    }
     let mut rng: u64 = 0x9E37_79B9_7F4A_7C15 ^ seed;
     let mut next_u = || {
         rng ^= rng << 13;
