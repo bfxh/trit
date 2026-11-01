@@ -1855,7 +1855,13 @@ fn tex_conv_cmd(argv: &[String]) {
         }
         loss += net.train_batch(&batch, n, n, lr, adam) as f64;
         if (step + 1) % 2000 == 0 {
-            println!("  step {} loss {:.4}", step + 1, loss / 2000.0);
+            println!(
+                "  step {} loss {:.4} | aux CE {:.3} acc {:.2}",
+                step + 1,
+                loss / 2000.0,
+                net.aux_ce,
+                net.aux_acc
+            );
             loss = 0.0;
         }
     }
@@ -2149,19 +2155,22 @@ fn tex_gen_cmd(argv: &[String]) {
     }
 
     // --only-class k：只保留某一类（S6.3 的「每类独立模型」上界实验）
-    let images: Vec<Vec<f32>> = match arg(argv, "--only-class").and_then(|v| v.parse::<usize>().ok()) {
-        Some(k) if film_k > 0 => {
-            let keep: Vec<usize> = (0..images.len()).filter(|&i| img_class[i] == Some(k)).collect();
-            if keep.len() < 20 {
-                fail(&format!("--only-class {k} 只有 {} 张，太少", keep.len()));
+    let images: Vec<Vec<f32>> =
+        match arg(argv, "--only-class").and_then(|v| v.parse::<usize>().ok()) {
+            Some(k) if film_k > 0 => {
+                let keep: Vec<usize> = (0..images.len())
+                    .filter(|&i| img_class[i] == Some(k))
+                    .collect();
+                if keep.len() < 20 {
+                    fail(&format!("--only-class {k} 只有 {} 张，太少", keep.len()));
+                }
+                let cls: Vec<Option<usize>> = keep.iter().map(|&i| img_class[i]).collect();
+                img_class = cls;
+                println!("只训类 {k}：{} 张", keep.len());
+                keep.iter().map(|&i| images[i].clone()).collect()
             }
-            let cls: Vec<Option<usize>> = keep.iter().map(|&i| img_class[i]).collect();
-            img_class = cls;
-            println!("只训类 {k}：{} 张", keep.len());
-            keep.iter().map(|&i| images[i].clone()).collect()
-        }
-        _ => images,
-    };
+            _ => images,
+        };
 
     // 归一化：每张图减去自身均值、除以自身标准差（保留反归一化参数）
     let img_norm: Vec<(f32, f32)> = images
@@ -2243,6 +2252,14 @@ fn tex_gen_cmd(argv: &[String]) {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(1.0f32);
             println!("FiLM lr 倍数 {}", net.film_lr_mul);
+            // 辅助分类损失：逼输出携带类别信息（FiLM 单独用会被逐点回归忽略）
+            net.aux_w = arg(argv, "--aux")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0.0f32);
+            if net.aux_w > 0.0 {
+                net.set_aux(film_k);
+                println!("辅助分类损失 λ={}（{} 类）", net.aux_w, film_k);
+            }
         }
         let tmax = sched.steps().max(1);
         // 每张图的 (均值, 对比) —— 条件通道的取值
@@ -2300,7 +2317,13 @@ fn tex_gen_cmd(argv: &[String]) {
             }
             loss += net.train_batch_xc(&items, n, n, lr, use_adam) as f64;
             if (step + 1) % 2000 == 0 {
-                println!("  step {} loss {:.4}", step + 1, loss / 2000.0);
+                println!(
+                    "  step {} loss {:.4} | aux CE {:.3} acc {:.2}",
+                    step + 1,
+                    loss / 2000.0,
+                    net.aux_ce,
+                    net.aux_acc
+                );
                 loss = 0.0;
             }
             // 断点：每 1000 步存一次（本机常被关机，别让整轮白跑）

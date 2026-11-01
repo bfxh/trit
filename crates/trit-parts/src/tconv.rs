@@ -324,6 +324,36 @@ impl Bn {
     }
 }
 
+/// 辅助分类头：对隐特征做全局平均池化 → 线性 → 类别 logits。
+/// 目的：给「逐点回归」补一条**对类别有可辨识性**的损失（FiLM 单独用会被忽略）。
+pub struct AuxCls {
+    pub w: Vec<f32>,
+    pub b: Vec<f32>,
+    pub nk: usize,
+    pub c: usize,
+}
+
+impl AuxCls {
+    pub fn new(nk: usize, c: usize) -> Self {
+        AuxCls {
+            w: vec![0.0; nk * c],
+            b: vec![0.0; nk],
+            nk,
+            c,
+        }
+    }
+    fn logits(&self, pool: &[f32]) -> Vec<f32> {
+        (0..self.nk)
+            .map(|k| {
+                self.b[k]
+                    + (0..self.c)
+                        .map(|i| self.w[k * self.c + i] * pool[i])
+                        .sum::<f32>()
+            })
+            .collect()
+    }
+}
+
 /// FiLM：按类别对隐层做逐通道缩放/平移（`y = g[c]·y + b[c]`）。
 /// 行数 = 类别数 + 1，最后一行为**空类**（条件丢弃时用）。
 pub struct Film {
@@ -375,6 +405,13 @@ pub struct Net {
     pub nk: usize,
     /// FiLM 的学习率倍数（条件信号弱时需要放大；默认 1）。
     pub film_lr_mul: f32,
+    /// 辅助分类头（`None` = 不加）。
+    pub aux: Option<AuxCls>,
+    /// 辅助分类损失的权重 λ。
+    pub aux_w: f32,
+    /// 诊断：上一批辅助头自己的 CE 与准确率。
+    pub aux_ce: f32,
+    pub aux_acc: f32,
 }
 
 impl Net {
@@ -399,7 +436,20 @@ impl Net {
             films: (0..n).map(|_| None).collect(),
             nk: 0,
             film_lr_mul: 1.0,
+            aux: None,
+            aux_w: 0.0,
+            aux_ce: 0.0,
+            aux_acc: 0.0,
         }
+    }
+
+    /// 开辅助分类头：作用在**最后一层隐特征**的全局池化上。
+    pub fn set_aux(&mut self, nk: usize) {
+        if self.layers.len() < 2 {
+            return;
+        }
+        let c = self.layers[self.layers.len() - 2].cout;
+        self.aux = Some(AuxCls::new(nk, c));
     }
 
     /// 开关 FiLM 条件：`nk` 个类 + 1 个空类，只作用在隐藏层。
@@ -564,6 +614,18 @@ impl Net {
             .iter()
             .map(|b| b.as_ref().map(|bb| vec![0.0; bb.beta.len()]))
             .collect();
+        let (mut aux_ce_acc, mut aux_hit, mut aux_cnt) = (0.0f32, 0usize, 0usize);
+        // 辅助分类头的梯度（w: nk×c，b: nk）
+        let mut acc_aw: Vec<f32> = self
+            .aux
+            .as_ref()
+            .map(|a| vec![0.0; a.w.len()])
+            .unwrap_or_default();
+        let mut acc_ab: Vec<f32> = self
+            .aux
+            .as_ref()
+            .map(|a| vec![0.0; a.b.len()])
+            .unwrap_or_default();
         // FiLM 的梯度按「层 × 类 × 通道」累加
         let mut acc_fg: Vec<Option<Vec<f32>>> = self
             .films
@@ -623,6 +685,61 @@ impl Net {
                 }
                 x = y;
             }
+            // 辅助分类：对「最后一层隐特征」做全局平均池化
+            let mut aux_dpool: Option<Vec<f32>> = None;
+            let mut aux_feat: Option<&Vec<Vec<f32>>> = None;
+            // 只在低噪声段加分类损失：高 t 时输入近纯噪声，类别本质不可辨，硬加只会浪费梯度
+            let t_frac = maps_in.get(1).map(|m| m[0]).unwrap_or(0.0);
+            let aux_scale = self.aux_w * (1.0 - t_frac).powi(2);
+            if let (Some(a), Some(cls)) = (self.aux.as_ref(), class)
+                && aux_scale > 1e-4
+                && *cls < a.nk
+                && self.layers.len() >= 2
+            {
+                {
+                    let feats = &ins[self.layers.len() - 1];
+                    let mut pool = vec![0.0f32; a.c];
+                    for (ch, v) in feats.iter().enumerate() {
+                        pool[ch] = v.iter().sum::<f32>() / n as f32;
+                    }
+                    let logits = a.logits(&pool);
+                    let mx = logits.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                    let exps: Vec<f32> = logits.iter().map(|v| (v - mx).exp()).collect();
+                    let z: f32 = exps.iter().sum::<f32>().max(1e-9);
+                    let probs: Vec<f32> = exps.iter().map(|v| v / z).collect();
+                    loss += f64::from(
+                        aux_scale * -(probs.get(*cls).copied().unwrap_or(1e-6).max(1e-6).ln()),
+                    );
+                    let mut dlog = probs.clone();
+                    dlog[*cls] -= 1.0;
+                    for k in 0..a.nk {
+                        acc_ab[k] += aux_scale * dlog[k];
+                        for i in 0..a.c {
+                            acc_aw[k * a.c + i] += aux_scale * dlog[k] * pool[i];
+                        }
+                    }
+                    let mut dpool = vec![0.0f32; a.c];
+                    for (i, dp) in dpool.iter_mut().enumerate() {
+                        *dp = (0..a.nk)
+                            .map(|k| aux_scale * dlog[k] * a.w[k * a.c + i])
+                            .sum();
+                    }
+                    aux_ce_acc += -probs.get(*cls).copied().unwrap_or(1e-6).max(1e-6).ln();
+                    let best = probs
+                        .iter()
+                        .enumerate()
+                        .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                        .map(|(i, _)| i)
+                        .unwrap_or(0);
+                    if best == *cls {
+                        aux_hit += 1;
+                    }
+                    aux_cnt += 1;
+                    aux_dpool = Some(dpool);
+                    aux_feat = Some(feats);
+                }
+            }
+
             let pred = &x[0];
             let mut d = vec![vec![0.0f32; n]; 1];
             for i in 0..n {
@@ -686,6 +803,19 @@ impl Net {
                     }
                     d = dx;
                 }
+                // 辅助分类头对「该层激活输出」的梯度：只在 ReLU 未截断处有效
+                if li + 2 == self.layers.len()
+                    && let (Some(dpool), Some(feats)) = (aux_dpool.as_ref(), aux_feat.as_ref())
+                {
+                    for (ch, row) in feats.iter().enumerate() {
+                        let gg = dpool[ch] / n as f32;
+                        for (i, v) in row.iter().enumerate() {
+                            if *v > 0.0 {
+                                d[ch][i] += gg;
+                            }
+                        }
+                    }
+                }
                 if let (Some((pre, g, cls)), Some(ag), Some(ab)) =
                     (&film_state[li], acc_fg[li].as_mut(), acc_fb[li].as_mut())
                 {
@@ -724,6 +854,18 @@ impl Net {
                     *a += g;
                 }
                 d = dx;
+            }
+        }
+        if aux_cnt > 0 {
+            self.aux_ce = aux_ce_acc / aux_cnt as f32;
+            self.aux_acc = aux_hit as f32 / aux_cnt as f32;
+        }
+        if let Some(a) = self.aux.as_mut() {
+            for (w, g) in a.w.iter_mut().zip(&acc_aw) {
+                *w -= lr * g / k as f32;
+            }
+            for (b, g) in a.b.iter_mut().zip(&acc_ab) {
+                *b -= lr * g / k as f32;
             }
         }
         for li in 0..self.layers.len() {
@@ -909,6 +1051,10 @@ impl Net {
             films: (0..nl).map(|_| None).collect(),
             nk: 0,
             film_lr_mul: 1.0,
+            aux: None,
+            aux_w: 0.0,
+            aux_ce: 0.0,
+            aux_acc: 0.0,
         };
         net.set_circular(circular);
         if nk_hdr > 0 {
