@@ -1555,7 +1555,107 @@ fn mesh_tex_cmd(argv: &[String]) {
             let lscm = argv.iter().any(|a| a == "--lscm");
             // 按材质类别（面法线主轴 X/Y/Z）分别上风格：`--style-by-axis "cel:0.6,oil:0.5,-"`
             // `-` = 该类不处理；条目不足 3 个时其余为恒等。
-            let per_class_data: Option<(Vec<u8>, Vec<trit_parts::tex::Style>)> =
+            // 材质映射：manifest 的 pass_index → material；顶点用多视角投影投票定部件号
+            let mat_spec = arg(argv, "--style-by-material");
+            let per_class_data: Option<(Vec<u8>, Vec<trit_parts::tex::Style>)> = if let Some(spec) =
+                mat_spec
+            {
+                use trit_parts::tex::{Preset, Style};
+                const MATS: [&str; 4] = ["wood", "metal", "stone", "fabric"];
+                let mut styles = vec![Style::default(); 5];
+                for part in spec.split(',') {
+                    let part = part.trim();
+                    if part.is_empty() {
+                        continue;
+                    }
+                    let (mat, st) = part.split_once('=').unwrap_or((part, "-"));
+                    let k = MATS
+                        .iter()
+                        .position(|m| *m == mat)
+                        .unwrap_or_else(|| fail(&format!("未知材质 {mat}（可选 {MATS:?}）")));
+                    if st == "-" {
+                        continue;
+                    }
+                    let (name, t) = st.split_once(':').unwrap_or((st, "1.0"));
+                    let p = Preset::by_name(name).unwrap_or_else(|| {
+                        fail(&format!("未知预设 {name}（可选 cel / oil / epic）"))
+                    });
+                    styles[k] = p.style(t.parse::<f32>().unwrap_or(1.0));
+                }
+                // 顶点 → 部件号（多视角投影投票）
+                let txt =
+                    std::fs::read_to_string(scene.join("manifest.json")).unwrap_or_else(|e| {
+                        fail(&format!(
+                            "读 manifest 失败（--style-by-material 需要它）：{e}"
+                        ))
+                    });
+                let by_pass = materials_by_pass(&txt);
+                let mat_of = |id: u32| -> u8 {
+                    by_pass
+                        .get(id as usize)
+                        .and_then(|m| m.as_ref())
+                        .and_then(|m| MATS.iter().position(|x| *x == m.as_str()))
+                        .map(|k| k as u8)
+                        .unwrap_or(4)
+                };
+                let vclass: Vec<u8> = m
+                    .verts
+                    .iter()
+                    .map(|v| {
+                        let mut votes: std::collections::HashMap<u32, usize> =
+                            std::collections::HashMap::new();
+                        for view in &views {
+                            if let Some((u, vv, d)) = view.cam.project(*v) {
+                                let (ui, vi) = (u.round(), vv.round());
+                                if d > 0.0
+                                    && ui >= 0.0
+                                    && vi >= 0.0
+                                    && (ui as usize) < view.w
+                                    && (vi as usize) < view.h
+                                {
+                                    let id = view.ids[vi as usize * view.w + ui as usize];
+                                    if id > 0 {
+                                        *votes.entry(id).or_default() += 1;
+                                    }
+                                }
+                            }
+                        }
+                        // 平票必须确定性：先比票数，再比部件号（否则 HashMap 顺序会让结果不可复现）
+                        votes
+                            .into_iter()
+                            .max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0)))
+                            .map(|(id, _)| mat_of(id))
+                            .unwrap_or(4)
+                    })
+                    .collect();
+                let class: Vec<u8> = m
+                    .tris
+                    .iter()
+                    .map(|t| {
+                        let (a, b, c) = (
+                            vclass[t[0] as usize],
+                            vclass[t[1] as usize],
+                            vclass[t[2] as usize],
+                        );
+                        if a == b || a == c {
+                            a
+                        } else if b == c {
+                            b
+                        } else {
+                            4
+                        }
+                    })
+                    .collect();
+                let mut cnt = [0usize; 5];
+                for &c in &class {
+                    cnt[c as usize] += 1;
+                }
+                println!(
+                    "按材质分风格：wood {} / metal {} / stone {} / fabric {} / 未知 {} 个三角形（{spec}）",
+                    cnt[0], cnt[1], cnt[2], cnt[3], cnt[4]
+                );
+                Some((class, styles))
+            } else {
                 arg(argv, "--style-by-axis").map(|spec| {
                     use trit_parts::tex::{Preset, Style};
                     let mut styles: Vec<Style> = Vec::new();
@@ -1599,7 +1699,8 @@ fn mesh_tex_cmd(argv: &[String]) {
                         .collect();
                     println!("按主轴分风格：X/Y/Z = {spec}");
                     (class, styles)
-                });
+                })
+            };
             let pc = per_class_data
                 .as_ref()
                 .map(|(c, st)| trit_parts::atlas::PerClass {
@@ -1629,7 +1730,10 @@ fn mesh_tex_cmd(argv: &[String]) {
                 .unwrap_or_else(|e| fail(&e));
             let st = trit_parts::atlas::uv_stats(&m, &a);
             if !a.styled_texels.is_empty() {
-                println!("按类改写纹素：X/Y/Z = {:?}", a.styled_texels);
+                println!(
+                    "按类改写纹素（按 --style-by-* 的类别序）= {:?}",
+                    a.styled_texels
+                );
             }
             println!(
                 "UV 密度：中位 {:.0} texel²/单位²，p05 {:.0} / p95 {:.0}（spread {:.2}）",
@@ -2239,6 +2343,38 @@ fn tex_quilt_cmd(argv: &[String]) {
         std::fs::write(&outp, bytes).unwrap_or_else(|e| fail(&format!("{outp}: {e}")));
         println!("写出 {outp}");
     }
+}
+
+/// 从 manifest 里抽 `pass_index → material`（手写扫描：manifest 由本仓渲染器产出，字段顺序固定）。
+fn materials_by_pass(manifest: &str) -> Vec<Option<String>> {
+    let mut out: Vec<Option<String>> = Vec::new();
+    let mut rest = manifest;
+    while let Some(i) = rest.find("\"pass_index\":") {
+        let after = &rest[i + 13..];
+        rest = after;
+        let num: String = after
+            .trim_start()
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+        let Ok(idx) = num.parse::<usize>() else {
+            continue;
+        };
+        // 在同一对象内找 material（下一个 pass_index 之前）
+        let seg_end = after.find("\"pass_index\":").unwrap_or(after.len());
+        let window = &after[..seg_end];
+        let mat = window.find("\"material\":").and_then(|j| {
+            let tail = &window[j + 11..];
+            let q = tail.find('"')? + 1;
+            let name: String = tail[q..].chars().take_while(|c| *c != '"').collect();
+            if name.is_empty() { None } else { Some(name) }
+        });
+        if idx >= out.len() {
+            out.resize(idx + 1, None);
+        }
+        out[idx] = mat;
+    }
+    out
 }
 
 /// 从命令行取风格参数（预设优先；都没有/默认值则返回 None = 不变）。
