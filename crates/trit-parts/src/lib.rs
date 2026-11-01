@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 pub mod api;
+pub mod atlas;
 pub mod augment;
 pub mod backward;
 pub mod data;

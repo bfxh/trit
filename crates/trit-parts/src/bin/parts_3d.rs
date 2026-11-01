@@ -1483,7 +1483,9 @@ fn mesh_tex_cmd(argv: &[String]) {
         let tex_world: f32 = arg(argv, "--tex-world")
             .and_then(|v| v.parse().ok())
             .unwrap_or(cell * 40.0);
-        let uvs = trit_parts::uv::box_uvs(&m, tex_world);
+        let atlas_px: usize = arg(argv, "--atlas")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         let obj_path = PathBuf::from(&obj_p);
         let stem = obj_path
             .file_stem()
@@ -1491,11 +1493,37 @@ fn mesh_tex_cmd(argv: &[String]) {
             .unwrap_or("mesh")
             .to_string();
         let png_p = obj_path.with_file_name(format!("{stem}.png"));
+        if atlas_px > 0 {
+            let texels: f32 = arg(argv, "--texels")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1024.0);
+            let ndeg: f32 = arg(argv, "--atlas-deg")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(45.0);
+            let a = trit_parts::atlas::bake_atlas(&m, &tpix, tw, th, atlas_px, texels, ndeg)
+                .unwrap_or_else(|e| fail(&e));
+            trit_parts::data::write_rgb(&png_p, a.w, a.h, &a.img).unwrap_or_else(|e| fail(&e));
+            trit_parts::uv::write_obj(&obj_path, &m, &a.uv, &format!("{stem}.png"))
+                .unwrap_or_else(|e| fail(&e));
+            println!(
+                "OBJ {}：{} 顶点 / {} 三角形，**图集** {}×{}（{} 个 chart，法线聚类 {:.0}°）⇒ {}",
+                obj_path.display(),
+                m.verts.len(),
+                m.tris.len(),
+                a.w,
+                a.h,
+                a.charts.len(),
+                ndeg,
+                png_p.display()
+            );
+            return;
+        }
+        let uvs = trit_parts::uv::box_uvs(&m, tex_world);
         trit_parts::data::write_rgb(&png_p, tw, th, &tpix).unwrap_or_else(|e| fail(&e));
         trit_parts::uv::write_obj(&obj_path, &m, &uvs, &format!("{stem}.png"))
             .unwrap_or_else(|e| fail(&e));
         println!(
-            "OBJ {}：{} 顶点 / {} 三角形，贴图 {}×{}（一张覆盖 {:.3} 世界单位）⇒ {}",
+            "OBJ {}：{} 顶点 / {} 三角形，投影 UV，贴图 {}×{}（一张覆盖 {:.3} 世界单位）⇒ {}",
             obj_path.display(),
             m.verts.len(),
             m.tris.len(),
