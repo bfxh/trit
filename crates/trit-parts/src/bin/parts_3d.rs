@@ -1434,6 +1434,20 @@ fn mesh_tex_cmd(argv: &[String]) {
     let pts = view_points(&views);
     let g = trit_parts::mesh::Grid::from_points(&pts, cell, 3).unwrap_or_else(|| fail("无有效点"));
     let solid = close_solid(&g, selfsup_solid(&views, &g, tau));
+    // 最小壁厚：形态学开运算删掉薄板/相切壁（噪声网格上非流形边的源头）
+    let solid = if let Some(r) = arg(argv, "--open").and_then(|v| v.parse::<usize>().ok()) {
+        let before = solid.iter().filter(|&&v| v != 0).count();
+        let s2 = trit_parts::mesh::open_solid(&solid, g.nx, g.ny, g.nz, r);
+        let after = s2.iter().filter(|&&v| v != 0).count();
+        println!(
+            "开运算 r={r}：占用体素 {before}→{after}（略掉 {}，{:.2}%）",
+            before.saturating_sub(after),
+            100.0 * (before - after) as f32 / before.max(1) as f32
+        );
+        s2
+    } else {
+        solid
+    };
     let sg = trit_parts::mesh::Grid {
         occ: solid,
         nx: g.nx,

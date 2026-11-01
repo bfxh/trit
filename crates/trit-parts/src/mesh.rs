@@ -492,6 +492,102 @@ pub fn boundary_edges(m: &Mesh) -> usize {
     cnt.values().filter(|&&c| c == 1).count()
 }
 
+/// 半径 `r` 的球核偏移（含中心）。
+fn ball_offsets(r: usize) -> Vec<(isize, isize, isize)> {
+    let r = r as isize;
+    let mut out = Vec::new();
+    for dz in -r..=r {
+        for dy in -r..=r {
+            for dx in -r..=r {
+                if dx * dx + dy * dy + dz * dz <= r * r {
+                    out.push((dx, dy, dz));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// 腐蚀：只有球核覆盖的体素**全是 1** 才保留（出界当 0 ⇒ 边界必然被吃掉）。
+pub fn erode(occ: &[u8], nx: usize, ny: usize, nz: usize, r: usize) -> Vec<u8> {
+    if r == 0 {
+        return occ.to_vec();
+    }
+    let offs = ball_offsets(r);
+    let mut out = vec![0u8; occ.len()];
+    for z in 0..nz {
+        for y in 0..ny {
+            for x in 0..nx {
+                let i = x + nx * (y + ny * z);
+                if occ[i] == 0 {
+                    continue;
+                }
+                let mut keep = true;
+                for &(dx, dy, dz) in &offs {
+                    let (xx, yy, zz) = (x as isize + dx, y as isize + dy, z as isize + dz);
+                    if xx < 0
+                        || yy < 0
+                        || zz < 0
+                        || xx >= nx as isize
+                        || yy >= ny as isize
+                        || zz >= nz as isize
+                    {
+                        keep = false;
+                        break;
+                    }
+                    if occ[xx as usize + nx * (yy as usize + ny * zz as usize)] == 0 {
+                        keep = false;
+                        break;
+                    }
+                }
+                out[i] = keep as u8;
+            }
+        }
+    }
+    out
+}
+
+/// 膨胀：球核覆盖到的任一位置为 1 就置 1。
+pub fn dilate(occ: &[u8], nx: usize, ny: usize, nz: usize, r: usize) -> Vec<u8> {
+    if r == 0 {
+        return occ.to_vec();
+    }
+    let offs = ball_offsets(r);
+    let mut out = vec![0u8; occ.len()];
+    for z in 0..nz {
+        for y in 0..ny {
+            for x in 0..nx {
+                let mut on = false;
+                for &(dx, dy, dz) in &offs {
+                    let (xx, yy, zz) = (x as isize + dx, y as isize + dy, z as isize + dz);
+                    if xx < 0
+                        || yy < 0
+                        || zz < 0
+                        || xx >= nx as isize
+                        || yy >= ny as isize
+                        || zz >= nz as isize
+                    {
+                        continue;
+                    }
+                    if occ[xx as usize + nx * (yy as usize + ny * zz as usize)] != 0 {
+                        on = true;
+                        break;
+                    }
+                }
+                out[x + nx * (y + ny * z)] = on as u8;
+            }
+        }
+    }
+    out
+}
+
+/// 形态学开（先腐蚀后膨胀）：删掉比 `2r+1` 更薄的板/桥，尺寸基本不变。
+/// 对二进制占用，开运算是**幂等**的（`open(open(x)) == open(x)`，单测钉住）。
+pub fn open_solid(occ: &[u8], nx: usize, ny: usize, nz: usize, r: usize) -> Vec<u8> {
+    let e = erode(occ, nx, ny, nz, r);
+    dilate(&e, nx, ny, nz, r)
+}
+
 /// 被 >2 个面共用的边数（真正的「非流形边」；`non_manifold_edges` 把边界边也算进去，别混用）。
 pub fn multiface_edges(m: &Mesh) -> usize {
     use std::collections::HashMap;
@@ -794,6 +890,50 @@ mod tests {
             [3, 4, 7],
         ];
         Mesh { verts: v, tris: t }
+    }
+
+    fn slab(nx: usize, ny: usize, nz: usize, lo: usize, hi: usize) -> Vec<u8> {
+        // z ∈ [lo, hi) 的厚板
+        let mut o = vec![0u8; nx * ny * nz];
+        for z in lo..hi {
+            for y in 0..ny {
+                for x in 0..nx {
+                    o[x + nx * (y + ny * z)] = 1;
+                }
+            }
+        }
+        o
+    }
+
+    #[test]
+    fn open_removes_one_voxel_sheet_but_keeps_thick_slabs() {
+        let (nx, ny, nz) = (9usize, 9usize, 9usize);
+        let thin = slab(nx, ny, nz, 4, 5); // 1 体素厚
+        let thick = slab(nx, ny, nz, 2, 7); // 5 体素厚
+        for r in [1usize, 2] {
+            let o = open_solid(&thin, nx, ny, nz, r);
+            assert_eq!(
+                o.iter().filter(|&&v| v != 0).count(),
+                0,
+                "r={r} 应删掉 1 体素薄板"
+            );
+            let o = open_solid(&thick, nx, ny, nz, r);
+            assert!(
+                o.iter().filter(|&&v| v != 0).count() > 0,
+                "r={r} 不该把 5 体素厚板删没"
+            );
+        }
+    }
+
+    #[test]
+    fn opening_is_idempotent() {
+        let (nx, ny, nz) = (12usize, 12usize, 12usize);
+        let mut occ = slab(nx, ny, nz, 2, 10);
+        occ[5 + nx * (5 + ny * 5)] = 0; // 挖个单点洞
+        let a = open_solid(&occ, nx, ny, nz, 1);
+        let b = open_solid(&a, nx, ny, nz, 1);
+        assert_eq!(a, b, "开运算应幂等");
+        assert!(a.iter().any(|&v| v != 0), "不该把厚板删没");
     }
 
     #[test]
