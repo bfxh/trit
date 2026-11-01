@@ -343,6 +343,53 @@ pub fn stylize(px: &[f32], w: usize, h: usize, s: &Style) -> Vec<f32> {
     out
 }
 
+/// **点式**风格（无空间操作）：对比度 → 色温 → 饱和 → 色阶（最后 posterize）。
+/// 用于「按材质类别分开上风格」——类别是逐三角形的，模糊这类空间算子不能逐三角形做。
+pub fn apply_pointwise(px: &mut [f32], s: &Style) {
+    if (s.contrast - 1.0).abs() > 1e-6 {
+        let n = (px.len() / 3) as f32;
+        let mut mean = [0.0f32; 3];
+        for p in px.chunks(3) {
+            for c in 0..3 {
+                mean[c] += p[c];
+            }
+        }
+        for m in mean.iter_mut() {
+            *m /= n;
+        }
+        for p in px.chunks_mut(3) {
+            for c in 0..3 {
+                p[c] = ((p[c] - mean[c]) * s.contrast + mean[c]).clamp(0.0, 1.0);
+            }
+        }
+    }
+    if s.warmth.abs() > 1e-6 {
+        for p in px.chunks_mut(3) {
+            p[0] = (p[0] * (1.0 + s.warmth)).clamp(0.0, 1.0);
+            p[2] = (p[2] * (1.0 - s.warmth)).clamp(0.0, 1.0);
+        }
+    }
+    if (s.sat - 1.0).abs() > 1e-6 {
+        for p in px.chunks_mut(3) {
+            let y = 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
+            for v in p.iter_mut() {
+                *v = (y + (*v - y) * s.sat).clamp(0.0, 1.0);
+            }
+        }
+    }
+    if s.levels >= 2 {
+        let lo = px.iter().cloned().fold(f32::INFINITY, f32::min);
+        let hi = px.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        if hi - lo > 1e-6 {
+            let n = s.levels as f32 - 1.0;
+            for v in px.iter_mut() {
+                let t = ((*v - lo) / (hi - lo) * n).round() / n;
+                *v = lo + t * (hi - lo);
+            }
+        }
+    }
+}
+
 /// 风格预设（S6.7 止损后的形态）：**固定变换序列 + 单一强度 `t ∈ [0,1]`**。
 ///
 /// 三个预设只在「端点」定义（t=1），中间按 t 线性插值；t=0 必须逐位等于原图（单测钉住）。

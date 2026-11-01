@@ -20,6 +20,8 @@ pub struct Chart {
 pub struct Atlas {
     /// 交错 RGB，`w×h`。
     pub img: Vec<f32>,
+    /// 每类被风格改写的纹素数（无风格时全 0）——「按类别分开」的精确判据。
+    pub styled_texels: Vec<usize>,
     pub w: usize,
     pub h: usize,
     pub charts: Vec<Chart>,
@@ -266,6 +268,39 @@ fn lscm_chart(pts3d: &[[f32; 3]], tris: &[[u32; 3]]) -> Vec<[f32; 2]> {
     (0..nv).map(|v| [x[2 * v], x[2 * v + 1]]).collect()
 }
 
+/// 逐三角形类别 + 每类点式风格（模糊这类空间算子不参与）。
+pub struct PerClass<'a> {
+    pub class: &'a [u8],
+    pub styles: &'a [crate::tex::Style],
+}
+
+fn style_texel(c: [f32; 3], s: &crate::tex::Style, mean: [f32; 3], lo: f32, hi: f32) -> [f32; 3] {
+    let mut p = c;
+    if (s.contrast - 1.0).abs() > 1e-6 {
+        for k in 0..3 {
+            p[k] = ((p[k] - mean[k]) * s.contrast + mean[k]).clamp(0.0, 1.0);
+        }
+    }
+    if s.warmth.abs() > 1e-6 {
+        p[0] = (p[0] * (1.0 + s.warmth)).clamp(0.0, 1.0);
+        p[2] = (p[2] * (1.0 - s.warmth)).clamp(0.0, 1.0);
+    }
+    if (s.sat - 1.0).abs() > 1e-6 {
+        let y = 0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2];
+        for v in p.iter_mut() {
+            *v = (y + (*v - y) * s.sat).clamp(0.0, 1.0);
+        }
+    }
+    if s.levels >= 2 && hi - lo > 1e-6 {
+        let n = s.levels as f32 - 1.0;
+        for v in p.iter_mut() {
+            let t = ((*v - lo) / (hi - lo) * n).round() / n;
+            *v = lo + t * (hi - lo);
+        }
+    }
+    p
+}
+
 /// 切 chart + 打包 + 烘焙。
 ///
 /// chart 用**法线相似度**聚类（相邻面法线夹角 <= `normal_deg` 才合并）。
@@ -283,6 +318,7 @@ pub fn bake_atlas(
     texels_per_unit: f32,
     normal_deg: f32,
     use_lscm: bool,
+    per_class: Option<&PerClass>,
 ) -> Result<Atlas, String> {
     if m.tris.is_empty() {
         return Err("空网格".into());
@@ -532,11 +568,20 @@ pub fn bake_atlas(
     for mv in mean.iter_mut() {
         *mv /= cnt;
     }
+    let (tlo, thi) = if per_class.is_some() {
+        (
+            tex.iter().cloned().fold(f32::INFINITY, f32::min),
+            tex.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
+        )
+    } else {
+        (0.0, 1.0)
+    };
     let mut img = Vec::with_capacity(atlas_px * atlas_px * 3);
     for _ in 0..atlas_px * atlas_px {
         img.extend_from_slice(&mean);
     }
     let mut uv = vec![[[0.0f32; 2]; 3]; n];
+    let mut styled = vec![0usize; per_class.map(|p| p.styles.len()).unwrap_or(0)];
     let mut charts = Vec::with_capacity(group_list.len());
     for (gi, g) in group_list.iter().enumerate() {
         let (lo, _) = bounds[gi];
@@ -554,7 +599,7 @@ pub fn bake_atlas(
                 uv[fi][k] = [p[0] / atlas_px as f32, 1.0 - p[1] / atlas_px as f32];
             }
         }
-        for (li, _fi) in g.iter().enumerate() {
+        for (li, &fi) in g.iter().enumerate() {
             let src = coords[gi][li];
             let ps: Vec<[f32; 2]> = src.iter().map(|&p| to_px(p)).collect();
             let minx = (ps
@@ -603,7 +648,17 @@ pub fn bake_atlas(
                     }
                     let u = w0 * src[0][0] + w1 * src[1][0] + w2 * src[2][0];
                     let v = w0 * src[0][1] + w1 * src[1][1] + w2 * src[2][1];
-                    let c = sample(tex, tw, th, u, v);
+                    let mut c = sample(tex, tw, th, u, v);
+                    if let Some(pc) = per_class {
+                        let k = *pc.class.get(fi).unwrap_or(&0) as usize;
+                        if let Some(st) = pc.styles.get(k) {
+                            let before = c;
+                            c = style_texel(c, st, mean, tlo, thi);
+                            if c != before && k < styled.len() {
+                                styled[k] += 1;
+                            }
+                        }
+                    }
                     let i = (y * atlas_px + x) * 3;
                     img[i..i + 3].copy_from_slice(&c);
                 }
@@ -646,6 +701,7 @@ pub fn bake_atlas(
         img,
         w: atlas_px,
         h: atlas_px,
+        styled_texels: styled,
         charts,
         uv,
     })
@@ -735,7 +791,7 @@ mod tests {
     fn atlas_uvs_are_normalized_and_charts_do_not_overlap() {
         let m = cube();
         let tex = vec![0.5f32; 32 * 32 * 3];
-        let a = bake_atlas(&m, &tex, 32, 32, 256, 60.0, 45.0, false).unwrap();
+        let a = bake_atlas(&m, &tex, 32, 32, 256, 60.0, 45.0, false, None).unwrap();
         assert_eq!(a.uv.len(), m.tris.len());
         for tri in &a.uv {
             for p in tri {
@@ -766,7 +822,7 @@ mod tests {
         let m = cube();
         let (tw, th) = (16usize, 16usize);
         let tex: Vec<f32> = (0..tw * th).flat_map(|_| [0.25, 0.5, 0.75]).collect();
-        let a = bake_atlas(&m, &tex, tw, th, 128, 40.0, 45.0, false).unwrap();
+        let a = bake_atlas(&m, &tex, tw, th, 128, 40.0, 45.0, false, None).unwrap();
         // 所有被覆盖的纹素都必须等于源色（padding 处是 0，用 >0 判定被覆盖）
         let mut covered = 0usize;
         for px in a.img.chunks(3) {
@@ -796,7 +852,7 @@ mod tests {
             tris: vec![[0, 1, 2], [0, 2, 3]],
         };
         let tex = vec![0.5f32; 8 * 8 * 3];
-        let a = bake_atlas(&m, &tex, 8, 8, 128, 50.0, 45.0, false).unwrap();
+        let a = bake_atlas(&m, &tex, 8, 8, 128, 50.0, 45.0, false, None).unwrap();
         let st = uv_stats(&m, &a);
         assert_eq!(st.charts, 1, "共面应只出一个 chart");
         assert!(
@@ -833,8 +889,8 @@ mod tests {
     fn lscm_flattens_a_curved_patch_better_than_planar_projection() {
         let m = cylinder_patch(32, 8);
         let tex = vec![0.5f32; 8 * 8 * 3];
-        let planar = bake_atlas(&m, &tex, 8, 8, 512, 0.0, 89.0, false).unwrap();
-        let lscm = bake_atlas(&m, &tex, 8, 8, 512, 0.0, 89.0, true).unwrap();
+        let planar = bake_atlas(&m, &tex, 8, 8, 512, 0.0, 89.0, false, None).unwrap();
+        let lscm = bake_atlas(&m, &tex, 8, 8, 512, 0.0, 89.0, true, None).unwrap();
         let sp = uv_stats(&m, &planar);
         let sl = uv_stats(&m, &lscm);
         assert_eq!(
@@ -857,11 +913,77 @@ mod tests {
     }
 
     #[test]
+    fn per_class_styles_only_affect_their_own_triangles() {
+        // 同一平面两个三角形：第 0 个强制灰度，第 1 个不动
+        let m = Mesh {
+            verts: vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [1.0, 1.0, 0.0],
+                [0.0, 1.0, 0.0],
+            ],
+            tris: vec![[0, 1, 2], [0, 2, 3]],
+        };
+        // 彩色源（R 通道随 x 变化）
+        let (tw, th) = (32usize, 32usize);
+        let tex: Vec<f32> = (0..tw * th)
+            .flat_map(|i| {
+                let x = (i % tw) as f32 / tw as f32;
+                [x, 0.5, 0.5]
+            })
+            .collect();
+        let gray = crate::tex::Style {
+            sat: 0.0,
+            ..Default::default()
+        };
+        let id = crate::tex::Style::default();
+        let styles = [gray, id];
+        let class = [0u8, 1u8];
+        let a = bake_atlas(
+            &m,
+            &tex,
+            tw,
+            th,
+            128,
+            50.0,
+            45.0,
+            false,
+            Some(&PerClass {
+                class: &class,
+                styles: &styles,
+            }),
+        )
+        .unwrap();
+        let at = |fi: usize| -> [f32; 3] {
+            // 取该三角形 UV 质心处的图集像素
+            let u = (a.uv[fi][0][0] + a.uv[fi][1][0] + a.uv[fi][2][0]) / 3.0;
+            let v = (a.uv[fi][0][1] + a.uv[fi][1][1] + a.uv[fi][2][1]) / 3.0;
+            let x = (u * a.w as f32) as usize;
+            let y = ((1.0 - v) * a.h as f32) as usize;
+            let i = (y.min(a.h - 1) * a.w + x.min(a.w - 1)) * 3;
+            [a.img[i], a.img[i + 1], a.img[i + 2]]
+        };
+        let c0 = at(0);
+        let c1 = at(1);
+        assert!(
+            (c0[0] - c0[1]).abs() < 0.02 && (c0[1] - c0[2]).abs() < 0.02,
+            "类别 0 应为灰度，实际 {c0:?}"
+        );
+        assert!(
+            (c1[0] - c1[1]).abs() > 0.05,
+            "类别 1 应保留彩色，实际 {c1:?}"
+        );
+        // 精确判据：只有类别 0 的纹素被改写
+        assert!(a.styled_texels[0] > 0, "类别 0 应有纹素被改写");
+        assert_eq!(a.styled_texels[1], 0, "类别 1（恒等）不应改写任何纹素");
+    }
+
+    #[test]
     fn atlas_is_deterministic() {
         let m = cube();
         let tex = vec![0.3f32; 16 * 16 * 3];
-        let a = bake_atlas(&m, &tex, 16, 16, 128, 40.0, 45.0, false).unwrap();
-        let b = bake_atlas(&m, &tex, 16, 16, 128, 40.0, 45.0, false).unwrap();
+        let a = bake_atlas(&m, &tex, 16, 16, 128, 40.0, 45.0, false, None).unwrap();
+        let b = bake_atlas(&m, &tex, 16, 16, 128, 40.0, 45.0, false, None).unwrap();
         assert_eq!(a.uv, b.uv);
         assert_eq!(a.img, b.img);
         assert_eq!(a.charts.len(), b.charts.len());

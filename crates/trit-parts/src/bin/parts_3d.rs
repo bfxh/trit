@@ -1553,9 +1553,72 @@ fn mesh_tex_cmd(argv: &[String]) {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(45.0);
             let lscm = argv.iter().any(|a| a == "--lscm");
+            // 按材质类别（面法线主轴 X/Y/Z）分别上风格：`--style-by-axis "cel:0.6,oil:0.5,-"`
+            // `-` = 该类不处理；条目不足 3 个时其余为恒等。
+            let per_class_data: Option<(Vec<u8>, Vec<trit_parts::tex::Style>)> =
+                arg(argv, "--style-by-axis").map(|spec| {
+                    use trit_parts::tex::{Preset, Style};
+                    let mut styles: Vec<Style> = Vec::new();
+                    for part in spec.split(',') {
+                        let part = part.trim();
+                        if part == "-" || part.is_empty() {
+                            styles.push(Style::default());
+                            continue;
+                        }
+                        let (name, t) = part.split_once(':').unwrap_or((part, "1.0"));
+                        let p = Preset::by_name(name).unwrap_or_else(|| {
+                            fail(&format!("未知预设 {name}（可选 cel / oil / epic 或 -）"))
+                        });
+                        styles.push(p.style(t.parse::<f32>().unwrap_or(1.0)));
+                    }
+                    while styles.len() < 3 {
+                        styles.push(Style::default());
+                    }
+                    let class: Vec<u8> = m
+                        .tris
+                        .iter()
+                        .map(|t| {
+                            let a = m.verts[t[0] as usize];
+                            let b = m.verts[t[1] as usize];
+                            let c = m.verts[t[2] as usize];
+                            let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                            let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+                            let n = [
+                                (e1[1] * e2[2] - e1[2] * e2[1]).abs(),
+                                (e1[2] * e2[0] - e1[0] * e2[2]).abs(),
+                                (e1[0] * e2[1] - e1[1] * e2[0]).abs(),
+                            ];
+                            if n[0] >= n[1] && n[0] >= n[2] {
+                                0u8
+                            } else if n[1] >= n[2] {
+                                1u8
+                            } else {
+                                2u8
+                            }
+                        })
+                        .collect();
+                    println!("按主轴分风格：X/Y/Z = {spec}");
+                    (class, styles)
+                });
+            let pc = per_class_data
+                .as_ref()
+                .map(|(c, st)| trit_parts::atlas::PerClass {
+                    class: c,
+                    styles: st,
+                });
             let t0 = std::time::Instant::now();
-            let a = trit_parts::atlas::bake_atlas(&m, &tpix, tw, th, atlas_px, texels, ndeg, lscm)
-                .unwrap_or_else(|e| fail(&e));
+            let a = trit_parts::atlas::bake_atlas(
+                &m,
+                &tpix,
+                tw,
+                th,
+                atlas_px,
+                texels,
+                ndeg,
+                lscm,
+                pc.as_ref(),
+            )
+            .unwrap_or_else(|e| fail(&e));
             println!(
                 "展开 {}：{:.1} s",
                 if lscm { "LSCM" } else { "平面投影" },
@@ -1565,6 +1628,9 @@ fn mesh_tex_cmd(argv: &[String]) {
             trit_parts::uv::write_obj(&obj_path, &m, &a.uv, &format!("{stem}.png"))
                 .unwrap_or_else(|e| fail(&e));
             let st = trit_parts::atlas::uv_stats(&m, &a);
+            if !a.styled_texels.is_empty() {
+                println!("按类改写纹素：X/Y/Z = {:?}", a.styled_texels);
+            }
             println!(
                 "UV 密度：中位 {:.0} texel²/单位²，p05 {:.0} / p95 {:.0}（spread {:.2}）",
                 st.median, st.p05, st.p95, st.spread
