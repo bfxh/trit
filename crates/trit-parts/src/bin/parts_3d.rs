@@ -2493,6 +2493,195 @@ fn material_data_cmd(argv: &[String]) {
     println!("material-data：{n} 个「帧×部件」样本 → {}", out.display());
 }
 
+/// 取一帧里每个可见部件（≥ min_px）的**方形裁剪**（掩码外填均值色），缩放到 `side×side`。
+fn part_crops_in(
+    scene: &Path,
+    frame: usize,
+    min_px: usize,
+    side: usize,
+) -> Vec<(u32, Vec<Vec<f32>>)> {
+    let (ids, shape) = trit_parts::data::read_npy_i32(&frame_path(scene, "seg", frame, "npy"))
+        .unwrap_or_else(|e| fail(&e));
+    let (rgbw, rgbh, rgb) = trit_parts::data::read_rgb(&frame_path(scene, "rgb", frame, "png"))
+        .unwrap_or_else(|e| fail(&e));
+    let (h, w) = (shape[0], shape[1]);
+    if (w, h) != (rgbw, rgbh) {
+        fail("seg 与 rgb 尺寸不一致");
+    }
+    let mut present: std::collections::BTreeMap<u32, (usize, usize, usize, usize, usize)> =
+        std::collections::BTreeMap::new();
+    for y in 0..h {
+        for x in 0..w {
+            let id = ids[y * w + x];
+            if id <= 0 {
+                continue;
+            }
+            let e = present.entry(id as u32).or_insert((x, y, x, y, 0));
+            e.0 = e.0.min(x);
+            e.1 = e.1.min(y);
+            e.2 = e.2.max(x);
+            e.3 = e.3.max(y);
+            e.4 += 1;
+        }
+    }
+    let mut out = Vec::new();
+    for (id, (x0, y0, x1, y1, cnt)) in present {
+        if cnt < min_px {
+            continue;
+        }
+        let mut mean = [0.0f32; 3];
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                if ids[y * w + x] == id as i32 {
+                    for c in 0..3 {
+                        mean[c] += rgb[(y * w + x) * 3 + c];
+                    }
+                }
+            }
+        }
+        for m in mean.iter_mut() {
+            *m /= cnt as f32;
+        }
+        let (cw, ch) = (x1 - x0 + 1, y1 - y0 + 1);
+        let mut planes = vec![vec![0.0f32; side * side]; 3];
+        for yy in 0..side {
+            for xx in 0..side {
+                let sy = y0 + yy * ch / side;
+                let sx = x0 + xx * cw / side;
+                let inside = ids[sy * w + sx] == id as i32;
+                for c in 0..3 {
+                    planes[c][yy * side + xx] = if inside {
+                        rgb[(sy * w + sx) * 3 + c]
+                    } else {
+                        mean[c]
+                    };
+                }
+            }
+        }
+        out.push((id, planes));
+    }
+    out
+}
+
+/// `material-cnn --renders <dir> --holdout-every 5 --epochs 6 --lr 0.01 --out model.mcn`：
+/// 三值卷积头（`matnet`）训练 + 按场景留出评估；与手工特征 + 岭回归（§6.64）同数据同协议对照。
+fn material_cnn_cmd(argv: &[String]) {
+    use trit_parts::matnet::{MatClass, MatNet, SIDE};
+    let renders = PathBuf::from(arg(argv, "--renders").unwrap_or_else(|| usage()));
+    let every: usize = arg(argv, "--holdout-every")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(5);
+    let epochs: usize = arg(argv, "--epochs")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(6);
+    let lr: f32 = arg(argv, "--lr")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.01);
+    let hidden: usize = arg(argv, "--hidden")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8);
+    let frames: usize = arg(argv, "--frames-per-scene")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let min_px: usize = arg(argv, "--min-px")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
+    let mut scenes: Vec<PathBuf> = std::fs::read_dir(&renders)
+        .unwrap_or_else(|e| fail(&format!("{}: {e}", renders.display())))
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| p.is_dir() && p.join("manifest.json").exists())
+        .collect();
+    scenes.sort();
+    if scenes.is_empty() {
+        fail("没有找到场景（需要 manifest.json）");
+    }
+    // 收集样本
+    let mut samples: Vec<(bool, usize, Vec<Vec<f32>>)> = Vec::new(); // (是否留出, 类别, 输入)
+    for (si, sc) in scenes.iter().enumerate() {
+        let txt = std::fs::read_to_string(sc.join("manifest.json"))
+            .unwrap_or_else(|e| fail(&format!("{e}")));
+        let by_pass = materials_by_pass(&txt);
+        let is_test = si % every == 0;
+        for fr in 0..frames {
+            for (id, planes) in part_crops_in(sc, fr, min_px, SIDE) {
+                let Some(mat) = by_pass.get(id as usize).and_then(|m| m.clone()) else {
+                    continue;
+                };
+                let Some(cls) = MatClass::from_name(&mat) else {
+                    continue;
+                };
+                samples.push((is_test, cls as usize, planes));
+            }
+        }
+    }
+    let ntr = samples.iter().filter(|s| !s.0).count();
+    let nte = samples.iter().filter(|s| s.0).count();
+    if ntr == 0 || nte == 0 {
+        fail(&format!(
+            "样本不足：训练 {ntr} / 留出 {nte}（调 --holdout-every 或 --frames-per-scene）"
+        ));
+    }
+    println!("样本 {ntr} 训练 / {nte} 留出（{SIDE}² 输入，{hidden} 通道三值卷积 ×2）");
+    let seed: u64 = arg(argv, "--seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(7);
+    let mut net = MatNet::new(hidden, seed);
+    let mut order: Vec<usize> = (0..samples.len()).filter(|&i| !samples[i].0).collect();
+    // 确定性打乱（LCG，不用系统随机）
+    let mut st = seed | 1;
+    for i in (1..order.len()).rev() {
+        st ^= st << 13;
+        st ^= st >> 7;
+        st ^= st << 17;
+        order.swap(i, (st as usize) % (i + 1));
+    }
+    for ep in 0..epochs {
+        let mut loss = 0.0f32;
+        for &i in &order {
+            let (_, cls, planes) = &samples[i];
+            loss += net.train_step(planes, SIDE, SIDE, *cls, lr);
+        }
+        println!(
+            "epoch {}/{}：平均 CE {:.4}",
+            ep + 1,
+            epochs,
+            loss / order.len() as f32
+        );
+    }
+    let mut conf = [[0usize; 4]; 4];
+    for s in &samples {
+        if !s.0 {
+            continue;
+        }
+        let (k, _) = net.predict(&s.2, SIDE, SIDE);
+        conf[s.1][k] += 1;
+    }
+    print!("{:>8}", "真/预测");
+    for c in MatClass::ALL {
+        print!("{:>8}", c.name());
+    }
+    println!();
+    let (mut correct, mut total) = (0usize, 0usize);
+    for (k, row) in conf.iter().enumerate() {
+        print!("{:>8}", MatClass::ALL[k].name());
+        for v in row.iter() {
+            print!("{:>8}", v);
+        }
+        println!();
+        correct += row[k];
+        total += row.iter().sum::<usize>();
+    }
+    println!(
+        "三值卷积留出准确率 {correct}/{total} = {:.1}%",
+        100.0 * correct as f32 / total.max(1) as f32
+    );
+    if let Some(p) = arg(argv, "--out") {
+        net.save(std::path::Path::new(&p))
+            .unwrap_or_else(|e| fail(&e));
+        println!("模型写出 {p}");
+    }
+}
+
 /// 材质模型（`material-fit --out` 写出的文本）。
 struct MaterialModel {
     mu: Vec<f32>,
@@ -3998,6 +4187,7 @@ fn main() {
         Some("material-data") => material_data_cmd(&argv),
         Some("material-fit") => material_fit_cmd(&argv),
         Some("material-predict") => material_predict_cmd(&argv),
+        Some("material-cnn") => material_cnn_cmd(&argv),
         Some("tex-stylize") => tex_stylize_cmd(&argv),
         Some("look") => look_cmd(&argv),
         Some("style") => style_cmd(&argv),

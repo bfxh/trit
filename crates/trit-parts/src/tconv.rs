@@ -191,7 +191,7 @@ impl Conv {
 
     /// 反向：给定 `dL/dout`，返回 `(dL/dx, dL/dw, dL/db)`；**不**更新权重（批量累积后统一更新）。
     #[allow(clippy::needless_range_loop)] // 同上
-    fn backward(
+    pub(crate) fn backward(
         &self,
         x: &[Vec<f32>],
         w: usize,
@@ -250,7 +250,7 @@ impl Conv {
 
     /// 用累积梯度更新（`adam=false` → SGD；否则 Adam，梯度已含 1/N）。
     #[allow(clippy::needless_range_loop)] // 三路并行索引（w/m/v）
-    fn apply(&mut self, dw: &[f32], db: &[f32], dsc: &[f32], lr: f32, adam: bool) {
+    pub(crate) fn apply(&mut self, dw: &[f32], db: &[f32], dsc: &[f32], lr: f32, adam: bool) {
         if adam {
             self.t += 1;
             let (b1, b2, eps) = (0.9f32, 0.999f32, 1e-8f32);

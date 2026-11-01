@@ -22,6 +22,7 @@ pub mod inst;
 // 观感/风格测量的正本在独立仓 bfxh/trit-look（git 依赖，pin rev）。
 pub use trit_look as look;
 pub mod loss;
+pub mod matnet;
 pub mod mesh;
 pub mod model;
 pub mod occ;
