@@ -32,6 +32,11 @@ impl Conv {
     }
 }
 
+/// 一条训练样本：(输入通道图, 目标图, 类别)。
+pub type Sample = (Vec<Vec<f32>>, Vec<f32>, Option<usize>);
+/// FiLM 反向所需：(FiLM 前的 conv 输出, 该类 γ, 类别)。
+type FilmState = (Vec<Vec<f32>>, Vec<f32>, Option<usize>);
+
 fn q(v: f32) -> f32 {
     v.round().clamp(-1.0, 1.0)
 }
@@ -319,6 +324,38 @@ impl Bn {
     }
 }
 
+/// FiLM：按类别对隐层做逐通道缩放/平移（`y = g[c]·y + b[c]`）。
+/// 行数 = 类别数 + 1，最后一行为**空类**（条件丢弃时用）。
+pub struct Film {
+    pub g: Vec<f32>,
+    pub b: Vec<f32>,
+    pub nk: usize,
+    pub c: usize,
+}
+
+impl Film {
+    pub fn new(nk: usize, c: usize) -> Self {
+        let rows = nk + 1;
+        Film {
+            g: vec![1.0; rows * c],
+            b: vec![0.0; rows * c],
+            nk,
+            c,
+        }
+    }
+    pub fn row(&self, class: Option<usize>) -> usize {
+        class.filter(|&k| k < self.nk).unwrap_or(self.nk)
+    }
+    pub fn gamma(&self, class: Option<usize>) -> &[f32] {
+        let r = self.row(class);
+        &self.g[r * self.c..(r + 1) * self.c]
+    }
+    pub fn beta(&self, class: Option<usize>) -> &[f32] {
+        let r = self.row(class);
+        &self.b[r * self.c..(r + 1) * self.c]
+    }
+}
+
 /// 全卷积栈：隐藏层（可选 BN）+ ReLU，最后一层 sigmoid。
 pub struct Net {
     pub layers: Vec<Conv>,
@@ -332,6 +369,10 @@ pub struct Net {
     pub circular: bool,
     /// 高通（拉普拉斯残差）匹配项的权重；0 = 关。线性输出模式下生效。
     pub highpass: f32,
+    /// 每个隐层的 FiLM（`None` = 该层不做条件调制）。
+    pub films: Vec<Option<Film>>,
+    /// 类别数（0 = 未启用 FiLM）。
+    pub nk: usize,
 }
 
 impl Net {
@@ -353,6 +394,21 @@ impl Net {
             linear_out: false,
             circular: false,
             highpass: 0.0,
+            films: (0..n).map(|_| None).collect(),
+            nk: 0,
+        }
+    }
+
+    /// 开关 FiLM 条件：`nk` 个类 + 1 个空类，只作用在隐藏层。
+    pub fn set_film(&mut self, nk: usize) {
+        self.nk = nk;
+        let n = self.layers.len();
+        for i in 0..n {
+            self.films[i] = if i + 1 < n {
+                Some(Film::new(nk, self.layers[i].cout))
+            } else {
+                None
+            };
         }
     }
 
@@ -391,9 +447,23 @@ impl Net {
 
     /// 直接吃一组通道图（扩散去噪器要把 `t/T` 当第二通道，`input` 造不出来）。
     pub fn forward_x(&self, x: &[Vec<f32>], w: usize, h: usize) -> Vec<f32> {
+        self.forward_xc(x, None, w, h)
+    }
+
+    /// 带类别条件的前向（FiLM）。
+    pub fn forward_xc(&self, x: &[Vec<f32>], class: Option<usize>, w: usize, h: usize) -> Vec<f32> {
         let mut x = x.to_vec();
         for i in 0..self.layers.len() {
             let mut y = self.layers[i].forward(&x, w, h);
+            if let Some(f) = &self.films[i] {
+                let (g, bb) = (f.gamma(class), f.beta(class));
+                for (ch, v) in y.iter_mut().enumerate() {
+                    let (gi, bi) = (g[ch], bb[ch]);
+                    for t in v.iter_mut() {
+                        *t = gi * *t + bi;
+                    }
+                }
+            }
             if let Some(bn) = &self.bns[i] {
                 // 推理也用**输入自身的统计**（单图 InstanceNorm 语义），
                 // 否则训练（批统计）与评测（running stats）不一致，BN 版会直接崩。
@@ -456,6 +526,22 @@ impl Net {
         lr: f32,
         adam: bool,
     ) -> f32 {
+        let with_class: Vec<Sample> = batch
+            .iter()
+            .map(|(m, t)| (m.clone(), t.clone(), None))
+            .collect();
+        self.train_batch_xc(&with_class, w, h, lr, adam)
+    }
+
+    /// 带类别条件的批量训练（FiLM）：`batch[i] = (输入通道图, 目标图, 类别)`。
+    pub fn train_batch_xc(
+        &mut self,
+        batch: &[Sample],
+        w: usize,
+        h: usize,
+        lr: f32,
+        adam: bool,
+    ) -> f32 {
         let n = w * h;
         let k = batch.len().max(1);
         let mut acc_w: Vec<Vec<f32>> = self.layers.iter().map(|l| vec![0.0; l.w.len()]).collect();
@@ -475,14 +561,41 @@ impl Net {
             .iter()
             .map(|b| b.as_ref().map(|bb| vec![0.0; bb.beta.len()]))
             .collect();
+        // FiLM 的梯度按「层 × 类 × 通道」累加
+        let mut acc_fg: Vec<Option<Vec<f32>>> = self
+            .films
+            .iter()
+            .map(|f| f.as_ref().map(|ff| vec![0.0; ff.g.len()]))
+            .collect();
+        let mut acc_fb: Vec<Option<Vec<f32>>> = self
+            .films
+            .iter()
+            .map(|f| f.as_ref().map(|ff| vec![0.0; ff.b.len()]))
+            .collect();
         let mut loss = 0.0f64;
-        for (maps_in, target) in batch {
+        for (maps_in, target, class) in batch {
             let mut ins: Vec<Vec<Vec<f32>>> = Vec::new();
             let mut pre_relu: Vec<Vec<Vec<f32>>> = Vec::new();
             let mut xhats: Vec<Option<Vec<Vec<f32>>>> = Vec::new();
+            // 每层的 (FiLM 前的 conv 输出, 该类的 γ, 类别)
+            let mut film_state: Vec<Option<FilmState>> = Vec::new();
             let mut x = maps_in.clone();
             for li in 0..self.layers.len() {
                 let mut y = self.layers[li].forward(&x, w, h);
+                let mut fs = None;
+                if let Some(f) = &self.films[li] {
+                    let pre = y.clone();
+                    let g = f.gamma(*class).to_vec();
+                    let b = f.beta(*class);
+                    for (ch, v) in y.iter_mut().enumerate() {
+                        let (gi, bi) = (g[ch], b[ch]);
+                        for t in v.iter_mut() {
+                            *t = gi * *t + bi;
+                        }
+                    }
+                    fs = Some((pre, g, *class));
+                }
+                film_state.push(fs);
                 let mut xh = None;
                 if let Some(bn) = self.bns[li].as_mut() {
                     let (z, xx) = bn.forward(&y, n, true);
@@ -570,6 +683,33 @@ impl Net {
                     }
                     d = dx;
                 }
+                if let (Some((pre, g, cls)), Some(ag), Some(ab)) =
+                    (&film_state[li], acc_fg[li].as_mut(), acc_fb[li].as_mut())
+                {
+                    {
+                        let f = self.films[li].as_ref().unwrap();
+                        let r = f.row(*cls);
+                        let (lo, hi) = (r * f.c, (r + 1) * f.c);
+                        for ch in 0..d.len() {
+                            let mut sg = 0.0f32;
+                            let mut sb = 0.0f32;
+                            for i in 0..n {
+                                sg += d[ch][i] * pre[ch][i];
+                                sb += d[ch][i];
+                            }
+                            ag[lo + ch] += sg;
+                            ab[lo + ch] += sb;
+                        }
+                        // dL/dpre = γ · dL/dy
+                        for (ch, row) in d.iter_mut().enumerate() {
+                            let gi = g[ch];
+                            for v in row.iter_mut() {
+                                *v *= gi;
+                            }
+                        }
+                        let _ = (lo, hi);
+                    }
+                }
                 let (dx, dw, db, dsc) = self.layers[li].backward(&ins[li], w, h, &d);
                 for (a, g) in acc_w[li].iter_mut().zip(&dw) {
                     *a += g;
@@ -584,6 +724,23 @@ impl Net {
             }
         }
         for li in 0..self.layers.len() {
+            if let (Some(f), Some(ag), Some(ab)) = (
+                self.films[li].as_mut(),
+                acc_fg[li].as_ref(),
+                acc_fb[li].as_ref(),
+            ) {
+                let rows = f.nk + 1;
+                for r in 0..rows {
+                    let (lo, hi) = (r * f.c, (r + 1) * f.c);
+                    let dg: Vec<f32> = ag[lo..hi].iter().map(|v| v / k as f32).collect();
+                    let db: Vec<f32> = ab[lo..hi].iter().map(|v| v / k as f32).collect();
+                    // 按行更新：复用 apply_step 的行定位（用 0..nk 隐式映射）
+                    for i in 0..f.c {
+                        f.g[lo + i] = (f.g[lo + i] - lr * dg[i]).clamp(1e-3, 10.0);
+                        f.b[lo + i] -= lr * db[i];
+                    }
+                }
+            }
             self.layers[li].apply(&acc_w[li], &acc_b[li], &acc_sc[li], lr, adam);
             if let (Some(bn), Some(g), Some(be)) = (
                 self.bns[li].as_mut(),
@@ -604,12 +761,13 @@ impl Net {
         let mut out = String::new();
         let _ = writeln!(
             out,
-            "TPC4 {} {} {} {} {}",
+            "TPC5 {} {} {} {} {} {}",
             self.layers.len(),
             self.cond,
             self.linear_out as u8,
             self.circular as u8,
-            self.highpass
+            self.highpass,
+            self.nk
         );
         for l in &self.layers {
             let _ = writeln!(out, "{} {}", l.cin, l.cout);
@@ -638,6 +796,25 @@ impl Net {
                 }
             }
         }
+        // FiLM：层号 + 是否启用 + (nk+1)×c 的 g/b
+        let nfilm = self.films.iter().filter(|f| f.is_some()).count();
+        let _ = writeln!(out, "FILM {nfilm}");
+        for (i, f) in self.films.iter().enumerate() {
+            match f {
+                Some(ff) => {
+                    let _ = writeln!(out, "{i} {} {}", ff.nk, ff.c);
+                    for v in [&ff.g, &ff.b] {
+                        for x in v.iter() {
+                            let _ = write!(out, "{x} ");
+                        }
+                        let _ = writeln!(out);
+                    }
+                }
+                None => {
+                    let _ = writeln!(out, "{i} 0 0");
+                }
+            }
+        }
         std::fs::write(path, out).map_err(|e| format!("{}: {e}", path.display()))
     }
 
@@ -657,20 +834,29 @@ impl Net {
         let head = it.next();
         if !matches!(
             head,
-            Some("TPC1") | Some("TPC2") | Some("TPC3") | Some("TPC4")
+            Some("TPC1") | Some("TPC2") | Some("TPC3") | Some("TPC4") | Some("TPC5")
         ) {
-            return Err(format!("{}: 不是 TPC1..TPC4", path.display()));
+            return Err(format!("{}: 不是 TPC1..TPC5", path.display()));
         }
         let nl = take(&mut it, path, "层数")? as usize;
         let cond = take(&mut it, path, "cond")? as usize;
-        let linear_out = matches!(head, Some("TPC2") | Some("TPC3") | Some("TPC4"))
-            && take(&mut it, path, "linear")? != 0.0;
-        let circular =
-            matches!(head, Some("TPC3") | Some("TPC4")) && take(&mut it, path, "circular")? != 0.0;
-        let highpass = if head == Some("TPC4") {
+        let has_linear = matches!(
+            head,
+            Some("TPC2") | Some("TPC3") | Some("TPC4") | Some("TPC5")
+        );
+        let linear_out = has_linear && take(&mut it, path, "linear")? != 0.0;
+        let has_circ = matches!(head, Some("TPC3") | Some("TPC4") | Some("TPC5"));
+        let circular = has_circ && take(&mut it, path, "circular")? != 0.0;
+        let has_hp = matches!(head, Some("TPC4") | Some("TPC5"));
+        let highpass = if has_hp {
             take(&mut it, path, "highpass")?
         } else {
             0.0
+        };
+        let nk_hdr = if head == Some("TPC5") {
+            take(&mut it, path, "nk")? as usize
+        } else {
+            0
         };
         let mut layers = Vec::with_capacity(nl);
         for _ in 0..nl {
@@ -716,8 +902,33 @@ impl Net {
             linear_out,
             circular: false,
             highpass,
+            films: (0..nl).map(|_| None).collect(),
+            nk: 0,
         };
         net.set_circular(circular);
+        if nk_hdr > 0 {
+            net.set_film(nk_hdr);
+            if it.next() != Some("FILM") {
+                return Err(format!("{}: 缺 FILM 段", path.display()));
+            }
+            let _n = take(&mut it, path, "FILM 数量")? as usize;
+            for _ in 0..nl {
+                let idx = take(&mut it, path, "Film 层号")? as usize;
+                let k = take(&mut it, path, "Film nk")? as usize;
+                let c = take(&mut it, path, "Film c")? as usize;
+                if k == 0 || c == 0 {
+                    continue;
+                }
+                if let Some(f) = net.films[idx].as_mut() {
+                    for v in f.g.iter_mut() {
+                        *v = take(&mut it, path, "Film g")?;
+                    }
+                    for v in f.b.iter_mut() {
+                        *v = take(&mut it, path, "Film b")?;
+                    }
+                }
+            }
+        }
         Ok(net)
     }
 }
@@ -731,6 +942,8 @@ pub struct VDen {
     pub extra: Vec<f32>,
     /// 是否把 x̂0 裁到 [0,1]；归一化（z-score）训练时必须为 false。
     pub clamp: bool,
+    /// FiLM 的类别 id（`None` = 空类）。
+    pub class: Option<usize>,
 }
 
 impl crate::diffuse::Denoiser for VDen {
@@ -749,7 +962,7 @@ impl crate::diffuse::Denoiser for VDen {
         for k in 0..self.net.cond {
             maps.push(vec![(cond == Some(k)) as u8 as f32; w * h]);
         }
-        let v = self.net.forward_x(&maps, w, h);
+        let v = self.net.forward_xc(&maps, self.class, w, h);
         let tmax = self.abar.len().saturating_sub(1).max(1);
         let idx = ((t_frac * tmax as f32).round() as usize).min(tmax);
         let a = self.abar[idx].clamp(0.0, 1.0);
@@ -1000,12 +1213,58 @@ mod tests {
             abar: abar.clone(),
             extra: Vec::new(),
             clamp: true,
+            class: None,
         };
         let xt = vec![0.8f32; w * h];
         let x0 = d.predict_x0(&xt, 0.5, None, w, h); // ᾱ=0.25 ⇒ 0.5*0.8=0.4
         assert!((x0[0] - 0.4).abs() < 1e-4, "实际 {}", x0[0]);
         let x0b = d.predict_x0(&xt, 0.0, None, w, h); // ᾱ=1 ⇒ x_t
         assert!((x0b[0] - 0.8).abs() < 1e-4, "实际 {}", x0b[0]);
+    }
+
+    #[test]
+    fn film_modulates_by_class() {
+        let (w, h) = (6usize, 6usize);
+        let mut net = Net::new(1, &[4], 9);
+        net.set_film(2);
+        // 手工把两类的 γ 设成不同值
+        {
+            let f = net.films[0].as_mut().unwrap();
+            for v in f.g[0..4].iter_mut() {
+                *v = 2.0;
+            }
+            for v in f.g[4..8].iter_mut() {
+                *v = 0.5;
+            }
+        }
+        let x = vec![vec![0.7f32; w * h]];
+        let a = net.forward_xc(&x, Some(0), w, h);
+        let b = net.forward_xc(&x, Some(1), w, h);
+        let c = net.forward_xc(&x, None, w, h); // 空类 γ=1
+        assert!((a[0] - b[0]).abs() > 1e-4, "不同类别应给出不同输出");
+        assert!((c[0] - a[0]).abs() > 1e-4, "空类应与类 0 不同");
+    }
+
+    #[test]
+    fn film_learns_class_offsets() {
+        let (w, h) = (6usize, 6usize);
+        let mut net = Net::new(1, &[4], 11);
+        net.set_film(2);
+        net.linear_out = true;
+        let maps = vec![vec![0.5f32; w * h]];
+        // 类 0 目标 0.2、类 1 目标 0.8
+        let t0 = vec![0.2f32; w * h];
+        let t1 = vec![0.8f32; w * h];
+        let batch = vec![
+            (maps.clone(), t0.clone(), Some(0usize)),
+            (maps.clone(), t1.clone(), Some(1usize)),
+        ];
+        for _ in 0..300 {
+            net.train_batch_xc(&batch, w, h, 0.05, true);
+        }
+        let a = net.forward_xc(&maps, Some(0), w, h)[0];
+        let b = net.forward_xc(&maps, Some(1), w, h)[0];
+        assert!(b - a > 0.2, "两类应被区分：{a:.3} vs {b:.3}");
     }
 
     #[test]

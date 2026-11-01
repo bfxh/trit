@@ -2033,6 +2033,7 @@ fn tex_gen_cmd(argv: &[String]) {
                 .collect()
         })
         .unwrap_or_default();
+    let mut img_files: Vec<PathBuf> = Vec::new();
     let images: Vec<Vec<f32>> = match &data_dir {
         Some(dir) => {
             let mut files: Vec<PathBuf> = std::fs::read_dir(dir)
@@ -2055,6 +2056,7 @@ fn tex_gen_cmd(argv: &[String]) {
             if !hold_names.is_empty() && files.len() < 3 {
                 fail("--holdout-names 之后训练集不足 3 张");
             }
+            img_files = files.clone();
             files.iter().map(gray_img).collect()
         }
         None => kinds.iter().map(|k| gray(k, seed)).collect(),
@@ -2091,6 +2093,61 @@ fn tex_gen_cmd(argv: &[String]) {
         .sum::<f32>()
         / images.len() as f32;
     println!("训练图 {} 张，均值 {data_mean:.3}", images.len());
+    // S6.3：材质类别（--labels <tsv: assetId\tclass>）→ 每张图的类索引
+    let film_k: usize = arg(argv, "--film")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let mut img_class: Vec<Option<usize>> = vec![None; images.len()];
+    if film_k > 0 {
+        let labels_path = arg(argv, "--labels")
+            .unwrap_or_else(|| fail("--film 需要 --labels <tsv>（assetId\\tclass）"));
+        let txt = std::fs::read_to_string(&labels_path)
+            .unwrap_or_else(|e| fail(&format!("读不了 {labels_path}: {e}")));
+        let mut names: Vec<String> = Vec::new();
+        let mut ids: Vec<String> = Vec::new();
+        for line in txt.lines() {
+            let mut it = line.split('\t');
+            let (Some(aid), Some(cls)) = (it.next(), it.next()) else {
+                continue;
+            };
+            let name = cls.trim();
+            let idx = match names.iter().position(|n| n == name) {
+                Some(i) => i,
+                None => {
+                    names.push(name.to_string());
+                    names.len() - 1
+                }
+            };
+            ids.push(format!("{aid}\t{idx}"));
+        }
+        if names.len() != film_k {
+            fail(&format!(
+                "--film {film_k} 与标签里的类数 {} 不一致：{:?}",
+                names.len(),
+                names
+            ));
+        }
+        for (i, f) in img_files.iter().enumerate() {
+            let stem = f
+                .file_stem()
+                .map(|x| x.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            for row in &ids {
+                let (aid, idx) = row.split_once('\t').unwrap();
+                if stem.starts_with(aid) {
+                    img_class[i] = idx.parse().ok();
+                    break;
+                }
+            }
+        }
+        let hit = img_class.iter().filter(|c| c.is_some()).count();
+        println!(
+            "类别条件：{film_k} 类，命中 {hit}/{} 张；类名 {:?}",
+            images.len(),
+            names
+        );
+    }
+
     // 归一化：每张图减去自身均值、除以自身标准差（保留反归一化参数）
     let img_norm: Vec<(f32, f32)> = images
         .iter()
@@ -2165,6 +2222,9 @@ fn tex_gen_cmd(argv: &[String]) {
         if linear_mode && load_path.is_none() {
             net.linear_out = true;
         }
+        if film_k > 0 && load_path.is_none() {
+            net.set_film(film_k);
+        }
         let tmax = sched.steps().max(1);
         // 每张图的 (均值, 对比) —— 条件通道的取值
         let img_stats: Vec<(f32, f32)> = images
@@ -2178,7 +2238,7 @@ fn tex_gen_cmd(argv: &[String]) {
             })
             .collect();
         for step in 0..iters {
-            let mut items: Vec<(Vec<Vec<f32>>, Vec<f32>)> = Vec::with_capacity(batch);
+            let mut items: Vec<trit_parts::tconv::Sample> = Vec::with_capacity(batch);
             for _ in 0..batch {
                 let ki = (next_u() * images.len() as f32) as usize % images.len();
                 let t = 1 + (next_u() * tmax as f32) as usize % tmax;
@@ -2198,6 +2258,12 @@ fn tex_gen_cmd(argv: &[String]) {
                     maps.push(vec![m; n * n]);
                     maps.push(vec![c; n * n]);
                 }
+                // 10% 条件丢弃（学会空类，避免只能靠类别提示）
+                let cls = if film_k > 0 && next_u() < 0.1 {
+                    None
+                } else {
+                    img_class[ki]
+                };
                 let target = if eps_mode {
                     noise
                 } else if v_mode {
@@ -2211,12 +2277,19 @@ fn tex_gen_cmd(argv: &[String]) {
                 } else {
                     x0.clone()
                 };
-                items.push((maps, target));
+                items.push((maps, target, cls));
             }
-            loss += net.train_batch_x(&items, n, n, lr, use_adam) as f64;
+            loss += net.train_batch_xc(&items, n, n, lr, use_adam) as f64;
             if (step + 1) % 2000 == 0 {
                 println!("  step {} loss {:.4}", step + 1, loss / 2000.0);
                 loss = 0.0;
+            }
+            // 断点：每 1000 步存一次（本机常被关机，别让整轮白跑）
+            if let Some(p) = &save_path
+                && (step + 1) % 1000 == 0
+            {
+                net.save(p).unwrap_or_else(|e| fail(&e));
+                println!("  ckpt {} @ step {}", p.display(), step + 1);
             }
         }
         // --diag：线性输出（ε/v）时，判预测器对输入 x_t 的依赖强度。
@@ -2306,11 +2379,23 @@ fn tex_gen_cmd(argv: &[String]) {
             } else {
                 Vec::new()
             };
+            let want_class: Option<usize> = arg(argv, "--want-class")
+                .and_then(|v| v.parse().ok())
+                .filter(|&k| k < film_k);
+            if film_k > 0 {
+                println!(
+                    "采样类别：{}",
+                    want_class
+                        .map(|k| k.to_string())
+                        .unwrap_or_else(|| "空类".into())
+                );
+            }
             Den::V(trit_parts::tconv::VDen {
                 net,
                 abar: abar.clone(),
                 extra,
                 clamp: !normalize,
+                class: want_class,
             })
         } else if eps_mode {
             Den::E(trit_parts::tconv::EpsDen {
