@@ -1476,10 +1476,41 @@ fn mesh_tex_cmd(argv: &[String]) {
     } else {
         m
     };
-    // 给了贴图就走 OBJ + MTL（盒式投影 UV），否则维持原来的顶点色 PLY
-    if let (Some(tex_p), Some(obj_p)) = (arg(argv, "--tex"), arg(argv, "--obj")) {
-        let (tw, th, tpix) =
-            trit_parts::data::read_rgb(std::path::Path::new(&tex_p)).unwrap_or_else(|e| fail(&e));
+    // 给了贴图（--tex）或 quilt 源（--quilt）就走 OBJ + MTL，否则维持原来的顶点色 PLY
+    let quilt_p = arg(argv, "--quilt");
+    let tex_p = arg(argv, "--tex");
+    if let Some(obj_p) = arg(argv, "--obj") {
+        let (tw, th, tpix) = if let Some(q) = &quilt_p {
+            // quilt → stylize → atlas 的第一段：先从源图合成一张可贴的贴图
+            let (sw, sh, src) =
+                trit_parts::data::read_rgb(std::path::Path::new(q)).unwrap_or_else(|e| fail(&e));
+            let n: usize = arg(argv, "--quilt-size")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(512);
+            let patch: usize = arg(argv, "--patch")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(16);
+            let ov: usize = arg(argv, "--overlap")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(patch / 4);
+            let seed: u64 = arg(argv, "--quilt-seed")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1);
+            if patch > sw.min(sh) {
+                fail(&format!("--patch {patch} 超过源图短边 {}", sw.min(sh)));
+            }
+            let out = trit_parts::tex::quilt(&src, sw, sh, n, n, patch, ov, seed);
+            let l = trit_parts::look::analyze(&out, n, n);
+            println!(
+                "quilt：{}×{} 源 → {n}×{n}（patch {patch} 重叠 {ov} seed {seed}）stroke {:.2} coh {:.3}",
+                sw, sh, l.stroke, l.coherence
+            );
+            (n, n, out)
+        } else if let Some(t) = &tex_p {
+            trit_parts::data::read_rgb(std::path::Path::new(t)).unwrap_or_else(|e| fail(&e))
+        } else {
+            fail("需要 --tex <贴图> 或 --quilt <源图> 之一");
+        };
         // stylize → atlas 两段：贴图先过显式风格，再烘进图集（无风格参数时逐位不变）
         let tpix = match style_from_argv(argv) {
             Some(st) => {

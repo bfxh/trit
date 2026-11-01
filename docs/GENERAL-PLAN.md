@@ -1670,3 +1670,22 @@ CLI `tex-stylize <in.png> [--contrast K] [--levels N] [--warmth T] [--sat S] [--
 
 **缺口**：还没把 `quilt` 接到同一条命令里（下一步），目前是「已有贴图 → stylize → atlas」两段；
 风格参数作用在**整张源贴图**上，不区分材质类别。
+
+### 6.59 整链合并：`quilt → stylize → atlas → OBJ` 一条命令（2026-11-01）
+
+**用法**
+```
+parts-3d mesh-tex --scene <scene> --frames 0..7 --cell 0.02 --open 2 --clean   --quilt <源.png> --quilt-size 512 --patch 16 --quilt-seed 3   --preset cel --strength 0.5 --atlas 512 --obj out.obj --out out.ply
+```
+（`--quilt` 与 `--tex` 二选一；quilt 参数：`--quilt-size / --patch / --overlap / --quilt-seed`）
+
+**三条验收**
+1. **恒等**：同参数下「不带风格」与「`--preset cel --strength 0`」的图集 **md5 相同**（`ed1f7b69…`）⇒ 链上没有偷偷改行为。
+2. **可复现**：同 seed 跑两遍，图集 md5 相同（`5ae22e9a…`）。
+3. **风格落到资产**（满幅细纹理源，512²，scene0000）：渲染 contrast 0.408→**0.473**、sat 0.126→**0.142**；
+   轮廓像素 **103,964 不变**、padding 灰像素 **0**。
+   - 注意：`levels` 在这里是上升的（15→26）——cel 先拉对比度再 posterize，细纹理被对比度摊开后占用的桶更多；
+     `look.levels` 不是「请求档数」的度量（§6.57 已用「离散值数」另测）。
+
+**一个观察**：拿整帧渲染图当源时会 quilt 出很平的贴图（contrast 0.004–0.19），因为画面大半是背景；
+材质源（满幅纹理）才是正常输入。这条不是 bug，但选源要注意。
