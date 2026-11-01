@@ -1717,3 +1717,37 @@ mesh-tex … --style-by-axis "cel:0.6,oil:0.5,-"   # X=cel@0.6，Y=oil@0.5，Z=�
 **产物**：`cel/oil/epic` 三类分别作用后渲染轮廓像素 103,964 不变（几何未动），风格只改纹素。
 
 **局限**：类别只有 3 类且由朝向决定（不是真正的材质语义）；空间算子不能逐类；风格仍作用于同一张源贴图。
+
+### 6.61 S1 数据加材质标签：生成器 + 渲染器 + 4 场景试渲（2026-11-01）
+
+**背景**：§6.60 的「材质类别」只能用面法线主轴顶替，因为 seg 里没有材质语义（`seg=0` 背景、`1..N` 部件 id；
+manifest 只有 `kind ∈ {part_cube, cylinder, sphere, torus}`，无任何 material 字段）。
+
+**改动**
+1. `s1_gen_scenes.py`：`MATERIALS = [wood, metal, stone, fabric]`，每部件随机分配并写进 `objects.json`（与形状解耦）。
+2. `blender_gt.py`：按 `material` 上 PBR（wood 0/0.65、metal 0.9/0.25、stone 0/0.85、fabric 0/0.95）并**写进 manifest**，
+   于是 `seg id == pass_index → material` 成为权威映射。
+3. 两个脚本纳入版本库：`scripts/s1_gen_scenes.py`、`scripts/blender_gt.py`（正本仍在 drift）。
+
+**试渲**（`--scenes 4 --seed 7`，每场景 4 帧、384²、16 samples，约 0.3 s/帧）
+
+| 场景 | 部件 | 首帧可见 | 材质分布 |
+|---|---|---|---|
+| scene0000 | 25 | 23 | fabric 9 / metal 9 / stone 4 / wood 3 |
+| scene0001 | 3 | 3 | stone 2 / wood 1 |
+| scene0002 | 4 | 4 | metal 2 / stone 1 / wood 1 |
+| scene0003 | 14 | 14 | stone / wood / fabric 混合 |
+
+**渲染是否真的反映材质**（174 个「帧×部件」的可见区域均值色，用一条只看亮度+色度的简单规则反推）
+
+| 材质 | 命中 | 平均色 RGB | 色度 |
+|---|---|---|---|
+| wood | 31/31 = **100%** | (156,128,100) | 56.1 |
+| fabric | 49/49 = **100%** | (123,143,176) | 53.5 |
+| metal | 43/56 = 77% | (82,85,91) | 9.1 |
+| stone | 19/38 = **50%** | (157,158,157) | 2.2 |
+| 合计 | 142/174 = 81.6% | — | — |
+
+- 结论：**材质确实进了渲染**（wood/fabric 靠色相 100% 可分；metal 暗、stone 亮）。
+- **metal vs stone 单靠「均值亮度+色度」只有 50%**（19 个 stone 在暗部被误判 metal）⇒ 若要做**像素级材质分类**，
+  必须用高光/粗糙度这类特征，不能用均值色。但本轮不需要分类：类别来自 manifest 的权威映射。
