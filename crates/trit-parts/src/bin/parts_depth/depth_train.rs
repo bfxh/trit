@@ -137,11 +137,12 @@ pub(crate) fn cnn_train(argv: &[String]) {
     let stride: usize = arg(argv, "--stride")
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
-    let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+    let out = arg(argv, "--out").map(PathBuf::from);
     let holdout: Vec<String> = arg(argv, "--holdout")
         .map(|s| s.split(',').map(|x| x.trim().to_string()).collect())
         .unwrap_or_default();
     let full = argv.iter().any(|a| a == "--full");
+    let eval_only = arg(argv, "--eval-only").map(PathBuf::from);
     let ternary = !argv.iter().any(|a| a == "--f32");
     let dil: usize = arg(argv, "--dil").and_then(|v| v.parse().ok()).unwrap_or(1);
     let mut net = DepthNet::with_ternary(hidden, 7, ternary);
@@ -168,12 +169,27 @@ pub(crate) fn cnn_train(argv: &[String]) {
     if samples.is_empty() {
         panic!("没有可用样本");
     }
+    // 留出项可能给的是「目录名」也可能给的是完整路径（Git Bash 下 basename 不一定剥掉盘符）
+    // ⇒ 一律取最后一段再比。
     let is_held = |p: &Path| {
         let n = p.file_name().map(|s| s.to_string_lossy().into_owned());
-        n.is_some_and(|n| holdout.iter().any(|h| n.ends_with(h.as_str())))
+        n.is_some_and(|n| {
+            holdout.iter().any(|h| {
+                let hb = h.trim_end_matches(['/', '\\']);
+                let hb = hb.rsplit(['/', '\\']).next().unwrap_or(hb);
+                n == hb
+            })
+        })
     };
     let (mut train, held): (Vec<_>, Vec<_>) = samples.iter().cloned().partition(|s| !is_held(&s.0));
-    if train.is_empty() {
+    if std::env::var("DEPTH_DEBUG").is_ok() {
+        println!("holdout 清单 {holdout:?}");
+        println!(
+            "首个样本目录名 {:?}",
+            samples.first().map(|s| s.0.file_name())
+        );
+    }
+    if train.is_empty() && eval_only.is_none() {
         panic!("留出后没有训练样本");
     }
     // **逐图**归一化：目标是形状（去掉相机距离），每图用自己的 log 深度中位/IQR。
@@ -234,7 +250,11 @@ pub(crate) fn cnn_train(argv: &[String]) {
             vals.last().copied().unwrap_or(0.0)
         );
     }
-    for ep in 0..epochs {
+    if let Some(p) = &eval_only {
+        net = trit_parts::depthnet::DepthNet::load(p).unwrap_or_else(|e| panic!("{e}"));
+        println!("仅评估 {}（跳过训练）", p.display());
+    }
+    for ep in 0..if eval_only.is_some() { 0 } else { epochs } {
         let t_ep = std::time::Instant::now();
         let mut loss = 0.0f32;
         for (_, _, x, y, mk) in &train {
@@ -273,10 +293,12 @@ pub(crate) fn cnn_train(argv: &[String]) {
             mean / p0.len().max(1) as f32,
             t_ep.elapsed().as_secs_f64() * 1000.0
         );
-        let _ = &out;
     }
-    net.save(&out).unwrap_or_else(|e| panic!("{e}"));
-    println!("已存 {}", out.display());
+    if eval_only.is_none() {
+        let out = out.unwrap_or_else(|| usage());
+        net.save(&out).unwrap_or_else(|e| panic!("{e}"));
+        println!("已存 {}", out.display());
+    }
     if !held.is_empty() {
         // 留出集是**原始** log 深度。两种口径：
         // (a) 形状对齐：用该图 GT 的中位/IQR 反归一（只量形状，尺度按定义对齐）；

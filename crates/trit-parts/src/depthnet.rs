@@ -157,11 +157,12 @@ impl DepthNet {
     pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
         use std::fmt::Write as _;
         let mut s = format!(
-            "DCN2 {} {} {} {}\n",
+            "DCN3 {} {} {} {} {}\n",
             self.med,
             self.iqr,
             u8::from(self.c1.ternary),
-            self.out_b
+            self.out_b,
+            self.c1.dil
         );
         for c in [&self.c1, &self.c2, &self.c3] {
             let _ = writeln!(s, "{} {}", c.cin, c.cout);
@@ -179,16 +180,22 @@ impl DepthNet {
         let txt = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let mut it = txt.split_whitespace();
         let tag = it.next();
-        if tag != Some("DCN1") && tag != Some("DCN2") {
-            return Err(format!("{}: 不是 DCN1/DCN2", path.display()));
+        if !matches!(tag, Some("DCN1") | Some("DCN2") | Some("DCN3")) {
+            return Err(format!("{}: 不是 DCN1/DCN2/DCN3", path.display()));
         }
         let med: f32 = it.next().and_then(|x| x.parse().ok()).ok_or("缺 med")?;
         let iqr: f32 = it.next().and_then(|x| x.parse().ok()).ok_or("缺 iqr")?;
         let tern: bool = it.next().and_then(|x| x.parse::<u8>().ok()).unwrap_or(1) != 0;
-        let out_b: f32 = if tag == Some("DCN2") {
+        let out_b: f32 = if matches!(tag, Some("DCN2") | Some("DCN3")) {
             it.next().and_then(|x| x.parse().ok()).ok_or("缺 out_b")?
         } else {
             0.0
+        };
+        // DCN3 起存膨胀率：不存会让推理按 dil=1 跑，与训练（dil=2）不是同一个函数。
+        let dil: usize = if tag == Some("DCN3") {
+            it.next().and_then(|x| x.parse().ok()).ok_or("缺 dil")?
+        } else {
+            1
         };
         let mut convs = Vec::new();
         for _ in 0..3 {
@@ -212,14 +219,16 @@ impl DepthNet {
         c2.ternary = tern;
         let mut c3 = convs[2].clone();
         c3.ternary = false; // 与 new() 一致：输出层是线性 f32
-        Ok(DepthNet {
+        let mut net = DepthNet {
             c1,
             c2,
             c3,
             out_b,
             med,
             iqr,
-        })
+        };
+        net.set_dilation(dil);
+        Ok(net)
     }
 }
 
@@ -320,12 +329,17 @@ mod tests {
         net.med = 0.25;
         net.iqr = 0.5;
         net.out_b = -0.75;
+        net.set_dilation(2);
         let p = std::env::temp_dir().join("dcn_roundtrip.dcn");
         net.save(&p).unwrap();
         let back = DepthNet::load(&p).unwrap();
         assert_eq!(back.med, 0.25);
         assert_eq!(back.iqr, 0.5);
         assert_eq!(back.out_b, -0.75);
+        assert_eq!(
+            back.c1.dil, 2,
+            "膨胀率必须存进文件（否则推理与训练不是同一个函数）"
+        );
         let a = net.forward(&gray(0.3, w, h), w, h);
         let b = back.forward(&gray(0.3, w, h), w, h);
         for (x, y) in a.iter().zip(&b) {
