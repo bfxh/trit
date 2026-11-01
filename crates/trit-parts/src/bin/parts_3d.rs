@@ -1978,7 +1978,7 @@ impl Den {
     }
 }
 
-/// `tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 6] [--seed 1]`：
+/// `tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 3] [--seed 1]`：
 /// 非参数 patch 合成（搬真实 patch，结构/统计由构造保证；与 `tex-gen` 的学出来的合成对照用）。
 fn tex_quilt_cmd(argv: &[String]) {
     use trit_parts::tex::quilt;
@@ -1995,9 +1995,10 @@ fn tex_quilt_cmd(argv: &[String]) {
     let patch: usize = arg(argv, "--patch")
         .and_then(|v| v.parse().ok())
         .unwrap_or(12);
+    // 实测（§6.47）：重叠越大越糊、环绕接缝越差（ov=12 时 border 2.0）⇒ 默认 patch/4
     let ov: usize = arg(argv, "--overlap")
         .and_then(|v| v.parse().ok())
-        .unwrap_or(patch / 2);
+        .unwrap_or(patch / 4);
     let seed: u64 = arg(argv, "--seed")
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
@@ -3025,7 +3026,7 @@ fn usage() -> ! {
   parts-3d tex --kind wood|marble|rust|grid --size 256 --out <ppm>
   parts-3d tex-prior [--iters 30000] [--patch 3|7] [--cond] [--hid 16]
   parts-3d tex-conv  [--iters 20000] [--hidden 8,8] [--cond] [--size 64] [--adam] [--batch K] [--bn]
-  parts-3d tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 6] [--seed 1]
+  parts-3d tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 3] [--seed 1]
   parts-3d tex-gen   [--iters 200000] [--steps-t 50] [--size 64] [--hid 32] [--out <dir>]
                      [--conv 8,8] [--batch 4] [--adam] [--eps|--v] [--eps-space] [--diag]
                      [--dil N] [--save w.tpc] [--load w.tpc] [--holdout-names A,B]
