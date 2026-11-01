@@ -294,7 +294,7 @@ fn inv3(m: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
 }
 
 /// 逐通道盒式模糊（去光照用的低频）。
-fn box_blur_rgb(src: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
+pub(crate) fn box_blur_rgb(src: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
     if r == 0 {
         return src.to_vec();
     }
