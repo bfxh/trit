@@ -1958,3 +1958,7 @@ manifest 只有 `kind ∈ {part_cube, cylinder, sphere, torus}`，无任何 mate
 
 **训练可行性**：`parts-train` 在 S1 数据上可跑——单场景 4 帧过拟合自检 120 步 57 s，loss 0.71→0.046，valid 0.986。
 `--data` 可直接给渲染根目录（会自动扫子场景）；`--manifest` 只有 `--eval` 需要。
+
+**补充（同日）**：`--data <父目录>` 一开始报「没有可用帧」，排查后是**二进制过期**（重建时未带 `gpu` feature 的旧 exe）。
+重新 `cargo build --features gpu --bin parts-train` 后父目录正常展开（60 个子场景，480 帧）。
+⇒ 又一次印证「跑任何测量前先比 exe 与源码 mtime」。已加 `PARTSTRAIN_DEBUG=1` 打印展开数量，避免再被静默空集骗。

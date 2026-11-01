@@ -630,6 +630,13 @@ fn expand_scenes(root: &std::path::Path) -> Vec<PathBuf> {
         })
         .unwrap_or_default();
     subs.sort();
+    if std::env::var("PARTSTRAIN_DEBUG").is_ok() {
+        eprintln!(
+            "[debug] expand_scenes {} → {} 个子场景",
+            root.display(),
+            subs.len()
+        );
+    }
     if subs.is_empty() {
         eprintln!(
             "{}: 既不是场景（无 rgb/），也没有含 rgb/ 的子目录",
