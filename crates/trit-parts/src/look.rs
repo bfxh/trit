@@ -49,6 +49,9 @@ pub struct Look {
     pub hf1: f32,
     pub hf2: f32,
     pub hf4: f32,
+    /// 边界/内部梯度比：最外一圈相邻差的均值 ÷ 内部相邻差均值。
+    /// 1.0 = 边界与内部一致；>1 是零填充伪影，<1 是边界被抹平。
+    pub border: f32,
 }
 
 fn luma_of(r: f32, g: f32, b: f32) -> f32 {
@@ -351,6 +354,41 @@ fn analyze_region(
     let (c4, w4, h4) = half(&c2, w2, h2);
     let hf4 = lap_energy(&c4, w4, h4);
 
+    // 边界/内部梯度比（用均值，不受 p95 归一化影响）
+    let mut ring = 0.0f32;
+    let mut ring_n = 0usize;
+    let mut inner = 0.0f32;
+    let mut inner_n = 0usize;
+    for y in 0..ch {
+        for x in 0..cw.saturating_sub(1) {
+            let d = (lum[at(x + 1, y)] - lum[at(x, y)]).abs();
+            if y == 0 || y + 1 == ch {
+                ring += d;
+                ring_n += 1;
+            } else if x >= 2 && x + 3 <= cw {
+                inner += d;
+                inner_n += 1;
+            }
+        }
+    }
+    for x in 0..cw {
+        for y in 0..ch.saturating_sub(1) {
+            let d = (lum[at(x, y + 1)] - lum[at(x, y)]).abs();
+            if x == 0 || x + 1 == cw {
+                ring += d;
+                ring_n += 1;
+            } else if y >= 2 && y + 3 <= ch {
+                inner += d;
+                inner_n += 1;
+            }
+        }
+    }
+    let border = if inner_n > 0 && ring_n > 0 {
+        (ring / ring_n as f32) / (inner / inner_n as f32).max(1e-6)
+    } else {
+        1.0
+    };
+
     let key_dir = if ori_w > 1e-6 {
         (0.5 * ori_sin.atan2(ori_cos))
             .to_degrees()
@@ -415,6 +453,7 @@ fn analyze_region(
         hf1,
         hf2,
         hf4,
+        border,
     }
 }
 
@@ -495,6 +534,28 @@ mod tests {
         let l = analyze(&v, w, h);
         let d = l.key_dir.min(180.0 - l.key_dir);
         assert!(d < 10.0, "梯度应基本沿水平，实际 {}°", l.key_dir);
+    }
+
+    #[test]
+    fn border_ratio_is_one_for_periodic_texture() {
+        // 周期图（每 4 像素重复）边缘与内部梯度应一致
+        let (w, h) = (32usize, 32usize);
+        let mut v = vec![0.0f32; w * h * 3];
+        for y in 0..h {
+            for x in 0..w {
+                let c = if (x / 4 + y / 4) % 2 == 0 { 0.2 } else { 0.8 };
+                let p = (y * w + x) * 3;
+                v[p] = c;
+                v[p + 1] = c;
+                v[p + 2] = c;
+            }
+        }
+        let l = analyze(&v, w, h);
+        assert!(
+            (l.border - 1.0).abs() < 0.2,
+            "周期图边界比应≈1，实际 {}",
+            l.border
+        );
     }
 
     #[test]

@@ -2154,6 +2154,10 @@ fn tex_gen_cmd(argv: &[String]) {
             None => Net::new(2 + 2 * usize::from(cond_stats), &conv_hidden, seed),
         };
         net.set_bn(use_bn && load_path.is_none());
+        // 可平铺纹理用循环填充：零填充会把边界抹平（接缝比 0.60）
+        if argv.iter().any(|a| a == "--circ") {
+            net.set_circular(true);
+        }
         if linear_mode && load_path.is_none() {
             net.linear_out = true;
         }
@@ -2511,7 +2515,7 @@ fn look_cmd(argv: &[String]) {
     let mut out_h = std::io::stdout().lock();
     let _ = writeln!(
         out_h,
-        "{:<22} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>5} {:>5} {:>5} {:>6} {:>6} {:>6}  启发式",
+        "{:<22} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>5} {:>6} {:>5} {:>5} {:>5} {:>6} {:>6} {:>6} {:>6}  启发式",
         "样本",
         "亮度",
         "对比",
@@ -2530,7 +2534,8 @@ fn look_cmd(argv: &[String]) {
         "高光",
         "hf1",
         "hf2",
-        "hf4"
+        "hf4",
+        "边界比"
     );
     let mut rows: Vec<(String, look::Look)> = Vec::new();
     for f in &inputs {
@@ -2542,7 +2547,7 @@ fn look_cmd(argv: &[String]) {
         let l = look::analyze(&rgb, w, h);
         let _ = writeln!(
             out_h,
-            "{:<22} {:>5.2} {:>5.2} {:>5.2} {:>5.2} {:>5.3} {:>5.3} {:>5.2} {:>5.0} {:>5.2} {:>5.3} {:>5.2} {:>6.2} {:>5.0} {:>5.2} {:>5.3} {:>6.3} {:>6.3} {:>6.3}  {}",
+            "{:<22} {:>5.2} {:>5.2} {:>5.2} {:>5.2} {:>5.3} {:>5.3} {:>5.2} {:>5.0} {:>5.2} {:>5.3} {:>5.2} {:>6.2} {:>5.0} {:>5.2} {:>5.3} {:>6.3} {:>6.3} {:>6.3} {:>6.3}  {}",
             name,
             l.luma,
             l.contrast,
@@ -2562,20 +2567,21 @@ fn look_cmd(argv: &[String]) {
             l.hf1,
             l.hf2,
             l.hf4,
+            l.border,
             look::guess(&l)
         );
         rows.push((name, l));
     }
 
     if let Some(p) = csv {
-        let mut out = String::from("name,luma,contrast,sat,hue_entropy,edge,fine,strong,flat,levels,haze,emissive,bars,warmth,key_dir,key_fill_dwarm,highlights,hf1,hf2,hf4
+        let mut out = String::from("name,luma,contrast,sat,hue_entropy,edge,fine,strong,flat,levels,haze,emissive,bars,warmth,key_dir,key_fill_dwarm,highlights,hf1,hf2,hf4,border
 ");
         for (n, l) in &rows {
             out.push_str(&format!(
-                "{n},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4}
+                "{n},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4},{:.2},{:.4},{:.4},{:.4},{:.4},{:.4},{:.4}
 ",
                 l.luma, l.contrast, l.sat, l.hue_entropy, l.edge, l.fine, l.strong, l.flat, l.levels,
-                l.haze, l.emissive, l.bars, l.warmth, l.key_dir, l.key_fill_dwarm, l.highlights, l.hf1, l.hf2, l.hf4
+                l.haze, l.emissive, l.bars, l.warmth, l.key_dir, l.key_fill_dwarm, l.highlights, l.hf1, l.hf2, l.hf4, l.border
             ));
         }
         std::fs::write(&p, out).unwrap_or_else(|e| fail(&format!("{}: {e}", p.display())));

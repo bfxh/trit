@@ -7,6 +7,8 @@
 /// 一层 3×3 卷积。
 #[derive(Clone)]
 pub struct Conv {
+    /// 循环填充（纹理可平铺时用；零填充会把边界抹平，测出来接缝比 0.60）
+    pub circular: bool,
     pub cin: usize,
     pub cout: usize,
     /// `cout·cin·9`，布局 `((co*cin)+ci)*9 + (dy*3+dx)`。
@@ -44,6 +46,7 @@ impl Conv {
             ((r % 2001) as f32 - 1000.0) / 2500.0
         };
         Conv {
+            circular: false,
             cin,
             cout,
             // 初始要越过三值死区（|w|<0.5 → 量化成 0），否则整层恒零
@@ -72,17 +75,22 @@ impl Conv {
                     let mut s = self.b[co];
                     for ci in 0..self.cin {
                         for dy in 0..3 {
-                            let yy = y as i32 + dy as i32 - 1;
-                            if yy < 0 || yy >= h as i32 {
-                                continue;
-                            }
+                            let yyi = y as i32 + dy as i32 - 1;
                             for dx in 0..3 {
-                                let xr = xx as i32 + dx as i32 - 1;
-                                if xr < 0 || xr >= w as i32 {
-                                    continue;
-                                }
+                                let xri = xx as i32 + dx as i32 - 1;
+                                let (yy, xr) = if self.circular {
+                                    (
+                                        yyi.rem_euclid(h as i32) as usize,
+                                        xri.rem_euclid(w as i32) as usize,
+                                    )
+                                } else {
+                                    if yyi < 0 || yyi >= h as i32 || xri < 0 || xri >= w as i32 {
+                                        continue;
+                                    }
+                                    (yyi as usize, xri as usize)
+                                };
                                 s += self.eff(self.w[self.idx(co, ci, dy * 3 + dx)])
-                                    * x[ci][yy as usize * w + xr as usize];
+                                    * x[ci][yy * w + xr];
                             }
                         }
                     }
@@ -120,17 +128,22 @@ impl Conv {
                     let mut z = 0.0f32;
                     for ci in 0..self.cin {
                         for dy in 0..3 {
-                            let yy = y as i32 + dy as i32 - 1;
-                            if yy < 0 || yy >= h as i32 {
-                                continue;
-                            }
+                            let yyi = y as i32 + dy as i32 - 1;
                             for dxk in 0..3 {
-                                let xr = xx as i32 + dxk as i32 - 1;
-                                if xr < 0 || xr >= w as i32 {
-                                    continue;
-                                }
+                                let xri = xx as i32 + dxk as i32 - 1;
+                                let (yy, xr) = if self.circular {
+                                    (
+                                        yyi.rem_euclid(h as i32) as usize,
+                                        xri.rem_euclid(w as i32) as usize,
+                                    )
+                                } else {
+                                    if yyi < 0 || yyi >= h as i32 || xri < 0 || xri >= w as i32 {
+                                        continue;
+                                    }
+                                    (yyi as usize, xri as usize)
+                                };
                                 let k = dy * 3 + dxk;
-                                let xi = yy as usize * w + xr as usize;
+                                let xi = yy * w + xr;
                                 let xv = x[ci][xi];
                                 let qw = self.eff(self.w[self.idx(co, ci, k)]);
                                 z += qw * xv;
@@ -315,6 +328,8 @@ pub struct Net {
     pub cond: usize,
     /// 输出层是否线性（ε-预测需要无界输出；默认 sigmoid 给 x0 用）。
     pub linear_out: bool,
+    /// 所有卷积层是否循环填充（可平铺纹理用）。
+    pub circular: bool,
 }
 
 impl Net {
@@ -334,6 +349,15 @@ impl Net {
             bns,
             cond: 0,
             linear_out: false,
+            circular: false,
+        }
+    }
+
+    /// 开关循环填充（可平铺纹理；零填充会让边界变平，接缝比 <1）。
+    pub fn set_circular(&mut self, on: bool) {
+        self.circular = on;
+        for l in self.layers.iter_mut() {
+            l.circular = on;
         }
     }
 
@@ -553,10 +577,11 @@ impl Net {
         let mut out = String::new();
         let _ = writeln!(
             out,
-            "TPC2 {} {} {}",
+            "TPC3 {} {} {} {}",
             self.layers.len(),
             self.cond,
-            self.linear_out as u8
+            self.linear_out as u8,
+            self.circular as u8
         );
         for l in &self.layers {
             let _ = writeln!(out, "{} {}", l.cin, l.cout);
@@ -602,12 +627,14 @@ impl Net {
         }
         let mut it = txt.split_whitespace();
         let head = it.next();
-        if head != Some("TPC1") && head != Some("TPC2") {
-            return Err(format!("{}: 不是 TPC1/TPC2", path.display()));
+        if !matches!(head, Some("TPC1") | Some("TPC2") | Some("TPC3")) {
+            return Err(format!("{}: 不是 TPC1/TPC2/TPC3", path.display()));
         }
         let nl = take(&mut it, path, "层数")? as usize;
         let cond = take(&mut it, path, "cond")? as usize;
-        let linear_out = head == Some("TPC2") && take(&mut it, path, "linear")? != 0.0;
+        let linear_out =
+            matches!(head, Some("TPC2") | Some("TPC3")) && take(&mut it, path, "linear")? != 0.0;
+        let circular = head == Some("TPC3") && take(&mut it, path, "circular")? != 0.0;
         let mut layers = Vec::with_capacity(nl);
         for _ in 0..nl {
             let cin = take(&mut it, path, "cin")? as usize;
@@ -645,12 +672,15 @@ impl Net {
             }
             bns[idx] = Some(b);
         }
-        Ok(Net {
+        let mut net = Net {
             layers,
             bns,
             cond,
             linear_out,
-        })
+            circular: false,
+        };
+        net.set_circular(circular);
+        Ok(net)
     }
 }
 
