@@ -77,6 +77,7 @@ struct Args {
     /// 稀疏类加权：标签 id 等于该值的像素 loss × 倍数（0 = 不加权）。
     bnd_label: u32,
     bnd_weight: f32,
+    id_weight: f32,
 }
 
 fn parse() -> Result<Args, String> {
@@ -120,6 +121,7 @@ fn parse() -> Result<Args, String> {
         seg_sub: "seg".into(),
         bnd_label: 0,
         bnd_weight: 0.0,
+        id_weight: 0.0,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -183,6 +185,7 @@ fn parse() -> Result<Args, String> {
             }
             "--seg-sub" => a.seg_sub = val()?,
             "--bnd-label" => a.bnd_label = val()?.parse().map_err(|_| "--bnd-label 非整数")?,
+            "--id-weight" => a.id_weight = val()?.parse().map_err(|_| "--id-weight 非数字")?,
             "--bnd-weight" => a.bnd_weight = val()?.parse().map_err(|_| "--bnd-weight 非数字")?,
             "--sgd" => a.adam = false,
             other => return Err(format!("未知参数 {other}")),
@@ -418,7 +421,34 @@ fn main() {
         }
         let tr = net.forward(&gpu, xb, res);
         let logits = gpu.read(&tr.out, hw * ch);
-        let out = if args.bnd_weight > 0.0 {
+        let out = if args.id_weight > 0.0 {
+            // 逐 id 反频率加权：pw = ((1/n_ids)/freq)^α，clamp 到 [0.25, 8]
+            let mut cnt: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
+            let mut ids = vec![0u32; hw];
+            for p in 0..hw {
+                let mut id = 0u32;
+                for plane in &s.planes {
+                    id = id * 3 + plane[p] as u32;
+                }
+                ids[p] = id;
+                if s.valid[p] == 1 {
+                    *cnt.entry(id).or_insert(0) += 1;
+                }
+            }
+            let total: f32 = cnt.values().sum::<usize>() as f32;
+            let n_ids = cnt.len().max(1) as f32;
+            let mut pw = vec![1.0f32; hw];
+            for (p, wp) in pw.iter_mut().enumerate() {
+                if s.valid[p] != 1 {
+                    continue;
+                }
+                let f = *cnt.get(&ids[p]).unwrap_or(&1) as f32 / total.max(1.0);
+                *wp = ((1.0 / n_ids) / f.max(1e-6))
+                    .powf(args.id_weight)
+                    .clamp(0.25, 8.0);
+            }
+            trit_parts::loss::loss_and_grad_weighted(&logits, &s.planes, &s.valid, hw, k, &w, &pw)
+        } else if args.bnd_weight > 0.0 {
             // 稀疏类（如实例边界）加权：标签 id == --bnd-label 的像素损失 × bnd_weight
             let mut pw = vec![1.0f32; hw];
             for (p, wp) in pw.iter_mut().enumerate() {
