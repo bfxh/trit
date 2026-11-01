@@ -52,6 +52,9 @@ pub struct Look {
     /// 边界/内部梯度比：最外一圈相邻差的均值 ÷ 内部相邻差均值。
     /// 1.0 = 边界与内部一致；>1 是零填充伪影，<1 是边界被抹平。
     pub border: f32,
+    /// 笔触尺度：带符号自相关降到 1/e 的位移（对数插值，范围 1..32）。
+    /// 只作**跨图比较**的相对量（周期图案约落在 0.3×周期）：细颗粒 ≈1–2，大色块/场景 ≥4。
+    pub stroke: f32,
 }
 
 fn luma_of(r: f32, g: f32, b: f32) -> f32 {
@@ -431,6 +434,58 @@ fn analyze_region(
         0.0
     };
 
+    // 笔触尺度：水平/垂直位移的自相关第一次低于 1/e 的距离（对数插值）
+    // 水平、垂直分别算再平均（混在一起会平方掉相关性，尺度被低估一半）
+    let corr_at = |lag: usize| -> f32 {
+        let mut acc = 0.0f32;
+        for axis in 0..2 {
+            let (mut sab, mut sa, mut sb) = (0.0f32, 0.0f32, 0.0f32);
+            for y in 0..ch {
+                for x in 0..cw.saturating_sub(lag) {
+                    if axis == 1 && y + lag >= ch {
+                        continue;
+                    }
+                    let (xx, yy) = if axis == 0 {
+                        (x + lag, y)
+                    } else {
+                        (x, y + lag)
+                    };
+                    let a = lum[at(x, y)] - mean;
+                    let b = lum[at(xx, yy)] - mean;
+                    sab += a * b;
+                    sa += a * a;
+                    sb += b * b;
+                }
+            }
+            acc += sab / (sa * sb).sqrt().max(1e-9);
+        }
+        acc * 0.5
+    };
+    let lags = [1usize, 2, 4, 8, 16, 32];
+    let mut stroke = 32.0f32;
+    let thr = 1.0 / std::f32::consts::E;
+    let mut prev = (1usize, 1.0f32);
+    for &lag in lags.iter() {
+        if lag >= cw.min(ch) {
+            break;
+        }
+        let c = corr_at(lag);
+        if c < thr {
+            // 在 (prev.0, lag) 之间做 log-线性插值
+            let (l0, c0) = prev;
+            let t = if (c0 - c).abs() < 1e-6 {
+                1.0
+            } else {
+                ((c0 - thr) / (c0 - c)).clamp(0.0, 1.0)
+            };
+            let a = l0 as f32;
+            let b = lag as f32;
+            stroke = a * (b / a).powf(t);
+            break;
+        }
+        prev = (lag, c);
+    }
+
     Look {
         w,
         h,
@@ -454,6 +509,7 @@ fn analyze_region(
         hf2,
         hf4,
         border,
+        stroke,
     }
 }
 
@@ -534,6 +590,36 @@ mod tests {
         let l = analyze(&v, w, h);
         let d = l.key_dir.min(180.0 - l.key_dir);
         assert!(d < 10.0, "梯度应基本沿水平，实际 {}°", l.key_dir);
+    }
+
+    #[test]
+    fn stroke_scale_separates_fine_and_coarse() {
+        let (w, h) = (96usize, 96usize);
+        let mut fine = vec![0.0f32; w * h * 3];
+        let mut coarse = vec![0.0f32; w * h * 3];
+        for y in 0..h {
+            for x in 0..w {
+                let f = if (x + y) % 2 == 0 { 0.4 } else { 0.6 };
+                let c = if ((x / 16) + (y / 16)) % 2 == 0 {
+                    0.4
+                } else {
+                    0.6
+                };
+                let p = (y * w + x) * 3;
+                fine[p] = f;
+                fine[p + 1] = f;
+                fine[p + 2] = f;
+                coarse[p] = c;
+                coarse[p + 1] = c;
+                coarse[p + 2] = c;
+            }
+        }
+        let a = analyze(&fine, w, h);
+        let b = analyze(&coarse, w, h);
+        assert!(a.stroke < 2.5, "细棋盘笔触尺度应 ~1–2，实际 {}", a.stroke);
+        // 注：这是带符号的自相关长度，对周期图案约落在 0.3×周期（16px 块 ≈5），
+        // 只作**跨图比较**的相对量，不是字面像素。
+        assert!(b.stroke > 4.0, "16px 块应给出较大尺度，实际 {}", b.stroke);
     }
 
     #[test]
