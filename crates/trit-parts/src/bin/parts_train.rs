@@ -30,6 +30,7 @@ struct Args {
     eval: Option<PathBuf>,
     k: usize,
     dump: Option<PathBuf>,
+    res: u32,
     manifest: Option<PathBuf>,
     steps: usize,
     lr: f32,
@@ -89,6 +90,7 @@ fn parse() -> Result<Args, String> {
         eval: None,
         k: 5,
         dump: None,
+        res: 384,
         manifest: None,
         steps: 100,
         lr: 1e-3,
@@ -138,6 +140,7 @@ fn parse() -> Result<Args, String> {
             "--eval" => a.eval = Some(PathBuf::from(val()?)),
             "--k" => a.k = val()?.parse().map_err(|_| "--k 非整数")?,
             "--dump" => a.dump = Some(PathBuf::from(val()?)),
+            "--res" => a.res = val()?.parse().map_err(|_| "--res 非整数")?,
             "--manifest" => a.manifest = Some(PathBuf::from(val()?)),
             "--steps" => a.steps = val()?.parse().map_err(|_| "--steps 非整数")?,
             "--lr" => a.lr = val()?.parse().map_err(|_| "--lr 非数字")?,
@@ -265,7 +268,7 @@ fn main() {
     }
 
     let k = args.k;
-    let res = 384u32;
+    let res = args.res;
     let hw = (res * res) as usize;
 
     let mut resumed_step = 0u64;
@@ -710,7 +713,7 @@ fn eval_only(gpu: &Gpu, args: &Args) {
     net.upload_all(gpu);
     let ch = net.head_cout() as usize;
 
-    let res = 384u32;
+    let res = args.res;
     let hw = (res * res) as usize;
 
     let mut plane_sum = vec![0f64; k];
