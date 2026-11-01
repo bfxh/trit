@@ -401,7 +401,7 @@ MUTANTS = [
         "old": '        let temporary = self.temporary_path();',
         "new": '        let temporary = self.path.with_extension("tmp");',
         "pkg": "trit-orch",
-        "filter": 'concurrent_saves_on_one_path_never_steal_each_others_bytes',
-        "diagnostic": 'ORCH_LEDGER_TMP_UNIQUE',
+        "filter": 'save_does_not_consume_a_foreign_tmp_named_file',
+        "diagnostic": 'ORCH_LEDGER_TMP_OWNED',
     },
 ]

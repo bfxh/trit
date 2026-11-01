@@ -79,6 +79,35 @@ fn ledger_roundtrips_through_disk() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// 同名中转文件是并发串内容的入口。这里**不用线程**也能判红：
+/// 预置一个与旧写法（`path.with_extension("tmp")`）同名的文件，save 之后它必须原样还在。
+#[test]
+fn save_does_not_consume_a_foreign_tmp_named_file() {
+    let path = temp_path("foreign-tmp");
+    let store = LedgerStore::new(&path);
+    let legacy_tmp = path.with_extension("tmp");
+    std::fs::write(&legacy_tmp, b"foreign-tmp-sentinel").unwrap();
+
+    let mut ledger = Ledger::new();
+    ledger.prepare("job", 0, "job", 1).unwrap();
+    store
+        .save(&ledger)
+        .unwrap_or_else(|error| panic!("ORCH_LEDGER_TMP_OWNED: 保存不该失败: {error}"));
+
+    assert_eq!(
+        std::fs::read(&legacy_tmp).unwrap_or_default(),
+        b"foreign-tmp-sentinel",
+        "ORCH_LEDGER_TMP_OWNED: save 不该占用/改名掉与目标同前缀的 .tmp 文件"
+    );
+    assert_eq!(
+        store.load().unwrap().attempt("job").unwrap().attempt,
+        1,
+        "ORCH_LEDGER_TMP_OWNED: 台账本身仍要写成功"
+    );
+    let _ = std::fs::remove_file(&legacy_tmp);
+    let _ = std::fs::remove_file(&path);
+}
+
 /// 同一台账文件被两个 store 并发保存：中转名必须每次唯一，否则一方会把另一方的字节
 /// rename 进自己的路径，或第二次 rename 因源文件已消失而报错。
 #[test]
