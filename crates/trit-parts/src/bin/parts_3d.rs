@@ -1480,6 +1480,27 @@ fn mesh_tex_cmd(argv: &[String]) {
     if let (Some(tex_p), Some(obj_p)) = (arg(argv, "--tex"), arg(argv, "--obj")) {
         let (tw, th, tpix) =
             trit_parts::data::read_rgb(std::path::Path::new(&tex_p)).unwrap_or_else(|e| fail(&e));
+        // stylize → atlas 两段：贴图先过显式风格，再烘进图集（无风格参数时逐位不变）
+        let tpix = match style_from_argv(argv) {
+            Some(st) => {
+                let before = trit_parts::look::analyze(&tpix, tw, th);
+                let out = trit_parts::tex::stylize(&tpix, tw, th, &st);
+                let after = trit_parts::look::analyze(&out, tw, th);
+                println!(
+                    "风格：contrast {:.3}→{:.3}，levels {:.0}→{:.0}，sat {:.3}→{:.3}，stroke {:.2}→{:.2}",
+                    before.contrast,
+                    after.contrast,
+                    before.levels,
+                    after.levels,
+                    before.sat,
+                    after.sat,
+                    before.stroke,
+                    after.stroke
+                );
+                out
+            }
+            None => tpix,
+        };
         let tex_world: f32 = arg(argv, "--tex-world")
             .and_then(|v| v.parse().ok())
             .unwrap_or(cell * 40.0);
@@ -2123,10 +2144,42 @@ fn tex_quilt_cmd(argv: &[String]) {
     }
 }
 
+/// 从命令行取风格参数（预设优先；都没有/默认值则返回 None = 不变）。
+fn style_from_argv(argv: &[String]) -> Option<trit_parts::tex::Style> {
+    use trit_parts::tex::{Preset, Style};
+    if let Some(name) = arg(argv, "--preset") {
+        let p = Preset::by_name(&name)
+            .unwrap_or_else(|| fail(&format!("未知预设 {name}（可选 cel / oil / epic）")));
+        let t = arg(argv, "--strength")
+            .and_then(|v| v.parse::<f32>().ok())
+            .unwrap_or(1.0);
+        return Some(p.style(t));
+    }
+    let st = Style {
+        contrast: arg(argv, "--contrast")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1.0),
+        levels: arg(argv, "--levels")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0f32)
+            .max(0.0) as u32,
+        warmth: arg(argv, "--warmth")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0),
+        sat: arg(argv, "--sat")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(1.0),
+        stroke: arg(argv, "--stroke")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0),
+    };
+    if st.is_identity() { None } else { Some(st) }
+}
+
 /// `tex-stylize <in.png> --contrast 1.2 --levels 8 --warmth 0.1 --sat 1.5 --stroke 2 --out o.png`：
 /// S6.5 的**显式**风格旋钮（不训练）；打印变换前后 trit-look 的对应因子，便于验收单调性。
 fn tex_stylize_cmd(argv: &[String]) {
-    use trit_parts::tex::{Style, stylize};
+    use trit_parts::tex::stylize;
     let Some(p) = argv.get(1).filter(|a| !a.starts_with("--")) else {
         fail(
             "用法: parts-3d tex-stylize <in.png> [--contrast 1.2] [--levels 8] [--warmth 0.1] [--sat 1.5] [--stroke 2] --out o.png",
@@ -2134,22 +2187,7 @@ fn tex_stylize_cmd(argv: &[String]) {
     };
     let (w, h, px) =
         trit_parts::data::read_rgb(std::path::Path::new(p)).unwrap_or_else(|e| fail(&e));
-    let num = |k: &str, d: f32| -> f32 { arg(argv, k).and_then(|v| v.parse().ok()).unwrap_or(d) };
-    let st = if let Some(name) = arg(argv, "--preset") {
-        let p = trit_parts::tex::Preset::by_name(&name)
-            .unwrap_or_else(|| fail(&format!("未知预设 {name}（可选 cel / oil / epic）")));
-        let t = num("--strength", 1.0);
-        println!("预设 {} × 强度 {t:.2}", p.name);
-        p.style(t)
-    } else {
-        Style {
-            contrast: num("--contrast", 1.0),
-            levels: num("--levels", 0.0).max(0.0) as u32,
-            warmth: num("--warmth", 0.0),
-            sat: num("--sat", 1.0),
-            stroke: num("--stroke", 0.0),
-        }
-    };
+    let st = style_from_argv(argv).unwrap_or_default();
     let out = stylize(&px, w, h, &st);
     let a = trit_parts::look::analyze(&px, w, h);
     let b = trit_parts::look::analyze(&out, w, h);
