@@ -22,6 +22,7 @@ trit-learn.workspace = true
 trit-look = { version = "0.1", git = "https://github.com/bfxh/trit-look", rev = "f32001b446778d0e568b083c320ac5316384ff42" }
 # 训练数据是 PNG（384² RGB）；纯 Rust 解码，不借 Python。
 png = "0.17"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 [dev-dependencies]
 # 交叉对拍：本 crate 的 STE 与 trit-train 线性层逐元素一致（只测不跑）。

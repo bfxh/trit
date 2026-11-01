@@ -1603,7 +1603,12 @@ fn mesh_tex_cmd(argv: &[String]) {
                 fail(&format!("--patch {patch} 超过源图短边 {}", sw.min(sh)));
             }
             let tone = argv.iter().any(|a| a == "--tone-match");
-            let out = trit_parts::tex::quilt(&src, sw, sh, n, n, patch, ov, seed, tone);
+            let detrend: usize = arg(argv, "--detrend")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(0);
+            let relight = argv.iter().any(|a| a == "--relight");
+            let out =
+                trit_parts::tex::quilt(&src, sw, sh, n, n, patch, ov, seed, tone, detrend, relight);
             let l = trit_parts::look::analyze(&out, n, n);
             println!(
                 "quilt：{}×{} 源 → {n}×{n}（patch {patch} 重叠 {ov} seed {seed}）stroke {:.2} coh {:.3}",
@@ -3260,7 +3265,11 @@ fn tex_quilt_cmd(argv: &[String]) {
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
     let tone = argv.iter().any(|a| a == "--tone-match");
-    let out = quilt(&rgb, sw, sh, n, n, patch, ov, seed, tone);
+    let detrend: usize = arg(argv, "--detrend")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let relight = argv.iter().any(|a| a == "--relight");
+    let out = quilt(&rgb, sw, sh, n, n, patch, ov, seed, tone, detrend, relight);
     let l = trit_parts::look::analyze(&out, n, n);
     println!("源 {sw}x{sh} ⇒ {n}x{n}，patch {patch} 重叠 {ov} seed {seed}");
     println!(

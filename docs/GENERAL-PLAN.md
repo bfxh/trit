@@ -2157,3 +2157,25 @@ occl8b/scene0000 按 512² 重渲 12 帧（0.29 s/帧），512 头训 1200 步�
 - 默认关；它是一个「有光照梯度就必须权衡」的选项，不是免费改进。
 
 **未测**：真实照片（非扫描贴图）；低/高对比纹理的边界条件。
+
+### 6.80 JPG 直读 + 去光照/回贴（`--detrend` / `--relight`）（2026-11-02）
+
+**① JPG 直读**：`data::read_rgb` 按魔数分派——PNG 走本仓解码器，其它交给 `image` crate（`default-features=false, features=["jpeg"]`，本地缓存有 `image 0.25.10` + `zune-jpeg`）。
+实测 `tex-quilt <ambientCG 的 *Color.jpg>` 直接可用（无需先转 PNG）。
+
+**② 去光照/回贴**：`--detrend R`（减去半径 R 的盒式低频）再拼，`--relight`（按源图拟合的**线性平面**光照回贴）。
+
+| 纹理 | 指标 | 源 | 纯 quilt | +tone-match | **detrend32 + relight** |
+|---|---|---|---|---|---|
+| Planks008 | contrast | 0.400 | 0.087 | 0.139 | 0.105 |
+| | **coherence** | 0.865 | **0.328** | 0.328 | **0.821** |
+| | stroke | 7.8 | 7.9 | 1.7 | **7.5** |
+| Wood051 | contrast / stroke | 0.095 / 9.5 | 0.067 / 7.3 | 0.089 / 5.1 | 0.061 / 5.7 |
+| Ground104 | contrast | 0.226 | 0.155 | 0.209 | 0.140 |
+
+- **去光照救的是结构**：Planks008 的 coherence 从 0.33 回到 **0.82**、stroke 保持 7.5 —— 目检木板缝与木纹都回来了（此前是糊状）。
+- **但对比度回不来**：`--relight` 只回贴「一个平面」，而源的亮度分布远不止线性（p95−p5 达不到 0.400）。
+- 低对比纹理（Wood051）上去光照反而略伤（0.067→0.061）——它本来就没什么梯度可去。
+- 单测 `detrend_removes_and_relight_restores_the_global_gradient`：只去梯度 ⇒ 左右亮度差 <35% 源；去+回贴 ⇒ ≥70% 源。
+
+**用法建议**：强光照扫描件用 `--detrend 32 --relight`（要结构）；低对比件用 `--tone-match`；两者都默认关。

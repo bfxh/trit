@@ -142,7 +142,22 @@ pub fn resize_rgb(w: usize, h: usize, pix: &[f32], res: usize) -> Vec<f32> {
 
 /// 只读 RGB（推理用，不需要 seg 标签）。
 pub fn read_rgb(path: &Path) -> Result<(usize, usize, Vec<f32>), String> {
-    read_png_rgb(path)
+    // PNG 走本仓解码器（与训练一致）；其它格式（JPEG）交给 image crate
+    let magic = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    if magic.starts_with(&[0x89, b'P', b'N', b'G']) {
+        return read_png_rgb(path);
+    }
+    let img = image::load_from_memory(&magic)
+        .map_err(|e| format!("{}: {e}", path.display()))?
+        .to_rgb8();
+    let (w, h) = (img.width() as usize, img.height() as usize);
+    let mut out = Vec::with_capacity(w * h * 3);
+    for p in img.pixels() {
+        out.push(f32::from(p[0]) / 255.0);
+        out.push(f32::from(p[1]) / 255.0);
+        out.push(f32::from(p[2]) / 255.0);
+    }
+    Ok((w, h, out))
 }
 
 /// 写 PNG（RGB，`pix` 为交错 f32 0..1）。与 `read_rgb` 互逆（量化误差 ≤1/255）。
