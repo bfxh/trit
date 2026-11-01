@@ -45,30 +45,30 @@ fn sobel(img: &[f32], w: usize, h: usize) -> (Vec<f32>, Vec<f32>) {
             let at = |dx: isize, dy: isize| {
                 img[((y as isize + dy) as usize) * w + (x as isize + dx) as usize]
             };
+            // gx = 水平差分（[-1 0 1; -2 0 2; -1 0 1]），gy = 竖直差分
             gx[y * w + x] =
-                -at(-1, -1) - 2.0 * at(-1, 0) - at(-1, 1) + at(1, -1) + 2.0 * at(1, 0) + at(1, 1);
-            gy[y * w + x] =
                 -at(-1, -1) - 2.0 * at(0, -1) - at(1, -1) + at(-1, 1) + 2.0 * at(0, 1) + at(1, 1);
+            gy[y * w + x] =
+                -at(-1, -1) - 2.0 * at(-1, 0) - at(-1, 1) + at(1, -1) + 2.0 * at(1, 0) + at(1, 1);
         }
     }
     (gx, gy)
 }
 
-/// Sobel 的转置：把 (cx, cy) 对应的梯度回传到图像上（核是对称的，转置=同核散射）。
+/// Sobel 的**真转置**（单测 `sobel_adjoint_is_transpose` 用内积恒等式钉住）。
 fn sobel_adjoint(cx: &[f32], cy: &[f32], w: usize, h: usize) -> Vec<f32> {
     let mut out = vec![0.0f32; w * h];
     for y in 1..h.saturating_sub(1) {
         for x in 1..w.saturating_sub(1) {
             let (a, b) = (cx[y * w + x], cy[y * w + x]);
-            // gx 的核
-            out[(y - 1) * w + x - 1] += -a;
-            out[(y - 1) * w + x] += -2.0 * b;
-            out[(y - 1) * w + x + 1] += -a;
-            out[y * w + x - 1] += -2.0 * a;
-            out[y * w + x + 1] += 2.0 * a;
-            out[(y + 1) * w + x - 1] += a;
-            out[(y + 1) * w + x] += 2.0 * b;
-            out[(y + 1) * w + x + 1] += a;
+            out[(y - 1) * w + x - 1] += -a - b;
+            out[(y - 1) * w + x] += -2.0 * a;
+            out[(y - 1) * w + x + 1] += -a + b;
+            out[y * w + x - 1] += -2.0 * b;
+            out[y * w + x + 1] += 2.0 * b;
+            out[(y + 1) * w + x - 1] += a - b;
+            out[(y + 1) * w + x] += 2.0 * a;
+            out[(y + 1) * w + x + 1] += a + b;
         }
     }
     out
@@ -455,6 +455,8 @@ pub struct Net {
     pub dir: Option<(usize, f32, f32)>,
     /// 噪声表（v-预测下用于把 v̂ 还原成 x̂0 供方向性损失使用）；空 = 不可用。
     pub abar: Vec<f32>,
+    /// 结构张量矩匹配：`(类别, 目标 (Jxx,Jyy,Jxy), λ)`。`None` = 关。
+    pub stm: Option<(usize, [f32; 3], f32)>,
 }
 
 impl Net {
@@ -486,6 +488,7 @@ impl Net {
             heads: Vec::new(),
             dir: None,
             abar: Vec::new(),
+            stm: None,
         }
     }
 
@@ -849,6 +852,45 @@ impl Net {
                     d[0][i] = (p - t) / n as f32 / k as f32; // 批内平均
                 }
             }
+            // 结构张量矩匹配：把 x̂0 的 (Jxx,Jyy,Jxy) 拉向该类真实值（同时约束各向异性与梯度能量）
+            if let (Some((scls, jt, lam)), Some(cls)) = (self.stm, class)
+                && *cls == scls
+                && lam > 0.0
+                && self.linear_out
+                && !self.abar.is_empty()
+            {
+                let tmax = self.abar.len().saturating_sub(1).max(1);
+                let idx = ((t_frac * tmax as f32).round() as usize).min(tmax);
+                let a = self.abar[idx].clamp(0.0, 1.0);
+                let (sa, se) = (a.sqrt(), (1.0 - a).sqrt());
+                let xt = &maps_in[0];
+                let x0: Vec<f32> = (0..n).map(|i| sa * xt[i] - se * pred[i]).collect();
+                let (gx, gy) = sobel(&x0, w, h);
+                let inner = (w.saturating_sub(2)) * (h.saturating_sub(2));
+                let (mut jxx, mut jyy, mut jxy) = (0.0f32, 0.0f32, 0.0f32);
+                for i in 0..n {
+                    jxx += gx[i] * gx[i];
+                    jyy += gy[i] * gy[i];
+                    jxy += gx[i] * gy[i];
+                }
+                let inv = 1.0 / inner.max(1) as f32;
+                let (jxx, jyy, jxy) = (jxx * inv, jyy * inv, jxy * inv);
+                // 相对误差（用目标总能量做尺度），避免大 λ 直接爆
+                let sc = (jt[0] + jt[1]).max(1e-6);
+                let (ex, ey, exy) = ((jxx - jt[0]) / sc, (jyy - jt[1]) / sc, (jxy - jt[2]) / sc);
+                loss += f64::from(lam * (ex * ex + ey * ey + 2.0 * exy * exy));
+                // dL/dg：链式（J 对 g 的导数 × 误差项）
+                let cxx = 2.0 * lam * ex / sc * inv;
+                let cyy = 2.0 * lam * ey / sc * inv;
+                let cxy = 4.0 * lam * exy / sc * inv;
+                let gx2: Vec<f32> = (0..n).map(|i| 2.0 * (cxx * gx[i] + cxy * gy[i])).collect();
+                let gy2: Vec<f32> = (0..n).map(|i| 2.0 * (cyy * gy[i] + cxy * gx[i])).collect();
+                let dx0 = sobel_adjoint(&gx2, &gy2, w, h);
+                for (i, g) in dx0.iter().enumerate() {
+                    d[0][i] += -se * g / k as f32;
+                }
+            }
+
             // 方向性损失：抑制「垂直于目标主方向」的梯度分量（对 x̂0 施加）
             if let (Some((dcls, angle, lam)), Some(cls)) = (self.dir, class)
                 && *cls == dcls
@@ -1250,6 +1292,7 @@ impl Net {
             heads: Vec::new(),
             dir: None,
             abar: Vec::new(),
+            stm: None,
         };
         net.set_circular(circular);
         if nk_hdr > 0 {
@@ -1638,6 +1681,29 @@ mod tests {
         let a = net.forward_xc(&maps, Some(0), w, h)[0];
         let b = net.forward_xc(&maps, Some(1), w, h)[0];
         assert!(b - a > 0.2, "两类应被区分：{a:.3} vs {b:.3}");
+    }
+
+    #[test]
+    fn sobel_adjoint_is_transpose() {
+        let (w, h) = (7usize, 6usize);
+        let mut s = 7u64;
+        let mut rnd = || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            (s >> 11) as f32 / (1u64 << 53) as f32 - 0.5
+        };
+        let x: Vec<f32> = (0..w * h).map(|_| rnd()).collect();
+        let cx: Vec<f32> = (0..w * h).map(|_| rnd()).collect();
+        let cy: Vec<f32> = (0..w * h).map(|_| rnd()).collect();
+        let (gx, gy) = super::sobel(&x, w, h);
+        let lhs: f32 = (0..w * h).map(|i| gx[i] * cx[i] + gy[i] * cy[i]).sum();
+        let adj = super::sobel_adjoint(&cx, &cy, w, h);
+        let rhs: f32 = (0..w * h).map(|i| x[i] * adj[i]).sum();
+        assert!(
+            (lhs - rhs).abs() < 1e-3 * lhs.abs().max(1.0),
+            "adjoint 不是转置：{lhs} vs {rhs}"
+        );
     }
 
     #[test]

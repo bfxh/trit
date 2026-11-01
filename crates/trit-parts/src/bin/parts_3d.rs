@@ -2256,6 +2256,19 @@ fn tex_gen_cmd(argv: &[String]) {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(1.0f32);
             println!("FiLM lr 倍数 {}", net.film_lr_mul);
+            // 结构张量矩匹配（S6.3 方向性结构）
+            if let (Some(c), Some(t), Some(lam)) = (
+                arg(argv, "--stm-class").and_then(|v| v.parse::<usize>().ok()),
+                arg(argv, "--stm-target"),
+                arg(argv, "--stm-loss").and_then(|v| v.parse::<f32>().ok()),
+            ) {
+                let parts: Vec<f32> = t.split(',').filter_map(|x| x.trim().parse().ok()).collect();
+                if parts.len() == 3 {
+                    net.stm = Some((c, [parts[0], parts[1], parts[2]], lam));
+                    net.abar = abar.clone();
+                    println!("结构张量匹配：类 {c}，目标 {:?}，λ={lam}", parts);
+                }
+            }
             // 方向性损失：只对指定类（如木纹）抑制垂直方向梯度
             if let (Some(c), Some(deg), Some(lam)) = (
                 arg(argv, "--dir-class").and_then(|v| v.parse::<usize>().ok()),
