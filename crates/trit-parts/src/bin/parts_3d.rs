@@ -2248,10 +2248,11 @@ fn tex_gen_cmd(argv: &[String]) {
         if argv.iter().any(|a| a == "--circ") {
             net.set_circular(true);
         }
-        // 高通匹配权重（对抗 MSE 的条件均值化；0 = 关）
-        net.highpass = arg(argv, "--hf-weight")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0.0f32);
+        // 高通匹配权重（对抗 MSE 的条件均值化；0 = 关）。
+        // 只有显式给了才覆盖：否则加载 TPC4+ checkpoint 时会把文件里的 highpass 静默抹成 0。
+        if let Some(v) = arg(argv, "--hf-weight").and_then(|v| v.parse().ok()) {
+            net.highpass = v;
+        }
         if linear_mode && load_path.is_none() {
             net.linear_out = true;
         }
