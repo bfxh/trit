@@ -202,8 +202,19 @@ impl Denoiser for PatchMlp {
 
 /// 采样起点 `x_T ≈ ε ~ N(0,1)`——必须与训练加噪的分布一致。
 /// 曾写成 `0.5 + 0.5z`（均值 0.5、std 0.5），去噪器把偏暗输入当亮图，采样均值系统性偏高。
+///
+/// 种子先过 splitmix64 再进 xorshift：早期直接 `seed | 1` 当状态会把最低位丢掉，
+/// 相邻种子（如按类扫样的 `base+ki`）产出**逐位相同**的样本（2026-11-01 实测）。
 pub fn initial_noise(n: usize, seed: u64) -> Vec<f32> {
-    let mut rng = seed | 1;
+    let mut rng = seed
+        .wrapping_add(0x9E37_79B9_7F4A_7C15)
+        .wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    rng ^= rng >> 30;
+    rng = rng.wrapping_mul(0x94D0_49BB_1331_11EB);
+    rng ^= rng >> 31;
+    if rng == 0 {
+        rng = 0x2545_F491_4F6C_DD1D;
+    }
     let mut next = || {
         rng ^= rng << 13;
         rng ^= rng >> 7;
@@ -304,6 +315,15 @@ mod tests {
             "std 应 ~1，实际 {:.3}",
             var.sqrt()
         );
+    }
+
+    #[test]
+    fn initial_noise_distinguishes_adjacent_seeds() {
+        let a = super::initial_noise(256, 924);
+        let b = super::initial_noise(256, 925);
+        let same = a.iter().zip(&b).filter(|(x, y)| x == y).count();
+        assert!(same < 8, "相邻种子应给出不同噪声，实际 {same}/256 同位相同");
+        assert_eq!(a, super::initial_noise(256, 924), "同种子必须可复现");
     }
 
     #[test]
