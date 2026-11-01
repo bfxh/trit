@@ -1642,6 +1642,11 @@ fn mesh_tex_cmd(argv: &[String]) {
             .and_then(|v| v.parse().ok())
             .unwrap_or(0);
         let obj_path = PathBuf::from(&obj_p);
+        // 目标目录不存在时自动建；否则 write_rgb 会以「找不到路径」失败，报错还指不到真正原因
+        if let Some(parent) = obj_path.parent() {
+            std::fs::create_dir_all(parent)
+                .unwrap_or_else(|e| fail(&format!("{}: {e}", parent.display())));
+        }
         let stem = obj_path
             .file_stem()
             .and_then(|s| s.to_str())
