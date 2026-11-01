@@ -1,6 +1,6 @@
 """S6.3 评估：按类生成 vs 真实同类分布（数据准备/分析，不参与训练）。
 
-用法：py -3.11 scripts/eval_s63.py <crops128 目录> <labels.tsv> <生成样本目录> <输出 csv>
+用法：py -3.11 scripts/eval_s63.py <真实 look.csv> <labels.tsv> <生成 look.csv> <输出 csv>
   1) 把 true 类按 assetId 前缀绑到文件名；
   2) 读 `trit-look look` 产出的两份 CSV（真实 / 生成）——这里只做连接与统计；
   3) 输出每类均值 + 跨类 Spearman 秩相关（生成 vs 真实）。
@@ -72,10 +72,8 @@ def main() -> int:
     if len(sys.argv) < 5:
         print(__doc__)
         return 2
-    crops, labels_tsv, gen_dir, out_csv = sys.argv[1:5]
+    real_csv, labels_tsv, gen_csv, out_csv = sys.argv[1:5]
     labels = load_labels(labels_tsv)
-    real_csv = os.path.join(os.path.dirname(out_csv), "real_crops_look.csv")
-    gen_csv = os.path.join(os.path.dirname(out_csv), "gen_look.csv")
 
     real = read_look(real_csv)
     gen = read_look(gen_csv)

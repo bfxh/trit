@@ -2148,6 +2148,21 @@ fn tex_gen_cmd(argv: &[String]) {
         );
     }
 
+    // --only-class k：只保留某一类（S6.3 的「每类独立模型」上界实验）
+    let images: Vec<Vec<f32>> = match arg(argv, "--only-class").and_then(|v| v.parse::<usize>().ok()) {
+        Some(k) if film_k > 0 => {
+            let keep: Vec<usize> = (0..images.len()).filter(|&i| img_class[i] == Some(k)).collect();
+            if keep.len() < 20 {
+                fail(&format!("--only-class {k} 只有 {} 张，太少", keep.len()));
+            }
+            let cls: Vec<Option<usize>> = keep.iter().map(|&i| img_class[i]).collect();
+            img_class = cls;
+            println!("只训类 {k}：{} 张", keep.len());
+            keep.iter().map(|&i| images[i].clone()).collect()
+        }
+        _ => images,
+    };
+
     // 归一化：每张图减去自身均值、除以自身标准差（保留反归一化参数）
     let img_norm: Vec<(f32, f32)> = images
         .iter()
