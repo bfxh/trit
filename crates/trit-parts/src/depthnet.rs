@@ -19,11 +19,20 @@ pub struct DepthNet {
 
 impl DepthNet {
     pub fn new(hidden: usize, seed: u64) -> Self {
+        Self::with_ternary(hidden, seed, true)
+    }
+
+    /// `ternary=false` 时整网 f32（连续几何量允许 f32；三值 STE 在真实数据上会塌，见 §6.86）。
+    pub fn with_ternary(hidden: usize, seed: u64, ternary: bool) -> Self {
+        let mut c1 = Conv::new(3, hidden, seed);
+        let mut c2 = Conv::new(hidden, hidden, seed ^ 0x5DEECE66D);
         let mut c3 = Conv::new(hidden, 1, seed ^ 0xA5A5);
+        c1.ternary = ternary;
+        c2.ternary = ternary;
         c3.ternary = false;
         DepthNet {
-            c1: Conv::new(3, hidden, seed),
-            c2: Conv::new(hidden, hidden, seed ^ 0x5DEECE66D),
+            c1,
+            c2,
             c3,
             med: 0.0,
             iqr: 1.0,
@@ -124,7 +133,12 @@ impl DepthNet {
 
     pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
         use std::fmt::Write as _;
-        let mut s = format!("DCN1 {} {}\n", self.med, self.iqr);
+        let mut s = format!(
+            "DCN1 {} {} {}\n",
+            self.med,
+            self.iqr,
+            u8::from(self.c1.ternary)
+        );
         for c in [&self.c1, &self.c2, &self.c3] {
             let _ = writeln!(s, "{} {}", c.cin, c.cout);
             for v in [&c.w, &c.b, &c.scale] {
@@ -145,6 +159,7 @@ impl DepthNet {
         }
         let med: f32 = it.next().and_then(|x| x.parse().ok()).ok_or("缺 med")?;
         let iqr: f32 = it.next().and_then(|x| x.parse().ok()).ok_or("缺 iqr")?;
+        let tern: bool = it.next().and_then(|x| x.parse::<u8>().ok()).unwrap_or(1) != 0;
         let mut convs = Vec::new();
         for _ in 0..3 {
             let cin: usize = it.next().ok_or("缺 cin")?.parse().map_err(|_| "cin")?;
@@ -161,11 +176,15 @@ impl DepthNet {
             }
             convs.push(c);
         }
+        let mut c1 = convs[0].clone();
+        let mut c2 = convs[1].clone();
+        c1.ternary = tern;
+        c2.ternary = tern;
         let mut c3 = convs[2].clone();
         c3.ternary = false; // 与 new() 一致：输出层是线性 f32
         Ok(DepthNet {
-            c1: convs[0].clone(),
-            c2: convs[1].clone(),
+            c1,
+            c2,
             c3,
             med,
             iqr,

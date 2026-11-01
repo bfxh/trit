@@ -264,7 +264,9 @@ fn cnn_train(argv: &[String]) {
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
     let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
-    let mut net = DepthNet::new(hidden, 7);
+    let ternary = !argv.iter().any(|a| a == "--f32");
+    let mut net = DepthNet::with_ternary(hidden, 7, ternary);
+    println!("卷积深度头：{} 权重", if ternary { "三值" } else { "f32" });
     type TrainSample = (PathBuf, usize, Vec<Vec<f32>>, Vec<f32>, Vec<bool>);
     let mut samples: Vec<TrainSample> = Vec::new();
     let mut med_sum = 0.0f32;
