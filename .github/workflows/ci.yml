@@ -76,6 +76,17 @@ jobs:
       - name: Every file within budget or shrinking-only debt
         run: python3 scripts/module_budget.py
 
+  hazard:
+    name: hazard gate (concurrency/memory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Gate self-test (positive + counterexamples)
+        run: python3 scripts/hazard_gate.py --self-test
+      - name: Concurrency/memory hazards within the design policy
+        run: python3 scripts/hazard_gate.py
+
   stress:
     name: stress (high pressure invariants)
     runs-on: ubuntu-latest

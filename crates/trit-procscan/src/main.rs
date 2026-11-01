@@ -16,6 +16,7 @@ mod analyze;
 mod collector;
 mod event;
 mod mcp;
+mod net;
 mod trace;
 
 use std::collections::BTreeMap;

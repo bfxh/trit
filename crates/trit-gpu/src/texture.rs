@@ -1,7 +1,7 @@
 //! TT3 块纹理的 GPU 解码（WGSL `texture.wgsl`）。
 //!
 //! 格式契约在 trit-texture（跨实验层不能互相依赖，见发布图门），这里只接收
-//! **扁平的块字节流**（每块 12 字节，宽为 4 的倍数、高为 10 的倍数）；正确性由
+//! **扁平的块字节流**（每块 17 字节 = 4 端点 + 13 载荷，宽高皆 8 的倍数）；正确性由
 //! `tests/texture_decode.rs` 用 trit-texture 编码 + CPU 解码逐字节对拍钉住。
 //! 没有 adapter 时返回 `None`（与 [`crate::gpu::run`] 同约定）。
 
@@ -9,21 +9,27 @@ use wgpu::util::DeviceExt;
 
 const WORKGROUP: u32 = 64;
 /// 每块字节数（与 trit-texture 的 TRIT_BLOCK_BYTES 对齐）。
-const BLOCK_BYTES: usize = 12;
+const BLOCK_BYTES: usize = 17;
+/// 块边长（与 trit-texture 的 BLOCK_WIDTH/BLOCK_HEIGHT 对齐）。
+const BLOCK_SIDE: usize = 8;
 
 /// 用 GPU 解码一整张 TT3 纹理；返回 RGBA（每纹素 4 字节，alpha 255）。
 ///
-/// `blocks` 是逐块拼接的字节流，`width` 须为 4 的倍数、`height` 须为 10 的倍数；
+/// `blocks` 是逐块拼接的字节流，`width`/`height` 须为 8 的倍数；
 /// 形状或长度不符返回 `None`。
 pub fn decode_tt3_blocks(blocks: &[u8], width: usize, height: usize) -> Option<Vec<u8>> {
     pollster::block_on(decode_async(blocks, width, height))
 }
 
 async fn decode_async(blocks: &[u8], width: usize, height: usize) -> Option<Vec<u8>> {
-    if width == 0 || !width.is_multiple_of(4) || height == 0 || !height.is_multiple_of(10) {
+    if width == 0
+        || !width.is_multiple_of(BLOCK_SIDE)
+        || height == 0
+        || !height.is_multiple_of(BLOCK_SIDE)
+    {
         return None;
     }
-    let expected_blocks = (width / 4) * (height / 10);
+    let expected_blocks = (width / BLOCK_SIDE) * (height / BLOCK_SIDE);
     if blocks.len() != expected_blocks * BLOCK_BYTES {
         return None;
     }
@@ -42,8 +48,14 @@ async fn decode_async(blocks: &[u8], width: usize, height: usize) -> Option<Vec<
         .ok()?;
 
     let texels = (width * height) as u32;
-    // 块字节流按 u32 上传（每块 12 字节 = 3 字，天然对齐）。
-    let words: &[u32] = bytemuck::cast_slice(blocks);
+    // 17 字节/块不是 4 字节的倍数：块起点不再 u32 对齐，着色器按**全局字节偏移**
+    // 取字节（见 texture.wgsl）。上传前把字节流补齐到 4 字节倍数，只补尾部，
+    // 不改变任何块的偏移。
+    let mut padded = blocks.to_vec();
+    while !padded.len().is_multiple_of(4) {
+        padded.push(0);
+    }
+    let words: &[u32] = bytemuck::cast_slice(&padded);
     let blocks_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("tt3-blocks"),
         contents: bytemuck::cast_slice(words),
@@ -57,7 +69,12 @@ async fn decode_async(blocks: &[u8], width: usize, height: usize) -> Option<Vec<
     });
     let params = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("tt3-params"),
-        contents: bytemuck::cast_slice(&[texels, width as u32, (width / 4) as u32]),
+        contents: bytemuck::cast_slice(&[
+            texels,
+            width as u32,
+            (width / BLOCK_SIDE) as u32,
+            BLOCK_BYTES as u32,
+        ]),
         usage: wgpu::BufferUsages::UNIFORM,
     });
 

@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 # cargo-fuzz 需要 nightly 与独立 target，不并入 workspace。
-exclude = ["fuzz"]
+exclude = ["fuzz", "t3"]
 members = [
     "crates/trit-core",
     "crates/trit-learn",
@@ -32,6 +32,9 @@ members = [
     "crates/trit-unsafe",
     "crates/trit-procscan",
     "crates/trit-ops",
+    "crates/trit-capacity",
+    "crates/trit-re",
+    "crates/trit-immune",
 ]
 
 [workspace.package]
@@ -43,6 +46,7 @@ repository = "https://github.com/bfxh/trit"
 
 [workspace.dependencies]
 trit-core = { path = "crates/trit-core", version = "0.12.0" }
+trit-capacity = { path = "crates/trit-capacity", version = "0.12.0" }
 trit-learn = { path = "crates/trit-learn", version = "0.12.0" }
 trit-eval = { path = "crates/trit-eval", version = "0.12.0" }
 trit-sat = { path = "crates/trit-sat", version = "0.12.0" }

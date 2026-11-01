@@ -167,6 +167,10 @@ pub struct Report {
 #[cfg(feature = "gpu")]
 mod bench;
 #[cfg(feature = "gpu")]
+pub mod dp4a;
+#[cfg(feature = "gpu")]
+pub mod dp4a_gpu;
+#[cfg(feature = "gpu")]
 pub mod forward;
 #[cfg(feature = "gpu")]
 pub mod gpu;
@@ -176,6 +180,10 @@ pub mod matmul;
 mod matmul_f32;
 #[cfg(feature = "gpu")]
 mod popc;
+#[cfg(feature = "gpu")]
+pub mod render;
+#[cfg(feature = "gpu")]
+pub mod sampler;
 #[cfg(feature = "gpu")]
 pub mod texture;
 

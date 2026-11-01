@@ -27,14 +27,20 @@ BASELINE = ROOT / "scripts" / "module_budget_baseline.json"
 LIMIT = 800
 
 
+# 主 workspace 与独立 workspace（`t3/`）都要扫：只扫 crates/ 会让
+# 「挪到扫描范围外」变成绕过 800 行的捷径。
+SOURCES = ("crates/*/**/*.rs", "t3/crates/*/**/*.rs")
+
+
 def scan(root: Path) -> dict[str, int]:
     sizes: dict[str, int] = {}
-    for path in sorted(root.glob("crates/*/**/*.rs")):
-        rel = path.relative_to(root).as_posix()
-        if "/target/" in rel:
-            continue
-        with path.open(encoding="utf-8") as handle:
-            sizes[rel] = len(handle.read().splitlines())
+    for pattern in SOURCES:
+        for path in sorted(root.glob(pattern)):
+            rel = path.relative_to(root).as_posix()
+            if "/target/" in rel:
+                continue
+            with path.open(encoding="utf-8") as handle:
+                sizes[rel] = len(handle.read().splitlines())
     return sizes
 
 

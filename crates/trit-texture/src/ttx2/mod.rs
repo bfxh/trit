@@ -27,6 +27,9 @@ pub const CHECKSUM_BYTES: usize = 4;
 pub const KIND_TEX: u8 = 0;
 /// kind：三值模型（基 3 打包权重）。
 pub const KIND_MOD: u8 = 1;
+/// `flags` 的布局位：置位表示 8×8 块（17 字节）。旧文件该位为 0（4×10 / 12 字节），
+/// 读到时显式报 `UnsupportedLayout`，而不是走到块数/校验和才炸。
+pub const FLAG_LAYOUT_8X8: u8 = 0x01;
 
 /// 一份 TTX2 文档。
 #[derive(Debug, Clone, PartialEq)]
@@ -141,7 +144,7 @@ pub fn to_ttx2(document: &TtxDocument) -> Result<Vec<u8>, TextureError> {
     let mut out = Vec::with_capacity(HEADER_BYTES + section.len() + CHECKSUM_BYTES);
     out.extend_from_slice(&MAGIC);
     out.push(kind);
-    out.push(0);
+    out.push(FLAG_LAYOUT_8X8);
     out.extend_from_slice(&0u16.to_le_bytes());
     out.extend_from_slice(&(section.len() as u32).to_le_bytes());
     out.extend_from_slice(&section);
@@ -277,7 +280,11 @@ pub fn from_ttx2(bytes: &[u8]) -> Result<TtxDocument, TextureError> {
     if kind != KIND_TEX && kind != KIND_MOD {
         return Err(TextureError::TtxKind(kind));
     }
-    if flags != 0 || reserved != 0 {
+    if flags == 0 {
+        // 旧 4×10 布局：头部本身能区分，不必等到块数/校验和才报错。
+        return Err(TextureError::UnsupportedLayout { rev: 0 });
+    }
+    if flags & !FLAG_LAYOUT_8X8 != 0 || reserved != 0 {
         return Err(TextureError::TtxFlags { flags, reserved });
     }
     let section_len = u32::from_le_bytes(bytes[8..12].try_into().unwrap()) as usize;
@@ -394,8 +401,8 @@ mod tests {
 
     #[test]
     fn texture_mip_chain_roundtrips() {
-        let fine = encode_rgba(&sample(8, 20), 8, 20).unwrap();
-        let coarse = encode_rgba(&sample(4, 10), 4, 10).unwrap();
+        let fine = encode_rgba(&sample(16, 16), 16, 16).unwrap();
+        let coarse = encode_rgba(&sample(8, 8), 8, 8).unwrap();
         let bytes = to_ttx2(&TtxDocument::Texture {
             levels: vec![fine.clone(), coarse.clone()],
         })
@@ -407,14 +414,14 @@ mod tests {
         assert_eq!(levels, vec![fine, coarse]);
         // 单级（无 mip）合法：内容与 TTX1 同源。
         let single = to_ttx2(&TtxDocument::Texture {
-            levels: vec![encode_rgba(&sample(8, 20), 8, 20).unwrap()],
+            levels: vec![encode_rgba(&sample(16, 16), 16, 16).unwrap()],
         })
         .unwrap();
         let TtxDocument::Texture { levels } = from_ttx2(&single).unwrap() else {
             panic!()
         };
         let via_v1 =
-            ttx::from_ttx(&ttx::to_ttx(&encode_rgba(&sample(8, 20), 8, 20).unwrap())).unwrap();
+            ttx::from_ttx(&ttx::to_ttx(&encode_rgba(&sample(16, 16), 16, 16).unwrap())).unwrap();
         assert_eq!(
             decode_rgba(&levels[0]).unwrap(),
             decode_rgba(&via_v1).unwrap()
@@ -423,7 +430,7 @@ mod tests {
 
     #[test]
     fn mip_chain_rejects_equal_misaligned_and_empty() {
-        let fine = encode_rgba(&sample(8, 20), 8, 20).unwrap();
+        let fine = encode_rgba(&sample(16, 16), 16, 16).unwrap();
         // 同级（宽高都不减）：拒绝。
         assert!(matches!(
             to_ttx2(&TtxDocument::Texture {
@@ -453,7 +460,7 @@ mod tests {
     #[test]
     fn header_fields_are_validated_before_payload() {
         let bytes = to_ttx2(&TtxDocument::Texture {
-            levels: vec![encode_rgba(&sample(4, 10), 4, 10).unwrap()],
+            levels: vec![encode_rgba(&sample(8, 8), 8, 8).unwrap()],
         })
         .unwrap();
         // 未知 kind。
@@ -463,12 +470,19 @@ mod tests {
             from_ttx2(&bad_kind),
             Err(TextureError::TtxKind(7))
         ));
-        // 非零 flags / reserved。
+        // flags=0 是旧 4×10 布局：头部直接报布局错误。
+        let mut old_layout = bytes.clone();
+        old_layout[5] = 0;
+        assert!(matches!(
+            from_ttx2(&old_layout),
+            Err(TextureError::UnsupportedLayout { rev: 0 })
+        ));
+        // 未知 flags 位 / reserved 非零仍按前向兼容拒绝。
         let mut bad_flags = bytes.clone();
-        bad_flags[5] = 1;
+        bad_flags[5] = FLAG_LAYOUT_8X8 | 0x02;
         assert!(matches!(
             from_ttx2(&bad_flags),
-            Err(TextureError::TtxFlags { flags: 1, .. })
+            Err(TextureError::TtxFlags { flags, .. }) if flags == (FLAG_LAYOUT_8X8 | 0x02)
         ));
         let mut bad_reserved = bytes.clone();
         bad_reserved[6] = 1;
@@ -495,13 +509,36 @@ mod tests {
         let layer = TritModelLayer::new(&[vec![1, -1, 0, -1]], &[1]).unwrap();
         let bytes = to_ttx2(&TtxDocument::Model(TritModel::new(vec![layer]).unwrap())).unwrap();
         let expected = vec![
-            b'T', b'T', b'X', b'2', KIND_MOD, 0, 0, 0, 14, 0, 0, 0, // 头
-            1, 0, 0, 0, // layer_count
-            4, 0, 0, 0, // inputs
-            1, 0, 0, 0,  // outputs
+            b'T',
+            b'T',
+            b'X',
+            b'2',
+            KIND_MOD,
+            FLAG_LAYOUT_8X8,
+            0,
+            0,
+            14,
+            0,
+            0,
+            0, // 头
+            1,
+            0,
+            0,
+            0, // layer_count
+            4,
+            0,
+            0,
+            0, // inputs
+            1,
+            0,
+            0,
+            0,  // outputs
             11, // weights 基 3 打包（2·3⁰ + 1·3²）
             2,  // bias digit
-            144, 81, 14, 1, // GF(3) CRC-16（独立验算冻结）
+            144,
+            81,
+            14,
+            1, // GF(3) CRC-16（独立验算冻结）
         ];
         assert_eq!(bytes, expected);
         // 双偏置基 3 位值钉死：bias [1,0] → 2·3⁰ + 1·3¹ = 5（基 2 打包变异体写 4）。
@@ -520,7 +557,7 @@ mod tests {
         // mip 级声明 8 亿×20（块数 ×12 > u32::MAX 的回绕区）：level_blocks 的
         // checked 预算必须拒成 Shape，不进入任何按声明的分配/切片。
         let bytes = to_ttx2(&TtxDocument::Texture {
-            levels: vec![encode_rgba(&sample(4, 10), 4, 10).unwrap()],
+            levels: vec![encode_rgba(&sample(8, 8), 8, 8).unwrap()],
         })
         .unwrap();
         let mut giant = bytes;
@@ -538,7 +575,7 @@ mod tests {
 
     #[test]
     fn v1_files_are_rejected_with_explicit_magic() {
-        let texture = encode_rgba(&sample(4, 10), 4, 10).unwrap();
+        let texture = encode_rgba(&sample(8, 8), 8, 8).unwrap();
         let v1 = ttx::to_ttx(&texture);
         assert!(matches!(
             from_ttx2(&v1),

@@ -321,13 +321,15 @@ fn check_planes(
 #[cfg(target_arch = "x86_64")]
 #[allow(unsafe_code)]
 mod popcnt {
-    /// 调用者必须已确认 CPU 支持 `POPCNT`。
+    /// # Safety
+    /// 调用者必须已确认 CPU 支持 `POPCNT`（否则是非法指令，不是错误结果）。
     #[target_feature(enable = "popcnt")]
     unsafe fn dot(a_pos: &[u64], a_neg: &[u64], b_pos: &[u64], b_neg: &[u64]) -> i64 {
         super::unrolled_body(a_pos, a_neg, b_pos, b_neg)
     }
 
-    /// 调用者必须已确认 CPU 支持 `POPCNT`。
+    /// # Safety
+    /// 调用者必须已确认 CPU 支持 `POPCNT`（否则是非法指令，不是错误结果）。
     #[target_feature(enable = "popcnt")]
     unsafe fn bipolar_mismatches(a: &[u64], b: &[u64]) -> u64 {
         let mut mismatches = 0u64;

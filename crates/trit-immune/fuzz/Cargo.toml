@@ -1,0 +1,52 @@
+[package]
+name = "trit-immune-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+
+[dependencies.trit-immune]
+path = ".."
+
+# 与上游 bfxh/trit 的 fuzz/ 同一模式：nightly 独立 target，不并入主 workspace。
+# 触发条件：rustup install nightly && cargo install cargo-fuzz
+# 运行：cargo fuzz run json_parse -- -max_len=4096
+[[bin]]
+name = "json_parse"
+path = "fuzz_targets/json_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "git_log_parse"
+path = "fuzz_targets/git_log_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lsp_stream_parse"
+path = "fuzz_targets/lsp_stream_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "lock_parse"
+path = "fuzz_targets/lock_parse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "journal_line_parse"
+path = "fuzz_targets/journal_line_parse.rs"
+test = false
+doc = false
+bench = false

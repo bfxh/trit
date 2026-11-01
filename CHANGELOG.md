@@ -47,6 +47,94 @@
   三值 vs f32 argmax 0.987118、幅值 4.78→1.25 ⇒ 事后三值化不可用，必须 QAT+STE。
 - **未做**：反向内核、训练循环、清单约束 argmax。交付模型仍缺，等这三件。
 - 夹具不进 git：`D:\KF\trit-data\parts-parity`（22 MB）。
+### Fixed（`trit-re`：GOT 基址按寄存器跟踪——`get_pc_thunk.ax` 等不再漏检）
+
+- 此前只认 `call __x86.get_pc_thunk.bx; add $imm,%ebx`；PIE 构建里 GCC 会按函数挑寄存器
+  （实测 `get_pc_thunk.ax` / `.dx` 都出现），`mov 0x10(%eax),%ecx` 这类访问被漏掉。
+- 现在 thunk 体按字节识别（`8B 04|0C|14|1C|34|3C 24 C3`）取出寄存器号，`add $imm`
+  支持 eax 短编码 `05 imm32` 与 `81 C0|reg imm32`；基址表按寄存器分组；访问侧按 `modrm`
+  的 `rm` 取寄存器（`8B/8D/39/3B/85`、`80/81/83`、`FF /2|/4|/6`）。
+- **更正上一片的结论**：`c32-pie` 的 `_ITM_deregisterTMCloneTable` / `_ITM_registerTMCloneTable`
+  上一片被判 `False`（"本文件不引用"），实际 crt 用 `get_pc_thunk.dx` + `call *%eax` 间接调用它们
+  ⇒ 现在正确为 `Unknown`。`c32-fptr-pie` 的 `strcmp`/`memcmp` 同样由 `False` → `Unknown`。
+- 其余样本（c32-nopie / x86-64 与 AArch64 glibc / ripgrep）读数不变。
+- 测试 **92 → 94**；变异 **25 → 27/27**（新增"GOT 基址只认 EBX""EAX 的短 add 编码不认"）。
+- **未证**：不做数据流——寄存器后来被改写成普通指针时仍按 GOT 基址相加，
+  方向只会多判 `Unknown`（不会多判 `True`）。
+
+### Fixed（`trit-re`：i386 立即数取址——函数指针不再被判"没有引用"）
+
+- 取导入函数地址时，非 PIC 给的是 **PLT 桩地址**（`push $strcmp@plt` / `movl $…,-0x4(%ebp)`），
+  原先只比对 GOT 槽位，打不中 ⇒ 只被取址、没有直接 call 的导入落 `False`。
+  新增第三遍扫描：`B8..BF imm32`、`68 imm32`、`C7 45|85|05 imm32` 的立即数同时比对
+  GOT 槽位与已知 PLT 桩地址，命中只把该导入降级 `Unknown`。
+- 取址识别补 `cmp r/m8|32, imm8|32`：`80/81/83 BB disp32`（EBX 相对）与 `80/81/83 3D disp32`（绝对）。
+- 真实样本（`fptr.c`：`f = strcmp; if (argc>2) f = memcmp; return f(...)`）：
+  `c32-fptr`（非 PIE）`strcmp`/`memcmp` 由 `False` → **`Unknown`**；
+  其余 32 位/x64/ARM64 校准样本读数不变。
+- 测试 **90 → 92**；变异 **23 → 25/25**（新增"取址不认 PLT 桩地址""C7 立即数偏移少 1"）。
+- **已知假阴性（下一步）**：`c32-fptr-pie` 用 `get_pc_thunk.ax` 把 GOT 基址放进 **EAX**，
+  `mov 0x10(%eax),%ecx` 识别不到 ⇒ `strcmp`/`memcmp` 仍为 `False`。
+  现在只认 `get_pc_thunk.bx` + EBX 相对形式，需要按寄存器解码 modrm。
+
+### Added（TTX3：万级大纹理档案——瓦片化 + 层级混搭 + 流式解码）
+
+- `trit-texture` 新容器 **TTX3**（新模块 `ttx3`）：把 TT3 推到万级——
+  - 基面 **10240×10240 = 1.05 亿纹素**（TTX2 上限的 25 倍；单边上限 65536，
+    单级纹素上限 2^30）；
+  - **瓦片化**：256×320 纹素/瓦片（64×32 个 4×10 块，与块形状严丝合缝），
+    瓦片 = 编码/校验/解码/显存上传的统一单元；
+  - **层级混搭**：每级 `LevelPolicy`——细层 `Capacity`（2.4 bpp 纯容量）、
+    粗层 `Strength`（瓦片双写冗余，单副本损坏自动恢复；默认混搭 =
+    `suggest_chain` 最粗两级 Strength）；
+  - **流式**：`Ttx3Archive::decode_tile` 只物化单瓦片 320 KB RGBA；
+    `verify` 逐瓦片全档校验；u64 偏移、封闭布局无回填；
+  - **校验**：逐瓦片 GF(3) CRC-16 盖三元载荷 ⊕ FNV-1a 盖 RGB565 端点字节
+    （只盖载荷的话端点损坏检不出来——开发中发现）；
+  - **账**：10240² 全链 6 级存档 ≈ 42.1 MiB vs RGBA 533 MiB（12.7×），
+    见 docs/TTX.md 的 TTX3 章节（逐级账可 `level_storage_bytes` 复算）。
+- 开发中抓出的三个自伤 bug（各有回归测试）：级目录条目 20 B vs 解析 16 B
+  步进错位、解析头部偏移位置错、瓦片按瓦片存储却按整图块序拼装解码。
+- 测试：`trit-texture` 40 → 48（往返/混搭/强度恢复/双副本耗尽/Capacity
+  检错/尺寸与级数拒绝/魔数与 flags/万级封闭账/与 crate 路径逐位一致）。
+
+### Added（扫描分层：前端/后端识别——产物面 + 网络面 + 组件地图）
+
+- `trit-redteam binary`：新增 `side` / `artifact` 字段——`.wasm`（`\0asm` 魔数）
+  与 HTML = **前端产物**，PE / ELF = **后端（原生）产物**；前端产物跳过
+  PE/ELF 硬化解析（无此面，报告 hardening=null）但**泄密/路径检查照跑**
+  （wasm 里嵌 API key 是真实威胁）。产不出格式的报错信息同步更新。
+- `trit-procscan`：报告新增 `network_roles`——采样窗口内每个有网络行为的
+  进程的角色：**监听 = 在当后端（server）/ 发起连接 = 在当前端（client）/
+  双角色（both）**，带监听端口数与连接目标数（去重）；重复采样去重。
+  边界：这是窗口内的行为角色，不是进程的永久身份。
+- 新文档 `docs/ATLAS.md`：全部 28 crate + playground 的**分层地图**
+  （浏览器前端 / 语言前端 / 编译后端 / 执行后端 / 语义层 / 实验层 /
+  横切安全工具 / 入口），逐条给证据（manifest 依赖、产物特征、放行清单），
+  并说明三个扫描面（产物 side / 网络 roles / hazard gate 放行范围）怎么消费它。
+
+### Added（`trit-procscan` 网络面检查：地址分类 + 外联/监听/扇出/连接失败）
+
+- 新模块 `net`，接入 `run`/`analyze` 的报告（`network_findings`）：
+  - **地址分类器**：RFC 作用域分类（Loopback/Private/CGNAT/LinkLocal/Multicast/
+    Unspecified/Public/Invalid），IPv4 严格四段十进制；IPv6 前缀级
+    （`::1`、`fe80::/10`、`fc00::/7`、`ff00::/8`、`::`），带括号写法可剥，
+    `::ffff:a.b.c.d` 映射回落 v4 分类。采集端拼法 `{addr}:{port}`（IPv6 无括号）。
+  - **四类发现**（只陈述证据形态，不下「恶意」结论）：
+    - `outbound-connection`（high）：连到 Public / CGNAT（CGNAT 按外部算，口径已写明）；
+    - `listen-all-interfaces`（high）：`0.0.0.0` / `::` 上的监听（面向所有网卡；
+      只听回环或内网单卡不报）；
+    - `egress-fanout`（medium）：同一 pid 对 ≥8 个不同非本机主机发起连接
+      （扫描/信标重试的常见形态）；
+    - `connect-failures`（medium）：同一 pid ≥4 个不同目标停在 SYN_SENT。
+  - **重复采样去重**：同一条连接每个采样间隔重拍一次，先按 (host, port, state)
+    去重再判阈值（10 次采样 ≠ 扇出 10 主机，有测试）。
+- 修复：原 `is_loopback` 手搓前缀匹配既混了私网、又漏 CGNAT/link-local IPv4，
+  IPv6 带括号写法会误判成外联——职责并入分类器后按 RFC 口径重写。
+- 边界（不猜）：DNS 未采集 ⇒ 只能对 IP 字面量分类，回答不了域名；
+  TCP 表是瞬时快照，看见 LISTEN 不代表一直在听。
+- 测试：`trit-procscan` 17 → 26（分类表/畸形地址/四类发现/去重）。
+- 变异新增 3 条（私网误判成外联、监听全部网卡不报、扇出阈值失效），全部被抓住。
 
 ### Added（`trit-procscan` 动态追溯/追踪：事件流离线重放）
 

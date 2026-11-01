@@ -11,6 +11,7 @@
 #![forbid(unsafe_code)]
 
 pub mod format;
+pub mod netsec;
 pub mod train;
 
 mod infer;
