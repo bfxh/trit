@@ -2493,6 +2493,124 @@ fn material_data_cmd(argv: &[String]) {
     println!("material-data：{n} 个「帧×部件」样本 → {}", out.display());
 }
 
+/// `occl-stats --scene <dir> --frames 0,1,..,7 --cell 0.03`：
+/// 时序/遮挡的**测量片**：每个部件在多少帧可见、最长连续遮挡、以及它的 3D 体素覆盖随可见帧数的变化。
+fn occl_stats_cmd(argv: &[String]) {
+    use std::collections::BTreeMap;
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let frames: Vec<usize> = arg(argv, "--frames")
+        .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![0, 1, 2, 3, 4, 5, 6, 7]);
+    let cell: f32 = arg(argv, "--cell")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.03);
+    let min_px: usize = arg(argv, "--min-px")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50);
+    // 每帧读 seg+depth+cam，统计可见性并把点体素化
+    let mut vis: BTreeMap<u32, Vec<bool>> = BTreeMap::new();
+    let mut vox: BTreeMap<u32, std::collections::HashSet<(i32, i32, i32)>> = BTreeMap::new();
+    let nframes = frames.len();
+    for &fr in &frames {
+        let (ids, shape) = trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", fr, "npy"))
+            .unwrap_or_else(|e| fail(&e));
+        let (depth, dshape) =
+            trit_parts::geo::read_npy_f32(&frame_path(&scene, "depth", fr, "npy"))
+                .unwrap_or_else(|e| fail(&e));
+        let cam =
+            Camera::load(&frame_path(&scene, "meta", fr, "json")).unwrap_or_else(|e| fail(&e));
+        let (h, w) = (shape[0], shape[1]);
+        if dshape.len() != shape.len() || dshape[0] != h || dshape[1] != w {
+            fail("seg 与 depth 尺寸不一致");
+        }
+        let mut cnt: BTreeMap<u32, usize> = BTreeMap::new();
+        for i in 0..w * h {
+            let id = ids[i];
+            if id <= 0 {
+                continue;
+            }
+            *cnt.entry(id as u32).or_default() += 1;
+            let d = depth[i];
+            if d.is_finite() && d > 0.0 && d < 50.0 {
+                let p = cam.unproject((i % w) as f64, (i / w) as f64, d);
+                let k = (
+                    (p[0] / cell).floor() as i32,
+                    (p[1] / cell).floor() as i32,
+                    (p[2] / cell).floor() as i32,
+                );
+                vox.entry(id as u32).or_default().insert(k);
+            }
+        }
+        for (id, c) in cnt {
+            if c >= min_px {
+                let e = vis.entry(id).or_insert_with(|| vec![false; nframes]);
+                e[frames.iter().position(|&f| f == fr).unwrap_or(0)] = true;
+            }
+        }
+    }
+    // 对齐：没出现在任何帧的部件不统计
+    let mut rows: Vec<(u32, usize, usize, usize)> = Vec::new(); // (id, 可见帧数, 最长遮挡, 体素数)
+    for (id, v) in &vis {
+        let seen = v.iter().filter(|x| **x).count();
+        // 最长连续不可见（按帧序列，不跨首尾）
+        let (mut best, mut cur) = (0usize, 0usize);
+        for &b in v.iter() {
+            if b {
+                cur = 0;
+            } else {
+                cur += 1;
+                best = best.max(cur);
+            }
+        }
+        rows.push((*id, seen, best, vox.get(id).map(|s| s.len()).unwrap_or(0)));
+    }
+    rows.sort_by_key(|r| r.0);
+    println!(
+        "场景 {}：{} 帧，cell {:.3}，可见部件 {} 个",
+        scene.file_name().and_then(|x| x.to_str()).unwrap_or("?"),
+        nframes,
+        cell,
+        rows.len()
+    );
+    println!(
+        "{:>5} {:>7} {:>9} {:>8} {:>9}",
+        "部件", "可见帧", "最长遮挡", "体素数", "体素/帧"
+    );
+    let mut occluded = 0usize;
+    for (id, seen, gap, nv) in &rows {
+        if *seen < nframes {
+            occluded += 1;
+        }
+        println!(
+            "{:>5} {:>7} {:>9} {:>8} {:>9.0}",
+            id,
+            format!("{seen}/{nframes}"),
+            gap,
+            nv,
+            *nv as f32 / (*seen).max(1) as f32
+        );
+    }
+    let full: Vec<&(u32, usize, usize, usize)> = rows.iter().filter(|r| r.1 == nframes).collect();
+    let part: Vec<&(u32, usize, usize, usize)> = rows.iter().filter(|r| r.1 < nframes).collect();
+    let mean = |v: &[&(u32, usize, usize, usize)]| -> f32 {
+        if v.is_empty() {
+            0.0
+        } else {
+            v.iter().map(|r| r.3 as f32).sum::<f32>() / v.len() as f32
+        }
+    };
+    println!(
+        "遮挡率 {}/{} = {:.0}%；体素均值：全程可见 {:.0}（n={}）vs 曾被遮挡 {:.0}（n={}）",
+        occluded,
+        rows.len(),
+        100.0 * occluded as f32 / rows.len().max(1) as f32,
+        mean(&full),
+        full.len(),
+        mean(&part),
+        part.len()
+    );
+}
+
 /// 取一帧里每个可见部件（≥ min_px）的**方形裁剪**（掩码外填均值色），缩放到 `side×side`。
 fn part_crops_in(
     scene: &Path,
@@ -4188,6 +4306,7 @@ fn main() {
         Some("material-fit") => material_fit_cmd(&argv),
         Some("material-predict") => material_predict_cmd(&argv),
         Some("material-cnn") => material_cnn_cmd(&argv),
+        Some("occl-stats") => occl_stats_cmd(&argv),
         Some("tex-stylize") => tex_stylize_cmd(&argv),
         Some("look") => look_cmd(&argv),
         Some("style") => style_cmd(&argv),
