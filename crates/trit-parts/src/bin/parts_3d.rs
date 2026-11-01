@@ -18,6 +18,80 @@ fn arg(argv: &[String], key: &str) -> Option<String> {
     argv.get(i + 1).cloned()
 }
 
+/// 读「作业 JSON」并展开成命令行参数（**扁平**对象：`{"key": 值, ...}`，值为字符串/数字/布尔）。
+///
+/// 键名即开关名（去掉 `--`）；布尔 `true` 展开成单个开关，`false` 跳过。
+/// 例：`{"scene":"...","cell":0.02,"clean":true,"preset":"cel","strength":0.6}`。
+fn load_job_args(path: &Path) -> Vec<String> {
+    let txt = std::fs::read_to_string(path).unwrap_or_else(|e| {
+        eprintln!("{}: {e}", path.display());
+        std::process::exit(1);
+    });
+    let mut out: Vec<String> = Vec::new();
+    let b: Vec<char> = txt.chars().collect();
+    let mut i = 0usize;
+    while i < b.len() {
+        // 找键
+        if b[i] != '"' {
+            i += 1;
+            continue;
+        }
+        let ks = i + 1;
+        let mut ke = ks;
+        while ke < b.len() && b[ke] != '"' {
+            ke += 1;
+        }
+        let key: String = b[ks..ke.min(b.len())].iter().collect();
+        i = ke + 1;
+        // 找冒号
+        while i < b.len() && b[i] != ':' {
+            i += 1;
+        }
+        i += 1;
+        while i < b.len() && (b[i] == ' ' || b[i] == '\n' || b[i] == '\r' || b[i] == '\t') {
+            i += 1;
+        }
+        if i >= b.len() {
+            break;
+        }
+        if key == "job" || key.starts_with('_') {
+            // 跳过值
+        }
+        let mut val = String::new();
+        let mut is_str = false;
+        if b[i] == '"' {
+            is_str = true;
+            i += 1;
+            while i < b.len() && b[i] != '"' {
+                val.push(b[i]);
+                i += 1;
+            }
+            i += 1;
+        } else {
+            while i < b.len() && b[i] != ',' && b[i] != '}' && b[i] != '\n' {
+                val.push(b[i]);
+                i += 1;
+            }
+            val = val.trim().to_string();
+        }
+        if key == "job" || key.starts_with('_') {
+            continue;
+        }
+        if !is_str && (val == "true" || val == "false") {
+            if val == "true" {
+                out.push(format!("--{key}"));
+            }
+            continue;
+        }
+        if val.is_empty() {
+            continue;
+        }
+        out.push(format!("--{key}"));
+        out.push(val);
+    }
+    out
+}
+
 fn frame_path(dir: &Path, sub: &str, n: usize, ext: &str) -> PathBuf {
     dir.join(sub).join(format!("{n:06}.{ext}"))
 }
@@ -1451,6 +1525,18 @@ fn model_solid(
 /// 颜色从最近的高斯取（观测面），没有近邻的顶点标灰（不可见/推断面）。
 fn mesh_tex_cmd(argv: &[String]) {
     use trit_parts::mesh::{non_manifold_edges, surface_nets, write_ply_rgb};
+    // `--job file.json`：把作业参数接在命令行**之后**（`arg()` 取第一个匹配 ⇒ 命令行优先）
+    let merged: Vec<String> = match arg(argv, "--job") {
+        Some(p) => {
+            let job = load_job_args(std::path::Path::new(&p));
+            if !job.is_empty() {
+                println!("作业 {}：{} 个参数（命令行参数优先）", p, job.len());
+            }
+            argv.iter().cloned().chain(job).collect()
+        }
+        None => argv.to_vec(),
+    };
+    let argv: &[String] = &merged;
     use trit_parts::occ::selfsup_solid;
     use trit_parts::splat::build;
 
