@@ -18,6 +18,8 @@ pub struct Conv {
     pub scale: Vec<f32>,
     /// true = 前向用三值权重（STE 反传）；false = 原生 f32（用于梯度校验）。
     pub ternary: bool,
+    /// 膨胀率（3×3 核按 `dil` 步长取样）：感受野 = 2·dil·层数 + 1，算力不变。
+    pub dil: usize,
     // Adam 状态（一阶/二阶矩）
     mw: Vec<f32>,
     vw: Vec<f32>,
@@ -138,6 +140,7 @@ impl Conv {
             b: vec![0.0; cout],
             ternary: true,
             scale: vec![0.1; cout],
+            dil: 1,
             mw: vec![0.0; cout * cin * 9],
             vw: vec![0.0; cout * cin * 9],
             mb: vec![0.0; cout],
@@ -153,15 +156,16 @@ impl Conv {
     #[allow(clippy::needless_range_loop)] // 三重坐标循环，索引写法更直白
     pub fn forward(&self, x: &[Vec<f32>], w: usize, h: usize) -> Vec<Vec<f32>> {
         let mut out = vec![vec![0.0f32; w * h]; self.cout];
+        let d = self.dil as i32;
         for co in 0..self.cout {
             for y in 0..h {
                 for xx in 0..w {
                     let mut s = self.b[co];
                     for ci in 0..self.cin {
                         for dy in 0..3 {
-                            let yyi = y as i32 + dy as i32 - 1;
+                            let yyi = y as i32 + dy as i32 * d - d;
                             for dx in 0..3 {
-                                let xri = xx as i32 + dx as i32 - 1;
+                                let xri = xx as i32 + dx as i32 * d - d;
                                 let (yy, xr) = if self.circular {
                                     (
                                         yyi.rem_euclid(h as i32) as usize,
@@ -199,6 +203,7 @@ impl Conv {
         let mut dw = vec![0.0f32; self.w.len()];
         let mut db = vec![0.0f32; self.cout];
         let mut dscale = vec![0.0f32; self.cout];
+        let d = self.dil as i32;
         for co in 0..self.cout {
             let sc = self.scale[co];
             for y in 0..h {
@@ -212,9 +217,9 @@ impl Conv {
                     let mut z = 0.0f32;
                     for ci in 0..self.cin {
                         for dy in 0..3 {
-                            let yyi = y as i32 + dy as i32 - 1;
+                            let yyi = y as i32 + dy as i32 * d - d;
                             for dxk in 0..3 {
-                                let xri = xx as i32 + dxk as i32 - 1;
+                                let xri = xx as i32 + dxk as i32 * d - d;
                                 let (yy, xr) = if self.circular {
                                     (
                                         yyi.rem_euclid(h as i32) as usize,
@@ -583,6 +588,17 @@ impl Net {
         self.circular = on;
         for l in self.layers.iter_mut() {
             l.circular = on;
+        }
+    }
+
+    /// 全局膨胀率（含输出头）：感受野 = 2·dil·层数 + 1，算力不变。
+    pub fn set_dilation(&mut self, d: usize) {
+        let d = d.max(1);
+        for l in self.layers.iter_mut() {
+            l.dil = d;
+        }
+        for h in self.heads.iter_mut().flatten() {
+            h.dil = d;
         }
     }
 
@@ -1179,14 +1195,15 @@ impl Net {
         let mut out = String::new();
         let _ = writeln!(
             out,
-            "TPC6 {} {} {} {} {} {} {}",
+            "TPC7 {} {} {} {} {} {} {} {}",
             self.layers.len(),
             self.cond,
             self.linear_out as u8,
             self.circular as u8,
             self.highpass,
             self.nk,
-            self.heads.len()
+            self.heads.len(),
+            self.layers.first().map(|l| l.dil).unwrap_or(1)
         );
         for l in &self.layers {
             let _ = writeln!(out, "{} {}", l.cin, l.cout);
@@ -1271,37 +1288,51 @@ impl Net {
         let head = it.next();
         if !matches!(
             head,
-            Some("TPC1") | Some("TPC2") | Some("TPC3") | Some("TPC4") | Some("TPC5") | Some("TPC6")
+            Some("TPC1")
+                | Some("TPC2")
+                | Some("TPC3")
+                | Some("TPC4")
+                | Some("TPC5")
+                | Some("TPC6")
+                | Some("TPC7")
         ) {
-            return Err(format!("{}: 不是 TPC1..TPC5", path.display()));
+            return Err(format!("{}: 不是 TPC1..TPC7", path.display()));
         }
         let nl = take(&mut it, path, "层数")? as usize;
         let cond = take(&mut it, path, "cond")? as usize;
         let has_linear = matches!(
             head,
-            Some("TPC2") | Some("TPC3") | Some("TPC4") | Some("TPC5") | Some("TPC6")
+            Some("TPC2") | Some("TPC3") | Some("TPC4") | Some("TPC5") | Some("TPC6") | Some("TPC7")
         );
         let linear_out = has_linear && take(&mut it, path, "linear")? != 0.0;
         let has_circ = matches!(
             head,
-            Some("TPC3") | Some("TPC4") | Some("TPC5") | Some("TPC6")
+            Some("TPC3") | Some("TPC4") | Some("TPC5") | Some("TPC6") | Some("TPC7")
         );
         let circular = has_circ && take(&mut it, path, "circular")? != 0.0;
-        let has_hp = matches!(head, Some("TPC4") | Some("TPC5") | Some("TPC6"));
+        let has_hp = matches!(
+            head,
+            Some("TPC4") | Some("TPC5") | Some("TPC6") | Some("TPC7")
+        );
         let highpass = if has_hp {
             take(&mut it, path, "highpass")?
         } else {
             0.0
         };
-        let nk_hdr = if matches!(head, Some("TPC5") | Some("TPC6")) {
+        let nk_hdr = if matches!(head, Some("TPC5") | Some("TPC6") | Some("TPC7")) {
             take(&mut it, path, "nk")? as usize
         } else {
             0
         };
-        let nheads = if head == Some("TPC6") {
+        let nheads = if matches!(head, Some("TPC6") | Some("TPC7")) {
             take(&mut it, path, "nheads")? as usize
         } else {
             0
+        };
+        let dil = if head == Some("TPC7") {
+            (take(&mut it, path, "dilation")? as usize).max(1)
+        } else {
+            1
         };
         let mut layers = Vec::with_capacity(nl);
         for _ in 0..nl {
@@ -1411,6 +1442,7 @@ impl Net {
                 net.heads.push(Some(c));
             }
         }
+        net.set_dilation(dil);
         Ok(net)
     }
 }
@@ -1607,12 +1639,14 @@ mod tests {
     fn net_save_load_roundtrip() {
         let mut net = Net::new(2, &[4, 3], 11);
         net.set_bn(true);
+        net.set_dilation(2);
         let (w, h) = (5usize, 5usize);
         let x = vec![vec![0.4f32; w * h], vec![0.25f32; w * h]];
         let a = net.forward_x(&x, w, h);
         let p = std::env::temp_dir().join("tconv_roundtrip.tpc");
         net.save(&p).unwrap();
         let back = Net::load(&p).unwrap();
+        assert_eq!(back.layers[0].dil, 2, "膨胀率必须存进文件");
         let b = back.forward_x(&x, w, h);
         for (p, q) in a.iter().zip(&b) {
             assert!((p - q).abs() < 1e-5, "存读应逐位一致 {p} vs {q}");
@@ -1620,6 +1654,28 @@ mod tests {
         assert_eq!(back.cond, 0);
         assert!(!back.linear_out);
         let _ = std::fs::remove_file(p);
+    }
+
+    #[test]
+    fn dilation_widens_the_tap_spacing() {
+        // 单通道、单输出：输入中心放一个脉冲，dil=2 时只有 ±2 的抽头看得到它
+        let mut c = Conv::new(1, 1, 5);
+        c.ternary = false;
+        c.w.fill(1.0);
+        c.b.fill(0.0);
+        c.scale.fill(1.0);
+        let (w, h) = (7usize, 7usize);
+        let mut x = vec![vec![0.0f32; w * h]];
+        x[0][3 * w + 3] = 1.0;
+        let mut hit = |dil: usize, dx: i32, dy: i32| {
+            c.dil = dil;
+            let o = c.forward(&x, w, h);
+            o[0][((3 + dy) as usize) * w + (3 + dx) as usize]
+        };
+        assert_eq!(hit(1, 1, 0), 1.0, "dil=1 时 ±1 的抽头应命中");
+        assert_eq!(hit(2, 1, 0), 0.0, "dil=2 时 ±1 间距上不应有抽头");
+        assert_eq!(hit(2, 2, 0), 1.0, "dil=2 时 ±2 的抽头应命中");
+        assert_eq!(hit(2, 2, 2), 1.0, "对角线 ±2 也应命中");
     }
 
     #[test]

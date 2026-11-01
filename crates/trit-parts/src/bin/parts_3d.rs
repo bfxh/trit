@@ -2243,6 +2243,15 @@ fn tex_gen_cmd(argv: &[String]) {
             Some(p) => Net::load(p).unwrap_or_else(|e| fail(&e)),
             None => Net::new(2 + 2 * usize::from(cond_stats), &conv_hidden, seed),
         };
+        if let Some(d) = arg(argv, "--dil").and_then(|v| v.parse::<usize>().ok()) {
+            let file_dil = net.layers.first().map(|l| l.dil).unwrap_or(1);
+            if load_path.is_some() && d.max(1) != file_dil {
+                fail(&format!(
+                    "--dil {d} 与 checkpoint 里的膨胀率 {file_dil} 不一致（改它等于换模型）"
+                ));
+            }
+            net.set_dilation(d);
+        }
         net.set_bn(use_bn && load_path.is_none());
         // 可平铺纹理用循环填充：零填充会把边界抹平（接缝比 0.60）
         if argv.iter().any(|a| a == "--circ") {
@@ -2978,7 +2987,7 @@ fn usage() -> ! {
   parts-3d tex-conv  [--iters 20000] [--hidden 8,8] [--cond] [--size 64] [--adam] [--batch K] [--bn]
   parts-3d tex-gen   [--iters 200000] [--steps-t 50] [--size 64] [--hid 32] [--out <dir>]
                      [--conv 8,8] [--batch 4] [--adam] [--eps|--v] [--eps-space] [--diag]
-                     [--save w.tpc] [--load w.tpc] [--holdout-names A,B]
+                     [--dil N] [--save w.tpc] [--load w.tpc] [--holdout-names A,B]
   parts-3d look <图或目录>… [--out features.csv]"
     );
     std::process::exit(2);
