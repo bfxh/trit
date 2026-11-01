@@ -1443,6 +1443,25 @@ fn mesh_tex_cmd(argv: &[String]) {
         cell: g.cell,
     };
     let m = surface_nets(&sg);
+    let m = if argv.iter().any(|a| a == "--clean") {
+        let (c, st) = trit_parts::mesh::clean(&m);
+        println!(
+            "清理：面 {}→{}（退化 {}、重复 {}）| 非流形边 {}→{} | 边界边 {}→{} | 顶点 {}→{}",
+            st.faces_before,
+            st.faces_after,
+            st.degenerate,
+            st.duplicate,
+            st.nonmanifold_before,
+            st.nonmanifold_after,
+            st.boundary_before,
+            st.boundary_after,
+            st.verts_before,
+            st.verts_after
+        );
+        c
+    } else {
+        m
+    };
     // 给了贴图就走 OBJ + MTL（盒式投影 UV），否则维持原来的顶点色 PLY
     if let (Some(tex_p), Some(obj_p)) = (arg(argv, "--tex"), arg(argv, "--obj")) {
         let (tw, th, tpix) =

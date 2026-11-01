@@ -492,6 +492,184 @@ pub fn boundary_edges(m: &Mesh) -> usize {
     cnt.values().filter(|&&c| c == 1).count()
 }
 
+/// 被 >2 个面共用的边数（真正的「非流形边」；`non_manifold_edges` 把边界边也算进去，别混用）。
+pub fn multiface_edges(m: &Mesh) -> usize {
+    use std::collections::HashMap;
+    let mut cnt: HashMap<(u32, u32), usize> = HashMap::new();
+    for t in &m.tris {
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            let e = if a < b { (a, b) } else { (b, a) };
+            *cnt.entry(e).or_insert(0) += 1;
+        }
+    }
+    cnt.values().filter(|&&c| c > 2).count()
+}
+
+/// 清理统计（前/后对照）。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CleanStats {
+    pub verts_before: usize,
+    pub faces_before: usize,
+    pub degenerate: usize,
+    pub duplicate: usize,
+    pub nonmanifold_before: usize,
+    pub boundary_before: usize,
+    pub verts_after: usize,
+    pub faces_after: usize,
+    pub nonmanifold_after: usize,
+    pub boundary_after: usize,
+}
+
+fn face_area2(m: &Mesh, t: &[u32; 3]) -> f32 {
+    let a = m.verts[t[0] as usize];
+    let b = m.verts[t[1] as usize];
+    let c = m.verts[t[2] as usize];
+    let e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    let e2 = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    let n = [
+        e1[1] * e2[2] - e1[2] * e2[1],
+        e1[2] * e2[0] - e1[0] * e2[2],
+        e1[0] * e2[1] - e1[1] * e2[0],
+    ];
+    n[0] * n[0] + n[1] * n[1] + n[2] * n[2]
+}
+
+/// 梅沙清理：丢退化面、去重复面、按一环连通分量分裂非流形顶点。
+///
+/// 分裂规则：同一顶点周围的面，只有**共享一条恰好 2 面的边**才算连通；共边 ≥3 的面之间不连通
+/// ⇒ 两张仅在一条边上相切的曲面会各自拿到一份顶点副本（切片/薄壁处常见），分裂后该边不再被 >2 面共用。
+/// 副作用诚实记录在 [`CleanStats`] 里：分裂可能把「相切」变成两条边界边（不再闭合）。
+pub fn clean(m: &Mesh) -> (Mesh, CleanStats) {
+    use std::collections::{HashMap, HashSet};
+    let mut st = CleanStats {
+        verts_before: m.verts.len(),
+        faces_before: m.tris.len(),
+        nonmanifold_before: multiface_edges(m),
+        boundary_before: boundary_edges(m),
+        ..Default::default()
+    };
+    // 1) 丢退化面（重复索引或面积为零）+ 去重复面（顶点集合相同）
+    let mut seen: HashSet<[u32; 3]> = HashSet::new();
+    let mut tris: Vec<[u32; 3]> = Vec::with_capacity(m.tris.len());
+    for t in &m.tris {
+        if t[0] == t[1] || t[1] == t[2] || t[0] == t[2] || face_area2(m, t) < 1e-20 {
+            st.degenerate += 1;
+            continue;
+        }
+        let mut k = *t;
+        k.sort_unstable();
+        if !seen.insert(k) {
+            st.duplicate += 1;
+            continue;
+        }
+        tris.push(*t);
+    }
+    // 2) 边 → 面（只在当前保留的面里建）
+    let mut e2f: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
+    for (fi, t) in tris.iter().enumerate() {
+        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+            let e = if a < b { (a, b) } else { (b, a) };
+            e2f.entry(e).or_default().push(fi);
+        }
+    }
+    let mut v2f: HashMap<u32, Vec<usize>> = HashMap::new();
+    for (fi, t) in tris.iter().enumerate() {
+        for &v in t {
+            v2f.entry(v).or_default().push(fi);
+        }
+    }
+    // 3) 每个顶点：按「共享流形边」做并查集，非首分量拿副本
+    let mut verts = m.verts.clone();
+    let mut new_tris = tris.clone();
+    let mut split = 0usize;
+    let mut keys: Vec<u32> = v2f.keys().copied().collect();
+    keys.sort_unstable();
+    for v in keys {
+        let fs = &v2f[&v];
+        if fs.len() < 2 {
+            continue;
+        }
+        let mut parent: Vec<usize> = (0..fs.len()).collect();
+        fn find(p: &mut [usize], x: usize) -> usize {
+            if p[x] != x {
+                let r = find(p, p[x]);
+                p[x] = r;
+            }
+            p[x]
+        }
+        let local: HashMap<usize, usize> = fs.iter().enumerate().map(|(i, &f)| (f, i)).collect();
+        // 只走该顶点的邻面（O(度)），不要扫全部三角形（O(V·F) 在 10 万面上会卡死）
+        for (i, &fi) in fs.iter().enumerate() {
+            let t = &tris[fi];
+            for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
+                if a != v && b != v {
+                    continue;
+                }
+                let e = if a < b { (a, b) } else { (b, a) };
+                if let Some(faces) = e2f.get(&e)
+                    && faces.len() == 2
+                {
+                    let j = local[&faces[0]];
+                    if j == i {
+                        continue;
+                    }
+                    let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                    if ri != rj {
+                        parent[ri] = rj;
+                    }
+                }
+            }
+        }
+        // 每个根（按首次出现顺序）一个顶点：第一个用原 id，其余各建一份副本
+        let roots: Vec<usize> = (0..fs.len()).map(|i| find(&mut parent, i)).collect();
+        let mut root_id: HashMap<usize, u32> = HashMap::new();
+        for (i, &r) in roots.iter().enumerate() {
+            let id = *root_id.entry(r).or_insert_with(|| {
+                if i == 0 {
+                    v
+                } else {
+                    split += 1;
+                    verts.push(m.verts[v as usize]);
+                    (verts.len() - 1) as u32
+                }
+            });
+            if id != v {
+                let fi = fs[i];
+                for c in new_tris[fi].iter_mut() {
+                    if *c == v {
+                        *c = id;
+                    }
+                }
+            }
+        }
+    }
+    // 4) 压缩未引用顶点
+    let mut remap: HashMap<u32, u32> = HashMap::new();
+    let mut out_v: Vec<[f32; 3]> = Vec::with_capacity(verts.len());
+    for t in &new_tris {
+        for &v in t {
+            remap.entry(v).or_insert_with(|| {
+                out_v.push(verts[v as usize]);
+                (out_v.len() - 1) as u32
+            });
+        }
+    }
+    let out_t: Vec<[u32; 3]> = new_tris
+        .iter()
+        .map(|t| [remap[&t[0]], remap[&t[1]], remap[&t[2]]])
+        .collect();
+    let out = Mesh {
+        verts: out_v,
+        tris: out_t,
+    };
+    st.verts_after = out.verts.len();
+    st.faces_after = out.tris.len();
+    st.nonmanifold_after = multiface_edges(&out);
+    st.boundary_after = boundary_edges(&out);
+    let _ = split;
+    (out, st)
+}
+
 /// 写带顶点颜色的 ASCII PLY（`None` = 未观测，写成灰色 128）。
 pub fn write_ply_rgb(path: &Path, m: &Mesh, colors: &[Option<[u8; 3]>]) -> Result<(), String> {
     use std::fmt::Write as _;
@@ -586,6 +764,85 @@ mod tests {
         assert!(
             rel < 0.10,
             "体积 {got:.1} vs {want:.1}（相对误差 {rel:.3}）"
+        );
+    }
+
+    fn cube() -> Mesh {
+        // 单位立方体，8 顶点 12 面（外法线不保证，但拓扑闭合且流形）
+        let v = vec![
+            [0.0, 0.0, 0.0],
+            [1.0, 0.0, 0.0],
+            [1.0, 1.0, 0.0],
+            [0.0, 1.0, 0.0],
+            [0.0, 0.0, 1.0],
+            [1.0, 0.0, 1.0],
+            [1.0, 1.0, 1.0],
+            [0.0, 1.0, 1.0],
+        ];
+        let t = vec![
+            [0, 2, 1],
+            [0, 3, 2],
+            [4, 5, 6],
+            [4, 6, 7],
+            [0, 1, 5],
+            [0, 5, 4],
+            [1, 2, 6],
+            [1, 6, 5],
+            [2, 3, 7],
+            [2, 7, 6],
+            [3, 0, 4],
+            [3, 4, 7],
+        ];
+        Mesh { verts: v, tris: t }
+    }
+
+    #[test]
+    fn clean_is_noop_on_a_clean_mesh() {
+        let m = cube();
+        let (out, st) = clean(&m);
+        assert_eq!(st.nonmanifold_before, 0);
+        assert_eq!(st.boundary_before, 0);
+        assert_eq!(st.degenerate, 0);
+        assert_eq!(st.duplicate, 0);
+        assert_eq!(out.tris.len(), 12, "干净网格不该被改动");
+        assert_eq!(out.verts.len(), 8, "不该凭空复制顶点");
+        assert_eq!(st.nonmanifold_after, 0);
+        assert_eq!(st.boundary_after, 0);
+    }
+
+    #[test]
+    fn clean_drops_degenerate_and_duplicate_faces() {
+        let mut m = cube();
+        m.tris.push([0, 0, 1]); // 退化（重复索引）
+        m.tris.push([0, 2, 1]); // 与 [0,2,1] 重复
+        let (out, st) = clean(&m);
+        assert_eq!(st.degenerate, 1);
+        assert_eq!(st.duplicate, 1);
+        assert_eq!(out.tris.len(), 12);
+        assert_eq!(st.nonmanifold_after, 0);
+        assert_eq!(st.boundary_after, 0, "丢掉的是多余面，不应留洞");
+    }
+
+    #[test]
+    fn clean_splits_a_pinched_edge() {
+        // 三个面共用 ab 边：>=3 面 = 非流形；分裂后该边不再被 3 个面共用
+        let m = Mesh {
+            verts: vec![
+                [0.0, 0.0, 0.0],
+                [1.0, 0.0, 0.0],
+                [0.0, 1.0, 0.0],
+                [0.0, -1.0, 0.0],
+                [0.0, 0.0, 1.0],
+            ],
+            tris: vec![[0, 1, 2], [0, 1, 3], [0, 1, 4]],
+        };
+        assert_eq!(super::multiface_edges(&m), 1);
+        let (out, st) = clean(&m);
+        assert_eq!(st.nonmanifold_after, 0, "分裂后不应再有非流形边");
+        assert_eq!(out.tris.len(), 3, "不应丢面");
+        assert!(
+            st.boundary_after > 0,
+            "相切的第三片面会变成开口（如实记录）"
         );
     }
 
