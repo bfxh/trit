@@ -2100,7 +2100,7 @@ fn tex_gen_cmd(argv: &[String]) {
         / images.len() as f32;
     println!("训练图 {} 张，均值 {data_mean:.3}", images.len());
     // S6.3：材质类别（--labels <tsv: assetId\tclass>）→ 每张图的类索引
-    let film_k: usize = arg(argv, "--film")
+    let mut film_k: usize = arg(argv, "--film")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
     let mut img_class: Vec<Option<usize>> = vec![None; images.len()];
@@ -2154,23 +2154,27 @@ fn tex_gen_cmd(argv: &[String]) {
         );
     }
 
-    // --only-class k：只保留某一类（S6.3 的「每类独立模型」上界实验）
-    let images: Vec<Vec<f32>> =
-        match arg(argv, "--only-class").and_then(|v| v.parse::<usize>().ok()) {
-            Some(k) if film_k > 0 => {
-                let keep: Vec<usize> = (0..images.len())
-                    .filter(|&i| img_class[i] == Some(k))
-                    .collect();
-                if keep.len() < 20 {
-                    fail(&format!("--only-class {k} 只有 {} 张，太少", keep.len()));
-                }
-                let cls: Vec<Option<usize>> = keep.iter().map(|&i| img_class[i]).collect();
-                img_class = cls;
-                println!("只训类 {k}：{} 张", keep.len());
-                keep.iter().map(|&i| images[i].clone()).collect()
-            }
-            _ => images,
-        };
+    // --classes a,b：只保留这些类并重映射到 0..n（S6.3 的小规模对照）
+    let sel: Vec<usize> = arg(argv, "--classes")
+        .map(|v| v.split(',').filter_map(|x| x.trim().parse().ok()).collect())
+        .unwrap_or_default();
+    let images: Vec<Vec<f32>> = if sel.len() >= 2 && film_k > 0 {
+        let keep: Vec<usize> = (0..images.len())
+            .filter(|&i| img_class[i].is_some_and(|c| sel.contains(&c)))
+            .collect();
+        if keep.len() < 40 {
+            fail(&format!("--classes {sel:?} 只有 {} 张，太少", keep.len()));
+        }
+        img_class = keep
+            .iter()
+            .map(|&i| img_class[i].map(|c| sel.iter().position(|&s| s == c).unwrap()))
+            .collect();
+        film_k = sel.len();
+        println!("只训类 {sel:?}：{} 张（重映射 0..{}）", keep.len(), film_k);
+        keep.iter().map(|&i| images[i].clone()).collect()
+    } else {
+        images
+    };
 
     // 归一化：每张图减去自身均值、除以自身标准差（保留反归一化参数）
     let img_norm: Vec<(f32, f32)> = images
@@ -2252,6 +2256,11 @@ fn tex_gen_cmd(argv: &[String]) {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(1.0f32);
             println!("FiLM lr 倍数 {}", net.film_lr_mul);
+            // 每类一个输出头（共享主干）：把「逐类上界」的机制塞回单模型
+            if argv.iter().any(|a| a == "--heads") {
+                net.set_heads(film_k, seed);
+                println!("输出头：{film_k} 个（共享主干）");
+            }
             // 辅助分类损失：逼输出携带类别信息（FiLM 单独用会被逐点回归忽略）
             net.aux_w = arg(argv, "--aux")
                 .and_then(|v| v.parse().ok())

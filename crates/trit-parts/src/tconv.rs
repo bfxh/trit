@@ -412,6 +412,8 @@ pub struct Net {
     /// 诊断：上一批辅助头自己的 CE 与准确率。
     pub aux_ce: f32,
     pub aux_acc: f32,
+    /// 每类一个**输出头**（共享主干）；`None` 的类走基础输出层。
+    pub heads: Vec<Option<Conv>>,
 }
 
 impl Net {
@@ -440,7 +442,27 @@ impl Net {
             aux_w: 0.0,
             aux_ce: 0.0,
             aux_acc: 0.0,
+            heads: Vec::new(),
         }
+    }
+
+    /// 开「每类一个输出头」：共享主干，只多最后一层卷积（`nk` 个头）。
+    pub fn set_heads(&mut self, nk: usize, seed: u64) {
+        if self.layers.len() < 2 {
+            return;
+        }
+        let cin = self.layers[self.layers.len() - 2].cout;
+        self.heads = (0..nk)
+            .map(|k| Some(Conv::new(cin, 1, seed + 1000 + k as u64)))
+            .collect();
+        // 输出头与基础输出层同源初值会打架，这里让基础层退居「空类」
+    }
+
+    /// 取该类应使用的输出层（没有专属头就走基础层）。
+    fn out_layer(&self, class: Option<usize>) -> Option<&Conv> {
+        class
+            .and_then(|c| self.heads.get(c))
+            .and_then(|h| h.as_ref())
     }
 
     /// 开辅助分类头：作用在**最后一层隐特征**的全局池化上。
@@ -507,7 +529,14 @@ impl Net {
     pub fn forward_xc(&self, x: &[Vec<f32>], class: Option<usize>, w: usize, h: usize) -> Vec<f32> {
         let mut x = x.to_vec();
         for i in 0..self.layers.len() {
-            let mut y = self.layers[i].forward(&x, w, h);
+            let mut y = if i + 1 == self.layers.len() {
+                match self.out_layer(class) {
+                    Some(hd) => hd.forward(&x, w, h),
+                    None => self.layers[i].forward(&x, w, h),
+                }
+            } else {
+                self.layers[i].forward(&x, w, h)
+            };
             if let Some(f) = &self.films[i] {
                 let (g, bb) = (f.gamma(class), f.beta(class));
                 for (ch, v) in y.iter_mut().enumerate() {
@@ -614,6 +643,21 @@ impl Net {
             .iter()
             .map(|b| b.as_ref().map(|bb| vec![0.0; bb.beta.len()]))
             .collect();
+        let mut acc_hw: Vec<Option<Vec<f32>>> = self
+            .heads
+            .iter()
+            .map(|h| h.as_ref().map(|c| vec![0.0; c.w.len()]))
+            .collect();
+        let mut acc_hb: Vec<Option<Vec<f32>>> = self
+            .heads
+            .iter()
+            .map(|h| h.as_ref().map(|c| vec![0.0; c.b.len()]))
+            .collect();
+        let mut acc_hsc: Vec<Option<Vec<f32>>> = self
+            .heads
+            .iter()
+            .map(|h| h.as_ref().map(|c| vec![0.0; c.scale.len()]))
+            .collect();
         let (mut aux_ce_acc, mut aux_hit, mut aux_cnt) = (0.0f32, 0usize, 0usize);
         // 辅助分类头的梯度（w: nk×c，b: nk）
         let mut acc_aw: Vec<f32> = self
@@ -646,7 +690,14 @@ impl Net {
             let mut film_state: Vec<Option<FilmState>> = Vec::new();
             let mut x = maps_in.clone();
             for li in 0..self.layers.len() {
-                let mut y = self.layers[li].forward(&x, w, h);
+                let mut y = if li + 1 == self.layers.len() {
+                    match self.out_layer(*class) {
+                        Some(hd) => hd.forward(&x, w, h),
+                        None => self.layers[li].forward(&x, w, h),
+                    }
+                } else {
+                    self.layers[li].forward(&x, w, h)
+                };
                 let mut fs = None;
                 if let Some(f) = &self.films[li] {
                     let pre = y.clone();
@@ -843,6 +894,32 @@ impl Net {
                         let _ = (lo, hi);
                     }
                 }
+                let head_hit = if li + 1 == self.layers.len()
+                    && let Some(c) = *class
+                    && let Some(hd) = self.heads.get(c).and_then(|h| h.as_ref())
+                {
+                    let (dx, dw, db, dsc) = hd.backward(&ins[li], w, h, &d);
+                    if let (Some(aw), Some(ab), Some(asc)) =
+                        (acc_hw[c].as_mut(), acc_hb[c].as_mut(), acc_hsc[c].as_mut())
+                    {
+                        for (a, g) in aw.iter_mut().zip(&dw) {
+                            *a += g;
+                        }
+                        for (a, g) in ab.iter_mut().zip(&db) {
+                            *a += g;
+                        }
+                        for (a, g) in asc.iter_mut().zip(&dsc) {
+                            *a += g;
+                        }
+                    }
+                    Some(dx)
+                } else {
+                    None
+                };
+                if let Some(dx) = head_hit {
+                    d = dx;
+                    continue;
+                }
                 let (dx, dw, db, dsc) = self.layers[li].backward(&ins[li], w, h, &d);
                 for (a, g) in acc_w[li].iter_mut().zip(&dw) {
                     *a += g;
@@ -859,6 +936,16 @@ impl Net {
         if aux_cnt > 0 {
             self.aux_ce = aux_ce_acc / aux_cnt as f32;
             self.aux_acc = aux_hit as f32 / aux_cnt as f32;
+        }
+        for c in 0..self.heads.len() {
+            if let (Some(hd), Some(aw), Some(ab), Some(asc)) = (
+                self.heads[c].as_mut(),
+                acc_hw[c].as_ref(),
+                acc_hb[c].as_ref(),
+                acc_hsc[c].as_ref(),
+            ) {
+                hd.apply(aw, ab, asc, lr, adam);
+            }
         }
         if let Some(a) = self.aux.as_mut() {
             for (w, g) in a.w.iter_mut().zip(&acc_aw) {
@@ -907,13 +994,14 @@ impl Net {
         let mut out = String::new();
         let _ = writeln!(
             out,
-            "TPC5 {} {} {} {} {} {}",
+            "TPC6 {} {} {} {} {} {} {}",
             self.layers.len(),
             self.cond,
             self.linear_out as u8,
             self.circular as u8,
             self.highpass,
-            self.nk
+            self.nk,
+            self.heads.len()
         );
         for l in &self.layers {
             let _ = writeln!(out, "{} {}", l.cin, l.cout);
@@ -961,6 +1049,24 @@ impl Net {
                 }
             }
         }
+        // 输出头：数量 + 每个头（启用=1 + cin/cout + w/b/scale）
+        let _ = writeln!(out, "HEADS {}", self.heads.len());
+        for h in &self.heads {
+            match h {
+                Some(c) => {
+                    let _ = writeln!(out, "1 {} {}", c.cin, c.cout);
+                    for v in [&c.w, &c.b, &c.scale] {
+                        for x in v.iter() {
+                            let _ = write!(out, "{x} ");
+                        }
+                        let _ = writeln!(out);
+                    }
+                }
+                None => {
+                    let _ = writeln!(out, "0 0 0");
+                }
+            }
+        }
         std::fs::write(path, out).map_err(|e| format!("{}: {e}", path.display()))
     }
 
@@ -980,7 +1086,7 @@ impl Net {
         let head = it.next();
         if !matches!(
             head,
-            Some("TPC1") | Some("TPC2") | Some("TPC3") | Some("TPC4") | Some("TPC5")
+            Some("TPC1") | Some("TPC2") | Some("TPC3") | Some("TPC4") | Some("TPC5") | Some("TPC6")
         ) {
             return Err(format!("{}: 不是 TPC1..TPC5", path.display()));
         }
@@ -988,19 +1094,27 @@ impl Net {
         let cond = take(&mut it, path, "cond")? as usize;
         let has_linear = matches!(
             head,
-            Some("TPC2") | Some("TPC3") | Some("TPC4") | Some("TPC5")
+            Some("TPC2") | Some("TPC3") | Some("TPC4") | Some("TPC5") | Some("TPC6")
         );
         let linear_out = has_linear && take(&mut it, path, "linear")? != 0.0;
-        let has_circ = matches!(head, Some("TPC3") | Some("TPC4") | Some("TPC5"));
+        let has_circ = matches!(
+            head,
+            Some("TPC3") | Some("TPC4") | Some("TPC5") | Some("TPC6")
+        );
         let circular = has_circ && take(&mut it, path, "circular")? != 0.0;
-        let has_hp = matches!(head, Some("TPC4") | Some("TPC5"));
+        let has_hp = matches!(head, Some("TPC4") | Some("TPC5") | Some("TPC6"));
         let highpass = if has_hp {
             take(&mut it, path, "highpass")?
         } else {
             0.0
         };
-        let nk_hdr = if head == Some("TPC5") {
+        let nk_hdr = if matches!(head, Some("TPC5") | Some("TPC6")) {
             take(&mut it, path, "nk")? as usize
+        } else {
+            0
+        };
+        let nheads = if head == Some("TPC6") {
+            take(&mut it, path, "nheads")? as usize
         } else {
             0
         };
@@ -1055,6 +1169,7 @@ impl Net {
             aux_w: 0.0,
             aux_ce: 0.0,
             aux_acc: 0.0,
+            heads: Vec::new(),
         };
         net.set_circular(circular);
         if nk_hdr > 0 {
@@ -1078,6 +1193,33 @@ impl Net {
                         *v = take(&mut it, path, "Film b")?;
                     }
                 }
+            }
+        }
+        if nheads > 0 {
+            if it.next() != Some("HEADS") {
+                return Err(format!("{}: 缺 HEADS 段", path.display()));
+            }
+            let _n = take(&mut it, path, "HEADS 数量")? as usize;
+            net.heads = Vec::with_capacity(nheads);
+            for _ in 0..nheads {
+                let on = take(&mut it, path, "head on")? != 0.0;
+                let cin = take(&mut it, path, "head cin")? as usize;
+                let cout = take(&mut it, path, "head cout")? as usize;
+                if !on {
+                    net.heads.push(None);
+                    continue;
+                }
+                let mut c = Conv::new(cin, cout, 1);
+                for v in c.w.iter_mut() {
+                    *v = take(&mut it, path, "head w")?;
+                }
+                for v in c.b.iter_mut() {
+                    *v = take(&mut it, path, "head b")?;
+                }
+                for v in c.scale.iter_mut() {
+                    *v = take(&mut it, path, "head scale")?;
+                }
+                net.heads.push(Some(c));
             }
         }
         Ok(net)
