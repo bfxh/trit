@@ -22,7 +22,13 @@ const ALL_POINTS: [CrashPoint; 5] = [
 
 fn temp_path(tag: &str) -> PathBuf {
     let mut path = std::env::temp_dir();
-    path.push(format!("trit-orch-crash-{tag}-{}.json", std::process::id()));
+    // 同 tag 会被两个测试同时用到（逐点扫描与单点用例），并行时共用一个文件就会互相删；
+    // libtest 保证同时在跑的用例占不同线程，所以带上线程号即可隔离。
+    path.push(format!(
+        "trit-orch-crash-{tag}-{}-{:?}.json",
+        std::process::id(),
+        std::thread::current().id()
+    ));
     let _ = std::fs::remove_file(&path);
     path
 }

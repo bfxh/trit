@@ -289,7 +289,7 @@ impl LedgerStore {
 
     /// 原子替换式保存。
     pub fn save(&self, ledger: &Ledger) -> Result<(), Error> {
-        let temporary = self.path.with_extension("tmp");
+        let temporary = self.temporary_path();
         if let Some(parent) = self.path.parent()
             && !parent.as_os_str().is_empty()
         {
@@ -301,9 +301,30 @@ impl LedgerStore {
             // Windows 不允许 rename 覆盖已存在文件；先删再改名，窗口期由 tmp 文件兜底。
             Err(_) => {
                 let _ = std::fs::remove_file(&self.path);
-                std::fs::rename(&temporary, &self.path).map_err(|error| self.io(error))
+                std::fs::rename(&temporary, &self.path).map_err(|error| {
+                    let _ = std::fs::remove_file(&temporary);
+                    self.io(error)
+                })
             }
         }
+    }
+
+    /// 每次保存都用进程内唯一的中转名。
+    ///
+    /// 只由目标路径派生（`path.with_extension("tmp")`）时，两个指向同一台账文件的
+    /// `LedgerStore` 会写同一个 tmp 再各自 rename：一方可能把另一方的内容搬进自己的
+    /// 路径，或第二次 rename 因源文件已消失而报错。调用方仍须自己串行化同一台账
+    /// （§1.1 L3 口径不变），这里只保证「不会因同名中转而串内容」。
+    fn temporary_path(&self) -> PathBuf {
+        static SAVE_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = SAVE_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let stem = self
+            .path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "ledger".into());
+        self.path
+            .with_file_name(format!("{stem}.{}.{}.tmp", std::process::id(), seq))
     }
 
     fn io(&self, error: std::io::Error) -> Error {

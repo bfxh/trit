@@ -79,6 +79,70 @@ fn ledger_roundtrips_through_disk() {
     let _ = std::fs::remove_file(&path);
 }
 
+/// 同一台账文件被两个 store 并发保存：中转名必须每次唯一，否则一方会把另一方的字节
+/// rename 进自己的路径，或第二次 rename 因源文件已消失而报错。
+#[test]
+fn concurrent_saves_on_one_path_never_steal_each_others_bytes() {
+    use std::sync::{Arc, Barrier};
+
+    let path = temp_path("same-path");
+    let reader = LedgerStore::new(&path);
+    let mut big = Ledger::new();
+    for name in ["a", "b", "c", "d", "e"] {
+        big.prepare(name, 0, name, 1).unwrap();
+    }
+    let mut small = Ledger::new();
+    small.prepare("z", 0, "z", 1).unwrap();
+
+    for round in 0..24 {
+        let barrier = Arc::new(Barrier::new(2));
+        let handles: Vec<_> = [big.clone(), small.clone()]
+            .into_iter()
+            .map(|ledger| {
+                let barrier = Arc::clone(&barrier);
+                let store = LedgerStore::new(path.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    store.save(&ledger)
+                })
+            })
+            .collect();
+        for handle in handles {
+            let result = handle
+                .join()
+                .unwrap_or_else(|_| panic!("ORCH_LEDGER_TMP_UNIQUE: 第 {round} 轮线程 panic"));
+            result.unwrap_or_else(|error| {
+                panic!("ORCH_LEDGER_TMP_UNIQUE: 第 {round} 轮同路径保存不该失败: {error}")
+            });
+        }
+        let loaded = reader.load().unwrap_or_else(|error| {
+            panic!("ORCH_LEDGER_TMP_UNIQUE: 第 {round} 轮载入失败: {error}")
+        });
+        let present: Vec<&str> = ["a", "b", "c", "d", "e", "z"]
+            .iter()
+            .filter(|name| loaded.attempt(name).is_some())
+            .copied()
+            .collect();
+        assert!(
+            present.len() == 5 || present.len() == 1,
+            "ORCH_LEDGER_TMP_UNIQUE: 第 {round} 轮落盘不是任一方的完整台账: {present:?}"
+        );
+    }
+
+    let stem = path.file_name().unwrap().to_string_lossy().into_owned();
+    let stray: Vec<String> = std::fs::read_dir(path.parent().unwrap())
+        .unwrap()
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(&stem) && name.ends_with(".tmp"))
+        .collect();
+    assert!(
+        stray.is_empty(),
+        "ORCH_LEDGER_TMP_CLEANUP: 保存后不该留下中转文件: {stray:?}"
+    );
+    let _ = std::fs::remove_file(&path);
+}
+
 #[test]
 fn corrupt_ledger_is_reported_not_guessed() {
     let path = temp_path("corrupt");
