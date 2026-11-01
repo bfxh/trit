@@ -1505,6 +1505,11 @@ fn mesh_tex_cmd(argv: &[String]) {
             trit_parts::data::write_rgb(&png_p, a.w, a.h, &a.img).unwrap_or_else(|e| fail(&e));
             trit_parts::uv::write_obj(&obj_path, &m, &a.uv, &format!("{stem}.png"))
                 .unwrap_or_else(|e| fail(&e));
+            let st = trit_parts::atlas::uv_stats(&m, &a);
+            println!(
+                "UV 密度：中位 {:.0} texel²/单位²，p05 {:.0} / p95 {:.0}（spread {:.2}）",
+                st.median, st.p05, st.p95, st.spread
+            );
             println!(
                 "OBJ {}：{} 顶点 / {} 三角形，**图集** {}×{}（{} 个 chart，法线聚类 {:.0}°）⇒ {}",
                 obj_path.display(),
