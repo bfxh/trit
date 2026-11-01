@@ -294,6 +294,115 @@ fn mesh_single(argv: &[String]) {
         boundary_edges(&m),
         out.display()
     );
+
+    if let Some(ip) = arg(argv, "--inst").map(PathBuf::from) {
+        let split_dir = PathBuf::from(arg(argv, "--split-dir").unwrap_or_else(|| ".".to_string()));
+        let min_tris: usize = arg(argv, "--min-tris")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10);
+        split_mesh_by_instances(&m, &cam, &ip, w, h, &split_dir, min_tris);
+    }
+}
+
+/// 把网格按**源视角的 2D 实例图**切片：每个顶点投回图像取最近像素的实例 id，
+/// 每个面取三顶点的多数票；按 id 分组重映射顶点写成独立 PLY。
+fn split_mesh_by_instances(
+    m: &trit_parts::mesh::Mesh,
+    cam: &trit_parts::geo::Camera,
+    inst_path: &Path,
+    w: usize,
+    h: usize,
+    out_dir: &Path,
+    min_tris: usize,
+) {
+    use std::collections::BTreeMap;
+    let (inst, shape) = trit_parts::data::read_npy_i32(inst_path).unwrap_or_else(|e| panic!("{e}"));
+    if shape.len() != 2 || shape[1] != w || shape[0] != h {
+        panic!(
+            "实例图 {}×{} 与图像 {w}×{h} 不一致",
+            shape.get(1).copied().unwrap_or(0),
+            shape.first().copied().unwrap_or(0)
+        );
+    }
+    // 顶点 → 实例（0 = 未命中/背景）
+    let vid: Vec<u32> = m
+        .verts
+        .iter()
+        .map(|p| match cam.project(*p) {
+            Some((u, v, _)) => {
+                let (ux, vy) = (u.round(), v.round());
+                if ux < 0.0 || vy < 0.0 || ux >= w as f64 || vy >= h as f64 {
+                    0
+                } else {
+                    inst[vy as usize * w + ux as usize].max(0) as u32
+                }
+            }
+            None => 0,
+        })
+        .collect();
+    let mut groups: BTreeMap<u32, Vec<[u32; 3]>> = BTreeMap::new();
+    for t in &m.tris {
+        let (a, b, c) = (vid[t[0] as usize], vid[t[1] as usize], vid[t[2] as usize]);
+        let id = if a == b || a == c {
+            a
+        } else if b == c {
+            b
+        } else {
+            0
+        };
+        groups.entry(id).or_default().push(*t);
+    }
+    std::fs::create_dir_all(out_dir).ok();
+    let mut written = 0usize;
+    let mut skipped = 0usize;
+    let mut sizes: Vec<usize> = Vec::new();
+    for (id, tris) in &groups {
+        if *id == 0 {
+            continue;
+        }
+        if tris.len() < min_tris {
+            skipped += 1;
+            continue;
+        }
+        let mut remap: std::collections::HashMap<u32, u32> = std::collections::HashMap::new();
+        let mut verts: Vec<[f32; 3]> = Vec::new();
+        let mut out_tris: Vec<[u32; 3]> = Vec::with_capacity(tris.len());
+        for t in tris {
+            let mut nt = [0u32; 3];
+            for (k, &v) in t.iter().enumerate() {
+                let nv = *remap.entry(v).or_insert_with(|| {
+                    verts.push(m.verts[v as usize]);
+                    verts.len() as u32 - 1
+                });
+                nt[k] = nv;
+            }
+            out_tris.push(nt);
+        }
+        let part = trit_parts::mesh::Mesh {
+            verts,
+            tris: out_tris,
+        };
+        let p = out_dir.join(format!("part_{id:03}.ply"));
+        trit_parts::mesh::write_ply(&p, &part).unwrap_or_else(|e| panic!("{e}"));
+        written += 1;
+        sizes.push(tris.len());
+    }
+    sizes.sort_unstable();
+    println!(
+        "部件切片：{} 个（跳过 <{min_tris} 面的 {} 个；未归属面 {}）→ {}",
+        written,
+        skipped,
+        groups.get(&0).map(Vec::len).unwrap_or(0),
+        out_dir.display()
+    );
+    if let Some(mid) = sizes.get(sizes.len() / 2) {
+        println!(
+            "每部件面数：最小 {} / 中位 {} / 最大 {}",
+            sizes.first().copied().unwrap_or(0),
+            mid,
+            sizes.last().copied().unwrap_or(0)
+        );
+    }
 }
 
 fn eval(argv: &[String]) {
