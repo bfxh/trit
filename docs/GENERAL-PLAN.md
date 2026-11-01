@@ -1830,3 +1830,24 @@ manifest 只有 `kind ∈ {part_cube, cylinder, sphere, torus}`，无任何 mate
 
 **局限（不掩饰）**：训练与留出都来自**合成渲染**（同一材质预设、同一光照套路），换真实照片或换渲染器不保证；
 特征是手工描述量、不是卷积学出来的；`material-fit` 只吃 CSV，没有端到端推理命令。
+
+### 6.65 材质分类器的推理命令与自动模式（2026-11-01）
+
+**新增**
+1. `material-fit --out model.txt` 落模型（λ + 每特征 μ/σ + 每类权重）。
+2. `material-predict --model model.txt --scene <dir> [--frames 0] [--out csv]`：逐部件预测材质 + margin。
+3. `mesh-tex … --style-by-material "wood=cel:1" --material-model model.txt`：**忽略 manifest 材质，改用分类器**，
+   （没有 `--material-model` 时仍走 manifest 的权威映射）。
+
+**验证**
+- **部件级留出**（12 个留出场景、帧 0）：**82/83 = 98.8%**，唯一错误是 metal→stone；margin 中位 **1.683**。
+- **端到端一致性**（分类器模式 vs manifest 模式，同场景同参数）：
+
+| 场景 | 清单材质 | 分类器模式三角形归属 | 清单模式三角形归属 | 改写纹素 |
+|---|---|---|---|---|
+| scene0010 | wood 2 / fabric 2 / stone 5 / metal 1 | 28,810 / 11,456 / 90,744 / 8,970（未知 16） | **完全相同** | [31,357, 0,0,0,0] |
+| scene0015 | wood 4 / metal 3 / stone 2 / fabric 1 | 26,514 / 39,066 / 35,724 / 11,538（未知 90） | **完全相同** | [30,540, 0,0,0,0] |
+
+- scene0005（无 wood 部件）预测 4 个部件都不含 wood ⇒ 改写纹素 `[0,0,0,0,0]`，符合预期。
+
+**局限**：模型来自合成渲染（见 §6.64）；推理仍需 seg（真实照片要先过部件分割）；「未知类」仍来自三顶点类别分裂。

@@ -1583,6 +1583,27 @@ fn mesh_tex_cmd(argv: &[String]) {
                     styles[k] = p.style(t.parse::<f32>().unwrap_or(1.0));
                 }
                 // 顶点 → 部件号（多视角投影投票）
+                // 有 --material-model 时优先用分类器预测（真实数据没有 manifest 材质也能用）
+                let pred = arg(argv, "--material-model").map(|mp| {
+                    let mm = load_material_model(std::path::Path::new(&mp));
+                    let min_px: usize = arg(argv, "--min-px")
+                        .and_then(|v| v.parse().ok())
+                        .unwrap_or(200);
+                    let mut map: std::collections::HashMap<u32, usize> =
+                        std::collections::HashMap::new();
+                    for (id, feats) in part_features_in(&scene, 0, min_px) {
+                        let sc = mm.scores(&feats);
+                        let mut best = (f32::NEG_INFINITY, 0usize);
+                        for (k, v) in sc.iter().enumerate() {
+                            if *v > best.0 {
+                                best = (*v, k);
+                            }
+                        }
+                        map.insert(id, best.1);
+                    }
+                    println!("材质分类器：{} 个部件（帧 0）", map.len());
+                    map
+                });
                 let txt =
                     std::fs::read_to_string(scene.join("manifest.json")).unwrap_or_else(|e| {
                         fail(&format!(
@@ -1591,6 +1612,11 @@ fn mesh_tex_cmd(argv: &[String]) {
                     });
                 let by_pass = materials_by_pass(&txt);
                 let mat_of = |id: u32| -> u8 {
+                    if let Some(p) = &pred
+                        && let Some(k) = p.get(&id)
+                    {
+                        return *k as u8;
+                    }
                     by_pass
                         .get(id as usize)
                         .and_then(|m| m.as_ref())
@@ -2359,6 +2385,71 @@ fn look_vec(l: &trit_parts::look::Look) -> Vec<f32> {
     ]
 }
 
+/// 取一帧里所有可见部件（像素数 ≥ min_px）的 22 维特征：`(部件号, 特征)`。
+/// 掩码外填该部件均值色，避免背景污染特征。
+fn part_features_in(scene: &Path, frame: usize, min_px: usize) -> Vec<(u32, Vec<f32>)> {
+    let (ids, shape) = trit_parts::data::read_npy_i32(&frame_path(scene, "seg", frame, "npy"))
+        .unwrap_or_else(|e| fail(&e));
+    let (rgbw, rgbh, rgb) = trit_parts::data::read_rgb(&frame_path(scene, "rgb", frame, "png"))
+        .unwrap_or_else(|e| fail(&e));
+    let (h, w) = (shape[0], shape[1]);
+    if (w, h) != (rgbw, rgbh) {
+        fail("seg 与 rgb 尺寸不一致");
+    }
+    let mut present: std::collections::BTreeMap<u32, (usize, usize, usize, usize, usize)> =
+        std::collections::BTreeMap::new();
+    for y in 0..h {
+        for x in 0..w {
+            let id = ids[y * w + x];
+            if id <= 0 {
+                continue;
+            }
+            let e = present.entry(id as u32).or_insert((x, y, x, y, 0));
+            e.0 = e.0.min(x);
+            e.1 = e.1.min(y);
+            e.2 = e.2.max(x);
+            e.3 = e.3.max(y);
+            e.4 += 1;
+        }
+    }
+    let mut out = Vec::new();
+    for (id, (x0, y0, x1, y1, cnt)) in present {
+        if cnt < min_px {
+            continue;
+        }
+        let mut mean = [0.0f32; 3];
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                if ids[y * w + x] == id as i32 {
+                    for c in 0..3 {
+                        mean[c] += rgb[(y * w + x) * 3 + c];
+                    }
+                }
+            }
+        }
+        for m in mean.iter_mut() {
+            *m /= cnt as f32;
+        }
+        let (cw, ch) = (x1 - x0 + 1, y1 - y0 + 1);
+        let mut crop = vec![0.0f32; cw * ch * 3];
+        for y in 0..ch {
+            for x in 0..cw {
+                let inside = ids[(y0 + y) * w + x0 + x] == id as i32;
+                for c in 0..3 {
+                    crop[(y * cw + x) * 3 + c] = if inside {
+                        rgb[((y0 + y) * w + x0 + x) * 3 + c]
+                    } else {
+                        mean[c]
+                    };
+                }
+            }
+        }
+        let l = trit_parts::look::analyze(&crop, cw, ch);
+        out.push((id, look_vec(&l)));
+    }
+    out
+}
+
 /// `material-data --scene <dir> --frames 0,1,2 --out csv [--min-px 200]`：
 /// 按 seg 取每个部件的**掩码裁剪**，算 look 的 22 个描述量 + manifest 材质标签，写 CSV（训练用）。
 fn material_data_cmd(argv: &[String]) {
@@ -2381,72 +2472,17 @@ fn material_data_cmd(argv: &[String]) {
     csv.push('\n');
     let mut n = 0usize;
     for &fr in &frames {
-        let (ids, shape) = trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", fr, "npy"))
-            .unwrap_or_else(|e| fail(&e));
-        let (rgbw, rgbh, rgb) = trit_parts::data::read_rgb(&frame_path(&scene, "rgb", fr, "png"))
-            .unwrap_or_else(|e| fail(&e));
-        let (h, w) = (shape[0], shape[1]);
-        if (w, h) != (rgbw, rgbh) {
-            fail("seg 与 rgb 尺寸不一致");
-        }
-        let mut present: std::collections::BTreeMap<u32, (usize, usize, usize, usize, usize)> =
-            std::collections::BTreeMap::new();
-        for y in 0..h {
-            for x in 0..w {
-                let id = ids[y * w + x];
-                if id <= 0 {
-                    continue;
-                }
-                let e = present.entry(id as u32).or_insert((x, y, x, y, 0));
-                e.0 = e.0.min(x);
-                e.1 = e.1.min(y);
-                e.2 = e.2.max(x);
-                e.3 = e.3.max(y);
-                e.4 += 1;
-            }
-        }
-        for (id, (x0, y0, x1, y1, cnt)) in present {
-            if cnt < min_px {
-                continue;
-            }
+        for (id, feats) in part_features_in(&scene, fr, min_px) {
             let Some(mat) = by_pass.get(id as usize).and_then(|m| m.clone()) else {
                 continue;
             };
-            let mut mean = [0.0f32; 3];
-            for y in y0..=y1 {
-                for x in x0..=x1 {
-                    if ids[y * w + x] == id as i32 {
-                        for c in 0..3 {
-                            mean[c] += rgb[(y * w + x) * 3 + c];
-                        }
-                    }
-                }
-            }
-            for m in mean.iter_mut() {
-                *m /= cnt as f32;
-            }
-            let (cw, ch) = (x1 - x0 + 1, y1 - y0 + 1);
-            let mut crop = vec![0.0f32; cw * ch * 3];
-            for y in 0..ch {
-                for x in 0..cw {
-                    let inside = ids[(y0 + y) * w + x0 + x] == id as i32;
-                    for c in 0..3 {
-                        crop[(y * cw + x) * 3 + c] = if inside {
-                            rgb[((y0 + y) * w + x0 + x) * 3 + c]
-                        } else {
-                            mean[c]
-                        };
-                    }
-                }
-            }
-            let l = trit_parts::look::analyze(&crop, cw, ch);
             let name = scene
                 .file_name()
                 .and_then(|x| x.to_str())
                 .unwrap_or("scene")
                 .to_string();
             csv.push_str(&format!("{name},{fr},{id},{mat}"));
-            for v in look_vec(&l) {
+            for v in feats {
                 csv.push_str(&format!(",{v:.6}"));
             }
             csv.push('\n');
@@ -2455,6 +2491,109 @@ fn material_data_cmd(argv: &[String]) {
     }
     std::fs::write(&out, csv).unwrap_or_else(|e| fail(&format!("{}: {e}", out.display())));
     println!("material-data：{n} 个「帧×部件」样本 → {}", out.display());
+}
+
+/// 材质模型（`material-fit --out` 写出的文本）。
+struct MaterialModel {
+    mu: Vec<f32>,
+    sd: Vec<f32>,
+    /// 每类权重：`w[k][0]` 是截距，其后是特征权重。
+    w: Vec<Vec<f32>>,
+}
+
+fn load_material_model(path: &Path) -> MaterialModel {
+    let txt =
+        std::fs::read_to_string(path).unwrap_or_else(|e| fail(&format!("{}: {e}", path.display())));
+    let mut mu = Vec::new();
+    let mut sd = Vec::new();
+    let mut w: Vec<Vec<f32>> = Vec::new();
+    for line in txt.lines() {
+        let p: Vec<&str> = line.split_whitespace().collect();
+        match p.first().copied() {
+            Some("mu") if p.len() >= 3 => mu.push(p[2].parse().unwrap_or(0.0)),
+            Some("sd") if p.len() >= 3 => sd.push(p[2].parse().unwrap_or(1.0)),
+            Some("w") if p.len() >= 4 => {
+                let (k, j, v): (usize, usize, f32) = (
+                    p[1].parse().unwrap_or(0),
+                    p[2].parse().unwrap_or(0),
+                    p[3].parse().unwrap_or(0.0),
+                );
+                while w.len() <= k {
+                    w.push(Vec::new());
+                }
+                if w[k].len() <= j {
+                    w[k].resize(j + 1, 0.0);
+                }
+                w[k][j] = v;
+            }
+            _ => {}
+        }
+    }
+    if mu.is_empty() || w.is_empty() {
+        fail("模型文件不完整（缺 mu 或 w）");
+    }
+    MaterialModel { mu, sd, w }
+}
+
+impl MaterialModel {
+    fn scores(&self, x: &[f32]) -> Vec<f32> {
+        self.w
+            .iter()
+            .map(|wk| {
+                let mut s = wk.first().copied().unwrap_or(0.0);
+                for (j, v) in x.iter().enumerate() {
+                    let z = (v - self.mu[j]) / self.sd[j].max(1e-6);
+                    s += wk.get(j + 1).copied().unwrap_or(0.0) * z;
+                }
+                s
+            })
+            .collect()
+    }
+}
+
+/// `material-predict --model <txt> --scene <dir> [--frames 0] [--min-px 200] [--out csv]`：
+/// 逐部件猜材质（真实数据没有 manifest 时用）；打印每部件预测与 margin。
+fn material_predict_cmd(argv: &[String]) {
+    const MATS: [&str; 4] = ["wood", "metal", "stone", "fabric"];
+    let model = PathBuf::from(arg(argv, "--model").unwrap_or_else(|| usage()));
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let frames: Vec<usize> = arg(argv, "--frames")
+        .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
+        .unwrap_or_else(|| vec![0]);
+    let min_px: usize = arg(argv, "--min-px")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(200);
+    let m = load_material_model(&model);
+    let mut csv = String::from("frame,part,material,margin\n");
+    for &fr in &frames {
+        for (id, feats) in part_features_in(&scene, fr, min_px) {
+            let sc = m.scores(&feats);
+            let mut best = (f32::NEG_INFINITY, 0usize);
+            let mut second = f32::NEG_INFINITY;
+            for (k, v) in sc.iter().enumerate() {
+                if *v > best.0 {
+                    second = best.0;
+                    best = (*v, k);
+                } else if *v > second {
+                    second = *v;
+                }
+            }
+            println!(
+                "帧 {fr} 部件 {id}: {} (margin {:.3})",
+                MATS[best.1],
+                best.0 - second
+            );
+            csv.push_str(&format!(
+                "{fr},{id},{},{:.4}\n",
+                MATS[best.1],
+                best.0 - second
+            ));
+        }
+    }
+    if let Some(p) = arg(argv, "--out") {
+        std::fs::write(&p, csv).unwrap_or_else(|e| fail(&format!("{p}: {e}")));
+        println!("写出 {p}");
+    }
 }
 
 /// `material-fit --csv <csv> --holdout-every 5 --lambda 1 [--out model.txt]`：
@@ -3768,6 +3907,7 @@ fn main() {
         Some("tex-quilt") => tex_quilt_cmd(&argv),
         Some("material-data") => material_data_cmd(&argv),
         Some("material-fit") => material_fit_cmd(&argv),
+        Some("material-predict") => material_predict_cmd(&argv),
         Some("tex-stylize") => tex_stylize_cmd(&argv),
         Some("look") => look_cmd(&argv),
         Some("style") => style_cmd(&argv),
