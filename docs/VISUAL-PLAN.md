@@ -230,8 +230,8 @@ parts-3d look D:/KF/trit-data/style-frames --out features.csv
 
 **S6.1 · 因子定义与测量（已完成，2026-11-01；正本在独立仓 `bfxh/trit-look`）**
 
-> 代码位置：`github.com/bfxh/trit-look`（**已公开**）。`parts-3d style` 是仓内冻结副本，
-> 迁移计划见 LEDGER A153。新仓自带 `selfcheck` 门（**8 条**不变量）与 CI：fmt→clippy→test→selfcheck。
+> 代码位置：`github.com/bfxh/trit-look`（公开），**crates.io 0.1.0**；trit-parts 现在用 `git + version` 依赖
+> （pin rev `f32001b4`），仓内副本已删除（A153 完成）。新仓自带 `selfcheck` 门（**8 条**不变量）与 CI。
 - 做：`parts-3d style <A…> [--vs <B…>] [--out csv]`，六因子
   = **笔触尺度**（带符号自相关降到 1/e 的位移，`look.stroke`）、**色阶数**（`levels`）、
   **边缘强度**（`strong`）、**局部对比**（`contrast`）、**色温**（`warmth`）、**饱和度**（`sat`）；
