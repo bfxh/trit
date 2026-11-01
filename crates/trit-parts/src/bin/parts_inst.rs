@@ -343,13 +343,31 @@ fn eval(argv: &[String]) {
                         (logits[o + 1] - logits[o] > bnd_margin) as u32
                     })
                     .collect();
-                if let Ok((gb, _)) = read_npy_i32(&rd.join("bnd").join(format!("{stem}.npy"))) {
+                // 边界 F1 的参考：部件级评测优先 `pbnd/`（部件边界），实例级优先 `bnd/`
+                let order: [&str; 2] = if gt_part {
+                    ["pbnd", "bnd"]
+                } else {
+                    ["bnd", "pbnd"]
+                };
+                let bnd_ref = order
+                    .iter()
+                    .map(|d| rd.join(d).join(format!("{stem}.npy")))
+                    .find(|p| p.exists());
+                if let Some(bp) = bnd_ref
+                    && let Ok((gb, _)) = read_npy_i32(&bp)
+                {
+                    if frames == 0 && i == 0 {
+                        eprintln!("边界参考：{}", bp.display());
+                    }
                     for (i, &g) in gb.iter().enumerate() {
                         let g = (g == 2) as usize;
                         let q = bd[i] as usize;
                         b_gt += g;
                         b_pred += q;
                         b_inter += (g == 1 && q == 1) as usize;
+                    }
+                    if frames == 0 && i == 0 {
+                        eprintln!("边界计数：gt {b_gt} pred {b_pred} inter {b_inter}（g==2 参考）");
                     }
                 }
                 trit_parts::inst::split_by_boundary_min(

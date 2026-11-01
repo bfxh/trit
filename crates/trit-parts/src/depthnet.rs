@@ -12,7 +12,10 @@ pub struct DepthNet {
     pub c1: Conv,
     pub c2: Conv,
     pub c3: Conv,
-    /// 训练时的目标归一化统计（中位/四分位距），用于推理反归一化。
+    /// 输出层的**外置**偏置：`Conv` 的 bias 在 scale 乘法之内，学全局 DC 时会与 scale 打架
+    /// （实测 scale 被推到 0.02、输出恒 0）。数据集级归一化必须能预测每图的绝对深度均值。
+    pub out_b: f32,
+    /// 训练时的目标归一化统计（log 深度中位/四分位距），用于推理反归一化。
     pub med: f32,
     pub iqr: f32,
 }
@@ -30,13 +33,23 @@ impl DepthNet {
         c1.ternary = ternary;
         c2.ternary = ternary;
         c3.ternary = false;
+        c3.scale.fill(0.5); // 输出层 scale 初值放大：0.1 时梯度推不动（§6.86）
         DepthNet {
             c1,
             c2,
             c3,
+            out_b: 0.0,
             med: 0.0,
             iqr: 1.0,
         }
+    }
+
+    /// 全局膨胀率：感受野 = 6·dil + 1（三层 3×3）。单图内景深依赖全局布局，5×5 不够。
+    pub fn set_dilation(&mut self, d: usize) {
+        let d = d.max(1);
+        self.c1.dil = d;
+        self.c2.dil = d;
+        self.c3.dil = d;
     }
 
     pub fn forward(&self, x: &[Vec<f32>], w: usize, h: usize) -> Vec<f32> {
@@ -54,10 +67,11 @@ impl DepthNet {
             .forward(&r2, w, h)
             .into_iter()
             .next()
+            .map(|m| m.iter().map(|v| v + self.out_b).collect())
             .unwrap_or_default()
     }
 
-    /// 一步训练：L1 损失（对归一化视差），返回平均误差。
+    /// 一步训练：L2 损失（对归一化 log 深度），返回平均误差。
     pub fn train_step(
         &mut self,
         x: &[Vec<f32>],
@@ -82,20 +96,29 @@ impl DepthNet {
             .forward(&r2, w, h)
             .into_iter()
             .next()
+            .map(|m| m.iter().map(|v| v + self.out_b).collect::<Vec<_>>())
             .unwrap_or_default();
         let mut loss = 0.0f32;
         let mut valid = 0usize;
         let mut dout = vec![vec![0.0f32; w * h]];
+        let mut grad_b = 0.0f32;
         for i in 0..w * h {
             if !mask[i] {
                 continue;
             }
             let d = pred[i] - target[i];
-            loss += d.abs();
+            loss += d * d;
             valid += 1;
-            // 不要除 n：除以像素数会把梯度压到 1e-4 量级，三值 STE 下几乎不动（实测 1400 步损失只掉 1%）
-            dout[0][i] = d.signum();
+            dout[0][i] = 2.0 * d;
+            grad_b += 2.0 * d;
         }
+        // 逐像素梯度必须按有效像素数归一：`Conv::apply` 的 scale 走普通 SGD
+        // （不归一化时 step = lr·Σ像素 ≈ 40，scale 在 ±10 与 1e-3 之间振荡，输出直接爆到 1e4）
+        let inv = 1.0 / valid.max(1) as f32;
+        for g in &mut dout[0] {
+            *g *= inv;
+        }
+        self.out_b -= lr * grad_b * inv;
         let (dr2, dw3, db3, ds3) = self.c3.backward(&r2, w, h, &dout);
         self.c3.apply(&dw3, &db3, &ds3, lr, true);
         // 先过 ReLU 掩码（r2 = ReLU(o2)），再喂给 c2 —— 之前把未掩码的梯度给了 c2，链是断的
@@ -134,10 +157,11 @@ impl DepthNet {
     pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
         use std::fmt::Write as _;
         let mut s = format!(
-            "DCN1 {} {} {}\n",
+            "DCN2 {} {} {} {}\n",
             self.med,
             self.iqr,
-            u8::from(self.c1.ternary)
+            u8::from(self.c1.ternary),
+            self.out_b
         );
         for c in [&self.c1, &self.c2, &self.c3] {
             let _ = writeln!(s, "{} {}", c.cin, c.cout);
@@ -154,12 +178,18 @@ impl DepthNet {
     pub fn load(path: &std::path::Path) -> Result<Self, String> {
         let txt = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let mut it = txt.split_whitespace();
-        if it.next() != Some("DCN1") {
-            return Err(format!("{}: 不是 DCN1", path.display()));
+        let tag = it.next();
+        if tag != Some("DCN1") && tag != Some("DCN2") {
+            return Err(format!("{}: 不是 DCN1/DCN2", path.display()));
         }
         let med: f32 = it.next().and_then(|x| x.parse().ok()).ok_or("缺 med")?;
         let iqr: f32 = it.next().and_then(|x| x.parse().ok()).ok_or("缺 iqr")?;
         let tern: bool = it.next().and_then(|x| x.parse::<u8>().ok()).unwrap_or(1) != 0;
+        let out_b: f32 = if tag == Some("DCN2") {
+            it.next().and_then(|x| x.parse().ok()).ok_or("缺 out_b")?
+        } else {
+            0.0
+        };
         let mut convs = Vec::new();
         for _ in 0..3 {
             let cin: usize = it.next().ok_or("缺 cin")?.parse().map_err(|_| "cin")?;
@@ -186,6 +216,7 @@ impl DepthNet {
             c1,
             c2,
             c3,
+            out_b,
             med,
             iqr,
         })
@@ -196,12 +227,13 @@ impl DepthNet {
 mod tests {
     use super::*;
 
-    /// 目标 = 归一化 x 坐标（0..1），网络应能学到这个单调整体趋势。
+    /// 目标 = 左半 −0.5 / 右半 +0.5 的阶跃（线性斜坡不行：线性函数过任何卷积核后
+    /// 内部恒为常数，只能靠零填充边界「看到」坡度）。
     fn ramp_target(w: usize, h: usize) -> Vec<f32> {
         let mut v = vec![0.0f32; w * h];
         for y in 0..h {
             for x in 0..w {
-                v[y * w + x] = x as f32 / w as f32;
+                v[y * w + x] = if x < w / 2 { -0.5 } else { 0.5 };
             }
         }
         v
@@ -211,12 +243,12 @@ mod tests {
         (0..3).map(|_| vec![level; w * h]).collect()
     }
 
-    /// 输入：横向亮度斜坡（与目标同向）；常数输入无法产生空间目标。
+    /// 输入：横向亮度阶跃（与目标同向）；常数输入无法产生空间目标。
     fn ramp_input(w: usize, h: usize) -> Vec<Vec<f32>> {
         let mut m = vec![0.0f32; w * h];
         for y in 0..h {
             for x in 0..w {
-                m[y * w + x] = x as f32 / w as f32;
+                m[y * w + x] = if x < w / 2 { 0.0 } else { 1.0 };
             }
         }
         vec![m.clone(), m.clone(), m]
@@ -228,14 +260,49 @@ mod tests {
         let t = ramp_target(w, h);
         let mut net = DepthNet::new(6, 3);
         // 输入亮度与目标相关：亮 → 视差大
-        for _ in 0..400 {
+        for _ in 0..1200 {
             net.train_step(&ramp_input(w, h), w, h, &t, &vec![true; w * h], 0.02);
         }
         // 预测应与目标正相关（不做绝对精度要求）
         let p = net.forward(&ramp_input(w, h), w, h);
-        let mean_l: f32 = p[..w * h / 2].iter().sum::<f32>() / (w * h / 2) as f32;
-        let mean_r: f32 = p[w * h / 2..].iter().sum::<f32>() / (w * h / 2) as f32;
-        assert!(mean_r > mean_l, "右侧应更大：{mean_r:.3} vs {mean_l:.3}");
+        // 注意：必须按**左右**取均值；按扁平数组前后半会取成上下半（这是旧测试的错）
+        let (mut l, mut r, mut nl, mut nr) = (0.0f32, 0.0f32, 0usize, 0usize);
+        for y in 0..h {
+            for x in 0..w {
+                let v = p[y * w + x];
+                if x < w / 2 {
+                    l += v;
+                    nl += 1;
+                } else {
+                    r += v;
+                    nr += 1;
+                }
+            }
+        }
+        let (mean_l, mean_r) = (l / nl as f32, r / nr as f32);
+        assert!(
+            mean_r > mean_l + 0.5,
+            "右侧应明显更大：{mean_r:.3} vs {mean_l:.3}"
+        );
+    }
+
+    #[test]
+    fn learns_constant_offset() {
+        // 回归：外置偏置必须能学到常数目标。之前 bias 在 scale 乘法之内，
+        // 优化器把 scale 推到 0，输出恒 0（整网塌成常数预测）。
+        let (w, h) = (8usize, 8usize);
+        let t = vec![2.0f32; w * h];
+        let mut net = DepthNet::new(4, 3);
+        for _ in 0..300 {
+            net.train_step(&gray(0.5, w, h), w, h, &t, &vec![true; w * h], 0.02);
+        }
+        let p = net.forward(&gray(0.5, w, h), w, h);
+        let mean = p.iter().sum::<f32>() / p.len() as f32;
+        assert!(
+            mean > 1.5,
+            "应学到常数 2.0，实际 {mean:.3}（out_b {:.3}）",
+            net.out_b
+        );
     }
 
     #[test]
@@ -252,11 +319,13 @@ mod tests {
         );
         net.med = 0.25;
         net.iqr = 0.5;
+        net.out_b = -0.75;
         let p = std::env::temp_dir().join("dcn_roundtrip.dcn");
         net.save(&p).unwrap();
         let back = DepthNet::load(&p).unwrap();
         assert_eq!(back.med, 0.25);
         assert_eq!(back.iqr, 0.5);
+        assert_eq!(back.out_b, -0.75);
         let a = net.forward(&gray(0.3, w, h), w, h);
         let b = back.forward(&gray(0.3, w, h), w, h);
         for (x, y) in a.iter().zip(&b) {
