@@ -373,6 +373,8 @@ pub struct Net {
     pub films: Vec<Option<Film>>,
     /// 类别数（0 = 未启用 FiLM）。
     pub nk: usize,
+    /// FiLM 的学习率倍数（条件信号弱时需要放大；默认 1）。
+    pub film_lr_mul: f32,
 }
 
 impl Net {
@@ -396,6 +398,7 @@ impl Net {
             highpass: 0.0,
             films: (0..n).map(|_| None).collect(),
             nk: 0,
+            film_lr_mul: 1.0,
         }
     }
 
@@ -735,9 +738,10 @@ impl Net {
                     let dg: Vec<f32> = ag[lo..hi].iter().map(|v| v / k as f32).collect();
                     let db: Vec<f32> = ab[lo..hi].iter().map(|v| v / k as f32).collect();
                     // 按行更新：复用 apply_step 的行定位（用 0..nk 隐式映射）
+                    let flr = lr * self.film_lr_mul;
                     for i in 0..f.c {
-                        f.g[lo + i] = (f.g[lo + i] - lr * dg[i]).clamp(1e-3, 10.0);
-                        f.b[lo + i] -= lr * db[i];
+                        f.g[lo + i] = (f.g[lo + i] - flr * dg[i]).clamp(1e-3, 10.0);
+                        f.b[lo + i] -= flr * db[i];
                     }
                 }
             }
@@ -904,6 +908,7 @@ impl Net {
             highpass,
             films: (0..nl).map(|_| None).collect(),
             nk: 0,
+            film_lr_mul: 1.0,
         };
         net.set_circular(circular);
         if nk_hdr > 0 {

@@ -2224,6 +2224,10 @@ fn tex_gen_cmd(argv: &[String]) {
         }
         if film_k > 0 && load_path.is_none() {
             net.set_film(film_k);
+            net.film_lr_mul = arg(argv, "--film-lr")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(1.0f32);
+            println!("FiLM lr 倍数 {}", net.film_lr_mul);
         }
         let tmax = sched.steps().max(1);
         // 每张图的 (均值, 对比) —— 条件通道的取值
