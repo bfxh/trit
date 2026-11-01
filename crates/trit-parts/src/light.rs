@@ -87,7 +87,7 @@ pub fn estimate(img: &[f32], w: usize, h: usize) -> LightEst {
     }
 }
 
-/// 线性平面拟合 `a + bx·u + by·v`（u,v ∈ [0,1]）。
+/// 线性平面拟合 `a + bx·u + by·v`（u,v ∈ `[0,1]`）。
 fn fit_plane(v: &[f32], w: usize, h: usize) -> [f32; 3] {
     let n = (w * h) as f64;
     let (mut su, mut sv, mut suu, mut svv, mut suv, mut sy, mut suy, mut svy) = (

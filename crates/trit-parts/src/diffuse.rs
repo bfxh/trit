@@ -242,8 +242,8 @@ pub fn ddim_sample(
     ddim_sample_opts(d, sched, cond, w, h, seed, true)
 }
 
-/// 同 `ddim_sample`，但可关掉最后一步的 [0,1] 裁剪——**归一化（z-score）训练时必须关**，
-/// 否则把标准正态尺度的 x0 硬压进 [0,1]。
+/// 同 `ddim_sample`，但可关掉最后一步的 `[0,1]` 裁剪——**归一化（z-score）训练时必须关**，
+/// 否则把标准正态尺度的 x0 硬压进 `[0,1]`。
 pub fn ddim_sample_opts(
     d: &dyn Denoiser,
     sched: &Schedule,

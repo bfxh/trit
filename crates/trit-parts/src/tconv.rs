@@ -1454,7 +1454,7 @@ pub struct VDen {
     pub abar: Vec<f32>,
     /// 追加在 `[x_t, t/T]` 之后的常数条件图（如目标均值/对比）；空 = 无条件。
     pub extra: Vec<f32>,
-    /// 是否把 x̂0 裁到 [0,1]；归一化（z-score）训练时必须为 false。
+    /// 是否把 x̂0 裁到 `[0,1]`；归一化（z-score）训练时必须为 false。
     pub clamp: bool,
     /// FiLM 的类别 id（`None` = 空类）。
     pub class: Option<usize>,

@@ -233,7 +233,7 @@ fn luma_of(p: &[f32]) -> f32 {
     0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]
 }
 
-/// 逐通道线性平面拟合 `a + bx·u + by·v`（u,v ∈ [0,1]），最小二乘闭式解（`--relight-plane` 用）。
+/// 逐通道线性平面拟合 `a + bx·u + by·v`（u,v ∈ `[0,1]`），最小二乘闭式解（`--relight-plane` 用）。
 fn fit_plane(src: &[f32], w: usize, h: usize) -> [[f32; 3]; 3] {
     let n = (w * h) as f64;
     let (mut su, mut sv, mut suu, mut svv, mut suv) = (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
