@@ -30,6 +30,7 @@ pub fn quilt(
     tone_match: bool,
     detrend: usize,
     relight: bool,
+    relight_plane: bool,
 ) -> Vec<f32> {
     assert!(patch >= 2 && patch <= sw.min(sh), "patch 必须 ≤ 源图短边");
     assert!(out_w >= patch && out_h >= patch, "输出不能小于一个 patch");
@@ -55,6 +56,12 @@ pub fn quilt(
     // 这是对比度 p95−p5 大幅缩水的主因（Planks008 实测 −78%）。
 
     let src_orig: &[f32] = src;
+    // 平面回贴（旧行为）：只在 `--relight-plane` 时用；分布回贴不需要平面。
+    let plane = if relight_plane {
+        fit_plane(src, sw, sh)
+    } else {
+        [[0.0f32; 3]; 3]
+    };
     let work: Vec<f32> = if detrend > 0 {
         let lf = box_blur_rgb(src, sw, sh, detrend);
         src.iter().zip(&lf).map(|(a, b)| a - b).collect()
@@ -184,7 +191,20 @@ pub fn quilt(
             }
         }
     }
-    if relight {
+    if relight_plane {
+        // **旧行为**：回贴源图拟合的线性平面。结构保得住，但对比度只回一小部分（§6.80/§6.81）。
+        for y in 0..out_h {
+            let v = y as f32 / out_h.max(1) as f32;
+            for x in 0..out_w {
+                let u = x as f32 / out_w.max(1) as f32;
+                let o = (y * out_w + x) * 3;
+                for c in 0..3 {
+                    let g = plane[c][0] + plane[c][1] * u + plane[c][2] * v;
+                    out[o + c] = (out[o + c] + g).clamp(0.0, 1.0);
+                }
+            }
+        }
+    } else if relight {
         // **亮度分位匹配（加性）**：把输出亮度分位对到源亮度分布，位移量加到 RGB 上。
         // 逐通道独立映射也能补回对比度，但会改色相与梯度（实测 coh 0.865→0.470、hf1 +94%）⇒ 用加性保结构。
         let mut src_luma: Vec<f32> = src_orig.chunks(3).map(luma_of).collect();
@@ -211,6 +231,66 @@ pub fn quilt(
 
 fn luma_of(p: &[f32]) -> f32 {
     0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]
+}
+
+/// 逐通道线性平面拟合 `a + bx·u + by·v`（u,v ∈ [0,1]），最小二乘闭式解（`--relight-plane` 用）。
+fn fit_plane(src: &[f32], w: usize, h: usize) -> [[f32; 3]; 3] {
+    let n = (w * h) as f64;
+    let (mut su, mut sv, mut suu, mut svv, mut suv) = (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
+    let mut sy = [0.0f64; 3];
+    let mut suy = [0.0f64; 3];
+    let mut svy = [0.0f64; 3];
+    for y in 0..h {
+        let v = y as f64 / h.max(1) as f64;
+        for x in 0..w {
+            let u = x as f64 / w.max(1) as f64;
+            su += u;
+            sv += v;
+            suu += u * u;
+            svv += v * v;
+            suv += u * v;
+            let i = (y * w + x) * 3;
+            for c in 0..3 {
+                let val = src[i + c] as f64;
+                sy[c] += val;
+                suy[c] += val * u;
+                svy[c] += val * v;
+            }
+        }
+    }
+    let inv = inv3([[n, su, sv], [su, suu, suv], [sv, suv, svv]]);
+    let mut out = [[0.0f32; 3]; 3];
+    for c in 0..3 {
+        let b = [sy[c], suy[c], svy[c]];
+        for row in 0..3 {
+            out[c][row] = (inv[row][0] * b[0] + inv[row][1] * b[1] + inv[row][2] * b[2]) as f32;
+        }
+    }
+    out
+}
+
+fn inv3(m: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
+    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    let d = if det.abs() < 1e-12 { 1e-12 } else { det };
+    [
+        [
+            (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / d,
+            (m[0][2] * m[2][1] - m[0][1] * m[2][2]) / d,
+            (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / d,
+        ],
+        [
+            (m[1][2] * m[2][0] - m[1][0] * m[2][2]) / d,
+            (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / d,
+            (m[0][2] * m[1][0] - m[0][0] * m[1][2]) / d,
+        ],
+        [
+            (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / d,
+            (m[0][1] * m[2][0] - m[0][0] * m[2][1]) / d,
+            (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / d,
+        ],
+    ]
 }
 
 /// 逐通道盒式模糊（去光照用的低频）。
@@ -935,14 +1015,14 @@ mod tests {
         let d_src = lr_diff(&src, n);
         assert!(d_src > 0.3, "测试源本身要有明显梯度，实际 {d_src}");
         // 只去梯度不回贴：输出应基本平坦
-        let flat = quilt(&src, n, n, n, n, 16, 4, 5, false, 16, false);
+        let flat = quilt(&src, n, n, n, n, 16, 4, 5, false, 16, false, false);
         let d_flat = lr_diff(&flat, n).abs();
         assert!(
             d_flat < d_src * 0.35,
             "detrend 后梯度应大幅减小：{d_flat:.3} vs 源 {d_src:.3}"
         );
         // 去梯度 + 分位回贴：对比度（p95−p5）应回到源的 80% 以上
-        let lit = quilt(&src, n, n, n, n, 16, 4, 5, false, 16, true);
+        let lit = quilt(&src, n, n, n, n, 16, 4, 5, false, 16, true, false);
         let p = |img: &[f32]| -> f32 {
             let mut v: Vec<f32> = img.chunks(3).map(luma_of).collect();
             v.sort_by(f32::total_cmp);
@@ -957,9 +1037,33 @@ mod tests {
     }
 
     #[test]
+    fn relight_plane_restores_a_gentle_ramp_but_not_full_contrast() {
+        // 平面回贴：左右亮度差应恢复（≥70% 源），但整体对比度不应达到源（这是它和分布回贴的区别）
+        let n = 96usize;
+        let src = ramp_with_noise(n);
+        let d_src = lr_diff(&src, n);
+        let lit = quilt(&src, n, n, n, n, 16, 4, 5, false, 16, false, true);
+        let d_lit = lr_diff(&lit, n);
+        assert!(
+            d_lit >= d_src * 0.7,
+            "平面回贴后亮度梯度应恢复：{d_lit:.3} vs 源 {d_src:.3}"
+        );
+        let p = |img: &[f32]| -> f32 {
+            let mut v: Vec<f32> = img.chunks(3).map(luma_of).collect();
+            v.sort_by(f32::total_cmp);
+            let q = |f: f32| v[((v.len() as f32 - 1.0) * f).round() as usize];
+            q(0.95) - q(0.05)
+        };
+        assert!(
+            p(&lit) < p(&src),
+            "平面回贴不应把对比度拉满（分布回贴才会）"
+        );
+    }
+
+    #[test]
     fn quilt_outputs_the_requested_size_and_stays_in_range() {
         let src = stripes(32, 8);
-        let out = quilt(&src, 32, 32, 64, 48, 8, 4, 7, false, 0, false);
+        let out = quilt(&src, 32, 32, 64, 48, 8, 4, 7, false, 0, false, false);
         assert_eq!(out.len(), 64 * 48 * 3);
         assert!(out.iter().all(|v| (0.0..=1.0).contains(v)));
         // 源只有两档灰度 ⇒ 输出也只应落在两档附近（羽化区允许中间值）
@@ -973,10 +1077,10 @@ mod tests {
     #[test]
     fn quilt_is_deterministic_and_seed_sensitive() {
         let src = stripes(32, 8);
-        let a = quilt(&src, 32, 32, 64, 64, 8, 4, 1, false, 0, false);
-        let b = quilt(&src, 32, 32, 64, 64, 8, 4, 1, false, 0, false);
+        let a = quilt(&src, 32, 32, 64, 64, 8, 4, 1, false, 0, false, false);
+        let b = quilt(&src, 32, 32, 64, 64, 8, 4, 1, false, 0, false, false);
         assert_eq!(a, b, "同 seed 必须逐位一致");
-        let c = quilt(&src, 32, 32, 64, 64, 8, 4, 2, false, 0, false);
+        let c = quilt(&src, 32, 32, 64, 64, 8, 4, 2, false, 0, false, false);
         assert_ne!(a, c, "不同 seed 应给出不同拼法");
     }
 
@@ -984,7 +1088,7 @@ mod tests {
     fn quilt_preserves_directionality_where_diffusion_does_not() {
         // 竖条纹源：合成图必须仍是大幅各向异性；随机噪声源作对照必须是各向同性
         let src = stripes(48, 8);
-        let out = quilt(&src, 48, 48, 64, 64, 12, 6, 3, false, 0, false);
+        let out = quilt(&src, 48, 48, 64, 64, 12, 6, 3, false, 0, false, false);
         let l = crate::look::analyze(&out, 64, 64);
         assert!(
             l.coherence > 0.6,

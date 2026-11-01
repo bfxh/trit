@@ -2246,3 +2246,15 @@ occl8b/scene0000 按 512² 重渲 12 帧（0.29 s/帧），512 头训 1200 步�
   tile 的 coherence 掉到 0.235、hf1 涨 2.4×（细密规则纹理的残差被放大成噪点）；fabric 反而 coh 1.4–2.3（布纹本来低频，拉伸后更"有序"）。
 - ⇒ **链路与材质无关**；「木头」只是最早挑的样本。选择参数应按类：
   规则细密类（tile）**不要**用 relight；低频/有机类（fabric/ground/wood）用 relight 代价小。
+
+**补：`--relight-plane` 保留旧行为**（同日）。两种回贴并存，按需选：
+
+| 模式 | Planks008 contrast | coh | hf1 | stroke | 定位 |
+|---|---|---|---|---|---|
+| `--relight`（分布匹配） | **0.399** | 0.465 | 0.207 | 5.0 | 对比度优先 |
+| `--relight-plane`（线性平面） | 0.105 | **0.821** | **0.074** | **7.5** | 结构优先 |
+| 源 | 0.400 | 0.865 | 0.105 | 7.8 | — |
+
+- 两者互斥：给了 `--relight-plane` 就按平面走（即使同时给了 `--relight`）。
+- 单测 `relight_plane_restores_a_gentle_ramp_but_not_full_contrast`：平面回贴后左右亮度差 ≥70% 源，但对比度仍低于源（与分布回贴区分）。
+- 两个开关都进了作业文件允许键表（`tone-match` / `detrend` / `relight` / `relight-plane`）。
