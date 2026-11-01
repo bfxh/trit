@@ -1978,6 +1978,46 @@ impl Den {
     }
 }
 
+/// `tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 6] [--seed 1]`：
+/// 非参数 patch 合成（搬真实 patch，结构/统计由构造保证；与 `tex-gen` 的学出来的合成对照用）。
+fn tex_quilt_cmd(argv: &[String]) {
+    use trit_parts::tex::quilt;
+    let Some(p) = argv.get(1).filter(|a| !a.starts_with("--")) else {
+        fail(
+            "用法: parts-3d tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 6] [--seed 1]",
+        );
+    };
+    let (sw, sh, rgb) =
+        trit_parts::data::read_rgb(std::path::Path::new(p)).unwrap_or_else(|e| fail(&e));
+    let n: usize = arg(argv, "--size")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(128);
+    let patch: usize = arg(argv, "--patch")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(12);
+    let ov: usize = arg(argv, "--overlap")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(patch / 2);
+    let seed: u64 = arg(argv, "--seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1);
+    let out = quilt(&rgb, sw, sh, n, n, patch, ov, seed);
+    let l = trit_parts::look::analyze(&out, n, n);
+    println!("源 {sw}x{sh} ⇒ {n}x{n}，patch {patch} 重叠 {ov} seed {seed}");
+    println!(
+        "stroke {:.2} coherence {:.3} hf1 {:.3} contrast {:.3}",
+        l.stroke, l.coherence, l.hf1, l.contrast
+    );
+    if let Some(outp) = arg(argv, "--out") {
+        let mut bytes = format!("P6\n{n} {n}\n255\n").into_bytes();
+        for v in &out {
+            bytes.push((v.clamp(0.0, 1.0) * 255.0) as u8);
+        }
+        std::fs::write(&outp, bytes).unwrap_or_else(|e| fail(&format!("{outp}: {e}")));
+        println!("写出 {outp}");
+    }
+}
+
 fn tex_gen_cmd(argv: &[String]) {
     use trit_parts::tex::{seam_ratio, tile};
 
@@ -2985,6 +3025,7 @@ fn usage() -> ! {
   parts-3d tex --kind wood|marble|rust|grid --size 256 --out <ppm>
   parts-3d tex-prior [--iters 30000] [--patch 3|7] [--cond] [--hid 16]
   parts-3d tex-conv  [--iters 20000] [--hidden 8,8] [--cond] [--size 64] [--adam] [--batch K] [--bn]
+  parts-3d tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 6] [--seed 1]
   parts-3d tex-gen   [--iters 200000] [--steps-t 50] [--size 64] [--hid 32] [--out <dir>]
                      [--conv 8,8] [--batch 4] [--adam] [--eps|--v] [--eps-space] [--diag]
                      [--dil N] [--save w.tpc] [--load w.tpc] [--holdout-names A,B]
@@ -3013,6 +3054,7 @@ fn main() {
         Some("tex-prior") => tex_prior_cmd(&argv),
         Some("tex-conv") => tex_conv_cmd(&argv),
         Some("tex-gen") => tex_gen_cmd(&argv),
+        Some("tex-quilt") => tex_quilt_cmd(&argv),
         Some("look") => look_cmd(&argv),
         Some("style") => style_cmd(&argv),
         Some("infer") => {
