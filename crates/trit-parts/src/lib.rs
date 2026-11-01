@@ -19,6 +19,7 @@ pub mod diffuse;
 pub mod fuse;
 pub mod geo;
 pub mod inst;
+pub mod job;
 // 观感/风格测量的正本在独立仓 bfxh/trit-look（git 依赖，pin rev）。
 pub use trit_look as look;
 pub mod loss;
