@@ -1380,3 +1380,29 @@ parts-3d tex-quilt <源.png> --size 128 --patch 16 --overlap 8 --seed 1 --out ou
   原因是宽重叠把两段不相关内容长时间平均。默认改为 `patch/4`。
 - 环绕接缝在 ov=2–4 时 border ≈1.1，接近可平铺，但**不是严格无缝**（合成时没有做周期约束）；
   规范做法是 graph-cut 缝合或周期包装，列为缺口。
+
+### 6.48 贴图落到网格上：盒式投影 UV + OBJ/MTL 导出（端到端跑通，2026-11-01）
+
+**缺口**：`mesh-tex` 之前只写**顶点色 PLY**，没有 UV/图集，quilt 出的贴图接不进去。
+
+**补的两块**：
+1. `data::write_rgb`（PNG 写，`png` crate 的编码器）+ 单测 `png_write_read_roundtrip`（量化误差 ≤1/255）。
+2. `uv::box_uvs` / `uv::write_obj`：按面法线主轴投影（triplanar 的静态版），UV = 世界坐标 / `tex_world`，
+   写出 OBJ + MTL（`map_Kd` 指向同目录 PNG）。单测 3 条：平面 +Z 投影 uv=(x,y)/tex_world、
+   球面 UV 有限且跨度 >1、OBJ 的 `vt` 数 = 3×面数且 MTL 有 `map_Kd`。
+3. `mesh-tex --tex <png> --obj <out.obj> [--tex-world W]` 走新路径（否则仍是顶点色 PLY）。
+
+**端到端验证**（本机合成场景：半径 1 的球、4 视角 64²、针孔相机，脚本只用 numpy/cv2 造夹具）：
+```
+parts-3d mesh-tex --scene E:/tmp/scene_sphere --frames 0,1,2,3 --cell 0.02   --out out.ply --tex E:/tmp/qsp/q1.png --obj out/sphere.obj --tex-world 1.0
+```
+⇒ **74,380 顶点 / 148,832 三角形**；`vt` 446,496（=3×面数）；顶点 bbox `[-1.05,1.05]³`（真值半径 1）；
+`sphere.obj` + `sphere.mtl` + `sphere.png` 三件齐全。
+
+**两个相机口径的坑（造夹具时踩到，记下来）**：
+- meta 里的矩阵虽然 `Camera::load` 也接受 `T_cw` 这个名字，但**实际用法是 world←camera**（直接左乘相机点），
+  给 `T_cw` 会让重建点落到镜像位置（实测 z=-5.67）；要写 `T_wc`。
+- 深度是**沿视线正深度**，相机 z 轴朝外（视线 −Z）；存 +z 会让所有点被 `d>0` 过滤掉（"无有效点"）。
+
+**局限（明确）**：投影式 UV 不是展开，接缝处不连续、不保证无重叠；对重建的稠密表面够用，
+对需要精确 UV 的美术资产不够。图片/网格都只在本机验证，未入公开数据集。

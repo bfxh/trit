@@ -1443,6 +1443,36 @@ fn mesh_tex_cmd(argv: &[String]) {
         cell: g.cell,
     };
     let m = surface_nets(&sg);
+    // 给了贴图就走 OBJ + MTL（盒式投影 UV），否则维持原来的顶点色 PLY
+    if let (Some(tex_p), Some(obj_p)) = (arg(argv, "--tex"), arg(argv, "--obj")) {
+        let (tw, th, tpix) =
+            trit_parts::data::read_rgb(std::path::Path::new(&tex_p)).unwrap_or_else(|e| fail(&e));
+        let tex_world: f32 = arg(argv, "--tex-world")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(cell * 40.0);
+        let uvs = trit_parts::uv::box_uvs(&m, tex_world);
+        let obj_path = PathBuf::from(&obj_p);
+        let stem = obj_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("mesh")
+            .to_string();
+        let png_p = obj_path.with_file_name(format!("{stem}.png"));
+        trit_parts::data::write_rgb(&png_p, tw, th, &tpix).unwrap_or_else(|e| fail(&e));
+        trit_parts::uv::write_obj(&obj_path, &m, &uvs, &format!("{stem}.png"))
+            .unwrap_or_else(|e| fail(&e));
+        println!(
+            "OBJ {}：{} 顶点 / {} 三角形，贴图 {}×{}（一张覆盖 {:.3} 世界单位）⇒ {}",
+            obj_path.display(),
+            m.verts.len(),
+            m.tris.len(),
+            tw,
+            th,
+            tex_world,
+            png_p.display()
+        );
+        return;
+    }
     let splats = build(&views, &rgbs, cell, 0.6);
     // 高斯按格建索引，顶点找半径 ≤3 格的最近颜色
     let key = |p: [f32; 3]| {

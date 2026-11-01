@@ -30,6 +30,7 @@ pub mod splat;
 pub mod tconv;
 pub mod tex;
 pub mod tpm;
+pub mod uv;
 pub mod weights;
 
 #[cfg(feature = "gpu")]

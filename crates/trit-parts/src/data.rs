@@ -5,7 +5,7 @@
 //! `plane[i] = ((id−1) / 3^(k−1−i)) % 3`，valid=0 处平面置 0。
 
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{BufReader, BufWriter};
 use std::path::{Path, PathBuf};
 
 /// 一帧的输入与标签。
@@ -143,6 +143,29 @@ pub fn resize_rgb(w: usize, h: usize, pix: &[f32], res: usize) -> Vec<f32> {
 /// 只读 RGB（推理用，不需要 seg 标签）。
 pub fn read_rgb(path: &Path) -> Result<(usize, usize, Vec<f32>), String> {
     read_png_rgb(path)
+}
+
+/// 写 PNG（RGB，`pix` 为交错 f32 0..1）。与 `read_rgb` 互逆（量化误差 ≤1/255）。
+pub fn write_rgb(path: &Path, w: usize, h: usize, pix: &[f32]) -> Result<(), String> {
+    if pix.len() != w * h * 3 {
+        return Err(format!(
+            "{}: 像素数 {} != {}×{}×3",
+            path.display(),
+            pix.len(),
+            w,
+            h
+        ));
+    }
+    let file = File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    let mut enc = png::Encoder::new(BufWriter::new(file), w as u32, h as u32);
+    enc.set_color(png::ColorType::Rgb);
+    enc.set_depth(png::BitDepth::Eight);
+    let mut wr = enc.write_header().map_err(|e| e.to_string())?;
+    let bytes: Vec<u8> = pix
+        .iter()
+        .map(|v| (v.clamp(0.0, 1.0) * 255.0) as u8)
+        .collect();
+    wr.write_image_data(&bytes).map_err(|e| e.to_string())
 }
 
 /// 读 PNG，返回 `(宽, 高, RGB 的 f32 NHWC)`。
@@ -300,6 +323,22 @@ mod tests {
         let (data, shape) = read_npy_i32(&p).unwrap();
         assert_eq!(shape, vec![2, 3]);
         assert_eq!(data, vec![1, 2, 3, 4, 5, 6]);
+        std::fs::remove_file(&p).ok();
+    }
+
+    #[test]
+    fn png_write_read_roundtrip() {
+        let (w, h) = (7usize, 5usize);
+        let pix: Vec<f32> = (0..w * h * 3)
+            .map(|i| ((i * 37) % 256) as f32 / 255.0)
+            .collect();
+        let p = std::env::temp_dir().join("trit_parts_png_roundtrip.png");
+        write_rgb(&p, w, h, &pix).unwrap();
+        let (w2, h2, back) = read_rgb(&p).unwrap();
+        assert_eq!((w2, h2), (w, h));
+        for (a, b) in pix.iter().zip(&back) {
+            assert!((a - b).abs() <= 1.0 / 255.0 + 1e-6, "量化误差应 ≤1/255");
+        }
         std::fs::remove_file(&p).ok();
     }
 }
