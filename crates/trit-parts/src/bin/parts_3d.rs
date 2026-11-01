@@ -2158,6 +2158,10 @@ fn tex_gen_cmd(argv: &[String]) {
         if argv.iter().any(|a| a == "--circ") {
             net.set_circular(true);
         }
+        // 高通匹配权重（对抗 MSE 的条件均值化；0 = 关）
+        net.highpass = arg(argv, "--hf-weight")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0.0f32);
         if linear_mode && load_path.is_none() {
             net.linear_out = true;
         }

@@ -330,6 +330,8 @@ pub struct Net {
     pub linear_out: bool,
     /// 所有卷积层是否循环填充（可平铺纹理用）。
     pub circular: bool,
+    /// 高通（拉普拉斯残差）匹配项的权重；0 = 关。线性输出模式下生效。
+    pub highpass: f32,
 }
 
 impl Net {
@@ -350,6 +352,7 @@ impl Net {
             cond: 0,
             linear_out: false,
             circular: false,
+            highpass: 0.0,
         }
     }
 
@@ -509,7 +512,7 @@ impl Net {
             for i in 0..n {
                 let t = target[i];
                 if self.linear_out {
-                    // ε-预测：平方误差（输出无界）
+                    // ε/v-预测：平方误差（输出无界）
                     let e = pred[i] - t;
                     loss += 0.5 * f64::from(e * e);
                     d[0][i] = e / n as f32 / k as f32;
@@ -517,6 +520,30 @@ impl Net {
                     let p = pred[i].clamp(1e-6, 1.0 - 1e-6);
                     loss -= f64::from(t * p.ln() + (1.0 - t) * (1.0 - p).ln());
                     d[0][i] = (p - t) / n as f32 / k as f32; // 批内平均
+                }
+            }
+            // 高通匹配：对残差做 4 邻域拉普拉斯，边界跳过（保证算子自伴，梯度就是它自己）
+            if self.linear_out && self.highpass > 0.0 && w > 2 && h > 2 {
+                let mut lap = vec![0.0f32; n];
+                for yy in 1..h - 1 {
+                    for xx in 1..w - 1 {
+                        let i = yy * w + xx;
+                        let r = |j: usize| pred[j] - target[j];
+                        lap[i] = r(i) - 0.25 * (r(i - 1) + r(i + 1) + r(i - w) + r(i + w));
+                    }
+                }
+                for yy in 1..h - 1 {
+                    for xx in 1..w - 1 {
+                        let i = yy * w + xx;
+                        let l = lap[i];
+                        loss += f64::from(self.highpass * 0.5 * l * l);
+                        let g = self.highpass * l / n as f32 / k as f32;
+                        d[0][i] += g;
+                        d[0][i - 1] -= g * 0.25;
+                        d[0][i + 1] -= g * 0.25;
+                        d[0][i - w] -= g * 0.25;
+                        d[0][i + w] -= g * 0.25;
+                    }
                 }
             }
             for li in (0..self.layers.len()).rev() {
@@ -577,11 +604,12 @@ impl Net {
         let mut out = String::new();
         let _ = writeln!(
             out,
-            "TPC3 {} {} {} {}",
+            "TPC4 {} {} {} {} {}",
             self.layers.len(),
             self.cond,
             self.linear_out as u8,
-            self.circular as u8
+            self.circular as u8,
+            self.highpass
         );
         for l in &self.layers {
             let _ = writeln!(out, "{} {}", l.cin, l.cout);
@@ -627,14 +655,23 @@ impl Net {
         }
         let mut it = txt.split_whitespace();
         let head = it.next();
-        if !matches!(head, Some("TPC1") | Some("TPC2") | Some("TPC3")) {
-            return Err(format!("{}: 不是 TPC1/TPC2/TPC3", path.display()));
+        if !matches!(
+            head,
+            Some("TPC1") | Some("TPC2") | Some("TPC3") | Some("TPC4")
+        ) {
+            return Err(format!("{}: 不是 TPC1..TPC4", path.display()));
         }
         let nl = take(&mut it, path, "层数")? as usize;
         let cond = take(&mut it, path, "cond")? as usize;
-        let linear_out =
-            matches!(head, Some("TPC2") | Some("TPC3")) && take(&mut it, path, "linear")? != 0.0;
-        let circular = head == Some("TPC3") && take(&mut it, path, "circular")? != 0.0;
+        let linear_out = matches!(head, Some("TPC2") | Some("TPC3") | Some("TPC4"))
+            && take(&mut it, path, "linear")? != 0.0;
+        let circular =
+            matches!(head, Some("TPC3") | Some("TPC4")) && take(&mut it, path, "circular")? != 0.0;
+        let highpass = if head == Some("TPC4") {
+            take(&mut it, path, "highpass")?
+        } else {
+            0.0
+        };
         let mut layers = Vec::with_capacity(nl);
         for _ in 0..nl {
             let cin = take(&mut it, path, "cin")? as usize;
@@ -678,6 +715,7 @@ impl Net {
             cond,
             linear_out,
             circular: false,
+            highpass,
         };
         net.set_circular(circular);
         Ok(net)
@@ -916,6 +954,32 @@ mod tests {
             "实际 {}",
             x0b[0]
         );
+    }
+
+    #[test]
+    fn highpass_term_penalizes_missing_detail() {
+        let (w, h) = (8usize, 8usize);
+        let mut tgt = vec![0.0f32; w * h];
+        for y in 0..h {
+            for x in 0..w {
+                tgt[y * w + x] = if (x + y) % 2 == 0 { 1.0 } else { -1.0 };
+            }
+        }
+        let maps = vec![vec![0.0f32; w * h]];
+        let mk = |hp: f32| -> f32 {
+            let mut n = Net::new(1, &[], 3);
+            n.linear_out = true;
+            n.highpass = hp;
+            for l in n.layers.iter_mut() {
+                l.w.fill(0.0);
+                l.b.fill(0.0);
+                l.scale.fill(1.0);
+            }
+            n.train_batch_x(&[(maps.clone(), tgt.clone())], w, h, 0.0, false)
+        };
+        let a = mk(0.0);
+        let b = mk(1.0);
+        assert!(b > a * 1.5, "高通项应显著加大损失：{a:.3} -> {b:.3}");
     }
 
     #[test]
