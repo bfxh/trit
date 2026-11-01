@@ -2636,6 +2636,96 @@ fn material_fit_cmd(argv: &[String]) {
     if xs.is_empty() {
         fail("CSV 里没有可用样本");
     }
+    // --test-csv 给了就用「全量训练 + 外部测试集」；否则按场景分组留出
+    if let Some(tp) = arg(argv, "--test-csv") {
+        let ttxt = std::fs::read_to_string(&tp).unwrap_or_else(|e| fail(&format!("{tp}: {e}")));
+        let mut txs: Vec<Vec<f32>> = Vec::new();
+        let mut tys: Vec<usize> = Vec::new();
+        for (i, line) in ttxt.lines().enumerate() {
+            if i == 0 || line.trim().is_empty() {
+                continue;
+            }
+            let cols: Vec<&str> = line.split(',').collect();
+            if cols.len() < 4 + LOOK_FEATURES.len() {
+                continue;
+            }
+            let Some(k) = MATS.iter().position(|m| *m == cols[3]) else {
+                continue;
+            };
+            txs.push(
+                cols[4..4 + LOOK_FEATURES.len()]
+                    .iter()
+                    .map(|v| v.parse::<f32>().unwrap_or(0.0))
+                    .collect(),
+            );
+            tys.push(k);
+        }
+        if txs.is_empty() {
+            fail("--test-csv 里没有可用样本");
+        }
+        let d = xs[0].len();
+        let mut mu = vec![0.0f32; d];
+        let mut sd = vec![0.0f32; d];
+        for v in &xs {
+            for j in 0..d {
+                mu[j] += v[j];
+            }
+        }
+        for m in mu.iter_mut() {
+            *m /= xs.len() as f32;
+        }
+        for v in &xs {
+            for j in 0..d {
+                sd[j] += (v[j] - mu[j]).powi(2);
+            }
+        }
+        for v in sd.iter_mut() {
+            *v = (*v / xs.len() as f32).sqrt().max(1e-6);
+        }
+        let norm = |v: &Vec<f32>| -> Vec<f32> { (0..d).map(|j| (v[j] - mu[j]) / sd[j]).collect() };
+        let xtr: Vec<Vec<f32>> = xs.iter().map(norm).collect();
+        let mut head: Vec<Vec<f32>> = Vec::new();
+        for k in 0..MATS.len() {
+            let y: Vec<f32> = ys
+                .iter()
+                .map(|&t| if t == k { 1.0 } else { -1.0 })
+                .collect();
+            head.push(ridge::fit_ridge(&xtr, &y, lambda));
+        }
+        let mut conf = [[0usize; 4]; 4];
+        for (v, &t) in txs.iter().zip(&tys) {
+            let xn = norm(v);
+            let mut best = (f32::NEG_INFINITY, 0usize);
+            for (k, w) in head.iter().enumerate() {
+                let sc = ridge::predict(w, &xn);
+                if sc > best.0 {
+                    best = (sc, k);
+                }
+            }
+            conf[t][best.1] += 1;
+        }
+        println!("训练 {}（本批）/ 测试 {}（外部）", xs.len(), txs.len());
+        print!("{:>8}", "真/预测");
+        for m in MATS {
+            print!("{:>8}", m);
+        }
+        println!();
+        let (mut correct, mut total) = (0usize, 0usize);
+        for (k, row) in conf.iter().enumerate() {
+            print!("{:>8}", MATS[k]);
+            for v in row.iter() {
+                print!("{:>8}", v);
+            }
+            println!();
+            correct += row[k];
+            total += row.iter().sum::<usize>();
+        }
+        println!(
+            "跨批准确率 {correct}/{total} = {:.1}%",
+            100.0 * correct as f32 / total.max(1) as f32
+        );
+        return;
+    }
     let mut order: Vec<String> = Vec::new();
     for s in &scenes {
         if !order.contains(s) {
