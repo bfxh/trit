@@ -53,11 +53,8 @@ pub fn quilt(
     ys.push(out_h - patch);
     // 去低频（光照梯度）：拟合并扣除线性光照，拼完再回贴 —— 拼接口会抹平跨区域光照，
     // 这是对比度 p95−p5 大幅缩水的主因（Planks008 实测 −78%）。
-    let plane = if relight || detrend > 0 {
-        fit_plane(src, sw, sh)
-    } else {
-        [[0.0f32; 3]; 3]
-    };
+
+    let src_orig: &[f32] = src;
     let work: Vec<f32> = if detrend > 0 {
         let lf = box_blur_rgb(src, sw, sh, detrend);
         src.iter().zip(&lf).map(|(a, b)| a - b).collect()
@@ -188,15 +185,23 @@ pub fn quilt(
         }
     }
     if relight {
-        // 回贴：用源图拟合的线性光照（归一化坐标），平铺 1 次而不是重复图案
-        for y in 0..out_h {
-            let v = y as f32 / out_h.max(1) as f32;
-            for x in 0..out_w {
-                let u = x as f32 / out_w.max(1) as f32;
-                let o = (y * out_w + x) * 3;
+        // **亮度分位匹配（加性）**：把输出亮度分位对到源亮度分布，位移量加到 RGB 上。
+        // 逐通道独立映射也能补回对比度，但会改色相与梯度（实测 coh 0.865→0.470、hf1 +94%）⇒ 用加性保结构。
+        let mut src_luma: Vec<f32> = src_orig.chunks(3).map(luma_of).collect();
+        src_luma.sort_by(f32::total_cmp);
+        let mut out_sorted: Vec<f32> = out.chunks(3).map(luma_of).collect();
+        out_sorted.sort_by(f32::total_cmp);
+        let (ns, no) = (src_luma.len(), out_sorted.len());
+        if ns > 1 && no > 1 {
+            for i in 0..out.len() / 3 {
+                let o = i * 3;
+                let y0 = luma_of(&out[o..o + 3]);
+                let rank = out_sorted.partition_point(|v| *v < y0).min(no - 1);
+                let q = rank as f32 / (no - 1) as f32;
+                let t = (q * (ns - 1) as f32).round() as usize;
+                let delta = src_luma[t.min(ns - 1)] - y0;
                 for c in 0..3 {
-                    let g = plane[c][0] + plane[c][1] * u + plane[c][2] * v;
-                    out[o + c] = (out[o + c] + g).clamp(0.0, 1.0);
+                    out[o + c] = (out[o + c] + delta).clamp(0.0, 1.0);
                 }
             }
         }
@@ -204,64 +209,8 @@ pub fn quilt(
     out
 }
 
-/// 逐通道线性平面拟合 `a + bx·u + by·v`（u,v ∈ [0,1]），最小二乘闭式解。
-fn fit_plane(src: &[f32], w: usize, h: usize) -> [[f32; 3]; 3] {
-    let n = (w * h) as f64;
-    let mut su = 0.0;
-    let mut sv = 0.0;
-    let mut suu = 0.0;
-    let mut svv = 0.0;
-    let mut suv = 0.0;
-    let mut sy = [0.0f64; 3];
-    let mut suy = [0.0f64; 3];
-    let mut svy = [0.0f64; 3];
-    for y in 0..h {
-        let v = y as f64 / h.max(1) as f64;
-        for x in 0..w {
-            let u = x as f64 / w.max(1) as f64;
-            su += u;
-            sv += v;
-            suu += u * u;
-            svv += v * v;
-            suv += u * v;
-            let i = (y * w + x) * 3;
-            for c in 0..3 {
-                let val = src[i + c] as f64;
-                sy[c] += val;
-                suy[c] += val * u;
-                svy[c] += val * v;
-            }
-        }
-    }
-    // 3×3 法方程
-    let a = [[n, su, sv], [su, suu, suv], [sv, suv, svv]];
-    let inv = inv3(a);
-    let mut out = [[0.0f32; 3]; 3];
-    for c in 0..3 {
-        let b = [sy[c], suy[c], svy[c]];
-        for row in 0..3 {
-            out[c][row] = (inv[row][0] * b[0] + inv[row][1] * b[1] + inv[row][2] * b[2]) as f32;
-        }
-    }
-    out
-}
-
-fn inv3(m: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
-    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-    let d = if det.abs() < 1e-12 { 1e-12 } else { det };
-    let mut o = [[0.0f64; 3]; 3];
-    o[0][0] = (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / d;
-    o[0][1] = (m[0][2] * m[2][1] - m[0][1] * m[2][2]) / d;
-    o[0][2] = (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / d;
-    o[1][0] = (m[1][2] * m[2][0] - m[1][0] * m[2][2]) / d;
-    o[1][1] = (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / d;
-    o[1][2] = (m[0][2] * m[1][0] - m[0][0] * m[1][2]) / d;
-    o[2][0] = (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / d;
-    o[2][1] = (m[0][1] * m[2][0] - m[0][0] * m[2][1]) / d;
-    o[2][2] = (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / d;
-    o
+fn luma_of(p: &[f32]) -> f32 {
+    0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]
 }
 
 /// 逐通道盒式模糊（去光照用的低频）。
@@ -992,12 +941,18 @@ mod tests {
             d_flat < d_src * 0.35,
             "detrend 后梯度应大幅减小：{d_flat:.3} vs 源 {d_src:.3}"
         );
-        // 去梯度 + 回贴：梯度应恢复到源的 70% 以上
+        // 去梯度 + 分位回贴：对比度（p95−p5）应回到源的 80% 以上
         let lit = quilt(&src, n, n, n, n, 16, 4, 5, false, 16, true);
-        let d_lit = lr_diff(&lit, n);
+        let p = |img: &[f32]| -> f32 {
+            let mut v: Vec<f32> = img.chunks(3).map(luma_of).collect();
+            v.sort_by(f32::total_cmp);
+            let q = |f: f32| v[((v.len() as f32 - 1.0) * f).round() as usize];
+            q(0.95) - q(0.05)
+        };
+        let (cs, cl) = (p(&src), p(&lit));
         assert!(
-            d_lit >= d_src * 0.7,
-            "relight 后梯度应恢复，实际 {d_lit:.3} vs 源 {d_src:.3}"
+            cl >= cs * 0.8,
+            "分位回贴后对比度应接近源：{cl:.3} vs {cs:.3}"
         );
     }
 
