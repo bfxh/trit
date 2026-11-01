@@ -2135,12 +2135,20 @@ fn tex_stylize_cmd(argv: &[String]) {
     let (w, h, px) =
         trit_parts::data::read_rgb(std::path::Path::new(p)).unwrap_or_else(|e| fail(&e));
     let num = |k: &str, d: f32| -> f32 { arg(argv, k).and_then(|v| v.parse().ok()).unwrap_or(d) };
-    let st = Style {
-        contrast: num("--contrast", 1.0),
-        levels: num("--levels", 0.0).max(0.0) as u32,
-        warmth: num("--warmth", 0.0),
-        sat: num("--sat", 1.0),
-        stroke: num("--stroke", 0.0),
+    let st = if let Some(name) = arg(argv, "--preset") {
+        let p = trit_parts::tex::Preset::by_name(&name)
+            .unwrap_or_else(|| fail(&format!("未知预设 {name}（可选 cel / oil / epic）")));
+        let t = num("--strength", 1.0);
+        println!("预设 {} × 强度 {t:.2}", p.name);
+        p.style(t)
+    } else {
+        Style {
+            contrast: num("--contrast", 1.0),
+            levels: num("--levels", 0.0).max(0.0) as u32,
+            warmth: num("--warmth", 0.0),
+            sat: num("--sat", 1.0),
+            stroke: num("--stroke", 0.0),
+        }
     };
     let out = stylize(&px, w, h, &st);
     let a = trit_parts::look::analyze(&px, w, h);
@@ -3171,7 +3179,7 @@ fn usage() -> ! {
   parts-3d tex-prior [--iters 30000] [--patch 3|7] [--cond] [--hid 16]
   parts-3d tex-conv  [--iters 20000] [--hidden 8,8] [--cond] [--size 64] [--adam] [--batch K] [--bn]
   parts-3d tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 3] [--seed 1]
-  parts-3d tex-stylize <in.png> [--contrast K] [--levels N] [--warmth T] [--sat S] [--stroke R] --out o.png
+  parts-3d tex-stylize <in.png> [--preset cel|oil|epic --strength 0..1] [--contrast K] [--levels N] [--warmth T] [--sat S] [--stroke R] --out o.png
   parts-3d tex-gen   [--iters 200000] [--steps-t 50] [--size 64] [--hid 32] [--out <dir>]
                      [--conv 8,8] [--batch 4] [--adam] [--eps|--v] [--eps-space] [--diag]
                      [--dil N] [--save w.tpc] [--load w.tpc] [--holdout-names A,B]

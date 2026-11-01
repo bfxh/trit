@@ -267,17 +267,32 @@ fn box_blur(px: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
     out
 }
 
-/// 按 [`Style`] 做**显式**变换（顺序固定：笔触 → 对比度 → 色阶 → 色温 → 饱和）。
+/// 按 [`Style`] 做**显式**变换（顺序固定：笔触 → 对比度 → 色温 → 饱和 → **色阶**）。
+/// 色阶必须放最后（posterize 语义）：放前面的话后面的线性变换会再造出新值，量化档数测不出来。
 ///
 /// 每一步都是可逆/单调的闭式变换，不引入随机性；参数为默认值时逐位不变。
 pub fn stylize(px: &[f32], w: usize, h: usize, s: &Style) -> Vec<f32> {
     let mut out = px.to_vec();
+    // 分数半径：在 r 与 r+1 之间线性混合（直接 round() 会让 0.5 突然变整级模糊，实测对比度断崖）
+    let frac_blur = |src: &[f32], r: f32| -> Vec<f32> {
+        let r = r.max(0.0);
+        let lo = r.floor() as usize;
+        let fr = r - lo as f32;
+        let a = box_blur(src, w, h, lo);
+        if fr <= 1e-6 {
+            return a;
+        }
+        let b = box_blur(src, w, h, lo + 1);
+        a.iter()
+            .zip(&b)
+            .map(|(x, y)| x * (1.0 - fr) + y * fr)
+            .collect()
+    };
     if s.stroke > 0.0 {
-        out = box_blur(&out, w, h, s.stroke.round() as usize);
+        out = frac_blur(&out, s.stroke);
     } else if s.stroke < 0.0 {
         // 负值 = 锐化：原图 + (原图 − 模糊)
-        let r = (-s.stroke).round().max(1.0) as usize;
-        let b = box_blur(px, w, h, r);
+        let b = frac_blur(px, -s.stroke);
         for i in 0..out.len() {
             out[i] = (px[i] * 2.0 - b[i]).clamp(0.0, 1.0);
         }
@@ -299,18 +314,6 @@ pub fn stylize(px: &[f32], w: usize, h: usize, s: &Style) -> Vec<f32> {
             }
         }
     }
-    if s.levels >= 2 {
-        // 在**图自身**的 [lo, hi] 里量化：按 0..1 量化会把深色图压成 1–2 档（实测 8 档只剩 2 档）
-        let lo = out.iter().cloned().fold(f32::INFINITY, f32::min);
-        let hi = out.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-        if hi - lo > 1e-6 {
-            let n = s.levels as f32 - 1.0;
-            for v in out.iter_mut() {
-                let t = ((*v - lo) / (hi - lo) * n).round() / n;
-                *v = lo + t * (hi - lo);
-            }
-        }
-    }
     if s.warmth.abs() > 1e-6 {
         for p in out.chunks_mut(3) {
             p[0] = (p[0] * (1.0 + s.warmth)).clamp(0.0, 1.0);
@@ -325,7 +328,92 @@ pub fn stylize(px: &[f32], w: usize, h: usize, s: &Style) -> Vec<f32> {
             }
         }
     }
+    if s.levels >= 2 {
+        // 在**图自身**的 [lo, hi] 里量化：按 0..1 量化会把深色图压成 1–2 档（实测 8 档只剩 2 档）
+        let lo = out.iter().cloned().fold(f32::INFINITY, f32::min);
+        let hi = out.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        if hi - lo > 1e-6 {
+            let n = s.levels as f32 - 1.0;
+            for v in out.iter_mut() {
+                let t = ((*v - lo) / (hi - lo) * n).round() / n;
+                *v = lo + t * (hi - lo);
+            }
+        }
+    }
     out
+}
+
+/// 风格预设（S6.7 止损后的形态）：**固定变换序列 + 单一强度 `t ∈ [0,1]`**。
+///
+/// 三个预设只在「端点」定义（t=1），中间按 t 线性插值；t=0 必须逐位等于原图（单测钉住）。
+#[derive(Clone, Copy, Debug)]
+pub struct Preset {
+    pub name: &'static str,
+    /// t=1 时的对比度倍数
+    pub contrast: f32,
+    /// t=1 时的色阶数（0 = 不量化）
+    pub levels: u32,
+    /// t=1 时的色温
+    pub warmth: f32,
+    /// t=1 时的饱和度
+    pub sat: f32,
+    /// t=1 时的笔触（正 = 模糊、负 = 锐化，0 = 不变）
+    pub stroke: f32,
+}
+
+/// 三个预设：赛璐璐 / 油画 / 史诗写实。
+pub const PRESETS: [Preset; 3] = [
+    Preset {
+        name: "cel",
+        contrast: 1.5,
+        levels: 6,
+        warmth: 0.0,
+        sat: 1.25,
+        stroke: -1.0,
+    },
+    Preset {
+        name: "oil",
+        contrast: 1.15,
+        levels: 0,
+        warmth: 0.12,
+        sat: 1.2,
+        stroke: 3.0,
+    },
+    Preset {
+        name: "epic",
+        // 实测两条：① 量化放最后会压掉局部对比度 ⇒ 不做 posterize；
+        // ② 任何模糊都会抵消对比度增益（t=1 时 contrast 0.29→0.24）⇒ 这个预设不带笔触。
+        contrast: 1.35,
+        levels: 0,
+        warmth: 0.18,
+        sat: 1.05,
+        stroke: 0.0,
+    },
+];
+
+impl Preset {
+    pub fn by_name(name: &str) -> Option<Preset> {
+        PRESETS.iter().copied().find(|p| p.name == name)
+    }
+
+    /// 强度 `t` 下的显式参数（t=0 ⇒ 默认参数；`levels` 从 32 档线性收拢到端点档数）。
+    pub fn style(&self, t: f32) -> Style {
+        let t = t.clamp(0.0, 1.0);
+        let levels = if self.levels < 2 || t <= 0.0 {
+            0
+        } else {
+            let hi = 32.0f32;
+            let lo = self.levels as f32;
+            (hi + (lo - hi) * t).round().max(2.0) as u32
+        };
+        Style {
+            contrast: 1.0 + (self.contrast - 1.0) * t,
+            levels,
+            warmth: self.warmth * t,
+            sat: 1.0 + (self.sat - 1.0) * t,
+            stroke: self.stroke * t,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -385,6 +473,115 @@ mod tests {
             let _ = y;
         }
         v
+    }
+
+    #[test]
+    fn preset_zero_strength_is_identity() {
+        let img = sample_img(32);
+        for p in PRESETS {
+            assert_eq!(
+                p.style(0.0),
+                Style::default(),
+                "{}: t=0 应为默认参数",
+                p.name
+            );
+            assert_eq!(
+                stylize(&img, 32, 32, &p.style(0.0)),
+                img,
+                "{}: t=0 必须逐位不变",
+                p.name
+            );
+        }
+    }
+
+    #[test]
+    fn preset_names_are_unique() {
+        let mut names: Vec<&str> = PRESETS.iter().map(|p| p.name).collect();
+        names.sort_unstable();
+        let n = names.len();
+        names.dedup();
+        assert_eq!(names.len(), n, "预设名不能重复");
+        assert!(Preset::by_name("cel").is_some());
+        assert!(Preset::by_name("nope").is_none());
+    }
+
+    #[test]
+    fn preset_strength_is_monotone_in_its_defining_factors() {
+        let (w, h) = (64usize, 64usize);
+        // 细纹理彩色底：stroke 不撞上限，色阶/对比度也都有空间
+        let mut st = 4242u64;
+        // 中调区噪声（0.25–0.75）：对比度拉到 1.35 也不会削顶，否则裁剪会让 contrast 指标假跌
+        let img: Vec<f32> = (0..w * h * 3)
+            .map(|i| {
+                let base = 0.25 + 0.5 * ((sm64(&mut st) >> 40) as f32 / (1u64 << 24) as f32);
+                base * [1.0, 0.9, 0.8][i % 3]
+            })
+            .collect();
+        let ts = [0.0f32, 0.25, 0.5, 0.75, 1.0];
+        for p in PRESETS {
+            let v: Vec<crate::look::Look> = ts
+                .iter()
+                .map(|&t| crate::look::analyze(&stylize(&img, w, h, &p.style(t)), w, h))
+                .collect();
+            match p.name {
+                "cel" => {
+                    // look.levels 是 luma 直方图档数，逐通道量化后 luma 会组合出更多值；
+                    // 验收「posterize」要看**通道实际离散值数** ≤ 请求档数，并随强度单调减少。
+                    let distinct: Vec<usize> = ts
+                        .iter()
+                        .map(|&t| {
+                            let o = stylize(&img, w, h, &p.style(t));
+                            let mut set: Vec<u32> = o.iter().map(|v| (v * 1e6) as u32).collect();
+                            set.sort_unstable();
+                            set.dedup();
+                            set.len()
+                        })
+                        .collect();
+                    let mono = distinct.windows(2).all(|x| x[1] <= x[0]);
+                    assert!(mono, "cel 量化档数应随强度单调减少，实际 {distinct:?}");
+                    for (i, &d) in distinct.iter().enumerate() {
+                        let req = p.style(ts[i]).levels as usize;
+                        let want = if req == 0 { usize::MAX } else { req };
+                        assert!(d <= want, "t={}: 离散值 {d} 应 ≤ 请求档数 {want}", ts[i]);
+                    }
+                    let contrast_up = v.windows(2).all(|x| x[1].contrast >= x[0].contrast - 1e-3);
+                    assert!(
+                        contrast_up,
+                        "cel 对比度应单调上升，实际 {:?}",
+                        v.iter().map(|l| l.contrast).collect::<Vec<_>>()
+                    );
+                }
+                "oil" => {
+                    let s_up = v.windows(2).all(|x| x[1].stroke >= x[0].stroke - 1e-3);
+                    assert!(
+                        s_up,
+                        "oil 笔触尺度应单调上升，实际 {:?}",
+                        v.iter().map(|l| l.stroke).collect::<Vec<_>>()
+                    );
+                    let w_up = v.windows(2).all(|x| x[1].warmth >= x[0].warmth - 1e-3);
+                    assert!(
+                        w_up,
+                        "oil 色温应单调上升，实际 {:?}",
+                        v.iter().map(|l| l.warmth).collect::<Vec<_>>()
+                    );
+                }
+                "epic" => {
+                    let c_up = v.windows(2).all(|x| x[1].contrast >= x[0].contrast - 1e-3);
+                    assert!(
+                        c_up,
+                        "epic 对比度应单调上升，实际 {:?}",
+                        v.iter().map(|l| l.contrast).collect::<Vec<_>>()
+                    );
+                    let w_up = v.windows(2).all(|x| x[1].warmth >= x[0].warmth - 1e-3);
+                    assert!(
+                        w_up,
+                        "epic 色温应单调上升，实际 {:?}",
+                        v.iter().map(|l| l.warmth).collect::<Vec<_>>()
+                    );
+                }
+                _ => unreachable!(),
+            }
+        }
     }
 
     #[test]
