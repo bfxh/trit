@@ -2256,6 +2256,16 @@ fn tex_gen_cmd(argv: &[String]) {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(1.0f32);
             println!("FiLM lr 倍数 {}", net.film_lr_mul);
+            // 方向性损失：只对指定类（如木纹）抑制垂直方向梯度
+            if let (Some(c), Some(deg), Some(lam)) = (
+                arg(argv, "--dir-class").and_then(|v| v.parse::<usize>().ok()),
+                arg(argv, "--dir-angle").and_then(|v| v.parse::<f32>().ok()),
+                arg(argv, "--dir-loss").and_then(|v| v.parse::<f32>().ok()),
+            ) {
+                net.dir = Some((c, deg.to_radians(), lam));
+                net.abar = abar.clone();
+                println!("方向性损失：类 {c}，目标梯度角 {deg}°，λ={lam}");
+            }
             // 每类一个输出头（共享主干）：把「逐类上界」的机制塞回单模型
             if argv.iter().any(|a| a == "--heads") {
                 net.set_heads(film_k, seed);

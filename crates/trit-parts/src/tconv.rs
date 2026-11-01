@@ -37,6 +37,43 @@ pub type Sample = (Vec<Vec<f32>>, Vec<f32>, Option<usize>);
 /// FiLM 反向所需：(FiLM 前的 conv 输出, 该类 γ, 类别)。
 type FilmState = (Vec<Vec<f32>>, Vec<f32>, Option<usize>);
 
+fn sobel(img: &[f32], w: usize, h: usize) -> (Vec<f32>, Vec<f32>) {
+    let mut gx = vec![0.0f32; w * h];
+    let mut gy = vec![0.0f32; w * h];
+    for y in 1..h.saturating_sub(1) {
+        for x in 1..w.saturating_sub(1) {
+            let at = |dx: isize, dy: isize| {
+                img[((y as isize + dy) as usize) * w + (x as isize + dx) as usize]
+            };
+            gx[y * w + x] =
+                -at(-1, -1) - 2.0 * at(-1, 0) - at(-1, 1) + at(1, -1) + 2.0 * at(1, 0) + at(1, 1);
+            gy[y * w + x] =
+                -at(-1, -1) - 2.0 * at(0, -1) - at(1, -1) + at(-1, 1) + 2.0 * at(0, 1) + at(1, 1);
+        }
+    }
+    (gx, gy)
+}
+
+/// Sobel 的转置：把 (cx, cy) 对应的梯度回传到图像上（核是对称的，转置=同核散射）。
+fn sobel_adjoint(cx: &[f32], cy: &[f32], w: usize, h: usize) -> Vec<f32> {
+    let mut out = vec![0.0f32; w * h];
+    for y in 1..h.saturating_sub(1) {
+        for x in 1..w.saturating_sub(1) {
+            let (a, b) = (cx[y * w + x], cy[y * w + x]);
+            // gx 的核
+            out[(y - 1) * w + x - 1] += -a;
+            out[(y - 1) * w + x] += -2.0 * b;
+            out[(y - 1) * w + x + 1] += -a;
+            out[y * w + x - 1] += -2.0 * a;
+            out[y * w + x + 1] += 2.0 * a;
+            out[(y + 1) * w + x - 1] += a;
+            out[(y + 1) * w + x] += 2.0 * b;
+            out[(y + 1) * w + x + 1] += a;
+        }
+    }
+    out
+}
+
 fn q(v: f32) -> f32 {
     v.round().clamp(-1.0, 1.0)
 }
@@ -414,6 +451,10 @@ pub struct Net {
     pub aux_acc: f32,
     /// 每类一个**输出头**（共享主干）；`None` 的类走基础输出层。
     pub heads: Vec<Option<Conv>>,
+    /// 方向性损失：(类别, 目标梯度角弧度, 权重)。`None` = 关。
+    pub dir: Option<(usize, f32, f32)>,
+    /// 噪声表（v-预测下用于把 v̂ 还原成 x̂0 供方向性损失使用）；空 = 不可用。
+    pub abar: Vec<f32>,
 }
 
 impl Net {
@@ -443,6 +484,8 @@ impl Net {
             aux_ce: 0.0,
             aux_acc: 0.0,
             heads: Vec::new(),
+            dir: None,
+            abar: Vec::new(),
         }
     }
 
@@ -806,6 +849,41 @@ impl Net {
                     d[0][i] = (p - t) / n as f32 / k as f32; // 批内平均
                 }
             }
+            // 方向性损失：抑制「垂直于目标主方向」的梯度分量（对 x̂0 施加）
+            if let (Some((dcls, angle, lam)), Some(cls)) = (self.dir, class)
+                && *cls == dcls
+                && lam > 0.0
+                && self.linear_out
+                && !self.abar.is_empty()
+            {
+                {
+                    let tmax = self.abar.len().saturating_sub(1).max(1);
+                    let idx = ((t_frac * tmax as f32).round() as usize).min(tmax);
+                    let a = self.abar[idx].clamp(0.0, 1.0);
+                    let (sa, se) = (a.sqrt(), (1.0 - a).sqrt());
+                    let xt = &maps_in[0];
+                    let x0: Vec<f32> = (0..n).map(|i| sa * xt[i] - se * pred[i]).collect();
+                    let (gx, gy) = sobel(&x0, w, h);
+                    // m ⊥ 目标梯度方向 n=(cosθ, sinθ)
+                    let (mx, my) = (-angle.sin(), angle.cos());
+                    let mut gsum = 0.0f64;
+                    let mut coef = vec![0.0f32; n];
+                    let inner = (w.saturating_sub(2)) * (h.saturating_sub(2));
+                    for i in 0..n {
+                        let gm = gx[i] * mx + gy[i] * my;
+                        gsum += f64::from(gm * gm);
+                        coef[i] = 2.0 * lam * gm / inner.max(1) as f32;
+                    }
+                    loss += f64::from(lam) * gsum / inner.max(1) as f64;
+                    let gx2: Vec<f32> = coef.iter().map(|c| c * mx).collect();
+                    let gy2: Vec<f32> = coef.iter().map(|c| c * my).collect();
+                    let dx0 = sobel_adjoint(&gx2, &gy2, w, h);
+                    for (i, g) in dx0.iter().enumerate() {
+                        d[0][i] += -se * g / k as f32;
+                    }
+                }
+            }
+
             // 高通匹配：对残差做 4 邻域拉普拉斯，边界跳过（保证算子自伴，梯度就是它自己）
             if self.linear_out && self.highpass > 0.0 && w > 2 && h > 2 {
                 let mut lap = vec![0.0f32; n];
@@ -1170,6 +1248,8 @@ impl Net {
             aux_ce: 0.0,
             aux_acc: 0.0,
             heads: Vec::new(),
+            dir: None,
+            abar: Vec::new(),
         };
         net.set_circular(circular);
         if nk_hdr > 0 {
