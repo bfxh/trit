@@ -183,6 +183,98 @@ fn train(argv: &[String]) {
     println!("已存 {}", save.display());
 }
 
+/// `mesh-single --model <tpm> --head <tpdh> --scene <dir> --frame N --cell 0.02 [--gt] --out <ply>`：
+/// **单图 → 3D 网格**：预测（或 GT）深度 → 反投影点云 → 体素填实 → 表面网 → PLY。
+/// 前景遮罩目前取 GT seg（真实照片要靠背景分割/深度阈值，见文档）。
+fn mesh_single(argv: &[String]) {
+    use trit_parts::mesh::{boundary_edges, fill_solid, surface_nets, write_ply};
+
+    let model = PathBuf::from(arg(argv, "--model").unwrap_or_else(|| usage()));
+    let head_p = arg(argv, "--head").map(PathBuf::from);
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let frame: usize = arg(argv, "--frame")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let cell: f32 = arg(argv, "--cell")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.02);
+    let use_gt = argv.iter().any(|a| a == "--gt");
+    let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+
+    let p = scene.join("rgb").join(format!("{frame:06}.png"));
+    let (seg, shape) =
+        trit_parts::data::read_npy_i32(&scene.join("seg").join(format!("{frame:06}.npy")))
+            .unwrap_or_else(|e| panic!("{e}"));
+    let (h, w) = (shape[0], shape[1]);
+
+    let depth: Vec<f32> = if use_gt {
+        let (d, _) =
+            trit_parts::geo::read_npy_f32(&scene.join("depth").join(format!("{frame:06}.npy")))
+                .unwrap_or_else(|e| panic!("{e}"));
+        d
+    } else {
+        let gpu = Gpu::new().expect("GPU 初始化失败");
+        let tpm = TpmModel::load(&model).unwrap_or_else(|e| panic!("{e}"));
+        let mut net = Net::from_tpm(&tpm);
+        net.upload_all(&gpu);
+        let head = DepthHead::load(&head_p.unwrap_or_else(|| panic!("预测模式需要 --head")))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let (feats, _, npix) = forward_all(&net, &gpu, &p);
+        let mut disp = head.disparity(&feats, npix);
+        // 逐图中位数对齐（默认关）：实测把它打开后单图重建与 GT 的 IoU 从 0.016 掉到 0.001，
+        // 说明误差不是简单的整体偏移，而是逐像素的非线性偏差 ⇒ 仅保留为实验开关。
+        if argv.iter().any(|a| a == "--align-median") {
+            let mut fg: Vec<f32> = (0..npix).filter(|&i| seg[i] > 0).map(|i| disp[i]).collect();
+            fg.sort_by(f32::total_cmp);
+            if !fg.is_empty() {
+                let med = fg[fg.len() / 2];
+                let shift = head.b - med;
+                for v in disp.iter_mut() {
+                    *v += shift;
+                }
+                println!(
+                    "视差中位对齐：{med:.4} → {:.4}（shift {shift:+.4}）",
+                    head.b
+                );
+            }
+        }
+        DepthHead::depth(&disp)
+    };
+
+    let cam = trit_parts::geo::Camera::load(&scene.join("meta").join(format!("{frame:06}.json")))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let mut pts: Vec<[f32; 3]> = Vec::new();
+    for i in 0..w * h {
+        if seg[i] <= 0 {
+            continue;
+        }
+        let d = depth[i];
+        if !(d.is_finite() && d > 0.05 && d < 50.0) {
+            continue;
+        }
+        pts.push(cam.unproject((i % w) as f64, (i / w) as f64, d));
+    }
+    let grid =
+        trit_parts::mesh::Grid::from_points(&pts, cell, 3).unwrap_or_else(|| panic!("无有效点"));
+    let mut g = grid.clone();
+    fill_solid(&mut g);
+    let m = surface_nets(&g);
+    write_ply(&out, &m).unwrap_or_else(|e| panic!("{e}"));
+    println!(
+        "单图{} → 点 {} / 顶点 {} / 面 {} / 边界边 {} → {}",
+        if use_gt {
+            "（GT 深度）"
+        } else {
+            "（预测深度）"
+        },
+        pts.len(),
+        m.verts.len(),
+        m.tris.len(),
+        boundary_edges(&m),
+        out.display()
+    );
+}
+
 fn eval(argv: &[String]) {
     use trit_parts::api::decode_ids;
     use trit_parts::geo::{Camera, centroid, clouds, iou3d, voxelize};
@@ -309,6 +401,7 @@ fn main() {
     match argv.first().map(String::as_str) {
         Some("train") => train(&argv),
         Some("eval") => eval(&argv),
+        Some("mesh-single") => mesh_single(&argv),
         _ => usage(),
     }
 }
