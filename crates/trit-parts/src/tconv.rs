@@ -74,6 +74,48 @@ fn sobel_adjoint(cx: &[f32], cy: &[f32], w: usize, h: usize) -> Vec<f32> {
     out
 }
 
+/// coherence 损失与其对 x̂0 的解析梯度（抽出来做有限差分对拍）。
+pub(crate) fn coh_loss_grad(
+    x0: &[f32],
+    w: usize,
+    h: usize,
+    cstar: f32,
+    tstar: f32,
+    lam: f32,
+    w_t: f32,
+) -> (f32, Vec<f32>) {
+    let n = w * h;
+    let (gx, gy) = sobel(x0, w, h);
+    let inner = (w.saturating_sub(2)) * (h.saturating_sub(2));
+    let (mut jxx, mut jyy, mut jxy) = (0.0f32, 0.0f32, 0.0f32);
+    for i in 0..n {
+        jxx += gx[i] * gx[i];
+        jyy += gy[i] * gy[i];
+        jxy += gx[i] * gy[i];
+    }
+    let inv = 1.0 / inner.max(1) as f32;
+    let (jxx, jyy, jxy) = (jxx * inv, jyy * inv, jxy * inv);
+    let tr = (jxx + jyy).max(1e-8);
+    let (aa, bb) = (jxx - jyy, 2.0 * jxy);
+    let dd = (aa * aa + bb * bb).sqrt().max(1e-8);
+    let c = (dd / tr).clamp(0.0, 1.0);
+    let et = (tr - tstar) / tstar.max(1e-6);
+    let loss = lam * (c - cstar) * (c - cstar) + w_t * lam * et * et;
+    let dl_dc = 2.0 * lam * (c - cstar);
+    let dl_dt = 2.0 * w_t * lam * et / tstar.max(1e-6);
+    let djxx = dl_dc * ((aa / dd - c) / tr) + dl_dt;
+    let djyy = dl_dc * ((-aa / dd - c) / tr) + dl_dt;
+    let djxy = dl_dc * ((2.0 * bb / dd) / tr);
+    let cx: Vec<f32> = (0..n)
+        .map(|i| (2.0 * djxx * gx[i] + djxy * gy[i]) * inv)
+        .collect();
+    let cy: Vec<f32> = (0..n)
+        .map(|i| (2.0 * djyy * gy[i] + djxy * gx[i]) * inv)
+        .collect();
+    let grad = sobel_adjoint(&cx, &cy, w, h);
+    (loss, grad)
+}
+
 fn q(v: f32) -> f32 {
     v.round().clamp(-1.0, 1.0)
 }
@@ -457,6 +499,8 @@ pub struct Net {
     pub abar: Vec<f32>,
     /// 结构张量矩匹配：`(类别, 目标 (Jxx,Jyy,Jxy), λ)`。`None` = 关。
     pub stm: Option<(usize, [f32; 3], f32)>,
+    /// coherence 匹配：`(类别, 目标 c*, 目标总能量 T*, λ, 能量项权重)`。`None` = 关。
+    pub coh: Option<(usize, f32, f32, f32, f32)>,
 }
 
 impl Net {
@@ -489,6 +533,7 @@ impl Net {
             dir: None,
             abar: Vec::new(),
             stm: None,
+            coh: None,
         }
     }
 
@@ -852,6 +897,26 @@ impl Net {
                     d[0][i] = (p - t) / n as f32 / k as f32; // 批内平均
                 }
             }
+            // coherence 匹配：c = sqrt((Jxx−Jyy)²+4Jxy²)/(Jxx+Jyy)，另加弱能量项防止退化成光栅/空图
+            if let (Some((ccls, cstar, tstar, lam, w_t)), Some(cls)) = (self.coh, class)
+                && *cls == ccls
+                && lam > 0.0
+                && self.linear_out
+                && !self.abar.is_empty()
+            {
+                let tmax = self.abar.len().saturating_sub(1).max(1);
+                let idx = ((t_frac * tmax as f32).round() as usize).min(tmax);
+                let a = self.abar[idx].clamp(0.0, 1.0);
+                let (sa, se) = (a.sqrt(), (1.0 - a).sqrt());
+                let xt = &maps_in[0];
+                let x0: Vec<f32> = (0..n).map(|i| sa * xt[i] - se * pred[i]).collect();
+                let (lval, dx0) = coh_loss_grad(&x0, w, h, cstar, tstar, lam, w_t);
+                loss += f64::from(lval);
+                for (i, g) in dx0.iter().enumerate() {
+                    d[0][i] += -se * g / k as f32;
+                }
+            }
+
             // 结构张量矩匹配：把 x̂0 的 (Jxx,Jyy,Jxy) 拉向该类真实值（同时约束各向异性与梯度能量）
             if let (Some((scls, jt, lam)), Some(cls)) = (self.stm, class)
                 && *cls == scls
@@ -1293,6 +1358,7 @@ impl Net {
             dir: None,
             abar: Vec::new(),
             stm: None,
+            coh: None,
         };
         net.set_circular(circular);
         if nk_hdr > 0 {
@@ -1681,6 +1747,36 @@ mod tests {
         let a = net.forward_xc(&maps, Some(0), w, h)[0];
         let b = net.forward_xc(&maps, Some(1), w, h)[0];
         assert!(b - a > 0.2, "两类应被区分：{a:.3} vs {b:.3}");
+    }
+
+    #[test]
+    fn coh_loss_grad_matches_finite_difference() {
+        let (w, h) = (9usize, 8usize);
+        let mut s = 11u64;
+        let mut rnd = || {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            (s >> 11) as f32 / (1u64 << 53) as f32 - 0.5
+        };
+        let x0: Vec<f32> = (0..w * h).map(|_| rnd()).collect();
+        let (cstar, tstar, lam, wt) = (0.573f32, 0.0333f32, 1.0f32, 0.1f32);
+        let (_, grad) = super::coh_loss_grad(&x0, w, h, cstar, tstar, lam, wt);
+        let eps = 1e-3f32;
+        for &i in &[w + 2, 3 * w + 4, 5 * w + 5] {
+            let mut up = x0.clone();
+            up[i] += eps;
+            let mut dn = x0.clone();
+            dn[i] -= eps;
+            let fu = super::coh_loss_grad(&up, w, h, cstar, tstar, lam, wt).0;
+            let fd = super::coh_loss_grad(&dn, w, h, cstar, tstar, lam, wt).0;
+            let num = (fu - fd) / (2.0 * eps);
+            let ana = grad[i];
+            assert!(
+                (num - ana).abs() < 0.05 * num.abs().max(0.05),
+                "像素 {i}: 数值 {num:.4} vs 解析 {ana:.4}"
+            );
+        }
     }
 
     #[test]

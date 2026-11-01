@@ -2256,6 +2256,20 @@ fn tex_gen_cmd(argv: &[String]) {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(1.0f32);
             println!("FiLM lr 倍数 {}", net.film_lr_mul);
+            // coherence 匹配（归一化矩，直击各向异性）
+            if let (Some(c), Some(cs), Some(ts), Some(lam)) = (
+                arg(argv, "--coh-class").and_then(|v| v.parse::<usize>().ok()),
+                arg(argv, "--coh-target").and_then(|v| v.parse::<f32>().ok()),
+                arg(argv, "--coh-energy").and_then(|v| v.parse::<f32>().ok()),
+                arg(argv, "--coh-loss").and_then(|v| v.parse::<f32>().ok()),
+            ) {
+                let w_t = arg(argv, "--coh-wt")
+                    .and_then(|v| v.parse::<f32>().ok())
+                    .unwrap_or(0.1f32);
+                net.coh = Some((c, cs, ts, lam, w_t));
+                net.abar = abar.clone();
+                println!("coherence 匹配：类 {c}，c*={cs}，T*={ts}，λ={lam}，能量权 {w_t}");
+            }
             // 结构张量矩匹配（S6.3 方向性结构）
             if let (Some(c), Some(t), Some(lam)) = (
                 arg(argv, "--stm-class").and_then(|v| v.parse::<usize>().ok()),
