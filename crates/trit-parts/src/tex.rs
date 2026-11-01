@@ -717,7 +717,7 @@ mod tests {
         let mut v = Vec::with_capacity(n * n * 3);
         for _y in 0..n {
             for x in 0..n {
-                let c = if (x / (period / 2)) % 2 == 0 {
+                let c = if (x / (period / 2)).is_multiple_of(2) {
                     0.85
                 } else {
                     0.15
