@@ -7,6 +7,9 @@
 - `scripts/autoflow.py run -- <命令…>`：一条命令内**先快照、失败自动回退**——成功保留改动并打印快照 id；
   失败自动补回被删、覆盖被改、**删掉命令新建的文件**，失败码原样返回；`--keep-on-fail` 保留现场。
   实仓演练：改 README + 建探针后 exit 5 ⇒ README 逐字节还原、探针被删、rc=5。
+- `scripts/gitflow.py branch list|start|sync|prune`：**分支层面的日常**——领先/落后、已并入、陈旧标记、PR 状态；
+  `start` 从最新 base 起分支（验名字、拒受保护名）；`sync` 先 fetch 再 rebase，冲突自动 abort 并列出冲突文件；
+  `prune` 默认 dry-run，`--apply` 才删已并入 base 的本地分支（不动受保护分支/当前分支）。
 - `scripts/gitflow.py publish --title … --files …`：**一句话送 GitHub**——显式点名文件（不做 `git add -A`）、
   提交前密钥扫描（`sk-*`/GitHub/Slack token/私钥头/AKIA/`.env` 一类按文件名拒收）、推送、开 PR、
   `gh pr checks --watch` 绿后 squash 合入；`--dry-run` 只打印将执行的命令。
@@ -30,9 +33,9 @@
 - `scripts/vendor.py save/restore/status`：**离线自足开关**——`cargo vendor` 整批拷进 `vendor/` 并插入带标记的
   `.cargo/config.toml` source replacement，`restore` 按备份还原并删目录；两个方向都用 `cargo metadata --offline` 验。
   实仓演练：**337.3 MiB**、`cargo check --offline -p trit-attn` 4.87s 通过；restore 后 `git status` 干净。
-- 五个工具各带 `--self-test`（21 / 22 / 17 / 10 / 28 条）并进 CI；`bfxh/repo-tools` 另有 **46 个场景测试**
+- 五个工具各带 `--self-test`（21 / 22 / 17 / 10 / 33 条）并进 CI；`bfxh/repo-tools` 另有 **52 个场景测试**
   （边界/不变量/组合矩阵 + 本地 bare 仓端到端 publish），CI 的 `scenarios` job 里跑。
-  变异门登记 46 条自锁（12 + 16 + 10 + 5 + 7），登记表 **431 → 481**。
+  变异门登记 49 条自锁（12 + 16 + 13 + 5 + 7），登记表 **431 → 484**。
   （POSIX 绝对路径那条不登记：Windows 上才可观测，Linux 上会读成 SURVIVED 造成假红。）
   场景测试当场抓到 4 个真缺陷并修掉：命令不存在不回退（改 127 并回退）、prune 不清空目录、
   POSIX 绝对路径漏拦、`.env.production` 漏网。

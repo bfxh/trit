@@ -24,6 +24,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -118,6 +119,28 @@ def staged_outside(root: pathlib.Path, files: list[str]) -> list[str]:
     return sorted(set(staged) - set(files))
 
 
+PROTECTED = {"main", "master"}
+
+
+def parse_ahead_behind(text: str) -> tuple[int, int]:
+    """`git rev-list --left-right --count` 的输出 -> (ahead, behind)。"""
+    parts = text.split()
+    if len(parts) == 2 and all(part.isdigit() for part in parts):
+        return int(parts[0]), int(parts[1])
+    return 0, 0
+
+
+def prune_candidates(names: list[str], merged: set[str], current: str, bases: set[str]) -> list[str]:
+    """可安全删除的本地分支：已并入 base、不是当前分支、不是受保护分支。"""
+    return sorted(name for name in names if name in merged and name != current and name not in bases)
+
+
+def mark_stale(rows: list[dict], now: int, stale_days: int) -> list[dict]:
+    for row in rows:
+        row["stale"] = bool(row.get("merged")) and (now - int(row.get("last_commit", now))) > stale_days * 86400
+    return sorted(rows, key=lambda row: (not row["stale"], row["name"]))
+
+
 def failed_checks(rollup: list[dict]) -> list[dict]:
     """从 PR 的 statusCheckRollup 里挑出失败的；成功/跳过/未完成都不算失败。"""
     bad: list[dict] = []
@@ -127,6 +150,160 @@ def failed_checks(rollup: list[dict]) -> list[dict]:
             continue
         bad.append(check)
     return bad
+
+
+def branch_list(repo: str, base: str, stale_days: int, remote_state: bool) -> int:
+    refs = git(["for-each-ref", "--format=%(refname:short)|%(committerdate:unix)", "refs/heads"]).stdout
+    names: list[str] = []
+    dates: dict[str, int] = {}
+    for line in refs.splitlines():
+        if "|" not in line:
+            continue
+        name, stamp = line.rsplit("|", 1)
+        names.append(name)
+        dates[name] = int(stamp) if stamp.strip().isdigit() else 0
+    merged = {
+        line.strip().lstrip("* ").strip()
+        for line in git(["branch", "--merged", base]).stdout.splitlines()
+        if line.strip()
+    }
+    current = git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    rows: list[dict] = []
+    for name in names:
+        ahead, behind = parse_ahead_behind(git(["rev-list", "--left-right", "--count", f"{base}...{name}"]).stdout)
+        row = {"name": name, "ahead": ahead, "behind": behind, "merged": name in merged, "last_commit": dates[name]}
+        if remote_state and name not in PROTECTED:
+            listing = gh(["pr", "list", "--repo", repo, "--head", name, "--state", "all", "--json", "number,state", "--limit", "1"])
+            if listing.returncode == 0 and listing.stdout.strip():
+                try:
+                    data = json.loads(listing.stdout)
+                    row["pr"] = f"#{data[0]['number']}/{data[0]['state']}" if data else "-"
+                except (json.JSONDecodeError, KeyError, IndexError):
+                    row["pr"] = "?"
+        rows.append(row)
+    rows = mark_stale(rows, int(time.time()), stale_days)
+    print(f"本地分支（base={base}，当前={current}，陈旧阈值={stale_days} 天）")
+    for row in rows:
+        flags = []
+        if row["name"] == current:
+            flags.append("当前")
+        if row["merged"]:
+            flags.append("已并入")
+        if row["stale"]:
+            flags.append("陈旧")
+        if row.get("pr"):
+            flags.append(row["pr"])
+        print(f"  {row['name']:<40} +{row['ahead']}/-{row['behind']}  " + " ".join(flags))
+    return 0
+
+
+def branch_start(name: str, base: str, remote: str, dry_run: bool) -> int:
+    problems = branch_problems(name)
+    if problems:
+        for problem in problems:
+            print(f"拒绝：{problem}")
+        return 2
+    if name in PROTECTED:
+        print(f"拒绝：{name} 是受保护分支名")
+        return 2
+    if git(["branch", "--list", name]).stdout.strip():
+        print(f"拒绝：分支已存在：{name}")
+        return 2
+    commands = [
+        ["git", "fetch", remote, base],
+        ["git", "checkout", "-b", name, "--no-track", f"{remote}/{base}"],
+    ]
+    if dry_run:
+        print("dry-run：将执行")
+        for command in commands:
+            print("  " + " ".join(command))
+        return 0
+    for command in commands:
+        result = git(command[1:])
+        print(f"$ {' '.join(command[:3])} … rc={result.returncode}")
+        if result.returncode != 0:
+            print(result.stdout[-1000:])
+            return 1
+    print(f"已从 {remote}/{base} 起分支：{name}")
+    return 0
+
+
+def branch_sync(base: str, remote: str, dry_run: bool) -> int:
+    current = git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    if current in PROTECTED:
+        print(f"拒绝：当前在受保护分支 {current} 上，先切到你的分支")
+        return 2
+    dirty = [line for line in git(["status", "--porcelain"]).stdout.splitlines() if line.strip()]
+    if dirty:
+        print("拒绝：工作树有未提交改动，先提交或清理（rebase 会拒绝/丢改动）")
+        return 2
+    target = f"{remote}/{base}"
+    if dry_run:
+        print(f"dry-run：git fetch {remote} {base} && git rebase {target}")
+        return 0
+    fetched = git(["fetch", remote, base])
+    if fetched.returncode != 0:
+        print(fetched.stdout[-1000:])
+        return 1
+    rebase = git(["rebase", target])
+    if rebase.returncode != 0:
+        conflicted = [line for line in git(["diff", "--name-only", "--diff-filter=U"]).stdout.splitlines() if line.strip()]
+        print("rebase 冲突，已 abort（分支回到原样）：")
+        for name in conflicted:
+            print(f"  {name}")
+        git(["rebase", "--abort"])
+        return 1
+    print(f"已把 {current} rebase 到 {target}")
+    return 0
+
+
+def branch_prune(base: str, apply_changes: bool) -> int:
+    current = git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    names = [line.strip().lstrip("* ").strip() for line in git(["branch", "--format=%(refname:short)"]).stdout.splitlines() if line.strip()]
+    merged = {
+        line.strip().lstrip("* ").strip()
+        for line in git(["branch", "--merged", base]).stdout.splitlines()
+        if line.strip()
+    }
+    candidates = prune_candidates(names, merged, current, PROTECTED | {base})
+    if not candidates:
+        print(f"没有可清理的分支（base={base}，当前={current}）")
+        return 0
+    for name in candidates:
+        print(f"  {'删除' if apply_changes else '候选'} {name}")
+    if not apply_changes:
+        print(f"dry-run：加 --apply 才会删除这 {len(candidates)} 个已并入 {base} 的本地分支")
+        return 0
+    failed = 0
+    for name in candidates:
+        result = git(["branch", "-d", name])
+        print(f"$ git branch -d {name} … rc={result.returncode}")
+        if result.returncode != 0:
+            failed += 1
+    return 1 if failed else 0
+
+
+def branch_cmd(repo: str, argv: list[str]) -> int:
+    base_arg = argv[argv.index("--base") + 1] if "--base" in argv else ""
+    base = base_arg or detect_base(detect_remote())
+    remote = argv[argv.index("--remote") + 1] if "--remote" in argv else detect_remote()
+    sub = argv[0] if argv else "list"
+    rest = [a for a in argv[1:] if not a.startswith("--")]
+    if sub == "list":
+        stale_days = int(argv[argv.index("--stale-days") + 1]) if "--stale-days" in argv else 14
+        return branch_list(repo, base, stale_days, remote_state="--no-remote" not in argv)
+    if sub == "start":
+        if not rest:
+            print("用法：gitflow.py branch start <名字> [--from main]")
+            return 2
+        source = argv[argv.index("--from") + 1] if "--from" in argv else base
+        return branch_start(rest[0], source, remote, "--dry-run" in argv)
+    if sub == "sync":
+        return branch_sync(base, remote, "--dry-run" in argv)
+    if sub == "prune":
+        return branch_prune(base, "--apply" in argv)
+    print(f"未知分支子命令: {sub}（list / start / sync / prune）")
+    return 2
 
 
 def diagnose(pr: str, repo: str) -> int:
@@ -363,6 +540,24 @@ def self_test() -> int:
         check("正常分支名放行", branch_problems("feat/x-1"), [])
         check("仓库名要 owner/name", bool(repo_problems("trit")), True)
         check("正常仓库名放行", repo_problems("bfxh/trit"), [])
+        check("ahead/behind 解析", parse_ahead_behind("2\t5"), (2, 5))
+        check("ahead/behind 脏输入回 0", parse_ahead_behind("oops"), (0, 0))
+        check(
+            "可清理分支：只挑已并入且非当前/非保护",
+            prune_candidates(["a", "b", "main", "cur"], {"a", "main", "cur"}, "cur", {"main"}),
+            ["a"],
+        )
+        stale = mark_stale(
+            [
+                {"name": "old-merged", "merged": True, "last_commit": 0},
+                {"name": "new-merged", "merged": True, "last_commit": 1_999_996_400},
+                {"name": "old-open", "merged": False, "last_commit": 0},
+            ],
+            now=2_000_000_000,
+            stale_days=14,
+        )
+        check("陈旧只标已并入的", [r["name"] for r in stale if r["stale"]], ["old-merged"])
+        check("陈旧排在最前", stale[0]["name"], "old-merged")
         check("默认 base 优先 main", pick_base(["main", "master"]), "main")
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")
@@ -400,6 +595,8 @@ def main(argv: list[str]) -> int:
         for line in hits:
             print(f"命中：{line}")
         return 1 if hits else 0
+    if command == "branch":
+        return branch_cmd(repo, argv[1:])
     if command == "diagnose":
         pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
         if not pr:
