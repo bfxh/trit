@@ -948,7 +948,7 @@ MUTANTS = [
         "name": "params: 不归一化位宽",
         "file": "crates/trit-circuit/src/verilog/params.rs",
         "old": "            let left = eval_expr(left, &empty)?;\n            out.push('[');\n            out.push_str(&left.to_string());\n            if let Some(right) = right {\n                let right = eval_expr(right, &empty)?;\n                out.push(':');\n                out.push_str(&right.to_string());\n            }\n            out.push(']');\n",
-        "new": "            out.push('[');\n            out.push_str(inner.trim());\n            out.push(']');\n",
+        "new": "            let left = eval_expr(left, &empty)?;\n            out.push('[');\n            out.push_str(&left.to_string());\n            out.push(']');\n",
         "pkg": "trit-circuit",
         "filter": "parses_parameterized_module_defaults"
     },
@@ -988,7 +988,7 @@ MUTANTS = [
         "name": "schedule: 不传播延迟",
         "file": "crates/trit-schedule/src/lib.rs",
         "old": "        for &predecessor in predecessors {\n            dependents[predecessor].push(position);",
-        "new": "            let _ = position;",
+        "new": "        for &predecessor in predecessors {\n            let _ = (predecessor, position);\n",
         "pkg": "trit-schedule",
         "filter": "unknown_dependency_defers_transitively"
     },
@@ -1196,7 +1196,7 @@ MUTANTS = [
         "name": "lock: 忽略已存在",
         "file": "crates/trit-schedule/src/checkpoint/file.rs",
         "old": "            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => Ok(None),\n",
-        "new": "            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {\n                let _ = error;\n                Ok(Some(CheckpointLock { path }))\n            }\n",
+        "new": "            Err(_) if false => Ok(None),\n",
         "pkg": "trit-schedule",
         "filter": "cross_process_lock_excludes_and_releases"
     },
@@ -1604,7 +1604,7 @@ MUTANTS = [
         "name": "float: 乘法指数相减",
         "file": "crates/trit-float/src/lib.rs",
         "old": "            self.exponent.saturating_add(other.exponent),",
-        "new": "            self.exponent.saturating_sub(other.exponent,",
+        "new": "            self.exponent.max(other.exponent),",
         "pkg": "trit-float",
         "filter": "arithmetic_is_exact_when_digits_fit"
     },
@@ -3229,6 +3229,9 @@ def main(pkgs: list[str]) -> int:
 
     baseline: dict[tuple[str, str], bool] = {}
     survived = 0
+    false_kills: list[str] = []
+    crash_kills: list[str] = []
+    unnamed: list[str] = []
     for mutant in mutants:
         key = (mutant["pkg"], mutant["filter"])
         if key not in baseline:
@@ -3257,15 +3260,57 @@ def main(pkgs: list[str]) -> int:
         if result.returncode == 0:
             survived += 1
             print(f"SURVIVED  {mutant['name']}")
-        else:
-            tail = next(
-                (line for line in result.stdout.splitlines() if "FAILED" in line),
-                "(有测试失败)",
+            continue
+        out = result.stdout
+        if "could not compile" in out or "error[E" in out:
+            # 变异让代码编不过 ⇒ 测试根本没跑，这条"红"不证明任何断言。
+            false_kills.append(mutant["name"])
+            print(f"FALSE-KILL {mutant['name']}  [编译红：测试没跑，不算锁]")
+            continue
+        named = next((line for line in out.splitlines() if "FAILED" in line), None)
+        tests = sorted({m.group(1) for m in re.finditer(r"^---- (\S+) stdout ----", out, re.M)})
+        if named is None and tests:
+            named = " / ".join(tests) + " 断言失败"
+        if named is None:
+            # 没有断言痕迹，只有进程异常退出（Windows 上常见 0xC00000FD 栈溢出、
+            # 0xC0000005 访问违例；Linux 上是 signal: 6/11）。这类"红"只证明
+            # 去掉守卫会炸，不证明有断言钉住它 ⇒ 单列成 CRASH-KILL，不与断言混计。
+            crash = result.returncode < 0 or result.returncode >= 0xC0000000 or bool(
+                re.search(r"overflowed its stack|signal: \d+|exit code: 0xc00000", out)
             )
-            print(f"caught    {mutant['name']}  [{tail.strip()}]")
+            if crash:
+                crash_kills.append(mutant["name"])
+                hint = next(
+                    (
+                        line.strip()
+                        for line in out.splitlines()
+                        if "overflowed" in line or "exit code" in line or "signal:" in line
+                    ),
+                    f"rc={result.returncode}",
+                )
+                print(f"CRASH-KILL {mutant['name']}  [崩溃红 {hex(result.returncode & 0xFFFFFFFF)}：{hint[:100]}]")
+                continue
+            unnamed.append(mutant["name"])
+            named = "(未点名测试)"
+        print(f"caught    {mutant['name']}  [{named.strip()}]")
 
-    print(f"\n{len(mutants) - survived}/{len(mutants)} 个变异被抓住")
-    return 1 if survived else 0
+    killed = len(mutants) - survived - len(false_kills) - len(crash_kills)
+    print(
+        f"\n断言抓住 {killed}，崩溃抓住 {len(crash_kills)}，编译红假杀 {len(false_kills)}，"
+        f"存活 {survived}（共 {len(mutants)}）"
+    )
+    for name in false_kills:
+        print(f"  FALSE-KILL {name}")
+    if crash_kills:
+        print("  CRASH-KILL（证明守卫移除会炸，但不是断言钉住）：")
+        for name in crash_kills:
+            print(f"    - {name}")
+    if unnamed:
+        print(f"  未点名（既无断言也无崩溃签名）: {', '.join(unnamed)}")
+    if survived or false_kills:
+        print("⇒ 门判红：假杀的条目要么改成语义变异（编得过、只改行为），要么删除。")
+        return 1
+    return 0
 
 
 def parse_args(argv: list[str]) -> list[str]:
