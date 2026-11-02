@@ -2,6 +2,42 @@
 
 ## [Unreleased]
 
+### Added（M3 受控探测：allowlist 默认拒绝的实验室端口/服务指纹）
+
+- `trit-net::netsec::probe`：证据生产端——M2 攻击图是登记制，probe 是第一个
+  机器化证据来源。授权边界机械化（每条可测）：**只吃字面 IP**（DNS 名拒绝，
+  SSRF/重绑定面从协议层排除）；**实验室范围** = 环回/私网/链路本地/`::1`/ULA
+  （刻意不含 CGNAT 100.64/10、198.18/15、组播、公网）；**默认拒绝**（allowlist
+  显式列出 (ip, port) 才探，主机在列端口没列也拒）；**硬上限防扫全段**（≤64 目标
+  /≤32 端口每目标/≤512 总探测，超顶拒绝运行而非缩放，**端口段不支持**——段就是
+  扫描的形状）；串行 + 限速 + 全局 deadline。
+- 结果只分类不升格：成功=`T`、明确拒绝（RST）=`F`、超时/不可达=`X`（分不清
+  filtered/down 不替网络下结论；平台现实：Windows 的 connect_timeout 常把拒绝
+  表面化成超时，那时落 `X`——宁可少报信息不多报结论）。banner 摘录与知名端口
+  提示只是 note 里的线索，不是判决。每条输出自带 `source: "tcp-connect"`，
+  可直接作为攻击图登记的出处。
+- `trit-net probe <allowlist.json> [--connect-timeout ms] [--delay ms]`：CLI 入口，
+  JSONL 逐行输出 findings，stderr 报 planned/probed/truncated。
+- 测试 `tests/probe.rs` 11 条（默认拒绝、DNS/公网拒绝、实验室范围穷举、硬上限、
+  配置超顶、分类纯函数、**环回真连接**：开端口 banner=`T`、关端口永不绝不
+  `Confirmed`、deadline 截断如实、JSONL 往返；全部只打 127.0.0.1）；
+  变异门 +2（拒绝分类被改、allowlist `&&`→`||`）。
+
+### Added（M2 三值攻击图：证据等级 + 弃权语义进攻击侧）
+
+- `trit-net::netsec::attack`：三值攻击图——节点与边都带证据等级（`T` 已证实 /
+  `X` 待验证 / `F` 已排除），登记一律带出处（空出处拒绝）。路径折叠 = K3 AND
+  （格序 min，`F` 支配；**不是** `strong_and`——⊗ 会让 `F ⊗ X = X`，把已排除的
+  跳数洗活）；跨路径合并 = K3 OR（一条已证实路线即可达已证实）；枚举截断
+  **一律封顶 `X`**，既不敢确认也不敢排除。`X` 判决带机器可读见证（`open` 逐环节
+  点名待验证的边/立场）。修的缺陷：自动渗透文献把「没验证」当「成功」，攻击图的
+  边没有证据等级（见 `docs/SECURITY-NET.md` §与论文的关系）。
+- `trit-net attack <台账.jsonl> --src <label> --dst <label> [--max-depth N]
+  [--max-paths N]`：CLI 判决入口，JSON 输出 verdict/reason/paths/open；
+  未知节点如实失败退出。JSONL 台账往返 + 坏行显式报错（不静默丢行）。
+- 测试 `tests/attack.rs` 16 条（折叠穷举对拍 K3 AND/OR、截断封顶、LWW 登记、
+  幂等复用、环路终止、CLI 端到端）；变异门新增 2 条（fold 换 OR、截断不封顶）。
+
 ### Added（无损回退底座 + 依赖脱离体检 + 一句话提交）
 
 - `scripts/autoflow.py run -- <命令…>`：一条命令内**先快照、失败自动回退**——成功保留改动并打印快照 id；
