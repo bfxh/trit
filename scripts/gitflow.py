@@ -449,7 +449,7 @@ def branch_cmd(repo: str, argv: list[str]) -> int:
         return branch_prune(base, "--apply" in argv)
     if sub == "protect":
         target = argv[argv.index("--branch") + 1] if "--branch" in argv else base
-        return protect(repo, target, "--apply" in argv, "--dry-run" in argv)
+        return protect(repo, target, "--apply" in argv, "--dry-run" in argv, "--force" in argv)
     print(f"未知分支子命令: {sub}（list / start / sync / prune）")
     return 2
 
@@ -575,8 +575,100 @@ def diff_contexts(got: list[str], wanted: list[str]) -> list[str]:
     return problems
 
 
+def load_ci_integrity():
+    """复用 ci_integrity 的 job 解析与矩阵匹配，避免两边口径漂移。"""
+    import importlib.util
+
+    path = pathlib.Path(__file__).resolve().parent / "ci_integrity.py"
+    spec = importlib.util.spec_from_file_location("trit_ci_integrity", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def delta_contexts(current: list[str], wanted: list[str]) -> list[str]:
+    """这次要新增的必需检查（老 PR 已经卡着的不在本次责任里）。"""
+    return sorted(set(wanted) - set(current))
+
+
+def missing_on_branch(jobs, wanted: list[str], ci) -> list[str]:
+    """这个分支上不会上报的上下文。jobs=None（取不到 workflow）按"全都缺"算——
+    证明不了它会跑，就不许把它设成必需。"""
+    if jobs is None:
+        return list(wanted)
+    return [context for context in wanted
+            if not any(ci.matches_context(job, context) for job in jobs)]
+
+
+def protection_blockers(prs: list[dict], jobs_by_branch: dict, added: list[str], ci) -> list[str]:
+    """加必需检查之前的拦路清单：开着的 PR 里，谁的分支根本不会跑这些 job。
+
+    GitHub 的行为是"必需检查从不出现 ⇒ 这个 PR 永远合不了"，所以这一步不能省，
+    也不能靠人肉记得（本仓差点就把两个新门推上去，卡住三条在跑的 PR）。
+    """
+    blockers: list[str] = []
+    if not added:
+        return blockers
+    for pr in prs:
+        branch = pr.get("headRefName") or ""
+        if jobs_by_branch.get(branch) is None:
+            blockers.append(f"#{pr.get('number')}（{branch}）读不到 workflow ⇒ 无法证明会跑："
+                            f"{'、'.join(added)}")
+            continue
+        gaps = missing_on_branch(jobs_by_branch[branch], added, ci)
+        if gaps:
+            blockers.append(f"#{pr.get('number')}（{branch}）不会上报：{'、'.join(gaps)}")
+    return blockers
+
+
+# API 路径只认正斜杠；ci_integrity.WORKFLOWS 是本地 os.path 常量（Windows 上是反斜杠）
+WORKFLOWS_URL = ".github/workflows"
+
+
+def remote_workflow_jobs(ci, repo: str, branch: str) -> list[dict] | None:
+    import base64
+
+    listing = gh(["api", f"repos/{repo}/contents/{WORKFLOWS_URL}?ref={branch}"])
+    if listing.returncode != 0:
+        return None
+    try:
+        entries = json.loads(listing.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(entries, list):
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        box = pathlib.Path(tmp)
+        (box / WORKFLOWS_URL).mkdir(parents=True, exist_ok=True)
+        found = 0
+        for entry in entries:
+            name = entry.get("name") or ""
+            if not name.endswith((".yml", ".yaml")):
+                continue
+            raw = gh(["api", f"repos/{repo}/contents/{WORKFLOWS_URL}/{name}?ref={branch}",
+                      "--jq", ".content"])
+            if raw.returncode != 0:
+                return None
+            (box / WORKFLOWS_URL / name).write_bytes(base64.b64decode(raw.stdout))
+            found += 1
+        if found == 0:
+            return None
+        return ci.parse_workflows(box)
+
+
+def open_pr_list(repo: str) -> list[dict] | None:
+    result = gh(["pr", "list", "--repo", repo, "--state", "open", "--json", "number,headRefName"])
+    if result.returncode != 0:
+        return None
+    try:
+        data = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, list) else None
+
+
 def apply_required_checks(repo: str, branch: str, rule: dict, wanted: list[str],
-                          dry_run: bool) -> int:
+                          dry_run: bool, force: bool = False) -> int:
     """把本地台账推到分支保护，并把改动前的规则存成回滚点。
 
     这里唯一不能出错的是"空清单"：台账读出来是空（文件没了/全被注释）就当"撤掉所有必需检查"
@@ -586,6 +678,29 @@ def apply_required_checks(repo: str, branch: str, rule: dict, wanted: list[str],
         print("拒收：本地必需检查清单是空的（文件缺失或全是注释）。"
               "真要撤掉保护请显式操作，不许由一次读空触发。")
         return 1
+    current = (rule.get("required_status_checks") or {}).get("contexts") or []
+    added = delta_contexts(current, wanted)
+    if added and not force:
+        ci = load_ci_integrity()
+        prs = open_pr_list(repo)
+        if prs is None:
+            print("拒推：读不到开着的 PR 清单，无法证明新检查不会把别人的 PR 卡死。"
+                  "确认无误再加 --force。")
+            return 1
+        jobs_by_branch: dict[str, list[dict] | None] = {}
+        for pr in prs:
+            name = pr.get("headRefName") or ""
+            if name not in jobs_by_branch:
+                jobs_by_branch[name] = remote_workflow_jobs(ci, repo, name)
+        blockers = protection_blockers(prs, jobs_by_branch, added, ci)
+        if blockers:
+            print(f"拒推：这次要新增 {len(added)} 条必需检查，但 {len(blockers)} 条开着的 PR "
+                  "的分支上这些 job 不会跑 ⇒ 设成必需就把它们永久卡住：")
+            for line in blockers:
+                print(f"  - {line}")
+            print("补救：先 `gitflow pr sync <n>` 把 main 并进那个分支（带来 workflow），"
+                  "或本次先不加这两条必需。确认要强行加才用 --force。")
+            return 1
     body = strip_urls(rule)
     body["required_status_checks"] = {**(rule.get("required_status_checks") or {}),
                                       "strict": (rule.get("required_status_checks") or {})
@@ -625,7 +740,8 @@ def apply_required_checks(repo: str, branch: str, rule: dict, wanted: list[str],
     return 0
 
 
-def protect(repo: str, branch: str, apply_changes: bool = False, dry_run: bool = False) -> int:
+def protect(repo: str, branch: str, apply_changes: bool = False, dry_run: bool = False,
+          force: bool = False) -> int:
     info = gh(["api", f"repos/{repo}/branches/{branch}"])
     if info.returncode != 0:
         print(f"查不到分支 {branch}：")
@@ -657,7 +773,7 @@ def protect(repo: str, branch: str, apply_changes: bool = False, dry_run: bool =
     if apply_changes:
         wanted = read_required_checks(ROOT / ".github" / "required-checks.txt")
         print(f"本地台账 {len(wanted)} 条 ⇒ 推送到 {repo}:{branch}")
-        return apply_required_checks(repo, branch, rule, wanted, dry_run)
+        return apply_required_checks(repo, branch, rule, wanted, dry_run, force)
     return 0
 
 
@@ -1291,10 +1407,40 @@ def self_test() -> int:
               apply_required_checks("o/r", "main", {}, [], True), 1)
         check("dry-run 只打印不碰远端",
               apply_required_checks("o/r", "main", {"required_status_checks":
-                                                    {"strict": True, "contexts": []}}, ["CI"], True), 0)
+                                                    {"strict": True, "contexts": ["CI"]}}, ["CI"], True), 0)
+        check("新增必需检查时先过拦路检查（无网络就拒，不许盲推）",
+              apply_required_checks("o/r", "main", {"required_status_checks":
+                                                    {"strict": True, "contexts": []}}, ["CI"], True), 1)
         check("写完复核：一致没话说", diff_contexts(["CI", "t3"], ["t3", "CI"]), [])
         check("写完复核：少了要点名", diff_contexts(["CI"], ["CI", "t3"]), ["少 t3"])
         check("写完复核：多了也要点名", diff_contexts(["CI", "旧门"], ["CI"]), ["多 旧门"])
+
+        # 推保护之前先看开着的 PR 会不会被卡住（本仓差点把两个新门推上去卡住三条 PR）
+        ci = load_ci_integrity()
+        check("只对本次新增的必需检查负责", delta_contexts(["CI", "t3"], ["CI", "t3", "新门"]), ["新门"])
+        jobs_ok = [{"workflow": "ci.yml", "id": "surface", "name": "test surface (ratchet)",
+                    "if": "", "on_pr": True, "has_matrix": False}]
+        jobs_missing = [{"workflow": "ci.yml", "id": "old", "name": "old job",
+                         "if": "", "on_pr": True, "has_matrix": False}]
+        check("分支上有这个 job ⇒ 不缺", missing_on_branch(jobs_ok, ["test surface (ratchet)"], ci), [])
+        check("分支上没这个 job ⇒ 缺",
+              missing_on_branch(jobs_missing, ["test surface (ratchet)"], ci), ["test surface (ratchet)"])
+        check("取不到 workflow 按全缺算（证明不了就不许放行）",
+              missing_on_branch(None, ["a", "b"], ci), ["a", "b"])
+        check("矩阵展开名也要能对上",
+              missing_on_branch([{"workflow": "ci.yml", "id": "x", "name": "fmt + clippy + test",
+                                  "if": "", "on_pr": True, "has_matrix": True}],
+                                ["fmt + clippy + test (ubuntu-latest)"], ci), [])
+        prs = [{"number": 7, "headRefName": "feat/a"}, {"number": 8, "headRefName": "feat/b"}]
+        check("只点名会卡住的 PR",
+              protection_blockers(prs, {"feat/a": jobs_ok, "feat/b": jobs_missing},
+                                  ["test surface (ratchet)"], ci),
+              ["#8（feat/b）不会上报：test surface (ratchet)"])
+        check("没有新增就没有拦路", protection_blockers(prs, {"feat/a": None, "feat/b": None}, [], ci), [])
+        check("读不到 workflow 要单独点名（不许混成\"确实没这个 job\"）",
+              protection_blockers([{"number": 9, "headRefName": "feat/z"}], {"feat/z": None},
+                                  ["新门"], ci),
+              ["#9（feat/z）读不到 workflow ⇒ 无法证明会跑：新门"])
 
         problems = base_ok(root, [])
         check("空文件列表被拒（点名 --files）", any("--files" in p for p in problems), True)
