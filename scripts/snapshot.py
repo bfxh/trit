@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import pathlib
@@ -34,6 +35,16 @@ STORE = ".trit"
 EXCLUDE_DIRS = {".git", "target", ".trit", "node_modules", "__pycache__", ".venv"}
 MANIFEST_VERSION = 1
 SNAP_ID_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{4}$")
+
+
+def _say(text: str) -> None:
+    """打印文件名用的：中文 Windows 控制台是 cp936，名字里带 emoji 会让 print 抛
+    UnicodeEncodeError —— 回退跑到中途因为一行进度而崩，是不能接受的。"""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        print(text.encode(encoding, "replace").decode(encoding, "replace"))
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -188,9 +199,9 @@ def restore(root: pathlib.Path, manifest: dict, prune: bool, dry_run: bool) -> i
         f"新增未动 {len(plan['extra'])}{'（--prune：删除）' if prune else '（保留；要删加 --prune）'}"
     )
     for rel in actions:
-        print(f"  {'补回' if rel in plan['missing'] else '覆盖'} {rel}")
+        _say(f"  {'补回' if rel in plan['missing'] else '覆盖'} {rel}")
     for rel in plan["extra"]:
-        print(f"  {'删除' if prune else '保留'} {rel}")
+        _say(f"  {'删除' if prune else '保留'} {rel}")
     if dry_run:
         print("dry-run：未改动任何文件")
         return 0
@@ -281,7 +292,7 @@ def verify(root: pathlib.Path, manifest: dict) -> int:
     print(f"verify {manifest['id']}：不一致")
     for key, label in (("missing", "缺失"), ("changed", "已改"), ("extra", "快照后新增")):
         for rel in plan[key]:
-            print(f"  {label} {rel}")
+            _say(f"  {label} {rel}")
     return 1
 
 
@@ -393,6 +404,26 @@ def self_test() -> int:
         (root / "target").mkdir()
         (root / "target" / "junk.bin").write_bytes(b"junk")
         check("target/ 不进快照", "target/junk.bin" in iter_files(root), False)
+
+        # 14) 回退不能被"打印文件名"崩掉：中文 Windows 控制台是 cp936——中文能打，
+        # 文件名里的 emoji 打不出，bare print 会抛 UnicodeEncodeError。
+        # 这里不靠本机 locale：自己造一个 cp936 的 stdout 来判红，Linux 上同样成立。
+        with tempfile.TemporaryDirectory() as tmp3:
+            esrc = pathlib.Path(tmp3)
+            weird = esrc / "\U0001f642.txt"
+            weird.write_bytes(b"must survive\n")
+            eid = save(esrc, "unicode-name")
+            weird.unlink()
+            probe = io.TextIOWrapper(io.BytesIO(), encoding="cp936", errors="strict", newline="\n")
+            saved_stdout, sys.stdout = sys.stdout, probe
+            try:
+                rc = restore(esrc, resolve(esrc, eid), prune=False, dry_run=False)
+            except UnicodeEncodeError:
+                rc = -1
+            finally:
+                sys.stdout = saved_stdout
+            check("cp936 控制台下回退不崩（打印文件名不许判死回退）", rc, 0)
+            check("非 ASCII 文件名照样逐字节回退", (esrc / "\U0001f642.txt").read_bytes(), b"must survive\n")
 
     if failures:
         print(f"self-test: {total[0] - len(failures)}/{total[0]} passed")

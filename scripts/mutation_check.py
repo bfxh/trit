@@ -3552,6 +3552,15 @@ MUTANTS = [
         "runner": "python",
     },
     {
+        "name": "snapshot: 控制台编码崩掉回退（降级打印被去掉）",
+        "file": "scripts/snapshot.py",
+        "old": "    try:\n        print(text)\n    except UnicodeEncodeError:\n        print(text.encode(encoding, \"replace\").decode(encoding, \"replace\"))",
+        "new": "    print(text)",
+        "pkg": "scripts/snapshot.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
         "name": "snapshot: 被删文件不补回",
         "file": "scripts/snapshot.py",
         "old": "    missing = sorted(set(wanted) - current_set)\n    extra = sorted(current_set - set(wanted))",

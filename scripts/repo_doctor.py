@@ -274,6 +274,9 @@ def self_test() -> int:
         subprocess.run(["git", "init", "-q"], cwd=root)
         subprocess.run(["git", "config", "user.email", "t@example.com"], cwd=root)
         subprocess.run(["git", "config", "user.name", "t"], cwd=root)
+        # 夹具必须自带口径：不钉 autocrlf 的话，Linux CI 上 renormalize 不做转换，
+        # 索引侧仍是 CRLF，这条 would 只能判 high —— 断言就跟着机器跑了。
+        subprocess.run(["git", "config", "core.autocrlf", "true"], cwd=root)
         (root / "a.txt").write_bytes(b"line\r\n")
         (root / "target").mkdir()
         (root / "target" / "junk.bin").write_bytes(b"junk")
