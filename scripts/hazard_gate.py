@@ -354,16 +354,19 @@ def self_test() -> int:
             ),
             # 已登记但没写不变量：仍然要红（登记不能代替 SAFETY）。
             "registered_no_safety.rs": "struct R(*mut u8);\nunsafe impl Send for R {}\n",
-            # 文档写在 unsafe fn 签名上方、离匹配点超过 8 行：靠"回到签名再查 8 行"放行。
+            # 文档紧贴 unsafe fn 签名，匹配点在长函数体深处（离签名 > 8 行）：
+            # 固定 8 行窗口够不到，只能靠"回到签名再查上方 8 行"那条路放行。
             "good_fn_far.rs": (
-                "// SAFETY: 文档在签名上方，离匹配点超过 8 行。\n"
-                "//\n"
-                "//\n"
-                "//\n"
-                "//\n"
-                "//\n"
-                "//\n"
+                "// SAFETY: 文档紧贴签名，匹配点在长函数体深处。\n"
                 "unsafe fn f(p: *const u8, n: usize) {\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
                 "    let s = core::slice::from_raw_parts(p, n);\n"
                 "    std::hint::black_box(s);\n"
                 "}\n"
