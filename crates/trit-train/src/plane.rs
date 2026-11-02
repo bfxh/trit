@@ -256,10 +256,28 @@ mod tests {
     fn tail_bits_stay_clean() {
         let values = sample(65, 3);
         let planes = Planes::from_trits(&values);
-        let out = planes.and(&planes, Algebra::Kleene);
-        // 第二字只有 1 个有效位。
-        assert_eq!(out.pos_plane()[1] & !1, 0);
-        assert_eq!(out.neg_plane()[1] & !1, 0);
+        // 第二字只有 1 个有效位。逐代数都查：Bochvar 的补运算会把无效位填成 1，
+        // 只测 Kleene 自与的话掩码是不是空转看不出来（实测那样会漏掉 valid_mask 的退化）。
+        for alg in Algebra::ALL {
+            for out in [
+                planes.and(&planes, alg),
+                planes.or(&planes, alg),
+                planes.xor(&planes, alg),
+            ] {
+                assert_eq!(
+                    out.pos_plane()[1] & !1,
+                    0,
+                    "{alg:?} 的 pos 导轨尾部污染了：{:064b}",
+                    out.pos_plane()[1]
+                );
+                assert_eq!(
+                    out.neg_plane()[1] & !1,
+                    0,
+                    "{alg:?} 的 neg 导轨尾部污染了：{:064b}",
+                    out.neg_plane()[1]
+                );
+            }
+        }
     }
 
     #[test]
