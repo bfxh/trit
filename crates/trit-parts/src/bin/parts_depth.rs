@@ -212,13 +212,46 @@ fn mesh_single(argv: &[String]) {
 
     let p = scene.join("rgb").join(format!("{frame:06}.png"));
     let (w, h, _) = trit_parts::data::read_rgb(&p).unwrap_or_else(|e| panic!("{e}"));
-    // 前景遮罩：有 GT 分割就用它；真实照片没有 seg 文件，先退化成全图
-    // （无 GT 的自动抠图属于分割那一块，见文档缺口）。
-    let mask: Vec<bool> =
+    // 前景遮罩优先级：`--fg <tpm>`（模型前景头，真实照片用）> GT `seg/` > 全图。
+    let mask: Vec<bool> = if let Some(fp) = arg(argv, "--fg").map(PathBuf::from) {
+        let k: usize = arg(argv, "--fg-k")
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(5);
+        let gpu = Gpu::new().expect("GPU 初始化失败");
+        let tpm = TpmModel::load(&fp).unwrap_or_else(|e| panic!("{e}"));
+        let mut net = Net::from_tpm(&tpm);
+        net.upload_all(&gpu);
+        let (_, logits, npix) = forward_all(&net, &gpu, &p);
+        let ch = logits.len() / npix.max(1);
+        if k * 3 >= ch {
+            panic!("模型输出 {ch} 通道，不够 k={k}（需 {}）", k * 3 + 1);
+        }
+        let m: Vec<bool> = (0..npix).map(|i| logits[i * ch + k * 3] > 0.0).collect();
+        let fg = m.iter().filter(|v| **v).count() as f32 / npix as f32;
+        if let Ok((gt, _)) =
+            trit_parts::data::read_npy_i32(&scene.join("seg").join(format!("{frame:06}.npy")))
+        {
+            let (mut inter, mut union) = (0usize, 0usize);
+            for i in 0..npix {
+                let g = gt[i] > 0;
+                inter += (m[i] && g) as usize;
+                union += (m[i] || g) as usize;
+            }
+            println!(
+                "前景头：覆盖率 {:.1}%，前景 IoU {:.3}",
+                fg * 100.0,
+                inter as f32 / union.max(1) as f32
+            );
+        } else {
+            println!("前景头：覆盖率 {:.1}%（无 GT seg 可比）", fg * 100.0);
+        }
+        m
+    } else {
         match trit_parts::data::read_npy_i32(&scene.join("seg").join(format!("{frame:06}.npy"))) {
             Ok((seg, _)) => seg.iter().map(|&v| v > 0).collect(),
             Err(_) => vec![true; w * h],
-        };
+        }
+    };
 
     let depth: Vec<f32> = if use_gt {
         let (d, _) =
