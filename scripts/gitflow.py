@@ -37,6 +37,7 @@ SECRET_PATTERNS = [
     (re.compile("xox" + r"[baprs]-[A-Za-z0-9-]{10,}"), "Slack token"),
     (re.compile(r"-----BEGIN " + r"[A-Z ]*PRIVATE KEY-----"), "私钥"),
 ]
+ALLOW_MARKER = "secret-scan: allow"
 SECRET_FILE_NAMES = {"credentials.json", "id_rsa", "id_ed25519", "id_dsa", ".npmrc", ".pypirc", "secrets.json", "secrets.yaml"}
 
 
@@ -574,9 +575,14 @@ def secret_scan(root: pathlib.Path, files: list[str]) -> list[str]:
         except OSError as exc:
             hits.append(f"{name}: 读不了（{exc}）")
             continue
-        for pattern, label in SECRET_PATTERNS:
-            if pattern.search(text):
-                hits.append(f"{name}: 命中 {label}")
+        lines = text.splitlines()
+        for index, line in enumerate(lines):
+            # 与 scripts/secret_scan.py 同口径：本行或上一行带显式豁免标记就跳过
+            if ALLOW_MARKER in line or (index > 0 and ALLOW_MARKER in lines[index - 1]):
+                continue
+            for pattern, label in SECRET_PATTERNS:
+                if pattern.search(line):
+                    hits.append(f"{name}:{index + 1}: 命中 {label}")
     return hits
 
 
@@ -732,6 +738,10 @@ def self_test() -> int:
         check("sk- 形状命中", any("sk-" in h for h in secret_scan(root, ["leak.py"])), True)
         check(".env 按文件名命中", any(".env" in h for h in secret_scan(root, [".env"])), True)
         check("私钥头命中", any("私钥" in h for h in secret_scan(root, ["key.pem"])), True)
+        (root / "allowed.py").write_text(
+            'KEY = "sk' + '-abcdefghijklmnopqrstu"  # secret-scan: allow 夹具' + chr(10), encoding="utf-8"
+        )
+        check("显式豁免标记被认", secret_scan(root, ["allowed.py"]), [])
         (root / ".env.production").write_text("A=1\n", encoding="utf-8")
         check(".env.* 也按敏感文件拒收",
               any(".env.production" in h for h in secret_scan(root, [".env.production"])), True)

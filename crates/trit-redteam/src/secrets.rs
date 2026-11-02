@@ -106,7 +106,7 @@ mod tests {
     #[test]
     fn detects_secret_with_tail_and_ignores_plain_word() {
         // 够长的尾随字母数字串才算命中。
-        let bytes = b"\0AKIAIOSFODNN7EXAMPLEKEYX\0".to_vec();
+        let bytes = b"\0AKIAIOSFODNN7EXAMPLEKEYX\0".to_vec(); // secret-scan: allow 合成夹具
         assert_eq!(scan_strings(&bytes)["aws-access-key"], 1);
         // `AKIA` 单独出现、后面没有长尾：降噪过滤。
         let bytes = b"\0the AKIA word\0".to_vec();
@@ -115,7 +115,7 @@ mod tests {
 
     #[test]
     fn private_key_needs_the_full_header() {
-        let bytes = b"\0-----BEGIN OPENSSH PRIVATE KEY-----\0".to_vec();
+        let bytes = b"\0-----BEGIN OPENSSH PRIVATE KEY-----\0".to_vec(); // secret-scan: allow 合成夹具
         assert_eq!(scan_strings(&bytes)["private-key"], 1);
         let bytes = b"\0-----BEGIN SOMETHING ELSE-----\0".to_vec();
         assert!(scan_strings(&bytes).is_empty());
