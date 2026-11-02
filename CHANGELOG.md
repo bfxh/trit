@@ -9,10 +9,13 @@
   回退前落 pending 标记，中断后重跑同一条命令即幂等收敛。实测本仓 623 文件 / 5.15 MiB，对象库 6.9 MB。
 - `scripts/deps.py`：把「某个 crate 能不能整块摘出去、缺哪几块」逐条列出来（继承字段 / 内部依赖 /
   内部 dev / 越界引用 / build.rs），只读、离线、不改文件。本仓实测：31 个 crate **无一可直接摘出**；
-  150 继承字段、54 内部依赖、2 内部 dev、5 越界引用（`trit-gpu` 的 `../matmul*.wgsl`、
-  `trit-redteam` 的 `../fixtures/three_rail.v`）；7 个 crate 无内部依赖；17 个不可发布。
-- 两者各带 `--self-test`（14 / 10 条）并进 CI（job `snapshot (self-test)` / `deps plan (self-test)`）；
-  变异门登记 17 条自锁（8 + 9），登记表 **431 → 448**。
+  150 继承字段、54 内部依赖、2 内部 dev（`trit-gpu` / `trit-net` → 不可发布的 `trit-texture`）、
+  **0 越界引用**、0 build.rs；7 个 crate 无内部依赖；17 个不可发布。
+  （更正：早先报的「5 处越界引用」是**误报**——扫描器只看 `..` 前缀、没解析路径，
+  `src/matmul/baseline.rs` 的 `../matmul_f32.wgsl` 其实仍在 `src/` 内。已改为解析后判归属，
+  并把「指向不存在文件」单列为缺失引用。）
+- 两者各带 `--self-test`（14 / 13 条）并进 CI（job `snapshot (self-test)` / `deps plan (self-test)`）；
+  变异门登记 19 条自锁（8 + 11），登记表 **431 → 450**。
 
 ### Changed（变异门：三语言口径 + 逐目标 fail-closed + 门自身自测）
 

@@ -113,10 +113,16 @@ def classify_dep(name: str, spec, ws_deps: dict) -> dict:
 OUTSIDE_REF = re.compile(r'(include_str!|include_bytes!|#\[path\s*=\s*)\(\s*"|"\s*\)|"([^"]+)"')
 
 
-def outside_refs(crate_dir: pathlib.Path) -> list[dict]:
-    """源码里指到 crate 目录之外的引用（摘出去会丢文件）。"""
+def outside_refs(crate_root: pathlib.Path) -> list[dict]:
+    """源码里指到 crate 目录**之外**的引用（摘出去会丢文件）。
+
+    必须解析相对路径再判：`src/matmul/baseline.rs` 里的 `../matmul.wgsl` 落在
+    `src/` 内，仍是 crate 自己的文件 —— 只看前缀 `..` 会把它们全误报成越界
+    （2026-11-02 本仓就误报了 5 处，公开数字已撤回）。
+    """
     hits: list[dict] = []
-    for path in sorted(crate_dir.rglob("*.rs")):
+    crate_abs = crate_root.resolve()
+    for path in sorted(crate_root.rglob("*.rs")):
         if "target" in path.parts:
             continue
         try:
@@ -124,14 +130,19 @@ def outside_refs(crate_dir: pathlib.Path) -> list[dict]:
         except (OSError, UnicodeDecodeError):
             continue
         for number, line in enumerate(lines, 1):
-            for match in re.finditer(r'(?:include_str!|include_bytes!)\(\s*"([^"]+)"', line):
-                ref = match.group(1)
-                if ref.startswith(".."):
-                    hits.append({"file": path.name, "line": number, "ref": ref})
-            for match in re.finditer(r'#\[path\s*=\s*"([^"]+)"', line):
-                ref = match.group(1)
-                if ref.startswith(".."):
-                    hits.append({"file": path.name, "line": number, "ref": ref})
+            refs = [m.group(1) for m in re.finditer(r'(?:include_str!|include_bytes!)\(\s*"([^"]+)"', line)]
+            refs += [m.group(1) for m in re.finditer(r'#\[path\s*=\s*"([^"]+)"', line)]
+            for ref in refs:
+                target = (path.parent / ref).resolve()
+                try:
+                    target.relative_to(crate_abs)
+                    inside = True
+                except ValueError:
+                    inside = False
+                if not inside:
+                    hits.append({"file": path.name, "line": number, "ref": ref, "kind": "越界"})
+                elif not target.is_file():
+                    hits.append({"file": path.name, "line": number, "ref": ref, "kind": "缺失"})
     return hits
 
 
@@ -161,7 +172,9 @@ def plan_crate(root: pathlib.Path, crate: Crate, ws_deps: dict, by_name: dict[st
 
     refs = outside_refs(root / crate.rel)
     for ref in refs:
-        blockers.append({"kind": "越界引用", "detail": f"{ref['file']}:{ref['line']} → {ref['ref']}"})
+        blockers.append(
+            {"kind": "越界引用", "detail": f"{ref['file']}:{ref['line']} → {ref['ref']}（{ref['kind']}）"}
+        )
 
     if (root / crate.rel / "build.rs").is_file():
         blockers.append({"kind": "build.rs", "detail": "存在 build.rs（可能读工作区文件）"})
@@ -241,8 +254,14 @@ def self_test() -> int:
             encoding="utf-8",
         )
         (root / "crates" / "alpha" / "src" / "lib.rs").write_text(
-            'const X: &str = include_str!("../data/x.txt");\n', encoding="utf-8"
+            'const OUT: &str = include_str!("../../outside.txt");\n'
+            'const IN: &str = include_str!("../data/x.txt");\n'
+            'const GONE: &str = include_str!("../data/absent.txt");\n',
+            encoding="utf-8",
         )
+        (root / "crates" / "outside.txt").write_text("x\n", encoding="utf-8")
+        (root / "crates" / "alpha" / "data").mkdir(parents=True)
+        (root / "crates" / "alpha" / "data" / "x.txt").write_text("x\n", encoding="utf-8")
         (root / "crates" / "alpha" / "build.rs").write_text("fn main() {}\n", encoding="utf-8")
         (root / "crates" / "beta" / "src").mkdir(parents=True)
         (root / "crates" / "beta" / "Cargo.toml").write_text(
@@ -272,6 +291,10 @@ def self_test() -> int:
             True,
         )
         check("越界 include 被识别", "越界引用" in kinds, True)
+        ref_detail = " ".join(b["detail"] for b in alpha["blockers"] if b["kind"] == "越界引用")
+        check("越界项点名 outside.txt", "outside.txt" in ref_detail, True)
+        check("crate 内的 ../ 不算越界", "data/x.txt" in ref_detail, False)
+        check("指向不存在的文件单列成缺失", "缺失" in ref_detail, True)
         check("build.rs 被识别", "build.rs" in kinds, True)
         check("内部依赖点名 beta", alpha["internal_deps"], ["beta"])
         check(
@@ -280,9 +303,9 @@ def self_test() -> int:
             True,
         )
         check("beta 自身无阻断", by_name["beta"]["blockers"], [])
-        # 反证：把 include 改成 crate 内路径，越界引用就该消失
+        # 反证：把 include 改成 crate 内已存在的文件，越界与缺失都该消失
         (root / "crates" / "alpha" / "src" / "lib.rs").write_text(
-            'const X: &str = include_str!("x.txt");\n', encoding="utf-8"
+            'const X: &str = include_str!("lib.rs");\n', encoding="utf-8"
         )
         plans2, _ = build(root)
         check(
