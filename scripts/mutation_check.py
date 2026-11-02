@@ -2936,6 +2936,179 @@ MUTANTS = [
         "pkg": "trit-immune",
         "filter": 'landing_is_monotonic_and_never_whitewashes',
     },
+    # trit-capacity 显存容量判决（2026-11-02 登记；门改为空集判红后补的第一批）。
+    {
+        "name": 'capacity: headroom 小于 1 不再夹到 1.0',
+        "file": 'crates/trit-capacity/src/lib.rs',
+        "old": '    if headroom.is_finite() && headroom >= 1.0 {',
+        "new": '    if headroom.is_finite() {',
+        "pkg": "trit-capacity",
+        "filter": 'headroom_below_one_is_clamped',
+    },
+    {
+        "name": 'capacity: free==required 判成 WARN（边界收紧）',
+        "file": 'crates/trit-capacity/src/lib.rs',
+        "old": '    let (verdict, reason) = if free >= required {',
+        "new": '    let (verdict, reason) = if free > required {',
+        "pkg": "trit-capacity",
+        "filter": 'boundary_free_equals_required_is_ok',
+    },
+    {
+        "name": 'capacity: 只够峰值也算 REJECT（WARN 层消失）',
+        "file": 'crates/trit-capacity/src/lib.rs',
+        "old": '    } else if free >= need {',
+        "new": '    } else if false {',
+        "pkg": "trit-capacity",
+        "filter": 'warn_when_only_bare_peak_fits',
+    },
+    {
+        "name": 'capacity: 读数不可用时猜成 OK',
+        "file": 'crates/trit-capacity/src/lib.rs',
+        "old": '        verdict: Verdict::Warn,',
+        "new": '        verdict: Verdict::Ok,',
+        "pkg": "trit-capacity",
+        "filter": 'unknown_is_warn_not_ok',
+    },
+    {
+        "name": 'capacity: --require 下不再拒绝无读数（fail-open）',
+        "file": 'crates/trit-capacity/src/lib.rs',
+        "old": '            if j.free.is_none() && strict {',
+        "new": '            if false {',
+        "pkg": "trit-capacity",
+        "filter": 'unknown_runs_by_default_but_strict_refuses',
+    },
+    # trit-belnap FOUR 双轨代数与预算闸门（2026-11-02 登记）。
+    {
+        "name": 'belnap: 合取假轨该 OR 写成 AND',
+        "file": 'crates/trit-belnap/src/lib.rs',
+        "old": 'Self::from_rails(t1 && t2, f1 || f2)',
+        "new": 'Self::from_rails(t1 && t2, f1 && f2)',
+        "pkg": "trit-belnap",
+        "filter": 'de_morgan_holds_on_all_sixteen_assignments',
+    },
+    {
+        "name": 'belnap: 析取假轨该 AND 写成 OR',
+        "file": 'crates/trit-belnap/src/lib.rs',
+        "old": 'Self::from_rails(t1 || t2, f1 && f2)',
+        "new": 'Self::from_rails(t1 || t2, f1 || f2)',
+        "pkg": "trit-belnap",
+        "filter": 'truth_tables_have_the_expected_conflicts',
+    },
+    {
+        "name": 'belnap: 否定不再交换两轨（变成恒等）',
+        "file": 'crates/trit-belnap/src/lib.rs',
+        "old": 'Self::from_rails(f, t)',
+        "new": 'Self::from_rails(t, f)',
+        "pkg": "trit-belnap",
+        "filter": 'truth_tables_have_the_expected_conflicts',
+    },
+    {
+        "name": 'belnap: 未赋值的变量默认判成 F 而非 N',
+        "file": 'crates/trit-belnap/src/lib.rs',
+        "old": '.unwrap_or(B4::N)',
+        "new": '.unwrap_or(B4::F)',
+        "pkg": "trit-belnap",
+        "filter": 'eval_defaults_missing_variables_to_neither',
+    },
+    {
+        "name": 'belnap: 真值表生成前不查变量数预算',
+        "file": 'crates/trit-belnap/src/lib.rs',
+        "old": '    let vars = expr.variables();\n    if vars.len() > limits.max_vars {',
+        "new": '    let vars = expr.variables();\n    if false {',
+        "pkg": "trit-belnap",
+        "filter": 'budgets_are_enforced_before_enumeration',
+    },
+    # trit-wasm JS 出口面（2026-11-02 登记；6 变量上限/未知四值字符/name=value 报错三条规则**当前无测试面**，故不登记）。
+    {
+        "name": 'wasm: 未赋值的变量在 JSON 里不再标 X',
+        "file": 'crates/trit-wasm/src/lib.rs',
+        "old": '.unwrap_or_else(|| "X".to_string());',
+        "new": '.unwrap_or_else(|| "?".to_string());',
+        "pkg": "trit-wasm",
+        "filter": 'assignment_json_marks_variables_without_a_value_as_x',
+    },
+    {
+        "name": 'wasm: 等价判定把结论取反',
+        "file": 'crates/trit-wasm/src/lib.rs',
+        "old": '"equivalent": verdict.equivalent,',
+        "new": '"equivalent": !verdict.equivalent,',
+        "pkg": "trit-wasm",
+        "filter": 'de_morgan_is_equivalent',
+    },
+    # trit-train 双导轨位平面算子（2026-11-02 登记；对照标量参考实现与尾部污染）。
+    {
+        "name": 'train: ∧ 的假导轨该 OR 写成 AND',
+        "file": 'crates/trit-train/src/plane.rs',
+        "old": '(ap & bp, an | bn),',
+        "new": '(ap & bp, an & bn),',
+        "pkg": "trit-train",
+        "filter": 'exhaustive_binary_ops_match_scalar',
+    },
+    {
+        "name": 'train: ∨ 的假导轨该 AND 写成 OR',
+        "file": 'crates/trit-train/src/plane.rs',
+        "old": '(ap | bp, an & bn),',
+        "new": '(ap | bp, an | bn),',
+        "pkg": "trit-train",
+        "filter": 'exhaustive_binary_ops_match_scalar',
+    },
+    {
+        "name": 'train: ¬ 不再交换两轨（恒等）',
+        "file": 'crates/trit-train/src/plane.rs',
+        "old": 'pos: self.neg.clone(),\n            neg: self.pos.clone(),',
+        "new": 'pos: self.pos.clone(),\n            neg: self.neg.clone(),',
+        "pkg": "trit-train",
+        "filter": 'not_matches_scalar_and_is_involutive',
+    },
+    {
+        "name": 'train: 尾部位不再清零',
+        "file": 'crates/trit-train/src/plane.rs',
+        "old": 'if word + 1 < self.words() || tail == 0 {',
+        "new": 'if true {',
+        "pkg": "trit-train",
+        "filter": 'tail_bits_stay_clean',
+    },
+    # trit-ops 打包校验与量化闸门（2026-11-02 登记；三条"拒绝"去掉就是 fail-open）。
+    {
+        "name": 'ops: 不再拒绝两轨重叠（脏输入放行）',
+        "file": 'crates/trit-ops/src/pack.rs',
+        "old": 'if pos.iter().zip(&neg).any(|(p, n)| p & n != 0) {',
+        "new": 'if false {',
+        "pkg": "trit-ops",
+        "filter": 'rail_rejects_overlapping_planes',
+    },
+    {
+        "name": 'ops: 不再拒绝尾部脏位',
+        "file": 'crates/trit-ops/src/pack.rs',
+        "old": 'if (pos[last] | neg[last]) & mask != 0 {',
+        "new": 'if false {',
+        "pkg": "trit-ops",
+        "filter": 'rail_rejects_dirty_tail',
+    },
+    {
+        "name": 'ops: 不再拒绝越界的 tryte 码',
+        "file": 'crates/trit-ops/src/pack.rs',
+        "old": 'if data.iter().any(|&b| (b as usize) >= TRYTE_STATES) {',
+        "new": 'if false {',
+        "pkg": "trit-ops",
+        "filter": 'trytes_reject_out_of_range_code',
+    },
+    {
+        "name": 'ops: 量化尺度不按绝对值取（丢符号位）',
+        "file": 'crates/trit-ops/src/quant.rs',
+        "old": 'let s = values.iter().fold(0.0f32, |a, v| a.max(v.abs()));',
+        "new": 'let s = values.iter().fold(0.0f32, |a, v| a.max(*v));',
+        "pkg": "trit-ops",
+        "filter": 'abs_max_scale_uses_magnitude_and_degenerate_input_falls_back',
+    },
+    {
+        "name": 'ops: 量化结果不再夹到 [-1,1]',
+        "file": 'crates/trit-ops/src/quant.rs',
+        "old": 'Trit::from_i8_unchecked(q.clamp(-1.0, 1.0) as i8)',
+        "new": 'Trit::from_i8_unchecked(q as i8)',
+        "pkg": "trit-ops",
+        "filter": 'quantize_respects_sign_and_clamps',
+    },
 ]
 
 
@@ -2954,6 +3127,33 @@ def run_tests(pkg: str, test_filter: str) -> subprocess.CompletedProcess[str]:
         encoding="utf-8",
         errors="replace",
     )
+
+
+# 显式豁免：只有"整个 crate 不含自有逻辑"这种**可以被机器复核**的理由才收在这里。
+# 复核在 has_own_logic()：一旦该包出现了 fn/impl，豁免自动失效并判红（防止理由烂掉）。
+EXEMPT: dict[str, str] = {
+    "sansheng": "三值工具箱的伞包：lib.rs 只有 pub use 转发与文档 doctest，无自有规则",
+}
+
+FN_OR_IMPL = re.compile(
+    r"^\s*(pub\s+)?(const\s+|unsafe\s+|async\s+)*(fn|impl)\b", re.M
+)
+
+
+def has_own_logic(pkg: str) -> bool:
+    """该 crate 是否已经长出自有逻辑（文档行与 `pub use` 不算）。"""
+    root = ROOT / "crates" / pkg / "src"
+    if not root.is_dir():
+        return True
+    for path in sorted(root.rglob("*.rs")):
+        body = "\n".join(
+            line
+            for line in path.read_text(encoding="utf-8").splitlines()
+            if not line.lstrip().startswith(("//!", "///", "//"))
+        )
+        if FN_OR_IMPL.search(body):
+            return True
+    return False
 
 
 def select(pkgs: list[str]) -> list[dict]:
@@ -3000,12 +3200,19 @@ def main(pkgs: list[str]) -> int:
     if not mutants:
         # fail-closed：登记表里 0 条时"绿"没有任何含义——别把空集读成证据
         # （2026-11-02 的 trit-immune 就是这样在 CI 报 14s 通过的）。
-        scope = ", ".join(pkgs) if pkgs else "(全仓)"
-        print(
-            f"NO MUTANTS REGISTERED：{scope} 在 MUTANTS 里是 0 条 ⇒ 判红。"
-            "补登记（锚点 + 对应测试名），或确认该包没有可判定的纯规则后显式登记豁免。"
-        )
-        return 1
+        # 唯一的松口是 EXEMPT：必须是"纯转发伞包"这种**可自证**的理由，且自证一失效就判红。
+        unexplained = [pkg for pkg in pkgs if pkg not in EXEMPT]
+        stale = [pkg for pkg in pkgs if pkg in EXEMPT and has_own_logic(pkg)]
+        if unexplained or stale:
+            scope = ", ".join(unexplained or ["(全仓)"]) if unexplained else ", ".join(stale)
+            print(f"NO MUTANTS REGISTERED：{scope} 在 MUTANTS 里是 0 条 ⇒ 判红。"
+                  "补登记（锚点 + 对应测试名），或确认它是纯转发后登记进 EXEMPT 并写理由。")
+            for pkg in stale:
+                print(f"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。")
+            return 1
+        for pkg in pkgs:
+            print(f"EXEMPT（已自证无自有逻辑）: {pkg} —— {EXEMPT[pkg]}")
+        return 0
     if pkgs:
         counts = {
             pkg: sum(1 for mutant in MUTANTS if mutant["pkg"] == pkg)
