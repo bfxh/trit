@@ -97,6 +97,16 @@ jobs:
       - name: Gate self-test (verdicts / runner inference / empty selection)
         run: python3 scripts/mutation_check.py --self-test
 
+  snapshot:
+    name: snapshot (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 回退底座按字节还原、dry-run 不改文件、不清新文件、对象被篡改要报错
+      - name: Snapshot self-test (save / verify / restore / prune)
+        run: python3 scripts/snapshot.py --self-test
+
   stress:
     name: stress (high pressure invariants)
     runs-on: ubuntu-latest
