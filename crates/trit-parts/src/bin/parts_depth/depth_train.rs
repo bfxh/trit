@@ -15,7 +15,13 @@ type DepthSample = (Vec<Vec<f32>>, Vec<f32>, Vec<bool>);
 ///
 /// `full=true` 时**整图盒式降采样**到 `size²`（前景只占 ~15%，中心裁剪会丢掉全局布局；
 /// 64² 整图是 6×6 块均值）；否则中心裁剪。
-fn load_sample(scene: &Path, frame: usize, size: usize, full: bool) -> Option<DepthSample> {
+fn load_sample(
+    scene: &Path,
+    frame: usize,
+    size: usize,
+    full: bool,
+    pyr: usize,
+) -> Option<DepthSample> {
     let p = scene.join("rgb").join(format!("{frame:06}.png"));
     if !p.exists() {
         return None;
@@ -82,11 +88,14 @@ fn load_sample(scene: &Path, frame: usize, size: usize, full: bool) -> Option<De
     if vals.len() < size * size / 20 {
         return None;
     }
+    for lvl in 1..=pyr {
+        add_lowpass(&mut planes, size, 4usize.pow(lvl as u32));
+    }
     Some((planes, disp, mask))
 }
 
 /// 只从 RGB 造输入平面（盒式降采样到 `size²`）——推理时不读 GT 深度/分割。
-pub(crate) fn image_planes(p: &Path, size: usize) -> Option<Vec<Vec<f32>>> {
+pub(crate) fn image_planes(p: &Path, size: usize, pyr: usize) -> Option<Vec<Vec<f32>>> {
     let (w, h, rgb) = read_rgb(p).ok()?;
     if w < size || h < size {
         return None;
@@ -110,7 +119,38 @@ pub(crate) fn image_planes(p: &Path, size: usize) -> Option<Vec<Vec<f32>>> {
             }
         }
     }
+    for lvl in 1..=pyr {
+        add_lowpass(&mut planes, size, 4usize.pow(lvl as u32));
+    }
     Some(planes)
+}
+
+/// 多尺度输入：把每通道按 `factor` 做块均值再复制回原分辨率（`--pyr`）。
+pub(crate) fn add_lowpass(planes: &mut Vec<Vec<f32>>, size: usize, factor: usize) {
+    let n = planes.len();
+    let s = size / factor;
+    for c in 0..n {
+        let src = &planes[c];
+        let mut coarse = vec![0.0f32; s * s];
+        for y in 0..s {
+            for x in 0..s {
+                let mut acc = 0.0f32;
+                for by in 0..factor {
+                    for bx in 0..factor {
+                        acc += src[(y * factor + by) * size + x * factor + bx];
+                    }
+                }
+                coarse[y * s + x] = acc / (factor * factor) as f32;
+            }
+        }
+        let mut out = vec![0.0f32; size * size];
+        for y in 0..size {
+            for x in 0..size {
+                out[y * size + x] = coarse[(y / factor) * s + x / factor];
+            }
+        }
+        planes.push(out);
+    }
 }
 
 /// `cnn-train --data <场景目录,…> --holdout a,b --size 64 --epochs 3 --out model.dcn`：
@@ -143,9 +183,10 @@ pub(crate) fn cnn_train(argv: &[String]) {
         .unwrap_or_default();
     let full = argv.iter().any(|a| a == "--full");
     let eval_only = arg(argv, "--eval-only").map(PathBuf::from);
+    let pyr: usize = arg(argv, "--pyr").and_then(|v| v.parse().ok()).unwrap_or(0);
     let ternary = !argv.iter().any(|a| a == "--f32");
     let dil: usize = arg(argv, "--dil").and_then(|v| v.parse().ok()).unwrap_or(1);
-    let mut net = DepthNet::with_ternary(hidden, 7, ternary);
+    let mut net = DepthNet::with_inputs(3 + 3 * pyr, hidden, 7, ternary);
     net.set_dilation(dil);
     println!(
         "卷积深度头：{} 权重，dil {dil}（感受野 {}）",
@@ -156,7 +197,7 @@ pub(crate) fn cnn_train(argv: &[String]) {
     let mut samples: Vec<TrainSample> = Vec::new();
     for d in &data {
         let mut fr = 0usize;
-        while let Some((x, y, mk)) = load_sample(d, fr, size, full) {
+        while let Some((x, y, mk)) = load_sample(d, fr, size, full, pyr) {
             if fr.is_multiple_of(stride.max(1)) {
                 samples.push((d.clone(), fr, x, y, mk));
             }
@@ -408,7 +449,8 @@ pub(crate) fn depth_iou(argv: &[String]) {
     let cam = Camera::load(&scene.join("meta").join(format!("{frame:06}.json")))
         .unwrap_or_else(|e| panic!("{e}"));
     let dn = trit_parts::depthnet::DepthNet::load(&dcn_p).unwrap_or_else(|e| panic!("{e}"));
-    let planes = image_planes(&p, dcn_size).unwrap_or_else(|| panic!("图像太小"));
+    let planes = image_planes(&p, dcn_size, dn.c1.cin.saturating_sub(3) / 3)
+        .unwrap_or_else(|| panic!("图像太小"));
     let pred = dcn_depth_map(&dn, &planes, w, h, dcn_size);
 
     let (mut gp, mut pg, mut ppd) = (Vec::new(), Vec::new(), Vec::new());

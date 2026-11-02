@@ -27,7 +27,12 @@ impl DepthNet {
 
     /// `ternary=false` 时整网 f32（连续几何量允许 f32；三值 STE 在真实数据上会塌，见 §6.86）。
     pub fn with_ternary(hidden: usize, seed: u64, ternary: bool) -> Self {
-        let mut c1 = Conv::new(3, hidden, seed);
+        Self::with_inputs(3, hidden, seed, ternary)
+    }
+
+    /// `cin=6/9`：`--pyr` 多尺度输入（RGB + 4× 低通 [+ 8× 低通]）。
+    pub fn with_inputs(cin: usize, hidden: usize, seed: u64, ternary: bool) -> Self {
+        let mut c1 = Conv::new(cin, hidden, seed);
         let mut c2 = Conv::new(hidden, hidden, seed ^ 0x5DEECE66D);
         let mut c3 = Conv::new(hidden, 1, seed ^ 0xA5A5);
         c1.ternary = ternary;
