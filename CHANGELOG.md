@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（M2 三值攻击图：证据等级 + 弃权语义进攻击侧）
+
+- `trit-net::netsec::attack`：三值攻击图——节点与边都带证据等级（`T` 已证实 /
+  `X` 待验证 / `F` 已排除），登记一律带出处（空出处拒绝）。路径折叠 = K3 AND
+  （格序 min，`F` 支配；**不是** `strong_and`——⊗ 会让 `F ⊗ X = X`，把已排除的
+  跳数洗活）；跨路径合并 = K3 OR（一条已证实路线即可达已证实）；枚举截断
+  **一律封顶 `X`**，既不敢确认也不敢排除。`X` 判决带机器可读见证（`open` 逐环节
+  点名待验证的边/立场）。修的缺陷：自动渗透文献把「没验证」当「成功」，攻击图的
+  边没有证据等级（见 `docs/SECURITY-NET.md` §与论文的关系）。
+- `trit-net attack <台账.jsonl> --src <label> --dst <label> [--max-depth N]
+  [--max-paths N]`：CLI 判决入口，JSON 输出 verdict/reason/paths/open；
+  未知节点如实失败退出。JSONL 台账往返 + 坏行显式报错（不静默丢行）。
+- 测试 `tests/attack.rs` 16 条（折叠穷举对拍 K3 AND/OR、截断封顶、LWW 登记、
+  幂等复用、环路终止、CLI 端到端）；变异门新增 2 条（fold 换 OR、截断不封顶）。
+
 ### Added（无损回退底座 + 依赖脱离体检 + 一句话提交）
 
 - `scripts/autoflow.py run -- <命令…>`：一条命令内**先快照、失败自动回退**——成功保留改动并打印快照 id；
