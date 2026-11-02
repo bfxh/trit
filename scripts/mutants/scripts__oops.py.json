@@ -1,0 +1,173 @@
+[
+ {
+  "name": "oops: fsck 加回 reflogs ⇒ branch -D 的孤儿全算可达（正是要找的那批）",
+  "file": "scripts/oops.py",
+  "old": "[\"fsck\", \"--full\", \"--no-reflogs\", \"--dangling\", \"--no-progress\"]",
+  "new": "[\"fsck\", \"--full\", \"--dangling\", \"--no-progress\"]",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: fsck 这一路哑火被静默",
+  "file": "scripts/oops.py",
+  "old": "return [], \"fsck 这一路跑不动：\" + result.stdout.strip()[:120]",
+  "new": "return [], \"\"",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: quick 跳过 fsck 却不出声（当成查过了）",
+  "file": "scripts/oops.py",
+  "old": "if quick:",
+  "new": "if False:",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: reflog 用动作文本当标题（--grep/--since 认不出提交本身）",
+  "file": "scripts/oops.py",
+  "old": "\"subject\": parts[3], \"when\": parts[4], \"source\": \"reflog\"",
+  "new": "\"subject\": parts[2], \"when\": \"\", \"source\": \"reflog\"",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: reflog 这一路哑火被静默（当成没丢过东西）",
+  "file": "scripts/oops.py",
+  "old": "return [], \"reflog 这一路跑不动：\" + result.stdout.strip()[:120]",
+  "new": "return [], \"\"",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: restore 不给 sha 也继续往下走",
+  "file": "scripts/oops.py",
+  "old": "if len(positional) < 2:",
+  "new": "if len(argv) < 0:",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: search 子命令不再处理（走未知分支）",
+  "file": "scripts/oops.py",
+  "old": "if command == \"search\":",
+  "new": "if False:",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: stash 这一路哑火被静默",
+  "file": "scripts/oops.py",
+  "old": "return [], \"stash 这一路跑不动：\" + result.stdout.strip()[:120]",
+  "new": "return [], \"\"",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: 不在仓里取证时静默给空表（而不是说清没查）",
+  "file": "scripts/oops.py",
+  "old": "\"不在 git 仓里 ⇒ 什么都没查（这条必须响，不能静默给空表）\"",
+  "new": "\"\"",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: 可达范围放宽到所有 ref ⇒ 还在的 stash 被算成没丢（该显示的候选被吞）",
+  "file": "scripts/oops.py",
+  "old": "[\"rev-list\", \"--branches\", \"--tags\", \"--remotes\"]",
+  "new": "[\"rev-list\", \"--all\"]",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: 可达集合算不出来也照样报丢失（判不了却说没挂）",
+  "file": "scripts/oops.py",
+  "old": "if reach_problem:",
+  "new": "if False:",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: 同名分支检查整个关掉（把上一次的恢复结果直接覆盖）",
+  "file": "scripts/oops.py",
+  "old": "while checked.returncode == 0:",
+  "new": "while False:",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: 子命令前的选项不再剥（取值被当成子命令）",
+  "file": "scripts/oops.py",
+  "old": "for flag in (\"--root\", \"--limit\", \"--grep\", \"--since\", \"--author\", \"--branch\"):",
+  "new": "for flag in (\"--limit\", \"--grep\", \"--since\", \"--author\", \"--branch\"):",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: 库里没有的对象也硬解（不声明不可恢复）",
+  "file": "scripts/oops.py",
+  "old": "_say(\"对象 \" + sha + \" 不在库里（多半被 gc 收走）⇒ 不可恢复；这里不动任何 ref\")",
+  "new": "_say(\"\")",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: 恢复前不落快照（出错就没有退路）",
+  "file": "scripts/oops.py",
+  "old": "if snap.returncode != 0:",
+  "new": "if False:",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: 恢复改成移动 HEAD（把用户当前工作顶掉）",
+  "file": "scripts/oops.py",
+  "old": "made = git(root, [\"branch\", name, full])",
+  "new": "made = git(root, [\"checkout\", \"-f\", full])",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: 还挂在 ref 上的活也当成丢了（噪声淹没真候选）",
+  "file": "scripts/oops.py",
+  "old": "if item[\"sha\"] in reachable:",
+  "new": "if False:",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: 选项少了取值也硬往下走（猜它指哪儿）",
+  "file": "scripts/oops.py",
+  "old": "if at + 1 >= len(positional):",
+  "new": "if False:",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "oops: 非 git 仓里也执行恢复（在最坏的地方动手）",
+  "file": "scripts/oops.py",
+  "old": "_say(\"不在 git 仓里 ⇒ 拒绝执行（不是没找到，是没地方找）\")",
+  "new": "_say(\"\")",
+  "pkg": "scripts/oops.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
