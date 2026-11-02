@@ -1402,6 +1402,22 @@ MUTANTS = [
         "filter": "cancellation_is_exact_but_interval_is_blind"
     },
     {
+        "name": "net: 攻击图路径折叠用 OR 代替 AND（X/F 环节被洗成已证实）",
+        "file": "crates/trit-net/src/netsec/attack.rs",
+        "old": "        Self::from_ternary(Algebra::Kleene.and(self.to_ternary(), other.to_ternary()))",
+        "new": "        Self::from_ternary(Algebra::Kleene.or(self.to_ternary(), other.to_ternary()))",
+        "pkg": "trit-net",
+        "filter": "one_unverified_edge_caps_the_whole_path"
+    },
+    {
+        "name": "net: 攻击图截断不封顶（枚举不全也敢下已证实/已排除）",
+        "file": "crates/trit-net/src/netsec/attack.rs",
+        "old": "        if truncated {",
+        "new": "        if false {",
+        "pkg": "trit-net",
+        "filter": "truncation_never_confirms_and_never_rules_out"
+    },
+    {
         "name": "vm: X 分叉跳到错误位置",
         "file": "crates/trit-machines/src/vm.rs",
         "old": "queue.push((target, stack.clone()));",
