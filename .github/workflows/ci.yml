@@ -186,6 +186,25 @@ jobs:
       - name: Quarantine ledger audit
         run: python3 scripts/flake_ledger.py ledger
 
+  wiring:
+    name: secret wiring (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 引用解析 / 环境归属 / 外部声明格式的反证
+      - name: Secret wiring self-test
+        run: python3 scripts/secret_wiring.py --self-test
+      # 真对账：只读名字清单（secrets/variables/environments），值永远读不到
+      # 取不到清单时门自己判红——"跳过就绿"是这类门最坏的失败模式
+      - name: Reconcile workflow refs against provisioned names
+        run: python3 scripts/secret_wiring.py --repo "${{ github.repository }}"
+        env:
+          GH_TOKEN: ${{ github.token }}
+
   forensics:
     name: merge forensics (self-test)
     runs-on: ubuntu-latest
