@@ -161,12 +161,12 @@ def publish(args: dict) -> int:
 
 
 def watch_and_merge(branch: str, repo: str) -> int:
-    checks = gh(["pr", "checks", repo, branch, "--watch"])
+    checks = gh(["pr", "checks", "--repo", repo, branch, "--watch"])
     if checks.returncode != 0:
         print("CI 未通过：")
         print(checks.stdout[-2000:])
         return 1
-    merge = gh(["pr", "merge", repo, branch, "--squash", "--delete-branch"])
+    merge = gh(["pr", "merge", "--repo", repo, branch, "--squash", "--delete-branch"])
     if merge.returncode != 0:
         print("合并失败：")
         print(merge.stdout[-1000:])
