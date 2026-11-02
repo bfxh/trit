@@ -85,10 +85,15 @@ def backup_config(root: pathlib.Path) -> None:
         backup.write_bytes(config.read_bytes())
 
 
-def save(root: pathlib.Path, directory: str) -> int:
+def save(root: pathlib.Path, directory: str, force: bool = False) -> int:
     target = root / directory
     config = root / CONFIG
     config.parent.mkdir(parents=True, exist_ok=True)
+    text = config.read_text(encoding="utf-8") if config.exists() else ""
+    mine = (root / BACKUP).exists() or (START in text and END in text)
+    if target.exists() and any(target.iterdir()) and not mine and not force:
+        print(f"拒绝：{directory}/ 已存在且不是本工具建的（要覆盖加 --force）")
+        return 2
     backup_config(root)
     result = cargo(["vendor", "--locked", directory], root)
     if result.returncode != 0:
@@ -221,7 +226,7 @@ def main(argv: list[str]) -> int:
     command = argv[0] if argv else "status"
     if command == "save":
         directory = argv[argv.index("--dir") + 1] if "--dir" in argv else "vendor"
-        return save(root, directory)
+        return save(root, directory, force="--force" in argv)
     if command == "restore":
         return restore(root, force="--force" in argv)
     if command == "status":

@@ -3915,6 +3915,24 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    {
+        "name": "snapshot: gc 不删任何清单",
+        "file": "scripts/snapshot.py",
+        "old": "    kept = snaps[-keep:]",
+        "new": "    kept = snaps",
+        "pkg": "scripts/snapshot.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "snapshot: gc 永远不执行",
+        "file": "scripts/snapshot.py",
+        "old": "    if len(snaps) <= keep:",
+        "new": "    if True:",
+        "pkg": "scripts/snapshot.py",
+        "filter": "",
+        "runner": "python",
+    },
     # ---- gitflow（一句话提交 GitHub）----
     {
         "name": "gitflow: 密钥扫描失效",

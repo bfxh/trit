@@ -327,6 +327,16 @@ def detach(root: pathlib.Path, crate_name: str, to: pathlib.Path, force: bool) -
         print(f"目标目录非空：{to}（要覆盖加 --force）")
         return 2
     closure = sorted(closure_of(crate_name, plan_map))
+    dangling = [
+        (name, ref)
+        for name in closure
+        for ref in outside_refs(root / plan_map[name]["path"]) if ref["kind"] == "越界"
+    ]
+    if dangling:
+        print("拒绝：脱离闭包里有指到 crate 之外的引用，摘出去会丢文件：")
+        for name, ref in dangling:
+            print(f"  {name}: {ref['file']}:{ref['line']} → {ref['ref']}")
+        return 2
     to.mkdir(parents=True, exist_ok=True)
     copied: list[str] = []
     rewritten = 0

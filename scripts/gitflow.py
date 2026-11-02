@@ -266,12 +266,15 @@ def publish(args: dict) -> int:
         ])
     else:
         print("该分支已有 open PR：跳过 create，直接等 CI")
-    for command in steps:
-        result = git(command[1:]) if command[0] == "git" else gh(command[1:])
-        print(f"$ {' '.join(command[:3])} … rc={result.returncode}")
-        if result.returncode != 0:
-            print(result.stdout[-2000:])
-            return 1
+    try:
+        for command in steps:
+            result = git(command[1:]) if command[0] == "git" else gh(command[1:])
+            print(f"$ {' '.join(command[:3])} … rc={result.returncode}")
+            if result.returncode != 0:
+                print(result.stdout[-2000:])
+                return 1
+    finally:
+        pathlib.Path(message_file).unlink(missing_ok=True)
     if args["no_merge"]:
         print("已开 PR（--no-merge）：等 CI，绿了自己合或再来一次 gitflow merge")
         return 0

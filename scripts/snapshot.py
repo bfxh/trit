@@ -129,14 +129,21 @@ def save(root: pathlib.Path, label: str) -> str:
 
 
 def list_snapshots(root: pathlib.Path) -> list[dict]:
-    out: list[dict] = []
-    for path in sorted(snapshots_dir(root).glob("*.json")):
+    """按**创建顺序**返回（清单文件的 mtime），不是按 id 字符串。
+
+    id 只有秒级时间戳 + 随机后缀：同一秒内多个快照按文件名排序会乱序，
+    `latest` 与 `gc --keep` 就会选错（gc 自测两跑不一致时抓到的）。
+    """
+    entries: list[tuple[int, str, dict]] = []
+    for path in snapshots_dir(root).glob("*.json"):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
+            stamp = path.stat().st_mtime_ns
         except (OSError, json.JSONDecodeError):
             continue
-        out.append(data)
-    return out
+        entries.append((stamp, path.name, data))
+    entries.sort(key=lambda item: (item[0], item[1]))
+    return [data for _, _, data in entries]
 
 
 def resolve(root: pathlib.Path, snap_id: str) -> dict:
@@ -208,6 +215,33 @@ def restore(root: pathlib.Path, manifest: dict, prune: bool, dry_run: bool) -> i
                 directory = directory.parent
     pending.unlink(missing_ok=True)
     print("回退完成，逐文件 SHA-256 校验通过")
+    return 0
+
+
+def gc(root: pathlib.Path, keep: int) -> int:
+    """只保留最近 keep 个快照，并清掉没人引用的对象（快照不该只增不减）。"""
+    snaps = list_snapshots(root)
+    if keep <= 0:
+        raise SystemExit("--keep 必须 ≥ 1")
+    if len(snaps) <= keep:
+        print(f"gc：只有 {len(snaps)} 个快照，无需清理")
+        return 0
+    dropped = snaps[:-keep]
+    kept = snaps[-keep:]
+    for snap in dropped:
+        (snapshots_dir(root) / f"{snap['id']}.json").unlink()
+    referenced = {entry["sha"] for snap in kept for entry in snap["files"].values()}
+    removed = 0
+    objects = root / STORE / "objects"
+    if objects.is_dir():
+        for blob in objects.rglob("*"):
+            if blob.is_file() and blob.name not in referenced:
+                blob.unlink()
+                removed += 1
+        for shard in sorted(objects.iterdir()):
+            if shard.is_dir() and not any(shard.iterdir()):
+                shard.rmdir()
+    print(f"gc：保留 {len(kept)} 个快照，删除 {len(dropped)} 份清单、{removed} 个未引用对象")
     return 0
 
 
@@ -299,7 +333,25 @@ def self_test() -> int:
             reason = str(exc)
         check("非法快照 id 被拒绝（要点名不合法，不是碰巧找不到）", "不合法" in reason, True)
 
-        # 10) 构建产物不进快照
+        # 10) gc：只保留最近 N 个，未引用对象一起清，留下的仍能回退
+        with tempfile.TemporaryDirectory() as tmp2:
+            gsrc = pathlib.Path(tmp2)
+            ids = []
+            for index in range(3):
+                (gsrc / "g.txt").write_bytes(str(index).encode())
+                ids.append(save(gsrc, f"g{index}"))
+            objects_before = len([p for p in (gsrc / STORE / "objects").rglob("*") if p.is_file()])
+            gc(gsrc, keep=1)
+            remaining = list_snapshots(gsrc)
+            objects_after = len([p for p in (gsrc / STORE / "objects").rglob("*") if p.is_file()])
+            check("gc 只留最近一个", len(remaining), 1)
+            check("gc 保留的是最新", remaining[0]["id"], ids[-1])
+            check("gc 清掉未引用对象", objects_after < objects_before, True)
+            (gsrc / "g.txt").write_bytes(b"tampered")
+            check("gc 后仍能回退", restore(gsrc, resolve(gsrc, ids[-1]), prune=True, dry_run=False), 0)
+            check("gc 后回退逐字节正确", (gsrc / "g.txt").read_bytes(), b"2")
+
+        # 11) 构建产物不进快照
         (root / "target").mkdir()
         (root / "target" / "junk.bin").write_bytes(b"junk")
         check("target/ 不进快照", "target/junk.bin" in iter_files(root), False)
@@ -347,6 +399,9 @@ def main(argv: list[str]) -> int:
                 f"{snap.get('label') or '无标签'}  {git.get('branch', '-')}@{git.get('head', '-')[:8]}"
             )
         return 0
+    if command == "gc":
+        keep = int(rest[rest.index("--keep") + 1]) if "--keep" in rest else 10
+        return gc(root, keep)
     if command == "verify":
         return verify(root, resolve(root, rest[0] if rest else "latest"))
     if command == "restore":
