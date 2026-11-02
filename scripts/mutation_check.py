@@ -1418,6 +1418,22 @@ MUTANTS = [
         "filter": "truncation_never_confirms_and_never_rules_out"
     },
     {
+        "name": "net: 探测分类把明确拒绝当未知（RST 也敢不下结论）",
+        "file": "crates/trit-net/src/netsec/probe.rs",
+        "old": "            std::io::ErrorKind::ConnectionRefused => (Evidence::RuledOut, \"refused\".to_string()),",
+        "new": "            std::io::ErrorKind::ConnectionRefused => (Evidence::Unverified, \"refused\".to_string()),",
+        "pkg": "trit-net",
+        "filter": "classify_connect_maps_results_to_evidence"
+    },
+    {
+        "name": "net: 探测 allowlist 默认放行（没列的端口也探）",
+        "file": "crates/trit-net/src/netsec/probe.rs",
+        "old": "        self.targets\n            .iter()\n            .any(|(target_ip, ports)| *target_ip == ip && ports.contains(&port))",
+        "new": "        self.targets\n            .iter()\n            .any(|(target_ip, ports)| *target_ip == ip || ports.contains(&port))",
+        "pkg": "trit-net",
+        "filter": "allowlist_default_denies_everything"
+    },
+    {
         "name": "vm: X 分叉跳到错误位置",
         "file": "crates/trit-machines/src/vm.rs",
         "old": "queue.push((target, stack.clone()));",

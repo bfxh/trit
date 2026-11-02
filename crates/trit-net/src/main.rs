@@ -17,6 +17,7 @@ fn main() -> ExitCode {
         Some("flow") => flow_cmd(&args[1..]),
         Some("calibrate") => calibrate_cmd(&args[1..]),
         Some("attack") => attack_cmd(&args[1..]),
+        Some("probe") => probe_cmd(&args[1..]),
         _ => run(),
     };
     match result {
@@ -724,6 +725,64 @@ fn attack_cmd(args: &[String]) -> Result<(), String> {
             "truncated": reach.truncated,
             "paths": paths,
         })
+    );
+    Ok(())
+}
+
+fn probe_cmd(args: &[String]) -> Result<(), String> {
+    use trit_net::netsec::probe::{Allowlist, ProbeConfig, run};
+
+    let mut path: Option<String> = None;
+    let mut connect_timeout_ms = 1_500u64;
+    let mut delay_ms = 100u64;
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].clone();
+        match flag.as_str() {
+            "--connect-timeout" | "--delay" => {
+                index += 1;
+                let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
+                let parsed: u64 = raw
+                    .parse()
+                    .map_err(|_| format!("{flag} 不是整数（毫秒）"))?;
+                if flag == "--connect-timeout" {
+                    connect_timeout_ms = parsed;
+                } else {
+                    delay_ms = parsed;
+                }
+            }
+            other if other.starts_with("--") => return Err(format!("未知参数 {other}")),
+            other => {
+                if path.is_some() {
+                    return Err(format!("多余的参数 {other}"));
+                }
+                path = Some(other.to_string());
+            }
+        }
+        index += 1;
+    }
+    let path = path.ok_or(
+        "probe 需要 allowlist JSON 路径（{\"targets\":[{\"ip\":\"127.0.0.1\",\"ports\":[..]}]}；\
+         只接受字面 IP、只对环回/私网发包）",
+    )?;
+    let text =
+        std::fs::read_to_string(&path).map_err(|error| format!("读取 {path} 失败：{error}"))?;
+    let allowlist = Allowlist::from_json(&text).map_err(|error| error.to_string())?;
+    let config = ProbeConfig {
+        connect_timeout: std::time::Duration::from_millis(connect_timeout_ms),
+        delay: std::time::Duration::from_millis(delay_ms),
+        ..ProbeConfig::default()
+    };
+    let report = run(&allowlist, &config).map_err(|error| error.to_string())?;
+    for finding in &report.findings {
+        println!(
+            "{}",
+            serde_json::to_string(finding).map_err(|error| error.to_string())?
+        );
+    }
+    eprintln!(
+        "计划 {} / 执行 {} / 截断 {}",
+        report.planned, report.probed, report.truncated
     );
     Ok(())
 }
