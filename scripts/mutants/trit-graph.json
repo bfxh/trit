@@ -1,0 +1,202 @@
+[
+ {
+  "name": "classifier: 头梯度漏掉特征",
+  "file": "crates/trit-graph/src/classifier.rs",
+  "old": "            dhead[0][k] = dlogits[k] * feature;",
+  "new": "            dhead[0][k] = dlogits[k];",
+  "pkg": "trit-graph",
+  "filter": "gradients_match_finite_differences"
+ },
+ {
+  "name": "classifier: 标签梯度符号反",
+  "file": "crates/trit-graph/src/classifier.rs",
+  "old": "        dlogits[index_of(sample.label)] -= 1.0;",
+  "new": "        dlogits[index_of(sample.label)] += 1.0;",
+  "pkg": "trit-graph",
+  "filter": "gradients_match_finite_differences"
+ },
+ {
+  "name": "classifier: 聚合梯度少除入度",
+  "file": "crates/trit-graph/src/classifier.rs",
+  "old": "            let scale = dfeature / incoming.len() as f32;",
+  "new": "            let scale = dfeature;",
+  "pkg": "trit-graph",
+  "filter": "gradients_match_finite_differences"
+ },
+ {
+  "name": "council: 关键否决失效",
+  "file": "crates/trit-graph/src/council.rs",
+  "old": "                vetoed |= critical;",
+  "new": "                vetoed |= false;",
+  "pkg": "trit-graph",
+  "filter": "critical_false_vetoes_even_with_majority"
+ },
+ {
+  "name": "council: 平票判真",
+  "file": "crates/trit-graph/src/council.rs",
+  "old": "    } else if plus > minus {",
+  "new": "    } else if plus >= minus {",
+  "pkg": "trit-graph",
+  "filter": "tie_falls_back_to_unknown"
+ },
+ {
+  "name": "decomp: 不校验边覆盖",
+  "file": "crates/trit-graph/src/decomp.rs",
+  "old": "            let covered = (0..self.bags.len())\n                .any(|bag| self.bag_contains(bag, u) && self.bag_contains(bag, v));",
+  "new": "            let covered = true;",
+  "pkg": "trit-graph",
+  "filter": "missing_edge_coverage_is_reported"
+ },
+ {
+  "name": "decomp: 不校验运行交",
+  "file": "crates/trit-graph/src/decomp.rs",
+  "old": "            if links + 1 != holders.len() {",
+  "new": "            if false {",
+  "pkg": "trit-graph",
+  "filter": "disconnected_running_intersection_is_reported"
+ },
+ {
+  "name": "graph: CSR 丢掉边状态",
+  "file": "crates/trit-graph/src/csr.rs",
+  "old": "                states[cursor] = state;",
+  "new": "                states[cursor] = Ternary::Unknown;",
+  "pkg": "trit-graph",
+  "filter": "conversion_preserves_edges_and_states"
+ },
+ {
+  "name": "graph: CSR 偏移不累加",
+  "file": "crates/trit-graph/src/csr.rs",
+  "old": "            offsets[u + 1] = offsets[u] + graph.out_degree(u);",
+  "new": "            offsets[u + 1] = offsets[u];",
+  "pkg": "trit-graph",
+  "filter": "conversion_preserves_edges_and_states"
+ },
+ {
+  "name": "graph: WL 一轮就停",
+  "file": "crates/trit-graph/src/wl.rs",
+  "old": "        let stable = partition_stable(&colors, &next);",
+  "new": "        let stable = true;",
+  "pkg": "trit-graph",
+  "filter": "distinguishes_path_from_star"
+ },
+ {
+  "name": "graph: WL 忽略边符号",
+  "file": "crates/trit-graph/src/wl.rs",
+  "old": "            view.for_each_out(u, |v, edge| neighbors.push((edge_code(edge), colors[v])));",
+  "new": "            view.for_each_out(u, |v, _| neighbors.push((0, colors[v])));",
+  "pkg": "trit-graph",
+  "filter": "edge_signs_change_colors"
+ },
+ {
+  "name": "graph: 拓扑序忽略环",
+  "file": "crates/trit-graph/src/view.rs",
+  "old": "        (order.len() == self.len()).then_some(order)",
+  "new": "        Some(order)",
+  "pkg": "trit-graph",
+  "filter": "cycle_is_detected"
+ },
+ {
+  "name": "graph: 邻居只看第一个字",
+  "file": "crates/trit-graph/src/graph.rs",
+  "old": "                bits &= bits - 1;",
+  "new": "                bits = 0;",
+  "pkg": "trit-graph",
+  "filter": "neighbor_iteration_crosses_words"
+ },
+ {
+  "name": "hyper: 超边判决忽略成员状态",
+  "file": "crates/trit-graph/src/hyper.rs",
+  "old": "            (self.nodes.get(node), self.nodes.is_critical(node))",
+  "new": "            (Ternary::True, self.nodes.is_critical(node))",
+  "pkg": "trit-graph",
+  "filter": "verdict_majority_and_veto"
+ },
+ {
+  "name": "kernel: WL 核忽略边符号",
+  "file": "crates/trit-graph/src/kernel.rs",
+  "old": "        graph.for_each_out(u, |v, edge| neighbors.push((edge_code(edge), colors[v])));",
+  "new": "        graph.for_each_out(u, |v, _| neighbors.push((0, colors[v])));",
+  "pkg": "trit-graph",
+  "filter": "edge_signs_matter"
+ },
+ {
+  "name": "kernel: 归一化分母错误",
+  "file": "crates/trit-graph/src/kernel.rs",
+  "old": "    k as f64 / ((self_a as f64).sqrt() * (self_b as f64).sqrt())",
+  "new": "    k as f64 / ((self_a * self_b) as f64)",
+  "pkg": "trit-graph",
+  "filter": "isomorphic_graphs_have_kernel_one"
+ },
+ {
+  "name": "kernel: 路径核忽略边符号",
+  "file": "crates/trit-graph/src/kernel.rs",
+  "old": "        signature.push(edge_code(edge));",
+  "new": "        signature.push(0);",
+  "pkg": "trit-graph",
+  "filter": "edge_signs_matter"
+ },
+ {
+  "name": "mpnn: 反对边不取反",
+  "file": "crates/trit-graph/src/mpnn.rs",
+  "old": "                _ => -1.0,",
+  "new": "                _ => 1.0,",
+  "pkg": "trit-graph",
+  "filter": "identity_table_votes_all_nine_pairs"
+ },
+ {
+  "name": "mpnn: 拟合梯度反向",
+  "file": "crates/trit-graph/src/mpnn.rs",
+  "old": "            let grad_q = value_of(target) - value_of(current);",
+  "new": "            let grad_q = value_of(current) - value_of(target);",
+  "pkg": "trit-graph",
+  "filter": "fit_recovers_identity_table"
+ },
+ {
+  "name": "mpnn: 死区边界含等号",
+  "file": "crates/trit-graph/src/mpnn.rs",
+  "old": "        if latent > DEAD_ZONE {",
+  "new": "        if latent >= DEAD_ZONE {",
+  "pkg": "trit-graph",
+  "filter": "dead_zone_is_unknown"
+ },
+ {
+  "name": "mpnn: 消息取错端点状态",
+  "file": "crates/trit-graph/src/mpnn.rs",
+  "old": "                votes[target].push(self.table.vote(edge, state));",
+  "new": "                votes[target].push(self.table.vote(edge, states[target]));",
+  "pkg": "trit-graph",
+  "filter": "propagates_along_support_edges"
+ },
+ {
+  "name": "walk: 中立边不冻结",
+  "file": "crates/trit-graph/src/walk.rs",
+  "old": "                    Ternary::Unknown => (0.0, 0.0, mass.total()),",
+  "new": "                    Ternary::Unknown => (mass.plus, mass.minus, mass.unknown),",
+  "pkg": "trit-graph",
+  "filter": "neutral_edge_freezes_to_unknown"
+ },
+ {
+  "name": "walk: 反对边不翻转",
+  "file": "crates/trit-graph/src/walk.rs",
+  "old": "                    Ternary::False => (mass.minus, mass.plus, mass.unknown),",
+  "new": "                    Ternary::False => (mass.plus, mass.minus, mass.unknown),",
+  "pkg": "trit-graph",
+  "filter": "oppose_edge_flips_state"
+ },
+ {
+  "name": "walk: 平票判真",
+  "file": "crates/trit-graph/src/walk.rs",
+  "old": "        } else if self.plus > self.minus {",
+  "new": "        } else if self.plus >= self.minus {",
+  "pkg": "trit-graph",
+  "filter": "tie_is_unknown"
+ },
+ {
+  "name": "walk: 忽略阻尼",
+  "file": "crates/trit-graph/src/walk.rs",
+  "old": "            let share = damping / degree as f64;",
+  "new": "            let share = 1.0 / degree as f64;",
+  "pkg": "trit-graph",
+  "filter": "support_edges_carry_true"
+ }
+]

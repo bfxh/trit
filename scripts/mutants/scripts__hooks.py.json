@@ -1,0 +1,29 @@
+[
+ {
+  "name": "hooks: 不拦直推主干",
+  "file": "scripts/hooks.py",
+  "old": "    refs/heads/main|refs/heads/master)",
+  "new": "    refs/heads/never-main)",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 卸载不动外来钩子失效",
+  "file": "scripts/hooks.py",
+  "old": "    if not is_ours(path):\n        print(f\"拒绝：{path} 不是本工具装的，不动它\")",
+  "new": "    if False:\n        print(f\"拒绝：{path} 不是本工具装的，不动它\")",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 覆盖外来钩子",
+  "file": "scripts/hooks.py",
+  "old": "    if path.exists() and not is_ours(path) and not force:",
+  "new": "    if False:",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

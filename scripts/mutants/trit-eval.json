@@ -1,0 +1,42 @@
+[
+ {
+  "name": "eval: K3 a^a 不再折回 a",
+  "file": "crates/trit-eval/src/simplify.rs",
+  "old": "    if x == y && alg != Algebra::Lukasiewicz {",
+  "new": "    if x == y && alg == Algebra::Lukasiewicz {",
+  "pkg": "trit-eval",
+  "filter": "xor_and_equiv_self_respect_unknown"
+ },
+ {
+  "name": "eval: OR 吸收误用 AND 形状",
+  "file": "crates/trit-eval/src/simplify.rs",
+  "old": "    if let Expr::And(p, q) = y",
+  "new": "    if let Expr::Or(p, q) = y",
+  "pkg": "trit-eval",
+  "filter": "absorption_only_removes_matching_operator"
+ },
+ {
+  "name": "eval: 编码对高位零也报溢出",
+  "file": "crates/trit-eval/src/eval.rs",
+  "old": "        if digit == 0 {\n            continue;\n        }\n",
+  "new": "        if digit == 0 {\n        }\n",
+  "pkg": "trit-eval",
+  "filter": "assignment_index_does_not_over_reject_high_zero_digits"
+ },
+ {
+  "name": "eval: 自等价对所有代数折叠成 1",
+  "file": "crates/trit-eval/src/simplify.rs",
+  "old": "    if x == y && alg == Algebra::Lukasiewicz {",
+  "new": "    if x == y {",
+  "pkg": "trit-eval",
+  "filter": "xor_and_equiv_self_respect_unknown"
+ },
+ {
+  "name": "eval: 解码忽略剩余高位",
+  "file": "crates/trit-eval/src/eval.rs",
+  "old": "    if t != 0 {\n        return Err(AssignmentCodecError::OutOfDomain {\n",
+  "new": "    if false {\n        return Err(AssignmentCodecError::OutOfDomain {\n",
+  "pkg": "trit-eval",
+  "filter": "checked_codec_rejects_out_of_domain_and_duplicates"
+ }
+]

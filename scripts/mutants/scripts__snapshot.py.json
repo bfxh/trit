@@ -1,0 +1,128 @@
+[
+ {
+  "name": "snapshot: --prune 不删新增文件",
+  "file": "scripts/snapshot.py",
+  "old": "    if prune:\n        for rel in plan[\"extra\"]:",
+  "new": "    if False:\n        for rel in plan[\"extra\"]:",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: dry-run 也真写文件",
+  "file": "scripts/snapshot.py",
+  "old": "    if dry_run:\n        print(\"dry-run：未改动任何文件\")",
+  "new": "    if False:\n        print(\"dry-run：未改动任何文件\")",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: gc 不删任何清单",
+  "file": "scripts/snapshot.py",
+  "old": "    kept = snaps[-keep:]",
+  "new": "    kept = snaps",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: gc 永远不执行",
+  "file": "scripts/snapshot.py",
+  "old": "    if len(snaps) <= keep:",
+  "new": "    if True:",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: intact 不查对象（库坏了也当可用）",
+  "file": "scripts/snapshot.py",
+  "old": "        if not blob_path(root, entry[\"sha\"]).is_file():",
+  "new": "        if False:",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: prune 后不清空目录",
+  "file": "scripts/snapshot.py",
+  "old": "            while directory != root and directory.is_dir() and not any(directory.iterdir()):",
+  "new": "            while False:",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: verify 永远报一致",
+  "file": "scripts/snapshot.py",
+  "old": "    if not any(plan.values()):\n        print(f\"verify {manifest['id']}：工作树与快照逐字节一致\")",
+  "new": "    if True:\n        print(f\"verify {manifest['id']}：工作树与快照逐字节一致\")",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 写回后不校验（坏对象静默落盘）",
+  "file": "scripts/snapshot.py",
+  "old": "        if sha256_file(target) != manifest[\"files\"][rel][\"sha\"]:",
+  "new": "        if False:",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 快照后新增的文件看不见",
+  "file": "scripts/snapshot.py",
+  "old": "    missing = sorted(set(wanted) - current_set)\n    extra = sorted(current_set - set(wanted))",
+  "new": "    missing = sorted(set(wanted) - current_set)\n    extra = []",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 把 target/ 也存进快照",
+  "file": "scripts/snapshot.py",
+  "old": "EXCLUDE_DIRS = {\".git\", \"target\", \".trit\", \"node_modules\", \"__pycache__\", \".venv\"}",
+  "new": "EXCLUDE_DIRS = {\".git\", \".trit\", \"node_modules\", \"__pycache__\", \".venv\"}",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 控制台编码崩掉回退（降级打印被去掉）",
+  "file": "scripts/snapshot.py",
+  "old": "    try:\n        print(text)\n    except UnicodeEncodeError:\n        print(text.encode(encoding, \"replace\").decode(encoding, \"replace\"))",
+  "new": "    print(text)",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 改动文件检不出来",
+  "file": "scripts/snapshot.py",
+  "old": "        if sha256_file(root / rel) != wanted[rel][\"sha\"]:",
+  "new": "        if False:",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 被删文件不补回",
+  "file": "scripts/snapshot.py",
+  "old": "    missing = sorted(set(wanted) - current_set)\n    extra = sorted(current_set - set(wanted))",
+  "new": "    missing = []\n    extra = sorted(current_set - set(wanted))",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 非法快照 id 不拦（../ 可跳出）",
+  "file": "scripts/snapshot.py",
+  "old": "    if not SNAP_ID_RE.match(snap_id):",
+  "new": "    if False:",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

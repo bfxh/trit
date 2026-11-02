@@ -1,0 +1,66 @@
+[
+ {
+  "name": "immune: 入账不按标题采纳既有坐标节点（幂等破）",
+  "file": "crates/trit-immune/src/coords.rs",
+  "old": ".find(|n| n.title == title)",
+  "new": ".find(|n| n.title == \"不可能命中的键\")",
+  "pkg": "trit-immune",
+  "filter": "attach_and_sync_are_idempotent"
+ },
+ {
+  "name": "immune: 只按包名连边（忽略版本）",
+  "file": "crates/trit-immune/src/coords.rs",
+  "old": "p.coord.key() != u.coord.key()",
+  "new": "p.coord.name != u.coord.name",
+  "pkg": "trit-immune",
+  "filter": "fanout_is_scoped_to_the_exact_coordinate"
+ },
+ {
+  "name": "immune: 坐标按家族匹配连边（丢版本/来源/摘要）",
+  "file": "crates/trit-immune/src/coords.rs",
+  "old": "p.coord.key() != u.coord.key()",
+  "new": "p.coord.family() != u.coord.family()",
+  "pkg": "trit-immune",
+  "filter": "derive_edges_only_for_exact_key_match_and_never_self"
+ },
+ {
+  "name": "immune: 坐标缺口一律不上报（fail-open）",
+  "file": "crates/trit-immune/src/coords.rs",
+  "old": "if exact {",
+  "new": "if true {",
+  "pkg": "trit-immune",
+  "filter": "coordinate_without_provider_is_reported"
+ },
+ {
+  "name": "immune: 坐标节点不连回本仓根",
+  "file": "crates/trit-immune/src/coords.rs",
+  "old": "        j.cross_link(node, NodeId(0), Trit::Vulnerable, &format!(\"消费 {title}\"))\n            .map_err(io::Error::other)?;\n",
+  "new": "        let _ = (node, &title);\n",
+  "pkg": "trit-immune",
+  "filter": "coordinate_breach_reaches_the_gate_and_vetoes_merge"
+ },
+ {
+  "name": "immune: 放宽「变坏才落账」（相等也落）",
+  "file": "crates/trit-immune/src/coords.rs",
+  "old": "if out >= dv {",
+  "new": "if out > dv {",
+  "pkg": "trit-immune",
+  "filter": "fanout_is_scoped_to_the_exact_coordinate"
+ },
+ {
+  "name": "immune: 策略忽略传播后的 -1",
+  "file": "crates/trit-immune/src/policy.rs",
+  "old": "if pr.verdict == Trit::Vulnerable {",
+  "new": "if pr.verdict == Trit::Vulnerable && false {",
+  "pkg": "trit-immune",
+  "filter": "propagated_minus_one_vetoes_even_with_allow_gate"
+ },
+ {
+  "name": "immune: 跨仓落账不溯源坐标",
+  "file": "crates/trit-immune/src/coords.rs",
+  "old": "format!(\"{note} ← coord {}:{}\", fr, fid.0)",
+  "new": "format!(\"{note}\")",
+  "pkg": "trit-immune",
+  "filter": "landing_is_monotonic_and_never_whitewashes"
+ }
+]

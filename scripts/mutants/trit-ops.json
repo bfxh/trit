@@ -1,0 +1,42 @@
+[
+ {
+  "name": "ops: 不再拒绝两轨重叠（脏输入放行）",
+  "file": "crates/trit-ops/src/pack.rs",
+  "old": "if pos.iter().zip(&neg).any(|(p, n)| p & n != 0) {",
+  "new": "if false {",
+  "pkg": "trit-ops",
+  "filter": "rail_rejects_overlapping_planes"
+ },
+ {
+  "name": "ops: 不再拒绝尾部脏位",
+  "file": "crates/trit-ops/src/pack.rs",
+  "old": "if (pos[last] | neg[last]) & mask != 0 {",
+  "new": "if false {",
+  "pkg": "trit-ops",
+  "filter": "rail_rejects_dirty_tail"
+ },
+ {
+  "name": "ops: 不再拒绝越界的 tryte 码",
+  "file": "crates/trit-ops/src/pack.rs",
+  "old": "if data.iter().any(|&b| (b as usize) >= TRYTE_STATES) {",
+  "new": "if false {",
+  "pkg": "trit-ops",
+  "filter": "trytes_reject_out_of_range_code"
+ },
+ {
+  "name": "ops: 量化尺度不按绝对值取（丢符号位）",
+  "file": "crates/trit-ops/src/quant.rs",
+  "old": "let s = values.iter().fold(0.0f32, |a, v| a.max(v.abs()));",
+  "new": "let s = values.iter().fold(0.0f32, |a, v| a.max(*v));",
+  "pkg": "trit-ops",
+  "filter": "abs_max_scale_uses_magnitude_and_degenerate_input_falls_back"
+ },
+ {
+  "name": "ops: 量化结果不再夹到 [-1,1]",
+  "file": "crates/trit-ops/src/quant.rs",
+  "old": "Trit::from_i8_unchecked(q.clamp(-1.0, 1.0) as i8)",
+  "new": "Trit::from_i8_unchecked(q as i8)",
+  "pkg": "trit-ops",
+  "filter": "quantize_respects_sign_and_clamps"
+ }
+]

@@ -1,0 +1,92 @@
+[
+ {
+  "name": "budget: --update 不再拒绝增长",
+  "file": "scripts/module_budget.py",
+  "old": "        if new is not None and new > old",
+  "new": "        if False",
+  "pkg": "scripts/module_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "budget: --update 把预算内文件也写进台账",
+  "file": "scripts/module_budget.py",
+  "old": "def save_baseline(path: Path, sizes: dict[str, int]) -> None:\n    over = {f: n for f, n in sizes.items() if n > LIMIT}",
+  "new": "def save_baseline(path: Path, sizes: dict[str, int]) -> None:\n    over = {f: n for f, n in sizes.items() if n >= LIMIT}",
+  "pkg": "scripts/module_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "budget: 台账变瘦不再要求收紧（两条 STALE 一起失效）",
+  "file": "scripts/module_budget.py",
+  "old": "        elif lines <= LIMIT:\n            failures.append(\n                f\"STALE BASELINE: {file} 已降到 {lines}（预算内），台账仍写 {recorded}；跑 --update 移除\"\n            )\n        elif lines < recorded:\n            failures.append(\n                f\"STALE BASELINE: {file} 已降到 {lines}，台账仍写 {recorded}；跑 --update 收紧\"\n            )\n",
+  "new": "        elif False:\n            pass\n        elif False:\n            pass\n",
+  "pkg": "scripts/module_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "budget: 台账变胖不再拒绝（--update 变成无条件放行）",
+  "file": "scripts/module_budget.py",
+  "old": "    if grew:",
+  "new": "    if False:",
+  "pkg": "scripts/module_budget.py",
+  "filter": "update refuses growth",
+  "runner": "python"
+ },
+ {
+  "name": "budget: 台账里的文件变胖不判红",
+  "file": "scripts/module_budget.py",
+  "old": "        if lines > recorded:",
+  "new": "        if False:",
+  "pkg": "scripts/module_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "budget: 完全跳过台账比对（GREW/STALE/ORPHAN 三条一起失效）",
+  "file": "scripts/module_budget.py",
+  "old": "    for file, recorded in sorted(baseline.items()):",
+  "new": "    for file, recorded in []:",
+  "pkg": "scripts/module_budget.py",
+  "filter": "red: baselined file grew",
+  "runner": "python"
+ },
+ {
+  "name": "budget: 已删除文件留在台账里不判红",
+  "file": "scripts/module_budget.py",
+  "old": "        if file not in sizes:",
+  "new": "        if False:",
+  "pkg": "scripts/module_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "budget: 新超预算不再上报（fail-open）",
+  "file": "scripts/module_budget.py",
+  "old": "        if lines > LIMIT and file not in baseline:",
+  "new": "        if False:",
+  "pkg": "scripts/module_budget.py",
+  "filter": "red: one line over",
+  "runner": "python"
+ },
+ {
+  "name": "budget: 无视台账（已登记的债务也算新增超限）",
+  "file": "scripts/module_budget.py",
+  "old": "        if lines > LIMIT and file not in baseline:",
+  "new": "        if lines > LIMIT:",
+  "pkg": "scripts/module_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "budget: 记账值变胖不判红",
+  "file": "scripts/module_budget.py",
+  "old": "        if lines > recorded:",
+  "new": "        if False:",
+  "pkg": "scripts/module_budget.py",
+  "filter": "red: baselined file grew",
+  "runner": "python"
+ }
+]

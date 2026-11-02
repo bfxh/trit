@@ -1,0 +1,56 @@
+[
+ {
+  "name": "autoflow: --keep-on-fail 失效（失败也回退）",
+  "file": "scripts/autoflow.py",
+  "old": "    if keep_on_fail:",
+  "new": "    if False:",
+  "pkg": "scripts/autoflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "autoflow: 吞掉失败码（返回 0）",
+  "file": "scripts/autoflow.py",
+  "old": "    return returncode if code == 0 else code",
+  "new": "    return 0",
+  "pkg": "scripts/autoflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "autoflow: 命令起不来时误报成功",
+  "file": "scripts/autoflow.py",
+  "old": "        returncode = 127",
+  "new": "        returncode = 0",
+  "pkg": "scripts/autoflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "autoflow: 回退时不删命令新建的文件",
+  "file": "scripts/autoflow.py",
+  "old": "    try:\n        code = snap.restore(root, manifest, prune=True, dry_run=False)",
+  "new": "    try:\n        code = snap.restore(root, manifest, prune=False, dry_run=False)",
+  "pkg": "scripts/autoflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "autoflow: 失败也当成功（不回退）",
+  "file": "scripts/autoflow.py",
+  "old": "    if returncode == 0:",
+  "new": "    if True:",
+  "pkg": "scripts/autoflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "autoflow: 快照库被破坏仍当回退成功",
+  "file": "scripts/autoflow.py",
+  "old": "    if missing:",
+  "new": "    if False:",
+  "pkg": "scripts/autoflow.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
