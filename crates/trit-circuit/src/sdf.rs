@@ -577,6 +577,18 @@ mod tests {
     }
 
     #[test]
+    fn sdf_depth_just_over_limit_returns_limit_error() {
+        // `MAX_SDF_DEPTH = 256` 的**有界**版本：300 层远超上限却只吃几百帧栈，
+        // 所以守卫被拆掉时这里会拿到 `NoDelays`（断言判红），而不是先把测试进程打死。
+        let deep = format!("{}x{}", "(".repeat(300), ")".repeat(300));
+        assert!(
+            matches!(parse_sdf(&deep), Err(SdfError::Limit(_))),
+            "300 层必须被深度守卫判成 Limit，实得 {:?}",
+            parse_sdf(&deep)
+        );
+    }
+
+    #[test]
     fn timing_model_uses_one_cycle_for_unlisted_cells() {
         let model = timing_model_from_sdf(SAMPLE).unwrap();
         assert_eq!(model.default_delay, 1);

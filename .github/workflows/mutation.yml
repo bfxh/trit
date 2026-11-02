@@ -35,6 +35,10 @@ jobs:
           set -euo pipefail
           files=$(git diff --name-only "$BASE_SHA"...HEAD -- 'crates/**')
           pkgs=$(printf '%s\n' "$files" | awk -F/ 'NF > 1 && $1 == "crates" { print $2 }' | sort -u)
+          # 门脚本（python 语言面）也算一个可选目标：脚本路径本身就是 `--pkg` 的值
+          scripts=$(git diff --name-only "$BASE_SHA"...HEAD -- 'scripts/**' \
+            | grep -E '^scripts/[A-Za-z0-9_]+\.py$' || true)
+          pkgs=$(printf '%s\n%s\n' "$pkgs" "$scripts" | sed '/^$/d' | sort -u)
           args=""
           for pkg in $pkgs; do args="$args --pkg $pkg"; done
           echo "args=$args" >> "$GITHUB_OUTPUT"
