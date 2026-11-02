@@ -235,6 +235,23 @@ mod tests {
         let value: Value = serde_json::from_str(&raw).unwrap();
         assert_eq!(value["rows"].as_array().unwrap().len(), 4);
     }
+
+    #[test]
+    fn assignment_json_marks_variables_without_a_value_as_x() {
+        // 出口契约：没赋值的变量要显式印成 `X`（页面看得见"这格没值"），
+        // 不能省略键，也不能被读成别的意思。
+        let assignment = Assignment::new();
+        let vars = ["a".to_string(), "b".to_string()];
+        let map = assignment_json(&assignment, &vars);
+        assert_eq!(map.get("a"), Some(&json!("X")), "缺值必须印 X：{map:?}");
+        assert_eq!(map.get("b"), Some(&json!("X")));
+
+        let mut with_a = Assignment::new();
+        with_a.set("a", trit_core::value::Ternary::True);
+        let map = assignment_json(&with_a, &vars);
+        assert_eq!(map.get("a"), Some(&json!("1")), "有值按 as_char 印出");
+        assert_eq!(map.get("b"), Some(&json!("X")), "另一格仍按缺值处理");
+    }
 }
 
 /// 对网表做 ATPG，返回覆盖率、测试向量与不可测故障数（JSON 字符串）。
