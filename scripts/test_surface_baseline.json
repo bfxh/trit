@@ -39,6 +39,7 @@
  "script/green_audit.py": 1,
  "script/hazard_gate.py": 1,
  "script/hooks.py": 1,
+ "script/merge_forensics.py": 1,
  "script/module_budget.py": 1,
  "script/mutation_check.py": 1,
  "script/pr_hygiene.py": 1,
