@@ -267,6 +267,201 @@ pub fn split_by_boundary_min(
     lab
 }
 
+/// 按**边界强度**并块（滞后阈值）：相邻两实例共享边界上的平均 logit 间隔 < `tau` 就合并。
+/// 直接针对「纹理边被当成部件边」的假边界；面积法会连真部件一起并掉（实测 mIoU −0.025~−0.07）。
+pub fn merge_weak(labels: &[u32], margin: &[f32], w: usize, h: usize, tau: f32) -> Vec<u32> {
+    if tau <= f32::NEG_INFINITY {
+        return labels.to_vec();
+    }
+    let mut acc: HashMap<(u32, u32), (f32, usize)> = HashMap::new();
+    for y in 0..h {
+        for x in 0..w {
+            let p = y * w + x;
+            let a = labels[p];
+            if a == 0 {
+                continue;
+            }
+            if x + 1 < w {
+                let b = labels[p + 1];
+                if b != 0 && b != a {
+                    let k = (a.min(b), a.max(b));
+                    let e = acc.entry(k).or_insert((0.0, 0));
+                    e.0 += margin[p].max(margin[p + 1]);
+                    e.1 += 1;
+                }
+            }
+            if y + 1 < h {
+                let b = labels[p + w];
+                if b != 0 && b != a {
+                    let k = (a.min(b), a.max(b));
+                    let e = acc.entry(k).or_insert((0.0, 0));
+                    e.0 += margin[p].max(margin[p + w]);
+                    e.1 += 1;
+                }
+            }
+        }
+    }
+    let mut parent: HashMap<u32, u32> = HashMap::new();
+    fn find(parent: &mut HashMap<u32, u32>, x: u32) -> u32 {
+        let p = *parent.entry(x).or_insert(x);
+        if p == x {
+            x
+        } else {
+            let r = find(parent, p);
+            parent.insert(x, r);
+            r
+        }
+    }
+    let mut merged = 0usize;
+    for ((a, b), (sum, n)) in acc {
+        if n == 0 {
+            continue;
+        }
+        if (sum / n as f32) < tau {
+            let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
+            if ra != rb {
+                parent.insert(ra.max(rb), ra.min(rb));
+                merged += 1;
+            }
+        }
+    }
+    if merged == 0 {
+        return labels.to_vec();
+    }
+    labels
+        .iter()
+        .map(|&v| if v == 0 { 0 } else { find(&mut parent, v) })
+        .collect()
+}
+
+/// 按**最大块**的比例并块：面积 < `beta × 本帧最大实例面积` 的块并入最大邻块。
+/// 与中位数版相比，密度不均的帧里只压真碎片，不会把「本来就小」的部件全部并掉。
+pub fn merge_small_by_max(labels: &[u32], w: usize, h: usize, beta: f32) -> Vec<u32> {
+    if beta <= 0.0 {
+        return labels.to_vec();
+    }
+    let mut lab = labels.to_vec();
+    for _ in 0..4 {
+        let mut area: HashMap<u32, usize> = HashMap::new();
+        for &v in lab.iter().filter(|&&v| v != 0) {
+            *area.entry(v).or_insert(0) += 1;
+        }
+        if area.len() < 3 {
+            break;
+        }
+        let max_area = *area.values().max().unwrap_or(&0);
+        let thr = (beta * max_area as f32).max(1.0);
+        let small: Vec<(u32, usize)> = area
+            .iter()
+            .filter(|(_, a)| (**a as f32) < thr)
+            .map(|(&k, &a)| (k, a))
+            .collect();
+        let mut changed = 0usize;
+        for (s, asz) in small {
+            let mut nb: HashMap<u32, usize> = HashMap::new();
+            for p in 0..w * h {
+                if lab[p] != s {
+                    continue;
+                }
+                let (x, y) = (p % w, p / w);
+                for (dx, dy) in [(-1i32, 0), (1, 0), (0, -1), (0, 1)] {
+                    let (xx, yy) = (x as i32 + dx, y as i32 + dy);
+                    if xx < 0 || yy < 0 || xx >= w as i32 || yy >= h as i32 {
+                        continue;
+                    }
+                    let t = lab[yy as usize * w + xx as usize];
+                    if t != 0 && t != s {
+                        *nb.entry(t).or_insert(0) += 1;
+                    }
+                }
+            }
+            let best = nb
+                .iter()
+                .filter(|(t, _)| area.get(t).copied().unwrap_or(0) > asz)
+                .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0)))
+                .map(|(&t, _)| t);
+            if let Some(t) = best {
+                for v in lab.iter_mut() {
+                    if *v == s {
+                        *v = t;
+                    }
+                }
+                changed += 1;
+            }
+        }
+        if changed == 0 {
+            break;
+        }
+    }
+    lab
+}
+
+/// 自适应并块：面积 < `ratio × 本图中位面积` 的实例并入**共享边界最多**的更大邻块。
+/// 与固定 `min_size` 的区别：密集簇里的碎片是「相对小」而不是「绝对小」，
+/// 固定阈值（50→1000 px）会先误杀整场景再欠分割。
+pub fn merge_small(labels: &[u32], w: usize, h: usize, ratio: f32) -> Vec<u32> {
+    if ratio <= 0.0 {
+        return labels.to_vec();
+    }
+    let mut lab = labels.to_vec();
+    for _ in 0..4 {
+        let mut area: HashMap<u32, usize> = HashMap::new();
+        for &v in lab.iter().filter(|&&v| v != 0) {
+            *area.entry(v).or_insert(0) += 1;
+        }
+        if area.len() < 3 {
+            break;
+        }
+        let mut sizes: Vec<usize> = area.values().copied().collect();
+        sizes.sort_unstable();
+        let median = sizes[sizes.len() / 2] as f32;
+        let thr = (ratio * median).max(1.0);
+        let small: Vec<(u32, usize)> = area
+            .iter()
+            .filter(|(_, a)| (**a as f32) < thr)
+            .map(|(&k, &a)| (k, a))
+            .collect();
+        let mut changed = 0usize;
+        for (s, asz) in small {
+            let mut nb: HashMap<u32, usize> = HashMap::new();
+            for p in 0..w * h {
+                if lab[p] != s {
+                    continue;
+                }
+                let (x, y) = (p % w, p / w);
+                for (dx, dy) in [(-1i32, 0), (1, 0), (0, -1), (0, 1)] {
+                    let (xx, yy) = (x as i32 + dx, y as i32 + dy);
+                    if xx < 0 || yy < 0 || xx >= w as i32 || yy >= h as i32 {
+                        continue;
+                    }
+                    let t = lab[yy as usize * w + xx as usize];
+                    if t != 0 && t != s {
+                        *nb.entry(t).or_insert(0) += 1;
+                    }
+                }
+            }
+            // 邻块里选**面积更大**的；并列按较小 id（确定性）
+            let best = nb
+                .iter()
+                .filter(|(t, _)| area.get(t).copied().unwrap_or(0) > asz)
+                .max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0)))
+                .map(|(&t, _)| t);
+            if let Some(t) = best {
+                for v in lab.iter_mut() {
+                    if *v == s {
+                        *v = t;
+                    }
+                }
+                changed += 1;
+            }
+        }
+        if changed == 0 {
+            break;
+        }
+    }
+    lab
+}
+
 /// 实例边界标签：`0` 背景、`1` 实例内部、`2` **实例之间的边界像素**
 /// （前景且 `radius` 邻域里存在不同实例号的像素；`radius≥1` 加粗，便于下采样网络学到）。
 /// 物体外沿不算边界。
@@ -514,5 +709,20 @@ mod tests {
         assert_eq!(out[5], 2, "右侧对象（部件 1/2）排 2");
         assert_eq!(out.iter().filter(|&&v| v > 0).count(), 16);
         assert!(out.iter().all(|&v| v <= 2), "不可见对象不占号");
+    }
+    #[test]
+    fn merge_weak_folds_low_margin_pairs() {
+        // 4×2：左半 id1、右半 id2，共享边界 2 条。
+        let (w, h) = (4usize, 2usize);
+        let labels: Vec<u32> = vec![1, 1, 2, 2, 1, 1, 2, 2];
+        let weak = vec![0.1f32; w * h];
+        let m = merge_weak(&labels, &weak, w, h, 0.5);
+        assert!(
+            m.iter().all(|&v| v == m[0]),
+            "平均间隔 0.1 < tau 0.5 应合并：{m:?}"
+        );
+        let strong = vec![2.0f32; w * h];
+        let m2 = merge_weak(&labels, &strong, w, h, 0.5);
+        assert!(m2.contains(&2), "强边界不应合并：{m2:?}");
     }
 }

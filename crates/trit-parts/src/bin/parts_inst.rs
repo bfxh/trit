@@ -223,6 +223,15 @@ fn eval(argv: &[String]) {
     let bnd_margin: f32 = arg(argv, "--bnd-margin")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.0);
+    let merge_weak: f32 = arg(argv, "--merge-weak")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(f32::NEG_INFINITY);
+    let merge_max: f32 = arg(argv, "--merge-max")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
+    let merge_ratio: f32 = arg(argv, "--merge-ratio")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
     let min_size: usize = arg(argv, "--min-size")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
@@ -337,11 +346,15 @@ fn eval(argv: &[String]) {
                 let fg: Vec<u32> = (0..hw)
                     .map(|p| (logits[p * ch + k * 3] > 0.0) as u32)
                     .collect();
-                let bd: Vec<u32> = (0..hw)
+                let margin_map: Vec<f32> = (0..hw)
                     .map(|p| {
                         let o = p * ch + (k - 1) * 3;
-                        (logits[o + 1] - logits[o] > bnd_margin) as u32
+                        logits[o + 1] - logits[o]
                     })
+                    .collect();
+                let bd: Vec<u32> = margin_map
+                    .iter()
+                    .map(|&m| (m > bnd_margin) as u32)
                     .collect();
                 // 边界 F1 的参考：部件级评测优先 `pbnd/`（部件边界），实例级优先 `bnd/`
                 let order: [&str; 2] = if gt_part {
@@ -370,13 +383,25 @@ fn eval(argv: &[String]) {
                         eprintln!("边界计数：gt {b_gt} pred {b_pred} inter {b_inter}（g==2 参考）");
                     }
                 }
-                trit_parts::inst::split_by_boundary_min(
-                    &fg,
-                    &bd,
-                    res as usize,
-                    res as usize,
-                    min_size,
-                )
+                {
+                    let p = trit_parts::inst::split_by_boundary_min(
+                        &fg,
+                        &bd,
+                        res as usize,
+                        res as usize,
+                        min_size,
+                    );
+                    let p = trit_parts::inst::merge_weak(
+                        &p,
+                        &margin_map,
+                        res as usize,
+                        res as usize,
+                        merge_weak,
+                    );
+                    let p =
+                        trit_parts::inst::merge_small(&p, res as usize, res as usize, merge_ratio);
+                    trit_parts::inst::merge_small_by_max(&p, res as usize, res as usize, merge_max)
+                }
             } else {
                 decode_ids(&logits, res, &pl)
             };
@@ -437,13 +462,26 @@ fn eval(argv: &[String]) {
             }
         }
     }
+    let ratio90 = {
+        let mut r: Vec<f64> = npred
+            .iter()
+            .zip(&ngt)
+            .map(|(&p, &g)| p as f64 / g.max(1) as f64)
+            .collect();
+        r.sort_by(f64::total_cmp);
+        if r.is_empty() {
+            0.0
+        } else {
+            r[(r.len() * 9) / 10]
+        }
+    };
     let mean = |v: &[f64]| v.iter().sum::<f64>() / v.len().max(1) as f64;
     let median = |v: &mut Vec<f64>| {
         v.sort_by(f64::total_cmp);
         if v.is_empty() { 0.0 } else { v[v.len() / 2] }
     };
     println!(
-        "frames={frames} 实例 mIoU mean {:.4} median {:.4}（p10 {:.4}）| 前景 IoU mean {:.4} | pred/gt {:.2} | 计数±1 {:.1}% | 计数全对 {:.1}% | 边界 P {:.3} R {:.3} F1 {:.3} | 跨物体混合 {:.1}%",
+        "frames={frames} 实例 mIoU mean {:.4} median {:.4}（p10 {:.4}）| 前景 IoU mean {:.4} | pred/gt {:.2}（p90 {:.2}）| 计数±1 {:.1}% | 计数全对 {:.1}% | 边界 P {:.3} R {:.3} F1 {:.3} | 跨物体混合 {:.1}%",
         mean(&miou),
         median(&mut miou.clone()),
         {
@@ -453,6 +491,7 @@ fn eval(argv: &[String]) {
         },
         mean(&fgis),
         npred.iter().sum::<usize>() as f64 / ngt.iter().sum::<usize>().max(1) as f64,
+        ratio90,
         100.0 * cnt_ok as f64 / frames.max(1) as f64,
         100.0 * cnt_exact as f64 / frames.max(1) as f64,
         b_inter as f64 / b_pred.max(1) as f64,

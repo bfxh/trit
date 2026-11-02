@@ -3126,6 +3126,14 @@ MUTANTS = [
         "filter": "learns_constant_offset"
     },
     {
+        "name": "parts: 弱边界并块失效（过分割不被压）",
+        "file": "crates/trit-parts/src/inst.rs",
+        "old": "        if (sum / n as f32) < tau {",
+        "new": "        if false {",
+        "pkg": "trit-parts",
+        "filter": "merge_weak_folds_low_margin_pairs"
+    },
+    {
         "name": "parts: 多视角一致性去掉鲁棒权重（遮挡把预测拉走）",
         "file": "crates/trit-parts/src/depthnet.rs",
         "old": "                let wgt = if tau > 0.0 {\n                    1.0 / (1.0 + (d / tau) * (d / tau))\n                } else {\n                    1.0\n                };",
