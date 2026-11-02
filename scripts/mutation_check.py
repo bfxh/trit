@@ -4104,6 +4104,33 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    {
+        "name": "split: 共变相似度不算比例（全连）",
+        "file": "scripts/split.py",
+        "old": "        score = count / union_size",
+        "new": "        score = count",
+        "pkg": "scripts/split.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "split: 闭包不追传递依赖",
+        "file": "scripts/split.py",
+        "old": "        stack.extend(plan[\"internal_deps\"])",
+        "new": "        pass",
+        "pkg": "scripts/split.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "split: 下游识别失效",
+        "file": "scripts/split.py",
+        "old": "    return sorted(p[\"crate\"] for p in plans if target in p[\"internal_deps\"])",
+        "new": "    return []",
+        "pkg": "scripts/split.py",
+        "filter": "",
+        "runner": "python",
+    },
     # ---- gitflow（一句话提交 GitHub）----
     {
         "name": "gitflow: 密钥扫描失效",
