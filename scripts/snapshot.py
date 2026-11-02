@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import pathlib
@@ -34,6 +35,16 @@ STORE = ".trit"
 EXCLUDE_DIRS = {".git", "target", ".trit", "node_modules", "__pycache__", ".venv"}
 MANIFEST_VERSION = 1
 SNAP_ID_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{4}$")
+
+
+def _say(text: str) -> None:
+    """打印文件名用的：中文 Windows 控制台是 cp936，名字里带 emoji 会让 print 抛
+    UnicodeEncodeError —— 回退跑到中途因为一行进度而崩，是不能接受的。"""
+    encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        print(text.encode(encoding, "replace").decode(encoding, "replace"))
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -102,6 +113,7 @@ def new_id() -> str:
 
 
 def save(root: pathlib.Path, label: str) -> str:
+    root = pathlib.Path(root)
     files: dict[str, dict] = {}
     for rel in iter_files(root):
         path = root / rel
@@ -129,6 +141,7 @@ def save(root: pathlib.Path, label: str) -> str:
 
 
 def list_snapshots(root: pathlib.Path) -> list[dict]:
+    root = pathlib.Path(root)
     """按**创建顺序**返回（清单文件的 mtime），不是按 id 字符串。
 
     id 只有秒级时间戳 + 随机后缀：同一秒内多个快照按文件名排序会乱序，
@@ -147,6 +160,7 @@ def list_snapshots(root: pathlib.Path) -> list[dict]:
 
 
 def resolve(root: pathlib.Path, snap_id: str) -> dict:
+    root = pathlib.Path(root)
     if not snap_id or snap_id == "latest":
         snaps = list_snapshots(root)
         if not snaps:
@@ -162,6 +176,7 @@ def resolve(root: pathlib.Path, snap_id: str) -> dict:
 
 
 def diff(root: pathlib.Path, manifest: dict) -> dict[str, list[str]]:
+    root = pathlib.Path(root)
     """清单 vs 现状：missing（被删）/ changed（改过）/ extra（快照后新增）。"""
     wanted = manifest["files"]
     current = iter_files(root)
@@ -176,6 +191,7 @@ def diff(root: pathlib.Path, manifest: dict) -> dict[str, list[str]]:
 
 
 def restore(root: pathlib.Path, manifest: dict, prune: bool, dry_run: bool) -> int:
+    root = pathlib.Path(root)
     plan = diff(root, manifest)
     actions = plan["missing"] + plan["changed"]
     print(
@@ -183,9 +199,9 @@ def restore(root: pathlib.Path, manifest: dict, prune: bool, dry_run: bool) -> i
         f"新增未动 {len(plan['extra'])}{'（--prune：删除）' if prune else '（保留；要删加 --prune）'}"
     )
     for rel in actions:
-        print(f"  {'补回' if rel in plan['missing'] else '覆盖'} {rel}")
+        _say(f"  {'补回' if rel in plan['missing'] else '覆盖'} {rel}")
     for rel in plan["extra"]:
-        print(f"  {'删除' if prune else '保留'} {rel}")
+        _say(f"  {'删除' if prune else '保留'} {rel}")
     if dry_run:
         print("dry-run：未改动任何文件")
         return 0
@@ -196,7 +212,13 @@ def restore(root: pathlib.Path, manifest: dict, prune: bool, dry_run: bool) -> i
         json.dumps({"id": manifest["id"], "started": time.time()}, ensure_ascii=False).encode("utf-8"),
     )
     for rel in actions:
-        data = blob_path(root, manifest["files"][rel]["sha"]).read_bytes()
+        blob = blob_path(root, manifest["files"][rel]["sha"])
+        if not blob.is_file():
+            raise SystemExit(
+                f"回退失败：快照对象缺失（{rel} 的 {manifest['files'][rel]['sha'][:12]}…）。"
+                "pending 已保留；对象库可能被删/被清，先查 .trit/objects。"
+            )
+        data = blob.read_bytes()
         target = root / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
@@ -218,7 +240,23 @@ def restore(root: pathlib.Path, manifest: dict, prune: bool, dry_run: bool) -> i
     return 0
 
 
+def intact(root: pathlib.Path, manifest: dict) -> list[str]:
+    root = pathlib.Path(root)
+    """回退前确认快照库还在：清单文件与对象缺一个就回不去（.trit 不进快照，删了就没了）。"""
+    missing: list[str] = []
+    manifest_file = snapshots_dir(root) / f"{manifest['id']}.json"
+    if not manifest_file.is_file():
+        missing.append(str(manifest_file))
+    for rel, entry in manifest["files"].items():
+        if not blob_path(root, entry["sha"]).is_file():
+            missing.append(f"{rel} -> objects/{entry['sha'][:12]}…")
+            if len(missing) >= 5:
+                break
+    return missing
+
+
 def gc(root: pathlib.Path, keep: int) -> int:
+    root = pathlib.Path(root)
     """只保留最近 keep 个快照，并清掉没人引用的对象（快照不该只增不减）。"""
     snaps = list_snapshots(root)
     if keep <= 0:
@@ -246,6 +284,7 @@ def gc(root: pathlib.Path, keep: int) -> int:
 
 
 def verify(root: pathlib.Path, manifest: dict) -> int:
+    root = pathlib.Path(root)
     plan = diff(root, manifest)
     if not any(plan.values()):
         print(f"verify {manifest['id']}：工作树与快照逐字节一致")
@@ -253,7 +292,7 @@ def verify(root: pathlib.Path, manifest: dict) -> int:
     print(f"verify {manifest['id']}：不一致")
     for key, label in (("missing", "缺失"), ("changed", "已改"), ("extra", "快照后新增")):
         for rel in plan[key]:
-            print(f"  {label} {rel}")
+            _say(f"  {label} {rel}")
     return 1
 
 
@@ -351,10 +390,40 @@ def self_test() -> int:
             check("gc 后仍能回退", restore(gsrc, resolve(gsrc, ids[-1]), prune=True, dry_run=False), 0)
             check("gc 后回退逐字节正确", (gsrc / "g.txt").read_bytes(), b"2")
 
-        # 11) 构建产物不进快照
+        # 11) 传 str 也能用（API 健壮性：有人会传字符串路径）
+        check("save 接受 str 路径", bool(save(str(root), "str-root")), True)
+
+        # 12) intact：对象缺一个就不完整
+        intact_id = save(root, "intact")
+        manifest = resolve(root, intact_id)
+        first_rel = sorted(manifest["files"])[0]
+        blob_path(root, manifest["files"][first_rel]["sha"]).unlink()
+        check("对象缺失时 intact 报不完整", bool(intact(root, manifest)), True)
+
+        # 13) 构建产物不进快照
         (root / "target").mkdir()
         (root / "target" / "junk.bin").write_bytes(b"junk")
         check("target/ 不进快照", "target/junk.bin" in iter_files(root), False)
+
+        # 14) 回退不能被"打印文件名"崩掉：中文 Windows 控制台是 cp936——中文能打，
+        # 文件名里的 emoji 打不出，bare print 会抛 UnicodeEncodeError。
+        # 这里不靠本机 locale：自己造一个 cp936 的 stdout 来判红，Linux 上同样成立。
+        with tempfile.TemporaryDirectory() as tmp3:
+            esrc = pathlib.Path(tmp3)
+            weird = esrc / "\U0001f642.txt"
+            weird.write_bytes(b"must survive\n")
+            eid = save(esrc, "unicode-name")
+            weird.unlink()
+            probe = io.TextIOWrapper(io.BytesIO(), encoding="cp936", errors="strict", newline="\n")
+            saved_stdout, sys.stdout = sys.stdout, probe
+            try:
+                rc = restore(esrc, resolve(esrc, eid), prune=False, dry_run=False)
+            except UnicodeEncodeError:
+                rc = -1
+            finally:
+                sys.stdout = saved_stdout
+            check("cp936 控制台下回退不崩（打印文件名不许判死回退）", rc, 0)
+            check("非 ASCII 文件名照样逐字节回退", (esrc / "\U0001f642.txt").read_bytes(), b"must survive\n")
 
     if failures:
         print(f"self-test: {total[0] - len(failures)}/{total[0]} passed")
