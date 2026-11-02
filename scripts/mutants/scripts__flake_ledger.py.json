@@ -1,0 +1,92 @@
+[
+ {
+  "name": "flake-ledger: attempt>1 的绿一律看不见",
+  "file": "scripts/flake_ledger.py",
+  "old": "        if not green_late:",
+  "new": "        if True:",
+  "pkg": "scripts/flake_ledger.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "flake-ledger: 只认 failure，超时/取消后的重跑看不见",
+  "file": "scripts/flake_ledger.py",
+  "old": "                  if str(r.get(\"conclusion\") or \"\").lower() in {\"failure\", \"timed_out\", \"cancelled\"}]",
+  "new": "                  if str(r.get(\"conclusion\") or \"\").lower() in {\"failure\"}]",
+  "pkg": "scripts/flake_ledger.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "flake-ledger: 台账缺字段不查",
+  "file": "scripts/flake_ledger.py",
+  "old": "            if not str(entry.get(field) or \"\").strip():",
+  "new": "            if False:",
+  "pkg": "scripts/flake_ledger.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "flake-ledger: 坏日期编成一个真日期",
+  "file": "scripts/flake_ledger.py",
+  "old": "    except ValueError:\n        return None",
+  "new": "    except ValueError:\n        return dt.date(2000, 1, 1)",
+  "pkg": "scripts/flake_ledger.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "flake-ledger: 安静项不吭声（台账只增不减）",
+  "file": "scripts/flake_ledger.py",
+  "old": "        if not any(test in name or name in test for name in lowered):",
+  "new": "        if False:",
+  "pkg": "scripts/flake_ledger.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "flake-ledger: 时间戳读不出来就丢掉这条 run",
+  "file": "scripts/flake_ledger.py",
+  "old": "    except ValueError:\n        return True",
+  "new": "    except ValueError:\n        return False",
+  "pkg": "scripts/flake_ledger.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "flake-ledger: 查不到 run 也当没有 flake",
+  "file": "scripts/flake_ledger.py",
+  "old": "                \"warnings\": 0, \"red\": True, \"runs\": 0, \"masked\": 0}",
+  "new": "                \"warnings\": 0, \"red\": False, \"runs\": 0, \"masked\": 0}",
+  "pkg": "scripts/flake_ledger.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "flake-ledger: 没有失败痕迹也当确凿掩盖（把抢 runner 判成 flake）",
+  "file": "scripts/flake_ledger.py",
+  "old": "                      \"definitive\": bool(failed)})",
+  "new": "                      \"definitive\": True})",
+  "pkg": "scripts/flake_ledger.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "flake-ledger: 记了账照样拦（台账白记）",
+  "file": "scripts/flake_ledger.py",
+  "old": "        if covered(hit[\"name\"], ledger):",
+  "new": "        if False:",
+  "pkg": "scripts/flake_ledger.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "flake-ledger: 过期隔离不判红",
+  "file": "scripts/flake_ledger.py",
+  "old": "        if expires and expires < today:",
+  "new": "        if False:",
+  "pkg": "scripts/flake_ledger.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

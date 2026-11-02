@@ -173,6 +173,19 @@ jobs:
       - name: Green audit self-test (execution evidence)
         run: python3 scripts/green_audit.py --self-test
 
+  flake:
+    name: flake ledger (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 重跑掩盖 + 隔离台账（owner/理由/到期/复验）的判定链反证
+      - name: Flake ledger self-test
+        run: python3 scripts/flake_ledger.py --self-test
+      # 离线只审台账本身：查 API 要 token，这一步保证"台账不合规"当天就红
+      - name: Quarantine ledger audit
+        run: python3 scripts/flake_ledger.py ledger
+
   forensics:
     name: merge forensics (self-test)
     runs-on: ubuntu-latest
