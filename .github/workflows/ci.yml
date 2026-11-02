@@ -87,6 +87,16 @@ jobs:
       - name: Concurrency/memory hazards within the design policy
         run: python3 scripts/hazard_gate.py
 
+  mutation-gate:
+    name: mutation gate (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 门的判定链自身也要有人盯：编译红当抓住、崩溃当断言、脚本落 cargo、空集放行
+      - name: Gate self-test (verdicts / runner inference / empty selection)
+        run: python3 scripts/mutation_check.py --self-test
+
   stress:
     name: stress (high pressure invariants)
     runs-on: ubuntu-latest
