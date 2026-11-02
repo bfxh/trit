@@ -1299,6 +1299,28 @@ def has_pending(output: str) -> bool:
     return "pending" in lowered or "in_progress" in lowered or "queued" in lowered
 
 
+CHECK_STATES_OK = {"pass", "skipping"}
+
+
+def listing_problems(output: str) -> list[str]:
+    """`gh pr checks` 表格里所有"没通过"的行。
+
+    为什么合并前还要自己看一遍：`gh pr merge` 只受**分支保护**约束。像
+    `bfxh/trit-immune` 那样没设保护的仓，红着也照样合得进去
+    （master 就是这么被弄红的）。
+    `skipping` 放行是故意的——非必需的 job 没跑不该拦合并；必需检查没跑由 `green_audit` 判红。
+    """
+    problems = []
+    for line in output.splitlines():
+        cols = [cell.strip() for cell in line.split("\t")]
+        if len(cols) < 2 or not cols[0]:
+            continue
+        state = cols[1].lower()
+        if state not in CHECK_STATES_OK:
+            problems.append(f"{cols[0]}={state or '未知状态'}")
+    return problems
+
+
 def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30) -> int:
     """等检查**真正**落定再合。
 
@@ -1321,6 +1343,15 @@ def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30)
                 print("检查还在跑（可能是刚 push 触发的新一轮），等它落定…")
             time.sleep(pause)
             continue
+        problems = listing_problems(output)
+        if problems:
+            print("拒绝合入：有检查没通过（这个仓可能没有分支保护，GitHub 不会替你拦）：")
+            for line in problems[:12]:
+                print(f"  - {line}")
+            if any("cancelled" in line or "=未知状态" in line for line in problems):
+                print("  提示：cancelled 常见于托管 runner 没抢到（macOS 容量）——"
+                      "先 `gh run rerun <run-id> --failed` 再判，别把它当代码问题。")
+            return 1
         merge = gh(["pr", "merge", "--repo", repo, branch, "--squash", "--delete-branch"])
         if merge.returncode == 0:
             print(f"CI 全绿，已 squash 合入 {branch} 并删分支")
@@ -1441,6 +1472,12 @@ def self_test() -> int:
         check("竞态识别：no checks reported", checks_not_yet("no checks reported on the 'x' branch"), True)
         check("真实失败不算竞态", checks_not_yet("some check failed"), False)
         check("pending 识别", has_pending("CI\tpending\t0\thttps://x"), True)
+        check("合并前自己看表格：fail 要拦（没保护的仓 GitHub 不替你拦）",
+              listing_problems("fmt\tpass\t1s\th\nCI\tfail\t2s\th"), ["CI=fail"])
+        check("cancelled 算没通过（master 那次红就是这么来的）",
+              listing_problems("t\tcancelled\t15m1s\th"), ["t=cancelled"])
+        check("非必需 job 的 skipping 不拦", listing_problems("m\tskipping\t0\th"), [])
+        check("状态为空不许当通过", listing_problems("x\t\t1s\th"), ["x=未知状态"])
         check("通过不算 pending", has_pending("CI\tpass\t1s\thttps://x"), False)
         check("文件重叠 Jaccard", round(file_jaccard(["a", "b"], ["a", "b", "c"]), 6), 0.666667)
         now = 2_000_000_000
