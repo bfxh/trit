@@ -3714,6 +3714,52 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    # ---- deps.py 的 copy 模式脱离 ----
+    {
+        "name": "deps: 点号形式的 workspace 依赖不展开",
+        "file": "scripts/deps.py",
+        "old": "            if section_tail in DEP_SECTIONS:",
+        "new": "            if False:",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 内部依赖的 path 不改指新布局",
+        "file": "scripts/deps.py",
+        "old": "    if \"path\" in merged and name in closure:\n        merged[\"path\"] = f\"../{name}\"",
+        "new": "    if False:\n        merged[\"path\"] = f\"../{name}\"",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 写回时没用重写后的清单",
+        "file": "scripts/deps.py",
+        "old": "        manifest.write_text(new_text, encoding=\"utf-8\", newline=\"\")",
+        "new": "        manifest.write_text(text, encoding=\"utf-8\", newline=\"\")",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 只带走直接依赖（传递依赖漏拷）",
+        "file": "scripts/deps.py",
+        "old": "        for dep in plan[\"internal_deps\"]:\n            stack.append(dep)",
+        "new": "        for dep in plan[\"internal_deps\"]:\n            pass",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: dev 传递依赖漏拷",
+        "file": "scripts/deps.py",
+        "old": "            if blocker[\"kind\"] == \"内部 dev\":\n                stack.append(blocker[\"detail\"].split(\"（\", 1)[0])",
+        "new": "            if False:\n                stack.append(blocker[\"detail\"].split(\"（\", 1)[0])",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
 ]
 
 

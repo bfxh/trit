@@ -23,6 +23,8 @@ import dataclasses
 import json
 import pathlib
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 
@@ -214,7 +216,164 @@ def print_graph(plans: list[dict]) -> None:
         print(f"{plan['crate']} -> {deps}")
 
 
+def toml_value(value) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, str):
+        return json.dumps(value, ensure_ascii=False)
+    if isinstance(value, list):
+        return "[" + ", ".join(toml_value(v) for v in value) + "]"
+    raise ValueError(f"不支持的 TOML 值：{value!r}")
+
+
+def inline_table(data: dict) -> str:
+    return "{ " + ", ".join(f"{k} = {toml_value(v)}" for k, v in data.items()) + " }"
+
+
+def concrete_dep(name: str, spec: dict, ws_deps: dict, closure: set[str]) -> dict:
+    extra = {k: v for k, v in spec.items() if k != "workspace"}
+    base = ws_deps.get(name, {})
+    if isinstance(base, str):
+        base = {"version": base}
+    if not isinstance(base, dict):
+        base = {}
+    merged = dict(base)
+    merged.update(extra)
+    if "path" in merged and name in closure:
+        merged["path"] = f"../{name}"
+    return merged
+
+
+INHERIT_LINE = re.compile(r"^(\s*)([A-Za-z0-9_-]+)\.workspace\s*=\s*true\s*$")
+INLINE_DEP_LINE = re.compile(r"^(\s*)([A-Za-z0-9_-]+)\s*=\s*\{[^}]*\}\s*$")
+
+
+def rewrite_manifest(text: str, crate: Crate, ws: dict, closure: set[str]) -> tuple[str, int]:
+    """把 workspace 继承与 workspace 依赖实体化；返回 (新文本, 改了几处)。"""
+    ws_package = ws.get("package", {})
+    ws_deps = ws.get("dependencies", {})
+    out: list[str] = []
+    section = ""
+    changed = 0
+    for line in text.splitlines():
+        header = re.match(r"^\[([^\]]+)\]\s*$", line.strip())
+        if header:
+            section = header.group(1)
+        match = INHERIT_LINE.match(line)
+        if match:
+            indent, key = match.group(1), match.group(2)
+            section_tail = section.split(".")[-1]
+            if section_tail in DEP_SECTIONS:
+                # 依赖也常用点号形式：`trit-learn.workspace = true`
+                merged = concrete_dep(key, {"workspace": True}, ws_deps, closure)
+                out.append(f"{indent}{key} = {inline_table(merged)}")
+                changed += 1
+                continue
+            if key not in ws_package:
+                out.append(line)
+                continue
+            out.append(f"{indent}{key} = {toml_value(ws_package[key])}")
+            changed += 1
+            continue
+        match = INLINE_DEP_LINE.match(line)
+        if match and section.split(".")[-1] in DEP_SECTIONS:
+            indent, name = match.group(1), match.group(2)
+            spec = crate.data.get(section, {}).get(name)
+            if isinstance(spec, dict) and spec.get("workspace") is True:
+                merged = concrete_dep(name, spec, ws_deps, closure)
+                out.append(f"{indent}{name} = {inline_table(merged)}")
+                changed += 1
+                continue
+        out.append(line)
+    return "\n".join(out) + ("\n" if text.endswith("\n") else ""), changed
+
+
+def closure_of(crate_name: str, plans: dict[str, dict]) -> set[str]:
+    seen: set[str] = set()
+    stack = [crate_name]
+    while stack:
+        current = stack.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        plan = plans.get(current)
+        if not plan:
+            continue
+        for dep in plan["internal_deps"]:
+            stack.append(dep)
+        for blocker in plan["blockers"]:
+            if blocker["kind"] == "内部 dev":
+                stack.append(blocker["detail"].split("（", 1)[0])
+    return seen
+
+
+def detach(root: pathlib.Path, crate_name: str, to: pathlib.Path, force: bool) -> int:
+    """copy 模式脱离：crate + 传递内部依赖整块拷到目标目录，实体化继承字段与 workspace 依赖。
+
+    只写目标目录，源仓一个字节都不动 —— 退回就是删目标目录（或 snapshot restore）。
+    """
+    ws, _ = workspace(root)
+    plans, by_name = build(root)
+    plan_map = {p["crate"]: p for p in plans}
+    if crate_name not in plan_map:
+        print(f"没有这个 crate：{crate_name}")
+        return 2
+    if to.exists() and any(to.iterdir()) and not force:
+        print(f"目标目录非空：{to}（要覆盖加 --force）")
+        return 2
+    closure = sorted(closure_of(crate_name, plan_map))
+    to.mkdir(parents=True, exist_ok=True)
+    copied: list[str] = []
+    rewritten = 0
+    for name in closure:
+        crate = by_name[name]
+        src = root / crate.rel
+        dst = to / "crates" / name
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("target", ".trit"))
+        manifest = dst / "Cargo.toml"
+        text = manifest.read_text(encoding="utf-8")
+        new_text, changed = rewrite_manifest(text, crate, ws, set(closure))
+        manifest.write_text(new_text, encoding="utf-8", newline="")
+        rewritten += changed
+        copied.append(name)
+    members = ", ".join(f'"crates/{name}"' for name in closure)
+    (to / "Cargo.toml").write_text(
+        "[workspace]\n"
+        'resolver = "3"\n'
+        f"members = [{members}]\n\n"
+        "[workspace.package]\n"
+        + "".join(f"{k} = {toml_value(v)}\n" for k, v in ws.get("package", {}).items()),
+        encoding="utf-8",
+        newline="",
+    )
+    print(f"已脱离到 {to}：{len(copied)} 个 crate（{', '.join(copied)}），实体化 {rewritten} 处")
+    return 0
+
+
+def verify_detached(to: pathlib.Path) -> int:
+    result = subprocess.run(
+        ["cargo", "metadata", "--offline", "--no-deps", "--format-version", "1",
+         "--manifest-path", str(to / "Cargo.toml")],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.returncode != 0:
+        print("verify 失败（cargo metadata --offline --no-deps）：")
+        print(result.stderr[-2000:])
+        return 1
+    print("verify 通过：脱离后的工作区能被 cargo 独立解析")
+    return 0
+
+
 def self_test() -> int:
+    """每条判定都要有反证：漏检/误报/多退/假 dry-run 都得当场红。"""
     failures: list[str] = []
     total = [0]
 
@@ -228,7 +387,7 @@ def self_test() -> int:
         root = pathlib.Path(tmp)
         (root / "Cargo.toml").write_text(
             "[workspace]\n"
-            'members = ["crates/alpha", "crates/beta", "crates/gamma"]\n'
+            'members = ["crates/alpha", "crates/beta", "crates/gamma", "crates/delta"]\n'
             "\n"
             "[workspace.package]\n"
             'version = "9.9.9"\n'
@@ -245,7 +404,7 @@ def self_test() -> int:
             "version.workspace = true\n"
             "\n"
             "[dependencies]\n"
-            "beta = { workspace = true }\n"
+            "beta.workspace = true\n"
             'serde = { workspace = true }\n'
             "\n"
             "[dev-dependencies]\n"
@@ -277,6 +436,22 @@ def self_test() -> int:
             '[package]\nname = "gamma"\nversion = "9.9.9"\n', encoding="utf-8"
         )
         (root / "crates" / "gamma" / "src" / "lib.rs").write_text("pub fn g() {}\n", encoding="utf-8")
+        # delta 只经由 beta 才可达：用来钉"传递依赖要跟着走"，免得 direct 边被删掉后仍被 dev 边补上。
+        (root / "crates" / "delta" / "src").mkdir(parents=True)
+        (root / "crates" / "delta" / "Cargo.toml").write_text(
+            '[package]\nname = "delta"\nversion = "9.9.9"\n', encoding="utf-8"
+        )
+        (root / "crates" / "delta" / "src" / "lib.rs").write_text("pub fn d() {}\n", encoding="utf-8")
+        (root / "crates" / "beta" / "Cargo.toml").write_text(
+            "[package]\n"
+            'name = "beta"\n'
+            'version = "9.9.9"\n'
+            'publish = false\n'
+            "\n"
+            "[dependencies]\n"
+            'delta = { path = "../delta" }\n',
+            encoding="utf-8",
+        )
 
         plans, _ = build(root)
         by_name = {p["crate"]: p for p in plans}
@@ -302,7 +477,8 @@ def self_test() -> int:
             any("不可发布" in b["detail"] for b in alpha["blockers"] if b["kind"] == "内部依赖"),
             True,
         )
-        check("beta 自身无阻断", by_name["beta"]["blockers"], [])
+        check("beta 只被内部依赖挡住（无继承/越界）",
+              [b["kind"] for b in by_name["beta"]["blockers"]], ["内部依赖"])
         # 反证：把 include 改成 crate 内已存在的文件，越界与缺失都该消失
         (root / "crates" / "alpha" / "src" / "lib.rs").write_text(
             'const X: &str = include_str!("lib.rs");\n', encoding="utf-8"
@@ -313,6 +489,21 @@ def self_test() -> int:
             [b for b in {p["crate"]: p for p in plans2}["alpha"]["blockers"] if b["kind"] == "越界引用"],
             [],
         )
+
+        # 5. copy 模式脱离：继承字段与 workspace 依赖都要实体化，且源仓不许被改
+        out_dir = root.parent / (root.name + "-detach")
+        check("detach 返回 0", detach(root, "alpha", out_dir, force=True), 0)
+        check("传递依赖被一起带走", (out_dir / "crates" / "beta").is_dir(), True)
+        check("传递依赖的传递依赖也被带走", (out_dir / "crates" / "delta").is_dir(), True)
+        check("dev 传递依赖也被带走", (out_dir / "crates" / "gamma").is_dir(), True)
+        alpha_manifest = (out_dir / "crates" / "alpha" / "Cargo.toml").read_text(encoding="utf-8")
+        check("继承字段已实体化", ".workspace = true" in alpha_manifest, False)
+        check("版本号已写死", 'version = "9.9.9"' in alpha_manifest, True)
+        check("内部依赖改指新布局", 'path = "../beta"' in alpha_manifest, True)
+        check("外部依赖展开成版本", 'serde = { version = "1" }' in alpha_manifest, True)
+        src_manifest = (root / "crates" / "alpha" / "Cargo.toml").read_text(encoding="utf-8")
+        check("源清单未被改动", "version.workspace = true" in src_manifest, True)
+        shutil.rmtree(out_dir, ignore_errors=True)
 
     if failures:
         print(f"self-test: {total[0] - len(failures)}/{total[0]} passed")
@@ -333,6 +524,15 @@ def main(argv: list[str]) -> int:
         argv = argv[:index] + argv[index + 2 :]
     command = argv[0] if argv else "plan"
     rest = [a for a in argv[1:] if not a.startswith("--")]
+    if command == "detach":
+        if not rest or "--to" not in argv:
+            print("用法：deps.py detach <crate> --to <目录> [--force] [--verify]")
+            return 2
+        target = pathlib.Path(argv[argv.index("--to") + 1]).resolve()
+        code = detach(root, rest[0], target, force="--force" in argv)
+        if code == 0 and "--verify" in argv:
+            code = verify_detached(target)
+        return code
     plans, _ = build(root)
     if command == "graph":
         print_graph(plans)

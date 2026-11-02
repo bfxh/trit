@@ -14,8 +14,13 @@
   （更正：早先报的「5 处越界引用」是**误报**——扫描器只看 `..` 前缀、没解析路径，
   `src/matmul/baseline.rs` 的 `../matmul_f32.wgsl` 其实仍在 `src/` 内。已改为解析后判归属，
   并把「指向不存在文件」单列为缺失引用。）
-- 两者各带 `--self-test`（14 / 13 条）并进 CI（job `snapshot (self-test)` / `deps plan (self-test)`）；
-  变异门登记 19 条自锁（8 + 11），登记表 **431 → 450**。
+- `scripts/deps.py detach <crate> --to <dir> --verify`：**copy 模式脱离**——把 crate 与传递内部依赖
+  （含 dev 依赖）整块拷到目标目录，实体化 `*.workspace = true`（含点号形式的依赖写法）、
+  把 `workspace = true` 依赖展开成 `{ path = "../<名>", version }`，再用 `cargo metadata --offline` 验一遍。
+  只写目标目录，源仓一个字节不动；实测 `trit-attn` 脱离后 **`cargo check --offline` 5.07s 通过**，
+  `trit-gpu` 连同 `trit-texture` 的 dev 闭包一起脱离也能独立解析。
+- 两者各带 `--self-test`（14 / 22 条）并进 CI（job `snapshot (self-test)` / `deps plan (self-test)`）；
+  变异门登记 24 条自锁（8 + 16），登记表 **431 → 455**。
 
 ### Changed（变异门：三语言口径 + 逐目标 fail-closed + 门自身自测）
 
