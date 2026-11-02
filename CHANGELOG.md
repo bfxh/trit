@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（无损回退底座 + 依赖脱离体检）
+
+- `scripts/snapshot.py`：不依赖 git 的字节级快照（内容寻址对象库）——`save` / `verify` / `restore` / `list`。
+  回退补回被删、覆盖被改，**默认不删快照后新写的文件**（`--prune` 才删）；写回后逐文件 SHA-256 校验；
+  回退前落 pending 标记，中断后重跑同一条命令即幂等收敛。实测本仓 623 文件 / 5.15 MiB，对象库 6.9 MB。
+- `scripts/deps.py`：把「某个 crate 能不能整块摘出去、缺哪几块」逐条列出来（继承字段 / 内部依赖 /
+  内部 dev / 越界引用 / build.rs），只读、离线、不改文件。本仓实测：31 个 crate **无一可直接摘出**；
+  150 继承字段、54 内部依赖、2 内部 dev、5 越界引用（`trit-gpu` 的 `../matmul*.wgsl`、
+  `trit-redteam` 的 `../fixtures/three_rail.v`）；7 个 crate 无内部依赖；17 个不可发布。
+- 两者各带 `--self-test`（14 / 10 条）并进 CI（job `snapshot (self-test)` / `deps plan (self-test)`）；
+  变异门登记 17 条自锁（8 + 9），登记表 **431 → 448**。
+
 ### Changed（变异门：三语言口径 + 逐目标 fail-closed + 门自身自测）
 
 - 登记表 **385 → 431 条**、目标 30 → 36：新增 python **39** 条（`module_budget` / `hazard_gate` /
@@ -16,7 +28,7 @@
   不带 `--pkg` 且登记表全空同样判红。唯一的松口是 `EXEMPT`，且自证一失效（出现自有 `fn`/自测面）就判红。
 - 修复门的恢复路径：写回用 `newline=""`、恢复按字节。此前 Windows 上默认写回会把整篇 `\n` 翻成 `\r\n`，
   `bash` 见到 `\r` 直接语法错 ⇒ "抓住"被误判成崩溃、工作树也被门改坏。
-- 新增 `scripts/mutation_check.py --self-test`（**31** 条检查，毫秒级）与 CI job `mutation gate (self-test)`；
+- 新增 `scripts/mutation_check.py --self-test`（**36** 条检查，毫秒级）与 CI job `mutation gate (self-test)`；
   门的判定链（编译红≠抓住、崩溃≠断言、空集≠证据）从此有人盯。
 - CI collect 收集 `scripts/*.sh` 与 `crates/*/scripts/*.sh`；字符类必须含 `-`，否则 `crates/trit-immune/...` 一条都收不到。
 
