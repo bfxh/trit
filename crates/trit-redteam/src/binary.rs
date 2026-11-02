@@ -663,8 +663,8 @@ mod tests {
     #[test]
     fn detects_secret_shaped_strings_and_attributes_them_to_us() {
         let mut bytes = pe_image(DLL_DYNAMIC_BASE | DLL_NX_COMPAT | DLL_GUARD_CF, 0x6000_0020);
-        bytes.extend_from_slice(b"\0-----BEGIN RSA PRIVATE KEY-----\0");
-        bytes.extend_from_slice(b"\0AKIAIOSFODNN7EXAMPLE\0");
+        bytes.extend_from_slice(b"\0-----BEGIN RSA PRIVATE KEY-----\0"); // secret-scan: allow 合成夹具
+        bytes.extend_from_slice(b"\0AKIAIOSFODNN7EXAMPLE\0"); // secret-scan: allow AWS 官方示例键
         let report = run(&bytes, "leaky.exe").unwrap();
         let ids = finding_ids(&report, "findings");
         assert!(ids.iter().any(|id| id == "secret-private-key"), "{ids:?}");

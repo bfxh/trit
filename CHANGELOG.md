@@ -2,6 +2,68 @@
 
 ## [Unreleased]
 
+### Added（无损回退底座 + 依赖脱离体检 + 一句话提交）
+
+- `scripts/autoflow.py run -- <命令…>`：一条命令内**先快照、失败自动回退**——成功保留改动并打印快照 id；
+  失败自动补回被删、覆盖被改、**删掉命令新建的文件**，失败码原样返回；`--keep-on-fail` 保留现场。
+  实仓演练：改 README + 建探针后 exit 5 ⇒ README 逐字节还原、探针被删、rc=5。
+- `scripts/gitflow.py worktree add|list|remove`：**多会话并行**——新分支直接开在仓旁的独立 worktree
+  （拒绝放进仓里、拒绝删当前所在树），解决"共用一个工作树被切分支"的老问题。
+- `scripts/gitflow.py stack`：按 base→head 串出 PR 链；base 不是 main/master 的 PR 单独告警
+  （按 base 过滤的 CI 会零 check，这个坑踩过）。
+- `scripts/gitflow.py branch protect`：查主干保护规则（必需检查/审批数/是否对管理员生效）。
+- `scripts/gitflow.py branch prune --remote --apply`：删已并入 base **且**有 MERGED PR 记录的远端分支（默认 dry-run）。
+- `scripts/gitflow.py branch list|start|sync|prune`：**分支层面的日常**——领先/落后、已并入、陈旧标记、PR 状态；
+  `start` 从最新 base 起分支（验名字、拒受保护名）；`sync` 先 fetch 再 rebase，冲突自动 abort 并列出冲突文件；
+  `prune` 默认 dry-run，`--apply` 才删已并入 base 的本地分支（不动受保护分支/当前分支）。
+- `scripts/gitflow.py publish --title … --files …`：**一句话送 GitHub**——显式点名文件（不做 `git add -A`）、
+  提交前密钥扫描（`sk-*`/GitHub/Slack token/私钥头/AKIA/`.env` 一类按文件名拒收）、推送、开 PR、
+  `gh pr checks --watch` 绿后 squash 合入；`--dry-run` 只打印将执行的命令。
+  自锁时抓到一个真问题：扫描器把**自己源码里的正则字面量**当成密钥 ⇒ 改成运行期拼接模式串。
+
+- `scripts/snapshot.py`：不依赖 git 的字节级快照（内容寻址对象库）——`save` / `verify` / `restore` / `list`。
+  回退补回被删、覆盖被改，**默认不删快照后新写的文件**（`--prune` 才删）；写回后逐文件 SHA-256 校验；
+  回退前落 pending 标记，中断后重跑同一条命令即幂等收敛。实测本仓 623 文件 / 5.15 MiB，对象库 6.9 MB。
+- `scripts/deps.py`：把「某个 crate 能不能整块摘出去、缺哪几块」逐条列出来（继承字段 / 内部依赖 /
+  内部 dev / 越界引用 / build.rs），只读、离线、不改文件。本仓实测：31 个 crate **无一可直接摘出**；
+  150 继承字段、54 内部依赖、2 内部 dev（`trit-gpu` / `trit-net` → 不可发布的 `trit-texture`）、
+  **0 越界引用**、0 build.rs；7 个 crate 无内部依赖；17 个不可发布。
+  （更正：早先报的「5 处越界引用」是**误报**——扫描器只看 `..` 前缀、没解析路径，
+  `src/matmul/baseline.rs` 的 `../matmul_f32.wgsl` 其实仍在 `src/` 内。已改为解析后判归属，
+  并把「指向不存在文件」单列为缺失引用。）
+- `scripts/deps.py detach <crate> --to <dir> --verify`：**copy 模式脱离**——把 crate 与传递内部依赖
+  （含 dev 依赖）整块拷到目标目录，实体化 `*.workspace = true`（含点号形式的依赖写法）、
+  把 `workspace = true` 依赖展开成 `{ path = "../<名>", version }`，再用 `cargo metadata --offline` 验一遍。
+  只写目标目录，源仓一个字节不动；实测 `trit-attn` 脱离后 **`cargo check --offline` 5.07s 通过**，
+  `trit-gpu` 连同 `trit-texture` 的 dev 闭包一起脱离也能独立解析。
+- `scripts/vendor.py save/restore/status`：**离线自足开关**——`cargo vendor` 整批拷进 `vendor/` 并插入带标记的
+  `.cargo/config.toml` source replacement，`restore` 按备份还原并删目录；两个方向都用 `cargo metadata --offline` 验。
+  实仓演练：**337.3 MiB**、`cargo check --offline -p trit-attn` 4.87s 通过；restore 后 `git status` 干净。
+- 五个工具各带 `--self-test`（21 / 22 / 17 / 10 / 39 条）并进 CI；`bfxh/repo-tools` 另有 **57 个场景测试**
+  （边界/不变量/组合矩阵 + 本地 bare 仓端到端 publish），CI 的 `scenarios` job 里跑。
+  变异门登记 57 条自锁（12 + 16 + 17 + 5 + 7），登记表 **431 → 488**。
+  （POSIX 绝对路径那条不登记：Windows 上才可观测，Linux 上会读成 SURVIVED 造成假红。）
+  场景测试当场抓到 4 个真缺陷并修掉：命令不存在不回退（改 127 并回退）、prune 不清空目录、
+  POSIX 绝对路径漏拦、`.env.production` 漏网。
+
+### Changed（变异门：三语言口径 + 逐目标 fail-closed + 门自身自测）
+
+- 登记表 **385 → 431 条**、目标 30 → 36：新增 python **39** 条（`module_budget` / `hazard_gate` /
+  `publish_graph` / `pr_hygiene` 的 `--self-test` 面）、bash **7** 条（`cli_smoke.sh` 的断言工具）、
+  门自身 **12** 条（裁决链 / runner 推断 / 空集 / preflight 边界）。
+- `hazard_gate` 自测补两条夹具（**登记了但没写不变量仍要红**、**SAFETY 文档在签名上方且离匹配点超过 8 行**），
+  并把内联测试夹具改名 `inline_cfg.rs`——原名以 `tests.rs` 结尾，`rel.endswith("tests.rs")` 已经把它当测试，
+  边界判定等于空转，改坏也测不出来。
+- `RUNNERS` 三种语言口径：`cargo test` / `<script> --self-test`（python）/ `bash <script> --self-test`；
+  登记表没写 `runner` 时按 pkg 后缀（`.py` / `.sh`）推断，脚本不会再落到 `cargo test` 去跑。
+- fail-closed 改成**逐目标**：多目标一起选中时，0 条登记的目标不能再被别的目标带绿；
+  不带 `--pkg` 且登记表全空同样判红。唯一的松口是 `EXEMPT`，且自证一失效（出现自有 `fn`/自测面）就判红。
+- 修复门的恢复路径：写回用 `newline=""`、恢复按字节。此前 Windows 上默认写回会把整篇 `\n` 翻成 `\r\n`，
+  `bash` 见到 `\r` 直接语法错 ⇒ "抓住"被误判成崩溃、工作树也被门改坏。
+- 新增 `scripts/mutation_check.py --self-test`（**36** 条检查，毫秒级）与 CI job `mutation gate (self-test)`；
+  门的判定链（编译红≠抓住、崩溃≠断言、空集≠证据）从此有人盯。
+- CI collect 收集 `scripts/*.sh` 与 `crates/*/scripts/*.sh`；字符类必须含 `-`，否则 `crates/trit-immune/...` 一条都收不到。
+
 ### Fixed（`trit-re`：GOT 基址按寄存器跟踪——`get_pc_thunk.ax` 等不再漏检）
 
 - 此前只认 `call __x86.get_pc_thunk.bx; add $imm,%ebx`；PIE 构建里 GCC 会按函数挑寄存器

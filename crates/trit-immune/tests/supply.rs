@@ -14,6 +14,7 @@ fn pin(name: &str, ver: &str, sum: Option<&str>) -> Pin {
     Pin {
         name: name.into(),
         version: ver.into(),
+        source: None,
         checksum: sum.map(|s| s.into()),
     }
 }
@@ -206,22 +207,10 @@ fn supply_intake_pipeline_records_findings_and_blocks_gate() {
     j.record(rel, Trit::Hardened, None, "基线审计通过").unwrap();
 
     // 基线：serde 已锁定；当前锁文件：serde 被换 checksum + 多出未知包
-    let baseline = vec![Pin {
-        name: "serde".into(),
-        version: "1.0.200".into(),
-        checksum: Some("good".into()),
-    }];
+    let baseline = vec![pin("serde", "1.0.200", Some("good"))];
     let lock_now = vec![
-        Pin {
-            name: "serde".into(),
-            version: "1.0.200".into(),
-            checksum: Some("EVIL".into()),
-        },
-        Pin {
-            name: "mystery".into(),
-            version: "0.0.1".into(),
-            checksum: None,
-        },
+        pin("serde", "1.0.200", Some("EVIL")),
+        pin("mystery", "0.0.1", None),
     ];
 
     let n = intake::intake_supply(&mut j, rel, "nightly-audit", &lock_now, &baseline).unwrap();

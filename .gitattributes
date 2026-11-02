@@ -1,0 +1,11 @@
+# 统一 LF：此前根目录没有这个文件，Windows 上 checkout 成 CRLF / 提交成 LF 来回漂，
+# 曾导致 bash 脚本本地跑不起来、变异门写回判红（见 CHANGELOG）。
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff2 binary
+*.wasm binary
+*.pdf binary

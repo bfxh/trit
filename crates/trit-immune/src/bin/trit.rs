@@ -21,7 +21,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use trit_immune::{delta, parse_stamped_line, Journal, NodeId, NodeKind, Trit};
+use trit_immune::{coords, delta, parse_stamped_line, supply, Journal, NodeId, NodeKind, Trit};
 
 const DEFAULT_LEDGER: &str = "repo.tritj";
 
@@ -77,6 +77,7 @@ fn run(args: &[String]) -> Result<(), CliError> {
         "gate" => cmd_gate(rest),
         "suspects" => cmd_suspects(rest),
         "sync-git" => cmd_sync_git(rest),
+        "lock" => cmd_lock(rest),
         "help" | "--help" | "-h" => {
             println!("{}", help_text());
             Ok(())
@@ -114,6 +115,13 @@ fn cmd_init(args: &[String]) -> Result<(), CliError> {
     let path = PathBuf::from(dir).join(DEFAULT_LEDGER);
     if path.exists() {
         return Err(CliError::Runtime(format!("{} 已存在", path.display())));
+    }
+    // `trit init ./new-repo` 应当像 git init 一样把目录一起建出来：
+    // 少这一步时 Journal::create 只会抛 os error 3（路径不存在），用户看不出是 init 的锅。
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| {
+            CliError::Runtime(format!("创建账本目录 {} 失败：{e}", parent.display()))
+        })?;
     }
     Journal::create_as(&path, &title, 0)?;
     println!("初始化账本 {}（根：{title}）", path.display());
@@ -424,6 +432,67 @@ fn cmd_sync_git(args: &[String]) -> Result<(), CliError> {
     Ok(())
 }
 
+/// `trit lock <Cargo.lock> [-f file] [--build X]`：**依赖坐标入账**。
+///
+/// 把本项目锁文件里实际解析到的每个依赖，立成账本中的坐标节点（**0 态**——
+/// 外部事实入账，未验证不算安全），并连一条"消费 → 本仓根"的边，让库被打穿时
+/// 本仓的门禁与有效裁决直接看见。`--build` 给 feature/构建参数指纹
+/// （`Cargo.lock` 不记 feature 集，不传就只锁到 checksum 这一层）。
+/// 幂等：同坐标再跑不重复建节点。
+fn cmd_lock(args: &[String]) -> Result<(), CliError> {
+    // 参数惯例与 merge / sync-git 一致：位置参数在前、`-f` 在后也要认。
+    // 只走 split_ledger（认首位 `-f`）会把账本静默换成默认名——坐标写进别的文件。
+    let mut path = PathBuf::from(DEFAULT_LEDGER);
+    let mut build: Option<String> = None;
+    let mut lock_arg: Option<String> = None;
+    let mut i = 0usize;
+    while i < args.len() {
+        match args[i].as_str() {
+            "-f" => {
+                let v = args
+                    .get(i + 1)
+                    .ok_or_else(|| CliError::Usage("-f 需要跟一个文件".into()))?;
+                path = PathBuf::from(v);
+                i += 2;
+            }
+            "--build" => {
+                let v = args
+                    .get(i + 1)
+                    .ok_or_else(|| CliError::Usage("--build 需要跟一个值".into()))?;
+                build = Some(v.clone());
+                i += 2;
+            }
+            other if other.starts_with('-') => i += 1,
+            other => {
+                if lock_arg.is_none() {
+                    lock_arg = Some(other.to_string());
+                }
+                i += 1;
+            }
+        }
+    }
+    let lock_arg = lock_arg.ok_or_else(|| CliError::Usage("lock 需要 <Cargo.lock>".into()))?;
+    let text = std::fs::read_to_string(&lock_arg)
+        .map_err(|e| CliError::Runtime(format!("读 {lock_arg} 失败：{e}")))?;
+    let pins = supply::parse_lock(&text);
+    let mut j = Journal::open_as(&path, 0)
+        .map_err(|e| CliError::Runtime(format!("打开账本 {} 失败：{e}", path.display())))?;
+    let report = coords::attach_pins(&mut j, &pins, build.as_deref())
+        .map_err(|e| CliError::Runtime(format!("坐标入账失败：{e}")))?;
+    println!(
+        "坐标入账 {} 条：新建 {}，复用 {}（账本 {}）",
+        report.all.len(),
+        report.created.len(),
+        report.reused,
+        path.display()
+    );
+    for (n, c) in &report.created {
+        println!("  #{:02} {}", n.0, c.key());
+    }
+    drop(j.into_dag().map_err(|e| CliError::Runtime(e.to_string()))?);
+    Ok(())
+}
+
 fn help_text() -> String {
     "trit —— journal 代替 git 的命令行（三进制免疫账本）
 
@@ -441,6 +510,8 @@ fn help_text() -> String {
   suspects [-f file]        0 态待办队列
   sync-git <repo> [-f file] [--open]
                             git 共存桥：提交历史吸收进账本（0 态+默认隔离）
+  lock <Cargo.lock> [-f file] [--build X]
+                            依赖坐标入账：本项目实际解析到哪个库产物（幂等）
   help                      本帮助
 
 默认账本：当前目录 repo.tritj（-f 可指定）。"
@@ -461,6 +532,25 @@ mod tests {
 
     fn s(v: impl Into<String>) -> String {
         v.into()
+    }
+
+    #[test]
+    fn init_creates_missing_directories_and_refuses_overwrite() {
+        let base = tmpdir("init-missing");
+        let target = base.join("nested").join("brand-new");
+
+        run(&[s("init"), s(target.to_string_lossy().to_string())])
+            .expect("init 应能把不存在的父目录一起建出来");
+        assert!(
+            target.join(DEFAULT_LEDGER).is_file(),
+            "init 后账本文件必须存在"
+        );
+
+        let again = run(&[s("init"), s(target.to_string_lossy().to_string())]);
+        assert!(
+            matches!(again, Err(CliError::Runtime(_))),
+            "重复 init 不该静默覆盖已有账本：{again:?}"
+        );
     }
 
     #[test]
@@ -585,6 +675,45 @@ mod tests {
         ));
         assert!(matches!(run(&[s("nope")]), Err(CliError::Usage(_))));
 
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn lock_accepts_ledger_option_after_positional_argument() {
+        // 文档口径是 `lock <Cargo.lock> [-f file]`：`-f` 排在位置参数之后也必须生效，
+        // 否则坐标静默写进默认账本——同一命令行写到了另一个文件。
+        let dir = tmpdir("lock-opt");
+        run(&[s("init"), s(dir.to_string_lossy().to_string())]).unwrap();
+        let ledger = dir.join(DEFAULT_LEDGER);
+        let lockfile = dir.join("Cargo.lock");
+        fs::write(
+            &lockfile,
+            "[[package]]\nname = \"shared-lib\"\nversion = \"1.2.0\"\nchecksum = \"aaa\"\n",
+        )
+        .unwrap();
+
+        run(&[
+            s("lock"),
+            s(lockfile.to_string_lossy().to_string()),
+            s("-f"),
+            s(ledger.to_string_lossy().to_string()),
+        ])
+        .expect("lock 应接受位置参数之后的 -f");
+
+        let j = Journal::open_as(&ledger, 0).unwrap();
+        let titles: Vec<String> = j
+            .dag()
+            .nodes()
+            .iter()
+            .filter(|n| n.title.starts_with("COORD "))
+            .map(|n| n.title.clone())
+            .collect();
+        assert_eq!(
+            titles.len(),
+            1,
+            "坐标节点必须落在 -f 指定的账本里：{titles:?}"
+        );
+        drop(j.into_dag().unwrap());
         fs::remove_dir_all(&dir).unwrap();
     }
 }

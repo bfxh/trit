@@ -97,6 +97,24 @@ mod tests {
     use super::*;
 
     #[test]
+    fn abs_max_scale_uses_magnitude_and_degenerate_input_falls_back() {
+        // AbsMax 要的是幅度上界：最负那个才是界。若按有符号最大值取，scale 会被估小，
+        // 负侧整体饱和成 -1 ⇒ 量化不对称。
+        let v = [0.4f32, -2.0, 1.0, 0.0];
+        let s = scale_for(&v, Scheme::AbsMax);
+        assert_eq!(s, 2.0, "AbsMax 必须按 |v| 取上界，实得 {s}");
+        let q: Vec<i8> = quantize(&v, s).iter().map(|t| t.get()).collect();
+        assert_eq!(q, vec![0, -1, 1, 0], "按 ±2 归一不该把负侧整体饱和");
+
+        // 退化输入不能让 scale 落到 0（除零会毁掉整条量化）。
+        assert!(
+            scale_for(&[0.0f32, 0.0], Scheme::AbsMax) > 0.0,
+            "全零必须有回退值"
+        );
+        assert!(scale_for(&[], Scheme::AbsMean) > 0.0, "空输入必须有回退值");
+    }
+
+    #[test]
     fn quantize_respects_sign_and_clamps() {
         let v = [0.9f32, -0.9, 0.01, 0.0, 5.0];
         let q = quantize(&v, 0.5);

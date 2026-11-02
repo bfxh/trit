@@ -468,6 +468,23 @@ fn deep_parameter_expression_returns_limit_not_stack_overflow() {
 }
 
 #[test]
+fn parameter_depth_just_over_limit_returns_limit_error() {
+    // `MAX_PARAM_DEPTH = 256` 的**有界**版本（同上：300 层超限但不爆栈）。
+    let deep = "(".repeat(300) + "1" + &")".repeat(300);
+    let text = format!(
+        "module leaf #(parameter W = 2) (\n\
+         input a, output y);\n\
+         assign y = a;\n\
+         endmodule\n\
+         module top(input a, output y);\n\
+         leaf #(.W({deep})) u (.a(a), .y(y));\n\
+         endmodule\n"
+    );
+    let err = parse_verilog(&text).unwrap_err();
+    assert_eq!(err.kind, VerilogErrorKind::Limit, "{err:?}");
+}
+
+#[test]
 fn parent_parameter_flows_to_positional_child_override() {
     let text = "module leaf #(parameter W = 2) (\n\
                     input [W-1:0] a, input [W-1:0] b, output [W-1:0] y);\n\

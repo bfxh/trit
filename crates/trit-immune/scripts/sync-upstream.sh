@@ -14,7 +14,7 @@ set -uo pipefail
 
 IMMUNE="${1:?用法: sync-upstream.sh <trit-immune 仓库> <trit 上游 clone> [分支]}"
 UPSTREAM="${2:?用法: sync-upstream.sh <trit-immune 仓库> <trit 上游 clone> [分支]}"
-BRANCH="${3:-master}"
+BRANCH="${3:-main}"
 CRATE="$UPSTREAM/crates/trit-immune"
 PATCHES="$IMMUNE/upstream/patches"
 
@@ -22,13 +22,14 @@ step() { printf '\n== %s\n' "$*"; }
 die() { printf '错误：%s\n' "$*" >&2; exit 1; }
 
 [ -d "$IMMUNE/.git" ] || die "$IMMUNE 不是 git 仓库"
-[ -d "$UPSTREAM/.git" ] || die "$UPSTREAM 不是 git 仓库"
+# worktree 的 .git 是指针文件不是目录，用 rev-parse 判才认
+git -C "$UPSTREAM" rev-parse --git-dir >/dev/null 2>&1 \n  || die "$UPSTREAM 不是 git 仓库"
 [ -d "$PATCHES" ] || die "补丁目录不存在：$PATCHES"
 
-step "1/5 fetch 本仓库 $BRANCH"
+step "1/6 fetch 本仓库 $BRANCH"
 git -C "$UPSTREAM" fetch "$IMMUNE" "$BRANCH" || die "fetch 失败"
 
-step "2/5 清空 prefix 并树级叠加（read-tree）"
+step "2/6 清空 prefix 并树级叠加（read-tree）"
 # 幂等：rm --cached 对"staged 中间态"会拒删（数据丢失保护）——但 staged
 # 中间态可从 upstream/patches 重建（补丁是真源，工作区不是孤本），故 -f 兜底
 git -C "$UPSTREAM" rm -r -q --cached crates/trit-immune 2>/dev/null \
@@ -37,7 +38,7 @@ git -C "$UPSTREAM" clean -q -fd crates/trit-immune
 git -C "$UPSTREAM" read-tree --prefix=crates/trit-immune/ -u "FETCH_HEAD^{tree}" \
   || die "read-tree 失败（工作区可重跑本脚本恢复）"
 
-step "3/5 打上游专属补丁（幂等：已应用则跳过）"
+step "3/6 打上游专属补丁（幂等：已应用则跳过）"
 for p in "$PATCHES"/*.patch; do
   if git -C "$UPSTREAM" apply --recount --check "$p" 2>/dev/null; then
     git -C "$UPSTREAM" apply --recount "$p" && echo "已应用：$(basename "$p")"
@@ -48,7 +49,13 @@ for p in "$PATCHES"/*.patch; do
   fi
 done
 
-step "4/5 快验（cargo check，几十秒级）"
+step "4/6 护栏：上游不许出现指向本仓的 git 源依赖"
+if grep -qF 'git = "https://github.com/bfxh/trit"' "$CRATE/Cargo.toml"; then
+  die "同步后的 crates/trit-immune/Cargo.toml 仍带 git 源依赖——上游要用 trit-core.workspace = true（工作区内部路径），
+       否则就成了 trit 仓依赖 trit 仓。注意：这条护栏本轮只做过 bash -n 语法检查，没实跑过完整同步。"
+fi
+
+step "5/6 快验（cargo check，几十秒级）"
 if command -v cargo >/dev/null 2>&1; then
   (cd "$UPSTREAM" && CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$UPSTREAM/../trit-target-sync}" \
     cargo check -p trit-immune --quiet) \
@@ -58,7 +65,7 @@ else
   echo "警告：cargo 不可用，跳过快验（push 前必须手工 cargo test）"
 fi
 
-step "5/5 完成——后续动作（人工确认）"
+step "6/6 完成——后续动作（人工确认）"
 cat <<EOF
 本地同步完成。建议下一步：
   cd "$UPSTREAM" && cargo test -p trit-immune     # 全量验证（慢，按需）

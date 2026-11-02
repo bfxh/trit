@@ -45,7 +45,7 @@
 //! （bitparallel/auth/kani_proofs）+ 生产线（lifecycle/scheduler/design/
 //! vocab）+ 裁决源与出口（scan/diag/json/net/supply/vex/attest）。
 //! **工具层**（`full` feature，默认开启）：recovery/import/template/server/
-//! daemon/lsp/taskmd/intake/fleet/harvest/adoption——人体工程与集成面，
+//! daemon/lsp/taskmd/intake/fleet/coords/coords_fleet/harvest/adoption——人体工程与集成面，
 //! 跨仓运维域（六态落地以 Fleet 为数据源），是本工具专属，**不随上游收录**。
 //! 收录规则全文见 `docs/UPSTREAM.md`。
 
@@ -57,6 +57,10 @@ pub mod attest;
 pub mod auth;
 pub mod bitparallel;
 pub mod compat;
+#[cfg(feature = "full")]
+pub mod coords;
+#[cfg(feature = "full")]
+pub mod coords_fleet;
 pub mod cull;
 #[cfg(feature = "full")]
 pub mod daemon;
@@ -113,6 +117,8 @@ pub use adoption::{Adoption, AdoptionState, Blast, ChangePackage, Impact, Receiv
 pub use attest::{attest, verify, PREDICATE_TYPE, STATEMENT_TYPE};
 pub use auth::{ct_eq, hmac_sha256, sha256};
 pub use bitparallel::{tri_pack, tri_unpack, PackError, TriWord};
+#[cfg(feature = "full")]
+pub use coords::{attach_lock, declare_provider, CoordDecl, CoordGap, CoordKey, GapReason, Role};
 pub use cull::{cull, CullAction, CullRules};
 #[cfg(feature = "full")]
 pub use daemon::{encode_frame, read_frame, LspSession};
@@ -130,7 +136,6 @@ pub use fleet::{AttackChain, AttackChains, ChainStep, ChainVia, CrossRepoDelta, 
 #[cfg(feature = "full")]
 pub use harvest::{harvest, HarvestReport, Registry};
 pub use hlc::{Clock, Hlc};
-#[cfg(feature = "full")]
 #[cfg(feature = "full")]
 pub use import::{collect_git_log, import_commits, parse_git_log, CommitRecord};
 #[cfg(feature = "full")]
