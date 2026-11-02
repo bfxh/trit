@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """变异门：对关键规则做单点文本变异，跑对应回归；测试必须变红。
 
-用法：python scripts/mutation_check.py [--pkg <crate>]...
-每个变异都会在 finally 里恢复原文件；退出码 1 表示有 mutant 存活（测试没抓住）。
-`--pkg` 可重复，只跑这些 crate 的变异（PR 门用改动过的 crate）。
+用法：python scripts/mutation_check.py [--pkg <目标>]...
+目标 = crate 名，或带自测面的脚本路径（`scripts/*.py`、`crates/*/scripts/*.sh`）。
+每个变异都会在 finally 里**按字节**恢复原文件；退出码 1 表示有 mutant 存活。
+
+语言口径见 RUNNERS：
+  cargo  —— `cargo test -p <crate> <测试名> --locked`
+  python —— `<python> <脚本> --self-test`
+  bash   —— `bash <脚本> --self-test`
+登记表里没写 runner 时按 pkg 后缀推断（.py / .sh），避免脚本被当成 crate 去跑 cargo。
 """
 
 from __future__ import annotations
@@ -3249,6 +3255,70 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    # ---- bash 面：cli_smoke.sh 的断言工具（--self-test 钉正反两侧）----
+    {
+        "name": "smoke: expect 的匹配分支放宽成无条件放行",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "    *\"$1\"*) say \"$3\" ;;",
+        "new": "    *) say \"$3\" ;;",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: expect 判红后不再退出（断言空转）",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "实际输出：%s\\n' \"$3\" \"$1\" \"$2\" >&2; exit 1",
+        "new": "实际输出：%s\\n' \"$3\" \"$1\" \"$2\" >&2; exit 0",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: expect_absent 只在空输出时判脏",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "    *\"$1\"*) printf 'FAIL %s：不该出现",
+        "new": "    \"\") printf 'FAIL %s：不该出现",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: fail 打印了却没让脚本失败",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "fail() { printf 'FAIL %s\\n' \"$*\" >&2; exit 1; }",
+        "new": "fail() { printf 'FAIL %s\\n' \"$*\" >&2; exit 0; }",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: run 吞掉命令的非零退出",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "run() { \"$BIN\" \"$@\" -f \"$LEDGER\" 2>&1 || fail \"命令失败：$BIN $*\"; }",
+        "new": "run() { \"$BIN\" \"$@\" -f \"$LEDGER\" 2>&1; }",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: expect 比错了变量（拿标签当输出比对）",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "expect() {\n  case \"$2\" in",
+        "new": "expect() {\n  case \"$3\" in",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: expect_absent 拿 needle 自己比对（干净输出误判）",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "expect_absent() {\n  case \"$2\" in",
+        "new": "expect_absent() {\n  case \"$1\" in",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
 ]
 
 
@@ -3262,18 +3332,27 @@ def ran_any(output: str) -> bool:
 # 门脚本自测面的标记串只能拼出来：本文件自己也是被检测对象，
 # 写死字面量会让 `has_own_logic("scripts/mutation_check.py")` 把自己判成"有自测面"。
 SELFTEST_MARKER = "def self_" + "test("
+# bash 侧同理：标记串拼出来，别让自己的字面量把检测结果带偏。
+SELFTEST_MARKER_SH = "self_" + "test() {"
 
 RUNNERS: dict[str, dict[str, str]] = {
     # cargo：跑 crate 里被点名的那个测试
     "cargo": {"cmd": "cargo", "syntax": "error[E"},
     # python：门脚本自带的 --self-test（正例 + 逐项反证），失败时打印 `FAIL <例名>`
     "python": {"cmd": "python", "syntax": "SyntaxError"},
+    # bash：冒烟/门脚本自带的 --self-test，失败时同样打印 `FAIL <例名>`
+    # 语法判红的签名分语言环境：中文 Windows 的 bash 打「语法错误」而不是 "syntax error"
+    "bash": {"cmd": "bash", "syntax": "syntax error|语法错误"},
 }
 
 
+def selftest_marker(runner: str) -> str:
+    return SELFTEST_MARKER_SH if runner == "bash" else SELFTEST_MARKER
+
+
 def run_tests(pkg: str, test_filter: str, runner: str = "cargo") -> subprocess.CompletedProcess[str]:
-    if runner == "python":
-        argv = [sys.executable, pkg, "--self-test"]
+    if runner in ("python", "bash"):
+        argv = [sys.executable if runner == "python" else "bash", pkg, "--self-test"]
     else:
         argv = ["cargo", "test", "-q", "-p", pkg, test_filter, "--locked"]
     return subprocess.run(
@@ -3305,14 +3384,15 @@ def has_own_logic(pkg: str) -> bool:
 
     - python 门脚本（`scripts/*.py`）：**有 `--self-test` 面却不登记变异** ⇒ 过期（该补条目）；
       没有自测面才允许豁免（钉不住任何东西），等它补上自测再逼登记。
+    - bash 脚本（`*.sh`）：同上口径，认 `self_test() {`。
     - rust crate：出现了自有 `fn`/`impl` ⇒ 过期（纯转发伞包才允许豁免）。
     """
-    if pkg.endswith(".py"):
+    if pkg.endswith(".py") or pkg.endswith(".sh"):
         script = ROOT / pkg
         if not script.is_file():
             return False
         text = script.read_text(encoding="utf-8")
-        return SELFTEST_MARKER in text
+        return selftest_marker("bash" if pkg.endswith(".sh") else "python") in text
     root = ROOT / "crates" / pkg / "src"
     if not root.is_dir():
         return True
@@ -3328,7 +3408,16 @@ def has_own_logic(pkg: str) -> bool:
 
 
 def runner_of(mutant: dict) -> str:
-    return mutant.get("runner", "cargo")
+    """条目的 runner 优先；没写就按 pkg 后缀推断，免得脚本被当成 crate 去 `cargo test`。"""
+    explicit = mutant.get("runner")
+    if explicit:
+        return explicit
+    pkg = mutant["pkg"]
+    if pkg.endswith(".py"):
+        return "python"
+    if pkg.endswith(".sh"):
+        return "bash"
+    return "cargo"
 
 
 def select(pkgs: list[str]) -> list[dict]:
@@ -3362,9 +3451,11 @@ def preflight(mutants: list[dict]) -> list[str]:
             problems.append(f"{mutant['name']}: 锚点出现 {count} 次（{raw}）")
             continue
         anchor = text.find(mutant["old"])
-        if runner_of(mutant) == "python":
-            at = text.rfind(SELFTEST_MARKER)
-            label = SELFTEST_MARKER
+        runner = runner_of(mutant)
+        if runner in ("python", "bash"):
+            marker = selftest_marker(runner)
+            at = text.rfind(marker)
+            label = marker
         else:
             # cargo 侧仍按原口径：只认 `#[cfg(test)] mod xxx`，
             # 放宽成裸 `#[cfg(test)]` 会把 trit-build 的 4 条正常条目误判成"落在测试里"。
@@ -3427,20 +3518,27 @@ def main(pkgs: list[str]) -> int:
             baseline[key] = True
 
         path = ROOT / mutant["file"]
-        original = path.read_text(encoding="utf-8")
+        original_bytes = path.read_bytes()
+        # 与 preflight 的 read_text 同口径（通用换行）：CRLF 工作树里锚点仍按 \n 匹配
+        original = original_bytes.decode("utf-8").replace("\r\n", "\n")
         count = original.count(mutant["old"])
         if count != 1:
             print(f"BAD MUTANT {mutant['name']}: anchor 出现 {count} 次")
             return 1
 
+        # newline="" 是硬要求：默认写回会把整篇 \n 翻成 \r\n（Windows），
+        # bash/sh 见到 \r 直接语法错，结果被误判成"崩溃"而不是断言——本地与 CI 就分叉了。
         path.write_text(
-            original.replace(mutant["old"], mutant["new"]), encoding="utf-8"
+            original.replace(mutant["old"], mutant["new"]),
+            encoding="utf-8",
+            newline="",
         )
         try:
             result = run_tests(pkg, filt, runner)
         finally:
-            path.write_text(original, encoding="utf-8")
-            assert path.read_text(encoding="utf-8") == original, "恢复失败"
+            # 恢复按字节，保证工作树回到原样（换行风格也不许被门顺手改掉）
+            path.write_bytes(original_bytes)
+            assert path.read_bytes() == original_bytes, "恢复失败"
 
         if result.returncode == 0:
             survived += 1
@@ -3449,15 +3547,15 @@ def main(pkgs: list[str]) -> int:
         out = result.stdout
         runner = runner_of(mutant)
         syntax = RUNNERS[runner]["syntax"]
-        if "could not compile" in out or syntax in out:
+        if "could not compile" in out or any(tok in out for tok in syntax.split("|")):
             # 变异让代码编不过 ⇒ 测试根本没跑，这条"红"不证明任何断言。
             false_kills.append(mutant["name"])
             print(f"FALSE-KILL {mutant['name']}  [{runner} 编译/语法红：测试没跑，不算锁]")
             continue
         named = next((line for line in out.splitlines() if "FAILED" in line), None)
-        if runner == "python":
-            # 三种门脚本的自测形态各自点名方式不同，按能点名的优先：
-            #   `FAIL <例名>`（module_budget / publish_graph）、
+        if runner in ("python", "bash"):
+            # 门脚本自测面的点名方式各不相同，按能点名的优先：
+            #   `FAIL <例名>`（module_budget / publish_graph / bash 冒烟脚本）、
             #   `SELF-TEST FAIL: <规则>`（hazard_gate）、
             #   裸 `assert` 抛出的 `AssertionError: <话>`（pr_hygiene）—— 那也是断言。
             for probe in (
