@@ -93,20 +93,25 @@ def overlaps(a: list[str], b: list[str]) -> bool:
 def conflicts(claims: list[dict], at: int) -> tuple[list[str], list[str]]:
     """(拦路:重叠的双方点名, 警告:过期未收 / 跨仓同名路径)。
 
-    拦：**同一个仓**里两个在效声明 ⇒ 一定撞（不管路径写没写、写的是不是同一批）。
-    不同仓 ⇒ 不拦。两份代码在两个仓里各有一份（单体仓的 `crates/x/src/*` 与独立仓的 `src/*`）
-    路径名相交是常态，判红就是把闸门自己变成假红源头；但这种情况要**出声**，所以给警告。
+    拦：**同一个仓 + 路径相交**（含"整仓声明"：空路径集与谁都重叠）⇒ 一定撞，双方点名。
+    警：同一个仓但路径不相交 ⇒ 不拦——两个智能体各改各的文件是常态，一律判红等于把闸门自己
+    变成噪音源头（第二天就有人绕过它）；但**照样点名双方**，共享工作树/分支这件事得有人记着。
+    不同仓、路径名相交 ⇒ 也不拦只警告：单体仓的 `crates/x/src/*` 与独立仓的 `src/*` 就是这个形状。
     """
     red, warn = [], []
     active = [c for c in claims if live(c, at)]
     for index, left in enumerate(active):
         for right in active[index + 1:]:
             same_repo = bool(left["repo"].strip()) and left["repo"].strip() == right["repo"].strip()
-            if same_repo:
+            if same_repo and overlaps(left["paths"], right["paths"]):
                 red.append(f"{left['who']} ↔ {right['who']}"
-                           f"｜同一个仓 {left['repo']}"
+                           f"｜同一个仓 {left['repo']} 且路径相交"
                            f"｜路径 {left['paths'] or ['(整个仓)']} × {right['paths'] or ['(整个仓)']}"
                            f"｜{left['note'] or '-'} / {right['note'] or '-'}")
+            elif same_repo:
+                warn.append(f"{left['who']} ↔ {right['who']}｜同一个仓 {left['repo']} 但路径不相交"
+                            f"（{left['paths'] or ['(整个仓)']} × {right['paths'] or ['(整个仓)']}）"
+                            "——不拦，但工作树/分支是共享的：切分支、改台账前先对齐，别把对方的 HEAD 带走")
             elif overlaps(left["paths"], right["paths"]):
                 warn.append(f"{left['who']}@{left['repo']} 与 {right['who']}@{right['repo']} "
                             f"路径名相交（{left['paths']} × {right['paths']}）"
@@ -258,8 +263,10 @@ def self_test() -> int:
     check_at("跨仓同名路径不判红", red, [])
     check_at("跨仓同名路径要警告", len(warn), 1)
     # 反证 2：同一个 repo + 分支，路径不同也算撞（今天真实形状：两份同名 crate）
-    red, _ = conflicts([a, same], base)
-    check_at("同仓不同路径也拦", len(red), 1)
+    red, warn = conflicts([a, same], base)
+    check_at("同仓但路径不相交 ⇒ 不拦（否则闸门自己变噪音源头）", red, [])
+    check_at("同仓路径不相交也要点名双方（共享工作树的账）",
+             (len(warn), "Qoder ↔ zodER" in warn[0], "HEAD" in warn[0]), (1, True, True))
     # 反证 3：空路径集 = 整个仓，与同仓的任何声明都重叠
     red, _ = conflicts([a, {**b, "repo": "bfxh/trit", "paths": []}], base)
     check_at("整仓声明与任何人在建的都算重叠", len(red), 1)
@@ -298,12 +305,16 @@ def self_test() -> int:
                                   "--paths", "src/a"]), 0)
         check_at("ttl=0 当永久占用被拒",
                  cmd_claim(path, ["claim", "--who", "X", "--repo", "o/r", "--ttl", "0"]), 1)
-        check_at("另一会话同仓 ⇒ 拦并点名双方",
+        check_at("另一会话同仓但路径不相交 ⇒ 登记成功（只提醒不拦）",
                  cmd_claim(path, ["claim", "--who", "zodER", "--repo", "o/r",
-                                  "--paths", "src/b"]), 1)
+                                  "--paths", "src/z"]), 0)
+        check_at("另一会话同仓且路径相交 ⇒ 拦并点名双方",
+                 cmd_claim(path, ["claim", "--who", "Third", "--repo", "o/r",
+                                  "--paths", "src/a/inner"]), 1)
         check_at("release 能收掉", cmd_release(path, ["--who", "Qoder"]), 0)
-        check_at("冲突那条也已登记（等双方对齐后各自 release）", len(read_claims(path)), 1)
+        check_at("判红那条也是登记过的（等双方对齐后各自 release）", len(read_claims(path)), 2)
         check_at("第二条也收得掉", cmd_release(path, ["--who", "zodER"]), 0)
+        check_at("第三条也收得掉", cmd_release(path, ["--who", "Third"]), 0)
         check_at("收完确实空了", read_claims(path), [])
         check_at("含 | 的备注不会把名单写坏",
                  cmd_claim(path, ["claim", "--who", "Third", "--repo", "third/r",
