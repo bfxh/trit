@@ -1915,9 +1915,7 @@ dependencies = [
  "image",
  "png",
  "pollster",
- "trit-learn",
  "trit-look",
- "trit-train",
  "wgpu",
 ]
 

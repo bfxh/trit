@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use trit_learn::Ste;
+use trit_parts::ste::Ste;
 
 pub(crate) struct Args {
     pub(crate) data: Vec<PathBuf>,

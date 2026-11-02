@@ -220,12 +220,13 @@ fn eval(argv: &[String]) {
     let close_r: usize = arg(argv, "--close")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    // 默认 = 留出集上选出的工作点（§6.94）：margin −1 + min-size 50 + merge-weak 0。
     let bnd_margin: f32 = arg(argv, "--bnd-margin")
         .and_then(|v| v.parse().ok())
-        .unwrap_or(0.0);
+        .unwrap_or(-1.0);
     let merge_weak: f32 = arg(argv, "--merge-weak")
         .and_then(|v| v.parse().ok())
-        .unwrap_or(f32::NEG_INFINITY);
+        .unwrap_or(0.0);
     let merge_max: f32 = arg(argv, "--merge-max")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.0);
@@ -234,7 +235,7 @@ fn eval(argv: &[String]) {
         .unwrap_or(0.0);
     let min_size: usize = arg(argv, "--min-size")
         .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+        .unwrap_or(50);
     let dump = arg(argv, "--dump").map(PathBuf::from);
     let dump_n: usize = arg(argv, "--dump-n")
         .and_then(|v| v.parse().ok())
