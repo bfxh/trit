@@ -15,7 +15,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
+import io
 import pathlib
 import subprocess
 import sys
@@ -35,6 +37,7 @@ def load_snapshot():
 
 
 def run(root: pathlib.Path, argv: list[str], label: str, keep_on_fail: bool) -> int:
+    root = pathlib.Path(root)
     snap = load_snapshot()
     snap_id = snap.save(root, label or "autoflow")
     manifest = snap.resolve(root, snap_id)
@@ -55,8 +58,19 @@ def run(root: pathlib.Path, argv: list[str], label: str, keep_on_fail: bool) -> 
     if keep_on_fail:
         print(f"autoflow: 失败（rc={returncode}），按 --keep-on-fail 保留现场；回退：restore {snap_id}")
         return returncode
+    missing = snap.intact(root, manifest)
+    if missing:
+        print("autoflow: 快照库已被破坏，无法回退（.trit 不在快照里）：")
+        for item in missing[:5]:
+            print(f"  - {item}")
+        return returncode if returncode != 0 else 1
     print(f"autoflow: 失败（rc={returncode}），自动回退到 {snap_id}")
-    code = snap.restore(root, manifest, prune=True, dry_run=False)
+    try:
+        code = snap.restore(root, manifest, prune=True, dry_run=False)
+    except (SystemExit, OSError) as exc:
+        # 回退自己也可能失败（对象库被删/磁盘满）：必须显式报出来，不能当作已恢复
+        print(f"autoflow: 回退失败（{exc}）——工作树可能处于中间状态，pending 已保留")
+        return returncode if returncode != 0 else 1
     return returncode if code == 0 else code
 
 
@@ -105,7 +119,21 @@ def self_test() -> int:
         check("命令不存在→127", code, 127)
         check("命令不存在时状态不变", (root / "a.txt").read_bytes(), b"orig3\n")
 
-        # 4) --keep-on-fail：保留现场
+        # 4) 命令把快照库删掉：不能假装回退成功
+        (root / "a.txt").write_bytes(b"orig4b\n")
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            code = run(
+                root,
+                [sys.executable, "-c", "import shutil;shutil.rmtree('.trit', ignore_errors=True);raise SystemExit(6)"],
+                "",
+                False,
+            )
+        check("快照库被删→非零", code != 0, True)
+        check("快照库被删→点名原因（不是静默）", "快照库已被破坏" in buf.getvalue(), True)
+        check("快照库被删→文件未被改动", (root / "a.txt").read_bytes(), b"orig4b\n")
+
+        # 5) --keep-on-fail：保留现场
         code = run(
             root,
             [sys.executable, "-c", "open('a.txt','wb').write(b'kept\\n');raise SystemExit(3)"],

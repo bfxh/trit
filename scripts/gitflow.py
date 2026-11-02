@@ -719,7 +719,7 @@ def has_pending(output: str) -> bool:
     return "pending" in lowered or "in_progress" in lowered or "queued" in lowered
 
 
-def watch_and_merge(branch: str, repo: str, attempts: int = 40, pause: int = 15) -> int:
+def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30) -> int:
     """等检查**真正**落定再合。
 
     只靠 `gh pr checks --watch` 不够：push 之后新的 run 还没注册时，它会拿着上一轮的
@@ -729,7 +729,7 @@ def watch_and_merge(branch: str, repo: str, attempts: int = 40, pause: int = 15)
     if wait_for_checks(repo, branch) != 0:
         return 1
     checks = gh(["pr", "checks", "--repo", repo, branch, "--watch"])
-    if checks.returncode != 0:
+    if checks.returncode != 0 and not has_pending(checks.stdout or ""):
         print("CI 未通过：")
         print(checks.stdout[-2000:])
         return 1
@@ -750,7 +750,7 @@ def watch_and_merge(branch: str, repo: str, attempts: int = 40, pause: int = 15)
             print(merge.stdout[-1500:])
             return 1
         time.sleep(pause)
-    print("合并超时（10 分钟）")
+    print(f"合并超时（约 {attempts * pause // 60} 分钟）")
     return 1
 
 
@@ -925,9 +925,10 @@ def main(argv: list[str]) -> int:
     if command == "merge":
         target = argv[argv.index("--branch") + 1] if "--branch" in argv else ""
         if not target:
-            print("用法：gitflow.py merge --branch <分支>")
+            print("用法：gitflow.py merge --branch <分支> [--wait-minutes N]")
             return 2
-        return watch_and_merge(target, repo)
+        wait = int(argv[argv.index("--wait-minutes") + 1]) if "--wait-minutes" in argv else 30
+        return watch_and_merge(target, repo, attempts=max(1, wait * 2), pause=30)
     if command == "diagnose":
         pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
         if not pr:

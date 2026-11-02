@@ -145,6 +145,18 @@ jobs:
       - name: Scan repository for high-confidence secrets
         run: python3 scripts/secret_scan.py
 
+  ci-integrity:
+    name: ci integrity (protection ↔ workflows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Self-test (typo / push-only / if-guard)
+        run: python3 scripts/ci_integrity.py --self-test
+      # 拼错的必需检查 = 永久卡死；只在 push 触发的 job 设成必需 = PR 永远等不到
+      - name: Required checks match workflow jobs
+        run: python3 scripts/ci_integrity.py
+
   stress:
     name: stress (high pressure invariants)
     runs-on: ubuntu-latest

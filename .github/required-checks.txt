@@ -1,0 +1,22 @@
+# main 分支的必需检查（与 GitHub 分支保护保持一致；ci_integrity.py 会核对）
+# 规则：每一行必须是某个 workflow job 的 name（矩阵模板按通配匹配）。
+# 绝不把 `mutation (full)` 放进来：它只在 dispatch/定时跑，设了会把所有 PR 永久卡住。
+
+MSRV (1.88)
+fmt + clippy + test (ubuntu-latest)
+fmt + clippy + test (windows-latest)
+docs (rustdoc -D warnings)
+action (self-test)
+wasm (wasm32 build)
+package (publishable)
+module budget (god objects)
+hazard gate (concurrency/memory)
+publish graph (no dep on unpublished crates)
+stress (high pressure invariants)
+mutation gate (self-test)
+snapshot (self-test)
+deps plan (self-test)
+vendor (self-test)
+secret scan (repo-wide)
+mutation (changed crates)
+t3 fmt + clippy + test
