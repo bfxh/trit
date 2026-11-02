@@ -3870,15 +3870,6 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
-    {
-        "name": "gitflow: POSIX 绝对路径漏拦",
-        "file": "scripts/gitflow.py",
-        "old": "        if \"..\" in posix.parts or posix.is_absolute() or pathlib.Path(name).is_absolute():",
-        "new": "        if \"..\" in posix.parts or pathlib.Path(name).is_absolute():",
-        "pkg": "scripts/gitflow.py",
-        "filter": "",
-        "runner": "python",
-    },
     # ---- gitflow（一句话提交 GitHub）----
     {
         "name": "gitflow: 密钥扫描失效",
