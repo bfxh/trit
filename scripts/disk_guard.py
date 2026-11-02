@@ -325,6 +325,9 @@ def self_test() -> int:
     pin("两路信号都空 -> unknown（不许默认当固态）", ("", "", ""), "unknown")
     pin("Unspecified 且无正面固态证据 -> unknown", ("Unspecified", "False", ""), "unknown")
     pin("PhysicalDisk=SSD -> ssd", ("", "False", "SSD"), "ssd")
+    pin("只有 MediaType 报 HDD（另两路都空）也要判机械", ("HDD", "", ""), "hdd")
+    pin("Spinning=False 且 PhysicalDisk=Unspecified 不许当固态", ("", "False", "Unspecified"),
+        "unknown")
 
     # 8. 真实探针必须能用（不然整条门是自娱自乐）：对本仓根跑一次，不许是 hdd
     real_media, real_detail = media_of(ROOT)
