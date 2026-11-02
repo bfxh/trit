@@ -53,6 +53,23 @@ def gh(args: list[str], cwd: pathlib.Path = ROOT) -> subprocess.CompletedProcess
     )
 
 
+def pick_base(branches: list[str]) -> str:
+    """默认 base：有这个仓的默认分支就用它（main / master），否则 main。"""
+    return "main" if "main" in branches else ("master" if "master" in branches else "main")
+
+
+def detect_remote(root: pathlib.Path = ROOT) -> str:
+    remotes = git(["remote"], root).stdout.split()
+    if "origin" in remotes:
+        return "origin"
+    return remotes[0] if remotes else "origin"
+
+
+def detect_base(remote: str, root: pathlib.Path = ROOT) -> str:
+    names = [line.split()[-1] for line in git(["branch", "-r"], root).stdout.splitlines() if line.strip()]
+    return pick_base([name.split("/", 1)[-1] for name in names])
+
+
 REMOTE_RE = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$")
 
 
@@ -113,14 +130,14 @@ def plan(args: dict) -> list[list[str]]:
     files = args["files"]
     commands: list[list[str]] = [["git", "add", "--", *files]]
     commands.append(["git", "commit", "-F", "<message-file>"])
-    commands.append(["git", "push", "-u", "origin", args["branch"]])
+    commands.append(["git", "push", "-u", args["remote"], args["branch"]])
     commands.append([
         "gh", "pr", "create", "--base", args["base"], "--head", args["branch"],
         "--title", args["title"], "--body-file", args["body_file"] or "<body>",
     ])
     if not args["no_merge"]:
-        commands.append(["gh", "pr", "checks", args["branch"], "--watch"])
-        commands.append(["gh", "pr", "merge", args["branch"], "--squash", "--delete-branch"])
+        commands.append(["gh", "pr", "checks", "--repo", args["repo"], args["branch"], "--watch"])
+        commands.append(["gh", "pr", "merge", "--repo", args["repo"], args["branch"], "--squash", "--delete-branch"])
     return commands
 
 
@@ -164,7 +181,7 @@ def publish(args: dict) -> int:
     steps = [
         ["git", "add", "--", *args["files"]],
         ["git", "commit", "-F", message_file],
-        ["git", "push", "-u", "origin", branch],
+        ["git", "push", "-u", args["remote"], branch],
         ["gh", "pr", "create", "--repo", args["repo"], "--base", args["base"], "--head", branch,
          "--title", args["title"], "--body-file", args["body_file"] or message_file],
     ]
@@ -232,6 +249,7 @@ def self_test() -> int:
         args = {
             "title": "t", "body_file": "body.md", "files": ["a.py", "b.py"],
             "branch": "feat/x", "base": "main", "no_merge": False, "repo": "o/r", "dry_run": True,
+            "remote": "origin",
         }
         commands = plan(args)
         check("第一条是显式 add", commands[0], ["git", "add", "--", "a.py", "b.py"])
@@ -244,6 +262,9 @@ def self_test() -> int:
         check("SSH remote 解析", repo_from_url("git@github.com:bfxh/trit.git"), "bfxh/trit")
         check("HTTPS remote 解析", repo_from_url("https://github.com/bfxh/trit-immune"), "bfxh/trit-immune")
         check("认不出的 remote 为空", repo_from_url("file:///tmp/x"), "")
+        check("默认 base 优先 main", pick_base(["main", "master"]), "main")
+        check("只有 master 时用 master", pick_base(["master"]), "master")
+        check("都没有时回落 main", pick_base([]), "main")
 
         problems = base_ok(root, [])
         check("空文件列表被拒（点名 --files）", any("--files" in p for p in problems), True)
@@ -263,6 +284,8 @@ def main(argv: list[str]) -> int:
         return self_test()
     command = argv[0] if argv else "status"
     repo = argv[argv.index("--repo") + 1] if "--repo" in argv else detect_repo()
+    remote = argv[argv.index("--remote") + 1] if "--remote" in argv else detect_remote()
+    base = argv[argv.index("--base") + 1] if "--base" in argv else detect_base(remote)
     if command == "status":
         return status(repo)
     files: list[str] = []
@@ -282,7 +305,8 @@ def main(argv: list[str]) -> int:
             "body_file": argv[argv.index("--body-file") + 1] if "--body-file" in argv else "",
             "files": files,
             "branch": argv[argv.index("--branch") + 1] if "--branch" in argv else "",
-            "base": argv[argv.index("--base") + 1] if "--base" in argv else "main",
+            "base": base,
+            "remote": remote,
             "repo": repo,
             "no_merge": "--no-merge" in argv,
             "dry_run": "--dry-run" in argv,
