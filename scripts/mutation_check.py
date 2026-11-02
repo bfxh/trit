@@ -3203,6 +3203,52 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    # 第二批 python 门脚本变异（同样逐条实测为断言红）。
+    {
+        "name": "publish: 依赖未发布 crate 不再拦截",
+        "file": "scripts/publish_graph.py",
+        "old": "            if not is_publishable(target):",
+        "new": "            if False:",
+        "pkg": "scripts/publish_graph.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "publish: dev 依赖不再豁免（正例被误报）",
+        "file": "scripts/publish_graph.py",
+        "old": "            if dependency.get(\"kind\") == \"dev\":",
+        "new": "            if False:",
+        "pkg": "scripts/publish_graph.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hygiene: 点名两文件不再算描述不符（门槛抬到 3）",
+        "file": "scripts/pr_hygiene.py",
+        "old": "    if len(missing) < 2:",
+        "new": "    if len(missing) < 3:",
+        "pkg": "scripts/pr_hygiene.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: SAFETY 注释识别失效（正例全被误报）",
+        "file": "scripts/hazard_gate.py",
+        "old": "SAFETY_RE = re.compile(r\"#\\s*Safety|SAFETY\\s*[::]|Safety\\s*[::]\")",
+        "new": "SAFETY_RE = re.compile(r\"NEVER_MATCHES_THIS_SENTINEL\")",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: 台账变瘦不再要求收紧（两条 STALE 一起失效）",
+        "file": "scripts/module_budget.py",
+        "old": "        elif lines <= LIMIT:\n            failures.append(\n                f\"STALE BASELINE: {file} \u5df2\u964d\u5230 {lines}\uff08\u9884\u7b97\u5185\uff09\uff0c\u53f0\u8d26\u4ecd\u5199 {recorded}\uff1b\u8dd1 --update \u79fb\u9664\"\n            )\n        elif lines < recorded:\n            failures.append(\n                f\"STALE BASELINE: {file} \u5df2\u964d\u5230 {lines}\uff0c\u53f0\u8d26\u4ecd\u5199 {recorded}\uff1b\u8dd1 --update \u6536\u7d27\"\n            )\n",
+        "new": "        elif False:\n            pass\n        elif False:\n            pass\n",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
 ]
 
 
