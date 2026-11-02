@@ -1,0 +1,65 @@
+[
+ {
+  "name": "smoke: expect 判红后不再退出（断言空转）",
+  "file": "crates/trit-immune/scripts/cli_smoke.sh",
+  "old": "实际输出：%s\\n' \"$3\" \"$1\" \"$2\" >&2; exit 1",
+  "new": "实际输出：%s\\n' \"$3\" \"$1\" \"$2\" >&2; exit 0",
+  "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+  "filter": "",
+  "runner": "bash"
+ },
+ {
+  "name": "smoke: expect 比错了变量（拿标签当输出比对）",
+  "file": "crates/trit-immune/scripts/cli_smoke.sh",
+  "old": "expect() {\n  case \"$2\" in",
+  "new": "expect() {\n  case \"$3\" in",
+  "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+  "filter": "",
+  "runner": "bash"
+ },
+ {
+  "name": "smoke: expect 的匹配分支放宽成无条件放行",
+  "file": "crates/trit-immune/scripts/cli_smoke.sh",
+  "old": "    *\"$1\"*) say \"$3\" ;;",
+  "new": "    *) say \"$3\" ;;",
+  "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+  "filter": "",
+  "runner": "bash"
+ },
+ {
+  "name": "smoke: expect_absent 只在空输出时判脏",
+  "file": "crates/trit-immune/scripts/cli_smoke.sh",
+  "old": "    *\"$1\"*) printf 'FAIL %s：不该出现",
+  "new": "    \"\") printf 'FAIL %s：不该出现",
+  "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+  "filter": "",
+  "runner": "bash"
+ },
+ {
+  "name": "smoke: expect_absent 拿 needle 自己比对（干净输出误判）",
+  "file": "crates/trit-immune/scripts/cli_smoke.sh",
+  "old": "expect_absent() {\n  case \"$2\" in",
+  "new": "expect_absent() {\n  case \"$1\" in",
+  "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+  "filter": "",
+  "runner": "bash"
+ },
+ {
+  "name": "smoke: fail 打印了却没让脚本失败",
+  "file": "crates/trit-immune/scripts/cli_smoke.sh",
+  "old": "fail() { printf 'FAIL %s\\n' \"$*\" >&2; exit 1; }",
+  "new": "fail() { printf 'FAIL %s\\n' \"$*\" >&2; exit 0; }",
+  "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+  "filter": "",
+  "runner": "bash"
+ },
+ {
+  "name": "smoke: run 吞掉命令的非零退出",
+  "file": "crates/trit-immune/scripts/cli_smoke.sh",
+  "old": "run() { \"$BIN\" \"$@\" -f \"$LEDGER\" 2>&1 || fail \"命令失败：$BIN $*\"; }",
+  "new": "run() { \"$BIN\" \"$@\" -f \"$LEDGER\" 2>&1; }",
+  "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+  "filter": "",
+  "runner": "bash"
+ }
+]

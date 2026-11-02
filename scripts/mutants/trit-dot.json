@@ -1,0 +1,66 @@
+[
+ {
+  "name": "dot: 三值点积少减一项",
+  "file": "crates/trit-dot/src/lib.rs",
+  "old": "            sums[lane] += i64::from(matches) - i64::from(mismatches);",
+  "new": "            sums[lane] += i64::from(matches);",
+  "pkg": "trit-dot",
+  "filter": "ternary_dot_matches_scalar_across_block_boundaries"
+ },
+ {
+  "name": "dot: 不查尾部填充位",
+  "file": "crates/trit-dot/src/lib.rs",
+  "old": "            if dirty_pos != 0 || dirty_neg != 0 {",
+  "new": "            if false {",
+  "pkg": "trit-dot",
+  "filter": "invalid_planes_are_rejected_at_construction"
+ },
+ {
+  "name": "dot: 二值公式丢掉系数 2",
+  "file": "crates/trit-dot/src/lib.rs",
+  "old": "        return len as i64 - 2 * mismatches as i64;",
+  "new": "        return len as i64 - mismatches as i64;",
+  "pkg": "trit-dot",
+  "filter": "bipolar_dot_matches_scalar"
+ },
+ {
+  "name": "dot: 展开体丢掉负负项",
+  "file": "crates/trit-dot/src/lib.rs",
+  "old": "            let matches = ((pa[lane] & pb[lane]) | (na[lane] & nb[lane])).count_ones();",
+  "new": "            let matches = (pa[lane] & pb[lane]).count_ones();",
+  "pkg": "trit-dot",
+  "filter": "ternary_dot_matches_scalar_across_block_boundaries"
+ },
+ {
+  "name": "dot: 展开体的尾巴不算不匹配",
+  "file": "crates/trit-dot/src/lib.rs",
+  "old": "    for lane in 0..rest_a_pos.len() {\n        let matches = ((rest_a_pos[lane] & rest_b_pos[lane])\n            | (rest_a_neg[lane] & rest_b_neg[lane]))\n            .count_ones();\n        let mismatches = ((rest_a_pos[lane] & rest_b_neg[lane])\n            | (rest_a_neg[lane] & rest_b_pos[lane]))\n            .count_ones();\n        total += i64::from(matches) - i64::from(mismatches);\n    }\n    total",
+  "new": "    for lane in 0..rest_a_pos.len() {\n        let matches = ((rest_a_pos[lane] & rest_b_pos[lane])\n            | (rest_a_neg[lane] & rest_b_neg[lane]))\n            .count_ones();\n        let mismatches = ((rest_a_pos[lane] & rest_b_neg[lane])\n            | (rest_a_neg[lane] & rest_b_pos[lane]))\n            .count_ones();\n        total += i64::from(matches);\n    }\n    total",
+  "pkg": "trit-dot",
+  "filter": "unrolled_matches_dense_on_all_tail_lengths"
+ },
+ {
+  "name": "dot: 放行重叠的双导轨",
+  "file": "crates/trit-dot/src/lib.rs",
+  "old": "            .find(|(_, overlap)| *overlap != 0)",
+  "new": "            .find(|_| false)",
+  "pkg": "trit-dot",
+  "filter": "invalid_planes_are_rejected_at_construction"
+ },
+ {
+  "name": "dot: 稀疏路径漏掉负负项",
+  "file": "crates/trit-dot/src/lib.rs",
+  "old": "            let nn = (self.neg[block] & other.neg[block]).count_ones();\n            total += i64::from(pp) - i64::from(pn) - i64::from(np) + i64::from(nn);\n        }\n        Ok(total)\n    }\n\n    fn check_length(",
+  "new": "            let nn = (self.neg[block] & other.neg[block]).count_ones();\n            total += i64::from(pp) - i64::from(pn) - i64::from(np);\n        }\n        Ok(total)\n    }\n\n    fn check_length(",
+  "pkg": "trit-dot",
+  "filter": "ternary_dot_matches_scalar_across_block_boundaries"
+ },
+ {
+  "name": "dot: 长度不一致不报错",
+  "file": "crates/trit-dot/src/lib.rs",
+  "old": "        if self.len != other.len {",
+  "new": "        if false {",
+  "pkg": "trit-dot",
+  "filter": "length_mismatch_is_rejected"
+ }
+]

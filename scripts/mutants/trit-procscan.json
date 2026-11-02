@@ -1,0 +1,66 @@
+[
+ {
+  "name": "net: 外联扇出阈值失效",
+  "file": "crates/trit-procscan/src/net.rs",
+  "old": "        if hosts_reachable.len() >= SCAN_FANOUT_HOSTS {",
+  "new": "        if false {",
+  "pkg": "trit-procscan",
+  "filter": "egress_fanout_needs_eight_distinct_hosts"
+ },
+ {
+  "name": "net: 监听全部网卡不报",
+  "file": "crates/trit-procscan/src/net.rs",
+  "old": "    matches!(host, \"0.0.0.0\" | \"::\" | \"*\")",
+  "new": "    false",
+  "pkg": "trit-procscan",
+  "filter": "listen_all_interfaces_is_flagged_loopback_is_not"
+ },
+ {
+  "name": "net: 私网误判成公网外联",
+  "file": "crates/trit-procscan/src/net.rs",
+  "old": "        [10, ..] => AddrClass::Private,",
+  "new": "        [10, ..] => AddrClass::Public,",
+  "pkg": "trit-procscan",
+  "filter": "public_egress_is_flagged_private_is_not"
+ },
+ {
+  "name": "procscan: 不统计 schema 体积",
+  "file": "crates/trit-procscan/src/mcp.rs",
+  "old": "    let schema_bytes = serde_json::to_string(&tools_value)",
+  "new": "    let schema_bytes = 0 * serde_json::to_string(&tools_value)",
+  "pkg": "trit-procscan",
+  "filter": "handshake_reads_tools_and_measures_schema"
+ },
+ {
+  "name": "procscan: 不识别 shell 进程",
+  "file": "crates/trit-procscan/src/analyze.rs",
+  "old": "                if SHELLS.contains(&lower.as_str()) {",
+  "new": "                if false {",
+  "pkg": "trit-procscan",
+  "filter": "flags_shell_network_and_encoded_commands"
+ },
+ {
+  "name": "procscan: 后代追踪漏掉间接子树",
+  "file": "crates/trit-procscan/src/trace.rs",
+  "old": "            worklist.extend(children.get(&current).cloned().unwrap_or_default());",
+  "new": "            worklist.clear();",
+  "pkg": "trit-procscan",
+  "filter": "descendants_follow_multi_level_tree"
+ },
+ {
+  "name": "procscan: 画像末次时间不更新",
+  "file": "crates/trit-procscan/src/trace.rs",
+  "old": "            entry.last_seen_ms = entry.last_seen_ms.max(*ts_ms);",
+  "new": "            entry.last_seen_ms = entry.last_seen_ms.min(*ts_ms);",
+  "pkg": "trit-procscan",
+  "filter": "repeated_samples_merge_into_one_step"
+ },
+ {
+  "name": "procscan: 目录快照看不出改动",
+  "file": "crates/trit-procscan/src/collector.rs",
+  "old": "                out.insert(path, (mtime, meta.len()));",
+  "new": "                out.insert(path, (mtime, 0u64));",
+  "pkg": "trit-procscan",
+  "filter": "snapshot_detects_new_and_changed_files"
+ }
+]

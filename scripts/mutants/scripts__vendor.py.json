@@ -1,0 +1,65 @@
+[
+ {
+  "name": "vendor: restore 不优先用备份",
+  "file": "scripts/vendor.py",
+  "old": "    if backup.exists():",
+  "new": "    if False:",
+  "pkg": "scripts/vendor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "vendor: restore 误删外部 vendor/",
+  "file": "scripts/vendor.py",
+  "old": "    if path.is_dir() and (owned or force):",
+  "new": "    if path.is_dir():",
+  "pkg": "scripts/vendor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "vendor: source replacement 写成错的名字",
+  "file": "scripts/vendor.py",
+  "old": "        'replace-with = \"vendored-sources\"\\n'",
+  "new": "        'replace-with = \"vendor\"\\n'",
+  "pkg": "scripts/vendor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "vendor: 无尾换行的配置被吞行",
+  "file": "scripts/vendor.py",
+  "old": "    if text and not text.endswith(\"\\n\"):\n        text += \"\\n\"",
+  "new": "    if False:\n        text += \"\\n\"",
+  "pkg": "scripts/vendor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "vendor: 第二次 save 覆盖真原件",
+  "file": "scripts/vendor.py",
+  "old": "    if config.exists() and not backup.exists():",
+  "new": "    if config.exists():",
+  "pkg": "scripts/vendor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "vendor: 还原后多留一行空行",
+  "file": "scripts/vendor.py",
+  "old": "    if head.endswith(\"\\n\\n\"):  # 插段时多垫的一行\n        head = head[:-1]",
+  "new": "    if False:\n        head = head[:-1]",
+  "pkg": "scripts/vendor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "vendor: 重复 save 会重复插段",
+  "file": "scripts/vendor.py",
+  "old": "    if START in text and END in text:",
+  "new": "    if False:",
+  "pkg": "scripts/vendor.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

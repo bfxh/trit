@@ -1,0 +1,29 @@
+[
+ {
+  "name": "hygiene: 同文件重叠不再上报",
+  "file": "scripts/pr_hygiene.py",
+  "old": "            if shared:",
+  "new": "            if False:",
+  "pkg": "scripts/pr_hygiene.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hygiene: 同树两份不再判 DUP",
+  "file": "scripts/pr_hygiene.py",
+  "old": "        if len(members) < 2:",
+  "new": "        if len(members) < 3:",
+  "pkg": "scripts/pr_hygiene.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hygiene: 点名两文件不再算描述不符（门槛抬到 3）",
+  "file": "scripts/pr_hygiene.py",
+  "old": "    if len(missing) < 2:",
+  "new": "    if len(missing) < 3:",
+  "pkg": "scripts/pr_hygiene.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

@@ -1,0 +1,34 @@
+[
+ {
+  "name": "bdd: is_valid 退回布尔全集",
+  "file": "crates/trit-bdd/src/quantify.rs",
+  "old": "        self.bdd.not().and(&self.valid_free).is_false()",
+  "new": "        self.bdd.is_true()",
+  "pkg": "trit-bdd",
+  "filter": "forall_with_free_ternary_variable_is_judged_on_valid_domain"
+ },
+ {
+  "name": "bdd: satisfiable 不限制合法域",
+  "file": "crates/trit-bdd/src/equiv.rs",
+  "old": "    let sat = enc.guard(enc.valid()?.and(&node.t).and(&node.x.not()))?;",
+  "new": "    let sat = enc.guard(node.t.and(&node.x.not()))?;",
+  "pkg": "trit-bdd",
+  "filter": "satisfiable_requires_a_legal_valuation"
+ },
+ {
+  "name": "bdd: 节点预算永不触发",
+  "file": "crates/trit-bdd/src/encode.rs",
+  "old": "    pub(crate) fn guard(&self, bdd: Bdd) -> Result<Bdd, BddError> {\n        if bdd.size() > self.limits.max_nodes {",
+  "new": "    pub(crate) fn guard(&self, bdd: Bdd) -> Result<Bdd, BddError> {\n        if false {",
+  "pkg": "trit-bdd",
+  "filter": "budget_rejects"
+ },
+ {
+  "name": "bdd: 频率降序写反",
+  "file": "crates/trit-bdd/src/order.rs",
+  "old": "                    cr.cmp(&cl)",
+  "new": "                    cl.cmp(&cr)",
+  "pkg": "trit-bdd",
+  "filter": "frequency_order"
+ }
+]

@@ -1,0 +1,47 @@
+[
+ {
+  "name": "doctor: CODEOWNERS 缺口不报",
+  "file": "scripts/repo_doctor.py",
+  "old": "    return [directory for directory in required_dirs if directory not in covered]",
+  "new": "    return []",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doctor: LFS 方案不区分类型",
+  "file": "scripts/repo_doctor.py",
+  "old": "    suffixes = sorted({pathlib.PurePosixPath(name).suffix for name in big if pathlib.PurePosixPath(name).suffix})",
+  "new": "    suffixes = []",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doctor: 历史大 blob 不报",
+  "file": "scripts/repo_doctor.py",
+  "old": "        if size >= BIG_FILE:",
+  "new": "        if False:",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doctor: 工作树 CRLF 不计数",
+  "file": "scripts/repo_doctor.py",
+  "old": "        elif \"w/crlf\" in flags:",
+  "new": "        elif False:",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doctor: 索引 CRLF 不报",
+  "file": "scripts/repo_doctor.py",
+  "old": "        if \"i/crlf\" in flags:",
+  "new": "        if False:",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
