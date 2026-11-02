@@ -99,7 +99,8 @@ def git_facts(root: pathlib.Path) -> dict:
     ):
         try:
             out = subprocess.run(
-                argv, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True
+                argv, cwd=root, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                encoding="utf-8", errors="replace"
             )
         except OSError:
             return {}
