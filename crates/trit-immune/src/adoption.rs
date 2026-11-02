@@ -208,7 +208,7 @@ impl Adoption {
 
         // 精准推送：跨仓边 from == 变更节点的接收仓
         let mut deps: BTreeMap<String, Vec<NodeId>> = BTreeMap::new();
-        for l in fleet.cross_links() {
+        for l in &fleet.cross_edges() {
             if changed
                 .iter()
                 .any(|(r, n)| *r == l.from.0 && *n == l.from.1)
@@ -265,7 +265,7 @@ impl Adoption {
                 g.link(off + l.from.0 as usize, off + l.to.0 as usize, l.pass);
             }
         }
-        for l in fleet.cross_links() {
+        for l in &fleet.cross_edges() {
             let (Some(fo), Some(to)) = (base.get(&l.from.0), base.get(&l.to.0)) else {
                 continue;
             };

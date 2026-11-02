@@ -32,6 +32,11 @@ pub struct Fleet {
     repos: Vec<(String, Journal)>,
     cross_links: Vec<CrossRepoLink>,
     link_ledger: Option<PathBuf>,
+    /// 依赖坐标声明（见 [`crate::coords`]）：谁提供这个坐标、谁实际用到它。
+    /// 方法面在 [`crate::coords_fleet`]，字段留在此处（同一 `Fleet` 身份）。
+    pub(crate) provides: Vec<crate::coords::CoordDecl>,
+    pub(crate) uses: Vec<crate::coords::CoordDecl>,
+    pub(crate) coord_ledger: Option<PathBuf>,
 }
 
 /// 聚合收敛表的一行。
@@ -129,11 +134,12 @@ impl Fleet {
     /// 聚合流程图：每仓一节（收敛头 + render）+ 跨仓依赖边列表。
     pub fn render_with_edges(&self) -> String {
         let mut out = String::new();
+        let edges = self.cross_edges();
         let _ = writeln!(
             out,
             "══ 舰队　{} 仓　跨仓污染边 {} 条 ══",
             self.repos.len(),
-            self.cross_links.len()
+            edges.len()
         );
         for (n, j) in &self.repos {
             let cv = j.dag().convergence();
@@ -148,9 +154,9 @@ impl Fleet {
             );
             out.push_str(&j.dag().render());
         }
-        if !self.cross_links.is_empty() {
+        if !edges.is_empty() {
             out.push_str("\n── 跨仓依赖边 ──\n");
-            for l in &self.cross_links {
+            for l in &edges {
                 let _ = writeln!(
                     out,
                     "{}#{:02} → {}#{:02}　[{} {}]　{}",
@@ -352,7 +358,7 @@ impl Fleet {
                 g.link(off + l.from.0 as usize, off + l.to.0 as usize, l.pass);
             }
         }
-        for l in &self.cross_links {
+        for l in &self.cross_edges() {
             let (Some(fo), Some(to)) = (base.get(&l.from.0), base.get(&l.to.0)) else {
                 continue;
             };
