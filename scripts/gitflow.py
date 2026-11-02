@@ -698,14 +698,15 @@ def checks_not_yet(output: str) -> bool:
 
 
 def wait_for_checks(repo: str, branch: str, attempts: int = 40, pause: int = 15) -> int:
+    """等检查**注册**（不是等它们绿）：pending 时 gh 返回非零(8)，那也算已注册。
+
+    真正的通过/失败交给后面的 `gh pr checks --watch` 判。
+    """
     for index in range(attempts):
         listing = gh(["pr", "checks", "--repo", repo, branch])
-        if listing.returncode == 0 and listing.stdout.strip():
+        output = listing.stdout or ""
+        if output.strip() and not checks_not_yet(output):
             return 0
-        if not checks_not_yet(listing.stdout):
-            print("查询检查失败：")
-            print(listing.stdout[-1000:])
-            return 1
         if index == 0:
             print("检查还没注册，先等它们出现…")
         time.sleep(pause)
