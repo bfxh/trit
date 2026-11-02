@@ -106,6 +106,9 @@ jobs:
       # 回退底座按字节还原、dry-run 不改文件、不清新文件、对象被篡改要报错
       - name: Snapshot self-test (save / verify / restore / prune)
         run: python3 scripts/snapshot.py --self-test
+      # 一条命令 = 先快照、失败自动回退（含删掉命令新建的文件）
+      - name: Autoflow self-test (run / auto-restore / keep-on-fail)
+        run: python3 scripts/autoflow.py --self-test
 
   deps:
     name: deps plan (self-test)
