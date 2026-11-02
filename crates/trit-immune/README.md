@@ -1,4 +1,58 @@
-# trit-immune —— 三进制免疫系统核心
+# trit-immune
+
+三进制免疫系统：把红蓝对抗史沉淀成 **Kleene K3 三值裁决的因果 DAG**——
+每条攻击向量落 `-1 / 0 / +1` 之一，合并门禁按三态动作（`BLOCK / FREEZE / ALLOW`），
+账本（journal）即数据库：日志只增不减、重放即恢复、跨副本 δ-CRDT 无冲突合并。
+
+**这里是 `bfxh/trit` 工作区里的 `crates/trit-immune`**，`trit-core` 走工作区 `path` 依赖。
+同一个 crate 另有一份**独立发布形态**（[`bfxh/trit-immune`](https://github.com/bfxh/trit-immune)：
+`trit-core` 以 git 源引入、`Cargo.lock` 锁到具体提交、CI 独立跑、可独立发版）。
+两边代码同源，差异见下面「与独立仓的差异」。
+
+## 装与跑（bash）
+
+```bash
+git clone https://github.com/bfxh/trit-immune.git
+cd trit-immune
+cargo test                       # 默认形态：内核 + 工具层 + CLI
+cargo test --no-default-features # 内核形态（不含工具层，即上游收录的那份）
+cargo build                      # 产出 target/debug/trit-immune
+bash scripts/cli_smoke.sh        # 账本命令行的端到端冒烟（CI 里同一个脚本）
+cargo run --example scenario     # 红蓝对抗场景演示
+```
+
+（独立仓形态才有 git 源依赖，受限网络下要 `export CARGO_NET_GIT_FETCH_WITH_CLI=true`；
+工作区里 `trit-core` 是 path 依赖，不需要这条。）
+
+## 账本命令行（`trit-immune`，命令名沿用 `trit`）
+
+`trit-immune init|status|commit|branch|merge|checkout|clone|gate|suspects|log|sync-git|lock`——
+用三值账本代替 git 做「带裁决的版本控制」：`commit` 默认 0 态（未测不可信），
+`merge` 是无冲突收敛，`checkout` 是重放到任意节点，`gate` 给出三值门禁与打穿来源。
+完整语义见下面的「`trit` CLI」一节；`scripts/cli_smoke.sh` 是可执行的口径样本。
+
+## 工程纪律
+
+- **三值是语义不是装饰**：`-1 & x == -1`（一条确证漏洞堵死全链）、`0` 传染但不武断
+  （未知面冻结合并，绝不猜成安全）、新代码默认 `0`。真值表逐组合对拍在 `tests/trit_tables.rs`。
+- **两层结构**：`--no-default-features` 一条命令切到内核形态，feature 门控钉死边界。
+- **CI 全部 `shell: bash`**：格式、clippy `-D warnings`、三平台测试、内核形态、MSRV 1.88、
+  rustdoc `-D warnings`、CLI 冒烟（`.github/workflows/ci.yml`）。
+- **诚实边界**见下文同名小节：`Sandbox` 是确定性替身，真实隔离执行环境要换；
+  红蓝 Agent 是外部组件，本仓只定义它们写入 DAG 的协议。
+
+## 与独立仓的差异（避免两边悄悄不一样）
+
+| 项 | 这里（`bfxh/trit` 工作区） | `bfxh/trit-immune` 独立仓 |
+|---|---|---|
+| 依赖声明 | `trit-core` = 工作区 `path` 依赖 | git 源，`Cargo.lock` 锁到具体提交 |
+| CI | 随工作区（含 module budget / hazard / publish graph 等门） | 独立 7 job（含三平台、MSRV、bash 冒烟） |
+| `trit` CLI（含 `init` 建目录、`lock` 坐标入账） | 同 | 同 |
+| 二进制名 | `trit-immune` | 同 |
+
+反向同步（独立仓 → 上游）用 `scripts/sync-upstream.sh`，收录规则与过程纪律见 `docs/UPSTREAM.md`。
+
+---
 
 把**渗透测试**做成 DeltaDB 分支图的原生伴生机制：每个节点/分支用三进制裁决
 `{-1, 0, +1}`（Kleene K3）标注，红蓝对抗史沉淀为因果 DAG，合并门禁三态动作。
@@ -34,11 +88,12 @@
 | 人类主控（0 态） | `ImmuneDag::human_review`：唯一解除隔离 / 落锤 0 的通道 |
 | Prompt 注入溯源 | `NodeKind::Message` + `ImmuneDag::quarantine`（沿因果链隔离） |
 | 合并门禁 | `ImmuneDag::merge_gate`：K3 AND 折叠 → 三态动作 |
+| 依赖坐标（谁真的用到了这个库产物） | `CoordKey` + `Fleet::attach_lock` / `trit lock`（`src/coords.rs`：坐标逐字段相等才连边，对不上的一律进 `CoordGap` 0 态清单，不静默丢边） |
 
 ## 快速开始
 
 ```bash
-cargo test                      # 221 全绿（full 默认形态）
+cargo test                      # 251 全绿（full 默认形态，2026-11-02 实测；内核形态 --no-default-features 155）
 cargo run --example scenario    # 端到端红蓝对抗场景演示
 ```
 
@@ -215,6 +270,14 @@ assert_eq!(m.deferred.len(), 0);
   真实部署应替换为边缘隔离执行环境（Durable Object / 容器），接口不变。
 - 红队/蓝队 Agent 本身是外部组件；本 crate 只定义它们写入 DAG 的**协议**（节点、裁决、证据、门禁）。
 - 只做真值函数三值逻辑（K3），与 `trit` 仓库一致；不做时序模型检验、通用 SMT。
+- **基线假设要说死**：`init` 出来的账本根节点建库即 `+1`（把既有代码当作已接受的基线），
+  因此空账本的 `status` 直接给 `Allow`；而 `branch` 生出的新节点与不带 `-v` 的 `commit` 都是 `0`。
+  也就是说「未测即冻结」作用在**增量**上，不作用在基线上。要 fail-closed 的宿主应在建库后
+  显式把根节点记为 `0`，或让门禁校验从某个已验收节点开始——这是使用口径，不是内核默认。
+  `scripts/cli_smoke.sh` 把这两条都断言住了（根 `+1` → Allow；新节点 `0` → Freeze）。
+- 文中测试计数：本副本（工作区 `cargo test -p trit-immune --locked`）2026-11-02 实测 **251 绿 / 23 个测试套**，
+  内核形态（`--no-default-features`）同样全绿；`docs/ROADMAP.md` 里更早的行保留的是当时测得的历史数字，
+  不是有一边在编。
 
 ## 测试
 
@@ -228,10 +291,10 @@ assert_eq!(m.deferred.len(), 0);
 一条命令即得上游收录形态（feature 门控钉死边界，不靠人记）：
 
 ```bash
-cargo test                        # 221（full 默认：内核 + 工具层）
-cargo test --no-default-features  # 146（内核形态 = 上游将收到的）
-cargo test --all-features         # 221（含 tls feature 编译验证）
-cargo test --release              # 221（优化模式）
+cargo test                        # 234（full 默认：内核 + 工具层）
+cargo test --no-default-features  # 154（内核形态 = 上游将收到的）
+cargo test --all-features         # 234（含 tls feature 编译验证）
+cargo test --release              # 234（优化模式）
 cargo clippy --all-targets        # 0 警告
 ```
 

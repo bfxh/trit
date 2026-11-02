@@ -1,5 +1,8 @@
 # 平台路线图：愿景拆解与定位
 
+> 计数口径：文中的 221 / 146 是 2026-10-31 在 `bfxh/trit` 工作区实测的历史读数，保留不改写。
+> 独立仓（本仓）2026-11-01 实测：full 与 `--all-features` 各 234、`--no-default-features` 154，见 README。
+
 > 用户愿景原文的分解与状态账本。定位先说死：**trit-immune = 三进制 + Rust 的裁决内核**，
 > 对语言工具的四个主任务：**裁决（verdict）、记账（journal）、传播（propagate）、同步（sync）**。
 > 它不造语言、不替代 git/GitHub（并行）、不做 LLM 决策——本地调度、确定性优先。
@@ -55,6 +58,7 @@
 | 46 | **同步过程纪律**（"搞底层有些智能体任务会停"的答案：同步脚本化 + 幂等 + 分层验证 + 性价比看未来） | ✅ | `scripts/sync-upstream.sh`（幂等：补丁先 `-R --check` 已应用则跳过、中断重跑即恢复；分层验证 `cargo check` 秒级内建、`cargo test` 分钟级**不自动跑**由人定时；外向动作 commit/push 只打印建议人工执行）+ `upstream/patches/*.patch`（上游专属内容 git 化——read-tree 清掉的工作区永远可从 patch 重建，无孤本）+ UPSTREAM.md 补**性价比 = 当前收益 + 未来可演进 − 未来迁移成本**（"三年后换掉它要付多少？"可逆/可并存/可导出的设计永远优先）；脚本已自举验证（幂等分支 + 快验通过） |
 | 47 | **测试矩阵盲区清零**（四个从未验证过的形态） | ✅ | `--all-features`（tls 首次编译验证）221 全绿；`--release` 221 全绿；**clippy --all-targets 25 条清零**（--fix 批量 + 手工：固有 not 与 Not trait 并存是设计选择——删除破坏 `t.not()` 调用方，恢复并 allow）；上游 workspace 全量 check 通过（PR 不被 CI 卡）+ README 更新（两层结构/CLI 映射/测试矩阵/过时"尚未做"替换） |
 | 48 | **解析器模糊测试**（外部输入第一道墙的攻击面：json / git log / LSP / Cargo.lock / journal 行——核心不变量：**任何输入不 panic、不挂起、只 Ok 或显式 Err**） | ✅ | `tests/fuzz_smoke.rs`（**确定性模糊**：xorshift64 随机字节流 + 真实样本结构变异（删/插/替），5000+ 次输入零 panic，进常规套件无需 nightly）+ `fuzz/`（**libFuzzer 正式形态**，五 targets 对齐上游 fuzz/ 结构——nightly + cargo-fuzz 触发即跑；full 依赖的 targets 函数级 cfg 门，内核形态只 fuzz 内核解析器）；Kani 安装 Windows gnu 工具链失败（如实记录，harness 触发待 linux/msvc） |
+| 49 | **依赖坐标层**（扇出难题："一个库被打穿，哪些项目真的受影响"——按 仓→仓 的粗边会把只用 `lib 2.0` 的项目一并打红，真受影响的反而被平均掉；把跨仓边下沉到坐标粒度） | ✅ | `src/coords.rs`（`CoordKey` = `name@version` + `source` + `digest` + 可选 `build`，**逐字段相等才派生边**；**不匹配不静默**——来源/摘要/构建对不上或根本没有提供者，一律进 `CoordGap` 0 态清单，把边悄悄丢掉就是 fail-open）+ `src/coords_fleet.rs`（舰队方法面：`declare_provider` / `attach_lock` / `sync_coordinates` / `coord_gaps` / `render_coords` / `load_coords`；声明是追加式注册表 `PROV`/`USE` 行，账外无数据，加载期不验证、失效声明照实上报）；`Pin` 补 `source` + `supply` 新增 `SourceChanged → -1`（同名同版本换来源 = dependency confusion 正身）；出口面 `trit lock <Cargo.lock> [--build X]`（与舰队形态共用 `attach_pins` **同一条入账路径**，幂等）+ `/v1/fleet/coords`、`/v1/fleet/gaps`、`POST /v1/fleet/coord-declare`、`/lock`、`/coord-sync`；查询视图统一读 `cross_edges()`（声明边 ⊕ 坐标派生边）——传播 / 渲染 / 攻击链 / 落地影响不再两套真相；**顺带修一条既有 fail-open**（不是坐标层引入的）：`policy::decide` 只看因果链 `gate`，有效裁决 `-1`（跨仓边或坐标污染打进来、因果链干净）会走到 AutoMerge，现按有效裁决一票否决；实测 full 251 / 内核 155 全绿（对 #45 的 221/146：+30/+9），坐标行为测试 11 条 + CLI 冒烟 3 条断言，8 把变异（家族匹配 / 缺口 fail-open / 不建「坐标→本仓根」消费边 / 不按标题采纳既有节点 / 策略忽略传播后的 -1 / 忽略版本 / 相等也落账 / 落账不溯源）**逐条由断言消息判红**（无编译红、开场与收尾双基线自证）；已知局限：`Cargo.lock` 不记录 feature 集，同 checksum 不同 feature 要靠调用方把清单指纹（`supply::fingerprint`）当 `build` 传进来，否则判成同一坐标 |
 
 ### 标签语义澄清（2026-10-31）
 

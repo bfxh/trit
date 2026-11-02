@@ -204,7 +204,7 @@ fn walk(
             }
         }
     }
-    for l in fleet.cross_links() {
+    for l in &fleet.cross_edges() {
         if l.to.0 == repo
             && l.to.1 == id
             && l.pass == Trit::Vulnerable
