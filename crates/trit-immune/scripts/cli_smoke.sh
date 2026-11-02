@@ -3,16 +3,8 @@
 #
 # 用法：bash scripts/cli_smoke.sh [可执行文件路径]
 #       默认 target/debug/trit-immune（先 cargo build）
+#       bash scripts/cli_smoke.sh --self-test   只验下面这套断言工具，不需要二进制
 set -uo pipefail
-
-BIN="${1:-target/debug/trit-immune}"
-if [ ! -e "$BIN" ]; then
-  printf 'FAIL 找不到可执行文件：%s（先 cargo build）\n' "$BIN" >&2
-  exit 1
-fi
-
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
 
 fail() { printf 'FAIL %s\n' "$*" >&2; exit 1; }
 say() { printf 'ok   %s\n' "$*"; }
@@ -33,6 +25,70 @@ expect_absent() {
   esac
 }
 
+# run <参数…>：账本命令统一走这里；非零退出必须把整条冒烟拖红，而不是被吞掉
+run() { "$BIN" "$@" -f "$LEDGER" 2>&1 || fail "命令失败：$BIN $*"; }
+
+# self_test 验的是**断言工具本身会不会空转**：每个工具都喂「必须通过」和
+# 「必须判红」两侧输入。只测正例的话，把 expect 改成永远通过也照样绿——
+# 变异门钉的就是这条（下面的每一步都对应一个可注入的坏改法）。
+self_test() {
+  local rc=0 stub seen
+  stub="$(mktemp)" || fail "自测建不出桩二进制"
+  printf '#!/bin/sh\ncase "${1:-}" in --fail) exit 3 ;; esac\nexit 0\n' > "$stub"
+  # 没有执行位的桩在 Linux/CI 上根本跑不起来（正例反例全变 rc=126 ⇒ 反例假通过）
+  chmod +x "$stub" || { rm -f "$stub"; fail "自测无法给桩加执行位"; }
+  BIN="$stub"
+  LEDGER="/dev/null"
+
+  # 先钉夹具本身：桩得能真的分成成功/失败两侧，否则下面的反例是空转的
+  must_pass() {
+    local label="$1"
+    shift
+    ( "$@" ) >/dev/null 2>&1 || { printf 'FAIL 自测：%s 该通过却被判红\n' "$label" >&2; rc=1; }
+  }
+  must_fail() {
+    local label="$1"
+    shift
+    ( "$@" ) >/dev/null 2>&1
+    [ $? -ne 0 ] || { printf 'FAIL 自测：%s 该判红却放行（断言空转）\n' "$label" >&2; rc=1; }
+  }
+
+  must_pass "桩命令成功侧" "$BIN" ok
+  must_fail "桩命令失败侧" "$BIN" --fail
+  must_pass "expect 认得出 needle" expect "甲" "某某甲某某" "自测"
+  must_fail "expect 少 needle 仍放行" expect "乙" "某某甲某某" "自测"
+  must_pass "expect_absent 放行干净输出" expect_absent "乙" "某某甲某某" "自测"
+  must_fail "expect_absent 命中脏输出仍放行" expect_absent "甲" "某某甲某某" "自测"
+  must_fail "fail 没让脚本失败" fail "自测探针"
+  must_fail "run 把失败命令当成功" run --fail
+  must_pass "run 放行成功命令" run ok
+  # run 的价值在「失败就中止」而不只是返回非零：少了 || fail，脚本会带着错误往下跑，
+  # 冒烟照样可能全绿。所以这里看的是后续语句有没有被执行。
+  seen="$( ( run --fail; printf 'REACHED' ) 2>&1 )"
+  case "$seen" in
+    *REACHED*) { printf 'FAIL 自测：run 失败后没有中止脚本（错误被吞）\n' >&2; rc=1; } ;;
+  esac
+
+  rm -f "$stub"
+  [ $rc -eq 0 ] || return 1
+  say "断言工具自测通过（expect/expect_absent/fail/run 各正反两侧）"
+  return 0
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+  self_test
+  exit $?
+fi
+
+BIN="${1:-target/debug/trit-immune}"
+if [ ! -e "$BIN" ]; then
+  printf 'FAIL 找不到可执行文件：%s（先 cargo build）\n' "$BIN" >&2
+  exit 1
+fi
+
+WORK="$(mktemp -d)"
+trap 'rm -rf "$WORK"' EXIT
+
 # 1) init 把不存在的父目录一起建出来
 REPO="$WORK/brand-new/nested"
 LEDGER="$REPO/repo.tritj"
@@ -45,8 +101,6 @@ if out="$("$BIN" init "$REPO" 2>&1)"; then
   fail "重复 init 竟然成功：$out"
 fi
 expect "已存在" "$out" "重复 init 被拒绝"
-
-run() { "$BIN" "$@" -f "$LEDGER" 2>&1 || fail "命令失败：$BIN $*"; }
 
 # 3) 基线口径：账本根节点建库即 +1（既有代码视为基线），不是 0
 out="$(run status)"
