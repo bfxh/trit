@@ -9,6 +9,8 @@
 //! 2. [`audit`]：当前锁文件 vs 基线清单 → 三值 findings。裁决协议：
 //!    - 新增依赖 → **`-1`**（新攻击面未审计，与"新代码默认 0/未测即不可信"同构）；
 //!    - 已锁定包 checksum 变化 → **`-1`**（投毒信号，Dispositive）；
+//!    - 已锁定包 source 变化 → **`-1`**（同名同版本换了来源 = dependency
+//!      confusion 的正身：解析出的产物不是同一个东西）；
 //!    - 依赖消失 → `+1`（攻击面缩减的机械事实——这是审计结论，不是扫描器洗白）；
 //!    - 无变化 → 无 finding（管线层 Clean）；
 //! 3. [`fingerprint`]：对 Cargo.toml 声明文件做 SHA-256 指纹——上次审计以来的
@@ -28,6 +30,10 @@ use crate::trit::Trit;
 pub struct Pin {
     pub name: String,
     pub version: String,
+    /// 来源：`registry+...` / `git+...?rev=..#..`；workspace/path 成员为 None。
+    /// 坐标身份必须有它——同名同版本从内网名与从 crates.io 解析是两件事
+    /// （dependency confusion 的正身），见 [`crate::coords::CoordKey`]。
+    pub source: Option<String>,
     /// registry 来源的包有 checksum；path/git/workspace 成员为 None。
     pub checksum: Option<String>,
 }
@@ -39,6 +45,9 @@ pub enum SupplyKind {
     Added,
     /// (name, version) 相同但 checksum 变了——投毒信号。
     ChecksumChanged,
+    /// (name, version) 相同但来源变了——dependency confusion 的正身
+    /// （同名同版本从 crates.io 换到内网名，或反之：产物不是同一个东西）。
+    SourceChanged,
     /// 基线里有、当前锁文件没有——攻击面缩减。
     Removed,
 }
@@ -49,6 +58,7 @@ impl SupplyKind {
         match self {
             SupplyKind::Added => Trit::Vulnerable,
             SupplyKind::ChecksumChanged => Trit::Vulnerable,
+            SupplyKind::SourceChanged => Trit::Vulnerable,
             SupplyKind::Removed => Trit::Hardened,
         }
     }
@@ -72,6 +82,7 @@ pub fn parse_lock(text: &str) -> Vec<Pin> {
     let mut in_pkg = false;
     let mut name = String::new();
     let mut version = String::new();
+    let mut source: Option<String> = None;
     let mut checksum: Option<String> = None;
     for raw in text.lines() {
         let line = raw.trim();
@@ -84,12 +95,14 @@ pub fn parse_lock(text: &str) -> Vec<Pin> {
                 pins.push(Pin {
                     name: std::mem::take(&mut name),
                     version: std::mem::take(&mut version),
+                    source: source.take(),
                     checksum: checksum.take(),
                 });
             }
             in_pkg = true;
             name.clear();
             version.clear();
+            source = None;
             checksum = None;
             continue;
         }
@@ -99,12 +112,14 @@ pub fn parse_lock(text: &str) -> Vec<Pin> {
                 pins.push(Pin {
                     name: std::mem::take(&mut name),
                     version: std::mem::take(&mut version),
+                    source: source.take(),
                     checksum: checksum.take(),
                 });
             }
             in_pkg = false;
             name.clear();
             version.clear();
+            source = None;
             checksum = None;
             continue;
         }
@@ -119,6 +134,10 @@ pub fn parse_lock(text: &str) -> Vec<Pin> {
             if let Some(v) = strip_toml_str(rest) {
                 version = v;
             }
+        } else if let Some(rest) = line.strip_prefix("source") {
+            if let Some(v) = strip_toml_str(rest) {
+                source = Some(v);
+            }
         } else if let Some(rest) = line.strip_prefix("checksum") {
             if let Some(v) = strip_toml_str(rest) {
                 checksum = Some(v);
@@ -129,6 +148,7 @@ pub fn parse_lock(text: &str) -> Vec<Pin> {
         pins.push(Pin {
             name,
             version,
+            source,
             checksum,
         });
     }
@@ -168,6 +188,14 @@ pub fn audit(lock: &[Pin], baseline: &[Pin]) -> Vec<SupplyFinding> {
                 verdict: SupplyKind::Added.verdict(),
             }),
             Some(prev) => {
+                if prev.source != cur.source {
+                    out.push(SupplyFinding {
+                        name: k.0.clone(),
+                        version: k.1.clone(),
+                        kind: SupplyKind::SourceChanged,
+                        verdict: SupplyKind::SourceChanged.verdict(),
+                    });
+                }
                 if prev.checksum != cur.checksum {
                     out.push(SupplyFinding {
                         name: k.0.clone(),
@@ -199,21 +227,26 @@ pub fn audit(lock: &[Pin], baseline: &[Pin]) -> Vec<SupplyFinding> {
     out
 }
 
-/// 基线清单编码（TSV，`#` 注释头）。checksum 缺失时第三列为空。
+/// 基线清单编码（TSV，`#` 注释头）。缺列以空串占位。
+/// 列序 `name\tversion\tchecksum\tsource`（source 是 v2 追加列，旧基线缺列照读）。
 pub fn encode_baseline(pins: &[Pin]) -> String {
-    let mut s = String::from("# trit-immune supply baseline v1\n# name\\tversion\\tchecksum\n");
+    let mut s =
+        String::from("# trit-immune supply baseline v2\n# name\\tversion\\tchecksum\\tsource\n");
     for p in pins {
         s.push_str(&p.name);
         s.push('\t');
         s.push_str(&p.version);
         s.push('\t');
         s.push_str(p.checksum.as_deref().unwrap_or(""));
+        s.push('\t');
+        s.push_str(p.source.as_deref().unwrap_or(""));
         s.push('\n');
     }
     s
 }
 
-/// 解析基线清单（[`encode_baseline`] 的逆，宽容：空行/注释跳过，列数不足丢弃）。
+/// 解析基线清单（[`encode_baseline`] 的逆，宽容：空行/注释跳过，列数不足丢弃；
+/// 第三/四列缺省即 None，兼容 v1 三列基线）。
 pub fn parse_baseline(text: &str) -> Vec<Pin> {
     let mut out = Vec::new();
     for line in text.lines() {
@@ -226,12 +259,14 @@ pub fn parse_baseline(text: &str) -> Vec<Pin> {
             continue;
         };
         let checksum = it.next().filter(|c| !c.is_empty()).map(|c| c.to_string());
+        let source = it.next().filter(|c| !c.is_empty()).map(|c| c.to_string());
         if name.is_empty() || version.is_empty() {
             continue;
         }
         out.push(Pin {
             name: name.to_string(),
             version: version.to_string(),
+            source,
             checksum,
         });
     }

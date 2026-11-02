@@ -49,7 +49,8 @@ pub struct PrSnapshot {
     pub layers: Vec<Trit>,
     /// 已通过的测试基准名
     pub baselines: Vec<String>,
-    /// 传播后的有效裁决
+    /// 传播后的有效裁决。`-1` **同样一票否决**（跨仓边/依赖坐标打进来的污染
+    /// 不在 `gate` 的折叠范围内，只看 gate 会 fail-open）
     pub verdict: Trit,
 }
 
@@ -87,6 +88,12 @@ pub fn decide(policy: &MergePolicy, pr: &PrSnapshot) -> Decision {
     }
     if pr.gate == GateDecision::Block {
         return Decision::Block("因果链存在确证漏洞".into());
+    }
+    // 有效裁决（含传播/坐标污染）为 -1 时同样一票否决：
+    // merge_gate 折的是因果链 + 锚定攻击分支，**看不见**跨仓边与依赖坐标打进来的
+    // 污染；只看 gate 会让"库被打穿、本仓因果链干净"的 PR 直接自动合并（fail-open）。
+    if pr.verdict == Trit::Vulnerable {
+        return Decision::Block("有效裁决为 -1（传播或依赖坐标污染）".into());
     }
     for (i, l) in pr.layers.iter().enumerate() {
         match l {
@@ -202,6 +209,22 @@ mod tests {
             decide(&MergePolicy::default(), &pr),
             Decision::Block(_)
         ));
+    }
+
+    #[test]
+    fn propagated_minus_one_vetoes_even_with_allow_gate() {
+        // 因果链干净（gate=Allow）、CI 全绿、开关开，但有效裁决因跨仓/坐标污染为 -1
+        let p = MergePolicy {
+            channel: Channel::Main,
+            auto_merge: true,
+            required_baselines: vec!["perf-baseline".into()],
+        };
+        let mut pr = green();
+        pr.verdict = Trit::Vulnerable;
+        assert!(
+            matches!(decide(&p, &pr), Decision::Block(_)),
+            "污染后的 -1 必须否决，否则自动合并放行被打穿的依赖"
+        );
     }
 
     #[test]
