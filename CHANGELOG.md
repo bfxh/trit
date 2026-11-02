@@ -47,6 +47,47 @@
   三值 vs f32 argmax 0.987118、幅值 4.78→1.25 ⇒ 事后三值化不可用，必须 QAT+STE。
 - **未做**：反向内核、训练循环、清单约束 argmax。交付模型仍缺，等这三件。
 - 夹具不进 git：`D:\KF\trit-data\parts-parity`（22 MB）。
+### Added（无损回退底座 + 依赖脱离体检）
+
+- `scripts/snapshot.py`：不依赖 git 的字节级快照（内容寻址对象库）——`save` / `verify` / `restore` / `list`。
+  回退补回被删、覆盖被改，**默认不删快照后新写的文件**（`--prune` 才删）；写回后逐文件 SHA-256 校验；
+  回退前落 pending 标记，中断后重跑同一条命令即幂等收敛。实测本仓 623 文件 / 5.15 MiB，对象库 6.9 MB。
+- `scripts/deps.py`：把「某个 crate 能不能整块摘出去、缺哪几块」逐条列出来（继承字段 / 内部依赖 /
+  内部 dev / 越界引用 / build.rs），只读、离线、不改文件。本仓实测：31 个 crate **无一可直接摘出**；
+  150 继承字段、54 内部依赖、2 内部 dev（`trit-gpu` / `trit-net` → 不可发布的 `trit-texture`）、
+  **0 越界引用**、0 build.rs；7 个 crate 无内部依赖；17 个不可发布。
+  （更正：早先报的「5 处越界引用」是**误报**——扫描器只看 `..` 前缀、没解析路径，
+  `src/matmul/baseline.rs` 的 `../matmul_f32.wgsl` 其实仍在 `src/` 内。已改为解析后判归属，
+  并把「指向不存在文件」单列为缺失引用。）
+- `scripts/deps.py detach <crate> --to <dir> --verify`：**copy 模式脱离**——把 crate 与传递内部依赖
+  （含 dev 依赖）整块拷到目标目录，实体化 `*.workspace = true`（含点号形式的依赖写法）、
+  把 `workspace = true` 依赖展开成 `{ path = "../<名>", version }`，再用 `cargo metadata --offline` 验一遍。
+  只写目标目录，源仓一个字节不动；实测 `trit-attn` 脱离后 **`cargo check --offline` 5.07s 通过**，
+  `trit-gpu` 连同 `trit-texture` 的 dev 闭包一起脱离也能独立解析。
+- `scripts/vendor.py save/restore/status`：**离线自足开关**——`cargo vendor` 整批拷进 `vendor/` 并插入带标记的
+  `.cargo/config.toml` source replacement，`restore` 按备份还原并删目录；两个方向都用 `cargo metadata --offline` 验。
+  实仓演练：**337.3 MiB**、`cargo check --offline -p trit-attn` 4.87s 通过；restore 后 `git status` 干净。
+- 三者各带 `--self-test`（14 / 22 / 13 条）并进 CI（job `snapshot (self-test)` / `deps plan (self-test)` / `vendor (self-test)`）；
+  变异门登记 30 条自锁（8 + 16 + 6），登记表 **431 → 461**。
+
+### Changed（变异门：三语言口径 + 逐目标 fail-closed + 门自身自测）
+
+- 登记表 **385 → 431 条**、目标 30 → 36：新增 python **39** 条（`module_budget` / `hazard_gate` /
+  `publish_graph` / `pr_hygiene` 的 `--self-test` 面）、bash **7** 条（`cli_smoke.sh` 的断言工具）、
+  门自身 **12** 条（裁决链 / runner 推断 / 空集 / preflight 边界）。
+- `hazard_gate` 自测补两条夹具（**登记了但没写不变量仍要红**、**SAFETY 文档在签名上方且离匹配点超过 8 行**），
+  并把内联测试夹具改名 `inline_cfg.rs`——原名以 `tests.rs` 结尾，`rel.endswith("tests.rs")` 已经把它当测试，
+  边界判定等于空转，改坏也测不出来。
+- `RUNNERS` 三种语言口径：`cargo test` / `<script> --self-test`（python）/ `bash <script> --self-test`；
+  登记表没写 `runner` 时按 pkg 后缀（`.py` / `.sh`）推断，脚本不会再落到 `cargo test` 去跑。
+- fail-closed 改成**逐目标**：多目标一起选中时，0 条登记的目标不能再被别的目标带绿；
+  不带 `--pkg` 且登记表全空同样判红。唯一的松口是 `EXEMPT`，且自证一失效（出现自有 `fn`/自测面）就判红。
+- 修复门的恢复路径：写回用 `newline=""`、恢复按字节。此前 Windows 上默认写回会把整篇 `\n` 翻成 `\r\n`，
+  `bash` 见到 `\r` 直接语法错 ⇒ "抓住"被误判成崩溃、工作树也被门改坏。
+- 新增 `scripts/mutation_check.py --self-test`（**36** 条检查，毫秒级）与 CI job `mutation gate (self-test)`；
+  门的判定链（编译红≠抓住、崩溃≠断言、空集≠证据）从此有人盯。
+- CI collect 收集 `scripts/*.sh` 与 `crates/*/scripts/*.sh`；字符类必须含 `-`，否则 `crates/trit-immune/...` 一条都收不到。
+
 ### Fixed（`trit-re`：GOT 基址按寄存器跟踪——`get_pc_thunk.ax` 等不再漏检）
 
 - 此前只认 `call __x86.get_pc_thunk.bx; add $imm,%ebx`；PIE 构建里 GCC 会按函数挑寄存器

@@ -1,17 +1,26 @@
 #!/usr/bin/env python3
 """变异门：对关键规则做单点文本变异，跑对应回归；测试必须变红。
 
-用法：python scripts/mutation_check.py [--pkg <crate>]...
-每个变异都会在 finally 里恢复原文件；退出码 1 表示有 mutant 存活（测试没抓住）。
-`--pkg` 可重复，只跑这些 crate 的变异（PR 门用改动过的 crate）。
+用法：python scripts/mutation_check.py [--pkg <目标>]...
+目标 = crate 名，或带自测面的脚本路径（`scripts/*.py`、`crates/*/scripts/*.sh`）。
+每个变异都会在 finally 里**按字节**恢复原文件；退出码 1 表示有 mutant 存活。
+
+语言口径见 RUNNERS：
+  cargo  —— `cargo test -p <crate> <测试名> --locked`
+  python —— `<python> <脚本> --self-test`
+  bash   —— `bash <脚本> --self-test`
+登记表里没写 runner 时按 pkg 后缀推断（.py / .sh），避免脚本被当成 crate 去跑 cargo。
 """
 
 from __future__ import annotations
 
+import contextlib
+import io
 import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -3249,6 +3258,563 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    # ---- bash 面：cli_smoke.sh 的断言工具（--self-test 钉正反两侧）----
+    {
+        "name": "smoke: expect 的匹配分支放宽成无条件放行",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "    *\"$1\"*) say \"$3\" ;;",
+        "new": "    *) say \"$3\" ;;",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: expect 判红后不再退出（断言空转）",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "实际输出：%s\\n' \"$3\" \"$1\" \"$2\" >&2; exit 1",
+        "new": "实际输出：%s\\n' \"$3\" \"$1\" \"$2\" >&2; exit 0",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: expect_absent 只在空输出时判脏",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "    *\"$1\"*) printf 'FAIL %s：不该出现",
+        "new": "    \"\") printf 'FAIL %s：不该出现",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: fail 打印了却没让脚本失败",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "fail() { printf 'FAIL %s\\n' \"$*\" >&2; exit 1; }",
+        "new": "fail() { printf 'FAIL %s\\n' \"$*\" >&2; exit 0; }",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: run 吞掉命令的非零退出",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "run() { \"$BIN\" \"$@\" -f \"$LEDGER\" 2>&1 || fail \"命令失败：$BIN $*\"; }",
+        "new": "run() { \"$BIN\" \"$@\" -f \"$LEDGER\" 2>&1; }",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: expect 比错了变量（拿标签当输出比对）",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "expect() {\n  case \"$2\" in",
+        "new": "expect() {\n  case \"$3\" in",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    {
+        "name": "smoke: expect_absent 拿 needle 自己比对（干净输出误判）",
+        "file": "crates/trit-immune/scripts/cli_smoke.sh",
+        "old": "expect_absent() {\n  case \"$2\" in",
+        "new": "expect_absent() {\n  case \"$1\" in",
+        "pkg": "crates/trit-immune/scripts/cli_smoke.sh",
+        "filter": "",
+        "runner": "bash",
+    },
+    # ---- 门自身：裁决链（--self-test 钉住；这些判定都真被改坏过）----
+    {
+        "name": "gate: 编译/语法红不再单列（假杀当抓住）",
+        "file": "scripts/mutation_check.py",
+        "old": "    if \"could not compile\" in diag or any(tok in diag for tok in syntax.split(\"|\")):",
+        "new": "    if False:",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: 崩溃红当断言（CRASH-KILL 归零）",
+        "file": "scripts/mutation_check.py",
+        "old": "            return \"crash\", hint",
+        "new": "            return \"caught\", hint",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: python 裸 traceback 不再算崩溃",
+        "file": "scripts/mutation_check.py",
+        "old": "        ) or (\n            runner == \"python\"\n            and \"Traceback (most recent call last)\" in out\n            and \"AssertionError\" not in out\n        )",
+        "new": "        ) or False",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: bash 语法红只认英文签名",
+        "file": "scripts/mutation_check.py",
+        "old": "    \"bash\": {\"cmd\": \"bash\", \"syntax\": \"syntax error|语法错误\"},",
+        "new": "    \"bash\": {\"cmd\": \"bash\", \"syntax\": \"syntax error\"},",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: .sh 目标回落到 cargo",
+        "file": "scripts/mutation_check.py",
+        "old": "    if pkg.endswith(\".sh\"):\n        return \"bash\"",
+        "new": "    if pkg.endswith(\".sh\"):\n        return \"cargo\"",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: 空集不再判红（绿=没东西可杀）",
+        "file": "scripts/mutation_check.py",
+        "old": "            print(f\"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。\")\n        return 1",
+        "new": "            print(f\"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。\")\n        return 0",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: 不点名失败的测试（抓住说不出是谁）",
+        "file": "scripts/mutation_check.py",
+        "old": "    tests = sorted({m.group(1) for m in re.finditer(r\"^---- (\\S+) stdout ----\", out, re.M)})",
+        "new": "    tests = []",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: 忽略条目显式 runner",
+        "file": "scripts/mutation_check.py",
+        "old": "    explicit = mutant.get(\"runner\")\n    if explicit:\n        return explicit",
+        "new": "    explicit = mutant.get(\"runner\")\n    if False:\n        return explicit",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: preflight 不按语言分判自测边界",
+        "file": "scripts/mutation_check.py",
+        "old": "        if runner in (\"python\", \"bash\"):\n            marker = selftest_marker(runner)",
+        "new": "        if False:\n            marker = selftest_marker(runner)",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: bash 自测面识别失效（豁免永不过期）",
+        "file": "scripts/mutation_check.py",
+        "old": "        return selftest_marker(\"bash\" if pkg.endswith(\".sh\") else \"python\") in text",
+        "new": "        return selftest_marker(\"python\") in text",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: 逐目标 0 条不判红（被别的目标带绿）",
+        "file": "scripts/mutation_check.py",
+        "old": "    if unexplained or stale:\n        scope = ",
+        "new": "    if False:\n        scope = ",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: 全仓登记为空也放行",
+        "file": "scripts/mutation_check.py",
+        "old": "            print(\"NO MUTANTS REGISTERED：（全仓）MUTANTS 是空的 ⇒ 判红。\")\n            return 1",
+        "new": "            print(\"NO MUTANTS REGISTERED：（全仓）MUTANTS 是空的 ⇒ 判红。\")\n            return 0",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    # ---- hazard_gate 判定面 ----
+    {
+        "name": "hazard: 不剥字符串/char 字面量（needle 自指复活）",
+        "file": "scripts/hazard_gate.py",
+        "old": "        joined = scrub(\"\\n\".join(original_lines) + \"\\n\")",
+        "new": "        joined = \"\\n\".join(original_lines) + \"\\n\"",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: 内联测试边界失效（测试演练当产品代码）",
+        "file": "scripts/hazard_gate.py",
+        "old": "        if \"#[cfg(test)]\" in lines[index]:",
+        "new": "        if False:",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: Relaxed 规则匹配错枚举",
+        "file": "scripts/hazard_gate.py",
+        "old": "        \"pattern\": r\"Ordering::Relaxed\",",
+        "new": "        \"pattern\": r\"Ordering::SeqCst\",",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: 忽略登记表（已登记的文件也报红）",
+        "file": "scripts/hazard_gate.py",
+        "old": "            allow = (allow_overrides or {}).get(rule[\"id\"]) or rule[\"allow\"]",
+        "new": "            allow = {}",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: 报行号偏一行",
+        "file": "scripts/hazard_gate.py",
+        "old": "                    \"line\": line_no + 1,",
+        "new": "                    \"line\": line_no + 2,",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: 登记了但没写不变量也放行",
+        "file": "scripts/hazard_gate.py",
+        "old": "                        entry[\"hint\"] = (\n                            \"已登记但匹配点（及其所在 unsafe fn 签名）向上没有\"\n                            \" SAFETY/# Safety 不变量\"\n                        )\n                        findings.append(entry)",
+        "new": "                        entry[\"hint\"] = (\n                            \"已登记但匹配点（及其所在 unsafe fn 签名）向上没有\"\n                            \" SAFETY/# Safety 不变量\"\n                        )\n                        allow_hits.append(entry)",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: SAFETY 检索窗口缩到 0 行",
+        "file": "scripts/hazard_gate.py",
+        "old": "SAFETY_WINDOW = 8\n\n\ndef scrub",
+        "new": "SAFETY_WINDOW = 0\n\n\ndef scrub",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    # ---- module_budget 台账面 ----
+    {
+        "name": "budget: 无视台账（已登记的债务也算新增超限）",
+        "file": "scripts/module_budget.py",
+        "old": "        if lines > LIMIT and file not in baseline:",
+        "new": "        if lines > LIMIT:",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: 台账里的文件变胖不判红",
+        "file": "scripts/module_budget.py",
+        "old": "        if lines > recorded:",
+        "new": "        if False:",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: 已删除文件留在台账里不判红",
+        "file": "scripts/module_budget.py",
+        "old": "        if file not in sizes:",
+        "new": "        if False:",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: --update 不再拒绝增长",
+        "file": "scripts/module_budget.py",
+        "old": "        if new is not None and new > old",
+        "new": "        if False",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: --update 把预算内文件也写进台账",
+        "file": "scripts/module_budget.py",
+        "old": "def save_baseline(path: Path, sizes: dict[str, int]) -> None:\n    over = {f: n for f, n in sizes.items() if n > LIMIT}",
+        "new": "def save_baseline(path: Path, sizes: dict[str, int]) -> None:\n    over = {f: n for f, n in sizes.items() if n >= LIMIT}",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    # ---- 快照底座（不依赖 git 的字节级回退）----
+    {
+        "name": "snapshot: 改动文件检不出来",
+        "file": "scripts/snapshot.py",
+        "old": "        if sha256_file(root / rel) != wanted[rel][\"sha\"]:",
+        "new": "        if False:",
+        "pkg": "scripts/snapshot.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "snapshot: 被删文件不补回",
+        "file": "scripts/snapshot.py",
+        "old": "    missing = sorted(set(wanted) - current_set)\n    extra = sorted(current_set - set(wanted))",
+        "new": "    missing = []\n    extra = sorted(current_set - set(wanted))",
+        "pkg": "scripts/snapshot.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "snapshot: 快照后新增的文件看不见",
+        "file": "scripts/snapshot.py",
+        "old": "    missing = sorted(set(wanted) - current_set)\n    extra = sorted(current_set - set(wanted))",
+        "new": "    missing = sorted(set(wanted) - current_set)\n    extra = []",
+        "pkg": "scripts/snapshot.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "snapshot: dry-run 也真写文件",
+        "file": "scripts/snapshot.py",
+        "old": "    if dry_run:\n        print(\"dry-run：未改动任何文件\")",
+        "new": "    if False:\n        print(\"dry-run：未改动任何文件\")",
+        "pkg": "scripts/snapshot.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "snapshot: --prune 不删新增文件",
+        "file": "scripts/snapshot.py",
+        "old": "    if prune:\n        for rel in plan[\"extra\"]:",
+        "new": "    if False:\n        for rel in plan[\"extra\"]:",
+        "pkg": "scripts/snapshot.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "snapshot: verify 永远报一致",
+        "file": "scripts/snapshot.py",
+        "old": "    if not any(plan.values()):\n        print(f\"verify {manifest['id']}：工作树与快照逐字节一致\")",
+        "new": "    if True:\n        print(f\"verify {manifest['id']}：工作树与快照逐字节一致\")",
+        "pkg": "scripts/snapshot.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "snapshot: 写回后不校验（坏对象静默落盘）",
+        "file": "scripts/snapshot.py",
+        "old": "        if sha256_file(target) != manifest[\"files\"][rel][\"sha\"]:",
+        "new": "        if False:",
+        "pkg": "scripts/snapshot.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "snapshot: 把 target/ 也存进快照",
+        "file": "scripts/snapshot.py",
+        "old": "EXCLUDE_DIRS = {\".git\", \"target\", \".trit\", \"node_modules\", \"__pycache__\", \".venv\"}",
+        "new": "EXCLUDE_DIRS = {\".git\", \".trit\", \"node_modules\", \"__pycache__\", \".venv\"}",
+        "pkg": "scripts/snapshot.py",
+        "filter": "",
+        "runner": "python",
+    },
+    # ---- 依赖脱离体检（deps.py）----
+    {
+        "name": "deps: 继承字段识别失效（摘出去才会炸）",
+        "file": "scripts/deps.py",
+        "old": "        if isinstance(v, dict) and v.get(\"workspace\") is True\n    ]",
+        "new": "        if False\n    ]",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: workspace 依赖里的内部 crate 被判成外部",
+        "file": "scripts/deps.py",
+        "old": "            kind = \"internal\" if \"path\" in base else \"external\"",
+        "new": "            kind = \"external\"",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 直接 path 依赖不算内部",
+        "file": "scripts/deps.py",
+        "old": "    if isinstance(spec, dict) and \"path\" in spec:",
+        "new": "    if False:",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 越界引用不再单列（../ 指到 crate 外也放行）",
+        "file": "scripts/deps.py",
+        "old": "                if not inside:",
+        "new": "                if False:",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 不解析相对路径（crate 内的 ../ 被误报越界）",
+        "file": "scripts/deps.py",
+        "old": "                target = (path.parent / ref).resolve()",
+        "new": "                target = path.parent / ref",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 指向不存在的文件不报",
+        "file": "scripts/deps.py",
+        "old": "                elif not target.is_file():",
+        "new": "                elif False:",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 不看 dev-dependencies",
+        "file": "scripts/deps.py",
+        "old": "DEP_SECTIONS = (\"dependencies\", \"dev-dependencies\", \"build-dependencies\")",
+        "new": "DEP_SECTIONS = (\"dependencies\", \"build-dependencies\")",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: dev 依赖被当成普通内部依赖",
+        "file": "scripts/deps.py",
+        "old": "                kind = \"内部 dev\" if section == \"dev-dependencies\" else \"内部依赖\"",
+        "new": "                kind = \"内部依赖\"",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 不可发布的依赖没被标出",
+        "file": "scripts/deps.py",
+        "old": "        publish = package.get(\"publish\", True)",
+        "new": "        publish = True",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: build.rs 不体检",
+        "file": "scripts/deps.py",
+        "old": "    if (root / crate.rel / \"build.rs\").is_file():",
+        "new": "    if False:",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 内部依赖不进图（graph 会空）",
+        "file": "scripts/deps.py",
+        "old": "                if section != \"dev-dependencies\":\n                    internal.append(name)",
+        "new": "                if section != \"dev-dependencies\":\n                    pass",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    # ---- deps.py 的 copy 模式脱离 ----
+    {
+        "name": "deps: 点号形式的 workspace 依赖不展开",
+        "file": "scripts/deps.py",
+        "old": "            if section_tail in DEP_SECTIONS:",
+        "new": "            if False:",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 内部依赖的 path 不改指新布局",
+        "file": "scripts/deps.py",
+        "old": "    if \"path\" in merged and name in closure:\n        merged[\"path\"] = f\"../{name}\"",
+        "new": "    if False:\n        merged[\"path\"] = f\"../{name}\"",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 写回时没用重写后的清单",
+        "file": "scripts/deps.py",
+        "old": "        manifest.write_text(new_text, encoding=\"utf-8\", newline=\"\")",
+        "new": "        manifest.write_text(text, encoding=\"utf-8\", newline=\"\")",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: 只带走直接依赖（传递依赖漏拷）",
+        "file": "scripts/deps.py",
+        "old": "        for dep in plan[\"internal_deps\"]:\n            stack.append(dep)",
+        "new": "        for dep in plan[\"internal_deps\"]:\n            pass",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "deps: dev 传递依赖漏拷",
+        "file": "scripts/deps.py",
+        "old": "            if blocker[\"kind\"] == \"内部 dev\":\n                stack.append(blocker[\"detail\"].split(\"（\", 1)[0])",
+        "new": "            if False:\n                stack.append(blocker[\"detail\"].split(\"（\", 1)[0])",
+        "pkg": "scripts/deps.py",
+        "filter": "",
+        "runner": "python",
+    },
+    # ---- 离线自足（vendor.py）----
+    {
+        "name": "vendor: 重复 save 会重复插段",
+        "file": "scripts/vendor.py",
+        "old": "    if START in text and END in text:",
+        "new": "    if False:",
+        "pkg": "scripts/vendor.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "vendor: 还原后多留一行空行",
+        "file": "scripts/vendor.py",
+        "old": "    if head.endswith(\"\\n\\n\"):  # 插段时多垫的一行\n        head = head[:-1]",
+        "new": "    if False:\n        head = head[:-1]",
+        "pkg": "scripts/vendor.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "vendor: 无尾换行的配置被吞行",
+        "file": "scripts/vendor.py",
+        "old": "    if text and not text.endswith(\"\\n\"):\n        text += \"\\n\"",
+        "new": "    if False:\n        text += \"\\n\"",
+        "pkg": "scripts/vendor.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "vendor: restore 不优先用备份",
+        "file": "scripts/vendor.py",
+        "old": "    if backup.exists():",
+        "new": "    if False:",
+        "pkg": "scripts/vendor.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "vendor: 第二次 save 覆盖真原件",
+        "file": "scripts/vendor.py",
+        "old": "    if config.exists() and not backup.exists():",
+        "new": "    if config.exists():",
+        "pkg": "scripts/vendor.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "vendor: source replacement 写成错的名字",
+        "file": "scripts/vendor.py",
+        "old": "        'replace-with = \"vendored-sources\"\\n'",
+        "new": "        'replace-with = \"vendor\"\\n'",
+        "pkg": "scripts/vendor.py",
+        "filter": "",
+        "runner": "python",
+    },
 
     {
         "name": "parts: 深度头丢掉外置 out_b（学不了全局 DC）",
@@ -3295,18 +3861,27 @@ def ran_any(output: str) -> bool:
 # 门脚本自测面的标记串只能拼出来：本文件自己也是被检测对象，
 # 写死字面量会让 `has_own_logic("scripts/mutation_check.py")` 把自己判成"有自测面"。
 SELFTEST_MARKER = "def self_" + "test("
+# bash 侧同理：标记串拼出来，别让自己的字面量把检测结果带偏。
+SELFTEST_MARKER_SH = "self_" + "test() {"
 
 RUNNERS: dict[str, dict[str, str]] = {
     # cargo：跑 crate 里被点名的那个测试
     "cargo": {"cmd": "cargo", "syntax": "error[E"},
     # python：门脚本自带的 --self-test（正例 + 逐项反证），失败时打印 `FAIL <例名>`
     "python": {"cmd": "python", "syntax": "SyntaxError"},
+    # bash：冒烟/门脚本自带的 --self-test，失败时同样打印 `FAIL <例名>`
+    # 语法判红的签名分语言环境：中文 Windows 的 bash 打「语法错误」而不是 "syntax error"
+    "bash": {"cmd": "bash", "syntax": "syntax error|语法错误"},
 }
 
 
+def selftest_marker(runner: str) -> str:
+    return SELFTEST_MARKER_SH if runner == "bash" else SELFTEST_MARKER
+
+
 def run_tests(pkg: str, test_filter: str, runner: str = "cargo") -> subprocess.CompletedProcess[str]:
-    if runner == "python":
-        argv = [sys.executable, pkg, "--self-test"]
+    if runner in ("python", "bash"):
+        argv = [sys.executable if runner == "python" else "bash", pkg, "--self-test"]
     else:
         argv = ["cargo", "test", "-q", "-p", pkg, test_filter, "--locked"]
     return subprocess.run(
@@ -3324,8 +3899,11 @@ def run_tests(pkg: str, test_filter: str, runner: str = "cargo") -> subprocess.C
 # 复核在 has_own_logic()：一旦该包出现了 fn/impl，豁免自动失效并判红（防止理由烂掉）。
 EXEMPT: dict[str, str] = {
     "sansheng": "三值工具箱的伞包：lib.rs 只有 pub use 转发与文档 doctest，无自有规则",
-    "scripts/mutation_check.py": "尚未提供 --self-test（钉不住任何东西）；补上自测面后本豁免自动过期 ⇒ 该补条目",
     "scripts/gen_docs_charts.py": "出图脚本，无 --self-test 且非承重判定；不参与发布门禁",
+    # 这两个是薄壳（5 / 19 行），没有可钉的判定；一旦有人给它们补 self_test()，豁免自动过期。
+    "scripts/bench.sh": "基准薄壳（5 行）：只是把参数转给 cargo bench，无可变异判定",
+    "scripts/publish.sh": "发布薄壳（19 行）：版本校验后转给 cargo publish，无可变异判定",
+    "crates/trit-immune/scripts/sync-upstream.sh": "上游同步脚本：一键同步本就不成立（补丁表达不了删除），无 --self-test 面",
 }
 
 FN_OR_IMPL = re.compile(
@@ -3333,23 +3911,24 @@ FN_OR_IMPL = re.compile(
 )
 
 
-def has_own_logic(pkg: str) -> bool:
+def has_own_logic(pkg: str, *, root: pathlib.Path = ROOT) -> bool:
     """豁免是否已过期。
 
     - python 门脚本（`scripts/*.py`）：**有 `--self-test` 面却不登记变异** ⇒ 过期（该补条目）；
       没有自测面才允许豁免（钉不住任何东西），等它补上自测再逼登记。
+    - bash 脚本（`*.sh`）：同上口径，认 `self_test() {`。
     - rust crate：出现了自有 `fn`/`impl` ⇒ 过期（纯转发伞包才允许豁免）。
     """
-    if pkg.endswith(".py"):
-        script = ROOT / pkg
+    if pkg.endswith(".py") or pkg.endswith(".sh"):
+        script = root / pkg
         if not script.is_file():
             return False
         text = script.read_text(encoding="utf-8")
-        return SELFTEST_MARKER in text
-    root = ROOT / "crates" / pkg / "src"
-    if not root.is_dir():
+        return selftest_marker("bash" if pkg.endswith(".sh") else "python") in text
+    src = root / "crates" / pkg / "src"
+    if not src.is_dir():
         return True
-    for path in sorted(root.rglob("*.rs")):
+    for path in sorted(src.rglob("*.rs")):
         body = "\n".join(
             line
             for line in path.read_text(encoding="utf-8").splitlines()
@@ -3361,7 +3940,16 @@ def has_own_logic(pkg: str) -> bool:
 
 
 def runner_of(mutant: dict) -> str:
-    return mutant.get("runner", "cargo")
+    """条目的 runner 优先；没写就按 pkg 后缀推断，免得脚本被当成 crate 去 `cargo test`。"""
+    explicit = mutant.get("runner")
+    if explicit:
+        return explicit
+    pkg = mutant["pkg"]
+    if pkg.endswith(".py"):
+        return "python"
+    if pkg.endswith(".sh"):
+        return "bash"
+    return "cargo"
 
 
 def select(pkgs: list[str]) -> list[dict]:
@@ -3373,7 +3961,7 @@ def select(pkgs: list[str]) -> list[dict]:
 TEST_MODULE = re.compile(r"#\[cfg\(test\)\]\s*mod\s+\w+")
 
 
-def preflight(mutants: list[dict]) -> list[str]:
+def preflight(mutants: list[dict], *, root: pathlib.Path = ROOT) -> list[str]:
     """跑测试之前先把文件与锚点查一遍：路径写错/锚点漂移要立刻报全，不等到跑一半才崩。
 
     锚点落在 `#[cfg(test)] mod ...` 之后也算错：改测试代码不会改产品行为，
@@ -3385,7 +3973,7 @@ def preflight(mutants: list[dict]) -> list[str]:
         if "\\" in raw:
             problems.append(f"{mutant['name']}: 路径含反斜杠（Linux 打不开）: {raw}")
             continue
-        path = ROOT / raw
+        path = root / raw
         if not path.is_file():
             problems.append(f"{mutant['name']}: 文件不存在: {raw}")
             continue
@@ -3395,9 +3983,11 @@ def preflight(mutants: list[dict]) -> list[str]:
             problems.append(f"{mutant['name']}: 锚点出现 {count} 次（{raw}）")
             continue
         anchor = text.find(mutant["old"])
-        if runner_of(mutant) == "python":
-            at = text.rfind(SELFTEST_MARKER)
-            label = SELFTEST_MARKER
+        runner = runner_of(mutant)
+        if runner in ("python", "bash"):
+            marker = selftest_marker(runner)
+            at = text.rfind(marker)
+            label = marker
         else:
             # cargo 侧仍按原口径：只认 `#[cfg(test)] mod xxx`，
             # 放宽成裸 `#[cfg(test)]` 会把 trit-build 的 4 条正常条目误判成"落在测试里"。
@@ -3409,33 +3999,118 @@ def preflight(mutants: list[dict]) -> list[str]:
     return problems
 
 
+def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
+    """把一次变异运行的结果判成四类：caught / false_kill / crash / unnamed。
+
+    rc==0 的"存活"由调用方先判，不在这里。
+    返回 (kind, detail)：caught 的 detail 是点名，crash 的 detail 是崩溃提示。
+    这一层是门最容易被改坏的地方（编译红当抓住、把崩溃当断言各踩过一次），
+    所以抽成纯函数，由 `--self-test` 用合成输出逐类钉住。
+    """
+    syntax = RUNNERS[runner]["syntax"]
+    # 只认工具链自己打的诊断：断言行的例名里可能出现 "SyntaxError" 这类字样，
+    # 把断言文本当成编译失败就会把"真抓住"误判成假杀（门自测第一版就这么翻车）。
+    diag = "\n".join(line for line in out.splitlines() if not line.startswith("FAIL "))
+    if "could not compile" in diag or any(tok in diag for tok in syntax.split("|")):
+        # 变异让代码编不过 ⇒ 测试根本没跑，这条"红"不证明任何断言。
+        return "false_kill", ""
+    named = next((line for line in out.splitlines() if "FAILED" in line), None)
+    if runner in ("python", "bash"):
+        # 门脚本自测面的点名方式各不相同，按能点名的优先：
+        #   `FAIL <例名>`（module_budget / publish_graph / bash 冒烟脚本）、
+        #   `SELF-TEST FAIL: <规则>`（hazard_gate）、
+        #   裸 `assert` 抛出的 `AssertionError: <话>`（pr_hygiene）—— 那也是断言。
+        for probe in (
+            lambda: next((l for l in out.splitlines() if l.startswith("FAIL ")), None),
+            lambda: next((l for l in out.splitlines() if "SELF-TEST FAIL" in l), None),
+            lambda: next(
+                (
+                    "断言失败: {} ｜ 位置 {}".format(
+                        l.split("AssertionError", 1)[-1].strip(": ").strip() or "(无消息)",
+                        next(
+                            (
+                                f"{m.group(1).rsplit('/', 1)[-1].rsplit(chr(92), 1)[-1]}:{m.group(2)} in {m.group(3)}"
+                                for m in reversed(
+                                    [
+                                        fr
+                                        for fr in re.finditer(
+                                            r'File "([^"]+)", line (\d+), in (\S+)', out
+                                        )
+                                    ]
+                                )
+                                if "mutation_check" not in m.group(1)
+                            ),
+                            "?",
+                        ),
+                    )
+                    for l in out.splitlines()
+                    if "AssertionError" in l
+                ),
+                None,
+            ),
+        ):
+            if named is None:
+                named = probe()
+        if named is not None and "self-test:" in out:
+            tally = next((l for l in out.splitlines() if "self-test:" in l), "")
+            named = f"{named.strip()} ｜ {tally.strip()}"
+    tests = sorted({m.group(1) for m in re.finditer(r"^---- (\S+) stdout ----", out, re.M)})
+    if named is None and tests:
+        named = " / ".join(tests) + " 断言失败"
+    if named is None:
+        # 没有断言痕迹，只有进程异常退出（Windows 上常见 0xC00000FD 栈溢出、
+        # 0xC0000005 访问违例；Linux 上是 signal: 6/11）。这类"红"只证明
+        # 去掉守卫会炸，不证明有断言钉住它 ⇒ 单列成 CRASH-KILL，不与断言混计。
+        crash = rc < 0 or rc >= 0xC0000000 or bool(
+            re.search(r"overflowed its stack|signal: \d+|exit code: 0xc00000", out)
+        ) or (
+            runner == "python"
+            and "Traceback (most recent call last)" in out
+            and "AssertionError" not in out
+        )
+        if crash:
+            hint = next(
+                (
+                    line.strip()
+                    for line in out.splitlines()
+                    if "overflowed" in line or "exit code" in line or "signal:" in line
+                ),
+                f"rc={rc}",
+            )
+            return "crash", hint
+        return "unnamed", ""
+    return "caught", named.strip()
+
+
 def main(pkgs: list[str]) -> int:
     # Windows 控制台默认可能是 GBK；变异名里有中国字与 Ł，统一按 UTF-8 输出。
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     mutants = select(pkgs)
+    # fail-closed（**逐目标**）：某个目标在登记表里 0 条时，"它绿了"没有任何含义。
+    # 多个目标一起选中时更危险——别的目标有变异可杀，这个目标会被静默跳过
+    # （2026-11-02 的 trit-immune 就是这样在 CI 报 14s 通过的）。
+    # 唯一的松口是 EXEMPT：必须是"纯转发/无判决面"这种**可自证**的理由，自证一失效就判红。
+    counts = {pkg: sum(1 for mutant in MUTANTS if mutant["pkg"] == pkg) for pkg in pkgs}
+    uncovered = [pkg for pkg, n in counts.items() if n == 0]
+    unexplained = [pkg for pkg in uncovered if pkg not in EXEMPT]
+    stale = [pkg for pkg in uncovered if pkg in EXEMPT and has_own_logic(pkg)]
+    if unexplained or stale:
+        scope = ", ".join(unexplained or ["(全仓)"]) if unexplained else ", ".join(stale)
+        print(f"NO MUTANTS REGISTERED：{scope} 在 MUTANTS 里是 0 条 ⇒ 判红。"
+              "补登记（锚点 + 对应测试名），或确认它是纯转发后登记进 EXEMPT 并写理由。")
+        for pkg in stale:
+            print(f"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。")
+        return 1
+    for pkg in uncovered:
+        print(f"EXEMPT（已自证无自有逻辑）: {pkg} —— {EXEMPT[pkg]}")
     if not mutants:
-        # fail-closed：登记表里 0 条时"绿"没有任何含义——别把空集读成证据
-        # （2026-11-02 的 trit-immune 就是这样在 CI 报 14s 通过的）。
-        # 唯一的松口是 EXEMPT：必须是"纯转发伞包"这种**可自证**的理由，且自证一失效就判红。
-        unexplained = [pkg for pkg in pkgs if pkg not in EXEMPT]
-        stale = [pkg for pkg in pkgs if pkg in EXEMPT and has_own_logic(pkg)]
-        if unexplained or stale:
-            scope = ", ".join(unexplained or ["(全仓)"]) if unexplained else ", ".join(stale)
-            print(f"NO MUTANTS REGISTERED：{scope} 在 MUTANTS 里是 0 条 ⇒ 判红。"
-                  "补登记（锚点 + 对应测试名），或确认它是纯转发后登记进 EXEMPT 并写理由。")
-            for pkg in stale:
-                print(f"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。")
+        if not pkgs:
+            print("NO MUTANTS REGISTERED：（全仓）MUTANTS 是空的 ⇒ 判红。")
             return 1
-        for pkg in pkgs:
-            print(f"EXEMPT（已自证无自有逻辑）: {pkg} —— {EXEMPT[pkg]}")
         return 0
     if pkgs:
-        counts = {
-            pkg: sum(1 for mutant in MUTANTS if mutant["pkg"] == pkg)
-            for pkg in sorted(set(pkgs))
-        }
-        detail = ", ".join(f"{pkg}={count}" for pkg, count in counts.items())
+        detail = ", ".join(f"{pkg}={count}" for pkg, count in sorted(counts.items()))
         print(f"只跑所选包（{detail}）：{len(mutants)} 个变异")
     problems = preflight(mutants)
     if problems:
@@ -3460,20 +4135,27 @@ def main(pkgs: list[str]) -> int:
             baseline[key] = True
 
         path = ROOT / mutant["file"]
-        original = path.read_text(encoding="utf-8")
+        original_bytes = path.read_bytes()
+        # 与 preflight 的 read_text 同口径（通用换行）：CRLF 工作树里锚点仍按 \n 匹配
+        original = original_bytes.decode("utf-8").replace("\r\n", "\n")
         count = original.count(mutant["old"])
         if count != 1:
             print(f"BAD MUTANT {mutant['name']}: anchor 出现 {count} 次")
             return 1
 
+        # newline="" 是硬要求：默认写回会把整篇 \n 翻成 \r\n（Windows），
+        # bash/sh 见到 \r 直接语法错，结果被误判成"崩溃"而不是断言——本地与 CI 就分叉了。
         path.write_text(
-            original.replace(mutant["old"], mutant["new"]), encoding="utf-8"
+            original.replace(mutant["old"], mutant["new"]),
+            encoding="utf-8",
+            newline="",
         )
         try:
             result = run_tests(pkg, filt, runner)
         finally:
-            path.write_text(original, encoding="utf-8")
-            assert path.read_text(encoding="utf-8") == original, "恢复失败"
+            # 恢复按字节，保证工作树回到原样（换行风格也不许被门顺手改掉）
+            path.write_bytes(original_bytes)
+            assert path.read_bytes() == original_bytes, "恢复失败"
 
         if result.returncode == 0:
             survived += 1
@@ -3481,81 +4163,20 @@ def main(pkgs: list[str]) -> int:
             continue
         out = result.stdout
         runner = runner_of(mutant)
-        syntax = RUNNERS[runner]["syntax"]
-        if "could not compile" in out or syntax in out:
-            # 变异让代码编不过 ⇒ 测试根本没跑，这条"红"不证明任何断言。
+        kind, detail = classify(out, result.returncode, runner)
+        if kind == "false_kill":
             false_kills.append(mutant["name"])
             print(f"FALSE-KILL {mutant['name']}  [{runner} 编译/语法红：测试没跑，不算锁]")
             continue
-        named = next((line for line in out.splitlines() if "FAILED" in line), None)
-        if runner == "python":
-            # 三种门脚本的自测形态各自点名方式不同，按能点名的优先：
-            #   `FAIL <例名>`（module_budget / publish_graph）、
-            #   `SELF-TEST FAIL: <规则>`（hazard_gate）、
-            #   裸 `assert` 抛出的 `AssertionError: <话>`（pr_hygiene）—— 那也是断言。
-            for probe in (
-                lambda: next((l for l in out.splitlines() if l.startswith("FAIL ")), None),
-                lambda: next((l for l in out.splitlines() if "SELF-TEST FAIL" in l), None),
-                lambda: next(
-                    (
-                        "断言失败: {} ｜ 位置 {}".format(
-                            l.split("AssertionError", 1)[-1].strip(": ").strip() or "(无消息)",
-                            next(
-                                (
-                                    f"{m.group(1).rsplit('/', 1)[-1].rsplit(chr(92), 1)[-1]}:{m.group(2)} in {m.group(3)}"
-                                    for m in reversed(
-                                        [
-                                            fr
-                                            for fr in re.finditer(
-                                                r'File "([^"]+)", line (\d+), in (\S+)', out
-                                            )
-                                        ]
-                                    )
-                                    if "mutation_check" not in m.group(1)
-                                ),
-                                "?",
-                            ),
-                        )
-                        for l in out.splitlines()
-                        if "AssertionError" in l
-                    ),
-                    None,
-                ),
-            ):
-                if named is None:
-                    named = probe()
-            if named is not None and "self-test:" in out:
-                tally = next((l for l in out.splitlines() if "self-test:" in l), "")
-                named = f"{named.strip()} ｜ {tally.strip()}"
-        tests = sorted({m.group(1) for m in re.finditer(r"^---- (\S+) stdout ----", out, re.M)})
-        if named is None and tests:
-            named = " / ".join(tests) + " 断言失败"
-        if named is None:
-            # 没有断言痕迹，只有进程异常退出（Windows 上常见 0xC00000FD 栈溢出、
-            # 0xC0000005 访问违例；Linux 上是 signal: 6/11）。这类"红"只证明
-            # 去掉守卫会炸，不证明有断言钉住它 ⇒ 单列成 CRASH-KILL，不与断言混计。
-            crash = result.returncode < 0 or result.returncode >= 0xC0000000 or bool(
-                re.search(r"overflowed its stack|signal: \d+|exit code: 0xc00000", out)
-            ) or (
-                runner == "python"
-                and "Traceback (most recent call last)" in out
-                and "AssertionError" not in out
-            )
-            if crash:
-                crash_kills.append(mutant["name"])
-                hint = next(
-                    (
-                        line.strip()
-                        for line in out.splitlines()
-                        if "overflowed" in line or "exit code" in line or "signal:" in line
-                    ),
-                    f"rc={result.returncode}",
-                )
-                print(f"CRASH-KILL {mutant['name']}  [崩溃红 {hex(result.returncode & 0xFFFFFFFF)}：{hint[:100]}]")
-                continue
+        if kind == "crash":
+            crash_kills.append(mutant["name"])
+            print(f"CRASH-KILL {mutant['name']}  [崩溃红 {hex(result.returncode & 0xFFFFFFFF)}：{detail[:100]}]")
+            continue
+        if kind == "unnamed":
             unnamed.append(mutant["name"])
-            named = "(未点名测试)"
-        print(f"caught    {mutant['name']}  [{named.strip()}]")
+            print(f"caught    {mutant['name']}  [(未点名测试)]")
+            continue
+        print(f"caught    {mutant['name']}  [{detail}]")
 
     killed = len(mutants) - survived - len(false_kills) - len(crash_kills)
     print(
@@ -3590,5 +4211,126 @@ def parse_args(argv: list[str]) -> list[str]:
     return pkgs
 
 
+def self_test() -> int:
+    """门自身判定链的自测：合成输出逐类判定 + 临时夹具验 preflight/has_own_logic 边界。
+
+    这不是"再跑一遍变异"：不碰 cargo，毫秒级，专钉门里最容易改坏的那几行
+    （编译红当抓住、崩溃当断言、脚本落到 cargo、空集放行，这四类都真踩过）。
+    失败打印 `FAIL <例名>`（与门脚本族同口径），全过打印 `self-test: N/N passed`。
+    """
+    total = 0
+    failures: list[str] = []
+
+    def check(label: str, actual, expected) -> None:
+        nonlocal total
+        total += 1
+        if actual != expected:
+            failures.append(f"FAIL {label}: 期望 {expected!r}，实际 {actual!r}")
+
+    # 一、四类裁决：编译红不算锁、崩溃不算断言
+    check("cargo 编译红→false_kill", classify("error[E0308]: mismatched types", 1, "cargo")[0], "false_kill")
+    check("cargo 栈溢出→crash", classify("thread 'x' has overflowed its stack", 134, "cargo")[0], "crash")
+    check("cargo 0xc00000fd→crash", classify("boom", 0xC00000FD, "cargo")[0], "crash")
+    check(
+        "cargo 点名测试→caught",
+        classify("---- t1 stdout ----\nthread 't1' panicked", 101, "cargo"),
+        ("caught", "t1 断言失败"),
+    )
+    check("cargo 无痕迹→unnamed", classify("nothing useful", 1, "cargo")[0], "unnamed")
+    check("python SyntaxError→false_kill", classify("SyntaxError: invalid syntax", 1, "python")[0], "false_kill")
+    check(
+        "python FAIL 点名→caught",
+        # 真脚本里 FAIL 行与 `self-test:` 计数行是两行，门会把计数拼在后面
+        classify("FAIL red: stale baseline\nself-test: 9/10 passed", 1, "python"),
+        ("caught", "FAIL red: stale baseline ｜ self-test: 9/10 passed"),
+    )
+    check("python 裸 traceback→crash", classify("Traceback (most recent call last):\nKeyError: 1", 1, "python")[0], "crash")
+    check("python AssertionError→caught", classify("AssertionError: 断言失败: x", 1, "python")[0], "caught")
+    check(
+        "断言文本里的 SyntaxError 不算编译红",
+        classify("FAIL python SyntaxError→false_kill: 期望 a，实际 b\nself-test: 26/27 passed", 1, "python")[0],
+        "caught",
+    )
+    check("bash 中文语法红→false_kill", classify("行 13: 未预期的记号 附近有语法错误", 2, "bash")[0], "false_kill")
+    check(
+        "bash FAIL 点名→caught",
+        classify("FAIL 自测：run 失败后没有中止脚本", 1, "bash"),
+        ("caught", "FAIL 自测：run 失败后没有中止脚本"),
+    )
+
+    # 二、runner 推断：脚本绝不能落到 cargo 去跑
+    check("runner .py→python", runner_of({"pkg": "scripts/x.py"}), "python")
+    check("runner .sh→bash", runner_of({"pkg": "crates/a/scripts/x.sh"}), "bash")
+    check("runner crate→cargo", runner_of({"pkg": "trit-core"}), "cargo")
+    check("runner 显式优先", runner_of({"pkg": "scripts/x.py", "runner": "cargo"}), "cargo")
+
+    # 三、空集 fail-closed：没有登记就"绿"没有含义（真跑 main，输出吞掉免得像报错）
+    def rc_of(targets: list[str]) -> object:
+        # 判定链被改坏时 main 可能直接抛异常（例如 EXEMPT[pkg] KeyError）；
+        # 把异常也变成可比较的返回值，这样它会以断言失败被点名，而不是被算成"崩溃红"。
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                return main(targets)
+        except Exception as exc:
+            return f"异常 {type(exc).__name__}"
+
+    empty_rc = rc_of(["no-such-target-xyz"])
+    exempt_rc = rc_of(["sansheng"])
+    # 多目标一起选中时，0 条的那个不能被别的目标"带绿"
+    partial_rc = rc_of(["scripts/gen_docs_charts.py", "no-such-target-xyz"])
+    covered_rc = rc_of(["sansheng", "scripts/gen_docs_charts.py"])
+    saved = MUTANTS[:]
+    try:
+        MUTANTS.clear()
+        whole_empty_rc = rc_of([])
+    finally:
+        MUTANTS.extend(saved)
+    check("空集未豁免→判红", empty_rc, 1)
+    check("空集但自证豁免→放行", exempt_rc, 0)
+    check("多目标里 0 条的那个→判红", partial_rc, 1)
+    check("全部是自证豁免→放行", covered_rc, 0)
+    check("全仓登记为空→判红", whole_empty_rc, 1)
+    check("选中过滤", [m["pkg"] for m in select(["sansheng"])], [])
+    check("空选择=全表", len(select([])), len(MUTANTS))
+    # 豁免项自己也要可复核：路径写错时 has_own_logic 会返回 False，豁免会静静地套在空气上
+    for pkg in EXEMPT:
+        exists = pkg.endswith((".py", ".sh")) and (ROOT / pkg).is_file()
+        check(f"EXEMPT 路径存在：{pkg}", exists or (ROOT / "crates" / pkg).is_dir(), True)
+
+    # 四、豁免过期与 preflight 边界（按语言分判），用临时夹具，不碰真仓
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "crates" / "umbrella" / "src").mkdir(parents=True)
+        (root / "crates" / "umbrella" / "src" / "lib.rs").write_text("pub use trit_core::*;\n", encoding="utf-8")
+        (root / "crates" / "real" / "src").mkdir(parents=True)
+        (root / "crates" / "real" / "src" / "lib.rs").write_text("pub fn f() -> u8 {\n    1\n}\n", encoding="utf-8")
+        (root / "scripts").mkdir()
+        (root / "scripts" / "plain.py").write_text("print(1)\n", encoding="utf-8")
+        (root / "scripts" / "gate.py").write_text("x = 1\ndef self_test():\n    return 0\ny = 2\n", encoding="utf-8")
+        (root / "scripts" / "gate.sh").write_text("a=1\nself_test() {\n  :\n}\nb=2\n", encoding="utf-8")
+        check("伞包（只 pub use）→不过期", has_own_logic("umbrella", root=root), False)
+        check("自有 fn→过期", has_own_logic("real", root=root), True)
+        check("脚本无自测面→不过期", has_own_logic("scripts/plain.py", root=root), False)
+        check("python 有自测面→过期", has_own_logic("scripts/gate.py", root=root), True)
+        check("bash 有自测面→过期", has_own_logic("scripts/gate.sh", root=root), True)
+
+        def fixture(file: str, old: str, runner: str) -> list[dict]:
+            return [{"name": "fixture", "file": file, "old": old, "pkg": file, "filter": "", "runner": runner}]
+
+        check("preflight 锚点在 python 自测面之后→报错", len(preflight(fixture("scripts/gate.py", "y = 2", "python"), root=root)), 1)
+        check("preflight 锚点在自测面之前→放行", preflight(fixture("scripts/gate.py", "x = 1", "python"), root=root), [])
+        check("preflight 锚点在 bash 自测面之后→报错", len(preflight(fixture("scripts/gate.sh", "b=2", "bash"), root=root)), 1)
+
+    if failures:
+        for line in failures:
+            print(line)
+        print(f"self-test: {total - len(failures)}/{total} passed")
+        return 1
+    print(f"self-test: {total}/{total} passed")
+    return 0
+
+
 if __name__ == "__main__":
+    if "--self-test" in sys.argv[1:]:
+        sys.exit(self_test())
     sys.exit(main(parse_args(sys.argv[1:])))

@@ -341,7 +341,7 @@ def self_test() -> int:
                 "static mut HIDDEN: u32 = 0;\n"
             ),
             # 内联测试：#[cfg(test)] 之后允许演练。
-            "inline_tests.rs": (
+            "inline_cfg.rs": (
                 "pub fn ok() {}\n"
                 "#[cfg(test)]\n"
                 "mod tests {\n"
@@ -350,6 +350,25 @@ def self_test() -> int:
                 "    fn t() {\n"
                 "        let _ = core::mem::transmute::<u8, u8>(0u8);\n"
                 "    }\n"
+                "}\n"
+            ),
+            # 已登记但没写不变量：仍然要红（登记不能代替 SAFETY）。
+            "registered_no_safety.rs": "struct R(*mut u8);\nunsafe impl Send for R {}\n",
+            # 文档紧贴 unsafe fn 签名，匹配点在长函数体深处（离签名 > 8 行）：
+            # 固定 8 行窗口够不到，只能靠"回到签名再查上方 8 行"那条路放行。
+            "good_fn_far.rs": (
+                "// SAFETY: 文档紧贴签名，匹配点在长函数体深处。\n"
+                "unsafe fn f(p: *const u8, n: usize) {\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
+                "    //\n"
+                "    let s = core::slice::from_raw_parts(p, n);\n"
+                "    std::hint::black_box(s);\n"
                 "}\n"
             ),
         }
@@ -374,8 +393,14 @@ def self_test() -> int:
             encoding="utf-8",
         )
         allow = {
-            "unsafe-send-sync": {"crates/demo/src/good_impl.rs": "自测：屏障不变量"},
-            "raw-memory-api": {"crates/demo/src/good_fn.rs": "自测：fn 级文档"},
+            "unsafe-send-sync": {
+                "crates/demo/src/good_impl.rs": "自测：屏障不变量",
+                "crates/demo/src/registered_no_safety.rs": "自测：登记了但没写不变量",
+            },
+            "raw-memory-api": {
+                "crates/demo/src/good_fn.rs": "自测：fn 级文档",
+                "crates/demo/src/good_fn_far.rs": "自测：签名上方 8 行内",
+            },
         }
         report = scan(root, allow)
         fired: dict[str, set[str]] = {}
@@ -396,7 +421,15 @@ def self_test() -> int:
         needle_hits = [f for f in report["findings"] if f["file"].endswith("needle.rs")]
         if len(needle_hits) != 1 or needle_hits[0]["line"] != 3:
             failures.append(f"needle.rs 应只报第 3 行的真 static mut：{needle_hits}")
-        for name in ["inline_tests.rs", "good_impl.rs", "good_fn.rs"]:
+        # 登记不能代替不变量：登记了但没写 SAFETY 的仍然要红。
+        if not any(f["file"].endswith("registered_no_safety.rs") for f in report["findings"]):
+            failures.append("反证失败：已登记但没有 SAFETY 的文件必须仍然变红")
+        for name in [
+            "inline_cfg.rs",
+            "good_impl.rs",
+            "good_fn.rs",
+            "good_fn_far.rs",
+        ]:
             for f in report["findings"]:
                 if f["file"].endswith(name):
                     failures.append(f"误报：{name} 不该红（{f['rule']}）")
@@ -406,7 +439,7 @@ def self_test() -> int:
         return 1
     print(
         "self-test ok：5 条反证全部变红、needle/char/内联测试不自指、"
-        "登记+SAFETY 两种正例放行"
+        "登记+SAFETY 两种正例放行、登记但无不变量仍红"
     )
     return 0
 
