@@ -1,0 +1,191 @@
+[
+ {
+  "name": "ci_budget: cancel-in-progress: false 升级成拦（发布类会被误杀）",
+  "file": "scripts/ci_budget.py",
+  "old": "elif info[\"cancel_in_progress\"] is False:",
+  "new": "elif False:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: run 的 workflow 名对不上本地文件时静默跳过",
+  "file": "scripts/ci_budget.py",
+  "old": "if config is None:",
+  "new": "if False:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: runs 取不到也照样绿（跳过就绿）",
+  "file": "scripts/ci_budget.py",
+  "old": "if runs is None:",
+  "new": "if False:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 一行写法的 concurrency 不认（假红）",
+  "file": "scripts/ci_budget.py",
+  "old": "info[\"concurrency\"] = value != \"false\"",
+  "new": "info[\"concurrency\"] = False",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 判红之后退出码还是 0（门不拦）",
+  "file": "scripts/ci_budget.py",
+  "old": "runner 额度与排队时间都在暗处花掉）\")\n        return 1",
+  "new": "runner 额度与排队时间都在暗处花掉）\")\n        return 0",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 台账豁免不认（有理由的长 job 照样判红）",
+  "file": "scripts/ci_budget.py",
+  "old": "if workflow_name == workflow and job_id in (job[\"id\"], \"*\"):",
+  "new": "if False:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 时长单位错（分钟当秒比，任何 job 都「快撞上限」）",
+  "file": "scripts/ci_budget.py",
+  "old": "if ceiling and median >= ceiling * 60 * 0.8:",
+  "new": "if ceiling and median >= ceiling * 0.8:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 时长尺：结束早于开始也算正常时长",
+  "file": "scripts/ci_budget.py",
+  "old": "if a is None or b is None or b < a:",
+  "new": "if a is None or b is None:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 有 runs-on 却没 timeout 不再判红（挂死占 6 小时额度）",
+  "file": "scripts/ci_budget.py",
+  "old": "elif job[\"timeout\"] is None:",
+  "new": "elif False:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 没开取消却被取消也不出声（外来取消没人问）",
+  "file": "scripts/ci_budget.py",
+  "old": "if config[\"cancel_in_progress\"] is not True:",
+  "new": "if False:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 没有 runs-on 的 job 也要求 timeout（reusable 调用被误杀）",
+  "file": "scripts/ci_budget.py",
+  "old": "if not job[\"runs_on\"]:\n                continue",
+  "new": "if False:\n                continue",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 没给豁免清单也照样审（台账问题被静默绕过）",
+  "file": "scripts/ci_budget.py",
+  "old": "if overrides is None:",
+  "new": "if False:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 缺 concurrency 不再判红（重复 run 抢 runner 没人管）",
+  "file": "scripts/ci_budget.py",
+  "old": "if not info[\"concurrency\"]:",
+  "new": "if False:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 耗时对账整个关掉",
+  "file": "scripts/ci_budget.py",
+  "old": "for workflow, times in sorted(durations.items()):\n        median",
+  "new": "for workflow, times in []:\n        median",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 行尾注释里的 concurrency 不再抠（历史写法变假红）",
+  "file": "scripts/ci_budget.py",
+  "old": "if char == \"#\" and (index == 0 or line[index - 1] in \" \\t\"):",
+  "new": "if False:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 豁免指向不存在的 job 也不出声（台账过期无人知）",
+  "file": "scripts/ci_budget.py",
+  "old": "if stale:",
+  "new": "if False:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 跨月算平的手算尺回来了（11-01 与 10-31 同一个数）",
+  "file": "scripts/ci_budget.py",
+  "old": "if not value or not TIME_RE.match(value):\n        return None\n    try:\n        parsed = datetime.datetime.strptime(value, \"%Y-%m-%dT%H:%M:%SZ\")",
+  "new": "if not value:\n        return None\n    try:\n        parsed = datetime.datetime.strptime(value[:10], \"%Y-%m-%d\")",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 通配豁免 `*` 不生效（整份 workflow 抬不了预算）",
+  "file": "scripts/ci_budget.py",
+  "old": "job_id in (job[\"id\"], \"*\")",
+  "new": "job_id == job[\"id\"]",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 配了 cancel-in-progress 也照样刷噪音（每分支一条警告）",
+  "file": "scripts/ci_budget.py",
+  "old": "if config[\"cancel_in_progress\"] is not True:",
+  "new": "if True:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 非整数 timeout 直接当没设（模板值溜过去）",
+  "file": "scripts/ci_budget.py",
+  "old": "current[\"timeout\"] = None\n                        current[\"bad_timeout\"] = value",
+  "new": "current[\"timeout\"] = None",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_budget: 预算比较方向反了（小于预算反而判超）",
+  "file": "scripts/ci_budget.py",
+  "old": "if job[\"timeout\"] > ceiling:",
+  "new": "if job[\"timeout\"] < ceiling:",
+  "pkg": "scripts/ci_budget.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
