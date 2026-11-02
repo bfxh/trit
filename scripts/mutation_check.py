@@ -4158,6 +4158,33 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    {
+        "name": "doctor: 索引 CRLF 不报",
+        "file": "scripts/repo_doctor.py",
+        "old": "        if \"i/crlf\" in flags:",
+        "new": "        if False:",
+        "pkg": "scripts/repo_doctor.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "doctor: 工作树 CRLF 不计数",
+        "file": "scripts/repo_doctor.py",
+        "old": "        elif \"w/crlf\" in flags:",
+        "new": "        elif False:",
+        "pkg": "scripts/repo_doctor.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "doctor: CODEOWNERS 缺口不报",
+        "file": "scripts/repo_doctor.py",
+        "old": "    return [directory for directory in required_dirs if directory not in covered]",
+        "new": "    return []",
+        "pkg": "scripts/repo_doctor.py",
+        "filter": "",
+        "runner": "python",
+    },
     # ---- gitflow（一句话提交 GitHub）----
     {
         "name": "gitflow: 密钥扫描失效",

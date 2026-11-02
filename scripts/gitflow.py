@@ -639,7 +639,7 @@ def pr_triage(repo: str, stale_days: int, as_json: bool, apply_changes: bool) ->
     return 0
 
 
-def pr_sync(repo: str, number: str) -> int:
+def pr_sync(repo: str, number: str, dry_run: bool = False) -> int:
     """把 main merge 进 PR 分支并 push：不改写历史，不动别人的提交。"""
     view = gh(["pr", "view", number, "--repo", repo, "--json", "headRefName,number"])
     if view.returncode != 0:
@@ -650,32 +650,62 @@ def pr_sync(repo: str, number: str) -> int:
     except (json.JSONDecodeError, KeyError):
         print("解析 PR 分支失败")
         return 1
-    dirty = [line for line in git(["status", "--porcelain"]).stdout.splitlines() if line.strip()]
-    if dirty:
-        print("拒绝：工作树有未提交改动（先提交或清理）")
-        return 2
-    original = git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
     base = detect_base(detect_remote())
-    steps = [
-        ["git", "fetch", "origin", base],
-        ["git", "checkout", branch],
+    if dry_run:
+        # 只预览冲突：merge-tree 不碰工作树，也不产生提交
+        git(["fetch", "origin", base])
+        base_sha = git(["rev-parse", f"origin/{base}"]).stdout.strip()
+        branch_sha = git(["rev-parse", f"origin/{branch}"]).stdout.strip()
+        if not branch_sha:
+            print(f"拉不到 origin/{branch}（先 push 或 fetch）")
+            return 1
+        merge_base = git(["merge-base", base_sha, branch_sha]).stdout.strip() or base_sha
+        tree = git(["merge-tree", merge_base, base_sha, branch_sha])
+        conflicts = [line for line in tree.stdout.splitlines() if "changed in both" in line or line.startswith("<<<<<<<")]
+        if conflicts:
+            print(f"预览：把 {base} 合进 {branch} 会冲突")
+            for line in conflicts[:10]:
+                print(f"  {line.strip()}")
+            return 1
+        print(f"预览：把 {base} 合进 {branch} 无冲突（merge-tree 结果为空）")
+        return 0
+    # 分支可能正被另一个 worktree 占用（多会话常态）：在**那里**操作，不强行 checkout
+    worktrees = parse_worktrees(git(["worktree", "list", "--porcelain"]).stdout)
+    host = next((entry.get("path") for entry in worktrees if entry.get("branch") == branch), "")
+    workdir = pathlib.Path(host) if host else ROOT
+    if host and workdir.resolve() != ROOT.resolve():
+        print(f"分支在另一个 worktree：{workdir}（就在那里操作）")
+    dirty = [line for line in git(["status", "--porcelain"], workdir).stdout.splitlines() if line.strip()]
+    if dirty:
+        print(f"拒绝：{workdir} 有未提交改动（先提交或清理）")
+        return 2
+    original = git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip() if not host else ""
+    steps = [["git", "fetch", "origin", base]]
+    if not host:
+        steps.append(["git", "checkout", branch])
+    steps += [
         ["git", "merge", f"origin/{base}", "--no-edit"],
         ["git", "push", "origin", branch],
     ]
     for command in steps:
-        result = git(command[1:])
+        result = git(command[1:], workdir)
         print(f"$ {' '.join(command[:3])} … rc={result.returncode}")
         if result.returncode != 0:
             if command[1] == "merge":
-                conflicted = [line for line in git(["diff", "--name-only", "--diff-filter=U"]).stdout.splitlines() if line.strip()]
+                conflicted = [
+                    line for line in git(["diff", "--name-only", "--diff-filter=U"], workdir).stdout.splitlines()
+                    if line.strip()
+                ]
                 print("合并冲突，已 abort（分支保持原样）：")
                 for name in conflicted:
                     print(f"  {name}")
-                git(["merge", "--abort"])
-            git(["checkout", original])
+                git(["merge", "--abort"], workdir)
+            if original:
+                git(["checkout", original])
             print(result.stdout[-800:])
             return 1
-    git(["checkout", original])
+    if original:
+        git(["checkout", original])
     print(f"已把 {base} 合入 #{number}（{branch}）并推送")
     return 0
 
@@ -1094,9 +1124,9 @@ def main(argv: list[str]) -> int:
             return pr_triage(repo, stale_days, "--json" in argv, "--apply" in argv)
         if sub == "sync":
             if not rest:
-                print("用法：gitflow.py pr sync <编号>")
+                print("用法：gitflow.py pr sync <编号> [--dry-run]")
                 return 2
-            return pr_sync(repo, rest[0])
+            return pr_sync(repo, rest[0], dry_run="--dry-run" in argv)
         print(f"未知 pr 子命令: {sub}（triage / sync）")
         return 2
     if command == "merge":
