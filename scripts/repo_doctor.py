@@ -108,14 +108,62 @@ def codeowners_gaps(text: str, required_dirs: list[str]) -> list[str]:
     return [directory for directory in required_dirs if directory not in covered]
 
 
-def diagnose(root: pathlib.Path, remote: bool) -> list[dict]:
+def history_big_blobs(root: pathlib.Path, limit: int = 5) -> list[tuple[str, int, str]]:
+    """历史里出现过的大 blob（(路径, 字节, oid)）——HEAD 里的文件大小只是一半的事实。
+
+    一次 `git rev-list --objects --all | git cat-file --batch-check`，不逐条起进程。
+    """
+    listing = run(["rev-list", "--objects", "--all"], root)
+    if not listing:
+        return []
+    result = subprocess.run(
+        ["git", "cat-file", "--batch-check=%(objecttype) %(objectname) %(objectsize) %(rest)"],
+        cwd=root, input=listing, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, encoding="utf-8", errors="replace",
+    )
+    rows: list[tuple[str, int, str]] = []
+    for line in result.stdout.splitlines():
+        parts = line.split(" ", 3)
+        if len(parts) < 4 or parts[0] != "blob":
+            continue
+        size = int(parts[2]) if parts[2].isdigit() else 0
+        if size >= BIG_FILE:
+            rows.append((parts[3], size, parts[1]))
+    rows.sort(key=lambda item: -item[1])
+    return rows[:limit]
+
+
+def lfs_plan(root: pathlib.Path) -> list[str]:
+    """把大文件迁到 LFS 的命令（会改写历史，所以只出方案，不自动执行）。"""
+    big = []
+    for name in tracked_files(root):
+        path = root / name
+        try:
+            if path.is_file() and path.stat().st_size > BIG_FILE:
+                big.append(name)
+        except OSError:
+            continue
+    if not big:
+        return ["当前没有 > 5 MiB 的受控文件，不需要上 LFS"]
+    suffixes = sorted({pathlib.PurePosixPath(name).suffix for name in big if pathlib.PurePosixPath(name).suffix})
+    include = " ".join(f'"*{suffix}"' for suffix in suffixes) or '"*"'
+    return [
+        f"要迁的类型：{', '.join(suffixes) or '(无扩展名)'}",
+        f"git lfs install",
+        f"git lfs migrate import --include={include} --everything   # 会改写历史，先打快照/备份",
+        "回滚：git lfs migrate export --include=<同样的模式> --everything",
+        "推之前确认：git log --stat | grep -c 'Pointer'（应大于 0）；CI 需装 git-lfs",
+    ]
+
+
+def diagnose(root: pathlib.Path, remote: bool, history: bool = False) -> list[dict]:
     findings: list[dict] = []
 
     def add(kind: str, level: str, detail: str, fix: str) -> None:
         findings.append({"kind": kind, "level": level, "detail": detail, "fix": fix})
 
     files = tracked_files(root)
-    if not files:
+    if not files and not history:
         return [{"kind": "repo", "level": "high", "detail": "不是 git 仓库或没有跟踪文件", "fix": "先 git init"}]
 
     if not (root / ".gitattributes").is_file():
@@ -185,6 +233,10 @@ def diagnose(root: pathlib.Path, remote: bool) -> list[dict]:
             add("密钥", "high", f"{len(hits)} 处高置信度密钥（{hits[0]['file']}:{hits[0]['line']}）",
                 "轮换密钥；历史里出现过的用 git-filter-repo 清除")
 
+    if history:
+        for path, size, oid in history_big_blobs(root):
+            add("历史大文件", "medium", f"{path}（{size / 1024 / 1024:.1f} MiB，blob {oid[:10]}…）",
+                "git filter-repo --strip-blobs-bigger-than 5M   # 会改写历史，先快照")
     if remote:
         integrity = load_tool("ci_integrity")
         if integrity is not None and hasattr(integrity, "validate"):
@@ -252,6 +304,32 @@ def self_test() -> int:
         check("索引 CRLF 被抓出来", index_crlf, ["a.txt"])
         check("只工作树是 CRLF 的只计数", worktree_only, 1)
 
+        # 历史大文件：提交一个 6 MiB 文件再删掉，HEAD 里没有、历史里有
+        big_repo = pathlib.Path(tmp) / "big"
+        big_repo.mkdir()
+        gitc = lambda args: subprocess.run(["git", *args], cwd=big_repo, stdout=subprocess.PIPE,
+                                           stderr=subprocess.STDOUT, text=True)
+        gitc(["init", "-q"])
+        gitc(["config", "user.email", "t@example.com"])
+        gitc(["config", "user.name", "t"])
+        (big_repo / "blob.bin").write_bytes(b"0" * (6 * 1024 * 1024))
+        gitc(["add", "-A"])
+        gitc(["commit", "-qm", "add big"])
+        (big_repo / "blob.bin").unlink()
+        gitc(["add", "-A"])
+        gitc(["commit", "-qm", "remove big"])
+        check("HEAD 里没有大文件", [n for n in tracked_files(big_repo) if n == "blob.bin"], [])
+        check("历史里能找出大 blob", bool(history_big_blobs(big_repo)), True)
+        check("历史检查接入诊断",
+              any(f["kind"] == "历史大文件" for f in diagnose(big_repo, remote=False, history=True)), True)
+        (big_repo / "big2.bin").write_bytes(b"0" * (6 * 1024 * 1024))
+        gitc(["add", "-A"])
+        gitc(["commit", "-qm", "add big2"])
+        plan = lfs_plan(big_repo)
+        check("LFS 方案含 migrate", any("lfs migrate" in line for line in plan), True)
+        check("LFS 方案含回滚", any("export" in line for line in plan), True)
+        check("LFS 方案点名类型", any("*.bin" in line for line in plan), True)
+
         empty = pathlib.Path(tmp) / "empty"
         empty.mkdir()
         check("非 git 目录会说清楚", diagnose(empty, remote=False)[0]["kind"], "repo")
@@ -271,7 +349,11 @@ def main(argv: list[str]) -> int:
     root = ROOT
     if "--root" in argv:
         root = pathlib.Path(argv[argv.index("--root") + 1]).resolve()
-    findings = diagnose(root, remote="--remote" in argv)
+    if "--lfs-plan" in argv:
+        for line in lfs_plan(root):
+            print(line)
+        return 0
+    findings = diagnose(root, remote="--remote" in argv, history="--history" in argv)
     if "--json" in argv:
         print(json.dumps(findings, ensure_ascii=False, indent=1))
         return 1 if any(f["level"] == "high" for f in findings) else 0

@@ -243,6 +243,43 @@ def _matrix_covered(name: str, present: set[str]) -> set[str]:
     return covered
 
 
+def missing_signoff(log_text: str) -> list[str]:
+    """`git log --format=%H%x1f%B%x1e` 的输出 -> 缺 Signed-off-by 的短 sha 列表。"""
+    missing: list[str] = []
+    for record in log_text.split(chr(30)):
+        record = record.strip("\n")
+        if not record.strip():
+            continue
+        sha, _, body = record.partition(chr(31))
+        if "Signed-off-by:" not in body:
+            missing.append(sha.strip()[:12])
+    return missing
+
+
+def flaky_groups(rows: list[dict]) -> list[dict]:
+    """同一提交多次运行、同一 job 结论不一致的组。
+
+    rows: [{"sha", "run", "jobs": {job_name: conclusion}}]
+    """
+    # 按 (提交, workflow) 分组：同一提交的 CI / t3 / mutation 是不同 workflow，job 集合本来就不同
+    buckets: dict[tuple[str, str], list[dict]] = {}
+    for row in rows:
+        buckets.setdefault((row["sha"], row.get("workflow", "")), []).append(row)
+    out: list[dict] = []
+    for (sha, workflow), group in buckets.items():
+        if len(group) < 2:
+            continue
+        names = set().union(*(row["jobs"].keys() for row in group))
+        unstable = {}
+        for name in names:
+            conclusions = sorted({row["jobs"].get(name, "missing") for row in group})
+            if len(conclusions) > 1:
+                unstable[name] = conclusions
+        if unstable:
+            out.append({"sha": sha[:8], "workflow": workflow, "retries": len(group), "unstable": unstable})
+    return out
+
+
 def failed_checks(rollup: list[dict]) -> list[dict]:
     """从 PR 的 statusCheckRollup 里挑出失败的；成功/跳过/未完成都不算失败。"""
     bad: list[dict] = []
@@ -710,6 +747,93 @@ def pr_sync(repo: str, number: str, dry_run: bool = False) -> int:
     return 0
 
 
+def dco(range_text: str) -> int:
+    text = git(["log", "--format=%H%x1f%B%x1e", range_text]).stdout
+    missing = missing_signoff(text)
+    if missing:
+        print(f"缺 Signed-off-by 的提交（{len(missing)} 个）：")
+        for sha in missing:
+            print(f"  {sha}")
+        print("补救：git rebase --signoff <range>  （或后续提交用 git commit -s）")
+        return 1
+    print(f"DCO：{range_text} 范围内所有提交都有 Signed-off-by")
+    return 0
+
+
+def flaky(repo: str, limit: int) -> int:
+    listing = gh(["run", "list", "--repo", repo, "--limit", str(limit), "--json",
+                  "databaseId,headSha,workflowName,conclusion"])
+    if listing.returncode != 0:
+        print(listing.stdout[-1000:])
+        return 1
+    try:
+        runs = json.loads(listing.stdout or "[]")
+    except json.JSONDecodeError:
+        print("gh 输出解析失败")
+        return 1
+    buckets: dict[tuple[str, str], list[dict]] = {}
+    for run in runs:
+        buckets.setdefault((run["headSha"], run.get("workflowName", "")), []).append(run)
+    rows: list[dict] = []
+    fetched = 0
+    for (sha, workflow), group in buckets.items():
+        if len(group) < 2 or fetched >= 10:
+            continue
+        for run in group:
+            if fetched >= 10:
+                break
+            detail = gh(["run", "view", str(run["databaseId"]), "--repo", repo, "--json", "jobs"])
+            fetched += 1
+            if detail.returncode != 0:
+                continue
+            try:
+                jobs = {job["name"]: job.get("conclusion") or "pending" for job in json.loads(detail.stdout)["jobs"]}
+            except (json.JSONDecodeError, KeyError):
+                continue
+            rows.append({"sha": sha, "workflow": workflow, "run": run["databaseId"], "jobs": jobs})
+    groups = flaky_groups(rows)
+    if not groups:
+        print(f"最近 {len(runs)} 次运行里，没有发现同提交结论不一致的 job")
+        return 0
+    for group in groups:
+        print(f"{group['sha']}（{group['workflow']}，{group['retries']} 次运行）不稳定：")
+        for name, conclusions in group["unstable"].items():
+            print(f"  {name}: {', '.join(map(str, conclusions))}")
+    return 0
+
+
+def queue_status(repo: str) -> int:
+    listing = gh(["api", f"repos/{repo}/rulesets"])
+    if listing.returncode != 0:
+        print("读不到 rulesets（可能没开 rulesets 或权限不足）：")
+        print(listing.stdout[-500:])
+        return 1
+    try:
+        rulesets = json.loads(listing.stdout or "[]")
+    except json.JSONDecodeError:
+        print("rulesets 解析失败")
+        return 1
+    found = []
+    for item in rulesets:
+        detail = gh(["api", f"repos/{repo}/rulesets/{item['id']}"])
+        if detail.returncode != 0:
+            continue
+        try:
+            rules = json.loads(detail.stdout).get("rules", [])
+        except json.JSONDecodeError:
+            continue
+        if any(rule.get("type") == "merge_queue" for rule in rules):
+            found.append(item.get("name", item["id"]))
+    if found:
+        print(f"merge queue：已开启（ruleset: {', '.join(map(str, found))}）")
+        print("注意：之后合并要走队列（`gh pr merge --merge-queue`），普通 merge 会被拒。")
+        return 0
+    print("merge queue：未开启")
+    print("开启前先想清楚：合并会变成排队执行，`gitflow merge` 需要改用 --merge-queue；")
+    print("建议做法：新建 ruleset（target=branch, 只对 main），加 merge_queue 规则，然后在 PR 上试一次。")
+    return 0
+
+
 def diagnose(pr: str, repo: str) -> int:
     """把失败检查的**地址**逐条列出来：检查名 → 运行链接 → 失败日志尾部。"""
     view = gh(["pr", "view", pr, "--repo", repo, "--json", "number,title,headRefName,statusCheckRollup"])
@@ -1056,6 +1180,19 @@ def self_test() -> int:
         duplicate = {"number": 9, "isDraft": False, "updatedAt": "2033-05-18T03:00:00Z",
                      "mergeable": "MERGEABLE", "statusCheckRollup": [{"name": "CI"}], "files": [{"path": "a"}]}
         check("重复 PR 被标", classify_pr(duplicate, now, 14, ["CI"], [sample[0]]), ["superseded-by-#1"])
+        sep, end = chr(31), chr(30)
+        sample_log = f"aaa111{sep}feat: x{chr(10)}Signed-off-by: t <t@e>{end}bbb222{sep}fix: y{end}"
+        check("DCO 找出缺签名的提交", missing_signoff(sample_log), ["bbb222"])
+        rows = [
+            {"sha": "same", "workflow": "CI", "run": 1, "jobs": {"CI": "success", "t3": "success"}},
+            {"sha": "same", "workflow": "CI", "run": 2, "jobs": {"CI": "failure", "t3": "success"}},
+            {"sha": "other", "workflow": "CI", "run": 3, "jobs": {"CI": "success"}},
+            {"sha": "other", "workflow": "CI", "run": 4, "jobs": {"CI": "success"}},
+            # 不同 workflow 的 job 集合不同，不该互相比出 "missing"
+            {"sha": "same", "workflow": "t3", "run": 5, "jobs": {"t3 fmt + clippy + test": "success"}},
+        ]
+        groups = flaky_groups(rows)
+        check("flake 只报不一致的 job", [(g["sha"], list(g["unstable"])) for g in groups], [("same", ["CI"])])
         check("默认 base 优先 main", pick_base(["main", "master"]), "main")
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")
@@ -1116,6 +1253,14 @@ def main(argv: list[str]) -> int:
         return 2
     if command == "stack":
         return stack(repo, remote_state="--no-remote" not in argv)
+    if command == "dco":
+        default_range = f"{detect_remote()}/{detect_base(detect_remote())}..HEAD"
+        return dco(argv[argv.index("--range") + 1] if "--range" in argv else default_range)
+    if command == "flaky":
+        limit = int(argv[argv.index("--limit") + 1]) if "--limit" in argv else 20
+        return flaky(repo, limit)
+    if command == "queue":
+        return queue_status(repo)
     if command == "pr":
         sub = argv[1] if len(argv) > 1 else "triage"
         rest = [a for a in argv[2:] if not a.startswith("--")]
