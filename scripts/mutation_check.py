@@ -2998,8 +2998,14 @@ def main(pkgs: list[str]) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     mutants = select(pkgs)
     if not mutants:
-        print(f"所选包没有登记变异: {', '.join(pkgs)}")
-        return 0
+        # fail-closed：登记表里 0 条时"绿"没有任何含义——别把空集读成证据
+        # （2026-11-02 的 trit-immune 就是这样在 CI 报 14s 通过的）。
+        scope = ", ".join(pkgs) if pkgs else "(全仓)"
+        print(
+            f"NO MUTANTS REGISTERED：{scope} 在 MUTANTS 里是 0 条 ⇒ 判红。"
+            "补登记（锚点 + 对应测试名），或确认该包没有可判定的纯规则后显式登记豁免。"
+        )
+        return 1
     if pkgs:
         counts = {
             pkg: sum(1 for mutant in MUTANTS if mutant["pkg"] == pkg)
