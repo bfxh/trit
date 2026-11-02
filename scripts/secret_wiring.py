@@ -346,9 +346,8 @@ def main(argv: list[str]) -> int:
         root = pathlib.Path(argv[argv.index("--root") + 1])
     provided = None
     if "--provided" in argv:
-        provided = json.loads((root / argv[argv.index("--provided") + 1]).read_text(encoding="utf-8")
-                              if not pathlib.Path(argv[argv.index("--provided") + 1]).is_absolute()
-                              else pathlib.Path(argv[argv.index("--provided") + 1]).read_text(encoding="utf-8"))
+        raw = pathlib.Path(argv[argv.index("--provided") + 1])
+        provided = json.loads((raw if raw.is_absolute() else root / raw).read_text(encoding="utf-8"))
     elif "--offline" not in argv:
         if "--repo" in argv:
             repo_name = argv[argv.index("--repo") + 1]
@@ -435,11 +434,13 @@ def self_test() -> int:
         repo({"ci.yml": refs_yml(ex("GITHUB_TOKEN"))}, root)
         check("GitHub 自带的 token 不判红", audit(root, provided)[0], [])
 
-        commented = "on: pull_request\njobs:\n  build:\n    steps:\n" \
-                    "      - run: echo hello  # 以前用 " + ex("OBSOLETE_TOKEN") + "\n"
+        commented = ("on: pull_request\njobs:\n  build:\n    steps:\n"
+                     "      # 整行注释里提过 " + ex("OBSOLETE_LINE") + "\n"
+                     "      - run: echo hello  # 行尾注释里也提过 " + ex("OBSOLETE_TRAILING") + "\n")
         repo({"ci.yml": commented}, root)
         blocking, _, _ = audit(root, provided)
-        check("注释里的引用不算（假红防线）", [b for b in blocking if "OBSOLETE" in b], [])
+        check("整行/行尾注释里的引用都不算（假红防线）", [b for b in blocking if "OBSOLETE" in b], [])
+        check("注释行不产生引用点", audit(root, provided)[2]["uses"], 0)
 
         (root / EXTERNAL_FILE).write_text("SOMETHING_ORG_LEVEL\n", encoding="utf-8")
         repo({"ci.yml": refs_yml(ex("SOMETHING_ORG_LEVEL"))}, root)
@@ -534,6 +535,16 @@ def self_test() -> int:
         uses_dup, _ = parse_workflow("on: push\njobs:\n  a:\n    steps:\n"
                                      "      - run: echo " + ex("T") + " " + ex("T") + "\n", "z.yml")
         check("同行同名引用只记一次", len(uses_dup), 2)
+
+        # 退出码面：门必须真的拦（把 main 的 `return 1` 改成 `return 0` 要靠这两条抓到）
+        dump = root / "provided.json"
+        dump.write_text(json.dumps({"secrets": ["DEPLOY_KEY"], "variables": [],
+                                    "environments": {}, "environments_readable": True}),
+                        encoding="utf-8")
+        repo({"ci.yml": refs_yml(ex("NPM_TOKEN"))}, root)
+        check("判红时退出码是 1（门真的拦）", main(["--root", str(root), "--provided", str(dump)]), 1)
+        repo({"ci.yml": refs_yml(ex("DEPLOY_KEY"))}, root)
+        check("接线对上时退出码是 0", main(["--root", str(root), "--provided", str(dump)]), 0)
 
     print(f"secret_wiring 自测：{passed} 过 / {failed} 红")
     return 1 if failed else 0
