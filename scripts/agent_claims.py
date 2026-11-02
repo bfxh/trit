@@ -91,17 +91,26 @@ def overlaps(a: list[str], b: list[str]) -> bool:
 
 
 def conflicts(claims: list[dict], at: int) -> tuple[list[str], list[str]]:
-    """(拦路:重叠的双方点名, 警告:过期未收)。"""
+    """(拦路:重叠的双方点名, 警告:过期未收 / 跨仓同名路径)。
+
+    拦：**同一个仓**里两个在效声明 ⇒ 一定撞（不管路径写没写、写的是不是同一批）。
+    不同仓 ⇒ 不拦。两份代码在两个仓里各有一份（单体仓的 `crates/x/src/*` 与独立仓的 `src/*`）
+    路径名相交是常态，判红就是把闸门自己变成假红源头；但这种情况要**出声**，所以给警告。
+    """
     red, warn = [], []
     active = [c for c in claims if live(c, at)]
     for index, left in enumerate(active):
         for right in active[index + 1:]:
-            same_repo = left["repo"].strip() == right["repo"].strip() and left["repo"].strip()
-            if same_repo or overlaps(left["paths"], right["paths"]):
+            same_repo = bool(left["repo"].strip()) and left["repo"].strip() == right["repo"].strip()
+            if same_repo:
                 red.append(f"{left['who']} ↔ {right['who']}"
-                           f"｜repo {left['repo']} / {right['repo']}"
+                           f"｜同一个仓 {left['repo']}"
                            f"｜路径 {left['paths'] or ['(整个仓)']} × {right['paths'] or ['(整个仓)']}"
                            f"｜{left['note'] or '-'} / {right['note'] or '-'}")
+            elif overlaps(left["paths"], right["paths"]):
+                warn.append(f"{left['who']}@{left['repo']} 与 {right['who']}@{right['repo']} "
+                            f"路径名相交（{left['paths']} × {right['paths']}）"
+                            "——不同仓不拦，但如果这是同一份代码的两份副本，先对齐")
     for claim in claims:
         if not live(claim, at):
             stale_min = (at - claim["ts"]) // 60 - claim["ttl"]
@@ -169,15 +178,18 @@ def cmd_claim(path: pathlib.Path, argv: list[str]) -> int:
 
     who = value("--who")
     repo = value("--repo")
+    paths = [p for p in values("--paths") if p]
     if not who or not repo:
         _say("claim 需要 --who <会话名> 与 --repo <o/r>（谁在动哪个仓，缺一项就没法提醒对方）")
         return 1
     claims = read_claims(path)
-    mine = [c for c in claims if c["who"] == who]
-    if mine:
-        _say(f"{who} 已有声明：{mine[0]['repo']} {mine[0]['paths']}（先 release 再 claim）")
+    # 一个会话可以同时守几个仓；只有"同仓 + 同路径"才是重复声明
+    dupes = [c for c in claims if c["who"] == who and c["repo"] == repo
+             and overlaps([x.rstrip("/") for x in c["paths"]], [x.rstrip("/") for x in paths])]
+    if dupes:
+        _say(f"{who} 已在 {repo} 声明过这些路径：{dupes[0]['paths'] or '(整个仓)'}"
+             "（要换范围先 release）")
         return 1
-    paths = [p for p in values("--paths") if p]
     ttl = int(value("--ttl", "90"))
     if ttl <= 0:
         _say("ttl 必须是正数分钟（不许用 0 表示永久占用，那样别人永远解不开）")
@@ -200,7 +212,9 @@ def cmd_release(path: pathlib.Path, argv: list[str]) -> int:
     who = argv[argv.index("--who") + 1] if "--who" in argv else ""
     cid = argv[argv.index("--id") + 1] if "--id" in argv else ""
     claims = read_claims(path)
-    keep = [c for c in claims if not ((who and c["who"] == who) or (cid and c["id"] == cid))]
+    # 两个条件同时给时必须同时满足：or 会把我这条 `--who X --id c1` 变成"把 X 全清掉"
+    keep = [c for c in claims
+            if not ((not who or c["who"] == who) and (not cid or c["id"] == cid))]
     if len(keep) == len(claims):
         _say(f"没找到要释放的声明（who={who or '-'} id={cid or '-'}）")
         return 1
@@ -234,16 +248,23 @@ def self_test() -> int:
     # 正例：路径不相交 ⇒ 绿（注意 repo 不同但 paths 名字像，也不该因为字符串像就判红）
     red, warn = conflicts([a, b], base)
     check_at("路径不相交时判绿", red, [])
-    # 反证 1：路径前缀相交（src 覆盖 src/tls.rs）⇒ 红，且双方都在文案里
-    red, _ = conflicts([a, {**b, "paths": ["crates/trit-immune/src/tls.rs"]}], base)
+    # 反证 1：同一个仓 + 路径前缀相交（src 覆盖 src/tls.rs）⇒ 红，双方都在文案里
+    red, _ = conflicts([a, {**b, "repo": "bfxh/trit",
+                             "paths": ["crates/trit-immune/src/tls.rs"]}], base)
     check_at("前缀相交被判出", len(red), 1)
     check_at("双方都被点名", "Qoder ↔ zodER" in red[0], True)
+    # 反证 1b：不同仓、路径名相交 ⇒ 不拦，但必须出声（同一份代码的两个副本就是这个形状）
+    red, warn = conflicts([a, {**b, "paths": ["crates/trit-immune/src/tls.rs"]}], base)
+    check_at("跨仓同名路径不判红", red, [])
+    check_at("跨仓同名路径要警告", len(warn), 1)
     # 反证 2：同一个 repo + 分支，路径不同也算撞（今天真实形状：两份同名 crate）
     red, _ = conflicts([a, same], base)
     check_at("同仓不同路径也拦", len(red), 1)
-    # 反证 3：空路径集 = 整个仓，与谁都重叠
-    red, _ = conflicts([a, {**b, "paths": []}], base)
+    # 反证 3：空路径集 = 整个仓，与同仓的任何声明都重叠
+    red, _ = conflicts([a, {**b, "repo": "bfxh/trit", "paths": []}], base)
     check_at("整仓声明与任何人在建的都算重叠", len(red), 1)
+    red, warn = conflicts([a, {**b, "paths": []}], base)
+    check_at("整仓声明跨仓时也是警告不是拦", (red, len(warn)), ([], 1))
     # 反证 4：过期的不算撞，但要单列成警告（不能悄悄消失）
     red, warn = conflicts([a, {**b, "ts": base - 60 * 600}], base)
     check_at("过期声明不再拦路", red, [])
@@ -272,6 +293,9 @@ def self_test() -> int:
         check_at("自己写的名单没有坏行", check(path)["broken"], [])
         check_at("同一会话重复 claim 被拒", cmd_claim(path, ["claim", "--who", "Qoder",
                                                              "--repo", "o/r"]), 1)
+        check_at("同一会话可以另开一个仓的声明（一人守多仓是常态）",
+                 cmd_claim(path, ["claim", "--who", "Qoder", "--repo", "other/r",
+                                  "--paths", "src/a"]), 0)
         check_at("ttl=0 当永久占用被拒",
                  cmd_claim(path, ["claim", "--who", "X", "--repo", "o/r", "--ttl", "0"]), 1)
         check_at("另一会话同仓 ⇒ 拦并点名双方",
@@ -288,6 +312,14 @@ def self_test() -> int:
         check_at("转义后仍只有一条", len(read_claims(path)), 1)
         check_at("带 | 的名单也没有坏行", check(path)["broken"], [])
         check_at("没东西可释放时报错不静默", cmd_release(path, ["--who", "Qoder"]), 1)
+        cmd_claim(path, ["claim", "--who", "Multi", "--repo", "m/r", "--paths", "x"])
+        before = len(read_claims(path))
+        check_at("release 的 --who 与 --id 是且不是或（id 不匹配就一条都不许删）",
+                 (cmd_release(path, ["--who", "Multi", "--id", "不存在"]), len(read_claims(path))),
+                 (1, before))
+        multi = [c for c in read_claims(path) if c["who"] == "Multi"]
+        check_at("两个条件都对上才删",
+                 cmd_release(path, ["--who", "Multi", "--id", multi[0]["id"]]), 0)
         # 反证 7：名单文件不存在 ≠ 没人，只是闸门还没启用（不判红，但必须说）
         absent = check(path.parent / "没有这个文件.md")
         check_at("没有声明文件时不判红但要说",
