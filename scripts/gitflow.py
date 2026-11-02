@@ -37,6 +37,7 @@ SECRET_PATTERNS = [
     (re.compile("xox" + r"[baprs]-[A-Za-z0-9-]{10,}"), "Slack token"),
     (re.compile(r"-----BEGIN " + r"[A-Z ]*PRIVATE KEY-----"), "私钥"),
 ]
+ALLOW_MARKER = "secret-scan: allow"
 SECRET_FILE_NAMES = {"credentials.json", "id_rsa", "id_ed25519", "id_dsa", ".npmrc", ".pypirc", "secrets.json", "secrets.yaml"}
 
 
@@ -574,9 +575,14 @@ def secret_scan(root: pathlib.Path, files: list[str]) -> list[str]:
         except OSError as exc:
             hits.append(f"{name}: 读不了（{exc}）")
             continue
-        for pattern, label in SECRET_PATTERNS:
-            if pattern.search(text):
-                hits.append(f"{name}: 命中 {label}")
+        lines = text.splitlines()
+        for index, line in enumerate(lines):
+            # 与 scripts/secret_scan.py 同口径：本行或上一行带显式豁免标记就跳过
+            if ALLOW_MARKER in line or (index > 0 and ALLOW_MARKER in lines[index - 1]):
+                continue
+            for pattern, label in SECRET_PATTERNS:
+                if pattern.search(line):
+                    hits.append(f"{name}:{index + 1}: 命中 {label}")
     return hits
 
 
@@ -685,19 +691,67 @@ def publish(args: dict) -> int:
     return watch_and_merge(branch, args["repo"])
 
 
-def watch_and_merge(branch: str, repo: str) -> int:
+def checks_not_yet(output: str) -> bool:
+    """检查还没注册时 gh 会说 no checks reported——这是竞态，不是失败。"""
+    lowered = output.lower()
+    return "no checks reported" in lowered or "no checks" in lowered
+
+
+def wait_for_checks(repo: str, branch: str, attempts: int = 40, pause: int = 15) -> int:
+    """等检查**注册**（不是等它们绿）：pending 时 gh 返回非零(8)，那也算已注册。
+
+    真正的通过/失败交给后面的 `gh pr checks --watch` 判。
+    """
+    for index in range(attempts):
+        listing = gh(["pr", "checks", "--repo", repo, branch])
+        output = listing.stdout or ""
+        if output.strip() and not checks_not_yet(output):
+            return 0
+        if index == 0:
+            print("检查还没注册，先等它们出现…")
+        time.sleep(pause)
+    print("等检查出现超时（10 分钟）")
+    return 1
+
+
+def has_pending(output: str) -> bool:
+    lowered = output.lower()
+    return "pending" in lowered or "in_progress" in lowered or "queued" in lowered
+
+
+def watch_and_merge(branch: str, repo: str, attempts: int = 40, pause: int = 15) -> int:
+    """等检查**真正**落定再合。
+
+    只靠 `gh pr checks --watch` 不够：push 之后新的 run 还没注册时，它会拿着上一轮的
+    结果返回——然后 merge 被"requirements have not been met"拒掉（实跑踩过）。
+    所以这里再轮询到没有 pending，并且失败时重试合并。
+    """
+    if wait_for_checks(repo, branch) != 0:
+        return 1
     checks = gh(["pr", "checks", "--repo", repo, branch, "--watch"])
     if checks.returncode != 0:
         print("CI 未通过：")
         print(checks.stdout[-2000:])
         return 1
-    merge = gh(["pr", "merge", "--repo", repo, branch, "--squash", "--delete-branch"])
-    if merge.returncode != 0:
-        print("合并失败：")
-        print(merge.stdout[-1000:])
-        return 1
-    print(f"CI 全绿，已 squash 合入 {branch} 并删分支")
-    return 0
+    for index in range(attempts):
+        listing = gh(["pr", "checks", "--repo", repo, branch])
+        output = listing.stdout or ""
+        if not output.strip() or has_pending(output):
+            if index == 0:
+                print("检查还在跑（可能是刚 push 触发的新一轮），等它落定…")
+            time.sleep(pause)
+            continue
+        merge = gh(["pr", "merge", "--repo", repo, branch, "--squash", "--delete-branch"])
+        if merge.returncode == 0:
+            print(f"CI 全绿，已 squash 合入 {branch} 并删分支")
+            return 0
+        if index == attempts - 1:
+            print("合并失败：")
+            print(merge.stdout[-1500:])
+            return 1
+        time.sleep(pause)
+    print("合并超时（10 分钟）")
+    return 1
 
 
 def status(repo: str) -> int:
@@ -732,6 +786,10 @@ def self_test() -> int:
         check("sk- 形状命中", any("sk-" in h for h in secret_scan(root, ["leak.py"])), True)
         check(".env 按文件名命中", any(".env" in h for h in secret_scan(root, [".env"])), True)
         check("私钥头命中", any("私钥" in h for h in secret_scan(root, ["key.pem"])), True)
+        (root / "allowed.py").write_text(
+            'KEY = "sk' + '-abcdefghijklmnopqrstu"  # secret-scan: allow 夹具' + chr(10), encoding="utf-8"
+        )
+        check("显式豁免标记被认", secret_scan(root, ["allowed.py"]), [])
         (root / ".env.production").write_text("A=1\n", encoding="utf-8")
         check(".env.* 也按敏感文件拒收",
               any(".env.production" in h for h in secret_scan(root, [".env.production"])), True)
@@ -800,6 +858,10 @@ def self_test() -> int:
         chains, off = pr_chains(prs)
         check("链长度", [len(c) for c in chains], [2, 1])
         check("离干 PR 被标出", sorted(p["headRefName"] for p in off), ["feat/b", "feat/c"])
+        check("竞态识别：no checks reported", checks_not_yet("no checks reported on the 'x' branch"), True)
+        check("真实失败不算竞态", checks_not_yet("some check failed"), False)
+        check("pending 识别", has_pending("CI\tpending\t0\thttps://x"), True)
+        check("通过不算 pending", has_pending("CI\tpass\t1s\thttps://x"), False)
         check("默认 base 优先 main", pick_base(["main", "master"]), "main")
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")
@@ -860,6 +922,12 @@ def main(argv: list[str]) -> int:
         return 2
     if command == "stack":
         return stack(repo, remote_state="--no-remote" not in argv)
+    if command == "merge":
+        target = argv[argv.index("--branch") + 1] if "--branch" in argv else ""
+        if not target:
+            print("用法：gitflow.py merge --branch <分支>")
+            return 2
+        return watch_and_merge(target, repo)
     if command == "diagnose":
         pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
         if not pr:

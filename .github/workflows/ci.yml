@@ -133,6 +133,18 @@ jobs:
       - name: Vendor config splice self-test
         run: python3 scripts/vendor.py --self-test
 
+  secret-scan:
+    name: secret scan (repo-wide)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Self-test (patterns / binary skip / allow marker)
+        run: python3 scripts/secret_scan.py --self-test
+      # 与 GitHub push protection 互补：合成夹具用 `secret-scan: allow` 显式豁免
+      - name: Scan repository for high-confidence secrets
+        run: python3 scripts/secret_scan.py
+
   stress:
     name: stress (high pressure invariants)
     runs-on: ubuntu-latest
