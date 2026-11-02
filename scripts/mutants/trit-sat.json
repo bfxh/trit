@@ -1,0 +1,10 @@
+[
+ {
+  "name": "sat: 二值 strong_add 的 Ł3 分支用 AND",
+  "file": "crates/trit-sat/src/symbolic.rs",
+  "old": "            Algebra::Lukasiewicz => self.binary_or(a, b),",
+  "new": "            Algebra::Lukasiewicz => self.binary_and(a, b),",
+  "pkg": "trit-sat",
+  "filter": "binary_fast_path_uses_strong_add_not_xor"
+ }
+]

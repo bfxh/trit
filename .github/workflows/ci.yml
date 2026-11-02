@@ -173,6 +173,62 @@ jobs:
       - name: Green audit self-test (execution evidence)
         run: python3 scripts/green_audit.py --self-test
 
+  flake:
+    name: flake ledger (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 重跑掩盖 + 隔离台账（owner/理由/到期/复验）的判定链反证
+      - name: Flake ledger self-test
+        run: python3 scripts/flake_ledger.py --self-test
+      # 离线只审台账本身：查 API 要 token，这一步保证"台账不合规"当天就红
+      - name: Quarantine ledger audit
+        run: python3 scripts/flake_ledger.py ledger
+
+  wiring:
+    name: secret wiring (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 引用解析 / 环境归属 / 外部声明格式的反证
+      - name: Secret wiring self-test
+        run: python3 scripts/secret_wiring.py --self-test
+      # 真对账需要能列本仓 secrets：本组织的 GITHUB_TOKEN 上限是"只读仓库内容"，
+      # job 级 `actions: read` 抬不上去（实测 CI 报"取不到密钥/变量清单"⇒ 门按口径判红，
+      # 那个红是对的，但在 CI 里它证明不了任何接线面）。所以：
+      #   - CI 跑静态面（引用解析 / 环境归属 / 外部声明格式），并公示没跟线上对过账；
+      #   - 线上对账在本地带 PAT 跑，或以后加一条用仓库 secret 的定时流（那才是它真正的用武之地）。
+      - name: Wiring static surface (offline)
+        run: python3 scripts/secret_wiring.py --offline
+
+  budget:
+    name: ci budget (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 静态面（workflow 缺 concurrency / job 缺 timeout / 台账无理由）的反证
+      - name: CI budget self-test
+        run: python3 scripts/ci_budget.py --self-test
+      # 线上耗时对账要 runs 清单；GITHUB_TOKEN 抬不到那个权限，所以 CI 只跑能证明的部分并公示
+      - name: CI budget static audit
+        run: python3 scripts/ci_budget.py --offline
+
+  recovery:
+    name: oops recovery (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 找回链路全在临时仓里跑：reflog/fsck/stash 三路取证 + "先快照再建分支、不动 HEAD"
+      - name: oops self-test
+        run: python3 scripts/oops.py --self-test
+
   forensics:
     name: merge forensics (self-test)
     runs-on: ubuntu-latest

@@ -44,9 +44,18 @@ jobs:
           # bash 语言面同理（冒烟脚本带 --self-test 才能登记变异）
           # 字符类要带 `-`/`.`：crate 目录名形如 trit-immune，漏了连字符就一条也收不到
           bsh=$(git diff --name-only "$BASE_SHA"...HEAD -- 'scripts/*.sh' 'crates/*/scripts/*.sh' \
+<<<<<<< HEAD
             | grep -E '^(scripts|crates/[A-Za-z0-9_.-]+/scripts)/[A-Za-z0-9_.-]+\.sh$' \
             | while read -r f; do grep -q -- '--self-test' "$f" 2>/dev/null && echo "$f"; done || true)
           pkgs=$(printf '%s\n%s\n%s\n' "$pkgs" "$scripts" "$bsh" | sed '/^$/d' | sort -u)
+=======
+            | grep -E '^(scripts|crates/[A-Za-z0-9_.-]+/scripts)/[A-Za-z0-9_.-]+\.sh$' || true)
+          # 登记表按目标拆成 scripts/mutants/<目标>.json 之后，改 json 就是改那个目标的登记，
+          # 要把文件名映射回目标本身（`__` → `/`），否则这个目标的变异一条都不会被重跑。
+          jsons=$(git diff --name-only "$BASE_SHA"...HEAD -- 'scripts/mutants/*.json' \
+            | sed -E 's#^scripts/mutants/(.*)\.json$#\1#; s#__#/#g' || true)
+          pkgs=$(printf '%s\n%s\n%s\n%s\n' "$pkgs" "$scripts" "$bsh" "$jsons" | sed '/^$/d' | sort -u)
+>>>>>>> origin/main
           args=""
           for pkg in $pkgs; do args="$args --pkg $pkg"; done
           echo "args=$args" >> "$GITHUB_OUTPUT"

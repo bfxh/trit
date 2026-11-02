@@ -1,0 +1,26 @@
+[
+ {
+  "name": "lsp: 律 lint 不比较否定差异",
+  "file": "crates/trit-lsp/src/semantics.rs",
+  "old": "        if left.name != right.name || left.negated == right.negated {",
+  "new": "        if true {",
+  "pkg": "trit-lsp",
+  "filter": "contradiction_is_flagged_in_all_spellings"
+ },
+ {
+  "name": "lsp: 语义分歧对拍恒不触发",
+  "file": "crates/trit-lsp/src/semantics.rs",
+  "old": "        if kleene != lukasiewicz {",
+  "new": "        if false {",
+  "pkg": "trit-lsp",
+  "filter": "lukasiewicz_implies_self_diverges"
+ },
+ {
+  "name": "lsp: 重命名不校验新名",
+  "file": "crates/trit-lsp/src/nav.rs",
+  "old": "    if !is_identifier(new_name) || analysis::constant(new_name).is_some() {",
+  "new": "    if false {",
+  "pkg": "trit-lsp",
+  "filter": "rename_rejects_invalid_and_constant_names"
+ }
+]

@@ -1,0 +1,154 @@
+[
+ {
+  "name": "net-format: encode 不校验模型",
+  "file": "crates/trit-net/src/format.rs",
+  "old": "    model\n        .validate()\n        .map_err(|error| FormatError::Model(error.to_string()))?;",
+  "new": "    let _ = &model;",
+  "pkg": "trit-net",
+  "filter": "encode_rejects_invalid_models_instead_of_truncating"
+ },
+ {
+  "name": "net-format: 不校验魔数",
+  "file": "crates/trit-net/src/format.rs",
+  "old": "    if magic != MAGIC {",
+  "new": "    if false {",
+  "pkg": "trit-net",
+  "filter": "bad_magic_is_rejected"
+ },
+ {
+  "name": "net-format: 打包长度向上取整改成向下",
+  "file": "crates/trit-net/src/format.rs",
+  "old": "        let bytes = self.take(trits.div_ceil(5))?;",
+  "new": "        let bytes = self.take(trits / 5)?;",
+  "pkg": "trit-net",
+  "filter": "round_trip_preserves_weights"
+ },
+ {
+  "name": "net-format: 维数按 u16 静默截断",
+  "file": "crates/trit-net/src/format.rs",
+  "old": "        let inputs = u16::try_from(layer.inputs).map_err(|_| {",
+  "new": "        let inputs = Ok::<u16, FormatError>((layer.inputs % 65536) as u16).map_err(|_| {",
+  "pkg": "trit-net",
+  "filter": "encode_rejects_invalid_models_instead_of_truncating"
+ },
+ {
+  "name": "net-train: 不校验模型就开训",
+  "file": "crates/trit-net/src/train.rs",
+  "old": "    model.validate()?;\n    for (index, sample) in inputs.iter().enumerate() {",
+  "new": "    for (index, sample) in inputs.iter().enumerate() {",
+  "pkg": "trit-net",
+  "filter": "rejects_inconsistent_model_and_late_short_samples"
+ },
+ {
+  "name": "net-train: 只校验第一条样本",
+  "file": "crates/trit-net/src/train.rs",
+  "old": "    for (index, sample) in inputs.iter().enumerate() {",
+  "new": "    for (index, sample) in inputs.iter().take(1).enumerate() {",
+  "pkg": "trit-net",
+  "filter": "rejects_inconsistent_model_and_late_short_samples"
+ },
+ {
+  "name": "net-train: 学习率不校验有限/正",
+  "file": "crates/trit-net/src/train.rs",
+  "old": "    if !options.learning_rate.is_finite() || options.learning_rate <= 0.0 {",
+  "new": "    if false {",
+  "pkg": "trit-net",
+  "filter": "rejects_non_finite_learning_rate_and_zero_epochs"
+ },
+ {
+  "name": "net-train: 放行 0 轮训练",
+  "file": "crates/trit-net/src/train.rs",
+  "old": "    if options.epochs == 0 {",
+  "new": "    if false {",
+  "pkg": "trit-net",
+  "filter": "rejects_non_finite_learning_rate_and_zero_epochs"
+ },
+ {
+  "name": "net-train: 梯度上升",
+  "file": "crates/trit-net/src/train.rs",
+  "old": "        let scale = options.learning_rate / count;",
+  "new": "        let scale = -options.learning_rate / count;",
+  "pkg": "trit-net",
+  "filter": "majority_five_is_learned"
+ },
+ {
+  "name": "net: +1 见证记到另一端",
+  "file": "crates/trit-net/src/infer.rs",
+  "old": "pos_witness[output] = Some(witness.clone());",
+  "new": "neg_witness[output] = Some(witness.clone());",
+  "pkg": "trit-net",
+  "filter": "ambiguous_output_carries_both_witnesses"
+ },
+ {
+  "name": "net: forward 不校验手搓模型",
+  "file": "crates/trit-net/src/infer.rs",
+  "old": "pub fn forward(model: &Model, inputs: &[Ternary]) -> Result<Vec<Sign>, ModelError> {\n    model.validate()?;",
+  "new": "pub fn forward(model: &Model, inputs: &[Ternary]) -> Result<Vec<Sign>, ModelError> {",
+  "pkg": "trit-net",
+  "filter": "hand_built_invalid_model_is_rejected_instead_of_panicking"
+ },
+ {
+  "name": "net: 区间下界不取端点最小值",
+  "file": "crates/trit-net/src/infer.rs",
+  "old": "low += low_term.min(high_term);",
+  "new": "low += low_term;",
+  "pkg": "trit-net",
+  "filter": "negative_weight_interval_spans_for_unknown_input"
+ },
+ {
+  "name": "net: 区间压缩下界拿上界算",
+  "file": "crates/trit-net/src/infer.rs",
+  "old": "            next_lows.push(sign(low));",
+  "new": "            next_lows.push(sign(high));",
+  "pkg": "trit-net",
+  "filter": "cancellation_is_exact_but_interval_is_blind"
+ },
+ {
+  "name": "net: 探测 allowlist 默认放行（没列的端口也探）",
+  "file": "crates/trit-net/src/netsec/probe.rs",
+  "old": "        self.targets\n            .iter()\n            .any(|(target_ip, ports)| *target_ip == ip && ports.contains(&port))",
+  "new": "        self.targets\n            .iter()\n            .any(|(target_ip, ports)| *target_ip == ip || ports.contains(&port))",
+  "pkg": "trit-net",
+  "filter": "allowlist_default_denies_everything"
+ },
+ {
+  "name": "net: 探测分类把明确拒绝当未知（RST 也敢不下结论）",
+  "file": "crates/trit-net/src/netsec/probe.rs",
+  "old": "            std::io::ErrorKind::ConnectionRefused => (Evidence::RuledOut, \"refused\".to_string()),",
+  "new": "            std::io::ErrorKind::ConnectionRefused => (Evidence::Unverified, \"refused\".to_string()),",
+  "pkg": "trit-net",
+  "filter": "classify_connect_maps_results_to_evidence"
+ },
+ {
+  "name": "net: 攻击图截断不封顶（枚举不全也敢下已证实/已排除）",
+  "file": "crates/trit-net/src/netsec/attack.rs",
+  "old": "        if truncated {",
+  "new": "        if false {",
+  "pkg": "trit-net",
+  "filter": "truncation_never_confirms_and_never_rules_out"
+ },
+ {
+  "name": "net: 攻击图路径折叠用 OR 代替 AND（X/F 环节被洗成已证实）",
+  "file": "crates/trit-net/src/netsec/attack.rs",
+  "old": "        Self::from_ternary(Algebra::Kleene.and(self.to_ternary(), other.to_ternary()))",
+  "new": "        Self::from_ternary(Algebra::Kleene.or(self.to_ternary(), other.to_ternary()))",
+  "pkg": "trit-net",
+  "filter": "one_unverified_edge_caps_the_whole_path"
+ },
+ {
+  "name": "net: 符号函数把负数当零",
+  "file": "crates/trit-net/src/infer.rs",
+  "old": "    (value > 0) as i32 - (value < 0) as i32",
+  "new": "    (value > 0) as i32",
+  "pkg": "trit-net",
+  "filter": "binary_forward_is_sign_of_weighted_sum"
+ },
+ {
+  "name": "net: 预算边界写成严格小于",
+  "file": "crates/trit-net/src/infer.rs",
+  "old": ".filter(|total| *total <= budget)",
+  "new": ".filter(|total| *total < budget)",
+  "pkg": "trit-net",
+  "filter": "budget_is_inclusive"
+ }
+]

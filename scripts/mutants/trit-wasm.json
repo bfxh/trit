@@ -1,0 +1,18 @@
+[
+ {
+  "name": "wasm: 未赋值的变量在 JSON 里不再标 X",
+  "file": "crates/trit-wasm/src/lib.rs",
+  "old": ".unwrap_or_else(|| \"X\".to_string());",
+  "new": ".unwrap_or_else(|| \"?\".to_string());",
+  "pkg": "trit-wasm",
+  "filter": "assignment_json_marks_variables_without_a_value_as_x"
+ },
+ {
+  "name": "wasm: 等价判定把结论取反",
+  "file": "crates/trit-wasm/src/lib.rs",
+  "old": "\"equivalent\": verdict.equivalent,",
+  "new": "\"equivalent\": !verdict.equivalent,",
+  "pkg": "trit-wasm",
+  "filter": "de_morgan_is_equivalent"
+ }
+]

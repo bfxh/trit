@@ -1,0 +1,101 @@
+[
+ {
+  "name": "green-audit: 0 个 job 的 run 当证据",
+  "file": "scripts/green_audit.py",
+  "old": "                elif not entries:",
+  "new": "                elif False:",
+  "pkg": "scripts/green_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "green-audit: job 清单没取到也当有证据",
+  "file": "scripts/green_audit.py",
+  "old": "                if entries is None:",
+  "new": "                if False:",
+  "pkg": "scripts/green_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "green-audit: 取不到必需清单当\"没有要求\"",
+  "file": "scripts/green_audit.py",
+  "old": "    if not required:",
+  "new": "    if False:",
+  "pkg": "scripts/green_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "green-audit: 形状不认识返回空列表（混淆\"取不到\"与\"没 job\"）",
+  "file": "scripts/green_audit.py",
+  "old": "        return body[\"jobs\"]\n    return None",
+  "new": "        return body[\"jobs\"]\n    return []",
+  "pkg": "scripts/green_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "green-audit: 必需检查压根没上报也放行",
+  "file": "scripts/green_audit.py",
+  "old": "        hit = find_reported(context, rollup, ci)\n        if hit is None:",
+  "new": "        hit = find_reported(context, rollup, ci) or {\n            \"name\": context, \"conclusion\": \"success\", \"status\": \"\", \"detailsUrl\": \"\"\n        }\n        if hit is None:",
+  "pkg": "scripts/green_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "green-audit: 必需清单有拦的但不判红",
+  "file": "scripts/green_audit.py",
+  "old": "    findings.append({\"kind\": kind, \"detail\": detail, \"blocking\": kind in BLOCKING})",
+  "new": "    findings.append({\"kind\": kind, \"detail\": detail, \"blocking\": False})",
+  "pkg": "scripts/green_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "green-audit: 批准后推送不点出",
+  "file": "scripts/green_audit.py",
+  "old": "        if commit_id and head_sha and commit_id != head_sha:",
+  "new": "        if False:",
+  "pkg": "scripts/green_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "green-audit: 控制台编码崩掉判决输出",
+  "file": "scripts/green_audit.py",
+  "old": "    try:\n        print(text)\n    except UnicodeEncodeError:\n        print(text.encode(encoding, \"replace\").decode(encoding, \"replace\"))",
+  "new": "    print(text)",
+  "pkg": "scripts/green_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "green-audit: 没跑过的必需检查当通过",
+  "file": "scripts/green_audit.py",
+  "old": "        if conclusion not in PASSING:",
+  "new": "        if False:",
+  "pkg": "scripts/green_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "green-audit: 警告也算拦（不分两档）",
+  "file": "scripts/green_audit.py",
+  "old": "            \"red\": any(finding[\"blocking\"] for finding in findings),",
+  "new": "            \"red\": bool(findings),",
+  "pkg": "scripts/green_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "green-audit: 非必需的 skipped 不点出",
+  "file": "scripts/green_audit.py",
+  "old": "        if conclusion == \"SKIPPED\" and entry[\"name\"] not in required:",
+  "new": "        if False:",
+  "pkg": "scripts/green_audit.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

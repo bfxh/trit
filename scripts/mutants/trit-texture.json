@@ -1,0 +1,146 @@
+[
+ {
+  "name": "convert: v2 解码取末级",
+  "file": "crates/trit-texture/src/convert.rs",
+  "old": "    let texture = levels.first().ok_or(TextureError::TtxEmpty)?;",
+  "new": "    let texture = levels.last().ok_or(TextureError::TtxEmpty)?;",
+  "pkg": "trit-texture",
+  "filter": "downgrade_rejects_mip_chains_and_model_kind"
+ },
+ {
+  "name": "convert: 盒式滤波只取首像素",
+  "file": "crates/trit-texture/src/convert.rs",
+  "old": "            for (dy, dx) in [(0usize, 0usize), (0, 1), (1, 0), (1, 1)] {",
+  "new": "            for (dy, dx) in [(0usize, 0usize)] {",
+  "pkg": "trit-texture",
+  "filter": "mip_chain_dimensions_and_box_filter_are_exact"
+ },
+ {
+  "name": "convert: 降级放行 mip 链",
+  "file": "crates/trit-texture/src/convert.rs",
+  "old": "    if levels.len() != 1 {",
+  "new": "    if levels.len() > 2 {",
+  "pkg": "trit-texture",
+  "filter": "downgrade_rejects_mip_chains_and_model_kind"
+ },
+ {
+  "name": "gguf: 张量长度不校验",
+  "file": "crates/trit-texture/src/gguf.rs",
+  "old": "    if needed > data.len() {",
+  "new": "    if false {",
+  "pkg": "trit-texture",
+  "filter": "rejects_non_finite_and_truncated"
+ },
+ {
+  "name": "gguf: 接受非 v2/v3 版本",
+  "file": "crates/trit-texture/src/gguf.rs",
+  "old": "    if !SUPPORTED_VERSIONS.contains(&version) {",
+  "new": "    if false {",
+  "pkg": "trit-texture",
+  "filter": "rejects_bad_magic_version_and_quantized_types"
+ },
+ {
+  "name": "gguf: 放行 NaN/Inf",
+  "file": "crates/trit-texture/src/gguf.rs",
+  "old": "    if !value.is_finite() {",
+  "new": "    if false {",
+  "pkg": "trit-texture",
+  "filter": "rejects_non_finite_and_truncated"
+ },
+ {
+  "name": "gguf: 阈值不做有限性校验",
+  "file": "crates/trit-texture/src/gguf.rs",
+  "old": "    if !options.zero_threshold.is_finite() || options.zero_threshold < 0.0 {",
+  "new": "    if false {",
+  "pkg": "trit-texture",
+  "filter": "unsupported_nan_threshold_is_rejected"
+ },
+ {
+  "name": "texture: into 解码 alpha 写 0",
+  "file": "crates/trit-texture/src/lib.rs",
+  "old": "                Ternary::True => 2,\n            }];\n            out[offset] = r;\n            out[offset + 1] = g;\n            out[offset + 2] = b;\n            out[offset + 3] = 255;",
+  "new": "                Ternary::True => 2,\n            }];\n            out[offset] = r;\n            out[offset + 1] = g;\n            out[offset + 2] = b;\n            out[offset + 3] = 0;",
+  "pkg": "trit-texture",
+  "filter": "decode_into_matches_allocating_and_rejects_short_buffers"
+ },
+ {
+  "name": "texture: trit 打包换基 2",
+  "file": "crates/trit-texture/src/lib.rs",
+  "old": "        out[byte] += (trit_digit(*value) * 3u32.pow(slot as u32)) as u8;",
+  "new": "        out[byte] += (trit_digit(*value) * 2u32.pow(slot as u32)) as u8;",
+  "pkg": "trit-texture",
+  "filter": "pack_roundtrips_all_five_trit_values"
+ },
+ {
+  "name": "texture: 基线位打包丢移位",
+  "file": "crates/trit-texture/src/lib.rs",
+  "old": "        payload[bit / 8] |= ((palette_index << (bit % 8)) & 0xff) as u8;",
+  "new": "        payload[bit / 8] |= (palette_index & 0xff) as u8;",
+  "pkg": "trit-texture",
+  "filter": "baseline_roundtrips_endpoint_colors_exactly"
+ },
+ {
+  "name": "texture: 最近色并列取大下标",
+  "file": "crates/trit-texture/src/endpoints.rs",
+  "old": "        if dist < best_dist {",
+  "new": "        if dist <= best_dist {",
+  "pkg": "trit-texture",
+  "filter": "nearest_color_breaks_ties_toward_the_lower_index"
+ },
+ {
+  "name": "texture: 调色板中点写成 1/3",
+  "file": "crates/trit-texture/src/endpoints.rs",
+  "old": "    let mid = |a: u8, b: u8| ((u16::from(a) + u16::from(b)) / 2) as u8;",
+  "new": "    let mid = |a: u8, b: u8| ((u16::from(a) + u16::from(b)) / 3) as u8;",
+  "pkg": "trit-texture",
+  "filter": "block_roundtrips_endpoint_colors_exactly"
+ },
+ {
+  "name": "ttx2: CRC 生成常数换轨",
+  "file": "crates/trit-texture/src/ttx.rs",
+  "old": "pub(crate) const GEN16: [i32; 17] = [2, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 1];",
+  "new": "pub(crate) const GEN16: [i32; 17] = [2, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 1];",
+  "pkg": "trit-texture",
+  "filter": "model_container_bytes_are_pinned"
+ },
+ {
+  "name": "ttx2: digit 映射偏移",
+  "file": "crates/trit-texture/src/ttx2/model.rs",
+  "old": "    (value + 1) as u32",
+  "new": "    (value + 2) as u32",
+  "pkg": "trit-texture",
+  "filter": "model_container_bytes_are_pinned"
+ },
+ {
+  "name": "ttx2: mip 允许同级",
+  "file": "crates/trit-texture/src/ttx2/mod.rs",
+  "old": "            if !(w <= prev_w && h <= prev_h && (w < prev_w || h < prev_h)) {",
+  "new": "            if !(w <= prev_w && h <= prev_h && (w <= prev_w || h <= prev_h)) {",
+  "pkg": "trit-texture",
+  "filter": "mip_chain_rejects_equal_misaligned_and_empty"
+ },
+ {
+  "name": "ttx2: 双轨行界错位（平面下标）",
+  "file": "crates/trit-texture/src/ttx2/model.rs",
+  "old": "                    1 => pos[row * words + col / TRITS_PER_WORD] |= bit,",
+  "new": "                    1 => pos[(row * self.inputs + col) / TRITS_PER_WORD] |= bit,",
+  "pkg": "trit-texture",
+  "filter": "dual_rail_conversion_matches_the_gpu_layout"
+ },
+ {
+  "name": "ttx2: 基 3 打包换基 2",
+  "file": "crates/trit-texture/src/ttx2/model.rs",
+  "old": "            (value_digit(*value) * 3u32.pow((index % TRITS_PER_PACKED_BYTE) as u32)) as u8;",
+  "new": "            (value_digit(*value) * 2u32.pow((index % TRITS_PER_PACKED_BYTE) as u32)) as u8;",
+  "pkg": "trit-texture",
+  "filter": "model_container_bytes_are_pinned"
+ },
+ {
+  "name": "ttx2: 层间衔接放行",
+  "file": "crates/trit-texture/src/ttx2/model.rs",
+  "old": "            if index > 0 && layer.inputs != layers[index - 1].outputs {",
+  "new": "            if false && index > 0 && layer.inputs != layers[index - 1].outputs {",
+  "pkg": "trit-texture",
+  "filter": "chain_dimensions_are_enforced_like_trit_net"
+ }
+]

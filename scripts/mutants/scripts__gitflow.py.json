@@ -1,0 +1,398 @@
+[
+ {
+  "name": "gitflow: --no-merge 也会去合",
+  "file": "scripts/gitflow.py",
+  "old": "    if not args[\"no_merge\"]:",
+  "new": "    if True:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: .env.* 漏收（只认 .env）",
+  "file": "scripts/gitflow.py",
+  "old": "        if path.name in SECRET_FILE_NAMES or path.name == \".env\" or path.name.startswith(\".env.\"):",
+  "new": "        if path.name in SECRET_FILE_NAMES or path.name == \".env\":",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: DCO 缺签名不报",
+  "file": "scripts/gitflow.py",
+  "old": "        if \"Signed-off-by:\" not in body:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: PR 链按 base 建索引（串不起来）",
+  "file": "scripts/gitflow.py",
+  "old": "            children = [c for c in by_base.get(chain[-1][\"headRefName\"], []) if c[\"number\"] not in seen]",
+  "new": "            children = []",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: ahead/behind 反着解析",
+  "file": "scripts/gitflow.py",
+  "old": "        return int(parts[0]), int(parts[1])",
+  "new": "        return int(parts[1]), int(parts[0])",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: enforce_admins 送 GET 的原对象而不是布尔",
+  "file": "scripts/gitflow.py",
+  "old": "        \"enforce_admins\": bool((rule.get(\"enforce_admins\") or {}).get(\"enabled\", False)),",
+  "new": "        \"enforce_admins\": rule.get(\"enforce_admins\") or False,",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: flake 不一致不报",
+  "file": "scripts/gitflow.py",
+  "old": "            if len(conclusions) > 1:",
+  "new": "            if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: payload 丢掉 restrictions 键（GitHub 必 422）",
+  "file": "scripts/gitflow.py",
+  "old": "        \"restrictions\": strip_urls(restrictions) if restrictions else None,\n",
+  "new": "",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: worktree 落进仓里",
+  "file": "scripts/gitflow.py",
+  "old": "    return root.parent / f\"{root.name}-{sanitize(branch)}\"",
+  "new": "    return root / f\"{sanitize(branch)}\"",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: write-tree 只看文件名不看结论码",
+  "file": "scripts/gitflow.py",
+  "old": "        return (modern_rc != 0 or bool(paths)), paths, \"write-tree\"",
+  "new": "        return bool(paths), paths, \"write-tree\"",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 不剥只读 url（PUT 必 422）",
+  "file": "scripts/gitflow.py",
+  "old": "        return {key: strip_urls(value) for key, value in node.items() if key != \"url\"}",
+  "new": "        return {key: strip_urls(value) for key, value in node.items()}",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 不认显式豁免标记",
+  "file": "scripts/gitflow.py",
+  "old": "            if ALLOW_MARKER in line or (index > 0 and ALLOW_MARKER in lines[index - 1]):",
+  "new": "            if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 仓库名不校验",
+  "file": "scripts/gitflow.py",
+  "old": "    return [] if REPO_RE.match(repo) else [f\"仓库名应为 owner/name：{repo}\"]",
+  "new": "    return []",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 任何状态都算通过",
+  "file": "scripts/gitflow.py",
+  "old": "CHECK_STATES_OK = {\"pass\", \"skipping\"}",
+  "new": "CHECK_STATES_OK = {\"pass\", \"skipping\", \"fail\", \"cancelled\", \"timed_out\", \"\"}",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 允许跳出仓库的路径",
+  "file": "scripts/gitflow.py",
+  "old": "        posix = pathlib.PurePosixPath(name)\n        if \"..\" in posix.parts or posix.is_absolute() or pathlib.Path(name).is_absolute():",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 冲突文件去重失效（同一文件报三遍）",
+  "file": "scripts/gitflow.py",
+  "old": "            if match.group(1) not in paths:",
+  "new": "            if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 冲突预览只印块头不点名文件",
+  "file": "scripts/gitflow.py",
+  "old": "        if stripped.endswith(\"in both\") or stripped.startswith(\"<<<<<<<\"):",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 分支名 .. / .lock 不拦",
+  "file": "scripts/gitflow.py",
+  "old": "    if \"..\" in name or \"//\" in name or name.endswith(\"/\") or name.endswith(\".lock\"):",
+  "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 分支名以 - 开头不拦（可注入 git 选项）",
+  "file": "scripts/gitflow.py",
+  "old": "    if name.startswith(\"-\"):",
+  "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 取不到分支 workflow 当\"不缺\"",
+  "file": "scripts/gitflow.py",
+  "old": "    if jobs is None:\n        return list(wanted)",
+  "new": "    if jobs is None:\n        return []",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 只对新增的必需检查负责（把老账算进本次）",
+  "file": "scripts/gitflow.py",
+  "old": "    return sorted(set(wanted) - set(current))",
+  "new": "    return sorted(wanted)",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 只读 url 只查一层",
+  "file": "scripts/gitflow.py",
+  "old": "        return \"url\" in node or any(has_url_key(value) for value in node.values())",
+  "new": "        return \"url\" in node",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 可清理分支把 main 也算进去",
+  "file": "scripts/gitflow.py",
+  "old": "    return sorted(name for name in names if name in merged and name != current and name not in bases)",
+  "new": "    return sorted(name for name in names if name in merged and name != current)",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 合并前不看表格里的失败项（没保护的仓红着也合）",
+  "file": "scripts/gitflow.py",
+  "old": "        if state not in CHECK_STATES_OK:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 复核不点名多出来的检查",
+  "file": "scripts/gitflow.py",
+  "old": "    problems += [f\"多 {context}\" for context in sorted(set(got) - set(wanted))]",
+  "new": "    problems += []",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 复核不点名少掉的检查",
+  "file": "scripts/gitflow.py",
+  "old": "    problems = [f\"少 {context}\" for context in sorted(set(wanted) - set(got))]",
+  "new": "    problems = []",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 密钥扫描失效",
+  "file": "scripts/gitflow.py",
+  "old": "            for pattern, label in SECRET_PATTERNS:\n                if pattern.search(line):",
+  "new": "            for pattern, label in SECRET_PATTERNS:\n                if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 拦路清单不点名具体 PR",
+  "file": "scripts/gitflow.py",
+  "old": "        if gaps:\n            blockers.append(",
+  "new": "        if False:\n            blockers.append(",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 按文件名判敏感文件失效（.env 会被提交）",
+  "file": "scripts/gitflow.py",
+  "old": "        if path.name in SECRET_FILE_NAMES or path.name == \".env\" or path.name.startswith(\".env.\"):",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 推保护前不看开着的 PR（会把人卡死）",
+  "file": "scripts/gitflow.py",
+  "old": "    if added and not force:",
+  "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 未并入的分支也被标陈旧",
+  "file": "scripts/gitflow.py",
+  "old": "        row[\"stale\"] = bool(row.get(\"merged\")) and (now - int(row.get(\"last_commit\", now))) > stale_days * 86400",
+  "new": "        row[\"stale\"] = (now - int(row.get(\"last_commit\", now))) > stale_days * 86400",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 检查竞态被当成失败",
+  "file": "scripts/gitflow.py",
+  "old": "    return \"no checks reported\" in lowered or \"no checks\" in lowered",
+  "new": "    return False",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 没有新增也去拦（无关 PR 被卡）",
+  "file": "scripts/gitflow.py",
+  "old": "    if not added:\n        return blockers",
+  "new": "    if False:\n        return blockers",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 离干 PR 不告警",
+  "file": "scripts/gitflow.py",
+  "old": "    off_trunk = [pr for pr in prs if pr[\"baseRefName\"] not in PROTECTED]",
+  "new": "    off_trunk = []",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 空文件列表也放行",
+  "file": "scripts/gitflow.py",
+  "old": "    if not files:\n        problems.append(",
+  "new": "    if False:\n        problems.append(",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 缺必需检查不标",
+  "file": "scripts/gitflow.py",
+  "old": "    if missing:\n        labels.append(\"missing-required-check\")",
+  "new": "    if False:\n        labels.append(\"missing-required-check\")",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 读不到 workflow 混成\"确实没这个 job\"",
+  "file": "scripts/gitflow.py",
+  "old": "            blockers.append(f\"#{pr.get('number')}（{branch}）读不到 workflow ⇒ 无法证明会跑：\"",
+  "new": "            blockers.append(f\"#{pr.get('number')}（{branch}）不会上报：\"",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 读不到开着的 PR 清单照样推",
+  "file": "scripts/gitflow.py",
+  "old": "                  \"确认无误再加 --force。\")\n            return 1",
+  "new": "                  \"确认无误再加 --force。\")\n            return 0",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 读空的必需清单也往保护上推（等于自己撤保护）",
+  "file": "scripts/gitflow.py",
+  "old": "    if not wanted:",
+  "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 退回 git add -A",
+  "file": "scripts/gitflow.py",
+  "old": "    commands: list[list[str]] = [[\"git\", \"add\", \"--\", *files]]",
+  "new": "    commands: list[list[str]] = [[\"git\", \"add\", \"-A\"]]",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 重复 PR 不标",
+  "file": "scripts/gitflow.py",
+  "old": "        if overlap >= 0.8:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 链根取全部 PR（重复/环）",
+  "file": "scripts/gitflow.py",
+  "old": "    roots = [pr for pr in prs if pr[\"baseRefName\"] not in heads]",
+  "new": "    roots = list(prs)",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 陈旧不标",
+  "file": "scripts/gitflow.py",
+  "old": "        if now - stamp > stale_days * 86400:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 预览不用 write-tree（把可自动合并报成冲突）",
+  "file": "scripts/gitflow.py",
+  "old": "    if lines and OID_RE.fullmatch(lines[0].strip()) and modern_rc in (0, 1):",
+  "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
