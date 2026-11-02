@@ -101,9 +101,12 @@ def save(root: pathlib.Path, directory: str) -> int:
     return verify(root, offline=True)
 
 
-def restore(root: pathlib.Path, verify_build: bool = True) -> int:
+def restore(root: pathlib.Path, verify_build: bool = True, force: bool = False) -> int:
     config = root / CONFIG
     backup = root / BACKUP
+    text = config.read_text(encoding="utf-8") if config.exists() else ""
+    # 只删"我们自己的" vendor/：没有备份、也没有标记段时，别碰用户的目录
+    owned = backup.exists() or (START in text and END in text)
     if backup.exists():
         config.parent.mkdir(parents=True, exist_ok=True)
         config.write_bytes(backup.read_bytes())
@@ -116,11 +119,12 @@ def restore(root: pathlib.Path, verify_build: bool = True) -> int:
         else:
             config.unlink()
         print("已移除配置里的 trit-vendor 段")
-    for name in ("vendor",):
-        path = root / name
-        if path.is_dir():
-            shutil.rmtree(path)
-            print(f"已删除 {name}/")
+    path = root / "vendor"
+    if path.is_dir() and (owned or force):
+        shutil.rmtree(path)
+        print("已删除 vendor/")
+    elif path.is_dir():
+        print("vendor/ 不是本工具建的（无备份、无标记段），保留；要删加 --force")
     return verify(root, offline=True) if verify_build else 0
 
 
@@ -177,6 +181,16 @@ def self_test() -> int:
         "[net]\nretry = 2\n\n" + block_for("vendor"),
     )
 
+    # 没有备份/标记段时，restore 不许删用户自己的 vendor/
+    with tempfile.TemporaryDirectory() as tmp:
+        root = pathlib.Path(tmp)
+        (root / "vendor").mkdir()
+        (root / "vendor" / "keep.txt").write_text("mine", encoding="utf-8")
+        check("外部 vendor/ 不被删", restore(root, verify_build=False), 0)
+        check("外部 vendor/ 仍在", (root / "vendor" / "keep.txt").exists(), True)
+        check("--force 才删", restore(root, verify_build=False, force=True), 0)
+        check("--force 后已删", (root / "vendor").exists(), False)
+
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp)
         (root / CONFIG).parent.mkdir(parents=True)
@@ -209,7 +223,7 @@ def main(argv: list[str]) -> int:
         directory = argv[argv.index("--dir") + 1] if "--dir" in argv else "vendor"
         return save(root, directory)
     if command == "restore":
-        return restore(root)
+        return restore(root, force="--force" in argv)
     if command == "status":
         return status(root)
     print(__doc__)

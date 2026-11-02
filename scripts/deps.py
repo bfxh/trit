@@ -320,6 +320,9 @@ def detach(root: pathlib.Path, crate_name: str, to: pathlib.Path, force: bool) -
     if crate_name not in plan_map:
         print(f"没有这个 crate：{crate_name}")
         return 2
+    if to == root or root in to.parents:
+        print(f"拒绝：目标目录在源仓里（{to}），会互相包含")
+        return 2
     if to.exists() and any(to.iterdir()) and not force:
         print(f"目标目录非空：{to}（要覆盖加 --force）")
         return 2
@@ -333,7 +336,7 @@ def detach(root: pathlib.Path, crate_name: str, to: pathlib.Path, force: bool) -
         dst = to / "crates" / name
         if dst.exists():
             shutil.rmtree(dst)
-        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("target", ".trit"))
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("target", ".trit", "vendor"))
         manifest = dst / "Cargo.toml"
         text = manifest.read_text(encoding="utf-8")
         new_text, changed = rewrite_manifest(text, crate, ws, set(closure))

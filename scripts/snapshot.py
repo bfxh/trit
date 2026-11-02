@@ -21,6 +21,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -32,6 +33,7 @@ STORE = ".trit"
 # 构建产物与本地状态不进快照：它们可再生，塞进来只会让快照变成垃圾场。
 EXCLUDE_DIRS = {".git", "target", ".trit", "node_modules", "__pycache__", ".venv"}
 MANIFEST_VERSION = 1
+SNAP_ID_RE = re.compile(r"^\d{8}T\d{6}Z-[0-9a-f]{4}$")
 
 
 def sha256_file(path: pathlib.Path) -> str:
@@ -105,7 +107,8 @@ def save(root: pathlib.Path, label: str) -> str:
         path = root / rel
         sha = sha256_file(path)
         store_blob(root, path, sha)
-        files[rel] = {"sha": sha, "size": path.stat().st_size}
+        stat = path.stat()
+        files[rel] = {"sha": sha, "size": stat.st_size, "mode": stat.st_mode & 0o777}
     snap_id = new_id()
     manifest = {
         "version": MANIFEST_VERSION,
@@ -142,6 +145,9 @@ def resolve(root: pathlib.Path, snap_id: str) -> dict:
         if not snaps:
             raise SystemExit("没有任何快照（先跑 save）")
         return snaps[-1]
+    if not SNAP_ID_RE.match(snap_id):
+        # id 直接拼进路径：不许带分隔符/../（否则等于任意 json 读取）
+        raise SystemExit(f"快照 id 不合法：{snap_id}")
     path = snapshots_dir(root) / f"{snap_id}.json"
     if not path.is_file():
         raise SystemExit(f"找不到快照 {snap_id}（用 list 看有哪些）")
@@ -187,6 +193,9 @@ def restore(root: pathlib.Path, manifest: dict, prune: bool, dry_run: bool) -> i
         target = root / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
+        mode = manifest["files"][rel].get("mode")
+        if mode is not None:
+            os.chmod(target, mode)  # 可执行位也要还原（脚本回退后仍要能跑）
         if sha256_file(target) != manifest["files"][rel]["sha"]:
             raise SystemExit(f"回退失败：{rel} 写回后校验不一致（pending 保留，可重跑 restore）")
     if prune:
@@ -282,7 +291,15 @@ def self_test() -> int:
             restored_ok = False
         check("对象被篡改时回退报错", restored_ok, False)
 
-        # 9) 构建产物不进快照
+        # 9) 快照 id 直接拼路径：非法 id 必须拒绝（不许 ../ 跳出去）
+        try:
+            resolve(root, "../evil")
+            reason = ""
+        except SystemExit as exc:
+            reason = str(exc)
+        check("非法快照 id 被拒绝（要点名不合法，不是碰巧找不到）", "不合法" in reason, True)
+
+        # 10) 构建产物不进快照
         (root / "target").mkdir()
         (root / "target" / "junk.bin").write_bytes(b"junk")
         check("target/ 不进快照", "target/junk.bin" in iter_files(root), False)

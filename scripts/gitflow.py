@@ -36,7 +36,7 @@ SECRET_PATTERNS = [
     (re.compile("xox" + r"[baprs]-[A-Za-z0-9-]{10,}"), "Slack token"),
     (re.compile(r"-----BEGIN " + r"[A-Z ]*PRIVATE KEY-----"), "私钥"),
 ]
-SECRET_FILE_NAMES = {"credentials.json", "id_rsa", "id_ed25519"}
+SECRET_FILE_NAMES = {"credentials.json", "id_rsa", "id_ed25519", "id_dsa", ".npmrc", ".pypirc", "secrets.json", "secrets.yaml"}
 
 
 def git(args: list[str], cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess[str]:
@@ -88,6 +88,34 @@ def detect_repo(root: pathlib.Path = ROOT) -> str:
         if name:
             return name
     return "bfxh/trit"
+
+
+BRANCH_BAD = set(" ~^:?*[\\")
+REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def branch_problems(name: str) -> list[str]:
+    """分支名会直接进 git 命令：拒绝选项注入与 git 自己也不收的形态。"""
+    problems: list[str] = []
+    if not name:
+        problems.append("分支名为空")
+    if name.startswith("-"):
+        problems.append("分支名不许以 - 开头（会被当成 git 选项）")
+    if any(ch in BRANCH_BAD or ord(ch) < 32 for ch in name):
+        problems.append("分支名含空白/控制字符或 ~^:?*[\\")
+    if ".." in name or "//" in name or name.endswith("/") or name.endswith(".lock"):
+        problems.append("分支名形态非法（..、//、结尾 / 或 .lock）")
+    return problems
+
+
+def repo_problems(repo: str) -> list[str]:
+    return [] if REPO_RE.match(repo) else [f"仓库名应为 owner/name：{repo}"]
+
+
+def staged_outside(root: pathlib.Path, files: list[str]) -> list[str]:
+    """索引里已有的、但不在本次点名列表里的文件——提交会把它们一起带上。"""
+    staged = [line for line in git(["diff", "--cached", "--name-only"], root).stdout.splitlines() if line.strip()]
+    return sorted(set(staged) - set(files))
 
 
 def failed_checks(rollup: list[dict]) -> list[dict]:
@@ -180,6 +208,15 @@ def plan(args: dict) -> list[list[str]]:
 
 def publish(args: dict) -> int:
     problems = base_ok(ROOT, args["files"])
+    if not problems:
+        problems += repo_problems(args["repo"])
+        if args["branch"]:
+            problems += branch_problems(args["branch"])
+        outside = staged_outside(ROOT, args["files"])
+        if outside:
+            problems.append(
+                "索引里已有不在本次列表的文件（提交会带上它们）：" + ", ".join(outside)
+            )
     hits = secret_scan(ROOT, args["files"]) if not problems else []
     if problems or hits:
         for line in problems + hits:
@@ -215,13 +252,20 @@ def publish(args: dict) -> int:
         handle.write(message)
         message_file = handle.name
 
+    existing = gh(["pr", "list", "--repo", args["repo"], "--head", branch, "--state", "open", "--json", "number"])
+    has_pr = existing.returncode == 0 and existing.stdout.strip() not in ("", "[]")
     steps = [
         ["git", "add", "--", *args["files"]],
         ["git", "commit", "-F", message_file],
         ["git", "push", "-u", args["remote"], branch],
-        ["gh", "pr", "create", "--repo", args["repo"], "--base", args["base"], "--head", branch,
-         "--title", args["title"], "--body-file", args["body_file"] or message_file],
     ]
+    if not has_pr:
+        steps.append([
+            "gh", "pr", "create", "--repo", args["repo"], "--base", args["base"], "--head", branch,
+            "--title", args["title"], "--body-file", args["body_file"] or message_file,
+        ])
+    else:
+        print("该分支已有 open PR：跳过 create，直接等 CI")
     for command in steps:
         result = git(command[1:]) if command[0] == "git" else gh(command[1:])
         print(f"$ {' '.join(command[:3])} … rc={result.returncode}")
@@ -310,6 +354,12 @@ def self_test() -> int:
                   {"name": "bad", "conclusion": "FAILURE"},
                   {"name": "run", "conclusion": None},
               ])], ["bad"])
+        check("分支名以 - 开头被拒", bool(branch_problems("-x")), True)
+        check("分支名含 .. 被拒", bool(branch_problems("feat/../x")), True)
+        check("分支名带空格被拒", bool(branch_problems("feat x")), True)
+        check("正常分支名放行", branch_problems("feat/x-1"), [])
+        check("仓库名要 owner/name", bool(repo_problems("trit")), True)
+        check("正常仓库名放行", repo_problems("bfxh/trit"), [])
         check("默认 base 优先 main", pick_base(["main", "master"]), "main")
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")

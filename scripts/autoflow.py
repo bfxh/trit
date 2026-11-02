@@ -45,6 +45,10 @@ def run(root: pathlib.Path, argv: list[str], label: str, keep_on_fail: bool) -> 
         # 命令不存在/没权限：也是一次失败，必须走回退路径（返回 127 与 shell 一致）
         print(f"autoflow: 命令起不来：{exc}")
         returncode = 127
+    except KeyboardInterrupt:
+        print("autoflow: 被中断，回退到快照")
+        code = snap.restore(root, manifest, prune=True, dry_run=False)
+        return 130 if code == 0 else code
     if returncode == 0:
         print(f"autoflow: 成功，改动已保留；回退：python scripts/snapshot.py restore {snap_id}")
         return 0
