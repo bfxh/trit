@@ -4050,6 +4050,15 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    {
+        "name": "gitflow: 检查竞态被当成失败",
+        "file": "scripts/gitflow.py",
+        "old": "    return \"no checks reported\" in lowered or \"no checks\" in lowered",
+        "new": "    return False",
+        "pkg": "scripts/gitflow.py",
+        "filter": "",
+        "runner": "python",
+    },
     # ---- gitflow（一句话提交 GitHub）----
     {
         "name": "gitflow: 密钥扫描失效",

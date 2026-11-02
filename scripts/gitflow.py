@@ -691,7 +691,31 @@ def publish(args: dict) -> int:
     return watch_and_merge(branch, args["repo"])
 
 
+def checks_not_yet(output: str) -> bool:
+    """检查还没注册时 gh 会说 no checks reported——这是竞态，不是失败。"""
+    lowered = output.lower()
+    return "no checks reported" in lowered or "no checks" in lowered
+
+
+def wait_for_checks(repo: str, branch: str, attempts: int = 40, pause: int = 15) -> int:
+    for index in range(attempts):
+        listing = gh(["pr", "checks", "--repo", repo, branch])
+        if listing.returncode == 0 and listing.stdout.strip():
+            return 0
+        if not checks_not_yet(listing.stdout):
+            print("查询检查失败：")
+            print(listing.stdout[-1000:])
+            return 1
+        if index == 0:
+            print("检查还没注册，先等它们出现…")
+        time.sleep(pause)
+    print("等检查出现超时（10 分钟）")
+    return 1
+
+
 def watch_and_merge(branch: str, repo: str) -> int:
+    if wait_for_checks(repo, branch) != 0:
+        return 1
     checks = gh(["pr", "checks", "--repo", repo, branch, "--watch"])
     if checks.returncode != 0:
         print("CI 未通过：")
@@ -810,6 +834,8 @@ def self_test() -> int:
         chains, off = pr_chains(prs)
         check("链长度", [len(c) for c in chains], [2, 1])
         check("离干 PR 被标出", sorted(p["headRefName"] for p in off), ["feat/b", "feat/c"])
+        check("竞态识别：no checks reported", checks_not_yet("no checks reported on the 'x' branch"), True)
+        check("真实失败不算竞态", checks_not_yet("some check failed"), False)
         check("默认 base 优先 main", pick_base(["main", "master"]), "main")
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")
@@ -870,6 +896,12 @@ def main(argv: list[str]) -> int:
         return 2
     if command == "stack":
         return stack(repo, remote_state="--no-remote" not in argv)
+    if command == "merge":
+        target = argv[argv.index("--branch") + 1] if "--branch" in argv else ""
+        if not target:
+            print("用法：gitflow.py merge --branch <分支>")
+            return 2
+        return watch_and_merge(target, repo)
     if command == "diagnose":
         pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
         if not pr:
