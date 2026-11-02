@@ -172,13 +172,17 @@ impl DepthNet {
                     continue;
                 }
                 let d = pred[i] - t2[i];
-                if tau > 0.0 && d.abs() > tau {
-                    continue; // 遮挡/离群：不约束
-                }
-                e2 += d * d;
+                // 软化门（Cauchy 型）：|d|≫tau 的遮挡像素权重趋 0，但在预测还差时**不直接排除**
+                // ——硬截断会自锁：预测一旦离 warp 超过 tau，一致性项就永远不再起作用。
+                let wgt = if tau > 0.0 {
+                    1.0 / (1.0 + (d / tau) * (d / tau))
+                } else {
+                    1.0
+                };
+                e2 += wgt * d * d;
                 n2 += 1;
-                g2[i] = 2.0 * wt * d;
-                gb2 += 2.0 * wt * d;
+                g2[i] = 2.0 * wt * wgt * d;
+                gb2 += 2.0 * wt * wgt * d;
             }
             let inv2 = 1.0 / n2.max(1) as f32;
             for i in 0..w * h {
@@ -382,6 +386,93 @@ mod tests {
             "应学到常数 2.0，实际 {mean:.3}（out_b {:.3}）",
             net.out_b
         );
+    }
+
+    #[test]
+    fn forward_includes_external_bias() {
+        // 部署走 forward：外置 out_b 必须真的加在输出上（bias 在 Conv 的 scale 乘法之内，
+        // 少了这一句 scale 一缩就把 DC 吞掉）。
+        let (w, h) = (8usize, 8usize);
+        let mut net = DepthNet::new(4, 3);
+        let mean_of = |n: &DepthNet| {
+            let p = n.forward(&gray(0.5, w, h), w, h);
+            p.iter().sum::<f32>() / p.len() as f32
+        };
+        let base = mean_of(&net);
+        net.out_b = 3.5;
+        let shifted = mean_of(&net);
+        assert!(
+            (shifted - base - 3.5).abs() < 1e-3,
+            "forward 必须加外置 out_b：{base:.3} → {shifted:.3}"
+        );
+    }
+
+    #[test]
+    fn mv_gate_skips_outliers() {
+        // GT 全 0；warp 目标是 10（远超 tau=0.5，属于遮挡/离群）⇒ 截断门必须把它全部跳过，
+        // 否则预测会被拉走。没有门的实现会在这里涨到 O(1) 以上。
+        let (w, h) = (8usize, 8usize);
+        let zero = vec![0.0f32; w * h];
+        let ones = vec![true; w * h];
+        let bad = vec![10.0f32; w * h];
+        let mut net = DepthNet::new(4, 3);
+        for _ in 0..60 {
+            net.train_step_mv(
+                &gray(0.5, w, h),
+                w,
+                h,
+                TargetMap {
+                    y: &zero,
+                    mask: &ones,
+                },
+                Some(MvExtra {
+                    y: &bad,
+                    mask: &ones,
+                    weight: 1.0,
+                    tau: 0.5,
+                }),
+                0.02,
+            );
+        }
+        let p = net.forward(&gray(0.5, w, h), w, h);
+        let mean = p.iter().sum::<f32>() / p.len() as f32;
+        assert!(
+            mean.abs() < 1.0,
+            "离群 warp 目标应被截断门跳过，实际 {mean:.3}"
+        );
+    }
+
+    #[test]
+    fn mv_inlier_pulls_prediction() {
+        // GT 全 0、warp 目标 0.8（在 tau 内）⇒ 两项各占一半权重，最优解 ≈ 0.4。
+        // 这条挡住「一致性项根本没接进损失」的实现。
+        let (w, h) = (8usize, 8usize);
+        let zero = vec![0.0f32; w * h];
+        let ones = vec![true; w * h];
+        let good = vec![0.8f32; w * h];
+        let mut net = DepthNet::new(4, 3);
+        for _ in 0..400 {
+            net.train_step_mv(
+                &gray(0.5, w, h),
+                w,
+                h,
+                TargetMap {
+                    y: &zero,
+                    mask: &ones,
+                },
+                Some(MvExtra {
+                    y: &good,
+                    mask: &ones,
+                    weight: 1.0,
+                    tau: 0.5,
+                }),
+                0.02,
+            );
+        }
+        let p = net.forward(&gray(0.5, w, h), w, h);
+        let mean = p.iter().sum::<f32>() / p.len() as f32;
+        // 软门会把平衡点从 0.4 拉低（|d| 越大权重越小），但只要是「接上了」就应明显 > 0
+        assert!(mean > 0.1, "tau 内的 warp 目标必须起作用，实际 {mean:.3}");
     }
 
     #[test]

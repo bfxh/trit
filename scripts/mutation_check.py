@@ -3109,6 +3109,30 @@ MUTANTS = [
         "pkg": "trit-ops",
         "filter": 'quantize_respects_sign_and_clamps',
     },
+    {
+        "name": "parts: 深度头丢掉外置 out_b（学不了全局 DC）",
+        "file": "crates/trit-parts/src/depthnet.rs",
+        "old": ".map(|m| m.iter().map(|v| v + self.out_b).collect())",
+        "new": ".map(|m| m.iter().map(|v| *v).collect())",
+        "pkg": "trit-parts",
+        "filter": "forward_includes_external_bias"
+    },
+    {
+        "name": "parts: scale 梯度不按有效像素归一（步长爆掉）",
+        "file": "crates/trit-parts/src/depthnet.rs",
+        "old": "let inv_gt = 1.0 / valid.max(1) as f32;",
+        "new": "let inv_gt = 1.0f32;",
+        "pkg": "trit-parts",
+        "filter": "learns_constant_offset"
+    },
+    {
+        "name": "parts: 多视角一致性去掉鲁棒权重（遮挡把预测拉走）",
+        "file": "crates/trit-parts/src/depthnet.rs",
+        "old": "                let wgt = if tau > 0.0 {\n                    1.0 / (1.0 + (d / tau) * (d / tau))\n                } else {\n                    1.0\n                };",
+        "new": "                let wgt = 1.0f32;",
+        "pkg": "trit-parts",
+        "filter": "mv_gate_skips_outliers"
+    },
 ]
 
 
