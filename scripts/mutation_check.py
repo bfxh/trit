@@ -4113,6 +4113,215 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    # ---- 绿即合前的证据审计（必需检查到底跑没跑）----
+    {
+        "name": "green-audit: 没跑过的必需检查当通过",
+        "file": "scripts/green_audit.py",
+        "old": "        if conclusion not in PASSING:",
+        "new": "        if False:",
+        "pkg": "scripts/green_audit.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "green-audit: 必需检查压根没上报也放行",
+        "file": "scripts/green_audit.py",
+        "old": "        hit = find_reported(context, rollup, ci)\n        if hit is None:",
+        "new": "        hit = find_reported(context, rollup, ci) or {\n            \"name\": context, \"conclusion\": \"success\", \"status\": \"\", \"detailsUrl\": \"\"\n        }\n        if hit is None:",
+        "pkg": "scripts/green_audit.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "green-audit: 取不到必需清单当\"没有要求\"",
+        "file": "scripts/green_audit.py",
+        "old": "    if not required:",
+        "new": "    if False:",
+        "pkg": "scripts/green_audit.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "green-audit: job 清单没取到也当有证据",
+        "file": "scripts/green_audit.py",
+        "old": "                if entries is None:",
+        "new": "                if False:",
+        "pkg": "scripts/green_audit.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "green-audit: 0 个 job 的 run 当证据",
+        "file": "scripts/green_audit.py",
+        "old": "                elif not entries:",
+        "new": "                elif False:",
+        "pkg": "scripts/green_audit.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "green-audit: 形状不认识返回空列表（混淆\"取不到\"与\"没 job\"）",
+        "file": "scripts/green_audit.py",
+        "old": "        return body[\"jobs\"]\n    return None",
+        "new": "        return body[\"jobs\"]\n    return []",
+        "pkg": "scripts/green_audit.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "green-audit: 警告也算拦（不分两档）",
+        "file": "scripts/green_audit.py",
+        "old": "            \"red\": any(finding[\"blocking\"] for finding in findings),",
+        "new": "            \"red\": bool(findings),",
+        "pkg": "scripts/green_audit.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "green-audit: 必需清单有拦的但不判红",
+        "file": "scripts/green_audit.py",
+        "old": "    findings.append({\"kind\": kind, \"detail\": detail, \"blocking\": kind in BLOCKING})",
+        "new": "    findings.append({\"kind\": kind, \"detail\": detail, \"blocking\": False})",
+        "pkg": "scripts/green_audit.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "green-audit: 批准后推送不点出",
+        "file": "scripts/green_audit.py",
+        "old": "        if commit_id and head_sha and commit_id != head_sha:",
+        "new": "        if False:",
+        "pkg": "scripts/green_audit.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "green-audit: 非必需的 skipped 不点出",
+        "file": "scripts/green_audit.py",
+        "old": "        if conclusion == \"SKIPPED\" and entry[\"name\"] not in required:",
+        "new": "        if False:",
+        "pkg": "scripts/green_audit.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "green-audit: 控制台编码崩掉判决输出",
+        "file": "scripts/green_audit.py",
+        "old": "    try:\n        print(text)\n    except UnicodeEncodeError:\n        print(text.encode(encoding, \"replace\").decode(encoding, \"replace\"))",
+        "new": "    print(text)",
+        "pkg": "scripts/green_audit.py",
+        "filter": "",
+        "runner": "python",
+    },
+    # ---- 测试面体检（绿不等于跑了东西）----
+    {
+        "name": "test-surface: 空壳测试检不出来",
+        "file": "scripts/test_surface.py",
+        "old": "        if not body.strip():",
+        "new": "        if False:",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "test-surface: prop_assert 不算断言（属性测试被误判）",
+        "file": "scripts/test_surface.py",
+        "old": "    r\"(assert|expect\\(|unwrap\\(|panic!|unreachable!|ensure|\"",
+        "new": "    r\"(\\bassert\\b|expect\\(|unwrap\\(|panic!|unreachable!|ensure|\"",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "test-surface: 扫描器连文档一起扫（自扫误报）",
+        "file": "scripts/test_surface.py",
+        "old": "    code = blank_strings(text) if is_python else text",
+        "new": "    code = text",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "test-surface: 裸 ignore 放行",
+        "file": "scripts/test_surface.py",
+        "old": "    for match in RUST_IGNORE_BARE.finditer(text):",
+        "new": "    for match in []:",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "test-surface: 无理由 skip 放行",
+        "file": "scripts/test_surface.py",
+        "old": "        for match in PY_SKIP_NOREASON.finditer(code):",
+        "new": "        for match in []:",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "test-surface: 空转自测不抓（门拿它当判据=空转）",
+        "file": "scripts/test_surface.py",
+        "old": "        if not ASSERT_ANY.search(strip_comments(tail)):",
+        "new": "        if False:",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "test-surface: 未登记的计数单位放行",
+        "file": "scripts/test_surface.py",
+        "old": "        if name not in baseline:",
+        "new": "        if False:",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "test-surface: 测试变少不判红",
+        "file": "scripts/test_surface.py",
+        "old": "        elif entry[\"tests\"] < baseline[name]:",
+        "new": "        elif False:",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "test-surface: --update 接受测试变少",
+        "file": "scripts/test_surface.py",
+        "old": "    if grew:",
+        "new": "    if False:",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "test-surface: 台账里的死单位不报",
+        "file": "scripts/test_surface.py",
+        "old": "    for name in sorted(set(baseline) - set(units)):",
+        "new": "    for name in []:",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "test-surface: 警告也算拦（不分两档）",
+        "file": "scripts/test_surface.py",
+        "old": "        \"red\": any(finding[\"blocking\"] for finding in findings),",
+        "new": "        \"red\": bool(findings),",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "test-surface: 拦了也不判红",
+        "file": "scripts/test_surface.py",
+        "old": "        \"red\": any(finding[\"blocking\"] for finding in findings),",
+        "new": "        \"red\": False,",
+        "pkg": "scripts/test_surface.py",
+        "filter": "",
+        "runner": "python",
+    },
     {
         "name": "split: 共变相似度不算比例（全连）",
         "file": "scripts/split.py",
@@ -4795,16 +5004,25 @@ def self_test() -> int:
     finally:
         MUTANTS.extend(saved)
     check("空集未豁免→判红", empty_rc, 1)
-    check("空集但自证豁免→放行", exempt_rc, 0)
-    check("多目标里 0 条的那个→判红", partial_rc, 1)
-    check("全部是自证豁免→放行", covered_rc, 0)
+    # 这三条的夹具是主仓里真实存在的目标（伞包 sansheng、无自测面的 gen_docs_charts.py）；
+    # 独立镜像仓里没有 ⇒ 大声 SKIP，不许把它们算成"通过"。
+    has_ambient = (ROOT / "crates" / "sansheng").is_dir() and (ROOT / "scripts" / "gen_docs_charts.py").is_file()
+    if has_ambient:
+        check("空集但自证豁免→放行", exempt_rc, 0)
+        check("多目标里 0 条的那个→判红", partial_rc, 1)
+        check("全部是自证豁免→放行", covered_rc, 0)
+    else:
+        print("SKIP 豁免/多目标 3 条：本仓没有夹具目标（主仓专属）")
     check("全仓登记为空→判红", whole_empty_rc, 1)
     check("选中过滤", [m["pkg"] for m in select(["sansheng"])], [])
     check("空选择=全表", len(select([])), len(MUTANTS))
     # 豁免项自己也要可复核：路径写错时 has_own_logic 会返回 False，豁免会静静地套在空气上
-    for pkg in EXEMPT:
-        exists = pkg.endswith((".py", ".sh")) and (ROOT / pkg).is_file()
-        check(f"EXEMPT 路径存在：{pkg}", exists or (ROOT / "crates" / pkg).is_dir(), True)
+    if (ROOT / "crates").is_dir():
+        for pkg in EXEMPT:
+            exists = pkg.endswith((".py", ".sh")) and (ROOT / pkg).is_file()
+            check(f"EXEMPT 路径存在：{pkg}", exists or (ROOT / "crates" / pkg).is_dir(), True)
+    else:
+        print("SKIP EXEMPT 台账对账：本仓没有 crates/ 目录（台账属于主仓）")
 
     # 四、豁免过期与 preflight 边界（按语言分判），用临时夹具，不碰真仓
     with tempfile.TemporaryDirectory() as tmp:
