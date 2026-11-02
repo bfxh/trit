@@ -117,6 +117,16 @@ jobs:
       - name: Dependency detach self-test
         run: python3 scripts/deps.py --self-test
 
+  vendor:
+    name: vendor (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 离线自足开关的配置拼接/还原：重复 save 不重复插段、restore 优先按备份、备份只做一次
+      - name: Vendor config splice self-test
+        run: python3 scripts/vendor.py --self-test
+
   stress:
     name: stress (high pressure invariants)
     runs-on: ubuntu-latest

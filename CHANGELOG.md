@@ -19,8 +19,11 @@
   把 `workspace = true` 依赖展开成 `{ path = "../<名>", version }`，再用 `cargo metadata --offline` 验一遍。
   只写目标目录，源仓一个字节不动；实测 `trit-attn` 脱离后 **`cargo check --offline` 5.07s 通过**，
   `trit-gpu` 连同 `trit-texture` 的 dev 闭包一起脱离也能独立解析。
-- 两者各带 `--self-test`（14 / 22 条）并进 CI（job `snapshot (self-test)` / `deps plan (self-test)`）；
-  变异门登记 24 条自锁（8 + 16），登记表 **431 → 455**。
+- `scripts/vendor.py save/restore/status`：**离线自足开关**——`cargo vendor` 整批拷进 `vendor/` 并插入带标记的
+  `.cargo/config.toml` source replacement，`restore` 按备份还原并删目录；两个方向都用 `cargo metadata --offline` 验。
+  实仓演练：**337.3 MiB**、`cargo check --offline -p trit-attn` 4.87s 通过；restore 后 `git status` 干净。
+- 三者各带 `--self-test`（14 / 22 / 13 条）并进 CI（job `snapshot (self-test)` / `deps plan (self-test)` / `vendor (self-test)`）；
+  变异门登记 30 条自锁（8 + 16 + 6），登记表 **431 → 461**。
 
 ### Changed（变异门：三语言口径 + 逐目标 fail-closed + 门自身自测）
 

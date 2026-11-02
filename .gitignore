@@ -14,3 +14,7 @@ __pycache__/
 
 # 快照底座的本地产物（scripts/snapshot.py）：对象库与清单不进版本库
 .trit/
+
+# 离线自足（scripts/vendor.py）：vendor 目录与配置备份不进版本库
+/vendor/
+.cargo/config.toml.tritbak
