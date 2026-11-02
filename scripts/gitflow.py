@@ -90,6 +90,42 @@ def detect_repo(root: pathlib.Path = ROOT) -> str:
     return "bfxh/trit"
 
 
+def failed_checks(rollup: list[dict]) -> list[dict]:
+    """从 PR 的 statusCheckRollup 里挑出失败的；成功/跳过/未完成都不算失败。"""
+    bad: list[dict] = []
+    for check in rollup:
+        conclusion = (check.get("conclusion") or "").upper()
+        if conclusion in ("SUCCESS", "SKIPPED", "NEUTRAL", ""):
+            continue
+        bad.append(check)
+    return bad
+
+
+def diagnose(pr: str, repo: str) -> int:
+    """把失败检查的**地址**逐条列出来：检查名 → 运行链接 → 失败日志尾部。"""
+    view = gh(["pr", "view", pr, "--repo", repo, "--json", "number,title,headRefName,statusCheckRollup"])
+    if view.returncode != 0:
+        print(view.stdout[-1000:])
+        return 1
+    data = json.loads(view.stdout)
+    print(f"#{data['number']} {data['title']}｜分支 {data['headRefName']}｜{repo}")
+    bad = failed_checks(data.get("statusCheckRollup") or [])
+    if not bad:
+        print("没有失败检查（可能还在跑）")
+        return 0
+    for check in bad:
+        print(f"- 失败：{check.get('name')} [{check.get('conclusion')}]")
+        url = check.get("detailsUrl") or ""
+        print(f"  地址：{url}")
+        match = re.search(r"/runs/(\d+)", url)
+        if match:
+            logs = gh(["run", "view", match.group(1), "--repo", repo, "--log-failed"])
+            tail = [line for line in logs.stdout.splitlines() if line.strip()][-20:]
+            for line in tail:
+                print("  | " + line[:300])
+    return 1
+
+
 def secret_scan(root: pathlib.Path, files: list[str]) -> list[str]:
     """返回命中说明；空列表表示干净。只扫**要点名提交的这几个文件**。"""
     hits: list[str] = []
@@ -262,6 +298,13 @@ def self_test() -> int:
         check("SSH remote 解析", repo_from_url("git@github.com:bfxh/trit.git"), "bfxh/trit")
         check("HTTPS remote 解析", repo_from_url("https://github.com/bfxh/trit-immune"), "bfxh/trit-immune")
         check("认不出的 remote 为空", repo_from_url("file:///tmp/x"), "")
+        check("失败检查只挑失败的",
+              [c["name"] for c in failed_checks([
+                  {"name": "ok", "conclusion": "SUCCESS"},
+                  {"name": "skip", "conclusion": "SKIPPED"},
+                  {"name": "bad", "conclusion": "FAILURE"},
+                  {"name": "run", "conclusion": None},
+              ])], ["bad"])
         check("默认 base 优先 main", pick_base(["main", "master"]), "main")
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")
@@ -299,6 +342,12 @@ def main(argv: list[str]) -> int:
         for line in hits:
             print(f"命中：{line}")
         return 1 if hits else 0
+    if command == "diagnose":
+        pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
+        if not pr:
+            print("用法：gitflow.py diagnose --pr <编号>")
+            return 2
+        return diagnose(pr, repo)
     if command == "publish":
         args = {
             "title": argv[argv.index("--title") + 1] if "--title" in argv else "",
