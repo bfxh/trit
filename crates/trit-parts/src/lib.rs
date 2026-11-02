@@ -33,7 +33,6 @@ pub mod ood;
 pub mod parts;
 pub mod ridge;
 pub mod splat;
-pub mod ste;
 pub mod tconv;
 pub mod tex;
 pub mod tpm;

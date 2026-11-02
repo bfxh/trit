@@ -3,12 +3,12 @@
 //! 为什么先有 CPU 版：**有限差分只能验证「直通前向」的梯度**（三值量化对 `w` 的导数几乎处处为 0），
 //! 所以判据拆成两层：
 //! 1. 对**有效权重** `E`（`E = q·scale`）做解析反向，用中心差分逐元素对拍 `∂L/∂x / ∂L/∂E / ∂L/∂b`；
-//! 2. `E → latent` 的映射按 `trit-learn` 的口径（[`crate::ste::Ste`]）单独验证：
+//! 2. `E → latent` 的映射按 `trit-learn` 的口径（[`trit_learn::Ste`]）单独验证：
 //!    `grad_latent = Ste::backward(w, s, s·dE)`、`grad_scale = Σ dE·q`。
 //!
 //! GPU 内核只负责第 1 层（`dE / dx / db`），第 2 层在主机侧做——权重数量远小于激活，没必要上卡。
 
-use crate::ste::Ste;
+use trit_learn::Ste;
 
 /// 一个 3×3 / 1×1 卷积的形状（`pad = kk/2`，NHWC，N=1）。
 #[derive(Clone, Copy, Debug)]
@@ -437,6 +437,71 @@ mod tests {
         assert_eq!(dx[(w + 1) * c + 1], 1.0);
         assert_eq!(dx[2 * c], 1.0);
         assert_eq!(dx[3 * c + 1], 1.0);
+    }
+
+    #[test]
+    fn ste_matches_trit_train_linear() {
+        let (rows, cols) = (2usize, 3usize);
+        let lr = 0.05f32;
+        let scale0 = 0.5f32;
+        let latent: Vec<f32> = vec![0.31, -0.72, 0.05, -0.44, 0.83, -0.12];
+        let x: Vec<f32> = vec![0.6, -0.9, 0.25];
+        let target: Vec<f32> = vec![0.4, -0.7];
+
+        for ste in [Ste::Identity, Ste::Clipped { ratio: 1.0 }, Ste::Soft] {
+            let mut layer = trit_train::layer::TernaryLinear::new(
+                rows,
+                cols,
+                |r, c| latent[r * cols + c],
+                ste,
+                lr,
+                scale0,
+            );
+            layer.train_step(&x, &target);
+
+            // 我们的口径：E = q·scale；dE[c·rows+r] = dy_r·x_c（卷积布局：oc 在最低位）
+            let y: Vec<f32> = (0..rows)
+                .map(|r| {
+                    let q =
+                        trit_train::quantize_with_scale(&latent[r * cols..(r + 1) * cols], scale0);
+                    scale0 * trit_train::layer::dot(&q, &x, false)
+                })
+                .collect();
+            let dy: Vec<f32> = (0..rows).map(|r| y[r] - target[r]).collect();
+            let mut d_e = vec![0.0f32; rows * cols];
+            let mut q_cw = vec![0i32; rows * cols];
+            let mut latent_cw = vec![0.0f32; rows * cols];
+            for r in 0..rows {
+                let q = trit_train::quantize_with_scale(&latent[r * cols..(r + 1) * cols], scale0);
+                for c in 0..cols {
+                    let wi = c * rows + r;
+                    d_e[wi] = dy[r] * x[c];
+                    q_cw[wi] = i32::from(q[c]);
+                    latent_cw[wi] = latent[r * cols + c];
+                }
+            }
+            let (d_latent, d_scale) =
+                ste_apply(&latent_cw, &q_cw, &vec![scale0; rows], &d_e, ste, rows);
+
+            for r in 0..rows {
+                for c in 0..cols {
+                    let want = latent[r * cols + c] - lr * d_latent[c * rows + r];
+                    let got = layer.latent()[r * cols + c];
+                    assert!(
+                        (got - want).abs() < 1e-6,
+                        "{ste:?} latent[{r}][{c}]: {got} vs {want}"
+                    );
+                }
+            }
+            for (r, &ds) in d_scale.iter().enumerate() {
+                let want = (scale0 - lr * ds).max(1e-4);
+                let got = layer.scales()[r];
+                assert!(
+                    (got - want).abs() < 1e-6,
+                    "{ste:?} scale[{r}]: {got} vs {want}"
+                );
+            }
+        }
     }
 
     #[test]
