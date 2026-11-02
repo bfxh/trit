@@ -667,6 +667,41 @@ def open_pr_list(repo: str) -> list[dict] | None:
     return data if isinstance(data, list) else None
 
 
+def build_protection_body(rule: dict, wanted: list[str]) -> dict:
+    """组 PUT /branches/<b>/protection 的请求体。GitHub 这套 schema 很挑：
+
+    - GET 回来的只读 `url` 原样送回 ⇒ 422；
+    - `restrictions` 整个键缺失（哪怕它本该是 null）⇒ 422；
+    - `enforce_admins` 这里要布尔，不是 GET 那种 `{"enabled": true}`。
+    所以显式列要送的字段，而不是把 GET 结果改两下就发出去（第一版就这么被拒了）。
+    """
+    status = rule.get("required_status_checks") or {}
+    reviews = rule.get("required_pull_request_reviews")
+    restrictions = rule.get("restrictions")
+    body = {
+        "required_status_checks": {"strict": bool(status.get("strict", True)),
+                                   "contexts": list(wanted)},
+        "required_pull_request_reviews": strip_urls(reviews) if reviews else None,
+        "restrictions": strip_urls(restrictions) if restrictions else None,
+        "enforce_admins": bool((rule.get("enforce_admins") or {}).get("enabled", False)),
+    }
+    for flag in ("allow_force_pushes", "allow_deletions", "required_linear_history",
+                 "required_conversation_resolution"):
+        node = rule.get(flag)
+        if isinstance(node, dict) and "enabled" in node:
+            body[flag] = bool(node["enabled"])
+    return body
+
+
+def has_url_key(node) -> bool:
+    """递归查只读 url：payload 里残留一个就等于整份被拒。"""
+    if isinstance(node, dict):
+        return "url" in node or any(has_url_key(value) for value in node.values())
+    if isinstance(node, list):
+        return any(has_url_key(item) for item in node)
+    return False
+
+
 def apply_required_checks(repo: str, branch: str, rule: dict, wanted: list[str],
                           dry_run: bool, force: bool = False) -> int:
     """把本地台账推到分支保护，并把改动前的规则存成回滚点。
@@ -701,12 +736,7 @@ def apply_required_checks(repo: str, branch: str, rule: dict, wanted: list[str],
             print("补救：先 `gitflow pr sync <n>` 把 main 并进那个分支（带来 workflow），"
                   "或本次先不加这两条必需。确认要强行加才用 --force。")
             return 1
-    body = strip_urls(rule)
-    body["required_status_checks"] = {**(rule.get("required_status_checks") or {}),
-                                      "strict": (rule.get("required_status_checks") or {})
-                                      .get("strict", True),
-                                      "contexts": wanted}
-    body.pop("required_status_checks_url", None)
+    body = build_protection_body(rule, wanted)
     if dry_run:
         print(f"dry-run：将把 {len(wanted)} 条必需检查写入 {repo}:{branch}")
         for context in wanted:
@@ -901,6 +931,26 @@ def merge_tree_conflicts(text: str) -> list[str]:
     return paths
 
 
+OID_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def merge_preview(modern_rc: int, modern_out: str, legacy_out: str) -> tuple[bool, list[str], str]:
+    """这次合并会不会冲突、冲突在哪些文件、用的哪种 merge-tree 口径。
+
+    老式 `git merge-tree <base> <ours> <theirs>` 的 `changed in both` 只是块头，
+    而且**两边都改过但能自动合并的文件也打这块** ⇒ 拿它判冲突会过度报警
+    （#198/#199 就被它报成"有真冲突"，实际干净合上了）。
+    所以优先 `--write-tree`（rc≠0 才是真冲突，oid 之后是冲突文件名），不可用才退回老口径。
+    """
+    lines = [line for line in modern_out.splitlines() if line.strip()]
+    if lines and OID_RE.fullmatch(lines[0].strip()) and modern_rc in (0, 1):
+        paths = [line.strip() for line in lines[1:]
+                 if not line.strip().startswith(("Auto-merging", "CONFLICT"))]
+        return (modern_rc != 0 or bool(paths)), paths, "write-tree"
+    paths = merge_tree_conflicts(legacy_out)
+    return bool(paths) or "in both" in legacy_out, paths, "legacy"
+
+
 def pr_sync(repo: str, number: str, dry_run: bool = False) -> int:
     """把 main merge 进 PR 分支并 push：不改写历史，不动别人的提交。"""
     view = gh(["pr", "view", number, "--repo", repo, "--json", "headRefName,number"])
@@ -922,10 +972,11 @@ def pr_sync(repo: str, number: str, dry_run: bool = False) -> int:
             print(f"拉不到 origin/{branch}（先 push 或 fetch）")
             return 1
         merge_base = git(["merge-base", base_sha, branch_sha]).stdout.strip() or base_sha
-        tree = git(["merge-tree", merge_base, base_sha, branch_sha])
-        conflicts = merge_tree_conflicts(tree.stdout)
-        if conflicts or "in both" in tree.stdout:
-            print(f"预览：把 {base} 合进 {branch} 会冲突（{len(conflicts)} 个文件）")
+        modern = git(["merge-tree", "--write-tree", "--name-only", base_sha, branch_sha])
+        legacy = git(["merge-tree", merge_base, base_sha, branch_sha])
+        conflicted, conflicts, how = merge_preview(modern.returncode, modern.stdout, legacy.stdout)
+        if conflicted:
+            print(f"预览：把 {base} 合进 {branch} 会冲突（{len(conflicts)} 个文件，口径 {how}）")
             for path in conflicts[:12]:
                 print(f"  - {path}")
             if not conflicts:
@@ -933,7 +984,7 @@ def pr_sync(repo: str, number: str, dry_run: bool = False) -> int:
                 for line in tree.stdout.splitlines()[:6]:
                     print(f"    {line}")
             return 1
-        print(f"预览：把 {base} 合进 {branch} 无冲突（merge-tree 没有 \"changed in both\" 块）")
+        print(f"预览：把 {base} 合进 {branch} 无冲突（口径 {how}）")
         return 0
     # 分支可能正被另一个 worktree 占用（多会话常态）：在**那里**操作，不强行 checkout
     worktrees = parse_worktrees(git(["worktree", "list", "--porcelain"]).stdout)
@@ -1434,6 +1485,17 @@ def self_test() -> int:
         check("台账不存在算空清单", read_required_checks(root / "nope.txt"), [])
         check("PUT 前剥掉只读 url", strip_urls({"url": "x", "a": {"url": "y", "b": [1]}}),
               {"a": {"b": [1]}})
+        bare = build_protection_body(
+            {"required_status_checks": {"strict": True, "contexts": ["CI"], "url": "https://api/x"},
+             "url": "https://api/y",
+             "enforce_admins": {"enabled": True, "url": "https://api/z"},
+             "restrictions": {"url": "https://api/r", "users": ["a"]}},
+            ["CI", "新门"])
+        check("payload 里不许有任何只读 url（GET 原样送回必 422）", has_url_key(bare), False)
+        check("payload 必须带 restrictions 键（缺了也 422）", "restrictions" in bare, True)
+        check("enforce_admins 要布尔不是对象", bare["enforce_admins"], True)
+        check("要推的清单原样进 contexts", bare["required_status_checks"]["contexts"], ["CI", "新门"])
+        check("没有 restrictions 时也显式给 null", build_protection_body({}, ["CI"])["restrictions"], None)
         check("空清单拒推（读空不等于撤保护）",
               apply_required_checks("o/r", "main", {}, [], True), 1)
         check("dry-run 只打印不碰远端",
@@ -1487,6 +1549,21 @@ def self_test() -> int:
         )
         check("冲突预览点名到文件", merge_tree_conflicts(legacy), ["a.txt", "b/c.txt"])
         check("没有冲突块就不点名", merge_tree_conflicts("merged\n  our 100644 a.txt\n"), [])
+        check("预览优先 write-tree：能自动合并的不算冲突",
+              merge_preview(0, "d" * 40 + "\nAuto-merging a.txt\n", ""), (False, [], "write-tree"))
+        check("write-tree 报冲突时点名文件",
+              merge_preview(1, "d" * 40 + "\nsrc/x.rs\nCONFLICT (content): Merge conflict in src/x.rs\n",
+                            ""), (True, ["src/x.rs"], "write-tree"))
+        check("write-tree 不可用才退回老口径",
+              merge_preview(129, "usage: git merge-tree",
+                            "changed in both\n  our    100644 " + "1" * 40 + " b/y.rs\n  their  100644 "
+                            + "2" * 40 + " b/y.rs\n"),
+              (True, ["b/y.rs"], "legacy"))
+        check("write-tree 干净但列了文件名也算冲突",
+              merge_preview(0, "d" * 40 + "\nsrc/y.rs\n", "")[0], True)
+        check("write-tree rc≠0 但没列文件也算冲突（只看文件名会漏）",
+              merge_preview(1, "d" * 40 + "\n", "")[0], True)
+        check("has_url_key 是递归查的", has_url_key({"a": {"b": [{"url": "x"}]}}), True)
 
         problems = base_ok(root, [])
         check("空文件列表被拒（点名 --files）", any("--files" in p for p in problems), True)
