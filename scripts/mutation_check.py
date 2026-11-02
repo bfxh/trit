@@ -86,7 +86,7 @@ MUTANTS = [
         "old": "                self.enter()?;" + "\n" + "                let parsed = self.parse_concat_body();" + "\n" + "                self.leave();" + "\n" + "                parsed",
         "new": "                let parsed = self.parse_concat_body();" + "\n" + "                parsed",
         "pkg": "trit-circuit",
-        "filter": "deeply_nested_concat_returns_limit_not_stack_overflow"
+        "filter": "concat_depth_just_over_limit_returns_limit_error",
     },
     {
         "name": "verilog: 二元运算链不封顶",
@@ -102,7 +102,7 @@ MUTANTS = [
         "old": "                self.depth += 1;" + "\n" + "                if self.depth > MAX_SDF_DEPTH {",
         "new": "                self.depth += 1;" + "\n" + "                if false {",
         "pkg": "trit-circuit",
-        "filter": "budget_rejects_deep_nesting_and_oversized_input"
+        "filter": "sdf_depth_just_over_limit_returns_limit_error",
     },
     {
         "name": "sdf: 输入字节预算失效",
@@ -118,7 +118,7 @@ MUTANTS = [
         "old": "        self.depth += 1;" + "\n" + "        if self.depth > MAX_PARAM_DEPTH {",
         "new": "        self.depth += 1;" + "\n" + "        if false {",
         "pkg": "trit-circuit",
-        "filter": "deep_parameter_expression_returns_limit_not_stack_overflow"
+        "filter": "parameter_depth_just_over_limit_returns_limit_error",
     },
     {
         "name": "aiger: 文本字节预算失效",
@@ -390,7 +390,7 @@ MUTANTS = [
         "old": "        search_cover(\n            uncovered & !faults,",
         "new": "        search_cover(\n            uncovered & faults,",
         "pkg": "trit-circuit",
-        "filter": "minimum_cover_matches_bruteforce"
+        "filter": "budget_exhaustion_with_unexplored_siblings_is_not_optimal",
     },
     {
         "name": "bdd: 节点预算永不触发",

@@ -627,6 +627,24 @@ fn deeply_nested_concat_returns_limit_not_stack_overflow() {
 }
 
 #[test]
+fn concat_depth_just_over_limit_returns_limit_error() {
+    // 同一条守卫（`MAX_RHS_DEPTH = 256`）的**有界**版本：300 层足够超限，但只吃掉
+    // 几百帧栈 ⇒ 守卫一旦被拆掉，这里拿到的是 `Ok`（断言判红），而不是像 2 万层
+    // 那样先把测试进程打死（崩溃红不指明是哪条断言抓的，还会带走同二进制里后面的测试）。
+    let mut text = String::from("module m(input a, output y);\nassign y = ");
+    for _ in 0..300 {
+        text.push('{');
+    }
+    text.push('a');
+    for _ in 0..300 {
+        text.push('}');
+    }
+    text.push_str(";\nendmodule\n");
+    let err = parse_verilog(&text).unwrap_err();
+    assert_eq!(err.kind, VerilogErrorKind::Limit, "{err:?}");
+}
+
+#[test]
 fn long_operator_chain_returns_limit_not_stack_overflow() {
     // 复审 H01：平链构造成左深 AST，合成阶段递归遍历曾栈溢出。
     // 用「上限 +1」项：护栏阈值被放大或禁用的任何变异都会立刻变绿暴露，
