@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed（变异门：三语言口径 + 逐目标 fail-closed + 门自身自测）
+
+- 登记表 **385 → 419 条**、目标 30 → 36：新增 python **27** 条（`module_budget` / `hazard_gate` /
+  `publish_graph` / `pr_hygiene` 的 `--self-test` 面）、bash **7** 条（`cli_smoke.sh` 的断言工具）、
+  门自身 **12** 条（裁决链 / runner 推断 / 空集 / preflight 边界）。
+- `RUNNERS` 三种语言口径：`cargo test` / `<script> --self-test`（python）/ `bash <script> --self-test`；
+  登记表没写 `runner` 时按 pkg 后缀（`.py` / `.sh`）推断，脚本不会再落到 `cargo test` 去跑。
+- fail-closed 改成**逐目标**：多目标一起选中时，0 条登记的目标不能再被别的目标带绿；
+  不带 `--pkg` 且登记表全空同样判红。唯一的松口是 `EXEMPT`，且自证一失效（出现自有 `fn`/自测面）就判红。
+- 修复门的恢复路径：写回用 `newline=""`、恢复按字节。此前 Windows 上默认写回会把整篇 `\n` 翻成 `\r\n`，
+  `bash` 见到 `\r` 直接语法错 ⇒ "抓住"被误判成崩溃、工作树也被门改坏。
+- 新增 `scripts/mutation_check.py --self-test`（**31** 条检查，毫秒级）与 CI job `mutation gate (self-test)`；
+  门的判定链（编译红≠抓住、崩溃≠断言、空集≠证据）从此有人盯。
+- CI collect 收集 `scripts/*.sh` 与 `crates/*/scripts/*.sh`；字符类必须含 `-`，否则 `crates/trit-immune/...` 一条都收不到。
+
 ### Fixed（`trit-re`：GOT 基址按寄存器跟踪——`get_pc_thunk.ax` 等不再漏检）
 
 - 此前只认 `call __x86.get_pc_thunk.bx; add $imm,%ebx`；PIE 构建里 GCC 会按函数挑寄存器

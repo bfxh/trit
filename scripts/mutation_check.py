@@ -3371,8 +3371,8 @@ MUTANTS = [
     {
         "name": "gate: 空集不再判红（绿=没东西可杀）",
         "file": "scripts/mutation_check.py",
-        "old": "            for pkg in stale:\n                print(f\"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。\")\n            return 1",
-        "new": "            for pkg in stale:\n                print(f\"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。\")\n            return 0",
+        "old": "            print(f\"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。\")\n        return 1",
+        "new": "            print(f\"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。\")\n        return 0",
         "pkg": "scripts/mutation_check.py",
         "filter": "",
         "runner": "python",
@@ -3409,6 +3409,24 @@ MUTANTS = [
         "file": "scripts/mutation_check.py",
         "old": "        return selftest_marker(\"bash\" if pkg.endswith(\".sh\") else \"python\") in text",
         "new": "        return selftest_marker(\"python\") in text",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: 逐目标 0 条不判红（被别的目标带绿）",
+        "file": "scripts/mutation_check.py",
+        "old": "    if unexplained or stale:\n        scope = ",
+        "new": "    if False:\n        scope = ",
+        "pkg": "scripts/mutation_check.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gate: 全仓登记为空也放行",
+        "file": "scripts/mutation_check.py",
+        "old": "            print(\"NO MUTANTS REGISTERED：（全仓）MUTANTS 是空的 ⇒ 判红。\")\n            return 1",
+        "new": "            print(\"NO MUTANTS REGISTERED：（全仓）MUTANTS 是空的 ⇒ 判红。\")\n            return 0",
         "pkg": "scripts/mutation_check.py",
         "filter": "",
         "runner": "python",
@@ -3648,28 +3666,30 @@ def main(pkgs: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     mutants = select(pkgs)
+    # fail-closed（**逐目标**）：某个目标在登记表里 0 条时，"它绿了"没有任何含义。
+    # 多个目标一起选中时更危险——别的目标有变异可杀，这个目标会被静默跳过
+    # （2026-11-02 的 trit-immune 就是这样在 CI 报 14s 通过的）。
+    # 唯一的松口是 EXEMPT：必须是"纯转发/无判决面"这种**可自证**的理由，自证一失效就判红。
+    counts = {pkg: sum(1 for mutant in MUTANTS if mutant["pkg"] == pkg) for pkg in pkgs}
+    uncovered = [pkg for pkg, n in counts.items() if n == 0]
+    unexplained = [pkg for pkg in uncovered if pkg not in EXEMPT]
+    stale = [pkg for pkg in uncovered if pkg in EXEMPT and has_own_logic(pkg)]
+    if unexplained or stale:
+        scope = ", ".join(unexplained or ["(全仓)"]) if unexplained else ", ".join(stale)
+        print(f"NO MUTANTS REGISTERED：{scope} 在 MUTANTS 里是 0 条 ⇒ 判红。"
+              "补登记（锚点 + 对应测试名），或确认它是纯转发后登记进 EXEMPT 并写理由。")
+        for pkg in stale:
+            print(f"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。")
+        return 1
+    for pkg in uncovered:
+        print(f"EXEMPT（已自证无自有逻辑）: {pkg} —— {EXEMPT[pkg]}")
     if not mutants:
-        # fail-closed：登记表里 0 条时"绿"没有任何含义——别把空集读成证据
-        # （2026-11-02 的 trit-immune 就是这样在 CI 报 14s 通过的）。
-        # 唯一的松口是 EXEMPT：必须是"纯转发伞包"这种**可自证**的理由，且自证一失效就判红。
-        unexplained = [pkg for pkg in pkgs if pkg not in EXEMPT]
-        stale = [pkg for pkg in pkgs if pkg in EXEMPT and has_own_logic(pkg)]
-        if unexplained or stale:
-            scope = ", ".join(unexplained or ["(全仓)"]) if unexplained else ", ".join(stale)
-            print(f"NO MUTANTS REGISTERED：{scope} 在 MUTANTS 里是 0 条 ⇒ 判红。"
-                  "补登记（锚点 + 对应测试名），或确认它是纯转发后登记进 EXEMPT 并写理由。")
-            for pkg in stale:
-                print(f"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。")
+        if not pkgs:
+            print("NO MUTANTS REGISTERED：（全仓）MUTANTS 是空的 ⇒ 判红。")
             return 1
-        for pkg in pkgs:
-            print(f"EXEMPT（已自证无自有逻辑）: {pkg} —— {EXEMPT[pkg]}")
         return 0
     if pkgs:
-        counts = {
-            pkg: sum(1 for mutant in MUTANTS if mutant["pkg"] == pkg)
-            for pkg in sorted(set(pkgs))
-        }
-        detail = ", ".join(f"{pkg}={count}" for pkg, count in counts.items())
+        detail = ", ".join(f"{pkg}={count}" for pkg, count in sorted(counts.items()))
         print(f"只跑所选包（{detail}）：{len(mutants)} 个变异")
     problems = preflight(mutants)
     if problems:
@@ -3824,11 +3844,31 @@ def self_test() -> int:
     check("runner 显式优先", runner_of({"pkg": "scripts/x.py", "runner": "cargo"}), "cargo")
 
     # 三、空集 fail-closed：没有登记就"绿"没有含义（真跑 main，输出吞掉免得像报错）
-    with contextlib.redirect_stdout(io.StringIO()):
-        empty_rc = main(["no-such-target-xyz"])
-        exempt_rc = main(["sansheng"])
+    def rc_of(targets: list[str]) -> object:
+        # 判定链被改坏时 main 可能直接抛异常（例如 EXEMPT[pkg] KeyError）；
+        # 把异常也变成可比较的返回值，这样它会以断言失败被点名，而不是被算成"崩溃红"。
+        try:
+            with contextlib.redirect_stdout(io.StringIO()):
+                return main(targets)
+        except Exception as exc:
+            return f"异常 {type(exc).__name__}"
+
+    empty_rc = rc_of(["no-such-target-xyz"])
+    exempt_rc = rc_of(["sansheng"])
+    # 多目标一起选中时，0 条的那个不能被别的目标"带绿"
+    partial_rc = rc_of(["scripts/gen_docs_charts.py", "no-such-target-xyz"])
+    covered_rc = rc_of(["sansheng", "scripts/gen_docs_charts.py"])
+    saved = MUTANTS[:]
+    try:
+        MUTANTS.clear()
+        whole_empty_rc = rc_of([])
+    finally:
+        MUTANTS.extend(saved)
     check("空集未豁免→判红", empty_rc, 1)
     check("空集但自证豁免→放行", exempt_rc, 0)
+    check("多目标里 0 条的那个→判红", partial_rc, 1)
+    check("全部是自证豁免→放行", covered_rc, 0)
+    check("全仓登记为空→判红", whole_empty_rc, 1)
     check("选中过滤", [m["pkg"] for m in select(["sansheng"])], [])
     check("空选择=全表", len(select([])), len(MUTANTS))
 
