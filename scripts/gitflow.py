@@ -714,7 +714,18 @@ def wait_for_checks(repo: str, branch: str, attempts: int = 40, pause: int = 15)
     return 1
 
 
-def watch_and_merge(branch: str, repo: str) -> int:
+def has_pending(output: str) -> bool:
+    lowered = output.lower()
+    return "pending" in lowered or "in_progress" in lowered or "queued" in lowered
+
+
+def watch_and_merge(branch: str, repo: str, attempts: int = 40, pause: int = 15) -> int:
+    """等检查**真正**落定再合。
+
+    只靠 `gh pr checks --watch` 不够：push 之后新的 run 还没注册时，它会拿着上一轮的
+    结果返回——然后 merge 被"requirements have not been met"拒掉（实跑踩过）。
+    所以这里再轮询到没有 pending，并且失败时重试合并。
+    """
     if wait_for_checks(repo, branch) != 0:
         return 1
     checks = gh(["pr", "checks", "--repo", repo, branch, "--watch"])
@@ -722,13 +733,25 @@ def watch_and_merge(branch: str, repo: str) -> int:
         print("CI 未通过：")
         print(checks.stdout[-2000:])
         return 1
-    merge = gh(["pr", "merge", "--repo", repo, branch, "--squash", "--delete-branch"])
-    if merge.returncode != 0:
-        print("合并失败：")
-        print(merge.stdout[-1000:])
-        return 1
-    print(f"CI 全绿，已 squash 合入 {branch} 并删分支")
-    return 0
+    for index in range(attempts):
+        listing = gh(["pr", "checks", "--repo", repo, branch])
+        output = listing.stdout or ""
+        if not output.strip() or has_pending(output):
+            if index == 0:
+                print("检查还在跑（可能是刚 push 触发的新一轮），等它落定…")
+            time.sleep(pause)
+            continue
+        merge = gh(["pr", "merge", "--repo", repo, branch, "--squash", "--delete-branch"])
+        if merge.returncode == 0:
+            print(f"CI 全绿，已 squash 合入 {branch} 并删分支")
+            return 0
+        if index == attempts - 1:
+            print("合并失败：")
+            print(merge.stdout[-1500:])
+            return 1
+        time.sleep(pause)
+    print("合并超时（10 分钟）")
+    return 1
 
 
 def status(repo: str) -> int:
@@ -837,6 +860,8 @@ def self_test() -> int:
         check("离干 PR 被标出", sorted(p["headRefName"] for p in off), ["feat/b", "feat/c"])
         check("竞态识别：no checks reported", checks_not_yet("no checks reported on the 'x' branch"), True)
         check("真实失败不算竞态", checks_not_yet("some check failed"), False)
+        check("pending 识别", has_pending("CI\tpending\t0\thttps://x"), True)
+        check("通过不算 pending", has_pending("CI\tpass\t1s\thttps://x"), False)
         check("默认 base 优先 main", pick_base(["main", "master"]), "main")
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")
