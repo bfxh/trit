@@ -9,7 +9,7 @@ use super::{arg, usage};
 /// 一条训练样本：RGB 平面 / **原始 log 深度** / 有效掩码。
 /// 归一化统计是**数据集级**的（存进 `DepthNet::med/iqr`）：逐图归一化会把绝对尺度抹掉，
 /// 推理时拿不到「这张图自己的中位数」，网格就没有尺度。
-type DepthSample = (Vec<Vec<f32>>, Vec<f32>, Vec<bool>);
+type DepthSample = (Vec<Vec<f32>>, Vec<f32>, Vec<bool>, f32, f32, usize);
 
 /// 读一张图 + 深度，返回 `(rgb 平面, 原始 log 深度, 掩码)`。
 ///
@@ -88,10 +88,16 @@ fn load_sample(
     if vals.len() < size * size / 20 {
         return None;
     }
+    let (med, iqr) = {
+        let mut v = vals.clone();
+        v.sort_by(f32::total_cmp);
+        let q = |f: f32| v[((v.len() as f32 - 1.0) * f).round() as usize];
+        (q(0.5), (q(0.75) - q(0.25)).max(1e-3))
+    };
     for lvl in 1..=pyr {
         add_lowpass(&mut planes, size, 4usize.pow(lvl as u32));
     }
-    Some((planes, disp, mask))
+    Some((planes, disp, mask, med, iqr, w))
 }
 
 /// 只从 RGB 造输入平面（盒式降采样到 `size²`）——推理时不读 GT 深度/分割。
@@ -153,6 +159,79 @@ pub(crate) fn add_lowpass(planes: &mut Vec<Vec<f32>>, size: usize, factor: usize
     }
 }
 
+/// 一条训练样本：多视角一致性需要**相机**与逐图归一化统计。
+#[derive(Clone)]
+pub(crate) struct TrainSample {
+    pub scene: PathBuf,
+    pub scene_id: usize,
+    pub frame: usize,
+    pub x: Vec<Vec<f32>>,
+    pub y: Vec<f32>,
+    pub mask: Vec<bool>,
+    pub med: f32,
+    pub iqr: f32,
+    pub cam: trit_parts::geo::Camera,
+}
+
+/// 把 384² 的相机缩到模型网格（像素坐标按 `scale` 缩放）。
+fn scaled_camera(scene: &Path, frame: usize, scale: f64) -> trit_parts::geo::Camera {
+    let p = scene.join("meta").join(format!("{frame:06}.json"));
+    let mut c = trit_parts::geo::Camera::load(&p).unwrap_or_else(|e| panic!("{e}"));
+    for row in 0..2 {
+        for k in 0..3 {
+            c.k[row][k] *= scale;
+        }
+    }
+    c
+}
+
+/// 把视角 `a` 的预测深度投到视角 `b`，得到 `b` 的归一化 log 深度目标（最近邻写入）。
+/// 返回 `None` 表示这一对的有效像素太少（<1%）。
+fn warp_targets(
+    pred_a: &[f32],
+    a: &TrainSample,
+    b: &TrainSample,
+    size: usize,
+    step: usize,
+) -> Option<(Vec<f32>, Vec<bool>)> {
+    let mut t = vec![0.0f32; size * size];
+    let mut m = vec![false; size * size];
+    let mut hit = 0usize;
+    for y in (0..size).step_by(step.max(1)) {
+        for x in (0..size).step_by(step.max(1)) {
+            let i = y * size + x;
+            if !a.mask[i] {
+                continue;
+            }
+            let logd = pred_a[i] * a.iqr + a.med;
+            let d = logd.exp();
+            if !(d.is_finite() && (0.05..50.0).contains(&d)) {
+                continue;
+            }
+            let p = a.cam.unproject(x as f64, y as f64, d);
+            let Some((u, v, z)) = b.cam.project(p) else {
+                continue;
+            };
+            if !(z.is_finite() && (0.05..50.0).contains(&z)) {
+                continue;
+            }
+            if u < 0.0 || v < 0.0 || u >= size as f64 || v >= size as f64 {
+                continue;
+            }
+            let q = (v.round() as usize).min(size - 1) * size + (u.round() as usize).min(size - 1);
+            t[q] = ((z.ln() as f32 - b.med) / b.iqr).clamp(-4.0, 4.0);
+            m[q] = true;
+            hit += 1;
+        }
+    }
+    let sampled = (size / step.max(1)).pow(2);
+    if hit * 100 < sampled {
+        None
+    } else {
+        Some((t, m))
+    }
+}
+
 /// `cnn-train --data <场景目录,…> --holdout a,b --size 64 --epochs 3 --out model.dcn`：
 /// 三值卷积逐像素深度头（归一化视差），留出场景评估相对误差。
 pub(crate) fn cnn_train(argv: &[String]) {
@@ -186,6 +265,19 @@ pub(crate) fn cnn_train(argv: &[String]) {
     let pyr: usize = arg(argv, "--pyr").and_then(|v| v.parse().ok()).unwrap_or(0);
     let ternary = !argv.iter().any(|a| a == "--f32");
     let dil: usize = arg(argv, "--dil").and_then(|v| v.parse().ok()).unwrap_or(1);
+    // 多视角一致性：`--mv-weight` > 0 时启用；`--pair-gap` 选同场景的另一个视角。
+    let mv_weight: f32 = arg(argv, "--mv-weight")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
+    let pair_gap: usize = arg(argv, "--pair-gap")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(4);
+    let mv_stride: usize = arg(argv, "--mv-stride")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+    let mv_tau: f32 = arg(argv, "--mv-tau")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.5);
     let mut net = DepthNet::with_inputs(3 + 3 * pyr, hidden, 7, ternary);
     net.set_dilation(dil);
     println!(
@@ -193,13 +285,23 @@ pub(crate) fn cnn_train(argv: &[String]) {
         if ternary { "三值" } else { "f32" },
         6 * dil + 1
     );
-    type TrainSample = (PathBuf, usize, Vec<Vec<f32>>, Vec<f32>, Vec<bool>);
     let mut samples: Vec<TrainSample> = Vec::new();
-    for d in &data {
+    for (sid, d) in data.iter().enumerate() {
         let mut fr = 0usize;
-        while let Some((x, y, mk)) = load_sample(d, fr, size, full, pyr) {
+        while let Some((x, y, mk, med, iqr, w0)) = load_sample(d, fr, size, full, pyr) {
             if fr.is_multiple_of(stride.max(1)) {
-                samples.push((d.clone(), fr, x, y, mk));
+                let cam = scaled_camera(d, fr, size as f64 / w0 as f64);
+                samples.push(TrainSample {
+                    scene: d.clone(),
+                    scene_id: sid,
+                    frame: fr,
+                    x,
+                    y,
+                    mask: mk,
+                    med,
+                    iqr,
+                    cam,
+                });
             }
             fr += 1;
             if fr > 24 {
@@ -222,12 +324,13 @@ pub(crate) fn cnn_train(argv: &[String]) {
             })
         })
     };
-    let (mut train, held): (Vec<_>, Vec<_>) = samples.iter().cloned().partition(|s| !is_held(&s.0));
+    let (mut train, held): (Vec<_>, Vec<_>) =
+        samples.iter().cloned().partition(|s| !is_held(&s.scene));
     if std::env::var("DEPTH_DEBUG").is_ok() {
         println!("holdout 清单 {holdout:?}");
         println!(
             "首个样本目录名 {:?}",
-            samples.first().map(|s| s.0.file_name())
+            samples.first().map(|s| s.scene.file_name())
         );
     }
     if train.is_empty() && eval_only.is_none() {
@@ -257,8 +360,8 @@ pub(crate) fn cnn_train(argv: &[String]) {
     };
     let mut med_sum = 0.0f32;
     let mut iqr_sum = 0.0f32;
-    for (_, _, _, y, mk) in train.iter_mut() {
-        let (m, q) = norm(y, mk);
+    for s in train.iter_mut() {
+        let (m, q) = norm(&mut s.y, &s.mask);
         med_sum += m;
         iqr_sum += q;
     }
@@ -275,13 +378,13 @@ pub(crate) fn cnn_train(argv: &[String]) {
         net.med,
         net.iqr
     );
-    if let Some((_, _, _, y0, mk0)) = samples.first() {
-        let mut vals: Vec<f32> = y0
-            .iter()
-            .zip(mk0)
-            .filter(|(_, m)| **m)
-            .map(|(v, _)| *v)
-            .collect();
+    if let Some(s0) = samples.first() {
+        let mut vals: Vec<f32> =
+            s0.y.iter()
+                .zip(&s0.mask)
+                .filter(|(_, m)| **m)
+                .map(|(v, _)| *v)
+                .collect();
         vals.sort_by(f32::total_cmp);
         println!(
             "首样本原始 log 深度：有效 {}/{} 像素，范围 [{:.2}, {:.2}]",
@@ -291,6 +394,54 @@ pub(crate) fn cnn_train(argv: &[String]) {
             vals.last().copied().unwrap_or(0.0)
         );
     }
+    if argv.iter().any(|a| a == "--mv-check") {
+        // 几何自检：把 A 的 **GT** 深度投到 B，和 B 的 GT 比。中位 |Δlog| 应接近 0（毫米级），
+        // 否则相机缩放/投影写错了，一致性损失就是在训练噪声。
+        let mut checked = 0usize;
+        for a in train.iter() {
+            let Some(b) = train
+                .iter()
+                .find(|b| b.scene_id == a.scene_id && b.frame == a.frame + pair_gap)
+            else {
+                continue;
+            };
+            let pred_a: Vec<f32> =
+                a.y.iter()
+                    .zip(&a.mask)
+                    .map(|(v, m)| if *m { *v } else { 0.0 })
+                    .collect();
+            let Some((t, m)) = warp_targets(&pred_a, a, b, size, 1) else {
+                continue;
+            };
+            let mut e: Vec<f32> = (0..size * size)
+                .filter(|&i| m[i] && b.mask[i])
+                .map(|i| (t[i] - b.y[i]).abs())
+                .collect();
+            if e.is_empty() {
+                continue;
+            }
+            e.sort_by(f32::total_cmp);
+            let q = |f: f32| e[((e.len() as f32 - 1.0) * f).round() as usize];
+            let thr = |pct: f32| ((1.0 + pct).ln() / b.iqr).min(4.0);
+            let frac = |t: f32| e.iter().filter(|v| **v < t).count() as f32 / e.len() as f32;
+            println!(
+                "几何自检 场景{} 帧{}→{}：命中 {} 像素，中位深度误差 {:.1}% / p90 {:.1}%；<5% {:.0}% / <10% {:.0}%",
+                a.scene_id,
+                a.frame,
+                b.frame,
+                e.len(),
+                ((q(0.5) * b.iqr).exp() - 1.0) * 100.0,
+                ((q(0.9) * b.iqr).exp() - 1.0) * 100.0,
+                frac(thr(0.05)) * 100.0,
+                frac(thr(0.10)) * 100.0
+            );
+            checked += 1;
+            if checked >= 3 {
+                break;
+            }
+        }
+        return;
+    }
     if let Some(p) = &eval_only {
         net = trit_parts::depthnet::DepthNet::load(p).unwrap_or_else(|e| panic!("{e}"));
         println!("仅评估 {}（跳过训练）", p.display());
@@ -298,8 +449,59 @@ pub(crate) fn cnn_train(argv: &[String]) {
     for ep in 0..if eval_only.is_some() { 0 } else { epochs } {
         let t_ep = std::time::Instant::now();
         let mut loss = 0.0f32;
-        for (_, _, x, y, mk) in &train {
-            loss += net.train_step(x, size, size, y, mk, lr);
+        if mv_weight > 0.0 {
+            // 按场景分组，每个样本拿同场景的另一个视角当几何约束（stop-gradient）。
+            let mut by_scene: std::collections::HashMap<usize, Vec<usize>> =
+                std::collections::HashMap::new();
+            for (k, s) in train.iter().enumerate() {
+                by_scene.entry(s.scene_id).or_default().push(k);
+            }
+            let mut pairs = 0usize;
+            let mut first_pair: Option<(usize, usize)> = None;
+            for idxs in by_scene.values() {
+                if idxs.len() < 2 {
+                    continue;
+                }
+                for (k, &ji) in idxs.iter().enumerate() {
+                    let ii = idxs[(k + pair_gap) % idxs.len()];
+                    if ii == ji {
+                        continue;
+                    }
+                    let pred_i = net.forward(&train[ii].x, size, size);
+                    if let Some((t2, m2)) =
+                        warp_targets(&pred_i, &train[ii], &train[ji], size, mv_stride)
+                    {
+                        loss += net.train_step_mv(
+                            &train[ji].x,
+                            size,
+                            size,
+                            trit_parts::depthnet::TargetMap {
+                                y: &train[ji].y,
+                                mask: &train[ji].mask,
+                            },
+                            Some(trit_parts::depthnet::MvExtra {
+                                y: &t2,
+                                mask: &m2,
+                                weight: mv_weight,
+                                tau: mv_tau,
+                            }),
+                            lr,
+                        );
+                        pairs += 1;
+                        first_pair.get_or_insert((train[ii].frame, train[ji].frame));
+                    }
+                }
+            }
+            if ep == 0 {
+                println!(
+                    "多视角一致性：{pairs} 对/epoch，w {mv_weight}，gap {pair_gap}，tau {mv_tau}（例 帧{:?}）",
+                    first_pair
+                );
+            }
+        } else {
+            for s in &train {
+                loss += net.train_step(&s.x, size, size, &s.y, &s.mask, lr);
+            }
         }
         if ep.is_multiple_of(50) || ep + 1 == epochs {
             let nz = |c: &trit_parts::tconv::Conv| {
@@ -318,8 +520,7 @@ pub(crate) fn cnn_train(argv: &[String]) {
                 am(&net.c3.scale),
             );
         }
-        let (_, _, x0, _, _) = &train[0];
-        let p0 = net.forward(x0, size, size);
+        let p0 = net.forward(&train[0].x, size, size);
         let (mut lo, mut hi, mut mean) = (f32::INFINITY, f32::NEG_INFINITY, 0.0f32);
         for v in &p0 {
             lo = lo.min(*v);
@@ -346,7 +547,8 @@ pub(crate) fn cnn_train(argv: &[String]) {
         // (b) 可部署：用训练集平均逐图统计（net.med/net.iqr）——照片上没有这张图自己的中位数。
         let (mut mae_n, mut rel, mut rel_dep, mut rel_base, mut delta, mut n) =
             (0f64, 0f64, 0f64, 0f64, 0f64, 0usize);
-        for (_, _, x, y, mk) in &held {
+        for s in &held {
+            let (x, y, mk) = (&s.x, &s.y, &s.mask);
             let mut v: Vec<f32> = y
                 .iter()
                 .zip(mk)

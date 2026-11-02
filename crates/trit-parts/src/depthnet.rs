@@ -8,6 +8,20 @@
 
 use crate::tconv::Conv;
 
+/// 一张目标图（值 + 有效掩码）。参数多时打包，避免 clippy 的 too_many_arguments。
+pub struct TargetMap<'a> {
+    pub y: &'a [f32],
+    pub mask: &'a [bool],
+}
+
+/// 多视角一致性项：warp 目标 + 掩码 + 权重 + 截断阈值 tau。
+pub struct MvExtra<'a> {
+    pub y: &'a [f32],
+    pub mask: &'a [bool],
+    pub weight: f32,
+    pub tau: f32,
+}
+
 pub struct DepthNet {
     pub c1: Conv,
     pub c2: Conv,
@@ -86,6 +100,22 @@ impl DepthNet {
         mask: &[bool],
         lr: f32,
     ) -> f32 {
+        self.train_step_mv(x, w, h, TargetMap { y: target, mask }, None, lr)
+    }
+
+    /// 多视角一致性版：在 GT 的 L2 之外，再叠一项 `(warp_target, warp_mask, weight)`。
+    /// warp 目标来自**另一个视角**的预测投到本视角（stop-gradient，此处按常数处理），
+    /// 两项都是同一输出的 L2 ⇒ 梯度直接相加，各按自己的有效像素数归一。
+    pub fn train_step_mv(
+        &mut self,
+        x: &[Vec<f32>],
+        w: usize,
+        h: usize,
+        gt: TargetMap<'_>,
+        extra: Option<MvExtra<'_>>,
+        lr: f32,
+    ) -> f32 {
+        let (target, mask) = (gt.y, gt.mask);
         let o1 = self.c1.forward(x, w, h);
         let r1: Vec<Vec<f32>> = o1
             .iter()
@@ -107,6 +137,7 @@ impl DepthNet {
         let mut valid = 0usize;
         let mut dout = vec![vec![0.0f32; w * h]];
         let mut grad_b = 0.0f32;
+        let mut grad_b_warped = 0.0f32;
         for i in 0..w * h {
             if !mask[i] {
                 continue;
@@ -119,11 +150,45 @@ impl DepthNet {
         }
         // 逐像素梯度必须按有效像素数归一：`Conv::apply` 的 scale 走普通 SGD
         // （不归一化时 step = lr·Σ像素 ≈ 40，scale 在 ±10 与 1e-3 之间振荡，输出直接爆到 1e4）
-        let inv = 1.0 / valid.max(1) as f32;
+        let inv_gt = 1.0 / valid.max(1) as f32;
         for g in &mut dout[0] {
-            *g *= inv;
+            *g *= inv_gt;
         }
-        self.out_b -= lr * grad_b * inv;
+        let mut extra_avg = 0.0f32;
+        if let Some(MvExtra {
+            y: t2,
+            mask: m2,
+            weight: wt,
+            tau,
+        }) = extra
+            && wt > 0.0
+        {
+            let mut n2 = 0usize;
+            let mut g2 = vec![0.0f32; w * h];
+            let mut gb2 = 0.0f32;
+            let mut e2 = 0.0f32;
+            for i in 0..w * h {
+                if !m2[i] {
+                    continue;
+                }
+                let d = pred[i] - t2[i];
+                if tau > 0.0 && d.abs() > tau {
+                    continue; // 遮挡/离群：不约束
+                }
+                e2 += d * d;
+                n2 += 1;
+                g2[i] = 2.0 * wt * d;
+                gb2 += 2.0 * wt * d;
+            }
+            let inv2 = 1.0 / n2.max(1) as f32;
+            for i in 0..w * h {
+                dout[0][i] += g2[i] * inv2;
+            }
+            grad_b_warped += gb2 * inv2;
+            extra_avg = e2 * inv2;
+        }
+        // 两项各按自己的有效像素数归一，不能把 warp 项再乘一次 inv_gt
+        self.out_b -= lr * (grad_b * inv_gt + grad_b_warped);
         let (dr2, dw3, db3, ds3) = self.c3.backward(&r2, w, h, &dout);
         self.c3.apply(&dw3, &db3, &ds3, lr, true);
         // 先过 ReLU 掩码（r2 = ReLU(o2)），再喂给 c2 —— 之前把未掩码的梯度给了 c2，链是断的
@@ -151,7 +216,7 @@ impl DepthNet {
         }
         let (_dx, dw1, db1, ds1) = self.c1.backward(x, w, h, &d1);
         self.c1.apply(&dw1, &db1, &ds1, lr, true);
-        loss / valid.max(1) as f32
+        loss / valid.max(1) as f32 + extra_avg
     }
 
     /// 归一化视差 → 相对值；`med/iqr` 由训练集统计给出。
