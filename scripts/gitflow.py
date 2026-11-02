@@ -141,6 +141,62 @@ def mark_stale(rows: list[dict], now: int, stale_days: int) -> list[dict]:
     return sorted(rows, key=lambda row: (not row["stale"], row["name"]))
 
 
+def sanitize(branch: str) -> str:
+    return branch.replace("/", "-").replace("\\", "-")
+
+
+def worktree_path_for(root: pathlib.Path, branch: str) -> pathlib.Path:
+    """默认放在仓的**旁边**：放进仓里会被自身扫描/提交。"""
+    return root.parent / f"{root.name}-{sanitize(branch)}"
+
+
+def parse_worktrees(text: str) -> list[dict]:
+    entries: list[dict] = []
+    current: dict = {}
+    for line in text.splitlines():
+        if not line.strip():
+            if current:
+                entries.append(current)
+                current = {}
+            continue
+        key, _, value = line.partition(" ")
+        if key == "worktree":
+            current["path"] = value
+        elif key == "branch":
+            current["branch"] = value.replace("refs/heads/", "")
+        elif key == "HEAD":
+            current["head"] = value
+        elif key == "bare":
+            current["bare"] = True
+        elif key == "detached":
+            current["detached"] = True
+    if current:
+        entries.append(current)
+    return entries
+
+
+def pr_chains(prs: list[dict]) -> tuple[list[list[dict]], list[dict]]:
+    """把 open PR 按 base->head 串成链；返回 (链列表, 基不是主干的 PR)。"""
+    by_base: dict[str, list[dict]] = {}
+    for pr in prs:
+        by_base.setdefault(pr["baseRefName"], []).append(pr)
+    heads = {pr["headRefName"] for pr in prs}
+    roots = [pr for pr in prs if pr["baseRefName"] not in heads]
+    chains: list[list[dict]] = []
+    for root in roots:
+        chain = [root]
+        seen = {root["number"]}
+        while True:
+            children = [c for c in by_base.get(chain[-1]["headRefName"], []) if c["number"] not in seen]
+            if not children:
+                break
+            chain.append(children[0])
+            seen.add(children[0]["number"])
+        chains.append(chain)
+    off_trunk = [pr for pr in prs if pr["baseRefName"] not in PROTECTED]
+    return chains, off_trunk
+
+
 def failed_checks(rollup: list[dict]) -> list[dict]:
     """从 PR 的 statusCheckRollup 里挑出失败的；成功/跳过/未完成都不算失败。"""
     bad: list[dict] = []
@@ -301,9 +357,180 @@ def branch_cmd(repo: str, argv: list[str]) -> int:
     if sub == "sync":
         return branch_sync(base, remote, "--dry-run" in argv)
     if sub == "prune":
+        if "--remote" in argv:
+            return branch_prune_remote(repo, base, remote, "--apply" in argv)
         return branch_prune(base, "--apply" in argv)
+    if sub == "protect":
+        target = argv[argv.index("--branch") + 1] if "--branch" in argv else base
+        return protect(repo, target)
     print(f"未知分支子命令: {sub}（list / start / sync / prune）")
     return 2
+
+
+def worktree_list() -> int:
+    rows = parse_worktrees(git(["worktree", "list", "--porcelain"]).stdout)
+    current = git(["rev-parse", "--show-toplevel"]).stdout.strip()
+    for row in rows:
+        flags = []
+        if row.get("path") == current:
+            flags.append("当前")
+        if row.get("bare"):
+            flags.append("裸仓")
+        if row.get("detached"):
+            flags.append("detached")
+        print(f"  {row.get('path', '?'):<60} {row.get('branch', '-')}  {' '.join(flags)}")
+    return 0
+
+
+def worktree_add(branch: str, base: str, remote: str, path: str, dry_run: bool) -> int:
+    problems = branch_problems(branch)
+    if problems:
+        for problem in problems:
+            print(f"拒绝：{problem}")
+        return 2
+    target = pathlib.Path(path) if path else worktree_path_for(ROOT, branch)
+    if target.resolve() == ROOT.resolve() or ROOT.resolve() in target.resolve().parents:
+        print(f"拒绝：worktree 不能放在仓里（{target}）")
+        return 2
+    if target.exists():
+        print(f"拒绝：目标已存在：{target}")
+        return 2
+    exists = bool(git(["branch", "--list", branch]).stdout.strip())
+    commands = [["git", "fetch", remote, base]]
+    if exists:
+        commands.append(["git", "worktree", "add", str(target), branch])
+    else:
+        commands.append(["git", "worktree", "add", "-b", branch, str(target), f"{remote}/{base}"])
+    if dry_run:
+        print("dry-run：将执行")
+        for command in commands:
+            print("  " + " ".join(command))
+        return 0
+    for command in commands:
+        result = git(command[1:])
+        print(f"$ {' '.join(command[:3])} … rc={result.returncode}")
+        if result.returncode != 0:
+            print(result.stdout[-1000:])
+            return 1
+    print(f"worktree 已就绪：{target}（分支 {branch}）")
+    return 0
+
+
+def worktree_remove(path: str, force: bool) -> int:
+    target = pathlib.Path(path).resolve()
+    current = pathlib.Path(git(["rev-parse", "--show-toplevel"]).stdout.strip()).resolve()
+    if target == current:
+        print("拒绝：不能删当前所在的工作树")
+        return 2
+    args = ["worktree", "remove", str(target)]
+    if force:
+        args.append("--force")
+    result = git(args)
+    print(f"$ git worktree remove {target} … rc={result.returncode}")
+    if result.returncode != 0:
+        print(result.stdout[-1000:])
+        return 1
+    return 0
+
+
+def stack(repo: str, remote_state: bool) -> int:
+    if not remote_state:
+        print("stack 需要 gh（去掉 --no-remote）")
+        return 2
+    listing = gh(["pr", "list", "--repo", repo, "--state", "open", "--json",
+                  "number,title,headRefName,baseRefName", "--limit", "100"])
+    if listing.returncode != 0:
+        print(listing.stdout[-1000:])
+        return 1
+    try:
+        prs = json.loads(listing.stdout or "[]")
+    except json.JSONDecodeError:
+        print("gh 输出解析失败")
+        return 1
+    if not prs:
+        print("没有 open PR")
+        return 0
+    chains, off_trunk = pr_chains(prs)
+    for chain in chains:
+        flow = " → ".join(f"{pr['baseRefName']}" for pr in chain)
+        flow += f" → {chain[-1]['headRefName']}"
+        print(flow)
+        for pr in chain:
+            print(f"    #{pr['number']} {pr['title'][:60]}")
+    if off_trunk:
+        print("警告：下列 PR 的 base 不是 main/master。按 base 过滤的 CI 可能零 check，合并前先确认：")
+        for pr in off_trunk:
+            print(f"    #{pr['number']} base={pr['baseRefName']}")
+    return 0
+
+
+def protect(repo: str, branch: str) -> int:
+    info = gh(["api", f"repos/{repo}/branches/{branch}"])
+    if info.returncode != 0:
+        print(f"查不到分支 {branch}：")
+        print(info.stdout[-800:])
+        return 1
+    try:
+        data = json.loads(info.stdout)
+    except json.JSONDecodeError:
+        print("gh api 输出解析失败")
+        return 1
+    protected = bool(data.get("protected"))
+    print(f"{repo}:{branch} 受保护={protected}")
+    if not protected:
+        print("提示：没有保护规则时，publish 仍会拒绝直接提交主干——但远端本身不做拦截。")
+        return 0
+    rules = gh(["api", f"repos/{repo}/branches/{branch}/protection"])
+    if rules.returncode != 0:
+        print("（有保护，但当前 token 无权读规则详情）")
+        return 0
+    try:
+        rule = json.loads(rules.stdout)
+    except json.JSONDecodeError:
+        return 0
+    checks = (rule.get("required_status_checks") or {}).get("contexts") or []
+    reviews = (rule.get("required_pull_request_reviews") or {}).get("required_approving_review_count")
+    print(f"  必需检查：{', '.join(checks) if checks else '（无）'}")
+    print(f"  必需审批数：{reviews if reviews is not None else '（无）'}")
+    print(f"  强制直推：{bool(rule.get('enforce_admins', {}).get('enabled'))}")
+    return 0
+
+
+def branch_prune_remote(repo: str, base: str, remote: str, apply_changes: bool) -> int:
+    listing = git(["branch", "-r", "--merged", f"{remote}/{base}", "--format=%(refname:short)"])
+    names = []
+    for line in listing.stdout.splitlines():
+        name = line.strip()
+        if not name or name.endswith("/HEAD"):
+            continue
+        short = name.split("/", 1)[-1]
+        if short in PROTECTED or short == base:
+            continue
+        names.append(short)
+    if not names:
+        print(f"没有已并入 {remote}/{base} 的远端分支")
+        return 0
+    candidates: list[str] = []
+    for name in sorted(set(names)):
+        merged_pr = gh(["pr", "list", "--repo", repo, "--head", name, "--state", "merged",
+                        "--json", "number", "--limit", "1"])
+        if merged_pr.returncode == 0 and merged_pr.stdout.strip() not in ("", "[]"):
+            candidates.append(name)
+    if not candidates:
+        print("有已并入的远端分支，但没有 MERGED 的 PR 记录（不删，避免误删他人分支）")
+        return 0
+    for name in candidates:
+        print(f"  {'删除' if apply_changes else '候选'} 远端 {name}")
+    if not apply_changes:
+        print(f"dry-run：加 --apply 才会删这 {len(candidates)} 个远端分支")
+        return 0
+    failed = 0
+    for name in candidates:
+        result = git(["push", remote, "--delete", name])
+        print(f"$ git push {remote} --delete {name} … rc={result.returncode}")
+        if result.returncode != 0:
+            failed += 1
+    return 1 if failed else 0
 
 
 def diagnose(pr: str, repo: str) -> int:
@@ -558,6 +785,21 @@ def self_test() -> int:
         )
         check("陈旧只标已并入的", [r["name"] for r in stale if r["stale"]], ["old-merged"])
         check("陈旧排在最前", stale[0]["name"], "old-merged")
+        check("分支名转目录名", sanitize("feat/x-y"), "feat-x-y")
+        wt = worktree_path_for(pathlib.Path("/repo/trit"), "feat/x")
+        check("worktree 放在仓外", wt.name == "trit-feat-x" and wt.parent.name == "repo", True)
+        sample = "worktree /a/b\nHEAD abc\nbranch refs/heads/feat/x\n\nworktree /a/c\nHEAD def\ndetached\n"
+        rows = parse_worktrees(sample)
+        check("worktree 解析条数", len(rows), 2)
+        check("worktree 解析分支", rows[0]["branch"], "feat/x")
+        prs = [
+            {"number": 1, "title": "a", "headRefName": "feat/a", "baseRefName": "main"},
+            {"number": 2, "title": "b", "headRefName": "feat/b", "baseRefName": "feat/a"},
+            {"number": 3, "title": "c", "headRefName": "feat/c", "baseRefName": "feat/missing"},
+        ]
+        chains, off = pr_chains(prs)
+        check("链长度", [len(c) for c in chains], [2, 1])
+        check("离干 PR 被标出", sorted(p["headRefName"] for p in off), ["feat/b", "feat/c"])
         check("默认 base 优先 main", pick_base(["main", "master"]), "main")
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")
@@ -597,6 +839,27 @@ def main(argv: list[str]) -> int:
         return 1 if hits else 0
     if command == "branch":
         return branch_cmd(repo, argv[1:])
+    if command == "worktree":
+        sub = argv[1] if len(argv) > 1 else "list"
+        rest = [a for a in argv[2:] if not a.startswith("--")]
+        if sub == "list":
+            return worktree_list()
+        if sub == "add":
+            if not rest:
+                print("用法：gitflow.py worktree add <分支> [--path 目录] [--from main]")
+                return 2
+            base = argv[argv.index("--from") + 1] if "--from" in argv else detect_base(detect_remote())
+            path = argv[argv.index("--path") + 1] if "--path" in argv else ""
+            return worktree_add(rest[0], base, detect_remote(), path, "--dry-run" in argv)
+        if sub == "remove":
+            if not rest:
+                print("用法：gitflow.py worktree remove <目录> [--force]")
+                return 2
+            return worktree_remove(rest[0], "--force" in argv)
+        print(f"未知 worktree 子命令: {sub}（list / add / remove）")
+        return 2
+    if command == "stack":
+        return stack(repo, remote_state="--no-remote" not in argv)
     if command == "diagnose":
         pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
         if not pr:
