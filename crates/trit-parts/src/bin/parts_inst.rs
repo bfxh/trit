@@ -38,7 +38,7 @@ fn scene_dirs(root: &Path) -> Vec<PathBuf> {
             p.is_dir()
                 && p.file_name()
                     .and_then(|s| s.to_str())
-                    .is_some_and(|s| s.starts_with("scene"))
+                    .is_some_and(|s| s.starts_with("scene") || s.starts_with("pt"))
         })
         .collect();
     v.sort();
