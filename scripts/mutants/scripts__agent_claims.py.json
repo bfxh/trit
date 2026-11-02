@@ -54,7 +54,25 @@
   "runner": "python"
  },
  {
-  "name": "agent-claims: 同仓不同路径不算撞（两份同名 crate 就是这个形状）",
+  "name": "agent-claims: 同仓一律判红（路径不相交也拦，闸门自己变噪音）",
+  "file": "scripts/agent_claims.py",
+  "old": "if same_repo and overlaps(left[\"paths\"], right[\"paths\"]):",
+  "new": "if same_repo:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 同仓但路径不相交时不出声（共享工作树的提醒丢失）",
+  "file": "scripts/agent_claims.py",
+  "old": "elif same_repo:",
+  "new": "elif False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 同仓判断整个摘掉（真相交的两份也提醒不到）",
   "file": "scripts/agent_claims.py",
   "old": "            same_repo = bool(left[\"repo\"].strip()) and left[\"repo\"].strip() == right[\"repo\"].strip()",
   "new": "            same_repo = False",
@@ -130,6 +148,15 @@
   "file": "scripts/agent_claims.py",
   "old": "            elif overlaps(left[\"paths\"], right[\"paths\"]):",
   "new": "            elif False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 跨仓路径名相交也判红（单体仓副本与独立仓常态形状被当成撞车）",
+  "file": "scripts/agent_claims.py",
+  "old": "if same_repo and overlaps(left[\"paths\"], right[\"paths\"]):",
+  "new": "if overlaps(left[\"paths\"], right[\"paths\"]):",
   "pkg": "scripts/agent_claims.py",
   "filter": "",
   "runner": "python"
