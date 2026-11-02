@@ -53,6 +53,26 @@ def gh(args: list[str], cwd: pathlib.Path = ROOT) -> subprocess.CompletedProcess
     )
 
 
+REMOTE_RE = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$")
+
+
+def repo_from_url(url: str) -> str:
+    """从 git remote URL 抠 `owner/name`；认不出就回落到默认仓。"""
+    match = REMOTE_RE.search(url.strip())
+    return match.group(1) if match else ""
+
+
+def detect_repo(root: pathlib.Path = ROOT) -> str:
+    """默认仓 = 本仓 remote 指向的那个；换仓使用同一份脚本不必改参数。"""
+    lines = git(["remote", "-v"], root).stdout.splitlines()
+    urls = [line.split()[1] for line in lines if len(line.split()) >= 2]
+    for url in urls:
+        name = repo_from_url(url)
+        if name:
+            return name
+    return "bfxh/trit"
+
+
 def secret_scan(root: pathlib.Path, files: list[str]) -> list[str]:
     """返回命中说明；空列表表示干净。只扫**要点名提交的这几个文件**。"""
     hits: list[str] = []
@@ -221,6 +241,9 @@ def self_test() -> int:
         args["no_merge"] = True
         check("--no-merge 不出合并", any(c[:3] == ["gh", "pr", "merge"] for c in plan(args)), False)
         check("不做 git add -A", any("-A" in c for c in plan(args)), False)
+        check("SSH remote 解析", repo_from_url("git@github.com:bfxh/trit.git"), "bfxh/trit")
+        check("HTTPS remote 解析", repo_from_url("https://github.com/bfxh/trit-immune"), "bfxh/trit-immune")
+        check("认不出的 remote 为空", repo_from_url("file:///tmp/x"), "")
 
         problems = base_ok(root, [])
         check("空文件列表被拒（点名 --files）", any("--files" in p for p in problems), True)
@@ -239,7 +262,7 @@ def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return self_test()
     command = argv[0] if argv else "status"
-    repo = argv[argv.index("--repo") + 1] if "--repo" in argv else "bfxh/trit"
+    repo = argv[argv.index("--repo") + 1] if "--repo" in argv else detect_repo()
     if command == "status":
         return status(repo)
     files: list[str] = []
