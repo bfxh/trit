@@ -1,0 +1,34 @@
+[
+ {
+  "name": "train: ¬ 不再交换两轨（恒等）",
+  "file": "crates/trit-train/src/plane.rs",
+  "old": "pos: self.neg.clone(),\n            neg: self.pos.clone(),",
+  "new": "pos: self.pos.clone(),\n            neg: self.neg.clone(),",
+  "pkg": "trit-train",
+  "filter": "not_matches_scalar_and_is_involutive"
+ },
+ {
+  "name": "train: ∧ 的假导轨该 OR 写成 AND",
+  "file": "crates/trit-train/src/plane.rs",
+  "old": "(ap & bp, an | bn),",
+  "new": "(ap & bp, an & bn),",
+  "pkg": "trit-train",
+  "filter": "exhaustive_binary_ops_match_scalar"
+ },
+ {
+  "name": "train: ∨ 的假导轨该 AND 写成 OR",
+  "file": "crates/trit-train/src/plane.rs",
+  "old": "(ap | bp, an & bn),",
+  "new": "(ap | bp, an | bn),",
+  "pkg": "trit-train",
+  "filter": "exhaustive_binary_ops_match_scalar"
+ },
+ {
+  "name": "train: 尾部位不再清零",
+  "file": "crates/trit-train/src/plane.rs",
+  "old": "if word + 1 < self.words() || tail == 0 {",
+  "new": "if true {",
+  "pkg": "trit-train",
+  "filter": "tail_bits_stay_clean"
+ }
+]

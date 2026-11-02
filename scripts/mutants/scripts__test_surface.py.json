@@ -1,0 +1,110 @@
+[
+ {
+  "name": "test-surface: --update 接受测试变少",
+  "file": "scripts/test_surface.py",
+  "old": "    if grew:",
+  "new": "    if False:",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "test-surface: prop_assert 不算断言（属性测试被误判）",
+  "file": "scripts/test_surface.py",
+  "old": "    r\"(assert|expect\\(|unwrap\\(|panic!|unreachable!|ensure|\"",
+  "new": "    r\"(\\bassert\\b|expect\\(|unwrap\\(|panic!|unreachable!|ensure|\"",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "test-surface: 台账里的死单位不报",
+  "file": "scripts/test_surface.py",
+  "old": "    for name in sorted(set(baseline) - set(units)):",
+  "new": "    for name in []:",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "test-surface: 扫描器连文档一起扫（自扫误报）",
+  "file": "scripts/test_surface.py",
+  "old": "    code = blank_strings(text) if is_python else text",
+  "new": "    code = text",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "test-surface: 拦了也不判红",
+  "file": "scripts/test_surface.py",
+  "old": "        \"red\": any(finding[\"blocking\"] for finding in findings),",
+  "new": "        \"red\": False,",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "test-surface: 无理由 skip 放行",
+  "file": "scripts/test_surface.py",
+  "old": "        for match in PY_SKIP_NOREASON.finditer(code):",
+  "new": "        for match in []:",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "test-surface: 未登记的计数单位放行",
+  "file": "scripts/test_surface.py",
+  "old": "        if name not in baseline:",
+  "new": "        if False:",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "test-surface: 测试变少不判红",
+  "file": "scripts/test_surface.py",
+  "old": "        elif entry[\"tests\"] < baseline[name]:",
+  "new": "        elif False:",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "test-surface: 空壳测试检不出来",
+  "file": "scripts/test_surface.py",
+  "old": "        if not body.strip():",
+  "new": "        if False:",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "test-surface: 空转自测不抓（门拿它当判据=空转）",
+  "file": "scripts/test_surface.py",
+  "old": "        if not ASSERT_ANY.search(strip_comments(tail)):",
+  "new": "        if False:",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "test-surface: 裸 ignore 放行",
+  "file": "scripts/test_surface.py",
+  "old": "    for match in RUST_IGNORE_BARE.finditer(text):",
+  "new": "    for match in []:",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "test-surface: 警告也算拦（不分两档）",
+  "file": "scripts/test_surface.py",
+  "old": "        \"red\": any(finding[\"blocking\"] for finding in findings),",
+  "new": "        \"red\": bool(findings),",
+  "pkg": "scripts/test_surface.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

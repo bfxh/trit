@@ -1,0 +1,26 @@
+[
+ {
+  "name": "policy: binary 允许派生定义",
+  "file": "crates/trit-policy/src/lib.rs",
+  "old": "        if definitions.contains_key(name) {\n",
+  "new": "        if false && definitions.contains_key(name) {\n",
+  "pkg": "trit-policy",
+  "filter": "binary_names_must_be_original_variables"
+ },
+ {
+  "name": "policy: 未引用环不报错",
+  "file": "crates/trit-policy/src/lib.rs",
+  "old": "                        return Err(PolicyError::Cycle(cycle.join(\" -> \")));\n",
+  "new": "                        let _ = cycle;\n",
+  "pkg": "trit-policy",
+  "filter": "unused_definition_cycle_is_rejected_before_expansion"
+ },
+ {
+  "name": "sat: 前提过滤不再要求 premise.t=1",
+  "file": "crates/trit-sat/src/symbolic.rs",
+  "old": "    enc.clause(&[Lit::from_var(p.t, true)]);",
+  "new": "    enc.clause(&[Lit::from_var(p.t, false)]);",
+  "pkg": "trit-policy",
+  "filter": "counterexample_satisfies_premise"
+ }
+]

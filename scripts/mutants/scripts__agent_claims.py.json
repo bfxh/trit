@@ -1,0 +1,137 @@
+[
+ {
+  "name": "agent-claims: --paths 只取第一个值（声明面被丢掉）",
+  "file": "scripts/agent_claims.py",
+  "old": "            out.append(argv[index])\n            index += 1",
+  "new": "            out.append(argv[index])\n            index = len(argv)",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: release 的两个筛选条件是或不是且（一次删光别人的声明）",
+  "file": "scripts/agent_claims.py",
+  "old": "            if not ((not who or c[\"who\"] == who) and (not cid or c[\"id\"] == cid))",
+  "new": "            if not ((who and c[\"who\"] == who) or (cid and c[\"id\"] == cid))",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 一个会话不能同时守两个仓",
+  "file": "scripts/agent_claims.py",
+  "old": "    dupes = [c for c in claims if c[\"who\"] == who and c[\"repo\"] == repo",
+  "new": "    dupes = [c for c in claims if c[\"who\"] == who",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 允许 ttl=0 永久占用",
+  "file": "scripts/agent_claims.py",
+  "old": "    if ttl <= 0:",
+  "new": "    if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 写侧不转义 |（名单被自己写坏）",
+  "file": "scripts/agent_claims.py",
+  "old": "        lines.append(\"| \" + \" | \".join(str(cell).replace(\"|\", \"/\") for cell in cells) + \" |\")",
+  "new": "        lines.append(\"| \" + \" | \".join(str(cell) for cell in cells) + \" |\")",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 前缀相交检不出来",
+  "file": "scripts/agent_claims.py",
+  "old": "            if x == y or x.startswith(y.rstrip(\"/\") + \"/\") or y.startswith(x.rstrip(\"/\") + \"/\"):",
+  "new": "            if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 同仓不同路径不算撞（两份同名 crate 就是这个形状）",
+  "file": "scripts/agent_claims.py",
+  "old": "            same_repo = bool(left[\"repo\"].strip()) and left[\"repo\"].strip() == right[\"repo\"].strip()",
+  "new": "            same_repo = False",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 坏行不判红",
+  "file": "scripts/agent_claims.py",
+  "old": "    red += [f\"名单里有解析不了的行（不知道是谁在动什么 ⇒ 判红）：{line}\" for line in broken]",
+  "new": "    red += []",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 所有声明都当在效期内",
+  "file": "scripts/agent_claims.py",
+  "old": "    return claim[\"ttl\"] <= 0 or at - claim[\"ts\"] <= claim[\"ttl\"] * 60",
+  "new": "    return True",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 控制台编码崩掉闸门输出",
+  "file": "scripts/agent_claims.py",
+  "old": "    try:\n        print(text)\n    except UnicodeEncodeError:\n        print(text.encode(encoding, \"replace\").decode(encoding, \"replace\"))",
+  "new": "    print(text)",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 没有声明文件时不说\"闸门还没启用\"",
+  "file": "scripts/agent_claims.py",
+  "old": "                \"warn\": [\"没有任何声明文件：新会话开工前请先 claim（这条不判红，但等于没闸门）\"],",
+  "new": "                \"warn\": [],",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 空路径集不再等于整仓",
+  "file": "scripts/agent_claims.py",
+  "old": "    if not a or not b:",
+  "new": "    if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 表头行被当坏行（自己写的名单自己判红）",
+  "file": "scripts/agent_claims.py",
+  "old": "        if not cells or cells[0] in (\"\", \"id\") or all(set(cell) <= set(\"-: \") for cell in cells):",
+  "new": "        if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 解析不了的行静默丢掉",
+  "file": "scripts/agent_claims.py",
+  "old": "        if not match:\n            broken.append(line[:120])",
+  "new": "        if not match:\n            continue",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 跨仓同名路径不吭声（两份副本无人知）",
+  "file": "scripts/agent_claims.py",
+  "old": "            elif overlaps(left[\"paths\"], right[\"paths\"]):",
+  "new": "            elif False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

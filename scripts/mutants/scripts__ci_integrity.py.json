@@ -1,0 +1,29 @@
+[
+ {
+  "name": "ci-integrity: if 不覆盖 PR 不判红",
+  "file": "scripts/ci_integrity.py",
+  "old": "            if cond and (\"pull_request\" not in cond or negated):",
+  "new": "            if False:",
+  "pkg": "scripts/ci_integrity.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci-integrity: 只在 push 触发的 job 不判红",
+  "file": "scripts/ci_integrity.py",
+  "old": "            if not job[\"on_pr\"]:",
+  "new": "            if False:",
+  "pkg": "scripts/ci_integrity.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci-integrity: 拼错的必需检查不判红",
+  "file": "scripts/ci_integrity.py",
+  "old": "        if not matches:",
+  "new": "        if False:",
+  "pkg": "scripts/ci_integrity.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

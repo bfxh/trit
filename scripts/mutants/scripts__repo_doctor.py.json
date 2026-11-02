@@ -1,0 +1,110 @@
+[
+ {
+  "name": "doctor: CODEOWNERS 缺口不报",
+  "file": "scripts/repo_doctor.py",
+  "old": "    return [directory for directory in required_dirs if directory not in covered]",
+  "new": "    return []",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doctor: LFS 方案不区分类型",
+  "file": "scripts/repo_doctor.py",
+  "old": "    suffixes = sorted({pathlib.PurePosixPath(name).suffix for name in big if pathlib.PurePosixPath(name).suffix})",
+  "new": "    suffixes = []",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doctor: 历史大 blob 不报",
+  "file": "scripts/repo_doctor.py",
+  "old": "        if size >= BIG_FILE:",
+  "new": "        if False:",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doctor: 工作树 CRLF 不计数",
+  "file": "scripts/repo_doctor.py",
+  "old": "        elif \"w/crlf\" in flags:",
+  "new": "        elif False:",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doctor: 索引 CRLF 不报",
+  "file": "scripts/repo_doctor.py",
+  "old": "        if \"i/crlf\" in flags:",
+  "new": "        if False:",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "repo_doctor: 函数名不在名单里 ⇒ 调用点全漏（run/check_output 都不认）",
+  "file": "scripts/repo_doctor.py",
+  "old": "if name not in (\"run\", \"check_output\", \"Popen\", \"call\", \"communicate\"):",
+  "new": "if name not in (\"Popen\",):",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "repo_doctor: 发现不入库（体检永远看不到这一类）",
+  "file": "scripts/repo_doctor.py",
+  "old": "    gaps = subprocess_encoding_gaps(root / \"scripts\")",
+  "new": "    gaps = []",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "repo_doctor: 只看 text 不看 universal_newlines（老写法漏网）",
+  "file": "scripts/repo_doctor.py",
+  "old": "if keywords & {\"text\", \"universal_newlines\"} and \"encoding\" not in keywords:",
+  "new": "if \"text\" in keywords and \"encoding\" not in keywords:",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "repo_doctor: 有缺口却只报 high 之外（等级降级到没人看）",
+  "file": "scripts/repo_doctor.py",
+  "old": "add(\"子进程编码\", \"high\"",
+  "new": "add(\"子进程编码\", \"low\"",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "repo_doctor: 编码钉子整个关掉（子进程假绿不再被发现）",
+  "file": "scripts/repo_doctor.py",
+  "old": "if keywords & {\"text\", \"universal_newlines\"} and \"encoding\" not in keywords:",
+  "new": "if False:",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "repo_doctor: 解析失败的文件静默跳过（fail-open）",
+  "file": "scripts/repo_doctor.py",
+  "old": "            gaps.append(f\"{path.name}（解析不了，证明不了它接没接编码）\")",
+  "new": "            pass",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "repo_doctor: 钉了 encoding 也照样判缺口（噪声化）",
+  "file": "scripts/repo_doctor.py",
+  "old": "if keywords & {\"text\", \"universal_newlines\"} and \"encoding\" not in keywords:",
+  "new": "if keywords & {\"text\", \"universal_newlines\"}:",
+  "pkg": "scripts/repo_doctor.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

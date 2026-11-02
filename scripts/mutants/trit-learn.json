@@ -1,0 +1,18 @@
+[
+ {
+  "name": "learn: STE 饱和门失效",
+  "file": "crates/trit-learn/src/quant.rs",
+  "old": "                if ratio.abs() <= limit {",
+  "new": "                if true {",
+  "pkg": "trit-learn",
+  "filter": "clipped_ste_zeroes_saturated_gradients"
+ },
+ {
+  "name": "learn: softmax 不归一化",
+  "file": "crates/trit-learn/src/loss.rs",
+  "old": "    let sum: f64 = exps.iter().sum();",
+  "new": "    let sum: f64 = 1.0;",
+  "pkg": "trit-learn",
+  "filter": "softmax_sums_to_one_and_is_stable"
+ }
+]

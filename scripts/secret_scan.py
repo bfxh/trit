@@ -220,7 +220,8 @@ def self_test() -> int:
         repo = pathlib.Path(tmp) / "hist"
         repo.mkdir()
         run = lambda args: subprocess.run(["git", *args], cwd=repo, stdout=subprocess.PIPE,
-                                          stderr=subprocess.STDOUT, text=True)
+                                          stderr=subprocess.STDOUT, text=True,
+                                          encoding="utf-8", errors="replace")
         run(["init", "-q"])
         run(["config", "user.email", "t@example.com"])
         run(["config", "user.name", "t"])

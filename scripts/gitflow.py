@@ -6,6 +6,10 @@
                                      [--branch 分支名] [--base main] [--no-merge] [--dry-run]
   python scripts/gitflow.py secret-scan --files a b c
   python scripts/gitflow.py status
+  python scripts/gitflow.py branch list|start <名>|sync|prune [--apply]|protect [--apply] [--dry-run]
+  python scripts/gitflow.py worktree add|list|remove
+  python scripts/gitflow.py pr triage|sync <n> [--dry-run]
+  python scripts/gitflow.py stack | diagnose --pr <n> | flaky | dco | queue | merge <n> [--wait-minutes N]
   python scripts/gitflow.py --self-test
 
 为什么不是"git add -A"：
@@ -445,7 +449,7 @@ def branch_cmd(repo: str, argv: list[str]) -> int:
         return branch_prune(base, "--apply" in argv)
     if sub == "protect":
         target = argv[argv.index("--branch") + 1] if "--branch" in argv else base
-        return protect(repo, target)
+        return protect(repo, target, "--apply" in argv, "--dry-run" in argv, "--force" in argv)
     print(f"未知分支子命令: {sub}（list / start / sync / prune）")
     return 2
 
@@ -547,7 +551,227 @@ def stack(repo: str, remote_state: bool) -> int:
     return 0
 
 
-def protect(repo: str, branch: str) -> int:
+def read_required_checks(path: pathlib.Path) -> list[str]:
+    """.github/required-checks.txt 的正文行（# 注释与空行不算）。"""
+    if not path.is_file():
+        return []
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")]
+
+
+def strip_urls(node):
+    """GET 保护规则会带回只读的 url 字段，PUT 不认——原样送回会被 422。"""
+    if isinstance(node, dict):
+        return {key: strip_urls(value) for key, value in node.items() if key != "url"}
+    if isinstance(node, list):
+        return [strip_urls(item) for item in node]
+    return node
+
+
+def diff_contexts(got: list[str], wanted: list[str]) -> list[str]:
+    """推送后复核：远端与本地台账的差异，空列表才叫真对上。"""
+    problems = [f"少 {context}" for context in sorted(set(wanted) - set(got))]
+    problems += [f"多 {context}" for context in sorted(set(got) - set(wanted))]
+    return problems
+
+
+def load_ci_integrity():
+    """复用 ci_integrity 的 job 解析与矩阵匹配，避免两边口径漂移。"""
+    import importlib.util
+
+    path = pathlib.Path(__file__).resolve().parent / "ci_integrity.py"
+    spec = importlib.util.spec_from_file_location("trit_ci_integrity", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def delta_contexts(current: list[str], wanted: list[str]) -> list[str]:
+    """这次要新增的必需检查（老 PR 已经卡着的不在本次责任里）。"""
+    return sorted(set(wanted) - set(current))
+
+
+def missing_on_branch(jobs, wanted: list[str], ci) -> list[str]:
+    """这个分支上不会上报的上下文。jobs=None（取不到 workflow）按"全都缺"算——
+    证明不了它会跑，就不许把它设成必需。"""
+    if jobs is None:
+        return list(wanted)
+    return [context for context in wanted
+            if not any(ci.matches_context(job, context) for job in jobs)]
+
+
+def protection_blockers(prs: list[dict], jobs_by_branch: dict, added: list[str], ci) -> list[str]:
+    """加必需检查之前的拦路清单：开着的 PR 里，谁的分支根本不会跑这些 job。
+
+    GitHub 的行为是"必需检查从不出现 ⇒ 这个 PR 永远合不了"，所以这一步不能省，
+    也不能靠人肉记得（本仓差点就把两个新门推上去，卡住三条在跑的 PR）。
+    """
+    blockers: list[str] = []
+    if not added:
+        return blockers
+    for pr in prs:
+        branch = pr.get("headRefName") or ""
+        if jobs_by_branch.get(branch) is None:
+            blockers.append(f"#{pr.get('number')}（{branch}）读不到 workflow ⇒ 无法证明会跑："
+                            f"{'、'.join(added)}")
+            continue
+        gaps = missing_on_branch(jobs_by_branch[branch], added, ci)
+        if gaps:
+            blockers.append(f"#{pr.get('number')}（{branch}）不会上报：{'、'.join(gaps)}")
+    return blockers
+
+
+# API 路径只认正斜杠；ci_integrity.WORKFLOWS 是本地 os.path 常量（Windows 上是反斜杠）
+WORKFLOWS_URL = ".github/workflows"
+
+
+def remote_workflow_jobs(ci, repo: str, branch: str) -> list[dict] | None:
+    import base64
+
+    listing = gh(["api", f"repos/{repo}/contents/{WORKFLOWS_URL}?ref={branch}"])
+    if listing.returncode != 0:
+        return None
+    try:
+        entries = json.loads(listing.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(entries, list):
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        box = pathlib.Path(tmp)
+        (box / WORKFLOWS_URL).mkdir(parents=True, exist_ok=True)
+        found = 0
+        for entry in entries:
+            name = entry.get("name") or ""
+            if not name.endswith((".yml", ".yaml")):
+                continue
+            raw = gh(["api", f"repos/{repo}/contents/{WORKFLOWS_URL}/{name}?ref={branch}",
+                      "--jq", ".content"])
+            if raw.returncode != 0:
+                return None
+            (box / WORKFLOWS_URL / name).write_bytes(base64.b64decode(raw.stdout))
+            found += 1
+        if found == 0:
+            return None
+        return ci.parse_workflows(box)
+
+
+def open_pr_list(repo: str) -> list[dict] | None:
+    result = gh(["pr", "list", "--repo", repo, "--state", "open", "--json", "number,headRefName"])
+    if result.returncode != 0:
+        return None
+    try:
+        data = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, list) else None
+
+
+def build_protection_body(rule: dict, wanted: list[str]) -> dict:
+    """组 PUT /branches/<b>/protection 的请求体。GitHub 这套 schema 很挑：
+
+    - GET 回来的只读 `url` 原样送回 ⇒ 422；
+    - `restrictions` 整个键缺失（哪怕它本该是 null）⇒ 422；
+    - `enforce_admins` 这里要布尔，不是 GET 那种 `{"enabled": true}`。
+    所以显式列要送的字段，而不是把 GET 结果改两下就发出去（第一版就这么被拒了）。
+    """
+    status = rule.get("required_status_checks") or {}
+    reviews = rule.get("required_pull_request_reviews")
+    restrictions = rule.get("restrictions")
+    body = {
+        "required_status_checks": {"strict": bool(status.get("strict", True)),
+                                   "contexts": list(wanted)},
+        "required_pull_request_reviews": strip_urls(reviews) if reviews else None,
+        "restrictions": strip_urls(restrictions) if restrictions else None,
+        "enforce_admins": bool((rule.get("enforce_admins") or {}).get("enabled", False)),
+    }
+    for flag in ("allow_force_pushes", "allow_deletions", "required_linear_history",
+                 "required_conversation_resolution"):
+        node = rule.get(flag)
+        if isinstance(node, dict) and "enabled" in node:
+            body[flag] = bool(node["enabled"])
+    return body
+
+
+def has_url_key(node) -> bool:
+    """递归查只读 url：payload 里残留一个就等于整份被拒。"""
+    if isinstance(node, dict):
+        return "url" in node or any(has_url_key(value) for value in node.values())
+    if isinstance(node, list):
+        return any(has_url_key(item) for item in node)
+    return False
+
+
+def apply_required_checks(repo: str, branch: str, rule: dict, wanted: list[str],
+                          dry_run: bool, force: bool = False) -> int:
+    """把本地台账推到分支保护，并把改动前的规则存成回滚点。
+
+    这里唯一不能出错的是"空清单"：台账读出来是空（文件没了/全被注释）就当"撤掉所有必需检查"
+    推上去，等于自己把保护关掉 ⇒ 必须先拒绝。
+    """
+    if not wanted:
+        print("拒收：本地必需检查清单是空的（文件缺失或全是注释）。"
+              "真要撤掉保护请显式操作，不许由一次读空触发。")
+        return 1
+    current = (rule.get("required_status_checks") or {}).get("contexts") or []
+    added = delta_contexts(current, wanted)
+    if added and not force:
+        ci = load_ci_integrity()
+        prs = open_pr_list(repo)
+        if prs is None:
+            print("拒推：读不到开着的 PR 清单，无法证明新检查不会把别人的 PR 卡死。"
+                  "确认无误再加 --force。")
+            return 1
+        jobs_by_branch: dict[str, list[dict] | None] = {}
+        for pr in prs:
+            name = pr.get("headRefName") or ""
+            if name not in jobs_by_branch:
+                jobs_by_branch[name] = remote_workflow_jobs(ci, repo, name)
+        blockers = protection_blockers(prs, jobs_by_branch, added, ci)
+        if blockers:
+            print(f"拒推：这次要新增 {len(added)} 条必需检查，但 {len(blockers)} 条开着的 PR "
+                  "的分支上这些 job 不会跑 ⇒ 设成必需就把它们永久卡住：")
+            for line in blockers:
+                print(f"  - {line}")
+            print("补救：先 `gitflow pr sync <n>` 把 main 并进那个分支（带来 workflow），"
+                  "或本次先不加这两条必需。确认要强行加才用 --force。")
+            return 1
+    body = build_protection_body(rule, wanted)
+    if dry_run:
+        print(f"dry-run：将把 {len(wanted)} 条必需检查写入 {repo}:{branch}")
+        for context in wanted:
+            print(f"  + {context}")
+        return 0
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    rollback = pathlib.Path(tempfile.gettempdir()) / f"protection_before_{repo.replace('/', '_')}_{stamp}.json"
+    rollback.write_text(json.dumps(rule, ensure_ascii=False, indent=1), encoding="utf-8")
+    payload = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False)
+    try:
+        json.dump(body, payload, ensure_ascii=False)
+        payload.close()
+        result = gh(["api", "-X", "PUT", f"repos/{repo}/branches/{branch}/protection",
+                     "--input", payload.name])
+    finally:
+        pathlib.Path(payload.name).unlink(missing_ok=True)
+    if result.returncode != 0:
+        print(f"写入失败（回滚点在 {rollback}）：{result.stdout.strip()[:600]}")
+        return 1
+    after = gh(["api", f"repos/{repo}/branches/{branch}/protection/required_status_checks"])
+    try:
+        got = (json.loads(after.stdout) or {}).get("contexts") or []
+    except json.JSONDecodeError:
+        print(f"写完读不回，无法核对（回滚点：{rollback}）")
+        return 1
+    problems = diff_contexts(got, wanted)
+    if problems:
+        print(f"写完复核不一致：远端 {len(got)} 条｜{'、'.join(problems)}（回滚点：{rollback}）")
+        return 1
+    print(f"已写入 {len(got)} 条必需检查；改动前的规则存在 {rollback}")
+    return 0
+
+
+def protect(repo: str, branch: str, apply_changes: bool = False, dry_run: bool = False,
+          force: bool = False) -> int:
     info = gh(["api", f"repos/{repo}/branches/{branch}"])
     if info.returncode != 0:
         print(f"查不到分支 {branch}：")
@@ -576,6 +800,10 @@ def protect(repo: str, branch: str) -> int:
     print(f"  必需检查：{', '.join(checks) if checks else '（无）'}")
     print(f"  必需审批数：{reviews if reviews is not None else '（无）'}")
     print(f"  强制直推：{bool(rule.get('enforce_admins', {}).get('enabled'))}")
+    if apply_changes:
+        wanted = read_required_checks(ROOT / ".github" / "required-checks.txt")
+        print(f"本地台账 {len(wanted)} 条 ⇒ 推送到 {repo}:{branch}")
+        return apply_required_checks(repo, branch, rule, wanted, dry_run, force)
     return 0
 
 
@@ -676,6 +904,53 @@ def pr_triage(repo: str, stale_days: int, as_json: bool, apply_changes: bool) ->
     return 0
 
 
+CONFLICT_RECORD = re.compile(r"^\s+(?:base|our|their|ancestor)\s+\d{6}\s+[0-9a-f]+\s+(\S.*)$")
+
+
+def merge_tree_conflicts(text: str) -> list[str]:
+    """从 `git merge-tree <base> <ours> <theirs>` 的输出里抠出冲突文件。
+
+    "changed in both" 只是**块头**，路径在紧随其后的 base/our/their 三行里——
+    只印块头等于什么都没点名（第一版就是这样：预览说"会冲突"却不说是哪几个文件）。
+    """
+    paths: list[str] = []
+    in_block = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.endswith("in both") or stripped.startswith("<<<<<<<"):
+            in_block = True
+            continue
+        if not in_block:
+            continue
+        match = CONFLICT_RECORD.match(line)
+        if match:
+            if match.group(1) not in paths:
+                paths.append(match.group(1))
+        elif line[:1] not in (" ", "\t"):
+            in_block = False
+    return paths
+
+
+OID_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def merge_preview(modern_rc: int, modern_out: str, legacy_out: str) -> tuple[bool, list[str], str]:
+    """这次合并会不会冲突、冲突在哪些文件、用的哪种 merge-tree 口径。
+
+    老式 `git merge-tree <base> <ours> <theirs>` 的 `changed in both` 只是块头，
+    而且**两边都改过但能自动合并的文件也打这块** ⇒ 拿它判冲突会过度报警
+    （#198/#199 就被它报成"有真冲突"，实际干净合上了）。
+    所以优先 `--write-tree`（rc≠0 才是真冲突，oid 之后是冲突文件名），不可用才退回老口径。
+    """
+    lines = [line for line in modern_out.splitlines() if line.strip()]
+    if lines and OID_RE.fullmatch(lines[0].strip()) and modern_rc in (0, 1):
+        paths = [line.strip() for line in lines[1:]
+                 if not line.strip().startswith(("Auto-merging", "CONFLICT"))]
+        return (modern_rc != 0 or bool(paths)), paths, "write-tree"
+    paths = merge_tree_conflicts(legacy_out)
+    return bool(paths) or "in both" in legacy_out, paths, "legacy"
+
+
 def pr_sync(repo: str, number: str, dry_run: bool = False) -> int:
     """把 main merge 进 PR 分支并 push：不改写历史，不动别人的提交。"""
     view = gh(["pr", "view", number, "--repo", repo, "--json", "headRefName,number"])
@@ -697,14 +972,19 @@ def pr_sync(repo: str, number: str, dry_run: bool = False) -> int:
             print(f"拉不到 origin/{branch}（先 push 或 fetch）")
             return 1
         merge_base = git(["merge-base", base_sha, branch_sha]).stdout.strip() or base_sha
-        tree = git(["merge-tree", merge_base, base_sha, branch_sha])
-        conflicts = [line for line in tree.stdout.splitlines() if "changed in both" in line or line.startswith("<<<<<<<")]
-        if conflicts:
-            print(f"预览：把 {base} 合进 {branch} 会冲突")
-            for line in conflicts[:10]:
-                print(f"  {line.strip()}")
+        modern = git(["merge-tree", "--write-tree", "--name-only", base_sha, branch_sha])
+        legacy = git(["merge-tree", merge_base, base_sha, branch_sha])
+        conflicted, conflicts, how = merge_preview(modern.returncode, modern.stdout, legacy.stdout)
+        if conflicted:
+            print(f"预览：把 {base} 合进 {branch} 会冲突（{len(conflicts)} 个文件，口径 {how}）")
+            for path in conflicts[:12]:
+                print(f"  - {path}")
+            if not conflicts:
+                print("  （merge-tree 说有冲突但没解析出文件名，原文前几行：）")
+                for line in tree.stdout.splitlines()[:6]:
+                    print(f"    {line}")
             return 1
-        print(f"预览：把 {base} 合进 {branch} 无冲突（merge-tree 结果为空）")
+        print(f"预览：把 {base} 合进 {branch} 无冲突（口径 {how}）")
         return 0
     # 分支可能正被另一个 worktree 占用（多会话常态）：在**那里**操作，不强行 checkout
     worktrees = parse_worktrees(git(["worktree", "list", "--porcelain"]).stdout)
@@ -1019,6 +1299,28 @@ def has_pending(output: str) -> bool:
     return "pending" in lowered or "in_progress" in lowered or "queued" in lowered
 
 
+CHECK_STATES_OK = {"pass", "skipping"}
+
+
+def listing_problems(output: str) -> list[str]:
+    """`gh pr checks` 表格里所有"没通过"的行。
+
+    为什么合并前还要自己看一遍：`gh pr merge` 只受**分支保护**约束。像
+    `bfxh/trit-immune` 那样没设保护的仓，红着也照样合得进去
+    （master 就是这么被弄红的）。
+    `skipping` 放行是故意的——非必需的 job 没跑不该拦合并；必需检查没跑由 `green_audit` 判红。
+    """
+    problems = []
+    for line in output.splitlines():
+        cols = [cell.strip() for cell in line.split("\t")]
+        if len(cols) < 2 or not cols[0]:
+            continue
+        state = cols[1].lower()
+        if state not in CHECK_STATES_OK:
+            problems.append(f"{cols[0]}={state or '未知状态'}")
+    return problems
+
+
 def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30) -> int:
     """等检查**真正**落定再合。
 
@@ -1041,6 +1343,15 @@ def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30)
                 print("检查还在跑（可能是刚 push 触发的新一轮），等它落定…")
             time.sleep(pause)
             continue
+        problems = listing_problems(output)
+        if problems:
+            print("拒绝合入：有检查没通过（这个仓可能没有分支保护，GitHub 不会替你拦）：")
+            for line in problems[:12]:
+                print(f"  - {line}")
+            if any("cancelled" in line or "=未知状态" in line for line in problems):
+                print("  提示：cancelled 常见于托管 runner 没抢到（macOS 容量）——"
+                      "先 `gh run rerun <run-id> --failed` 再判，别把它当代码问题。")
+            return 1
         merge = gh(["pr", "merge", "--repo", repo, branch, "--squash", "--delete-branch"])
         if merge.returncode == 0:
             print(f"CI 全绿，已 squash 合入 {branch} 并删分支")
@@ -1161,6 +1472,12 @@ def self_test() -> int:
         check("竞态识别：no checks reported", checks_not_yet("no checks reported on the 'x' branch"), True)
         check("真实失败不算竞态", checks_not_yet("some check failed"), False)
         check("pending 识别", has_pending("CI\tpending\t0\thttps://x"), True)
+        check("合并前自己看表格：fail 要拦（没保护的仓 GitHub 不替你拦）",
+              listing_problems("fmt\tpass\t1s\th\nCI\tfail\t2s\th"), ["CI=fail"])
+        check("cancelled 算没通过（master 那次红就是这么来的）",
+              listing_problems("t\tcancelled\t15m1s\th"), ["t=cancelled"])
+        check("非必需 job 的 skipping 不拦", listing_problems("m\tskipping\t0\th"), [])
+        check("状态为空不许当通过", listing_problems("x\t\t1s\th"), ["x=未知状态"])
         check("通过不算 pending", has_pending("CI\tpass\t1s\thttps://x"), False)
         check("文件重叠 Jaccard", round(file_jaccard(["a", "b"], ["a", "b", "c"]), 6), 0.666667)
         now = 2_000_000_000
@@ -1196,6 +1513,94 @@ def self_test() -> int:
         check("默认 base 优先 main", pick_base(["main", "master"]), "main")
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")
+
+        # 保护规则一键对账（本地台账 → GitHub）：读空不许当成"撤掉保护"
+        checks_file = root / "checks.txt"
+        checks_file.write_text("# 注释\n\nMSRV (1.88)\n  wasm (wasm32 build)  \n", encoding="utf-8")
+        check("必需检查台账读正文", read_required_checks(checks_file),
+              ["MSRV (1.88)", "wasm (wasm32 build)"])
+        check("台账不存在算空清单", read_required_checks(root / "nope.txt"), [])
+        check("PUT 前剥掉只读 url", strip_urls({"url": "x", "a": {"url": "y", "b": [1]}}),
+              {"a": {"b": [1]}})
+        bare = build_protection_body(
+            {"required_status_checks": {"strict": True, "contexts": ["CI"], "url": "https://api/x"},
+             "url": "https://api/y",
+             "enforce_admins": {"enabled": True, "url": "https://api/z"},
+             "restrictions": {"url": "https://api/r", "users": ["a"]}},
+            ["CI", "新门"])
+        check("payload 里不许有任何只读 url（GET 原样送回必 422）", has_url_key(bare), False)
+        check("payload 必须带 restrictions 键（缺了也 422）", "restrictions" in bare, True)
+        check("enforce_admins 要布尔不是对象", bare["enforce_admins"], True)
+        check("要推的清单原样进 contexts", bare["required_status_checks"]["contexts"], ["CI", "新门"])
+        check("没有 restrictions 时也显式给 null", build_protection_body({}, ["CI"])["restrictions"], None)
+        check("空清单拒推（读空不等于撤保护）",
+              apply_required_checks("o/r", "main", {}, [], True), 1)
+        check("dry-run 只打印不碰远端",
+              apply_required_checks("o/r", "main", {"required_status_checks":
+                                                    {"strict": True, "contexts": ["CI"]}}, ["CI"], True), 0)
+        check("新增必需检查时先过拦路检查（无网络就拒，不许盲推）",
+              apply_required_checks("o/r", "main", {"required_status_checks":
+                                                    {"strict": True, "contexts": []}}, ["CI"], True), 1)
+        check("写完复核：一致没话说", diff_contexts(["CI", "t3"], ["t3", "CI"]), [])
+        check("写完复核：少了要点名", diff_contexts(["CI"], ["CI", "t3"]), ["少 t3"])
+        check("写完复核：多了也要点名", diff_contexts(["CI", "旧门"], ["CI"]), ["多 旧门"])
+
+        # 推保护之前先看开着的 PR 会不会被卡住（本仓差点把两个新门推上去卡住三条 PR）
+        ci = load_ci_integrity()
+        check("只对本次新增的必需检查负责", delta_contexts(["CI", "t3"], ["CI", "t3", "新门"]), ["新门"])
+        jobs_ok = [{"workflow": "ci.yml", "id": "surface", "name": "test surface (ratchet)",
+                    "if": "", "on_pr": True, "has_matrix": False}]
+        jobs_missing = [{"workflow": "ci.yml", "id": "old", "name": "old job",
+                         "if": "", "on_pr": True, "has_matrix": False}]
+        check("分支上有这个 job ⇒ 不缺", missing_on_branch(jobs_ok, ["test surface (ratchet)"], ci), [])
+        check("分支上没这个 job ⇒ 缺",
+              missing_on_branch(jobs_missing, ["test surface (ratchet)"], ci), ["test surface (ratchet)"])
+        check("取不到 workflow 按全缺算（证明不了就不许放行）",
+              missing_on_branch(None, ["a", "b"], ci), ["a", "b"])
+        check("矩阵展开名也要能对上",
+              missing_on_branch([{"workflow": "ci.yml", "id": "x", "name": "fmt + clippy + test",
+                                  "if": "", "on_pr": True, "has_matrix": True}],
+                                ["fmt + clippy + test (ubuntu-latest)"], ci), [])
+        prs = [{"number": 7, "headRefName": "feat/a"}, {"number": 8, "headRefName": "feat/b"}]
+        check("只点名会卡住的 PR",
+              protection_blockers(prs, {"feat/a": jobs_ok, "feat/b": jobs_missing},
+                                  ["test surface (ratchet)"], ci),
+              ["#8（feat/b）不会上报：test surface (ratchet)"])
+        check("没有新增就没有拦路", protection_blockers(prs, {"feat/a": None, "feat/b": None}, [], ci), [])
+        check("读不到 workflow 要单独点名（不许混成\"确实没这个 job\"）",
+              protection_blockers([{"number": 9, "headRefName": "feat/z"}], {"feat/z": None},
+                                  ["新门"], ci),
+              ["#9（feat/z）读不到 workflow ⇒ 无法证明会跑：新门"])
+        legacy = (
+            "Auto-merging a.txt\n"
+            "changed in both\n"
+            "  base   100644 " + "1" * 40 + " a.txt\n"
+            "  our    100644 " + "2" * 40 + " a.txt\n"
+            "  their  100644 " + "3" * 40 + " a.txt\n"
+            "\n"
+            "merged\n"
+            "changed in both\n"
+            "  base   100644 " + "4" * 40 + " b/c.txt\n"
+            "  our    100644 " + "5" * 40 + " b/c.txt\n"
+            "  their  100644 " + "6" * 40 + " b/c.txt\n"
+        )
+        check("冲突预览点名到文件", merge_tree_conflicts(legacy), ["a.txt", "b/c.txt"])
+        check("没有冲突块就不点名", merge_tree_conflicts("merged\n  our 100644 a.txt\n"), [])
+        check("预览优先 write-tree：能自动合并的不算冲突",
+              merge_preview(0, "d" * 40 + "\nAuto-merging a.txt\n", ""), (False, [], "write-tree"))
+        check("write-tree 报冲突时点名文件",
+              merge_preview(1, "d" * 40 + "\nsrc/x.rs\nCONFLICT (content): Merge conflict in src/x.rs\n",
+                            ""), (True, ["src/x.rs"], "write-tree"))
+        check("write-tree 不可用才退回老口径",
+              merge_preview(129, "usage: git merge-tree",
+                            "changed in both\n  our    100644 " + "1" * 40 + " b/y.rs\n  their  100644 "
+                            + "2" * 40 + " b/y.rs\n"),
+              (True, ["b/y.rs"], "legacy"))
+        check("write-tree 干净但列了文件名也算冲突",
+              merge_preview(0, "d" * 40 + "\nsrc/y.rs\n", "")[0], True)
+        check("write-tree rc≠0 但没列文件也算冲突（只看文件名会漏）",
+              merge_preview(1, "d" * 40 + "\n", "")[0], True)
+        check("has_url_key 是递归查的", has_url_key({"a": {"b": [{"url": "x"}]}}), True)
 
         problems = base_ok(root, [])
         check("空文件列表被拒（点名 --files）", any("--files" in p for p in problems), True)
