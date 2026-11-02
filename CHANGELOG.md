@@ -4,9 +4,12 @@
 
 ### Changed（变异门：三语言口径 + 逐目标 fail-closed + 门自身自测）
 
-- 登记表 **385 → 419 条**、目标 30 → 36：新增 python **27** 条（`module_budget` / `hazard_gate` /
+- 登记表 **385 → 426 条**、目标 30 → 36：新增 python **34** 条（`module_budget` / `hazard_gate` /
   `publish_graph` / `pr_hygiene` 的 `--self-test` 面）、bash **7** 条（`cli_smoke.sh` 的断言工具）、
   门自身 **12** 条（裁决链 / runner 推断 / 空集 / preflight 边界）。
+- `hazard_gate` 自测补两条夹具（**登记了但没写不变量仍要红**、**SAFETY 文档在签名上方且离匹配点超过 8 行**），
+  并把内联测试夹具改名 `inline_cfg.rs`——原名以 `tests.rs` 结尾，`rel.endswith("tests.rs")` 已经把它当测试，
+  边界判定等于空转，改坏也测不出来。
 - `RUNNERS` 三种语言口径：`cargo test` / `<script> --self-test`（python）/ `bash <script> --self-test`；
   登记表没写 `runner` 时按 pkg 后缀（`.py` / `.sh`）推断，脚本不会再落到 `cargo test` 去跑。
 - fail-closed 改成**逐目标**：多目标一起选中时，0 条登记的目标不能再被别的目标带绿；
