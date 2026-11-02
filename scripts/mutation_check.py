@@ -3495,6 +3495,52 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    # ---- module_budget 台账面 ----
+    {
+        "name": "budget: 无视台账（已登记的债务也算新增超限）",
+        "file": "scripts/module_budget.py",
+        "old": "        if lines > LIMIT and file not in baseline:",
+        "new": "        if lines > LIMIT:",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: 台账里的文件变胖不判红",
+        "file": "scripts/module_budget.py",
+        "old": "        if lines > recorded:",
+        "new": "        if False:",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: 已删除文件留在台账里不判红",
+        "file": "scripts/module_budget.py",
+        "old": "        if file not in sizes:",
+        "new": "        if False:",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: --update 不再拒绝增长",
+        "file": "scripts/module_budget.py",
+        "old": "        if new is not None and new > old",
+        "new": "        if False",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: --update 把预算内文件也写进台账",
+        "file": "scripts/module_budget.py",
+        "old": "def save_baseline(path: Path, sizes: dict[str, int]) -> None:\n    over = {f: n for f, n in sizes.items() if n > LIMIT}",
+        "new": "def save_baseline(path: Path, sizes: dict[str, int]) -> None:\n    over = {f: n for f, n in sizes.items() if n >= LIMIT}",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
 ]
 
 

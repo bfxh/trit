@@ -4,7 +4,7 @@
 
 ### Changed（变异门：三语言口径 + 逐目标 fail-closed + 门自身自测）
 
-- 登记表 **385 → 426 条**、目标 30 → 36：新增 python **34** 条（`module_budget` / `hazard_gate` /
+- 登记表 **385 → 431 条**、目标 30 → 36：新增 python **39** 条（`module_budget` / `hazard_gate` /
   `publish_graph` / `pr_hygiene` 的 `--self-test` 面）、bash **7** 条（`cli_smoke.sh` 的断言工具）、
   门自身 **12** 条（裁决链 / runner 推断 / 空集 / preflight 边界）。
 - `hazard_gate` 自测补两条夹具（**登记了但没写不变量仍要红**、**SAFETY 文档在签名上方且离匹配点超过 8 行**），
