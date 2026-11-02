@@ -335,6 +335,60 @@ def ex(name: str, kind: str = "secrets") -> str:
     return "${{" + f" {kind}.{name} " + "}}"
 
 
+def main(argv: list[str]) -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+    if "--self-test" in argv:
+        return self_test()
+    root = ROOT
+    if "--root" in argv:
+        root = pathlib.Path(argv[argv.index("--root") + 1])
+    provided = None
+    if "--provided" in argv:
+        provided = json.loads((root / argv[argv.index("--provided") + 1]).read_text(encoding="utf-8")
+                              if not pathlib.Path(argv[argv.index("--provided") + 1]).is_absolute()
+                              else pathlib.Path(argv[argv.index("--provided") + 1]).read_text(encoding="utf-8"))
+    elif "--offline" not in argv:
+        if "--repo" in argv:
+            repo_name = argv[argv.index("--repo") + 1]
+        else:
+            result = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner",
+                                     "-q", ".nameWithOwner"],
+                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                    text=True, encoding="utf-8", errors="replace")
+            repo_name = result.stdout.strip()
+        if not repo_name:
+            _say("取不到仓库名（不在 git 仓里？）⇒ 判红；可用 --repo o/r 或 --offline")
+            return 1
+        provided = fetch_provided(repo_name)
+    if provided is None and "--offline" not in argv:
+        blocking, warnings, stats = audit(root, None)
+    elif "--offline" in argv:
+        blocking, warnings, stats = audit(root, {"secrets": [], "variables": [], "environments": {},
+                                                 "environments_readable": True})
+        # 离线模式没有清单：格式类问题照判，引用缺口降级成"待线上核对"并公示
+        blocking = [b for b in blocking if "没写理由" in b]
+        stats["deferred"] = True
+    else:
+        blocking, warnings, stats = audit(root, provided)
+
+    if "--offline" in argv:
+        _say(f"离线（不核对线上清单）｜引用点 {stats['uses']}｜动态引用 {stats['dynamic']}｜"
+             f"拦 {len(blocking)}｜警 {len(warnings)}")
+    else:
+        _say(f"引用点 {stats['uses']}｜动态引用 {stats['dynamic']}｜拦 {len(blocking)}｜警 {len(warnings)}")
+    for line in blocking:
+        _say(f"  [拦] {line}")
+    for line in warnings:
+        _say(f"  [警] {line}")
+    if blocking:
+        _say("结论：红（密钥/变量接线对不上，CI 会跑到那一步才炸）")
+        return 1
+    _say("结论：绿（能证明的部分都对上了；动态引用已公示）")
+    return 0
+
+
 def self_test() -> int:
     import tempfile
 
@@ -483,60 +537,6 @@ def self_test() -> int:
 
     print(f"secret_wiring 自测：{passed} 过 / {failed} 红")
     return 1 if failed else 0
-
-
-def main(argv: list[str]) -> int:
-    for stream in (sys.stdout, sys.stderr):
-        if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace")
-    if "--self-test" in argv:
-        return self_test()
-    root = ROOT
-    if "--root" in argv:
-        root = pathlib.Path(argv[argv.index("--root") + 1])
-    provided = None
-    if "--provided" in argv:
-        provided = json.loads((root / argv[argv.index("--provided") + 1]).read_text(encoding="utf-8")
-                              if not pathlib.Path(argv[argv.index("--provided") + 1]).is_absolute()
-                              else pathlib.Path(argv[argv.index("--provided") + 1]).read_text(encoding="utf-8"))
-    elif "--offline" not in argv:
-        if "--repo" in argv:
-            repo_name = argv[argv.index("--repo") + 1]
-        else:
-            result = subprocess.run(["gh", "repo", "view", "--json", "nameWithOwner",
-                                     "-q", ".nameWithOwner"],
-                                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                                    text=True, encoding="utf-8", errors="replace")
-            repo_name = result.stdout.strip()
-        if not repo_name:
-            _say("取不到仓库名（不在 git 仓里？）⇒ 判红；可用 --repo o/r 或 --offline")
-            return 1
-        provided = fetch_provided(repo_name)
-    if provided is None and "--offline" not in argv:
-        blocking, warnings, stats = audit(root, None)
-    elif "--offline" in argv:
-        blocking, warnings, stats = audit(root, {"secrets": [], "variables": [], "environments": {},
-                                                 "environments_readable": True})
-        # 离线模式没有清单：格式类问题照判，引用缺口降级成"待线上核对"并公示
-        blocking = [b for b in blocking if "没写理由" in b]
-        stats["deferred"] = True
-    else:
-        blocking, warnings, stats = audit(root, provided)
-
-    if "--offline" in argv:
-        _say(f"离线（不核对线上清单）｜引用点 {stats['uses']}｜动态引用 {stats['dynamic']}｜"
-             f"拦 {len(blocking)}｜警 {len(warnings)}")
-    else:
-        _say(f"引用点 {stats['uses']}｜动态引用 {stats['dynamic']}｜拦 {len(blocking)}｜警 {len(warnings)}")
-    for line in blocking:
-        _say(f"  [拦] {line}")
-    for line in warnings:
-        _say(f"  [警] {line}")
-    if blocking:
-        _say("结论：红（密钥/变量接线对不上，CI 会跑到那一步才炸）")
-        return 1
-    _say("结论：绿（能证明的部分都对上了；动态引用已公示）")
-    return 0
 
 
 if __name__ == "__main__":
