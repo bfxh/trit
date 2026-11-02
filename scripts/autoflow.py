@@ -38,16 +38,22 @@ def run(root: pathlib.Path, argv: list[str], label: str, keep_on_fail: bool) -> 
     snap = load_snapshot()
     snap_id = snap.save(root, label or "autoflow")
     manifest = snap.resolve(root, snap_id)
-    result = subprocess.run(argv, cwd=root)
-    if result.returncode == 0:
+    try:
+        result = subprocess.run(argv, cwd=root)
+        returncode = result.returncode
+    except OSError as exc:
+        # 命令不存在/没权限：也是一次失败，必须走回退路径（返回 127 与 shell 一致）
+        print(f"autoflow: 命令起不来：{exc}")
+        returncode = 127
+    if returncode == 0:
         print(f"autoflow: 成功，改动已保留；回退：python scripts/snapshot.py restore {snap_id}")
         return 0
     if keep_on_fail:
-        print(f"autoflow: 失败（rc={result.returncode}），按 --keep-on-fail 保留现场；回退：restore {snap_id}")
-        return result.returncode
-    print(f"autoflow: 失败（rc={result.returncode}），自动回退到 {snap_id}")
+        print(f"autoflow: 失败（rc={returncode}），按 --keep-on-fail 保留现场；回退：restore {snap_id}")
+        return returncode
+    print(f"autoflow: 失败（rc={returncode}），自动回退到 {snap_id}")
     code = snap.restore(root, manifest, prune=True, dry_run=False)
-    return result.returncode if code == 0 else code
+    return returncode if code == 0 else code
 
 
 def self_test() -> int:
@@ -89,7 +95,13 @@ def self_test() -> int:
         check("失败后文件被还原", (root / "a.txt").read_bytes(), b"changed\n")
         check("失败后新建文件被删", (root / "new.txt").exists(), False)
 
-        # 3) --keep-on-fail：保留现场
+        # 3) 命令不存在：也是失败，回退并返回 127
+        (root / "a.txt").write_bytes(b"orig3\n")
+        code = run(root, ["definitely-not-a-command-xyz"], "", False)
+        check("命令不存在→127", code, 127)
+        check("命令不存在时状态不变", (root / "a.txt").read_bytes(), b"orig3\n")
+
+        # 4) --keep-on-fail：保留现场
         code = run(
             root,
             [sys.executable, "-c", "open('a.txt','wb').write(b'kept\\n');raise SystemExit(3)"],

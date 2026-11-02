@@ -30,9 +30,11 @@
 - `scripts/vendor.py save/restore/status`：**离线自足开关**——`cargo vendor` 整批拷进 `vendor/` 并插入带标记的
   `.cargo/config.toml` source replacement，`restore` 按备份还原并删目录；两个方向都用 `cargo metadata --offline` 验。
   实仓演练：**337.3 MiB**、`cargo check --offline -p trit-attn` 4.87s 通过；restore 后 `git status` 干净。
-- 五个工具各带 `--self-test`（14 / 22 / 13 / 8 / 13 条）并进 CI（job `snapshot (self-test)` /
-  `deps plan (self-test)` / `vendor (self-test)`）；变异门登记 40 条自锁（8 + 16 + 6 + 4 + 6），
-  登记表 **431 → 471**。
+- 五个工具各带 `--self-test`（15 / 22 / 13 / 10 / 22 条）并进 CI；`bfxh/repo-tools` 另有 **36 个场景测试**
+  （边界/不变量/组合矩阵 + 本地 bare 仓端到端 publish），CI 的 `scenarios` job 里跑。
+  变异门登记 44 条自锁（9 + 16 + 6 + 5 + 8），登记表 **431 → 475**。
+  场景测试当场抓到 4 个真缺陷并修掉：命令不存在不回退（改 127 并回退）、prune 不清空目录、
+  POSIX 绝对路径漏拦、`.env.production` 漏网。
 
 ### Changed（变异门：三语言口径 + 逐目标 fail-closed + 门自身自测）
 

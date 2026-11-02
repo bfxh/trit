@@ -36,19 +36,19 @@ SECRET_PATTERNS = [
     (re.compile("xox" + r"[baprs]-[A-Za-z0-9-]{10,}"), "Slack token"),
     (re.compile(r"-----BEGIN " + r"[A-Z ]*PRIVATE KEY-----"), "私钥"),
 ]
-SECRET_FILE_NAMES = {".env", "credentials.json", "id_rsa", "id_ed25519"}
+SECRET_FILE_NAMES = {"credentials.json", "id_rsa", "id_ed25519"}
 
 
-def git(args: list[str], cwd: pathlib.Path = ROOT) -> subprocess.CompletedProcess[str]:
+def git(args: list[str], cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["git", *args], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        ["git", *args], cwd=ROOT if cwd is None else cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
     )
 
 
-def gh(args: list[str], cwd: pathlib.Path = ROOT) -> subprocess.CompletedProcess[str]:
+def gh(args: list[str], cwd: pathlib.Path | None = None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        ["gh", *args], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        ["gh", *args], cwd=ROOT if cwd is None else cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, encoding="utf-8", errors="replace",
     )
 
@@ -75,7 +75,7 @@ REMOTE_RE = re.compile(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?$")
 
 def repo_from_url(url: str) -> str:
     """从 git remote URL 抠 `owner/name`；认不出就回落到默认仓。"""
-    match = REMOTE_RE.search(url.strip())
+    match = REMOTE_RE.search(url.strip().rstrip("/"))
     return match.group(1) if match else ""
 
 
@@ -131,7 +131,7 @@ def secret_scan(root: pathlib.Path, files: list[str]) -> list[str]:
     hits: list[str] = []
     for name in files:
         path = root / name
-        if path.name in SECRET_FILE_NAMES:
+        if path.name in SECRET_FILE_NAMES or path.name == ".env" or path.name.startswith(".env."):
             hits.append(f"{name}: 按文件名判为敏感文件")
             continue
         if not path.is_file():
@@ -153,7 +153,8 @@ def base_ok(root: pathlib.Path, files: list[str]) -> list[str]:
     if not files:
         problems.append("必须显式点名要提交的文件（--files）；不做 git add -A")
     for name in files:
-        if ".." in pathlib.PurePosixPath(name).parts or pathlib.Path(name).is_absolute():
+        posix = pathlib.PurePosixPath(name)
+        if ".." in posix.parts or posix.is_absolute() or pathlib.Path(name).is_absolute():
             problems.append(f"{name}: 不许跳出仓库")
     top = git(["rev-parse", "--show-toplevel"], root)
     if top.returncode != 0:
@@ -280,6 +281,10 @@ def self_test() -> int:
         check("sk- 形状命中", any("sk-" in h for h in secret_scan(root, ["leak.py"])), True)
         check(".env 按文件名命中", any(".env" in h for h in secret_scan(root, [".env"])), True)
         check("私钥头命中", any("私钥" in h for h in secret_scan(root, ["key.pem"])), True)
+        (root / ".env.production").write_text("A=1\n", encoding="utf-8")
+        check(".env.* 也按敏感文件拒收",
+              any(".env.production" in h for h in secret_scan(root, [".env.production"])), True)
+        check("POSIX 绝对路径被拒", any("跳出仓库" in p for p in base_ok(root, ["/etc/passwd"])), True)
         check("不存在的文件要报", any("不存在" in h for h in secret_scan(root, ["nope.txt"])), True)
 
         args = {

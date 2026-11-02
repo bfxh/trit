@@ -192,6 +192,11 @@ def restore(root: pathlib.Path, manifest: dict, prune: bool, dry_run: bool) -> i
     if prune:
         for rel in plan["extra"]:
             (root / rel).unlink()
+        # 删空的目录（自底向上）：命令新建的目录树不该留在"已回退"的工作树里
+        for directory in sorted({(root / rel).parent for rel in plan["extra"]}, key=lambda p: len(p.parts), reverse=True):
+            while directory != root and directory.is_dir() and not any(directory.iterdir()):
+                directory.rmdir()
+                directory = directory.parent
     pending.unlink(missing_ok=True)
     print("回退完成，逐文件 SHA-256 校验通过")
     return 0
@@ -260,7 +265,13 @@ def self_test() -> int:
         restore(root, resolve(root, snap_id), prune=True, dry_run=False)
         check("二次回退仍通过", verify(root, resolve(root, snap_id)), 0)
 
-        # 7) 对象库坏了必须报错，而不是"看起来成功"
+        # 7) prune：命令新建的空目录也要清掉（不能只删文件留一堆空目录）
+        (root / "made" / "deep").mkdir(parents=True)
+        (root / "made" / "deep" / "x.txt").write_bytes(b"x")
+        restore(root, resolve(root, snap_id), prune=True, dry_run=False)
+        check("prune 清掉命令新建的目录", (root / "made").exists(), False)
+
+        # 8) 对象库坏了必须报错，而不是"看起来成功"
         blob = blob_path(root, resolve(root, snap_id)["files"]["src/a.rs"]["sha"])
         blob.write_bytes(b"tampered")
         (root / "src" / "a.rs").write_bytes(b"x\n")
@@ -271,7 +282,7 @@ def self_test() -> int:
             restored_ok = False
         check("对象被篡改时回退报错", restored_ok, False)
 
-        # 8) 构建产物不进快照
+        # 9) 构建产物不进快照
         (root / "target").mkdir()
         (root / "target" / "junk.bin").write_bytes(b"junk")
         check("target/ 不进快照", "target/junk.bin" in iter_files(root), False)
