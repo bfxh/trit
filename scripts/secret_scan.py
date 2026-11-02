@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import pathlib
 import re
+import subprocess
 import sys
 import tempfile
 
@@ -40,8 +41,89 @@ PATTERNS = [
 ]
 
 
+IGNORE_FILE = ".secret-scan-ignore"
+
+
+def load_ignores(root: pathlib.Path) -> list[tuple[re.Pattern[str], str]]:
+    """路径白名单：每行 `正则<空白>理由`。理由必填（空理由的行忽略并告警）。"""
+    path = root / IGNORE_FILE
+    if not path.is_file():
+        return []
+    ignores: list[tuple[re.Pattern[str], str]] = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(None, 1)
+        if len(parts) != 2:
+            print(f"忽略：{IGNORE_FILE} 里有一行没写理由，跳过：{line}")
+            continue
+        try:
+            ignores.append((re.compile(parts[0]), parts[1]))
+        except re.error:
+            print(f"忽略：{IGNORE_FILE} 里有非法正则，跳过：{parts[0]}")
+    return ignores
+
+
+def ignored(ignores: list[tuple[re.Pattern[str], str]], name: str) -> bool:
+    return any(pattern.search(name) for pattern, _ in ignores)
+
+
 def is_binary(data: bytes) -> bool:
     return b"\x00" in data[:8192]
+
+
+TEXT_SUFFIXES = (
+    ".rs", ".py", ".sh", ".toml", ".json", ".md", ".txt", ".yml", ".yaml", ".cfg", ".ini", ".env",
+)
+
+
+def git(root: pathlib.Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args], cwd=root, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        text=True, encoding="utf-8", errors="replace",
+    )
+
+
+def history_objects(root: pathlib.Path) -> list[tuple[str, str]]:
+    """历史里出现过的 (blob oid, 路径)；同一 blob 多路径只留第一条。"""
+    out: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for line in git(root, ["rev-list", "--objects", "--all"]).stdout.splitlines():
+        oid, _, path = line.partition(" ")
+        if not oid or not path or oid in seen:
+            continue
+        if not path.endswith(TEXT_SUFFIXES):
+            continue
+        seen.add(oid)
+        out.append((oid, path))
+    return out
+
+
+def scan_history(root: pathlib.Path, max_mb: int = 2, limit: int = 500) -> list[dict]:
+    """扫历史 blob：HEAD 里已经删掉的密钥/大文件也能找出来。"""
+    max_bytes = max_mb * 1024 * 1024
+    objects = history_objects(root)[:limit]
+    if not objects:
+        return []
+    ignores = load_ignores(root)
+    findings: list[dict] = []
+    for oid, path in objects:
+        if ignored(ignores, path):
+            continue
+        info = git(root, ["cat-file", "-s", oid])
+        if info.returncode != 0:
+            continue
+        if not info.stdout.strip().isdigit() or int(info.stdout.strip()) > max_bytes:
+            continue
+        blob = git(root, ["cat-file", "blob", oid])
+        if blob.returncode != 0 or is_binary(blob.stdout.encode("utf-8", errors="replace")):
+            continue
+        for pattern, name in PATTERNS:
+            if pattern.search(blob.stdout):
+                findings.append({"file": path, "blob": oid, "rule": name})
+                break
+    return findings
 
 
 def scan_file(path: pathlib.Path, max_bytes: int) -> list[dict]:
@@ -79,8 +161,11 @@ def iter_files(root: pathlib.Path) -> list[pathlib.Path]:
 
 def scan(root: pathlib.Path, max_mb: int) -> list[dict]:
     max_bytes = max_mb * 1024 * 1024
+    ignores = load_ignores(root)
     findings: list[dict] = []
     for path in iter_files(root):
+        if ignored(ignores, path.relative_to(root).as_posix()):
+            continue
         for hit in scan_file(path, max_bytes):
             findings.append(
                 {"file": path.relative_to(root).as_posix(), "line": hit["line"], "rule": hit["rule"]}
@@ -131,6 +216,35 @@ def self_test() -> int:
         check("超大文件跳过", scan(root, max_mb=0) == [], True)
         check("排除目录不扫", all(".git" not in f["file"] for f in findings), True)
 
+        # 历史扫描：HEAD 删掉之后仍能找出来
+        repo = pathlib.Path(tmp) / "hist"
+        repo.mkdir()
+        run = lambda args: subprocess.run(["git", *args], cwd=repo, stdout=subprocess.PIPE,
+                                          stderr=subprocess.STDOUT, text=True)
+        run(["init", "-q"])
+        run(["config", "user.email", "t@example.com"])
+        run(["config", "user.name", "t"])
+        (repo / "leak.py").write_text('K = "sk' + '-abcdefghijklmnopqrstu"' + chr(10), encoding="utf-8")
+        run(["add", "-A"])
+        run(["commit", "-qm", "add leak"])
+        (repo / "leak.py").unlink()
+        run(["add", "-A"])
+        run(["commit", "-qm", "remove leak"])
+        check("HEAD 已经干净", scan(repo, max_mb=2), [])
+        history = scan_history(repo, max_mb=2)
+        check("历史里仍能找出密钥", bool(history), True)
+        check("历史命中带路径", history[0]["file"], "leak.py")
+        (repo / IGNORE_FILE).write_text("leak\\.py  合成夹具\n", encoding="utf-8")
+        check("路径白名单对历史生效", scan_history(repo, max_mb=2), [])
+        (repo / "leak.py").write_text('K = "sk' + '-abcdefghijklmnopqrstu"' + chr(10), encoding="utf-8")
+        check("路径白名单对工作树也生效", scan(repo, max_mb=2), [])
+        (repo / IGNORE_FILE).write_text("leak\\.py\n", encoding="utf-8")
+        (repo / "leak.py").write_text("clean\n", encoding="utf-8")
+        (repo / "other.py").write_text('K = "sk' + '-abcdefghijklmnopqrstu"' + chr(10), encoding="utf-8")
+        (repo / IGNORE_FILE).write_text("leak\\.py\n", encoding="utf-8")
+        check("没写理由的白名单行不生效（fail-closed）",
+              bool([f for f in scan(repo, max_mb=2) if f["file"] == "other.py"]), True)
+
     if failures:
         print(f"self-test: {total[0] - len(failures)}/{total[0]} passed")
         return 1
@@ -147,6 +261,18 @@ def main(argv: list[str]) -> int:
     if "--root" in argv:
         root = pathlib.Path(argv[argv.index("--root") + 1]).resolve()
     max_mb = int(argv[argv.index("--max-mb") + 1]) if "--max-mb" in argv else 2
+    if "--history" in argv:
+        findings = scan_history(root, max_mb)
+        if "--json" in argv:
+            print(json.dumps(findings, ensure_ascii=False, indent=1))
+        else:
+            for finding in findings:
+                print(f"{finding['file']}（历史 blob {finding['blob'][:12]}…）: 命中 {finding['rule']}")
+            print(f"历史扫描完成：{len(findings)} 处命中")
+            if findings:
+                print("清理：git filter-repo --path <路径> --invert-paths  （或 --replace-text 替换内容）；"
+                      "然后轮换该密钥并把旧 tag/分支一起清掉")
+        return 1 if findings else 0
     findings = scan(root, max_mb)
     if "--json" in argv:
         print(json.dumps(findings, ensure_ascii=False, indent=1))
