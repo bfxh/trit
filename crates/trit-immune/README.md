@@ -312,6 +312,7 @@ git 的每个核心操作在账本上都有对应物，且大多更强：
 | （不存在） | `trit gate` | 三值门禁 + 打穿来源——git 只知道冲突，这里知道风险 |
 | `git commit` | `trit commit` | 默认 0 态——未测不可信 |
 | `git sync`（桥） | `trit sync-git` | git 提交历史吸收进账本参与裁决（0 态+隔离防污染） |
+| （不存在） | `trit lock` | 依赖坐标入账——库被打穿只污染真用到该产物的项目，对不上的上报 0 态缺口 |
 
 ```bash
 cargo run --bin trit-immune -- init ./my-repo
