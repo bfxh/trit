@@ -593,8 +593,10 @@ fn part_iou(argv: &[String]) {
         .unwrap_or_else(|e| panic!("{e}"));
 
     // 同一像素集合，两种归属：GT seg vs 预测实例
-    let mut gt_pts: std::collections::HashMap<u32, Vec<[f32; 3]>> = std::collections::HashMap::new();
-    let mut pr_pts: std::collections::HashMap<u32, Vec<[f32; 3]>> = std::collections::HashMap::new();
+    let mut gt_pts: std::collections::HashMap<u32, Vec<[f32; 3]>> =
+        std::collections::HashMap::new();
+    let mut pr_pts: std::collections::HashMap<u32, Vec<[f32; 3]>> =
+        std::collections::HashMap::new();
     for i in 0..w * h {
         let d = dep[i];
         if seg[i] <= 0 || !(d.is_finite() && d > 0.05 && d < 50.0) {
