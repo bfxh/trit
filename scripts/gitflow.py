@@ -198,6 +198,51 @@ def pr_chains(prs: list[dict]) -> tuple[list[list[dict]], list[dict]]:
     return chains, off_trunk
 
 
+def file_jaccard(left: list[str], right: list[str]) -> float:
+    a, b = set(left), set(right)
+    return len(a & b) / len(a | b) if (a | b) else 0.0
+
+
+def classify_pr(pr: dict, now: float, stale_days: int, required: list[str], others: list[dict]) -> list[str]:
+    """给一个 open PR 打标签：draft / stale / conflicting / missing-required-check / superseded-by-#N。"""
+    labels: list[str] = []
+    if pr.get("isDraft"):
+        labels.append("draft")
+    updated = pr.get("updatedAt") or ""
+    try:
+        # ISO8601 -> epoch（只用于比较天数，粗糙到秒即可）
+        stamp = time.mktime(time.strptime(updated[:19].replace("T", " "), "%Y-%m-%d %H:%M:%S"))
+        if now - stamp > stale_days * 86400:
+            labels.append("stale")
+    except (ValueError, TypeError):
+        pass
+    if (pr.get("mergeable") or "").upper() == "CONFLICTING":
+        labels.append("conflicting")
+    present = {check.get("name") for check in (pr.get("statusCheckRollup") or [])}
+    missing = [name for name in required if name not in present and name not in _matrix_covered(name, present)]
+    if missing:
+        labels.append("missing-required-check")
+    files = [entry.get("path", "") for entry in (pr.get("files") or [])]
+    for other in others:
+        if other["number"] == pr["number"]:
+            continue
+        overlap = file_jaccard(files, [entry.get("path", "") for entry in (other.get("files") or [])])
+        if overlap >= 0.8:
+            labels.append(f"superseded-by-#{other['number']}")
+            break
+    return labels
+
+
+def _matrix_covered(name: str, present: set[str]) -> set[str]:
+    """矩阵展开的检查名：`X (${{ matrix.os }})` 之类按前缀算已覆盖。"""
+    covered = set()
+    for existing in present:
+        for context in (name,):
+            if existing.startswith(context.split(" (")[0] + " ("):
+                covered.add(context)
+    return covered
+
+
 def failed_checks(rollup: list[dict]) -> list[dict]:
     """从 PR 的 statusCheckRollup 里挑出失败的；成功/跳过/未完成都不算失败。"""
     bad: list[dict] = []
@@ -534,6 +579,107 @@ def branch_prune_remote(repo: str, base: str, remote: str, apply_changes: bool) 
     return 1 if failed else 0
 
 
+def pr_list_payload(repo: str) -> list[dict]:
+    listing = gh(["pr", "list", "--repo", repo, "--state", "open", "--limit", "100", "--json",
+                  "number,title,headRefName,baseRefName,isDraft,updatedAt,mergeable,statusCheckRollup,files"])
+    if listing.returncode != 0:
+        print(listing.stdout[-1000:])
+        return []
+    try:
+        return json.loads(listing.stdout or "[]")
+    except json.JSONDecodeError:
+        print("gh 输出解析失败")
+        return []
+
+
+def pr_triage(repo: str, stale_days: int, as_json: bool, apply_changes: bool) -> int:
+    prs = pr_list_payload(repo)
+    if not prs:
+        print("没有 open PR")
+        return 0
+    required = []
+    required_file = ROOT / ".github" / "required-checks.txt"
+    if required_file.is_file():
+        required = [
+            line.strip()
+            for line in required_file.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+    now = time.time()
+    rows = []
+    for pr in prs:
+        others = [other for other in prs if other["number"] != pr["number"]]
+        rows.append({"pr": pr, "labels": classify_pr(pr, now, stale_days, required, others)})
+    if as_json:
+        print(json.dumps(
+            [{"number": row["pr"]["number"], "title": row["pr"]["title"],
+              "branch": row["pr"]["headRefName"], "labels": row["labels"]} for row in rows],
+            ensure_ascii=False, indent=1,
+        ))
+        return 0
+    actionable = 0
+    for row in rows:
+        pr = row["pr"]
+        labels = row["labels"] or ["ok"]
+        print(f"#{pr['number']:<4} {pr['headRefName']:<40} [{', '.join(labels)}] {pr['title'][:50]}")
+        if set(labels) & {"stale", "conflicting", "missing-required-check"}:
+            actionable += 1
+    print(f"\n可动作 {actionable} / 共 {len(rows)}")
+    if actionable and not apply_changes:
+        print("dry-run：对可动作项跑 `gitflow pr sync <编号>` 把 main 合进分支（不 force、不改写历史）；"
+              "`--apply` 会逐个执行")
+        return 0
+    if apply_changes:
+        for row in rows:
+            if set(row["labels"]) & {"stale", "conflicting", "missing-required-check"}:
+                print(f"== 同步 #{row['pr']['number']}（{row['pr']['headRefName']}）")
+                if pr_sync(repo, str(row["pr"]["number"])) != 0:
+                    print("  失败，停下（后面不继续动）")
+                    return 1
+    return 0
+
+
+def pr_sync(repo: str, number: str) -> int:
+    """把 main merge 进 PR 分支并 push：不改写历史，不动别人的提交。"""
+    view = gh(["pr", "view", number, "--repo", repo, "--json", "headRefName,number"])
+    if view.returncode != 0:
+        print(view.stdout[-1000:])
+        return 1
+    try:
+        branch = json.loads(view.stdout)["headRefName"]
+    except (json.JSONDecodeError, KeyError):
+        print("解析 PR 分支失败")
+        return 1
+    dirty = [line for line in git(["status", "--porcelain"]).stdout.splitlines() if line.strip()]
+    if dirty:
+        print("拒绝：工作树有未提交改动（先提交或清理）")
+        return 2
+    original = git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
+    base = detect_base(detect_remote())
+    steps = [
+        ["git", "fetch", "origin", base],
+        ["git", "checkout", branch],
+        ["git", "merge", f"origin/{base}", "--no-edit"],
+        ["git", "push", "origin", branch],
+    ]
+    for command in steps:
+        result = git(command[1:])
+        print(f"$ {' '.join(command[:3])} … rc={result.returncode}")
+        if result.returncode != 0:
+            if command[1] == "merge":
+                conflicted = [line for line in git(["diff", "--name-only", "--diff-filter=U"]).stdout.splitlines() if line.strip()]
+                print("合并冲突，已 abort（分支保持原样）：")
+                for name in conflicted:
+                    print(f"  {name}")
+                git(["merge", "--abort"])
+            git(["checkout", original])
+            print(result.stdout[-800:])
+            return 1
+    git(["checkout", original])
+    print(f"已把 {base} 合入 #{number}（{branch}）并推送")
+    return 0
+
+
 def diagnose(pr: str, repo: str) -> int:
     """把失败检查的**地址**逐条列出来：检查名 → 运行链接 → 失败日志尾部。"""
     view = gh(["pr", "view", pr, "--repo", repo, "--json", "number,title,headRefName,statusCheckRollup"])
@@ -862,6 +1008,24 @@ def self_test() -> int:
         check("真实失败不算竞态", checks_not_yet("some check failed"), False)
         check("pending 识别", has_pending("CI\tpending\t0\thttps://x"), True)
         check("通过不算 pending", has_pending("CI\tpass\t1s\thttps://x"), False)
+        check("文件重叠 Jaccard", round(file_jaccard(["a", "b"], ["a", "b", "c"]), 6), 0.666667)
+        now = 2_000_000_000
+        sample = [
+            {"number": 1, "isDraft": False, "updatedAt": "2033-05-18T03:00:00Z", "mergeable": "MERGEABLE",
+             "statusCheckRollup": [{"name": "CI"}], "files": [{"path": "a"}]},
+            {"number": 2, "isDraft": True, "updatedAt": "2033-05-18T03:00:00Z", "mergeable": "MERGEABLE",
+             "statusCheckRollup": [{"name": "CI"}], "files": [{"path": "b"}]},
+            {"number": 3, "isDraft": False, "updatedAt": "2020-01-01T00:00:00Z", "mergeable": "CONFLICTING",
+             "statusCheckRollup": [], "files": [{"path": "x"}]},
+        ]
+        labels1 = classify_pr(sample[0], now, 14, ["CI"], sample[1:])
+        check("正常 PR 无标签", labels1, [])
+        check("草稿被标", classify_pr(sample[1], now, 14, ["CI"], [sample[0], sample[2]]), ["draft"])
+        labels3 = classify_pr(sample[2], now, 14, ["CI"], [sample[0], sample[1]])
+        check("陈旧+冲突+缺检查", set(labels3) >= {"stale", "conflicting", "missing-required-check"}, True)
+        duplicate = {"number": 9, "isDraft": False, "updatedAt": "2033-05-18T03:00:00Z",
+                     "mergeable": "MERGEABLE", "statusCheckRollup": [{"name": "CI"}], "files": [{"path": "a"}]}
+        check("重复 PR 被标", classify_pr(duplicate, now, 14, ["CI"], [sample[0]]), ["superseded-by-#1"])
         check("默认 base 优先 main", pick_base(["main", "master"]), "main")
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")
@@ -922,6 +1086,19 @@ def main(argv: list[str]) -> int:
         return 2
     if command == "stack":
         return stack(repo, remote_state="--no-remote" not in argv)
+    if command == "pr":
+        sub = argv[1] if len(argv) > 1 else "triage"
+        rest = [a for a in argv[2:] if not a.startswith("--")]
+        if sub == "triage":
+            stale_days = int(argv[argv.index("--stale-days") + 1]) if "--stale-days" in argv else 14
+            return pr_triage(repo, stale_days, "--json" in argv, "--apply" in argv)
+        if sub == "sync":
+            if not rest:
+                print("用法：gitflow.py pr sync <编号>")
+                return 2
+            return pr_sync(repo, rest[0])
+        print(f"未知 pr 子命令: {sub}（triage / sync）")
+        return 2
     if command == "merge":
         target = argv[argv.index("--branch") + 1] if "--branch" in argv else ""
         if not target:

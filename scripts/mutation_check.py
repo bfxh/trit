@@ -4131,6 +4131,33 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    {
+        "name": "gitflow: 缺必需检查不标",
+        "file": "scripts/gitflow.py",
+        "old": "    if missing:",
+        "new": "    if False:",
+        "pkg": "scripts/gitflow.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gitflow: 重复 PR 不标",
+        "file": "scripts/gitflow.py",
+        "old": "        if overlap >= 0.8:",
+        "new": "        if False:",
+        "pkg": "scripts/gitflow.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "gitflow: 陈旧不标",
+        "file": "scripts/gitflow.py",
+        "old": "        if now - stamp > stale_days * 86400:",
+        "new": "        if False:",
+        "pkg": "scripts/gitflow.py",
+        "filter": "",
+        "runner": "python",
+    },
     # ---- gitflow（一句话提交 GitHub）----
     {
         "name": "gitflow: 密钥扫描失效",
