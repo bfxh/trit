@@ -157,6 +157,32 @@ jobs:
       - name: Required checks match workflow jobs
         run: python3 scripts/ci_integrity.py
 
+  surface:
+    name: test surface (ratchet)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 每条规则都要有真的会红的反证：空壳 #[test]、裸 #[ignore]、空 self_test、棘轮
+      - name: Self-test (hollow tests / bare ignore / ratchet)
+        run: python3 scripts/test_surface.py --self-test
+      # 台账棘轮：删测试不会让任何别的手段变红，所以在这里拦
+      - name: Repo test surface
+        run: python3 scripts/test_surface.py
+      # 绿即合之前的证据审计：必需检查 skipped / 压根没上报 / run 里 0 个 job 都判红
+      - name: Green audit self-test (execution evidence)
+        run: python3 scripts/green_audit.py --self-test
+
+  forensics:
+    name: merge forensics (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 夹具现造真仓库真冲突：整块取一边、文件没了、算不出 merge-base 都要判红
+      - name: Merge forensics self-test (dropped side / vanished file)
+        run: python3 scripts/merge_forensics.py --self-test
+
   stress:
     name: stress (high pressure invariants)
     runs-on: ubuntu-latest
