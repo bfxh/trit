@@ -874,6 +874,33 @@ def pr_triage(repo: str, stale_days: int, as_json: bool, apply_changes: bool) ->
     return 0
 
 
+CONFLICT_RECORD = re.compile(r"^\s+(?:base|our|their|ancestor)\s+\d{6}\s+[0-9a-f]+\s+(\S.*)$")
+
+
+def merge_tree_conflicts(text: str) -> list[str]:
+    """从 `git merge-tree <base> <ours> <theirs>` 的输出里抠出冲突文件。
+
+    "changed in both" 只是**块头**，路径在紧随其后的 base/our/their 三行里——
+    只印块头等于什么都没点名（第一版就是这样：预览说"会冲突"却不说是哪几个文件）。
+    """
+    paths: list[str] = []
+    in_block = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.endswith("in both") or stripped.startswith("<<<<<<<"):
+            in_block = True
+            continue
+        if not in_block:
+            continue
+        match = CONFLICT_RECORD.match(line)
+        if match:
+            if match.group(1) not in paths:
+                paths.append(match.group(1))
+        elif line[:1] not in (" ", "\t"):
+            in_block = False
+    return paths
+
+
 def pr_sync(repo: str, number: str, dry_run: bool = False) -> int:
     """把 main merge 进 PR 分支并 push：不改写历史，不动别人的提交。"""
     view = gh(["pr", "view", number, "--repo", repo, "--json", "headRefName,number"])
@@ -896,13 +923,17 @@ def pr_sync(repo: str, number: str, dry_run: bool = False) -> int:
             return 1
         merge_base = git(["merge-base", base_sha, branch_sha]).stdout.strip() or base_sha
         tree = git(["merge-tree", merge_base, base_sha, branch_sha])
-        conflicts = [line for line in tree.stdout.splitlines() if "changed in both" in line or line.startswith("<<<<<<<")]
-        if conflicts:
-            print(f"预览：把 {base} 合进 {branch} 会冲突")
-            for line in conflicts[:10]:
-                print(f"  {line.strip()}")
+        conflicts = merge_tree_conflicts(tree.stdout)
+        if conflicts or "in both" in tree.stdout:
+            print(f"预览：把 {base} 合进 {branch} 会冲突（{len(conflicts)} 个文件）")
+            for path in conflicts[:12]:
+                print(f"  - {path}")
+            if not conflicts:
+                print("  （merge-tree 说有冲突但没解析出文件名，原文前几行：）")
+                for line in tree.stdout.splitlines()[:6]:
+                    print(f"    {line}")
             return 1
-        print(f"预览：把 {base} 合进 {branch} 无冲突（merge-tree 结果为空）")
+        print(f"预览：把 {base} 合进 {branch} 无冲突（merge-tree 没有 \"changed in both\" 块）")
         return 0
     # 分支可能正被另一个 worktree 占用（多会话常态）：在**那里**操作，不强行 checkout
     worktrees = parse_worktrees(git(["worktree", "list", "--porcelain"]).stdout)
@@ -1441,6 +1472,21 @@ def self_test() -> int:
               protection_blockers([{"number": 9, "headRefName": "feat/z"}], {"feat/z": None},
                                   ["新门"], ci),
               ["#9（feat/z）读不到 workflow ⇒ 无法证明会跑：新门"])
+        legacy = (
+            "Auto-merging a.txt\n"
+            "changed in both\n"
+            "  base   100644 " + "1" * 40 + " a.txt\n"
+            "  our    100644 " + "2" * 40 + " a.txt\n"
+            "  their  100644 " + "3" * 40 + " a.txt\n"
+            "\n"
+            "merged\n"
+            "changed in both\n"
+            "  base   100644 " + "4" * 40 + " b/c.txt\n"
+            "  our    100644 " + "5" * 40 + " b/c.txt\n"
+            "  their  100644 " + "6" * 40 + " b/c.txt\n"
+        )
+        check("冲突预览点名到文件", merge_tree_conflicts(legacy), ["a.txt", "b/c.txt"])
+        check("没有冲突块就不点名", merge_tree_conflicts("merged\n  our 100644 a.txt\n"), [])
 
         problems = base_ok(root, [])
         check("空文件列表被拒（点名 --files）", any("--files" in p for p in problems), True)
