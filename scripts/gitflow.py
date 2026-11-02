@@ -6,6 +6,10 @@
                                      [--branch 分支名] [--base main] [--no-merge] [--dry-run]
   python scripts/gitflow.py secret-scan --files a b c
   python scripts/gitflow.py status
+  python scripts/gitflow.py branch list|start <名>|sync|prune [--apply]|protect [--apply] [--dry-run]
+  python scripts/gitflow.py worktree add|list|remove
+  python scripts/gitflow.py pr triage|sync <n> [--dry-run]
+  python scripts/gitflow.py stack | diagnose --pr <n> | flaky | dco | queue | merge <n> [--wait-minutes N]
   python scripts/gitflow.py --self-test
 
 为什么不是"git add -A"：
@@ -445,7 +449,7 @@ def branch_cmd(repo: str, argv: list[str]) -> int:
         return branch_prune(base, "--apply" in argv)
     if sub == "protect":
         target = argv[argv.index("--branch") + 1] if "--branch" in argv else base
-        return protect(repo, target)
+        return protect(repo, target, "--apply" in argv, "--dry-run" in argv)
     print(f"未知分支子命令: {sub}（list / start / sync / prune）")
     return 2
 
@@ -547,7 +551,81 @@ def stack(repo: str, remote_state: bool) -> int:
     return 0
 
 
-def protect(repo: str, branch: str) -> int:
+def read_required_checks(path: pathlib.Path) -> list[str]:
+    """.github/required-checks.txt 的正文行（# 注释与空行不算）。"""
+    if not path.is_file():
+        return []
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")]
+
+
+def strip_urls(node):
+    """GET 保护规则会带回只读的 url 字段，PUT 不认——原样送回会被 422。"""
+    if isinstance(node, dict):
+        return {key: strip_urls(value) for key, value in node.items() if key != "url"}
+    if isinstance(node, list):
+        return [strip_urls(item) for item in node]
+    return node
+
+
+def diff_contexts(got: list[str], wanted: list[str]) -> list[str]:
+    """推送后复核：远端与本地台账的差异，空列表才叫真对上。"""
+    problems = [f"少 {context}" for context in sorted(set(wanted) - set(got))]
+    problems += [f"多 {context}" for context in sorted(set(got) - set(wanted))]
+    return problems
+
+
+def apply_required_checks(repo: str, branch: str, rule: dict, wanted: list[str],
+                          dry_run: bool) -> int:
+    """把本地台账推到分支保护，并把改动前的规则存成回滚点。
+
+    这里唯一不能出错的是"空清单"：台账读出来是空（文件没了/全被注释）就当"撤掉所有必需检查"
+    推上去，等于自己把保护关掉 ⇒ 必须先拒绝。
+    """
+    if not wanted:
+        print("拒收：本地必需检查清单是空的（文件缺失或全是注释）。"
+              "真要撤掉保护请显式操作，不许由一次读空触发。")
+        return 1
+    body = strip_urls(rule)
+    body["required_status_checks"] = {**(rule.get("required_status_checks") or {}),
+                                      "strict": (rule.get("required_status_checks") or {})
+                                      .get("strict", True),
+                                      "contexts": wanted}
+    body.pop("required_status_checks_url", None)
+    if dry_run:
+        print(f"dry-run：将把 {len(wanted)} 条必需检查写入 {repo}:{branch}")
+        for context in wanted:
+            print(f"  + {context}")
+        return 0
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    rollback = pathlib.Path(tempfile.gettempdir()) / f"protection_before_{repo.replace('/', '_')}_{stamp}.json"
+    rollback.write_text(json.dumps(rule, ensure_ascii=False, indent=1), encoding="utf-8")
+    payload = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False)
+    try:
+        json.dump(body, payload, ensure_ascii=False)
+        payload.close()
+        result = gh(["api", "-X", "PUT", f"repos/{repo}/branches/{branch}/protection",
+                     "--input", payload.name])
+    finally:
+        pathlib.Path(payload.name).unlink(missing_ok=True)
+    if result.returncode != 0:
+        print(f"写入失败（回滚点在 {rollback}）：{result.stdout.strip()[:600]}")
+        return 1
+    after = gh(["api", f"repos/{repo}/branches/{branch}/protection/required_status_checks"])
+    try:
+        got = (json.loads(after.stdout) or {}).get("contexts") or []
+    except json.JSONDecodeError:
+        print(f"写完读不回，无法核对（回滚点：{rollback}）")
+        return 1
+    problems = diff_contexts(got, wanted)
+    if problems:
+        print(f"写完复核不一致：远端 {len(got)} 条｜{'、'.join(problems)}（回滚点：{rollback}）")
+        return 1
+    print(f"已写入 {len(got)} 条必需检查；改动前的规则存在 {rollback}")
+    return 0
+
+
+def protect(repo: str, branch: str, apply_changes: bool = False, dry_run: bool = False) -> int:
     info = gh(["api", f"repos/{repo}/branches/{branch}"])
     if info.returncode != 0:
         print(f"查不到分支 {branch}：")
@@ -576,6 +654,10 @@ def protect(repo: str, branch: str) -> int:
     print(f"  必需检查：{', '.join(checks) if checks else '（无）'}")
     print(f"  必需审批数：{reviews if reviews is not None else '（无）'}")
     print(f"  强制直推：{bool(rule.get('enforce_admins', {}).get('enabled'))}")
+    if apply_changes:
+        wanted = read_required_checks(ROOT / ".github" / "required-checks.txt")
+        print(f"本地台账 {len(wanted)} 条 ⇒ 推送到 {repo}:{branch}")
+        return apply_required_checks(repo, branch, rule, wanted, dry_run)
     return 0
 
 
@@ -1196,6 +1278,23 @@ def self_test() -> int:
         check("默认 base 优先 main", pick_base(["main", "master"]), "main")
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")
+
+        # 保护规则一键对账（本地台账 → GitHub）：读空不许当成"撤掉保护"
+        checks_file = root / "checks.txt"
+        checks_file.write_text("# 注释\n\nMSRV (1.88)\n  wasm (wasm32 build)  \n", encoding="utf-8")
+        check("必需检查台账读正文", read_required_checks(checks_file),
+              ["MSRV (1.88)", "wasm (wasm32 build)"])
+        check("台账不存在算空清单", read_required_checks(root / "nope.txt"), [])
+        check("PUT 前剥掉只读 url", strip_urls({"url": "x", "a": {"url": "y", "b": [1]}}),
+              {"a": {"b": [1]}})
+        check("空清单拒推（读空不等于撤保护）",
+              apply_required_checks("o/r", "main", {}, [], True), 1)
+        check("dry-run 只打印不碰远端",
+              apply_required_checks("o/r", "main", {"required_status_checks":
+                                                    {"strict": True, "contexts": []}}, ["CI"], True), 0)
+        check("写完复核：一致没话说", diff_contexts(["CI", "t3"], ["t3", "CI"]), [])
+        check("写完复核：少了要点名", diff_contexts(["CI"], ["CI", "t3"]), ["少 t3"])
+        check("写完复核：多了也要点名", diff_contexts(["CI", "旧门"], ["CI"]), ["多 旧门"])
 
         problems = base_ok(root, [])
         check("空文件列表被拒（点名 --files）", any("--files" in p for p in problems), True)
