@@ -556,9 +556,107 @@ fn usage() -> ! {
   parts-depth train --model <tpm> --data <dir,...> --steps N --lr 0.05 --save <tph>
   parts-depth eval --model <tpm> --head <tph> --scene <dir> [--limit N]
   parts-depth cnn-train --data <dir,...> --holdout a,b --size 64 --epochs 60 --out <dcn>
-  parts-depth mesh-single [--dcn <dcn> | --gt] --scene <dir> --frame N --out <ply>"
+  parts-depth mesh-single [--dcn <dcn> | --gt] --scene <dir> --frame N --out <ply>
+  parts-depth part-iou --scene <dir> --frame N --inst <npy> [--cell 0.02] [--min-px 50]"
     );
     std::process::exit(2);
+}
+
+/// `part-iou`：**隔离分割**的 3D 质量——两侧都用 GT 深度，只比实例归属。
+/// 逐 GT 部件与预测实例做 3D 贪心匹配（体素 IoU），报 mIoU / 中位 / 匹配数。
+fn part_iou(argv: &[String]) {
+    use trit_parts::geo::{Camera, iou3d, read_npy_f32, voxelize};
+
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let frame: usize = arg(argv, "--frame")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    let inst_p = PathBuf::from(arg(argv, "--inst").unwrap_or_else(|| usage()));
+    let cell: f32 = arg(argv, "--cell")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.02);
+    let min_px: usize = arg(argv, "--min-px")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(50);
+
+    let (seg, shape) =
+        trit_parts::data::read_npy_i32(&scene.join("seg").join(format!("{frame:06}.npy")))
+            .unwrap_or_else(|e| panic!("{e}"));
+    let (dep, _) = read_npy_f32(&scene.join("depth").join(format!("{frame:06}.npy")))
+        .unwrap_or_else(|e| panic!("{e}"));
+    let (inst, ishape) = trit_parts::data::read_npy_i32(&inst_p).unwrap_or_else(|e| panic!("{e}"));
+    let (h, w) = (shape[0], shape[1]);
+    if ishape != shape {
+        panic!("实例图 {}×{} 与 seg {w}×{h} 不一致", ishape[1], ishape[0]);
+    }
+    let cam = Camera::load(&scene.join("meta").join(format!("{frame:06}.json")))
+        .unwrap_or_else(|e| panic!("{e}"));
+
+    // 同一像素集合，两种归属：GT seg vs 预测实例
+    let mut gt_pts: std::collections::HashMap<u32, Vec<[f32; 3]>> = std::collections::HashMap::new();
+    let mut pr_pts: std::collections::HashMap<u32, Vec<[f32; 3]>> = std::collections::HashMap::new();
+    for i in 0..w * h {
+        let d = dep[i];
+        if seg[i] <= 0 || !(d.is_finite() && d > 0.05 && d < 50.0) {
+            continue;
+        }
+        let p = cam.unproject((i % w) as f64, (i / w) as f64, d);
+        gt_pts.entry(seg[i] as u32).or_default().push(p);
+        if inst[i] > 0 {
+            pr_pts.entry(inst[i] as u32).or_default().push(p);
+        }
+    }
+    let gt_vox: Vec<(u32, std::collections::HashSet<(i32, i32, i32)>)> = gt_pts
+        .iter()
+        .filter(|(_, v)| v.len() >= min_px)
+        .map(|(&id, v)| (id, voxelize(v, cell)))
+        .collect();
+    let pr_vox: Vec<(u32, std::collections::HashSet<(i32, i32, i32)>)> = pr_pts
+        .iter()
+        .filter(|(_, v)| v.len() >= min_px)
+        .map(|(&id, v)| (id, voxelize(v, cell)))
+        .collect();
+
+    // 贪心匹配：先按 IoU 降序，各用一次
+    let mut cand: Vec<(f32, u32, u32)> = Vec::new();
+    for (g, gv) in &gt_vox {
+        for (p, pv) in &pr_vox {
+            let i = iou3d(gv, pv);
+            if i > 0.0 {
+                cand.push((i, *g, *p));
+            }
+        }
+    }
+    cand.sort_by(|a, b| b.0.total_cmp(&a.0));
+    let (mut used_p, mut used_g) = (
+        std::collections::HashSet::new(),
+        std::collections::HashSet::new(),
+    );
+    let mut ious: Vec<f32> = Vec::new();
+    for (i, g, p) in cand {
+        if used_g.contains(&g) || used_p.contains(&p) {
+            continue;
+        }
+        used_g.insert(g);
+        used_p.insert(p);
+        ious.push(i);
+    }
+    // 未匹配的 GT 部件按 0 计（与 2D mIoU 口径一致）
+    let n_gt = gt_vox.len();
+    let sum: f32 = ious.iter().sum();
+    let miou = if n_gt == 0 { 0.0 } else { sum / n_gt as f32 };
+    let mut sorted = ious.clone();
+    sorted.sort_by(f32::total_cmp);
+    let med = sorted.get(sorted.len() / 2).copied().unwrap_or(0.0);
+    println!(
+        "3D 部件 IoU（两侧 GT 深度，只有归属不同）：GT {} / 预测 {} 个（≥{min_px}px），匹配 {}；\
+         mIoU {:.3} / 中位 {:.3}",
+        n_gt,
+        pr_vox.len(),
+        ious.len(),
+        miou,
+        med
+    );
 }
 
 fn main() {
@@ -569,6 +667,7 @@ fn main() {
         Some("mesh-single") => mesh_single(&argv),
         Some("cnn-train") => depth_train::cnn_train(&argv),
         Some("depth-iou") => depth_train::depth_iou(&argv),
+        Some("part-iou") => part_iou(&argv),
         _ => usage(),
     }
 }
