@@ -3431,6 +3431,116 @@ MUTANTS = [
         "filter": "",
         "runner": "python",
     },
+    # ---- hazard_gate 判定面 ----
+    {
+        "name": "hazard: 不剥字符串/char 字面量（needle 自指复活）",
+        "file": "scripts/hazard_gate.py",
+        "old": "        joined = scrub(\"\\n\".join(original_lines) + \"\\n\")",
+        "new": "        joined = \"\\n\".join(original_lines) + \"\\n\"",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: 内联测试边界失效（测试演练当产品代码）",
+        "file": "scripts/hazard_gate.py",
+        "old": "        if \"#[cfg(test)]\" in lines[index]:",
+        "new": "        if False:",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: Relaxed 规则匹配错枚举",
+        "file": "scripts/hazard_gate.py",
+        "old": "        \"pattern\": r\"Ordering::Relaxed\",",
+        "new": "        \"pattern\": r\"Ordering::SeqCst\",",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: 忽略登记表（已登记的文件也报红）",
+        "file": "scripts/hazard_gate.py",
+        "old": "            allow = (allow_overrides or {}).get(rule[\"id\"]) or rule[\"allow\"]",
+        "new": "            allow = {}",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: 报行号偏一行",
+        "file": "scripts/hazard_gate.py",
+        "old": "                    \"line\": line_no + 1,",
+        "new": "                    \"line\": line_no + 2,",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: 登记了但没写不变量也放行",
+        "file": "scripts/hazard_gate.py",
+        "old": "                        entry[\"hint\"] = (\n                            \"已登记但匹配点（及其所在 unsafe fn 签名）向上没有\"\n                            \" SAFETY/# Safety 不变量\"\n                        )\n                        findings.append(entry)",
+        "new": "                        entry[\"hint\"] = (\n                            \"已登记但匹配点（及其所在 unsafe fn 签名）向上没有\"\n                            \" SAFETY/# Safety 不变量\"\n                        )\n                        allow_hits.append(entry)",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "hazard: SAFETY 检索窗口缩到 0 行",
+        "file": "scripts/hazard_gate.py",
+        "old": "SAFETY_WINDOW = 8\n\n\ndef scrub",
+        "new": "SAFETY_WINDOW = 0\n\n\ndef scrub",
+        "pkg": "scripts/hazard_gate.py",
+        "filter": "",
+        "runner": "python",
+    },
+    # ---- module_budget 台账面 ----
+    {
+        "name": "budget: 无视台账（已登记的债务也算新增超限）",
+        "file": "scripts/module_budget.py",
+        "old": "        if lines > LIMIT and file not in baseline:",
+        "new": "        if lines > LIMIT:",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: 台账里的文件变胖不判红",
+        "file": "scripts/module_budget.py",
+        "old": "        if lines > recorded:",
+        "new": "        if False:",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: 已删除文件留在台账里不判红",
+        "file": "scripts/module_budget.py",
+        "old": "        if file not in sizes:",
+        "new": "        if False:",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: --update 不再拒绝增长",
+        "file": "scripts/module_budget.py",
+        "old": "        if new is not None and new > old",
+        "new": "        if False",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
+    {
+        "name": "budget: --update 把预算内文件也写进台账",
+        "file": "scripts/module_budget.py",
+        "old": "def save_baseline(path: Path, sizes: dict[str, int]) -> None:\n    over = {f: n for f, n in sizes.items() if n > LIMIT}",
+        "new": "def save_baseline(path: Path, sizes: dict[str, int]) -> None:\n    over = {f: n for f, n in sizes.items() if n >= LIMIT}",
+        "pkg": "scripts/module_budget.py",
+        "filter": "",
+        "runner": "python",
+    },
 ]
 
 
@@ -3483,6 +3593,10 @@ def run_tests(pkg: str, test_filter: str, runner: str = "cargo") -> subprocess.C
 EXEMPT: dict[str, str] = {
     "sansheng": "三值工具箱的伞包：lib.rs 只有 pub use 转发与文档 doctest，无自有规则",
     "scripts/gen_docs_charts.py": "出图脚本，无 --self-test 且非承重判定；不参与发布门禁",
+    # 这两个是薄壳（5 / 19 行），没有可钉的判定；一旦有人给它们补 self_test()，豁免自动过期。
+    "scripts/bench.sh": "基准薄壳（5 行）：只是把参数转给 cargo bench，无可变异判定",
+    "scripts/publish.sh": "发布薄壳（19 行）：版本校验后转给 cargo publish，无可变异判定",
+    "crates/trit-immune/scripts/sync-upstream.sh": "上游同步脚本：一键同步本就不成立（补丁表达不了删除），无 --self-test 面",
 }
 
 FN_OR_IMPL = re.compile(
@@ -3871,6 +3985,10 @@ def self_test() -> int:
     check("全仓登记为空→判红", whole_empty_rc, 1)
     check("选中过滤", [m["pkg"] for m in select(["sansheng"])], [])
     check("空选择=全表", len(select([])), len(MUTANTS))
+    # 豁免项自己也要可复核：路径写错时 has_own_logic 会返回 False，豁免会静静地套在空气上
+    for pkg in EXEMPT:
+        exists = pkg.endswith((".py", ".sh")) and (ROOT / pkg).is_file()
+        check(f"EXEMPT 路径存在：{pkg}", exists or (ROOT / "crates" / pkg).is_dir(), True)
 
     # 四、豁免过期与 preflight 边界（按语言分判），用临时夹具，不碰真仓
     with tempfile.TemporaryDirectory() as tmp:
