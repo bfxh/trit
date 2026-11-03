@@ -124,5 +124,59 @@
   "pkg": "scripts/mutation_check.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "mutation-check: 未点名仍算抓住（环境坏了门照样报全绿）",
+  "file": "scripts/mutation_check.py",
+  "old": "    killed = len(mutants) - survived - false_kills - crash_kills - unnamed",
+  "new": "    killed = len(mutants) - survived - false_kills - crash_kills",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-check: 崩溃与断言混计（killed 数虚高）",
+  "file": "scripts/mutation_check.py",
+  "old": "    killed = len(mutants) - survived - false_kills - crash_kills - unnamed",
+  "new": "    killed = len(mutants) - survived - false_kills - unnamed",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-check: 未点名不判红（抓住数对了但门仍绿）",
+  "file": "scripts/mutation_check.py",
+  "old": "    return killed, bool(survived or false_kills or unnamed)",
+  "new": "    return killed, bool(survived or false_kills)",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-check: python 孩子不钉编码（中文 Windows 上门报糊成乱码）",
+  "file": "scripts/mutation_check.py",
+  "old": "        env[\"PYTHONIOENCODING\"] = \"utf-8\"",
+  "new": "        pass",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-check: 非 python 孩子也继承 PYTHONIOENCODING（环境被门自己改写）",
+  "file": "scripts/mutation_check.py",
+  "old": "        env.pop(\"PYTHONIOENCODING\", None)",
+  "new": "        pass",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-check: 缺省不吃母进程环境（CI 里 PATH 丢失，全部变异一起坏）",
+  "file": "scripts/mutation_check.py",
+  "old": "    env = dict(os.environ if base is None else base)",
+  "new": "    env = dict(base or {})",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
  }
 ]

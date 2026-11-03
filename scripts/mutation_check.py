@@ -17,6 +17,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -77,6 +78,21 @@ def selftest_marker(runner: str) -> str:
     return SELFTEST_MARKER_SH if runner == "bash" else SELFTEST_MARKER
 
 
+def child_env(runner: str, base: dict[str, str] | None = None) -> dict[str, str]:
+    """子进程的环境。
+
+    python 的 stdout 接**管道**时按本机 locale 编码（中文 Windows = cp936），而 run_tests
+    固定按 utf-8 解码 ⇒ 门报里的中文测试名糊成一团，"抓的是哪条断言"读不出来。
+    cargo / bash 自己就写 UTF-8，反而不许继承母进程可能被设成 cp936 的这层变量。
+    """
+    env = dict(os.environ if base is None else base)
+    if runner == "python":
+        env["PYTHONIOENCODING"] = "utf-8"
+    else:
+        env.pop("PYTHONIOENCODING", None)
+    return env
+
+
 def run_tests(pkg: str, test_filter: str, runner: str = "cargo") -> subprocess.CompletedProcess[str]:
     if runner in ("python", "bash"):
         argv = [sys.executable if runner == "python" else "bash", pkg, "--self-test"]
@@ -85,6 +101,7 @@ def run_tests(pkg: str, test_filter: str, runner: str = "cargo") -> subprocess.C
     return subprocess.run(
         argv,
         cwd=ROOT,
+        env=child_env(runner),
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         text=True,
@@ -280,6 +297,18 @@ def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
     return "caught", named.strip()
 
 
+def tally(mutants: list[dict], survived: int, false_kills: int, crash_kills: int, unnamed: int) -> tuple[int, bool]:
+    """抓住多少条，以及门该不该判红。
+
+    `unnamed` = 进程 rc≠0 但既没有断言点名也没有崩溃签名：磁盘写满导致链接失败、
+    cargo 不在 PATH、harness 自己报错都落这一格。它不证明任何断言钉住了什么 ⇒
+    既不能计成抓住，也不能静默算过（原先就是把它计进 killed，于是环境一坏门反而"全绿"）。
+    `crash` 单列但维持不判红：崩溃至少证明把守卫去掉会炸，只是没有断言兜着。
+    """
+    killed = len(mutants) - survived - false_kills - crash_kills - unnamed
+    return killed, bool(survived or false_kills or unnamed)
+
+
 def main(pkgs: list[str]) -> int:
     # Windows 控制台默认可能是 GBK；变异名里有中国字与 Ł，统一按 UTF-8 输出。
     if hasattr(sys.stdout, "reconfigure"):
@@ -372,14 +401,14 @@ def main(pkgs: list[str]) -> int:
             continue
         if kind == "unnamed":
             unnamed.append(mutant["name"])
-            print(f"caught    {mutant['name']}  [(未点名测试)]")
+            print(f"UNNAMED   {mutant['name']}  [rc≠0 但既无断言点名也无崩溃签名：不证明任何东西]")
             continue
         print(f"caught    {mutant['name']}  [{detail}]")
 
-    killed = len(mutants) - survived - len(false_kills) - len(crash_kills)
+    killed, red = tally(mutants, survived, len(false_kills), len(crash_kills), len(unnamed))
     print(
         f"\n断言抓住 {killed}，崩溃抓住 {len(crash_kills)}，编译红假杀 {len(false_kills)}，"
-        f"存活 {survived}（共 {len(mutants)}）"
+        f"未点名 {len(unnamed)}，存活 {survived}（共 {len(mutants)}）"
     )
     for name in false_kills:
         print(f"  FALSE-KILL {name}")
@@ -388,9 +417,10 @@ def main(pkgs: list[str]) -> int:
         for name in crash_kills:
             print(f"    - {name}")
     if unnamed:
-        print(f"  未点名（既无断言也无崩溃签名）: {', '.join(unnamed)}")
-    if survived or false_kills:
-        print("⇒ 门判红：假杀的条目要么改成语义变异（编得过、只改行为），要么删除。")
+        print(f"  UNNAMED（既无断言也无崩溃签名，多半是环境/工具链坏了）: {', '.join(unnamed)}")
+    if red:
+        print("⇒ 门判红：假杀的条目要么改成语义变异（编得过、只改行为），要么删除；"
+              "未点名的条目要先把它跑红的原因查清（盘满 / cargo 缺失 / harness 自身报错）。")
         return 1
     return 0
 
@@ -461,6 +491,25 @@ def self_test() -> int:
     check("runner .sh→bash", runner_of({"pkg": "crates/a/scripts/x.sh"}), "bash")
     check("runner crate→cargo", runner_of({"pkg": "trit-core"}), "cargo")
     check("runner 显式优先", runner_of({"pkg": "scripts/x.py", "runner": "cargo"}), "cargo")
+
+    # 二b、计数口径（合成输入，不跑真变异）：这一格原先把"未点名"算成抓住且不判红，
+    # 盘满导致链接失败 / cargo 缺失 / harness 自己报错都会混在这里变成空心绿。
+    three = [{}, {}, {}]
+    check("全抓住→不判红", tally(three, 0, 0, 0, 0), (3, False))
+    check("未点名不计算住且判红", tally(three, 0, 0, 0, 1), (2, True))
+    check("崩溃单列但不判红", tally(three, 0, 0, 1, 0), (2, False))
+    check(
+        "存活/假杀/未点名任一即判红",
+        [tally(three, 1, 0, 0, 0)[1], tally(three, 0, 1, 0, 0)[1], tally(three, 0, 0, 1, 1)[1]],
+        [True, True, True],
+    )
+
+    # 二c、子进程编码：母进程按 utf-8 解码，python 孩子却按 locale(cp936) 编码 ⇒ 门报糊字。
+    # 三条都用显式 base，不吃本机环境，免得"本地绿 CI 红"或反过来。
+    check("python 孩子钉成 utf-8", child_env("python", {"PYTHONIOENCODING": "cp936"}), {"PYTHONIOENCODING": "utf-8"})
+    check("bash 孩子不许继承这层", child_env("bash", {"PYTHONIOENCODING": "cp936"}), {})
+    check("cargo 孩子也只剥这层", child_env("cargo", {"PATH": "/x", "PYTHONIOENCODING": "utf-8"}), {"PATH": "/x"})
+    check("缺省跟随母进程环境", "PATH" in child_env("cargo"), True)
 
     # 三、空集 fail-closed：没有登记就"绿"没有含义（真跑 main，输出吞掉免得像报错）
     def rc_of(targets: list[str]) -> object:
