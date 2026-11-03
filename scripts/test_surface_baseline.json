@@ -1,7 +1,7 @@
 {
  "crate/sansheng": 0,
  "crate/trit-attn": 28,
- "crate/trit-bdd": 22,
+ "crate/trit-bdd": 28,
  "crate/trit-belnap": 8,
  "crate/trit-build": 45,
  "crate/trit-capacity": 16,
@@ -9,7 +9,7 @@
  "crate/trit-cli": 96,
  "crate/trit-codec": 137,
  "crate/trit-core": 88,
- "crate/trit-count": 22,
+ "crate/trit-count": 24,
  "crate/trit-dot": 18,
  "crate/trit-eval": 28,
  "crate/trit-float": 26,

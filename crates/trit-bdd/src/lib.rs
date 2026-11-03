@@ -16,11 +16,13 @@
 
 use trit_eval::EquivalenceResult;
 
+mod count;
 mod encode;
 mod equiv;
 mod order;
 mod quantify;
 
+pub use count::count_models_bdd;
 pub use equiv::{
     PremiseCheck, equivalent_bdd, equivalent_bdd_best, equivalent_bdd_best_with_limits,
     equivalent_bdd_with, equivalent_bdd_with_limits, equivalent_bdd_with_order,
@@ -55,6 +57,9 @@ pub enum BddError {
         /// 上限。
         limit: usize,
     },
+    /// 模型数超出 `u128` 可表示范围。
+    #[error("模型数超过 u128 上限")]
+    CountTooLarge,
 }
 
 /// BDD 节点预算。

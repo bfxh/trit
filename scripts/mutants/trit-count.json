@@ -102,5 +102,29 @@
   "new": "fn default_algebra() -> String {\n    \"lukasiewicz\".to_string()\n}",
   "pkg": "trit-count",
   "filter": "default_algebra_is_kleene"
+ },
+ {
+  "name": "crosscheck: BDD 被拒也算三方一致",
+  "file": "crates/trit-count/src/lib.rs",
+  "old": "    let three_way = bdd_count.is_some_and(agrees);",
+  "new": "    let three_way = true;",
+  "pkg": "trit-count",
+  "filter": "bdd_budget_refusal_is_not_a_mismatch"
+ },
+ {
+  "name": "crosscheck: BDD 拒绝原因被丢弃",
+  "file": "crates/trit-count/src/lib.rs",
+  "old": "        Err(error) => (None, Some(error.to_string())),",
+  "new": "        Err(error) => (None, { let _ = &error; None }),",
+  "pkg": "trit-count",
+  "filter": "bdd_budget_refusal_is_not_a_mismatch"
+ },
+ {
+  "name": "crosscheck: BDD 一路忽略约束",
+  "file": "crates/trit-count/src/lib.rs",
+  "old": "    let bdd = count_models_bdd(expr, constraints, vars, binary, alg, target, bdd_limits);",
+  "new": "    let bdd = count_models_bdd(expr, &[], vars, binary, alg, target, bdd_limits);",
+  "pkg": "trit-count",
+  "filter": "constrained_counts_match_exhaustive"
  }
 ]

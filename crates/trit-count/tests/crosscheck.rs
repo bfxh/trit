@@ -4,7 +4,10 @@ use trit_core::algebra::Algebra;
 use trit_core::ast::Expr;
 use trit_core::parser::Parser;
 use trit_core::value::Ternary;
-use trit_count::{count_models, count_models_under, crosscheck, crosscheck_under};
+use trit_count::{
+    count_models, count_models_bdd, count_models_under, crosscheck, crosscheck_under,
+    crosscheck_under_with_limits,
+};
 
 fn parse(source: &str) -> Expr {
     Parser::parse(source).expect("test expression must parse")
@@ -127,10 +130,17 @@ fn random_n_up_to_eight_match_exhaustive() {
                     let report = crosscheck(&expr, &vars, &HashSet::new(), alg, target);
                     assert!(
                         report.matches,
-                        "random mismatch n={n} alg={} target={target:?} dpll={} exhaustive={}",
+                        "random mismatch n={n} alg={} target={target:?} dpll={} exhaustive={} bdd={:?}",
                         alg.as_str(),
                         report.dpll_count,
-                        report.exhaustive_count
+                        report.exhaustive_count,
+                        report.bdd_count
+                    );
+                    assert!(
+                        report.three_way,
+                        "bdd engine absent n={n} alg={} error={:?}",
+                        alg.as_str(),
+                        report.bdd_error
                     );
                 }
             }
@@ -148,13 +158,104 @@ fn random_n_twelve_match_exhaustive() {
             let report = crosscheck(&expr, &vars, &HashSet::new(), alg, target);
             assert!(
                 report.matches,
-                "n=12 mismatch alg={} target={target:?} dpll={} exhaustive={}",
+                "n=12 mismatch alg={} target={target:?} dpll={} exhaustive={} bdd={:?}",
                 alg.as_str(),
                 report.dpll_count,
-                report.exhaustive_count
+                report.exhaustive_count,
+                report.bdd_count
+            );
+            assert!(
+                report.three_way,
+                "bdd engine absent at n=12 alg={} error={:?}",
+                alg.as_str(),
+                report.bdd_error
             );
         }
     }
+}
+
+/// 穷举跑不动的规模上，DPLL 与 BDD 两条独立链仍要给出同一个数。
+#[test]
+fn dpll_and_bdd_agree_beyond_exhaustive() {
+    let mut rng = Rng(0xB1B0_DDEA_D1CC_0001);
+    for n in [13usize, 17, 21] {
+        let vars: Vec<String> = (0..n).map(|index| format!("v{index}")).collect();
+        for _ in 0..2 {
+            for alg in Algebra::ALL {
+                for target in [Ternary::False, Ternary::True, Ternary::Unknown] {
+                    let expr = random_expr(&mut rng, &vars, 4);
+                    let dpll = count_models(&expr, &vars, &HashSet::new(), alg, target).count;
+                    let bdd = count_models_bdd(
+                        &expr,
+                        &[],
+                        &vars,
+                        &HashSet::new(),
+                        alg,
+                        target,
+                        trit_bdd::BddLimits::UNLIMITED,
+                    )
+                    .expect("unlimited bdd budget should count");
+                    assert_eq!(dpll, bdd, "n={n} alg={} target={target:?}", alg.as_str());
+                }
+            }
+        }
+    }
+}
+
+/// 节点预算拦下 BDD 时是「这一路没出数」，不是三方不一致。
+#[test]
+fn bdd_budget_refusal_is_not_a_mismatch() {
+    let vars: Vec<String> = (0..6).map(|index| format!("v{index}")).collect();
+    let expr = random_expr(&mut Rng(0x0F1C_1CE5_5EED_1234), &vars, 4);
+    let tiny = trit_bdd::BddLimits { max_nodes: 1 };
+    let refused = count_models_bdd(
+        &expr,
+        &[],
+        &vars,
+        &HashSet::new(),
+        Algebra::Kleene,
+        Ternary::True,
+        tiny,
+    );
+    assert!(
+        matches!(refused, Err(trit_bdd::BddError::BudgetExceeded { .. })),
+        "one node should not be enough: {refused:?}"
+    );
+
+    let report = crosscheck_under_with_limits(
+        &expr,
+        &[],
+        &vars,
+        &HashSet::new(),
+        Algebra::Kleene,
+        Ternary::True,
+        tiny,
+    );
+    assert_eq!(report.bdd_count, None, "budget must refuse the bdd engine");
+    assert!(report.bdd_error.is_some(), "a refusal needs a reason");
+    assert!(
+        report.matches,
+        "dpll/exhaustive still agree: {} vs {}",
+        report.dpll_count, report.exhaustive_count
+    );
+    assert!(
+        !report.three_way,
+        "a refused engine must not be counted as three-way agreement"
+    );
+
+    let room = crosscheck(
+        &expr,
+        &vars,
+        &HashSet::new(),
+        Algebra::Kleene,
+        Ternary::True,
+    );
+    assert!(
+        room.matches && room.three_way,
+        "crosscheck budget fits: {:?}",
+        room.bdd_error
+    );
+    assert_eq!(room.bdd_error, None);
 }
 
 #[test]
@@ -233,8 +334,14 @@ fn constrained_counts_match_exhaustive() {
                 let report = crosscheck_under(&expr, &constraints, &vars, &binary, alg, target);
                 assert!(
                     report.matches,
-                    "constrained mismatch: alg={} target={target:?} expr={source} constraints={constraint_sources:?}",
-                    alg.as_str()
+                    "constrained mismatch: alg={} target={target:?} expr={source} constraints={constraint_sources:?} bdd={:?}",
+                    alg.as_str(),
+                    report.bdd_count
+                );
+                assert!(
+                    report.three_way,
+                    "constrained bdd engine absent: expr={source} error={:?}",
+                    report.bdd_error
                 );
             }
         }
