@@ -71,24 +71,75 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         if: steps.scope.outputs.only_docs != 'true'
 
+      # 收窄判据本身要有人盯：它坏了不能悄悄把整条测试面关掉。
+      - name: Scope self-test (ci_scope)
+        if: steps.scope.outputs.only_docs != 'true'
+        run: python3 scripts/ci_scope.py --self-test
+
+      # 编译/测试面按「直改 crate + 反向依赖闭包」收窄（scripts/ci_scope.py）。
+      # 拿不到依赖图就退回全量：full 永远是安全方向。
+      - name: Scope crates (PR only)
+        id: crates
+        if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          fallback() {
+            {
+              echo "args="
+              echo "needs_png=true"
+              echo "needs_gpu=true"
+              echo "reason=$1"
+            } >> "$GITHUB_OUTPUT"
+            echo "收窄不可用，走全量：$1"
+          }
+          if [ "$EVENT" != "pull_request" ] || [ -z "${BASE_SHA:-}" ]; then
+            fallback "非 PR 或拿不到 base"
+            exit 0
+          fi
+          if ! python3 scripts/ci_scope.py --base "$BASE_SHA" --github-output >> "$GITHUB_OUTPUT"; then
+            fallback "ci_scope 运行失败"
+          fi
+
       - name: Check formatting
         if: steps.scope.outputs.only_docs != 'true'
         run: cargo fmt --all -- --check
 
+      # args 为空 = 全量：非 PR、改到 workspace 级文件、闭包吃掉大半仓，都走这条路。
       - name: Clippy
         if: steps.scope.outputs.only_docs != 'true'
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo clippy $SCOPE_ARGS --all-targets --locked -- -D warnings
+          else
+            cargo clippy --workspace --all-targets --locked -- -D warnings
+          fi
 
       - name: Test
         if: steps.scope.outputs.only_docs != 'true'
-        run: cargo test --workspace --locked
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo test $SCOPE_ARGS --locked
+          else
+            cargo test --workspace --locked
+          fi
 
       # png feature（默认关）：单独测 + clippy，否则 CI 永远碰不到这些代码。
+      # 收窄后只在闭包真含 trit-texture 时才跑，否则这条 step 白等一趟编译。
       - name: Test (trit-texture png feature)
-        if: steps.scope.outputs.only_docs != 'true'
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_png == 'true'
         run: cargo test -p trit-texture --features png --locked
       - name: Clippy (trit-texture png feature)
-        if: steps.scope.outputs.only_docs != 'true'
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_png == 'true'
         run: cargo clippy -p trit-texture --features png --all-targets --locked -- -D warnings
 
       # gpu feature（默认关）：同上。#149 的事故就是这块代码从没被门编译过
@@ -98,10 +149,10 @@ jobs:
       # （512×4096×512）要十几分钟；而 1×1×1 同样会创建全部 shader module，
       # f16 扩展缺失这类错照样能抓到。完整形状在开发者本机跑。
       - name: Test (trit-gpu gpu feature, shader smoke)
-        if: steps.scope.outputs.only_docs != 'true'
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
         run: cargo test -p trit-gpu --features gpu --locked --test matmul gpu_reg_matmul_tiny_case
       - name: Clippy (trit-gpu gpu feature)
-        if: steps.scope.outputs.only_docs != 'true'
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
         run: cargo clippy -p trit-gpu --features gpu --all-targets --locked -- -D warnings
 
   module-budget:
