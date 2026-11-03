@@ -88,5 +88,23 @@
   "filter": "hlc_is_monotonic_under_skew",
   "pkg": "trit-vcs",
   "runner": "cargo"
+ },
+ {
+  "name": "vcs: 增量不比大小就用（无关内容也硬套 delta，越存越大）",
+  "file": "crates/trit-vcs/src/store.rs",
+  "old": "        if (delta.len() as u64) >= full_len / 2 {",
+  "new": "        if false {",
+  "filter": "delta_is_not_used_for_unrelated_content",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 重建增量时丢掉前缀（读出来少一截）",
+  "file": "crates/trit-vcs/src/store.rs",
+  "old": "    out.extend_from_slice(&base[..prefix]);",
+  "new": "    let _ = prefix;",
+  "filter": "delta_is_used_for_a_local_edit",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
  }
 ]

@@ -163,7 +163,28 @@ impl Repo {
         files: &BTreeMap<String, Vec<u8>>,
         now_secs: u64,
     ) -> Result<(Hash, PutStats), RepoError> {
-        let (tree, put) = self.store.put_tree(files)?;
+        // 上一版的树：同路径文件的新块会拿"上一版同位置块"做增量
+        let prev_files: BTreeMap<String, Hash> = match self.head()? {
+            Some(head) => self
+                .commit_at(&head)
+                .ok()
+                .and_then(|commit| self.store.tree_entries(&commit.tree).ok())
+                .unwrap_or_default(),
+            None => BTreeMap::new(),
+        };
+        let mut put = PutStats::default();
+        let mut entries = BTreeMap::new();
+        for (path, bytes) in files {
+            let prev = prev_files.get(path).copied();
+            let (id, detail) = self.store.put_file_with_prev(bytes, prev)?;
+            put.new_chunks += detail.new_chunks;
+            put.reused_chunks += detail.reused_chunks;
+            put.bytes_written += detail.bytes_written;
+            entries.insert(path.clone(), id);
+        }
+        let encoded =
+            serde_json::to_vec(&entries).map_err(|e| RepoError::BadHead(e.to_string()))?;
+        let (tree, _) = self.store.put_chunk(&encoded)?;
         let index = Index {
             tree: tree.to_hex(),
             paths: files.keys().cloned().collect(),

@@ -148,6 +148,90 @@ fn bench_shared_block() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// 场景 C：大文件反复"整体重编号"（每行都变一点）。
+/// 这是 delta 该赢的形状：CDC 会认为每个块都变了（内容确实都变了），
+/// 但块内的前后缀高度相似——整块存下来就亏，增量才省。
+fn bench_renumber() {
+    let lines = 20_000usize;
+    let rounds = 10usize;
+    let make = |tag: usize| -> Vec<u8> {
+        let mut body = String::new();
+        for line in 0..lines {
+            body.push_str(&format!(
+                "let v_{line} = compute({line}, {tag}, {tag});
+"
+            ));
+        }
+        body.into_bytes()
+    };
+    let root: PathBuf =
+        std::env::temp_dir().join(format!("trit-vcs-bench-renum-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+
+    let repo_root = root.join("trit");
+    std::fs::create_dir_all(&repo_root).unwrap();
+    let mut repo = Repo::init(&repo_root).unwrap();
+    let claim = ClaimSpec {
+        id: "c1".to_string(),
+        owner: "qoder:bench".to_string(),
+        paths: vec!["big.rs".to_string()],
+        acquired_at: 1,
+        expires_at: u64::MAX / 2,
+    };
+    for round in 0..rounds {
+        let mut files = BTreeMap::new();
+        files.insert("big.rs".to_string(), make(round));
+        repo.stage(&files, 1_000 + round as u64).unwrap();
+        repo.commit(CommitRequest {
+            message: format!("renumber {round}"),
+            session: "qoder:bench".to_string(),
+            claims: vec![claim.clone()],
+            now_secs: 1_000 + round as u64,
+            ..Default::default()
+        })
+        .unwrap();
+    }
+    let vcs_bytes = dir_bytes(&repo_root.join(".tritvcs").join("objects"));
+
+    let git_root = root.join("git");
+    std::fs::create_dir_all(&git_root).unwrap();
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(&git_root)
+            .output()
+            .expect("git 不可用");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "bench@example.com"]);
+    git(&["config", "user.name", "bench"]);
+    for round in 0..rounds {
+        std::fs::write(git_root.join("big.rs"), make(round)).unwrap();
+        git(&["add", "-A"]);
+        git(&["commit", "-qm", &format!("renumber {round}")]);
+    }
+    let git_bytes = dir_bytes(&git_root.join(".git"));
+    let raw = make(0).len() as u64;
+    println!(
+        "场景 C（整体重编号）：单文件 {:.2} MiB × {} 轮（每行都变一点）",
+        raw as f64 / 1_048_576.0,
+        rounds
+    );
+    println!(
+        "  trit-vcs {:.2} MiB ｜ git {:.2} MiB ｜ 体积比 {:.2}",
+        vcs_bytes as f64 / 1_048_576.0,
+        git_bytes as f64 / 1_048_576.0,
+        vcs_bytes as f64 / git_bytes.max(1) as f64
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 fn main() {
     let files = 60usize;
     let lines = 400usize;
@@ -227,9 +311,24 @@ fn main() {
         payload_bytes as f64 / 1_048_576.0,
         rounds
     );
+    let size_of = |path: PathBuf| std::fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let pack = size_of(
+        repo_root
+            .join(".tritvcs")
+            .join("objects")
+            .join("pack-000001.pack"),
+    );
+    let index = size_of(
+        repo_root
+            .join(".tritvcs")
+            .join("objects")
+            .join("index.jsonl"),
+    );
     println!(
-        "trit-vcs：对象库 {:.2} MiB，{:.0} ms/轮",
+        "trit-vcs：对象库 {:.2} MiB（pack {:.2} / 索引 {:.2}），{:.0} ms/轮",
         vcs_bytes as f64 / 1_048_576.0,
+        pack as f64 / 1_048_576.0,
+        index as f64 / 1_048_576.0,
         vcs_time.as_secs_f64() * 1000.0 / rounds as f64
     );
     println!(
@@ -243,4 +342,5 @@ fn main() {
     );
     let _ = std::fs::remove_dir_all(&root);
     bench_shared_block();
+    bench_renumber();
 }
