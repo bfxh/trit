@@ -111,6 +111,7 @@ jobs:
       # args 为空 = 全量：非 PR、改到 workspace 级文件、闭包吃掉大半仓，都走这条路。
       - name: Clippy
         if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
         env:
           SCOPE_ARGS: ${{ steps.crates.outputs.args }}
         run: |
@@ -122,6 +123,7 @@ jobs:
 
       - name: Test
         if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
         env:
           SCOPE_ARGS: ${{ steps.crates.outputs.args }}
         run: |
