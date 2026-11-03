@@ -58,13 +58,64 @@ fn unif(binding: u32) -> wgpu::BindGroupLayoutEntry {
 }
 
 impl Gpu {
-    pub fn new() -> Option<Self> {
+    /// 物理设备去重后的适配器表（同名多后端只留第一个；排除 CPU 软件渲染）。
+    fn unique_adapters() -> Vec<wgpu::Adapter> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            ..Default::default()
-        }))
-        .ok()?;
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for a in pollster::block_on(instance.enumerate_adapters(wgpu::Backends::all())) {
+            let info = a.get_info();
+            // 排除软件渲染（WARP）与 GL 后端重命名的同一张卡（类型是 Other）。
+            if matches!(
+                info.device_type,
+                wgpu::DeviceType::Cpu | wgpu::DeviceType::Other
+            ) {
+                continue;
+            }
+            // 同一张卡在不同后端名字会不同（GL 带 `/PCIe/SSE2`），按 vendor/device 去重；
+            // 两者都为 0 时退回名字。
+            let key = if info.vendor == 0 && info.device == 0 {
+                info.name.clone()
+            } else {
+                format!("{}:{}", info.vendor, info.device)
+            };
+            if seen.insert(key) {
+                out.push(a);
+            }
+        }
+        out
+    }
+
+    /// 枚举可用适配器（`--list-gpus` 用）：`"<名字> (<类型>)"`，顺序与 `new_on` 的下标一致。
+    pub fn adapters() -> Vec<String> {
+        Self::unique_adapters()
+            .iter()
+            .map(|a| {
+                let i = a.get_info();
+                format!("{} ({:?})", i.name, i.device_type)
+            })
+            .collect()
+    }
+
+    pub fn new() -> Option<Self> {
+        Self::build(None)
+    }
+
+    /// 按 `adapters()` 的下标选卡（多卡机器上给每个进程分一张）。
+    pub fn new_on(index: usize) -> Option<Self> {
+        Self::build(Some(index))
+    }
+
+    fn build(index: Option<usize>) -> Option<Self> {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let adapter = match index {
+            None => pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                ..Default::default()
+            }))
+            .ok()?,
+            Some(i) => Self::unique_adapters().into_iter().nth(i)?,
+        };
         let adapter_name = adapter.get_info().name;
         let alim = adapter.limits();
         let limits = wgpu::Limits {
