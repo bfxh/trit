@@ -2,6 +2,7 @@
 
 mod admission;
 mod budget;
+mod claim;
 mod context;
 mod effects;
 mod error;
@@ -10,11 +11,13 @@ mod model;
 mod plan;
 mod policy;
 mod progress;
+mod receipt;
 mod selection;
 mod shadow;
 mod status;
 
-pub use admission::{admit, dependency_gate};
+pub use admission::{admit, admit_with_claim, dependency_gate};
+pub use claim::{Claim, ClaimOutcome, ClaimState, ClaimStore, MAX_CLAIM_PATHS, paths_overlap};
 pub use context::{
     CompactionBlock, CompactionDecision, ContextFacts, DEFAULT_THRESHOLD_BP, MAX_THRESHOLD_BP,
     MIN_THRESHOLD_BP, Obligation, Overflow, Tier, compaction_gate,
@@ -32,6 +35,9 @@ pub use policy::{
     bottom_levels, builtin,
 };
 pub use progress::{Progress, RoundReport, Summary};
+pub use receipt::{
+    DeliveryReceipt, HandoffPacket, ReceiptFailure, ReceiptLedger, ReceiptState, handoff_gate,
+};
 pub use shadow::{ShadowReport, TraceStep, TraceStore, replay};
 pub use status::Counts;
 pub use trit_core::value::Ternary;

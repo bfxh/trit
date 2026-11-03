@@ -120,6 +120,62 @@ pub enum Error {
     InputParse { message: String },
     #[error("bad context-compaction config: {message}")]
     ContextConfig { message: String },
+    #[error("claim owner is blank")]
+    ClaimBlankOwner,
+    #[error("claim owner is too long: {owner}")]
+    ClaimOwnerTooLong { owner: String },
+    #[error("claim intent is blank")]
+    ClaimIntentBlank,
+    #[error("claim intent is too long")]
+    ClaimIntentTooLong,
+    #[error("claim path is blank: {path:?}")]
+    ClaimBlankPath { path: String },
+    #[error("claim path is too long: {path}")]
+    ClaimPathTooLong { path: String },
+    #[error("claim path must stay repo-relative: {path}")]
+    ClaimPathEscape { path: String },
+    #[error("claim has {count} paths, exceeding limit {max}")]
+    ClaimTooManyPaths { count: usize, max: usize },
+    #[error("claim ttl must be positive")]
+    ClaimZeroTtl,
+    #[error("claim expiry overflows u64")]
+    ClaimTimeOverflow,
+    #[error("claim fencing overflows u64")]
+    ClaimFenceOverflow,
+    #[error("claim id is blank")]
+    ClaimIdBlank,
+    #[error("duplicate claim id: {id}")]
+    ClaimDuplicateId { id: String },
+    #[error("claim {id} has expires_at <= acquired_at")]
+    ClaimTimeRange { id: String },
+    #[error("unknown claim {id}")]
+    ClaimNotFound { id: String },
+    #[error("claim {id} belongs to {owner}")]
+    ClaimNotOwner { id: String, owner: String },
+    #[error("claim {id} expired; reclaim instead of renewing")]
+    ClaimExpired { id: String },
+    #[error("receipt id is blank")]
+    ReceiptIdBlank,
+    #[error("receipt idempotency key is blank")]
+    ReceiptKeyBlank,
+    #[error("unknown receipt {key}")]
+    ReceiptNotFound { key: String },
+    #[error("receipt rejection reason is blank")]
+    ReceiptReasonBlank,
+    #[error("receipt {key} already failed; it cannot advance")]
+    ReceiptFailed { key: String },
+    #[error("receipt {key} already acted; it cannot fail")]
+    ReceiptAlreadyActed { key: String },
+    #[error("receipt {key} cannot skip from {from} to {to}")]
+    ReceiptSkip {
+        key: String,
+        from: String,
+        to: String,
+    },
+    #[error("handoff field is blank: {field}")]
+    HandoffFieldBlank { field: String },
+    #[error("handoff packet {id} expired")]
+    HandoffExpired { id: String },
     #[error("{operation}: cannot move from {from} to {to}")]
     InvalidTransition {
         operation: String,
@@ -177,6 +233,32 @@ impl Error {
             Error::TraceParse { .. } => "trace_parse",
             Error::InputParse { .. } => "input_parse",
             Error::ContextConfig { .. } => "context_config",
+            Error::ClaimBlankOwner => "claim_blank_owner",
+            Error::ClaimOwnerTooLong { .. } => "claim_owner_too_long",
+            Error::ClaimIntentBlank => "claim_intent_blank",
+            Error::ClaimIntentTooLong => "claim_intent_too_long",
+            Error::ClaimBlankPath { .. } => "claim_blank_path",
+            Error::ClaimPathTooLong { .. } => "claim_path_too_long",
+            Error::ClaimPathEscape { .. } => "claim_path_escape",
+            Error::ClaimTooManyPaths { .. } => "claim_too_many_paths",
+            Error::ClaimZeroTtl => "claim_zero_ttl",
+            Error::ClaimTimeOverflow => "claim_time_overflow",
+            Error::ClaimFenceOverflow => "claim_fence_overflow",
+            Error::ClaimIdBlank => "claim_id_blank",
+            Error::ClaimDuplicateId { .. } => "claim_duplicate_id",
+            Error::ClaimTimeRange { .. } => "claim_time_range",
+            Error::ClaimNotFound { .. } => "claim_not_found",
+            Error::ClaimNotOwner { .. } => "claim_not_owner",
+            Error::ClaimExpired { .. } => "claim_expired",
+            Error::ReceiptIdBlank => "receipt_id_blank",
+            Error::ReceiptKeyBlank => "receipt_key_blank",
+            Error::ReceiptNotFound { .. } => "receipt_not_found",
+            Error::ReceiptReasonBlank => "receipt_reason_blank",
+            Error::ReceiptFailed { .. } => "receipt_failed",
+            Error::ReceiptAlreadyActed { .. } => "receipt_already_acted",
+            Error::ReceiptSkip { .. } => "receipt_skip",
+            Error::HandoffFieldBlank { .. } => "handoff_field_blank",
+            Error::HandoffExpired { .. } => "handoff_expired",
             Error::InvalidTransition { .. } => "invalid_transition",
         }
     }
