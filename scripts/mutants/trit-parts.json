@@ -24,6 +24,22 @@
     "filter": "mv_gate_skips_outliers"
   },
   {
+    "name": "parts: 训练集指纹不覆盖路径（换目录名可骗过复核）",
+    "file": "crates/trit-parts/src/partsrun.rs",
+    "old": "                    out.push(format!(\"{} {h}\", it.key));",
+    "new": "                    out.push(format!(\"{h}\"));",
+    "pkg": "trit-parts",
+    "filter": "train_fingerprint_distinguishes_paths"
+  },
+  {
+    "name": "parts: 评测语料指纹不按 limit 截断（复核评的不是同一批帧）",
+    "file": "crates/trit-parts/src/partsrun.rs",
+    "old": "            if limit > 0 && i >= limit {",
+    "new": "            if false {",
+    "pkg": "trit-parts",
+    "filter": "eval_fingerprint_enumerates_used_files_and_limit"
+  },
+  {
     "name": "parts: 弱边界并块失效（过分割不被压）",
     "file": "crates/trit-parts/src/inst.rs",
     "old": "        if (sum / n as f32) < tau {",

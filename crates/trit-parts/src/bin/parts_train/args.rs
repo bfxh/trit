@@ -61,6 +61,12 @@ pub(crate) struct Args {
     pub(crate) bnd_label: u32,
     pub(crate) bnd_weight: f32,
     pub(crate) id_weight: f32,
+    /// 结果清单（A1）。缺省 = `<--export-tpm>.manifest.json`；两者都不给就不写。
+    pub(crate) run_manifest: Option<PathBuf>,
+    /// 训练结束导出部署包（`TPM1`）——独立复核（A2）要的就是这份产物。
+    pub(crate) export_tpm: Option<PathBuf>,
+    /// 导出时把 head 裁到 N 通道（0 = 不裁）。
+    pub(crate) tpm_channels: u32,
 }
 
 pub(crate) fn parse() -> Result<Args, String> {
@@ -105,6 +111,9 @@ pub(crate) fn parse() -> Result<Args, String> {
         bnd_label: 0,
         bnd_weight: 0.0,
         id_weight: 0.0,
+        run_manifest: None,
+        export_tpm: None,
+        tpm_channels: 0,
     };
     let argv: Vec<String> = std::env::args().skip(1).collect();
     let mut i = 0;
@@ -170,6 +179,11 @@ pub(crate) fn parse() -> Result<Args, String> {
             "--bnd-label" => a.bnd_label = val()?.parse().map_err(|_| "--bnd-label 非整数")?,
             "--id-weight" => a.id_weight = val()?.parse().map_err(|_| "--id-weight 非数字")?,
             "--bnd-weight" => a.bnd_weight = val()?.parse().map_err(|_| "--bnd-weight 非数字")?,
+            "--run-manifest" => a.run_manifest = Some(PathBuf::from(val()?)),
+            "--export-tpm" => a.export_tpm = Some(PathBuf::from(val()?)),
+            "--tpm-channels" => {
+                a.tpm_channels = val()?.parse().map_err(|_| "--tpm-channels 非整数")?
+            }
             "--sgd" => a.adam = false,
             other => return Err(format!("未知参数 {other}")),
         }
