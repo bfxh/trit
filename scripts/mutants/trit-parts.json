@@ -24,6 +24,22 @@
     "filter": "mv_gate_skips_outliers"
   },
   {
+    "name": "parts: 复核不比评测协议（k 错位也 PASS）",
+    "file": "crates/trit-parts/src/bin/parts_verify.rs",
+    "old": "        .unwrap_or(true)\n        && res",
+    "new": "        .unwrap_or(true)\n        || res",
+    "pkg": "trit-parts",
+    "filter": "protocol_must_match_manifest_config"
+  },
+  {
+    "name": "parts: 复核指标解析成 0（格式漂了还 PASS）",
+    "file": "crates/trit-parts/src/bin/parts_verify.rs",
+    "old": "    rest[..end].parse().ok()",
+    "new": "    rest[..end].parse().ok().map(|v: f64| v * 0.0)",
+    "pkg": "trit-parts",
+    "filter": "parses_parts_inst_summary"
+  },
+  {
     "name": "parts: 训练集指纹不覆盖路径（换目录名可骗过复核）",
     "file": "crates/trit-parts/src/partsrun.rs",
     "old": "                    out.push(format!(\"{} {h}\", it.key));",

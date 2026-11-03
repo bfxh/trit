@@ -103,7 +103,13 @@ def parts_rows(root):
         sha = deploy.get("sha256")
         vp = verify_sibling(m)
         v = load(vp) if vp and vp.exists() else None
-        same = bool(v) and bool(sha) and (v.get("model") or {}).get("sha256") == sha
+        # 「通过复核」= 模型相同 **且** 复核记录确实锚在一份清单上（A1 是族进 live 的硬条件）
+        same = (
+            bool(v)
+            and bool(sha)
+            and (v.get("model") or {}).get("sha256") == sha
+            and bool((v.get("manifest") or {}).get("sha256"))
+        )
         rows.append((m, v, same))
     rows.sort(key=lambda r: r[0].get("created_unix", 0), reverse=True)
     return rows
@@ -152,7 +158,9 @@ def parts_doc(root):
             if ts
             else "?"
         )
-        name = pathlib.Path(str(deploy.get("path", "?"))).name
+        p = pathlib.Path(str(deploy.get("path", "?")))
+        # 部件产物都叫 model.tpm，用「目录/文件」区分不同运行
+        name = f"{p.parent.name}/{p.name}" if p.parent.name else p.name
         out.append(
             f"| `{name}` | {cfg} | {d.get('dirs', '?')} / {d.get('frames', '?')} | {loss_s} | "
             f"{check} | `{sha}` | `{commit}` | {time_s} |"
@@ -200,7 +208,30 @@ def self_test():
     both = {"model": {"path": "E:/runs/m.dcn"}, "deploy": {"path": "E:/runs/d.tpm"}}
     assert verify_sibling(both) == pathlib.Path("E:/runs/d.tpm.verify.json"), verify_sibling(both)
     assert verify_sibling({}) is None
-    print("self-test 10/10 通过")
+    # 复核记录必须同时满足：模型 SHA 相同 + 锚在清单上
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        sha = "ab" * 32
+        man = {"kind": "parts-train", "created_unix": 1, "deploy": {"path": str(root / "x.tpm"), "sha256": sha}}
+        (root / "x.tpm.manifest.json").write_text(json.dumps(man), encoding="utf-8")
+        assert parts_rows(root)[0][2] is False  # 没有复核记录
+        (root / "x.tpm.verify.json").write_text(
+            json.dumps({"model": {"sha256": sha}, "manifest": {}}), encoding="utf-8"
+        )
+        assert parts_rows(root)[0][2] is False  # 没锚在清单上
+        (root / "x.tpm.verify.json").write_text(
+            json.dumps({"model": {"sha256": "cd" * 32}, "manifest": {"sha256": "e" * 64}}),
+            encoding="utf-8",
+        )
+        assert parts_rows(root)[0][2] is False  # 模型不符
+        (root / "x.tpm.verify.json").write_text(
+            json.dumps({"model": {"sha256": sha}, "manifest": {"sha256": "e" * 64}}),
+            encoding="utf-8",
+        )
+        assert parts_rows(root)[0][2] is True
+    print("self-test 11/11 通过")
 
 
 def main():

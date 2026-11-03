@@ -13,12 +13,12 @@
     {
       "id": "parts",
       "title": "部件平面头 / 分割与实例",
-      "status": "registered",
+      "status": "live",
       "dir": "runs/parts",
       "manifest_kind": "parts-train",
       "verifier": "parts-verify",
-      "needs": "parts-train 写清单（commit / config / 数据指纹 / 模型 SHA），并把 `parts-inst eval` 包成 parts-verify 做独立复核",
-      "evidence": "GENERAL-PLAN §6.96 / §6.99（文档读数：mIoU 0.4962、边界 F1 0.432、3D 部件 IoU 0.5177、计数±1 36.2%——**非本目录复核**）"
+      "detail": "docs/PARTS-RESULTS.md",
+      "protocol": "parts-train 写清单（内容级训练集指纹 + 模型 SHA）→ parts-verify 重算指纹并子进程重跑 parts-inst eval → 目录自动生成"
     },
     {
       "id": "texture",

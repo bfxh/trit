@@ -55,6 +55,15 @@ fn num_after(line: &str, pat: &str) -> Option<f64> {
     rest[..end].parse().ok()
 }
 
+/// 评测协议（k / res）是否与清单里的训练配置一致。
+fn cfg_matches(txt: &str, k: Option<usize>, res: Option<usize>) -> bool {
+    k.map(|k| txt.contains(&format!("\"k\": {k},")))
+        .unwrap_or(true)
+        && res
+            .map(|r| txt.contains(&format!("\"res\": {r},")))
+            .unwrap_or(true)
+}
+
 fn fp_json(fp: &Fp) -> String {
     format!(
         "{{\"dirs\": {}, \"files\": {}, \"bytes\": {}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\"}}",
@@ -83,12 +92,14 @@ fn main() {
         .split_whitespace()
         .map(|s| s.to_string())
         .collect();
-    let eval_limit: usize = eval_args
-        .iter()
-        .position(|a| a == "--limit")
-        .and_then(|i| eval_args.get(i + 1))
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
+    let eval_flag = |k: &str| -> Option<usize> {
+        eval_args
+            .iter()
+            .position(|a| a == k)
+            .and_then(|i| eval_args.get(i + 1))
+            .and_then(|v| v.parse().ok())
+    };
+    let eval_limit = eval_flag("--limit").unwrap_or(0);
     let inst_bin = arg(&argv, "--parts-inst")
         .map(PathBuf::from)
         .unwrap_or_else(|| sibling("parts-inst"));
@@ -186,19 +197,22 @@ fn main() {
     } else {
         None
     };
-    let (mut ok_model, mut ok_data, mut note) = (true, true, "没有清单，只写复核记录");
+    let (mut ok_model, mut ok_data, mut ok_cfg, mut note) =
+        (true, true, true, "没有清单，只写复核记录");
     if let Some(txt) = &manifest {
         ok_model = txt.contains("\"kind\": \"parts-train\"")
             && txt.contains(&format!("\"sha256\": \"{model_sha}\""));
         ok_data = txt.contains("\"algo\": \"sha256-content-v1\"")
             && txt.contains(&format!("\"hash\": \"sha256:{}\"", train_fp.hash));
-        note = if ok_model && ok_data {
-            "复核 PASS：模型与训练集指纹与清单一致"
+        // 评测协议必须与训练配置一致：k 错位时 GT 编码都不同，指标照样「跑得出来」。
+        ok_cfg = cfg_matches(txt, eval_flag("--k"), eval_flag("--res"));
+        note = if ok_model && ok_data && ok_cfg {
+            "复核 PASS：模型 / 训练集指纹 / 评测协议与清单一致"
         } else {
             "复核 FAIL：与清单不一致"
         };
     }
-    let verdict = if ok_model && ok_data && out.status.success() {
+    let verdict = if ok_model && ok_data && ok_cfg && out.status.success() {
         "pass"
     } else {
         "reject"
@@ -209,7 +223,7 @@ fn main() {
     if verdict == "pass" {
         println!("{note}");
     } else {
-        eprintln!("{note}（模型={ok_model} 训练集={ok_data}）");
+        eprintln!("{note}（模型={ok_model} 训练集={ok_data} 协议={ok_cfg}）");
     }
 
     let manifest_sha = if mpath.exists() {
@@ -255,5 +269,35 @@ fn main() {
     println!("复核记录 {}（{verdict}）", vp.display());
     if verdict != "pass" {
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 指标解析钉在 parts-inst 的真实摘要行上：格式漂了要判红，而不是写一堆 null 还 PASS。
+    #[test]
+    fn parses_parts_inst_summary() {
+        let line = "frames=80 实例 mIoU mean 0.4962 median 0.4912（p10 0.2933）| 前景 IoU mean 0.9685 | pred/gt 0.81（p90 1.18）| 计数±1 36.2% | 计数全对 7.5% | 边界 P 0.305 R 0.741 F1 0.432 | 跨物体混合 0.0%";
+        assert_eq!(num_after(line, "frames="), Some(80.0));
+        assert!((num_after(line, "mIoU mean ").unwrap() - 0.4962).abs() < 1e-9);
+        assert!((num_after(line, "median ").unwrap() - 0.4912).abs() < 1e-9);
+        assert!((num_after(line, "前景 IoU mean ").unwrap() - 0.9685).abs() < 1e-9);
+        assert!((num_after(line, "边界 P ").unwrap() - 0.305).abs() < 1e-9);
+        assert!((num_after(line, " R ").unwrap() - 0.741).abs() < 1e-9);
+        assert!((num_after(line, "F1 ").unwrap() - 0.432).abs() < 1e-9);
+        assert_eq!(num_after(line, "不存在的列 "), None);
+    }
+
+    #[test]
+    fn protocol_must_match_manifest_config() {
+        let cfg = "{\"steps\": 6000, \"k\": 5, \"res\": 384, \"seed\": 1}";
+        assert!(cfg_matches(cfg, Some(5), Some(384)));
+        assert!(cfg_matches(cfg, None, None));
+        assert!(!cfg_matches(cfg, Some(2), Some(384)));
+        assert!(!cfg_matches(cfg, Some(5), Some(96)));
+        // 前缀不能误命中（k=5 vs k=50）
+        assert!(!cfg_matches("{\"k\": 50, \"res\": 384}", Some(5), None));
     }
 }
