@@ -221,6 +221,9 @@ pub struct DepthGpu {
     pub out_b: f32,
     pub med: f32,
     pub iqr: f32,
+    /// 输入平面构成（与 DCN4 一起存盘）。
+    pub pyr: usize,
+    pub ppyr: usize,
     pub size: u32,
     /// 分项耗时（秒）：打包+前向+读回 / 造 dy / 反向 dispatch / 读回+更新+上传。
     pub prof: [f64; 4],
@@ -239,6 +242,8 @@ impl DepthGpu {
             out_b: net.out_b,
             med: net.med,
             iqr: net.iqr,
+            pyr: net.pyr,
+            ppyr: net.ppyr,
             size,
             prof: [0.0; 4],
             engine: None,
@@ -275,6 +280,8 @@ impl DepthGpu {
         net.out_b = self.out_b;
         net.med = self.med;
         net.iqr = self.iqr;
+        net.pyr = self.pyr;
+        net.ppyr = self.ppyr;
         net
     }
 

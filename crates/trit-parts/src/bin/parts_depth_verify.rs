@@ -79,12 +79,12 @@ fn main() {
     let stride: usize = arg(&argv, "--stride")
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
-    let pyr: usize = arg(&argv, "--pyr")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0);
     let full = flag(&argv, "--full");
 
     let net = DepthNet::load(&dcn).unwrap_or_else(|e| panic!("{e}"));
+    // 输入构成以**模型里记的**为准（DCN4 的 pyr/ppyr），不接受命令行覆盖：
+    // 否则复核跑的可能是另一个输入语义。
+    let (pyr, ppyr) = (net.pyr, net.ppyr);
     let mut es: Vec<EvalSample> = Vec::new();
     for d in &data {
         if !is_held(d, &holdout) {
@@ -94,7 +94,7 @@ fn main() {
             if fr % stride.max(1) != 0 {
                 continue;
             }
-            if let Some((x, y, mask, _m, _q, _w)) = load_sample(d, fr, size, full, pyr) {
+            if let Some((x, y, mask, _m, _q, _w)) = load_sample(d, fr, size, full, pyr, ppyr) {
                 es.push(EvalSample { x, y, mask });
             }
         }
