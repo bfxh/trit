@@ -39,6 +39,15 @@ enum Command {
         #[arg(long)]
         functions: bool,
     },
+    /// 吃 procscan 的 JSONL 事件流，采集其中的模块路径并逐个分析（N3）
+    Collect {
+        /// procscan 事件流 JSONL（缺省读 stdin；`-` 亦表示 stdin）
+        #[arg(long, value_name = "FILE")]
+        events: Option<PathBuf>,
+        /// 只输出汇总行（默认输出每模块台账行 + 汇总行）
+        #[arg(long)]
+        summary_only: bool,
+    },
 }
 
 fn main() -> ExitCode {
@@ -51,6 +60,10 @@ fn main() -> ExitCode {
             xref,
             functions,
         } => run(&paths, jsonl, facts, xref, functions),
+        Command::Collect {
+            events,
+            summary_only,
+        } => run_collect(events.as_deref(), summary_only),
     }
 }
 
@@ -207,4 +220,71 @@ fn emit_human(
         }
     }
     out.flush()
+}
+
+/// `trit-re collect`：procscan 事件流 → 模块台账 + 采集汇总。
+///
+/// 事件流来自文件或 stdin（`trit-procscan … | trit-re collect` 是预期管线）；
+/// 输出走 stdout（逐行 JSONL），stderr 给一行人读摘要。
+fn run_collect(events: Option<&Path>, summary_only: bool) -> ExitCode {
+    let text = match events {
+        Some(path) if path.as_os_str() != "-" => match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) => {
+                eprintln!("读取事件流 {} 失败: {error}", path.display());
+                return ExitCode::from(1);
+            }
+        },
+        _ => {
+            let mut buffer = String::new();
+            if let Err(error) = io::Read::read_to_string(&mut io::stdin(), &mut buffer) {
+                eprintln!("读 stdin 失败: {error}");
+                return ExitCode::from(1);
+            }
+            buffer
+        }
+    };
+    let stdout = io::stdout();
+    let mut out = io::BufWriter::new(stdout.lock());
+    let reader = |path: &Path| std::fs::read(path);
+    let (rows, summary) = trit_re::collect(&text, reader);
+    let mut failed = false;
+    for line in &rows {
+        if summary_only && !line.contains("\"collect-summary\"") {
+            continue;
+        }
+        if let Err(error) = writeln!(out, "{line}") {
+            if error.kind() == io::ErrorKind::BrokenPipe {
+                return ExitCode::SUCCESS;
+            }
+            eprintln!("写 stdout 失败: {error}");
+            return ExitCode::from(1);
+        }
+    }
+    if let Err(error) = out.flush()
+        && error.kind() != io::ErrorKind::BrokenPipe
+    {
+        eprintln!("写 stdout 失败: {error}");
+        failed = true;
+    }
+    eprintln!(
+        "采集：模块事件 {} / 唯一 {}（去重 {}）→ 分析 {}，不可读 {}，非 module 事件 {}，坏行 {}，{} 字节，{} ms",
+        summary.module_events,
+        summary.modules,
+        summary.deduped,
+        summary.analyzed,
+        summary.unreadable,
+        summary.non_module_events,
+        summary.bad_lines,
+        summary.bytes,
+        summary.elapsed_ms
+    );
+    if summary.unreadable > 0 {
+        failed = true;
+    }
+    if failed {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
 }

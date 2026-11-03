@@ -1,7 +1,7 @@
 [
  {
   "name": "wasm: 未赋值的变量在 JSON 里不再标 X",
-  "file": "crates/trit-wasm/src/lib.rs",
+  "file": "crates/trit-wasm/src/js_args.rs",
   "old": ".unwrap_or_else(|| \"X\".to_string());",
   "new": ".unwrap_or_else(|| \"?\".to_string());",
   "pkg": "trit-wasm",
