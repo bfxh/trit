@@ -40,6 +40,14 @@ def fmt_cfg(cfg):
     return " · ".join(str(p) for p in parts)
 
 
+def family_line(fam):
+    """族在总表里的一行（live 只报数量；registered 报缺什么）。"""
+    st = fam.get("status", "registered")
+    if st == "live":
+        return f"- **{fam['title']}**（live）：清单 + 独立复核已接线；完整表见 `{fam.get('detail', '')}`"
+    return f"- **{fam['title']}**（registered，产物未接）：{fam.get('needs', '')}"
+
+
 def self_test():
     cfg = {"hidden": 32, "dil": 2, "pyr": 0, "accum": 1, "lr": 0.002, "epochs": 3}
     a = fmt_cfg(cfg)
@@ -50,13 +58,19 @@ def self_test():
     p = {pathlib.Path("E:/runs/x.dcn").resolve()}
     assert promotion_mark("E:/runs/x.dcn", p) == "✓"
     assert promotion_mark("E:/runs/y.dcn", p) == "—"
-    print("self-test 4/4 通过")
+    live = family_line({"title": "深度", "status": "live", "detail": "docs/D.md"})
+    assert "live" in live and "docs/D.md" in live
+    reg = family_line({"title": "部件", "status": "registered", "needs": "写清单"})
+    assert "registered" in reg and "写清单" in reg and "完整表" not in reg
+    print("self-test 6/6 通过")
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default="runs/depth")
     ap.add_argument("--out", default="docs/DEPTH-RESULTS.md")
+    ap.add_argument("--families", default="sweeps/families.json")
+    ap.add_argument("--umbrella", default="docs/RESULTS.md", help="总表输出（空串 = 不写）")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
@@ -140,6 +154,39 @@ def main():
     )
     pathlib.Path(args.out).write_text("\n".join(out) + "\n", encoding="utf-8")
     print(f"已写 {args.out}（{len(rows)} 行）")
+
+    if args.umbrella:
+        fam_path = pathlib.Path(args.families)
+        fams = []
+        if fam_path.exists():
+            fams = load(fam_path).get("families", [])
+        ok = sum(1 for _, v, _ in rows if v)
+        u = []
+        u.append("# 结果目录（自动生成）\n")
+        u.append(
+            "> 由 `scripts/depth_catalogue.py` 生成，**不要手改**。只有 `live` 的族有"
+            "机器可读清单 + 独立复核；`registered` 的族只登记协议与证据位置，"
+            "文档读数**不算复核**。\n"
+        )
+        u.append("## 已接线（live）\n")
+        live_rows = [f for f in fams if f.get("status") == "live"]
+        if not live_rows:
+            u.append("（无）\n")
+        for f in live_rows:
+            u.append(family_line(f))
+        u.append(f"\n  本次扫描：{len(rows)} 条运行，{ok} 条通过独立复核。\n")
+        u.append("## 已登记、产物未接（registered）\n")
+        reg_rows = [f for f in fams if f.get("status") != "live"]
+        if not reg_rows:
+            u.append("（无）\n")
+        for f in reg_rows:
+            u.append(family_line(f))
+            ev = f.get("evidence")
+            if ev:
+                u.append(f"  - 文档证据：{ev}")
+        u.append("")
+        pathlib.Path(args.umbrella).write_text("\n".join(u) + "\n", encoding="utf-8")
+        print(f"已写 {args.umbrella}（{len(live_rows)} live / {len(reg_rows)} registered）")
 
 
 if __name__ == "__main__":
