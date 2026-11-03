@@ -39,9 +39,14 @@
   bad_lines/bytes/elapsed_ms/errors）——路线图 N3 判据「一次采集 ≥ N 条
   记录、耗时与文件大小线性」直接从汇总行复算。
 - CLI：`trit-re collect [--events <file>] [--summary-only]`（缺省读 stdin）。
-- 实测冒烟：notepad.exe（356KB）28ms；测试 `tests/collect.rs` 4 条
-  （内存文件系统注入 read 闭包，不碰真实文件系统）+ 变异门沿用；
-  依赖补 `serde`/`serde_json`（事件流是外部输入，字段级取值）。
+- 依赖补 `serde`/`serde_json`（事件流是外部输入，字段级取值）。
+- 实测冒烟（真事件流 5 行：同一 `notepad.exe` 两次 + 一只不存在的 dll + 一条 `process`
+  事件 + 一行坏 JSON）⇒ 汇总行 `module_events=3 / modules=2 / deduped=1 / analyzed=1 /
+  unreadable=1 / non_module_events=1 / bad_lines=1 / bytes=356352 / elapsed_ms=22`，
+  `errors` 点名「系统找不到指定的文件。(os error 2)」；stdout 共 **622 行**（621 条台账 + 1 条汇总）。
+  同一份流把路径写成单反斜杠（JSON 非法转义）时 ⇒ `module_events=0 / bad_lines=3`，
+  一条模块都不解析、但计数照报 ⇒ 坏行上报不是纸面话。
+  测试 `tests/collect.rs` 4 条用内存文件系统注入 `read` 闭包，不碰真实文件系统。
 
 ### Added（trit-re：未归属调用点的逐条裁定）
 

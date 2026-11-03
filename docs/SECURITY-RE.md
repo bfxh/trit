@@ -200,7 +200,10 @@ PYAS 的 `FileEntropy` / 熵直方图 / `StringEntropy` / 叠加段特征与 EMB
 |---|---|---|
 | N1 | **真实语料校准**：PE x64 / PE ARM64 / ELF x64 / ELF ARM64 各一批 | 记录每个样本的 `sha256`；人工复核 xref 误报/漏报，给出比例；ARM64 至少一批非合成样本 |
 | N2 | **最小 CFG**：基本块 + 直接跳转边，替换启发式边界 | `unattributed_sites` 在 notepad/trit-re.exe 上下降；`fn_*` 判定不回归；PE32 共现从 `Unknown` 变为可判（2026-11-03：这半只已由 COFF 符号表达成，`.text` 里的启发式边界仍待 CFG 换掉） |
-| N3 | **接 `trit-procscan`**：现场模块路径 → 台账（✅ 2026-11-03：`trit-re collect` 吃 procscan JSONL 事件流，抽取 `type:"module"` 路径——去重保序、坏行/非 module 事件计数上报、单文件读取失败不中断；每模块产出台账行，末尾一条 `collect-summary`（模块数/去重/不可读/坏行/字节/`elapsed_ms`）——判据「一次采集 ≥ N 条记录」直接从汇总行复算，耗时线性性由两次采集的 bytes/elapsed 对比复算；管道式接入不建 crate 依赖：`trit-procscan … \| trit-re collect`。实测冒烟：notepad.exe 356KB 分析 28ms；测试 `tests/collect.rs` 4 条用内存文件系统） | 一次采集产出 ≥ N 条 `xref`/`function` 记录，耗时与文件大小线性 |
+| N3 | **接 `trit-procscan`**：现场模块路径 → 台账（✅ 2026-11-03：`trit-re collect` 吃 procscan JSONL 事件流，抽取 `type:"module"` 路径——去重保序、坏行/非 module 事件计数上报、单文件读取失败不中断；每模块产出台账行，末尾一条 `collect-summary`（模块数/去重/不可读/坏行/字节/`elapsed_ms`）——判据「一次采集 ≥ N 条记录」直接从汇总行复算，耗时线性性由两次采集的 bytes/elapsed 对比复算；管道式接入不建 crate 依赖：`trit-procscan … \| trit-re collect`。实测冒烟（真事件流 5 行）：`notepad.exe` 356 KB 分析 22 ms，汇总行给出
+`module_events=3/modules=2/deduped=1/analyzed=1/unreadable=1/non_module_events=1/bad_lines=1/bytes=356352`，
+stdout 622 行（621 条台账 + 1 条汇总）；路径写成 JSON 非法转义时 `module_events=0/bad_lines=3` 一条不解析但计数照报。
+测试 `tests/collect.rs` 4 条用内存文件系统） | 一次采集产出 ≥ N 条 `xref`/`function` 记录，耗时与文件大小线性 |
 | N4 | **YARA 子集的三值匹配** | 与官方 YARA 在同一批样本上的命中集合一致；"未命中"只在完整扫描后给出 |
 | — | **不做**：完整反汇编、符号执行、内核驱动、动态行为 | — |
 
