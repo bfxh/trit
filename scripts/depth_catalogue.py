@@ -55,11 +55,19 @@ def family_line(fam, stats=None):
     return f"- **{fam['title']}**（registered，产物未接）：{fam.get('needs', '')}"
 
 
-def verify_sibling(m):
-    """清单里登记的产物旁边的复核记录（PASS 才会存在）。"""
+def verify_sibling(m, manifest_path=None):
+    """复核记录的位置：有模型/部署包时取其旁边的 `.verify.json`；
+    否则按清单名派生（`pack.manifest.json` → `pack.verify.json`，纹理包用）。"""
     art = m.get("deploy") or m.get("model") or {}
     p = art.get("path")
-    return pathlib.Path(str(p) + ".verify.json") if p else None
+    if p:
+        return pathlib.Path(str(p) + ".verify.json")
+    if manifest_path is not None:
+        s = str(manifest_path)
+        suffix = ".manifest.json"
+        if s.endswith(suffix):
+            return pathlib.Path(s[: -len(suffix)] + ".verify.json")
+    return None
 
 
 def family_stats(fam):
@@ -73,7 +81,7 @@ def family_stats(fam):
             if not m or (kind and m.get("kind") != kind):
                 continue
             runs += 1
-            v = verify_sibling(m)
+            v = verify_sibling(m, mf)
             if v and v.exists():
                 ok += 1
     return runs, ok
@@ -101,7 +109,7 @@ def parts_rows(root):
             continue
         deploy = m.get("deploy") or {}
         sha = deploy.get("sha256")
-        vp = verify_sibling(m)
+        vp = verify_sibling(m, mf)
         v = load(vp) if vp and vp.exists() else None
         # 「通过复核」= 模型相同 **且** 复核记录确实锚在一份清单上（A1 是族进 live 的硬条件）
         same = (
@@ -182,6 +190,86 @@ def parts_doc(root):
     return out
 
 
+def texture_rows(root):
+    """(清单, 清单文件, 复核记录或 None, 复核是否锚在这份清单上)。"""
+    rows = []
+    for mf in sorted(root.rglob("*.manifest.json")) if root.exists() else []:
+        m = load(mf)
+        if not m or m.get("kind") != "texture-ttx-pack":
+            continue
+        vp = verify_sibling(m, mf)
+        v = load(vp) if vp and vp.exists() else None
+        import hashlib
+
+        sha = hashlib.sha256(mf.read_bytes()).hexdigest()
+        same = bool(v) and (v.get("manifest") or {}).get("sha256") == sha
+        rows.append((m, mf, v, same))
+    rows.sort(key=lambda r: r[0].get("created_unix", 0), reverse=True)
+    return rows
+
+
+def texture_doc(root):
+    rows = texture_rows(root)
+    out = []
+    out.append("# 纹理结果目录（自动生成）\n")
+    out.append(
+        "> 由 `scripts/depth_catalogue.py` 从 `runs/texture/*.manifest.json` 生成，**不要手改**。"
+        "每行的「复核」来自独立进程 `ttx-verify`：它重算 PNG 语料的内容级 SHA-256、索引 SHA、"
+        "逐图比 TTX 哈希/PSNR/最大误差、**重编码逐字节比对**，并重查采样一致性"
+        "（压缩域采样器在纹素中心必须等于整图解码，repeat 跨边界回环）。协议：**固定参数、"
+        "无逐图调参**；失败写 `pack.verify.reject.json`。\n"
+    )
+    out.append("## 结果族：纹理（TTX2 资产包）\n")
+    if not rows:
+        out.append("（还没有带清单的运行）\n")
+        return out
+    out.append(
+        "| 包 | 配置 | 语料（文件/字节） | 保真（PSNR / 最大误差） | 码率 bpp | 采样一致性 | 索引（前 12） | 来源 | 时间 |"
+    )
+    out.append("|---|---|---|---|---|---|---|---|---|")
+    for m, mf, v, same in rows:
+        cfg = m.get("config", {})
+        cfg_s = "ttx2" + (" + mip" if cfg.get("mip") else "") + f" · stride {cfg.get('sample_stride', '?')}"
+        d = m.get("data", {})
+        res = m.get("result", {})
+        psnr = res.get("psnr_mean")
+        fid = (
+            f"✅ {psnr:.2f} dB / {res.get('max_err', '?')}"
+            if isinstance(psnr, (int, float))
+            else f"✅ 无损 / {res.get('max_err', '?')}"
+        )
+        if same:
+            met = v.get("metrics", {})
+            samp = f"✅ {met.get('sampling_bad', '?')}/{met.get('sampling_checked', '?')} 不符"
+        elif v:
+            samp = "⚠️ 复核记录与清单不符"
+        else:
+            samp = "未复核"
+        bpp = res.get("bpp_mean")
+        bpp_s = f"{bpp:.3f}" if isinstance(bpp, (int, float)) else "?"
+        sha = str(m.get("index_sha256", ""))[:12]
+        commit = str(m.get("commit", "?")) + ("+dirty" if m.get("dirty") else "")
+        ts = m.get("created_unix", 0)
+        time_s = (
+            __import__("datetime")
+            .datetime.fromtimestamp(ts, __import__("datetime").UTC)
+            .strftime("%Y-%m-%d %H:%M UTC")
+            if ts
+            else "?"
+        )
+        name = f"{mf.parent.name}/pack"
+        out.append(
+            f"| `{name}` | {cfg_s} | {d.get('files', '?')} / {d.get('bytes', '?')} | {fid} | {bpp_s} | "
+            f"{samp} | `{sha}` | `{commit}` | {time_s} |"
+        )
+    out.append("")
+    out.append("## 如何复核一行\n")
+    out.append("```sh")
+    out.append("ttx-verify --pack <产包目录>   # 清单缺省 <包>/pack.manifest.json")
+    out.append("```\n")
+    return out
+
+
 def self_test():
     cfg = {"hidden": 32, "dil": 2, "pyr": 0, "accum": 1, "lr": 0.002, "epochs": 3}
     a = fmt_cfg(cfg)
@@ -208,6 +296,10 @@ def self_test():
     both = {"model": {"path": "E:/runs/m.dcn"}, "deploy": {"path": "E:/runs/d.tpm"}}
     assert verify_sibling(both) == pathlib.Path("E:/runs/d.tpm.verify.json"), verify_sibling(both)
     assert verify_sibling({}) is None
+    # 没有模型/部署包时按清单名派生（纹理包）
+    mf = pathlib.Path("runs/texture/x/pack.manifest.json")
+    assert verify_sibling({}, mf) == pathlib.Path("runs/texture/x/pack.verify.json")
+    assert verify_sibling(both, mf) == pathlib.Path("E:/runs/d.tpm.verify.json")
     # 复核记录必须同时满足：模型 SHA 相同 + 锚在清单上
     import tempfile
 
@@ -231,6 +323,38 @@ def self_test():
             encoding="utf-8",
         )
         assert parts_rows(root)[0][2] is True
+    # 纹理包：复核记录必须锚在**这份**清单的 SHA 上
+    import hashlib
+
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td) / "tex"
+        root.mkdir()
+        man = {
+            "kind": "texture-ttx-pack",
+            "created_unix": 1,
+            "index_sha256": "ab" * 32,
+            "config": {"mip": False, "sample_stride": 5},
+            "data": {"files": 2, "bytes": 100},
+            "result": {"psnr_mean": 30.0, "max_err": 9, "bpp_mean": 2.128},
+            "commit": "abc",
+            "dirty": False,
+        }
+        mf = root / "pack.manifest.json"
+        mf.write_text(json.dumps(man), encoding="utf-8")
+        assert texture_rows(root)[0][3] is False
+        sha = hashlib.sha256(mf.read_bytes()).hexdigest()
+        (root / "pack.verify.json").write_text(
+            json.dumps({"manifest": {"sha256": sha}, "metrics": {"sampling_bad": 0, "sampling_checked": 9}}),
+            encoding="utf-8",
+        )
+        assert texture_rows(root)[0][3] is True
+        doc = "\n".join(texture_doc(root))
+        assert "纹理结果目录" in doc and "✅ 30.00 dB / 9" in doc and "0/9" in doc, doc
+        (root / "pack.verify.json").write_text(
+            json.dumps({"manifest": {"sha256": "0" * 64}, "metrics": {}}), encoding="utf-8"
+        )
+        assert texture_rows(root)[0][3] is False
+        assert "复核记录与清单不符" in "\n".join(texture_doc(root))
     print("self-test 11/11 通过")
 
 
@@ -242,6 +366,10 @@ def main():
     ap.add_argument("--umbrella", default="docs/RESULTS.md", help="总表输出（空串 = 不写）")
     ap.add_argument("--parts-dir", default="runs/parts")
     ap.add_argument("--parts-out", default="docs/PARTS-RESULTS.md", help="部件族表（空串 = 不写）")
+    ap.add_argument("--texture-dir", default="runs/texture")
+    ap.add_argument(
+        "--texture-out", default="docs/TEXTURE-RESULTS.md", help="纹理族表（空串 = 不写）"
+    )
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
@@ -330,6 +458,11 @@ def main():
         pd = parts_doc(proot)
         pathlib.Path(args.parts_out).write_text("\n".join(pd) + "\n", encoding="utf-8")
         print(f"已写 {args.parts_out}（{len(parts_rows(proot))} 行）")
+    if args.texture_out:
+        troot = pathlib.Path(args.texture_dir)
+        td = texture_doc(troot)
+        pathlib.Path(args.texture_out).write_text("\n".join(td) + "\n", encoding="utf-8")
+        print(f"已写 {args.texture_out}（{len(texture_rows(troot))} 行）")
 
     if args.umbrella:
         fam_path = pathlib.Path(args.families)

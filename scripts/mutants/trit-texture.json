@@ -142,5 +142,21 @@
   "new": "            if false && index > 0 && layer.inputs != layers[index - 1].outputs {",
   "pkg": "trit-texture",
   "filter": "chain_dimensions_are_enforced_like_trit_net"
+ },
+ {
+  "name": "pack: 指纹不覆盖文件名（换名可骗过复核）",
+  "file": "crates/trit-texture/src/pack.rs",
+  "old": "        lines.push(format!(\"{name} {h}\"));",
+  "new": "        lines.push(format!(\"{h}\"));",
+  "pkg": "trit-texture",
+  "filter": "pack::tests::fingerprint_is_content_and_name_sensitive"
+ },
+ {
+  "name": "pack: 采样一致性不计数（「检查过了」是假的）",
+  "file": "crates/trit-texture/src/pack.rs",
+  "old": "            checked += 3;",
+  "new": "            checked += 0;",
+  "pkg": "trit-texture",
+  "filter": "pack::tests::encode_is_deterministic_and_metrics_are_sane"
  }
 ]

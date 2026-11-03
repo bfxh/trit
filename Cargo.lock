@@ -1946,6 +1946,7 @@ dependencies = [
  "image",
  "png",
  "pollster",
+ "trit-core",
  "trit-learn",
  "trit-look",
  "trit-train",

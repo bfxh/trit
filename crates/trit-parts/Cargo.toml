@@ -18,6 +18,8 @@ pollster = { version = "0.4", optional = true }
 bytemuck = { version = "1", features = ["derive"], optional = true }
 # STE / 量化口径的唯一来源：trit-learn 的 quant 模块（trit-train 只是它的再导出）。
 trit-learn.workspace = true
+# 结果指纹（SHA-256）的正本在 trit-core，纹理族的复核器共用同一份。
+trit-core.workspace = true
 # 观感/风格测量的正本（pin 到具体 rev，保证可复现）；本 crate publish=false
 trit-look = { version = "0.1", git = "https://github.com/bfxh/trit-look", rev = "f32001b446778d0e568b083c320ac5316384ff42" }
 # 训练数据是 PNG（384² RGB）；纯 Rust 解码，不借 Python。
