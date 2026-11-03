@@ -181,6 +181,8 @@ mod matmul_f32;
 #[cfg(feature = "gpu")]
 pub mod matmul_wf32;
 #[cfg(feature = "gpu")]
+pub mod matmul_wf32_plan;
+#[cfg(feature = "gpu")]
 mod popc;
 #[cfg(feature = "gpu")]
 pub mod render;
