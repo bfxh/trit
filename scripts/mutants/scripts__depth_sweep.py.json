@@ -34,5 +34,14 @@
     "pkg": "scripts/depth_sweep.py",
     "filter": "",
     "runner": "python"
+  },
+  {
+    "name": "gpu: 槽分配不轮转",
+    "file": "scripts/depth_sweep.py",
+    "old": "    return [pool[i % len(pool)] for i in range(max(1, jobs))]",
+    "new": "    return [pool[0] for i in range(max(1, jobs))]",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
   }
 ]
