@@ -32,7 +32,8 @@ fn usage() -> ! {
     eprintln!(
         "用法: parts-depth-gpu cnn-train --data <dir,...> [--holdout a,b] [--size 64] \
          [--hidden 32] [--dil 2] [--epochs 60] [--lr 0.01] [--stride 2] [--pyr 0] [--full] \
-         [--f32] [--seed 7] [--limit N] [--accum K] [--out model.dcn] [--parity N]\n\
+         [--f32] [--seed 7] [--limit N] [--accum K] [--out model.dcn] [--parity N] \
+         [--gpu-index N] [--list-gpus]\n\
          --accum K>1 改成 mini-batch SGD（每 K 个样本更新一次，梯度块内平均）；默认 1 = 与 CPU 逐样本同配方"
     );
     std::process::exit(2);
@@ -68,6 +69,13 @@ fn norm(y: &mut [f32], mask: &[bool]) -> (f32, f32) {
 
 fn main() {
     let argv: Vec<String> = std::env::args().skip(1).collect();
+    // 探测卡数不需要子命令，也要在 `--data` 解析之前处理。
+    if flag(&argv, "--list-gpus") {
+        for (i, name) in Gpu::adapters().iter().enumerate() {
+            println!("{i}: {name}");
+        }
+        return;
+    }
     if argv.first().map(String::as_str) != Some("cnn-train") {
         usage();
     }
@@ -120,7 +128,12 @@ fn main() {
     let mut net = DepthNet::with_inputs(3 + 3 * pyr, hidden, seed, ternary);
     net.set_dilation(dil);
 
-    let gpu = Gpu::new().expect("没有可用 GPU");
+    let gpu = match arg(&argv, "--gpu-index").and_then(|v| v.parse::<usize>().ok()) {
+        Some(i) => {
+            Gpu::new_on(i).unwrap_or_else(|| panic!("GPU {i} 不可用（先用 --list-gpus 看）"))
+        }
+        None => Gpu::new().expect("没有可用 GPU"),
+    };
     println!("使用适配器：{}", gpu.adapter);
     println!(
         "卷积深度头（GPU）：{} 权重，dil {dil}（补零核 {}），输出层补齐到 4 通道",

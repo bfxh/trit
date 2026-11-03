@@ -31,6 +31,7 @@ import glob
 import itertools
 import json
 import pathlib
+import queue
 import subprocess
 import sys
 import threading
@@ -93,6 +94,34 @@ def cli_map(cfg):
     return flags
 
 
+def slot_gpus(jobs, pool):
+    """给 `jobs` 个并发槽分配 GPU 下标（从 `pool` 里轮转、确定性）。"""
+    pool = list(pool) or [0]
+    return [pool[i % len(pool)] for i in range(max(1, jobs))]
+
+
+def parse_gpu_pool(text):
+    """从 `--list-gpus` 输出里挑可用卡：优先独显；没有独显就用非 CPU 的全部。"""
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    idx = [i for i, ln in enumerate(lines) if "(DiscreteGpu)" in ln]
+    if not idx:
+        idx = [i for i, ln in enumerate(lines) if "(Cpu)" not in ln]
+    return idx or [0]
+
+
+def detect_gpu_pool(bin_path):
+    """探测卡池；失败按 `[0]`。"""
+    try:
+        p = subprocess.run(
+            [str(bin_path), "--list-gpus"], capture_output=True, text=True, timeout=60
+        )
+        if p.returncode != 0:
+            return [0]
+        return parse_gpu_pool(p.stdout)
+    except Exception:
+        return [0]
+
+
 def run(cmd, log, timeout):
     t0 = time.time()
     with open(log, "w", encoding="utf-8") as f:
@@ -127,17 +156,21 @@ def evaluate_promotion(row, rule):
     return True, "达标"
 
 
-def run_one(cfg, tag, ctx):
+def run_one(cfg, tag, gpu, ctx):
     model = ctx["out_dir"] / f"{tag}.dcn"
     tlog = ctx["out_dir"] / f"{tag}.train.log"
     vlog = ctx["out_dir"] / f"{tag}.verify.log"
     train_cmd = [
         str(ctx["train_bin"]), "cnn-train", "--data", ctx["data_arg"],
-        "--holdout", ctx["hold"], "--out", str(model), *cli_map(cfg),
+        "--holdout", ctx["hold"], "--out", str(model), "--gpu-index", str(gpu),
+        *cli_map(cfg),
     ]
     out(f"[{tag}] 训练…")
     rc, secs = run(train_cmd, tlog, ctx["timeout"])
-    row = {"tag": tag, "config": cfg, "model": str(model), "train_rc": rc, "train_secs": round(secs, 1)}
+    row = {
+        "tag": tag, "config": cfg, "model": str(model), "gpu": gpu,
+        "train_rc": rc, "train_secs": round(secs, 1),
+    }
     if rc != 0:
         row["status"] = "train-failed"
         out(f"[{tag}] 训练失败 rc={rc}（日志 {tlog}）")
@@ -184,6 +217,19 @@ def self_test():
         ("缺指标", evaluate_promotion({"status": "verified"}, rule)[0], False),
         ("只给上限", evaluate_promotion(weak, {"max": 8.0})[0], True),
         ("只给基线", evaluate_promotion(good, {"beat_baseline_pp": 0.5})[0], True),
+        ("槽分配 4x2", slot_gpus(4, [0, 1]), [0, 1, 0, 1]),
+        ("槽分配 3x1", slot_gpus(3, [0]), [0, 0, 0]),
+        ("槽分配 2x[2,5]", slot_gpus(2, [2, 5]), [2, 5]),
+        (
+            "卡池：有独显只取独显",
+            parse_gpu_pool("0: A (DiscreteGpu)\n1: B (IntegratedGpu)\n2: W (Cpu)\n"),
+            [0],
+        ),
+        (
+            "卡池：没独显用非 CPU",
+            parse_gpu_pool("0: A (IntegratedGpu)\n1: W (Cpu)\n"),
+            [0],
+        ),
         (
             "自定义指标",
             evaluate_promotion(
@@ -206,7 +252,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--spec")
     ap.add_argument("--bin-dir", default="target/release")
-    ap.add_argument("--jobs", type=int, default=0, help="并发进程数（0 = 用规格里的 jobs，缺省 2）")
+    ap.add_argument("--jobs", type=int, default=0, help="并发进程数（0 = 用规格里的 jobs，缺省 max(2, 卡数)）")
+    ap.add_argument("--gpus", type=int, default=0, help="卡数（0 = 自动探测 --list-gpus）")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--timeout", type=int, default=3600, help="单个训练/复核的超时（秒）")
     ap.add_argument("--self-test", action="store_true")
@@ -225,20 +272,25 @@ def main():
     out_dir = pathlib.Path(spec.get("out_dir", "runs/depth/sweep"))
     out_dir.mkdir(parents=True, exist_ok=True)
     bin_dir = pathlib.Path(args.bin_dir)
-    jobs = max(1, args.jobs or int(spec.get("jobs", 2)))
+    pool = detect_gpu_pool(bin_dir / "parts-depth-gpu.exe")
+    if args.gpus > 0:
+        pool = pool[: args.gpus] or list(range(args.gpus))
+    jobs = max(1, args.jobs or int(spec.get("jobs", 0)) or max(2, len(pool)))
+    slots = slot_gpus(jobs, pool)
 
     configs = build_configs(base, grid)
     grid_keys = sorted(grid)
     data_arg = ",".join(data)
     hold = ",".join(holdout)
-    out(f"共 {len(configs)} 个配置；数据 {len(data)} 目录；并发 {jobs}；输出 {out_dir}")
+    out(f"共 {len(configs)} 个配置；数据 {len(data)} 目录；并发 {jobs}；卡池 {pool}（槽 {slots}）；输出 {out_dir}")
 
     if args.dry_run:
-        for cfg in configs:
+        for i, cfg in enumerate(configs):
             tag = tag_of(cfg, grid_keys, base)
             cmd = " ".join([
                 str(bin_dir / "parts-depth-gpu.exe"), "cnn-train", "--data", f"<{len(data)} dirs>",
-                "--holdout", hold, "--out", str(out_dir / f"{tag}.dcn"), *cli_map(cfg),
+                "--holdout", hold, "--out", str(out_dir / f"{tag}.dcn"),
+                "--gpu-index", str(slots[i % len(slots)]), *cli_map(cfg),
             ])
             print("  " + cmd)
         return
@@ -255,8 +307,19 @@ def main():
 
     t0 = time.time()
     rows = []
+    tokens = queue.Queue()
+    for g in slots:
+        tokens.put(g)
+
+    def task(cfg, tag):
+        g = tokens.get()
+        try:
+            return run_one(cfg, tag, g, ctx)
+        finally:
+            tokens.put(g)
+
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
-        futs = [ex.submit(run_one, cfg, tag_of(cfg, grid_keys, base), ctx) for cfg in configs]
+        futs = [ex.submit(task, cfg, tag_of(cfg, grid_keys, base)) for cfg in configs]
         for fut in concurrent.futures.as_completed(futs):
             rows.append(fut.result())
     wall = time.time() - t0
