@@ -42,6 +42,7 @@
  "script/ci_budget.py": 1,
  "script/ci_integrity.py": 1,
  "script/ci_scope.py": 1,
+ "script/claims_audit.py": 1,
  "script/deps.py": 1,
  "script/depth_catalogue.py": 1,
  "script/depth_sweep.py": 1,
