@@ -81,7 +81,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-circuit` | 组合网表 X 传播、stuck-at/桥接可测性、ATPG、STA-lite、技术映射、结构化 Verilog |
 | `trit-belnap` | Belnap 四值（T/F/B/N）的 opt-in 语义 |
 | `trit-wasm` | WASM 绑定：给 `playground/` 的求值、真值表、等价 |
-| `trit-bdd` | BDD（canonical）等价判定、三值量化 |
+| `trit-bdd` | BDD（canonical）等价判定、三值量化、精确模型计数（`count_models_bdd`） |
 | `trit-policy` | 三值决策表的构建期验证 |
 | `trit-schedule` | 三值依赖的静态 DAG 调度（True/False/Unknown） |
 | `trit-learn` | 三值训练原语与神经组件：量化、STE 三变体、scale 梯度；批量 QAT 全连接层、损失/激活/优化器（实验层共用） |
@@ -99,7 +99,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-attn` | 注意力 = 快权重 FFN 的双视角、三值整数关联记忆、可训练三值注意力块（注意力+残差+FFN，QAT + 全链 STE） | `trit-attn demo\|train` |
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |
-| `trit-count` | 三值表达式精确模型计数：dual-rail CNF + DPLL + 组件缓存；约束计数（`--constraint` 可重复）；策略文件计数（`--policy` 展开 definitions、assumptions 当约束）；≤12 变量与穷举逐条对拍 | `trit-count --expr "a & b" --constraint a` / `trit-count --policy examples/policy.json` |
+| `trit-count` | 三值表达式精确模型计数：dual-rail CNF + DPLL + 组件缓存；约束计数（`--constraint` 可重复）；策略文件计数（`--policy` 展开 definitions、assumptions 当约束）；DPLL / 穷举 / BDD 三方对拍（≤12 变量穷举，`--big` 在 n>12 只做 DPLL vs BDD） | `trit-count --expr "a & b" --constraint a` / `trit-count --policy examples/policy.json` / `trit-count --big 24` |
 | `trit-ops` | 三值推理算子（双导轨掩码 / tryte 查表 / 自动选核）：流式 15.8× f32、0.2 B/参数 | `bench`（`crates/trit-ops`） |
 | `trit-texture` | TT3/TTX 三值纹理容器：8×8 块 2.125 bpp、GF(3) CRC-16、CPU/GPU 解码；TTX3 万级档案（瓦片化/层级混搭/流式解码，10240² 基面） | `trit-texture` |
 | `trit-unsafe` | 用 K3 审 unsafe：Safe / Unknown / Risky 按 crate 合成；17 类高危形态 + extern 声明块 | `trit-unsafe` |

@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Added（trit-count：BDD 第三方计数）
+
+- 新模块 `crates/trit-bdd/src/count.rs`：`count_models_bdd` 在 dual-rail BDD 上数「全部约束为 `True` ∧ 表达式取目标值」的合法赋值，
+  合法域由 `valid()` 并入；未被引用的变量按 `Bdd::exact_cardinality` 的整个变量集自动计入（实测常量式在 2 个二值变量上 = 4、
+  2 个三值变量上 = 9，只引用 `a` 的二值式在 `a,b` 皆二值时 = 2）；超过 `u128` 报 `BddError::CountTooLarge`，不环绕。
+- 过程中的负结果：先按「BDD 只数到最高判定变量」补了 `2^free` 乘子，实测把 `a`（`b` 未引用）数成 4（正确 2）——
+  终端节点记的就是变量总数，乘子是重复计数，已删。
+- `trit-count` 侧新增 `count_models_bdd` 包装与 `CROSSCHECK_BDD_LIMITS`（20 万节点软预算）；
+  `crosscheck_under` 升级为 DPLL / 穷举 / BDD **三方**对拍，报告多出 `bdd_count`、`bdd_error`、`three_way`；
+  `crosscheck_under_with_limits` 让调用方自己给 BDD 预算 —— 被预算拦下时 `matches` 仍可成立、`three_way` 必须为假。
+- CLI：`--expr` 多报 `bdd_count` / `three_way` / `bdd_time`；`--policy` 每档变成 `dpll/exhaustive/bdd` 三个数；
+  新增 `--big [MAX_N]`：穷举跑不动的规模（n=13..）只做 DPLL vs BDD 两方对拍。
+- 读数：`--random --cases 2`（n=1..12，216 个 case）0 失败、0 拒绝；n=12 单例最慢 dpll 20.1 ms / 穷举 872 ms / bdd 4.0 ms。
+  `--big 24 --cases 2`（54 个 case）0 失败：n=13 max dpll 33.7 ms vs bdd 2.9 ms、n=21 51.1 vs 13.6 ms
+  ⇒ 在这批随机深度 4 的形状上 BDD 不比 DPLL 慢。等价树（`<=>`，全二值，n=8/12/14）与三值 `^` 树（n=8/12/16，
+  K3/B3 的 `^` 是强加＝二元合取）三方逐条一致；n=16 那个例子穷举 93.8 s vs dpll 4.1 ms。
+  **未证**：会让 BDD 指数爆炸的函数类（隐藏加权位、乘法）本机没构造，「BDD 更快」只对我测过的形状成立。
+- 测试：`trit-bdd` 22 → 28、`trit-count` 22 → 24（三方一致、超穷举规模两方一致、预算拒绝不算不一致）。
+- 变异：`trit-bdd` 4 → 9、`trit-count` 13 → 16；`mutation_check.py --pkg trit-bdd --pkg trit-count` **caught 25 / survived 0**。
+  已知缺口：把 `matches` 里「BDD 那一路」整条删掉的变异杀不掉——三方永远一致，没有注入错误计数的入口；登记时避开了这一条。
+- 依赖：`trit-count`（实验层，`publish = false`）新增依赖 `trit-bdd`（可发布），方向合法，`publish_graph` 通过。
+- 门禁：workspace test **1959 passed / 0 failed**、fmt / clippy / doc / module_budget / publish_graph /
+  test_surface（台账 22→28、22→24）/ ci_integrity / ci_budget / hazard_gate 全过。
+  跑第一轮 workspace test 时 E: 盘被 target 目录占满（`No space left on device` 伪装成 `trit-net` 链接错），
+  删掉自己已失效的 `E:/cargo-target/trit-count-wt` 后重跑才拿到读数——不是代码问题。
+
 ### Added（trit-count：策略文件计数）
 
 - 新模块 `crates/trit-count/src/policy.rs`：读取策略 JSON（`algebra` / `binary` / `assumptions` /
