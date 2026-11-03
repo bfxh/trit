@@ -11,7 +11,7 @@
 
 use std::path::PathBuf;
 
-use trit_parts::data::{Sample, frames, load_frame_sub};
+use trit_parts::data::{Sample, load_frame_sub};
 use trit_parts::gpu::Gpu;
 use trit_parts::loss::{depth_loss_grad, loss_and_grad, plane_weights};
 use trit_parts::net::Net;
@@ -26,7 +26,7 @@ mod selfcheck;
 
 use args::parse;
 use eval::eval_only;
-use selfcheck::{expand_scenes, selfcheck};
+use selfcheck::selfcheck;
 
 fn main() {
     let args = match parse() {
@@ -74,17 +74,7 @@ fn main() {
 
     // 数据：按目录列帧，--limit 截断。`--data` 可以是单场景（含 rgb/），
     // 也可以是「场景的父目录」（其子目录各含 rgb/）。
-    let mut paths: Vec<(PathBuf, PathBuf)> = Vec::new();
-    for root in &args.data {
-        for scene in expand_scenes(root) {
-            for p in frames(&scene) {
-                paths.push((scene.clone(), p));
-            }
-        }
-    }
-    if args.limit > 0 {
-        paths.truncate(args.limit);
-    }
+    let paths = trit_parts::partsrun::expand_frames(&args.data, args.limit);
     if paths.is_empty() {
         eprintln!("没有可用帧");
         std::process::exit(2);
@@ -200,6 +190,7 @@ fn main() {
     let mut aug = trit_parts::augment::Augment::new(args.seed ^ 0x5eed, args.augment_shift);
     let mut rng = resumed_rng.unwrap_or(args.seed | 1);
     let mut best = f32::INFINITY;
+    let mut last_loss = f32::NAN;
     let mut ma = f32::NAN; // 损失的指数移动平均（单帧噪声大，直接打最后一帧会误导）
     let mut dep_out: Option<trit_parts::loss::DepthOut>;
     for step in 0..args.steps {
@@ -319,6 +310,7 @@ fn main() {
             net.update(&gpu, lr, args.ste, args.adam, 1.0 / args.accum as f32);
         }
         best = best.min(out.loss);
+        last_loss = out.loss;
         ma = if ma.is_nan() {
             out.loss
         } else {
@@ -412,4 +404,155 @@ fn main() {
             }
         }
     }
+    if let Some(tpm) = &args.export_tpm {
+        let mut m = trit_parts::tpm::from_net(&net);
+        if args.tpm_channels > 0 {
+            m = m.truncate_head(args.tpm_channels);
+        }
+        if let Some(parent) = tpm.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent).ok();
+        }
+        m.save(tpm).unwrap_or_else(|e| {
+            eprintln!("导出部署包失败: {e}");
+            std::process::exit(1);
+        });
+        let n: usize = m.layers.iter().map(|l| l.q.len()).sum();
+        println!(
+            "部署包 {}（{} 层，{} 个三值权重）",
+            tpm.display(),
+            m.layers.len(),
+            n
+        );
+    }
+    if let Some(mp) = manifest_path(&args) {
+        write_manifest(
+            &mp,
+            &args,
+            &paths,
+            save_path.as_ref(),
+            resumed_step,
+            best,
+            last_loss,
+        );
+    }
+}
+
+/// 清单缺省落在部署包旁边（`<tpm>.manifest.json`），目录器按这个位置收。
+fn manifest_path(args: &args::Args) -> Option<PathBuf> {
+    if let Some(p) = &args.run_manifest {
+        return Some(p.clone());
+    }
+    args.export_tpm.as_ref().map(|t| {
+        let mut s = t.as_os_str().to_owned();
+        s.push(".manifest.json");
+        PathBuf::from(s)
+    })
+}
+
+fn jnum(v: f32) -> String {
+    if v.is_finite() {
+        format!("{v}")
+    } else {
+        "null".into()
+    }
+}
+
+fn write_manifest(
+    path: &PathBuf,
+    args: &args::Args,
+    frames: &[(PathBuf, PathBuf)],
+    state: Option<&PathBuf>,
+    resumed_step: u64,
+    best: f32,
+    last: f32,
+) {
+    use trit_parts::fingerprint::file_sha256;
+    use trit_parts::partsrun::{created_unix, git_out, json_str, norm};
+
+    let fp = match trit_parts::partsrun::fingerprint_train(frames, &args.seg_sub) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("数据指纹失败: {e}");
+            std::process::exit(1);
+        }
+    };
+    let commit = git_out(&["rev-parse", "--short", "HEAD"])
+        .trim()
+        .to_string();
+    let dirty = !git_out(&["status", "--porcelain"]).trim().is_empty();
+    let created = created_unix();
+    let argv: Vec<String> = std::env::args().skip(1).map(|a| json_str(&a)).collect();
+    let roots: Vec<String> = args.data.iter().map(|p| json_str(&norm(p))).collect();
+    let fp_json = format!(
+        "{{\"dirs\": {}, \"files\": {}, \"bytes\": {}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\", \"frames\": {}, \"roots\": [{}], \"limit\": {}}}",
+        fp.dirs,
+        fp.files,
+        fp.bytes,
+        fp.hash,
+        frames.len(),
+        roots.join(", "),
+        args.limit
+    );
+    let blob = |p: &PathBuf| {
+        format!(
+            "{{\"path\": {}, \"sha256\": \"{}\", \"bytes\": {}}}",
+            json_str(&norm(p)),
+            file_sha256(p).unwrap_or_default(),
+            std::fs::metadata(p).map(|m| m.len()).unwrap_or(0)
+        )
+    };
+    let model = match state {
+        Some(p) if p.exists() => blob(p),
+        _ => "null".into(),
+    };
+    let deploy = match &args.export_tpm {
+        Some(p) if p.exists() => {
+            let mut b = blob(p);
+            b.pop();
+            format!("{b}, \"channels\": {}}}", args.tpm_channels)
+        }
+        _ => "null".into(),
+    };
+    let lr_final = match args.lr_final {
+        Some(v) => jnum(v),
+        None => "null".into(),
+    };
+    let config = format!(
+        "{{\"steps\": {}, \"resumed_from\": {resumed_step}, \"lr\": {}, \"lr_final\": {lr_final}, \"accum\": {}, \"res\": {}, \"k\": {}, \"seed\": {}, \"width\": {}, \"seg_sub\": {}, \"bnd_label\": {}, \"bnd_weight\": {}, \"id_weight\": {}, \"depth_planes\": {}, \"residual\": {}, \"adam\": {}, \"batch\": {}}}",
+        args.steps,
+        jnum(args.lr),
+        args.accum,
+        args.res,
+        args.k,
+        args.seed,
+        jnum(args.width),
+        json_str(&args.seg_sub),
+        args.bnd_label,
+        jnum(args.bnd_weight),
+        jnum(args.id_weight),
+        args.depth_planes,
+        args.residual,
+        args.adam,
+        args.batch
+    );
+    let body = format!(
+        "{{\n  \"schema\": 1,\n  \"kind\": \"parts-train\",\n  \"created_unix\": {created},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {config},\n  \"data\": {fp_json},\n  \"model\": {model},\n  \"deploy\": {deploy},\n  \"result\": {{\"final_loss\": {}, \"best_loss\": {}, \"steps\": {}}}\n}}\n",
+        json_str(&commit),
+        argv.join(", "),
+        jnum(last),
+        jnum(best),
+        resumed_step + args.steps as u64
+    );
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        std::fs::create_dir_all(parent).ok();
+    }
+    std::fs::write(path, body).unwrap_or_else(|e| {
+        eprintln!("写清单失败 {}: {e}", path.display());
+        std::process::exit(1);
+    });
+    println!("清单 {}", path.display());
 }

@@ -26,23 +26,19 @@ fn usage() -> ! {
     std::process::exit(2)
 }
 
+// 枚举规则只有一份（partsrun）：评测与指纹必须看到同一批文件。
 fn scene_dirs(root: &Path) -> Vec<PathBuf> {
-    let mut v: Vec<PathBuf> = std::fs::read_dir(root)
-        .unwrap_or_else(|e| {
-            eprintln!("读不了 {}: {e}", root.display());
-            std::process::exit(2)
-        })
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| {
-            p.is_dir()
-                && p.file_name()
-                    .and_then(|s| s.to_str())
-                    .is_some_and(|s| s.starts_with("scene") || s.starts_with("pt"))
-        })
-        .collect();
-    v.sort();
-    v
+    trit_parts::partsrun::scene_dirs(root).unwrap_or_else(|e| {
+        eprintln!("{e}");
+        std::process::exit(2)
+    })
+}
+
+fn seg_files(rd: &Path) -> Vec<PathBuf> {
+    trit_parts::partsrun::seg_files(rd).unwrap_or_else(|e| {
+        eprintln!("{e}");
+        std::process::exit(2)
+    })
 }
 
 /// 从 `instances.json` 里取 `(first_id, last_id)` 区间（实例 id = 区间序号 + 1）。
@@ -77,20 +73,6 @@ fn num(s: &str) -> Option<u32> {
     let t = s.trim_start();
     let end = t.find(|c: char| !c.is_ascii_digit()).unwrap_or(t.len());
     t[..end].parse().ok()
-}
-
-fn seg_files(rd: &Path) -> Vec<PathBuf> {
-    let mut v: Vec<PathBuf> = std::fs::read_dir(rd.join("seg"))
-        .unwrap_or_else(|e| {
-            eprintln!("读不了 {}: {e}", rd.join("seg").display());
-            std::process::exit(2)
-        })
-        .filter_map(|e| e.ok())
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == "npy"))
-        .collect();
-    v.sort();
-    v
 }
 
 fn prep(argv: &[String]) {

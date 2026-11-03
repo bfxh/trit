@@ -67,19 +67,10 @@ pub(crate) fn selfcheck(dir: &std::path::Path) {
 
 /// `--data` / `--eval` 的目录：单场景（含 `rgb/`）或「场景的父目录」（子目录各含 `rgb/`）。
 pub(crate) fn expand_scenes(root: &std::path::Path) -> Vec<PathBuf> {
-    if root.join("rgb").is_dir() {
-        return vec![root.to_path_buf()];
-    }
-    let mut subs: Vec<PathBuf> = std::fs::read_dir(root)
-        .map(|it| {
-            it.filter_map(|e| e.ok())
-                .map(|e| e.path())
-                .filter(|p| p.join("rgb").is_dir())
-                .collect()
-        })
-        .unwrap_or_default();
-    subs.sort();
-    if std::env::var("PARTSTRAIN_DEBUG").is_ok() {
+    // 枚举规则只有一份（partsrun）：训练清单与复核器必须看到同一批场景。
+    let single = root.join("rgb").is_dir();
+    let subs = trit_parts::partsrun::expand_scenes(root);
+    if !single && std::env::var("PARTSTRAIN_DEBUG").is_ok() {
         eprintln!(
             "[debug] expand_scenes {} → {} 个子场景",
             root.display(),
