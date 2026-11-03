@@ -1,6 +1,6 @@
 //! 三值量化与反量化。
 //!
-//! scale 的三种口径与量化/反量化本体拆在 [`scale`] 子模块里，公开路径不变
+//! scale 的三种口径与量化/反量化本体拆在 `scale` 子模块里，公开路径不变
 //! （`quant::Scheme`、`quant::scale_for`、`quant::quantize` 由这里转发）。
 
 use crate::trit::Trit;
