@@ -45,6 +45,7 @@
  "script/merge_forensics.py": 1,
  "script/module_budget.py": 1,
  "script/mutation_check.py": 1,
+ "script/mutation_sweep.py": 1,
  "script/oops.py": 1,
  "script/pr_hygiene.py": 1,
  "script/publish.sh": 0,
