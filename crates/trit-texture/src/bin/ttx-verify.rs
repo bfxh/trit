@@ -264,23 +264,21 @@ fn run() -> Result<i32, String> {
         t.reencode_mismatch,
         t.read_errors
     );
-    let vp = arg(&argv, "--json-out")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            pack.join(if pass {
-                "pack.verify.json"
-            } else {
-                "pack.verify.reject.json"
-            })
-        });
-    // 同一产包里 PASS 与 reject 记录互斥：否则旧记录会让目录器把失败读成通过。
-    let stale = pack.join(if pass {
-        "pack.verify.reject.json"
-    } else {
-        "pack.verify.json"
+    // 只有写默认位置时才维护「PASS/reject 互斥」；--json-out 是旁路记录，不碰正式记录。
+    let custom = arg(&argv, "--json-out").map(PathBuf::from);
+    let vp = custom.clone().unwrap_or_else(|| {
+        pack.join(if pass {
+            "pack.verify.json"
+        } else {
+            "pack.verify.reject.json"
+        })
     });
-    if stale != vp {
-        let _ = std::fs::remove_file(&stale);
+    if custom.is_none() {
+        let _ = std::fs::remove_file(pack.join(if pass {
+            "pack.verify.reject.json"
+        } else {
+            "pack.verify.json"
+        }));
     }
     std::fs::write(&vp, body).map_err(|e| format!("写复核记录 {}: {e}", vp.display()))?;
     println!(

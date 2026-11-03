@@ -220,28 +220,25 @@ fn main() {
         jnum(closed),
         json_str(&norm_root(&recheck))
     );
-    let vp = arg(&argv, "--json-out")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            let mut s = model.as_os_str().to_owned();
-            s.push(if pass {
-                ".verify.json"
-            } else {
-                ".verify.reject.json"
-            });
-            PathBuf::from(s)
+    // 只有写默认位置时才维护「PASS/reject 互斥」；--json-out 是旁路记录，不碰正式记录。
+    let custom = arg(&argv, "--json-out").map(PathBuf::from);
+    let vp = custom.clone().unwrap_or_else(|| {
+        let mut s = model.as_os_str().to_owned();
+        s.push(if pass {
+            ".verify.json"
+        } else {
+            ".verify.reject.json"
         });
-    let stale = {
+        PathBuf::from(s)
+    });
+    if custom.is_none() {
         let mut s = model.as_os_str().to_owned();
         s.push(if pass {
             ".verify.reject.json"
         } else {
             ".verify.json"
         });
-        PathBuf::from(s)
-    };
-    if stale != vp {
-        let _ = std::fs::remove_file(&stale);
+        let _ = std::fs::remove_file(PathBuf::from(s));
     }
     std::fs::write(&vp, body).unwrap_or_else(|e| {
         eprintln!("写复核记录 {}: {e}", vp.display());
