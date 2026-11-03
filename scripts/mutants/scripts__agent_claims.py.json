@@ -11,8 +11,8 @@
  {
   "name": "agent-claims: release 的两个筛选条件是或不是且（一次删光别人的声明）",
   "file": "scripts/agent_claims.py",
-  "old": "            if not ((not who or c[\"who\"] == who) and (not cid or c[\"id\"] == cid))",
-  "new": "            if not ((who and c[\"who\"] == who) or (cid and c[\"id\"] == cid))",
+  "old": "                    and (not cid or c[\"id\"] == cid))]",
+  "new": "                    or (not cid or c[\"id\"] == cid))]",
   "pkg": "scripts/agent_claims.py",
   "filter": "",
   "runner": "python"
@@ -274,6 +274,78 @@
   "file": "scripts/agent_claims.py",
   "old": "    return 1 if verdict == \"false\" else 0",
   "new": "    return 0",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 归不出的 who 也放行（release 永远收不掉）",
+  "old": "    if not who:\n        _say(f\"FAIL --who {raw_who!r}",
+  "new": "    if False:\n        _say(f\"FAIL --who {raw_who!r}",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 新声明不设 TTL 上限（过期声明长期占位）",
+  "old": "    if ttl > TTL_CAP_MIN:",
+  "new": "    if False:",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 同名 id 不判红（按 id 收声明会收错人）",
+  "old": "        if len(owners) > 1:",
+  "new": "        if False:",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 旧 who 不给归一建议（精确匹配的坑留给人踩）",
+  "old": "        elif fixed != claim[\"who\"]:",
+  "new": "        elif False:",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 历史行 ttl 超上限不出声",
+  "old": "        if claim[\"ttl\"] > TTL_CAP_MIN:",
+  "new": "        if False:",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: renew 不计数（看不出有没有在续期）",
+  "old": "        claim[\"renewed\"] = claim.get(\"renewed\", 0) + 1",
+  "new": "        claim[\"renewed\"] = claim.get(\"renewed\", 0)",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: renew 绕过 TTL 上限（一次占到底又回来了）",
+  "old": "    if ttl and ttl > TTL_CAP_MIN:",
+  "new": "    if False:",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: release 不归一 who（旧写法收不掉自己的声明）",
+  "old": "    who_key = canonical_who(who)",
+  "new": "    who_key = \"\"",
+  "file": "scripts/agent_claims.py",
   "pkg": "scripts/agent_claims.py",
   "filter": "",
   "runner": "python"
