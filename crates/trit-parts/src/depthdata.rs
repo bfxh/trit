@@ -245,50 +245,78 @@ pub fn eval_holdout(
     }
 }
 
-/// 数据集指纹：场景目录名 + 三个子目录里的文件名与大小（不读像素）。
+/// 数据集指纹（**内容级**）：对训练实际会用到的帧（`0..=24` 按 `stride`）逐文件流式
+/// SHA-256，再对「(场景名, 子目录, 帧号, 文件哈希)」的规范序列做一次总哈希。
 ///
-/// 能抓「换了一版渲染/改名/帧数变化」；抓不到「同尺寸同帧数但内容变了」——
-/// 那需要全量像素哈希，代价按 GB 计，留给需要时再加。
-pub fn data_fingerprint(dirs: &[std::path::PathBuf]) -> (usize, usize, String) {
-    use crate::fingerprint::sha256_hex;
+/// 覆盖 `rgb/`、`depth/`、`seg/` 三个子目录（训练读的就是这三类）；`meta/` 不参与
+/// （本训练器不用相机）。结果对目录名与文件内容都敏感，同尺寸同帧数的内容替换也能抓到。
+///
+/// 返回 `(目录数, 文件数, 总字节数, sha256)`。代价：按实际数据读一遍（本机 ~2 GB 约 6 s）。
+pub fn data_fingerprint(dirs: &[std::path::PathBuf], stride: usize) -> (usize, usize, u64, String) {
+    use crate::fingerprint::{file_sha256, sha256_hex};
     let mut names: Vec<String> = dirs
         .iter()
         .map(|d| d.to_string_lossy().into_owned())
         .collect();
     names.sort();
-    let mut acc: Vec<u8> = Vec::new();
+
+    // 按规范顺序列出条目（目录名一行，随后每个文件的「子目录/帧号」标记），
+    // 文件内容由线程池并行哈希；合并时按原顺序拼接 ⇒ 结果与线程数/调度无关。
+    enum Item {
+        Dir(String),
+        File(String, std::path::PathBuf),
+    }
+    let mut items: Vec<Item> = Vec::new();
+    let mut bytes = 0u64;
     let mut files = 0usize;
     for d in &names {
-        acc.extend_from_slice(d.as_bytes());
-        acc.push(b'\n');
-        for sub in ["rgb", "depth", "seg"] {
-            acc.extend_from_slice(sub.as_bytes());
-            acc.push(b':');
-            let mut entries: Vec<(String, u64)> =
-                std::fs::read_dir(std::path::Path::new(d).join(sub))
-                    .map(|it| {
-                        it.filter_map(|e| e.ok())
-                            .map(|e| {
-                                (
-                                    e.file_name().to_string_lossy().into_owned(),
-                                    e.metadata().map(|m| m.len()).unwrap_or(0),
-                                )
-                            })
-                            .collect()
-                    })
-                    .unwrap_or_default();
-            entries.sort();
-            files += entries.len();
-            for (n, sz) in entries {
-                acc.extend_from_slice(n.as_bytes());
-                acc.push(b'\n');
-                acc.extend_from_slice(sz.to_string().as_bytes());
-                acc.push(b'\n');
+        items.push(Item::Dir(d.clone()));
+        for fr in (0..=24).step_by(stride.max(1)) {
+            for (sub, ext) in [("rgb", "png"), ("depth", "npy"), ("seg", "npy")] {
+                let p = std::path::Path::new(d)
+                    .join(sub)
+                    .join(format!("{fr:06}.{ext}"));
+                if let Ok(meta) = std::fs::metadata(&p) {
+                    bytes += meta.len();
+                    files += 1;
+                    items.push(Item::File(format!("{sub}/{fr:06}"), p));
+                }
             }
-            acc.push(b'\n');
         }
     }
-    (names.len(), files, sha256_hex(&acc))
+
+    let nthreads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+        .clamp(1, 8);
+    let chunk = items.len().div_ceil(nthreads).max(1);
+    let mut parts: Vec<Vec<String>> = Vec::new();
+    std::thread::scope(|s| {
+        let mut handles = Vec::new();
+        for c in items.chunks(chunk) {
+            handles.push(s.spawn(move || {
+                c.iter()
+                    .map(|it| match it {
+                        Item::Dir(d) => d.clone(),
+                        Item::File(tag, p) => match file_sha256(p) {
+                            Ok(h) => format!("{tag} {h}"),
+                            Err(_) => format!("{tag} unreadable"),
+                        },
+                    })
+                    .collect::<Vec<String>>()
+            }));
+        }
+        for h in handles {
+            parts.push(h.join().unwrap_or_default());
+        }
+    });
+
+    let mut acc: Vec<u8> = Vec::new();
+    for line in parts.iter().flatten() {
+        acc.extend_from_slice(line.as_bytes());
+        acc.push(b'\n');
+    }
+    (names.len(), files, bytes, sha256_hex(&acc))
 }
 
 #[cfg(test)]
@@ -306,5 +334,34 @@ mod tests {
         ));
         assert!(!is_held(p, &["scene0051".to_string()]));
         assert!(!is_held(p, &[]));
+    }
+
+    /// 内容级指纹：同内容两次一致；**同尺寸改一个字节也必须变**。
+    #[test]
+    fn data_fingerprint_is_content_sensitive() {
+        let base = std::env::temp_dir().join(format!("trit_dp_{}", std::process::id()));
+        let scene = base.join("scene0000");
+        for sub in ["rgb", "depth", "seg"] {
+            std::fs::create_dir_all(scene.join(sub)).unwrap();
+        }
+        let rgb = scene.join("rgb").join("000000.png");
+        let dep = scene.join("depth").join("000000.npy");
+        let seg = scene.join("seg").join("000000.npy");
+        std::fs::write(&rgb, b"rgb-bytes").unwrap(); // 9
+        std::fs::write(&dep, b"depth-bytes").unwrap(); // 11
+        std::fs::write(&seg, b"seg-bytes").unwrap(); // 9
+
+        let (dirs, files, bytes, h1) = data_fingerprint(std::slice::from_ref(&scene), 2);
+        let (_, _, _, h1b) = data_fingerprint(std::slice::from_ref(&scene), 2);
+        assert_eq!((dirs, files, bytes), (1, 3, 29));
+        assert_eq!(h1, h1b, "同内容两次结果必须一致");
+
+        // 长度不变、内容改一个字节
+        std::fs::write(&dep, b"depth-byteZ").unwrap();
+        let (_, _, bytes2, h2) = data_fingerprint(std::slice::from_ref(&scene), 2);
+        assert_eq!(bytes, bytes2, "字节数不变");
+        assert_ne!(h1, h2, "内容变了指纹必须变");
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

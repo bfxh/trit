@@ -372,7 +372,10 @@ fn write_manifest(
     held: usize,
 ) {
     let model_sha = trit_parts::fingerprint::file_sha256(out).unwrap_or_default();
-    let (dirs, files, data_hash) = trit_parts::depthdata::data_fingerprint(data);
+    let stride = arg(argv, "--stride")
+        .and_then(|v| v.parse::<usize>().ok())
+        .unwrap_or(2);
+    let (dirs, files, bytes, data_hash) = trit_parts::depthdata::data_fingerprint(data, stride);
     let commit = git_out(&["rev-parse", "--short", "HEAD"])
         .trim()
         .to_string();
@@ -402,9 +405,9 @@ fn write_manifest(
     );
     let argv_json: Vec<String> = argv.iter().map(|a| jstr(a)).collect();
     let hold_json: Vec<String> = holdout.iter().map(|a| jstr(a)).collect();
-    let bytes = std::fs::metadata(out).map(|m| m.len()).unwrap_or(0);
+    let model_bytes = std::fs::metadata(out).map(|m| m.len()).unwrap_or(0);
     let body = format!(
-        "{{\n  \"schema\": 1,\n  \"kind\": \"depth-cnn-train\",\n  \"created_unix\": {created},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {config},\n  \"data\": {{\"dirs\": {dirs}, \"files\": {files}, \"hash\": \"sha256:{data_hash}\", \"train\": {train}, \"held\": {held}}},\n  \"holdout\": [{}],\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"bytes\": {bytes}}},\n  \"result\": {{\"final_mse\": {last_mse}, \"epochs\": {epochs}}}\n}}\n",
+        "{{\n  \"schema\": 1,\n  \"kind\": \"depth-cnn-train\",\n  \"created_unix\": {created},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {config},\n  \"data\": {{\"dirs\": {dirs}, \"files\": {files}, \"bytes\": {bytes}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{data_hash}\", \"train\": {train}, \"held\": {held}}},\n  \"holdout\": [{}],\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"bytes\": {model_bytes}}},\n  \"result\": {{\"final_mse\": {last_mse}, \"epochs\": {epochs}}}\n}}\n",
         jstr(&commit),
         argv_json.join(", "),
         hold_json.join(", "),
