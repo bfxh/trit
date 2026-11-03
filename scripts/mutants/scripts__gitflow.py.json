@@ -727,5 +727,32 @@
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "gitflow: 形状不认识也当竞态一路空睡（10 分钟不吭声）",
+  "file": "scripts/gitflow.py",
+  "old": "        if \"形状不认识\" in state:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 形状不认识时返回成功（把读不懂当没检查）",
+  "file": "scripts/gitflow.py",
+  "old": "            print(\"checks 输出形状不认识 ⇒ 判红（这不是竞态，重试不会变好）：\" + state)\n            return 1",
+  "new": "            print(\"checks 输出形状不认识 ⇒ 判红（这不是竞态，重试不会变好）：\" + state)\n            return 0",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 认错的标记不是形状那一类（永久错误被当偶发）",
+  "file": "scripts/gitflow.py",
+  "old": "        if \"形状不认识\" in state:",
+  "new": "        if \"竞态\" in state:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
  }
 ]
