@@ -105,7 +105,7 @@ fn main() {
 
     let r = eval_holdout(&net, &es, size);
     let model_sha = trit_parts::fingerprint::file_sha256(&dcn).unwrap_or_default();
-    let (dirs, files, data_hash) = data_fingerprint(&data);
+    let (dirs, files, bytes, data_hash) = data_fingerprint(&data, stride);
     let commit = git_out(&["rev-parse", "--short", "HEAD"])
         .trim()
         .to_string();
@@ -125,10 +125,12 @@ fn main() {
         r.delta,
         r.deploy_pct
     );
-    println!("模型 sha256 {model_sha}｜数据 sha256 {data_hash}（{dirs} 目录 / {files} 文件）");
+    println!(
+        "模型 sha256 {model_sha}｜数据 sha256 {data_hash}（{dirs} 目录 / {files} 文件 / {bytes} 字节，内容级）"
+    );
 
     let body = format!(
-        "{{\n  \"schema\": 1,\n  \"kind\": \"depth-holdout-verify\",\n  \"created_unix\": {created},\n  \"commit\": {},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\"}},\n  \"data\": {{\"dirs\": {dirs}, \"files\": {files}, \"hash\": \"sha256:{data_hash}\"}},\n  \"holdout\": [{}],\n  \"size\": {size},\n  \"metrics\": {{\"frames\": {}, \"pixels\": {}, \"mae_log\": {}, \"rel_pct\": {}, \"base_pct\": {}, \"delta\": {}, \"deploy_pct\": {}}}\n}}\n",
+        "{{\n  \"schema\": 1,\n  \"kind\": \"depth-holdout-verify\",\n  \"created_unix\": {created},\n  \"commit\": {},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\"}},\n  \"data\": {{\"dirs\": {dirs}, \"files\": {files}, \"bytes\": {bytes}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{data_hash}\"}},\n  \"holdout\": [{}],\n  \"size\": {size},\n  \"metrics\": {{\"frames\": {}, \"pixels\": {}, \"mae_log\": {}, \"rel_pct\": {}, \"base_pct\": {}, \"delta\": {}, \"deploy_pct\": {}}}\n}}\n",
         jstr(&commit),
         jstr(&dcn.to_string_lossy()),
         holdout
@@ -151,7 +153,9 @@ fn main() {
     let verdict = if mp.exists() {
         let m = std::fs::read_to_string(&mp).unwrap_or_default();
         let ok_model = m.contains(&format!("\"sha256\": \"{model_sha}\""));
-        let ok_data = m.contains(&format!("\"hash\": \"sha256:{data_hash}\""));
+        // 只认内容级算法标记：旧清单（名+大小）与新指纹不可比，必须重训/重写清单。
+        let ok_data = m.contains("\"algo\": \"sha256-content-v1\"")
+            && m.contains(&format!("\"hash\": \"sha256:{data_hash}\""));
         if ok_model && ok_data {
             println!("复核 PASS：模型与数据指纹与清单一致");
             "pass"
