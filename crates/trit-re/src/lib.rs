@@ -16,6 +16,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod collect;
 pub mod elf;
 pub mod entropy;
 pub mod functions;
@@ -29,6 +30,7 @@ pub mod verdict;
 pub mod witness;
 pub mod xref;
 
+pub use collect::{CollectSummary, collect, module_paths};
 pub use functions::{FuncSource, Function, FunctionCalls, FunctionReport};
 pub use triage::{Triage, analyze};
 pub use verdict::{Hypothesis, Judgment, default_hypotheses, evaluate};

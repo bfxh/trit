@@ -24,6 +24,14 @@
   "filter": "parses_clr_and_tls_facts"
  },
  {
+  "name": "trit-re: COFF 函数类型过滤失效（非函数符号混进边界表）",
+  "file": "crates/trit-re/src/pe/coff.rs",
+  "old": "        let is_function = section_number > 0 && (type_field >> 8) == 0x02; // IMAGE_SYM_DTYPE_FUNCTION（字段值 = 2 << 8 = 0x0200）",
+  "new": "        let is_function = section_number > 0;",
+  "pkg": "trit-re",
+  "filter": "coff_symbols_give_pe32_exact_boundaries"
+ },
+ {
   "name": "trit-re: EAX 的短 add 编码不认",
   "file": "crates/trit-re/src/xref/x86.rs",
   "old": "    if register == 0 && data.get(at) == Some(&0x05) {",
@@ -86,6 +94,22 @@
   "new": "    for _ in 0..1 {",
   "pkg": "trit-re",
   "filter": "parses_clr_and_tls_facts"
+ },
+ {
+  "name": "trit-re: collect 去重失效（同模块按加载次数重复分析、deduped 不计数）",
+  "file": "crates/trit-re/src/collect.rs",
+  "old": "        if seen.insert(path.clone()) {",
+  "new": "        if seen.insert(path.clone()) || true {",
+  "pkg": "trit-re",
+  "filter": "module_paths_dedup_keep_order_and_count_noise"
+ },
+ {
+  "name": "trit-re: collect 坏 JSON 行静默丢弃（纪律说不静默，但计数不加）",
+  "file": "crates/trit-re/src/collect.rs",
+  "old": "            Err(_) => {\n                bad_lines += 1;\n                continue;\n            }",
+  "new": "            Err(_) => {\n                continue;\n            }",
+  "pkg": "trit-re",
+  "filter": "module_paths_dedup_keep_order_and_count_noise"
  },
  {
   "name": "trit-re: debug_frame 地址宽度写死 4",
@@ -198,6 +222,14 @@
   "new": "                        crate::xref::SiteKind::Call => unattributed_jumps += 1,",
   "pkg": "trit-re",
   "filter": "unattributed_sites_are_split_by_kind"
+ },
+ {
+  "name": "trit-re: 未归属裁定的非执行判断写反（误报候选被判成边界问题）",
+  "file": "crates/trit-re/src/functions/mod.rs",
+  "old": "                    let (ruling, counter) = if !in_exec {",
+  "new": "                    let (ruling, counter) = if in_exec {",
+  "pkg": "trit-re",
+  "filter": "unattributed_sites_get_per_site_rulings"
  },
  {
   "name": "trit-re: 熵符号写反",
