@@ -6,6 +6,7 @@ pub mod algebra;
 pub mod ast;
 pub mod bits;
 pub mod bulk;
+pub mod fingerprint;
 pub mod limits;
 pub mod parallel;
 pub mod parser;

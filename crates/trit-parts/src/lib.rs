@@ -19,7 +19,8 @@ pub mod depthdata;
 pub mod depthnet;
 pub mod depthunet;
 pub mod diffuse;
-pub mod fingerprint;
+// 结果指纹的正本在 trit-core（纹理族也要用，避免第二份 SHA-256）；这里保持旧路径可用。
+pub use trit_core::fingerprint;
 pub mod fuse;
 pub mod geo;
 pub mod inst;
