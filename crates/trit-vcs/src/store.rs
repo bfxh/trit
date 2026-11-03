@@ -495,14 +495,14 @@ mod tests {
             .map(str::to_string)
             .collect();
         for line in lines.iter_mut() {
-            if let Ok((hex, entry)) = serde_json::from_str::<(String, PackEntry)>(line) {
-                if hex == a_chunk.to_hex() {
-                    let patched = PackEntry {
-                        offset: other.1.offset,
-                        len: other.1.len,
-                    };
-                    *line = serde_json::to_string(&(hex, patched)).unwrap();
-                }
+            if let Ok((hex, _)) = serde_json::from_str::<(String, PackEntry)>(line)
+                && hex == a_chunk.to_hex()
+            {
+                let patched = PackEntry {
+                    offset: other.1.offset,
+                    len: other.1.len,
+                };
+                *line = serde_json::to_string(&(hex, patched)).unwrap();
             }
         }
         fs::write(
