@@ -34,5 +34,50 @@
     "pkg": "scripts/depth_sweep.py",
     "filter": "",
     "runner": "python"
+  },
+  {
+    "name": "gpu: 槽分配不轮转",
+    "file": "scripts/depth_sweep.py",
+    "old": "    return [pool[i % len(pool)] for i in range(max(1, jobs))]",
+    "new": "    return [pool[0] for i in range(max(1, jobs))]",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "resume: 清单配置永远算匹配",
+    "file": "scripts/depth_sweep.py",
+    "old": "    return all(k in manifest_cfg and manifest_cfg[k] == v for k, v in cfg.items())",
+    "new": "    return True",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "resume: 不看复核记录就算完成",
+    "file": "scripts/depth_sweep.py",
+    "old": "    if verify_enabled and not pathlib.Path(str(model) + \".verify.json\").exists():",
+    "new": "    if False:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "retry: 失败不重试",
+    "file": "scripts/depth_sweep.py",
+    "old": "    return rc != 0 and not rejected",
+    "new": "    return rc == 0 and not rejected",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "resume: 不清理残留进程",
+    "file": "scripts/depth_sweep.py",
+    "old": "        if isinstance(st, dict) and st.get(\"state\") == \"running\" and st.get(\"pid\")",
+    "new": "        if False",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
   }
 ]
