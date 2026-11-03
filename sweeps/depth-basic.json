@@ -1,13 +1,44 @@
 {
   "family": "depth",
-  "data_globs": ["E:/trit-data/s1/mat60/renders/scene*"],
+  "data_globs": [
+    "E:/trit-data/s1/mat60/renders/scene*"
+  ],
   "holdout": [
-    "scene0050", "scene0051", "scene0052", "scene0053", "scene0054",
-    "scene0055", "scene0056", "scene0057", "scene0058", "scene0059"
+    "scene0050",
+    "scene0051",
+    "scene0052",
+    "scene0053",
+    "scene0054",
+    "scene0055",
+    "scene0056",
+    "scene0057",
+    "scene0058",
+    "scene0059"
   ],
   "out_dir": "runs/depth/sweep-basic",
-  "base": { "size": 64, "dil": 2, "accum": 8, "lr": 0.002, "epochs": 3, "stride": 2 },
-  "grid": { "hidden": [32, 64, 128], "lr": [0.001, 0.002] },
+  "base": {
+    "size": 64,
+    "dil": 2,
+    "accum": 8,
+    "lr": 0.002,
+    "epochs": 3,
+    "stride": 2
+  },
+  "grid": {
+    "hidden": [
+      32,
+      64,
+      128
+    ],
+    "lr": [
+      0.001,
+      0.002
+    ]
+  },
   "verify": true,
-  "catalogue": "docs/DEPTH-RESULTS.md"
+  "catalogue": "docs/DEPTH-RESULTS.md",
+  "jobs": 2,
+  "promote": {
+    "max": 8.6
+  }
 }

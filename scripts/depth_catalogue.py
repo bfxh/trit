@@ -54,6 +54,14 @@ def main():
         rows.append((m, v, rj))
     rows.sort(key=lambda r: r[0].get("created_unix", 0), reverse=True)
 
+    promoted = {}
+    for pf in root.rglob("promoted.json"):
+        d = load(pf)
+        if not d:
+            continue
+        for tag in d.get("promoted", []):
+            promoted[(pf.parent / f"{tag}.dcn").resolve()] = d.get("rule")
+
     out = []
     out.append("# 深度头结果目录（自动生成）\n")
     out.append(
@@ -65,8 +73,8 @@ def main():
     if not rows:
         out.append("（还没有带清单的运行）\n")
     else:
-        out.append("| 模型 | 配置 | 数据（目录/文件） | 训练 MSE | 留出复核（形状对齐 / δ<1.25 / 常数基线） | 指纹（模型前 12） | 来源 | 时间 |")
-        out.append("|---|---|---|---|---|---|---|---|")
+        out.append("| 模型 | 配置 | 数据（目录/文件） | 训练 MSE | 留出复核（形状对齐 / δ<1.25 / 常数基线） | 晋级 | 指纹（模型前 12） | 来源 | 时间 |")
+        out.append("|---|---|---|---|---|---|---|---|---|")
         for m, v, rj in rows:
             d = m.get("data", {})
             cfg = fmt_cfg(m.get("config", {}))
@@ -92,9 +100,11 @@ def main():
                 else "?"
             )
             name = pathlib.Path(m.get("model", {}).get("path", "?")).name
+            mp = pathlib.Path(m.get("model", {}).get("path", "")).resolve()
+            promo = "✓" if mp in promoted else "—"
             out.append(
                 f"| `{name}` | {cfg} | {d.get('dirs', '?')} / {d.get('files', '?')} | {mse_s} | "
-                f"{check} | `{sha}` | `{commit}` | {time_s} |"
+                f"{check} | {promo} | `{sha}` | `{commit}` | {time_s} |"
             )
     out.append("")
     out.append("## 如何复核一行\n")
