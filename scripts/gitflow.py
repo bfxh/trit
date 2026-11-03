@@ -1486,7 +1486,7 @@ def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30)
             print(f"CI 全绿，已 squash 合入 {branch} 并删分支")
             return 0
         reason = " ".join((merge.stdout or "").split())[:220]
-        if "not mergeable" in reason or "not up to date" in reason:
+        if any(mark in reason for mark in MERGE_BLOCKED_FOREVER):
             print("合并判红（重试没用，这种要先并主干）：" + reason)
             print("  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply")
             return 1
@@ -1512,7 +1512,10 @@ def status(repo: str) -> int:
     return 0
 
 
-# 带值的 flag：它们的值是裸词，取位置参数时必须连 flag 一起跳掉。
+# 只有这几类失败是"重试也不会变好"的：要先并主干或有冲突。
+# 反过来，`base branch policy prohibits the merge` 多半只是必需检查还没落定 ⇒ 继续等。
+# 实测教训：#234 同步 main 之后 watcher 被这句误判成"永远合不上"而提前退出（见 A291）。
+MERGE_BLOCKED_FOREVER = ("not up to date", "cannot be cleanly created", "merge conflict")
 VALUE_FLAGS = ("--repo", "--remote", "--base", "--from", "--path", "--stale-days", "--wait-minutes")
 
 def positional_args(tokens: list[str], value_flags: tuple[str, ...]) -> list[str]:
@@ -2066,6 +2069,47 @@ def self_test() -> int:
                 rc_sync = main(["pr", "sync", "--repo", "o/r"])
             check("其余用法入口同样带 FAIL 前缀", (rc_sync, buf3.getvalue().startswith("FAIL 用法")), (2, True))
         finally:
+            policy_rows = globals()["check_rows"]
+            real_watch = merge_real
+            policy_msg = ("X Pull request o/r#34 is not mergeable: the base branch policy "
+                          "prohibits the merge. To have the pull request merged after all the "
+                          "requirements have been met, add the `--auto` flag.")
+            behind_msg = ("X Pull request o/r#34 is not mergeable: the head branch is not up to "
+                          "date with the base branch.")
+            try:
+                globals()["check_rows"] = lambda repo, branch: ([{"name": "CI", "bucket": "pass"}], "")
+
+                def gh_policy(args):
+                    if args[:2] == ["pr", "checks"] and "--watch" in args:
+                        return _CP(args, 0, "", "")
+                    if args[:2] == ["pr", "checks"]:
+                        return _CP(args, 0, json.dumps([{"name": "CI", "bucket": "pass"}]), "")
+                    return _CP(args, 1, policy_msg, "")
+
+                globals()["gh"] = gh_policy
+                wait_clock = _Clock()
+                globals()["time"] = wait_clock
+                rc_policy = real_watch("feat/x", "o/r", attempts=3, pause=2)
+                check("policy prohibits 只是检查没落定 ⇒ 继续按预算重试，不许提前放弃",
+                      (rc_policy, wait_clock.slept), (1, [2, 2]))
+
+                def gh_behind(args):
+                    if args[:2] == ["pr", "checks"] and "--watch" in args:
+                        return _CP(args, 0, "", "")
+                    if args[:2] == ["pr", "checks"]:
+                        return _CP(args, 0, json.dumps([{"name": "CI", "bucket": "pass"}]), "")
+                    return _CP(args, 1, behind_msg, "")
+
+                globals()["gh"] = gh_behind
+                forever_clock = _Clock()
+                globals()["time"] = forever_clock
+                check("head 落后主干 ⇒ 仍然立刻判红、一次都不重试",
+                      (real_watch("feat/x", "o/r", attempts=3, pause=2), forever_clock.slept),
+                      (1, []))
+            finally:
+                globals()["check_rows"] = policy_rows
+                globals()["time"] = real_time
+                globals()["gh"] = gh_real_merge
             globals()["watch_and_merge"] = merge_real
             globals()["gh"] = gh_real_merge
 
