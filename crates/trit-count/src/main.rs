@@ -1,11 +1,16 @@
 use std::collections::HashSet;
 use std::process::ExitCode;
+use std::time::Instant;
 
 use trit_core::algebra::Algebra;
 use trit_core::ast::Expr;
 use trit_core::parser::Parser;
 use trit_core::value::Ternary;
-use trit_count::{crosscheck, crosscheck_under, oracle};
+use trit_count::{
+    count_models_under, crosscheck, crosscheck_under,
+    oracle::{self, count_exhaustive_under},
+    policy::Policy,
+};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -18,6 +23,9 @@ fn main() -> ExitCode {
             .and_then(|value| value.parse().ok())
             .unwrap_or(2);
         return run_random(cases);
+    }
+    if let Some(path) = flag_value(&args, "--policy") {
+        return run_policy(&path);
     }
 
     let Some(source) = flag_value(&args, "--expr") else {
@@ -114,6 +122,89 @@ fn main() -> ExitCode {
         ExitCode::SUCCESS
     } else {
         eprintln!("MISMATCH");
+        ExitCode::from(1)
+    }
+}
+
+fn run_policy(path: &str) -> ExitCode {
+    let policy = match Policy::load(path) {
+        Ok(policy) => policy,
+        Err(error) => {
+            eprintln!("策略读取失败: {error}");
+            return ExitCode::from(2);
+        }
+    };
+    let mut binary: Vec<String> = policy.binary.iter().cloned().collect();
+    binary.sort();
+    println!(
+        "policy={} alg={} vars={:?} binary={:?}",
+        path,
+        policy.algebra.as_str(),
+        policy.vars,
+        binary
+    );
+    let assumption_true = policy.count_assumptions();
+    println!(
+        "assumptions={} assumption_true={assumption_true}",
+        policy.assumptions.len()
+    );
+
+    let mut failures = 0usize;
+    for (index, assertion) in policy.assertions.iter().enumerate() {
+        let mut parts = Vec::new();
+        let mut total = 0u128;
+        let mut matches = true;
+        let mut dpll_time = 0.0f64;
+        let mut exhaustive_time = 0.0f64;
+        for target in [Ternary::False, Ternary::True, Ternary::Unknown] {
+            let start = Instant::now();
+            let dpll = count_models_under(
+                &assertion.expr,
+                &policy.assumptions,
+                &policy.vars,
+                &policy.binary,
+                policy.algebra,
+                target,
+            )
+            .count;
+            dpll_time = dpll_time.max(start.elapsed().as_secs_f64() * 1e3);
+
+            let start = Instant::now();
+            let exhaustive = count_exhaustive_under(
+                &assertion.expr,
+                &policy.assumptions,
+                &policy.vars,
+                &policy.binary,
+                policy.algebra,
+                target,
+            );
+            exhaustive_time = exhaustive_time.max(start.elapsed().as_secs_f64() * 1e3);
+
+            matches &= dpll == exhaustive;
+            total += dpll;
+            let label = match target {
+                Ternary::False => "false",
+                Ternary::True => "true",
+                Ternary::Unknown => "unknown",
+            };
+            parts.push(format!("{label}={dpll}/{exhaustive}"));
+        }
+        matches &= total == assumption_true;
+        if !matches {
+            failures += 1;
+        }
+        println!(
+            "[{index}] {name} {parts} total={total} match={matches} dpll={dpll_time:.3}ms exh={exhaustive_time:.3}ms",
+            index = index + 1,
+            name = assertion.name,
+            parts = parts.join(" "),
+        );
+    }
+
+    if failures == 0 {
+        ExitCode::SUCCESS
+    } else {
+        eprintln!("MISMATCH: {failures} 条断言与穷举不一致");
         ExitCode::from(1)
     }
 }
@@ -245,8 +336,11 @@ fn usage() {
          用法:\n\
            trit-count --expr \"a & b\" [--constraint \"a\"] [--constraint \"!c\"] [--vars a,b,c] [--binary a] [--alg k3|l3|b3] [--target true|false|unknown]\n\
            trit-count --random [--cases N]\n\
+           trit-count --policy examples/policy.json\n\
          \n\
          说明:\n\
+           --policy 读取策略 JSON，展开 definitions，把 assumptions 当约束，逐条断言统计\n\
+           true/false/unknown 的赋值数，并与穷举对拍（总数必须等于前提为真的赋值数）。\n\
            --constraint 可重复；每条约束必须为 true，计数只在满足全部约束的赋值上进行。\n\
            --vars 省略时从表达式与约束收集；显式列出未使用变量会按其域计数。\n\
            --binary 中的变量只取 false/true；其余变量取 false/true/unknown。\n\
