@@ -38,6 +38,7 @@ mod endpoints;
 pub mod error;
 pub mod gguf;
 pub mod mip;
+pub mod pack;
 #[cfg(feature = "png")]
 pub mod pngio;
 pub mod preview;
