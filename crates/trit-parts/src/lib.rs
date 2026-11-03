@@ -15,6 +15,7 @@ pub mod augment;
 pub mod backward;
 pub mod data;
 pub mod depth;
+pub mod depthdata;
 pub mod depthnet;
 pub mod diffuse;
 pub mod fuse;
@@ -41,6 +42,8 @@ pub mod weights;
 
 #[cfg(feature = "gpu")]
 pub mod backend_wgpu;
+#[cfg(feature = "gpu")]
+pub mod depthgpu;
 #[cfg(feature = "gpu")]
 pub mod expand;
 #[cfg(feature = "gpu")]

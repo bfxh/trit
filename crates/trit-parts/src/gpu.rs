@@ -226,6 +226,47 @@ impl Gpu {
         }
     }
 
+    /// 一次同步读回多段缓冲（每段 `(buf, n)`）。训练时把多次 `read` 并成一次 map，
+    /// 数值与逐段读完全相同，只是少几次「提交 + 等待 + 映射」。
+    pub fn read_many(&self, items: &[(&wgpu::Buffer, usize)]) -> Vec<Vec<f32>> {
+        if items.is_empty() {
+            return Vec::new();
+        }
+        self.flush_batch();
+        let total: usize = items.iter().map(|(_, n)| *n).sum();
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("staging-many"),
+            size: (total * 4) as u64,
+            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        let mut enc = self.device.create_command_encoder(&Default::default());
+        let mut off = 0u64;
+        for (buf, n) in items {
+            let b = (*n * 4) as u64;
+            enc.copy_buffer_to_buffer(buf, 0, &staging, off, b);
+            off += b;
+        }
+        self.queue.submit([enc.finish()]);
+        let slice = staging.slice(..);
+        slice.map_async(wgpu::MapMode::Read, |_| {});
+        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
+        let data = slice.get_mapped_range().expect("map").to_vec();
+        let mut out = Vec::with_capacity(items.len());
+        let mut o = 0usize;
+        for (_, n) in items {
+            let v = data[o * 4..(o + n) * 4]
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .map(|c| f32::from_le_bytes(*c))
+                .collect();
+            out.push(v);
+            o += n;
+        }
+        out
+    }
+
     /// 把一段 dispatch 记进当前会话（没有会话时自成一次提交）。
     pub(crate) fn record(&self, f: impl FnOnce(&mut wgpu::ComputePass<'_>)) {
         if let Some(enc) = self.batch.borrow_mut().as_mut() {

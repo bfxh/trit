@@ -63,6 +63,11 @@ path = "src/bin/parts_depth.rs"
 required-features = ["gpu"]
 
 [[bin]]
+name = "parts-depth-gpu"
+path = "src/bin/parts_depth_gpu.rs"
+required-features = ["gpu"]
+
+[[bin]]
 name = "parts-guard"
 path = "src/bin/parts_guard.rs"
 
