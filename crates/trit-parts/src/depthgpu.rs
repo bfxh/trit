@@ -12,6 +12,7 @@
 
 use wgpu::Buffer;
 
+use crate::depthkern::{FlatAcc, Pipes, acc_add6, dx_masked};
 use crate::depthnet::DepthNet;
 use crate::gpu::Gpu;
 use crate::tconv::Conv;
@@ -201,51 +202,9 @@ impl GConv {
     /// `conv_dx4m`：与 `conv_dx4` 同式，额外按 ReLU 输出把输入梯度逐通道置零。
     fn dx_masked(&self, gpu: &Gpu, pipes: &Pipes, y: &Buffer, dy: &Buffer, size: u32) -> Buffer {
         let d = self.dev.as_ref().expect("层未上传");
-        let u = ConvU8 {
-            h: size,
-            w: size,
-            cin: self.cin,
-            cout: self.gcout,
-            kk: self.kk,
-            pad: self.kk / 2,
-            mode: 0,
-            relu: 0,
-        };
-        let ub = gpu.ubuf(&u);
-        let out = gpu.empty_out((size * size * self.cin) as usize, "dg-dx");
-        let bg = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &pipes.dx4m_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: ub.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: dy.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: y.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: d.wf_t.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: out.as_entire_binding(),
-                },
-            ],
-        });
-        let n4 = size * size * self.cin / 4;
-        gpu.record(|pass| {
-            pass.set_pipeline(&pipes.dx4m_pl);
-            pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(256, crate::gpu::div_up(n4, crate::gpu::ROW), 1);
-        });
-        out
+        dx_masked(
+            gpu, pipes, self.cin, self.gcout, self.kk, size, dy, y, &d.wf_t,
+        )
     }
 
     /// 把设备梯度读回并**按 CPU 口径还原**：`dw_cpu = scale·dE`、`db_cpu = scale·db`、
@@ -309,152 +268,6 @@ impl GConv {
 
 fn align4(v: u32) -> u32 {
     v.div_ceil(COUT_ALIGN) * COUT_ALIGN
-}
-
-// ---------------------------------------------------------------- 融合内核（自包含）
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct ConvU8 {
-    h: u32,
-    w: u32,
-    cin: u32,
-    cout: u32,
-    kk: u32,
-    pad: u32,
-    mode: u32,
-    relu: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-struct AccU {
-    total: u32,
-    nseg: u32,
-    _a: u32,
-    _b: u32,
-    seg: [[u32; 4]; 8],
-}
-
-fn depth_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Storage { read_only },
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
-    }
-}
-
-fn depth_unif(binding: u32) -> wgpu::BindGroupLayoutEntry {
-    wgpu::BindGroupLayoutEntry {
-        binding,
-        visibility: wgpu::ShaderStages::COMPUTE,
-        ty: wgpu::BindingType::Buffer {
-            ty: wgpu::BufferBindingType::Uniform,
-            has_dynamic_offset: false,
-            min_binding_size: None,
-        },
-        count: None,
-    }
-}
-
-/// 深度头自己的两条管线（不改共享 shader，避免影响 parts 训练路径）。
-struct Pipes {
-    dx4m_pl: wgpu::ComputePipeline,
-    dx4m_bgl: wgpu::BindGroupLayout,
-    acc_pl: wgpu::ComputePipeline,
-    acc_bgl: wgpu::BindGroupLayout,
-}
-
-impl Pipes {
-    fn new(device: &wgpu::Device) -> Self {
-        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("depth-fused"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders_depth.wgsl").into()),
-        });
-        let mk = |entries: &[wgpu::BindGroupLayoutEntry]| {
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries,
-            })
-        };
-        let dx4m_bgl = mk(&[
-            depth_unif(0),
-            depth_entry(1, true),
-            depth_entry(2, true),
-            depth_entry(3, true),
-            depth_entry(4, false),
-        ]);
-        let acc_bgl = mk(&[
-            depth_unif(0),
-            depth_entry(1, true),
-            depth_entry(2, true),
-            depth_entry(3, true),
-            depth_entry(4, true),
-            depth_entry(5, true),
-            depth_entry(6, true),
-            depth_entry(7, false),
-        ]);
-        let pipe = |label: &str, bgl: &wgpu::BindGroupLayout| {
-            let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some(label),
-                bind_group_layouts: &[Some(bgl)],
-                immediate_size: 0,
-            });
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some(label),
-                layout: Some(&pl),
-                module: &module,
-                entry_point: Some(label),
-                compilation_options: Default::default(),
-                cache: None,
-            })
-        };
-        Self {
-            dx4m_pl: pipe("conv_dx4m", &dx4m_bgl),
-            dx4m_bgl,
-            acc_pl: pipe("acc_add6", &acc_bgl),
-            acc_bgl,
-        }
-    }
-}
-
-/// 6 段梯度共用的扁平累加器（`--accum K`）：加一次、读一次、清一次。
-struct FlatAcc {
-    buf: Option<Buffer>,
-    total: usize,
-    lens: [usize; 6],
-    offs: [usize; 6],
-}
-
-impl FlatAcc {
-    fn new() -> Self {
-        Self {
-            buf: None,
-            total: 0,
-            lens: [0; 6],
-            offs: [0; 6],
-        }
-    }
-
-    fn init(&mut self, gpu: &Gpu, lens: [usize; 6]) {
-        self.lens = lens;
-        let mut off = 0usize;
-        for (o, len) in self.offs.iter_mut().zip(&lens) {
-            *o = off;
-            off += len;
-        }
-        self.total = off;
-        self.buf = Some(gpu.zeros(off, "dg-acc"));
-    }
-
-    fn buf(&self) -> &Buffer {
-        self.buf.as_ref().expect("累加器未初始化")
-    }
 }
 
 /// 整个深度头的 GPU 镜像。
@@ -521,7 +334,7 @@ impl DepthGpu {
         if self.pipes.is_none() {
             self.pipes = Some(Pipes::new(&gpu.device));
         }
-        if self.acc.buf.is_none() {
+        if !self.acc.ready() {
             self.acc.init(
                 gpu,
                 [
@@ -542,73 +355,15 @@ impl DepthGpu {
 
     /// 6 段梯度并成 **1 次 dispatch** 加进扁平累加器。
     fn acc_add6(&self, gpu: &Gpu, srcs: [&Buffer; 6]) {
-        let p = self.pipes();
-        let mut seg = [[0u32; 4]; 8];
-        for (s, (o, l)) in seg.iter_mut().zip(self.acc.offs.iter().zip(&self.acc.lens)) {
-            *s = [*o as u32, *l as u32, 0, 0];
-        }
-        let ub = gpu.ubuf(&AccU {
-            total: self.acc.total as u32,
-            nseg: 6,
-            _a: 0,
-            _b: 0,
-            seg,
-        });
-        let bg = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &p.acc_bgl,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: ub.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: srcs[0].as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: srcs[1].as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: srcs[2].as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: srcs[3].as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 5,
-                    resource: srcs[4].as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 6,
-                    resource: srcs[5].as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 7,
-                    resource: self.acc.buf().as_entire_binding(),
-                },
-            ],
-        });
-        gpu.record(|pass| {
-            pass.set_pipeline(&p.acc_pl);
-            pass.set_bind_group(0, &bg, &[]);
-            pass.dispatch_workgroups(
-                256,
-                crate::gpu::div_up(self.acc.total as u32, crate::gpu::ROW),
-                1,
-            );
-        });
+        acc_add6(gpu, self.pipes(), self.acc.buf(), &self.acc, srcs);
     }
 
     fn acc_read(&self, gpu: &Gpu) -> Vec<f32> {
-        gpu.read(self.acc.buf(), self.acc.total)
+        gpu.read(self.acc.buf(), self.acc.total())
     }
 
     fn acc_clear(&self, gpu: &Gpu) {
-        gpu.clear(self.acc.buf(), self.acc.total);
+        gpu.clear(self.acc.buf(), self.acc.total());
     }
 
     fn pack(&self, x: &[Vec<f32>]) -> Vec<f32> {
@@ -797,7 +552,7 @@ impl DepthGpu {
         let t3 = std::time::Instant::now();
         let r = self.acc_read(gpu);
         self.acc_clear(gpu);
-        let (o, l) = (self.acc.offs, self.acc.lens);
+        let (o, l) = (self.acc.offs(), self.acc.lens());
         let inv = 1.0 / k as f32;
         let scale = |v: Vec<f32>| -> Vec<f32> { v.into_iter().map(|x| x * inv).collect() };
         let (g1, gb1, s1) = self.c1.pull(&r[o[0]..o[0] + l[0]], &r[o[1]..o[1] + l[1]]);

@@ -45,6 +45,8 @@ pub mod backend_wgpu;
 #[cfg(feature = "gpu")]
 pub mod depthgpu;
 #[cfg(feature = "gpu")]
+mod depthkern;
+#[cfg(feature = "gpu")]
 pub mod expand;
 #[cfg(feature = "gpu")]
 pub mod forward;
