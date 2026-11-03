@@ -1,11 +1,16 @@
 //! 生成器四层形状上的「三值权重 × f32 激活」GPU vs CPU 对比。
 //!
+//! 两种口径分开看：
+//! - 端到端：含上传与回读，`run*` / `plan.run` 的墙钟；
+//! - 内核段：`plan.run_timed` 里夹在 submit + poll 之间的时间，不含建缓冲、不含回读。
+//!
 //! 运行：
 //!   cargo run -p trit-gpu --features gpu --release --example wf32_bench
 
 use std::time::Instant;
 
 use trit_gpu::matmul_wf32::Wf32Gpu;
+use trit_gpu::matmul_wf32_plan::{Wf32Kernel, Wf32Plan, run_batch};
 
 fn pack_rows(vals: &[i32], k: usize) -> (Vec<u32>, Vec<u32>) {
     let words = k.div_ceil(32);
@@ -40,84 +45,179 @@ fn cpu_wf32(m: usize, n: usize, k: usize, a: &[i32], b: &[f32]) -> f32 {
     sink
 }
 
-fn main() {
-    let Some(gpu) = Wf32Gpu::new() else {
-        eprintln!("没有可用 GPU adapter");
-        return;
-    };
-    println!("layer shapes (m rows, n pixels, k cols); GPU run 含上传/读回");
-    let shapes = [
-        ("conv1 256x64 k9216", 256usize, 64usize, 9216usize),
-        ("conv2 128x256 k2304", 128, 256, 2304),
-        ("conv3 64x1024 k576", 64, 1024, 576),
-        ("fc 16384x1 k128", 16384, 1, 128),
-    ];
-    for (name, m, n, k) in shapes {
+struct Layer {
+    name: &'static str,
+    m: usize,
+    n: usize,
+    k: usize,
+    a: Vec<i32>,
+    b: Vec<f32>,
+    ap: Vec<u32>,
+    an: Vec<u32>,
+}
+
+impl Layer {
+    fn build(name: &'static str, m: usize, n: usize, k: usize) -> Self {
         let words = k.div_ceil(32);
         let a: Vec<i32> = (0..m * k).map(|i| ((i * 7 + 1) % 3) as i32 - 1).collect();
         let b: Vec<f32> = (0..n * words * 32)
             .map(|i| ((i * 13 % 17) as f32) / 17.0 - 0.5)
             .collect();
         let (ap, an) = pack_rows(&a, k);
-
-        let _ = gpu.run(m, n, k, &ap, &an, &b);
-        let _ = gpu.run_reg4(m, n, k, &ap, &an, &b);
-        if m >= 16 && n >= 16 {
-            let _ = gpu.run_tiled(m, n, k, &ap, &an, &b);
+        Self {
+            name,
+            m,
+            n,
+            k,
+            a,
+            b,
+            ap,
+            an,
         }
-        let t0 = Instant::now();
+    }
+
+    fn cpu_ms(&self) -> f64 {
+        let t = Instant::now();
+        let sink = cpu_wf32(self.m, self.n, self.k, &self.a, &self.b);
+        let _ = sink;
+        t.elapsed().as_secs_f64() * 1000.0
+    }
+
+    fn ns_per_mac(&self, ms: f64) -> f64 {
+        ms * 1e6 / (self.m * self.n * self.k) as f64
+    }
+}
+
+/// 单个持久计划：缓冲一次分配，随后每轮只换激活。
+fn bench_plan(layer: &Layer, plan: &Wf32Plan<'_>, reps: usize) {
+    let kernel = Wf32Kernel::pick(layer.m, layer.n);
+    let _ = plan.run(Some(kernel));
+
+    // 端到端（单 submit：内核 + 回读同一条 command buffer）
+    let t = Instant::now();
+    let mut sink = 0f32;
+    for _ in 0..reps {
+        plan.set_activations(&layer.b);
+        sink += plan.run(Some(kernel))[0];
+    }
+    let e2e_ms = t.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+
+    // 内核段 / 回读段分开（两次 submit，各自 poll 到完成）
+    let t = Instant::now();
+    let (mut compute_ms, mut readback_ms) = (0f64, 0f64);
+    for _ in 0..reps {
+        let (out, phases) = plan.run_timed(Some(kernel));
+        sink += out[0];
+        compute_ms += phases.compute_ms;
+        readback_ms += phases.readback_ms;
+    }
+    let split_ms = t.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+    compute_ms /= reps as f64;
+    readback_ms /= reps as f64;
+
+    let t = Instant::now();
+    for _ in 0..reps {
+        plan.set_activations(&layer.b);
+    }
+    let upload_ms = t.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+
+    println!(
+        "  {:<20} {:?}：端到端 {e2e_ms:.3} ms | 分段 {split_ms:.3} ms（内核 {compute_ms:.3} + 回读 {readback_ms:.3}）| 激活上传 {upload_ms:.3} ms | {:.1} ns/MAC",
+        layer.name,
+        kernel,
+        layer.ns_per_mac(e2e_ms),
+    );
+    assert!(sink.is_finite(), "{} 结果非有限", layer.name);
+}
+
+/// 四层合批：全部塞进一个 submit vs 每层各自 submit。
+fn bench_batch(plans: &[Wf32Plan<'_>], reps: usize) {
+    let refs: Vec<&Wf32Plan<'_>> = plans.iter().collect();
+    let mut sink = 0f32;
+
+    let _ = plans.iter().map(|p| p.run(None)).collect::<Vec<_>>();
+    let t = Instant::now();
+    for _ in 0..reps {
+        for p in plans {
+            sink += p.run(None)[0];
+        }
+    }
+    let solo_ms = t.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+
+    let _ = run_batch(&refs, None);
+    let t = Instant::now();
+    for _ in 0..reps {
+        sink += run_batch(&refs, None)[0][0];
+    }
+    let batch_ms = t.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+
+    // 合批不能改结果：同一批数据，逐层跑与合批逐元素对齐。
+    let per = plans.iter().map(|p| p.run(None)).collect::<Vec<_>>();
+    for (idx, (got, want)) in run_batch(&refs, None).iter().zip(&per).enumerate() {
+        let worst = got
+            .iter()
+            .zip(want)
+            .map(|(g, w): (&f32, &f32)| (g - w).abs())
+            .fold(0f32, f32::max);
+        assert!(
+            worst < 1e-5,
+            "第 {idx} 层合批与逐层不一致，最大偏差 {worst}"
+        );
+    }
+
+    println!(
+        "  四层合批：逐层 submit {solo_ms:.3} ms | 单 submit {batch_ms:.3} ms | {:.2}x",
+        solo_ms / batch_ms
+    );
+    assert!(sink.is_finite(), "合批结果非有限");
+}
+
+fn main() {
+    let Some(gpu) = Wf32Gpu::new() else {
+        eprintln!("没有可用 GPU adapter");
+        return;
+    };
+    println!("layer shapes (m rows, n pixels, k cols)");
+
+    let shapes = [
+        ("conv1 256x64 k9216", 256usize, 64usize, 9216usize),
+        ("conv2 128x256 k2304", 128, 256, 2304),
+        ("conv3 64x1024 k576", 64, 1024, 576),
+        ("fc 16384x1 k128", 16384, 1, 128),
+    ];
+    let layers: Vec<Layer> = shapes
+        .into_iter()
+        .map(|(name, m, n, k)| Layer::build(name, m, n, k))
+        .collect();
+
+    println!("—— 旧口径：每次 run 新建缓冲 + 两次 submit ——");
+    for layer in &layers {
+        let _ = gpu.run_auto(layer.m, layer.n, layer.k, &layer.ap, &layer.an, &layer.b);
+        let t = Instant::now();
         let reps = 10;
         let mut sink = 0f32;
         for _ in 0..reps {
-            sink += gpu.run(m, n, k, &ap, &an, &b)[0];
+            sink += gpu.run_auto(layer.m, layer.n, layer.k, &layer.ap, &layer.an, &layer.b)[0];
         }
-        let old_ms = t0.elapsed().as_secs_f64() * 1000.0 / reps as f64;
-
-        let new_ms = if n >= 4 {
-            let mut reg4_sink = 0f32;
-            let t = Instant::now();
-            for _ in 0..reps {
-                reg4_sink += gpu.run_reg4(m, n, k, &ap, &an, &b)[0];
-            }
-            sink += reg4_sink;
-            Some(t.elapsed().as_secs_f64() * 1000.0 / reps as f64)
-        } else {
-            None
-        };
-
-        let tiled_ms = if m >= 16 && n >= 16 {
-            let mut tiled_sink = 0f32;
-            let t = Instant::now();
-            for _ in 0..reps {
-                tiled_sink += gpu.run_tiled(m, n, k, &ap, &an, &b)[0];
-            }
-            sink += tiled_sink;
-            Some(t.elapsed().as_secs_f64() * 1000.0 / reps as f64)
-        } else {
-            None
-        };
-
-        let t1 = Instant::now();
-        let csink = cpu_wf32(m, n, k, &a, &b);
-        let cpu_ms = t1.elapsed().as_secs_f64() * 1000.0;
-
-        let macs = (m * n * k) as f64;
-        let old_ps = old_ms * 1e9 / macs;
-        println!("{name}: CPU {cpu_ms:.1} ms | sink {sink:.3}/{csink:.3}");
-        println!("  old   {old_ms:.3} ms ({old_ps:.1} ps/MAC)");
-        if let Some(ms) = new_ms {
-            println!(
-                "  reg4  {ms:.3} ms ({:.1} ps/MAC)  speedup {:.2}x",
-                ms * 1e9 / macs,
-                old_ms / ms
-            );
-        }
-        if let Some(ms) = tiled_ms {
-            println!(
-                "  tiled {ms:.3} ms ({:.1} ps/MAC)  speedup {:.2}x",
-                ms * 1e9 / macs,
-                old_ms / ms
-            );
-        }
+        let gpu_ms = t.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+        let cpu_ms = layer.cpu_ms();
+        println!(
+            "  {:<20} GPU {gpu_ms:.3} ms | CPU {cpu_ms:.1} ms | {:.2}x CPU | {:.1} ns/MAC | sink {:.3}",
+            layer.name,
+            cpu_ms / gpu_ms,
+            layer.ns_per_mac(gpu_ms),
+            sink
+        );
     }
+
+    println!("—— 持久缓冲：形状只分配一次 ——");
+    let plans: Vec<Wf32Plan<'_>> = layers
+        .iter()
+        .map(|layer| gpu.plan(layer.m, layer.n, layer.k, &layer.ap, &layer.an, &layer.b))
+        .collect();
+    for (layer, plan) in layers.iter().zip(&plans) {
+        bench_plan(layer, plan, 10);
+    }
+
+    bench_batch(&plans, 10);
 }
