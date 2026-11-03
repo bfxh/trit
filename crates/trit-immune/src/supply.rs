@@ -76,7 +76,6 @@ pub struct SupplyFinding {
     pub verdict: Trit,
 }
 
-
 /// 基线 vs 当前锁文件比对。主键 = (name, version)（Cargo.lock 允许同名多版本并存）。
 pub fn audit(lock: &[Pin], baseline: &[Pin]) -> Vec<SupplyFinding> {
     let key = |p: &Pin| (p.name.clone(), p.version.clone());
@@ -225,4 +224,3 @@ mod tests {
         assert_ne!(fingerprint(b"x"), fingerprint(b"y"));
     }
 }
-
