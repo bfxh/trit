@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::time::Instant;
 
 use trit_parts::depthdata::{is_held, load_sample};
-use trit_parts::depthgpu::DepthGpu;
+use trit_parts::depthgpu::{DepthGpu, TrainRef};
 use trit_parts::depthnet::DepthNet;
 use trit_parts::gpu::Gpu;
 
@@ -32,7 +32,8 @@ fn usage() -> ! {
     eprintln!(
         "用法: parts-depth-gpu cnn-train --data <dir,...> [--holdout a,b] [--size 64] \
          [--hidden 32] [--dil 2] [--epochs 60] [--lr 0.01] [--stride 2] [--pyr 0] [--full] \
-         [--f32] [--seed 7] [--limit N] [--out model.dcn] [--parity N]"
+         [--f32] [--seed 7] [--limit N] [--accum K] [--out model.dcn] [--parity N]\n\
+         --accum K>1 改成 mini-batch SGD（每 K 个样本更新一次，梯度块内平均）；默认 1 = 与 CPU 逐样本同配方"
     );
     std::process::exit(2);
 }
@@ -102,6 +103,10 @@ fn main() {
     let limit: usize = arg(&argv, "--limit")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    let accum: usize = arg(&argv, "--accum")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1)
+        .max(1);
     let parity: usize = arg(&argv, "--parity")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
@@ -122,6 +127,9 @@ fn main() {
         if ternary { "三值" } else { "f32" },
         2 * dil + 1
     );
+    if accum > 1 {
+        println!("--accum {accum}：mini-batch SGD（每 {accum} 个样本更新一次，梯度块内平均）");
+    }
     let mut gnet = DepthGpu::from_depthnet(&net, size as u32);
     gnet.upload(&gpu);
 
@@ -237,8 +245,18 @@ fn main() {
     for ep in 0..epochs {
         let t0 = Instant::now();
         let mut loss = 0.0f32;
-        for s in &train {
-            loss += gnet.train_step(&gpu, &s.x, &s.y, &s.mask, lr);
+        if accum <= 1 {
+            for s in &train {
+                loss += gnet.train_step(&gpu, &s.x, &s.y, &s.mask, lr);
+            }
+        } else {
+            for chunk in train.chunks(accum) {
+                let b: Vec<TrainRef> = chunk
+                    .iter()
+                    .map(|s| (s.x.as_slice(), s.y.as_slice(), s.mask.as_slice()))
+                    .collect();
+                loss += gnet.train_block(&gpu, &b, lr);
+            }
         }
         println!(
             "epoch {}/{}：MSE {:.4}（{:.0} ms，{:.1} 样本/秒）",
