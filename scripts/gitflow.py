@@ -10,7 +10,7 @@
   python scripts/gitflow.py worktree add|list|remove
   python scripts/gitflow.py pr triage|sync <n> [--dry-run]
   python scripts/gitflow.py stack [--repair [--apply]] | diagnose --pr <n> | flaky | dco | queue
-  python scripts/gitflow.py merge <n> [--wait-minutes N]
+  python scripts/gitflow.py merge <分支或 PR 号> [--wait-minutes N]
   python scripts/gitflow.py --self-test
 
 为什么不是"git add -A"：
@@ -432,14 +432,13 @@ def branch_cmd(repo: str, argv: list[str]) -> int:
     base = base_arg or detect_base(detect_remote())
     remote = argv[argv.index("--remote") + 1] if "--remote" in argv else detect_remote()
     sub = argv[0] if argv else "list"
-    rest = [a for a in argv[1:] if not a.startswith("--")]
+    rest = positional_args(argv[1:], VALUE_FLAGS)
     if sub == "list":
         stale_days = int(argv[argv.index("--stale-days") + 1]) if "--stale-days" in argv else 14
         return branch_list(repo, base, stale_days, remote_state="--no-remote" not in argv)
     if sub == "start":
         if not rest:
-            print("用法：gitflow.py branch start <名字> [--from main]")
-            return 2
+            return usage("用法：gitflow.py branch start <名字> [--from main]")
         source = argv[argv.index("--from") + 1] if "--from" in argv else base
         return branch_start(rest[0], source, remote, "--dry-run" in argv)
     if sub == "sync":
@@ -451,8 +450,7 @@ def branch_cmd(repo: str, argv: list[str]) -> int:
     if sub == "protect":
         target = argv[argv.index("--branch") + 1] if "--branch" in argv else base
         return protect(repo, target, "--apply" in argv, "--dry-run" in argv, "--force" in argv)
-    print(f"未知分支子命令: {sub}（list / start / sync / prune）")
-    return 2
+    return usage(f"未知分支子命令: {sub}（list / start / sync / prune）")
 
 
 def worktree_list() -> int:
@@ -1488,7 +1486,7 @@ def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30)
             print(f"CI 全绿，已 squash 合入 {branch} 并删分支")
             return 0
         reason = " ".join((merge.stdout or "").split())[:220]
-        if "not mergeable" in reason or "not up to date" in reason:
+        if any(mark in reason for mark in MERGE_BLOCKED_FOREVER):
             print("合并判红（重试没用，这种要先并主干）：" + reason)
             print("  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply")
             return 1
@@ -1514,6 +1512,58 @@ def status(repo: str) -> int:
     return 0
 
 
+# 只有这几类失败是"重试也不会变好"的：要先并主干或有冲突。
+# 反过来，`base branch policy prohibits the merge` 多半只是必需检查还没落定 ⇒ 继续等。
+# 实测教训：#234 同步 main 之后 watcher 被这句误判成"永远合不上"而提前退出（见 A291）。
+MERGE_BLOCKED_FOREVER = ("not up to date", "cannot be cleanly created", "merge conflict")
+VALUE_FLAGS = ("--repo", "--remote", "--base", "--from", "--path", "--stale-days", "--wait-minutes")
+
+def positional_args(tokens: list[str], value_flags: tuple[str, ...]) -> list[str]:
+    """挑位置参数：`--flag 值` 的**值也是不带 -- 的裸词**，必须连 flag 一起跳掉。
+
+    早先用 `a for a in argv if not a.startswith("--")` 取位置参数，于是
+    `merge --repo o/r` 会把 `o/r` 当成分支名去 watch/合并 —— 参数被吞成**另一个对象**，
+    比报错更糟（2026-11-03 另一会话报 usage 不一致时顺带撞出来，自测把它抓到了）。
+    """
+    out: list[str] = []
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if token.startswith("--"):
+            skip_next = token in value_flags
+            continue
+        out.append(token)
+    return out
+
+
+def usage(text: str) -> int:
+    """用法/参数错误也打 `FAIL ` 前缀。
+
+    只印中文说明时，`... > log; tail -4 log` 这类包法会把退出码吞成 tail 的 0 ⇒
+    「根本没跑」被记成「跑过了」（2026-11-03 另一个会话实测撞到）。前缀让它在日志里可 grep。
+    """
+    print("FAIL " + text)
+    return 2
+
+
+def resolve_merge_target(repo: str, token: str) -> str:
+    """`merge <参数>`：纯数字当 PR 号查它的 headRefName，否则当分支名用。
+
+    查不到返回空串 ⇒ 调用方判红。**不猜分支名**：猜错就是去动别的分支。
+    """
+    if not token.isdigit():
+        return token
+    result = gh(["pr", "view", token, "--repo", repo, "--json", "headRefName"])
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return ""
+    if result.returncode != 0:
+        return ""
+    return (data.get("headRefName") or "").strip()
+
 def main(argv: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -1532,31 +1582,34 @@ def main(argv: list[str]) -> int:
             files.append(argv[index])
             index += 1
     if command == "secret-scan":
+        if not files:
+            print("拦：--files 一个都没点 ⇒ 一个文件也没扫。扫描面为空不能算「干净」。")
+            return 1
         hits = secret_scan(ROOT, files)
         for line in hits:
             print(f"命中：{line}")
-        return 1 if hits else 0
+        if hits:
+            return 1
+        print(f"未发现敏感串（扫了 {len(files)} 个文件、{len(SECRET_PATTERNS)} 条内容规则 + 文件名规则）")
+        return 0
     if command == "branch":
         return branch_cmd(repo, argv[1:])
     if command == "worktree":
         sub = argv[1] if len(argv) > 1 else "list"
-        rest = [a for a in argv[2:] if not a.startswith("--")]
+        rest = positional_args(argv[2:], VALUE_FLAGS)
         if sub == "list":
             return worktree_list()
         if sub == "add":
             if not rest:
-                print("用法：gitflow.py worktree add <分支> [--path 目录] [--from main]")
-                return 2
+                return usage("用法：gitflow.py worktree add <分支> [--path 目录] [--from main]")
             base = argv[argv.index("--from") + 1] if "--from" in argv else detect_base(detect_remote())
             path = argv[argv.index("--path") + 1] if "--path" in argv else ""
             return worktree_add(rest[0], base, detect_remote(), path, "--dry-run" in argv)
         if sub == "remove":
             if not rest:
-                print("用法：gitflow.py worktree remove <目录> [--force]")
-                return 2
+                return usage("用法：gitflow.py worktree remove <目录> [--force]")
             return worktree_remove(rest[0], "--force" in argv)
-        print(f"未知 worktree 子命令: {sub}（list / add / remove）")
-        return 2
+        return usage(f"未知 worktree 子命令: {sub}（list / add / remove）")
     if command == "stack":
         return stack(repo, remote_state="--no-remote" not in argv,
                      repair="--repair" in argv, apply_changes="--apply" in argv)
@@ -1570,29 +1623,29 @@ def main(argv: list[str]) -> int:
         return queue_status(repo)
     if command == "pr":
         sub = argv[1] if len(argv) > 1 else "triage"
-        rest = [a for a in argv[2:] if not a.startswith("--")]
+        rest = positional_args(argv[2:], VALUE_FLAGS)
         if sub == "triage":
             stale_days = int(argv[argv.index("--stale-days") + 1]) if "--stale-days" in argv else 14
             return pr_triage(repo, stale_days, "--json" in argv, "--apply" in argv)
         if sub == "sync":
             if not rest:
-                print("用法：gitflow.py pr sync <编号> [--dry-run]")
-                return 2
+                return usage("用法：gitflow.py pr sync <编号> [--dry-run]")
             return pr_sync(repo, rest[0], dry_run="--dry-run" in argv)
-        print(f"未知 pr 子命令: {sub}（triage / sync）")
-        return 2
+        return usage(f"未知 pr 子命令: {sub}（triage / sync）")
     if command == "merge":
-        target = argv[argv.index("--branch") + 1] if "--branch" in argv else ""
+        positional = positional_args(argv[1:], VALUE_FLAGS + ("--branch",))
+        raw = argv[argv.index("--branch") + 1] if "--branch" in argv else (positional[0] if positional else "")
+        if not raw:
+            return usage("用法：gitflow.py merge <分支或 PR 号> [--wait-minutes N]（也接受 --branch <分支>）")
+        target = resolve_merge_target(repo, raw)
         if not target:
-            print("用法：gitflow.py merge --branch <分支> [--wait-minutes N]")
-            return 2
+            return usage(f"判红：拿不到 {raw} 的分支名（不猜分支名去合并）")
         wait = int(argv[argv.index("--wait-minutes") + 1]) if "--wait-minutes" in argv else 30
         return watch_and_merge(target, repo, attempts=max(1, wait * 2), pause=30)
     if command == "diagnose":
         pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
         if not pr:
-            print("用法：gitflow.py diagnose --pr <编号>")
-            return 2
+            return usage("用法：gitflow.py diagnose --pr <编号>")
         return diagnose(pr, repo)
     if command == "publish":
         args = {
@@ -1644,6 +1697,31 @@ def self_test() -> int:
               any(".env.production" in h for h in secret_scan(root, [".env.production"])), True)
         check("POSIX 绝对路径被拒", any("跳出仓库" in p for p in base_ok(root, ["/etc/passwd"])), True)
         check("不存在的文件要报", any("不存在" in h for h in secret_scan(root, ["nope.txt"])), True)
+        real_scan_root = globals()["ROOT"]
+        globals()["ROOT"] = root
+        import contextlib as _scl
+        import io as _sio
+        try:
+            buf = _sio.StringIO()
+            with _scl.redirect_stdout(buf):
+                rc_clean = main(["secret-scan", "--repo", "o/r", "--remote", "origin",
+                                 "--base", "main", "--files", "clean.py"])
+            check("干净也要报扫描面：静默通过分不清「跑了」和「没跑」",
+                  (rc_clean, "扫了 1 个文件" in buf.getvalue()), (0, True))
+            buf2 = _sio.StringIO()
+            with _scl.redirect_stdout(buf2):
+                rc_dirty = main(["secret-scan", "--repo", "o/r", "--remote", "origin",
+                                 "--base", "main", "--files", "leak.py"])
+            check("命中要点名且 rc=1（不只给个退出码）",
+                  (rc_dirty, "sk-" in buf2.getvalue()), (1, True))
+            buf3 = _sio.StringIO()
+            with _scl.redirect_stdout(buf3):
+                rc_empty = main(["secret-scan", "--repo", "o/r", "--remote", "origin",
+                                 "--base", "main"])
+            check("一个文件都没点 ⇒ 判红（扫描面为空≠干净）",
+                  (rc_empty, "一个文件也没扫" in buf3.getvalue()), (1, True))
+        finally:
+            globals()["ROOT"] = real_scan_root
 
         args = {
             "title": "t", "body_file": "body.md", "files": ["a.py", "b.py"],
@@ -1952,6 +2030,88 @@ def self_test() -> int:
             globals()["gh"] = real_gh_ref
             globals()["wait_for_checks"] = real_watch
             globals()["time"] = real_time
+
+        merge_real = globals()["watch_and_merge"]
+        gh_real_merge = globals()["gh"]
+        seen_branch: list[str] = []
+
+        def fake_watch(branch: str, repo: str, attempts: int = 60, pause: int = 30) -> int:
+            seen_branch.append(branch)
+            return 0
+
+        try:
+            globals()["watch_and_merge"] = fake_watch
+            globals()["gh"] = lambda args: _CP(args, 0, json.dumps({"headRefName": "feat/from-pr"}), "")
+            import contextlib as _mcl
+            import io as _mio
+            check("merge 吃位置参数：分支名直接用",
+                  main(["merge", "--repo", "o/r", "feat/x", "--wait-minutes", "1"]), 0)
+            check("位置参数是分支名时不查远端", seen_branch[-1], "feat/x")
+            check("merge <PR 号> ⇒ 先查 headRefName（文档里那条形状真的能用）",
+                  main(["merge", "--repo", "o/r", "234", "--wait-minutes", "1"]), 0)
+            check("PR 号被换成真实分支名", seen_branch[-1], "feat/from-pr")
+            check("--branch 仍旧能用（不破坏老写法）",
+                  main(["merge", "--repo", "o/r", "--branch", "feat/y", "--wait-minutes", "1"]), 0)
+            check("--branch 的值被取到", seen_branch[-1], "feat/y")
+            globals()["gh"] = lambda args: _CP(args, 1, "", "")
+            buf = _mio.StringIO()
+            with _mcl.redirect_stdout(buf):
+                rc_missing = main(["merge", "--repo", "o/r", "999", "--wait-minutes", "1"])
+            check("查不到分支名 ⇒ 判红且不拿猜的名字去合并",
+                  (rc_missing, "拿不到 999 的分支名" in buf.getvalue()), (2, True))
+            buf2 = _mio.StringIO()
+            with _mcl.redirect_stdout(buf2):
+                rc_usage = main(["merge", "--repo", "o/r"])
+            check("用法错误也打 FAIL 前缀（管道 tail 吞不掉它）",
+                  (rc_usage, buf2.getvalue().startswith("FAIL 用法")), (2, True))
+            buf3 = _mio.StringIO()
+            with _mcl.redirect_stdout(buf3):
+                rc_sync = main(["pr", "sync", "--repo", "o/r"])
+            check("其余用法入口同样带 FAIL 前缀", (rc_sync, buf3.getvalue().startswith("FAIL 用法")), (2, True))
+        finally:
+            policy_rows = globals()["check_rows"]
+            real_watch = merge_real
+            policy_msg = ("X Pull request o/r#34 is not mergeable: the base branch policy "
+                          "prohibits the merge. To have the pull request merged after all the "
+                          "requirements have been met, add the `--auto` flag.")
+            behind_msg = ("X Pull request o/r#34 is not mergeable: the head branch is not up to "
+                          "date with the base branch.")
+            try:
+                globals()["check_rows"] = lambda repo, branch: ([{"name": "CI", "bucket": "pass"}], "")
+
+                def gh_policy(args):
+                    if args[:2] == ["pr", "checks"] and "--watch" in args:
+                        return _CP(args, 0, "", "")
+                    if args[:2] == ["pr", "checks"]:
+                        return _CP(args, 0, json.dumps([{"name": "CI", "bucket": "pass"}]), "")
+                    return _CP(args, 1, policy_msg, "")
+
+                globals()["gh"] = gh_policy
+                wait_clock = _Clock()
+                globals()["time"] = wait_clock
+                rc_policy = real_watch("feat/x", "o/r", attempts=3, pause=2)
+                check("policy prohibits 只是检查没落定 ⇒ 继续按预算重试，不许提前放弃",
+                      (rc_policy, wait_clock.slept), (1, [2, 2]))
+
+                def gh_behind(args):
+                    if args[:2] == ["pr", "checks"] and "--watch" in args:
+                        return _CP(args, 0, "", "")
+                    if args[:2] == ["pr", "checks"]:
+                        return _CP(args, 0, json.dumps([{"name": "CI", "bucket": "pass"}]), "")
+                    return _CP(args, 1, behind_msg, "")
+
+                globals()["gh"] = gh_behind
+                forever_clock = _Clock()
+                globals()["time"] = forever_clock
+                check("head 落后主干 ⇒ 仍然立刻判红、一次都不重试",
+                      (real_watch("feat/x", "o/r", attempts=3, pause=2), forever_clock.slept),
+                      (1, []))
+            finally:
+                globals()["check_rows"] = policy_rows
+                globals()["time"] = real_time
+                globals()["gh"] = gh_real_merge
+            globals()["watch_and_merge"] = merge_real
+            globals()["gh"] = gh_real_merge
 
         real_gh = globals()["gh"]
         import subprocess as _sp
