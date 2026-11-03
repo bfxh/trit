@@ -79,5 +79,32 @@
     "pkg": "scripts/depth_sweep.py",
     "filter": "",
     "runner": "python"
+  },
+  {
+    "name": "lease: 创建租约不加 O_EXCL",
+    "file": "scripts/depth_sweep.py",
+    "old": "        fd = os.open(lease_path(gpu), os.O_CREAT | os.O_EXCL | os.O_WRONLY)",
+    "new": "        fd = os.open(lease_path(gpu), os.O_CREAT | os.O_WRONLY)",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "lease: 过期判定反向",
+    "file": "scripts/depth_sweep.py",
+    "old": "    return bool(d) and float(d.get(\"expires\", 0)) > now",
+    "new": "    return bool(d) and float(d.get(\"expires\", 0)) < now",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "lease: 不等直接放弃",
+    "file": "scripts/depth_sweep.py",
+    "old": "    deadline = time.time() + max(0.0, wait)",
+    "new": "    deadline = time.time()",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
   }
 ]

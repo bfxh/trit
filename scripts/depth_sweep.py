@@ -35,10 +35,12 @@ import glob
 import hashlib
 import itertools
 import json
+import os
 import pathlib
 import queue
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -47,6 +49,103 @@ if hasattr(sys.stdout, "reconfigure"):
 
 PRINT_LOCK = threading.Lock()
 QUEUE_LOCK = threading.Lock()
+
+# ---------------------------------------------------------------- 机器级 GPU 租约
+#
+# 多个扫描器进程共用同一台机器时，按「一台卡一份租约」串行化：拿不到就排队等，
+# 租约带 `expires`（心跳续租），进程崩了最多 `ttl` 秒后别人可抢占。
+
+LEASE_DIR = pathlib.Path(tempfile.gettempdir()) / "trit-gpu-leases"
+
+
+def lease_path(gpu):
+    return LEASE_DIR / f"gpu{gpu}.json"
+
+
+def lease_read(gpu):
+    try:
+        return json.loads(lease_path(gpu).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+
+
+def lease_held(gpu, now=None):
+    """该卡当前是否被**未过期**的租约占着。"""
+    now = time.time() if now is None else now
+    d = lease_read(gpu)
+    return bool(d) and float(d.get("expires", 0)) > now
+
+
+def lease_write(gpu, data):
+    LEASE_DIR.mkdir(parents=True, exist_ok=True)
+    p = lease_path(gpu)
+    tmp = p.with_name(f"{p.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(data), encoding="utf-8")
+    tmp.replace(p)
+
+
+def lease_try(gpu, owner, ttl=120.0):
+    """尝试拿租约：不存在就原子创建；已过期就抢占（写临时再 replace，回读确认）。"""
+    LEASE_DIR.mkdir(parents=True, exist_ok=True)
+    now = time.time()
+    data = {"gpu": gpu, "owner": owner, "pid": os.getpid(), "expires": now + ttl}
+    try:
+        fd = os.open(lease_path(gpu), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+    except FileExistsError:
+        if lease_held(gpu, now):
+            return False
+        lease_write(gpu, data)
+    else:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        return True
+    back = lease_read(gpu) or {}
+    return back.get("owner") == owner
+
+
+def lease_acquire(pool, owner, wait=0.0, ttl=120.0, poll=0.5):
+    """在 `pool` 里等一张空闲卡；`wait` 秒内拿不到返回 None（排队）。"""
+    deadline = time.time() + max(0.0, wait)
+    while True:
+        for gpu in pool:
+            if lease_try(gpu, owner, ttl):
+                return gpu
+        if time.time() >= deadline:
+            return None
+        time.sleep(poll)
+
+
+def lease_release(gpu, owner):
+    d = lease_read(gpu)
+    if d and d.get("owner") == owner:
+        try:
+            lease_path(gpu).unlink()
+        except FileNotFoundError:
+            pass
+        return True
+    return False
+
+
+def lease_heartbeat(gpu, owner, ttl, stop):
+    """长任务续租：每 `ttl/3` 把 expires 往后推；租约被别人抢走就退出。"""
+    while not stop.wait(max(0.2, ttl / 3.0)):
+        d = lease_read(gpu)
+        if not d or d.get("owner") != owner:
+            return
+        d["expires"] = time.time() + ttl
+        lease_write(gpu, d)
+
+
+def lease_start(gpu, owner, ttl):
+    stop = threading.Event()
+    t = threading.Thread(target=lease_heartbeat, args=(gpu, owner, ttl, stop), daemon=True)
+    t.start()
+    return stop
+
+
+def lease_stop(gpu, owner, stop):
+    stop.set()
+    lease_release(gpu, owner)
 
 
 def out(msg):
@@ -371,6 +470,40 @@ def self_test():
         (pathlib.Path(str(model) + ".verify.json")).write_text("{}", encoding="utf-8")
         assert is_complete(model, cfg, True), "产物齐了应判完成"
 
+    # GPU 租约：互斥 / 过期抢占 / release 只对 owner 生效 / 排队
+    global LEASE_DIR
+    old_dir = LEASE_DIR
+    with tempfile.TemporaryDirectory() as td:
+        LEASE_DIR = pathlib.Path(td)
+        try:
+            assert lease_try(0, "a"), "空卡应能拿到"
+            assert not lease_try(0, "b"), "被占时不能再拿"
+            assert lease_held(0)
+            lease_write(1, {"gpu": 1, "owner": "x", "expires": time.time() - 1})
+            assert not lease_held(1), "过期租约不算占用"
+            assert lease_try(1, "b"), "过期租约应可抢占"
+            assert (lease_read(1) or {}).get("owner") == "b"
+            assert not lease_release(1, "a"), "release 只对 owner 生效"
+            assert lease_release(1, "b")
+            assert not lease_held(1)
+            assert lease_release(0, "a"), "先释放第一张卡再重拿"
+            assert lease_try(0, "a")
+            got = {}
+
+            def waiter():
+                got["g"] = lease_acquire([0], "b", wait=5, ttl=60, poll=0.05)
+
+            th = threading.Thread(target=waiter)
+            th.start()
+            time.sleep(0.3)
+            assert "g" not in got, "被占时不应立刻拿到"
+            lease_release(0, "a")
+            th.join(timeout=5)
+            assert got.get("g") == 0, "释放后排队者应拿到"
+            lease_release(0, "b")
+        finally:
+            LEASE_DIR = old_dir
+
     cases = [
         ("达标", evaluate_promotion(good, rule), (True, "达标")),
         ("超上限", evaluate_promotion(over, rule)[0], False),
@@ -433,7 +566,7 @@ def self_test():
     if bad:
         print(f"FAIL {len(bad)} 条：{bad}")
         sys.exit(1)
-    print(f"self-test {len(cases) + 5}/{len(cases) + 5} 通过（含 5 条文件系统断言）")
+    print(f"self-test {len(cases) + 5}/{len(cases) + 5} 通过（含文件系统 + 租约断言）")
 
 
 def main():
@@ -443,6 +576,9 @@ def main():
     ap.add_argument("--jobs", type=int, default=0, help="并发进程数（0 = 用规格里的 jobs，缺省 max(2, 卡数)）")
     ap.add_argument("--gpus", type=int, default=0, help="卡数（0 = 自动探测 --list-gpus）")
     ap.add_argument("--retries", type=int, default=1, help="训练/复核失败的重试次数（缺省 1）")
+    ap.add_argument("--no-lease", action="store_true", help="不跨扫描器抢卡（默认会排队等租约）")
+    ap.add_argument("--lease-wait", type=int, default=3600, help="等一张空闲卡的秒数（缺省 3600）")
+    ap.add_argument("--lease-ttl", type=float, default=120.0, help="租约过期秒数（心跳每 ttl/3 续租）")
     ap.add_argument("--fresh", action="store_true", help="忽略已有产物与队列，全部重跑")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--timeout", type=int, default=3600, help="单个训练/复核的超时（秒）")
@@ -530,8 +666,23 @@ def main():
             states[tag] = {"state": "running", "gpu": gpu, "pid": pid}
             save_queue(queue_path, sha, states)
 
+    lease_on = not args.no_lease
+    owner = f"{out_dir.name}:{sha[:8]}:{os.getpid()}"
+
     def task(cfg, tag):
-        g = tokens.get()
+        t_wait = time.time()
+        if lease_on:
+            g = lease_acquire(pool, owner, args.lease_wait, args.lease_ttl)
+            if g is None:
+                out(f"[{tag}] 等卡超时（{args.lease_wait}s），跳过")
+                return {"tag": tag, "config": cfg, "status": "lease-timeout"}
+            waited = time.time() - t_wait
+            if waited > 0.5:
+                out(f"[{tag}] 排队 {waited:.0f}s 拿到 GPU {g}")
+            stop = lease_start(g, owner, args.lease_ttl)
+        else:
+            g = tokens.get()
+            stop = None
         try:
             ctx["on_start"] = lambda pid: mark_running(tag, g, pid)
             row = run_one(cfg, tag, g, ctx)
@@ -546,7 +697,10 @@ def main():
                 save_queue(queue_path, sha, states)
             return row
         finally:
-            tokens.put(g)
+            if lease_on:
+                lease_stop(g, owner, stop)
+            else:
+                tokens.put(g)
 
     if pending:
         with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
