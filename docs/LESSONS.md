@@ -48,3 +48,7 @@
 - **文件行数不等于结构**：一个 786 行的文件里可以有 655 行的单函数；拆模块时要按职责看，
   而不是只看行数。
 - **文档用仓库相对路径**：不写本机绝对路径，别人拿到仓库就能点开。
+- **wgpu 30 复用 staging buffer 必须显式 `Buffer::unmap()`**：`BufferView` 的 `Drop`
+  只清 host 侧映射记录，显存侧仍算 mapped；下一次 `submit` 直接判
+  `Buffer ... is still mapped`。一次性 buffer 的写法（每次新建）掩盖了这条，
+  改成持久 buffer 才暴露（WF32 `Wf32Plan`，PR #255）。
