@@ -1,0 +1,38 @@
+[
+  {
+    "name": "promote: 上限判断反向",
+    "file": "scripts/depth_sweep.py",
+    "old": "    if \"max\" in rule and rel > rule[\"max\"]:",
+    "new": "    if \"max\" in rule and rel < rule[\"max\"]:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "promote: 基线差判断反向",
+    "file": "scripts/depth_sweep.py",
+    "old": "        if gap < rule[\"beat_baseline_pp\"]:",
+    "new": "        if gap > rule[\"beat_baseline_pp\"]:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "promote: 未复核也放行",
+    "file": "scripts/depth_sweep.py",
+    "old": "    if row.get(\"status\") != \"verified\":",
+    "new": "    if row.get(\"status\") == \"verified\":",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "promote: 忽略自定义 metric",
+    "file": "scripts/depth_sweep.py",
+    "old": "    metric = rule.get(\"metric\", \"rel_pct\")",
+    "new": "    metric = \"rel_pct\"",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  }
+]
