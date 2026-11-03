@@ -1,0 +1,150 @@
+//! 同一份语料的「Git vs trit-vcs」对照：存体积与写入耗时。
+//!
+//! 口径：先生成 N 个文件，再在**同一个文件中间插入一段**重复提交 20 次——
+//! 这正是内容定义分块应该赢的形状（Git 的整文件 blob 每次都要新建整块）。
+//! 每条读数都打印来源，便于复算。
+
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+use std::process::Command;
+use std::time::Instant;
+
+use trit_vcs::gate::ClaimSpec;
+use trit_vcs::repo::{CommitRequest, Repo};
+
+fn corpus(files: usize, lines: usize) -> BTreeMap<String, Vec<u8>> {
+    let mut out = BTreeMap::new();
+    for f in 0..files {
+        let mut body = String::new();
+        for line in 0..lines {
+            body.push_str(&format!(
+                "fn item_{f}_{line}() -> u32 {{ {} }}\n",
+                (f * 131 + line * 17) % 997
+            ));
+        }
+        out.insert(format!("gen/file_{f:03}.rs"), body.into_bytes());
+    }
+    out
+}
+
+fn dir_bytes(root: &std::path::Path) -> u64 {
+    let mut total = 0u64;
+    let mut stack = vec![root.to_path_buf()];
+    while let Some(current) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&current) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+            } else if let Ok(meta) = entry.metadata() {
+                total += meta.len();
+            }
+        }
+    }
+    total
+}
+
+fn inject(entry: &mut Vec<u8>) {
+    let cut = entry.len() / 2;
+    let mut injected = b"// inserted by vcs_bench\n".to_vec();
+    injected.extend(entry.split_off(cut));
+    entry.extend_from_slice(&injected);
+}
+
+fn main() {
+    let files = 60usize;
+    let lines = 400usize;
+    let rounds = 20usize;
+    let base = corpus(files, lines);
+    let payload_bytes: u64 = base.values().map(|v| v.len() as u64).sum();
+
+    let root: PathBuf = std::env::temp_dir().join(format!("trit-vcs-bench-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+
+    // —— trit-vcs：每轮在第一个文件中间插 64 字节 ——
+    let repo_root = root.join("trit");
+    std::fs::create_dir_all(&repo_root).unwrap();
+    let mut repo = Repo::init(&repo_root).unwrap();
+    let mut current = base.clone();
+    let claim = ClaimSpec {
+        id: "c1".to_string(),
+        owner: "qoder:bench".to_string(),
+        paths: vec!["gen".to_string()],
+        acquired_at: 1,
+        expires_at: u64::MAX / 2,
+    };
+    let start = Instant::now();
+    for round in 0..rounds {
+        inject(current.get_mut("gen/file_000.rs").unwrap());
+        repo.stage(&current, 1_000 + round as u64).unwrap();
+        repo.commit(CommitRequest {
+            message: format!("round {round}"),
+            session: "qoder:bench".to_string(),
+            claims: vec![claim.clone()],
+            now_secs: 1_000 + round as u64,
+            ..Default::default()
+        })
+        .unwrap();
+    }
+    let vcs_time = start.elapsed();
+    let vcs_bytes = dir_bytes(&repo_root.join(".tritvcs").join("objects"));
+
+    // —— Git：同样的 20 轮 ——
+    let git_root = root.join("git");
+    std::fs::create_dir_all(&git_root).unwrap();
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(&git_root)
+            .output()
+            .expect("git 不可用");
+        assert!(
+            status.status.success(),
+            "git {args:?} 失败：{}",
+            String::from_utf8_lossy(&status.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "bench@example.com"]);
+    git(&["config", "user.name", "bench"]);
+    let mut git_current = base.clone();
+    let start = Instant::now();
+    for round in 0..rounds {
+        for (path, body) in &git_current {
+            let target = git_root.join(path);
+            std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+            std::fs::write(&target, body).unwrap();
+        }
+        git(&["add", "-A"]);
+        git(&["commit", "-qm", &format!("round {round}")]);
+        inject(git_current.get_mut("gen/file_000.rs").unwrap());
+    }
+    let git_time = start.elapsed();
+    let git_bytes = dir_bytes(&git_root.join(".git"));
+
+    println!(
+        "语料：{} 个文件 × {} 行，原始 {:.2} MiB，{} 轮「中间插 64 字节」",
+        files,
+        lines,
+        payload_bytes as f64 / 1_048_576.0,
+        rounds
+    );
+    println!(
+        "trit-vcs：对象库 {:.2} MiB，{:.0} ms/轮",
+        vcs_bytes as f64 / 1_048_576.0,
+        vcs_time.as_secs_f64() * 1000.0 / rounds as f64
+    );
+    println!(
+        "git      ：.git     {:.2} MiB，{:.0} ms/轮",
+        git_bytes as f64 / 1_048_576.0,
+        git_time.as_secs_f64() * 1000.0 / rounds as f64
+    );
+    println!(
+        "体积比 trit/git = {:.2}（越小越省；这一栏只测存储，不测 checkout/merge）",
+        vcs_bytes as f64 / git_bytes.max(1) as f64
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}

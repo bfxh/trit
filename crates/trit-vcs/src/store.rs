@@ -1,0 +1,501 @@
+//! 内容寻址对象库：**打包存储 + zlib 压缩 + 读时校验**。
+//!
+//! 与 Git 的差别（都是"更强"或"至少不弱"）：
+//! 1. **块级去重**：文件按内容定义切块（[`crate::chunk`]），插入一段只新增边界附近那几个块；
+//! 2. **打包**：块按 `[u32 长度][zlib 负载]` 追加进单个 pack，避免每块一个小文件的簇开销
+//!    （第一版按文件存，60 个文件 × 20 轮的样本比 git 大 5 倍，主要是这个开销）；
+//! 3. **读时校验**：每次读出来都重算 BLAKE3 与索引里的哈希比对，被改一个字节立刻现形。
+//!
+//! 单写者假设：写入期间持 `pack.lock`（`create_new` 语义），第二个进程直接报错而不是写坏包。
+
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+use std::collections::HashMap;
+use std::fs::{self, OpenOptions};
+use std::io::{Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
+
+use flate2::Compression;
+use flate2::read::ZlibDecoder;
+use flate2::write::ZlibEncoder;
+use serde::{Deserialize, Serialize};
+
+use crate::chunk::Chunking;
+use crate::hash::Hash;
+
+/// 一个文件 = 有序块列表 + 原始长度。
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct FileMap {
+    pub size: u64,
+    pub chunks: Vec<Hash>,
+}
+
+/// 索引里的一条：块在 pack 里的位置与原始长度。
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
+struct PackEntry {
+    offset: u64,
+    len: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Stats {
+    pub objects: u64,
+    pub bytes_stored: u64,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PutStats {
+    pub new_chunks: u64,
+    pub reused_chunks: u64,
+    pub bytes_written: u64,
+}
+
+impl PutStats {
+    pub fn total_chunks(&self) -> u64 {
+        self.new_chunks + self.reused_chunks
+    }
+
+    /// 复用比例（按块数）。0.0 = 一点没省。
+    pub fn reuse_ratio(&self) -> f64 {
+        if self.total_chunks() == 0 {
+            return 0.0;
+        }
+        self.reused_chunks as f64 / self.total_chunks() as f64
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum StoreError {
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("对象缺失: {0}")]
+    Missing(String),
+    #[error("对象内容与名字对不上（被改过或损坏）: 期望 {expected}，实际 {actual}")]
+    Corrupt { expected: String, actual: String },
+    #[error("文件映射解析失败: {0}")]
+    BadMap(String),
+    #[error("另一个进程正在写这个对象库（{0} 存在）")]
+    Locked(String),
+    #[error("索引行坏了：{0}")]
+    BadIndex(String),
+}
+
+/// 对象库：`objects/pack-000001.pack` + `objects/index.jsonl`。
+#[derive(Clone, Debug)]
+pub struct Store {
+    root: PathBuf,
+    chunking: Chunking,
+    index: RefCell<HashMap<Hash, PackEntry>>,
+    pack_len: RefCell<u64>,
+}
+
+impl Store {
+    pub fn open(root: impl Into<PathBuf>) -> Result<Self, StoreError> {
+        let root = root.into();
+        fs::create_dir_all(root.join("objects"))?;
+        let store = Self {
+            root,
+            chunking: Chunking::default_4k(),
+            index: RefCell::new(HashMap::new()),
+            pack_len: RefCell::new(0),
+        };
+        store.load()?;
+        Ok(store)
+    }
+
+    fn objects(&self) -> PathBuf {
+        self.root.join("objects")
+    }
+
+    fn pack_path(&self) -> PathBuf {
+        self.objects().join("pack-000001.pack")
+    }
+
+    fn index_path(&self) -> PathBuf {
+        self.objects().join("index.jsonl")
+    }
+
+    fn load(&self) -> Result<(), StoreError> {
+        self.index.borrow_mut().clear();
+        if self.index_path().is_file() {
+            let text = fs::read_to_string(self.index_path())?;
+            for line in text.lines() {
+                if line.trim().is_empty() {
+                    continue;
+                }
+                let row: (String, PackEntry) =
+                    serde_json::from_str(line).map_err(|e| StoreError::BadIndex(e.to_string()))?;
+                let hash = Hash::from_hex(&row.0)
+                    .ok_or_else(|| StoreError::BadIndex(format!("不是哈希：{}", row.0)))?;
+                self.index.borrow_mut().insert(hash, row.1);
+            }
+        }
+        *self.pack_len.borrow_mut() = fs::metadata(self.pack_path()).map(|m| m.len()).unwrap_or(0);
+        Ok(())
+    }
+
+    pub fn with_chunking(mut self, chunking: Chunking) -> Self {
+        self.chunking = chunking;
+        self
+    }
+
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
+
+    pub fn chunking(&self) -> Chunking {
+        self.chunking
+    }
+
+    pub fn has(&self, hash: &Hash) -> bool {
+        self.index.borrow().contains_key(hash)
+    }
+
+    fn lock(&self) -> Result<PathBuf, StoreError> {
+        let path = self.objects().join("pack.lock");
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(mut file) => {
+                let _ = writeln!(file, "{}", std::process::id());
+                Ok(path)
+            }
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => {
+                Err(StoreError::Locked(path.display().to_string()))
+            }
+            Err(err) => Err(StoreError::Io(err)),
+        }
+    }
+
+    /// 写块：压缩后追加进 pack，再追加一行索引。同名对象已存在就直接复用。
+    pub fn put_chunk(&self, bytes: &[u8]) -> Result<(Hash, bool), StoreError> {
+        let hash = Hash::of(bytes);
+        if self.index.borrow().contains_key(&hash) {
+            return Ok((hash, false));
+        }
+        let lock = self.lock()?;
+        let result = (|| -> Result<(), StoreError> {
+            let (offset, compressed_len) = self.append_chunk(bytes)?;
+            self.append_index(&hash, offset, compressed_len)
+        })();
+        let _ = fs::remove_file(&lock);
+        result?;
+        Ok((hash, true))
+    }
+
+    fn append_chunk(&self, bytes: &[u8]) -> Result<(u64, u64), StoreError> {
+        let mut encoder = ZlibEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(bytes)?;
+        let compressed = encoder.finish()?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.pack_path())?;
+        let offset = file.metadata()?.len();
+        file.write_all(&(compressed.len() as u32).to_le_bytes())?;
+        file.write_all(&compressed)?;
+        file.sync_data()?;
+        Ok((offset, compressed.len() as u64))
+    }
+
+    fn append_index(
+        &self,
+        hash: &Hash,
+        offset: u64,
+        compressed_len: u64,
+    ) -> Result<(), StoreError> {
+        let entry = PackEntry {
+            offset,
+            len: compressed_len,
+        };
+        let line = serde_json::to_string(&(hash.to_hex(), entry))
+            .map_err(|e| StoreError::BadIndex(e.to_string()))?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(self.index_path())?;
+        writeln!(file, "{line}")?;
+        file.sync_data()?;
+        self.index.borrow_mut().insert(*hash, entry);
+        Ok(())
+    }
+
+    /// 读块并**校验**：内容与名字对不上就报 Corrupt，而不是把坏数据交出去。
+    pub fn get_chunk(&self, hash: &Hash) -> Result<Vec<u8>, StoreError> {
+        let entry = self
+            .index
+            .borrow()
+            .get(hash)
+            .copied()
+            .ok_or_else(|| StoreError::Missing(hash.to_hex()))?;
+        let mut file = fs::File::open(self.pack_path())?;
+        file.seek(SeekFrom::Start(entry.offset + 4))?;
+        let mut compressed = vec![0u8; entry.len as usize];
+        file.read_exact(&mut compressed)?;
+        let mut decoder = ZlibDecoder::new(&compressed[..]);
+        let mut bytes = Vec::new();
+        decoder.read_to_end(&mut bytes)?;
+        let actual = Hash::of(&bytes);
+        if actual != *hash {
+            return Err(StoreError::Corrupt {
+                expected: hash.to_hex(),
+                actual: actual.to_hex(),
+            });
+        }
+        Ok(bytes)
+    }
+
+    /// 把一个文件按内容切块入库，返回文件映射对象的 id 与本次写入明细。
+    pub fn put_file(&self, bytes: &[u8]) -> Result<(Hash, PutStats), StoreError> {
+        let mut stats = PutStats::default();
+        let mut chunks = Vec::new();
+        for (start, end) in self.chunking.split(bytes) {
+            let (hash, is_new) = self.put_chunk(&bytes[start..end])?;
+            if is_new {
+                stats.new_chunks += 1;
+                stats.bytes_written += (end - start) as u64;
+            } else {
+                stats.reused_chunks += 1;
+            }
+            chunks.push(hash);
+        }
+        let map = FileMap {
+            size: bytes.len() as u64,
+            chunks,
+        };
+        let encoded = serde_json::to_vec(&map).map_err(|e| StoreError::BadMap(e.to_string()))?;
+        let (id, _) = self.put_chunk(&encoded)?;
+        Ok((id, stats))
+    }
+
+    pub fn file_map(&self, id: &Hash) -> Result<FileMap, StoreError> {
+        let bytes = self.get_chunk(id)?;
+        serde_json::from_slice(&bytes).map_err(|e| StoreError::BadMap(e.to_string()))
+    }
+
+    pub fn get_file(&self, id: &Hash) -> Result<Vec<u8>, StoreError> {
+        let map = self.file_map(id)?;
+        let mut out = Vec::with_capacity(map.size as usize);
+        for chunk in &map.chunks {
+            out.extend_from_slice(&self.get_chunk(chunk)?);
+        }
+        Ok(out)
+    }
+
+    pub fn stats(&self) -> Result<Stats, StoreError> {
+        let pack = fs::metadata(self.pack_path()).map(|m| m.len()).unwrap_or(0);
+        let index = fs::metadata(self.index_path())
+            .map(|m| m.len())
+            .unwrap_or(0);
+        Ok(Stats {
+            objects: self.index.borrow().len() as u64,
+            bytes_stored: pack + index,
+        })
+    }
+
+    /// 全库体检：每条索引都能读出来、内容哈希都对得上、pack 没被截断。
+    pub fn fsck(&self) -> Result<usize, Vec<String>> {
+        let mut checked = 0usize;
+        let mut bad = Vec::new();
+        let pack_size = fs::metadata(self.pack_path()).map(|m| m.len()).unwrap_or(0);
+        let snapshot: Vec<(Hash, PackEntry)> =
+            self.index.borrow().iter().map(|(h, e)| (*h, *e)).collect();
+        for (hash, entry) in &snapshot {
+            if entry.offset + entry.len + 4 > pack_size {
+                bad.push(format!(
+                    "{} 越界（pack 只有 {} 字节）",
+                    hash.short(),
+                    pack_size
+                ));
+                continue;
+            }
+            match self.get_chunk(hash) {
+                Ok(_) => checked += 1,
+                Err(err) => bad.push(format!("{}: {err}", hash.short())),
+            }
+        }
+        if bad.is_empty() {
+            Ok(checked)
+        } else {
+            Err(bad)
+        }
+    }
+
+    /// 目录快照：路径 → 文件映射 id。
+    pub fn put_tree(
+        &self,
+        files: &BTreeMap<String, Vec<u8>>,
+    ) -> Result<(Hash, PutStats), StoreError> {
+        let mut stats = PutStats::default();
+        let mut entries = BTreeMap::new();
+        for (path, bytes) in files {
+            let (id, detail) = self.put_file(bytes)?;
+            stats.new_chunks += detail.new_chunks;
+            stats.reused_chunks += detail.reused_chunks;
+            stats.bytes_written += detail.bytes_written;
+            entries.insert(path.clone(), id);
+        }
+        let encoded =
+            serde_json::to_vec(&entries).map_err(|e| StoreError::BadMap(e.to_string()))?;
+        let (id, _) = self.put_chunk(&encoded)?;
+        Ok((id, stats))
+    }
+
+    pub fn tree_entries(&self, id: &Hash) -> Result<BTreeMap<String, Hash>, StoreError> {
+        let bytes = self.get_chunk(id)?;
+        serde_json::from_slice(&bytes).map_err(|e| StoreError::BadMap(e.to_string()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn temp(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("trit-vcs-store-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        dir
+    }
+
+    /// 像真文本的数据：带随机扰动，避免周期性输入把 gear 哈希也弄成周期（切点会不触发）。
+    fn realistic(len: usize, seed: u64) -> Vec<u8> {
+        let mut state = seed | 1;
+        let mut out = Vec::with_capacity(len);
+        for i in 0..len {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            out.push(if i % 61 == 0 {
+                b'\n'
+            } else {
+                b'a' + (state % 26) as u8
+            });
+        }
+        out
+    }
+
+    #[test]
+    fn roundtrip_and_stats() {
+        let root = temp("roundtrip");
+        let store = Store::open(&root).unwrap();
+        let bytes = realistic(50_000, 7);
+        let (id, stats) = store.put_file(&bytes).unwrap();
+        assert_eq!(store.get_file(&id).unwrap(), bytes);
+        assert!(
+            stats.new_chunks > 1,
+            "50 KiB 应切成多块，实际 {}",
+            stats.new_chunks
+        );
+        assert_eq!(stats.reused_chunks, 0);
+        assert!(store.stats().unwrap().bytes_stored > 0);
+        assert!(store.fsck().is_ok());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn reopening_keeps_the_index() {
+        let root = temp("reopen");
+        let bytes = realistic(20_000, 3);
+        let (id, _) = {
+            let store = Store::open(&root).unwrap();
+            store.put_file(&bytes).unwrap()
+        };
+        let store = Store::open(&root).unwrap();
+        assert_eq!(store.get_file(&id).unwrap(), bytes);
+        let (_, stats) = store.put_file(&bytes).unwrap();
+        assert_eq!(stats.new_chunks, 0, "重开后同样内容仍是复用");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn identical_content_writes_nothing_new() {
+        let root = temp("dedup");
+        let store = Store::open(&root).unwrap();
+        let bytes = realistic(30_000, 11);
+        let _ = store.put_file(&bytes).unwrap();
+        let before = store.stats().unwrap();
+        let (_, stats) = store.put_file(&bytes).unwrap();
+        assert_eq!(stats.new_chunks, 0, "同样内容不该写任何新块");
+        assert_eq!(stats.bytes_written, 0);
+        assert_eq!(store.stats().unwrap(), before);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn inserting_middle_reuses_most_chunks() {
+        let root = temp("insert");
+        let store = Store::open(&root).unwrap();
+        let base = realistic(200_000, 13);
+        let _ = store.put_file(&base).unwrap();
+        let mut inserted = base.clone();
+        inserted.splice(90_000..90_000, vec![b'x'; 64]);
+        let (_, stats) = store.put_file(&inserted).unwrap();
+        assert!(
+            stats.reuse_ratio() > 0.5,
+            "中间插 64 字节后应复用大半块，实际复用率 {:.2}",
+            stats.reuse_ratio()
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn compression_actually_shrinks_text() {
+        let root = temp("compress");
+        let store = Store::open(&root).unwrap();
+        let bytes = realistic(200_000, 17);
+        let _ = store.put_file(&bytes).unwrap();
+        let stored = store.stats().unwrap().bytes_stored;
+        assert!(
+            stored < bytes.len() as u64,
+            "文本应被压缩：原 {} 字节，库 {} 字节",
+            bytes.len(),
+            stored
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn tampered_pack_is_detected_on_read_and_fsck() {
+        let root = temp("tamper");
+        let store = Store::open(&root).unwrap();
+        let (id, _) = store.put_file(b"hello world").unwrap();
+        let map = store.file_map(&id).unwrap();
+        let entry = store.index.borrow().get(&map.chunks[0]).copied().unwrap();
+        let pack = store.pack_path();
+        let mut bytes = fs::read(&pack).unwrap();
+        let at = entry.offset as usize + 4;
+        bytes[at] ^= 0xFF;
+        fs::write(&pack, &bytes).unwrap();
+        assert!(store.get_file(&id).is_err(), "改一位就必须读失败");
+        assert!(store.fsck().is_err(), "fsck 必须报出来");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn truncated_pack_is_reported() {
+        let root = temp("truncate");
+        let store = Store::open(&root).unwrap();
+        let (_, _) = store.put_file(&realistic(10_000, 19)).unwrap();
+        let pack = store.pack_path();
+        let bytes = fs::read(&pack).unwrap();
+        fs::write(&pack, &bytes[..bytes.len() / 2]).unwrap();
+        assert!(store.fsck().is_err(), "pack 被截断必须报");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn tree_snapshot_roundtrip() {
+        let root = temp("tree");
+        let store = Store::open(&root).unwrap();
+        let mut files = BTreeMap::new();
+        files.insert("a.txt".to_string(), b"alpha".to_vec());
+        files.insert("dir/b.txt".to_string(), b"beta".to_vec());
+        let (id, _) = store.put_tree(&files).unwrap();
+        let entries = store.tree_entries(&id).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(
+            store.get_file(entries.get("dir/b.txt").unwrap()).unwrap(),
+            b"beta"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+}
