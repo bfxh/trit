@@ -106,5 +106,32 @@
     "pkg": "scripts/depth_sweep.py",
     "filter": "",
     "runner": "python"
+  },
+  {
+    "name": "sweep: 模板未知占位符放行",
+    "file": "scripts/depth_sweep.py",
+    "old": "    if \"{\" in s:",
+    "new": "    if False:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "sweep: 闭合门放行（closed != scenes 也晋级）",
+    "file": "scripts/depth_sweep.py",
+    "old": "        if m.get(\"closed\") != m.get(\"scenes\"):",
+    "new": "        if False:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "sweep: 下限门判反",
+    "file": "scripts/depth_sweep.py",
+    "old": "    if \"min\" in rule and rel < rule[\"min\"]:",
+    "new": "    if \"min\" in rule and rel > rule[\"min\"]:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
   }
 ]
