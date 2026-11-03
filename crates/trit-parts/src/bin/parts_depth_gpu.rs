@@ -10,8 +10,8 @@
 //!   --size 64 --hidden 32 --dil 2 --epochs 2 --out E:/tmp/x.dcn --parity 3
 //! ```
 
-use std::path::PathBuf;
-use std::time::Instant;
+use std::path::{Path, PathBuf};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use trit_parts::depthdata::{is_held, load_sample};
 use trit_parts::depthgpu::{DepthGpu, TrainRef};
@@ -232,6 +232,7 @@ fn main() {
         gnet.upload(&gpu);
     }
 
+    let mut last_mse = 0.0f32;
     for ep in 0..epochs {
         let t0 = Instant::now();
         let mut loss = 0.0f32;
@@ -248,11 +249,13 @@ fn main() {
                 loss += gnet.train_block(&gpu, &b, lr);
             }
         }
+        let mse = loss / train.len() as f32;
+        last_mse = mse;
         println!(
             "epoch {}/{}：MSE {:.4}（{:.0} ms，{:.1} 样本/秒）",
             ep + 1,
             epochs,
-            loss / train.len() as f32,
+            mse,
             t0.elapsed().as_secs_f64() * 1000.0,
             train.len() as f64 / t0.elapsed().as_secs_f64()
         );
@@ -262,6 +265,15 @@ fn main() {
             .save(&p)
             .unwrap_or_else(|e| panic!("{e}"));
         println!("已存 {}", p.display());
+        write_manifest(
+            &p,
+            &argv,
+            &data,
+            &holdout,
+            last_mse,
+            train.len(),
+            _held.len(),
+        );
     }
     if flag(&argv, "--profile") {
         let p = gnet.prof;
@@ -304,4 +316,103 @@ fn maxdiff(a: &[f32], b: &[f32]) -> f32 {
         .zip(b)
         .map(|(x, y)| (x - y).abs())
         .fold(0.0f32, f32::max)
+}
+
+/// JSON 字符串转义（不引 serde）。
+fn jstr(s: &str) -> String {
+    let bs = '\\';
+    let mut o = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => {
+                o.push(bs);
+                o.push('"');
+            }
+            c if c == bs => {
+                o.push(bs);
+                o.push(bs);
+            }
+            '\n' => {
+                o.push(bs);
+                o.push('n');
+            }
+            '\r' => {
+                o.push(bs);
+                o.push('r');
+            }
+            '\t' => {
+                o.push(bs);
+                o.push('t');
+            }
+            c if (c as u32) < 0x20 => o.push_str(&format!("{}u{:04x}", bs, c as u32)),
+            c => o.push(c),
+        }
+    }
+    o.push('"');
+    o
+}
+
+fn git_out(args: &[&str]) -> String {
+    std::process::Command::new("git")
+        .args(args)
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default()
+}
+
+/// 写 `<model>.manifest.json`：结果族台账的机器可读那一半。
+fn write_manifest(
+    out: &Path,
+    argv: &[String],
+    data: &[PathBuf],
+    holdout: &[String],
+    last_mse: f32,
+    train: usize,
+    held: usize,
+) {
+    let model_sha = trit_parts::fingerprint::file_sha256(out).unwrap_or_default();
+    let (dirs, files, data_hash) = trit_parts::depthdata::data_fingerprint(data);
+    let commit = git_out(&["rev-parse", "--short", "HEAD"])
+        .trim()
+        .to_string();
+    let dirty = !git_out(&["status", "--porcelain"]).trim().is_empty();
+    let created = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let num = |k: &str, d: f64| {
+        arg(argv, k)
+            .and_then(|v| v.parse::<f64>().ok())
+            .unwrap_or(d)
+    };
+    let epochs = num("--epochs", 3.0) as u32;
+    let config = format!(
+        "{{\"size\": {}, \"hidden\": {}, \"dil\": {}, \"epochs\": {epochs}, \"lr\": {}, \"accum\": {}, \"stride\": {}, \"pyr\": {}, \"full\": {}, \"f32\": {}, \"seed\": {}}}",
+        num("--size", 64.0) as u32,
+        num("--hidden", 8.0) as u32,
+        num("--dil", 1.0) as u32,
+        num("--lr", 0.01),
+        num("--accum", 1.0) as u32,
+        num("--stride", 2.0) as u32,
+        num("--pyr", 0.0) as u32,
+        flag(argv, "--full"),
+        flag(argv, "--f32"),
+        num("--seed", 7.0) as u64
+    );
+    let argv_json: Vec<String> = argv.iter().map(|a| jstr(a)).collect();
+    let hold_json: Vec<String> = holdout.iter().map(|a| jstr(a)).collect();
+    let bytes = std::fs::metadata(out).map(|m| m.len()).unwrap_or(0);
+    let body = format!(
+        "{{\n  \"schema\": 1,\n  \"kind\": \"depth-cnn-train\",\n  \"created_unix\": {created},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {config},\n  \"data\": {{\"dirs\": {dirs}, \"files\": {files}, \"hash\": \"sha256:{data_hash}\", \"train\": {train}, \"held\": {held}}},\n  \"holdout\": [{}],\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"bytes\": {bytes}}},\n  \"result\": {{\"final_mse\": {last_mse}, \"epochs\": {epochs}}}\n}}\n",
+        jstr(&commit),
+        argv_json.join(", "),
+        hold_json.join(", "),
+        jstr(&out.to_string_lossy())
+    );
+    let mut mpath = out.as_os_str().to_owned();
+    mpath.push(".manifest.json");
+    let mpath = PathBuf::from(mpath);
+    std::fs::write(&mpath, body).unwrap_or_else(|e| panic!("{}: {e}", mpath.display()));
+    println!("清单 {}", mpath.display());
 }
