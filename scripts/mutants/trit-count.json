@@ -62,5 +62,45 @@
   "new": "    let _ = constraints;\n    let cnf = cnf::Encoder::new(alg, vars, binary).encode(expr, target);",
   "pkg": "trit-count",
   "filter": "constrained_counts_match_exhaustive"
+ },
+ {
+  "name": "policy: 定义不展开",
+  "file": "crates/trit-count/src/policy.rs",
+  "old": "        Expr::Var(name) => {\n            if !definitions.contains_key(name) {\n                return Ok(Expr::Var(name.clone()));\n            }",
+  "new": "        Expr::Var(name) => {\n            if true {\n                return Ok(Expr::Var(name.clone()));\n            }",
+  "pkg": "trit-count",
+  "filter": "example_policy_expands_and_counts"
+ },
+ {
+  "name": "policy: 空断言集不判红",
+  "file": "crates/trit-count/src/policy.rs",
+  "old": "        if raw.assertions.is_empty() {\n            return Err(PolicyError::NoAssertions);\n        }",
+  "new": "        if false {\n            return Err(PolicyError::NoAssertions);\n        }",
+  "pkg": "trit-count",
+  "filter": "empty_assertion_set_is_rejected"
+ },
+ {
+  "name": "policy: binary 与定义同名不判红",
+  "file": "crates/trit-count/src/policy.rs",
+  "old": "            if expanded.contains_key(name) {\n                return Err(PolicyError::BinaryIsDefinition(name.clone()));\n            }",
+  "new": "            if false {\n                return Err(PolicyError::BinaryIsDefinition(name.clone()));\n            }",
+  "pkg": "trit-count",
+  "filter": "binary_named_after_a_definition_is_rejected"
+ },
+ {
+  "name": "policy: 未使用的 binary 变量不并入域",
+  "file": "crates/trit-count/src/policy.rs",
+  "old": "        vars.extend(raw.binary.iter().cloned());",
+  "new": "        let _ = &raw.binary;",
+  "pkg": "trit-count",
+  "filter": "unused_binary_variable_extends_the_domain"
+ },
+ {
+  "name": "policy: 默认代数不是 kleene",
+  "file": "crates/trit-count/src/policy.rs",
+  "old": "fn default_algebra() -> String {\n    \"kleene\".to_string()\n}",
+  "new": "fn default_algebra() -> String {\n    \"lukasiewicz\".to_string()\n}",
+  "pkg": "trit-count",
+  "filter": "default_algebra_is_kleene"
  }
 ]
