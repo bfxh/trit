@@ -5,7 +5,7 @@ use trit_core::algebra::Algebra;
 use trit_core::ast::Expr;
 use trit_core::parser::Parser;
 use trit_core::value::Ternary;
-use trit_count::{crosscheck, oracle};
+use trit_count::{crosscheck, crosscheck_under, oracle};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -35,6 +35,16 @@ fn main() -> ExitCode {
         .as_deref()
         .and_then(Algebra::parse)
         .unwrap_or(Algebra::Kleene);
+    let mut constraints = Vec::new();
+    for source in flag_values(&args, "--constraint") {
+        match Parser::parse(&source) {
+            Ok(constraint) => constraints.push(constraint),
+            Err(error) => {
+                eprintln!("约束解析失败: {error}");
+                return ExitCode::from(2);
+            }
+        }
+    }
     let target = flag_value(&args, "--target")
         .as_deref()
         .map(parse_target)
@@ -54,7 +64,13 @@ fn main() -> ExitCode {
                 .map(ToString::to_string)
                 .collect()
         })
-        .unwrap_or_else(|| oracle::collect_vars(&expr));
+        .unwrap_or_else(|| {
+            let mut collected = oracle::collect_vars(&expr);
+            for constraint in &constraints {
+                collected.extend(oracle::collect_vars(constraint));
+            }
+            collected
+        });
     vars.sort();
     vars.dedup();
 
@@ -69,8 +85,12 @@ fn main() -> ExitCode {
         })
         .unwrap_or_default();
 
-    let report = crosscheck(&expr, &vars, &binary, alg, target);
-    println!("alg={} target={target:?} vars={vars:?}", alg.as_str());
+    let report = crosscheck_under(&expr, &constraints, &vars, &binary, alg, target);
+    println!(
+        "alg={} target={target:?} constraints={} vars={vars:?}",
+        alg.as_str(),
+        constraints.len()
+    );
     println!("dpll_count     = {}", report.dpll_count);
     println!("exhaustive     = {}", report.exhaustive_count);
     println!("match          = {}", report.matches);
@@ -201,16 +221,34 @@ fn flag_value(args: &[String], name: &str) -> Option<String> {
         .and_then(|index| args.get(index + 1).cloned())
 }
 
+fn flag_values(args: &[String], name: &str) -> Vec<String> {
+    let mut values = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        if args[index] == name
+            && let Some(value) = args.get(index + 1)
+            && !value.starts_with("--")
+        {
+            values.push(value.clone());
+            index += 2;
+            continue;
+        }
+        index += 1;
+    }
+    values
+}
+
 fn usage() {
     println!(
         "trit-count — 三值表达式精确模型计数（dual-rail CNF + DPLL + 组件缓存）\n\
          \n\
          用法:\n\
-           trit-count --expr \"a & b\" [--vars a,b] [--binary a] [--alg k3|l3|b3] [--target true|false|unknown]\n\
+           trit-count --expr \"a & b\" [--constraint \"a\"] [--constraint \"!c\"] [--vars a,b,c] [--binary a] [--alg k3|l3|b3] [--target true|false|unknown]\n\
            trit-count --random [--cases N]\n\
          \n\
          说明:\n\
-           --vars 省略时从表达式收集；显式列出未使用变量会按其域计数。\n\
+           --constraint 可重复；每条约束必须为 true，计数只在满足全部约束的赋值上进行。\n\
+           --vars 省略时从表达式与约束收集；显式列出未使用变量会按其域计数。\n\
            --binary 中的变量只取 false/true；其余变量取 false/true/unknown。\n\
            --random 对 n=1..12 的随机表达式做 DPLL vs 穷举对拍。"
     );

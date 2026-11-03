@@ -114,8 +114,28 @@ impl Encoder {
 
     /// Encodes the expression and asserts the root has the target value.
     #[must_use]
-    pub fn encode(mut self, expr: &Expr, target: Ternary) -> Cnf {
+    pub fn encode(self, expr: &Expr, target: Ternary) -> Cnf {
+        self.encode_with_constraints(expr, &[], target)
+    }
+
+    /// Encodes the expression and every constraint. Each constraint must be
+    /// `True`, and the expression must have the `target` value.
+    #[must_use]
+    pub fn encode_with_constraints(
+        mut self,
+        expr: &Expr,
+        constraints: &[Expr],
+        target: Ternary,
+    ) -> Cnf {
+        let constraint_roots: Vec<Rails> = constraints
+            .iter()
+            .map(|constraint| self.encode_expr(constraint))
+            .collect();
         let root = self.encode_expr(expr);
+        for constraint in constraint_roots {
+            self.clause(&[constraint.t]);
+            self.clause(&[-constraint.x]);
+        }
         match target {
             Ternary::False => {
                 self.clause(&[-root.t]);
