@@ -225,18 +225,20 @@ def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
     syntax = RUNNERS[runner]["syntax"]
     # 只认工具链自己打的诊断：断言行的例名里可能出现 "SyntaxError" 这类字样，
     # 把断言文本当成编译失败就会把"真抓住"误判成假杀（门自测第一版就这么翻车）。
-    diag = "\n".join(line for line in out.splitlines() if not line.startswith("FAIL "))
+    # lstrip 不是装饰：`ci_budget / secret_wiring / oops` 印的是缩进的 `  FAIL <例名>`，
+    # 不认缩进 ⇒ 这 50 条既进不了 diag 剔除、也点不出名，全落 unnamed（2026-11-03 全表普查实测）。
+    diag = "\n".join(line for line in out.splitlines() if not line.lstrip().startswith("FAIL "))
     if "could not compile" in diag or any(tok in diag for tok in syntax.split("|")):
         # 变异让代码编不过 ⇒ 测试根本没跑，这条"红"不证明任何断言。
         return "false_kill", ""
     named = next((line for line in out.splitlines() if "FAILED" in line), None)
     if runner in ("python", "bash"):
         # 门脚本自测面的点名方式各不相同，按能点名的优先：
-        #   `FAIL <例名>`（module_budget / publish_graph / bash 冒烟脚本）、
+        #   `FAIL <例名>`（module_budget / publish_graph / bash 冒烟脚本；缩进两格的同款也算）
         #   `SELF-TEST FAIL: <规则>`（hazard_gate）、
         #   裸 `assert` 抛出的 `AssertionError: <话>`（pr_hygiene）—— 那也是断言。
         for probe in (
-            lambda: next((l for l in out.splitlines() if l.startswith("FAIL ")), None),
+            lambda: next((l for l in out.splitlines() if l.lstrip().startswith("FAIL ")), None),
             lambda: next((l for l in out.splitlines() if "SELF-TEST FAIL" in l), None),
             lambda: next(
                 (
@@ -473,6 +475,16 @@ def self_test() -> int:
         ("caught", "FAIL red: stale baseline ｜ self-test: 9/10 passed"),
     )
     check("python 裸 traceback→crash", classify("Traceback (most recent call last):\nKeyError: 1", 1, "python")[0], "crash")
+    check(
+        "缩进两格的 FAIL 也算点名（ci_budget/secret_wiring/oops 的印法）",
+        classify("  FAIL red: stale baseline\nself-test: 9/10 passed", 1, "python"),
+        ("caught", "FAIL red: stale baseline ｜ self-test: 9/10 passed"),
+    )
+    check(
+        "缩进 FAIL 行里的 SyntaxError 同样不算编译红",
+        classify("  FAIL x: 文案里有 SyntaxError 字样\nself-test: 2/3 passed", 1, "python")[0],
+        "caught",
+    )
     check("python AssertionError→caught", classify("AssertionError: 断言失败: x", 1, "python")[0], "caught")
     check(
         "断言文本里的 SyntaxError 不算编译红",

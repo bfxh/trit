@@ -178,5 +178,23 @@
   "pkg": "scripts/mutation_check.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "mutation-check: 缩进 FAIL 行没被剔出语法诊断（断言里的 SyntaxError 字样误判成编译红）",
+  "file": "scripts/mutation_check.py",
+  "old": "    diag = \"\\n\".join(line for line in out.splitlines() if not line.lstrip().startswith(\"FAIL \"))",
+  "new": "    diag = \"\\n\".join(line for line in out.splitlines() if not line.startswith(\"FAIL \"))",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-check: 点名不认缩进的 FAIL 行（50 条真抓住被降级成未点名⇒门红在错的地方）",
+  "file": "scripts/mutation_check.py",
+  "old": "            lambda: next((l for l in out.splitlines() if l.lstrip().startswith(\"FAIL \")), None),",
+  "new": "            lambda: next((l for l in out.splitlines() if l.startswith(\"FAIL \")), None),",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
  }
 ]
