@@ -1,0 +1,20 @@
+[package]
+name = "trit-count"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三值表达式精确模型计数：dual-rail CNF、DPLL 与组件缓存（实验层）"
+publish = false
+
+[dependencies]
+trit-core.workspace = true
+trit-eval.workspace = true
+
+[dev-dependencies]
+trit-sat.workspace = true
+
+[[bin]]
+name = "trit-count"
+path = "src/main.rs"

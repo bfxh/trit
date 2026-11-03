@@ -10,6 +10,7 @@ members = [
     "crates/trit-lsp",
     "crates/trit-eval",
     "crates/trit-sat",
+    "crates/trit-count",
     "crates/trit-circuit",
     "crates/trit-cli",
     "crates/trit-build",
