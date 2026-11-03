@@ -32,6 +32,10 @@ pub struct DepthNet {
     /// 训练时的目标归一化统计（log 深度中位/四分位距），用于推理反归一化。
     pub med: f32,
     pub iqr: f32,
+    /// 输入平面构成：`--pyr`（局部低通层数）与 `--ppyr`（全局金字塔池化层数）。
+    /// 推理时必须用同一份构成，否则输入通道数对不上/语义不一致。
+    pub pyr: usize,
+    pub ppyr: usize,
 }
 
 impl DepthNet {
@@ -60,6 +64,8 @@ impl DepthNet {
             out_b: 0.0,
             med: 0.0,
             iqr: 1.0,
+            pyr: 0,
+            ppyr: 0,
         }
     }
 
@@ -230,13 +236,17 @@ impl DepthNet {
 
     pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
         use std::fmt::Write as _;
+        // DCN4 起存输入构成（`--pyr` 局部低通 / `--ppyr` 全局金字塔池化）：
+        // 推理时若不同一份构成，通道数与语义都对不上。
         let mut s = format!(
-            "DCN3 {} {} {} {} {}\n",
+            "DCN4 {} {} {} {} {} {} {}\n",
             self.med,
             self.iqr,
             u8::from(self.c1.ternary),
             self.out_b,
-            self.c1.dil
+            self.c1.dil,
+            self.pyr,
+            self.ppyr
         );
         for c in [&self.c1, &self.c2, &self.c3] {
             let _ = writeln!(s, "{} {}", c.cin, c.cout);
@@ -254,23 +264,32 @@ impl DepthNet {
         let txt = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         let mut it = txt.split_whitespace();
         let tag = it.next();
-        if !matches!(tag, Some("DCN1") | Some("DCN2") | Some("DCN3")) {
-            return Err(format!("{}: 不是 DCN1/DCN2/DCN3", path.display()));
+        if !matches!(
+            tag,
+            Some("DCN1") | Some("DCN2") | Some("DCN3") | Some("DCN4")
+        ) {
+            return Err(format!("{}: 不是 DCN1/DCN2/DCN3/DCN4", path.display()));
         }
         let med: f32 = it.next().and_then(|x| x.parse().ok()).ok_or("缺 med")?;
         let iqr: f32 = it.next().and_then(|x| x.parse().ok()).ok_or("缺 iqr")?;
         let tern: bool = it.next().and_then(|x| x.parse::<u8>().ok()).unwrap_or(1) != 0;
-        let out_b: f32 = if matches!(tag, Some("DCN2") | Some("DCN3")) {
+        let out_b: f32 = if matches!(tag, Some("DCN2") | Some("DCN3") | Some("DCN4")) {
             it.next().and_then(|x| x.parse().ok()).ok_or("缺 out_b")?
         } else {
             0.0
         };
         // DCN3 起存膨胀率：不存会让推理按 dil=1 跑，与训练（dil=2）不是同一个函数。
-        let dil: usize = if tag == Some("DCN3") {
+        let dil: usize = if matches!(tag, Some("DCN3") | Some("DCN4")) {
             it.next().and_then(|x| x.parse().ok()).ok_or("缺 dil")?
         } else {
             1
         };
+        // DCN4 起存输入构成；老格式按「多出来的通道都是 pyr」推。
+        let (mut pyr, mut ppyr) = (0usize, 0usize);
+        if tag == Some("DCN4") {
+            pyr = it.next().and_then(|x| x.parse().ok()).ok_or("缺 pyr")?;
+            ppyr = it.next().and_then(|x| x.parse().ok()).ok_or("缺 ppyr")?;
+        }
         let mut convs = Vec::new();
         for _ in 0..3 {
             let cin: usize = it.next().ok_or("缺 cin")?.parse().map_err(|_| "cin")?;
@@ -293,6 +312,10 @@ impl DepthNet {
         c2.ternary = tern;
         let mut c3 = convs[2].clone();
         c3.ternary = false; // 与 new() 一致：输出层是线性 f32
+        if tag != Some("DCN4") {
+            // 老格式没有输入构成字段：多出来的通道按 pyr（局部低通）算。
+            pyr = c1.cin.saturating_sub(3) / 3;
+        }
         let mut net = DepthNet {
             c1,
             c2,
@@ -300,6 +323,8 @@ impl DepthNet {
             out_b,
             med,
             iqr,
+            pyr,
+            ppyr,
         };
         net.set_dilation(dil);
         Ok(net)
