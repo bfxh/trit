@@ -1,0 +1,92 @@
+[
+ {
+  "name": "ci_scope: 空 diff 也敢窄化（拿不到 base 时等于放弃全量）",
+  "file": "scripts/ci_scope.py",
+  "old": "    if not files:",
+  "new": "    if False:",
+  "pkg": "scripts/ci_scope.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_scope: 纯文档不跳过 Rust 矩阵（#247 快路径失效）",
+  "file": "scripts/ci_scope.py",
+  "old": "    if not code:",
+  "new": "    if False:",
+  "pkg": "scripts/ci_scope.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_scope: only_docs 标 False，文档 PR 仍跑全量编译",
+  "file": "scripts/ci_scope.py",
+  "old": "        out[\"only_docs\"] = True",
+  "new": "        out[\"only_docs\"] = False",
+  "pkg": "scripts/ci_scope.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_scope: 归不到 crate 的文件（根级 Cargo.toml/.github/scripts）不再兜全量",
+  "file": "scripts/ci_scope.py",
+  "old": "        if owner is None:",
+  "new": "        if False:",
+  "pkg": "scripts/ci_scope.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_scope: owner_of 不做最深匹配，嵌套成员归属错乱",
+  "file": "scripts/ci_scope.py",
+  "old": "        if p.startswith(prefix) and len(directory) > best_len:",
+  "new": "        if p.startswith(prefix) and False:",
+  "pkg": "scripts/ci_scope.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_scope: 反向依赖不传播（只测直改 crate，上游漏跑）",
+  "file": "scripts/ci_scope.py",
+  "old": "        for up in dependents.get(cur, ()):",
+  "new": "        for up in ():",
+  "pkg": "scripts/ci_scope.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_scope: -p 列表用直改集而不是闭包（等于丢掉反向依赖）",
+  "file": "scripts/ci_scope.py",
+  "old": "    ordered = sorted(closure)",
+  "new": "    ordered = sorted(seeds)",
+  "pkg": "scripts/ci_scope.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_scope: 闭包吃掉大半仓仍窄化（省不了多少，只剩风险）",
+  "file": "scripts/ci_scope.py",
+  "old": "    if len(names) and len(closure) / len(names) >= CLOSURE_RATIO:",
+  "new": "    if False:",
+  "pkg": "scripts/ci_scope.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_scope: crate 名不做字符校验（能往 shell 里拼参数）",
+  "file": "scripts/ci_scope.py",
+  "old": "    if not all(NAME_OK.match(n) for n in closure):",
+  "new": "    if False:",
+  "pkg": "scripts/ci_scope.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "ci_scope: needs_png/needs_gpu 恒真（feature step 永远白等一趟编译）",
+  "file": "scripts/ci_scope.py",
+  "old": "        out[key] = gate_crate in closure",
+  "new": "        out[key] = True",
+  "pkg": "scripts/ci_scope.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
