@@ -1373,7 +1373,10 @@ def wait_for_checks(repo: str, branch: str, attempts: int = 40, pause: int = 15)
         rows, state = check_rows(repo, branch)
         if rows and state == "":
             return 0
-        if state not in ("none", ""):
+        if "形状不认识" in state:
+            print("checks 输出形状不认识 ⇒ 判红（这不是竞态，重试不会变好）：" + state)
+            return 1
+        if state and state != "none":
             print("读 checks 失败：" + state + "（继续等，超时则判红）")
         if index == 0:
             print("检查还没注册，先等它们出现…")
@@ -1904,6 +1907,18 @@ def self_test() -> int:
                 if probes["n"] < 2:
                     return ([], "none")
                 return ([{"name": "CI", "bucket": "pass"}], "")
+
+            globals()["check_rows"] = lambda repo, branch: ([], "checks 输出不是 JSON（形状不认识）：CI pass")
+            shape_clock = _Clock()
+            globals()["time"] = shape_clock
+            check("形状不认识 ⇒ 立刻判红、一次都不睡（旧代码会按整个预算空睡）",
+                  (wait_for_checks("o/r", "b", attempts=4, pause=6), shape_clock.slept), (1, []))
+            globals()["check_rows"] = lambda repo, branch: ([], "gh pr checks 返回码 1 且没有输出")
+            blip_clock = _Clock()
+            globals()["time"] = blip_clock
+            check("网络类失败仍按预算重试（不把偶发当永久）",
+                  (wait_for_checks("o/r", "b", attempts=2, pause=4), blip_clock.slept), (1, [4, 4]))
+            globals()["check_rows"] = lambda repo, branch: ([], "none")
 
             globals()["check_rows"] = registered_later
             globals()["time"] = clock3
