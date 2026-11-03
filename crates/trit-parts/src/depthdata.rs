@@ -172,24 +172,6 @@ pub fn is_held(path: &Path, holdout: &[String]) -> bool {
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 目录名与完整路径两种写法都要命中；相近名字不能误命中。
-    #[test]
-    fn holdout_accepts_bare_name_and_full_path() {
-        let p = Path::new("E:/trit-data/s1/mat60/renders/scene0050");
-        assert!(is_held(p, &["scene0050".to_string()]));
-        assert!(is_held(
-            p,
-            &["E:/trit-data/s1/mat60/renders/scene0050/".to_string()]
-        ));
-        assert!(!is_held(p, &["scene0051".to_string()]));
-        assert!(!is_held(p, &[]));
-    }
-}
-
 /// 评测用样本（只需要输入/目标/掩码；不带相机，验证器不必读 meta）。
 pub struct EvalSample {
     pub x: Vec<Vec<f32>>,
@@ -307,4 +289,22 @@ pub fn data_fingerprint(dirs: &[std::path::PathBuf]) -> (usize, usize, String) {
         }
     }
     (names.len(), files, sha256_hex(&acc))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 目录名与完整路径两种写法都要命中；相近名字不能误命中。
+    #[test]
+    fn holdout_accepts_bare_name_and_full_path() {
+        let p = Path::new("E:/trit-data/s1/mat60/renders/scene0050");
+        assert!(is_held(p, &["scene0050".to_string()]));
+        assert!(is_held(
+            p,
+            &["E:/trit-data/s1/mat60/renders/scene0050/".to_string()]
+        ));
+        assert!(!is_held(p, &["scene0051".to_string()]));
+        assert!(!is_held(p, &[]));
+    }
 }
