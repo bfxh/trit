@@ -193,3 +193,59 @@ fn authenticode_certificate_is_not_overlay() {
     assert!(info.has_security_dir);
     assert!(info.overlay.is_none(), "只有证书、没有尾巴时不应报叠加段");
 }
+
+#[test]
+fn coff_symbols_give_pe32_exact_boundaries() {
+    use trit_re::functions::FunctionReport;
+    use trit_re::xref::{CallSite, ImportXref, SiteKind, XrefReport};
+
+    let bytes = support::pe32_with_symbols();
+    let info = pe::parse(&bytes).expect("PE32 must parse");
+    assert!(!info.plus);
+    assert!(info.runtime_functions.is_none(), "PE32 没有 .pdata");
+
+    // COFF 符号表：2 个函数符号（短名内联 + 串表长名）。夹具里第 3 只是**住在可执行节
+    // .text 里的非函数符号**——只有 Type 那道过滤能挡它，所以这条 len 断言钉得住
+    // 符号类型判断本身，而不是被"节必须可执行"顺手替它把关。
+    let functions = info.coff_functions.as_ref().expect("符号表应可解析");
+    assert_eq!(functions.len(), 2);
+    assert_eq!(functions[0].rva, 0x1010);
+    assert_eq!(functions[0].name.as_deref(), Some("fn_alpha"));
+    assert_eq!(functions[1].rva, 0x1100);
+    assert_eq!(functions[1].name.as_deref(), Some("fn_beta_long_name"));
+
+    // 函数级报告：exact=true（COFF 符号表与 STT_FUNC 同等权威）。
+    let xref = XrefReport {
+        arch: "x86".into(),
+        scanned_bytes: 0x200,
+        complete: true,
+        imports: vec![ImportXref {
+            import: "KERNEL32.dll!LoadLibraryA".into(),
+            slot: 0x2040,
+            sites: vec![CallSite {
+                addr: 0x1010,
+                file_offset: 0x410,
+                kind: SiteKind::Call,
+            }],
+            status: Ternary::True,
+            note: String::new(),
+        }],
+        notes: vec![],
+    };
+    let report = trit_re::functions::build_pe(&bytes, &info, &xref);
+    assert!(report.exact, "COFF 符号表边界必须算精确");
+    assert_eq!(report.total_functions, 2);
+    let first = &report.functions[0];
+    assert_eq!(first.function.source.as_str(), "coff-symtab");
+    assert_eq!(first.function.start, 0x1010);
+    assert_eq!(first.function.end, 0x1100);
+    assert_eq!(first.function.name.as_deref(), Some("fn_alpha"));
+    assert_eq!(first.imports, vec!["KERNEL32.dll!LoadLibraryA".to_string()]);
+    // 调用点落在 fn_alpha 内 ⇒ 全部归属，无未归属。
+    assert_eq!(report.attributed_sites, 1);
+    assert_eq!(report.unattributed_sites, 0);
+
+    // **PE32 共现从 Unknown 变为可判**：无未归属且证据完整 ⇒ 能给出确定结论。
+    let co: FunctionReport = report;
+    assert_eq!(co.cooccurrence(&["process"], true), Ternary::False);
+}

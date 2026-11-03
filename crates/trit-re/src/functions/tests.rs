@@ -17,6 +17,10 @@ fn cooccurrence_case() -> FunctionReport {
         unattributed_calls: 0,
         unattributed_jumps: 0,
         unattributed_buckets: vec![],
+        ruled_sites: vec![],
+        ruling_clip: 0,
+        ruling_miss: 0,
+        ruling_nonexec: 0,
         notes: vec![],
     }
 }
@@ -293,7 +297,7 @@ fn unattributed_sites_are_split_by_kind() {
         }],
         notes: vec![],
     };
-    let report = attribute(&xref, &[], true, vec![]);
+    let report = attribute(&xref, &[], &[], true, vec![]);
     assert_eq!(report.unattributed_calls, 1);
     assert_eq!(report.unattributed_jumps, 1);
     assert!(
@@ -301,6 +305,17 @@ fn unattributed_sites_are_split_by_kind() {
             .notes
             .iter()
             .any(|note| note.contains("call 1 / jmp 1"))
+    );
+    // 逐条裁定：没有 exec 段时两个调用点都是非执行节（误报候选）。
+    assert_eq!(report.ruling_nonexec, 2);
+    assert_eq!(report.ruling_clip, 0);
+    assert_eq!(report.ruling_miss, 0);
+    assert_eq!(report.ruled_sites.len(), 2);
+    assert!(
+        report
+            .ruled_sites
+            .iter()
+            .all(|site| site.ruling.as_str() == "non-exec")
     );
 }
 
@@ -325,6 +340,10 @@ fn cooccurrence_requires_exact_and_fully_attributed() {
         unattributed_calls: 0,
         unattributed_jumps: 0,
         unattributed_buckets: vec![],
+        ruled_sites: vec![],
+        ruling_clip: 0,
+        ruling_miss: 0,
+        ruling_nonexec: 0,
         notes: vec![],
     };
     assert_eq!(report.cooccurrence(&["a", "b"], true), Ternary::False);
@@ -364,4 +383,110 @@ fn cooccurrence_requires_exact_and_fully_attributed() {
         ..cooccurrence_case()
     };
     assert_eq!(hit_with_gap.cooccurrence(&["a", "b"], true), Ternary::True);
+}
+
+#[test]
+fn unattributed_sites_get_per_site_rulings() {
+    use super::{BOUNDARY_CLIP_BYTES, attribute};
+    use crate::xref::{CallSite, ImportXref, SiteKind as Kind, XrefReport};
+
+    // 一个函数 [0x1000, 0x1100)；exec 段 [0x0, 0x2000)。
+    // 三个未归属调用点分别命中三类裁定：
+    // - 0x1103：距函数末尾 4 字节 ⇒ 疑边界裁剪（对齐填充/尾部代码）；
+    // - 0x1800：exec 内、距边界 0x700 ⇒ 疑边界漏检；
+    // - 0x3000：exec 段之外 ⇒ 字节模式误报候选。
+    let xref = |sites: &[(u64, Kind)]| XrefReport {
+        arch: "test".into(),
+        scanned_bytes: 0,
+        complete: true,
+        imports: sites
+            .iter()
+            .map(|(addr, kind)| ImportXref {
+                import: "a!VirtualAllocEx".into(),
+                slot: 1,
+                sites: vec![CallSite {
+                    addr: *addr,
+                    file_offset: 0,
+                    kind: *kind,
+                }],
+                status: Ternary::Unknown,
+                note: String::new(),
+            })
+            .collect(),
+        notes: vec![],
+    };
+    let ranges = vec![function(0x1000, 0x1100)];
+    let exec_data = vec![0u8; 0x2000];
+    let exec = vec![(0x0u64, &exec_data[..])];
+
+    let report = attribute(
+        &xref(&[
+            (0x1103, Kind::Call),
+            (0x1800, Kind::Call),
+            (0x3000, Kind::Jump),
+        ]),
+        &ranges,
+        &exec,
+        true,
+        vec![],
+    );
+    assert_eq!(report.unattributed_sites, 3);
+    assert_eq!(report.ruling_clip, 1);
+    assert_eq!(report.ruling_miss, 1);
+    assert_eq!(report.ruling_nonexec, 1);
+    assert_eq!(report.ruled_sites.len(), 3);
+    let ruling_of = |addr: u64| {
+        report
+            .ruled_sites
+            .iter()
+            .find(|site| site.addr == addr)
+            .expect("三个地址都要有裁定")
+    };
+    assert_eq!(ruling_of(0x1103).ruling.as_str(), "boundary-clip");
+    assert_eq!(ruling_of(0x1103).distance, 4);
+    assert_eq!(ruling_of(0x1800).ruling.as_str(), "boundary-miss");
+    assert!(ruling_of(0x1800).distance > BOUNDARY_CLIP_BYTES);
+    assert_eq!(ruling_of(0x3000).ruling.as_str(), "non-exec");
+    // 说明里带三类计数的汇总。
+    assert!(
+        report
+            .notes
+            .iter()
+            .any(|note| note.contains("逐条裁定") && note.contains("非执行节（误报候选）1"))
+    );
+}
+
+#[test]
+fn ruling_detail_is_capped_but_counts_are_complete() {
+    use super::{MAX_RULED_SITES, attribute};
+    use crate::xref::{CallSite, ImportXref, SiteKind as Kind, XrefReport};
+
+    // 100 个未归属调用点（全在 exec 外）：明细截断到 64，三类计数仍为 100。
+    let sites: Vec<(u64, Kind)> = (0..100)
+        .map(|i| (0x3000 + i as u64 * 0x10, Kind::Call))
+        .collect();
+    let xref = XrefReport {
+        arch: "test".into(),
+        scanned_bytes: 0,
+        complete: true,
+        imports: sites
+            .iter()
+            .map(|(addr, kind)| ImportXref {
+                import: "a!x".into(),
+                slot: 1,
+                sites: vec![CallSite {
+                    addr: *addr,
+                    file_offset: 0,
+                    kind: *kind,
+                }],
+                status: Ternary::Unknown,
+                note: String::new(),
+            })
+            .collect(),
+        notes: vec![],
+    };
+    let report = attribute(&xref, &[], &[], true, vec![]);
+    assert_eq!(report.unattributed_sites, 100);
+    assert_eq!(report.ruled_sites.len(), MAX_RULED_SITES);
+    assert_eq!(report.ruling_nonexec, 100);
 }

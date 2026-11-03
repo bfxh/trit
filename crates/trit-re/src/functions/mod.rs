@@ -25,6 +25,8 @@ use crate::xref::XrefReport;
 pub enum FuncSource {
     /// PE `.pdata`。
     Pdata,
+    /// PE COFF 符号表（PE32 常见；与 ELF `STT_FUNC` 同等权威）。
+    CoffSymbols,
     /// ELF `STT_FUNC`。
     Symtab,
     /// ELF `.eh_frame`（FDE 区间）。
@@ -40,6 +42,7 @@ impl FuncSource {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Pdata => "pdata",
+            Self::CoffSymbols => "coff-symtab",
             Self::Symtab => "symtab",
             Self::EhFrame => "eh_frame",
             Self::DebugFrame => "debug_frame",
@@ -72,6 +75,51 @@ pub struct FunctionCalls {
     pub buckets: Vec<&'static str>,
 }
 
+/// 未归属调用点的**逐条裁定**。
+///
+/// 裁定是**证据分类**，不是归属成功——方向保守：任何裁定都不会把调用点
+/// 洗成"已归属"，能力桶的 `Unknown` 拖累逻辑不变。裁定回答的是
+/// "这个调用点为什么归不到函数"，让人能直接看边界质量问题出在哪。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SiteRuling {
+    /// 疑**边界裁剪**：距最近函数边界 ≤ [`BOUNDARY_CLIP_BYTES`]——
+    /// 对齐填充/边界源截断（`.pdata` 只记录函数体，尾部的 unwind/填充码
+    /// 会落在区间外）里的真实代码。
+    BoundaryClip,
+    /// 疑**边界漏检**：在可执行节内、距任何函数边界 > [`BOUNDARY_CLIP_BYTES`]
+    /// ——某个函数的起点没有被任何边界源识别。
+    BoundaryMiss,
+    /// **不在可执行节**：字节模式匹配的误报候选（数据段里恰好长得像指令）。
+    NonExec,
+}
+
+impl SiteRuling {
+    /// 稳定短名（进台账）。
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::BoundaryClip => "boundary-clip",
+            Self::BoundaryMiss => "boundary-miss",
+            Self::NonExec => "non-exec",
+        }
+    }
+}
+
+/// 边界裁剪的判定半径：x64 最长指令 15 字节，函数间对齐填充 ≤15 字节。
+pub const BOUNDARY_CLIP_BYTES: u64 = 16;
+
+/// 单个未归属调用点的裁定明细。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuledSite {
+    /// 调用点地址（PE 为 RVA，ELF 为虚拟地址）。
+    pub addr: u64,
+    /// 调用点类别。
+    pub kind: crate::xref::SiteKind,
+    /// 裁定。
+    pub ruling: SiteRuling,
+    /// 到最近函数边界的距离（不在任何函数区间内时的间隔字节数）。
+    pub distance: u64,
+}
+
 /// 函数级报告。
 #[derive(Debug, Clone)]
 pub struct FunctionReport {
@@ -91,9 +139,20 @@ pub struct FunctionReport {
     pub unattributed_jumps: usize,
     /// 这些未归属调用点涉及的能力桶（只有可能影响该组的桶才会拖成 `Unknown`）。
     pub unattributed_buckets: Vec<&'static str>,
+    /// 未归属调用点的**逐条裁定**（超过 [`MAX_RULED_SITES`] 条截断，计数仍完整）。
+    pub ruled_sites: Vec<RuledSite>,
+    /// 三类裁定的总数（与截断无关）。
+    pub ruling_clip: usize,
+    /// 疑边界漏检数。
+    pub ruling_miss: usize,
+    /// 非执行节误报候选数。
+    pub ruling_nonexec: usize,
     /// 说明。
     pub notes: Vec<String>,
 }
+
+/// 逐条裁定的保留上限（报告体积护栏；计数不受影响）。
+pub const MAX_RULED_SITES: usize = 64;
 
 impl FunctionReport {
     /// 是否存在"同一函数内同时出现全部 `required` 能力桶"。
@@ -145,16 +204,31 @@ pub fn build_pe(bytes: &[u8], info: &pe::PeInfo, xref: &XrefReport) -> FunctionR
                 .collect(),
             true,
         ),
-        _ => {
-            notes.push("没有 .pdata：函数边界退化为启发式，只用于展示".to_string());
-            (
-                heuristic_ranges(&exec, info.entry_rva as u64, arch_of_pe(info.machine)),
-                false,
-            )
-        }
+        // PE32 没有 `.pdata`；COFF 符号表（mingw 系默认带）是与 ELF `STT_FUNC`
+        // 同等权威的边界源——函数符号的 Value 按 RVA 解释，落在可执行节内
+        // 才收（pe/coff.rs 已自校验）。区间终点 = 下一个函数起点 / 所在节末尾。
+        _ => match &info.coff_functions {
+            Some(functions) if !functions.is_empty() => {
+                notes.push(format!(
+                    "没有 .pdata：函数边界取自 COFF 符号表（{} 个函数符号）",
+                    functions.len()
+                ));
+                (coff_symbol_ranges(functions, &info.sections), true)
+            }
+            _ => {
+                notes.push(
+                    "没有 .pdata 也没有可用的 COFF 符号表：函数边界退化为启发式，只用于展示"
+                        .to_string(),
+                );
+                (
+                    heuristic_ranges(&exec, info.entry_rva as u64, arch_of_pe(info.machine)),
+                    false,
+                )
+            }
+        },
     };
     normalize(&mut ranges);
-    attribute(xref, &ranges, exact, notes)
+    attribute(xref, &ranges, &exec, exact, notes)
 }
 
 /// ELF 的函数级报告。
@@ -237,7 +311,7 @@ pub fn build_elf(bytes: &[u8], info: &elf::ElfInfo, xref: &XrefReport) -> Functi
         )
     };
     normalize(&mut ranges);
-    attribute(xref, &ranges, exact, notes)
+    attribute(xref, &ranges, &exec, exact, notes)
 }
 
 /// 边界候选覆盖了多少个交叉引用调用点。
@@ -294,6 +368,43 @@ fn choose_frame_source<'a>(
 /// 符号覆盖的可执行字节是否足够撑起"精确边界"。
 fn coverage_is_complete(covered: u64, exec_bytes: u64) -> bool {
     exec_bytes > 0 && covered.saturating_mul(10) >= exec_bytes.saturating_mul(9)
+}
+
+/// COFF 函数符号 → 函数区间：起点 = 符号 RVA（升序去重后），终点 =
+/// 下一个函数起点与所在节末尾的较小者；最后一个函数到所在节末尾。
+/// 符号不落在任何节里（pe/coff.rs 已过滤，这里再兜底）就跳过。
+fn coff_symbol_ranges(functions: &[pe::CoffFunction], sections: &[pe::Section]) -> Vec<Function> {
+    let section_end = |rva: u32| -> u64 {
+        sections
+            .iter()
+            .find(|section| {
+                rva >= section.virtual_address
+                    && rva < section.virtual_address.saturating_add(section.raw_size)
+            })
+            .map(|section| {
+                section.virtual_address as u64 + section.virtual_size.max(section.raw_size) as u64
+            })
+            .unwrap_or(u64::MAX)
+    };
+    let mut ranges: Vec<Function> = Vec::new();
+    for (index, symbol) in functions.iter().enumerate() {
+        let start = symbol.rva as u64;
+        let next_start = functions
+            .get(index + 1)
+            .map(|next| next.rva as u64)
+            .unwrap_or(u64::MAX);
+        let end = next_start.min(section_end(symbol.rva));
+        if end <= start {
+            continue;
+        }
+        ranges.push(Function {
+            start,
+            end,
+            name: symbol.name.clone(),
+            source: FuncSource::CoffSymbols,
+        });
+    }
+    ranges
 }
 
 fn pe_exec_sections<'a>(bytes: &'a [u8], info: &pe::PeInfo) -> Vec<(u64, &'a [u8])> {
@@ -447,6 +558,7 @@ fn normalize(ranges: &mut Vec<Function>) {
 fn attribute(
     xref: &XrefReport,
     ranges: &[Function],
+    exec: &[(u64, &[u8])],
     exact: bool,
     notes: Vec<String>,
 ) -> FunctionReport {
@@ -464,6 +576,10 @@ fn attribute(
     let mut unattributed_jumps = 0usize;
     let mut unattributed_samples: Vec<u64> = Vec::new();
     let mut unattributed_buckets: BTreeSet<&'static str> = BTreeSet::new();
+    let mut ruled_sites: Vec<RuledSite> = Vec::new();
+    let mut ruling_clip = 0usize;
+    let mut ruling_miss = 0usize;
+    let mut ruling_nonexec = 0usize;
     for row in &xref.imports {
         for site in &row.sites {
             match locate(ranges, site.addr) {
@@ -489,6 +605,28 @@ fn attribute(
                         for bucket in buckets {
                             unattributed_buckets.insert(*bucket);
                         }
+                    }
+                    // 逐条裁定：为什么归不到函数。裁定不改变保守方向
+                    // （不洗成"已归属"），只给可复算的证据分类。
+                    let in_exec = exec.iter().any(|(start, data)| {
+                        site.addr >= *start && site.addr < start.wrapping_add(data.len() as u64)
+                    });
+                    let distance = nearest_boundary_distance(ranges, site.addr);
+                    let (ruling, counter) = if !in_exec {
+                        (SiteRuling::NonExec, &mut ruling_nonexec)
+                    } else if distance <= BOUNDARY_CLIP_BYTES {
+                        (SiteRuling::BoundaryClip, &mut ruling_clip)
+                    } else {
+                        (SiteRuling::BoundaryMiss, &mut ruling_miss)
+                    };
+                    *counter += 1;
+                    if ruled_sites.len() < MAX_RULED_SITES {
+                        ruled_sites.push(RuledSite {
+                            addr: site.addr,
+                            kind: site.kind,
+                            ruling,
+                            distance,
+                        });
                     }
                 }
             }
@@ -517,6 +655,9 @@ fn attribute(
             "{unattributed} 个调用点不在任何精确函数区间内（call {unattributed_calls} / jmp {unattributed_jumps}；跳板或缺少边界信息的函数（PE 叶函数 / ELF 缺 FDE）都会落在这里），示例 {}",
             samples.join(", ")
         ));
+        notes.push(format!(
+            "逐条裁定：疑边界裁剪（≤{BOUNDARY_CLIP_BYTES}B）{ruling_clip}、疑边界漏检（exec 内远距）{ruling_miss}、非执行节（误报候选）{ruling_nonexec}；明细见 ruled_sites（≤{MAX_RULED_SITES} 条）"
+        ));
     }
 
     FunctionReport {
@@ -528,8 +669,29 @@ fn attribute(
         unattributed_calls,
         unattributed_jumps,
         unattributed_buckets: unattributed_buckets.into_iter().collect(),
+        ruled_sites,
+        ruling_clip,
+        ruling_miss,
+        ruling_nonexec,
         notes,
     }
+}
+
+/// 到最近函数边界的距离：地址在补集里时，与所有 `[start, end)` 区间的
+/// 最小间隔。区间内不会调用本函数（locate 已筛过）。
+fn nearest_boundary_distance(ranges: &[Function], addr: u64) -> u64 {
+    ranges
+        .iter()
+        .map(|function| {
+            if addr < function.start {
+                function.start - addr
+            } else {
+                // addr >= end：间隔 = addr 越过区间末尾的字节数。
+                addr - function.end + 1
+            }
+        })
+        .min()
+        .unwrap_or(u64::MAX)
 }
 
 fn locate(ranges: &[Function], addr: u64) -> Option<usize> {
