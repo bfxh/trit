@@ -31,7 +31,21 @@ pub fn count_models(
     alg: Algebra,
     target: Ternary,
 ) -> CountResult {
-    let cnf = cnf::Encoder::new(alg, vars, binary).encode(expr, target);
+    count_models_under(expr, &[], vars, binary, alg, target)
+}
+
+/// Counts assignments where every constraint is `True` and `expr == target`.
+#[must_use]
+pub fn count_models_under(
+    expr: &Expr,
+    constraints: &[Expr],
+    vars: &[String],
+    binary: &HashSet<String>,
+    alg: Algebra,
+    target: Ternary,
+) -> CountResult {
+    let cnf =
+        cnf::Encoder::new(alg, vars, binary).encode_with_constraints(expr, constraints, target);
     dpll::count_cnf(&cnf)
 }
 
@@ -61,12 +75,26 @@ pub fn crosscheck(
     alg: Algebra,
     target: Ternary,
 ) -> CrosscheckReport {
+    crosscheck_under(expr, &[], vars, binary, alg, target)
+}
+
+/// Runs both counters with constraints and compares them.
+#[must_use]
+pub fn crosscheck_under(
+    expr: &Expr,
+    constraints: &[Expr],
+    vars: &[String],
+    binary: &HashSet<String>,
+    alg: Algebra,
+    target: Ternary,
+) -> CrosscheckReport {
     let start = Instant::now();
-    let result = count_models(expr, vars, binary, alg, target);
+    let result = count_models_under(expr, constraints, vars, binary, alg, target);
     let dpll_time = start.elapsed();
 
     let start = Instant::now();
-    let exhaustive_count = oracle::count_exhaustive(expr, vars, binary, alg, target);
+    let exhaustive_count =
+        oracle::count_exhaustive_under(expr, constraints, vars, binary, alg, target);
     let exhaustive_time = start.elapsed();
 
     CrosscheckReport {
