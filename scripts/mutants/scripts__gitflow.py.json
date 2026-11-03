@@ -754,5 +754,41 @@
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "gitflow: secret-scan 一个文件没点也当扫过（空扫描面冒充干净）",
+  "file": "scripts/gitflow.py",
+  "old": "        if not files:\n            print(\"拦：--files 一个都没点 ⇒ 一个文件也没扫。扫描面为空不能算「干净」。\")\n            return 1",
+  "new": "        if False:\n            print(\"拦：--files 一个都没点 ⇒ 一个文件也没扫。扫描面为空不能算「干净」。\")\n            return 1",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: secret-scan 命中了却返回成功",
+  "file": "scripts/gitflow.py",
+  "old": "        if hits:\n            return 1\n        print(f\"未发现敏感串（扫了 {len(files)} 个文件、{len(SECRET_PATTERNS)} 条内容规则 + 文件名规则）\")",
+  "new": "        if False:\n            return 1\n        print(f\"未发现敏感串（扫了 {len(files)} 个文件、{len(SECRET_PATTERNS)} 条内容规则 + 文件名规则）\")",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 扫描面条数印成 0（报数变成装饰）",
+  "file": "scripts/gitflow.py",
+  "old": "        print(f\"未发现敏感串（扫了 {len(files)} 个文件、{len(SECRET_PATTERNS)} 条内容规则 + 文件名规则）\")",
+  "new": "        print(f\"未发现敏感串（扫了 0 个文件、{len(SECRET_PATTERNS)} 条内容规则 + 文件名规则）\")",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 空扫描面的 rc 写成 0（拦与不拦只剩一句话）",
+  "file": "scripts/gitflow.py",
+  "old": "            print(\"拦：--files 一个都没点 ⇒ 一个文件也没扫。扫描面为空不能算「干净」。\")\n            return 1",
+  "new": "            print(\"拦：--files 一个都没点 ⇒ 一个文件也没扫。扫描面为空不能算「干净」。\")\n            return 0",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
  }
 ]

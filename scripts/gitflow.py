@@ -1532,10 +1532,16 @@ def main(argv: list[str]) -> int:
             files.append(argv[index])
             index += 1
     if command == "secret-scan":
+        if not files:
+            print("拦：--files 一个都没点 ⇒ 一个文件也没扫。扫描面为空不能算「干净」。")
+            return 1
         hits = secret_scan(ROOT, files)
         for line in hits:
             print(f"命中：{line}")
-        return 1 if hits else 0
+        if hits:
+            return 1
+        print(f"未发现敏感串（扫了 {len(files)} 个文件、{len(SECRET_PATTERNS)} 条内容规则 + 文件名规则）")
+        return 0
     if command == "branch":
         return branch_cmd(repo, argv[1:])
     if command == "worktree":
@@ -1644,6 +1650,31 @@ def self_test() -> int:
               any(".env.production" in h for h in secret_scan(root, [".env.production"])), True)
         check("POSIX 绝对路径被拒", any("跳出仓库" in p for p in base_ok(root, ["/etc/passwd"])), True)
         check("不存在的文件要报", any("不存在" in h for h in secret_scan(root, ["nope.txt"])), True)
+        real_scan_root = globals()["ROOT"]
+        globals()["ROOT"] = root
+        import contextlib as _scl
+        import io as _sio
+        try:
+            buf = _sio.StringIO()
+            with _scl.redirect_stdout(buf):
+                rc_clean = main(["secret-scan", "--repo", "o/r", "--remote", "origin",
+                                 "--base", "main", "--files", "clean.py"])
+            check("干净也要报扫描面：静默通过分不清「跑了」和「没跑」",
+                  (rc_clean, "扫了 1 个文件" in buf.getvalue()), (0, True))
+            buf2 = _sio.StringIO()
+            with _scl.redirect_stdout(buf2):
+                rc_dirty = main(["secret-scan", "--repo", "o/r", "--remote", "origin",
+                                 "--base", "main", "--files", "leak.py"])
+            check("命中要点名且 rc=1（不只给个退出码）",
+                  (rc_dirty, "sk-" in buf2.getvalue()), (1, True))
+            buf3 = _sio.StringIO()
+            with _scl.redirect_stdout(buf3):
+                rc_empty = main(["secret-scan", "--repo", "o/r", "--remote", "origin",
+                                 "--base", "main"])
+            check("一个文件都没点 ⇒ 判红（扫描面为空≠干净）",
+                  (rc_empty, "一个文件也没扫" in buf3.getvalue()), (1, True))
+        finally:
+            globals()["ROOT"] = real_scan_root
 
         args = {
             "title": "t", "body_file": "body.md", "files": ["a.py", "b.py"],
