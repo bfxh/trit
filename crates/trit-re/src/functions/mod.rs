@@ -206,7 +206,7 @@ pub fn build_pe(bytes: &[u8], info: &pe::PeInfo, xref: &XrefReport) -> FunctionR
         ),
         // PE32 没有 `.pdata`；COFF 符号表（mingw 系默认带）是与 ELF `STT_FUNC`
         // 同等权威的边界源——函数符号的 Value 按 RVA 解释，落在可执行节内
-        // 才收（pe.rs 已自校验）。区间终点 = 下一个函数起点 / 所在节末尾。
+        // 才收（pe/coff.rs 已自校验）。区间终点 = 下一个函数起点 / 所在节末尾。
         _ => match &info.coff_functions {
             Some(functions) if !functions.is_empty() => {
                 notes.push(format!(
@@ -372,7 +372,7 @@ fn coverage_is_complete(covered: u64, exec_bytes: u64) -> bool {
 
 /// COFF 函数符号 → 函数区间：起点 = 符号 RVA（升序去重后），终点 =
 /// 下一个函数起点与所在节末尾的较小者；最后一个函数到所在节末尾。
-/// 符号不落在任何节里（pe.rs 已过滤，这里再兜底）就跳过。
+/// 符号不落在任何节里（pe/coff.rs 已过滤，这里再兜底）就跳过。
 fn coff_symbol_ranges(functions: &[pe::CoffFunction], sections: &[pe::Section]) -> Vec<Function> {
     let section_end = |rva: u32| -> u64 {
         sections

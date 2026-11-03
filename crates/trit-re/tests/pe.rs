@@ -204,7 +204,9 @@ fn coff_symbols_give_pe32_exact_boundaries() {
     assert!(!info.plus);
     assert!(info.runtime_functions.is_none(), "PE32 没有 .pdata");
 
-    // COFF 符号表：2 个函数符号（短名内联 + 串表长名），非函数被过滤。
+    // COFF 符号表：2 个函数符号（短名内联 + 串表长名）。夹具里第 3 只是**住在可执行节
+    // .text 里的非函数符号**——只有 Type 那道过滤能挡它，所以这条 len 断言钉得住
+    // 符号类型判断本身，而不是被"节必须可执行"顺手替它把关。
     let functions = info.coff_functions.as_ref().expect("符号表应可解析");
     assert_eq!(functions.len(), 2);
     assert_eq!(functions[0].rva, 0x1010);

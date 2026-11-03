@@ -164,6 +164,16 @@ PYAS 的 `FileEntropy` / 熵直方图 / `StringEntropy` / 叠加段特征与 EMB
   `FunctionReport`，方向保守不变（裁定不洗成"已归属"，共现的 `Unknown` 拖累逻辑不动）。
   这把「N 个未归属」从黑箱计数变成能直接看边界质量问题出在哪的证据清单——
   也是 N2（最小 CFG）成效的**现成度量**：边界漏检类应随 N2 显著下降。
+- **PE32 的函数边界不再只剩启发式**（2026-11-03）：没有 `.pdata` 的 PE32（mingw 系默认带
+  COFF 符号表）现在从符号表取边界——只认 `Type` 高字节 = `IMAGE_SYM_DTYPE_FUNCTION` 且
+  `SectionNumber > 0` 的符号，`Value` 按 RVA 解释并自校验「落在所指**可执行节**内」，
+  对不上就丢符号（宁可丢也不给假边界）；区间终点 = 下一个函数起点/所在节末尾。
+  权威等级与 ELF `STT_FUNC` 对齐（`FuncSource::CoffSymbols`、`exact = true`），
+  于是 PE32 的同函数共现从「一律 `Unknown`」变成可判。
+  🔴 证据等级：**合成 PE32 夹具已证**（`tests/pe.rs::coff_symbols_give_pe32_exact_boundaries`
+  钉住过滤、逐字节边界、归属与共现可判），**真实 mingw PE32 样本未证**——本机只有
+  mingw-w64 x86_64（没有 i686 工具链，`-m32` 编不出来），要按 N1 口径拿到 32 位真样本后补
+  `sha256` 记录才算数。
 
 ### 4.2 站不住 / 未证的部分
 
@@ -171,7 +181,7 @@ PYAS 的 `FileEntropy` / 熵直方图 / `StringEntropy` / 叠加段特征与 EMB
 |---|---|---|
 | 模式匹配不是反汇编 | 只识别固定编码（`FF /2`、`adrp+ldr+blr` 等） | 寄存器经 `mov` 搬运、栈传递的间接调用会漏；数据里的疑似指令可能误报 |
 | 无真实 ARM64 样本 | 只有合成夹具 | ARM64 路径的**误报率完全未知** |
-| PE32 / 无 `.pdata` | 函数边界退化为启发式 | 同函数共现一律 `Unknown` |
+| PE32 / 无 `.pdata` | 有 COFF 符号表时边界取自符号表（只有合成夹具证过）；**表被剥掉的 PE32 仍退化启发式** | 剥表 PE32 的共现仍一律 `Unknown`；带表那条路径还没吃过真实 mingw PE32 样本 |
 | 无 YARA / 无签名验证 | 只识别 signedData 结构 | 不能替代 PYAS 的规则层 |
 | 无动态/内核面 | 只看文件 | KSword 的 R3/R0 差异、钩子、回调都看不到 |
 
@@ -189,7 +199,7 @@ PYAS 的 `FileEntropy` / 熵直方图 / `StringEntropy` / 叠加段特征与 EMB
 | 编号 | 事项 | 判据（可复算） |
 |---|---|---|
 | N1 | **真实语料校准**：PE x64 / PE ARM64 / ELF x64 / ELF ARM64 各一批 | 记录每个样本的 `sha256`；人工复核 xref 误报/漏报，给出比例；ARM64 至少一批非合成样本 |
-| N2 | **最小 CFG**：基本块 + 直接跳转边，替换启发式边界 | `unattributed_sites` 在 notepad/trit-re.exe 上下降；`fn_*` 判定不回归；PE32 共现从 `Unknown` 变为可判 |
+| N2 | **最小 CFG**：基本块 + 直接跳转边，替换启发式边界 | `unattributed_sites` 在 notepad/trit-re.exe 上下降；`fn_*` 判定不回归；PE32 共现从 `Unknown` 变为可判（2026-11-03：这半只已由 COFF 符号表达成，`.text` 里的启发式边界仍待 CFG 换掉） |
 | N3 | **接 `trit-procscan`**：现场模块路径 → 台账（✅ 2026-11-03：`trit-re collect` 吃 procscan JSONL 事件流，抽取 `type:"module"` 路径——去重保序、坏行/非 module 事件计数上报、单文件读取失败不中断；每模块产出台账行，末尾一条 `collect-summary`（模块数/去重/不可读/坏行/字节/`elapsed_ms`）——判据「一次采集 ≥ N 条记录」直接从汇总行复算，耗时线性性由两次采集的 bytes/elapsed 对比复算；管道式接入不建 crate 依赖：`trit-procscan … \| trit-re collect`。实测冒烟：notepad.exe 356KB 分析 28ms；测试 `tests/collect.rs` 4 条用内存文件系统） | 一次采集产出 ≥ N 条 `xref`/`function` 记录，耗时与文件大小线性 |
 | N4 | **YARA 子集的三值匹配** | 与官方 YARA 在同一批样本上的命中集合一致；"未命中"只在完整扫描后给出 |
 | — | **不做**：完整反汇编、符号执行、内核驱动、动态行为 | — |

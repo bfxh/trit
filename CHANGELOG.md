@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Added（trit-re：PE32 函数边界取自 COFF 符号表）
+
+- `pe::parse` 现在读 COFF 符号表（`PointerToSymbolTable`/`NumberOfSymbols`，18 字节条目）：
+  只收 `Type>>8 == IMAGE_SYM_DTYPE_FUNCTION(2)` 且 `SectionNumber > 0` 的函数符号，
+  `Value` 按 RVA 解释并自校验「必须落在所指可执行节内」——对 strip 过/非常规的表
+  **宁可丢符号也不给假边界**；短名内联、长名走串表（首 4 字节为 0 时读后 4 字节的偏移）。
+  新增字段 `PeInfo::coff_functions`（`Option<Vec<CoffFunction>>`）。
+- `functions::build_pe` 在没有 `.pdata` 时改用 COFF 符号表当边界源
+  （`FuncSource::CoffSymbols`，区间终点 = 下一个函数起点/所在节末尾），并把它算作
+  **精确**边界（与 ELF `STT_FUNC` 同等权威）。效果：PE32 的同函数共现从「一律 `Unknown`」
+  变成可判——这是路线图 N2 判据里「PE32 共现从 `Unknown` 变为可判」的一半，靠符号表而不是 CFG。
+- 测试 +1（`tests/pe.rs::coff_symbols_give_pe32_exact_boundaries`：合成 PE32 夹具带 3 只符号
+  ——短名函数、串表长名函数、非函数符号各一只——钉住「过滤 + 逐字节边界 + 归属 + 共现可判」）；
+  变异门 +1（`scripts/mutants/trit-re.json`「COFF 函数类型过滤失效」；连同上一片的
+  「未归属裁定的非执行判断写反」，登记表现 29 条）。
+- 🔴 夹具的一次改法披露：符号表里那只非函数符号原本住在 `.rdata`，结果「节必须可执行」
+  替 `Type` 过滤把了关 ⇒ 变异门打「去掉 Type 判断」照样**存活**（防御码空转）。已把它搬到
+  可执行节 `.text`（RVA 0x1180），现在只有 `Type` 那道判断能挡它，这条变异改判为断言判红。
+- 为守 800 行预算搬家（公开路径不变）：COFF 符号表面 → `crates/trit-re/src/pe/coff.rs`
+  （`pe.rs` 878→786 行，照 `pe/overlay.rs` 先例）；带符号表的 PE32 夹具 →
+  `crates/trit-re/tests/support/pe_builders.rs`（`support/mod.rs` 802→701 行）。
+  `pe::CoffFunction` 与 `support::pe32_with_symbols()` 经 `pub use` 保持原路径。
+- 🔴 证据等级：**合成夹具已证，真实 mingw PE32 样本未证**。本机只有 mingw-w64 x86_64
+  （`-m32` 没有 i686 工具链），拿不出带符号表的 32 位真样本；按 N1 口径要有真样本后补 `sha256` 记录。
+
 ### Added（trit-re collect：procscan 现场模块 → 逆向台账，路线图 N3 落地）
 
 - `trit-re::collect`：吃 `trit-procscan` 的 JSONL 事件流，抽取
