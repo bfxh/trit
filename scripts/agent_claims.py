@@ -93,9 +93,12 @@ def overlaps(a: list[str], b: list[str]) -> bool:
     return False
 
 
-PARITY_TABLE = (
+# 共享表在单体仓里跟着库走；镜像仓（repo-tools）没有 crates/，就把同一份表放在 fixtures/。
+# 两处都读不到才算失败——不是跳过。
+PARITY_TABLES = (
     pathlib.Path(__file__).resolve().parents[1]
-    / "crates" / "trit-orch" / "tests" / "fixtures" / "claim_gate_cases.json"
+    / "crates" / "trit-orch" / "tests" / "fixtures" / "claim_gate_cases.json",
+    pathlib.Path(__file__).resolve().parents[1] / "fixtures" / "claim_gate_cases.json",
 )
 INF = 2**63 - 1
 
@@ -169,10 +172,11 @@ def gate(claims: list[dict], who: str, paths: list[str], at: int) -> str:
 
 def parity_cases() -> tuple[list[dict], str]:
     """读共享表。读不到不"跳过"——没有表就等于两侧口径没人对过，必须当成判决失败。"""
-    if not PARITY_TABLE.is_file():
-        return [], f"共享表读不到：{PARITY_TABLE}"
+    table = next((cand for cand in PARITY_TABLES if cand.is_file()), None)
+    if table is None:
+        return [], f"共享表读不到（找过 {len(PARITY_TABLES)} 个位置：{', '.join(str(c) for c in PARITY_TABLES)}）"
     try:
-        data = json.loads(PARITY_TABLE.read_text(encoding="utf-8"))
+        data = json.loads(table.read_text(encoding="utf-8"))
     except ValueError as exc:
         return [], f"共享表不是合法 JSON：{exc}"
     if data.get("spec") != "bfxh/trit claim-gate parity v1":
