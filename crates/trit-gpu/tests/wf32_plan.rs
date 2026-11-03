@@ -86,7 +86,7 @@ fn reuse_plan_after_new_activations() {
     for seed in [31usize, 57, 91] {
         let b = activations(n, k, seed);
         plan.set_activations(&b);
-        assert_close(&plan.run(None), &cpu_wf32(m, n, k, &a, &b), &"换激活");
+        assert_close(&plan.run(None), &cpu_wf32(m, n, k, &a, &b), "换激活");
     }
 }
 

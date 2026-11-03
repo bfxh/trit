@@ -83,13 +83,13 @@ impl Layer {
         t.elapsed().as_secs_f64() * 1000.0
     }
 
-    fn ns_per_mac(&self, ms: f64) -> f64 {
-        ms * 1e6 / (self.m * self.n * self.k) as f64
+    fn ps_per_mac(&self, ms: f64) -> f64 {
+        ms * 1e9 / (self.m * self.n * self.k) as f64
     }
 }
 
 /// 单个持久计划：缓冲一次分配，随后每轮只换激活。
-fn bench_plan(layer: &Layer, plan: &Wf32Plan<'_>, reps: usize) {
+fn bench_plan(layer: &Layer, plan: &Wf32Plan<'_>, old_ms: f64, reps: usize) {
     let kernel = Wf32Kernel::pick(layer.m, layer.n);
     let _ = plan.run(Some(kernel));
 
@@ -122,10 +122,12 @@ fn bench_plan(layer: &Layer, plan: &Wf32Plan<'_>, reps: usize) {
     let upload_ms = t.elapsed().as_secs_f64() * 1000.0 / reps as f64;
 
     println!(
-        "  {:<20} {:?}：端到端 {e2e_ms:.3} ms | 分段 {split_ms:.3} ms（内核 {compute_ms:.3} + 回读 {readback_ms:.3}）| 激活上传 {upload_ms:.3} ms | {:.1} ns/MAC",
+        "  {:<20} {:?}：端到端 {e2e_ms:.3} ms（{:.2}x 旧）| 内核段 {compute_ms:.3} + 回读段 {readback_ms:.3}（两次 submit 共 {split_ms:.3}）| 激活上传 {upload_ms:.3} | 内核 {:.2} / 端到端 {:.2} ps/MAC",
         layer.name,
         kernel,
-        layer.ns_per_mac(e2e_ms),
+        old_ms / e2e_ms,
+        layer.ps_per_mac(compute_ms),
+        layer.ps_per_mac(e2e_ms),
     );
     assert!(sink.is_finite(), "{} 结果非有限", layer.name);
 }
@@ -191,6 +193,7 @@ fn main() {
         .collect();
 
     println!("—— 旧口径：每次 run 新建缓冲 + 两次 submit ——");
+    let mut old_ms = Vec::with_capacity(layers.len());
     for layer in &layers {
         let _ = gpu.run_auto(layer.m, layer.n, layer.k, &layer.ap, &layer.an, &layer.b);
         let t = Instant::now();
@@ -200,12 +203,13 @@ fn main() {
             sink += gpu.run_auto(layer.m, layer.n, layer.k, &layer.ap, &layer.an, &layer.b)[0];
         }
         let gpu_ms = t.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+        old_ms.push(gpu_ms);
         let cpu_ms = layer.cpu_ms();
         println!(
-            "  {:<20} GPU {gpu_ms:.3} ms | CPU {cpu_ms:.1} ms | {:.2}x CPU | {:.1} ns/MAC | sink {:.3}",
+            "  {:<20} GPU {gpu_ms:.3} ms | CPU {cpu_ms:.1} ms | {:.2}x CPU | {:.2} ps/MAC | sink {:.3}",
             layer.name,
             cpu_ms / gpu_ms,
-            layer.ns_per_mac(gpu_ms),
+            layer.ps_per_mac(gpu_ms),
             sink
         );
     }
@@ -215,8 +219,8 @@ fn main() {
         .iter()
         .map(|layer| gpu.plan(layer.m, layer.n, layer.k, &layer.ap, &layer.an, &layer.b))
         .collect();
-    for (layer, plan) in layers.iter().zip(&plans) {
-        bench_plan(layer, plan, 10);
+    for (layer, (plan, old_ms)) in layers.iter().zip(plans.iter().zip(&old_ms)) {
+        bench_plan(layer, plan, *old_ms, 10);
     }
 
     bench_batch(&plans, 10);
