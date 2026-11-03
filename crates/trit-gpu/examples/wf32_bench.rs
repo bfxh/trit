@@ -10,7 +10,7 @@
 use std::time::Instant;
 
 use trit_gpu::matmul_wf32::Wf32Gpu;
-use trit_gpu::matmul_wf32_plan::{Wf32Kernel, Wf32Plan, run_batch};
+use trit_gpu::matmul_wf32_plan::{Wf32Kernel, Wf32Plan, run_batch, run_chain};
 
 fn pack_rows(vals: &[i32], k: usize) -> (Vec<u32>, Vec<u32>) {
     let words = k.div_ceil(32);
@@ -224,4 +224,91 @@ fn main() {
     }
 
     bench_batch(&plans, 10);
+
+    println!("—— 层间不出显存（链式，1×1 栈）——");
+    bench_chain(&chain_stack(), 10);
+}
+
+/// 行主序 `m×n` → 列主序补齐 `n×words*32`（链式的 host 侧对照）。
+fn transpose_into_b(prev: &[f32], prev_m: usize, prev_n: usize) -> Vec<f32> {
+    let words = prev_m.div_ceil(32);
+    let mut b = vec![0f32; prev_n * words * 32];
+    for c in 0..prev_n {
+        for r in 0..prev_m {
+            b[c * words * 32 + r] = prev[r * prev_n + c];
+        }
+    }
+    b
+}
+
+/// 一条通道递减、像素不变的 1×1 栈：第一层吃 conv1 的形状，后两层 k 接上一层的 m。
+fn chain_stack() -> Vec<Layer> {
+    [
+        ("L1 256x64 k9216", 256usize, 64usize, 9216usize),
+        ("L2 128x64 k256", 128, 64, 256),
+        ("L3 64x64 k128", 64, 64, 128),
+    ]
+    .into_iter()
+    .map(|(name, m, n, k)| Layer::build(name, m, n, k))
+    .collect()
+}
+
+/// 逐层（每层上传 + 回读 + host 侧重排）vs 链式（只首层上传、只末层回读，一个 submit）。
+fn bench_chain(layers: &[Layer], reps: usize) {
+    let Some(gpu) = Wf32Gpu::new() else { return };
+    let plans: Vec<Wf32Plan<'_>> = layers
+        .iter()
+        .map(|l| gpu.plan(l.m, l.n, l.k, &l.ap, &l.an, &l.b))
+        .collect();
+
+    let mut sink = 0f32;
+    let t = Instant::now();
+    for _ in 0..reps {
+        let mut b_in = layers[0].b.clone();
+        for (idx, plan) in plans.iter().enumerate() {
+            plan.set_activations(&b_in);
+            let out = plan.run(None);
+            sink += out[0];
+            if idx + 1 < layers.len() {
+                b_in = transpose_into_b(&out, layers[idx].m, layers[idx].n);
+            }
+        }
+    }
+    let per_layer_ms = t.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+
+    let refs: Vec<&Wf32Plan<'_>> = plans.iter().collect();
+    let _ = run_chain(&refs, None);
+    let t = Instant::now();
+    let mut chained = Vec::new();
+    for _ in 0..reps {
+        chained = run_chain(&refs, None);
+        sink += chained[0];
+    }
+    let chain_ms = t.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+
+    // 链式必须与逐层同解：中间层少跑的每一趟搬运都会被这条抓到。
+    let mut b_in = layers[0].b.clone();
+    let mut per_layer_out = Vec::new();
+    for (idx, plan) in plans.iter().enumerate() {
+        plan.set_activations(&b_in);
+        let out = plan.run(None);
+        per_layer_out.push(out.clone());
+        if idx + 1 < layers.len() {
+            b_in = transpose_into_b(&out, layers[idx].m, layers[idx].n);
+        }
+    }
+    let worst = chained
+        .iter()
+        .zip(&per_layer_out[layers.len() - 1])
+        .map(|(g, w): (&f32, &f32)| (g - w).abs())
+        .fold(0f32, f32::max);
+    assert!(worst < 1e-5, "链式与逐层不同解，最大偏差 {worst}");
+
+    println!(
+        "  三层 1×1 栈：逐层（{n_up} 上传 + {n_down} 回读）{per_layer_ms:.3} ms | 链式（1 上传 + 1 回读，单 submit）{chain_ms:.3} ms | {:.2}x | 偏差 {worst:.1e}",
+        per_layer_ms / chain_ms,
+        n_up = layers.len(),
+        n_down = layers.len(),
+    );
+    assert!(sink.is_finite(), "链式结果非有限");
 }

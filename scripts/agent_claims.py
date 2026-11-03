@@ -7,6 +7,9 @@
   python scripts/agent_claims.py release --who <会话名> [--id <编号>]
   python scripts/agent_claims.py list
   python scripts/agent_claims.py check          # 有重叠就红，并把**双方**都点名
+  python scripts/agent_claims.py gate --who <会话名> --paths <a b> [--json]
+      # 三态判定（与库里的 ClaimStore::gate 同一张表）：True=我登记过且全覆盖，
+      # False=别人在效期里撞我，Unknown=没登记过（能动，但没人知道）
   python scripts/agent_claims.py --self-test
 
 为什么要有这个（2026-11-03 实测的形状）：
@@ -88,6 +91,127 @@ def overlaps(a: list[str], b: list[str]) -> bool:
             if x == y or x.startswith(y.rstrip("/") + "/") or y.startswith(x.rstrip("/") + "/"):
                 return True
     return False
+
+
+# 共享表在单体仓里跟着库走；镜像仓（repo-tools）没有 crates/，就把同一份表放在 fixtures/。
+# 两处都读不到才算失败——不是跳过。
+PARITY_TABLES = (
+    pathlib.Path(__file__).resolve().parents[1]
+    / "crates" / "trit-orch" / "tests" / "fixtures" / "claim_gate_cases.json",
+    pathlib.Path(__file__).resolve().parents[1] / "fixtures" / "claim_gate_cases.json",
+)
+INF = 2**63 - 1
+
+
+def normalize_path(raw: str) -> str:
+    """与库里 `normalize_path` 同口径：反斜杠转正斜杠、丢空段与 `.`、去掉首尾斜杠。
+
+    不归一就会漏判同一个文件（`src\\.` 与 `src` 是一种写法）；`..`、盘符、绝对路径直接不收，
+    因为声明的键必须是仓内相对路径，否则两边的"同一个路径"没有共同定义。
+    """
+    path = (raw or "").strip().replace("\\", "/").strip("/")
+    if not path or ":" in path:
+        return ""
+    parts = [part for part in path.split("/") if part not in ("", ".")]
+    if not parts or any(part == ".." for part in parts):
+        return ""
+    return "/".join(parts)
+
+
+def covers(scope: str, path: str) -> bool:
+    """只向下覆盖：`src` 覆盖 `src/a.rs`，`src/a.rs` 不覆盖 `src`。"""
+    return scope == path or path.startswith(scope + "/")
+
+
+def paths_overlap(left: str, right: str) -> bool:
+    return covers(left, right) or covers(right, left)
+
+
+def expires_at_of(claim: dict) -> int:
+    """台账行是 `ts + ttl_min`，共享表是绝对 `expires_at`；两边统一到后者比较。
+
+    `ttl <= 0` 在这套 CLI 里表示"永不过期"（收工必须 release），库里没有这种声明，
+    所以对拍表里不会出现，这里只把它折成极大值。
+    """
+    if "expires_at" in claim:
+        return int(claim["expires_at"])
+    ttl = int(claim.get("ttl", 0))
+    return INF if ttl <= 0 else int(claim["ts"]) + ttl * 60
+
+
+def owner_of_claim(claim: dict) -> str:
+    return (claim.get("who") if claim.get("who") is not None else claim.get("owner") or "").strip()
+
+
+def gate(claims: list[dict], who: str, paths: list[str], at: int) -> str:
+    """三态判定：`true` / `unknown` / `false`，与 `ClaimStore::gate` 逐字对齐。
+
+    先扫别人再扫自己：撞了就是 `false`，不许用自己那条把它洗成 `true`。
+    全覆盖才算 `true`；其余（没登记、只覆盖一半、别人的已过期）都是 `unknown`。
+    """
+    want = (who or "").strip()
+    scoped = [normalize_path(p) for p in paths]
+    if not want or not scoped or any(not p for p in scoped):
+        return "unknown"
+    live_claims = [(owner_of_claim(claim), expires_at_of(claim),
+                    [normalize_path(x) for x in claim.get("paths", []) if normalize_path(x)])
+                   for claim in claims]
+    live_claims = [(owner, expires, scopes) for owner, expires, scopes in live_claims if expires > at]
+
+    for path in scoped:
+        for owner, _expires, scopes in live_claims:
+            if owner != want and any(paths_overlap(scope, path) for scope in scopes):
+                return "false"
+    for path in scoped:
+        held = any(owner == want and any(covers(scope, path) for scope in scopes)
+                   for owner, _expires, scopes in live_claims)
+        if not held:
+            return "unknown"
+    return "true"
+
+
+def parity_cases() -> tuple[list[dict], str]:
+    """读共享表。读不到不"跳过"——没有表就等于两侧口径没人对过，必须当成判决失败。"""
+    table = next((cand for cand in PARITY_TABLES if cand.is_file()), None)
+    if table is None:
+        return [], f"共享表读不到（找过 {len(PARITY_TABLES)} 个位置：{', '.join(str(c) for c in PARITY_TABLES)}）"
+    try:
+        data = json.loads(table.read_text(encoding="utf-8"))
+    except ValueError as exc:
+        return [], f"共享表不是合法 JSON：{exc}"
+    if data.get("spec") != "bfxh/trit claim-gate parity v1":
+        return [], f"共享表版本对不上：{data.get('spec')!r}"
+    return data.get("cases", []), ""
+
+
+def _flag(argv: list[str], flag: str) -> str:
+    """单值取参：取不到就空串（`--who` 后面没东西时不许拿 IndexError 当判决）。"""
+    following = argv[1:]  # 位置 0 是 flag 自己
+    return following[argv.index(flag)] if flag in argv and argv.index(flag) < len(following) else ""
+
+
+def _flag_list(argv: list[str], flag: str) -> list[str]:
+    """多值取参：`--paths a b c` 收到下一个 `--` 为止。"""
+    if flag not in argv:
+        return []
+    rest = argv[argv.index(flag) + 1:]
+    end = next((i for i, item in enumerate(rest) if item.startswith("--")), len(rest))
+    return rest[:end]
+
+
+def cmd_gate(path: pathlib.Path, argv: list[str]) -> int:
+    who = _flag(argv, "--who")
+    paths = _flag_list(argv, "--paths")
+    claims = read_claims(path)
+    verdict = gate(claims, who, paths, now())
+    if "--json" in argv:
+        print(json.dumps({"tool": "agent-claims-gate", "who": who, "paths": paths,
+                          "verdict": verdict, "claims": len(claims)}, ensure_ascii=False))
+    else:
+        label = {"true": "True（我登记过且全覆盖）", "false": "False（别人在效期里撞你）",
+                 "unknown": "Unknown（没登记过；能动，但先 claim 一声）"}[verdict]
+        _say(f"gate {who or '(无名)'} @ {paths or ['(没给路径)']} ⇒ {label}")
+    return 1 if verdict == "false" else 0
 
 
 def crate_of_repo(repo: str) -> str:
@@ -385,6 +509,24 @@ def self_test() -> int:
         check_at("第二条也收得掉", cmd_release(path, ["--who", "zodER"]), 0)
         check_at("第三条也收得掉", cmd_release(path, ["--who", "Third"]), 0)
         check_at("收完确实空了", read_claims(path), [])
+        # gate 子命令：三态判定 + 退出码（0=能动，1=别人占着）。用单独一本台账，别搅后面的用例
+        gate_ledger = pathlib.Path(tmp) / "GATE.md"
+        check_at("gate：台账空 ⇒ unknown 且放行（没登记不等于不能动）",
+                 cmd_gate(gate_ledger, ["--who", "Qoder", "--paths", "src/a"]), 0)
+        cmd_claim(gate_ledger, ["claim", "--who", "Qoder", "--repo", "o/r",
+                               "--paths", "src/a", "src/b"])
+        check_at("gate：自己登记过 ⇒ true（目录覆盖其下文件）",
+                 cmd_gate(gate_ledger, ["--who", "Qoder", "--paths", "src/a/deep.rs"]), 0)
+        check_at("gate：--paths 的多个值都收（只取一个就把声明面丢掉）",
+                 cmd_gate(gate_ledger, ["--who", "Qoder", "--paths", "src/b"]), 0)
+        cmd_claim(gate_ledger, ["claim", "--who", "zodER", "--repo", "o/r", "--paths", "src/c"])
+        check_at("gate：别人占着 ⇒ 拦（退 1）",
+                 cmd_gate(gate_ledger, ["--who", "Qoder", "--paths", "src/c"]), 1)
+        check_at("gate：没登记的第三方也算撞（unknown 不是给别人的通行证）",
+                 cmd_gate(gate_ledger, ["--who", "Newbie", "--paths", "src/c"]), 1)
+        cmd_release(gate_ledger, ["--who", "zodER"])
+        check_at("gate：对方 release 之后不再拦",
+                 cmd_gate(gate_ledger, ["--who", "Newbie", "--paths", "src/c"]), 0)
         check_at("含 | 的备注不会把名单写坏",
                  cmd_claim(path, ["claim", "--who", "Third", "--repo", "third/r",
                                   "--paths", "docs", "--note", "在合并 A|B 两条"]), 0)
@@ -424,6 +566,18 @@ def self_test() -> int:
             sys.stdout = saved
         check_at("cp936 控制台下打印判决不崩", rc, 0)
 
+    cases, table_error = parity_cases()
+    if table_error:
+        check_at("认领闸门共享表可读", table_error, "")
+    else:
+        checked = {"true": 0, "false": 0, "unknown": 0}
+        for case in cases:
+            query = case["query"]
+            got = gate(case["claims"], query["owner"], query["paths"], query["now"])
+            checked[case["expect"]] = checked.get(case["expect"], 0) + 1
+            check_at(f"共享表 {case['name']}", got, case["expect"])
+        check_at("共享表三态都覆盖到", all(v > 0 for v in checked.values()), True)
+
     _say(f"self-test: {total - len(failures)}/{total} passed")
     return 1 if failures else 0
 
@@ -441,6 +595,8 @@ def main(argv: list[str]) -> int:
         return cmd_claim(path, argv[1:])
     if command == "release":
         return cmd_release(path, argv[1:])
+    if command == "gate":
+        return cmd_gate(path, argv[1:])
     if command in ("list", "check", ""):
         result = check(path)
         render(result)
