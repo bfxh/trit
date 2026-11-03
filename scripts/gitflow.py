@@ -1484,6 +1484,13 @@ def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30)
         if merge.returncode == 0:
             print(f"CI 全绿，已 squash 合入 {branch} 并删分支")
             return 0
+        reason = " ".join((merge.stdout or "").split())[:220]
+        if "not mergeable" in reason or "not up to date" in reason:
+            print("合并判红（重试没用，这种要先并主干）：" + reason)
+            print("  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply")
+            return 1
+        if index == 0:
+            print("合并暂时失败（继续重试）：" + reason)
         if index == attempts - 1:
             print("合并失败：")
             print(merge.stdout[-1500:])
@@ -1910,6 +1917,27 @@ def self_test() -> int:
         finally:
             globals()["time"] = real_time
             globals()["check_rows"] = real_rows
+        real_watch = globals()["wait_for_checks"]
+        real_gh_ref = globals()["gh"]
+        try:
+            globals()["wait_for_checks"] = lambda repo, branch, attempts=1, pause=1: 0
+            clock4 = _Clock()
+            globals()["time"] = clock4
+
+            def gh_refuse(args):
+                if args[:2] == ["pr", "checks"]:
+                    return _CP(args, 0, chr(91) + chr(123) + "\"name\":\"CI\",\"bucket\":\"pass\"" + chr(125) + chr(93), "")
+                return _CP(args, 1, "X Pull request o/r#9 is not mergeable: "
+                           "the head branch is not up to date with the base branch.", "")
+
+            globals()["gh"] = gh_refuse
+            check("分支落后主干时立刻判红并给出可执行提示（不再静默重试半小时）",
+                  (watch_and_merge("feat/x", "o/r", attempts=6, pause=30), clock4.slept), (1, []))
+        finally:
+            globals()["gh"] = real_gh_ref
+            globals()["wait_for_checks"] = real_watch
+            globals()["time"] = real_time
+
         real_gh = globals()["gh"]
         import subprocess as _sp
         try:

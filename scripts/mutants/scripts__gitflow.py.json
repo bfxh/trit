@@ -700,5 +700,32 @@
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "gitflow: 分支落后主干不再立刻判红（静默重试到超时）",
+  "file": "scripts/gitflow.py",
+  "old": "        if \"not mergeable\" in reason or \"not up to date\" in reason:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 落后主干却报成功（把该并主干的活吞掉）",
+  "file": "scripts/gitflow.py",
+  "old": "            print(\"  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply\")\n            return 1",
+  "new": "            print(\"  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply\")\n            return 0",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 合并失败原因取空串（等于永远认不出「落后主干」）",
+  "file": "scripts/gitflow.py",
+  "old": "        reason = \" \".join((merge.stdout or \"\").split())[:220]",
+  "new": "        reason = \" \".join((merge.stdout or \"\").split())[:0]",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
  }
 ]
