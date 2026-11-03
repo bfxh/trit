@@ -100,7 +100,7 @@
  },
  {
   "name": "vcs: 重建增量时丢掉前缀（读出来少一截）",
-  "file": "crates/trit-vcs/src/store.rs",
+  "file": "crates/trit-vcs/src/delta.rs",
   "old": "    out.extend_from_slice(&base[..prefix]);",
   "new": "    let _ = prefix;",
   "filter": "delta_is_used_for_a_local_edit",

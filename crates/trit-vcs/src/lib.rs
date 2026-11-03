@@ -15,6 +15,7 @@
 //! M1 只做本仓库的单机闭环。传输、合并、部分拉取、Git 兼容桥在 M2–M3；没做的维度不在这里宣称。
 
 pub mod chunk;
+pub mod delta;
 pub mod gate;
 pub mod hash;
 pub mod journal;

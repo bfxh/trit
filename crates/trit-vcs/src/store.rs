@@ -15,12 +15,12 @@ use std::fs::{self, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-use flate2::Compression;
-use flate2::read::ZlibDecoder;
-use flate2::write::ZlibEncoder;
 use serde::{Deserialize, Serialize};
 
 use crate::chunk::Chunking;
+use crate::delta::{
+    PackEntry, PackPlan, apply_delta, common_prefix, common_suffix, compress, decompress,
+};
 use crate::hash::Hash;
 
 /// 一个文件 = 有序块列表 + 原始长度。
@@ -28,91 +28,6 @@ use crate::hash::Hash;
 pub struct FileMap {
     pub size: u64,
     pub chunks: Vec<Hash>,
-}
-
-/// 索引里的一条：块在 pack 里的位置与形态。
-///
-/// `kind=0` 整块（zlib）；`kind=1` 相对另一块的增量（前后缀相同、中间是新内容）。
-/// `base_off/base_len` 指向 base 记录自身而不是它的哈希：省 64 字节/条，索引不膨胀。
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-struct PackEntry {
-    offset: u64,
-    len: u64,
-    kind: u8,
-    base_off: u64,
-    base_len: u64,
-    prefix: u32,
-    suffix: u32,
-}
-
-impl PackEntry {
-    fn is_delta(&self) -> bool {
-        self.kind == 1
-    }
-}
-
-/// 一条记录写进 pack 之前的形态（整块或增量）。
-struct PackPlan {
-    payload: Vec<u8>,
-    kind: u8,
-    base_off: u64,
-    base_len: u64,
-    prefix: u32,
-    suffix: u32,
-}
-
-impl PackPlan {
-    fn full(payload: Vec<u8>) -> Self {
-        let len = payload.len() as u64;
-        Self {
-            payload,
-            kind: 0,
-            base_off: 0,
-            base_len: len,
-            prefix: 0,
-            suffix: 0,
-        }
-    }
-}
-
-fn compress(bytes: &[u8]) -> Result<Vec<u8>, StoreError> {
-    let mut encoder = ZlibEncoder::new(Vec::new(), Compression::best());
-    encoder.write_all(bytes)?;
-    Ok(encoder.finish()?)
-}
-
-fn decompress(payload: &[u8]) -> Result<Vec<u8>, StoreError> {
-    let mut decoder = ZlibDecoder::new(payload);
-    let mut out = Vec::new();
-    decoder.read_to_end(&mut out)?;
-    Ok(out)
-}
-
-fn common_prefix(a: &[u8], b: &[u8]) -> usize {
-    a.iter().zip(b).take_while(|(x, y)| x == y).count()
-}
-
-fn common_suffix(a: &[u8], b: &[u8]) -> usize {
-    a.iter()
-        .rev()
-        .zip(b.iter().rev())
-        .take_while(|(x, y)| x == y)
-        .count()
-}
-
-fn apply_delta(base: &[u8], body: &[u8], prefix: u32, suffix: u32) -> Result<Vec<u8>, StoreError> {
-    let prefix = prefix as usize;
-    let suffix = suffix as usize;
-    if prefix > base.len() || suffix > base.len() - prefix {
-        return Err(StoreError::BadMap(
-            "delta 的 prefix/suffix 越界".to_string(),
-        ));
-    }
-    let mut out = Vec::with_capacity(prefix + body.len() + suffix);
-    out.extend_from_slice(&base[..prefix]);
-    out.extend_from_slice(body);
-    out.extend_from_slice(&base[base.len() - suffix..]);
-    Ok(out)
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
