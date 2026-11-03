@@ -1,0 +1,50 @@
+[
+ {
+  "name": "count: true 组合的基字面量写反（match 而非 ¬match）",
+  "file": "crates/trit-count/src/cnf.rs",
+  "old": "                    Ternary::True => {\n                        base.push(-node.t);\n                        base.push(node.x);\n                    }",
+  "new": "                    Ternary::True => {\n                        base.push(node.t);\n                        base.push(node.x);\n                    }",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "count: binary 变量不约束 x 轨",
+  "file": "crates/trit-count/src/cnf.rs",
+  "old": "        if self.binary.contains(name) {\n            self.clause(&[-x]);\n        }",
+  "new": "        if self.binary.contains(name) {\n            self.clause(&[x]);\n        }",
+  "pkg": "trit-count",
+  "filter": "binary_variables_use_two_valued_domain"
+ },
+ {
+  "name": "count: 常量 true 的 x 轨写成 true",
+  "file": "crates/trit-count/src/cnf.rs",
+  "old": "            Ternary::True => Rails {\n                t: -self.false_var,\n                x: self.false_var,\n            },",
+  "new": "            Ternary::True => Rails {\n                t: -self.false_var,\n                x: -self.false_var,\n            },",
+  "pkg": "trit-count",
+  "filter": "constant_expression_counts_whole_domain"
+ },
+ {
+  "name": "count: 自由变量不乘 2^free",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "        let free_factor = 1u128\n            .checked_shl(free as u32)\n            .expect(\"free variable count exceeds u128 capacity\");",
+  "new": "        let free_factor = 1u128;",
+  "pkg": "trit-count",
+  "filter": "unused_variables_still_count"
+ },
+ {
+  "name": "count: 分支只数正支",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "        let total = self.count_core(&positive, m) + self.count_core(&negative, m);",
+  "new": "        let total = self.count_core(&positive, m);",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "count: 组件乘积被最后一块覆盖",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "            for (part_vars, part_clauses) in parts {\n                let local = renumber(&part_clauses, &part_vars);\n                product *= self.count_core(&local, part_vars.len());\n            }",
+  "new": "            for (part_vars, part_clauses) in parts {\n                let local = renumber(&part_clauses, &part_vars);\n                product = self.count_core(&local, part_vars.len());\n            }",
+  "pkg": "trit-count",
+  "filter": "component_product_multiplies_independent_parts"
+ }
+]

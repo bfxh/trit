@@ -9,6 +9,7 @@
  "crate/trit-cli": 96,
  "crate/trit-codec": 137,
  "crate/trit-core": 88,
+ "crate/trit-count": 9,
  "crate/trit-dot": 18,
  "crate/trit-eval": 28,
  "crate/trit-float": 26,

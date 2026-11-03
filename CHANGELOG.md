@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-count：三值精确模型计数原型）
+
+- 新实验 crate `trit-count`（`publish = false`）：表达式 → dual-rail CNF → DPLL + 连通分量分解 + 组件缓存，
+  计数目标可为 `True` / `False` / `Unknown`；`--random` 对 n=1..12 做 DPLL vs 穷举逐条对拍。
+- 编码与 `trit-sat` 的符号化编码**故意各自独立**（计数参考实现不与求解器共享代码），
+  并由 `trit-sat::satisfiable` 在 True 目标上做独立交叉验证：`count > 0 ⇔ SAT`，SAT 见证重新 `eval` 为 True。
+- 读数（本机 release，3 cases × 3 代数 × 3 目标 × n=1..12）：**324 个随机用例 0 mismatch**；
+  n=12 最大 DPLL **3.06 ms** vs 穷举 **389.76 ms**（约 127×），交叉点约 n=8，缓存命中约 46%。
+- 测试：`cargo test -p trit-count` **9/9**；登记 `scripts/test_surface_baseline.json` `crate/trit-count: 9`。
+- 变异：`scripts/mutants/trit-count.json` 登记 6 条（基字面量极性、binary x 轨、常量 true、自由变量因子、
+  分支只数正支、组件乘积覆盖）；`mutation_check.py --pkg trit-count` **caught 6 / survived 0**。
+- 边界：计数用 `u128`（自由变量 ≥128 会显式 panic）；未做 watched literals / 变量重命名规范化；
+  n≤12 只证明与穷举一致，尚未在真实策略/网表负载上测 crossover。
+
 ### Added（门脚本族：全表锚点 sweep `scripts/mutation_sweep.py`）
 
 - 补上一块盲区：`mutation_check.main()` 只对 `--pkg` **选中**的条目调用 `preflight`，

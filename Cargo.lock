@@ -1815,6 +1815,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-count"
+version = "0.12.0"
+dependencies = [
+ "trit-core",
+ "trit-eval",
+ "trit-sat",
+]
+
+[[package]]
 name = "trit-dot"
 version = "0.12.0"
 dependencies = [
