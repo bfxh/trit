@@ -790,5 +790,86 @@
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "gitflow: 取位置参数时不跳 flag 的值（`--repo o/r` 被当成分支名）",
+  "file": "scripts/gitflow.py",
+  "old": "        if skip_next:\n            skip_next = False\n            continue",
+  "new": "        if False:\n            skip_next = False\n            continue",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 哪些 flag 带值不再认（值全被当位置参数）",
+  "file": "scripts/gitflow.py",
+  "old": "            skip_next = token in value_flags",
+  "new": "            skip_next = False",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: flag 本身被当成位置参数",
+  "file": "scripts/gitflow.py",
+  "old": "        if token.startswith(\"--\"):",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: PR 号不查分支名（照数字去 watch）",
+  "file": "scripts/gitflow.py",
+  "old": "    if not token.isdigit():\n        return token",
+  "new": "    if True:\n        return token",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 分支名也被送去查 PR（位置参数失效）",
+  "file": "scripts/gitflow.py",
+  "old": "    if not token.isdigit():\n        return token",
+  "new": "    if False:\n        return token",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 用法错误不打 FAIL 前缀（管道 tail 把它吞掉）",
+  "file": "scripts/gitflow.py",
+  "old": "    print(\"FAIL \" + text)",
+  "new": "    print(text)",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 用法错误返回 0（参数没吃对也算跑成功）",
+  "file": "scripts/gitflow.py",
+  "old": "    print(\"FAIL \" + text)\n    return 2",
+  "new": "    print(\"FAIL \" + text)\n    return 0",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: merge 少了参数也不报用法（拿空串去合并）",
+  "file": "scripts/gitflow.py",
+  "old": "        if not raw:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 查不到分支名还继续合并（猜一个去动远端）",
+  "file": "scripts/gitflow.py",
+  "old": "        if not target:\n            return usage(f\"判红：拿不到 {raw} 的分支名（不猜分支名去合并）\")",
+  "new": "        if False:\n            return usage(f\"判红：拿不到 {raw} 的分支名（不猜分支名去合并）\")",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
  }
 ]
