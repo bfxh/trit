@@ -2999,3 +2999,41 @@ Intel 核显）⇒ 实测仍是 **jobs=2 / 槽 [0,0] / 134 s**；多卡分配逻
   `parts-verify`（现有读数 mIoU 0.4962 / 边界 F1 0.432 / 3D 部件 IoU 0.5177 只在文档里，**未经目录复核**）。
 - 纹理线要补：先定义可复核产物（ttx 包 + 采样一致性指标）与留出协议。
 - S1 提取线要补：N1–N7 门的机器可读读数 + 每场景资产清单。
+
+### 6.106 部件族进 live：A1 清单 + A2 独立复核（2026-11-04）
+
+§6.105 定的判据是「族进 live 必须同时有机器可读清单（A1）+ 独立复核器（A2）」。部件线补齐两件：
+
+**A1 — `parts-train --export-tpm <tpm> [--run-manifest <json>]`**
+训练结束导出部署包，并在 `<tpm>.manifest.json` 写：commit/dirty、完整 argv、config
+（steps/lr/accum/res/k/seg_sub/bnd_label/bnd_weight）、**内容级**训练集指纹（逐文件 SHA-256 +
+「相对路径 + 哈希」规范序列总哈希，与深度线同口径）、state 与 TPM 的 SHA-256、final/best loss。
+
+**A2 — `parts-verify --model <tpm> --data <场景根,...> --seg-sub pbnd --renders <留出> --scenes <留出>`**
+新进程重算训练集指纹、评测语料指纹（`renders/<s>/rgb|seg[/bnd|pbnd]` + `scenes/<s>/instances.json`）
+与模型 SHA-256，再以**子进程**重跑 `parts-inst eval`。模型 / 训练集指纹 / 评测协议（k、res）
+任一与清单不一致 ⇒ `.verify.reject.json` + 退出码 1。
+
+两处与深度线不同，都是刻意的：
+
+- 评测本身走子进程——`parts-inst eval` 的 CLI 就是产品面，复核不该另写一份评测循环；
+- 场景/帧枚举下沉到 `partsrun`（`parts-inst` 与指纹共用），否则「复核器评的是另一批文件」这种
+  漂移只能靠人眼发现。
+
+**冒烟（600 步，`E:/runs/pb300/pv/quick.tpm`）**：PASS；故意少给一个训练场景重跑 ⇒
+`复核 FAIL（模型=true 训练集=false）` + 退出码 1。
+
+**本轮读数**（50 训练场景 / 6,000 步 / 留出 mat60 scene0050–0059 × 8 帧 = 80 帧；
+`docs/PARTS-RESULTS.md` 由目录器自动生成）：
+
+| 配方 | 2D 部件 mIoU | 前景 IoU | 边界 F1 | pred/gt | 复核 |
+|---|---|---|---|---|---|
+| accum 1（§6.88 同配方，6,000 更新） | **0.3419** | **0.964** | **0.406** | 0.56 | ✅ PASS |
+| accum 4（对照，1,500 更新） | 0.1558 | 0.842 | 0.237 | 0.30 | ✅ PASS |
+
+**同一步数下 accum 4 把优化器更新压到 1/4，指标掉一半**——这和 §6.95「扩数据要按比例加步数」
+是同一件事：`samples seen` 不是有效步数，更新次数才是。两条都是独立复核过的读数，不是文档抄数。
+
+注意：历史交付 `E:/runs/pb300/pb35k_decay.tpm`（mIoU 0.4962）**没有训练清单**（那时还没有 A1），
+所以不在目录里；要让它进目录必须按同配方重训（290 场景 / 35k 步 ≈ 4 h）。本轮不补写清单——
+事后补的元数据不能冒充当时写下的记录。

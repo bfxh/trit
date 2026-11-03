@@ -24,6 +24,38 @@
     "filter": "mv_gate_skips_outliers"
   },
   {
+    "name": "parts: 复核不比评测协议（k 错位也 PASS）",
+    "file": "crates/trit-parts/src/bin/parts_verify.rs",
+    "old": "        .unwrap_or(true)\n        && res",
+    "new": "        .unwrap_or(true)\n        || res",
+    "pkg": "trit-parts",
+    "filter": "protocol_must_match_manifest_config"
+  },
+  {
+    "name": "parts: 复核指标解析成 0（格式漂了还 PASS）",
+    "file": "crates/trit-parts/src/bin/parts_verify.rs",
+    "old": "    rest[..end].parse().ok()",
+    "new": "    rest[..end].parse().ok().map(|v: f64| v * 0.0)",
+    "pkg": "trit-parts",
+    "filter": "parses_parts_inst_summary"
+  },
+  {
+    "name": "parts: 训练集指纹不覆盖路径（换目录名可骗过复核）",
+    "file": "crates/trit-parts/src/partsrun.rs",
+    "old": "                    out.push(format!(\"{} {h}\", it.key));",
+    "new": "                    out.push(format!(\"{h}\"));",
+    "pkg": "trit-parts",
+    "filter": "train_fingerprint_distinguishes_paths"
+  },
+  {
+    "name": "parts: 评测语料指纹不按 limit 截断（复核评的不是同一批帧）",
+    "file": "crates/trit-parts/src/partsrun.rs",
+    "old": "            if limit > 0 && i >= limit {",
+    "new": "            if false {",
+    "pkg": "trit-parts",
+    "filter": "eval_fingerprint_enumerates_used_files_and_limit"
+  },
+  {
     "name": "parts: 弱边界并块失效（过分割不被压）",
     "file": "crates/trit-parts/src/inst.rs",
     "old": "        if (sum / n as f32) < tau {",

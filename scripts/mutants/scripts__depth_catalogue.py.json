@@ -25,5 +25,32 @@
     "pkg": "scripts/depth_catalogue.py",
     "filter": "",
     "runner": "python"
+  },
+  {
+    "name": "parts: 配置列丢掉标签子目录",
+    "file": "scripts/depth_catalogue.py",
+    "old": "    if cfg.get(\"seg_sub\") and cfg[\"seg_sub\"] != \"seg\":",
+    "new": "    if False:",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "parts: 复核不要求锚在清单上",
+    "file": "scripts/depth_catalogue.py",
+    "old": "            and bool((v.get(\"manifest\") or {}).get(\"sha256\"))",
+    "new": "            and True",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "parts: 复核记录取错产物",
+    "file": "scripts/depth_catalogue.py",
+    "old": "    art = m.get(\"deploy\") or m.get(\"model\") or {}",
+    "new": "    art = m.get(\"model\") or m.get(\"deploy\") or {}",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
   }
 ]

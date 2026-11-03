@@ -88,3 +88,7 @@ required-features = ["gpu"]
 name = "parts-inst"
 path = "src/bin/parts_inst.rs"
 required-features = ["gpu"]
+
+[[bin]]
+name = "parts-verify"
+path = "src/bin/parts_verify.rs"

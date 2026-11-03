@@ -40,12 +40,146 @@ def fmt_cfg(cfg):
     return " · ".join(str(p) for p in parts)
 
 
-def family_line(fam):
-    """族在总表里的一行（live 只报数量；registered 报缺什么）。"""
+def family_line(fam, stats=None):
+    """族在总表里的一行（live 报本族扫描数；registered 报缺什么）。"""
     st = fam.get("status", "registered")
     if st == "live":
-        return f"- **{fam['title']}**（live）：清单 + 独立复核已接线；完整表见 `{fam.get('detail', '')}`"
+        line = (
+            f"- **{fam['title']}**（live）：清单 + 独立复核已接线；"
+            f"完整表见 `{fam.get('detail', '')}`"
+        )
+        if stats:
+            runs, ok = stats
+            line += f"；本次扫描 {runs} 条运行，{ok} 条通过独立复核"
+        return line
     return f"- **{fam['title']}**（registered，产物未接）：{fam.get('needs', '')}"
+
+
+def verify_sibling(m):
+    """清单里登记的产物旁边的复核记录（PASS 才会存在）。"""
+    art = m.get("deploy") or m.get("model") or {}
+    p = art.get("path")
+    return pathlib.Path(str(p) + ".verify.json") if p else None
+
+
+def family_stats(fam):
+    """按族扫描：清单数 / 其中产物旁有 `.verify.json` 的数。"""
+    root = pathlib.Path(fam.get("dir", ""))
+    kind = fam.get("manifest_kind")
+    runs, ok = 0, 0
+    if fam.get("dir") and root.exists():
+        for mf in root.rglob("*.manifest.json"):
+            m = load(mf)
+            if not m or (kind and m.get("kind") != kind):
+                continue
+            runs += 1
+            v = verify_sibling(m)
+            if v and v.exists():
+                ok += 1
+    return runs, ok
+
+
+def fmt_parts_cfg(cfg):
+    parts = [f"{cfg.get('res', '?')}²", f"k{cfg.get('k', '?')}"]
+    if cfg.get("seg_sub") and cfg["seg_sub"] != "seg":
+        parts.append(str(cfg["seg_sub"]))
+    if cfg.get("bnd_weight"):
+        parts.append(f"bnd×{cfg['bnd_weight']:g}")
+    if cfg.get("accum", 1) > 1:
+        parts.append(f"accum {cfg['accum']}")
+    parts.append(f"lr {cfg.get('lr', '?')}")
+    parts.append(f"{cfg.get('steps', '?')} 步")
+    return " · ".join(str(p) for p in parts)
+
+
+def parts_rows(root):
+    """(清单, 复核记录或 None, 复核是否指向同一模型)。"""
+    rows = []
+    for mf in sorted(root.rglob("*.manifest.json")) if root.exists() else []:
+        m = load(mf)
+        if not m or m.get("kind") != "parts-train":
+            continue
+        deploy = m.get("deploy") or {}
+        sha = deploy.get("sha256")
+        vp = verify_sibling(m)
+        v = load(vp) if vp and vp.exists() else None
+        # 「通过复核」= 模型相同 **且** 复核记录确实锚在一份清单上（A1 是族进 live 的硬条件）
+        same = (
+            bool(v)
+            and bool(sha)
+            and (v.get("model") or {}).get("sha256") == sha
+            and bool((v.get("manifest") or {}).get("sha256"))
+        )
+        rows.append((m, v, same))
+    rows.sort(key=lambda r: r[0].get("created_unix", 0), reverse=True)
+    return rows
+
+
+def parts_doc(root):
+    rows = parts_rows(root)
+    out = []
+    out.append("# 部件头结果目录（自动生成）\n")
+    out.append(
+        "> 由 `scripts/depth_catalogue.py` 从 `runs/parts/*.manifest.json` 生成，**不要手改**。"
+        "每行的「复核」来自独立进程 `parts-verify`：它重读训练集与评测语料、重算内容级 "
+        "SHA-256、重跑 `parts-inst eval`；指纹或模型与清单不一致会判红（写 `.verify.reject.json`）。\n"
+    )
+    out.append("## 结果族：部件平面头 / 分割与实例\n")
+    if not rows:
+        out.append("（还没有带清单的运行）\n")
+        return out
+    out.append(
+        "| 模型 | 配置 | 训练数据（场景/帧） | 训练 loss | 留出复核（帧 / mIoU / 前景 IoU / 边界 F1） | 指纹（模型前 12） | 来源 | 时间 |"
+    )
+    out.append("|---|---|---|---|---|---|---|---|")
+    for m, v, same in rows:
+        cfg = fmt_parts_cfg(m.get("config", {}))
+        d = m.get("data", {})
+        loss = m.get("result", {}).get("final_loss")
+        loss_s = f"{loss:.4f}" if isinstance(loss, (int, float)) else "?"
+        if v and same:
+            met = v.get("metrics", {})
+            check = (
+                f"✅ {met.get('frames', '?')} 帧 / {met.get('miou', 0):.4f} / "
+                f"{met.get('fg_iou', 0):.3f} / {met.get('bnd_f1', 0):.3f}"
+            )
+        elif v:
+            check = "⚠️ 复核记录与模型不符"
+        else:
+            check = "未复核"
+        deploy = m.get("deploy") or {}
+        sha = str(deploy.get("sha256", ""))[:12]
+        commit = str(m.get("commit", "?")) + ("+dirty" if m.get("dirty") else "")
+        ts = m.get("created_unix", 0)
+        time_s = (
+            __import__("datetime")
+            .datetime.fromtimestamp(ts, __import__("datetime").UTC)
+            .strftime("%Y-%m-%d %H:%M UTC")
+            if ts
+            else "?"
+        )
+        p = pathlib.Path(str(deploy.get("path", "?")))
+        # 部件产物都叫 model.tpm，用「目录/文件」区分不同运行
+        name = f"{p.parent.name}/{p.name}" if p.parent.name else p.name
+        out.append(
+            f"| `{name}` | {cfg} | {d.get('dirs', '?')} / {d.get('frames', '?')} | {loss_s} | "
+            f"{check} | `{sha}` | `{commit}` | {time_s} |"
+        )
+    out.append("")
+    out.append("## 如何复核一行\n")
+    out.append("```sh")
+    out.append(
+        "parts-verify --model <模型.tpm> --data <训练时的场景根目录列表> \\\n"
+        "  --seg-sub <seg/pbnd> --renders <留出 renders> --scenes <留出 scenes> \\\n"
+        '  --eval-args "--gt part --boundary --k 5 --res 384"'
+    )
+    out.append("```\n")
+    out.append(
+        "复核器会重算 `sha256(模型)`、训练集与评测语料的内容级指纹，与 "
+        "`<模型>.manifest.json` 比对；一致才写 `.verify.json`，否则写 "
+        "`.verify.reject.json` 并退出码 1。\n"
+    )
+    return out
 
 
 def self_test():
@@ -59,10 +193,45 @@ def self_test():
     assert promotion_mark("E:/runs/x.dcn", p) == "✓"
     assert promotion_mark("E:/runs/y.dcn", p) == "—"
     live = family_line({"title": "深度", "status": "live", "detail": "docs/D.md"})
-    assert "live" in live and "docs/D.md" in live
+    assert "live" in live and "docs/D.md" in live and "本次扫描" not in live
+    live2 = family_line({"title": "深度", "status": "live", "detail": "docs/D.md"}, (9, 9))
+    assert "9 条运行" in live2 and "9 条通过" in live2, live2
     reg = family_line({"title": "部件", "status": "registered", "needs": "写清单"})
     assert "registered" in reg and "写清单" in reg and "完整表" not in reg
-    print("self-test 6/6 通过")
+    # 部件配置行：只报非默认项 + 步数
+    pc = fmt_parts_cfg({"res": 384, "k": 5, "seg_sub": "pbnd", "bnd_weight": 4, "accum": 4, "lr": 0.001, "steps": 600})
+    assert "384²" in pc and "pbnd" in pc and "bnd×4" in pc and "accum 4" in pc and "600 步" in pc, pc
+    pc2 = fmt_parts_cfg({"res": 384, "k": 5, "seg_sub": "seg", "bnd_weight": 0, "accum": 1, "lr": 0.001, "steps": 10})
+    assert "seg" not in pc2 and "bnd×" not in pc2 and "accum" not in pc2, pc2
+    assert verify_sibling({"deploy": {"path": "E:/runs/x.tpm"}}) == pathlib.Path("E:/runs/x.tpm.verify.json")
+    assert verify_sibling({"model": {"path": "E:/runs/y.dcn"}}) == pathlib.Path("E:/runs/y.dcn.verify.json")
+    both = {"model": {"path": "E:/runs/m.dcn"}, "deploy": {"path": "E:/runs/d.tpm"}}
+    assert verify_sibling(both) == pathlib.Path("E:/runs/d.tpm.verify.json"), verify_sibling(both)
+    assert verify_sibling({}) is None
+    # 复核记录必须同时满足：模型 SHA 相同 + 锚在清单上
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td)
+        sha = "ab" * 32
+        man = {"kind": "parts-train", "created_unix": 1, "deploy": {"path": str(root / "x.tpm"), "sha256": sha}}
+        (root / "x.tpm.manifest.json").write_text(json.dumps(man), encoding="utf-8")
+        assert parts_rows(root)[0][2] is False  # 没有复核记录
+        (root / "x.tpm.verify.json").write_text(
+            json.dumps({"model": {"sha256": sha}, "manifest": {}}), encoding="utf-8"
+        )
+        assert parts_rows(root)[0][2] is False  # 没锚在清单上
+        (root / "x.tpm.verify.json").write_text(
+            json.dumps({"model": {"sha256": "cd" * 32}, "manifest": {"sha256": "e" * 64}}),
+            encoding="utf-8",
+        )
+        assert parts_rows(root)[0][2] is False  # 模型不符
+        (root / "x.tpm.verify.json").write_text(
+            json.dumps({"model": {"sha256": sha}, "manifest": {"sha256": "e" * 64}}),
+            encoding="utf-8",
+        )
+        assert parts_rows(root)[0][2] is True
+    print("self-test 11/11 通过")
 
 
 def main():
@@ -71,6 +240,8 @@ def main():
     ap.add_argument("--out", default="docs/DEPTH-RESULTS.md")
     ap.add_argument("--families", default="sweeps/families.json")
     ap.add_argument("--umbrella", default="docs/RESULTS.md", help="总表输出（空串 = 不写）")
+    ap.add_argument("--parts-dir", default="runs/parts")
+    ap.add_argument("--parts-out", default="docs/PARTS-RESULTS.md", help="部件族表（空串 = 不写）")
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
     if args.self_test:
@@ -154,13 +325,17 @@ def main():
     )
     pathlib.Path(args.out).write_text("\n".join(out) + "\n", encoding="utf-8")
     print(f"已写 {args.out}（{len(rows)} 行）")
+    if args.parts_out:
+        proot = pathlib.Path(args.parts_dir)
+        pd = parts_doc(proot)
+        pathlib.Path(args.parts_out).write_text("\n".join(pd) + "\n", encoding="utf-8")
+        print(f"已写 {args.parts_out}（{len(parts_rows(proot))} 行）")
 
     if args.umbrella:
         fam_path = pathlib.Path(args.families)
         fams = []
         if fam_path.exists():
             fams = load(fam_path).get("families", [])
-        ok = sum(1 for _, v, _ in rows if v)
         u = []
         u.append("# 结果目录（自动生成）\n")
         u.append(
@@ -173,8 +348,8 @@ def main():
         if not live_rows:
             u.append("（无）\n")
         for f in live_rows:
-            u.append(family_line(f))
-        u.append(f"\n  本次扫描：{len(rows)} 条运行，{ok} 条通过独立复核。\n")
+            u.append(family_line(f, family_stats(f)))
+        u.append("")
         u.append("## 已登记、产物未接（registered）\n")
         reg_rows = [f for f in fams if f.get("status") != "live"]
         if not reg_rows:
