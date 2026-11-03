@@ -30,9 +30,6 @@ struct Dev {
     ws: Buffer,
     bias: Buffer,
     wf_t: Buffer,
-    /// 梯度累加器（`--accum K`：块内逐样本累加，每 K 个样本读回一次）。
-    acc_w: Buffer,
-    acc_b: Buffer,
 }
 
 /// 一层卷积的 CPU 侧参数 + 设备镜像。
@@ -152,8 +149,6 @@ impl GConv {
                     ws: gpu.buf(&ws, "dg-ws"),
                     bias: gpu.buf(&bias, "dg-b"),
                     wf_t: gpu.buf(&wf_t, "dg-wft"),
-                    acc_w: gpu.zeros(self.nw(), "dg-acc-w"),
-                    acc_b: gpu.zeros(self.gcout as usize, "dg-acc-b"),
                 });
             }
         }
@@ -178,41 +173,79 @@ impl GConv {
     }
 
     /// 反向：只发 dispatch，不读回。返回 `(dw, db, dx)`，梯度是对**有效权重 E** 的。
-    pub fn grads(
+    #[allow(clippy::too_many_arguments)]
+    fn grads(
         &self,
         gpu: &Gpu,
+        pipes: &Pipes,
         x: &Buffer,
         dy: &Buffer,
+        ymask: Option<&Buffer>,
         size: u32,
         need_dx: bool,
     ) -> (Buffer, Buffer, Option<Buffer>) {
         let spec = self.spec();
         let dw = gpu.bwd_conv_dw_split(size, size, &spec, 0, x, dy);
         let db = gpu.bwd_conv_db_split(size, size, &spec, 0, dy);
-        let dx = need_dx.then(|| {
-            let d = self.dev.as_ref().expect("层未上传");
-            gpu.bwd_conv_dx(size, size, &spec, 0, dy, &d.wf, &d.wf_t)
+        let dx = need_dx.then(|| match ymask {
+            // ReLU 掩码折进 dx：省掉一次 mask_dy（以及它 512 KB 的临时缓冲）
+            Some(y) if self.cin.is_multiple_of(4) => self.dx_masked(gpu, pipes, y, dy, size),
+            _ => {
+                let d = self.dev.as_ref().expect("层未上传");
+                gpu.bwd_conv_dx(size, size, &spec, 0, dy, &d.wf, &d.wf_t)
+            }
         });
         (dw, db, dx)
     }
 
-    /// 把一次反向的梯度累加到设备缓冲（块内不清零；每 K 个样本读回后由 `acc_clear` 清零）。
-    pub fn acc_add(&self, gpu: &Gpu, dw: &Buffer, db: &Buffer) {
+    /// `conv_dx4m`：与 `conv_dx4` 同式，额外按 ReLU 输出把输入梯度逐通道置零。
+    fn dx_masked(&self, gpu: &Gpu, pipes: &Pipes, y: &Buffer, dy: &Buffer, size: u32) -> Buffer {
         let d = self.dev.as_ref().expect("层未上传");
-        gpu.add_into(&d.acc_w, dw, self.nw());
-        gpu.add_into(&d.acc_b, db, self.gcout as usize);
-    }
-
-    /// 梯度累加器 `(dw, db)`（`--accum` 路径一次读回用）。
-    pub fn acc_bufs(&self) -> (&Buffer, &Buffer) {
-        let d = self.dev.as_ref().expect("层未上传");
-        (&d.acc_w, &d.acc_b)
-    }
-
-    pub fn acc_clear(&self, gpu: &Gpu) {
-        let d = self.dev.as_ref().expect("层未上传");
-        gpu.clear(&d.acc_w, self.nw());
-        gpu.clear(&d.acc_b, self.gcout as usize);
+        let u = ConvU8 {
+            h: size,
+            w: size,
+            cin: self.cin,
+            cout: self.gcout,
+            kk: self.kk,
+            pad: self.kk / 2,
+            mode: 0,
+            relu: 0,
+        };
+        let ub = gpu.ubuf(&u);
+        let out = gpu.empty_out((size * size * self.cin) as usize, "dg-dx");
+        let bg = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &pipes.dx4m_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ub.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: dy.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: y.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: d.wf_t.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: out.as_entire_binding(),
+                },
+            ],
+        });
+        let n4 = size * size * self.cin / 4;
+        gpu.record(|pass| {
+            pass.set_pipeline(&pipes.dx4m_pl);
+            pass.set_bind_group(0, &bg, &[]);
+            pass.dispatch_workgroups(256, crate::gpu::div_up(n4, crate::gpu::ROW), 1);
+        });
+        out
     }
 
     /// 把设备梯度读回并**按 CPU 口径还原**：`dw_cpu = scale·dE`、`db_cpu = scale·db`、
@@ -278,6 +311,152 @@ fn align4(v: u32) -> u32 {
     v.div_ceil(COUT_ALIGN) * COUT_ALIGN
 }
 
+// ---------------------------------------------------------------- 融合内核（自包含）
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct ConvU8 {
+    h: u32,
+    w: u32,
+    cin: u32,
+    cout: u32,
+    kk: u32,
+    pad: u32,
+    mode: u32,
+    relu: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+struct AccU {
+    total: u32,
+    nseg: u32,
+    _a: u32,
+    _b: u32,
+    seg: [[u32; 4]; 8],
+}
+
+fn depth_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Storage { read_only },
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
+fn depth_unif(binding: u32) -> wgpu::BindGroupLayoutEntry {
+    wgpu::BindGroupLayoutEntry {
+        binding,
+        visibility: wgpu::ShaderStages::COMPUTE,
+        ty: wgpu::BindingType::Buffer {
+            ty: wgpu::BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: None,
+        },
+        count: None,
+    }
+}
+
+/// 深度头自己的两条管线（不改共享 shader，避免影响 parts 训练路径）。
+struct Pipes {
+    dx4m_pl: wgpu::ComputePipeline,
+    dx4m_bgl: wgpu::BindGroupLayout,
+    acc_pl: wgpu::ComputePipeline,
+    acc_bgl: wgpu::BindGroupLayout,
+}
+
+impl Pipes {
+    fn new(device: &wgpu::Device) -> Self {
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("depth-fused"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("shaders_depth.wgsl").into()),
+        });
+        let mk = |entries: &[wgpu::BindGroupLayoutEntry]| {
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: None,
+                entries,
+            })
+        };
+        let dx4m_bgl = mk(&[
+            depth_unif(0),
+            depth_entry(1, true),
+            depth_entry(2, true),
+            depth_entry(3, true),
+            depth_entry(4, false),
+        ]);
+        let acc_bgl = mk(&[
+            depth_unif(0),
+            depth_entry(1, true),
+            depth_entry(2, true),
+            depth_entry(3, true),
+            depth_entry(4, true),
+            depth_entry(5, true),
+            depth_entry(6, true),
+            depth_entry(7, false),
+        ]);
+        let pipe = |label: &str, bgl: &wgpu::BindGroupLayout| {
+            let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some(label),
+                bind_group_layouts: &[Some(bgl)],
+                immediate_size: 0,
+            });
+            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+                label: Some(label),
+                layout: Some(&pl),
+                module: &module,
+                entry_point: Some(label),
+                compilation_options: Default::default(),
+                cache: None,
+            })
+        };
+        Self {
+            dx4m_pl: pipe("conv_dx4m", &dx4m_bgl),
+            dx4m_bgl,
+            acc_pl: pipe("acc_add6", &acc_bgl),
+            acc_bgl,
+        }
+    }
+}
+
+/// 6 段梯度共用的扁平累加器（`--accum K`）：加一次、读一次、清一次。
+struct FlatAcc {
+    buf: Option<Buffer>,
+    total: usize,
+    lens: [usize; 6],
+    offs: [usize; 6],
+}
+
+impl FlatAcc {
+    fn new() -> Self {
+        Self {
+            buf: None,
+            total: 0,
+            lens: [0; 6],
+            offs: [0; 6],
+        }
+    }
+
+    fn init(&mut self, gpu: &Gpu, lens: [usize; 6]) {
+        self.lens = lens;
+        let mut off = 0usize;
+        for (o, len) in self.offs.iter_mut().zip(&lens) {
+            *o = off;
+            off += len;
+        }
+        self.total = off;
+        self.buf = Some(gpu.zeros(off, "dg-acc"));
+    }
+
+    fn buf(&self) -> &Buffer {
+        self.buf.as_ref().expect("累加器未初始化")
+    }
+}
+
 /// 整个深度头的 GPU 镜像。
 pub struct DepthGpu {
     pub c1: GConv,
@@ -289,6 +468,8 @@ pub struct DepthGpu {
     pub size: u32,
     /// 分项耗时（秒）：打包+前向+读回 / 造 dy / 反向 dispatch / 读回+更新+上传。
     pub prof: [f64; 4],
+    pipes: Option<Pipes>,
+    acc: FlatAcc,
 }
 
 impl DepthGpu {
@@ -303,6 +484,8 @@ impl DepthGpu {
             iqr: net.iqr,
             size,
             prof: [0.0; 4],
+            pipes: None,
+            acc: FlatAcc::new(),
         }
     }
 
@@ -335,6 +518,97 @@ impl DepthGpu {
         self.c1.upload(gpu);
         self.c2.upload(gpu);
         self.c3.upload(gpu);
+        if self.pipes.is_none() {
+            self.pipes = Some(Pipes::new(&gpu.device));
+        }
+        if self.acc.buf.is_none() {
+            self.acc.init(
+                gpu,
+                [
+                    self.c1.nw(),
+                    self.c1.gcout as usize,
+                    self.c2.nw(),
+                    self.c2.gcout as usize,
+                    self.c3.nw(),
+                    self.c3.gcout as usize,
+                ],
+            );
+        }
+    }
+
+    fn pipes(&self) -> &Pipes {
+        self.pipes.as_ref().expect("管线未建")
+    }
+
+    /// 6 段梯度并成 **1 次 dispatch** 加进扁平累加器。
+    fn acc_add6(&self, gpu: &Gpu, srcs: [&Buffer; 6]) {
+        let p = self.pipes();
+        let mut seg = [[0u32; 4]; 8];
+        for (s, (o, l)) in seg.iter_mut().zip(self.acc.offs.iter().zip(&self.acc.lens)) {
+            *s = [*o as u32, *l as u32, 0, 0];
+        }
+        let ub = gpu.ubuf(&AccU {
+            total: self.acc.total as u32,
+            nseg: 6,
+            _a: 0,
+            _b: 0,
+            seg,
+        });
+        let bg = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &p.acc_bgl,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: ub.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: srcs[0].as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: srcs[1].as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: srcs[2].as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: srcs[3].as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: srcs[4].as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 6,
+                    resource: srcs[5].as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 7,
+                    resource: self.acc.buf().as_entire_binding(),
+                },
+            ],
+        });
+        gpu.record(|pass| {
+            pass.set_pipeline(&p.acc_pl);
+            pass.set_bind_group(0, &bg, &[]);
+            pass.dispatch_workgroups(
+                256,
+                crate::gpu::div_up(self.acc.total as u32, crate::gpu::ROW),
+                1,
+            );
+        });
+    }
+
+    fn acc_read(&self, gpu: &Gpu) -> Vec<f32> {
+        gpu.read(self.acc.buf(), self.acc.total)
+    }
+
+    fn acc_clear(&self, gpu: &Gpu) {
+        gpu.clear(self.acc.buf(), self.acc.total);
     }
 
     fn pack(&self, x: &[Vec<f32>]) -> Vec<f32> {
@@ -403,7 +677,6 @@ impl DepthGpu {
         let size = self.size;
         let hw = (size * size) as usize;
         let gco = self.c3.gcout as usize;
-        let cin1 = self.c2.cout as usize; // c1 输出 / c2 输入通道
         let t0 = std::time::Instant::now();
         let xin = self.pack(x);
         let xb = gpu.buf(&xin, "dg-x");
@@ -424,14 +697,15 @@ impl DepthGpu {
         let dy3 = gpu.buf(&dy, "dg-dy3");
         self.prof[1] += t1.elapsed().as_secs_f64();
 
-        // 反向
+        // 反向（ReLU 掩码折进 dx，省掉两次 mask dispatch）
         let t2 = std::time::Instant::now();
+        let pipes = self.pipes();
         gpu.begin_batch();
-        let (dw3, db3, dx3) = self.c3.grads(gpu, &a2, &dy3, size, true);
-        let dy2 = gpu.mask_dy(&a2, dx3.as_ref().unwrap(), hw * cin1, true);
-        let (dw2, db2, dx2) = self.c2.grads(gpu, &a1, &dy2, size, true);
-        let dy1 = gpu.mask_dy(&a1, dx2.as_ref().unwrap(), hw * cin1, true);
-        let (dw1, db1, _) = self.c1.grads(gpu, &xb, &dy1, size, false);
+        let (dw3, db3, dx3) = self.c3.grads(gpu, pipes, &a2, &dy3, Some(&a2), size, true);
+        let dy2 = dx3.expect("c3 缺 dx");
+        let (dw2, db2, dx2) = self.c2.grads(gpu, pipes, &a1, &dy2, Some(&a1), size, true);
+        let dy1 = dx2.expect("c2 缺 dx");
+        let (dw1, db1, _) = self.c1.grads(gpu, pipes, &xb, &dy1, None, size, false);
         gpu.end_batch();
         self.prof[2] += t2.elapsed().as_secs_f64();
 
@@ -470,7 +744,6 @@ impl DepthGpu {
         let size = self.size;
         let hw = (size * size) as usize;
         let gco = self.c3.gcout as usize;
-        let cin1 = self.c2.cout as usize;
 
         // 前向：K 张一次提交
         let t0 = std::time::Instant::now();
@@ -504,46 +777,32 @@ impl DepthGpu {
         self.out_b -= lr * gb_sum / k as f32;
         self.prof[1] += t1.elapsed().as_secs_f64();
 
-        // 反向：K 张一次提交，梯度累加进设备缓冲
+        // 反向：K 张一次提交，ReLU 掩码折进 dx，6 段梯度各 1 次 dispatch 累加
         let t2 = std::time::Instant::now();
+        let pipes = self.pipes();
         gpu.begin_batch();
         for i in 0..k {
             let (a1, a2, _) = &acts[i];
-            let (dw3, db3, dx3) = self.c3.grads(gpu, a2, &dys[i], size, true);
-            self.c3.acc_add(gpu, &dw3, &db3);
-            let dy2 = gpu.mask_dy(a2, dx3.as_ref().unwrap(), hw * cin1, true);
-            let (dw2, db2, dx2) = self.c2.grads(gpu, a1, &dy2, size, true);
-            self.c2.acc_add(gpu, &dw2, &db2);
-            let dy1 = gpu.mask_dy(a1, dx2.as_ref().unwrap(), hw * cin1, true);
-            let (dw1, db1, _) = self.c1.grads(gpu, &xs[i], &dy1, size, false);
-            self.c1.acc_add(gpu, &dw1, &db1);
+            let (dw3, db3, dx3) = self.c3.grads(gpu, pipes, a2, &dys[i], Some(a2), size, true);
+            let dy2 = dx3.expect("c3 缺 dx");
+            let (dw2, db2, dx2) = self.c2.grads(gpu, pipes, a1, &dy2, Some(a1), size, true);
+            let dy1 = dx2.expect("c2 缺 dx");
+            let (dw1, db1, _) = self.c1.grads(gpu, pipes, &xs[i], &dy1, None, size, false);
+            self.acc_add6(gpu, [&dw1, &db1, &dw2, &db2, &dw3, &db3]);
         }
         gpu.end_batch();
         self.prof[2] += t2.elapsed().as_secs_f64();
 
-        // 一次读回六个累加器，清零，按 1/K 还原成平均梯度
+        // 读一次扁平累加器、清一次，按 1/K 还原成平均梯度
         let t3 = std::time::Instant::now();
-        let (c1w, c1b) = self.c1.acc_bufs();
-        let (c2w, c2b) = self.c2.acc_bufs();
-        let (c3w, c3b) = self.c3.acc_bufs();
-        let r = gpu.read_many(&[
-            (c1w, self.c1.nw()),
-            (c1b, self.c1.gcout as usize),
-            (c2w, self.c2.nw()),
-            (c2b, self.c2.gcout as usize),
-            (c3w, self.c3.nw()),
-            (c3b, self.c3.gcout as usize),
-        ]);
-        gpu.begin_batch();
-        self.c1.acc_clear(gpu);
-        self.c2.acc_clear(gpu);
-        self.c3.acc_clear(gpu);
-        gpu.end_batch();
+        let r = self.acc_read(gpu);
+        self.acc_clear(gpu);
+        let (o, l) = (self.acc.offs, self.acc.lens);
         let inv = 1.0 / k as f32;
         let scale = |v: Vec<f32>| -> Vec<f32> { v.into_iter().map(|x| x * inv).collect() };
-        let (g1, gb1, s1) = self.c1.pull(&r[0], &r[1]);
-        let (g2, gb2, s2) = self.c2.pull(&r[2], &r[3]);
-        let (g3, gb3, s3) = self.c3.pull(&r[4], &r[5]);
+        let (g1, gb1, s1) = self.c1.pull(&r[o[0]..o[0] + l[0]], &r[o[1]..o[1] + l[1]]);
+        let (g2, gb2, s2) = self.c2.pull(&r[o[2]..o[2] + l[2]], &r[o[3]..o[3] + l[3]]);
+        let (g3, gb3, s3) = self.c3.pull(&r[o[4]..o[4] + l[4]], &r[o[5]..o[5] + l[5]]);
         self.c1.apply(&scale(g1), &scale(gb1), &scale(s1), lr);
         self.c2.apply(&scale(g2), &scale(gb2), &scale(s2), lr);
         self.c3.apply(&scale(g3), &scale(gb3), &scale(s3), lr);
