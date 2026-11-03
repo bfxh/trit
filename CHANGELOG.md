@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added（门脚本族：全表锚点 sweep `scripts/mutation_sweep.py`）
+
+- 补上一块盲区：`mutation_check.main()` 只对 `--pkg` **选中**的条目调用 `preflight`，
+  所以没被选中的目标里，锚点烂掉了没人报。`scripts/mutation_sweep.py` 不复制判据——
+  `from mutation_check import load_mutants, preflight` 直接复用，把同一套「文件存在 + 锚点恰好 1 次 +
+  不许落在自测代码之后」跑遍整张表；另加两条门本体没有的检查：**跨目标重名判红**
+  （同名会让「谁抓住了哪条变异」对不上账），**0 条判红**（空表不等于全绿）。
+- 单独成文件而不是改门本体：`scripts/mutation_check.py` 此刻有另一路在飞的改动
+  （撤过期豁免），同一文件两个写者必撞；这里对门本体**零行改动**。
+- 读数：真表 sweep **743 条 / 55 个目标 / 问题 0 / 0.12s**（成本可忽略，适合每次必跑）；
+  `python scripts/mutation_sweep.py --self-test` **12/12**；
+  自己登记 5 条变异 ⇒ `python scripts/mutation_check.py --pkg scripts/mutation_sweep.py`
+  **断言抓 5、崩溃 0、编译红假杀 0、存活 0**（每条都由点名的断言判红，例如
+  「重名检查失效」⇒ `FAIL 重名要判红`，「未知旗标不再拒绝」⇒ `FAIL 走 main：未知旗标 ⇒ rc=2 期望 2，实际 1`）。
+- 自测里 `main()` 的过程输出被 `redirect_stdout` 吞掉：绿日志里出现 `FAIL 用法：…` 形状的行
+  会让下一个人误判门红——这是自测自身也要守的形状。
+- 🔴 **本条只落"脚本 + 登记表"，CI 挂步还没做**：把 sweep 接进 `.github/workflows/` 需要动
+  另一路正在声明的面（`.github` 整目录被别的在建 PR 占着），对齐后另开一片；在那之前
+  这条门是"可跑、有变异锁、没进 CI"的状态，不许当成已经每次必跑。
+
 ### Added（trit-re：PE32 函数边界取自 COFF 符号表）
 
 - `pe::parse` 现在读 COFF 符号表（`PointerToSymbolTable`/`NumberOfSymbols`，18 字节条目）：
