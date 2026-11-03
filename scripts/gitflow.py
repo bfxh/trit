@@ -1747,7 +1747,7 @@ def self_test() -> int:
         check("修一个孤儿要两步（两个孤儿就四步）", len(steps), 4)
         check("第一步必须先改 base（顺序错了会白跑一轮 CI）",
               (steps[0][:4], steps[1][:4]),
-              (["gh", "pr", "edit", "221"], [sys.executable.split(chr(47))[-1], "scripts/gitflow.py", "pr", "sync"]))
+              (["gh", "pr", "edit", "221"], [sys.executable, "scripts/gitflow.py", "pr", "sync"]))
         check("没有孤儿时计划是空的（不拿空列表去执行）", repair_plan([]), [])
         git_real = globals()["git"]
         try:
@@ -1857,14 +1857,15 @@ def self_test() -> int:
             globals()["stack"] = fake_stack
             try:
                 check("main 把 --repair/--apply 接到 stack 上",
-                      main(["stack", "--repo", "o/r", "--repair", "--apply"]), 0)
+                      main(["stack", "--repo", "o/r", "--remote", "origin", "--base", "main",
+                          "--repair", "--apply"]), 0)
                 check("命令行两个开关都传到（少一个就是 flag 被吞）",
                       (wired["repair"], wired["apply"]), (True, True))
                 check("main：--no-remote 传到 remote_state=False",
-                      main(["stack", "--repo", "o/r", "--no-remote"]), 0)
+                      main(["stack", "--repo", "o/r", "--remote", "origin", "--base", "main", "--no-remote"]), 0)
                 check("--no-remote 时 remote_state 必须关掉", wired["remote"], False)
                 check("main：不给开关时 repair/apply 都是 False（默认只读）",
-                      (main(["stack", "--repo", "o/r"]), wired["repair"], wired["apply"]),
+                      (main(["stack", "--repo", "o/r", "--remote", "origin", "--base", "main"]), wired["repair"], wired["apply"]),
                       (0, False, False))
             finally:
                 globals()["stack"] = stack_real
