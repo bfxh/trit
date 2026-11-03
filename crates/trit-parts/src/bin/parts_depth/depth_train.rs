@@ -3,12 +3,19 @@
 use std::path::{Path, PathBuf};
 
 use trit_parts::data::read_rgb;
-use trit_parts::depthdata::{TrainSample, add_lowpass, load_sample, scaled_camera};
+use trit_parts::depthdata::{
+    TrainSample, add_lowpass, add_pyramid_pool, load_sample, scaled_camera,
+};
 
 use super::{arg, usage};
 
 /// 只从 RGB 造输入平面（盒式降采样到 `size²`）——推理时不读 GT 深度/分割。
-pub(crate) fn image_planes(p: &Path, size: usize, pyr: usize) -> Option<Vec<Vec<f32>>> {
+pub(crate) fn image_planes(
+    p: &Path,
+    size: usize,
+    pyr: usize,
+    ppyr: usize,
+) -> Option<Vec<Vec<f32>>> {
     let (w, h, rgb) = read_rgb(p).ok()?;
     if w < size || h < size {
         return None;
@@ -35,6 +42,7 @@ pub(crate) fn image_planes(p: &Path, size: usize, pyr: usize) -> Option<Vec<Vec<
     for lvl in 1..=pyr {
         add_lowpass(&mut planes, size, 4usize.pow(lvl as u32));
     }
+    add_pyramid_pool(&mut planes, size, ppyr);
     Some(planes)
 }
 
@@ -116,6 +124,9 @@ pub(crate) fn cnn_train(argv: &[String]) {
     let full = argv.iter().any(|a| a == "--full");
     let eval_only = arg(argv, "--eval-only").map(PathBuf::from);
     let pyr: usize = arg(argv, "--pyr").and_then(|v| v.parse().ok()).unwrap_or(0);
+    let ppyr: usize = arg(argv, "--ppyr")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let ternary = !argv.iter().any(|a| a == "--f32");
     let dil: usize = arg(argv, "--dil").and_then(|v| v.parse().ok()).unwrap_or(1);
     // 多视角一致性：`--mv-weight` > 0 时启用；`--pair-gap` 选同场景的另一个视角。
@@ -131,7 +142,9 @@ pub(crate) fn cnn_train(argv: &[String]) {
     let mv_tau: f32 = arg(argv, "--mv-tau")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.5);
-    let mut net = DepthNet::with_inputs(3 + 3 * pyr, hidden, 7, ternary);
+    let mut net = DepthNet::with_inputs(3 + 3 * pyr + 3 * ppyr, hidden, 7, ternary);
+    net.pyr = pyr;
+    net.ppyr = ppyr;
     net.set_dilation(dil);
     println!(
         "卷积深度头：{} 权重，dil {dil}（感受野 {}）",
@@ -141,7 +154,7 @@ pub(crate) fn cnn_train(argv: &[String]) {
     let mut samples: Vec<TrainSample> = Vec::new();
     for (sid, d) in data.iter().enumerate() {
         let mut fr = 0usize;
-        while let Some((x, y, mk, med, iqr, w0)) = load_sample(d, fr, size, full, pyr) {
+        while let Some((x, y, mk, med, iqr, w0)) = load_sample(d, fr, size, full, pyr, ppyr) {
             if fr.is_multiple_of(stride.max(1)) {
                 let cam = scaled_camera(d, fr, size as f64 / w0 as f64);
                 samples.push(TrainSample {
@@ -461,8 +474,7 @@ pub(crate) fn depth_iou(argv: &[String]) {
     let cam = Camera::load(&scene.join("meta").join(format!("{frame:06}.json")))
         .unwrap_or_else(|e| panic!("{e}"));
     let dn = trit_parts::depthnet::DepthNet::load(&dcn_p).unwrap_or_else(|e| panic!("{e}"));
-    let planes = image_planes(&p, dcn_size, dn.c1.cin.saturating_sub(3) / 3)
-        .unwrap_or_else(|| panic!("图像太小"));
+    let planes = image_planes(&p, dcn_size, dn.pyr, dn.ppyr).unwrap_or_else(|| panic!("图像太小"));
     let pred = dcn_depth_map(&dn, &planes, w, h, dcn_size);
 
     let (mut gp, mut pg, mut ppd) = (Vec::new(), Vec::new(), Vec::new());

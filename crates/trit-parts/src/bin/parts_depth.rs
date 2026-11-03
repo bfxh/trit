@@ -261,7 +261,7 @@ fn mesh_single(argv: &[String]) {
     } else if let Some(dp) = dcn_p {
         // 卷积深度头：整图降采样 → 逐像素归一化深度 → 双线性回原分辨率
         let dn = trit_parts::depthnet::DepthNet::load(&dp).unwrap_or_else(|e| panic!("{e}"));
-        let planes = depth_train::image_planes(&p, dcn_size, (dn.c1.cin.saturating_sub(3)) / 3)
+        let planes = depth_train::image_planes(&p, dcn_size, dn.pyr, dn.ppyr)
             .unwrap_or_else(|| panic!("图像小于 {dcn_size}²，无法降采样"));
         depth_train::dcn_depth_map(&dn, &planes, w, h, dcn_size)
     } else {
