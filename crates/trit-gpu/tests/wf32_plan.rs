@@ -4,7 +4,7 @@
 #![cfg(feature = "gpu")]
 
 use trit_gpu::matmul_wf32::Wf32Gpu;
-use trit_gpu::matmul_wf32_plan::{Wf32Kernel, run_batch};
+use trit_gpu::matmul_wf32_plan::{Wf32Kernel, Wf32Plan, run_batch, run_chain};
 use trit_gpu::pack_rows;
 
 /// `C[r][c] = Σ_k a[r][k] · b[c][k]`，`b` 按列主序、每列补齐到 `words*32`。
@@ -156,4 +156,116 @@ fn timed_phases_agree_with_plain_run() {
     assert_close(&timed, &plan.run(None), "分段 vs 单 submit");
     assert!(phases.compute_ms > 0.0, "compute 段应耗时");
     assert!(phases.readback_ms > 0.0, "回读段应耗时");
+}
+/// 把上一层的行主序 `m×n` 输出重排成下一层的列主序 `b`（尾部补 0）——
+/// 与 `matmul_wf32_transpose.wgsl` 同一套约定的 CPU 参照。
+fn transpose_into_b(prev: &[f32], prev_m: usize, prev_n: usize) -> Vec<f32> {
+    let words = prev_m.div_ceil(32);
+    let mut b = vec![0f32; prev_n * words * 32];
+    for c in 0..prev_n {
+        for r in 0..prev_m {
+            b[c * words * 32 + r] = prev[r * prev_n + c];
+        }
+    }
+    b
+}
+
+/// 通道数递减、像素数不变的逐层链：40→24→8 通道 × 12 像素，每层 k = 上一层的 m。
+/// 40 不是 32 的倍数，正好压住「补齐尾部必须是 0」。
+const CHAIN: [(usize, usize, usize); 3] = [(40, 12, 32), (24, 12, 40), (8, 12, 24)];
+
+/// 建一条链：非首层的 `b` 故意灌成垃圾，只有层间搬运真跑了结果才可能对上。
+fn poisoned_chain(gpu: &Wf32Gpu) -> (Vec<Wf32Plan<'_>>, Vec<f32>) {
+    let mut expected: Vec<f32> = Vec::new();
+    let mut plans = Vec::new();
+    for (idx, (m, n, k)) in CHAIN.into_iter().enumerate() {
+        let (a, ap, an) = trit_rows(m, k, idx + 1);
+        let words = k.div_ceil(32);
+        let right = if idx == 0 {
+            activations(n, k, 0)
+        } else {
+            transpose_into_b(&expected, CHAIN[idx - 1].0, n)
+        };
+        assert_eq!(right.len(), n * words * 32, "第 {idx} 层激活长度");
+        expected = cpu_wf32(m, n, k, &a, &right);
+        let poison = if idx == 0 {
+            right
+        } else {
+            vec![3.25f32; n * words * 32]
+        };
+        plans.push(gpu.plan(m, n, k, &ap, &an, &poison));
+    }
+    (plans, expected)
+}
+
+#[test]
+fn chain_consumes_previous_layer_output_on_device() {
+    let Some(gpu) = Wf32Gpu::new() else {
+        eprintln!("无 GPU adapter，跳过");
+        return;
+    };
+    let (plans, expected) = poisoned_chain(&gpu);
+    let refs: Vec<&Wf32Plan<'_>> = plans.iter().collect();
+    assert_close(
+        &run_chain(&refs, Some(Wf32Kernel::Scalar)),
+        &expected,
+        "链式 vs CPU 参照",
+    );
+    assert_close(
+        &run_chain(&refs, Some(Wf32Kernel::Tiled)),
+        &expected,
+        "链式 tiled",
+    );
+    assert_close(&run_chain(&refs, None), &expected, "链式自动选核");
+}
+
+#[test]
+fn chain_matches_layer_by_layer_roundtrip() {
+    let Some(gpu) = Wf32Gpu::new() else {
+        eprintln!("无 GPU adapter，跳过");
+        return;
+    };
+    // 逐层口径：每层跑完回读、在 host 侧重排、再上传给下一层。
+    let mut b_in = activations(CHAIN[0].1, CHAIN[0].2, 0);
+    let mut per_layer: Vec<Vec<f32>> = Vec::new();
+    for (idx, (m, n, k)) in CHAIN.into_iter().enumerate() {
+        let (a, ap, an) = trit_rows(m, k, idx + 1);
+        let plan = gpu.plan(m, n, k, &ap, &an, &b_in);
+        let out = plan.run(Some(Wf32Kernel::Scalar));
+        assert_close(&out, &cpu_wf32(m, n, k, &a, &b_in), "逐层第 {idx} 层");
+        per_layer.push(out.clone());
+        b_in = transpose_into_b(&out, m, n);
+    }
+    let (plans, expected) = poisoned_chain(&gpu);
+    let refs: Vec<&Wf32Plan<'_>> = plans.iter().collect();
+    assert_close(&per_layer[2], &expected, "逐层参照 vs CPU 参照");
+    assert_close(
+        &run_chain(&refs, Some(Wf32Kernel::Scalar)),
+        &per_layer[2],
+        "链式 vs 逐层回读",
+    );
+}
+
+#[test]
+fn chain_rejects_shape_that_does_not_connect() {
+    let Some(gpu) = Wf32Gpu::new() else {
+        eprintln!("无 GPU adapter，跳过");
+        return;
+    };
+    let (_a, ap, an) = trit_rows(40, 32, 1);
+    let prev = gpu.plan(40, 12, 32, &ap, &an, &activations(12, 32, 0));
+    // 通道接不上：下一层 k=33 != 上一层 m=40
+    let (_a2, ap2, an2) = trit_rows(24, 33, 2);
+    let bad_k = gpu.plan(24, 12, 33, &ap2, &an2, &activations(12, 33, 0));
+    // 像素数变了：n=11 != 上一层 n=12
+    let (_a3, ap3, an3) = trit_rows(24, 40, 3);
+    let bad_n = gpu.plan(24, 11, 40, &ap3, &an3, &activations(11, 40, 0));
+
+    for (label, bad) in [("k 接不上", &bad_k), ("像素数变了", &bad_n)] {
+        let refs = vec![&prev, bad];
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            run_chain(&refs, Some(Wf32Kernel::Scalar))
+        }));
+        assert!(caught.is_err(), "{label} 时必须判红，不能悄悄算出个错结果");
+    }
 }

@@ -329,6 +329,98 @@ impl<'g> Wf32Plan<'g> {
     }
 }
 
+/// 布局搬运内核的 workgroup 大小，与 `matmul_wf32_transpose.wgsl` 一致。
+pub const TRANSPOSE_WORKGROUP: u32 = 64;
+
+impl<'g> Wf32Plan<'g> {
+    /// 把上一层的 `out` 直接搬进本层的 `b`（device→device，中间结果不过 host）。
+    ///
+    /// 只在这种形状关系下成立：本层 `k == 上一层 m`（通道数接上）且
+    /// `n` 不变（像素数不变，即 1×1 conv / 逐通道线性）。带空间的 3×3 需要
+    /// im2col 邻域展开，不是单纯重排，不接这条链。
+    pub fn encode_layout_from(&self, prev: &Wf32Plan<'_>, encoder: &mut wgpu::CommandEncoder) {
+        assert_eq!(
+            self.k, prev.m,
+            "链式要求本层 k(={}) 等于上一层 m({})",
+            self.k, prev.m
+        );
+        assert_eq!(
+            self.n, prev.n,
+            "链式要求像素数不变（本层 n={} vs 上层 n={}）",
+            self.n, prev.n
+        );
+        let total = self.n * self.words * 32;
+        let params: [u32; 4] = [
+            prev.m as u32,
+            prev.n as u32,
+            self.words as u32,
+            total as u32,
+        ];
+        let params_buf = self
+            .gpu
+            .device
+            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("wf32-transpose-params"),
+                contents: bytemuck::cast_slice(&params),
+                usage: wgpu::BufferUsages::UNIFORM,
+            });
+        let bind = self
+            .gpu
+            .device
+            .create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("wf32-transpose"),
+                layout: &self.gpu.layout_transpose,
+                entries: &[
+                    wgpu::BindGroupEntry {
+                        binding: 0,
+                        resource: prev.out.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 1,
+                        resource: self.b.as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 2,
+                        resource: params_buf.as_entire_binding(),
+                    },
+                ],
+            });
+        let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+        pass.set_pipeline(&self.gpu.pipeline_transpose);
+        pass.set_bind_group(0, &bind, &[]);
+        pass.dispatch_workgroups((total as u32).div_ceil(TRANSPOSE_WORKGROUP), 1, 1);
+        drop(pass);
+    }
+}
+
+/// 一整条前向链：中间结果不出显存，只上传第一层、只回读最后一层。
+///
+/// 与 [`run_batch`] 的区别：`run_batch` 是「互相独立的几层挤进一个 submit」，
+/// 这里是「有依赖的几层挤进一个 submit」——层的顺序就是执行顺序，
+/// 每层的 `b` 由上一层的 `out` 在显存里重排而来。
+pub fn run_chain(plans: &[&Wf32Plan<'_>], kernel: Option<Wf32Kernel>) -> Vec<f32> {
+    assert!(!plans.is_empty(), "空链没有输出");
+    let first = plans[0];
+    let mut encoder = first
+        .gpu
+        .device
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("wf32-chain"),
+        });
+    for (idx, plan) in plans.iter().enumerate() {
+        if idx > 0 {
+            plan.encode_layout_from(plans[idx - 1], &mut encoder);
+        }
+        let chosen = plan.kernel_for(kernel);
+        let grid = plan.grid(chosen);
+        plan.encode_compute(&mut encoder, chosen, grid);
+    }
+    let last = plans[plans.len() - 1];
+    last.encode_readback(&mut encoder);
+    last.gpu.queue.submit([encoder.finish()]);
+    last.read_back()
+}
+
 /// 多个层合进一个 submit：所有内核派发 + 所有回读拷贝，再一次映射等待。
 ///
 /// `kernel` 为 `None` 时每个层各自按形状选核。返回顺序与 `plans` 一致。

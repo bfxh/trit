@@ -17,7 +17,9 @@ pub struct Wf32Gpu {
     pub(crate) pipeline: wgpu::ComputePipeline,
     pub(crate) pipeline_reg4: wgpu::ComputePipeline,
     pub(crate) pipeline_tiled: wgpu::ComputePipeline,
+    pub(crate) pipeline_transpose: wgpu::ComputePipeline,
     pub(crate) layout: wgpu::BindGroupLayout,
+    pub(crate) layout_transpose: wgpu::BindGroupLayout,
 }
 
 impl Wf32Gpu {
@@ -86,13 +88,37 @@ impl Wf32Gpu {
             compilation_options: Default::default(),
             cache: None,
         });
+        let layout_transpose = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("wf32-transpose"),
+            entries: &[storage(0), storage_with(1, false), uniform(2)],
+        });
+        let transpose_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: None,
+                bind_group_layouts: &[Some(&layout_transpose)],
+                immediate_size: 0,
+            });
+        let shader_transpose = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("matmul-wf32-transpose"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("matmul_wf32_transpose.wgsl").into()),
+        });
+        let pipeline_transpose = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("matmul-wf32-transpose"),
+            layout: Some(&transpose_pipeline_layout),
+            module: &shader_transpose,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         Some(Self {
             device,
             queue,
             pipeline,
             pipeline_reg4,
             pipeline_tiled,
+            pipeline_transpose,
             layout,
+            layout_transpose,
         })
     }
 
