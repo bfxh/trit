@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""A4 扫描器：一次跑 N 个深度头配置 → 自动复核 → 按指标晋级 → 自动重建结果目录。
+"""A4 扫描器：N 配置 → 自动复核 → 按指标晋级 → 自动重建目录（带排队/重试/断点续跑）。
 
 用法:
-    python scripts/depth_sweep.py --spec sweeps/depth-basic.json [--jobs 2] [--dry-run]
+    python scripts/depth_sweep.py --spec sweeps/depth-basic.json [--jobs 2] [--retries 1]
+    python scripts/depth_sweep.py --spec sweeps/depth-basic.json --fresh   # 忽略已有产物
     python scripts/depth_sweep.py --self-test
 
 规格（JSON）:
@@ -20,14 +21,18 @@
   "catalogue": "docs/DEPTH-RESULTS.md"
 }
 
-行为：对 `grid` 做笛卡尔积（`base` 里同名键被覆盖），**并发**跑（每个配置一个进程：
-训练 → 复核），最后按 `promote` 规则评晋级，写 `<out_dir>/sweep.json` 与
-`<out_dir>/promoted.json`，并调 `depth_catalogue.py` 重建目录。任一配置复核失败则退出码 1。
+行为：
+- 对 `grid` 做笛卡尔积（`base` 里同名键被覆盖），**并发**跑（每配置一个进程：训练 → 复核）。
+- **断点续跑**：产物（清单 + 复核记录，且清单里 config 与本次一致）齐了就跳过，记 `cached`；
+  进度写 `<out_dir>/sweep.queue.json`（带规格指纹，规格变了会拒绝续跑）。
+- **重试**：训练/复核失败按 `--retries`（缺省 1）重试；「复核判定拒绝」（指纹不一致）不重试。
+- 最后按 `promote` 评晋级，写 `sweep.json` / `promoted.json`，并重建整棵结果树目录。
 """
 
 import argparse
 import concurrent.futures
 import glob
+import hashlib
 import itertools
 import json
 import pathlib
@@ -41,6 +46,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
 PRINT_LOCK = threading.Lock()
+QUEUE_LOCK = threading.Lock()
 
 
 def out(msg):
@@ -122,11 +128,137 @@ def detect_gpu_pool(bin_path):
         return [0]
 
 
-def run(cmd, log, timeout):
+def run(cmd, log, timeout, on_start=None):
+    """跑一条命令；返回 `(rc, secs)`。`on_start(pid)` 在进程起来后回调（记进队列）。"""
     t0 = time.time()
     with open(log, "w", encoding="utf-8") as f:
-        p = subprocess.run(cmd, stdout=f, stderr=subprocess.STDOUT, timeout=timeout)
-    return p.returncode, time.time() - t0
+        p = subprocess.Popen(cmd, stdout=f, stderr=subprocess.STDOUT)
+        if on_start:
+            on_start(p.pid)
+        try:
+            rc = p.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            p.kill()
+            p.wait()
+            rc = -9
+    return rc, time.time() - t0
+
+
+def kill_pid(pid):
+    """杀一个可能还活着的子进程（续跑前清理上次崩溃留下的孤儿训练进程）。"""
+    if not pid:
+        return False
+    try:
+        if sys.platform.startswith("win"):
+            subprocess.run(["taskkill", "/F", "/PID", str(pid)], capture_output=True)
+        else:
+            import os
+            os.kill(pid, 9)
+        return True
+    except Exception:
+        return False
+
+
+def stale_pids(states):
+    """上次运行留下、仍标记 running 的子进程 pid。"""
+    return [
+        st["pid"]
+        for st in states.values()
+        if isinstance(st, dict) and st.get("state") == "running" and st.get("pid")
+    ]
+
+
+def run_with_retry(cmd, log, timeout, retries, on_start=None):
+    """跑一条命令；非零退出按 `retries` 重试（第 n 次日志加 `.retryN`）。"""
+    attempts = 0
+    while True:
+        attempts += 1
+        lg = log if attempts == 1 else log.with_name(f"{log.name}.retry{attempts}")
+        rc, secs = run(cmd, lg, timeout, on_start)
+        if rc == 0 or attempts > retries:
+            return rc, secs, attempts
+
+
+def spec_sha(spec):
+    """规格指纹：键排序后哈希（字段顺序不影响）。"""
+    return hashlib.sha256(
+        json.dumps(spec, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()
+
+
+def cfg_matches(manifest_cfg, cfg):
+    """清单里的 config 是否与本次配置一致（缺键也算不一致）。"""
+    if not isinstance(manifest_cfg, dict):
+        return False
+    return all(k in manifest_cfg and manifest_cfg[k] == v for k, v in cfg.items())
+
+
+def is_complete(model, cfg, verify_enabled):
+    """产物已完成：清单在、config 一致；需要复核时 `.verify.json` 也在。"""
+    mp = pathlib.Path(str(model) + ".manifest.json")
+    if not mp.exists():
+        return False
+    try:
+        man = json.loads(mp.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    if not cfg_matches(man.get("config", {}), cfg):
+        return False
+    if verify_enabled and not pathlib.Path(str(model) + ".verify.json").exists():
+        return False
+    return True
+
+
+def should_retry(rc, rejected):
+    """非零退出、且不是「复核判定拒绝」才值得重试。"""
+    return rc != 0 and not rejected
+
+
+def load_queue(path, sha):
+    if not path.exists():
+        return {}
+    try:
+        q = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    if q.get("spec_sha") != sha:
+        sys.exit(f"{path} 的规格指纹与当前 --spec 不一致；换 out_dir 或加 --fresh")
+    return q.get("jobs", {})
+
+
+def save_queue(path, sha, states):
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(
+        json.dumps({"spec_sha": sha, "jobs": states}, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    tmp.replace(path)
+
+
+def cached_row(tag, cfg, model, verify, prev):
+    row = {
+        "tag": tag,
+        "config": cfg,
+        "model": str(model),
+        "gpu": (prev or {}).get("gpu"),
+        "status": "verified" if verify else "trained",
+        "cached": True,
+    }
+    vp = pathlib.Path(str(model) + ".verify.json")
+    if verify and vp.exists():
+        try:
+            row["metrics"] = json.loads(vp.read_text(encoding="utf-8")).get("metrics")
+        except Exception:
+            row["metrics"] = None
+    mp = pathlib.Path(str(model) + ".manifest.json")
+    if mp.exists():
+        try:
+            row["train_mse"] = json.loads(mp.read_text(encoding="utf-8")).get("result", {}).get(
+                "final_mse"
+            )
+        except Exception:
+            pass
+    return row
 
 
 def evaluate_promotion(row, rule):
@@ -165,15 +297,17 @@ def run_one(cfg, tag, gpu, ctx):
         "--holdout", ctx["hold"], "--out", str(model), "--gpu-index", str(gpu),
         *cli_map(cfg),
     ]
-    out(f"[{tag}] 训练…")
-    rc, secs = run(train_cmd, tlog, ctx["timeout"])
+    out(f"[{tag}] 训练…（gpu {gpu}）")
+    rc, secs, attempts = run_with_retry(
+        train_cmd, tlog, ctx["timeout"], ctx["retries"], ctx.get("on_start")
+    )
     row = {
         "tag": tag, "config": cfg, "model": str(model), "gpu": gpu,
-        "train_rc": rc, "train_secs": round(secs, 1),
+        "train_rc": rc, "train_secs": round(secs, 1), "train_attempts": attempts,
     }
     if rc != 0:
         row["status"] = "train-failed"
-        out(f"[{tag}] 训练失败 rc={rc}（日志 {tlog}）")
+        out(f"[{tag}] 训练失败 rc={rc}（{attempts} 次；日志 {tlog}）")
         return row
     if ctx["verify"]:
         verify_cmd = [
@@ -184,9 +318,18 @@ def run_one(cfg, tag, gpu, ctx):
         if cfg.get("full"):
             verify_cmd.append("--full")
         out(f"[{tag}] 复核…")
-        vrc, vsecs = run(verify_cmd, vlog, ctx["timeout"])
+        vattempts = 0
+        while True:
+            vattempts += 1
+            lg = vlog if vattempts == 1 else vlog.with_name(f"{vlog.name}.retry{vattempts}")
+            vrc, vsecs = run(verify_cmd, lg, ctx["timeout"], ctx.get("on_start"))
+            rejected = pathlib.Path(str(model) + ".verify.reject.json").exists()
+            if vrc == 0 or not should_retry(vrc, rejected) or vattempts > ctx["retries"]:
+                break
+            out(f"[{tag}] 复核失败 rc={vrc}，重试 {vattempts}/{ctx['retries']}")
         row["verify_rc"] = vrc
         row["verify_secs"] = round(vsecs, 1)
+        row["verify_attempts"] = vattempts
         vpath = pathlib.Path(str(model) + ".verify.json")
         if vrc == 0 and vpath.exists():
             v = json.loads(vpath.read_text(encoding="utf-8"))
@@ -196,18 +339,38 @@ def run_one(cfg, tag, gpu, ctx):
             out(f"[{tag}] PASS {m['rel_pct']:.2f}% / δ {m['delta']:.3f} / 基线 {m['base_pct']:.2f}%")
         else:
             row["status"] = "verify-failed"
-            out(f"[{tag}] FAIL 复核 rc={vrc}（日志 {vlog}）")
+            out(f"[{tag}] FAIL 复核 rc={vrc}（{vattempts} 次；日志 {vlog}）")
     else:
         row["status"] = "trained"
     return row
 
 
 def self_test():
+    import tempfile
+
     good = {"status": "verified", "metrics": {"rel_pct": 7.3, "base_pct": 7.91}}
     over = {"status": "verified", "metrics": {"rel_pct": 8.5, "base_pct": 7.91}}
     weak = {"status": "verified", "metrics": {"rel_pct": 7.8, "base_pct": 7.91}}
     unver = {"status": "verify-failed", "metrics": {"rel_pct": 7.0, "base_pct": 7.91}}
     rule = {"max": 8.0, "beat_baseline_pp": 0.5}
+
+    # 断点续跑：清单 + 配置一致性 + 复核记录
+    with tempfile.TemporaryDirectory() as td:
+        model = pathlib.Path(td) / "m.dcn"
+        cfg = {"hidden": 32, "lr": 0.002, "epochs": 3}
+        assert not is_complete(model, cfg, True), "无产物应判未完成"
+        (pathlib.Path(str(model) + ".manifest.json")).write_text(
+            json.dumps({"config": {"hidden": 32, "lr": 0.002, "epochs": 2}}), encoding="utf-8"
+        )
+        assert not is_complete(model, cfg, True), "config 不一致应判未完成"
+        (pathlib.Path(str(model) + ".manifest.json")).write_text(
+            json.dumps({"config": cfg}), encoding="utf-8"
+        )
+        assert not is_complete(model, cfg, True), "缺 verify.json 应判未完成"
+        assert is_complete(model, cfg, False), "不要求复核时应判完成"
+        (pathlib.Path(str(model) + ".verify.json")).write_text("{}", encoding="utf-8")
+        assert is_complete(model, cfg, True), "产物齐了应判完成"
+
     cases = [
         ("达标", evaluate_promotion(good, rule), (True, "达标")),
         ("超上限", evaluate_promotion(over, rule)[0], False),
@@ -238,6 +401,31 @@ def self_test():
             )[0],
             True,
         ),
+        ("重试：失败可重试", should_retry(101, False), True),
+        ("重试：拒绝不重试", should_retry(1, True), False),
+        ("重试：成功不重试", should_retry(0, False), False),
+        ("配置匹配：一致", cfg_matches({"a": 1, "b": 2}, {"a": 1}), True),
+        ("配置匹配：不一致", cfg_matches({"a": 1}, {"a": 2}), False),
+        ("配置匹配：缺键", cfg_matches({}, {"a": 1}), False),
+        ("配置匹配：非字典", cfg_matches(None, {"a": 1}), False),
+        (
+            "规格指纹：键序无关",
+            spec_sha({"a": 1, "b": [2]}) == spec_sha({"b": [2], "a": 1}),
+            True,
+        ),
+        ("规格指纹：内容敏感", spec_sha({"a": 1}) != spec_sha({"a": 2}), True),
+        (
+            "残留进程：只挑 running 且有 pid",
+            stale_pids(
+                {
+                    "a": {"state": "running", "pid": 111},
+                    "b": {"state": "done", "pid": 222},
+                    "c": {"state": "running"},
+                    "d": {"state": "failed", "pid": 333},
+                }
+            ),
+            [111],
+        ),
     ]
     bad = [n for n, got, want in cases if got != want]
     for n, got, want in cases:
@@ -245,7 +433,7 @@ def self_test():
     if bad:
         print(f"FAIL {len(bad)} 条：{bad}")
         sys.exit(1)
-    print(f"self-test {len(cases)}/{len(cases)} 通过")
+    print(f"self-test {len(cases) + 5}/{len(cases) + 5} 通过（含 5 条文件系统断言）")
 
 
 def main():
@@ -254,6 +442,8 @@ def main():
     ap.add_argument("--bin-dir", default="target/release")
     ap.add_argument("--jobs", type=int, default=0, help="并发进程数（0 = 用规格里的 jobs，缺省 max(2, 卡数)）")
     ap.add_argument("--gpus", type=int, default=0, help="卡数（0 = 自动探测 --list-gpus）")
+    ap.add_argument("--retries", type=int, default=1, help="训练/复核失败的重试次数（缺省 1）")
+    ap.add_argument("--fresh", action="store_true", help="忽略已有产物与队列，全部重跑")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--timeout", type=int, default=3600, help="单个训练/复核的超时（秒）")
     ap.add_argument("--self-test", action="store_true")
@@ -277,51 +467,92 @@ def main():
         pool = pool[: args.gpus] or list(range(args.gpus))
     jobs = max(1, args.jobs or int(spec.get("jobs", 0)) or max(2, len(pool)))
     slots = slot_gpus(jobs, pool)
+    verify_on = spec.get("verify", True)
 
     configs = build_configs(base, grid)
     grid_keys = sorted(grid)
     data_arg = ",".join(data)
     hold = ",".join(holdout)
-    out(f"共 {len(configs)} 个配置；数据 {len(data)} 目录；并发 {jobs}；卡池 {pool}（槽 {slots}）；输出 {out_dir}")
+    sha = spec_sha(spec)
+    queue_path = out_dir / "sweep.queue.json"
+    prev = {} if args.fresh else load_queue(queue_path, sha)
+    out(
+        f"共 {len(configs)} 个配置；数据 {len(data)} 目录；并发 {jobs}；卡池 {pool}（槽 {slots}）；"
+        f"重试 {args.retries}；{'fresh' if args.fresh else '续跑'}；输出 {out_dir}"
+    )
 
     if args.dry_run:
         for i, cfg in enumerate(configs):
             tag = tag_of(cfg, grid_keys, base)
+            done = is_complete(out_dir / f"{tag}.dcn", cfg, verify_on)
             cmd = " ".join([
                 str(bin_dir / "parts-depth-gpu.exe"), "cnn-train", "--data", f"<{len(data)} dirs>",
                 "--holdout", hold, "--out", str(out_dir / f"{tag}.dcn"),
                 "--gpu-index", str(slots[i % len(slots)]), *cli_map(cfg),
             ])
-            print("  " + cmd)
+            print(f"  [{'skip' if done and not args.fresh else 'run '}] {cmd}")
         return
 
     ctx = {
         "out_dir": out_dir, "data_arg": data_arg, "hold": hold,
         "train_bin": bin_dir / "parts-depth-gpu.exe",
         "verify_bin": bin_dir / "parts-depth-verify.exe",
-        "verify": spec.get("verify", True), "timeout": args.timeout,
+        "verify": verify_on, "timeout": args.timeout, "retries": args.retries,
     }
     for b in (ctx["train_bin"], ctx["verify_bin"]):
         if not b.exists():
             sys.exit(f"找不到 {b}（先 cargo build --release --features gpu --bin parts-depth-gpu）")
 
-    t0 = time.time()
+    states = dict(prev)
+    for pid in stale_pids(states):
+        if kill_pid(pid):
+            out(f"清理上次残留的训练进程 pid={pid}")
+    pending = []
     rows = []
+    for cfg in configs:
+        tag = tag_of(cfg, grid_keys, base)
+        model = out_dir / f"{tag}.dcn"
+        if not args.fresh and is_complete(model, cfg, verify_on):
+            row = cached_row(tag, cfg, model, verify_on, prev.get(tag))
+            rows.append(row)
+            states[tag] = {"state": "cached", "metrics": row.get("metrics"), "gpu": row.get("gpu")}
+            out(f"[{tag}] 已完成，跳过")
+        else:
+            pending.append((cfg, tag))
+
+    t0 = time.time()
     tokens = queue.Queue()
     for g in slots:
         tokens.put(g)
 
+    def mark_running(tag, gpu, pid):
+        with QUEUE_LOCK:
+            states[tag] = {"state": "running", "gpu": gpu, "pid": pid}
+            save_queue(queue_path, sha, states)
+
     def task(cfg, tag):
         g = tokens.get()
         try:
-            return run_one(cfg, tag, g, ctx)
+            ctx["on_start"] = lambda pid: mark_running(tag, g, pid)
+            row = run_one(cfg, tag, g, ctx)
+            with QUEUE_LOCK:
+                states[tag] = {
+                    "state": row["status"],
+                    "gpu": g,
+                    "train_attempts": row.get("train_attempts"),
+                    "verify_attempts": row.get("verify_attempts"),
+                    "metrics": row.get("metrics"),
+                }
+                save_queue(queue_path, sha, states)
+            return row
         finally:
             tokens.put(g)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
-        futs = [ex.submit(task, cfg, tag_of(cfg, grid_keys, base)) for cfg in configs]
-        for fut in concurrent.futures.as_completed(futs):
-            rows.append(fut.result())
+    if pending:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
+            futs = [ex.submit(task, cfg, tag) for cfg, tag in pending]
+            for fut in concurrent.futures.as_completed(futs):
+                rows.append(fut.result())
     wall = time.time() - t0
     order = {tag_of(c, grid_keys, base): i for i, c in enumerate(configs)}
     rows.sort(key=lambda r: order.get(r["tag"], 0))
@@ -337,7 +568,8 @@ def main():
     summary = out_dir / "sweep.json"
     summary.write_text(
         json.dumps(
-            {"spec": spec, "jobs": jobs, "wall_secs": round(wall, 1), "rows": rows},
+            {"spec": spec, "jobs": jobs, "retries": args.retries, "wall_secs": round(wall, 1),
+             "rows": rows},
             ensure_ascii=False,
             indent=2,
         ),
@@ -352,7 +584,11 @@ def main():
         encoding="utf-8",
     )
     ok = sum(1 for r in rows if r["status"] in ("verified", "trained"))
-    out(f"\n完成 {ok}/{len(rows)}；墙钟 {wall:.0f}s；晋级 {len(promoted)} 条；汇总 {summary}")
+    cached = sum(1 for r in rows if r.get("cached"))
+    out(
+        f"\n完成 {ok}/{len(rows)}（跳过 {cached}，实跑 {len(pending)}）；墙钟 {wall:.0f}s；"
+        f"晋级 {len(promoted)} 条；汇总 {summary}"
+    )
     for p in promoted:
         out(f"  晋级 {p['tag']}")
 
