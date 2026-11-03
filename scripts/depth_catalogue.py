@@ -21,6 +21,11 @@ def load(path):
         return None
 
 
+def promotion_mark(model_path, promoted):
+    """模型是否在 promoted 集合里（目录的「晋级」列）。"""
+    return "✓" if pathlib.Path(model_path).resolve() in promoted else "—"
+
+
 def fmt_cfg(cfg):
     parts = [f"h{cfg.get('hidden', '?')}"]
     for k, label in (("dil", "dil"), ("pyr", "pyr"), ("accum", "accum"), ("lr", "lr")):
@@ -35,11 +40,28 @@ def fmt_cfg(cfg):
     return " · ".join(str(p) for p in parts)
 
 
+def self_test():
+    cfg = {"hidden": 32, "dil": 2, "pyr": 0, "accum": 1, "lr": 0.002, "epochs": 3}
+    a = fmt_cfg(cfg)
+    assert "h32" in a and "lr 0.002" in a and "pyr" not in a and "accum" not in a, a
+    cfg2 = {"hidden": 64, "dil": 4, "pyr": 2, "accum": 8, "lr": 0.001, "epochs": 10, "f32": True, "full": True}
+    b = fmt_cfg(cfg2)
+    assert "pyr 2" in b and "accum 8" in b and "f32" in b and "full" in b, b
+    p = {pathlib.Path("E:/runs/x.dcn").resolve()}
+    assert promotion_mark("E:/runs/x.dcn", p) == "✓"
+    assert promotion_mark("E:/runs/y.dcn", p) == "—"
+    print("self-test 4/4 通过")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default="runs/depth")
     ap.add_argument("--out", default="docs/DEPTH-RESULTS.md")
+    ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
+    if args.self_test:
+        self_test()
+        return
     root = pathlib.Path(args.dir)
     rows = []
     for mf in sorted(root.rglob("*.manifest.json")):
@@ -101,7 +123,7 @@ def main():
             )
             name = pathlib.Path(m.get("model", {}).get("path", "?")).name
             mp = pathlib.Path(m.get("model", {}).get("path", "")).resolve()
-            promo = "✓" if mp in promoted else "—"
+            promo = promotion_mark(m.get("model", {}).get("path", ""), promoted)
             out.append(
                 f"| `{name}` | {cfg} | {d.get('dirs', '?')} / {d.get('files', '?')} | {mse_s} | "
                 f"{check} | {promo} | `{sha}` | `{commit}` | {time_s} |"
