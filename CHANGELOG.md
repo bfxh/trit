@@ -136,6 +136,53 @@
   `gh pr checks --watch` 绿后 squash 合入；`--dry-run` 只打印将执行的命令。
   自锁时抓到一个真问题：扫描器把**自己源码里的正则字面量**当成密钥 ⇒ 改成运行期拼接模式串。
 
+### Added（`trit-parts` 清单约束 argmax + 评估）
+
+- `parts.rs`：清单解析（k/id/digits，已用真实清单 135 部件验证）、`id↔digits`、
+  `decode_free` 与 **`decode_constrained`**（在清单上取 `Σ logit[i][digit_i]` 最大，同分取小 id）。
+  约束解码**结构上不可能**输出清单外 id——单测构造「无约束落到 id 8（清单外）」的 logits，约束返回合法 id。
+- `evaluate_frame`：平面准确率（仅 GT 部件像素）、id 一致、部件 IoU、清单外 id 率（不同 id 个数）与
+  清单外像素占比；`parts-train --eval --manifest` 把无约束/约束两组指标并排打印。
+- 单测：4 passed（约束必在清单内 / 约束取最优合法 id / id↔digits 往返 / 指标行为）。
+- **注意**：约束的实际收益要等正式模型；当前坏 ckpt 只预测 10 种 id（恰好都在清单内），两组指标相同。
+
+### Added（`trit-parts` 训练循环 + 三值判读口径更正）
+
+- `data.rs`：PNG(RGB)→NHWC f32、`.npy` int32→三进制平面 + valid（编码与 `part_index.encode` 同口径）。
+- `loss.rs`：层级加权 CE（k 平面）+ 0.5·BCE(valid)，中心差分逐元素对拍；
+  准确率只在 **GT 部件像素**上统计（此前分母错误会少算 k 倍）。
+- `net.rs` + `parts-train`：13 层整网前向/反向、STE + Adam/SGD、梯度累加、断点续跑
+  （resume→save 逐字节一致，只差 step 字段）。
+- 过拟合自检（big-r3.6 4 帧 / 150 步 / lr 1e-3）：loss **0.7005 → 0.0244**，
+  valid 0.039 → **0.997**，平面准确率 0.30/0.30/0.30/0.39/0.51 → **0.59/0.65/0.56/0.35/0.38**（仍在升）。
+- **口径更正**：「三值 vs f32 平面 argmax 0.9871」被 98% 背景像素灌水。只算部件像素时，
+  三值 ckpt 的平面准确率是 **0.28–0.52**，f32 是 **0.74–0.91** ⇒ 事后三值化是崩的，QAT 不是可选项。
+- 未做：清单约束 argmax。
+
+### Added（`trit-parts` 反向内核：四类算子 + STE 口径对齐）
+
+- `backward.rs`：卷积 / 转置卷积 / 最大池化 / 通道拼接的 f64 参考实现（前向 + 反向），
+  中心差分逐元素对拍（conv 1×1 与 3×3、有/无 ReLU）最大相对误差 < 1e-6。
+- `ste_apply`：`E = q·scale` 的梯度经 STE 回落到 latent 与每通道 scale；与 `trit-train`
+  的 `Identity / Clipped / Soft` 三种 STE 做单步更新对拍，逐位一致。
+- `shaders_bwd.wgsl` + `gpu_bwd.rs`：8 条反向管线（conv_dx/dw/db、pool_dx、cat_dx、convt_dx/dw/db）。
+- `parts-gradcheck` 二进制：GPU ↔ f64 CPU 对拍 10 项，判据 `max rel < 2e-3`，实测 ≤ **2.1e-6**。
+  变异自检：conv_dx 权重×2 / convt_dw×2 / pool_dx 减半，三个变异全部判红（rel = 0.5）。
+- **未做**：训练循环（CE/BCE/优化器）、清单约束 argmax。
+
+### Added（`trit-parts`：部件平面头进仓，模型不再寄居 `.yanagent`）
+
+- 新实验 crate `crates/trit-parts`（`publish = false`，GPU 在 `gpu` feature 后）：
+  权重加载 + BN 折叠、WGSL conv/pool/cat/ConvT、UNet 前向（f32 与每通道三值双模），
+  以及 `parts-parity` 对拍二进制。按工作区死命令，模型归本仓，训练与推理一律 Rust 三进制。
+- 判据（本机 RTX 4060 Ti / Vulkan，384²，与搬迁前逐位一致）：
+  f32 `max|Δlogit| = 2.608e-4`、平面 argmax **737280/737280**；
+  三值 vs PyTorch 同套量化 `max|Δ| = 1.367e-1`、argmax **0.999688**；
+  三值 vs f32 argmax 0.987118、幅值 4.78→1.25 ⇒ 事后三值化不可用，必须 QAT+STE。
+- **未做**：反向内核、训练循环、清单约束 argmax。交付模型仍缺，等这三件。
+- 夹具不进 git：`D:\KF\trit-data\parts-parity`（22 MB）。
+### Added（无损回退底座 + 依赖脱离体检）
+
 - `scripts/snapshot.py`：不依赖 git 的字节级快照（内容寻址对象库）——`save` / `verify` / `restore` / `list`。
   回退补回被删、覆盖被改，**默认不删快照后新写的文件**（`--prune` 才删）；写回后逐文件 SHA-256 校验；
   回退前落 pending 标记，中断后重跑同一条命令即幂等收敛。实测本仓 623 文件 / 5.15 MiB，对象库 6.9 MB。
