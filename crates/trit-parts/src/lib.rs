@@ -17,6 +17,7 @@ pub mod data;
 pub mod depth;
 pub mod depthdata;
 pub mod depthnet;
+pub mod depthunet;
 pub mod diffuse;
 pub mod fingerprint;
 pub mod fuse;

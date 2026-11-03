@@ -238,6 +238,17 @@ pub fn eval_holdout(
     held: &[EvalSample],
     size: usize,
 ) -> EvalReport {
+    eval_with(|x| net.forward(x, size, size), net.med, net.iqr, held, size)
+}
+
+/// 用任意前向函数评留出集（U-Net 等其它头复用同一份口径）。
+pub fn eval_with<F: Fn(&[Vec<f32>]) -> Vec<f32>>(
+    forward: F,
+    med: f32,
+    iqr: f32,
+    held: &[EvalSample],
+    size: usize,
+) -> EvalReport {
     use crate::depthnet::DepthNet;
     let _ = std::marker::PhantomData::<DepthNet>;
     let (mut mae_n, mut rel, mut rel_dep, mut rel_base, mut delta, mut n) =
@@ -256,14 +267,14 @@ pub fn eval_holdout(
         v.sort_by(f32::total_cmp);
         let q = |f: f32| v[((v.len() as f32 - 1.0) * f).round() as usize];
         let (gmed, giqr) = (q(0.5), (q(0.75) - q(0.25)).max(1e-3));
-        let p = net.forward(x, size, size);
+        let p = forward(x);
         for i in 0..size * size {
             if !mk[i] {
                 continue;
             }
             let raw = y[i];
             let aligned = p[i] * giqr + gmed;
-            let dep = p[i] * net.iqr + net.med;
+            let dep = p[i] * iqr + med;
             let e = f64::from((aligned - raw).abs());
             mae_n += e;
             rel += (e.exp() - 1.0).abs();
