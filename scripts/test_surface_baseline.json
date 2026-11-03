@@ -12,7 +12,7 @@
  "crate/trit-dot": 18,
  "crate/trit-eval": 28,
  "crate/trit-float": 26,
- "crate/trit-gpu": 42,
+ "crate/trit-gpu": 43,
  "crate/trit-graph": 59,
  "crate/trit-immune": 253,
  "crate/trit-learn": 29,
