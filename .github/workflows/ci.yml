@@ -31,27 +31,64 @@ jobs:
         os: ["ubuntu-latest", "windows-latest", "macos-latest"]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect docs-only (PR only)
+        id: scope
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "${BASE_SHA:-}" ]; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE_SHA"...HEAD || true)
+          if [ -z "$files" ]; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if printf '%s\n' "$files" | grep -Ev '^(docs/|.*\.md$|README|LICENSE|CHANGELOG)' | grep -q .; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "only_docs=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "changed files:"; printf '%s\n' "$files" | head -50
 
       - name: Install Rust
+        if: steps.scope.outputs.only_docs != 'true'
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        if: steps.scope.outputs.only_docs != 'true'
 
       - name: Check formatting
+        if: steps.scope.outputs.only_docs != 'true'
         run: cargo fmt --all -- --check
 
       - name: Clippy
+        if: steps.scope.outputs.only_docs != 'true'
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
       - name: Test
+        if: steps.scope.outputs.only_docs != 'true'
         run: cargo test --workspace --locked
 
       # png feature（默认关）：单独测 + clippy，否则 CI 永远碰不到这些代码。
       - name: Test (trit-texture png feature)
+        if: steps.scope.outputs.only_docs != 'true'
         run: cargo test -p trit-texture --features png --locked
       - name: Clippy (trit-texture png feature)
+        if: steps.scope.outputs.only_docs != 'true'
         run: cargo clippy -p trit-texture --features png --all-targets --locked -- -D warnings
 
       # gpu feature（默认关）：同上。#149 的事故就是这块代码从没被门编译过
@@ -61,8 +98,10 @@ jobs:
       # （512×4096×512）要十几分钟；而 1×1×1 同样会创建全部 shader module，
       # f16 扩展缺失这类错照样能抓到。完整形状在开发者本机跑。
       - name: Test (trit-gpu gpu feature, shader smoke)
+        if: steps.scope.outputs.only_docs != 'true'
         run: cargo test -p trit-gpu --features gpu --locked --test matmul gpu_reg_matmul_tiny_case
       - name: Clippy (trit-gpu gpu feature)
+        if: steps.scope.outputs.only_docs != 'true'
         run: cargo clippy -p trit-gpu --features gpu --all-targets --locked -- -D warnings
 
   module-budget:
