@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Added（trit-re collect：procscan 现场模块 → 逆向台账，路线图 N3 落地）
+
+- `trit-re::collect`：吃 `trit-procscan` 的 JSONL 事件流，抽取
+  `type:"module"` 的路径——**管道式接入**（`trit-procscan … | trit-re collect`），
+  不建 crate 依赖。纪律：坏 JSON 行/非 module 事件**计数上报不静默**；
+  同路径**去重保序**（同模块多进程加载只分析一次）；单文件读取失败
+  **不中断采集**（计数 + ≤8 条原因）。
+- 每模块产出 `ledger::jsonl` 台账行，末尾一条 **`collect-summary`**
+  （module_events/modules/deduped/analyzed/unreadable/non_module_events/
+  bad_lines/bytes/elapsed_ms/errors）——路线图 N3 判据「一次采集 ≥ N 条
+  记录、耗时与文件大小线性」直接从汇总行复算。
+- CLI：`trit-re collect [--events <file>] [--summary-only]`（缺省读 stdin）。
+- 实测冒烟：notepad.exe（356KB）28ms；测试 `tests/collect.rs` 4 条
+  （内存文件系统注入 read 闭包，不碰真实文件系统）+ 变异门沿用；
+  依赖补 `serde`/`serde_json`（事件流是外部输入，字段级取值）。
+
+### Added（trit-re：未归属调用点的逐条裁定）
+
+- `functions::FunctionReport` 新增 `ruled_sites`（≤64 条明细）与三类计数
+  `ruling_clip`/`ruling_miss`/`ruling_nonexec`：每个归不到函数区间的调用点
+  按证据分类——疑**边界裁剪**（距最近函数边界 ≤16B）、疑**边界漏检**
+  （exec 内、距边界 >16B）、**非执行节**（字节模式误报候选）；
+  距离字段（`RuledSite.distance`）可复算。方向保守不变：裁定是证据分类，
+  不把调用点洗成「已归属」，共现的 `Unknown` 拖累逻辑不动。
+  这也是路线图 N2（最小 CFG）成效的现成度量：边界漏检类应随 N2 显著下降。
+- 测试 +2（三类裁定逐一命中 + 明细截断但计数完整）；变异门 +1
+  （非执行判断写反）。
+
+
 ### Added（M3 受控探测：allowlist 默认拒绝的实验室端口/服务指纹）
 
 - `trit-net::netsec::probe`：证据生产端——M2 攻击图是登记制，probe 是第一个
