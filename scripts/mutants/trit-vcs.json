@@ -106,5 +106,32 @@
   "filter": "delta_is_used_for_a_local_edit",
   "pkg": "trit-vcs",
   "runner": "cargo"
+ },
+ {
+  "name": "vcs: status 看不到修改（只报新增/删除）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "            Some(known) if *known != id => changes.push(Change {",
+  "new": "            Some(known) if false => changes.push(Change {",
+  "filter": "status_sees_added_modified_deleted",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: checkout 覆盖未提交改动（不打招呼就冲掉别人的文件）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "    if !force && !changes.is_empty() {",
+  "new": "    if false {",
+  "filter": "checkout_restores_and_refuses_dirty_without_force",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: checkout 不防路径穿越（树里的 ../ 能写到仓库外）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "    if is_unsafe(&cleaned) {",
+  "new": "    if false {",
+  "filter": "checkout_rejects_path_escape",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
  }
 ]

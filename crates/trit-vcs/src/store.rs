@@ -358,6 +358,20 @@ impl Store {
         Ok((id, stats))
     }
 
+    /// 只算"这个内容入库后会是哪个 id"，**不写盘**：`status` 靠它和工作树比对。
+    pub fn file_id_bytes(&self, bytes: &[u8]) -> Result<Hash, StoreError> {
+        let mut chunks = Vec::new();
+        for (start, end) in self.chunking.split(bytes) {
+            chunks.push(Hash::of(&bytes[start..end]));
+        }
+        let map = FileMap {
+            size: bytes.len() as u64,
+            chunks,
+        };
+        let encoded = serde_json::to_vec(&map).map_err(|e| StoreError::BadMap(e.to_string()))?;
+        Ok(Hash::of(&encoded))
+    }
+
     pub fn file_map(&self, id: &Hash) -> Result<FileMap, StoreError> {
         let bytes = self.get_chunk(id)?;
         serde_json::from_slice(&bytes).map_err(|e| StoreError::BadMap(e.to_string()))

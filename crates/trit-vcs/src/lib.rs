@@ -22,6 +22,7 @@ pub mod journal;
 pub mod model;
 pub mod repo;
 pub mod store;
+pub mod worktree;
 
 pub use chunk::Chunking;
 pub use gate::{ClaimSpec, Verdict, check as gate_check};
@@ -30,3 +31,4 @@ pub use journal::{Event, Journal};
 pub use model::{Commit, Hlc};
 pub use repo::{CommitOutcome, CommitRequest, Repo, RepoError, VerifyReport};
 pub use store::{FileMap, PutStats, Stats, Store, StoreError};
+pub use worktree::{Change, Kind as ChangeKind, WorktreeError};
