@@ -182,6 +182,10 @@ def gate(claims: list[dict], who: str, paths: list[str], at: int) -> str:
 
     先扫别人再扫自己：撞了就是 `false`，不许用自己那条把它洗成 `true`。
     全覆盖才算 `true`；其余（没登记、只覆盖一半、别人的已过期）都是 `unknown`。
+
+    **`who` 在这里按原文比较**（与库的 `ClaimStore::gate` 同一口径，共享表也是这么写的）；
+    "三种写法是同一个人"那件事在账本边界上做（`canonical_who`，写入与 release/renew 时）。
+    两处混在一起，共享表就会跟着 Python 侧的归一规则漂。
     """
     want = (who or "").strip()
     scoped = [normalize_path(p) for p in paths]
