@@ -41,6 +41,7 @@
  "script/ci_budget.py": 1,
  "script/ci_integrity.py": 1,
  "script/deps.py": 1,
+ "script/depth_catalogue.py": 0,
  "script/eval_boundary.sh": 0,
  "script/eval_s63.py": 0,
  "script/extract_frames.py": 0,

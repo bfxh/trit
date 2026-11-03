@@ -172,6 +172,125 @@ pub fn is_held(path: &Path, holdout: &[String]) -> bool {
     })
 }
 
+/// 评测用样本（只需要输入/目标/掩码；不带相机，验证器不必读 meta）。
+pub struct EvalSample {
+    pub x: Vec<Vec<f32>>,
+    pub y: Vec<f32>,
+    pub mask: Vec<bool>,
+}
+
+/// 留出集评测读数（与 `cnn-train` 尾段同口径）。
+pub struct EvalReport {
+    pub frames: usize,
+    pub pixels: usize,
+    pub mae_log: f64,
+    pub rel_pct: f64,
+    pub base_pct: f64,
+    pub delta: f64,
+    pub deploy_pct: f64,
+}
+
+/// 在留出样本上评 `DepthNet`：形状对齐 / 常数基线 / δ<1.25 / 默认尺度。
+///
+/// 留出样本的 `y` 必须是**原始 log 深度**（未做逐图归一化）。
+pub fn eval_holdout(
+    net: &crate::depthnet::DepthNet,
+    held: &[EvalSample],
+    size: usize,
+) -> EvalReport {
+    use crate::depthnet::DepthNet;
+    let _ = std::marker::PhantomData::<DepthNet>;
+    let (mut mae_n, mut rel, mut rel_dep, mut rel_base, mut delta, mut n) =
+        (0f64, 0f64, 0f64, 0f64, 0f64, 0usize);
+    for s in held {
+        let (x, y, mk) = (&s.x, &s.y, &s.mask);
+        let mut v: Vec<f32> = y
+            .iter()
+            .zip(mk)
+            .filter(|(_, m)| **m)
+            .map(|(a, _)| *a)
+            .collect();
+        if v.is_empty() {
+            continue;
+        }
+        v.sort_by(f32::total_cmp);
+        let q = |f: f32| v[((v.len() as f32 - 1.0) * f).round() as usize];
+        let (gmed, giqr) = (q(0.5), (q(0.75) - q(0.25)).max(1e-3));
+        let p = net.forward(x, size, size);
+        for i in 0..size * size {
+            if !mk[i] {
+                continue;
+            }
+            let raw = y[i];
+            let aligned = p[i] * giqr + gmed;
+            let dep = p[i] * net.iqr + net.med;
+            let e = f64::from((aligned - raw).abs());
+            mae_n += e;
+            rel += (e.exp() - 1.0).abs();
+            rel_dep += (f64::from(dep - raw).exp() - 1.0).abs();
+            rel_base += (f64::from(raw - gmed).exp() - 1.0).abs();
+            delta += f64::from(u8::from(e < 0.2231));
+            n += 1;
+        }
+    }
+    let k = n.max(1) as f64;
+    EvalReport {
+        frames: held.len(),
+        pixels: n,
+        mae_log: mae_n / k,
+        rel_pct: rel / k * 100.0,
+        base_pct: rel_base / k * 100.0,
+        delta: delta / k,
+        deploy_pct: rel_dep / k * 100.0,
+    }
+}
+
+/// 数据集指纹：场景目录名 + 三个子目录里的文件名与大小（不读像素）。
+///
+/// 能抓「换了一版渲染/改名/帧数变化」；抓不到「同尺寸同帧数但内容变了」——
+/// 那需要全量像素哈希，代价按 GB 计，留给需要时再加。
+pub fn data_fingerprint(dirs: &[std::path::PathBuf]) -> (usize, usize, String) {
+    use crate::fingerprint::sha256_hex;
+    let mut names: Vec<String> = dirs
+        .iter()
+        .map(|d| d.to_string_lossy().into_owned())
+        .collect();
+    names.sort();
+    let mut acc: Vec<u8> = Vec::new();
+    let mut files = 0usize;
+    for d in &names {
+        acc.extend_from_slice(d.as_bytes());
+        acc.push(b'\n');
+        for sub in ["rgb", "depth", "seg"] {
+            acc.extend_from_slice(sub.as_bytes());
+            acc.push(b':');
+            let mut entries: Vec<(String, u64)> =
+                std::fs::read_dir(std::path::Path::new(d).join(sub))
+                    .map(|it| {
+                        it.filter_map(|e| e.ok())
+                            .map(|e| {
+                                (
+                                    e.file_name().to_string_lossy().into_owned(),
+                                    e.metadata().map(|m| m.len()).unwrap_or(0),
+                                )
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default();
+            entries.sort();
+            files += entries.len();
+            for (n, sz) in entries {
+                acc.extend_from_slice(n.as_bytes());
+                acc.push(b'\n');
+                acc.extend_from_slice(sz.to_string().as_bytes());
+                acc.push(b'\n');
+            }
+            acc.push(b'\n');
+        }
+    }
+    (names.len(), files, sha256_hex(&acc))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

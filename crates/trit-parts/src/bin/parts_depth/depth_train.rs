@@ -384,50 +384,18 @@ pub(crate) fn cnn_train(argv: &[String]) {
         println!("已存 {}", out.display());
     }
     if !held.is_empty() {
-        // 留出集是**原始** log 深度。两种口径：
-        // (a) 形状对齐：用该图 GT 的中位/IQR 反归一（只量形状，尺度按定义对齐）；
-        // (b) 可部署：用训练集平均逐图统计（net.med/net.iqr）——照片上没有这张图自己的中位数。
-        let (mut mae_n, mut rel, mut rel_dep, mut rel_base, mut delta, mut n) =
-            (0f64, 0f64, 0f64, 0f64, 0f64, 0usize);
-        for s in &held {
-            let (x, y, mk) = (&s.x, &s.y, &s.mask);
-            let mut v: Vec<f32> = y
-                .iter()
-                .zip(mk)
-                .filter(|(_, m)| **m)
-                .map(|(a, _)| *a)
-                .collect();
-            v.sort_by(f32::total_cmp);
-            let q = |f: f32| v[((v.len() as f32 - 1.0) * f).round() as usize];
-            let (gmed, giqr) = (q(0.5), (q(0.75) - q(0.25)).max(1e-3));
-            let p = net.forward(x, size, size);
-            for i in 0..size * size {
-                if !mk[i] {
-                    continue;
-                }
-                let raw = y[i];
-                let aligned = p[i] * giqr + gmed;
-                let dep = p[i] * net.iqr + net.med;
-                let e = f64::from((aligned - raw).abs());
-                mae_n += e;
-                rel += (e.exp() - 1.0).abs();
-                rel_dep += (f64::from(dep - raw).exp() - 1.0).abs();
-                // 常数基线：预测该图 GT 中位深度（对形状完全无知）
-                rel_base += (f64::from(raw - gmed).exp() - 1.0).abs();
-                delta += f64::from(u8::from(e < 0.2231));
-                n += 1;
-            }
-        }
-        let k = n.max(1) as f64;
+        let es: Vec<trit_parts::depthdata::EvalSample> = held
+            .iter()
+            .map(|s| trit_parts::depthdata::EvalSample {
+                x: s.x.clone(),
+                y: s.y.clone(),
+                mask: s.mask.clone(),
+            })
+            .collect();
+        let r = trit_parts::depthdata::eval_holdout(&net, &es, size);
         println!(
             "留出 {} 帧 / {} 像素：形状对齐 log MAE {:.4}、深度相对误差 {:.2}%（常数基线 {:.2}%），δ<1.25 {:.3}；默认尺度相对误差 {:.2}%",
-            held.len(),
-            n,
-            mae_n / k,
-            rel / k * 100.0,
-            rel_base / k * 100.0,
-            delta / k,
-            rel_dep / k * 100.0
+            r.frames, r.pixels, r.mae_log, r.rel_pct, r.base_pct, r.delta, r.deploy_pct
         );
     }
 }
