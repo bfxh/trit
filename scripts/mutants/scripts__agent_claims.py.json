@@ -160,5 +160,59 @@
   "pkg": "scripts/agent_claims.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "claims: 同一个仓也算「两个落点」（拦/警两档被混成一条）",
+  "file": "scripts/agent_claims.py",
+  "old": "    if not left_repo or not right_repo or left_repo == right_repo:",
+  "new": "    if not left_repo or not right_repo:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 单体仓→独立仓那个方向不再认（两个落点漏一半）",
+  "file": "scripts/agent_claims.py",
+  "old": "    if right_crate in left_crates and overlaps(left_crates[right_crate], right[\"paths\"]):",
+  "new": "    if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 独立仓→单体仓那个方向不再认（漏另一半）",
+  "file": "scripts/agent_claims.py",
+  "old": "    if left_crate in right_crates and overlaps(right_crates[left_crate], left[\"paths\"]):",
+  "new": "    if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 不再识别 crates/<名>/ 形状（整条两个落点规则失效）",
+  "file": "scripts/agent_claims.py",
+  "old": "        if len(parts) >= 3 and parts[0] == \"crates\" and parts[1]:",
+  "new": "        if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 两个落点的警告分支被摘掉（今天这种撞车又看不见）",
+  "file": "scripts/agent_claims.py",
+  "old": "            elif crate_twin(left, right):",
+  "new": "            elif False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 归一时把 crate 名当相对路径（永远不相交）",
+  "file": "scripts/agent_claims.py",
+  "old": "            out.setdefault(parts[1], []).append(\"/\".join(parts[2:]))",
+  "new": "            out.setdefault(parts[1], []).append(parts[1])",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
  }
 ]
