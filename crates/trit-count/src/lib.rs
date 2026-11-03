@@ -12,6 +12,7 @@
 pub mod cnf;
 pub mod dpll;
 pub mod oracle;
+pub mod policy;
 
 use std::collections::HashSet;
 use std::time::{Duration, Instant};

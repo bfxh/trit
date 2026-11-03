@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-count：策略文件计数）
+
+- 新模块 `crates/trit-count/src/policy.rs`：读取策略 JSON（`algebra` / `binary` / `assumptions` /
+  `definitions` / `assertions`），递归展开 definitions 并检测循环；`binary` 与定义同名、空断言集、
+  非法名称、未知顶层字段都判错。
+- CLI `--policy <path>`：把 assumptions 当约束，逐条断言报 `true/false/unknown` 计数并与穷举对拍；
+  三值总数必须等于「前提为真的赋值数」，不一致退出码 1。
+- 读数：`examples/policy.json` 两条断言在 12 个赋值上全成立（true=12）；
+  `crates/trit-cli/tests/fixtures/bad_policy.json` 暴露 false=1 / true=9 / unknown=2，DPLL 与穷举逐条一致。
+- 测试 12 → 22（展开、前提收缩、未使用 binary 并入域、循环拒绝、同名拒绝、空断言拒绝、默认代数、未知字段等）；
+  变异 8 → 13，`mutation_check.py --pkg trit-count` **caught 13 / survived 0**。
+- 依赖：新增 `serde`(derive) 与 `serde_json`，只用于策略解析；计数与穷举路径不依赖 JSON。
+
 ### Added（trit-count：约束计数）
 
 - `count_models_under` / `crosscheck_under` / `Encoder::encode_with_constraints`：在每条约束为 `True` 的赋值上计数；
