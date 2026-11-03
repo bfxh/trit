@@ -1378,7 +1378,7 @@ def wait_for_checks(repo: str, branch: str, attempts: int = 40, pause: int = 15)
         if index == 0:
             print("检查还没注册，先等它们出现…")
         time.sleep(pause)
-    print("等检查出现超时（10 分钟）")
+    print(f"等检查出现超时（{attempts} 次 × {pause} 秒）")
     return 1
 
 
@@ -1456,7 +1456,7 @@ def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30)
     结果返回——然后 merge 被"requirements have not been met"拒掉（实跑踩过）。
     所以这里再轮询到没有 pending，并且失败时重试合并。
     """
-    if wait_for_checks(repo, branch) != 0:
+    if wait_for_checks(repo, branch, attempts=attempts, pause=pause) != 0:
         return 1
     checks = gh(["pr", "checks", "--repo", repo, branch, "--watch"])
     if checks.returncode != 0 and not has_pending(checks.stdout or ""):
@@ -1874,6 +1874,42 @@ def self_test() -> int:
             globals()["remote_heads"] = remote_real
             globals()["subprocess"] = real_subprocess
 
+        class _Clock:
+            def __init__(self):
+                self.slept: list[int] = []
+
+            def sleep(self, seconds):
+                self.slept.append(seconds)
+
+        real_time = globals()["time"]
+        real_rows = globals()["check_rows"]
+        try:
+            clock = _Clock()
+            globals()["time"] = clock
+            globals()["check_rows"] = lambda repo, branch: ([], "none")
+            check("wait_for_checks 听话：给几次试几次、给多长睡多长（不是写死 40×15）",
+                  (wait_for_checks("o/r", "b", attempts=3, pause=7), clock.slept), (1, [7, 7, 7]))
+            clock3 = _Clock()
+            probes = {"n": 0}
+
+            def registered_later(repo, branch):
+                probes["n"] += 1
+                if probes["n"] < 2:
+                    return ([], "none")
+                return ([{"name": "CI", "bucket": "pass"}], "")
+
+            globals()["check_rows"] = registered_later
+            globals()["time"] = clock3
+            check("注册一旦出现就返回 0（不空等到超时）",
+                  (wait_for_checks("o/r", "b", attempts=9, pause=1), clock3.slept), (0, [1]))
+            globals()["check_rows"] = lambda repo, branch: ([], "none")
+            clock2 = _Clock()
+            globals()["time"] = clock2
+            check("watch_and_merge 把预算转给注册等待（--wait-minutes 不再被吞）",
+                  (watch_and_merge("feat/x", "o/r", attempts=2, pause=5), clock2.slept), (1, [5, 5]))
+        finally:
+            globals()["time"] = real_time
+            globals()["check_rows"] = real_rows
         real_gh = globals()["gh"]
         import subprocess as _sp
         try:

@@ -673,5 +673,32 @@
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "gitflow: 注册等待吞掉调用方的预算（写死 40×15，--wait-minutes 说了不算）",
+  "file": "scripts/gitflow.py",
+  "old": "    if wait_for_checks(repo, branch, attempts=attempts, pause=pause) != 0:",
+  "new": "    if wait_for_checks(repo, branch) != 0:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 注册等待次数不听话（写死 40 次）",
+  "file": "scripts/gitflow.py",
+  "old": "    for index in range(attempts):\n        rows, state = check_rows(repo, branch)\n        if rows and state == \"\":",
+  "new": "    for index in range(40):\n        rows, state = check_rows(repo, branch)\n        if rows and state == \"\":",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 检查注册好了也不返回（一路空等到超时）",
+  "file": "scripts/gitflow.py",
+  "old": "        if rows and state == \"\":\n            return 0",
+  "new": "        if False:\n            return 0",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
  }
 ]
