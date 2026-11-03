@@ -1283,10 +1283,11 @@ def wait_for_checks(repo: str, branch: str, attempts: int = 40, pause: int = 15)
     真正的通过/失败交给后面的 `gh pr checks --watch` 判。
     """
     for index in range(attempts):
-        listing = gh(["pr", "checks", "--repo", repo, branch])
-        output = listing.stdout or ""
-        if output.strip() and not checks_not_yet(output):
+        rows, state = check_rows(repo, branch)
+        if rows and state == "":
             return 0
+        if state not in ("none", ""):
+            print("读 checks 失败：" + state + "（继续等，超时则判红）")
         if index == 0:
             print("检查还没注册，先等它们出现…")
         time.sleep(pause)
@@ -1300,25 +1301,65 @@ def has_pending(output: str) -> bool:
 
 
 CHECK_STATES_OK = {"pass", "skipping"}
+CHECK_STATES_PENDING = {"pending", "running", "queued", ""}
 
 
-def listing_problems(output: str) -> list[str]:
-    """`gh pr checks` 表格里所有"没通过"的行。
+def check_rows(repo: str, branch: str) -> tuple[list[dict], str]:
+    """用 `gh pr checks --json name,bucket` 拿结构化行，返回 (行, 状态说明)。
+
+    状态说明三种：""=正常；"none"=还没注册（刚 push 的竞态，要继续等）；其他=读取失败的原因。
+    为什么非用 JSON：对齐表格的**名字列可能是空的**——今天真撞上一次，那条行的 URL 落到第一列、
+    空串被当成状态列，于是一条 completed/success 的检查被判成"未知状态"，合并被永久卡住。
+    解析表格等于把判断建在别人的排版上。
+    """
+    result = gh(["pr", "checks", "--repo", repo, branch, "--json", "name,bucket"])
+    body = (result.stdout or "").strip()
+    if checks_not_yet(body):
+        return [], "none"
+    if result.returncode != 0 and not body:
+        return [], "gh pr checks 返回码 " + str(result.returncode) + " 且没有输出"
+    try:
+        rows = json.loads(body)
+    except json.JSONDecodeError:
+        return [], "checks 输出不是 JSON（形状不认识）：" + body[:120]
+    if not isinstance(rows, list):
+        return [], "checks 返回的不是数组（形状不认识）"
+    return [row for row in rows if isinstance(row, dict)], ""
+
+
+def listing_problems(rows: list[dict]) -> list[str]:
+    """所有"没通过"的检查（按 bucket 口径）。
 
     为什么合并前还要自己看一遍：`gh pr merge` 只受**分支保护**约束。像
-    `bfxh/trit-immune` 那样没设保护的仓，红着也照样合得进去
-    （master 就是这么被弄红的）。
+    `bfxh/trit-immune` 那样没设保护的仓，红着也照样合得进去（master 就是这么被弄红的）。
     `skipping` 放行是故意的——非必需的 job 没跑不该拦合并；必需检查没跑由 `green_audit` 判红。
     """
     problems = []
-    for line in output.splitlines():
-        cols = [cell.strip() for cell in line.split("\t")]
-        if len(cols) < 2 or not cols[0]:
-            continue
-        state = cols[1].lower()
+    for row in rows:
+        name = (row.get("name") or "").strip() or "(无名检查)"
+        state = (row.get("bucket") or "").strip().lower()
         if state not in CHECK_STATES_OK:
-            problems.append(f"{cols[0]}={state or '未知状态'}")
+            problems.append(name + "=" + (state or "未知状态"))
     return problems
+
+
+def merge_gate(rows: list[dict], state: str) -> tuple[str, list[str]]:
+    """一轮 checks 读数的决定：("wait"|"refuse"|"merge", 说明)。
+
+    抽成纯函数是因为这几条分支只有在合成数据下才测得住：`state == "none"` 是刚 push 的竞态（要等）、
+    `rows` 为空是**读不到**（要拒——读不到不等于通过）、有 pending 要等，其余按 bucket 判。
+    留在网络代码里的一串 if 就只能靠真跑碰运气。
+    """
+    if state == "none":
+        return "wait", ["检查还没注册"]
+    if not rows:
+        return "refuse", ["读不到 checks 清单：" + (state or "空返回") + "（读不到不等于通过）"]
+    if any((row.get("bucket") or "").strip().lower() in CHECK_STATES_PENDING for row in rows):
+        return "wait", ["还有检查在跑"]
+    problems = listing_problems(rows)
+    if problems:
+        return "refuse", problems
+    return "merge", []
 
 
 def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30) -> int:
@@ -1336,14 +1377,14 @@ def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30)
         print(checks.stdout[-2000:])
         return 1
     for index in range(attempts):
-        listing = gh(["pr", "checks", "--repo", repo, branch])
-        output = listing.stdout or ""
-        if not output.strip() or has_pending(output):
+        rows, state = check_rows(repo, branch)
+        action, notes = merge_gate(rows, state)
+        if action == "wait":
             if index == 0:
-                print("检查还在跑（可能是刚 push 触发的新一轮），等它落定…")
+                print("先等一轮：" + notes[0])
             time.sleep(pause)
             continue
-        problems = listing_problems(output)
+        problems = [] if action == "merge" else notes
         if problems:
             print("拒绝合入：有检查没通过（这个仓可能没有分支保护，GitHub 不会替你拦）：")
             for line in problems[:12]:
@@ -1473,11 +1514,53 @@ def self_test() -> int:
         check("真实失败不算竞态", checks_not_yet("some check failed"), False)
         check("pending 识别", has_pending("CI\tpending\t0\thttps://x"), True)
         check("合并前自己看表格：fail 要拦（没保护的仓 GitHub 不替你拦）",
-              listing_problems("fmt\tpass\t1s\th\nCI\tfail\t2s\th"), ["CI=fail"])
+              listing_problems([{"name": "fmt", "bucket": "pass"}, {"name": "CI", "bucket": "fail"}]),
+              ["CI=fail"])
         check("cancelled 算没通过（master 那次红就是这么来的）",
-              listing_problems("t\tcancelled\t15m1s\th"), ["t=cancelled"])
-        check("非必需 job 的 skipping 不拦", listing_problems("m\tskipping\t0\th"), [])
-        check("状态为空不许当通过", listing_problems("x\t\t1s\th"), ["x=未知状态"])
+              listing_problems([{"name": "t", "bucket": "cancelled"}]), ["t=cancelled"])
+        check("非必需 job 的 skipping 不拦", listing_problems([{"name": "m", "bucket": "skipping"}]), [])
+        check("状态为空不许当通过", listing_problems([{"name": "x", "bucket": ""}]),
+              ["x=未知状态"])
+        check("名字列为空也不许悄悄放过（点名成无名检查）",
+              listing_problems([{"name": "", "bucket": "fail"}]), ["(无名检查)=fail"])
+        check("merge_gate：刚注册竞态算等不算拒", merge_gate([], "none"), ("wait", ["检查还没注册"]))
+        check("merge_gate：读不到清单 ⇒ 拒绝合并（读不到不等于通过）",
+              merge_gate([], "gh pr checks 返回码 1 且没有输出")[0], "refuse")
+        check("merge_gate：有 pending ⇒ 等",
+              merge_gate([{"name": "a", "bucket": "pass"}, {"name": "b", "bucket": "pending"}],
+                         "")[0], "wait")
+        check("merge_gate：全绿才允许合",
+              merge_gate([{"name": "a", "bucket": "pass"}, {"name": "m", "bucket": "skipping"}], ""),
+              ("merge", []))
+        check("merge_gate：失败就点名是谁",
+              merge_gate([{"name": "CI", "bucket": "fail"}], ""), ("refuse", ["CI=fail"]))
+        real_gh = globals()["gh"]
+        import subprocess as _sp
+        try:
+            globals()["gh"] = lambda args: _sp.CompletedProcess(args, 0,
+                                                                 '[{"name":"a","bucket":"pass"}]', "")
+            check("check_rows 走 JSON：正常返回行",
+                  check_rows("o/r", "b"), ([{"name": "a", "bucket": "pass"}], ""))
+            globals()["gh"] = lambda args: _sp.CompletedProcess(
+                args, 1, "no checks reported on this pull request", "")
+            check("check_rows：还没注册算竞态，返回 none 而不是空表冒充通过",
+                  check_rows("o/r", "b"), ([], "none"))
+            globals()["gh"] = lambda args: _sp.CompletedProcess(args, 0, "not json", "")
+            bad_rows, bad_state = check_rows("o/r", "b")
+            check("check_rows：输出形状不认识 ⇒ 返回原因（不静默）",
+                  (bad_rows, bad_state != ""), ([], True))
+            globals()["gh"] = lambda args: _sp.CompletedProcess(args, 1, "", "")
+            err_rows, err_state = check_rows("o/r", "b")
+            globals()["gh"] = lambda args: _sp.CompletedProcess(args, 0, '{"a": 1}', "")
+            obj_rows, obj_state = check_rows("o/r", "b")
+            check("checks 返回对象而不是数组 ⇒ 返回原因（不静默当成没检查）",
+                  (obj_rows, obj_state != ""), ([], True))
+            check("bucket 为空当知不了状态：先等而不是立刻判过",
+                  merge_gate([{"name": "x", "bucket": ""}], "")[0], "wait")
+            check("check_rows：gh 失败且没输出 ⇒ 返回原因",
+                  (err_rows, err_state.startswith("gh pr checks 返回码")), ([], True))
+        finally:
+            globals()["gh"] = real_gh
         check("通过不算 pending", has_pending("CI\tpass\t1s\thttps://x"), False)
         check("文件重叠 Jaccard", round(file_jaccard(["a", "b"], ["a", "b", "c"]), 6), 0.666667)
         now = 2_000_000_000
