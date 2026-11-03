@@ -1,0 +1,110 @@
+[
+ {
+  "name": "disk_guard: MediaType=HDD 这一路不认",
+  "file": "scripts/disk_guard.py",
+  "old": "if mt.strip().lower() == \"hdd\":",
+  "new": "if False:",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "disk_guard: medium 档不算（直接落到 large）",
+  "file": "scripts/disk_guard.py",
+  "old": "if lines < MEDIUM_LINES:",
+  "new": "if False:",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "disk_guard: small 档探不到介质也判红（口径反了）",
+  "file": "scripts/disk_guard.py",
+  "old": "if size == \"small\":",
+  "new": "if False:",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "disk_guard: small 档永远不成立（5k 以下也当中型判红）",
+  "file": "scripts/disk_guard.py",
+  "old": "if lines < SMALL_LINES:",
+  "new": "if False:",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "disk_guard: 不信 Get-PhysicalDisk 的 HDD ⇒ SATA 机械盘被当成固态（本机那次假绿）",
+  "file": "scripts/disk_guard.py",
+  "old": "if \"hdd\" in physical.lower():",
+  "new": "if False:",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "disk_guard: 不信 Spinning=True ⇒ 机械盘漏判",
+  "file": "scripts/disk_guard.py",
+  "old": "if spin == \"true\":",
+  "new": "if False:",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "disk_guard: 不认正面固态证据（SSD 也报不出来）",
+  "file": "scripts/disk_guard.py",
+  "old": "if \"ssd\" in physical.lower() or mt.strip().lower() == \"ssd\":",
+  "new": "if False:",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "disk_guard: 探不到介质不再按规模判红（medium/large 也放行）",
+  "file": "scripts/disk_guard.py",
+  "old": "elif media == \"unknown\":",
+  "new": "elif False:",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "disk_guard: 探不到介质时默认当固态（fail-open，最坏的一种）",
+  "file": "scripts/disk_guard.py",
+  "old": "return \"unknown\", evidence",
+  "new": "return \"ssd\", evidence",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "disk_guard: 放行时仍然判红（ALLOWED 留痕被拆）",
+  "file": "scripts/disk_guard.py",
+  "old": "notes.append(f\"ALLOWED {label}={shown} 在机械盘（{detail}）—— 显式放行，PR 里要写\")",
+  "new": "failures.append(f\"ALLOWED {label}={detail}\")",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "disk_guard: 显式放行不再生效（逃生口被拆）",
+  "file": "scripts/disk_guard.py",
+  "old": "if allowed(shown):\n                notes.append(f\"ALLOWED {label}={shown} 在机械盘",
+  "new": "if False:\n                notes.append(f\"ALLOWED {label}={shown} 在机械盘",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "disk_guard: 机械盘不再判红",
+  "file": "scripts/disk_guard.py",
+  "old": "if media == \"hdd\":",
+  "new": "if False:",
+  "pkg": "scripts/disk_guard.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

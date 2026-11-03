@@ -36,6 +36,7 @@
  "script/ci_budget.py": 1,
  "script/ci_integrity.py": 1,
  "script/deps.py": 1,
+ "script/disk_guard.py": 1,
  "script/flake_ledger.py": 1,
  "script/gen_docs_charts.py": 0,
  "script/gitflow.py": 1,
