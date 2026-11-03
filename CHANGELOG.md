@@ -2,6 +2,65 @@
 
 ## [Unreleased]
 
+### Added（trit-re：PE32 函数边界取自 COFF 符号表）
+
+- `pe::parse` 现在读 COFF 符号表（`PointerToSymbolTable`/`NumberOfSymbols`，18 字节条目）：
+  只收 `Type>>8 == IMAGE_SYM_DTYPE_FUNCTION(2)` 且 `SectionNumber > 0` 的函数符号，
+  `Value` 按 RVA 解释并自校验「必须落在所指可执行节内」——对 strip 过/非常规的表
+  **宁可丢符号也不给假边界**；短名内联、长名走串表（首 4 字节为 0 时读后 4 字节的偏移）。
+  新增字段 `PeInfo::coff_functions`（`Option<Vec<CoffFunction>>`）。
+- `functions::build_pe` 在没有 `.pdata` 时改用 COFF 符号表当边界源
+  （`FuncSource::CoffSymbols`，区间终点 = 下一个函数起点/所在节末尾），并把它算作
+  **精确**边界（与 ELF `STT_FUNC` 同等权威）。效果：PE32 的同函数共现从「一律 `Unknown`」
+  变成可判——这是路线图 N2 判据里「PE32 共现从 `Unknown` 变为可判」的一半，靠符号表而不是 CFG。
+- 测试 +1（`tests/pe.rs::coff_symbols_give_pe32_exact_boundaries`：合成 PE32 夹具带 3 只符号
+  ——短名函数、串表长名函数、非函数符号各一只——钉住「过滤 + 逐字节边界 + 归属 + 共现可判」）；
+  变异门 +1（`scripts/mutants/trit-re.json`「COFF 函数类型过滤失效」；连同上一片的
+  「未归属裁定的非执行判断写反」，登记表现 29 条）。
+- 🔴 夹具的一次改法披露：符号表里那只非函数符号原本住在 `.rdata`，结果「节必须可执行」
+  替 `Type` 过滤把了关 ⇒ 变异门打「去掉 Type 判断」照样**存活**（防御码空转）。已把它搬到
+  可执行节 `.text`（RVA 0x1180），现在只有 `Type` 那道判断能挡它，这条变异改判为断言判红。
+- 为守 800 行预算搬家（公开路径不变）：COFF 符号表面 → `crates/trit-re/src/pe/coff.rs`
+  （`pe.rs` 878→786 行，照 `pe/overlay.rs` 先例）；带符号表的 PE32 夹具 →
+  `crates/trit-re/tests/support/pe_builders.rs`（`support/mod.rs` 802→701 行）。
+  `pe::CoffFunction` 与 `support::pe32_with_symbols()` 经 `pub use` 保持原路径。
+- 🔴 证据等级：**合成夹具已证，真实 mingw PE32 样本未证**。本机只有 mingw-w64 x86_64
+  （`-m32` 没有 i686 工具链），拿不出带符号表的 32 位真样本；按 N1 口径要有真样本后补 `sha256` 记录。
+
+### Added（trit-re collect：procscan 现场模块 → 逆向台账，路线图 N3 落地）
+
+- `trit-re::collect`：吃 `trit-procscan` 的 JSONL 事件流，抽取
+  `type:"module"` 的路径——**管道式接入**（`trit-procscan … | trit-re collect`），
+  不建 crate 依赖。纪律：坏 JSON 行/非 module 事件**计数上报不静默**；
+  同路径**去重保序**（同模块多进程加载只分析一次）；单文件读取失败
+  **不中断采集**（计数 + ≤8 条原因）。
+- 每模块产出 `ledger::jsonl` 台账行，末尾一条 **`collect-summary`**
+  （module_events/modules/deduped/analyzed/unreadable/non_module_events/
+  bad_lines/bytes/elapsed_ms/errors）——路线图 N3 判据「一次采集 ≥ N 条
+  记录、耗时与文件大小线性」直接从汇总行复算。
+- CLI：`trit-re collect [--events <file>] [--summary-only]`（缺省读 stdin）。
+- 依赖补 `serde`/`serde_json`（事件流是外部输入，字段级取值）。
+- 实测冒烟（真事件流 5 行：同一 `notepad.exe` 两次 + 一只不存在的 dll + 一条 `process`
+  事件 + 一行坏 JSON）⇒ 汇总行 `module_events=3 / modules=2 / deduped=1 / analyzed=1 /
+  unreadable=1 / non_module_events=1 / bad_lines=1 / bytes=356352 / elapsed_ms=22`，
+  `errors` 点名「系统找不到指定的文件。(os error 2)」；stdout 共 **622 行**（621 条台账 + 1 条汇总）。
+  同一份流把路径写成单反斜杠（JSON 非法转义）时 ⇒ `module_events=0 / bad_lines=3`，
+  一条模块都不解析、但计数照报 ⇒ 坏行上报不是纸面话。
+  测试 `tests/collect.rs` 4 条用内存文件系统注入 `read` 闭包，不碰真实文件系统。
+
+### Added（trit-re：未归属调用点的逐条裁定）
+
+- `functions::FunctionReport` 新增 `ruled_sites`（≤64 条明细）与三类计数
+  `ruling_clip`/`ruling_miss`/`ruling_nonexec`：每个归不到函数区间的调用点
+  按证据分类——疑**边界裁剪**（距最近函数边界 ≤16B）、疑**边界漏检**
+  （exec 内、距边界 >16B）、**非执行节**（字节模式误报候选）；
+  距离字段（`RuledSite.distance`）可复算。方向保守不变：裁定是证据分类，
+  不把调用点洗成「已归属」，共现的 `Unknown` 拖累逻辑不动。
+  这也是路线图 N2（最小 CFG）成效的现成度量：边界漏检类应随 N2 显著下降。
+- 测试 +2（三类裁定逐一命中 + 明细截断但计数完整）；变异门 +1
+  （非执行判断写反）。
+
+
 ### Added（M3 受控探测：allowlist 默认拒绝的实验室端口/服务指纹）
 
 - `trit-net::netsec::probe`：证据生产端——M2 攻击图是登记制，probe 是第一个
