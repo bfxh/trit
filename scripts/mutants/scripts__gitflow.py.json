@@ -502,5 +502,176 @@
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "gitflow: remote_heads 失败时也收脏输出（判红变成假清单）",
+  "file": "scripts/gitflow.py",
+  "old": "    if result.returncode != 0:\n        return names",
+  "new": "    if False:\n        return names",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: origin/ 前缀不剥（远端分支名全对不上）",
+  "file": "scripts/gitflow.py",
+  "old": "        if name.startswith(\"origin/\"):",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: origin/HEAD 也当成分支（主干识别被脏数据带偏）",
+  "file": "scripts/gitflow.py",
+  "old": "        if name and name != \"HEAD\":",
+  "new": "        if name:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 主干写死 main（master 仓里全错）",
+  "file": "scripts/gitflow.py",
+  "old": "    return \"main\" if \"main\" in live else \"master\"",
+  "new": "    return \"main\"",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: base 还在也当孤儿（正常叠栈被乱改）",
+  "file": "scripts/gitflow.py",
+  "old": "        if base in live:\n            continue",
+  "new": "        if False:\n            continue",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 主干上的 PR 也当孤儿",
+  "file": "scripts/gitflow.py",
+  "old": "        if not base or base in PROTECTED or base == trunk:",
+  "new": "        if not base or base == trunk:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 修复计划里 base 改成 head 自己",
+  "file": "scripts/gitflow.py",
+  "old": "        plan.append([\"gh\", \"pr\", \"edit\", number, \"--base\", item[\"trunk\"]])",
+  "new": "        plan.append([\"gh\", \"pr\", \"edit\", number, \"--base\", item[\"head\"]])",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 先同步再改 base（白跑一轮 CI）",
+  "file": "scripts/gitflow.py",
+  "old": "        plan.append([\"gh\", \"pr\", \"edit\", number, \"--base\", item[\"trunk\"]])\n        plan.append([sys.executable, \"scripts/gitflow.py\", \"pr\", \"sync\", number, \"--apply\"])",
+  "new": "        plan.append([sys.executable, \"scripts/gitflow.py\", \"pr\", \"sync\", number, \"--apply\"])\n        plan.append([\"gh\", \"pr\", \"edit\", number, \"--base\", item[\"trunk\"]])",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 同步主干少了 --apply（修了个寂寞）",
+  "file": "scripts/gitflow.py",
+  "old": "        plan.append([sys.executable, \"scripts/gitflow.py\", \"pr\", \"sync\", number, \"--apply\"])",
+  "new": "        plan.append([sys.executable, \"scripts/gitflow.py\", \"pr\", \"sync\", number])",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 没孤儿也走修复（印一堆『发现 0 个』）",
+  "file": "scripts/gitflow.py",
+  "old": "    if not orphans:\n        return 0",
+  "new": "    if False:\n        return 0",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: dry-run 也发命令（没让确认就动远端）",
+  "file": "scripts/gitflow.py",
+  "old": "        if not apply_changes:",
+  "new": "        if apply_changes:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 修复步骤失败继续往下走（rc=1 当成功）",
+  "file": "scripts/gitflow.py",
+  "old": "        if made.returncode != 0:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 读不到远端分支不再判红（分不清被删还是断网）",
+  "file": "scripts/gitflow.py",
+  "old": "    if not live:",
+  "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 不拿 open PR 的 head 补 live（叠栈的正常 base 被误判孤儿）",
+  "file": "scripts/gitflow.py",
+  "old": "    live |= {pr.get(\"headRefName\", \"\") for pr in prs}",
+  "new": "    live |= set()",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 检测到孤儿也不处理（这坑明天还在）",
+  "file": "scripts/gitflow.py",
+  "old": "    if orphans:",
+  "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 没给 --repair 也静默放行（孤儿 PR 继续卡死）",
+  "file": "scripts/gitflow.py",
+  "old": "        if not repair:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: --repair 不带 --apply 就直接执行（默认改远端）",
+  "file": "scripts/gitflow.py",
+  "old": "        code = repair_orphans(ROOT, orphans, repair and apply_changes)",
+  "new": "        code = repair_orphans(ROOT, orphans, True)",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: --repair 开关被吞（命令行失效）",
+  "file": "scripts/gitflow.py",
+  "old": "                     repair=\"--repair\" in argv, apply_changes=\"--apply\" in argv)",
+  "new": "                     repair=False, apply_changes=\"--apply\" in argv)",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: --no-remote 被吞（离线也用不了）",
+  "file": "scripts/gitflow.py",
+  "old": "        return stack(repo, remote_state=\"--no-remote\" not in argv,",
+  "new": "        return stack(repo, remote_state=True,",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
  }
 ]
