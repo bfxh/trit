@@ -358,3 +358,206 @@ fn compact_gate_bad_config_uses_stable_error_kind() {
     assert_eq!(value["ok"], false, "ORCH_CTX_CLI_CONFIG");
     assert_eq!(value["kind"], "context_config", "ORCH_CTX_CLI_CONFIG");
 }
+
+#[test]
+fn claim_cli_acquire_renew_release_and_gate() {
+    let (code, value) = run(
+        "claim",
+        &json!({
+            "owner": "alice",
+            "paths": ["src/a.rs"],
+            "intent": "edit",
+            "now": 100,
+            "ttl": 10
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["outcome"]["Acquired"]["owner"], "alice");
+    let claim_id = value["outcome"]["Acquired"]["id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let fencing = value["outcome"]["Acquired"]["fencing"].as_u64().unwrap();
+    let store = value["store"].clone();
+
+    let (code, value) = run(
+        "claim-gate",
+        &json!({"store": store, "owner": "alice", "paths": ["src/a.rs"], "now": 101}),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["gate"], "True");
+
+    let (code, value) = run(
+        "renew",
+        &json!({
+            "store": store,
+            "id": claim_id,
+            "owner": "alice",
+            "fencing": fencing,
+            "now": 101,
+            "ttl": 20
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    let renewed = value["claim"]["fencing"].as_u64().unwrap();
+    assert!(renewed > fencing);
+    let store = value["store"].clone();
+
+    let (code, value) = run(
+        "release",
+        &json!({"store": store, "id": claim_id, "owner": "alice", "fencing": renewed}),
+    );
+    assert_eq!(code, 0, "{value}");
+    let store = value["store"].clone();
+
+    let (code, value) = run(
+        "claim-gate",
+        &json!({"store": store, "owner": "alice", "paths": ["src/a.rs"], "now": 102}),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["gate"], "Unknown", "ORCH_CLI_CLAIM_RELEASE");
+}
+
+#[test]
+fn claim_cli_conflict_is_contested_and_gate_blocks() {
+    let (code, value) = run(
+        "claim",
+        &json!({
+            "owner": "alice",
+            "paths": ["src/a.rs"],
+            "intent": "edit",
+            "now": 100,
+            "ttl": 10
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    let store = value["store"].clone();
+
+    let (code, value) = run(
+        "claim",
+        &json!({
+            "store": store,
+            "owner": "bob",
+            "paths": ["src"],
+            "intent": "edit",
+            "now": 101,
+            "ttl": 10
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(
+        value["outcome"]["Contested"]["contenders"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    let store = value["store"].clone();
+
+    let (code, value) = run(
+        "claim-gate",
+        &json!({"store": store, "owner": "bob", "paths": ["src/a.rs"], "now": 101}),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["gate"], "False", "ORCH_CLI_CLAIM_CONFLICT");
+}
+
+#[test]
+fn receipt_cli_walks_four_states_and_rejects_skip() {
+    let (code, value) = run(
+        "receipt",
+        &json!({"action": "record", "id": "r1", "key": "k1"}),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["receipt"]["state"], "Sent");
+    let ledger = value["ledger"].clone();
+
+    let (code, value) = run(
+        "receipt",
+        &json!({"ledger": ledger, "action": "advance", "key": "k1", "state": "Delivered"}),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["receipt"]["state"], "Delivered");
+    let ledger = value["ledger"].clone();
+
+    let (code, value) = run(
+        "receipt",
+        &json!({"ledger": ledger, "action": "advance", "key": "k1", "state": "Acted"}),
+    );
+    assert_eq!(code, 1, "ORCH_CLI_RECEIPT_SKIP: 不能跳过 Read");
+    assert_eq!(value["kind"], "receipt_skip");
+}
+
+#[test]
+fn handoff_gate_cli_three_states() {
+    let packet = json!({
+        "id": "h1",
+        "from": "alice",
+        "to": "bob",
+        "goal": "finish",
+        "base_commit": "abc",
+        "state_hash": "sha256:abc",
+        "decisions": [],
+        "open_questions": [],
+        "claims": [],
+        "evidence": [],
+        "next_action": "run gates",
+        "idempotency_key": "handoff:h1",
+        "expires_at": 200
+    });
+    let (code, value) = run(
+        "handoff-gate",
+        &json!({"packet": packet, "receiver_state_hash": "sha256:abc", "now": 100}),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["gate"], "True");
+
+    let (code, value) = run(
+        "handoff-gate",
+        &json!({"packet": packet, "receiver_state_hash": "sha256:other", "now": 100}),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["gate"], "Unknown", "ORCH_CLI_HANDOFF_STATE");
+}
+
+#[test]
+fn admit_with_claim_cli_is_k3_and() {
+    let (code, value) = run(
+        "admit-with-claim",
+        &json!({
+            "dependencies": "True",
+            "authorization": "True",
+            "resources": "True",
+            "freshness": "True",
+            "claim": "True"
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["gate"], "True");
+
+    let (code, value) = run(
+        "admit-with-claim",
+        &json!({
+            "dependencies": "True",
+            "authorization": "Unknown",
+            "resources": "True",
+            "freshness": "True",
+            "claim": "True"
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["gate"], "Unknown");
+
+    let (code, value) = run(
+        "admit-with-claim",
+        &json!({
+            "dependencies": "True",
+            "authorization": "True",
+            "resources": "True",
+            "freshness": "True",
+            "claim": "False"
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["gate"], "False", "ORCH_CLI_ADMIT_CLAIM");
+}

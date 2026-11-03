@@ -102,7 +102,48 @@ assert_eq!(handoff_gate(&packet, "sha256:other", 100), Ternary::Unknown);
 
 ---
 
-## 3. 模块地图
+## 3. 宿主桥 CLI
+
+`trit-orch` 从 stdin 读一份 JSON，stdout 回一份 JSON；成功永远带 `"ok": true`，
+失败输出 `{"ok":false,"kind":"…","error":"…"}` 并以 1 退出。
+
+协调面命令：
+
+```bash
+# 认领（首轮）
+echo '{"owner":"alice","paths":["src/a.rs"],"intent":"edit","now":100,"ttl":10}' \
+  | trit-orch claim
+
+# 第五门（把返回的 store 原样带回）
+echo '{"store":{…},"owner":"alice","paths":["src/a.rs"],"now":101}' \
+  | trit-orch claim-gate
+
+# 续约 / 释放
+echo '{"store":{…},"id":"claim-1","owner":"alice","fencing":1,"now":101,"ttl":20}' \
+  | trit-orch renew
+echo '{"store":{…},"id":"claim-1","owner":"alice","fencing":2}' \
+  | trit-orch release
+
+# 四态回执：record → advance → …
+echo '{"action":"record","id":"r1","key":"k1"}' | trit-orch receipt
+echo '{"ledger":{…},"action":"advance","key":"k1","state":"Delivered"}' | trit-orch receipt
+
+# 交接门
+echo '{"packet":{…},"receiver_state_hash":"sha256:abc","now":100}' \
+  | trit-orch handoff-gate
+
+# 五门 K3 AND
+echo '{"dependencies":"True","authorization":"True","resources":"True","freshness":"True","claim":"True"}' \
+  | trit-orch admit-with-claim
+```
+
+- 三值输入接受 `True/Unknown/False` 或 `+1/0/-1`。
+- 回执状态：`sent/delivered/read/acted`。
+- `store` / `ledger` 是上一条命令返回的对象；CLI 不自己落盘，宿主负责持久化。
+
+---
+
+## 4. 模块地图
 
 ```text
 src/
@@ -129,7 +170,7 @@ src/
 
 ---
 
-## 4. 测试与门禁
+## 5. 测试与门禁
 
 ```bash
 cargo test -p trit-orch
@@ -152,7 +193,7 @@ python scripts/mutation_check.py --pkg trit-orch
 
 ---
 
-## 5. 边界
+## 6. 边界
 
 - 本 crate 不读系统时钟；`now`/`ttl` 由调用方传入，便于确定性测试。
 - 不持久化认领表；宿主用 `ClaimStore` 的 serde 形态自行落盘，
