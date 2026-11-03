@@ -42,7 +42,7 @@ def main():
     args = ap.parse_args()
     root = pathlib.Path(args.dir)
     rows = []
-    for mf in sorted(root.glob("*.manifest.json")):
+    for mf in sorted(root.rglob("*.manifest.json")):
         m = load(mf)
         if not m:
             continue
@@ -98,9 +98,9 @@ def main():
             )
     out.append("")
     out.append("## 如何复核一行\n")
-    out.append("```sh\n")
-    out.append("parts-depth-verify --dcn <模型> --data <训练时的 --data 列表> \\\n")
-    out.append("  --holdout <清单里的 holdout> --size <config.size>\n")
+    out.append("```sh")
+    out.append("parts-depth-verify --dcn <模型> --data <训练时的 --data 列表> \\")
+    out.append("  --holdout <清单里的 holdout> --size <config.size>")
     out.append("```\n")
     out.append(
         "复核器会重算 `sha256(model)` 与数据集指纹，与 `<模型>.manifest.json` 比对；"
