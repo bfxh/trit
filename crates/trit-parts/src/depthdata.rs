@@ -254,9 +254,10 @@ pub fn eval_holdout(
 /// 返回 `(目录数, 文件数, 总字节数, sha256)`。代价：按实际数据读一遍（本机 ~2 GB 约 6 s）。
 pub fn data_fingerprint(dirs: &[std::path::PathBuf], stride: usize) -> (usize, usize, u64, String) {
     use crate::fingerprint::{file_sha256, sha256_hex};
+    // 路径写法归一（`E:\x` 与 `E:/x` 必须得到同一指纹），再排序。
     let mut names: Vec<String> = dirs
         .iter()
-        .map(|d| d.to_string_lossy().into_owned())
+        .map(|d| d.to_string_lossy().replace('\\', "/"))
         .collect();
     names.sort();
 
@@ -361,6 +362,11 @@ mod tests {
         let (_, _, bytes2, h2) = data_fingerprint(std::slice::from_ref(&scene), 2);
         assert_eq!(bytes, bytes2, "字节数不变");
         assert_ne!(h1, h2, "内容变了指纹必须变");
+
+        // 路径写法归一：`E:\x` 与 `E:/x` 必须同指纹（目录不存在时只哈希名字）
+        let h3 = data_fingerprint(&[std::path::PathBuf::from(r"E:\none\scene")], 2).3;
+        let h4 = data_fingerprint(&[std::path::PathBuf::from("E:/none/scene")], 2).3;
+        assert_eq!(h3, h4);
 
         let _ = std::fs::remove_dir_all(&base);
     }
