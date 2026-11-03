@@ -102,6 +102,9 @@ fn main() {
     let pyr: usize = arg(&argv, "--pyr")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
+    let ppyr: usize = arg(&argv, "--ppyr")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
     let dil: usize = arg(&argv, "--dil")
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
@@ -125,7 +128,9 @@ fn main() {
     let full = flag(&argv, "--full");
     let ternary = !flag(&argv, "--f32");
 
-    let mut net = DepthNet::with_inputs(3 + 3 * pyr, hidden, seed, ternary);
+    let mut net = DepthNet::with_inputs(3 + 3 * pyr + 3 * ppyr, hidden, seed, ternary);
+    net.pyr = pyr;
+    net.ppyr = ppyr;
     net.set_dilation(dil);
 
     let gpu = match arg(&argv, "--gpu-index").and_then(|v| v.parse::<usize>().ok()) {
@@ -153,7 +158,8 @@ fn main() {
             if fr % stride.max(1) != 0 {
                 continue;
             }
-            let Some((x, y, mask, _med, _iqr, _w0)) = load_sample(d, fr, size, full, pyr) else {
+            let Some((x, y, mask, _med, _iqr, _w0)) = load_sample(d, fr, size, full, pyr, ppyr)
+            else {
                 if fr == 0 {
                     break; // 这个目录没有帧 0（不是场景目录）
                 }
@@ -235,11 +241,10 @@ fn main() {
             std::process::exit(1);
         }
         // 对拍后回到同一起点继续正式训练
-        gnet = DepthGpu::from_depthnet(
-            &DepthNet::with_inputs(3 + 3 * pyr, hidden, seed, ternary),
-            size as u32,
-        )
-        .with_slots(accum);
+        let mut fresh = DepthNet::with_inputs(3 + 3 * pyr + 3 * ppyr, hidden, seed, ternary);
+        fresh.pyr = pyr;
+        fresh.ppyr = ppyr;
+        gnet = DepthGpu::from_depthnet(&fresh, size as u32).with_slots(accum);
         gnet.med = med_sum / train.len() as f32;
         gnet.iqr = iqr_sum / train.len() as f32;
         gnet.upload(&gpu);
@@ -404,7 +409,7 @@ fn write_manifest(
     };
     let epochs = num("--epochs", 3.0) as u32;
     let config = format!(
-        "{{\"size\": {}, \"hidden\": {}, \"dil\": {}, \"epochs\": {epochs}, \"lr\": {}, \"accum\": {}, \"stride\": {}, \"pyr\": {}, \"full\": {}, \"f32\": {}, \"seed\": {}}}",
+        "{{\"size\": {}, \"hidden\": {}, \"dil\": {}, \"epochs\": {epochs}, \"lr\": {}, \"accum\": {}, \"stride\": {}, \"pyr\": {}, \"ppyr\": {}, \"full\": {}, \"f32\": {}, \"seed\": {}}}",
         num("--size", 64.0) as u32,
         num("--hidden", 8.0) as u32,
         num("--dil", 1.0) as u32,
@@ -412,6 +417,7 @@ fn write_manifest(
         num("--accum", 1.0) as u32,
         num("--stride", 2.0) as u32,
         num("--pyr", 0.0) as u32,
+        num("--ppyr", 0.0) as u32,
         flag(argv, "--full"),
         flag(argv, "--f32"),
         num("--seed", 7.0) as u64

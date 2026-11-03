@@ -23,6 +23,7 @@ pub fn load_sample(
     size: usize,
     full: bool,
     pyr: usize,
+    ppyr: usize,
 ) -> Option<DepthSample> {
     let p = scene.join("rgb").join(format!("{frame:06}.png"));
     if !p.exists() {
@@ -99,6 +100,7 @@ pub fn load_sample(
     for lvl in 1..=pyr {
         add_lowpass(&mut planes, size, 4usize.pow(lvl as u32));
     }
+    add_pyramid_pool(&mut planes, size, ppyr);
     Some((planes, disp, mask, med, iqr, w))
 }
 
@@ -127,6 +129,44 @@ pub fn add_lowpass(planes: &mut Vec<Vec<f32>>, size: usize, factor: usize) {
             }
         }
         planes.push(out);
+    }
+}
+
+/// **全局**金字塔池化输入：按 `2^lvl × 2^lvl` 网格取每通道块均值，再铺回全分辨率。
+///
+/// 与 `add_lowpass`（局部低通）不同，这里带的是整幅布局（1×1、2×2、4×4 …），
+/// 每个 level 追加 3 个平面（RGB 各一）。
+pub fn add_pyramid_pool(planes: &mut Vec<Vec<f32>>, size: usize, levels: usize) {
+    if levels == 0 {
+        return;
+    }
+    let base: Vec<Vec<f32>> = planes[..3].to_vec();
+    for lvl in 1..=levels {
+        let cells = 1usize << lvl; // 2, 4, 8 ...
+        if cells > size {
+            break;
+        }
+        let block = size / cells;
+        for src in base.iter() {
+            let mut out = vec![0.0f32; size * size];
+            for cy in 0..cells {
+                for cx in 0..cells {
+                    let mut acc = 0.0f32;
+                    for by in 0..block {
+                        for bx in 0..block {
+                            acc += src[(cy * block + by) * size + cx * block + bx];
+                        }
+                    }
+                    let v = acc / (block * block) as f32;
+                    for by in 0..block {
+                        for bx in 0..block {
+                            out[(cy * block + by) * size + cx * block + bx] = v;
+                        }
+                    }
+                }
+            }
+            planes.push(out);
+        }
     }
 }
 
@@ -335,6 +375,32 @@ mod tests {
         ));
         assert!(!is_held(p, &["scene0051".to_string()]));
         assert!(!is_held(p, &[]));
+    }
+
+    /// 金字塔池化：4×4 图、level 1（2×2 网格、块 2×2）→ 每块均值铺回；level 0 是 no-op。
+    #[test]
+    fn pyramid_pool_block_means() {
+        let size = 4;
+        let mut planes = vec![vec![0.0f32; size * size]; 3];
+        for (i, v) in planes[0].iter_mut().enumerate() {
+            *v = i as f32;
+        }
+        let before = planes.len();
+        add_pyramid_pool(&mut planes, size, 0);
+        assert_eq!(planes.len(), before, "levels=0 不应加通道");
+
+        add_pyramid_pool(&mut planes, size, 1);
+        assert_eq!(planes.len(), before + 3, "level 1 加 3 个通道");
+        // 左上块 [0,1;4,5] 均值 2.5；右下块 [10,11;14,15] 均值 12.5
+        assert!((planes[3][0] - 2.5).abs() < 1e-6);
+        assert!((planes[3][5] - 2.5).abs() < 1e-6);
+        assert!((planes[3][15] - 12.5).abs() < 1e-6);
+        assert!(planes[4].iter().all(|v| *v == 0.0), "全零通道均值仍为 0");
+        assert_eq!(planes[4].len(), size * size);
+
+        let n = planes.len();
+        add_pyramid_pool(&mut planes, size, 1);
+        assert_eq!(planes.len(), n + 3);
     }
 
     /// 内容级指纹：同内容两次一致；**同尺寸改一个字节也必须变**。
