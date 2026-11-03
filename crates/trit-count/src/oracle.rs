@@ -19,6 +19,19 @@ pub fn count_exhaustive(
     alg: Algebra,
     target: Ternary,
 ) -> u128 {
+    count_exhaustive_under(expr, &[], vars, binary, alg, target)
+}
+
+/// Counts assignments where every constraint is `True` and `expr == target`.
+#[must_use]
+pub fn count_exhaustive_under(
+    expr: &Expr,
+    constraints: &[Expr],
+    vars: &[String],
+    binary: &HashSet<String>,
+    alg: Algebra,
+    target: Ternary,
+) -> u128 {
     let domains: Vec<&[Ternary]> = vars
         .iter()
         .map(|name| {
@@ -38,7 +51,10 @@ pub fn count_exhaustive(
         for (slot, name) in vars.iter().enumerate() {
             assignment.set(name.clone(), domains[slot][index[slot]]);
         }
-        if eval(expr, &assignment, alg) == target {
+        let constraints_hold = constraints
+            .iter()
+            .all(|constraint| eval(constraint, &assignment, alg) == Ternary::True);
+        if constraints_hold && eval(expr, &assignment, alg) == target {
             count += 1;
         }
 

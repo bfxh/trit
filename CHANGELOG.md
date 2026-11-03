@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added（trit-count：约束计数）
+
+- `count_models_under` / `crosscheck_under` / `Encoder::encode_with_constraints`：在每条约束为 `True` 的赋值上计数；
+  CLI `--constraint` 可重复，省略 `--vars` 时自动把约束变量并入变量域。
+- 新增 3 个对拍测试（约束 vs 穷举、约束收缩域、约束合并 + 未使用变量），测试 9 → 12。
+- 变异新增 2 条（约束不置 True、忽略约束），`mutation_check --pkg trit-count` 应保持全抓。
+- 同轮试过“缓存键变量重命名规范化”：实测命中率/节点数不变、耗时略增，已撤（负结果，不落代码）。
+
 ### Added（trit-count：三值精确模型计数原型）
 
 - 新实验 crate `trit-count`（`publish = false`）：表达式 → dual-rail CNF → DPLL + 连通分量分解 + 组件缓存，

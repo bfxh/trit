@@ -4,7 +4,7 @@ use trit_core::algebra::Algebra;
 use trit_core::ast::Expr;
 use trit_core::parser::Parser;
 use trit_core::value::Ternary;
-use trit_count::{count_models, crosscheck};
+use trit_count::{count_models, count_models_under, crosscheck, crosscheck_under};
 
 fn parse(source: &str) -> Expr {
     Parser::parse(source).expect("test expression must parse")
@@ -211,6 +211,85 @@ fn positive_count_matches_trit_sat_satisfiable() {
                 }
             }
         }
+    }
+}
+
+#[test]
+fn constrained_counts_match_exhaustive() {
+    let vars = vars(&["a", "b", "c"]);
+    let binary = HashSet::new();
+    let cases = [
+        ("a & b", vec!["a"]),
+        ("a | b", vec!["!a", "c | !c"]),
+        ("(a => b) ^ c", vec!["a", "!b"]),
+        ("a & b", vec!["X"]),
+    ];
+    for alg in Algebra::ALL {
+        for target in [Ternary::False, Ternary::True, Ternary::Unknown] {
+            for (source, constraint_sources) in &cases {
+                let expr = parse(source);
+                let constraints: Vec<Expr> =
+                    constraint_sources.iter().map(|src| parse(src)).collect();
+                let report = crosscheck_under(&expr, &constraints, &vars, &binary, alg, target);
+                assert!(
+                    report.matches,
+                    "constrained mismatch: alg={} target={target:?} expr={source} constraints={constraint_sources:?}",
+                    alg.as_str()
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn constraints_restrict_domain() {
+    let vars = vars(&["a", "b"]);
+    let expr = parse("a & b");
+    let constraint = parse("a");
+    for alg in Algebra::ALL {
+        let counts: Vec<u128> = [Ternary::False, Ternary::True, Ternary::Unknown]
+            .into_iter()
+            .map(|target| {
+                count_models_under(
+                    &expr,
+                    std::slice::from_ref(&constraint),
+                    &vars,
+                    &HashSet::new(),
+                    alg,
+                    target,
+                )
+                .count
+            })
+            .collect();
+        assert_eq!(counts.iter().sum::<u128>(), 3, "{}", alg.as_str());
+        assert_eq!(counts[1], 1, "{}", alg.as_str());
+    }
+}
+
+#[test]
+fn constraints_combine_and_cover_unused_variables() {
+    let vars = vars(&["a", "b", "c"]);
+    let expr = parse("a & b");
+    let constraints = [parse("a"), parse("b")];
+    for alg in Algebra::ALL {
+        let total: u128 = [Ternary::False, Ternary::True, Ternary::Unknown]
+            .into_iter()
+            .map(|target| {
+                count_models_under(&expr, &constraints, &vars, &HashSet::new(), alg, target).count
+            })
+            .sum();
+        assert_eq!(total, 3, "{}", alg.as_str());
+    }
+
+    let only_c = [parse("c")];
+    for alg in Algebra::ALL {
+        let total: u128 = [Ternary::False, Ternary::True, Ternary::Unknown]
+            .into_iter()
+            .map(|target| {
+                count_models_under(&expr, &only_c, &vars, &HashSet::new(), alg, target).count
+            })
+            .sum();
+        assert_eq!(total, 9, "{}", alg.as_str());
     }
 }
 

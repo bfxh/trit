@@ -46,5 +46,21 @@
   "new": "            for (part_vars, part_clauses) in parts {\n                let local = renumber(&part_clauses, &part_vars);\n                product = self.count_core(&local, part_vars.len());\n            }",
   "pkg": "trit-count",
   "filter": "component_product_multiplies_independent_parts"
+ },
+ {
+  "name": "count: 约束不置 True",
+  "file": "crates/trit-count/src/cnf.rs",
+  "old": "        for constraint in constraint_roots {\n            self.clause(&[constraint.t]);\n            self.clause(&[-constraint.x]);\n        }",
+  "new": "        for constraint in constraint_roots {\n            self.clause(&[-constraint.t]);\n            self.clause(&[-constraint.x]);\n        }",
+  "pkg": "trit-count",
+  "filter": "constraints_restrict_domain"
+ },
+ {
+  "name": "count: 忽略约束",
+  "file": "crates/trit-count/src/lib.rs",
+  "old": "    let cnf =\n        cnf::Encoder::new(alg, vars, binary).encode_with_constraints(expr, constraints, target);",
+  "new": "    let _ = constraints;\n    let cnf = cnf::Encoder::new(alg, vars, binary).encode(expr, target);",
+  "pkg": "trit-count",
+  "filter": "constrained_counts_match_exhaustive"
  }
 ]
