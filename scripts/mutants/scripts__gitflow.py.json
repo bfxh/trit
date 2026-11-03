@@ -702,9 +702,9 @@
   "runner": "python"
  },
  {
-  "name": "gitflow: 分支落后主干不再立刻判红（静默重试到超时）",
+  "name": "gitflow: 落后主干不再立刻判红（回到静默重试三十分钟）",
   "file": "scripts/gitflow.py",
-  "old": "        if \"not mergeable\" in reason or \"not up to date\" in reason:",
+  "old": "        if any(mark in reason for mark in MERGE_BLOCKED_FOREVER):",
   "new": "        if False:",
   "pkg": "scripts/gitflow.py",
   "filter": "",
@@ -751,6 +751,141 @@
   "file": "scripts/gitflow.py",
   "old": "        if \"形状不认识\" in state:",
   "new": "        if \"竞态\" in state:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: secret-scan 一个文件没点也当扫过（空扫描面冒充干净）",
+  "file": "scripts/gitflow.py",
+  "old": "        if not files:\n            print(\"拦：--files 一个都没点 ⇒ 一个文件也没扫。扫描面为空不能算「干净」。\")\n            return 1",
+  "new": "        if False:\n            print(\"拦：--files 一个都没点 ⇒ 一个文件也没扫。扫描面为空不能算「干净」。\")\n            return 1",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: secret-scan 命中了却返回成功",
+  "file": "scripts/gitflow.py",
+  "old": "        if hits:\n            return 1\n        print(f\"未发现敏感串（扫了 {len(files)} 个文件、{len(SECRET_PATTERNS)} 条内容规则 + 文件名规则）\")",
+  "new": "        if False:\n            return 1\n        print(f\"未发现敏感串（扫了 {len(files)} 个文件、{len(SECRET_PATTERNS)} 条内容规则 + 文件名规则）\")",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 扫描面条数印成 0（报数变成装饰）",
+  "file": "scripts/gitflow.py",
+  "old": "        print(f\"未发现敏感串（扫了 {len(files)} 个文件、{len(SECRET_PATTERNS)} 条内容规则 + 文件名规则）\")",
+  "new": "        print(f\"未发现敏感串（扫了 0 个文件、{len(SECRET_PATTERNS)} 条内容规则 + 文件名规则）\")",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 空扫描面的 rc 写成 0（拦与不拦只剩一句话）",
+  "file": "scripts/gitflow.py",
+  "old": "            print(\"拦：--files 一个都没点 ⇒ 一个文件也没扫。扫描面为空不能算「干净」。\")\n            return 1",
+  "new": "            print(\"拦：--files 一个都没点 ⇒ 一个文件也没扫。扫描面为空不能算「干净」。\")\n            return 0",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 取位置参数时不跳 flag 的值（`--repo o/r` 被当成分支名）",
+  "file": "scripts/gitflow.py",
+  "old": "        if skip_next:\n            skip_next = False\n            continue",
+  "new": "        if False:\n            skip_next = False\n            continue",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 哪些 flag 带值不再认（值全被当位置参数）",
+  "file": "scripts/gitflow.py",
+  "old": "            skip_next = token in value_flags",
+  "new": "            skip_next = False",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: flag 本身被当成位置参数",
+  "file": "scripts/gitflow.py",
+  "old": "        if token.startswith(\"--\"):",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: PR 号不查分支名（照数字去 watch）",
+  "file": "scripts/gitflow.py",
+  "old": "    if not token.isdigit():\n        return token",
+  "new": "    if True:\n        return token",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 分支名也被送去查 PR（位置参数失效）",
+  "file": "scripts/gitflow.py",
+  "old": "    if not token.isdigit():\n        return token",
+  "new": "    if False:\n        return token",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 用法错误不打 FAIL 前缀（管道 tail 把它吞掉）",
+  "file": "scripts/gitflow.py",
+  "old": "    print(\"FAIL \" + text)",
+  "new": "    print(text)",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 用法错误返回 0（参数没吃对也算跑成功）",
+  "file": "scripts/gitflow.py",
+  "old": "    print(\"FAIL \" + text)\n    return 2",
+  "new": "    print(\"FAIL \" + text)\n    return 0",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: merge 少了参数也不报用法（拿空串去合并）",
+  "file": "scripts/gitflow.py",
+  "old": "        if not raw:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 查不到分支名还继续合并（猜一个去动远端）",
+  "file": "scripts/gitflow.py",
+  "old": "        if not target:\n            return usage(f\"判红：拿不到 {raw} 的分支名（不猜分支名去合并）\")",
+  "new": "        if False:\n            return usage(f\"判红：拿不到 {raw} 的分支名（不猜分支名去合并）\")",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 把「policy prohibits」也当永久失败（一次同步就提前放弃等待）",
+  "file": "scripts/gitflow.py",
+  "old": "MERGE_BLOCKED_FOREVER = (\"not up to date\", \"cannot be cleanly created\", \"merge conflict\")",
+  "new": "MERGE_BLOCKED_FOREVER = (\"not up to date\", \"not mergeable\", \"cannot be cleanly created\", \"merge conflict\")",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 什么都当永久失败（检查还没落定就直接退出）",
+  "file": "scripts/gitflow.py",
+  "old": "        if any(mark in reason for mark in MERGE_BLOCKED_FOREVER):",
+  "new": "        if True:",
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
