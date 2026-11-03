@@ -1,15 +1,18 @@
 //! `trit-orch` 的宿主桥：stdin 收一份 JSON，stdout 回一份 JSON。
 //!
-//! 子命令：`plan` / `select` / `dispatch` / `finish` / `recover` / `shadow` / `compact-gate`。成功退出码 0，
-//! 失败退出码 1 并输出 `{"ok":false,"kind":"...","error":"..."}`；成功输出永远带 `"ok":true`。
+//! 子命令：`plan` / `select` / `dispatch` / `finish` / `recover` / `shadow` / `compact-gate`
+//! 以及协调面 `claim` / `renew` / `release` / `claim-gate` / `receipt` / `handoff-gate` /
+//! `admit-with-claim`。成功退出码 0，失败退出码 1 并输出
+//! `{"ok":false,"kind":"...","error":"..."}`；成功输出永远带 `"ok":true`。
 
 use std::io::Read;
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 use trit_orch::{
-    ContextFacts, Ledger, Limits, Plan, PlanPatch, Progress, RoundReport, Selection, Snapshot,
-    TaskSpec, TraceStep, TraceStore, builtin, compaction_gate, dispatch_ready, replay,
+    ClaimStore, ContextFacts, HandoffPacket, Ledger, Limits, Plan, PlanPatch, Progress,
+    ReceiptLedger, ReceiptState, RoundReport, Selection, Snapshot, TaskSpec, Ternary, TraceStep,
+    TraceStore, admit_with_claim, builtin, compaction_gate, dispatch_ready, handoff_gate, replay,
 };
 
 #[derive(Deserialize)]
@@ -50,6 +53,100 @@ struct FinishInput {
     snapshot: Snapshot,
     #[serde(default)]
     rounds: Vec<RoundReport>,
+}
+
+#[derive(Deserialize)]
+struct ClaimInput {
+    #[serde(default)]
+    store: ClaimStore,
+    owner: String,
+    paths: Vec<String>,
+    intent: String,
+    now: u64,
+    ttl: u64,
+}
+
+#[derive(Deserialize)]
+struct RenewInput {
+    #[serde(default)]
+    store: ClaimStore,
+    id: String,
+    owner: String,
+    fencing: u64,
+    now: u64,
+    ttl: u64,
+}
+
+#[derive(Deserialize)]
+struct ReleaseInput {
+    #[serde(default)]
+    store: ClaimStore,
+    id: String,
+    owner: String,
+    fencing: u64,
+}
+
+#[derive(Deserialize)]
+struct ClaimGateInput {
+    #[serde(default)]
+    store: ClaimStore,
+    owner: String,
+    paths: Vec<String>,
+    now: u64,
+}
+
+#[derive(Deserialize)]
+struct ReceiptInput {
+    #[serde(default)]
+    ledger: ReceiptLedger,
+    action: String,
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    key: String,
+    #[serde(default)]
+    state: Option<String>,
+    #[serde(default)]
+    reason: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct HandoffGateInput {
+    packet: HandoffPacket,
+    receiver_state_hash: String,
+    now: u64,
+}
+
+#[derive(Deserialize)]
+struct AdmitWithClaimInput {
+    dependencies: String,
+    authorization: String,
+    resources: String,
+    freshness: String,
+    claim: String,
+}
+
+fn parse_ternary(raw: &str) -> Result<Ternary, trit_orch::Error> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "true" | "t" | "+1" | "1" => Ok(Ternary::True),
+        "unknown" | "u" | "0" => Ok(Ternary::Unknown),
+        "false" | "f" | "-1" => Ok(Ternary::False),
+        other => Err(trit_orch::Error::InputParse {
+            message: format!("非法三值 {other:?}（True/Unknown/False 或 +1/0/-1）"),
+        }),
+    }
+}
+
+fn parse_receipt_state(raw: &str) -> Result<ReceiptState, trit_orch::Error> {
+    match raw.trim().to_ascii_lowercase().as_str() {
+        "sent" => Ok(ReceiptState::Sent),
+        "delivered" => Ok(ReceiptState::Delivered),
+        "read" => Ok(ReceiptState::Read),
+        "acted" => Ok(ReceiptState::Acted),
+        other => Err(trit_orch::Error::InputParse {
+            message: format!("未知回执状态 {other:?}（sent/delivered/read/acted）"),
+        }),
+    }
 }
 
 fn main() {
@@ -197,6 +294,106 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                 "recovery": ledger.recover(),
             }))
         }
+        "claim" => {
+            let mut request: ClaimInput = parse(input)?;
+            let outcome = request.store.claim(
+                &request.owner,
+                &request.paths,
+                &request.intent,
+                request.now,
+                request.ttl,
+            )?;
+            Ok(json!({
+                "ok": true,
+                "store": request.store,
+                "outcome": outcome,
+            }))
+        }
+        "renew" => {
+            let mut request: RenewInput = parse(input)?;
+            let claim = request.store.renew(
+                &request.id,
+                &request.owner,
+                request.fencing,
+                request.now,
+                request.ttl,
+            )?;
+            Ok(json!({
+                "ok": true,
+                "store": request.store,
+                "claim": claim,
+            }))
+        }
+        "release" => {
+            let mut request: ReleaseInput = parse(input)?;
+            let claim = request
+                .store
+                .release(&request.id, &request.owner, request.fencing)?;
+            Ok(json!({
+                "ok": true,
+                "store": request.store,
+                "claim": claim,
+            }))
+        }
+        "claim-gate" => {
+            let request: ClaimGateInput = parse(input)?;
+            let gate = request
+                .store
+                .gate(&request.paths, &request.owner, request.now)?;
+            Ok(json!({
+                "ok": true,
+                "gate": format!("{gate:?}"),
+            }))
+        }
+        "receipt" => {
+            let mut request: ReceiptInput = parse(input)?;
+            let receipt = match request.action.as_str() {
+                "record" => request.ledger.record(&request.id, &request.key)?,
+                "advance" => {
+                    let state = parse_receipt_state(request.state.as_deref().unwrap_or(""))?;
+                    request.ledger.advance(&request.key, state)?
+                }
+                "reject" => {
+                    let reason = request.reason.as_deref().unwrap_or("");
+                    request.ledger.reject(&request.key, reason)?
+                }
+                "expire" => request.ledger.expire(&request.key)?,
+                other => {
+                    return Err(trit_orch::Error::InputParse {
+                        message: format!(
+                            "未知 receipt action {other:?}（record/advance/reject/expire）"
+                        ),
+                    });
+                }
+            };
+            Ok(json!({
+                "ok": true,
+                "ledger": request.ledger,
+                "receipt": receipt,
+            }))
+        }
+        "handoff-gate" => {
+            let request: HandoffGateInput = parse(input)?;
+            let gate = handoff_gate(&request.packet, &request.receiver_state_hash, request.now);
+            Ok(json!({
+                "ok": true,
+                "gate": format!("{gate:?}"),
+            }))
+        }
+        "admit-with-claim" => {
+            let request: AdmitWithClaimInput = parse(input)?;
+            let gate = admit_with_claim(
+                parse_ternary(&request.dependencies)?,
+                parse_ternary(&request.authorization)?,
+                parse_ternary(&request.resources)?,
+                parse_ternary(&request.freshness)?,
+                parse_ternary(&request.claim)?,
+            );
+            Ok(json!({
+                "ok": true,
+                "gate": format!("{gate:?}"),
+            }))
+        }
         "compact-gate" => {
             let facts: ContextFacts = parse(input)?;
             Ok(json!({
@@ -206,7 +403,7 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
         }
         other => Err(trit_orch::Error::InputParse {
             message: format!(
-                "未知子命令 {other:?}（可用：plan/select/dispatch/finish/recover/shadow/shadow-jsonl/compact-gate）"
+                "未知子命令 {other:?}（可用：plan/select/dispatch/finish/recover/shadow/shadow-jsonl/compact-gate/claim/renew/release/claim-gate/receipt/handoff-gate/admit-with-claim）"
             ),
         }),
     }
