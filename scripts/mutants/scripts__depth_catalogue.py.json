@@ -1,0 +1,20 @@
+[
+  {
+    "name": "catalogue: 晋级标记反向",
+    "file": "scripts/depth_catalogue.py",
+    "old": "    return \"✓\" if pathlib.Path(model_path).resolve() in promoted else \"—\"",
+    "new": "    return \"✓\" if pathlib.Path(model_path).resolve() not in promoted else \"—\"",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "catalogue: 配置列退化成全打印",
+    "file": "scripts/depth_catalogue.py",
+    "old": "        if v not in (None, 0, 1) or k == \"lr\":",
+    "new": "        if True:",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  }
+]
