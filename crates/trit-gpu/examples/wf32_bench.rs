@@ -61,25 +61,63 @@ fn main() {
         let (ap, an) = pack_rows(&a, k);
 
         let _ = gpu.run(m, n, k, &ap, &an, &b);
+        let _ = gpu.run_reg4(m, n, k, &ap, &an, &b);
+        if m >= 16 && n >= 16 {
+            let _ = gpu.run_tiled(m, n, k, &ap, &an, &b);
+        }
         let t0 = Instant::now();
         let reps = 10;
         let mut sink = 0f32;
         for _ in 0..reps {
             sink += gpu.run(m, n, k, &ap, &an, &b)[0];
         }
-        let gpu_ms = t0.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+        let old_ms = t0.elapsed().as_secs_f64() * 1000.0 / reps as f64;
+
+        let new_ms = if n >= 4 {
+            let mut reg4_sink = 0f32;
+            let t = Instant::now();
+            for _ in 0..reps {
+                reg4_sink += gpu.run_reg4(m, n, k, &ap, &an, &b)[0];
+            }
+            sink += reg4_sink;
+            Some(t.elapsed().as_secs_f64() * 1000.0 / reps as f64)
+        } else {
+            None
+        };
+
+        let tiled_ms = if m >= 16 && n >= 16 {
+            let mut tiled_sink = 0f32;
+            let t = Instant::now();
+            for _ in 0..reps {
+                tiled_sink += gpu.run_tiled(m, n, k, &ap, &an, &b)[0];
+            }
+            sink += tiled_sink;
+            Some(t.elapsed().as_secs_f64() * 1000.0 / reps as f64)
+        } else {
+            None
+        };
 
         let t1 = Instant::now();
         let csink = cpu_wf32(m, n, k, &a, &b);
         let cpu_ms = t1.elapsed().as_secs_f64() * 1000.0;
 
         let macs = (m * n * k) as f64;
-        println!(
-            "{name}: GPU {gpu_ms:.3} ms ({:.2} G ns/MAC) | CPU {cpu_ms:.1} ms | {:.2}x | sink {:.3}/{:.3}",
-            gpu_ms * 1e6 / macs,
-            cpu_ms / gpu_ms,
-            sink,
-            csink
-        );
+        let old_ps = old_ms * 1e9 / macs;
+        println!("{name}: CPU {cpu_ms:.1} ms | sink {sink:.3}/{csink:.3}");
+        println!("  old   {old_ms:.3} ms ({old_ps:.1} ps/MAC)");
+        if let Some(ms) = new_ms {
+            println!(
+                "  reg4  {ms:.3} ms ({:.1} ps/MAC)  speedup {:.2}x",
+                ms * 1e9 / macs,
+                old_ms / ms
+            );
+        }
+        if let Some(ms) = tiled_ms {
+            println!(
+                "  tiled {ms:.3} ms ({:.1} ps/MAC)  speedup {:.2}x",
+                ms * 1e9 / macs,
+                old_ms / ms
+            );
+        }
     }
 }

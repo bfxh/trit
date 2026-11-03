@@ -9,11 +9,23 @@ use crate::bench::{storage, storage_with, uniform};
 
 pub const WORKGROUP: u32 = 64;
 
+struct Wf32Run<'a> {
+    grid: (u32, u32, u32),
+    m: usize,
+    n: usize,
+    k: usize,
+    a_pos: &'a [u32],
+    a_neg: &'a [u32],
+    b: &'a [f32],
+}
+
 /// 复用 device / pipeline 的 WF32 执行器；每次 `run` 只建数据缓冲。
 pub struct Wf32Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
     pipeline: wgpu::ComputePipeline,
+    pipeline_reg4: wgpu::ComputePipeline,
+    pipeline_tiled: wgpu::ComputePipeline,
     layout: wgpu::BindGroupLayout,
 }
 
@@ -59,10 +71,36 @@ impl Wf32Gpu {
             compilation_options: Default::default(),
             cache: None,
         });
+        let shader_reg4 = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("matmul-wf32-reg4"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("matmul_wf32_reg4.wgsl").into()),
+        });
+        let pipeline_reg4 = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("matmul-wf32-reg4"),
+            layout: Some(&pipeline_layout),
+            module: &shader_reg4,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
+        let shader_tiled = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: Some("matmul-wf32-tiled"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("matmul_wf32_tiled.wgsl").into()),
+        });
+        let pipeline_tiled = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("matmul-wf32-tiled"),
+            layout: Some(&pipeline_layout),
+            module: &shader_tiled,
+            entry_point: Some("main"),
+            compilation_options: Default::default(),
+            cache: None,
+        });
         Some(Self {
             device,
             queue,
             pipeline,
+            pipeline_reg4,
+            pipeline_tiled,
             layout,
         })
     }
@@ -72,15 +110,16 @@ impl Wf32Gpu {
     /// - `a_pos/a_neg`：`m` 行 × `words` 字（`words = ceil(k/32)`）；
     /// - `b`：`n` 列 × `words*32` 个 f32（每列补齐，列主序）；
     /// - 返回 `m × n` 行主序 f32。
-    pub fn run(
-        &self,
-        m: usize,
-        n: usize,
-        k: usize,
-        a_pos: &[u32],
-        a_neg: &[u32],
-        b: &[f32],
-    ) -> Vec<f32> {
+    fn run_with(&self, pipeline: &wgpu::ComputePipeline, run: Wf32Run<'_>) -> Vec<f32> {
+        let Wf32Run {
+            grid,
+            m,
+            n,
+            k,
+            a_pos,
+            a_neg,
+            b,
+        } = run;
         let words = k.div_ceil(32);
         assert_eq!(a_pos.len(), m * words, "a_pos 长度");
         assert_eq!(a_neg.len(), m * words, "a_neg 长度");
@@ -147,15 +186,14 @@ impl Wf32Gpu {
             ],
         });
 
-        let grid = ((m * n) as u32).div_ceil(WORKGROUP);
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            pass.set_pipeline(&self.pipeline);
+            pass.set_pipeline(pipeline);
             pass.set_bind_group(0, &bind, &[]);
-            pass.dispatch_workgroups(grid, 1, 1);
+            pass.dispatch_workgroups(grid.0, grid.1, grid.2);
         }
         self.queue.submit([encoder.finish()]);
 
@@ -180,6 +218,100 @@ impl Wf32Gpu {
             .map(|c| f32::from_le_bytes(*c))
             .collect()
     }
+
+    /// 原始内核：一线程一输出（保留为 A/B 基线）。
+    pub fn run(
+        &self,
+        m: usize,
+        n: usize,
+        k: usize,
+        a_pos: &[u32],
+        a_neg: &[u32],
+        b: &[f32],
+    ) -> Vec<f32> {
+        self.run_with(
+            &self.pipeline,
+            Wf32Run {
+                grid: (((m * n) as u32).div_ceil(WORKGROUP), 1, 1),
+                m,
+                n,
+                k,
+                a_pos,
+                a_neg,
+                b,
+            },
+        )
+    }
+
+    /// 四列阻塞：每个 k word 的 A 位只取一次，B 用 vec4 装载。
+    pub fn run_reg4(
+        &self,
+        m: usize,
+        n: usize,
+        k: usize,
+        a_pos: &[u32],
+        a_neg: &[u32],
+        b: &[f32],
+    ) -> Vec<f32> {
+        let groups = (n as u32).div_ceil(4);
+        let total = (m as u32) * groups;
+        self.run_with(
+            &self.pipeline_reg4,
+            Wf32Run {
+                grid: (total.div_ceil(WORKGROUP), 1, 1),
+                m,
+                n,
+                k,
+                a_pos,
+                a_neg,
+                b,
+            },
+        )
+    }
+
+    /// 16×16 共享内存 tile：B 在 workgroup 内被 16 行复用。
+    pub fn run_tiled(
+        &self,
+        m: usize,
+        n: usize,
+        k: usize,
+        a_pos: &[u32],
+        a_neg: &[u32],
+        b: &[f32],
+    ) -> Vec<f32> {
+        let grid = ((n as u32).div_ceil(16), (m as u32).div_ceil(16), 1);
+        self.run_with(
+            &self.pipeline_tiled,
+            Wf32Run {
+                grid,
+                m,
+                n,
+                k,
+                a_pos,
+                a_neg,
+                b,
+            },
+        )
+    }
+
+    /// 自动选核：m,n 都够大走 tiled；否则 n>=4 走四列；再否则标量。
+    pub fn run_auto(
+        &self,
+        m: usize,
+        n: usize,
+        k: usize,
+        a_pos: &[u32],
+        a_neg: &[u32],
+        b: &[f32],
+    ) -> Vec<f32> {
+        if m >= 16 && n >= 16 {
+            self.run_tiled(m, n, k, a_pos, a_neg, b)
+        } else if n >= 4 {
+            self.run_reg4(m, n, k, a_pos, a_neg, b)
+        } else {
+            self.run(m, n, k, a_pos, a_neg, b)
+        }
+    }
 }
 
 /// 便捷入口：每次新建执行器（基准请复用 [`Wf32Gpu`]）。
@@ -191,7 +323,7 @@ pub fn matmul_wf32(
     a_neg: &[u32],
     b: &[f32],
 ) -> Option<Vec<f32>> {
-    Some(Wf32Gpu::new()?.run(m, n, k, a_pos, a_neg, b))
+    Some(Wf32Gpu::new()?.run_auto(m, n, k, a_pos, a_neg, b))
 }
 
 #[cfg(test)]
@@ -239,6 +371,42 @@ mod tests {
                     (got - want).abs() < 1e-4,
                     "r={r} c={c} got={got} want={want}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn gpu_wf32_reg4_matches_cpu_and_scalar() {
+        let Some(gpu) = Wf32Gpu::new() else {
+            eprintln!("无 GPU adapter，跳过");
+            return;
+        };
+        for (m, n, k) in [(7usize, 9usize, 100usize), (5, 8, 37), (4, 64, 100)] {
+            let words = k.div_ceil(32);
+            let a: Vec<i32> = (0..m * k).map(|i| ((i * 7 + 1) % 3) as i32 - 1).collect();
+            let b: Vec<f32> = (0..n * words * 32)
+                .map(|i| ((i * 13 % 17) as f32) / 17.0)
+                .collect();
+            let (a_pos, a_neg) = pack_rows(&a, k);
+            let old = gpu.run(m, n, k, &a_pos, &a_neg, &b);
+            let new = gpu.run_reg4(m, n, k, &a_pos, &a_neg, &b);
+            let tiled = gpu.run_tiled(m, n, k, &a_pos, &a_neg, &b);
+            assert_eq!(old.len(), m * n);
+            assert_eq!(new.len(), m * n);
+            assert_eq!(tiled.len(), m * n);
+            for r in 0..m {
+                for c in 0..n {
+                    let mut want = 0f32;
+                    for kk in 0..k {
+                        want += a[r * k + kk] as f32 * b[c * words * 32 + kk];
+                    }
+                    let o = old[r * n + c];
+                    let v = new[r * n + c];
+                    let t = tiled[r * n + c];
+                    assert!((o - want).abs() < 1e-4, "old r={r} c={c} {o} != {want}");
+                    assert!((v - want).abs() < 1e-4, "reg4 r={r} c={c} {v} != {want}");
+                    assert!((t - want).abs() < 1e-4, "tiled r={r} c={c} {t} != {want}");
+                }
             }
         }
     }
