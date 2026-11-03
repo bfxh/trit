@@ -45,6 +45,24 @@
   "runner": "python"
  },
  {
+  "name": "gitflow: bucket 不合口径也不再算问题（合并门变成摆设）",
+  "file": "scripts/gitflow.py",
+  "old": "if state not in CHECK_STATES_OK:",
+  "new": "if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: checks 还没注册时不再当竞态（把 push 后的空窗当成失败）",
+  "file": "scripts/gitflow.py",
+  "old": "if checks_not_yet(body):",
+  "new": "if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
   "name": "gitflow: enforce_admins 送 GET 的原对象而不是布尔",
   "file": "scripts/gitflow.py",
   "old": "        \"enforce_admins\": bool((rule.get(\"enforce_admins\") or {}).get(\"enabled\", False)),",
@@ -58,6 +76,15 @@
   "file": "scripts/gitflow.py",
   "old": "            if len(conclusions) > 1:",
   "new": "            if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: gh 失败且无输出时不再报原因（拿空 stdout 去解析）",
+  "file": "scripts/gitflow.py",
+  "old": "if result.returncode != 0 and not body:",
+  "new": "if False:",
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
@@ -216,6 +243,15 @@
   "runner": "python"
  },
  {
+  "name": "gitflow: 名字列为空的行不再点名成无名检查（悄悄放行）",
+  "file": "scripts/gitflow.py",
+  "old": "name = (row.get(\"name\") or \"\").strip() or \"(无名检查)\"",
+  "new": "name = (row.get(\"name\") or \"\").strip()",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
   "name": "gitflow: 复核不点名多出来的检查",
   "file": "scripts/gitflow.py",
   "old": "    problems += [f\"多 {context}\" for context in sorted(set(got) - set(wanted))]",
@@ -243,6 +279,15 @@
   "runner": "python"
  },
  {
+  "name": "gitflow: 把 skipping 也判成未通过（非必需 job 没跑卡死合并）",
+  "file": "scripts/gitflow.py",
+  "old": "CHECK_STATES_OK = {\"pass\", \"skipping\"}",
+  "new": "CHECK_STATES_OK = {\"pass\"}",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
   "name": "gitflow: 拦路清单不点名具体 PR",
   "file": "scripts/gitflow.py",
   "old": "        if gaps:\n            blockers.append(",
@@ -265,6 +310,24 @@
   "file": "scripts/gitflow.py",
   "old": "    if added and not force:",
   "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 有 pending 也照样合（把没跑完的检查当绿）",
+  "file": "scripts/gitflow.py",
+  "old": "if any((row.get(\"bucket\") or \"\").strip().lower() in CHECK_STATES_PENDING for row in rows):",
+  "new": "if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 有未通过的检查也继续合并",
+  "file": "scripts/gitflow.py",
+  "old": "if problems:\n        return \"refuse\", problems",
+  "new": "if False:\n        return \"refuse\", problems",
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
@@ -306,10 +369,28 @@
   "runner": "python"
  },
  {
+  "name": "gitflow: 空 bucket 不再当未知状态（立刻放行）",
+  "file": "scripts/gitflow.py",
+  "old": "CHECK_STATES_PENDING = {\"pending\", \"running\", \"queued\", \"\"}",
+  "new": "CHECK_STATES_PENDING = {\"pending\", \"running\", \"queued\"}",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
   "name": "gitflow: 空文件列表也放行",
   "file": "scripts/gitflow.py",
   "old": "    if not files:\n        problems.append(",
   "new": "    if False:\n        problems.append(",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 竞态（none）不再走等待分支（空清单被当成通过）",
+  "file": "scripts/gitflow.py",
+  "old": "if state == \"none\":",
+  "new": "if False:",
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
@@ -342,10 +423,37 @@
   "runner": "python"
  },
  {
+  "name": "gitflow: 读不到清单也允许合并（读不到等于通过）",
+  "file": "scripts/gitflow.py",
+  "old": "if not rows:",
+  "new": "if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
   "name": "gitflow: 读空的必需清单也往保护上推（等于自己撤保护）",
   "file": "scripts/gitflow.py",
   "old": "    if not wanted:",
   "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 输出不是 JSON 时静默返回空清单（读不懂当成没检查）",
+  "file": "scripts/gitflow.py",
+  "old": "return [], \"checks 输出不是 JSON（形状不认识）：\" + body[:120]",
+  "new": "return [], \"\"",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 返回对象而不是数组也照样往下走",
+  "file": "scripts/gitflow.py",
+  "old": "if not isinstance(rows, list):",
+  "new": "if False:",
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
@@ -391,6 +499,177 @@
   "file": "scripts/gitflow.py",
   "old": "    if lines and OID_RE.fullmatch(lines[0].strip()) and modern_rc in (0, 1):",
   "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: remote_heads 失败时也收脏输出（判红变成假清单）",
+  "file": "scripts/gitflow.py",
+  "old": "    if result.returncode != 0:\n        return names",
+  "new": "    if False:\n        return names",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: origin/ 前缀不剥（远端分支名全对不上）",
+  "file": "scripts/gitflow.py",
+  "old": "        if name.startswith(\"origin/\"):",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: origin/HEAD 也当成分支（主干识别被脏数据带偏）",
+  "file": "scripts/gitflow.py",
+  "old": "        if name and name != \"HEAD\":",
+  "new": "        if name:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 主干写死 main（master 仓里全错）",
+  "file": "scripts/gitflow.py",
+  "old": "    return \"main\" if \"main\" in live else \"master\"",
+  "new": "    return \"main\"",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: base 还在也当孤儿（正常叠栈被乱改）",
+  "file": "scripts/gitflow.py",
+  "old": "        if base in live:\n            continue",
+  "new": "        if False:\n            continue",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 主干上的 PR 也当孤儿",
+  "file": "scripts/gitflow.py",
+  "old": "        if not base or base in PROTECTED or base == trunk:",
+  "new": "        if not base or base == trunk:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 修复计划里 base 改成 head 自己",
+  "file": "scripts/gitflow.py",
+  "old": "        plan.append([\"gh\", \"pr\", \"edit\", number, \"--base\", item[\"trunk\"]])",
+  "new": "        plan.append([\"gh\", \"pr\", \"edit\", number, \"--base\", item[\"head\"]])",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 先同步再改 base（白跑一轮 CI）",
+  "file": "scripts/gitflow.py",
+  "old": "        plan.append([\"gh\", \"pr\", \"edit\", number, \"--base\", item[\"trunk\"]])\n        plan.append([sys.executable, \"scripts/gitflow.py\", \"pr\", \"sync\", number, \"--apply\"])",
+  "new": "        plan.append([sys.executable, \"scripts/gitflow.py\", \"pr\", \"sync\", number, \"--apply\"])\n        plan.append([\"gh\", \"pr\", \"edit\", number, \"--base\", item[\"trunk\"]])",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 同步主干少了 --apply（修了个寂寞）",
+  "file": "scripts/gitflow.py",
+  "old": "        plan.append([sys.executable, \"scripts/gitflow.py\", \"pr\", \"sync\", number, \"--apply\"])",
+  "new": "        plan.append([sys.executable, \"scripts/gitflow.py\", \"pr\", \"sync\", number])",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 没孤儿也走修复（印一堆『发现 0 个』）",
+  "file": "scripts/gitflow.py",
+  "old": "    if not orphans:\n        return 0",
+  "new": "    if False:\n        return 0",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: dry-run 也发命令（没让确认就动远端）",
+  "file": "scripts/gitflow.py",
+  "old": "        if not apply_changes:",
+  "new": "        if apply_changes:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 修复步骤失败继续往下走（rc=1 当成功）",
+  "file": "scripts/gitflow.py",
+  "old": "        if made.returncode != 0:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 读不到远端分支不再判红（分不清被删还是断网）",
+  "file": "scripts/gitflow.py",
+  "old": "    if not live:",
+  "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 不拿 open PR 的 head 补 live（叠栈的正常 base 被误判孤儿）",
+  "file": "scripts/gitflow.py",
+  "old": "    live |= {pr.get(\"headRefName\", \"\") for pr in prs}",
+  "new": "    live |= set()",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 检测到孤儿也不处理（这坑明天还在）",
+  "file": "scripts/gitflow.py",
+  "old": "    if orphans:",
+  "new": "    if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 没给 --repair 也静默放行（孤儿 PR 继续卡死）",
+  "file": "scripts/gitflow.py",
+  "old": "        if not repair:",
+  "new": "        if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: --repair 不带 --apply 就直接执行（默认改远端）",
+  "file": "scripts/gitflow.py",
+  "old": "        code = repair_orphans(ROOT, orphans, repair and apply_changes)",
+  "new": "        code = repair_orphans(ROOT, orphans, True)",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: --repair 开关被吞（命令行失效）",
+  "file": "scripts/gitflow.py",
+  "old": "                     repair=\"--repair\" in argv, apply_changes=\"--apply\" in argv)",
+  "new": "                     repair=False, apply_changes=\"--apply\" in argv)",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: --no-remote 被吞（离线也用不了）",
+  "file": "scripts/gitflow.py",
+  "old": "        return stack(repo, remote_state=\"--no-remote\" not in argv,",
+  "new": "        return stack(repo, remote_state=True,",
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
