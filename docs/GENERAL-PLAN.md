@@ -2856,3 +2856,33 @@ K 个样本拼进一次 dispatch；每块 17 次 dispatch（3 前向 + 14 反向
 **另外两条实测口径**：
 - hidden 128 + `--accum 8` + lr 0.01 **会发散**（epoch1 MSE 19.5）；宽度上去后 lr 必须下调（0.002 稳定）。
 - 批次内核在 128 通道上与单图逐位一致：`--accum 1` 的 2 epoch MSE 1.1617 → 0.8727，与拼批前完全相同。
+
+### 6.102 结果族流水线（A1–A3）：清单 → 独立复核 → 目录（2026-11-03）
+
+仿 openai/math 的发布结构：每个结果都带**机器可读清单**和**独立复核**，目录自动生成，
+不靠日志口头对账。
+
+- **A1 清单**：`parts-depth-gpu cnn-train --out X.dcn` 自动写 `X.dcn.manifest.json`
+  （commit/是否 dirty、完整 argv、config、数据指纹（目录名 + 每帧文件名/大小 → SHA-256）、
+  训练/留出样本数、模型 SHA-256、最终 MSE）。训练侧零侵入：不改变任何数值。
+- **A2 独立复核**：`parts-depth-verify --dcn X.dcn --data <同一份列表> --holdout ... --size ...`
+  在**新进程**重读数据、重算模型/数据指纹、在留出集重跑评测；指纹与清单一致才写
+  `X.dcn.verify.json`（PASS），否则写 `.verify.reject.json` 并以 **rc=1** 退出。
+- **A3 目录**：`python scripts/depth_catalogue.py --dir runs/depth --out docs/DEPTH-RESULTS.md`
+  生成表格（配置 / 数据规模 / 训练 MSE / 复核读数 / 模型指纹 / 来源 commit / 时间）。
+
+**零依赖**：SHA-256 自己实现（`src/fingerprint.rs`，带 ""/"abc"/1000×'a' 三条标准向量，
+外加「文件哈希 = 内存哈希」测试）；不引 serde。`eval_holdout` / `data_fingerprint` 下沉到
+`depthdata`，CPU 训练、GPU 训练、复核器共用同一份评测与指纹代码。
+
+**实测（3 个 demo：h32/h64/h128 × 3 epoch）**：
+- 三个都 **PASS**（模型与数据指纹一致）；
+- 负例 1（`--data` 少一个场景）⇒ 数据指纹不一致，**rc=1**；
+- 负例 2（把模型里一个数字 0.5 改成 0.6）⇒ 模型指纹不一致，**rc=1**，落 `.verify.reject.json`。
+
+**已知边界**：数据指纹是「目录名 + 每帧文件名/大小」，抓不到「同尺寸同帧数但内容被替换」；
+需要时再上像素级哈希（代价按 GB 计）。`runs/` 是本地产物目录（`.gitignore` 里已忽略），
+目录快照 `docs/DEPTH-RESULTS.md` 会随仓库走，换机器重训后用同一条命令重建。
+
+**下一步（A4）**：多配置扫描器（一次跑 N 个 config、自动复核、自动进目录），
+以及把「族」从单目深度头扩到部件/纹理/提取。
