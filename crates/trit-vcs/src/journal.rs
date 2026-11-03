@@ -45,7 +45,13 @@ pub enum JournalError {
     },
 }
 
-fn event_hash(seq: u64, at_ms: u64, kind: &str, payload: &Value, prev: Option<&Hash>) -> Hash {
+pub(crate) fn event_hash(
+    seq: u64,
+    at_ms: u64,
+    kind: &str,
+    payload: &Value,
+    prev: Option<&Hash>,
+) -> Hash {
     let prev_hex = prev.map(|h| h.to_hex()).unwrap_or_else(|| "-".to_string());
     let body = format!(
         "{seq}\n{at_ms}\n{kind}\n{}\n{prev_hex}",
@@ -236,6 +242,43 @@ mod tests {
         text = text.replace("\"i\":0", "\"i\":1");
         fs::write(&path, text).unwrap();
         assert!(Journal::open(&path).is_err(), "坏链上不许继续追加");
+    }
+
+    /// 模拟"写坏的写入方"：prev 指错但把自己的 hash 算对了。
+    /// 哈希校验抓不到（hash 自洽），只有 prev 链接检查能抓——这条专钉那一段。
+    #[test]
+    fn wrong_prev_with_self_consistent_hash_is_caught() {
+        let path = temp("wrong-prev");
+        let first = Event {
+            seq: 0,
+            at_ms: 1,
+            kind: "commit".to_string(),
+            payload: json!({"i": 0}),
+            prev: None,
+            hash: event_hash(0, 1, "commit", &json!({"i": 0}), None),
+        };
+        let bogus_prev = Hash::of(b"somewhere-else");
+        let second = Event {
+            seq: 1,
+            at_ms: 2,
+            kind: "commit".to_string(),
+            payload: json!({"i": 1}),
+            prev: Some(bogus_prev),
+            hash: event_hash(1, 2, "commit", &json!({"i": 1}), Some(&bogus_prev)),
+        };
+        let body = format!(
+            "{}
+{}
+",
+            serde_json::to_string(&first).unwrap(),
+            serde_json::to_string(&second).unwrap()
+        );
+        fs::write(&path, body).unwrap();
+        assert!(matches!(
+            Journal::verify(&path),
+            Err(JournalError::WrongPrev { .. })
+        ));
+        let _ = fs::remove_dir_all(path.parent().unwrap());
     }
 
     #[test]

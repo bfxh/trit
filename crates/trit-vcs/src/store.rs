@@ -470,6 +470,58 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
+    /// 索引被改到"另一个合法块"上：zlib 能解、但内容哈希对不上 ⇒ 必须 Corrupt。
+    /// 这条专钉"读时不校验哈希"——只翻一个字节的话 zlib 自己就会报错，考验不出哈希校验。
+    #[test]
+    fn index_pointing_at_another_chunk_is_corrupt() {
+        let root = temp("misindex");
+        let store = Store::open(&root).unwrap();
+        let (a, _) = store.put_file(&realistic(5_000, 23)).unwrap();
+        let _ = store.put_file(&realistic(6_000, 29)).unwrap();
+        let a_chunk = store.file_map(&a).unwrap().chunks[0];
+        let other = {
+            let index = store.index.borrow();
+            index
+                .iter()
+                .find(|(hash, _)| **hash != a_chunk)
+                .map(|(hash, entry)| (*hash, *entry))
+                .unwrap()
+        };
+        // 把 a_chunk 的索引条目改指向另一个块的字节
+        let path = store.index_path();
+        let mut lines: Vec<String> = fs::read_to_string(&path)
+            .unwrap()
+            .lines()
+            .map(str::to_string)
+            .collect();
+        for line in lines.iter_mut() {
+            if let Ok((hex, entry)) = serde_json::from_str::<(String, PackEntry)>(line) {
+                if hex == a_chunk.to_hex() {
+                    let patched = PackEntry {
+                        offset: other.1.offset,
+                        len: other.1.len,
+                    };
+                    *line = serde_json::to_string(&(hex, patched)).unwrap();
+                }
+            }
+        }
+        fs::write(
+            &path,
+            lines.join(
+                "
+",
+            ) + "
+",
+        )
+        .unwrap();
+        let reopened = Store::open(&root).unwrap();
+        match reopened.get_chunk(&a_chunk) {
+            Err(StoreError::Corrupt { .. }) => {}
+            other_err => panic!("期望 Corrupt（索引指错块），得到 {other_err:?}"),
+        }
+        let _ = fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn truncated_pack_is_reported() {
         let root = temp("truncate");
@@ -478,7 +530,11 @@ mod tests {
         let pack = store.pack_path();
         let bytes = fs::read(&pack).unwrap();
         fs::write(&pack, &bytes[..bytes.len() / 2]).unwrap();
-        assert!(store.fsck().is_err(), "pack 被截断必须报");
+        let bad = store.fsck().unwrap_err();
+        assert!(
+            bad.iter().any(|line| line.contains("越界")),
+            "截断必须点名越界，而不是只报解压失败：{bad:?}"
+        );
         let _ = fs::remove_dir_all(&root);
     }
 

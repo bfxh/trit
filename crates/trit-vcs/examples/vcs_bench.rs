@@ -53,6 +53,101 @@ fn inject(entry: &mut Vec<u8>) {
     entry.extend_from_slice(&injected);
 }
 
+/// 场景 B：60 个文件共享同一个 100 KiB 大块（只有头部不同）。
+/// 这是块级去重该赢的形状：git 只对"整文件相同"做 blob 去重，共享块要靠 delta 猜。
+fn shared_block(files: usize, block: usize) -> BTreeMap<String, Vec<u8>> {
+    let mut state = 0x1234_5678_9abc_def0u64;
+    let mut common = Vec::with_capacity(block);
+    for _ in 0..block {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        common.push(b'a' + (state % 26) as u8);
+    }
+    let mut out = BTreeMap::new();
+    for f in 0..files {
+        let mut body = format!(
+            "// unique header {f}
+"
+        )
+        .into_bytes();
+        body.extend_from_slice(&common);
+        out.insert(format!("shared/file_{f:03}.rs"), body);
+    }
+    out
+}
+
+fn bench_shared_block() {
+    let files = 60usize;
+    let block = 100 * 1024usize;
+    let base = shared_block(files, block);
+    let payload: u64 = base.values().map(|v| v.len() as u64).sum();
+    let root: PathBuf =
+        std::env::temp_dir().join(format!("trit-vcs-bench-shared-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(&root).unwrap();
+
+    let repo_root = root.join("trit");
+    std::fs::create_dir_all(&repo_root).unwrap();
+    let mut repo = Repo::init(&repo_root).unwrap();
+    repo.stage(&base, 1_000).unwrap();
+    repo.commit(CommitRequest {
+        message: "shared".to_string(),
+        session: "qoder:bench".to_string(),
+        claims: vec![ClaimSpec {
+            id: "c1".to_string(),
+            owner: "qoder:bench".to_string(),
+            paths: vec!["shared".to_string()],
+            acquired_at: 1,
+            expires_at: u64::MAX / 2,
+        }],
+        now_secs: 1_000,
+        ..Default::default()
+    })
+    .unwrap();
+    let vcs_bytes = dir_bytes(&repo_root.join(".tritvcs").join("objects"));
+
+    let git_root = root.join("git");
+    std::fs::create_dir_all(&git_root).unwrap();
+    let git = |args: &[&str]| {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(&git_root)
+            .output()
+            .expect("git 不可用");
+        assert!(
+            out.status.success(),
+            "git {args:?}: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "bench@example.com"]);
+    git(&["config", "user.name", "bench"]);
+    for (path, body) in &base {
+        let target = git_root.join(path);
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        std::fs::write(&target, body).unwrap();
+    }
+    git(&["add", "-A"]);
+    git(&["commit", "-qm", "shared"]);
+    let git_bytes = dir_bytes(&git_root.join(".git"));
+
+    println!(
+        "场景 B（共享块）：{} 文件各带同一个 {} KiB 块，原始 {:.2} MiB",
+        files,
+        block / 1024,
+        payload as f64 / 1_048_576.0
+    );
+    println!(
+        "  trit-vcs {:.2} MiB ｜ git {:.2} MiB ｜ 体积比 {:.2}",
+        vcs_bytes as f64 / 1_048_576.0,
+        git_bytes as f64 / 1_048_576.0,
+        vcs_bytes as f64 / git_bytes.max(1) as f64
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 fn main() {
     let files = 60usize;
     let lines = 400usize;
@@ -147,4 +242,5 @@ fn main() {
         vcs_bytes as f64 / git_bytes.max(1) as f64
     );
     let _ = std::fs::remove_dir_all(&root);
+    bench_shared_block();
 }

@@ -32,7 +32,7 @@
  "crate/trit-texture": 98,
  "crate/trit-train": 8,
  "crate/trit-unsafe": 15,
- "crate/trit-vcs": 38,
+ "crate/trit-vcs": 40,
  "crate/trit-wasm": 5,
  "script/agent_claims.py": 1,
  "script/autoflow.py": 1,
