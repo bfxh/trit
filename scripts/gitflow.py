@@ -9,7 +9,8 @@
   python scripts/gitflow.py branch list|start <名>|sync|prune [--apply]|protect [--apply] [--dry-run]
   python scripts/gitflow.py worktree add|list|remove
   python scripts/gitflow.py pr triage|sync <n> [--dry-run]
-  python scripts/gitflow.py stack | diagnose --pr <n> | flaky | dco | queue | merge <n> [--wait-minutes N]
+  python scripts/gitflow.py stack [--repair [--apply]] | diagnose --pr <n> | flaky | dco | queue
+  python scripts/gitflow.py merge <n> [--wait-minutes N]
   python scripts/gitflow.py --self-test
 
 为什么不是"git add -A"：
@@ -520,7 +521,80 @@ def worktree_remove(path: str, force: bool) -> int:
     return 0
 
 
-def stack(repo: str, remote_state: bool) -> int:
+def remote_heads(root: pathlib.Path) -> set[str]:
+    """远端还在的分支名（去掉 `origin/` 前缀）。读不到就返回空集，由调用方判红。"""
+    result = git(["branch", "--remotes", "--format=%(refname:short)"], root)
+    names: set[str] = set()
+    if result.returncode != 0:
+        return names
+    for line in result.stdout.splitlines():
+        name = line.strip()
+        if name.startswith("origin/"):
+            name = name[len("origin/"):]
+        if name and name != "HEAD":
+            names.add(name)
+    return names
+
+
+def pick_trunk(live: set[str]) -> str:
+    return "main" if "main" in live else "master"
+
+
+def orphaned_bases(prs: list[dict], live: set[str], trunk: str) -> list[dict]:
+    """base 分支已经不存在的 PR —— squash 合并并删分支后，GitHub **不会**把叠在上面的 PR 改指主干。
+
+    这种 PR 的合并按钮永远不亮，而且 `mergeable` 要等我们手动 retarget 后才重算。
+    今天连撞三次（#221 / #222 / #224），所以做成"检测 + 保守修复"：
+    只把 base 改到主干、再把主干合进来——**不 force-push、不改写别人的分支**。
+    """
+    out: list[dict] = []
+    for pr in prs:
+        base = (pr.get("baseRefName") or "").strip()
+        head = (pr.get("headRefName") or "").strip()
+        if not base or base in PROTECTED or base == trunk:
+            continue
+        if base in live:
+            continue
+        out.append({"number": pr.get("number"), "base": base, "head": head, "trunk": trunk})
+    return out
+
+
+def repair_plan(orphans: list[dict]) -> list[list[str]]:
+    """修一个孤儿 PR 的命令序列：先改 base，再同步主干（顺序错了会白跑一轮 CI）。"""
+    plan: list[list[str]] = []
+    for item in orphans:
+        number = str(item["number"])
+        plan.append(["gh", "pr", "edit", number, "--base", item["trunk"]])
+        plan.append([sys.executable, "scripts/gitflow.py", "pr", "sync", number, "--apply"])
+    return plan
+
+
+def repair_orphans(root: pathlib.Path, orphans: list[dict], apply_changes: bool) -> int:
+    if not orphans:
+        return 0
+    verb = "执行" if apply_changes else "将要执行（dry-run；加 --apply 才动远端）"
+    print(f"发现 {len(orphans)} 个 base 已被删的 PR ⇒ {verb}")
+    for item in orphans:
+        print(f"    #{item['number']} base={item['base']}（远端已无此分支）→ 改指 {item['trunk']}")
+    for step in repair_plan(orphans):
+        if not apply_changes:
+            print("    $ " + " ".join(step))
+            continue
+        made = subprocess.run(step, cwd=str(root), stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True,
+                              encoding="utf-8", errors="replace")
+        text = (made.stdout or "").strip()
+        if made.returncode != 0:
+            print("    步骤失败（rc=" + str(made.returncode) + "）：" + " ".join(step))
+            for line in text.splitlines()[:6]:
+                print("      " + line)
+            return 1
+        print("    rc=0 " + " ".join(step))
+    return 0
+
+
+def stack(repo: str, remote_state: bool, repair: bool = False,
+          apply_changes: bool = False) -> int:
     if not remote_state:
         print("stack 需要 gh（去掉 --no-remote）")
         return 2
@@ -548,6 +622,19 @@ def stack(repo: str, remote_state: bool) -> int:
         print("警告：下列 PR 的 base 不是 main/master。按 base 过滤的 CI 可能零 check，合并前先确认：")
         for pr in off_trunk:
             print(f"    #{pr['number']} base={pr['baseRefName']}")
+    live = remote_heads(ROOT)
+    if not live:
+        print("读不到远端分支 ⇒ 判红（分不清「base 被删」还是「网络/权限问题」）")
+        return 1
+    live |= {pr.get("headRefName", "") for pr in prs}
+    trunk = pick_trunk(live)
+    orphans = orphaned_bases(prs, live, trunk)
+    if orphans:
+        code = repair_orphans(ROOT, orphans, repair and apply_changes)
+        if not repair:
+            print("提示：`gitflow stack --repair` 看修复步骤；`--repair --apply` 执行（只改 base + 同步主干，不 force-push）")
+            return 1
+        return code
     return 0
 
 
@@ -1417,6 +1504,106 @@ def status(repo: str) -> int:
     return 0
 
 
+def main(argv: list[str]) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if "--self-test" in argv:
+        return self_test()
+    command = argv[0] if argv else "status"
+    repo = argv[argv.index("--repo") + 1] if "--repo" in argv else detect_repo()
+    remote = argv[argv.index("--remote") + 1] if "--remote" in argv else detect_remote()
+    base = argv[argv.index("--base") + 1] if "--base" in argv else detect_base(remote)
+    if command == "status":
+        return status(repo)
+    files: list[str] = []
+    if "--files" in argv:
+        index = argv.index("--files") + 1
+        while index < len(argv) and not argv[index].startswith("--"):
+            files.append(argv[index])
+            index += 1
+    if command == "secret-scan":
+        hits = secret_scan(ROOT, files)
+        for line in hits:
+            print(f"命中：{line}")
+        return 1 if hits else 0
+    if command == "branch":
+        return branch_cmd(repo, argv[1:])
+    if command == "worktree":
+        sub = argv[1] if len(argv) > 1 else "list"
+        rest = [a for a in argv[2:] if not a.startswith("--")]
+        if sub == "list":
+            return worktree_list()
+        if sub == "add":
+            if not rest:
+                print("用法：gitflow.py worktree add <分支> [--path 目录] [--from main]")
+                return 2
+            base = argv[argv.index("--from") + 1] if "--from" in argv else detect_base(detect_remote())
+            path = argv[argv.index("--path") + 1] if "--path" in argv else ""
+            return worktree_add(rest[0], base, detect_remote(), path, "--dry-run" in argv)
+        if sub == "remove":
+            if not rest:
+                print("用法：gitflow.py worktree remove <目录> [--force]")
+                return 2
+            return worktree_remove(rest[0], "--force" in argv)
+        print(f"未知 worktree 子命令: {sub}（list / add / remove）")
+        return 2
+    if command == "stack":
+        return stack(repo, remote_state="--no-remote" not in argv,
+                     repair="--repair" in argv, apply_changes="--apply" in argv)
+    if command == "dco":
+        default_range = f"{detect_remote()}/{detect_base(detect_remote())}..HEAD"
+        return dco(argv[argv.index("--range") + 1] if "--range" in argv else default_range)
+    if command == "flaky":
+        limit = int(argv[argv.index("--limit") + 1]) if "--limit" in argv else 20
+        return flaky(repo, limit)
+    if command == "queue":
+        return queue_status(repo)
+    if command == "pr":
+        sub = argv[1] if len(argv) > 1 else "triage"
+        rest = [a for a in argv[2:] if not a.startswith("--")]
+        if sub == "triage":
+            stale_days = int(argv[argv.index("--stale-days") + 1]) if "--stale-days" in argv else 14
+            return pr_triage(repo, stale_days, "--json" in argv, "--apply" in argv)
+        if sub == "sync":
+            if not rest:
+                print("用法：gitflow.py pr sync <编号> [--dry-run]")
+                return 2
+            return pr_sync(repo, rest[0], dry_run="--dry-run" in argv)
+        print(f"未知 pr 子命令: {sub}（triage / sync）")
+        return 2
+    if command == "merge":
+        target = argv[argv.index("--branch") + 1] if "--branch" in argv else ""
+        if not target:
+            print("用法：gitflow.py merge --branch <分支> [--wait-minutes N]")
+            return 2
+        wait = int(argv[argv.index("--wait-minutes") + 1]) if "--wait-minutes" in argv else 30
+        return watch_and_merge(target, repo, attempts=max(1, wait * 2), pause=30)
+    if command == "diagnose":
+        pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
+        if not pr:
+            print("用法：gitflow.py diagnose --pr <编号>")
+            return 2
+        return diagnose(pr, repo)
+    if command == "publish":
+        args = {
+            "title": argv[argv.index("--title") + 1] if "--title" in argv else "",
+            "body_file": argv[argv.index("--body-file") + 1] if "--body-file" in argv else "",
+            "files": files,
+            "branch": argv[argv.index("--branch") + 1] if "--branch" in argv else "",
+            "base": base,
+            "remote": remote,
+            "repo": repo,
+            "no_merge": "--no-merge" in argv,
+            "dry_run": "--dry-run" in argv,
+        }
+        if not args["title"]:
+            print("publish 需要 --title")
+            return 2
+        return publish(args)
+    print(__doc__)
+    return 2
+
+
 def self_test() -> int:
     failures: list[str] = []
     total = [0]
@@ -1534,6 +1721,158 @@ def self_test() -> int:
               ("merge", []))
         check("merge_gate：失败就点名是谁",
               merge_gate([{"name": "CI", "bucket": "fail"}], ""), ("refuse", ["CI=fail"]))
+        # 叠栈 PR 的 base 被 squash 合并后删掉：GitHub 不会替我们改指主干（今天连撞三次）
+        prs_fixture = [
+            {"number": 221, "baseRefName": "feat/registry-split", "headRefName": "feat/flake-ledger"},
+            {"number": 220, "baseRefName": "main", "headRefName": "feat/registry-split"},
+            {"number": 300, "baseRefName": "feat/gone", "headRefName": "feat/gone"},
+        ]
+        live_fixture = {"main", "feat/flake-ledger"}
+        orphans = orphaned_bases(prs_fixture, live_fixture, "main")
+        check("只点名 base 已消失的那些", [item["number"] for item in orphans], [221, 300])
+        check("修复目标写的是主干", [item["trunk"] for item in orphans], ["main", "main"])
+        check("主干上的 PR 不算孤儿",
+              orphaned_bases([prs_fixture[1]], live_fixture, "main"), [])
+        check("master 也算保护分支（就算主干判成了 main、远端又没列出它）",
+              orphaned_bases([{"number": 9, "baseRefName": "master", "headRefName": "feat/x"}],
+                             {"main", "feat/x"}, "main"), [])
+        check("base 与 head 同名（自指）也算孤儿，但要能看清",
+              [item["number"] for item in orphaned_bases([prs_fixture[2]], live_fixture, "main")], [300])
+        check("base 还在远端（叠栈正常态）不算孤儿",
+              orphaned_bases([{"number": 11, "baseRefName": "feat/flake-ledger",
+                               "headRefName": "feat/top"}], live_fixture, "main"), [])
+        check("主干识别：有 main 用 main", pick_trunk({"main", "dev"}), "main")
+        check("主干识别：只有 master 用 master", pick_trunk({"master", "dev"}), "master")
+        steps = repair_plan(orphans)
+        check("修一个孤儿要两步（两个孤儿就四步）", len(steps), 4)
+        check("第一步必须先改 base（顺序错了会白跑一轮 CI）",
+              (steps[0][:4], steps[1][:4]),
+              (["gh", "pr", "edit", "221"], [sys.executable.split(chr(47))[-1], "scripts/gitflow.py", "pr", "sync"]))
+        check("没有孤儿时计划是空的（不拿空列表去执行）", repair_plan([]), [])
+        git_real = globals()["git"]
+        try:
+            globals()["git"] = lambda args, cwd=None: subprocess.CompletedProcess(
+                args, 0, "origin/main\norigin/HEAD\norigin/feat/x\n", "")
+            check("remote_heads 剥 origin/ 前缀、不收 HEAD",
+                  sorted(remote_heads(pathlib.Path("."))), ["feat/x", "main"])
+            globals()["git"] = lambda args, cwd=None: subprocess.CompletedProcess(
+                args, 1, "origin/main\n", "boom")
+            check("remote_heads：git 失败 ⇒ 空集（判红交给调用方，脏输出也不收）",
+                  remote_heads(pathlib.Path(".")), set())
+        finally:
+            globals()["git"] = git_real
+
+        _CP = subprocess.CompletedProcess
+
+        class _Runner:
+            PIPE = -1
+            STDOUT = -2
+
+            def __init__(self, codes):
+                self.codes = list(codes)
+                self.seen: list[list[str]] = []
+
+            def run(self, cmd, *args, **kwargs):
+                self.seen.append([str(part) for part in cmd])
+                code = self.codes.pop(0) if self.codes else 0
+                return _CP(cmd, code, "ok", "")
+
+        orphan = [{"number": 221, "base": "feat/gone", "head": "feat/x", "trunk": "main"}]
+        real_subprocess = globals()["subprocess"]
+        try:
+            dry = _Runner([0, 0])
+            globals()["subprocess"] = dry
+            check("dry-run 只出计划：一个 subprocess 都不发（发了就是动远端）",
+                  repair_orphans(pathlib.Path("."), orphan, False), 0)
+            check("dry-run 真的没发命令", dry.seen, [])
+            ran = _Runner([0, 0])
+            globals()["subprocess"] = ran
+            check("执行模式返回 0", repair_orphans(pathlib.Path("."), orphan, True), 0)
+            check("执行模式两步都发、先改 base 再同步主干（带 --apply）", ran.seen,
+                  [["gh", "pr", "edit", "221", "--base", "main"],
+                   [sys.executable, "scripts/gitflow.py", "pr", "sync", "221", "--apply"]])
+            boom = _Runner([1, 0])
+            globals()["subprocess"] = boom
+            check("第一步就失败 ⇒ 返回 1（不拿 rc=1 当成功）",
+                  repair_orphans(pathlib.Path("."), orphan, True), 1)
+            check("失败后立刻停，不跑第二步", len(boom.seen), 1)
+            idle = _Runner([0])
+            globals()["subprocess"] = idle
+            import io as _io
+            from contextlib import redirect_stdout as _redirect
+            out = _io.StringIO()
+            with _redirect(out):
+                empty = repair_orphans(pathlib.Path("."), [], True)
+            check("没有孤儿时一行都不印、也不发命令（不拿『发现 0 个』糊弄）",
+                  (empty, out.getvalue().strip(), idle.seen), (0, "", []))
+        finally:
+            globals()["subprocess"] = real_subprocess
+
+        remote_real = globals()["remote_heads"]
+        gh_real = globals()["gh"]
+        prs_on_trunk = json.dumps([{"number": 5, "title": "t", "headRefName": "feat/a",
+                                   "baseRefName": "main"}])
+        prs_orphan = json.dumps([{"number": 5, "title": "t", "headRefName": "feat/a",
+                                 "baseRefName": "feat/gone"}])
+        prs_stacked = json.dumps([{"number": 10, "title": "t", "headRefName": "feat/mid",
+                                   "baseRefName": "main"},
+                                  {"number": 11, "title": "t", "headRefName": "feat/top",
+                                   "baseRefName": "feat/mid"}])
+        try:
+            globals()["gh"] = lambda args: _CP(args, 0, prs_on_trunk, "")
+            globals()["remote_heads"] = lambda root: set()
+            check("stack：读不到远端分支 ⇒ 判红（分不清 base 被删还是网络问题）",
+                  stack("o/r", True), 1)
+            globals()["remote_heads"] = lambda root: {"main", "feat/a"}
+            check("stack：主干在、base 也在 ⇒ 不判红", stack("o/r", True), 0)
+            globals()["gh"] = lambda args: _CP(args, 0, prs_stacked, "")
+            globals()["remote_heads"] = lambda root: {"main"}
+            check("stack：base 是另一个开着的 PR 的分支 ⇒ 不算孤儿（head 在就算活）",
+                  stack("o/r", True), 0)
+            globals()["gh"] = lambda args: _CP(args, 0, prs_orphan, "")
+            globals()["remote_heads"] = lambda root: {"main", "feat/a"}
+            check("stack：有孤儿但没给 --repair ⇒ 判红", stack("o/r", True), 1)
+            plan_only = _Runner([0, 0])
+            globals()["subprocess"] = plan_only
+            check("stack：--repair 不带 --apply ⇒ 只出计划（返回 0）",
+                  stack("o/r", True, repair=True), 0)
+            check("stack：--repair 不带 --apply 时一条命令都不发（发就是动远端）",
+                  plan_only.seen, [])
+            go = _Runner([0, 0])
+            globals()["subprocess"] = go
+            check("stack：--repair --apply 才真的执行",
+                  stack("o/r", True, repair=True, apply_changes=True), 0)
+            check("stack：--repair --apply 第一步是改 base", go.seen[0],
+                  ["gh", "pr", "edit", "5", "--base", "main"])
+            stack_real = globals()["stack"]
+            wired: dict[str, object] = {}
+
+            def fake_stack(repo: str, remote_state: bool, repair: bool = False,
+                           apply_changes: bool = False) -> int:
+                wired.clear()
+                wired.update({"repo": repo, "remote": remote_state,
+                              "repair": repair, "apply": apply_changes})
+                return 0
+
+            globals()["stack"] = fake_stack
+            try:
+                check("main 把 --repair/--apply 接到 stack 上",
+                      main(["stack", "--repo", "o/r", "--repair", "--apply"]), 0)
+                check("命令行两个开关都传到（少一个就是 flag 被吞）",
+                      (wired["repair"], wired["apply"]), (True, True))
+                check("main：--no-remote 传到 remote_state=False",
+                      main(["stack", "--repo", "o/r", "--no-remote"]), 0)
+                check("--no-remote 时 remote_state 必须关掉", wired["remote"], False)
+                check("main：不给开关时 repair/apply 都是 False（默认只读）",
+                      (main(["stack", "--repo", "o/r"]), wired["repair"], wired["apply"]),
+                      (0, False, False))
+            finally:
+                globals()["stack"] = stack_real
+        finally:
+            globals()["gh"] = gh_real
+            globals()["remote_heads"] = remote_real
+            globals()["subprocess"] = real_subprocess
+
         real_gh = globals()["gh"]
         import subprocess as _sp
         try:
@@ -1694,105 +2033,6 @@ def self_test() -> int:
         return 1
     print(f"self-test: {total[0]}/{total[0]} passed")
     return 0
-
-
-def main(argv: list[str]) -> int:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    if "--self-test" in argv:
-        return self_test()
-    command = argv[0] if argv else "status"
-    repo = argv[argv.index("--repo") + 1] if "--repo" in argv else detect_repo()
-    remote = argv[argv.index("--remote") + 1] if "--remote" in argv else detect_remote()
-    base = argv[argv.index("--base") + 1] if "--base" in argv else detect_base(remote)
-    if command == "status":
-        return status(repo)
-    files: list[str] = []
-    if "--files" in argv:
-        index = argv.index("--files") + 1
-        while index < len(argv) and not argv[index].startswith("--"):
-            files.append(argv[index])
-            index += 1
-    if command == "secret-scan":
-        hits = secret_scan(ROOT, files)
-        for line in hits:
-            print(f"命中：{line}")
-        return 1 if hits else 0
-    if command == "branch":
-        return branch_cmd(repo, argv[1:])
-    if command == "worktree":
-        sub = argv[1] if len(argv) > 1 else "list"
-        rest = [a for a in argv[2:] if not a.startswith("--")]
-        if sub == "list":
-            return worktree_list()
-        if sub == "add":
-            if not rest:
-                print("用法：gitflow.py worktree add <分支> [--path 目录] [--from main]")
-                return 2
-            base = argv[argv.index("--from") + 1] if "--from" in argv else detect_base(detect_remote())
-            path = argv[argv.index("--path") + 1] if "--path" in argv else ""
-            return worktree_add(rest[0], base, detect_remote(), path, "--dry-run" in argv)
-        if sub == "remove":
-            if not rest:
-                print("用法：gitflow.py worktree remove <目录> [--force]")
-                return 2
-            return worktree_remove(rest[0], "--force" in argv)
-        print(f"未知 worktree 子命令: {sub}（list / add / remove）")
-        return 2
-    if command == "stack":
-        return stack(repo, remote_state="--no-remote" not in argv)
-    if command == "dco":
-        default_range = f"{detect_remote()}/{detect_base(detect_remote())}..HEAD"
-        return dco(argv[argv.index("--range") + 1] if "--range" in argv else default_range)
-    if command == "flaky":
-        limit = int(argv[argv.index("--limit") + 1]) if "--limit" in argv else 20
-        return flaky(repo, limit)
-    if command == "queue":
-        return queue_status(repo)
-    if command == "pr":
-        sub = argv[1] if len(argv) > 1 else "triage"
-        rest = [a for a in argv[2:] if not a.startswith("--")]
-        if sub == "triage":
-            stale_days = int(argv[argv.index("--stale-days") + 1]) if "--stale-days" in argv else 14
-            return pr_triage(repo, stale_days, "--json" in argv, "--apply" in argv)
-        if sub == "sync":
-            if not rest:
-                print("用法：gitflow.py pr sync <编号> [--dry-run]")
-                return 2
-            return pr_sync(repo, rest[0], dry_run="--dry-run" in argv)
-        print(f"未知 pr 子命令: {sub}（triage / sync）")
-        return 2
-    if command == "merge":
-        target = argv[argv.index("--branch") + 1] if "--branch" in argv else ""
-        if not target:
-            print("用法：gitflow.py merge --branch <分支> [--wait-minutes N]")
-            return 2
-        wait = int(argv[argv.index("--wait-minutes") + 1]) if "--wait-minutes" in argv else 30
-        return watch_and_merge(target, repo, attempts=max(1, wait * 2), pause=30)
-    if command == "diagnose":
-        pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
-        if not pr:
-            print("用法：gitflow.py diagnose --pr <编号>")
-            return 2
-        return diagnose(pr, repo)
-    if command == "publish":
-        args = {
-            "title": argv[argv.index("--title") + 1] if "--title" in argv else "",
-            "body_file": argv[argv.index("--body-file") + 1] if "--body-file" in argv else "",
-            "files": files,
-            "branch": argv[argv.index("--branch") + 1] if "--branch" in argv else "",
-            "base": base,
-            "remote": remote,
-            "repo": repo,
-            "no_merge": "--no-merge" in argv,
-            "dry_run": "--dry-run" in argv,
-        }
-        if not args["title"]:
-            print("publish 需要 --title")
-            return 2
-        return publish(args)
-    print(__doc__)
-    return 2
 
 
 if __name__ == "__main__":
