@@ -1,9 +1,14 @@
 //! 合成夹具：手工拼最小但结构完整的 PE32+ / ELF64。
 //!
 //! 不依赖任何样本文件，偏移量在注释里写死，方便逐字段对账。
-//! 每个测试目标只用到一部分构造函数，故整模块放行 dead_code。
+//! 每个测试目标只用到一部分构造函数，故整模块放行 dead_code；
+//! `pub use` 的跨文件再导出同理——没用到那只夹具的测试目标会报 unused_imports，
+//! 而 `-D warnings` 会把它们判红（门脚本自己不算错误）。
+#![allow(dead_code, unused_imports)]
 
-#![allow(dead_code)]
+mod pe_builders;
+
+pub use pe_builders::pe32_with_symbols;
 
 pub fn put_u16(buf: &mut [u8], off: usize, value: u16) {
     buf[off..off + 2].copy_from_slice(&value.to_le_bytes());
