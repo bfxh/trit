@@ -3,30 +3,21 @@
 //! 与 [`crate::matmul`] 的「三值 × 三值」不同：B 是 f32 激活，A 仍是双导轨三值权重。
 //! 用途是一步生成器的 conv：im2col 后的补丁是 f32，权重是三值。
 
-use wgpu::util::DeviceExt;
-
 use crate::bench::{storage, storage_with, uniform};
+use crate::matmul_wf32_plan::{Wf32Kernel, Wf32Plan};
 
 pub const WORKGROUP: u32 = 64;
 
-struct Wf32Run<'a> {
-    grid: (u32, u32, u32),
-    m: usize,
-    n: usize,
-    k: usize,
-    a_pos: &'a [u32],
-    a_neg: &'a [u32],
-    b: &'a [f32],
-}
-
 /// 复用 device / pipeline 的 WF32 执行器；每次 `run` 只建数据缓冲。
+///
+/// 同形状反复推理请改用 [`Wf32Plan`]：缓冲常驻显存，还能多层的合进一个 submit。
 pub struct Wf32Gpu {
-    device: wgpu::Device,
-    queue: wgpu::Queue,
-    pipeline: wgpu::ComputePipeline,
-    pipeline_reg4: wgpu::ComputePipeline,
-    pipeline_tiled: wgpu::ComputePipeline,
-    layout: wgpu::BindGroupLayout,
+    pub(crate) device: wgpu::Device,
+    pub(crate) queue: wgpu::Queue,
+    pub(crate) pipeline: wgpu::ComputePipeline,
+    pub(crate) pipeline_reg4: wgpu::ComputePipeline,
+    pub(crate) pipeline_tiled: wgpu::ComputePipeline,
+    pub(crate) layout: wgpu::BindGroupLayout,
 }
 
 impl Wf32Gpu {
@@ -110,113 +101,18 @@ impl Wf32Gpu {
     /// - `a_pos/a_neg`：`m` 行 × `words` 字（`words = ceil(k/32)`）；
     /// - `b`：`n` 列 × `words*32` 个 f32（每列补齐，列主序）；
     /// - 返回 `m × n` 行主序 f32。
-    fn run_with(&self, pipeline: &wgpu::ComputePipeline, run: Wf32Run<'_>) -> Vec<f32> {
-        let Wf32Run {
-            grid,
-            m,
-            n,
-            k,
-            a_pos,
-            a_neg,
-            b,
-        } = run;
-        let words = k.div_ceil(32);
-        assert_eq!(a_pos.len(), m * words, "a_pos 长度");
-        assert_eq!(a_neg.len(), m * words, "a_neg 长度");
-        assert_eq!(b.len(), n * words * 32, "b 长度（每列补齐到 words*32）");
-
-        let make_u32 = |data: &[u32]| {
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: None,
-                    contents: bytemuck::cast_slice(data),
-                    usage: wgpu::BufferUsages::STORAGE,
-                })
-        };
-        let make_f32 = |data: &[f32]| {
-            self.device
-                .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                    label: None,
-                    contents: bytemuck::cast_slice(data),
-                    usage: wgpu::BufferUsages::STORAGE,
-                })
-        };
-        let a_pos_buf = make_u32(a_pos);
-        let a_neg_buf = make_u32(a_neg);
-        let b_buf = make_f32(b);
-        let out = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: (m * n * 4) as u64,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-
-        let params: [u32; 4] = [m as u32, n as u32, k as u32, words as u32];
-        let params_buf = self
-            .device
-            .create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: None,
-                contents: bytemuck::cast_slice(&params),
-                usage: wgpu::BufferUsages::UNIFORM,
-            });
-        let bind = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &self.layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: a_pos_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: a_neg_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 2,
-                    resource: b_buf.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 3,
-                    resource: out.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 4,
-                    resource: params_buf.as_entire_binding(),
-                },
-            ],
-        });
-
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-            pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, &bind, &[]);
-            pass.dispatch_workgroups(grid.0, grid.1, grid.2);
-        }
-        self.queue.submit([encoder.finish()]);
-
-        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: (m * n * 4) as u64,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut encoder = self
-            .device
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.copy_buffer_to_buffer(&out, 0, &staging, 0, (m * n * 4) as u64);
-        self.queue.submit([encoder.finish()]);
-        let slice = staging.slice(..);
-        slice.map_async(wgpu::MapMode::Read, |_| {});
-        let _ = self.device.poll(wgpu::PollType::wait_indefinitely());
-        let data = slice.get_mapped_range().expect("map").to_vec();
-        data.as_chunks::<4>()
-            .0
-            .iter()
-            .map(|c| f32::from_le_bytes(*c))
-            .collect()
+    ///
+    /// 下面的 `run*` 每次新建缓冲，适合一次性调用；同形状反复推理请建 [`Wf32Plan`]。
+    pub fn plan(
+        &self,
+        m: usize,
+        n: usize,
+        k: usize,
+        a_pos: &[u32],
+        a_neg: &[u32],
+        b: &[f32],
+    ) -> Wf32Plan<'_> {
+        Wf32Plan::new(self, m, n, k, a_pos, a_neg, b)
     }
 
     /// 原始内核：一线程一输出（保留为 A/B 基线）。
@@ -229,18 +125,8 @@ impl Wf32Gpu {
         a_neg: &[u32],
         b: &[f32],
     ) -> Vec<f32> {
-        self.run_with(
-            &self.pipeline,
-            Wf32Run {
-                grid: (((m * n) as u32).div_ceil(WORKGROUP), 1, 1),
-                m,
-                n,
-                k,
-                a_pos,
-                a_neg,
-                b,
-            },
-        )
+        self.plan(m, n, k, a_pos, a_neg, b)
+            .run(Some(Wf32Kernel::Scalar))
     }
 
     /// 四列阻塞：每个 k word 的 A 位只取一次，B 用 vec4 装载。
@@ -253,20 +139,8 @@ impl Wf32Gpu {
         a_neg: &[u32],
         b: &[f32],
     ) -> Vec<f32> {
-        let groups = (n as u32).div_ceil(4);
-        let total = (m as u32) * groups;
-        self.run_with(
-            &self.pipeline_reg4,
-            Wf32Run {
-                grid: (total.div_ceil(WORKGROUP), 1, 1),
-                m,
-                n,
-                k,
-                a_pos,
-                a_neg,
-                b,
-            },
-        )
+        self.plan(m, n, k, a_pos, a_neg, b)
+            .run(Some(Wf32Kernel::Reg4))
     }
 
     /// 16×16 共享内存 tile：B 在 workgroup 内被 16 行复用。
@@ -279,19 +153,8 @@ impl Wf32Gpu {
         a_neg: &[u32],
         b: &[f32],
     ) -> Vec<f32> {
-        let grid = ((n as u32).div_ceil(16), (m as u32).div_ceil(16), 1);
-        self.run_with(
-            &self.pipeline_tiled,
-            Wf32Run {
-                grid,
-                m,
-                n,
-                k,
-                a_pos,
-                a_neg,
-                b,
-            },
-        )
+        self.plan(m, n, k, a_pos, a_neg, b)
+            .run(Some(Wf32Kernel::Tiled))
     }
 
     /// 自动选核：m,n 都够大走 tiled；否则 n>=4 走四列；再否则标量。
@@ -304,13 +167,8 @@ impl Wf32Gpu {
         a_neg: &[u32],
         b: &[f32],
     ) -> Vec<f32> {
-        if m >= 16 && n >= 16 {
-            self.run_tiled(m, n, k, a_pos, a_neg, b)
-        } else if n >= 4 {
-            self.run_reg4(m, n, k, a_pos, a_neg, b)
-        } else {
-            self.run(m, n, k, a_pos, a_neg, b)
-        }
+        let kernel = Wf32Kernel::pick(m, n);
+        self.plan(m, n, k, a_pos, a_neg, b).run(Some(kernel))
     }
 }
 
