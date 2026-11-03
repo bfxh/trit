@@ -16,5 +16,14 @@
     "pkg": "scripts/depth_catalogue.py",
     "filter": "",
     "runner": "python"
+  },
+  {
+    "name": "family: live/registered 判反",
+    "file": "scripts/depth_catalogue.py",
+    "old": "    if st == \"live\":",
+    "new": "    if st != \"live\":",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
   }
 ]
