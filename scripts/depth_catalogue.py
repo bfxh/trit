@@ -270,6 +270,98 @@ def texture_doc(root):
     return out
 
 
+def extract_rows(root):
+    """(清单, 清单文件, 复核记录或 None, 复核是否锚在这份清单+模型上)。"""
+    rows = []
+    for mf in sorted(root.rglob("*.manifest.json")) if root.exists() else []:
+        m = load(mf)
+        if not m or m.get("kind") != "extract-occupancy":
+            continue
+        vp = verify_sibling(m, mf)
+        v = load(vp) if vp and vp.exists() else None
+        import hashlib
+
+        sha = hashlib.sha256(mf.read_bytes()).hexdigest()
+        same = (
+            bool(v)
+            and (v.get("manifest") or {}).get("sha256") == sha
+            and (v.get("model") or {}).get("sha256") == (m.get("model") or {}).get("sha256")
+        )
+        rows.append((m, v, same))
+    rows.sort(key=lambda r: r[0].get("created_unix", 0), reverse=True)
+    return rows
+
+
+def extract_doc(root):
+    rows = extract_rows(root)
+    out = []
+    out.append("# 提取结果目录（自动生成）\n")
+    out.append(
+        "> 由 `scripts/depth_catalogue.py` 从 `runs/extract/*.manifest.json` 生成，**不要手改**。"
+        "本族只把 **N2 学习式占据补全**接线：清单记语料内容级 SHA-256、模型 SHA、1 cm 体素上的"
+        "体积 IoU 与网格闭合率；复核器 `parts-extract-verify` 用 `--load-model` 在新进程重跑同一评测，"
+        "IoU 差 >1e-4 或闭合数不同即判红。N1/N3–N7 仍只有文档读数，**不在本目录**。\n"
+    )
+    out.append("## 结果族：S1 提取（N2 占据补全）\n")
+    if not rows:
+        out.append("（还没有带清单的运行）\n")
+        return out
+    out.append(
+        "| 模型 | 配置 | 语料（场景/文件） | 体积 IoU（均值 / 最低） | 闭合 | 非流形边（债） | 指纹（模型前 12） | 来源 | 时间 |"
+    )
+    out.append("|---|---|---|---|---|---|---|---|---|")
+    for m, v, same in rows:
+        cfg = m.get("config", {})
+        cfg_s = (
+            f"cell {cfg.get('cell', '?')} m · {cfg.get('steps', '?')} 步 · "
+            f"{len(cfg.get('frames', []))} 视角"
+        )
+        d = m.get("data", {})
+        res = m.get("result", {})
+        iou = res.get("iou_mean")
+        rows_m = res.get("rows") or []
+        lowest = min((r.get("iou", 1.0) for r in rows_m), default=None)
+        iou_s = (
+            f"{iou:.4f} / {lowest:.4f}"
+            if isinstance(iou, (int, float)) and isinstance(lowest, (int, float))
+            else "?"
+        )
+        if same:
+            met = v.get("metrics", {})
+            check = f"✅ {met.get('closed', '?')}/{met.get('scenes', '?')}"
+        elif v:
+            check = "⚠️ 复核记录与清单不符"
+        else:
+            check = "未复核"
+        nmani = max((r.get("nonmanifold_edges", 0) for r in rows_m), default=0)
+        sha = str((m.get("model") or {}).get("sha256", ""))[:12]
+        commit = str(m.get("commit", "?")) + ("+dirty" if m.get("dirty") else "")
+        ts = m.get("created_unix", 0)
+        time_s = (
+            __import__("datetime")
+            .datetime.fromtimestamp(ts, __import__("datetime").UTC)
+            .strftime("%Y-%m-%d %H:%M UTC")
+            if ts
+            else "?"
+        )
+        name = f"{mf_name(m)}"
+        out.append(
+            f"| `{name}` | {cfg_s} | {d.get('dirs', '?')} / {d.get('files', '?')} | {iou_s} | "
+            f"{check} | {nmani} | `{sha}` | `{commit}` | {time_s} |"
+        )
+    out.append("")
+    out.append("## 如何复核一行\n")
+    out.append("```sh")
+    out.append("parts-extract-verify --model <n2.occ1>   # 清单缺省 <模型>.manifest.json")
+    out.append("```\n")
+    return out
+
+
+def mf_name(m):
+    p = pathlib.Path(str((m.get("model") or {}).get("path", "?")))
+    return f"{p.parent.name}/{p.name}" if p.parent.name else p.name
+
+
 def self_test():
     cfg = {"hidden": 32, "dil": 2, "pyr": 0, "accum": 1, "lr": 0.002, "epochs": 3}
     a = fmt_cfg(cfg)
@@ -355,7 +447,51 @@ def self_test():
         )
         assert texture_rows(root)[0][3] is False
         assert "复核记录与清单不符" in "\n".join(texture_doc(root))
-    print("self-test 11/11 通过")
+    # 提取（N2）：复核记录必须同时锚在清单 SHA 与模型 SHA 上
+    with tempfile.TemporaryDirectory() as td:
+        root = pathlib.Path(td) / "ex"
+        root.mkdir()
+        (root / "n2.occ1").write_bytes(b"OCC1 3 4\n")
+        man = {
+            "kind": "extract-occupancy",
+            "created_unix": 1,
+            "config": {"cell": 0.01, "steps": 20000, "frames": [0, 1]},
+            "data": {"dirs": 2, "files": 14},
+            "model": {"path": str(root / "n2.occ1"), "sha256": "ab" * 32},
+            "result": {
+                "scenes": 2,
+                "iou_mean": 0.55,
+                "closed": 2,
+                "rows": [{"scene": 84, "iou": 0.6, "nonmanifold_edges": 3}, {"scene": 85, "iou": 0.5}],
+            },
+        }
+        mf = root / "n2.occ1.manifest.json"
+        mf.write_text(json.dumps(man), encoding="utf-8")
+        assert extract_rows(root)[0][2] is False
+        sha = hashlib.sha256(mf.read_bytes()).hexdigest()
+        (root / "n2.occ1.verify.json").write_text(
+            json.dumps({"manifest": {"sha256": sha}, "model": {"sha256": "ab" * 32}, "metrics": {"closed": 2, "scenes": 2}}),
+            encoding="utf-8",
+        )
+        assert extract_rows(root)[0][2] is True
+        # 清单 SHA 不对但模型 SHA 对 ⇒ 仍判不符
+        (root / "n2.occ1.verify.json").write_text(
+            json.dumps({"manifest": {"sha256": "0" * 64}, "model": {"sha256": "ab" * 32}, "metrics": {}}),
+            encoding="utf-8",
+        )
+        assert extract_rows(root)[0][2] is False
+        (root / "n2.occ1.verify.json").write_text(
+            json.dumps({"manifest": {"sha256": sha}, "model": {"sha256": "ab" * 32}, "metrics": {"closed": 2, "scenes": 2}}),
+            encoding="utf-8",
+        )
+        doc = "\n".join(extract_doc(root))
+        assert "S1 提取" in doc and "0.5500 / 0.5000" in doc and "✅ 2/2" in doc, doc
+        (root / "n2.occ1.verify.json").write_text(
+            json.dumps({"manifest": {"sha256": sha}, "model": {"sha256": "cd" * 32}, "metrics": {}}),
+            encoding="utf-8",
+        )
+        assert extract_rows(root)[0][2] is False
+    print("self-test 12/12 通过")
 
 
 def main():
@@ -369,6 +505,10 @@ def main():
     ap.add_argument("--texture-dir", default="runs/texture")
     ap.add_argument(
         "--texture-out", default="docs/TEXTURE-RESULTS.md", help="纹理族表（空串 = 不写）"
+    )
+    ap.add_argument("--extract-dir", default="runs/extract")
+    ap.add_argument(
+        "--extract-out", default="docs/EXTRACT-RESULTS.md", help="提取族表（空串 = 不写）"
     )
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()
@@ -463,6 +603,11 @@ def main():
         td = texture_doc(troot)
         pathlib.Path(args.texture_out).write_text("\n".join(td) + "\n", encoding="utf-8")
         print(f"已写 {args.texture_out}（{len(texture_rows(troot))} 行）")
+    if args.extract_out:
+        eroot = pathlib.Path(args.extract_dir)
+        ed = extract_doc(eroot)
+        pathlib.Path(args.extract_out).write_text("\n".join(ed) + "\n", encoding="utf-8")
+        print(f"已写 {args.extract_out}（{len(extract_rows(eroot))} 行）")
 
     if args.umbrella:
         fam_path = pathlib.Path(args.families)

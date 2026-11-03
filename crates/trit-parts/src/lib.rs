@@ -37,6 +37,7 @@ pub mod ood;
 pub mod parts;
 pub mod partsrun;
 pub mod ridge;
+pub mod scenefp;
 pub mod splat;
 pub mod tconv;
 pub mod tex;

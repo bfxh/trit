@@ -73,6 +73,10 @@ name = "parts-depth-verify"
 path = "src/bin/parts_depth_verify.rs"
 
 [[bin]]
+name = "parts-extract-verify"
+path = "src/bin/parts_extract_verify.rs"
+
+[[bin]]
 name = "parts-depth-gpu"
 path = "src/bin/parts_depth_gpu.rs"
 required-features = ["gpu"]
