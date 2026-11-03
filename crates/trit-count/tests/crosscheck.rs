@@ -175,6 +175,17 @@ fn constant_expression_counts_whole_domain() {
 }
 
 #[test]
+fn component_product_multiplies_independent_parts() {
+    let cnf = trit_count::cnf::Cnf {
+        nvars: 4,
+        clauses: vec![vec![1, 2], vec![3, 4]],
+    };
+    let result = trit_count::dpll::count_cnf(&cnf);
+    assert_eq!(result.count, 9);
+    assert!(result.stats.components > 0);
+}
+
+#[test]
 fn positive_count_matches_trit_sat_satisfiable() {
     let mut rng = Rng(0x0BAD_F00D_DEAD_BEEF);
     for n in 1..=8usize {
