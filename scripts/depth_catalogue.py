@@ -59,7 +59,7 @@ def main():
     out.append(
         "> 由 `scripts/depth_catalogue.py` 从 `runs/depth/*.manifest.json` 生成，"
         "**不要手改**。每行的「复核」来自独立进程 `parts-depth-verify`：它重读数据、"
-        "重算模型/数据指纹并在留出集上重跑评测；指纹与清单不一致会判红。\n"
+        "重算模型/数据指纹（数据是**内容级** SHA-256）并在留出集上重跑评测；指纹与清单不一致会判红。\n"
     )
     out.append("## 结果族：单目深度头\n")
     if not rows:
