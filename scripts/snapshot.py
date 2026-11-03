@@ -178,17 +178,27 @@ def resolve(root: pathlib.Path, snap_id: str) -> dict:
 
 def diff(root: pathlib.Path, manifest: dict) -> dict[str, list[str]]:
     root = pathlib.Path(root)
-    """清单 vs 现状：missing（被删）/ changed（改过）/ extra（快照后新增）。"""
+    """清单 vs 现状：missing（被删）/ changed（改过）/ mode（内容没动只改权限）/ extra（快照后新增）。"""
     wanted = manifest["files"]
     current = iter_files(root)
     current_set = set(current)
     missing = sorted(set(wanted) - current_set)
     extra = sorted(current_set - set(wanted))
     changed: list[str] = []
+    mode_drift: list[str] = []
     for rel in sorted(set(wanted) & current_set):
         if sha256_file(root / rel) != wanted[rel]["sha"]:
             changed.append(rel)
-    return {"missing": missing, "changed": changed, "extra": extra}
+        elif wants_mode_at(root, rel, wanted[rel].get("mode")):
+            mode_drift.append(rel)
+    return {"missing": missing, "changed": changed, "extra": extra, "mode": mode_drift}
+
+
+def wants_mode_at(root: pathlib.Path, rel: str, manifest_mode) -> bool:
+    """内容没动但权限动了 —— 权限也是被恢复的对象，漏了它回退后脚本就跑不起来。"""
+    if manifest_mode is None:
+        return False
+    return (root / rel).stat().st_mode & 0o777 != manifest_mode
 
 
 def restore(root: pathlib.Path, manifest: dict, prune: bool, dry_run: bool) -> int:
@@ -197,6 +207,7 @@ def restore(root: pathlib.Path, manifest: dict, prune: bool, dry_run: bool) -> i
     actions = plan["missing"] + plan["changed"]
     print(
         f"回退到 {manifest['id']}：补回 {len(plan['missing'])}，覆盖 {len(plan['changed'])}，"
+        f"改权限 {len(plan.get('mode', []))}，"
         f"新增未动 {len(plan['extra'])}{'（--prune：删除）' if prune else '（保留；要删加 --prune）'}"
     )
     for rel in actions:
@@ -228,6 +239,12 @@ def restore(root: pathlib.Path, manifest: dict, prune: bool, dry_run: bool) -> i
             os.chmod(target, mode)  # 可执行位也要还原（脚本回退后仍要能跑）
         if sha256_file(target) != manifest["files"][rel]["sha"]:
             raise SystemExit(f"回退失败：{rel} 写回后校验不一致（pending 保留，可重跑 restore）")
+    for rel in plan.get("mode", []):
+        mode = manifest["files"][rel].get("mode")
+        if mode is not None:
+            os.chmod(root / rel, mode)  # 内容相同也要把权限退回去（否则回退后的脚本跑不起来）
+            _say(f"  改权限 {rel}")
+
     if prune:
         for rel in plan["extra"]:
             (root / rel).unlink()
@@ -291,7 +308,7 @@ def verify(root: pathlib.Path, manifest: dict) -> int:
         print(f"verify {manifest['id']}：工作树与快照逐字节一致")
         return 0
     print(f"verify {manifest['id']}：不一致")
-    for key, label in (("missing", "缺失"), ("changed", "已改"), ("extra", "快照后新增")):
+    for key, label in (("missing", "缺失"), ("changed", "已改"), ("extra", "快照后新增"), ("mode", "权限不同")):
         for rel in plan[key]:
             _say(f"  {label} {rel}")
     return 1
@@ -318,6 +335,12 @@ def self_test() -> int:
         # 1) 原样：verify 绿
         check("原样 verify 通过", verify(root, resolve(root, snap_id)), 0)
 
+        # 1b) 旧快照没记权限：不许因此把全员判成权限漂移
+        bare = resolve(root, snap_id)
+        for entry in bare["files"].values():
+            entry.pop("mode", None)
+        check("没记权限的清单不去比权限", diff(root, bare)["mode"], [])
+
         # 2) 改一个、删一个、加一个
         (root / "src" / "a.rs").write_bytes(b"line1\nCHANGED\n")
         (root / "README.md").unlink()
@@ -338,6 +361,36 @@ def self_test() -> int:
         check("还原改动文件", (root / "src" / "a.rs").read_bytes(), b"line1\nline2\n")
         check("默认保留新增", (root / "src" / "new.rs").exists(), True)
         check("回退后 verify 仍有新增", verify(root, resolve(root, snap_id)), 1)
+        # 5) 内容一个字没动、只改权限：也必须能退回去（Windows 没有 POSIX 可执行位，跳过并公示）
+        if os.name != "nt":
+            script = root / "src" / "a.rs"
+            original_mode = script.stat().st_mode & 0o777
+            os.chmod(script, 0o600)
+            mode_plan = diff(root, resolve(root, snap_id))
+            check("只改权限也被检出", mode_plan["mode"], ["src/a.rs"])
+            check("只改权限时 verify 判不一致", verify(root, resolve(root, snap_id)), 1)
+            restore(root, resolve(root, snap_id), prune=False, dry_run=True)
+            check("dry-run 不动权限", script.stat().st_mode & 0o777, 0o600)
+
+            restore(root, resolve(root, snap_id), prune=False, dry_run=False)
+            check("restore 把权限退回快照里的值", script.stat().st_mode & 0o777, original_mode)
+            import contextlib as _cl
+            import io as _io
+            out = _io.StringIO()
+            with _cl.redirect_stdout(out):
+                restore(root, resolve(root, snap_id), prune=False, dry_run=True)
+            check("dry-run 也要把「改权限几个」说出来（不许静默跳过）",
+                  "改权限 0" in out.getvalue(), True)
+            os.chmod(script, 0o600)
+            out2 = _io.StringIO()
+            with _cl.redirect_stdout(out2):
+                restore(root, resolve(root, snap_id), prune=False, dry_run=False)
+            check("改权限的条数进汇总（不是只印块头）", "改权限 1" in out2.getvalue(), True)
+
+            check("restore 把权限退回快照里的值", script.stat().st_mode & 0o777, original_mode)
+            check("退权限后 verify 重新变绿", verify(root, resolve(root, snap_id)), 1)
+        else:
+            check("Windows 上不误报权限差异", diff(root, resolve(root, snap_id))["mode"], [])
 
         # 5) prune：连新增一起清掉，verify 全绿
         restore(root, resolve(root, snap_id), prune=True, dry_run=False)

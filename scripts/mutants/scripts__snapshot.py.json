@@ -124,5 +124,59 @@
   "pkg": "scripts/snapshot.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "snapshot: 内容没动只改权限不被检出（回退后脚本跑不起来）",
+  "file": "scripts/snapshot.py",
+  "old": "        elif wants_mode_at(root, rel, wanted[rel].get(\"mode\")):",
+  "new": "        elif False:",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 权限清单不返回给调用方（restore/verify 都看不见）",
+  "file": "scripts/snapshot.py",
+  "old": "    return {\"missing\": missing, \"changed\": changed, \"extra\": extra, \"mode\": mode_drift}",
+  "new": "    return {\"missing\": missing, \"changed\": changed, \"extra\": extra}",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 恢复时不把权限退回去（只退内容）",
+  "file": "scripts/snapshot.py",
+  "old": "    for rel in plan.get(\"mode\", []):\n        mode = manifest[\"files\"][rel].get(\"mode\")",
+  "new": "    for rel in []:\n        mode = manifest[\"files\"][rel].get(\"mode\")",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 没记录权限也去比（老快照全员被判权限不同）",
+  "file": "scripts/snapshot.py",
+  "old": "    if manifest_mode is None:\n        return False",
+  "new": "    if False:\n        return False",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 权限比较方向反了（相同的判成漂移）",
+  "file": "scripts/snapshot.py",
+  "old": "    return (root / rel).stat().st_mode & 0o777 != manifest_mode",
+  "new": "    return (root / rel).stat().st_mode & 0o777 == manifest_mode",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "snapshot: 汇总里不说改了几个权限",
+  "file": "scripts/snapshot.py",
+  "old": "        f\"改权限 {len(plan.get('mode', []))}，\"",
+  "new": "        f\"改权限 {\" + str(0) + \"}，\"",
+  "pkg": "scripts/snapshot.py",
+  "filter": "",
+  "runner": "python"
  }
 ]
