@@ -47,6 +47,8 @@ pub mod depthgpu;
 #[cfg(feature = "gpu")]
 mod depthkern;
 #[cfg(feature = "gpu")]
+mod depthrun;
+#[cfg(feature = "gpu")]
 pub mod expand;
 #[cfg(feature = "gpu")]
 pub mod forward;

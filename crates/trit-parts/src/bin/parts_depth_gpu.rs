@@ -130,7 +130,7 @@ fn main() {
     if accum > 1 {
         println!("--accum {accum}：mini-batch SGD（每 {accum} 个样本更新一次，梯度块内平均）");
     }
-    let mut gnet = DepthGpu::from_depthnet(&net, size as u32);
+    let mut gnet = DepthGpu::from_depthnet(&net, size as u32).with_slots(accum);
     gnet.upload(&gpu);
 
     // 样本（与 CPU 同一份预处理）
@@ -225,7 +225,8 @@ fn main() {
         gnet = DepthGpu::from_depthnet(
             &DepthNet::with_inputs(3 + 3 * pyr, hidden, seed, ternary),
             size as u32,
-        );
+        )
+        .with_slots(accum);
         gnet.med = med_sum / train.len() as f32;
         gnet.iqr = iqr_sum / train.len() as f32;
         gnet.upload(&gpu);
