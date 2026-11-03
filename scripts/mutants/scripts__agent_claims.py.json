@@ -214,5 +214,68 @@
   "pkg": "scripts/agent_claims.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "gate: 别人的声明也算自己的（owner 不比就把自己的在效声明判成撞车）",
+  "file": "scripts/agent_claims.py",
+  "old": "            if owner != want and any(paths_overlap(scope, path) for scope in scopes):",
+  "new": "            if any(paths_overlap(scope, path) for scope in scopes):",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 撞了只报 unknown（该拦的时候放行，双方各写各的）",
+  "file": "scripts/agent_claims.py",
+  "old": "                return \"false\"",
+  "new": "                return \"unknown\"",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 没覆盖全也报 true（没登记当成登记过）",
+  "file": "scripts/agent_claims.py",
+  "old": "            return \"unknown\"\n    return \"true\"",
+  "new": "            return \"true\"\n    return \"true\"",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: covers 不认等值路径（自己声明 src/a.rs 却说自己没声明）",
+  "file": "scripts/agent_claims.py",
+  "old": "    return scope == path or path.startswith(scope + \"/\")",
+  "new": "    return path.startswith(scope + \"/\")",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 到期边界写成闭区间（恰好到点的声明还算在效，与库里的 > 分叉）",
+  "file": "scripts/agent_claims.py",
+  "old": "if expires > at]",
+  "new": "if expires >= at]",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 不归一路径（同一个文件两种写法就漏判）",
+  "file": "scripts/agent_claims.py",
+  "old": "    path = (raw or \"\").strip().replace(\"\\\\\", \"/\").strip(\"/\")",
+  "new": "    path = (raw or \"\").strip().strip(\"/\")",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate 子命令撞车也退 0（当 CLI 用的人看不出被拦）",
+  "file": "scripts/agent_claims.py",
+  "old": "    return 1 if verdict == \"false\" else 0",
+  "new": "    return 0",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
  }
 ]
