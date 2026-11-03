@@ -9,19 +9,6 @@ use crate::gpu::Gpu;
 
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
-pub(crate) struct ConvU8 {
-    pub(crate) h: u32,
-    pub(crate) w: u32,
-    pub(crate) cin: u32,
-    pub(crate) cout: u32,
-    pub(crate) kk: u32,
-    pub(crate) pad: u32,
-    pub(crate) mode: u32,
-    pub(crate) relu: u32,
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 struct AccU {
     total: u32,
     nseg: u32,
@@ -58,8 +45,6 @@ fn unif(binding: u32) -> wgpu::BindGroupLayoutEntry {
 
 /// 深度头自己的两条管线。
 pub(crate) struct Pipes {
-    pub(crate) dx4m_pl: wgpu::ComputePipeline,
-    pub(crate) dx4m_bgl: wgpu::BindGroupLayout,
     pub(crate) acc_pl: wgpu::ComputePipeline,
     pub(crate) acc_bgl: wgpu::BindGroupLayout,
 }
@@ -76,13 +61,6 @@ impl Pipes {
                 entries,
             })
         };
-        let dx4m_bgl = mk(&[
-            unif(0),
-            entry(1, true),
-            entry(2, true),
-            entry(3, true),
-            entry(4, false),
-        ]);
         let acc_bgl = mk(&[
             unif(0),
             entry(1, true),
@@ -109,8 +87,6 @@ impl Pipes {
             })
         };
         Self {
-            dx4m_pl: pipe("conv_dx4m", &dx4m_bgl),
-            dx4m_bgl,
             acc_pl: pipe("acc_add6", &acc_bgl),
             acc_bgl,
         }
@@ -227,81 +203,4 @@ pub(crate) fn acc_add6(gpu: &Gpu, pipes: &Pipes, dst: &Buffer, acc: &FlatAcc, sr
             1,
         );
     });
-}
-
-// ---------------------------------------------------------------- 持久化资源引擎
-//
-// 每个 conv/bwd 调用的 uniform、输入/输出缓冲与 bind group **只建一次**：
-// 形状在训练期内不变，权重缓冲由 `GConv::upload` 原地覆盖（bind group 仍有效）。
-
-pub(crate) struct ConvPl {
-    pub(crate) conv_pl: wgpu::ComputePipeline,
-    pub(crate) conv_bgl: wgpu::BindGroupLayout,
-    pub(crate) dw_pl: wgpu::ComputePipeline,
-    pub(crate) dw_bgl: wgpu::BindGroupLayout,
-    pub(crate) red4_pl: wgpu::ComputePipeline,
-    pub(crate) red4_bgl: wgpu::BindGroupLayout,
-    pub(crate) db_pl: wgpu::ComputePipeline,
-    pub(crate) db_bgl: wgpu::BindGroupLayout,
-    pub(crate) red_pl: wgpu::ComputePipeline,
-    pub(crate) red_bgl: wgpu::BindGroupLayout,
-}
-
-impl ConvPl {
-    pub(crate) fn new(device: &wgpu::Device) -> Self {
-        let fwd = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("depth-fwd"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders.wgsl").into()),
-        });
-        let bwd = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("depth-bwd"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shaders_bwd.wgsl").into()),
-        });
-        let mk = |entries: &[wgpu::BindGroupLayoutEntry]| {
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries,
-            })
-        };
-        let conv_bgl = mk(&[
-            unif(0),
-            entry(1, true),
-            entry(2, true),
-            entry(3, true),
-            entry(4, true),
-            entry(5, true),
-            entry(6, false),
-        ]);
-        let dw_bgl = mk(&[unif(0), entry(1, true), entry(2, true), entry(3, false)]);
-        let red4_bgl = mk(&[unif(0), entry(1, true), entry(2, false)]);
-        let db_bgl = mk(&[unif(0), entry(1, true), entry(2, false)]);
-        let red_bgl = mk(&[unif(0), entry(1, true), entry(2, false)]);
-        let pipe = |module: &wgpu::ShaderModule, label: &str, bgl: &wgpu::BindGroupLayout| {
-            let pl = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some(label),
-                bind_group_layouts: &[Some(bgl)],
-                immediate_size: 0,
-            });
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some(label),
-                layout: Some(&pl),
-                module,
-                entry_point: Some(label),
-                compilation_options: Default::default(),
-                cache: None,
-            })
-        };
-        Self {
-            conv_pl: pipe(&fwd, "conv", &conv_bgl),
-            conv_bgl,
-            dw_pl: pipe(&bwd, "conv_dw_k", &dw_bgl),
-            dw_bgl,
-            red4_pl: pipe(&bwd, "reduce_chunks4", &red4_bgl),
-            red4_bgl,
-            db_pl: pipe(&bwd, "conv_db_k", &db_bgl),
-            db_bgl,
-            red_pl: pipe(&bwd, "reduce_chunks", &red_bgl),
-            red_bgl,
-        }
-    }
 }

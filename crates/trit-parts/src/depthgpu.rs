@@ -373,20 +373,20 @@ impl DepthGpu {
         let hw = (self.size * self.size) as usize;
         let gco = self.c3.gcout as usize;
         let packed = self.pack(x);
-        gpu.write(e.slot_x(0), &packed);
+        e.set_batch(gpu, 1);
+        gpu.write(e.x(), &packed);
         gpu.begin_batch();
-        e.forward(gpu, 0);
+        e.forward(gpu);
         gpu.end_batch();
-        let out = gpu.read(e.slot_o3(0), hw * gco);
+        let out = gpu.read(e.o3(), hw * gco);
         (0..hw).map(|i| out[i * gco] + self.out_b).collect()
     }
 
-    /// 一张样本的损失与 `dL/dout`（只填通道 0），与 CPU `train_step` 同口径。
-    /// 返回 `(dy, loss, gb)`：`loss` 是有效像素上的 MSE，`gb` 是 `out_b` 的梯度。
-    fn make_dy(&self, out: &[f32], target: &[f32], mask: &[bool]) -> (Vec<f32>, f32, f32) {
+    /// 把一张样本的损失与 `dL/dout` 写进批缓冲的对应切片（只填通道 0）。
+    /// 返回 `(loss, gb)`：`loss` 是有效像素上的 MSE，`gb` 是 `out_b` 的梯度。
+    fn fill_dy(&self, out: &[f32], target: &[f32], mask: &[bool], dy: &mut [f32]) -> (f32, f32) {
         let hw = (self.size * self.size) as usize;
         let gco = self.c3.gcout as usize;
-        let mut dy = vec![0.0f32; hw * gco];
         let mut loss = 0.0f32;
         let mut valid = 0usize;
         let mut gb = 0.0f32;
@@ -405,10 +405,10 @@ impl DepthGpu {
                 dy[i * gco] = 2.0 * (out[i * gco] + self.out_b - target[i]) * inv;
             }
         }
-        (dy, loss * inv, gb * inv)
+        (loss * inv, gb * inv)
     }
 
-    /// 一步训练：损失 = 有效像素上的均方误差（与 CPU `train_step` 同口径）。
+    /// 一步训练（单样本 = 批大小 1）。
     pub fn train_step(
         &mut self,
         gpu: &Gpu,
@@ -417,109 +417,61 @@ impl DepthGpu {
         mask: &[bool],
         lr: f32,
     ) -> f32 {
-        let hw = (self.size * self.size) as usize;
-        let gco = self.c3.gcout as usize;
-        let t0 = std::time::Instant::now();
-        let out = {
-            let e = self.engine.as_ref().expect("引擎未建");
-            let packed = self.pack(x);
-            gpu.write(e.slot_x(0), &packed);
-            gpu.begin_batch();
-            e.forward(gpu, 0);
-            gpu.end_batch();
-            gpu.read(e.slot_o3(0), hw * gco)
-        };
-        self.prof[0] += t0.elapsed().as_secs_f64();
-
-        let t1 = std::time::Instant::now();
-        let (dy, loss, gb) = self.make_dy(&out, target, mask);
-        self.out_b -= lr * gb;
-        self.prof[1] += t1.elapsed().as_secs_f64();
-
-        let t2 = std::time::Instant::now();
-        {
-            let e = self.engine.as_ref().expect("引擎未建");
-            gpu.write(e.slot_dy3(0), &dy);
-            gpu.begin_batch();
-            e.backward(gpu, 0);
-            gpu.end_batch();
-        }
-        self.prof[2] += t2.elapsed().as_secs_f64();
-
-        let t3 = std::time::Instant::now();
-        let e = self.engine.as_ref().expect("引擎未建");
-        let r = gpu.read_many(&[
-            (e.layer_dw(0), e.layer_nw(0)),
-            (e.layer_db(0), e.layer_cout(0)),
-            (e.layer_dw(1), e.layer_nw(1)),
-            (e.layer_db(1), e.layer_cout(1)),
-            (e.layer_dw(2), e.layer_nw(2)),
-            (e.layer_db(2), e.layer_cout(2)),
-        ]);
-        let (g1, gb1, s1) = self.c1.pull(&r[0], &r[1]);
-        let (g2, gb2, s2) = self.c2.pull(&r[2], &r[3]);
-        let (g3, gb3, s3) = self.c3.pull(&r[4], &r[5]);
-        self.c1.apply(&g1, &gb1, &s1, lr);
-        self.c2.apply(&g2, &gb2, &s2, lr);
-        self.c3.apply(&g3, &gb3, &s3, lr);
-        self.c1.upload(gpu);
-        self.c2.upload(gpu);
-        self.c3.upload(gpu);
-        self.prof[3] += t3.elapsed().as_secs_f64();
-        loss
+        self.train_block(gpu, &[(x, target, mask)], lr)
     }
 
-    /// 一块（K 个样本）的训练：前向/反向各一次提交，梯度在设备侧累加，
-    /// **每 K 个样本读回并更新一次**（mini-batch SGD）。
+    /// 一块（≤cap 个样本）的训练：**所有样本拼进一次 dispatch**，梯度在设备侧累加，
+    /// 每个块读回并更新一次（mini-batch SGD）。
     ///
     /// 返回块内各样本 MSE 的**和**（与 `train_step` 返回值同口径）。
     pub fn train_block(&mut self, gpu: &Gpu, batch: &[TrainRef<'_>], lr: f32) -> f32 {
-        if batch.len() == 1 {
-            let (x, y, m) = batch[0];
-            return self.train_step(gpu, x, y, m, lr);
-        }
-        let k = batch.len();
+        let k = batch
+            .len()
+            .min(self.engine.as_ref().expect("引擎未建").cap());
         let hw = (self.size * self.size) as usize;
         let gco = self.c3.gcout as usize;
 
-        // 前向：K 张一次提交
+        // 整批前向（3 次 dispatch）
         let t0 = std::time::Instant::now();
         let outs = {
             let e = self.engine.as_ref().expect("引擎未建");
+            e.set_batch(gpu, k);
+            let packed = self.pack_batch(&batch[..k]);
+            gpu.write(e.x(), &packed);
             gpu.begin_batch();
-            for (i, (x, _, _)) in batch.iter().enumerate() {
-                let packed = self.pack(x);
-                gpu.write(e.slot_x(i), &packed);
-                e.forward(gpu, i);
-            }
+            e.forward(gpu);
             gpu.end_batch();
-            let items: Vec<(&Buffer, usize)> = (0..k).map(|i| (e.slot_o3(i), hw * gco)).collect();
-            gpu.read_many(&items)
+            gpu.read(e.o3(), k * hw * gco)
         };
         self.prof[0] += t0.elapsed().as_secs_f64();
 
-        // 损失与 dL/dout；out_b 的梯度取块内平均
+        // 每张样本的 dy / 损失；out_b 的梯度取块内平均
         let t1 = std::time::Instant::now();
+        let mut dy = vec![0.0f32; k * hw * gco];
         let (mut loss_sum, mut gb_sum) = (0.0f32, 0.0f32);
-        {
-            let e = self.engine.as_ref().expect("引擎未建");
-            for (i, (_, target, mask)) in batch.iter().enumerate() {
-                let (dy, loss, gb) = self.make_dy(&outs[i], target, mask);
-                gpu.write(e.slot_dy3(i), &dy);
-                loss_sum += loss;
-                gb_sum += gb;
-            }
+        for i in 0..k {
+            let (_, target, mask) = batch[i];
+            let o = &outs[i * hw * gco..(i + 1) * hw * gco];
+            let (loss, gb) =
+                self.fill_dy(o, target, mask, &mut dy[i * hw * gco..(i + 1) * hw * gco]);
+            loss_sum += loss;
+            gb_sum += gb;
         }
         self.out_b -= lr * gb_sum / k as f32;
+        self.engine.as_ref().expect("引擎未建").set_batch(gpu, k);
+        {
+            let e = self.engine.as_ref().expect("引擎未建");
+            gpu.write(e.dy3(), &dy);
+        }
         self.prof[1] += t1.elapsed().as_secs_f64();
 
-        // 反向：K 张一次提交，6 段梯度各 1 次 dispatch 累加
+        // 整批反向（8 次 dispatch）；k>1 时 6 段梯度再并 1 次累加
         let t2 = std::time::Instant::now();
         {
             let e = self.engine.as_ref().expect("引擎未建");
             gpu.begin_batch();
-            for i in 0..k {
-                e.backward(gpu, i);
+            e.backward(gpu);
+            if k > 1 {
                 e.acc_add(
                     gpu,
                     self.acc.buf(),
@@ -538,16 +490,33 @@ impl DepthGpu {
         }
         self.prof[2] += t2.elapsed().as_secs_f64();
 
-        // 读一次扁平累加器、清一次，按 1/K 还原成平均梯度
+        // 读回：k=1 直接读 6 段；k>1 读扁平累加器后按 1/K 还原
         let t3 = std::time::Instant::now();
-        let r = self.acc_read(gpu);
-        self.acc_clear(gpu);
-        let (o, l) = (self.acc.offs(), self.acc.lens());
-        let inv = 1.0 / k as f32;
+        let (parts, inv) = if k == 1 {
+            let e = self.engine.as_ref().expect("引擎未建");
+            let r = gpu.read_many(&[
+                (e.layer_dw(0), e.layer_nw(0)),
+                (e.layer_db(0), e.layer_cout(0)),
+                (e.layer_dw(1), e.layer_nw(1)),
+                (e.layer_db(1), e.layer_cout(1)),
+                (e.layer_dw(2), e.layer_nw(2)),
+                (e.layer_db(2), e.layer_cout(2)),
+            ]);
+            (r, 1.0f32)
+        } else {
+            let r = self.acc_read(gpu);
+            self.acc_clear(gpu);
+            let (o, l) = (self.acc.offs(), self.acc.lens());
+            let mut parts = Vec::with_capacity(6);
+            for i in 0..6 {
+                parts.push(r[o[i]..o[i] + l[i]].to_vec());
+            }
+            (parts, 1.0 / k as f32)
+        };
         let scale = |v: Vec<f32>| -> Vec<f32> { v.into_iter().map(|x| x * inv).collect() };
-        let (g1, gb1, s1) = self.c1.pull(&r[o[0]..o[0] + l[0]], &r[o[1]..o[1] + l[1]]);
-        let (g2, gb2, s2) = self.c2.pull(&r[o[2]..o[2] + l[2]], &r[o[3]..o[3] + l[3]]);
-        let (g3, gb3, s3) = self.c3.pull(&r[o[4]..o[4] + l[4]], &r[o[5]..o[5] + l[5]]);
+        let (g1, gb1, s1) = self.c1.pull(&parts[0], &parts[1]);
+        let (g2, gb2, s2) = self.c2.pull(&parts[2], &parts[3]);
+        let (g3, gb3, s3) = self.c3.pull(&parts[4], &parts[5]);
         self.c1.apply(&scale(g1), &scale(gb1), &scale(s1), lr);
         self.c2.apply(&scale(g2), &scale(gb2), &scale(s2), lr);
         self.c3.apply(&scale(g3), &scale(gb3), &scale(s3), lr);
@@ -556,5 +525,21 @@ impl DepthGpu {
         self.c3.upload(gpu);
         self.prof[3] += t3.elapsed().as_secs_f64();
         loss_sum
+    }
+
+    /// 把 K 张样本按 NHWC 拼成一整块输入缓冲。
+    fn pack_batch(&self, batch: &[TrainRef<'_>]) -> Vec<f32> {
+        let hw = (self.size * self.size) as usize;
+        let cin = self.c1.cin as usize;
+        let mut v = vec![0.0f32; batch.len() * hw * cin];
+        for (i, (x, _, _)) in batch.iter().enumerate() {
+            let base = i * hw * cin;
+            for (c, plane) in x.iter().enumerate().take(cin) {
+                for (p, val) in plane.iter().enumerate() {
+                    v[base + p * cin + c] = *val;
+                }
+            }
+        }
+        v
     }
 }
