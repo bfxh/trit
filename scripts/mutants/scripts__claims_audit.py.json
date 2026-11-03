@@ -1,0 +1,38 @@
+[
+ {
+  "name": "audit: 有声明覆盖也照样报拦（假红，第二天就没人看）",
+  "old": "            if covering:\n                continue",
+  "new": "            if False:\n                continue",
+  "file": "scripts/claims_audit.py",
+  "pkg": "scripts/claims_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 过期声明被当成拦而不是警（人可能还在跑）",
+  "old": "            if stale:",
+  "new": "            if False:",
+  "file": "scripts/claims_audit.py",
+  "pkg": "scripts/claims_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 空 paths 不再代表整个仓（整仓声明失效）",
+  "old": "    if not claim[\"paths\"]:\n        return True  # 空路径 = 整个仓",
+  "new": "    if not claim[\"paths\"]:\n        return False  # 空路径 = 整个仓",
+  "file": "scripts/claims_audit.py",
+  "pkg": "scripts/claims_audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 干净的 worktree 也进账（满屏噪音）",
+  "old": "            if not files:\n                continue",
+  "new": "            if False:\n                continue",
+  "file": "scripts/claims_audit.py",
+  "pkg": "scripts/claims_audit.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
