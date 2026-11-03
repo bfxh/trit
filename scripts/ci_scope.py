@@ -32,6 +32,12 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
+# Windows runner 的 stdout 默认 cp1252，中文标签会 UnicodeEncodeError（#257 实测）；
+# 门脚本的输出必须是 UTF-8，编不动的字符替换掉而不是抛异常。
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 NAME_OK = re.compile(r"^[A-Za-z0-9_.-]+$")
 # 需要单独 feature 才编译得到的 crate：闭包里含它，才跑那条 step。
 FEATURE_GATES = {"needs_png": ("png", "trit-texture"), "needs_gpu": ("gpu", "trit-gpu")}
