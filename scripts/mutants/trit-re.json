@@ -99,7 +99,7 @@
   "name": "trit-re: collect 去重失效（同模块按加载次数重复分析、deduped 不计数）",
   "file": "crates/trit-re/src/collect.rs",
   "old": "        if seen.insert(path.clone()) {",
-  "new": "        if true {",
+  "new": "        if seen.insert(path.clone()) || true {",
   "pkg": "trit-re",
   "filter": "module_paths_dedup_keep_order_and_count_noise"
  },
