@@ -133,6 +133,10 @@ pub use export::to_verilog;
 pub use parse::parse_verilog;
 
 #[cfg(test)]
+mod assign_tests;
+#[cfg(test)]
 mod hierarchy_tests;
+#[cfg(test)]
+mod parameter_tests;
 #[cfg(test)]
 mod tests;
