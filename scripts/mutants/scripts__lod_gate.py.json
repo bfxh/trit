@@ -16,5 +16,14 @@
     "pkg": "scripts/lod_gate.py",
     "filter": "",
     "runner": "python"
+  },
+  {
+    "name": "lod_gate: 不按 cell 聚合（每行一级）",
+    "file": "scripts/lod_gate.py",
+    "old": "        g = groups.setdefault(\n            cell, {\"cell\": cell, \"ious\": [], \"tris\": [], \"status\": [], \"why\": None}\n        )",
+    "new": "        g = groups.setdefault(\n            id(r), {\"cell\": cell, \"ious\": [], \"tris\": [], \"status\": [], \"why\": None}\n        )",
+    "pkg": "scripts/lod_gate.py",
+    "filter": "",
+    "runner": "python"
   }
 ]

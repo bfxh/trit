@@ -6,6 +6,15 @@
 
 | 模型 | 配置 | 语料（场景/文件） | 体积 IoU（均值 / 最低） | 闭合 | 非流形边（债） | 指纹（模型前 12） | 来源 | 时间 |
 |---|---|---|---|---|---|---|---|---|
+| `sweep-lod-selfsup/cell0.04-seed5.occ1` | cell 0.04 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7129 / 0.6155 | ✅ 8/8 | 171 | `c5f1213abdff` | `40010a3+dirty` | 2026-11-04 21:28 UTC |
+| `sweep-lod-selfsup/cell0.04-seed3.occ1` | cell 0.04 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.6869 / 0.5990 | ✅ 8/8 | 211 | `bc0a8a78c632` | `40010a3+dirty` | 2026-11-04 21:28 UTC |
+| `sweep-lod-selfsup/cell0.04-seed2.occ1` | cell 0.04 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7704 / 0.6769 | ✅ 8/8 | 132 | `3223e9ae3ecb` | `40010a3+dirty` | 2026-11-04 21:28 UTC |
+| `sweep-lod-selfsup/cell0.02-seed5.occ1` | cell 0.02 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7988 / 0.7069 | ✅ 8/8 | 322 | `177fd3be8760` | `40010a3+dirty` | 2026-11-04 21:27 UTC |
+| `sweep-lod-selfsup/cell0.02-seed3.occ1` | cell 0.02 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7683 / 0.6675 | ✅ 8/8 | 536 | `3e8af285e5c0` | `40010a3+dirty` | 2026-11-04 21:27 UTC |
+| `sweep-lod-selfsup/cell0.02-seed2.occ1` | cell 0.02 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7866 / 0.6975 | ✅ 8/8 | 339 | `6fca474631c3` | `40010a3+dirty` | 2026-11-04 21:26 UTC |
+| `sweep-lod-selfsup/cell0.01-seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.8026 / 0.7148 | ✅ 8/8 | 1563 | `a30f6dd6031f` | `40010a3+dirty` | 2026-11-04 21:24 UTC |
+| `sweep-lod-selfsup/cell0.01-seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7941 / 0.7040 | ✅ 8/8 | 1510 | `ec5134af10a5` | `40010a3+dirty` | 2026-11-04 21:21 UTC |
+| `sweep-lod-selfsup/cell0.01-seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7775 / 0.6961 | ✅ 8/8 | 1251 | `ede9ab23affd` | `40010a3+dirty` | 2026-11-04 21:18 UTC |
 | `sweep-selfsup-seeds/seed5-tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.6453 / 0.5758 | ✅ 8/8 | 1677 | `605702fd9f29` | `64b6eac+dirty` | 2026-11-04 20:54 UTC |
 | `sweep-selfsup-seeds/seed5-tau0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.01 | 12 / 300 | 0.6386 / 0.5612 | ✅ 8/8 | 1766 | `2faf286ff1c5` | `64b6eac+dirty` | 2026-11-04 20:52 UTC |
 | `sweep-selfsup-seeds/seed3-tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.6129 / 0.5326 | ✅ 8/8 | 2606 | `b9f407077757` | `64b6eac+dirty` | 2026-11-04 20:51 UTC |
