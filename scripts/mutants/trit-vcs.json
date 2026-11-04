@@ -502,5 +502,41 @@
   "filter": "export_paths_cannot_escape_the_git_worktree",
   "pkg": "trit-vcs",
   "runner": "cargo"
+ },
+ {
+  "name": "vcs: MCP token 估算除数翻倍（少报一半）",
+  "file": "crates/trit-vcs/src/mcp.rs",
+  "old": "    scaled.div_ceil(4)",
+  "new": "    scaled.div_ceil(8)",
+  "filter": "token_estimate_is_ascii_quarter_and_cjk_one",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: MCP commit 默认放行未认领",
+  "file": "crates/trit-vcs/src/mcp.rs",
+  "old": "                            .unwrap_or(false),",
+  "new": "                            .unwrap_or(true),",
+  "filter": "commit_without_allowance_is_a_tool_error",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: MCP 通知也回响应（协议错）",
+  "file": "crates/trit-vcs/src/mcp.rs",
+  "old": "        let id = request.get(\"id\")?.clone();",
+  "new": "        let id = request\n            .get(\"id\")\n            .cloned()\n            .unwrap_or_else(|| Value::Null);",
+  "filter": "initialize_reports_protocol",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 未知方法不报 -32601",
+  "file": "crates/trit-vcs/src/mcp.rs",
+  "old": "                \"error\": {\"code\": -32601, \"message\": format!(\"未知方法：{other}\")}",
+  "new": "                \"error\": {\"code\": 0, \"message\": format!(\"未知方法：{other}\")}",
+  "filter": "unknown_method_and_tool_are_reported",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
  }
 ]
