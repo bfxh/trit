@@ -457,5 +457,50 @@
   "filter": "test_specs_turn_into_runnable_commands",
   "pkg": "trit-vcs",
   "runner": "cargo"
+ },
+ {
+  "name": "vcs: Git 导出不同步删除（上一版文件留在镜像里）",
+  "file": "crates/trit-vcs/src/git_bridge.rs",
+  "old": "            if !wanted.contains(rel.as_str()) {",
+  "new": "            if false {",
+  "filter": "export_then_import_roundtrip_keeps_content_and_order",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: Git 导出按新→旧写（父链反了）",
+  "file": "crates/trit-vcs/src/git_bridge.rs",
+  "old": "    for (id, commit) in log.iter().rev() {",
+  "new": "    for (id, commit) in log.iter() {",
+  "filter": "export_then_import_roundtrip_keeps_content_and_order",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: Git 导入不剥 trit 尾注（提交说明被污染）",
+  "file": "crates/trit-vcs/src/git_bridge.rs",
+  "old": "        .is_some_and(|line| line.trim_start().starts_with(\"Trit-\"))",
+  "new": "        .is_some_and(|_line| false)",
+  "filter": "export_then_import_roundtrip_keeps_content_and_order",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: Git 导入不倒序（提交逆序）",
+  "file": "crates/trit-vcs/src/git_bridge.rs",
+  "old": "        &[\"log\", \"--reverse\", \"--first-parent\", \"--format=%H\"],",
+  "new": "        &[\"log\", \"--first-parent\", \"--format=%H\"],",
+  "filter": "export_then_import_roundtrip_keeps_content_and_order",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 导出不防路径穿越（树里的 ../ 能写出镜像目录）",
+  "file": "crates/trit-vcs/src/git_bridge.rs",
+  "old": "        || cleaned\n            .split('/')\n            .any(|part| part.is_empty() || part == \"..\")",
+  "new": "        || false",
+  "filter": "export_paths_cannot_escape_the_git_worktree",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
  }
 ]
