@@ -316,6 +316,9 @@ def extract_doc(root):
             f"cell {cfg.get('cell', '?')} m · {cfg.get('steps', '?')} 步 · "
             f"{len(cfg.get('frames', []))} 视角"
         )
+        if cfg.get("selfsup"):
+            cfg_s += f" · selfsup τ{cfg.get('tau', '?')}"
+
         d = m.get("data", {})
         res = m.get("result", {})
         iou = res.get("iou_mean")
@@ -455,7 +458,7 @@ def self_test():
         man = {
             "kind": "extract-occupancy",
             "created_unix": 1,
-            "config": {"cell": 0.01, "steps": 20000, "frames": [0, 1]},
+            "config": {"cell": 0.01, "steps": 20000, "frames": [0, 1], "selfsup": True, "tau": 0.01},
             "data": {"dirs": 2, "files": 14},
             "model": {"path": str(root / "n2.occ1"), "sha256": "ab" * 32},
             "result": {
@@ -486,6 +489,7 @@ def self_test():
         )
         doc = "\n".join(extract_doc(root))
         assert "S1 提取" in doc and "0.5500 / 0.5000" in doc and "✅ 2/2" in doc, doc
+        assert "selfsup τ0.01" in doc, doc
         (root / "n2.occ1.verify.json").write_text(
             json.dumps({"manifest": {"sha256": sha}, "model": {"sha256": "cd" * 32}, "metrics": {}}),
             encoding="utf-8",
