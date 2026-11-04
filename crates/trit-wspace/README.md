@@ -110,6 +110,9 @@ trit-wspace mcp
 库仍会重新验证。候选里的数字不是打分估计。
 模板见 [`mcp.example.json`](mcp.example.json)。
 
+> 注册后需要**重启/重载 Qoder App**，工具目录才会出现；当前会话的 `mcp_list` 不会热更新。
+> 本地已注册的服务 key 是 `trit-wspace`，命令为 `trit-wspace mcp`。
+
 ## 论文与来源
 
 - **Weight-space programming（外部报道，未复现）**：MIT CSAIL，2026-11-02，
