@@ -17,6 +17,7 @@ use trit_vcs::repo::{CommitRequest, Repo};
 use trit_vcs::witness::{RunOutput, Witness};
 use trit_vcs::worktree;
 
+mod bridge;
 mod query;
 
 fn now_secs() -> u64 {
@@ -37,6 +38,8 @@ fn usage() -> ExitCode {
          trit-vcs admit <提交id> --witness FILE [--repo PATH]\n  \
          trit-vcs export <树id> --out FILE [--prefix DIR] [--dest REPO] [--repo SRC]\n  \
          trit-vcs import <包文件> [--repo DEST]\n  \
+         trit-vcs git-export <git目录> [--map FILE] [--repo PATH]\n  \
+         trit-vcs git-import <git目录> [--map FILE] [--repo PATH]\n  \
          trit-vcs merge <ours提交> <theirs提交> [--base <提交>] [--json] [--repo PATH]\n  \
          trit-vcs log [--json] [--tag T] [--evidence 文本] [--session S] [--grep 文本] [--repo PATH]\n  \
          trit-vcs where <路径/测试/标签> --techmap FILE [--json]\n  \
@@ -493,6 +496,8 @@ fn main() -> ExitCode {
                 Err(err) => fail(err.to_string()),
             }
         }
+        "git-export" => bridge::export_cmd(&args),
+        "git-import" => bridge::import_cmd(&args),
         "merge" => {
             let root = repo_path(&args);
             let repo = match Repo::open(&root) {
