@@ -132,7 +132,7 @@ fn with_budget(mut entry: Value) -> Value {
     entry["inputSchema"]["properties"]["budget"] = json!({
         "type": "integer",
         "minimum": 1,
-        "description": "读数上限（元）；超出丢尾部整行并写 truncation.dropped",
+        "description": "读数上限（元）",
     });
     entry
 }

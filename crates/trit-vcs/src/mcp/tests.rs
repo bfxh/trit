@@ -52,6 +52,13 @@ fn tools_list_has_thirteen_tools_and_usage() {
     let usage = &response["result"]["_meta"]["usage"];
     assert!(usage["bytes"].as_u64().unwrap() > 0);
     assert!(usage["tokens_est"].as_u64().unwrap() > 0);
+    // schema 是每个智能体每次会话的固定开销 ⇒ 上界当门钉住（实测 4,146 B / 1,111 元，2026-11-05）。
+    // 加参数可以，别把同一段说明抄 13 份：那条中文抄开一次就是 +192 元。
+    assert!(
+        usage["tokens_est"].as_u64().unwrap() <= 1_300,
+        "tools/list 的 schema 涨到 {} 元，超过上界：把重复说明收进一处",
+        usage["tokens_est"].as_u64().unwrap()
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
