@@ -1,0 +1,92 @@
+[
+ {
+  "name": "layers: 回边永不判红",
+  "file": "scripts/layers.py",
+  "old": "            up = LAYER_ORDER[layers[dep]] > LAYER_ORDER[layers[crate]]",
+  "new": "            up = False",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 未登记的新 crate 放过",
+  "file": "scripts/layers.py",
+  "old": "        if crate not in layers:\n            problems.append(f\"未登记：{crate} 不在 layers.json（新增 crate 必须先归位）\")",
+  "new": "        if False:\n            problems.append(f\"未登记：{crate} 不在 layers.json（新增 crate 必须先归位）\")",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 逐条例外失效（allows 被无视）",
+  "file": "scripts/layers.py",
+  "old": "            if up and (crate, dep) not in exceptions:",
+  "new": "            if up:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 失效例外不清",
+  "file": "scripts/layers.py",
+  "old": "        if src in members and dst not in deps_of(src):",
+  "new": "        if False:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 陈旧登记不清（表里删了成员却没人知道）",
+  "file": "scripts/layers.py",
+  "old": "        if crate not in members:\n            problems.append(f\"陈旧登记：layers.json 里的 {crate} 已不是 workspace 成员\")",
+  "new": "        if False:\n            problems.append(f\"陈旧登记：layers.json 里的 {crate} 已不是 workspace 成员\")",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 实测差缺字段的检查关掉",
+  "file": "scripts/layers.py",
+  "old": "            if not gap:",
+  "new": "            if False:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 读数里必须有数字这条失效",
+  "file": "scripts/layers.py",
+  "old": "            elif not any(ch.isdigit() for ch in gap):",
+  "new": "            elif False:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 并存理由不查",
+  "file": "scripts/layers.py",
+  "old": "            if not (mirror.get(\"why_kept\") or \"\").strip():",
+  "new": "            if False:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 能力重复登记不查",
+  "file": "scripts/layers.py",
+  "old": "        if name in seen:",
+  "new": "        if False:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 权威实现不在表里不查",
+  "file": "scripts/layers.py",
+  "old": "        if authoritative not in known_crates:",
+  "new": "        if False:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
