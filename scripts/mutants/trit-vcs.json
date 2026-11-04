@@ -335,7 +335,7 @@
  {
   "name": "vcs: 包头仍声明原树（部分包因此缺树对象）",
   "file": "crates/trit-vcs/src/bundle.rs",
-  "old": "    out.write_all(manifest_id.as_bytes())?;",
+  "old": "    out.write_all(id.as_bytes())?;",
   "new": "    out.write_all(tree.as_bytes())?;",
   "filter": "partial_pull_sends_well_under_a_tenth",
   "pkg": "trit-vcs",
@@ -554,6 +554,186 @@
   "old": "        .filter(|change| change.kind != Kind::Deleted)",
   "new": "        .filter(|_change| true)",
   "filter": "sparse_checkout_writes_only_the_requested_prefix",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 搬运不跳过目标已有对象（重复 pull 重传全量）",
+  "file": "crates/trit-vcs/src/bundle.rs",
+  "old": "        if dst.has_chunk(hash) {",
+  "new": "        if false {",
+  "filter": "publish_then_pull_prefix_sends_only_that_closure",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 树清单不看目标已有（第二次 pull 又写一遍）",
+  "file": "crates/trit-vcs/src/bundle.rs",
+  "old": "    if dst.has_chunk(&manifest.id) {",
+  "new": "    if false {",
+  "filter": "publish_then_pull_prefix_sends_only_that_closure",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 树清单挂原树 id（客户端里没有这个对象）",
+  "file": "crates/trit-vcs/src/bundle.rs",
+  "old": "        id: Hash::of(&bytes),",
+  "new": "        id: tree,",
+  "filter": "publish_then_pull_prefix_sends_only_that_closure",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 发布不带树对象（中央仓凑不齐闭包）",
+  "file": "crates/trit-vcs/src/bundle.rs",
+  "old": "    push_object(&mut order, &mut seen, parsed.tree);",
+  "new": "    let _ = parsed.tree;",
+  "filter": "publish_then_pull_prefix_sends_only_that_closure",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 发布不写命名 ref（中央仓没有可拉的分支）",
+  "file": "crates/trit-vcs/src/central.rs",
+  "old": "    central.set_ref(name, &resolved)?;",
+  "new": "    let _ = (name, &resolved);",
+  "filter": "refs_are_named_and_listed",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: publish 先搬对象再校验名字（非法名在中央仓留下块）",
+  "file": "crates/trit-vcs/src/central.rs",
+  "old": "    Repo::validate_ref(name)?;\n    let resolved = match commit {",
+  "new": "    let resolved = match commit {",
+  "filter": "bad_names_and_missing_refs_are_loud",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: pull 的目录范围不生效（清单按全量造）",
+  "file": "crates/trit-vcs/src/central.rs",
+  "old": "    let list = bundle::manifest(central.store(), commit_obj.tree, prefix)?;",
+  "new": "    let list = bundle::manifest(central.store(), commit_obj.tree, None)?;",
+  "filter": "publish_then_pull_prefix_sends_only_that_closure",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: pull 总是强推（本地改动被静默盖掉）",
+  "file": "crates/trit-vcs/src/central.rs",
+  "old": "client.root(), None, force)?;",
+  "new": "client.root(), None, true)?;",
+  "filter": "pull_refuses_to_overwrite_local_changes",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 物化的脏判断反了（干净也挡、脏也不挡）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "        if !force\n            && let Ok(existing) = fs::read(&target)\n            && existing != bytes",
+  "new": "        if force\n            && let Ok(existing) = fs::read(&target)\n            && existing != bytes",
+  "filter": "pull_refuses_to_overwrite_local_changes",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 脏清单为空也报错（pull 永远失败）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "    if !blocked.is_empty() {",
+  "new": "    if true {",
+  "filter": "pull_without_prefix_materializes_everything",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: CLI pull 不接 --prefix（只拉一个目录失效）",
+  "file": "crates/trit-vcs/src/bin/trit-vcs/central_sync.rs",
+  "old": "    let prefix = flag(args, \"--prefix\");",
+  "new": "    let prefix: Option<&str> = None;",
+  "filter": "publish_then_sparse_pull",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: CLI pull 不接 --force（没法覆盖本地改动）",
+  "file": "crates/trit-vcs/src/bin/trit-vcs/central_sync.rs",
+  "old": "        prefix,\n        has(args, \"--force\"),",
+  "new": "        prefix,\n        false,",
+  "filter": "publish_then_sparse_pull",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: ref 名长度不设限（64 位的墙形同虚设）",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "        if name.is_empty() || name.len() > 64 {",
+  "new": "        if name.is_empty() || name.len() > 6400 {",
+  "filter": "bad_names_and_missing_refs_are_loud",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: ref 名字符不限制（空格名也能当分支）",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))",
+  "new": "                .all(|_ch| true)",
+  "filter": "bad_names_and_missing_refs_are_loud",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: ref 名允许点开头（隐藏文件当分支）",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "        if name.starts_with('.')",
+  "new": "        if false",
+  "filter": "bad_names_and_missing_refs_are_loud",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 写 ref 不进哈希链（改分支不留痕）",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "        self.journal.append(\n            \"ref\",",
+  "new": "        self.journal.append(\n            \"stage\",",
+  "filter": "refs_are_named_and_listed",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 中央仓 ref 随便后退（甩掉别人的历史）",
+  "file": "crates/trit-vcs/src/central.rs",
+  "old": "        if !descendant && !force {",
+  "new": "        if false {",
+  "filter": "publish_only_moves_a_ref_forwards",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 后代判定比错了端点（父提交被当成后代）",
+  "file": "crates/trit-vcs/src/central.rs",
+  "old": "            current == resolved || central.merge_base(&resolved, &current)? == Some(current);",
+  "new": "            current == resolved || central.merge_base(&resolved, &current)? == Some(resolved);",
+  "filter": "publish_only_moves_a_ref_forwards",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 发布不补父链（中央仓判不了分叉）",
+  "file": "crates/trit-vcs/src/central.rs",
+  "old": "const ANCESTOR_CAP: usize = 4_096;",
+  "new": "const ANCESTOR_CAP: usize = 0;",
+  "filter": "publish_only_moves_a_ref_forwards",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: CLI publish 不接 --force（改写 ref 无入口）",
+  "file": "crates/trit-vcs/src/bin/trit-vcs/central_sync.rs",
+  "old": "        commit.as_ref(),\n        has(args, \"--force\"),",
+  "new": "        commit.as_ref(),\n        false,",
+  "filter": "publish_then_sparse_pull",
   "pkg": "trit-vcs",
   "runner": "cargo"
  }

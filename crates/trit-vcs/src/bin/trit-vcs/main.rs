@@ -17,6 +17,7 @@ use trit_vcs::witness::{RunOutput, Witness};
 use trit_vcs::worktree;
 
 mod bridge;
+mod central_sync;
 mod mcp_serve;
 mod query;
 mod transport;
@@ -39,6 +40,8 @@ fn usage() -> ExitCode {
          trit-vcs admit <提交id> --witness FILE [--repo PATH]\n  \
          trit-vcs export <树id> --out FILE [--prefix DIR] [--dest REPO] [--repo SRC]\n  \
          trit-vcs import <包文件> [--repo DEST]\n  \
+         trit-vcs publish <ref> --central PATH [--commit ID] [--force] [--repo SRC]\n  \
+         trit-vcs pull <ref> --central PATH [--prefix DIR] [--force] [--repo DEST]\n  \
          trit-vcs git-export <git目录> [--map FILE] [--repo PATH]\n  \
          trit-vcs mcp [--repo PATH]\n  \
          trit-vcs git-import <git目录> [--map FILE] [--repo PATH]\n  \
@@ -409,6 +412,8 @@ fn main() -> ExitCode {
         }
         "export" => transport::export_cmd(&args),
         "import" => transport::import_cmd(&args),
+        "publish" => central_sync::publish_cmd(&args),
+        "pull" => central_sync::pull_cmd(&args),
         "git-export" => bridge::export_cmd(&args),
         "git-import" => bridge::import_cmd(&args),
         "mcp" => mcp_serve::serve_cmd(&args),

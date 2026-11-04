@@ -56,6 +56,20 @@ pub enum RepoError {
     WitnessFailed(i32),
     #[error("提交 {0} 没有 witness：不能作为合并候选")]
     Unwitnessed(String),
+    #[error("ref 名字不合法：{0:?}（要 1–64 位字母数字或 . _ -，不含 /）")]
+    BadRefName(String),
+    #[error("ref 内容坏了：{0}")]
+    BadRef(String),
+    #[error("找不到 ref：{0}")]
+    UnknownRef(String),
+    #[error(
+        "ref {name} 现在指向 {current}，新提交 {incoming} 不是它的后代——移动它会把别人的工作甩掉（确认要改写加 --force）"
+    )]
+    NonFastForward {
+        name: String,
+        current: String,
+        incoming: String,
+    },
     #[error("仓库策略要求提交带 intent（goal + 至少一条 accept）")]
     IntentRequired,
     #[error("intent 不成立：{0}")]
@@ -244,6 +258,75 @@ impl Repo {
     fn write_head(&self, id: &Hash) -> Result<(), RepoError> {
         fs::write(Self::dir(&self.root).join("HEAD"), format!("{id}\n"))?;
         Ok(())
+    }
+
+    /// ref 名是扁平标签（`main`、`nightly`）：长度 1–64，只用 ASCII 字母数字与 `.` `_` `-`，
+    /// 不含 `/`、不以 `.` 开头（否则一个名字会变成一层目录或一个隐藏文件）。
+    pub fn validate_ref(name: &str) -> Result<(), RepoError> {
+        if name.is_empty() || name.len() > 64 {
+            return Err(RepoError::BadRefName(name.to_string()));
+        }
+        if name.starts_with('.')
+            || name.contains('/')
+            || name.contains("..")
+            || !name
+                .chars()
+                .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+        {
+            return Err(RepoError::BadRefName(name.to_string()));
+        }
+        Ok(())
+    }
+
+    /// 命名 ref：`.tritvcs/refs/<名字>` 存一个提交 id。
+    pub fn set_ref(&mut self, name: &str, commit: &Hash) -> Result<(), RepoError> {
+        Self::validate_ref(name)?;
+        let path = Self::dir(&self.root).join("refs").join(name);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&path, format!("{commit}\n"))?;
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        self.journal.append(
+            "ref",
+            json!({"name": name, "commit": commit.to_hex()}),
+            now_ms,
+        )?;
+        Ok(())
+    }
+
+    pub fn ref_commit(&self, name: &str) -> Result<Option<Hash>, RepoError> {
+        Self::validate_ref(name)?;
+        let path = Self::dir(&self.root).join("refs").join(name);
+        if !path.is_file() {
+            return Ok(None);
+        }
+        let text = fs::read_to_string(&path)?;
+        let text = text.trim();
+        Hash::from_hex(text)
+            .map(Some)
+            .ok_or_else(|| RepoError::BadRef(text.to_string()))
+    }
+
+    /// 所有命名 ref（按名字排序）。
+    pub fn list_refs(&self) -> Result<Vec<(String, Hash)>, RepoError> {
+        let dir = Self::dir(&self.root).join("refs");
+        if !dir.is_dir() {
+            return Ok(Vec::new());
+        }
+        let mut out = Vec::new();
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if let Some(id) = self.ref_commit(&name)? {
+                out.push((name, id));
+            }
+        }
+        out.sort();
+        Ok(out)
     }
 
     pub fn index(&self) -> Result<Option<Index>, RepoError> {
