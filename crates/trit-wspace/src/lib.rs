@@ -24,7 +24,8 @@
 //! - **表示层**：[`Net`] / [`Layer`] 是不可变的权重工件；[`codec`] 把它写成 WSP1 文本，
 //!   [`Trit`] 是唯一的权重单位。
 //! - **编辑层**：[`Edit`] / [`Patch`] 是事务式补丁；[`Journal`] 支持逐位回滚；
-//!   [`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行。
+//!   [`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
+//!   [`AuditLog`] 把每次编辑记成带哈希链的 JSONL，可验链、可从初始工件重放。
 //! - 程序语义：[`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
 //! - 搜索层：[`mod@repair`] 不走梯度，在离散空间里找精确最小补丁；[`mod@analyze`] 对每个单点
 //!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`merge`] 负责消掉隐藏单元置换对称性后再合并。
@@ -87,6 +88,7 @@
 #![forbid(unsafe_code)]
 
 pub mod analyze;
+pub mod audit;
 pub mod cli;
 pub mod codec;
 pub mod edit;
@@ -102,6 +104,7 @@ pub mod trit;
 pub mod wire;
 
 pub use analyze::{Analysis, EditImpact, analyze};
+pub use audit::{AuditLog, LogEntry, ReplayReport};
 pub use codec::{checksum, from_wsp, to_wsp};
 pub use edit::{Cost, Edit, Journal, Patch};
 pub use error::{Error, Result};

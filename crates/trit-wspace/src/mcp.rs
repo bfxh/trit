@@ -1,13 +1,15 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，七个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，八个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
-//! 求最小补丁、提议单点编辑、求差集、合并。每次调用都从 WSP1 文本开始，不依赖服务端保存状态。
+//! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
+//! 不依赖服务端保存状态。
 
 use std::io::{self, BufRead, Write as IoWrite};
 
 use serde_json::{Value, json};
 
 use crate::analyze;
+use crate::audit::AuditLog;
 use crate::codec::{from_wsp, to_wsp};
 use crate::edit::Patch;
 use crate::merge::{merge_aligned, merge_vote};
@@ -38,7 +40,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 七个工具。改数量必须同时改测试断言。
+/// 八个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -93,6 +95,15 @@ pub fn tools() -> Vec<Value> {
                 "limit": {"type": "integer", "description": "返回条数，默认 16；0=全部"},
             }),
             &["oracle"],
+        ),
+        tool(
+            "wsp_audit",
+            "校验 JSONL 编辑日志的哈希链；可选从初始工件重放并检查最终校验和",
+            json!({
+                "log": {"type": "string", "description": "JSONL 文本或路径"},
+                "artifact": artifact(), "path": {"type": "string"},
+            }),
+            &["log"],
         ),
         tool(
             "wsp_diff",
@@ -193,11 +204,14 @@ impl Mcp {
                 if (require_before || require_after) && oracle.is_none() {
                     return Err("require_before/require_after 需要 oracle".into());
                 }
-                let (report, work) =
+                let outcome =
                     ops::apply_patch(&net, patch, oracle.as_ref(), require_before, require_after)
                         .map_err(err)?;
+                let work = outcome.net;
                 let mut value = json!({
-                    "report": report,
+                    "report": outcome.report,
+                    "applied": outcome.applied,
+                    "rolled_back": outcome.rolled_back,
                     "summary": wire::net_summary(&work),
                     "artifact": to_wsp(&work),
                 });
@@ -242,6 +256,42 @@ impl Mcp {
                 let limit = opt_usize(args, "limit", 16);
                 let analysis = analyze::analyze(&net, &oracle, limit).map_err(err)?;
                 Ok(wire::analysis_to_value(&analysis))
+            }
+            "wsp_audit" => {
+                let raw = args.get("log").and_then(Value::as_str).ok_or("需要 log")?;
+                let text = read_log(raw)?;
+                let log = match AuditLog::from_jsonl(&text) {
+                    Ok(log) => log,
+                    Err(error) => {
+                        return Ok(json!({"valid": false, "error": error.to_string()}));
+                    }
+                };
+                if let Err(error) = log.verify_chain() {
+                    return Ok(json!({"valid": false, "error": error.to_string()}));
+                }
+                let mut value = json!({
+                    "valid": true,
+                    "entries": log.len(),
+                    "head": format!("{:016x}", log.head()),
+                });
+                if let Some(net) = load_optional(args)? {
+                    match log.replay(&net) {
+                        Ok(report) => {
+                            value["replay"] = json!({
+                                "entries": report.entries,
+                                "applied": report.applied,
+                                "rolled_back": report.rolled_back,
+                                "skipped": report.skipped,
+                                "final_checksum": format!("{:016x}", report.final_checksum),
+                            });
+                        }
+                        Err(error) => {
+                            value["valid"] = json!(false);
+                            value["error"] = json!(error.to_string());
+                        }
+                    }
+                }
+                Ok(value)
             }
             "wsp_diff" => {
                 let a = load_key(args, "a")?;
@@ -318,6 +368,22 @@ fn err_result(message: impl Into<String>) -> Value {
         "isError": true,
         "_meta": {"usage": {"bytes": text.len(), "tokens_est": estimate_tokens(&text)}},
     })
+}
+
+fn read_log(raw: &str) -> Result<String, String> {
+    if raw.trim_start().starts_with('{') || raw.contains('\n') {
+        Ok(raw.to_string())
+    } else {
+        std::fs::read_to_string(raw).map_err(|error| format!("{raw}: {error}"))
+    }
+}
+
+fn load_optional(args: &Value) -> Result<Option<Net>, String> {
+    if args.get("artifact").is_some() || args.get("path").is_some() {
+        load(args).map(Some)
+    } else {
+        Ok(None)
+    }
 }
 
 fn load(args: &Value) -> Result<Net, String> {

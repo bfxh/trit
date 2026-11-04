@@ -77,7 +77,7 @@
   "old": "let tools = tools();",
   "new": "let tools: Vec<Value> = Vec::new();",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_seven_tools"
+  "filter": "lists_exactly_eight_tools"
  },
  {
   "name": "wspace-mcp: 错误结果不再标 isError",
@@ -140,6 +140,54 @@
   "file": "crates/trit-wspace/src/cli.rs",
   "old": "\"propose\" => cmd_propose(&args[1..]),",
   "new": "\"proposeX\" => cmd_propose(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-audit: 验链不比对 chain",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if entry.chain != want {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "tampering_is_detected"
+ },
+ {
+  "name": "wspace-audit: 重放忽略 rolled_back",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if entry.rolled_back {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "rolled_back_and_blocked_entries_replay_unchanged"
+ },
+ {
+  "name": "wspace-audit: 允许回滚条目前后不同",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if rolled_back && before_sum != after_sum {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "inconsistent_rollback_and_blocked_entries_are_rejected"
+ },
+ {
+  "name": "wspace-audit: prev 不接链头",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "let prev = self.head();",
+  "new": "let prev = GENESIS;",
+  "pkg": "trit-wspace",
+  "filter": "append_verify_replay_round_trip"
+ },
+ {
+  "name": "wspace-mcp: 审计工具名被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "\"wsp_audit\" =>",
+  "new": "\"wsp_auditX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "audit_verifies_chain_and_replays"
+ },
+ {
+  "name": "wspace-cli: audit 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "\"audit\" => cmd_audit(&args[1..]),",
+  "new": "\"auditX\" => cmd_audit(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
  }

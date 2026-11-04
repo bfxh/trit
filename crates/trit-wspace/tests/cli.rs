@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
 use serde_json::Value;
-use trit_wspace::{Layer, Net, to_wsp};
+use trit_wspace::{Layer, Net, checksum, from_wsp, to_wsp};
 
 fn xor_net() -> Net {
     Net::new(vec![
@@ -50,6 +50,8 @@ fn cli_read_verify_patch_repair_round_trip() {
     let patch = dir.join("break.json");
     let broken = dir.join("broken.wsp");
     let fixed = dir.join("fixed.wsp");
+    let log = dir.join("audit.jsonl");
+    let replayed = dir.join("replayed.wsp");
     fs::write(&artifact, to_wsp(&xor_net())).expect("artifact");
     fs::write(&oracle, r#"{"domain":"boolean","vars":2,"table":"0110"}"#).expect("oracle");
     fs::write(
@@ -77,6 +79,8 @@ fn cli_read_verify_patch_repair_round_trip() {
         &path_string(&patch),
         "--out",
         &path_string(&broken),
+        "--log",
+        &path_string(&log),
     ]));
     assert_eq!(patched["report"]["applied"], true);
     assert_eq!(patched["report"]["cost"]["touched"].as_u64(), Some(1));
@@ -87,6 +91,48 @@ fn cli_read_verify_patch_repair_round_trip() {
         &path_string(&oracle),
     ]));
     assert_eq!(broken_verify["exact"], false);
+
+    let broken_sum =
+        checksum(&from_wsp(&fs::read_to_string(&broken).expect("broken")).expect("parse broken"));
+    let audit = stdout_json(&run(&[
+        "audit",
+        &path_string(&log),
+        "--artifact",
+        &path_string(&artifact),
+    ]));
+    assert_eq!(audit["valid"], true);
+    assert_eq!(audit["entries"].as_u64(), Some(1));
+    assert_eq!(
+        audit["replay"]["final_checksum"].as_str().expect("sum"),
+        format!("{broken_sum:016x}")
+    );
+
+    let replayed_report = stdout_json(&run(&[
+        "replay",
+        &path_string(&log),
+        "--artifact",
+        &path_string(&artifact),
+        "--out",
+        &path_string(&replayed),
+    ]));
+    assert_eq!(
+        replayed_report["final_checksum"].as_str().expect("sum"),
+        format!("{broken_sum:016x}")
+    );
+    assert!(replayed.is_file());
+
+    let tampered =
+        fs::read_to_string(&log)
+            .expect("log")
+            .replacen("\"to\":\"0\"", "\"to\":\"+\"", 1);
+    fs::write(&log, tampered).expect("tamper");
+    let bad = run(&["audit", &path_string(&log)]);
+    assert!(!bad.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).starts_with("FAIL "),
+        "stderr: {}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
 
     let proposed = stdout_json(&run(&[
         "propose",

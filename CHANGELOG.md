@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：可重放的编辑审计链）
+
+- 新模块 `audit`：JSONL + FNV 哈希链。每条记录 `before` / `after` 校验和、补丁、改动量、
+  `applied` / `rolled_back`、`prev` / `chain`；`verify_chain` 抓篡改与乱序，
+  `replay` / `replay_net` 从初始工件逐条重放并核对每一步校验和。
+- 不变量：回滚条目与未应用条目必须前后同校验和（工件不会被留在半改状态），
+  `record` 直接拒绝不自洽的记录。
+- CLI：`patch --log`、`audit <log> [--artifact]`、`replay <log> --artifact --out`；
+  MCP 新增 `wsp_audit`（工具 7 → 8）。
+- 测试 71 + 1 doctest（新增 7 条审计链不变量、1 条 MCP 审计回放、CLI 追加日志/验链/重放/篡改）；
+  变异 18 → **24 条，24/24 caught**；test_surface 台账 2,233 → 2,251。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py 全过。
+- 本机 release 二进制与 MCP 服务已按新工具清单重装（8 工具）。
+
 ### Added（trit-wspace：单点编辑提议器）
 
 - 新模块 `analyze`：枚举全部点编辑（改一个 trit / 偏置），对每条**实测**

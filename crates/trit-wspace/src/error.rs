@@ -80,6 +80,8 @@ pub enum Error {
     },
     /// 线格式（补丁/验证集/报告 JSON）错误。
     Wire(String),
+    /// 审计日志不一致（哈希链、顺序、重放校验和）。
+    Audit(String),
 }
 
 /// 库内统一 `Result`。
@@ -117,6 +119,7 @@ impl fmt::Display for Error {
                 write!(f, "校验和不符：文本 {expected:016x}，重算 {got:016x}")
             }
             Self::Wire(msg) => write!(f, "线格式错误：{msg}"),
+            Self::Audit(msg) => write!(f, "审计日志错误：{msg}"),
         }
     }
 }

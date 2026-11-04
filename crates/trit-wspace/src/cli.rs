@@ -6,9 +6,11 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::io::Read;
+use std::path::Path;
 
 use serde_json::{Value, json};
 
+use crate::audit::AuditLog;
 use crate::codec::{from_wsp, to_wsp};
 use crate::edit::Patch;
 use crate::merge::{merge_aligned, merge_vote};
@@ -22,9 +24,11 @@ const USAGE: &str = "\
 trit-wspace <command>
   read <artifact|-> [--out <path>]
   verify <artifact|-> --oracle <json|-> [--limit N]
-  patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
+  patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N]
+  audit <log|-> [--artifact <initial|->]
+  replay <log|-> --artifact <initial|-> [--out <path>]
   diff <a|-> <b|->
   merge <a|-> <b|-> [--aligned] [--out <path>]
   mcp";
@@ -53,6 +57,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "patch" => cmd_patch(&args[1..]),
         "repair" => cmd_repair(&args[1..]),
         "propose" => cmd_propose(&args[1..]),
+        "audit" => cmd_audit(&args[1..]),
+        "replay" => cmd_replay(&args[1..]),
         "diff" => cmd_diff(&args[1..]),
         "merge" => cmd_merge(&args[1..]),
         "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
@@ -98,7 +104,7 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &["require-before", "require-after"])?;
     let path = one(
         &parsed,
-        "patch <artifact|-> --patch <json|-> [--oracle <json|->]",
+        "patch <artifact|-> --patch <json|-> [--oracle <json|->] [--log <path>]",
     )?;
     let patch_path = value(&parsed, "patch")?;
     let oracle_path = parsed.values.get("oracle").map(String::as_str);
@@ -110,18 +116,43 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
 
     let net = load_net(path)?;
     let patch = wire::patch_from_value(&load_json(patch_path)?).map_err(err)?;
+    let patch_for_log = patch.clone();
     let oracle = oracle_path.map(load_oracle).transpose()?;
     let require_before = parsed.switches.contains("require-before");
     let require_after = parsed.switches.contains("require-after");
     if (require_before || require_after) && oracle.is_none() {
         return Err("--require-before/--require-after 需要 --oracle".into());
     }
-    let (report, work) =
-        ops::apply_patch(&net, patch, oracle.as_ref(), require_before, require_after)
-            .map_err(err)?;
+    let outcome = ops::apply_patch(&net, patch, oracle.as_ref(), require_before, require_after)
+        .map_err(err)?;
+    let applied = outcome.applied;
+    let rolled_back = outcome.rolled_back;
+    let work = outcome.net;
+    if let Some(log_path) = parsed.values.get("log") {
+        let mut log = if Path::new(log_path).exists() {
+            AuditLog::from_jsonl(
+                &fs::read_to_string(log_path).map_err(|error| format!("{log_path}: {error}"))?,
+            )
+            .map_err(err)?
+        } else {
+            AuditLog::new()
+        };
+        log.record(
+            "cli-patch",
+            &net,
+            &work,
+            patch_for_log,
+            applied,
+            rolled_back,
+        )
+        .map_err(err)?;
+        atomic_write(log_path, &log.to_jsonl())?;
+    }
     write_out(&parsed, &work)?;
     let mut output = json!({
-        "report": report,
+        "report": outcome.report,
+        "applied": applied,
+        "rolled_back": rolled_back,
         "summary": wire::net_summary(&work),
         "artifact": to_wsp(&work),
     });
@@ -132,6 +163,58 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
         });
     }
     emit(&output)
+}
+
+fn cmd_audit(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    let log_path = one(&parsed, "audit <log|-> [--artifact <initial|->]")?;
+    let artifact = parsed.values.get("artifact").map(String::as_str);
+    let mut sources = vec![log_path];
+    if let Some(artifact) = artifact {
+        sources.push(artifact);
+    }
+    no_double_stdin(&sources)?;
+    let log = AuditLog::from_jsonl(&read_source(log_path)?).map_err(err)?;
+    log.verify_chain().map_err(err)?;
+    let mut output = json!({
+        "valid": true,
+        "entries": log.len(),
+        "head": format!("{:016x}", log.head()),
+    });
+    if let Some(artifact) = artifact {
+        let replay = log.replay(&load_net(artifact)?).map_err(err)?;
+        output["replay"] = json!({
+            "entries": replay.entries,
+            "applied": replay.applied,
+            "rolled_back": replay.rolled_back,
+            "skipped": replay.skipped,
+            "final_checksum": format!("{:016x}", replay.final_checksum),
+        });
+    }
+    emit(&output)
+}
+
+fn cmd_replay(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    let log_path = one(
+        &parsed,
+        "replay <log|-> --artifact <initial|-> [--out <path>]",
+    )?;
+    let artifact = value(&parsed, "artifact")?;
+    no_double_stdin(&[log_path, artifact])?;
+    let log = AuditLog::from_jsonl(&read_source(log_path)?).map_err(err)?;
+    log.verify_chain().map_err(err)?;
+    let (replay, net) = log.replay_net(&load_net(artifact)?).map_err(err)?;
+    write_out(&parsed, &net)?;
+    emit(&json!({
+        "entries": replay.entries,
+        "applied": replay.applied,
+        "rolled_back": replay.rolled_back,
+        "skipped": replay.skipped,
+        "final_checksum": format!("{:016x}", replay.final_checksum),
+        "summary": wire::net_summary(&net),
+        "artifact": to_wsp(&net),
+    }))
 }
 
 fn cmd_repair(args: &[String]) -> Result<(), String> {

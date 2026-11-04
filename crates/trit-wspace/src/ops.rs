@@ -12,18 +12,29 @@ use crate::program::Program;
 use crate::repair::{Repair, RepairOptions, repair};
 use crate::wire;
 
+/// 应用补丁的结果。
+#[derive(Clone, Debug, PartialEq)]
+pub struct PatchOutcome {
+    /// 报告 JSON（`Program` 报告或直接应用的报告）。
+    pub report: Value,
+    /// 最终网络（回滚时与输入逐位相同）。
+    pub net: Net,
+    /// 补丁是否被应用过。
+    pub applied: bool,
+    /// 是否因后置失败而回滚。
+    pub rolled_back: bool,
+}
+
 /// 应用补丁：有验证集时走 `Program`（可带前后置条件），没有时直接事务式应用。
-///
-/// 返回 `(报告 JSON, 最终网络)`；后置失败时最终网络与输入逐位相同。
 pub fn apply_patch(
     net: &Net,
     patch: Patch,
     oracle: Option<&Oracle>,
     require_before: bool,
     require_after: bool,
-) -> Result<(Value, Net)> {
+) -> Result<PatchOutcome> {
     let mut work = net.clone();
-    let report = if let Some(oracle) = oracle {
+    if let Some(oracle) = oracle {
         let mut program = Program::new("tool", patch);
         if require_before {
             program = program.require_before(oracle.behavior());
@@ -31,17 +42,27 @@ pub fn apply_patch(
         if require_after {
             program = program.require_after(oracle.behavior());
         }
-        wire::report_to_value(&program.run(&mut work, oracle)?)
+        let report = program.run(&mut work, oracle)?;
+        Ok(PatchOutcome {
+            report: wire::report_to_value(&report),
+            net: work,
+            applied: report.applied,
+            rolled_back: report.rolled_back,
+        })
     } else {
         let cost = patch.cost(net);
         patch.apply(&mut work)?;
-        json!({
-            "applied": true,
-            "rolled_back": false,
-            "cost": wire::cost_to_value(&cost),
+        Ok(PatchOutcome {
+            report: json!({
+                "applied": true,
+                "rolled_back": false,
+                "cost": wire::cost_to_value(&cost),
+            }),
+            net: work,
+            applied: true,
+            rolled_back: false,
         })
-    };
-    Ok((report, work))
+    }
 }
 
 /// 求精确补丁并应用；找不到返回 `None`（不返回“差不多对”的网络）。

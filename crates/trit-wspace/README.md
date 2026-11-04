@@ -63,6 +63,8 @@ trit-wspace verify xor.wsp --oracle xor.json
 trit-wspace patch  xor.wsp --patch break.json --oracle xor.json --require-after --out fixed.wsp
 trit-wspace repair broken.wsp --oracle xor.json --max-edits 2 --out fixed.wsp
 trit-wspace propose broken.wsp --oracle xor.json --limit 8
+trit-wspace audit  audit.jsonl --artifact start.wsp
+trit-wspace replay audit.jsonl --artifact start.wsp --out final.wsp
 trit-wspace diff   a.wsp b.wsp
 trit-wspace merge  a.wsp b.wsp --aligned --out merged.wsp
 trit-wspace mcp
@@ -102,16 +104,24 @@ trit-wspace mcp
 }
 ```
 
-七个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_repair`、`wsp_propose`、`wsp_diff`、`wsp_merge`。
+八个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_repair`、`wsp_propose`、`wsp_audit`、`wsp_diff`、`wsp_merge`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对每个单点编辑**实测** `after_loss` /
 `fixed` / `broken` / `changed`，按 `gain` 排序返回；模型挑一条后走 `wsp_patch`，
 库仍会重新验证。候选里的数字不是打分估计。
+
+`wsp_audit` 校验 JSONL 编辑日志的哈希链；给了初始工件就顺带重放并核对最终校验和。
 模板见 [`mcp.example.json`](mcp.example.json)。
 
 > 注册后需要**重启/重载 Qoder App**，工具目录才会出现；当前会话的 `mcp_list` 不会热更新。
 > 本地已注册的服务 key 是 `trit-wspace`，命令为 `trit-wspace mcp`。
+
+### 审计日志（JSONL + 哈希链）
+
+`patch --log audit.jsonl` 每次追加一条；每行含 `before` / `after` 校验和、补丁、改动量、
+`applied` / `rolled_back`、`prev` / `chain`。`audit` 验链（抓篡改/乱序），`replay` 从初始
+工件逐条重放并核对每一步校验和。回滚/未应用条目必须前后同校验和，日志本身自洽。
 
 ## 论文与来源
 

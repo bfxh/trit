@@ -53,13 +53,13 @@ fn initialize_reports_protocol_and_server_name() {
 }
 
 #[test]
-fn lists_exactly_seven_tools() {
+fn lists_exactly_eight_tools() {
     let mut server = Mcp::new();
     let response = server
         .dispatch(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))
         .expect("response");
     let listed = response["result"]["tools"].as_array().expect("tools");
-    assert_eq!(listed.len(), 7);
+    assert_eq!(listed.len(), 8);
     let names: Vec<&str> = listed
         .iter()
         .map(|tool| tool["name"].as_str().expect("name"))
@@ -70,12 +70,13 @@ fn lists_exactly_seven_tools() {
         "wsp_patch",
         "wsp_repair",
         "wsp_propose",
+        "wsp_audit",
         "wsp_diff",
         "wsp_merge",
     ] {
         assert!(names.contains(&expected), "缺少工具 {expected}");
     }
-    assert_eq!(tools().len(), 7);
+    assert_eq!(tools().len(), 8);
 }
 
 #[test]
@@ -243,6 +244,43 @@ fn propose_returns_replayable_ranked_candidates() {
     let mut fixed = broken.clone();
     patch.apply(&mut fixed).expect("apply");
     assert!(xor_oracle_net_check(&fixed));
+}
+
+#[test]
+fn audit_verifies_chain_and_replays() {
+    let start = xor_net();
+    let mut broken = start.clone();
+    let patch = Patch::new(vec![Edit::SetTrit {
+        layer: 0,
+        row: 0,
+        col: 0,
+        to: Trit::Zero,
+    }]);
+    patch.apply(&mut broken).expect("corrupt");
+    let mut log = trit_wspace::AuditLog::new();
+    log.record("break", &start, &broken, patch, true, false)
+        .expect("record");
+
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_audit",
+        json!({"log": log.to_jsonl(), "artifact": to_wsp(&start)}),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert_eq!(value["valid"], true);
+    assert_eq!(value["entries"].as_u64(), Some(1));
+    assert_eq!(
+        value["replay"]["final_checksum"].as_str().expect("sum"),
+        format!("{:016x}", trit_wspace::checksum(&broken))
+    );
+
+    let tampered = log.to_jsonl().replacen("\"to\":\"0\"", "\"to\":\"+\"", 1);
+    let result = call(&mut server, "wsp_audit", json!({"log": tampered}));
+    let value = payload(&result);
+    assert_eq!(value["valid"], false);
+    assert!(value["error"].is_string());
 }
 
 #[test]
