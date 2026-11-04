@@ -237,17 +237,11 @@ pub(crate) fn occ_cmd(argv: &[String]) {
         let prims: Vec<Primitive> =
             parse_objects(&scenes.join(format!("scene{idx:04}/objects.json")));
         let views = load_views(idx);
-        let g = if selfsup {
-            let pts = view_points(&views);
-            match trit_parts::mesh::Grid::from_points(&pts, cell, 3) {
-                Some(g) => g,
-                None => continue,
-            }
-        } else {
-            match grid_for(&prims, cell, 2) {
-                Some(g) => g,
-                None => continue,
-            }
+        // 评测栅格**一律由原语包围盒建**（与训练标签来源无关）：否则自监督与监督两条线的
+        // IoU 分母不同，读数不可比（2026-11-05 抓到）。
+        let g = match grid_for(&prims, cell, 2) {
+            Some(g) => g,
+            None => continue,
         };
         let gt = solid(&prims, &g); // 评测仍用解析实心（仅测量）
         let mut pred = g.clone();
