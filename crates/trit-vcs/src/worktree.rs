@@ -96,9 +96,31 @@ fn mtime_ns(meta: &fs::Metadata) -> u64 {
         .unwrap_or(0)
 }
 
+/// 路径是否落在某个前缀范围内（按路径段匹配：`gen` 覆盖 `gen/...`）。
+pub fn in_scope(path: &str, prefix: Option<&str>) -> bool {
+    let Some(prefix) = prefix else {
+        return true;
+    };
+    let prefix = prefix.trim_end_matches('/');
+    path == prefix || path.starts_with(&format!("{prefix}/"))
+}
+
 /// 带 stat 缓存的 `status`：`(size, mtime_ns)` 没变的文件复用上次的内容 id，不读内容。
 pub fn status_with_cache(repo: &Repo) -> Result<(Vec<Change>, StatusStats), WorktreeError> {
-    let tree = head_tree(repo)?;
+    status_scoped(repo, None)
+}
+
+/// 限定范围的 `status`：只报告 `prefix` 内的改动（范围外既不读内容，也不算删除）。
+/// 限定范围时**不写缓存**，免得把范围外的条目从缓存里抹掉。
+pub fn status_scoped(
+    repo: &Repo,
+    prefix: Option<&str>,
+) -> Result<(Vec<Change>, StatusStats), WorktreeError> {
+    let all = head_tree(repo)?;
+    let tree: BTreeMap<String, Hash> = all
+        .into_iter()
+        .filter(|(path, _)| in_scope(path, prefix))
+        .collect();
     let cache_file = crate::status_cache::cache_path(repo.root());
     let old = StatusCache::load(&cache_file);
     let mut cache = StatusCache::default();
@@ -127,6 +149,9 @@ pub fn status_with_cache(repo: &Repo) -> Result<(Vec<Change>, StatusStats), Work
                 continue;
             }
             if !meta.is_file() {
+                continue;
+            }
+            if !in_scope(&rel, prefix) {
                 continue;
             }
             let size = meta.len();
@@ -171,23 +196,44 @@ pub fn status_with_cache(repo: &Repo) -> Result<(Vec<Change>, StatusStats), Work
         }
     }
     changes.sort_by(|a, b| a.path.cmp(&b.path));
-    cache.save(&cache_file)?;
+    if prefix.is_none() {
+        cache.save(&cache_file)?;
+    }
     Ok((changes, stats))
 }
 
 /// 把某个提交里的文件写回工作树。默认拒绝覆盖未提交改动（`--force` 才覆盖）。
 pub fn checkout(repo: &Repo, commit_id: &Hash, force: bool) -> Result<usize, WorktreeError> {
-    let changes = status(repo)?;
-    if !force && !changes.is_empty() {
+    Ok(checkout_scoped(repo, commit_id, None, force)?.written)
+}
+
+/// 稀疏检出：只物化 `prefix` 内的文件，其余跳过（不算删除，也不检查工作树）。
+pub fn checkout_scoped(
+    repo: &Repo,
+    commit_id: &Hash,
+    prefix: Option<&str>,
+    force: bool,
+) -> Result<CheckoutStats, WorktreeError> {
+    let (changes, _) = status_scoped(repo, prefix)?;
+    // 只挡"会被覆盖的改动"；范围内缺失的文件正是 checkout 要补的，不算脏。
+    let blocking: Vec<&Change> = changes
+        .iter()
+        .filter(|change| change.kind != Kind::Deleted)
+        .collect();
+    if !force && !blocking.is_empty() {
         return Err(WorktreeError::Dirty(
-            changes.len(),
-            changes.iter().take(5).map(|c| c.path.clone()).collect(),
+            blocking.len(),
+            blocking.iter().take(5).map(|c| c.path.clone()).collect(),
         ));
     }
     let commit = repo.commit_at(commit_id)?;
     let tree = repo.store().tree_entries(&commit.tree)?;
-    let mut written = 0usize;
+    let mut stats = CheckoutStats::default();
     for (path, file_id) in &tree {
+        if !in_scope(path, prefix) {
+            stats.skipped += 1;
+            continue;
+        }
         let bytes = repo.store().get_file(file_id)?;
         let target = safe_join(repo.root(), path)?;
         if let Some(parent) = target.parent() {
@@ -196,10 +242,17 @@ pub fn checkout(repo: &Repo, commit_id: &Hash, force: bool) -> Result<usize, Wor
         let same = fs::read(&target).map(|old| old == bytes).unwrap_or(false);
         if !same {
             fs::write(&target, &bytes)?;
-            written += 1;
+            stats.written += 1;
         }
     }
-    Ok(written)
+    Ok(stats)
+}
+
+/// 一次检出的读数：写了多少、按前缀跳过了多少。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CheckoutStats {
+    pub written: usize,
+    pub skipped: usize,
 }
 
 /// 两个提交之间的路径级差异（按内容 id 比，不做行级 diff）。
@@ -456,6 +509,47 @@ mod tests {
         assert_eq!(stats.hashed, 1, "坏缓存 ⇒ 退回全读");
         let healed = StatusCache::load(&cache_file);
         assert_eq!(healed.files.len(), 1, "这次要重写成好缓存");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sparse_checkout_writes_only_the_requested_prefix() {
+        let root = temp("sparse");
+        fs::create_dir_all(root.join("keep")).unwrap();
+        fs::write(root.join("keep/a.txt"), b"a").unwrap();
+        fs::create_dir_all(root.join("skip")).unwrap();
+        fs::write(root.join("skip/b.txt"), b"b").unwrap();
+        let mut repo = Repo::init(&root).unwrap();
+        let id = commit_all(&mut repo, "base", 1_000);
+
+        fs::remove_dir_all(root.join("keep")).unwrap();
+        fs::remove_dir_all(root.join("skip")).unwrap();
+        let stats = checkout_scoped(&repo, &id, Some("keep"), false).unwrap();
+        assert_eq!(stats.written, 1);
+        assert_eq!(stats.skipped, 1);
+        assert!(root.join("keep/a.txt").exists());
+        assert!(!root.join("skip/b.txt").exists(), "范围外不该被物化");
+        let (scoped, _) = status_scoped(&repo, Some("keep")).unwrap();
+        assert!(scoped.is_empty(), "范围内应干净");
+        let (whole, _) = status_scoped(&repo, None).unwrap();
+        assert_eq!(whole.len(), 1, "范围外缺失仍要如实报告");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn sparse_checkout_refuses_dirty_in_scope() {
+        let root = temp("sparse-dirty");
+        fs::create_dir_all(root.join("keep")).unwrap();
+        fs::write(root.join("keep/a.txt"), b"a").unwrap();
+        let mut repo = Repo::init(&root).unwrap();
+        let id = commit_all(&mut repo, "base", 1_000);
+        fs::write(root.join("keep/a.txt"), b"dirty").unwrap();
+        assert!(matches!(
+            checkout_scoped(&repo, &id, Some("keep"), false),
+            Err(WorktreeError::Dirty(..))
+        ));
+        let stats = checkout_scoped(&repo, &id, Some("keep"), true).unwrap();
+        assert_eq!(stats.written, 1);
         let _ = fs::remove_dir_all(&root);
     }
 }
