@@ -31,8 +31,13 @@
                                           "--run-manifest", "{model}.manifest.json", ...]},
   "verifier": {"bin": "parts-extract-verify", "argv": ["--model", "{model}"]},
   "model": "{out}/{tag}.occ1",
-  "promote": {"metric": "iou_mean", "min": 0.5, "all_closed": true}
+  "promote": {"metric": "iou_mean", "min": 0.5, "all_closed": true},
+  "replicate": "seed"
 }
+`replicate`（可选）：同一其余配置的多次运行（通常按 `seed`）会聚合成 mean/min/max/range
+写进 `sweep.json` 的 `aggregates`；`--reaggregate <sweep.json>` 可对旧汇总重算（不重跑训练）。
+**排序看聚合、晋级看门**：均值差小于种子极差时不要判优。
+
 占位符：`{tag}` `{out}` `{model}` `{data}` `{holdout}` `{gpu}` + 每个配置键；
 没解析掉的占位符**直接判红**。模板模式的生产器自己选卡 ⇒ 不抢 GPU 租约（`jobs` 别开太大）。
 
@@ -410,6 +415,59 @@ def evaluate_promotion(row, rule):
     return True, "达标"
 
 
+def aggregate(rows, key, metric):
+    """按 `key`（典型是 `seed`）聚合：其余配置相同的多次运行给 mean / min / max / range。
+
+    只收 `verified` 行；缺指标的行不参与。返回按均值降序的列表——**别用单行排序**：
+    种子极差（实测 0.07–0.18）会压过预算/超参的小差。
+    """
+    groups = {}
+    for r in rows:
+        if r.get("status") != "verified":
+            continue
+        cfg = dict(r.get("config") or {})
+        rep = cfg.pop(key, None)
+        gk = json.dumps(cfg, sort_keys=True)
+        g = groups.setdefault(gk, {"config": cfg, "seeds": [], "values": []})
+        if rep is not None:
+            g["seeds"].append(rep)
+        v = (r.get("metrics") or {}).get(metric)
+        if isinstance(v, (int, float)):
+            g["values"].append(float(v))
+    out = []
+    for g in groups.values():
+        vals = g["values"]
+        if not vals:
+            continue
+        out.append(
+            {
+                "config": g["config"],
+                "seeds": sorted(g["seeds"]),
+                "n": len(vals),
+                "metric": metric,
+                "mean": sum(vals) / len(vals),
+                "min": min(vals),
+                "max": max(vals),
+                "range": max(vals) - min(vals),
+            }
+        )
+    out.sort(key=lambda a: -a["mean"])
+    return out
+
+
+def print_aggregates(aggs):
+    if not aggs:
+        return
+    out("多种子聚合（按均值降序；range 是同一配置的种子极差）：")
+    for a in aggs:
+        cfg = json.dumps(a["config"], ensure_ascii=False, sort_keys=True)
+        tag = f"n={a['n']}" + ("" if a["n"] >= 2 else "（**单种子**）")
+        out(
+            f"  {cfg}  {tag}  mean={a['mean']:.4f}  "
+            f"range={a['min']:.4f}–{a['max']:.4f}（Δ{a['range']:.4f}）  seeds={a['seeds']}"
+        )
+
+
 def render_template(tpl, ctx):
     """把 `{key}` 换成 ctx 里的值。没替换掉的占位符**直接判红**（打错键名不许静默跑）。"""
     s = tpl
@@ -731,6 +789,25 @@ def self_test():
         unknown_red = True
     cases.append(("模板未知键判红", unknown_red, True))
 
+    # 多种子聚合：同配置不同 seed → mean/range；不同 steps 分开；未复核不收
+    agg_rows = [
+        {"status": "verified", "config": {"steps": 5000, "seed": 2}, "metrics": {"iou_mean": 0.60}},
+        {"status": "verified", "config": {"steps": 5000, "seed": 3}, "metrics": {"iou_mean": 0.70}},
+        {"status": "verified", "config": {"steps": 5000, "seed": 5}, "metrics": {"iou_mean": 0.65}},
+        {"status": "verified", "config": {"steps": 10000, "seed": 2}, "metrics": {"iou_mean": 0.50}},
+        {"status": "verify-failed", "config": {"steps": 5000, "seed": 7}, "metrics": {"iou_mean": 0.99}},
+    ]
+    agg = aggregate(agg_rows, "seed", "iou_mean")
+    cases += [
+        ("聚合组数", len(agg), 2),
+        ("聚合 n=3", agg[0]["n"], 3),
+        ("聚合均值", round(agg[0]["mean"], 4), 0.65),
+        ("聚合极差", round(agg[0]["range"], 4), 0.10),
+        ("聚合种子排序", agg[0]["seeds"], [2, 3, 5]),
+        ("聚合按均值降序", round(agg[1]["mean"], 4), 0.5),
+        ("聚合排除未复核", all(a["n"] <= 3 for a in agg), True),
+    ]
+
     bad = [n for n, got, want in cases if got != want]
     for n, got, want in cases:
         print(f"  {n}: {'ok' if got == want else 'FAIL'}（got={got} want={want}）")
@@ -754,9 +831,23 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--timeout", type=int, default=3600, help="单个训练/复核的超时（秒）")
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--reaggregate", help="只对已有 sweep.json 重算多种子聚合（不跑训练）")
+    ap.add_argument("--by", default="", help="聚合键（缺省用规格里的 replicate，或 seed）")
+    ap.add_argument("--metric", default="", help="聚合指标（缺省用 promote.metric）")
     args = ap.parse_args()
     if args.self_test:
         self_test()
+        return
+    if args.reaggregate:
+        p = pathlib.Path(args.reaggregate)
+        d = json.loads(p.read_text(encoding="utf-8"))
+        spec0 = d.get("spec") or {}
+        key = args.by or spec0.get("replicate") or "seed"
+        metric = args.metric or (spec0.get("promote") or {}).get("metric") or "rel_pct"
+        aggs = aggregate(d.get("rows", []), key, metric)
+        d["aggregates"] = aggs
+        p.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+        print_aggregates(aggs)
         return
     if not args.spec:
         ap.error("需要 --spec（或 --self-test）")
@@ -955,11 +1046,15 @@ def main():
         r["promote_reason"] = why
         (promoted if ok else rejected).append({"tag": r["tag"], "why": why})
 
+    replicate = spec.get("replicate")
+    aggs = []
+    if replicate:
+        aggs = aggregate(rows, replicate, (spec.get("promote") or {}).get("metric", "rel_pct"))
     summary = out_dir / "sweep.json"
     summary.write_text(
         json.dumps(
             {"spec": spec, "jobs": jobs, "retries": args.retries, "wall_secs": round(wall, 1),
-             "rows": rows},
+             "rows": rows, "aggregates": aggs},
             ensure_ascii=False,
             indent=2,
         ),
@@ -981,6 +1076,7 @@ def main():
     )
     for p in promoted:
         out(f"  晋级 {p['tag']}")
+    print_aggregates(aggs)
 
     cat = spec.get("catalogue")
     if cat:
