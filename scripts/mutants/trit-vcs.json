@@ -133,5 +133,77 @@
   "filter": "checkout_rejects_path_escape",
   "pkg": "trit-vcs",
   "runner": "cargo"
+ },
+ {
+  "name": "vcs: witness 不检查 statement 类型（随便什么 JSON 都算见证）",
+  "file": "crates/trit-vcs/src/witness.rs",
+  "old": "    if witness.statement_type != STATEMENT_TYPE {",
+  "new": "    if false {",
+  "filter": "wrong_statement_or_predicate_type_is_rejected",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: witness 不检查 schema 版本（未来格式也当 v1 用）",
+  "file": "crates/trit-vcs/src/witness.rs",
+  "old": "    if witness.predicate.schema != SCHEMA {",
+  "new": "    if false {",
+  "filter": "unsupported_schema_is_rejected",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: witness 不要求恰好一个 subject（多棵树的见证也接受）",
+  "file": "crates/trit-vcs/src/witness.rs",
+  "old": "        if self.subject.len() != 1 {",
+  "new": "        if false {",
+  "filter": "bad_digest_and_subject_count_are_rejected",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: witness 不校验树绑定（见证能盖到任意树）",
+  "file": "crates/trit-vcs/src/witness.rs",
+  "old": "        if subject != tree {",
+  "new": "        if false {",
+  "filter": "binding_to_the_wrong_tree_is_rejected",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: witness 不校验退出码（红测试也能过）",
+  "file": "crates/trit-vcs/src/witness.rs",
+  "old": "        if self.predicate.exit != 0 {",
+  "new": "        if false {",
+  "filter": "failed_run_is_not_a_passing_witness",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 准入不校验见证文件摘要（改一个字节照过）",
+  "file": "crates/trit-vcs/src/witness.rs",
+  "old": "    if actual != recorded {",
+  "new": "    if false {",
+  "filter": "admission_rejects_a_tampered_witness_or_another_tree",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 策略要求见证时也放行（require_witness 形同虚设）",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "            None if policy.require_witness => return Err(RepoError::WitnessRequired),",
+  "new": "            None if false => return Err(RepoError::WitnessRequired),",
+  "filter": "policy_can_require_a_witness",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 失败见证按通过处理（WitnessFailed 永久不触发）",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "        Err(WitnessError::Failed(code)) => Err(RepoError::WitnessFailed(code)),",
+  "new": "        Err(WitnessError::Failed(_)) => Ok(()),",
+  "filter": "failing_witness_cannot_be_committed",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
  }
 ]

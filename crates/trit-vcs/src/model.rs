@@ -54,6 +54,9 @@ pub struct Commit {
     pub tags: Vec<String>,
     pub message: String,
     pub hlc: Hlc,
+    /// 绑定了本次树的测试见证（对象库里的摘要）；老提交没有这个字段。
+    #[serde(default)]
+    pub witness: Option<Hash>,
 }
 
 pub const COMMIT_SCHEMA: u32 = 1;
@@ -75,7 +78,13 @@ impl Commit {
             tags: Vec::new(),
             message: message.into(),
             hlc,
+            witness: None,
         }
+    }
+
+    pub fn with_witness(mut self, witness: Hash) -> Self {
+        self.witness = Some(witness);
+        self
     }
 
     pub fn with_parent(mut self, parent: Hash) -> Self {
@@ -166,5 +175,20 @@ mod tests {
         let decoded = Commit::decode(&commit.encode().unwrap()).unwrap();
         assert_eq!(decoded, commit);
         assert_eq!(decoded.evidence, vec!["PR #246".to_string()]);
+    }
+
+    #[test]
+    fn old_commits_without_witness_still_decode() {
+        let commit = Commit::new(Hash::of(b"tree"), "qoder:s1", "old", Hlc::zero().tick(1));
+        let mut value: serde_json::Value =
+            serde_json::from_slice(&commit.encode().unwrap()).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .remove("witness")
+            .expect("老提交里没有 witness 字段");
+        let decoded = Commit::decode(&serde_json::to_vec(&value).unwrap()).unwrap();
+        assert!(decoded.witness.is_none());
+        assert_eq!(decoded.message, "old");
     }
 }

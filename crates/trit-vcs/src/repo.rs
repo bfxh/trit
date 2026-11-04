@@ -21,6 +21,7 @@ use crate::hash::Hash;
 use crate::journal::{Journal, JournalError};
 use crate::model::{Commit, Hlc};
 use crate::store::{PutStats, Store, StoreError};
+use crate::witness::{self, Witness, WitnessError};
 
 pub const DIR: &str = ".tritvcs";
 
@@ -47,6 +48,14 @@ pub enum RepoError {
     UnknownCommit(String),
     #[error("HEAD 文件坏了: {0}")]
     BadHead(String),
+    #[error("仓库策略要求每次提交带 witness；先跑 `trit-vcs witness -- <命令>`")]
+    WitnessRequired,
+    #[error("witness 不成立：{0}")]
+    Witness(#[from] WitnessError),
+    #[error("witness 记录的命令退出码是 {0}；失败的运行不能当提交证据")]
+    WitnessFailed(i32),
+    #[error("提交 {0} 没有 witness：不能作为合并候选")]
+    Unwitnessed(String),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -58,6 +67,8 @@ pub struct CommitRequest {
     pub tags: Vec<String>,
     /// 显式放行未认领的写（会记进日志，不是静默）
     pub allow_unclaimed: bool,
+    /// 绑定本次树的测试见证（canonical JSON 字节）；策略要求时不可为空
+    pub witness: Option<Vec<u8>>,
     pub now_secs: u64,
 }
 
@@ -73,6 +84,22 @@ pub struct CommitOutcome {
 pub struct Index {
     pub tree: String,
     pub paths: Vec<String>,
+}
+
+/// 仓库策略（`.tritvcs/policy.json`）。默认全关：不影响别项目，成熟后逐项目 opt-in。
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct Policy {
+    #[serde(default)]
+    pub require_witness: bool,
+}
+
+/// 见证必须是"跑通"的那种；失败的运行单独报，避免和格式错误混在一起。
+fn require_passing(witness: &Witness) -> Result<(), RepoError> {
+    match witness.check_passed() {
+        Ok(()) => Ok(()),
+        Err(WitnessError::Failed(code)) => Err(RepoError::WitnessFailed(code)),
+        Err(other) => Err(RepoError::Witness(other)),
+    }
 }
 
 pub struct Repo {
@@ -157,6 +184,16 @@ impl Repo {
             .map_err(|e| RepoError::BadHead(format!("index.json: {e}")))
     }
 
+    /// 仓库策略；文件坏了就让调用方失败（不能静默退回"不要求见证"）。
+    pub fn policy(&self) -> Result<Policy, RepoError> {
+        let path = Self::dir(&self.root).join("policy.json");
+        if !path.is_file() {
+            return Ok(Policy::default());
+        }
+        let text = fs::read_to_string(&path)?;
+        serde_json::from_str(&text).map_err(|e| RepoError::BadHead(format!("policy.json: {e}")))
+    }
+
     /// 暂存：把给定文件内容入库并写 index（不提交）。
     pub fn stage(
         &mut self,
@@ -222,9 +259,23 @@ impl Repo {
             }
             _ => {}
         }
+        let policy = self.policy()?;
+        let witness: Option<(Hash, Witness)> = match req.witness.as_deref() {
+            Some(bytes) => {
+                let parsed = witness::verify(bytes, tree)?;
+                require_passing(&parsed)?;
+                let (digest, _) = self.store.put_chunk(bytes)?;
+                Some((digest, parsed))
+            }
+            None if policy.require_witness => return Err(RepoError::WitnessRequired),
+            None => None,
+        };
         let last_ms = self.journal.events().last().map(|e| e.at_ms).unwrap_or(0);
         let hlc = Hlc::zero().tick((req.now_secs * 1000).max(last_ms));
         let mut commit = Commit::new(tree, req.session.clone(), req.message.clone(), hlc);
+        if let Some((digest, _)) = &witness {
+            commit = commit.with_witness(*digest);
+        }
         if let Some(parent) = self.head()? {
             commit = commit.with_parent(parent);
         }
@@ -251,6 +302,7 @@ impl Repo {
                 "evidence": commit.evidence,
                 "tags": commit.tags,
                 "verdict": verdict.label(),
+                "witness": witness.as_ref().map(|(digest, _)| digest.to_hex()),
                 "message": commit.message,
             }),
             hlc.wall_ms,
@@ -266,6 +318,19 @@ impl Repo {
     pub fn commit_at(&self, id: &Hash) -> Result<Commit, RepoError> {
         let bytes = self.store.get_chunk(id)?;
         Commit::decode(&bytes).map_err(|e| RepoError::BadHead(e.to_string()))
+    }
+
+    /// 合并准入：见证文件必须与提交里记录的摘要一致、绑定该提交的树、且运行通过。
+    /// 这是"通过就合、不通过就通知智能体"那条链里唯一可信的判据。
+    pub fn admit(&self, id: &Hash, witness_bytes: &[u8]) -> Result<Witness, RepoError> {
+        let commit = self.commit_at(id)?;
+        let recorded = commit
+            .witness
+            .ok_or_else(|| RepoError::Unwitnessed(id.short().to_string()))?;
+        witness::check_file(recorded, witness_bytes)?;
+        let parsed = witness::verify(witness_bytes, commit.tree)?;
+        require_passing(&parsed)?;
+        Ok(parsed)
     }
 
     /// 从 HEAD 往回走的提交链（新→旧）。
@@ -296,10 +361,25 @@ impl Repo {
             ))
         })?;
         let commits = self.log()?;
+        let mut witnessed = 0usize;
+        for (id, commit) in &commits {
+            let Some(digest) = commit.witness else {
+                continue;
+            };
+            witnessed += 1;
+            let bytes = self.store.get_chunk(&digest)?;
+            let parsed = witness::verify(&bytes, commit.tree).map_err(|e| {
+                RepoError::BadHead(format!("提交 {} 的 witness 不成立：{e}", id.short()))
+            })?;
+            parsed.check_passed().map_err(|e| {
+                RepoError::BadHead(format!("提交 {} 的 witness 不可用：{e}", id.short()))
+            })?;
+        }
         Ok(VerifyReport {
             events,
             objects: checked,
             commits: commits.len(),
+            witnessed,
             head: commits.first().map(|(id, _)| id.to_hex()),
         })
     }
@@ -310,6 +390,7 @@ pub struct VerifyReport {
     pub events: usize,
     pub objects: usize,
     pub commits: usize,
+    pub witnessed: usize,
     pub head: Option<String>,
 }
 
@@ -340,6 +421,16 @@ mod tests {
             .collect()
     }
 
+    fn run_witness(tree: Hash, base: Option<Hash>, exit: i32) -> Vec<u8> {
+        crate::witness::Witness::from_run(
+            tree,
+            base,
+            vec!["cargo".to_string(), "test".to_string()],
+            crate::witness::RunOutput::new(exit, b"ok".to_vec(), Vec::new(), 1_000, 5),
+        )
+        .encode()
+    }
+
     #[test]
     fn stage_commit_and_log() {
         let root = temp("basic");
@@ -353,6 +444,7 @@ mod tests {
                 evidence: vec!["PR #1".to_string()],
                 tags: vec!["demo".to_string()],
                 allow_unclaimed: false,
+                witness: None,
                 now_secs: 1_000,
             })
             .unwrap();
@@ -482,6 +574,147 @@ mod tests {
         bytes[at] ^= 0xFF;
         fs::write(&pack, bytes).unwrap();
         assert!(repo.verify().is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn policy_can_require_a_witness() {
+        let root = temp("witness-required");
+        let mut repo = Repo::init(&root).unwrap();
+        fs::write(
+            Repo::dir(&root).join("policy.json"),
+            br#"{"require_witness":true}"#,
+        )
+        .unwrap();
+        repo.stage(&files(&[("a.txt", "alpha")]), 1_000).unwrap();
+        let err = repo
+            .commit(CommitRequest {
+                message: "no witness".to_string(),
+                session: "qoder:s1".to_string(),
+                claims: vec![claim("qoder:s1", &["a.txt"], 9_999)],
+                now_secs: 1_000,
+                ..Default::default()
+            })
+            .unwrap_err();
+        assert!(matches!(err, RepoError::WitnessRequired), "{err:?}");
+        assert!(repo.head().unwrap().is_none(), "没有见证不许推进 HEAD");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn witness_must_bind_the_exact_staged_tree() {
+        let root = temp("witness-tree");
+        let mut repo = Repo::init(&root).unwrap();
+        let (tree, _) = repo.stage(&files(&[("a.txt", "alpha")]), 1_000).unwrap();
+        let witness = run_witness(tree, None, 0);
+        // 见证之后又改暂存内容 ⇒ 树变了 ⇒ 提交必须拒
+        let (new_tree, _) = repo.stage(&files(&[("a.txt", "beta")]), 1_001).unwrap();
+        assert_ne!(tree, new_tree);
+        let err = repo
+            .commit(CommitRequest {
+                message: "stale witness".to_string(),
+                session: "qoder:s1".to_string(),
+                claims: vec![claim("qoder:s1", &["a.txt"], 9_999)],
+                witness: Some(witness),
+                now_secs: 1_002,
+                ..Default::default()
+            })
+            .unwrap_err();
+        assert!(
+            matches!(
+                err,
+                RepoError::Witness(crate::witness::WitnessError::TreeMismatch { .. })
+            ),
+            "{err:?}"
+        );
+        assert!(repo.head().unwrap().is_none(), "错配的见证不许推进 HEAD");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn failing_witness_cannot_be_committed() {
+        let root = temp("witness-fail");
+        let mut repo = Repo::init(&root).unwrap();
+        let (tree, _) = repo.stage(&files(&[("a.txt", "alpha")]), 1_000).unwrap();
+        let err = repo
+            .commit(CommitRequest {
+                message: "red tests".to_string(),
+                session: "qoder:s1".to_string(),
+                claims: vec![claim("qoder:s1", &["a.txt"], 9_999)],
+                witness: Some(run_witness(tree, None, 101)),
+                now_secs: 1_000,
+                ..Default::default()
+            })
+            .unwrap_err();
+        assert!(matches!(err, RepoError::WitnessFailed(101)), "{err:?}");
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn admission_rejects_a_tampered_witness_or_another_tree() {
+        let root = temp("witness-admit");
+        let mut repo = Repo::init(&root).unwrap();
+        let (tree, _) = repo.stage(&files(&[("a.txt", "alpha")]), 1_000).unwrap();
+        let bytes = run_witness(tree, None, 0);
+        let outcome = repo
+            .commit(CommitRequest {
+                message: "witnessed".to_string(),
+                session: "qoder:s1".to_string(),
+                claims: vec![claim("qoder:s1", &["a.txt"], 9_999)],
+                witness: Some(bytes.clone()),
+                now_secs: 1_000,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(
+            repo.commit_at(&outcome.id).unwrap().witness,
+            Some(Hash::of(&bytes))
+        );
+        repo.admit(&outcome.id, &bytes).unwrap();
+        // 只改一个字节：树绑定仍成立，但提交里记的文件摘要对不上
+        let mut tampered = bytes.clone();
+        let at = tampered
+            .windows(9)
+            .position(|window| window == b"trit-vcs/")
+            .expect("见证里应有 tool 字段");
+        tampered[at] = b'X';
+        assert!(
+            matches!(
+                repo.admit(&outcome.id, &tampered).unwrap_err(),
+                RepoError::Witness(crate::witness::WitnessError::FileTampered { .. })
+            ),
+            "改一个字节必须拒"
+        );
+        // 同一命令但对另一棵树 ⇒ 文件摘要先变，仍然拒
+        let other = run_witness(Hash::of(b"other-tree"), None, 0);
+        assert!(matches!(
+            repo.admit(&outcome.id, &other).unwrap_err(),
+            RepoError::Witness(crate::witness::WitnessError::FileTampered { .. })
+        ));
+        let report = repo.verify().unwrap();
+        assert_eq!(report.witnessed, 1);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn admission_refuses_an_unwitnessed_commit() {
+        let root = temp("witness-missing");
+        let mut repo = Repo::init(&root).unwrap();
+        let (tree, _) = repo.stage(&files(&[("a.txt", "alpha")]), 1_000).unwrap();
+        let outcome = repo
+            .commit(CommitRequest {
+                message: "plain".to_string(),
+                session: "qoder:s1".to_string(),
+                claims: vec![claim("qoder:s1", &["a.txt"], 9_999)],
+                now_secs: 1_000,
+                ..Default::default()
+            })
+            .unwrap();
+        assert!(matches!(
+            repo.admit(&outcome.id, &run_witness(tree, None, 0))
+                .unwrap_err(),
+            RepoError::Unwitnessed(_)
+        ));
         let _ = fs::remove_dir_all(&root);
     }
 }
