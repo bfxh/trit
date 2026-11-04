@@ -12,9 +12,12 @@ use trit_vcs::bundle;
 use trit_vcs::gate::{ClaimSpec, Verdict, load_claims};
 use trit_vcs::merge;
 use trit_vcs::model::Intent;
+use trit_vcs::repo::CommitFilter;
 use trit_vcs::repo::{CommitRequest, Repo};
 use trit_vcs::witness::{RunOutput, Witness};
 use trit_vcs::worktree;
+
+mod query;
 
 fn now_secs() -> u64 {
     SystemTime::now()
@@ -35,7 +38,10 @@ fn usage() -> ExitCode {
          trit-vcs export <树id> --out FILE [--prefix DIR] [--dest REPO] [--repo SRC]\n  \
          trit-vcs import <包文件> [--repo DEST]\n  \
          trit-vcs merge <ours提交> <theirs提交> [--base <提交>] [--json] [--repo PATH]\n  \
-         trit-vcs log [--json] [--repo PATH]\n  \
+         trit-vcs log [--json] [--tag T] [--evidence 文本] [--session S] [--grep 文本] [--repo PATH]\n  \
+         trit-vcs where <路径/测试/标签> --techmap FILE [--json]\n  \
+         trit-vcs tests <路径/测试/标签> --techmap FILE\n  \
+         trit-vcs explain <提交id> [--techmap FILE] [--json] [--repo PATH]\n  \
          trit-vcs verify [--repo PATH]\n  \
          trit-vcs stats [--repo PATH]"
     );
@@ -567,13 +573,22 @@ fn main() -> ExitCode {
                 Err(err) => fail(err.to_string()),
             }
         }
+        "where" => query::where_cmd(&args),
+        "tests" => query::tests_cmd(&args),
+        "explain" => query::explain_cmd(&args),
         "log" => {
             let root = repo_path(&args);
             let repo = match Repo::open(&root) {
                 Ok(repo) => repo,
                 Err(err) => return fail(err.to_string()),
             };
-            let log = match repo.log() {
+            let filter = CommitFilter {
+                tag: flag(&args, "--tag").map(str::to_string),
+                evidence: flag(&args, "--evidence").map(str::to_string),
+                session: flag(&args, "--session").map(str::to_string),
+                grep: flag(&args, "--grep").map(str::to_string),
+            };
+            let log = match repo.query(&filter) {
                 Ok(log) => log,
                 Err(err) => return fail(err.to_string()),
             };

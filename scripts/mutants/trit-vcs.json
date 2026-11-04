@@ -403,5 +403,59 @@
   "filter": "two_different_additions_are_structured_add_add",
   "pkg": "trit-vcs",
   "runner": "cargo"
+ },
+ {
+  "name": "vcs: --tag 过滤形同虚设（不匹配也返回）",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "            .is_none_or(|tag| commit.tags.iter().any(|have| have == tag))",
+  "new": "            .is_none_or(|_tag| true)",
+  "filter": "query_filters_by_tag_evidence_session_and_message",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: --evidence 过滤形同虚设",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "                .is_none_or(|needle| commit.evidence.iter().any(|line| line.contains(needle)))",
+  "new": "                .is_none_or(|_needle| true)",
+  "filter": "query_filters_by_tag_evidence_session_and_message",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: --grep 过滤形同虚设",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "                .is_none_or(|needle| commit.message.contains(needle))",
+  "new": "                .is_none_or(|_needle| true)",
+  "filter": "query_filters_by_tag_evidence_session_and_message",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: techmap 反查永远命中（空查询也返回全部）",
+  "file": "crates/trit-vcs/src/techmap.rs",
+  "old": "                entry.id.to_lowercase().contains(&needle)",
+  "new": "                true || entry.id.to_lowercase().contains(&needle)",
+  "filter": "where_matches_paths_tests_and_tags",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 提交 tags 映射不过滤（任意标签都列出条目）",
+  "file": "crates/trit-vcs/src/techmap.rs",
+  "old": "                    .any(|tag| wanted.iter().any(|want| want == &tag.to_lowercase()))",
+  "new": "                    .any(|_tag| true)",
+  "filter": "tags_map_commits_to_entries",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 测试命令不认 crates/ 前缀（脚本路径也拼 cargo test）",
+  "file": "crates/trit-vcs/src/techmap.rs",
+  "old": "    let crate_name = path.strip_prefix(\"crates/\")?.split('/').next()?;",
+  "new": "    let crate_name = path.strip_prefix(\"\")?.split('/').next()?;",
+  "filter": "test_specs_turn_into_runnable_commands",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
  }
 ]
