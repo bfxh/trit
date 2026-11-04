@@ -38,6 +38,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -136,6 +137,27 @@ def kill_tree(proc: subprocess.Popen[str]) -> None:
             os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
     with contextlib.suppress(OSError):
         proc.kill()
+
+
+def proc_gone(pid: int) -> bool:
+    """孙进程是否真的没了。
+
+    POSIX 上 `os.kill(pid, 0)` 对**僵尸**仍然成功：父进程一起被杀后，孩子要等 init 收尸，
+    这中间它既是"死的"又"还在"。CI 上踩过：判据用 _pid_alive ⇒ 把僵尸读成"没杀掉"，自测自己假红。"""
+    if not _pid_alive(pid):
+        return True
+    if os.name == "nt":
+        return False
+    with contextlib.suppress(Exception):
+        state = subprocess.run(
+            ["ps", "-o", "stat=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+        if not state or state.startswith("Z"):
+            return True
+    return False
 
 
 def run_command(argv: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
@@ -805,7 +827,15 @@ def self_test() -> int:
         check("父命令超时被判哨兵 rc", tree.returncode == TIMEOUT_RC, True)
         if pid_file.exists():
             kid_pid = int(pid_file.read_text(encoding="utf-8"))
-            check("超时要把孙进程（真正的测试进程）一起端掉", _pid_alive(kid_pid), False)
+            # 给 5 秒收尸窗口：Linux 上刚被 SIGKILL 的孩子会以僵尸身份短暂"还在"
+            # （CI 上就是把僵尸读成"没杀掉"，自测自己假红了一次）。
+            gone = False
+            for _ in range(50):
+                if proc_gone(kid_pid):
+                    gone = True
+                    break
+                time.sleep(0.1)
+            check("超时要把孙进程（真正的测试进程）一起端掉", gone, True)
 
     with tempfile.TemporaryDirectory() as td:
         target = pathlib.Path(td) / "src.txt"
