@@ -1,7 +1,6 @@
 //! 命令行端到端：MCP stdio 循环（initialize / tools/list / add / commit / log）。
 
 use std::io::Write;
-use std::path::Path;
 use std::process::{Command, Stdio};
 
 use trit_vcs::repo::Repo;
@@ -67,8 +66,7 @@ fn serve_loop_answers_initialize() {
             > 0
     );
 
-    for index in 2..5 {
-        let result = &lines[index]["result"];
+    for result in lines.iter().take(5).skip(2).map(|line| &line["result"]) {
         assert_eq!(result["isError"], false, "{result}");
         assert!(result["_meta"]["usage"]["tokens_est"].as_u64().unwrap() > 0);
     }
