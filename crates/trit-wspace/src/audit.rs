@@ -46,7 +46,11 @@ pub struct LogEntry {
     /// 实际补丁。
     pub patch: Patch,
     /// 记录时使用的验证集（可选；紧凑 `inputs` / `outputs` JSON）。
+    ///
+    /// 即使本条只写了 `oracle_ref`，解析时也会解析成完整值放在这里，供重放核对。
     pub oracle: Option<Value>,
+    /// 同一验证集首次出现的那条记录的序号；`None` 表示本条自己内嵌了验证集。
+    pub oracle_ref: Option<usize>,
     /// 验证集上的行为指纹（可选）。
     pub behavior_before: Option<u64>,
     /// 应用后的行为指纹（可选；回滚/未应用时等于 `behavior_before`）。
@@ -150,7 +154,9 @@ impl AuditLog {
         if rolled_back && before_sum != after_sum {
             return Err(Error::Audit("回滚条目前后工件校验和不同".into()));
         }
-        let (oracle_value, behavior_before, behavior_after) = if let Some(oracle) = oracle {
+        let (oracle_value, oracle_ref, behavior_before, behavior_after) = if let Some(oracle) =
+            oracle
+        {
             if oracle.len() > MAX_LOGGED_ORACLE {
                 return Err(Error::Audit(format!(
                     "验证集 {} 条超过日志上限 {MAX_LOGGED_ORACLE}",
@@ -162,13 +168,13 @@ impl AuditLog {
             if (!applied || rolled_back) && before_sig != after_sig {
                 return Err(Error::Audit("回滚/未应用条目的行为指纹发生变化".into()));
             }
-            (
-                Some(wire::oracle_to_value(oracle)),
-                Some(before_sig),
-                Some(after_sig),
-            )
+            let value = wire::oracle_to_value(oracle);
+            let root = self.entries.iter().enumerate().find_map(|(index, entry)| {
+                (entry.oracle.as_ref() == Some(&value)).then(|| entry.oracle_ref.unwrap_or(index))
+            });
+            (Some(value), root, Some(before_sig), Some(after_sig))
         } else {
-            (None, None, None)
+            (None, None, None, None)
         };
         let seq = self.entries.len();
         let prev = self.head();
@@ -183,6 +189,7 @@ impl AuditLog {
             cost,
             patch,
             oracle: oracle_value,
+            oracle_ref,
             behavior_before,
             behavior_after,
             prev,
@@ -348,6 +355,32 @@ impl AuditLog {
                 .get("patch")
                 .ok_or_else(|| Error::Audit(format!("第 {} 行缺少 patch", index + 1)))?;
             let patch = wire::patch_from_value(patch_value)?;
+            let inline = parse_oracle(&value)?;
+            let oracle_ref = optional_usize_field(&value, "oracle_ref")?;
+            let oracle = match (inline, oracle_ref) {
+                (Some(_), Some(_)) => {
+                    return Err(Error::Audit(format!(
+                        "第 {} 行同时有 oracle 与 oracle_ref",
+                        index + 1
+                    )));
+                }
+                (Some(oracle), None) => Some(oracle),
+                (None, Some(root)) => {
+                    let Some(entry) = log.entries.get(root) else {
+                        return Err(Error::Audit(format!(
+                            "第 {} 行 oracle_ref={root} 指向不存在的条目（只能向前引用）",
+                            index + 1
+                        )));
+                    };
+                    Some(entry.oracle.clone().ok_or_else(|| {
+                        Error::Audit(format!(
+                            "第 {} 行 oracle_ref={root} 指向没有验证集的条目",
+                            index + 1
+                        ))
+                    })?)
+                }
+                (None, None) => None,
+            };
             log.entries.push(LogEntry {
                 seq: usize_field(&value, "seq")?,
                 name: value
@@ -367,7 +400,8 @@ impl AuditLog {
                     .unwrap_or(false),
                 cost: value.get("cost").cloned().unwrap_or_else(|| json!({})),
                 patch,
-                oracle: parse_oracle(&value)?,
+                oracle,
+                oracle_ref,
                 behavior_before: optional_hex_field(&value, "behavior_before")?,
                 behavior_after: optional_hex_field(&value, "behavior_after")?,
                 prev: hex_field(&value, "prev")?,
@@ -394,8 +428,14 @@ fn canonical(entry: &LogEntry, with_chain: bool) -> Value {
     map.insert("cost".to_string(), entry.cost.clone());
     map.insert("patch".to_string(), wire::patch_to_value(&entry.patch));
     map.insert("prev".to_string(), json!(hex(entry.prev)));
-    if let Some(oracle) = &entry.oracle {
-        map.insert("oracle".to_string(), oracle.clone());
+    match (&entry.oracle, entry.oracle_ref) {
+        (Some(_), Some(root)) => {
+            map.insert("oracle_ref".to_string(), json!(root));
+        }
+        (Some(oracle), None) => {
+            map.insert("oracle".to_string(), oracle.clone());
+        }
+        _ => {}
     }
     if let Some(sig) = entry.behavior_before {
         map.insert("behavior_before".to_string(), json!(hex(sig)));
@@ -438,6 +478,20 @@ fn optional_hex_field(value: &Value, name: &str) -> Result<Option<u64>> {
             .map(Some)
             .map_err(|_| Error::Audit(format!("`{name}` 不是十六进制：{text}"))),
         Some(_) => Err(Error::Audit(format!("`{name}` 必须是字符串"))),
+    }
+}
+
+fn optional_usize_field(value: &Value, name: &str) -> Result<Option<usize>> {
+    match value.get(name) {
+        None | Some(Value::Null) => Ok(None),
+        Some(raw) => {
+            let number = raw
+                .as_u64()
+                .ok_or_else(|| Error::Audit(format!("`{name}` 必须是非负整数")))?;
+            usize::try_from(number)
+                .map(Some)
+                .map_err(|_| Error::Audit(format!("`{name}` 超出 usize")))
+        }
     }
 }
 

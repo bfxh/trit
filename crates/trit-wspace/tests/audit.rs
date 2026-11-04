@@ -272,3 +272,79 @@ fn oversized_oracle_is_rejected() {
     assert!(error.to_string().contains("上限"), "{error}");
     assert!(log.is_empty());
 }
+
+#[test]
+fn repeated_oracle_is_content_addressed() {
+    let (log, _, _) = behavior_log();
+    assert_eq!(log.entries()[0].oracle_ref, None);
+    assert_eq!(log.entries()[1].oracle_ref, Some(0));
+    let text = log.to_jsonl();
+    assert_eq!(text.matches("\"oracle\":").count(), 1, "验证集只内嵌一次");
+    assert_eq!(text.matches("\"oracle_ref\":").count(), 1);
+
+    let parsed = AuditLog::from_jsonl(&text).expect("parse");
+    assert_eq!(parsed, log);
+    assert_eq!(parsed.entries()[0].oracle, parsed.entries()[1].oracle);
+    let (replay, _) = parsed.replay_net(&xor_net()).expect("replay");
+    assert_eq!(replay.behavior_checked, 2);
+}
+
+#[test]
+fn different_oracles_are_not_deduped() {
+    let start = xor_net();
+    let xor = xor_oracle();
+    let and = Oracle::boolean(2, |bits| bits[0] && bits[1]).expect("and");
+    let mut broken = start.clone();
+    break_patch().apply(&mut broken).expect("break");
+
+    let mut log = AuditLog::new();
+    log.record_with_oracle(
+        "xor",
+        &start,
+        &broken,
+        break_patch(),
+        true,
+        false,
+        Some(&xor),
+    )
+    .expect("xor");
+    log.record_with_oracle(
+        "and",
+        &start,
+        &broken,
+        break_patch(),
+        true,
+        false,
+        Some(&and),
+    )
+    .expect("and");
+    assert_eq!(log.entries()[0].oracle_ref, None);
+    assert_eq!(log.entries()[1].oracle_ref, None);
+    assert_eq!(log.to_jsonl().matches("\"oracle\":").count(), 2);
+}
+
+#[test]
+fn bad_oracle_refs_are_rejected() {
+    let (log, _, _) = behavior_log();
+    let text = log.to_jsonl();
+
+    let future = text.replacen("\"oracle_ref\":0", "\"oracle_ref\":9", 1);
+    assert_ne!(future, text);
+    assert!(AuditLog::from_jsonl(&future).is_err());
+
+    let self_ref = text.replacen("\"oracle_ref\":0", "\"oracle_ref\":1", 1);
+    assert!(AuditLog::from_jsonl(&self_ref).is_err());
+
+    let mut lines: Vec<Value> = text
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("line"))
+        .collect();
+    lines[0]["oracle_ref"] = json!(0);
+    let both: String = lines
+        .iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    assert!(AuditLog::from_jsonl(&both).is_err());
+}

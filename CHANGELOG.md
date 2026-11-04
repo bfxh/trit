@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：验证集内容寻址）
+
+- 同一验证集只在日志第一条内嵌，后续条目写 `oracle_ref`（向前指向首条序号）；
+  解析时解析成完整 oracle 供重放核对，序列化仍写回 ref。不同验证集不去重。
+- `oracle_ref` 越界 / 自指 / 与内嵌 `oracle` 同时出现都直接判错；指向没有验证集的条目也判错。
+- 测试 80 → 83 + 1 doctest（新增 3 条去重/错引用不变量）；变异 34 → **37 条，37/37 caught**；
+  test_surface 台账 2,260 → 2,264。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
 ### Added（trit-wspace：两编辑批量提议）
 
 - `analyze_pairs`：枚举全部**不同坐标**的点编辑对，实测 `after_loss` / `fixed` / `broken` /

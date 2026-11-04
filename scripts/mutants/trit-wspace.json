@@ -270,5 +270,29 @@
   "new": "if false {",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-dedup: 关闭验证集去重",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "(Some(value), root, Some(before_sig), Some(after_sig))",
+  "new": "(Some(value), None, Some(before_sig), Some(after_sig))",
+  "pkg": "trit-wspace",
+  "filter": "repeated_oracle_is_content_addressed"
+ },
+ {
+  "name": "wspace-dedup: 解析时不解析 oracle_ref",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "                (None, Some(root)) => {\n                    let Some(entry) = log.entries.get(root) else {\n                        return Err(Error::Audit(format!(\n                            \"第 {} 行 oracle_ref={root} 指向不存在的条目（只能向前引用）\",\n                            index + 1\n                        )));\n                    };\n                    Some(entry.oracle.clone().ok_or_else(|| {\n                        Error::Audit(format!(\n                            \"第 {} 行 oracle_ref={root} 指向没有验证集的条目\",\n                            index + 1\n                        ))\n                    })?)\n                }",
+  "new": "                (None, Some(_)) => None,",
+  "pkg": "trit-wspace",
+  "filter": "repeated_oracle_is_content_addressed"
+ },
+ {
+  "name": "wspace-dedup: 越界引用落到第 0 条",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "                    let Some(entry) = log.entries.get(root) else {\n                        return Err(Error::Audit(format!(\n                            \"第 {} 行 oracle_ref={root} 指向不存在的条目（只能向前引用）\",\n                            index + 1\n                        )));\n                    };",
+  "new": "                    let entry = &log.entries[0];\n                    let _ = root;",
+  "pkg": "trit-wspace",
+  "filter": "bad_oracle_refs_are_rejected"
  }
 ]
