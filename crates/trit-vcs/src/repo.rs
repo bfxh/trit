@@ -93,6 +93,37 @@ pub struct Policy {
     pub require_witness: bool,
 }
 
+/// 认领范围已经覆盖的路径折叠成范围本身。
+/// 10k 文件的提交不必逐路径过门（门的路径上限是 256），判定等价：范围覆盖 ⇒ 范围与路径同权。
+fn collapsed_paths(paths: &[String], claims: &[ClaimSpec]) -> Vec<String> {
+    fn covers(scope: &str, path: &str) -> bool {
+        scope == path
+            || (path.len() > scope.len()
+                && path.starts_with(scope)
+                && path.as_bytes().get(scope.len()) == Some(&b'/'))
+    }
+    let mut out: Vec<String> = Vec::new();
+    for path in paths {
+        if claims
+            .iter()
+            .any(|claim| claim.paths.iter().any(|scope| covers(scope, path)))
+        {
+            continue;
+        }
+        out.push(path.clone());
+    }
+    for claim in claims {
+        for scope in &claim.paths {
+            if paths.iter().any(|path| covers(scope, path)) {
+                out.push(scope.clone());
+            }
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
 /// 见证必须是"跑通"的那种；失败的运行单独报，避免和格式错误混在一起。
 fn require_passing(witness: &Witness) -> Result<(), RepoError> {
     match witness.check_passed() {
@@ -243,18 +274,19 @@ impl Repo {
         let index = self.index()?.ok_or(RepoError::NothingStaged)?;
         let tree =
             Hash::from_hex(&index.tree).ok_or_else(|| RepoError::BadHead(index.tree.clone()))?;
-        let verdict = check(&req.claims, &req.session, &index.paths, req.now_secs);
+        let gate_paths = collapsed_paths(&index.paths, &req.claims);
+        let verdict = check(&req.claims, &req.session, &gate_paths, req.now_secs);
         match &verdict {
             Verdict::Allowed => {}
             Verdict::Unclaimed if !req.allow_unclaimed => {
                 return Err(RepoError::Unclaimed {
-                    paths: index.paths.clone(),
+                    paths: gate_paths.clone(),
                 });
             }
             Verdict::Conflict { others } => {
                 return Err(RepoError::Conflict {
                     others: others.clone(),
-                    paths: index.paths.clone(),
+                    paths: gate_paths.clone(),
                 });
             }
             _ => {}
@@ -574,6 +606,31 @@ mod tests {
         bytes[at] ^= 0xFF;
         fs::write(&pack, bytes).unwrap();
         assert!(repo.verify().is_err());
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn commit_with_many_files_uses_claim_scopes() {
+        let root = temp("many-paths");
+        let mut repo = Repo::init(&root).unwrap();
+        let mut files = BTreeMap::new();
+        for index in 0..300 {
+            files.insert(
+                format!("gen/f{index:04}.txt"),
+                format!("v{index}").into_bytes(),
+            );
+        }
+        repo.stage(&files, 1_000).unwrap();
+        let outcome = repo
+            .commit(CommitRequest {
+                message: "many".to_string(),
+                session: "qoder:s1".to_string(),
+                claims: vec![claim("qoder:s1", &["gen"], 9_999)],
+                now_secs: 1_000,
+                ..Default::default()
+            })
+            .unwrap();
+        assert_eq!(outcome.verdict, Verdict::Allowed);
         let _ = fs::remove_dir_all(&root);
     }
 

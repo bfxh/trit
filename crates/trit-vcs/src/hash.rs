@@ -26,6 +26,10 @@ impl Hash {
         Some(Self(out))
     }
 
+    pub fn from_bytes(bytes: [u8; 32]) -> Self {
+        Self(bytes)
+    }
+
     pub fn to_hex(self) -> String {
         self.0.iter().map(|b| format!("{b:02x}")).collect()
     }

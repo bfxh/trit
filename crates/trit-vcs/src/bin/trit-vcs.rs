@@ -439,8 +439,8 @@ fn main() -> ExitCode {
                 Ok(repo) => repo,
                 Err(err) => return fail(err.to_string()),
             };
-            match worktree::status(&repo) {
-                Ok(changes) => {
+            match worktree::status_with_cache(&repo) {
+                Ok((changes, stats)) => {
                     if has(&args, "--json") {
                         println!(
                             "{}",
@@ -453,6 +453,10 @@ fn main() -> ExitCode {
                             println!("  {:?}  {}", change.kind, change.path);
                         }
                     }
+                    println!(
+                        "（读了 {} 个文件，stat 缓存省了 {} 个）",
+                        stats.hashed, stats.cached
+                    );
                     ExitCode::SUCCESS
                 }
                 Err(err) => fail(err.to_string()),
