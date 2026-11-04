@@ -1,0 +1,20 @@
+{
+ "README.md": 9,
+ "docs/CAPACITY.md": 1,
+ "docs/DATASETS.md": 1,
+ "docs/DESIGN.md": 2,
+ "docs/GENERAL-PLAN.md": 11,
+ "docs/LESSONS.md": 2,
+ "docs/MODEL-CARD.md": 3,
+ "docs/MULTI-CHIP.md": 10,
+ "docs/SCOPE.md": 4,
+ "docs/SECURITY-NET.md": 4,
+ "docs/STATUS.md": 7,
+ "docs/TERNARY-TOOLCHAIN.md": 6,
+ "docs/TTX.md": 5,
+ "docs/VISUAL-PLAN.md": 2,
+ "docs/review/gpu-unlock-2026-10-26.md": 4,
+ "docs/review/self-audit-2026-10-28.md": 1,
+ "docs/review/tensor-core-path-audit-2026-10-26.md": 1,
+ "docs/review/trit-audit-2026-10-25.md": 3
+}
