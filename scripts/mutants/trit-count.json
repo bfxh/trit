@@ -34,8 +34,8 @@
  {
   "name": "count: 分支只数正支",
   "file": "crates/trit-count/src/dpll.rs",
-  "old": "        let total = self.count_core(&positive, m) + self.count_core(&negative, m);",
-  "new": "        let total = self.count_core(&positive, m);",
+  "old": "        let total = positive + negative;",
+  "new": "        let total = positive;",
   "pkg": "trit-count",
   "filter": "fixed_expressions_match_exhaustive"
  },
@@ -126,5 +126,45 @@
   "new": "    let bdd = count_models_bdd(expr, &[], vars, binary, alg, target, bdd_limits);",
   "pkg": "trit-count",
   "filter": "constrained_counts_match_exhaustive"
+ },
+ {
+  "name": "dpll: 已满足的子句照旧扣计数（假冲突）",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "            if satisfied[clause as usize] {\n                continue;\n            }",
+  "new": "            if false {\n                continue;\n            }",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "dpll: 正负出现表互换（满足当饿死）",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "        let (fill_from, fill_to, starve_from, starve_to) = if value == 1 {",
+  "new": "        let (fill_from, fill_to, starve_from, starve_to) = if value == -1 {",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "dpll: 单位判定阈值写成 2（强行任意赋值）",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "            if *slot == 1 {",
+  "new": "            if *slot == 2 {",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "dpll: 已赋值计数不累加（自由变量算多）",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "        assigned += 1;",
+  "new": "        assigned += 0;",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "dpll: 分支回收漏摘单位子句（表格被污染）",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "        numbered.remove(at);\n        let at = insert_unit(&mut numbered, -(branch as i32));",
+  "new": "        let at = insert_unit(&mut numbered, -(branch as i32));",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
  }
 ]

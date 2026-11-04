@@ -79,6 +79,133 @@ pub fn select_entries(
         .collect())
 }
 
+/// 传输用的树清单：过滤后的树对象，源仓里通常并不存在这个 id。
+#[derive(Clone, Debug)]
+pub struct Manifest {
+    pub id: Hash,
+    pub bytes: Vec<u8>,
+    pub entries: BTreeMap<String, Hash>,
+}
+
+/// 造树清单。部分拉取发的是过滤后的树对象（不是原树，原树会大到让"只拉一个目录"失去意义）；
+/// `prefix` 为 `None` 时条目表与原树逐字相同 ⇒ `id` 就是原树 id。
+pub fn manifest(store: &Store, tree: Hash, prefix: Option<&str>) -> Result<Manifest, BundleError> {
+    let entries = select_entries(store, tree, prefix)?;
+    let bytes = serde_json::to_vec(&entries)
+        .map_err(|e| BundleError::Store(StoreError::BadMap(e.to_string())))?;
+    Ok(Manifest {
+        id: Hash::of(&bytes),
+        bytes,
+        entries,
+    })
+}
+
+/// 一组树条目的对象闭包：条目自身（文件映射）+ 它引用的块。
+pub fn entries_closure(
+    store: &Store,
+    entries: &BTreeMap<String, Hash>,
+) -> Result<Vec<Hash>, BundleError> {
+    let mut order = Vec::new();
+    let mut seen = HashSet::new();
+    for file_id in entries.values() {
+        push_object(&mut order, &mut seen, *file_id);
+        for chunk in &store.file_map(file_id)?.chunks {
+            push_object(&mut order, &mut seen, *chunk);
+        }
+    }
+    Ok(order)
+}
+
+/// 沿第一父链补齐 `dst` 还没有的**提交对象**（只有提交，不带树与数据块）。
+///
+/// 中央仓要能判"新提交是不是从现有 ref 往下走"，就必须能沿父链走通；
+/// `commit_closure` 明确不含父提交，所以这里单独补一段。
+pub fn missing_ancestors(
+    src: &Store,
+    dst: &Store,
+    commit: Hash,
+    cap: usize,
+) -> Result<Vec<Hash>, BundleError> {
+    let mut order = Vec::new();
+    let mut cursor = commit_object(src, &commit)?.parents.first().copied();
+    let mut steps = 0usize;
+    while let Some(id) = cursor {
+        if dst.has_chunk(&id) || steps >= cap {
+            break;
+        }
+        order.push(id);
+        steps += 1;
+        cursor = commit_object(src, &id)?.parents.first().copied();
+    }
+    Ok(order)
+}
+
+fn commit_object(src: &Store, commit: &Hash) -> Result<crate::model::Commit, BundleError> {
+    let bytes = src.get_chunk(commit)?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| BundleError::Store(StoreError::BadMap(e.to_string())))
+}
+
+/// 一个提交的闭包（提交对象 + 它的树 + 全部文件映射与块；不含父提交）。
+pub fn commit_closure(store: &Store, commit: Hash) -> Result<Vec<Hash>, BundleError> {
+    let parsed = commit_object(store, &commit)?;
+    let mut order = vec![commit];
+    let mut seen = HashSet::new();
+    seen.insert(commit);
+    push_object(&mut order, &mut seen, parsed.tree);
+    order.extend(entries_closure(store, &store.tree_entries(&parsed.tree)?)?);
+    Ok(order)
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TransferStats {
+    pub objects: usize,
+    pub sent_objects: usize,
+    pub skipped: usize,
+    pub total_bytes: u64,
+    pub sent_bytes: u64,
+}
+
+/// 进程内搬运：目标已有的块跳过（同一套内容寻址，无需协商）。
+pub fn transfer(src: &Store, dst: &Store, objects: &[Hash]) -> Result<TransferStats, BundleError> {
+    let mut stats = TransferStats {
+        objects: objects.len(),
+        ..Default::default()
+    };
+    for hash in objects {
+        let bytes = src.get_chunk(hash)?;
+        stats.total_bytes += bytes.len() as u64;
+        if dst.has_chunk(hash) {
+            stats.skipped += 1;
+            continue;
+        }
+        dst.put_chunk(&bytes)?;
+        stats.sent_objects += 1;
+        stats.sent_bytes += bytes.len() as u64;
+    }
+    Ok(stats)
+}
+
+/// 搬运 + 一份"发送端现造"的树清单：过滤后的树对象在源仓里并不存在，只能带着字节走。
+pub fn transfer_scoped(
+    src: &Store,
+    dst: &Store,
+    objects: &[Hash],
+    manifest: &Manifest,
+) -> Result<TransferStats, BundleError> {
+    let mut stats = transfer(src, dst, objects)?;
+    stats.objects += 1;
+    stats.total_bytes += manifest.bytes.len() as u64;
+    if dst.has_chunk(&manifest.id) {
+        stats.skipped += 1;
+    } else {
+        dst.put_chunk(&manifest.bytes)?;
+        stats.sent_objects += 1;
+        stats.sent_bytes += manifest.bytes.len() as u64;
+    }
+    Ok(stats)
+}
+
 /// 把 `tree`（可限定到某个目录）的对象写成包；`dest` 已有的对象不写（块级增量）。
 pub fn export<W: Write>(
     store: &Store,
@@ -87,20 +214,11 @@ pub fn export<W: Write>(
     dest: Option<&Store>,
     out: &mut W,
 ) -> Result<ExportStats, BundleError> {
-    let entries = select_entries(store, tree, prefix)?;
-    // 部分拉取发的是**过滤后的树对象**；全量时它的 id 与原树相同（同一份 JSON 编码）。
-    let manifest = serde_json::to_vec(&entries)
-        .map_err(|e| BundleError::Store(StoreError::BadMap(e.to_string())))?;
-    let manifest_id = Hash::of(&manifest);
+    let Manifest { id, bytes, entries } = manifest(store, tree, prefix)?;
     let mut order = Vec::new();
     let mut seen = HashSet::new();
-    push_object(&mut order, &mut seen, manifest_id);
-    for file_id in entries.values() {
-        push_object(&mut order, &mut seen, *file_id);
-        for chunk in &store.file_map(file_id)?.chunks {
-            push_object(&mut order, &mut seen, *chunk);
-        }
-    }
+    push_object(&mut order, &mut seen, id);
+    order.extend(entries_closure(store, &entries)?);
 
     let mut stats = ExportStats {
         files: entries.len(),
@@ -109,13 +227,13 @@ pub fn export<W: Write>(
     };
     out.write_all(MAGIC)?;
     out.write_all(&SCHEMA.to_le_bytes())?;
-    out.write_all(manifest_id.as_bytes())?;
+    out.write_all(id.as_bytes())?;
     out.write_all(&(entries.len() as u32).to_le_bytes())?;
     out.write_all(&(order.len() as u32).to_le_bytes())?;
 
     for hash in &order {
-        let payload = if *hash == manifest_id {
-            manifest.clone()
+        let payload = if *hash == id {
+            bytes.clone()
         } else {
             store.get_chunk(hash)?
         };

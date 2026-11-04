@@ -62,6 +62,47 @@
   也没有“自然语言 → 补丁”的模型；外部 WSP 报道（2026-11-02 MIT CSAIL，Astra 读写
   Qwen3.5-0.8B 原始权重）**未复现**，只借用其接口形态。
 
+### Added（分层与归位：算子 / 算法 / 学习 / 生产链）
+
+- 措辞更正：README 标题、`docs/DESIGN.md` 一句话、`sansheng` 的 crate description 里的
+  「三值推理**工具箱**」改成「**底座**」——这个仓不是工具箱，是所有三值实现的落点。
+  （文档里剩下那些「工具链」指的是编译器工具链，不是自我定位，不动。）
+- 新规范 `docs/LAYERS.md`：四层定义 + 「新东西进来放哪」的 5 问判据 + 依赖方向 +
+  去重三条硬规则（一个能力一个权威实现、oracle 与被测不同体、性能声明必须带规模档）+
+  外部取用口径（生产链按 **git pin + tag** 依赖，不 vendor、不抄源码）+ 改名的固定顺序（现在不改）。
+- 新门 `scripts/layers.py` + 登记表 `scripts/layers.json`：35 个 crate 全部归位
+  （base 3 / ops 6 / algo 8 / learn 6 / prod 12），依赖边全部向下，唯一的跨层回边
+  `trit-graph → trit-learn`（mpnn 要 `Ste`）在 `allows` 里点名并写了删除条件。
+  不登记的新 crate、倒着依赖、失效例外、陈旧登记、未知层名都判红。
+- 门的自证：`--self-test` 1 正例 + 6 反证全绿；把 `trit-core` 临时登记成 `prod` ⇒ 门立刻报
+  4 条以上回边 rc=1（实测，不是推断）；变异 5 条 **caught 5 / survived 0**。
+  诚实披露：python runner 的变异属「未点名」（没打印可归属的断言名），只算抓住不算指名。
+
+### Measured（trit-count：BDD 坏顺序族 = 匹配族，给 watched literals 定靶子）
+
+- 新 `crates/trit-count/examples/matching_family.rs`：`(x0∧y0) | … | (x_{n-1}∧y_{n-1})`，
+  表达式里 x/y 交错出现、**声明顺序却是「所有 x 再所有 y」**（BDD 的教科书坏顺序，结宽 2^n）。
+- 读数（µs/节点 = DPLL 毫秒 ÷ 节点数）：
+
+  | 对数 | rails | 子句 | DPLL ms | 节点 | µs/节点 | BDD |
+  |---|---|---|---|---|---|---|
+  | 8 | 63 | 320 | 13.7 | 203 | 67.6 | ok |
+  | 12 | 95 | 488 | 35.2 | 323 | 109.0 | ok |
+  | 16 | 127 | 656 | 66.5 | 443 | 150.1 | ok |
+  | 20 | 159 | 824 | 113.6 | 563 | 201.8 | refused(>200k 节点) |
+  | 24 | 191 | 992 | 170.3 | 683 | 249.4 | refused |
+  | 32 | 255 | 1328 | 305.5 | 923 | 331.0 | refused |
+  | 40 | 319 | 1664 | 496.2 | 1163 | 426.7 | refused |
+
+- 结论两条：① **这一族 BDD 会炸、DPLL 扛得住**（节点数只随对数线性涨，20 对起 BDD 被预算拦下）
+  ⇒ 上一轮「DPLL 反正比 BDD 慢，不值得优化」的判断在这一族上不成立，watched literals 有靶子了。
+  ② DPLL 的 **µs/节点随实例线性变差**（67.6→426.7，随子句数 320→1664 同比涨），
+  与每节点 O(子句数) 的三处全表扫描（`normalize` 重排全部子句、`propagate` 全表迭代、residual 重建）同比涨；
+  **机制属推断**（没做逐段计时，本机 Instant 分辨率 ~100 ns 也不够切 200 µs 级的三段），
+  但它足以否证「DPLL 不值得优化」：这一族只有 DPLL 出得了数。
+- 锁：新增 2 条测试（`matching_family_hits_the_closed_form` 对 **闭式解 `4^n − 3^n`**，与两条引擎无关；
+  `matching_family_blows_the_bdd_budget` 钉住「20 对是 refused 而不是不一致」）；测试 24 → 26。
+
 ### Added（trit-count：BDD 第三方计数）
 
 - 新模块 `crates/trit-bdd/src/count.rs`：`count_models_bdd` 在 dual-rail BDD 上数「全部约束为 `True` ∧ 表达式取目标值」的合法赋值，

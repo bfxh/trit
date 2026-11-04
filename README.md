@@ -1,10 +1,10 @@
-# trit —— Rust 三进制工具箱（balanced ternary / 三值逻辑 / 三值内核）
+# trit —— Rust 三进制底座（balanced ternary / 三值逻辑 / 算子 · 算法 · 学习）
 
 [![CI](https://github.com/bfxh/trit/actions/workflows/ci.yml/badge.svg)](https://github.com/bfxh/trit/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/sansheng.svg)](https://crates.io/crates/sansheng)
 [![docs.rs](https://docs.rs/sansheng/badge.svg)](https://docs.rs/sansheng)
 
-**是什么**：在二进制机器上，把三进制真正能落地的那一层做成可复用 Rust crate——
+**是什么**：三值/多值计算的**底座仓**——所有算子、算法、学习机制在这里实现一次，生产链项目按 git pin 取用。在二进制机器上，把三进制真正能落地的那一层做成可复用 Rust crate——
 三值逻辑（Kleene K3 / Łukasiewicz Ł3 / Bochvar B3）、真值表与穷举等价、双导轨打包、
 CPU 掩码与 tryte 查表内核、GPU 三值内核、位平面 ALU、三值训练（STE/QAT）、
 TT3/TTX 资产容器、`.tri` 语言服务器、WASM Playground 与 `trit` CLI。
@@ -51,6 +51,10 @@ GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值
 完整清单与复算命令：[docs/LESSONS.md](docs/LESSONS.md)（经验与负结果）。
 
 定位与边界：[docs/DESIGN.md](docs/DESIGN.md)。
+
+新代码归位（算子 / 算法 / 学习 / 生产链）判据与门：[docs/LAYERS.md](docs/LAYERS.md)、`python scripts/layers.py`。
+
+该搬进 / 该新开 / 该搬出与排序：[docs/ROADMAP.md](docs/ROADMAP.md)。
 
 网安/逆向技术调研（PYAS、KSword 与静态二进制分析的对照、证据等级与路线图）：
 [docs/SECURITY-RE.md](docs/SECURITY-RE.md)。
@@ -99,7 +103,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-attn` | 注意力 = 快权重 FFN 的双视角、三值整数关联记忆、可训练三值注意力块（注意力+残差+FFN，QAT + 全链 STE） | `trit-attn demo\|train` |
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |
-| `trit-count` | 三值表达式精确模型计数：dual-rail CNF + DPLL + 组件缓存；约束计数（`--constraint` 可重复）；策略文件计数（`--policy` 展开 definitions、assumptions 当约束）；DPLL / 穷举 / BDD 三方对拍（≤12 变量穷举，`--big` 在 n>12 只做 DPLL vs BDD） | `trit-count --expr "a & b" --constraint a` / `trit-count --policy examples/policy.json` / `trit-count --big 24` |
+| `trit-count` | 三值表达式精确模型计数：dual-rail CNF + DPLL + 组件缓存；约束计数（`--constraint` 可重复）；策略文件计数（`--policy` 展开 definitions、assumptions 当约束）；DPLL / 穷举 / BDD 三方对拍（≤12 变量穷举，`--big` 在 n>12 只做 DPLL vs BDD） | `trit-count --expr "a & b" --constraint a` / `trit-count --policy examples/policy.json` / `trit-count --big 24` / `cargo run -p trit-count --example matching_family` |
 | `trit-ops` | 三值推理算子（双导轨掩码 / tryte 查表 / 自动选核）：流式 15.8× f32、0.2 B/参数 | `bench`（`crates/trit-ops`） |
 | `trit-texture` | TT3/TTX 三值纹理容器：8×8 块 2.125 bpp、GF(3) CRC-16、CPU/GPU 解码；TTX3 万级档案（瓦片化/层级混搭/流式解码，10240² 基面） | `trit-texture` |
 | `trit-unsafe` | 用 K3 审 unsafe：Safe / Unknown / Risky 按 crate 合成；17 类高危形态 + extern 声明块 | `trit-unsafe` |

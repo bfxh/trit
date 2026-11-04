@@ -10,6 +10,7 @@ pub mod fingerprint;
 pub mod limits;
 pub mod parallel;
 pub mod parser;
+pub mod quant;
 pub mod topology;
 pub mod tristate;
 pub mod value;

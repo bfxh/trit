@@ -5,8 +5,8 @@ use trit_core::ast::Expr;
 use trit_core::parser::Parser;
 use trit_core::value::Ternary;
 use trit_count::{
-    count_models, count_models_bdd, count_models_under, crosscheck, crosscheck_under,
-    crosscheck_under_with_limits,
+    CROSSCHECK_BDD_LIMITS, count_models, count_models_bdd, count_models_under, crosscheck,
+    crosscheck_under, crosscheck_under_with_limits,
 };
 
 fn parse(source: &str) -> Expr {
@@ -175,6 +175,57 @@ fn random_n_twelve_match_exhaustive() {
 }
 
 /// 穷举跑不动的规模上，DPLL 与 BDD 两条独立链仍要给出同一个数。
+/// 匹配族 `(x0&y0)|…|(x_{n-1}&y_{n-1})`，声明顺序是「所有 x 再所有 y」——
+/// BDD 在这一族上是教科书级坏顺序（结宽 2^n），DPLL 的组件缓存按对拆开所以吃得下。
+/// 计数对上**闭式解** `4^n - 3^n`（每条子句独立，至少一对同时为真），与两条引擎都无关。
+fn matching_family(pairs: usize) -> (Expr, Vec<String>, HashSet<String>) {
+    let xs: Vec<String> = (0..pairs).map(|index| format!("x{index}")).collect();
+    let ys: Vec<String> = (0..pairs).map(|index| format!("y{index}")).collect();
+    let mut source = String::new();
+    for (x, y) in xs.iter().zip(&ys) {
+        let term = format!("({x} & {y})");
+        source = if source.is_empty() {
+            term
+        } else {
+            format!("({source} | {term})")
+        };
+    }
+    let declared: Vec<String> = xs.iter().chain(ys.iter()).cloned().collect();
+    let binary: HashSet<String> = declared.iter().cloned().collect();
+    (parse(&source), declared, binary)
+}
+
+#[test]
+fn matching_family_hits_the_closed_form() {
+    for pairs in [1usize, 2, 4, 7, 10, 12] {
+        let (expr, declared, binary) = matching_family(pairs);
+        for alg in Algebra::ALL {
+            let count = count_models(&expr, &declared, &binary, alg, Ternary::True).count;
+            let expected = 4u128.pow(pairs as u32) - 3u128.pow(pairs as u32);
+            assert_eq!(count, expected, "pairs={pairs} alg={}", alg.as_str());
+        }
+    }
+}
+
+/// 同一族上 BDD 侧到 20 对被节点预算拦下：报 refused，不是报不一致。
+#[test]
+fn matching_family_blows_the_bdd_budget() {
+    let (expr, declared, binary) = matching_family(20);
+    let refused = count_models_bdd(
+        &expr,
+        &[],
+        &declared,
+        &binary,
+        Algebra::Kleene,
+        Ternary::True,
+        CROSSCHECK_BDD_LIMITS,
+    );
+    assert!(
+        matches!(refused, Err(trit_count::BddError::BudgetExceeded { .. })),
+        "20 pairs should exceed the BDD budget: {refused:?}"
+    );
+}
+
 #[test]
 fn dpll_and_bdd_agree_beyond_exhaustive() {
     let mut rng = Rng(0xB1B0_DDEA_D1CC_0001);
