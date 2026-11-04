@@ -78,5 +78,13 @@
     "new": "    let pat = format!(\"\\\"frames\\\": [\");",
     "pkg": "trit-parts",
     "filter": "parses_manifest_fields"
+  },
+  {
+    "name": "occ: 偶数种子与下一个奇数撞车（seed|1 回归）",
+    "file": "crates/trit-parts/src/occ.rs",
+    "old": "        let mut r = if seed.is_multiple_of(2) {\n            seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1\n        } else {\n            seed\n        };",
+    "new": "        let mut r = seed | 1;",
+    "pkg": "trit-parts",
+    "filter": "even_and_odd_seeds_init_differently"
   }
 ]
