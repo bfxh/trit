@@ -77,7 +77,7 @@
   "old": "let tools = tools();",
   "new": "let tools: Vec<Value> = Vec::new();",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_eight_tools"
+  "filter": "lists_exactly_nine_tools"
  },
  {
   "name": "wspace-mcp: 错误结果不再标 isError",
@@ -332,6 +332,38 @@
   "file": "crates/trit-wspace/src/cli.rs",
   "old": "        3 => {\n            let max_triples = opt_usize(&parsed, \"max-triples\", 20_000)?;",
   "new": "        4 => {\n            let max_triples = opt_usize(&parsed, \"max-triples\", 20_000)?;",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-candidate: 组合候选只取第一条",
+  "file": "crates/trit-wspace/src/wire.rs",
+  "old": "    let edits = value\n        .get(\"edits\")\n        .and_then(Value::as_array)\n        .ok_or_else(|| wire(\"候选需要 edit（单点）或 edits（组合）\"))?;\n    if edits.is_empty() {\n        return Err(wire(\"候选 edits 不能为空\"));\n    }\n    let mut out = Vec::with_capacity(edits.len());\n    for edit in edits {",
+  "new": "    let edits = value\n        .get(\"edits\")\n        .and_then(Value::as_array)\n        .ok_or_else(|| wire(\"候选需要 edit（单点）或 edits（组合）\"))?;\n    if edits.is_empty() {\n        return Err(wire(\"候选 edits 不能为空\"));\n    }\n    let mut out = Vec::with_capacity(edits.len());\n    for edit in edits.iter().take(1) {",
+  "pkg": "trit-wspace",
+  "filter": "candidate_forms_build_patches"
+ },
+ {
+  "name": "wspace-mcp: 候选直用不返回日志",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "value[\"log\"] = json!(log.to_jsonl());",
+  "new": "value[\"log\"] = json!(\"\");",
+  "pkg": "trit-wspace",
+  "filter": "apply_candidate_uses_proposal_and_appends_log"
+ },
+ {
+  "name": "wspace-mcp: 候选直用忽略 require_after",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "let outcome = ops::apply_patch(&net, patch, oracle.as_ref(), false, require_after)",
+  "new": "let outcome = ops::apply_patch(&net, patch, oracle.as_ref(), false, false)",
+  "pkg": "trit-wspace",
+  "filter": "apply_candidate_rolls_back_and_logs_it"
+ },
+ {
+  "name": "wspace-cli: apply-candidate 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "\"apply-candidate\" => cmd_apply_candidate(&args[1..]),",
+  "new": "\"apply-candidateX\" => cmd_apply_candidate(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
  }

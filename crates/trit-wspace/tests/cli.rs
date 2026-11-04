@@ -176,6 +176,40 @@ fn cli_read_verify_patch_repair_round_trip() {
     assert_eq!(triples["depth"].as_u64(), Some(3));
     assert!(triples["candidates"].as_array().expect("triples").len() <= 2);
 
+    let candidate = dir.join("candidate.json");
+    let fixed2 = dir.join("fixed2.wsp");
+    let log2 = dir.join("audit2.jsonl");
+    fs::write(
+        &candidate,
+        r#"{"edit":{"op":"set_trit","layer":0,"row":0,"col":0,"to":"-"}}"#,
+    )
+    .expect("candidate");
+    let applied = stdout_json(&run(&[
+        "apply-candidate",
+        &path_string(&broken),
+        "--candidate",
+        &path_string(&candidate),
+        "--oracle",
+        &path_string(&oracle),
+        "--require-after",
+        "--out",
+        &path_string(&fixed2),
+        "--log",
+        &path_string(&log2),
+    ]));
+    assert_eq!(applied["applied"], true);
+    assert_eq!(applied["verify"]["exact"], true);
+    assert!(fixed2.is_file());
+    let audit2 = stdout_json(&run(&[
+        "audit",
+        &path_string(&log2),
+        "--artifact",
+        &path_string(&broken),
+    ]));
+    assert_eq!(audit2["valid"], true);
+    assert_eq!(audit2["entries"].as_u64(), Some(1));
+    assert_eq!(audit2["replay"]["behavior_checked"].as_u64(), Some(1));
+
     let repaired = stdout_json(&run(&[
         "repair",
         &path_string(&broken),

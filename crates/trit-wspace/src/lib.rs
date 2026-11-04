@@ -80,7 +80,8 @@
 //!
 //! - CLI：`read / verify / patch / repair / diff / merge`，输入 `-` 读 stdin，报告一律 JSON；
 //! - MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、
-//!   `wsp_repair`、`wsp_propose`、`wsp_diff`、`wsp_merge` 七个工具，工具参数与返回格式见 [`wire`]。
+//!   `wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_audit`、`wsp_diff`、`wsp_merge`
+//!   九个工具，工具参数与返回格式见 [`wire`]。
 //!
 //! 补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
 

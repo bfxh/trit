@@ -25,6 +25,7 @@ trit-wspace <command>
   read <artifact|-> [--out <path>]
   verify <artifact|-> --oracle <json|-> [--limit N]
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
+  apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
   audit <log|-> [--artifact <initial|->]
@@ -55,6 +56,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "read" => cmd_read(&args[1..]),
         "verify" => cmd_verify(&args[1..]),
         "patch" => cmd_patch(&args[1..]),
+        "apply-candidate" => cmd_apply_candidate(&args[1..]),
         "repair" => cmd_repair(&args[1..]),
         "propose" => cmd_propose(&args[1..]),
         "audit" => cmd_audit(&args[1..]),
@@ -116,14 +118,45 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
 
     let net = load_net(path)?;
     let patch = wire::patch_from_value(&load_json(patch_path)?).map_err(err)?;
-    let patch_for_log = patch.clone();
     let oracle = oracle_path.map(load_oracle).transpose()?;
+    perform_patch(&parsed, &net, patch, oracle, "cli-patch")
+}
+
+fn cmd_apply_candidate(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &["require-before", "require-after"])?;
+    let path = one(
+        &parsed,
+        "apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>]",
+    )?;
+    let candidate_path = value(&parsed, "candidate")?;
+    let oracle_path = parsed.values.get("oracle").map(String::as_str);
+    let mut sources = vec![path, candidate_path];
+    if let Some(oracle) = oracle_path {
+        sources.push(oracle);
+    }
+    no_double_stdin(&sources)?;
+
+    let net = load_net(path)?;
+    let candidate = load_json(candidate_path)?;
+    let patch = wire::patch_from_candidate(&candidate).map_err(err)?;
+    let oracle = oracle_path.map(load_oracle).transpose()?;
+    perform_patch(&parsed, &net, patch, oracle, "cli-apply-candidate")
+}
+
+fn perform_patch(
+    parsed: &Parsed,
+    net: &Net,
+    patch: Patch,
+    oracle: Option<Oracle>,
+    log_name: &str,
+) -> Result<(), String> {
     let require_before = parsed.switches.contains("require-before");
     let require_after = parsed.switches.contains("require-after");
     if (require_before || require_after) && oracle.is_none() {
         return Err("--require-before/--require-after 需要 --oracle".into());
     }
-    let outcome = ops::apply_patch(&net, patch, oracle.as_ref(), require_before, require_after)
+    let patch_for_log = patch.clone();
+    let outcome = ops::apply_patch(net, patch, oracle.as_ref(), require_before, require_after)
         .map_err(err)?;
     let applied = outcome.applied;
     let rolled_back = outcome.rolled_back;
@@ -138,8 +171,8 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
             AuditLog::new()
         };
         log.record_with_oracle(
-            "cli-patch",
-            &net,
+            log_name,
+            net,
             &work,
             patch_for_log,
             applied,
@@ -149,7 +182,7 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
         .map_err(err)?;
         atomic_write(log_path, &log.to_jsonl())?;
     }
-    write_out(&parsed, &work)?;
+    write_out(parsed, &work)?;
     let mut output = json!({
         "report": outcome.report,
         "applied": applied,

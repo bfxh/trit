@@ -335,7 +335,27 @@ pub fn trits_text(values: &[Trit]) -> String {
     values.iter().map(|&t| t.to_char()).collect()
 }
 
-fn edit_from_value(value: &Value) -> Result<Edit> {
+/// 从 proposal 候选构造补丁：接受 `{"edit": {...}}`（单点）或 `{"edits": [...]}`（组合）。
+pub fn patch_from_candidate(value: &Value) -> Result<Patch> {
+    if let Some(edit) = value.get("edit") {
+        return Ok(Patch::new(vec![edit_from_value(edit)?]));
+    }
+    let edits = value
+        .get("edits")
+        .and_then(Value::as_array)
+        .ok_or_else(|| wire("候选需要 edit（单点）或 edits（组合）"))?;
+    if edits.is_empty() {
+        return Err(wire("候选 edits 不能为空"));
+    }
+    let mut out = Vec::with_capacity(edits.len());
+    for edit in edits {
+        out.push(edit_from_value(edit)?);
+    }
+    Ok(Patch::new(out))
+}
+
+/// 单条编辑 JSON → [`Edit`]。
+pub fn edit_from_value(value: &Value) -> Result<Edit> {
     let op = value
         .get("op")
         .and_then(Value::as_str)

@@ -155,3 +155,26 @@ fn summary_exposes_arch_count_and_checksums() {
         json!(format!("{:016x}", net.state_hash()))
     );
 }
+
+#[test]
+fn candidate_forms_build_patches() {
+    let single = wire::patch_from_candidate(&json!({
+        "edit": {"op": "set_trit", "layer": 0, "row": 0, "col": 0, "to": "0"}
+    }))
+    .expect("single");
+    assert_eq!(single.len(), 1);
+
+    let triple = wire::patch_from_candidate(&json!({
+        "edits": [
+            {"op": "set_trit", "layer": 0, "row": 0, "col": 0, "to": "-"},
+            {"op": "set_trit", "layer": 0, "row": 0, "col": 1, "to": "-"},
+            {"op": "set_trit", "layer": 0, "row": 1, "col": 0, "to": "-"},
+        ]
+    }))
+    .expect("triple");
+    assert_eq!(triple.len(), 3);
+
+    assert!(wire::patch_from_candidate(&json!({})).is_err());
+    assert!(wire::patch_from_candidate(&json!({"edits": []})).is_err());
+    assert!(wire::patch_from_candidate(&json!({"edit": {"op": "nope"}})).is_err());
+}

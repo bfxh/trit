@@ -1,4 +1,4 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，八个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，九个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
@@ -40,7 +40,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 八个工具。改数量必须同时改测试断言。
+/// 九个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -73,6 +73,18 @@ pub fn tools() -> Vec<Value> {
                 "require_after": {"type": "boolean"},
             }),
             &["patch"],
+        ),
+        tool(
+            "wsp_apply_candidate",
+            "直接把 proposal 候选应用为补丁；可选后置检查与追加审计日志（日志以文本返回，不写盘）",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "candidate": {"type": "object", "description": "wsp_propose 的 candidates[i]"},
+                "oracle": {"type": "object"},
+                "require_after": {"type": "boolean"},
+                "log": {"type": "string", "description": "已有 JSONL 日志文本或只读路径；空串表示新日志"},
+            }),
+            &["candidate"],
         ),
         tool(
             "wsp_repair",
@@ -225,6 +237,51 @@ impl Mcp {
                         "loss": oracle.loss(&work).map_err(err)?,
                         "mismatches": wire::mismatches_value(&work, oracle, 8).map_err(err)?,
                     });
+                }
+                Ok(value)
+            }
+            "wsp_apply_candidate" => {
+                let net = load(args)?;
+                let candidate = args.get("candidate").ok_or("需要 candidate")?;
+                let patch = wire::patch_from_candidate(candidate).map_err(err)?;
+                let patch_for_log = patch.clone();
+                let oracle = optional_oracle(args)?;
+                let require_after = flag(args, "require_after");
+                if require_after && oracle.is_none() {
+                    return Err("require_after 需要 oracle".into());
+                }
+                let outcome = ops::apply_patch(&net, patch, oracle.as_ref(), false, require_after)
+                    .map_err(err)?;
+                let work = outcome.net;
+                let mut value = json!({
+                    "report": outcome.report,
+                    "applied": outcome.applied,
+                    "rolled_back": outcome.rolled_back,
+                    "summary": wire::net_summary(&work),
+                    "artifact": to_wsp(&work),
+                });
+                if let Some(oracle) = &oracle {
+                    value["verify"] = json!({
+                        "exact": oracle.exact(&work).map_err(err)?,
+                        "loss": oracle.loss(&work).map_err(err)?,
+                        "mismatches": wire::mismatches_value(&work, oracle, 8).map_err(err)?,
+                    });
+                }
+                if let Some(raw) = args.get("log").and_then(Value::as_str) {
+                    let text = read_log(raw)?;
+                    let mut log = AuditLog::from_jsonl(&text).map_err(err)?;
+                    log.verify_chain().map_err(err)?;
+                    log.record_with_oracle(
+                        "mcp-apply-candidate",
+                        &net,
+                        &work,
+                        patch_for_log,
+                        outcome.applied,
+                        outcome.rolled_back,
+                        oracle.as_ref(),
+                    )
+                    .map_err(err)?;
+                    value["log"] = json!(log.to_jsonl());
                 }
                 Ok(value)
             }
@@ -399,6 +456,9 @@ fn err_result(message: impl Into<String>) -> Value {
 }
 
 fn read_log(raw: &str) -> Result<String, String> {
+    if raw.trim().is_empty() {
+        return Ok(String::new());
+    }
     if raw.trim_start().starts_with('{') || raw.contains('\n') {
         Ok(raw.to_string())
     } else {

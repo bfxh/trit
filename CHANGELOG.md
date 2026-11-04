@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：候选直用）
+
+- `wire::patch_from_candidate` 接受 `{"edit": {...}}`（单点）或 `{"edits": [...]}`（组合），
+  把 `wsp_propose` 的候选直接变成补丁；空候选、非法 op 都报错。
+- CLI `apply-candidate <artifact> --candidate <json> ...`；MCP `wsp_apply_candidate`（工具 8 → 9）。
+  两者都支持 `require_after`（失败原样回滚）；可选把本次编辑追加进 JSONL 审计日志
+  （MCP 返回更新后的日志文本，不写盘；CLI 的 `--log` 写盘）。
+- `patch` 与 `apply-candidate` 共用同一条执行路径（`perform_patch`），避免两条入口判决分叉。
+- 测试 88 → 92 + 1 doctest（新增 1 条候选线格式、3 条 MCP 直用/回滚/日志）；
+  变异 42 → **46 条，46/46 caught**；test_surface 台账 2,269 → 2,273。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
 ### Added（trit-wspace：三编辑批量提议）
 
 - `analyze_triples`：枚举全部**不同坐标**的三点编辑组合，实测 `after_loss` / `fixed` /

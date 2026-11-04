@@ -53,13 +53,13 @@ fn initialize_reports_protocol_and_server_name() {
 }
 
 #[test]
-fn lists_exactly_eight_tools() {
+fn lists_exactly_nine_tools() {
     let mut server = Mcp::new();
     let response = server
         .dispatch(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))
         .expect("response");
     let listed = response["result"]["tools"].as_array().expect("tools");
-    assert_eq!(listed.len(), 8);
+    assert_eq!(listed.len(), 9);
     let names: Vec<&str> = listed
         .iter()
         .map(|tool| tool["name"].as_str().expect("name"))
@@ -68,6 +68,7 @@ fn lists_exactly_eight_tools() {
         "wsp_read",
         "wsp_verify",
         "wsp_patch",
+        "wsp_apply_candidate",
         "wsp_repair",
         "wsp_propose",
         "wsp_audit",
@@ -76,7 +77,7 @@ fn lists_exactly_eight_tools() {
     ] {
         assert!(names.contains(&expected), "缺少工具 {expected}");
     }
-    assert_eq!(tools().len(), 8);
+    assert_eq!(tools().len(), 9);
 }
 
 #[test]
@@ -351,6 +352,86 @@ fn propose_depth3_returns_three_edit_candidates() {
     let mut fixed = broken.clone();
     patch.apply(&mut fixed).expect("apply");
     assert!(xor_oracle_net_check(&fixed));
+}
+
+#[test]
+fn apply_candidate_uses_proposal_and_appends_log() {
+    let mut broken = xor_net();
+    Patch::new(vec![Edit::SetTrit {
+        layer: 0,
+        row: 0,
+        col: 0,
+        to: Trit::Zero,
+    }])
+    .apply(&mut broken)
+    .expect("corrupt");
+    let candidate = json!({
+        "edit": {"op": "set_trit", "layer": 0, "row": 0, "col": 0, "to": "-"}
+    });
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_apply_candidate",
+        json!({
+            "artifact": to_wsp(&broken),
+            "candidate": candidate,
+            "oracle": xor_oracle(),
+            "require_after": true,
+            "log": "",
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert_eq!(value["applied"], true);
+    assert_eq!(value["rolled_back"], false);
+    assert_eq!(value["verify"]["exact"], true);
+    let log_text = value["log"].as_str().expect("log");
+    let log = trit_wspace::AuditLog::from_jsonl(log_text).expect("parse log");
+    log.verify_chain().expect("chain");
+    assert_eq!(log.len(), 1);
+    let (replay, _) = log.replay_net(&broken).expect("replay");
+    assert_eq!(replay.behavior_checked, 1);
+}
+
+#[test]
+fn apply_candidate_rolls_back_and_logs_it() {
+    let candidate = json!({
+        "edit": {"op": "set_trit", "layer": 0, "row": 0, "col": 0, "to": "0"}
+    });
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_apply_candidate",
+        json!({
+            "artifact": xor_artifact(),
+            "candidate": candidate,
+            "oracle": xor_oracle(),
+            "require_after": true,
+            "log": "",
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert_eq!(value["applied"], true);
+    assert_eq!(value["rolled_back"], true);
+    assert_eq!(value["verify"]["exact"], true, "回滚后仍是原工件");
+    let log =
+        trit_wspace::AuditLog::from_jsonl(value["log"].as_str().expect("log")).expect("parse log");
+    log.verify_chain().expect("chain");
+    let entry = &log.entries()[0];
+    assert!(entry.rolled_back);
+    assert_eq!(entry.before, entry.after);
+}
+
+#[test]
+fn apply_candidate_rejects_empty_candidate() {
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_apply_candidate",
+        json!({"artifact": xor_artifact(), "candidate": {}}),
+    );
+    assert_eq!(result["isError"], true);
 }
 
 #[test]
