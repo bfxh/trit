@@ -295,5 +295,50 @@
   "filter": "intent_base_must_match_parent_tree",
   "pkg": "trit-vcs",
   "runner": "cargo"
+ },
+ {
+  "name": "vcs: 部分拉取不过滤路径（单目录包和全量一样大）",
+  "file": "crates/trit-vcs/src/bundle.rs",
+  "old": "        .filter(|(path, _)| path == prefix || path.starts_with(&scoped))",
+  "new": "        .filter(|(_path, _)| true)",
+  "filter": "partial_pull_sends_well_under_a_tenth",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 收包不校验哈希（坏块也写进去）",
+  "file": "crates/trit-vcs/src/bundle.rs",
+  "old": "        if actual != id {",
+  "new": "        if false {",
+  "filter": "tampered_payload_is_rejected_before_storing",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 导出不看目标已有对象（全量重传）",
+  "file": "crates/trit-vcs/src/bundle.rs",
+  "old": "        if dest.is_some_and(|dest| dest.has_chunk(hash)) {",
+  "new": "        if false {",
+  "filter": "export_skips_objects_the_destination_already_has",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 收包不跳过已有块（重复导入重复写）",
+  "file": "crates/trit-vcs/src/bundle.rs",
+  "old": "        if store.has_chunk(&id) {",
+  "new": "        if false {",
+  "filter": "truncated_bundle_resumes_and_ends_byte_identical",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 包头仍声明原树（部分包因此缺树对象）",
+  "file": "crates/trit-vcs/src/bundle.rs",
+  "old": "    out.write_all(manifest_id.as_bytes())?;",
+  "new": "    out.write_all(tree.as_bytes())?;",
+  "filter": "partial_pull_sends_well_under_a_tenth",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
  }
 ]

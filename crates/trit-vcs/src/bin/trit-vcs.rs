@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use trit_vcs::bundle;
 use trit_vcs::gate::{ClaimSpec, Verdict, load_claims};
 use trit_vcs::model::Intent;
 use trit_vcs::repo::{CommitRequest, Repo};
@@ -30,6 +31,8 @@ fn usage() -> ExitCode {
          [--tag 标签]... [--witness FILE] [--goal 目标] [--accept 判据]... [--allow-unclaimed] [--repo PATH]\n  \
          trit-vcs witness [--out FILE] [--repo PATH] -- <命令>...\n  \
          trit-vcs admit <提交id> --witness FILE [--repo PATH]\n  \
+         trit-vcs export <树id> --out FILE [--prefix DIR] [--dest REPO] [--repo SRC]\n  \
+         trit-vcs import <包文件> [--repo DEST]\n  \
          trit-vcs log [--json] [--repo PATH]\n  \
          trit-vcs verify [--repo PATH]\n  \
          trit-vcs stats [--repo PATH]"
@@ -388,6 +391,99 @@ fn main() -> ExitCode {
                 Err(err) => fail(err.to_string()),
             }
         }
+        "export" => {
+            let root = repo_path(&args);
+            let repo = match Repo::open(&root) {
+                Ok(repo) => repo,
+                Err(err) => return fail(err.to_string()),
+            };
+            let ids = positionals(&args, &["--repo", "--out", "--dest", "--prefix"]);
+            let Some(target) = ids.first() else {
+                eprintln!("export 需要树 id");
+                return ExitCode::from(2);
+            };
+            let Some(tree) = trit_vcs::Hash::from_hex(target) else {
+                return fail(format!("不是合法树 id：{target}"));
+            };
+            let Some(out_path) = flag(&args, "--out") else {
+                eprintln!("export 需要 --out FILE");
+                return ExitCode::from(2);
+            };
+            let dest = match flag(&args, "--dest") {
+                Some(path) => match Repo::open(path) {
+                    Ok(repo) => Some(repo),
+                    Err(err) => return fail(err.to_string()),
+                },
+                None => None,
+            };
+            let mut file = match std::fs::File::create(out_path) {
+                Ok(file) => file,
+                Err(err) => return fail(format!("{out_path}: {err}")),
+            };
+            let prefix = flag(&args, "--prefix");
+            let result = bundle::export(
+                repo.store(),
+                tree,
+                prefix,
+                dest.as_ref().map(|repo| repo.store()),
+                &mut file,
+            );
+            match result {
+                Ok(stats) => {
+                    println!(
+                        "已导出 {}（{} 个文件，对象 {}，实传 {}/{}，字节 {}/{}）",
+                        out_path,
+                        stats.files,
+                        stats.objects,
+                        stats.sent_objects,
+                        stats.objects,
+                        stats.sent_bytes,
+                        stats.total_bytes
+                    );
+                    if stats.total_bytes > 0 {
+                        println!(
+                            "  传输占比 {:.1}%（前缀 {:?}）",
+                            stats.sent_bytes as f64 / stats.total_bytes as f64 * 100.0,
+                            prefix.unwrap_or("全量")
+                        );
+                    }
+                    ExitCode::SUCCESS
+                }
+                Err(err) => fail(err.to_string()),
+            }
+        }
+        "import" => {
+            let root = repo_path(&args);
+            let repo = match Repo::open(&root) {
+                Ok(repo) => repo,
+                Err(err) => return fail(err.to_string()),
+            };
+            let ids = positionals(&args, &["--repo"]);
+            let Some(path) = ids.first() else {
+                eprintln!("import 需要包文件");
+                return ExitCode::from(2);
+            };
+            let mut file = match std::fs::File::open(path) {
+                Ok(file) => file,
+                Err(err) => return fail(format!("{path}: {err}")),
+            };
+            match bundle::import(repo.store(), &mut file) {
+                Ok(stats) => {
+                    println!(
+                        "已导入：收到 {} 个对象（{} 字节），跳过已有 {} 个，树 {}",
+                        stats.received,
+                        stats.bytes,
+                        stats.skipped,
+                        stats
+                            .tree
+                            .map(|tree| tree.short())
+                            .unwrap_or_else(|| "-".to_string())
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(err) => fail(err.to_string()),
+            }
+        }
         "log" => {
             let root = repo_path(&args);
             let repo = match Repo::open(&root) {
@@ -404,6 +500,7 @@ fn main() -> ExitCode {
                     .map(|(id, commit)| {
                         serde_json::json!({
                             "id": id.to_hex(),
+                            "tree": commit.tree.to_hex(),
                             "parents": commit.parents.iter().map(|p| p.to_hex()).collect::<Vec<_>>(),
                             "session": commit.session,
                             "claims": commit.claims,
