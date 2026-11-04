@@ -52,6 +52,8 @@ GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值
 
 定位与边界：[docs/DESIGN.md](docs/DESIGN.md)。
 
+本库**收什么、不收什么**（含数据与二进制政策、跨仓分工）：[docs/SCOPE.md](docs/SCOPE.md)。
+
 新代码归位（算子 / 算法 / 学习 / 生产链）判据与门：[docs/LAYERS.md](docs/LAYERS.md)、`python scripts/layers.py`。
 
 该搬进 / 该新开 / 该搬出与排序：[docs/ROADMAP.md](docs/ROADMAP.md)。
