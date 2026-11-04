@@ -69,6 +69,10 @@ fn witness_commit_admit_roundtrip_and_tamper_refusal() {
             "--allow-unclaimed",
             "--witness",
             &path_text,
+            "--goal",
+            "见证往返",
+            "--accept",
+            "改一字节被拒",
         ],
     );
     assert!(committed.status.success(), "{}", stderr(&committed));
@@ -81,6 +85,13 @@ fn witness_commit_admit_roundtrip_and_tamper_refusal() {
         rows[0]["witness"].is_string(),
         "提交里应记录见证摘要：{}",
         rows[0]
+    );
+    assert_eq!(rows[0]["intent"]["goal"], "见证往返");
+    assert_eq!(rows[0]["intent"]["accept"][0], "改一字节被拒");
+    assert!(
+        rows[0]["intent"]["base"].is_null(),
+        "第一条提交没有父树 ⇒ base=null：{}",
+        rows[0]["intent"]
     );
 
     let admitted = run(&root, &["admit", &id, "--witness", &path_text]);
