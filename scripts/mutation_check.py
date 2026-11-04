@@ -40,6 +40,15 @@ DEFAULT_TIMEOUT_SECS = float(os.environ.get("MUTANT_TIMEOUT_SECS", "900"))
 TIMEOUT_RC = 100_000
 LOCK_DIR = pathlib.Path(__file__).resolve().parent / ".mutation-check.lock"
 
+
+def lock_path() -> pathlib.Path:
+    """锁目录可注入：自测走临时目录，绝不碰仓里那把真锁。
+
+    CI 会把 `mutation_check.py` 自己的变异也跑一遍（子进程 = `--self-test`），那时外层门正持有真锁；
+    自测若去抢同一把就是"自己挡自己"，基线直接判红（2026-11-05 在 CI 上实测踩到）。"""
+    override = os.environ.get("MUTATION_CHECK_LOCK_DIR")
+    return pathlib.Path(override) if override else LOCK_DIR
+
 MUTANT_DIR = pathlib.Path(__file__).resolve().parent / "mutants"
 
 
@@ -207,27 +216,29 @@ def acquire_lock() -> tuple[bool, str]:
     """单实例：两个门互抢 target 锁会一起挂死 ⇒ 后来者直接被拒，而不是排队装忙。"""
     if os.environ.get("MUTATION_CHECK_ALLOW_CONCURRENT") == "1":
         return True, "并行已显式允许（MUTATION_CHECK_ALLOW_CONCURRENT=1）"
-    if LOCK_DIR.exists():
+    here = lock_path()
+    if here.exists():
         pid = -1
         try:
-            pid = int((LOCK_DIR / "pid").read_text(encoding="utf-8").strip() or "-1")
+            pid = int((here / "pid").read_text(encoding="utf-8").strip() or "-1")
         except (OSError, ValueError):
             pass
         if _pid_alive(pid):
-            return False, f"另一个变异门正在跑（pid {pid}）⇒ 等它结束，或确认它已死后删 {LOCK_DIR}"
+            return False, f"另一个变异门正在跑（pid {pid}）⇒ 等它结束，或确认它已死后删 {here}"
         note = f"接管陈旧锁（原持有者 pid {pid} 已不在）"
         release_lock()
     else:
         note = ""
-    LOCK_DIR.mkdir(parents=True, exist_ok=True)
-    (LOCK_DIR / "pid").write_text(str(os.getpid()), encoding="utf-8")
+    here.mkdir(parents=True, exist_ok=True)
+    (here / "pid").write_text(str(os.getpid()), encoding="utf-8")
     return True, note
 
 
 def release_lock() -> None:
+    here = lock_path()
     with contextlib.suppress(OSError):
-        (LOCK_DIR / "pid").unlink(missing_ok=True)
-        LOCK_DIR.rmdir()
+        (here / "pid").unlink(missing_ok=True)
+        here.rmdir()
 
 
 def runner_of(mutant: dict) -> str:
@@ -685,21 +696,33 @@ def self_test() -> int:
         check("恢复要回到原文（幂等）", target.read_bytes(), original.encode("utf-8"))
         check("恢复后同样不许留临时文件", list(pathlib.Path(td).glob("*.mutant-tmp")), [])
 
-    ok, _ = acquire_lock()
-    check("第一次拿锁要成功", ok, True)
-    ok2, why = acquire_lock()
-    check("同一个仓里第二个门必须被拒（互抢 target 锁会一起挂死）", ok2, False)
-    check("拒绝时要点名持有者 pid", str(os.getpid()) in why, True)
-    release_lock()
-    check("释放后要能再拿", acquire_lock()[0], True)
-    release_lock()
-    LOCK_DIR.mkdir(parents=True, exist_ok=True)
-    (LOCK_DIR / "pid").write_text("4000000", encoding="utf-8")
-    stale_ok, stale_note = acquire_lock()
-    check("陈旧锁（持有者已死）要能接管，不能永久卡住门", stale_ok, True)
-    check("接管要说明是陈旧锁", "陈旧" in stale_note, True)
-    release_lock()
-    check("锁释放后目录要消失", LOCK_DIR.exists(), False)
+    # 锁的断言一律跑在注入的临时目录里：CI 自测时外层门正持有仓里那把真锁（踩过）。
+    # 守卫问的是"没碰那把真锁"，不是"那把锁不存在"——外层门正在跑时它本来就该在。
+    real_pid_file = LOCK_DIR / "pid"
+    before = real_pid_file.read_text(encoding="utf-8") if real_pid_file.exists() else None
+    with tempfile.TemporaryDirectory() as lock_box:
+        os.environ["MUTATION_CHECK_LOCK_DIR"] = str(pathlib.Path(lock_box) / "lock")
+        try:
+            ok, _ = acquire_lock()
+            check("第一次拿锁要成功", ok, True)
+            ok2, why = acquire_lock()
+            check("同一个仓里第二个门必须被拒（互抢 target 锁会一起挂死）", ok2, False)
+            check("拒绝时要点名持有者 pid", str(os.getpid()) in why, True)
+            release_lock()
+            check("释放后要能再拿", acquire_lock()[0], True)
+            release_lock()
+            lock_path().mkdir(parents=True, exist_ok=True)
+            (lock_path() / "pid").write_text("4000000", encoding="utf-8")
+            stale_ok, stale_note = acquire_lock()
+            check("陈旧锁（持有者已死）要能接管，不能永久卡住门", stale_ok, True)
+            check("接管要说明是陈旧锁", "陈旧" in stale_note, True)
+            release_lock()
+            check("锁释放后目录要消失", lock_path().exists(), False)
+        finally:
+            os.environ.pop("MUTATION_CHECK_LOCK_DIR", None)
+        check("自测没碰仓里那把真锁（外层门在跑时也不许接管或释放它）",
+              (real_pid_file.read_text(encoding="utf-8") if real_pid_file.exists() else None) == before,
+              True)
 
     if failures:
         for line in failures:
