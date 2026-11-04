@@ -6,6 +6,8 @@
 //! - `eval`：模型预测 id + GT depth → 与 GT 反投影逐部件比对（3D IoU / 质心误差）；
 //! - `mesh`：点云 → 实心占用 → Surface Nets 网格，并按 `--levels` 出 LOD 金字塔。
 
+#[path = "parts_3d/asset.rs"]
+mod asset;
 #[path = "parts_3d/cli.rs"]
 mod cli;
 #[path = "parts_3d/features.rs"]
@@ -31,6 +33,7 @@ mod texgen2;
 #[path = "parts_3d/texstyle.rs"]
 mod texstyle;
 
+use asset::export_asset_cmd;
 use cli::usage;
 use light::{light_est_cmd, light_fit_cmd, light_relight_cmd, light_relight_normals_cmd};
 use look::{look_cmd, style_cmd};
@@ -53,6 +56,7 @@ fn main() {
         Some("fuse") => fuse_cmd(&argv),
         Some("splat") => splat_cmd(&argv),
         Some("occ") => occ_cmd(&argv),
+        Some("export-asset") => export_asset_cmd(&argv),
         Some("align") => align_cmd(&argv),
         Some("obs-split") => obs_split_cmd(&argv),
         Some("mesh-tex") => mesh_tex_cmd(&argv),
