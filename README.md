@@ -54,6 +54,8 @@ GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值
 
 新代码归位（算子 / 算法 / 学习 / 生产链）判据与门：[docs/LAYERS.md](docs/LAYERS.md)、`python scripts/layers.py`。
 
+该搬进 / 该新开 / 该搬出与排序：[docs/ROADMAP.md](docs/ROADMAP.md)。
+
 网安/逆向技术调研（PYAS、KSword 与静态二进制分析的对照、证据等级与路线图）：
 [docs/SECURITY-RE.md](docs/SECURITY-RE.md)。
 

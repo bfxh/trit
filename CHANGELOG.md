@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Changed（publish 面：`trit-count` 翻成可发布）
+
+- `crates/trit-count/Cargo.toml` 去掉 `publish = false`，description 去掉「实验层」字样。
+  理由三条具体的，不是"感觉成熟了"：① 计数有四条独立判据链（DPLL / 穷举 / 闭式解 `4^n−3^n` / BDD 三方对拍）；
+  ② 26 条测试 + 16 条变异全抓；③ 它依赖的 `trit-core`/`trit-eval`/`trit-bdd` 本来就可发布，翻面不引入新约束。
+- 效果：`publish_graph` 的「可发布 crate 不得依赖未发布 crate」不再挡住 `trit-cli count`——**堵点解除**，
+  接线本身留给下一片（那是功能 PR，不是治理动作）。
+- 名字实测未占用：`GET https://crates.io/api/v1/crates/trit-count` → 404（"crate does not exist"）。
+  **翻面 ≠ 发布**：真上 crates.io 要单独授权（登录不等于授权、邮箱验证、新包限流），按 `scripts/publish.sh` 走。
+- 顺带修 CI 判红：A357 的对照 bench 原先挂在 `trit-dot` 的 dev-dependency 上，
+  `cargo package --workspace --locked` 报「no matching package named `trit-gpu`」
+  ——打包不接受对 `publish = false` crate 的跨包依赖。按仓里 `fuzz`/`t3` 的既有做法，
+  bench 挪成 workspace 外的独立包 `benchmarks/dot_variants/`（根 `Cargo.toml` 的 `exclude` 加一条）。
+  重跑读数不变：2M 档 u64 dispatch 中位 9.20 / u32 镜像 50.93 / i32 标量 191.69 ps/trit，
+  复算命令改成 `cargo run --release --manifest-path benchmarks/dot_variants/Cargo.toml`。
+
+### Added（路线图与文档归位）
+
+- 新 `docs/ROADMAP.md`：**该搬进**（diffusion 模型头 / lacbs 三值扩展 / memtri 打分内核 /
+  vxl-phys 裁决面 / 评测协议三件从 trit-parts 下沉 trit-learn）、**该新开**
+  （`trit-bench`、`trit-fuzz`、`trit-ir`、`trit-mv`、`trit-num`、`trit-export`、belnap 的算子面）、
+  **该搬出**（prod 层 6 个外壳 crate → `trit-tools`，且必须排在门进 CI 之后）、排序、
+  publish 面口径（19 个仍 publish=false）。
+- 文档归位规则写进 ROADMAP §6 并在 LAYERS 里挂链接：主库只写底座的事；项目口径留项目仓；
+  主库不复制正文，只留一行指针（抄过去就会漂）。
+
 ### Added（门的第二半：能力登记与「读数必须有数字」判红）
 
 - `scripts/layers.json` 新增 `capabilities` 段：一个能力一个 `authoritative`，第二份实现进 `mirrors`，
