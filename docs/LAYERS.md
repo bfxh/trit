@@ -73,6 +73,11 @@
 
 - 同能力去重的那一半（`alternative_of` + 实测差）还**只是规范**，门里没有实现；
   现在门只判「归位 + 依赖方向」。下一轮把它变成登记表里的字段并判红。
+- **第一案已量完**（A357）：CPU 位并行点积有两份——`trit-dot`（u64，popcnt 派发）与
+  `trit-gpu` 的 CPU 镜像（u32，WGSL 逐字镜像）。交错 9 轮实测：**u64 7.6–12.5 ps/trit，
+  u32 48.1–50.7 ps/trit，三个规模档慢 3.9–5.7×、无交叉**（`crates/trit-dot/examples/dot_variants.rs`）。
+  ⇒ 处置不是删代码而是**定性质**：要 CPU 吞吐用 `trit-dot`；`trit-gpu` 那份的位宽被 GPU 侧锁死，
+  只作 GPU 内核的逐位对拍基准。口径写进 `crates/trit-gpu/src/lib.rs` 头注释。
 - README/`DESIGN.md`/`sansheng` 的「工具箱」措辞已改成「底座」；仓内其他文档里残留的
   「工具链」是**编译器工具链**那个意思的，不算错，不动。
 - 门本身还没进 CI：`.github` 整目录被别的会话认领着（等收窄），所以现阶段靠

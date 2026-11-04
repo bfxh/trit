@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Measured（A357：CPU 位并行点积的两份实现，实测差出来了）
+
+- 新 `crates/trit-dot/examples/dot_variants.rs`（`cargo run --release -p trit-dot --example dot_variants`）：
+  同机、同输入、**交错 9 轮**（热漂移 ±25%，不交错读数不作数），打包与数据生成留在计时外，
+  四路必须先给**同一个 i64** 才算这轮成立。
+
+  | trits | u64 dispatch | u64 portable | **u32（trit-gpu 镜像）** | i32 标量 |
+  |---|---|---|---|---|
+  | 8 192 | 12.2 | 12.2 | **48.8** | 170.9 |
+  | 131 072 | 8.4 | 12.2 | **48.8** | 168.6 |
+  | 2 097 152 | 9.4 | 12.5 | **50.7** | 183.5 |
+
+  ps/trit，中位数。结论：**u64 在三个规模档全部更快，慢 3.9–5.7×，没有交叉点** ⇒ 按 LAYERS §4
+  这不是两个平权的权威实现。
+- 处置（不删代码，改性质）：`trit-gpu` 的 u32 镜像**位宽被 GPU 侧锁死**（一个 WGSL 线程一个 32 位字），
+  它的职责是 GPU 内核的逐位对拍基准（`matmul_words` 与真机对拍都走它），不是 CPU 吞吐路径；
+  `trit-dot` 才是 CPU 权威实现。这条口径写进 `crates/trit-gpu/src/lib.rs` 的头注释，带表里的数。
+- 更正 A357 的取证：**「全仓零引用」只对外部成立**——`crate::dot_words` 在 `trit-gpu` 内部是承重的
+  （`lib.rs:123` 的 `matmul_words`、`gpu.rs:337` 的 CPU/GPU 对照计时）。立项时按 `trit_gpu::dot_*` 搜
+  当然搜不到仓内调用，这条证据当时给弱了。
+- 依赖面：`trit-dot` 加 dev-dependency `trit-gpu`（只在 bench 里），根 `Cargo.toml` 的
+  `workspace.dependencies` 补 `trit-gpu` 条目。门：fmt / clippy `--release --all-targets` /
+  test_surface / module_budget / publish_graph / deps / layers 全绿（无新增产品代码，故不新增变异）。
+
 ### Changed（Ste 与三值量化下沉到 base）
 
 - `Ste`（Identity / Clipped / Soft 三变体）连同 `ternarize` / `quantize_with_scale` / `Quantized` /
