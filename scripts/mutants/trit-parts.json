@@ -94,5 +94,21 @@
     "new": "        Some(_end) if steps > 1 => lr,",
     "pkg": "trit-parts",
     "filter": "lr_decays_linearly_to_final"
+  },
+  {
+    "name": "asset-verify: 档位解析吞掉第一档",
+    "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
+    "old": "    for seg in txt.split(\"{\\\"cell\\\": \").skip(1) {",
+    "new": "    for seg in txt.split(\"{\\\"cell\\\": \").skip(2) {",
+    "pkg": "trit-parts",
+    "filter": "levels_parse_all_metrics"
+  },
+  {
+    "name": "asset-verify: 无观测顶点数不比（丢一列几何计数）",
+    "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
+    "old": "        && w.unseen == g.unseen",
+    "new": "        && w.unseen != g.unseen",
+    "pkg": "trit-parts",
+    "filter": "levels_match_catches_every_field"
   }
 ]

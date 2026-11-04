@@ -32,27 +32,6 @@ struct Level {
     unseen: usize,
 }
 
-/// 场景输入指纹（模型消费的就是 seg/depth/meta 三类）。
-fn scene_fingerprint(
-    scene: &std::path::Path,
-    frames: &[usize],
-) -> Result<(usize, u64, String), String> {
-    use trit_core::fingerprint::{file_sha256, sha256_hex};
-    let mut lines = Vec::new();
-    let mut bytes = 0u64;
-    let mut files = 0usize;
-    for &f in frames {
-        for (sub, ext) in [("seg", "npy"), ("depth", "npy"), ("meta", "json")] {
-            let p = frame_path(scene, sub, f, ext);
-            let meta = std::fs::metadata(&p).map_err(|e| format!("{}: {e}", p.display()))?;
-            bytes += meta.len();
-            files += 1;
-            lines.push(format!("{sub}/{f:06} {}", file_sha256(&p)?));
-        }
-    }
-    Ok((files, bytes, sha256_hex(lines.join("\n").as_bytes())))
-}
-
 pub(crate) fn export_asset_cmd(argv: &[String]) {
     let model_path = PathBuf::from(arg(argv, "--model").unwrap_or_else(|| usage()));
     let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
@@ -168,8 +147,9 @@ pub(crate) fn export_asset_cmd(argv: &[String]) {
         });
     }
 
-    let (files, data_bytes, data_hash) =
-        scene_fingerprint(&scene, &frames).unwrap_or_else(|e| fail(&e));
+    let fp =
+        trit_parts::scenefp::fingerprint_scene_frames(&scene, &frames).unwrap_or_else(|e| fail(&e));
+    let (files, data_bytes, data_hash) = (fp.files, fp.bytes, fp.hash);
     let model_sha = trit_core::fingerprint::file_sha256(&model_path).unwrap_or_default();
     let model_bytes = std::fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0);
     let commit = trit_parts::partsrun::git_out(&["rev-parse", "--short", "HEAD"])

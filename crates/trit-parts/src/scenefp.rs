@@ -65,6 +65,35 @@ pub fn fingerprint_scenes(
     })
 }
 
+/// 单场景 + 帧集合的内容级指纹（资产导出/复核共用；只覆盖模型真正读的 seg/depth/meta）。
+pub fn fingerprint_scene_frames(scene: &Path, frames: &[usize]) -> Result<Fp, String> {
+    let mut lines = Vec::new();
+    let mut bytes = 0u64;
+    let mut files = 0usize;
+    for &f in frames {
+        for (sub, ext) in [("seg", "npy"), ("depth", "npy"), ("meta", "json")] {
+            let p = scene.join(sub).join(format!("{f:06}.{ext}"));
+            let meta = std::fs::metadata(&p).map_err(|e| format!("{}: {e}", p.display()))?;
+            bytes += meta.len();
+            files += 1;
+            lines.push(format!("{sub}/{f:06} {}", file_sha256(&p)?));
+        }
+    }
+    Ok(Fp {
+        dirs: 1,
+        files,
+        bytes,
+        hash: sha256_hex(
+            lines
+                .join(
+                    "
+",
+                )
+                .as_bytes(),
+        ),
+    })
+}
+
 /// 场景根的规范写法（清单里直接记这个，复核器照抄）。
 pub fn norm_root(p: &Path) -> String {
     norm(p)
@@ -122,6 +151,18 @@ mod tests {
         assert_ne!(a.hash, c.hash);
         // 2 场景 × (2 帧 × {seg,depth,meta} + objects.json) = 14
         assert_eq!(a.files, 14);
+    }
+
+    #[test]
+    fn single_scene_fingerprint_matches_frames() {
+        let t = Tmp::new("one");
+        scene(&t, 80, &[0, 1]);
+        let a = fingerprint_scene_frames(&t.0.join("r/scene0080"), &[0]).unwrap();
+        let b = fingerprint_scene_frames(&t.0.join("r/scene0080"), &[0, 1]).unwrap();
+        assert_eq!(a.files, 3);
+        assert_eq!(b.files, 6);
+        assert_ne!(a.hash, b.hash);
+        assert!(fingerprint_scene_frames(&t.0.join("r/scene0080"), &[9]).is_err());
     }
 
     #[test]
