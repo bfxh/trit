@@ -24,12 +24,86 @@ from __future__ import annotations
 import argparse
 import json
 import pathlib
+import re
 import sys
 import time
 
 DEFAULT_CLAIMS = pathlib.Path("D:/KF/_handoff/CLAIMS.md")
 DEFAULT_TECHMAP = pathlib.Path("D:/KF/_handoff/TECHMAP.json")
 SHARED_TAGS_TO_WARN = 2
+DEFAULT_LEDGER = pathlib.Path("D:/KF/_handoff/LEDGER.md")
+STOPWORDS = {"ledger", "done", "note", "that", "with", "from", "see", "详见", "完成", "开工", "负责", "会话", "提出"}
+
+
+
+ENTRY_RE = re.compile(r"^- \[[ xX]\] \*\*(A[0-9]+)([^*]*)\*\*")
+OWNER_RE = re.compile(r"负责[：:]\s*([^｜|）)]+)")
+
+
+def parse_entries(text: str) -> list[dict]:
+    """读 LEDGER 的条目行：编号、开/关、标题与负责会话。"""
+    rows: list[dict] = []
+    for line in text.splitlines():
+        match = ENTRY_RE.match(line)
+        if not match:
+            continue
+        num, rest = match.group(1), line
+        closed = line[3].lower() == "x"
+        owner = OWNER_RE.search(line)
+        rows.append(
+            {
+                "id": num,
+                "title": match.group(2).strip(" ·")[:40],
+                "closed": closed,
+                "owner": (owner.group(1).strip() if owner else "?"),
+                "words": set(
+                    word
+                    for word in re.findall(r"[A-Za-z]{4,}|[一-鿿]{2,}", rest)
+                    if word not in STOPWORDS
+                ),
+            }
+        )
+    return rows
+
+
+def judge_ledger(entries: list[dict]) -> list[tuple[str, str]]:
+    """重复登记、状态自相矛盾、疑似同一件事被两家做。"""
+    findings: list[tuple[str, str]] = []
+    by_id: dict[str, list[dict]] = {}
+    for entry in entries:
+        by_id.setdefault(entry["id"], []).append(entry)
+    for num, group in sorted(by_id.items()):
+        if len(group) > 1:
+            titles = {item["title"] for item in group}
+            label = "编号被两件事复用" if len(titles) > 1 else "同一件事重复登记"
+            findings.append(
+                (
+                    "拦",
+                    f"LEDGER {label}：{num} 出现 {len(group)} 次，负责 "
+                    + "、".join(item["owner"] for item in group)
+                    + f"；标题 {sorted(titles)[:2]} ⇒ "
+                    + ("说「A 完成了」指的是哪一件？必须重新取号" if len(titles) > 1 else "各自推进会互相覆盖"),
+                )
+            )
+        if any(item["closed"] for item in group) and any(not item["closed"] for item in group):
+            findings.append(("拦", f"LEDGER 里 {num} 同时有 open 与 [x] 两种状态，自相矛盾"))
+    open_rows = [entry for entry in entries if not entry["closed"]]
+    for first in range(len(open_rows)):
+        for second in range(first + 1, len(open_rows)):
+            a, b = open_rows[first], open_rows[second]
+            if a["id"] == b["id"]:
+                continue
+            shared = a["words"] & b["words"]
+            smaller = min(len(a["words"]), len(b["words"])) or 1
+            if len(shared) >= 4 and len(shared) / smaller >= 0.5:
+                findings.append(
+                    (
+                        "警",
+                        f"疑似重复开工（不拦）：{a['id']}（{a['owner']}）与 {b['id']}（{b['owner']}）"
+                        f"标题共享 {sorted(shared)[:6]} ⇒ 双方对齐是同一件事还是两件",
+                    )
+                )
+    return findings
 
 
 def parse_claims(text: str) -> list[dict]:
@@ -160,6 +234,8 @@ def main(argv: list[str]) -> int:
     parser.add_argument("--claims", default=str(DEFAULT_CLAIMS))
     parser.add_argument("--techmap", default=str(DEFAULT_TECHMAP))
     parser.add_argument("--now", type=int, default=None)
+    parser.add_argument("--ledger", default=str(DEFAULT_LEDGER))
+    parser.add_argument("--no-ledger", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args(argv)
     if args.self_test:
@@ -180,12 +256,18 @@ def main(argv: list[str]) -> int:
         parse_techmap(payload),
         args.now if args.now is not None else int(time.time()),
     )
+    ledger_path = pathlib.Path(args.ledger)
+    if not args.no_ledger:
+        if not ledger_path.is_file():
+            print(f"FAIL 读不到交接账本：{ledger_path} —— 不知道有没有重复登记不等于没重复")
+            return 1
+        findings = judge_ledger(parse_entries(ledger_path.read_text(encoding="utf-8", errors="replace"))) + findings
     blocked = [message for kind, message in findings if kind == "拦"]
     print(f"同技术撞车：拦 {len(blocked)} 条｜警 {len(findings) - len(blocked)} 条")
     for kind, message in findings:
         print(f"  [{kind}] {message}")
     if blocked:
-        print("FAIL 有两条在效期的声明指向同一项技术")
+        print("FAIL 撞车或账本重复未处理（见上表：同技术撞车 / 编号复用 / 重复登记）")
         return 1
     print("OK 没有同技术撞车（异域重叠只报警告）")
     return 0
