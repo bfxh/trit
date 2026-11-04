@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### 否证（`MatNet` 不改名——原本列为"命名整改"的欠账）
+
+- `docs/STATUS.md` §4 第 4 条提议"是组件就改名 `MatHead`"。读码把它**否证**了：
+  `crates/trit-parts/src/matnet.rs:1-4` 写的是独立训练的四类分类器（`conv(3→H) → ReLU → conv(H→H) → ReLU → 全局平均 → 线性(H→4)`），
+  不是接在骨干后面的头 ⇒ 叫 `MatHead` 比原名更迷惑。
+- 外部 pin 实测（决定改名有没有代价）：全机代码面只有 `crates/trit-parts/src/bin/parts_3d/material.rs` 引用，
+  其余 `MatNet` 命中都在同一仓的 worktree 副本里；`crates/trit-parts/Cargo.toml:9` 是 `publish = false`
+  ⇒ 本来不受 semver 约束。结论：**维持 `MatNet`**，把它在 §2 表里的判定（组件：1 个 bin 用、无仓内复用）写准。
+  迷惑性的修法是判定与读数，不是换名字。
+
 ### Added（把「计时夹具」登记成分层能力：权威 = `trit-bench`，两份手写档带实测差）
 
 - `scripts/layers.json` 的 `capabilities` 新增 `bench-timing-harness`：权威 `trit-bench`，镜像两份——

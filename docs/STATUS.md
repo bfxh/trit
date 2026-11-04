@@ -120,5 +120,9 @@ done
    （`tests/models_e2e.rs`，§2.1/§2.2）、`DepthNet` 4 条（`tests/depthnet_e2e.rs`，§2.3）。
    判决性都用变异验过（池化 max→avg、`q` 改恒等、`dil` 改常量），不是"加了测试就算数"。
    仍欠：`DepthHead`、`MatNet` —— 但按 §1 它们是**组件**，要么补到能改名要么维持组件名。
-4. **命名整改**：`MatNet` 是组件（只有 1 个 bin 用、无仓内复用），按 §1 要么补端到端跑通并带读数，要么改名 `MatHead`。
-   改名要走 `trit-look`/外部 pin 检查，所以排在门之后。
+4. ~~命名整改：`MatNet` 改名 `MatHead`~~ **被读码否证，不改**（2026-11-05）：
+   `matnet.rs:1-4` 写明它是**独立训练**的四类分类器（`conv(3→H) → ReLU → conv(H→H) → ReLU → 全局平均 → 线性(H→4)`），
+   不是挂在骨干后面的头 —— 叫 `MatHead` 比现在更迷惑。外部 pin 实测：全机代码面只有
+   `crates/trit-parts/src/bin/parts_3d/material.rs` 引用它（其余命中都是同一仓的 worktree 副本），
+   且 `crates/trit-parts/Cargo.toml:9` 是 `publish = false` ⇒ 改名本来没有 semver 约束，但没有更好的名字。
+   维持 `MatNet`，§2 表里它是**组件**（1 个 bin 用、无仓内复用）这一点不变——迷惑性的修法是把判定写准，不是换个名字。
