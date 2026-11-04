@@ -178,8 +178,7 @@ fn every_tool_advertises_budget_and_commit_advertises_dry_run() {
     let tools = response["result"]["tools"].as_array().unwrap();
     for tool in tools {
         assert_eq!(
-            tool["inputSchema"]["properties"]["budget"]["type"],
-            "integer",
+            tool["inputSchema"]["properties"]["budget"]["type"], "integer",
             "{} 没声明 budget 参数",
             tool["name"]
         );
@@ -188,7 +187,10 @@ fn every_tool_advertises_budget_and_commit_advertises_dry_run() {
         .iter()
         .find(|tool| tool["name"].as_str() == Some("commit"))
         .unwrap();
-    assert_eq!(commit["inputSchema"]["properties"]["dry_run"]["type"], "boolean");
+    assert_eq!(
+        commit["inputSchema"]["properties"]["dry_run"]["type"],
+        "boolean"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -214,11 +216,19 @@ fn dry_run_writes_nothing_and_budget_caps_the_reading() {
     assert!(text.contains("\"files\":1"), "预检必须带上规模读数：{text}");
     let log = call(&mut server, "log", json!({}));
     let rows: Value = serde_json::from_str(&text_of(&log)).unwrap();
-    assert_eq!(rows["commits"].as_array().unwrap().len(), 0, "dry_run 不该落提交");
+    assert_eq!(
+        rows["commits"].as_array().unwrap().len(),
+        0,
+        "dry_run 不该落提交"
+    );
 
     // 真提交 6 条，再用小预算读回来：必须真压进预算，并说丢了几行
     for i in 0..6 {
-        std::fs::write(root.join("a.txt"), format!("第 {i} 版内容，稍微长一点好让预算有得压\n")).unwrap();
+        std::fs::write(
+            root.join("a.txt"),
+            format!("第 {i} 版内容，稍微长一点好让预算有得压\n"),
+        )
+        .unwrap();
         assert_eq!(
             call(&mut server, "add", json!({"paths": ["a.txt"]}))["isError"],
             json!(false)
@@ -228,7 +238,12 @@ fn dry_run_writes_nothing_and_budget_caps_the_reading() {
             "commit",
             json!({"message": format!("提交 {i}"), "session": "qoder:mcp", "allow_unclaimed": true}),
         );
-        assert_eq!(committed["isError"], json!(false), "{}", text_of(&committed));
+        assert_eq!(
+            committed["isError"],
+            json!(false),
+            "{}",
+            text_of(&committed)
+        );
     }
 
     let capped = call(&mut server, "log", json!({"budget": 120}));
