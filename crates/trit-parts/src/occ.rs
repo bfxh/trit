@@ -229,7 +229,13 @@ fn quant(v: f32) -> f32 {
 
 impl Mlp {
     pub fn new(nin: usize, nhid: usize, seed: u64) -> Self {
-        let mut r = seed | 1;
+        // xorshift 状态不能为零。旧写法 `seed | 1` 会让**偶数种子与下一个奇数种子撞成同一初始化**
+        // （实测 seed 2 与 3 训出的模型逐字节相同）；奇数种子保持原值，偶数种子先混合一次。
+        let mut r = if seed.is_multiple_of(2) {
+            seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1
+        } else {
+            seed
+        };
         let mut next = || {
             r ^= r << 13;
             r ^= r >> 7;
@@ -366,6 +372,17 @@ impl Mlp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 偶数种子与下一个奇数种子不能撞成同一初始化（旧 `seed | 1` 的 bug）。
+    #[test]
+    fn even_and_odd_seeds_init_differently() {
+        let a = Mlp::new(6, 4, 2);
+        let b = Mlp::new(6, 4, 3);
+        assert_ne!(a.w1, b.w1, "seed 2 与 3 的初始化相同");
+        assert_ne!(Mlp::new(6, 4, 4).w1, Mlp::new(6, 4, 5).w1);
+        // 奇数种子仍确定性（既有跑法可复现）
+        assert_eq!(Mlp::new(6, 4, 3).w1, b.w1);
+    }
 
     #[test]
     fn primitives_containment() {

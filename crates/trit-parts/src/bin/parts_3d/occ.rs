@@ -108,6 +108,10 @@ pub(crate) fn occ_cmd(argv: &[String]) {
     let cap: usize = arg(argv, "--cap")
         .and_then(|v| v.parse().ok())
         .unwrap_or(20000);
+    // 初始化种子：只影响训练；复核走 `--load-model`，不需要它。
+    let seed: u64 = arg(argv, "--seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(12345);
     let save_model = arg(argv, "--save-model").map(PathBuf::from);
     let load_model = arg(argv, "--load-model").map(PathBuf::from);
     // 评测结果落盘（复核器读它，而不是解析人看的日志）
@@ -153,7 +157,7 @@ pub(crate) fn occ_cmd(argv: &[String]) {
             println!("加载模型 {}", p.display());
             Mlp::load(p).unwrap_or_else(|e| fail(&e))
         }
-        None => Mlp::new(nin, hid, 12345),
+        None => Mlp::new(nin, hid, seed),
     };
     if load_model.is_none() {
         let mut samples: Vec<(Vec<f32>, f32)> = Vec::new();
@@ -389,7 +393,7 @@ pub(crate) fn occ_cmd(argv: &[String]) {
         let model_bytes = std::fs::metadata(model).map(|m| m.len()).unwrap_or(0);
         let model_sha = trit_core::fingerprint::file_sha256(model).unwrap_or_default();
         let body = format!(
-            "{{\n  \"schema\": 1,\n  \"kind\": \"extract-occupancy\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"cell\": {cell}, \"hid\": {hid}, \"steps\": {steps}, \"lr\": {lr}, \"cap\": {cap}, \"frames\": [{}], \"train\": [{}], \"eval\": [{}], \"selfsup\": {selfsup}, \"tau\": {tau}, \"seal\": {seal}}},\n  \"data\": {{\"dirs\": {}, \"files\": {}, \"bytes\": {}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\", \"renders\": {}, \"scenes_root\": {}}},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"bytes\": {model_bytes}}},\n  \"result\": {{\"scenes\": {n}, \"iou_mean\": {mean}, \"closed\": {closed}, \"rows\": [{}]}}\n}}\n",
+            "{{\n  \"schema\": 1,\n  \"kind\": \"extract-occupancy\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"cell\": {cell}, \"hid\": {hid}, \"steps\": {steps}, \"lr\": {lr}, \"cap\": {cap}, \"seed\": {seed}, \"frames\": [{}], \"train\": [{}], \"eval\": [{}], \"selfsup\": {selfsup}, \"tau\": {tau}, \"seal\": {seal}}},\n  \"data\": {{\"dirs\": {}, \"files\": {}, \"bytes\": {}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\", \"renders\": {}, \"scenes_root\": {}}},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"bytes\": {model_bytes}}},\n  \"result\": {{\"scenes\": {n}, \"iou_mean\": {mean}, \"closed\": {closed}, \"rows\": [{}]}}\n}}\n",
             trit_parts::partsrun::created_unix(),
             trit_parts::partsrun::json_str(&commit),
             argv_json.join(", "),
