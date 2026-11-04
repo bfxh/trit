@@ -329,7 +329,8 @@ cargo run --release -p trit-cli -- verify examples/policy.json
   `Limit`／`BudgetExceeded` 错误；策略展开在分配大子树之前扣节点预算。
 - CLI 在默认值上收紧：`table` / REPL 与 WASM 只允许 10 个变量，网表分析最多 10 个主输入。
 
-**可复算的质量数据**：`scripts/mutation_check.py` 对 **312** 条关键规则做单点文本变异并跑回归；
+**可复算的质量数据**：`scripts/mutation_check.py` 的登记表（`scripts/mutants/*.json`）现有 **1,022**
+条关键规则的单点文本变异，逐条跑对应回归（复算：`python -c "import json,glob;print(sum(len(json.load(open(f,encoding='utf-8'))) for f in glob.glob('scripts/mutants/*.json')))"`）；
 fuzz 目标 8 个（netlist / verilog / atpg / blif / aiger / expr / policy / netlist_json）；
 测试矩阵覆盖 Linux / Windows / macOS 三平台 + MSRV 1.88 + wasm32。贡献流程见
 [CONTRIBUTING.md](CONTRIBUTING.md)。

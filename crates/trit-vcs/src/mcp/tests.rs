@@ -52,6 +52,13 @@ fn tools_list_has_thirteen_tools_and_usage() {
     let usage = &response["result"]["_meta"]["usage"];
     assert!(usage["bytes"].as_u64().unwrap() > 0);
     assert!(usage["tokens_est"].as_u64().unwrap() > 0);
+    // schema 是每个智能体每次会话的固定开销 ⇒ 上界当门钉住（实测 4,146 B / 1,111 元，2026-11-05）。
+    // 加参数可以，别把同一段说明抄 13 份：那条中文抄开一次就是 +192 元。
+    assert!(
+        usage["tokens_est"].as_u64().unwrap() <= 1_300,
+        "tools/list 的 schema 涨到 {} 元，超过上界：把重复说明收进一处",
+        usage["tokens_est"].as_u64().unwrap()
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
@@ -162,8 +169,103 @@ fn where_and_tests_use_techmap() {
 
 #[test]
 fn token_estimate_is_ascii_quarter_and_cjk_one() {
-    assert_eq!(estimate_tokens("abcd"), 1);
-    assert_eq!(estimate_tokens("abcdefgh"), 2);
-    assert_eq!(estimate_tokens("中文"), 2);
-    assert!(estimate_tokens("混合 mixed") >= 2);
+    assert_eq!(estimate("abcd"), 1);
+    assert_eq!(estimate("abcdefgh"), 2);
+    assert_eq!(estimate("中文"), 2);
+    assert!(estimate("混合 mixed") >= 2);
+}
+
+#[test]
+fn every_tool_advertises_budget_and_commit_advertises_dry_run() {
+    let root = temp("schema-budget");
+    let mut server = server(&root);
+    let response = server
+        .dispatch(&rpc(1, "tools/list", json!({})))
+        .expect("tools/list");
+    let tools = response["result"]["tools"].as_array().unwrap();
+    for tool in tools {
+        assert_eq!(
+            tool["inputSchema"]["properties"]["budget"]["type"], "integer",
+            "{} 没声明 budget 参数",
+            tool["name"]
+        );
+    }
+    let commit = tools
+        .iter()
+        .find(|tool| tool["name"].as_str() == Some("commit"))
+        .unwrap();
+    assert_eq!(
+        commit["inputSchema"]["properties"]["dry_run"]["type"],
+        "boolean"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+#[test]
+fn dry_run_writes_nothing_and_budget_caps_the_reading() {
+    let root = temp("budget-run");
+    let mut server = server(&root);
+    std::fs::write(root.join("a.txt"), "一行\n").unwrap();
+    let added = call(&mut server, "add", json!({"paths": ["a.txt"]}));
+    assert_eq!(added["isError"], json!(false), "{added}");
+
+    // 预检：说放行，但一条提交都不许落
+    let dry = call(
+        &mut server,
+        "commit",
+        json!({"message": "预检一下", "session": "qoder:mcp", "allow_unclaimed": true, "dry_run": true}),
+    );
+    assert_eq!(dry["isError"], json!(false), "{}", text_of(&dry));
+    let text = text_of(&dry);
+    assert!(text.contains("\"dry_run\":true"), "{text}");
+    // 这个工具不接受 claims ⇒ 放行只能走 allow_unclaimed，判决面如实写 unclaimed
+    assert!(text.contains("\"verdict\":\"unclaimed\""), "{text}");
+    assert!(text.contains("\"files\":1"), "预检必须带上规模读数：{text}");
+    let log = call(&mut server, "log", json!({}));
+    let rows: Value = serde_json::from_str(&text_of(&log)).unwrap();
+    assert_eq!(
+        rows["commits"].as_array().unwrap().len(),
+        0,
+        "dry_run 不该落提交"
+    );
+
+    // 真提交 6 条，再用小预算读回来：必须真压进预算，并说丢了几行
+    for i in 0..6 {
+        std::fs::write(
+            root.join("a.txt"),
+            format!("第 {i} 版内容，稍微长一点好让预算有得压\n"),
+        )
+        .unwrap();
+        assert_eq!(
+            call(&mut server, "add", json!({"paths": ["a.txt"]}))["isError"],
+            json!(false)
+        );
+        let committed = call(
+            &mut server,
+            "commit",
+            json!({"message": format!("提交 {i}"), "session": "qoder:mcp", "allow_unclaimed": true}),
+        );
+        assert_eq!(
+            committed["isError"],
+            json!(false),
+            "{}",
+            text_of(&committed)
+        );
+    }
+
+    let capped = call(&mut server, "log", json!({"budget": 120}));
+    let payload: Value = serde_json::from_str(&text_of(&capped)).unwrap();
+    assert!(
+        payload["truncation"]["dropped"].as_u64().unwrap() >= 1,
+        "120 元装不下 6 条提交：{}",
+        text_of(&capped)
+    );
+    let kept = payload["commits"].as_array().unwrap().len();
+    assert!(kept < 6, "压完必须少几行：留了 {kept}");
+    assert!(
+        estimate(&text_of(&capped)) <= 120,
+        "读数本身必须真在预算内：{}",
+        estimate(&text_of(&capped))
+    );
+    let _ = std::fs::remove_dir_all(&root);
 }
