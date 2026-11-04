@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use trit_vcs::gate::{ClaimSpec, Verdict, load_claims};
 use trit_vcs::repo::{CommitRequest, Repo};
+use trit_vcs::witness::{RunOutput, Witness};
 use trit_vcs::worktree;
 
 fn now_secs() -> u64 {
@@ -25,7 +26,9 @@ fn usage() -> ExitCode {
          trit-vcs init [--repo PATH]\n  \
          trit-vcs add <文件>... [--repo PATH]\n  \
          trit-vcs commit -m <说明> --owner <宿主:会话id> [--claims FILE] [--evidence 文本]... \n                   \
-         [--tag 标签]... [--allow-unclaimed] [--repo PATH]\n  \
+         [--tag 标签]... [--witness FILE] [--allow-unclaimed] [--repo PATH]\n  \
+         trit-vcs witness [--out FILE] [--repo PATH] -- <命令>...\n  \
+         trit-vcs admit <提交id> --witness FILE [--repo PATH]\n  \
          trit-vcs log [--json] [--repo PATH]\n  \
          trit-vcs verify [--repo PATH]\n  \
          trit-vcs stats [--repo PATH]"
@@ -58,6 +61,41 @@ fn repo_path(args: &[String]) -> PathBuf {
     flag(args, "--repo")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+/// 取位置参数（跳过开关及其值），用于 admit 这类"id + 文件"的命令。
+fn positionals(args: &[String], flags_with_value: &[&str]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut index = 1;
+    while index < args.len() {
+        let arg = &args[index];
+        if flags_with_value.contains(&arg.as_str()) {
+            index += 2;
+            continue;
+        }
+        if arg.starts_with("--") {
+            index += 1;
+            continue;
+        }
+        out.push(arg.clone());
+        index += 1;
+    }
+    out
+}
+
+/// 见证对象：优先暂存区（尚未提交的树），否则 HEAD 的树。
+fn current_tree(repo: &Repo) -> Result<(trit_vcs::Hash, Option<trit_vcs::Hash>), String> {
+    let base = repo.head().map_err(|e| e.to_string())?;
+    let base_tree = match base {
+        Some(id) => Some(repo.commit_at(&id).map_err(|e| e.to_string())?.tree),
+        None => None,
+    };
+    let tree = match repo.index().map_err(|e| e.to_string())? {
+        Some(index) => trit_vcs::Hash::from_hex(&index.tree)
+            .ok_or_else(|| format!("index 里的树 id 非法：{}", index.tree))?,
+        None => base_tree.ok_or("仓库里既没有暂存区也没有提交；先 add 或 commit")?,
+    };
+    Ok((tree, base_tree))
 }
 
 /// 收集要暂存的文件：路径相对仓库根，目录会递归展开（跳过 `.tritvcs` 与 `.git`）。
@@ -188,6 +226,14 @@ fn main() -> ExitCode {
                 },
                 None => Vec::new(),
             };
+            let witness = match flag(&args, "--witness") {
+                Some(path) => match std::fs::read(path) {
+                    Ok(bytes) => Some(bytes),
+                    Err(err) => return fail(format!("{path}: {err}")),
+                },
+                None => None,
+            };
+            let witness_digest = witness.as_ref().map(|bytes| trit_vcs::Hash::of(bytes));
             let mut repo = match Repo::open(&root) {
                 Ok(repo) => repo,
                 Err(err) => return fail(err.to_string()),
@@ -199,18 +245,133 @@ fn main() -> ExitCode {
                 evidence: flags(&args, "--evidence"),
                 tags: flags(&args, "--tag"),
                 allow_unclaimed: has(&args, "--allow-unclaimed"),
+                witness,
                 now_secs: now_secs(),
             };
             match repo.commit(request) {
                 Ok(outcome) => {
                     println!(
-                        "提交 {}（门禁 {}）",
+                        "提交 {}（门禁 {}{}）",
                         outcome.id.short(),
                         match outcome.verdict {
                             Verdict::Allowed => "allowed".to_string(),
                             Verdict::Unclaimed => "unclaimed（已显式放行）".to_string(),
                             Verdict::Conflict { others } => format!("conflict {others:?}"),
+                        },
+                        match witness_digest {
+                            Some(digest) => format!("，见证 {}", digest.short()),
+                            None => String::new(),
                         }
+                    );
+                    ExitCode::SUCCESS
+                }
+                Err(err) => fail(err.to_string()),
+            }
+        }
+        "witness" => {
+            let root = repo_path(&args);
+            let repo = match Repo::open(&root) {
+                Ok(repo) => repo,
+                Err(err) => return fail(err.to_string()),
+            };
+            let Some(sep) = args.iter().position(|arg| arg == "--") else {
+                eprintln!("witness 需要 `-- <命令>`");
+                return ExitCode::from(2);
+            };
+            let command: Vec<String> = args[sep + 1..].to_vec();
+            if command.is_empty() {
+                eprintln!("witness 后面没有命令");
+                return ExitCode::from(2);
+            }
+            let (tree, base) = match current_tree(&repo) {
+                Ok(pair) => pair,
+                Err(err) => return fail(err),
+            };
+            let started_ms = now_secs() * 1000;
+            let start = std::time::Instant::now();
+            let output = match std::process::Command::new(&command[0])
+                .args(&command[1..])
+                .current_dir(repo.root())
+                .output()
+            {
+                Ok(output) => output,
+                Err(err) => return fail(format!("启动 {} 失败：{err}", command[0])),
+            };
+            let elapsed_ms = start.elapsed().as_millis() as u64;
+            let witness = Witness::from_run(
+                tree,
+                base,
+                command.clone(),
+                RunOutput::new(
+                    output.status.code().unwrap_or(-1),
+                    output.stdout,
+                    output.stderr,
+                    started_ms,
+                    elapsed_ms,
+                ),
+            );
+            let bytes = witness.encode();
+            let path = flag(&args, "--out").map(PathBuf::from).unwrap_or_else(|| {
+                repo.root()
+                    .join(".tritvcs")
+                    .join("witness")
+                    .join(format!("{}.json", tree.to_hex()))
+            });
+            if let Some(parent) = path.parent()
+                && let Err(err) = std::fs::create_dir_all(parent)
+            {
+                return fail(format!("{}: {err}", parent.display()));
+            }
+            if let Err(err) = std::fs::write(&path, &bytes) {
+                return fail(format!("{}: {err}", path.display()));
+            }
+            println!(
+                "见证 {}：{} → 退出 {}，{} ms",
+                tree.short(),
+                command.join(" "),
+                witness.predicate.exit,
+                witness.predicate.elapsed_ms
+            );
+            println!("已写入 {}", path.display());
+            if witness.predicate.exit == 0 {
+                ExitCode::SUCCESS
+            } else {
+                ExitCode::FAILURE
+            }
+        }
+        "admit" => {
+            let root = repo_path(&args);
+            let repo = match Repo::open(&root) {
+                Ok(repo) => repo,
+                Err(err) => return fail(err.to_string()),
+            };
+            let ids = positionals(&args, &["--repo", "--witness"]);
+            let Some(target) = ids.first() else {
+                eprintln!("admit 需要提交 id");
+                return ExitCode::from(2);
+            };
+            let Some(id) = trit_vcs::Hash::from_hex(target) else {
+                return fail(format!("不是合法提交 id：{target}"));
+            };
+            let Some(path) = flag(&args, "--witness") else {
+                eprintln!("admit 需要 --witness FILE");
+                return ExitCode::from(2);
+            };
+            let bytes = match std::fs::read(path) {
+                Ok(bytes) => bytes,
+                Err(err) => return fail(format!("{path}: {err}")),
+            };
+            match repo.admit(&id, &bytes) {
+                Ok(witness) => {
+                    println!(
+                        "准入通过：提交 {}，树 {}，命令 {}，退出 {}",
+                        id.short(),
+                        witness
+                            .subject_tree()
+                            .map(|t| t.short())
+                            .unwrap_or_default(),
+                        witness.predicate.command.join(" "),
+                        witness.predicate.exit
                     );
                     ExitCode::SUCCESS
                 }
@@ -240,6 +401,7 @@ fn main() -> ExitCode {
                             "tags": commit.tags,
                             "message": commit.message,
                             "hlc": [commit.hlc.wall_ms, commit.hlc.counter],
+                            "witness": commit.witness.map(|w| w.to_hex()),
                         })
                     })
                     .collect();
@@ -365,10 +527,11 @@ fn main() -> ExitCode {
             match repo.verify() {
                 Ok(report) => {
                     println!(
-                        "绿：事件 {} 条，对象 {} 个，提交 {} 条，HEAD {}",
+                        "绿：事件 {} 条，对象 {} 个，提交 {} 条（带见证 {} 条），HEAD {}",
                         report.events,
                         report.objects,
                         report.commits,
+                        report.witnessed,
                         report.head.unwrap_or_else(|| "-".to_string())
                     );
                     ExitCode::SUCCESS
