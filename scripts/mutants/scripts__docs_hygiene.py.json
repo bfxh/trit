@@ -1,0 +1,38 @@
+[
+ {
+  "name": "docs_hygiene: 首行形状不查",
+  "file": "scripts/docs_hygiene.py",
+  "old": "    if first.strip() != \"# Changelog\":",
+  "new": "    if False:",
+  "pkg": "scripts/docs_hygiene.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "docs_hygiene: 字节棘轮不查",
+  "file": "scripts/docs_hygiene.py",
+  "old": "    if len(changelog.encode(\"utf-8\")) < floor:",
+  "new": "    if False:",
+  "pkg": "scripts/docs_hygiene.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "docs_hygiene: 盘符路径增长不拦",
+  "file": "scripts/docs_hygiene.py",
+  "old": "        if count > allowed:",
+  "new": "        if False:",
+  "pkg": "scripts/docs_hygiene.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "docs_hygiene: 缺表当没事",
+  "file": "scripts/docs_hygiene.py",
+  "old": "    if \"changelog\" not in payload or \"drive_paths\" not in payload:",
+  "new": "    if \"changelog\" in payload and \"drive_paths\" in payload:",
+  "pkg": "scripts/docs_hygiene.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
