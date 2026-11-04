@@ -1,26 +1,60 @@
 {
   "family": "extract",
   "out_dir": "runs/extract/sweep-1cm-seeds",
-  "base": {"cell": 0.01, "steps": 10000, "seed": 2},
-  "grid": {"seed": [2, 3, 5], "steps": [5000, 10000, 20000]},
+  "base": {
+    "cell": 0.01,
+    "steps": 10000,
+    "seed": 2
+  },
+  "grid": {
+    "seed": [
+      2,
+      3,
+      5
+    ],
+    "steps": [
+      5000,
+      10000,
+      20000
+    ]
+  },
   "producer": {
     "bin": "parts-3d",
     "argv": [
       "occ",
-      "--root", "E:/trit-data/s1/renders_v6",
-      "--scenes", "E:/trit-data/s1/scenes_v6",
-      "--train", "80,81,82,83",
-      "--eval", "84,85,86,87,88,89,90,91",
-      "--cell", "{cell}",
-      "--steps", "{steps}",
-      "--seed", "{seed}",
-      "--save-model", "{model}",
-      "--run-manifest", "{model}.manifest.json"
+      "--root",
+      "E:/trit-data/s1/renders_v6",
+      "--scenes",
+      "E:/trit-data/s1/scenes_v6",
+      "--train",
+      "80,81,82,83",
+      "--eval",
+      "84,85,86,87,88,89,90,91",
+      "--cell",
+      "{cell}",
+      "--steps",
+      "{steps}",
+      "--seed",
+      "{seed}",
+      "--save-model",
+      "{model}",
+      "--run-manifest",
+      "{model}.manifest.json"
     ]
   },
-  "verifier": {"bin": "parts-extract-verify", "argv": ["--model", "{model}"]},
+  "verifier": {
+    "bin": "parts-extract-verify",
+    "argv": [
+      "--model",
+      "{model}"
+    ]
+  },
   "model": "{out}/{tag}.occ1",
   "jobs": 1,
-  "promote": {"metric": "iou_mean", "min": 0.35},
-  "catalogue": true
+  "promote": {
+    "metric": "iou_mean",
+    "min": 0.35
+  },
+  "catalogue": true,
+  "replicate": "seed"
 }

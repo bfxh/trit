@@ -133,5 +133,23 @@
     "pkg": "scripts/depth_sweep.py",
     "filter": "",
     "runner": "python"
+  },
+  {
+    "name": "aggregate: 不按去掉聚合键分组（每组 n=1）",
+    "file": "scripts/depth_sweep.py",
+    "old": "        rep = cfg.pop(key, None)",
+    "new": "        rep = None",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "aggregate: 极差算成和",
+    "file": "scripts/depth_sweep.py",
+    "old": "                \"range\": max(vals) - min(vals),",
+    "new": "                \"range\": max(vals) + min(vals),",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
   }
 ]
