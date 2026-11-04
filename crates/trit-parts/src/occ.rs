@@ -210,6 +210,17 @@ pub fn features(views: &[View], p: [f32; 3]) -> Vec<f32> {
     f
 }
 
+/// 学习率线性衰减：`step ∈ [0, steps)`，从 `lr` 降到 `lr_final`（`None` = 恒定）。
+pub fn lr_at(step: usize, steps: usize, lr: f32, lr_final: Option<f32>) -> f32 {
+    match lr_final {
+        Some(end) if steps > 1 => {
+            let frac = step as f32 / (steps - 1) as f32;
+            lr + (end - lr) * frac
+        }
+        _ => lr,
+    }
+}
+
 /// 两层三值 MLP（隐藏层 ReLU，输出 logit），STE 反向。
 pub struct Mlp {
     pub nin: usize,
@@ -372,6 +383,17 @@ impl Mlp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lr_decays_linearly_to_final() {
+        assert_eq!(lr_at(0, 10, 0.05, None), 0.05);
+        assert!((lr_at(0, 10, 0.05, Some(0.005)) - 0.05).abs() < 1e-9);
+        assert!((lr_at(9, 10, 0.05, Some(0.005)) - 0.005).abs() < 1e-9);
+        assert!((lr_at(4, 9, 0.05, Some(0.005)) - 0.0275).abs() < 1e-6);
+        // 单步/空计划不除零
+        assert_eq!(lr_at(0, 1, 0.05, Some(0.005)), 0.05);
+        assert_eq!(lr_at(0, 0, 0.05, Some(0.005)), 0.05);
+    }
 
     /// 偶数种子与下一个奇数种子不能撞成同一初始化（旧 `seed | 1` 的 bug）。
     #[test]

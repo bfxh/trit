@@ -77,7 +77,7 @@ struct EvalRow {
 /// 学习式占据（三值 MLP）：训练用解析原语当 GT 实心，评测报体积 IoU 与网格闭合率。
 pub(crate) fn occ_cmd(argv: &[String]) {
     use trit_parts::mesh::{boundary_edges, fix_diagonals, non_manifold_edges, surface_nets};
-    use trit_parts::occ::{FPER, Mlp, Primitive, features, grid_for, selfsup_solid, solid};
+    use trit_parts::occ::{FPER, Mlp, Primitive, features, grid_for, lr_at, selfsup_solid, solid};
 
     let root = PathBuf::from(arg(argv, "--root").unwrap_or_else(|| usage()));
     let scenes = PathBuf::from(arg(argv, "--scenes").unwrap_or_else(|| usage()));
@@ -105,6 +105,8 @@ pub(crate) fn occ_cmd(argv: &[String]) {
     let lr: f32 = arg(argv, "--lr")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.05);
+    // 线性衰减到 `--lr-final`（缺省恒定；大步数 + 固定 lr 会发散，§6.113）
+    let lr_final: Option<f32> = arg(argv, "--lr-final").and_then(|v| v.parse().ok());
     let cap: usize = arg(argv, "--cap")
         .and_then(|v| v.parse().ok())
         .unwrap_or(20000);
@@ -209,7 +211,8 @@ pub(crate) fn occ_cmd(argv: &[String]) {
         let mut loss_acc = 0.0f64;
         for step in 0..steps {
             let (x, y) = &samples[(step * 7919) % samples.len()];
-            loss_acc += mlp.train_step(x, *y, lr) as f64;
+            let step_lr = lr_at(step, steps, lr, lr_final);
+            loss_acc += mlp.train_step(x, *y, step_lr) as f64;
             if (step + 1) % 2000 == 0 {
                 println!(
                     "  step {} loss(平均) {:.4} 三值零占比 {:.2}",
@@ -392,8 +395,12 @@ pub(crate) fn occ_cmd(argv: &[String]) {
             .collect();
         let model_bytes = std::fs::metadata(model).map(|m| m.len()).unwrap_or(0);
         let model_sha = trit_core::fingerprint::file_sha256(model).unwrap_or_default();
+        let lr_final_json = match lr_final {
+            Some(v) => format!("{v}"),
+            None => "null".to_string(),
+        };
         let body = format!(
-            "{{\n  \"schema\": 1,\n  \"kind\": \"extract-occupancy\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"cell\": {cell}, \"hid\": {hid}, \"steps\": {steps}, \"lr\": {lr}, \"cap\": {cap}, \"seed\": {seed}, \"frames\": [{}], \"train\": [{}], \"eval\": [{}], \"selfsup\": {selfsup}, \"tau\": {tau}, \"seal\": {seal}}},\n  \"data\": {{\"dirs\": {}, \"files\": {}, \"bytes\": {}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\", \"renders\": {}, \"scenes_root\": {}}},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"bytes\": {model_bytes}}},\n  \"result\": {{\"scenes\": {n}, \"iou_mean\": {mean}, \"closed\": {closed}, \"rows\": [{}]}}\n}}\n",
+            "{{\n  \"schema\": 1,\n  \"kind\": \"extract-occupancy\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"cell\": {cell}, \"hid\": {hid}, \"steps\": {steps}, \"lr\": {lr}, \"lr_final\": {lr_final_json}, \"cap\": {cap}, \"seed\": {seed}, \"frames\": [{}], \"train\": [{}], \"eval\": [{}], \"selfsup\": {selfsup}, \"tau\": {tau}, \"seal\": {seal}}},\n  \"data\": {{\"dirs\": {}, \"files\": {}, \"bytes\": {}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\", \"renders\": {}, \"scenes_root\": {}}},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"bytes\": {model_bytes}}},\n  \"result\": {{\"scenes\": {n}, \"iou_mean\": {mean}, \"closed\": {closed}, \"rows\": [{}]}}\n}}\n",
             trit_parts::partsrun::created_unix(),
             trit_parts::partsrun::json_str(&commit),
             argv_json.join(", "),
