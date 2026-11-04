@@ -31,7 +31,7 @@ pub use chunk::Chunking;
 pub use gate::{ClaimSpec, Verdict, check as gate_check};
 pub use hash::Hash;
 pub use journal::{Event, Journal};
-pub use model::{Commit, Hlc};
+pub use model::{Commit, Hlc, Intent};
 pub use repo::{CommitOutcome, CommitRequest, Repo, RepoError, VerifyReport};
 pub use store::{FileMap, PutStats, Stats, Store, StoreError};
 pub use witness::{Witness, WitnessError};

@@ -39,6 +39,32 @@ impl Hlc {
     }
 }
 
+/// 提交意图：这次改动想达成什么、怎么算达成、基于哪棵树。
+///
+/// 与 commit message 的区别：`goal`/`accept` 是**可机读的判据**（合并准入直接看），
+/// `base` 绑定"改之前看到的世界"，防的是"拿旧基线做出的改动被当成新世界"。
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Intent {
+    pub goal: String,
+    pub accept: Vec<String>,
+    pub base: Option<Hash>,
+}
+
+impl Intent {
+    pub fn new(goal: impl Into<String>, accept: Vec<String>) -> Self {
+        Self {
+            goal: goal.into(),
+            accept,
+            base: None,
+        }
+    }
+
+    pub fn with_base(mut self, base: Hash) -> Self {
+        self.base = Some(base);
+        self
+    }
+}
+
 /// 提交对象的内容（存进对象库，id = 内容哈希）。
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Commit {
@@ -57,6 +83,9 @@ pub struct Commit {
     /// 绑定了本次树的测试见证（对象库里的摘要）；老提交没有这个字段。
     #[serde(default)]
     pub witness: Option<Hash>,
+    /// 改动意图；老提交没有这个字段。
+    #[serde(default)]
+    pub intent: Option<Intent>,
 }
 
 pub const COMMIT_SCHEMA: u32 = 1;
@@ -79,11 +108,17 @@ impl Commit {
             message: message.into(),
             hlc,
             witness: None,
+            intent: None,
         }
     }
 
     pub fn with_witness(mut self, witness: Hash) -> Self {
         self.witness = Some(witness);
+        self
+    }
+
+    pub fn with_intent(mut self, intent: Intent) -> Self {
+        self.intent = Some(intent);
         self
     }
 
@@ -189,6 +224,19 @@ mod tests {
             .expect("老提交里没有 witness 字段");
         let decoded = Commit::decode(&serde_json::to_vec(&value).unwrap()).unwrap();
         assert!(decoded.witness.is_none());
+        assert!(decoded.intent.is_none());
         assert_eq!(decoded.message, "old");
+    }
+
+    #[test]
+    fn commit_roundtrip_keeps_intent_and_base() {
+        let base = Hash::of(b"base-tree");
+        let intent =
+            Intent::new("修 status 热路径", vec!["10k 热 ≤2× git".to_string()]).with_base(base);
+        let commit = Commit::new(Hash::of(b"tree"), "qoder:s1", "x", Hlc::zero().tick(1))
+            .with_intent(intent.clone());
+        let decoded = Commit::decode(&commit.encode().unwrap()).unwrap();
+        assert_eq!(decoded.intent, Some(intent));
+        assert_eq!(decoded.intent.unwrap().base, Some(base));
     }
 }
