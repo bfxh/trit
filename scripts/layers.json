@@ -1,7 +1,7 @@
 {
   "_comment": "crate → 层 归位表（判据见 docs/LAYERS.md）。层序 base < ops < algo < learn < prod，依赖只能向下；跨层回边必须在 allows 里逐条点名并给原因。",
   "layers": {
-    "base": "语义与表示：值域/代数/AST/编码，换掉任何上层它都不动",
+    "base": "语义与表示：值域/代数/AST/编码，以及不需要理解上层语义的公共底件（测量与夹具）",
     "ops": "算子库：单点计算件，正确性说法是「同输入更快/更省」，可对拍逐位一致",
     "algo": "算法库：解一个问题（等价/可满足/计数/量化/化简/调度/验证），有 oracle 可对拍",
     "learn": "学习库：会改参数，产出权重或指标，需要清单 + 独立复核",
@@ -42,7 +42,8 @@
     "trit-redteam": "prod",
     "trit-procscan": "prod",
     "trit-unsafe": "prod",
-    "sansheng": "prod"
+    "sansheng": "prod",
+    "trit-bench": "base"
   },
   "allows": [],
   "known_debts": [

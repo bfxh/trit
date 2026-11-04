@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Added（`trit-bench`：把 8 份手写 xorshift 与不交错计时收成一份底件）
+
+- 立项判据是清点实测（不是"感觉重复"）：仓内同型 `xorshift64` 手写副本 **8 份**；五处主要 bench 里
+  **3 处完全不交错**（热漂移会把 32% 读成 13%）、**2 处只报单次或总均值**（无 min/median 概念），
+  多数没有 `black_box`。最完整的是 `trit-ops/src/bench.rs`（交错 + min/median/max + 规模档），
+  它的"轮内轮换起始位序"做法被抄进本 crate。
+- 新 crate `crates/trit-bench`（base 层，纯 std、零依赖）：`SeedRng`（确定性三值序列，种子 0 防退化）、
+  `Bench`（登记实现 → `run(rounds)` 交错 + 每轮轮换位序；`reps(n)` 在计时段内重复并取平均；
+  `black_box` 兜住返回值）、`Spread`（min/median/max + `ns_per_unit`/`ps_per_unit`）。
+- 复算尺迁过去并且**尺子没变**：`benchmarks/dot_variants` 改用 trit-bench 重跑 A357，读数与手写版同档 ——
+  u64 派发 8.1–9.3 ps/trit（手写 7.6–12.2）、u64 便携 12.7–12.8（12.2–12.5）、
+  u32 镜像 48.5–52.3（48.1–50.7）、i32 标量 170.8–246（168.6–183.5）。
+- **量出一个真问题**：小档位（8192 trits）整个点积只有 1–2 个 tick（本机 `Instant` 分辨率约 100 ns），
+  手写版报的 min=100.0 / med=200.0 ns 就是量化台阶本身；加 `reps` 后同一档报出
+  min=67.5 / med=72.8 / max=82.8 ns，台阶消失 ⇒ 以后所有 bench 默认要在计时段内重复。
+- 归位与文档：`layers.json` 登记 `trit-bench = base`，并把 base 的定义**明确拓宽**为
+  「值域/代数/编码 + 不需要理解上层语义的公共底件（测量与夹具）」，`docs/LAYERS.md` §1 同步改（不是悄悄塞）；
+  README 加一行；ROADMAP §2 的 `trit-bench` 划掉，下一步迁其余 4 份 bench。
+- 测试 9 条（确定性、三值分布、种子 0 不退化、分位数口径、单位换算、轮内交错且轮换位序、
+  `reps` 真按次数放大并平均、`reps(0)` 安全、标签对齐）。变异 5 条 **caught 5 / survived 0**。
+- 三处被自己的门/现实逼出来的纠正，如实记：① 第一版 `seed_zero_does_not_degenerate` 断言的是"不全为 0"，
+  而退化序列其实是**全 -1**（量化偏移）⇒ 变异存活，问题是**我的断言不判决**；改成"不许退化成常数序列"才抓住。
+  ② `Bench` 初版用 `Box<dyn FnMut>` 要求 `'static`，逼调用方 clone ⇒ 改成带生命周期 `'a`，允许直接借用。
+  ③ 本轮我先在旧分支上做，那片没有上一轮的文档与卫生门、CHANGELOG 还是被覆盖后的 29 字节，
+  于是条目被一次没有 assert 的 `replace` 静默丢弃；改动整体搬到 main 之上重做，这次插入前先断言锚点与文件规模。
+
 ### Added（仓库边界文档 + 文档卫生门）
 
 - 新 `docs/SCOPE.md`：**主库存什么、不存什么**的一次定案 —— 收进来的四条判据（R1 与具体项目无关、

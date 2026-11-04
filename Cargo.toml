@@ -3,6 +3,7 @@ resolver = "3"
 # cargo-fuzz 需要 nightly 与独立 target，不并入 workspace。
 exclude = ["fuzz", "t3", "benchmarks/dot_variants"]
 members = [
+    "crates/trit-bench",
     "crates/trit-core",
     "crates/trit-learn",
     "crates/trit-graph",

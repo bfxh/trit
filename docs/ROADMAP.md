@@ -20,7 +20,7 @@
 
 | 新库 | 层 | 为什么现在就该做 | 对拍谁 |
 |---|---|---|---|
-| `trit-bench` | 门/框架 | 交错 ≥6 轮、min/median/max、规模档表现在**至少 5 份手写实现**（trit-dot main、trit-ops bench、trit-gpu bench、trit-parts parts_bench、`benchmarks/dot_variants`）；这是 §4 第一批要登记的重复能力 | 与 `benchmarks/dot_variants` 的读数对齐 |
+| ~~`trit-bench`~~ **已建**（2026-11-05） | base | 交错 ≥6 轮、min/median/max、规模档表现在**至少 5 份手写实现**（trit-dot main、trit-ops bench、trit-gpu bench、trit-parts parts_bench、`benchmarks/dot_variants`）；这是 §4 第一批要登记的重复能力 | 与 `benchmarks/dot_variants` 的读数对齐 |
 | `trit-fuzz` | 语料 | 随机表达式 / CNF / 三值向量生成器现在 5+ 处各写一套 RNG（含 trit-count 里我自己重写的那份） | 各 crate 现有 fuzz_smoke |
 | `trit-ir` | algo | `.tri`/TTIR 只有"化简 + 打包"，没有 **pass 框架**（常量折叠、等价重写、CSE） | `trit-sat` / `trit-bdd` / `trit-count` 当每个 pass 的 oracle |
 | `trit-mv` | base | 主库只有 K3/Ł3/B3；要"用四值/n 值移植别的算法"先得有代数层（MV-algebra、t-norm 族、De Morgan 格、bilattice） | 真值表穷举 + `trit-belnap` |
