@@ -62,6 +62,14 @@ pub enum RepoError {
     BadRef(String),
     #[error("找不到 ref：{0}")]
     UnknownRef(String),
+    #[error(
+        "ref {name} 现在指向 {current}，新提交 {incoming} 不是它的后代——移动它会把别人的工作甩掉（确认要改写加 --force）"
+    )]
+    NonFastForward {
+        name: String,
+        current: String,
+        incoming: String,
+    },
     #[error("仓库策略要求提交带 intent（goal + 至少一条 accept）")]
     IntentRequired,
     #[error("intent 不成立：{0}")]

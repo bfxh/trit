@@ -40,7 +40,7 @@ fn usage() -> ExitCode {
          trit-vcs admit <提交id> --witness FILE [--repo PATH]\n  \
          trit-vcs export <树id> --out FILE [--prefix DIR] [--dest REPO] [--repo SRC]\n  \
          trit-vcs import <包文件> [--repo DEST]\n  \
-         trit-vcs publish <ref> --central PATH [--commit ID] [--repo SRC]\n  \
+         trit-vcs publish <ref> --central PATH [--commit ID] [--force] [--repo SRC]\n  \
          trit-vcs pull <ref> --central PATH [--prefix DIR] [--force] [--repo DEST]\n  \
          trit-vcs git-export <git目录> [--map FILE] [--repo PATH]\n  \
          trit-vcs mcp [--repo PATH]\n  \

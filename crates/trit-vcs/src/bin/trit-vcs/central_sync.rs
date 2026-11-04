@@ -37,7 +37,13 @@ pub(crate) fn publish_cmd(args: &[String]) -> ExitCode {
         },
         None => None,
     };
-    match central::publish(&client, &mut central_repo, name, commit.as_ref()) {
+    match central::publish(
+        &client,
+        &mut central_repo,
+        name,
+        commit.as_ref(),
+        has(args, "--force"),
+    ) {
         Ok(stats) => {
             println!(
                 "已发布 {} → 中央仓 ref {name}（对象 {}/{} 实传，字节 {}/{}）",

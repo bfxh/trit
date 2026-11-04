@@ -499,7 +499,7 @@ fn central_bench() {
     std::fs::create_dir_all(&hub_dir).unwrap();
     let mut hub = Repo::init(&hub_dir).unwrap();
     let start = Instant::now();
-    let published = central::publish(&repo, &mut hub, "main", None).unwrap();
+    let published = central::publish(&repo, &mut hub, "main", None, false).unwrap();
     let publish_ms = start.elapsed().as_secs_f64() * 1000.0;
 
     let one_dir = root.join("client-one");

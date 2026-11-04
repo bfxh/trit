@@ -700,5 +700,41 @@
   "filter": "refs_are_named_and_listed",
   "pkg": "trit-vcs",
   "runner": "cargo"
+ },
+ {
+  "name": "vcs: 中央仓 ref 随便后退（甩掉别人的历史）",
+  "file": "crates/trit-vcs/src/central.rs",
+  "old": "        if !descendant && !force {",
+  "new": "        if false {",
+  "filter": "publish_only_moves_a_ref_forwards",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 后代判定比错了端点（父提交被当成后代）",
+  "file": "crates/trit-vcs/src/central.rs",
+  "old": "            current == resolved || central.merge_base(&resolved, &current)? == Some(current);",
+  "new": "            current == resolved || central.merge_base(&resolved, &current)? == Some(resolved);",
+  "filter": "publish_only_moves_a_ref_forwards",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 发布不补父链（中央仓判不了分叉）",
+  "file": "crates/trit-vcs/src/central.rs",
+  "old": "const ANCESTOR_CAP: usize = 4_096;",
+  "new": "const ANCESTOR_CAP: usize = 0;",
+  "filter": "publish_only_moves_a_ref_forwards",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: CLI publish 不接 --force（改写 ref 无入口）",
+  "file": "crates/trit-vcs/src/bin/trit-vcs/central_sync.rs",
+  "old": "        commit.as_ref(),\n        has(args, \"--force\"),",
+  "new": "        commit.as_ref(),\n        false,",
+  "filter": "publish_then_sparse_pull",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
  }
 ]

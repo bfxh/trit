@@ -175,6 +175,79 @@ fn publish_then_sparse_pull() {
         stdout(&whole)
     );
 
+    // ref 只能往前推：退回旧提交判红，--force 才改写
+    fs::write(src.join("gen/d00/extra.txt"), b"extra\n").unwrap();
+    assert!(run(&src, &["add", "gen"]).status.success());
+    assert!(
+        run(
+            &src,
+            &[
+                "commit",
+                "-m",
+                "second",
+                "--owner",
+                "qoder:it",
+                "--allow-unclaimed"
+            ],
+        )
+        .status
+        .success()
+    );
+    let logged = run(&src, &["log", "--json"]);
+    let rows: serde_json::Value = serde_json::from_str(&stdout(&logged)).unwrap();
+    let newest = rows[0]["id"].as_str().unwrap().to_string();
+    let oldest = rows[1]["id"].as_str().unwrap().to_string();
+    let forwards = run(
+        &src,
+        &[
+            "publish",
+            "main",
+            "--central",
+            &central_text,
+            "--commit",
+            &newest,
+        ],
+    );
+    assert!(
+        forwards.status.success(),
+        "快进应当放行：{}",
+        stderr(&forwards)
+    );
+    let backwards = run(
+        &src,
+        &[
+            "publish",
+            "main",
+            "--central",
+            &central_text,
+            "--commit",
+            &oldest,
+        ],
+    );
+    assert!(!backwards.status.success(), "把 ref 退回旧提交必须判失败");
+    assert!(
+        stderr(&backwards).contains("FAIL"),
+        "失败要带 FAIL 前缀：{}",
+        stderr(&backwards)
+    );
+    let rewrote = run(
+        &src,
+        &[
+            "publish",
+            "main",
+            "--central",
+            &central_text,
+            "--commit",
+            &oldest,
+            "--force",
+        ],
+    );
+    assert!(
+        rewrote.status.success(),
+        "--force 才允许改写：{}",
+        stderr(&rewrote)
+    );
+
     let bad_ref = run(&client, &["pull", "a/b", "--central", &central_text]);
     assert!(!bad_ref.status.success(), "非法 ref 名必须判失败");
     let _ = fs::remove_dir_all(&root);

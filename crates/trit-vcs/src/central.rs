@@ -1,4 +1,4 @@
-//! 中央仓 + 按需物化：`publish` 推命名 ref，`pull` 只取一个目录的对象并稀疏物化。
+//! 中央仓 + 按需物化：`publish` 把命名 ref **往前推**（非后代判红），`pull` 只取一个目录的对象并稀疏物化。
 //!
 //! 搬运走内容寻址：目标已有的块直接跳过，所以第二次拉几乎零字节。
 //! v0 是本地/离线（中央仓是另一个目录）；网络、鉴权、跨机认领表都还没做，不在这里宣称。
@@ -32,20 +32,46 @@ pub struct PullStats {
     pub skipped: usize,
 }
 
+/// 补父链的上限：再多也不该一次搬完整个仓库历史。
+const ANCESTOR_CAP: usize = 4_096;
+
 /// 把客户端的某个提交（缺省 HEAD）搬到中央仓，并写上命名 ref。
+///
+/// ref **只允许往前推**：新提交必须是现有 ref 的后代，否则判红（`--force` 才改写）。
+/// 多个智能体共用一个中央仓时，甩掉别人的历史比丢一个文件贵得多。
+/// 顺序是先搬对象再判 ref：对象内容寻址且不可变，搬了不挪 ref 盖不掉任何东西；
+/// 判红时 ref 一定还在原位（非法名字在搬任何东西之前就被拒）。
 pub fn publish(
     client: &Repo,
     central: &mut Repo,
     name: &str,
     commit: Option<&Hash>,
+    force: bool,
 ) -> Result<PublishStats, CentralError> {
     Repo::validate_ref(name)?;
     let resolved = match commit {
         Some(id) => *id,
         None => client.head()?.ok_or(RepoError::NothingStaged)?,
     };
-    let objects = bundle::commit_closure(client.store(), resolved)?;
+    let mut objects = bundle::commit_closure(client.store(), resolved)?;
+    objects.extend(bundle::missing_ancestors(
+        client.store(),
+        central.store(),
+        resolved,
+        ANCESTOR_CAP,
+    )?);
     let transfer = bundle::transfer(client.store(), central.store(), &objects)?;
+    if let Some(current) = central.ref_commit(name)? {
+        let descendant =
+            current == resolved || central.merge_base(&resolved, &current)? == Some(current);
+        if !descendant && !force {
+            return Err(CentralError::Repo(RepoError::NonFastForward {
+                name: name.to_string(),
+                current: current.short(),
+                incoming: resolved.short(),
+            }));
+        }
+    }
     central.set_ref(name, &resolved)?;
     Ok(PublishStats {
         commit: resolved,
@@ -144,7 +170,7 @@ mod tests {
         let commit = commit_all(&mut src, &files, 1_000);
 
         let mut central = open_repo(&root.join("central"));
-        let published = publish(&src, &mut central, "main", None).unwrap();
+        let published = publish(&src, &mut central, "main", None, false).unwrap();
         assert_eq!(published.commit, commit);
         assert!(published.transfer.sent_bytes > 0);
         assert_eq!(central.ref_commit("main").unwrap(), Some(commit));
@@ -180,7 +206,7 @@ mod tests {
         let mut src = open_repo(&root.join("src"));
         commit_all(&mut src, &files, 1_000);
         let mut central = open_repo(&root.join("central"));
-        publish(&src, &mut central, "main", None).unwrap();
+        publish(&src, &mut central, "main", None, false).unwrap();
 
         let client_dir = root.join("client");
         let mut client = open_repo(&client_dir);
@@ -212,8 +238,8 @@ mod tests {
         let files = corpus(2, 1);
         let first = commit_all(&mut src, &files, 1_000);
         let mut central = open_repo(&root.join("central"));
-        publish(&src, &mut central, "nightly", Some(&first)).unwrap();
-        publish(&src, &mut central, "main", Some(&first)).unwrap();
+        publish(&src, &mut central, "nightly", Some(&first), false).unwrap();
+        publish(&src, &mut central, "main", Some(&first), false).unwrap();
         let refs = central.list_refs().unwrap();
         assert_eq!(
             refs.iter()
@@ -242,7 +268,7 @@ mod tests {
         for name in ["", "a/b", "..", ".hidden", "a b", &"x".repeat(65)] {
             assert!(
                 matches!(
-                    publish(&src, &mut central, name, None),
+                    publish(&src, &mut central, name, None, false),
                     Err(CentralError::Repo(RepoError::BadRefName(_)))
                 ),
                 "{name:?} 必须被拒"
@@ -274,13 +300,77 @@ mod tests {
     }
 
     #[test]
+    fn publish_only_moves_a_ref_forwards() {
+        let root = temp("forward");
+        let files = corpus(2, 1);
+        let mut src = open_repo(&root.join("src"));
+        let first = commit_all(&mut src, &files, 1_000);
+        let second = commit_all(&mut src, &corpus(2, 2), 1_001);
+
+        // 中央仓是空的：先推 HEAD（second），父链得跟着补齐
+        let mut central = open_repo(&root.join("central"));
+        publish(&src, &mut central, "main", Some(&second), false).unwrap();
+        assert_eq!(central.ref_commit("main").unwrap(), Some(second));
+        assert!(
+            central.commit_at(&first).is_ok(),
+            "父提交对象必须一起搬来，否则中央仓连分叉都判不了"
+        );
+
+        // 直接退回父提交 ⇒ 判红，且 ref 还在原位
+        let err = publish(&src, &mut central, "main", Some(&first), false).unwrap_err();
+        assert!(
+            matches!(err, CentralError::Repo(RepoError::NonFastForward { .. })),
+            "{err:?}"
+        );
+        assert_eq!(central.ref_commit("main").unwrap(), Some(second));
+
+        // 另起一条分叉线（父指针强行指回 first）⇒ 同样判红
+        let diverged = {
+            let other = corpus(1, 1);
+            src.stage(&other, 1_005).unwrap();
+            src.commit(CommitRequest {
+                message: "diverged".to_string(),
+                session: "qoder:central".to_string(),
+                claims: vec![ClaimSpec {
+                    id: "c5".to_string(),
+                    owner: "qoder:central".to_string(),
+                    paths: other.keys().cloned().collect(),
+                    acquired_at: 1,
+                    expires_at: u64::MAX / 2,
+                }],
+                parent_override: Some(first),
+                now_secs: 1_005,
+                ..Default::default()
+            })
+            .unwrap()
+            .id
+        };
+        assert!(matches!(
+            publish(&src, &mut central, "main", Some(&diverged), false).unwrap_err(),
+            CentralError::Repo(RepoError::NonFastForward { .. })
+        ));
+        assert_eq!(
+            central.ref_commit("main").unwrap(),
+            Some(second),
+            "分叉提交不该把 ref 挪走"
+        );
+
+        // 显式改写（--force）才允许
+        publish(&src, &mut central, "main", Some(&diverged), true).unwrap();
+        assert_eq!(central.ref_commit("main").unwrap(), Some(diverged));
+        // 幂等重推同一个提交不算倒退
+        publish(&src, &mut central, "main", Some(&diverged), false).unwrap();
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn pull_without_prefix_materializes_everything() {
         let root = temp("full");
         let files = corpus(4, 2);
         let mut src = open_repo(&root.join("src"));
         commit_all(&mut src, &files, 1_000);
         let mut central = open_repo(&root.join("central"));
-        publish(&src, &mut central, "main", None).unwrap();
+        publish(&src, &mut central, "main", None, false).unwrap();
 
         let client_dir = root.join("client");
         let mut client = open_repo(&client_dir);

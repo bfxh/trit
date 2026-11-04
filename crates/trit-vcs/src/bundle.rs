@@ -116,11 +116,39 @@ pub fn entries_closure(
     Ok(order)
 }
 
+/// 沿第一父链补齐 `dst` 还没有的**提交对象**（只有提交，不带树与数据块）。
+///
+/// 中央仓要能判"新提交是不是从现有 ref 往下走"，就必须能沿父链走通；
+/// `commit_closure` 明确不含父提交，所以这里单独补一段。
+pub fn missing_ancestors(
+    src: &Store,
+    dst: &Store,
+    commit: Hash,
+    cap: usize,
+) -> Result<Vec<Hash>, BundleError> {
+    let mut order = Vec::new();
+    let mut cursor = commit_object(src, &commit)?.parents.first().copied();
+    let mut steps = 0usize;
+    while let Some(id) = cursor {
+        if dst.has_chunk(&id) || steps >= cap {
+            break;
+        }
+        order.push(id);
+        steps += 1;
+        cursor = commit_object(src, &id)?.parents.first().copied();
+    }
+    Ok(order)
+}
+
+fn commit_object(src: &Store, commit: &Hash) -> Result<crate::model::Commit, BundleError> {
+    let bytes = src.get_chunk(commit)?;
+    serde_json::from_slice(&bytes)
+        .map_err(|e| BundleError::Store(StoreError::BadMap(e.to_string())))
+}
+
 /// 一个提交的闭包（提交对象 + 它的树 + 全部文件映射与块；不含父提交）。
 pub fn commit_closure(store: &Store, commit: Hash) -> Result<Vec<Hash>, BundleError> {
-    let bytes = store.get_chunk(&commit)?;
-    let parsed: crate::model::Commit = serde_json::from_slice(&bytes)
-        .map_err(|e| BundleError::Store(StoreError::BadMap(e.to_string())))?;
+    let parsed = commit_object(store, &commit)?;
     let mut order = vec![commit];
     let mut seen = HashSet::new();
     seen.insert(commit);
