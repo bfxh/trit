@@ -70,5 +70,14 @@
     "pkg": "scripts/depth_catalogue.py",
     "filter": "",
     "runner": "python"
+  },
+  {
+    "name": "extract: 自监督配置不显示",
+    "file": "scripts/depth_catalogue.py",
+    "old": "        if cfg.get(\"selfsup\"):",
+    "new": "        if False:",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
   }
 ]
