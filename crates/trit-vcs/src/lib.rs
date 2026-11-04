@@ -11,6 +11,7 @@
 //! | 并发写 | **未认领的提交默认拒绝**（复用 `trit-orch` 的认领语义） | Git 不拦，冲突在 push/merge 才炸 |
 //! | 提交元数据 | 会话身份 + 认领 id + 证据 + 标签进对象内容 | 只有 author/committer 字符串 |
 //! | 时间 | 混合逻辑时钟（墙上倒退也全序） | 墙上时钟，可乱 |
+//! | 证据 | **测试见证绑定树；合并准入离线复核，改一个字节就拒** | 无内建证据，CI 结论在外部、可被重跑改写 |
 //!
 //! M1 只做本仓库的单机闭环。传输、合并、部分拉取、Git 兼容桥在 M2–M3；没做的维度不在这里宣称。
 
@@ -22,6 +23,7 @@ pub mod journal;
 pub mod model;
 pub mod repo;
 pub mod store;
+pub mod witness;
 pub mod worktree;
 
 pub use chunk::Chunking;
@@ -31,4 +33,5 @@ pub use journal::{Event, Journal};
 pub use model::{Commit, Hlc};
 pub use repo::{CommitOutcome, CommitRequest, Repo, RepoError, VerifyReport};
 pub use store::{FileMap, PutStats, Stats, Store, StoreError};
+pub use witness::{Witness, WitnessError};
 pub use worktree::{Change, Kind as ChangeKind, WorktreeError};
