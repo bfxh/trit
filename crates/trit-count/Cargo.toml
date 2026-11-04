@@ -5,8 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "三值表达式精确模型计数：dual-rail CNF、DPLL 与组件缓存（实验层）"
-publish = false
+description = "三值表达式精确模型计数：dual-rail CNF + DPLL 组件缓存，DPLL/穷举/BDD 三方对拍"
 
 [dependencies]
 trit-core.workspace = true
