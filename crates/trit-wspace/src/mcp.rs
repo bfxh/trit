@@ -282,6 +282,7 @@ impl Mcp {
                                 "applied": report.applied,
                                 "rolled_back": report.rolled_back,
                                 "skipped": report.skipped,
+                                "behavior_checked": report.behavior_checked,
                                 "final_checksum": format!("{:016x}", report.final_checksum),
                             });
                         }

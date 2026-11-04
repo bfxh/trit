@@ -77,6 +77,8 @@ fn cli_read_verify_patch_repair_round_trip() {
         &path_string(&artifact),
         "--patch",
         &path_string(&patch),
+        "--oracle",
+        &path_string(&oracle),
         "--out",
         &path_string(&broken),
         "--log",
@@ -102,6 +104,7 @@ fn cli_read_verify_patch_repair_round_trip() {
     ]));
     assert_eq!(audit["valid"], true);
     assert_eq!(audit["entries"].as_u64(), Some(1));
+    assert_eq!(audit["replay"]["behavior_checked"].as_u64(), Some(1));
     assert_eq!(
         audit["replay"]["final_checksum"].as_str().expect("sum"),
         format!("{broken_sum:016x}")
@@ -119,6 +122,7 @@ fn cli_read_verify_patch_repair_round_trip() {
         replayed_report["final_checksum"].as_str().expect("sum"),
         format!("{broken_sum:016x}")
     );
+    assert_eq!(replayed_report["behavior_checked"].as_u64(), Some(1));
     assert!(replayed.is_file());
 
     let tampered =

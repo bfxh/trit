@@ -190,5 +190,45 @@
   "new": "\"auditX\" => cmd_audit(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-behavior: 不核对 before 行为指纹",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if Some(sig) != entry.behavior_before {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "behavior_mismatch_is_detected"
+ },
+ {
+  "name": "wspace-behavior: 不核对 after 行为指纹",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if Some(sig) != entry.behavior_after {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "behavior_mismatch_is_detected"
+ },
+ {
+  "name": "wspace-behavior: 记录不存验证集",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "oracle: oracle_value,",
+  "new": "oracle: None,",
+  "pkg": "trit-wspace",
+  "filter": "behavior_chain_round_trip_and_replay"
+ },
+ {
+  "name": "wspace-behavior: 重算链不接 prev",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "entry.prev = prev;",
+  "new": "entry.prev = GENESIS;",
+  "pkg": "trit-wspace",
+  "filter": "behavior_mismatch_is_detected"
+ },
+ {
+  "name": "wspace-behavior: 不限制日志里的验证集大小",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if oracle.len() > MAX_LOGGED_ORACLE {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "oversized_oracle_is_rejected"
  }
 ]

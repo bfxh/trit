@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：审计日志的行为链）
+
+- `record_with_oracle`：记录时存下验证集规范 + 前后**行为指纹**；`replay_net` 同时核对
+  权重链（`before`/`after` 校验和）与行为链（`behavior_before`/`behavior_after`），
+  报告新增 `behavior_checked`（实际核对条数）。
+- 防日志爆掉：单条记录最多存 4,096 条验证集，超过直接报错。
+- `recompute_chain`：日志合并/手工修订后重算整条链（不验证已有内容）；
+  行为指纹被改但链重算过时，`replay` 仍会按行为链报错。
+- CLI：`patch --log --oracle` 记行为链；`audit` / `replay` 输出 `behavior_checked`。
+- 测试 74 + 1 doctest（新增 3 条行为链不变量/超限/错配）；变异 24 → **29 条，29/29 caught**；
+  test_surface 台账 2,251 → 2,254。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py 全过。
+
 ### Added（trit-wspace：可重放的编辑审计链）
 
 - 新模块 `audit`：JSONL + FNV 哈希链。每条记录 `before` / `after` 校验和、补丁、改动量、

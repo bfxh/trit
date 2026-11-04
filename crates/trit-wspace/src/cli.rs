@@ -137,13 +137,14 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
         } else {
             AuditLog::new()
         };
-        log.record(
+        log.record_with_oracle(
             "cli-patch",
             &net,
             &work,
             patch_for_log,
             applied,
             rolled_back,
+            oracle.as_ref(),
         )
         .map_err(err)?;
         atomic_write(log_path, &log.to_jsonl())?;
@@ -188,6 +189,7 @@ fn cmd_audit(args: &[String]) -> Result<(), String> {
             "applied": replay.applied,
             "rolled_back": replay.rolled_back,
             "skipped": replay.skipped,
+            "behavior_checked": replay.behavior_checked,
             "final_checksum": format!("{:016x}", replay.final_checksum),
         });
     }
@@ -211,6 +213,7 @@ fn cmd_replay(args: &[String]) -> Result<(), String> {
         "applied": replay.applied,
         "rolled_back": replay.rolled_back,
         "skipped": replay.skipped,
+        "behavior_checked": replay.behavior_checked,
         "final_checksum": format!("{:016x}", replay.final_checksum),
         "summary": wire::net_summary(&net),
         "artifact": to_wsp(&net),

@@ -1,6 +1,7 @@
 //! 审计链：追加、验链、重放、篡改与乱序。
 
-use trit_wspace::{AuditLog, Edit, Layer, Net, Patch, Trit, checksum};
+use serde_json::{Value, json};
+use trit_wspace::{AuditLog, Behavior, Edit, Layer, Net, Oracle, Patch, Trit, checksum};
 
 fn xor_net() -> Net {
     Net::new(vec![
@@ -152,4 +153,122 @@ fn malformed_jsonl_is_rejected() {
     ] {
         assert!(AuditLog::from_jsonl(text).is_err(), "应当拒绝：{text}");
     }
+}
+
+fn xor_oracle() -> Oracle {
+    Oracle::boolean(2, |bits| bits[0] != bits[1]).expect("oracle")
+}
+
+fn behavior_log() -> (AuditLog, Net, Net) {
+    let start = xor_net();
+    let mut broken = start.clone();
+    break_patch().apply(&mut broken).expect("break");
+    let mut fixed = broken.clone();
+    fix_patch().apply(&mut fixed).expect("fix");
+    let oracle = xor_oracle();
+    let mut log = AuditLog::new();
+    log.record_with_oracle(
+        "break",
+        &start,
+        &broken,
+        break_patch(),
+        true,
+        false,
+        Some(&oracle),
+    )
+    .expect("record break");
+    log.record_with_oracle(
+        "fix",
+        &broken,
+        &fixed,
+        fix_patch(),
+        true,
+        false,
+        Some(&oracle),
+    )
+    .expect("record fix");
+    (log, broken, fixed)
+}
+
+#[test]
+fn behavior_chain_round_trip_and_replay() {
+    let (log, broken, fixed) = behavior_log();
+    assert_eq!(
+        log.entries()[0].behavior_after,
+        Some(
+            Behavior::of(&broken, &xor_oracle())
+                .expect("behavior")
+                .signature()
+        )
+    );
+    assert_ne!(
+        log.entries()[0].behavior_before,
+        log.entries()[0].behavior_after
+    );
+    let (replay, net) = log.replay_net(&xor_net()).expect("replay");
+    assert_eq!(replay.behavior_checked, 2);
+    assert_eq!(net, fixed);
+
+    let text = log.to_jsonl();
+    let parsed = AuditLog::from_jsonl(&text).expect("parse");
+    assert_eq!(parsed, log);
+    parsed.verify_chain().expect("parsed chain");
+    let (replay, _) = parsed.replay_net(&xor_net()).expect("parsed replay");
+    assert_eq!(replay.behavior_checked, 2);
+}
+
+fn tamper_field(log: &AuditLog, index: usize, field: &str, value: Value) -> AuditLog {
+    let text = log.to_jsonl();
+    let mut lines: Vec<Value> = text
+        .lines()
+        .map(|line| serde_json::from_str(line).expect("line"))
+        .collect();
+    lines[index][field] = value;
+    let tampered_text: String = lines
+        .iter()
+        .map(|value| value.to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
+        + "\n";
+    let mut tampered = AuditLog::from_jsonl(&tampered_text).expect("parse tampered");
+    tampered.recompute_chain();
+    tampered.verify_chain().expect("手工重算后链应自洽");
+    tampered
+}
+
+#[test]
+fn behavior_mismatch_is_detected() {
+    let (log, _, _) = behavior_log();
+
+    let after = tamper_field(&log, 1, "behavior_after", json!("0000000000000000"));
+    let error = after
+        .replay(&xor_net())
+        .expect_err("after 指纹不符必须报错");
+    assert!(error.to_string().contains("behavior_after"), "{error}");
+
+    let before = tamper_field(&log, 1, "behavior_before", json!("0000000000000000"));
+    let error = before
+        .replay(&xor_net())
+        .expect_err("before 指纹不符必须报错");
+    assert!(error.to_string().contains("behavior_before"), "{error}");
+}
+
+#[test]
+fn oversized_oracle_is_rejected() {
+    let oracle = Oracle::boolean(13, |_| false).expect("oracle");
+    let net = Net::zeros(&[13, 1]).expect("net");
+    let mut log = AuditLog::new();
+    let error = log
+        .record_with_oracle(
+            "big",
+            &net,
+            &net,
+            Patch::default(),
+            true,
+            false,
+            Some(&oracle),
+        )
+        .expect_err("超过 4096 条验证集应拒绝");
+    assert!(error.to_string().contains("上限"), "{error}");
+    assert!(log.is_empty());
 }

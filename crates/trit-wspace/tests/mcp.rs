@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 use trit_wspace::mcp::{Mcp, PROTOCOL_VERSION, tools};
-use trit_wspace::{Edit, Layer, Net, Patch, Trit, from_wsp, to_wsp};
+use trit_wspace::{Edit, Layer, Net, Oracle, Patch, Trit, from_wsp, to_wsp};
 
 fn xor_net() -> Net {
     Net::new(vec![
@@ -257,8 +257,9 @@ fn audit_verifies_chain_and_replays() {
         to: Trit::Zero,
     }]);
     patch.apply(&mut broken).expect("corrupt");
+    let oracle = Oracle::boolean(2, |bits| bits[0] != bits[1]).expect("oracle");
     let mut log = trit_wspace::AuditLog::new();
-    log.record("break", &start, &broken, patch, true, false)
+    log.record_with_oracle("break", &start, &broken, patch, true, false, Some(&oracle))
         .expect("record");
 
     let mut server = Mcp::new();
@@ -271,6 +272,7 @@ fn audit_verifies_chain_and_replays() {
     let value = payload(&result);
     assert_eq!(value["valid"], true);
     assert_eq!(value["entries"].as_u64(), Some(1));
+    assert_eq!(value["replay"]["behavior_checked"].as_u64(), Some(1));
     assert_eq!(
         value["replay"]["final_checksum"].as_str().expect("sum"),
         format!("{:016x}", trit_wspace::checksum(&broken))

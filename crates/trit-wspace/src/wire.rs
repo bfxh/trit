@@ -176,6 +176,15 @@ pub fn impact_to_value(impact: &EditImpact) -> Value {
     })
 }
 
+/// 验证集 → 规范 JSON（紧凑行字符串，可被 [`oracle_from_value`] 读回）。
+#[must_use]
+pub fn oracle_to_value(oracle: &Oracle) -> Value {
+    json!({
+        "inputs": oracle.inputs().iter().map(|row| trits_text(row)).collect::<Vec<_>>(),
+        "outputs": oracle.outputs().iter().map(|row| trits_text(row)).collect::<Vec<_>>(),
+    })
+}
+
 /// 验证集 → JSON。
 pub fn oracle_from_value(value: &Value) -> Result<Oracle> {
     if value.get("inputs").is_some() || value.get("outputs").is_some() {

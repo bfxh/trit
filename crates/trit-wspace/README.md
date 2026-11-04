@@ -123,6 +123,9 @@ trit-wspace mcp
 `applied` / `rolled_back`、`prev` / `chain`。`audit` 验链（抓篡改/乱序），`replay` 从初始
 工件逐条重放并核对每一步校验和。回滚/未应用条目必须前后同校验和，日志本身自洽。
 
+记录时若给了 `--oracle`，还会存下验证集规范与前后**行为指纹**；`audit` / `replay`
+会同时核对权重链与行为链（`behavior_checked` 是实际核对条数）。
+
 ## 论文与来源
 
 - **Weight-space programming（外部报道，未复现）**：MIT CSAIL，2026-11-02，

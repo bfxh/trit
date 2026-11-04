@@ -4,8 +4,9 @@
 //! 以及 `prev` / `chain` 两个哈希链字段。`verify_chain` 抓篡改与乱序；
 //! `replay` 从初始工件逐条重放，校验每一步的 `before` / `after` 校验和。
 //!
-//! 回滚条目必须前后同校验和；未应用条目（前置不成立）也必须前后同校验和。
-//! 这两条让日志本身自洽，重放时不需要猜“这一步到底有没有改工件”。
+//! 记录时如果给了验证集，还会存下验证集规范 + 前/后**行为指纹**；重放会同时
+//! 核对“权重链”和“行为链”。回滚条目必须前后同校验和、同行为指纹；
+//! 未应用条目（前置不成立）同理。三条不变量让日志本身自洽。
 
 use serde_json::{Value, json};
 
@@ -13,6 +14,7 @@ use crate::codec::checksum;
 use crate::edit::Patch;
 use crate::error::{Error, Result};
 use crate::net::Net;
+use crate::oracle::{Behavior, Oracle};
 use crate::wire;
 
 /// 日志线格式版本。
@@ -20,6 +22,9 @@ pub const LOG_VERSION: u64 = 1;
 
 /// 创世链值。
 pub const GENESIS: u64 = 0;
+
+/// 单条记录最多存多大的验证集（超过就报错，避免日志爆掉）。
+pub const MAX_LOGGED_ORACLE: usize = 4096;
 
 /// 一条编辑记录。
 #[derive(Clone, Debug, PartialEq)]
@@ -40,6 +45,12 @@ pub struct LogEntry {
     pub cost: Value,
     /// 实际补丁。
     pub patch: Patch,
+    /// 记录时使用的验证集（可选；紧凑 `inputs` / `outputs` JSON）。
+    pub oracle: Option<Value>,
+    /// 验证集上的行为指纹（可选）。
+    pub behavior_before: Option<u64>,
+    /// 应用后的行为指纹（可选；回滚/未应用时等于 `behavior_before`）。
+    pub behavior_after: Option<u64>,
     /// 上一条的 `chain`；第一条是 [`GENESIS`]。
     pub prev: u64,
     /// 本条哈希链值。
@@ -57,6 +68,8 @@ pub struct ReplayReport {
     pub rolled_back: usize,
     /// 未应用（前置不成立）的条数。
     pub skipped: usize,
+    /// 实际核对了行为指纹的条数。
+    pub behavior_checked: usize,
     /// 最终工件的校验和。
     pub final_checksum: u64,
 }
@@ -98,9 +111,7 @@ impl AuditLog {
         self.entries.last().map_or(GENESIS, |entry| entry.chain)
     }
 
-    /// 追加一条记录。
-    ///
-    /// 不变量：未应用 / 回滚的条目必须前后校验和相同（工件没被留在半改状态）。
+    /// 追加一条记录（不带验证集）。
     pub fn record(
         &mut self,
         name: impl Into<String>,
@@ -109,6 +120,24 @@ impl AuditLog {
         patch: Patch,
         applied: bool,
         rolled_back: bool,
+    ) -> Result<()> {
+        self.record_with_oracle(name, before, after, patch, applied, rolled_back, None)
+    }
+
+    /// 追加一条记录，可选存下验证集与前后行为指纹。
+    ///
+    /// 不变量：未应用 / 回滚的条目必须前后校验和相同（工件没被留在半改状态），
+    /// 且行为指纹相同。
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_with_oracle(
+        &mut self,
+        name: impl Into<String>,
+        before: &Net,
+        after: &Net,
+        patch: Patch,
+        applied: bool,
+        rolled_back: bool,
+        oracle: Option<&Oracle>,
     ) -> Result<()> {
         if before.arch() != after.arch() {
             return Err(Error::ArchMismatch);
@@ -121,6 +150,26 @@ impl AuditLog {
         if rolled_back && before_sum != after_sum {
             return Err(Error::Audit("回滚条目前后工件校验和不同".into()));
         }
+        let (oracle_value, behavior_before, behavior_after) = if let Some(oracle) = oracle {
+            if oracle.len() > MAX_LOGGED_ORACLE {
+                return Err(Error::Audit(format!(
+                    "验证集 {} 条超过日志上限 {MAX_LOGGED_ORACLE}",
+                    oracle.len()
+                )));
+            }
+            let before_sig = Behavior::of(before, oracle)?.signature();
+            let after_sig = Behavior::of(after, oracle)?.signature();
+            if (!applied || rolled_back) && before_sig != after_sig {
+                return Err(Error::Audit("回滚/未应用条目的行为指纹发生变化".into()));
+            }
+            (
+                Some(wire::oracle_to_value(oracle)),
+                Some(before_sig),
+                Some(after_sig),
+            )
+        } else {
+            (None, None, None)
+        };
         let seq = self.entries.len();
         let prev = self.head();
         let cost = wire::cost_to_value(&patch.cost(before));
@@ -133,6 +182,9 @@ impl AuditLog {
             rolled_back,
             cost,
             patch,
+            oracle: oracle_value,
+            behavior_before,
+            behavior_after,
             prev,
             chain: 0,
         };
@@ -169,19 +221,51 @@ impl AuditLog {
         Ok(())
     }
 
+    /// 重算整条链（日志合并/手工修订后使用；不验证已有内容）。
+    pub fn recompute_chain(&mut self) {
+        let mut prev = GENESIS;
+        for entry in &mut self.entries {
+            entry.prev = prev;
+            entry.chain = chain_of(entry);
+            prev = entry.chain;
+        }
+    }
+
     /// 从 `initial` 重放：逐条校验 before/after 校验和。
     pub fn replay(&self, initial: &Net) -> Result<ReplayReport> {
         self.replay_net(initial).map(|(report, _)| report)
     }
 
-    /// 重放并返回最终工件。
+    /// 重放并返回最终工件；有验证集的条目会同时核对前后行为指纹。
     pub fn replay_net(&self, initial: &Net) -> Result<(ReplayReport, Net)> {
         self.verify_chain()?;
         let mut current = initial.clone();
         let mut applied = 0usize;
         let mut rolled_back = 0usize;
         let mut skipped = 0usize;
+        let mut behavior_checked = 0usize;
         for entry in &self.entries {
+            let oracle = match &entry.oracle {
+                Some(value) => Some(wire::oracle_from_value(value)?),
+                None => None,
+            };
+            if oracle.is_none()
+                && (entry.behavior_before.is_some() || entry.behavior_after.is_some())
+            {
+                return Err(Error::Audit(format!(
+                    "第 {} 条有行为指纹但没有验证集",
+                    entry.seq
+                )));
+            }
+            if let Some(oracle) = &oracle {
+                let sig = Behavior::of(&current, oracle)?.signature();
+                if Some(sig) != entry.behavior_before {
+                    return Err(Error::Audit(format!(
+                        "第 {} 条 behavior_before 不符（记录 {:?}，重算 {:016x}）",
+                        entry.seq, entry.behavior_before, sig
+                    )));
+                }
+            }
             let now = checksum(&current);
             if now != entry.before {
                 return Err(Error::Audit(format!(
@@ -207,12 +291,23 @@ impl AuditLog {
                     entry.seq, entry.after, after
                 )));
             }
+            if let Some(oracle) = &oracle {
+                let sig = Behavior::of(&current, oracle)?.signature();
+                if Some(sig) != entry.behavior_after {
+                    return Err(Error::Audit(format!(
+                        "第 {} 条 behavior_after 不符（记录 {:?}，重算 {:016x}）",
+                        entry.seq, entry.behavior_after, sig
+                    )));
+                }
+                behavior_checked += 1;
+            }
         }
         let report = ReplayReport {
             entries: self.entries.len(),
             applied,
             rolled_back,
             skipped,
+            behavior_checked,
             final_checksum: checksum(&current),
         };
         Ok((report, current))
@@ -223,20 +318,7 @@ impl AuditLog {
     pub fn to_jsonl(&self) -> String {
         let mut out = String::new();
         for entry in &self.entries {
-            let value = json!({
-                "v": LOG_VERSION,
-                "seq": entry.seq,
-                "name": entry.name,
-                "before": hex(entry.before),
-                "after": hex(entry.after),
-                "applied": entry.applied,
-                "rolled_back": entry.rolled_back,
-                "cost": entry.cost,
-                "patch": wire::patch_to_value(&entry.patch),
-                "prev": hex(entry.prev),
-                "chain": hex(entry.chain),
-            });
-            out.push_str(&value.to_string());
+            out.push_str(&canonical(entry, true).to_string());
             out.push('\n');
         }
         out
@@ -285,6 +367,9 @@ impl AuditLog {
                     .unwrap_or(false),
                 cost: value.get("cost").cloned().unwrap_or_else(|| json!({})),
                 patch,
+                oracle: parse_oracle(&value)?,
+                behavior_before: optional_hex_field(&value, "behavior_before")?,
+                behavior_after: optional_hex_field(&value, "behavior_after")?,
                 prev: hex_field(&value, "prev")?,
                 chain: hex_field(&value, "chain")?,
             });
@@ -294,19 +379,34 @@ impl AuditLog {
 }
 
 fn chain_of(entry: &LogEntry) -> u64 {
-    let canonical = json!({
-        "v": LOG_VERSION,
-        "seq": entry.seq,
-        "name": entry.name,
-        "before": hex(entry.before),
-        "after": hex(entry.after),
-        "applied": entry.applied,
-        "rolled_back": entry.rolled_back,
-        "cost": entry.cost,
-        "patch": wire::patch_to_value(&entry.patch),
-        "prev": hex(entry.prev),
-    });
-    fnv(canonical.to_string().as_bytes())
+    fnv(canonical(entry, false).to_string().as_bytes())
+}
+
+fn canonical(entry: &LogEntry, with_chain: bool) -> Value {
+    let mut map = serde_json::Map::new();
+    map.insert("v".to_string(), json!(LOG_VERSION));
+    map.insert("seq".to_string(), json!(entry.seq));
+    map.insert("name".to_string(), json!(entry.name));
+    map.insert("before".to_string(), json!(hex(entry.before)));
+    map.insert("after".to_string(), json!(hex(entry.after)));
+    map.insert("applied".to_string(), json!(entry.applied));
+    map.insert("rolled_back".to_string(), json!(entry.rolled_back));
+    map.insert("cost".to_string(), entry.cost.clone());
+    map.insert("patch".to_string(), wire::patch_to_value(&entry.patch));
+    map.insert("prev".to_string(), json!(hex(entry.prev)));
+    if let Some(oracle) = &entry.oracle {
+        map.insert("oracle".to_string(), oracle.clone());
+    }
+    if let Some(sig) = entry.behavior_before {
+        map.insert("behavior_before".to_string(), json!(hex(sig)));
+    }
+    if let Some(sig) = entry.behavior_after {
+        map.insert("behavior_after".to_string(), json!(hex(sig)));
+    }
+    if with_chain {
+        map.insert("chain".to_string(), json!(hex(entry.chain)));
+    }
+    Value::Object(map)
 }
 
 fn fnv(bytes: &[u8]) -> u64 {
@@ -329,6 +429,26 @@ fn hex_field(value: &Value, name: &str) -> Result<u64> {
         .ok_or_else(|| Error::Audit(format!("缺少十六进制字段 `{name}`")))?;
     u64::from_str_radix(text, 16)
         .map_err(|_| Error::Audit(format!("`{name}` 不是 16 位十六进制：{text}")))
+}
+
+fn optional_hex_field(value: &Value, name: &str) -> Result<Option<u64>> {
+    match value.get(name) {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(text)) => u64::from_str_radix(text, 16)
+            .map(Some)
+            .map_err(|_| Error::Audit(format!("`{name}` 不是十六进制：{text}"))),
+        Some(_) => Err(Error::Audit(format!("`{name}` 必须是字符串"))),
+    }
+}
+
+fn parse_oracle(value: &Value) -> Result<Option<Value>> {
+    match value.get("oracle") {
+        None | Some(Value::Null) => Ok(None),
+        Some(raw) => {
+            wire::oracle_from_value(raw)?;
+            Ok(Some(raw.clone()))
+        }
+    }
 }
 
 fn usize_field(value: &Value, name: &str) -> Result<usize> {
