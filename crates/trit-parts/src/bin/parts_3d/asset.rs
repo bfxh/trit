@@ -10,9 +10,9 @@
 
 use std::path::PathBuf;
 
-use trit_parts::data::read_npy_i32;
+use trit_parts::data::{read_npy_i32, read_rgb};
 use trit_parts::geo::{Camera, read_npy_f32};
-use trit_parts::mesh::{Grid, boundary_edges, non_manifold_edges, surface_nets, write_ply};
+use trit_parts::mesh::{Grid, boundary_edges, non_manifold_edges, surface_nets, write_ply_rgb};
 use trit_parts::occ::Mlp;
 
 use super::cli::{arg, fail, frame_path, usage};
@@ -28,27 +28,8 @@ struct Level {
     tris: usize,
     boundary: usize,
     nonmanifold: usize,
-}
-
-/// 场景输入指纹（模型消费的就是 seg/depth/meta 三类）。
-fn scene_fingerprint(
-    scene: &std::path::Path,
-    frames: &[usize],
-) -> Result<(usize, u64, String), String> {
-    use trit_core::fingerprint::{file_sha256, sha256_hex};
-    let mut lines = Vec::new();
-    let mut bytes = 0u64;
-    let mut files = 0usize;
-    for &f in frames {
-        for (sub, ext) in [("seg", "npy"), ("depth", "npy"), ("meta", "json")] {
-            let p = frame_path(scene, sub, f, ext);
-            let meta = std::fs::metadata(&p).map_err(|e| format!("{}: {e}", p.display()))?;
-            bytes += meta.len();
-            files += 1;
-            lines.push(format!("{sub}/{f:06} {}", file_sha256(&p)?));
-        }
-    }
-    Ok((files, bytes, sha256_hex(lines.join("\n").as_bytes())))
+    /// 没有任何视角看到的顶点数（标灰）。
+    unseen: usize,
 }
 
 pub(crate) fn export_asset_cmd(argv: &[String]) {
@@ -80,6 +61,10 @@ pub(crate) fn export_asset_cmd(argv: &[String]) {
         }
     };
     let views: Vec<trit_parts::fuse::View> = frames.iter().map(|&f| load(f)).collect();
+    let rgbs: Vec<(usize, usize, Vec<f32>)> = frames
+        .iter()
+        .map(|&f| read_rgb(&frame_path(&scene, "rgb", f, "png")).unwrap_or_else(|e| fail(&e)))
+        .collect();
     let pts = view_points(&views);
     std::fs::create_dir_all(&out).unwrap_or_else(|e| fail(&format!("{}: {e}", out.display())));
 
@@ -95,17 +80,59 @@ pub(crate) fn export_asset_cmd(argv: &[String]) {
         let m = surface_nets(&solved);
         let name = format!("lod-{}cm.ply", (cell * 100.0).round() as u32);
         let p = out.join(&name);
-        write_ply(&p, &m).unwrap_or_else(|e| fail(&e));
+        // 顶点色：投影到每个视角，深度一致才采样，跨视角平均；无视角看到 ⇒ 标灰。
+        let mut unseen = 0usize;
+        let colors: Vec<Option<[u8; 3]>> = m
+            .verts
+            .iter()
+            .map(|v| {
+                let mut acc = [0f64; 3];
+                let mut n = 0u32;
+                for (k, view) in views.iter().enumerate() {
+                    let Some((u, vv, d)) = view.cam.project(*v) else {
+                        continue;
+                    };
+                    if u < 0.0 || vv < 0.0 || u >= view.w as f64 || vv >= view.h as f64 {
+                        continue;
+                    }
+                    let i = vv as usize * view.w + u as usize;
+                    if d > view.depth[i] as f64 + 0.02 {
+                        continue; // 被遮挡
+                    }
+                    let (rw, rh, pix) = &rgbs[k];
+                    if *rw != view.w || *rh != view.h || i * 3 + 2 >= pix.len() {
+                        continue;
+                    }
+                    for c in 0..3 {
+                        acc[c] += pix[i * 3 + c] as f64;
+                    }
+                    n += 1;
+                }
+                if n == 0 {
+                    unseen += 1;
+                    None
+                } else {
+                    let s = 255.0 / n as f64;
+                    Some([
+                        (acc[0] * s).round().clamp(0.0, 255.0) as u8,
+                        (acc[1] * s).round().clamp(0.0, 255.0) as u8,
+                        (acc[2] * s).round().clamp(0.0, 255.0) as u8,
+                    ])
+                }
+            })
+            .collect();
+        write_ply_rgb(&p, &m, &colors).unwrap_or_else(|e| fail(&e));
         let bytes = std::fs::metadata(&p).map(|x| x.len()).unwrap_or(0);
         let sha = trit_core::fingerprint::file_sha256(&p).unwrap_or_default();
         let boundary = boundary_edges(&m);
         let nonmanifold = non_manifold_edges(&m);
         println!(
-            "cell {cell} m: 顶点 {} 面 {} 边界边 {} 非流形 {} → {name}",
+            "cell {cell} m: 顶点 {} 面 {} 边界边 {} 非流形 {} 无观测顶点 {} → {name}",
             m.verts.len(),
             m.tris.len(),
             boundary,
-            nonmanifold
+            nonmanifold,
+            unseen
         );
         levels.push(Level {
             cell,
@@ -116,11 +143,13 @@ pub(crate) fn export_asset_cmd(argv: &[String]) {
             tris: m.tris.len(),
             boundary,
             nonmanifold,
+            unseen,
         });
     }
 
-    let (files, data_bytes, data_hash) =
-        scene_fingerprint(&scene, &frames).unwrap_or_else(|e| fail(&e));
+    let fp =
+        trit_parts::scenefp::fingerprint_scene_frames(&scene, &frames).unwrap_or_else(|e| fail(&e));
+    let (files, data_bytes, data_hash) = (fp.files, fp.bytes, fp.hash);
     let model_sha = trit_core::fingerprint::file_sha256(&model_path).unwrap_or_default();
     let model_bytes = std::fs::metadata(&model_path).map(|m| m.len()).unwrap_or(0);
     let commit = trit_parts::partsrun::git_out(&["rev-parse", "--short", "HEAD"])
@@ -139,7 +168,7 @@ pub(crate) fn export_asset_cmd(argv: &[String]) {
         .iter()
         .map(|l| {
             format!(
-                "{{\"cell\": {}, \"path\": {}, \"sha256\": \"{}\", \"bytes\": {}, \"verts\": {}, \"tris\": {}, \"boundary_edges\": {}, \"nonmanifold_edges\": {}}}",
+                "{{\"cell\": {}, \"path\": {}, \"sha256\": \"{}\", \"bytes\": {}, \"verts\": {}, \"tris\": {}, \"boundary_edges\": {}, \"nonmanifold_edges\": {}, \"unseen_vertices\": {}}}",
                 l.cell,
                 trit_parts::partsrun::json_str(&l.name),
                 l.sha256,
@@ -147,12 +176,13 @@ pub(crate) fn export_asset_cmd(argv: &[String]) {
                 l.verts,
                 l.tris,
                 l.boundary,
-                l.nonmanifold
+                l.nonmanifold,
+                l.unseen
             )
         })
         .collect();
     let body = format!(
-        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-asset\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"frames\": [{}], \"cells\": [{}]}},\n  \"data\": {{\"files\": {files}, \"bytes\": {data_bytes}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{data_hash}\", \"scene\": {}}},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"bytes\": {model_bytes}}},\n  \"levels\": [{}]\n}}\n",
+        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-asset\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"frames\": [{}], \"cells\": [{}], \"bake_colors\": true}},\n  \"data\": {{\"files\": {files}, \"bytes\": {data_bytes}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{data_hash}\", \"scene\": {}}},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"bytes\": {model_bytes}}},\n  \"levels\": [{}]\n}}\n",
         trit_parts::partsrun::created_unix(),
         trit_parts::partsrun::json_str(&commit),
         argv_json.join(", "),
