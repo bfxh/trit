@@ -11,6 +11,7 @@ use serde::Serialize;
 
 use crate::hash::Hash;
 use crate::repo::{Repo, RepoError};
+use crate::status_cache::{CachedFile, StatusCache};
 use crate::store::StoreError;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -77,25 +78,92 @@ fn head_tree(repo: &Repo) -> Result<BTreeMap<String, Hash>, WorktreeError> {
 
 /// 工作树 vs `HEAD`：按内容判定新增/修改/删除。
 pub fn status(repo: &Repo) -> Result<Vec<Change>, WorktreeError> {
+    Ok(status_with_cache(repo)?.0)
+}
+
+/// `status` 的读数：这次真正读内容算哈希的文件数、以及靠 stat 缓存省掉的。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct StatusStats {
+    pub hashed: usize,
+    pub cached: usize,
+}
+
+fn mtime_ns(meta: &fs::Metadata) -> u64 {
+    meta.modified()
+        .ok()
+        .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|duration| u64::try_from(duration.as_nanos()).unwrap_or(u64::MAX))
+        .unwrap_or(0)
+}
+
+/// 带 stat 缓存的 `status`：`(size, mtime_ns)` 没变的文件复用上次的内容 id，不读内容。
+pub fn status_with_cache(repo: &Repo) -> Result<(Vec<Change>, StatusStats), WorktreeError> {
     let tree = head_tree(repo)?;
-    let files = scan(repo.root())?;
+    let cache_file = crate::status_cache::cache_path(repo.root());
+    let old = StatusCache::load(&cache_file);
+    let mut cache = StatusCache::default();
+    let mut stats = StatusStats::default();
     let mut changes = Vec::new();
-    for (path, bytes) in &files {
-        let id = repo.store().file_id_bytes(bytes)?;
-        match tree.get(path) {
-            None => changes.push(Change {
-                kind: Kind::Added,
-                path: path.clone(),
-            }),
-            Some(known) if *known != id => changes.push(Change {
-                kind: Kind::Modified,
-                path: path.clone(),
-            }),
-            Some(_) => {}
+
+    let mut stack = vec![(repo.root().to_path_buf(), String::new())];
+    while let Some((dir, rel_dir)) = stack.pop() {
+        cache
+            .dirs
+            .insert(rel_dir.clone(), mtime_ns(&fs::metadata(&dir)?));
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == ".tritvcs" || name == ".git" {
+                continue;
+            }
+            let meta = entry.metadata()?;
+            let rel = if rel_dir.is_empty() {
+                name
+            } else {
+                format!("{rel_dir}/{name}")
+            };
+            if meta.is_dir() {
+                stack.push((entry.path(), rel));
+                continue;
+            }
+            if !meta.is_file() {
+                continue;
+            }
+            let size = meta.len();
+            let mtime = mtime_ns(&meta);
+            let id = match old.files.get(&rel) {
+                Some(cached) if cached.matches(size, mtime) => {
+                    stats.cached += 1;
+                    cached.id
+                }
+                _ => {
+                    stats.hashed += 1;
+                    repo.store().file_id_bytes(&fs::read(entry.path())?)?
+                }
+            };
+            cache.files.insert(
+                rel.clone(),
+                CachedFile {
+                    size,
+                    mtime_ns: mtime,
+                    id,
+                },
+            );
+            match tree.get(&rel) {
+                None => changes.push(Change {
+                    kind: Kind::Added,
+                    path: rel,
+                }),
+                Some(known) if *known != id => changes.push(Change {
+                    kind: Kind::Modified,
+                    path: rel,
+                }),
+                Some(_) => {}
+            }
         }
     }
     for path in tree.keys() {
-        if !files.contains_key(path) {
+        if !cache.files.contains_key(path) {
             changes.push(Change {
                 kind: Kind::Deleted,
                 path: path.clone(),
@@ -103,7 +171,8 @@ pub fn status(repo: &Repo) -> Result<Vec<Change>, WorktreeError> {
         }
     }
     changes.sort_by(|a, b| a.path.cmp(&b.path));
-    Ok(changes)
+    cache.save(&cache_file)?;
+    Ok((changes, stats))
 }
 
 /// 把某个提交里的文件写回工作树。默认拒绝覆盖未提交改动（`--force` 才覆盖）。
@@ -307,5 +376,86 @@ mod tests {
         assert!(safe_join(Path::new("/repo"), "../escape").is_err());
         assert!(safe_join(Path::new("/repo"), "/abs").is_err());
         assert!(safe_join(Path::new("/repo"), "ok/inside").is_ok());
+    }
+
+    #[test]
+    fn status_reuses_stat_cache_for_unchanged_files() {
+        let root = temp("status-cache");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("a.txt"), b"one").unwrap();
+        fs::write(root.join("b.txt"), b"two").unwrap();
+        let mut repo = Repo::init(&root).unwrap();
+        let _ = commit_all(&mut repo, "base", 1_000);
+
+        let (cold_changes, cold) = status_with_cache(&repo).unwrap();
+        assert!(cold_changes.is_empty());
+        assert_eq!(
+            cold,
+            StatusStats {
+                hashed: 2,
+                cached: 0
+            },
+            "第一次必须全读"
+        );
+        let (warm_changes, warm) = status_with_cache(&repo).unwrap();
+        assert!(warm_changes.is_empty());
+        assert_eq!(
+            warm,
+            StatusStats {
+                hashed: 0,
+                cached: 2
+            },
+            "内容没变就不该再读文件"
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn same_size_rewrite_is_detected() {
+        let root = temp("status-cache-mtime");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("a.txt"), b"aaaa").unwrap();
+        let mut repo = Repo::init(&root).unwrap();
+        let _ = commit_all(&mut repo, "base", 1_000);
+        let (_, cold) = status_with_cache(&repo).unwrap();
+        assert_eq!(cold.hashed, 1);
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        fs::write(root.join("a.txt"), b"bbbb").unwrap();
+        let (changes, stats) = status_with_cache(&repo).unwrap();
+        assert_eq!(
+            changes,
+            vec![Change {
+                kind: Kind::Modified,
+                path: "a.txt".to_string()
+            }],
+            "同大小改写必须靠 mtime 抓到"
+        );
+        assert_eq!(
+            stats,
+            StatusStats {
+                hashed: 1,
+                cached: 0
+            }
+        );
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn corrupt_cache_is_ignored_and_rewritten() {
+        let root = temp("status-cache-corrupt");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(root.join("a.txt"), b"one").unwrap();
+        let mut repo = Repo::init(&root).unwrap();
+        let _ = commit_all(&mut repo, "base", 1_000);
+        let cache_file = crate::status_cache::cache_path(repo.root());
+        fs::write(&cache_file, b"garbage").unwrap();
+
+        let (changes, stats) = status_with_cache(&repo).unwrap();
+        assert!(changes.is_empty(), "坏缓存不能影响判定");
+        assert_eq!(stats.hashed, 1, "坏缓存 ⇒ 退回全读");
+        let healed = StatusCache::load(&cache_file);
+        assert_eq!(healed.files.len(), 1, "这次要重写成好缓存");
+        let _ = fs::remove_dir_all(&root);
     }
 }

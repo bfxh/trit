@@ -9,6 +9,7 @@ use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use trit_vcs::gate::{ClaimSpec, Verdict, load_claims};
+use trit_vcs::model::Intent;
 use trit_vcs::repo::{CommitRequest, Repo};
 use trit_vcs::witness::{RunOutput, Witness};
 use trit_vcs::worktree;
@@ -26,7 +27,7 @@ fn usage() -> ExitCode {
          trit-vcs init [--repo PATH]\n  \
          trit-vcs add <文件>... [--repo PATH]\n  \
          trit-vcs commit -m <说明> --owner <宿主:会话id> [--claims FILE] [--evidence 文本]... \n                   \
-         [--tag 标签]... [--witness FILE] [--allow-unclaimed] [--repo PATH]\n  \
+         [--tag 标签]... [--witness FILE] [--goal 目标] [--accept 判据]... [--allow-unclaimed] [--repo PATH]\n  \
          trit-vcs witness [--out FILE] [--repo PATH] -- <命令>...\n  \
          trit-vcs admit <提交id> --witness FILE [--repo PATH]\n  \
          trit-vcs log [--json] [--repo PATH]\n  \
@@ -234,6 +235,14 @@ fn main() -> ExitCode {
                 None => None,
             };
             let witness_digest = witness.as_ref().map(|bytes| trit_vcs::Hash::of(bytes));
+            let accept = flags(&args, "--accept");
+            let intent = match flag(&args, "--goal") {
+                Some(goal) => Some(Intent::new(goal, accept)),
+                None if !accept.is_empty() => {
+                    return fail("--accept 需要同时给 --goal");
+                }
+                None => None,
+            };
             let mut repo = match Repo::open(&root) {
                 Ok(repo) => repo,
                 Err(err) => return fail(err.to_string()),
@@ -246,6 +255,7 @@ fn main() -> ExitCode {
                 tags: flags(&args, "--tag"),
                 allow_unclaimed: has(&args, "--allow-unclaimed"),
                 witness,
+                intent,
                 now_secs: now_secs(),
             };
             match repo.commit(request) {
@@ -402,6 +412,11 @@ fn main() -> ExitCode {
                             "message": commit.message,
                             "hlc": [commit.hlc.wall_ms, commit.hlc.counter],
                             "witness": commit.witness.map(|w| w.to_hex()),
+                            "intent": commit.intent.as_ref().map(|intent| serde_json::json!({
+                                "goal": intent.goal,
+                                "accept": intent.accept,
+                                "base": intent.base.map(|base| base.to_hex()),
+                            })),
                         })
                     })
                     .collect();
@@ -439,8 +454,8 @@ fn main() -> ExitCode {
                 Ok(repo) => repo,
                 Err(err) => return fail(err.to_string()),
             };
-            match worktree::status(&repo) {
-                Ok(changes) => {
+            match worktree::status_with_cache(&repo) {
+                Ok((changes, stats)) => {
                     if has(&args, "--json") {
                         println!(
                             "{}",
@@ -453,6 +468,10 @@ fn main() -> ExitCode {
                             println!("  {:?}  {}", change.kind, change.path);
                         }
                     }
+                    println!(
+                        "（读了 {} 个文件，stat 缓存省了 {} 个）",
+                        stats.hashed, stats.cached
+                    );
                     ExitCode::SUCCESS
                 }
                 Err(err) => fail(err.to_string()),
