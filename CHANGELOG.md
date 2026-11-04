@@ -104,6 +104,68 @@
   也没有“自然语言 → 补丁”的模型；外部 WSP 报道（2026-11-02 MIT CSAIL，Astra 读写
   Qwen3.5-0.8B 原始权重）**未复现**，只借用其接口形态。
 
+### Added（仓库边界文档 + 文档卫生门）
+
+- 新 `docs/SCOPE.md`：**主库存什么、不存什么**的一次定案 —— 收进来的四条判据（R1 与具体项目无关、
+  R2 有独立判据、R3 可归位、R4 能长期守）、不收的六类（生产链接入、治理工具、一次性笔记、
+  不可再生大素材、别的语言生态成品、私有环境与凭据，逐类给真实例子与去处）、
+  **数据与二进制政策**（是否判据必需 / 可否再生 / 是否超 1 MiB–8 MiB 三问，超了走"内容级 SHA-256 清单 + 取数脚本 + 最小切片"）、
+  构建产物与机器状态（文档只记读数与口径，不记本机路径）、跨仓分工表、进门流程、
+  以及**「规矩 ↔ 门」对照表**（哪条机器判、哪条只能人判，人判的要写清为什么门判不了）。
+  `README.md`、`docs/LAYERS.md`、`docs/ROADMAP.md` 各挂一处指针，不复制正文。
+- 新门 `scripts/docs_hygiene.py` + 棘轮台账 `scripts/docs_hygiene_baseline.json`：
+  ① `CHANGELOG.md` 首行必须是 `# Changelog`、必须有 `## [Unreleased]`、字节数不得低于基线；
+  ② 仓内可见文档（CHANGELOG / README / docs/**.md）的**盘符绝对路径**按文件计数，只许变少；
+  ③ 基线读不出 = 判红（"不知道有多少"不等于"没有"）。
+  存量如实登记为债务：7 个文件共 45 处（`GENERAL-PLAN.md` 24、`VISUAL-PLAN.md` 6、`GUARD.md` 5 等），
+  我没批量改别人的历史记录，只保证不再变多。
+- 自证：`--self-test` 2 正例 + 6 反证绿；活体反证两条都判红（在 `docs/SCOPE.md` 里塞一行指向临时目录的绝对路径 ⇒ rc=1；把 CHANGELOG 截成 tiny ⇒ rc=1），恢复后 rc=0。
+  变异 `scripts__docs_hygiene.py.json` 4 条 **caught 4 / survived 0**（python runner 属"未点名/崩溃类"，
+  与 `scripts/layers.py` 同一披露）。
+
+### Fixed（CHANGELOG.md 曾被脚本覆盖成一行人机路径；条目按提交信息重建）
+
+- 事实：`CHANGELOG.md` 在某次脚本化追加时把**路径字符串当成内容写回**，文件从 173 760 字节变成 29 字节，
+  内容是本机绝对路径；该破坏随 `ba081a3` 提交，并已通过 PR #289 的 squash 进入 main。
+  现在从最后一个好版本（`6988d9c`）恢复，并按分支提交信息补回丢失条目。
+- 根因与防再犯：脚本里同一个名字先当路径再当内容用，写回时写错了对象。
+  ① 这类追加改用 Edit 逐段改，不再整文件写回；② 新门 `scripts/docs_hygiene.py` 判三件事——
+  `CHANGELOG.md` 必须以 `# Changelog` 开头且含 `## [Unreleased]`、字节数不得低于棘轮基线、
+  仓内文档不得新增**盘符绝对路径**（存量按目录计数进基线，只许变少）。三条都自带反证与变异。
+- 借这次恢复一并补回的条目（细节在各次提交信息里）：
+  · **能力登记进门**（`layers.json` 的 `capabilities`）：一个能力一个 `authoritative`，第二实现必须带
+    含数字的 `measured_gap` + `why_kept` + `bench`；缺字段、写"慢很多"、缺理由、同能力两条、权威不在归位表 ⇒ 判红。
+    自测 2 正例 + 11 反证，`scripts/layers.py` 变异 5 → 10 条 caught 10。
+  · **A357 点积实测**：`benchmarks/dot_variants/`（因 `cargo package` 不接受对 `publish = false` crate 的
+    跨包依赖，从 `trit-dot` 的 dev-dep 挪成 workspace 外独立包）；交错 9 轮读数：
+    u64 dispatch 7.6–12.2 / u64 portable 12.2–12.5 / **u32 镜像 48.1–50.7** / i32 标量 168.6–183.5 ps/trit，
+    三档无交叉 ⇒ 处置是**定性质**（要 CPU 吞吐用 `trit-dot`，u32 那份是 WGSL 的逐位对拍基准）。
+  · **文档拆开写**：新增 `docs/ROADMAP.md`（该搬进 / 该新开 / 该搬出 / 排序 / publish 面）与
+    `docs/SCOPE.md`（本文件 §0 说的仓库边界），`docs/LAYERS.md` 与 `README.md` 挂链接。
+  · **publish 面**：`trit-count` 去掉 `publish = false`（判据=四条独立判据链 + 26 测试 + 16 变异全抓 +
+    依赖面本就可发布），`publish_graph` 不再挡住 `trit-cli count`；名字实测 crates.io 未占用。翻面 ≠ 发布。
+  · **DPLL 两刀**（详见下面两条 Perf 小节）。
+
+### Perf（DPLL 两刀：计数器 + CSR 出现表 1.21×，再就地换号 + 复用表格 1.35×，累计 1.56×）
+
+- 第一刀：节点入口不再 `normalize` 全表；`residue()` 用**计数器 + CSR 扁平出现表**一趟做完单位传播闭包与
+  残基构造；分支单位子句由 `insert_unit()` 插回有序位置。匹配族八档 min 合计 **260.3 → 215.2 ms（1.21×）**，
+  每档 −13%~−19%。第一版只换计数器、出现表仍用 `Vec<Vec<u32>>`（每节点 2(k+1) 次小分配）**只有 1.05×**
+  ⇒ 瓶颈是**分配**不是扫描次数。
+- 第二刀：`residue` 顺手把出现变量压成 `1..=m` 新号并**就地改写子句**（省掉 `renumber` 的第二次全表拷贝），
+  两个子节点**共用同一份表**（插→递归→原位摘→插反面），省掉每个分支节点一次深拷贝；
+  `decompose` 之后那次换号是真换号，保留。八档 min 合计 **225.4 → 166.4 ms（1.35×）**，每档 −18%~−28%。
+- 等价判据（两刀各做一次，口径相同）：`--random --cases 2`（16 个统计字段）、`--big 24 --cases 2`（8 个字段）、
+  匹配族八档的 **nodes / branches / comps / cache 命中数与失败数逐条不变**，且同一二进制两轮自比一致
+  （第一轮比对把计时字段算进去，作废重做）。
+- 两处自己的错都由门/断言先抓出，不粉饰：① 「单调映射自动保序」的推理被 `debug_assert` 推翻
+  （反例 `[3,4,-7]` 排在 `[-1,-2]` 前，符号翻转字典序）⇒ 排序保留，只省拷贝；
+  ② 变异表里我自己写过一条**空变异**（只加注释），修成真删 `numbered.remove(at)` 后才被抓住。
+  另一条「`sort()` 改 `reverse()`」存活且确认是**等价变异**（结果与命中率都不变），按门规删除并披露。
+- 变异：`trit-count` 16 → 20 → **21 条，caught 21 / survived 0**。
+- 未做：两级 watched literals。两刀的实测说明真正吃时间的是分配与全表复制，
+  下一笔收益更可能在 `decompose` 的分组拷贝——那条同样先测再动。
+
 ### Added（分层与归位：算子 / 算法 / 学习 / 生产链）
 
 - 措辞更正：README 标题、`docs/DESIGN.md` 一句话、`sansheng` 的 crate description 里的
@@ -169,7 +231,7 @@
 - 门禁：workspace test **1959 passed / 0 failed**、fmt / clippy / doc / module_budget / publish_graph /
   test_surface（台账 22→28、22→24）/ ci_integrity / ci_budget / hazard_gate 全过。
   跑第一轮 workspace test 时 E: 盘被 target 目录占满（`No space left on device` 伪装成 `trit-net` 链接错），
-  删掉自己已失效的 `E:/cargo-target/trit-count-wt` 后重跑才拿到读数——不是代码问题。
+  删掉自己已失效的 trit-count 临时 target 目录后重跑才拿到读数——不是代码问题。
 
 ### Added（trit-count：策略文件计数）
 
