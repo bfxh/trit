@@ -82,6 +82,13 @@ pub enum Error {
     Wire(String),
     /// 审计日志不一致（哈希链、顺序、重放校验和）。
     Audit(String),
+    /// 配对候选超过预算。
+    PairBudget {
+        /// 实际候选对数。
+        pairs: usize,
+        /// 调用方给的预算。
+        limit: usize,
+    },
 }
 
 /// 库内统一 `Result`。
@@ -120,6 +127,12 @@ impl fmt::Display for Error {
             }
             Self::Wire(msg) => write!(f, "线格式错误：{msg}"),
             Self::Audit(msg) => write!(f, "审计日志错误：{msg}"),
+            Self::PairBudget { pairs, limit } => {
+                write!(
+                    f,
+                    "配对候选 {pairs} 对超过上限 {limit}；提高 max_pairs 或改用 repair"
+                )
+            }
         }
     }
 }

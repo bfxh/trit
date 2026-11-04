@@ -20,7 +20,7 @@
 
 use serde_json::{Value, json};
 
-use crate::analyze::{Analysis, EditImpact};
+use crate::analyze::{Analysis, EditImpact, PairAnalysis, PairImpact};
 use crate::codec::checksum;
 use crate::edit::{Cost, Edit, Patch};
 use crate::error::{Error, Result};
@@ -151,6 +151,7 @@ pub fn repair_to_value(repair: &Repair) -> Value {
 #[must_use]
 pub fn analysis_to_value(analysis: &Analysis) -> Value {
     json!({
+        "depth": 1,
         "before_loss": analysis.before_loss,
         "evaluated": analysis.evaluated,
         "exact": analysis.before_loss == 0,
@@ -159,6 +160,36 @@ pub fn analysis_to_value(analysis: &Analysis) -> Value {
             .iter()
             .map(impact_to_value)
             .collect::<Vec<_>>(),
+    })
+}
+
+/// 两编辑分析结果 → JSON。
+#[must_use]
+pub fn pair_analysis_to_value(analysis: &PairAnalysis) -> Value {
+    json!({
+        "depth": 2,
+        "before_loss": analysis.before_loss,
+        "evaluated": analysis.evaluated,
+        "exact": analysis.before_loss == 0,
+        "candidates": analysis
+            .candidates
+            .iter()
+            .map(pair_impact_to_value)
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// 两编辑的实测影响 → JSON。
+#[must_use]
+pub fn pair_impact_to_value(impact: &PairImpact) -> Value {
+    json!({
+        "edits": [edit_to_value(&impact.first), edit_to_value(&impact.second)],
+        "before_loss": impact.before_loss,
+        "after_loss": impact.after_loss,
+        "gain": impact.gain,
+        "fixed": impact.fixed,
+        "broken": impact.broken,
+        "changed": impact.changed,
     })
 }
 

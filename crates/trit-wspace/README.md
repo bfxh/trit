@@ -63,6 +63,7 @@ trit-wspace verify xor.wsp --oracle xor.json
 trit-wspace patch  xor.wsp --patch break.json --oracle xor.json --require-after --out fixed.wsp
 trit-wspace repair broken.wsp --oracle xor.json --max-edits 2 --out fixed.wsp
 trit-wspace propose broken.wsp --oracle xor.json --limit 8
+trit-wspace propose broken.wsp --oracle xor.json --pairs --limit 8
 trit-wspace audit  audit.jsonl --artifact start.wsp
 trit-wspace replay audit.jsonl --artifact start.wsp --out final.wsp
 trit-wspace diff   a.wsp b.wsp
@@ -107,9 +108,10 @@ trit-wspace mcp
 八个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_repair`、`wsp_propose`、`wsp_audit`、`wsp_diff`、`wsp_merge`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
-`wsp_propose` 是“模型提议、库复核”的入口：对每个单点编辑**实测** `after_loss` /
-`fixed` / `broken` / `changed`，按 `gain` 排序返回；模型挑一条后走 `wsp_patch`，
-库仍会重新验证。候选里的数字不是打分估计。
+`wsp_propose` 是“模型提议、库复核”的入口：对每个单点编辑（或 `pairs=true` 时的两编辑
+组合）**实测** `after_loss` / `fixed` / `broken` / `changed`，按 `gain` 排序返回；模型挑一条
+后走 `wsp_patch`，库仍会重新验证。候选里的数字不是打分估计。配对枚举超过预算会直接报错，
+不做静默截断（否则 top-K 就不是真 top-K）。
 
 `wsp_audit` 校验 JSONL 编辑日志的哈希链；给了初始工件就顺带重放并核对最终校验和。
 模板见 [`mcp.example.json`](mcp.example.json)。

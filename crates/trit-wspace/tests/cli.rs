@@ -151,6 +151,18 @@ fn cli_read_verify_patch_repair_round_trip() {
     assert!(proposed["before_loss"].as_u64().expect("loss") > 0);
     assert_eq!(candidates[0]["after_loss"].as_u64(), Some(0));
 
+    let pairs = stdout_json(&run(&[
+        "propose",
+        &path_string(&broken),
+        "--oracle",
+        &path_string(&oracle),
+        "--pairs",
+        "--limit",
+        "2",
+    ]));
+    assert_eq!(pairs["depth"].as_u64(), Some(2));
+    assert!(pairs["candidates"].as_array().expect("pairs").len() <= 2);
+
     let repaired = stdout_json(&run(&[
         "repair",
         &path_string(&broken),

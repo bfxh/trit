@@ -88,11 +88,13 @@ pub fn tools() -> Vec<Value> {
         ),
         tool(
             "wsp_propose",
-            "对每个单点编辑实测失配变化并按收益排序（模型提议、库复核；不改工件）",
+            "实测单点编辑（或 pairs=true 时两编辑组合）的失配变化并按收益排序；不改工件",
             json!({
                 "artifact": artifact(), "path": {"type": "string"},
                 "oracle": {"type": "object"},
                 "limit": {"type": "integer", "description": "返回条数，默认 16；0=全部"},
+                "pairs": {"type": "boolean", "description": "true=两编辑组合（默认单点）"},
+                "max_pairs": {"type": "integer", "description": "配对预算，默认 20000"},
             }),
             &["oracle"],
         ),
@@ -254,8 +256,15 @@ impl Mcp {
                 let net = load(args)?;
                 let oracle = required_oracle(args)?;
                 let limit = opt_usize(args, "limit", 16);
-                let analysis = analyze::analyze(&net, &oracle, limit).map_err(err)?;
-                Ok(wire::analysis_to_value(&analysis))
+                if flag(args, "pairs") {
+                    let max_pairs = opt_usize(args, "max_pairs", 20_000);
+                    let analysis =
+                        analyze::analyze_pairs(&net, &oracle, limit, max_pairs).map_err(err)?;
+                    Ok(wire::pair_analysis_to_value(&analysis))
+                } else {
+                    let analysis = analyze::analyze(&net, &oracle, limit).map_err(err)?;
+                    Ok(wire::analysis_to_value(&analysis))
+                }
             }
             "wsp_audit" => {
                 let raw = args.get("log").and_then(Value::as_str).ok_or("需要 log")?;

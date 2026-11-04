@@ -106,24 +106,24 @@
  {
   "name": "wspace-propose: gain 符号写反",
   "file": "crates/trit-wspace/src/analyze.rs",
-  "old": "gain: before_loss as isize - after_mismatches.len() as isize,",
-  "new": "gain: after_mismatches.len() as isize - before_loss as isize,",
+  "old": "            edit,\n            before_loss,\n            after_loss: after_mismatches.len(),\n            gain: before_loss as isize - after_mismatches.len() as isize,",
+  "new": "            edit,\n            before_loss,\n            after_loss: after_mismatches.len(),\n            gain: after_mismatches.len() as isize - before_loss as isize,",
   "pkg": "trit-wspace",
   "filter": "top_candidate_is_the_exact_fix"
  },
  {
   "name": "wspace-propose: 预测 after_loss 不更新",
   "file": "crates/trit-wspace/src/analyze.rs",
-  "old": "after_loss: after_mismatches.len(),",
-  "new": "after_loss: before_loss,",
+  "old": "            edit,\n            before_loss,\n            after_loss: after_mismatches.len(),",
+  "new": "            edit,\n            before_loss,\n            after_loss: before_loss,",
   "pkg": "trit-wspace",
   "filter": "every_prediction_replays_exactly"
  },
  {
   "name": "wspace-propose: fixed 数成 before∩after",
   "file": "crates/trit-wspace/src/analyze.rs",
-  "old": ".filter(|index| !after_set.contains(index))",
-  "new": ".filter(|index| after_set.contains(index))",
+  "old": "        let fixed = before_mismatches\n            .iter()\n            .filter(|index| !after_set.contains(index))",
+  "new": "        let fixed = before_mismatches\n            .iter()\n            .filter(|index| after_set.contains(index))",
   "pkg": "trit-wspace",
   "filter": "every_prediction_replays_exactly"
  },
@@ -230,5 +230,45 @@
   "new": "if false {",
   "pkg": "trit-wspace",
   "filter": "oversized_oracle_is_rejected"
+ },
+ {
+  "name": "wspace-pairs: 配对 gain 符号写反",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "                after_loss: after_mismatches.len(),\n                gain: before_loss as isize - after_mismatches.len() as isize,",
+  "new": "                after_loss: after_mismatches.len(),\n                gain: after_mismatches.len() as isize - before_loss as isize,",
+  "pkg": "trit-wspace",
+  "filter": "pair_candidates_find_two_edit_fix"
+ },
+ {
+  "name": "wspace-pairs: 只应用第一条编辑",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "            first.apply_to(&mut trial)?;\n            second.apply_to(&mut trial)?;",
+  "new": "            first.apply_to(&mut trial)?;",
+  "pkg": "trit-wspace",
+  "filter": "every_pair_prediction_replays_exactly"
+ },
+ {
+  "name": "wspace-pairs: 忽略配对预算",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "if total_pairs > max_pairs {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "pair_budget_is_honest"
+ },
+ {
+  "name": "wspace-mcp: pairs 开关被忽略",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "if flag(args, \"pairs\") {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "propose_pairs_returns_two_edit_candidates"
+ },
+ {
+  "name": "wspace-cli: --pairs 开关被忽略",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "if parsed.switches.contains(\"pairs\") {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
  }
 ]

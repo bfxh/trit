@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：两编辑批量提议）
+
+- `analyze_pairs`：枚举全部**不同坐标**的点编辑对，实测 `after_loss` / `fixed` / `broken` /
+  `changed` 并按 `gain` 排序；候选对数超过 `max_pairs` 直接报 `PairBudget`，不静默截断。
+- CLI `propose --pairs [--max-pairs N]`；MCP `wsp_propose` 增加 `pairs` / `max_pairs`；
+  返回里 `depth=1|2` 区分单点与配对。
+- 读数：两处 trit 破坏后单点提议全部 `after_loss>0`，配对 top 修到 0 并可回放；
+  `[2,3,1]` 的 26 个候选给出 312 对（325 对减去 13 对同坐标）。
+- 测试 80 + 1 doctest（新增 5 条配对不变量/预算/同坐标过滤）；变异 29 → **34 条，34/34 caught**；
+  test_surface 台账 2,254 → 2,260。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py 全过。
+
 ### Added（trit-wspace：审计日志的行为链）
 
 - `record_with_oracle`：记录时存下验证集规范 + 前后**行为指纹**；`replay_net` 同时核对

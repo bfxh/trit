@@ -229,6 +229,7 @@ fn propose_returns_replayable_ranked_candidates() {
     );
     assert_eq!(result["isError"], false);
     let value = payload(&result);
+    assert_eq!(value["depth"].as_u64(), Some(1));
     assert!(value["before_loss"].as_u64().expect("before") > 0);
     let candidates = value["candidates"].as_array().expect("candidates");
     assert!(!candidates.is_empty() && candidates.len() <= 4);
@@ -241,6 +242,56 @@ fn propose_returns_replayable_ranked_candidates() {
         "edits": [top["edit"].clone()],
     }))
     .expect("returned edit must be a valid patch");
+    let mut fixed = broken.clone();
+    patch.apply(&mut fixed).expect("apply");
+    assert!(xor_oracle_net_check(&fixed));
+}
+
+#[test]
+fn propose_pairs_returns_two_edit_candidates() {
+    let mut broken = xor_net();
+    Patch::new(vec![
+        Edit::SetTrit {
+            layer: 0,
+            row: 0,
+            col: 0,
+            to: Trit::Zero,
+        },
+        Edit::SetTrit {
+            layer: 1,
+            row: 0,
+            col: 0,
+            to: Trit::Pos,
+        },
+    ])
+    .apply(&mut broken)
+    .expect("corrupt");
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_propose",
+        json!({
+            "artifact": to_wsp(&broken),
+            "oracle": xor_oracle(),
+            "pairs": true,
+            "limit": 4,
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert_eq!(value["depth"].as_u64(), Some(2));
+    let candidates = value["candidates"].as_array().expect("candidates");
+    assert!(!candidates.is_empty() && candidates.len() <= 4);
+    let top = &candidates[0];
+    assert_eq!(top["after_loss"].as_u64(), Some(0));
+    let edits = top["edits"].as_array().expect("edits");
+    assert_eq!(edits.len(), 2);
+
+    let patch = trit_wspace::wire::patch_from_value(&json!({
+        "version": 1,
+        "edits": edits,
+    }))
+    .expect("pair must be a valid patch");
     let mut fixed = broken.clone();
     patch.apply(&mut fixed).expect("apply");
     assert!(xor_oracle_net_check(&fixed));
