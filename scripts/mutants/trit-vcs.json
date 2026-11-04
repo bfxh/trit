@@ -340,5 +340,68 @@
   "filter": "partial_pull_sends_well_under_a_tenth",
   "pkg": "trit-vcs",
   "runner": "cargo"
+ },
+ {
+  "name": "vcs: 重叠编辑也当干净（冲突永不出现）",
+  "file": "crates/trit-vcs/src/merge.rs",
+  "old": "        } else if only_ours\n            || ours_out == theirs_out\n            || normalize(&ours_out) == normalize(&theirs_out)\n        {",
+  "new": "        } else if true\n        {",
+  "filter": "overlapping_edits_become_one_structured_conflict",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 同窗口两侧只差空白也判冲突（伪冲突回来了）",
+  "file": "crates/trit-vcs/src/merge.rs",
+  "old": "        } else if only_ours\n            || ours_out == theirs_out\n            || normalize(&ours_out) == normalize(&theirs_out)\n        {",
+  "new": "        } else if only_ours || ours_out == theirs_out\n        {",
+  "filter": "formatting_only_difference_is_not_a_conflict",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 一侧只做格式化也照 diff（格式噪音变成改动）",
+  "file": "crates/trit-vcs/src/merge.rs",
+  "old": "    if normalize(ours) == normalize(base) {",
+  "new": "    if false {",
+  "filter": "formatting_only_difference_is_not_a_conflict",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 删除 vs 未变也判争用（单边删除合不了）",
+  "file": "crates/trit-vcs/src/merge.rs",
+  "old": "            if changed_id == base_id {",
+  "new": "            if false {",
+  "filter": "delete_on_one_side_only_is_clean",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 不自动找公共祖先（两侧都当新增）",
+  "file": "crates/trit-vcs/src/merge.rs",
+  "old": "        None => repo.merge_base(ours, theirs)?,",
+  "new": "        None => None,",
+  "filter": "non_overlapping_edits_merge_clean_via_cli",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 二进制当文本合（NUL 也按行切）",
+  "file": "crates/trit-vcs/src/merge.rs",
+  "old": "    if binary(ours) || binary(theirs) || base.is_some_and(binary) {",
+  "new": "    if false {",
+  "filter": "binary_files_are_conflicts_not_line_merges",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 双方新增不标 add_add（当普通 content）",
+  "file": "crates/trit-vcs/src/merge.rs",
+  "old": "                let kind = if base_id.is_none() {",
+  "new": "                let kind = if false {",
+  "filter": "two_different_additions_are_structured_add_add",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
  }
 ]

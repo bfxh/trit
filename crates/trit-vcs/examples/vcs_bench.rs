@@ -378,9 +378,92 @@ fn status_bench() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// 场景 E：结构化争用对象的成本（对象字节 vs 两份全文），以及伪冲突是否为 0。
+fn merge_bench() {
+    use trit_vcs::merge;
+
+    let root = std::env::temp_dir().join(format!("trit-vcs-merge-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let mut repo = Repo::init(&root).unwrap();
+    let commit = |repo: &mut Repo, body: &str, parent: Option<trit_vcs::Hash>, now: u64| {
+        let files: BTreeMap<String, Vec<u8>> =
+            [("f.txt".to_string(), body.as_bytes().to_vec())].into();
+        repo.stage(&files, now).unwrap();
+        repo.commit(CommitRequest {
+            message: format!("c{now}"),
+            session: "qoder:bench".to_string(),
+            claims: vec![ClaimSpec {
+                id: format!("c{now}"),
+                owner: "qoder:bench".to_string(),
+                paths: vec!["f.txt".to_string()],
+                acquired_at: 1,
+                expires_at: u64::MAX / 2,
+            }],
+            parent_override: parent,
+            now_secs: now,
+            ..Default::default()
+        })
+        .unwrap()
+        .id
+    };
+
+    let base_text: String = (0..300).map(|i| format!("line {i}\n")).collect();
+    let ours_text: String = (0..300)
+        .map(|i| {
+            if i == 150 {
+                "ours changed\n".to_string()
+            } else {
+                format!("line {i}\n")
+            }
+        })
+        .collect();
+    let theirs_text: String = (0..300)
+        .map(|i| {
+            if i == 150 {
+                "theirs changed\n".to_string()
+            } else {
+                format!("line {i}\n")
+            }
+        })
+        .collect();
+    let base = commit(&mut repo, &base_text, None, 1_000);
+    let ours = commit(&mut repo, &ours_text, Some(base), 1_001);
+    let theirs = commit(&mut repo, &theirs_text, Some(base), 1_002);
+    let outcome = merge::merge(&repo, &ours, &theirs, None).unwrap();
+    let conflict = &outcome.conflicts[0];
+    println!(
+        "冲突对象 {} B vs 两侧全文 {} B（{:.2}%，hunks={}）",
+        conflict.object_bytes(),
+        conflict.raw_bytes,
+        conflict.object_bytes() as f64 / conflict.raw_bytes as f64 * 100.0,
+        conflict.hunks.len()
+    );
+
+    // 伪冲突：一侧只加行尾空白，另一侧改真实行 ⇒ 冲突数必须为 0。
+    let format_ours = commit(
+        &mut repo,
+        &base_text.replace("line 2\n", "line 2   \n"),
+        Some(base),
+        1_003,
+    );
+    let format_theirs = commit(
+        &mut repo,
+        &base_text.replace("line 250\n", "changed 250\n"),
+        Some(base),
+        1_004,
+    );
+    let outcome = merge::merge(&repo, &format_ours, &format_theirs, None).unwrap();
+    println!("伪冲突（格式化）冲突数 = {}", outcome.conflicts.len());
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 fn main() {
     if std::env::args().any(|arg| arg == "--status") {
         status_bench();
+        return;
+    }
+    if std::env::args().any(|arg| arg == "--merge") {
+        merge_bench();
         return;
     }
     let files = 60usize;
