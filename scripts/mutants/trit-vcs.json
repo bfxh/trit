@@ -74,7 +74,7 @@
  {
   "name": "vcs: 第二条提交不记父提交（历史断成散点）",
   "file": "crates/trit-vcs/src/repo.rs",
-  "old": "        if let Some(parent) = self.head()? {",
+  "old": "        if let Some(parent) = parent {",
   "new": "        if let Some(parent) = None::<Hash> {",
   "filter": "second_commit_links_to_first",
   "pkg": "trit-vcs",
@@ -203,6 +203,96 @@
   "old": "        Err(WitnessError::Failed(code)) => Err(RepoError::WitnessFailed(code)),",
   "new": "        Err(WitnessError::Failed(_)) => Ok(()),",
   "filter": "failing_witness_cannot_be_committed",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 不读 stat 缓存（每次都重读全部文件）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "                Some(cached) if cached.matches(size, mtime) => {",
+  "new": "                Some(cached) if false => {",
+  "filter": "status_reuses_stat_cache_for_unchanged_files",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: stat 缓存只看大小不看 mtime（同大小改写漏掉）",
+  "file": "crates/trit-vcs/src/status_cache.rs",
+  "old": "        self.size == size && self.mtime_ns == mtime_ns",
+  "new": "        self.size == size",
+  "filter": "same_size_rewrite_is_detected",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: status 不落缓存（第二次仍然全读）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "    cache.save(&cache_file)?;",
+  "new": "    let _ = &cache_file;",
+  "filter": "status_reuses_stat_cache_for_unchanged_files",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: status 看不到删除（缓存里有的就当存在）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "        if !cache.files.contains_key(path) {",
+  "new": "        if false {",
+  "filter": "status_sees_added_modified_deleted",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 认领范围不折叠（>256 个文件的提交永远判未认领）",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "            .any(|claim| claim.paths.iter().any(|scope| covers(scope, path)))",
+  "new": "            .any(|_claim| false)",
+  "filter": "commit_with_many_files_uses_claim_scopes",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 策略要求 intent 时也放行",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "            None if policy.require_intent => return Err(RepoError::IntentRequired),",
+  "new": "            None if false => return Err(RepoError::IntentRequired),",
+  "filter": "policy_can_require_an_intent",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: intent 不要求 goal",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "                if intent.goal.trim().is_empty() {",
+  "new": "                if false {",
+  "filter": "intent_needs_a_goal_and_accept",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: intent 不要求 accept",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "                if intent.accept.iter().all(|item| item.trim().is_empty()) {",
+  "new": "                if false {",
+  "filter": "intent_needs_a_goal_and_accept",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: intent 基线错配也放行",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "                    (Some(declared), Some(actual)) if declared != actual => {",
+  "new": "                    (Some(declared), Some(actual)) if false => {",
+  "filter": "intent_base_must_match_parent_tree",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: intent 不自动填父树（基线永远空着）",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "                    (None, Some(actual)) => intent.base = Some(actual),",
+  "new": "                    (None, Some(_actual)) => {}",
+  "filter": "intent_base_must_match_parent_tree",
   "pkg": "trit-vcs",
   "runner": "cargo"
  }

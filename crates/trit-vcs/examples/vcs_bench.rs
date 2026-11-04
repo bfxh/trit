@@ -232,7 +232,157 @@ fn bench_renumber() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+fn floor_walk(root: &std::path::Path) -> (std::time::Duration, usize) {
+    let start = Instant::now();
+    let mut stack = vec![root.to_path_buf()];
+    let mut files = 0usize;
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name == ".tritvcs" || name == ".git" {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else {
+                continue;
+            };
+            if meta.is_dir() {
+                stack.push(entry.path());
+            } else {
+                files += 1;
+            }
+        }
+    }
+    (start.elapsed(), files)
+}
+
+/// 场景 D：10k 文件的热 `status` 对照（stat 缓存 vs git 的 index 缓存），外加"纯 stat"地板。
+fn status_bench() {
+    use trit_vcs::worktree;
+
+    let files = 10_000usize;
+    let root = std::env::temp_dir().join(format!("trit-vcs-status-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let trit_root = root.join("trit");
+    let git_root = root.join("git");
+
+    let mut entries = BTreeMap::new();
+    for i in 0..files {
+        let body = format!("file {i:05}\n").repeat(8);
+        entries.insert(
+            format!("gen/d{:03}/f{i:05}.txt", i / 100),
+            body.into_bytes(),
+        );
+    }
+
+    std::fs::create_dir_all(&trit_root).unwrap();
+    let mut repo = Repo::init(&trit_root).unwrap();
+    for (path, bytes) in &entries {
+        let target = trit_root.join(path);
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        std::fs::write(target, bytes).unwrap();
+    }
+    repo.stage(&entries, 1_000).unwrap();
+    repo.commit(CommitRequest {
+        message: "status bench".to_string(),
+        session: "qoder:bench".to_string(),
+        claims: vec![ClaimSpec {
+            id: "c1".to_string(),
+            owner: "qoder:bench".to_string(),
+            paths: vec!["gen".to_string()],
+            acquired_at: 1,
+            expires_at: u64::MAX / 2,
+        }],
+        now_secs: 1_000,
+        ..Default::default()
+    })
+    .unwrap();
+
+    let cold_start = Instant::now();
+    let (cold_changes, cold_stats) = worktree::status_with_cache(&repo).unwrap();
+    let cold = cold_start.elapsed();
+    assert!(cold_changes.is_empty());
+
+    let mut warm_best = std::time::Duration::MAX;
+    let mut warm_stats = worktree::StatusStats::default();
+    for _ in 0..3 {
+        let start = Instant::now();
+        let (changes, stats) = worktree::status_with_cache(&repo).unwrap();
+        let elapsed = start.elapsed();
+        assert!(changes.is_empty());
+        warm_stats = stats;
+        warm_best = warm_best.min(elapsed);
+    }
+
+    let (floor, floor_files) = floor_walk(&trit_root);
+
+    std::fs::create_dir_all(&git_root).unwrap();
+    let git = |args: &[&str]| {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(&git_root)
+            .output()
+            .expect("git 不可用");
+        assert!(
+            status.status.success(),
+            "git {args:?} 失败：{}",
+            String::from_utf8_lossy(&status.stderr)
+        );
+    };
+    git(&["init", "-q"]);
+    git(&["config", "user.email", "bench@example.com"]);
+    git(&["config", "user.name", "bench"]);
+    for (path, bytes) in &entries {
+        let target = git_root.join(path);
+        std::fs::create_dir_all(target.parent().unwrap()).unwrap();
+        std::fs::write(target, bytes).unwrap();
+    }
+    git(&["add", "-A"]);
+    git(&["commit", "-qm", "base"]);
+
+    let mut git_best = std::time::Duration::MAX;
+    for _ in 0..3 {
+        let start = Instant::now();
+        let output = Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(&git_root)
+            .output()
+            .expect("git 不可用");
+        assert!(output.status.success());
+        assert!(output.stdout.is_empty(), "git status 应干净");
+        git_best = git_best.min(start.elapsed());
+    }
+
+    let cold_ms = cold.as_secs_f64() * 1000.0;
+    let warm_ms = warm_best.as_secs_f64() * 1000.0;
+    let git_ms = git_best.as_secs_f64() * 1000.0;
+    let ratio = warm_ms / git_ms.max(0.001);
+    println!("场景 D：{} 个文件（{} 目录），同机 3 次取最好", files, 100);
+    println!(
+        "  trit 冷：{cold_ms:.0} ms（读 {} / 缓存 {}）",
+        cold_stats.hashed, cold_stats.cached
+    );
+    println!(
+        "  trit 热：{warm_ms:.0} ms（读 {} / 缓存 {}）",
+        warm_stats.hashed, warm_stats.cached
+    );
+    println!("  git  热：{git_ms:.0} ms");
+    println!(
+        "  地板（纯走目录 + metadata）：{:.0} ms（{} 文件）",
+        floor.as_secs_f64() * 1000.0,
+        floor_files
+    );
+    println!("  trit/git = {ratio:.1}×（目标 ≤2×；地板决定下限）");
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 fn main() {
+    if std::env::args().any(|arg| arg == "--status") {
+        status_bench();
+        return;
+    }
     let files = 60usize;
     let lines = 400usize;
     let rounds = 20usize;
