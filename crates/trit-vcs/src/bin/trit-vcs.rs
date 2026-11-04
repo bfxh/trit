@@ -10,6 +10,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use trit_vcs::bundle;
 use trit_vcs::gate::{ClaimSpec, Verdict, load_claims};
+use trit_vcs::merge;
 use trit_vcs::model::Intent;
 use trit_vcs::repo::{CommitRequest, Repo};
 use trit_vcs::witness::{RunOutput, Witness};
@@ -33,6 +34,7 @@ fn usage() -> ExitCode {
          trit-vcs admit <提交id> --witness FILE [--repo PATH]\n  \
          trit-vcs export <树id> --out FILE [--prefix DIR] [--dest REPO] [--repo SRC]\n  \
          trit-vcs import <包文件> [--repo DEST]\n  \
+         trit-vcs merge <ours提交> <theirs提交> [--base <提交>] [--json] [--repo PATH]\n  \
          trit-vcs log [--json] [--repo PATH]\n  \
          trit-vcs verify [--repo PATH]\n  \
          trit-vcs stats [--repo PATH]"
@@ -259,6 +261,7 @@ fn main() -> ExitCode {
                 allow_unclaimed: has(&args, "--allow-unclaimed"),
                 witness,
                 intent,
+                parent_override: None,
                 now_secs: now_secs(),
             };
             match repo.commit(request) {
@@ -480,6 +483,86 @@ fn main() -> ExitCode {
                             .unwrap_or_else(|| "-".to_string())
                     );
                     ExitCode::SUCCESS
+                }
+                Err(err) => fail(err.to_string()),
+            }
+        }
+        "merge" => {
+            let root = repo_path(&args);
+            let repo = match Repo::open(&root) {
+                Ok(repo) => repo,
+                Err(err) => return fail(err.to_string()),
+            };
+            let ids = positionals(&args, &["--repo", "--base"]);
+            if ids.len() < 2 {
+                eprintln!("merge 需要两个提交 id");
+                return ExitCode::from(2);
+            }
+            let (Some(ours), Some(theirs)) = (
+                trit_vcs::Hash::from_hex(&ids[0]),
+                trit_vcs::Hash::from_hex(&ids[1]),
+            ) else {
+                return fail("提交 id 不合法");
+            };
+            let base = match flag(&args, "--base") {
+                Some(value) => match trit_vcs::Hash::from_hex(value) {
+                    Some(id) => Some(id),
+                    None => return fail(format!("不是合法提交 id：{value}")),
+                },
+                None => None,
+            };
+            match merge::merge(&repo, &ours, &theirs, base.as_ref()) {
+                Ok(outcome) => {
+                    if has(&args, "--json") {
+                        let conflicts: Vec<serde_json::Value> = outcome
+                            .conflicts
+                            .iter()
+                            .map(|conflict| {
+                                let mut value = serde_json::to_value(conflict).unwrap_or_default();
+                                value["object_bytes"] = serde_json::json!(conflict.object_bytes());
+                                value["id"] = serde_json::json!(conflict.id().to_hex());
+                                value
+                            })
+                            .collect();
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&serde_json::json!({
+                                "tree": outcome.tree.map(|tree| tree.to_hex()),
+                                "merged_files": outcome.merged_files,
+                                "removed_files": outcome.removed_files,
+                                "conflicts": conflicts,
+                            }))
+                            .unwrap_or_default()
+                        );
+                    } else if outcome.conflicts.is_empty() {
+                        println!(
+                            "合并干净：树 {}（{} 个文件合并、{} 个删除）",
+                            outcome.tree.map(|tree| tree.short()).unwrap_or_default(),
+                            outcome.merged_files,
+                            outcome.removed_files
+                        );
+                    } else {
+                        println!(
+                            "冲突 {} 处（结构化对象，无冲突标记）：",
+                            outcome.conflicts.len()
+                        );
+                        for conflict in &outcome.conflicts {
+                            println!(
+                                "  {}  {:?}  hunks={}  对象 {} B / 原文 {} B  id {}",
+                                conflict.path,
+                                conflict.kind,
+                                conflict.hunks.len(),
+                                conflict.object_bytes(),
+                                conflict.raw_bytes,
+                                conflict.id().short()
+                            );
+                        }
+                    }
+                    if outcome.conflicts.is_empty() {
+                        ExitCode::SUCCESS
+                    } else {
+                        ExitCode::FAILURE
+                    }
                 }
                 Err(err) => fail(err.to_string()),
             }
