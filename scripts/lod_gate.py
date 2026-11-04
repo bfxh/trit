@@ -23,26 +23,41 @@ import sys
 
 
 def levels_from(sweep_path):
-    """把 sweep.json + 各级清单读成按「粗 → 细」排序的级别表。"""
+    """把 sweep.json + 各级清单读成按「粗 → 细」排序的级别表。
+
+    同一 `cell` 的多条行（多种子）先聚合：IoU 取均值、三角面取均值、状态取「全部 verified」。
+    不聚合会把单个种子当成一级——门就会挑到任意一行（2026-11-05 抓到）。
+    """
     d = json.loads(pathlib.Path(sweep_path).read_text(encoding="utf-8"))
-    out = []
+    groups = {}
     for r in d.get("rows", []):
         cfg = r.get("config") or {}
-        model = pathlib.Path(str(r.get("model", "")))
-        mp = pathlib.Path(str(model) + ".manifest.json")
-        lv = {
-            "cell": cfg.get("cell"),
-            "iou": (r.get("metrics") or {}).get("iou_mean"),
-            "tris": None,
-            "status": r.get("status"),
-            "why": None,
-        }
+        cell = cfg.get("cell")
+        g = groups.setdefault(
+            cell, {"cell": cell, "ious": [], "tris": [], "status": [], "why": None}
+        )
+        g["status"].append(r.get("status"))
+        iou = (r.get("metrics") or {}).get("iou_mean")
+        if isinstance(iou, (int, float)):
+            g["ious"].append(float(iou))
+        mp = pathlib.Path(str(pathlib.Path(str(r.get("model", "")))) + ".manifest.json")
         if not mp.exists():
-            lv["why"] = f"缺清单 {mp}"
-        else:
-            man = json.loads(mp.read_text(encoding="utf-8"))
-            lv["tris"] = sum(int(x.get("tris", 0)) for x in man.get("result", {}).get("rows", []))
-        out.append(lv)
+            g["why"] = f"缺清单 {mp}"
+            continue
+        man = json.loads(mp.read_text(encoding="utf-8"))
+        g["tris"].append(sum(int(x.get("tris", 0)) for x in man.get("result", {}).get("rows", [])))
+    out = []
+    for g in groups.values():
+        out.append(
+            {
+                "cell": g["cell"],
+                "iou": (sum(g["ious"]) / len(g["ious"])) if g["ious"] else None,
+                "tris": round(sum(g["tris"]) / len(g["tris"])) if g["tris"] else None,
+                "n": len(g["status"]),
+                "status": "verified" if all(s == "verified" for s in g["status"]) else "unverified",
+                "why": g["why"],
+            }
+        )
     out.sort(key=lambda x: -(x["cell"] or 0))
     return out
 
@@ -81,7 +96,7 @@ def report(levels, min_iou, ratio):
         share = ""
         if fine and lv.get("tris") is not None:
             share = f"  体积比 {lv['tris'] / fine:.3f}"
-        print(f"  cell {cell:>5} m  IoU {iou:>7}  tris {tris:>9}{share}")
+        print(f"  cell {cell:>5} m  n={lv.get('n', 1)}  IoU {iou:>7}  tris {tris:>9}{share}")
     passed, reasons = check(levels, min_iou, ratio)
     if passed:
         print("RESULT: PASS")
@@ -98,12 +113,12 @@ def self_test():
     def build(root, rows):
         """rows: [(cell, iou, tris, status)]；写清单与 sweep.json。"""
         sweep = {"rows": []}
-        for row in rows:
+        for i, row in enumerate(rows):
             cell, iou, tris = row[0], row[1], row[2]
             status = row[3] if len(row) > 3 else "verified"
-            model = root / f"cell{cell}.occ1"
+            model = root / f"cell{cell}_{i}.occ1"
             model.write_bytes(b"OCC1 1 1\n")
-            (root / f"cell{cell}.occ1.manifest.json").write_text(
+            (root / f"cell{cell}_{i}.occ1.manifest.json").write_text(
                 json.dumps({"result": {"rows": [{"tris": tris}]}}), encoding="utf-8"
             )
             sweep["rows"].append(
@@ -145,6 +160,13 @@ def self_test():
         p = build(root, [(0.04, 0.64, 200), (0.01, 0.70, 1468)])
         cases.append(("比例 4 通过", check(levels_from(p))[0], True))
         cases.append(("比例收紧到 8 失败", check(levels_from(p), ratio=8)[0], False))
+        # 多 seed：同一 cell 先聚合（均值），不能当成两级/多级
+        p = build(root, [(0.04, 0.60, 80), (0.04, 0.70, 100), (0.01, 0.70, 1468)])
+        lv = levels_from(p)
+        cases.append(("多 seed 级数", len(lv), 2))
+        cases.append(("多 seed 均值", round(lv[0]["iou"], 4), 0.65))
+        cases.append(("多 seed 三角面均值", lv[0]["tris"], 90))
+        cases.append(("多 seed 计数", lv[0]["n"], 2))
     bad = [n for n, got, want in cases if got != want]
     for n, got, want in cases:
         print(f"  {n}: {'ok' if got == want else 'FAIL'}（got={got} want={want}）")
