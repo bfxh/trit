@@ -145,6 +145,36 @@ fn require_passing(witness: &Witness) -> Result<(), RepoError> {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct CommitFilter {
+    pub tag: Option<String>,
+    /// 证据文本的子串
+    pub evidence: Option<String>,
+    pub session: Option<String>,
+    /// 提交说明的子串
+    pub grep: Option<String>,
+}
+
+impl CommitFilter {
+    pub fn matches(&self, commit: &Commit) -> bool {
+        self.tag
+            .as_ref()
+            .is_none_or(|tag| commit.tags.iter().any(|have| have == tag))
+            && self
+                .evidence
+                .as_ref()
+                .is_none_or(|needle| commit.evidence.iter().any(|line| line.contains(needle)))
+            && self
+                .session
+                .as_ref()
+                .is_none_or(|session| &commit.session == session)
+            && self
+                .grep
+                .as_ref()
+                .is_none_or(|needle| commit.message.contains(needle))
+    }
+}
+
 pub struct Repo {
     root: PathBuf,
     store: Store,
@@ -435,6 +465,15 @@ impl Repo {
             guard += 1;
         }
         Ok(out)
+    }
+
+    /// 按标签/证据/会话/说明过滤提交（新→旧）。
+    pub fn query(&self, filter: &CommitFilter) -> Result<Vec<(Hash, Commit)>, RepoError> {
+        Ok(self
+            .log()?
+            .into_iter()
+            .filter(|(_, commit)| filter.matches(commit))
+            .collect())
     }
 
     /// 两个提交的最近公共祖先（只看第一父链；线性历史够用）。
