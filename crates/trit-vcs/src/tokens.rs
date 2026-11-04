@@ -155,7 +155,7 @@ mod tests {
         let dropped = cap_rows(&mut value, exact - 1);
         assert!(dropped >= 1, "退一元也得丢行，否则'压进预算'是假的");
         assert!(
-            estimate(&value.to_string()) <= exact - 1,
+            estimate(&value.to_string()) < exact,
             "压完必须连元数据一起算仍在预算内：{}",
             estimate(&value.to_string())
         );
