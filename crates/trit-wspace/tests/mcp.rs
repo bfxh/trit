@@ -53,13 +53,13 @@ fn initialize_reports_protocol_and_server_name() {
 }
 
 #[test]
-fn lists_exactly_six_tools() {
+fn lists_exactly_seven_tools() {
     let mut server = Mcp::new();
     let response = server
         .dispatch(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))
         .expect("response");
     let listed = response["result"]["tools"].as_array().expect("tools");
-    assert_eq!(listed.len(), 6);
+    assert_eq!(listed.len(), 7);
     let names: Vec<&str> = listed
         .iter()
         .map(|tool| tool["name"].as_str().expect("name"))
@@ -69,12 +69,13 @@ fn lists_exactly_six_tools() {
         "wsp_verify",
         "wsp_patch",
         "wsp_repair",
+        "wsp_propose",
         "wsp_diff",
         "wsp_merge",
     ] {
         assert!(names.contains(&expected), "缺少工具 {expected}");
     }
-    assert_eq!(tools().len(), 6);
+    assert_eq!(tools().len(), 7);
 }
 
 #[test]
@@ -206,6 +207,42 @@ fn xor_oracle_net_check(net: &Net) -> bool {
         .expect("oracle")
         .exact(net)
         .expect("exact")
+}
+
+#[test]
+fn propose_returns_replayable_ranked_candidates() {
+    let mut broken = xor_net();
+    Patch::new(vec![Edit::SetTrit {
+        layer: 0,
+        row: 0,
+        col: 0,
+        to: Trit::Zero,
+    }])
+    .apply(&mut broken)
+    .expect("corrupt");
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_propose",
+        json!({"artifact": to_wsp(&broken), "oracle": xor_oracle(), "limit": 4}),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert!(value["before_loss"].as_u64().expect("before") > 0);
+    let candidates = value["candidates"].as_array().expect("candidates");
+    assert!(!candidates.is_empty() && candidates.len() <= 4);
+    let top = &candidates[0];
+    assert!(top["gain"].as_i64().expect("gain") > 0);
+    assert_eq!(top["after_loss"].as_u64(), Some(0));
+
+    let patch = trit_wspace::wire::patch_from_value(&json!({
+        "version": 1,
+        "edits": [top["edit"].clone()],
+    }))
+    .expect("returned edit must be a valid patch");
+    let mut fixed = broken.clone();
+    patch.apply(&mut fixed).expect("apply");
+    assert!(xor_oracle_net_check(&fixed));
 }
 
 #[test]

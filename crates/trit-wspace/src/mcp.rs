@@ -1,12 +1,13 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，六个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，七个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
-//! 求最小补丁、求差集、合并。每次调用都从 WSP1 文本开始，不依赖服务端保存状态。
+//! 求最小补丁、提议单点编辑、求差集、合并。每次调用都从 WSP1 文本开始，不依赖服务端保存状态。
 
 use std::io::{self, BufRead, Write as IoWrite};
 
 use serde_json::{Value, json};
 
+use crate::analyze;
 use crate::codec::{from_wsp, to_wsp};
 use crate::edit::Patch;
 use crate::merge::{merge_aligned, merge_vote};
@@ -37,7 +38,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 六个工具。改数量必须同时改测试断言。
+/// 七个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -80,6 +81,16 @@ pub fn tools() -> Vec<Value> {
                 "max_edits": {"type": "integer"},
                 "beam_width": {"type": "integer"},
                 "exhaustive_states": {"type": "integer"},
+            }),
+            &["oracle"],
+        ),
+        tool(
+            "wsp_propose",
+            "对每个单点编辑实测失配变化并按收益排序（模型提议、库复核；不改工件）",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "oracle": {"type": "object"},
+                "limit": {"type": "integer", "description": "返回条数，默认 16；0=全部"},
             }),
             &["oracle"],
         ),
@@ -224,6 +235,13 @@ impl Mcp {
                         "before_loss": oracle.loss(&net).map_err(err)?,
                     })),
                 }
+            }
+            "wsp_propose" => {
+                let net = load(args)?;
+                let oracle = required_oracle(args)?;
+                let limit = opt_usize(args, "limit", 16);
+                let analysis = analyze::analyze(&net, &oracle, limit).map_err(err)?;
+                Ok(wire::analysis_to_value(&analysis))
             }
             "wsp_diff" => {
                 let a = load_key(args, "a")?;

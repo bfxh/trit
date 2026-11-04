@@ -24,6 +24,7 @@ trit-wspace <command>
   verify <artifact|-> --oracle <json|-> [--limit N]
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
+  propose <artifact|-> --oracle <json|-> [--limit N]
   diff <a|-> <b|->
   merge <a|-> <b|-> [--aligned] [--out <path>]
   mcp";
@@ -51,6 +52,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "verify" => cmd_verify(&args[1..]),
         "patch" => cmd_patch(&args[1..]),
         "repair" => cmd_repair(&args[1..]),
+        "propose" => cmd_propose(&args[1..]),
         "diff" => cmd_diff(&args[1..]),
         "merge" => cmd_merge(&args[1..]),
         "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
@@ -164,6 +166,18 @@ fn cmd_repair(args: &[String]) -> Result<(), String> {
             "before_loss": oracle.loss(&net).map_err(err)?,
         })),
     }
+}
+
+fn cmd_propose(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    let path = one(&parsed, "propose <artifact|-> --oracle <json|->")?;
+    let oracle_path = value(&parsed, "oracle")?;
+    no_double_stdin(&[path, oracle_path])?;
+    let net = load_net(path)?;
+    let oracle = load_oracle(oracle_path)?;
+    let limit = opt_usize(&parsed, "limit", 16)?;
+    let analysis = crate::analyze::analyze(&net, &oracle, limit).map_err(err)?;
+    emit(&wire::analysis_to_value(&analysis))
 }
 
 fn cmd_diff(args: &[String]) -> Result<(), String> {

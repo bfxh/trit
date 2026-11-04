@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：单点编辑提议器）
+
+- 新模块 `analyze`：枚举全部点编辑（改一个 trit / 偏置），对每条**实测**
+  `after_loss` / `fixed` / `broken` / `changed`，按 `gain` 降序、失配数升序、坐标字典序排序。
+  候选里的数字不是打分估计，回放补丁必须逐项相等。
+- CLI 新增 `propose`；MCP 新增 `wsp_propose`（工具数 6 → 7）。
+- 读数：2-2-1 XOR 被单 trit 打坏后，top 候选 `after_loss=0`；
+  单层 2→1 网络没有任何单编辑能把 XOR 修到 0，但常量输出能把 4 条失配降到 2 条。
+- 测试 59 → **64 + 1 doctest**（新增 4 提议器不变量、1 MCP 提议回放）；
+  变异 13 → **18 条，18/18 caught**；test_surface 台账 2,228 → 2,233。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(672 文件 0 超) /
+  publish_graph / hazard_gate(0 findings) / test_surface 全过。
+- 本机 release 二进制已重装（`~/.qoder/bin/trit-wspace.exe`），MCP 工具清单已含 `wsp_propose`。
+
 ### Added（trit-wspace：模型/脚本工具面）
 
 - 新二进制 `trit-wspace`：`read / verify / patch / repair / diff / merge / mcp` 七个子命令；

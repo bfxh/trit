@@ -245,7 +245,7 @@ fn rank(left: &State, right: &State) -> std::cmp::Ordering {
 }
 
 /// 所有点编辑候选（每个三值位置的另外两个取值）。
-fn candidates(net: &Net) -> Vec<Edit> {
+pub(crate) fn candidates(net: &Net) -> Vec<Edit> {
     let mut out = Vec::new();
     for (layer, weights) in net.layers().iter().enumerate() {
         for row in 0..weights.rows() {

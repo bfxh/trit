@@ -25,8 +25,9 @@
 //!   [`Trit`] 是唯一的权重单位。
 //! - **编辑层**：[`Edit`] / [`Patch`] 是事务式补丁；[`Journal`] 支持逐位回滚；
 //!   [`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行。
-//! - **搜索层**：[`mod@repair`] 不走梯度，在离散空间里找精确最小补丁；[`merge`] 负责消掉
-//!   隐藏单元置换对称性后再合并。
+//! - 程序语义：[`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
+//! - 搜索层：[`mod@repair`] 不走梯度，在离散空间里找精确最小补丁；[`mod@analyze`] 对每个单点
+//!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`merge`] 负责消掉隐藏单元置换对称性后再合并。
 //!
 //! 规范自由度（不变量）：
 //!
@@ -78,13 +79,14 @@
 //!
 //! - CLI：`read / verify / patch / repair / diff / merge`，输入 `-` 读 stdin，报告一律 JSON；
 //! - MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、
-//!   `wsp_repair`、`wsp_diff`、`wsp_merge` 六个工具，工具参数与返回格式见 [`wire`]。
+//!   `wsp_repair`、`wsp_propose`、`wsp_diff`、`wsp_merge` 七个工具，工具参数与返回格式见 [`wire`]。
 //!
 //! 补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod analyze;
 pub mod cli;
 pub mod codec;
 pub mod edit;
@@ -99,6 +101,7 @@ pub mod repair;
 pub mod trit;
 pub mod wire;
 
+pub use analyze::{Analysis, EditImpact, analyze};
 pub use codec::{checksum, from_wsp, to_wsp};
 pub use edit::{Cost, Edit, Journal, Patch};
 pub use error::{Error, Result};

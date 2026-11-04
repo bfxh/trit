@@ -62,6 +62,7 @@ trit-wspace read   xor.wsp
 trit-wspace verify xor.wsp --oracle xor.json
 trit-wspace patch  xor.wsp --patch break.json --oracle xor.json --require-after --out fixed.wsp
 trit-wspace repair broken.wsp --oracle xor.json --max-edits 2 --out fixed.wsp
+trit-wspace propose broken.wsp --oracle xor.json --limit 8
 trit-wspace diff   a.wsp b.wsp
 trit-wspace merge  a.wsp b.wsp --aligned --out merged.wsp
 trit-wspace mcp
@@ -101,8 +102,12 @@ trit-wspace mcp
 }
 ```
 
-六个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_repair`、`wsp_diff`、`wsp_merge`。
+七个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_repair`、`wsp_propose`、`wsp_diff`、`wsp_merge`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
+
+`wsp_propose` 是“模型提议、库复核”的入口：对每个单点编辑**实测** `after_loss` /
+`fixed` / `broken` / `changed`，按 `gain` 排序返回；模型挑一条后走 `wsp_patch`，
+库仍会重新验证。候选里的数字不是打分估计。
 模板见 [`mcp.example.json`](mcp.example.json)。
 
 ## 论文与来源

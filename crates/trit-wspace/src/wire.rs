@@ -20,6 +20,7 @@
 
 use serde_json::{Value, json};
 
+use crate::analyze::{Analysis, EditImpact};
 use crate::codec::checksum;
 use crate::edit::{Cost, Edit, Patch};
 use crate::error::{Error, Result};
@@ -35,35 +36,37 @@ pub const PATCH_VERSION: u64 = 1;
 /// 补丁 → JSON。
 #[must_use]
 pub fn patch_to_value(patch: &Patch) -> Value {
-    let edits: Vec<Value> = patch
-        .edits()
-        .iter()
-        .map(|edit| match *edit {
-            Edit::SetTrit {
-                layer,
-                row,
-                col,
-                to,
-            } => json!({
-                "op": "set_trit", "layer": layer, "row": row, "col": col,
-                "to": to.to_char().to_string(),
-            }),
-            Edit::SetBias { layer, row, to } => json!({
-                "op": "set_bias", "layer": layer, "row": row,
-                "to": to.to_char().to_string(),
-            }),
-            Edit::SetScale { layer, row, to } => json!({
-                "op": "set_scale", "layer": layer, "row": row, "to": to,
-            }),
-            Edit::SwapRows { layer, a, b } => json!({
-                "op": "swap_rows", "layer": layer, "a": a, "b": b,
-            }),
-            Edit::NegateRow { layer, row } => json!({
-                "op": "negate_row", "layer": layer, "row": row,
-            }),
-        })
-        .collect();
+    let edits: Vec<Value> = patch.edits().iter().map(edit_to_value).collect();
     json!({"version": PATCH_VERSION, "edits": edits})
+}
+
+/// 单条编辑 → JSON。
+#[must_use]
+pub fn edit_to_value(edit: &Edit) -> Value {
+    match *edit {
+        Edit::SetTrit {
+            layer,
+            row,
+            col,
+            to,
+        } => json!({
+            "op": "set_trit", "layer": layer, "row": row, "col": col,
+            "to": to.to_char().to_string(),
+        }),
+        Edit::SetBias { layer, row, to } => json!({
+            "op": "set_bias", "layer": layer, "row": row,
+            "to": to.to_char().to_string(),
+        }),
+        Edit::SetScale { layer, row, to } => json!({
+            "op": "set_scale", "layer": layer, "row": row, "to": to,
+        }),
+        Edit::SwapRows { layer, a, b } => json!({
+            "op": "swap_rows", "layer": layer, "a": a, "b": b,
+        }),
+        Edit::NegateRow { layer, row } => json!({
+            "op": "negate_row", "layer": layer, "row": row,
+        }),
+    }
 }
 
 /// JSON → 补丁。缺 `version` 时按 1 处理；未知 op / 缺字段 / 非法三值都报错。
@@ -141,6 +144,35 @@ pub fn repair_to_value(repair: &Repair) -> Value {
         "after_loss": repair.after_loss,
         "evaluated": repair.evaluated,
         "patch": patch_to_value(&repair.patch),
+    })
+}
+
+/// 分析结果 → JSON。
+#[must_use]
+pub fn analysis_to_value(analysis: &Analysis) -> Value {
+    json!({
+        "before_loss": analysis.before_loss,
+        "evaluated": analysis.evaluated,
+        "exact": analysis.before_loss == 0,
+        "candidates": analysis
+            .candidates
+            .iter()
+            .map(impact_to_value)
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// 单条编辑的实测影响 → JSON。
+#[must_use]
+pub fn impact_to_value(impact: &EditImpact) -> Value {
+    json!({
+        "edit": edit_to_value(&impact.edit),
+        "before_loss": impact.before_loss,
+        "after_loss": impact.after_loss,
+        "gain": impact.gain,
+        "fixed": impact.fixed,
+        "broken": impact.broken,
+        "changed": impact.changed,
     })
 }
 

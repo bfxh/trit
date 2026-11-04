@@ -88,6 +88,19 @@ fn cli_read_verify_patch_repair_round_trip() {
     ]));
     assert_eq!(broken_verify["exact"], false);
 
+    let proposed = stdout_json(&run(&[
+        "propose",
+        &path_string(&broken),
+        "--oracle",
+        &path_string(&oracle),
+        "--limit",
+        "4",
+    ]));
+    let candidates = proposed["candidates"].as_array().expect("candidates");
+    assert!(!candidates.is_empty() && candidates.len() <= 4);
+    assert!(proposed["before_loss"].as_u64().expect("loss") > 0);
+    assert_eq!(candidates[0]["after_loss"].as_u64(), Some(0));
+
     let repaired = stdout_json(&run(&[
         "repair",
         &path_string(&broken),
