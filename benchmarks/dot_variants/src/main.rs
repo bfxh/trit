@@ -2,7 +2,7 @@
 //! 在**同机同输入交错测**下的实测差。判据来自 `docs/LAYERS.md` §4：各带实测差才允许并存。
 //!
 //! 跑法（release，调试构建测不出真东西）：
-//!     cargo run --release -p trit-dot --example dot_variants
+//!     cargo run --release --manifest-path benchmarks/dot_variants/Cargo.toml
 //!
 //! 计时口径：打包与数据生成**留在计时外**（一次性建好四种表示），计时段只做点积本身；
 //! 每个规模档把 4 个实现**交错跑 9 轮**（本机热漂移 ±25%，不交错会把 32% 读成 13%），

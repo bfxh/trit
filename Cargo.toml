@@ -1,7 +1,7 @@
 [workspace]
 resolver = "3"
 # cargo-fuzz 需要 nightly 与独立 target，不并入 workspace。
-exclude = ["fuzz", "t3"]
+exclude = ["fuzz", "t3", "benchmarks/dot_variants"]
 members = [
     "crates/trit-core",
     "crates/trit-learn",
@@ -58,7 +58,6 @@ trit-bdd = { path = "crates/trit-bdd", version = "0.12.0" }
 trit-policy = { path = "crates/trit-policy", version = "0.12.0" }
 trit-belnap = { path = "crates/trit-belnap", version = "0.12.0" }
 trit-codec = { path = "crates/trit-codec", version = "0.12.0" }
-trit-gpu = { path = "crates/trit-gpu", version = "0.12.0" }
 trit-wasm = { path = "crates/trit-wasm", version = "0.12.0" }
 sansheng = { path = "crates/sansheng", version = "0.12.0" }
 trit-schedule = { path = "crates/trit-schedule", version = "0.12.0" }
