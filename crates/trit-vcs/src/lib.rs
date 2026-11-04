@@ -23,6 +23,7 @@ pub mod gate;
 pub mod git_bridge;
 pub mod hash;
 pub mod journal;
+pub mod mcp;
 pub mod merge;
 pub mod model;
 pub mod repo;
