@@ -1813,6 +1813,7 @@ dependencies = [
  "trit-capacity",
  "trit-circuit",
  "trit-core",
+ "trit-count",
  "trit-eval",
  "trit-policy",
  "trit-sat",
