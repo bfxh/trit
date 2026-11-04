@@ -162,8 +162,8 @@ fn where_and_tests_use_techmap() {
 
 #[test]
 fn token_estimate_is_ascii_quarter_and_cjk_one() {
-    assert_eq!(estimate_tokens("abcd"), 1);
-    assert_eq!(estimate_tokens("abcdefgh"), 2);
-    assert_eq!(estimate_tokens("中文"), 2);
-    assert!(estimate_tokens("混合 mixed") >= 2);
+    assert_eq!(estimate("abcd"), 1);
+    assert_eq!(estimate("abcdefgh"), 2);
+    assert_eq!(estimate("中文"), 2);
+    assert!(estimate("混合 mixed") >= 2);
 }

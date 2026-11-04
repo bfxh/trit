@@ -21,6 +21,7 @@ mod central_sync;
 mod mcp_serve;
 mod query;
 mod transport;
+mod verdict;
 
 fn now_secs() -> u64 {
     SystemTime::now()
@@ -35,7 +36,8 @@ fn usage() -> ExitCode {
          trit-vcs init [--repo PATH]\n  \
          trit-vcs add <文件>... [--repo PATH]\n  \
          trit-vcs commit -m <说明> --owner <宿主:会话id> [--claims FILE] [--evidence 文本]... \n                   \
-         [--tag 标签]... [--witness FILE] [--goal 目标] [--accept 判据]... [--allow-unclaimed] [--repo PATH]\n  \
+         [--tag 标签]... [--witness FILE] [--goal 目标] [--accept 判据]... [--allow-unclaimed] [--dry-run] [--json] [--repo PATH]\n  \
+         trit-vcs preflight -m <说明> --owner <宿主:会话id> [同 commit 的参数] [--budget N] [--json] [--repo PATH]\n  \
          trit-vcs witness [--out FILE] [--repo PATH] -- <命令>...\n  \
          trit-vcs admit <提交id> --witness FILE [--repo PATH]\n  \
          trit-vcs export <树id> --out FILE [--prefix DIR] [--dest REPO] [--repo SRC]\n  \
@@ -46,9 +48,9 @@ fn usage() -> ExitCode {
          trit-vcs mcp [--repo PATH]\n  \
          trit-vcs git-import <git目录> [--map FILE] [--repo PATH]\n  \
          trit-vcs merge <ours提交> <theirs提交> [--base <提交>] [--json] [--repo PATH]\n  \
-         trit-vcs status [--prefix DIR] [--json] [--repo PATH]\n  \
+         trit-vcs status [--prefix DIR] [--json] [--budget N] [--repo PATH]\n  \
          trit-vcs checkout <提交id> [--prefix DIR] [--force] [--repo PATH]\n  \
-         trit-vcs log [--json] [--tag T] [--evidence 文本] [--session S] [--grep 文本] [--repo PATH]\n  \
+         trit-vcs log [--json] [--budget N] [--tag T] [--evidence 文本] [--session S] [--grep 文本] [--repo PATH]\n  \
          trit-vcs where <路径/测试/标签> --techmap FILE [--json]\n  \
          trit-vcs tests <路径/测试/标签> --techmap FILE\n  \
          trit-vcs explain <提交id> [--techmap FILE] [--json] [--repo PATH]\n  \
@@ -103,6 +105,42 @@ fn positionals(args: &[String], flags_with_value: &[&str]) -> Vec<String> {
         index += 1;
     }
     out
+}
+
+/// 从参数造提交请求：`commit` 与 `preflight` 共用，保证预检看的和真提交要的是同一份输入。
+fn commit_request(args: &[String]) -> Result<CommitRequest, String> {
+    let message = flag(args, "-m")
+        .or_else(|| flag(args, "--message"))
+        .ok_or("commit/preflight 需要 -m <说明>")?;
+    let owner = flag(args, "--owner").ok_or("commit/preflight 需要 --owner <宿主:会话id>")?;
+    let claims: Vec<ClaimSpec> = match flag(args, "--claims") {
+        Some(path) => load_claims(Path::new(path))?,
+        None => Vec::new(),
+    };
+    let witness = match flag(args, "--witness") {
+        Some(path) => Some(std::fs::read(path).map_err(|err| format!("{path}: {err}"))?),
+        None => None,
+    };
+    let accept = flags(args, "--accept");
+    let intent = match flag(args, "--goal") {
+        Some(goal) => Some(Intent::new(goal, accept)),
+        None if !accept.is_empty() => {
+            return Err("--accept 需要同时给 --goal".to_string());
+        }
+        None => None,
+    };
+    Ok(CommitRequest {
+        message: message.to_string(),
+        session: owner.to_string(),
+        claims,
+        evidence: flags(args, "--evidence"),
+        tags: flags(args, "--tag"),
+        allow_unclaimed: has(args, "--allow-unclaimed"),
+        witness,
+        intent,
+        parent_override: None,
+        now_secs: now_secs(),
+    })
 }
 
 /// 见证对象：优先暂存区（尚未提交的树），否则 HEAD 的树。
@@ -233,53 +271,21 @@ fn main() -> ExitCode {
         }
         "commit" => {
             let root = repo_path(&args);
-            let message = flag(&args, "-m")
-                .or_else(|| flag(&args, "--message"))
-                .unwrap_or("");
-            let owner = flag(&args, "--owner").unwrap_or("");
-            if message.is_empty() || owner.is_empty() {
-                eprintln!("commit 需要 -m <说明> 与 --owner <宿主:会话id>");
-                return ExitCode::from(2);
-            }
-            let claims: Vec<ClaimSpec> = match flag(&args, "--claims") {
-                Some(path) => match load_claims(Path::new(path)) {
-                    Ok(claims) => claims,
-                    Err(err) => return fail(err),
-                },
-                None => Vec::new(),
+            let request = match commit_request(&args) {
+                Ok(request) => request,
+                Err(err) => return fail(err),
             };
-            let witness = match flag(&args, "--witness") {
-                Some(path) => match std::fs::read(path) {
-                    Ok(bytes) => Some(bytes),
-                    Err(err) => return fail(format!("{path}: {err}")),
-                },
-                None => None,
-            };
-            let witness_digest = witness.as_ref().map(|bytes| trit_vcs::Hash::of(bytes));
-            let accept = flags(&args, "--accept");
-            let intent = match flag(&args, "--goal") {
-                Some(goal) => Some(Intent::new(goal, accept)),
-                None if !accept.is_empty() => {
-                    return fail("--accept 需要同时给 --goal");
-                }
-                None => None,
-            };
+            let witness_digest = request
+                .witness
+                .as_ref()
+                .map(|bytes| trit_vcs::Hash::of(bytes));
             let mut repo = match Repo::open(&root) {
                 Ok(repo) => repo,
                 Err(err) => return fail(err.to_string()),
             };
-            let request = CommitRequest {
-                message: message.to_string(),
-                session: owner.to_string(),
-                claims,
-                evidence: flags(&args, "--evidence"),
-                tags: flags(&args, "--tag"),
-                allow_unclaimed: has(&args, "--allow-unclaimed"),
-                witness,
-                intent,
-                parent_override: None,
-                now_secs: now_secs(),
-            };
+            if has(&args, "--dry-run") {
+                return verdict::preflight_run(&repo, &request, &args);
+            }
             match repo.commit(request) {
                 Ok(outcome) => {
                     println!(
@@ -297,7 +303,12 @@ fn main() -> ExitCode {
                     );
                     ExitCode::SUCCESS
                 }
-                Err(err) => fail(err.to_string()),
+                Err(err) => verdict::fail_repo(
+                    &err,
+                    repo.root(),
+                    flag(&args, "--owner").unwrap_or(""),
+                    &args,
+                ),
             }
         }
         "witness" => {
@@ -412,6 +423,18 @@ fn main() -> ExitCode {
         }
         "export" => transport::export_cmd(&args),
         "import" => transport::import_cmd(&args),
+        "preflight" => {
+            let root = repo_path(&args);
+            let request = match commit_request(&args) {
+                Ok(request) => request,
+                Err(err) => return fail(err),
+            };
+            let repo = match Repo::open(&root) {
+                Ok(repo) => repo,
+                Err(err) => return fail(err.to_string()),
+            };
+            verdict::preflight_run(&repo, &request, &args)
+        }
         "publish" => central_sync::publish_cmd(&args),
         "pull" => central_sync::pull_cmd(&args),
         "git-export" => bridge::export_cmd(&args),
@@ -454,16 +477,20 @@ fn main() -> ExitCode {
                                 value
                             })
                             .collect();
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&serde_json::json!({
+                        let printed = verdict::print_json(
+                            serde_json::json!({
                                 "tree": outcome.tree.map(|tree| tree.to_hex()),
                                 "merged_files": outcome.merged_files,
                                 "removed_files": outcome.removed_files,
                                 "conflicts": conflicts,
-                            }))
-                            .unwrap_or_default()
+                            }),
+                            &args,
                         );
+                        // 打印本身的失败（比如 --budget 0）要立刻判红；否则继续走
+                        // "有冲突 ⇒ 非零" 这条老逻辑，不能被 JSON 出口吃掉。
+                        if printed != ExitCode::SUCCESS {
+                            return printed;
+                        }
                     } else if outcome.conflicts.is_empty() {
                         println!(
                             "合并干净：树 {}（{} 个文件合并、{} 个删除）",
@@ -539,10 +566,7 @@ fn main() -> ExitCode {
                         })
                     })
                     .collect();
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&rows).unwrap_or_default()
-                );
+                return verdict::print_json(serde_json::json!(rows), &args);
             } else if log.is_empty() {
                 println!("（还没有提交）");
             } else {
@@ -577,17 +601,15 @@ fn main() -> ExitCode {
             match worktree::status_scoped(&repo, prefix.as_deref()) {
                 Ok((changes, stats)) => {
                     if has(&args, "--json") {
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&serde_json::json!({
+                        return verdict::print_json(
+                            serde_json::json!({
                                 "changes": changes,
                                 "hashed": stats.hashed,
                                 "cached": stats.cached,
                                 "prefix": prefix,
-                            }))
-                            .unwrap_or_default()
+                            }),
+                            &args,
                         );
-                        return ExitCode::SUCCESS;
                     }
                     if changes.is_empty() {
                         println!("工作树干净（与 HEAD 逐内容一致）");
@@ -659,10 +681,7 @@ fn main() -> ExitCode {
             match worktree::diff(&repo, &left, &right) {
                 Ok(changes) => {
                     if has(&args, "--json") {
-                        println!(
-                            "{}",
-                            serde_json::to_string_pretty(&changes).unwrap_or_default()
-                        );
+                        return verdict::print_json(serde_json::json!(changes), &args);
                     } else {
                         for change in &changes {
                             println!("  {:?}  {}", change.kind, change.path);

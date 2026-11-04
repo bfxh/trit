@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use crate::gate::{ClaimSpec, Verdict, check};
+use crate::gate::{ClaimSpec, Verdict};
 use crate::hash::Hash;
 use crate::journal::{Journal, JournalError};
 use crate::model::{Commit, Hlc, Intent};
@@ -121,7 +121,7 @@ pub struct Policy {
 
 /// 认领范围已经覆盖的路径折叠成范围本身。
 /// 10k 文件的提交不必逐路径过门（门的路径上限是 256），判定等价：范围覆盖 ⇒ 范围与路径同权。
-fn collapsed_paths(paths: &[String], claims: &[ClaimSpec]) -> Vec<String> {
+pub(crate) fn collapsed_paths(paths: &[String], claims: &[ClaimSpec]) -> Vec<String> {
     fn covers(scope: &str, path: &str) -> bool {
         scope == path
             || (path.len() > scope.len()
@@ -151,7 +151,7 @@ fn collapsed_paths(paths: &[String], claims: &[ClaimSpec]) -> Vec<String> {
 }
 
 /// 见证必须是"跑通"的那种；失败的运行单独报，避免和格式错误混在一起。
-fn require_passing(witness: &Witness) -> Result<(), RepoError> {
+pub(crate) fn require_passing(witness: &Witness) -> Result<(), RepoError> {
     match witness.check_passed() {
         Ok(()) => Ok(()),
         Err(WitnessError::Failed(code)) => Err(RepoError::WitnessFailed(code)),
@@ -394,74 +394,18 @@ impl Repo {
         Ok((tree, put))
     }
 
-    /// 提交：先过认领门，再写提交对象，最后进日志 + 推 HEAD。
+    /// 提交：判决走 `preflight::decide()`（与 `preflight()` 同一条路），之后才写盘。
     pub fn commit(&mut self, req: CommitRequest) -> Result<CommitOutcome, RepoError> {
-        let index = self.index()?.ok_or(RepoError::NothingStaged)?;
-        let tree =
-            Hash::from_hex(&index.tree).ok_or_else(|| RepoError::BadHead(index.tree.clone()))?;
-        let gate_paths = collapsed_paths(&index.paths, &req.claims);
-        let verdict = check(&req.claims, &req.session, &gate_paths, req.now_secs);
-        match &verdict {
-            Verdict::Allowed => {}
-            Verdict::Unclaimed if !req.allow_unclaimed => {
-                return Err(RepoError::Unclaimed {
-                    paths: gate_paths.clone(),
-                });
-            }
-            Verdict::Conflict { others } => {
-                return Err(RepoError::Conflict {
-                    others: others.clone(),
-                    paths: gate_paths.clone(),
-                });
-            }
-            _ => {}
+        let decision = crate::preflight::decide(self, &req)?;
+        let tree = decision.tree;
+        let verdict = decision.verdict;
+        let parent = decision.parent;
+        let intent = decision.intent;
+        // 判决里已经逐字校验过见证并算出摘要；这里只负责把见证字节落进对象库。
+        if let Some(bytes) = req.witness.as_deref() {
+            self.store.put_chunk(bytes)?;
         }
-        let policy = self.policy()?;
-        let witness: Option<(Hash, Witness)> = match req.witness.as_deref() {
-            Some(bytes) => {
-                let parsed = witness::verify(bytes, tree)?;
-                require_passing(&parsed)?;
-                let (digest, _) = self.store.put_chunk(bytes)?;
-                Some((digest, parsed))
-            }
-            None if policy.require_witness => return Err(RepoError::WitnessRequired),
-            None => None,
-        };
-        let parent = req.parent_override.or(self.head()?);
-        let base_tree = match parent {
-            Some(id) => Some(self.commit_at(&id)?.tree),
-            None => None,
-        };
-        let intent = match req.intent.clone() {
-            Some(mut intent) => {
-                if intent.goal.trim().is_empty() {
-                    return Err(RepoError::IntentInvalid("goal 不能为空".to_string()));
-                }
-                if intent.accept.iter().all(|item| item.trim().is_empty()) {
-                    return Err(RepoError::IntentInvalid(
-                        "至少写一条 accept 判据".to_string(),
-                    ));
-                }
-                match (intent.base, base_tree) {
-                    (Some(declared), Some(actual)) if declared != actual => {
-                        return Err(RepoError::IntentBaseMismatch {
-                            declared: declared.to_hex(),
-                            actual: actual.to_hex(),
-                        });
-                    }
-                    (Some(_), None) => {
-                        return Err(RepoError::IntentInvalid(
-                            "第一条提交没有父树，intent.base 必须留空".to_string(),
-                        ));
-                    }
-                    (None, Some(actual)) => intent.base = Some(actual),
-                    _ => {}
-                }
-                Some(intent)
-            }
-            None if policy.require_intent => return Err(RepoError::IntentRequired),
-            None => None,
-        };
+        let witness = decision.witness;
         let last_ms = self.journal.events().last().map(|e| e.at_ms).unwrap_or(0);
         let hlc = Hlc::zero().tick((req.now_secs * 1000).max(last_ms));
         let mut commit = Commit::new(tree, req.session.clone(), req.message.clone(), hlc);
