@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Measured（trit-count：BDD 坏顺序族 = 匹配族，给 watched literals 定靶子）
+
+- 新 `crates/trit-count/examples/matching_family.rs`：`(x0∧y0) | … | (x_{n-1}∧y_{n-1})`，
+  表达式里 x/y 交错出现、**声明顺序却是「所有 x 再所有 y」**（BDD 的教科书坏顺序，结宽 2^n）。
+- 读数（µs/节点 = DPLL 毫秒 ÷ 节点数）：
+
+  | 对数 | rails | 子句 | DPLL ms | 节点 | µs/节点 | BDD |
+  |---|---|---|---|---|---|---|
+  | 8 | 63 | 320 | 13.7 | 203 | 67.6 | ok |
+  | 12 | 95 | 488 | 35.2 | 323 | 109.0 | ok |
+  | 16 | 127 | 656 | 66.5 | 443 | 150.1 | ok |
+  | 20 | 159 | 824 | 113.6 | 563 | 201.8 | refused(>200k 节点) |
+  | 24 | 191 | 992 | 170.3 | 683 | 249.4 | refused |
+  | 32 | 255 | 1328 | 305.5 | 923 | 331.0 | refused |
+  | 40 | 319 | 1664 | 496.2 | 1163 | 426.7 | refused |
+
+- 结论两条：① **这一族 BDD 会炸、DPLL 扛得住**（节点数只随对数线性涨，20 对起 BDD 被预算拦下）
+  ⇒ 上一轮「DPLL 反正比 BDD 慢，不值得优化」的判断在这一族上不成立，watched literals 有靶子了。
+  ② DPLL 的 **µs/节点随实例线性变差**（67.6→426.7，随子句数 320→1664 同比涨），
+  与每节点 O(子句数) 的三处全表扫描（`normalize` 重排全部子句、`propagate` 全表迭代、residual 重建）同比涨；
+  **机制属推断**（没做逐段计时，本机 Instant 分辨率 ~100 ns 也不够切 200 µs 级的三段），
+  但它足以否证「DPLL 不值得优化」：这一族只有 DPLL 出得了数。
+- 锁：新增 2 条测试（`matching_family_hits_the_closed_form` 对 **闭式解 `4^n − 3^n`**，与两条引擎无关；
+  `matching_family_blows_the_bdd_budget` 钉住「20 对是 refused 而不是不一致」）；测试 24 → 26。
+
 ### Added（trit-count：BDD 第三方计数）
 
 - 新模块 `crates/trit-bdd/src/count.rs`：`count_models_bdd` 在 dual-rail BDD 上数「全部约束为 `True` ∧ 表达式取目标值」的合法赋值，
