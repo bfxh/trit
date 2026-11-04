@@ -62,6 +62,17 @@ pub(crate) fn parse_objects(path: &Path) -> Vec<trit_parts::occ::Primitive> {
     out
 }
 
+/// 一个评测场景的读数（清单/复核器共用）。
+struct EvalRow {
+    scene: usize,
+    iou: f32,
+    verts: usize,
+    tris: usize,
+    boundary: usize,
+    nonmanifold: usize,
+    closed: bool,
+}
+
 /// `occ --root <renders 根> --scenes <scenes 根> --train 80,81 --eval 84,85`：
 /// 学习式占据（三值 MLP）：训练用解析原语当 GT 实心，评测报体积 IoU 与网格闭合率。
 pub(crate) fn occ_cmd(argv: &[String]) {
@@ -97,7 +108,16 @@ pub(crate) fn occ_cmd(argv: &[String]) {
     let cap: usize = arg(argv, "--cap")
         .and_then(|v| v.parse().ok())
         .unwrap_or(20000);
+    // 初始化种子：只影响训练；复核走 `--load-model`，不需要它。
+    let seed: u64 = arg(argv, "--seed")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(12345);
     let save_model = arg(argv, "--save-model").map(PathBuf::from);
+    let load_model = arg(argv, "--load-model").map(PathBuf::from);
+    // 评测结果落盘（复核器读它，而不是解析人看的日志）
+    let json_out = arg(argv, "--json-out").map(PathBuf::from);
+    // A1 清单（提取族）
+    let run_manifest = arg(argv, "--run-manifest").map(PathBuf::from);
     let seal: usize = arg(argv, "--seal")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
@@ -105,8 +125,8 @@ pub(crate) fn occ_cmd(argv: &[String]) {
     let tau: f32 = arg(argv, "--tau")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.01);
-    if train.is_empty() || eval.is_empty() {
-        fail("需要 --train 与 --eval（场景编号列表）");
+    if eval.is_empty() || (train.is_empty() && load_model.is_none()) {
+        fail("需要 --eval，以及 --train（--load-model 时可省）");
     }
 
     let load_views = |idx: usize| -> Vec<trit_parts::fuse::View> {
@@ -130,77 +150,85 @@ pub(crate) fn occ_cmd(argv: &[String]) {
             .collect()
     };
 
-    // 训练：每场景平衡采样（实心/空各半）
+    // 训练：每场景平衡采样（实心/空各半）；`--load-model` 时跳过训练，只做评测。
     let nin = frames.len() * FPER + 1;
-    let mut mlp = Mlp::new(nin, hid, 12345);
-    let mut samples: Vec<(Vec<f32>, f32)> = Vec::new();
-    for &idx in &train {
-        let prims: Vec<Primitive> =
-            parse_objects(&scenes.join(format!("scene{idx:04}/objects.json")));
-        let views = load_views(idx);
-        let g = if selfsup {
-            let pts = view_points(&views);
-            match trit_parts::mesh::Grid::from_points(&pts, cell, 3) {
-                Some(g) => g,
-                None => continue,
-            }
-        } else {
-            match grid_for(&prims, cell, 2) {
-                Some(g) => g,
-                None => continue,
-            }
-        };
-        let gt = if selfsup {
-            selfsup_solid(&views, &g, tau)
-        } else {
-            solid(&prims, &g)
-        };
-        let mut pos = Vec::new();
-        let mut neg = Vec::new();
-        for (i, &label) in gt.iter().enumerate() {
-            let (x, y, z) = (i % g.nx, (i / g.nx) % g.ny, i / (g.nx * g.ny));
-            let p = [
-                g.origin[0] + (x as f32 + 0.5) * g.cell,
-                g.origin[1] + (y as f32 + 0.5) * g.cell,
-                g.origin[2] + (z as f32 + 0.5) * g.cell,
-            ];
-            let f = features(&views, p);
-            if label == 1 {
-                pos.push((f, 1.0))
+    let mut mlp = match &load_model {
+        Some(p) => {
+            println!("加载模型 {}", p.display());
+            Mlp::load(p).unwrap_or_else(|e| fail(&e))
+        }
+        None => Mlp::new(nin, hid, seed),
+    };
+    if load_model.is_none() {
+        let mut samples: Vec<(Vec<f32>, f32)> = Vec::new();
+        for &idx in &train {
+            let prims: Vec<Primitive> =
+                parse_objects(&scenes.join(format!("scene{idx:04}/objects.json")));
+            let views = load_views(idx);
+            let g = if selfsup {
+                let pts = view_points(&views);
+                match trit_parts::mesh::Grid::from_points(&pts, cell, 3) {
+                    Some(g) => g,
+                    None => continue,
+                }
             } else {
-                neg.push((f, 0.0))
+                match grid_for(&prims, cell, 2) {
+                    Some(g) => g,
+                    None => continue,
+                }
+            };
+            let gt = if selfsup {
+                selfsup_solid(&views, &g, tau)
+            } else {
+                solid(&prims, &g)
+            };
+            let mut pos = Vec::new();
+            let mut neg = Vec::new();
+            for (i, &label) in gt.iter().enumerate() {
+                let (x, y, z) = (i % g.nx, (i / g.nx) % g.ny, i / (g.nx * g.ny));
+                let p = [
+                    g.origin[0] + (x as f32 + 0.5) * g.cell,
+                    g.origin[1] + (y as f32 + 0.5) * g.cell,
+                    g.origin[2] + (z as f32 + 0.5) * g.cell,
+                ];
+                let f = features(&views, p);
+                if label == 1 {
+                    pos.push((f, 1.0))
+                } else {
+                    neg.push((f, 0.0))
+                }
+            }
+            let k = pos.len().min(cap / 2).min(neg.len());
+            samples.extend(pos.into_iter().take(k));
+            samples.extend(neg.into_iter().take(k));
+            println!("train scene{idx:04}: 采样 {k}+{k}");
+        }
+        if samples.is_empty() {
+            fail("没有训练样本");
+        }
+        let mut loss_acc = 0.0f64;
+        for step in 0..steps {
+            let (x, y) = &samples[(step * 7919) % samples.len()];
+            loss_acc += mlp.train_step(x, *y, lr) as f64;
+            if (step + 1) % 2000 == 0 {
+                println!(
+                    "  step {} loss(平均) {:.4} 三值零占比 {:.2}",
+                    step + 1,
+                    loss_acc / 2000.0,
+                    mlp.sparsity()
+                );
+                loss_acc = 0.0;
             }
         }
-        let k = pos.len().min(cap / 2).min(neg.len());
-        samples.extend(pos.into_iter().take(k));
-        samples.extend(neg.into_iter().take(k));
-        println!("train scene{idx:04}: 采样 {k}+{k}");
-    }
-    if samples.is_empty() {
-        fail("没有训练样本");
-    }
-    let mut loss_acc = 0.0f64;
-    for step in 0..steps {
-        let (x, y) = &samples[(step * 7919) % samples.len()];
-        loss_acc += mlp.train_step(x, *y, lr) as f64;
-        if (step + 1) % 2000 == 0 {
-            println!(
-                "  step {} loss(平均) {:.4} 三值零占比 {:.2}",
-                step + 1,
-                loss_acc / 2000.0,
-                mlp.sparsity()
-            );
-            loss_acc = 0.0;
-        }
-    }
 
-    if let Some(p) = &save_model {
-        mlp.save(p).unwrap_or_else(|e| fail(&e));
-        println!("模型已存 {}", p.display());
-    }
+        if let Some(p) = &save_model {
+            mlp.save(p).unwrap_or_else(|e| fail(&e));
+            println!("模型已存 {}", p.display());
+        }
+    } // if load_model.is_none()
 
     // 评测：体积 IoU（vs 原语实心）+ 网格闭合率
-    let (mut ious, mut closed, mut n) = (Vec::new(), 0usize, 0usize);
+    let mut rows: Vec<EvalRow> = Vec::new();
     let mut lab_ious: Vec<f32> = Vec::new();
     for &idx in &eval {
         let prims: Vec<Primitive> =
@@ -273,31 +301,117 @@ pub(crate) fn occ_cmd(argv: &[String]) {
             f32::NAN
         };
         let m = surface_nets(&pred);
-        let ok = !m.tris.is_empty() && boundary_edges(&m) == 0;
-        n += 1;
-        closed += ok as usize;
-        ious.push(iou);
+        let boundary = boundary_edges(&m);
+        let nonmanifold = non_manifold_edges(&m);
+        let ok = !m.tris.is_empty() && boundary == 0;
+        rows.push(EvalRow {
+            scene: idx,
+            iou,
+            verts: m.verts.len(),
+            tris: m.tris.len(),
+            boundary,
+            nonmanifold,
+            closed: ok,
+        });
         println!(
             "eval scene{idx:04}: 体积 IoU {iou:.3}  网格 顶点 {} 面 {} 边界边 {} 非流形 {} 闭合 {}",
             m.verts.len(),
             m.tris.len(),
-            boundary_edges(&m),
-            non_manifold_edges(&m),
+            boundary,
+            nonmanifold,
             if ok { "是" } else { "否" }
         );
     }
-    let mean = ious.iter().sum::<f32>() / ious.len().max(1) as f32;
+    let n = rows.len();
+    let closed = rows.iter().filter(|r| r.closed).count();
+    let mean = rows.iter().map(|r| r.iou).sum::<f32>() / n.max(1) as f32;
     if !lab_ious.is_empty() {
         let lm = lab_ious.iter().sum::<f32>() / lab_ious.len() as f32;
         println!("标签 IoU 均值 {lm:.3}（{} 场景）", lab_ious.len());
     }
     println!(
-        "N2 汇总：体积 IoU 均值 {mean:.3}（{} 场景）；闭合 {}/{}（{:.0}%）；门：IoU≥0.5 且 闭合率≥80%",
-        ious.len(),
-        closed,
-        n,
+        "N2 汇总：体积 IoU 均值 {mean:.3}（{n} 场景）；闭合 {closed}/{n}（{:.0}%）；门：IoU≥0.5 且 闭合率≥80%",
         100.0 * closed as f64 / n.max(1) as f64
     );
+
+    // 机器可读结果（复核器只读这个，不解析人看的日志）
+    if let Some(p) = &json_out {
+        let rows_json: Vec<String> = rows
+            .iter()
+            .map(|r| {
+                format!(
+                    "{{\"scene\": {}, \"iou\": {}, \"verts\": {}, \"tris\": {}, \"boundary_edges\": {}, \"nonmanifold_edges\": {}, \"closed\": {}}}",
+                    r.scene, r.iou, r.verts, r.tris, r.boundary, r.nonmanifold, r.closed
+                )
+            })
+            .collect();
+        let body = format!(
+            "{{\n  \"kind\": \"extract-occupancy-eval\",\n  \"scenes\": {n},\n  \"iou_mean\": {mean},\n  \"closed\": {closed},\n  \"gate\": {{\"iou_ge_0_5\": {}, \"closed_ge_80pct\": {}}},\n  \"rows\": [{}]\n}}\n",
+            mean >= 0.5,
+            closed * 100 >= 80 * n.max(1),
+            rows_json.join(", ")
+        );
+        std::fs::write(p, body).unwrap_or_else(|e| fail(&format!("写 {}: {e}", p.display())));
+        println!("结果已写 {}", p.display());
+    }
+
+    // A1 清单：模型 + 语料指纹 + 配置 + 读数（提取族）
+    if let Some(mp) = &run_manifest {
+        let model = save_model
+            .as_ref()
+            .unwrap_or_else(|| fail("--run-manifest 需要 --save-model（清单要钉住产物）"));
+        let mut ids: Vec<usize> = train.iter().chain(eval.iter()).copied().collect();
+        ids.sort_unstable();
+        ids.dedup();
+        let fp = trit_parts::scenefp::fingerprint_scenes(&root, &scenes, &ids, &frames)
+            .unwrap_or_else(|e| fail(&e));
+        let commit = trit_parts::partsrun::git_out(&["rev-parse", "--short", "HEAD"])
+            .trim()
+            .to_string();
+        let dirty = !trit_parts::partsrun::git_out(&["status", "--porcelain"])
+            .trim()
+            .is_empty();
+        let argv_json: Vec<String> = std::env::args()
+            .skip(1)
+            .map(|a| trit_parts::partsrun::json_str(&a))
+            .collect();
+        let list = |v: &[usize]| {
+            v.iter()
+                .map(|x| x.to_string())
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let rows_json: Vec<String> = rows
+            .iter()
+            .map(|r| {
+                format!(
+                    "{{\"scene\": {}, \"iou\": {}, \"boundary_edges\": {}, \"nonmanifold_edges\": {}, \"verts\": {}, \"tris\": {}, \"closed\": {}}}",
+                    r.scene, r.iou, r.boundary, r.nonmanifold, r.verts, r.tris, r.closed
+                )
+            })
+            .collect();
+        let model_bytes = std::fs::metadata(model).map(|m| m.len()).unwrap_or(0);
+        let model_sha = trit_core::fingerprint::file_sha256(model).unwrap_or_default();
+        let body = format!(
+            "{{\n  \"schema\": 1,\n  \"kind\": \"extract-occupancy\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"cell\": {cell}, \"hid\": {hid}, \"steps\": {steps}, \"lr\": {lr}, \"cap\": {cap}, \"seed\": {seed}, \"frames\": [{}], \"train\": [{}], \"eval\": [{}], \"selfsup\": {selfsup}, \"tau\": {tau}, \"seal\": {seal}}},\n  \"data\": {{\"dirs\": {}, \"files\": {}, \"bytes\": {}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\", \"renders\": {}, \"scenes_root\": {}}},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"bytes\": {model_bytes}}},\n  \"result\": {{\"scenes\": {n}, \"iou_mean\": {mean}, \"closed\": {closed}, \"rows\": [{}]}}\n}}\n",
+            trit_parts::partsrun::created_unix(),
+            trit_parts::partsrun::json_str(&commit),
+            argv_json.join(", "),
+            list(&frames),
+            list(&train),
+            list(&eval),
+            fp.dirs,
+            fp.files,
+            fp.bytes,
+            fp.hash,
+            trit_parts::partsrun::json_str(&trit_parts::scenefp::norm_root(&root)),
+            trit_parts::partsrun::json_str(&trit_parts::scenefp::norm_root(&scenes)),
+            trit_parts::partsrun::json_str(&trit_parts::scenefp::norm_root(model)),
+            rows_json.join(", ")
+        );
+        std::fs::write(mp, body).unwrap_or_else(|e| fail(&format!("写 {}: {e}", mp.display())));
+        println!("清单 {}", mp.display());
+    }
 }
 
 /// 闭合后处理：清边界 → 填实 → 修对角（自举标签与模型输出共用）。

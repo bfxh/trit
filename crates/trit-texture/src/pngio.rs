@@ -1,7 +1,8 @@
 //! PNG 文件 I/O（`png` feature，默认关）。
 //!
-//! 只做 RGBA8 ↔ PNG：RGB8 自动补 alpha=255，其余颜色类型拒绝。像素/容器
-//! 之间的纯转换在 [`crate::convert`]（默认构建就有）；本模块只补文件这一层。
+//! 只做 RGBA8 ↔ PNG：灰度/RGB 自动补 alpha=255（灰度复制到三通道），16 位与
+//! 调色板图拒绝。像素/容器之间的纯转换在 [`crate::convert`]（默认构建就有）；
+//! 本模块只补文件这一层。
 
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
@@ -42,6 +43,12 @@ pub fn load_png_rgba(path: &Path) -> Result<RgbaImage, PngError> {
     let mut buffer = vec![0u8; reader.output_buffer_size()];
     let frame = reader.next_frame(&mut buffer)?;
     let (width, height) = (frame.width as usize, frame.height as usize);
+    if frame.bit_depth != png::BitDepth::Eight {
+        return Err(PngError::Io(format!(
+            "位深 {:?} 不支持：请先转成 8 位",
+            frame.bit_depth
+        )));
+    }
     buffer.truncate(frame.buffer_size());
     match frame.color_type.samples() {
         4 => Ok(RgbaImage {
@@ -61,8 +68,31 @@ pub fn load_png_rgba(path: &Path) -> Result<RgbaImage, PngError> {
                 rgba,
             })
         }
+        2 => {
+            // 灰度 + alpha：三通道复制灰度，alpha 原样
+            let mut rgba = Vec::with_capacity(width * height * 4);
+            for px in buffer.as_chunks::<2>().0 {
+                rgba.extend_from_slice(&[px[0], px[0], px[0], px[1]]);
+            }
+            Ok(RgbaImage {
+                width,
+                height,
+                rgba,
+            })
+        }
+        1 => {
+            let mut rgba = Vec::with_capacity(width * height * 4);
+            for &g in &buffer {
+                rgba.extend_from_slice(&[g, g, g, 255]);
+            }
+            Ok(RgbaImage {
+                width,
+                height,
+                rgba,
+            })
+        }
         other => Err(PngError::Io(format!(
-            "颜色类型 {other} 字节/像素不支持：请先转成 RGB/RGBA"
+            "颜色类型 {other} 字节/像素不支持：请先转成灰度/RGB/RGBA"
         ))),
     }
 }
@@ -107,5 +137,25 @@ mod tests {
         save_png_rgba(&back_png, &back).unwrap();
         // TTX 解码结果二次写读 PNG 无损。
         assert_eq!(load_png_rgba(&back_png).unwrap(), back);
+    }
+
+    #[test]
+    fn grayscale_png_expands_to_rgba() {
+        let dir = std::env::temp_dir().join("trit-texture-gray-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("gray.png");
+        let file = File::create(&p).unwrap();
+        let mut enc = png::Encoder::new(BufWriter::new(file), 4, 2);
+        enc.set_color(png::ColorType::Grayscale);
+        enc.set_depth(png::BitDepth::Eight);
+        let mut w = enc.write_header().unwrap();
+        w.write_image_data(&[0, 64, 128, 255, 10, 20, 30, 40])
+            .unwrap();
+        drop(w);
+        let img = load_png_rgba(&p).unwrap();
+        assert_eq!((img.width, img.height), (4, 2));
+        assert_eq!(&img.rgba[0..4], &[0, 0, 0, 255]);
+        assert_eq!(&img.rgba[4..8], &[64, 64, 64, 255]);
+        assert_eq!(&img.rgba[28..32], &[40, 40, 40, 255]);
     }
 }

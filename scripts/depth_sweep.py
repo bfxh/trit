@@ -21,6 +21,26 @@
   "catalogue": "docs/DEPTH-RESULTS.md"
 }
 
+模板模式（部件/纹理/提取族，`family` ≠ depth）：不给 `data/holdout` 也行，但必须给
+`producer` / `verifier` / `model`：
+{
+  "family": "extract",
+  "out_dir": "runs/extract/sweep-steps",
+  "base": {"cell": 0.01}, "grid": {"steps": [5000, 20000]},
+  "producer": {"bin": "parts-3d", "argv": ["occ", "--steps", "{steps}", "--save-model", "{model}",
+                                          "--run-manifest", "{model}.manifest.json", ...]},
+  "verifier": {"bin": "parts-extract-verify", "argv": ["--model", "{model}"]},
+  "model": "{out}/{tag}.occ1",
+  "promote": {"metric": "iou_mean", "min": 0.5, "all_closed": true},
+  "replicate": "seed"
+}
+`replicate`（可选）：同一其余配置的多次运行（通常按 `seed`）会聚合成 mean/min/max/range
+写进 `sweep.json` 的 `aggregates`；`--reaggregate <sweep.json>` 可对旧汇总重算（不重跑训练）。
+**排序看聚合、晋级看门**：均值差小于种子极差时不要判优。
+
+占位符：`{tag}` `{out}` `{model}` `{data}` `{holdout}` `{gpu}` + 每个配置键；
+没解析掉的占位符**直接判红**。模板模式的生产器自己选卡 ⇒ 不抢 GPU 租约（`jobs` 别开太大）。
+
 行为：
 - 对 `grid` 做笛卡尔积（`base` 里同名键被覆盖），**并发**跑（每配置一个进程：训练 → 复核）。
 - **断点续跑**：产物（清单 + 复核记录，且清单里 config 与本次一致）齐了就跳过，记 `cached`；
@@ -363,8 +383,9 @@ def cached_row(tag, cfg, model, verify, prev):
 def evaluate_promotion(row, rule):
     """按指标判晋级。返回 `(promoted, reason)`。
 
-    规则键：`max`（`metric` 的上限）、`beat_baseline_pp`（要比常数基线至少低多少个百分点）、
-    `metric`（默认 `rel_pct`）。只对**已复核**的行生效。
+    规则键：`max` / `min`（`metric` 的上/下限）、`beat_baseline_pp`（要比常数基线至少低多少
+    个百分点）、`all_closed`（`closed == scenes`，提取族的闭合门）、`metric`（默认 `rel_pct`）。
+    只对**已复核**的行生效。
     """
     if not rule:
         return False, "未配置规则"
@@ -376,7 +397,14 @@ def evaluate_promotion(row, rule):
     if rel is None:
         return False, "无指标"
     if "max" in rule and rel > rule["max"]:
-        return False, f"{rel:.2f}% > 上限 {rule['max']}%"
+        return False, f"{rel:g} > 上限 {rule['max']:g}"
+    if "min" in rule and rel < rule["min"]:
+        return False, f"{rel:g} < 下限 {rule['min']:g}"
+    if rule.get("all_closed"):
+        if m.get("closed") is None or m.get("scenes") is None:
+            return False, "缺闭合读数"
+        if m.get("closed") != m.get("scenes"):
+            return False, f"闭合 {m['closed']}/{m['scenes']}"
     if "beat_baseline_pp" in rule:
         base = m.get("base_pct")
         if base is None:
@@ -385,6 +413,85 @@ def evaluate_promotion(row, rule):
         if gap < rule["beat_baseline_pp"]:
             return False, f"只比基线低 {gap:.2f}pp（需 ≥{rule['beat_baseline_pp']}pp）"
     return True, "达标"
+
+
+def aggregate(rows, key, metric):
+    """按 `key`（典型是 `seed`）聚合：其余配置相同的多次运行给 mean / min / max / range。
+
+    只收 `verified` 行；缺指标的行不参与。返回按均值降序的列表——**别用单行排序**：
+    种子极差（实测 0.07–0.18）会压过预算/超参的小差。
+    """
+    groups = {}
+    for r in rows:
+        if r.get("status") != "verified":
+            continue
+        cfg = dict(r.get("config") or {})
+        rep = cfg.pop(key, None)
+        gk = json.dumps(cfg, sort_keys=True)
+        g = groups.setdefault(gk, {"config": cfg, "seeds": [], "values": []})
+        if rep is not None:
+            g["seeds"].append(rep)
+        v = (r.get("metrics") or {}).get(metric)
+        if isinstance(v, (int, float)):
+            g["values"].append(float(v))
+    out = []
+    for g in groups.values():
+        vals = g["values"]
+        if not vals:
+            continue
+        out.append(
+            {
+                "config": g["config"],
+                "seeds": sorted(g["seeds"]),
+                "n": len(vals),
+                "metric": metric,
+                "mean": sum(vals) / len(vals),
+                "min": min(vals),
+                "max": max(vals),
+                "range": max(vals) - min(vals),
+            }
+        )
+    out.sort(key=lambda a: -a["mean"])
+    return out
+
+
+def print_aggregates(aggs):
+    if not aggs:
+        return
+    out("多种子聚合（按均值降序；range 是同一配置的种子极差）：")
+    for a in aggs:
+        cfg = json.dumps(a["config"], ensure_ascii=False, sort_keys=True)
+        tag = f"n={a['n']}" + ("" if a["n"] >= 2 else "（**单种子**）")
+        out(
+            f"  {cfg}  {tag}  mean={a['mean']:.4f}  "
+            f"range={a['min']:.4f}–{a['max']:.4f}（Δ{a['range']:.4f}）  seeds={a['seeds']}"
+        )
+
+
+def render_template(tpl, ctx):
+    """把 `{key}` 换成 ctx 里的值。没替换掉的占位符**直接判红**（打错键名不许静默跑）。"""
+    s = tpl
+    for k, v in ctx.items():
+        s = s.replace("{" + k + "}", str(v))
+    if "{" in s:
+        i = s.find("{")
+        raise SystemExit(f"模板占位符未解析：{s[i:i + 40]!r}（可用键：{sorted(ctx)}）")
+    return s
+
+
+def resolve_bin(name, bin_dir):
+    """`bin` 可以是完整路径，也可以是 bin-dir 下的名字（Windows 自动补 .exe）。"""
+    p = pathlib.Path(name)
+    if p.exists():
+        return p
+    q = bin_dir / name
+    if q.exists():
+        return q
+    if sys.platform.startswith("win") and not name.endswith(".exe"):
+        q = bin_dir / f"{name}.exe"
+        if q.exists():
+            return q
+    return q
 
 
 def run_one(cfg, tag, gpu, ctx):
@@ -441,6 +548,79 @@ def run_one(cfg, tag, gpu, ctx):
             out(f"[{tag}] FAIL 复核 rc={vrc}（{vattempts} 次；日志 {vlog}）")
     else:
         row["status"] = "trained"
+    return row
+
+
+def run_one_generic(cfg, tag, gpu, ctx):
+    """模板模式：生产器 → 复核器 → 读 `<model>.verify.json` 的 metrics。"""
+    t = dict(cfg)
+    t.update(
+        {
+            "tag": tag,
+            "out": str(ctx["out_dir"]),
+            "data": ctx["data"],
+            "holdout": ctx["holdout"],
+            "gpu": gpu,
+        }
+    )
+    t["model"] = render_template(ctx["model_tpl"], t)
+    model = pathlib.Path(t["model"])
+    tlog = ctx["out_dir"] / f"{tag}.train.log"
+    vlog = ctx["out_dir"] / f"{tag}.verify.log"
+    prod = [str(ctx["producer_bin"])] + [
+        render_template(a, t) for a in ctx["producer_argv"]
+    ]
+    out(f"[{tag}] 生产…")
+    rc, secs, attempts = run_with_retry(
+        prod, tlog, ctx["timeout"], ctx["retries"], ctx.get("on_start")
+    )
+    row = {
+        "tag": tag,
+        "config": cfg,
+        "model": str(model),
+        "gpu": gpu,
+        "train_rc": rc,
+        "train_secs": round(secs, 1),
+        "train_attempts": attempts,
+    }
+    if rc != 0:
+        row["status"] = "train-failed"
+        out(f"[{tag}] 生产失败 rc={rc}（{attempts} 次；日志 {tlog}）")
+        return row
+    if not ctx["verify"]:
+        row["status"] = "trained"
+        return row
+    ver = [str(ctx["verify_bin"])] + [
+        render_template(a, t) for a in ctx["verify_argv"]
+    ]
+    record = pathlib.Path(render_template(ctx["verify_record_tpl"], t))
+    reject = pathlib.Path(str(record).removesuffix(".verify.json") + ".verify.reject.json")
+    out(f"[{tag}] 复核…")
+    vattempts = 0
+    while True:
+        vattempts += 1
+        lg = vlog if vattempts == 1 else vlog.with_name(f"{vlog.name}.retry{vattempts}")
+        vrc, vsecs = run(ver, lg, ctx["timeout"], ctx.get("on_start"))
+        if vrc == 0 or not should_retry(vrc, reject.exists()) or vattempts > ctx["retries"]:
+            break
+        out(f"[{tag}] 复核失败 rc={vrc}，重试 {vattempts}/{ctx['retries']}")
+    row["verify_rc"] = vrc
+    row["verify_secs"] = round(vsecs, 1)
+    row["verify_attempts"] = vattempts
+    if vrc == 0 and record.exists():
+        v = json.loads(record.read_text(encoding="utf-8"))
+        row["metrics"] = v.get("metrics")
+        row["status"] = "verified"
+        m = row["metrics"] or {}
+        brief = ", ".join(
+            f"{k}={v:.4g}" if isinstance(v, float) else f"{k}={v}"
+            for k, v in m.items()
+            if isinstance(v, (int, float))
+        )
+        out(f"[{tag}] PASS {brief}")
+    else:
+        row["status"] = "verify-failed"
+        out(f"[{tag}] FAIL 复核 rc={vrc}（{vattempts} 次；日志 {vlog}）")
     return row
 
 
@@ -534,6 +714,47 @@ def self_test():
             )[0],
             True,
         ),
+        ("模板替换", render_template("{out}/{tag}.tpm", {"out": "E:/r", "tag": "x"}), "E:/r/x.tpm"),
+        (
+            "下限达标",
+            evaluate_promotion(
+                {"status": "verified", "metrics": {"miou": 0.42}},
+                {"metric": "miou", "min": 0.4},
+            )[0],
+            True,
+        ),
+        (
+            "下限不够",
+            evaluate_promotion(
+                {"status": "verified", "metrics": {"miou": 0.39}},
+                {"metric": "miou", "min": 0.4},
+            )[0],
+            False,
+        ),
+        (
+            "闭合全过",
+            evaluate_promotion(
+                {"status": "verified", "metrics": {"iou_mean": 0.55, "closed": 8, "scenes": 8}},
+                {"metric": "iou_mean", "min": 0.5, "all_closed": True},
+            )[0],
+            True,
+        ),
+        (
+            "闭合不全",
+            evaluate_promotion(
+                {"status": "verified", "metrics": {"iou_mean": 0.55, "closed": 7, "scenes": 8}},
+                {"metric": "iou_mean", "min": 0.5, "all_closed": True},
+            )[0],
+            False,
+        ),
+        (
+            "闭合缺读数",
+            evaluate_promotion(
+                {"status": "verified", "metrics": {"iou_mean": 0.55}},
+                {"metric": "iou_mean", "min": 0.5, "all_closed": True},
+            )[0],
+            False,
+        ),
         ("重试：失败可重试", should_retry(101, False), True),
         ("重试：拒绝不重试", should_retry(1, True), False),
         ("重试：成功不重试", should_retry(0, False), False),
@@ -560,6 +781,33 @@ def self_test():
             [111],
         ),
     ]
+    # 未知占位符必须判红（打错键名不许静默跑）
+    try:
+        render_template("{nope}", {})
+        unknown_red = False
+    except SystemExit:
+        unknown_red = True
+    cases.append(("模板未知键判红", unknown_red, True))
+
+    # 多种子聚合：同配置不同 seed → mean/range；不同 steps 分开；未复核不收
+    agg_rows = [
+        {"status": "verified", "config": {"steps": 5000, "seed": 2}, "metrics": {"iou_mean": 0.60}},
+        {"status": "verified", "config": {"steps": 5000, "seed": 3}, "metrics": {"iou_mean": 0.70}},
+        {"status": "verified", "config": {"steps": 5000, "seed": 5}, "metrics": {"iou_mean": 0.65}},
+        {"status": "verified", "config": {"steps": 10000, "seed": 2}, "metrics": {"iou_mean": 0.50}},
+        {"status": "verify-failed", "config": {"steps": 5000, "seed": 7}, "metrics": {"iou_mean": 0.99}},
+    ]
+    agg = aggregate(agg_rows, "seed", "iou_mean")
+    cases += [
+        ("聚合组数", len(agg), 2),
+        ("聚合 n=3", agg[0]["n"], 3),
+        ("聚合均值", round(agg[0]["mean"], 4), 0.65),
+        ("聚合极差", round(agg[0]["range"], 4), 0.10),
+        ("聚合种子排序", agg[0]["seeds"], [2, 3, 5]),
+        ("聚合按均值降序", round(agg[1]["mean"], 4), 0.5),
+        ("聚合排除未复核", all(a["n"] <= 3 for a in agg), True),
+    ]
+
     bad = [n for n, got, want in cases if got != want]
     for n, got, want in cases:
         print(f"  {n}: {'ok' if got == want else 'FAIL'}（got={got} want={want}）")
@@ -583,27 +831,66 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--timeout", type=int, default=3600, help="单个训练/复核的超时（秒）")
     ap.add_argument("--self-test", action="store_true")
+    ap.add_argument("--reaggregate", help="只对已有 sweep.json 重算多种子聚合（不跑训练）")
+    ap.add_argument("--by", default="", help="聚合键（缺省用规格里的 replicate，或 seed）")
+    ap.add_argument("--metric", default="", help="聚合指标（缺省用 promote.metric）")
     args = ap.parse_args()
     if args.self_test:
         self_test()
+        return
+    if args.reaggregate:
+        p = pathlib.Path(args.reaggregate)
+        d = json.loads(p.read_text(encoding="utf-8"))
+        spec0 = d.get("spec") or {}
+        key = args.by or spec0.get("replicate") or "seed"
+        metric = args.metric or (spec0.get("promote") or {}).get("metric") or "rel_pct"
+        aggs = aggregate(d.get("rows", []), key, metric)
+        d["aggregates"] = aggs
+        p.write_text(json.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+        print_aggregates(aggs)
         return
     if not args.spec:
         ap.error("需要 --spec（或 --self-test）")
 
     spec = json.loads(pathlib.Path(args.spec).read_text(encoding="utf-8"))
-    data = resolve_data(spec)
-    holdout = spec["holdout"]
+    # 模板模式（部件/纹理/提取）：producer + verifier 都由规格给 argv，深度专用逻辑不参与。
+    generic = isinstance(spec.get("producer"), dict)
+    if generic:
+        data = list(spec.get("data", []))
+        for g in spec.get("data_globs", []):
+            data.extend(sorted(glob.glob(g)))
+        holdout = list(spec.get("holdout", []))
+    else:
+        data = resolve_data(spec)
+        holdout = spec["holdout"]
     base = spec.get("base", {})
     grid = spec.get("grid", {})
     out_dir = pathlib.Path(spec.get("out_dir", "runs/depth/sweep"))
     out_dir.mkdir(parents=True, exist_ok=True)
     bin_dir = pathlib.Path(args.bin_dir)
-    pool = detect_gpu_pool(bin_dir / "parts-depth-gpu.exe")
-    if args.gpus > 0:
-        pool = pool[: args.gpus] or list(range(args.gpus))
-    jobs = max(1, args.jobs or int(spec.get("jobs", 0)) or max(2, len(pool)))
+    if generic:
+        # 生产器自己选卡（parts-train / parts-3d 都没有 --gpu-index），不做跨扫描器租约。
+        pool = [0]
+    else:
+        pool = detect_gpu_pool(bin_dir / "parts-depth-gpu.exe")
+        if args.gpus > 0:
+            pool = pool[: args.gpus] or list(range(args.gpus))
+    jobs = max(
+        1,
+        args.jobs
+        or int(spec.get("jobs", 0))
+        or (1 if generic else max(2, len(pool))),
+    )
     slots = slot_gpus(jobs, pool)
     verify_on = spec.get("verify", True)
+    mdl_tpl = spec.get("model", "{out}/{tag}")
+
+    def model_for(cfg, tag):
+        if not generic:
+            return out_dir / f"{tag}.dcn"
+        t = dict(cfg)
+        t.update({"tag": tag, "out": str(out_dir)})
+        return pathlib.Path(render_template(mdl_tpl, t))
 
     configs = build_configs(base, grid)
     grid_keys = sorted(grid)
@@ -620,7 +907,29 @@ def main():
     if args.dry_run:
         for i, cfg in enumerate(configs):
             tag = tag_of(cfg, grid_keys, base)
-            done = is_complete(out_dir / f"{tag}.dcn", cfg, verify_on)
+            done = is_complete(model_for(cfg, tag), cfg, verify_on)
+            if generic:
+                t = dict(cfg)
+                t.update(
+                    {
+                        "tag": tag,
+                        "out": str(out_dir),
+                        "data": ",".join(data),
+                        "holdout": ",".join(holdout),
+                        "gpu": slots[i % len(slots)],
+                    }
+                )
+                t["model"] = render_template(mdl_tpl, t)
+                prod = [spec["producer"]["bin"]] + [
+                    render_template(a, t) for a in spec["producer"].get("argv", [])
+                ]
+                print(f"  [{'skip' if done and not args.fresh else 'run '}] {' '.join(prod)}")
+                if verify_on:
+                    ver = [spec["verifier"]["bin"]] + [
+                        render_template(a, t) for a in spec["verifier"].get("argv", [])
+                    ]
+                    print(f"        verify: {' '.join(ver)}")
+                continue
             cmd = " ".join([
                 str(bin_dir / "parts-depth-gpu.exe"), "cnn-train", "--data", f"<{len(data)} dirs>",
                 "--holdout", hold, "--out", str(out_dir / f"{tag}.dcn"),
@@ -629,15 +938,32 @@ def main():
             print(f"  [{'skip' if done and not args.fresh else 'run '}] {cmd}")
         return
 
-    ctx = {
-        "out_dir": out_dir, "data_arg": data_arg, "hold": hold,
-        "train_bin": bin_dir / "parts-depth-gpu.exe",
-        "verify_bin": bin_dir / "parts-depth-verify.exe",
-        "verify": verify_on, "timeout": args.timeout, "retries": args.retries,
-    }
-    for b in (ctx["train_bin"], ctx["verify_bin"]):
+    if generic:
+        ctx = {
+            "out_dir": out_dir,
+            "data": ",".join(data),
+            "holdout": ",".join(holdout),
+            "producer_bin": resolve_bin(spec["producer"]["bin"], bin_dir),
+            "producer_argv": spec["producer"].get("argv", []),
+            "verify_bin": resolve_bin(spec["verifier"]["bin"], bin_dir),
+            "verify_argv": spec["verifier"].get("argv", []),
+            "model_tpl": mdl_tpl,
+            "verify_record_tpl": spec.get("verify_record", "{model}.verify.json"),
+            "verify": verify_on,
+            "timeout": args.timeout,
+            "retries": args.retries,
+        }
+    else:
+        ctx = {
+            "out_dir": out_dir, "data_arg": data_arg, "hold": hold,
+            "train_bin": bin_dir / "parts-depth-gpu.exe",
+            "verify_bin": bin_dir / "parts-depth-verify.exe",
+            "verify": verify_on, "timeout": args.timeout, "retries": args.retries,
+        }
+    for b in ((ctx["producer_bin"], ctx["verify_bin"]) if generic
+              else (ctx["train_bin"], ctx["verify_bin"])):
         if not b.exists():
-            sys.exit(f"找不到 {b}（先 cargo build --release --features gpu --bin parts-depth-gpu）")
+            sys.exit(f"找不到 {b}（先 cargo build --release）")
 
     states = dict(prev)
     for pid in stale_pids(states):
@@ -647,7 +973,7 @@ def main():
     rows = []
     for cfg in configs:
         tag = tag_of(cfg, grid_keys, base)
-        model = out_dir / f"{tag}.dcn"
+        model = model_for(cfg, tag)
         if not args.fresh and is_complete(model, cfg, verify_on):
             row = cached_row(tag, cfg, model, verify_on, prev.get(tag))
             rows.append(row)
@@ -666,7 +992,8 @@ def main():
             states[tag] = {"state": "running", "gpu": gpu, "pid": pid}
             save_queue(queue_path, sha, states)
 
-    lease_on = not args.no_lease
+    # 模板模式的生产器自己选卡 ⇒ 租约没有意义（租了也拦不住它用同一张卡）。
+    lease_on = (not args.no_lease) and not generic
     owner = f"{out_dir.name}:{sha[:8]}:{os.getpid()}"
 
     def task(cfg, tag):
@@ -685,7 +1012,7 @@ def main():
             stop = None
         try:
             ctx["on_start"] = lambda pid: mark_running(tag, g, pid)
-            row = run_one(cfg, tag, g, ctx)
+            row = (run_one_generic if generic else run_one)(cfg, tag, g, ctx)
             with QUEUE_LOCK:
                 states[tag] = {
                     "state": row["status"],
@@ -719,11 +1046,15 @@ def main():
         r["promote_reason"] = why
         (promoted if ok else rejected).append({"tag": r["tag"], "why": why})
 
+    replicate = spec.get("replicate")
+    aggs = []
+    if replicate:
+        aggs = aggregate(rows, replicate, (spec.get("promote") or {}).get("metric", "rel_pct"))
     summary = out_dir / "sweep.json"
     summary.write_text(
         json.dumps(
             {"spec": spec, "jobs": jobs, "retries": args.retries, "wall_secs": round(wall, 1),
-             "rows": rows},
+             "rows": rows, "aggregates": aggs},
             ensure_ascii=False,
             indent=2,
         ),
@@ -745,16 +1076,22 @@ def main():
     )
     for p in promoted:
         out(f"  晋级 {p['tag']}")
+    print_aggregates(aggs)
 
     cat = spec.get("catalogue")
     if cat:
-        # 目录覆盖整棵结果树（默认 runs/depth），不是只扫本次 out_dir
-        root = spec.get("catalogue_root", "runs/depth")
-        subprocess.run(
-            [sys.executable, "scripts/depth_catalogue.py", "--dir", root, "--out", cat],
-            check=False,
-        )
-        out(f"目录已重建 {cat}（root={root}）")
+        if generic:
+            # 模板模式：目录器无参重建**全部**族表（默认路径），不猜是哪一族。
+            subprocess.run([sys.executable, "scripts/depth_catalogue.py"], check=False)
+            out("目录已重建（全部族表）")
+        else:
+            # 目录覆盖整棵结果树（默认 runs/depth），不是只扫本次 out_dir
+            root = spec.get("catalogue_root", "runs/depth")
+            subprocess.run(
+                [sys.executable, "scripts/depth_catalogue.py", "--dir", root, "--out", cat],
+                check=False,
+            )
+            out(f"目录已重建 {cat}（root={root}）")
 
     if any(r["status"] in ("train-failed", "verify-failed") for r in rows):
         sys.exit(1)

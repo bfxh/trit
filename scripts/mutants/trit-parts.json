@@ -62,5 +62,29 @@
     "new": "        if false {",
     "pkg": "trit-parts",
     "filter": "merge_weak_folds_low_margin_pairs"
+  },
+  {
+    "name": "scenefp: 指纹不覆盖相机 meta（换相机不换指纹）",
+    "file": "crates/trit-parts/src/scenefp.rs",
+    "old": "            for (sub, ext) in [(\"seg\", \"npy\"), (\"depth\", \"npy\"), (\"meta\", \"json\")] {",
+    "new": "            for (sub, ext) in [(\"seg\", \"npy\"), (\"depth\", \"npy\"), (\"seg\", \"npy\")] {",
+    "pkg": "trit-parts",
+    "filter": "scenefp::tests::fingerprint_is_order_insensitive_but_content_sensitive"
+  },
+  {
+    "name": "extract-verify: 列表字段解析忽略键名",
+    "file": "crates/trit-parts/src/bin/parts_extract_verify.rs",
+    "old": "    let pat = format!(\"\\\"{key}\\\": [\");",
+    "new": "    let pat = format!(\"\\\"frames\\\": [\");",
+    "pkg": "trit-parts",
+    "filter": "parses_manifest_fields"
+  },
+  {
+    "name": "occ: 偶数种子与下一个奇数撞车（seed|1 回归）",
+    "file": "crates/trit-parts/src/occ.rs",
+    "old": "        let mut r = if seed.is_multiple_of(2) {\n            seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1\n        } else {\n            seed\n        };",
+    "new": "        let mut r = seed | 1;",
+    "pkg": "trit-parts",
+    "filter": "even_and_odd_seeds_init_differently"
   }
 ]

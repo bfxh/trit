@@ -4,7 +4,8 @@
 用法：
   python scripts/agent_claims.py claim --who <会话名> --repo <o/r> --paths <a/src b/src> \
       [--note "在做什么"] [--ttl 90]
-  python scripts/agent_claims.py release --who <会话名> [--id <编号>]
+  python scripts/agent_claims.py release --who <宿主:会话id> [--id <编号>]
+  python scripts/agent_claims.py renew --who <宿主:会话id> [--ttl ≤240]   # 长任务心跳
   python scripts/agent_claims.py list
   python scripts/agent_claims.py check          # 有重叠就红，并把**双方**都点名
   python scripts/agent_claims.py gate --who <会话名> --paths <a b> [--json]
@@ -35,10 +36,19 @@ import sys
 import time
 
 DEFAULT_CLAIMS = pathlib.Path(r"D:\KF\_handoff\CLAIMS.md")
+TTL_CAP_MIN = 240
+HOSTS = ("qoder", "zcode", "codex", "yan", "eac", "human")
+WHO = re.compile(r"^(?P<host>[a-z]+):(?P<id>[a-z0-9][a-z0-9._-]{0,63})$")
+_W = "qoder|zcode|codex|yan|eac"
+_WHO_HOST_PAREN = re.compile(rf"^(?P<host>{_W})\s*\(\s*(?:sess(?:ion)?[ :]*)?(?P<id>[^)]+?)\s*\)$",
+                             re.IGNORECASE)
+_WHO_HOST_DASH = re.compile(rf"^(?P<host>{_W})[-_ ](?P<id>.+)$", re.IGNORECASE)
+_WHO_ID_PAREN = re.compile(rf"^(?P<id>[^\s(]+?)\s*\(\s*(?P<host>{_W})\s*\)$", re.IGNORECASE)
 HEADER = "# 活动声明（多智能体重叠提醒）\n\n机器读写：`scripts/agent_claims.py`。人可读，收工请 release。\n"
 LINE = re.compile(r"^\|\s*(?P<id>\w+)\s*\|\s*(?P<who>[^|]*?)\s*\|\s*(?P<repo>[^|]*?)\s*\|"
-                  r"\s*(?P<paths>[^|]*?)\s*\|\s*(?P<ts>\d+)\s*\|\s*(?P<ttl>\d+)\s*\|\s*(?P<note>[^|]*?)\s*\|")
-SEP = "| id | who | repo | paths | claimed_at | ttl_min | note |"
+                  r"\s*(?P<paths>[^|]*?)\s*\|\s*(?P<ts>\d+)\s*\|\s*(?P<ttl>\d+)\s*\|\s*(?P<note>[^|]*?)\s*\|"
+                  r"(?:\s*(?P<renewed>\d+)\s*\|)?$")
+SEP = "| id | who | repo | paths | claimed_at | ttl_min | note | renewed |"
 
 
 def _say(text: str) -> None:
@@ -53,6 +63,30 @@ def _say(text: str) -> None:
 
 def now() -> int:
     return int(time.time())
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^a-z0-9._-]+", "-", text.strip().lower()).strip("-") or "unknown"
+
+
+def canonical_who(raw: str) -> str:
+    """把历史写法归一成 `宿主:会话id`；归不了返回空串（调用方决定警告还是拒绝）。
+
+    实测三种写法描述同一个人：`Qoder(sess dc34ac09)` / `qoder-56607d26` / `zodER(ZCode)`。
+    `release --who` 是精确匹配，不归一就会出现"收不掉自己的声明"。
+    """
+    text = (raw or "").strip()
+    if not text:
+        return ""
+    direct = WHO.match(text.lower())
+    if direct:
+        return f"{direct.group('host')}:{direct.group('id')}" if direct.group("host") in HOSTS else ""
+    for pattern in (_WHO_HOST_PAREN, _WHO_HOST_DASH, _WHO_ID_PAREN):
+        match = pattern.match(text)
+        if match:
+            host = match.group("host").lower()
+            return f"{host}:{slug(match.group('id'))}"
+    return ""
 
 
 def parse_claims(text: str) -> tuple[list[dict], list[str]]:
@@ -74,7 +108,7 @@ def parse_claims(text: str) -> tuple[list[dict], list[str]]:
         claims.append({"id": fields["id"], "who": fields["who"], "repo": fields["repo"],
                        "paths": [p for p in fields["paths"].split(",") if p.strip()],
                        "ts": int(fields["ts"]), "ttl": int(fields["ttl"]),
-                       "note": fields["note"]})
+                       "note": fields["note"], "renewed": int(fields.get("renewed") or 0)})
     return claims, broken
 
 
@@ -148,6 +182,10 @@ def gate(claims: list[dict], who: str, paths: list[str], at: int) -> str:
 
     先扫别人再扫自己：撞了就是 `false`，不许用自己那条把它洗成 `true`。
     全覆盖才算 `true`；其余（没登记、只覆盖一半、别人的已过期）都是 `unknown`。
+
+    **`who` 在这里按原文比较**（与库的 `ClaimStore::gate` 同一口径，共享表也是这么写的）；
+    "三种写法是同一个人"那件事在账本边界上做（`canonical_who`，写入与 release/renew 时）。
+    两处混在一起，共享表就会跟着 Python 侧的归一规则漂。
     """
     want = (who or "").strip()
     scoped = [normalize_path(p) for p in paths]
@@ -300,6 +338,23 @@ def check(path: pathlib.Path) -> dict:
                 "broken": [], "green": True}
     claims, broken = parse_claims(path.read_text(encoding="utf-8"))
     red, warn = conflicts(claims, now())
+    seen: dict[str, list[str]] = {}
+    for claim in claims:
+        seen.setdefault(claim["id"], []).append(claim["who"])
+    for cid, owners in seen.items():
+        if len(owners) > 1:
+            red.append(f"同名声明 id={cid} 出现 {len(owners)} 次（{', '.join(owners)}）⇒ "
+                       "按 id 收声明会收错人；库里的 ClaimStore 对同名 id 直接报错，两侧不能不一致")
+    for claim in claims:
+        fixed = canonical_who(claim["who"])
+        if not fixed:
+            warn.append(f"{claim['id']} 的 who={claim['who']!r} 归不出「宿主:会话id」；"
+                        f"release --who 精确匹配会漏（可用 {'|'.join(HOSTS)}:id）")
+        elif fixed != claim["who"]:
+            warn.append(f"{claim['id']} 的 who={claim['who']!r} 建议写成 {fixed!r}")
+        if claim["ttl"] > TTL_CAP_MIN:
+            warn.append(f"{claim['id']} 的 ttl={claim['ttl']} 分钟超过上限 {TTL_CAP_MIN}；"
+                        "长任务请用 renew 续期，别一次性占到底")
     red += [f"名单里有解析不了的行（不知道是谁在动什么 ⇒ 判红）：{line}" for line in broken]
     return {"tool": "agent-claims", "claims": claims, "red": red, "warn": warn,
             "broken": broken, "green": not red}
@@ -327,7 +382,8 @@ def write_claims(path: pathlib.Path, claims: list[dict]) -> None:
     lines = [HEADER, "", SEP, "| --- | --- | --- | --- | --- | --- | --- |"]
     for claim in claims:
         cells = [claim["id"], claim["who"], claim["repo"], ",".join(claim["paths"]),
-                 str(claim["ts"]), str(claim["ttl"]), claim["note"]]
+                 str(claim["ts"]), str(claim["ttl"]), claim["note"],
+                 str(claim.get("renewed", 0))]
         # 字段里出现 | 会截断解析 ⇒ 写侧就换掉，别把名单写坏
         lines.append("| " + " | ".join(str(cell).replace("|", "/") for cell in cells) + " |")
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -348,11 +404,16 @@ def cmd_claim(path: pathlib.Path, argv: list[str]) -> int:
             index += 1
         return out
 
-    who = value("--who")
+    raw_who = value("--who")
+    who = canonical_who(raw_who)
     repo = value("--repo")
     paths = [p for p in values("--paths") if p]
-    if not who or not repo:
+    if not raw_who or not repo:
         _say("claim 需要 --who <会话名> 与 --repo <o/r>（谁在动哪个仓，缺一项就没法提醒对方）")
+        return 1
+    if not who:
+        _say(f"FAIL --who {raw_who!r} 归不出「宿主:会话id」（宿主限定 {', '.join(HOSTS)}）。"
+             "新声明一律写规范形，否则 release --who 精确匹配收不掉自己的声明")
         return 1
     claims = read_claims(path)
     # 一个会话可以同时守几个仓；只有"同仓 + 同路径"才是重复声明
@@ -366,10 +427,19 @@ def cmd_claim(path: pathlib.Path, argv: list[str]) -> int:
     if ttl <= 0:
         _say("ttl 必须是正数分钟（不许用 0 表示永久占用，那样别人永远解不开）")
         return 1
-    claims.append({"id": f"c{len(claims) + 1}", "who": who, "repo": repo, "paths": paths,
+    if ttl > TTL_CAP_MIN:
+        _say(f"FAIL ttl={ttl} 超过上限 {TTL_CAP_MIN} 分钟：长任务用 `renew` 续期，"
+             "一次占到底会让过期声明长期占位（实测有一本账里 3/4 条过期未收）")
+        return 1
+    taken = {c["id"] for c in claims}
+    serial = 1
+    while f"c{serial}" in taken:
+        serial += 1
+    claims.append({"id": f"c{serial}", "who": who, "repo": repo, "paths": paths,
                    "ts": now(), "ttl": ttl, "note": value("--note")})
     write_claims(path, claims)
-    _say(f"已登记：{who} @ {repo} {paths or '(整个仓)'}（{ttl} 分钟）")
+    _say(f"已登记：{who} @ {repo} {paths or '(整个仓)'}（{ttl} 分钟；上限 {TTL_CAP_MIN}，"
+         "超时请 renew）")
     result = check(path)
     mine = [line for line in result["red"] if who in line]
     if mine:
@@ -380,13 +450,54 @@ def cmd_claim(path: pathlib.Path, argv: list[str]) -> int:
     return 0
 
 
+def cmd_renew(path: pathlib.Path, argv: list[str]) -> int:
+    """续期：把 claimed_at 推到现在并可改 ttl。长任务的心跳口。
+
+    不续期就只能靠 ttl 一次占到底，而一次占到底在实测里出过两种坏账：
+    过期未收长期占位（3/4 条）与 TTL 与工作时长严重不匹配（1461 分钟 vs 240）。
+    """
+    def value(flag: str, default: str = "") -> str:
+        return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else default
+
+    raw_who = value("--who")
+    ident = value("--id")
+    who = canonical_who(raw_who)
+    if not who and not ident:
+        _say("renew 需要 --who <宿主:会话id> 或 --id <编号>")
+        return 1
+    claims = read_claims(path)
+    targets = [c for c in claims
+               if (ident and c["id"] == ident)
+               or (who and canonical_who(c["who"]) == who)]
+    if not targets:
+        _say(f"没找到要续期的声明（who={raw_who or '-'} id={ident or '-'}）")
+        return 1
+    ttl_raw = value("--ttl")
+    ttl = int(ttl_raw) if ttl_raw else 0
+    if ttl and ttl > TTL_CAP_MIN:
+        _say(f"FAIL ttl={ttl} 超过上限 {TTL_CAP_MIN} 分钟")
+        return 1
+    at = now()
+    for claim in targets:
+        claim["ts"] = at
+        claim["ttl"] = ttl or min(claim["ttl"], TTL_CAP_MIN)
+        claim["renewed"] = claim.get("renewed", 0) + 1
+    write_claims(path, claims)
+    _say(f"已续期 {len(targets)} 条：{', '.join(c['id'] for c in targets)}"
+         f"（ttl={targets[0]['ttl']} 分钟，renewed={targets[0]['renewed']}）")
+    return 0
+
+
 def cmd_release(path: pathlib.Path, argv: list[str]) -> int:
     who = argv[argv.index("--who") + 1] if "--who" in argv else ""
     cid = argv[argv.index("--id") + 1] if "--id" in argv else ""
+    # 归一再比：三种历史写法描述的是同一个人，精确匹配会让你收不掉自己的声明
+    who_key = canonical_who(who)
     claims = read_claims(path)
     # 两个条件同时给时必须同时满足：or 会把我这条 `--who X --id c1` 变成"把 X 全清掉"
     keep = [c for c in claims
-            if not ((not who or c["who"] == who) and (not cid or c["id"] == cid))]
+            if not ((not who or (canonical_who(c["who"]) or c["who"]) == (who_key or who))
+                    and (not cid or c["id"] == cid))]
     if len(keep) == len(claims):
         _say(f"没找到要释放的声明（who={who or '-'} id={cid or '-'}）")
         return 1
@@ -410,11 +521,11 @@ def self_test() -> int:
             _say(f"FAIL {name}：期望 {expected!r}，实际 {actual!r}")
 
     base = now()
-    a = {"id": "c1", "who": "Qoder", "repo": "bfxh/trit", "paths": ["crates/trit-immune/src"],
+    a = {"id": "c1", "who": "qoder:s1", "repo": "bfxh/trit", "paths": ["crates/trit-immune/src"],
          "ts": base, "ttl": 90, "note": "治理门"}
-    b = {"id": "c2", "who": "zodER", "repo": "bfxh/trit-immune",
+    b = {"id": "c2", "who": "zcode:zoder", "repo": "bfxh/trit-immune",
          "paths": ["src/tls.rs", "src/diag.rs"], "ts": base, "ttl": 90, "note": "TLS"}
-    same = {"id": "c3", "who": "zodER", "repo": "bfxh/trit", "paths": ["scripts"],
+    same = {"id": "c3", "who": "zcode:zoder", "repo": "bfxh/trit", "paths": ["scripts"],
             "ts": base, "ttl": 90, "note": "同仓不同路径"}
 
     # 正例：路径不相交 ⇒ 绿（注意 repo 不同但 paths 名字像，也不该因为字符串像就判红）
@@ -449,7 +560,7 @@ def self_test() -> int:
     red, _ = conflicts([a, {**b, "repo": "bfxh/trit",
                              "paths": ["crates/trit-immune/src/tls.rs"]}], base)
     check_at("前缀相交被判出", len(red), 1)
-    check_at("双方都被点名", "Qoder ↔ zodER" in red[0], True)
+    check_at("双方都被点名", "qoder:s1 ↔ zcode:zoder" in red[0], True)
     # 反证 1b：不同仓、路径名相交 ⇒ 不拦，但必须出声（同一份代码的两个副本就是这个形状）
     red, warn = conflicts([a, {**b, "paths": ["crates/trit-immune/src/tls.rs"]}], base)
     check_at("跨仓同名路径不判红", red, [])
@@ -458,7 +569,7 @@ def self_test() -> int:
     red, warn = conflicts([a, same], base)
     check_at("同仓但路径不相交 ⇒ 不拦（否则闸门自己变噪音源头）", red, [])
     check_at("同仓路径不相交也要点名双方（共享工作树的账）",
-             (len(warn), "Qoder ↔ zodER" in warn[0], "HEAD" in warn[0]), (1, True, True))
+             (len(warn), "qoder:s1 ↔ zcode:zoder" in warn[0], "HEAD" in warn[0]), (1, True, True))
     # 反证 3：空路径集 = 整个仓，与同仓的任何声明都重叠
     red, _ = conflicts([a, {**b, "repo": "bfxh/trit", "paths": []}], base)
     check_at("整仓声明与任何人在建的都算重叠", len(red), 1)
@@ -481,7 +592,7 @@ def self_test() -> int:
         path.unlink()
         check_at("claim 需要 who+repo",
                  cmd_claim(path, ["claim", "--repo", "o/r"]), 1)
-        check_at("claim 写进去了", cmd_claim(path, ["claim", "--who", "Qoder", "--repo", "o/r",
+        check_at("claim 写进去了", cmd_claim(path, ["claim", "--who", "qoder:s1", "--repo", "o/r",
                                                     "--paths", "src/a", "src/b", "src/c/d.rs",
                                                     "--ttl", "30", "--note", "治理门"]), 0)
         check_at("读回来是 1 条", len(read_claims(path)), 1)
@@ -491,57 +602,113 @@ def self_test() -> int:
         # 反证 3b：自己写的名单自己必须能读干净（表头/分隔行被当坏行时，
         # 一次本来没冲突的检查会直接判红——这类"工具自己造假红"今天犯过一次）
         check_at("自己写的名单没有坏行", check(path)["broken"], [])
-        check_at("同一会话重复 claim 被拒", cmd_claim(path, ["claim", "--who", "Qoder",
+        check_at("同一会话重复 claim 被拒", cmd_claim(path, ["claim", "--who", "qoder:s1",
                                                              "--repo", "o/r"]), 1)
         check_at("同一会话可以另开一个仓的声明（一人守多仓是常态）",
-                 cmd_claim(path, ["claim", "--who", "Qoder", "--repo", "other/r",
+                 cmd_claim(path, ["claim", "--who", "qoder:s1", "--repo", "other/r",
                                   "--paths", "src/a"]), 0)
         check_at("ttl=0 当永久占用被拒",
-                 cmd_claim(path, ["claim", "--who", "X", "--repo", "o/r", "--ttl", "0"]), 1)
+                 cmd_claim(path, ["claim", "--who", "eac:x", "--repo", "o/r", "--ttl", "0"]), 1)
         check_at("另一会话同仓但路径不相交 ⇒ 登记成功（只提醒不拦）",
-                 cmd_claim(path, ["claim", "--who", "zodER", "--repo", "o/r",
+                 cmd_claim(path, ["claim", "--who", "zcode:zoder", "--repo", "o/r",
                                   "--paths", "src/z"]), 0)
         check_at("另一会话同仓且路径相交 ⇒ 拦并点名双方",
-                 cmd_claim(path, ["claim", "--who", "Third", "--repo", "o/r",
+                 cmd_claim(path, ["claim", "--who", "qoder:s3", "--repo", "o/r",
                                   "--paths", "src/a/inner"]), 1)
-        check_at("release 能收掉", cmd_release(path, ["--who", "Qoder"]), 0)
+        check_at("release 能收掉", cmd_release(path, ["--who", "qoder:s1"]), 0)
         check_at("判红那条也是登记过的（等双方对齐后各自 release）", len(read_claims(path)), 2)
-        check_at("第二条也收得掉", cmd_release(path, ["--who", "zodER"]), 0)
-        check_at("第三条也收得掉", cmd_release(path, ["--who", "Third"]), 0)
+        check_at("第二条也收得掉", cmd_release(path, ["--who", "zcode:zoder"]), 0)
+        check_at("第三条也收得掉", cmd_release(path, ["--who", "qoder:s3"]), 0)
         check_at("收完确实空了", read_claims(path), [])
         # gate 子命令：三态判定 + 退出码（0=能动，1=别人占着）。用单独一本台账，别搅后面的用例
         gate_ledger = pathlib.Path(tmp) / "GATE.md"
         check_at("gate：台账空 ⇒ unknown 且放行（没登记不等于不能动）",
-                 cmd_gate(gate_ledger, ["--who", "Qoder", "--paths", "src/a"]), 0)
-        cmd_claim(gate_ledger, ["claim", "--who", "Qoder", "--repo", "o/r",
+                 cmd_gate(gate_ledger, ["--who", "qoder:s1", "--paths", "src/a"]), 0)
+        cmd_claim(gate_ledger, ["claim", "--who", "qoder:s1", "--repo", "o/r",
                                "--paths", "src/a", "src/b"])
         check_at("gate：自己登记过 ⇒ true（目录覆盖其下文件）",
-                 cmd_gate(gate_ledger, ["--who", "Qoder", "--paths", "src/a/deep.rs"]), 0)
+                 cmd_gate(gate_ledger, ["--who", "qoder:s1", "--paths", "src/a/deep.rs"]), 0)
         check_at("gate：--paths 的多个值都收（只取一个就把声明面丢掉）",
-                 cmd_gate(gate_ledger, ["--who", "Qoder", "--paths", "src/b"]), 0)
-        cmd_claim(gate_ledger, ["claim", "--who", "zodER", "--repo", "o/r", "--paths", "src/c"])
+                 cmd_gate(gate_ledger, ["--who", "qoder:s1", "--paths", "src/b"]), 0)
+        cmd_claim(gate_ledger, ["claim", "--who", "zcode:zoder", "--repo", "o/r", "--paths", "src/c"])
         check_at("gate：别人占着 ⇒ 拦（退 1）",
-                 cmd_gate(gate_ledger, ["--who", "Qoder", "--paths", "src/c"]), 1)
+                 cmd_gate(gate_ledger, ["--who", "qoder:s1", "--paths", "src/c"]), 1)
         check_at("gate：没登记的第三方也算撞（unknown 不是给别人的通行证）",
-                 cmd_gate(gate_ledger, ["--who", "Newbie", "--paths", "src/c"]), 1)
-        cmd_release(gate_ledger, ["--who", "zodER"])
+                 cmd_gate(gate_ledger, ["--who", "codex:newbie", "--paths", "src/c"]), 1)
+        cmd_release(gate_ledger, ["--who", "zcode:zoder"])
         check_at("gate：对方 release 之后不再拦",
-                 cmd_gate(gate_ledger, ["--who", "Newbie", "--paths", "src/c"]), 0)
+                 cmd_gate(gate_ledger, ["--who", "codex:newbie", "--paths", "src/c"]), 0)
+        # —— 账本硬化：who 归一 / TTL 上限 / id 唯一 / renew ——
+        hard = pathlib.Path(tmp) / "HARD.md"
+        check_at("三种历史写法国一成同一个键",
+                 {canonical_who("Qoder(sess dc34ac09)"), canonical_who("qoder-dc34ac09"),
+                  canonical_who("qoder:dc34ac09")}, {"qoder:dc34ac09"})
+        check_at("前缀写法的第三种方向也认（zodER(ZCode)）",
+                 canonical_who("zodER(ZCode)"), "zcode:zoder")
+        check_at("归不出的写法返回空串（交给调用方拒绝）",
+                 (canonical_who("随便"), canonical_who("")), ("", ""))
+        check_at("claim 用旧写法也存成规范形",
+                 (cmd_claim(hard, ["claim", "--who", "qoder-abcdef12", "--repo", "o/r",
+                                   "--paths", "src/x"]),
+                  read_claims(hard)[0]["who"]), (0, "qoder:abcdef12"))
+        check_at("归不出的 who 直接拒收，且不写进账",
+                 (cmd_claim(hard, ["claim", "--who", "随便", "--repo", "o/r"]),
+                  len(read_claims(hard))), (1, 1))
+        check_at("ttl 超过上限被拒（长任务走 renew）",
+                 cmd_claim(hard, ["claim", "--who", "qoder:abcdef12", "--repo", "o/r2",
+                                  "--paths", "src/y", "--ttl", str(TTL_CAP_MIN + 60)]), 1)
+        before = read_claims(hard)[0]["ts"]
+        check_at("renew 推进时间并计数",
+                 (cmd_renew(hard, ["--who", "qoder:abcdef12"]),
+                  read_claims(hard)[0]["renewed"] >= 1), (0, True))
+        check_at("renew 用旧写法也能续规范形的行",
+                 cmd_renew(hard, ["--who", "qoder-abcdef12"]), 0)
+        check_at("renew 找不到就报错",
+                 cmd_renew(hard, ["--who", "zcode:nobody"]), 1)
+        check_at("renew 的 ttl 也受上限约束",
+                 cmd_renew(hard, ["--id", read_claims(hard)[0]["id"],
+                                 "--ttl", str(TTL_CAP_MIN + 1)]), 1)
+        check_at("release 用旧写法能收掉规范形的行",
+                 cmd_release(hard, ["--who", "qoder-abcdef12"]), 0)
+        check_at("收完之后确实是空的", read_claims(hard), [])
+
+        dup = pathlib.Path(tmp) / "DUP.md"
+        dup_rows = ["| c1 | qoder:a | o/r | src/x | 1000000000 | 90 | one | 0 |",
+                    "| c1 | zcode:b | o/r | src/y | 1000000000 | 90 | two | 0 |"]
+        dup.write_text(chr(10).join([HEADER.rstrip(), "", SEP,
+                                    "| --- | --- | --- | --- | --- | --- | --- |", *dup_rows])
+                       + chr(10), encoding="utf-8")
+        res = check(dup)
+        check_at("同名 id 判红（按 id 收声明会收错人）",
+                 any("同名声明" in line for line in res["red"]), True)
+
+        legacy = pathlib.Path(tmp) / "LEG.md"
+        leg_rows = ["| c1 | Qoder(sess dc34ac09) | o/r | src/x | 1000000000 | 600 | three | 0 |"]
+        legacy.write_text(chr(10).join([HEADER.rstrip(), "", SEP,
+                                       "| --- | --- | --- | --- | --- | --- | --- |", *leg_rows])
+                          + chr(10), encoding="utf-8")
+        res = check(legacy)
+        check_at("旧 who 给警告并给出照抄值",
+                 any("qoder:dc34ac09" in line for line in res["warn"]), True)
+        check_at("历史行 ttl 超上限也只警告（不追溯判红）",
+                 any("超过上限" in line for line in res["warn"]), True)
+        check_at("这些警告不改绿/红结论", res["green"], True)
+
         check_at("含 | 的备注不会把名单写坏",
-                 cmd_claim(path, ["claim", "--who", "Third", "--repo", "third/r",
+                 cmd_claim(path, ["claim", "--who", "qoder:s3", "--repo", "third/r",
                                   "--paths", "docs", "--note", "在合并 A|B 两条"]), 0)
         check_at("备注里的 | 被换掉（否则解析被截断）", read_claims(path)[0]["note"], "在合并 A/B 两条")
         check_at("转义后仍只有一条", len(read_claims(path)), 1)
         check_at("带 | 的名单也没有坏行", check(path)["broken"], [])
-        check_at("没东西可释放时报错不静默", cmd_release(path, ["--who", "Qoder"]), 1)
-        cmd_claim(path, ["claim", "--who", "Multi", "--repo", "m/r", "--paths", "x"])
+        check_at("没东西可释放时报错不静默", cmd_release(path, ["--who", "qoder:s1"]), 1)
+        cmd_claim(path, ["claim", "--who", "yan:multi", "--repo", "m/r", "--paths", "x"])
         before = len(read_claims(path))
         check_at("release 的 --who 与 --id 是且不是或（id 不匹配就一条都不许删）",
-                 (cmd_release(path, ["--who", "Multi", "--id", "不存在"]), len(read_claims(path))),
+                 (cmd_release(path, ["--who", "yan:multi", "--id", "不存在"]), len(read_claims(path))),
                  (1, before))
-        multi = [c for c in read_claims(path) if c["who"] == "Multi"]
+        multi = [c for c in read_claims(path) if canonical_who(c["who"]) == "yan:multi"]
         check_at("两个条件都对上才删",
-                 cmd_release(path, ["--who", "Multi", "--id", multi[0]["id"]]), 0)
+                 cmd_release(path, ["--who", "yan:multi", "--id", multi[0]["id"]]), 0)
         # 反证 7：名单文件不存在 ≠ 没人，只是闸门还没启用（不判红，但必须说）
         absent = check(path.parent / "没有这个文件.md")
         check_at("没有声明文件时不判红但要说",
@@ -595,6 +762,8 @@ def main(argv: list[str]) -> int:
         return cmd_claim(path, argv[1:])
     if command == "release":
         return cmd_release(path, argv[1:])
+    if command == "renew":
+        return cmd_renew(path, argv[1:])
     if command == "gate":
         return cmd_gate(path, argv[1:])
     if command in ("list", "check", ""):

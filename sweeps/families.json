@@ -22,19 +22,23 @@
     },
     {
       "id": "texture",
-      "title": "纹理",
-      "status": "registered",
+      "title": "纹理（TTX2 资产包）",
+      "status": "live",
       "dir": "runs/texture",
-      "needs": "先定义可复核的产物（ttx 包 + 采样一致性指标）与留出协议",
-      "evidence": "docs/TTX.md（协议草案，无机器可读清单）"
+      "manifest_kind": "texture-ttx-pack",
+      "verifier": "ttx-verify",
+      "detail": "docs/TEXTURE-RESULTS.md",
+      "protocol": "ttx-pack 固定参数编码（无逐图调参）→ ttx-verify 重算语料/索引/逐图指纹、重编码逐字节比对、采样一致性 → 目录自动生成"
     },
     {
       "id": "extract",
-      "title": "S1 提取（场景/文字→3D）",
-      "status": "registered",
+      "title": "S1 提取（N2 占据补全）",
+      "status": "live",
       "dir": "runs/extract",
-      "needs": "S1 / N1–N7 门的机器可读读数 + 每场景资产清单（2,400 帧见 A108）",
-      "evidence": "GENERAL-PLAN 通用提取各节 / LEDGER A108（**非本目录复核**）"
+      "manifest_kind": "extract-occupancy",
+      "verifier": "parts-extract-verify",
+      "detail": "docs/EXTRACT-RESULTS.md",
+      "protocol": "parts-3d occ 写清单（场景语料指纹 + 模型 SHA + 体积 IoU/闭合）→ parts-extract-verify 用 --load-model 在新进程重跑同一评测 → 目录自动生成；N1/N3–N7 仍只有文档读数"
     }
   ]
 }

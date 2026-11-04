@@ -52,5 +52,32 @@
     "pkg": "scripts/depth_catalogue.py",
     "filter": "",
     "runner": "python"
+  },
+  {
+    "name": "extract: 复核只认模型不认清单",
+    "file": "scripts/depth_catalogue.py",
+    "old": "            and (v.get(\"manifest\") or {}).get(\"sha256\") == sha",
+    "new": "            and True",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "extract: 最低 IoU 取成最高",
+    "file": "scripts/depth_catalogue.py",
+    "old": "        lowest = min((r.get(\"iou\", 1.0) for r in rows_m), default=None)",
+    "new": "        lowest = max((r.get(\"iou\", 1.0) for r in rows_m), default=None)",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "extract: 自监督配置不显示",
+    "file": "scripts/depth_catalogue.py",
+    "old": "        if cfg.get(\"selfsup\"):",
+    "new": "        if False:",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
   }
 ]
