@@ -6,6 +6,15 @@
 
 | 模型 | 配置 | 语料（场景/文件） | 体积 IoU（均值 / 最低） | 闭合 | 非流形边（债） | 指纹（模型前 12） | 来源 | 时间 |
 |---|---|---|---|---|---|---|---|---|
+| `sweep-selfsup-seeds/seed5-tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.6453 / 0.5758 | ✅ 8/8 | 1677 | `605702fd9f29` | `64b6eac+dirty` | 2026-11-04 20:54 UTC |
+| `sweep-selfsup-seeds/seed5-tau0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.01 | 12 / 300 | 0.6386 / 0.5612 | ✅ 8/8 | 1766 | `2faf286ff1c5` | `64b6eac+dirty` | 2026-11-04 20:52 UTC |
+| `sweep-selfsup-seeds/seed3-tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.6129 / 0.5326 | ✅ 8/8 | 2606 | `b9f407077757` | `64b6eac+dirty` | 2026-11-04 20:51 UTC |
+| `sweep-selfsup-seeds/seed3-tau0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.01 | 12 / 300 | 0.5786 / 0.4988 | ✅ 8/8 | 2350 | `c7b41d05a14d` | `64b6eac+dirty` | 2026-11-04 20:50 UTC |
+| `sweep-selfsup-seeds/seed2-tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.7301 / 0.6513 | ✅ 8/8 | 1081 | `a5464fad584c` | `64b6eac+dirty` | 2026-11-04 20:48 UTC |
+| `sweep-selfsup-seeds/seed2-tau0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.01 | 12 / 300 | 0.7280 / 0.6535 | ✅ 8/8 | 1106 | `39e3f86c6086` | `64b6eac+dirty` | 2026-11-04 20:47 UTC |
+| `sweep-24scenes-selfsup/seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.8026 / 0.7148 | ✅ 8/8 | 1563 | `a30f6dd6031f` | `64b6eac+dirty` | 2026-11-04 20:45 UTC |
+| `sweep-24scenes-selfsup/seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7941 / 0.7040 | ✅ 8/8 | 1510 | `ec5134af10a5` | `64b6eac+dirty` | 2026-11-04 20:42 UTC |
+| `sweep-24scenes-selfsup/seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7775 / 0.6961 | ✅ 8/8 | 1251 | `ede9ab23affd` | `64b6eac+dirty` | 2026-11-04 20:38 UTC |
 | `sweep-24scenes-hid128/hid128-seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6552 / 0.5707 | ✅ 8/8 | 2617 | `3a245091e5bd` | `288f981+dirty` | 2026-11-04 19:32 UTC |
 | `sweep-24scenes-hid128/hid128-seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6561 / 0.5851 | ✅ 8/8 | 1809 | `8a48618dd7fa` | `288f981+dirty` | 2026-11-04 19:26 UTC |
 | `sweep-24scenes-hid128/hid128-seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6929 / 0.6144 | ✅ 8/8 | 1563 | `31e10c43cc35` | `288f981+dirty` | 2026-11-04 19:19 UTC |
@@ -39,12 +48,6 @@
 | `sweep-lod-cells-seeds/cell0.02-seed5.occ1` | cell 0.02 m · 5000 步 · 8 视角 | 12 / 300 | 0.6218 / 0.5658 | ✅ 8/8 | 427 | `636f4b6169c9` | `4c0f110+dirty` | 2026-11-04 17:04 UTC |
 | `sweep-lod-cells-seeds/cell0.02-seed3.occ1` | cell 0.02 m · 5000 步 · 8 视角 | 12 / 300 | 0.4005 / 0.3215 | ✅ 8/8 | 572 | `45340764b767` | `4c0f110+dirty` | 2026-11-04 17:03 UTC |
 | `sweep-lod-cells-seeds/cell0.02-seed2.occ1` | cell 0.02 m · 5000 步 · 8 视角 | 12 / 300 | 0.6532 / 0.5828 | ✅ 8/8 | 240 | `7863082fb938` | `4c0f110+dirty` | 2026-11-04 17:03 UTC |
-| `sweep-selfsup-seeds/seed5-tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.6600 / 0.5841 | ✅ 8/8 | 1506 | `605702fd9f29` | `4c0f110+dirty` | 2026-11-04 17:02 UTC |
-| `sweep-selfsup-seeds/seed5-tau0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.01 | 12 / 300 | 0.6536 / 0.5727 | ✅ 8/8 | 1523 | `2faf286ff1c5` | `4c0f110+dirty` | 2026-11-04 17:01 UTC |
-| `sweep-selfsup-seeds/seed3-tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.6235 / 0.5356 | ✅ 8/8 | 2769 | `b9f407077757` | `4c0f110+dirty` | 2026-11-04 17:00 UTC |
-| `sweep-selfsup-seeds/seed3-tau0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.01 | 12 / 300 | 0.5917 / 0.5118 | ✅ 8/8 | 2211 | `c7b41d05a14d` | `4c0f110+dirty` | 2026-11-04 16:59 UTC |
-| `sweep-selfsup-seeds/seed2-tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.7460 / 0.6820 | ✅ 8/8 | 1116 | `a5464fad584c` | `4c0f110+dirty` | 2026-11-04 16:58 UTC |
-| `sweep-selfsup-seeds/seed2-tau0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.01 | 12 / 300 | 0.7430 / 0.6862 | ✅ 8/8 | 1074 | `39e3f86c6086` | `4c0f110+dirty` | 2026-11-04 16:57 UTC |
 | `sweep-1cm-seeds/seed5-steps20000.occ1` | cell 0.01 m · 20000 步 · 8 视角 | 12 / 300 | 0.5661 / 0.4842 | ✅ 8/8 | 1693 | `5e523dd35e00` | `241359f+dirty` | 2026-11-04 13:49 UTC |
 | `sweep-1cm-seeds/seed5-steps10000.occ1` | cell 0.01 m · 10000 步 · 8 视角 | 12 / 300 | 0.5150 / 0.4521 | ✅ 8/8 | 1734 | `14f6a85c21a9` | `241359f+dirty` | 2026-11-04 13:47 UTC |
 | `sweep-1cm-seeds/seed5-steps5000.occ1` | cell 0.01 m · 5000 步 · 8 视角 | 12 / 300 | 0.6363 / 0.5573 | ✅ 8/8 | 1957 | `b242335bfd68` | `241359f+dirty` | 2026-11-04 13:46 UTC |
@@ -60,8 +63,6 @@
 | `sweep-lod/cell0.04.occ1` | cell 0.04 m · 5000 步 · 8 视角 | 12 / 300 | 0.6370 / 0.5613 | ✅ 8/8 | 81 | `2b6c9ec307be` | `5dfbb8a+dirty` | 2026-11-04 11:10 UTC |
 | `sweep-lod/cell0.02.occ1` | cell 0.02 m · 5000 步 · 8 视角 | 12 / 300 | 0.5094 / 0.4400 | ✅ 8/8 | 393 | `b21d255806d6` | `5dfbb8a+dirty` | 2026-11-04 11:10 UTC |
 | `sweep-lod/cell0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 | 12 / 300 | 0.7035 / 0.6249 | ✅ 8/8 | 1504 | `bdd078bace72` | `5dfbb8a+dirty` | 2026-11-04 11:09 UTC |
-| `sweep-selfsup/tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.4945 / 0.4395 | ✅ 8/8 | 976 | `0227c23b63c4` | `0b6fc42+dirty` | 2026-11-04 10:42 UTC |
-| `sweep-selfsup/tau0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.01 | 12 / 300 | 0.5432 / 0.4745 | ✅ 8/8 | 1095 | `ffa2eb521cb8` | `0b6fc42+dirty` | 2026-11-04 10:41 UTC |
 | `sweep-steps/steps20000.occ1` | cell 0.01 m · 20000 步 · 8 视角 | 12 / 300 | 0.5535 / 0.4635 | ✅ 8/8 | 2083 | `9f05847034c6` | `d0ccaee+dirty` | 2026-11-03 23:40 UTC |
 | `sweep-steps/steps10000.occ1` | cell 0.01 m · 10000 步 · 8 视角 | 12 / 300 | 0.6981 / 0.6267 | ✅ 8/8 | 1613 | `3bf5408ecb45` | `d0ccaee+dirty` | 2026-11-03 23:38 UTC |
 | `sweep-steps/steps5000.occ1` | cell 0.01 m · 5000 步 · 8 视角 | 12 / 300 | 0.7035 / 0.6249 | ✅ 8/8 | 1504 | `bdd078bace72` | `d0ccaee+dirty` | 2026-11-03 23:37 UTC |
