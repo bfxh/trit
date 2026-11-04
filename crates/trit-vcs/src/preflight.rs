@@ -345,6 +345,7 @@ mod tests {
         assert_eq!(facts.staged_paths, 12);
         assert_eq!(facts.touched, vec!["gen".to_string()], "整片范围应折成一条");
         assert_eq!(facts.size.files, 12);
+        assert!(facts.size.bytes > 0, "规模读数必须带字节数");
         assert_eq!(facts.claims, vec!["scope".to_string()]);
         assert_eq!(facts.witness, None);
         assert_eq!(facts.witness_exit, None);

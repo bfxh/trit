@@ -505,9 +505,9 @@
  },
  {
   "name": "vcs: MCP token 估算除数翻倍（少报一半）",
-  "file": "crates/trit-vcs/src/mcp.rs",
-  "old": "    scaled.div_ceil(4)",
-  "new": "    scaled.div_ceil(8)",
+  "file": "crates/trit-vcs/src/tokens.rs",
+  "old": "    units.div_ceil(4)",
+  "new": "    units.div_ceil(8)",
   "filter": "token_estimate_is_ascii_quarter_and_cjk_one",
   "pkg": "trit-vcs",
   "runner": "cargo"
@@ -515,8 +515,8 @@
  {
   "name": "vcs: MCP commit 默认放行未认领",
   "file": "crates/trit-vcs/src/mcp.rs",
-  "old": "                            .unwrap_or(false),",
-  "new": "                            .unwrap_or(true),",
+  "old": "                        .get(\"allow_unclaimed\")\n                        .and_then(Value::as_bool)\n                        .unwrap_or(false),",
+  "new": "                        .get(\"allow_unclaimed\")\n                        .and_then(Value::as_bool)\n                        .unwrap_or(true),",
   "filter": "commit_without_allowance_is_a_tool_error",
   "pkg": "trit-vcs",
   "runner": "cargo"
@@ -734,6 +734,132 @@
   "old": "        commit.as_ref(),\n        has(args, \"--force\"),",
   "new": "        commit.as_ref(),\n        false,",
   "filter": "publish_then_sparse_pull",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 预检与提交判的不是同一条路（未认领被放行）",
+  "file": "crates/trit-vcs/src/preflight.rs",
+  "old": "        Verdict::Unclaimed if !req.allow_unclaimed => {",
+  "new": "        Verdict::Unclaimed if false => {",
+  "filter": "preflight_and_commit_share_one_verdict",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 预检不算这次提交的字节规模",
+  "file": "crates/trit-vcs/src/preflight.rs",
+  "old": "        bytes += map.size;",
+  "new": "        bytes += 0;",
+  "filter": "preflight_reports_collapsed_scope_and_size",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 预算形同虚设（一条行都不丢）",
+  "file": "crates/trit-vcs/src/tokens.rs",
+  "old": "    while estimate(&value.to_string()) > budget {",
+  "new": "    while false {",
+  "filter": "over_budget_trims_tail_rows_and_reports_the_count",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 没超预算也挂 truncation（元数据白占上下文）",
+  "file": "crates/trit-vcs/src/tokens.rs",
+  "old": "    if estimate(&value.to_string()) <= budget {\n        return 0;\n    }",
+  "new": "    if false {\n        return 0;\n    }",
+  "filter": "budget_big_enough_drops_nothing_and_says_so",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 丢到空数组还在计数",
+  "file": "crates/trit-vcs/src/tokens.rs",
+  "old": "        if rows.pop().is_none() {\n            break;\n        }",
+  "new": "        if false {\n            break;\n        }",
+  "filter": "over_budget_trims_tail_rows_and_reports_the_count",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 撞车判决的 kind 改名（智能体按名字分支失效）",
+  "file": "crates/trit-vcs/src/remediation.rs",
+  "old": "        RepoError::Conflict { .. } => \"claim_conflict\",",
+  "new": "        RepoError::Conflict { .. } => \"conflict\",",
+  "filter": "rejection_ships_the_command_that_clears_it",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 撞车时教智能体替别人撤销认领",
+  "file": "crates/trit-vcs/src/remediation.rs",
+  "old": "                    \"等 {other} 的认领到期再重来（别替它 release；能拆就先把触碰集拆到不相交）\"",
+  "new": "                    \"{CLAIMS} release --who {other}\"",
+  "filter": "conflict_names_the_other_side_but_never_tells_me_to_release_it",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: CLI 不认 --dry-run（预检变成真提交）",
+  "file": "crates/trit-vcs/src/bin/trit-vcs/main.rs",
+  "old": "            if has(&args, \"--dry-run\") {",
+  "new": "            if false {",
+  "filter": "rejection_ships_the_command_that_clears_it",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: CLI 不读 --budget（读数不设上限灌上下文）",
+  "file": "crates/trit-vcs/src/bin/trit-vcs/verdict.rs",
+  "old": "    let budget = flag(args, \"--budget\").and_then(|raw| raw.parse::<u64>().ok());",
+  "new": "    let budget: Option<u64> = None;",
+  "filter": "budget_caps_rows_and_says_how_many_it_dropped",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 数组型读数压完不喊丢了几行（静默截断）",
+  "file": "crates/trit-vcs/src/bin/trit-vcs/verdict.rs",
+  "old": "    if is_array && dropped > 0 {",
+  "new": "    if false {",
+  "filter": "budget_caps_rows_and_says_how_many_it_dropped",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: --budget 0 也照收（0 到底是全给还是全不给）",
+  "file": "crates/trit-vcs/src/bin/trit-vcs/verdict.rs",
+  "old": "        if budget == 0 {",
+  "new": "        if false {",
+  "filter": "budget_caps_rows_and_says_how_many_it_dropped",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: MCP 不吃 budget 参数",
+  "file": "crates/trit-vcs/src/mcp.rs",
+  "old": "                        if let Some(budget) = args.get(\"budget\").and_then(Value::as_u64) {",
+  "new": "                        if false {",
+  "filter": "dry_run_writes_nothing_and_budget_caps_the_reading",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: MCP 不认 dry_run（预检直接落提交）",
+  "file": "crates/trit-vcs/src/mcp.rs",
+  "old": "                if args\n                    .get(\"dry_run\")\n                    .and_then(Value::as_bool)\n                    .unwrap_or(false)\n                {",
+  "new": "                if false {",
+  "filter": "dry_run_writes_nothing_and_budget_caps_the_reading",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 工具清单不声明 budget 参数",
+  "file": "crates/trit-vcs/src/mcp.rs",
+  "old": "    .into_iter()\n    .map(with_budget)\n    .collect()",
+  "new": "    .into_iter()\n    .collect()",
+  "filter": "every_tool_advertises_budget_and_commit_advertises_dry_run",
   "pkg": "trit-vcs",
   "runner": "cargo"
  }
