@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（门的第二半：能力登记与「读数必须有数字」判红）
+
+- `scripts/layers.json` 新增 `capabilities` 段：一个能力一个 `authoritative`，第二份实现进 `mirrors`，
+  每条必须带 `measured_gap`（含数字）、`why_kept`、`bench`。**首条就是 A357**
+  （`cpu-bit-parallel-ternary-dot`，authoritative = `trit-dot`，mirror = `trit-gpu` + 那张 3.9–5.7× 的表）。
+- `scripts/layers.py::check_capabilities` 判红面：第二实现缺 `measured_gap`；读数里没有数字（"慢很多"挡得住）；
+  缺 `why_kept`；同一能力登记两条；`authoritative` 或 mirror 不在归位表里。
+- 自证：self-test 从 1 正例 + 6 反证扩到 **2 正例 + 11 反证**；变异 `scripts/layers.py` 5 → **10 条，caught 10 / survived 0**；
+  活体反证：把登记里的 `measured_gap` 改成"慢很多" ⇒ 门报「没有数字」rc=1，改回即绿（实测非推断）。
+- `docs/LAYERS.md` §4 与 §7 同步：去重这半不再是纸面规范。python runner 的变异仍属「未点名」，如实披露。
+
 ### Measured（A357：CPU 位并行点积的两份实现，实测差出来了）
 
 - 新 `crates/trit-dot/examples/dot_variants.rs`（`cargo run --release -p trit-dot --example dot_variants`）：

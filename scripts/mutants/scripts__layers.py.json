@@ -43,5 +43,50 @@
   "pkg": "scripts/layers.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "layers: 实测差缺字段的检查关掉",
+  "file": "scripts/layers.py",
+  "old": "            if not gap:",
+  "new": "            if False:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 读数里必须有数字这条失效",
+  "file": "scripts/layers.py",
+  "old": "            elif not any(ch.isdigit() for ch in gap):",
+  "new": "            elif False:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 并存理由不查",
+  "file": "scripts/layers.py",
+  "old": "            if not (mirror.get(\"why_kept\") or \"\").strip():",
+  "new": "            if False:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 能力重复登记不查",
+  "file": "scripts/layers.py",
+  "old": "        if name in seen:",
+  "new": "        if False:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "layers: 权威实现不在表里不查",
+  "file": "scripts/layers.py",
+  "old": "        if authoritative not in known_crates:",
+  "new": "        if False:",
+  "pkg": "scripts/layers.py",
+  "filter": "",
+  "runner": "python"
  }
 ]

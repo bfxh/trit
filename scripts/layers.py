@@ -84,6 +84,39 @@ def check(table: dict, members: list[str], deps_of=None) -> list[str]:
     for (src, dst) in exceptions:
         if src in members and dst not in deps_of(src):
             problems.append(f"失效例外：allows 里 {src} → {dst} 这条依赖已经不在了")
+    problems.extend(check_capabilities(table, set(layers)))
+    return problems
+
+
+def check_capabilities(table: dict, known_crates: set[str]) -> list[str]:
+    """LAYERS §4 的机器化：一个能力一个权威实现，第二份必须带**数字读数**与存在理由。"""
+    problems: list[str] = []
+    seen: set[str] = set()
+    for cap in table.get("capabilities", []):
+        name = cap.get("capability", "")
+        if name in seen:
+            problems.append(f"能力重复登记：{name} 出现两条记录（一个能力一条）")
+        seen.add(name)
+        authoritative = cap.get("authoritative")
+        if authoritative not in known_crates:
+            problems.append(f"能力 {name}：authoritative={authoritative!r} 不在归位表里")
+            continue
+        for mirror in cap.get("mirrors", []):
+            crate = mirror.get("crate")
+            if crate == authoritative:
+                problems.append(f"能力 {name}：{crate} 把自己登记成了镜像")
+            if crate not in known_crates:
+                problems.append(f"能力 {name}：镜像 {crate!r} 不在归位表里（先归位再登记）")
+            gap = (mirror.get("measured_gap") or "").strip()
+            if not gap:
+                problems.append(
+                    f"能力 {name}：{crate} 是第二份实现却没带 measured_gap —— "
+                    "「建议优化」不算读数，写清同机同输入的实测差"
+                )
+            elif not any(ch.isdigit() for ch in gap):
+                problems.append(f"能力 {name}：{crate} 的 measured_gap 里没有数字：{gap!r}")
+            if not (mirror.get("why_kept") or "").strip():
+                problems.append(f"能力 {name}：{crate} 没写 why_kept（并存就必须给理由）")
     return problems
 
 
@@ -104,7 +137,9 @@ def main(argv: list[str]) -> int:
         print(f"FAIL 拦 {len(problems)} 条 ⇒ 有东西没归位或在倒着依赖")
         return 1
     n_allows = len(table.get("allows", []))
-    print(f"OK 每个 crate 都归位，依赖全部向下（登记的跨层例外 {n_allows} 条）")
+    n_caps = len(table.get("capabilities", []))
+    n_mirrors = sum(len(cap.get("mirrors", [])) for cap in table.get("capabilities", []))
+    print(f"OK 每个 crate 都归位，依赖全部向下（跨层例外 {n_allows} 条；能力登记 {n_caps} 条、第二实现 {n_mirrors} 份）")
     return 0
 
 
@@ -163,6 +198,45 @@ def self_test() -> int:
         check({"crates": {"x": "middle"}, "allows": []}, ["x"], deps()),
         "未知层",
     )
+
+    # —— 能力登记（LAYERS §4 的机器化）——
+    def caps(**_: object):
+        return {"crates": {"d": "ops", "g": "ops"}, "allows": [], "capabilities": CAPS}
+
+    good_cap = {
+        "capability": "cpu-dot",
+        "authoritative": "d",
+        "mirrors": [
+            {"crate": "g", "measured_gap": "u64 8.4 vs u32 48.8 ps/trit（慢 5.8×）", "why_kept": "位宽被 GPU 锁死"}
+        ],
+    }
+    CAPS = [good_cap]
+    expect("正例 2：第二份实现带数字读数与理由", check(caps(), ["d", "g"], deps()), None)
+    CAPS = [{"capability": "cpu-dot", "authoritative": "d", "mirrors": [{"crate": "g", "why_kept": "x"}]}]
+    expect("反证 7：第二份实现没带实测差", check(caps(), ["d", "g"], deps()), "没带 measured_gap")
+    CAPS = [
+        {
+            "capability": "cpu-dot",
+            "authoritative": "d",
+            "mirrors": [{"crate": "g", "measured_gap": "慢很多", "why_kept": "x"}],
+        }
+    ]
+    expect("反证 8：实测差里没有数字", check(caps(), ["d", "g"], deps()), "没有数字")
+    CAPS = [
+        {
+            "capability": "cpu-dot",
+            "authoritative": "d",
+            "mirrors": [{"crate": "g", "measured_gap": "慢 5.8×", "why_kept": ""}],
+        }
+    ]
+    expect("反证 9：并存没写理由", check(caps(), ["d", "g"], deps()), "why_kept")
+    CAPS = [
+        {"capability": "cpu-dot", "authoritative": "d", "mirrors": []},
+        {"capability": "cpu-dot", "authoritative": "g", "mirrors": []},
+    ]
+    expect("反证 10：同一能力登记两条", check(caps(), ["d", "g"], deps()), "能力重复登记")
+    CAPS = [{"capability": "cpu-dot", "authoritative": "ghost", "mirrors": []}]
+    expect("反证 11：权威实现不在归位表里", check(caps(), ["d", "g"], deps()), "不在归位表里")
 
     print("自测结论：%s" % ("绿" if failures == 0 else f"红 {failures} 条"))
     return 1 if failures else 0

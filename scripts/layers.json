@@ -11,14 +11,12 @@
     "trit-core": "base",
     "trit-eval": "base",
     "trit-belnap": "base",
-
     "trit-dot": "ops",
     "trit-ops": "ops",
     "trit-float": "ops",
     "trit-codec": "ops",
     "trit-texture": "ops",
     "trit-gpu": "ops",
-
     "trit-sat": "algo",
     "trit-bdd": "algo",
     "trit-count": "algo",
@@ -27,14 +25,12 @@
     "trit-schedule": "algo",
     "trit-graph": "algo",
     "trit-capacity": "algo",
-
     "trit-learn": "learn",
     "trit-train": "learn",
     "trit-parts": "learn",
     "trit-attn": "learn",
     "trit-net": "learn",
     "trit-machines": "learn",
-
     "trit-cli": "prod",
     "trit-lsp": "prod",
     "trit-build": "prod",
@@ -53,5 +49,19 @@
     "trit-dot / trit-ops / trit-gpu 三者描述里都写「点积」：dot=位并行 CPU、ops=双导轨与 trit×f32 矩阵向量、gpu=WGSL 内核。同能力三处实现，按 LAYERS §4 必须各带同机实测差，否则合并。",
     "sansheng 是伞包且 0 测试：它只做 re-export，不参与判定；若哪天出现逻辑就必须先补对拍。",
     "trit-machines 与 trit-attn 都含「神经元」类部件，归 learn 而非 ops（它们改参数、要评测）。"
+  ],
+  "capabilities": [
+    {
+      "capability": "cpu-bit-parallel-ternary-dot",
+      "authoritative": "trit-dot",
+      "mirrors": [
+        {
+          "crate": "trit-gpu",
+          "measured_gap": "同机同输入交错 9 轮，8K/128K/2M 三档：u64 dispatch 中位 7.6–12.2 ps/trit、u64 portable 12.2–12.5、u32 镜像 48.1–50.7（慢 3.9–5.7×，无交叉点）、i32 标量 168.6–183.5",
+          "why_kept": "它是 WGSL 内核的逐字镜像（一个线程一个 32 位字），位宽被 GPU 侧锁死；matmul_words 与真机对拍、CPU/GPU 对照计时都走它。CPU 吞吐请一律用 trit-dot。",
+          "bench": "cargo run --release -p trit-dot --example dot_variants"
+        }
+      ]
+    }
   ]
 }
