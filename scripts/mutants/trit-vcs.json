@@ -780,7 +780,8 @@
   "new": "        if false {\n            break;\n        }",
   "filter": "over_budget_trims_tail_rows_and_reports_the_count",
   "pkg": "trit-vcs",
-  "runner": "cargo"
+  "runner": "cargo",
+  "hang_secs": 300
  },
  {
   "name": "vcs: 撞车判决的 kind 改名（智能体按名字分支失效）",
@@ -839,8 +840,8 @@
  {
   "name": "vcs: MCP 不吃 budget 参数",
   "file": "crates/trit-vcs/src/mcp.rs",
-  "old": "                        if let Some(budget) = args.get(\"budget\").and_then(Value::as_u64) {",
-  "new": "                        if false {",
+  "old": "args.get(\"budget\").and_then(Value::as_u64)",
+  "new": "args.get(\"budgets\").and_then(Value::as_u64)",
   "filter": "dry_run_writes_nothing_and_budget_caps_the_reading",
   "pkg": "trit-vcs",
   "runner": "cargo"

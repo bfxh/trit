@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
 """变异门：对关键规则做单点文本变异，跑对应回归；测试必须变红。
 
-用法：python scripts/mutation_check.py [--pkg <目标>]...
+用法：python scripts/mutation_check.py [--pkg <目标>]... [--only <名字片段>]
 目标 = crate 名，或带自测面的脚本路径（`scripts/*.py`、`crates/*/scripts/*.sh`）。
-每个变异都会在 finally 里**按字节、原子替换**恢复原文件；退出码 1 表示有 mutant 存活或超时。
+`--only` 只用于本地复跑个别条目，会大声打 `PARTIAL RUN`，且一条都没选中时判红（打错字不等于跑过）。
+每个变异都会在 finally 里**按字节、原子替换**恢复原文件；退出码 1 表示有变异存活、假杀、超时或无输出。
 
-三个反脆弱的阀门（都是本机踩出来的，不是设想）：
+四个反脆弱的阀门（都是本机踩出来的，不是设想）：
   · **每条变异有超时**（`MUTANT_TIMEOUT_SECS`，默认 900 秒）。踩过两次：同一台机器两个会话各跑一轮门，
     抢同一把 target 目录锁 ⇒ `cargo` 只等不编（有 cargo 无 rustc 子进程），整轮静默挂 20 分钟以上。
-    超时报 `TIMEOUT` 并判红 —— 那是"没结论"，不是"抓住"。
+    超时报 `TIMEOUT` 并判红 —— 那是"没结论"，不是"抓住"。杀超时进程时杀**整棵树**：
+    `subprocess.run` 只杀直接子进程，cargo 死了、它拉起的测试 exe 还在原地烧一个核
+    （2026-11-05 本地实测：pid 27480 空转，CPU 每秒 +1）。
+  · **必然死循环的变异在登记表里写 `hang_secs`**：拆掉终止守卫这类变异（`if rows.pop().is_none() { break }`
+    → 永不 break）没有断言可钉，只能靠超时判。写 `hang_secs` = 用短超时 + 单列成 `HANG-KILL`，
+    **不计入"断言抓住"**；没写这条声明的超时仍然判红，防止把环境卡死当成抓住。
   · **单实例锁**（`scripts/.mutation-check.lock/`，记 pid）。已有活着的门在跑就直接拒；
     持有者已死算陈旧锁，接管并点名。确认要并行：`MUTATION_CHECK_ALLOW_CONCURRENT=1`。
   · **写文件走 temp + os.replace**。踩过：SIGKILL 正好落在 `write_text` 中间 ⇒ 源文件被截成 0 字节。
@@ -28,6 +34,7 @@ import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -103,34 +110,71 @@ def selftest_marker(runner: str) -> str:
 
 def argv_of(pkg: str, test_filter: str, runner: str) -> list[str]:
     """跑法：脚本走自己的 --self-test，crate 走 cargo test（只点名那一条测试）。"""
-    if runner in ("python", "bash"):
-        return [sys.executable if runner == "python" else "bash", pkg, "--self-test"]
+    if runner == "python":
+        # -X utf8 是硬要求：中文 Windows 默认 cp936，子进程打的 `FAIL <例名>` 会被
+        # 按 utf-8 解成乱码 ⇒ 门还能判红，但点名的那条断言读不出人话。
+        return [sys.executable, "-X", "utf8", pkg, "--self-test"]
+    if runner == "bash":
+        return ["bash", pkg, "--self-test"]
     return ["cargo", "test", "-q", "-p", pkg, test_filter, "--locked"]
+
+
+def kill_tree(proc: subprocess.Popen[str]) -> None:
+    """连子进程一起杀。
+
+    `subprocess.run(timeout=)` 只杀直接子进程：cargo 死了，它拉起的测试 exe 还在原地空转烧核
+    （拆掉终止守卫的那条变异正是这种）。Windows 用 taskkill /T，POSIX 用进程组。"""
+    with contextlib.suppress(OSError, subprocess.TimeoutExpired):
+        if os.name == "nt":
+            subprocess.run(
+                ["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=60,
+            )
+        else:
+            os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+    with contextlib.suppress(OSError):
+        proc.kill()
 
 
 def run_command(argv: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
     """跑一条命令，超时**不当成抓住**：返回哨兵 rc + 点明最常见成因（target 目录锁被别的门占着）。"""
+    kwargs: dict = {
+        "cwd": ROOT,
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+        "text": True,
+        "encoding": "utf-8",
+        "errors": "replace",
+    }
+    if os.name != "nt":
+        # POSIX：自成进程组，超时可以整组端掉（CI 的 ubuntu/macos 走这条）。
+        kwargs["start_new_session"] = True
+    proc = subprocess.Popen(argv, **kwargs)
     try:
-        return subprocess.run(
-            argv,
-            cwd=ROOT,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=timeout,
-        )
+        out, _ = proc.communicate(timeout=timeout)
+        return subprocess.CompletedProcess(argv, proc.returncode, stdout=out, stderr="")
     except subprocess.TimeoutExpired as exc:
+        kill_tree(proc)
+        with contextlib.suppress(Exception):
+            # 树已死、管道随之关闭：把残留输出收干净，别丢掉半截日志。
+            exc.stdout, _ = proc.communicate(timeout=60)
         partial = exc.stdout or b""
         if isinstance(partial, bytes):
             partial = partial.decode("utf-8", errors="replace")
         tail = (
-            f"\nMUTANT TIMEOUT {timeout:.0f}s：子进程已被杀 ⇒ 这条没有结论。"\
+            f"\nMUTANT TIMEOUT {timeout:.0f}s：子进程连同它的测试 exe 已被杀 ⇒ 这条没有结论。"
             "本机常见原因是另一个门/编译占着 target 目录锁"
             "（`cargo` 在 `Blocking waiting for file lock`：有 cargo、没有 rustc 子进程）。\n"
         )
         return subprocess.CompletedProcess(argv, TIMEOUT_RC, stdout=partial + tail, stderr="")
+
+
+def hang_secs_of(mutant: dict) -> float | None:
+    """登记表里声明"这条变异必然死循环"时用它自己的短超时；没声明就用默认。"""
+    declared = mutant.get("hang_secs")
+    return float(declared) if declared else None
 
 
 def run_tests(
@@ -302,7 +346,7 @@ def preflight(mutants: list[dict], *, root: pathlib.Path = ROOT) -> list[str]:
 
 
 def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
-    """把一次变异运行的结果判成四类：caught / false_kill / crash / unnamed。
+    """把一次变异运行的结果判成五类：caught / false_kill / crash / unnamed / inconclusive。
 
     rc==0 的"存活"由调用方先判，不在这里。
     返回 (kind, detail)：caught 的 detail 是点名，crash 的 detail 是崩溃提示。
@@ -310,6 +354,11 @@ def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
     所以抽成纯函数，由 `--self-test` 用合成输出逐类钉住。
     """
     syntax = RUNNERS[runner]["syntax"]
+    if not out.strip():
+        # 一条输出都没有 ⇒ 测试根本没跑起来（被杀、被锁挡在编译前）。
+        # 这类"红"最容易被当成抓住：昨晚手工杀掉死循环的测试 exe，cargo 空输出退出，
+        # 门就把那条记成了 caught。单列成没结论，判红。
+        return "inconclusive", "无输出：进程没跑完就被杀或没跑起来"
     # 只认工具链自己打的诊断：断言行的例名里可能出现 "SyntaxError" 这类字样，
     # 把断言文本当成编译失败就会把"真抓住"误判成假杀（门自测第一版就这么翻车）。
     diag = "\n".join(line for line in out.splitlines() if not line.startswith("FAIL "))
@@ -384,7 +433,7 @@ def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
     return "caught", named.strip()
 
 
-def main(pkgs: list[str]) -> int:
+def main(pkgs: list[str], only: str = "") -> int:
     # Windows 控制台默认可能是 GBK；变异名里有中国字与 Ł，统一按 UTF-8 输出。
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -414,6 +463,13 @@ def main(pkgs: list[str]) -> int:
     if pkgs:
         detail = ", ".join(f"{pkg}={count}" for pkg, count in sorted(counts.items()))
         print(f"只跑所选包（{detail}）：{len(mutants)} 个变异")
+    if only:
+        picked = [m for m in mutants if only in m["name"]]
+        if not picked:
+            print(f"NO MUTANTS MATCHED --only {only!r}：{len(mutants)} 条里一条都没选中 ⇒ 判红（打错字不等于跑过了）")
+            return 1
+        print(f"PARTIAL RUN --only {only!r}：{len(picked)}/{len(mutants)} 条 —— 这不是全量复跑，CI 仍按包跑全部")
+        mutants = picked
     held, lock_note = acquire_lock()
     if not held:
         print(f"REFUSED：{lock_note}")
@@ -436,6 +492,8 @@ def _run(mutants: list[dict]) -> int:
 
     baseline: dict[tuple[str, str], bool] = {}
     timed_out: list[str] = []
+    hang_kills: list[str] = []
+    no_output: list[str] = []
     survived = 0
     false_kills: list[str] = []
     crash_kills: list[str] = []
@@ -465,14 +523,20 @@ def _run(mutants: list[dict]) -> int:
         # newline="" 是硬要求：默认写回会把整篇 \n 翻成 \r\n（Windows），
         # bash/sh 见到 \r 直接语法错，结果被误判成"崩溃"而不是断言——本地与 CI 就分叉了。
         write_atomic(path, original.replace(mutant["old"], mutant["new"]).encode("utf-8"))
+        # 声明了 hang_secs 的变异：拆掉终止守卫后测试永不返回，短超时即可判死循环
+        hang = hang_secs_of(mutant)
         try:
-            result = run_tests(pkg, filt, runner)
+            result = run_tests(pkg, filt, runner, timeout=hang)
         finally:
             # 恢复按字节，保证工作树回到原样（换行风格也不许被门顺手改掉）
             write_atomic(path, original_bytes)
             assert path.read_bytes() == original_bytes, "恢复失败"
 
         if result.returncode == TIMEOUT_RC:
+            if hang is not None:
+                hang_kills.append(mutant["name"])
+                print(f"HANG-KILL {mutant['name']}  [登记表声明的死循环 {hang:.0f}s：无断言可钉，不计入断言抓住]")
+                continue
             timed_out.append(mutant["name"])
             print(f"TIMEOUT   {mutant['name']}  [没结论：不算抓住，也不算存活]")
             continue
@@ -483,6 +547,10 @@ def _run(mutants: list[dict]) -> int:
         out = result.stdout
         runner = runner_of(mutant)
         kind, detail = classify(out, result.returncode, runner)
+        if kind == "inconclusive":
+            no_output.append(mutant["name"])
+            print(f"NO-OUTPUT {mutant['name']}  [没结论：{detail}]")
+            continue
         if kind == "false_kill":
             false_kills.append(mutant["name"])
             print(f"FALSE-KILL {mutant['name']}  [{runner} 编译/语法红：测试没跑，不算锁]")
@@ -497,30 +565,40 @@ def _run(mutants: list[dict]) -> int:
             continue
         print(f"caught    {mutant['name']}  [{detail}]")
 
-    killed = len(mutants) - survived - len(false_kills) - len(crash_kills) - len(timed_out)
+    killed = (len(mutants) - survived - len(false_kills) - len(crash_kills)
+              - len(timed_out) - len(hang_kills) - len(no_output))
     print(
-        f"\n断言抓住 {killed}，崩溃抓住 {len(crash_kills)}，编译红假杀 {len(false_kills)}，"
-        f"存活 {survived}，超时 {len(timed_out)}（共 {len(mutants)}）"
+        f"\n断言抓住 {killed}，死循环抓住 {len(hang_kills)}，崩溃抓住 {len(crash_kills)}，"
+        f"编译红假杀 {len(false_kills)}，存活 {survived}，超时 {len(timed_out)}，"
+        f"无输出 {len(no_output)}（共 {len(mutants)}）"
     )
     for name in timed_out:
         print(f"  TIMEOUT {name}")
+    for name in no_output:
+        print(f"  NO-OUTPUT {name}")
     for name in false_kills:
         print(f"  FALSE-KILL {name}")
+    if hang_kills:
+        print("  HANG-KILL（登记表声明的必然死循环：拆掉守卫会转不停，没有断言能钉住）：")
+        for name in hang_kills:
+            print(f"    - {name}")
     if crash_kills:
         print("  CRASH-KILL（证明守卫移除会炸，但不是断言钉住）：")
         for name in crash_kills:
             print(f"    - {name}")
     if unnamed:
         print(f"  未点名（既无断言也无崩溃签名）: {', '.join(unnamed)}")
-    if survived or false_kills or timed_out:
+    if survived or false_kills or timed_out or no_output:
         print("⇒ 门判红：假杀的条目要么改成语义变异（编得过、只改行为），要么删除；"
-              "超时的条目要么等锁空闲重跑，要么抬 MUTANT_TIMEOUT_SECS 并写理由。")
+              "超时/无输出的条目要么等锁空闲重跑，要么抬 MUTANT_TIMEOUT_SECS 并写理由；"
+              "确实只会死循环的条目在登记表里写 hang_secs 声明，别让它冒充抓住。")
         return 1
     return 0
 
 
-def parse_args(argv: list[str]) -> list[str]:
+def parse_args(argv: list[str]) -> tuple[list[str], str]:
     pkgs: list[str] = []
+    only = ""
     rest = list(argv)
     while rest:
         arg = rest.pop(0)
@@ -528,16 +606,21 @@ def parse_args(argv: list[str]) -> list[str]:
             pkgs.append(rest.pop(0))
         elif arg.startswith("--pkg="):
             pkgs.append(arg.split("=", 1)[1])
+        elif arg == "--only" and rest:
+            only = rest.pop(0)
+        elif arg.startswith("--only="):
+            only = arg.split("=", 1)[1]
         else:
             raise SystemExit(f"未知参数: {arg}")
-    return pkgs
+    return pkgs, only
 
 
 def self_test() -> int:
     """门自身判定链的自测：合成输出逐类判定 + 临时夹具验 preflight/has_own_logic 边界。
 
-    这不是"再跑一遍变异"：不碰 cargo，毫秒级，专钉门里最容易改坏的那几行
-    （编译红当抓住、崩溃当断言、脚本落到 cargo、空集放行，这四类都真踩过）。
+    这不是"再跑一遍变异"：不碰 cargo，秒级（两条超时夹具各等 0.5 秒与 6 秒），
+    专钉门里最容易改坏的那几行
+    （编译红当抓住、崩溃当断言、空输出当抓住、脚本落到 cargo、空集放行，这五类都真踩过）。
     失败打印 `FAIL <例名>`（与门脚本族同口径），全过打印 `self-test: N/N passed`。
     """
     total = 0
@@ -549,7 +632,7 @@ def self_test() -> int:
         if actual != expected:
             failures.append(f"FAIL {label}: 期望 {expected!r}，实际 {actual!r}")
 
-    # 一、四类裁决：编译红不算锁、崩溃不算断言
+    # 一、五类裁决：编译红不算锁、崩溃不算断言、空输出不算抓住
     check("cargo 编译红→false_kill", classify("error[E0308]: mismatched types", 1, "cargo")[0], "false_kill")
     check("cargo 栈溢出→crash", classify("thread 'x' has overflowed its stack", 134, "cargo")[0], "crash")
     check("cargo 0xc00000fd→crash", classify("boom", 0xC00000FD, "cargo")[0], "crash")
@@ -559,6 +642,8 @@ def self_test() -> int:
         ("caught", "t1 断言失败"),
     )
     check("cargo 无痕迹→unnamed", classify("nothing useful", 1, "cargo")[0], "unnamed")
+    check("空输出→没结论（不算抓住）", classify("", 1, "cargo")[0], "inconclusive")
+    check("只有空白也算空输出→没结论", classify("\n  \n", 101, "python")[0], "inconclusive")
     check("python SyntaxError→false_kill", classify("SyntaxError: invalid syntax", 1, "python")[0], "false_kill")
     check(
         "python FAIL 点名→caught",
@@ -676,7 +761,7 @@ def self_test() -> int:
         check("preflight 锚点在自测面之前→放行", preflight(fixture("scripts/gate.py", "x = 1", "python"), root=root), [])
         check("preflight 锚点在 bash 自测面之后→报错", len(preflight(fixture("scripts/gate.sh", "b=2", "bash"), root=root)), 1)
 
-    # 五、门自己的三条反脆弱阀门：超时 / 原子写 / 单实例锁（都是本机踩出来的）
+    # 五、门自己的五条反脆弱阀门：超时 / 杀整棵树 / 死循环声明 / 原子写 / 单实例锁（都是本机踩出来的）
     slow = run_command([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.5)
     check("超时必须返回哨兵 rc（不是假装跑完）", slow.returncode == TIMEOUT_RC, True)
     check("超时要点名 MUTANT TIMEOUT", "MUTANT TIMEOUT" in slow.stdout, True)
@@ -684,6 +769,43 @@ def self_test() -> int:
     fast = run_command([sys.executable, "-c", "print(1)"], timeout=30)
     check("给足超时的正常命令不该被判超时（反证）", fast.returncode == 0, True)
     check("正常命令不该带超时字样（反证）", "MUTANT TIMEOUT" in fast.stdout, False)
+
+    check("声明 hang_secs 的变异用短超时", hang_secs_of({"hang_secs": 300}), 300.0)
+    check("没声明就是 None（走默认 900）", hang_secs_of({}), None)
+    check("hang_secs=0 不算声明（0 秒超时会假杀一切）", hang_secs_of({"hang_secs": 0}), None)
+
+    # 超时只杀直接子进程是不够的：cargo 死了，它拉起的测试 exe 还在原地空转烧核
+    # （2026-11-05 本地实测 pid 27480，CPU 每秒 +1，杀掉 cargo 之后它照样活着）。
+    with tempfile.TemporaryDirectory() as td:
+        pid_file = pathlib.Path(td) / "kid.pid"
+        pathlib.Path(td, "kid.py").write_text(
+            "import os, time\n"
+            'with open(os.environ["MUTANT_KID_PID_FILE"], "w") as f:\n'
+            "    f.write(str(os.getpid()))\n"
+            "time.sleep(120)\n",
+            encoding="utf-8",
+        )
+        kid_py = str(pathlib.Path(td, "kid.py"))
+        pathlib.Path(td, "parent.py").write_text(
+            "import os, subprocess, sys, time\n"
+            'subprocess.Popen([sys.executable, os.environ["MUTANT_KID_PY"]])\n'
+            "time.sleep(120)\n",
+            encoding="utf-8",
+        )
+        parent_py = str(pathlib.Path(td, "parent.py"))
+        # 夹具靠环境变量认路：run_command 继承本进程环境，改完必须清掉。
+        os.environ["MUTANT_KID_PID_FILE"] = str(pid_file)
+        os.environ["MUTANT_KID_PY"] = kid_py
+        try:
+            tree = run_command([sys.executable, parent_py], timeout=6)
+        finally:
+            os.environ.pop("MUTANT_KID_PID_FILE", None)
+            os.environ.pop("MUTANT_KID_PY", None)
+        check("夹具要真的把孙进程起来（否则这条白测）", pid_file.exists(), True)
+        check("父命令超时被判哨兵 rc", tree.returncode == TIMEOUT_RC, True)
+        if pid_file.exists():
+            kid_pid = int(pid_file.read_text(encoding="utf-8"))
+            check("超时要把孙进程（真正的测试进程）一起端掉", _pid_alive(kid_pid), False)
 
     with tempfile.TemporaryDirectory() as td:
         target = pathlib.Path(td) / "src.txt"
@@ -736,4 +858,4 @@ def self_test() -> int:
 if __name__ == "__main__":
     if "--self-test" in sys.argv[1:]:
         sys.exit(self_test())
-    sys.exit(main(parse_args(sys.argv[1:])))
+    sys.exit(main(*parse_args(sys.argv[1:])))
