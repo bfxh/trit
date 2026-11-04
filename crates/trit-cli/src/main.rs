@@ -173,6 +173,9 @@ enum Commands {
         #[arg(long)]
         json: bool,
     },
+    /// 模型计数（DPLL 主路，可选与穷举 / BDD 对拍）。
+    #[command(subcommand)]
+    Count(commands::count::CountCommand),
     /// 化简表达式。
     Simplify {
         /// 待化简的表达式。
@@ -486,6 +489,9 @@ fn main() -> Result<()> {
                 json,
             },
         ),
+        Commands::Count(sub) => match sub {
+            commands::count::CountCommand::Models(args) => args.run(&cli.algebra),
+        },
         Commands::Simplify {
             expression,
             format,

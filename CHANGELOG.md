@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（`trit count models`：把计数引擎接到命令行）
+
+- `trit-cli` 新增子命令 `count models <expr>`（`crates/trit-cli/src/commands/count.rs`，经 `#[command(subcommand)]`
+  嵌套，main.rs 只长 6 行、离 800 行的上帝模块门还有 12 行）。参数：`--vars` / `--constraints` / `--binary` /
+  `--target true|false|unknown` / `--crosscheck` / `--bdd-max-nodes` / `--json`。
+- 实测读数（穷举独立复算过）：`a & b` 为真 **1**；`a | b` 为真 **5**，`--binary a` 收窄到 **4**；
+  `a & b` 为**未定 3**；`a & b` 在约束 `!a` 下 **0**；`--bdd-max-nodes 1` 时报
+  `BDD 拒（BDD 节点数超过上限 1）` 且 `matches=true / three_way=false`（拒绝不等于不一致）。
+- 新测试 `crates/trit-cli/tests/count_cmd.rs`（**5 条**，跑真二进制）。判决性实测：把 DPLL 调用里的
+  `&binary` 换成 `&HashSet::new()` ⇒ 只有 `binary_vars_narrow_the_domain` 判红。
+- 又踩一次**陈旧 exe** 的坑：变异探针把 `trit.exe` 重编译成被改坏的那版，恢复源码后**没重建**就直接跑，
+  于是读到 `--binary a` 报 5（其实是变异体在跑）。重新 `cargo build` 后才报 4。
+  顺手把这条做成锁：文本模式加断言 `!stdout.contains("BDD BDD ")`，同一个坑要用测试而不是记性来挡。
+- `README.md` 加「模型计数」一节（含上面每条读数与复算来源）；`--bdd-max-nodes` 的适用命令列表补 `count`。
+
 ### Added（`DepthNet` 的 `tests/` 端到端：三值格不变量、膨胀可达集、留出泛化）
 
 - 第二个 `tests/` 文件 `crates/trit-parts/tests/depthnet_e2e.rs`（**4 条**，全绿）。与内联 7 条**不重叠**：

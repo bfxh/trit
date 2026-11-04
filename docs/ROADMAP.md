@@ -53,7 +53,8 @@
 - **本轮翻面：`trit-count` → 可发布**（名字在 crates.io 实测未占用：`GET /api/v1/crates/trit-count` = 404）。
   判据不是"它成熟了"这种虚话，而是三条具体的：① 计数有**三方独立对拍**（DPLL / 穷举 / 闭式解 / BDD）；
   ② 有 26 条测试 + 16 条变异全抓；③ 它依赖的 `trit-core` / `trit-eval` / `trit-bdd` 本来就可发布，
-  翻面不引入新的约束。 ⇒ 于是 `trit-cli` 可以接 `count` 子命令了（下一片）。
+  翻面不引入新的约束。 ⇒ `trit-cli` 的 `count models` 子命令已接上（PR #299）：
+  `crates/trit-cli/tests/count_cmd.rs` 5 条二进制级断言，读数写在 README「模型计数」一节。
 - **翻面 ≠ 发布**。真发 crates.io 是单独一次授权动作（登录 ≠ 授权、邮箱验证、新包限流、token 不落聊天记录），
   要发的时候单独说，我按 `scripts/publish.sh` 口径走。
 

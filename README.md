@@ -506,7 +506,7 @@ BDD 节点预算默认 100 万（`BddLimits::default()`）。这是**软限额**
 高于上限。需要硬内存/CPU 上界时，把求解放进有资源限制的进程或 worker。
 量化结果的 `try_is_valid` / `try_counterexample` 会把查询产生的中间 BDD 也纳入检查。
 库调用可用 `equivalent_bdd_with_limits` 收紧，或 `BddLimits::UNLIMITED` 关闭。
-CLI 的 `equiv` / `quantify` / `verify --engine bdd` 都支持 `--bdd-max-nodes N`（0 表示不设上限）。
+CLI 的 `equiv` / `quantify` / `verify --engine bdd` / `count --crosscheck` 都支持 `--bdd-max-nodes N`（0 表示不设上限）。
 
 ## 量化（`trit quantify`）
 
@@ -535,6 +535,33 @@ $ trit quantify "a | !a" --vars a --kind forall --binary a
 性质成立退出 `0`，不成立退出 `2`；`--json` 输出 `satisfiable` / `valid` / `free` /
 `witness` / `counterexample` / `nodes`。被量化变量已被消去，见证与反例只含自由变量。
 省略 `--vars` 即量化全部变量，结果退化为一个布尔判定。
+
+## 模型计数（`trit count models`）
+
+把表达式编成双导轨 CNF，用带单元传播 / 分量分解 / 规范形缓存的 DPLL **精确计数**使
+`expr` 取目标值的赋值个数（目标是 `true` / `false` / `unknown` 三选一）。`--crosscheck`
+再跑两条**独立**路径复算：穷举（`3^n`，只适合小域）与双导轨 BDD（节点预算拦下时报"拒"，
+不算不一致）。
+
+```bash
+$ trit count models "a & b"
+模型数 a & b = 1  [kleene / cnf-dpll，节点 9、分支 4、分解 0]
+
+$ trit count models "a | b" --binary a
+模型数 a | b = 4  [kleene / cnf-dpll，节点 5、分支 2、分解 0]
+
+$ trit count models "a & b" --target unknown --crosscheck
+模型数 a & b = 3  [kleene / cnf-dpll，节点 9、分支 4、分解 0]
+对拍：穷举 3 ｜ BDD 3 ｜ 三路一致 是
+
+$ trit count models "a | b" --bdd-max-nodes 1 --crosscheck
+模型数 a | b = 5  [kleene / cnf-dpll，节点 9、分支 4、分解 0]
+对拍：穷举 5 ｜ BDD 拒（BDD 节点数超过上限 1）｜ 三路一致 否（预算拦下 BDD 时也是正常）
+```
+
+`--binary a` 把 a 的域从 `{F,U,T}` 收到 `{F,T}`，所以 `a | b` 从 5 降到 4；
+`--constraints "!a"` 要求约束先取 `True`，此时 `a & b` 数到 `0`（三路一致）。
+这些数都由穷举独立复算，见 `crates/trit-cli/tests/count_cmd.rs`。
 
 ## 四值（Belnap，opt-in）
 
