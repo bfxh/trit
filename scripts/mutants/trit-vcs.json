@@ -1,0 +1,137 @@
+[
+ {
+  "name": "vcs: 读块不校验哈希（对象被改也照常交出坏数据）",
+  "file": "crates/trit-vcs/src/store.rs",
+  "old": "        if actual != *hash {",
+  "new": "        if false {",
+  "filter": "index_pointing_at_another_chunk_is_corrupt",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 不检查 pack 越界（截断的库照常当好的）",
+  "file": "crates/trit-vcs/src/store.rs",
+  "old": "            if entry.offset + entry.len + 4 > pack_size {",
+  "new": "            if false {",
+  "filter": "truncated_pack_is_reported",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 已存在的块不再复用（每次都写新块，去重失效）",
+  "file": "crates/trit-vcs/src/store.rs",
+  "old": "        if self.index.borrow().contains_key(&hash) {\n            return Ok((hash, false));",
+  "new": "        if false {\n            return Ok((hash, false));",
+  "filter": "identical_content_writes_nothing_new",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 事件哈希不重算（改过的日志也判绿）",
+  "file": "crates/trit-vcs/src/journal.rs",
+  "old": "            if expected_hash != event.hash {",
+  "new": "            if false {",
+  "filter": "tampering_with_a_middle_event_is_detected",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: prev 链接不检查（删掉一条历史也看不出来）",
+  "file": "crates/trit-vcs/src/journal.rs",
+  "old": "            if event.prev != expected_prev && !(events.is_empty() && event.prev.is_none()) {",
+  "new": "            if false {",
+  "filter": "wrong_prev_with_self_consistent_hash_is_caught",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 认领门不看别人（撞车照写）",
+  "file": "crates/trit-vcs/src/gate.rs",
+  "old": "    if !others.is_empty() {",
+  "new": "    if false {",
+  "filter": "other_live_claim_conflicts_and_is_named",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 没人认领也放行（默认拒绝形同虚设）",
+  "file": "crates/trit-vcs/src/gate.rs",
+  "old": "        Ok(trit_core::Ternary::True) => Verdict::Allowed,\n        _ => Verdict::Unclaimed,",
+  "new": "        _ => Verdict::Allowed,",
+  "filter": "no_claim_is_unclaimed_not_allowed",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 提交不推 HEAD（前端一直看不到新提交）",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "        self.write_head(&id)?;",
+  "new": "        let _ = &id;",
+  "filter": "stage_commit_and_log",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 第二条提交不记父提交（历史断成散点）",
+  "file": "crates/trit-vcs/src/repo.rs",
+  "old": "        if let Some(parent) = self.head()? {",
+  "new": "        if let Some(parent) = None::<Hash> {",
+  "filter": "second_commit_links_to_first",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: HLC 退化（墙上时钟回拨就乱序）",
+  "file": "crates/trit-vcs/src/model.rs",
+  "old": "        if observed > self.wall_ms {",
+  "new": "        if false {",
+  "filter": "hlc_is_monotonic_under_skew",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 增量不比大小就用（无关内容也硬套 delta，越存越大）",
+  "file": "crates/trit-vcs/src/store.rs",
+  "old": "        if (delta.len() as u64) >= full_len / 2 {",
+  "new": "        if false {",
+  "filter": "delta_is_not_used_for_unrelated_content",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 重建增量时丢掉前缀（读出来少一截）",
+  "file": "crates/trit-vcs/src/delta.rs",
+  "old": "    out.extend_from_slice(&base[..prefix]);",
+  "new": "    let _ = prefix;",
+  "filter": "delta_is_used_for_a_local_edit",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: status 看不到修改（只报新增/删除）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "            Some(known) if *known != id => changes.push(Change {",
+  "new": "            Some(known) if false => changes.push(Change {",
+  "filter": "status_sees_added_modified_deleted",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: checkout 覆盖未提交改动（不打招呼就冲掉别人的文件）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "    if !force && !changes.is_empty() {",
+  "new": "    if false {",
+  "filter": "checkout_restores_and_refuses_dirty_without_force",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: checkout 不防路径穿越（树里的 ../ 能写到仓库外）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "    if is_unsafe(&cleaned) {",
+  "new": "    if false {",
+  "filter": "checkout_rejects_path_escape",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ }
+]
