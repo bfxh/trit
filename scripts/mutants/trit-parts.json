@@ -86,5 +86,13 @@
     "new": "        let mut r = seed | 1;",
     "pkg": "trit-parts",
     "filter": "even_and_odd_seeds_init_differently"
+  },
+  {
+    "name": "occ: lr 衰减失效（忽略 lr-final）",
+    "file": "crates/trit-parts/src/occ.rs",
+    "old": "        Some(end) if steps > 1 => {\n            let frac = step as f32 / (steps - 1) as f32;\n            lr + (end - lr) * frac\n        }",
+    "new": "        Some(_end) if steps > 1 => lr,",
+    "pkg": "trit-parts",
+    "filter": "lr_decays_linearly_to_final"
   }
 ]
