@@ -58,6 +58,7 @@
  "script/green_audit.py": 1,
  "script/hazard_gate.py": 1,
  "script/hooks.py": 1,
+ "script/layers.py": 1,
  "script/lod_gate.py": 1,
  "script/merge_forensics.py": 1,
  "script/module_budget.py": 1,

@@ -1,10 +1,10 @@
-# trit —— Rust 三进制工具箱（balanced ternary / 三值逻辑 / 三值内核）
+# trit —— Rust 三进制底座（balanced ternary / 三值逻辑 / 算子 · 算法 · 学习）
 
 [![CI](https://github.com/bfxh/trit/actions/workflows/ci.yml/badge.svg)](https://github.com/bfxh/trit/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/sansheng.svg)](https://crates.io/crates/sansheng)
 [![docs.rs](https://docs.rs/sansheng/badge.svg)](https://docs.rs/sansheng)
 
-**是什么**：在二进制机器上，把三进制真正能落地的那一层做成可复用 Rust crate——
+**是什么**：三值/多值计算的**底座仓**——所有算子、算法、学习机制在这里实现一次，生产链项目按 git pin 取用。在二进制机器上，把三进制真正能落地的那一层做成可复用 Rust crate——
 三值逻辑（Kleene K3 / Łukasiewicz Ł3 / Bochvar B3）、真值表与穷举等价、双导轨打包、
 CPU 掩码与 tryte 查表内核、GPU 三值内核、位平面 ALU、三值训练（STE/QAT）、
 TT3/TTX 资产容器、`.tri` 语言服务器、WASM Playground 与 `trit` CLI。
@@ -51,6 +51,8 @@ GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值
 完整清单与复算命令：[docs/LESSONS.md](docs/LESSONS.md)（经验与负结果）。
 
 定位与边界：[docs/DESIGN.md](docs/DESIGN.md)。
+
+新代码归位（算子 / 算法 / 学习 / 生产链）判据与门：[docs/LAYERS.md](docs/LAYERS.md)、`python scripts/layers.py`。
 
 网安/逆向技术调研（PYAS、KSword 与静态二进制分析的对照、证据等级与路线图）：
 [docs/SECURITY-RE.md](docs/SECURITY-RE.md)。

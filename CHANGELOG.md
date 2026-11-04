@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（分层与归位：算子 / 算法 / 学习 / 生产链）
+
+- 措辞更正：README 标题、`docs/DESIGN.md` 一句话、`sansheng` 的 crate description 里的
+  「三值推理**工具箱**」改成「**底座**」——这个仓不是工具箱，是所有三值实现的落点。
+  （文档里剩下那些「工具链」指的是编译器工具链，不是自我定位，不动。）
+- 新规范 `docs/LAYERS.md`：四层定义 + 「新东西进来放哪」的 5 问判据 + 依赖方向 +
+  去重三条硬规则（一个能力一个权威实现、oracle 与被测不同体、性能声明必须带规模档）+
+  外部取用口径（生产链按 **git pin + tag** 依赖，不 vendor、不抄源码）+ 改名的固定顺序（现在不改）。
+- 新门 `scripts/layers.py` + 登记表 `scripts/layers.json`：35 个 crate 全部归位
+  （base 3 / ops 6 / algo 8 / learn 6 / prod 12），依赖边全部向下，唯一的跨层回边
+  `trit-graph → trit-learn`（mpnn 要 `Ste`）在 `allows` 里点名并写了删除条件。
+  不登记的新 crate、倒着依赖、失效例外、陈旧登记、未知层名都判红。
+- 门的自证：`--self-test` 1 正例 + 6 反证全绿；把 `trit-core` 临时登记成 `prod` ⇒ 门立刻报
+  4 条以上回边 rc=1（实测，不是推断）；变异 5 条 **caught 5 / survived 0**。
+  诚实披露：python runner 的变异属「未点名」（没打印可归属的断言名），只算抓住不算指名。
+
 ### Measured（trit-count：BDD 坏顺序族 = 匹配族，给 watched literals 定靶子）
 
 - 新 `crates/trit-count/examples/matching_family.rs`：`(x0∧y0) | … | (x_{n-1}∧y_{n-1})`，
