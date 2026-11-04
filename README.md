@@ -54,6 +54,8 @@ GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值
 
 本库**收什么、不收什么**（含数据与二进制政策、跨仓分工）：[docs/SCOPE.md](docs/SCOPE.md)。
 
+每条能力到底是什么状态（已跑通 / 已实现未测 / 组件 / 已否证）：[docs/STATUS.md](docs/STATUS.md)。
+
 新代码归位（算子 / 算法 / 学习 / 生产链）判据与门：[docs/LAYERS.md](docs/LAYERS.md)、`python scripts/layers.py`。
 
 该搬进 / 该新开 / 该搬出与排序：[docs/ROADMAP.md](docs/ROADMAP.md)。
