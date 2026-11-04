@@ -24,7 +24,10 @@
 - 只允许 **上层依赖下层**：L4 → L3 → L2 → L1 → L0，同层之间允许但必须点名原因。
 - **禁止**：L1 依赖 L2/L3（算子为了跑自己的基准去链求解器）、L2 依赖 L3、任何跨层回边。
 - `trit-count` → `trit-bdd` 这类**同层**依赖要登记原因（一个引擎给另一个当第三方对拍）。
-- 落地：`门` `scripts/layer_gate.py` 读 `scripts/layers.json` + 各 `Cargo.toml` 的内部依赖边，出现回边判红。
+- 落地：`门` `scripts/layers.py` 读 `scripts/layers.json` + 各 `Cargo.toml` 的内部依赖边，出现回边判红。
+  当前 **0 条跨层例外**——原先唯一一条 `trit-graph → trit-learn`（mpnn 要 `Ste`）
+  已用「把 `Ste` 连同三值量化下沉到 `trit-core::quant`」消掉，`trit_learn::quant` 保留同名再导出，
+  既有导入路径与外部 git pin 不受影响。
 
 ## 3. 新东西进来时放哪（这是你日常最痛的一步）
 
@@ -68,7 +71,9 @@
 
 ## 7. 现在的缺口（不粉饰）
 
-- `scripts/layers.json`（crate→层 登记表）与 `scripts/layer_gate.py`（回边/重复能力判红）**本轮未落地**，
-  下一轮补：登记 36 个 crate、门自带正例 + 三类反证（回边、未登记、同能力无读数）。
+- 同能力去重的那一半（`alternative_of` + 实测差）还**只是规范**，门里没有实现；
+  现在门只判「归位 + 依赖方向」。下一轮把它变成登记表里的字段并判红。
 - README/`DESIGN.md`/`sansheng` 的「工具箱」措辞已改成「底座」；仓内其他文档里残留的
   「工具链」是**编译器工具链**那个意思的，不算错，不动。
+- 门本身还没进 CI：`.github` 整目录被别的会话认领着（等收窄），所以现阶段靠
+  `python scripts/layers.py` 本地判红 + 变异 5 条钉住判据。

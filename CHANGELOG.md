@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed（Ste 与三值量化下沉到 base）
+
+- `Ste`（Identity / Clipped / Soft 三变体）连同 `ternarize` / `quantize_with_scale` / `Quantized` /
+  `scale_grad` 从 `trit-learn::quant` **移到 `trit-core::quant`**（base 层）。理由是归位：
+  「量化到 {-1,0,+1} 与它的梯度口径」是表示层的事，算法层的 `trit-graph::mpnn` 要用它就不该反向依赖学习层。
+- `trit-learn::quant` 变成同名再导出 ⇒ `trit_learn::Ste`、`trit_learn::quant::*` 全部照旧，
+  `trit-train` / `trit-attn` / `trit-parts` 与外部 git pin **一行都没改**。
+- `trit-graph` 去掉 `trit-learn` 依赖；`trit-learn` 新增 `trit-core` 依赖（learn→base，向下）。
+- 归位表里的唯一跨层例外随之删除：`scripts/layers.json` 现在 **0 条例外**，门仍绿。
+- 测试跟着实现走：6 条量化/STE 断言从 learn 挪进 core（`--update` 不接受跨单位迁移，
+  台账按「learn 29→23、core 90→96、总数 2169 不变」手工搬；已验证 core 里 6 条、shim 里 0 条）。
+- 门：trit-core / trit-learn / trit-graph / trit-train / trit-attn / trit-parts 测试全绿、
+  clippy 干净、`mutation_check --pkg trit-core --pkg trit-learn --pkg trit-graph --pkg scripts/layers.py`
+  **caught 50 / survived 0**（含搬了锚点的 `learn: STE 截断门失效`，现指 `crates/trit-core/src/quant.rs`）。
+
 ### Added（分层与归位：算子 / 算法 / 学习 / 生产链）
 
 - 措辞更正：README 标题、`docs/DESIGN.md` 一句话、`sansheng` 的 crate description 里的

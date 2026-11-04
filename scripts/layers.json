@@ -48,13 +48,7 @@
     "trit-unsafe": "prod",
     "sansheng": "prod"
   },
-  "allows": [
-    {
-      "from": "trit-graph",
-      "to": "trit-learn",
-      "reason": "mpnn.rs 用 trit_learn::Ste（三态图上的消息传递头要训练原语）；等 Ste 下沉到 base 后删掉这条例外"
-    }
-  ],
+  "allows": [],
   "known_debts": [
     "trit-dot / trit-ops / trit-gpu 三者描述里都写「点积」：dot=位并行 CPU、ops=双导轨与 trit×f32 矩阵向量、gpu=WGSL 内核。同能力三处实现，按 LAYERS §4 必须各带同机实测差，否则合并。",
     "sansheng 是伞包且 0 测试：它只做 re-export，不参与判定；若哪天出现逻辑就必须先补对拍。",

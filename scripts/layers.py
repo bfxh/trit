@@ -103,7 +103,8 @@ def main(argv: list[str]) -> int:
     if problems:
         print(f"FAIL 拦 {len(problems)} 条 ⇒ 有东西没归位或在倒着依赖")
         return 1
-    print("OK 每个 crate 都归位，依赖全部向下（例外逐条点名）")
+    n_allows = len(table.get("allows", []))
+    print(f"OK 每个 crate 都归位，依赖全部向下（登记的跨层例外 {n_allows} 条）")
     return 0
 
 
