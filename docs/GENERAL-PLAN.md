@@ -3437,5 +3437,26 @@ parts-3d export-asset --model <occ1> --scene <dir> --frames 0,...,7 \
 - 三档全水密（边界边 = 0），导出 13 s；
 - **顶点色**：每个顶点投影到各视角、**深度一致才采样**、跨视角平均；无视角看到的（底面/内部）
   标灰——1 cm 只有 6.2% 无观测，粗档因为表面变厚升到 21.5%；
-- **缺口**：还没有 UV/贴图（顶点色是每顶点一色，不是纹素级）；也还没有独立复核器
-  （清单已带全部哈希，复核器是下一步）。
+- **缺口**：还没有 UV/贴图（顶点色是每顶点一色，不是纹素级）；独立复核器见 §6.119。
+
+### 6.119 资产清单独立复核器：`parts-asset-verify`（2026-11-05）
+
+```text
+parts-asset-verify --asset runs/assets/scene0084 [--parts-3d <exe>] [--json-out <path>]
+```
+
+- **不信清单**：新进程重算模型 SHA 与单场景语料指纹（`scenefp::fingerprint_scene_frames`，
+  seg/depth/meta × 帧），再把 `export-asset` 重跑到 `<asset>/verify.tmp`；
+- 逐档三项比对：清单记录哈希 = **磁盘交付件**哈希 = **重导出**哈希，外加 cell / 顶点 / 面 /
+  边界边 / 非流形 / 无观测顶点逐项相等；交付目录一个字节都不动；
+- 结果落 `asset.verify.json`；任一不一致写 `asset.verify.reject.json` 且退出码 1；
+  `--json-out` 是旁路记录，不碰正式记录（PASS/reject 互斥只在默认路径维护）。
+
+**实测**：
+
+| 输入 | 读数 | 记录 |
+|---|---|---|
+| `runs/assets/scene0084`（3 档） | 模型 / 语料 / 3 档全一致 | `asset.verify.json`（pass，rc=0） |
+| 同一拷贝 + `lod-2cm.ply` 尾加 1 字节 | 2/3 档一致（异常 `lod-2cm.ply`） | `asset.verify.reject.json`（reject，rc=1） |
+
+变异 2/2 caught（档位解析吞掉第一档 / 几何计数漏比无观测顶点）；单测 3 条。
