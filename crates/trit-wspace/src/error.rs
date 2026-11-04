@@ -89,6 +89,15 @@ pub enum Error {
         /// 调用方给的预算。
         limit: usize,
     },
+    /// 多编辑组合超过预算。
+    CombinationBudget {
+        /// 深度（目前支持 2 / 3）。
+        depth: usize,
+        /// 实际组合数。
+        combinations: usize,
+        /// 调用方给的预算。
+        limit: usize,
+    },
 }
 
 /// 库内统一 `Result`。
@@ -133,6 +142,14 @@ impl fmt::Display for Error {
                     "配对候选 {pairs} 对超过上限 {limit}；提高 max_pairs 或改用 repair"
                 )
             }
+            Self::CombinationBudget {
+                depth,
+                combinations,
+                limit,
+            } => write!(
+                f,
+                "{depth} 编辑组合 {combinations} 组超过上限 {limit}；提高预算或降低 depth"
+            ),
         }
     }
 }

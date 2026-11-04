@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：三编辑批量提议）
+
+- `analyze_triples`：枚举全部**不同坐标**的三点编辑组合，实测 `after_loss` / `fixed` /
+  `broken` / `changed` 并按 `gain` 排序；组合数超过 `max_triples` 报 `CombinationBudget`。
+- CLI `propose --depth 1|2|3 [--max-triples N]`（`--pairs` 仍是 `depth=2` 的别名）；
+  MCP `wsp_propose` 增加 `depth` / `max_triples`，返回 `depth=1|2|3`。
+- 读数：一个真实三点破坏（layer0 三个 trit 置 0）单点与配对都修不到 0，三组合 top 修到 0
+  且可回放；`[2,2,1]` 评估 672 组、`[2,3,1]` 评估 2,288 组（均排除同坐标组合）。
+- 测试 83 → 88 + 1 doctest（新增 4 条三组合不变量/预算 + 1 条 MCP depth=3 回放）；
+  变异 37 → **42 条，42/42 caught**；test_surface 台账 2,264 → 2,269。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
 ### Added（trit-wspace：验证集内容寻址）
 
 - 同一验证集只在日志第一条内嵌，后续条目写 `oracle_ref`（向前指向首条序号）；

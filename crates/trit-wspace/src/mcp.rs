@@ -88,13 +88,15 @@ pub fn tools() -> Vec<Value> {
         ),
         tool(
             "wsp_propose",
-            "实测单点编辑（或 pairs=true 时两编辑组合）的失配变化并按收益排序；不改工件",
+            "实测单点/两编辑/三编辑组合的失配变化并按收益排序；不改工件",
             json!({
                 "artifact": artifact(), "path": {"type": "string"},
                 "oracle": {"type": "object"},
                 "limit": {"type": "integer", "description": "返回条数，默认 16；0=全部"},
-                "pairs": {"type": "boolean", "description": "true=两编辑组合（默认单点）"},
+                "depth": {"type": "integer", "description": "1=单点，2=配对，3=三组合；默认 1"},
+                "pairs": {"type": "boolean", "description": "等价于 depth=2（兼容旧调用）"},
                 "max_pairs": {"type": "integer", "description": "配对预算，默认 20000"},
+                "max_triples": {"type": "integer", "description": "三组合预算，默认 20000"},
             }),
             &["oracle"],
         ),
@@ -256,14 +258,30 @@ impl Mcp {
                 let net = load(args)?;
                 let oracle = required_oracle(args)?;
                 let limit = opt_usize(args, "limit", 16);
-                if flag(args, "pairs") {
-                    let max_pairs = opt_usize(args, "max_pairs", 20_000);
-                    let analysis =
-                        analyze::analyze_pairs(&net, &oracle, limit, max_pairs).map_err(err)?;
-                    Ok(wire::pair_analysis_to_value(&analysis))
-                } else {
-                    let analysis = analyze::analyze(&net, &oracle, limit).map_err(err)?;
-                    Ok(wire::analysis_to_value(&analysis))
+                let depth = args.get("depth").and_then(Value::as_u64).map_or_else(
+                    || {
+                        if flag(args, "pairs") { 2 } else { 1 }
+                    },
+                    |value| value as usize,
+                );
+                match depth {
+                    1 => {
+                        let analysis = analyze::analyze(&net, &oracle, limit).map_err(err)?;
+                        Ok(wire::analysis_to_value(&analysis))
+                    }
+                    2 => {
+                        let max_pairs = opt_usize(args, "max_pairs", 20_000);
+                        let analysis =
+                            analyze::analyze_pairs(&net, &oracle, limit, max_pairs).map_err(err)?;
+                        Ok(wire::pair_analysis_to_value(&analysis))
+                    }
+                    3 => {
+                        let max_triples = opt_usize(args, "max_triples", 20_000);
+                        let analysis = analyze::analyze_triples(&net, &oracle, limit, max_triples)
+                            .map_err(err)?;
+                        Ok(wire::triple_analysis_to_value(&analysis))
+                    }
+                    other => Err(format!("depth 只支持 1/2/3，得到 {other}")),
                 }
             }
             "wsp_audit" => {

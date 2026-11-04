@@ -266,8 +266,8 @@
  {
   "name": "wspace-cli: --pairs 开关被忽略",
   "file": "crates/trit-wspace/src/cli.rs",
-  "old": "if parsed.switches.contains(\"pairs\") {",
-  "new": "if false {",
+  "old": "        None if parsed.switches.contains(\"pairs\") => 2,",
+  "new": "        None if false => 2,",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
  },
@@ -294,5 +294,45 @@
   "new": "                    let entry = &log.entries[0];\n                    let _ = root;",
   "pkg": "trit-wspace",
   "filter": "bad_oracle_refs_are_rejected"
+ },
+ {
+  "name": "wspace-triples: 三组合 gain 符号写反",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "                    after_loss: after_mismatches.len(),\n                    gain: before_loss as isize - after_mismatches.len() as isize,",
+  "new": "                    after_loss: after_mismatches.len(),\n                    gain: after_mismatches.len() as isize - before_loss as isize,",
+  "pkg": "trit-wspace",
+  "filter": "triple_candidates_find_three_edit_fix"
+ },
+ {
+  "name": "wspace-triples: 只应用前两条编辑",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "                first.apply_to(&mut trial)?;\n                second.apply_to(&mut trial)?;\n                third.apply_to(&mut trial)?;",
+  "new": "                first.apply_to(&mut trial)?;\n                second.apply_to(&mut trial)?;",
+  "pkg": "trit-wspace",
+  "filter": "every_triple_prediction_replays_exactly"
+ },
+ {
+  "name": "wspace-triples: 忽略三组合预算",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "if total > max_triples {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "triple_budget_is_honest"
+ },
+ {
+  "name": "wspace-mcp: depth=3 分支失效",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                    3 => {\n                        let max_triples = opt_usize(args, \"max_triples\", 20_000);",
+  "new": "                    4 => {\n                        let max_triples = opt_usize(args, \"max_triples\", 20_000);",
+  "pkg": "trit-wspace",
+  "filter": "propose_depth3_returns_three_edit_candidates"
+ },
+ {
+  "name": "wspace-cli: --depth 3 分支失效",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        3 => {\n            let max_triples = opt_usize(&parsed, \"max-triples\", 20_000)?;",
+  "new": "        4 => {\n            let max_triples = opt_usize(&parsed, \"max-triples\", 20_000)?;",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
  }
 ]

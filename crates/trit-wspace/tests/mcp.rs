@@ -298,6 +298,62 @@ fn propose_pairs_returns_two_edit_candidates() {
 }
 
 #[test]
+fn propose_depth3_returns_three_edit_candidates() {
+    let mut broken = xor_net();
+    Patch::new(vec![
+        Edit::SetTrit {
+            layer: 0,
+            row: 0,
+            col: 0,
+            to: Trit::Zero,
+        },
+        Edit::SetTrit {
+            layer: 0,
+            row: 0,
+            col: 1,
+            to: Trit::Zero,
+        },
+        Edit::SetTrit {
+            layer: 0,
+            row: 1,
+            col: 0,
+            to: Trit::Zero,
+        },
+    ])
+    .apply(&mut broken)
+    .expect("corrupt");
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_propose",
+        json!({
+            "artifact": to_wsp(&broken),
+            "oracle": xor_oracle(),
+            "depth": 3,
+            "limit": 4,
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert_eq!(value["depth"].as_u64(), Some(3));
+    let candidates = value["candidates"].as_array().expect("candidates");
+    assert!(!candidates.is_empty() && candidates.len() <= 4);
+    let top = &candidates[0];
+    assert_eq!(top["after_loss"].as_u64(), Some(0));
+    let edits = top["edits"].as_array().expect("edits");
+    assert_eq!(edits.len(), 3);
+
+    let patch = trit_wspace::wire::patch_from_value(&json!({
+        "version": 1,
+        "edits": edits,
+    }))
+    .expect("triple must be a valid patch");
+    let mut fixed = broken.clone();
+    patch.apply(&mut fixed).expect("apply");
+    assert!(xor_oracle_net_check(&fixed));
+}
+
+#[test]
 fn audit_verifies_chain_and_replays() {
     let start = xor_net();
     let mut broken = start.clone();
@@ -369,6 +425,14 @@ fn unknown_tool_and_bad_artifact_are_errors() {
 
     let bad = call(&mut server, "wsp_read", json!({"artifact": "not a wsp1"}));
     assert_eq!(bad["isError"], true);
+
+    let bad_depth = call(
+        &mut server,
+        "wsp_propose",
+        json!({"artifact": xor_artifact(), "oracle": xor_oracle(), "depth": 4}),
+    );
+    assert_eq!(bad_depth["isError"], true);
+    assert!(text(&bad_depth).contains("depth"));
 }
 
 #[test]

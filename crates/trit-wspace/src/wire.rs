@@ -20,7 +20,9 @@
 
 use serde_json::{Value, json};
 
-use crate::analyze::{Analysis, EditImpact, PairAnalysis, PairImpact};
+use crate::analyze::{
+    Analysis, EditImpact, PairAnalysis, PairImpact, TripleAnalysis, TripleImpact,
+};
 use crate::codec::checksum;
 use crate::edit::{Cost, Edit, Patch};
 use crate::error::{Error, Result};
@@ -184,6 +186,40 @@ pub fn pair_analysis_to_value(analysis: &PairAnalysis) -> Value {
 pub fn pair_impact_to_value(impact: &PairImpact) -> Value {
     json!({
         "edits": [edit_to_value(&impact.first), edit_to_value(&impact.second)],
+        "before_loss": impact.before_loss,
+        "after_loss": impact.after_loss,
+        "gain": impact.gain,
+        "fixed": impact.fixed,
+        "broken": impact.broken,
+        "changed": impact.changed,
+    })
+}
+
+/// 三编辑分析结果 → JSON。
+#[must_use]
+pub fn triple_analysis_to_value(analysis: &TripleAnalysis) -> Value {
+    json!({
+        "depth": 3,
+        "before_loss": analysis.before_loss,
+        "evaluated": analysis.evaluated,
+        "exact": analysis.before_loss == 0,
+        "candidates": analysis
+            .candidates
+            .iter()
+            .map(triple_impact_to_value)
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// 三编辑的实测影响 → JSON。
+#[must_use]
+pub fn triple_impact_to_value(impact: &TripleImpact) -> Value {
+    json!({
+        "edits": [
+            edit_to_value(&impact.first),
+            edit_to_value(&impact.second),
+            edit_to_value(&impact.third),
+        ],
         "before_loss": impact.before_loss,
         "after_loss": impact.after_loss,
         "gain": impact.gain,

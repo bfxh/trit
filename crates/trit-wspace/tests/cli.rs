@@ -163,6 +163,19 @@ fn cli_read_verify_patch_repair_round_trip() {
     assert_eq!(pairs["depth"].as_u64(), Some(2));
     assert!(pairs["candidates"].as_array().expect("pairs").len() <= 2);
 
+    let triples = stdout_json(&run(&[
+        "propose",
+        &path_string(&broken),
+        "--oracle",
+        &path_string(&oracle),
+        "--depth",
+        "3",
+        "--limit",
+        "2",
+    ]));
+    assert_eq!(triples["depth"].as_u64(), Some(3));
+    assert!(triples["candidates"].as_array().expect("triples").len() <= 2);
+
     let repaired = stdout_json(&run(&[
         "repair",
         &path_string(&broken),

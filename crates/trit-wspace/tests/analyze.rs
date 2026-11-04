@@ -246,3 +246,136 @@ fn same_coordinate_pairs_are_excluded() {
     assert_eq!(analysis.evaluated, 4);
     assert_eq!(analysis.candidates.len(), 4);
 }
+
+fn three_corruptions() -> Net {
+    let mut net = xor_net();
+    Patch::new(vec![
+        Edit::SetTrit {
+            layer: 0,
+            row: 0,
+            col: 0,
+            to: Trit::Zero,
+        },
+        Edit::SetTrit {
+            layer: 0,
+            row: 0,
+            col: 1,
+            to: Trit::Zero,
+        },
+        Edit::SetTrit {
+            layer: 0,
+            row: 1,
+            col: 0,
+            to: Trit::Zero,
+        },
+    ])
+    .apply(&mut net)
+    .expect("corrupt");
+    net
+}
+
+#[test]
+fn triple_candidates_find_three_edit_fix() {
+    let broken = three_corruptions();
+    let oracle = xor_oracle();
+    assert!(
+        analyze::analyze(&broken, &oracle, 0)
+            .expect("singles")
+            .candidates
+            .iter()
+            .all(|impact| impact.after_loss > 0),
+        "测试前提：单点修不好"
+    );
+    assert!(
+        analyze::analyze_pairs(&broken, &oracle, 0, 20_000)
+            .expect("pairs")
+            .candidates
+            .iter()
+            .all(|impact| impact.after_loss > 0),
+        "测试前提：配对也修不好"
+    );
+
+    let triples = analyze::analyze_triples(&broken, &oracle, 0, 20_000).expect("triples");
+    let top = &triples.candidates[0];
+    assert_eq!(top.after_loss, 0);
+    assert!(top.gain > 0);
+    assert_eq!(top.broken, 0);
+    let mut fixed = broken.clone();
+    Patch::new(vec![
+        top.first.clone(),
+        top.second.clone(),
+        top.third.clone(),
+    ])
+    .apply(&mut fixed)
+    .expect("apply triple");
+    assert!(oracle.exact(&fixed).expect("exact"));
+}
+
+#[test]
+fn every_triple_prediction_replays_exactly() {
+    let net = Net::random(&[2, 2, 1], 11).expect("net");
+    let oracle = Oracle::ternary(2, |input| {
+        Trit::sign_of(2 * i32::from(input[0].to_i8()) + i32::from(input[1].to_i8()))
+    })
+    .expect("oracle");
+    let analysis = analyze::analyze_triples(&net, &oracle, 0, 20_000).expect("triples");
+    assert_eq!(analysis.candidates.len(), analysis.evaluated);
+    assert_eq!(analysis.evaluated, 672, "816 组减去 144 组含同坐标的");
+
+    let before = oracle.outputs_of(&net).expect("before");
+    let want = oracle.outputs();
+    for impact in &analysis.candidates {
+        let mut trial = net.clone();
+        Patch::new(vec![
+            impact.first.clone(),
+            impact.second.clone(),
+            impact.third.clone(),
+        ])
+        .apply(&mut trial)
+        .expect("apply");
+        let after = oracle.outputs_of(&trial).expect("after");
+        let fixed = before
+            .iter()
+            .zip(want)
+            .zip(&after)
+            .filter(|((left, expected), right)| left != expected && right == expected)
+            .count();
+        let broken = before
+            .iter()
+            .zip(want)
+            .zip(&after)
+            .filter(|((left, expected), right)| left == expected && right != expected)
+            .count();
+        let changed = before
+            .iter()
+            .zip(&after)
+            .filter(|(left, right)| left != right)
+            .count();
+        assert_eq!(impact.after_loss, oracle.loss(&trial).expect("loss"));
+        assert_eq!(impact.fixed, fixed);
+        assert_eq!(impact.broken, broken);
+        assert_eq!(impact.changed, changed);
+    }
+}
+
+#[test]
+fn triple_limit_and_determinism() {
+    let net = Net::random(&[2, 3, 1], 9).expect("net");
+    let oracle = Oracle::boolean(2, |bits| bits[0] || bits[1]).expect("oracle");
+    let first = analyze::analyze_triples(&net, &oracle, 5, 20_000).expect("first");
+    let second = analyze::analyze_triples(&net, &oracle, 5, 20_000).expect("second");
+    assert_eq!(first, second);
+    assert_eq!(first.candidates.len(), 5);
+    assert_eq!(first.evaluated, 2288, "2600 组减去 312 组含同坐标的");
+}
+
+#[test]
+fn triple_budget_is_honest() {
+    let net = Net::random(&[2, 3, 1], 9).expect("net");
+    let oracle = Oracle::boolean(2, |bits| bits[0] || bits[1]).expect("oracle");
+    let error = analyze::analyze_triples(&net, &oracle, 0, 100).expect_err("超预算应报错");
+    assert!(
+        matches!(error, Error::CombinationBudget { depth: 3, .. }),
+        "{error}"
+    );
+}

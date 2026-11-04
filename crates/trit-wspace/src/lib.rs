@@ -103,7 +103,10 @@ pub mod repair;
 pub mod trit;
 pub mod wire;
 
-pub use analyze::{Analysis, EditImpact, PairAnalysis, PairImpact, analyze, analyze_pairs};
+pub use analyze::{
+    Analysis, EditImpact, PairAnalysis, PairImpact, TripleAnalysis, TripleImpact, analyze,
+    analyze_pairs, analyze_triples,
+};
 pub use audit::{AuditLog, LogEntry, ReplayReport};
 pub use codec::{checksum, from_wsp, to_wsp};
 pub use edit::{Cost, Edit, Journal, Patch};
