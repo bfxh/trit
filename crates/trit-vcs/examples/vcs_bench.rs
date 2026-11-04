@@ -457,9 +457,104 @@ fn merge_bench() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// 场景 F：中心化 + 按需物化——全量 publish 的字节，对上单目录 pull 的字节与用时。
+fn central_bench() {
+    use trit_vcs::central;
+
+    let dirs = 20usize;
+    let per = 10usize;
+    let root = std::env::temp_dir().join(format!("trit-vcs-central-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+
+    let mut entries: BTreeMap<String, Vec<u8>> = BTreeMap::new();
+    for d in 0..dirs {
+        for f in 0..per {
+            entries.insert(
+                format!("gen/d{d:02}/f{f:02}.txt"),
+                format!("dir {d} file {f}\n").repeat(40).into_bytes(),
+            );
+        }
+    }
+
+    let src = root.join("src");
+    std::fs::create_dir_all(&src).unwrap();
+    let mut repo = Repo::init(&src).unwrap();
+    repo.stage(&entries, 1_000).unwrap();
+    repo.commit(CommitRequest {
+        message: "central bench".to_string(),
+        session: "qoder:bench".to_string(),
+        claims: vec![ClaimSpec {
+            id: "c1".to_string(),
+            owner: "qoder:bench".to_string(),
+            paths: vec!["gen".to_string()],
+            acquired_at: 1,
+            expires_at: u64::MAX / 2,
+        }],
+        now_secs: 1_000,
+        ..Default::default()
+    })
+    .unwrap();
+
+    let hub_dir = root.join("central");
+    std::fs::create_dir_all(&hub_dir).unwrap();
+    let mut hub = Repo::init(&hub_dir).unwrap();
+    let start = Instant::now();
+    let published = central::publish(&repo, &mut hub, "main", None, false).unwrap();
+    let publish_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+    let one_dir = root.join("client-one");
+    std::fs::create_dir_all(&one_dir).unwrap();
+    let mut client = Repo::init(&one_dir).unwrap();
+    let start = Instant::now();
+    let first = central::pull(&hub, &mut client, "main", Some("gen/d00"), false).unwrap();
+    let first_ms = start.elapsed().as_secs_f64() * 1000.0;
+    let again = central::pull(&hub, &mut client, "main", Some("gen/d00"), false).unwrap();
+
+    let all_dir = root.join("client-all");
+    std::fs::create_dir_all(&all_dir).unwrap();
+    let mut client_all = Repo::init(&all_dir).unwrap();
+    let start = Instant::now();
+    let whole = central::pull(&hub, &mut client_all, "main", None, false).unwrap();
+    let whole_ms = start.elapsed().as_secs_f64() * 1000.0;
+
+    let ratio = first.transfer.sent_bytes as f64 / published.transfer.total_bytes as f64 * 100.0;
+    println!(
+        "F 中心化（{} 目录 × {} 文件 = {} 个）",
+        dirs,
+        per,
+        dirs * per
+    );
+    println!(
+        "  publish 全量：{} B / {} 对象（{:.1} ms）",
+        published.transfer.total_bytes, published.transfer.objects, publish_ms
+    );
+    println!(
+        "  单目录 pull：{} B / {} 对象 ⇒ {:.2}% 全量；物化 {} 个文件、范围外跳过 {}（{:.1} ms）",
+        first.transfer.sent_bytes,
+        first.transfer.objects,
+        ratio,
+        first.written,
+        first.skipped,
+        first_ms
+    );
+    println!(
+        "  重复 pull：实传 {} B / {} 对象（判据 0；跳过 {}）",
+        again.transfer.sent_bytes, again.transfer.sent_objects, again.transfer.skipped
+    );
+    println!(
+        "  全量 pull：{} B；物化 {} 个文件（{:.1} ms）",
+        whole.transfer.sent_bytes, whole.written, whole_ms
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 fn main() {
     if std::env::args().any(|arg| arg == "--status") {
         status_bench();
+        return;
+    }
+    if std::env::args().any(|arg| arg == "--central") {
+        central_bench();
         return;
     }
     if std::env::args().any(|arg| arg == "--merge") {
