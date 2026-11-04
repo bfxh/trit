@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（把「计时夹具」登记成分层能力：权威 = `trit-bench`，两份手写档带实测差）
+
+- `scripts/layers.json` 的 `capabilities` 新增 `bench-timing-harness`：权威 `trit-bench`，镜像两份——
+  `trit-ops/src/bin/bench.rs`（最完整的手写档：交错 + min/median/max + 轮内轮换，`trit-bench` 的轮换就是从它抄的；
+  该文件被 sess 179ea139 认领中，不悄悄合）与 `trit-parts` 的 `parts-bench`（GPU + 仓外 ckpt，本机跑不起来 ⇒ 无法先验证尺子没换）。
+  每条都带 `measured_gap`（A357 迁移前后同档：u64 dispatch 8.1–9.3 vs 手写 7.6–12.2 ps/trit 等；小档量化台阶
+  100/200 ns → 67.5/72.8/82.8 ns）与 `why_kept`，门报「能力登记 2 条、第二实现 3 份」绿。
+- **我自己写坏过一条复算指针**：先填的是 `cargo test -p trit-ops --release bench`（凭印象猜的），
+  实际 `crates/trit-ops/Cargo.toml:14` 是 `[[bin]] name = "bench"` ⇒ 正确口径 `cargo run --release -p trit-ops --bin bench`；
+  `parts-bench` 的参数也不是位置参数而是 `--dir <parity 目录>`。两处都按 `Cargo.toml` 与 bin 源码逐字改过——
+  复算命令写错等于没有复算尺。
+
 ### Added（`trit count models`：把计数引擎接到命令行）
 
 - `trit-cli` 新增子命令 `count models <expr>`（`crates/trit-cli/src/commands/count.rs`，经 `#[command(subcommand)]`

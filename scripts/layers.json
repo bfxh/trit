@@ -63,6 +63,24 @@
           "bench": "cargo run --release -p trit-dot --example dot_variants"
         }
       ]
+    },
+    {
+      "capability": "bench-timing-harness",
+      "authoritative": "trit-bench",
+      "mirrors": [
+        {
+          "crate": "trit-ops",
+          "measured_gap": "A357 复算尺从手写版迁到 trit-bench 后读数同档：u64 dispatch 8.1–9.3 ps/trit（手写 7.6–12.2）、u64 portable 12.7–12.8（12.2–12.5）、u32 镜像 48.5–52.3（48.1–50.7）、i32 标量 170.8–246（168.6–183.5）；小档 8192 trits 手写只报 min=100/med=200 ns 的量化台阶，trit-bench 的 reps 报出 67.5/72.8/82.8 ns",
+          "why_kept": "trit-ops/src/bench.rs 是最完整的手写档（交错 + min/median/max + 轮内轮换位序），trit-bench 的位序轮换就是从它抄的；它挂在 ops 的单测路径里、被现有测试引用，迁移要动的是别人的承重面（该文件被 sess 179ea139 认领中）。先登记不悄悄合",
+          "bench": "cargo run --release -p trit-ops --bin bench"
+        },
+        {
+          "crate": "trit-parts",
+          "measured_gap": "手写 `bench()` 只做「预热 → gpu.sync → iters 次 → elapsed×1000/iters」，报的是**单一均值**（无 min/median/max）、也不与别的实现交错；分项那段（dx/dw/db）按 k=0..2 各测一次，同样是单次均值",
+          "why_kept": "需要真 GPU + 仓外 ckpt（默认 `../trit-data/parts-parity`），本机没有那份数据 ⇒ 无法在迁移前用读数验证尺子没换。按「先验证再下结论」保留手写并登记，验证面补齐再迁",
+          "bench": "cargo run --release -p trit-parts --bin parts-bench -- --dir <parity 目录>"
+        }
+      ]
     }
   ]
 }
