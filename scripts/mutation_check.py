@@ -3,7 +3,15 @@
 
 用法：python scripts/mutation_check.py [--pkg <目标>]...
 目标 = crate 名，或带自测面的脚本路径（`scripts/*.py`、`crates/*/scripts/*.sh`）。
-每个变异都会在 finally 里**按字节**恢复原文件；退出码 1 表示有 mutant 存活。
+每个变异都会在 finally 里**按字节、原子替换**恢复原文件；退出码 1 表示有 mutant 存活或超时。
+
+三个反脆弱的阀门（都是本机踩出来的，不是设想）：
+  · **每条变异有超时**（`MUTANT_TIMEOUT_SECS`，默认 900 秒）。踩过两次：同一台机器两个会话各跑一轮门，
+    抢同一把 target 目录锁 ⇒ `cargo` 只等不编（有 cargo 无 rustc 子进程），整轮静默挂 20 分钟以上。
+    超时报 `TIMEOUT` 并判红 —— 那是"没结论"，不是"抓住"。
+  · **单实例锁**（`scripts/.mutation-check.lock/`，记 pid）。已有活着的门在跑就直接拒；
+    持有者已死算陈旧锁，接管并点名。确认要并行：`MUTATION_CHECK_ALLOW_CONCURRENT=1`。
+  · **写文件走 temp + os.replace**。踩过：SIGKILL 正好落在 `write_text` 中间 ⇒ 源文件被截成 0 字节。
 
 语言口径见 RUNNERS：
   cargo  —— `cargo test -p <crate> <测试名> --locked`
@@ -17,6 +25,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -24,6 +33,12 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+
+# 一条变异正常是几秒到几十秒；900 秒是「慢」与「卡死」的分界，不是性能目标。
+DEFAULT_TIMEOUT_SECS = float(os.environ.get("MUTANT_TIMEOUT_SECS", "900"))
+# 超时用哨兵退出码，绝不能与真实 rc 撞上（真实测试失败是 101/10，崩溃是 0xC000…）。
+TIMEOUT_RC = 100_000
+LOCK_DIR = pathlib.Path(__file__).resolve().parent / ".mutation-check.lock"
 
 MUTANT_DIR = pathlib.Path(__file__).resolve().parent / "mutants"
 
@@ -77,20 +92,43 @@ def selftest_marker(runner: str) -> str:
     return SELFTEST_MARKER_SH if runner == "bash" else SELFTEST_MARKER
 
 
-def run_tests(pkg: str, test_filter: str, runner: str = "cargo") -> subprocess.CompletedProcess[str]:
+def argv_of(pkg: str, test_filter: str, runner: str) -> list[str]:
+    """跑法：脚本走自己的 --self-test，crate 走 cargo test（只点名那一条测试）。"""
     if runner in ("python", "bash"):
-        argv = [sys.executable if runner == "python" else "bash", pkg, "--self-test"]
-    else:
-        argv = ["cargo", "test", "-q", "-p", pkg, test_filter, "--locked"]
-    return subprocess.run(
-        argv,
-        cwd=ROOT,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+        return [sys.executable if runner == "python" else "bash", pkg, "--self-test"]
+    return ["cargo", "test", "-q", "-p", pkg, test_filter, "--locked"]
+
+
+def run_command(argv: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
+    """跑一条命令，超时**不当成抓住**：返回哨兵 rc + 点明最常见成因（target 目录锁被别的门占着）。"""
+    try:
+        return subprocess.run(
+            argv,
+            cwd=ROOT,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        partial = exc.stdout or b""
+        if isinstance(partial, bytes):
+            partial = partial.decode("utf-8", errors="replace")
+        tail = (
+            f"\nMUTANT TIMEOUT {timeout:.0f}s：子进程已被杀 ⇒ 这条没有结论。"\
+            "本机常见原因是另一个门/编译占着 target 目录锁"
+            "（`cargo` 在 `Blocking waiting for file lock`：有 cargo、没有 rustc 子进程）。\n"
+        )
+        return subprocess.CompletedProcess(argv, TIMEOUT_RC, stdout=partial + tail, stderr="")
+
+
+def run_tests(
+    pkg: str, test_filter: str, runner: str = "cargo", timeout: float | None = None
+) -> subprocess.CompletedProcess[str]:
+    return run_command(argv_of(pkg, test_filter, runner),
+                      DEFAULT_TIMEOUT_SECS if timeout is None else timeout)
 
 
 # 显式豁免：只有"整个 crate 不含自有逻辑"这种**可以被机器复核**的理由才收在这里。
@@ -135,6 +173,61 @@ def has_own_logic(pkg: str, *, root: pathlib.Path = ROOT) -> bool:
         if FN_OR_IMPL.search(body):
             return True
     return False
+
+
+def write_atomic(path: pathlib.Path, data: bytes) -> None:
+    """原地替换：中途被杀不可能留下半篇源文件（踩过：write_text 被 SIGKILL 打断 ⇒ 整篇成 0 字节）。"""
+    tmp = path.with_name(path.name + ".mutant-tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, path)
+
+
+def _pid_alive(pid: int) -> bool:
+    """跨平台的"这个 pid 还在不在"。查不到就当作还在（宁可拒，也不要两个门互锁）。"""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def acquire_lock() -> tuple[bool, str]:
+    """单实例：两个门互抢 target 锁会一起挂死 ⇒ 后来者直接被拒，而不是排队装忙。"""
+    if os.environ.get("MUTATION_CHECK_ALLOW_CONCURRENT") == "1":
+        return True, "并行已显式允许（MUTATION_CHECK_ALLOW_CONCURRENT=1）"
+    if LOCK_DIR.exists():
+        pid = -1
+        try:
+            pid = int((LOCK_DIR / "pid").read_text(encoding="utf-8").strip() or "-1")
+        except (OSError, ValueError):
+            pass
+        if _pid_alive(pid):
+            return False, f"另一个变异门正在跑（pid {pid}）⇒ 等它结束，或确认它已死后删 {LOCK_DIR}"
+        note = f"接管陈旧锁（原持有者 pid {pid} 已不在）"
+        release_lock()
+    else:
+        note = ""
+    LOCK_DIR.mkdir(parents=True, exist_ok=True)
+    (LOCK_DIR / "pid").write_text(str(os.getpid()), encoding="utf-8")
+    return True, note
+
+
+def release_lock() -> None:
+    with contextlib.suppress(OSError):
+        (LOCK_DIR / "pid").unlink(missing_ok=True)
+        LOCK_DIR.rmdir()
 
 
 def runner_of(mutant: dict) -> str:
@@ -310,6 +403,19 @@ def main(pkgs: list[str]) -> int:
     if pkgs:
         detail = ", ".join(f"{pkg}={count}" for pkg, count in sorted(counts.items()))
         print(f"只跑所选包（{detail}）：{len(mutants)} 个变异")
+    held, lock_note = acquire_lock()
+    if not held:
+        print(f"REFUSED：{lock_note}")
+        return 1
+    if lock_note:
+        print(f"锁：{lock_note}")
+    try:
+        return _run(mutants)
+    finally:
+        release_lock()
+
+
+def _run(mutants: list[dict]) -> int:
     problems = preflight(mutants)
     if problems:
         print(f"PREFLIGHT FAILED（{len(problems)}/{len(mutants)} 条）:")
@@ -318,6 +424,7 @@ def main(pkgs: list[str]) -> int:
         return 1
 
     baseline: dict[tuple[str, str], bool] = {}
+    timed_out: list[str] = []
     survived = 0
     false_kills: list[str] = []
     crash_kills: list[str] = []
@@ -327,6 +434,9 @@ def main(pkgs: list[str]) -> int:
         pkg, filt, runner = key
         if key not in baseline:
             result = run_tests(pkg, filt, runner)
+            if result.returncode == TIMEOUT_RC:
+                print(f"BASELINE TIMEOUT：{key}\n{result.stdout[-1200:]}")
+                return 1
             if result.returncode != 0:
                 print(f"BASELINE RED: {key}\n{result.stdout[-2000:]}")
                 return 1
@@ -343,18 +453,18 @@ def main(pkgs: list[str]) -> int:
 
         # newline="" 是硬要求：默认写回会把整篇 \n 翻成 \r\n（Windows），
         # bash/sh 见到 \r 直接语法错，结果被误判成"崩溃"而不是断言——本地与 CI 就分叉了。
-        path.write_text(
-            original.replace(mutant["old"], mutant["new"]),
-            encoding="utf-8",
-            newline="",
-        )
+        write_atomic(path, original.replace(mutant["old"], mutant["new"]).encode("utf-8"))
         try:
             result = run_tests(pkg, filt, runner)
         finally:
             # 恢复按字节，保证工作树回到原样（换行风格也不许被门顺手改掉）
-            path.write_bytes(original_bytes)
+            write_atomic(path, original_bytes)
             assert path.read_bytes() == original_bytes, "恢复失败"
 
+        if result.returncode == TIMEOUT_RC:
+            timed_out.append(mutant["name"])
+            print(f"TIMEOUT   {mutant['name']}  [没结论：不算抓住，也不算存活]")
+            continue
         if result.returncode == 0:
             survived += 1
             print(f"SURVIVED  {mutant['name']}")
@@ -376,11 +486,13 @@ def main(pkgs: list[str]) -> int:
             continue
         print(f"caught    {mutant['name']}  [{detail}]")
 
-    killed = len(mutants) - survived - len(false_kills) - len(crash_kills)
+    killed = len(mutants) - survived - len(false_kills) - len(crash_kills) - len(timed_out)
     print(
         f"\n断言抓住 {killed}，崩溃抓住 {len(crash_kills)}，编译红假杀 {len(false_kills)}，"
-        f"存活 {survived}（共 {len(mutants)}）"
+        f"存活 {survived}，超时 {len(timed_out)}（共 {len(mutants)}）"
     )
+    for name in timed_out:
+        print(f"  TIMEOUT {name}")
     for name in false_kills:
         print(f"  FALSE-KILL {name}")
     if crash_kills:
@@ -389,8 +501,9 @@ def main(pkgs: list[str]) -> int:
             print(f"    - {name}")
     if unnamed:
         print(f"  未点名（既无断言也无崩溃签名）: {', '.join(unnamed)}")
-    if survived or false_kills:
-        print("⇒ 门判红：假杀的条目要么改成语义变异（编得过、只改行为），要么删除。")
+    if survived or false_kills or timed_out:
+        print("⇒ 门判红：假杀的条目要么改成语义变异（编得过、只改行为），要么删除；"
+              "超时的条目要么等锁空闲重跑，要么抬 MUTANT_TIMEOUT_SECS 并写理由。")
         return 1
     return 0
 
@@ -551,6 +664,42 @@ def self_test() -> int:
         check("preflight 锚点在 python 自测面之后→报错", len(preflight(fixture("scripts/gate.py", "y = 2", "python"), root=root)), 1)
         check("preflight 锚点在自测面之前→放行", preflight(fixture("scripts/gate.py", "x = 1", "python"), root=root), [])
         check("preflight 锚点在 bash 自测面之后→报错", len(preflight(fixture("scripts/gate.sh", "b=2", "bash"), root=root)), 1)
+
+    # 五、门自己的三条反脆弱阀门：超时 / 原子写 / 单实例锁（都是本机踩出来的）
+    slow = run_command([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.5)
+    check("超时必须返回哨兵 rc（不是假装跑完）", slow.returncode == TIMEOUT_RC, True)
+    check("超时要点名 MUTANT TIMEOUT", "MUTANT TIMEOUT" in slow.stdout, True)
+    check("超时要指出 target 目录锁这个成因", "file lock" in slow.stdout, True)
+    fast = run_command([sys.executable, "-c", "print(1)"], timeout=30)
+    check("给足超时的正常命令不该被判超时（反证）", fast.returncode == 0, True)
+    check("正常命令不该带超时字样（反证）", "MUTANT TIMEOUT" in fast.stdout, False)
+
+    with tempfile.TemporaryDirectory() as td:
+        target = pathlib.Path(td) / "src.txt"
+        original = "原始" + chr(10)
+        target.write_text(original, encoding="utf-8")
+        write_atomic(target, ("变异后" + chr(10)).encode("utf-8"))
+        check("原子写的内容要落对", target.read_text(encoding="utf-8"), "变异后" + chr(10))
+        check("原子写不许留临时文件", list(pathlib.Path(td).glob("*.mutant-tmp")), [])
+        write_atomic(target, original.encode("utf-8"))
+        check("恢复要回到原文（幂等）", target.read_bytes(), original.encode("utf-8"))
+        check("恢复后同样不许留临时文件", list(pathlib.Path(td).glob("*.mutant-tmp")), [])
+
+    ok, _ = acquire_lock()
+    check("第一次拿锁要成功", ok, True)
+    ok2, why = acquire_lock()
+    check("同一个仓里第二个门必须被拒（互抢 target 锁会一起挂死）", ok2, False)
+    check("拒绝时要点名持有者 pid", str(os.getpid()) in why, True)
+    release_lock()
+    check("释放后要能再拿", acquire_lock()[0], True)
+    release_lock()
+    LOCK_DIR.mkdir(parents=True, exist_ok=True)
+    (LOCK_DIR / "pid").write_text("4000000", encoding="utf-8")
+    stale_ok, stale_note = acquire_lock()
+    check("陈旧锁（持有者已死）要能接管，不能永久卡住门", stale_ok, True)
+    check("接管要说明是陈旧锁", "陈旧" in stale_note, True)
+    release_lock()
+    check("锁释放后目录要消失", LOCK_DIR.exists(), False)
 
     if failures:
         for line in failures:
