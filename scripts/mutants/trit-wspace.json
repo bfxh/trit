@@ -1,0 +1,58 @@
+[
+ {
+  "name": "wspace: 符号把 0 判成 +1",
+  "file": "crates/trit-wspace/src/trit.rs",
+  "old": "} else if value > 0 {",
+  "new": "} else if value >= 0 {",
+  "pkg": "trit-wspace",
+  "filter": "sign_of_is_total"
+ },
+ {
+  "name": "wspace: 校验和不比对",
+  "file": "crates/trit-wspace/src/codec.rs",
+  "old": "if got != expected {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "codec_detects_any_trit_change"
+ },
+ {
+  "name": "wspace: 补丁先应用后校验（事务性丢失）",
+  "file": "crates/trit-wspace/src/edit.rs",
+  "old": "self.validate(net)?;",
+  "new": "if false {\n            self.validate(net)?;\n        }",
+  "pkg": "trit-wspace",
+  "filter": "patch_is_transactional"
+ },
+ {
+  "name": "wspace: BFS 不检查精确解",
+  "file": "crates/trit-wspace/src/repair.rs",
+  "old": "let mut found = patch.clone();\n                found.push(candidate.clone());\n                if oracle.exact(&trial)? {",
+  "new": "let mut found = patch.clone();\n                found.push(candidate.clone());\n                if false {",
+  "pkg": "trit-wspace",
+  "filter": "single_trit_corruption_is_repairable_by_one_edit"
+ },
+ {
+  "name": "wspace: 贪心对齐取最差行",
+  "file": "crates/trit-wspace/src/merge.rs",
+  "old": "if best == usize::MAX || score > best_score {",
+  "new": "if best == usize::MAX || score < best_score {",
+  "pkg": "trit-wspace",
+  "filter": "align_recovers_a_permuted_model_and_merge_is_identity"
+ },
+ {
+  "name": "wspace: 后置失败不回滚",
+  "file": "crates/trit-wspace/src/program.rs",
+  "old": "if !after_ok {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "program_rolls_back_when_postcondition_fails"
+ },
+ {
+  "name": "wspace: 激活丢掉整数累加",
+  "file": "crates/trit-wspace/src/net.rs",
+  "old": "out.push(Trit::sign_of(acc));",
+  "new": "out.push(Trit::Pos);",
+  "pkg": "trit-wspace",
+  "filter": "forward_is_sign_of_integer_accumulation"
+ }
+]

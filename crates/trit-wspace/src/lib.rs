@@ -1,0 +1,96 @@
+//! # trit-wspace — 三值权重空间编程
+//!
+//! 传统流程是“写代码 → 训练 → 得到权重”。权重空间编程（weight-space programming）
+//! 反过来把**权重本身当作源码**：读出行为、写出补丁、验证后再提交。2026-11-02
+//! MIT CSAIL 报告的工作（GPT-6 Astra 直接读写 Qwen3.5-0.8B 的原始权重，改约 0.016%
+//! 的权重把 MATH-500 从 7.9% 提到 48.1%，不走梯度）把这条路线推到台前；该结果来自
+//! 外部报道，本仓**未复现**，这里只借用它的接口形态：读 / 写 / 验证。
+//!
+//! ## 三值为什么适合权重空间编程
+//!
+//! | 性质 | 三值权重 | f32 权重 |
+//! |---|---|---|
+//! | 一次编辑 | 离散、精确（`-1/0/+1` 三选一） | 连续值，编辑误差不可复现 |
+//! | 判等 | 逐位相等 | 需要容差 |
+//! | 回滚 | 存旧值即可逐位还原 | 需要快照 |
+//! | 行为验证 | 有界域可**穷举**，给出完全等价 | 只能抽样/留出 |
+//! | 规范形式 | `WSP1` 可 diff、可校验和 | 二进制 blob 不可读 |
+//!
+//! 代价同样明确：没有现成的 f32 预训练生态；表达力受三值限制；大规模网络的穷举
+//! 不可行（本库的 M0 边界就是小网络 + 有界域）。
+//!
+//! ## 三层结构
+//!
+//! - **表示层**：[`Net`] / [`Layer`] 是不可变的权重工件；[`codec`] 把它写成 WSP1 文本，
+//!   [`Trit`] 是唯一的权重单位。
+//! - **编辑层**：[`Edit`] / [`Patch`] 是事务式补丁；[`Journal`] 支持逐位回滚；
+//!   [`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行。
+//! - **搜索层**：[`mod@repair`] 不走梯度，在离散空间里找精确最小补丁；[`merge`] 负责消掉
+//!   隐藏单元置换对称性后再合并。
+//!
+//! 规范自由度（不变量）：
+//!
+//! - 正 scale 不改行为，只改 f32 读数；
+//! - 隐藏层行置换 + 下一层列置换不改行为；
+//! - 因此行为判等必须用 [`Oracle`] 穷举，而不是比较权重。
+//!
+//! ## 快速开始
+//!
+//! 一个已经学会 XOR 的小网络被打坏一格；修补应只改一个三值：
+//!
+//! ```
+//! use trit_wspace::{Edit, Layer, Net, Oracle, Patch, RepairOptions, Trit, repair};
+//!
+//! let net = Net::new(vec![
+//!     Layer::new(2, 2, &[-1, -1, -1, -1], &[-1, 1]).unwrap(),
+//!     Layer::new(1, 2, &[-1, 1], &[-1]).unwrap(),
+//! ]).unwrap();
+//! let want = Oracle::boolean(2, |b| b[0] != b[1]).unwrap();
+//! assert!(want.exact(&net).unwrap());
+//!
+//! let mut broken = net.clone();
+//! Patch::new(vec![Edit::SetTrit { layer: 0, row: 0, col: 0, to: Trit::Zero }])
+//!     .apply(&mut broken)
+//!     .unwrap();
+//! assert!(!want.exact(&broken).unwrap());
+//!
+//! let found = repair(&broken, &want, &RepairOptions::default()).unwrap().unwrap();
+//! assert_eq!(found.patch.len(), 1);
+//! let mut fixed = broken.clone();
+//! found.patch.apply(&mut fixed).unwrap();
+//! assert!(want.exact(&fixed).unwrap());
+//! ```
+//!
+//! ## 边界（没做的部分）
+//!
+//! - 只支持符号激活的前馈网络；不带注意力、残差、卷积；
+//! - 验证是**有界穷举**，不是形式化证明；超出域的输入没有保证；
+//! - 修补搜索是启发式（半径 1/2 穷举 + 束搜索），不保证全局最小，只保证返回的解
+//!   在验证集上完全正确；
+//! - 没有“从自然语言生成补丁”的模型；本库提供的是可被外部程序/模型调用的
+//!   编辑原语与验证闭环。
+//!
+//! 技术树与尚缺的层见 `crates/trit-wspace/README.md`。
+
+#![deny(missing_docs)]
+#![forbid(unsafe_code)]
+
+pub mod codec;
+pub mod edit;
+pub mod error;
+pub mod merge;
+pub mod net;
+pub mod oracle;
+pub mod program;
+pub mod repair;
+pub mod trit;
+
+pub use codec::{checksum, from_wsp, to_wsp};
+pub use edit::{Cost, Edit, Journal, Patch};
+pub use error::{Error, Result};
+pub use merge::{align, merge_aligned, merge_vote};
+pub use net::{Layer, Net};
+pub use oracle::{Behavior, Oracle};
+pub use program::{Program, Report};
+pub use repair::{Repair, RepairOptions, repair};
+pub use trit::Trit;

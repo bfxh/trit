@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：三值权重空间编程）
+
+- 新 crate `crates/trit-wspace`（实验层，`publish = false`）：把权重当源码的
+  **读 / 写 / 验证** 闭环，不做梯度、不改 f32 latent。
+- 表示：`Net`/`Layer`（三值权重 + 三值偏置 + 每行 f32 scale），WSP1 规范文本
+  （每 trit 一个字符、一行一个神经元、FNV-1a 校验和、解析时允许注释但不进规范形式）；
+  `codec_round_trip_is_exact_and_canonical` 钉住逐位往返，改任一 trit 必报校验和错。
+- 编辑：`Edit`（改 trit/偏置/scale、换行、整行取反）+ `Patch`（先整体校验再应用）
+  + `Journal`（逆序逐位撤销）；`Program` 带前置/后置行为条件，后置失败原样回滚。
+- 搜索：`repair` 无梯度求精确补丁。状态空间 `3^权重数 ≤ 20 万` 时按编辑数逐层 **BFS**，
+  首次命中的层数就是最小编辑数；超过后走半径 1/2 穷举 + 按 `(失配数, 裕量能量)` 排序的束搜索。
+  返回 `None` 而不是“差不多对”。
+- 合并：`align` 用贪心行匹配消掉隐藏单元置换对称性，`merge_vote` 做逐点符号投票；
+  `merge_aligned` 对“同一模型换了隐藏单元编号”能精确还原。
+- 关键负结果：从零网络到 2-2-1 XOR 的汉明距离恰好是 **9**（全部 9 个参数都非零，
+  穷举可证），束搜索在 loss 平台上会丢路；改成小状态空间完备 BFS 后才稳定命中。
+  这也说明 WSP 的真正优势是“改已有工件”，不是从零训练。
+- 读数：测试 **37 条 + 1 doctest**（8 单元 + 21 不变量 + 8 编程语义）；
+  2-2-1（带偏置）**穷举 19,683 个配置覆盖全部 16 个二元布尔函数**；
+  任意单 trit 破坏都能被**一条编辑**修回；两处破坏在两条内修回。
+- 变异：`scripts/mutants/trit-wspace.json` 登记 7 条，
+  `mutation_check.py --pkg trit-wspace` **caught 7 / survived 0**（0 崩溃红、0 编译红）。
+- 门禁：`cargo fmt --all --check`、`cargo clippy -p trit-wspace --all-targets -D warnings`、
+  `cargo test -p trit-wspace`、`module_budget`（662 文件 / 0 超预算）、`publish_graph`、
+  `hazard_gate`（0 findings）、`test_surface`（2207 条 / 新增单位已登记）全过。
+- 边界（诚实缺口）：只做符号激活前馈网络；验证是有界穷举；大规模网络没有完备搜索，
+  也没有“自然语言 → 补丁”的模型；外部 WSP 报道（2026-11-02 MIT CSAIL，Astra 读写
+  Qwen3.5-0.8B 原始权重）**未复现**，只借用其接口形态。
+
 ### Added（trit-count：BDD 第三方计数）
 
 - 新模块 `crates/trit-bdd/src/count.rs`：`count_models_bdd` 在 dual-rail BDD 上数「全部约束为 `True` ∧ 表达式取目标值」的合法赋值，
