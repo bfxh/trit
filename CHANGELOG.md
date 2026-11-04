@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：模型/脚本工具面）
+
+- 新二进制 `trit-wspace`：`read / verify / patch / repair / diff / merge / mcp` 七个子命令；
+  输入 `-` 读 stdin，报告一律 JSON，`--out` 用“临时文件 + 改名”落盘，避免半写。
+- 补丁线格式 `version=1`（`set_trit / set_bias / set_scale / swap_rows / negate_row`），
+  模型可直接生成、人工可逐条审；验证集支持显式 `inputs/outputs` 与紧凑 `domain/vars/table`
+  （boolean 用 `0/1/x`，ternary 用 `-0+`，字典序）。
+- MCP stdio 六个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_repair`、`wsp_diff`、`wsp_merge`。
+  无状态（每次从 WSP1 文本开始）；错误返回 `isError=true`；工具清单 2,381 B / 657 tokens（本机粗估）。
+- `ops` 统一 CLI 与 MCP 的判决路径：补丁仍走事务式 `Patch`/`Program`，修补仍只返回精确解。
+- 测试 38 → **59 + 1 doctest**（新增 3 CLI 端到端、11 MCP、7 线格式）；
+  变异 7 → **13 条，13/13 caught**；test_surface 台账 2,207 → 2,228。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(670 文件 0 超) /
+  publish_graph / hazard_gate(0 findings) / test_surface 全过。
+- 本机已把 release 二进制装到 `~/.qoder/bin/trit-wspace.exe` 并注册为 MCP 服务
+  （`trit-wspace mcp`，注册 key `trit-wspace`）；工具目录需重启/重载 App 后出现。
+
 ### Added（trit-wspace：三值权重空间编程）
 
 - 新 crate `crates/trit-wspace`（实验层，`publish = false`）：把权重当源码的

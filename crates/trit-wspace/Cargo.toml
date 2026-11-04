@@ -10,6 +10,7 @@ publish = false
 
 [dependencies]
 trit-learn.workspace = true
+serde_json = "1.0.154"
 
 [[example]]
 name = "program_xor"

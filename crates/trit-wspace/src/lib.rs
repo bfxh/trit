@@ -71,19 +71,33 @@
 //!   编辑原语与验证闭环。
 //!
 //! 技术树与尚缺的层见 `crates/trit-wspace/README.md`。
+//!
+//! ## 模型/脚本接口
+//!
+//! 二进制 `trit-wspace` 提供两套入口，共用同一条判决路径（[`ops`]）：
+//!
+//! - CLI：`read / verify / patch / repair / diff / merge`，输入 `-` 读 stdin，报告一律 JSON；
+//! - MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、
+//!   `wsp_repair`、`wsp_diff`、`wsp_merge` 六个工具，工具参数与返回格式见 [`wire`]。
+//!
+//! 补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod cli;
 pub mod codec;
 pub mod edit;
 pub mod error;
+pub mod mcp;
 pub mod merge;
 pub mod net;
+pub mod ops;
 pub mod oracle;
 pub mod program;
 pub mod repair;
 pub mod trit;
+pub mod wire;
 
 pub use codec::{checksum, from_wsp, to_wsp};
 pub use edit::{Cost, Edit, Journal, Patch};

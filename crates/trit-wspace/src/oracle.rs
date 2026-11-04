@@ -248,6 +248,14 @@ impl Oracle {
         let loss = self.loss(net)?;
         Ok(1.0 - loss as f32 / self.len() as f32)
     }
+
+    /// 把期望输出包装成行为（给 [`crate::Program`] 的后置条件用）。
+    #[must_use]
+    pub fn behavior(&self) -> Behavior {
+        Behavior {
+            outputs: self.outputs.clone(),
+        }
+    }
 }
 
 fn fnv(mut hash: u64, bytes: &[u8]) -> u64 {

@@ -51,6 +51,60 @@ python scripts/mutation_check.py --pkg trit-wspace
 python scripts/module_budget.py
 ```
 
+## 给模型 / 脚本的工具面
+
+二进制 `trit-wspace` 有两套入口，共用 `ops` 里同一条判决路径：
+
+### CLI
+
+```bash
+trit-wspace read   xor.wsp
+trit-wspace verify xor.wsp --oracle xor.json
+trit-wspace patch  xor.wsp --patch break.json --oracle xor.json --require-after --out fixed.wsp
+trit-wspace repair broken.wsp --oracle xor.json --max-edits 2 --out fixed.wsp
+trit-wspace diff   a.wsp b.wsp
+trit-wspace merge  a.wsp b.wsp --aligned --out merged.wsp
+trit-wspace mcp
+```
+
+输入 `-` 读 stdin；报告一律 JSON；`--out` 用“临时文件 + 改名”落盘，避免半写。
+
+### 补丁线格式（version=1）
+
+```json
+{"version": 1, "edits": [
+  {"op": "set_trit", "layer": 0, "row": 0, "col": 0, "to": "+"},
+  {"op": "set_bias", "layer": 0, "row": 1, "to": "-"},
+  {"op": "swap_rows", "layer": 0, "a": 0, "b": 1}
+]}
+```
+
+### 验证集两种写法
+
+```json
+{"inputs": [["-","+"], ["+","-"]], "outputs": [["+"], ["-"]]}
+{"domain": "boolean", "vars": 2, "table": "0110"}
+```
+
+紧凑表的顺序是字典序（最后一个变量变化最快），boolean 用 `0/1/x`，ternary 用 `-0+`。
+
+### MCP（stdio）
+
+```json
+{
+  "mcpServers": {
+    "trit-wspace": {
+      "command": "C:/path/to/trit-wspace.exe",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+六个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_repair`、`wsp_diff`、`wsp_merge`。
+每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
+模板见 [`mcp.example.json`](mcp.example.json)。
+
 ## 论文与来源
 
 - **Weight-space programming（外部报道，未复现）**：MIT CSAIL，2026-11-02，

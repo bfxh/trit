@@ -78,6 +78,8 @@ pub enum Error {
         /// 按内容重算的值。
         got: u64,
     },
+    /// 线格式（补丁/验证集/报告 JSON）错误。
+    Wire(String),
 }
 
 /// 库内统一 `Result`。
@@ -114,6 +116,7 @@ impl fmt::Display for Error {
             Self::Checksum { expected, got } => {
                 write!(f, "校验和不符：文本 {expected:016x}，重算 {got:016x}")
             }
+            Self::Wire(msg) => write!(f, "线格式错误：{msg}"),
         }
     }
 }
