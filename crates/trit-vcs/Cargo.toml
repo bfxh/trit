@@ -10,7 +10,7 @@ publish = false
 
 [[bin]]
 name = "trit-vcs"
-path = "src/bin/trit-vcs.rs"
+path = "src/bin/trit-vcs/main.rs"
 
 [dependencies]
 trit-orch.workspace = true

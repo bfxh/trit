@@ -462,3 +462,112 @@ fn admission_refuses_an_unwitnessed_commit() {
     ));
     let _ = fs::remove_dir_all(&root);
 }
+
+#[test]
+fn query_filters_by_tag_evidence_session_and_message() {
+    let root = temp("query");
+    let mut repo = Repo::init(&root).unwrap();
+    repo.stage(&files(&[("a.txt", "one")]), 1_000).unwrap();
+    repo.commit(CommitRequest {
+        message: "first fix".to_string(),
+        session: "qoder:s1".to_string(),
+        claims: vec![claim("qoder:s1", &["a.txt"], 9_999)],
+        evidence: vec!["PR #1".to_string()],
+        tags: vec!["vcs".to_string()],
+        now_secs: 1_000,
+        ..Default::default()
+    })
+    .unwrap();
+    repo.stage(&files(&[("a.txt", "two")]), 2_000).unwrap();
+    repo.commit(CommitRequest {
+        message: "second".to_string(),
+        session: "codex:c2".to_string(),
+        claims: vec![claim("codex:c2", &["a.txt"], 9_999)],
+        tags: vec!["gpu".to_string()],
+        now_secs: 2_000,
+        ..Default::default()
+    })
+    .unwrap();
+
+    let count = |filter: CommitFilter| repo.query(&filter).unwrap().len();
+    assert_eq!(
+        count(CommitFilter {
+            tag: Some("vcs".to_string()),
+            ..Default::default()
+        }),
+        1
+    );
+    assert_eq!(
+        count(CommitFilter {
+            tag: Some("nope".to_string()),
+            ..Default::default()
+        }),
+        0
+    );
+    assert_eq!(
+        count(CommitFilter {
+            evidence: Some("#1".to_string()),
+            ..Default::default()
+        }),
+        1
+    );
+    assert_eq!(
+        count(CommitFilter {
+            session: Some("codex:c2".to_string()),
+            ..Default::default()
+        }),
+        1
+    );
+    assert_eq!(
+        count(CommitFilter {
+            grep: Some("fix".to_string()),
+            ..Default::default()
+        }),
+        1
+    );
+    assert_eq!(count(CommitFilter::default()), 2);
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn merge_base_walks_to_common_ancestor() {
+    let root = temp("base");
+    let mut repo = Repo::init(&root).unwrap();
+    let claims = vec![claim("qoder:s1", &["a.txt"], 9_999)];
+    repo.stage(&files(&[("a.txt", "v1")]), 1_000).unwrap();
+    let first = repo
+        .commit(CommitRequest {
+            message: "v1".to_string(),
+            session: "qoder:s1".to_string(),
+            claims: claims.clone(),
+            now_secs: 1_000,
+            ..Default::default()
+        })
+        .unwrap()
+        .id;
+    repo.stage(&files(&[("a.txt", "v2")]), 2_000).unwrap();
+    let second = repo
+        .commit(CommitRequest {
+            message: "v2".to_string(),
+            session: "qoder:s1".to_string(),
+            claims: claims.clone(),
+            now_secs: 2_000,
+            ..Default::default()
+        })
+        .unwrap()
+        .id;
+    repo.stage(&files(&[("a.txt", "v3")]), 3_000).unwrap();
+    let third = repo
+        .commit(CommitRequest {
+            message: "v3".to_string(),
+            session: "qoder:s1".to_string(),
+            claims,
+            now_secs: 3_000,
+            ..Default::default()
+        })
+        .unwrap()
+        .id;
+    assert_eq!(repo.merge_base(&second, &third).unwrap(), Some(second));
+    assert_eq!(repo.merge_base(&first, &first).unwrap(), Some(first));
+    let _ = fs::remove_dir_all(&root);
+}

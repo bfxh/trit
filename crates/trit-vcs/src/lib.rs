@@ -27,6 +27,7 @@ pub mod model;
 pub mod repo;
 pub mod status_cache;
 pub mod store;
+pub mod techmap;
 pub mod witness;
 pub mod worktree;
 
@@ -35,7 +36,7 @@ pub use gate::{ClaimSpec, Verdict, check as gate_check};
 pub use hash::Hash;
 pub use journal::{Event, Journal};
 pub use model::{Commit, Hlc, Intent};
-pub use repo::{CommitOutcome, CommitRequest, Repo, RepoError, VerifyReport};
+pub use repo::{CommitFilter, CommitOutcome, CommitRequest, Repo, RepoError, VerifyReport};
 pub use store::{FileMap, PutStats, Stats, Store, StoreError};
 pub use witness::{Witness, WitnessError};
 pub use worktree::{Change, Kind as ChangeKind, StatusStats, WorktreeError};
