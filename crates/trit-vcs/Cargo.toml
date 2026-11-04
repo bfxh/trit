@@ -1,0 +1,26 @@
+[package]
+name = "trit-vcs"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "内容寻址的三进制协作版本库：BLAKE3 + 内容定义分块 + 哈希链事件日志 + 认领门（不属于稳定 API）"
+publish = false
+
+[[bin]]
+name = "trit-vcs"
+path = "src/bin/trit-vcs.rs"
+
+[dependencies]
+trit-orch.workspace = true
+trit-core.workspace = true
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+thiserror = "2.0.21"
+blake3 = "1.5"
+flate2 = "1.0"
+
+[[example]]
+name = "vcs_bench"
+path = "examples/vcs_bench.rs"
