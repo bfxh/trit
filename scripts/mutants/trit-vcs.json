@@ -119,7 +119,7 @@
  {
   "name": "vcs: checkout 覆盖未提交改动（不打招呼就冲掉别人的文件）",
   "file": "crates/trit-vcs/src/worktree.rs",
-  "old": "    if !force && !changes.is_empty() {",
+  "old": "    if !force && !blocking.is_empty() {",
   "new": "    if false {",
   "filter": "checkout_restores_and_refuses_dirty_without_force",
   "pkg": "trit-vcs",
@@ -536,6 +536,24 @@
   "old": "                \"error\": {\"code\": -32601, \"message\": format!(\"未知方法：{other}\")}",
   "new": "                \"error\": {\"code\": 0, \"message\": format!(\"未知方法：{other}\")}",
   "filter": "unknown_method_and_tool_are_reported",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 稀疏检出不按前缀过滤（整棵树都物化）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "    path == prefix || path.starts_with(&format!(\"{prefix}/\"))",
+  "new": "    true || path == prefix",
+  "filter": "sparse_checkout_writes_only_the_requested_prefix",
+  "pkg": "trit-vcs",
+  "runner": "cargo"
+ },
+ {
+  "name": "vcs: 把\"范围内缺失\"也当脏（checkout 补不回被删文件）",
+  "file": "crates/trit-vcs/src/worktree.rs",
+  "old": "        .filter(|change| change.kind != Kind::Deleted)",
+  "new": "        .filter(|_change| true)",
+  "filter": "sparse_checkout_writes_only_the_requested_prefix",
   "pkg": "trit-vcs",
   "runner": "cargo"
  }
