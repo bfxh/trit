@@ -34,8 +34,8 @@
  {
   "name": "count: 分支只数正支",
   "file": "crates/trit-count/src/dpll.rs",
-  "old": "        let total = self.count_core(&positive, m) + self.count_core(&negative, m);",
-  "new": "        let total = self.count_core(&positive, m);",
+  "old": "        let total = positive + negative;",
+  "new": "        let total = positive;",
   "pkg": "trit-count",
   "filter": "fixed_expressions_match_exhaustive"
  },
@@ -156,6 +156,14 @@
   "file": "crates/trit-count/src/dpll.rs",
   "old": "        assigned += 1;",
   "new": "        assigned += 0;",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "dpll: 分支回收漏摘单位子句（表格被污染）",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "        numbered.remove(at);\n        let at = insert_unit(&mut numbered, -(branch as i32));",
+  "new": "        let at = insert_unit(&mut numbered, -(branch as i32));",
   "pkg": "trit-count",
   "filter": "fixed_expressions_match_exhaustive"
  }

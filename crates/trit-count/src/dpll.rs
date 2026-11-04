@@ -65,26 +65,25 @@ impl Counter {
     fn count_core(&mut self, clauses: &[Vec<i32>], k: usize) -> u128 {
         self.stats.nodes += 1;
         // 进来的子句表已经是规范形（见 `count_cnf` 与 `insert_unit`），不再逐节点重排。
-        let (residual, occurring, assigned) = match residue(clauses, k) {
+        // residue 顺手把变量压成 1..=m 的新编号：省掉一次全表复制与一次重排。
+        let (mut numbered, m, assigned) = match residue(clauses, k) {
             Some(got) => got,
             None => return 0,
         };
-        let occurring_count = occurring.iter().filter(|&&set| set).count();
-        let free = k - assigned - occurring_count;
+        let free = k - assigned - m;
         debug_assert!(free < 128, "free variable count too large for u128");
         let free_factor = 1u128
             .checked_shl(free as u32)
             .expect("free variable count exceeds u128 capacity");
 
-        if residual.is_empty() {
+        if m == 0 {
             return free_factor;
         }
+        // 0 号位是留给分支插单位子句的空槽（下表恒从 1 开始读），所以插入不会挪动表格。
+        numbered.reserve(1);
+        let renumbered = &numbered[1..];
 
-        let vars: Vec<usize> = (1..=k).filter(|&v| occurring[v]).collect();
-        let m = vars.len();
-        let renumbered = renumber(&residual, &vars);
-
-        if let Some(parts) = decompose(&renumbered, m) {
+        if let Some(parts) = decompose(renumbered, m) {
             self.stats.components += 1;
             let mut product = free_factor;
             for (part_vars, part_clauses) in parts {
@@ -94,21 +93,24 @@ impl Counter {
             return product;
         }
 
-        let key = cache_key(&renumbered, m);
+        let key = cache_key(renumbered, m);
         if let Some(cached) = self.cache.get(&key) {
             self.stats.cache_hits += 1;
             return free_factor * cached;
         }
         self.stats.cache_misses += 1;
 
-        let branch = choose_var(&renumbered, m);
+        let branch = choose_var(renumbered, m);
         self.stats.branches += 1;
-        let mut positive = renumbered.clone();
-        insert_unit(&mut positive, branch as i32);
-        let mut negative = renumbered;
-        insert_unit(&mut negative, -(branch as i32));
-
-        let total = self.count_core(&positive, m) + self.count_core(&negative, m);
+        // 两个子节点共用这一份表：插单位子句 → 递归 → 原位摘掉 → 插反面。
+        // 省下的是每个分支节点一次深拷贝（分支数 ≈ 节点数的一半）。
+        let at = insert_unit(&mut numbered, branch as i32);
+        let positive = self.count_core(&numbered[1..], m);
+        numbered.remove(at);
+        let at = insert_unit(&mut numbered, -(branch as i32));
+        let negative = self.count_core(&numbered[1..], m);
+        numbered.remove(at);
+        let total = positive + negative;
         self.cache.insert(key, total);
         free_factor * total
     }
@@ -143,10 +145,11 @@ fn prefix_offsets(lengths: &[u32]) -> Vec<u32> {
 /// 计数器式单位传播 + 残基构造，**一趟**做完（旧写法每个节点要对全表反复扫描：
 /// `normalize` 重排全部子句、`propagate` 全表迭代、再全表构造残基）。
 ///
-/// 返回 `(open 子句, occurring, 已赋值变量数)`；出现冲突返回 `None`。
+/// 返回 `(1 基的新子句表, 出现变量数, 已赋值变量数)`；出现冲突返回 `None`。
+/// 表按 `numbered[1..]` 使用，`numbered[0]` 是「不存在第 0 个变量」留下的空位。
 /// 单位传播的强制闭包与顺序无关（合流），所以残基与旧的两段实现逐位相同——
 /// 这一点由「节点数 / 分支数 / 组件数 / 缓存命中数全等」的实测对拍钉住，不是口头保证。
-fn residue(clauses: &[Vec<i32>], k: usize) -> Option<(Vec<Vec<i32>>, Vec<bool>, usize)> {
+fn residue(clauses: &[Vec<i32>], k: usize) -> Option<(Vec<Vec<i32>>, usize, usize)> {
     // 出现表用扁平数组 + 前缀偏移（CSR），每节点只 3 次分配，不是 2(k+1) 次小 Vec。
     let mut counts: Vec<u32> = Vec::with_capacity(clauses.len());
     let mut pos_len = vec![0u32; k + 2];
@@ -255,8 +258,8 @@ fn residue(clauses: &[Vec<i32>], k: usize) -> Option<(Vec<Vec<i32>>, Vec<bool>, 
         }
     }
 
-    let mut occurring = vec![false; k + 1];
-    let mut open_clauses = Vec::with_capacity(clauses.len());
+    let mut occurs = vec![false; k + 1];
+    let mut open_clauses: Vec<Vec<i32>> = Vec::with_capacity(clauses.len());
     for (index, clause) in clauses.iter().enumerate() {
         if satisfied[index] {
             continue;
@@ -269,7 +272,7 @@ fn residue(clauses: &[Vec<i32>], k: usize) -> Option<(Vec<Vec<i32>>, Vec<bool>, 
             let var = lit.unsigned_abs() as usize;
             if assign[var] == 0 {
                 kept.push(lit);
-                occurring[var] = true;
+                occurs[var] = true;
             }
         }
         debug_assert_eq!(
@@ -279,15 +282,43 @@ fn residue(clauses: &[Vec<i32>], k: usize) -> Option<(Vec<Vec<i32>>, Vec<bool>, 
         );
         open_clauses.push(kept);
     }
-    Some((open_clauses, occurring, assigned))
+
+    // 出现变量压成 1..=m 的新号，然后**就地换号**。map 随老号单调递增，
+    // 所以子句内部与子句表的有序性自动保持：既省掉 `renumber` 的第二次全表拷贝，
+    // 也省掉它末尾那次重排。0 号位留给分支插单位子句用（表格因此不用挪位）。
+    let mut map = vec![0i32; k + 1];
+    let mut m = 0usize;
+    for var in 1..=k {
+        if occurs[var] {
+            m += 1;
+            map[var] = m as i32;
+        }
+    }
+    let mut numbered: Vec<Vec<i32>> = Vec::with_capacity(open_clauses.len() + 1);
+    numbered.push(Vec::new());
+    for mut clause in open_clauses {
+        for lit in clause.iter_mut() {
+            let mapped = map[lit.unsigned_abs() as usize];
+            debug_assert!(mapped != 0, "残基里的变量必须拿到新号");
+            *lit = if *lit > 0 { mapped } else { -mapped };
+        }
+        numbered.push(clause);
+    }
+    // 换号之后必须重排：老号→新号对「同一子句内部」是单调的，但整张表的字典序
+    // 会被子句首文字的**符号**翻转（实测反例 [3,4,-7] 排在 [-1,-2] 之前），
+    // 所以这里不能省。省掉的只有 renumber 的那次全表拷贝。
+    numbered[1..].sort();
+    Some((numbered, m, assigned))
 }
 
 /// 把分支产生的单位子句**插回有序位置**，保住「子句表有序」这个不变量，
 /// 于是节点入口不需要再 `normalize` 一次（`cache_key` 的规范形依赖它）。
-fn insert_unit(clauses: &mut Vec<Vec<i32>>, lit: i32) {
+/// 把单位子句插回有序位置并返回下标（调用方递归完要原位摘掉，表格才能复用）。
+fn insert_unit(clauses: &mut Vec<Vec<i32>>, lit: i32) -> usize {
     let unit = vec![lit];
     let at = clauses.partition_point(|clause| clause.as_slice() < unit.as_slice());
     clauses.insert(at, unit);
+    at
 }
 
 /// Maps `vars` to `1..=vars.len()` and rewrites clauses.
