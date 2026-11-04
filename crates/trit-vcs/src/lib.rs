@@ -22,6 +22,7 @@ pub mod delta;
 pub mod gate;
 pub mod hash;
 pub mod journal;
+pub mod merge;
 pub mod model;
 pub mod repo;
 pub mod status_cache;

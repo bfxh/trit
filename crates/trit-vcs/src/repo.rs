@@ -77,6 +77,8 @@ pub struct CommitRequest {
     pub witness: Option<Vec<u8>>,
     /// 改动意图；`base` 为空时由提交自动填成父提交的树
     pub intent: Option<Intent>,
+    /// 测试/合并用：显式指定父提交（缺省跟 HEAD）。HEAD 仍会推进到新提交。
+    pub parent_override: Option<Hash>,
     pub now_secs: u64,
 }
 
@@ -312,7 +314,7 @@ impl Repo {
             None if policy.require_witness => return Err(RepoError::WitnessRequired),
             None => None,
         };
-        let parent = self.head()?;
+        let parent = req.parent_override.or(self.head()?);
         let base_tree = match parent {
             Some(id) => Some(self.commit_at(&id)?.tree),
             None => None,
@@ -433,6 +435,24 @@ impl Repo {
             guard += 1;
         }
         Ok(out)
+    }
+
+    /// 两个提交的最近公共祖先（只看第一父链；线性历史够用）。
+    pub fn merge_base(&self, a: &Hash, b: &Hash) -> Result<Option<Hash>, RepoError> {
+        let mut ancestors = std::collections::HashSet::new();
+        let mut cursor = Some(*b);
+        while let Some(id) = cursor {
+            ancestors.insert(id);
+            cursor = self.commit_at(&id)?.parents.first().copied();
+        }
+        let mut cursor = Some(*a);
+        while let Some(id) = cursor {
+            if ancestors.contains(&id) {
+                return Ok(Some(id));
+            }
+            cursor = self.commit_at(&id)?.parents.first().copied();
+        }
+        Ok(None)
     }
 
     /// 全仓体检：事件链 + 对象内容 + HEAD 可达性。
