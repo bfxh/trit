@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added（`trit-parts` 第一批 `tests/` 级端到端断言：`DepthUNet` 与 `TriModel` 从"已实现未测"翻篇）
+
+- 新文件 `crates/trit-parts/tests/models_e2e.rs`（**9 条**，`cargo test -p trit-parts --test models_e2e` 全绿）：
+  此前 `crates/trit-parts/tests/` **一个文件都没有**，六个"像模型的东西"的断言全在实现文件的 `mod tests` 里。
+  这条链选的是**不依赖 `gpu` feature** 的那一段（`tpm::from_net` / `net::Net` 都在 `gpu` 后面，CI 默认特性跑不到），
+  改成加载随仓的 `models/parts_id8118.tpm`（13 层 3→32→…→32→16）→ `to_tri()` → `RefCpu::forward`。
+- 读数（2026-11-05 实测）：`DepthUNet` 16×16、h=4、301 步 MSE **0.3602 → 0.01051**（34×），
+  左右两半均值 **−0.586 / +0.580**（目标 ∓0.6）——只看 MSE 会放过塌成常数的解，所以加区域判据；
+  全 false 掩码一步 ⇒ 前向输出**逐位不变**；`save`→`load`→前向**逐位一致**，坏头报 `不是 U1` 不 panic。
+- 三值不变量 + 部署语义：13 层每个 `|E|` 要么 0 要么等于该通道 `|scale|`；`to_tri()` 的 E 与 `TpmLayer::effective()`
+  **逐位相等**（防止中间混进第二次量化）；`truncate_head(4)` 后留下的 4 个平面逐位不变。
+- **金样指纹**（FNV-1a 64）：res=8 `f6de046f0b41c1f6`、res=16 `05f25dc40107c04a`。判决性实测：
+  把 `RefCpu::pool` 的 `m.max(v)` 换成 `(m+v)/2.0` ⇒ **只有金样这条判红，其余 8 条全绿**
+  ⇒ 没有这条 pin，池化写错根本拦不住。这就是"结构测试冒充端到端"的差别，也是 `docs/STATUS.md` §2.2 写它的原因。
+- 尺子自证：`compare_nhwc(a,a)` 报 `(1.0, 0.0)`；翻掉一个像素的 argmax ⇒ 一致率 319/320（既判红又不至于"改一个像素判整帧"）。
+- 本轮我自己的两个夹具错（都当场被门/红抓出，写进 `docs/STATUS.md` §3）：① 第一次"抬平面 0"抬的就是本来就是
+  argmax 的通道 ⇒ 断言红但其实没测到尺子；② 重算覆盖表时用 `grep -c` 单文件不带文件名，被 `awk -F:` 取空 ⇒
+  六个类型全报 0，看着像"补的测试没生效"。
+- `docs/STATUS.md` §2 表格随之更新：`DepthUNet`/`TriModel` 判**已跑通**（CPU 参考层），
+  六个类型里 `tests/` 覆盖仍是 **0** 的还有三个：`DepthNet`、`DepthHead`、`MatNet`（欠账留在 §4 第 3 条）。
+
 ### Added（能力句门 + 账本去重判定，把"我以为做完了"变成机器判）
 
 - 新门 `scripts/claims_evidence.py`：能力面（`README.md` + `docs/**.md`）里出现完成类动词

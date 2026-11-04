@@ -24,15 +24,34 @@
 |---|---|---|---|---|---|---|---|
 | `DepthNet` | `depthnet.rs:25` | 7 | 4 | 2 | **0** | `docs/PARTS-RESULTS.md`（清单 + 独立复核） | **已跑通** |
 | `TpmModel` | `tpm.rs:36` | 1 | 5 | 3 | **0** | 部分（同上文件，按族） | 已跑通（覆盖面窄） |
-| `DepthUNet` | `depthunet.rs:113` | 3 | 1 | 0 | **0** | 有（同族留出） | **已实现未测**（端到端缺） |
+| `DepthUNet` | `depthunet.rs:113` | 3 | 1 | 0 | **3**（`tests/models_e2e.rs`） | 本文件 §2.1 | **已跑通**（CPU 参考实现这一层） |
 | `DepthHead` | `depth.rs:14` | 3 | 1 | 0 | **0** | — | **组件**（名字已经是对的） |
 | `MatNet` | `matnet.rs:41` | 3 | 1 | 0 | **0** | — | **组件** |
-| `TriModel` | `model.rs:47` | 1 | 1 | 0 | **0** | — | 已实现未测 |
+| `TriModel` | `model.rs:47` | 1 | 1 | 0 | **5**（`tests/models_e2e.rs`） | 本文件 §2.2 | **已跑通**（加载→推理→金样指纹；跨后端对拍另见 `docs/PARTS-RESULTS.md`） |
 
-**这张表里最刺眼的一列是"tests/ 端到端 = 0"**：六个里面没有一个被 `crates/trit-parts/tests/` 覆盖，
-所有断言都是同文件内联的单点测试（量化、形状、梯度这类局部性质）。
-所以"我们有一堆三值模型"这句话在端到端意义上**不成立**——真正达到"已跑通"的只有 `DepthNet`（深度族，
-有清单 + 独立复核 + 留出读数）和 `TpmModel` 的一部分。其余是**组件或未测**。
+### 2.1 `DepthUNet` 的读数（2026-11-05 实测，`cargo test -p trit-parts --test models_e2e`）
+
+- 16×16、h=4、301 步：MSE **0.3602 → 0.01051**（34×）；左右两半均值 **−0.586 / +0.580**（目标 ∓0.6）
+  —— 只断言"MSE 下降"会放过塌成常数的退化解，所以加了这条区域判据。
+- 全 false 掩码一步 = **逐位不变**（`assert_eq!` 前向输出，不是容差比较）。
+- `save` → `load` → 前向**逐位一致**；坏头报 `不是 U1` 而不是 panic。
+
+### 2.2 `TriModel` 的读数（同上）
+
+- 随仓 `models/parts_id8118.tpm`（13 层，3→32→…→32→16）加载 → `to_tri()` → `RefCpu` 跑通：
+  res=8 输出 1024 个有限值、非退化；重新加载后**逐位相同**。
+- 三值不变量：13 层每个 `|E|` 要么 0 要么等于该通道 `|scale|`（`q ∈ {−1,0,1}` 逐元素核过）。
+- `truncate_head(4)` 后留下的 4 个平面**逐位不变**（head 是 1×1，逐通道独立）。
+- 金样指纹（FNV-1a 64）：res=8 `f6de046f0b41c1f6`、res=16 `05f25dc40107c04a`。
+  **判决性验过**：把 `RefCpu::pool` 的 `m.max(v)` 改成 `(m+v)/2.0` ⇒ 只有金样这条判红，其余 8 条全绿
+  ⇒ 没有这条 pin，池化写错是拦不住的（这条就是"结构测试冒充端到端"的差别）。
+- 对拍尺子自证：`compare_nhwc(a,a)` 报 `(1.0, 0.0)`；翻掉一个像素的 argmax ⇒ 一致率掉到 319/320（既判红又不误伤整帧）。
+
+**这一列以前是 0**：六个里面没有一个被 `crates/trit-parts/tests/` 覆盖，
+所有断言都在实现文件的 `mod tests` 里（量化、形状、梯度这类局部性质）。
+所以"我们有一堆三值模型"这句话在端到端意义上**不成立**——现在够得上"已跑通"的是 `DepthNet`（深度族，
+有清单 + 独立复核 + 留出读数）、`TpmModel` 的一部分，以及本轮补上的 `DepthUNet` / `TriModel`。
+`DepthHead` 与 `MatNet` 仍是**组件**，`DepthNet` 自己还没有 `tests/` 级断言。
 
 复算尺（谁都能重跑）：
 
@@ -40,7 +59,9 @@
 for f in depth depthnet depthunet matnet model tpm; do
   printf "%-12s 内联#test=%s\n" "$f" "$(grep -c '#\[test\]' crates/trit-parts/src/$f.rs)"
 done
-grep -rlE "DepthNet|TpmModel|MatNet|TriModel|DepthUNet|DepthHead" crates/trit-parts/tests | wc -l   # 期望 0
+for t in DepthNet TpmModel MatNet TriModel DepthUNet DepthHead; do
+  printf "%-10s tests提及=%s\n" "$t" "$(cat crates/trit-parts/tests/*.rs | grep -c "$t")"
+done
 ```
 
 ## 3. 本轮已经知道自己会错在哪（同类事故，登记在册）
@@ -50,6 +71,13 @@ grep -rlE "DepthNet|TpmModel|MatNet|TriModel|DepthUNet|DepthHead" crates/trit-pa
 - 我写过一条**不判决的断言**（"种子 0 不退化"断成"不全为 0"，而退化序列其实是全 -1）⇒ 变异存活才暴露。
 - 我量"这六个类型有没有测试"时，第一次 grep 口径漏了内联 `#[test]`，得出"全都没有测试"的错误结论；上面这张表是改正后的。
 - `scripts/layers.py`、`docs_hygiene.py`、`tech_collide.py` **都还没进 CI**（`.github` 目录被别的会话认领中）。现在说"门"，指的是本地可判红 + 变异钉住，不是 CI 拦得住。
+- 本轮重算 §2 那张表时，我第一次用了 `grep -c X crates/trit-parts/tests/*.rs | awk -F: '{s+=$2}'`：
+  只有一个文件时 `grep -c` **不带文件名前缀**，`$2` 是空的 ⇒ 六个类型全报 0，看着像"补的测试没生效"。
+  换成 `cat … | grep -c` 才拿到真数（`DepthUNet` 8 处 / `TriModel` 1 处 / `TpmModel` 2 处）。
+  这是第 41 次"判据的输入不是我刚读到的"同型错误，记在这儿是为了让它可查。
+- §2.2 那条"对拍尺子自证"第一版写的是"把平面 0 抬高"，结果抬的正好是本来就是最大值的那个通道
+  ⇒ 断言 `rate2 < 1.0` 报红，但**红的是夹具没翻转，不是尺子失灵**。改成"先读当前 argmax，再把另一个通道抬到它上面"
+  才是真的在测尺子；顺手加了 `rate2 > 0.99` 反证，防止"改一个像素判整帧不一致"这种过头实现。
 
 ## 3.5 门第一次实跑就抓到的东西（2026-11-05）
 
@@ -70,7 +98,8 @@ grep -rlE "DepthNet|TpmModel|MatNet|TriModel|DepthUNet|DepthHead" crates/trit-pa
    自测 3 正例 + 3 反证；变异 4 条 caught 4 / survived 0。
 2. **账本编号去重**（已立成 LEDGER 的独立条目，含 8 对的行号清单）：8 处复用要先清（谁复用谁改号），否则 §3.5 的判红会一直挂着，
    也不能把 `tech_collide` 挂进 CI（会把别人的历史卡住）。
-3. **端到端断言补齐**：`trit-parts` 六个类型里 `DepthUNet`/`TriModel` 至少要各有一条 `tests/` 级断言，
-   否则按 §1 的词汇表把它们降级标成"已实现未测"。
+3. ~~端到端断言补齐~~ **部分已补**（2026-11-05）：`DepthUNet` 3 条、`TriModel` 5 条落进
+   `crates/trit-parts/tests/models_e2e.rs`（读数见 §2.1/§2.2，判决性用池化变异验过）。
+   还欠：`DepthNet`（内联 7 条但 `tests/` 0 条）、`DepthHead`、`MatNet` 三个仍是 0。
 4. **命名整改**：`MatNet` 是组件（只有 1 个 bin 用、无仓内复用），按 §1 要么补端到端跑通并带读数，要么改名 `MatHead`。
    改名要走 `trit-look`/外部 pin 检查，所以排在门之后。
