@@ -17,6 +17,7 @@
 //! 合并、Git 兼容桥在 M4–M6；没做的维度不在这里宣称。
 
 pub mod bundle;
+pub mod central;
 pub mod chunk;
 pub mod delta;
 pub mod gate;
@@ -33,6 +34,7 @@ pub mod techmap;
 pub mod witness;
 pub mod worktree;
 
+pub use central::{PublishStats, PullStats, publish as central_publish, pull as central_pull};
 pub use chunk::Chunking;
 pub use gate::{ClaimSpec, Verdict, check as gate_check};
 pub use hash::Hash;

@@ -255,6 +255,56 @@ pub struct CheckoutStats {
     pub skipped: usize,
 }
 
+/// 按需物化：把某棵树的文件写进 `root`（只写 `prefix` 内）。
+/// 与 `checkout` 不同，它拿**目标树**比现状（新仓还没有 HEAD 也算得准），
+/// 并且先扫一遍冲突再写，不会写了一半才报错。
+pub fn materialize(
+    store: &crate::store::Store,
+    tree: &Hash,
+    root: &Path,
+    prefix: Option<&str>,
+    force: bool,
+) -> Result<CheckoutStats, WorktreeError> {
+    let entries = store.tree_entries(tree)?;
+    let mut wanted: Vec<(&String, Vec<u8>)> = Vec::new();
+    let mut blocked = Vec::new();
+    let mut stats = CheckoutStats::default();
+    for (path, file_id) in &entries {
+        if !in_scope(path, prefix) {
+            stats.skipped += 1;
+            continue;
+        }
+        let bytes = store.get_file(file_id)?;
+        let target = safe_join(root, path)?;
+        if !force
+            && let Ok(existing) = fs::read(&target)
+            && existing != bytes
+        {
+            blocked.push(path.clone());
+            continue;
+        }
+        wanted.push((path, bytes));
+    }
+    if !blocked.is_empty() {
+        return Err(WorktreeError::Dirty(
+            blocked.len(),
+            blocked.iter().take(5).cloned().collect(),
+        ));
+    }
+    for (path, bytes) in wanted {
+        let target = safe_join(root, path)?;
+        if fs::read(&target).map(|old| old == bytes).unwrap_or(false) {
+            continue;
+        }
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&target, &bytes)?;
+        stats.written += 1;
+    }
+    Ok(stats)
+}
+
 /// 两个提交之间的路径级差异（按内容 id 比，不做行级 diff）。
 pub fn diff(repo: &Repo, a: &Hash, b: &Hash) -> Result<Vec<Change>, WorktreeError> {
     let left = repo.store().tree_entries(&repo.commit_at(a)?.tree)?;
