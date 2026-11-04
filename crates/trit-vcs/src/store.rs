@@ -264,6 +264,11 @@ impl Store {
         Ok(())
     }
 
+    /// 块在不在本地（只查索引，不读盘、不校验内容）。
+    pub fn has_chunk(&self, hash: &Hash) -> bool {
+        self.index.borrow().contains_key(hash)
+    }
+
     /// 读块并**校验**：内容与名字对不上就报 Corrupt，而不是把坏数据交出去。
     pub fn get_chunk(&self, hash: &Hash) -> Result<Vec<u8>, StoreError> {
         let bytes = self.read_at(hash, 0)?;
