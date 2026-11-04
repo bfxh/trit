@@ -659,8 +659,8 @@
  {
   "name": "vcs: CLI pull 不接 --force（没法覆盖本地改动）",
   "file": "crates/trit-vcs/src/bin/trit-vcs/central_sync.rs",
-  "old": "        has(args, \"--force\"),",
-  "new": "        false,",
+  "old": "        prefix,\n        has(args, \"--force\"),",
+  "new": "        prefix,\n        false,",
   "filter": "publish_then_sparse_pull",
   "pkg": "trit-vcs",
   "runner": "cargo"
