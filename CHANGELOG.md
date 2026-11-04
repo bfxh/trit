@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Fixed（`count_cmd.rs` 自己找不到二进制：MSRV 作业里五个测试全红，不是计数命令坏）
+
+- CI 读数：**MSRV (1.88)** 失败的是我新加的 `crates/trit-cli/tests/count_cmd.rs` 5 条，报错
+  `failed to run trit binary: Os { code: 2, kind: NotFound }`；根因是我写的取径
+  `env("CARGO_BIN_EXE_trit").unwrap_or_else(|| format!("trit{}", EXE_SUFFIX))` —— **cargo 在那个作业里没注入该变量**，
+  回退成"让 PATH 去找裸 `trit`"必然找不到。同目录的 `tests/cli.rs` / `capacity_exec.rs` 一直是
+  "env 取不到就按 `current_exe()` 往上两级推 `target/debug/trit`"，我没照抄。
+- 修法：换成同一把尺（`trit_bin()`），并把静默回退改成**显式判红**（`assert!(bin.exists())` +
+  `unwrap_or_else(panic)` 点名路径）——"测试自己找不到二进制"不能伪装成"产品不工作"。
+- 复现验证：直接跑 `target/debug/deps/count_cmd-*.exe`（**不经 cargo**，因此没有 `CARGO_BIN_EXE_*`）
+  ⇒ 改前 5 条全红于同一行，改后 **5 passed**；`cargo test -p trit-cli --test count_cmd` 本地同样 5 passed。
+- 同一次 CI 里 **windows-latest** 挂的是既有 `capacity_exec.rs` 5 条，子进程报
+  `thread 'main' has overflowed its stack`（退出码 `-1073741571` = `0xC00000FD`）。
+  先按证据排除自己：实测 `std::mem::size_of::<Commands>() = 184` 字节（新变体内联只带来十级字节的增量），
+  本机 `cargo test -p trit-cli --test capacity_exec` **5 passed** ⇒ 不像本 PR 的成因；
+  重跑该作业再看是否复现（复现就按 Windows runner 的栈/内存面查，不动别人的测试）。
+
 ### 否证（`MatNet` 不改名——原本列为"命名整改"的欠账）
 
 - `docs/STATUS.md` §4 第 4 条提议"是组件就改名 `MatHead`"。读码把它**否证**了：

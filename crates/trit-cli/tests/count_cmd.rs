@@ -5,13 +5,27 @@
 
 use std::process::Command;
 
+/// 与 `tests/cli.rs` 同一把尺：先取 cargo 注入的 `CARGO_BIN_EXE_trit`，
+/// 取不到就按当前测试 exe 的目录推（`target/debug/trit[.exe]`）。
+/// 之前这里写成"回退到裸 `trit` 让 PATH 去找"，MSRV 作业里 cargo 没注入该变量 ⇒
+/// 五个测试全报 `NotFound`，看着像计数命令坏了，其实是**测试自己找不到二进制**。
+fn trit_bin() -> std::path::PathBuf {
+    if let Ok(p) = std::env::var("CARGO_BIN_EXE_trit") {
+        return std::path::PathBuf::from(p);
+    }
+    let mut dir = std::env::current_exe().expect("current exe");
+    dir.pop();
+    dir.pop();
+    dir.join(format!("trit{}", std::env::consts::EXE_SUFFIX))
+}
+
 fn run(args: &[&str]) -> (String, String, i32) {
-    let bin = std::env::var("CARGO_BIN_EXE_trit")
-        .unwrap_or_else(|_| format!("trit{}", std::env::consts::EXE_SUFFIX));
+    let bin = trit_bin();
+    assert!(bin.exists(), "找不到 trit 二进制：{}", bin.display());
     let out = Command::new(bin)
         .args(args)
         .output()
-        .expect("failed to run trit binary");
+        .unwrap_or_else(|e| panic!("跑 {} 失败：{e}", trit_bin().display()));
     (
         String::from_utf8_lossy(&out.stdout).to_string(),
         String::from_utf8_lossy(&out.stderr).to_string(),
