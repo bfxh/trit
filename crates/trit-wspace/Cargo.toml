@@ -1,0 +1,16 @@
+[package]
+name = "trit-wspace"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三值权重空间编程：可 diff 的权重 IR、事务式编辑、无梯度最小修补与穷举验证（不属于稳定 API）"
+publish = false
+
+[dependencies]
+trit-learn.workspace = true
+serde_json = "1.0.154"
+
+[[example]]
+name = "program_xor"

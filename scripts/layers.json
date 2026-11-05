@@ -26,6 +26,7 @@
     "trit-graph": "algo",
     "trit-capacity": "algo",
     "trit-learn": "learn",
+    "trit-wspace": "learn",
     "trit-train": "learn",
     "trit-parts": "learn",
     "trit-attn": "learn",

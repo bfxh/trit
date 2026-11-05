@@ -39,6 +39,7 @@ members = [
     "crates/trit-re",
     "crates/trit-immune",
     "crates/trit-orch",
+    "crates/trit-wspace",
 ]
 
 [workspace.package]
@@ -66,3 +67,4 @@ trit-wasm = { path = "crates/trit-wasm", version = "0.12.0" }
 sansheng = { path = "crates/sansheng", version = "0.12.0" }
 trit-schedule = { path = "crates/trit-schedule", version = "0.12.0" }
 trit-orch = { path = "crates/trit-orch", version = "0.12.0" }
+trit-wspace = { path = "crates/trit-wspace", version = "0.12.0" }

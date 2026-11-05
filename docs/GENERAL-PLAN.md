@@ -3687,7 +3687,7 @@ parts-scene-verify --scene <dir>
 | preview/ | 8 视角 + 1024×512 拼图 | PASS |
 | objects-mesh/scene.glb | 7 节点 / 7 材质 / 7 贴图，10.0 MB | PASS + 外部 valid |
 
-- **搬移测试**：整包复制到 `E:/tmp` 后复核仍 PASS（相对路径生效）；
+- **搬移测试**：整包复制到临时目录后复核仍 PASS（相对路径生效）；
 - 反证 ①：改 `preview/view-03.png` 一个像素 ⇒ 预览 FAIL、总包 reject、rc=1；
 - 反证 ②：总清单 `objects.count` 7→6 ⇒ “对象 7/6=FAIL”、reject、rc=1。
 - 局限：串行编排（44 s 里对象网格占 4 s、总复核里各子复核重复读盘）；包内 OBJ 是文本，
@@ -3734,8 +3734,8 @@ parts-3d export-scene ... --full --glb-spin 4
 ### 6.130 对象语义标签 + GT 质心对账（2026-11-06）
 
 ```text
-parts-3d export-objects --scene <dir> --frames 0,...,7 --out <dir> --scenes E:/trit-data/s1/scenes_v6
-parts-3d export-scene ... --full --scenes E:/trit-data/s1/scenes_v6
+parts-3d export-objects --scene <dir> --frames 0,...,7 --out <dir> --scenes <dir>
+parts-3d export-scene ... --full --scenes <dir>
 ```
 
 - 读 `scenes/<scene>/objects.json`，按 `pass_index`（= 分割 id）对齐；对象清单每项增加
