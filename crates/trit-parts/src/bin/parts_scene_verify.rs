@@ -84,6 +84,42 @@ fn count_entries(txt: &str, key: &str) -> usize {
     rest[..end].matches("{\"cell\": ").count()
 }
 
+/// 取 `"key": [ ... ]` 的数组体（支持嵌套，跳过字符串）。
+fn array_body<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
+    let pat = format!("\"{key}\": [");
+    let i = txt.find(&pat)? + pat.len();
+    let rest = &txt[i..];
+    let mut depth = 1usize;
+    let (mut in_str, mut esc) = (false, false);
+    for (j, ch) in rest.char_indices() {
+        if in_str {
+            if esc {
+                esc = false;
+            } else if ch == '\\' {
+                esc = true;
+            } else if ch == '"' {
+                in_str = false;
+            }
+        } else if ch == '"' {
+            in_str = true;
+        } else if ch == '[' {
+            depth += 1;
+        } else if ch == ']' {
+            depth -= 1;
+            if depth == 0 {
+                return Some(&rest[..j]);
+            }
+        }
+    }
+    None
+}
+
+fn count_ids(txt: &str, key: &str) -> usize {
+    array_body(txt, key)
+        .map(|b| b.matches("{\"id\": ").count())
+        .unwrap_or(0)
+}
+
 fn sha_matches(want: &str, got: &str) -> bool {
     !want.is_empty() && want == got
 }
@@ -151,6 +187,18 @@ fn main() {
     let splat_verify = arg(&argv, "--parts-splat-verify")
         .map(PathBuf::from)
         .unwrap_or_else(|| sibling("parts-splat-verify"));
+    let objects_verify = arg(&argv, "--objects-verify")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| sibling("parts-objects-verify"));
+    let compose_verify = arg(&argv, "--compose-verify")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| sibling("parts-compose-verify"));
+    let omesh_verify = arg(&argv, "--objectmesh-verify")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| sibling("parts-objectmesh-verify"));
+    let preview_verify = arg(&argv, "--preview-verify")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| sibling("parts-preview-verify"));
     let manifest = read(&mpath);
     let parts = object(&manifest, "parts").unwrap_or_else(|| usage());
     let mesh = object(parts, "mesh").unwrap_or_else(|| usage());
@@ -210,12 +258,127 @@ fn main() {
         && mverdict.contains("\"verdict\": \"pass\"")
         && sverdict.contains("\"verdict\": \"pass\"");
 
-    let pass = ok_man && ok_counts && ok_sub;
+    // `--full` 的四个子包（旧清单没有就跳过）
+    let mut extra_ok = true;
+    let mut extra = String::new();
+    if let Some(ob) = object(parts, "objects") {
+        let man = object(ob, "manifest").unwrap_or_else(|| usage());
+        let p = resolve(&scene_dir, field(man, "path").unwrap_or_else(|| usage()));
+        let d = p
+            .parent()
+            .map(|x| x.to_path_buf())
+            .unwrap_or_else(|| scene_dir.clone());
+        let want = number(ob, "count").unwrap_or(-1.0) as usize;
+        let got = count_ids(&read(&p), "objects");
+        let o = run(
+            &objects_verify,
+            &["--objects".into(), d.display().to_string()],
+            "parts-objects-verify",
+        );
+        let v = d.join("objects.verify.json");
+        let ok = sha_matches(&field(man, "sha256").unwrap_or_default(), &hash(&p))
+            && counts_match(want, got)
+            && o.status.success()
+            && v.is_file()
+            && read(&v).contains("\"verdict\": \"pass\"");
+        extra_ok &= ok;
+        extra.push_str(&format!(" 对象 {got}/{want}="));
+        extra.push_str(if ok { "ok" } else { "FAIL" });
+    }
+    if let Some(cb) = object(parts, "compose") {
+        let man = object(cb, "manifest").unwrap_or_else(|| usage());
+        let p = resolve(&scene_dir, field(man, "path").unwrap_or_else(|| usage()));
+        let d = p
+            .parent()
+            .map(|x| x.to_path_buf())
+            .unwrap_or_else(|| scene_dir.clone());
+        let ctxt = read(&p);
+        let composed = object(&ctxt, "composed")
+            .map(|b| number(b, "count").unwrap_or(-1.0))
+            .unwrap_or(-1.0) as usize;
+        let cov = object(&ctxt, "gate")
+            .map(|b| number(b, "coverage").unwrap_or(f64::NAN))
+            .unwrap_or(f64::NAN);
+        let want = number(cb, "count").unwrap_or(-1.0) as usize;
+        let want_cov = number(cb, "coverage").unwrap_or(f64::NAN);
+        let o = run(
+            &compose_verify,
+            &["--scene".into(), d.display().to_string()],
+            "parts-compose-verify",
+        );
+        let v = d.join("compose.verify.json");
+        let ok = sha_matches(&field(man, "sha256").unwrap_or_default(), &hash(&p))
+            && counts_match(want, composed)
+            && (want_cov - cov).abs() <= 1e-9
+            && o.status.success()
+            && v.is_file()
+            && read(&v).contains("\"verdict\": \"pass\"");
+        extra_ok &= ok;
+        extra.push_str(&format!(" 合成 {composed}/{want}="));
+        extra.push_str(if ok { "ok" } else { "FAIL" });
+    }
+    if let Some(mb) = object(parts, "objects_mesh") {
+        let man = object(mb, "manifest").unwrap_or_else(|| usage());
+        let p = resolve(&scene_dir, field(man, "path").unwrap_or_else(|| usage()));
+        let d = p
+            .parent()
+            .map(|x| x.to_path_buf())
+            .unwrap_or_else(|| scene_dir.clone());
+        let want = number(mb, "count").unwrap_or(-1.0) as usize;
+        let got = count_ids(&read(&p), "objects");
+        let o = run(
+            &omesh_verify,
+            &["--dir".into(), d.display().to_string()],
+            "parts-objectmesh-verify",
+        );
+        let v = d.join("objects-mesh.verify.json");
+        let ok = sha_matches(&field(man, "sha256").unwrap_or_default(), &hash(&p))
+            && counts_match(want, got)
+            && o.status.success()
+            && v.is_file()
+            && read(&v).contains("\"verdict\": \"pass\"");
+        extra_ok &= ok;
+        extra.push_str(&format!(" 对象网格 {got}/{want}="));
+        extra.push_str(if ok { "ok" } else { "FAIL" });
+    }
+    if let Some(pb) = object(parts, "preview") {
+        let man = object(pb, "manifest").unwrap_or_else(|| usage());
+        let p = resolve(&scene_dir, field(man, "path").unwrap_or_else(|| usage()));
+        let d = p
+            .parent()
+            .map(|x| x.to_path_buf())
+            .unwrap_or_else(|| scene_dir.clone());
+        let want = number(pb, "views").unwrap_or(-1.0) as usize;
+        let got = object(&read(&p), "config")
+            .map(|c| number(c, "views").unwrap_or(-1.0))
+            .unwrap_or(-1.0) as usize;
+        let o = run(
+            &preview_verify,
+            &["--preview".into(), d.display().to_string()],
+            "parts-preview-verify",
+        );
+        let v = d.join("preview.verify.json");
+        let ok = sha_matches(&field(man, "sha256").unwrap_or_default(), &hash(&p))
+            && counts_match(want, got)
+            && o.status.success()
+            && v.is_file()
+            && read(&v).contains("\"verdict\": \"pass\"");
+        extra_ok &= ok;
+        extra.push_str(&format!(" 预览 {got}/{want}="));
+        extra.push_str(if ok { "ok" } else { "FAIL" });
+    }
+
+    let pass = ok_man && ok_counts && ok_sub && extra_ok;
     println!(
-        "复核 {}：子清单 {}｜档数 {got_levels}/{want_levels}｜高斯 {got_splats}/{want_splats}｜子复核 {}",
+        "复核 {}：子清单 {}｜档数 {got_levels}/{want_levels}｜高斯 {got_splats}/{want_splats}｜子复核 {}｜子包{}",
         mpath.display(),
         if ok_man { "一致" } else { "不一致" },
-        if ok_sub { "全 PASS" } else { "未通过" }
+        if ok_sub { "全 PASS" } else { "未通过" },
+        if extra.is_empty() {
+            "无".to_string()
+        } else {
+            extra.clone()
+        }
     );
     println!(
         "{}",
@@ -227,7 +390,7 @@ fn main() {
     );
 
     let body = format!(
-        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-scene-verify\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"scene\": {{\"dir\": {}, \"manifest\": {{\"path\": {}, \"sha256\": \"{}\"}}}},\n  \"mesh\": {{\"manifest\": {}, \"levels\": {got_levels}, \"want_levels\": {want_levels}, \"ok\": {ok_man}}},\n  \"splat\": {{\"manifest\": {}, \"count\": {got_splats}, \"want_count\": {want_splats}, \"ok\": {ok_counts}}},\n  \"sub_verify_ok\": {ok_sub},\n  \"verdict\": \"{}\"\n}}\n",
+        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-scene-verify\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"scene\": {{\"dir\": {}, \"manifest\": {{\"path\": {}, \"sha256\": \"{}\"}}}},\n  \"mesh\": {{\"manifest\": {}, \"levels\": {got_levels}, \"want_levels\": {want_levels}, \"ok\": {ok_man}}},\n  \"splat\": {{\"manifest\": {}, \"count\": {got_splats}, \"want_count\": {want_splats}, \"ok\": {ok_counts}}},\n  \"sub_verify_ok\": {ok_sub},\n  \"full_ok\": {extra_ok},\n  \"sub\": {},\n  \"verdict\": \"{}\"\n}}\n",
         created_unix(),
         json_str(git_out(&["rev-parse", "--short", "HEAD"]).trim()),
         json_str(&trit_parts::scenefp::norm_root(&scene_dir)),
@@ -235,6 +398,7 @@ fn main() {
         hash(&mpath),
         json_str(&trit_parts::scenefp::norm_root(&mpath_sub)),
         json_str(&trit_parts::scenefp::norm_root(&ply)),
+        json_str(extra.trim()),
         if pass { "pass" } else { "reject" }
     );
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
@@ -311,6 +475,13 @@ mod tests {
         );
         let abs = std::env::temp_dir().join("trit_scene_abs.json");
         assert_eq!(resolve(base, abs.display().to_string()), abs);
+    }
+
+    #[test]
+    fn count_ids_handles_nested_arrays() {
+        let t = "{\"objects\": [{\"id\": 1, \"bbox_min\": [0,0,0], \"bbox_max\": [1,1,1]}, {\"id\": 2, \"bbox_min\": [1,0,0], \"bbox_max\": [2,1,1]}]}";
+        assert_eq!(count_ids(t, "objects"), 2);
+        assert_eq!(count_ids("{}", "objects"), 0);
     }
 
     #[test]
