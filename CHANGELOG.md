@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（`trit-immune/tests/properties.rs` 也改吃 `SeedRng`：重复度 61 → 60）
+
+- 上一轮我写"这件不做，因为要清 20 处 `as usize`"——这轮把它做完了：`below(u64)->u64` ⇒ `SeedRng::below(usize)->usize`，
+  顺带去掉 `rng.below(x.len() as u64) as usize` 一类的转换（逐类替换命中 14 处：4 纯数字、4 `.len()`、2 变量、
+  4 处 `Rng(seed)` 构造；另把 6 处 `rng.pick_trit()` 改成自由函数调用）。
+- `pick_trit` 留在本文件（`Trit` 是 trit-immune 的域概念，不进公共语料件）。
+- 口径核对：本地 `below` 一直是 `next() % n`，`SeedRng::below` 也是 ⇒ **探索序列不变**（每步抽样次数一样）。
+- 实测：`cargo test -p trit-immune` **23 个结果行全 ok**、`clippy --tests` 无告警；
+  精确尺 `grep -rlE "\^=.*<< 13" --include=*.rs crates/` ⇒ **60**（轨迹 67 → 65 → 63 → 61 → 60）。
+
+
 ### Added（再吃掉两份手写 RNG：`trit-float` / `trit-immune` 的测试改吃 `SeedRng`）
 
 - `crates/trit-float/tests/stress.rs`：删掉本地 `struct Rng`，`next()` ⇒ `next_u64()`，

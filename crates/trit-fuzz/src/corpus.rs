@@ -6,7 +6,8 @@
 //! 结果自己写的这段注释都被数进去了，读数是 64；换成精确尺后是 **67 → 65 → 63**：
 //! 本会话前 67、`trit-fuzz` 第一批（`trit-count` 两份逐字相同的 `random_expr` 合并）后 65、
 //! `trit-dot` / `trit-codec` 的 stress 改吃之后 63，再吃下 `trit-float` / `trit-immune`
-//! 两份测试后 **61**（口径都是 `crates/`；把 `benchmarks/` 算进来再多 1）。
+//! 两份测试后 61，再把 `trit-immune/tests/properties.rs` 换掉后 **60**（口径都是 `crates/`；
+//! 把 `benchmarks/` 算进来再多 1）。
 //! RNG 本体复用 [`trit_bench::SeedRng`]（同一组 13/7/17 移位），所以"换包"不改变序列口径。
 //!
 //! 只做语料，不做求解：这里出现的任何表达式都不该被当成"产品输入"。
