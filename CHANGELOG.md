@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Measured（DPLL 分配口径探针：µs/节点上升线归因到分配，靶子从 watched literals 换成残基子句表扁平化）
+
+- 新 example `crates/trit-count/examples/matching_alloc_probe.rs`：在这个 example 里装一个记数的 `#[global_allocator]`
+  （只累加 `alloc` 次数与 `layout.size()` 字节；计数自身有开销，所以**不看壁钟**、只读次数与字节），
+  构造与求解逐字复用 `matching_family`（同一族、同一 `cnf::Encoder`、同一 `dpll::count_cnf`），节点数取 `CountStats`。
+- 自标定：同一次运行里量 **64 B 的一次 alloc+free = 35.4 ns**（含两次原子计数的开销 ⇒ 这是分配单价的**上界**口径）。
+- 读数（release；节点数与 `matching_family` 逐位一致：203 / 323 / 443 / 563 / 683 / 803 / 923 / 1163）：
+
+  | 对数 | 子句 | allocs/节点 | bytes/节点 | 分配折算 µs/节点 | 实测 µs/节点（5 次中位数） |
+  |---|---|---|---|---|---|
+  | 8 | 320 | 164.1 | 17,857 | 5.8 | 10.8 |
+  | 20 | 824 | 449.0 | 58,866 | 15.9 | 25.7 |
+  | 40 | 1664 | 925.5 | 128,148 | 32.7 | 52.8 |
+
+- 结论（把上一轮定的靶子改了，不是加一条待办）：allocs/节点 从 164.1 涨到 925.5（**5.6×**）与 µs/节点从 10.8 涨到 52.8
+  （**5.0×**）同步线性上升；用 35.4 ns 的上界单价折算，分配解释 **≤64%** 的上升（(32.7−5.8)/(52.8−10.8) = 0.64）。
+  这跟 `dpll.rs` 头部那句"瓶颈是每节点 2(k+1) 次小分配"是同一件事的后半段：CSR 出现表已经扁平化，
+  **残基子句表却还是每条子句一个 `Vec`**（`residue()` 返回 `Vec<Vec<i32>>`）。
+  ⇒ 下一刀 = 把残基表也扁平化 / 跨节点复用缓冲；**watched literals 不是这一刀**（监视器省的是扫描次数，不是分配次数）。
+  ROADMAP §4 那句"watched literals（µs/节点 10.7→47.9）"已按本轮读数改写，旧靶子用删除线留在原处。
+- 复算尺：`cargo run --release -p trit-count --example matching_alloc_probe`、
+  `cargo run --release -p trit-count --example matching_family`（两条都要在机器空转时跑，µs/节点那列取 5 次中位数）。
 ### 更正（上一条里的两个读数：盘符债已被 #293 清掉；一次 rc=101 其实是没盘）
 
 - 上一条（`2e7eabf`）写 `docs_hygiene` 拦 1 = `docs/GENERAL-PLAN.md` 盘符 **27** / 基线 24。合完 `origin/main 0b7dd95`

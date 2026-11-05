@@ -40,8 +40,12 @@
 
 - **本周**：~~`trit-bench` 立项吃掉那 5 份重复 bench~~ **已做**（PR #299；`layers.json` 的 `capabilities`
   登记了 `bench-timing-harness`，两份未迁的手写档各带实测差与保留理由——"并存"这条已按口径办）。
-  评测协议从 `trit-parts` 下沉 `trit-learn`；watched literals（靶子：匹配族 20 对起只有 DPLL 出得了数，
-  µs/节点 10.7→47.9 随子句数增长，见 `crates/trit-count/src/dpll.rs` 头部）。
+  评测协议从 `trit-parts` 下沉 `trit-learn`；~~watched literals~~ → **残基子句表扁平化 / 缓冲复用**
+  （靶子在 2026-11-06 被自己的探针改了：匹配族 **allocs/节点 164.1 → 925.5（5.6×）**，同档 **µs/节点 10.8 → 52.8（5.0×，
+  5 次重复中位数、机器空转）**，两条线同步线性上升；按自标定单价 **35.4 ns/次 alloc+free**（含计数开销，是上界）折算，
+  分配能解释 **≤64%** 的上升 ⇒ 省扫描次数的监视器不是这一刀的瓶颈，`dpll.rs` 头部那句"瓶颈是小分配"只解决了一半：
+  CSR 出现表扁平化之后，**残基子句表仍是每条子句一个 `Vec`**。读数出处
+  `crates/trit-count/examples/matching_family.rs` 与 `crates/trit-count/examples/matching_alloc_probe.rs`。）
   **已被消融否证的路线**：省 `decompose`/拷贝不是下一刀——去掉分解后 12 对从 4.7 ms/323 节点涨到
   1807 ms/729,059 节点（×384），分解的开销跟它省下的搜索不在同一量级。
 - **下月**：`trit-mv` → `trit-ir` → `trit-num`。
