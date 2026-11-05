@@ -1434,6 +1434,54 @@ MUTANTS = [
         "filter": "allowlist_default_denies_everything"
     },
     {
+        "name": "net: 登记桥主机应答 all/any 写反（refused 不算主机在网）",
+        "file": "crates/trit-net/src/netsec/probe.rs",
+        "old": "        let answered = group\n            .iter()\n            .any(|finding| finding.evidence != Evidence::Unverified);",
+        "new": "        let answered = group\n            .iter()\n            .all(|finding| finding.evidence != Evidence::Unverified);",
+        "pkg": "trit-net",
+        "filter": "attach_builds_station_host_service_with_evidence"
+    },
+    {
+        "name": "net: 登记桥把服务节点证据升成 T（探测结果被洗成已证实）",
+        "file": "crates/trit-net/src/netsec/probe.rs",
+        "old": "            let service = graph.add_node(&service_label, finding.evidence, &finding.note);",
+        "new": "            let service = graph.add_node(&service_label, Evidence::Confirmed, &finding.note);",
+        "pkg": "trit-net",
+        "filter": "attach_builds_station_host_service_with_evidence"
+    },
+    {
+        "name": "net: mini-batch 洗牌退化成顺序访问（batch 内分布偏斜无人复算）",
+        "file": "crates/trit-net/src/train.rs",
+        "old": "        order.swap(i, j);",
+        "new": "        let _ = (i, j);",
+        "pkg": "trit-net",
+        "filter": "mini_batch_learns_majority_and_is_deterministic"
+    },
+    {
+        "name": "net: 良性尾部分位数退回全训练集（攻击分布重新拖动死区）",
+        "file": "crates/trit-net/src/netsec/calibrate.rs",
+        "old": "                high: quantile(values, 1.0 - tail),",
+        "new": "                high: quantile(values, inner_high),",
+        "pkg": "trit-net",
+        "filter": "benign_tail_rules_anchor_on_benign_quantiles"
+    },
+    {
+        "name": "net: 漂移门把 FPR 方向写反（变好才红，变坏放行）",
+        "file": "crates/trit-net/src/netsec/drift.rs",
+        "old": "                if dfpr > limits.max_fpr_delta {",
+        "new": "                if dfpr < -limits.max_fpr_delta {",
+        "pkg": "trit-net",
+        "filter": "fpr_rise_turns_red"
+    },
+    {
+        "name": "net: 漂移门忽略结构性问题（缺 band/坏配置静默放行）",
+        "file": "crates/trit-net/src/netsec/drift.rs",
+        "old": "    let red = !structural.is_empty() || bands.iter().any(|band| !band.reasons.is_empty());",
+        "new": "    let red = bands.iter().any(|band| !band.reasons.is_empty());",
+        "pkg": "trit-net",
+        "filter": "missing_band_fails_closed"
+    },
+    {
         "name": "vm: X 分叉跳到错误位置",
         "file": "crates/trit-machines/src/vm.rs",
         "old": "queue.push((target, stack.clone()));",
@@ -1524,8 +1572,8 @@ MUTANTS = [
     {
         "name": "net-train: 梯度上升",
         "file": "crates/trit-net/src/train.rs",
-        "old": "        let scale = options.learning_rate / count;",
-        "new": "        let scale = -options.learning_rate / count;",
+        "old": "            let scale = options.learning_rate / batch_len;",
+        "new": "            let scale = -options.learning_rate / batch_len;",
         "pkg": "trit-net",
         "filter": "majority_five_is_learned"
     },

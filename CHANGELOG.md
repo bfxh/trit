@@ -2,6 +2,58 @@
 
 ## [Unreleased]
 
+### Added（漂移门：校准读数对账，变坏即红）
+
+- `trit-net::netsec::drift`：基线校准读数（`docs/SECURITY-NET-BASELINE.json`，
+  Friday-16-02 200k 行、与 M1 §读数逐位一致）与当前读数按 band 逐条对账
+  ΔFPR/ΔTPR/Δ弃权，**FPR 升 >0.1 / TPR 降 >0.1 / 弃权升 >0.2 任一即红**
+  （阈值可调）；**fail-closed**：缺 band、多 band、坏 JSON、非有限读数、
+  负/NaN 阈值一律红——对不上账的「绿」没有含义。
+- `trit-net drift <基线.json> <当前.json> [--max-*-delta F]`：JSON 判决输出，
+  红则退出码非零。实测：基线自比绿；M1.6 变体对 M1 基线红 rc=1
+  （读数变了必须显式重生成基线并在提交说明里给理由）。
+- 边界（🔴）：只对账不归因——漂移原因（分布漂移/攻击类型/代码回归）是人的
+  工作；CI 接入取决于数据集可得性（335 MB 不入库），流程见
+  `docs/SECURITY-NET.md` §M1.6 §漂移门。
+- 测试 `tests/drift.rs` 10 条（绿路径/三方向触红/缺 band/多 band/坏 JSON/
+  非法阈值/多理由累积）；变异门 +2（FPR 方向写反、结构性问题被忽略）。
+
+### Changed（M1.6 训练器与阈值：mini-batch + 良性尾部，真实读数）
+
+- `trit-net::train`：`TrainOptions.batch_size`——`0/1` = 全批（旧行为）；`k>1` =
+  每轮按 `seed ^ epoch` **确定性洗牌**（Fisher–Yates，同参重跑逐位一致），每
+  `k` 条累积一次梯度更新。CLI `calibrate --batch N`。
+- `trit-net::netsec::calibrate`：`Config.benign_tail: Option<f64>`（CLI
+  `--benign-tail F`）——分位数锚在**良性子集**（`Bias::High` 取
+  `[良性 P(0.5-b), 良性 P(1-tail)]`，Low 镜像），攻击占比高时不再被攻击分布
+  把死区拖走。
+- 真实读数（Friday-16-02 DDoS 日，200k 行，基线与 M1 逐位一致）：**mini-batch
+  是主收益**——band 0.3 段 TPR 0.9378→**0.9987**（同弃权档），band 0 的 FPR
+  0.1446→**0.1101**、精确率 0.8313→0.8645；**良性尾部单独用是负结果**（DDoS 日
+  良性分布窄，FPR 全面变差），与 mini-batch 组合才成立（TPR 0.998 档 FPR
+  0.156）。跨日依旧失效（漂移负结果成立，照实记录）。详见
+  `docs/SECURITY-NET.md` §M1.6。
+- 测试 +3（mini-batch 收敛/确定性/超大 batch 钳制 + 洗牌质量断言；良性尾部
+  分位数锚定纯函数测试 + 死区恢复机制测试）；变异门 +2、修 1（梯度上升锚点
+  随 batch_len 重命名）。
+
+### Added（M3→M2 登记桥：probe 证据半自动进攻击图）
+
+- `trit-net::netsec::probe::attach_probe`：probe 报告 → 攻击图——station 节点（`T`）
+  → 主机节点（label = 字面 IP，证据 = **主机应答**：任一探测拿到 `T`/`F` 即在网，
+  refused 也是主机回的 RST；全 `X` 才是 `X`）→ 服务节点（`ip:port`，证据 =
+  finding 证据，banner 线索跟到 note），边出处 = `tcp-connect`。
+  **分工**：桥只登记探测证据；攻击语义由人随后用 LWW 改写。**幂等**：同报告
+  重跑图不变，新报告 LWW 刷新。
+- `attack::AttackGraph::add_node` 升级为 **LWW**：同 label 重复登记 = 证据与备注
+  后写覆盖（与边一致）——否则桥重跑时节点证据会和最新探测结果打架。
+- `findings_from_jsonl`：探测报告 JSONL 复原，坏行显式报错不静默丢。
+- `trit-net bridge <攻击图.jsonl> <探测报告.jsonl> [--station name]`：更新后的图
+  JSONL 走 stdout。
+- 测试 +4（结构/证据与 reach 贯通含见证、全 X 主机、幂等 + LWW 刷新 + 人工改写、
+  findings JSONL 往返与坏行拒绝）；变异门 +2（主机应答 any→all、服务节点证据
+  被升成 T）。
+
 ### Added（M3 受控探测：allowlist 默认拒绝的实验室端口/服务指纹）
 
 - `trit-net::netsec::probe`：证据生产端——M2 攻击图是登记制，probe 是第一个

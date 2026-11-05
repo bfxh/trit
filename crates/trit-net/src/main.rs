@@ -1,5 +1,7 @@
 //! `trit-net`：三值权重网络的最小 CLI（实验层）。
 
+mod netsec_cli;
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -18,6 +20,8 @@ fn main() -> ExitCode {
         Some("calibrate") => calibrate_cmd(&args[1..]),
         Some("attack") => attack_cmd(&args[1..]),
         Some("probe") => probe_cmd(&args[1..]),
+        Some("bridge") => bridge_cmd(&args[1..]),
+        Some("drift") => netsec_cli::drift_cmd(&args[1..]),
         _ => run(),
     };
     match result {
@@ -124,6 +128,7 @@ fn train_cmd(args: &[String]) -> Result<(), String> {
             epochs,
             learning_rate,
             seed: 11,
+            ..TrainOptions::default()
         },
     )
     .map_err(|error| error.to_string())?;
@@ -202,13 +207,15 @@ fn calibrate_cmd(args: &[String]) -> Result<(), String> {
     let mut bands = vec![0.0, 0.1, 0.2, 0.3, 0.4];
     let mut fraction = 0.75f64;
     let mut json = false;
+    let mut batch_size = 0usize;
+    let mut benign_tail: Option<f64> = None;
     let mut index = 0;
     while index < args.len() {
         let flag = args[index].clone();
         match flag.as_str() {
             "--no-select" => select_features = false,
             "--rows" | "--epochs" | "--hidden" | "--train-fraction" | "--bands" | "--lr"
-            | "--features" | "--test" => {
+            | "--features" | "--test" | "--batch" | "--benign-tail" => {
                 index += 1;
                 let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
                 match flag.as_str() {
@@ -231,6 +238,15 @@ fn calibrate_cmd(args: &[String]) -> Result<(), String> {
                         features = raw.parse().map_err(|_| "--features 不是整数".to_string())?
                     }
                     "--test" => test_path = Some(raw.clone()),
+                    "--batch" => {
+                        batch_size = raw.parse().map_err(|_| "--batch 不是整数".to_string())?
+                    }
+                    "--benign-tail" => {
+                        let tail: f64 = raw
+                            .parse()
+                            .map_err(|_| "--benign-tail 不是数字".to_string())?;
+                        benign_tail = Some(tail);
+                    }
                     _ => {
                         bands = raw
                             .split(',')
@@ -271,6 +287,8 @@ fn calibrate_cmd(args: &[String]) -> Result<(), String> {
         learning_rate,
         features,
         select_features,
+        batch_size,
+        benign_tail,
     };
     let (reports, selected) = match test_path.as_deref() {
         Some(test_path) => {
@@ -730,59 +748,9 @@ fn attack_cmd(args: &[String]) -> Result<(), String> {
 }
 
 fn probe_cmd(args: &[String]) -> Result<(), String> {
-    use trit_net::netsec::probe::{Allowlist, ProbeConfig, run};
+    netsec_cli::probe_cmd(args)
+}
 
-    let mut path: Option<String> = None;
-    let mut connect_timeout_ms = 1_500u64;
-    let mut delay_ms = 100u64;
-    let mut index = 0;
-    while index < args.len() {
-        let flag = args[index].clone();
-        match flag.as_str() {
-            "--connect-timeout" | "--delay" => {
-                index += 1;
-                let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
-                let parsed: u64 = raw
-                    .parse()
-                    .map_err(|_| format!("{flag} 不是整数（毫秒）"))?;
-                if flag == "--connect-timeout" {
-                    connect_timeout_ms = parsed;
-                } else {
-                    delay_ms = parsed;
-                }
-            }
-            other if other.starts_with("--") => return Err(format!("未知参数 {other}")),
-            other => {
-                if path.is_some() {
-                    return Err(format!("多余的参数 {other}"));
-                }
-                path = Some(other.to_string());
-            }
-        }
-        index += 1;
-    }
-    let path = path.ok_or(
-        "probe 需要 allowlist JSON 路径（{\"targets\":[{\"ip\":\"127.0.0.1\",\"ports\":[..]}]}；\
-         只接受字面 IP、只对环回/私网发包）",
-    )?;
-    let text =
-        std::fs::read_to_string(&path).map_err(|error| format!("读取 {path} 失败：{error}"))?;
-    let allowlist = Allowlist::from_json(&text).map_err(|error| error.to_string())?;
-    let config = ProbeConfig {
-        connect_timeout: std::time::Duration::from_millis(connect_timeout_ms),
-        delay: std::time::Duration::from_millis(delay_ms),
-        ..ProbeConfig::default()
-    };
-    let report = run(&allowlist, &config).map_err(|error| error.to_string())?;
-    for finding in &report.findings {
-        println!(
-            "{}",
-            serde_json::to_string(finding).map_err(|error| error.to_string())?
-        );
-    }
-    eprintln!(
-        "计划 {} / 执行 {} / 截断 {}",
-        report.planned, report.probed, report.truncated
-    );
-    Ok(())
+fn bridge_cmd(args: &[String]) -> Result<(), String> {
+    netsec_cli::bridge_cmd(args)
 }
