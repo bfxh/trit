@@ -13,6 +13,7 @@
 
 #![forbid(unsafe_code)]
 
+mod bigtask;
 mod commands;
 mod output;
 mod timeout;
@@ -408,7 +409,14 @@ enum Commands {
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    // 连 `Cli::parse()` 一起搬到固定大小的栈上：实测吃掉 >512 KB 的是 clap 对这张 20+ 分支
+    // 枚举的解析（debug 构建下每个分支的临时量摊进同一个栈帧），主线程只留平台默认 1 MB，
+    // 多一个子命令就顶穿三平台的 CI。见 `bigtask`。
+    bigtask::on_big_stack(|| run(Cli::parse()))
+}
+
+#[inline(never)]
+fn run(cli: Cli) -> Result<()> {
     if let Some(timeout_ms) = cli.timeout_ms {
         if timeout_ms == 0 {
             bail!("--timeout-ms 必须大于 0");

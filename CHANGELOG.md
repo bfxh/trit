@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Fixed（三平台 CI 的 windows `capacity_exec` 栈溢出：根因找到并修掉，另撤回我一次错判）
+
+- **撤回**：我先前把这次红判成"runner 面"（理由是 `size_of::<Commands>()` 只涨了几十字节 + 本机全绿）。
+  这个判断是错的：main 最近 5 次 CI 全绿，而我的头**两次**红在同一处 ⇒ 触发点在分支上，不在机器上。
+- **本地造出尺子**（不需要 CI）：`RUSTFLAGS="-C link-arg=-Wl,--stack,524288"` 把 `trit.exe` 的主线程栈压到 512 KB，
+  `cargo test -p trit-cli --test capacity_exec` 立刻复现同样的 5 条红 + `thread 'main' has overflowed its stack`
+  （同一把尺下 Windows 默认 1 MB 只是刚好躲过 ⇒ 任何让解析变大的改动都会顶穿 CI）。
+- **根因**：吃掉栈的是 **clap 对 `Commands` 这张 20+ 分支枚举的解析**——debug 构建下每个分支的临时量摊进同一个栈帧。
+  我先试"只把分发搬到工作线程"，**没用**（同一把 512 KB 尺下仍然红，报的还是 `'main' has overflowed`），
+  因为 `Cli::parse()` 本身就在主线程上；改成把 **解析 + 分发**一起搬进 64 MiB 栈的线程才过。
+- 修法：新增 `crates/trit-cli/src/bigtask.rs`（`STACK_BYTES = 64 MiB`，worker panic 以 101 退出，不伪装成功），
+  `main()` 现在只做 `bigtask::on_big_stack(|| run(Cli::parse()))`。子命令的多少不再取决于平台默认栈。
+- 实测（同一把尺，主线程 512 KB）：修前 `capacity_exec` **5 条全红** ⇒ 修后 **5 passed**；
+  整个 `cargo test -p trit-cli` 在 512 KB 下 **105 条全绿**（42 + 35 + 5 + … 共 8 个结果行）。
+  常规构建（默认栈）同样全绿；`bigtask` 自己带 2 条测试：一条用 40 层 × 64 KiB 帧（>2.5 MB 递归）
+  **证明线程真的拿到配给的栈**，一条证明 `Ok`/`Err` 原样带回。
+- 探针那一笔（`3298326`，临时摘掉 `count` 子命令）已用它自己的 revert 撤销（`5ec9e60`），
+  过程中 `test_surface` 因"删测试"判红 —— 保留那个红、没有用 `#[ignore]` 糊门。
+
+
 ### Added（再吃掉 4 份手写 xorshift：纹理两条 bench、电路 bench、编解码 example —— 精确尺 60 → 56）
 
 - `crates/trit-texture/benches/sample.rs` 与 `texture.rs`：删掉各自 `struct Rng(u64)`，改吃 `trit_fuzz::SeedRng`。

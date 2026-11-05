@@ -62,3 +62,7 @@
   第一版只认 `src/` 相对 —— 表一改成全路径它就自己报红。改完它两种都认，并补一条变异钉住（`scripts/mutants/scripts__model_status.py.json`）。
 - **一片做完再推**：同一分支连续 push 会把在跑的 run 顶掉（实测连续 4 次推 ⇒ 前一趟 CI 被 cancelled），
   白等一轮 8–10 分钟。收尾的门线全绿之后再推一次，比边写边推省时间。
+- **CLI 的解析本身就吃栈**：clap 派生在 debug 下会把 20+ 个分支的临时量摊进同一个栈帧。
+  只把**分发**搬到工作线程没用——`Cli::parse()` 还在主线程上；要连解析一起搬。
+  本地尺子：`RUSTFLAGS="-C link-arg=-Wl,--stack,524288" cargo test -p trit-cli --test capacity_exec`
+  （压小主线程栈就能稳定复现，不必等 CI 抽奖）。见 `crates/trit-cli/src/bigtask.rs`。
