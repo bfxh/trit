@@ -27,7 +27,8 @@
 //!   [`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
 //!   [`Script`] 把多个 [`Program`] 组合成原子序列或按行为分支的脚本；
 //!   [`AuditLog`] 把每次编辑记成带哈希链的 JSONL，可验链、可从初始工件重放；
-//!   [`mod@shard`] 把长日志切成带 header 与分片内 oracle 表的多文件，跨片仍是同一条链。
+//!   [`mod@shard`] 把长日志切成带 header 与分片内 oracle 表的多文件，跨片仍是同一条链；
+//!   [`Checkpoint`] 可在分片边界保存工件与链头，从检查点续放。
 //! - 程序语义：[`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
 //! - 搜索层：[`mod@repair`] 不走梯度，在离散空间里找精确最小补丁；[`mod@analyze`] 对每个单点
 //!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`mod@explain`] 解释单个样本
@@ -97,6 +98,7 @@
 pub mod analyze;
 pub mod audit;
 pub mod cli;
+mod cli_audit;
 pub mod codec;
 pub mod edit;
 pub mod error;
@@ -104,6 +106,7 @@ pub mod explain;
 pub mod localize;
 pub mod manifest;
 pub mod mcp;
+mod mcp_tools;
 pub mod merge;
 pub mod net;
 pub mod ops;
@@ -136,5 +139,5 @@ pub use probe::{
 };
 pub use program::{Program, Report, Script, ScriptReport};
 pub use repair::{Repair, RepairOptions, repair};
-pub use shard::{Shard, ShardCursor, ShardHeader, ShardReplay, ShardedLog};
+pub use shard::{Checkpoint, Shard, ShardCursor, ShardHeader, ShardReplay, ShardedLog};
 pub use trit::Trit;

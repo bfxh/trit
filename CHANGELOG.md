@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：分片检查点与续放）
+
+- `Checkpoint`：分片边界处的工件 + 下一个分片号/已消费条数/链头 + 应用/回滚/跳过/行为核对计数；
+  `ShardReplay::checkpoint` 取点、`ShardReplay::resume` 续放；续放报告的计数与整段重放一致。
+- CLI `audit-shards` 新增 `--checkpoint-every N --checkpoint-dir D`（写 `checkpoint-NNN.json`）
+  与 `--resume <checkpoint>`（先流式验前缀链、比对条数/链头，再从检查点工件续放）。
+- MCP `wsp_audit_shards` 接受 `checkpoint` 与 `checkpoint_every`，返回 `resumed` 与 `checkpoints`。
+- 读数：3 片日志在首片后取点续放，报告逐项等于整段重放；检查点链头/条数/工件被改都会报错；
+  CLI 2 片日志写 2 个检查点并从第 1 个续放到同一最终校验和。
+- 测试 135 → 137 + 1 doctest；变异 102 → **111 条，111/111 caught**；test_surface 2,371 → 2,373。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
 ### Added（trit-wspace：程序组合与条件分支脚本）
 
 - `Script`：把 `Program` 组合成 **原子序列**（默认，任一步失败/回滚则整段恢复原样；

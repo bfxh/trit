@@ -13,13 +13,11 @@ use serde_json::{Value, json};
 use crate::audit::AuditLog;
 use crate::codec::{from_wsp, to_wsp};
 use crate::edit::Patch;
-use crate::manifest::{ShardManifest, text_digest};
 use crate::merge::{merge_aligned, merge_vote};
 use crate::net::Net;
 use crate::ops;
 use crate::oracle::{Behavior, Oracle};
 use crate::repair::RepairOptions;
-use crate::shard::{ShardCursor, ShardReplay};
 use crate::wire;
 
 const USAGE: &str = "\
@@ -36,7 +34,7 @@ trit-wspace <command>
   localize <artifact|-> --oracle <json|-> [--rows K] [--row-budget N] [--max-trits N] [--top-trits K]
   audit <log|-> [--artifact <initial|->]
   shard <log|-> --size N --out <dir>
-  audit-shards <dir> [--artifact <initial|->] [--out <path>] [--manifest <path>]
+  audit-shards <dir> [--artifact <initial|->] [--out <path>] [--manifest <path>] [--resume <checkpoint>] [--checkpoint-every N --checkpoint-dir D]
   replay <log|-> --artifact <initial|-> [--out <path>]
   diff <a|-> <b|->
   merge <a|-> <b|-> [--aligned] [--out <path>]
@@ -71,10 +69,10 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "explain" => cmd_explain(&args[1..]),
         "probe" => cmd_probe(&args[1..]),
         "localize" => cmd_localize(&args[1..]),
-        "audit" => cmd_audit(&args[1..]),
-        "shard" => cmd_shard(&args[1..]),
-        "audit-shards" => cmd_audit_shards(&args[1..]),
-        "replay" => cmd_replay(&args[1..]),
+        "audit" => crate::cli_audit::cmd_audit(&args[1..]),
+        "shard" => crate::cli_audit::cmd_shard(&args[1..]),
+        "audit-shards" => crate::cli_audit::cmd_audit_shards(&args[1..]),
+        "replay" => crate::cli_audit::cmd_replay(&args[1..]),
         "diff" => cmd_diff(&args[1..]),
         "merge" => cmd_merge(&args[1..]),
         "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
@@ -235,235 +233,6 @@ fn perform_patch(
     emit(&output)
 }
 
-fn cmd_audit(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let log_path = one(&parsed, "audit <log|-> [--artifact <initial|->]")?;
-    let artifact = parsed.values.get("artifact").map(String::as_str);
-    let mut sources = vec![log_path];
-    if let Some(artifact) = artifact {
-        sources.push(artifact);
-    }
-    no_double_stdin(&sources)?;
-    let log = AuditLog::from_jsonl(&read_source(log_path)?).map_err(err)?;
-    log.verify_chain().map_err(err)?;
-    let mut output = json!({
-        "valid": true,
-        "entries": log.len(),
-        "head": format!("{:016x}", log.head()),
-    });
-    if let Some(artifact) = artifact {
-        let replay = log.replay(&load_net(artifact)?).map_err(err)?;
-        output["replay"] = json!({
-            "entries": replay.entries,
-            "applied": replay.applied,
-            "rolled_back": replay.rolled_back,
-            "skipped": replay.skipped,
-            "behavior_checked": replay.behavior_checked,
-            "final_checksum": format!("{:016x}", replay.final_checksum),
-        });
-    }
-    emit(&output)
-}
-
-fn cmd_shard(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let log_path = one(&parsed, "shard <log|-> --size N --out <dir>")?;
-    let size: usize = value(&parsed, "size")?
-        .parse()
-        .map_err(|_| "size 需要正整数".to_string())?;
-    let out_dir = value(&parsed, "out")?;
-    let log = AuditLog::from_jsonl(&read_source(log_path)?).map_err(err)?;
-    let shards = log.into_shards(size).map_err(err)?;
-    shards.verify_chain().map_err(err)?;
-    let texts = shards.to_texts();
-    fs::create_dir_all(out_dir).map_err(|error| format!("{out_dir}: {error}"))?;
-    for (index, text) in texts.iter().enumerate() {
-        let path = Path::new(out_dir).join(format!("shard-{index:03}.jsonl"));
-        let path = path.to_str().ok_or("输出路径不是 UTF-8")?;
-        atomic_write(path, text)?;
-    }
-    let mut manifest = ShardManifest::of(&shards);
-    for (index, item) in manifest.shards.iter_mut().enumerate() {
-        item.file = Some(format!("shard-{index:03}.jsonl"));
-    }
-    let manifest_text = serde_json::to_string_pretty(&manifest.to_value())
-        .map_err(|error| format!("manifest JSON：{error}"))?;
-    let manifest_path = Path::new(out_dir).join("manifest.json");
-    let manifest_path = manifest_path.to_str().ok_or("清单路径不是 UTF-8")?;
-    atomic_write(
-        manifest_path,
-        &format!(
-            "{manifest_text}
-"
-        ),
-    )?;
-    emit(&json!({
-        "shards": shards.shard_count(),
-        "entries": shards.len(),
-        "head": format!("{:016x}", shards.head()),
-        "out": out_dir,
-        "manifest": manifest_path,
-    }))
-}
-
-fn cmd_audit_shards(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let dir = one(
-        &parsed,
-        "audit-shards <dir> [--artifact <initial|->] [--out <path>]",
-    )?;
-    let artifact = parsed.values.get("artifact").map(String::as_str);
-    let out = parsed.values.get("out").map(String::as_str);
-    if out.is_some() && artifact.is_none() {
-        return Err("--out 需要 --artifact".into());
-    }
-    let manifest_path = match parsed.values.get("manifest") {
-        Some(path) => Some(path.clone()),
-        None => {
-            let candidate = Path::new(dir).join("manifest.json");
-            candidate
-                .is_file()
-                .then(|| candidate.to_string_lossy().into_owned())
-        }
-    };
-    let manifest = manifest_path
-        .as_deref()
-        .map(|path| {
-            let value: Value = serde_json::from_str(&read_source(path)?)
-                .map_err(|error| format!("{path}: {error}"))?;
-            ShardManifest::from_value(&value).map_err(err)
-        })
-        .transpose()?;
-    let mut files: BTreeSet<String> = fs::read_dir(dir)
-        .map_err(|error| format!("{dir}: {error}"))?
-        .filter_map(Result::ok)
-        .filter_map(|entry| {
-            let name = entry.file_name().to_str()?.to_string();
-            (name.starts_with("shard-") && name.ends_with(".jsonl")).then_some(name)
-        })
-        .collect();
-    let (paths, digests) = if let Some(manifest) = &manifest {
-        let mut paths = Vec::with_capacity(manifest.shards.len());
-        let mut digests = Vec::with_capacity(manifest.shards.len());
-        let mut listed = BTreeSet::new();
-        for item in &manifest.shards {
-            let name = item
-                .file
-                .clone()
-                .unwrap_or_else(|| format!("shard-{:03}.jsonl", item.shard));
-            if !listed.insert(name.clone()) {
-                return Err(format!("manifest 重复列出 `{name}`"));
-            }
-            if !files.remove(&name) {
-                return Err(format!("manifest 列出的 `{name}` 不存在"));
-            }
-            paths.push(Path::new(dir).join(&name));
-            digests.push(Some(item.digest));
-        }
-        if let Some(extra) = files.into_iter().next() {
-            return Err(format!("目录里有清单外的分片 `{extra}`"));
-        }
-        (paths, digests)
-    } else {
-        let mut paths: Vec<std::path::PathBuf> = files
-            .into_iter()
-            .map(|name| Path::new(dir).join(name))
-            .collect();
-        paths.sort();
-        if paths.is_empty() {
-            return Err(format!("{dir} 中没有 shard-*.jsonl"));
-        }
-        let digests = vec![None; paths.len()];
-        (paths, digests)
-    };
-    let mut replay = artifact
-        .map(|path| load_net(path).map(|net| ShardReplay::new(&net)))
-        .transpose()?;
-    let mut cursor = ShardCursor::new();
-    for (path, want) in paths.iter().zip(&digests) {
-        let path = path.to_str().ok_or("分片路径不是 UTF-8")?;
-        let text = read_source(path)?;
-        if let Some(want) = want {
-            let got = text_digest(&text);
-            if got != *want {
-                return Err(format!(
-                    "`{path}` 摘要={got:016x}，manifest 记录 {want:016x}"
-                ));
-            }
-        }
-        match &mut replay {
-            Some(replay) => replay.push(&text).map_err(err)?,
-            None => {
-                cursor.push(&text).map_err(err)?;
-            }
-        }
-    }
-    let (shards, entries, head) = match &replay {
-        Some(replay) => (replay.shard_count(), replay.entries(), replay.head()),
-        None => (cursor.shard_count(), cursor.entries(), cursor.head()),
-    };
-    if let Some(manifest) = &manifest {
-        if entries != manifest.entries {
-            return Err(format!(
-                "manifest 条数={}，分片合计 {entries}",
-                manifest.entries
-            ));
-        }
-        if head != manifest.head {
-            return Err(format!(
-                "manifest head={:016x}，分片链头 {head:016x}",
-                manifest.head
-            ));
-        }
-    }
-    let mut output = json!({
-        "valid": true,
-        "shards": shards,
-        "entries": entries,
-        "head": format!("{head:016x}"),
-        "manifest_checked": manifest.is_some(),
-    });
-    if let Some(replay) = replay {
-        let (report, net) = replay.finish();
-        output["replay"] = json!({
-            "entries": report.entries,
-            "applied": report.applied,
-            "rolled_back": report.rolled_back,
-            "skipped": report.skipped,
-            "behavior_checked": report.behavior_checked,
-            "final_checksum": format!("{:016x}", report.final_checksum),
-        });
-        if let Some(path) = out {
-            atomic_write(path, &to_wsp(&net))?;
-        }
-    }
-    emit(&output)
-}
-
-fn cmd_replay(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let log_path = one(
-        &parsed,
-        "replay <log|-> --artifact <initial|-> [--out <path>]",
-    )?;
-    let artifact = value(&parsed, "artifact")?;
-    no_double_stdin(&[log_path, artifact])?;
-    let log = AuditLog::from_jsonl(&read_source(log_path)?).map_err(err)?;
-    log.verify_chain().map_err(err)?;
-    let (replay, net) = log.replay_net(&load_net(artifact)?).map_err(err)?;
-    write_out(&parsed, &net)?;
-    emit(&json!({
-        "entries": replay.entries,
-        "applied": replay.applied,
-        "rolled_back": replay.rolled_back,
-        "skipped": replay.skipped,
-        "behavior_checked": replay.behavior_checked,
-        "final_checksum": format!("{:016x}", replay.final_checksum),
-        "summary": wire::net_summary(&net),
-        "artifact": to_wsp(&net),
-    }))
-}
-
 fn cmd_repair(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
     let path = one(&parsed, "repair <artifact|-> --oracle <json|->")?;
@@ -621,13 +390,13 @@ fn cmd_merge(args: &[String]) -> Result<(), String> {
 }
 
 #[derive(Default)]
-struct Parsed {
-    positional: Vec<String>,
-    values: BTreeMap<String, String>,
-    switches: BTreeSet<String>,
+pub(crate) struct Parsed {
+    pub(crate) positional: Vec<String>,
+    pub(crate) values: BTreeMap<String, String>,
+    pub(crate) switches: BTreeSet<String>,
 }
 
-fn parse(args: &[String], switches: &[&str]) -> Result<Parsed, String> {
+pub(crate) fn parse(args: &[String], switches: &[&str]) -> Result<Parsed, String> {
     let mut parsed = Parsed::default();
     let mut index = 0;
     while index < args.len() {
@@ -656,7 +425,7 @@ fn parse(args: &[String], switches: &[&str]) -> Result<Parsed, String> {
     Ok(parsed)
 }
 
-fn one<'a>(parsed: &'a Parsed, usage: &str) -> Result<&'a str, String> {
+pub(crate) fn one<'a>(parsed: &'a Parsed, usage: &str) -> Result<&'a str, String> {
     if parsed.positional.len() != 1 {
         return Err(format!("用法：trit-wspace {usage}"));
     }
@@ -670,7 +439,7 @@ fn two<'a>(parsed: &'a Parsed, usage: &str) -> Result<(&'a str, &'a str), String
     Ok((&parsed.positional[0], &parsed.positional[1]))
 }
 
-fn value<'a>(parsed: &'a Parsed, name: &str) -> Result<&'a str, String> {
+pub(crate) fn value<'a>(parsed: &'a Parsed, name: &str) -> Result<&'a str, String> {
     parsed
         .values
         .get(name)
@@ -678,7 +447,7 @@ fn value<'a>(parsed: &'a Parsed, name: &str) -> Result<&'a str, String> {
         .ok_or_else(|| format!("需要 --{name}"))
 }
 
-fn opt_usize(parsed: &Parsed, name: &str, default: usize) -> Result<usize, String> {
+pub(crate) fn opt_usize(parsed: &Parsed, name: &str, default: usize) -> Result<usize, String> {
     parsed.values.get(name).map_or(Ok(default), |raw| {
         raw.parse::<usize>()
             .map_err(|_| format!("--{name} 需要非负整数，得到 `{raw}`"))
@@ -692,7 +461,7 @@ fn opt_u64(parsed: &Parsed, name: &str, default: u64) -> Result<u64, String> {
     })
 }
 
-fn no_double_stdin<S: AsRef<str>>(sources: &[S]) -> Result<(), String> {
+pub(crate) fn no_double_stdin<S: AsRef<str>>(sources: &[S]) -> Result<(), String> {
     let count = sources
         .iter()
         .filter(|source| source.as_ref() == "-")
@@ -703,7 +472,7 @@ fn no_double_stdin<S: AsRef<str>>(sources: &[S]) -> Result<(), String> {
     Ok(())
 }
 
-fn read_source(source: &str) -> Result<String, String> {
+pub(crate) fn read_source(source: &str) -> Result<String, String> {
     if source == "-" {
         let mut text = String::new();
         std::io::stdin()
@@ -715,26 +484,26 @@ fn read_source(source: &str) -> Result<String, String> {
     }
 }
 
-fn load_net(source: &str) -> Result<Net, String> {
+pub(crate) fn load_net(source: &str) -> Result<Net, String> {
     from_wsp(&read_source(source)?).map_err(err)
 }
 
-fn load_json(source: &str) -> Result<Value, String> {
+pub(crate) fn load_json(source: &str) -> Result<Value, String> {
     serde_json::from_str(&read_source(source)?).map_err(|error| format!("{source}: {error}"))
 }
 
-fn load_oracle(source: &str) -> Result<Oracle, String> {
+pub(crate) fn load_oracle(source: &str) -> Result<Oracle, String> {
     wire::oracle_from_value(&load_json(source)?).map_err(err)
 }
 
-fn write_out(parsed: &Parsed, net: &Net) -> Result<(), String> {
+pub(crate) fn write_out(parsed: &Parsed, net: &Net) -> Result<(), String> {
     if let Some(path) = parsed.values.get("out") {
         atomic_write(path, &to_wsp(net))?;
     }
     Ok(())
 }
 
-fn atomic_write(path: &str, text: &str) -> Result<(), String> {
+pub(crate) fn atomic_write(path: &str, text: &str) -> Result<(), String> {
     let temp = format!("{path}.tmp-{}", std::process::id());
     fs::write(&temp, text).map_err(|error| format!("{temp}: {error}"))?;
     match fs::rename(&temp, path) {
@@ -750,13 +519,13 @@ fn atomic_write(path: &str, text: &str) -> Result<(), String> {
     }
 }
 
-fn emit(value: &Value) -> Result<(), String> {
+pub(crate) fn emit(value: &Value) -> Result<(), String> {
     let text =
         serde_json::to_string_pretty(value).map_err(|error| format!("JSON 序列化失败：{error}"))?;
     println!("{text}");
     Ok(())
 }
 
-fn err(error: crate::error::Error) -> String {
+pub(crate) fn err(error: crate::error::Error) -> String {
     error.to_string()
 }

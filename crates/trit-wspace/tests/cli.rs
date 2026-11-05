@@ -379,8 +379,12 @@ fn shard_manifest_detects_missing_extra_and_tampering() {
     let artifact = dir.join("xor.wsp");
     let oracle = dir.join("xor.json");
     let patch = dir.join("break.json");
+    let fix = dir.join("fix.json");
     let log = dir.join("audit.jsonl");
     let shards = dir.join("shards");
+    let checkpoints = dir.join("checkpoints");
+    let broken = dir.join("broken.wsp");
+    let fixed = dir.join("fixed.wsp");
     fs::write(&artifact, to_wsp(&xor_net())).expect("artifact");
     fs::write(&oracle, r#"{"domain":"boolean","vars":2,"table":"0110"}"#).expect("oracle");
     fs::write(
@@ -388,6 +392,11 @@ fn shard_manifest_detects_missing_extra_and_tampering() {
         r#"{"version":1,"edits":[{"op":"set_trit","layer":0,"row":0,"col":0,"to":"0"}]}"#,
     )
     .expect("patch");
+    fs::write(
+        &fix,
+        r#"{"version":1,"edits":[{"op":"set_trit","layer":0,"row":0,"col":0,"to":"-"}]}"#,
+    )
+    .expect("fix");
     let patched = run(&[
         "patch",
         &path_string(&artifact),
@@ -397,6 +406,21 @@ fn shard_manifest_detects_missing_extra_and_tampering() {
         &path_string(&oracle),
         "--log",
         &path_string(&log),
+        "--out",
+        &path_string(&broken),
+    ]);
+    assert!(patched.status.success());
+    let patched = run(&[
+        "patch",
+        &path_string(&broken),
+        "--patch",
+        &path_string(&fix),
+        "--oracle",
+        &path_string(&oracle),
+        "--log",
+        &path_string(&log),
+        "--out",
+        &path_string(&fixed),
     ]);
     assert!(patched.status.success());
 
@@ -408,7 +432,7 @@ fn shard_manifest_detects_missing_extra_and_tampering() {
         "--out",
         &path_string(&shards),
     ]));
-    assert_eq!(split["shards"].as_u64(), Some(1));
+    assert_eq!(split["shards"].as_u64(), Some(2));
     assert!(shards.join("manifest.json").is_file());
     let checked = stdout_json(&run(&[
         "audit-shards",
@@ -417,6 +441,59 @@ fn shard_manifest_detects_missing_extra_and_tampering() {
         &path_string(&artifact),
     ]));
     assert_eq!(checked["manifest_checked"], true);
+
+    let checkpointed = stdout_json(&run(&[
+        "audit-shards",
+        &path_string(&shards),
+        "--artifact",
+        &path_string(&artifact),
+        "--checkpoint-every",
+        "1",
+        "--checkpoint-dir",
+        &path_string(&checkpoints),
+    ]));
+    assert_eq!(checkpointed["checkpoints"].as_u64(), Some(2));
+    assert!(!checkpointed["resumed"].as_bool().expect("resumed"));
+    let resumed_out = dir.join("resumed.wsp");
+    let resumed = stdout_json(&run(&[
+        "audit-shards",
+        &path_string(&shards),
+        "--resume",
+        &path_string(&checkpoints.join("checkpoint-001.json")),
+        "--out",
+        &path_string(&resumed_out),
+    ]));
+    assert_eq!(resumed["resumed"], true);
+    assert_eq!(
+        resumed["replay"]["final_checksum"],
+        checkpointed["replay"]["final_checksum"]
+    );
+    let resumed_net =
+        from_wsp(&fs::read_to_string(&resumed_out).expect("resumed")).expect("parse resumed");
+    let fixed_net = from_wsp(&fs::read_to_string(&fixed).expect("fixed")).expect("parse fixed");
+    assert_eq!(resumed_net, fixed_net);
+
+    let checkpoint_path = checkpoints.join("checkpoint-001.json");
+    let checkpoint_text = fs::read_to_string(&checkpoint_path).expect("checkpoint");
+    let mut checkpoint: Value = serde_json::from_str(&checkpoint_text).expect("checkpoint json");
+    checkpoint["head"] = serde_json::json!("0000000000000000");
+    fs::write(
+        &checkpoint_path,
+        serde_json::to_string_pretty(&checkpoint).expect("json") + "\n",
+    )
+    .expect("tamper checkpoint");
+    let bad = run(&[
+        "audit-shards",
+        &path_string(&shards),
+        "--resume",
+        &path_string(&checkpoint_path),
+    ]);
+    assert!(!bad.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("检查点"),
+        "stderr: {}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
 
     let shard_file = shards.join("shard-000.jsonl");
     let extra = shards.join("shard-999.jsonl");

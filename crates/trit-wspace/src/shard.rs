@@ -202,7 +202,38 @@ pub struct ShardCursor {
     seq: usize,
 }
 
+/// 分片重放的检查点：下一个分片号、已消费条数、链头与当前工件。
+#[derive(Clone, Debug, PartialEq)]
+pub struct Checkpoint {
+    /// 下一个要读的分片号。
+    pub shard: usize,
+    /// 已消费的记录数。
+    pub entries: usize,
+    /// 已消费部分的链头。
+    pub head: u64,
+    /// 分片边界处的工件。
+    pub net: Net,
+    /// 已应用记录的计数。
+    pub applied: usize,
+    /// 已回滚记录的计数。
+    pub rolled_back: usize,
+    /// 未应用（前置不成立）记录的计数。
+    pub skipped: usize,
+    /// 已核对行为指纹的记录数。
+    pub behavior_checked: usize,
+}
+
 impl ShardCursor {
+    /// 从检查点继续：下一次 `push` 必须是 `shard` 号分片。
+    #[must_use]
+    pub fn resume(shard: usize, entries: usize, head: u64) -> Self {
+        Self {
+            shards: shard,
+            prev: head,
+            seq: entries,
+        }
+    }
+
     /// 从第一个分片开始。
     #[must_use]
     pub fn new() -> Self {
@@ -283,6 +314,38 @@ impl ShardReplay {
     #[must_use]
     pub fn net(&self) -> &Net {
         self.state.net()
+    }
+
+    /// 在当前位置取检查点（工件克隆一份）。
+    #[must_use]
+    pub fn checkpoint(&self) -> Checkpoint {
+        let (applied, rolled_back, skipped, behavior_checked) = self.state.counters();
+        Checkpoint {
+            shard: self.cursor.shard_count(),
+            entries: self.cursor.entries(),
+            head: self.cursor.head(),
+            net: self.state.net().clone(),
+            applied,
+            rolled_back,
+            skipped,
+            behavior_checked,
+        }
+    }
+
+    /// 从检查点继续（后续分片仍逐片验链）。
+    #[must_use]
+    pub fn resume(checkpoint: &Checkpoint) -> Self {
+        Self {
+            cursor: ShardCursor::resume(checkpoint.shard, checkpoint.entries, checkpoint.head),
+            state: ReplayState::resume(
+                &checkpoint.net,
+                checkpoint.entries,
+                checkpoint.applied,
+                checkpoint.rolled_back,
+                checkpoint.skipped,
+                checkpoint.behavior_checked,
+            ),
+        }
     }
 
     /// 结束并给出重放报告与最终工件。

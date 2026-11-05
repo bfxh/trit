@@ -57,7 +57,7 @@
  },
  {
   "name": "wspace-wire: 忽略补丁版本",
-  "file": "crates/trit-wspace/src/wire.rs",
+  "file": "crates/trit-wspace/src/wire/mod.rs",
   "old": "if version != PATCH_VERSION {",
   "new": "if false {",
   "pkg": "trit-wspace",
@@ -65,7 +65,7 @@
  },
  {
   "name": "wspace-wire: boolean 表把 0 读成 1",
-  "file": "crates/trit-wspace/src/wire.rs",
+  "file": "crates/trit-wspace/src/wire/mod.rs",
   "old": "'0' => Ok(Trit::Neg),",
   "new": "'0' => Ok(Trit::Pos),",
   "pkg": "trit-wspace",
@@ -186,8 +186,8 @@
  {
   "name": "wspace-cli: audit 子命令被改坏",
   "file": "crates/trit-wspace/src/cli.rs",
-  "old": "\"audit\" => cmd_audit(&args[1..]),",
-  "new": "\"auditX\" => cmd_audit(&args[1..]),",
+  "old": "\"audit\" => crate::cli_audit::cmd_audit(&args[1..]),",
+  "new": "\"auditX\" => crate::cli_audit::cmd_audit(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
  },
@@ -337,7 +337,7 @@
  },
  {
   "name": "wspace-candidate: 组合候选只取第一条",
-  "file": "crates/trit-wspace/src/wire.rs",
+  "file": "crates/trit-wspace/src/wire/mod.rs",
   "old": "    let edits = value\n        .get(\"edits\")\n        .and_then(Value::as_array)\n        .ok_or_else(|| wire(\"候选需要 edit（单点）或 edits（组合）\"))?;\n    if edits.is_empty() {\n        return Err(wire(\"候选 edits 不能为空\"));\n    }\n    let mut out = Vec::with_capacity(edits.len());\n    for edit in edits {",
   "new": "    let edits = value\n        .get(\"edits\")\n        .and_then(Value::as_array)\n        .ok_or_else(|| wire(\"候选需要 edit（单点）或 edits（组合）\"))?;\n    if edits.is_empty() {\n        return Err(wire(\"候选 edits 不能为空\"));\n    }\n    let mut out = Vec::with_capacity(edits.len());\n    for edit in edits.iter().take(1) {",
   "pkg": "trit-wspace",
@@ -650,8 +650,8 @@
  {
   "name": "wspace-cli: shard 子命令被改坏",
   "file": "crates/trit-wspace/src/cli.rs",
-  "old": "        \"shard\" => cmd_shard(&args[1..]),",
-  "new": "        \"shardX\" => cmd_shard(&args[1..]),",
+  "old": "        \"shard\" => crate::cli_audit::cmd_shard(&args[1..]),",
+  "new": "        \"shardX\" => crate::cli_audit::cmd_shard(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
  },
@@ -729,7 +729,7 @@
  },
  {
   "name": "wspace-cli: 不检查清单外分片",
-  "file": "crates/trit-wspace/src/cli.rs",
+  "file": "crates/trit-wspace/src/cli_audit.rs",
   "old": "        if let Some(extra) = files.into_iter().next() {",
   "new": "        if let Some(extra) = None::<String> {",
   "pkg": "trit-wspace",
@@ -737,9 +737,9 @@
  },
  {
   "name": "wspace-cli: 不核对文件摘要",
-  "file": "crates/trit-wspace/src/cli.rs",
-  "old": "            if got != *want {",
-  "new": "            if false {",
+  "file": "crates/trit-wspace/src/cli_audit.rs",
+  "old": "        if got != want {",
+  "new": "        if false {",
   "pkg": "trit-wspace",
   "filter": "shard_manifest_detects_missing_extra_and_tampering"
  },
@@ -785,7 +785,7 @@
  },
  {
   "name": "wspace-script: 步骤报告 type 写错",
-  "file": "crates/trit-wspace/src/wire.rs",
+  "file": "crates/trit-wspace/src/wire/compose.rs",
   "old": "            value[\"type\"] = json!(\"step\");",
   "new": "            value[\"type\"] = json!(\"nope\");",
   "pkg": "trit-wspace",
@@ -809,10 +809,82 @@
  },
  {
   "name": "wspace-script: 线格式丢 step patch",
-  "file": "crates/trit-wspace/src/wire.rs",
+  "file": "crates/trit-wspace/src/wire/compose.rs",
   "old": "                \"patch\": patch_to_value(program.patch()),",
   "new": "                \"patch\": json!({}),",
   "pkg": "trit-wspace",
   "filter": "script_wire_round_trip"
+ },
+ {
+  "name": "wspace-checkpoint: resume 忽略链头",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            prev: head,",
+  "new": "            prev: 0,",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-checkpoint: resume 忽略条数",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            seq: entries,",
+  "new": "            seq: 0,",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-checkpoint: 不保存工件",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            net: self.state.net().clone(),",
+  "new": "            net: Net::zeros(&[2, 2, 1]).expect(\"net\"),",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-cli: 不核对检查点前缀",
+  "file": "crates/trit-wspace/src/cli_audit.rs",
+  "old": "        if prefix.shard_count() != checkpoint.shard\n            || prefix.entries() != checkpoint.entries\n            || prefix.head() != checkpoint.head\n        {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_manifest_detects_missing_extra_and_tampering"
+ },
+ {
+  "name": "wspace-cli: 不写检查点",
+  "file": "crates/trit-wspace/src/cli_audit.rs",
+  "old": "                if checkpoint_every > 0 && count % checkpoint_every == 0 {",
+  "new": "                if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_manifest_detects_missing_extra_and_tampering"
+ },
+ {
+  "name": "wspace-checkpoint: 线格式丢 applied",
+  "file": "crates/trit-wspace/src/wire/compose.rs",
+  "old": "        \"applied\": checkpoint.applied,",
+  "new": "        \"applied\": 0usize,",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-mcp: 忽略检查点",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                    Some(ShardReplay::resume(checkpoint))",
+  "new": "                    None",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-mcp: 续放不跳过前缀",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                        if index < start {",
+  "new": "                        if index < 0 {",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-mcp: 不输出检查点",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                        if checkpoint_every > 0 && count % checkpoint_every == 0 {",
+  "new": "                        if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
  }
 ]

@@ -73,6 +73,8 @@ trit-wspace localize broken.wsp --oracle xor.json --rows 3 --row-budget 64 --max
 trit-wspace audit  audit.jsonl --artifact start.wsp
 trit-wspace shard  audit.jsonl --size 512 --out shards/
 trit-wspace audit-shards shards/ --artifact start.wsp --out final.wsp
+trit-wspace audit-shards shards/ --artifact start.wsp --checkpoint-every 16 --checkpoint-dir cps/
+trit-wspace audit-shards shards/ --resume cps/checkpoint-016.json --out final.wsp
 trit-wspace replay audit.jsonl --artifact start.wsp --out final.wsp
 trit-wspace diff   a.wsp b.wsp
 trit-wspace merge  a.wsp b.wsp --aligned --out merged.wsp
@@ -146,7 +148,9 @@ trit-wspace mcp
 表里存本片用到的验证集（每条只存一次），记录行改用 `oracle_index` 指向表项；
 `wsp_audit_shards` 校验跨片 `seq` / `prev` / `head` 与 oracle 表摘要，可选重放。
 CLI 的 `audit-shards` 是**流式**的：`ShardCursor` / `ShardReplay` 读一片、校验一片、应用一片，
-不保留分片文本；`--out` 直接落盘流式重放的最终工件。`shard` 同时写 `manifest.json`
+不保留分片文本；`--out` 直接落盘流式重放的最终工件。`--checkpoint-every N --checkpoint-dir D`
+在分片边界写检查点（工件 + 已消费条数/链头/计数），`--resume <checkpoint>` 先验完前缀链再从
+检查点续放，避免重放整段历史。MCP `wsp_audit_shards` 同样接受 `checkpoint` / `checkpoint_every`。`shard` 同时写 `manifest.json`
 （每片的文件、序号、条数、链头与文本摘要），`audit-shards` 有清单时按清单读文件并逐片核对
 摘要，缺片/多片/错序/内容替换都会直接报错。`wsp_shard` 支持 `start` / `limit` 分页按片返回
 （结果带 `total` / `next` / `manifest`），`wsp_audit_shards` 可带 `manifest` 复核。

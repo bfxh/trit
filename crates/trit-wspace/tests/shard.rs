@@ -1,6 +1,7 @@
 //! 审计日志分片：header / oracle 表 / 跨片链 / 重放 / 篡改。
 
 use serde_json::{Value, json};
+use trit_wspace::wire;
 use trit_wspace::{
     AuditLog, Edit, Layer, Net, Oracle, Patch, ShardCursor, ShardManifest, ShardReplay, ShardedLog,
     Trit, checksum,
@@ -280,6 +281,59 @@ fn manifest_matches_and_detects_wrong_text() {
     let mut wrong = manifest.clone();
     wrong.head = 0;
     assert!(wrong.verify_texts(&texts).is_err(), "链头应核对");
+}
+
+#[test]
+fn checkpoint_resume_matches_full_replay() {
+    let (log, fixed) = sample_log();
+    let texts = log.clone().into_shards(1).expect("split").to_texts();
+    assert_eq!(texts.len(), 3);
+    let mut replay = ShardReplay::new(&xor_net());
+    replay.push(&texts[0]).expect("first shard");
+    let checkpoint = replay.checkpoint();
+    assert_eq!(checkpoint.shard, 1);
+    assert_eq!(checkpoint.entries, 1);
+    assert_eq!(checkpoint.head, log.entries()[0].chain);
+    let value = wire::checkpoint_to_value(&checkpoint);
+    assert_eq!(
+        wire::checkpoint_from_value(&value).expect("parse"),
+        checkpoint
+    );
+
+    let mut resumed = ShardReplay::resume(&checkpoint);
+    for text in &texts[1..] {
+        resumed.push(text).expect("resume shard");
+        replay.push(text).expect("full shard");
+    }
+    let (left, left_net) = replay.finish();
+    let (right, right_net) = resumed.finish();
+    assert_eq!(left, right);
+    assert_eq!(left_net, right_net);
+    assert_eq!(right_net, fixed);
+}
+
+#[test]
+fn checkpoint_rejects_inconsistent_prefix() {
+    let (log, _) = sample_log();
+    let texts = log.into_shards(1).expect("split").to_texts();
+    let mut replay = ShardReplay::new(&xor_net());
+    replay.push(&texts[0]).expect("first shard");
+    let checkpoint = replay.checkpoint();
+
+    let mut wrong = checkpoint.clone();
+    wrong.head = 0;
+    assert!(ShardReplay::resume(&wrong).push(&texts[1]).is_err());
+
+    let mut wrong = checkpoint.clone();
+    wrong.entries = 0;
+    assert!(ShardReplay::resume(&wrong).push(&texts[1]).is_err());
+
+    let mut wrong = checkpoint;
+    wrong.net = xor_net();
+    let error = ShardReplay::resume(&wrong)
+        .push(&texts[1])
+        .expect_err("before 不符");
+    assert!(error.to_string().contains("before"), "{error}");
 }
 
 #[test]

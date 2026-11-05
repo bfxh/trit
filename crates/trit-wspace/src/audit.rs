@@ -379,14 +379,34 @@ pub(crate) struct ReplayState {
 
 impl ReplayState {
     pub(crate) fn new(initial: &Net) -> Self {
+        Self::resume(initial, 0, 0, 0, 0, 0)
+    }
+
+    pub(crate) fn resume(
+        initial: &Net,
+        entries: usize,
+        applied: usize,
+        rolled_back: usize,
+        skipped: usize,
+        behavior_checked: usize,
+    ) -> Self {
         Self {
             current: initial.clone(),
-            entries: 0,
-            applied: 0,
-            rolled_back: 0,
-            skipped: 0,
-            behavior_checked: 0,
+            entries,
+            applied,
+            rolled_back,
+            skipped,
+            behavior_checked,
         }
+    }
+
+    pub(crate) fn counters(&self) -> (usize, usize, usize, usize) {
+        (
+            self.applied,
+            self.rolled_back,
+            self.skipped,
+            self.behavior_checked,
+        )
     }
 
     pub(crate) fn apply_entry(&mut self, entry: &LogEntry) -> Result<()> {

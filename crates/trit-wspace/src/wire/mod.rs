@@ -29,11 +29,17 @@ use crate::error::{Error, Result};
 use crate::explain::{SampleEditImpact, SampleExplanation};
 use crate::localize::{LocalizeReport, RowLocalization, TritImpact};
 use crate::net::Net;
-use crate::oracle::{Behavior, Oracle};
+use crate::oracle::Oracle;
 use crate::probe::{ProbeReport, RowEffect, RowImpact};
-use crate::program::{Kind, Program, Report, Script, ScriptReport};
+use crate::program::Report;
 use crate::repair::Repair;
 use crate::trit::Trit;
+
+mod compose;
+pub use compose::{
+    behavior_from_value, behavior_to_value, checkpoint_from_value, checkpoint_to_value,
+    script_from_value, script_report_to_value, script_to_value,
+};
 
 /// 补丁线格式版本。
 pub const PATCH_VERSION: u64 = 1;
@@ -139,173 +145,6 @@ pub fn report_to_value(report: &Report) -> Value {
         "final_signature": format!("{:016x}", report.final_signature),
         "cost": cost_to_value(&report.cost),
     })
-}
-
-/// 行为（逐样本输出）→ JSON。
-#[must_use]
-pub fn behavior_to_value(behavior: &Behavior) -> Value {
-    json!({
-        "outputs": behavior
-            .outputs()
-            .iter()
-            .map(|row| trits_text(row))
-            .collect::<Vec<_>>(),
-    })
-}
-
-/// JSON → 行为；`outputs` 每行是 trit 字符串或数组。
-pub fn behavior_from_value(value: &Value) -> Result<Behavior> {
-    let outputs = value
-        .get("outputs")
-        .ok_or_else(|| wire("behavior 需要 outputs"))?;
-    Ok(Behavior::from_outputs(parse_rows(outputs)?))
-}
-
-/// 脚本 → JSON（type = step / sequence / when）。
-#[must_use]
-pub fn script_to_value(script: &Script) -> Value {
-    match &script.kind {
-        Kind::Step(program) => {
-            let mut value = json!({
-                "type": "step",
-                "name": program.name(),
-                "patch": patch_to_value(program.patch()),
-            });
-            if let Some(before) = program.before() {
-                value["before"] = behavior_to_value(before);
-            }
-            if let Some(after) = program.after() {
-                value["after"] = behavior_to_value(after);
-            }
-            value
-        }
-        Kind::Sequence {
-            name,
-            atomic,
-            steps,
-        } => json!({
-            "type": "sequence",
-            "name": name,
-            "atomic": atomic,
-            "steps": steps.iter().map(script_to_value).collect::<Vec<_>>(),
-        }),
-        Kind::When {
-            name,
-            expected,
-            then,
-            otherwise,
-        } => json!({
-            "type": "when",
-            "name": name,
-            "when": behavior_to_value(expected),
-            "then": script_to_value(then),
-            "otherwise": otherwise.as_ref().map(|script| script_to_value(script)),
-        }),
-    }
-}
-
-/// JSON → 脚本。
-pub fn script_from_value(value: &Value) -> Result<Script> {
-    let kind = value
-        .get("type")
-        .and_then(Value::as_str)
-        .ok_or_else(|| wire("脚本缺少 type（step/sequence/when）"))?;
-    let name = value
-        .get("name")
-        .and_then(Value::as_str)
-        .unwrap_or("script");
-    let kind = match kind {
-        "step" => {
-            let patch =
-                patch_from_value(value.get("patch").ok_or_else(|| wire("step 缺少 patch"))?)?;
-            let mut program = Program::new(name, patch);
-            if let Some(before) = value.get("before") {
-                program = program.require_before(behavior_from_value(before)?);
-            }
-            if let Some(after) = value.get("after") {
-                program = program.require_after(behavior_from_value(after)?);
-            }
-            Kind::Step(program)
-        }
-        "sequence" => {
-            let atomic = value.get("atomic").and_then(Value::as_bool).unwrap_or(true);
-            let raw = value
-                .get("steps")
-                .and_then(Value::as_array)
-                .ok_or_else(|| wire("sequence 缺少 steps 数组"))?;
-            let steps = raw
-                .iter()
-                .map(script_from_value)
-                .collect::<Result<Vec<_>>>()?;
-            Kind::Sequence {
-                name: name.to_string(),
-                atomic,
-                steps,
-            }
-        }
-        "when" => {
-            let expected = behavior_from_value(
-                value
-                    .get("when")
-                    .ok_or_else(|| wire("when 缺少 when（行为）"))?,
-            )?;
-            let then = Box::new(script_from_value(
-                value.get("then").ok_or_else(|| wire("when 缺少 then"))?,
-            )?);
-            let otherwise = value
-                .get("otherwise")
-                .filter(|value| !value.is_null())
-                .map(script_from_value)
-                .transpose()?
-                .map(Box::new);
-            Kind::When {
-                name: name.to_string(),
-                expected,
-                then,
-                otherwise,
-            }
-        }
-        other => return Err(wire(format!("未知脚本 type `{other}`"))),
-    };
-    Ok(Script { kind })
-}
-
-/// 脚本执行报告 → JSON（树形）。
-#[must_use]
-pub fn script_report_to_value(report: &ScriptReport) -> Value {
-    match report {
-        ScriptReport::Step(step) => {
-            let mut value = report_to_value(step);
-            value["type"] = json!("step");
-            value
-        }
-        ScriptReport::Sequence {
-            name,
-            atomic,
-            steps,
-            rolled_back,
-            final_signature,
-        } => json!({
-            "type": "sequence",
-            "name": name,
-            "atomic": atomic,
-            "steps": steps.iter().map(script_report_to_value).collect::<Vec<_>>(),
-            "rolled_back": rolled_back,
-            "final_signature": format!("{final_signature:016x}"),
-        }),
-        ScriptReport::When {
-            name,
-            matched,
-            chosen,
-            final_signature,
-        } => json!({
-            "type": "when",
-            "name": name,
-            "matched": matched,
-            "chosen": chosen.as_ref().map(|report| script_report_to_value(report)),
-            "final_signature": format!("{final_signature:016x}"),
-        }),
-    }
 }
 
 /// 修补结果 → JSON。
@@ -684,7 +523,7 @@ pub fn edit_from_value(value: &Value) -> Result<Edit> {
     }
 }
 
-fn parse_rows(value: &Value) -> Result<Vec<Vec<Trit>>> {
+pub(crate) fn parse_rows(value: &Value) -> Result<Vec<Vec<Trit>>> {
     let items = value
         .as_array()
         .ok_or_else(|| wire("inputs/outputs 必须是数组"))?;
@@ -765,6 +604,6 @@ fn field_trit(value: &Value, name: &str) -> Result<Trit> {
     )
 }
 
-fn wire(message: impl Into<String>) -> Error {
+pub(crate) fn wire(message: impl Into<String>) -> Error {
     Error::Wire(message.into())
 }
