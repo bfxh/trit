@@ -174,5 +174,93 @@
     "new": "    let _ = base;\n    p",
     "pkg": "trit-parts",
     "filter": "tests::relative_sub_manifest_paths_resolve_against_bundle"
+  },
+  {
+    "name": "splat: 对象过滤失效（所有 id 混在一起）",
+    "file": "crates/trit-parts/src/splat/core.rs",
+    "old": "            if v.ids[i] == 0 || !keep(v.ids[i]) || !(d.is_finite() && d > 0.0 && d < 50.0) {",
+    "new": "            if v.ids[i] == 0 || false || !(d.is_finite() && d > 0.0 && d < 50.0) {",
+    "pkg": "trit-parts",
+    "filter": "splat::tests::build_filtered_keeps_only_requested_ids"
+  },
+  {
+    "name": "objects-verify: 不比 alpha（透明度漂移放行）",
+    "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
+    "old": "            && (g.alpha - w.alpha).abs() <= 1e-5",
+    "new": "            && true",
+    "pkg": "trit-parts",
+    "filter": "tests::splat_and_stat_comparisons_are_deciding"
+  },
+  {
+    "name": "objects-verify: 包围盒/质心容差放到 1e9",
+    "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
+    "old": "    let near = |a: f64, b: f64| (a - b).abs() <= 1e-4;",
+    "new": "    let near = |a: f64, b: f64| (a - b).abs() <= 1e9;",
+    "pkg": "trit-parts",
+    "filter": "tests::splat_and_stat_comparisons_are_deciding"
+  },
+  {
+    "name": "objects-verify: 少一个对象也放行",
+    "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
+    "old": "    declared == parsed && expect == seg",
+    "new": "    true",
+    "pkg": "trit-parts",
+    "filter": "tests::id_set_must_be_complete"
+  },
+  {
+    "name": "compose-verify: 朝向不比对（转错也放行）",
+    "file": "crates/trit-parts/src/bin/parts_compose_verify.rs",
+    "old": "        && want.yaw == got.yaw",
+    "new": "        && true",
+    "pkg": "trit-parts",
+    "filter": "tests::placement_and_gate_checks_are_deciding"
+  },
+  {
+    "name": "compose-verify: 门不查穿插（只查覆盖）",
+    "file": "crates/trit-parts/src/bin/parts_compose_verify.rs",
+    "old": "    overlap <= 1e-12 && cov >= cov_min",
+    "new": "    cov >= cov_min",
+    "pkg": "trit-parts",
+    "filter": "tests::placement_and_gate_checks_are_deciding"
+  },
+  {
+    "name": "layout: 90° 旋转的最小角用错边",
+    "file": "crates/trit-parts/src/splat/layout.rs",
+    "old": "        90 => (cx + (z0 - cz), cz - (x1 - cx)),",
+    "new": "        90 => (cx + (z1 - cz), cz - (x1 - cx)),",
+    "pkg": "trit-parts",
+    "filter": "splat::layout::tests::placement_bbox_matches_transformed_points"
+  },
+  {
+    "name": "layout: 旋转方向反了（z 分量不取负）",
+    "file": "crates/trit-parts/src/splat/layout.rs",
+    "old": "                90 => (dz, -dx),",
+    "new": "                90 => (dz, dx),",
+    "pkg": "trit-parts",
+    "filter": "splat::layout::tests::yaw_swaps_extents_and_transform_matches_bbox"
+  },
+  {
+    "name": "preview: 相机旋转矩阵转置（中心投到画外）",
+    "file": "crates/trit-parts/src/splat/preview.rs",
+    "old": "        t_cw: [\n            [x[0], y[0], z[0], eye[0]],",
+    "new": "        t_cw: [\n            [x[0], x[1], x[2], eye[0]],",
+    "pkg": "trit-parts",
+    "filter": "splat::preview::tests::bounds_and_center_projection"
+  },
+  {
+    "name": "preview: 拼图行列颠倒",
+    "file": "crates/trit-parts/src/splat/preview.rs",
+    "old": "        let (cx, cy) = (fi % cols, fi / cols);",
+    "new": "        let (cx, cy) = (fi / cols, fi % cols);",
+    "pkg": "trit-parts",
+    "filter": "splat::preview::tests::sheet_places_frames_row_major"
+  },
+  {
+    "name": "preview-verify: 像素差恒 0（重渲不对也放行）",
+    "file": "crates/trit-parts/src/bin/parts_preview_verify.rs",
+    "old": "        .map(|(x, y)| (x - y).abs())",
+    "new": "        .map(|(x, y)| (x * 0.0 + y * 0.0))",
+    "pkg": "trit-parts",
+    "filter": "tests::pixel_diff_is_deciding"
   }
 ]

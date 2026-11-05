@@ -89,6 +89,18 @@ name = "parts-scene-verify"
 path = "src/bin/parts_scene_verify.rs"
 
 [[bin]]
+name = "parts-objects-verify"
+path = "src/bin/parts_objects_verify.rs"
+
+[[bin]]
+name = "parts-compose-verify"
+path = "src/bin/parts_compose_verify.rs"
+
+[[bin]]
+name = "parts-preview-verify"
+path = "src/bin/parts_preview_verify.rs"
+
+[[bin]]
 name = "parts-depth-gpu"
 path = "src/bin/parts_depth_gpu.rs"
 required-features = ["gpu"]

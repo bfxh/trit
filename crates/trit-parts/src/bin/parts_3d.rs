@@ -10,6 +10,8 @@
 mod asset;
 #[path = "parts_3d/cli.rs"]
 mod cli;
+#[path = "parts_3d/compose.rs"]
+mod compose;
 #[path = "parts_3d/features.rs"]
 mod features;
 #[path = "parts_3d/light.rs"]
@@ -20,8 +22,12 @@ mod look;
 mod material;
 #[path = "parts_3d/meshtex.rs"]
 mod meshtex;
+#[path = "parts_3d/objects_export.rs"]
+mod objects_export;
 #[path = "parts_3d/occ.rs"]
 mod occ;
+#[path = "parts_3d/preview.rs"]
+mod preview;
 #[path = "parts_3d/recon.rs"]
 mod recon;
 #[path = "parts_3d/scene_export.rs"]
@@ -39,13 +45,16 @@ mod texstyle;
 
 use asset::export_asset_cmd;
 use cli::usage;
+use compose::compose_scene_cmd;
 use light::{light_est_cmd, light_fit_cmd, light_relight_cmd, light_relight_normals_cmd};
 use look::{look_cmd, style_cmd};
 use material::{
     material_cnn_cmd, material_data_cmd, material_fit_cmd, material_predict_cmd, occl_stats_cmd,
 };
 use meshtex::mesh_tex_cmd;
+use objects_export::objects_export_cmd;
 use occ::occ_cmd;
+use preview::preview_scene_cmd;
 use recon::{cloud, eval, fuse_cmd, infer, infer_ids_cmd, mesh_cmd};
 use scene_export::scene_export_cmd;
 use splat::{align_cmd, obs_split_cmd, splat_cmd};
@@ -64,6 +73,9 @@ fn main() {
         Some("occ") => occ_cmd(&argv),
         Some("export-asset") => export_asset_cmd(&argv),
         Some("export-scene") => scene_export_cmd(&argv),
+        Some("export-objects") => objects_export_cmd(&argv),
+        Some("compose-scene") => compose_scene_cmd(&argv),
+        Some("preview-scene") => preview_scene_cmd(&argv),
         Some("splat-export") => splat_export_cmd(&argv),
         Some("align") => align_cmd(&argv),
         Some("obs-split") => obs_split_cmd(&argv),
