@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（文档行号指针对账门 `scripts/doc_pointers.py`）
+
+- 仓里大量用 `文件.rs:行` 当复算指针。代码一动行号就漂，而**漂了的那句话仍然通顺**——没人会发现。
+  本门逐条按行号真去读文件：① 文件指不到 ⇒ 拦；② 只写文件名且全仓多命中 ⇒ 拦"歧义"（要求写带目录的路径）；
+  ③ 行号越界 ⇒ 拦并报出真实行数；④ 指针旁边 40 字符内的反引号标识符必须出现在该行 ±2 行内，
+  否则拦"指歪"（这是"行号还在、内容已经不是那件事"唯一可机器判的形式）；⑤ 一条指针都没抓到也判红（失明 ≠ 干净）。
+- 第一版按**整句**核标识符，被一处 `crates/trit-parts/Cargo.toml:9` 的引用误伤：同句后半段提到的一个类型名离指针很远，
+  却被当成"这行写的是什么"的说明 ⇒ 改成只看指针后面 40 字符 + 前面 12 字符，误报清零（口径写进代码注释）。
+- 首跑抓到 **8 条**坏指针，全部当场改对：`CHANGELOG` 两条指向**已被删除的** `random_expr` 副本（改成"已在 `c71314c` 删掉合并"）、
+  两条 `tconv/conv.rs` 与一条 model.rs 的引用是歧义/相对路径（改成带目录的全路径）、`matnet.rs:1-4` 这种区间写法不被认（改成 `:3` 指到结构行）。
+  现 **19 条指针全绿**；台账基线随首建归零（`doc_pointers_baseline.json` 只在有存量时才需要）。
+- 自测 1 正例 + 7 反证 + 1 条"变少允许"；变异登记 6 条，官方门 **断言抓住 6 / 存活 0 / 崩溃 0 / 假杀 0**
+  （第一条跑时有一条存活，定位是我把锚点指在 `main()` 的 `--update` 分支而非 `compare()`，换锚后被抓到）。
+
+
 ### Fixed（三平台 CI 的 Clippy 步骤判红：`manual_contains`，以及我本地跑错了口径）
 
 - CI 报红的是**新 lint** `clippy::manual_contains`（rust 1.99）：我在 `crates/trit-bench/tests/bench.rs:170`
@@ -96,7 +111,7 @@
   `grep -rl "<< 13" | xargs grep -l ">> 7\|>> 17"` 数到 **64 个文件**，后来换成精确尺
   `grep -rlE "\^=.*<< 13"`（要求同一行真有 `^=`）⇒ 本会话前 **67**、这一批合并后 **65**。
   其中 `trit-count` 一个包里有两份**逐字相同**的
-  `random_expr`（`src/main.rs:381` 与 `tests/crosscheck.rs:454`）。
+  `random_expr`（`trit-count` 的 bin 与 `crosscheck` 测试各一份，两份都已在 `c71314c` 删掉合并）。
 - 新 crate `crates/trit-fuzz`（base 层，只依赖 `trit-core` + `trit-bench`）：`random_trits`、`random_expr`、
   `var_names`，RNG 本体复用 `trit_bench::SeedRng`（同 13/7/17 移位 ⇒ 换包不换序列），并在 `trit-bench` 上补
   `SeedRng::below(limit)`（`limit == 0` 直接 panic，不静默回 0）。
@@ -157,7 +172,7 @@
 ### 否证（`MatNet` 不改名——原本列为"命名整改"的欠账）
 
 - `docs/STATUS.md` §4 第 4 条提议"是组件就改名 `MatHead`"。读码把它**否证**了：
-  `crates/trit-parts/src/matnet.rs:1-4` 写的是独立训练的四类分类器（`conv(3→H) → ReLU → conv(H→H) → ReLU → 全局平均 → 线性(H→4)`），
+  `crates/trit-parts/src/matnet.rs:3` 写的是独立训练的四类分类器（`conv(3→H) → ReLU → conv(H→H) → ReLU → 全局平均 → 线性(H→4)`），
   不是接在骨干后面的头 ⇒ 叫 `MatHead` 比原名更迷惑。
 - 外部 pin 实测（决定改名有没有代价）：全机代码面只有 `crates/trit-parts/src/bin/parts_3d/material.rs` 引用，
   其余 `MatNet` 命中都在同一仓的 worktree 副本里；`crates/trit-parts/Cargo.toml:9` 是 `publish = false`
@@ -197,11 +212,11 @@
   内联测"学斜坡 / 学常数 / mv 门 / save-load / 确定性"，这里测必须跨模块才看得见的东西。
 - **三值格不变量**（这条是三进制命题的行为锁，不是权重检查）：把 `c1.w[0]` 换成同一量化格内的另一个值
   （`q(w)=round(w).clamp(-1,1)`）⇒ 三值档前向**逐位不变**；`ternary=false` 档同一个扰动**必须改变输出**。
-  两条合起来才排除"标志位被忽略"。判决性实测：`tconv/conv.rs:113` 的 `q` 改成恒等 ⇒ **只有这条判红**。
+  两条合起来才排除"标志位被忽略"。判决性实测：`crates/trit-parts/src/tconv/conv.rs:113` 的 `q` 改成恒等 ⇒ **只有这条判红**。
 - **量到一个非显然的实现性质**：膨胀核抽头在 ±dil 的**整数倍**上，所以孤立冲击的可达集落在 dil 格点上——
   实测 `dil=1` 依赖 16 个像素（{0,1,2,3}²）、`dil=2` 最远 (6,6)、`dil=3` 最远 (9,9)、`dil=5` 最远 (15,15)。
   第一版夹具选了"角落 (15,15)"，理由是"离冲击够远"，结果 15 不在 `dil=3` 的格点上 ⇒ **报红的是夹具不是实现**。
-  改成 `(6,6)`（`dil=1` 无关 / `dil=3` 相关）后成对判据成立；`conv.rs:151` 的 `self.dil` 改成常量 `1` ⇒ 这条判红。
+  改成 `(6,6)`（`dil=1` 无关 / `dil=3` 相关）后成对判据成立；`crates/trit-parts/src/tconv/conv.rs:151` 的 `self.dil` 改成常量 `1` ⇒ 这条判红。
 - **留出集泛化**（不是训练集）：3 个方向训练、第 4 个方向（反对角）从未出现，1200 步后 MSE **0.1710 → 0.00620**（27.6×）。
 - **部署构成**：`cin=6 / pyr=1 / dil=2 / med=-0.75 / iqr=1.25 / 量化档(1,1,0)` 经 `save`→`load` 全字段一致且前向逐位一致；
   未知 magic 的报错点名 `不是 DCN1/DCN2/DCN3/DCN4`（不吞成"读出来了"）。

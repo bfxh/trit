@@ -22,12 +22,12 @@
 
 | 名字 | 定义处 | 内联 `#[test]` | 被 bin 用 | 被仓内其他模块用 | `tests/` 提及（代码行） | 读数在哪 | 按 §1 判 |
 |---|---|---|---|---|---|---|---|
-| `DepthNet` | `depthnet.rs:25` | 7 | 4 | 2 | **11** | 本文件 §2.3 + `docs/PARTS-RESULTS.md`（清单 + 独立复核） | **已跑通** |
-| `TpmModel` | `tpm.rs:36` | 1 | 5 | 3 | **2** | 部分（同上文件，按族） | 已跑通（覆盖面窄） |
-| `DepthUNet` | `depthunet.rs:113` | 3 | 1 | 0 | **7** | 本文件 §2.1 | **已跑通**（CPU 参考实现这一层） |
-| `DepthHead` | `depth.rs:14` | 3 | 1 | 0 | **0** | — | **组件**（名字已经是对的） |
-| `MatNet` | `matnet.rs:41` | 3 | 1 | 0 | **0** | — | **组件**（名字像整机，§4 第 4 条已把改名提案否证） |
-| `TriModel` | `model.rs:47` | 1 | 1 | 1 | **0** | 本文件 §2.2（覆盖经由 `to_tri()`/`RefCpu`，不是类型名） | **已跑通**（加载→推理→金样指纹；跨后端对拍另见 `docs/PARTS-RESULTS.md`） |
+| `DepthNet` | `crates/trit-parts/src/depthnet.rs:25` | 7 | 4 | 2 | **11** | 本文件 §2.3 + `docs/PARTS-RESULTS.md`（清单 + 独立复核） | **已跑通** |
+| `TpmModel` | `crates/trit-parts/src/tpm.rs:36` | 1 | 5 | 3 | **2** | 部分（同上文件，按族） | 已跑通（覆盖面窄） |
+| `DepthUNet` | `crates/trit-parts/src/depthunet.rs:113` | 3 | 1 | 0 | **7** | 本文件 §2.1 | **已跑通**（CPU 参考实现这一层） |
+| `DepthHead` | `crates/trit-parts/src/depth.rs:14` | 3 | 1 | 0 | **0** | — | **组件**（名字已经是对的） |
+| `MatNet` | `crates/trit-parts/src/matnet.rs:41` | 3 | 1 | 0 | **0** | — | **组件**（名字像整机，§4 第 4 条已把改名提案否证） |
+| `TriModel` | `crates/trit-parts/src/model.rs:47` | 1 | 1 | 1 | **0** | 本文件 §2.2（覆盖经由 `to_tri()`/`RefCpu`，不是类型名） | **已跑通**（加载→推理→金样指纹；跨后端对拍另见 `docs/PARTS-RESULTS.md`） |
 
 **第四列口径（本门自己量的，不是手填）**：`python scripts/model_status.py` 逐行数**代码行**里的类型名提及，
 注释与文档行不算。所以两处要知道它的边界：
@@ -59,7 +59,7 @@
 
 - **三值格不变量**：把 `c1.w[0]` 换成同一量化格内的另一个值（`q(w)=round(w).clamp(-1,1)`）⇒ 三值档前向
   **逐位不变**，`ternary=false` 档**必须变**（这一对同时钉住"标志位真的生效"）。
-  判决性实测：把 `tconv/conv.rs:113` 的 `q` 改成恒等 ⇒ **只有这条判红**，其余 3 条全绿。
+  判决性实测：把 `crates/trit-parts/src/tconv/conv.rs:113` 的 `q` 改成恒等 ⇒ **只有这条判红**，其余 3 条全绿。
 - **膨胀 = 感受野**：孤立冲击的可达集实测落在 dil 的格点上（`dil=1` 依赖 16 个像素 = {0,1,2,3}²，
   `dil=3` = {0,3,6,9}²、最远 (9,9)）。`(6,6)` 在 `dil=1` 下与前向**无关**、在 `dil=3` 下**相关**。
   判决性实测：`conv.rs:151` 的 `let d = self.dil as i32` 改成 `let d = 1` ⇒ 这条判红。
@@ -127,7 +127,7 @@ python scripts/model_status.py --self-test
    判决性都用变异验过（池化 max→avg、`q` 改恒等、`dil` 改常量），不是"加了测试就算数"。
    仍欠：`DepthHead`、`MatNet` —— 但按 §1 它们是**组件**，要么补到能改名要么维持组件名。
 4. ~~命名整改：`MatNet` 改名 `MatHead`~~ **被读码否证，不改**（2026-11-05）：
-   `matnet.rs:1-4` 写明它是**独立训练**的四类分类器（`conv(3→H) → ReLU → conv(H→H) → ReLU → 全局平均 → 线性(H→4)`），
+   `crates/trit-parts/src/matnet.rs:3` 写明它是**独立训练**的四类分类器（`conv(3→H) → ReLU → conv(H→H) → ReLU → 全局平均 → 线性(H→4)`），
    不是挂在骨干后面的头 —— 叫 `MatHead` 比现在更迷惑。外部 pin 实测：全机代码面只有
    `crates/trit-parts/src/bin/parts_3d/material.rs` 引用它（其余命中都是同一仓的 worktree 副本），
    且 `crates/trit-parts/Cargo.toml:9` 是 `publish = false` ⇒ 改名本来没有 semver 约束，但没有更好的名字。

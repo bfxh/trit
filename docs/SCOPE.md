@@ -75,7 +75,7 @@
    `cargo clippy -p <crate> --tests` 是弱口径——少了 examples/benches、也漏掉没点名的包，
    2026-11-06 就是这样让三平台 CI 的 Clippy 步骤一起红）/ `doc` / `cargo test --workspace --locked` /
    `mutation_check` / `module_budget` / `test_surface` / `publish_graph` / `deps` / `ci_integrity` /
-   `hazard` / `layers` / `docs_hygiene`。
+   `hazard` / `layers` / `docs_hygiene` / `claims_evidence` / `model_status` / `doc_pointers`。
 
 ## 7. 规矩 ↔ 门 的对照（哪条机器判、哪条只能人判）
 
@@ -87,6 +87,7 @@
 | 不搞上帝模块 | `门` `module_budget.py` | 单文件 >800 行且未登记债务 |
 | 测试要真判东西、不许删 | `门` `test_surface.py` | 无断言测试（警告）、计数跌破台账（红） |
 | 关键规则改坏必须被发现 | `门` `mutation_check.py` | 存活变异、锚点找不到、空/等价变异混入 |
+| 文档里的行号指针必须指得到、指得对 | `门` `scripts/doc_pointers.py` | 文件不存在；同名文件歧义（必须写带目录的路径）；行号越界；指针旁边的标识符不在该行 ±2 行内（行号漂了）；坏指针比基线变多 |
 | 能力句必须带读数或复算指针（完成度口径） | `门` `scripts/claims_evidence.py` | 有完成类动词却既无读数又无指针；读数没单位；无据句比基线变多 |
 | 完成度表里的计数与判定必须和代码对得上 | `门` `scripts/model_status.py` | 表里四列计数与复算不符；判「已跑通」但 `tests/` 提及 0 且没指到文件/§/PR；判定词漂出 §1 词表；表头读不出来（失明也判红） |
 | 同技术不许两人各造一份；异域重叠需写清差异 | `门` `scripts/tech_collide.py` | 两条在效期声明命中同一技术索引条目；账本编号被两件事复用 |

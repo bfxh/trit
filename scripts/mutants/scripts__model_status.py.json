@@ -43,5 +43,14 @@
   "pkg": "scripts/model_status.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "model_status: 定义处不再认全路径（与 doc_pointers 打架）",
+  "file": "scripts/model_status.py",
+  "old": "        crate_dir / \"src\" / pathlib.PurePosixPath(*parts[2:]).as_posix() if len(parts) > 2 else crate_dir,",
+  "new": "        crate_dir / \"src\" / \"_never_.rs\",",
+  "pkg": "scripts/model_status.py",
+  "filter": "",
+  "runner": "python"
  }
 ]

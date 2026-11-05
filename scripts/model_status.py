@@ -52,9 +52,28 @@ def mentions(name: str, path: pathlib.Path) -> int:
     return sum(1 for line in code if pat.search(line))
 
 
+def resolve_own(crate_dir: pathlib.Path, def_file: str) -> pathlib.Path:
+    """定义处可以写 `foo.rs:25`（按 src/ 相对），也可以写 `crates/<包>/src/foo.rs:25`（按仓根相对）。
+
+    两种写法都放行是因为 `scripts/doc_pointers.py` 要求"只给文件名且有同名文件时必须写全路径"，
+    两张门不得互相顶牛（第一版只认 src/ 相对，表格一改成全路径就自己报"文件不存在"）。
+    """
+    stripped = def_file.removeprefix("crates/")
+    parts = pathlib.PurePosixPath(stripped).parts
+    candidates = [
+        crate_dir / "src" / def_file,
+        crate_dir / "src" / pathlib.PurePosixPath(*parts[2:]).as_posix() if len(parts) > 2 else crate_dir,
+        crate_dir / def_file,
+    ]
+    for cand in candidates:
+        if cand.is_file():
+            return cand
+    return crate_dir / "src" / def_file
+
+
 def measure(crate_dir: pathlib.Path, name: str, def_file: str) -> dict[str, int]:
     """四列计数：内联测试 / 被 bin 用 / 被其他模块用 / tests/ 提及。"""
-    own = crate_dir / "src" / def_file
+    own = resolve_own(crate_dir, def_file)
     inline = mentions("#[test]", own) if own.exists() else -1
     bins = 0
     bin_dir = crate_dir / "src" / "bin"
@@ -274,6 +293,13 @@ def self_test() -> int:
         "verdict": "**已跑通**",
     }
     expect("正例：数字与判定都对得上", check([dict(good_row)], tmp), None)
+
+    full_path = dict(good_row, ref="`crates/thing/src/thing.rs:1`")
+    expect(
+        "正例 2：定义处写成按仓根的全路径也认（与 doc_pointers 的口径不打架）",
+        check([full_path], tmp),
+        None,
+    )
 
     stale = dict(good_row, inline="7")
     expect("反证 1：表里的内联数没跟着代码动", check([stale], tmp), "表里写 7")

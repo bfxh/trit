@@ -50,6 +50,7 @@
  "script/deps.py": 1,
  "script/depth_catalogue.py": 1,
  "script/depth_sweep.py": 1,
+ "script/doc_pointers.py": 1,
  "script/docs_hygiene.py": 1,
  "script/eval_boundary.sh": 0,
  "script/eval_s63.py": 0,
