@@ -154,26 +154,30 @@ pub fn pack_best(items: &[Item], gap: f64) -> (Vec<Placement>, f64, f64) {
     best.unwrap_or_else(|| (pack(items, gap, widest + gap), widest + gap, 0.0))
 }
 
+/// 单个世界点按同一摆放变换（网格顶点与高斯共用这一份数学）。
+pub fn transform_point(p: [f32; 3], it: &Item, pl: &Placement) -> [f32; 3] {
+    let (cx, cz) = center(it);
+    let (dx, dz) = (p[0] as f64 - cx, p[2] as f64 - cz);
+    let (rx, rz) = match pl.yaw % 360 {
+        90 => (dz, -dx),
+        180 => (-dx, -dz),
+        270 => (-dz, dx),
+        _ => (dx, dz),
+    };
+    [
+        (cx + rx + pl.translate[0]) as f32,
+        (p[1] as f64 + pl.translate[1]) as f32,
+        (cz + rz + pl.translate[2]) as f32,
+    ]
+}
+
 /// 把对象高斯按摆放变换到世界系（旋转绕包围盒中心，再平移）。
 pub fn apply(splats: &[Splat], it: &Item, pl: &Placement) -> Vec<Splat> {
-    let (cx, cz) = center(it);
-    let yaw = pl.yaw % 360;
     splats
         .iter()
         .map(|s| {
-            let (dx, dz) = (s.pos[0] as f64 - cx, s.pos[2] as f64 - cz);
-            let (rx, rz) = match yaw {
-                90 => (dz, -dx),
-                180 => (-dx, -dz),
-                270 => (-dz, dx),
-                _ => (dx, dz),
-            };
             let mut g = s.clone();
-            g.pos = [
-                (cx + rx + pl.translate[0]) as f32,
-                (s.pos[1] as f64 + pl.translate[1]) as f32,
-                (cz + rz + pl.translate[2]) as f32,
-            ];
+            g.pos = transform_point(s.pos, it, pl);
             g
         })
         .collect()

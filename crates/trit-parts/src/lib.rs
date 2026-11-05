@@ -32,6 +32,7 @@ pub mod loss;
 pub mod matnet;
 pub mod mesh;
 pub mod model;
+pub mod objmesh;
 pub mod occ;
 pub mod ood;
 pub mod parts;
