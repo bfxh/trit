@@ -1,0 +1,101 @@
+[
+ {
+  "name": "hazard: Relaxed 规则匹配错枚举",
+  "file": "scripts/hazard_gate.py",
+  "old": "        \"pattern\": r\"Ordering::Relaxed\",",
+  "new": "        \"pattern\": r\"Ordering::SeqCst\",",
+  "pkg": "scripts/hazard_gate.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hazard: SAFETY 检索窗口收成 0 行",
+  "file": "scripts/hazard_gate.py",
+  "old": "SAFETY_WINDOW = 8",
+  "new": "SAFETY_WINDOW = 0",
+  "pkg": "scripts/hazard_gate.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hazard: SAFETY 检索窗口缩到 0 行",
+  "file": "scripts/hazard_gate.py",
+  "old": "SAFETY_WINDOW = 8\n\n\ndef scrub",
+  "new": "SAFETY_WINDOW = 0\n\n\ndef scrub",
+  "pkg": "scripts/hazard_gate.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hazard: SAFETY 注释识别失效（正例全被误报）",
+  "file": "scripts/hazard_gate.py",
+  "old": "SAFETY_RE = re.compile(r\"#\\s*Safety|SAFETY\\s*[::]|Safety\\s*[::]\")",
+  "new": "SAFETY_RE = re.compile(r\"NEVER_MATCHES_THIS_SENTINEL\")",
+  "pkg": "scripts/hazard_gate.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hazard: 不剥字符串/char 字面量（needle 自指复活）",
+  "file": "scripts/hazard_gate.py",
+  "old": "        joined = scrub(\"\\n\".join(original_lines) + \"\\n\")",
+  "new": "        joined = \"\\n\".join(original_lines) + \"\\n\"",
+  "pkg": "scripts/hazard_gate.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hazard: 内联测试边界失效（测试演练当产品代码）",
+  "file": "scripts/hazard_gate.py",
+  "old": "        if \"#[cfg(test)]\" in lines[index]:",
+  "new": "        if False:",
+  "pkg": "scripts/hazard_gate.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hazard: 已登记但缺 SAFETY 不再拦截",
+  "file": "scripts/hazard_gate.py",
+  "old": "                if rel in allow_files and not in_tests:",
+  "new": "                if False:",
+  "pkg": "scripts/hazard_gate.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hazard: 忽略登记表（已登记的文件也报红）",
+  "file": "scripts/hazard_gate.py",
+  "old": "            allow = (allow_overrides or {}).get(rule[\"id\"]) or rule[\"allow\"]",
+  "new": "            allow = {}",
+  "pkg": "scripts/hazard_gate.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hazard: 报行号偏一行",
+  "file": "scripts/hazard_gate.py",
+  "old": "                    \"line\": line_no + 1,",
+  "new": "                    \"line\": line_no + 2,",
+  "pkg": "scripts/hazard_gate.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hazard: 测试/示例豁免失效（正例被误报）",
+  "file": "scripts/hazard_gate.py",
+  "old": "                if in_tests:",
+  "new": "                if False:",
+  "pkg": "scripts/hazard_gate.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hazard: 登记了但没写不变量也放行",
+  "file": "scripts/hazard_gate.py",
+  "old": "                        entry[\"hint\"] = (\n                            \"已登记但匹配点（及其所在 unsafe fn 签名）向上没有\"\n                            \" SAFETY/# Safety 不变量\"\n                        )\n                        findings.append(entry)",
+  "new": "                        entry[\"hint\"] = (\n                            \"已登记但匹配点（及其所在 unsafe fn 签名）向上没有\"\n                            \" SAFETY/# Safety 不变量\"\n                        )\n                        allow_hits.append(entry)",
+  "pkg": "scripts/hazard_gate.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

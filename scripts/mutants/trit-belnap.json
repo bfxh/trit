@@ -1,0 +1,42 @@
+[
+ {
+  "name": "belnap: 合取假轨该 OR 写成 AND",
+  "file": "crates/trit-belnap/src/lib.rs",
+  "old": "Self::from_rails(t1 && t2, f1 || f2)",
+  "new": "Self::from_rails(t1 && t2, f1 && f2)",
+  "pkg": "trit-belnap",
+  "filter": "de_morgan_holds_on_all_sixteen_assignments"
+ },
+ {
+  "name": "belnap: 否定不再交换两轨（变成恒等）",
+  "file": "crates/trit-belnap/src/lib.rs",
+  "old": "Self::from_rails(f, t)",
+  "new": "Self::from_rails(t, f)",
+  "pkg": "trit-belnap",
+  "filter": "truth_tables_have_the_expected_conflicts"
+ },
+ {
+  "name": "belnap: 未赋值的变量默认判成 F 而非 N",
+  "file": "crates/trit-belnap/src/lib.rs",
+  "old": ".unwrap_or(B4::N)",
+  "new": ".unwrap_or(B4::F)",
+  "pkg": "trit-belnap",
+  "filter": "eval_defaults_missing_variables_to_neither"
+ },
+ {
+  "name": "belnap: 析取假轨该 AND 写成 OR",
+  "file": "crates/trit-belnap/src/lib.rs",
+  "old": "Self::from_rails(t1 || t2, f1 && f2)",
+  "new": "Self::from_rails(t1 || t2, f1 || f2)",
+  "pkg": "trit-belnap",
+  "filter": "truth_tables_have_the_expected_conflicts"
+ },
+ {
+  "name": "belnap: 真值表生成前不查变量数预算",
+  "file": "crates/trit-belnap/src/lib.rs",
+  "old": "    let vars = expr.variables();\n    if vars.len() > limits.max_vars {",
+  "new": "    let vars = expr.variables();\n    if false {",
+  "pkg": "trit-belnap",
+  "filter": "budgets_are_enforced_before_enumeration"
+ }
+]

@@ -1,0 +1,92 @@
+[
+ {
+  "name": "merge-forensics: 什么文件都当生成物（豁免面失控）",
+  "file": "scripts/merge_forensics.py",
+  "old": "    return name in {\"Cargo.lock\", \"package-lock.json\", \"yarn.lock\", \"poetry.lock\", \"uv.lock\"} \\",
+  "new": "    return True \\",
+  "pkg": "scripts/merge_forensics.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-forensics: 单亲提交假装查过了",
+  "file": "scripts/merge_forensics.py",
+  "old": "        base[\"note\"] = \"只有一个父（squash/rebase 落地）——没有「冲突解法」可取证，跳过而不是放行\"",
+  "new": "        base[\"note\"] = \"\"",
+  "pkg": "scripts/merge_forensics.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-forensics: 反向整块取也检不出来",
+  "file": "scripts/merge_forensics.py",
+  "old": "        if merged_blob == right_blob and right_blob != left_blob:",
+  "new": "        if False:",
+  "pkg": "scripts/merge_forensics.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-forensics: 取不到父提交当绿",
+  "file": "scripts/merge_forensics.py",
+  "old": "        return {**base, \"findings\": [{\"kind\": \"取不到父提交\", \"detail\": str(exc), \"blocking\": True}],\n                \"red\": True, \"blocking\": 1}",
+  "new": "        return {**base, \"findings\": [{\"kind\": \"取不到父提交\", \"detail\": str(exc), \"blocking\": True}],\n                \"red\": False, \"blocking\": 0}",
+  "pkg": "scripts/merge_forensics.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-forensics: 拦了也不判红",
+  "file": "scripts/merge_forensics.py",
+  "old": "            \"red\": any(finding[\"blocking\"] for finding in findings)}",
+  "new": "            \"red\": False}",
+  "pkg": "scripts/merge_forensics.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-forensics: 控制台编码崩掉判决输出",
+  "file": "scripts/merge_forensics.py",
+  "old": "        try:\n            print(line)\n        except UnicodeEncodeError:\n            print(line.encode(encoding, \"replace\").decode(encoding, \"replace\"))",
+  "new": "        print(line)",
+  "pkg": "scripts/merge_forensics.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-forensics: 整块取一边检不出来",
+  "file": "scripts/merge_forensics.py",
+  "old": "        if merged_blob == left_blob and right_blob != left_blob:",
+  "new": "        if False:",
+  "pkg": "scripts/merge_forensics.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-forensics: 文件整块没了不报",
+  "file": "scripts/merge_forensics.py",
+  "old": "        if merged_blob == \"\":",
+  "new": "        if False:",
+  "pkg": "scripts/merge_forensics.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-forensics: 生成物豁免不计数",
+  "file": "scripts/merge_forensics.py",
+  "old": "        if _is_generated(path):",
+  "new": "        if False:",
+  "pkg": "scripts/merge_forensics.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-forensics: 逐行核对失效（丢行检不出）",
+  "file": "scripts/merge_forensics.py",
+  "old": "                if line not in text:",
+  "new": "                if False:",
+  "pkg": "scripts/merge_forensics.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

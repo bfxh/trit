@@ -1,0 +1,29 @@
+[
+ {
+  "name": "publish: dev 依赖不再豁免（正例被误报）",
+  "file": "scripts/publish_graph.py",
+  "old": "            if dependency.get(\"kind\") == \"dev\":",
+  "new": "            if False:",
+  "pkg": "scripts/publish_graph.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "publish: 不再检查发布元数据（MISSING 全瞎）",
+  "file": "scripts/publish_graph.py",
+  "old": "        if publishable:",
+  "new": "        if False:",
+  "pkg": "scripts/publish_graph.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "publish: 依赖未发布 crate 不再拦截",
+  "file": "scripts/publish_graph.py",
+  "old": "            if not is_publishable(target):",
+  "new": "            if False:",
+  "pkg": "scripts/publish_graph.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

@@ -1,0 +1,42 @@
+[
+ {
+  "name": "capacity: --require 下不再拒绝无读数（fail-open）",
+  "file": "crates/trit-capacity/src/lib.rs",
+  "old": "            if j.free.is_none() && strict {",
+  "new": "            if false {",
+  "pkg": "trit-capacity",
+  "filter": "unknown_runs_by_default_but_strict_refuses"
+ },
+ {
+  "name": "capacity: free==required 判成 WARN（边界收紧）",
+  "file": "crates/trit-capacity/src/lib.rs",
+  "old": "    let (verdict, reason) = if free >= required {",
+  "new": "    let (verdict, reason) = if free > required {",
+  "pkg": "trit-capacity",
+  "filter": "boundary_free_equals_required_is_ok"
+ },
+ {
+  "name": "capacity: headroom 小于 1 不再夹到 1.0",
+  "file": "crates/trit-capacity/src/lib.rs",
+  "old": "    if headroom.is_finite() && headroom >= 1.0 {",
+  "new": "    if headroom.is_finite() {",
+  "pkg": "trit-capacity",
+  "filter": "headroom_below_one_is_clamped"
+ },
+ {
+  "name": "capacity: 只够峰值也算 REJECT（WARN 层消失）",
+  "file": "crates/trit-capacity/src/lib.rs",
+  "old": "    } else if free >= need {",
+  "new": "    } else if false {",
+  "pkg": "trit-capacity",
+  "filter": "warn_when_only_bare_peak_fits"
+ },
+ {
+  "name": "capacity: 读数不可用时猜成 OK",
+  "file": "crates/trit-capacity/src/lib.rs",
+  "old": "        verdict: Verdict::Warn,",
+  "new": "        verdict: Verdict::Ok,",
+  "pkg": "trit-capacity",
+  "filter": "unknown_is_warn_not_ok"
+ }
+]

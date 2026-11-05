@@ -1,0 +1,90 @@
+[
+ {
+  "name": "float: digit_count 上界差一",
+  "file": "crates/trit-float/src/lib.rs",
+  "old": "        if magnitude <= limit {",
+  "new": "        if magnitude < limit {",
+  "pkg": "trit-float",
+  "filter": "rounding_is_nearest_over_legal_mantissas"
+ },
+ {
+  "name": "float: 乘法指数相减",
+  "file": "crates/trit-float/src/lib.rs",
+  "old": "            self.exponent.saturating_add(other.exponent),",
+  "new": "            self.exponent.max(other.exponent),",
+  "pkg": "trit-float",
+  "filter": "arithmetic_is_exact_when_digits_fit"
+ },
+ {
+  "name": "float: 允许多一位有效位",
+  "file": "crates/trit-float/src/lib.rs",
+  "old": "    if digits > precision {",
+  "new": "    if digits > precision + 1 {",
+  "pkg": "trit-float",
+  "filter": "precision_bounds_follow_balanced_digits"
+ },
+ {
+  "name": "float: 加法对齐溢出改回饱和",
+  "file": "crates/trit-float/src/lib.rs",
+  "old": "        let Some(boosted) = high.checked_mul(3i128.pow(shift as u32)) else {\n            return Self::new(high, high_exp, precision);\n        };",
+  "new": "        let boosted = high.saturating_mul(3i128.pow(shift as u32));",
+  "pkg": "trit-float",
+  "filter": "adding_zero_returns_the_operand_unchanged"
+ },
+ {
+  "name": "float: 加法恒丢弃小项",
+  "file": "crates/trit-float/src/lib.rs",
+  "old": "        if shift > 76 {",
+  "new": "        if shift > 0 {",
+  "pkg": "trit-float",
+  "filter": "arithmetic_is_exact_when_digits_fit"
+ },
+ {
+  "name": "float: 对齐溢出判成更小",
+  "file": "crates/trit-float/src/lib.rs",
+  "old": "        None if high > 0 => std::cmp::Ordering::Greater,",
+  "new": "        None if high > 0 => std::cmp::Ordering::Less,",
+  "pkg": "trit-float",
+  "filter": "equality_and_order_are_numeric_not_representational"
+ },
+ {
+  "name": "float: 平局取更小指数（背离约定）",
+  "file": "crates/trit-float/src/lib.rs",
+  "old": "                            RoundMode::HalfAway => dropped > best_dropped,",
+  "new": "                            RoundMode::HalfAway => dropped < best_dropped,",
+  "pkg": "trit-float",
+  "filter": "precision_bounds_follow_balanced_digits"
+ },
+ {
+  "name": "float: 格式下溢不归零",
+  "file": "crates/trit-float/src/format.rs",
+  "old": "            return Some(TritFloat::zero(self.precision));\n        }\n        let precision = self.precision_at(exponent);",
+  "new": "            return None;\n        }\n        let precision = self.precision_at(exponent);",
+  "pkg": "trit-float",
+  "filter": "quantize_clamps_to_format"
+ },
+ {
+  "name": "float: 相等把精度算进去",
+  "file": "crates/trit-float/src/lib.rs",
+  "old": "        self.mantissa == other.mantissa && self.exponent == other.exponent",
+  "new": "        self.mantissa == other.mantissa\n            && self.exponent == other.exponent\n            && self.precision == other.precision",
+  "pkg": "trit-float",
+  "filter": "equality_and_order_are_numeric_not_representational"
+ },
+ {
+  "name": "float: 舍入不 clamp 到合法尾数",
+  "file": "crates/trit-float/src/lib.rs",
+  "old": "            let rounded = round_quotient(mantissa, divisor).clamp(-limit, limit);",
+  "new": "            let rounded = round_quotient(mantissa, divisor);",
+  "pkg": "trit-float",
+  "filter": "precision_bounds_follow_balanced_digits"
+ },
+ {
+  "name": "float: 锥形精度不衰减",
+  "file": "crates/trit-float/src/format.rs",
+  "old": "        self.precision.saturating_sub(drop).max(MIN_PRECISION)",
+  "new": "        self.precision",
+  "pkg": "trit-float",
+  "filter": "taper_reduces_precision_away_from_one"
+ }
+]

@@ -8,3 +8,4 @@ repository.workspace = true
 description = "三值训练原语：三值量化、直通估计器（STE）与 scale 梯度"
 
 [dependencies]
+trit-core.workspace = true

@@ -6,6 +6,11 @@
                                      [--branch 分支名] [--base main] [--no-merge] [--dry-run]
   python scripts/gitflow.py secret-scan --files a b c
   python scripts/gitflow.py status
+  python scripts/gitflow.py branch list|start <名>|sync|prune [--apply]|protect [--apply] [--dry-run]
+  python scripts/gitflow.py worktree add|list|remove
+  python scripts/gitflow.py pr triage|sync <n> [--dry-run]
+  python scripts/gitflow.py stack [--repair [--apply]] | diagnose --pr <n> | flaky | dco | queue
+  python scripts/gitflow.py merge <分支或 PR 号> [--wait-minutes N] [--auto-sync]
   python scripts/gitflow.py --self-test
 
 为什么不是"git add -A"：
@@ -427,14 +432,13 @@ def branch_cmd(repo: str, argv: list[str]) -> int:
     base = base_arg or detect_base(detect_remote())
     remote = argv[argv.index("--remote") + 1] if "--remote" in argv else detect_remote()
     sub = argv[0] if argv else "list"
-    rest = [a for a in argv[1:] if not a.startswith("--")]
+    rest = positional_args(argv[1:], VALUE_FLAGS)
     if sub == "list":
         stale_days = int(argv[argv.index("--stale-days") + 1]) if "--stale-days" in argv else 14
         return branch_list(repo, base, stale_days, remote_state="--no-remote" not in argv)
     if sub == "start":
         if not rest:
-            print("用法：gitflow.py branch start <名字> [--from main]")
-            return 2
+            return usage("用法：gitflow.py branch start <名字> [--from main]")
         source = argv[argv.index("--from") + 1] if "--from" in argv else base
         return branch_start(rest[0], source, remote, "--dry-run" in argv)
     if sub == "sync":
@@ -445,9 +449,8 @@ def branch_cmd(repo: str, argv: list[str]) -> int:
         return branch_prune(base, "--apply" in argv)
     if sub == "protect":
         target = argv[argv.index("--branch") + 1] if "--branch" in argv else base
-        return protect(repo, target)
-    print(f"未知分支子命令: {sub}（list / start / sync / prune）")
-    return 2
+        return protect(repo, target, "--apply" in argv, "--dry-run" in argv, "--force" in argv)
+    return usage(f"未知分支子命令: {sub}（list / start / sync / prune）")
 
 
 def worktree_list() -> int:
@@ -516,7 +519,80 @@ def worktree_remove(path: str, force: bool) -> int:
     return 0
 
 
-def stack(repo: str, remote_state: bool) -> int:
+def remote_heads(root: pathlib.Path) -> set[str]:
+    """远端还在的分支名（去掉 `origin/` 前缀）。读不到就返回空集，由调用方判红。"""
+    result = git(["branch", "--remotes", "--format=%(refname:short)"], root)
+    names: set[str] = set()
+    if result.returncode != 0:
+        return names
+    for line in result.stdout.splitlines():
+        name = line.strip()
+        if name.startswith("origin/"):
+            name = name[len("origin/"):]
+        if name and name != "HEAD":
+            names.add(name)
+    return names
+
+
+def pick_trunk(live: set[str]) -> str:
+    return "main" if "main" in live else "master"
+
+
+def orphaned_bases(prs: list[dict], live: set[str], trunk: str) -> list[dict]:
+    """base 分支已经不存在的 PR —— squash 合并并删分支后，GitHub **不会**把叠在上面的 PR 改指主干。
+
+    这种 PR 的合并按钮永远不亮，而且 `mergeable` 要等我们手动 retarget 后才重算。
+    今天连撞三次（#221 / #222 / #224），所以做成"检测 + 保守修复"：
+    只把 base 改到主干、再把主干合进来——**不 force-push、不改写别人的分支**。
+    """
+    out: list[dict] = []
+    for pr in prs:
+        base = (pr.get("baseRefName") or "").strip()
+        head = (pr.get("headRefName") or "").strip()
+        if not base or base in PROTECTED or base == trunk:
+            continue
+        if base in live:
+            continue
+        out.append({"number": pr.get("number"), "base": base, "head": head, "trunk": trunk})
+    return out
+
+
+def repair_plan(orphans: list[dict]) -> list[list[str]]:
+    """修一个孤儿 PR 的命令序列：先改 base，再同步主干（顺序错了会白跑一轮 CI）。"""
+    plan: list[list[str]] = []
+    for item in orphans:
+        number = str(item["number"])
+        plan.append(["gh", "pr", "edit", number, "--base", item["trunk"]])
+        plan.append([sys.executable, "scripts/gitflow.py", "pr", "sync", number, "--apply"])
+    return plan
+
+
+def repair_orphans(root: pathlib.Path, orphans: list[dict], apply_changes: bool) -> int:
+    if not orphans:
+        return 0
+    verb = "执行" if apply_changes else "将要执行（dry-run；加 --apply 才动远端）"
+    print(f"发现 {len(orphans)} 个 base 已被删的 PR ⇒ {verb}")
+    for item in orphans:
+        print(f"    #{item['number']} base={item['base']}（远端已无此分支）→ 改指 {item['trunk']}")
+    for step in repair_plan(orphans):
+        if not apply_changes:
+            print("    $ " + " ".join(step))
+            continue
+        made = subprocess.run(step, cwd=str(root), stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True,
+                              encoding="utf-8", errors="replace")
+        text = (made.stdout or "").strip()
+        if made.returncode != 0:
+            print("    步骤失败（rc=" + str(made.returncode) + "）：" + " ".join(step))
+            for line in text.splitlines()[:6]:
+                print("      " + line)
+            return 1
+        print("    rc=0 " + " ".join(step))
+    return 0
+
+
+def stack(repo: str, remote_state: bool, repair: bool = False,
+          apply_changes: bool = False) -> int:
     if not remote_state:
         print("stack 需要 gh（去掉 --no-remote）")
         return 2
@@ -544,10 +620,243 @@ def stack(repo: str, remote_state: bool) -> int:
         print("警告：下列 PR 的 base 不是 main/master。按 base 过滤的 CI 可能零 check，合并前先确认：")
         for pr in off_trunk:
             print(f"    #{pr['number']} base={pr['baseRefName']}")
+    live = remote_heads(ROOT)
+    if not live:
+        print("读不到远端分支 ⇒ 判红（分不清「base 被删」还是「网络/权限问题」）")
+        return 1
+    live |= {pr.get("headRefName", "") for pr in prs}
+    trunk = pick_trunk(live)
+    orphans = orphaned_bases(prs, live, trunk)
+    if orphans:
+        code = repair_orphans(ROOT, orphans, repair and apply_changes)
+        if not repair:
+            print("提示：`gitflow stack --repair` 看修复步骤；`--repair --apply` 执行（只改 base + 同步主干，不 force-push）")
+            return 1
+        return code
     return 0
 
 
-def protect(repo: str, branch: str) -> int:
+def read_required_checks(path: pathlib.Path) -> list[str]:
+    """.github/required-checks.txt 的正文行（# 注释与空行不算）。"""
+    if not path.is_file():
+        return []
+    return [line.strip() for line in path.read_text(encoding="utf-8").splitlines()
+            if line.strip() and not line.lstrip().startswith("#")]
+
+
+def strip_urls(node):
+    """GET 保护规则会带回只读的 url 字段，PUT 不认——原样送回会被 422。"""
+    if isinstance(node, dict):
+        return {key: strip_urls(value) for key, value in node.items() if key != "url"}
+    if isinstance(node, list):
+        return [strip_urls(item) for item in node]
+    return node
+
+
+def diff_contexts(got: list[str], wanted: list[str]) -> list[str]:
+    """推送后复核：远端与本地台账的差异，空列表才叫真对上。"""
+    problems = [f"少 {context}" for context in sorted(set(wanted) - set(got))]
+    problems += [f"多 {context}" for context in sorted(set(got) - set(wanted))]
+    return problems
+
+
+def load_ci_integrity():
+    """复用 ci_integrity 的 job 解析与矩阵匹配，避免两边口径漂移。"""
+    import importlib.util
+
+    path = pathlib.Path(__file__).resolve().parent / "ci_integrity.py"
+    spec = importlib.util.spec_from_file_location("trit_ci_integrity", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def delta_contexts(current: list[str], wanted: list[str]) -> list[str]:
+    """这次要新增的必需检查（老 PR 已经卡着的不在本次责任里）。"""
+    return sorted(set(wanted) - set(current))
+
+
+def missing_on_branch(jobs, wanted: list[str], ci) -> list[str]:
+    """这个分支上不会上报的上下文。jobs=None（取不到 workflow）按"全都缺"算——
+    证明不了它会跑，就不许把它设成必需。"""
+    if jobs is None:
+        return list(wanted)
+    return [context for context in wanted
+            if not any(ci.matches_context(job, context) for job in jobs)]
+
+
+def protection_blockers(prs: list[dict], jobs_by_branch: dict, added: list[str], ci) -> list[str]:
+    """加必需检查之前的拦路清单：开着的 PR 里，谁的分支根本不会跑这些 job。
+
+    GitHub 的行为是"必需检查从不出现 ⇒ 这个 PR 永远合不了"，所以这一步不能省，
+    也不能靠人肉记得（本仓差点就把两个新门推上去，卡住三条在跑的 PR）。
+    """
+    blockers: list[str] = []
+    if not added:
+        return blockers
+    for pr in prs:
+        branch = pr.get("headRefName") or ""
+        if jobs_by_branch.get(branch) is None:
+            blockers.append(f"#{pr.get('number')}（{branch}）读不到 workflow ⇒ 无法证明会跑："
+                            f"{'、'.join(added)}")
+            continue
+        gaps = missing_on_branch(jobs_by_branch[branch], added, ci)
+        if gaps:
+            blockers.append(f"#{pr.get('number')}（{branch}）不会上报：{'、'.join(gaps)}")
+    return blockers
+
+
+# API 路径只认正斜杠；ci_integrity.WORKFLOWS 是本地 os.path 常量（Windows 上是反斜杠）
+WORKFLOWS_URL = ".github/workflows"
+
+
+def remote_workflow_jobs(ci, repo: str, branch: str) -> list[dict] | None:
+    import base64
+
+    listing = gh(["api", f"repos/{repo}/contents/{WORKFLOWS_URL}?ref={branch}"])
+    if listing.returncode != 0:
+        return None
+    try:
+        entries = json.loads(listing.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(entries, list):
+        return None
+    with tempfile.TemporaryDirectory() as tmp:
+        box = pathlib.Path(tmp)
+        (box / WORKFLOWS_URL).mkdir(parents=True, exist_ok=True)
+        found = 0
+        for entry in entries:
+            name = entry.get("name") or ""
+            if not name.endswith((".yml", ".yaml")):
+                continue
+            raw = gh(["api", f"repos/{repo}/contents/{WORKFLOWS_URL}/{name}?ref={branch}",
+                      "--jq", ".content"])
+            if raw.returncode != 0:
+                return None
+            (box / WORKFLOWS_URL / name).write_bytes(base64.b64decode(raw.stdout))
+            found += 1
+        if found == 0:
+            return None
+        return ci.parse_workflows(box)
+
+
+def open_pr_list(repo: str) -> list[dict] | None:
+    result = gh(["pr", "list", "--repo", repo, "--state", "open", "--json", "number,headRefName"])
+    if result.returncode != 0:
+        return None
+    try:
+        data = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    return data if isinstance(data, list) else None
+
+
+def build_protection_body(rule: dict, wanted: list[str]) -> dict:
+    """组 PUT /branches/<b>/protection 的请求体。GitHub 这套 schema 很挑：
+
+    - GET 回来的只读 `url` 原样送回 ⇒ 422；
+    - `restrictions` 整个键缺失（哪怕它本该是 null）⇒ 422；
+    - `enforce_admins` 这里要布尔，不是 GET 那种 `{"enabled": true}`。
+    所以显式列要送的字段，而不是把 GET 结果改两下就发出去（第一版就这么被拒了）。
+    """
+    status = rule.get("required_status_checks") or {}
+    reviews = rule.get("required_pull_request_reviews")
+    restrictions = rule.get("restrictions")
+    body = {
+        "required_status_checks": {"strict": bool(status.get("strict", True)),
+                                   "contexts": list(wanted)},
+        "required_pull_request_reviews": strip_urls(reviews) if reviews else None,
+        "restrictions": strip_urls(restrictions) if restrictions else None,
+        "enforce_admins": bool((rule.get("enforce_admins") or {}).get("enabled", False)),
+    }
+    for flag in ("allow_force_pushes", "allow_deletions", "required_linear_history",
+                 "required_conversation_resolution"):
+        node = rule.get(flag)
+        if isinstance(node, dict) and "enabled" in node:
+            body[flag] = bool(node["enabled"])
+    return body
+
+
+def has_url_key(node) -> bool:
+    """递归查只读 url：payload 里残留一个就等于整份被拒。"""
+    if isinstance(node, dict):
+        return "url" in node or any(has_url_key(value) for value in node.values())
+    if isinstance(node, list):
+        return any(has_url_key(item) for item in node)
+    return False
+
+
+def apply_required_checks(repo: str, branch: str, rule: dict, wanted: list[str],
+                          dry_run: bool, force: bool = False) -> int:
+    """把本地台账推到分支保护，并把改动前的规则存成回滚点。
+
+    这里唯一不能出错的是"空清单"：台账读出来是空（文件没了/全被注释）就当"撤掉所有必需检查"
+    推上去，等于自己把保护关掉 ⇒ 必须先拒绝。
+    """
+    if not wanted:
+        print("拒收：本地必需检查清单是空的（文件缺失或全是注释）。"
+              "真要撤掉保护请显式操作，不许由一次读空触发。")
+        return 1
+    current = (rule.get("required_status_checks") or {}).get("contexts") or []
+    added = delta_contexts(current, wanted)
+    if added and not force:
+        ci = load_ci_integrity()
+        prs = open_pr_list(repo)
+        if prs is None:
+            print("拒推：读不到开着的 PR 清单，无法证明新检查不会把别人的 PR 卡死。"
+                  "确认无误再加 --force。")
+            return 1
+        jobs_by_branch: dict[str, list[dict] | None] = {}
+        for pr in prs:
+            name = pr.get("headRefName") or ""
+            if name not in jobs_by_branch:
+                jobs_by_branch[name] = remote_workflow_jobs(ci, repo, name)
+        blockers = protection_blockers(prs, jobs_by_branch, added, ci)
+        if blockers:
+            print(f"拒推：这次要新增 {len(added)} 条必需检查，但 {len(blockers)} 条开着的 PR "
+                  "的分支上这些 job 不会跑 ⇒ 设成必需就把它们永久卡住：")
+            for line in blockers:
+                print(f"  - {line}")
+            print("补救：先 `gitflow pr sync <n>` 把 main 并进那个分支（带来 workflow），"
+                  "或本次先不加这两条必需。确认要强行加才用 --force。")
+            return 1
+    body = build_protection_body(rule, wanted)
+    if dry_run:
+        print(f"dry-run：将把 {len(wanted)} 条必需检查写入 {repo}:{branch}")
+        for context in wanted:
+            print(f"  + {context}")
+        return 0
+    stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+    rollback = pathlib.Path(tempfile.gettempdir()) / f"protection_before_{repo.replace('/', '_')}_{stamp}.json"
+    rollback.write_text(json.dumps(rule, ensure_ascii=False, indent=1), encoding="utf-8")
+    payload = tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False)
+    try:
+        json.dump(body, payload, ensure_ascii=False)
+        payload.close()
+        result = gh(["api", "-X", "PUT", f"repos/{repo}/branches/{branch}/protection",
+                     "--input", payload.name])
+    finally:
+        pathlib.Path(payload.name).unlink(missing_ok=True)
+    if result.returncode != 0:
+        print(f"写入失败（回滚点在 {rollback}）：{result.stdout.strip()[:600]}")
+        return 1
+    after = gh(["api", f"repos/{repo}/branches/{branch}/protection/required_status_checks"])
+    try:
+        got = (json.loads(after.stdout) or {}).get("contexts") or []
+    except json.JSONDecodeError:
+        print(f"写完读不回，无法核对（回滚点：{rollback}）")
+        return 1
+    problems = diff_contexts(got, wanted)
+    if problems:
+        print(f"写完复核不一致：远端 {len(got)} 条｜{'、'.join(problems)}（回滚点：{rollback}）")
+        return 1
+    print(f"已写入 {len(got)} 条必需检查；改动前的规则存在 {rollback}")
+    return 0
+
+
+def protect(repo: str, branch: str, apply_changes: bool = False, dry_run: bool = False,
+          force: bool = False) -> int:
     info = gh(["api", f"repos/{repo}/branches/{branch}"])
     if info.returncode != 0:
         print(f"查不到分支 {branch}：")
@@ -576,6 +885,10 @@ def protect(repo: str, branch: str) -> int:
     print(f"  必需检查：{', '.join(checks) if checks else '（无）'}")
     print(f"  必需审批数：{reviews if reviews is not None else '（无）'}")
     print(f"  强制直推：{bool(rule.get('enforce_admins', {}).get('enabled'))}")
+    if apply_changes:
+        wanted = read_required_checks(ROOT / ".github" / "required-checks.txt")
+        print(f"本地台账 {len(wanted)} 条 ⇒ 推送到 {repo}:{branch}")
+        return apply_required_checks(repo, branch, rule, wanted, dry_run, force)
     return 0
 
 
@@ -676,6 +989,53 @@ def pr_triage(repo: str, stale_days: int, as_json: bool, apply_changes: bool) ->
     return 0
 
 
+CONFLICT_RECORD = re.compile(r"^\s+(?:base|our|their|ancestor)\s+\d{6}\s+[0-9a-f]+\s+(\S.*)$")
+
+
+def merge_tree_conflicts(text: str) -> list[str]:
+    """从 `git merge-tree <base> <ours> <theirs>` 的输出里抠出冲突文件。
+
+    "changed in both" 只是**块头**，路径在紧随其后的 base/our/their 三行里——
+    只印块头等于什么都没点名（第一版就是这样：预览说"会冲突"却不说是哪几个文件）。
+    """
+    paths: list[str] = []
+    in_block = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.endswith("in both") or stripped.startswith("<<<<<<<"):
+            in_block = True
+            continue
+        if not in_block:
+            continue
+        match = CONFLICT_RECORD.match(line)
+        if match:
+            if match.group(1) not in paths:
+                paths.append(match.group(1))
+        elif line[:1] not in (" ", "\t"):
+            in_block = False
+    return paths
+
+
+OID_RE = re.compile(r"^[0-9a-f]{40}$")
+
+
+def merge_preview(modern_rc: int, modern_out: str, legacy_out: str) -> tuple[bool, list[str], str]:
+    """这次合并会不会冲突、冲突在哪些文件、用的哪种 merge-tree 口径。
+
+    老式 `git merge-tree <base> <ours> <theirs>` 的 `changed in both` 只是块头，
+    而且**两边都改过但能自动合并的文件也打这块** ⇒ 拿它判冲突会过度报警
+    （#198/#199 就被它报成"有真冲突"，实际干净合上了）。
+    所以优先 `--write-tree`（rc≠0 才是真冲突，oid 之后是冲突文件名），不可用才退回老口径。
+    """
+    lines = [line for line in modern_out.splitlines() if line.strip()]
+    if lines and OID_RE.fullmatch(lines[0].strip()) and modern_rc in (0, 1):
+        paths = [line.strip() for line in lines[1:]
+                 if not line.strip().startswith(("Auto-merging", "CONFLICT"))]
+        return (modern_rc != 0 or bool(paths)), paths, "write-tree"
+    paths = merge_tree_conflicts(legacy_out)
+    return bool(paths) or "in both" in legacy_out, paths, "legacy"
+
+
 def pr_sync(repo: str, number: str, dry_run: bool = False) -> int:
     """把 main merge 进 PR 分支并 push：不改写历史，不动别人的提交。"""
     view = gh(["pr", "view", number, "--repo", repo, "--json", "headRefName,number"])
@@ -697,14 +1057,19 @@ def pr_sync(repo: str, number: str, dry_run: bool = False) -> int:
             print(f"拉不到 origin/{branch}（先 push 或 fetch）")
             return 1
         merge_base = git(["merge-base", base_sha, branch_sha]).stdout.strip() or base_sha
-        tree = git(["merge-tree", merge_base, base_sha, branch_sha])
-        conflicts = [line for line in tree.stdout.splitlines() if "changed in both" in line or line.startswith("<<<<<<<")]
-        if conflicts:
-            print(f"预览：把 {base} 合进 {branch} 会冲突")
-            for line in conflicts[:10]:
-                print(f"  {line.strip()}")
+        modern = git(["merge-tree", "--write-tree", "--name-only", base_sha, branch_sha])
+        legacy = git(["merge-tree", merge_base, base_sha, branch_sha])
+        conflicted, conflicts, how = merge_preview(modern.returncode, modern.stdout, legacy.stdout)
+        if conflicted:
+            print(f"预览：把 {base} 合进 {branch} 会冲突（{len(conflicts)} 个文件，口径 {how}）")
+            for path in conflicts[:12]:
+                print(f"  - {path}")
+            if not conflicts:
+                print("  （merge-tree 说有冲突但没解析出文件名，原文前几行：）")
+                for line in tree.stdout.splitlines()[:6]:
+                    print(f"    {line}")
             return 1
-        print(f"预览：把 {base} 合进 {branch} 无冲突（merge-tree 结果为空）")
+        print(f"预览：把 {base} 合进 {branch} 无冲突（口径 {how}）")
         return 0
     # 分支可能正被另一个 worktree 占用（多会话常态）：在**那里**操作，不强行 checkout
     worktrees = parse_worktrees(git(["worktree", "list", "--porcelain"]).stdout)
@@ -997,20 +1362,37 @@ def checks_not_yet(output: str) -> bool:
     return "no checks reported" in lowered or "no checks" in lowered
 
 
+def pr_number_for_branch(repo: str, branch: str) -> str:
+    """分支 → 它那一个 open PR 的编号。
+
+    查不到、读不到、或有多个 ⇒ 返回空串：自动同步只认唯一解，
+    **猜一个编号去同步 = 可能动到别人的 PR**。
+    """
+    prs = open_pr_list(repo)
+    if prs is None:
+        return ""
+    hits = [str(pr.get("number")) for pr in prs
+            if isinstance(pr, dict) and pr.get("headRefName") == branch]
+    return hits[0] if len(hits) == 1 else ""
+
 def wait_for_checks(repo: str, branch: str, attempts: int = 40, pause: int = 15) -> int:
     """等检查**注册**（不是等它们绿）：pending 时 gh 返回非零(8)，那也算已注册。
 
     真正的通过/失败交给后面的 `gh pr checks --watch` 判。
     """
     for index in range(attempts):
-        listing = gh(["pr", "checks", "--repo", repo, branch])
-        output = listing.stdout or ""
-        if output.strip() and not checks_not_yet(output):
+        rows, state = check_rows(repo, branch)
+        if rows and state == "":
             return 0
+        if "形状不认识" in state:
+            print("checks 输出形状不认识 ⇒ 判红（这不是竞态，重试不会变好）：" + state)
+            return 1
+        if state and state != "none":
+            print("读 checks 失败：" + state + "（继续等，超时则判红）")
         if index == 0:
             print("检查还没注册，先等它们出现…")
         time.sleep(pause)
-    print("等检查出现超时（10 分钟）")
+    print(f"等检查出现超时（{attempts} 次 × {pause} 秒）")
     return 1
 
 
@@ -1019,14 +1401,78 @@ def has_pending(output: str) -> bool:
     return "pending" in lowered or "in_progress" in lowered or "queued" in lowered
 
 
-def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30) -> int:
+CHECK_STATES_OK = {"pass", "skipping"}
+CHECK_STATES_PENDING = {"pending", "running", "queued", ""}
+
+
+def check_rows(repo: str, branch: str) -> tuple[list[dict], str]:
+    """用 `gh pr checks --json name,bucket` 拿结构化行，返回 (行, 状态说明)。
+
+    状态说明三种：""=正常；"none"=还没注册（刚 push 的竞态，要继续等）；其他=读取失败的原因。
+    为什么非用 JSON：对齐表格的**名字列可能是空的**——今天真撞上一次，那条行的 URL 落到第一列、
+    空串被当成状态列，于是一条 completed/success 的检查被判成"未知状态"，合并被永久卡住。
+    解析表格等于把判断建在别人的排版上。
+    """
+    result = gh(["pr", "checks", "--repo", repo, branch, "--json", "name,bucket"])
+    body = (result.stdout or "").strip()
+    if checks_not_yet(body):
+        return [], "none"
+    if result.returncode != 0 and not body:
+        return [], "gh pr checks 返回码 " + str(result.returncode) + " 且没有输出"
+    try:
+        rows = json.loads(body)
+    except json.JSONDecodeError:
+        return [], "checks 输出不是 JSON（形状不认识）：" + body[:120]
+    if not isinstance(rows, list):
+        return [], "checks 返回的不是数组（形状不认识）"
+    return [row for row in rows if isinstance(row, dict)], ""
+
+
+def listing_problems(rows: list[dict]) -> list[str]:
+    """所有"没通过"的检查（按 bucket 口径）。
+
+    为什么合并前还要自己看一遍：`gh pr merge` 只受**分支保护**约束。像
+    `bfxh/trit-immune` 那样没设保护的仓，红着也照样合得进去（master 就是这么被弄红的）。
+    `skipping` 放行是故意的——非必需的 job 没跑不该拦合并；必需检查没跑由 `green_audit` 判红。
+    """
+    problems = []
+    for row in rows:
+        name = (row.get("name") or "").strip() or "(无名检查)"
+        state = (row.get("bucket") or "").strip().lower()
+        if state not in CHECK_STATES_OK:
+            problems.append(name + "=" + (state or "未知状态"))
+    return problems
+
+
+def merge_gate(rows: list[dict], state: str) -> tuple[str, list[str]]:
+    """一轮 checks 读数的决定：("wait"|"refuse"|"merge", 说明)。
+
+    抽成纯函数是因为这几条分支只有在合成数据下才测得住：`state == "none"` 是刚 push 的竞态（要等）、
+    `rows` 为空是**读不到**（要拒——读不到不等于通过）、有 pending 要等，其余按 bucket 判。
+    留在网络代码里的一串 if 就只能靠真跑碰运气。
+    """
+    if state == "none":
+        return "wait", ["检查还没注册"]
+    if not rows:
+        return "refuse", ["读不到 checks 清单：" + (state or "空返回") + "（读不到不等于通过）"]
+    if any((row.get("bucket") or "").strip().lower() in CHECK_STATES_PENDING for row in rows):
+        return "wait", ["还有检查在跑"]
+    problems = listing_problems(rows)
+    if problems:
+        return "refuse", problems
+    return "merge", []
+
+
+def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30,
+                    auto_sync: bool = False) -> int:
     """等检查**真正**落定再合。
 
     只靠 `gh pr checks --watch` 不够：push 之后新的 run 还没注册时，它会拿着上一轮的
     结果返回——然后 merge 被"requirements have not been met"拒掉（实跑踩过）。
     所以这里再轮询到没有 pending，并且失败时重试合并。
     """
-    if wait_for_checks(repo, branch) != 0:
+    syncs_left = 2
+    if wait_for_checks(repo, branch, attempts=attempts, pause=pause) != 0:
         return 1
     checks = gh(["pr", "checks", "--repo", repo, branch, "--watch"])
     if checks.returncode != 0 and not has_pending(checks.stdout or ""):
@@ -1034,17 +1480,46 @@ def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30)
         print(checks.stdout[-2000:])
         return 1
     for index in range(attempts):
-        listing = gh(["pr", "checks", "--repo", repo, branch])
-        output = listing.stdout or ""
-        if not output.strip() or has_pending(output):
+        rows, state = check_rows(repo, branch)
+        action, notes = merge_gate(rows, state)
+        if action == "wait":
             if index == 0:
-                print("检查还在跑（可能是刚 push 触发的新一轮），等它落定…")
+                print("先等一轮：" + notes[0])
             time.sleep(pause)
             continue
+        problems = [] if action == "merge" else notes
+        if problems:
+            print("拒绝合入：有检查没通过（这个仓可能没有分支保护，GitHub 不会替你拦）：")
+            for line in problems[:12]:
+                print(f"  - {line}")
+            if any("cancelled" in line or "=未知状态" in line for line in problems):
+                print("  提示：cancelled 常见于托管 runner 没抢到（macOS 容量）——"
+                      "先 `gh run rerun <run-id> --failed` 再判，别把它当代码问题。")
+            return 1
         merge = gh(["pr", "merge", "--repo", repo, branch, "--squash", "--delete-branch"])
         if merge.returncode == 0:
             print(f"CI 全绿，已 squash 合入 {branch} 并删分支")
             return 0
+        reason = " ".join((merge.stdout or "").split())[:220]
+        if any(mark in reason for mark in MERGE_BLOCKED_FOREVER):
+            if not auto_sync:
+                print("合并判红（重试没用，这种要先并主干）：" + reason)
+                print("  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply")
+                return 1
+            if syncs_left <= 0:
+                print("FAIL 判红：自动同步的 2 次额度用完还合不上（主干一直在动）⇒ 停手，人工对齐后再跑")
+                return 1
+            number = pr_number_for_branch(repo, branch)
+            if not number:
+                print("FAIL 判红：" + branch + " 对应不上唯一的 open PR ⇒ 不猜编号去同步别人的 PR")
+                return 1
+            syncs_left -= 1
+            print(f"自动同步（剩 {syncs_left} 次额度）：把主干合进 #{number}（不 force-push、不改写历史）")
+            if pr_sync(repo, number, dry_run=False) != 0:
+                return 1
+            continue
+        if index == 0:
+            print("合并暂时失败（继续重试）：" + reason)
         if index == attempts - 1:
             print("合并失败：")
             print(merge.stdout[-1500:])
@@ -1063,6 +1538,162 @@ def status(repo: str) -> int:
         for pr in json.loads(prs.stdout):
             print(f"  #{pr['number']} {pr['title'][:60]} [{pr['state']}/{pr['mergeStateStatus']}]")
     return 0
+
+
+# 只有这几类失败是"重试也不会变好"的：要先并主干或有冲突。
+# 反过来，`base branch policy prohibits the merge` 多半只是必需检查还没落定 ⇒ 继续等。
+# 实测教训：#234 同步 main 之后 watcher 被这句误判成"永远合不上"而提前退出（见 A291）。
+MERGE_BLOCKED_FOREVER = ("not up to date", "cannot be cleanly created", "merge conflict")
+VALUE_FLAGS = ("--repo", "--remote", "--base", "--from", "--path", "--stale-days", "--wait-minutes")
+
+def positional_args(tokens: list[str], value_flags: tuple[str, ...]) -> list[str]:
+    """挑位置参数：`--flag 值` 的**值也是不带 -- 的裸词**，必须连 flag 一起跳掉。
+
+    早先用 `a for a in argv if not a.startswith("--")` 取位置参数，于是
+    `merge --repo o/r` 会把 `o/r` 当成分支名去 watch/合并 —— 参数被吞成**另一个对象**，
+    比报错更糟（2026-11-03 另一会话报 usage 不一致时顺带撞出来，自测把它抓到了）。
+    """
+    out: list[str] = []
+    skip_next = False
+    for token in tokens:
+        if skip_next:
+            skip_next = False
+            continue
+        if token.startswith("--"):
+            skip_next = token in value_flags
+            continue
+        out.append(token)
+    return out
+
+
+def usage(text: str) -> int:
+    """用法/参数错误也打 `FAIL ` 前缀。
+
+    只印中文说明时，`... > log; tail -4 log` 这类包法会把退出码吞成 tail 的 0 ⇒
+    「根本没跑」被记成「跑过了」（2026-11-03 另一个会话实测撞到）。前缀让它在日志里可 grep。
+    """
+    print("FAIL " + text)
+    return 2
+
+
+def resolve_merge_target(repo: str, token: str) -> str:
+    """`merge <参数>`：纯数字当 PR 号查它的 headRefName，否则当分支名用。
+
+    查不到返回空串 ⇒ 调用方判红。**不猜分支名**：猜错就是去动别的分支。
+    """
+    if not token.isdigit():
+        return token
+    result = gh(["pr", "view", token, "--repo", repo, "--json", "headRefName"])
+    try:
+        data = json.loads(result.stdout or "{}")
+    except json.JSONDecodeError:
+        return ""
+    if result.returncode != 0:
+        return ""
+    return (data.get("headRefName") or "").strip()
+
+def main(argv: list[str]) -> int:
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    if "--self-test" in argv:
+        return self_test()
+    command = argv[0] if argv else "status"
+    repo = argv[argv.index("--repo") + 1] if "--repo" in argv else detect_repo()
+    remote = argv[argv.index("--remote") + 1] if "--remote" in argv else detect_remote()
+    base = argv[argv.index("--base") + 1] if "--base" in argv else detect_base(remote)
+    if command == "status":
+        return status(repo)
+    files: list[str] = []
+    if "--files" in argv:
+        index = argv.index("--files") + 1
+        while index < len(argv) and not argv[index].startswith("--"):
+            files.append(argv[index])
+            index += 1
+    if command == "secret-scan":
+        if not files:
+            print("拦：--files 一个都没点 ⇒ 一个文件也没扫。扫描面为空不能算「干净」。")
+            return 1
+        hits = secret_scan(ROOT, files)
+        for line in hits:
+            print(f"命中：{line}")
+        if hits:
+            return 1
+        print(f"未发现敏感串（扫了 {len(files)} 个文件、{len(SECRET_PATTERNS)} 条内容规则 + 文件名规则）")
+        return 0
+    if command == "branch":
+        return branch_cmd(repo, argv[1:])
+    if command == "worktree":
+        sub = argv[1] if len(argv) > 1 else "list"
+        rest = positional_args(argv[2:], VALUE_FLAGS)
+        if sub == "list":
+            return worktree_list()
+        if sub == "add":
+            if not rest:
+                return usage("用法：gitflow.py worktree add <分支> [--path 目录] [--from main]")
+            base = argv[argv.index("--from") + 1] if "--from" in argv else detect_base(detect_remote())
+            path = argv[argv.index("--path") + 1] if "--path" in argv else ""
+            return worktree_add(rest[0], base, detect_remote(), path, "--dry-run" in argv)
+        if sub == "remove":
+            if not rest:
+                return usage("用法：gitflow.py worktree remove <目录> [--force]")
+            return worktree_remove(rest[0], "--force" in argv)
+        return usage(f"未知 worktree 子命令: {sub}（list / add / remove）")
+    if command == "stack":
+        return stack(repo, remote_state="--no-remote" not in argv,
+                     repair="--repair" in argv, apply_changes="--apply" in argv)
+    if command == "dco":
+        default_range = f"{detect_remote()}/{detect_base(detect_remote())}..HEAD"
+        return dco(argv[argv.index("--range") + 1] if "--range" in argv else default_range)
+    if command == "flaky":
+        limit = int(argv[argv.index("--limit") + 1]) if "--limit" in argv else 20
+        return flaky(repo, limit)
+    if command == "queue":
+        return queue_status(repo)
+    if command == "pr":
+        sub = argv[1] if len(argv) > 1 else "triage"
+        rest = positional_args(argv[2:], VALUE_FLAGS)
+        if sub == "triage":
+            stale_days = int(argv[argv.index("--stale-days") + 1]) if "--stale-days" in argv else 14
+            return pr_triage(repo, stale_days, "--json" in argv, "--apply" in argv)
+        if sub == "sync":
+            if not rest:
+                return usage("用法：gitflow.py pr sync <编号> [--dry-run]")
+            return pr_sync(repo, rest[0], dry_run="--dry-run" in argv)
+        return usage(f"未知 pr 子命令: {sub}（triage / sync）")
+    if command == "merge":
+        positional = positional_args(argv[1:], VALUE_FLAGS + ("--branch",))
+        raw = argv[argv.index("--branch") + 1] if "--branch" in argv else (positional[0] if positional else "")
+        if not raw:
+            return usage("用法：gitflow.py merge <分支或 PR 号> [--wait-minutes N] [--auto-sync]（也接受 --branch <分支>）")
+        target = resolve_merge_target(repo, raw)
+        if not target:
+            return usage(f"判红：拿不到 {raw} 的分支名（不猜分支名去合并）")
+        wait = int(argv[argv.index("--wait-minutes") + 1]) if "--wait-minutes" in argv else 30
+        return watch_and_merge(target, repo, attempts=max(1, wait * 2), pause=30,
+                               auto_sync="--auto-sync" in argv)
+    if command == "diagnose":
+        pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
+        if not pr:
+            return usage("用法：gitflow.py diagnose --pr <编号>")
+        return diagnose(pr, repo)
+    if command == "publish":
+        args = {
+            "title": argv[argv.index("--title") + 1] if "--title" in argv else "",
+            "body_file": argv[argv.index("--body-file") + 1] if "--body-file" in argv else "",
+            "files": files,
+            "branch": argv[argv.index("--branch") + 1] if "--branch" in argv else "",
+            "base": base,
+            "remote": remote,
+            "repo": repo,
+            "no_merge": "--no-merge" in argv,
+            "dry_run": "--dry-run" in argv,
+        }
+        if not args["title"]:
+            print("publish 需要 --title")
+            return 2
+        return publish(args)
+    print(__doc__)
+    return 2
 
 
 def self_test() -> int:
@@ -1095,6 +1726,31 @@ def self_test() -> int:
               any(".env.production" in h for h in secret_scan(root, [".env.production"])), True)
         check("POSIX 绝对路径被拒", any("跳出仓库" in p for p in base_ok(root, ["/etc/passwd"])), True)
         check("不存在的文件要报", any("不存在" in h for h in secret_scan(root, ["nope.txt"])), True)
+        real_scan_root = globals()["ROOT"]
+        globals()["ROOT"] = root
+        import contextlib as _scl
+        import io as _sio
+        try:
+            buf = _sio.StringIO()
+            with _scl.redirect_stdout(buf):
+                rc_clean = main(["secret-scan", "--repo", "o/r", "--remote", "origin",
+                                 "--base", "main", "--files", "clean.py"])
+            check("干净也要报扫描面：静默通过分不清「跑了」和「没跑」",
+                  (rc_clean, "扫了 1 个文件" in buf.getvalue()), (0, True))
+            buf2 = _sio.StringIO()
+            with _scl.redirect_stdout(buf2):
+                rc_dirty = main(["secret-scan", "--repo", "o/r", "--remote", "origin",
+                                 "--base", "main", "--files", "leak.py"])
+            check("命中要点名且 rc=1（不只给个退出码）",
+                  (rc_dirty, "sk-" in buf2.getvalue()), (1, True))
+            buf3 = _sio.StringIO()
+            with _scl.redirect_stdout(buf3):
+                rc_empty = main(["secret-scan", "--repo", "o/r", "--remote", "origin",
+                                 "--base", "main"])
+            check("一个文件都没点 ⇒ 判红（扫描面为空≠干净）",
+                  (rc_empty, "一个文件也没扫" in buf3.getvalue()), (1, True))
+        finally:
+            globals()["ROOT"] = real_scan_root
 
         args = {
             "title": "t", "body_file": "body.md", "files": ["a.py", "b.py"],
@@ -1161,6 +1817,419 @@ def self_test() -> int:
         check("竞态识别：no checks reported", checks_not_yet("no checks reported on the 'x' branch"), True)
         check("真实失败不算竞态", checks_not_yet("some check failed"), False)
         check("pending 识别", has_pending("CI\tpending\t0\thttps://x"), True)
+        check("合并前自己看表格：fail 要拦（没保护的仓 GitHub 不替你拦）",
+              listing_problems([{"name": "fmt", "bucket": "pass"}, {"name": "CI", "bucket": "fail"}]),
+              ["CI=fail"])
+        check("cancelled 算没通过（master 那次红就是这么来的）",
+              listing_problems([{"name": "t", "bucket": "cancelled"}]), ["t=cancelled"])
+        check("非必需 job 的 skipping 不拦", listing_problems([{"name": "m", "bucket": "skipping"}]), [])
+        check("状态为空不许当通过", listing_problems([{"name": "x", "bucket": ""}]),
+              ["x=未知状态"])
+        check("名字列为空也不许悄悄放过（点名成无名检查）",
+              listing_problems([{"name": "", "bucket": "fail"}]), ["(无名检查)=fail"])
+        check("merge_gate：刚注册竞态算等不算拒", merge_gate([], "none"), ("wait", ["检查还没注册"]))
+        check("merge_gate：读不到清单 ⇒ 拒绝合并（读不到不等于通过）",
+              merge_gate([], "gh pr checks 返回码 1 且没有输出")[0], "refuse")
+        check("merge_gate：有 pending ⇒ 等",
+              merge_gate([{"name": "a", "bucket": "pass"}, {"name": "b", "bucket": "pending"}],
+                         "")[0], "wait")
+        check("merge_gate：全绿才允许合",
+              merge_gate([{"name": "a", "bucket": "pass"}, {"name": "m", "bucket": "skipping"}], ""),
+              ("merge", []))
+        check("merge_gate：失败就点名是谁",
+              merge_gate([{"name": "CI", "bucket": "fail"}], ""), ("refuse", ["CI=fail"]))
+        # 叠栈 PR 的 base 被 squash 合并后删掉：GitHub 不会替我们改指主干（今天连撞三次）
+        prs_fixture = [
+            {"number": 221, "baseRefName": "feat/registry-split", "headRefName": "feat/flake-ledger"},
+            {"number": 220, "baseRefName": "main", "headRefName": "feat/registry-split"},
+            {"number": 300, "baseRefName": "feat/gone", "headRefName": "feat/gone"},
+        ]
+        live_fixture = {"main", "feat/flake-ledger"}
+        orphans = orphaned_bases(prs_fixture, live_fixture, "main")
+        check("只点名 base 已消失的那些", [item["number"] for item in orphans], [221, 300])
+        check("修复目标写的是主干", [item["trunk"] for item in orphans], ["main", "main"])
+        check("主干上的 PR 不算孤儿",
+              orphaned_bases([prs_fixture[1]], live_fixture, "main"), [])
+        check("master 也算保护分支（就算主干判成了 main、远端又没列出它）",
+              orphaned_bases([{"number": 9, "baseRefName": "master", "headRefName": "feat/x"}],
+                             {"main", "feat/x"}, "main"), [])
+        check("base 与 head 同名（自指）也算孤儿，但要能看清",
+              [item["number"] for item in orphaned_bases([prs_fixture[2]], live_fixture, "main")], [300])
+        check("base 还在远端（叠栈正常态）不算孤儿",
+              orphaned_bases([{"number": 11, "baseRefName": "feat/flake-ledger",
+                               "headRefName": "feat/top"}], live_fixture, "main"), [])
+        check("主干识别：有 main 用 main", pick_trunk({"main", "dev"}), "main")
+        check("主干识别：只有 master 用 master", pick_trunk({"master", "dev"}), "master")
+        steps = repair_plan(orphans)
+        check("修一个孤儿要两步（两个孤儿就四步）", len(steps), 4)
+        check("第一步必须先改 base（顺序错了会白跑一轮 CI）",
+              (steps[0][:4], steps[1][:4]),
+              (["gh", "pr", "edit", "221"], [sys.executable, "scripts/gitflow.py", "pr", "sync"]))
+        check("没有孤儿时计划是空的（不拿空列表去执行）", repair_plan([]), [])
+        git_real = globals()["git"]
+        try:
+            globals()["git"] = lambda args, cwd=None: subprocess.CompletedProcess(
+                args, 0, "origin/main\norigin/HEAD\norigin/feat/x\n", "")
+            check("remote_heads 剥 origin/ 前缀、不收 HEAD",
+                  sorted(remote_heads(pathlib.Path("."))), ["feat/x", "main"])
+            globals()["git"] = lambda args, cwd=None: subprocess.CompletedProcess(
+                args, 1, "origin/main\n", "boom")
+            check("remote_heads：git 失败 ⇒ 空集（判红交给调用方，脏输出也不收）",
+                  remote_heads(pathlib.Path(".")), set())
+        finally:
+            globals()["git"] = git_real
+
+        _CP = subprocess.CompletedProcess
+
+        class _Runner:
+            PIPE = -1
+            STDOUT = -2
+
+            def __init__(self, codes):
+                self.codes = list(codes)
+                self.seen: list[list[str]] = []
+
+            def run(self, cmd, *args, **kwargs):
+                self.seen.append([str(part) for part in cmd])
+                code = self.codes.pop(0) if self.codes else 0
+                return _CP(cmd, code, "ok", "")
+
+        orphan = [{"number": 221, "base": "feat/gone", "head": "feat/x", "trunk": "main"}]
+        real_subprocess = globals()["subprocess"]
+        try:
+            dry = _Runner([0, 0])
+            globals()["subprocess"] = dry
+            check("dry-run 只出计划：一个 subprocess 都不发（发了就是动远端）",
+                  repair_orphans(pathlib.Path("."), orphan, False), 0)
+            check("dry-run 真的没发命令", dry.seen, [])
+            ran = _Runner([0, 0])
+            globals()["subprocess"] = ran
+            check("执行模式返回 0", repair_orphans(pathlib.Path("."), orphan, True), 0)
+            check("执行模式两步都发、先改 base 再同步主干（带 --apply）", ran.seen,
+                  [["gh", "pr", "edit", "221", "--base", "main"],
+                   [sys.executable, "scripts/gitflow.py", "pr", "sync", "221", "--apply"]])
+            boom = _Runner([1, 0])
+            globals()["subprocess"] = boom
+            check("第一步就失败 ⇒ 返回 1（不拿 rc=1 当成功）",
+                  repair_orphans(pathlib.Path("."), orphan, True), 1)
+            check("失败后立刻停，不跑第二步", len(boom.seen), 1)
+            idle = _Runner([0])
+            globals()["subprocess"] = idle
+            import io as _io
+            from contextlib import redirect_stdout as _redirect
+            out = _io.StringIO()
+            with _redirect(out):
+                empty = repair_orphans(pathlib.Path("."), [], True)
+            check("没有孤儿时一行都不印、也不发命令（不拿『发现 0 个』糊弄）",
+                  (empty, out.getvalue().strip(), idle.seen), (0, "", []))
+        finally:
+            globals()["subprocess"] = real_subprocess
+
+        remote_real = globals()["remote_heads"]
+        gh_real = globals()["gh"]
+        prs_on_trunk = json.dumps([{"number": 5, "title": "t", "headRefName": "feat/a",
+                                   "baseRefName": "main"}])
+        prs_orphan = json.dumps([{"number": 5, "title": "t", "headRefName": "feat/a",
+                                 "baseRefName": "feat/gone"}])
+        prs_stacked = json.dumps([{"number": 10, "title": "t", "headRefName": "feat/mid",
+                                   "baseRefName": "main"},
+                                  {"number": 11, "title": "t", "headRefName": "feat/top",
+                                   "baseRefName": "feat/mid"}])
+        try:
+            globals()["gh"] = lambda args: _CP(args, 0, prs_on_trunk, "")
+            globals()["remote_heads"] = lambda root: set()
+            check("stack：读不到远端分支 ⇒ 判红（分不清 base 被删还是网络问题）",
+                  stack("o/r", True), 1)
+            globals()["remote_heads"] = lambda root: {"main", "feat/a"}
+            check("stack：主干在、base 也在 ⇒ 不判红", stack("o/r", True), 0)
+            globals()["gh"] = lambda args: _CP(args, 0, prs_stacked, "")
+            globals()["remote_heads"] = lambda root: {"main"}
+            check("stack：base 是另一个开着的 PR 的分支 ⇒ 不算孤儿（head 在就算活）",
+                  stack("o/r", True), 0)
+            globals()["gh"] = lambda args: _CP(args, 0, prs_orphan, "")
+            globals()["remote_heads"] = lambda root: {"main", "feat/a"}
+            check("stack：有孤儿但没给 --repair ⇒ 判红", stack("o/r", True), 1)
+            plan_only = _Runner([0, 0])
+            globals()["subprocess"] = plan_only
+            check("stack：--repair 不带 --apply ⇒ 只出计划（返回 0）",
+                  stack("o/r", True, repair=True), 0)
+            check("stack：--repair 不带 --apply 时一条命令都不发（发就是动远端）",
+                  plan_only.seen, [])
+            go = _Runner([0, 0])
+            globals()["subprocess"] = go
+            check("stack：--repair --apply 才真的执行",
+                  stack("o/r", True, repair=True, apply_changes=True), 0)
+            check("stack：--repair --apply 第一步是改 base", go.seen[0],
+                  ["gh", "pr", "edit", "5", "--base", "main"])
+            stack_real = globals()["stack"]
+            wired: dict[str, object] = {}
+
+            def fake_stack(repo: str, remote_state: bool, repair: bool = False,
+                           apply_changes: bool = False) -> int:
+                wired.clear()
+                wired.update({"repo": repo, "remote": remote_state,
+                              "repair": repair, "apply": apply_changes})
+                return 0
+
+            globals()["stack"] = fake_stack
+            try:
+                check("main 把 --repair/--apply 接到 stack 上",
+                      main(["stack", "--repo", "o/r", "--remote", "origin", "--base", "main",
+                          "--repair", "--apply"]), 0)
+                check("命令行两个开关都传到（少一个就是 flag 被吞）",
+                      (wired["repair"], wired["apply"]), (True, True))
+                check("main：--no-remote 传到 remote_state=False",
+                      main(["stack", "--repo", "o/r", "--remote", "origin", "--base", "main", "--no-remote"]), 0)
+                check("--no-remote 时 remote_state 必须关掉", wired["remote"], False)
+                check("main：不给开关时 repair/apply 都是 False（默认只读）",
+                      (main(["stack", "--repo", "o/r", "--remote", "origin", "--base", "main"]), wired["repair"], wired["apply"]),
+                      (0, False, False))
+            finally:
+                globals()["stack"] = stack_real
+        finally:
+            globals()["gh"] = gh_real
+            globals()["remote_heads"] = remote_real
+            globals()["subprocess"] = real_subprocess
+
+        class _Clock:
+            def __init__(self):
+                self.slept: list[int] = []
+
+            def sleep(self, seconds):
+                self.slept.append(seconds)
+
+        real_time = globals()["time"]
+        real_rows = globals()["check_rows"]
+        try:
+            clock = _Clock()
+            globals()["time"] = clock
+            globals()["check_rows"] = lambda repo, branch: ([], "none")
+            check("wait_for_checks 听话：给几次试几次、给多长睡多长（不是写死 40×15）",
+                  (wait_for_checks("o/r", "b", attempts=3, pause=7), clock.slept), (1, [7, 7, 7]))
+            clock3 = _Clock()
+            probes = {"n": 0}
+
+            def registered_later(repo, branch):
+                probes["n"] += 1
+                if probes["n"] < 2:
+                    return ([], "none")
+                return ([{"name": "CI", "bucket": "pass"}], "")
+
+            globals()["check_rows"] = lambda repo, branch: ([], "checks 输出不是 JSON（形状不认识）：CI pass")
+            shape_clock = _Clock()
+            globals()["time"] = shape_clock
+            check("形状不认识 ⇒ 立刻判红、一次都不睡（旧代码会按整个预算空睡）",
+                  (wait_for_checks("o/r", "b", attempts=4, pause=6), shape_clock.slept), (1, []))
+            globals()["check_rows"] = lambda repo, branch: ([], "gh pr checks 返回码 1 且没有输出")
+            blip_clock = _Clock()
+            globals()["time"] = blip_clock
+            check("网络类失败仍按预算重试（不把偶发当永久）",
+                  (wait_for_checks("o/r", "b", attempts=2, pause=4), blip_clock.slept), (1, [4, 4]))
+            globals()["check_rows"] = lambda repo, branch: ([], "none")
+
+            globals()["check_rows"] = registered_later
+            globals()["time"] = clock3
+            check("注册一旦出现就返回 0（不空等到超时）",
+                  (wait_for_checks("o/r", "b", attempts=9, pause=1), clock3.slept), (0, [1]))
+            globals()["check_rows"] = lambda repo, branch: ([], "none")
+            clock2 = _Clock()
+            globals()["time"] = clock2
+            check("watch_and_merge 把预算转给注册等待（--wait-minutes 不再被吞）",
+                  (watch_and_merge("feat/x", "o/r", attempts=2, pause=5), clock2.slept), (1, [5, 5]))
+        finally:
+            globals()["time"] = real_time
+            globals()["check_rows"] = real_rows
+        real_watch = globals()["wait_for_checks"]
+        real_gh_ref = globals()["gh"]
+        try:
+            globals()["wait_for_checks"] = lambda repo, branch, attempts=1, pause=1: 0
+            clock4 = _Clock()
+            globals()["time"] = clock4
+
+            def gh_refuse(args):
+                if args[:2] == ["pr", "checks"]:
+                    return _CP(args, 0, chr(91) + chr(123) + "\"name\":\"CI\",\"bucket\":\"pass\"" + chr(125) + chr(93), "")
+                return _CP(args, 1, "X Pull request o/r#9 is not mergeable: "
+                           "the head branch is not up to date with the base branch.", "")
+
+            globals()["gh"] = gh_refuse
+            check("分支落后主干时立刻判红并给出可执行提示（不再静默重试半小时）",
+                  (watch_and_merge("feat/x", "o/r", attempts=6, pause=30), clock4.slept), (1, []))
+        finally:
+            globals()["gh"] = real_gh_ref
+            globals()["wait_for_checks"] = real_watch
+            globals()["time"] = real_time
+
+        merge_real = globals()["watch_and_merge"]
+        gh_real_merge = globals()["gh"]
+        seen_branch: list[str] = []
+        seen_auto: list[bool] = []
+
+        def fake_watch(branch: str, repo: str, attempts: int = 60, pause: int = 30,
+                       auto_sync: bool = False) -> int:
+            seen_branch.append(branch)
+            seen_auto.append(auto_sync)
+            return 0
+
+        try:
+            globals()["watch_and_merge"] = fake_watch
+            globals()["gh"] = lambda args: _CP(args, 0, json.dumps({"headRefName": "feat/from-pr"}), "")
+            import contextlib as _mcl
+            import io as _mio
+            check("merge 吃位置参数：分支名直接用",
+                  main(["merge", "--repo", "o/r", "feat/x", "--wait-minutes", "1"]), 0)
+            check("位置参数是分支名时不查远端", seen_branch[-1], "feat/x")
+            check("merge <PR 号> ⇒ 先查 headRefName（文档里那条形状真的能用）",
+                  main(["merge", "--repo", "o/r", "234", "--wait-minutes", "1"]), 0)
+            check("PR 号被换成真实分支名", seen_branch[-1], "feat/from-pr")
+            check("--branch 仍旧能用（不破坏老写法）",
+                  main(["merge", "--repo", "o/r", "--branch", "feat/y", "--wait-minutes", "1"]), 0)
+            check("--branch 的值被取到", seen_branch[-1], "feat/y")
+            check("默认不开自动同步（没人要求就不许动远端）", seen_auto[-1], False)
+            check("--auto-sync 才转下去",
+                  (main(["merge", "--repo", "o/r", "--remote", "origin", "--base", "main",
+                         "feat/z", "--auto-sync"]), seen_auto[-1], seen_branch[-1]),
+                  (0, True, "feat/z"))
+            globals()["gh"] = lambda args: _CP(args, 1, "", "")
+            buf = _mio.StringIO()
+            with _mcl.redirect_stdout(buf):
+                rc_missing = main(["merge", "--repo", "o/r", "999", "--wait-minutes", "1"])
+            check("查不到分支名 ⇒ 判红且不拿猜的名字去合并",
+                  (rc_missing, "拿不到 999 的分支名" in buf.getvalue()), (2, True))
+            buf2 = _mio.StringIO()
+            with _mcl.redirect_stdout(buf2):
+                rc_usage = main(["merge", "--repo", "o/r"])
+            check("用法错误也打 FAIL 前缀（管道 tail 吞不掉它）",
+                  (rc_usage, buf2.getvalue().startswith("FAIL 用法")), (2, True))
+            buf3 = _mio.StringIO()
+            with _mcl.redirect_stdout(buf3):
+                rc_sync = main(["pr", "sync", "--repo", "o/r"])
+            check("其余用法入口同样带 FAIL 前缀", (rc_sync, buf3.getvalue().startswith("FAIL 用法")), (2, True))
+        finally:
+            policy_rows = globals()["check_rows"]
+            real_watch = merge_real
+            policy_msg = ("X Pull request o/r#34 is not mergeable: the base branch policy "
+                          "prohibits the merge. To have the pull request merged after all the "
+                          "requirements have been met, add the `--auto` flag.")
+            behind_msg = ("X Pull request o/r#34 is not mergeable: the head branch is not up to "
+                          "date with the base branch.")
+            try:
+                globals()["check_rows"] = lambda repo, branch: ([{"name": "CI", "bucket": "pass"}], "")
+
+                def gh_policy(args):
+                    if args[:2] == ["pr", "checks"] and "--watch" in args:
+                        return _CP(args, 0, "", "")
+                    if args[:2] == ["pr", "checks"]:
+                        return _CP(args, 0, json.dumps([{"name": "CI", "bucket": "pass"}]), "")
+                    return _CP(args, 1, policy_msg, "")
+
+                globals()["gh"] = gh_policy
+                wait_clock = _Clock()
+                globals()["time"] = wait_clock
+                rc_policy = real_watch("feat/x", "o/r", attempts=3, pause=2)
+                check("policy prohibits 只是检查没落定 ⇒ 继续按预算重试，不许提前放弃",
+                      (rc_policy, wait_clock.slept), (1, [2, 2]))
+
+                def gh_behind(args):
+                    if args[:2] == ["pr", "checks"] and "--watch" in args:
+                        return _CP(args, 0, "", "")
+                    if args[:2] == ["pr", "checks"]:
+                        return _CP(args, 0, json.dumps([{"name": "CI", "bucket": "pass"}]), "")
+                    return _CP(args, 1, behind_msg, "")
+
+                globals()["gh"] = gh_behind
+                forever_clock = _Clock()
+                globals()["time"] = forever_clock
+                check("head 落后主干 ⇒ 仍然立刻判红、一次都不重试",
+                      (real_watch("feat/x", "o/r", attempts=3, pause=2), forever_clock.slept),
+                      (1, []))
+            finally:
+                globals()["check_rows"] = policy_rows
+                globals()["time"] = real_time
+                globals()["gh"] = gh_real_merge
+            globals()["watch_and_merge"] = merge_real
+            globals()["gh"] = gh_real_merge
+
+        sync_state = {"calls": [], "synced": False}
+        BEHIND = ("X Pull request o/r#9 is not mergeable: the head branch is not up to date "
+                  "with the base branch.")
+
+        def pr_sync_ok(repo, number, dry_run=False):
+            sync_state["calls"].append((repo, number, dry_run))
+            sync_state["synced"] = True
+            return 0
+
+        def gh_auto(args):
+            if args[:2] == ["pr", "checks"]:
+                return _CP(args, 0, json.dumps([{"name": "CI", "bucket": "pass"}]), "")
+            if args[:2] == ["pr", "merge"] and sync_state["synced"]:
+                return _CP(args, 0, "", "")
+            return _CP(args, 1, BEHIND, "")
+
+        keep_rows = globals()["check_rows"]
+        keep_gh = globals()["gh"]
+        keep_time = globals()["time"]
+        keep_sync = globals()["pr_sync"]
+        keep_list = globals()["open_pr_list"]
+        auto_clock = _Clock()
+        try:
+            globals()["check_rows"] = lambda repo, branch: ([{"name": "CI", "bucket": "pass"}], "")
+            globals()["time"] = auto_clock
+            globals()["pr_sync"] = pr_sync_ok
+            globals()["open_pr_list"] = lambda repo: [{"number": 233, "headRefName": "feat/x"}]
+            globals()["gh"] = gh_auto
+            rc_auto = watch_and_merge("feat/x", "o/r", attempts=4, pause=6, auto_sync=True)
+            check("--auto-sync：自动把主干合进那一个 open PR 再试（不空睡）",
+                  (rc_auto, sync_state["calls"], auto_clock.slept),
+                  (0, [("o/r", "233", False)], []))
+            sync_state["calls"] = []
+            sync_state["synced"] = False
+            globals()["gh"] = lambda args: (
+                _CP(args, 0, json.dumps([{"name": "CI", "bucket": "pass"}]), "")
+                if args[:2] == ["pr", "checks"] else _CP(args, 1, BEHIND, ""))
+            rc_cap = watch_and_merge("feat/x", "o/r", attempts=9, pause=3, auto_sync=True)
+            check("--auto-sync 只有 2 次额度（主干一直动就停手，不许刷 merge commit）",
+                  (rc_cap, len(sync_state["calls"])), (1, 2))
+            sync_state["calls"] = []
+            globals()["open_pr_list"] = lambda repo: [
+                {"number": 7, "headRefName": "feat/x"}, {"number": 8, "headRefName": "feat/x"}]
+            rc_two = watch_and_merge("feat/x", "o/r", attempts=4, pause=3, auto_sync=True)
+            check("对应不上唯一 open PR ⇒ 判红且一次同步都不发（不猜编号去动别人的 PR）",
+                  (rc_two, sync_state["calls"]), (1, []))
+        finally:
+            globals()["check_rows"] = keep_rows
+            globals()["gh"] = keep_gh
+            globals()["time"] = keep_time
+            globals()["pr_sync"] = keep_sync
+            globals()["open_pr_list"] = keep_list
+
+        real_gh = globals()["gh"]
+        import subprocess as _sp
+        try:
+            globals()["gh"] = lambda args: _sp.CompletedProcess(args, 0,
+                                                                 '[{"name":"a","bucket":"pass"}]', "")
+            check("check_rows 走 JSON：正常返回行",
+                  check_rows("o/r", "b"), ([{"name": "a", "bucket": "pass"}], ""))
+            globals()["gh"] = lambda args: _sp.CompletedProcess(
+                args, 1, "no checks reported on this pull request", "")
+            check("check_rows：还没注册算竞态，返回 none 而不是空表冒充通过",
+                  check_rows("o/r", "b"), ([], "none"))
+            globals()["gh"] = lambda args: _sp.CompletedProcess(args, 0, "not json", "")
+            bad_rows, bad_state = check_rows("o/r", "b")
+            check("check_rows：输出形状不认识 ⇒ 返回原因（不静默）",
+                  (bad_rows, bad_state != ""), ([], True))
+            globals()["gh"] = lambda args: _sp.CompletedProcess(args, 1, "", "")
+            err_rows, err_state = check_rows("o/r", "b")
+            globals()["gh"] = lambda args: _sp.CompletedProcess(args, 0, '{"a": 1}', "")
+            obj_rows, obj_state = check_rows("o/r", "b")
+            check("checks 返回对象而不是数组 ⇒ 返回原因（不静默当成没检查）",
+                  (obj_rows, obj_state != ""), ([], True))
+            check("bucket 为空当知不了状态：先等而不是立刻判过",
+                  merge_gate([{"name": "x", "bucket": ""}], "")[0], "wait")
+            check("check_rows：gh 失败且没输出 ⇒ 返回原因",
+                  (err_rows, err_state.startswith("gh pr checks 返回码")), ([], True))
+        finally:
+            globals()["gh"] = real_gh
         check("通过不算 pending", has_pending("CI\tpass\t1s\thttps://x"), False)
         check("文件重叠 Jaccard", round(file_jaccard(["a", "b"], ["a", "b", "c"]), 6), 0.666667)
         now = 2_000_000_000
@@ -1197,6 +2266,94 @@ def self_test() -> int:
         check("只有 master 时用 master", pick_base(["master"]), "master")
         check("都没有时回落 main", pick_base([]), "main")
 
+        # 保护规则一键对账（本地台账 → GitHub）：读空不许当成"撤掉保护"
+        checks_file = root / "checks.txt"
+        checks_file.write_text("# 注释\n\nMSRV (1.88)\n  wasm (wasm32 build)  \n", encoding="utf-8")
+        check("必需检查台账读正文", read_required_checks(checks_file),
+              ["MSRV (1.88)", "wasm (wasm32 build)"])
+        check("台账不存在算空清单", read_required_checks(root / "nope.txt"), [])
+        check("PUT 前剥掉只读 url", strip_urls({"url": "x", "a": {"url": "y", "b": [1]}}),
+              {"a": {"b": [1]}})
+        bare = build_protection_body(
+            {"required_status_checks": {"strict": True, "contexts": ["CI"], "url": "https://api/x"},
+             "url": "https://api/y",
+             "enforce_admins": {"enabled": True, "url": "https://api/z"},
+             "restrictions": {"url": "https://api/r", "users": ["a"]}},
+            ["CI", "新门"])
+        check("payload 里不许有任何只读 url（GET 原样送回必 422）", has_url_key(bare), False)
+        check("payload 必须带 restrictions 键（缺了也 422）", "restrictions" in bare, True)
+        check("enforce_admins 要布尔不是对象", bare["enforce_admins"], True)
+        check("要推的清单原样进 contexts", bare["required_status_checks"]["contexts"], ["CI", "新门"])
+        check("没有 restrictions 时也显式给 null", build_protection_body({}, ["CI"])["restrictions"], None)
+        check("空清单拒推（读空不等于撤保护）",
+              apply_required_checks("o/r", "main", {}, [], True), 1)
+        check("dry-run 只打印不碰远端",
+              apply_required_checks("o/r", "main", {"required_status_checks":
+                                                    {"strict": True, "contexts": ["CI"]}}, ["CI"], True), 0)
+        check("新增必需检查时先过拦路检查（无网络就拒，不许盲推）",
+              apply_required_checks("o/r", "main", {"required_status_checks":
+                                                    {"strict": True, "contexts": []}}, ["CI"], True), 1)
+        check("写完复核：一致没话说", diff_contexts(["CI", "t3"], ["t3", "CI"]), [])
+        check("写完复核：少了要点名", diff_contexts(["CI"], ["CI", "t3"]), ["少 t3"])
+        check("写完复核：多了也要点名", diff_contexts(["CI", "旧门"], ["CI"]), ["多 旧门"])
+
+        # 推保护之前先看开着的 PR 会不会被卡住（本仓差点把两个新门推上去卡住三条 PR）
+        ci = load_ci_integrity()
+        check("只对本次新增的必需检查负责", delta_contexts(["CI", "t3"], ["CI", "t3", "新门"]), ["新门"])
+        jobs_ok = [{"workflow": "ci.yml", "id": "surface", "name": "test surface (ratchet)",
+                    "if": "", "on_pr": True, "has_matrix": False}]
+        jobs_missing = [{"workflow": "ci.yml", "id": "old", "name": "old job",
+                         "if": "", "on_pr": True, "has_matrix": False}]
+        check("分支上有这个 job ⇒ 不缺", missing_on_branch(jobs_ok, ["test surface (ratchet)"], ci), [])
+        check("分支上没这个 job ⇒ 缺",
+              missing_on_branch(jobs_missing, ["test surface (ratchet)"], ci), ["test surface (ratchet)"])
+        check("取不到 workflow 按全缺算（证明不了就不许放行）",
+              missing_on_branch(None, ["a", "b"], ci), ["a", "b"])
+        check("矩阵展开名也要能对上",
+              missing_on_branch([{"workflow": "ci.yml", "id": "x", "name": "fmt + clippy + test",
+                                  "if": "", "on_pr": True, "has_matrix": True}],
+                                ["fmt + clippy + test (ubuntu-latest)"], ci), [])
+        prs = [{"number": 7, "headRefName": "feat/a"}, {"number": 8, "headRefName": "feat/b"}]
+        check("只点名会卡住的 PR",
+              protection_blockers(prs, {"feat/a": jobs_ok, "feat/b": jobs_missing},
+                                  ["test surface (ratchet)"], ci),
+              ["#8（feat/b）不会上报：test surface (ratchet)"])
+        check("没有新增就没有拦路", protection_blockers(prs, {"feat/a": None, "feat/b": None}, [], ci), [])
+        check("读不到 workflow 要单独点名（不许混成\"确实没这个 job\"）",
+              protection_blockers([{"number": 9, "headRefName": "feat/z"}], {"feat/z": None},
+                                  ["新门"], ci),
+              ["#9（feat/z）读不到 workflow ⇒ 无法证明会跑：新门"])
+        legacy = (
+            "Auto-merging a.txt\n"
+            "changed in both\n"
+            "  base   100644 " + "1" * 40 + " a.txt\n"
+            "  our    100644 " + "2" * 40 + " a.txt\n"
+            "  their  100644 " + "3" * 40 + " a.txt\n"
+            "\n"
+            "merged\n"
+            "changed in both\n"
+            "  base   100644 " + "4" * 40 + " b/c.txt\n"
+            "  our    100644 " + "5" * 40 + " b/c.txt\n"
+            "  their  100644 " + "6" * 40 + " b/c.txt\n"
+        )
+        check("冲突预览点名到文件", merge_tree_conflicts(legacy), ["a.txt", "b/c.txt"])
+        check("没有冲突块就不点名", merge_tree_conflicts("merged\n  our 100644 a.txt\n"), [])
+        check("预览优先 write-tree：能自动合并的不算冲突",
+              merge_preview(0, "d" * 40 + "\nAuto-merging a.txt\n", ""), (False, [], "write-tree"))
+        check("write-tree 报冲突时点名文件",
+              merge_preview(1, "d" * 40 + "\nsrc/x.rs\nCONFLICT (content): Merge conflict in src/x.rs\n",
+                            ""), (True, ["src/x.rs"], "write-tree"))
+        check("write-tree 不可用才退回老口径",
+              merge_preview(129, "usage: git merge-tree",
+                            "changed in both\n  our    100644 " + "1" * 40 + " b/y.rs\n  their  100644 "
+                            + "2" * 40 + " b/y.rs\n"),
+              (True, ["b/y.rs"], "legacy"))
+        check("write-tree 干净但列了文件名也算冲突",
+              merge_preview(0, "d" * 40 + "\nsrc/y.rs\n", "")[0], True)
+        check("write-tree rc≠0 但没列文件也算冲突（只看文件名会漏）",
+              merge_preview(1, "d" * 40 + "\n", "")[0], True)
+        check("has_url_key 是递归查的", has_url_key({"a": {"b": [{"url": "x"}]}}), True)
+
         problems = base_ok(root, [])
         check("空文件列表被拒（点名 --files）", any("--files" in p for p in problems), True)
         check("跳出仓库被拒", any("跳出仓库" in p for p in base_ok(root, ["../x"])), True)
@@ -1206,105 +2363,6 @@ def self_test() -> int:
         return 1
     print(f"self-test: {total[0]}/{total[0]} passed")
     return 0
-
-
-def main(argv: list[str]) -> int:
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    if "--self-test" in argv:
-        return self_test()
-    command = argv[0] if argv else "status"
-    repo = argv[argv.index("--repo") + 1] if "--repo" in argv else detect_repo()
-    remote = argv[argv.index("--remote") + 1] if "--remote" in argv else detect_remote()
-    base = argv[argv.index("--base") + 1] if "--base" in argv else detect_base(remote)
-    if command == "status":
-        return status(repo)
-    files: list[str] = []
-    if "--files" in argv:
-        index = argv.index("--files") + 1
-        while index < len(argv) and not argv[index].startswith("--"):
-            files.append(argv[index])
-            index += 1
-    if command == "secret-scan":
-        hits = secret_scan(ROOT, files)
-        for line in hits:
-            print(f"命中：{line}")
-        return 1 if hits else 0
-    if command == "branch":
-        return branch_cmd(repo, argv[1:])
-    if command == "worktree":
-        sub = argv[1] if len(argv) > 1 else "list"
-        rest = [a for a in argv[2:] if not a.startswith("--")]
-        if sub == "list":
-            return worktree_list()
-        if sub == "add":
-            if not rest:
-                print("用法：gitflow.py worktree add <分支> [--path 目录] [--from main]")
-                return 2
-            base = argv[argv.index("--from") + 1] if "--from" in argv else detect_base(detect_remote())
-            path = argv[argv.index("--path") + 1] if "--path" in argv else ""
-            return worktree_add(rest[0], base, detect_remote(), path, "--dry-run" in argv)
-        if sub == "remove":
-            if not rest:
-                print("用法：gitflow.py worktree remove <目录> [--force]")
-                return 2
-            return worktree_remove(rest[0], "--force" in argv)
-        print(f"未知 worktree 子命令: {sub}（list / add / remove）")
-        return 2
-    if command == "stack":
-        return stack(repo, remote_state="--no-remote" not in argv)
-    if command == "dco":
-        default_range = f"{detect_remote()}/{detect_base(detect_remote())}..HEAD"
-        return dco(argv[argv.index("--range") + 1] if "--range" in argv else default_range)
-    if command == "flaky":
-        limit = int(argv[argv.index("--limit") + 1]) if "--limit" in argv else 20
-        return flaky(repo, limit)
-    if command == "queue":
-        return queue_status(repo)
-    if command == "pr":
-        sub = argv[1] if len(argv) > 1 else "triage"
-        rest = [a for a in argv[2:] if not a.startswith("--")]
-        if sub == "triage":
-            stale_days = int(argv[argv.index("--stale-days") + 1]) if "--stale-days" in argv else 14
-            return pr_triage(repo, stale_days, "--json" in argv, "--apply" in argv)
-        if sub == "sync":
-            if not rest:
-                print("用法：gitflow.py pr sync <编号> [--dry-run]")
-                return 2
-            return pr_sync(repo, rest[0], dry_run="--dry-run" in argv)
-        print(f"未知 pr 子命令: {sub}（triage / sync）")
-        return 2
-    if command == "merge":
-        target = argv[argv.index("--branch") + 1] if "--branch" in argv else ""
-        if not target:
-            print("用法：gitflow.py merge --branch <分支> [--wait-minutes N]")
-            return 2
-        wait = int(argv[argv.index("--wait-minutes") + 1]) if "--wait-minutes" in argv else 30
-        return watch_and_merge(target, repo, attempts=max(1, wait * 2), pause=30)
-    if command == "diagnose":
-        pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
-        if not pr:
-            print("用法：gitflow.py diagnose --pr <编号>")
-            return 2
-        return diagnose(pr, repo)
-    if command == "publish":
-        args = {
-            "title": argv[argv.index("--title") + 1] if "--title" in argv else "",
-            "body_file": argv[argv.index("--body-file") + 1] if "--body-file" in argv else "",
-            "files": files,
-            "branch": argv[argv.index("--branch") + 1] if "--branch" in argv else "",
-            "base": base,
-            "remote": remote,
-            "repo": repo,
-            "no_merge": "--no-merge" in argv,
-            "dry_run": "--dry-run" in argv,
-        }
-        if not args["title"]:
-            print("publish 需要 --title")
-            return 2
-        return publish(args)
-    print(__doc__)
-    return 2
 
 
 if __name__ == "__main__":

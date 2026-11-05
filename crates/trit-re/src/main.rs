@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use trit_re::{Triage, analyze, ledger};
+use trit_re::{Triage, analyze, ledger, yaraparse};
 
 #[derive(Parser)]
 #[command(
@@ -39,6 +39,25 @@ enum Command {
         #[arg(long)]
         functions: bool,
     },
+    /// 吃 procscan 的 JSONL 事件流，采集其中的模块路径并逐个分析（N3）
+    Collect {
+        /// procscan 事件流 JSONL（缺省读 stdin；`-` 亦表示 stdin）
+        #[arg(long, value_name = "FILE")]
+        events: Option<PathBuf>,
+        /// 只输出汇总行（默认输出每模块台账行 + 汇总行）
+        #[arg(long)]
+        summary_only: bool,
+    },
+    /// YARA 子集签名扫描（N4）：吃 .yar 规则文件 + 样本，输出命中集合
+    /// （对拍口径：HIT 行即命中规则名，与官方 yara 逐规则对照）
+    Sigscan {
+        /// 待扫描样本
+        #[arg(required = true, value_name = "PATH")]
+        path: PathBuf,
+        /// YARA 规则文件（.yar 文本）
+        #[arg(long, required = true, value_name = "FILE")]
+        rules: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -51,6 +70,11 @@ fn main() -> ExitCode {
             xref,
             functions,
         } => run(&paths, jsonl, facts, xref, functions),
+        Command::Collect {
+            events,
+            summary_only,
+        } => run_collect(events.as_deref(), summary_only),
+        Command::Sigscan { path, rules } => run_sigscan(&path, &rules),
     }
 }
 
@@ -207,4 +231,140 @@ fn emit_human(
         }
     }
     out.flush()
+}
+
+/// `trit-re collect`：procscan 事件流 → 模块台账 + 采集汇总。
+///
+/// 事件流来自文件或 stdin（`trit-procscan … | trit-re collect` 是预期管线）；
+/// 输出走 stdout（逐行 JSONL），stderr 给一行人读摘要。
+fn run_collect(events: Option<&Path>, summary_only: bool) -> ExitCode {
+    let text = match events {
+        Some(path) if path.as_os_str() != "-" => match std::fs::read_to_string(path) {
+            Ok(text) => text,
+            Err(error) => {
+                eprintln!("读取事件流 {} 失败: {error}", path.display());
+                return ExitCode::from(1);
+            }
+        },
+        _ => {
+            let mut buffer = String::new();
+            if let Err(error) = io::Read::read_to_string(&mut io::stdin(), &mut buffer) {
+                eprintln!("读 stdin 失败: {error}");
+                return ExitCode::from(1);
+            }
+            buffer
+        }
+    };
+    let stdout = io::stdout();
+    let mut out = io::BufWriter::new(stdout.lock());
+    let reader = |path: &Path| std::fs::read(path);
+    let (rows, summary) = trit_re::collect(&text, reader);
+    let mut failed = false;
+    for line in &rows {
+        if summary_only && !line.contains("\"collect-summary\"") {
+            continue;
+        }
+        if let Err(error) = writeln!(out, "{line}") {
+            if error.kind() == io::ErrorKind::BrokenPipe {
+                return ExitCode::SUCCESS;
+            }
+            eprintln!("写 stdout 失败: {error}");
+            return ExitCode::from(1);
+        }
+    }
+    if let Err(error) = out.flush()
+        && error.kind() != io::ErrorKind::BrokenPipe
+    {
+        eprintln!("写 stdout 失败: {error}");
+        failed = true;
+    }
+    eprintln!(
+        "采集：模块事件 {} / 唯一 {}（去重 {}）→ 分析 {}，不可读 {}，非 module 事件 {}，坏行 {}，{} 字节，{} ms",
+        summary.module_events,
+        summary.modules,
+        summary.deduped,
+        summary.analyzed,
+        summary.unreadable,
+        summary.non_module_events,
+        summary.bad_lines,
+        summary.bytes,
+        summary.elapsed_ms
+    );
+    if summary.unreadable > 0 {
+        failed = true;
+    }
+    if failed {
+        ExitCode::from(1)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// `trit-re sigscan <样本> --rules <规则.yar>`：YARA 子集扫描（N4）。
+///
+/// 输出逐规则一行（对拍口径，HIT 行即命中集合）：
+/// `HIT\t<name>` / `MISS\t<name>` / `UNKNOWN\t<name>`；解析不了的规则
+/// 另出 `UNSUPPORTED\t<name>\t<原因>`——扫描时按 Unknown 裁决，绝不静默。
+fn run_sigscan(sample: &Path, rules_path: &Path) -> ExitCode {
+    let rules_text = match std::fs::read_to_string(rules_path) {
+        Ok(text) => text,
+        Err(error) => {
+            eprintln!("读取规则 {} 失败: {error}", rules_path.display());
+            return ExitCode::from(1);
+        }
+    };
+    let parsed = match yaraparse::parse_rules(&rules_text) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            eprintln!("规则解析失败：{error}");
+            return ExitCode::from(1);
+        }
+    };
+    let bytes = match std::fs::read(sample) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            eprintln!("读取样本 {} 失败: {error}", sample.display());
+            return ExitCode::from(1);
+        }
+    };
+    let mut rules = Vec::new();
+    for outcome in &parsed.rules {
+        match outcome {
+            yaraparse::RuleOutcome::Parsed(rule) => rules.push(rule.clone()),
+            yaraparse::RuleOutcome::Unsupported { name, reason } => {
+                println!("UNSUPPORTED\t{name}\t{reason}");
+            }
+        }
+    }
+    let report = trit_re::sigscan::SigScan::new(&rules).scan(&bytes, false);
+    let stdout = io::stdout();
+    let mut out = io::BufWriter::new(stdout.lock());
+    for verdict in &report.rules {
+        let tag = match verdict.value {
+            trit_core::value::Ternary::True => "HIT",
+            trit_core::value::Ternary::False => "MISS",
+            trit_core::value::Ternary::Unknown => "UNKNOWN",
+        };
+        if writeln!(out, "{tag}\t{}", verdict.rule).is_err() {
+            return ExitCode::SUCCESS; // 管道提前关闭不算错
+        }
+    }
+    if let Err(error) = out.flush() {
+        eprintln!("写 stdout 失败: {error}");
+        return ExitCode::from(1);
+    }
+    let hits = report
+        .rules
+        .iter()
+        .filter(|r| r.value == trit_core::value::Ternary::True)
+        .count();
+    eprintln!(
+        "sigscan：规则 {}（可评估 {}，不支持 {}），命中 {}；样本 {} 字节",
+        report.rules.len(),
+        rules.len(),
+        parsed.rules.len() - rules.len(),
+        hits,
+        bytes.len()
+    );
+    ExitCode::SUCCESS
 }

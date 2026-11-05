@@ -39,15 +39,8 @@
 //!
 //! # 两层结构与上游收录边界
 //!
-//! **内核层**（默认构建即含，`--no-default-features` 只剩这层）：账本
-//! （delta/journal/hlc/snapshot/migrate）+ 裁决（trit/dag/verdict/sandbox/
-//! propagate/policy/cull）+ 同步（sync/transport）+ 计算与验证
-//! （bitparallel/auth/kani_proofs）+ 生产线（lifecycle/scheduler/design/
-//! vocab）+ 裁决源与出口（scan/diag/json/net/supply/vex/attest）。
-//! **工具层**（`full` feature，默认开启）：recovery/import/template/server/
-//! daemon/lsp/taskmd/intake/fleet/coords/coords_fleet/harvest/adoption——人体工程与集成面，
-//! 跨仓运维域（六态落地以 Fleet 为数据源），是本工具专属，**不随上游收录**。
-//! 收录规则全文见 `docs/UPSTREAM.md`。
+//! 内核层（默认构建即含）/ 工具层（`full` feature，本工具专属、**不随上游收录**）的分组清单、
+//! 判断口诀与收录流程都在 `docs/UPSTREAM.md`（§一按子系统列出模块归属）。
 
 #[cfg(feature = "full")]
 pub mod adoption;

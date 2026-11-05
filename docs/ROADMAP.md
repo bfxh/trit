@@ -1,70 +1,65 @@
-# 路线图（未完成事项）
+# 主库路线图（该搬进 / 该新开 / 该搬出）
 
-> 只记"还没做/做到哪"的事实，不写内部流程。每项给出**边界**和**验收口径**，
-> 做完就挪到对应 crate 的 README 或 [LESSONS](LESSONS.md)（负结果）。
+> 只写**底座自己的事**。项目口径（数据协议、产品判据、上线手册）留在各生产链仓，
+> 这里最多留一行指针——复制过来就会漂移，这是本仓踩过的坑（镜像副本判定相反那次）。
+> 判据正本在 [LAYERS.md](LAYERS.md)（归位）与 [SCOPE.md](SCOPE.md)（收 / 不收），本文件的每一行都要能对上它们。
 
-## 1. 三进制浮点（进行中）
+## 1. 该搬进来的（现在散在生产链仓，按 §1 属于 base/ops/algo/learn）
 
-- [x] 平衡三进制浮点基础（`mantissa·3^exp`、最近合法尾数舍入）：`trit-float`。
-- [x] **舍入模式**：`HalfAway`/`HalfEven` 已做；测出 half-even 只是翻转符号，未消零（记负结果）。
-- [x] **动态范围对比**：`Format { precision, exponent_digits, taper }` + `range` 子命令；
-      表与图见 `crates/trit-float/README.md`。
-- [ ] **Takum 式锥形精度**：只做了精度随 |e| 衰减的旋钮（单测覆盖）；
-      真正的 Takum 需要**锥形指数编码**与舍入/范围约束，未做。
-- [x] 对称舍入的"期望误差为零"：已测（平局取样）——未复现，记负结果。
+| 外面的东西 | 进哪层 | 只搬哪一半 | 现状证据 |
+|---|---|---|---|
+| diffusion 的三值模型头与一步生成算子 | learn + ops | 模型与算子；训练脚本、数据管道留项目 | FID 43.1 / 全三值 45.1 / 2-bit 14.3× |
+| lacbs 的三值扩展（`reject_hopeless`、SAT 侧改造） | algo | 判据与求解件；产品面留 lacbs | 现按 `trit-core = "0.3.2"` 版本号反向依赖主库 |
+| memtri 的三值检索打分内核 | ops | 打分内核；MCP 外壳与集成留 memtri | 命中 98.5% |
+| vxl-phys 的三值裁决面 | algo | 语义与判定表；物理内核留 BSHSQ | M0 交付 #300，M1 步 0 排序 3.8%/7.0% |
+| **评测协议三件**（清单 + 内容指纹 + 独立复核器） | learn，从 `trit-parts` 下沉成 `trit-learn::manifest` / `::verify` | 三件全部 | depth / parts 两族已各写一遍 SHA-256 与复核器 |
 
-## 2. 三进制训练
+判据一句话：**"移植别的算法、只是用三值/四值实现"的进来；"把主库接到我某个产品上"的留外面。**
 
-- [x] M0：STE 三变体 + per-row scale + 位平面 ALU + 并发/预取读数：`trit-train`。
-- [ ] 带噪 / 更大模型上的 STE 选型（M0 三个变体同分，选不出来）。
-- [ ] 反向的位平面加速（`dX = Wᵀdy` 仍走标量）。
-- [ ] 把 `trit-ops` 的 SIMD 掩码内核下沉到**可发布** crate，训练/推理共用。
-- [ ] **单卡显存拆批**：模型本来要 30 GB，按批拆到单卡能放下（不是多卡；不做跨卡通信）。
-      验收：同一模型/同一步数，峰值显存降到阈值内，吞吐与收敛不劣化超过给定百分比。
+## 2. 该新开的（主库真缺，且能被现有件对拍）
 
-## 3. 推理与缓存
+| 新库 | 层 | 为什么现在就该做 | 对拍谁 |
+|---|---|---|---|
+| `trit-bench` | 门/框架 | 交错 ≥6 轮、min/median/max、规模档表现在**至少 5 份手写实现**（trit-dot main、trit-ops bench、trit-gpu bench、trit-parts parts_bench、`benchmarks/dot_variants`）；这是 §4 第一批要登记的重复能力 | 与 `benchmarks/dot_variants` 的读数对齐 |
+| `trit-fuzz` | 语料 | 随机表达式 / CNF / 三值向量生成器现在 5+ 处各写一套 RNG（含 trit-count 里我自己重写的那份） | 各 crate 现有 fuzz_smoke |
+| `trit-ir` | algo | `.tri`/TTIR 只有"化简 + 打包"，没有 **pass 框架**（常量折叠、等价重写、CSE） | `trit-sat` / `trit-bdd` / `trit-count` 当每个 pass 的 oracle |
+| `trit-mv` | base | 主库只有 K3/Ł3/B3；要"用四值/n 值移植别的算法"先得有代数层（MV-algebra、t-norm 族、De Morgan 格、bilattice） | 真值表穷举 + `trit-belnap` |
+| `trit-num` | ops | 最小二乘现在在 `trit-texture` 里就地写；`parts-depth` 用 f32 四累加器 | 与 f32 参考实现同比特精度对拍 |
+| `trit-export` | ops | 三值权重容器（量化 GGUF）还没有落点，属 codec/learn 边界 | 与 `trit-codec` 打包逐位一致 |
+| `trit-belnap` 的算子面 | ops | 四值现在**只有语义**（8 条测试、0 入边），接不了四值移植 | `trit-belnap` 语义穷举 |
 
-- [ ] **三值 KV cache**：per-channel scale、按层/头量化；验收：同样显存下上下文长度，
-      与 f16 KV 的质量差（困惑度/采样一致率）和吞吐。
-- [x] 注意力/残差/FFN 的训练集成（M0，`trit-attn` 的 `block`/`train`：三值 QKV 投影 +
-      softmax 注意力 + 双残差 + 三值 FFN 的全链 STE 反向；关联回忆任务
-      loss 0.964 → 0.008、召回 1.000，全程三值前向。**边界**：单头、无偏置、
-      无 LayerNorm/KV-cache/因果掩码；配对固定的任务里 FFN 支路可背答案，
-      `attention_on_value_position ≈ 0.06`（均匀 0.2）——注意力必要性要靠
-      「置换随样本变化」的数据集另证）。
+**挡住别人的一条**：`trit-mv` 不做，"用四值/n 值移植算法"就没有落点，只能各项目自己搓。
 
-## 4. 通信
+## 3. 该搬出的（主库的 prod 层太重）
 
-- [ ] **TriCom 类三态消息格式**：先定消息集（心跳/确认/不确定）与线上编码，
-      再给 JSON 基线实测：字节数、编码/解码延迟、错误率。
-      外部流传的"99.06% 香农极限 / 136→12 字节"**不作为结论**，除非能在本仓复算。
-- [ ] 三态共识（"不确定"作为可验证状态）：先做形式化与模拟器，再谈分布式实现。
+`trit-vcs`、`trit-orch`、`trit-procscan`、`trit-redteam`、`trit-unsafe`、`trit-lsp` 都是外壳，不是底座
+（prod 现在 12/35）。方向是拆 `bfxh/trit-tools`，能同时瘦 CI 面与可发布面。**顺序硬要求**：
+分层门先进 CI、#289 合完，再谈拆分——两边同时动 `.github` 一定撞车。
 
-## 5. 任务与数据
+## 4. 排序
 
-- [ ] 图任务：节点分类/图回归/边分类/链路预测的小型三值 GNN（基于 `trit-train`）。
-- [ ] 强化学习：三值策略/价值函数的最小环境与对照。
-- [ ] 训练数据格式：三值标签/掩码的容器（与 TTX 的 GF(3) 校验复用）。
-- [ ] 结构化生成：输入/输出各有专门的神经组件（非纯 LLM 文本接口），先做接口与数据格式。
+- **本周**：`trit-bench` 立项吃掉那 5 份重复 bench（并存必须在 `layers.json` 的 `capabilities` 里带数字读数）；
+  评测协议从 `trit-parts` 下沉 `trit-learn`；watched literals（靶子：匹配族 20 对起只有 DPLL 出得了数，
+  µs/节点 67.6→426.7 同比子句数）。
+- **下月**：`trit-mv` → `trit-ir` → `trit-num`。
+- **择期**：`trit-tools` 拆分；改名（顺序见 LAYERS §6，外部 5 面证据已列全）。
 
-## 6. 工程与文档
+## 5. publish 面（可发布性口径）
 
-- [x] trit 仓 README：定位 + 可视化强弱对比 + 代价清单 + 经验文档。
-- [ ] 其余仓库按同一口径改：ADV → BSHSQ → fmnr → lacbs/S → tools（一仓一 PR）。
-- [ ] 公开数据集与权重（Hugging Face）发布流程：许可、体积、校验、版本。
+- 现状：**19 个 crate 仍 `publish = false`**（实验层），16 个可发布。可发布面是承诺：签名进 semver，
+  动它要走「先 `deprecated` 一个 tag，下个 tag 才删」。
+- 本仓的硬约束（`publish_graph.py` 判红）：可发布 crate **不得**依赖 `publish = false` 的 crate。
+  这条就是 `trit-cli count` 之前的堵点。
+- **本轮翻面：`trit-count` → 可发布**（名字在 crates.io 实测未占用：`GET /api/v1/crates/trit-count` = 404）。
+  判据不是"它成熟了"这种虚话，而是三条具体的：① 计数有**三方独立对拍**（DPLL / 穷举 / 闭式解 / BDD）；
+  ② 有 26 条测试 + 16 条变异全抓；③ 它依赖的 `trit-core` / `trit-eval` / `trit-bdd` 本来就可发布，
+  翻面不引入新的约束。 ⇒ 于是 `trit-cli` 可以接 `count` 子命令了（下一片）。
+- **翻面 ≠ 发布**。真发 crates.io 是单独一次授权动作（登录 ≠ 授权、邮箱验证、新包限流、token 不落聊天记录），
+  要发的时候单独说，我按 `scripts/publish.sh` 口径走。
 
-## 7. 三态结构模型（后期：Tri-Struct Oracle 线）
+## 6. 文档归位（谁写在哪）
 
-- [x] **基础层** `trit-graph` M1：稠密位集图 + 稀疏 CSR、拓扑序、DFS 树、三态议会、三态 1-WL。
-- [x] 超图与树分解的最小容器（`TritHypergraph`、`TreeDecomposition` + 覆盖/运行交校验）。
-- [x] 三态随机游走 / PageRank（三通道 + 阻尼，质量守恒有测试）。
-- [x] 三态图核（WL 子树核 + 路径核，归一化与正反例测试）。
-- [x] TriMPNN M0：可学习 3×3 三态转移表 + 一层消息传递 + 表级 STE 拟合（`trit-graph`）。
-- [x] 端到端三态分类 M0：单目标节点、一层传播、软松弛训练 + 硬推理（准确率 1.000 vs 符号盲基线 0.357）。
-- [ ] 图级池化 + 多层 TriMPNN 的端到端训练；BiTri-MPNN 位运算版。
-- [ ] Tri-TreeOracle / Tri-TreeRNN：叶到根的三态递归与三叉判决。
-- [ ] Tri-TD-GNN：树分解（袋内消息传递 + 袋间三态树自动机）。
-- [ ] Tri-HyperGNN / Tri-ForestOracle：超边投票、森林议会。
-- [ ] Tri-Struct Oracle：统一三态结构语法（图/树/DAG/超图/分解袋），递归组合成三叉判决。
-- [ ] 训练：前向硬三值 + STE；悬置预算、三态一致性正则（别让模型靠"不知道"摆烂）。
-- [ ] 编码/系统层：BiTri 2-bit 编码、9-trit/uint16 打包、三态 CSR、TriVM 指令与三态图引擎。
+- **主库 `docs/`**：语义、分层与归位、门、格式规格、跨引擎实测读数。
+- **生产链项目自己的仓**：该项目的数据协议、指标口径、上线与回滚手册。
+- 主库**不复制**项目文档正文，只留一行指针（`对象：bfxh/xxx · 文件：docs/yyy.md`）。
+- 反向禁令：项目仓不要把主库的分层规范抄一份过去——抄了就会漂，指过来就行。

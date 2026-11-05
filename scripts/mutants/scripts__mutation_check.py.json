@@ -1,0 +1,146 @@
+[
+ {
+  "name": "gate: .sh 目标回落到 cargo",
+  "file": "scripts/mutation_check.py",
+  "old": "    if pkg.endswith(\".sh\"):\n        return \"bash\"",
+  "new": "    if pkg.endswith(\".sh\"):\n        return \"cargo\"",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: bash 自测面识别失效（豁免永不过期）",
+  "file": "scripts/mutation_check.py",
+  "old": "        return selftest_marker(\"bash\" if pkg.endswith(\".sh\") else \"python\") in text",
+  "new": "        return selftest_marker(\"python\") in text",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: bash 语法红只认英文签名",
+  "file": "scripts/mutation_check.py",
+  "old": "    \"bash\": {\"cmd\": \"bash\", \"syntax\": \"syntax error|语法错误\"},",
+  "new": "    \"bash\": {\"cmd\": \"bash\", \"syntax\": \"syntax error\"},",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: preflight 不按语言分判自测边界",
+  "file": "scripts/mutation_check.py",
+  "old": "        if runner in (\"python\", \"bash\"):\n            marker = selftest_marker(runner)",
+  "new": "        if False:\n            marker = selftest_marker(runner)",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: python 裸 traceback 不再算崩溃",
+  "file": "scripts/mutation_check.py",
+  "old": "        ) or (\n            runner == \"python\"\n            and \"Traceback (most recent call last)\" in out\n            and \"AssertionError\" not in out\n        )",
+  "new": "        ) or False",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 不点名失败的测试（抓住说不出是谁）",
+  "file": "scripts/mutation_check.py",
+  "old": "    tests = sorted({m.group(1) for m in re.finditer(r\"^---- (\\S+) stdout ----\", out, re.M)})",
+  "new": "    tests = []",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 全仓登记为空也放行",
+  "file": "scripts/mutation_check.py",
+  "old": "            print(\"NO MUTANTS REGISTERED：（全仓）MUTANTS 是空的 ⇒ 判红。\")\n            return 1",
+  "new": "            print(\"NO MUTANTS REGISTERED：（全仓）MUTANTS 是空的 ⇒ 判红。\")\n            return 0",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 崩溃红当断言（CRASH-KILL 归零）",
+  "file": "scripts/mutation_check.py",
+  "old": "            return \"crash\", hint",
+  "new": "            return \"caught\", hint",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 忽略条目显式 runner",
+  "file": "scripts/mutation_check.py",
+  "old": "    explicit = mutant.get(\"runner\")\n    if explicit:\n        return explicit",
+  "new": "    explicit = mutant.get(\"runner\")\n    if False:\n        return explicit",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 空集不再判红（绿=没东西可杀）",
+  "file": "scripts/mutation_check.py",
+  "old": "            print(f\"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。\")\n        return 1",
+  "new": "            print(f\"EXEMPT 过期：{pkg} 已经有自己的 fn/impl 了，豁免不再成立 ⇒ 请补登记变异。\")\n        return 0",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 编译/语法红不再单列（假杀当抓住）",
+  "file": "scripts/mutation_check.py",
+  "old": "    if \"could not compile\" in diag or any(tok in diag for tok in syntax.split(\"|\")):",
+  "new": "    if False:",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 逐目标 0 条不判红（被别的目标带绿）",
+  "file": "scripts/mutation_check.py",
+  "old": "    if unexplained or stale:\n        scope = ",
+  "new": "    if False:\n        scope = ",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-check: 数组校验形同虚设（拼进字典的键）",
+  "file": "scripts/mutation_check.py",
+  "old": "        if not isinstance(data, list):",
+  "new": "        if False:",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-check: 没有登记表目录也当没有变异（空表放行）",
+  "file": "scripts/mutation_check.py",
+  "old": "        raise SystemExit(f\"找不到登记表目录 {directory} —— 没表不等于没有变异，判红\")",
+  "new": "        return []",
+  "pkg": "scripts/mutation_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 空输出也算抓住（被杀/没跑起来冒充抓住）",
+  "file": "scripts/mutation_check.py",
+  "old": "    if not out.strip():",
+  "new": "    if False:",
+  "filter": "",
+  "pkg": "scripts/mutation_check.py",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 登记表声明的 hang_secs 被忽略（死循环变异改用 900 秒）",
+  "file": "scripts/mutation_check.py",
+  "old": "    declared = mutant.get(\"hang_secs\")",
+  "new": "    declared = None",
+  "filter": "",
+  "pkg": "scripts/mutation_check.py",
+  "runner": "python"
+ }
+]

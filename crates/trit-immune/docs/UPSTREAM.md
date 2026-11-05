@@ -18,6 +18,12 @@
 规则一句话：**凡是"多个工具共用"的收，凡是"这个工具的人体工程"不收**。
 判断口诀：删掉它，内核还完整吗？完整 → 工具层；不完整 → 内核层。
 
+**内核层按子系统分组**（默认构建即含，`--no-default-features` 只剩这层）：
+账本（delta/journal/hlc/snapshot/migrate）+ 裁决（trit/dag/verdict/sandbox/
+propagate/policy/cull）+ 同步（sync/transport）+ 计算与验证（bitparallel/auth/
+kani_proofs）+ 生产线（lifecycle/scheduler/design/vocab）+ 裁决源与出口
+（scan/diag/json/net/supply/vex/attest）。**工具层默认开启**（`full` feature）。
+
 ## 二、选型哲学：性价比中性，进制是参数不是信仰
 
 trit 生态不搞三进制原教旨主义：

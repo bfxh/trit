@@ -8,7 +8,11 @@ use std::fmt;
 
 use crate::entropy;
 
+mod coff;
 mod overlay;
+
+pub use coff::CoffFunction;
+use coff::parse_coff_functions;
 
 use overlay::parse_overlay;
 
@@ -137,6 +141,9 @@ pub struct PeInfo {
     pub rich_header: bool,
     /// `.pdata` 函数表；`None` 表示没有异常目录或无法解析。
     pub runtime_functions: Option<Vec<RuntimeFunction>>,
+    /// COFF 符号表里的函数符号（RVA 升序）；`None` = 无符号表或整表不可信。
+    /// PE32 常见（没有 `.pdata`），与 ELF `STT_FUNC` 同等权威的边界源。
+    pub coff_functions: Option<Vec<CoffFunction>>,
     /// 是否存在 CLR（.NET）目录。
     pub clr_dir_present: bool,
     /// CLR 头；`None` 表示目录存在但无法解析。
@@ -237,6 +244,13 @@ pub fn parse(bytes: &[u8]) -> Result<PeInfo, ParseError> {
     let debug_pdb = parse_debug_pdb(bytes, dirs[6], &sections, headers_size);
     let runtime_functions =
         parse_runtime_functions(bytes, dirs[3], &sections, headers_size, machine);
+    // COFF 符号表：PointerToSymbolTable(+8) / NumberOfSymbols(+12)。
+    let coff_functions = parse_coff_functions(
+        bytes,
+        u32_at(bytes, coff + 8).unwrap_or(0),
+        u32_at(bytes, coff + 12).unwrap_or(0),
+        &sections,
+    );
     let (clr_dir_present, clr) = parse_clr(bytes, dirs[14], &sections, headers_size);
     let (tls_dir_present, tls_callbacks) =
         parse_tls(bytes, dirs[9], &sections, headers_size, image_base, plus);
@@ -259,6 +273,7 @@ pub fn parse(bytes: &[u8]) -> Result<PeInfo, ParseError> {
         exports,
         debug_pdb,
         runtime_functions,
+        coff_functions,
         clr_dir_present,
         clr,
         tls_dir_present,

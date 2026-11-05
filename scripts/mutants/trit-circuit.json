@@ -1,0 +1,826 @@
+[
+ {
+  "name": "aiger: aig 二进制头被当文本接受",
+  "file": "crates/trit-circuit/src/aiger.rs",
+  "old": "    if parts[0] == \"aig\" {\n        return Err(AigerError::BinaryFormat);\n    }",
+  "new": "    if false {\n        return Err(AigerError::BinaryFormat);\n    }",
+  "pkg": "trit-circuit",
+  "filter": "ascii_header_is_aag_and_binary_aig_is_rejected"
+ },
+ {
+  "name": "aiger: 忽略时序锁存器",
+  "file": "crates/trit-circuit/src/aiger.rs",
+  "old": "    if latches > 0 {",
+  "new": "    if false {",
+  "pkg": "trit-circuit",
+  "filter": "rejects_latches_strong_xor_and_bad_header"
+ },
+ {
+  "name": "aiger: 文本字节预算失效",
+  "file": "crates/trit-circuit/src/aiger.rs",
+  "old": "    if text.len() > MAX_AIGER_BYTES {",
+  "new": "    if false {",
+  "pkg": "trit-circuit",
+  "filter": "aiger_budget_rejects_huge_headers_and_oversized_input"
+ },
+ {
+  "name": "aiger: 计数对行数不校验",
+  "file": "crates/trit-circuit/src/aiger.rs",
+  "old": "    if declared > lines.len() {",
+  "new": "    if false {",
+  "pkg": "trit-circuit",
+  "filter": "aiger_budget_rejects_huge_headers_and_oversized_input"
+ },
+ {
+  "name": "atpg: X 位只验证一种填充",
+  "file": "crates//trit-circuit//src//atpg//mod.rs",
+  "old": "    for fill in 0..(1u64 << xbits.len()) {",
+  "new": "    for fill in 0..1 {",
+  "pkg": "trit-circuit",
+  "filter": "dont_care_bits_are_jointly_fillable"
+ },
+ {
+  "name": "atpg: X 合并忽略唯一覆盖（保留全部故障）",
+  "file": "crates//trit-circuit//src//atpg//compact.rs",
+  "old": "                        need.retain(|fault| !detected.contains(fault));",
+  "new": "                        need.retain(|_fault| true);",
+  "pkg": "trit-circuit",
+  "filter": "compaction_merges_witness_patterns"
+ },
+ {
+  "name": "atpg: 全向量矩阵枚举为空",
+  "file": "crates//trit-circuit//src//atpg//mod.rs",
+  "old": "    let total = 1u64 << circuit.input_count();",
+  "new": "    let total = 0;",
+  "pkg": "trit-circuit",
+  "filter": "atpg"
+ },
+ {
+  "name": "atpg: 精确覆盖递归错误清除已覆盖位",
+  "file": "crates/trit-circuit/src/coverage.rs",
+  "old": "        search_cover(\n            uncovered & !faults,",
+  "new": "        search_cover(\n            uncovered & faults,",
+  "pkg": "trit-circuit",
+  "filter": "budget_exhaustion_with_unexplored_siblings_is_not_optimal"
+ },
+ {
+  "name": "blif: 导出不查标识符",
+  "file": "crates/trit-circuit/src/blif.rs",
+  "old": "        if name.is_empty() || name.chars().any(char::is_whitespace) || name.starts_with('.') {",
+  "new": "        if false {",
+  "pkg": "trit-circuit",
+  "filter": "export_validates_structure_and_identifiers"
+ },
+ {
+  "name": "blif: 导出前不校验结构",
+  "file": "crates/trit-circuit/src/blif.rs",
+  "old": "    crate::circuit::validate(circuit).map_err(|error| BlifError::Structure(error.to_string()))?;",
+  "new": "    let _ = circuit;",
+  "pkg": "trit-circuit",
+  "filter": "export_validates_structure_and_identifiers"
+ },
+ {
+  "name": "blif: 把 '-' 当成 0 字面量",
+  "file": "crates/trit-circuit/src/blif.rs",
+  "old": "                        \"-\" => None,",
+  "new": "                        \"-\" => Some(false),",
+  "pkg": "trit-circuit",
+  "filter": "constants_and_dont_care_rows"
+ },
+ {
+  "name": "blif: 文本字节预算失效",
+  "file": "crates/trit-circuit/src/blif.rs",
+  "old": "    if text.len() > limits.bytes {",
+  "new": "    if false {",
+  "pkg": "trit-circuit",
+  "filter": "budgets_reject_oversized_blif"
+ },
+ {
+  "name": "blif: 解析不做结构校验",
+  "file": "crates/trit-circuit/src/blif.rs",
+  "old": "    crate::circuit::validate(&circuit).map_err(|error| BlifError::Structure(error.to_string()))?;",
+  "new": "    let _ = &circuit;",
+  "pkg": "trit-circuit",
+  "filter": "parser_rejects_structurally_invalid_blif"
+ },
+ {
+  "name": "bridge: wired 值反转",
+  "file": "crates/trit-circuit/src/bridge.rs",
+  "old": "    let value = matches!(pair.mode, BridgeMode::Or);",
+  "new": "    let value = !matches!(pair.mode, BridgeMode::Or);",
+  "pkg": "trit-circuit",
+  "filter": "sat_bridge_matches_exhaustive_for_small_circuits"
+ },
+ {
+  "name": "bridge: wired-OR 被当成 wired-AND",
+  "file": "crates/trit-circuit/src/bridge.rs",
+  "old": "            Self::Or => Ternary::True,\n",
+  "new": "            Self::Or => Ternary::False,\n",
+  "pkg": "trit-circuit",
+  "filter": "and_bridge_is_detected_only_for_wired_or"
+ },
+ {
+  "name": "bridge: 不要求两端取值不同",
+  "file": "crates/trit-circuit/src/bridge.rs",
+  "old": "    cnf.require_good_difference(&pair.a, &pair.b)?;",
+  "new": "    if false { cnf.require_good_difference(&pair.a, &pair.b)?; }",
+  "pkg": "trit-circuit",
+  "filter": "sat_bridge_matches_exhaustive_for_small_circuits"
+ },
+ {
+  "name": "bridge: 不要求输出不同",
+  "file": "crates/trit-circuit/src/bridge.rs",
+  "old": "    cnf.require_output_difference()?;",
+  "new": "    if false { cnf.require_output_difference()?; }",
+  "pkg": "trit-circuit",
+  "filter": "sat_bridge_matches_exhaustive_for_small_circuits"
+ },
+ {
+  "name": "bridge: 两端值恒等导致全部不可测",
+  "file": "crates/trit-circuit/src/bridge.rs",
+  "old": "                .map(|&(a, b, _)| (good[a], good[b]))\n",
+  "new": "                .map(|&(a, _b, _)| (good[a], good[a]))\n",
+  "pkg": "trit-circuit",
+  "filter": "and_bridge_is_detected_only_for_wired_or"
+ },
+ {
+  "name": "bridge: 同一网络不报错",
+  "file": "crates/trit-circuit/src/bridge.rs",
+  "old": "        if a == b {\n",
+  "new": "        if false {\n",
+  "pkg": "trit-circuit",
+  "filter": "validation_rejects_empty_unknown_and_same_pairs"
+ },
+ {
+  "name": "bridge: 空列表不失败",
+  "file": "crates/trit-circuit/src/bridge.rs",
+  "old": "    if pairs.is_empty() {\n        return Err(BridgeError::NoPairs);\n    }\n    let inputs = circuit.input_count();\n    if inputs > 16 {",
+  "new": "    if false {\n        return Err(BridgeError::NoPairs);\n    }\n    let inputs = circuit.input_count();\n    if inputs > 16 {",
+  "pkg": "trit-circuit",
+  "filter": "validation_rejects_empty_unknown_and_same_pairs"
+ },
+ {
+  "name": "circuit: Const 缺值不再报错",
+  "file": "crates//trit-circuit//src//circuit//validate.rs",
+  "old": "            (GateKind::Const, None) => {",
+  "new": "            (GateKind::Const, None) if false => {",
+  "pkg": "trit-circuit",
+  "filter": "const_gate_without_value_is_rejected"
+ },
+ {
+  "name": "circuit: 不可观测误判为被遮蔽",
+  "file": "crates//trit-circuit//src//circuit//analyze.rs",
+  "old": "                } else if reachable.contains(gate.output.name()) {",
+  "new": "                } else if true {",
+  "pkg": "trit-circuit",
+  "filter": "untestable_reasons"
+ },
+ {
+  "name": "circuit: 引脚故障不注入",
+  "file": "crates//trit-circuit//src//circuit//sim.rs",
+  "old": "                ins[pin] = value;",
+  "new": "                let _ = value;",
+  "pkg": "trit-circuit",
+  "filter": "fault_polarities_are_reported_separately"
+ },
+ {
+  "name": "circuit: 拓扑排序退回声明序",
+  "file": "crates//trit-circuit//src//circuit//graph.rs",
+  "old": "            if deps.iter().all(|d| resolved.contains(d)) {",
+  "new": "            if true {",
+  "pkg": "trit-circuit",
+  "filter": "evaluation_is_independent_of_gate_declaration_order"
+ },
+ {
+  "name": "circuit: 空信号名不再报错",
+  "file": "crates//trit-circuit//src//circuit//validate.rs",
+  "old": "        if sig.name().is_empty() {",
+  "new": "        if false {",
+  "pkg": "trit-circuit",
+  "filter": "empty_signal_name_is_rejected"
+ },
+ {
+  "name": "circuit: 组合数溢出后饱和",
+  "file": "crates//trit-circuit//src//circuit//types.rs",
+  "old": "        checked_pow3(self.input_count())\n",
+  "new": "        Ok(checked_pow3(self.input_count()).unwrap_or(u64::MAX))\n",
+  "pkg": "trit-circuit",
+  "filter": "analyze_rejects_too_many_inputs_before_enumeration"
+ },
+ {
+  "name": "circuit: 零宽 bus 不再报错",
+  "file": "crates/trit-circuit/src/circuit/validate.rs",
+  "old": "            || bus.width == 0",
+  "new": "            || false",
+  "pkg": "trit-circuit",
+  "filter": "zero_width_bus_is_rejected"
+ },
+ {
+  "name": "circuit: 非 Const 带值不再报错",
+  "file": "crates//trit-circuit//src//circuit//validate.rs",
+  "old": "            (kind, Some(_)) if kind != GateKind::Const => {",
+  "new": "            (_, Some(_)) if false => {",
+  "pkg": "trit-circuit",
+  "filter": "non_const_gate_with_value_is_rejected"
+ },
+ {
+  "name": "circuit: 预算耗尽仍宣称最优覆盖",
+  "file": "crates/trit-circuit/src/coverage.rs",
+  "old": "        if *budget == 0 && position + 1 < candidates.len() {\n            *exhausted = true;",
+  "new": "        if *budget == 0 && position + 1 < candidates.len() {",
+  "pkg": "trit-circuit",
+  "filter": "budget_exhaustion_with_unexplored_siblings_is_not_optimal"
+ },
+ {
+  "name": "exact: 完成之间不合并差异",
+  "file": "crates/trit-circuit/src/circuit/sim.rs",
+  "old": "if merged[slot] != *value {",
+  "new": "if false {",
+  "pkg": "trit-circuit",
+  "filter": "exact_propagation_accepts_partial_vectors_and_merges_values"
+ },
+ {
+  "name": "exact: 每块只枚举第一个完成",
+  "file": "crates/trit-circuit/src/circuit/sim.rs",
+  "old": "for mask in start..end {",
+  "new": "for mask in start..end.min(start + 1) {",
+  "pkg": "trit-circuit",
+  "filter": "exact_propagation_accepts_partial_vectors_and_merges_values"
+ },
+ {
+  "name": "exact: 缺失输入不补 X",
+  "file": "crates/trit-circuit/src/circuit/sim.rs",
+  "old": "        normalized\n            .entry(input.name().to_string())\n            .or_insert(Ternary::Unknown);\n",
+  "new": "        let _ = input;\n",
+  "pkg": "trit-circuit",
+  "filter": "exact_propagation_accepts_partial_vectors_and_merges_values"
+ },
+ {
+  "name": "exact: 超预算仍枚举",
+  "file": "crates/trit-circuit/src/circuit/sim.rs",
+  "old": "    if total > max_completions {\n",
+  "new": "    if false {\n",
+  "pkg": "trit-circuit",
+  "filter": "exact_propagation_falls_back_over_budget"
+ },
+ {
+  "name": "exact: 跨块合并只取第一块",
+  "file": "crates/trit-circuit/src/circuit/sim.rs",
+  "old": "if left == right {",
+  "new": "if true {",
+  "pkg": "trit-circuit",
+  "filter": "parallel_really_splits_into_chunks"
+ },
+ {
+  "name": "hierarchy: 位置连接按逆序绑定",
+  "file": "crates/trit-circuit/src/verilog/hierarchy.rs",
+  "old": "                    let Some(port) = child.ports.get(index) else {\n",
+  "new": "                    let Some(port) = child.ports.get(child.ports.len().saturating_sub(1 + index)) else {\n",
+  "pkg": "trit-circuit",
+  "filter": "hierarchical_positional_connections_bind_by_port_order"
+ },
+ {
+  "name": "hierarchy: 向量 bus 逆序连线",
+  "file": "crates/trit-circuit/src/verilog/hierarchy.rs",
+  "old": "            let parent_index = if parent_asc {\n",
+  "new": "            let parent_index = if true || parent_asc {\n",
+  "pkg": "trit-circuit",
+  "filter": "hierarchical_vector_bit_order_is_preserved"
+ },
+ {
+  "name": "hierarchy: 向量端口宽度不校验",
+  "file": "crates/trit-circuit/src/verilog/hierarchy.rs",
+  "old": "    if parent_width != child_width {\n",
+  "new": "    if false && parent_width != child_width {\n",
+  "pkg": "trit-circuit",
+  "filter": "hierarchical_vector_width_mismatch_is_rejected"
+ },
+ {
+  "name": "hierarchy: 向量端口接受单比特连接",
+  "file": "crates/trit-circuit/src/verilog/hierarchy.rs",
+  "old": "    if index.is_some() {\n",
+  "new": "    if false && index.is_some() {\n",
+  "pkg": "trit-circuit",
+  "filter": "hierarchical_vector_port_rejects_single_bit"
+ },
+ {
+  "name": "hierarchy: 所有模块都当作顶层",
+  "file": "crates/trit-circuit/src/verilog/hierarchy.rs",
+  "old": "        .filter(|def| !instantiated.contains(def.name.as_str()))\n",
+  "new": "        .filter(|_def| true)\n",
+  "pkg": "trit-circuit",
+  "filter": "hierarchical_named_connections_can_be_reordered"
+ },
+ {
+  "name": "hierarchy: 生成名冲突不报错",
+  "file": "crates/trit-circuit/src/verilog/hierarchy.rs",
+  "old": "    if used.contains(&renamed) {\n",
+  "new": "    if false && used.contains(&renamed) {\n",
+  "pkg": "trit-circuit",
+  "filter": "hierarchical_generated_names_do_not_collide_with_user_signals"
+ },
+ {
+  "name": "hierarchy: 跨方向 bus 不按子端口位序",
+  "file": "crates/trit-circuit/src/verilog/hierarchy.rs",
+  "old": "            let child_index = if child_asc {\n",
+  "new": "            let child_index = if false && child_asc {\n",
+  "pkg": "trit-circuit",
+  "filter": "hierarchical_cross_direction_bus_maps_by_position"
+ },
+ {
+  "name": "map: area-first 忽略 area",
+  "file": "crates/trit-circuit/src/map.rs",
+  "old": "                MapStrategy::Area => (candidate.area as u64, candidate.arrival as u64),\n",
+  "new": "                MapStrategy::Area => (candidate.cells as u64, candidate.arrival as u64),\n",
+  "pkg": "trit-circuit",
+  "filter": "area_first_uses_declared_area"
+ },
+ {
+  "name": "map: 弧数校验放宽",
+  "file": "crates/trit-circuit/src/map.rs",
+  "old": "                && arcs.len() != kind.arity()\n",
+  "new": "                && arcs.len() > kind.arity()\n",
+  "pkg": "trit-circuit",
+  "filter": "cell_library_accepts_arc_form_and_validates"
+ },
+ {
+  "name": "map: 直接单元到达时间漏加单元延迟",
+  "file": "crates/trit-circuit/src/map.rs",
+  "old": "            let total = start + u64::from(load_delay) * fanout;",
+  "new": "            let total = u64::from(load_delay) * fanout;",
+  "pkg": "trit-circuit",
+  "filter": "timing_driven_picks_lower_arrival_implementation"
+ },
+ {
+  "name": "map: 直接单元忽略引脚弧",
+  "file": "crates/trit-circuit/src/map.rs",
+  "old": "                let at = u64::from(arrival.get(signal.name()).copied().unwrap_or(0))\n                    + u64::from(library.arc_delay(gate.kind, input_index).unwrap_or(0));\n",
+  "new": "                let at = u64::from(arrival.get(signal.name()).copied().unwrap_or(0));\n",
+  "pkg": "trit-circuit",
+  "filter": "pin_arcs_flip_implementation_choice"
+ },
+ {
+  "name": "map: 面积策略按延迟排序",
+  "file": "crates/trit-circuit/src/map.rs",
+  "old": "                MapStrategy::Area => (candidate.area as u64, candidate.arrival as u64),",
+  "new": "                MapStrategy::Area => (candidate.arrival as u64, candidate.area as u64),",
+  "pkg": "trit-circuit",
+  "filter": "timing_driven_picks_lower_arrival_implementation"
+ },
+ {
+  "name": "netlist: JSON 新版本不拒绝",
+  "file": "crates/trit-circuit/src/netlist.rs",
+  "old": "    if parsed.format > JSON_FORMAT {",
+  "new": "    if false {",
+  "pkg": "trit-circuit",
+  "filter": "json_format_is_versioned_and_rejects_newer"
+ },
+ {
+  "name": "netlist: gate 参数计数失效",
+  "file": "crates/trit-circuit/src/netlist.rs",
+  "old": "                if parts.len() != 5 {",
+  "new": "                if false {",
+  "pkg": "trit-circuit",
+  "filter": "reports_line_numbers"
+ },
+ {
+  "name": "netlist: 文本字节预算失效",
+  "file": "crates/trit-circuit/src/netlist.rs",
+  "old": "    if text.len() > limits.bytes {",
+  "new": "    if false {",
+  "pkg": "trit-circuit",
+  "filter": "budgets_reject_oversized_input"
+ },
+ {
+  "name": "netlist: 解析不做结构校验",
+  "file": "crates/trit-circuit/src/netlist.rs",
+  "old": "    crate::circuit::validate(&circuit)\n        .map_err(|error| NetlistError::Structure(error.to_string()))?;",
+  "new": "    let _ = &circuit;",
+  "pkg": "trit-circuit",
+  "filter": "parser_rejects_structurally_invalid_input"
+ },
+ {
+  "name": "params: 不归一化位宽",
+  "file": "crates/trit-circuit/src/verilog/params.rs",
+  "old": "            let left = eval_expr(left, &empty)?;\n            out.push('[');\n            out.push_str(&left.to_string());\n            if let Some(right) = right {\n                let right = eval_expr(right, &empty)?;\n                out.push(':');\n                out.push_str(&right.to_string());\n            }\n            out.push(']');\n",
+  "new": "            let left = eval_expr(left, &empty)?;\n            out.push('[');\n            out.push_str(&left.to_string());\n            out.push(']');\n",
+  "pkg": "trit-circuit",
+  "filter": "parses_parameterized_module_defaults"
+ },
+ {
+  "name": "params: 不替换参数",
+  "file": "crates/trit-circuit/src/verilog/params.rs",
+  "old": "            if let Some(value) = params.get(&name) {\n",
+  "new": "            if let Some(value) = params.get(\"__never__\") {\n",
+  "pkg": "trit-circuit",
+  "filter": "parses_parameterized_module_defaults"
+ },
+ {
+  "name": "params: 位置覆盖错位",
+  "file": "crates/trit-circuit/src/verilog/params.rs",
+  "old": "            let Some(param) = child.params.get(positional) else {\n",
+  "new": "            let Some(param) = child.params.get(positional + 1) else {\n",
+  "pkg": "trit-circuit",
+  "filter": "parent_parameter_flows_to_positional_child_override"
+ },
+ {
+  "name": "params: 忽略实例覆盖",
+  "file": "crates/trit-circuit/src/verilog/params.rs",
+  "old": "            Some(value) => *value,\n",
+  "new": "            Some(_) => eval_expr(&param.default, &params)?,\n",
+  "pkg": "trit-circuit",
+  "filter": "named_parameter_override_changes_width"
+ },
+ {
+  "name": "params: 表达式嵌套护栏失效",
+  "file": "crates/trit-circuit/src/verilog/params.rs",
+  "old": "        self.depth += 1;\n        if self.depth > MAX_PARAM_DEPTH {",
+  "new": "        self.depth += 1;\n        if false {",
+  "pkg": "trit-circuit",
+  "filter": "parameter_depth_just_over_limit_returns_limit_error"
+ },
+ {
+  "name": "sat: Xor 一律按经典 XOR",
+  "file": "crates/trit-circuit/src/sat_cnf.rs",
+  "old": "                    GateKind::Xor => match self.alg {\n                        // Ł3 强加法在 0/1 上是 OR；K3/B3 是 AND。\n                        Algebra::Lukasiewicz => self.or(y, a, b),\n                        Algebra::Kleene | Algebra::Bochvar => self.and(y, a, b),\n                    },\n",
+  "new": "                    GateKind::Xor => self.xor(y, a, b),\n",
+  "pkg": "trit-circuit",
+  "filter": "sat_encodes_strong_xor_by_algebra"
+ },
+ {
+  "name": "sat: 不要求输出不同",
+  "file": "crates/trit-circuit/src/sat_cnf.rs",
+  "old": "        self.solver.add_clause(&differences);\n",
+  "new": "        if false { self.solver.add_clause(&differences); }\n",
+  "pkg": "trit-circuit",
+  "filter": "sat_matches_exhaustive_on_random_small_circuits"
+ },
+ {
+  "name": "sat: 常量 false 被强制成真",
+  "file": "crates/trit-circuit/src/sat_cnf.rs",
+  "old": "        solver.add_clause(&[Lit::from_var(false_var, false)]);\n        let mut encoded = Self {",
+  "new": "        solver.add_clause(&[Lit::from_var(false_var, true)]);\n        let mut encoded = Self {",
+  "pkg": "trit-circuit",
+  "filter": "sat_matches_exhaustive_on_random_small_circuits"
+ },
+ {
+  "name": "sat: 故障引脚不注入",
+  "file": "crates/trit-circuit/src/sat_cnf.rs",
+  "old": "            let lit = if faulty && inject.is_some_and(|(pin, _)| pin == index) {\n",
+  "new": "            let lit = if false && faulty && inject.is_some_and(|(pin, _)| pin == index) {\n",
+  "pkg": "trit-circuit",
+  "filter": "sat_matches_exhaustive_on_random_small_circuits"
+ },
+ {
+  "name": "sdf: XOR2 映射成三值强加门",
+  "file": "crates/trit-circuit/src/sdf.rs",
+  "old": "        (\"XOR\", GateKind::XorClassic),",
+  "new": "        (\"XOR\", GateKind::Xor),",
+  "pkg": "trit-circuit",
+  "filter": "xor_celltypes_map_to_the_classic_gate"
+ },
+ {
+  "name": "sdf: 不按实例覆盖",
+  "file": "crates/trit-circuit/src/sdf.rs",
+  "old": "        if let Some(delay) = best {\n            model\n                .instance_delays\n                .insert(gate.output.name().to_string(), delay);\n        }\n",
+  "new": "        if let Some(_delay) = best {}\n",
+  "pkg": "trit-circuit",
+  "filter": "instance_delays_override_celltype_in_sta"
+ },
+ {
+  "name": "sdf: 取最小延迟",
+  "file": "crates/trit-circuit/src/sdf.rs",
+  "old": "                    worst = worst.max(delay);\n",
+  "new": "                    worst = worst.min(delay);\n",
+  "pkg": "trit-circuit",
+  "filter": "sdf::tests::parses_and_rounds_up_the_worst_arc"
+ },
+ {
+  "name": "sdf: 向下取整",
+  "file": "crates/trit-circuit/src/sdf.rs",
+  "old": "    let rounded = value.ceil();",
+  "new": "    let rounded = value.floor();",
+  "pkg": "trit-circuit",
+  "filter": "sdf::tests::parses_and_rounds_up_the_worst_arc"
+ },
+ {
+  "name": "sdf: 实例路径只做全等",
+  "file": "crates/trit-circuit/src/sdf.rs",
+  "old": "    if sdf == gate {\n        return true;\n    }\n    sdf.strip_suffix(gate)\n        .is_some_and(|prefix| prefix.ends_with('.') || prefix.ends_with('/'))\n",
+  "new": "    sdf == gate\n",
+  "pkg": "trit-circuit",
+  "filter": "instance_path_accepts_a_design_prefix"
+ },
+ {
+  "name": "sdf: 括号深度护栏失效",
+  "file": "crates/trit-circuit/src/sdf.rs",
+  "old": "                self.depth += 1;\n                if self.depth > MAX_SDF_DEPTH {",
+  "new": "                self.depth += 1;\n                if false {",
+  "pkg": "trit-circuit",
+  "filter": "sdf_depth_just_over_limit_returns_limit_error"
+ },
+ {
+  "name": "sdf: 放行负值",
+  "file": "crates/trit-circuit/src/sdf.rs",
+  "old": "        if !value.is_finite() || value < 0.0 {\n",
+  "new": "        if !value.is_finite() {\n",
+  "pkg": "trit-circuit",
+  "filter": "sdf::tests::rejects_bad_syntax_and_missing_delays"
+ },
+ {
+  "name": "sdf: 跨实例取最小",
+  "file": "crates/trit-circuit/src/sdf.rs",
+  "old": "                out.entry(cell.to_string())\n                    .and_modify(|current| *current = current.max(worst))\n                    .or_insert(worst);",
+  "new": "                out.entry(cell.to_string())\n                    .and_modify(|current| *current = current.min(worst))\n                    .or_insert(worst);",
+  "pkg": "trit-circuit",
+  "filter": "sdf::tests::takes_the_max_across_instances_and_conditional_arcs"
+ },
+ {
+  "name": "sdf: 输入字节预算失效",
+  "file": "crates/trit-circuit/src/sdf.rs",
+  "old": "    if text.len() > MAX_SDF_BYTES {",
+  "new": "    if false {",
+  "pkg": "trit-circuit",
+  "filter": "budget_rejects_deep_nesting_and_oversized_input"
+ },
+ {
+  "name": "shared: mux 选反",
+  "file": "crates/trit-circuit/src/sat_cnf.rs",
+  "old": "                        Lit::from_var(candidate, true),\n                        Lit::from_var(current, true),\n",
+  "new": "                        Lit::from_var(current, true),\n                        Lit::from_var(current, true),\n",
+  "pkg": "trit-circuit",
+  "filter": "shared_cnf_matches_per_fault_semantics"
+ },
+ {
+  "name": "shared: 不假设故障 selector",
+  "file": "crates/trit-circuit/src/sat_cnf.rs",
+  "old": "        self.enc.solver.assume(&[selector]);\n",
+  "new": "        let _ = selector;\n",
+  "pkg": "trit-circuit",
+  "filter": "shared_cnf_matches_per_fault_semantics"
+ },
+ {
+  "name": "shared: 候选不注入常量",
+  "file": "crates/trit-circuit/src/sat_cnf.rs",
+  "old": "                    injected[pin] = enc.const_lit(stuck);\n",
+  "new": "                    injected[pin] = faulty_inputs[pin];\n",
+  "pkg": "trit-circuit",
+  "filter": "shared_cnf_matches_per_fault_semantics"
+ },
+ {
+  "name": "sim: LUT 填充把二元下标按 2 进位",
+  "file": "crates/trit-circuit/src/circuit/sim.rs",
+  "old": "                                Ternary::from_index(index / 3),",
+  "new": "                                Ternary::from_index(index / 2),",
+  "pkg": "trit-circuit",
+  "filter": "lookups_match_gate_semantics_for_every_algebra"
+ },
+ {
+  "name": "sim: 一元步长抹平成二元",
+  "file": "crates/trit-circuit/src/circuit/sim.rs",
+  "old": "                        *slot = gate.kind.eval(&[Ternary::from_index(a)], alg);\n                    }\n                    (1, 0)",
+  "new": "                        *slot = gate.kind.eval(&[Ternary::from_index(a)], alg);\n                    }\n                    (3, 0)",
+  "pkg": "trit-circuit",
+  "filter": "lookups_match_gate_semantics_for_every_algebra"
+ },
+ {
+  "name": "sim: 二元 bmask 抹掉第二操作数",
+  "file": "crates/trit-circuit/src/circuit/sim.rs",
+  "old": "                    }\n                    (3, 3)\n                }",
+  "new": "                    }\n                    (3, 0)\n                }",
+  "pkg": "trit-circuit",
+  "filter": "lookups_match_gate_semantics_for_every_algebra"
+ },
+ {
+  "name": "sim: 常量槽位不写常量值",
+  "file": "crates/trit-circuit/src/circuit/sim.rs",
+  "old": "                    lut[0] = gate.const_value.unwrap_or(Ternary::False);",
+  "new": "                    lut[0] = Ternary::False;",
+  "pkg": "trit-circuit",
+  "filter": "lookups_match_gate_semantics_for_every_algebra"
+ },
+ {
+  "name": "sim: 热循环丢掉 bmask",
+  "file": "crates/trit-circuit/src/circuit/sim.rs",
+  "old": "                gate.lut[ins[0].index() * gate.stride + (ins[1].index() & gate.bmask)]",
+  "new": "                gate.lut[ins[0].index() * gate.stride + ins[1].index()]",
+  "pkg": "trit-circuit",
+  "filter": "lookups_match_gate_semantics_for_every_algebra"
+ },
+ {
+  "name": "timing: --paths 忽略输入到达",
+  "file": "crates/trit-circuit/src/timing.rs",
+  "old": "        let arrival = constraints\n            .input_arrival\n            .get(input.name())\n            .copied()\n            .unwrap_or(0);\n",
+  "new": "        let arrival = 0;\n",
+  "pkg": "trit-circuit",
+  "filter": "input_arrival_and_output_required_constraints"
+ },
+ {
+  "name": "timing: 关键路径忽略引脚弧",
+  "file": "crates/trit-circuit/src/timing.rs",
+  "old": "                    let arc = u64::from(model.arc_delay_for_gate(gate, input_index));\n",
+  "new": "                    let arc = 0u64;\n",
+  "pkg": "trit-circuit",
+  "filter": "pin_arcs_change_arrival_and_critical_path"
+ },
+ {
+  "name": "timing: 到达时间忽略引脚弧",
+  "file": "crates/trit-circuit/src/timing.rs",
+  "old": "            .map(|(index, arrival)| {\n                u64::from(*arrival) + u64::from(self.arc_delay_for_gate(gate, index))\n            })",
+  "new": "            .map(|(_index, arrival)| u64::from(*arrival))",
+  "pkg": "trit-circuit",
+  "filter": "pin_arcs_change_arrival_and_critical_path"
+ },
+ {
+  "name": "timing: 忽略输入到达约束",
+  "file": "crates/trit-circuit/src/timing.rs",
+  "old": "            let arrival = constraints\n                .input_arrival\n                .get(signal.name())\n                .copied()\n                .unwrap_or(0);\n",
+  "new": "            let arrival = 0;\n",
+  "pkg": "trit-circuit",
+  "filter": "input_arrival_and_output_required_constraints"
+ },
+ {
+  "name": "timing: 忽略逐输出 required",
+  "file": "crates/trit-circuit/src/timing.rs",
+  "old": "            let required = constraints\n                .output_required\n                .get(signal.name())\n                .copied()\n                .unwrap_or(clock);\n",
+  "new": "            let required = clock;\n",
+  "pkg": "trit-circuit",
+  "filter": "per_output_required_times_are_independent"
+ },
+ {
+  "name": "timing: 负载延迟不参与到达时间",
+  "file": "crates/trit-circuit/src/timing.rs",
+  "old": "        start + u64::from(self.load_delay) * fanout as u64\n    }\n\n    /// 某类门在给定扇出下的延迟",
+  "new": "        start\n    }\n\n    /// 某类门在给定扇出下的延迟",
+  "pkg": "trit-circuit",
+  "filter": "load_delay_accumulates_with_fanout"
+ },
+ {
+  "name": "verilog: && 静默按逐位与",
+  "file": "crates/trit-circuit/src/verilog/expr.rs",
+  "old": "                if self.chars.get(self.pos + 1).copied() == Some('&') {",
+  "new": "                if false {",
+  "pkg": "trit-circuit",
+  "filter": "logical_and_or_are_rejected_instead_of_bitwise"
+ },
+ {
+  "name": "verilog: assign 的 ^ 退化成强加三值 Xor",
+  "file": "crates/trit-circuit/src/verilog/build.rs",
+  "old": "                    VExpr::Or(..) => GateKind::Or,\n                    _ => GateKind::XorClassic,",
+  "new": "                    VExpr::Or(..) => GateKind::Or,\n                    _ => GateKind::Xor,",
+  "pkg": "trit-circuit",
+  "filter": "assign_xor_is_not_lukasiewicz_strong_sum"
+ },
+ {
+  "name": "verilog: || 静默按逐位或",
+  "file": "crates/trit-circuit/src/verilog/expr.rs",
+  "old": "                if self.chars.get(self.pos + 1).copied() == Some('|') {",
+  "new": "                if false {",
+  "pkg": "trit-circuit",
+  "filter": "logical_and_or_are_rejected_instead_of_bitwise"
+ },
+ {
+  "name": "verilog: 二元运算链不封顶",
+  "file": "crates/trit-circuit/src/verilog/expr.rs",
+  "old": "        self.ops += 1;\n        if self.ops > MAX_RHS_OPS {",
+  "new": "        self.ops += 1;\n        if self.ops > MAX_RHS_OPS * 40 {",
+  "pkg": "trit-circuit",
+  "filter": "long_operator_chain_returns_limit_not_stack_overflow"
+ },
+ {
+  "name": "verilog: 升序 LHS 不按位序落位",
+  "file": "crates/trit-circuit/src/verilog/parse.rs",
+  "old": "                                    let lhs_index = if ascending.contains(&lhs_base) {\n",
+  "new": "                                    let lhs_index = if false && ascending.contains(&lhs_base) {\n",
+  "pkg": "trit-circuit",
+  "filter": "literal_assignment_to_ascending_vector_keeps_verilog_order"
+ },
+ {
+  "name": "verilog: 升序向量按降序取位",
+  "file": "crates/trit-circuit/src/verilog/expr.rs",
+  "old": "                let declared = if ascending.contains(name) {\n",
+  "new": "                let declared = if false && ascending.contains(name) {\n",
+  "pkg": "trit-circuit",
+  "filter": "ascending_vector_bit_order_matches_verilog"
+ },
+ {
+  "name": "verilog: 右值深度预算失效",
+  "file": "crates//trit-circuit//src//verilog//expr.rs",
+  "old": "        if self.depth > MAX_RHS_DEPTH {\n",
+  "new": "        if false {\n",
+  "pkg": "trit-circuit",
+  "filter": "deep_rhs_is_rejected"
+ },
+ {
+  "name": "verilog: 向量位选择恒取 bit 0",
+  "file": "crates//trit-circuit//src//verilog//expr.rs",
+  "old": "                    return Ok(VExpr::Var(format!(\"{name}[{index}]\")));",
+  "new": "                    return Ok(VExpr::Var(format!(\"{name}[0]\")));",
+  "pkg": "trit-circuit",
+  "filter": "parses_bit_selects_and_concatenation"
+ },
+ {
+  "name": "verilog: 向量声明记成 1 位",
+  "file": "crates/trit-circuit/src/verilog/decl.rs",
+  "old": "                let bus = if range.ascending {\n                    Bus::new_ascending(name.clone(), range.width)\n                } else {\n                    Bus::new(name.clone(), range.width)\n                };\n",
+  "new": "                let bus = Bus::new(name.clone(), 1);\n",
+  "pkg": "trit-circuit",
+  "filter": "vector_declarations_are_recorded_as_buses"
+ },
+ {
+  "name": "verilog: 向量端口只展开 bit 0",
+  "file": "crates/trit-circuit/src/verilog/decl.rs",
+  "old": "                for index in order {",
+  "new": "                for index in [0] {",
+  "pkg": "trit-circuit",
+  "filter": "parses_vector_ports_and_vectorized_bitwise_assign"
+ },
+ {
+  "name": "verilog: 多输入 NAND/NOR 忘记最终反相",
+  "file": "crates//trit-circuit//src//verilog//parse.rs",
+  "old": "                        if invert {",
+  "new": "                        if false {",
+  "pkg": "trit-circuit",
+  "filter": "multi_input_nand_nor_are_not_left_folded"
+ },
+ {
+  "name": "verilog: 导出不分组向量端口",
+  "file": "crates//trit-circuit//src//verilog//export.rs",
+  "old": "            (max, true, bus.ascending)",
+  "new": "            (max, false, bus.ascending)",
+  "pkg": "trit-circuit",
+  "filter": "vector_round_trip_regroups_ports"
+ },
+ {
+  "name": "verilog: 导出升序向量写成降序",
+  "file": "crates/trit-circuit/src/verilog/export.rs",
+  "old": "        if group.ascending {\n",
+  "new": "        if false {\n",
+  "pkg": "trit-circuit",
+  "filter": "ascending_ranges_parse_export_and_json_round_trip"
+ },
+ {
+  "name": "verilog: 导出忽略 bus 宽度",
+  "file": "crates/trit-circuit/src/verilog/export.rs",
+  "old": "        let (max, vector, ascending) = if let Some(bus) = buses.get(&base) {",
+  "new": "        let (max, vector, ascending) = if let Some(bus) = buses.get(&base).filter(|_| false) {",
+  "pkg": "trit-circuit",
+  "filter": "export_uses_declared_bus_width_for_partial_wire"
+ },
+ {
+  "name": "verilog: 尺寸常量位序反转",
+  "file": "crates/trit-circuit/src/verilog/expr.rs",
+  "old": "        'b' => {\n            for ch in digits.chars().rev() {",
+  "new": "        'b' => {\n            for ch in digits.chars() {",
+  "pkg": "trit-circuit",
+  "filter": "sized_literals_preserve_bit_order"
+ },
+ {
+  "name": "verilog: 尺寸常量零扩展成 X",
+  "file": "crates/trit-circuit/src/verilog/expr.rs",
+  "old": "    bits.resize(width, Ternary::False);",
+  "new": "    bits.resize(width, Ternary::Unknown);",
+  "pkg": "trit-circuit",
+  "filter": "sized_literal_zero_extends_to_wider_vector"
+ },
+ {
+  "name": "verilog: 拼接嵌套不计深度",
+  "file": "crates/trit-circuit/src/verilog/expr.rs",
+  "old": "                self.enter()?;\n                let parsed = self.parse_concat_body();\n                self.leave();\n                parsed",
+  "new": "                let parsed = self.parse_concat_body();\n                parsed",
+  "pkg": "trit-circuit",
+  "filter": "concat_depth_just_over_limit_returns_limit_error"
+ },
+ {
+  "name": "verilog: 拼接按 MSB-first 误解",
+  "file": "crates//trit-circuit//src//verilog//expr.rs",
+  "old": "            for item in items.iter().rev() {\n",
+  "new": "            for item in items.iter() {\n",
+  "pkg": "trit-circuit",
+  "filter": "parses_bit_selects_and_concatenation"
+ },
+ {
+  "name": "xpessimism: 不做 X 判定直接当已知",
+  "file": "crates/trit-circuit/src/circuit/xpessimism.rs",
+  "old": "        if !value.is_unknown() {\n            outputs.insert(name.to_string(), XOutcome::Known(value));\n            continue;\n        }\n",
+  "new": "        if true {\n            outputs.insert(name.to_string(), XOutcome::Known(value));\n            continue;\n        }\n",
+  "pkg": "trit-circuit",
+  "filter": "mux_with_equal_data_is_pessimistic_one"
+ },
+ {
+  "name": "xpessimism: 单边可满足判成 1",
+  "file": "crates/trit-circuit/src/circuit/xpessimism.rs",
+  "old": "            (Some(_), None) => XOutcome::Pessimistic {\n                resolved: Ternary::False,\n",
+  "new": "            (Some(_), None) => XOutcome::Pessimistic {\n                resolved: Ternary::True,\n",
+  "pkg": "trit-circuit",
+  "filter": "reconvergent_complement_is_pessimistic_zero"
+ },
+ {
+  "name": "xpessimism: 支持集不回溯扇入",
+  "file": "crates/trit-circuit/src/circuit/xpessimism.rs",
+  "old": "            for input in &gate.inputs {\n                stack.push(input.name());\n            }\n",
+  "new": "            let _ = gate;\n",
+  "pkg": "trit-circuit",
+  "filter": "support_only_covers_the_backward_cone"
+ }
+]

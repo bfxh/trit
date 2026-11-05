@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import pathlib
@@ -30,6 +31,32 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BIG_FILE = 5 * 1024 * 1024
 BUILD_DIRS = ("target/", "node_modules/", "dist/", "build/")
+
+
+def subprocess_encoding_gaps(directory: pathlib.Path) -> list[str]:
+    """`subprocess(..., text=True)` 没钉 `encoding=` ⇒ 子进程按本机 locale 解码。
+
+    中文 Windows 上默认 cp936：我们的门脚本往 stdout 打 UTF-8 中文时，读线程直接抛
+    UnicodeDecodeError，调用方拿到**空输出**——于是"读不到就等于没有"的分支被走进来，
+    门变成假绿。这一类只能靠静态钉子钉住：AST 里找 text/universal_newlines 而没 encoding 的调用。
+    """
+    gaps: list[str] = []
+    for path in sorted(directory.glob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError, ValueError):
+            gaps.append(f"{path.name}（解析不了，证明不了它接没接编码）")
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            name = getattr(node.func, "attr", "") or getattr(node.func, "id", "")
+            if name not in ("run", "check_output", "Popen", "call", "communicate"):
+                continue
+            keywords = {k.arg for k in node.keywords if k.arg}
+            if keywords & {"text", "universal_newlines"} and "encoding" not in keywords:
+                gaps.append(f"{path.name}:{node.lineno}")
+    return gaps
 
 
 def run(args: list[str], cwd: pathlib.Path) -> str:
@@ -233,6 +260,11 @@ def diagnose(root: pathlib.Path, remote: bool, history: bool = False) -> list[di
             add("密钥", "high", f"{len(hits)} 处高置信度密钥（{hits[0]['file']}:{hits[0]['line']}）",
                 "轮换密钥；历史里出现过的用 git-filter-repo 清除")
 
+    gaps = subprocess_encoding_gaps(root / "scripts")
+    if gaps:
+        add("子进程编码", "high", f"{len(gaps)} 处 subprocess(text=True) 没钉 encoding（例：{gaps[0]}）",
+            '补 encoding="utf-8", errors="replace"（中文 Windows 默认 cp936，读不到输出＝假绿）')
+
     if history:
         for path, size, oid in history_big_blobs(root):
             add("历史大文件", "medium", f"{path}（{size / 1024 / 1024:.1f} MiB，blob {oid[:10]}…）",
@@ -292,6 +324,19 @@ def self_test() -> int:
         levels = {finding["kind"]: finding["level"] for finding in diagnose(root, remote=False)}
         check("工作树 CRLF 不判 high", levels.get("行尾"), "low")
         check("构建产物会被报", "构建产物" in kinds, True)
+        # 接线面：诊断必须真的把「子进程编码」挂进 findings（只测纯函数测不到这条线）
+        scripts_dir = root / "scripts"
+        scripts_dir.mkdir(exist_ok=True)
+        (scripts_dir / "tool.py").write_text(
+            'import subprocess\nsubprocess.run(["x"], text=True)\n', encoding="utf-8")
+        wired = {finding["kind"]: finding["level"] for finding in diagnose(root, remote=False)}
+        check("诊断里有「子进程编码」这一类", "子进程编码" in wired, True)
+        check("子进程编码判 high（不降级成没人看的 low）", wired.get("子进程编码"), "high")
+        (scripts_dir / "tool.py").write_text(
+            'import subprocess\nsubprocess.run(["x"], text=True, encoding="utf-8")\n',
+            encoding="utf-8")
+        check("钉好编码后该类消失",
+              "子进程编码" in {f["kind"] for f in diagnose(root, remote=False)}, False)
         check("每条发现都有修复命令", all(finding["fix"] for finding in findings), True)
         tab = chr(9)
         fake = (
@@ -307,11 +352,32 @@ def self_test() -> int:
         check("索引 CRLF 被抓出来", index_crlf, ["a.txt"])
         check("只工作树是 CRLF 的只计数", worktree_only, 1)
 
+        # 子进程编码钉子：text=True 不钉 encoding 在中文 Windows 上会把门变成假绿
+        enc = root / "enc"
+        enc.mkdir()
+        (enc / "bad.py").write_text('import subprocess\nsubprocess.run(["x"], text=True)\n', encoding="utf-8")
+        (enc / "good.py").write_text('import subprocess\n'
+                                       'subprocess.run(["x"], text=True, encoding="utf-8", errors="replace")\n',
+                                       encoding="utf-8")
+        (enc / "bytes.py").write_text('import subprocess\nsubprocess.run(["x"])\n', encoding="utf-8")
+        check("没钉 encoding 的被点名", subprocess_encoding_gaps(enc), ["bad.py:2"])
+        (enc / "bad.py").write_text('import subprocess\n'
+                                     'subprocess.run(["x"], text=True, encoding="utf-8")\n', encoding="utf-8")
+        check("钉了 encoding 就放行", subprocess_encoding_gaps(enc), [])
+        (enc / "nl.py").write_text('import subprocess\n'
+                                    'subprocess.call(["x"], universal_newlines=True)\n', encoding="utf-8")
+        check("universal_newlines 同罪", subprocess_encoding_gaps(enc), ["nl.py:2"])
+        (enc / "broken.py").write_text("def (\n", encoding="utf-8")
+        check("解析不了的文件也点名（不静默跳过）",
+              [g for g in subprocess_encoding_gaps(enc) if g.startswith("broken.py")],
+              ["broken.py（解析不了，证明不了它接没接编码）"])
+
         # 历史大文件：提交一个 6 MiB 文件再删掉，HEAD 里没有、历史里有
         big_repo = pathlib.Path(tmp) / "big"
         big_repo.mkdir()
         gitc = lambda args: subprocess.run(["git", *args], cwd=big_repo, stdout=subprocess.PIPE,
-                                           stderr=subprocess.STDOUT, text=True)
+                                           stderr=subprocess.STDOUT, text=True,
+                                           encoding="utf-8", errors="replace")
         gitc(["init", "-q"])
         gitc(["config", "user.email", "t@example.com"])
         gitc(["config", "user.name", "t"])

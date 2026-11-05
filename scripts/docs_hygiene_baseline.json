@@ -1,0 +1,12 @@
+{
+ "changelog": 180199,
+ "drive_paths": {
+  "CHANGELOG.md": 1,
+  "docs/DATASETS.md": 1,
+  "docs/GENERAL-PLAN.md": 24,
+  "docs/GUARD.md": 5,
+  "docs/MODEL-CARD.md": 4,
+  "docs/VISUAL-PLAN.md": 6,
+  "docs/review/self-audit-2026-10-28.md": 4
+ }
+}

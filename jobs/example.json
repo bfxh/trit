@@ -1,0 +1,19 @@
+{
+  "scene": "E:/trit-data/s1/mat60/renders/scene0010",
+  "frames": "0,1,2,3,4,5,6,7",
+  "cell": 0.02,
+  "open": 2,
+  "clean": true,
+
+  "quilt": "E:/tmp/color_fine.png",
+  "quilt-size": 512,
+  "patch": 16,
+  "quilt-seed": 5,
+
+  "style-by-material": "wood=cel:1,metal=epic:0.5",
+
+  "atlas": 512,
+  "atlas-deg": 45,
+  "obj": "E:/tmp/example.obj",
+  "out": "E:/tmp/example.ply"
+}

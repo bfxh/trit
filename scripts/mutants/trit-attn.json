@@ -1,0 +1,42 @@
+[
+ {
+  "name": "attn: softmax 不归一化",
+  "file": "crates/trit-attn/src/scores.rs",
+  "old": "    let sum: f32 = exps.iter().sum();",
+  "new": "    let sum: f32 = 1.0;",
+  "pkg": "trit-attn",
+  "filter": "weights_sum_to_one"
+ },
+ {
+  "name": "attn: 三值化不夹边界",
+  "file": "crates/trit-attn/src/scores.rs",
+  "old": "    value.round().clamp(-1.0, 1.0)",
+  "new": "    value.round()",
+  "pkg": "trit-attn",
+  "filter": "quantize_clamps_to_ternary"
+ },
+ {
+  "name": "attn: 残差一丢输入 X",
+  "file": "crates/trit-attn/src/block.rs",
+  "old": "        let mut h = seq.to_vec();",
+  "new": "        let mut h = vec![0.0; seq.len()];",
+  "pkg": "trit-attn",
+  "filter": "input_gradients_match_finite_differences"
+ },
+ {
+  "name": "attn: 注意力丢 1/sqrt(d) 缩放",
+  "file": "crates/trit-attn/src/block.rs",
+  "old": "                        / scale",
+  "new": "                        / 1.0",
+  "pkg": "trit-attn",
+  "filter": "forward_matches_independent_attention_reference"
+ },
+ {
+  "name": "attn: 记忆编码符号写反",
+  "file": "crates/trit-attn/src/memory.rs",
+  "old": "                    .checked_add(delta)",
+  "new": "                    .checked_sub(delta)",
+  "pkg": "trit-attn",
+  "filter": "orthogonal_keys_recall_exactly"
+ }
+]
