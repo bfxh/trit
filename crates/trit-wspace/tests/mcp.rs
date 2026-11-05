@@ -639,10 +639,20 @@ fn shard_and_audit_shards_round_trip() {
         to: Trit::Zero,
     }]);
     patch.apply(&mut broken).expect("corrupt");
+    let mut fixed = broken.clone();
+    let fix = Patch::new(vec![Edit::SetTrit {
+        layer: 0,
+        row: 0,
+        col: 0,
+        to: Trit::Neg,
+    }]);
+    fix.apply(&mut fixed).expect("fix");
     let oracle = Oracle::boolean(2, |bits| bits[0] != bits[1]).expect("oracle");
     let mut log = trit_wspace::AuditLog::new();
     log.record_with_oracle("break", &start, &broken, patch, true, false, Some(&oracle))
-        .expect("record");
+        .expect("record break");
+    log.record_with_oracle("fix", &broken, &fixed, fix, true, false, Some(&oracle))
+        .expect("record fix");
 
     let mut server = Mcp::new();
     let split = call(
@@ -653,23 +663,51 @@ fn shard_and_audit_shards_round_trip() {
     assert_eq!(split["isError"], false);
     let split = payload(&split);
     assert_eq!(split["valid"], true);
-    assert_eq!(split["entries"].as_u64(), Some(1));
-    let texts = split["shards"].as_array().expect("shards").clone();
-    assert_eq!(texts.len(), 1);
+    assert_eq!(split["entries"].as_u64(), Some(2));
+    assert_eq!(split["total"].as_u64(), Some(2));
+    assert_eq!(split["shards"].as_array().expect("shards").len(), 2);
+    assert!(split["manifest"].is_object());
+    let manifest = split["manifest"].clone();
 
-    let checked = call(
+    let first = payload(&call(
+        &mut server,
+        "wsp_shard",
+        json!({"log": log.to_jsonl(), "size": 1, "start": 0, "limit": 1}),
+    ));
+    assert_eq!(first["next"].as_u64(), Some(1));
+    let first_shard = first["shards"][0].as_str().expect("first").to_string();
+    let second = payload(&call(
+        &mut server,
+        "wsp_shard",
+        json!({"log": log.to_jsonl(), "size": 1, "start": 1, "limit": 1}),
+    ));
+    assert!(second["next"].is_null());
+    let second_shard = second["shards"][0].as_str().expect("second").to_string();
+
+    let checked = payload(&call(
         &mut server,
         "wsp_audit_shards",
-        json!({"shards": texts, "artifact": to_wsp(&start)}),
-    );
-    assert_eq!(checked["isError"], false);
-    let checked = payload(&checked);
+        json!({
+            "shards": [first_shard, second_shard],
+            "manifest": manifest,
+            "artifact": to_wsp(&start),
+        }),
+    ));
     assert_eq!(checked["valid"], true);
-    assert_eq!(checked["entries"].as_u64(), Some(1));
+    assert_eq!(checked["entries"].as_u64(), Some(2));
     assert_eq!(
         checked["replay"]["final_checksum"].as_str().expect("sum"),
-        format!("{:016x}", trit_wspace::checksum(&broken))
+        format!("{:016x}", trit_wspace::checksum(&fixed))
     );
+
+    let mut bad_manifest = manifest;
+    bad_manifest["shards"][0]["digest"] = json!("0000000000000000");
+    let bad = payload(&call(
+        &mut server,
+        "wsp_audit_shards",
+        json!({"shards": [first_shard, second_shard], "manifest": bad_manifest}),
+    ));
+    assert_eq!(bad["valid"], false);
 
     let bad = call(&mut server, "wsp_audit_shards", json!({"shards": [1]}));
     assert_eq!(bad["isError"], true);

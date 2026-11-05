@@ -13,6 +13,7 @@ use serde_json::{Value, json};
 use crate::audit::AuditLog;
 use crate::codec::{from_wsp, to_wsp};
 use crate::edit::Patch;
+use crate::manifest::{ShardManifest, text_digest};
 use crate::merge::{merge_aligned, merge_vote};
 use crate::net::Net;
 use crate::ops;
@@ -34,7 +35,7 @@ trit-wspace <command>
   localize <artifact|-> --oracle <json|-> [--rows K] [--row-budget N] [--max-trits N] [--top-trits K]
   audit <log|-> [--artifact <initial|->]
   shard <log|-> --size N --out <dir>
-  audit-shards <dir> [--artifact <initial|->] [--out <path>]
+  audit-shards <dir> [--artifact <initial|->] [--out <path>] [--manifest <path>]
   replay <log|-> --artifact <initial|-> [--out <path>]
   diff <a|-> <b|->
   merge <a|-> <b|-> [--aligned] [--out <path>]
@@ -257,11 +258,27 @@ fn cmd_shard(args: &[String]) -> Result<(), String> {
         let path = path.to_str().ok_or("输出路径不是 UTF-8")?;
         atomic_write(path, text)?;
     }
+    let mut manifest = ShardManifest::of(&shards);
+    for (index, item) in manifest.shards.iter_mut().enumerate() {
+        item.file = Some(format!("shard-{index:03}.jsonl"));
+    }
+    let manifest_text = serde_json::to_string_pretty(&manifest.to_value())
+        .map_err(|error| format!("manifest JSON：{error}"))?;
+    let manifest_path = Path::new(out_dir).join("manifest.json");
+    let manifest_path = manifest_path.to_str().ok_or("清单路径不是 UTF-8")?;
+    atomic_write(
+        manifest_path,
+        &format!(
+            "{manifest_text}
+"
+        ),
+    )?;
     emit(&json!({
         "shards": shards.shard_count(),
         "entries": shards.len(),
         "head": format!("{:016x}", shards.head()),
         "out": out_dir,
+        "manifest": manifest_path,
     }))
 }
 
@@ -276,27 +293,80 @@ fn cmd_audit_shards(args: &[String]) -> Result<(), String> {
     if out.is_some() && artifact.is_none() {
         return Err("--out 需要 --artifact".into());
     }
-    let mut paths: Vec<std::path::PathBuf> = fs::read_dir(dir)
+    let manifest_path = match parsed.values.get("manifest") {
+        Some(path) => Some(path.clone()),
+        None => {
+            let candidate = Path::new(dir).join("manifest.json");
+            candidate
+                .is_file()
+                .then(|| candidate.to_string_lossy().into_owned())
+        }
+    };
+    let manifest = manifest_path
+        .as_deref()
+        .map(|path| {
+            let value: Value = serde_json::from_str(&read_source(path)?)
+                .map_err(|error| format!("{path}: {error}"))?;
+            ShardManifest::from_value(&value).map_err(err)
+        })
+        .transpose()?;
+    let mut files: BTreeSet<String> = fs::read_dir(dir)
         .map_err(|error| format!("{dir}: {error}"))?
         .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| {
-            path.file_name()
-                .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("shard-") && name.ends_with(".jsonl"))
+        .filter_map(|entry| {
+            let name = entry.file_name().to_str()?.to_string();
+            (name.starts_with("shard-") && name.ends_with(".jsonl")).then_some(name)
         })
         .collect();
-    if paths.is_empty() {
-        return Err(format!("{dir} 中没有 shard-*.jsonl"));
-    }
-    paths.sort();
+    let (paths, digests) = if let Some(manifest) = &manifest {
+        let mut paths = Vec::with_capacity(manifest.shards.len());
+        let mut digests = Vec::with_capacity(manifest.shards.len());
+        let mut listed = BTreeSet::new();
+        for item in &manifest.shards {
+            let name = item
+                .file
+                .clone()
+                .unwrap_or_else(|| format!("shard-{:03}.jsonl", item.shard));
+            if !listed.insert(name.clone()) {
+                return Err(format!("manifest 重复列出 `{name}`"));
+            }
+            if !files.remove(&name) {
+                return Err(format!("manifest 列出的 `{name}` 不存在"));
+            }
+            paths.push(Path::new(dir).join(&name));
+            digests.push(Some(item.digest));
+        }
+        if let Some(extra) = files.into_iter().next() {
+            return Err(format!("目录里有清单外的分片 `{extra}`"));
+        }
+        (paths, digests)
+    } else {
+        let mut paths: Vec<std::path::PathBuf> = files
+            .into_iter()
+            .map(|name| Path::new(dir).join(name))
+            .collect();
+        paths.sort();
+        if paths.is_empty() {
+            return Err(format!("{dir} 中没有 shard-*.jsonl"));
+        }
+        let digests = vec![None; paths.len()];
+        (paths, digests)
+    };
     let mut replay = artifact
         .map(|path| load_net(path).map(|net| ShardReplay::new(&net)))
         .transpose()?;
     let mut cursor = ShardCursor::new();
-    for path in paths {
+    for (path, want) in paths.iter().zip(&digests) {
         let path = path.to_str().ok_or("分片路径不是 UTF-8")?;
         let text = read_source(path)?;
+        if let Some(want) = want {
+            let got = text_digest(&text);
+            if got != *want {
+                return Err(format!(
+                    "`{path}` 摘要={got:016x}，manifest 记录 {want:016x}"
+                ));
+            }
+        }
         match &mut replay {
             Some(replay) => replay.push(&text).map_err(err)?,
             None => {
@@ -308,11 +378,26 @@ fn cmd_audit_shards(args: &[String]) -> Result<(), String> {
         Some(replay) => (replay.shard_count(), replay.entries(), replay.head()),
         None => (cursor.shard_count(), cursor.entries(), cursor.head()),
     };
+    if let Some(manifest) = &manifest {
+        if entries != manifest.entries {
+            return Err(format!(
+                "manifest 条数={}，分片合计 {entries}",
+                manifest.entries
+            ));
+        }
+        if head != manifest.head {
+            return Err(format!(
+                "manifest head={:016x}，分片链头 {head:016x}",
+                manifest.head
+            ));
+        }
+    }
     let mut output = json!({
         "valid": true,
         "shards": shards,
         "entries": entries,
         "head": format!("{head:016x}"),
+        "manifest_checked": manifest.is_some(),
     });
     if let Some(replay) = replay {
         let (report, net) = replay.finish();

@@ -12,6 +12,7 @@ use crate::analyze;
 use crate::audit::AuditLog;
 use crate::codec::{from_wsp, to_wsp};
 use crate::edit::Patch;
+use crate::manifest::ShardManifest;
 use crate::merge::{merge_aligned, merge_vote};
 use crate::net::Net;
 use crate::ops;
@@ -172,10 +173,12 @@ pub fn tools() -> Vec<Value> {
         ),
         tool(
             "wsp_shard",
-            "把 JSONL 审计日志切成带 header 与分片内 oracle 表的分片，返回分片文本",
+            "把 JSONL 审计日志切成带 header 与分片内 oracle 表的分片；可按 start/limit 分页取片",
             json!({
                 "log": {"type": "string", "description": "JSONL 文本或路径"},
                 "size": {"type": "integer", "description": "每片最多多少条"},
+                "start": {"type": "integer", "description": "从第几片开始（默认 0）"},
+                "limit": {"type": "integer", "description": "本次返回几片（0=全部）"},
             }),
             &["log", "size"],
         ),
@@ -184,6 +187,7 @@ pub fn tools() -> Vec<Value> {
             "校验分片审计日志的跨片哈希链；可选从初始工件重放",
             json!({
                 "shards": {"type": "array", "items": {"type": "string"}},
+                "manifest": {"type": "object", "description": "wsp_shard 返回的 manifest"},
                 "artifact": artifact(),
                 "path": {"type": "string"},
             }),
@@ -457,9 +461,26 @@ impl Mcp {
                 if let Err(error) = shards.verify_chain() {
                     return Ok(json!({"valid": false, "error": error.to_string()}));
                 }
+                let texts = shards.to_texts();
+                let total = texts.len();
+                let start = opt_usize(args, "start", 0);
+                if start > total {
+                    return Err(format!("start={start} 超过分片数 {total}"));
+                }
+                let limit = opt_usize(args, "limit", 0);
+                let end = if limit == 0 {
+                    total
+                } else {
+                    (start + limit).min(total)
+                };
+                let manifest = ShardManifest::of(&shards).to_value();
                 Ok(json!({
                     "valid": true,
-                    "shards": shards.to_texts(),
+                    "total": total,
+                    "start": start,
+                    "next": (end < total).then_some(end),
+                    "shards": texts[start..end],
+                    "manifest": manifest,
                     "entries": shards.len(),
                     "head": format!("{:016x}", shards.head()),
                 }))
@@ -477,6 +498,17 @@ impl Mcp {
                             .ok_or_else(|| "shards 必须是字符串数组".to_string())
                     })
                     .collect::<Result<_, _>>()?;
+                if let Some(value) = args.get("manifest") {
+                    let manifest = match ShardManifest::from_value(value) {
+                        Ok(manifest) => manifest,
+                        Err(error) => {
+                            return Ok(json!({"valid": false, "error": error.to_string()}));
+                        }
+                    };
+                    if let Err(error) = manifest.verify_texts(&texts) {
+                        return Ok(json!({"valid": false, "error": error.to_string()}));
+                    }
+                }
                 let shards = match ShardedLog::from_texts(&texts) {
                     Ok(shards) => shards,
                     Err(error) => {

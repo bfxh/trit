@@ -370,3 +370,88 @@ fn cli_supports_stdin_for_artifact() {
     let value = stdout_json(&output);
     assert_eq!(value["summary"]["arch"], serde_json::json!([2, 2, 1]));
 }
+
+#[test]
+fn shard_manifest_detects_missing_extra_and_tampering() {
+    let dir = std::env::temp_dir().join(format!("trit-wspace-manifest-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("temp dir");
+    let artifact = dir.join("xor.wsp");
+    let oracle = dir.join("xor.json");
+    let patch = dir.join("break.json");
+    let log = dir.join("audit.jsonl");
+    let shards = dir.join("shards");
+    fs::write(&artifact, to_wsp(&xor_net())).expect("artifact");
+    fs::write(&oracle, r#"{"domain":"boolean","vars":2,"table":"0110"}"#).expect("oracle");
+    fs::write(
+        &patch,
+        r#"{"version":1,"edits":[{"op":"set_trit","layer":0,"row":0,"col":0,"to":"0"}]}"#,
+    )
+    .expect("patch");
+    let patched = run(&[
+        "patch",
+        &path_string(&artifact),
+        "--patch",
+        &path_string(&patch),
+        "--oracle",
+        &path_string(&oracle),
+        "--log",
+        &path_string(&log),
+    ]);
+    assert!(patched.status.success());
+
+    let split = stdout_json(&run(&[
+        "shard",
+        &path_string(&log),
+        "--size",
+        "1",
+        "--out",
+        &path_string(&shards),
+    ]));
+    assert_eq!(split["shards"].as_u64(), Some(1));
+    assert!(shards.join("manifest.json").is_file());
+    let checked = stdout_json(&run(&[
+        "audit-shards",
+        &path_string(&shards),
+        "--artifact",
+        &path_string(&artifact),
+    ]));
+    assert_eq!(checked["manifest_checked"], true);
+
+    let shard_file = shards.join("shard-000.jsonl");
+    let extra = shards.join("shard-999.jsonl");
+    fs::copy(&shard_file, &extra).expect("extra");
+    let bad = run(&["audit-shards", &path_string(&shards)]);
+    assert!(!bad.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("清单外"),
+        "stderr: {}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
+    fs::remove_file(&extra).expect("remove extra");
+
+    let original = fs::read(&shard_file).expect("shard");
+    let mut tampered = original.clone();
+    tampered.push(b'\n');
+    fs::write(&shard_file, &tampered).expect("tamper");
+    let bad = run(&["audit-shards", &path_string(&shards)]);
+    assert!(!bad.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("摘要"),
+        "stderr: {}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
+    fs::write(&shard_file, &original).expect("restore");
+
+    let moved = shards.join("moved.jsonl");
+    fs::rename(&shard_file, &moved).expect("move");
+    let bad = run(&["audit-shards", &path_string(&shards)]);
+    assert!(!bad.status.success());
+    assert!(
+        String::from_utf8_lossy(&bad.stderr).contains("不存在"),
+        "stderr: {}",
+        String::from_utf8_lossy(&bad.stderr)
+    );
+    fs::rename(&moved, &shard_file).expect("restore");
+    let _ = fs::remove_dir_all(&dir);
+}

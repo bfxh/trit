@@ -2,7 +2,8 @@
 
 use serde_json::{Value, json};
 use trit_wspace::{
-    AuditLog, Edit, Layer, Net, Oracle, Patch, ShardCursor, ShardReplay, ShardedLog, Trit, checksum,
+    AuditLog, Edit, Layer, Net, Oracle, Patch, ShardCursor, ShardManifest, ShardReplay, ShardedLog,
+    Trit, checksum,
 };
 
 fn xor_net() -> Net {
@@ -247,6 +248,38 @@ fn shard_replay_streams_to_same_result() {
     assert_eq!(report.skipped, 1);
     assert_eq!(report.final_checksum, checksum(&fixed));
     assert_eq!(net, fixed);
+}
+
+#[test]
+fn manifest_matches_and_detects_wrong_text() {
+    let (log, _) = sample_log();
+    let shards = log.clone().into_shards(2).expect("split");
+    let texts = shards.to_texts();
+    let manifest = ShardManifest::of(&shards);
+    assert_eq!(manifest.entries, 3);
+    assert_eq!(manifest.head, log.head());
+    assert_eq!(manifest.shards.len(), 2);
+    manifest.verify_texts(&texts).expect("manifest match");
+    let value = manifest.to_value();
+    assert_eq!(ShardManifest::from_value(&value).expect("parse"), manifest);
+
+    let mut tampered = texts.clone();
+    tampered[1].push(' ');
+    assert!(manifest.verify_texts(&tampered).is_err(), "摘要应变化");
+    let swapped = vec![texts[1].clone(), texts[0].clone()];
+    assert!(manifest.verify_texts(&swapped).is_err(), "错序应拒绝");
+    assert!(manifest.verify_texts(&texts[..1]).is_err(), "丢片应拒绝");
+
+    let mut value = manifest.to_value();
+    value["shards"][0]["shard"] = json!(1);
+    assert!(ShardManifest::from_value(&value).is_err(), "序号必须连续");
+
+    let mut wrong = manifest.clone();
+    wrong.entries = 99;
+    assert!(wrong.verify_texts(&texts).is_err(), "总条数应核对");
+    let mut wrong = manifest.clone();
+    wrong.head = 0;
+    assert!(wrong.verify_texts(&texts).is_err(), "链头应核对");
 }
 
 #[test]

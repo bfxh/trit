@@ -141,7 +141,10 @@ trit-wspace mcp
 表里存本片用到的验证集（每条只存一次），记录行改用 `oracle_index` 指向表项；
 `wsp_audit_shards` 校验跨片 `seq` / `prev` / `head` 与 oracle 表摘要，可选重放。
 CLI 的 `audit-shards` 是**流式**的：`ShardCursor` / `ShardReplay` 读一片、校验一片、应用一片，
-不保留分片文本；`--out` 直接落盘流式重放的最终工件。
+不保留分片文本；`--out` 直接落盘流式重放的最终工件。`shard` 同时写 `manifest.json`
+（每片的文件、序号、条数、链头与文本摘要），`audit-shards` 有清单时按清单读文件并逐片核对
+摘要，缺片/多片/错序/内容替换都会直接报错。`wsp_shard` 支持 `start` / `limit` 分页按片返回
+（结果带 `total` / `next` / `manifest`），`wsp_audit_shards` 可带 `manifest` 复核。
 模板见 [`mcp.example.json`](mcp.example.json)。
 
 > 注册后需要**重启/重载 Qoder App**，工具目录才会出现；当前会话的 `mcp_list` 不会热更新。

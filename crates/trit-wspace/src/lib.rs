@@ -101,6 +101,7 @@ pub mod edit;
 pub mod error;
 pub mod explain;
 pub mod localize;
+pub mod manifest;
 pub mod mcp;
 pub mod merge;
 pub mod net;
@@ -125,6 +126,7 @@ pub use explain::{SampleEditImpact, SampleExplanation, explain_sample};
 pub use localize::{
     LocalizeReport, LocalizeSelection, RowLocalization, TritImpact, localize, localize_row,
 };
+pub use manifest::{MANIFEST_VERSION, ManifestShard, ShardManifest, text_digest};
 pub use merge::{align, merge_aligned, merge_vote};
 pub use net::{Layer, Net};
 pub use oracle::{Behavior, Oracle};

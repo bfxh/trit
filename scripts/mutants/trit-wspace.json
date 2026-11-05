@@ -694,5 +694,69 @@
   "new": "            let _ = entry;",
   "pkg": "trit-wspace",
   "filter": "shard_replay_streams_to_same_result"
+ },
+ {
+  "name": "wspace-manifest: 不校验分片摘要",
+  "file": "crates/trit-wspace/src/manifest.rs",
+  "old": "            if digest != item.digest {",
+  "new": "            if false {",
+  "pkg": "trit-wspace",
+  "filter": "manifest_matches_and_detects_wrong_text"
+ },
+ {
+  "name": "wspace-manifest: 不校验总条数",
+  "file": "crates/trit-wspace/src/manifest.rs",
+  "old": "        if total != self.entries {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "manifest_matches_and_detects_wrong_text"
+ },
+ {
+  "name": "wspace-manifest: 不校验链头",
+  "file": "crates/trit-wspace/src/manifest.rs",
+  "old": "            && last.head != self.head",
+  "new": "            && true",
+  "pkg": "trit-wspace",
+  "filter": "manifest_matches_and_detects_wrong_text"
+ },
+ {
+  "name": "wspace-manifest: 不校验分片序号连续",
+  "file": "crates/trit-wspace/src/manifest.rs",
+  "old": "            if shard != index {",
+  "new": "            if false {",
+  "pkg": "trit-wspace",
+  "filter": "manifest_matches_and_detects_wrong_text"
+ },
+ {
+  "name": "wspace-cli: 不检查清单外分片",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        if let Some(extra) = files.into_iter().next() {",
+  "new": "        if let Some(extra) = None::<String> {",
+  "pkg": "trit-wspace",
+  "filter": "shard_manifest_detects_missing_extra_and_tampering"
+ },
+ {
+  "name": "wspace-cli: 不核对文件摘要",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "            if got != *want {",
+  "new": "            if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_manifest_detects_missing_extra_and_tampering"
+ },
+ {
+  "name": "wspace-mcp: 忽略分页 limit",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                let end = if limit == 0 {",
+  "new": "                let end = if true {",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-mcp: 不核对 manifest",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                    if let Err(error) = manifest.verify_texts(&texts) {",
+  "new": "                    if let Err(error) = Ok::<(), crate::error::Error>(()) {",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
  }
 ]

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：分片 manifest + MCP 分页按片发送）
+
+- `ShardManifest`（`manifest.rs`）：记录每片的文件名、序号、起止、链头与**文本摘要**；
+  `verify_texts` 核对数量/顺序/条数/链头/摘要。CLI `shard` 写 `manifest.json`，
+  `audit-shards` 有清单时按清单读文件、逐片核对摘要，缺片/清单外分片/内容替换直接报错；
+  无清单时退回按文件名排序。
+- MCP `wsp_shard` 支持 `start` / `limit` 分页（结果带 `total` / `next` / `manifest`），
+  可按片取回；`wsp_audit_shards` 接受 `manifest` 并先核对再验链/重放。
+- 读数：2 片日志分页取回后重放与整日志一致；篡改清单摘要、删片、放额外分片、追加空白
+  均被拒绝。测试 126 → 128 + 1 doctest；变异 87 → **95 条，95/95 caught**；
+  test_surface 台账 2,348 → 2,350。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
 ### Added（trit-wspace：分片流式校验与重放）
 
 - `ShardCursor`：逐个 `push(text)` 解析并验链（序号、父链头、`count`、逐条 `chain`、本片
