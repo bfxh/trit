@@ -1,0 +1,47 @@
+[
+ {
+  "name": "前置检查退回 [ -d .git ]（worktree 被误判成非仓库，且 128 变成 1）",
+  "file": "crates/trit-immune/scripts/sync-upstream.sh",
+  "old": "  git -C \"$1\" rev-parse --git-dir >/dev/null 2>&1",
+  "new": "  [ -d \"$1/.git\" ]",
+  "pkg": "crates/trit-immune/scripts/sync-upstream.sh",
+  "filter": "",
+  "runner": "bash"
+ },
+ {
+  "name": "前置检查永远说\"是仓库\"（非仓库路径带病往下跑，die 永不触发）",
+  "file": "crates/trit-immune/scripts/sync-upstream.sh",
+  "old": "  git -C \"$1\" rev-parse --git-dir >/dev/null 2>&1",
+  "new": "  return 0",
+  "pkg": "crates/trit-immune/scripts/sync-upstream.sh",
+  "filter": "",
+  "runner": "bash"
+ },
+ {
+  "name": "sweep 空转（临时目录留在盘上，断言却说自己删了）",
+  "file": "crates/trit-immune/scripts/sync-upstream.sh",
+  "old": "  if [ -n \"$SWEEP_DIR\" ]; then rm -rf \"$SWEEP_DIR\"; fi",
+  "new": "  :",
+  "pkg": "crates/trit-immune/scripts/sync-upstream.sh",
+  "filter": "",
+  "runner": "bash"
+ },
+ {
+  "name": "sweep 的守卫反了（有目录时反倒不删）",
+  "file": "crates/trit-immune/scripts/sync-upstream.sh",
+  "old": "  if [ -n \"$SWEEP_DIR\" ]; then rm -rf \"$SWEEP_DIR\"; fi",
+  "new": "  if [ -z \"$SWEEP_DIR\" ]; then rm -rf \"$SWEEP_DIR\"; fi",
+  "pkg": "crates/trit-immune/scripts/sync-upstream.sh",
+  "filter": "",
+  "runner": "bash"
+ },
+ {
+  "name": "失败消息把期望/实际印反（读红的人被带往错方向）",
+  "file": "crates/trit-immune/scripts/sync-upstream.sh",
+  "old": "    printf 'FAIL %s：期望 %s，实际 %s\\n' \"$3\" \"$1\" \"$2\"",
+  "new": "    printf 'FAIL %s：期望 %s，实际 %s\\n' \"$3\" \"$2\" \"$1\"",
+  "pkg": "crates/trit-immune/scripts/sync-upstream.sh",
+  "filter": "",
+  "runner": "bash"
+ }
+]
