@@ -64,6 +64,7 @@
  "script/layers.py": 1,
  "script/lod_gate.py": 1,
  "script/merge_forensics.py": 1,
+ "script/model_status.py": 1,
  "script/module_budget.py": 1,
  "script/mutation_check.py": 1,
  "script/mutation_sweep.py": 1,

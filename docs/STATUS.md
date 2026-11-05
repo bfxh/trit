@@ -20,14 +20,20 @@
 
 ## 2. 实例：`trit-parts` 里六个"像模型的东西"（实测，2026-11-05）
 
-| 名字 | 定义处 | 内联 `#[test]` | 被 bin 用 | 被仓内其他模块用 | `tests/` 端到端 | 读数在哪 | 按 §1 判 |
+| 名字 | 定义处 | 内联 `#[test]` | 被 bin 用 | 被仓内其他模块用 | `tests/` 提及（代码行） | 读数在哪 | 按 §1 判 |
 |---|---|---|---|---|---|---|---|
-| `DepthNet` | `depthnet.rs:25` | 7 | 4 | 2 | **4**（`tests/depthnet_e2e.rs`） | 本文件 §2.3 + `docs/PARTS-RESULTS.md`（清单 + 独立复核） | **已跑通** |
-| `TpmModel` | `tpm.rs:36` | 1 | 5 | 3 | **0** | 部分（同上文件，按族） | 已跑通（覆盖面窄） |
-| `DepthUNet` | `depthunet.rs:113` | 3 | 1 | 0 | **3**（`tests/models_e2e.rs`） | 本文件 §2.1 | **已跑通**（CPU 参考实现这一层） |
+| `DepthNet` | `depthnet.rs:25` | 7 | 4 | 2 | **11** | 本文件 §2.3 + `docs/PARTS-RESULTS.md`（清单 + 独立复核） | **已跑通** |
+| `TpmModel` | `tpm.rs:36` | 1 | 5 | 3 | **2** | 部分（同上文件，按族） | 已跑通（覆盖面窄） |
+| `DepthUNet` | `depthunet.rs:113` | 3 | 1 | 0 | **7** | 本文件 §2.1 | **已跑通**（CPU 参考实现这一层） |
 | `DepthHead` | `depth.rs:14` | 3 | 1 | 0 | **0** | — | **组件**（名字已经是对的） |
-| `MatNet` | `matnet.rs:41` | 3 | 1 | 0 | **0** | — | **组件** |
-| `TriModel` | `model.rs:47` | 1 | 1 | 0 | **5**（`tests/models_e2e.rs`） | 本文件 §2.2 | **已跑通**（加载→推理→金样指纹；跨后端对拍另见 `docs/PARTS-RESULTS.md`） |
+| `MatNet` | `matnet.rs:41` | 3 | 1 | 0 | **0** | — | **组件**（名字像整机，§4 第 4 条已把改名提案否证） |
+| `TriModel` | `model.rs:47` | 1 | 1 | 1 | **0** | 本文件 §2.2（覆盖经由 `to_tri()`/`RefCpu`，不是类型名） | **已跑通**（加载→推理→金样指纹；跨后端对拍另见 `docs/PARTS-RESULTS.md`） |
+
+**第四列口径（本门自己量的，不是手填）**：`python scripts/model_status.py` 逐行数**代码行**里的类型名提及，
+注释与文档行不算。所以两处要知道它的边界：
+`TriModel` 的端到端覆盖是通过 `to_tri()` / `RefCpu` 发生的，按名字数会数到 **0** ⇒ 这一类必须在"读数在哪"
+指到具体 §，门对"`tests/` 提及 0  yet 判已跑通"的放行条件就是"有没有指到文件/§/PR"。
+表里任何一个数字与复算不符 ⇒ **判红**（这张表以前是手填的，手填就会烂）。
 
 ### 2.1 `DepthUNet` 的读数（2026-11-05 实测，`cargo test -p trit-parts --test models_e2e`）
 
@@ -68,15 +74,12 @@
 够得上"已跑通"的是 `DepthNet`、`DepthUNet`、`TriModel` 与 `TpmModel` 的一部分。
 仍欠：`DepthHead` 与 `MatNet` 是**组件**（只有 1 个 bin 用、无仓内复用），没有端到端可言。
 
-复算尺（谁都能重跑）：
+复算尺（谁都能重跑，也是本表的判红来源）：
 
 ```
-for f in depth depthnet depthunet matnet model tpm; do
-  printf "%-12s 内联#test=%s\n" "$f" "$(grep -c '#\[test\]' crates/trit-parts/src/$f.rs)"
-done
-for t in DepthNet TpmModel MatNet TriModel DepthUNet DepthHead; do
-  printf "%-10s tests提及=%s\n" "$t" "$(cat crates/trit-parts/tests/*.rs | grep -c "$t")"
-done
+python scripts/model_status.py            # 对账：表里四列计数 + 判定词，不符即拦
+python scripts/model_status.py --show     # 打印复算出来的表行（贴回本节用）
+python scripts/model_status.py --self-test
 ```
 
 ## 3. 本轮已经知道自己会错在哪（同类事故，登记在册）
@@ -93,6 +96,9 @@ done
 - §2.3 那条"膨胀可达集"的夹具第一版选了角落 `(15,15)`，理由是"离冲击够远"；实测抽头只落在 **dil 的整数倍**格点上，
   15 不在 `dil=3` 的格子里 ⇒ 红的是夹具。改成 `(6,6)` 并实测依赖集（`dil=1`→16 个像素、`dil=3`→最远 (9,9)）才成立。
 - 改 `planes()` 签名时用了一次**没有 `assert` 的字符串替换**，补丁空操作（调用点改了、函数体没改），靠编译报错才发现。
+- 新门 `model_status.py` 的自测第一版把失败行打成 `  FAIL …`（缩进两格），而变异门的点名口径是**行首** `FAIL `
+  ⇒ 五条变异全被判成"未点名"；另外自测打印里的 `⇒` 在中文 Windows 上让子进程 `UnicodeEncodeError`，
+  "门自己崩了"看着像测试失败。两处都在本轮改掉（行首 `FAIL ` + `main()` 里把 stdout 定成 UTF-8）。
 - §2.2 那条"对拍尺子自证"第一版写的是"把平面 0 抬高"，结果抬的正好是本来就是最大值的那个通道
   ⇒ 断言 `rate2 < 1.0` 报红，但**红的是夹具没翻转，不是尺子失灵**。改成"先读当前 argmax，再把另一个通道抬到它上面"
   才是真的在测尺子；顺手加了 `rate2 > 0.99` 反证，防止"改一个像素判整帧不一致"这种过头实现。
