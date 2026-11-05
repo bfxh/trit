@@ -34,7 +34,7 @@
  "crate/trit-unsafe": 15,
  "crate/trit-vcs": 120,
  "crate/trit-wasm": 5,
- "crate/trit-wspace": 92,
+ "crate/trit-wspace": 97,
  "script/agent_claims.py": 1,
  "script/autoflow.py": 1,
  "script/bench.sh": 0,

@@ -28,6 +28,7 @@ trit-wspace <command>
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
+  explain <artifact|-> --oracle <json|-> --sample N [--top K]
   audit <log|-> [--artifact <initial|->]
   replay <log|-> --artifact <initial|-> [--out <path>]
   diff <a|-> <b|->
@@ -59,6 +60,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "apply-candidate" => cmd_apply_candidate(&args[1..]),
         "repair" => cmd_repair(&args[1..]),
         "propose" => cmd_propose(&args[1..]),
+        "explain" => cmd_explain(&args[1..]),
         "audit" => cmd_audit(&args[1..]),
         "replay" => cmd_replay(&args[1..]),
         "diff" => cmd_diff(&args[1..]),
@@ -321,6 +323,25 @@ fn cmd_propose(args: &[String]) -> Result<(), String> {
         }
         other => Err(format!("--depth 只支持 1/2/3，得到 {other}")),
     }
+}
+
+fn cmd_explain(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    let path = one(
+        &parsed,
+        "explain <artifact|-> --oracle <json|-> --sample N [--top K]",
+    )?;
+    let oracle_path = value(&parsed, "oracle")?;
+    let sample_raw = value(&parsed, "sample")?;
+    let sample = sample_raw
+        .parse::<usize>()
+        .map_err(|_| format!("--sample 需要非负整数，得到 `{sample_raw}`"))?;
+    let top = opt_usize(&parsed, "top", 16)?;
+    no_double_stdin(&[path, oracle_path])?;
+    let net = load_net(path)?;
+    let oracle = load_oracle(oracle_path)?;
+    let explanation = crate::explain::explain_sample(&net, &oracle, sample, top).map_err(err)?;
+    emit(&wire::sample_explanation_to_value(&explanation))
 }
 
 fn cmd_diff(args: &[String]) -> Result<(), String> {

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：单样本解释）
+
+- `explain_sample`：先对全部候选只做**这一个样本**的前向，算 `flips` / `fixes`；
+  按 `(fixes, flips, 坐标)` 取 top-K，再做整验证集复核，给出 `after_loss` / `gain`。
+  `top=0` 表示全部复核（小网）。
+- CLI `explain <artifact> --oracle <json> --sample N [--top K]`；MCP `wsp_explain`（工具 9 → 10）。
+- 读数：打坏的 XOR 样本 0 的 top 候选 `fixes=true`、`after_loss=0`、`gain=2`；
+  `[2,3,1]` 网 `top=4` 时 `evaluated=26`、`fully_evaluated=4`。
+- 测试 92 → 97 + 1 doctest（新增 4 条解释不变量 + 1 条 MCP 解释）；变异 46 → **51 条，51/51 caught**；
+  test_surface 台账 2,273 → 2,278。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
 ### Added（trit-wspace：候选直用）
 
 - `wire::patch_from_candidate` 接受 `{"edit": {...}}`（单点）或 `{"edits": [...]}`（组合），

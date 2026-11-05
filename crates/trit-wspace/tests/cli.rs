@@ -176,6 +176,20 @@ fn cli_read_verify_patch_repair_round_trip() {
     assert_eq!(triples["depth"].as_u64(), Some(3));
     assert!(triples["candidates"].as_array().expect("triples").len() <= 2);
 
+    let explained = stdout_json(&run(&[
+        "explain",
+        &path_string(&broken),
+        "--oracle",
+        &path_string(&oracle),
+        "--sample",
+        "0",
+        "--top",
+        "4",
+    ]));
+    assert_eq!(explained["index"].as_u64(), Some(0));
+    assert_eq!(explained["candidates"][0]["fixes"], true);
+    assert_eq!(explained["candidates"][0]["after_loss"].as_u64(), Some(0));
+
     let candidate = dir.join("candidate.json");
     let fixed2 = dir.join("fixed2.wsp");
     let log2 = dir.join("audit2.jsonl");

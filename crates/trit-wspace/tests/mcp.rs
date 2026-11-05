@@ -53,13 +53,13 @@ fn initialize_reports_protocol_and_server_name() {
 }
 
 #[test]
-fn lists_exactly_nine_tools() {
+fn lists_exactly_ten_tools() {
     let mut server = Mcp::new();
     let response = server
         .dispatch(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))
         .expect("response");
     let listed = response["result"]["tools"].as_array().expect("tools");
-    assert_eq!(listed.len(), 9);
+    assert_eq!(listed.len(), 10);
     let names: Vec<&str> = listed
         .iter()
         .map(|tool| tool["name"].as_str().expect("name"))
@@ -71,13 +71,14 @@ fn lists_exactly_nine_tools() {
         "wsp_apply_candidate",
         "wsp_repair",
         "wsp_propose",
+        "wsp_explain",
         "wsp_audit",
         "wsp_diff",
         "wsp_merge",
     ] {
         assert!(names.contains(&expected), "缺少工具 {expected}");
     }
-    assert_eq!(tools().len(), 9);
+    assert_eq!(tools().len(), 10);
 }
 
 #[test]
@@ -435,6 +436,40 @@ fn apply_candidate_rejects_empty_candidate() {
 }
 
 #[test]
+fn explain_reports_sample_and_fixing_edit() {
+    let mut broken = xor_net();
+    Patch::new(vec![Edit::SetTrit {
+        layer: 0,
+        row: 0,
+        col: 0,
+        to: Trit::Zero,
+    }])
+    .apply(&mut broken)
+    .expect("corrupt");
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_explain",
+        json!({"artifact": to_wsp(&broken), "oracle": xor_oracle(), "sample": 0, "top": 4}),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert_eq!(value["index"].as_u64(), Some(0));
+    assert_eq!(value["want"].as_str(), Some("-"));
+    assert_eq!(value["got"].as_str(), Some("0"));
+    assert_eq!(value["fully_evaluated"].as_u64(), Some(4));
+    let top = &value["candidates"][0];
+    assert_eq!(top["fixes"], true);
+    assert_eq!(top["after_loss"].as_u64(), Some(0));
+
+    let patch = trit_wspace::wire::patch_from_candidate(&json!({"edit": top["edit"].clone()}))
+        .expect("edit");
+    let mut fixed = broken.clone();
+    patch.apply(&mut fixed).expect("apply");
+    assert!(xor_oracle_net_check(&fixed));
+}
+
+#[test]
 fn audit_verifies_chain_and_replays() {
     let start = xor_net();
     let mut broken = start.clone();
@@ -514,6 +549,14 @@ fn unknown_tool_and_bad_artifact_are_errors() {
     );
     assert_eq!(bad_depth["isError"], true);
     assert!(text(&bad_depth).contains("depth"));
+
+    let bad_sample = call(
+        &mut server,
+        "wsp_explain",
+        json!({"artifact": xor_artifact(), "oracle": xor_oracle(), "sample": 99}),
+    );
+    assert_eq!(bad_sample["isError"], true);
+    assert!(text(&bad_sample).contains("越界"));
 }
 
 #[test]

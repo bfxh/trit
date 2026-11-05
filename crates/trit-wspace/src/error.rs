@@ -98,6 +98,13 @@ pub enum Error {
         /// 调用方给的预算。
         limit: usize,
     },
+    /// 样本下标越界。
+    SampleIndex {
+        /// 请求的下标。
+        index: usize,
+        /// 验证集条数。
+        len: usize,
+    },
 }
 
 /// 库内统一 `Result`。
@@ -150,6 +157,9 @@ impl fmt::Display for Error {
                 f,
                 "{depth} 编辑组合 {combinations} 组超过上限 {limit}；提高预算或降低 depth"
             ),
+            Self::SampleIndex { index, len } => {
+                write!(f, "样本下标 {index} 越界（验证集 {len} 条）")
+            }
         }
     }
 }

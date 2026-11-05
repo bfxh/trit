@@ -26,6 +26,7 @@ use crate::analyze::{
 use crate::codec::checksum;
 use crate::edit::{Cost, Edit, Patch};
 use crate::error::{Error, Result};
+use crate::explain::{SampleEditImpact, SampleExplanation};
 use crate::net::Net;
 use crate::oracle::Oracle;
 use crate::program::Report;
@@ -226,6 +227,37 @@ pub fn triple_impact_to_value(impact: &TripleImpact) -> Value {
         "fixed": impact.fixed,
         "broken": impact.broken,
         "changed": impact.changed,
+    })
+}
+
+/// 单样本解释 → JSON。
+#[must_use]
+pub fn sample_explanation_to_value(explanation: &SampleExplanation) -> Value {
+    json!({
+        "index": explanation.index,
+        "input": trits_text(&explanation.input),
+        "want": trits_text(&explanation.want),
+        "got": trits_text(&explanation.got),
+        "before_loss": explanation.before_loss,
+        "evaluated": explanation.evaluated,
+        "fully_evaluated": explanation.fully_evaluated,
+        "candidates": explanation
+            .candidates
+            .iter()
+            .map(sample_impact_to_value)
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// 单样本编辑影响 → JSON。
+#[must_use]
+pub fn sample_impact_to_value(impact: &SampleEditImpact) -> Value {
+    json!({
+        "edit": edit_to_value(&impact.edit),
+        "flips": impact.flips,
+        "fixes": impact.fixes,
+        "after_loss": impact.after_loss,
+        "gain": impact.gain,
     })
 }
 

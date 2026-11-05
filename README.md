@@ -115,7 +115,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-lsp` | `.tri` 语言服务器：诊断 / 悬停真值表 / 补全 / 文档符号 / 定义-引用-高亮-重命名 / 矛盾律-排中律-语义分歧深层诊断 | `trit-lsp` |
 | `trit-train` | 三值训练 M0：STE 三变体 + 每行 scale + 位平面 ALU | `train-bench` |
 | `trit-graph` | 三态结构基础：稠密/CSR 三态图、超图、树分解容器、议会、1-WL、图核、PageRank、TriMPNN、端到端三态分类 | 库（无二进制） |
-| `trit-wspace` | 三值权重空间编程：可 diff 的 WSP1 权重 IR、事务式补丁与逐位回滚、无梯度最小修补（小网络完备 BFS、大网络束搜索）、单点/两编辑/三组合提议（实测失配变化排序）、候选直用、哈希链审计日志（权重链 + 行为链，验链 + 重放）、隐藏单元置换对齐合并；CLI + MCP 九工具 | `trit-wspace read/verify/patch/repair/propose/audit/replay` / `trit-wspace mcp` |
+| `trit-wspace` | 三值权重空间编程：可 diff 的 WSP1 权重 IR、事务式补丁与逐位回滚、无梯度最小修补（小网络完备 BFS、大网络束搜索）、单点/两编辑/三组合提议（实测失配变化排序）、单样本解释、候选直用、哈希链审计日志（权重链 + 行为链，验链 + 重放）、隐藏单元置换对齐合并；CLI + MCP 十工具 | `trit-wspace read/verify/patch/repair/propose/explain/audit/replay` / `trit-wspace mcp` |
 
 ## 三态与三值拓扑
 

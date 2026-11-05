@@ -1,4 +1,4 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，九个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，十个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
@@ -40,7 +40,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 九个工具。改数量必须同时改测试断言。
+/// 十个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -111,6 +111,17 @@ pub fn tools() -> Vec<Value> {
                 "max_triples": {"type": "integer", "description": "三组合预算，默认 20000"},
             }),
             &["oracle"],
+        ),
+        tool(
+            "wsp_explain",
+            "解释单个样本：哪些单点编辑让它翻转/变对；先单样本，再 top-K 全量复核",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "oracle": {"type": "object"},
+                "sample": {"type": "integer", "description": "样本下标"},
+                "top": {"type": "integer", "description": "复核条数，默认 16；0=全部"},
+            }),
+            &["oracle", "sample"],
         ),
         tool(
             "wsp_audit",
@@ -340,6 +351,18 @@ impl Mcp {
                     }
                     other => Err(format!("depth 只支持 1/2/3，得到 {other}")),
                 }
+            }
+            "wsp_explain" => {
+                let net = load(args)?;
+                let oracle = required_oracle(args)?;
+                let sample = args
+                    .get("sample")
+                    .and_then(Value::as_u64)
+                    .ok_or("需要 sample（非负整数）")? as usize;
+                let top = opt_usize(args, "top", 16);
+                let explanation =
+                    crate::explain::explain_sample(&net, &oracle, sample, top).map_err(err)?;
+                Ok(wire::sample_explanation_to_value(&explanation))
             }
             "wsp_audit" => {
                 let raw = args.get("log").and_then(Value::as_str).ok_or("需要 log")?;

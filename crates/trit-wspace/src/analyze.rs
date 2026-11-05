@@ -361,7 +361,7 @@ fn mismatches(outputs: &[Vec<crate::trit::Trit>], oracle: &Oracle) -> Vec<usize>
         .collect()
 }
 
-fn edit_key(edit: &Edit) -> (u8, usize, usize, usize, i64) {
+pub(crate) fn edit_key(edit: &Edit) -> (u8, usize, usize, usize, i64) {
     match *edit {
         Edit::SetTrit {
             layer,

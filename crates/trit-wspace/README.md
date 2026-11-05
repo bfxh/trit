@@ -66,6 +66,7 @@ trit-wspace repair broken.wsp --oracle xor.json --max-edits 2 --out fixed.wsp
 trit-wspace propose broken.wsp --oracle xor.json --limit 8
 trit-wspace propose broken.wsp --oracle xor.json --pairs --limit 8
 trit-wspace propose broken.wsp --oracle xor.json --depth 3 --limit 8
+trit-wspace explain broken.wsp --oracle xor.json --sample 0 --top 8
 trit-wspace audit  audit.jsonl --artifact start.wsp
 trit-wspace replay audit.jsonl --artifact start.wsp --out final.wsp
 trit-wspace diff   a.wsp b.wsp
@@ -107,7 +108,7 @@ trit-wspace mcp
 }
 ```
 
-九个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_audit`、`wsp_diff`、`wsp_merge`。
+十个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_audit`、`wsp_diff`、`wsp_merge`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
@@ -117,6 +118,9 @@ trit-wspace mcp
 
 `wsp_apply_candidate` 直接吃 `wsp_propose` 的 `candidates[i]`（`edit` 或 `edits`），
 可选 `require_after`；给了 `log` 就把这次编辑追加进 JSONL 日志（日志文本随结果返回，不写盘）。
+
+`wsp_explain` 解释单个样本：先对全部候选只做**这一个样本**的前向，算 `flips` / `fixes`；
+再对 top-K 做整验证集复核，给 `after_loss` / `gain`。大网只需要线性于权重数的单样本前向。
 
 `wsp_audit` 校验 JSONL 编辑日志的哈希链；给了初始工件就顺带重放并核对最终校验和。
 模板见 [`mcp.example.json`](mcp.example.json)。
