@@ -453,3 +453,127 @@ fn feature_selection_ranks_by_correlation() {
     assert!(picked[0].correlation > 0.9);
     assert!(picked[2].correlation.abs() < 1e-9, "零方差特征相关性为 0");
 }
+
+#[test]
+fn benign_tail_rules_anchor_on_benign_quantiles() {
+    use trit_net::netsec::calibrate::{Selected, rules_from_benign_tail};
+    use trit_net::netsec::features::Bias;
+
+    // 良性分布 1..=100（quantile 按 q*(n-1) 插值）：
+    // P(0.3)=30.7、P(0.7)=70.3、P(0.95)=95.05、P(0.05)=5.95、P(0.5)=50.5。
+    let sorted: Vec<Vec<f64>> = vec![(1..=100).map(f64::from).collect()];
+    let selected = [Selected {
+        feature: 4,
+        bias: Bias::High,
+        correlation: 0.9,
+    }];
+    let rules = rules_from_benign_tail(&sorted, 0.2, 0.05, &selected);
+    assert_eq!(rules.len(), 1);
+    // High 方向：low = 良性 P(0.3)，high = 良性 P(0.95)——不是 P(0.7)。
+    assert!((rules[0].low - 30.7).abs() < 1e-9, "low={}", rules[0].low);
+    assert!(
+        (rules[0].high - 95.05).abs() < 1e-9,
+        "high={}",
+        rules[0].high
+    );
+    // Low 方向镜像：high = 良性 P(0.7)，low = 良性 P(0.05)。
+    let selected_low = [Selected {
+        feature: 4,
+        bias: Bias::Low,
+        correlation: -0.9,
+    }];
+    let rules = rules_from_benign_tail(&sorted, 0.2, 0.05, &selected_low);
+    assert!(
+        (rules[0].high - 70.3).abs() < 1e-9,
+        "high={}",
+        rules[0].high
+    );
+    assert!((rules[0].low - 5.95).abs() < 1e-9, "low={}", rules[0].low);
+    // tail 钳制在 [0, 0.5]：tail=0.6 等效 0.5（P(0.5)）。
+    let rules = rules_from_benign_tail(&sorted, 0.0, 0.6, &selected);
+    assert!(
+        (rules[0].high - 50.5).abs() < 1e-9,
+        "high={}",
+        rules[0].high
+    );
+}
+
+#[test]
+fn benign_tail_recovers_attacks_hidden_in_the_dragged_dead_zone() {
+    use trit_net::netsec::calibrate::{Config, run};
+    use trit_net::netsec::dataset::{Label, Sample};
+
+    // 场景：攻击占 70% 且两簇——11 簇落在「全训练集分位数被攻击拖高」的死区里
+    // （对称带 high 被拖到 50 簇 ⇒ 11 簇弃权漏检），50 簇远高；良性 0..9.8。
+    // 良性尾部阈值锚在良性 P95≈9.4 ⇒ 11 簇直接判攻击。
+    // 复刻 M1 形状：8 个同信号维（4..=11）参与选维，其余维常量 0——
+    // 单信号维 + 常量维对 STE 是比真实数据更难的形状（23 维 ±1 噪声要靠轮数抵消）。
+    let mut samples = Vec::new();
+    for i in 0..1_000usize {
+        // 交错：每 10 个样本 3 良 7 攻；攻击内部再分 11/50 两簇（2:5）。
+        let malicious = i % 10 >= 3;
+        let value = if !malicious {
+            (i % 100) as f64 * 0.099 // 0..9.8
+        } else if i % 14 < 4 {
+            11.0
+        } else {
+            50.0
+        };
+        let mut features = [0.0f64; N];
+        for slot in &mut features[4..=11] {
+            *slot = value;
+        }
+        samples.push(Sample {
+            features,
+            label: if malicious {
+                Label::Malicious
+            } else {
+                Label::Benign
+            },
+        });
+    }
+    let base = Config {
+        bands: vec![0.2],
+        epochs: 120,
+        hidden: 8,
+        seed: 7,
+        train_fraction: 0.75,
+        learning_rate: 0.3,
+        features: 8,
+        batch_size: 16,
+        ..Config::default()
+    };
+    let (symmetric, selected) = run(&samples, &base).expect("对称带可运行");
+    // 选维前 8 名必须是信号维 4..=11（相关性并列时按下标序，恰好都是信号维）。
+    assert!(
+        selected
+            .iter()
+            .all(|picked| (4..=11).contains(&picked.feature)),
+        "选维必须全是信号维：{:?}",
+        selected
+    );
+    let benign_cfg = Config {
+        benign_tail: Some(0.05),
+        ..base.clone()
+    };
+    let (tail, _) = run(&samples, &benign_cfg).expect("良性尾部可运行");
+    let s = &symmetric[0];
+    let t = &tail[0];
+    // 恢复机制：对称带把 11 簇整个拖进弃权（attack_abstain 高），良性尾部
+    // 把它们捞回确定判决（attack_abstain 归零、覆盖率上升）；TPR 两侧都已
+    // 饱和在 1.0（50 簇两边都抓到），差别就在 11 簇。
+    assert!(
+        t.attack_abstain < s.attack_abstain - 0.1,
+        "良性尾部应把被拖进死区的攻击簇捞回确定判决：对称 {s:?} vs 尾部 {t:?}"
+    );
+    assert!(
+        t.coverage > s.coverage + 0.05,
+        "良性尾部覆盖率应上升：对称 {s:?} vs 尾部 {t:?}"
+    );
+    assert!(
+        t.tpr >= s.tpr,
+        "良性尾部不应丢检出：对称 {s:?} vs 尾部 {t:?}"
+    );
+    // FPR 上界：良性尾部按定义把良性 P95 以上的少量样本放进阳性侧，可容忍。
+    assert!(t.fpr < 0.3, "良性尾部 FPR 失控：{t:?}");
+}

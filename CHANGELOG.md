@@ -2,6 +2,232 @@
 
 ## [Unreleased]
 
+### Added（漂移门：校准读数对账，变坏即红）
+
+- `trit-net::netsec::drift`：基线校准读数（`docs/SECURITY-NET-BASELINE.json`，
+  Friday-16-02 200k 行、与 M1 §读数逐位一致）与当前读数按 band 逐条对账
+  ΔFPR/ΔTPR/Δ弃权，**FPR 升 >0.1 / TPR 降 >0.1 / 弃权升 >0.2 任一即红**
+  （阈值可调）；**fail-closed**：缺 band、多 band、坏 JSON、非有限读数、
+  负/NaN 阈值一律红——对不上账的「绿」没有含义。
+- `trit-net drift <基线.json> <当前.json> [--max-*-delta F]`：JSON 判决输出，
+  红则退出码非零。实测：基线自比绿；M1.6 变体对 M1 基线红 rc=1
+  （读数变了必须显式重生成基线并在提交说明里给理由）。
+- 边界（🔴）：只对账不归因——漂移原因（分布漂移/攻击类型/代码回归）是人的
+  工作；CI 接入取决于数据集可得性（335 MB 不入库），流程见
+  `docs/SECURITY-NET.md` §M1.6 §漂移门。
+- 测试 `tests/drift.rs` 10 条（绿路径/三方向触红/缺 band/多 band/坏 JSON/
+  非法阈值/多理由累积）；变异门 +2（FPR 方向写反、结构性问题被忽略）。
+
+### Changed（M1.6 训练器与阈值：mini-batch + 良性尾部，真实读数）
+
+- `trit-net::train`：`TrainOptions.batch_size`——`0/1` = 全批（旧行为）；`k>1` =
+  每轮按 `seed ^ epoch` **确定性洗牌**（Fisher–Yates，同参重跑逐位一致），每
+  `k` 条累积一次梯度更新。CLI `calibrate --batch N`。
+- `trit-net::netsec::calibrate`：`Config.benign_tail: Option<f64>`（CLI
+  `--benign-tail F`）——分位数锚在**良性子集**（`Bias::High` 取
+  `[良性 P(0.5-b), 良性 P(1-tail)]`，Low 镜像），攻击占比高时不再被攻击分布
+  把死区拖走。
+- 真实读数（Friday-16-02 DDoS 日，200k 行，基线与 M1 逐位一致）：**mini-batch
+  是主收益**——band 0.3 段 TPR 0.9378→**0.9987**（同弃权档），band 0 的 FPR
+  0.1446→**0.1101**、精确率 0.8313→0.8645；**良性尾部单独用是负结果**（DDoS 日
+  良性分布窄，FPR 全面变差），与 mini-batch 组合才成立（TPR 0.998 档 FPR
+  0.156）。跨日依旧失效（漂移负结果成立，照实记录）。详见
+  `docs/SECURITY-NET.md` §M1.6。
+- 测试 +3（mini-batch 收敛/确定性/超大 batch 钳制 + 洗牌质量断言；良性尾部
+  分位数锚定纯函数测试 + 死区恢复机制测试）；变异门 +2、修 1（梯度上升锚点
+  随 batch_len 重命名）。
+
+### Added（M3→M2 登记桥：probe 证据半自动进攻击图）
+
+- `trit-net::netsec::probe::attach_probe`：probe 报告 → 攻击图——station 节点（`T`）
+  → 主机节点（label = 字面 IP，证据 = **主机应答**：任一探测拿到 `T`/`F` 即在网，
+  refused 也是主机回的 RST；全 `X` 才是 `X`）→ 服务节点（`ip:port`，证据 =
+  finding 证据，banner 线索跟到 note），边出处 = `tcp-connect`。
+  **分工**：桥只登记探测证据；攻击语义由人随后用 LWW 改写。**幂等**：同报告
+  重跑图不变，新报告 LWW 刷新。
+- `attack::AttackGraph::add_node` 升级为 **LWW**：同 label 重复登记 = 证据与备注
+  后写覆盖（与边一致）——否则桥重跑时节点证据会和最新探测结果打架。
+- `findings_from_jsonl`：探测报告 JSONL 复原，坏行显式报错不静默丢。
+- `trit-net bridge <攻击图.jsonl> <探测报告.jsonl> [--station name]`：更新后的图
+  JSONL 走 stdout。
+- 测试 +4（结构/证据与 reach 贯通含见证、全 X 主机、幂等 + LWW 刷新 + 人工改写、
+  findings JSONL 往返与坏行拒绝）；变异门 +2（主机应答 any→all、服务节点证据
+  被升成 T）。
+### Fixed（trit-re：N4 加固轮——扫描预算 + 确定性模糊测试，对抗性输入不挂起）
+
+- **审查发现一个真风险**：hex 跳跃模式的回溯在对抗数据上指数爆炸——
+  `{ 90 [0-4096] 00 [0-4096] 00 [0-4096] 00 }` 配全 0x90 数据 ≈ 4096³ 条
+  回溯路径 = **挂起**（违反"任何输入不 panic 不挂起"不变量）。
+- `SCAN_BUDGET`(1M 步/模式)：段尝试 + 首段候选比较合计封顶，耗尽即停止
+  搜索。**耗尽的语义 = 扫描不完整 → 规则裁决 `Unknown` 而非 `False`**——
+  "未命中只在完整扫描后给出"的组成面（预算耗尽的沉默不是清白；YARA 用
+  时间超时，我们用确定性预算——同样的 fail-closed，可复算）。
+- `tests/fuzz_sigscan.rs` 新增（确定性模糊，xorshift64 固定种子可复现）：
+  随机文本 4000 次 + 真实规则结构变异（删/插/替）3000 次 + 随机 hex spec
+  4000 次 + 随机数据×随机模式×截断 800 次 + **对抗性跳跃链 40 次**（无预算
+  版本会跑数分钟）——五路夹击 `yaraparse`/`Pattern::hex`/`SigScan`，
+  不变量：不 panic、不挂起、命中数封顶纪律。
+- 测试 144 全绿（+7：2 预算语义 + 5 模糊）、clippy/fmt/module_budget/
+  变异门 31/secret/hazard 全过；sigscan.rs 681 行 ≤ 800。
+
+### Fixed（trit-re：N4 对拍揪出的词法 bug——`.` 不在断字集）
+
+- `yaraparse` 词法器的 word 分支没把 `.` 列入断字集：`in (4..8)` 的 `4..8`
+  被整体吞成一个 Word，`parse_int` 直接挂。修复：`.` 加入断字集（`pe.*`
+  之类模块路径本就不支持，断开与否只影响报错形状），区间分隔符解析简化为
+  「Sym('.')×2 与 Word("..") 两种形态都认」。**真对拍揪出来的**——合成批次
+  之前 137 测试全绿也没覆盖到 `4..8` 这种连写形态。
+
+### Added（trit-re：N4 对拍跑通——官方 YARA 引擎真对拍全绿，验收判据达成）
+
+- **环境通路选 uv（最轻一条）**：`uv python install 3.13`（python-build-standalone
+  预编译，免 MSVC）+ `uv venv` + `uv pip install yara-python`（cp313 预编译
+  轮子 4.5.4）——15ms 装完，绕开 py3.14 无轮子 + 无 MSVC 的双重卡点。
+- **真对拍结果**：合成对抗批次 6 样本 × 9 规则（官方 YARA 4.5.4 vs
+  trit-re 子集实现）→ **MATCH 6 / DIFF 0 / SUBSET-GAP 4 / OFFICIAL-ERR 0**。
+  覆盖：wide 文本、`at 0`、`in (4..8)`、`2 of them`、`all of ($pa*)`、
+  `not $ref`、跳跃窗口、正则挂账、filesize 挂账——可评估规则**命中集合
+  100% 一致**，不可评估规则全部正确落入 SUBSET-GAP 类（子集边界，不算失败）。
+  N4 验收判据「与官方 YARA 在同一批样本上的命中集合一致」在子集范围内达成。
+- **吞吐读数**（naive 逐字节扫描的量级，优化非目标）：34 MB 放大样本 ×
+  3 规则 **0.80 s ≈ 42.6 MB/s**（`sigscan` CLI 实测；356 KB notepad 单扫
+  0.48 s 含进程启动）。
+- `trit-re sigscan <样本> --rules <规则.yar>` CLI 子命令：逐规则一行
+  `HIT/MISS/UNKNOWN\t<name>`（对拍口径：HIT 行即命中集合）+ 不支持的规则
+  另出 `UNSUPPORTED\t<name>\t<原因>`——绝不静默；stderr 一行人读摘要。
+- `scripts/yara_diff.py`：**对拍 harness**——yara-python（官方引擎）vs
+  trit-re sigscan 逐样本对照命中集合，四态分类：MATCH / DIFF（真差异，退出
+  码 1）/ SUBSET-GAP（trit-re 未评估的子集边界规则，单独计数不算失败）/
+  OFFICIAL-ERR（官方引擎侧错误）；缺 yara-python 时优雅降级（安装提示 +
+  退出码 2）。
+- 🔴 **环境受阻的原始记录（2026-11-05 上午）**：本机 Python 3.14 无
+  yara-python 预编译轮子，源码构建需要 MSVC（未安装）；`py -0p` 列出的
+  3.12/3.11 是残留注册（python.exe 已不存在）——后由 uv 通路解决（见上）。
+- 测试 137 全绿、clippy/fmt/module_budget/变异门 31/secret/hazard 全过；
+  对拍抓出并修复词法 bug（见上 Fixed）。
+
+### Added（trit-re：N4 第二层——YARA 规则文件解析器）
+
+- `src/yaraparse.rs` 新增：`.yar` 文本 → `sigscan::Rule`。词法器引号感知
+  （字符串里的 `//` 是内容不是注释；`//` 行注释 / `/* */` 块注释 / 转义）、
+  meta 计数、`import`/`include` 入 notes（模块语义不支持，如实记录）、
+  字符串修饰符（nocase/wide/ascii——先收值再收修饰符，一次构造模式）、
+  hex 块（含通配/跳跃，复用 `Pattern::hex` 的全部语法检查）。
+- 条件递归下降：`and/or/not`（优先级 or < and < not/primary）、括号、
+  `$id`、`$id at N`、`$id in (a..b)`、`any/all/N of them`、`any/all/N of
+  ($x*)`（前缀集）；整数支持十进制与 `0x` 十六进制。
+- **fail-closed 是本层的主语义**：解析不了的规则 → `RuleOutcome::Unsupported`
+  带原因 → 扫描时按 `Unknown` 裁决，**绝不静默跳过**（评估不了的规则报
+  "没命中"就是说谎）。正则串 / `filesize` / `pe.*` / 未知 `$ref` / 条件尾
+  未消化 token 全部走这条路，集成测试逐类钉死。
+- `sigscan::Condition` 升级为表达式树（新增 Ref/And/Or/Not/OfAny/OfAll/
+  OfCount，`is_none_or` 前缀匹配）；`Rule` 补 `patterns()`/`condition_ref()`
+  访问器与 `pub(crate) from_parts` 装配器。
+- 测试 +9（`tests/yara.rs` 8 条集成 + 模块烟测）：全字段规则、正则挂账、
+  filesize 挂账、未知引用挂账、**Unsupported 规则扫描时 Unknown 绝不 False**、
+  表达式树经 SigScan 端到端三值判定、结构错误（未闭合/缺名/注释未闭合）、
+  hex 块跳跃；行数预算：测试迁 `tests/yara.rs` 后 yaraparse.rs 689 ≤ 800。
+- 🔴 剩余半只如实挂账：与官方 YARA 的命中集合对拍（等真实样本批次与 yara
+  就位，N1 口径）。
+
+### Added（trit-re：N4 第一层——sigscan 三值签名匹配）
+
+- `src/sigscan.rs` 新增：YARA 子集的三值匹配器。hex 串（`??` 通配、
+  `[n]`/`[n-m]` 跳跃，`[2-4]` 与 `[2 - 4]` 两种写法都认，**跳跃后必须有
+  字节段**——以跳跃开头/结尾一律拒绝）、文本串（ascii / nocase=ASCII 折叠 /
+  wide=仅 UTF-16LE，对齐 YARA `wide` 语义）、声明式条件
+  （All/Any/Count/At/In）。
+- **三值纪律与 N4 验收判据逐字对应**：命中 `True`（不依赖输入完整性）、
+  完整扫描且未命中 `False`、**输入截断 `Unknown`**——"未命中"只在完整扫描
+  后给出（fail-closed：截断的沉默不是清白）。整体裁决 = 各规则 Kleene OR
+  （报警语义：任一命中即报警，`False ∨ Unknown = Unknown`）。
+- 护栏：每模式命中 ≤ `MAX_HITS`(1024)、跳跃跨度 ≤ `MAX_JUMP`(0x1000)、
+  病态模式在收割侧截断不挂起。
+- 测试 +8：hex 字面量/通配/跳跃窗口（边界内外）、语法错误 fail-closed
+  （未闭合/区间反/以跳跃开头或结尾/非法字节）、nocase/wide、五条件、
+  **截断判据本体**（截断未命中 Unknown、截断命中 True、完整未命中 False）、
+  Kleene OR 语义、命中封顶。
+- 🔴 如实挂账：YARA 规则文件解析器 + 与官方 YARA 命中集合对拍（等真实样本
+  批次与 yara 就位，N1 口径）；当前规则经 Rust API 构造。
+
+### Added（trit-re：N2 v4——数据节指针表收割，漏检类清零）
+
+- `functions::pe_pointer_seeds` 新增：**非可执行节里指向可执行域的指针串**
+  （vtable/回调表）→ 候选函数起点。全机械过滤：PE32+ 按 u64 / PE32 按 u32
+  对齐步进；值 − `image_base` 必须落在可执行域内（NULL 槽位跳过、非可执行
+  域值归零连击）；**连续 ≥2 个**指针（表的形状）全收，孤立指针仅 16 字节
+  对齐时收（x64 MSVC 函数 16 对齐；不对齐孤立值多半是整数巧合——宁可丢也
+  不给假起点）。ELF 不在此列：PIE 下数据节指针要先过重定位，诚实留白。
+- `cfg_ranges` 加 `pointer_seeds` 参数：种子只当起点、不进块遍历（零覆盖
+  污染风险）；`build_pe` 精确路径接入（note 报告种子数）。
+- **验收实测**：trit-re.exe 未归属 15→**12**（**疑边界漏检 1→0 清零**，
+  函数 4324→**4591** = +267 个 vtable/回调起点，归属 2662→2665）；
+  notepad.exe 未归属 2 不变（漏检 1 不是指针表可解——不是每条漏检都能机械
+  找回，如实保留；函数 458→510）；`fn_*` 判定全表不变。测试 118 全绿（+2：
+  收割过滤规则单元 + 端到端 vtable 起点）、clippy/fmt/module_budget/变异门
+  31/secret/hazard 全过。
+
+### Added（trit-re：N2 v3——取址分析，间接调用叶子的起点信号）
+
+- `x86len::decode` 新增 `addr_taken`：`lea r64,[rip+disp32]`（mod=00 rm=101）
+  的落点——**地址被取 = 回调/虚表项，间接调用函数的起点信号**；`mov` 加载、
+  非 rip 相对形态、控制流指令恒 `None`。
+- `cfg::walk` 把取址目标**当新种子继续走**（不动点：新函数体里再发现取址/
+  调用边继续扩），起点合成加第三路：遍历确认调用目标 ∪ 前向无条件跳 ∪
+  **取址目标** ∪ 未覆盖层一候选回落。
+- **验收实测**：trit-re.exe 未归属 16→**15**（+1 归属，函数 4259→**4324**
+  = +65 个取址发现的间接入口）；notepad.exe 不变（残差漏检 1 是数据节表项
+  ——vtable 在 `.rdata`，代码内 `lea` 够不着，数据节指针表解析是 v4 范畴）；
+  `fn_*` 判定全表不变。测试 116 全绿（+1 取址单元 + +1 端到端）、clippy/fmt/
+  module_budget/变异门 31/secret/hazard 全过。
+
+### Added（trit-re：N2 v2——x86-64 最小长度解码器 + 块遍历验证层）
+
+- `functions/x86len.rs` 新增：**最小 x86-64 指令长度解码器**（fail-closed——
+  解不出返回 `None` 绝不猜）。覆盖：legacy/REX 前缀（REX.W 压过 `0x66` 的
+  立即数宽度）、ModRM/SIB/disp/imm 全寻址形态、主流整数指令、常用 SSE
+  （两字节 opcode 默认 ModRM）、全部控制流；15 字节上限 + 缓冲区装不下即停走。
+  不支持面如实列出：VEX/EVEX（`C4`/`C5`/`62`）、三字节逃逸（`0F 38`/`0F 3A`）、
+  64 位非法的 32 位时代指令（`60`/`61`/`D4`/`D5`/`27`…/`0F A0`/`0F A1`/
+  `0F A8`/`0F A9`）、moffs（`A0`-`A3`）——编译器产物里几乎只出现在**数据**
+  里，当停走信号恰好正确。`decode(bytes, base, addr) -> (len, kind, target)`
+  一次给出长度 + 控制流分类（Call/Jump/JumpCond/Ret/Other）+ 直接边目标。
+- `functions/cfg.rs` 接**块遍历验证层**（v2）：递归下降只从**可信种子**
+  （入口 + 精确区间起点）起走——从字节候选起走会拿数据当代码、覆盖面撒谎；
+  解码失败停链、访问数触顶（200k）停走、未覆盖区域回落层一（fail-closed
+  到 v1 行为，绝不静默缩覆盖）。起点合成 = 遍历确认的调用目标 ∪ 前向无条件
+  跳目标（尾调用/跳板——遍历归类，比字节猜测准）∪ 未被遍历覆盖的层一候选。
+- **验收读数（与 v1 逐字一致，如实记录）**：notepad.exe 未归属 2（漏检 1）、
+  trit-re.exe 未归属 16（漏检 1）——遍历验证没有改变归属结果（可达调用目标
+  层一字节扫描本来就能看到）；v2 的增量是**语义**（真边验证 + 尾调用归类）
+  与**地基**（解码器/遍历器），剩余漏检 = 间接调用的叶子（无静态 E8 源），
+  根治在间接调用解析而非块遍历。测试 114 全绿（+8 解码器）、clippy/fmt/
+  module_budget/变异门 31 全过。
+- 过程披露：`decode` 首版把 target 算在节内偏移空间、与调用方的绝对地址空间
+  错位（测试当场判红）；入口被「已覆盖」判定吞掉（测试当场判红）——两处都靠
+  层一测试网兜住后修正。
+
+### Added（trit-re：N2 最小 CFG 第一层——CFG 补隙合并）
+
+- `functions/cfg.rs` 新增（N2 路线图第一层）：直接控制流边收割（x86 `E8`/`E9`、
+  ARM64 `BL`/`B`，字节模式级）+ 入口/目标定起点 + **补隙合并**——有精确边界源
+  （`.pdata`/COFF 符号/STT_FUNC/CFI）时只填充精确区间未覆盖的可执行隙，
+  **绝不切分精确区间**（往函数体中间插假起点会劈碎同函数共现——`fn_*` 回归的
+  头号来源）；无精确源时覆盖全部可执行节（旧 `heuristic_ranges` 的替换形态，
+  起点收割语义逐字节一致）。`FuncSource::Heuristic` 更名 `Cfg`（`"cfg"`），
+  `exact` 恒为 false——共现判定照旧要求精确源，剥表 PE32 的共现在此**保持诚实**
+  （换个名字不改变证据等级；指令级块遍历留 v2，前提是最小长度解码器）。
+- `build_pe`/`build_elf` 精确路径接入补隙（归一化精确区间 → CFG 填隙 → 再归一化）。
+- **验收测量（N2 判据，真实样本）**：notepad.exe 未归属 8→**2**（疑边界漏检
+  5→**1**，归属调用点 1719→1725）；trit-re.exe（自身）未归属 22→**16**（漏检
+  2→**1**，归属 2621→2661）；`fn_*` 判定行与基线构建**逐字一致**（含
+  `fn_injection`/`fn_stager`/`staged_loader` 全表对照），测试 106 全绿。
+- 测试 +5（`functions/cfg.rs`：无精确源=替换形态平铺、精确区间绝不切分、
+  隙内补起点、入口在隙内/在精确区间内两分支、ARM64 BL 目标定起点）；
+  `tests/pe.rs` COFF 夹具断言更新（total 2→3：隙里 E8 形字节产 Cfg 候选——
+  正是补隙语义，精确区间原样）。
+- 变异门 31 条全抓住（本片未新增判决逻辑，登记表不变）。
+=======
 ### Added（仓库边界文档 + 文档卫生门）
 
 - 新 `docs/SCOPE.md`：**主库存什么、不存什么**的一次定案 —— 收进来的四条判据（R1 与具体项目无关、

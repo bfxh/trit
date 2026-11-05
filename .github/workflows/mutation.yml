@@ -49,6 +49,13 @@ jobs:
           jsons=$(git diff --name-only "$BASE_SHA"...HEAD -- 'scripts/mutants/*.json' \
             | sed -E 's#^scripts/mutants/(.*)\.json$#\1#; s#__#/#g' || true)
           pkgs=$(printf '%s\n%s\n%s\n%s\n' "$pkgs" "$scripts" "$bsh" "$jsons" | sed '/^$/d' | sort -u)
+          # 靶子消失了就不算「这个目标 0 条变异」：删除型 PR（整仓迁走）里，crate 目录与被删的
+          # 登记表路径都还会被 diff 选中，而门对「选中了但 0 条」是 fail-closed 判红 —— 那是一条
+          # 根本没东西可跑的靶子，不是漏登记。剔除口径只认 HEAD 上还在的东西：目录/文件任一存在即保留。
+          # 反过来，新加的 crate（目录在、登记 0 条）仍会走到门的判红分支，fail-closed 不放松。
+          pkgs=$(for p in $pkgs; do
+                   if [ -e "$p" ] || [ -e "crates/$p" ]; then printf '%s\n' "$p"; fi
+                 done | sort -u)
           args=""
           for pkg in $pkgs; do args="$args --pkg $pkg"; done
           echo "args=$args" >> "$GITHUB_OUTPUT"

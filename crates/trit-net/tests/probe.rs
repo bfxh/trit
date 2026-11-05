@@ -9,9 +9,10 @@ use std::io::Write as _;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, TcpListener, TcpStream};
 use std::time::Duration;
 
-use trit_net::netsec::attack::Evidence;
+use trit_net::netsec::attack::{AttackGraph, Evidence};
 use trit_net::netsec::probe::{
-    Allowlist, ProbeConfig, ProbeError, ProbeFinding, classify_connect, is_lab_address, run,
+    Allowlist, ProbeConfig, ProbeError, ProbeFinding, attach_probe, classify_connect,
+    findings_from_jsonl, is_lab_address, run,
 };
 
 fn fast_config() -> ProbeConfig {
@@ -260,4 +261,140 @@ fn report_jsonl_roundtrip() {
     assert_eq!(lines.len(), 1);
     let back: ProbeFinding = serde_json::from_str(lines[0]).unwrap();
     assert_eq!(back, report.findings[0]);
+}
+
+fn finding(ip: &str, port: u16, evidence: Evidence, note: &str) -> ProbeFinding {
+    ProbeFinding {
+        ip: ip.to_string(),
+        port,
+        evidence,
+        source: "tcp-connect".to_string(),
+        note: note.to_string(),
+    }
+}
+
+#[test]
+fn attach_builds_station_host_service_with_evidence() {
+    let findings = vec![
+        finding(
+            "10.0.0.5",
+            443,
+            Evidence::Confirmed,
+            "connected banner:HTTP",
+        ),
+        finding("10.0.0.5", 22, Evidence::Unverified, "timed out"),
+        finding("10.0.0.9", 445, Evidence::RuledOut, "refused"),
+    ];
+    let mut graph = AttackGraph::new();
+    let summary = attach_probe(&mut graph, &findings, "lab-station").unwrap();
+    assert_eq!(summary.hosts, 2);
+    assert_eq!(summary.services, 3);
+    assert_eq!(summary.edges, 5);
+    // 节点：station=T、主机=应答证据、服务=finding 证据。
+    let station = graph.node_id("lab-station").unwrap();
+    assert_eq!(graph.node(station).unwrap().evidence, Evidence::Confirmed);
+    let host_a = graph.node_id("10.0.0.5").unwrap();
+    assert_eq!(graph.node(host_a).unwrap().evidence, Evidence::Confirmed);
+    let host_b = graph.node_id("10.0.0.9").unwrap();
+    // 主机 B 只有 refused——refused 也是主机回的 RST ⇒ 在网（Confirmed）。
+    assert_eq!(graph.node(host_b).unwrap().evidence, Evidence::Confirmed);
+    let svc_t = graph.node_id("10.0.0.5:443").unwrap();
+    let svc_x = graph.node_id("10.0.0.5:22").unwrap();
+    let svc_f = graph.node_id("10.0.0.9:445").unwrap();
+    assert_eq!(graph.node(svc_t).unwrap().evidence, Evidence::Confirmed);
+    assert_eq!(graph.node(svc_x).unwrap().evidence, Evidence::Unverified);
+    assert_eq!(graph.node(svc_f).unwrap().evidence, Evidence::RuledOut);
+    assert!(graph.node(svc_t).unwrap().note.contains("banner:HTTP"));
+    // 边证据与出处。
+    assert_eq!(
+        graph.edge(host_a, svc_x).map(|edge| edge.evidence),
+        Some(Evidence::Unverified)
+    );
+    assert_eq!(
+        graph.edge(host_a, svc_x).map(|edge| edge.source.as_str()),
+        Some("tcp-connect")
+    );
+    // reach 贯通：T 服务已证实、X 服务待验证（见证点名 host→svc 边与服务节点）、
+    // F 服务已排除。
+    let limits = trit_net::netsec::attack::Limits::default();
+    let reach_t = graph.reach(station, svc_t, limits).unwrap();
+    assert_eq!(reach_t.verdict, Evidence::Confirmed);
+    let reach_x = graph.reach(station, svc_x, limits).unwrap();
+    assert_eq!(reach_x.verdict, Evidence::Unverified);
+    let open = &reach_x.paths[0].open;
+    assert!(open.contains(&trit_net::netsec::attack::OpenStep {
+        node: host_a,
+        edge_to: Some(svc_x),
+    }));
+    assert!(open.contains(&trit_net::netsec::attack::OpenStep {
+        node: svc_x,
+        edge_to: None,
+    }));
+    let reach_f = graph.reach(station, svc_f, limits).unwrap();
+    assert_eq!(reach_f.verdict, Evidence::RuledOut);
+}
+
+#[test]
+fn attach_all_timeout_host_stays_unverified() {
+    // 全 X 的主机：应答证据 = X（分不清 filtered 还是没有这台主机）。
+    let findings = vec![finding("10.0.0.7", 80, Evidence::Unverified, "timed out")];
+    let mut graph = AttackGraph::new();
+    attach_probe(&mut graph, &findings, "lab-station").unwrap();
+    let host = graph.node_id("10.0.0.7").unwrap();
+    assert_eq!(graph.node(host).unwrap().evidence, Evidence::Unverified);
+}
+
+#[test]
+fn attach_is_idempotent_and_lww_refreshes() {
+    let findings = vec![finding("10.0.0.5", 443, Evidence::Confirmed, "connected")];
+    let mut graph = AttackGraph::new();
+    attach_probe(&mut graph, &findings, "lab-station").unwrap();
+    let snapshot = graph.clone();
+    // 同一份报告重登记 ⇒ 图不变。
+    attach_probe(&mut graph, &findings, "lab-station").unwrap();
+    assert_eq!(graph, snapshot);
+    // 端口状态变了（服务被关）⇒ 新报告 LWW 刷新节点与边。
+    let newer = vec![finding("10.0.0.5", 443, Evidence::RuledOut, "refused")];
+    attach_probe(&mut graph, &newer, "lab-station").unwrap();
+    let svc = graph.node_id("10.0.0.5:443").unwrap();
+    assert_eq!(graph.node(svc).unwrap().evidence, Evidence::RuledOut);
+    let host = graph.node_id("10.0.0.5").unwrap();
+    assert_eq!(graph.edge(host, svc).unwrap().evidence, Evidence::RuledOut);
+    // 攻击语义的人写改写同样走 LWW：人给这条边登记攻击步骤。
+    graph
+        .add_edge(host, svc, Evidence::Confirmed, "smb 利用已复现（人工）")
+        .unwrap();
+    assert_eq!(
+        graph.edge(host, svc).unwrap().source,
+        "smb 利用已复现（人工）"
+    );
+}
+
+#[test]
+fn findings_from_jsonl_roundtrip_and_rejects_bad_lines() {
+    let findings = vec![
+        finding("10.0.0.5", 443, Evidence::Confirmed, "connected"),
+        finding("10.0.0.9", 445, Evidence::RuledOut, "refused"),
+    ];
+    let text = findings
+        .iter()
+        .map(|f| serde_json::to_string(f).unwrap())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let back = findings_from_jsonl(&text).unwrap();
+    assert_eq!(back, findings);
+    // 坏行显式报错，不静默丢。
+    assert!(matches!(
+        findings_from_jsonl(
+            "{\"ip\":\"10.0.0.5\",\"port\":443,\"evidence\":\"Q\",\"source\":\"x\",\"note\":\"\"}"
+        ),
+        Err(ProbeError::Json(_))
+    ));
+    assert!(matches!(
+        findings_from_jsonl("not-json"),
+        Err(ProbeError::Json(_))
+    ));
+    // 空行跳过。
+    let with_blank = format!("{text}\n\n");
+    assert_eq!(findings_from_jsonl(&with_blank).unwrap().len(), 2);
 }
