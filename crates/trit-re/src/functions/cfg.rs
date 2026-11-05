@@ -75,10 +75,9 @@ pub(super) fn cfg_ranges(
         trusted.insert(entry);
     }
     trusted.extend(exact.iter().map(|f| f.start));
-    let walk_out = if arch == Arch::X86 {
-        walk(exec, &trusted, arch)
-    } else {
-        WalkOutput::default()
+    let walk_out = match arch {
+        Arch::X86 => walk(exec, &trusted),
+        Arch::Arm64 => super::arm64walk::arm64_walk(exec, &trusted),
     };
     // 起点合成：
     //   ① 遍历确认的调用目标（可达 = 真边，含遍历挖出的传递目标）
@@ -123,7 +122,7 @@ pub(super) fn cfg_ranges(
 
 /// 块遍历的结果（x86）。
 #[derive(Default)]
-pub(super) struct WalkOutput {
+pub(in crate::functions) struct WalkOutput {
     /// 遍历中发现的直接调用目标（可达 = 真边）。
     pub call_targets: BTreeSet<u64>,
     /// 前向无条件跳目标（尾调用/跳板候选）。
@@ -147,17 +146,14 @@ impl WalkOutput {
 }
 
 /// 访问指令数上限（病态输入护栏；触顶后未走区域回落层一）。
-const WALK_CAP: usize = 200_000;
+pub(in crate::functions) const WALK_CAP: usize = 200_000;
 
 /// 递归下降块遍历（x86）：从可信种子线性走 + 控制流边扩展。
 /// 解码失败 = 停链（fail-closed，绝不猜）；条件跳的顺序边照走、无条件跳
 /// 不走顺序边（fall-through 属于别处）、ret 停链。目标只追可执行域内的。
-pub(super) fn walk(exec: &[(u64, &[u8])], seeds: &BTreeSet<u64>, arch: Arch) -> WalkOutput {
+pub(in crate::functions) fn walk(exec: &[(u64, &[u8])], seeds: &BTreeSet<u64>) -> WalkOutput {
+    // x86 专用：递归下降走 x86len 解码的指令流。ARM64 走 [`arm64walk::arm64_walk`]。
     let mut out = WalkOutput::default();
-    if arch != Arch::X86 {
-        // ARM64 固定 4 字节步进，层一扫描已精确，块遍历留给 v3
-        return out;
-    }
     let mut stack: Vec<u64> = seeds
         .iter()
         .filter(|s| in_exec_any(**s, exec))
@@ -223,12 +219,15 @@ pub(super) fn walk(exec: &[(u64, &[u8])], seeds: &BTreeSet<u64>, arch: Arch) -> 
     out
 }
 
-fn in_exec_any(addr: u64, exec: &[(u64, &[u8])]) -> bool {
+pub(in crate::functions) fn in_exec_any(addr: u64, exec: &[(u64, &[u8])]) -> bool {
     exec.iter()
         .any(|(base, data)| addr >= *base && addr < base.saturating_add(data.len() as u64))
 }
 
-fn section_of<'a>(addr: u64, exec: &'a [(u64, &'a [u8])]) -> Option<(u64, &'a [u8])> {
+pub(in crate::functions) fn section_of<'a>(
+    addr: u64,
+    exec: &'a [(u64, &'a [u8])],
+) -> Option<(u64, &'a [u8])> {
     exec.iter()
         .find(|(base, data)| addr >= *base && addr < base.saturating_add(data.len() as u64))
         .map(|(base, data)| (*base, *data))
