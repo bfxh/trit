@@ -23,6 +23,7 @@ pub mod diffuse;
 pub use trit_core::fingerprint;
 pub mod fuse;
 pub mod geo;
+pub mod glb;
 pub mod inst;
 pub mod job;
 pub mod light;

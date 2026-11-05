@@ -310,5 +310,29 @@
     "new": "    let _ = base;\n    p",
     "pkg": "trit-parts",
     "filter": "tests::relative_inputs_resolve_against_bundle"
+  },
+  {
+    "name": "glb: 法线不归一化",
+    "file": "crates/trit-parts/src/glb.rs",
+    "old": "                [(v[0] / l) as f32, (v[1] / l) as f32, (v[2] / l) as f32]",
+    "new": "                [v[0] as f32, v[1] as f32, v[2] as f32]",
+    "pkg": "trit-parts",
+    "filter": "glb::tests::normals_are_unit_and_parse_obj_roundtrips"
+  },
+  {
+    "name": "glb: 节点平移漏掉 c−R·c",
+    "file": "crates/trit-parts/src/glb.rs",
+    "old": "    let rc = [cx * c + cz * s, -cx * s + cz * c];",
+    "new": "    let rc = [cx, cz];",
+    "pkg": "trit-parts",
+    "filter": "glb::tests::node_trs_matches_layout_transform"
+  },
+  {
+    "name": "glb-verify: 不查总长与文件长度一致",
+    "file": "crates/trit-parts/src/bin/parts_glb_verify.rs",
+    "old": "    if ver != 2 || total != b.len() {",
+    "new": "    if ver != 2 {",
+    "pkg": "trit-parts",
+    "filter": "tests::chunks_and_structure_checks"
   }
 ]
