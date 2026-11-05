@@ -72,3 +72,63 @@ fn empty_clause_sets_are_counted_at_their_extremes() {
     assert_eq!(count_cnf(&none).count, 0, "有空子句就没有解");
     assert_eq!(count_cnf(&none).count, brute(&none.clauses, none.nvars));
 }
+
+/// 库里的穷举尺（`oracle::count_cnf_exhaustive`）必须和这份**故意另写**的朴素枚举逐例相同。
+/// 两条链共用一把尺就等于没有复核：`--fuzz-cnf` 用的是库里那把，这里证明它没被写歪。
+#[test]
+fn library_ruler_agrees_with_the_independent_enumeration() {
+    let mut rng = SeedRng::new(0xFEED_FACE_0000_0001);
+    for nvars in 1..=10usize {
+        for len in [2usize, 3, 5] {
+            let clauses = random_cnf(&mut rng, nvars, 3 * nvars, len);
+            let formula = Cnf { nvars, clauses };
+            assert_eq!(
+                trit_count::oracle::count_cnf_exhaustive(&formula),
+                brute(&formula.clauses, formula.nvars),
+                "nvars={nvars} len={len} 两把穷举尺不一致"
+            );
+        }
+    }
+}
+
+/// CLI 面：`--fuzz-cnf` 必须自己报一致，而不是只在库测试里成立。
+///
+/// 找二进制的尺和 `trit-cli/tests/*` 一致：`CARGO_BIN_EXE_*` 在有些作业里不注入，
+/// 回退成"让 PATH 去找裸名字"会报成产品故障（这轮在 MSRV 上刚踩过）。
+#[test]
+fn cli_fuzz_cnf_reports_agreement() {
+    let bin = if let Ok(path) = std::env::var("CARGO_BIN_EXE_trit-count") {
+        std::path::PathBuf::from(path)
+    } else {
+        let mut dir = std::env::current_exe().expect("current exe");
+        dir.pop();
+        dir.pop();
+        dir.join(format!("trit-count{}", std::env::consts::EXE_SUFFIX))
+    };
+    assert!(bin.exists(), "找不到 trit-count 二进制：{}", bin.display());
+    let out = std::process::Command::new(&bin)
+        .args(["--fuzz-cnf", "--nvars", "8", "--cases", "2"])
+        .output()
+        .unwrap_or_else(|e| panic!("跑 {} 失败：{e}", bin.display()));
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "stderr={stderr} stdout={stdout}"
+    );
+    assert!(stdout.contains("逐一对账一致"), "没报一致：{stdout}");
+    assert!(
+        stdout.contains("16 个"),
+        "nvars 1..=8 × 2 轮应是 16 例：{stdout}"
+    );
+
+    // 上限守卫：`--nvars 99` 会让穷举变成 2^99，必须拒了而不是开始等。
+    let over = std::process::Command::new(&bin)
+        .args(["--fuzz-cnf", "--nvars", "99"])
+        .output()
+        .expect("跑上限守卫");
+    assert_eq!(over.status.code(), Some(2), "越界输入该用法错误码 2");
+    let msg = String::from_utf8_lossy(&over.stderr).into_owned();
+    assert!(msg.contains("上限取 40"), "报错要给出上限：{msg}");
+}

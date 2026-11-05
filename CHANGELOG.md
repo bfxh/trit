@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（`trit-count --fuzz-cnf`：把随机 CNF 对账从测试里搬到工具上）
+
+- 新公开尺 `trit_count::oracle::count_cnf_exhaustive(&Cnf)`（库里那份），与 `tests/cnf_fuzz.rs` 里
+  **故意另写**的朴素枚举互为独立复核——两条链共用一把尺就等于没有复核。
+- CLI：`trit-count --fuzz-cnf [--cases N] [--nvars MAX] [--len K]`，默认 `nvars=1..=16` 各一条；
+  `--nvars` 超过 40 直接用法错误码 2（穷举是 `2^n`，不给它开始等死的机会）。
+  release 实测：`--fuzz-cnf --nvars 20` ⇒ **20 例全对，最慢一次 191µs**（读数也写进 README 那行）。
+- 新增断言 3 条（`cnf_fuzz.rs` 现 **4 条**）：432 例 DPLL vs 穷举、两把穷举尺逐例相同、CLI 报一致 + 越界守卫。
+- 变异登记 `trit-count` 21→**22 条**，新增的 "oracle: CNF 穷举把负文字当正文字"
+  用命名过滤实测 **FAILED**（抓住），源码随即恢复。
+- `cargo clippy -p trit-count --tests` 无告警、`main.rs` 494 行（离 800 行门还远）。
+
 ### Added（`trit-fuzz` 第二批：CNF 语料 + 它的第一条消费者）
 
 - `random_cnf(rng, nvars, nclauses, clause_len)`（DIMACS 口径：文字是 `±1..=nvars`）与 `random_assignment`。
