@@ -13,7 +13,7 @@
 - 读数：3 条共享验证集的日志切 2 片后，第二片 header `oracle_parent=0`、`oracles=[]`，
   文本里不再出现第二份验证集；检查点续放仍解析继承表。disjoint/consensus/tie/majority
   四类投票与基准校验均有断言。
-- 测试 137 → 146 + 1 doctest；变异 111 → **123 条，123/123 caught**；test_surface 2,282 → 2,291。
+- 测试 137 → 146 + 1 doctest；变异 111 → **123 条，123/123 caught**；test_surface 2,282 → 2,319（合并 main 新增测试后）。
 - 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
   hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
 
