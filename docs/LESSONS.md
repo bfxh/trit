@@ -55,3 +55,10 @@
 - **拿备份文件回滚源码后要 `touch` 它**：`mv x.bak x` 恢复的 mtime 可能比构建产物还旧，
   cargo 判定「没变更」继续链那份被变异过的 rlib —— 于是测试红的是刚刚已经被撤销的变异，
   而源码看起来是对的。做「删一行看测试会不会挂」这类验证时必踩（WF32 链式内核实测）。
+- **本地门线要用 CI 的逐字命令，不要自创弱口径**：`cargo clippy -p <crate> --tests` 少了 examples/benches、
+  也漏掉没点名的包；CI 是 `cargo clippy --workspace --all-targets --locked -- -D warnings`。
+  2026-11-06 就是靠这条差别让三平台的 Clippy 步骤一起红（rust 1.99 新 lint `manual_contains`）。
+- **两张门的口径不能互相顶牛**：`doc_pointers.py` 要求"同名文件必须写带目录的全路径"，而 `model_status.py`
+  第一版只认 `src/` 相对 —— 表一改成全路径它就自己报红。改完它两种都认，并补一条变异钉住（`scripts/mutants/scripts__model_status.py.json`）。
+- **一片做完再推**：同一分支连续 push 会把在跑的 run 顶掉（实测连续 4 次推 ⇒ 前一趟 CI 被 cancelled），
+  白等一轮 8–10 分钟。收尾的门线全绿之后再推一次，比边写边推省时间。
