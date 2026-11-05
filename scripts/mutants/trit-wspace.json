@@ -1,0 +1,986 @@
+[
+ {
+  "name": "wspace: 符号把 0 判成 +1",
+  "file": "crates/trit-wspace/src/trit.rs",
+  "old": "} else if value > 0 {",
+  "new": "} else if value >= 0 {",
+  "pkg": "trit-wspace",
+  "filter": "sign_of_is_total"
+ },
+ {
+  "name": "wspace: 校验和不比对",
+  "file": "crates/trit-wspace/src/codec.rs",
+  "old": "if got != expected {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "codec_detects_any_trit_change"
+ },
+ {
+  "name": "wspace: 补丁先应用后校验（事务性丢失）",
+  "file": "crates/trit-wspace/src/edit.rs",
+  "old": "self.validate(net)?;",
+  "new": "if false {\n            self.validate(net)?;\n        }",
+  "pkg": "trit-wspace",
+  "filter": "patch_is_transactional"
+ },
+ {
+  "name": "wspace: BFS 不检查精确解",
+  "file": "crates/trit-wspace/src/repair.rs",
+  "old": "let mut found = patch.clone();\n                found.push(candidate.clone());\n                if oracle.exact(&trial)? {",
+  "new": "let mut found = patch.clone();\n                found.push(candidate.clone());\n                if false {",
+  "pkg": "trit-wspace",
+  "filter": "single_trit_corruption_is_repairable_by_one_edit"
+ },
+ {
+  "name": "wspace: 贪心对齐取最差行",
+  "file": "crates/trit-wspace/src/merge.rs",
+  "old": "if best == usize::MAX || score > best_score {",
+  "new": "if best == usize::MAX || score < best_score {",
+  "pkg": "trit-wspace",
+  "filter": "align_recovers_a_permuted_model_and_merge_is_identity"
+ },
+ {
+  "name": "wspace: 后置失败不回滚",
+  "file": "crates/trit-wspace/src/program.rs",
+  "old": "if !after_ok {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "program_rolls_back_when_postcondition_fails"
+ },
+ {
+  "name": "wspace: 激活丢掉整数累加",
+  "file": "crates/trit-wspace/src/net.rs",
+  "old": "out.push(Trit::sign_of(acc));",
+  "new": "out.push(Trit::Pos);",
+  "pkg": "trit-wspace",
+  "filter": "forward_is_sign_of_integer_accumulation"
+ },
+ {
+  "name": "wspace-wire: 忽略补丁版本",
+  "file": "crates/trit-wspace/src/wire/mod.rs",
+  "old": "if version != PATCH_VERSION {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "patch_json_rejects_bad_input"
+ },
+ {
+  "name": "wspace-wire: boolean 表把 0 读成 1",
+  "file": "crates/trit-wspace/src/wire/mod.rs",
+  "old": "'0' => Ok(Trit::Neg),",
+  "new": "'0' => Ok(Trit::Pos),",
+  "pkg": "trit-wspace",
+  "filter": "oracle_boolean_table_matches_exhaustive_order"
+ },
+ {
+  "name": "wspace-mcp: 工具清单返回空",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "let tools = tools();",
+  "new": "let tools: Vec<Value> = Vec::new();",
+  "pkg": "trit-wspace",
+  "filter": "lists_exactly_sixteen_tools"
+ },
+ {
+  "name": "wspace-mcp: 错误结果不再标 isError",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "\"isError\": true,",
+  "new": "\"isError\": false,",
+  "pkg": "trit-wspace",
+  "filter": "unknown_tool_and_bad_artifact_are_errors"
+ },
+ {
+  "name": "wspace-mcp: 忽略后置条件（不回滚）",
+  "file": "crates/trit-wspace/src/ops.rs",
+  "old": "if require_after {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "patch_rolls_back_when_postcondition_fails"
+ },
+ {
+  "name": "wspace-cli: --out 不落盘",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "    if let Some(path) = parsed.values.get(\"out\") {\n        atomic_write(path, &to_wsp(net))?;\n    }",
+  "new": "    if false {\n        atomic_write(\"/nonexistent\", &to_wsp(net))?;\n    }",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-propose: gain 符号写反",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "            edit,\n            before_loss,\n            after_loss: after_mismatches.len(),\n            gain: before_loss as isize - after_mismatches.len() as isize,",
+  "new": "            edit,\n            before_loss,\n            after_loss: after_mismatches.len(),\n            gain: after_mismatches.len() as isize - before_loss as isize,",
+  "pkg": "trit-wspace",
+  "filter": "top_candidate_is_the_exact_fix"
+ },
+ {
+  "name": "wspace-propose: 预测 after_loss 不更新",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "            edit,\n            before_loss,\n            after_loss: after_mismatches.len(),",
+  "new": "            edit,\n            before_loss,\n            after_loss: before_loss,",
+  "pkg": "trit-wspace",
+  "filter": "every_prediction_replays_exactly"
+ },
+ {
+  "name": "wspace-propose: fixed 数成 before∩after",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "        let fixed = before_mismatches\n            .iter()\n            .filter(|index| !after_set.contains(index))",
+  "new": "        let fixed = before_mismatches\n            .iter()\n            .filter(|index| after_set.contains(index))",
+  "pkg": "trit-wspace",
+  "filter": "every_prediction_replays_exactly"
+ },
+ {
+  "name": "wspace-mcp: 提议工具名被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "\"wsp_propose\" =>",
+  "new": "\"wsp_proposeX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "propose_returns_replayable_ranked_candidates"
+ },
+ {
+  "name": "wspace-cli: propose 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "\"propose\" => cmd_propose(&args[1..]),",
+  "new": "\"proposeX\" => cmd_propose(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-audit: 验链不比对 chain",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if entry.chain != want {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "tampering_is_detected"
+ },
+ {
+  "name": "wspace-audit: 重放忽略 rolled_back",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if entry.rolled_back {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "rolled_back_and_blocked_entries_replay_unchanged"
+ },
+ {
+  "name": "wspace-audit: 允许回滚条目前后不同",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if rolled_back && before_sum != after_sum {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "inconsistent_rollback_and_blocked_entries_are_rejected"
+ },
+ {
+  "name": "wspace-audit: prev 不接链头",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "let prev = self.head();",
+  "new": "let prev = GENESIS;",
+  "pkg": "trit-wspace",
+  "filter": "append_verify_replay_round_trip"
+ },
+ {
+  "name": "wspace-mcp: 审计工具名被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "\"wsp_audit\" =>",
+  "new": "\"wsp_auditX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "audit_verifies_chain_and_replays"
+ },
+ {
+  "name": "wspace-cli: audit 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "\"audit\" => crate::cli_audit::cmd_audit(&args[1..]),",
+  "new": "\"auditX\" => crate::cli_audit::cmd_audit(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-behavior: 不核对 before 行为指纹",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if Some(sig) != entry.behavior_before {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "behavior_mismatch_is_detected"
+ },
+ {
+  "name": "wspace-behavior: 不核对 after 行为指纹",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if Some(sig) != entry.behavior_after {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "behavior_mismatch_is_detected"
+ },
+ {
+  "name": "wspace-behavior: 记录不存验证集",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "oracle: oracle_value,",
+  "new": "oracle: None,",
+  "pkg": "trit-wspace",
+  "filter": "behavior_chain_round_trip_and_replay"
+ },
+ {
+  "name": "wspace-behavior: 重算链不接 prev",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "entry.prev = prev;",
+  "new": "entry.prev = GENESIS;",
+  "pkg": "trit-wspace",
+  "filter": "behavior_mismatch_is_detected"
+ },
+ {
+  "name": "wspace-behavior: 不限制日志里的验证集大小",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "if oracle.len() > MAX_LOGGED_ORACLE {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "oversized_oracle_is_rejected"
+ },
+ {
+  "name": "wspace-pairs: 配对 gain 符号写反",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "                after_loss: after_mismatches.len(),\n                gain: before_loss as isize - after_mismatches.len() as isize,",
+  "new": "                after_loss: after_mismatches.len(),\n                gain: after_mismatches.len() as isize - before_loss as isize,",
+  "pkg": "trit-wspace",
+  "filter": "pair_candidates_find_two_edit_fix"
+ },
+ {
+  "name": "wspace-pairs: 只应用第一条编辑",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "            first.apply_to(&mut trial)?;\n            second.apply_to(&mut trial)?;",
+  "new": "            first.apply_to(&mut trial)?;",
+  "pkg": "trit-wspace",
+  "filter": "every_pair_prediction_replays_exactly"
+ },
+ {
+  "name": "wspace-pairs: 忽略配对预算",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "if total_pairs > max_pairs {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "pair_budget_is_honest"
+ },
+ {
+  "name": "wspace-mcp: pairs 开关被忽略",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "if flag(args, \"pairs\") {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "propose_pairs_returns_two_edit_candidates"
+ },
+ {
+  "name": "wspace-cli: --pairs 开关被忽略",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        None if parsed.switches.contains(\"pairs\") => 2,",
+  "new": "        None if false => 2,",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-dedup: 关闭验证集去重",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "(Some(value), root, Some(before_sig), Some(after_sig))",
+  "new": "(Some(value), None, Some(before_sig), Some(after_sig))",
+  "pkg": "trit-wspace",
+  "filter": "repeated_oracle_is_content_addressed"
+ },
+ {
+  "name": "wspace-dedup: 解析时不解析 oracle_ref",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "                (None, Some(root)) => {\n                    let Some(entry) = log.entries.get(root) else {\n                        return Err(Error::Audit(format!(\n                            \"第 {} 行 oracle_ref={root} 指向不存在的条目（只能向前引用）\",\n                            index + 1\n                        )));\n                    };\n                    Some(entry.oracle.clone().ok_or_else(|| {\n                        Error::Audit(format!(\n                            \"第 {} 行 oracle_ref={root} 指向没有验证集的条目\",\n                            index + 1\n                        ))\n                    })?)\n                }",
+  "new": "                (None, Some(_)) => None,",
+  "pkg": "trit-wspace",
+  "filter": "repeated_oracle_is_content_addressed"
+ },
+ {
+  "name": "wspace-dedup: 越界引用落到第 0 条",
+  "file": "crates/trit-wspace/src/audit.rs",
+  "old": "                    let Some(entry) = log.entries.get(root) else {\n                        return Err(Error::Audit(format!(\n                            \"第 {} 行 oracle_ref={root} 指向不存在的条目（只能向前引用）\",\n                            index + 1\n                        )));\n                    };",
+  "new": "                    let entry = &log.entries[0];\n                    let _ = root;",
+  "pkg": "trit-wspace",
+  "filter": "bad_oracle_refs_are_rejected"
+ },
+ {
+  "name": "wspace-triples: 三组合 gain 符号写反",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "                    after_loss: after_mismatches.len(),\n                    gain: before_loss as isize - after_mismatches.len() as isize,",
+  "new": "                    after_loss: after_mismatches.len(),\n                    gain: after_mismatches.len() as isize - before_loss as isize,",
+  "pkg": "trit-wspace",
+  "filter": "triple_candidates_find_three_edit_fix"
+ },
+ {
+  "name": "wspace-triples: 只应用前两条编辑",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "                first.apply_to(&mut trial)?;\n                second.apply_to(&mut trial)?;\n                third.apply_to(&mut trial)?;",
+  "new": "                first.apply_to(&mut trial)?;\n                second.apply_to(&mut trial)?;",
+  "pkg": "trit-wspace",
+  "filter": "every_triple_prediction_replays_exactly"
+ },
+ {
+  "name": "wspace-triples: 忽略三组合预算",
+  "file": "crates/trit-wspace/src/analyze.rs",
+  "old": "if total > max_triples {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "triple_budget_is_honest"
+ },
+ {
+  "name": "wspace-mcp: depth=3 分支失效",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                    3 => {\n                        let max_triples = opt_usize(args, \"max_triples\", 20_000);",
+  "new": "                    4 => {\n                        let max_triples = opt_usize(args, \"max_triples\", 20_000);",
+  "pkg": "trit-wspace",
+  "filter": "propose_depth3_returns_three_edit_candidates"
+ },
+ {
+  "name": "wspace-cli: --depth 3 分支失效",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        3 => {\n            let max_triples = opt_usize(&parsed, \"max-triples\", 20_000)?;",
+  "new": "        4 => {\n            let max_triples = opt_usize(&parsed, \"max-triples\", 20_000)?;",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-candidate: 组合候选只取第一条",
+  "file": "crates/trit-wspace/src/wire/mod.rs",
+  "old": "    let edits = value\n        .get(\"edits\")\n        .and_then(Value::as_array)\n        .ok_or_else(|| wire(\"候选需要 edit（单点）或 edits（组合）\"))?;\n    if edits.is_empty() {\n        return Err(wire(\"候选 edits 不能为空\"));\n    }\n    let mut out = Vec::with_capacity(edits.len());\n    for edit in edits {",
+  "new": "    let edits = value\n        .get(\"edits\")\n        .and_then(Value::as_array)\n        .ok_or_else(|| wire(\"候选需要 edit（单点）或 edits（组合）\"))?;\n    if edits.is_empty() {\n        return Err(wire(\"候选 edits 不能为空\"));\n    }\n    let mut out = Vec::with_capacity(edits.len());\n    for edit in edits.iter().take(1) {",
+  "pkg": "trit-wspace",
+  "filter": "candidate_forms_build_patches"
+ },
+ {
+  "name": "wspace-mcp: 候选直用不返回日志",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "value[\"log\"] = json!(log.to_jsonl());",
+  "new": "value[\"log\"] = json!(\"\");",
+  "pkg": "trit-wspace",
+  "filter": "apply_candidate_uses_proposal_and_appends_log"
+ },
+ {
+  "name": "wspace-mcp: 候选直用忽略 require_after",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "let outcome = ops::apply_patch(&net, patch, oracle.as_ref(), false, require_after)",
+  "new": "let outcome = ops::apply_patch(&net, patch, oracle.as_ref(), false, false)",
+  "pkg": "trit-wspace",
+  "filter": "apply_candidate_rolls_back_and_logs_it"
+ },
+ {
+  "name": "wspace-cli: apply-candidate 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "\"apply-candidate\" => cmd_apply_candidate(&args[1..]),",
+  "new": "\"apply-candidateX\" => cmd_apply_candidate(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-explain: fixes 条件写反",
+  "file": "crates/trit-wspace/src/explain.rs",
+  "old": "let fixes = got != want && after == want;",
+  "new": "let fixes = got == want && after != want;",
+  "pkg": "trit-wspace",
+  "filter": "explain_ranks_the_fixing_edit_first"
+ },
+ {
+  "name": "wspace-explain: flips 恒为真",
+  "file": "crates/trit-wspace/src/explain.rs",
+  "old": "let flips = after != got;",
+  "new": "let flips = true;",
+  "pkg": "trit-wspace",
+  "filter": "flips_match_direct_evaluation"
+ },
+ {
+  "name": "wspace-explain: top 不截断",
+  "file": "crates/trit-wspace/src/explain.rs",
+  "old": "preliminary.truncate(full);",
+  "new": "let _ = full;",
+  "pkg": "trit-wspace",
+  "filter": "top_limits_fully_evaluated_candidates"
+ },
+ {
+  "name": "wspace-mcp: explain 工具名被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "\"wsp_explain\" =>",
+  "new": "\"wsp_explainX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "explain_reports_sample_and_fixing_edit"
+ },
+ {
+  "name": "wspace-cli: explain 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "\"explain\" => cmd_explain(&args[1..]),",
+  "new": "\"explainX\" => cmd_explain(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-probe: zero 探针用了 negate",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "let zero = effect(net, oracle, &zero_patch, &baseline)?;",
+  "new": "let zero = effect(net, oracle, &negate_patch, &baseline)?;",
+  "pkg": "trit-wspace",
+  "filter": "probe_effects_replay_exactly"
+ },
+ {
+  "name": "wspace-probe: 忽略 budget",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "let (selected, stride, sampled, selection, pilot) = if budget == 0 || rows <= budget {",
+  "new": "let (selected, stride, sampled, selection, pilot) = if true {",
+  "pkg": "trit-wspace",
+  "filter": "budget_samples_evenly"
+ },
+ {
+  "name": "wspace-probe: changed 计数写反",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": ".filter(|(left, right)| left != right)",
+  "new": ".filter(|(left, right)| left == right)",
+  "pkg": "trit-wspace",
+  "filter": "probe_effects_replay_exactly"
+ },
+ {
+  "name": "wspace-mcp: probe 工具名被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "\"wsp_probe\" =>",
+  "new": "\"wsp_probeX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "probe_returns_row_ablation"
+ },
+ {
+  "name": "wspace-cli: probe 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "\"probe\" => cmd_probe(&args[1..]),",
+  "new": "\"probeX\" => cmd_probe(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-adaptive: 行打分恒等",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "fn rank_score(left: &RowScore, right: &RowScore) -> Ordering {\n    right\n        .active\n        .cmp(&left.active)\n        .then(right.margin.cmp(&left.margin))\n        .then(right.nonzero.cmp(&left.nonzero))\n        .then(left.layer.cmp(&right.layer))\n        .then(left.row.cmp(&right.row))\n}",
+  "new": "fn rank_score(_left: &RowScore, _right: &RowScore) -> Ordering {\n    Ordering::Equal\n}",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_prefers_active_rows"
+ },
+ {
+  "name": "wspace-adaptive: 不钉输出层行",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "    for score in output {\n        if selected.len() >= budget {\n            break;\n        }\n        selected.push((score.layer, score.row));\n    }",
+  "new": "    for score in output {\n        let _ = score;\n    }",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_pins_output_row_with_budget_one"
+ },
+ {
+  "name": "wspace-adaptive: 活跃度不计数",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "if value != 0 {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_uses_activity_not_just_nonzero_weights"
+ },
+ {
+  "name": "wspace-mcp: adaptive 开关被忽略",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "if flag(args, \"adaptive\") {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "probe_adaptive_pins_output_row"
+ },
+ {
+  "name": "wspace-cli: --adaptive 开关被忽略",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "if parsed.switches.contains(\"adaptive\") {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-localize: 只试原值（原地打转）",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "filter(|candidate| *candidate != current)",
+  "new": "filter(|candidate| *candidate == current)",
+  "pkg": "trit-wspace",
+  "filter": "localize_row_finds_culprit_trit"
+ },
+ {
+  "name": "wspace-localize: gain 符号写反",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "gain: effect.gain,",
+  "new": "gain: -effect.gain,",
+  "pkg": "trit-wspace",
+  "filter": "localize_row_predictions_replay"
+ },
+ {
+  "name": "wspace-localize: 忽略 max_trits 预算",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "if max_trits == 0 || positions <= max_trits {",
+  "new": "if true {",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_selection_finds_trit_stride_would_miss"
+ },
+ {
+  "name": "wspace-localize: 位置打分忽略输入活跃",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "if *active != Trit::Zero\n                && target.trit(row, col).expect(\"position in range\") != Trit::Zero",
+  "new": "if target.trit(row, col).expect(\"position in range\") != Trit::Zero",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_selection_skips_never_active_column"
+ },
+ {
+  "name": "wspace-localize: 隐藏层打分用原始输入",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "let activation: Vec<Trit> = if layer == 0 {",
+  "new": "let activation: Vec<Trit> = if true {",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_selection_uses_previous_layer_activation"
+ },
+ {
+  "name": "wspace-localize: 按序号不按分数选位置",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "order.sort_by(|left, right| {\n            scores[*right]\n                .cmp(&scores[*left])\n                .then_with(|| left.cmp(right))\n        });",
+  "new": "order.sort_unstable();",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_selection_skips_never_active_column"
+ },
+ {
+  "name": "wspace-localize: 选点不标 adaptive",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "(order, 0, true, LocalizeSelection::Adaptive)",
+  "new": "(order, 0, true, LocalizeSelection::All)",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_selection_finds_trit_stride_would_miss"
+ },
+ {
+  "name": "wspace-localize: 两级定位退回均匀行抽样",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "let probe = probe_rows_adaptive(net, oracle, row_budget, top_rows)?;",
+  "new": "let probe = crate::probe::probe_rows(net, oracle, row_budget, top_rows)?;",
+  "pkg": "trit-wspace",
+  "filter": "two_stage_localize_picks_active_row_and_trit"
+ },
+ {
+  "name": "wspace-mcp: localize 工具名被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "\"wsp_localize\" =>",
+  "new": "\"wsp_localizeX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "localize_returns_row_and_trit"
+ },
+ {
+  "name": "wspace-cli: localize 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "\"localize\" => cmd_localize(&args[1..]),",
+  "new": "\"localizeX\" => cmd_localize(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-pilot: 保留消融无效的 pilot 行",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "if effect_sum > 0 {",
+  "new": "if true {",
+  "pkg": "trit-wspace",
+  "filter": "pilot_drops_inert_high_activity_row"
+ },
+ {
+  "name": "wspace-pilot: pilot 效果恒 0",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "let effect_sum = pilot_effect(net, oracle, baseline, score.layer, score.row)?;",
+  "new": "let effect_sum = 0;",
+  "pkg": "trit-wspace",
+  "filter": "pilot_drops_inert_high_activity_row"
+ },
+ {
+  "name": "wspace-pilot: 层权重不校准",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "layer_weight[score.layer] = effect_sum;",
+  "new": "let _ = effect_sum;",
+  "pkg": "trit-wspace",
+  "filter": "pilot_drops_inert_high_activity_row"
+ },
+ {
+  "name": "wspace-pilot: 不跑 pilot",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "for score in pilots.into_iter().take(pilot_n) {",
+  "new": "for score in pilots.into_iter().take(0) {",
+  "pkg": "trit-wspace",
+  "filter": "pilot_drops_inert_high_activity_row"
+ },
+ {
+  "name": "wspace-shard: oracle 表不去重",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            && !table.contains(oracle)",
+  "new": "            && true",
+  "pkg": "trit-wspace",
+  "filter": "oracle_table_holds_each_oracle_once_per_shard"
+ },
+ {
+  "name": "wspace-shard: 记录仍内嵌 oracle",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            map.remove(\"oracle\");",
+  "new": "            let _ = &map;",
+  "pkg": "trit-wspace",
+  "filter": "shard_round_trip_preserves_chain_and_replay"
+ },
+ {
+  "name": "wspace-shard: 不校验 oracle 表摘要",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "    if digest != want_digest {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "oracle_table_tampering_is_detected"
+ },
+ {
+  "name": "wspace-shard: 不校验跨片 prev",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "    if header.prev != *prev {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_header_tampering_is_detected"
+ },
+ {
+  "name": "wspace-shard: 不校验分片 head",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "    if header.head != *prev {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_header_tampering_is_detected"
+ },
+ {
+  "name": "wspace-shard: 不校验分片序号",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "    if shard != expected {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "dropped_or_reordered_shard_is_detected"
+ },
+ {
+  "name": "wspace-cli: shard 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        \"shard\" => crate::cli_audit::cmd_shard(&args[1..]),",
+  "new": "        \"shardX\" => crate::cli_audit::cmd_shard(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-mcp: wsp_shard 工具名被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_shard\" =>",
+  "new": "            \"wsp_shardX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-mcp: wsp_audit_shards 工具名被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_audit_shards\" =>",
+  "new": "            \"wsp_audit_shardsX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-shard: 流式游标不验链",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "        verify_shard(&shard, self.shards, &mut self.prev, &mut self.seq, parent)?;",
+  "new": "        let _ = verify_shard(&shard, self.shards, &mut self.prev, &mut self.seq, parent);",
+  "pkg": "trit-wspace",
+  "filter": "cursor_streams_shards_and_checks_links"
+ },
+ {
+  "name": "wspace-shard: 流式游标不推进分片号",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "        self.shards += 1;",
+  "new": "        self.shards += 0;",
+  "pkg": "trit-wspace",
+  "filter": "cursor_streams_shards_and_checks_links"
+ },
+ {
+  "name": "wspace-shard: 流式重放不应用记录",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            self.state.apply_entry(entry)?;",
+  "new": "            let _ = entry;",
+  "pkg": "trit-wspace",
+  "filter": "shard_replay_streams_to_same_result"
+ },
+ {
+  "name": "wspace-manifest: 不校验分片摘要",
+  "file": "crates/trit-wspace/src/manifest.rs",
+  "old": "            if digest != item.digest {",
+  "new": "            if false {",
+  "pkg": "trit-wspace",
+  "filter": "manifest_matches_and_detects_wrong_text"
+ },
+ {
+  "name": "wspace-manifest: 不校验总条数",
+  "file": "crates/trit-wspace/src/manifest.rs",
+  "old": "        if total != self.entries {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "manifest_matches_and_detects_wrong_text"
+ },
+ {
+  "name": "wspace-manifest: 不校验链头",
+  "file": "crates/trit-wspace/src/manifest.rs",
+  "old": "            && last.head != self.head",
+  "new": "            && true",
+  "pkg": "trit-wspace",
+  "filter": "manifest_matches_and_detects_wrong_text"
+ },
+ {
+  "name": "wspace-manifest: 不校验分片序号连续",
+  "file": "crates/trit-wspace/src/manifest.rs",
+  "old": "            if shard != index {",
+  "new": "            if false {",
+  "pkg": "trit-wspace",
+  "filter": "manifest_matches_and_detects_wrong_text"
+ },
+ {
+  "name": "wspace-cli: 不检查清单外分片",
+  "file": "crates/trit-wspace/src/cli_audit.rs",
+  "old": "        if let Some(extra) = files.into_iter().next() {",
+  "new": "        if let Some(extra) = None::<String> {",
+  "pkg": "trit-wspace",
+  "filter": "shard_manifest_detects_missing_extra_and_tampering"
+ },
+ {
+  "name": "wspace-cli: 不核对文件摘要",
+  "file": "crates/trit-wspace/src/cli_audit.rs",
+  "old": "        if got != want {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_manifest_detects_missing_extra_and_tampering"
+ },
+ {
+  "name": "wspace-mcp: 忽略分页 limit",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                let end = if limit == 0 {",
+  "new": "                let end = if true {",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-mcp: 不核对 manifest",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                    if let Err(error) = manifest.verify_texts(&texts) {",
+  "new": "                    if let Err(error) = Ok::<(), crate::error::Error>(()) {",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-script: 原子序列不回滚",
+  "file": "crates/trit-wspace/src/program.rs",
+  "old": "                let rolled_back = failed && *atomic;",
+  "new": "                let rolled_back = false && failed && *atomic;",
+  "pkg": "trit-wspace",
+  "filter": "atomic_sequence_rolls_back_every_step"
+ },
+ {
+  "name": "wspace-script: 不识别步骤失败",
+  "file": "crates/trit-wspace/src/program.rs",
+  "old": "                    failed = report.failed();",
+  "new": "                    failed = false;",
+  "pkg": "trit-wspace",
+  "filter": "atomic_sequence_rolls_back_every_step"
+ },
+ {
+  "name": "wspace-script: 条件恒成立",
+  "file": "crates/trit-wspace/src/program.rs",
+  "old": "                let matched = &Behavior::of(net, oracle)? == expected;",
+  "new": "                let matched = true;",
+  "pkg": "trit-wspace",
+  "filter": "when_selects_then_or_otherwise"
+ },
+ {
+  "name": "wspace-script: 步骤报告 type 写错",
+  "file": "crates/trit-wspace/src/wire/compose.rs",
+  "old": "            value[\"type\"] = json!(\"step\");",
+  "new": "            value[\"type\"] = json!(\"nope\");",
+  "pkg": "trit-wspace",
+  "filter": "script_runs_atomic_sequence_and_writes_artifact"
+ },
+ {
+  "name": "wspace-cli: script 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        \"script\" => cmd_script(&args[1..]),",
+  "new": "        \"scriptX\" => cmd_script(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "script_runs_atomic_sequence_and_writes_artifact"
+ },
+ {
+  "name": "wspace-mcp: wsp_run_script 被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_run_script\" =>",
+  "new": "            \"wsp_run_scriptX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "run_script_executes_sequence"
+ },
+ {
+  "name": "wspace-script: 线格式丢 step patch",
+  "file": "crates/trit-wspace/src/wire/compose.rs",
+  "old": "                \"patch\": patch_to_value(program.patch()),",
+  "new": "                \"patch\": json!({}),",
+  "pkg": "trit-wspace",
+  "filter": "script_wire_round_trip"
+ },
+ {
+  "name": "wspace-checkpoint: resume 忽略链头",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            prev: head,",
+  "new": "            prev: 0,",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-checkpoint: resume 忽略条数",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            seq: entries,",
+  "new": "            seq: 0,",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-checkpoint: 不保存工件",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            net: self.state.net().clone(),",
+  "new": "            net: Net::zeros(&[2, 2, 1]).expect(\"net\"),",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-cli: 不核对检查点前缀",
+  "file": "crates/trit-wspace/src/cli_audit.rs",
+  "old": "        if prefix.shard_count() != checkpoint.shard\n            || prefix.entries() != checkpoint.entries\n            || prefix.head() != checkpoint.head\n        {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_manifest_detects_missing_extra_and_tampering"
+ },
+ {
+  "name": "wspace-cli: 不写检查点",
+  "file": "crates/trit-wspace/src/cli_audit.rs",
+  "old": "                if checkpoint_every > 0 && count % checkpoint_every == 0 {",
+  "new": "                if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_manifest_detects_missing_extra_and_tampering"
+ },
+ {
+  "name": "wspace-checkpoint: 线格式丢 applied",
+  "file": "crates/trit-wspace/src/wire/compose.rs",
+  "old": "        \"applied\": checkpoint.applied,",
+  "new": "        \"applied\": 0usize,",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-mcp: 忽略检查点",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                    Some(ShardReplay::resume(checkpoint))",
+  "new": "                    None",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-mcp: 续放不跳过前缀",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                        if index < start {",
+  "new": "                        if index < 0 {",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-mcp: 不输出检查点",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                        if checkpoint_every > 0 && count % checkpoint_every == 0 {",
+  "new": "                        if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-shard: 分片不复用 oracle 表",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            let parent = if shards.is_empty() {\n                None\n            } else {\n                Some(shards.len() - 1)\n            };",
+  "new": "            let parent = None;",
+  "pkg": "trit-wspace",
+  "filter": "cross_shard_oracle_table_is_inherited"
+ },
+ {
+  "name": "wspace-shard: 增量表包含父表项",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "                .filter(|oracle| !inherited.contains(oracle))",
+  "new": "                .filter(|_| true)",
+  "pkg": "trit-wspace",
+  "filter": "cross_shard_oracle_table_is_inherited"
+ },
+ {
+  "name": "wspace-shard: 序列化重复整张表",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "                header.oracles[parent.len()..].to_vec()",
+  "new": "                header.oracles.clone()",
+  "pkg": "trit-wspace",
+  "filter": "cross_shard_oracle_table_is_inherited"
+ },
+ {
+  "name": "wspace-shard: 解析忽略 oracle_parent",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "    let parent = optional_usize_field(&header_value, \"oracle_parent\", expected)?;",
+  "new": "    let parent: Option<usize> = None;",
+  "pkg": "trit-wspace",
+  "filter": "cross_shard_oracle_table_is_inherited"
+ },
+ {
+  "name": "wspace-checkpoint: 线格式丢 oracle 表",
+  "file": "crates/trit-wspace/src/wire/compose.rs",
+  "old": "        \"oracles\": checkpoint.oracles,",
+  "new": "        \"oracles\": Vec::<Value>::new(),",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-checkpoint: resume 丢 oracle 表",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "                checkpoint.oracles.clone(),\n            ),",
+  "new": "                Vec::new(),\n            ),",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-task: 平票取首票而非基准",
+  "file": "crates/trit-wspace/src/task.rs",
+  "old": "        } else if targets.iter().all(|target| *target == targets[0]) {",
+  "new": "        } else if true {",
+  "pkg": "trit-wspace",
+  "filter": "merge_votes_targets_and_breaks_ties_to_base"
+ },
+ {
+  "name": "wspace-task: 票和符号写反",
+  "file": "crates/trit-wspace/src/task.rs",
+  "old": "        let merged = if sum > 0 {\n            Trit::Pos\n        } else if sum < 0 {\n            Trit::Neg",
+  "new": "        let merged = if sum > 0 {\n            Trit::Neg\n        } else if sum < 0 {\n            Trit::Pos",
+  "pkg": "trit-wspace",
+  "filter": "merge_votes_targets_and_breaks_ties_to_base"
+ },
+ {
+  "name": "wspace-task: 不校验任务向量基准",
+  "file": "crates/trit-wspace/src/task.rs",
+  "old": "        if checksum(base) != self.base {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "vector_round_trip_and_base_guard"
+ },
+ {
+  "name": "wspace-task: 合并不校验基准",
+  "file": "crates/trit-wspace/src/task.rs",
+  "old": "    if tasks.iter().any(|task| task.base != expected) {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "merge_rejects_foreign_base"
+ },
+ {
+  "name": "wspace-cli: task-merge 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        \"task-merge\" => cmd_task_merge(&args[1..]),",
+  "new": "        \"task-mergeX\" => cmd_task_merge(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "task_merge_votes_and_writes_artifact"
+ },
+ {
+  "name": "wspace-mcp: wsp_task_merge 被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_task_merge\" =>",
+  "new": "            \"wsp_task_mergeX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "task_merge_via_mcp"
+ }
+]
