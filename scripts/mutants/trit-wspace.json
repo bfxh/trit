@@ -418,8 +418,8 @@
  {
   "name": "wspace-probe: 忽略 budget",
   "file": "crates/trit-wspace/src/probe.rs",
-  "old": "let (selected, stride, sampled) = if budget == 0 || rows <= budget {",
-  "new": "let (selected, stride, sampled) = if true {",
+  "old": "let (selected, stride, sampled, selection) = if budget == 0 || rows <= budget {",
+  "new": "let (selected, stride, sampled, selection) = if true {",
   "pkg": "trit-wspace",
   "filter": "budget_samples_evenly"
  },
