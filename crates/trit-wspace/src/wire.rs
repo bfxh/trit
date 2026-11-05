@@ -274,6 +274,8 @@ pub fn probe_report_to_value(report: &ProbeReport) -> Value {
         "probed_rows": report.probed_rows,
         "sampled": report.sampled,
         "selection": report.selection.as_str(),
+        "pilot_rows": report.pilot_rows,
+        "pilot_kept": report.pilot_kept,
         "stride": report.stride,
         "top": report.top.iter().map(row_impact_to_value).collect::<Vec<_>>(),
     })

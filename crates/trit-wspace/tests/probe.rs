@@ -207,6 +207,8 @@ fn adaptive_prefers_active_rows() {
     assert!(report.sampled);
     assert_eq!(report.stride, 0, "自适应抽样没有固定步长");
     assert_eq!(report.probed_rows, 2);
+    assert!(report.pilot_rows >= 1);
+    assert!(report.pilot_kept >= 1);
     let coordinates: Vec<(usize, usize)> = report
         .top
         .iter()
@@ -225,6 +227,7 @@ fn adaptive_pins_output_row_with_budget_one() {
     let net = layered_net();
     let report = probe_rows_adaptive(&net, &xor_oracle(), 1, 0).expect("probe");
     assert_eq!(report.probed_rows, 1);
+    assert_eq!(report.pilot_rows, 0, "预算 1 只够输出行，不做 pilot");
     assert_eq!(report.top[0].layer, 1);
     assert_eq!(report.top[0].row, 0);
 }
@@ -236,6 +239,7 @@ fn adaptive_without_budget_probes_all() {
     assert_eq!(report.selection, ProbeSelection::All);
     assert!(!report.sampled);
     assert_eq!(report.probed_rows, report.rows);
+    assert_eq!(report.pilot_rows, 0);
 }
 
 #[test]
@@ -264,4 +268,53 @@ fn adaptive_uses_activity_not_just_nonzero_weights() {
         "权重非零但从不激活的行不应被选"
     );
     assert!(coordinates.contains(&(0, 1)), "应选活跃行");
+    assert_eq!(report.pilot_kept, 1, "activity 打分必须让 pilot 命中活跃行");
+}
+
+#[test]
+fn pilot_drops_inert_high_activity_row() {
+    // layer0 r1 静态最活跃，但下游 layer1 r0 只读 h0_0 ⇒ r1 消融无效果。
+    // pilot 应把它丢掉，把预算给真正承重的 layer1 r0 / layer0 r0。
+    let net = Net::new(vec![
+        Layer::new(2, 2, &[1, 0, 1, 1], &[0, 1]).expect("l0"),
+        Layer::new(2, 2, &[1, 0, 0, 0], &[0, 0]).expect("l1"),
+        Layer::new(1, 2, &[1, 1], &[0]).expect("l2"),
+    ])
+    .expect("net");
+    // 构造 oracle 让 layer0 r1 严格比 r0 / layer1 r0 更活跃。
+    let inputs = vec![
+        vec![Trit::Zero, Trit::Zero],
+        vec![Trit::Zero, Trit::Pos],
+        vec![Trit::Pos, Trit::Zero],
+        vec![Trit::Pos, Trit::Pos],
+    ];
+    let outputs = inputs
+        .iter()
+        .map(|row| net.forward(row).expect("forward"))
+        .collect::<Vec<_>>();
+    let oracle = Oracle::new(inputs, outputs).expect("oracle");
+
+    let small = probe_rows_adaptive(&net, &oracle, 2, 0).expect("probe");
+    assert_eq!(small.selection, ProbeSelection::Adaptive);
+    assert_eq!(small.pilot_rows, 1);
+    assert_eq!(small.pilot_kept, 0, "pilot 行消融无效，应被丢掉");
+    let coordinates: Vec<(usize, usize)> = small
+        .top
+        .iter()
+        .map(|impact| (impact.layer, impact.row))
+        .collect();
+    assert!(coordinates.contains(&(1, 0)), "应选到真正承重的行");
+    assert!(!coordinates.contains(&(0, 1)), "高活跃但无效的行不应被选");
+
+    let full = probe_rows_adaptive(&net, &oracle, 3, 0).expect("probe");
+    assert_eq!(full.pilot_rows, 2, "每个隐层各 pilot 一条");
+    assert_eq!(full.pilot_kept, 1);
+    let coordinates: Vec<(usize, usize)> = full
+        .top
+        .iter()
+        .map(|impact| (impact.layer, impact.row))
+        .collect();
+    assert!(coordinates.contains(&(1, 0)));
+    assert!(coordinates.contains(&(0, 0)));
+    assert!(!coordinates.contains(&(0, 1)));
 }

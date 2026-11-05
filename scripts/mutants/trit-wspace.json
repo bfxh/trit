@@ -418,8 +418,8 @@
  {
   "name": "wspace-probe: 忽略 budget",
   "file": "crates/trit-wspace/src/probe.rs",
-  "old": "let (selected, stride, sampled, selection) = if budget == 0 || rows <= budget {",
-  "new": "let (selected, stride, sampled, selection) = if true {",
+  "old": "let (selected, stride, sampled, selection, pilot) = if budget == 0 || rows <= budget {",
+  "new": "let (selected, stride, sampled, selection, pilot) = if true {",
   "pkg": "trit-wspace",
   "filter": "budget_samples_evenly"
  },
@@ -458,8 +458,8 @@
  {
   "name": "wspace-adaptive: 不钉输出层行",
   "file": "crates/trit-wspace/src/probe.rs",
-  "old": "for score in output.into_iter().chain(hidden) {",
-  "new": "for score in hidden {",
+  "old": "    for score in output {\n        if selected.len() >= budget {\n            break;\n        }\n        selected.push((score.layer, score.row));\n    }",
+  "new": "    for score in output {\n        let _ = score;\n    }",
   "pkg": "trit-wspace",
   "filter": "adaptive_pins_output_row_with_budget_one"
  },
@@ -534,5 +534,37 @@
   "new": "\"localizeX\" => cmd_localize(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-pilot: 保留消融无效的 pilot 行",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "if effect_sum > 0 {",
+  "new": "if true {",
+  "pkg": "trit-wspace",
+  "filter": "pilot_drops_inert_high_activity_row"
+ },
+ {
+  "name": "wspace-pilot: pilot 效果恒 0",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "let effect_sum = pilot_effect(net, oracle, baseline, score.layer, score.row)?;",
+  "new": "let effect_sum = 0;",
+  "pkg": "trit-wspace",
+  "filter": "pilot_drops_inert_high_activity_row"
+ },
+ {
+  "name": "wspace-pilot: 层权重不校准",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "layer_weight[score.layer] = effect_sum;",
+  "new": "let _ = effect_sum;",
+  "pkg": "trit-wspace",
+  "filter": "pilot_drops_inert_high_activity_row"
+ },
+ {
+  "name": "wspace-pilot: 不跑 pilot",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "for score in pilots.into_iter().take(pilot_n) {",
+  "new": "for score in pilots.into_iter().take(0) {",
+  "pkg": "trit-wspace",
+  "filter": "pilot_drops_inert_high_activity_row"
  }
 ]

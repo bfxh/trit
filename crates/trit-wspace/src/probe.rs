@@ -105,6 +105,10 @@ pub struct ProbeReport {
     pub sampled: bool,
     /// 选行策略。
     pub selection: ProbeSelection,
+    /// 试点消融探过的行数（0 = 没做 pilot）。
+    pub pilot_rows: usize,
+    /// 试点里行为有变化的行数。
+    pub pilot_kept: usize,
     /// 均匀抽样的步长（`1` = 全量；自适应抽样为 `0`）。
     pub stride: usize,
     /// 按行为漂移排序后的行（最多 `top` 条；`top=0` 表示全部）。
@@ -144,19 +148,27 @@ fn probe_with(
         }
     }
     let rows = all_rows.len();
-    let (selected, stride, sampled, selection) = if budget == 0 || rows <= budget {
-        (all_rows, 1, false, ProbeSelection::All)
-    } else if adaptive {
+    let (selected, stride, sampled, selection, pilot) = if budget == 0 || rows <= budget {
         (
-            select_adaptive(net, oracle, budget)?,
-            0,
-            true,
-            ProbeSelection::Adaptive,
+            all_rows,
+            1,
+            false,
+            ProbeSelection::All,
+            PilotStats::default(),
         )
+    } else if adaptive {
+        let (selected, pilot) = select_adaptive(net, oracle, budget, &baseline)?;
+        (selected, 0, true, ProbeSelection::Adaptive, pilot)
     } else {
         let stride = rows.div_ceil(budget);
         let selected = all_rows.iter().step_by(stride).copied().collect();
-        (selected, stride, true, ProbeSelection::Uniform)
+        (
+            selected,
+            stride,
+            true,
+            ProbeSelection::Uniform,
+            PilotStats::default(),
+        )
     };
     let probed_rows = selected.len();
 
@@ -212,35 +224,133 @@ fn probe_with(
         probed_rows,
         sampled,
         selection,
+        pilot_rows: pilot.rows,
+        pilot_kept: pilot.kept,
         stride,
         top: impacts,
     })
 }
 
 /// 输出层行优先（最多占满预算），其余预算按活跃度/裕量从高到低。
-fn select_adaptive(net: &Net, oracle: &Oracle, budget: usize) -> Result<Vec<(usize, usize)>> {
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+struct PilotStats {
+    rows: usize,
+    kept: usize,
+}
+
+/// 输出层行钉住；每个隐层先 pilot 一条静态最高分行，用消融结果校准层权重，
+/// 丢掉“高活跃但消融无效”的行，再按层权重 + 静态分数填满预算。
+fn select_adaptive(
+    net: &Net,
+    oracle: &Oracle,
+    budget: usize,
+    baseline: &Baseline,
+) -> Result<(Vec<(usize, usize)>, PilotStats)> {
     let scores = activity_scores(net, oracle, 256)?;
     let depth = net.depth();
+    let mut selected = Vec::with_capacity(budget);
+
     let mut output: Vec<RowScore> = scores
         .iter()
         .filter(|score| score.layer + 1 == depth)
         .cloned()
         .collect();
-    let mut hidden: Vec<RowScore> = scores
-        .iter()
-        .filter(|score| score.layer + 1 != depth)
-        .cloned()
-        .collect();
     output.sort_by(rank_score);
-    hidden.sort_by(rank_score);
-    let mut selected = Vec::with_capacity(budget);
-    for score in output.into_iter().chain(hidden) {
+    for score in output {
         if selected.len() >= budget {
             break;
         }
         selected.push((score.layer, score.row));
     }
-    Ok(selected)
+    if selected.len() >= budget {
+        return Ok((selected, PilotStats::default()));
+    }
+
+    let mut pilots: Vec<RowScore> = Vec::new();
+    for layer in 0..depth.saturating_sub(1) {
+        if let Some(best) = scores
+            .iter()
+            .filter(|score| score.layer == layer)
+            .min_by(|left, right| rank_score(left, right))
+        {
+            pilots.push(best.clone());
+        }
+    }
+    pilots.sort_by(rank_score);
+    let pilot_n = pilots.len().min(budget - selected.len()).min(8);
+    let mut layer_weight = vec![1usize; depth.saturating_sub(1)];
+    let mut pilot_set: HashSet<(usize, usize)> = HashSet::new();
+    let mut stats = PilotStats::default();
+    let mut kept = Vec::new();
+    for score in pilots.into_iter().take(pilot_n) {
+        pilot_set.insert((score.layer, score.row));
+        let effect_sum = pilot_effect(net, oracle, baseline, score.layer, score.row)?;
+        stats.rows += 1;
+        layer_weight[score.layer] = effect_sum;
+        if effect_sum > 0 {
+            stats.kept += 1;
+            kept.push((score.layer, score.row));
+        }
+    }
+    for coordinate in kept {
+        if selected.len() >= budget {
+            break;
+        }
+        selected.push(coordinate);
+    }
+
+    let mut rest: Vec<RowScore> = scores
+        .into_iter()
+        .filter(|score| score.layer + 1 != depth && !pilot_set.contains(&(score.layer, score.row)))
+        .collect();
+    rest.sort_by(|left, right| fill_rank(left, right, &layer_weight));
+    for score in rest {
+        if selected.len() >= budget {
+            break;
+        }
+        selected.push((score.layer, score.row));
+    }
+    Ok((selected, stats))
+}
+
+/// 先用消融结果校准：活跃行优先，其次看所在层的 pilot 效果，再回到静态分数。
+fn fill_rank(left: &RowScore, right: &RowScore, weights: &[usize]) -> Ordering {
+    (right.active > 0)
+        .cmp(&(left.active > 0))
+        .then(weights[right.layer].cmp(&weights[left.layer]))
+        .then_with(|| rank_score(left, right))
+}
+
+fn pilot_effect(
+    net: &Net,
+    oracle: &Oracle,
+    baseline: &Baseline,
+    layer: usize,
+    row: usize,
+) -> Result<usize> {
+    let cols = net.layer(layer).expect("pilot row came from net").cols();
+    let mut zero_edits = Vec::with_capacity(cols + 1);
+    for col in 0..cols {
+        zero_edits.push(Edit::SetTrit {
+            layer,
+            row,
+            col,
+            to: Trit::Zero,
+        });
+    }
+    zero_edits.push(Edit::SetBias {
+        layer,
+        row,
+        to: Trit::Zero,
+    });
+    let zero = effect(net, oracle, &Patch::new(zero_edits), baseline)?;
+    let negate = effect(
+        net,
+        oracle,
+        &Patch::new(vec![Edit::NegateRow { layer, row }]),
+        baseline,
+    )?;
+    Ok(zero.changed + negate.changed)
 }
 
 fn rank_score(left: &RowScore, right: &RowScore) -> Ordering {

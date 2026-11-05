@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：pilot 消融校准的选行）
+
+- `probe_rows_adaptive` 升级为 **pilot 校准**：每个隐层先 pilot 一条静态分数最高的行，
+  实测清零/取反的 `changed` 作为该层的校准权重；消融无效的 pilot 行直接丢弃，
+  其余预算按“活跃优先 → 层权重 → 静态分数”填满；输出层行仍钉住。
+- `ProbeReport` 新增 `pilot_rows` / `pilot_kept`（线格式同名）。
+- 读数：构造“高活跃但下游无效”的行——pilot 把它丢掉，`budget=2` 选到真正承重的
+  layer1 r0；`budget=3` 再补 layer0 r0；全零行不选。
+- 测试 114 → 115 + 1 doctest；变异 67 → **71 条，71/71 caught**；test_surface 台账 2,320 → 2,321。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
 ### Added（trit-wspace：行内 trit 定位）
 
 - `localize_row`：在单行内逐位置（权重 + 偏置）试替代值，整验证集复核（`after_loss` /

@@ -125,8 +125,9 @@ trit-wspace mcp
 再对 top-K 做整验证集复核，给 `after_loss` / `gain`。大网只需要线性于权重数的单样本前向。
 
 `wsp_probe` 是大网读取：逐行清零/取反测行为漂移，成本 `2×行数×样本`，与行宽无关；
-`budget` 超了默认按固定步长均匀抽样，`adaptive=true` 时改用激活活跃度/裕量给行打分、
-优先探“真正在工作”的行并钉住输出层行；报告里明确标 `sampled` / `stride` / `selection`。
+`budget` 超了默认按固定步长均匀抽样，`adaptive=true` 时每个隐层先 **pilot** 一条静态最高分行，
+用消融结果校准层权重、丢掉“高活跃但消融无效”的行，再按活跃度/层权重/静态分填满预算；
+报告里明确标 `sampled` / `stride` / `selection` / `pilot_rows` / `pilot_kept`。
 没有验证集时用 `Oracle::sampled_behavior` 以网络当前行为生成确定性随机探针集。
 
 `wsp_localize` 做两级定位：先自适应选承重行，再在每行内逐位置（权重 + 偏置）试替代值、
