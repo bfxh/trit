@@ -60,7 +60,7 @@ python scripts/module_budget.py
 ```bash
 trit-wspace read   xor.wsp
 trit-wspace verify xor.wsp --oracle xor.json
-trit-wspace task-merge base.wsp tuned-a.wsp tuned-b.wsp --out merged.wsp
+trit-wspace task-merge base.wsp tuned-a.wsp tuned-b.wsp --aligned --out merged.wsp
 trit-wspace script xor.wsp --script repair.json --oracle xor.json --out fixed.wsp
 trit-wspace patch  xor.wsp --patch break.json --oracle xor.json --require-after --out fixed.wsp
 trit-wspace apply-candidate broken.wsp --candidate fix.json --oracle xor.json --require-after --out fixed.wsp --log audit.jsonl
@@ -141,7 +141,7 @@ trit-wspace mcp
 报告标 `selection=adaptive` / `sampled` / `stride=0`。
 
 `wsp_task_merge` 做三值任务向量合并：每个任务只对**它改过的坐标**投票，票和取符号、平票
-保留基准，全体投 `0` 时取 `0`；任务向量带基准校验和，拿错基准会报错。CLI 对应 `task-merge`。
+保留基准，全体投 `0` 时取 `0`；任务向量带基准校验和，拿错基准会报错；`aligned=true` / `--aligned` 先消隐藏单元置换再求差分。CLI 对应 `task-merge`。
 
 `wsp_run_script` 执行组合脚本：`sequence` 默认原子（任一步失败/回滚则整段恢复原样，
 `atomic=false` 保留已成功步骤），`when` 按当前行为（完整逐样本输出）选择 `then` / `otherwise`，

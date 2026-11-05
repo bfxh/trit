@@ -982,5 +982,29 @@
   "new": "            \"wsp_task_mergeX\" =>",
   "pkg": "trit-wspace",
   "filter": "task_merge_via_mcp"
+ },
+ {
+  "name": "wspace-task: between_aligned 不对齐",
+  "file": "crates/trit-wspace/src/task.rs",
+  "old": "        let aligned = crate::merge::align(base, tuned)?;",
+  "new": "        let aligned = tuned.clone();",
+  "pkg": "trit-wspace",
+  "filter": "aligned_vector_ignores_hidden_permutation"
+ },
+ {
+  "name": "wspace-cli: task-merge 忽略 --aligned",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "    let aligned = parsed.switches.contains(\"aligned\");",
+  "new": "    let aligned = false;",
+  "pkg": "trit-wspace",
+  "filter": "task_merge_aligned_ignores_hidden_permutation"
+ },
+ {
+  "name": "wspace-mcp: wsp_task_merge 忽略 aligned",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                let aligned = flag(args, \"aligned\");",
+  "new": "                let aligned = false;",
+  "pkg": "trit-wspace",
+  "filter": "task_merge_via_mcp"
  }
 ]

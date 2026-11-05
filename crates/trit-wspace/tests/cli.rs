@@ -17,6 +17,7 @@ fn xor_net() -> Net {
 
 fn temp_dir() -> PathBuf {
     let dir = std::env::temp_dir().join(format!("trit-wspace-cli-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("temp dir");
     dir
 }
@@ -531,6 +532,35 @@ fn shard_manifest_detects_missing_extra_and_tampering() {
     );
     fs::rename(&moved, &shard_file).expect("restore");
     let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn task_merge_aligned_ignores_hidden_permutation() {
+    let dir = std::env::temp_dir().join(format!("trit-wspace-task-aligned-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("temp dir");
+    let base = xor_net();
+    let permuted = base.permute_rows(0, &[1, 0]).expect("permute");
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    let out = dir.join("merged.wsp");
+    fs::write(&base_path, to_wsp(&base)).expect("base");
+    fs::write(&tuned_path, to_wsp(&permuted)).expect("tuned");
+    let merged = stdout_json(&run(&[
+        "task-merge",
+        &path_string(&base_path),
+        &path_string(&tuned_path),
+        "--aligned",
+        "--out",
+        &path_string(&out),
+    ]));
+    assert_eq!(
+        merged["cost"]["trits"].as_u64(),
+        Some(0),
+        "同行为应无合并改动"
+    );
+    let net = from_wsp(&fs::read_to_string(&out).expect("out")).expect("parse out");
+    assert_eq!(net, base);
 }
 
 #[test]

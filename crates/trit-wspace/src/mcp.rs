@@ -285,10 +285,16 @@ impl Mcp {
                     .and_then(Value::as_array)
                     .ok_or("需要 tasks 数组")?;
                 let mut tasks = Vec::with_capacity(raws.len());
+                let aligned = flag(args, "aligned");
                 for raw in raws {
                     let text = raw.as_str().ok_or("tasks 必须是字符串数组")?;
                     let tuned = parse_or_path(text)?;
-                    tasks.push(crate::task::TaskVector::between(&base, &tuned).map_err(err)?);
+                    let vector = if aligned {
+                        crate::task::TaskVector::between_aligned(&base, &tuned)
+                    } else {
+                        crate::task::TaskVector::between(&base, &tuned)
+                    };
+                    tasks.push(vector.map_err(err)?);
                 }
                 let merged = crate::task::merge_tasks(&base, &tasks).map_err(err)?;
                 let patch = Patch::diff(&base, &merged).map_err(err)?;

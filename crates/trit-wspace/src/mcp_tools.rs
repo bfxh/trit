@@ -145,6 +145,7 @@ pub fn tools() -> Vec<Value> {
             json!({
                 "base": artifact(),
                 "tasks": {"type": "array", "items": {"type": "string"}},
+                "aligned": {"type": "boolean"},
             }),
             &["base", "tasks"],
         ),

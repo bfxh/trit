@@ -24,7 +24,7 @@ const USAGE: &str = "\
 trit-wspace <command>
   read <artifact|-> [--out <path>]
   verify <artifact|-> --oracle <json|-> [--limit N]
-  task-merge <base|-> <tuned|->... [--out <path>]
+  task-merge <base|-> <tuned|->... [--aligned] [--out <path>]
   script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
@@ -117,15 +117,24 @@ fn cmd_verify(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_task_merge(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
+    let parsed = parse(args, &["aligned"])?;
     if parsed.positional.len() < 2 {
-        return Err("用法：trit-wspace task-merge <base|-> <tuned|->... [--out <path>]".into());
+        return Err(
+            "用法：trit-wspace task-merge <base|-> <tuned|->... [--aligned] [--out <path>]".into(),
+        );
     }
     no_double_stdin(&parsed.positional)?;
+    let aligned = parsed.switches.contains("aligned");
     let base = load_net(&parsed.positional[0])?;
     let mut tasks = Vec::with_capacity(parsed.positional.len() - 1);
     for path in &parsed.positional[1..] {
-        tasks.push(crate::task::TaskVector::between(&base, &load_net(path)?).map_err(err)?);
+        let tuned = load_net(path)?;
+        let vector = if aligned {
+            crate::task::TaskVector::between_aligned(&base, &tuned)
+        } else {
+            crate::task::TaskVector::between(&base, &tuned)
+        };
+        tasks.push(vector.map_err(err)?);
     }
     let merged = crate::task::merge_tasks(&base, &tasks).map_err(err)?;
     write_out(&parsed, &merged)?;
