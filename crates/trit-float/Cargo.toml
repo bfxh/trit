@@ -10,3 +10,6 @@ publish = false
 
 [dependencies]
 serde_json = "1.0.154"
+
+[dev-dependencies]
+trit-fuzz.workspace = true

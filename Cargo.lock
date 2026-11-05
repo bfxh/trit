@@ -1877,6 +1877,7 @@ name = "trit-float"
 version = "0.12.0"
 dependencies = [
  "serde_json",
+ "trit-fuzz",
 ]
 
 [[package]]
@@ -1914,6 +1915,7 @@ dependencies = [
  "rustls",
  "rustls-pemfile",
  "trit-core",
+ "trit-fuzz",
 ]
 
 [[package]]

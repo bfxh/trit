@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（再吃掉两份手写 RNG：`trit-float` / `trit-immune` 的测试改吃 `SeedRng`）
+
+- `crates/trit-float/tests/stress.rs`：删掉本地 `struct Rng`，`next()` ⇒ `next_u64()`，
+  `unit` / `signed` 留在本文件当自由函数（那是它的进料形状，不是公共件）。测试 **2 条全绿**。
+- `crates/trit-immune/tests/fuzz_smoke.rs`：同样删掉本地 `Rng`，7 个取样点改吃 `SeedRng`。测试 **10 条全绿**。
+- 重复度读数（同一把精确尺 `grep -rlE "\^=.*<< 13" --include=*.rs crates/`）：**63 → 61**。
+  口径注明：把 `benchmarks/` 也算进来是 62，本文引用的都是 `crates/` 口径。
+- 同一条 xorshift（13/7/17）⇒ **序列不变**，所以这两份 fuzz/高压测试探索的输入集合跟改之前一致，
+  没有"顺手换了语料"的隐蔽差别。
+- **没做**：`crates/trit-immune/tests/properties.rs`（它还有本地 `below(u64)->u64` 与 `pick_trit`，
+  换成 `SeedRng::below(usize)->usize` 要连带清 20 处 `as usize` 转换，否则 clippy 的 `unnecessary_cast`
+  会在 CI 的 `-D warnings` 下判红）、`trit-circuit` 的两份（该目录被 sess 179ea139 认领中，不动别人的面）。
+- 门线：`clippy --tests` 对 `trit-float`/`trit-immune` 无告警；`test_surface` / `claims_evidence` /
+  `docs_hygiene` / `module_budget` / `layers` / `deps` / `publish_graph` / `ci_integrity` / `hazard_gate` /
+  `model_status` 全绿。
+
 ### Added + 更正（`trit-dot` / `trit-codec` 的 stress 改吃 `trit-fuzz`；重复度尺子换成精确尺并当众改数）
 
 - `trit-fuzz` 补三个单值取样件：`trit`（`Ternary`）、`ternary_value`（`-1/0/+1`）、`bipolar`（`±1`）。
