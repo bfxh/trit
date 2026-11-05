@@ -1845,6 +1845,7 @@ dependencies = [
  "serde",
  "serde_json",
  "trit-bdd",
+ "trit-bench",
  "trit-core",
  "trit-eval",
  "trit-fuzz",

@@ -30,5 +30,29 @@
   "new": "                String::from((b'a' + i as u8) as char)",
   "pkg": "trit-fuzz",
   "filter": "var_names_switches_letter_style_at_26"
+ },
+ {
+  "name": "fuzz: 子句里的重字不去掉",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "            clause.remove(i + 1);\n            continue;",
+  "new": "            i += 1;\n            continue;",
+  "pkg": "trit-fuzz",
+  "filter": "cnf_clauses_are_dimacs_shaped_and_never_degenerate"
+ },
+ {
+  "name": "fuzz: 被消空的子句不再补一条",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "            if clause.is_empty() {",
+  "new": "            if false {",
+  "pkg": "trit-fuzz",
+  "filter": "cnf_clauses_are_dimacs_shaped_and_never_degenerate"
+ },
+ {
+  "name": "fuzz: 文字从 0 开始编号",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "                    let var = (rng.below(nvars) + 1) as i32;",
+  "new": "                    let var = rng.below(nvars) as i32;",
+  "pkg": "trit-fuzz",
+  "filter": "cnf_clauses_are_dimacs_shaped_and_never_degenerate"
  }
 ]

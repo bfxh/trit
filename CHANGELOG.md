@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added（`trit-fuzz` 第二批：CNF 语料 + 它的第一条消费者）
+
+- `random_cnf(rng, nvars, nclauses, clause_len)`（DIMACS 口径：文字是 `±1..=nvars`）与 `random_assignment`。
+  子句规范化口径写死在生成器里：**无重字、无永真（同变量两符号不同时出现）、无空子句**；
+  `clause_len` 是上界（小 `nvars` 时结果可能更短）；`nvars==0` 或 `clause_len==0` 返回空表，
+  而不是悄悄造一条空子句把公式判死。
+- 新消费者 `crates/trit-count/tests/cnf_fuzz.rs`（**2 条**）：这条链和 `crosscheck.rs` 不同——
+  那里从 `Expr` 出发经编码器造 CNF，编码器写错会**同时**骗到两边；这里跳过编码器直接喂随机子句集，
+  钉的是 DPLL 本体（规范形整理、单元传播、分量分解、缓存键）。
+  实测：**432 个**随机 CNF（`nvars` 1–9 × 长度 1–4 × 12 次）与 `2^nvars` 穷举逐一对账全等。
+- 判决性实测：把 `crates/trit-count/src/dpll.rs:78` 的 `let free = k - assigned - m` 改成 `k - assigned`
+  ⇒ `dpll_counts_random_cnfs_exactly` 报 **432 个里 96 个不一致**。
+- 变异登记从 4 条扩到 **7 条**，官方门 `python scripts/mutation_check.py --pkg trit-fuzz` ⇒
+  **断言抓住 7 / 崩溃 0 / 假杀 0 / 存活 0**。其中一条我先登记后**删除**并如实说明：
+  "永真子句只撤一半"（`clause.remove(i)` 只做一次）在我这套形状断言下**不可观测**——撤一半后子句仍合法，
+  既没有重字也没有永真；它只改变分布强度，而分布不是我要钉的性质。留着自己存活会让门误报"断言太弱"，
+  所以删条目 + 写下"这条性质没被锁住"，比假装锁住诚实。
+- `test_surface` 台账 94 单位 / **2228** 条（+6）。
+
 ### Added（`trit-fuzz`：把测试语料生成收进 base 层第一批）
 
 - 立项判据是一条能量化的尺，不是"感觉重复"：`grep -rl "<< 13" --include=*.rs crates/ | xargs grep -l ">> 7\|>> 17"`
