@@ -137,11 +137,14 @@ fn cli_read_verify_patch_repair_round_trip() {
     assert_eq!(sharded["shards"].as_u64(), Some(1));
     assert_eq!(sharded["entries"].as_u64(), Some(1));
     assert!(shard_dir.join("shard-000.jsonl").is_file());
+    let sharded_final = dir.join("sharded-final.wsp");
     let checked = stdout_json(&run(&[
         "audit-shards",
         &path_string(&shard_dir),
         "--artifact",
         &path_string(&artifact),
+        "--out",
+        &path_string(&sharded_final),
     ]));
     assert_eq!(checked["valid"], true);
     assert_eq!(checked["entries"].as_u64(), Some(1));
@@ -149,6 +152,11 @@ fn cli_read_verify_patch_repair_round_trip() {
         checked["replay"]["final_checksum"].as_str().expect("sum"),
         format!("{broken_sum:016x}")
     );
+    let sharded_sum = checksum(
+        &from_wsp(&fs::read_to_string(&sharded_final).expect("sharded final"))
+            .expect("parse sharded final"),
+    );
+    assert_eq!(sharded_sum, broken_sum);
 
     let tampered =
         fs::read_to_string(&log)

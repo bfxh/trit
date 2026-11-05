@@ -368,13 +368,28 @@ pub(crate) fn parse_entry(value: &Value, line: usize) -> Result<EntryParts> {
     })
 }
 
-pub(crate) fn replay_entries(entries: &[LogEntry], initial: &Net) -> Result<(ReplayReport, Net)> {
-    let mut current = initial.clone();
-    let mut applied = 0usize;
-    let mut rolled_back = 0usize;
-    let mut skipped = 0usize;
-    let mut behavior_checked = 0usize;
-    for entry in entries {
+pub(crate) struct ReplayState {
+    current: Net,
+    entries: usize,
+    applied: usize,
+    rolled_back: usize,
+    skipped: usize,
+    behavior_checked: usize,
+}
+
+impl ReplayState {
+    pub(crate) fn new(initial: &Net) -> Self {
+        Self {
+            current: initial.clone(),
+            entries: 0,
+            applied: 0,
+            rolled_back: 0,
+            skipped: 0,
+            behavior_checked: 0,
+        }
+    }
+
+    pub(crate) fn apply_entry(&mut self, entry: &LogEntry) -> Result<()> {
         let oracle = match &entry.oracle {
             Some(value) => Some(wire::oracle_from_value(value)?),
             None => None,
@@ -386,7 +401,7 @@ pub(crate) fn replay_entries(entries: &[LogEntry], initial: &Net) -> Result<(Rep
             )));
         }
         if let Some(oracle) = &oracle {
-            let sig = Behavior::of(&current, oracle)?.signature();
+            let sig = Behavior::of(&self.current, oracle)?.signature();
             if Some(sig) != entry.behavior_before {
                 return Err(Error::Audit(format!(
                     "第 {} 条 behavior_before 不符（记录 {:?}，重算 {:016x}）",
@@ -394,7 +409,7 @@ pub(crate) fn replay_entries(entries: &[LogEntry], initial: &Net) -> Result<(Rep
                 )));
             }
         }
-        let now = checksum(&current);
+        let now = checksum(&self.current);
         if now != entry.before {
             return Err(Error::Audit(format!(
                 "第 {} 条 before={:016x}，当前工件 {:016x}",
@@ -402,17 +417,17 @@ pub(crate) fn replay_entries(entries: &[LogEntry], initial: &Net) -> Result<(Rep
             )));
         }
         if !entry.applied {
-            skipped += 1;
+            self.skipped += 1;
         } else {
-            let journal = entry.patch.apply(&mut current)?;
+            let journal = entry.patch.apply(&mut self.current)?;
             if entry.rolled_back {
-                journal.undo(&mut current);
-                rolled_back += 1;
+                journal.undo(&mut self.current);
+                self.rolled_back += 1;
             } else {
-                applied += 1;
+                self.applied += 1;
             }
         }
-        let after = checksum(&current);
+        let after = checksum(&self.current);
         if after != entry.after {
             return Err(Error::Audit(format!(
                 "第 {} 条 after={:016x}，重放得到 {:016x}",
@@ -420,25 +435,42 @@ pub(crate) fn replay_entries(entries: &[LogEntry], initial: &Net) -> Result<(Rep
             )));
         }
         if let Some(oracle) = &oracle {
-            let sig = Behavior::of(&current, oracle)?.signature();
+            let sig = Behavior::of(&self.current, oracle)?.signature();
             if Some(sig) != entry.behavior_after {
                 return Err(Error::Audit(format!(
                     "第 {} 条 behavior_after 不符（记录 {:?}，重算 {:016x}）",
                     entry.seq, entry.behavior_after, sig
                 )));
             }
-            behavior_checked += 1;
+            self.behavior_checked += 1;
         }
+        self.entries += 1;
+        Ok(())
     }
-    let report = ReplayReport {
-        entries: entries.len(),
-        applied,
-        rolled_back,
-        skipped,
-        behavior_checked,
-        final_checksum: checksum(&current),
-    };
-    Ok((report, current))
+
+    pub(crate) fn net(&self) -> &Net {
+        &self.current
+    }
+
+    pub(crate) fn finish(self) -> (ReplayReport, Net) {
+        let report = ReplayReport {
+            entries: self.entries,
+            applied: self.applied,
+            rolled_back: self.rolled_back,
+            skipped: self.skipped,
+            behavior_checked: self.behavior_checked,
+            final_checksum: checksum(&self.current),
+        };
+        (report, self.current)
+    }
+}
+
+pub(crate) fn replay_entries(entries: &[LogEntry], initial: &Net) -> Result<(ReplayReport, Net)> {
+    let mut state = ReplayState::new(initial);
+    for entry in entries {
+        state.apply_entry(entry)?;
+    }
+    Ok(state.finish())
 }
 
 pub(crate) fn chain_of(entry: &LogEntry) -> u64 {

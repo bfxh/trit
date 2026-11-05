@@ -11,8 +11,8 @@
 use serde_json::{Value, json};
 
 use crate::audit::{
-    AuditLog, GENESIS, LogEntry, ReplayReport, canonical, chain_of, fnv, hex, parse_entry,
-    replay_entries,
+    AuditLog, GENESIS, LogEntry, ReplayReport, ReplayState, canonical, chain_of, fnv, hex,
+    parse_entry, replay_entries,
 };
 use crate::error::{Error, Result};
 use crate::net::Net;
@@ -172,64 +172,7 @@ impl ShardedLog {
         let mut prev = GENESIS;
         let mut seq = 0usize;
         for (index, shard) in self.shards.iter().enumerate() {
-            let header = &shard.header;
-            if header.shard != index {
-                return Err(Error::Audit(format!(
-                    "第 {index} 个分片头写的是 {}",
-                    header.shard
-                )));
-            }
-            if header.first_seq != seq {
-                return Err(Error::Audit(format!(
-                    "分片 {index} first_seq={}（全局序号应为 {seq}）",
-                    header.first_seq
-                )));
-            }
-            if header.prev != prev {
-                return Err(Error::Audit(format!(
-                    "分片 {index} prev={:016x}，应为 {:016x}",
-                    header.prev, prev
-                )));
-            }
-            if header.count != shard.entries.len() {
-                return Err(Error::Audit(format!(
-                    "分片 {index} count={}，实际 {} 条",
-                    header.count,
-                    shard.entries.len()
-                )));
-            }
-            if shard.entries.is_empty() {
-                return Err(Error::Audit(format!("分片 {index} 是空的")));
-            }
-            for entry in &shard.entries {
-                if entry.seq != seq {
-                    return Err(Error::Audit(format!(
-                        "分片 {index} 中序号是 {}（应为 {seq}）",
-                        entry.seq
-                    )));
-                }
-                if entry.prev != prev {
-                    return Err(Error::Audit(format!(
-                        "第 {seq} 条 prev={:016x}，应为 {:016x}",
-                        entry.prev, prev
-                    )));
-                }
-                let want = chain_of(entry);
-                if entry.chain != want {
-                    return Err(Error::Audit(format!(
-                        "第 {seq} 条 chain={:016x}，重算 {:016x}（内容被改过）",
-                        entry.chain, want
-                    )));
-                }
-                prev = entry.chain;
-                seq += 1;
-            }
-            if header.head != prev {
-                return Err(Error::Audit(format!(
-                    "分片 {index} head={:016x}，实际 {:016x}",
-                    header.head, prev
-                )));
-            }
+            verify_shard(shard, index, &mut prev, &mut seq)?;
         }
         Ok(())
     }
@@ -249,6 +192,166 @@ impl ShardedLog {
             .collect();
         replay_entries(&entries, initial)
     }
+}
+
+/// 流式分片游标：逐个 `push` 解析并验链，不保留已读分片。
+#[derive(Clone, Debug, Default)]
+pub struct ShardCursor {
+    shards: usize,
+    prev: u64,
+    seq: usize,
+}
+
+impl ShardCursor {
+    /// 从第一个分片开始。
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// 读入下一个分片（必须是下一序号），校验并返回；调用方可以随即丢弃。
+    pub fn push(&mut self, text: &str) -> Result<Shard> {
+        let shard = parse_shard(text, self.shards)?;
+        verify_shard(&shard, self.shards, &mut self.prev, &mut self.seq)?;
+        self.shards += 1;
+        Ok(shard)
+    }
+
+    /// 已读分片数。
+    #[must_use]
+    pub fn shard_count(&self) -> usize {
+        self.shards
+    }
+
+    /// 已读记录数。
+    #[must_use]
+    pub fn entries(&self) -> usize {
+        self.seq
+    }
+
+    /// 当前链头。
+    #[must_use]
+    pub fn head(&self) -> u64 {
+        self.prev
+    }
+}
+
+/// 流式跨片重放：读一片、校验一片、应用一片，不保留分片文本。
+pub struct ShardReplay {
+    cursor: ShardCursor,
+    state: ReplayState,
+}
+
+impl ShardReplay {
+    /// 从初始工件开始。
+    #[must_use]
+    pub fn new(initial: &Net) -> Self {
+        Self {
+            cursor: ShardCursor::new(),
+            state: ReplayState::new(initial),
+        }
+    }
+
+    /// 读入并应用下一个分片。
+    pub fn push(&mut self, text: &str) -> Result<()> {
+        let shard = self.cursor.push(text)?;
+        for entry in shard.entries() {
+            self.state.apply_entry(entry)?;
+        }
+        Ok(())
+    }
+
+    /// 已读分片数。
+    #[must_use]
+    pub fn shard_count(&self) -> usize {
+        self.cursor.shard_count()
+    }
+
+    /// 已应用记录数。
+    #[must_use]
+    pub fn entries(&self) -> usize {
+        self.cursor.entries()
+    }
+
+    /// 当前链头。
+    #[must_use]
+    pub fn head(&self) -> u64 {
+        self.cursor.head()
+    }
+
+    /// 当前工件。
+    #[must_use]
+    pub fn net(&self) -> &Net {
+        self.state.net()
+    }
+
+    /// 结束并给出重放报告与最终工件。
+    #[must_use]
+    pub fn finish(self) -> (ReplayReport, Net) {
+        self.state.finish()
+    }
+}
+
+fn verify_shard(shard: &Shard, index: usize, prev: &mut u64, seq: &mut usize) -> Result<()> {
+    let header = &shard.header;
+    if header.shard != index {
+        return Err(Error::Audit(format!(
+            "第 {index} 个分片头写的是 {}",
+            header.shard
+        )));
+    }
+    if header.first_seq != *seq {
+        return Err(Error::Audit(format!(
+            "分片 {index} first_seq={}（全局序号应为 {seq}）",
+            header.first_seq
+        )));
+    }
+    if header.prev != *prev {
+        return Err(Error::Audit(format!(
+            "分片 {index} prev={:016x}，应为 {:016x}",
+            header.prev, *prev
+        )));
+    }
+    if header.count != shard.entries.len() {
+        return Err(Error::Audit(format!(
+            "分片 {index} count={}，实际 {} 条",
+            header.count,
+            shard.entries.len()
+        )));
+    }
+    if shard.entries.is_empty() {
+        return Err(Error::Audit(format!("分片 {index} 是空的")));
+    }
+    for entry in &shard.entries {
+        if entry.seq != *seq {
+            return Err(Error::Audit(format!(
+                "分片 {index} 中序号是 {}（应为 {seq}）",
+                entry.seq
+            )));
+        }
+        if entry.prev != *prev {
+            return Err(Error::Audit(format!(
+                "第 {seq} 条 prev={:016x}，应为 {:016x}",
+                entry.prev, *prev
+            )));
+        }
+        let want = chain_of(entry);
+        if entry.chain != want {
+            return Err(Error::Audit(format!(
+                "第 {seq} 条 chain={:016x}，重算 {:016x}（内容被改过）",
+                entry.chain, want
+            )));
+        }
+        *prev = entry.chain;
+        *seq += 1;
+    }
+    if header.head != *prev {
+        return Err(Error::Audit(format!(
+            "分片 {index} head={:016x}，实际 {:016x}",
+            header.head, *prev
+        )));
+    }
+    Ok(())
 }
 
 fn shard_text(shard: &Shard) -> String {

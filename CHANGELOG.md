@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：分片流式校验与重放）
+
+- `ShardCursor`：逐个 `push(text)` 解析并验链（序号、父链头、`count`、逐条 `chain`、本片
+  `head`），读完即可丢弃分片；`entries` / `head` 随读随记。
+- `ShardReplay`：读一片、校验一片、应用一片；内部用增量 `ReplayState`，不保留分片文本，
+  `finish()` 给出与原日志一致的 `ReplayReport` 与最终工件。
+- CLI `audit-shards` 改为流式逐文件读取，新增 `--out <path>` 直接落盘流式重放的最终工件。
+- 读数：2 片/3 条日志流式重放与整日志重放报告逐项相同（applied 2 / skipped 1 / 校验和一致）；
+  乱序分片、篡改父链头在游标处即被拒绝。
+- 测试 124 → 126 + 1 doctest；变异 84 → **87 条，87/87 caught**；test_surface 台账 2,333 → 2,348。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
 ### Added（trit-wspace：审计日志分片 + 分片内 oracle 表）
 
 - `AuditLog::into_shards(max_entries)` → `ShardedLog`：长日志按条数切分，每片首行是

@@ -626,16 +626,16 @@
  {
   "name": "wspace-shard: 不校验跨片 prev",
   "file": "crates/trit-wspace/src/shard.rs",
-  "old": "            if header.prev != prev {",
-  "new": "            if false {",
+  "old": "    if header.prev != *prev {",
+  "new": "    if false {",
   "pkg": "trit-wspace",
   "filter": "shard_header_tampering_is_detected"
  },
  {
   "name": "wspace-shard: 不校验分片 head",
   "file": "crates/trit-wspace/src/shard.rs",
-  "old": "            if header.head != prev {",
-  "new": "            if false {",
+  "old": "    if header.head != *prev {",
+  "new": "    if false {",
   "pkg": "trit-wspace",
   "filter": "shard_header_tampering_is_detected"
  },
@@ -670,5 +670,29 @@
   "new": "            \"wsp_audit_shardsX\" =>",
   "pkg": "trit-wspace",
   "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-shard: 流式游标不验链",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "        verify_shard(&shard, self.shards, &mut self.prev, &mut self.seq)?;",
+  "new": "        let _ = verify_shard(&shard, self.shards, &mut self.prev, &mut self.seq);",
+  "pkg": "trit-wspace",
+  "filter": "cursor_streams_shards_and_checks_links"
+ },
+ {
+  "name": "wspace-shard: 流式游标不推进分片号",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "        self.shards += 1;",
+  "new": "        self.shards += 0;",
+  "pkg": "trit-wspace",
+  "filter": "cursor_streams_shards_and_checks_links"
+ },
+ {
+  "name": "wspace-shard: 流式重放不应用记录",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            self.state.apply_entry(entry)?;",
+  "new": "            let _ = entry;",
+  "pkg": "trit-wspace",
+  "filter": "shard_replay_streams_to_same_result"
  }
 ]

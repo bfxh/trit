@@ -133,5 +133,5 @@ pub use probe::{
 };
 pub use program::{Program, Report};
 pub use repair::{Repair, RepairOptions, repair};
-pub use shard::{Shard, ShardHeader, ShardedLog};
+pub use shard::{Shard, ShardCursor, ShardHeader, ShardReplay, ShardedLog};
 pub use trit::Trit;

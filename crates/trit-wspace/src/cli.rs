@@ -18,7 +18,7 @@ use crate::net::Net;
 use crate::ops;
 use crate::oracle::{Behavior, Oracle};
 use crate::repair::RepairOptions;
-use crate::shard::ShardedLog;
+use crate::shard::{ShardCursor, ShardReplay};
 use crate::wire;
 
 const USAGE: &str = "\
@@ -34,7 +34,7 @@ trit-wspace <command>
   localize <artifact|-> --oracle <json|-> [--rows K] [--row-budget N] [--max-trits N] [--top-trits K]
   audit <log|-> [--artifact <initial|->]
   shard <log|-> --size N --out <dir>
-  audit-shards <dir> [--artifact <initial|->]
+  audit-shards <dir> [--artifact <initial|->] [--out <path>]
   replay <log|-> --artifact <initial|-> [--out <path>]
   diff <a|-> <b|->
   merge <a|-> <b|-> [--aligned] [--out <path>]
@@ -267,8 +267,15 @@ fn cmd_shard(args: &[String]) -> Result<(), String> {
 
 fn cmd_audit_shards(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
-    let dir = one(&parsed, "audit-shards <dir> [--artifact <initial|->]")?;
+    let dir = one(
+        &parsed,
+        "audit-shards <dir> [--artifact <initial|->] [--out <path>]",
+    )?;
     let artifact = parsed.values.get("artifact").map(String::as_str);
+    let out = parsed.values.get("out").map(String::as_str);
+    if out.is_some() && artifact.is_none() {
+        return Err("--out 需要 --artifact".into());
+    }
     let mut paths: Vec<std::path::PathBuf> = fs::read_dir(dir)
         .map_err(|error| format!("{dir}: {error}"))?
         .filter_map(Result::ok)
@@ -283,29 +290,43 @@ fn cmd_audit_shards(args: &[String]) -> Result<(), String> {
         return Err(format!("{dir} 中没有 shard-*.jsonl"));
     }
     paths.sort();
-    let mut texts = Vec::with_capacity(paths.len());
+    let mut replay = artifact
+        .map(|path| load_net(path).map(|net| ShardReplay::new(&net)))
+        .transpose()?;
+    let mut cursor = ShardCursor::new();
     for path in paths {
         let path = path.to_str().ok_or("分片路径不是 UTF-8")?;
-        texts.push(read_source(path)?);
+        let text = read_source(path)?;
+        match &mut replay {
+            Some(replay) => replay.push(&text).map_err(err)?,
+            None => {
+                cursor.push(&text).map_err(err)?;
+            }
+        }
     }
-    let shards = ShardedLog::from_texts(&texts).map_err(err)?;
-    shards.verify_chain().map_err(err)?;
+    let (shards, entries, head) = match &replay {
+        Some(replay) => (replay.shard_count(), replay.entries(), replay.head()),
+        None => (cursor.shard_count(), cursor.entries(), cursor.head()),
+    };
     let mut output = json!({
         "valid": true,
-        "shards": shards.shard_count(),
-        "entries": shards.len(),
-        "head": format!("{:016x}", shards.head()),
+        "shards": shards,
+        "entries": entries,
+        "head": format!("{head:016x}"),
     });
-    if let Some(artifact) = artifact {
-        let replay = shards.replay(&load_net(artifact)?).map_err(err)?;
+    if let Some(replay) = replay {
+        let (report, net) = replay.finish();
         output["replay"] = json!({
-            "entries": replay.entries,
-            "applied": replay.applied,
-            "rolled_back": replay.rolled_back,
-            "skipped": replay.skipped,
-            "behavior_checked": replay.behavior_checked,
-            "final_checksum": format!("{:016x}", replay.final_checksum),
+            "entries": report.entries,
+            "applied": report.applied,
+            "rolled_back": report.rolled_back,
+            "skipped": report.skipped,
+            "behavior_checked": report.behavior_checked,
+            "final_checksum": format!("{:016x}", report.final_checksum),
         });
+        if let Some(path) = out {
+            atomic_write(path, &to_wsp(&net))?;
+        }
     }
     emit(&output)
 }

@@ -1,7 +1,9 @@
 //! 审计日志分片：header / oracle 表 / 跨片链 / 重放 / 篡改。
 
 use serde_json::{Value, json};
-use trit_wspace::{AuditLog, Edit, Layer, Net, Oracle, Patch, ShardedLog, Trit, checksum};
+use trit_wspace::{
+    AuditLog, Edit, Layer, Net, Oracle, Patch, ShardCursor, ShardReplay, ShardedLog, Trit, checksum,
+};
 
 fn xor_net() -> Net {
     Net::new(vec![
@@ -205,6 +207,46 @@ fn oracle_table_tampering_is_detected() {
     lines[1] = entry;
     let tampered = lines.join("\n") + "\n";
     assert!(ShardedLog::from_texts(&[tampered]).is_err());
+}
+
+#[test]
+fn cursor_streams_shards_and_checks_links() {
+    let (log, _) = sample_log();
+    let texts = log.clone().into_shards(2).expect("split").to_texts();
+    let mut cursor = ShardCursor::new();
+    for text in &texts {
+        cursor.push(text).expect("shard");
+    }
+    assert_eq!(cursor.shard_count(), 2);
+    assert_eq!(cursor.entries(), 3);
+    assert_eq!(cursor.head(), log.head());
+
+    let mut cursor = ShardCursor::new();
+    assert!(cursor.push(&texts[1]).is_err(), "序号不对应拒绝");
+
+    let mut cursor = ShardCursor::new();
+    cursor.push(&texts[0]).expect("first");
+    let broken = tamper_header(&texts[1], "prev", json!("0000000000000000"));
+    assert!(cursor.push(&broken).is_err(), "父链头不符应拒绝");
+}
+
+#[test]
+fn shard_replay_streams_to_same_result() {
+    let (log, fixed) = sample_log();
+    let texts = log.clone().into_shards(2).expect("split").to_texts();
+    let mut replay = ShardReplay::new(&xor_net());
+    for text in &texts {
+        replay.push(text).expect("replay shard");
+    }
+    assert_eq!(replay.shard_count(), 2);
+    assert_eq!(replay.entries(), 3);
+    assert_eq!(replay.head(), log.head());
+    let (report, net) = replay.finish();
+    assert_eq!(report.entries, 3);
+    assert_eq!(report.applied, 2);
+    assert_eq!(report.skipped, 1);
+    assert_eq!(report.final_checksum, checksum(&fixed));
+    assert_eq!(net, fixed);
 }
 
 #[test]
