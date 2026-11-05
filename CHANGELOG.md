@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed（三平台 CI 的 Clippy 步骤判红：`manual_contains`，以及我本地跑错了口径）
+
+- CI 报红的是**新 lint** `clippy::manual_contains`（rust 1.99）：我在 `crates/trit-bench/tests/bench.rs:170`
+  写的 `seq_a.iter().any(|&v| v == 0)` 该用 `seq_a.contains(&0)`；`-D warnings` 下就是错误，
+  ubuntu/macos/windows 三条作业同时红在 Clippy 步骤。
+- **我本地的复核口径错了**：这轮我只按单个 crate 跑 `cargo clippy -p <crate> --tests`，
+  而 CI 的口径是 `cargo clippy --workspace --all-targets --locked -- -D warnings`
+  ——`--tests` 不含 examples/benches，逐 crate 也漏掉没点名的包。改成**和 CI 逐字同一条命令**复跑，
+  `rc=0` 才算数（本轮实测：修前该命令报 1 条，修后 0 条）。
+
 ### Added（`trit-immune/tests/properties.rs` 也改吃 `SeedRng`：重复度 61 → 60）
 
 - 上一轮我写"这件不做，因为要清 20 处 `as usize`"——这轮把它做完了：`below(u64)->u64` ⇒ `SeedRng::below(usize)->usize`，

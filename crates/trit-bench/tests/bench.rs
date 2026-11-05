@@ -167,7 +167,7 @@ fn below_is_deterministic_and_bounded() {
         "越界：{:?}",
         seq_a.iter().find(|&&v| v >= 7)
     );
-    assert!(seq_a.iter().any(|&v| v == 0), "从没落到 0，像是分布坏了");
+    assert!(seq_a.contains(&0), "从没落到 0，像是分布坏了");
 
     let r = std::panic::catch_unwind(|| SeedRng::new(1).below(0));
     assert!(r.is_err(), "below(0) 该 panic，而不是回 0");

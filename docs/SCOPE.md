@@ -71,8 +71,11 @@
    同能力已有权威实现 ⇒ 登记 `capabilities`，第二份必须带**含数字**的 `measured_gap`。
 3. 加 `[[bin]]`/CLI 面 ⇒ 想清楚是不是该进 `trit-cli`（可发布），别让底座 crate 各自长壳。
 4. 数据/夹具 ⇒ 按 §3 三问回答，答案写进 PR 描述。
-5. 收尾：`fmt` / `clippy --all-targets` / `doc` / 测试 / `mutation_check` / `module_budget` /
-   `test_surface` / `publish_graph` / `deps` / `ci_integrity` / `hazard` / `layers` / `docs_hygiene`。
+5. 收尾：`fmt` / **`cargo clippy --workspace --all-targets --locked -- -D warnings`**（逐字这条；
+   `cargo clippy -p <crate> --tests` 是弱口径——少了 examples/benches、也漏掉没点名的包，
+   2026-11-06 就是这样让三平台 CI 的 Clippy 步骤一起红）/ `doc` / `cargo test --workspace --locked` /
+   `mutation_check` / `module_budget` / `test_surface` / `publish_graph` / `deps` / `ci_integrity` /
+   `hazard` / `layers` / `docs_hygiene`。
 
 ## 7. 规矩 ↔ 门 的对照（哪条机器判、哪条只能人判）
 
