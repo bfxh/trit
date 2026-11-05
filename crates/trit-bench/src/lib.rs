@@ -41,6 +41,17 @@ impl SeedRng {
             .map(|_| (self.next_u64() % 3) as i8 as i32 - 1)
             .collect()
     }
+
+    /// `[0, limit)` 内取一个整数。语料口径：直接取模，不做无偏修正（`limit` 远小于 2^64）。
+    ///
+    /// # Panics
+    ///
+    /// `limit == 0` 时除零 panic——"空域里选一个"没有意义，不静默返回 0。
+    #[must_use]
+    pub fn below(&mut self, limit: usize) -> usize {
+        assert!(limit > 0, "below(0) 没有可选值");
+        (self.next_u64() % limit as u64) as usize
+    }
 }
 
 /// 一个样本集的三分位口径。

@@ -21,7 +21,7 @@
 | 新库 | 层 | 为什么现在就该做 | 对拍谁 |
 |---|---|---|---|
 | ~~`trit-bench`~~ **已建**（2026-11-05） | base | 交错 ≥6 轮、min/median/max、规模档表现在**至少 5 份手写实现**（trit-dot main、trit-ops bench、trit-gpu bench、trit-parts parts_bench、`benchmarks/dot_variants`）；这是 §4 第一批要登记的重复能力 | 与 `benchmarks/dot_variants` 的读数对齐 |
-| `trit-fuzz` | 语料 | 随机表达式 / CNF / 三值向量生成器现在 5+ 处各写一套 RNG（含 trit-count 里我自己重写的那份） | 各 crate 现有 fuzz_smoke |
+| ~~`trit-fuzz`~~ **已建（第一批）**（2026-11-05） | base | 实测口径：`grep -rl "<< 13" --include=*.rs crates/ \| xargs grep -l ">> 7\|>> 17"` ⇒ **64 个文件**各自手写一条 xorshift；`trit-count` 一个包里两份逐字相同的 `random_expr` 已并进来。当前只收了三值向量 / 表达式 / 变量名三件，**CNF 夹具未做**（下一步从 `trit-codec`、`trit-dot` 的 stress 语料里收） | `trit-count` 的 crosscheck 语料改由它供给（同 13/7/17 序列，读数不变） |
 | `trit-ir` | algo | `.tri`/TTIR 只有"化简 + 打包"，没有 **pass 框架**（常量折叠、等价重写、CSE） | `trit-sat` / `trit-bdd` / `trit-count` 当每个 pass 的 oracle |
 | `trit-mv` | base | 主库只有 K3/Ł3/B3；要"用四值/n 值移植别的算法"先得有代数层（MV-algebra、t-norm 族、De Morgan 格、bilattice） | 真值表穷举 + `trit-belnap` |
 | `trit-num` | ops | 最小二乘现在在 `trit-texture` 里就地写；`parts-depth` 用 f32 四累加器 | 与 f32 参考实现同比特精度对拍 |

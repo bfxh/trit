@@ -149,3 +149,26 @@ fn zero_or_missing_reps_stays_safe() {
         "reps(0) 必须按 1 处理，不能一圈不跑"
     );
 }
+
+/// `below` 的三条：确定性、上界闭合、空域直接判红（不静默返回 0）。
+#[test]
+fn below_is_deterministic_and_bounded() {
+    let seq_a: Vec<usize> = {
+        let mut rng = SeedRng::new(21);
+        (0..200).map(|_| rng.below(7)).collect()
+    };
+    let seq_b: Vec<usize> = {
+        let mut rng = SeedRng::new(21);
+        (0..200).map(|_| rng.below(7)).collect()
+    };
+    assert_eq!(seq_a, seq_b, "同种子必须给同序列");
+    assert!(
+        seq_a.iter().all(|&v| v < 7),
+        "越界：{:?}",
+        seq_a.iter().find(|&&v| v >= 7)
+    );
+    assert!(seq_a.iter().any(|&v| v == 0), "从没落到 0，像是分布坏了");
+
+    let r = std::panic::catch_unwind(|| SeedRng::new(1).below(0));
+    assert!(r.is_err(), "below(0) 该 panic，而不是回 0");
+}

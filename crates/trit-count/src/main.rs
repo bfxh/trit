@@ -3,7 +3,6 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use trit_core::algebra::Algebra;
-use trit_core::ast::Expr;
 use trit_core::parser::Parser;
 use trit_core::value::Ternary;
 use trit_count::{
@@ -11,6 +10,8 @@ use trit_count::{
     oracle::{self, count_exhaustive_under},
     policy::Policy,
 };
+use trit_fuzz::SeedRng;
+use trit_fuzz::corpus::random_expr;
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -260,7 +261,7 @@ fn run_policy(path: &str) -> ExitCode {
 }
 
 fn run_random(cases: usize) -> ExitCode {
-    let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+    let mut rng = SeedRng::new(0x9E37_79B9_7F4A_7C15);
     let mut failures = 0usize;
     let mut total = 0usize;
     let mut refused = 0usize;
@@ -319,7 +320,7 @@ fn run_random(cases: usize) -> ExitCode {
 
 /// DPLL vs BDD 对拍（不跑穷举），用于 n>12 的第三方校验。
 fn run_big(cases: usize, max_n: usize) -> ExitCode {
-    let mut rng = Rng(0x5EED_1234_ABCD_EF01);
+    let mut rng = SeedRng::new(0x5EED_1234_ABCD_EF01);
     let mut failures = 0usize;
     let mut total = 0usize;
     let mut refused = 0usize;
@@ -378,43 +379,6 @@ fn run_big(cases: usize, max_n: usize) -> ExitCode {
     }
 }
 
-fn random_expr(rng: &mut Rng, vars: &[String], depth: usize) -> Expr {
-    if depth == 0 || rng.below(4) == 0 {
-        return if rng.below(6) == 0 {
-            Expr::Const(match rng.below(3) {
-                0 => Ternary::False,
-                1 => Ternary::True,
-                _ => Ternary::Unknown,
-            })
-        } else {
-            Expr::Var(vars[rng.below(vars.len())].clone())
-        };
-    }
-    match rng.below(6) {
-        0 => Expr::Not(Box::new(random_expr(rng, vars, depth - 1))),
-        1 => Expr::and(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        2 => Expr::or(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        3 => Expr::xor(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        4 => Expr::implies(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        _ => Expr::equiv(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-    }
-}
-
 fn parse_target(value: &str) -> Result<Ternary, String> {
     match value.trim().to_ascii_lowercase().as_str() {
         "true" | "t" | "1" => Ok(Ternary::True),
@@ -467,21 +431,4 @@ fn usage() {
            --big 对 n=13..MAX_N 的随机表达式做 DPLL vs BDD 两方对拍（穷举在这个规模跑不动）；\n\
            BDD 侧受 200k 节点预算限制，超预算只计 refused，不算不一致。"
     );
-}
-
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        let mut value = self.0;
-        value ^= value << 13;
-        value ^= value >> 7;
-        value ^= value << 17;
-        self.0 = value;
-        value
-    }
-
-    fn below(&mut self, limit: usize) -> usize {
-        (self.next() % limit as u64) as usize
-    }
 }

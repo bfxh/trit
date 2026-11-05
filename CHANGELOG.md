@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（`trit-fuzz`：把测试语料生成收进 base 层第一批）
+
+- 立项判据是一条能量化的尺，不是"感觉重复"：`grep -rl "<< 13" --include=*.rs crates/ | xargs grep -l ">> 7\|>> 17"`
+  ⇒ **64 个文件**各自手写一条 xorshift（移位组合略有出入）。其中 `trit-count` 一个包里有两份**逐字相同**的
+  `random_expr`（`src/main.rs:381` 与 `tests/crosscheck.rs:454`）。
+- 新 crate `crates/trit-fuzz`（base 层，只依赖 `trit-core` + `trit-bench`）：`random_trits`、`random_expr`、
+  `var_names`，RNG 本体复用 `trit_bench::SeedRng`（同 13/7/17 移位 ⇒ 换包不换序列），并在 `trit-bench` 上补
+  `SeedRng::below(limit)`（`limit == 0` 直接 panic，不静默回 0）。
+- `trit-count` 两份副本删掉、改吃 `trit-fuzz`：**测试逐条不变**（`cargo test -p trit-count` 16 + 10 全绿，
+  语料序列口径相同 ⇒ 没有金样被顺手改掉）。
+- 断言 6 条（`crates/trit-fuzz/tests/corpus.rs`）：同种子逐条重放、域封闭（不冒出域外变量）、深度上界、
+  `depth=0` 只出叶子、3000 个三值每档落在 800–1200、空变量表判红而不是悄悄全出常量、`var_names` 在 26 处换样式。
+- 变异 4 条 **抓住 4 / 存活 0 / 崩溃 0 / 假杀 0**（`python scripts/mutation_check.py --pkg trit-fuzz`）；
+  `layers.json` 归位 `trit-fuzz = base`，`test_surface` 台账随之更新。
+- **还没做**：CNF/子句夹具（下一步从 `trit-codec`、`trit-dot` 的 stress 语料里收），以及那 60 多份手写 RNG 的逐步改吃——
+  这两件都没动别人的承重面，不在本轮范围。
+
 ### Added（完成度表对账门 `scripts/model_status.py`：表里的数字改成机器量的）
 
 - `docs/STATUS.md` §2 那张"六个像模型的东西"的表一直是**手填**的（内联 `#[test]`、被 bin 用、`tests/` 提及、判定词）。

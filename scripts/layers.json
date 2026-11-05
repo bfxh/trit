@@ -43,7 +43,8 @@
     "trit-procscan": "prod",
     "trit-unsafe": "prod",
     "sansheng": "prod",
-    "trit-bench": "base"
+    "trit-bench": "base",
+    "trit-fuzz": "base"
   },
   "allows": [],
   "known_debts": [

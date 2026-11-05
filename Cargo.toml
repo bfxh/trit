@@ -4,6 +4,7 @@ resolver = "3"
 exclude = ["fuzz", "t3", "benchmarks/dot_variants"]
 members = [
     "crates/trit-bench",
+    "crates/trit-fuzz",
     "crates/trit-core",
     "crates/trit-learn",
     "crates/trit-graph",
@@ -56,6 +57,8 @@ trit-eval = { path = "crates/trit-eval", version = "0.12.0" }
 trit-sat = { path = "crates/trit-sat", version = "0.12.0" }
 trit-circuit = { path = "crates/trit-circuit", version = "0.12.0" }
 trit-bdd = { path = "crates/trit-bdd", version = "0.12.0" }
+trit-bench = { path = "crates/trit-bench", version = "0.12.0" }
+trit-fuzz = { path = "crates/trit-fuzz", version = "0.12.0" }
 trit-count = { path = "crates/trit-count", version = "0.12.0" }
 trit-policy = { path = "crates/trit-policy", version = "0.12.0" }
 trit-belnap = { path = "crates/trit-belnap", version = "0.12.0" }
