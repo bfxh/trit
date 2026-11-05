@@ -286,5 +286,29 @@
     "new": "    true",
     "pkg": "trit-parts",
     "filter": "tests::stats_comparison_is_deciding"
+  },
+  {
+    "name": "rel_path: 不回退上级目录（可搬移清单失效）",
+    "file": "crates/trit-parts/src/partsrun.rs",
+    "old": "    for _ in i..b.len() {\n        out.push(\"..\");\n    }",
+    "new": "    for _ in i..b.len() {}",
+    "pkg": "trit-parts",
+    "filter": "partsrun::tests::rel_path_walks_up_and_down"
+  },
+  {
+    "name": "scene-verify: 嵌套数组不加深（对象数只数到 1）",
+    "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
+    "old": "        } else if ch == '[' {\n            depth += 1;",
+    "new": "        } else if ch == '[' {\n            depth += 0;",
+    "pkg": "trit-parts",
+    "filter": "tests::count_ids_handles_nested_arrays"
+  },
+  {
+    "name": "objectmesh-verify: 相对输入不按包目录解析",
+    "file": "crates/trit-parts/src/bin/parts_objectmesh_verify.rs",
+    "old": "    if p.is_absolute() { p } else { base.join(p) }",
+    "new": "    let _ = base;\n    p",
+    "pkg": "trit-parts",
+    "filter": "tests::relative_inputs_resolve_against_bundle"
   }
 ]

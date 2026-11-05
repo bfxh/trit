@@ -191,6 +191,11 @@ fn layout_rows(txt: &str) -> Vec<Placement> {
     out
 }
 
+fn resolve(base: &Path, p: String) -> PathBuf {
+    let p = PathBuf::from(p);
+    if p.is_absolute() { p } else { base.join(p) }
+}
+
 fn load_view(scene: &Path, f: usize) -> View {
     let (ids, shape) =
         read_npy_i32(&scene.join("seg").join(format!("{f:06}.npy"))).unwrap_or_else(|e| fail(&e));
@@ -290,7 +295,7 @@ fn main() {
     let deg = number(cfg, "atlas_deg").unwrap_or(45.0) as f32;
     let want = entries(&manifest);
 
-    let ompath = PathBuf::from(field(oman, "path").unwrap_or_else(|| usage()));
+    let ompath = resolve(&base, field(oman, "path").unwrap_or_else(|| usage()));
     let ok_oman = field(oman, "sha256")
         .map(|s| s == hash(&ompath))
         .unwrap_or(false);
@@ -368,7 +373,7 @@ fn main() {
     let layout_in = block(inputs, "layout");
     let mut ok_scene = true;
     if let Some(lb) = layout_in {
-        let lp = PathBuf::from(field(lb, "path").unwrap_or_else(|| usage()));
+        let lp = resolve(&base, field(lb, "path").unwrap_or_else(|| usage()));
         ok_scene &= field(lb, "sha256").map(|s| s == hash(&lp)).unwrap_or(false);
         let lt = read(&lp);
         let mut places: HashMap<u32, Placement> = HashMap::new();
@@ -488,6 +493,17 @@ mod tests {
         let sb = block(man, "scene").unwrap();
         assert_eq!(field(sb, "mtl_sha256").as_deref(), Some("sm"));
         assert_eq!(number(block(man, "config").unwrap(), "atlas"), Some(512.0));
+    }
+
+    #[test]
+    fn relative_inputs_resolve_against_bundle() {
+        let base = Path::new("bundle/objects-mesh");
+        assert_eq!(
+            resolve(base, "../objects/objects.manifest.json".into()),
+            PathBuf::from("bundle/objects-mesh/../objects/objects.manifest.json")
+        );
+        let abs = std::env::temp_dir().join("trit_om.json");
+        assert_eq!(resolve(base, abs.display().to_string()), abs);
     }
 
     #[test]

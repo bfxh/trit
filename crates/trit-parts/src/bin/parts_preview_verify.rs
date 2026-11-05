@@ -120,6 +120,11 @@ fn max_diff(a: &[f32], b: &[f32]) -> f32 {
         .fold(0.0, f32::max)
 }
 
+fn resolve(base: &Path, p: String) -> PathBuf {
+    let p = PathBuf::from(p);
+    if p.is_absolute() { p } else { base.join(p) }
+}
+
 fn near3(a: [f64; 3], b: [f64; 3]) -> bool {
     (0..3).all(|k| (a[k] - b[k]).abs() <= 1e-6)
 }
@@ -161,7 +166,7 @@ fn main() {
 
     let ply = arg(&argv, "--splat")
         .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(field(src, "path").unwrap_or_else(|| usage())));
+        .unwrap_or_else(|| resolve(&base, field(src, "path").unwrap_or_else(|| usage())));
     let splats = read_ply_3dgs(&ply).unwrap_or_else(|e| {
         eprintln!("读 PLY 失败: {e}");
         std::process::exit(2);
@@ -302,6 +307,17 @@ mod tests {
         assert_eq!(rows[1].yaw, 180.0);
         assert_eq!(rows[1].sha, "f1");
         assert_eq!(number(block(MAN, "sheet").unwrap(), "w"), Some(32.0));
+    }
+
+    #[test]
+    fn relative_source_resolves_against_bundle() {
+        let base = Path::new("bundle/preview");
+        assert_eq!(
+            resolve(base, "../compose/composed.ply".into()),
+            PathBuf::from("bundle/preview/../compose/composed.ply")
+        );
+        let abs = std::env::temp_dir().join("trit_prev.ply");
+        assert_eq!(resolve(base, abs.display().to_string()), abs);
     }
 
     #[test]

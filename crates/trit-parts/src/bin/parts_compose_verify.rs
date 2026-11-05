@@ -157,6 +157,11 @@ fn layout(txt: &str) -> Vec<LayoutRow> {
     out
 }
 
+fn resolve(base: &Path, p: String) -> PathBuf {
+    let p = PathBuf::from(p);
+    if p.is_absolute() { p } else { base.join(p) }
+}
+
 fn near3(a: [f64; 3], b: [f64; 3]) -> bool {
     (0..3).all(|k| (a[k] - b[k]).abs() <= 1e-6)
 }
@@ -228,7 +233,7 @@ fn main() {
 
     let ompath = arg(&argv, "--objects")
         .map(|d| PathBuf::from(d).join("objects.manifest.json"))
-        .unwrap_or_else(|| PathBuf::from(field(oman, "path").unwrap_or_else(|| usage())));
+        .unwrap_or_else(|| resolve(&base, field(oman, "path").unwrap_or_else(|| usage())));
     let objdir = ompath
         .parent()
         .map(|p| p.to_path_buf())
@@ -385,6 +390,17 @@ mod tests {
             .as_deref(),
             Some("om")
         );
+    }
+
+    #[test]
+    fn relative_input_paths_resolve_against_manifest() {
+        let base = Path::new("bundle/compose");
+        assert_eq!(
+            resolve(base, "../objects/objects.manifest.json".into()),
+            PathBuf::from("bundle/compose/../objects/objects.manifest.json")
+        );
+        let abs = std::env::temp_dir().join("trit_objman.json");
+        assert_eq!(resolve(base, abs.display().to_string()), abs);
     }
 
     #[test]

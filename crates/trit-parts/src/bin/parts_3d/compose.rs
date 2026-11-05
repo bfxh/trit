@@ -204,7 +204,10 @@ pub(crate) fn compose_scene_cmd(argv: &[String]) {
         trit_parts::partsrun::created_unix(),
         trit_parts::partsrun::json_str(&commit),
         argv_json.join(", "),
-        trit_parts::partsrun::json_str(&trit_parts::scenefp::norm_root(&ompath)),
+        trit_parts::partsrun::json_str(&trit_parts::partsrun::rel_path(
+            &out,
+            &ompath.canonicalize().unwrap_or_else(|_| ompath.clone()),
+        )),
         layout_json.join(", "),
         composed.len()
     );
