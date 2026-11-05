@@ -174,5 +174,37 @@
     "new": "    let _ = base;\n    p",
     "pkg": "trit-parts",
     "filter": "tests::relative_sub_manifest_paths_resolve_against_bundle"
+  },
+  {
+    "name": "splat: 对象过滤失效（所有 id 混在一起）",
+    "file": "crates/trit-parts/src/splat/core.rs",
+    "old": "            if v.ids[i] == 0 || !keep(v.ids[i]) || !(d.is_finite() && d > 0.0 && d < 50.0) {",
+    "new": "            if v.ids[i] == 0 || false || !(d.is_finite() && d > 0.0 && d < 50.0) {",
+    "pkg": "trit-parts",
+    "filter": "splat::tests::build_filtered_keeps_only_requested_ids"
+  },
+  {
+    "name": "objects-verify: 不比 alpha（透明度漂移放行）",
+    "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
+    "old": "            && (g.alpha - w.alpha).abs() <= 1e-5",
+    "new": "            && true",
+    "pkg": "trit-parts",
+    "filter": "tests::splat_and_stat_comparisons_are_deciding"
+  },
+  {
+    "name": "objects-verify: 包围盒/质心容差放到 1e9",
+    "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
+    "old": "    let near = |a: f64, b: f64| (a - b).abs() <= 1e-4;",
+    "new": "    let near = |a: f64, b: f64| (a - b).abs() <= 1e9;",
+    "pkg": "trit-parts",
+    "filter": "tests::splat_and_stat_comparisons_are_deciding"
+  },
+  {
+    "name": "objects-verify: 少一个对象也放行",
+    "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
+    "old": "    declared == parsed && expect == seg",
+    "new": "    true",
+    "pkg": "trit-parts",
+    "filter": "tests::id_set_must_be_complete"
   }
 ]

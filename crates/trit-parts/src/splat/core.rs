@@ -25,6 +25,17 @@ pub struct Splat {
 /// 从多视角（id 图 + 深度 + RGB）建高斯：按世界体素去重，位置/颜色取均值。
 /// `cell` 越大精度越低；`scale_k` 是半径相对体素的比例。
 pub fn build(views: &[View], rgbs: &[Vec<f32>], cell: f32, scale_k: f32) -> Vec<Splat> {
+    build_filtered(views, rgbs, cell, scale_k, |_| true)
+}
+
+/// 同 [`build`]，但只保留 `keep(id)` 为真的分割 id（id 0 = 背景，永远丢弃）。
+pub fn build_filtered(
+    views: &[View],
+    rgbs: &[Vec<f32>],
+    cell: f32,
+    scale_k: f32,
+    keep: impl Fn(u32) -> bool,
+) -> Vec<Splat> {
     let mut acc: HashMap<(i32, i32, i32), Acc> = HashMap::new();
     let inv = 1.0 / cell.max(1e-5);
     for (v, rgb) in views.iter().zip(rgbs) {
@@ -33,7 +44,7 @@ pub fn build(views: &[View], rgbs: &[Vec<f32>], cell: f32, scale_k: f32) -> Vec<
         }
         for i in 0..v.ids.len().min(v.w * v.h) {
             let d = v.depth[i];
-            if v.ids[i] == 0 || !(d.is_finite() && d > 0.0 && d < 50.0) {
+            if v.ids[i] == 0 || !keep(v.ids[i]) || !(d.is_finite() && d > 0.0 && d < 50.0) {
                 continue;
             }
             let (u, vv) = (i % v.w, i / v.w);
