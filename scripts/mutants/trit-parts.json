@@ -238,5 +238,29 @@
     "new": "                90 => (dz, dx),",
     "pkg": "trit-parts",
     "filter": "splat::layout::tests::yaw_swaps_extents_and_transform_matches_bbox"
+  },
+  {
+    "name": "preview: 相机旋转矩阵转置（中心投到画外）",
+    "file": "crates/trit-parts/src/splat/preview.rs",
+    "old": "        t_cw: [\n            [x[0], y[0], z[0], eye[0]],",
+    "new": "        t_cw: [\n            [x[0], x[1], x[2], eye[0]],",
+    "pkg": "trit-parts",
+    "filter": "splat::preview::tests::bounds_and_center_projection"
+  },
+  {
+    "name": "preview: 拼图行列颠倒",
+    "file": "crates/trit-parts/src/splat/preview.rs",
+    "old": "        let (cx, cy) = (fi % cols, fi / cols);",
+    "new": "        let (cx, cy) = (fi / cols, fi % cols);",
+    "pkg": "trit-parts",
+    "filter": "splat::preview::tests::sheet_places_frames_row_major"
+  },
+  {
+    "name": "preview-verify: 像素差恒 0（重渲不对也放行）",
+    "file": "crates/trit-parts/src/bin/parts_preview_verify.rs",
+    "old": "        .map(|(x, y)| (x - y).abs())",
+    "new": "        .map(|(x, y)| (x * 0.0 + y * 0.0))",
+    "pkg": "trit-parts",
+    "filter": "tests::pixel_diff_is_deciding"
   }
 ]
