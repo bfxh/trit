@@ -22,6 +22,7 @@ pub(crate) fn usage() -> ! {
   parts-3d export-scene --model <occ1> --scene <dir> --frames 0,...,7 --out <dir> [--texture] [--splat-frames 0,2,4,6] [--splat-eval 1,3,5,7]
   parts-3d export-objects --scene <dir> --frames 0,...,7 --out <dir> [--cell 0.01] [--ids 1,2,5]
   parts-3d compose-scene --objects <对象目录> --out <目录> [--gap 0.05] [--cov-min 0.4]
+  parts-3d preview-scene --splat <ply> --out <目录> [--views 8] [--res 256] [--elev 20] [--fov 40]
   parts-3d splat-export --scene <dir> --frames 0,2,4,6 --eval 1,3,5,7 [--cell 0.01] [--fit 30] [--fit-all] --out <ply>
   parts-3d align --scene <dir> --frames 0,1,2,3,4,5,6,7 [--cell 0.01] [--tau 0.01] [--fill]
   parts-3d obs-split --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]

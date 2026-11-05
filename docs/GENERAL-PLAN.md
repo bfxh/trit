@@ -3602,3 +3602,28 @@ parts-compose-verify --scene runs/compose/scene0084
 - 反证 ②：把清单里第一条 `yaw` 从 90 改成 0 ⇒ 布局不一致、reject、rc=1（合成文件本身仍与重跑一致，
   说明复核是**分别**检查布局与合成，不是一把梭）。
 - 局限：轴对齐货架（只转 90°），不做吊挂/堆叠；覆盖率是包围盒口径，不保证视觉上互不遮挡。
+
+### 6.125 新视角预览：环绕相机 + 联系表 + 逐像素复核（2026-11-05）
+
+```text
+parts-3d preview-scene --splat runs/compose/scene0084/composed.ply --out runs/preview/scene0084 \
+  [--views 8] [--res 256] [--elev 20] [--fov 40] [--cols 4]
+parts-preview-verify --preview runs/preview/scene0084
+```
+
+- 相机只由包围盒 + 仰角/视场角决定（`splat::orbit_camera`，Blender 约定）；同一资产在任何机器上
+  得到同一组图。输出 8 张 256² PNG + 1024×512 联系表 + 清单（每视角 SHA/yaw、源 PLY SHA/计数、
+  包围盒、内参/半径）。
+- 复核重算包围盒、逐视角重渲并与 PNG 逐像素比对（容差 0.005，PNG 量化上限 0.0039），再重拼联系表。
+
+**实测**（合成场景 52,186 高斯；渲染 1.25 s）：
+
+| 项 | 读数 |
+|---|---|
+| 视角 | 8（yaw 0–315°），像素最大差 **0.0039**（PNG 量化） |
+| 联系表 | 1024×512，逐像素一致 |
+| 复核 | PASS（资产 / 包围盒 / 8 视角 / 拼图） |
+
+- 反证 ①：改 `view-03.png` 一个像素 ⇒ 视角 7/8、reject、rc=1；
+- 反证 ②：清单 `elev` 20→30 ⇒ 0/8 视角一致、拼图最大差 1.0、reject、rc=1。
+- 局限：EWA 近似的 CPU 光栅化，无景深/抗锯齿；联系表供人工检查，不参与训练。
