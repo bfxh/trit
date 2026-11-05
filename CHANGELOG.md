@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（再吃掉 4 份手写 xorshift：纹理两条 bench、电路 bench、编解码 example —— 精确尺 60 → 56）
+
+- `crates/trit-texture/benches/sample.rs` 与 `texture.rs`：删掉各自 `struct Rng(u64)`，改吃 `trit_fuzz::SeedRng`。
+  **不只是编译过**：`cargo bench -p trit-texture --bench sample` 真跑出来那张表（双线性 62.72 vs 整图 24.57 ns/样点、
+  各向异性 taps=8 自由 711.27 / 缓存 714.64 ns/样点、显存 1084 KiB vs 16320 KiB = 15.1×）。
+- `crates/trit-circuit/benches/core.rs`：把内联的三行 xorshift 闭包换成 `SeedRng::next_u64`。
+  跑过：`by match` 7.587 vs `by lut` 0.837 ns/op（random 档 9.06×），`exact k=12` 514.63 µs/iter。
+- `crates/trit-codec/examples/ternary_corpus.rs`：同样改吃 `SeedRng`，跑过（写出 171 行 truth / 85 行 balanced 语料）。
+- 四处都是**同一条 13/7/17 移位** ⇒ 语料序列与改动前逐字相同，读数口径没有被悄悄换掉。
+- 顺手抓到自己的一个手误：往 `[dev-dependencies]` 里插 `trit-fuzz` 时插重复了一行（`trit-codec` 那份本来就有），
+  `cargo check` 直接报"cannot load manifest"——靠编译发现，不是靠眼看。六个 manifest 复查计数现在都是 1。
+- 复算尺：`grep -rlE "\^=.*<< 13" --include=*.rs crates/ | wc -l` ⇒ **56**（本会话起点 67）。
+
+
 ### 读数（DPLL 在随机 CNF 上的规模档，release 实测）
 
 - `trit-count --fuzz-cnf --nvars N --cases 1`（N=18/20/22/24 各跑 3 次，同一颗种子 ⇒ 语料逐次相同）：
