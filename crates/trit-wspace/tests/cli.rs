@@ -125,6 +125,31 @@ fn cli_read_verify_patch_repair_round_trip() {
     assert_eq!(replayed_report["behavior_checked"].as_u64(), Some(1));
     assert!(replayed.is_file());
 
+    let shard_dir = dir.join("shards");
+    let sharded = stdout_json(&run(&[
+        "shard",
+        &path_string(&log),
+        "--size",
+        "1",
+        "--out",
+        &path_string(&shard_dir),
+    ]));
+    assert_eq!(sharded["shards"].as_u64(), Some(1));
+    assert_eq!(sharded["entries"].as_u64(), Some(1));
+    assert!(shard_dir.join("shard-000.jsonl").is_file());
+    let checked = stdout_json(&run(&[
+        "audit-shards",
+        &path_string(&shard_dir),
+        "--artifact",
+        &path_string(&artifact),
+    ]));
+    assert_eq!(checked["valid"], true);
+    assert_eq!(checked["entries"].as_u64(), Some(1));
+    assert_eq!(
+        checked["replay"]["final_checksum"].as_str().expect("sum"),
+        format!("{broken_sum:016x}")
+    );
+
     let tampered =
         fs::read_to_string(&log)
             .expect("log")

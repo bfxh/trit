@@ -77,7 +77,7 @@
   "old": "let tools = tools();",
   "new": "let tools: Vec<Value> = Vec::new();",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_twelve_tools"
+  "filter": "lists_exactly_fourteen_tools"
  },
  {
   "name": "wspace-mcp: 错误结果不再标 isError",
@@ -598,5 +598,77 @@
   "new": "for score in pilots.into_iter().take(0) {",
   "pkg": "trit-wspace",
   "filter": "pilot_drops_inert_high_activity_row"
+ },
+ {
+  "name": "wspace-shard: oracle 表不去重",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            && !table.contains(oracle)",
+  "new": "            && true",
+  "pkg": "trit-wspace",
+  "filter": "oracle_table_holds_each_oracle_once_per_shard"
+ },
+ {
+  "name": "wspace-shard: 记录仍内嵌 oracle",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            map.remove(\"oracle\");",
+  "new": "            let _ = &map;",
+  "pkg": "trit-wspace",
+  "filter": "shard_round_trip_preserves_chain_and_replay"
+ },
+ {
+  "name": "wspace-shard: 不校验 oracle 表摘要",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "    if digest != want_digest {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "oracle_table_tampering_is_detected"
+ },
+ {
+  "name": "wspace-shard: 不校验跨片 prev",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            if header.prev != prev {",
+  "new": "            if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_header_tampering_is_detected"
+ },
+ {
+  "name": "wspace-shard: 不校验分片 head",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            if header.head != prev {",
+  "new": "            if false {",
+  "pkg": "trit-wspace",
+  "filter": "shard_header_tampering_is_detected"
+ },
+ {
+  "name": "wspace-shard: 不校验分片序号",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "    if shard != expected {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "dropped_or_reordered_shard_is_detected"
+ },
+ {
+  "name": "wspace-cli: shard 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        \"shard\" => cmd_shard(&args[1..]),",
+  "new": "        \"shardX\" => cmd_shard(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-mcp: wsp_shard 工具名被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_shard\" =>",
+  "new": "            \"wsp_shardX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-mcp: wsp_audit_shards 工具名被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_audit_shards\" =>",
+  "new": "            \"wsp_audit_shardsX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "shard_and_audit_shards_round_trip"
  }
 ]

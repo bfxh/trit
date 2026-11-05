@@ -70,6 +70,8 @@ trit-wspace explain broken.wsp --oracle xor.json --sample 0 --top 8
 trit-wspace probe   xor.wsp --oracle probe.json --budget 64 --top 16 --adaptive
 trit-wspace localize broken.wsp --oracle xor.json --rows 3 --row-budget 64 --max-trits 64 --top-trits 8
 trit-wspace audit  audit.jsonl --artifact start.wsp
+trit-wspace shard  audit.jsonl --size 512 --out shards/
+trit-wspace audit-shards shards/ --artifact start.wsp
 trit-wspace replay audit.jsonl --artifact start.wsp --out final.wsp
 trit-wspace diff   a.wsp b.wsp
 trit-wspace merge  a.wsp b.wsp --aligned --out merged.wsp
@@ -110,7 +112,7 @@ trit-wspace mcp
 }
 ```
 
-十二个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`。
+十四个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
@@ -135,6 +137,9 @@ trit-wspace mcp
 报告标 `selection=adaptive` / `sampled` / `stride=0`。
 
 `wsp_audit` 校验 JSONL 编辑日志的哈希链；给了初始工件就顺带重放并核对最终校验和。
+`wsp_shard` 把日志切成带 header 的分片：每片首行声明序号/起止/父子链头，并在 `oracles`
+表里存本片用到的验证集（每条只存一次），记录行改用 `oracle_index` 指向表项；
+`wsp_audit_shards` 校验跨片 `seq` / `prev` / `head` 与 oracle 表摘要，可选重放。
 模板见 [`mcp.example.json`](mcp.example.json)。
 
 > 注册后需要**重启/重载 Qoder App**，工具目录才会出现；当前会话的 `mcp_list` 不会热更新。

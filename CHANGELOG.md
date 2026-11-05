@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：审计日志分片 + 分片内 oracle 表）
+
+- `AuditLog::into_shards(max_entries)` → `ShardedLog`：长日志按条数切分，每片首行是
+  `v=2 / kind=wspace-shard` 的 header（`shard` / `first_seq` / `count` / 父 `prev` / 本片
+  `head` / `oracles` 表 / `oracles_digest`）。记录行保持 v1 链字段，验证集改成
+  `oracle_index` 指向本片表项（同一验证集每片只存一次）。
+- `ShardedLog::verify_chain` 做跨片校验：分片序号/序号起止连续、父链头与上一片 `head`
+  衔接、每条 `chain` 可重算、表无重复/无未引用项/摘要匹配；`replay_net` 跨片重放并核对
+  权重链与行为链。
+- CLI `shard <log> --size N --out <dir>`（原子写入 `shard-NNN.jsonl`）、
+  `audit-shards <dir> [--artifact <initial>]`；MCP `wsp_shard` / `wsp_audit_shards`
+  （工具 12 → 14）。
+- 读数：3 条共享同一验证集的日志切 2 片，每片 oracle 表 1 项；记录行不再内嵌 `oracle`；
+  分片重放最终校验和与单文件日志一致。篡改 header `prev`/`head`/`count`、oracle 表内容、
+  丢片/乱序、`oracle_index` 越界均报错。
+- 测试 117 → 124 + 1 doctest；变异 75 → **84 条，84/84 caught**；test_surface 台账 2,323 → 2,333。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene 全过。
+
 ### Added（trit-wspace：行内定位按活跃度选点）
 
 - `localize_row` 的 `max_trits` 预算不再按固定步长抽样：先统计每个位置在样本上的

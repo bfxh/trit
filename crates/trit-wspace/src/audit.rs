@@ -246,78 +246,7 @@ impl AuditLog {
     /// 重放并返回最终工件；有验证集的条目会同时核对前后行为指纹。
     pub fn replay_net(&self, initial: &Net) -> Result<(ReplayReport, Net)> {
         self.verify_chain()?;
-        let mut current = initial.clone();
-        let mut applied = 0usize;
-        let mut rolled_back = 0usize;
-        let mut skipped = 0usize;
-        let mut behavior_checked = 0usize;
-        for entry in &self.entries {
-            let oracle = match &entry.oracle {
-                Some(value) => Some(wire::oracle_from_value(value)?),
-                None => None,
-            };
-            if oracle.is_none()
-                && (entry.behavior_before.is_some() || entry.behavior_after.is_some())
-            {
-                return Err(Error::Audit(format!(
-                    "第 {} 条有行为指纹但没有验证集",
-                    entry.seq
-                )));
-            }
-            if let Some(oracle) = &oracle {
-                let sig = Behavior::of(&current, oracle)?.signature();
-                if Some(sig) != entry.behavior_before {
-                    return Err(Error::Audit(format!(
-                        "第 {} 条 behavior_before 不符（记录 {:?}，重算 {:016x}）",
-                        entry.seq, entry.behavior_before, sig
-                    )));
-                }
-            }
-            let now = checksum(&current);
-            if now != entry.before {
-                return Err(Error::Audit(format!(
-                    "第 {} 条 before={:016x}，当前工件 {:016x}",
-                    entry.seq, entry.before, now
-                )));
-            }
-            if !entry.applied {
-                skipped += 1;
-            } else {
-                let journal = entry.patch.apply(&mut current)?;
-                if entry.rolled_back {
-                    journal.undo(&mut current);
-                    rolled_back += 1;
-                } else {
-                    applied += 1;
-                }
-            }
-            let after = checksum(&current);
-            if after != entry.after {
-                return Err(Error::Audit(format!(
-                    "第 {} 条 after={:016x}，重放得到 {:016x}",
-                    entry.seq, entry.after, after
-                )));
-            }
-            if let Some(oracle) = &oracle {
-                let sig = Behavior::of(&current, oracle)?.signature();
-                if Some(sig) != entry.behavior_after {
-                    return Err(Error::Audit(format!(
-                        "第 {} 条 behavior_after 不符（记录 {:?}，重算 {:016x}）",
-                        entry.seq, entry.behavior_after, sig
-                    )));
-                }
-                behavior_checked += 1;
-            }
-        }
-        let report = ReplayReport {
-            entries: self.entries.len(),
-            applied,
-            rolled_back,
-            skipped,
-            behavior_checked,
-            final_checksum: checksum(&current),
-        };
-        Ok((report, current))
+        replay_entries(&self.entries, initial)
     }
 
     /// 序列化为 JSONL（一行一条记录）。
@@ -341,23 +270,14 @@ impl AuditLog {
             }
             let value: Value = serde_json::from_str(line)
                 .map_err(|error| Error::Audit(format!("第 {} 行 JSON：{error}", index + 1)))?;
-            let version = value
-                .get("v")
-                .and_then(Value::as_u64)
-                .ok_or_else(|| Error::Audit(format!("第 {} 行缺少 v", index + 1)))?;
-            if version != LOG_VERSION {
+            let parts = parse_entry(&value, index + 1)?;
+            if parts.oracle_index.is_some() {
                 return Err(Error::Audit(format!(
-                    "第 {} 行版本 {version}（当前 {LOG_VERSION}）",
+                    "第 {} 行有 oracle_index（只用于分片文件）",
                     index + 1
                 )));
             }
-            let patch_value = value
-                .get("patch")
-                .ok_or_else(|| Error::Audit(format!("第 {} 行缺少 patch", index + 1)))?;
-            let patch = wire::patch_from_value(patch_value)?;
-            let inline = parse_oracle(&value)?;
-            let oracle_ref = optional_usize_field(&value, "oracle_ref")?;
-            let oracle = match (inline, oracle_ref) {
+            let oracle = match (parts.inline_oracle, parts.oracle_ref) {
                 (Some(_), Some(_)) => {
                     return Err(Error::Audit(format!(
                         "第 {} 行同时有 oracle 与 oracle_ref",
@@ -381,42 +301,151 @@ impl AuditLog {
                 }
                 (None, None) => None,
             };
-            log.entries.push(LogEntry {
-                seq: usize_field(&value, "seq")?,
-                name: value
-                    .get("name")
-                    .and_then(Value::as_str)
-                    .unwrap_or("")
-                    .to_string(),
-                before: hex_field(&value, "before")?,
-                after: hex_field(&value, "after")?,
-                applied: value
-                    .get("applied")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-                rolled_back: value
-                    .get("rolled_back")
-                    .and_then(Value::as_bool)
-                    .unwrap_or(false),
-                cost: value.get("cost").cloned().unwrap_or_else(|| json!({})),
-                patch,
-                oracle,
-                oracle_ref,
-                behavior_before: optional_hex_field(&value, "behavior_before")?,
-                behavior_after: optional_hex_field(&value, "behavior_after")?,
-                prev: hex_field(&value, "prev")?,
-                chain: hex_field(&value, "chain")?,
-            });
+            let mut entry = parts.entry;
+            entry.oracle = oracle;
+            log.entries.push(entry);
         }
         Ok(log)
     }
 }
 
-fn chain_of(entry: &LogEntry) -> u64 {
+/// 解析一行记录，验证集字段留待调用方解析（普通日志 / 分片表）。
+pub(crate) struct EntryParts {
+    pub(crate) entry: LogEntry,
+    pub(crate) inline_oracle: Option<Value>,
+    pub(crate) oracle_ref: Option<usize>,
+    pub(crate) oracle_index: Option<usize>,
+}
+
+pub(crate) fn parse_entry(value: &Value, line: usize) -> Result<EntryParts> {
+    let version = value
+        .get("v")
+        .and_then(Value::as_u64)
+        .ok_or_else(|| Error::Audit(format!("第 {line} 行缺少 v")))?;
+    if version != LOG_VERSION {
+        return Err(Error::Audit(format!(
+            "第 {line} 行版本 {version}（当前 {LOG_VERSION}）"
+        )));
+    }
+    let patch_value = value
+        .get("patch")
+        .ok_or_else(|| Error::Audit(format!("第 {line} 行缺少 patch")))?;
+    let patch = wire::patch_from_value(patch_value)?;
+    let inline_oracle = parse_oracle(value)?;
+    let oracle_ref = optional_usize_field(value, "oracle_ref")?;
+    let oracle_index = optional_usize_field(value, "oracle_index")?;
+    let entry = LogEntry {
+        seq: usize_field(value, "seq")?,
+        name: value
+            .get("name")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string(),
+        before: hex_field(value, "before")?,
+        after: hex_field(value, "after")?,
+        applied: value
+            .get("applied")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        rolled_back: value
+            .get("rolled_back")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        cost: value.get("cost").cloned().unwrap_or_else(|| json!({})),
+        patch,
+        oracle: None,
+        oracle_ref,
+        behavior_before: optional_hex_field(value, "behavior_before")?,
+        behavior_after: optional_hex_field(value, "behavior_after")?,
+        prev: hex_field(value, "prev")?,
+        chain: hex_field(value, "chain")?,
+    };
+    Ok(EntryParts {
+        entry,
+        inline_oracle,
+        oracle_ref,
+        oracle_index,
+    })
+}
+
+pub(crate) fn replay_entries(entries: &[LogEntry], initial: &Net) -> Result<(ReplayReport, Net)> {
+    let mut current = initial.clone();
+    let mut applied = 0usize;
+    let mut rolled_back = 0usize;
+    let mut skipped = 0usize;
+    let mut behavior_checked = 0usize;
+    for entry in entries {
+        let oracle = match &entry.oracle {
+            Some(value) => Some(wire::oracle_from_value(value)?),
+            None => None,
+        };
+        if oracle.is_none() && (entry.behavior_before.is_some() || entry.behavior_after.is_some()) {
+            return Err(Error::Audit(format!(
+                "第 {} 条有行为指纹但没有验证集",
+                entry.seq
+            )));
+        }
+        if let Some(oracle) = &oracle {
+            let sig = Behavior::of(&current, oracle)?.signature();
+            if Some(sig) != entry.behavior_before {
+                return Err(Error::Audit(format!(
+                    "第 {} 条 behavior_before 不符（记录 {:?}，重算 {:016x}）",
+                    entry.seq, entry.behavior_before, sig
+                )));
+            }
+        }
+        let now = checksum(&current);
+        if now != entry.before {
+            return Err(Error::Audit(format!(
+                "第 {} 条 before={:016x}，当前工件 {:016x}",
+                entry.seq, entry.before, now
+            )));
+        }
+        if !entry.applied {
+            skipped += 1;
+        } else {
+            let journal = entry.patch.apply(&mut current)?;
+            if entry.rolled_back {
+                journal.undo(&mut current);
+                rolled_back += 1;
+            } else {
+                applied += 1;
+            }
+        }
+        let after = checksum(&current);
+        if after != entry.after {
+            return Err(Error::Audit(format!(
+                "第 {} 条 after={:016x}，重放得到 {:016x}",
+                entry.seq, entry.after, after
+            )));
+        }
+        if let Some(oracle) = &oracle {
+            let sig = Behavior::of(&current, oracle)?.signature();
+            if Some(sig) != entry.behavior_after {
+                return Err(Error::Audit(format!(
+                    "第 {} 条 behavior_after 不符（记录 {:?}，重算 {:016x}）",
+                    entry.seq, entry.behavior_after, sig
+                )));
+            }
+            behavior_checked += 1;
+        }
+    }
+    let report = ReplayReport {
+        entries: entries.len(),
+        applied,
+        rolled_back,
+        skipped,
+        behavior_checked,
+        final_checksum: checksum(&current),
+    };
+    Ok((report, current))
+}
+
+pub(crate) fn chain_of(entry: &LogEntry) -> u64 {
     fnv(canonical(entry, false).to_string().as_bytes())
 }
 
-fn canonical(entry: &LogEntry, with_chain: bool) -> Value {
+pub(crate) fn canonical(entry: &LogEntry, with_chain: bool) -> Value {
     let mut map = serde_json::Map::new();
     map.insert("v".to_string(), json!(LOG_VERSION));
     map.insert("seq".to_string(), json!(entry.seq));
@@ -449,7 +478,7 @@ fn canonical(entry: &LogEntry, with_chain: bool) -> Value {
     Value::Object(map)
 }
 
-fn fnv(bytes: &[u8]) -> u64 {
+pub(crate) fn fnv(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     for &byte in bytes {
         hash ^= u64::from(byte);
@@ -458,7 +487,7 @@ fn fnv(bytes: &[u8]) -> u64 {
     hash
 }
 
-fn hex(value: u64) -> String {
+pub(crate) fn hex(value: u64) -> String {
     format!("{value:016x}")
 }
 
@@ -505,7 +534,7 @@ fn parse_oracle(value: &Value) -> Result<Option<Value>> {
     }
 }
 
-fn usize_field(value: &Value, name: &str) -> Result<usize> {
+pub(crate) fn usize_field(value: &Value, name: &str) -> Result<usize> {
     let number = value
         .get(name)
         .and_then(Value::as_u64)

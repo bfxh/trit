@@ -1,4 +1,4 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，十二个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，十四个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
@@ -17,6 +17,7 @@ use crate::net::Net;
 use crate::ops;
 use crate::oracle::Oracle;
 use crate::repair::RepairOptions;
+use crate::shard::ShardedLog;
 use crate::wire;
 
 /// MCP 协议版本。
@@ -40,7 +41,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 十二个工具。改数量必须同时改测试断言。
+/// 十四个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -168,6 +169,25 @@ pub fn tools() -> Vec<Value> {
             "合并两个同架构工件；aligned=true 时先消隐藏单元置换",
             json!({"a": artifact(), "b": artifact(), "aligned": {"type": "boolean"}}),
             &["a", "b"],
+        ),
+        tool(
+            "wsp_shard",
+            "把 JSONL 审计日志切成带 header 与分片内 oracle 表的分片，返回分片文本",
+            json!({
+                "log": {"type": "string", "description": "JSONL 文本或路径"},
+                "size": {"type": "integer", "description": "每片最多多少条"},
+            }),
+            &["log", "size"],
+        ),
+        tool(
+            "wsp_audit_shards",
+            "校验分片审计日志的跨片哈希链；可选从初始工件重放",
+            json!({
+                "shards": {"type": "array", "items": {"type": "string"}},
+                "artifact": artifact(),
+                "path": {"type": "string"},
+            }),
+            &["shards"],
         ),
     ]
 }
@@ -413,6 +433,83 @@ impl Mcp {
                 )
                 .map_err(err)?;
                 Ok(wire::localize_report_to_value(&report))
+            }
+            "wsp_shard" => {
+                let raw = args.get("log").and_then(Value::as_str).ok_or("需要 log")?;
+                let size = args
+                    .get("size")
+                    .and_then(Value::as_u64)
+                    .ok_or("需要 size")?;
+                let size = usize::try_from(size).map_err(|_| "size 超出 usize")?;
+                let text = read_log(raw)?;
+                let log = match AuditLog::from_jsonl(&text) {
+                    Ok(log) => log,
+                    Err(error) => {
+                        return Ok(json!({"valid": false, "error": error.to_string()}));
+                    }
+                };
+                let shards = match log.into_shards(size) {
+                    Ok(shards) => shards,
+                    Err(error) => {
+                        return Ok(json!({"valid": false, "error": error.to_string()}));
+                    }
+                };
+                if let Err(error) = shards.verify_chain() {
+                    return Ok(json!({"valid": false, "error": error.to_string()}));
+                }
+                Ok(json!({
+                    "valid": true,
+                    "shards": shards.to_texts(),
+                    "entries": shards.len(),
+                    "head": format!("{:016x}", shards.head()),
+                }))
+            }
+            "wsp_audit_shards" => {
+                let texts: Vec<String> = args
+                    .get("shards")
+                    .and_then(Value::as_array)
+                    .ok_or("需要 shards 数组")?
+                    .iter()
+                    .map(|value| {
+                        value
+                            .as_str()
+                            .map(str::to_string)
+                            .ok_or_else(|| "shards 必须是字符串数组".to_string())
+                    })
+                    .collect::<Result<_, _>>()?;
+                let shards = match ShardedLog::from_texts(&texts) {
+                    Ok(shards) => shards,
+                    Err(error) => {
+                        return Ok(json!({"valid": false, "error": error.to_string()}));
+                    }
+                };
+                if let Err(error) = shards.verify_chain() {
+                    return Ok(json!({"valid": false, "error": error.to_string()}));
+                }
+                let mut value = json!({
+                    "valid": true,
+                    "shards": shards.shard_count(),
+                    "entries": shards.len(),
+                    "head": format!("{:016x}", shards.head()),
+                });
+                if let Some(net) = load_optional(args)? {
+                    match shards.replay(&net) {
+                        Ok(report) => {
+                            value["replay"] = json!({
+                                "entries": report.entries,
+                                "applied": report.applied,
+                                "rolled_back": report.rolled_back,
+                                "skipped": report.skipped,
+                                "behavior_checked": report.behavior_checked,
+                                "final_checksum": format!("{:016x}", report.final_checksum),
+                            });
+                        }
+                        Err(error) => {
+                            return Ok(json!({"valid": false, "error": error.to_string()}));
+                        }
+                    }
+                }
+                Ok(value)
             }
             "wsp_audit" => {
                 let raw = args.get("log").and_then(Value::as_str).ok_or("需要 log")?;

@@ -53,13 +53,13 @@ fn initialize_reports_protocol_and_server_name() {
 }
 
 #[test]
-fn lists_exactly_twelve_tools() {
+fn lists_exactly_fourteen_tools() {
     let mut server = Mcp::new();
     let response = server
         .dispatch(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))
         .expect("response");
     let listed = response["result"]["tools"].as_array().expect("tools");
-    assert_eq!(listed.len(), 12);
+    assert_eq!(listed.len(), 14);
     let names: Vec<&str> = listed
         .iter()
         .map(|tool| tool["name"].as_str().expect("name"))
@@ -77,10 +77,12 @@ fn lists_exactly_twelve_tools() {
         "wsp_audit",
         "wsp_diff",
         "wsp_merge",
+        "wsp_shard",
+        "wsp_audit_shards",
     ] {
         assert!(names.contains(&expected), "缺少工具 {expected}");
     }
-    assert_eq!(tools().len(), 12);
+    assert_eq!(tools().len(), 14);
 }
 
 #[test]
@@ -624,6 +626,53 @@ fn audit_verifies_chain_and_replays() {
     let value = payload(&result);
     assert_eq!(value["valid"], false);
     assert!(value["error"].is_string());
+}
+
+#[test]
+fn shard_and_audit_shards_round_trip() {
+    let start = xor_net();
+    let mut broken = start.clone();
+    let patch = Patch::new(vec![Edit::SetTrit {
+        layer: 0,
+        row: 0,
+        col: 0,
+        to: Trit::Zero,
+    }]);
+    patch.apply(&mut broken).expect("corrupt");
+    let oracle = Oracle::boolean(2, |bits| bits[0] != bits[1]).expect("oracle");
+    let mut log = trit_wspace::AuditLog::new();
+    log.record_with_oracle("break", &start, &broken, patch, true, false, Some(&oracle))
+        .expect("record");
+
+    let mut server = Mcp::new();
+    let split = call(
+        &mut server,
+        "wsp_shard",
+        json!({"log": log.to_jsonl(), "size": 1}),
+    );
+    assert_eq!(split["isError"], false);
+    let split = payload(&split);
+    assert_eq!(split["valid"], true);
+    assert_eq!(split["entries"].as_u64(), Some(1));
+    let texts = split["shards"].as_array().expect("shards").clone();
+    assert_eq!(texts.len(), 1);
+
+    let checked = call(
+        &mut server,
+        "wsp_audit_shards",
+        json!({"shards": texts, "artifact": to_wsp(&start)}),
+    );
+    assert_eq!(checked["isError"], false);
+    let checked = payload(&checked);
+    assert_eq!(checked["valid"], true);
+    assert_eq!(checked["entries"].as_u64(), Some(1));
+    assert_eq!(
+        checked["replay"]["final_checksum"].as_str().expect("sum"),
+        format!("{:016x}", trit_wspace::checksum(&broken))
+    );
+
+    let bad = call(&mut server, "wsp_audit_shards", json!({"shards": [1]}));
+    assert_eq!(bad["isError"], true);
 }
 
 #[test]

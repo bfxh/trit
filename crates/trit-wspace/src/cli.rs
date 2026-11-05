@@ -18,6 +18,7 @@ use crate::net::Net;
 use crate::ops;
 use crate::oracle::{Behavior, Oracle};
 use crate::repair::RepairOptions;
+use crate::shard::ShardedLog;
 use crate::wire;
 
 const USAGE: &str = "\
@@ -32,6 +33,8 @@ trit-wspace <command>
   probe <artifact|-> --oracle <json|-> [--budget N] [--top K] [--adaptive]
   localize <artifact|-> --oracle <json|-> [--rows K] [--row-budget N] [--max-trits N] [--top-trits K]
   audit <log|-> [--artifact <initial|->]
+  shard <log|-> --size N --out <dir>
+  audit-shards <dir> [--artifact <initial|->]
   replay <log|-> --artifact <initial|-> [--out <path>]
   diff <a|-> <b|->
   merge <a|-> <b|-> [--aligned] [--out <path>]
@@ -66,6 +69,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "probe" => cmd_probe(&args[1..]),
         "localize" => cmd_localize(&args[1..]),
         "audit" => cmd_audit(&args[1..]),
+        "shard" => cmd_shard(&args[1..]),
+        "audit-shards" => cmd_audit_shards(&args[1..]),
         "replay" => cmd_replay(&args[1..]),
         "diff" => cmd_diff(&args[1..]),
         "merge" => cmd_merge(&args[1..]),
@@ -223,6 +228,76 @@ fn cmd_audit(args: &[String]) -> Result<(), String> {
     });
     if let Some(artifact) = artifact {
         let replay = log.replay(&load_net(artifact)?).map_err(err)?;
+        output["replay"] = json!({
+            "entries": replay.entries,
+            "applied": replay.applied,
+            "rolled_back": replay.rolled_back,
+            "skipped": replay.skipped,
+            "behavior_checked": replay.behavior_checked,
+            "final_checksum": format!("{:016x}", replay.final_checksum),
+        });
+    }
+    emit(&output)
+}
+
+fn cmd_shard(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    let log_path = one(&parsed, "shard <log|-> --size N --out <dir>")?;
+    let size: usize = value(&parsed, "size")?
+        .parse()
+        .map_err(|_| "size 需要正整数".to_string())?;
+    let out_dir = value(&parsed, "out")?;
+    let log = AuditLog::from_jsonl(&read_source(log_path)?).map_err(err)?;
+    let shards = log.into_shards(size).map_err(err)?;
+    shards.verify_chain().map_err(err)?;
+    let texts = shards.to_texts();
+    fs::create_dir_all(out_dir).map_err(|error| format!("{out_dir}: {error}"))?;
+    for (index, text) in texts.iter().enumerate() {
+        let path = Path::new(out_dir).join(format!("shard-{index:03}.jsonl"));
+        let path = path.to_str().ok_or("输出路径不是 UTF-8")?;
+        atomic_write(path, text)?;
+    }
+    emit(&json!({
+        "shards": shards.shard_count(),
+        "entries": shards.len(),
+        "head": format!("{:016x}", shards.head()),
+        "out": out_dir,
+    }))
+}
+
+fn cmd_audit_shards(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    let dir = one(&parsed, "audit-shards <dir> [--artifact <initial|->]")?;
+    let artifact = parsed.values.get("artifact").map(String::as_str);
+    let mut paths: Vec<std::path::PathBuf> = fs::read_dir(dir)
+        .map_err(|error| format!("{dir}: {error}"))?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("shard-") && name.ends_with(".jsonl"))
+        })
+        .collect();
+    if paths.is_empty() {
+        return Err(format!("{dir} 中没有 shard-*.jsonl"));
+    }
+    paths.sort();
+    let mut texts = Vec::with_capacity(paths.len());
+    for path in paths {
+        let path = path.to_str().ok_or("分片路径不是 UTF-8")?;
+        texts.push(read_source(path)?);
+    }
+    let shards = ShardedLog::from_texts(&texts).map_err(err)?;
+    shards.verify_chain().map_err(err)?;
+    let mut output = json!({
+        "valid": true,
+        "shards": shards.shard_count(),
+        "entries": shards.len(),
+        "head": format!("{:016x}", shards.head()),
+    });
+    if let Some(artifact) = artifact {
+        let replay = shards.replay(&load_net(artifact)?).map_err(err)?;
         output["replay"] = json!({
             "entries": replay.entries,
             "applied": replay.applied,
