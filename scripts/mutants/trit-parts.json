@@ -334,5 +334,21 @@
     "new": "    if ver != 2 {",
     "pkg": "trit-parts",
     "filter": "tests::chunks_and_structure_checks"
+  },
+  {
+    "name": "glb: 转台关键帧角度恒 0",
+    "file": "crates/trit-parts/src/glb.rs",
+    "old": "        let th = k as f32 * std::f32::consts::FRAC_PI_2;",
+    "new": "        let th = 0.0f32;",
+    "pkg": "trit-parts",
+    "filter": "glb::tests::turntable_keys_are_quarter_turns"
+  },
+  {
+    "name": "glb: 根节点把自己也挂成 child",
+    "file": "crates/trit-parts/src/glb.rs",
+    "old": "        let children: Vec<String> = (1..=nodes.len()).map(|i| i.to_string()).collect();",
+    "new": "        let children: Vec<String> = (0..nodes.len()).map(|i| i.to_string()).collect();",
+    "pkg": "trit-parts",
+    "filter": "glb::tests::turntable_animation_adds_root_and_keyframes"
   }
 ]

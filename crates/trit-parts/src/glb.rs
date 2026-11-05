@@ -76,6 +76,13 @@ fn f32s(v: &[f32]) -> Vec<u8> {
     v.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
 
+fn accessor_time(acc: &mut Vec<String>, view: usize, count: usize, t0: f32, t1: f32) -> usize {
+    acc.push(format!(
+        "{{\"bufferView\": {view}, \"componentType\": 5126, \"count\": {count}, \"type\": \"SCALAR\", \"min\": [{t0}], \"max\": [{t1}]}}"
+    ));
+    acc.len() - 1
+}
+
 fn accessor(
     acc: &mut Vec<String>,
     view: usize,
@@ -100,6 +107,12 @@ fn accessor(
 
 /// 生成 GLB 字节（确定性：同样输入逐字节相同）。
 pub fn build(parts: &[Part], generator: &str) -> Vec<u8> {
+    build_with(parts, generator, None)
+}
+
+/// 同 [`build`]，`spin_seconds > 0` 时额外写一条绕 Y 轴 360° 的转台动画：
+/// 所有对象挂在一个 `turntable` 根节点下，动画只转根节点（引擎里直接播放）。
+pub fn build_with(parts: &[Part], generator: &str, spin_seconds: Option<f32>) -> Vec<u8> {
     let mut bin = Vec::new();
     let mut views: Vec<(usize, usize, Option<u32>)> = Vec::new();
     let mut accessors: Vec<String> = Vec::new();
@@ -180,10 +193,35 @@ pub fn build(parts: &[Part], generator: &str) -> Vec<u8> {
         ));
     }
 
+    let mut anim_suffix = String::new();
+    if let Some(sec) = spin_seconds {
+        let t = sec.max(0.1);
+        let (times, quats) = turntable_keys(t);
+        let vt = push_view(&mut bin, &mut views, &f32s(&times), None);
+        let at = accessor_time(&mut accessors, vt, 5, 0.0, t);
+        let vq = push_view(&mut bin, &mut views, &f32s(&quats), None);
+        let aq = accessor(&mut accessors, vq, 5, "VEC4", 5126, None);
+        anim_suffix = format!(
+            ", \"animations\": [{{\"name\": \"turntable\", \"samplers\": [{{\"input\": {at}, \"output\": {aq}, \"interpolation\": \"LINEAR\"}}], \"channels\": [{{\"sampler\": 0, \"target\": {{\"node\": 0, \"path\": \"rotation\"}}}}]}}]"
+        );
+        let children: Vec<String> = (1..=nodes.len()).map(|i| i.to_string()).collect();
+        nodes.insert(
+            0,
+            format!(
+                "{{\"name\": \"turntable\", \"children\": [{}]}}",
+                children.join(", ")
+            ),
+        );
+    }
+
     while !bin.len().is_multiple_of(4) {
         bin.push(0);
     }
-    let scene_nodes: Vec<String> = (0..nodes.len()).map(|i| i.to_string()).collect();
+    let scene_nodes: Vec<String> = if spin_seconds.is_some() {
+        vec!["0".into()]
+    } else {
+        (0..nodes.len()).map(|i| i.to_string()).collect()
+    };
     let views_json: Vec<String> = views
         .iter()
         .map(|(o, l, t)| match t {
@@ -193,8 +231,8 @@ pub fn build(parts: &[Part], generator: &str) -> Vec<u8> {
             None => format!("{{\"buffer\": 0, \"byteOffset\": {o}, \"byteLength\": {l}}}"),
         })
         .collect();
-    let json = format!(
-        "{{\"asset\": {{\"version\": \"2.0\", \"generator\": {}}}, \"scene\": 0, \"scenes\": [{{\"nodes\": [{}]}}], \"nodes\": [{}], \"meshes\": [{}], \"materials\": [{}], \"textures\": [{}], \"images\": [{}], \"samplers\": [{{\"magFilter\": 9729, \"minFilter\": 9987, \"wrapS\": 10497, \"wrapT\": 10497}}], \"accessors\": [{}], \"bufferViews\": [{}], \"buffers\": [{{\"byteLength\": {}}}]}}",
+    let mut json = format!(
+        "{{\"asset\": {{\"version\": \"2.0\", \"generator\": {}}}, \"scene\": 0, \"scenes\": [{{\"nodes\": [{}]}}], \"nodes\": [{}], \"meshes\": [{}], \"materials\": [{}], \"textures\": [{}], \"images\": [{}], \"samplers\": [{{\"magFilter\": 9729, \"minFilter\": 9987, \"wrapS\": 10497, \"wrapT\": 10497}}], \"accessors\": [{}], \"bufferViews\": [{}], \"buffers\": [{{\"byteLength\": {}}}]",
         crate::partsrun::json_str(generator),
         scene_nodes.join(", "),
         nodes.join(", "),
@@ -206,6 +244,8 @@ pub fn build(parts: &[Part], generator: &str) -> Vec<u8> {
         views_json.join(", "),
         bin.len()
     );
+    json.push_str(&anim_suffix);
+    json.push('}');
     let mut jb = json.into_bytes();
     while !jb.len().is_multiple_of(4) {
         jb.push(b' ');
@@ -222,6 +262,18 @@ pub fn build(parts: &[Part], generator: &str) -> Vec<u8> {
     out.extend_from_slice(b"BIN\0");
     out.extend_from_slice(&bin);
     out
+}
+
+/// 转台动画的 5 个关键帧：时间 0..T 等分，四元数 0/90/180/270/360°（绕 Y）。
+pub fn turntable_keys(seconds: f32) -> (Vec<f32>, Vec<f32>) {
+    let t = seconds.max(0.1);
+    let times: Vec<f32> = (0..5).map(|k| t * k as f32 / 4.0).collect();
+    let mut quats: Vec<f32> = Vec::with_capacity(20);
+    for k in 0..5 {
+        let th = k as f32 * std::f32::consts::FRAC_PI_2;
+        quats.extend_from_slice(&[0.0, (th / 2.0).sin(), 0.0, (th / 2.0).cos()]);
+    }
+    (times, quats)
 }
 
 /// 布局 → 节点 TRS：绕包围盒中心（xz）旋转 yaw，再平移，等价于
@@ -563,6 +615,45 @@ mod tests {
         assert_eq!((m2.verts.len(), m2.tris.len()), (3, 1));
         assert_eq!(uv[0][1], [1.0, 0.0]);
         assert!(parse_obj("v 0 0 0\n").is_err());
+    }
+
+    #[test]
+    fn turntable_animation_adds_root_and_keyframes() {
+        let a = build(&[part("obj-1")], "t");
+        let b = build_with(&[part("obj-1")], "t", Some(2.0));
+        let (ja, _) = chunks_of(&a);
+        let (jb, _) = chunks_of(&b);
+        assert!(!ja.contains("\"animations\""));
+        assert!(jb.contains("\"animations\": [{"));
+        assert!(jb.contains("\"name\": \"turntable\""));
+        assert!(jb.contains("\"path\": \"rotation\""));
+        assert_eq!(jb.matches("\"mesh\": 0").count(), 1);
+        // 根节点把唯一对象挂成 child 1；obj-1 出现在 node/mesh/material 三处
+        assert!(jb.contains("\"children\": [1]"));
+        assert_eq!(jb.matches("\"name\": \"obj-1\"").count(), 3);
+        let c = build_with(&[part("obj-1")], "t", Some(2.0));
+        assert_eq!(b, c, "动画输出也必须逐字节确定");
+    }
+
+    fn chunks_of(b: &[u8]) -> (String, &[u8]) {
+        let jl = u32::from_le_bytes([b[12], b[13], b[14], b[15]]) as usize;
+        let json = String::from_utf8_lossy(&b[20..20 + jl]).to_string();
+        let bo = 20 + jl;
+        let bl = u32::from_le_bytes([b[bo], b[bo + 1], b[bo + 2], b[bo + 3]]) as usize;
+        (json, &b[bo + 8..bo + 8 + bl])
+    }
+
+    #[test]
+    fn turntable_keys_are_quarter_turns() {
+        let (t, q) = turntable_keys(4.0);
+        assert_eq!(t, vec![0.0, 1.0, 2.0, 3.0, 4.0]);
+        let h = std::f32::consts::FRAC_1_SQRT_2;
+        // 90°：(0, √½, 0, √½)；180°：(0,1,0,0)；360°：(0,0,0,-1)
+        assert!((q[4] - 0.0).abs() < 1e-6 && (q[5] - h).abs() < 1e-6);
+        assert!((q[6] - 0.0).abs() < 1e-6 && (q[7] - h).abs() < 1e-6);
+        assert!((q[9] - 1.0).abs() < 1e-6 && q[10].abs() < 1e-6);
+        assert!((q[19] + 1.0).abs() < 1e-6, "360° = (0,0,0,-1)");
+        assert_eq!(t.len(), 5);
     }
 
     #[test]

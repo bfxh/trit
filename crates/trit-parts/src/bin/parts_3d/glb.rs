@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use trit_parts::glb::{build, load_scene};
+use trit_parts::glb::{build_with, load_scene};
 
 use super::cli::{arg, fail, usage};
 
@@ -31,8 +31,15 @@ pub(crate) fn export_glb_cmd(argv: &[String]) {
     let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
     let layout = arg(argv, "--layout").map(PathBuf::from);
     let generator = arg(argv, "--generator").unwrap_or_else(|| "trit-parts".into());
+    let spin: f32 = arg(argv, "--spin")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
     let loaded = load_scene(&dir, layout.as_deref()).unwrap_or_else(|e| fail(&e));
-    let bytes = build(&loaded.parts, &generator);
+    let bytes = build_with(
+        &loaded.parts,
+        &generator,
+        if spin > 0.0 { Some(spin) } else { None },
+    );
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)
             .unwrap_or_else(|e| fail(&format!("{}: {e}", parent.display())));
@@ -67,7 +74,7 @@ pub(crate) fn export_glb_cmd(argv: &[String]) {
         .map(|a| trit_parts::partsrun::json_str(&a))
         .collect();
     let body = format!(
-        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-glb\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"generator\": {}}},\n  \"inputs\": {{\"objects_mesh\": {{\"path\": {}, \"sha256\": \"{}\"}}, \"objects_manifest\": {{\"path\": {}, \"sha256\": \"{}\"}}, \"layout\": {{\"path\": {}, \"sha256\": \"{}\"}}}},\n  \"glb\": {{\"path\": {}, \"sha256\": \"{}\", \"bytes\": {}, \"parts\": {}, \"verts\": {}, \"tris\": {}}}\n}}\n",
+        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-glb\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"generator\": {}, \"spin\": {spin}}},\n  \"inputs\": {{\"objects_mesh\": {{\"path\": {}, \"sha256\": \"{}\"}}, \"objects_manifest\": {{\"path\": {}, \"sha256\": \"{}\"}}, \"layout\": {{\"path\": {}, \"sha256\": \"{}\"}}}},\n  \"glb\": {{\"path\": {}, \"sha256\": \"{}\", \"bytes\": {}, \"parts\": {}, \"verts\": {}, \"tris\": {}}}\n}}\n",
         trit_parts::partsrun::created_unix(),
         trit_parts::partsrun::json_str(&commit),
         argv_json.join(", "),

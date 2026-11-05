@@ -360,6 +360,7 @@ N1/N3–N7 仍是文档读数，**不在目录里**（`docs/EXTRACT-RESULTS.md`�
 **对象级网格+贴图（§6.126）**：`export-object-meshes` 按分割 id 取视觉外壳→Surface Nets→多视角烘焙图集，7 个对象全部闭合（边界边 0），3.7 s 出 160,551 顶点 / 322,692 面；给布局时再写 `scene.obj/scene.mtl`（`g obj-<id>` 分组 + 变换）。`parts-objectmesh-verify` 重建并逐文件比 SHA；改一个 OBJ 字节或改 scene.obj 都 reject（rc=1）。局限：剪影锥保守、非流形边老债、小对象图集浪费。
 **全包（§6.127）**：`export-scene --full` 一条命令 33 s 出 139 MB 包（mesh/splat/objects/compose/objects-mesh/GLB/preview 七个子包），总清单只记子清单哈希；子清单改相对路径，整包复制到 E: 后 `parts-scene-verify` 仍 PASS（21.6 s，六个子复核全过）。反证：改一张预览图一像素或把总清单 objects.count 7→6 都 reject。
 **GLB（§6.128）**：`export-glb` 把 7 个对象打成单个 glTF 2.0 GLB（PNG 内嵌、节点带布局变换），10.0 MB（同内容 OBJ+MTL+PNG 76 MB，小 7.6×），0.9 s；`parts-glb-verify` 重新打包逐字节比对；外部 `qoder-gltf validate` 报 valid=true、诊断 0 条（7 节点/7 材质/7 贴图，包围盒 2.039×0.955×1.537 m）。反证：改一字节或改输入 SHA 都 reject。
+**GLB 转台动画（§6.129）**：`--spin 4` 写 `turntable` 根节点 + 5 关键帧 360° 动画（0/90/180/270/360°，LINEAR）；外部 `qoder-gltf validate` 报 nodes 8 / animations 1 / tracks 1 / keyframes 5、诊断 0 条，GLB 10.0 MB（+604 B）；`parts-glb-verify` 按清单 spin 重建并逐字节比对，把 spin 4→0 即 reject。
 **容量（§6.115）**：hid 16/32/64/128 的均值 0.674/0.655/**0.687**/0.668（差在噪声内），但**极差 0.153→0.039–0.060、最差 0.604→0.659** ⇒ 容量是稳定性杠杆；默认 hid 64。
 **lr 衰减（§6.114）**：`occ --lr-final` 线性衰减把 24 场景/30k 的发散救回——mean 0.5992→**0.6743**、最差种子 0.3999→0.6038、最高 0.7572；种子极差仍 0.153。长训练默认带衰减，排序仍要 ≥3 种子。
 **扩到 24 场景（§6.113）**：同曝光 30k 步 + 三种子，均值 0.599（lr0.05，1/3 发散）或 0.564（lr0.01），**没有超过** 4 场景的 0.631；数据不是杠杆。lr 0.05 在大步数下会发散（loss 0.10→0.81、IoU 0.400），lr≤0.03 不散。下一步给 occ 加发散守卫/衰减。
