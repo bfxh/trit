@@ -22,17 +22,17 @@
  "crate/trit-net": 76,
  "crate/trit-ops": 35,
  "crate/trit-orch": 160,
- "crate/trit-parts": 160,
+ "crate/trit-parts": 187,
  "crate/trit-policy": 24,
  "crate/trit-procscan": 28,
- "crate/trit-re": 100,
+ "crate/trit-re": 141,
  "crate/trit-redteam": 43,
  "crate/trit-sat": 11,
  "crate/trit-schedule": 49,
  "crate/trit-texture": 98,
  "crate/trit-train": 8,
  "crate/trit-unsafe": 15,
- "crate/trit-vcs": 120,
+ "crate/trit-vcs": 141,
  "crate/trit-wasm": 5,
  "script/agent_claims.py": 1,
  "script/autoflow.py": 1,
@@ -87,5 +87,6 @@
  "script/test_surface.py": 1,
  "script/train_guarded.sh": 0,
  "script/vendor.py": 1,
- "script/verify_materials.py": 0
+ "script/verify_materials.py": 0,
+ "script/yara_diff.py": 0
 }
