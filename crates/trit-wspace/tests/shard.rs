@@ -294,6 +294,7 @@ fn checkpoint_resume_matches_full_replay() {
     assert_eq!(checkpoint.shard, 1);
     assert_eq!(checkpoint.entries, 1);
     assert_eq!(checkpoint.head, log.entries()[0].chain);
+    assert_eq!(checkpoint.oracles.len(), 1);
     let value = wire::checkpoint_to_value(&checkpoint);
     assert_eq!(
         wire::checkpoint_from_value(&value).expect("parse"),
@@ -337,6 +338,36 @@ fn checkpoint_rejects_inconsistent_prefix() {
 }
 
 #[test]
+fn cross_shard_oracle_table_is_inherited() {
+    let (log, _) = sample_log();
+    let shards = log.clone().into_shards(2).expect("split");
+    let texts = shards.to_texts();
+    assert_eq!(texts.len(), 2);
+    let header: Value =
+        serde_json::from_str(texts[1].lines().next().expect("header")).expect("json");
+    assert_eq!(header["oracle_parent"], json!(0));
+    assert_eq!(header["oracles"], json!([]));
+    assert!(!texts[1].contains("\"inputs\""), "第二片不再重复验证集");
+    assert_eq!(shards.shards()[1].header().oracle_parent, Some(0));
+    assert_eq!(shards.shards()[1].header().oracles.len(), 1);
+
+    let parsed = ShardedLog::from_texts(&texts).expect("parse inherited");
+    parsed.verify_chain().expect("chain");
+    assert_eq!(parsed, shards);
+
+    let no_parent = texts[1].replace("\"oracle_parent\":0", "\"oracle_parent\":null");
+    assert_ne!(no_parent, texts[1]);
+    let error = ShardedLog::from_texts(&[texts[0].clone(), no_parent]).expect_err("缺父表");
+    assert!(
+        error.to_string().contains("oracle_index") || error.to_string().contains("越界"),
+        "{error}"
+    );
+
+    let bad_parent = texts[1].replace("\"oracle_parent\":0", "\"oracle_parent\":5");
+    assert!(ShardedLog::from_texts(&[texts[0].clone(), bad_parent]).is_err());
+}
+
+#[test]
 fn dropped_or_reordered_shard_is_detected() {
     let (log, _) = sample_log();
     let texts = log.into_shards(2).expect("split").to_texts();
@@ -344,5 +375,8 @@ fn dropped_or_reordered_shard_is_detected() {
     assert!(error.to_string().contains("分片"), "{error}");
     let error =
         ShardedLog::from_texts(&[texts[1].clone(), texts[0].clone()]).expect_err("分片乱序");
+    assert!(error.to_string().contains("分片"), "{error}");
+    let error =
+        ShardedLog::from_texts(&[texts[0].clone(), texts[0].clone()]).expect_err("重复分片");
     assert!(error.to_string().contains("分片"), "{error}");
 }

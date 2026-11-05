@@ -54,13 +54,13 @@ fn initialize_reports_protocol_and_server_name() {
 }
 
 #[test]
-fn lists_exactly_fifteen_tools() {
+fn lists_exactly_sixteen_tools() {
     let mut server = Mcp::new();
     let response = server
         .dispatch(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))
         .expect("response");
     let listed = response["result"]["tools"].as_array().expect("tools");
-    assert_eq!(listed.len(), 15);
+    assert_eq!(listed.len(), 16);
     let names: Vec<&str> = listed
         .iter()
         .map(|tool| tool["name"].as_str().expect("name"))
@@ -81,10 +81,11 @@ fn lists_exactly_fifteen_tools() {
         "wsp_shard",
         "wsp_audit_shards",
         "wsp_run_script",
+        "wsp_task_merge",
     ] {
         assert!(names.contains(&expected), "缺少工具 {expected}");
     }
-    assert_eq!(tools().len(), 15);
+    assert_eq!(tools().len(), 16);
 }
 
 #[test]

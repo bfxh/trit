@@ -34,7 +34,7 @@
 //!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`mod@explain`] 解释单个样本
 //!   为什么错、哪些单点编辑能让它翻转/变对；[`mod@probe`] 做行级消融测行为漂移（大网读取）；
 //!   [`mod@localize`] 在承重行内做 trit 级定位（行 → 权重两级读取）；
-//!   [`merge`] 负责消掉隐藏单元置换对称性后再合并。
+//!   [`merge`] 负责消掉隐藏单元置换对称性后再合并；[`mod@task`] 做三值任务向量投票合并。
 //!
 //! 规范自由度（不变量）：
 //!
@@ -87,7 +87,8 @@
 //! - CLI：`read / verify / patch / repair / diff / merge`，输入 `-` 读 stdin，报告一律 JSON；
 //! - MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、
 //!   `wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、
-//!   `wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script` 十五个工具，
+//!   `wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、
+//!   `wsp_task_merge` 十六个工具，
 //!   工具参数与返回格式见 [`wire`]。
 //!
 //! 补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
@@ -115,6 +116,7 @@ pub mod probe;
 pub mod program;
 pub mod repair;
 pub mod shard;
+pub mod task;
 pub mod trit;
 pub mod wire;
 
@@ -140,4 +142,5 @@ pub use probe::{
 pub use program::{Program, Report, Script, ScriptReport};
 pub use repair::{Repair, RepairOptions, repair};
 pub use shard::{Checkpoint, Shard, ShardCursor, ShardHeader, ShardReplay, ShardedLog};
+pub use task::{TaskVector, merge_tasks};
 pub use trit::Trit;

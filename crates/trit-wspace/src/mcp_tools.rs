@@ -10,7 +10,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 十五个工具。改数量必须同时改测试断言。
+/// 十六个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -138,6 +138,15 @@ pub fn tools() -> Vec<Value> {
             "合并两个同架构工件；aligned=true 时先消隐藏单元置换",
             json!({"a": artifact(), "b": artifact(), "aligned": {"type": "boolean"}}),
             &["a", "b"],
+        ),
+        tool(
+            "wsp_task_merge",
+            "多任务三值向量合并：每个任务只对改过的坐标投票，平票保留基准",
+            json!({
+                "base": artifact(),
+                "tasks": {"type": "array", "items": {"type": "string"}},
+            }),
+            &["base", "tasks"],
         ),
         tool(
             "wsp_run_script",

@@ -24,6 +24,7 @@ const USAGE: &str = "\
 trit-wspace <command>
   read <artifact|-> [--out <path>]
   verify <artifact|-> --oracle <json|-> [--limit N]
+  task-merge <base|-> <tuned|->... [--out <path>]
   script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
@@ -61,6 +62,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
     match command {
         "read" => cmd_read(&args[1..]),
         "verify" => cmd_verify(&args[1..]),
+        "task-merge" => cmd_task_merge(&args[1..]),
         "script" => cmd_script(&args[1..]),
         "patch" => cmd_patch(&args[1..]),
         "apply-candidate" => cmd_apply_candidate(&args[1..]),
@@ -111,6 +113,29 @@ fn cmd_verify(args: &[String]) -> Result<(), String> {
         "signature": format!("{:016x}", Behavior::of(&net, &oracle).map_err(err)?.signature()),
         "summary": wire::net_summary(&net),
         "mismatches": wire::mismatches_value(&net, &oracle, limit).map_err(err)?,
+    }))
+}
+
+fn cmd_task_merge(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    if parsed.positional.len() < 2 {
+        return Err("用法：trit-wspace task-merge <base|-> <tuned|->... [--out <path>]".into());
+    }
+    no_double_stdin(&parsed.positional)?;
+    let base = load_net(&parsed.positional[0])?;
+    let mut tasks = Vec::with_capacity(parsed.positional.len() - 1);
+    for path in &parsed.positional[1..] {
+        tasks.push(crate::task::TaskVector::between(&base, &load_net(path)?).map_err(err)?);
+    }
+    let merged = crate::task::merge_tasks(&base, &tasks).map_err(err)?;
+    write_out(&parsed, &merged)?;
+    let patch = Patch::diff(&base, &merged).map_err(err)?;
+    emit(&json!({
+        "tasks": tasks.len(),
+        "summary": wire::net_summary(&merged),
+        "patch": wire::patch_to_value(&patch),
+        "cost": wire::cost_to_value(&patch.cost(&base)),
+        "artifact": to_wsp(&merged),
     }))
 }
 

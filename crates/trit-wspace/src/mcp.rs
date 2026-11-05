@@ -1,4 +1,4 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，十五个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，十六个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
@@ -277,6 +277,28 @@ impl Mcp {
                 )
                 .map_err(err)?;
                 Ok(wire::localize_report_to_value(&report))
+            }
+            "wsp_task_merge" => {
+                let base = load_key(args, "base")?;
+                let raws = args
+                    .get("tasks")
+                    .and_then(Value::as_array)
+                    .ok_or("需要 tasks 数组")?;
+                let mut tasks = Vec::with_capacity(raws.len());
+                for raw in raws {
+                    let text = raw.as_str().ok_or("tasks 必须是字符串数组")?;
+                    let tuned = parse_or_path(text)?;
+                    tasks.push(crate::task::TaskVector::between(&base, &tuned).map_err(err)?);
+                }
+                let merged = crate::task::merge_tasks(&base, &tasks).map_err(err)?;
+                let patch = Patch::diff(&base, &merged).map_err(err)?;
+                Ok(json!({
+                    "tasks": tasks.len(),
+                    "summary": wire::net_summary(&merged),
+                    "patch": wire::patch_to_value(&patch),
+                    "cost": wire::cost_to_value(&patch.cost(&base)),
+                    "artifact": to_wsp(&merged),
+                }))
             }
             "wsp_run_script" => {
                 let net = load(args)?;

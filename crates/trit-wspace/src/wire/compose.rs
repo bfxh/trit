@@ -42,6 +42,7 @@ pub fn checkpoint_to_value(checkpoint: &Checkpoint) -> Value {
         "rolled_back": checkpoint.rolled_back,
         "skipped": checkpoint.skipped,
         "behavior_checked": checkpoint.behavior_checked,
+        "oracles": checkpoint.oracles,
         "artifact": to_wsp(&checkpoint.net),
     })
 }
@@ -71,6 +72,14 @@ pub fn checkpoint_from_value(value: &Value) -> Result<Checkpoint> {
         .get("artifact")
         .and_then(Value::as_str)
         .ok_or_else(|| wire("checkpoint 缺少 `artifact`"))?;
+    let oracles = value
+        .get("oracles")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    for oracle in &oracles {
+        super::oracle_from_value(oracle)?;
+    }
     Ok(Checkpoint {
         shard: usize::try_from(field("shard")?).map_err(|_| wire("checkpoint shard 超出 usize"))?,
         entries: usize::try_from(field("entries")?)
@@ -85,6 +94,7 @@ pub fn checkpoint_from_value(value: &Value) -> Result<Checkpoint> {
             .map_err(|_| wire("checkpoint skipped 超出 usize"))?,
         behavior_checked: usize::try_from(field("behavior_checked").unwrap_or(0))
             .map_err(|_| wire("checkpoint behavior_checked 超出 usize"))?,
+        oracles,
     })
 }
 

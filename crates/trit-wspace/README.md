@@ -60,6 +60,7 @@ python scripts/module_budget.py
 ```bash
 trit-wspace read   xor.wsp
 trit-wspace verify xor.wsp --oracle xor.json
+trit-wspace task-merge base.wsp tuned-a.wsp tuned-b.wsp --out merged.wsp
 trit-wspace script xor.wsp --script repair.json --oracle xor.json --out fixed.wsp
 trit-wspace patch  xor.wsp --patch break.json --oracle xor.json --require-after --out fixed.wsp
 trit-wspace apply-candidate broken.wsp --candidate fix.json --oracle xor.json --require-after --out fixed.wsp --log audit.jsonl
@@ -115,7 +116,7 @@ trit-wspace mcp
 }
 ```
 
-十五个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`。
+十六个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
@@ -139,6 +140,9 @@ trit-wspace mcp
 整验证集复核；`max_trits` 超了按位置的**实际活跃次数**选点（权重为零或入参恒为零的位置得 0 分），
 报告标 `selection=adaptive` / `sampled` / `stride=0`。
 
+`wsp_task_merge` 做三值任务向量合并：每个任务只对**它改过的坐标**投票，票和取符号、平票
+保留基准，全体投 `0` 时取 `0`；任务向量带基准校验和，拿错基准会报错。CLI 对应 `task-merge`。
+
 `wsp_run_script` 执行组合脚本：`sequence` 默认原子（任一步失败/回滚则整段恢复原样，
 `atomic=false` 保留已成功步骤），`when` 按当前行为（完整逐样本输出）选择 `then` / `otherwise`，
 报告是树形的 `steps` / `matched` / `chosen`。CLI 对应 `script`。
@@ -147,6 +151,10 @@ trit-wspace mcp
 `wsp_shard` 把日志切成带 header 的分片：每片首行声明序号/起止/父子链头，并在 `oracles`
 表里存本片用到的验证集（每条只存一次），记录行改用 `oracle_index` 指向表项；
 `wsp_audit_shards` 校验跨片 `seq` / `prev` / `head` 与 oracle 表摘要，可选重放。
+分片 header 的 `oracle_parent` 指向上一个分片，`oracles` 只写**新增**验证集，后面的分片
+直接复用父表（记录行仍用 `oracle_index`）；`audit-shards`/`wsp_audit_shards` 逐片解析时把
+父表拼回有效表，检查点也带上这张表以便续放。
+
 CLI 的 `audit-shards` 是**流式**的：`ShardCursor` / `ShardReplay` 读一片、校验一片、应用一片，
 不保留分片文本；`--out` 直接落盘流式重放的最终工件。`--checkpoint-every N --checkpoint-dir D`
 在分片边界写检查点（工件 + 已消费条数/链头/计数），`--resume <checkpoint>` 先验完前缀链再从

@@ -77,7 +77,7 @@
   "old": "let tools = tools();",
   "new": "let tools: Vec<Value> = Vec::new();",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_fifteen_tools"
+  "filter": "lists_exactly_sixteen_tools"
  },
  {
   "name": "wspace-mcp: 错误结果不再标 isError",
@@ -674,8 +674,8 @@
  {
   "name": "wspace-shard: 流式游标不验链",
   "file": "crates/trit-wspace/src/shard.rs",
-  "old": "        verify_shard(&shard, self.shards, &mut self.prev, &mut self.seq)?;",
-  "new": "        let _ = verify_shard(&shard, self.shards, &mut self.prev, &mut self.seq);",
+  "old": "        verify_shard(&shard, self.shards, &mut self.prev, &mut self.seq, parent)?;",
+  "new": "        let _ = verify_shard(&shard, self.shards, &mut self.prev, &mut self.seq, parent);",
   "pkg": "trit-wspace",
   "filter": "cursor_streams_shards_and_checks_links"
  },
@@ -886,5 +886,101 @@
   "new": "                        if false {",
   "pkg": "trit-wspace",
   "filter": "shard_and_audit_shards_round_trip"
+ },
+ {
+  "name": "wspace-shard: 分片不复用 oracle 表",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "            let parent = if shards.is_empty() {\n                None\n            } else {\n                Some(shards.len() - 1)\n            };",
+  "new": "            let parent = None;",
+  "pkg": "trit-wspace",
+  "filter": "cross_shard_oracle_table_is_inherited"
+ },
+ {
+  "name": "wspace-shard: 增量表包含父表项",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "                .filter(|oracle| !inherited.contains(oracle))",
+  "new": "                .filter(|_| true)",
+  "pkg": "trit-wspace",
+  "filter": "cross_shard_oracle_table_is_inherited"
+ },
+ {
+  "name": "wspace-shard: 序列化重复整张表",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "                header.oracles[parent.len()..].to_vec()",
+  "new": "                header.oracles.clone()",
+  "pkg": "trit-wspace",
+  "filter": "cross_shard_oracle_table_is_inherited"
+ },
+ {
+  "name": "wspace-shard: 解析忽略 oracle_parent",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "    let parent = optional_usize_field(&header_value, \"oracle_parent\", expected)?;",
+  "new": "    let parent: Option<usize> = None;",
+  "pkg": "trit-wspace",
+  "filter": "cross_shard_oracle_table_is_inherited"
+ },
+ {
+  "name": "wspace-checkpoint: 线格式丢 oracle 表",
+  "file": "crates/trit-wspace/src/wire/compose.rs",
+  "old": "        \"oracles\": checkpoint.oracles,",
+  "new": "        \"oracles\": Vec::<Value>::new(),",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-checkpoint: resume 丢 oracle 表",
+  "file": "crates/trit-wspace/src/shard.rs",
+  "old": "                checkpoint.oracles.clone(),\n            ),",
+  "new": "                Vec::new(),\n            ),",
+  "pkg": "trit-wspace",
+  "filter": "checkpoint_resume_matches_full_replay"
+ },
+ {
+  "name": "wspace-task: 平票取首票而非基准",
+  "file": "crates/trit-wspace/src/task.rs",
+  "old": "        } else if targets.iter().all(|target| *target == targets[0]) {",
+  "new": "        } else if true {",
+  "pkg": "trit-wspace",
+  "filter": "merge_votes_targets_and_breaks_ties_to_base"
+ },
+ {
+  "name": "wspace-task: 票和符号写反",
+  "file": "crates/trit-wspace/src/task.rs",
+  "old": "        let merged = if sum > 0 {\n            Trit::Pos\n        } else if sum < 0 {\n            Trit::Neg",
+  "new": "        let merged = if sum > 0 {\n            Trit::Neg\n        } else if sum < 0 {\n            Trit::Pos",
+  "pkg": "trit-wspace",
+  "filter": "merge_votes_targets_and_breaks_ties_to_base"
+ },
+ {
+  "name": "wspace-task: 不校验任务向量基准",
+  "file": "crates/trit-wspace/src/task.rs",
+  "old": "        if checksum(base) != self.base {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "vector_round_trip_and_base_guard"
+ },
+ {
+  "name": "wspace-task: 合并不校验基准",
+  "file": "crates/trit-wspace/src/task.rs",
+  "old": "    if tasks.iter().any(|task| task.base != expected) {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "merge_rejects_foreign_base"
+ },
+ {
+  "name": "wspace-cli: task-merge 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        \"task-merge\" => cmd_task_merge(&args[1..]),",
+  "new": "        \"task-mergeX\" => cmd_task_merge(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "task_merge_votes_and_writes_artifact"
+ },
+ {
+  "name": "wspace-mcp: wsp_task_merge 被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_task_merge\" =>",
+  "new": "            \"wsp_task_mergeX\" =>",
+  "pkg": "trit-wspace",
+  "filter": "task_merge_via_mcp"
  }
 ]

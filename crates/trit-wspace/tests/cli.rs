@@ -598,3 +598,50 @@ fn script_runs_atomic_sequence_and_writes_artifact() {
     let final_net = from_wsp(&fs::read_to_string(&out).expect("out")).expect("parse out");
     assert_eq!(final_net, xor_net(), "原子序列整体回滚");
 }
+
+#[test]
+fn task_merge_votes_and_writes_artifact() {
+    let dir = std::env::temp_dir().join(format!("trit-wspace-task-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("temp dir");
+    let base = xor_net();
+    let mut left = base.clone();
+    let mut right = base.clone();
+    trit_wspace::Patch::new(vec![trit_wspace::Edit::SetTrit {
+        layer: 0,
+        row: 0,
+        col: 0,
+        to: trit_wspace::Trit::Zero,
+    }])
+    .apply(&mut left)
+    .expect("left");
+    trit_wspace::Patch::new(vec![trit_wspace::Edit::SetTrit {
+        layer: 0,
+        row: 0,
+        col: 1,
+        to: trit_wspace::Trit::Zero,
+    }])
+    .apply(&mut right)
+    .expect("right");
+    let base_path = dir.join("base.wsp");
+    let left_path = dir.join("left.wsp");
+    let right_path = dir.join("right.wsp");
+    let out = dir.join("merged.wsp");
+    fs::write(&base_path, to_wsp(&base)).expect("base");
+    fs::write(&left_path, to_wsp(&left)).expect("left");
+    fs::write(&right_path, to_wsp(&right)).expect("right");
+    let merged = stdout_json(&run(&[
+        "task-merge",
+        &path_string(&base_path),
+        &path_string(&left_path),
+        &path_string(&right_path),
+        "--out",
+        &path_string(&out),
+    ]));
+    assert_eq!(merged["tasks"].as_u64(), Some(2));
+    assert_eq!(merged["cost"]["trits"].as_u64(), Some(2));
+    let net = from_wsp(&fs::read_to_string(&out).expect("out")).expect("parse out");
+    let layer = net.layer(0).expect("layer");
+    assert_eq!(layer.trit(0, 0), Some(trit_wspace::Trit::Zero));
+    assert_eq!(layer.trit(0, 1), Some(trit_wspace::Trit::Zero));
+}

@@ -37,15 +37,19 @@ pub struct ShardHeader {
     pub prev: u64,
     /// 本分片的链头。
     pub head: u64,
-    /// 分片内验证集表（每条唯一，按首次出现排序）。
+    /// 分片内验证集表（有效表 = 父表 + 本片新增，按首次出现排序）。
     pub oracles: Vec<Value>,
+    /// 复用哪一片的 oracle 表（`Some(p)` 表示 `oracles` 的前 `p` 片部分继承而来）。
+    pub oracle_parent: Option<usize>,
+    /// 本片**新增**验证集的摘要（不含继承部分）。
+    pub oracles_digest: u64,
 }
 
 impl ShardHeader {
-    /// 验证集表的摘要（表内容被改动时对不上）。
+    /// 新增验证集表的摘要（表内容被改动时对不上）。
     #[must_use]
     pub fn digest(&self) -> u64 {
-        oracles_digest(&self.oracles)
+        self.oracles_digest
     }
 }
 
@@ -84,14 +88,26 @@ impl AuditLog {
         }
         self.verify_chain()?;
         let entries = self.entries().to_vec();
-        let mut shards = Vec::new();
+        let mut shards: Vec<Shard> = Vec::new();
         let mut offset = 0usize;
         let mut prev = GENESIS;
+        let mut inherited: Vec<Value> = Vec::new();
         while offset < entries.len() {
             let end = (offset + max_entries).min(entries.len());
             let chunk = &entries[offset..end];
-            let oracles = oracle_table(chunk);
+            let local: Vec<Value> = oracle_table(chunk)
+                .into_iter()
+                .filter(|oracle| !inherited.contains(oracle))
+                .collect();
+            let digest = oracles_digest(&local);
+            let mut oracles = inherited.clone();
+            oracles.extend(local);
             let head = chunk.last().map_or(prev, |entry| entry.chain);
+            let parent = if shards.is_empty() {
+                None
+            } else {
+                Some(shards.len() - 1)
+            };
             shards.push(Shard {
                 header: ShardHeader {
                     shard: shards.len(),
@@ -99,10 +115,13 @@ impl AuditLog {
                     count: chunk.len(),
                     prev,
                     head,
-                    oracles,
+                    oracles: oracles.clone(),
+                    oracle_parent: parent,
+                    oracles_digest: digest,
                 },
                 entries: chunk.to_vec(),
             });
+            inherited = oracles;
             prev = head;
             offset = end;
         }
@@ -152,7 +171,11 @@ impl ShardedLog {
     /// 序列化为分片文本（与 [`ShardedLog::from_texts`] 互逆）。
     #[must_use]
     pub fn to_texts(&self) -> Vec<String> {
-        self.shards.iter().map(shard_text).collect()
+        self.shards
+            .iter()
+            .enumerate()
+            .map(|(index, shard)| shard_text(self, index, shard))
+            .collect()
     }
 
     /// 从分片文本解析；不自动验链（调用方显式调 [`ShardedLog::verify_chain`]）。
@@ -161,8 +184,11 @@ impl ShardedLog {
     /// 引用本分片的 oracle 表。
     pub fn from_texts(texts: &[String]) -> Result<Self> {
         let mut shards = Vec::with_capacity(texts.len());
+        let mut inherited: Vec<Value> = Vec::new();
         for (index, text) in texts.iter().enumerate() {
-            shards.push(parse_shard(text, index)?);
+            let shard = parse_shard(text, index, &inherited)?;
+            inherited = shard.header.oracles.clone();
+            shards.push(shard);
         }
         Ok(Self { shards })
     }
@@ -172,7 +198,11 @@ impl ShardedLog {
         let mut prev = GENESIS;
         let mut seq = 0usize;
         for (index, shard) in self.shards.iter().enumerate() {
-            verify_shard(shard, index, &mut prev, &mut seq)?;
+            let parent = index
+                .checked_sub(1)
+                .and_then(|previous| self.shards.get(previous))
+                .map(|previous| previous.header.oracles.as_slice());
+            verify_shard(shard, index, &mut prev, &mut seq, parent)?;
         }
         Ok(())
     }
@@ -200,6 +230,7 @@ pub struct ShardCursor {
     shards: usize,
     prev: u64,
     seq: usize,
+    table: Vec<Value>,
 }
 
 /// 分片重放的检查点：下一个分片号、已消费条数、链头与当前工件。
@@ -221,16 +252,19 @@ pub struct Checkpoint {
     pub skipped: usize,
     /// 已核对行为指纹的记录数。
     pub behavior_checked: usize,
+    /// 检查点处的有效 oracle 表（续放时新分片可能引用继承项）。
+    pub oracles: Vec<Value>,
 }
 
 impl ShardCursor {
     /// 从检查点继续：下一次 `push` 必须是 `shard` 号分片。
     #[must_use]
-    pub fn resume(shard: usize, entries: usize, head: u64) -> Self {
+    pub fn resume(shard: usize, entries: usize, head: u64, table: Vec<Value>) -> Self {
         Self {
             shards: shard,
             prev: head,
             seq: entries,
+            table,
         }
     }
 
@@ -242,8 +276,14 @@ impl ShardCursor {
 
     /// 读入下一个分片（必须是下一序号），校验并返回；调用方可以随即丢弃。
     pub fn push(&mut self, text: &str) -> Result<Shard> {
-        let shard = parse_shard(text, self.shards)?;
-        verify_shard(&shard, self.shards, &mut self.prev, &mut self.seq)?;
+        let shard = parse_shard(text, self.shards, &self.table)?;
+        let parent = if self.shards == 0 {
+            None
+        } else {
+            Some(self.table.as_slice())
+        };
+        verify_shard(&shard, self.shards, &mut self.prev, &mut self.seq, parent)?;
+        self.table = shard.header.oracles.clone();
         self.shards += 1;
         Ok(shard)
     }
@@ -329,6 +369,7 @@ impl ShardReplay {
             rolled_back,
             skipped,
             behavior_checked,
+            oracles: self.cursor.table.clone(),
         }
     }
 
@@ -336,7 +377,12 @@ impl ShardReplay {
     #[must_use]
     pub fn resume(checkpoint: &Checkpoint) -> Self {
         Self {
-            cursor: ShardCursor::resume(checkpoint.shard, checkpoint.entries, checkpoint.head),
+            cursor: ShardCursor::resume(
+                checkpoint.shard,
+                checkpoint.entries,
+                checkpoint.head,
+                checkpoint.oracles.clone(),
+            ),
             state: ReplayState::resume(
                 &checkpoint.net,
                 checkpoint.entries,
@@ -355,7 +401,13 @@ impl ShardReplay {
     }
 }
 
-fn verify_shard(shard: &Shard, index: usize, prev: &mut u64, seq: &mut usize) -> Result<()> {
+fn verify_shard(
+    shard: &Shard,
+    index: usize,
+    prev: &mut u64,
+    seq: &mut usize,
+    parent: Option<&[Value]>,
+) -> Result<()> {
     let header = &shard.header;
     if header.shard != index {
         return Err(Error::Audit(format!(
@@ -373,6 +425,34 @@ fn verify_shard(shard: &Shard, index: usize, prev: &mut u64, seq: &mut usize) ->
         return Err(Error::Audit(format!(
             "分片 {index} prev={:016x}，应为 {:016x}",
             header.prev, *prev
+        )));
+    }
+    let local: &[Value] = match header.oracle_parent {
+        Some(parent_index) => {
+            if parent_index + 1 != index {
+                return Err(Error::Audit(format!(
+                    "分片 {index} 的 oracle_parent={parent_index}（应为上一片）"
+                )));
+            }
+            let Some(base) = parent else {
+                return Err(Error::Audit(format!(
+                    "分片 {index} 引用了父表，但没有父分片上下文"
+                )));
+            };
+            if !header.oracles.starts_with(base) {
+                return Err(Error::Audit(format!(
+                    "分片 {index} 的 oracle 表不以父表开头"
+                )));
+            }
+            &header.oracles[base.len()..]
+        }
+        None => &header.oracles,
+    };
+    let want = oracles_digest(local);
+    if header.oracles_digest != want {
+        return Err(Error::Audit(format!(
+            "分片 {index} 的 oracle 表摘要={:016x}，重算 {want:016x}",
+            header.oracles_digest
         )));
     }
     if header.count != shard.entries.len() {
@@ -417,18 +497,34 @@ fn verify_shard(shard: &Shard, index: usize, prev: &mut u64, seq: &mut usize) ->
     Ok(())
 }
 
-fn shard_text(shard: &Shard) -> String {
+fn shard_text(log: &ShardedLog, index: usize, shard: &Shard) -> String {
     let header = &shard.header;
+    let local: Vec<Value> = match header.oracle_parent {
+        Some(parent_index) => {
+            let parent = &log.shards[parent_index].header.oracles;
+            if header.oracles.starts_with(parent) {
+                header.oracles[parent.len()..].to_vec()
+            } else {
+                header.oracles.clone()
+            }
+        }
+        None => header.oracles.clone(),
+    };
+    let digest = oracles_digest(&local);
+    let parent_value = header
+        .oracle_parent
+        .map_or(Value::Null, |parent_index| json!(parent_index));
     let mut out = json!({
         "v": SHARD_VERSION,
         "kind": SHARD_KIND,
-        "shard": header.shard,
+        "shard": index,
         "first_seq": header.first_seq,
         "count": header.count,
         "prev": hex(header.prev),
         "head": hex(header.head),
-        "oracles": header.oracles,
-        "oracles_digest": hex(header.digest()),
+        "oracle_parent": parent_value,
+        "oracles": local,
+        "oracles_digest": hex(digest),
     })
     .to_string();
     out.push('\n');
@@ -450,7 +546,7 @@ fn shard_text(shard: &Shard) -> String {
     out
 }
 
-fn parse_shard(text: &str, expected: usize) -> Result<Shard> {
+fn parse_shard(text: &str, expected: usize, inherited: &[Value]) -> Result<Shard> {
     let mut lines = text.lines().filter(|line| !line.trim().is_empty());
     let raw_header = lines
         .next()
@@ -485,31 +581,52 @@ fn parse_shard(text: &str, expected: usize) -> Result<Shard> {
     let count = usize_field(&header_value, "count", expected)?;
     let prev = hex_field(&header_value, "prev", expected)?;
     let head = hex_field(&header_value, "head", expected)?;
-    let oracles = header_value
+    let parent = optional_usize_field(&header_value, "oracle_parent", expected)?;
+    let local = header_value
         .get("oracles")
         .and_then(Value::as_array)
         .ok_or_else(|| Error::Audit(format!("分片 {expected} 缺少 oracles 数组")))?
         .clone();
-    for oracle in &oracles {
+    for oracle in &local {
         wire::oracle_from_value(oracle)?;
     }
-    for (left, value) in oracles.iter().enumerate() {
-        if oracles[..left].contains(value) {
+    for (left, value) in local.iter().enumerate() {
+        if local[..left].contains(value) {
             return Err(Error::Audit(format!(
                 "分片 {expected} 的 oracle 表第 {left} 项重复"
             )));
         }
     }
+    let oracles = if let Some(parent_index) = parent {
+        if parent_index + 1 != expected {
+            return Err(Error::Audit(format!(
+                "分片 {expected} 的 oracle_parent={parent_index}（应为上一片）"
+            )));
+        }
+        let mut effective = inherited.to_vec();
+        for value in &local {
+            if effective.contains(value) {
+                return Err(Error::Audit(format!(
+                    "分片 {expected} 的增量表重复了父表里的验证集"
+                )));
+            }
+            effective.push(value.clone());
+        }
+        effective
+    } else {
+        local.clone()
+    };
     let digest = hex_field(&header_value, "oracles_digest", expected)?;
-    let want_digest = oracles_digest(&oracles);
+    let want_digest = oracles_digest(&local);
     if digest != want_digest {
         return Err(Error::Audit(format!(
             "分片 {expected} 的 oracle 表摘要={digest:016x}，重算 {want_digest:016x}"
         )));
     }
 
+    let parent_len = oracles.len().saturating_sub(local.len());
     let mut entries = Vec::with_capacity(count);
-    let mut used = vec![false; oracles.len()];
+    let mut used = vec![false; local.len()];
     for (line, raw) in lines.enumerate() {
         let value: Value = serde_json::from_str(raw).map_err(|error| {
             Error::Audit(format!("分片 {expected} 第 {} 行 JSON：{error}", line + 2))
@@ -530,7 +647,9 @@ fn parse_shard(text: &str, expected: usize) -> Result<Shard> {
                         oracles.len()
                     ))
                 })?;
-                used[index] = true;
+                if index >= parent_len {
+                    used[index - parent_len] = true;
+                }
                 Some(value.clone())
             }
             None if parts.oracle_ref.is_some() => {
@@ -564,9 +683,25 @@ fn parse_shard(text: &str, expected: usize) -> Result<Shard> {
             prev,
             head,
             oracles,
+            oracle_parent: parent,
+            oracles_digest: digest,
         },
         entries,
     })
+}
+
+fn optional_usize_field(value: &Value, name: &str, shard: usize) -> Result<Option<usize>> {
+    match value.get(name) {
+        None | Some(Value::Null) => Ok(None),
+        Some(raw) => {
+            let number = raw
+                .as_u64()
+                .ok_or_else(|| Error::Audit(format!("分片 {shard} 的 `{name}` 必须是非负整数")))?;
+            usize::try_from(number)
+                .map(Some)
+                .map_err(|_| Error::Audit(format!("分片 {shard} 的 `{name}` 超出 usize")))
+        }
+    }
 }
 
 fn oracle_table(entries: &[LogEntry]) -> Vec<Value> {

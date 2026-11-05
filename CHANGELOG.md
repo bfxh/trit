@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：跨片 oracle 表复用 + 三值任务向量）
+
+- 分片 header 新增 `oracle_parent` + 增量 `oracles`：后续分片只写**新增**验证集，前面的直接复用；
+  解析时把父表拼成有效表（记录仍用 `oracle_index`），检查点也携带有效表以便续放；
+  `verify_shard` 核对父指针、父表前缀与增量摘要。
+- `TaskVector`（`task.rs`）：`base → tuned` 的 trit/偏置差分（忽略 scale 标尺），带基准校验和；
+  `merge_tasks` 按坐标对**目标 trit**投票：票和取符号、平票保留基准、全体投 0 取 0。
+  CLI `task-merge <base> <tuned>...`；MCP `wsp_task_merge`（工具 15 → 16）。
+- 读数：3 条共享验证集的日志切 2 片后，第二片 header `oracle_parent=0`、`oracles=[]`，
+  文本里不再出现第二份验证集；检查点续放仍解析继承表。disjoint/consensus/tie/majority
+  四类投票与基准校验均有断言。
+- 测试 137 → 146 + 1 doctest；变异 111 → **123 条，123/123 caught**；test_surface 2,282 → 2,291。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
 ### Added（trit-wspace：分片检查点与续放）
 
 - `Checkpoint`：分片边界处的工件 + 下一个分片号/已消费条数/链头 + 应用/回滚/跳过/行为核对计数；
