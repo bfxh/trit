@@ -3660,3 +3660,34 @@ parts-objectmesh-verify --dir runs/objects-mesh/scene0084
 - 反证 ②：给 `scene.obj` 尾加 1 字节 ⇒ 场景不一致、reject、rc=1。
 - 局限：视觉外壳对遮挡/凹面保守（剪影锥误差）；非流形边是 Surface Nets 老债；图集密度按每对象
   自动定，小对象也占满 512²（纹理体积有浪费）。
+
+### 6.127 一条命令打全包：`export-scene --full` + 总复核六连（2026-11-05）
+
+```text
+parts-3d export-scene --model <occ1> --scene <dir> --frames 0,...,7 --out <dir> \
+  --texture --atlas 1024 --splat-frames 0,2,4,6 --splat-eval 1,3,5,7 \
+  --splat-cell 0.01 --splat-fit 30 --splat-fit-all --full --obj-atlas 512
+parts-scene-verify --scene <dir>
+```
+
+- `--full` 在原有 mesh + splat 之后依次跑 `export-objects` → `compose-scene` →
+  `export-object-meshes` → `preview-scene`；总清单记四个子清单哈希与关键读数。
+- 所有子清单改记**相对路径**（`partsrun::rel_path`），复核器按清单目录解析 ⇒ 整包可搬移。
+- `parts-scene-verify` 对存在的子包各起一个新进程跑对应 A2 复核器，并交叉核对计数/覆盖率。
+
+**实测**（scene0084；一条命令 44 s，包 129 MB；总复核 21.6 s）：
+
+| 子包 | 读数 | 复核 |
+|---|---|---|
+| mesh/ | 3 档 PLY + 纹理 OBJ/MTL/PNG | PASS |
+| splat/ | 43,219 高斯 | PASS |
+| objects/ | 7 对象高斯 | PASS |
+| compose/ | 52,186 高斯，覆盖 0.791，穿插 0 | PASS |
+| objects-mesh/ | 7 份 OBJ+MTL+PNG + `scene.obj` | PASS |
+| preview/ | 8 视角 + 1024×512 拼图 | PASS |
+
+- **搬移测试**：整包复制到 `E:/tmp` 后复核仍 PASS（相对路径生效）；
+- 反证 ①：改 `preview/view-03.png` 一个像素 ⇒ 预览 FAIL、总包 reject、rc=1；
+- 反证 ②：总清单 `objects.count` 7→6 ⇒ “对象 7/6=FAIL”、reject、rc=1。
+- 局限：串行编排（44 s 里对象网格占 4 s、总复核里各子复核重复读盘）；包内 OBJ 是文本，
+  体积仍是最大项。

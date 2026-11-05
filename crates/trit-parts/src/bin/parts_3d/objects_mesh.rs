@@ -253,7 +253,10 @@ pub(crate) fn objects_mesh_cmd(argv: &[String]) {
         );
         format!(
             "{{\"path\": {}, \"sha256\": \"{}\"}}",
-            trit_parts::partsrun::json_str(&trit_parts::scenefp::norm_root(lp)),
+            trit_parts::partsrun::json_str(&trit_parts::partsrun::rel_path(
+                &out,
+                &lp.canonicalize().unwrap_or_else(|_| lp.clone()),
+            )),
             sha(lp)
         )
     } else {
@@ -279,7 +282,10 @@ pub(crate) fn objects_mesh_cmd(argv: &[String]) {
         trit_parts::partsrun::json_str(&commit),
         argv_json.join(", "),
         frames_json.join(", "),
-        trit_parts::partsrun::json_str(&trit_parts::scenefp::norm_root(&ompath)),
+        trit_parts::partsrun::json_str(&trit_parts::partsrun::rel_path(
+            &out,
+            &ompath.canonicalize().unwrap_or_else(|_| ompath.clone()),
+        )),
         sha(&ompath),
         fp.files,
         fp.bytes,
