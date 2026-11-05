@@ -290,3 +290,52 @@ fn build_dedups_by_voxel() {
     );
     assert!((coarse[0].color[0] - 1.0).abs() < 1e-6);
 }
+
+#[test]
+fn build_filtered_keeps_only_requested_ids() {
+    let (w, h) = (4usize, 4usize);
+    let mut view = View {
+        ids: vec![1u32; w * h],
+        depth: vec![2.0; w * h],
+        w,
+        h,
+        cam: cam(),
+    };
+    for i in 8..16 {
+        view.ids[i] = 2;
+    }
+    let rgb: Vec<f32> = (0..16)
+        .flat_map(|i| {
+            if i < 8 {
+                [1.0, 0.0, 0.0]
+            } else {
+                [0.0, 1.0, 0.0]
+            }
+        })
+        .collect();
+    let a = build_filtered(
+        std::slice::from_ref(&view),
+        std::slice::from_ref(&rgb),
+        0.01,
+        1.0,
+        |id| id == 1,
+    );
+    let b = build_filtered(
+        std::slice::from_ref(&view),
+        std::slice::from_ref(&rgb),
+        0.01,
+        1.0,
+        |id| id == 2,
+    );
+    assert!(!a.is_empty() && !b.is_empty());
+    assert!(a.iter().all(|s| s.color[0] > 0.9 && s.color[1] < 0.1));
+    assert!(b.iter().all(|s| s.color[1] > 0.9 && s.color[0] < 0.1));
+    let none = build_filtered(
+        std::slice::from_ref(&view),
+        std::slice::from_ref(&rgb),
+        0.01,
+        1.0,
+        |_| false,
+    );
+    assert!(none.is_empty(), "无匹配 id 必须为空");
+}

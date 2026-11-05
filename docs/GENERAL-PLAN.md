@@ -3437,7 +3437,7 @@ parts-3d export-asset --model <occ1> --scene <dir> --frames 0,...,7 \
 - 三档全水密（边界边 = 0），导出 13 s；
 - **顶点色**：每个顶点投影到各视角、**深度一致才采样**、跨视角平均；无视角看到的（底面/内部）
   标灰——1 cm 只有 6.2% 无观测，粗档因为表面变厚升到 21.5%；
-- **缺口**：还没有 UV/贴图（顶点色是每顶点一色，不是纹素级）；独立复核器见 §6.119。
+- **纹理**：`--texture` 输出 UV 图集 + OBJ/MTL + PNG，见 §6.120；独立复核器见 §6.119。
 
 ### 6.119 资产清单独立复核器：`parts-asset-verify`（2026-11-05）
 
@@ -3448,7 +3448,8 @@ parts-asset-verify --asset runs/assets/scene0084 [--parts-3d <exe>] [--json-out 
 - **不信清单**：新进程重算模型 SHA 与单场景语料指纹（`scenefp::fingerprint_scene_frames`，
   seg/depth/meta × 帧），再把 `export-asset` 重跑到 `<asset>/verify.tmp`；
 - 逐档三项比对：清单记录哈希 = **磁盘交付件**哈希 = **重导出**哈希，外加 cell / 顶点 / 面 /
-  边界边 / 非流形 / 无观测顶点逐项相等；交付目录一个字节都不动；
+  边界边 / 非流形 / 无观测顶点逐项相等；启用 `--texture` 时再比 OBJ/PNG 两份哈希与图集计数
+  （§6.120）；交付目录一个字节都不动；
 - 结果落 `asset.verify.json`；任一不一致写 `asset.verify.reject.json` 且退出码 1；
   `--json-out` 是旁路记录，不碰正式记录（PASS/reject 互斥只在默认路径维护）。
 
@@ -3460,3 +3461,169 @@ parts-asset-verify --asset runs/assets/scene0084 [--parts-3d <exe>] [--json-out 
 | 同一拷贝 + `lod-2cm.ply` 尾加 1 字节 | 2/3 档一致（异常 `lod-2cm.ply`） | `asset.verify.reject.json`（reject，rc=1） |
 
 变异 2/2 caught（档位解析吞掉第一档 / 几何计数漏比无观测顶点）；单测 3 条。
+
+### 6.120 纹素级材质：UV 图集 + OBJ/MTL + PNG（2026-11-05）
+
+```text
+parts-3d export-asset ... --texture [--atlas 1024] [--texels-per-m 0] [--atlas-deg 45]
+```
+
+- 复用已有 `atlas` 的切 chart（法线聚类 + 平面投影 + 货架打包），但纹素颜色不再来自源贴图：
+  新增 `atlas::bake_atlas_with` 把每个纹素反解成三角形重心坐标 → 世界坐标 → 多视角深度一致采样；
+  没有视角看到的纹素保留底色（灰 0.5），并记 `unseen_texels`。
+- 每档输出 `lod-Xcm.obj` + `.mtl` + `.png`；清单新增 `textures`（OBJ/PNG 哈希与字节、
+  图集边长、chart 数、着色纹素数、无观测纹素数）；复核器按清单的
+  `texture / atlas / texels_per_m / normal_deg` 重跑，并做三方比对（清单 = 磁盘交付 = 重导出）。
+
+**demo**（scene0084，同模型；导出 14.7 s，三档合计）：
+
+| 档 | chart | 着色纹素 | 无观测纹素 | 图集 | OBJ | PNG |
+|---|---|---|---|---|---|---|
+| 1 cm | 2,469 | 328,555 | 16,920（5.1%） | 1024² | 26.3 MB | 392 KB |
+| 2 cm | 451 | 311,253 | 28,238（9.1%） | 1024² | 6.1 MB | 295 KB |
+| 4 cm | 172 | 310,811 | 68,549（22.1%） | 1024² | 1.4 MB | 97 KB |
+
+- 图集密度按总面积自动定（与网格分辨率无关）⇒ 三档着色纹素数相近（31–33 万）；
+- **图集连贯性实测**：相邻已着色纹素中 RGB 跳变 >40 的只占 2.0–2.7%（不是随机拼贴）；
+- 复核 PASS（3/3 档纹理一致）；把 `lod-2cm.png` 尾加 1 字节 ⇒ reject、rc=1；
+- 局限：chart 是**投影式**（本路径不做 LSCM 展开），曲面 chart 会有拉伸与接缝；重叠区域共享 UV
+  （`atlas` 模块原有性质）；OBJ 为逐角 `vt`（每三角形 3 个）。
+
+### 6.121 高斯资产：标准 3DGS PLY + 独立复渲复核（2026-11-05）
+
+```text
+parts-3d splat-export --scene <dir> --frames 0,2,4,6 --eval 1,3,5,7 \
+  --cell 0.01 --scale-k 0.6 --alpha 0.8 --fit 30 --fit-all --out <ply>
+parts-splat-verify --splat <ply>
+```
+
+- 复用 §6.7/6.8 的 CPU 可微光栅化：多视角表面采样 → 各向同性高斯 → 全参数拟合；导出前**全序排序**
+  （`build` 走 HashMap，顺序随机），否则同输入两次运行字节不同、重叠次序也不稳；
+- 标准 3DGS 字段：SH 直流项 `f_dc = (c−0.5)/C0`、`opacity = logit(α)`、`scale = ln(r)`、单位四元数；
+  reader 拒绝旋转/各向异性文件（静默近似会让复核自我欺骗）；
+- 清单记超参 / 语料（**含 rgb** 的内容级指纹）/ 高斯数 / 两批 PSNR；复核器**从盘上 PLY 反解高斯**、
+  重渲并重算 PSNR（容差 1e-3 dB），再比语料指纹与文件哈希。
+
+**实测**（scene0084，1 cm，43,219 高斯，导出 14.0 s，2.9 MB）：
+
+| 口径 | 拟合前 | 拟合后 |
+|---|---|---|
+| 拟合视角 0/2/4/6 | 22.96 | **29.76** |
+| 留出视角 1/3/5/7 | 21.98 | **22.99** |
+
+- 同一命令两次导出 **SHA 逐字节相同**（`b6336d8b…`）；
+- 复核 PASS：PLY 哈希 / 语料指纹 / 高斯数 / 两批 PSNR 全一致；
+- 反证 ①：PLY 尾加 1 字节 ⇒ 文件哈希不一致、reject、rc=1；
+- 反证 ②：把所有 `f_dc` 置 0 并**同步改写清单哈希** ⇒ 文件“一致”，但重渲 PSNR 10.17/10.19
+  vs 清单 29.76/22.99 ⇒ reject（复核不只是比哈希）；
+- 局限：各向同性（无旋转/协方差）、CPU 光栅化（无 GPU 加速）、无 SH 高阶项。
+
+### 6.122 一键场景资产包 `export-scene` + 总复核（2026-11-05）
+
+```text
+parts-3d export-scene --model <occ1> --scene <dir> --frames 0,...,7 --out <dir> \
+  --texture --atlas 1024 --splat-frames 0,2,4,6 --splat-eval 1,3,5,7 \
+  --splat-cell 0.01 --splat-fit 30 --splat-fit-all
+parts-scene-verify --scene <dir>
+```
+
+- 编排而不复制实现：子命令分别跑 `export-asset` 与 `splat-export`，产出 `mesh/`
+  （3 档 PLY + OBJ/MTL/PNG）与 `splat/scene.ply`；总清单只记**子清单哈希**、档数与高斯数。
+  子清单路径存**相对路径** ⇒ 整包可搬移，搬走后仍能复核。
+- `parts-scene-verify`：先核对子清单哈希与读数，再把两个子复核器各起一个新进程；
+  任一不一致 ⇒ `scene.verify.reject.json` + rc=1。
+
+**实测**（scene0084；一条命令 26.7 s，包 47 MB）：
+
+| 组成 | 内容 |
+|---|---|
+| mesh/ | 1/2/4 cm 三档 PLY + 纹理 OBJ/MTL/PNG（45 MB） |
+| splat/ | 43,219 高斯标准 3DGS PLY（2.9 MB） |
+| 复核 | 子清单一致、档数 3/3、高斯 43,219/43,219、两个子复核全 PASS |
+
+- 反证 ①：整包复制到 E: 后给 `mesh/lod-2cm.ply` 尾加 1 字节 ⇒ 子复核未通过、reject、rc=1；
+- 反证 ②：只改总清单里的 mesh 子清单哈希 ⇒ “子清单不一致”、reject、rc=1。
+
+### 6.123 场景拆对象资产 `export-objects` + 对象级复核（2026-11-05）
+
+```text
+parts-3d export-objects --scene <dir> --frames 0,...,7 --cell 0.01 --out <dir> [--ids 1,2,5]
+parts-objects-verify --objects <dir>
+```
+
+- 用分割 id 过滤多视角表面点（`build_filtered`），每对象一份标准 3DGS PLY；清单记内容级指纹、
+  每对象 SHA / 字节 / 高斯数 / 包围盒 / 质心；没有可见像素的 id 记进 `skipped`。这是场景组合
+  （N4）的地基：对象可单独移动/替换/删除。
+- 复核：重算指纹与 SHA、把 PLY 反解回高斯、**按 id 重新建一遍**逐高斯比对（位置/颜色/尺度/alpha），
+  再比包围盒/质心，并校验「对象 ∪ 跳过 = 分割 id 集合」（少一条也判红）。
+
+**实测**（scene0084，8 视角，1 cm；0.8 s）：
+
+| id | 高斯 | 包围盒 (m) | 文件 |
+|---|---|---|---|
+| 1 | 5,557 | 0.800×0.481×0.596 | 378 KB |
+| 2 | 7,840 | 0.534×0.534×0.505 | 534 KB |
+| 3 | 1,907 | 0.460×0.337×0.452 | 130 KB |
+| 4 | 62 | 0.026×0.125×0.105 | 4.6 KB |
+| 5 | 22,774 | 0.939×0.937×0.861 | 1.5 MB |
+| 6 | 6,098 | 0.467×0.873×0.857 | 415 KB |
+| 7 | 7,948 | 0.536×0.535×0.518 | 541 KB |
+
+- 复核 PASS（7/7 对象、id 集合一致）；
+- 反证 ①：给 `obj-5.ply` 尾加 1 字节 ⇒ reject、rc=1；
+- 反证 ②：从清单删掉 id 7 一条（文件仍在）⇒ id 集合不一致、reject、rc=1；
+- **自查抓到的真 bug**：导出解析了 `--alpha` 但写 PLY 前仍用 `build` 的默认 0.6，清单却记 0.8；
+  复核器最初照抄同一写法，所以“一致通过”。复核端改为按清单 alpha 重建后立刻判红，导出端修正，
+  资产 alpha 读回 0.8000000。
+
+### 6.124 场景合成（N4 第一档）：货架布局 + 零穿插门（2026-11-05）
+
+```text
+parts-3d compose-scene --objects runs/objects/scene0084 --out runs/compose/scene0084 [--gap 0.05] [--cov-min 0.4]
+parts-compose-verify --scene runs/compose/scene0084
+```
+
+- 对象按包围盒货架式摆放：朝向只试 0/90/180/270，在 12 个候选总宽里挑**覆盖率最高**的一组，
+  全程确定性。门照 N4 的「穿插率 0、覆盖 ≥ 阈值」：AABB 穿插体积 = 0 且覆盖率 ≥ 0.4。
+- 输出 `composed.ply` 与 `compose.manifest.json`（每对象 yaw / 平移 / 世界包围盒 + 门读数）；
+  复核器用同一套规则重摆、重拼，再逐高斯比对。
+
+**实测**（scene0084 的 7 个对象）：
+
+| 指标 | 读数 |
+|---|---|
+| 摆放 | 7/7，总宽 2.189 m |
+| 覆盖率 | **0.791**（门 ≥ 0.4） |
+| 穿插体积 | **0** |
+| 合成高斯 | 52,186（= 7 个对象之和） |
+| 复核 | PASS（对象清单 / 摆放 / 逐高斯 / 门） |
+
+- 反证 ①：`composed.ply` 尾加 1 字节 ⇒ reject、rc=1；
+- 反证 ②：把清单里第一条 `yaw` 从 90 改成 0 ⇒ 布局不一致、reject、rc=1（合成文件本身仍与重跑一致，
+  说明复核是**分别**检查布局与合成，不是一把梭）。
+- 局限：轴对齐货架（只转 90°），不做吊挂/堆叠；覆盖率是包围盒口径，不保证视觉上互不遮挡。
+
+### 6.125 新视角预览：环绕相机 + 联系表 + 逐像素复核（2026-11-05）
+
+```text
+parts-3d preview-scene --splat runs/compose/scene0084/composed.ply --out runs/preview/scene0084 \
+  [--views 8] [--res 256] [--elev 20] [--fov 40] [--cols 4]
+parts-preview-verify --preview runs/preview/scene0084
+```
+
+- 相机只由包围盒 + 仰角/视场角决定（`splat::orbit_camera`，Blender 约定）；同一资产在任何机器上
+  得到同一组图。输出 8 张 256² PNG + 1024×512 联系表 + 清单（每视角 SHA/yaw、源 PLY SHA/计数、
+  包围盒、内参/半径）。
+- 复核重算包围盒、逐视角重渲并与 PNG 逐像素比对（容差 0.005，PNG 量化上限 0.0039），再重拼联系表。
+
+**实测**（合成场景 52,186 高斯；渲染 1.25 s）：
+
+| 项 | 读数 |
+|---|---|
+| 视角 | 8（yaw 0–315°），像素最大差 **0.0039**（PNG 量化） |
+| 联系表 | 1024×512，逐像素一致 |
+| 复核 | PASS（资产 / 包围盒 / 8 视角 / 拼图） |
+
+- 反证 ①：改 `view-03.png` 一个像素 ⇒ 视角 7/8、reject、rc=1；
+- 反证 ②：清单 `elev` 20→30 ⇒ 0/8 视角一致、拼图最大差 1.0、reject、rc=1。
+- 局限：EWA 近似的 CPU 光栅化，无景深/抗锯齿；联系表供人工检查，不参与训练。

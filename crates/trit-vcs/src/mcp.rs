@@ -1,4 +1,5 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0、13 个工具、每个响应带 token 估算。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0、13 个工具、每个响应带 token 估算，
+//! 且都能接 `budget`（读数上限）与 `commit.dry_run`（写前预检）。
 //!
 //! 目标不是"再包一层 CLI"，而是让智能体**一次调用拿到结构化结论**：状态、提交、冲突对象、准入、
 //! 传输、反查都在这里；schema 尽量短（工具描述本身就是上下文成本）。
@@ -14,20 +15,13 @@ use crate::gate::ClaimSpec;
 use crate::hash::Hash;
 use crate::merge;
 use crate::model::Intent;
+use crate::remediation::{self, Context};
 use crate::repo::{CommitFilter, CommitRequest, Repo};
 use crate::techmap::{Techmap, test_command};
+use crate::tokens::{cap_rows, estimate};
 use crate::worktree;
 
 pub const PROTOCOL_VERSION: &str = "2024-11-05";
-
-/// 粗估 token：ASCII 4 字符 / 1 token，非 ASCII 1 字符 / 1 token。
-pub fn estimate_tokens(text: &str) -> u64 {
-    let mut scaled = 0u64;
-    for ch in text.chars() {
-        scaled += if ch.is_ascii() { 1 } else { 4 };
-    }
-    scaled.div_ceil(4)
-}
 
 fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value {
     json!({
@@ -70,7 +64,7 @@ pub fn tools() -> Vec<Value> {
         ),
         tool(
             "commit",
-            "提交暂存区；默认拒绝未认领（allow_unclaimed=true 才放行）",
+            "提交暂存区；默认拒绝未认领（allow_unclaimed=true 才放行）；dry_run=true 只判决不写盘，被拒时文本里直接给下一步命令",
             json!({
                 "message": {"type": "string"}, "session": {"type": "string"},
                 "tags": {"type": "array", "items": {"type": "string"}},
@@ -79,6 +73,7 @@ pub fn tools() -> Vec<Value> {
                 "accept": {"type": "array", "items": {"type": "string"}},
                 "witness_path": {"type": "string"},
                 "allow_unclaimed": {"type": "boolean"},
+                "dry_run": {"type": "boolean"},
             }),
             &["message", "session"],
         ),
@@ -127,6 +122,19 @@ pub fn tools() -> Vec<Value> {
         ),
         tool("verify", "对象库/事件链/见证体检", json!({}), &[]),
     ]
+    .into_iter()
+    .map(with_budget)
+    .collect()
+}
+
+/// 给每个工具的入参补一个 `budget`（元）：超上限时从尾部丢整行，并把丢了多少写回读数。
+fn with_budget(mut entry: Value) -> Value {
+    entry["inputSchema"]["properties"]["budget"] = json!({
+        "type": "integer",
+        "minimum": 1,
+        "description": "读数上限（元）",
+    });
+    entry
 }
 
 fn ok_result(value: Value) -> Value {
@@ -134,7 +142,7 @@ fn ok_result(value: Value) -> Value {
     json!({
         "content": [{"type": "text", "text": text}],
         "isError": false,
-        "_meta": {"usage": {"bytes": text.len(), "tokens_est": estimate_tokens(&text)}},
+        "_meta": {"usage": {"bytes": text.len(), "tokens_est": estimate(&text)}},
     })
 }
 
@@ -143,7 +151,7 @@ fn err_result(message: impl Into<String>) -> Value {
     json!({
         "content": [{"type": "text", "text": text}],
         "isError": true,
-        "_meta": {"usage": {"bytes": text.len(), "tokens_est": estimate_tokens(&text)}},
+        "_meta": {"usage": {"bytes": text.len(), "tokens_est": estimate(&text)}},
     })
 }
 
@@ -240,7 +248,7 @@ impl Mcp {
                     "jsonrpc": "2.0", "id": id,
                     "result": {
                         "tools": tools,
-                        "_meta": {"usage": {"bytes": text.len(), "tokens_est": estimate_tokens(&text)}},
+                        "_meta": {"usage": {"bytes": text.len(), "tokens_est": estimate(&text)}},
                     }
                 }))
             }
@@ -251,7 +259,12 @@ impl Mcp {
                     .cloned()
                     .unwrap_or_else(|| json!({}));
                 let result = match self.call(name, &args) {
-                    Ok(value) => ok_result(value),
+                    Ok(mut value) => {
+                        if let Some(budget) = args.get("budget").and_then(Value::as_u64) {
+                            cap_rows(&mut value, budget);
+                        }
+                        ok_result(value)
+                    }
                     Err(message) => err_result(message),
                 };
                 Some(json!({"jsonrpc": "2.0", "id": id, "result": result}))
@@ -359,24 +372,41 @@ impl Mcp {
                     }
                     None => None,
                 };
+                let request = CommitRequest {
+                    message: message.to_string(),
+                    session: session.to_string(),
+                    claims: Vec::<ClaimSpec>::new(),
+                    evidence: arg_strings(args, "evidence"),
+                    tags: arg_strings(args, "tags"),
+                    allow_unclaimed: args
+                        .get("allow_unclaimed")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false),
+                    witness,
+                    intent,
+                    parent_override: None,
+                    now_secs: now_secs(),
+                };
+                // 目录先拷出来：解释错误时只需要字符串，不能占着 self 的不可变借用
+                let dir = self.repo.root().to_path_buf();
+                let where_ctx = || Context { dir: &dir, session };
+                // 判决段与 commit() 同源（preflight::decide），所以 dry_run 说放行就真放行
+                if args
+                    .get("dry_run")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false)
+                {
+                    return match self.repo.preflight(&request) {
+                        Ok(facts) => {
+                            Ok(json!({"dry_run": true, "verdict": facts.verdict, "facts": facts}))
+                        }
+                        Err(err) => Err(remediation::explain(&err, where_ctx())),
+                    };
+                }
                 let outcome = self
                     .repo
-                    .commit(CommitRequest {
-                        message: message.to_string(),
-                        session: session.to_string(),
-                        claims: Vec::<ClaimSpec>::new(),
-                        evidence: arg_strings(args, "evidence"),
-                        tags: arg_strings(args, "tags"),
-                        allow_unclaimed: args
-                            .get("allow_unclaimed")
-                            .and_then(Value::as_bool)
-                            .unwrap_or(false),
-                        witness,
-                        intent,
-                        parent_override: None,
-                        now_secs: now_secs(),
-                    })
-                    .map_err(|err| err.to_string())?;
+                    .commit(request)
+                    .map_err(|err| remediation::explain(&err, where_ctx()))?;
                 Ok(json!({"id": outcome.id.to_hex(), "verdict": outcome.verdict.label()}))
             }
             "diff" => {

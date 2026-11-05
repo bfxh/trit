@@ -25,6 +25,17 @@ pub struct Splat {
 /// 从多视角（id 图 + 深度 + RGB）建高斯：按世界体素去重，位置/颜色取均值。
 /// `cell` 越大精度越低；`scale_k` 是半径相对体素的比例。
 pub fn build(views: &[View], rgbs: &[Vec<f32>], cell: f32, scale_k: f32) -> Vec<Splat> {
+    build_filtered(views, rgbs, cell, scale_k, |_| true)
+}
+
+/// 同 [`build`]，但只保留 `keep(id)` 为真的分割 id（id 0 = 背景，永远丢弃）。
+pub fn build_filtered(
+    views: &[View],
+    rgbs: &[Vec<f32>],
+    cell: f32,
+    scale_k: f32,
+    keep: impl Fn(u32) -> bool,
+) -> Vec<Splat> {
     let mut acc: HashMap<(i32, i32, i32), Acc> = HashMap::new();
     let inv = 1.0 / cell.max(1e-5);
     for (v, rgb) in views.iter().zip(rgbs) {
@@ -33,7 +44,7 @@ pub fn build(views: &[View], rgbs: &[Vec<f32>], cell: f32, scale_k: f32) -> Vec<
         }
         for i in 0..v.ids.len().min(v.w * v.h) {
             let d = v.depth[i];
-            if v.ids[i] == 0 || !(d.is_finite() && d > 0.0 && d < 50.0) {
+            if v.ids[i] == 0 || !keep(v.ids[i]) || !(d.is_finite() && d > 0.0 && d < 50.0) {
                 continue;
             }
             let (u, vv) = (i % v.w, i / v.w);
@@ -207,6 +218,20 @@ pub fn fit_colors(splats: &mut [Splat], views: &[FitView], iters: usize, lr: f32
 }
 
 /// PSNR（输入 0..1）。
+/// 只在 GT 前景像素（`ids != 0`）上算 PSNR：喷溅表示里没有地板/背景。
+pub fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
+    let mut a = Vec::new();
+    let mut b = Vec::new();
+    for (p, &id) in ids.iter().enumerate() {
+        if id == 0 {
+            continue;
+        }
+        a.extend_from_slice(&img[p * 3..p * 3 + 3]);
+        b.extend_from_slice(&gt[p * 3..p * 3 + 3]);
+    }
+    psnr(&a, &b)
+}
+
 pub fn psnr(a: &[f32], b: &[f32]) -> f64 {
     assert_eq!(a.len(), b.len(), "PSNR 输入长度不一致");
     let mse: f64 = a

@@ -6,9 +6,15 @@
 
 mod core;
 mod fit;
+mod io;
+mod layout;
+mod preview;
 
 pub use core::*;
 pub use fit::*;
+pub use io::*;
+pub use layout::*;
+pub use preview::*;
 
 #[cfg(test)]
 mod tests;
