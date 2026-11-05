@@ -29,6 +29,7 @@ trit-wspace <command>
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
   explain <artifact|-> --oracle <json|-> --sample N [--top K]
+  probe <artifact|-> --oracle <json|-> [--budget N] [--top K]
   audit <log|-> [--artifact <initial|->]
   replay <log|-> --artifact <initial|-> [--out <path>]
   diff <a|-> <b|->
@@ -61,6 +62,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "repair" => cmd_repair(&args[1..]),
         "propose" => cmd_propose(&args[1..]),
         "explain" => cmd_explain(&args[1..]),
+        "probe" => cmd_probe(&args[1..]),
         "audit" => cmd_audit(&args[1..]),
         "replay" => cmd_replay(&args[1..]),
         "diff" => cmd_diff(&args[1..]),
@@ -342,6 +344,19 @@ fn cmd_explain(args: &[String]) -> Result<(), String> {
     let oracle = load_oracle(oracle_path)?;
     let explanation = crate::explain::explain_sample(&net, &oracle, sample, top).map_err(err)?;
     emit(&wire::sample_explanation_to_value(&explanation))
+}
+
+fn cmd_probe(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    let path = one(&parsed, "probe <artifact|-> --oracle <json|-> [--budget N]")?;
+    let oracle_path = value(&parsed, "oracle")?;
+    let budget = opt_usize(&parsed, "budget", 0)?;
+    let top = opt_usize(&parsed, "top", 16)?;
+    no_double_stdin(&[path, oracle_path])?;
+    let net = load_net(path)?;
+    let oracle = load_oracle(oracle_path)?;
+    let report = crate::probe::probe_rows(&net, &oracle, budget, top).map_err(err)?;
+    emit(&wire::probe_report_to_value(&report))
 }
 
 fn cmd_diff(args: &[String]) -> Result<(), String> {

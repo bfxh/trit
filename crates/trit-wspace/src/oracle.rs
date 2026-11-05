@@ -171,6 +171,51 @@ impl Oracle {
         Self::new(inputs, outputs)
     }
 
+    /// 从未标注网络自身的行为生成探针集：随机三值输入 + 当前输出。
+    ///
+    /// `vars` 必须等于 `net.input_dim()`；`samples` 必须非零。同一 seed 同结果。
+    /// 期望输出就是网络当前行为，所以 `before_loss` 恒为 0；行消融时看 `changed`。
+    pub fn sampled_behavior(net: &Net, vars: usize, samples: usize, seed: u64) -> Result<Self> {
+        if vars == 0 || vars > MAX_BOOLEAN_VARS {
+            return Err(Error::DomainTooLarge {
+                vars,
+                limit: MAX_BOOLEAN_VARS,
+            });
+        }
+        if samples == 0 {
+            return Err(Error::EmptyOracle);
+        }
+        if net.input_dim() != vars {
+            return Err(Error::Shape {
+                what: "input",
+                expected: vars,
+                got: net.input_dim(),
+            });
+        }
+        let mut state = seed ^ 0x9E37_79B9_7F4A_7C15;
+        if state == 0 {
+            state = 1;
+        }
+        let mut next = || {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            state.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        };
+        let mut inputs = Vec::with_capacity(samples);
+        for _ in 0..samples {
+            let row = (0..vars)
+                .map(|_| Trit::ALL[(next() % 3) as usize])
+                .collect::<Vec<_>>();
+            inputs.push(row);
+        }
+        let outputs = inputs
+            .iter()
+            .map(|row| net.forward(row))
+            .collect::<Result<Vec<_>>>()?;
+        Self::new(inputs, outputs)
+    }
+
     /// 输入向量。
     #[must_use]
     pub fn inputs(&self) -> &[Vec<Trit>] {

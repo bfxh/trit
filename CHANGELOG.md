@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：行级消融探针 / 大网读取）
+
+- `probe_rows`：逐行清零 / 取反，测整验证集上的行为漂移（`changed` / `fixed` / `broken` /
+  `after_loss` / `gain`）。成本 `2×行数×样本`，与行宽无关；`budget>0` 且超预算时按固定步长
+  均匀抽样，报告里明确标 `sampled` / `stride`，不做静默截断。
+- `Oracle::sampled_behavior`：没有验证集时，用网络当前行为生成确定性随机探针集
+  （同一 seed 同结果，`before_loss=0`），供大网读取使用。
+- CLI `probe <artifact> --oracle <json> [--budget N] [--top K]`；MCP `wsp_probe`（工具 10 → 11）。
+- 读数：XOR 输出行清零 `changed=4`、`after_loss=4`；`[2,5,4]` 的 9 行在 `budget=3` 下
+  `stride=3`、`probed_rows=3`，选中 `(0,0)/(0,3)/(1,1)`。
+- 测试 97 → 103 + 1 doctest（新增 5 条探针回放/预算/采样验证集 + 1 条 MCP 探针）；
+  变异 51 → **56 条，56/56 caught**；test_surface 台账 2,278 → 2,284。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
 ### Added（trit-wspace：单样本解释）
 
 - `explain_sample`：先对全部候选只做**这一个样本**的前向，算 `flips` / `fixes`；

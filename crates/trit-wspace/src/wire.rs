@@ -29,6 +29,7 @@ use crate::error::{Error, Result};
 use crate::explain::{SampleEditImpact, SampleExplanation};
 use crate::net::Net;
 use crate::oracle::Oracle;
+use crate::probe::{ProbeReport, RowEffect, RowImpact};
 use crate::program::Report;
 use crate::repair::Repair;
 use crate::trit::Trit;
@@ -258,6 +259,45 @@ pub fn sample_impact_to_value(impact: &SampleEditImpact) -> Value {
         "fixes": impact.fixes,
         "after_loss": impact.after_loss,
         "gain": impact.gain,
+    })
+}
+
+/// 行级探针报告 → JSON。
+#[must_use]
+pub fn probe_report_to_value(report: &ProbeReport) -> Value {
+    json!({
+        "arch": report.arch,
+        "before_loss": report.before_loss,
+        "samples": report.samples,
+        "rows": report.rows,
+        "probed_rows": report.probed_rows,
+        "sampled": report.sampled,
+        "stride": report.stride,
+        "top": report.top.iter().map(row_impact_to_value).collect::<Vec<_>>(),
+    })
+}
+
+/// 一行消融结果 → JSON。
+#[must_use]
+pub fn row_impact_to_value(impact: &RowImpact) -> Value {
+    json!({
+        "layer": impact.layer,
+        "row": impact.row,
+        "trits": impact.trits,
+        "zero": row_effect_to_value(&impact.zero),
+        "negate": row_effect_to_value(&impact.negate),
+    })
+}
+
+/// 一种行操作的影响 → JSON。
+#[must_use]
+pub fn row_effect_to_value(effect: &RowEffect) -> Value {
+    json!({
+        "after_loss": effect.after_loss,
+        "gain": effect.gain,
+        "changed": effect.changed,
+        "fixed": effect.fixed,
+        "broken": effect.broken,
     })
 }
 

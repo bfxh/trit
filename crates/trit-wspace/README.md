@@ -67,6 +67,7 @@ trit-wspace propose broken.wsp --oracle xor.json --limit 8
 trit-wspace propose broken.wsp --oracle xor.json --pairs --limit 8
 trit-wspace propose broken.wsp --oracle xor.json --depth 3 --limit 8
 trit-wspace explain broken.wsp --oracle xor.json --sample 0 --top 8
+trit-wspace probe   xor.wsp --oracle probe.json --budget 64 --top 16
 trit-wspace audit  audit.jsonl --artifact start.wsp
 trit-wspace replay audit.jsonl --artifact start.wsp --out final.wsp
 trit-wspace diff   a.wsp b.wsp
@@ -108,7 +109,7 @@ trit-wspace mcp
 }
 ```
 
-十个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_audit`、`wsp_diff`、`wsp_merge`。
+十一个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_audit`、`wsp_diff`、`wsp_merge`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
@@ -121,6 +122,10 @@ trit-wspace mcp
 
 `wsp_explain` 解释单个样本：先对全部候选只做**这一个样本**的前向，算 `flips` / `fixes`；
 再对 top-K 做整验证集复核，给 `after_loss` / `gain`。大网只需要线性于权重数的单样本前向。
+
+`wsp_probe` 是大网读取：逐行清零/取反测行为漂移，成本 `2×行数×样本`，与行宽无关；
+`budget` 超了按固定步长均匀抽样，并在报告里明确标 `sampled` / `stride`。
+没有验证集时用 `Oracle::sampled_behavior` 以网络当前行为生成确定性随机探针集。
 
 `wsp_audit` 校验 JSONL 编辑日志的哈希链；给了初始工件就顺带重放并核对最终校验和。
 模板见 [`mcp.example.json`](mcp.example.json)。

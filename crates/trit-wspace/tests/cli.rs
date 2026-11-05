@@ -190,6 +190,24 @@ fn cli_read_verify_patch_repair_round_trip() {
     assert_eq!(explained["candidates"][0]["fixes"], true);
     assert_eq!(explained["candidates"][0]["after_loss"].as_u64(), Some(0));
 
+    let probed = stdout_json(&run(&[
+        "probe",
+        &path_string(&artifact),
+        "--oracle",
+        &path_string(&oracle),
+        "--top",
+        "0",
+    ]));
+    assert_eq!(probed["rows"].as_u64(), Some(3));
+    assert_eq!(probed["sampled"], false);
+    let output_row = probed["top"]
+        .as_array()
+        .expect("top")
+        .iter()
+        .find(|impact| impact["layer"].as_u64() == Some(1) && impact["row"].as_u64() == Some(0))
+        .expect("output row");
+    assert_eq!(output_row["zero"]["changed"].as_u64(), Some(4));
+
     let candidate = dir.join("candidate.json");
     let fixed2 = dir.join("fixed2.wsp");
     let log2 = dir.join("audit2.jsonl");
