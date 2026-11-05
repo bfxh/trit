@@ -3675,7 +3675,7 @@ parts-scene-verify --scene <dir>
 - 所有子清单改记**相对路径**（`partsrun::rel_path`），复核器按清单目录解析 ⇒ 整包可搬移。
 - `parts-scene-verify` 对存在的子包各起一个新进程跑对应 A2 复核器，并交叉核对计数/覆盖率。
 
-**实测**（scene0084；一条命令 44 s，包 129 MB；总复核 21.6 s）：
+**实测**（scene0084；一条命令 33 s（热缓存），包 139 MB；总复核 18.5 s）：
 
 | 子包 | 读数 | 复核 |
 |---|---|---|
@@ -3685,9 +3685,32 @@ parts-scene-verify --scene <dir>
 | compose/ | 52,186 高斯，覆盖 0.791，穿插 0 | PASS |
 | objects-mesh/ | 7 份 OBJ+MTL+PNG + `scene.obj` | PASS |
 | preview/ | 8 视角 + 1024×512 拼图 | PASS |
+| objects-mesh/scene.glb | 7 节点 / 7 材质 / 7 贴图，10.0 MB | PASS + 外部 valid |
 
 - **搬移测试**：整包复制到 `E:/tmp` 后复核仍 PASS（相对路径生效）；
 - 反证 ①：改 `preview/view-03.png` 一个像素 ⇒ 预览 FAIL、总包 reject、rc=1；
 - 反证 ②：总清单 `objects.count` 7→6 ⇒ “对象 7/6=FAIL”、reject、rc=1。
 - 局限：串行编排（44 s 里对象网格占 4 s、总复核里各子复核重复读盘）；包内 OBJ 是文本，
   体积仍是最大项。
+
+### 6.128 引擎资产：单个 GLB（内嵌 PNG + 节点布局）+ 外部校验（2026-11-05）
+
+```text
+parts-3d export-glb --objects-mesh runs/scene-full/scene0084/objects-mesh \
+  --out runs/scene-full/scene0084/objects-mesh/scene.glb
+parts-glb-verify --glb runs/scene-full/scene0084/objects-mesh/scene.glb
+```
+
+- 从对象网格包读 OBJ/PNG/布局，打成 glTF 2.0 二进制：每对象一个 mesh / material / texture / node，
+  PNG 嵌进 BIN chunk；节点只带布局变换（绕 Y 旋转 + 平移，`T = c − R·c + t`）。
+- 顶点按 `(顶点号, uv)` 去重、法线面积加权；bufferView 带 `ARRAY_BUFFER` / `ELEMENT_ARRAY_BUFFER` target。
+- 复核：重算三个输入清单 SHA，**重新打包并逐字节比对**，再验 GLB 头/分块、节点数与 PNG 数。
+- **外部校验**（`qoder-gltf validate`，`qoder-glb-safe` profile）：**valid = true、诊断 0 条**；
+  7 节点 / 7 材质 / 7 贴图 / 172,731 顶点 / 322,692 面；世界包围盒 2.039×0.955×1.537 m。
+
+**实测**：10.0 MB（同场景 OBJ+MTL+PNG 是 76 MB，**小 7.6×**）；打包 0.9 s；
+`export-scene --full` 现在 7 个子包、139 MB，总复核 18.5 s 全 PASS；整包搬移到 E: 后仍 PASS。
+
+- 反证 ①：GLB 尾加 1 字节 ⇒ “版本/长度不对”、reject、rc=1；
+- 反证 ②：改清单里 objects_manifest 的 SHA ⇒ “输入不一致”、reject、rc=1。
+- 局限：无 Draco/网格压缩；PNG 原样嵌入（未重压）；静态资产（无动画/骨骼）。

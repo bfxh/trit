@@ -300,6 +300,18 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
             ],
             "export-object-meshes",
         );
+        let glb_out = om_dir.join("scene.glb");
+        run(
+            &parts3d,
+            &[
+                "export-glb".into(),
+                "--objects-mesh".into(),
+                om_dir.display().to_string(),
+                "--out".into(),
+                glb_out.display().to_string(),
+            ],
+            "export-glb",
+        );
         run(
             &parts3d,
             &[
@@ -319,22 +331,26 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
         let obj_m = obj_dir.join("objects.manifest.json");
         let om_m = om_dir.join("objects-mesh.manifest.json");
         let prev_m = prev_dir.join("preview.manifest.json");
+        let glb_m = PathBuf::from(format!("{}.manifest.json", glb_out.display()));
         let obj_txt = Sub::read(&obj_m);
         let comp_txt = Sub::read(&compose_manifest);
         let om_txt = Sub::read(&om_m);
         let _ = Sub::read(&prev_m);
+        let glb_txt = Sub::read(&glb_m);
         let n_obj = count_ids(&obj_txt.json, "objects");
         let composed = comp_txt.num_after("\"composed\": {", "count");
         let cov = comp_txt.num_after("\"gate\": {", "coverage");
         let n_omesh = count_ids(&om_txt.json, "objects");
+        let n_glb = glb_txt.num("parts");
         println!(
-            "总包：对象 {n_obj} 个、合成 {composed} 高斯（覆盖 {cov:.3}）、对象网格 {n_omesh} 份"
+            "总包：对象 {n_obj} 个、合成 {composed} 高斯（覆盖 {cov:.3}）、对象网格 {n_omesh} 份、GLB {n_glb} 部件"
         );
         full_parts = format!(
-            ", \"objects\": {{\"manifest\": {{\"path\": \"objects/objects.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_obj}}}, \"compose\": {{\"manifest\": {{\"path\": \"compose/compose.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {composed}, \"coverage\": {cov}}}, \"objects_mesh\": {{\"manifest\": {{\"path\": \"objects-mesh/objects-mesh.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_omesh}}}, \"preview\": {{\"manifest\": {{\"path\": \"preview/preview.manifest.json\", \"sha256\": \"{}\"}}, \"views\": {preview_views}, \"sheet\": \"preview/preview.png\"}}",
+            ", \"objects\": {{\"manifest\": {{\"path\": \"objects/objects.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_obj}}}, \"compose\": {{\"manifest\": {{\"path\": \"compose/compose.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {composed}, \"coverage\": {cov}}}, \"objects_mesh\": {{\"manifest\": {{\"path\": \"objects-mesh/objects-mesh.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_omesh}}}, \"glb\": {{\"manifest\": {{\"path\": \"objects-mesh/scene.glb.manifest.json\", \"sha256\": \"{}\"}}, \"parts\": {n_glb}}}, \"preview\": {{\"manifest\": {{\"path\": \"preview/preview.manifest.json\", \"sha256\": \"{}\"}}, \"views\": {preview_views}, \"sheet\": \"preview/preview.png\"}}",
             sha(&obj_m),
             sha(&compose_manifest),
             sha(&om_m),
+            sha(&glb_m),
             sha(&prev_m),
         );
     }
