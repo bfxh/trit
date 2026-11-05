@@ -1,0 +1,338 @@
+{
+  "spec": "bfxh/trit claim-gate parity v1",
+  "note": "Rust ClaimStore::gate 与 scripts/agent_claims.py 的 gate() 读同一张表。改判定口径必须同时改这张表和两边实现；只改一边会在这里判红。",
+  "cases": [
+    {
+      "name": "空表：谁都没声明过",
+      "claims": [],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src/a.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "unknown",
+      "why": "没人声明不等于可以动，得等人确认；这是 Unknown 不是 True"
+    },
+    {
+      "name": "自己有条正好覆盖",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "me",
+          "paths": [
+            "src/a.rs"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src/a.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "true",
+      "why": "同名在效声明覆盖该路径"
+    },
+    {
+      "name": "目录声明覆盖其下文件",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "me",
+          "paths": [
+            "src"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src/tls/handshake.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "true",
+      "why": "covers 只向下按 / 边界前缀"
+    },
+    {
+      "name": "文件声明不覆盖它的父目录",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "me",
+          "paths": [
+            "src/a.rs"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src"
+        ],
+        "now": 1000
+      },
+      "expect": "unknown",
+      "why": "src 里还可能有别的人的活"
+    },
+    {
+      "name": "两条路径只覆盖一条",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "me",
+          "paths": [
+            "src/a.rs"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src/a.rs",
+          "src/b.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "unknown",
+      "why": "全覆盖才算 True"
+    },
+    {
+      "name": "别人在效且相交",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "zodER",
+          "paths": [
+            "src/a.rs"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src/a.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "false",
+      "why": "别人占着就判 False，不许退成 Unknown"
+    },
+    {
+      "name": "别人声明目录我动其下文件",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "zodER",
+          "paths": [
+            "src"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src/a.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "false",
+      "why": "相交判定对称"
+    },
+    {
+      "name": "我声明文件别人要动其父目录",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "me",
+          "paths": [
+            "src/a.rs"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        }
+      ],
+      "query": {
+        "owner": "zodER",
+        "paths": [
+          "src"
+        ],
+        "now": 1000
+      },
+      "expect": "false",
+      "why": "前缀相近也算撞（两个 owner 各查一次都要红）"
+    },
+    {
+      "name": "别人的声明已过期",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "zodER",
+          "paths": [
+            "src/a.rs"
+          ],
+          "acquired_at": 100,
+          "expires_at": 999
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src/a.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "unknown",
+      "why": "过期不算拦；我也没声明 ⇒ Unknown"
+    },
+    {
+      "name": "到期边界是开区间",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "zodER",
+          "paths": [
+            "src/a.rs"
+          ],
+          "acquired_at": 100,
+          "expires_at": 1000
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src/a.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "unknown",
+      "why": "钉住 expires_at > now：恰好到点算已失效（Python 的 live() 是 <= 含边界，gate 里必须对齐）"
+    },
+    {
+      "name": "False 优先于自己的 True",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "me",
+          "paths": [
+            "src/a.rs"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        },
+        {
+          "id": "c2",
+          "owner": "zodER",
+          "paths": [
+            "src/a.rs"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src/a.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "false",
+      "why": "撞了不能拿自己的声明洗白"
+    },
+    {
+      "name": "同 owner 两条合起来覆盖",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "me",
+          "paths": [
+            "src/a.rs"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        },
+        {
+          "id": "c2",
+          "owner": "me",
+          "paths": [
+            "src/b.rs"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src/a.rs",
+          "src/b.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "true",
+      "why": "覆盖跨声明取并集"
+    },
+    {
+      "name": "路径写法先归一",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "me",
+          "paths": [
+            "src/tls"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src\\.\\./tls/handshake.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "true",
+      "why": "反斜杠与 ./ 不归一就会漏判同一个文件"
+    },
+    {
+      "name": "owner 大小写不同算两个人",
+      "claims": [
+        {
+          "id": "c1",
+          "owner": "ME",
+          "paths": [
+            "src/a.rs"
+          ],
+          "acquired_at": 900,
+          "expires_at": 2000
+        }
+      ],
+      "query": {
+        "owner": "me",
+        "paths": [
+          "src/a.rs"
+        ],
+        "now": 1000
+      },
+      "expect": "false",
+      "why": "owner 精确比较：名字像不等于同一个人"
+    }
+  ]
+}

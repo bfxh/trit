@@ -1,0 +1,12 @@
+[package]
+name = "dot-variants"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+# A357 的复算尺：跨 trit-dot 与 trit-gpu 的对照 bench。
+# 故意不并入 workspace —— `cargo package --workspace` 不接受对 publish = false
+# crate 的跨包依赖，独立小包是仓里既有的做法（同 fuzz / t3）。
+[dependencies]
+trit-dot = { path = "../../crates/trit-dot" }
+trit-gpu = { path = "../../crates/trit-gpu" }

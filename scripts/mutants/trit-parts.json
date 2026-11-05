@@ -1,0 +1,266 @@
+[
+  {
+    "name": "parts: 深度头丢掉外置 out_b（学不了全局 DC）",
+    "file": "crates/trit-parts/src/depthnet.rs",
+    "old": ".map(|m| m.iter().map(|v| v + self.out_b).collect())",
+    "new": ".map(|m| m.iter().map(|v| *v).collect())",
+    "pkg": "trit-parts",
+    "filter": "forward_includes_external_bias"
+  },
+  {
+    "name": "parts: scale 梯度不按有效像素归一（步长爆掉）",
+    "file": "crates/trit-parts/src/depthnet.rs",
+    "old": "let inv_gt = 1.0 / valid.max(1) as f32;",
+    "new": "let inv_gt = 1.0f32;",
+    "pkg": "trit-parts",
+    "filter": "learns_constant_offset"
+  },
+  {
+    "name": "parts: 多视角一致性去掉鲁棒权重（遮挡把预测拉走）",
+    "file": "crates/trit-parts/src/depthnet.rs",
+    "old": "                let wgt = if tau > 0.0 {\n                    1.0 / (1.0 + (d / tau) * (d / tau))\n                } else {\n                    1.0\n                };",
+    "new": "                let wgt = 1.0f32;",
+    "pkg": "trit-parts",
+    "filter": "mv_gate_skips_outliers"
+  },
+  {
+    "name": "parts: 复核不比评测协议（k 错位也 PASS）",
+    "file": "crates/trit-parts/src/bin/parts_verify.rs",
+    "old": "        .unwrap_or(true)\n        && res",
+    "new": "        .unwrap_or(true)\n        || res",
+    "pkg": "trit-parts",
+    "filter": "protocol_must_match_manifest_config"
+  },
+  {
+    "name": "parts: 复核指标解析成 0（格式漂了还 PASS）",
+    "file": "crates/trit-parts/src/bin/parts_verify.rs",
+    "old": "    rest[..end].parse().ok()",
+    "new": "    rest[..end].parse().ok().map(|v: f64| v * 0.0)",
+    "pkg": "trit-parts",
+    "filter": "parses_parts_inst_summary"
+  },
+  {
+    "name": "parts: 训练集指纹不覆盖路径（换目录名可骗过复核）",
+    "file": "crates/trit-parts/src/partsrun.rs",
+    "old": "                    out.push(format!(\"{} {h}\", it.key));",
+    "new": "                    out.push(format!(\"{h}\"));",
+    "pkg": "trit-parts",
+    "filter": "train_fingerprint_distinguishes_paths"
+  },
+  {
+    "name": "parts: 评测语料指纹不按 limit 截断（复核评的不是同一批帧）",
+    "file": "crates/trit-parts/src/partsrun.rs",
+    "old": "            if limit > 0 && i >= limit {",
+    "new": "            if false {",
+    "pkg": "trit-parts",
+    "filter": "eval_fingerprint_enumerates_used_files_and_limit"
+  },
+  {
+    "name": "parts: 弱边界并块失效（过分割不被压）",
+    "file": "crates/trit-parts/src/inst.rs",
+    "old": "        if (sum / n as f32) < tau {",
+    "new": "        if false {",
+    "pkg": "trit-parts",
+    "filter": "merge_weak_folds_low_margin_pairs"
+  },
+  {
+    "name": "scenefp: 指纹不覆盖相机 meta（换相机不换指纹）",
+    "file": "crates/trit-parts/src/scenefp.rs",
+    "old": "            for (sub, ext) in [(\"seg\", \"npy\"), (\"depth\", \"npy\"), (\"meta\", \"json\")] {",
+    "new": "            for (sub, ext) in [(\"seg\", \"npy\"), (\"depth\", \"npy\"), (\"seg\", \"npy\")] {",
+    "pkg": "trit-parts",
+    "filter": "scenefp::tests::fingerprint_is_order_insensitive_but_content_sensitive"
+  },
+  {
+    "name": "extract-verify: 列表字段解析忽略键名",
+    "file": "crates/trit-parts/src/bin/parts_extract_verify.rs",
+    "old": "    let pat = format!(\"\\\"{key}\\\": [\");",
+    "new": "    let pat = format!(\"\\\"frames\\\": [\");",
+    "pkg": "trit-parts",
+    "filter": "parses_manifest_fields"
+  },
+  {
+    "name": "occ: 偶数种子与下一个奇数撞车（seed|1 回归）",
+    "file": "crates/trit-parts/src/occ.rs",
+    "old": "        let mut r = if seed.is_multiple_of(2) {\n            seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1\n        } else {\n            seed\n        };",
+    "new": "        let mut r = seed | 1;",
+    "pkg": "trit-parts",
+    "filter": "even_and_odd_seeds_init_differently"
+  },
+  {
+    "name": "occ: lr 衰减失效（忽略 lr-final）",
+    "file": "crates/trit-parts/src/occ.rs",
+    "old": "        Some(end) if steps > 1 => {\n            let frac = step as f32 / (steps - 1) as f32;\n            lr + (end - lr) * frac\n        }",
+    "new": "        Some(_end) if steps > 1 => lr,",
+    "pkg": "trit-parts",
+    "filter": "lr_decays_linearly_to_final"
+  },
+  {
+    "name": "asset-verify: 档位解析吞掉第一档",
+    "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
+    "old": "fn levels(txt: &str) -> Vec<Lv> {\n    let mut out = Vec::new();\n    for seg in txt.split(\"{\\\"cell\\\": \").skip(1) {",
+    "new": "fn levels(txt: &str) -> Vec<Lv> {\n    let mut out = Vec::new();\n    for seg in txt.split(\"{\\\"cell\\\": \").skip(2) {",
+    "pkg": "trit-parts",
+    "filter": "levels_parse_all_metrics"
+  },
+  {
+    "name": "asset-verify: 无观测顶点数不比（丢一列几何计数）",
+    "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
+    "old": "        && w.nonmanifold == g.nonmanifold\n        && w.unseen == g.unseen\n}",
+    "new": "        && w.nonmanifold == g.nonmanifold\n        && w.unseen != g.unseen\n}",
+    "pkg": "trit-parts",
+    "filter": "levels_match_catches_every_field"
+  },
+  {
+    "name": "atlas: 自定义着色器返回 None 时不许改底色",
+    "file": "crates/trit-parts/src/atlas/bake.rs",
+    "old": "    let mean = fill;",
+    "new": "    let mean = [0.0f32; 3];",
+    "pkg": "trit-parts",
+    "filter": "custom_shade_controls_texels_and_none_keeps_fill"
+  },
+  {
+    "name": "asset-verify: 纹理 PNG 哈希解析错位到 OBJ 哈希",
+    "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
+    "old": "            png_sha: field(seg, \"png_sha256\").unwrap_or_default(),",
+    "new": "            png_sha: field(seg, \"sha256\").unwrap_or_default(),",
+    "pkg": "trit-parts",
+    "filter": "texture_entries_parse_and_catch_mismatch"
+  },
+  {
+    "name": "splat-io: SH 直流项不换算（颜色约定错）",
+    "file": "crates/trit-parts/src/splat/io.rs",
+    "old": "            put((c - 0.5) / SH_C0);",
+    "new": "            put(c);",
+    "pkg": "trit-parts",
+    "filter": "splat::io::tests::roundtrip_preserves_every_field"
+  },
+  {
+    "name": "splat-io: 导出前不排序（HashMap 顺序进文件）",
+    "file": "crates/trit-parts/src/splat/io.rs",
+    "old": "                .then(a.pos[k].total_cmp(&b.pos[k]))\n                .then(a.color[k].total_cmp(&b.color[k]));",
+    "new": "                .then(std::cmp::Ordering::Equal);",
+    "pkg": "trit-parts",
+    "filter": "splat::io::tests::sort_is_total_and_order_independent"
+  },
+  {
+    "name": "splat-verify: PSNR 容差放到 1e9（漂移也放行）",
+    "file": "crates/trit-parts/src/bin/parts_splat_verify.rs",
+    "old": "    want.is_finite() && got.is_finite() && (want - got).abs() <= 1e-3",
+    "new": "    want.is_finite() && got.is_finite() && (want - got).abs() <= 1e9",
+    "pkg": "trit-parts",
+    "filter": "psnr_tolerance_is_tight_and_finite_only"
+  },
+  {
+    "name": "scene-verify: 子清单哈希不比对（伪造也放行）",
+    "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
+    "old": "    !want.is_empty() && want == got",
+    "new": "    true",
+    "pkg": "trit-parts",
+    "filter": "tests::hash_and_count_checks_are_deciding"
+  },
+  {
+    "name": "scene-verify: 0 档/0 高斯也算有效资产",
+    "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
+    "old": "    want > 0 && want == got",
+    "new": "    want == got",
+    "pkg": "trit-parts",
+    "filter": "tests::hash_and_count_checks_are_deciding"
+  },
+  {
+    "name": "scene-verify: 相对子清单不按包目录解析",
+    "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
+    "old": "    if p.is_absolute() { p } else { base.join(p) }",
+    "new": "    let _ = base;\n    p",
+    "pkg": "trit-parts",
+    "filter": "tests::relative_sub_manifest_paths_resolve_against_bundle"
+  },
+  {
+    "name": "splat: 对象过滤失效（所有 id 混在一起）",
+    "file": "crates/trit-parts/src/splat/core.rs",
+    "old": "            if v.ids[i] == 0 || !keep(v.ids[i]) || !(d.is_finite() && d > 0.0 && d < 50.0) {",
+    "new": "            if v.ids[i] == 0 || false || !(d.is_finite() && d > 0.0 && d < 50.0) {",
+    "pkg": "trit-parts",
+    "filter": "splat::tests::build_filtered_keeps_only_requested_ids"
+  },
+  {
+    "name": "objects-verify: 不比 alpha（透明度漂移放行）",
+    "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
+    "old": "            && (g.alpha - w.alpha).abs() <= 1e-5",
+    "new": "            && true",
+    "pkg": "trit-parts",
+    "filter": "tests::splat_and_stat_comparisons_are_deciding"
+  },
+  {
+    "name": "objects-verify: 包围盒/质心容差放到 1e9",
+    "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
+    "old": "    let near = |a: f64, b: f64| (a - b).abs() <= 1e-4;",
+    "new": "    let near = |a: f64, b: f64| (a - b).abs() <= 1e9;",
+    "pkg": "trit-parts",
+    "filter": "tests::splat_and_stat_comparisons_are_deciding"
+  },
+  {
+    "name": "objects-verify: 少一个对象也放行",
+    "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
+    "old": "    declared == parsed && expect == seg",
+    "new": "    true",
+    "pkg": "trit-parts",
+    "filter": "tests::id_set_must_be_complete"
+  },
+  {
+    "name": "compose-verify: 朝向不比对（转错也放行）",
+    "file": "crates/trit-parts/src/bin/parts_compose_verify.rs",
+    "old": "        && want.yaw == got.yaw",
+    "new": "        && true",
+    "pkg": "trit-parts",
+    "filter": "tests::placement_and_gate_checks_are_deciding"
+  },
+  {
+    "name": "compose-verify: 门不查穿插（只查覆盖）",
+    "file": "crates/trit-parts/src/bin/parts_compose_verify.rs",
+    "old": "    overlap <= 1e-12 && cov >= cov_min",
+    "new": "    cov >= cov_min",
+    "pkg": "trit-parts",
+    "filter": "tests::placement_and_gate_checks_are_deciding"
+  },
+  {
+    "name": "layout: 90° 旋转的最小角用错边",
+    "file": "crates/trit-parts/src/splat/layout.rs",
+    "old": "        90 => (cx + (z0 - cz), cz - (x1 - cx)),",
+    "new": "        90 => (cx + (z1 - cz), cz - (x1 - cx)),",
+    "pkg": "trit-parts",
+    "filter": "splat::layout::tests::placement_bbox_matches_transformed_points"
+  },
+  {
+    "name": "layout: 旋转方向反了（z 分量不取负）",
+    "file": "crates/trit-parts/src/splat/layout.rs",
+    "old": "                90 => (dz, -dx),",
+    "new": "                90 => (dz, dx),",
+    "pkg": "trit-parts",
+    "filter": "splat::layout::tests::yaw_swaps_extents_and_transform_matches_bbox"
+  },
+  {
+    "name": "preview: 相机旋转矩阵转置（中心投到画外）",
+    "file": "crates/trit-parts/src/splat/preview.rs",
+    "old": "        t_cw: [\n            [x[0], y[0], z[0], eye[0]],",
+    "new": "        t_cw: [\n            [x[0], x[1], x[2], eye[0]],",
+    "pkg": "trit-parts",
+    "filter": "splat::preview::tests::bounds_and_center_projection"
+  },
+  {
+    "name": "preview: 拼图行列颠倒",
+    "file": "crates/trit-parts/src/splat/preview.rs",
+    "old": "        let (cx, cy) = (fi % cols, fi / cols);",
+    "new": "        let (cx, cy) = (fi / cols, fi % cols);",
+    "pkg": "trit-parts",
+    "filter": "splat::preview::tests::sheet_places_frames_row_major"
+  },
+  {
+    "name": "preview-verify: 像素差恒 0（重渲不对也放行）",
+    "file": "crates/trit-parts/src/bin/parts_preview_verify.rs",
+    "old": "        .map(|(x, y)| (x - y).abs())",
+    "new": "        .map(|(x, y)| (x * 0.0 + y * 0.0))",
+    "pkg": "trit-parts",
+    "filter": "tests::pixel_diff_is_deciding"
+  }
+]

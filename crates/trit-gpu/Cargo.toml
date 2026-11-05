@@ -27,6 +27,10 @@ required-features = ["gpu"]
 name = "render_scene_gpu"
 required-features = ["gpu"]
 
+[[example]]
+name = "wf32_bench"
+required-features = ["gpu"]
+
 [[bench]]
 name = "sample"
 harness = false

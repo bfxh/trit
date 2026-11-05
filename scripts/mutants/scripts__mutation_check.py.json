@@ -124,5 +124,23 @@
   "pkg": "scripts/mutation_check.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "gate: 空输出也算抓住（被杀/没跑起来冒充抓住）",
+  "file": "scripts/mutation_check.py",
+  "old": "    if not out.strip():",
+  "new": "    if False:",
+  "filter": "",
+  "pkg": "scripts/mutation_check.py",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 登记表声明的 hang_secs 被忽略（死循环变异改用 900 秒）",
+  "file": "scripts/mutation_check.py",
+  "old": "    declared = mutant.get(\"hang_secs\")",
+  "new": "    declared = None",
+  "filter": "",
+  "pkg": "scripts/mutation_check.py",
+  "runner": "python"
  }
 ]

@@ -176,6 +176,190 @@
   `tests/pe.rs` COFF 夹具断言更新（total 2→3：隙里 E8 形字节产 Cfg 候选——
   正是补隙语义，精确区间原样）。
 - 变异门 31 条全抓住（本片未新增判决逻辑，登记表不变）。
+=======
+### Added（仓库边界文档 + 文档卫生门）
+
+- 新 `docs/SCOPE.md`：**主库存什么、不存什么**的一次定案 —— 收进来的四条判据（R1 与具体项目无关、
+  R2 有独立判据、R3 可归位、R4 能长期守）、不收的六类（生产链接入、治理工具、一次性笔记、
+  不可再生大素材、别的语言生态成品、私有环境与凭据，逐类给真实例子与去处）、
+  **数据与二进制政策**（是否判据必需 / 可否再生 / 是否超 1 MiB–8 MiB 三问，超了走"内容级 SHA-256 清单 + 取数脚本 + 最小切片"）、
+  构建产物与机器状态（文档只记读数与口径，不记本机路径）、跨仓分工表、进门流程、
+  以及**「规矩 ↔ 门」对照表**（哪条机器判、哪条只能人判，人判的要写清为什么门判不了）。
+  `README.md`、`docs/LAYERS.md`、`docs/ROADMAP.md` 各挂一处指针，不复制正文。
+- 新门 `scripts/docs_hygiene.py` + 棘轮台账 `scripts/docs_hygiene_baseline.json`：
+  ① `CHANGELOG.md` 首行必须是 `# Changelog`、必须有 `## [Unreleased]`、字节数不得低于基线；
+  ② 仓内可见文档（CHANGELOG / README / docs/**.md）的**盘符绝对路径**按文件计数，只许变少；
+  ③ 基线读不出 = 判红（"不知道有多少"不等于"没有"）。
+  存量如实登记为债务：7 个文件共 45 处（`GENERAL-PLAN.md` 24、`VISUAL-PLAN.md` 6、`GUARD.md` 5 等），
+  我没批量改别人的历史记录，只保证不再变多。
+- 自证：`--self-test` 2 正例 + 6 反证绿；活体反证两条都判红（在 `docs/SCOPE.md` 里塞一行指向临时目录的绝对路径 ⇒ rc=1；把 CHANGELOG 截成 tiny ⇒ rc=1），恢复后 rc=0。
+  变异 `scripts__docs_hygiene.py.json` 4 条 **caught 4 / survived 0**（python runner 属"未点名/崩溃类"，
+  与 `scripts/layers.py` 同一披露）。
+
+### Fixed（CHANGELOG.md 曾被脚本覆盖成一行人机路径；条目按提交信息重建）
+
+- 事实：`CHANGELOG.md` 在某次脚本化追加时把**路径字符串当成内容写回**，文件从 173 760 字节变成 29 字节，
+  内容是本机绝对路径；该破坏随 `ba081a3` 提交，并已通过 PR #289 的 squash 进入 main。
+  现在从最后一个好版本（`6988d9c`）恢复，并按分支提交信息补回丢失条目。
+- 根因与防再犯：脚本里同一个名字先当路径再当内容用，写回时写错了对象。
+  ① 这类追加改用 Edit 逐段改，不再整文件写回；② 新门 `scripts/docs_hygiene.py` 判三件事——
+  `CHANGELOG.md` 必须以 `# Changelog` 开头且含 `## [Unreleased]`、字节数不得低于棘轮基线、
+  仓内文档不得新增**盘符绝对路径**（存量按目录计数进基线，只许变少）。三条都自带反证与变异。
+- 借这次恢复一并补回的条目（细节在各次提交信息里）：
+  · **能力登记进门**（`layers.json` 的 `capabilities`）：一个能力一个 `authoritative`，第二实现必须带
+    含数字的 `measured_gap` + `why_kept` + `bench`；缺字段、写"慢很多"、缺理由、同能力两条、权威不在归位表 ⇒ 判红。
+    自测 2 正例 + 11 反证，`scripts/layers.py` 变异 5 → 10 条 caught 10。
+  · **A357 点积实测**：`benchmarks/dot_variants/`（因 `cargo package` 不接受对 `publish = false` crate 的
+    跨包依赖，从 `trit-dot` 的 dev-dep 挪成 workspace 外独立包）；交错 9 轮读数：
+    u64 dispatch 7.6–12.2 / u64 portable 12.2–12.5 / **u32 镜像 48.1–50.7** / i32 标量 168.6–183.5 ps/trit，
+    三档无交叉 ⇒ 处置是**定性质**（要 CPU 吞吐用 `trit-dot`，u32 那份是 WGSL 的逐位对拍基准）。
+  · **文档拆开写**：新增 `docs/ROADMAP.md`（该搬进 / 该新开 / 该搬出 / 排序 / publish 面）与
+    `docs/SCOPE.md`（本文件 §0 说的仓库边界），`docs/LAYERS.md` 与 `README.md` 挂链接。
+  · **publish 面**：`trit-count` 去掉 `publish = false`（判据=四条独立判据链 + 26 测试 + 16 变异全抓 +
+    依赖面本就可发布），`publish_graph` 不再挡住 `trit-cli count`；名字实测 crates.io 未占用。翻面 ≠ 发布。
+  · **DPLL 两刀**（详见下面两条 Perf 小节）。
+
+### Perf（DPLL 两刀：计数器 + CSR 出现表 1.21×，再就地换号 + 复用表格 1.35×，累计 1.56×）
+
+- 第一刀：节点入口不再 `normalize` 全表；`residue()` 用**计数器 + CSR 扁平出现表**一趟做完单位传播闭包与
+  残基构造；分支单位子句由 `insert_unit()` 插回有序位置。匹配族八档 min 合计 **260.3 → 215.2 ms（1.21×）**，
+  每档 −13%~−19%。第一版只换计数器、出现表仍用 `Vec<Vec<u32>>`（每节点 2(k+1) 次小分配）**只有 1.05×**
+  ⇒ 瓶颈是**分配**不是扫描次数。
+- 第二刀：`residue` 顺手把出现变量压成 `1..=m` 新号并**就地改写子句**（省掉 `renumber` 的第二次全表拷贝），
+  两个子节点**共用同一份表**（插→递归→原位摘→插反面），省掉每个分支节点一次深拷贝；
+  `decompose` 之后那次换号是真换号，保留。八档 min 合计 **225.4 → 166.4 ms（1.35×）**，每档 −18%~−28%。
+- 等价判据（两刀各做一次，口径相同）：`--random --cases 2`（16 个统计字段）、`--big 24 --cases 2`（8 个字段）、
+  匹配族八档的 **nodes / branches / comps / cache 命中数与失败数逐条不变**，且同一二进制两轮自比一致
+  （第一轮比对把计时字段算进去，作废重做）。
+- 两处自己的错都由门/断言先抓出，不粉饰：① 「单调映射自动保序」的推理被 `debug_assert` 推翻
+  （反例 `[3,4,-7]` 排在 `[-1,-2]` 前，符号翻转字典序）⇒ 排序保留，只省拷贝；
+  ② 变异表里我自己写过一条**空变异**（只加注释），修成真删 `numbered.remove(at)` 后才被抓住。
+  另一条「`sort()` 改 `reverse()`」存活且确认是**等价变异**（结果与命中率都不变），按门规删除并披露。
+- 变异：`trit-count` 16 → 20 → **21 条，caught 21 / survived 0**。
+- 未做：两级 watched literals。两刀的实测说明真正吃时间的是分配与全表复制，
+  下一笔收益更可能在 `decompose` 的分组拷贝——那条同样先测再动。
+
+### Added（分层与归位：算子 / 算法 / 学习 / 生产链）
+
+- 措辞更正：README 标题、`docs/DESIGN.md` 一句话、`sansheng` 的 crate description 里的
+  「三值推理**工具箱**」改成「**底座**」——这个仓不是工具箱，是所有三值实现的落点。
+  （文档里剩下那些「工具链」指的是编译器工具链，不是自我定位，不动。）
+- 新规范 `docs/LAYERS.md`：四层定义 + 「新东西进来放哪」的 5 问判据 + 依赖方向 +
+  去重三条硬规则（一个能力一个权威实现、oracle 与被测不同体、性能声明必须带规模档）+
+  外部取用口径（生产链按 **git pin + tag** 依赖，不 vendor、不抄源码）+ 改名的固定顺序（现在不改）。
+- 新门 `scripts/layers.py` + 登记表 `scripts/layers.json`：35 个 crate 全部归位
+  （base 3 / ops 6 / algo 8 / learn 6 / prod 12），依赖边全部向下，唯一的跨层回边
+  `trit-graph → trit-learn`（mpnn 要 `Ste`）在 `allows` 里点名并写了删除条件。
+  不登记的新 crate、倒着依赖、失效例外、陈旧登记、未知层名都判红。
+- 门的自证：`--self-test` 1 正例 + 6 反证全绿；把 `trit-core` 临时登记成 `prod` ⇒ 门立刻报
+  4 条以上回边 rc=1（实测，不是推断）；变异 5 条 **caught 5 / survived 0**。
+  诚实披露：python runner 的变异属「未点名」（没打印可归属的断言名），只算抓住不算指名。
+
+### Measured（trit-count：BDD 坏顺序族 = 匹配族，给 watched literals 定靶子）
+
+- 新 `crates/trit-count/examples/matching_family.rs`：`(x0∧y0) | … | (x_{n-1}∧y_{n-1})`，
+  表达式里 x/y 交错出现、**声明顺序却是「所有 x 再所有 y」**（BDD 的教科书坏顺序，结宽 2^n）。
+- 读数（µs/节点 = DPLL 毫秒 ÷ 节点数）：
+
+  | 对数 | rails | 子句 | DPLL ms | 节点 | µs/节点 | BDD |
+  |---|---|---|---|---|---|---|
+  | 8 | 63 | 320 | 13.7 | 203 | 67.6 | ok |
+  | 12 | 95 | 488 | 35.2 | 323 | 109.0 | ok |
+  | 16 | 127 | 656 | 66.5 | 443 | 150.1 | ok |
+  | 20 | 159 | 824 | 113.6 | 563 | 201.8 | refused(>200k 节点) |
+  | 24 | 191 | 992 | 170.3 | 683 | 249.4 | refused |
+  | 32 | 255 | 1328 | 305.5 | 923 | 331.0 | refused |
+  | 40 | 319 | 1664 | 496.2 | 1163 | 426.7 | refused |
+
+- 结论两条：① **这一族 BDD 会炸、DPLL 扛得住**（节点数只随对数线性涨，20 对起 BDD 被预算拦下）
+  ⇒ 上一轮「DPLL 反正比 BDD 慢，不值得优化」的判断在这一族上不成立，watched literals 有靶子了。
+  ② DPLL 的 **µs/节点随实例线性变差**（67.6→426.7，随子句数 320→1664 同比涨），
+  与每节点 O(子句数) 的三处全表扫描（`normalize` 重排全部子句、`propagate` 全表迭代、residual 重建）同比涨；
+  **机制属推断**（没做逐段计时，本机 Instant 分辨率 ~100 ns 也不够切 200 µs 级的三段），
+  但它足以否证「DPLL 不值得优化」：这一族只有 DPLL 出得了数。
+- 锁：新增 2 条测试（`matching_family_hits_the_closed_form` 对 **闭式解 `4^n − 3^n`**，与两条引擎无关；
+  `matching_family_blows_the_bdd_budget` 钉住「20 对是 refused 而不是不一致」）；测试 24 → 26。
+
+### Added（trit-count：BDD 第三方计数）
+
+- 新模块 `crates/trit-bdd/src/count.rs`：`count_models_bdd` 在 dual-rail BDD 上数「全部约束为 `True` ∧ 表达式取目标值」的合法赋值，
+  合法域由 `valid()` 并入；未被引用的变量按 `Bdd::exact_cardinality` 的整个变量集自动计入（实测常量式在 2 个二值变量上 = 4、
+  2 个三值变量上 = 9，只引用 `a` 的二值式在 `a,b` 皆二值时 = 2）；超过 `u128` 报 `BddError::CountTooLarge`，不环绕。
+- 过程中的负结果：先按「BDD 只数到最高判定变量」补了 `2^free` 乘子，实测把 `a`（`b` 未引用）数成 4（正确 2）——
+  终端节点记的就是变量总数，乘子是重复计数，已删。
+- `trit-count` 侧新增 `count_models_bdd` 包装与 `CROSSCHECK_BDD_LIMITS`（20 万节点软预算）；
+  `crosscheck_under` 升级为 DPLL / 穷举 / BDD **三方**对拍，报告多出 `bdd_count`、`bdd_error`、`three_way`；
+  `crosscheck_under_with_limits` 让调用方自己给 BDD 预算 —— 被预算拦下时 `matches` 仍可成立、`three_way` 必须为假。
+- CLI：`--expr` 多报 `bdd_count` / `three_way` / `bdd_time`；`--policy` 每档变成 `dpll/exhaustive/bdd` 三个数；
+  新增 `--big [MAX_N]`：穷举跑不动的规模（n=13..）只做 DPLL vs BDD 两方对拍。
+- 读数：`--random --cases 2`（n=1..12，216 个 case）0 失败、0 拒绝；n=12 单例最慢 dpll 20.1 ms / 穷举 872 ms / bdd 4.0 ms。
+  `--big 24 --cases 2`（54 个 case）0 失败：n=13 max dpll 33.7 ms vs bdd 2.9 ms、n=21 51.1 vs 13.6 ms
+  ⇒ 在这批随机深度 4 的形状上 BDD 不比 DPLL 慢。等价树（`<=>`，全二值，n=8/12/14）与三值 `^` 树（n=8/12/16，
+  K3/B3 的 `^` 是强加＝二元合取）三方逐条一致；n=16 那个例子穷举 93.8 s vs dpll 4.1 ms。
+  **未证**：会让 BDD 指数爆炸的函数类（隐藏加权位、乘法）本机没构造，「BDD 更快」只对我测过的形状成立。
+- 测试：`trit-bdd` 22 → 28、`trit-count` 22 → 24（三方一致、超穷举规模两方一致、预算拒绝不算不一致）。
+- 变异：`trit-bdd` 4 → 9、`trit-count` 13 → 16；`mutation_check.py --pkg trit-bdd --pkg trit-count` **caught 25 / survived 0**。
+  已知缺口：把 `matches` 里「BDD 那一路」整条删掉的变异杀不掉——三方永远一致，没有注入错误计数的入口；登记时避开了这一条。
+- 依赖：`trit-count`（实验层，`publish = false`）新增依赖 `trit-bdd`（可发布），方向合法，`publish_graph` 通过。
+- 门禁：workspace test **1959 passed / 0 failed**、fmt / clippy / doc / module_budget / publish_graph /
+  test_surface（台账 22→28、22→24）/ ci_integrity / ci_budget / hazard_gate 全过。
+  跑第一轮 workspace test 时构建盘被 target 目录占满（`No space left on device` 伪装成 `trit-net` 的链接错），
+  清掉自己已失效的旧 target 目录后重跑才拿到读数——不是代码问题。见 `docs/SCOPE.md` §4 的构建产物口径。
+
+### Added（trit-count：策略文件计数）
+
+- 新模块 `crates/trit-count/src/policy.rs`：读取策略 JSON（`algebra` / `binary` / `assumptions` /
+  `definitions` / `assertions`），递归展开 definitions 并检测循环；`binary` 与定义同名、空断言集、
+  非法名称、未知顶层字段都判错。
+- CLI `--policy <path>`：把 assumptions 当约束，逐条断言报 `true/false/unknown` 计数并与穷举对拍；
+  三值总数必须等于「前提为真的赋值数」，不一致退出码 1。
+- 读数：`examples/policy.json` 两条断言在 12 个赋值上全成立（true=12）；
+  `crates/trit-cli/tests/fixtures/bad_policy.json` 暴露 false=1 / true=9 / unknown=2，DPLL 与穷举逐条一致。
+- 测试 12 → 22（展开、前提收缩、未使用 binary 并入域、循环拒绝、同名拒绝、空断言拒绝、默认代数、未知字段等）；
+  变异 8 → 13，`mutation_check.py --pkg trit-count` **caught 13 / survived 0**。
+- 依赖：新增 `serde`(derive) 与 `serde_json`，只用于策略解析；计数与穷举路径不依赖 JSON。
+
+### Added（trit-count：约束计数）
+
+- `count_models_under` / `crosscheck_under` / `Encoder::encode_with_constraints`：在每条约束为 `True` 的赋值上计数；
+  CLI `--constraint` 可重复，省略 `--vars` 时自动把约束变量并入变量域。
+- 新增 3 个对拍测试（约束 vs 穷举、约束收缩域、约束合并 + 未使用变量），测试 9 → 12。
+- 变异新增 2 条（约束不置 True、忽略约束），`mutation_check --pkg trit-count` 应保持全抓。
+- 同轮试过“缓存键变量重命名规范化”：实测命中率/节点数不变、耗时略增，已撤（负结果，不落代码）。
+
+### Added（trit-count：三值精确模型计数原型）
+
+- 新实验 crate `trit-count`（`publish = false`）：表达式 → dual-rail CNF → DPLL + 连通分量分解 + 组件缓存，
+  计数目标可为 `True` / `False` / `Unknown`；`--random` 对 n=1..12 做 DPLL vs 穷举逐条对拍。
+- 编码与 `trit-sat` 的符号化编码**故意各自独立**（计数参考实现不与求解器共享代码），
+  并由 `trit-sat::satisfiable` 在 True 目标上做独立交叉验证：`count > 0 ⇔ SAT`，SAT 见证重新 `eval` 为 True。
+- 读数（本机 release，3 cases × 3 代数 × 3 目标 × n=1..12）：**324 个随机用例 0 mismatch**；
+  n=12 最大 DPLL **3.06 ms** vs 穷举 **389.76 ms**（约 127×），交叉点约 n=8，缓存命中约 46%。
+- 测试：`cargo test -p trit-count` **9/9**；登记 `scripts/test_surface_baseline.json` `crate/trit-count: 9`。
+- 变异：`scripts/mutants/trit-count.json` 登记 6 条（基字面量极性、binary x 轨、常量 true、自由变量因子、
+  分支只数正支、组件乘积覆盖）；`mutation_check.py --pkg trit-count` **caught 6 / survived 0**。
+- 边界：计数用 `u128`（自由变量 ≥128 会显式 panic）；未做 watched literals / 变量重命名规范化；
+  n≤12 只证明与穷举一致，尚未在真实策略/网表负载上测 crossover。
+
+### Added（门脚本族：全表锚点 sweep `scripts/mutation_sweep.py`）
+
+- 补上一块盲区：`mutation_check.main()` 只对 `--pkg` **选中**的条目调用 `preflight`，
+  所以没被选中的目标里，锚点烂掉了没人报。`scripts/mutation_sweep.py` 不复制判据——
+  `from mutation_check import load_mutants, preflight` 直接复用，把同一套「文件存在 + 锚点恰好 1 次 +
+  不许落在自测代码之后」跑遍整张表；另加两条门本体没有的检查：**跨目标重名判红**
+  （同名会让「谁抓住了哪条变异」对不上账），**0 条判红**（空表不等于全绿）。
+- 单独成文件而不是改门本体：`scripts/mutation_check.py` 此刻有另一路在飞的改动
+  （撤过期豁免），同一文件两个写者必撞；这里对门本体**零行改动**。
+- 读数：真表 sweep **743 条 / 55 个目标 / 问题 0 / 0.12s**（成本可忽略，适合每次必跑）；
+  `python scripts/mutation_sweep.py --self-test` **12/12**；
+  自己登记 5 条变异 ⇒ `python scripts/mutation_check.py --pkg scripts/mutation_sweep.py`
+  **断言抓 5、崩溃 0、编译红假杀 0、存活 0**（每条都由点名的断言判红，例如
+  「重名检查失效」⇒ `FAIL 重名要判红`，「未知旗标不再拒绝」⇒ `FAIL 走 main：未知旗标 ⇒ rc=2 期望 2，实际 1`）。
+- 自测里 `main()` 的过程输出被 `redirect_stdout` 吞掉：绿日志里出现 `FAIL 用法：…` 形状的行
+  会让下一个人误判门红——这是自测自身也要守的形状。
+- 🔴 **本条只落"脚本 + 登记表"，CI 挂步还没做**：把 sweep 接进 `.github/workflows/` 需要动
+  另一路正在声明的面（`.github` 整目录被别的在建 PR 占着），对齐后另开一片；在那之前
+  这条门是"可跑、有变异锁、没进 CI"的状态，不许当成已经每次必跑。
 
 ### Added（trit-re：PE32 函数边界取自 COFF 符号表）
 
@@ -290,6 +474,53 @@
   提交前密钥扫描（`sk-*`/GitHub/Slack token/私钥头/AKIA/`.env` 一类按文件名拒收）、推送、开 PR、
   `gh pr checks --watch` 绿后 squash 合入；`--dry-run` 只打印将执行的命令。
   自锁时抓到一个真问题：扫描器把**自己源码里的正则字面量**当成密钥 ⇒ 改成运行期拼接模式串。
+
+### Added（`trit-parts` 清单约束 argmax + 评估）
+
+- `parts.rs`：清单解析（k/id/digits，已用真实清单 135 部件验证）、`id↔digits`、
+  `decode_free` 与 **`decode_constrained`**（在清单上取 `Σ logit[i][digit_i]` 最大，同分取小 id）。
+  约束解码**结构上不可能**输出清单外 id——单测构造「无约束落到 id 8（清单外）」的 logits，约束返回合法 id。
+- `evaluate_frame`：平面准确率（仅 GT 部件像素）、id 一致、部件 IoU、清单外 id 率（不同 id 个数）与
+  清单外像素占比；`parts-train --eval --manifest` 把无约束/约束两组指标并排打印。
+- 单测：4 passed（约束必在清单内 / 约束取最优合法 id / id↔digits 往返 / 指标行为）。
+- **注意**：约束的实际收益要等正式模型；当前坏 ckpt 只预测 10 种 id（恰好都在清单内），两组指标相同。
+
+### Added（`trit-parts` 训练循环 + 三值判读口径更正）
+
+- `data.rs`：PNG(RGB)→NHWC f32、`.npy` int32→三进制平面 + valid（编码与 `part_index.encode` 同口径）。
+- `loss.rs`：层级加权 CE（k 平面）+ 0.5·BCE(valid)，中心差分逐元素对拍；
+  准确率只在 **GT 部件像素**上统计（此前分母错误会少算 k 倍）。
+- `net.rs` + `parts-train`：13 层整网前向/反向、STE + Adam/SGD、梯度累加、断点续跑
+  （resume→save 逐字节一致，只差 step 字段）。
+- 过拟合自检（big-r3.6 4 帧 / 150 步 / lr 1e-3）：loss **0.7005 → 0.0244**，
+  valid 0.039 → **0.997**，平面准确率 0.30/0.30/0.30/0.39/0.51 → **0.59/0.65/0.56/0.35/0.38**（仍在升）。
+- **口径更正**：「三值 vs f32 平面 argmax 0.9871」被 98% 背景像素灌水。只算部件像素时，
+  三值 ckpt 的平面准确率是 **0.28–0.52**，f32 是 **0.74–0.91** ⇒ 事后三值化是崩的，QAT 不是可选项。
+- 未做：清单约束 argmax。
+
+### Added（`trit-parts` 反向内核：四类算子 + STE 口径对齐）
+
+- `backward.rs`：卷积 / 转置卷积 / 最大池化 / 通道拼接的 f64 参考实现（前向 + 反向），
+  中心差分逐元素对拍（conv 1×1 与 3×3、有/无 ReLU）最大相对误差 < 1e-6。
+- `ste_apply`：`E = q·scale` 的梯度经 STE 回落到 latent 与每通道 scale；与 `trit-train`
+  的 `Identity / Clipped / Soft` 三种 STE 做单步更新对拍，逐位一致。
+- `shaders_bwd.wgsl` + `gpu_bwd.rs`：8 条反向管线（conv_dx/dw/db、pool_dx、cat_dx、convt_dx/dw/db）。
+- `parts-gradcheck` 二进制：GPU ↔ f64 CPU 对拍 10 项，判据 `max rel < 2e-3`，实测 ≤ **2.1e-6**。
+  变异自检：conv_dx 权重×2 / convt_dw×2 / pool_dx 减半，三个变异全部判红（rel = 0.5）。
+- **未做**：训练循环（CE/BCE/优化器）、清单约束 argmax。
+
+### Added（`trit-parts`：部件平面头进仓，模型不再寄居 `.yanagent`）
+
+- 新实验 crate `crates/trit-parts`（`publish = false`，GPU 在 `gpu` feature 后）：
+  权重加载 + BN 折叠、WGSL conv/pool/cat/ConvT、UNet 前向（f32 与每通道三值双模），
+  以及 `parts-parity` 对拍二进制。按工作区死命令，模型归本仓，训练与推理一律 Rust 三进制。
+- 判据（本机 RTX 4060 Ti / Vulkan，384²，与搬迁前逐位一致）：
+  f32 `max|Δlogit| = 2.608e-4`、平面 argmax **737280/737280**；
+  三值 vs PyTorch 同套量化 `max|Δ| = 1.367e-1`、argmax **0.999688**；
+  三值 vs f32 argmax 0.987118、幅值 4.78→1.25 ⇒ 事后三值化不可用，必须 QAT+STE。
+- **未做**：反向内核、训练循环、清单约束 argmax。交付模型仍缺，等这三件。
+- 夹具不进 git：`D:\KF\trit-data\parts-parity`（22 MB）。
+### Added（无损回退底座 + 依赖脱离体检）
 
 - `scripts/snapshot.py`：不依赖 git 的字节级快照（内容寻址对象库）——`save` / `verify` / `restore` / `list`。
   回退补回被删、覆盖被改，**默认不删快照后新写的文件**（`--prune` 才删）；写回后逐文件 SHA-256 校验；
