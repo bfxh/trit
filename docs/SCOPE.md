@@ -115,9 +115,14 @@
   `docs_hygiene` 按目录计数进基线，**只许变少**；我没批量改别人的历史记录。
 - `scripts/layers.py` 与 `docs_hygiene.py` 还没挂进 CI（`.github` 目录正被别的会话认领），
   现阶段只在本地与变异面生效——这是本文件所有"门"字目前最大的水分，写在这是为了不被当成已完成。
-- 2026-11-06 在 `feat/trit-bench` 合 `origin/main` 后逐字复跑，存量红三条（都不是这片引入的，
-  逐号与复算尺记在交接账本 **A399** / **A367**）：
-  `docs_hygiene` 拦 1 —— `docs/GENERAL-PLAN.md` 盘符绝对路径 **27** 处 / 基线 24；
-  `claims_evidence` 拦 2 —— `docs/SECURITY-NET.md` 无据能力句 **5** 句 / 基线 4，新建的 `docs/CALIBRATION.md` **2** 句 / 基线 0（新文件没有豁免）；
-  `tech_collide` 拦 8 —— 交接账本 `LEDGER.md` 编号复用 A129/A130/A131/A134/A153/A155/A157/A267。
-  这三条的修法都是改文档而不是改基线；§6 第 6 条规定了改之前不许把这三门并进 CI。
+- 2026-11-06 在 `feat/trit-bench` 合 `origin/main` 后逐字复跑的存量债（都不是这片引入的，逐号与复算尺记在交接账本 **A399** / **A367**）：
+  `claims_evidence` **拦 2** —— `docs/SECURITY-NET.md` 无据能力句 **5** 句 / 基线 4；新建的 `docs/CALIBRATION.md` **2** 句 / 基线 0（新文件没有豁免）。
+  `tech_collide` **拦 8** —— 交接账本 `LEDGER.md` 编号复用 A129/A130/A131/A134/A153/A155/A157/A267。
+  `docs_hygiene` 同一天内从 **拦 1 → 绿**：`docs/GENERAL-PLAN.md` 的盘符绝对路径 25 → 27 → **24**（= 基线），
+  由 `#293` 那次提交清掉 —— 记在这里是因为它是"存量红会被别人顺手清掉、而读数不会自己跟上"的现场样本，
+  引用旧读数前必须重跑 `python scripts/docs_hygiene.py`。这几条的改法都是改文档而不是改基线；
+  §6 第 6 条规定了存量红清零之前不许把这三道门并进 CI。
+- 本机 E: 盘在 2026-11-06 06:0x 实测 **0 字节空闲**，`cargo test --workspace` 直接报
+  `rustc-LLVM ERROR: IO failure on output stream: No space left on device`（rc=101，`test result` 一条都没有 ⇒ 不是测试红，是盘红）。
+  判据是"无 cargo/rustc/gcc 进程 + 目录最后一次写入 ≥24 h"，据此回收了 6 个构建产物目录共 **15.4 G**（du 口径：7.0+5.4+1.6+0.9+0.3+0.2），
+  回收后 E: 空闲 **16.5 G**。构建产物可再生，但被删的那几个包下次要重编 —— 这条写在这是为了让"红"和"没盘"不再混在同一个 rc 里。

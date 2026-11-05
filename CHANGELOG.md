@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### 更正（上一条里的两个读数：盘符债已被 #293 清掉；一次 rc=101 其实是没盘）
+
+- 上一条（`2e7eabf`）写 `docs_hygiene` 拦 1 = `docs/GENERAL-PLAN.md` 盘符 **27** / 基线 24。合完 `origin/main 0b7dd95`
+  （#293）后重跑 `python scripts/docs_hygiene.py` ⇒ **绿**。两版分别数：`git show 2842cd3:docs/GENERAL-PLAN.md` 数到 **27**、
+  `git show 0b7dd95:` 同一把尺数到 **24** ⇒ 那 3 处是 #293 顺手清掉的，不是我清的；"拦 1"这条撤回。
+  §8 里剩下的存量红只有两类：`claims_evidence` 拦 2（`SECURITY-NET` 5 / 基线 4、`CALIBRATION` 2 / 基线 0）与
+  `tech_collide` 拦 8（账本编号复用）。
+- 同一次 `cargo test --workspace --locked -j 1` 出现过 **两种完全不同的红**，都记下来免得下次再糊：
+  1. `rc=101` 且一条 `test result` 都没有，日志里是 `rustc-LLVM ERROR: IO failure on output stream: No space left on device`
+     ⇒ 本机 E: 盘实测 **0 字节空闲**。判据"无 cargo/rustc/gcc 进程 + 目录最后写入 ≥24 h"，回收 6 个构建产物目录 **15.4 G**，
+     回收后空闲 **16.5 G**，重跑才有结果可读。
+  2. `179` 个单位 / **2177 passed / 1 failed**，红的那条是 `trit-wspace` 的
+     `cli_read_verify_patch_repair_round_trip`（`crates/trit-wspace/tests/cli.rs:33`）：
+     报错里的十进制数 `10565135468733683509` 就是十六进制 `0x929ee6bb79c05735`（`print(hex(...))` 可验），
+     而它正是 `/e/tmp/trit-wspace-cli-10096/audit.jsonl`（11-05 05:51 留下）里第一条的 `behavior_before`
+     ⇒ 该夹具的临时目录按 `process::id()` 命名又从不删，PID 复用就把上一轮的审计链当成本轮第一条来核对。
+     单跑该目标 `6 passed` 三次全绿、`--test-threads=1/8` 都绿；GitHub runner 的 `/tmp` 每次全新 ⇒ CI 不受影响，受影响的只有本机。
+     证据与建议改法已回给作者，登记为账本 **A400**（我没有替他们改那片，wsp-pilot 会话仍在跑）。
+- 清盘并定位后同一条命令复跑：**224 个单位 / 2292 passed / 0 failed，rc=0** ⇒ 上面两种红都是环境与残留状态，
+  产品测试面没有回退；本片合 `origin/main` 后的门线以这一条为准。
+- 判据复算尺（逐字）：`python scripts/docs_hygiene.py`；`cargo test --workspace --locked -j 1`；
+  `ls -d /e/tmp/trit-wspace-cli-* | wc -l`；`head -c 200 /e/tmp/trit-wspace-cli-10096/audit.jsonl`。
 ### Added（SCOPE §6 第 6 条 + §8：合过 main 的门线怎么分账）
 
 - `docs/SCOPE.md` §6 加第 6 条：合并 `origin/main` 之后门线判红，要先用
