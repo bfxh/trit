@@ -18,11 +18,26 @@ pub(crate) fn calibrate_cmd(args: &[String]) -> Result<(), String> {
     let mut bands = vec![0.0, 0.1, 0.2, 0.3, 0.4];
     let mut fraction = 0.75f64;
     let mut json = false;
+    let mut batch_size = 0usize;
+    let mut benign_tail: Option<f64> = None;
     let mut index = 0;
     while index < args.len() {
         let flag = args[index].clone();
         match flag.as_str() {
             "--no-select" => select_features = false,
+            "--batch" => {
+                index += 1;
+                let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
+                batch_size = raw.parse().map_err(|_| "--batch 不是整数".to_string())?;
+            }
+            "--benign-tail" => {
+                index += 1;
+                let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
+                benign_tail = Some(
+                    raw.parse()
+                        .map_err(|_| "--benign-tail 不是数字".to_string())?,
+                );
+            }
             "--rows" | "--epochs" | "--hidden" | "--train-fraction" | "--bands" | "--lr"
             | "--features" | "--test" => {
                 index += 1;
@@ -87,6 +102,8 @@ pub(crate) fn calibrate_cmd(args: &[String]) -> Result<(), String> {
         learning_rate,
         features,
         select_features,
+        batch_size,
+        benign_tail,
     };
     let (reports, selected) = match test_path.as_deref() {
         Some(test_path) => {
