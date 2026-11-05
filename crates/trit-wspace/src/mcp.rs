@@ -131,6 +131,7 @@ pub fn tools() -> Vec<Value> {
                 "oracle": {"type": "object"},
                 "budget": {"type": "integer", "description": "最多探多少行，0=全部"},
                 "top": {"type": "integer", "description": "返回条数，默认 16；0=全部"},
+                "adaptive": {"type": "boolean", "description": "按激活活跃度自适应选行（默认均匀步长）"},
             }),
             &["oracle"],
         ),
@@ -380,7 +381,11 @@ impl Mcp {
                 let oracle = required_oracle(args)?;
                 let budget = opt_usize(args, "budget", 0);
                 let top = opt_usize(args, "top", 16);
-                let report = crate::probe::probe_rows(&net, &oracle, budget, top).map_err(err)?;
+                let report = if flag(args, "adaptive") {
+                    crate::probe::probe_rows_adaptive(&net, &oracle, budget, top).map_err(err)?
+                } else {
+                    crate::probe::probe_rows(&net, &oracle, budget, top).map_err(err)?
+                };
                 Ok(wire::probe_report_to_value(&report))
             }
             "wsp_audit" => {

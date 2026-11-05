@@ -412,6 +412,37 @@ impl Net {
         batch.iter().map(|row| self.forward(row)).collect()
     }
 
+    /// 每层每行的 **pre-activation** 整数累加值（不取符号）。
+    ///
+    /// 用于探针选行：行内累加值非零的次数与幅值能廉价地说明“这一行在不在工作”。
+    pub fn pre_activations(&self, input: &[Trit]) -> Result<Vec<Vec<i32>>> {
+        if input.len() != self.input_dim() {
+            return Err(Error::Shape {
+                what: "input",
+                expected: self.input_dim(),
+                got: input.len(),
+            });
+        }
+        let mut current = input.to_vec();
+        let mut all = Vec::with_capacity(self.layers.len());
+        for layer in &self.layers {
+            let mut pre = Vec::with_capacity(layer.rows());
+            let mut next = Vec::with_capacity(layer.rows());
+            for (row, &bias) in layer.bias.iter().enumerate() {
+                let weights = &layer.trits[row * layer.cols..(row + 1) * layer.cols];
+                let mut acc = i32::from(bias.to_i8());
+                for (&weight, &value) in weights.iter().zip(current.iter()) {
+                    acc += i32::from(weight.to_i8()) * i32::from(value.to_i8());
+                }
+                pre.push(acc);
+                next.push(Trit::sign_of(acc));
+            }
+            all.push(pre);
+            current = next;
+        }
+        Ok(all)
+    }
+
     /// f32 读数：隐藏层按三值激活，最后一层保留 scale 后的原始分数。
     pub fn readout(&self, input: &[f32]) -> Result<Vec<f32>> {
         if input.len() != self.input_dim() {
@@ -561,6 +592,17 @@ mod tests {
             anti.forward(&[Trit::Pos, Trit::Neg]).unwrap(),
             vec![Trit::Zero]
         );
+    }
+
+    #[test]
+    fn pre_activations_match_manual_sums() {
+        let net = Net::new(vec![
+            Layer::new(2, 2, &[1, -1, -1, 1], &[1, 0]).unwrap(),
+            Layer::new(1, 2, &[1, 1], &[-1]).unwrap(),
+        ])
+        .unwrap();
+        let pre = net.pre_activations(&[Trit::Pos, Trit::Pos]).unwrap();
+        assert_eq!(pre, vec![vec![1, 0], vec![0]]);
     }
 
     #[test]

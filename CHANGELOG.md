@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：行级探针的自适应选行）
+
+- `probe_rows_adaptive` / CLI `--adaptive` / MCP `probe.adaptive`：预算不足时不再固定步长，
+  先用一次前向统计每行 pre-activation 的**活跃次数与裕量**，优先探“真正在工作”的行，
+  并**钉住输出层行**；报告 `selection=adaptive`、`stride=0`，仍是明确标注的抽样。
+- `Net::pre_activations`：返回每层每行的整数 pre-activation，供选行/后续读取使用。
+- 读数：权重非零但在 oracle 上从不激活的行不会被选（专门构造的 activity 用例）；
+  全零行被排除；`budget=1` 时只选输出行。
+- 测试 103 → 109 + 1 doctest（新增 1 条 pre-activation、4 条自适应选行、1 条 MCP 自适应）；
+  变异 56 → **61 条，61/61 caught**；test_surface 台账 2,309 → 2,315。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
 ### Added（trit-wspace：行级消融探针 / 大网读取）
 
 - `probe_rows`：逐行清零 / 取反，测整验证集上的行为漂移（`changed` / `fixed` / `broken` /

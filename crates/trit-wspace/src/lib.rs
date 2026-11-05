@@ -120,7 +120,9 @@ pub use explain::{SampleEditImpact, SampleExplanation, explain_sample};
 pub use merge::{align, merge_aligned, merge_vote};
 pub use net::{Layer, Net};
 pub use oracle::{Behavior, Oracle};
-pub use probe::{ProbeReport, RowEffect, RowImpact, probe_rows};
+pub use probe::{
+    ProbeReport, ProbeSelection, RowEffect, RowImpact, RowScore, probe_rows, probe_rows_adaptive,
+};
 pub use program::{Program, Report};
 pub use repair::{Repair, RepairOptions, repair};
 pub use trit::Trit;

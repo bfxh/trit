@@ -482,6 +482,7 @@ fn probe_returns_row_ablation() {
     let value = payload(&result);
     assert_eq!(value["rows"].as_u64(), Some(3));
     assert_eq!(value["sampled"], false);
+    assert_eq!(value["selection"].as_str(), Some("all"));
     let output = value["top"]
         .as_array()
         .expect("top")
@@ -490,6 +491,35 @@ fn probe_returns_row_ablation() {
         .expect("output row");
     assert_eq!(output["zero"]["changed"].as_u64(), Some(4));
     assert_eq!(output["zero"]["after_loss"].as_u64(), Some(4));
+}
+
+#[test]
+fn probe_adaptive_pins_output_row() {
+    let net = Net::new(vec![
+        Layer::new(3, 2, &[0, 0, 1, -1, -1, 1], &[0, 0, 0]).expect("l0"),
+        Layer::new(1, 3, &[1, 1, 1], &[0]).expect("l1"),
+    ])
+    .expect("net");
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_probe",
+        json!({
+            "artifact": to_wsp(&net),
+            "oracle": xor_oracle(),
+            "budget": 1,
+            "adaptive": true,
+            "top": 0,
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert_eq!(value["selection"].as_str(), Some("adaptive"));
+    assert_eq!(value["probed_rows"].as_u64(), Some(1));
+    assert_eq!(value["stride"].as_u64(), Some(0));
+    let top = &value["top"][0];
+    assert_eq!(top["layer"].as_u64(), Some(1));
+    assert_eq!(top["row"].as_u64(), Some(0));
 }
 
 #[test]

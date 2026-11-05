@@ -2,7 +2,9 @@
 
 use std::collections::HashSet;
 
-use trit_wspace::{Edit, Layer, Net, Oracle, Patch, Trit, probe_rows};
+use trit_wspace::{
+    Edit, Layer, Net, Oracle, Patch, ProbeSelection, Trit, probe_rows, probe_rows_adaptive,
+};
 
 fn xor_net() -> Net {
     Net::new(vec![
@@ -24,6 +26,7 @@ fn output_row_ablation_changes_everything() {
     assert_eq!(report.rows, 3, "2 个隐层行 + 1 个输出行");
     assert_eq!(report.probed_rows, 3);
     assert!(!report.sampled);
+    assert_eq!(report.selection, ProbeSelection::All);
     assert_eq!(report.stride, 1);
     assert_eq!(report.before_loss, 0);
     assert_eq!(report.samples, 4);
@@ -160,6 +163,7 @@ fn budget_samples_evenly() {
     assert_eq!(report.rows, 9, "5 + 4");
     assert_eq!(report.probed_rows, 3);
     assert!(report.sampled);
+    assert_eq!(report.selection, ProbeSelection::Uniform);
     assert_eq!(report.stride, 3);
     let coordinates: Vec<(usize, usize)> = report
         .top
@@ -183,4 +187,81 @@ fn sampled_behavior_is_deterministic_and_exact() {
     assert_ne!(first.inputs(), other.inputs());
     assert!(Oracle::sampled_behavior(&net, 2, 8, 42).is_err());
     assert!(Oracle::sampled_behavior(&net, 3, 0, 42).is_err());
+}
+
+fn layered_net() -> Net {
+    // 隐层 r0 全零（不工作），r1/r2 活跃；输出层 1 行。
+    Net::new(vec![
+        Layer::new(3, 2, &[0, 0, 1, -1, -1, 1], &[0, 0, 0]).expect("l0"),
+        Layer::new(1, 3, &[1, 1, 1], &[0]).expect("l1"),
+    ])
+    .expect("net")
+}
+
+#[test]
+fn adaptive_prefers_active_rows() {
+    let net = layered_net();
+    let oracle = xor_oracle();
+    let report = probe_rows_adaptive(&net, &oracle, 2, 0).expect("probe");
+    assert_eq!(report.selection, ProbeSelection::Adaptive);
+    assert!(report.sampled);
+    assert_eq!(report.stride, 0, "自适应抽样没有固定步长");
+    assert_eq!(report.probed_rows, 2);
+    let coordinates: Vec<(usize, usize)> = report
+        .top
+        .iter()
+        .map(|impact| (impact.layer, impact.row))
+        .collect();
+    assert!(coordinates.contains(&(1, 0)), "输出层必须钉住");
+    assert!(!coordinates.contains(&(0, 0)), "全零行不应被选");
+    assert!(
+        coordinates.contains(&(0, 1)) || coordinates.contains(&(0, 2)),
+        "应选到活跃的隐层行"
+    );
+}
+
+#[test]
+fn adaptive_pins_output_row_with_budget_one() {
+    let net = layered_net();
+    let report = probe_rows_adaptive(&net, &xor_oracle(), 1, 0).expect("probe");
+    assert_eq!(report.probed_rows, 1);
+    assert_eq!(report.top[0].layer, 1);
+    assert_eq!(report.top[0].row, 0);
+}
+
+#[test]
+fn adaptive_without_budget_probes_all() {
+    let net = layered_net();
+    let report = probe_rows_adaptive(&net, &xor_oracle(), 0, 0).expect("probe");
+    assert_eq!(report.selection, ProbeSelection::All);
+    assert!(!report.sampled);
+    assert_eq!(report.probed_rows, report.rows);
+}
+
+#[test]
+fn adaptive_uses_activity_not_just_nonzero_weights() {
+    // r0 权重非零但在 oracle 样本上恒不激活（a+b=0）；r1 活跃。
+    // 只看 nonzero 权重会打平并选中 r0；只有真的统计活跃度才会选 r1。
+    let net = Net::new(vec![
+        Layer::new(2, 2, &[1, 1, -1, 1], &[0, 0]).expect("l0"),
+        Layer::new(1, 2, &[1, 1], &[0]).expect("l1"),
+    ])
+    .expect("net");
+    let oracle = Oracle::new(
+        vec![vec![Trit::Neg, Trit::Pos], vec![Trit::Pos, Trit::Neg]],
+        vec![vec![Trit::Pos], vec![Trit::Neg]],
+    )
+    .expect("oracle");
+    let report = probe_rows_adaptive(&net, &oracle, 2, 0).expect("probe");
+    let coordinates: Vec<(usize, usize)> = report
+        .top
+        .iter()
+        .map(|impact| (impact.layer, impact.row))
+        .collect();
+    assert!(coordinates.contains(&(1, 0)), "输出层必须钉住");
+    assert!(
+        !coordinates.contains(&(0, 0)),
+        "权重非零但从不激活的行不应被选"
+    );
+    assert!(coordinates.contains(&(0, 1)), "应选活跃行");
 }

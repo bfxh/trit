@@ -200,6 +200,7 @@ fn cli_read_verify_patch_repair_round_trip() {
     ]));
     assert_eq!(probed["rows"].as_u64(), Some(3));
     assert_eq!(probed["sampled"], false);
+    assert_eq!(probed["selection"].as_str(), Some("all"));
     let output_row = probed["top"]
         .as_array()
         .expect("top")
@@ -207,6 +208,20 @@ fn cli_read_verify_patch_repair_round_trip() {
         .find(|impact| impact["layer"].as_u64() == Some(1) && impact["row"].as_u64() == Some(0))
         .expect("output row");
     assert_eq!(output_row["zero"]["changed"].as_u64(), Some(4));
+
+    let adaptive = stdout_json(&run(&[
+        "probe",
+        &path_string(&artifact),
+        "--oracle",
+        &path_string(&oracle),
+        "--budget",
+        "1",
+        "--adaptive",
+    ]));
+    assert_eq!(adaptive["selection"].as_str(), Some("adaptive"));
+    assert_eq!(adaptive["probed_rows"].as_u64(), Some(1));
+    assert_eq!(adaptive["top"][0]["layer"].as_u64(), Some(1));
+    assert_eq!(adaptive["top"][0]["row"].as_u64(), Some(0));
 
     let candidate = dir.join("candidate.json");
     let fixed2 = dir.join("fixed2.wsp");

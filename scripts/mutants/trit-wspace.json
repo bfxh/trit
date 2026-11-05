@@ -446,5 +446,45 @@
   "new": "\"probeX\" => cmd_probe(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
+ },
+ {
+  "name": "wspace-adaptive: 行打分恒等",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "fn rank_score(left: &RowScore, right: &RowScore) -> Ordering {\n    right\n        .active\n        .cmp(&left.active)\n        .then(right.margin.cmp(&left.margin))\n        .then(right.nonzero.cmp(&left.nonzero))\n        .then(left.layer.cmp(&right.layer))\n        .then(left.row.cmp(&right.row))\n}",
+  "new": "fn rank_score(_left: &RowScore, _right: &RowScore) -> Ordering {\n    Ordering::Equal\n}",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_prefers_active_rows"
+ },
+ {
+  "name": "wspace-adaptive: 不钉输出层行",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "for score in output.into_iter().chain(hidden) {",
+  "new": "for score in hidden {",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_pins_output_row_with_budget_one"
+ },
+ {
+  "name": "wspace-adaptive: 活跃度不计数",
+  "file": "crates/trit-wspace/src/probe.rs",
+  "old": "if value != 0 {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_uses_activity_not_just_nonzero_weights"
+ },
+ {
+  "name": "wspace-mcp: adaptive 开关被忽略",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "if flag(args, \"adaptive\") {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "probe_adaptive_pins_output_row"
+ },
+ {
+  "name": "wspace-cli: --adaptive 开关被忽略",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "if parsed.switches.contains(\"adaptive\") {",
+  "new": "if false {",
+  "pkg": "trit-wspace",
+  "filter": "cli_read_verify_patch_repair_round_trip"
  }
 ]

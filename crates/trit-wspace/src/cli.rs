@@ -29,7 +29,7 @@ trit-wspace <command>
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
   explain <artifact|-> --oracle <json|-> --sample N [--top K]
-  probe <artifact|-> --oracle <json|-> [--budget N] [--top K]
+  probe <artifact|-> --oracle <json|-> [--budget N] [--top K] [--adaptive]
   audit <log|-> [--artifact <initial|->]
   replay <log|-> --artifact <initial|-> [--out <path>]
   diff <a|-> <b|->
@@ -347,15 +347,22 @@ fn cmd_explain(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_probe(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(&parsed, "probe <artifact|-> --oracle <json|-> [--budget N]")?;
+    let parsed = parse(args, &["adaptive"])?;
+    let path = one(
+        &parsed,
+        "probe <artifact|-> --oracle <json|-> [--budget N] [--top K] [--adaptive]",
+    )?;
     let oracle_path = value(&parsed, "oracle")?;
     let budget = opt_usize(&parsed, "budget", 0)?;
     let top = opt_usize(&parsed, "top", 16)?;
     no_double_stdin(&[path, oracle_path])?;
     let net = load_net(path)?;
     let oracle = load_oracle(oracle_path)?;
-    let report = crate::probe::probe_rows(&net, &oracle, budget, top).map_err(err)?;
+    let report = if parsed.switches.contains("adaptive") {
+        crate::probe::probe_rows_adaptive(&net, &oracle, budget, top).map_err(err)?
+    } else {
+        crate::probe::probe_rows(&net, &oracle, budget, top).map_err(err)?
+    };
     emit(&wire::probe_report_to_value(&report))
 }
 
