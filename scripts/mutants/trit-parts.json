@@ -98,17 +98,33 @@
   {
     "name": "asset-verify: 档位解析吞掉第一档",
     "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
-    "old": "    for seg in txt.split(\"{\\\"cell\\\": \").skip(1) {",
-    "new": "    for seg in txt.split(\"{\\\"cell\\\": \").skip(2) {",
+    "old": "fn levels(txt: &str) -> Vec<Lv> {\n    let mut out = Vec::new();\n    for seg in txt.split(\"{\\\"cell\\\": \").skip(1) {",
+    "new": "fn levels(txt: &str) -> Vec<Lv> {\n    let mut out = Vec::new();\n    for seg in txt.split(\"{\\\"cell\\\": \").skip(2) {",
     "pkg": "trit-parts",
     "filter": "levels_parse_all_metrics"
   },
   {
     "name": "asset-verify: 无观测顶点数不比（丢一列几何计数）",
     "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
-    "old": "        && w.unseen == g.unseen",
-    "new": "        && w.unseen != g.unseen",
+    "old": "        && w.nonmanifold == g.nonmanifold\n        && w.unseen == g.unseen\n}",
+    "new": "        && w.nonmanifold == g.nonmanifold\n        && w.unseen != g.unseen\n}",
     "pkg": "trit-parts",
     "filter": "levels_match_catches_every_field"
+  },
+  {
+    "name": "atlas: 自定义着色器返回 None 时不许改底色",
+    "file": "crates/trit-parts/src/atlas/bake.rs",
+    "old": "    let mean = fill;",
+    "new": "    let mean = [0.0f32; 3];",
+    "pkg": "trit-parts",
+    "filter": "custom_shade_controls_texels_and_none_keeps_fill"
+  },
+  {
+    "name": "asset-verify: 纹理 PNG 哈希解析错位到 OBJ 哈希",
+    "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
+    "old": "            png_sha: field(seg, \"png_sha256\").unwrap_or_default(),",
+    "new": "            png_sha: field(seg, \"sha256\").unwrap_or_default(),",
+    "pkg": "trit-parts",
+    "filter": "texture_entries_parse_and_catch_mismatch"
   }
 ]

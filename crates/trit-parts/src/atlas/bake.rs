@@ -25,11 +25,71 @@ pub fn bake_atlas(
     use_lscm: bool,
     per_class: Option<&PerClass>,
 ) -> Result<Atlas, String> {
-    if m.tris.is_empty() {
-        return Err("空网格".into());
-    }
     if tex.len() != tw * th * 3 {
         return Err(format!("贴图像素数 {} != {tw}x{th}x3", tex.len()));
+    }
+    let mut mean = [0.0f32; 3];
+    for p in tex.chunks(3) {
+        for c in 0..3 {
+            mean[c] += p[c];
+        }
+    }
+    let cnt = (tex.len() / 3) as f32;
+    for mv in mean.iter_mut() {
+        *mv /= cnt;
+    }
+    let (tlo, thi) = if per_class.is_some() {
+        (
+            tex.iter().cloned().fold(f32::INFINITY, f32::min),
+            tex.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
+        )
+    } else {
+        (0.0, 1.0)
+    };
+    let mut styled = vec![0usize; per_class.map(|p| p.styles.len()).unwrap_or(0)];
+    let mut shade = |fi: usize, uv: [f32; 2], _p: [f32; 3]| -> Option<[f32; 3]> {
+        let mut c = sample(tex, tw, th, uv[0], uv[1]);
+        if let Some(pc) = per_class {
+            let k = *pc.class.get(fi).unwrap_or(&0) as usize;
+            if let Some(st) = pc.styles.get(k) {
+                let before = c;
+                c = style_texel(c, st, mean, tlo, thi);
+                if c != before && k < styled.len() {
+                    styled[k] += 1;
+                }
+            }
+        }
+        Some(c)
+    };
+    let mut a = bake_shaded(
+        m,
+        atlas_px,
+        texels_per_unit,
+        normal_deg,
+        use_lscm,
+        mean,
+        &mut shade,
+    )?;
+    a.styled_texels = styled;
+    Ok(a)
+}
+
+/// 同 [`bake_atlas`] 的切 chart / 打包 / 光栅化，但纹素颜色由调用方给：
+/// `shade(三角形, 图集内 uv, 世界坐标)`，返回 `None` 表示不写（保留底色 `fill`）。
+pub(crate) fn bake_shaded<S>(
+    m: &Mesh,
+    atlas_px: usize,
+    texels_per_unit: f32,
+    normal_deg: f32,
+    use_lscm: bool,
+    fill: [f32; 3],
+    shade: &mut S,
+) -> Result<Atlas, String>
+where
+    S: FnMut(usize, [f32; 2], [f32; 3]) -> Option<[f32; 3]>,
+{
+    if m.tris.is_empty() {
+        return Err("空网格".into());
     }
     let n = m.tris.len();
     let nrm: Vec<[f32; 3]> = m
@@ -263,30 +323,12 @@ pub fn bake_atlas(
         return Err("图集打包失败：减小 texels_per_unit 或增大 atlas_px".into());
     }
 
-    let mut mean = [0.0f32; 3];
-    for p in tex.chunks(3) {
-        for c in 0..3 {
-            mean[c] += p[c];
-        }
-    }
-    let cnt = (tex.len() / 3) as f32;
-    for mv in mean.iter_mut() {
-        *mv /= cnt;
-    }
-    let (tlo, thi) = if per_class.is_some() {
-        (
-            tex.iter().cloned().fold(f32::INFINITY, f32::min),
-            tex.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
-        )
-    } else {
-        (0.0, 1.0)
-    };
+    let mean = fill;
     let mut img = Vec::with_capacity(atlas_px * atlas_px * 3);
     for _ in 0..atlas_px * atlas_px {
         img.extend_from_slice(&mean);
     }
     let mut uv = vec![[[0.0f32; 2]; 3]; n];
-    let mut styled = vec![0usize; per_class.map(|p| p.styles.len()).unwrap_or(0)];
     let mut charts = Vec::with_capacity(group_list.len());
     for (gi, g) in group_list.iter().enumerate() {
         let (lo, _) = bounds[gi];
@@ -353,19 +395,21 @@ pub fn bake_atlas(
                     }
                     let u = w0 * src[0][0] + w1 * src[1][0] + w2 * src[2][0];
                     let v = w0 * src[0][1] + w1 * src[1][1] + w2 * src[2][1];
-                    let mut c = sample(tex, tw, th, u, v);
-                    if let Some(pc) = per_class {
-                        let k = *pc.class.get(fi).unwrap_or(&0) as usize;
-                        if let Some(st) = pc.styles.get(k) {
-                            let before = c;
-                            c = style_texel(c, st, mean, tlo, thi);
-                            if c != before && k < styled.len() {
-                                styled[k] += 1;
-                            }
-                        }
+                    let t = m.tris[fi];
+                    let (a, b, c) = (
+                        m.verts[t[0] as usize],
+                        m.verts[t[1] as usize],
+                        m.verts[t[2] as usize],
+                    );
+                    let p = [
+                        w0 * a[0] + w1 * b[0] + w2 * c[0],
+                        w0 * a[1] + w1 * b[1] + w2 * c[1],
+                        w0 * a[2] + w1 * b[2] + w2 * c[2],
+                    ];
+                    if let Some(c) = shade(fi, [u, v], p) {
+                        let i = (y * atlas_px + x) * 3;
+                        img[i..i + 3].copy_from_slice(&c);
                     }
-                    let i = (y * atlas_px + x) * 3;
-                    img[i..i + 3].copy_from_slice(&c);
                 }
             }
         }
@@ -406,7 +450,7 @@ pub fn bake_atlas(
         img,
         w: atlas_px,
         h: atlas_px,
-        styled_texels: styled,
+        styled_texels: Vec::new(),
         charts,
         uv,
     })
