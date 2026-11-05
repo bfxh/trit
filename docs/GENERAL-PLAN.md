@@ -3730,3 +3730,30 @@ parts-3d export-scene ... --full --glb-spin 4
   tracks 1、keyframes 5；GLB 10.0 MB（比无动画多 604 B）。
 - 反证：把清单 `spin` 4→0 ⇒ 重建无动画、字节不一致、reject、rc=1。
 - 局限：四元数线性插值（引擎按规范归一化）；只转根节点，不做材质/相机动画。
+
+### 6.130 对象语义标签 + GT 质心对账（2026-11-06）
+
+```text
+parts-3d export-objects --scene <dir> --frames 0,...,7 --out <dir> --scenes E:/trit-data/s1/scenes_v6
+parts-3d export-scene ... --full --scenes E:/trit-data/s1/scenes_v6
+```
+
+- 读 `scenes/<scene>/objects.json`，按 `pass_index`（= 分割 id）对齐；对象清单每项增加
+  `kind` / `gt_center` / `centroid_error`，`export-scene --full` 原样透传。
+- 复核按清单 `scenes` 重读 GT、重算质心误差（容差 1e-6），并校验 `kind` 与 `gt_center`。
+
+**实测**（scene0084；质心误差 = 重建对象质心到 GT 原语中心的欧氏距离）：
+
+| id | kind | 质心误差 (m) |
+|---|---|---|
+| 1 | cylinder | 0.0693 |
+| 2 | sphere | 0.0732 |
+| 3 | torus | **0.1431** |
+| 4 | part_cube | 0.0823 |
+| 5 | sphere | 0.1301 |
+| 6 | torus | 0.1057 |
+| 7 | sphere | **0.0581** |
+
+- 均值 **0.0945 m**、最大 0.1431、最小 0.0581；按类：torus 均值 0.1244（最差）、sphere 0.0871。
+- 复核 PASS（7/7 对象、标签一致）；把一条 `centroid_error` 改成 0.5 ⇒ 对象 6/7、标签不一致、reject。
+- 局限：只对质心，不比对形状/尺度；`pass_index ↔ 分割 id` 在这套数据成立，真实域需另建对应。

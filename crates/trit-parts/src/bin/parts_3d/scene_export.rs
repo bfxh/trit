@@ -139,6 +139,7 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
     let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
     let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
     let frames = arg(argv, "--frames").unwrap_or_else(|| "0,1,2,3,4,5,6,7".into());
+    let scenes_root = arg(argv, "--scenes").map(PathBuf::from);
     let cells = arg(argv, "--cells").unwrap_or_else(|| "0.01,0.02,0.04".into());
     let texture = argv.iter().any(|a| a == "--texture");
     let atlas: usize = arg(argv, "--atlas")
@@ -255,21 +256,22 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
         let om_dir = out.join("objects-mesh");
         let prev_dir = out.join("preview");
 
-        run(
-            &parts3d,
-            &[
-                "export-objects".into(),
-                "--scene".into(),
-                scene.display().to_string(),
-                "--frames".into(),
-                frames.clone(),
-                "--cell".into(),
-                format!("{scell}"),
-                "--out".into(),
-                obj_dir.display().to_string(),
-            ],
-            "export-objects",
-        );
+        let mut oargs: Vec<String> = vec![
+            "export-objects".into(),
+            "--scene".into(),
+            scene.display().to_string(),
+            "--frames".into(),
+            frames.clone(),
+            "--cell".into(),
+            format!("{scell}"),
+            "--out".into(),
+            obj_dir.display().to_string(),
+        ];
+        if let Some(root) = &scenes_root {
+            oargs.push("--scenes".into());
+            oargs.push(root.display().to_string());
+        }
+        run(&parts3d, &oargs, "export-objects");
         run(
             &parts3d,
             &[
