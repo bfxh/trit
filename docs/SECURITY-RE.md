@@ -164,6 +164,39 @@ PYAS 的 `FileEntropy` / 熵直方图 / `StringEntropy` / 叠加段特征与 EMB
   `FunctionReport`，方向保守不变（裁定不洗成"已归属"，共现的 `Unknown` 拖累逻辑不动）。
   这把「N 个未归属」从黑箱计数变成能直接看边界质量问题出在哪的证据清单——
   也是 N2（最小 CFG）成效的**现成度量**：边界漏检类应随 N2 显著下降。
+- **最小 CFG 第一层：补隙合并**（2026-11-05）：直接控制流边收割（x86 `E8`/`E9`、
+  ARM64 `BL`/`B`，字节模式级）+ 入口/目标定起点——有精确边界源时**只填充精确
+  区间未覆盖的可执行隙，绝不切分精确区间**（往函数体中间插假起点会劈碎同函数
+  共现，是 `fn_*` 回归的头号来源）；无精确源时覆盖全部可执行节（旧启发式的替换
+  形态，起点收割语义逐字节一致）。验收测量：notepad.exe 未归属 8→2（**漏检
+  5→1**）、trit-re.exe 22→16（**漏检 2→1**），`fn_*` 判定行与基线逐字一致。
+  已知边界如实记录：字节模式级不是指令级遍历，数据里的 `E8`/`E9` 会产生假边
+  （与旧启发式同风险）；`Cfg` 边界 `exact` 恒为 false，剥表 PE32 的共现**保持
+  `Unknown`**——指令级块遍历（真基本块）待最小长度解码器，是 N2 的 v2。
+- **最小 CFG v2：x86-64 长度解码器 + 块遍历验证层**（2026-11-05）：
+  `x86len.rs` 最小指令长度解码器（fail-closed：VEX/EVEX/三字节逃逸/64 位非法
+  指令/moffs 一律 `None` 停走不猜；15 字节上限 + 缓冲区界检查）+ `cfg.rs` 递归
+  下降块遍历——种子只取**可信起点**（入口 + 精确区间起点；从字节候选起走会
+  拿数据当代码、覆盖面撒谎），起点合成 = 遍历确认的调用目标 ∪ 前向无条件跳
+  目标（尾调用归类）∪ 未被遍历覆盖的层一候选（fail-closed 回落到层一，绝不
+  静默缩覆盖）。**验收读数与第一层逐字一致**（notepad 2/漏检 1、trit-re.exe
+  16/漏检 1）——遍历验证没有改变归属结果（可达调用目标字节扫描本就能看到）；
+  v2 的增量是真边验证语义 + 解码器地基；剩余漏检 = 间接调用的叶子（无静态
+  `E8` 源），根治在间接调用解析，是 N2 的 v3 方向。测试 114 全绿（+8 解码器）。
+- **最小 CFG v3：取址分析**（2026-11-05）：`decode` 新增 `addr_taken`——
+  `lea r64,[rip+disp32]` 的落点是**间接调用函数的起点信号**（回调/虚表项）；
+  遍历把它们当新种子继续走（不动点），起点合成加第三路。验收实测：
+  trit-re.exe 未归属 16→**15**（函数 4259→**4324**，+65 个取址发现的间接
+  入口）；notepad.exe 不变——残差漏检是**数据节表项**（vtable 在 `.rdata`，
+  代码内 `lea` 够不着），数据节指针表解析（需重定位/节语义）是 v4 范畴。
+  `fn_*` 判定全表不变。测试 116 全绿（+2）。
+- **最小 CFG v4：数据节指针表收割**（2026-11-05）：`pe_pointer_seeds`——
+  非可执行节里指向可执行域的指针串（vtable/回调表）→ 候选起点。机械过滤：
+  对齐步进（PE32+ u64 / PE32 u32）、值 − ImageBase 落在可执行域、NULL 跳过、
+  **连续 ≥2 全收 + 孤立仅 16 对齐收**（宁可丢也不给假起点）。ELF 诚实留白
+  （PIE 需先过重定位）。验收实测：trit-re.exe 未归属 15→**12**（**漏检
+  1→0 清零**，函数 +267）、notepad.exe 2 不变（漏检 1 非指针表可解，如实
+  保留——不是每条漏检都能机械找回）；`fn_*` 全表不变。测试 118 全绿（+2）。
 - **PE32 的函数边界不再只剩启发式**（2026-11-03）：没有 `.pdata` 的 PE32（mingw 系默认带
   COFF 符号表）现在从符号表取边界——只认 `Type` 高字节 = `IMAGE_SYM_DTYPE_FUNCTION` 且
   `SectionNumber > 0` 的符号，`Value` 按 RVA 解释并自校验「落在所指**可执行节**内」，
@@ -199,12 +232,12 @@ PYAS 的 `FileEntropy` / 熵直方图 / `StringEntropy` / 叠加段特征与 EMB
 | 编号 | 事项 | 判据（可复算） |
 |---|---|---|
 | N1 | **真实语料校准**：PE x64 / PE ARM64 / ELF x64 / ELF ARM64 各一批 | 记录每个样本的 `sha256`；人工复核 xref 误报/漏报，给出比例；ARM64 至少一批非合成样本 |
-| N2 | **最小 CFG**：基本块 + 直接跳转边，替换启发式边界 | `unattributed_sites` 在 notepad/trit-re.exe 上下降；`fn_*` 判定不回归；PE32 共现从 `Unknown` 变为可判（2026-11-03：这半只已由 COFF 符号表达成，`.text` 里的启发式边界仍待 CFG 换掉） |
+| N2 | **最小 CFG**：基本块 + 直接跳转边，替换启发式边界 | ✅ 第一层（2026-11-05）：`unattributed_sites` notepad.exe 8→2 / trit-re.exe 22→16（边界漏检 5→1 / 2→1），`fn_*` 判定与基线逐字一致，启发式边界由 CFG 补隙层替换（`FuncSource::Cfg`；无精确源=全量替换形态，有精确源=补隙不切分）；PE32 共现半只已由 COFF 符号表达成、剥表 PE32 保持 `Unknown`（字节模式级 CFG 不冒充精确——指令级块遍历待最小长度解码器，为 v2） |
 | N3 | **接 `trit-procscan`**：现场模块路径 → 台账（✅ 2026-11-03：`trit-re collect` 吃 procscan JSONL 事件流，抽取 `type:"module"` 路径——去重保序、坏行/非 module 事件计数上报、单文件读取失败不中断；每模块产出台账行，末尾一条 `collect-summary`（模块数/去重/不可读/坏行/字节/`elapsed_ms`）——判据「一次采集 ≥ N 条记录」直接从汇总行复算，耗时线性性由两次采集的 bytes/elapsed 对比复算；管道式接入不建 crate 依赖：`trit-procscan … \| trit-re collect`。实测冒烟（真事件流 5 行）：`notepad.exe` 356 KB 分析 22 ms，汇总行给出
 `module_events=3/modules=2/deduped=1/analyzed=1/unreadable=1/non_module_events=1/bad_lines=1/bytes=356352`，
 stdout 622 行（621 条台账 + 1 条汇总）；路径写成 JSON 非法转义时 `module_events=0/bad_lines=3` 一条不解析但计数照报。
 测试 `tests/collect.rs` 4 条用内存文件系统） | 一次采集产出 ≥ N 条 `xref`/`function` 记录，耗时与文件大小线性 |
-| N4 | **YARA 子集的三值匹配** | 与官方 YARA 在同一批样本上的命中集合一致；"未命中"只在完整扫描后给出 |
+| N4 | **YARA 子集的三值匹配** | ✅ 两层（2026-11-05）：第一层 `sigscan.rs`——hex 串（`??` 通配 + `[n]`/`[n-m]` 跳跃、跳跃后必须有字节段）、文本串（ascii/nocase ASCII 折叠/wide=仅 UTF-16LE）、声明式条件 + **表达式树**（And/Or/Not/Ref/OfAny/OfAll/OfCount）；三值纪律与验收判据逐字对应——**命中 True（不依赖完整性）、完整扫描未命中 False、输入截断 Unknown**（"未命中"只在完整扫描后给出），整体 = Kleene OR（报警语义：`False ∨ Unknown = Unknown`，截断的沉默不是清白）；护栏：每模式命中 ≤1024、跳跃 ≤0x1000。第二层 `yaraparse.rs`——`.yar` 规则文件解析器（词法器引号感知——字符串里的 `//` 是内容不是注释；meta 计数、`import` 入 notes；字符串修饰符 nocase/wide/ascii；hex 块；条件递归下降：and/or/not/括号/`$ref`/`at`/`in`/`any·all·N of them/($x*)`）；**解析不了的规则 → `Unsupported` 带原因 → 扫描时 `Unknown`，绝不静默跳过**（正则串、filesize/pe.*、未知 `$ref` 等 8 类端到端钉死）；**对拍基建已就位 + 真对拍已跑通**（2026-11-05）：`trit-re sigscan <样本> --rules <.yar>` CLI（HIT/MISS/UNKNOWN/UNSUPPORTED 逐规则一行，对拍口径）+ `scripts/yara_diff.py`（官方引擎 vs trit-re 四态分类：MATCH/DIFF/SUBSET-GAP/OFFICIAL-ERR，真 DIFF 退出码 1）；环境通路 = uv（`uv python install 3.13` + `uv pip install yara-python`，免 MSVC）；**真对拍结果：合成对抗批次 6 样本 × 9 规则（官方 YARA 4.5.4）MATCH 6 / DIFF 0 / SUBSET-GAP 4**——可评估规则命中集合 100% 一致，正则/filesize 规则正确落入子集边界类；对拍还揪出一个词法 bug（`.` 不在断字集，`in (4..8)` 挂——已修）；**加固轮**：`SCAN_BUDGET`(1M 步/模式) 封顶跳跃回溯的指数爆炸（对抗数据上 `{90 [0-4096] …}×全0x90` 会挂起）——耗尽 = 扫描不完整 = 裁决 `Unknown`（"未命中只在完整扫描后给出"的组成面）；确定性模糊 `tests/fuzz_sigscan.rs` 五路夹击（随机文本/结构变异/随机 spec/随机数据×模式/对抗跳跃链）不变量 = 不 panic 不挂起；🔴 剩余：真实样本批次上的规模化对拍（harness 就绪，喂样本目录即跑） |
 | — | **不做**：完整反汇编、符号执行、内核驱动、动态行为 | — |
 
 ---

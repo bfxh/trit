@@ -234,7 +234,9 @@ fn coff_symbols_give_pe32_exact_boundaries() {
     };
     let report = trit_re::functions::build_pe(&bytes, &info, &xref);
     assert!(report.exact, "COFF 符号表边界必须算精确");
-    assert_eq!(report.total_functions, 2);
+    // N2 补隙：fn_alpha 之前的 16 字节隙里有 E8 形字节 → 一个 Cfg 候选区间
+    // 进 total（精确区间不被切分，fn_alpha/fn_beta 的边界原样）。
+    assert_eq!(report.total_functions, 3);
     let first = &report.functions[0];
     assert_eq!(first.function.source.as_str(), "coff-symtab");
     assert_eq!(first.function.start, 0x1010);
