@@ -124,6 +124,54 @@ fn levels_match(w: &Lv, g: &Lv) -> bool {
         && w.unseen == g.unseen
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct Tx {
+    cell: f32,
+    obj: String,
+    obj_sha: String,
+    png: String,
+    png_sha: String,
+    atlas: usize,
+    charts: usize,
+    texels: usize,
+    unseen: usize,
+}
+
+fn textures(txt: &str) -> Vec<Tx> {
+    let mut out = Vec::new();
+    for seg in txt.split("{\"cell\": ").skip(1) {
+        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
+        let cell = seg
+            .split(',')
+            .next()
+            .and_then(|s| s.trim().parse().ok())
+            .unwrap_or(f32::NAN);
+        let n = |k: &str| number(seg, k).unwrap_or(-1.0) as usize;
+        out.push(Tx {
+            cell,
+            obj: field(seg, "path").unwrap_or_default(),
+            obj_sha: field(seg, "sha256").unwrap_or_default(),
+            png: field(seg, "png_path").unwrap_or_default(),
+            png_sha: field(seg, "png_sha256").unwrap_or_default(),
+            atlas: n("atlas"),
+            charts: n("charts"),
+            texels: n("texels"),
+            unseen: n("unseen_texels"),
+        });
+    }
+    out
+}
+
+fn textures_match(w: &Tx, g: &Tx) -> bool {
+    w.obj == g.obj
+        && w.png == g.png
+        && (w.cell - g.cell).abs() <= 1e-6
+        && w.atlas == g.atlas
+        && w.charts == g.charts
+        && w.texels == g.texels
+        && w.unseen == g.unseen
+}
+
 fn sibling(name: &str) -> PathBuf {
     let dir = std::env::current_exe()
         .ok()
@@ -176,6 +224,11 @@ fn main() {
     let frames = list_usize(config_block, "frames").unwrap_or_else(|| usage());
     let cells = list_f32(config_block, "cells").unwrap_or_else(|| usage());
     let want_levels = levels(array(&manifest, "levels").unwrap_or(""));
+    let texture = config_block.contains("\"texture\": true");
+    let atlas_px = number(config_block, "atlas").unwrap_or(1024.0) as usize;
+    let texels_per_m = number(config_block, "texels_per_m").unwrap_or(0.0) as f32;
+    let normal_deg = number(config_block, "normal_deg").unwrap_or(45.0) as f32;
+    let want_tx = textures(array(&manifest, "textures").unwrap_or(""));
 
     let fp = fingerprint_scene_frames(&scene, &frames).unwrap_or_else(|e| {
         eprintln!("语料指纹失败: {e}");
@@ -210,6 +263,15 @@ fn main() {
         .arg(join(&cs))
         .arg("--out")
         .arg(&tmp);
+    if texture {
+        cmd.arg("--texture")
+            .arg("--atlas")
+            .arg(atlas_px.to_string())
+            .arg("--texels-per-m")
+            .arg(format!("{texels_per_m}"))
+            .arg("--atlas-deg")
+            .arg(format!("{normal_deg}"));
+    }
     let out = cmd.output().unwrap_or_else(|e| {
         eprintln!("跑不了 {}: {e}", bin.display());
         std::process::exit(2);
@@ -218,8 +280,8 @@ fn main() {
         eprint!("{}", String::from_utf8_lossy(&out.stderr));
         println!("parts-3d export-asset 退出码 {:?}", out.status.code());
     }
-    let got_levels =
-        levels(array(&read_manifest(&tmp.join("asset.manifest.json")), "levels").unwrap_or(""));
+    let tmp_manifest = std::fs::read_to_string(tmp.join("asset.manifest.json")).unwrap_or_default();
+    let got_levels = levels(array(&tmp_manifest, "levels").unwrap_or(""));
 
     let mut matched = 0usize;
     let mut bad: Vec<String> = Vec::new();
@@ -241,9 +303,40 @@ fn main() {
         && got_levels.len() == want_levels.len()
         && matched == want_levels.len();
 
-    let pass = ok_model && ok_data && ok_levels;
+    // 纹理档：清单记录 = 磁盘交付 = 重导出（OBJ 与 PNG 各一份哈希）+ 图集计数。
+    let got_tx = textures(array(&tmp_manifest, "textures").unwrap_or(""));
+    let (mut tex_matched, mut tex_bad) = (0usize, Vec::new());
+    if texture {
+        if out.status.success() && got_tx.len() == want_tx.len() {
+            for (w, g) in want_tx.iter().zip(got_tx.iter()) {
+                let d_obj = hash(&asset_dir.join(&w.obj));
+                let d_png = hash(&asset_dir.join(&w.png));
+                let r_obj = hash(&tmp.join(&g.obj));
+                let r_png = hash(&tmp.join(&g.png));
+                if textures_match(w, g)
+                    && d_obj == w.obj_sha
+                    && d_png == w.png_sha
+                    && r_obj == w.obj_sha
+                    && r_png == w.png_sha
+                {
+                    tex_matched += 1;
+                } else {
+                    tex_bad.push(w.obj.clone());
+                }
+            }
+        } else {
+            tex_bad.push(format!("档数 {} ≠ {}", want_tx.len(), got_tx.len()));
+        }
+    }
+    let ok_tex = if texture {
+        !want_tx.is_empty() && got_tx.len() == want_tx.len() && tex_matched == want_tx.len()
+    } else {
+        want_tx.is_empty()
+    };
+
+    let pass = ok_model && ok_data && ok_levels && ok_tex;
     println!(
-        "复核 {}：模型 {}｜语料 {}/{} 字节 {}｜档位 {}/{} 一致{}",
+        "复核 {}：模型 {}｜语料 {}/{} 字节 {}｜档位 {}/{} 一致{}｜纹理 {}",
         mpath.display(),
         if ok_model { "一致" } else { "不一致" },
         fp.files,
@@ -255,6 +348,18 @@ fn main() {
             String::new()
         } else {
             format!("（异常：{}）", bad.join(", "))
+        },
+        if !texture {
+            "未启用".to_string()
+        } else if ok_tex {
+            format!("{tex_matched}/{} 一致", want_tx.len())
+        } else {
+            format!(
+                "不一致 {}/{}（{}）",
+                tex_matched,
+                want_tx.len(),
+                tex_bad.join(", ")
+            )
         }
     );
     println!(
@@ -267,7 +372,7 @@ fn main() {
     );
 
     let body = format!(
-        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-asset-verify\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"asset\": {{\"dir\": {}, \"manifest\": {{\"path\": {}, \"sha256\": \"{}\"}}}},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"ok\": {ok_model}}},\n  \"data\": {{\"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\", \"files\": {}, \"bytes\": {}, \"scene\": {}, \"ok\": {ok_data}}},\n  \"levels\": {{\"total\": {}, \"matched\": {matched}, \"bad\": [{}], \"ok\": {ok_levels}}},\n  \"verdict\": \"{}\"\n}}\n",
+        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-asset-verify\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"asset\": {{\"dir\": {}, \"manifest\": {{\"path\": {}, \"sha256\": \"{}\"}}}},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\", \"ok\": {ok_model}}},\n  \"data\": {{\"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\", \"files\": {}, \"bytes\": {}, \"scene\": {}, \"ok\": {ok_data}}},\n  \"levels\": {{\"total\": {}, \"matched\": {matched}, \"bad\": [{}], \"ok\": {ok_levels}}},\n  \"texture\": {{\"enabled\": {texture}, \"total\": {}, \"matched\": {tex_matched}, \"bad\": [{}], \"ok\": {ok_tex}}},\n  \"verdict\": \"{}\"\n}}\n",
         created_unix(),
         json_str(git_out(&["rev-parse", "--short", "HEAD"]).trim()),
         json_str(&norm_root(&asset_dir)),
@@ -280,6 +385,12 @@ fn main() {
         json_str(&norm_root(&scene)),
         want_levels.len(),
         bad.iter()
+            .map(|s| json_str(s))
+            .collect::<Vec<_>>()
+            .join(", "),
+        want_tx.len(),
+        tex_bad
+            .iter()
             .map(|s| json_str(s))
             .collect::<Vec<_>>()
             .join(", "),
@@ -360,6 +471,30 @@ mod tests {
         assert_eq!(lv[1].unseen, 4);
         // 空数组/缺键都不许崩
         assert!(levels("").is_empty());
+    }
+
+    const TMAN: &str = "{\"config\": {\"texture\": true, \"atlas\": 512}, \"textures\": [{\"cell\": 0.01, \"path\": \"lod-1cm.obj\", \"sha256\": \"o1\", \"bytes\": 5, \"png_path\": \"lod-1cm.png\", \"png_sha256\": \"p1\", \"png_bytes\": 6, \"atlas\": 512, \"charts\": 7, \"texels\": 100, \"unseen_texels\": 8}]}";
+
+    #[test]
+    fn texture_entries_parse_and_catch_mismatch() {
+        let tx = textures(array(TMAN, "textures").unwrap());
+        assert_eq!(tx.len(), 1);
+        assert_eq!(tx[0].cell, 0.01);
+        assert_eq!(tx[0].obj, "lod-1cm.obj");
+        assert_eq!(tx[0].obj_sha, "o1");
+        assert_eq!(tx[0].png, "lod-1cm.png");
+        assert_eq!(tx[0].png_sha, "p1");
+        assert_eq!(
+            (tx[0].atlas, tx[0].charts, tx[0].texels, tx[0].unseen),
+            (512, 7, 100, 8)
+        );
+        assert!(textures_match(&tx[0], &tx[0]));
+        let mut g = tx[0].clone();
+        g.unseen = 9;
+        assert!(!textures_match(&tx[0], &g), "无观测纹素数变了必须判红");
+        let mut g = tx[0].clone();
+        g.png = "other.png".into();
+        assert!(!textures_match(&tx[0], &g));
     }
 
     #[test]

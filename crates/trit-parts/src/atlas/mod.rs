@@ -14,5 +14,32 @@ pub use bake::bake_atlas;
 pub use charts::{Atlas, Chart, PerClass};
 pub use stats::{UvStats, uv_stats};
 
+use crate::mesh::Mesh;
+
+/// 纹素颜色由调用方提供的图集烘焙：`shade(三角形, 世界坐标)`，
+/// 返回 `None` 的纹素保留底色 `fill`（用于「没有视角看到」）。平面投影 chart（不做 LSCM）。
+pub fn bake_atlas_with<F>(
+    m: &Mesh,
+    atlas_px: usize,
+    texels_per_unit: f32,
+    normal_deg: f32,
+    fill: [f32; 3],
+    mut shade: F,
+) -> Result<Atlas, String>
+where
+    F: FnMut(usize, [f32; 3]) -> Option<[f32; 3]>,
+{
+    let mut sh = |fi: usize, _uv: [f32; 2], p: [f32; 3]| shade(fi, p);
+    bake::bake_shaded(
+        m,
+        atlas_px,
+        texels_per_unit,
+        normal_deg,
+        false,
+        fill,
+        &mut sh,
+    )
+}
+
 #[cfg(test)]
 mod tests;
