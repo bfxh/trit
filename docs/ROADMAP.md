@@ -32,7 +32,7 @@
 
 ## 3. 该搬出的（主库的 prod 层太重）
 
-`trit-vcs`、`trit-orch`、`trit-procscan`、`trit-redteam`、`trit-unsafe`、`trit-lsp` 都是外壳，不是底座
+`trit-orch`、`trit-procscan`、`trit-redteam`、`trit-unsafe`、`trit-lsp` 都是外壳，不是底座
 （prod 现在 12/35）。方向是拆 `bfxh/trit-tools`，能同时瘦 CI 面与可发布面。**顺序硬要求**：
 分层门先进 CI、#289 合完，再谈拆分——两边同时动 `.github` 一定撞车。
 
