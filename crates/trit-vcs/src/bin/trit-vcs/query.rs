@@ -8,7 +8,7 @@ use std::process::ExitCode;
 use trit_vcs::repo::Repo;
 use trit_vcs::techmap::{Techmap, test_command};
 
-use super::{fail, flag, has, positionals, repo_path};
+use super::{fail, flag, has, positionals, repo_path, verdict};
 
 pub(crate) fn load_techmap(args: &[String]) -> Result<Techmap, String> {
     let path = flag(args, "--techmap")
@@ -34,10 +34,7 @@ pub(crate) fn where_cmd(args: &[String]) -> ExitCode {
         return ExitCode::FAILURE;
     }
     if has(args, "--json") {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&hits).unwrap_or_default()
-        );
+        return verdict::print_json(serde_json::json!(hits), args);
     } else {
         for entry in &hits {
             println!("{} [{}] {}", entry.id, entry.status, entry.title);
@@ -114,9 +111,8 @@ pub(crate) fn explain_cmd(args: &[String]) -> ExitCode {
         }
     }
     if has(args, "--json") {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&serde_json::json!({
+        return verdict::print_json(
+            serde_json::json!({
                 "id": id.to_hex(),
                 "tree": commit.tree.to_hex(),
                 "session": commit.session,
@@ -132,8 +128,8 @@ pub(crate) fn explain_cmd(args: &[String]) -> ExitCode {
                 })),
                 "entries": entries,
                 "tests": tests.into_iter().collect::<Vec<_>>(),
-            }))
-            .unwrap_or_default()
+            }),
+            args,
         );
     } else {
         println!("提交 {}  树 {}", id.short(), commit.tree.short());

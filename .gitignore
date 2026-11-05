@@ -21,3 +21,7 @@ __pycache__/
 
 # 本地评测产物（scripts/regress_holdout.sh 等）
 /runs/
+
+# 变异门单实例锁（运行时目录，不入库）
+scripts/.mutation-check.lock/
+*.mutant-tmp

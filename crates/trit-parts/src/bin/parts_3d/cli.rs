@@ -21,6 +21,7 @@ pub(crate) fn usage() -> ! {
   parts-3d occ --root <renders 根> --scenes <scenes 根> --train 80,81 --eval 84,85 [--cell 0.01] [--steps 20000] [--selfsup] [--views N] [--tau 0.01]
   parts-3d align --scene <dir> --frames 0,1,2,3,4,5,6,7 [--cell 0.01] [--tau 0.01] [--fill]
   parts-3d obs-split --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]
+  parts-3d export-asset --model <occ1> --scene <dir> --frames 0,...,7 --out <dir> [--cells 0.01,0.02,0.04]
   parts-3d mesh-tex --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]
   parts-3d tex --kind wood|marble|rust|grid --size 256 --out <ppm>
   parts-3d tex-prior [--iters 30000] [--patch 3|7] [--cond] [--hid 16]
