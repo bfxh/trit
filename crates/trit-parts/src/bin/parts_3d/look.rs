@@ -290,16 +290,7 @@ A 组 {} 张{}",
 }
 
 pub(crate) fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
-    let mut a = Vec::new();
-    let mut b = Vec::new();
-    for (p, &id) in ids.iter().enumerate() {
-        if id == 0 {
-            continue;
-        }
-        a.extend_from_slice(&img[p * 3..p * 3 + 3]);
-        b.extend_from_slice(&gt[p * 3..p * 3 + 3]);
-    }
-    trit_parts::splat::psnr(&a, &b)
+    trit_parts::splat::masked_psnr(img, gt, ids)
 }
 
 pub(crate) fn avg(v: &[f64]) -> f64 {
