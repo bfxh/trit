@@ -119,7 +119,9 @@ pub use codec::{checksum, from_wsp, to_wsp};
 pub use edit::{Cost, Edit, Journal, Patch};
 pub use error::{Error, Result};
 pub use explain::{SampleEditImpact, SampleExplanation, explain_sample};
-pub use localize::{LocalizeReport, RowLocalization, TritImpact, localize, localize_row};
+pub use localize::{
+    LocalizeReport, LocalizeSelection, RowLocalization, TritImpact, localize, localize_row,
+};
 pub use merge::{align, merge_aligned, merge_vote};
 pub use net::{Layer, Net};
 pub use oracle::{Behavior, Oracle};

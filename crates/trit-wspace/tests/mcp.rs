@@ -563,7 +563,28 @@ fn localize_returns_row_and_trit() {
         .iter()
         .find(|row| row["layer"].as_u64() == Some(0) && row["row"].as_u64() == Some(0))
         .expect("row0");
+    assert_eq!(row0["selection"].as_str(), Some("all"));
     assert_eq!(row0["top"][0]["after_loss"].as_u64(), Some(0));
+
+    let tight = call(
+        &mut server,
+        "wsp_localize",
+        json!({
+            "artifact": to_wsp(&broken),
+            "oracle": trit_wspace::wire::oracle_to_value(&oracle),
+            "rows": 2,
+            "row_budget": 2,
+            "max_trits": 2,
+            "top_trits": 4,
+        }),
+    );
+    assert_eq!(tight["isError"], false);
+    let tight = payload(&tight);
+    for row in tight["rows"].as_array().expect("rows") {
+        assert_eq!(row["selection"].as_str(), Some("adaptive"));
+        assert_eq!(row["stride"].as_u64(), Some(0));
+        assert!(row["probed"].as_u64().expect("probed") <= 2);
+    }
 }
 
 #[test]

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：行内定位按活跃度选点）
+
+- `localize_row` 的 `max_trits` 预算不再按固定步长抽样：先统计每个位置在样本上的
+  **实际活跃次数**（权重为零、或该列输入恒为零的位置得 0 分；隐藏层用上一层激活，
+  不是原始输入），按分数选点并仍按位置顺序探测；报告新增 `selection=adaptive` /
+  `stride=0`，全量时 `selection=all`。
+- 读数：权重 `[1,1]`、偏置 0 的两列网络在 `max_trits=2` 下，固定步长只看 `{col0, bias}`
+  会漏掉被破坏的 col1；改为活跃度选点后探到 col1 并给出 `after_loss=0` 的修复。
+  恒零输入列与隐藏层激活两条反例分别钉住打分输入。
+- 测试 115 → 117 + 1 doctest；变异 71 → **75 条，75/75 caught**；test_surface 台账 2,321 → 2,323。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene 全过。
+
 ### Added（trit-wspace：pilot 消融校准的选行）
 
 - `probe_rows_adaptive` 升级为 **pilot 校准**：每个隐层先 pilot 一条静态分数最高的行，

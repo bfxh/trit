@@ -131,7 +131,8 @@ trit-wspace mcp
 没有验证集时用 `Oracle::sampled_behavior` 以网络当前行为生成确定性随机探针集。
 
 `wsp_localize` 做两级定位：先自适应选承重行，再在每行内逐位置（权重 + 偏置）试替代值、
-整验证集复核；`max_trits` 超了按固定步长抽样，报告标 `sampled` / `stride`。
+整验证集复核；`max_trits` 超了按位置的**实际活跃次数**选点（权重为零或入参恒为零的位置得 0 分），
+报告标 `selection=adaptive` / `sampled` / `stride=0`。
 
 `wsp_audit` 校验 JSONL 编辑日志的哈希链；给了初始工件就顺带重放并核对最终校验和。
 模板见 [`mcp.example.json`](mcp.example.json)。

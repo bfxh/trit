@@ -5,8 +5,10 @@
 //! 1. [`localize`] 先用自适应行探针（[`crate::probe::probe_rows_adaptive`]）选出 top 行；
 //! 2. [`localize_row`] 在单行内逐位置（权重 + 偏置）试替代值，整验证集复核。
 //!
-//! 单行成本 `2 × 位置数 × 样本数`。`max_trits>0` 且位置数超过预算时按固定步长抽样，
-//! 报告里标 `sampled` / `stride`，不做静默截断。
+//! 单行成本 `2 × 位置数 × 样本数`。`max_trits>0` 且位置数超过预算时，按**该位置在样本上的
+//! 实际活跃次数**选点（权重为零或入参恒为零的位置得 0 分），报告里标
+//! `selection=adaptive` / `sampled=true` / `stride=0`，不做静默截断。
+//! 打分最多看 256 条样本，仍是启发式。
 
 use crate::analyze::edit_key;
 use crate::edit::{Edit, Patch};
@@ -35,6 +37,15 @@ pub struct TritImpact {
     pub broken: usize,
 }
 
+/// 行内选点方式。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocalizeSelection {
+    /// 位置数在预算内，全部探测。
+    All,
+    /// 超出预算，按位置活跃次数选点。
+    Adaptive,
+}
+
 /// 单行定位结果。
 #[derive(Clone, Debug, PartialEq)]
 pub struct RowLocalization {
@@ -50,7 +61,9 @@ pub struct RowLocalization {
     pub probed: usize,
     /// 是否因 `max_trits` 抽样。
     pub sampled: bool,
-    /// 抽样步长（`1` = 全量）。
+    /// 选点方式。
+    pub selection: LocalizeSelection,
+    /// 抽样步长（`1` = 全量；`0` = 按活跃度选点，没有固定步长）。
     pub stride: usize,
     /// 评估过的候选编辑数。
     pub evaluated: usize,
@@ -111,15 +124,24 @@ pub fn localize_row(
     let positions = cols + 1;
     let baseline = Baseline::new(net, oracle)?;
     let before_loss = baseline.loss;
-    let (selected, stride, sampled) = if max_trits == 0 || positions <= max_trits {
-        ((0..positions).collect::<Vec<_>>(), 1, false)
-    } else {
-        let stride = positions.div_ceil(max_trits);
+    let (selected, stride, sampled, selection) = if max_trits == 0 || positions <= max_trits {
         (
-            (0..positions).step_by(stride).collect::<Vec<_>>(),
-            stride,
-            true,
+            (0..positions).collect::<Vec<_>>(),
+            1,
+            false,
+            LocalizeSelection::All,
         )
+    } else {
+        let scores = position_scores(net, oracle, layer, row, 256)?;
+        let mut order: Vec<usize> = (0..positions).collect();
+        order.sort_by(|left, right| {
+            scores[*right]
+                .cmp(&scores[*left])
+                .then_with(|| left.cmp(right))
+        });
+        order.truncate(max_trits);
+        order.sort_unstable();
+        (order, 0, true, LocalizeSelection::Adaptive)
     };
     let probed = selected.len();
     let mut impacts = Vec::new();
@@ -173,10 +195,60 @@ pub fn localize_row(
         positions,
         probed,
         sampled,
+        selection,
         stride,
         evaluated,
         top: impacts,
     })
+}
+
+/// 每个位置在样本上的活跃次数：权重非零且该列输入非零才计 1；偏置只看自身是否非零。
+///
+/// 隐藏层的“输入”是上一层激活（`sign(pre_activation)`），不是原始样本。
+fn position_scores(
+    net: &Net,
+    oracle: &Oracle,
+    layer: usize,
+    row: usize,
+    max_samples: usize,
+) -> Result<Vec<usize>> {
+    let target = net
+        .layer(layer)
+        .ok_or(Error::OutOfBounds { layer, row, col: 0 })?;
+    let cols = target.cols();
+    let mut scores = vec![0usize; cols + 1];
+    if oracle.is_empty() {
+        return Ok(scores);
+    }
+    let take = if max_samples == 0 {
+        oracle.len()
+    } else {
+        max_samples.min(oracle.len())
+    };
+    let stride = oracle.len().div_ceil(take);
+    let bias_live = target.bias_trit(row).expect("row in range") != Trit::Zero;
+    for index in (0..oracle.len()).step_by(stride).take(take) {
+        let input = &oracle.inputs()[index];
+        let activation: Vec<Trit> = if layer == 0 {
+            input.clone()
+        } else {
+            net.pre_activations(input)?[layer - 1]
+                .iter()
+                .map(|value| Trit::sign_of(*value))
+                .collect()
+        };
+        for (col, active) in activation.iter().enumerate().take(cols) {
+            if *active != Trit::Zero
+                && target.trit(row, col).expect("position in range") != Trit::Zero
+            {
+                scores[col] += 1;
+            }
+        }
+        if bias_live {
+            scores[cols] += 1;
+        }
+    }
+    Ok(scores)
 }
 
 fn alternatives(current: Trit) -> Vec<Trit> {

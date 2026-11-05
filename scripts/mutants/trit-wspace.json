@@ -509,7 +509,39 @@
   "old": "if max_trits == 0 || positions <= max_trits {",
   "new": "if true {",
   "pkg": "trit-wspace",
-  "filter": "localize_row_budget_samples_positions"
+  "filter": "adaptive_selection_finds_trit_stride_would_miss"
+ },
+ {
+  "name": "wspace-localize: 位置打分忽略输入活跃",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "if *active != Trit::Zero\n                && target.trit(row, col).expect(\"position in range\") != Trit::Zero",
+  "new": "if target.trit(row, col).expect(\"position in range\") != Trit::Zero",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_selection_skips_never_active_column"
+ },
+ {
+  "name": "wspace-localize: 隐藏层打分用原始输入",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "let activation: Vec<Trit> = if layer == 0 {",
+  "new": "let activation: Vec<Trit> = if true {",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_selection_uses_previous_layer_activation"
+ },
+ {
+  "name": "wspace-localize: 按序号不按分数选位置",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "order.sort_by(|left, right| {\n            scores[*right]\n                .cmp(&scores[*left])\n                .then_with(|| left.cmp(right))\n        });",
+  "new": "order.sort_unstable();",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_selection_skips_never_active_column"
+ },
+ {
+  "name": "wspace-localize: 选点不标 adaptive",
+  "file": "crates/trit-wspace/src/localize.rs",
+  "old": "(order, 0, true, LocalizeSelection::Adaptive)",
+  "new": "(order, 0, true, LocalizeSelection::All)",
+  "pkg": "trit-wspace",
+  "filter": "adaptive_selection_finds_trit_stride_would_miss"
  },
  {
   "name": "wspace-localize: 两级定位退回均匀行抽样",

@@ -328,6 +328,10 @@ pub fn row_localization_to_value(localization: &RowLocalization) -> Value {
         "positions": localization.positions,
         "probed": localization.probed,
         "sampled": localization.sampled,
+        "selection": match localization.selection {
+            crate::localize::LocalizeSelection::All => "all",
+            crate::localize::LocalizeSelection::Adaptive => "adaptive",
+        },
         "stride": localization.stride,
         "evaluated": localization.evaluated,
         "top": localization
