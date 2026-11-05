@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use trit_parts::glb::{build, load_scene};
+use trit_parts::glb::{build_with, load_scene};
 use trit_parts::partsrun::{created_unix, git_out, json_str};
 
 fn arg(argv: &[String], k: &str) -> Option<String> {
@@ -130,6 +130,7 @@ fn main() {
     let inputs = block(&manifest, "inputs").unwrap_or_else(|| usage());
     let gb = block(&manifest, "glb").unwrap_or_else(|| usage());
     let generator = field(cfg, "generator").unwrap_or_else(|| "trit-parts".into());
+    let spin = number(cfg, "spin").unwrap_or(0.0) as f32;
     let mesh_in = block(inputs, "objects_mesh").unwrap_or_else(|| usage());
     let obj_in = block(inputs, "objects_manifest").unwrap_or_else(|| usage());
     let lay_in = block(inputs, "layout").unwrap_or_else(|| usage());
@@ -154,7 +155,11 @@ fn main() {
     let mesh_dir = mesh_p.parent().unwrap_or_else(|| usage());
     let loaded = load_scene(mesh_dir, Some(&lay_p)).unwrap_or_else(|e| fail(&e));
     let ok_paths = loaded.objects_manifest == obj_p || sha(&loaded.objects_manifest) == sha(&obj_p);
-    let rebuilt = build(&loaded.parts, &generator);
+    let rebuilt = build_with(
+        &loaded.parts,
+        &generator,
+        if spin > 0.0 { Some(spin) } else { None },
+    );
     let delivered = std::fs::read(&glb).unwrap_or_default();
     let ok_bytes = delivered == rebuilt
         && field(gb, "sha256").map(|s| s == sha(&glb)).unwrap_or(false)
@@ -165,11 +170,18 @@ fn main() {
         Ok((json, bin)) => {
             let nodes = json.matches("\"mesh\": ").count();
             let pngs = png_count(bin);
+            let anims = json.matches("\"animations\": [").count();
+            let want_anim = usize::from(spin > 0.0);
+            let ok_anim = anims == want_anim
+                && (spin <= 0.0
+                    || (json.contains("\"name\": \"turntable\"")
+                        && json.contains("\"path\": \"rotation\"")));
             (
                 json.contains("\"meshes\": [")
                     && nodes == loaded.parts.len()
-                    && pngs == loaded.parts.len(),
-                format!("节点 {nodes}、PNG {pngs}"),
+                    && pngs == loaded.parts.len()
+                    && ok_anim,
+                format!("节点 {nodes}、PNG {pngs}、动画 {anims}"),
             )
         }
         Err(e) => (false, e),
@@ -205,7 +217,7 @@ fn main() {
     );
 
     let body = format!(
-        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-glb-verify\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"glb\": {{\"path\": {}, \"sha256\": \"{}\", \"bytes\": {}}},\n  \"inputs_ok\": {ok_inputs},\n  \"parts\": {{\"got\": {}, \"want\": {want_parts}, \"ok\": {ok_stats}}},\n  \"bytes_ok\": {ok_bytes},\n  \"struct_ok\": {ok_struct},\n  \"verdict\": \"{}\"\n}}\n",
+        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-glb-verify\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"glb\": {{\"path\": {}, \"sha256\": \"{}\", \"bytes\": {}}},\n  \"inputs_ok\": {ok_inputs},\n  \"parts\": {{\"got\": {}, \"want\": {want_parts}, \"ok\": {ok_stats}}},\n  \"bytes_ok\": {ok_bytes},\n  \"struct_ok\": {ok_struct},\n  \"spin\": {spin},\n  \"verdict\": \"{}\"\n}}\n",
         created_unix(),
         json_str(git_out(&["rev-parse", "--short", "HEAD"]).trim()),
         json_str(&trit_parts::scenefp::norm_root(&glb)),

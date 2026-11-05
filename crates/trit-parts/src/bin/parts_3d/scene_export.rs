@@ -172,6 +172,9 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
     let preview_res: usize = arg(argv, "--preview-res")
         .and_then(|v| v.parse().ok())
         .unwrap_or(256);
+    let glb_spin: f32 = arg(argv, "--glb-spin")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
     let parts3d = arg(argv, "--parts-3d")
         .map(PathBuf::from)
         .unwrap_or_else(|| sibling("parts-3d"));
@@ -301,17 +304,18 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
             "export-object-meshes",
         );
         let glb_out = om_dir.join("scene.glb");
-        run(
-            &parts3d,
-            &[
-                "export-glb".into(),
-                "--objects-mesh".into(),
-                om_dir.display().to_string(),
-                "--out".into(),
-                glb_out.display().to_string(),
-            ],
-            "export-glb",
-        );
+        let mut gargs: Vec<String> = vec![
+            "export-glb".into(),
+            "--objects-mesh".into(),
+            om_dir.display().to_string(),
+            "--out".into(),
+            glb_out.display().to_string(),
+        ];
+        if glb_spin > 0.0 {
+            gargs.push("--spin".into());
+            gargs.push(format!("{glb_spin}"));
+        }
+        run(&parts3d, &gargs, "export-glb");
         run(
             &parts3d,
             &[
@@ -346,7 +350,7 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
             "总包：对象 {n_obj} 个、合成 {composed} 高斯（覆盖 {cov:.3}）、对象网格 {n_omesh} 份、GLB {n_glb} 部件"
         );
         full_parts = format!(
-            ", \"objects\": {{\"manifest\": {{\"path\": \"objects/objects.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_obj}}}, \"compose\": {{\"manifest\": {{\"path\": \"compose/compose.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {composed}, \"coverage\": {cov}}}, \"objects_mesh\": {{\"manifest\": {{\"path\": \"objects-mesh/objects-mesh.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_omesh}}}, \"glb\": {{\"manifest\": {{\"path\": \"objects-mesh/scene.glb.manifest.json\", \"sha256\": \"{}\"}}, \"parts\": {n_glb}}}, \"preview\": {{\"manifest\": {{\"path\": \"preview/preview.manifest.json\", \"sha256\": \"{}\"}}, \"views\": {preview_views}, \"sheet\": \"preview/preview.png\"}}",
+            ", \"objects\": {{\"manifest\": {{\"path\": \"objects/objects.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_obj}}}, \"compose\": {{\"manifest\": {{\"path\": \"compose/compose.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {composed}, \"coverage\": {cov}}}, \"objects_mesh\": {{\"manifest\": {{\"path\": \"objects-mesh/objects-mesh.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_omesh}}}, \"glb\": {{\"manifest\": {{\"path\": \"objects-mesh/scene.glb.manifest.json\", \"sha256\": \"{}\"}}, \"parts\": {n_glb}, \"spin\": {glb_spin}}}, \"preview\": {{\"manifest\": {{\"path\": \"preview/preview.manifest.json\", \"sha256\": \"{}\"}}, \"views\": {preview_views}, \"sheet\": \"preview/preview.png\"}}",
             sha(&obj_m),
             sha(&compose_manifest),
             sha(&om_m),

@@ -3714,3 +3714,19 @@ parts-glb-verify --glb runs/scene-full/scene0084/objects-mesh/scene.glb
 - 反证 ①：GLB 尾加 1 字节 ⇒ “版本/长度不对”、reject、rc=1；
 - 反证 ②：改清单里 objects_manifest 的 SHA ⇒ “输入不一致”、reject、rc=1。
 - 局限：无 Draco/网格压缩；PNG 原样嵌入（未重压）；静态资产（无动画/骨骼）。
+
+### 6.129 GLB 转台动画：根节点 360° + 5 关键帧（2026-11-05）
+
+```text
+parts-3d export-glb --objects-mesh <对象网格目录> --out <场景.glb> --spin 4
+parts-3d export-scene ... --full --glb-spin 4
+```
+
+- `--spin N` 把所有对象挂到一个 `turntable` 根节点下，写一条绕 Y 轴 360° 的动画：
+  5 个关键帧（0/90/180/270/360°）、LINEAR、时长 N 秒；动画只转根节点，对象变换不动。
+- 时间/四元数各一个 accessor（时间带 min/max）；清单记 `spin`，复核器按同一时长重建并
+  **逐字节比对**，结构检查动画数/名称/路径。
+- 外部 `qoder-gltf validate`：**valid = true、诊断 0 条**；nodes 8、animations 1、
+  tracks 1、keyframes 5；GLB 10.0 MB（比无动画多 604 B）。
+- 反证：把清单 `spin` 4→0 ⇒ 重建无动画、字节不一致、reject、rc=1。
+- 局限：四元数线性插值（引擎按规范归一化）；只转根节点，不做材质/相机动画。
