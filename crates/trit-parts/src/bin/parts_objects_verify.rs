@@ -79,6 +79,9 @@ struct Obj {
     bbox_min: [f64; 3],
     bbox_max: [f64; 3],
     centroid: [f64; 3],
+    kind: Option<String>,
+    gt_center: Vec<f64>,
+    centroid_error: Option<f64>,
 }
 
 fn objects(txt: &str) -> Vec<Obj> {
@@ -105,9 +108,26 @@ fn objects(txt: &str) -> Vec<Obj> {
             bbox_min: [bx[0], bx[1], bx[2]],
             bbox_max: [bh[0], bh[1], bh[2]],
             centroid: [ce[0], ce[1], ce[2]],
+            kind: field(seg, "kind"),
+            gt_center: nums(seg, "gt_center"),
+            centroid_error: number(seg, "centroid_error"),
         })
     }
     out
+}
+
+/// 清单里的标签三件套（kind / gt_center / centroid_error）必须与 GT 和重算值一致。
+fn label_ok(o: &Obj, l: Option<&trit_parts::objlabel::Label>, cen: [f64; 3]) -> bool {
+    let Some(l) = l else {
+        return false;
+    };
+    let err = trit_parts::objlabel::centroid_error(cen, l.center);
+    o.kind.as_deref() == Some(l.kind.as_str())
+        && o.gt_center.len() == 3
+        && (0..3).all(|k| (o.gt_center[k] - l.center[k]).abs() <= 1e-9)
+        && o.centroid_error
+            .map(|e| (e - err).abs() <= 1e-6)
+            .unwrap_or(false)
 }
 
 fn load_view(scene: &Path, f: usize) -> View {
@@ -216,6 +236,14 @@ fn main() {
     let cell = number(cfg, "cell").unwrap_or(0.01) as f32;
     let scale_k = number(cfg, "scale_k").unwrap_or(0.6) as f32;
     let alpha = number(cfg, "alpha").unwrap_or(0.8) as f32;
+    let labels = field(cfg, "scenes").map(|root| {
+        let name = scene
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        trit_parts::objlabel::load(&PathBuf::from(root).join(name).join("objects.json"))
+            .unwrap_or_else(|e| fail(&e))
+    });
     let want_objects = objects(&manifest);
 
     let fp = fingerprint_scene_frames_rgb(&scene, &frames).unwrap_or_else(|e| {
@@ -255,6 +283,7 @@ fn main() {
     let ok_ids = ids_complete(declared, want_objects.len(), &expect_ids, &seg_ids);
 
     let mut bad = Vec::new();
+    let mut labels_all = true;
     for o in &want_objects {
         let p = base.join(&o.path);
         let got = read_ply_3dgs(&p).unwrap_or_else(|e| {
@@ -267,11 +296,20 @@ fn main() {
         }
         sort_splats(&mut want);
         let (lo, hi, cen) = stats(&got);
+        let ok_label = match &labels {
+            None => true,
+            Some(ls) => {
+                let l = ls.iter().find(|l| l.pass_index == o.id);
+                label_ok(o, l, cen)
+            }
+        };
+        labels_all &= ok_label;
         let ok = o.sha == hash(&p)
             && o.bytes == std::fs::metadata(&p).map(|m| m.len()).unwrap_or(u64::MAX)
             && o.count == got.len()
             && splats_match(&got, &want)
-            && stats_match(o, lo, hi, cen);
+            && stats_match(o, lo, hi, cen)
+            && ok_label;
         println!(
             "对象 {}: {} 个高斯{}",
             o.id,
@@ -282,14 +320,15 @@ fn main() {
             bad.push(o.id);
         }
     }
-    let ok_all = ok_data && ok_ids && !want_objects.is_empty() && bad.is_empty();
+    let ok_all = ok_data && ok_ids && labels_all && !want_objects.is_empty() && bad.is_empty();
     println!(
-        "复核 {}：语料 {}｜对象 {}/{} 一致｜id 集合 {}",
+        "复核 {}：语料 {}｜对象 {}/{} 一致｜id 集合 {}｜标签 {}",
         mpath.display(),
         if ok_data { "一致" } else { "不一致" },
         want_objects.len() - bad.len(),
         want_objects.len(),
-        if ok_ids { "一致" } else { "不一致" }
+        if ok_ids { "一致" } else { "不一致" },
+        if labels_all { "一致" } else { "不一致" }
     );
     println!(
         "{}",
@@ -400,9 +439,30 @@ mod tests {
             bbox_min: lo,
             bbox_max: hi,
             centroid: cen,
+            kind: None,
+            gt_center: Vec::new(),
+            centroid_error: None,
         };
         assert!(stats_match(&o, lo, hi, cen));
         assert!(!stats_match(&o, lo, [hi[0] + 0.01, hi[1], hi[2]], cen));
+        let lab = trit_parts::objlabel::Label {
+            pass_index: 1,
+            kind: "sphere".into(),
+            center: cen,
+            scale: [1.0; 3],
+        };
+        let mut with_lab = o.clone();
+        with_lab.kind = Some("sphere".into());
+        with_lab.gt_center = cen.to_vec();
+        with_lab.centroid_error = Some(0.0);
+        assert!(label_ok(&with_lab, Some(&lab), cen));
+        assert!(!label_ok(&o, Some(&lab), cen), "缺标签字段必须判红");
+        let mut wrong = with_lab.clone();
+        wrong.kind = Some("torus".into());
+        assert!(!label_ok(&wrong, Some(&lab), cen), "kind 不符必须判红");
+        let mut wrong = with_lab.clone();
+        wrong.centroid_error = Some(0.5);
+        assert!(!label_ok(&wrong, Some(&lab), cen), "质心误差不符必须判红");
     }
 
     #[test]

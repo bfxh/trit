@@ -101,6 +101,10 @@ name = "parts-preview-verify"
 path = "src/bin/parts_preview_verify.rs"
 
 [[bin]]
+name = "parts-glb-verify"
+path = "src/bin/parts_glb_verify.rs"
+
+[[bin]]
 name = "parts-objectmesh-verify"
 path = "src/bin/parts_objectmesh_verify.rs"
 
