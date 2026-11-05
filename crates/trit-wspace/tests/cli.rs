@@ -455,3 +455,69 @@ fn shard_manifest_detects_missing_extra_and_tampering() {
     fs::rename(&moved, &shard_file).expect("restore");
     let _ = fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn script_runs_atomic_sequence_and_writes_artifact() {
+    let dir = std::env::temp_dir().join(format!("trit-wspace-script-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("temp dir");
+    let artifact = dir.join("xor.wsp");
+    let oracle = dir.join("xor.json");
+    let script = dir.join("script.json");
+    let bad_script = dir.join("bad.json");
+    let out = dir.join("out.wsp");
+    fs::write(&artifact, to_wsp(&xor_net())).expect("artifact");
+    fs::write(&oracle, r#"{"domain":"boolean","vars":2,"table":"0110"}"#).expect("oracle");
+    fs::write(
+        &script,
+        r#"{"type":"sequence","name":"repair","steps":[
+            {"type":"step","name":"break","patch":{"version":1,"edits":[
+                {"op":"set_trit","layer":0,"row":0,"col":0,"to":"0"}]}},
+            {"type":"step","name":"fix","patch":{"version":1,"edits":[
+                {"op":"set_trit","layer":0,"row":0,"col":0,"to":"-"}]}}
+        ]}"#,
+    )
+    .expect("script");
+    fs::write(
+        &bad_script,
+        r#"{"type":"sequence","name":"bad","steps":[
+            {"type":"step","name":"break","patch":{"version":1,"edits":[
+                {"op":"set_trit","layer":0,"row":0,"col":0,"to":"0"}]}},
+            {"type":"step","name":"bad-fix","after":{"outputs":["0","0","0","0"]},
+             "patch":{"version":1,"edits":[
+                {"op":"set_trit","layer":0,"row":0,"col":0,"to":"-"}]}}
+        ]}"#,
+    )
+    .expect("bad script");
+
+    let ran = stdout_json(&run(&[
+        "script",
+        &path_string(&artifact),
+        "--script",
+        &path_string(&script),
+        "--oracle",
+        &path_string(&oracle),
+        "--out",
+        &path_string(&out),
+    ]));
+    assert_eq!(ran["report"]["type"], "sequence");
+    assert_eq!(ran["report"]["rolled_back"], false);
+    assert_eq!(ran["report"]["steps"].as_array().expect("steps").len(), 2);
+    assert_eq!(ran["report"]["steps"][0]["type"], "step");
+    let final_net = from_wsp(&fs::read_to_string(&out).expect("out")).expect("parse out");
+    assert_eq!(checksum(&final_net), checksum(&xor_net()));
+
+    let rolled = stdout_json(&run(&[
+        "script",
+        &path_string(&artifact),
+        "--script",
+        &path_string(&bad_script),
+        "--oracle",
+        &path_string(&oracle),
+        "--out",
+        &path_string(&out),
+    ]));
+    assert_eq!(rolled["report"]["rolled_back"], true);
+    let final_net = from_wsp(&fs::read_to_string(&out).expect("out")).expect("parse out");
+    assert_eq!(final_net, xor_net(), "原子序列整体回滚");
+}

@@ -26,6 +26,12 @@ impl Behavior {
         })
     }
 
+    /// 从逐样本输出构造（用于脚本条件/线格式）。
+    #[must_use]
+    pub fn from_outputs(outputs: Vec<Vec<Trit>>) -> Self {
+        Self { outputs }
+    }
+
     /// 逐样本输出。
     #[must_use]
     pub fn outputs(&self) -> &[Vec<Trit>] {

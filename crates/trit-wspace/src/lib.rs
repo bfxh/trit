@@ -25,6 +25,7 @@
 //!   [`Trit`] 是唯一的权重单位。
 //! - **编辑层**：[`Edit`] / [`Patch`] 是事务式补丁；[`Journal`] 支持逐位回滚；
 //!   [`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
+//!   [`Script`] 把多个 [`Program`] 组合成原子序列或按行为分支的脚本；
 //!   [`AuditLog`] 把每次编辑记成带哈希链的 JSONL，可验链、可从初始工件重放；
 //!   [`mod@shard`] 把长日志切成带 header 与分片内 oracle 表的多文件，跨片仍是同一条链。
 //! - 程序语义：[`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
@@ -85,7 +86,7 @@
 //! - CLI：`read / verify / patch / repair / diff / merge`，输入 `-` 读 stdin，报告一律 JSON；
 //! - MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、
 //!   `wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、
-//!   `wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards` 十四个工具，
+//!   `wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script` 十五个工具，
 //!   工具参数与返回格式见 [`wire`]。
 //!
 //! 补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
@@ -133,7 +134,7 @@ pub use oracle::{Behavior, Oracle};
 pub use probe::{
     ProbeReport, ProbeSelection, RowEffect, RowImpact, RowScore, probe_rows, probe_rows_adaptive,
 };
-pub use program::{Program, Report};
+pub use program::{Program, Report, Script, ScriptReport};
 pub use repair::{Repair, RepairOptions, repair};
 pub use shard::{Shard, ShardCursor, ShardHeader, ShardReplay, ShardedLog};
 pub use trit::Trit;

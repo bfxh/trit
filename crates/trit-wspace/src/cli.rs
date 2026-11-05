@@ -26,6 +26,7 @@ const USAGE: &str = "\
 trit-wspace <command>
   read <artifact|-> [--out <path>]
   verify <artifact|-> --oracle <json|-> [--limit N]
+  script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
@@ -62,6 +63,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
     match command {
         "read" => cmd_read(&args[1..]),
         "verify" => cmd_verify(&args[1..]),
+        "script" => cmd_script(&args[1..]),
         "patch" => cmd_patch(&args[1..]),
         "apply-candidate" => cmd_apply_candidate(&args[1..]),
         "repair" => cmd_repair(&args[1..]),
@@ -111,6 +113,28 @@ fn cmd_verify(args: &[String]) -> Result<(), String> {
         "signature": format!("{:016x}", Behavior::of(&net, &oracle).map_err(err)?.signature()),
         "summary": wire::net_summary(&net),
         "mismatches": wire::mismatches_value(&net, &oracle, limit).map_err(err)?,
+    }))
+}
+
+fn cmd_script(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    let path = one(
+        &parsed,
+        "script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]",
+    )?;
+    let script_path = value(&parsed, "script")?;
+    let oracle_path = value(&parsed, "oracle")?;
+    no_double_stdin(&[path, script_path, oracle_path])?;
+    let net = load_net(path)?;
+    let oracle = load_oracle(oracle_path)?;
+    let script = wire::script_from_value(&load_json(script_path)?).map_err(err)?;
+    let mut work = net.clone();
+    let report = script.run(&mut work, &oracle).map_err(err)?;
+    write_out(&parsed, &work)?;
+    emit(&json!({
+        "report": wire::script_report_to_value(&report),
+        "summary": wire::net_summary(&work),
+        "artifact": to_wsp(&work),
     }))
 }
 

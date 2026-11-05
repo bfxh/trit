@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：程序组合与条件分支脚本）
+
+- `Script`：把 `Program` 组合成 **原子序列**（默认，任一步失败/回滚则整段恢复原样；
+  `.atomic(false)` 保留已成功步骤）或 **条件分支**（当前完整行为等于 `when` 时走 `then`，
+  否则走可选 `otherwise`）。报告是树形 `ScriptReport`（`steps` / `matched` / `chosen` /
+  `rolled_back` / `final_signature`），`failed()` 统一判定单步未应用、序列回滚、分支失败。
+- 线格式 `type = step | sequence | when`；`behavior` 用完整逐样本输出表示（不是指纹），
+  `wire::script_to_value` / `script_from_value` 往返一致。
+- CLI `script <artifact> --script <json> --oracle <json> [--out]`；MCP `wsp_run_script`
+  （工具 14 → 15）。
+- 读数：break→bad-fix 原子序列失败后两步都回滚（网络逐位等于输入）；`atomic=false` 保留
+  break；条件分支在打坏/未打坏网络上分别走 `then`/`otherwise`，无 `otherwise` 时不动。
+- 测试 128 → 135 + 1 doctest；变异 95 → **102 条，102/102 caught**；test_surface 2,350 → 2,371。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
 ### Added（trit-wspace：分片 manifest + MCP 分页按片发送）
 
 - `ShardManifest`（`manifest.rs`）：记录每片的文件名、序号、起止、链头与**文本摘要**；

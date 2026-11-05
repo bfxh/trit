@@ -1,4 +1,4 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，十四个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，十五个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
@@ -42,7 +42,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 十四个工具。改数量必须同时改测试断言。
+/// 十五个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -170,6 +170,17 @@ pub fn tools() -> Vec<Value> {
             "合并两个同架构工件；aligned=true 时先消隐藏单元置换",
             json!({"a": artifact(), "b": artifact(), "aligned": {"type": "boolean"}}),
             &["a", "b"],
+        ),
+        tool(
+            "wsp_run_script",
+            "执行组合脚本（原子序列 / 按行为条件分支），失败整体回滚",
+            json!({
+                "artifact": artifact(),
+                "path": {"type": "string"},
+                "script": {"type": "object", "description": "step / sequence / when 树"},
+                "oracle": {"type": "object"},
+            }),
+            &["script", "oracle"],
         ),
         tool(
             "wsp_shard",
@@ -437,6 +448,19 @@ impl Mcp {
                 )
                 .map_err(err)?;
                 Ok(wire::localize_report_to_value(&report))
+            }
+            "wsp_run_script" => {
+                let net = load(args)?;
+                let script = wire::script_from_value(args.get("script").ok_or("需要 script")?)
+                    .map_err(err)?;
+                let oracle = required_oracle(args)?;
+                let mut work = net;
+                let report = script.run(&mut work, &oracle).map_err(err)?;
+                Ok(json!({
+                    "report": wire::script_report_to_value(&report),
+                    "summary": wire::net_summary(&work),
+                    "artifact": to_wsp(&work),
+                }))
             }
             "wsp_shard" => {
                 let raw = args.get("log").and_then(Value::as_str).ok_or("需要 log")?;

@@ -60,6 +60,7 @@ python scripts/module_budget.py
 ```bash
 trit-wspace read   xor.wsp
 trit-wspace verify xor.wsp --oracle xor.json
+trit-wspace script xor.wsp --script repair.json --oracle xor.json --out fixed.wsp
 trit-wspace patch  xor.wsp --patch break.json --oracle xor.json --require-after --out fixed.wsp
 trit-wspace apply-candidate broken.wsp --candidate fix.json --oracle xor.json --require-after --out fixed.wsp --log audit.jsonl
 trit-wspace repair broken.wsp --oracle xor.json --max-edits 2 --out fixed.wsp
@@ -112,7 +113,7 @@ trit-wspace mcp
 }
 ```
 
-十四个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`。
+十五个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
@@ -135,6 +136,10 @@ trit-wspace mcp
 `wsp_localize` 做两级定位：先自适应选承重行，再在每行内逐位置（权重 + 偏置）试替代值、
 整验证集复核；`max_trits` 超了按位置的**实际活跃次数**选点（权重为零或入参恒为零的位置得 0 分），
 报告标 `selection=adaptive` / `sampled` / `stride=0`。
+
+`wsp_run_script` 执行组合脚本：`sequence` 默认原子（任一步失败/回滚则整段恢复原样，
+`atomic=false` 保留已成功步骤），`when` 按当前行为（完整逐样本输出）选择 `then` / `otherwise`，
+报告是树形的 `steps` / `matched` / `chosen`。CLI 对应 `script`。
 
 `wsp_audit` 校验 JSONL 编辑日志的哈希链；给了初始工件就顺带重放并核对最终校验和。
 `wsp_shard` 把日志切成带 header 的分片：每片首行声明序号/起止/父子链头，并在 `oracles`

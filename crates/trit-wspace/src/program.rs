@@ -79,6 +79,18 @@ impl Program {
         &self.patch
     }
 
+    /// 前置行为条件（若有）。
+    #[must_use]
+    pub fn before(&self) -> Option<&Behavior> {
+        self.before.as_ref()
+    }
+
+    /// 后置行为条件（若有）。
+    #[must_use]
+    pub fn after(&self) -> Option<&Behavior> {
+        self.after.as_ref()
+    }
+
     /// 执行：前置检查 → 应用补丁 → 后置检查（失败回滚）。
     pub fn run(&self, net: &mut Net, oracle: &Oracle) -> Result<Report> {
         let before = Behavior::of(net, oracle)?;
@@ -119,5 +131,201 @@ impl Program {
             final_signature,
             cost,
         })
+    }
+}
+
+/// 组合脚本：单步、原子序列或按行为选择分支。
+#[derive(Clone, Debug, PartialEq)]
+pub struct Script {
+    pub(crate) kind: Kind,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) enum Kind {
+    Step(Program),
+    Sequence {
+        name: String,
+        atomic: bool,
+        steps: Vec<Script>,
+    },
+    When {
+        name: String,
+        expected: Behavior,
+        then: Box<Script>,
+        otherwise: Option<Box<Script>>,
+    },
+}
+
+/// 脚本执行报告（树形）。
+#[derive(Clone, Debug, PartialEq)]
+pub enum ScriptReport {
+    /// 单步报告。
+    Step(Report),
+    /// 序列报告。
+    Sequence {
+        /// 名字。
+        name: String,
+        /// 失败时是否整体回滚。
+        atomic: bool,
+        /// 各步报告。
+        steps: Vec<ScriptReport>,
+        /// 本次是否发生整体回滚。
+        rolled_back: bool,
+        /// 结束后的行为指纹。
+        final_signature: u64,
+    },
+    /// 条件分支报告。
+    When {
+        /// 名字。
+        name: String,
+        /// 条件是否成立（选了 `then`）。
+        matched: bool,
+        /// 实际执行的子脚本（没有分支时为 `None`）。
+        chosen: Option<Box<ScriptReport>>,
+        /// 结束后的行为指纹。
+        final_signature: u64,
+    },
+}
+
+impl ScriptReport {
+    /// 结束后的行为指纹。
+    #[must_use]
+    pub fn final_signature(&self) -> u64 {
+        match self {
+            Self::Step(report) => report.final_signature,
+            Self::Sequence {
+                final_signature, ..
+            }
+            | Self::When {
+                final_signature, ..
+            } => *final_signature,
+        }
+    }
+
+    /// 是否失败（单步未应用/回滚，或原子序列回滚，或选中分支失败）。
+    #[must_use]
+    pub fn failed(&self) -> bool {
+        match self {
+            Self::Step(report) => !report.applied || report.rolled_back,
+            Self::Sequence { rolled_back, .. } => *rolled_back,
+            Self::When { chosen, .. } => chosen.as_ref().is_some_and(|report| report.failed()),
+        }
+    }
+}
+
+impl Script {
+    /// 单步脚本。
+    #[must_use]
+    pub fn step(program: Program) -> Self {
+        Self {
+            kind: Kind::Step(program),
+        }
+    }
+
+    /// 原子序列：任一步失败/回滚，整段恢复原样。
+    #[must_use]
+    pub fn sequence(name: impl Into<String>, steps: Vec<Self>) -> Self {
+        Self {
+            kind: Kind::Sequence {
+                name: name.into(),
+                atomic: true,
+                steps,
+            },
+        }
+    }
+
+    /// 设置序列失败时是否整体回滚（对非序列无影响）。
+    #[must_use]
+    pub fn atomic(mut self, atomic: bool) -> Self {
+        if let Kind::Sequence {
+            atomic: current, ..
+        } = &mut self.kind
+        {
+            *current = atomic;
+        }
+        self
+    }
+
+    /// 条件分支：当前行为等于 `expected` 时执行 `then`，否则执行 `otherwise`（可选）。
+    #[must_use]
+    pub fn when(
+        name: impl Into<String>,
+        expected: Behavior,
+        then: Self,
+        otherwise: Option<Self>,
+    ) -> Self {
+        Self {
+            kind: Kind::When {
+                name: name.into(),
+                expected,
+                then: Box::new(then),
+                otherwise: otherwise.map(Box::new),
+            },
+        }
+    }
+
+    /// 名字（单步用程序名）。
+    #[must_use]
+    pub fn name(&self) -> &str {
+        match &self.kind {
+            Kind::Step(program) => program.name(),
+            Kind::Sequence { name, .. } | Kind::When { name, .. } => name,
+        }
+    }
+
+    /// 执行脚本；序列按 `atomic` 决定失败后是否回滚已执行的步骤。
+    pub fn run(&self, net: &mut Net, oracle: &Oracle) -> Result<ScriptReport> {
+        match &self.kind {
+            Kind::Step(program) => Ok(ScriptReport::Step(program.run(net, oracle)?)),
+            Kind::Sequence {
+                name,
+                atomic,
+                steps,
+            } => {
+                let snapshot = atomic.then(|| net.clone());
+                let mut reports = Vec::with_capacity(steps.len());
+                let mut failed = false;
+                for step in steps {
+                    let report = step.run(net, oracle)?;
+                    failed = report.failed();
+                    reports.push(report);
+                    if failed {
+                        break;
+                    }
+                }
+                let rolled_back = failed && *atomic;
+                if let (true, Some(snapshot)) = (rolled_back, snapshot) {
+                    *net = snapshot;
+                }
+                Ok(ScriptReport::Sequence {
+                    name: name.clone(),
+                    atomic: *atomic,
+                    steps: reports,
+                    rolled_back,
+                    final_signature: Behavior::of(net, oracle)?.signature(),
+                })
+            }
+            Kind::When {
+                name,
+                expected,
+                then,
+                otherwise,
+            } => {
+                let matched = &Behavior::of(net, oracle)? == expected;
+                let chosen = if matched {
+                    Some(Box::new(then.run(net, oracle)?))
+                } else if let Some(otherwise) = otherwise {
+                    Some(Box::new(otherwise.run(net, oracle)?))
+                } else {
+                    None
+                };
+                Ok(ScriptReport::When {
+                    name: name.clone(),
+                    matched,
+                    chosen,
+                    final_signature: Behavior::of(net, oracle)?.signature(),
+                })
+            }
+        }
     }
 }
