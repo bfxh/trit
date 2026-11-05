@@ -350,5 +350,29 @@
     "new": "        let children: Vec<String> = (0..nodes.len()).map(|i| i.to_string()).collect();",
     "pkg": "trit-parts",
     "filter": "glb::tests::turntable_animation_adds_root_and_keyframes"
+  },
+  {
+    "name": "objlabel: pass_index 不解析（标签全对到 0）",
+    "file": "crates/trit-parts/src/objlabel.rs",
+    "old": "            pass_index: number(seg, \"pass_index\").unwrap_or(0.0) as u32,",
+    "new": "            pass_index: 0,",
+    "pkg": "trit-parts",
+    "filter": "objlabel::tests::parses_labels_by_pass_index"
+  },
+  {
+    "name": "objlabel: 质心误差不取平方根",
+    "file": "crates/trit-parts/src/objlabel.rs",
+    "old": "    (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt()",
+    "new": "    d[0] * d[0] + d[1] * d[1] + d[2] * d[2]",
+    "pkg": "trit-parts",
+    "filter": "objlabel::tests::centroid_error_is_euclidean"
+  },
+  {
+    "name": "objects-verify: kind 不比对",
+    "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
+    "old": "    o.kind.as_deref() == Some(l.kind.as_str())",
+    "new": "    true",
+    "pkg": "trit-parts",
+    "filter": "tests::splat_and_stat_comparisons_are_deciding"
   }
 ]
