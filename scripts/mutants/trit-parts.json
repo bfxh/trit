@@ -374,5 +374,29 @@
     "new": "    true",
     "pkg": "trit-parts",
     "filter": "tests::splat_and_stat_comparisons_are_deciding"
+  },
+  {
+    "name": "objlabel: gt_diag 不取平方根",
+    "file": "crates/trit-parts/src/objlabel.rs",
+    "old": "    2.0 * (h[0] * h[0] + h[1] * h[1] + h[2] * h[2]).sqrt()",
+    "new": "    2.0 * (h[0] * h[0] + h[1] * h[1] + h[2] * h[2])",
+    "pkg": "trit-parts",
+    "filter": "objlabel::tests::gt_diag_is_rotation_invariant"
+  },
+  {
+    "name": "objects-verify: 对角线比不比对",
+    "file": "crates/trit-parts/src/bin/parts_objects_verify.rs",
+    "old": "        && o.diag_ratio\n            .map(|r| (r - ratio).abs() <= 1e-6)\n            .unwrap_or(false)",
+    "new": "        && true",
+    "pkg": "trit-parts",
+    "filter": "tests::splat_and_stat_comparisons_are_deciding"
+  },
+  {
+    "name": "objlabel: part_cube 基准半边长用错（当世界半尺寸）",
+    "file": "crates/trit-parts/src/objlabel.rs",
+    "old": "        \"part_cube\" => [0.0275 * s[0], 0.0275 * s[1], 0.0275 * s[2]],",
+    "new": "        \"part_cube\" => [s[0], s[1], s[2]],",
+    "pkg": "trit-parts",
+    "filter": "objlabel::tests::gt_diag_is_rotation_invariant"
   }
 ]

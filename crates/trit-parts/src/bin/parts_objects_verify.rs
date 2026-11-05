@@ -82,6 +82,8 @@ struct Obj {
     kind: Option<String>,
     gt_center: Vec<f64>,
     centroid_error: Option<f64>,
+    gt_diag: Option<f64>,
+    diag_ratio: Option<f64>,
 }
 
 fn objects(txt: &str) -> Vec<Obj> {
@@ -111,22 +113,35 @@ fn objects(txt: &str) -> Vec<Obj> {
             kind: field(seg, "kind"),
             gt_center: nums(seg, "gt_center"),
             centroid_error: number(seg, "centroid_error"),
+            gt_diag: number(seg, "gt_diag"),
+            diag_ratio: number(seg, "diag_ratio"),
         })
     }
     out
 }
 
 /// 清单里的标签三件套（kind / gt_center / centroid_error）必须与 GT 和重算值一致。
-fn label_ok(o: &Obj, l: Option<&trit_parts::objlabel::Label>, cen: [f64; 3]) -> bool {
+fn label_ok(
+    o: &Obj,
+    l: Option<&trit_parts::objlabel::Label>,
+    cen: [f64; 3],
+    our_diag: f64,
+) -> bool {
     let Some(l) = l else {
         return false;
     };
     let err = trit_parts::objlabel::centroid_error(cen, l.center);
+    let gd = trit_parts::objlabel::gt_diag(l);
+    let ratio = our_diag / gd.max(1e-9);
     o.kind.as_deref() == Some(l.kind.as_str())
         && o.gt_center.len() == 3
         && (0..3).all(|k| (o.gt_center[k] - l.center[k]).abs() <= 1e-9)
         && o.centroid_error
             .map(|e| (e - err).abs() <= 1e-6)
+            .unwrap_or(false)
+        && o.gt_diag.map(|g| (g - gd).abs() <= 1e-9).unwrap_or(false)
+        && o.diag_ratio
+            .map(|r| (r - ratio).abs() <= 1e-6)
             .unwrap_or(false)
 }
 
@@ -296,11 +311,13 @@ fn main() {
         }
         sort_splats(&mut want);
         let (lo, hi, cen) = stats(&got);
+        let our_diag =
+            ((hi[0] - lo[0]).powi(2) + (hi[1] - lo[1]).powi(2) + (hi[2] - lo[2]).powi(2)).sqrt();
         let ok_label = match &labels {
             None => true,
             Some(ls) => {
                 let l = ls.iter().find(|l| l.pass_index == o.id);
-                label_ok(o, l, cen)
+                label_ok(o, l, cen, our_diag)
             }
         };
         labels_all &= ok_label;
@@ -442,6 +459,8 @@ mod tests {
             kind: None,
             gt_center: Vec::new(),
             centroid_error: None,
+            gt_diag: None,
+            diag_ratio: None,
         };
         assert!(stats_match(&o, lo, hi, cen));
         assert!(!stats_match(&o, lo, [hi[0] + 0.01, hi[1], hi[2]], cen));
@@ -451,18 +470,38 @@ mod tests {
             center: cen,
             scale: [1.0; 3],
         };
+        let our_diag =
+            ((hi[0] - lo[0]).powi(2) + (hi[1] - lo[1]).powi(2) + (hi[2] - lo[2]).powi(2)).sqrt();
+        let gd = trit_parts::objlabel::gt_diag(&lab);
         let mut with_lab = o.clone();
         with_lab.kind = Some("sphere".into());
         with_lab.gt_center = cen.to_vec();
         with_lab.centroid_error = Some(0.0);
-        assert!(label_ok(&with_lab, Some(&lab), cen));
-        assert!(!label_ok(&o, Some(&lab), cen), "缺标签字段必须判红");
+        with_lab.gt_diag = Some(gd);
+        with_lab.diag_ratio = Some(our_diag / gd);
+        assert!(label_ok(&with_lab, Some(&lab), cen, our_diag));
+        assert!(
+            !label_ok(&o, Some(&lab), cen, our_diag),
+            "缺标签字段必须判红"
+        );
         let mut wrong = with_lab.clone();
         wrong.kind = Some("torus".into());
-        assert!(!label_ok(&wrong, Some(&lab), cen), "kind 不符必须判红");
+        assert!(
+            !label_ok(&wrong, Some(&lab), cen, our_diag),
+            "kind 不符必须判红"
+        );
         let mut wrong = with_lab.clone();
         wrong.centroid_error = Some(0.5);
-        assert!(!label_ok(&wrong, Some(&lab), cen), "质心误差不符必须判红");
+        assert!(
+            !label_ok(&wrong, Some(&lab), cen, our_diag),
+            "质心误差不符必须判红"
+        );
+        let mut wrong = with_lab.clone();
+        wrong.diag_ratio = Some(9.0);
+        assert!(
+            !label_ok(&wrong, Some(&lab), cen, our_diag),
+            "对角线比不符必须判红"
+        );
     }
 
     #[test]

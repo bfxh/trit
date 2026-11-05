@@ -123,9 +123,17 @@ pub(crate) fn objects_export_cmd(argv: &[String]) {
                 .find(|l| l.pass_index == id)
                 .unwrap_or_else(|| fail(&format!("对象 {id} 在 objects.json 里没有标签")));
             let err = trit_parts::objlabel::centroid_error(cen, l.center);
-            println!("  标签 {}，质心误差 {err:.4} m", l.kind);
+            let gd = trit_parts::objlabel::gt_diag(l);
+            let our_diag =
+                ((hi[0] - lo[0]).powi(2) + (hi[1] - lo[1]).powi(2) + (hi[2] - lo[2]).powi(2))
+                    .sqrt();
+            let ratio = our_diag / gd.max(1e-9);
+            println!(
+                "  标签 {}，质心误差 {err:.4} m，对角线比 {ratio:.3}",
+                l.kind
+            );
             format!(
-                ", \"kind\": {}, \"gt_center\": [{}, {}, {}], \"centroid_error\": {err}",
+                ", \"kind\": {}, \"gt_center\": [{}, {}, {}], \"centroid_error\": {err}, \"gt_diag\": {gd}, \"diag_ratio\": {ratio}",
                 trit_parts::partsrun::json_str(&l.kind),
                 l.center[0],
                 l.center[1],
