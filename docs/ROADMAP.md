@@ -38,9 +38,12 @@
 
 ## 4. 排序
 
-- **本周**：`trit-bench` 立项吃掉那 5 份重复 bench（并存必须在 `layers.json` 的 `capabilities` 里带数字读数）；
+- **本周**：~~`trit-bench` 立项吃掉那 5 份重复 bench~~ **已做**（PR #299；`layers.json` 的 `capabilities`
+  登记了 `bench-timing-harness`，两份未迁的手写档各带实测差与保留理由——"并存"这条已按口径办）。
   评测协议从 `trit-parts` 下沉 `trit-learn`；watched literals（靶子：匹配族 20 对起只有 DPLL 出得了数，
-  µs/节点 67.6→426.7 同比子句数）。
+  µs/节点 10.7→47.9 随子句数增长，见 `crates/trit-count/src/dpll.rs` 头部）。
+  **已被消融否证的路线**：省 `decompose`/拷贝不是下一刀——去掉分解后 12 对从 4.7 ms/323 节点涨到
+  1807 ms/729,059 节点（×384），分解的开销跟它省下的搜索不在同一量级。
 - **下月**：`trit-mv` → `trit-ir` → `trit-num`。
 - **择期**：`trit-tools` 拆分；改名（顺序见 LAYERS §6，外部 5 面证据已列全）。
 
