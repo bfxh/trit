@@ -2,6 +2,364 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：跨片 oracle 表复用 + 三值任务向量）
+
+- 分片 header 新增 `oracle_parent` + 增量 `oracles`：后续分片只写**新增**验证集，前面的直接复用；
+  解析时把父表拼成有效表（记录仍用 `oracle_index`），检查点也携带有效表以便续放；
+  `verify_shard` 核对父指针、父表前缀与增量摘要。
+- `TaskVector`（`task.rs`）：`base → tuned` 的 trit/偏置差分（忽略 scale 标尺），带基准校验和；
+  `merge_tasks` 按坐标对**目标 trit**投票：票和取符号、平票保留基准、全体投 0 取 0。
+  CLI `task-merge <base> <tuned>...`；MCP `wsp_task_merge`（工具 15 → 16）。
+- 读数：3 条共享验证集的日志切 2 片后，第二片 header `oracle_parent=0`、`oracles=[]`，
+  文本里不再出现第二份验证集；检查点续放仍解析继承表。disjoint/consensus/tie/majority
+  四类投票与基准校验均有断言。
+- 测试 137 → 146 + 1 doctest；变异 111 → **123 条，123/123 caught**；test_surface 2,282 → 2,319（合并 main 新增测试后）。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
+### Added（trit-wspace：分片检查点与续放）
+
+- `Checkpoint`：分片边界处的工件 + 下一个分片号/已消费条数/链头 + 应用/回滚/跳过/行为核对计数；
+  `ShardReplay::checkpoint` 取点、`ShardReplay::resume` 续放；续放报告的计数与整段重放一致。
+- CLI `audit-shards` 新增 `--checkpoint-every N --checkpoint-dir D`（写 `checkpoint-NNN.json`）
+  与 `--resume <checkpoint>`（先流式验前缀链、比对条数/链头，再从检查点工件续放）。
+- MCP `wsp_audit_shards` 接受 `checkpoint` 与 `checkpoint_every`，返回 `resumed` 与 `checkpoints`。
+- 读数：3 片日志在首片后取点续放，报告逐项等于整段重放；检查点链头/条数/工件被改都会报错；
+  CLI 2 片日志写 2 个检查点并从第 1 个续放到同一最终校验和。
+- 测试 135 → 137 + 1 doctest；变异 102 → **111 条，111/111 caught**；test_surface 2,371 → 2,373（合并 main 移除 trit-vcs 后总表为 2,282）。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
+### Added（trit-wspace：程序组合与条件分支脚本）
+
+- `Script`：把 `Program` 组合成 **原子序列**（默认，任一步失败/回滚则整段恢复原样；
+  `.atomic(false)` 保留已成功步骤）或 **条件分支**（当前完整行为等于 `when` 时走 `then`，
+  否则走可选 `otherwise`）。报告是树形 `ScriptReport`（`steps` / `matched` / `chosen` /
+  `rolled_back` / `final_signature`），`failed()` 统一判定单步未应用、序列回滚、分支失败。
+- 线格式 `type = step | sequence | when`；`behavior` 用完整逐样本输出表示（不是指纹），
+  `wire::script_to_value` / `script_from_value` 往返一致。
+- CLI `script <artifact> --script <json> --oracle <json> [--out]`；MCP `wsp_run_script`
+  （工具 14 → 15）。
+- 读数：break→bad-fix 原子序列失败后两步都回滚（网络逐位等于输入）；`atomic=false` 保留
+  break；条件分支在打坏/未打坏网络上分别走 `then`/`otherwise`，无 `otherwise` 时不动。
+- 测试 128 → 135 + 1 doctest；变异 95 → **102 条，102/102 caught**；test_surface 2,350 → 2,371。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
+### Added（trit-wspace：分片 manifest + MCP 分页按片发送）
+
+- `ShardManifest`（`manifest.rs`）：记录每片的文件名、序号、起止、链头与**文本摘要**；
+  `verify_texts` 核对数量/顺序/条数/链头/摘要。CLI `shard` 写 `manifest.json`，
+  `audit-shards` 有清单时按清单读文件、逐片核对摘要，缺片/清单外分片/内容替换直接报错；
+  无清单时退回按文件名排序。
+- MCP `wsp_shard` 支持 `start` / `limit` 分页（结果带 `total` / `next` / `manifest`），
+  可按片取回；`wsp_audit_shards` 接受 `manifest` 并先核对再验链/重放。
+- 读数：2 片日志分页取回后重放与整日志一致；篡改清单摘要、删片、放额外分片、追加空白
+  均被拒绝。测试 126 → 128 + 1 doctest；变异 87 → **95 条，95/95 caught**；
+  test_surface 台账 2,348 → 2,350。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
+### Added（trit-wspace：分片流式校验与重放）
+
+- `ShardCursor`：逐个 `push(text)` 解析并验链（序号、父链头、`count`、逐条 `chain`、本片
+  `head`），读完即可丢弃分片；`entries` / `head` 随读随记。
+- `ShardReplay`：读一片、校验一片、应用一片；内部用增量 `ReplayState`，不保留分片文本，
+  `finish()` 给出与原日志一致的 `ReplayReport` 与最终工件。
+- CLI `audit-shards` 改为流式逐文件读取，新增 `--out <path>` 直接落盘流式重放的最终工件。
+- 读数：2 片/3 条日志流式重放与整日志重放报告逐项相同（applied 2 / skipped 1 / 校验和一致）；
+  乱序分片、篡改父链头在游标处即被拒绝。
+- 测试 124 → 126 + 1 doctest；变异 84 → **87 条，87/87 caught**；test_surface 台账 2,333 → 2,348。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
+### Added（trit-wspace：审计日志分片 + 分片内 oracle 表）
+
+- `AuditLog::into_shards(max_entries)` → `ShardedLog`：长日志按条数切分，每片首行是
+  `v=2 / kind=wspace-shard` 的 header（`shard` / `first_seq` / `count` / 父 `prev` / 本片
+  `head` / `oracles` 表 / `oracles_digest`）。记录行保持 v1 链字段，验证集改成
+  `oracle_index` 指向本片表项（同一验证集每片只存一次）。
+- `ShardedLog::verify_chain` 做跨片校验：分片序号/序号起止连续、父链头与上一片 `head`
+  衔接、每条 `chain` 可重算、表无重复/无未引用项/摘要匹配；`replay_net` 跨片重放并核对
+  权重链与行为链。
+- CLI `shard <log> --size N --out <dir>`（原子写入 `shard-NNN.jsonl`）、
+  `audit-shards <dir> [--artifact <initial>]`；MCP `wsp_shard` / `wsp_audit_shards`
+  （工具 12 → 14）。
+- 读数：3 条共享同一验证集的日志切 2 片，每片 oracle 表 1 项；记录行不再内嵌 `oracle`；
+  分片重放最终校验和与单文件日志一致。篡改 header `prev`/`head`/`count`、oracle 表内容、
+  丢片/乱序、`oracle_index` 越界均报错。
+- 测试 117 → 124 + 1 doctest；变异 75 → **84 条，84/84 caught**；test_surface 台账 2,323 → 2,333。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene 全过。
+
+### Added（trit-wspace：行内定位按活跃度选点）
+
+- `localize_row` 的 `max_trits` 预算不再按固定步长抽样：先统计每个位置在样本上的
+  **实际活跃次数**（权重为零、或该列输入恒为零的位置得 0 分；隐藏层用上一层激活，
+  不是原始输入），按分数选点并仍按位置顺序探测；报告新增 `selection=adaptive` /
+  `stride=0`，全量时 `selection=all`。
+- 读数：权重 `[1,1]`、偏置 0 的两列网络在 `max_trits=2` 下，固定步长只看 `{col0, bias}`
+  会漏掉被破坏的 col1；改为活跃度选点后探到 col1 并给出 `after_loss=0` 的修复。
+  恒零输入列与隐藏层激活两条反例分别钉住打分输入。
+- 测试 115 → 117 + 1 doctest；变异 71 → **75 条，75/75 caught**；test_surface 台账 2,321 → 2,323。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene 全过。
+
+### Added（trit-wspace：pilot 消融校准的选行）
+
+- `probe_rows_adaptive` 升级为 **pilot 校准**：每个隐层先 pilot 一条静态分数最高的行，
+  实测清零/取反的 `changed` 作为该层的校准权重；消融无效的 pilot 行直接丢弃，
+  其余预算按“活跃优先 → 层权重 → 静态分数”填满；输出层行仍钉住。
+- `ProbeReport` 新增 `pilot_rows` / `pilot_kept`（线格式同名）。
+- 读数：构造“高活跃但下游无效”的行——pilot 把它丢掉，`budget=2` 选到真正承重的
+  layer1 r0；`budget=3` 再补 layer0 r0；全零行不选。
+- 测试 114 → 115 + 1 doctest；变异 67 → **71 条，71/71 caught**；test_surface 台账 2,320 → 2,321。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
+### Added（trit-wspace：行内 trit 定位）
+
+- `localize_row`：在单行内逐位置（权重 + 偏置）试替代值，整验证集复核（`after_loss` /
+  `gain` / `changed` / `fixed` / `broken`）；`max_trits` 超了按固定步长抽样并标 `sampled` / `stride`。
+- `localize`：两级读取——自适应行探针选 top 行，再对每行做行内定位。
+- CLI `localize <artifact> --oracle <json> [--rows K] [--row-budget N] [--max-trits N] [--top-trits K]`；
+  MCP `wsp_localize`（工具 11 → 12）。
+- 读数：打坏的 XOR row0 的 top trit `after_loss=0`；`[6,1]` 的 7 个位置在 `max_trits=3` 下
+  `stride=3`、`probed=3`、`evaluated=6`；两级定位选到活跃 row0、排除全零 row1。
+- 测试 109 → 114 + 1 doctest；变异 61 → **67 条，67/67 caught**；test_surface 台账 2,315 → 2,320。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
+### Added（trit-wspace：行级探针的自适应选行）
+
+- `probe_rows_adaptive` / CLI `--adaptive` / MCP `probe.adaptive`：预算不足时不再固定步长，
+  先用一次前向统计每行 pre-activation 的**活跃次数与裕量**，优先探“真正在工作”的行，
+  并**钉住输出层行**；报告 `selection=adaptive`、`stride=0`，仍是明确标注的抽样。
+- `Net::pre_activations`：返回每层每行的整数 pre-activation，供选行/后续读取使用。
+- 读数：权重非零但在 oracle 上从不激活的行不会被选（专门构造的 activity 用例）；
+  全零行被排除；`budget=1` 时只选输出行。
+- 测试 103 → 109 + 1 doctest（新增 1 条 pre-activation、4 条自适应选行、1 条 MCP 自适应）；
+  变异 56 → **61 条，61/61 caught**；test_surface 台账 2,309 → 2,315。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
+### Added（trit-wspace：行级消融探针 / 大网读取）
+
+- `probe_rows`：逐行清零 / 取反，测整验证集上的行为漂移（`changed` / `fixed` / `broken` /
+  `after_loss` / `gain`）。成本 `2×行数×样本`，与行宽无关；`budget>0` 且超预算时按固定步长
+  均匀抽样，报告里明确标 `sampled` / `stride`，不做静默截断。
+- `Oracle::sampled_behavior`：没有验证集时，用网络当前行为生成确定性随机探针集
+  （同一 seed 同结果，`before_loss=0`），供大网读取使用。
+- CLI `probe <artifact> --oracle <json> [--budget N] [--top K]`；MCP `wsp_probe`（工具 10 → 11）。
+- 读数：XOR 输出行清零 `changed=4`、`after_loss=4`；`[2,5,4]` 的 9 行在 `budget=3` 下
+  `stride=3`、`probed_rows=3`，选中 `(0,0)/(0,3)/(1,1)`。
+- 测试 97 → 103 + 1 doctest（新增 5 条探针回放/预算/采样验证集 + 1 条 MCP 探针）；
+  变异 51 → **56 条，56/56 caught**；test_surface 台账 2,278 → 2,284。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
+### Added（trit-wspace：单样本解释）
+
+- `explain_sample`：先对全部候选只做**这一个样本**的前向，算 `flips` / `fixes`；
+  按 `(fixes, flips, 坐标)` 取 top-K，再做整验证集复核，给出 `after_loss` / `gain`。
+  `top=0` 表示全部复核（小网）。
+- CLI `explain <artifact> --oracle <json> --sample N [--top K]`；MCP `wsp_explain`（工具 9 → 10）。
+- 读数：打坏的 XOR 样本 0 的 top 候选 `fixes=true`、`after_loss=0`、`gain=2`；
+  `[2,3,1]` 网 `top=4` 时 `evaluated=26`、`fully_evaluated=4`。
+- 测试 92 → 97 + 1 doctest（新增 4 条解释不变量 + 1 条 MCP 解释）；变异 46 → **51 条，51/51 caught**；
+  test_surface 台账 2,273 → 2,278。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
+### Added（trit-wspace：候选直用）
+
+- `wire::patch_from_candidate` 接受 `{"edit": {...}}`（单点）或 `{"edits": [...]}`（组合），
+  把 `wsp_propose` 的候选直接变成补丁；空候选、非法 op 都报错。
+- CLI `apply-candidate <artifact> --candidate <json> ...`；MCP `wsp_apply_candidate`（工具 8 → 9）。
+  两者都支持 `require_after`（失败原样回滚）；可选把本次编辑追加进 JSONL 审计日志
+  （MCP 返回更新后的日志文本，不写盘；CLI 的 `--log` 写盘）。
+- `patch` 与 `apply-candidate` 共用同一条执行路径（`perform_patch`），避免两条入口判决分叉。
+- 测试 88 → 92 + 1 doctest（新增 1 条候选线格式、3 条 MCP 直用/回滚/日志）；
+  变异 42 → **46 条，46/46 caught**；test_surface 台账 2,269 → 2,273。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
+### Added（trit-wspace：三编辑批量提议）
+
+- `analyze_triples`：枚举全部**不同坐标**的三点编辑组合，实测 `after_loss` / `fixed` /
+  `broken` / `changed` 并按 `gain` 排序；组合数超过 `max_triples` 报 `CombinationBudget`。
+- CLI `propose --depth 1|2|3 [--max-triples N]`（`--pairs` 仍是 `depth=2` 的别名）；
+  MCP `wsp_propose` 增加 `depth` / `max_triples`，返回 `depth=1|2|3`。
+- 读数：一个真实三点破坏（layer0 三个 trit 置 0）单点与配对都修不到 0，三组合 top 修到 0
+  且可回放；`[2,2,1]` 评估 672 组、`[2,3,1]` 评估 2,288 组（均排除同坐标组合）。
+- 测试 83 → 88 + 1 doctest（新增 4 条三组合不变量/预算 + 1 条 MCP depth=3 回放）；
+  变异 37 → **42 条，42/42 caught**；test_surface 台账 2,264 → 2,269。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
+### Added（trit-wspace：验证集内容寻址）
+
+- 同一验证集只在日志第一条内嵌，后续条目写 `oracle_ref`（向前指向首条序号）；
+  解析时解析成完整 oracle 供重放核对，序列化仍写回 ref。不同验证集不去重。
+- `oracle_ref` 越界 / 自指 / 与内嵌 `oracle` 同时出现都直接判错；指向没有验证集的条目也判错。
+- 测试 80 → 83 + 1 doctest（新增 3 条去重/错引用不变量）；变异 34 → **37 条，37/37 caught**；
+  test_surface 台账 2,260 → 2,264。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
+### Added（trit-wspace：两编辑批量提议）
+
+- `analyze_pairs`：枚举全部**不同坐标**的点编辑对，实测 `after_loss` / `fixed` / `broken` /
+  `changed` 并按 `gain` 排序；候选对数超过 `max_pairs` 直接报 `PairBudget`，不静默截断。
+- CLI `propose --pairs [--max-pairs N]`；MCP `wsp_propose` 增加 `pairs` / `max_pairs`；
+  返回里 `depth=1|2` 区分单点与配对。
+- 读数：两处 trit 破坏后单点提议全部 `after_loss>0`，配对 top 修到 0 并可回放；
+  `[2,3,1]` 的 26 个候选给出 312 对（325 对减去 13 对同坐标）。
+- 测试 80 + 1 doctest（新增 5 条配对不变量/预算/同坐标过滤）；变异 29 → **34 条，34/34 caught**；
+  test_surface 台账 2,254 → 2,260。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py 全过。
+
+### Added（trit-wspace：审计日志的行为链）
+
+- `record_with_oracle`：记录时存下验证集规范 + 前后**行为指纹**；`replay_net` 同时核对
+  权重链（`before`/`after` 校验和）与行为链（`behavior_before`/`behavior_after`），
+  报告新增 `behavior_checked`（实际核对条数）。
+- 防日志爆掉：单条记录最多存 4,096 条验证集，超过直接报错。
+- `recompute_chain`：日志合并/手工修订后重算整条链（不验证已有内容）；
+  行为指纹被改但链重算过时，`replay` 仍会按行为链报错。
+- CLI：`patch --log --oracle` 记行为链；`audit` / `replay` 输出 `behavior_checked`。
+- 测试 74 + 1 doctest（新增 3 条行为链不变量/超限/错配）；变异 24 → **29 条，29/29 caught**；
+  test_surface 台账 2,251 → 2,254。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py 全过。
+
+### Added（trit-wspace：可重放的编辑审计链）
+
+- 新模块 `audit`：JSONL + FNV 哈希链。每条记录 `before` / `after` 校验和、补丁、改动量、
+  `applied` / `rolled_back`、`prev` / `chain`；`verify_chain` 抓篡改与乱序，
+  `replay` / `replay_net` 从初始工件逐条重放并核对每一步校验和。
+- 不变量：回滚条目与未应用条目必须前后同校验和（工件不会被留在半改状态），
+  `record` 直接拒绝不自洽的记录。
+- CLI：`patch --log`、`audit <log> [--artifact]`、`replay <log> --artifact --out`；
+  MCP 新增 `wsp_audit`（工具 7 → 8）。
+- 测试 71 + 1 doctest（新增 7 条审计链不变量、1 条 MCP 审计回放、CLI 追加日志/验链/重放/篡改）；
+  变异 18 → **24 条，24/24 caught**；test_surface 台账 2,233 → 2,251。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py 全过。
+- 本机 release 二进制与 MCP 服务已按新工具清单重装（8 工具）。
+
+### Added（trit-wspace：单点编辑提议器）
+
+- 新模块 `analyze`：枚举全部点编辑（改一个 trit / 偏置），对每条**实测**
+  `after_loss` / `fixed` / `broken` / `changed`，按 `gain` 降序、失配数升序、坐标字典序排序。
+  候选里的数字不是打分估计，回放补丁必须逐项相等。
+- CLI 新增 `propose`；MCP 新增 `wsp_propose`（工具数 6 → 7）。
+- 读数：2-2-1 XOR 被单 trit 打坏后，top 候选 `after_loss=0`；
+  单层 2→1 网络没有任何单编辑能把 XOR 修到 0，但常量输出能把 4 条失配降到 2 条。
+- 测试 59 → **64 + 1 doctest**（新增 4 提议器不变量、1 MCP 提议回放）；
+  变异 13 → **18 条，18/18 caught**；test_surface 台账 2,228 → 2,233。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(672 文件 0 超) /
+  publish_graph / hazard_gate(0 findings) / test_surface 全过。
+- 本机 release 二进制已重装（`~/.qoder/bin/trit-wspace.exe`），MCP 工具清单已含 `wsp_propose`。
+
+### Added（trit-wspace：模型/脚本工具面）
+
+- 新二进制 `trit-wspace`：`read / verify / patch / repair / diff / merge / mcp` 七个子命令；
+  输入 `-` 读 stdin，报告一律 JSON，`--out` 用“临时文件 + 改名”落盘，避免半写。
+- 补丁线格式 `version=1`（`set_trit / set_bias / set_scale / swap_rows / negate_row`），
+  模型可直接生成、人工可逐条审；验证集支持显式 `inputs/outputs` 与紧凑 `domain/vars/table`
+  （boolean 用 `0/1/x`，ternary 用 `-0+`，字典序）。
+- MCP stdio 六个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_repair`、`wsp_diff`、`wsp_merge`。
+  无状态（每次从 WSP1 文本开始）；错误返回 `isError=true`；工具清单 2,381 B / 657 tokens（本机粗估）。
+- `ops` 统一 CLI 与 MCP 的判决路径：补丁仍走事务式 `Patch`/`Program`，修补仍只返回精确解。
+- 测试 38 → **59 + 1 doctest**（新增 3 CLI 端到端、11 MCP、7 线格式）；
+  变异 7 → **13 条，13/13 caught**；test_surface 台账 2,207 → 2,228。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(670 文件 0 超) /
+  publish_graph / hazard_gate(0 findings) / test_surface 全过。
+- 本机已把 release 二进制装到 `~/.qoder/bin/trit-wspace.exe` 并注册为 MCP 服务
+  （`trit-wspace mcp`，注册 key `trit-wspace`）；工具目录需重启/重载 App 后出现。
+
+### Added（trit-wspace：三值权重空间编程）
+
+- 新 crate `crates/trit-wspace`（实验层，`publish = false`）：把权重当源码的
+  **读 / 写 / 验证** 闭环，不做梯度、不改 f32 latent。
+- 表示：`Net`/`Layer`（三值权重 + 三值偏置 + 每行 f32 scale），WSP1 规范文本
+  （每 trit 一个字符、一行一个神经元、FNV-1a 校验和、解析时允许注释但不进规范形式）；
+  `codec_round_trip_is_exact_and_canonical` 钉住逐位往返，改任一 trit 必报校验和错。
+- 编辑：`Edit`（改 trit/偏置/scale、换行、整行取反）+ `Patch`（先整体校验再应用）
+  + `Journal`（逆序逐位撤销）；`Program` 带前置/后置行为条件，后置失败原样回滚。
+- 搜索：`repair` 无梯度求精确补丁。状态空间 `3^权重数 ≤ 20 万` 时按编辑数逐层 **BFS**，
+  首次命中的层数就是最小编辑数；超过后走半径 1/2 穷举 + 按 `(失配数, 裕量能量)` 排序的束搜索。
+  返回 `None` 而不是“差不多对”。
+- 合并：`align` 用贪心行匹配消掉隐藏单元置换对称性，`merge_vote` 做逐点符号投票；
+  `merge_aligned` 对“同一模型换了隐藏单元编号”能精确还原。
+- 关键负结果：从零网络到 2-2-1 XOR 的汉明距离恰好是 **9**（全部 9 个参数都非零，
+  穷举可证），束搜索在 loss 平台上会丢路；改成小状态空间完备 BFS 后才稳定命中。
+  这也说明 WSP 的真正优势是“改已有工件”，不是从零训练。
+- 读数：测试 **37 条 + 1 doctest**（8 单元 + 21 不变量 + 8 编程语义）；
+  2-2-1（带偏置）**穷举 19,683 个配置覆盖全部 16 个二元布尔函数**；
+  任意单 trit 破坏都能被**一条编辑**修回；两处破坏在两条内修回。
+- 变异：`scripts/mutants/trit-wspace.json` 登记 7 条，
+  `mutation_check.py --pkg trit-wspace` **caught 7 / survived 0**（0 崩溃红、0 编译红）。
+- 门禁：`cargo fmt --all --check`、`cargo clippy -p trit-wspace --all-targets -D warnings`、
+  `cargo test -p trit-wspace`、`module_budget`（662 文件 / 0 超预算）、`publish_graph`、
+  `hazard_gate`（0 findings）、`test_surface`（2207 条 / 新增单位已登记）全过。
+- 边界（诚实缺口）：只做符号激活前馈网络；验证是有界穷举；大规模网络没有完备搜索，
+  也没有“自然语言 → 补丁”的模型；外部 WSP 报道（2026-11-02 MIT CSAIL，Astra 读写
+  Qwen3.5-0.8B 原始权重）**未复现**，只借用其接口形态。
+
+### Added（漂移门：校准读数对账，变坏即红）
+
+- `trit-net::netsec::drift`：基线校准读数（`docs/SECURITY-NET-BASELINE.json`，
+  Friday-16-02 200k 行、与 M1 §读数逐位一致）与当前读数按 band 逐条对账
+  ΔFPR/ΔTPR/Δ弃权，**FPR 升 >0.1 / TPR 降 >0.1 / 弃权升 >0.2 任一即红**
+  （阈值可调）；**fail-closed**：缺 band、多 band、坏 JSON、非有限读数、
+  负/NaN 阈值一律红——对不上账的「绿」没有含义。
+- `trit-net drift <基线.json> <当前.json> [--max-*-delta F]`：JSON 判决输出，
+  红则退出码非零。实测：基线自比绿；M1.6 变体对 M1 基线红 rc=1
+  （读数变了必须显式重生成基线并在提交说明里给理由）。
+- 边界（🔴）：只对账不归因——漂移原因（分布漂移/攻击类型/代码回归）是人的
+  工作；CI 接入取决于数据集可得性（335 MB 不入库），流程见
+  `docs/SECURITY-NET.md` §M1.6 §漂移门。
+- 测试 `tests/drift.rs` 10 条（绿路径/三方向触红/缺 band/多 band/坏 JSON/
+  非法阈值/多理由累积）；变异门 +2（FPR 方向写反、结构性问题被忽略）。
+
+### Changed（M1.6 训练器与阈值：mini-batch + 良性尾部，真实读数）
+
+- `trit-net::train`：`TrainOptions.batch_size`——`0/1` = 全批（旧行为）；`k>1` =
+  每轮按 `seed ^ epoch` **确定性洗牌**（Fisher–Yates，同参重跑逐位一致），每
+  `k` 条累积一次梯度更新。CLI `calibrate --batch N`。
+- `trit-net::netsec::calibrate`：`Config.benign_tail: Option<f64>`（CLI
+  `--benign-tail F`）——分位数锚在**良性子集**（`Bias::High` 取
+  `[良性 P(0.5-b), 良性 P(1-tail)]`，Low 镜像），攻击占比高时不再被攻击分布
+  把死区拖走。
+- 真实读数（Friday-16-02 DDoS 日，200k 行，基线与 M1 逐位一致）：**mini-batch
+  是主收益**——band 0.3 段 TPR 0.9378→**0.9987**（同弃权档），band 0 的 FPR
+  0.1446→**0.1101**、精确率 0.8313→0.8645；**良性尾部单独用是负结果**（DDoS 日
+  良性分布窄，FPR 全面变差），与 mini-batch 组合才成立（TPR 0.998 档 FPR
+  0.156）。跨日依旧失效（漂移负结果成立，照实记录）。详见
+  `docs/SECURITY-NET.md` §M1.6。
+- 测试 +3（mini-batch 收敛/确定性/超大 batch 钳制 + 洗牌质量断言；良性尾部
+  分位数锚定纯函数测试 + 死区恢复机制测试）；变异门 +2、修 1（梯度上升锚点
+  随 batch_len 重命名）。
+
+### Added（M3→M2 登记桥：probe 证据半自动进攻击图）
+
+- `trit-net::netsec::probe::attach_probe`：probe 报告 → 攻击图——station 节点（`T`）
+  → 主机节点（label = 字面 IP，证据 = **主机应答**：任一探测拿到 `T`/`F` 即在网，
+  refused 也是主机回的 RST；全 `X` 才是 `X`）→ 服务节点（`ip:port`，证据 =
+  finding 证据，banner 线索跟到 note），边出处 = `tcp-connect`。
+  **分工**：桥只登记探测证据；攻击语义由人随后用 LWW 改写。**幂等**：同报告
+  重跑图不变，新报告 LWW 刷新。
+- `attack::AttackGraph::add_node` 升级为 **LWW**：同 label 重复登记 = 证据与备注
+  后写覆盖（与边一致）——否则桥重跑时节点证据会和最新探测结果打架。
+- `findings_from_jsonl`：探测报告 JSONL 复原，坏行显式报错不静默丢。
+- `trit-net bridge <攻击图.jsonl> <探测报告.jsonl> [--station name]`：更新后的图
+  JSONL 走 stdout。
+- 测试 +4（结构/证据与 reach 贯通含见证、全 X 主机、幂等 + LWW 刷新 + 人工改写、
+  findings JSONL 往返与坏行拒绝）；变异门 +2（主机应答 any→all、服务节点证据
+  被升成 T）。
 ### Fixed（trit-re：N4 加固轮——扫描预算 + 确定性模糊测试，对抗性输入不挂起）
 
 - **审查发现一个真风险**：hex 跳跃模式的回溯在对抗数据上指数爆炸——
@@ -176,7 +534,6 @@
   `tests/pe.rs` COFF 夹具断言更新（total 2→3：隙里 E8 形字节产 Cfg 候选——
   正是补隙语义，精确区间原样）。
 - 变异门 31 条全抓住（本片未新增判决逻辑，登记表不变）。
-=======
 ### Added（仓库边界文档 + 文档卫生门）
 
 - 新 `docs/SCOPE.md`：**主库存什么、不存什么**的一次定案 —— 收进来的四条判据（R1 与具体项目无关、
@@ -303,8 +660,8 @@
 - 依赖：`trit-count`（实验层，`publish = false`）新增依赖 `trit-bdd`（可发布），方向合法，`publish_graph` 通过。
 - 门禁：workspace test **1959 passed / 0 failed**、fmt / clippy / doc / module_budget / publish_graph /
   test_surface（台账 22→28、22→24）/ ci_integrity / ci_budget / hazard_gate 全过。
-  跑第一轮 workspace test 时构建盘被 target 目录占满（`No space left on device` 伪装成 `trit-net` 的链接错），
-  清掉自己已失效的旧 target 目录后重跑才拿到读数——不是代码问题。见 `docs/SCOPE.md` §4 的构建产物口径。
+  跑第一轮 workspace test 时 E: 盘被 target 目录占满（`No space left on device` 伪装成 `trit-net` 链接错），
+  删掉自己已失效的 trit-count 临时 target 目录后重跑才拿到读数——不是代码问题。
 
 ### Added（trit-count：策略文件计数）
 
