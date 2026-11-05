@@ -395,7 +395,8 @@ fn calibration_curve_is_well_formed() {
         train_fraction: 0.75,
         ..Config::default()
     };
-    let (reports, selected) = run(&samples, &config).expect("校准可运行");
+    let out = run(&samples, &config).expect("校准可运行");
+    let (reports, selected) = (out.reports, out.selected);
     assert_eq!(reports.len(), 2);
     assert_eq!(selected.len(), config.features);
     assert!(selected.iter().all(|picked| picked.correlation.is_finite()));
@@ -543,7 +544,8 @@ fn benign_tail_recovers_attacks_hidden_in_the_dragged_dead_zone() {
         batch_size: 16,
         ..Config::default()
     };
-    let (symmetric, selected) = run(&samples, &base).expect("对称带可运行");
+    let symmetric_out = run(&samples, &base).expect("对称带可运行");
+    let (symmetric, selected) = (symmetric_out.reports, symmetric_out.selected);
     // 选维前 8 名必须是信号维 4..=11（相关性并列时按下标序，恰好都是信号维）。
     assert!(
         selected
@@ -556,9 +558,23 @@ fn benign_tail_recovers_attacks_hidden_in_the_dragged_dead_zone() {
         benign_tail: Some(0.05),
         ..base.clone()
     };
-    let (tail, _) = run(&samples, &benign_cfg).expect("良性尾部可运行");
+    let tail = run(&samples, &benign_cfg).expect("良性尾部可运行").reports;
     let s = &symmetric[0];
     let t = &tail[0];
+    // 校准规则可落盘回读（serde round-trip）——「校准结果回写」的机器面
+    let rules_out = run(&samples, &benign_cfg).expect("再跑取规则").band_rules;
+    assert_eq!(rules_out.len(), 1, "benign_cfg 只配了一个 band");
+    let text = serde_json::to_string(&rules_out).expect("序列化");
+    let back: Vec<trit_net::netsec::calibrate::BandRules> =
+        serde_json::from_str(&text).expect("反序列化");
+    assert_eq!(back, rules_out, "规则 round-trip 逐字段一致");
+    assert!(
+        back[0]
+            .rules
+            .iter()
+            .all(|r| r.low.is_finite() && r.high.is_finite()),
+        "规则界必须有限（分位数来自真实数据）"
+    );
     // 恢复机制：对称带把 11 簇整个拖进弃权（attack_abstain 高），良性尾部
     // 把它们捞回确定判决（attack_abstain 归零、覆盖率上升）；TPR 两侧都已
     // 饱和在 1.0（50 簇两边都抓到），差别就在 11 簇。

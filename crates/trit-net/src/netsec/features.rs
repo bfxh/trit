@@ -11,7 +11,7 @@ use trit_core::value::Ternary;
 use super::flow::N;
 
 /// 规则方向。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Bias {
     /// 值越大越可疑：`>= high` 判 `True`，`<= low` 判 `False`。
     High,
@@ -20,7 +20,7 @@ pub enum Bias {
 }
 
 /// 一条阈值规则。`low < high` 必须成立，中间是死区。
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Rule {
     /// 特征下标，对应 [`super::flow::NAMES`]。
     pub feature: usize,

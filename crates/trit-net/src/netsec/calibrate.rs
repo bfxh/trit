@@ -83,6 +83,23 @@ impl Selected {
     }
 }
 
+/// 一个弃权带的校准产物：带宽度 + 该带的规则集（可落盘供 flow 消费）。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BandRules {
+    /// 弃权带宽度。
+    pub band: f64,
+    /// 该带的校准规则集。
+    pub rules: Vec<super::features::Rule>,
+}
+
+/// `run`/`run_split` 的校准产物：曲线 + 选维 + 各带规则（可落盘供 flow 消费）。
+#[derive(Debug, Clone)]
+pub struct CalibOutput {
+    pub reports: Vec<BandReport>,
+    pub selected: Vec<Selected>,
+    pub band_rules: Vec<BandRules>,
+}
+
 /// 单个弃权带的读数。
 #[derive(Debug, Clone)]
 pub struct BandReport {
@@ -265,10 +282,7 @@ pub fn rules_from_benign_tail(
 }
 
 /// 在同一天上切分后跑曲线。
-pub fn run(
-    samples: &[Sample],
-    config: &Config,
-) -> Result<(Vec<BandReport>, Vec<Selected>), String> {
+pub fn run(samples: &[Sample], config: &Config) -> Result<CalibOutput, String> {
     if samples.is_empty() {
         return Err("数据集为空".to_string());
     }
@@ -290,7 +304,7 @@ pub fn run_split(
     train_set: &[Sample],
     test_set: &[Sample],
     config: &Config,
-) -> Result<(Vec<BandReport>, Vec<Selected>), String> {
+) -> Result<CalibOutput, String> {
     if train_set.is_empty() || test_set.is_empty() {
         return Err("训练集或测试集为空".to_string());
     }
@@ -334,11 +348,16 @@ pub fn run_split(
     };
 
     let mut reports = Vec::with_capacity(config.bands.len());
+    let mut band_rules: Vec<BandRules> = Vec::with_capacity(config.bands.len());
     for band in &config.bands {
         let rules = match config.benign_tail {
             Some(tail) => rules_from_benign_tail(&benign_sorted, *band, tail, &selected),
             None => rules_from_quantiles(&sorted, *band, &selected),
         };
+        band_rules.push(BandRules {
+            band: *band,
+            rules: rules.clone(),
+        });
         let (model, report) = fit(&train_set, &rules, config)?;
         reports.push(evaluate(
             test_set,
@@ -349,7 +368,11 @@ pub fn run_split(
             &report,
         )?);
     }
-    Ok((reports, selected))
+    Ok(CalibOutput {
+        reports,
+        selected,
+        band_rules,
+    })
 }
 
 /// 多数类下采样到少数类数量（等距取）。三值 STE 全批训练在不平衡数据上

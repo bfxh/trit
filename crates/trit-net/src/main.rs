@@ -200,6 +200,8 @@ fn usage() -> String {
 fn flow_cmd(args: &[String]) -> Result<(), String> {
     let mut path: Option<String> = None;
     let mut model_path: Option<String> = None;
+    let mut rules_path: Option<String> = None;
+    let mut band: Option<f64> = None;
     let mut budget = DEFAULT_BUDGET;
     let mut index = 0;
     while index < args.len() {
@@ -207,6 +209,15 @@ fn flow_cmd(args: &[String]) -> Result<(), String> {
             "--model" => {
                 index += 1;
                 model_path = Some(args.get(index).ok_or("--model 缺少参数")?.clone());
+            }
+            "--rules" => {
+                index += 1;
+                rules_path = Some(args.get(index).ok_or("--rules 缺少参数")?.clone());
+            }
+            "--band" => {
+                index += 1;
+                let raw = args.get(index).ok_or("--band 缺少参数")?;
+                band = Some(raw.parse().map_err(|_| format!("--band 不是数字: {raw}"))?);
             }
             "--budget" => {
                 index += 1;
@@ -225,6 +236,37 @@ fn flow_cmd(args: &[String]) -> Result<(), String> {
         }
         index += 1;
     }
+    // 校准规则回写消费：calibrate --emit-rules 的 JSON → flow 用已校准规则
+    // 三值化（替代 DEFAULT_RULES 占位）。--band 选带（缺省取第一条）。
+    let calibrated_rules = match rules_path.as_deref() {
+        Some(rules_path) => {
+            let text = std::fs::read_to_string(rules_path)
+                .map_err(|error| format!("读取 {rules_path} 失败：{error}"))?;
+            let band_rules: Vec<netsec::calibrate::BandRules> = serde_json::from_str(&text)
+                .map_err(|error| format!("规则文件 {rules_path} 不合法：{error}"))?;
+            let picked = match band {
+                Some(band) => band_rules
+                    .iter()
+                    .find(|entry| (entry.band - band).abs() < 1e-9)
+                    .ok_or_else(|| {
+                        format!(
+                            "规则文件里没有 band={band}（有：{:?}）",
+                            band_rules
+                                .iter()
+                                .map(|entry| entry.band)
+                                .collect::<Vec<_>>()
+                        )
+                    })?,
+                None => band_rules.first().ok_or("规则文件为空")?,
+            };
+            Some((picked.band, picked.rules.clone()))
+        }
+        None => None,
+    };
+    let rules: &[netsec::features::Rule] = match &calibrated_rules {
+        Some((_, rules)) => rules,
+        None => &netsec::features::DEFAULT_RULES,
+    };
     let path = path.ok_or("flow 需要 PCAP 路径")?;
     let data = std::fs::read(&path).map_err(|error| format!("读取 {path} 失败：{error}"))?;
     let model = match model_path.as_deref() {
@@ -271,7 +313,7 @@ fn flow_cmd(args: &[String]) -> Result<(), String> {
     let flows = table.finish();
     for flow in &flows {
         let values = flow.features.values();
-        let inputs = netsec::features::ternarize(&values, &netsec::features::DEFAULT_RULES);
+        let inputs = netsec::features::ternarize(&values, rules);
         let features = netsec::flow::NAMES
             .iter()
             .zip(values.iter())
@@ -302,7 +344,13 @@ fn flow_cmd(args: &[String]) -> Result<(), String> {
     }
     let mut summary = format!("报文 {packets} 条，流 {} 条", flows.len());
     if model.is_some() {
-        summary.push_str("；规则集 DEFAULT_RULES（未校准）");
+        match &calibrated_rules {
+            Some((band, rules)) => summary.push_str(&format!(
+                "；规则集 已校准（band={band}，{} 条）",
+                rules.len()
+            )),
+            None => summary.push_str("；规则集 DEFAULT_RULES（未校准）"),
+        }
     }
     if !skips.is_empty() {
         summary.push_str("；跳过：");
