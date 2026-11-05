@@ -14,6 +14,8 @@ mod cli;
 mod compose;
 #[path = "parts_3d/features.rs"]
 mod features;
+#[path = "parts_3d/glb.rs"]
+mod glb;
 #[path = "parts_3d/light.rs"]
 mod light;
 #[path = "parts_3d/look.rs"]
@@ -24,6 +26,8 @@ mod material;
 mod meshtex;
 #[path = "parts_3d/objects_export.rs"]
 mod objects_export;
+#[path = "parts_3d/objects_mesh.rs"]
+mod objects_mesh;
 #[path = "parts_3d/occ.rs"]
 mod occ;
 #[path = "parts_3d/preview.rs"]
@@ -46,6 +50,7 @@ mod texstyle;
 use asset::export_asset_cmd;
 use cli::usage;
 use compose::compose_scene_cmd;
+use glb::export_glb_cmd;
 use light::{light_est_cmd, light_fit_cmd, light_relight_cmd, light_relight_normals_cmd};
 use look::{look_cmd, style_cmd};
 use material::{
@@ -53,6 +58,7 @@ use material::{
 };
 use meshtex::mesh_tex_cmd;
 use objects_export::objects_export_cmd;
+use objects_mesh::objects_mesh_cmd;
 use occ::occ_cmd;
 use preview::preview_scene_cmd;
 use recon::{cloud, eval, fuse_cmd, infer, infer_ids_cmd, mesh_cmd};
@@ -75,7 +81,9 @@ fn main() {
         Some("export-scene") => scene_export_cmd(&argv),
         Some("export-objects") => objects_export_cmd(&argv),
         Some("compose-scene") => compose_scene_cmd(&argv),
+        Some("export-object-meshes") => objects_mesh_cmd(&argv),
         Some("preview-scene") => preview_scene_cmd(&argv),
+        Some("export-glb") => export_glb_cmd(&argv),
         Some("splat-export") => splat_export_cmd(&argv),
         Some("align") => align_cmd(&argv),
         Some("obs-split") => obs_split_cmd(&argv),

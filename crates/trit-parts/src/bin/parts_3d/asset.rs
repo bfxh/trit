@@ -47,45 +47,6 @@ struct Tex {
     unseen: usize,
 }
 
-/// 一个 3D 点的颜色：投影到每个视角、深度一致才采样、跨视角平均。返回 0..1。
-fn bake_color(
-    views: &[trit_parts::fuse::View],
-    rgbs: &[(usize, usize, Vec<f32>)],
-    p: [f32; 3],
-) -> Option<[f32; 3]> {
-    let mut acc = [0f64; 3];
-    let mut n = 0u32;
-    for (k, view) in views.iter().enumerate() {
-        let Some((u, v, d)) = view.cam.project(p) else {
-            continue;
-        };
-        if u < 0.0 || v < 0.0 || u >= view.w as f64 || v >= view.h as f64 {
-            continue;
-        }
-        let i = v as usize * view.w + u as usize;
-        if d > view.depth[i] as f64 + 0.02 {
-            continue; // 被遮挡
-        }
-        let (rw, rh, pix) = &rgbs[k];
-        if *rw != view.w || *rh != view.h || i * 3 + 2 >= pix.len() {
-            continue;
-        }
-        for c in 0..3 {
-            acc[c] += pix[i * 3 + c] as f64;
-        }
-        n += 1;
-    }
-    if n == 0 {
-        return None;
-    }
-    let s = 1.0 / n as f64;
-    Some([
-        (acc[0] * s) as f32,
-        (acc[1] * s) as f32,
-        (acc[2] * s) as f32,
-    ])
-}
-
 pub(crate) fn export_asset_cmd(argv: &[String]) {
     let model_path = PathBuf::from(arg(argv, "--model").unwrap_or_else(|| usage()));
     let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
@@ -129,9 +90,13 @@ pub(crate) fn export_asset_cmd(argv: &[String]) {
         }
     };
     let views: Vec<trit_parts::fuse::View> = frames.iter().map(|&f| load(f)).collect();
-    let rgbs: Vec<(usize, usize, Vec<f32>)> = frames
+    let rgbs: Vec<Vec<f32>> = frames
         .iter()
-        .map(|&f| read_rgb(&frame_path(&scene, "rgb", f, "png")).unwrap_or_else(|e| fail(&e)))
+        .map(|&f| {
+            read_rgb(&frame_path(&scene, "rgb", f, "png"))
+                .map(|(_, _, p)| p)
+                .unwrap_or_else(|e| fail(&e))
+        })
         .collect();
     let pts = view_points(&views);
     std::fs::create_dir_all(&out).unwrap_or_else(|e| fail(&format!("{}: {e}", out.display())));
@@ -153,7 +118,7 @@ pub(crate) fn export_asset_cmd(argv: &[String]) {
             .verts
             .iter()
             .map(|v| {
-                bake_color(&views, &rgbs, *v).map(|c| {
+                trit_parts::splat::bake_view_color(&views, &rgbs, *v).map(|c| {
                     [
                         (c[0] * 255.0).round().clamp(0.0, 255.0) as u8,
                         (c[1] * 255.0).round().clamp(0.0, 255.0) as u8,
@@ -177,7 +142,7 @@ pub(crate) fn export_asset_cmd(argv: &[String]) {
                 [0.5, 0.5, 0.5],
                 |_fi, pos| {
                     texels += 1;
-                    let c = bake_color(&views, &rgbs, pos);
+                    let c = trit_parts::splat::bake_view_color(&views, &rgbs, pos);
                     if c.is_none() {
                         unseen_texels += 1;
                     }

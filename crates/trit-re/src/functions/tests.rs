@@ -490,3 +490,61 @@ fn ruling_detail_is_capped_but_counts_are_complete() {
     assert_eq!(report.ruled_sites.len(), MAX_RULED_SITES);
     assert_eq!(report.ruling_nonexec, 100);
 }
+
+/// v4：数据节指针表收割的过滤规则——连续 ≥2 的可执行域指针全收，
+/// 孤立指针仅 16 对齐收，NULL/非可执行域值归零连击。
+#[test]
+fn pointer_table_harvest_filters() {
+    use crate::pe::{PeInfo, Section};
+    let plus = true;
+    let image_base = 0x140000000u64;
+    // 数据节原始内容：VA 串 = [叶子A, 叶子B, 叶子C, 0(空槽), 整数巧合(指向 exec 的孤立非对齐)]
+    let mut table = Vec::new();
+    for rva in [0x1010u64, 0x1030u64, 0x1050u64, 0u64] {
+        table.extend((image_base + rva).to_le_bytes());
+    }
+    table.extend((image_base + 0x1099u64).to_le_bytes()); // 孤立、非 16 对齐
+    let mut data_bytes = table;
+    data_bytes.resize(0x100, 0); // 后续全 0（NULL 槽位，不收）
+    let info = PeInfo {
+        plus,
+        machine: 0x8664,
+        timestamp: 0,
+        subsystem: 3,
+        entry_rva: 0x1000,
+        image_base,
+        sections: vec![Section {
+            name: ".rdata".into(),
+            virtual_size: data_bytes.len() as u32,
+            virtual_address: 0x2000,
+            raw_size: data_bytes.len() as u32,
+            raw_ptr: 0,
+            characteristics: 0x4000_0040, // initialized data，不可执行
+            entropy: None,
+        }],
+        imports: None,
+        exports: Vec::new(),
+        debug_pdb: None,
+        has_security_dir: false,
+        has_signed_data: false,
+        rich_header: false,
+        runtime_functions: None,
+        coff_functions: None,
+        clr_dir_present: false,
+        clr: None,
+        tls_dir_present: false,
+        tls_callbacks: None,
+        overlay: None,
+        headers_size: 0x400,
+    };
+    let exec_bounds = [(0x1000u64, 0x1100u64)];
+    let seeds = super::pe_pointer_seeds(&data_bytes, &info, &exec_bounds);
+    for want in [0x1010u64, 0x1030u64, 0x1050u64] {
+        assert!(seeds.contains(&want), "连击表里的函数指针全收：{seeds:?}");
+    }
+    assert!(
+        !seeds.contains(&0x1099),
+        "孤立非对齐指针 = 整数巧合，丢（宁可丢也不给假起点）"
+    );
+    assert!(!seeds.contains(&0), "NULL 槽位不收");
+}

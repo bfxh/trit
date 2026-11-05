@@ -203,9 +203,12 @@ impl AttackGraph {
         Self::default()
     }
 
-    /// 登记节点；同 `label` 复用已有节点（幂等），返回节点 id。
+    /// 登记节点；同 `label` 重复登记 = **LWW 后写覆盖**（证据与备注被更新，
+    /// 与边的语义一致），返回同一节点 id。
     pub fn add_node(&mut self, label: &str, evidence: Evidence, note: &str) -> u32 {
-        if let Some((id, _)) = self.nodes.iter().find(|(_, node)| node.label == label) {
+        if let Some((id, node)) = self.nodes.iter_mut().find(|(_, node)| node.label == label) {
+            node.evidence = evidence;
+            node.note = note.to_string();
             return *id;
         }
         let id = self.next_id;

@@ -234,8 +234,8 @@
   {
     "name": "layout: 旋转方向反了（z 分量不取负）",
     "file": "crates/trit-parts/src/splat/layout.rs",
-    "old": "                90 => (dz, -dx),",
-    "new": "                90 => (dz, dx),",
+    "old": "        90 => (dz, -dx),\n        180 => (-dx, -dz),",
+    "new": "        90 => (dz, dx),\n        180 => (-dx, -dz),",
     "pkg": "trit-parts",
     "filter": "splat::layout::tests::yaw_swaps_extents_and_transform_matches_bbox"
   },
@@ -262,5 +262,93 @@
     "new": "        .map(|(x, y)| (x * 0.0 + y * 0.0))",
     "pkg": "trit-parts",
     "filter": "tests::pixel_diff_is_deciding"
+  },
+  {
+    "name": "objmesh: 场景顶点不做布局变换",
+    "file": "crates/trit-parts/src/objmesh.rs",
+    "old": "            let q = transform_point(*v, it, pl);",
+    "new": "            let q = *v;",
+    "pkg": "trit-parts",
+    "filter": "objmesh::tests::scene_obj_applies_layout_transforms"
+  },
+  {
+    "name": "objmesh: 只建第一个对象",
+    "file": "crates/trit-parts/src/objmesh.rs",
+    "old": "    for &id in ids {",
+    "new": "    for &id in ids.iter().take(1) {",
+    "pkg": "trit-parts",
+    "filter": "objmesh::tests::builds_one_closed_mesh_per_id"
+  },
+  {
+    "name": "objectmesh-verify: 顶点数不比对",
+    "file": "crates/trit-parts/src/bin/parts_objectmesh_verify.rs",
+    "old": "    e.verts == verts",
+    "new": "    true",
+    "pkg": "trit-parts",
+    "filter": "tests::stats_comparison_is_deciding"
+  },
+  {
+    "name": "rel_path: 不回退上级目录（可搬移清单失效）",
+    "file": "crates/trit-parts/src/partsrun.rs",
+    "old": "    for _ in i..b.len() {\n        out.push(\"..\");\n    }",
+    "new": "    for _ in i..b.len() {}",
+    "pkg": "trit-parts",
+    "filter": "partsrun::tests::rel_path_walks_up_and_down"
+  },
+  {
+    "name": "scene-verify: 嵌套数组不加深（对象数只数到 1）",
+    "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
+    "old": "        } else if ch == '[' {\n            depth += 1;",
+    "new": "        } else if ch == '[' {\n            depth += 0;",
+    "pkg": "trit-parts",
+    "filter": "tests::count_ids_handles_nested_arrays"
+  },
+  {
+    "name": "objectmesh-verify: 相对输入不按包目录解析",
+    "file": "crates/trit-parts/src/bin/parts_objectmesh_verify.rs",
+    "old": "    if p.is_absolute() { p } else { base.join(p) }",
+    "new": "    let _ = base;\n    p",
+    "pkg": "trit-parts",
+    "filter": "tests::relative_inputs_resolve_against_bundle"
+  },
+  {
+    "name": "glb: 法线不归一化",
+    "file": "crates/trit-parts/src/glb.rs",
+    "old": "                [(v[0] / l) as f32, (v[1] / l) as f32, (v[2] / l) as f32]",
+    "new": "                [v[0] as f32, v[1] as f32, v[2] as f32]",
+    "pkg": "trit-parts",
+    "filter": "glb::tests::normals_are_unit_and_parse_obj_roundtrips"
+  },
+  {
+    "name": "glb: 节点平移漏掉 c−R·c",
+    "file": "crates/trit-parts/src/glb.rs",
+    "old": "    let rc = [cx * c + cz * s, -cx * s + cz * c];",
+    "new": "    let rc = [cx, cz];",
+    "pkg": "trit-parts",
+    "filter": "glb::tests::node_trs_matches_layout_transform"
+  },
+  {
+    "name": "glb-verify: 不查总长与文件长度一致",
+    "file": "crates/trit-parts/src/bin/parts_glb_verify.rs",
+    "old": "    if ver != 2 || total != b.len() {",
+    "new": "    if ver != 2 {",
+    "pkg": "trit-parts",
+    "filter": "tests::chunks_and_structure_checks"
+  },
+  {
+    "name": "glb: 转台关键帧角度恒 0",
+    "file": "crates/trit-parts/src/glb.rs",
+    "old": "        let th = k as f32 * std::f32::consts::FRAC_PI_2;",
+    "new": "        let th = 0.0f32;",
+    "pkg": "trit-parts",
+    "filter": "glb::tests::turntable_keys_are_quarter_turns"
+  },
+  {
+    "name": "glb: 根节点把自己也挂成 child",
+    "file": "crates/trit-parts/src/glb.rs",
+    "old": "        let children: Vec<String> = (1..=nodes.len()).map(|i| i.to_string()).collect();",
+    "new": "        let children: Vec<String> = (0..nodes.len()).map(|i| i.to_string()).collect();",
+    "pkg": "trit-parts",
+    "filter": "glb::tests::turntable_animation_adds_root_and_keyframes"
   }
 ]

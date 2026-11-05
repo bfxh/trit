@@ -25,13 +25,16 @@ pub mod imports;
 pub mod json;
 pub mod ledger;
 pub mod pe;
+pub mod sigscan;
 pub mod triage;
 pub mod verdict;
 pub mod witness;
 pub mod xref;
+pub mod yaraparse;
 
 pub use collect::{CollectSummary, collect, module_paths};
 pub use functions::{FuncSource, Function, FunctionCalls, FunctionReport};
+pub use sigscan::{Condition, Pattern, Rule, RuleVerdict, SigReport, SigScan};
 pub use triage::{Triage, analyze};
 pub use verdict::{Hypothesis, Judgment, default_hypotheses, evaluate};
 pub use witness::{Facts, Witness};

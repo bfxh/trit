@@ -22,6 +22,30 @@ pub fn norm(p: &Path) -> String {
     p.to_string_lossy().replace('\\', "/")
 }
 
+/// 把 `p` 写成相对 `base` 的路径（用于可搬移的资产包清单）。
+/// 两边都尽量用绝对路径比较；相对路径原样返回。
+pub fn rel_path(base: &Path, p: &Path) -> String {
+    use std::path::Component;
+    let b: Vec<Component> = base.components().collect();
+    let q: Vec<Component> = p.components().collect();
+    let mut i = 0usize;
+    while i < b.len() && i < q.len() && b[i] == q[i] {
+        i += 1;
+    }
+    let mut out = PathBuf::new();
+    for _ in i..b.len() {
+        out.push("..");
+    }
+    for c in &q[i..] {
+        out.push(c.as_os_str());
+    }
+    if out.as_os_str().is_empty() {
+        ".".into()
+    } else {
+        norm(&out)
+    }
+}
+
 /// `--data` 的展开规则（与 parts-train 历史行为一致）：
 /// 目录含 `rgb/` 就是场景本身，否则取其下含 `rgb/` 的子目录（排序）。
 pub fn expand_scenes(root: &Path) -> Vec<PathBuf> {
@@ -365,5 +389,16 @@ mod tests {
         assert_eq!(json_str("a\"b\\c\n"), "\"a\\\"b\\\\c\\n\"");
         // 非法子命令不应 panic
         let _ = git_out(&["rev-parse", "--definitely-not-a-flag"]);
+    }
+
+    #[test]
+    fn rel_path_walks_up_and_down() {
+        let base = Path::new("D:/a/b");
+        assert_eq!(rel_path(base, Path::new("D:/a/b/c/d.json")), "c/d.json");
+        assert_eq!(
+            rel_path(base, Path::new("D:/a/obj/x.json")),
+            "../obj/x.json"
+        );
+        assert_eq!(rel_path(base, Path::new("D:/a/b")), ".");
     }
 }

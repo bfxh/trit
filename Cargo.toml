@@ -35,7 +35,6 @@ members = [
     "crates/trit-unsafe",
     "crates/trit-procscan",
     "crates/trit-ops",
-    "crates/trit-vcs",
     "crates/trit-capacity",
     "crates/trit-re",
     "crates/trit-immune",

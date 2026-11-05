@@ -60,6 +60,80 @@ fn count_entries(txt: &str, key: &str) -> usize {
     rest[..end].matches("{\"cell\": ").count()
 }
 
+/// 数 `"key": [ {"id": ...` 形式的条目（对象/对象网格清单用这个）。
+/// 取 `"key": [ ... ]` 的数组体（支持嵌套，跳过字符串）。
+fn array_body<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
+    let pat = format!("\"{key}\": [");
+    let i = txt.find(&pat)? + pat.len();
+    let rest = &txt[i..];
+    let mut depth = 1usize;
+    let (mut in_str, mut esc) = (false, false);
+    for (j, ch) in rest.char_indices() {
+        if in_str {
+            if esc {
+                esc = false;
+            } else if ch == '\\' {
+                esc = true;
+            } else if ch == '"' {
+                in_str = false;
+            }
+        } else if ch == '"' {
+            in_str = true;
+        } else if ch == '[' {
+            depth += 1;
+        } else if ch == ']' {
+            depth -= 1;
+            if depth == 0 {
+                return Some(&rest[..j]);
+            }
+        }
+    }
+    None
+}
+
+fn count_ids(txt: &str, key: &str) -> usize {
+    array_body(txt, key)
+        .map(|b| b.matches("{\"id\": ").count())
+        .unwrap_or(0)
+}
+
+fn num_field(txt: &str, key: &str) -> Option<f64> {
+    let pat = format!("\"{key}\": ");
+    let i = txt.find(&pat)? + pat.len();
+    let rest = &txt[i..];
+    let end = rest
+        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == '+'))
+        .unwrap_or(rest.len());
+    rest[..end].parse().ok()
+}
+
+fn sha(p: &Path) -> String {
+    trit_core::fingerprint::file_sha256(p).unwrap_or_default()
+}
+
+struct Sub {
+    json: String,
+}
+
+impl Sub {
+    fn read(p: &Path) -> Self {
+        Sub {
+            json: std::fs::read_to_string(p)
+                .unwrap_or_else(|e| fail(&format!("{}: {e}", p.display()))),
+        }
+    }
+    fn num(&self, k: &str) -> f64 {
+        num_field(&self.json, k).unwrap_or(0.0)
+    }
+    /// 在某个对象体之后找字段（同名键会出现在多处，如 layout 与 composed 的 count）。
+    fn num_after(&self, anchor: &str, k: &str) -> f64 {
+        self.json
+            .find(anchor)
+            .and_then(|i| num_field(&self.json[i..], k))
+            .unwrap_or(0.0)
+    }
+}
+
 pub(crate) fn scene_export_cmd(argv: &[String]) {
     let model = PathBuf::from(arg(argv, "--model").unwrap_or_else(|| usage()));
     let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
@@ -85,6 +159,22 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
     let alpha: f32 = arg(argv, "--alpha")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.8);
+    let full = argv.iter().any(|a| a == "--full");
+    let obj_atlas: usize = arg(argv, "--obj-atlas")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(512);
+    let cov_min: f64 = arg(argv, "--cov-min")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.4);
+    let preview_views: usize = arg(argv, "--preview-views")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8);
+    let preview_res: usize = arg(argv, "--preview-res")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(256);
+    let glb_spin: f32 = arg(argv, "--glb-spin")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
     let parts3d = arg(argv, "--parts-3d")
         .map(PathBuf::from)
         .unwrap_or_else(|| sibling("parts-3d"));
@@ -150,21 +240,125 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
 
     let mm = mesh_dir.join("asset.manifest.json");
     let sm = PathBuf::from(format!("{}.manifest.json", splat_ply.display()));
-    let mtxt =
-        std::fs::read_to_string(&mm).unwrap_or_else(|e| fail(&format!("{}: {e}", mm.display())));
-    let stxt =
-        std::fs::read_to_string(&sm).unwrap_or_else(|e| fail(&format!("{}: {e}", sm.display())));
-    let msha = trit_core::fingerprint::file_sha256(&mm).unwrap_or_default();
-    let ssha = trit_core::fingerprint::file_sha256(&sm).unwrap_or_default();
-    let levels = count_entries(&mtxt, "levels");
-    let count = stxt
-        .find("\"count\": ")
-        .and_then(|i| {
-            let r = &stxt[i + 9..];
-            let e = r.find(|c: char| !c.is_ascii_digit()).unwrap_or(r.len());
-            r[..e].parse::<usize>().ok()
-        })
-        .unwrap_or(0);
+    let mesh_txt = Sub::read(&mm);
+    let splat_txt = Sub::read(&sm);
+    let msha = sha(&mm);
+    let ssha = sha(&sm);
+    let levels = count_entries(&mesh_txt.json, "levels");
+    let count = splat_txt.num("count") as usize;
+
+    // `--full`：对象 → 合成 → 对象网格 → 预览，各写各的清单
+    let mut full_parts = String::new();
+    if full {
+        let obj_dir = out.join("objects");
+        let comp_dir = out.join("compose");
+        let om_dir = out.join("objects-mesh");
+        let prev_dir = out.join("preview");
+
+        run(
+            &parts3d,
+            &[
+                "export-objects".into(),
+                "--scene".into(),
+                scene.display().to_string(),
+                "--frames".into(),
+                frames.clone(),
+                "--cell".into(),
+                format!("{scell}"),
+                "--out".into(),
+                obj_dir.display().to_string(),
+            ],
+            "export-objects",
+        );
+        run(
+            &parts3d,
+            &[
+                "compose-scene".into(),
+                "--objects".into(),
+                obj_dir.display().to_string(),
+                "--out".into(),
+                comp_dir.display().to_string(),
+                "--cov-min".into(),
+                format!("{cov_min}"),
+            ],
+            "compose-scene",
+        );
+        let compose_manifest = comp_dir.join("compose.manifest.json");
+        run(
+            &parts3d,
+            &[
+                "export-object-meshes".into(),
+                "--scene".into(),
+                scene.display().to_string(),
+                "--objects".into(),
+                obj_dir.display().to_string(),
+                "--out".into(),
+                om_dir.display().to_string(),
+                "--cell".into(),
+                format!("{scell}"),
+                "--atlas".into(),
+                obj_atlas.to_string(),
+                "--layout".into(),
+                compose_manifest.display().to_string(),
+            ],
+            "export-object-meshes",
+        );
+        let glb_out = om_dir.join("scene.glb");
+        let mut gargs: Vec<String> = vec![
+            "export-glb".into(),
+            "--objects-mesh".into(),
+            om_dir.display().to_string(),
+            "--out".into(),
+            glb_out.display().to_string(),
+        ];
+        if glb_spin > 0.0 {
+            gargs.push("--spin".into());
+            gargs.push(format!("{glb_spin}"));
+        }
+        run(&parts3d, &gargs, "export-glb");
+        run(
+            &parts3d,
+            &[
+                "preview-scene".into(),
+                "--splat".into(),
+                comp_dir.join("composed.ply").display().to_string(),
+                "--out".into(),
+                prev_dir.display().to_string(),
+                "--views".into(),
+                preview_views.to_string(),
+                "--res".into(),
+                preview_res.to_string(),
+            ],
+            "preview-scene",
+        );
+
+        let obj_m = obj_dir.join("objects.manifest.json");
+        let om_m = om_dir.join("objects-mesh.manifest.json");
+        let prev_m = prev_dir.join("preview.manifest.json");
+        let glb_m = PathBuf::from(format!("{}.manifest.json", glb_out.display()));
+        let obj_txt = Sub::read(&obj_m);
+        let comp_txt = Sub::read(&compose_manifest);
+        let om_txt = Sub::read(&om_m);
+        let _ = Sub::read(&prev_m);
+        let glb_txt = Sub::read(&glb_m);
+        let n_obj = count_ids(&obj_txt.json, "objects");
+        let composed = comp_txt.num_after("\"composed\": {", "count");
+        let cov = comp_txt.num_after("\"gate\": {", "coverage");
+        let n_omesh = count_ids(&om_txt.json, "objects");
+        let n_glb = glb_txt.num("parts");
+        println!(
+            "总包：对象 {n_obj} 个、合成 {composed} 高斯（覆盖 {cov:.3}）、对象网格 {n_omesh} 份、GLB {n_glb} 部件"
+        );
+        full_parts = format!(
+            ", \"objects\": {{\"manifest\": {{\"path\": \"objects/objects.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_obj}}}, \"compose\": {{\"manifest\": {{\"path\": \"compose/compose.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {composed}, \"coverage\": {cov}}}, \"objects_mesh\": {{\"manifest\": {{\"path\": \"objects-mesh/objects-mesh.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_omesh}}}, \"glb\": {{\"manifest\": {{\"path\": \"objects-mesh/scene.glb.manifest.json\", \"sha256\": \"{}\"}}, \"parts\": {n_glb}, \"spin\": {glb_spin}}}, \"preview\": {{\"manifest\": {{\"path\": \"preview/preview.manifest.json\", \"sha256\": \"{}\"}}, \"views\": {preview_views}, \"sheet\": \"preview/preview.png\"}}",
+            sha(&obj_m),
+            sha(&compose_manifest),
+            sha(&om_m),
+            sha(&glb_m),
+            sha(&prev_m),
+        );
+    }
+
     let commit = trit_parts::partsrun::git_out(&["rev-parse", "--short", "HEAD"])
         .trim()
         .to_string();
@@ -176,7 +370,7 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
         .map(|a| trit_parts::partsrun::json_str(&a))
         .collect();
     let body = format!(
-        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-scene\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"mesh_frames\": [{}], \"splat_fit_frames\": [{}], \"splat_eval_frames\": [{}], \"cells\": [{}], \"texture\": {texture}, \"atlas\": {atlas}, \"splat_cell\": {scell}, \"splat_fit\": {sfit_iters}, \"splat_fit_all\": {sfit_all}}},\n  \"scene\": {},\n  \"parts\": {{\"mesh\": {{\"manifest\": {{\"path\": {}, \"sha256\": \"{msha}\"}}, \"levels\": {levels}, \"texture\": {texture}}}, \"splat\": {{\"manifest\": {{\"path\": {}, \"sha256\": \"{ssha}\"}}, \"count\": {count}}}}}\n}}\n",
+        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-scene\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"mesh_frames\": [{}], \"splat_fit_frames\": [{}], \"splat_eval_frames\": [{}], \"cells\": [{}], \"texture\": {texture}, \"atlas\": {atlas}, \"splat_cell\": {scell}, \"splat_fit\": {sfit_iters}, \"splat_fit_all\": {sfit_all}, \"full\": {full}, \"obj_atlas\": {obj_atlas}, \"cov_min\": {cov_min}}},\n  \"scene\": {},\n  \"parts\": {{\"mesh\": {{\"manifest\": {{\"path\": {}, \"sha256\": \"{msha}\"}}, \"levels\": {levels}, \"texture\": {texture}}}, \"splat\": {{\"manifest\": {{\"path\": {}, \"sha256\": \"{ssha}\"}}, \"count\": {count}}}{full_parts}}}\n}}\n",
         trit_parts::partsrun::created_unix(),
         trit_parts::partsrun::json_str(&commit),
         argv_json.join(", "),
@@ -191,8 +385,9 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
     let mp = out.join("scene.manifest.json");
     std::fs::write(&mp, body).unwrap_or_else(|e| fail(&format!("{}: {e}", mp.display())));
     println!(
-        "场景包 {}：网格 {levels} 档、高斯 {count} 个",
-        out.display()
+        "场景包 {}：网格 {levels} 档、高斯 {count} 个{}",
+        out.display(),
+        if full { "（full）" } else { "" }
     );
     println!("总清单 {}", mp.display());
 }
