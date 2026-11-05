@@ -18,24 +18,15 @@ use std::path::{Path, PathBuf};
 use trit_immune::*;
 
 /// xorshift64 确定性随机生成器：种子固定 → 输入序列固定。
-struct Rng(u64);
+// RNG 改吃 trit-fuzz 的 `SeedRng`（同一条 xorshift 13/7/17，`below` 也是 `next % n` ⇒ 序列不变）。
+// `pick_trit` 是本文件的进料形状（`Trit` 是 trit-immune 的域），留在原地当自由函数。
+use trit_fuzz::SeedRng;
 
-impl Rng {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-    fn below(&mut self, n: u64) -> u64 {
-        self.next() % n
-    }
-    fn pick_trit(&mut self) -> Trit {
-        match self.below(3) {
-            0 => Trit::Vulnerable,
-            1 => Trit::Unknown,
-            _ => Trit::Hardened,
-        }
+fn pick_trit(rng: &mut SeedRng) -> Trit {
+    match rng.below(3) {
+        0 => Trit::Vulnerable,
+        1 => Trit::Unknown,
+        _ => Trit::Hardened,
     }
 }
 
@@ -74,16 +65,16 @@ fn read_log(path: &Path) -> Vec<Stamped> {
 
 #[test]
 fn prop_gate_monotone_new_minus_one_never_upgrades() {
-    let mut rng = Rng(0xDEAD_BEEF);
+    let mut rng = SeedRng::new(0xDEAD_BEEF);
     for round in 0..64u64 {
         // 链式 DAG：ROOT ← L0 ← L1 ← …，tip 的因果链覆盖全部节点
         let mut dag = ImmuneDag::root("main");
-        let depth = 3 + rng.below(8) as usize;
+        let depth = 3 + rng.below(8);
         let mut chain = vec![NodeId(0)];
         let mut parent = NodeId(0);
         for i in 0..depth {
             let id = dag.spawn(parent, NodeKind::Delta, &format!("L{i}"));
-            dag.record(id, rng.pick_trit(), None, "随机初始");
+            dag.record(id, pick_trit(&mut rng), None, "随机初始");
             chain.push(id);
             parent = id;
         }
@@ -91,7 +82,7 @@ fn prop_gate_monotone_new_minus_one_never_upgrades() {
 
         // (a) 任意初始态：新增 -1，恶劣度不降
         let before = dag.merge_gate(tip);
-        let victim = chain[rng.below(chain.len() as u64) as usize];
+        let victim = chain[rng.below(chain.len())];
         dag.record(victim, Trit::Vulnerable, None, "新增-1");
         let after = dag.merge_gate(tip);
         assert!(
@@ -124,7 +115,7 @@ fn prop_gate_monotone_new_minus_one_never_upgrades() {
 
 #[test]
 fn prop_merge_commutative_random_replicas() {
-    let mut rng = Rng(0xCAFE_BABE);
+    let mut rng = SeedRng::new(0xCAFE_BABE);
     for round in 0..32u64 {
         let (pa, pb) = (tmp_path("mgmt-a", round), tmp_path("mgmt-b", round));
         let _ = std::fs::remove_file(&pa);
@@ -133,16 +124,16 @@ fn prop_merge_commutative_random_replicas() {
         // A：随机子树 + 随机裁决
         let mut a = Journal::create_as(&pa, "A", 0).unwrap();
         let mut a_view = 1usize; // 根
-        let a_spawns = 2 + rng.below(6) as usize;
+        let a_spawns = 2 + rng.below(6);
         let mut a_titles = Vec::new();
         for i in 0..a_spawns {
-            let parent = NodeId(rng.below(a_view as u64) as u32);
+            let parent = NodeId(rng.below(a_view) as u32);
             let title = format!("A{i}");
             let id = a.spawn(parent, NodeKind::Delta, &title).unwrap();
             a_titles.push(title.clone());
             a_view += 1;
             if rng.below(4) != 0 {
-                let v = rng.pick_trit();
+                let v = pick_trit(&mut rng);
                 a.record(id, v, None, "A 裁决").unwrap();
             }
         }
@@ -151,10 +142,10 @@ fn prop_merge_commutative_random_replicas() {
         // B：克隆 A 的日志（前缀共享 → 同戳去重），以写者 1 追加自己的增量
         std::fs::copy(&pa, &pb).unwrap();
         let mut b = Journal::open_as(&pb, 1).unwrap();
-        let b_spawns = 1 + rng.below(4) as usize;
+        let b_spawns = 1 + rng.below(4);
         let mut reverify = Vec::new();
         for (i, b_view) in (a_view..a_view + b_spawns).enumerate() {
-            let parent = NodeId(rng.below(b_view as u64) as u32);
+            let parent = NodeId(rng.below(b_view) as u32);
             let title = format!("B{i}");
             let id = b.spawn(parent, NodeKind::Delta, &title).unwrap();
             if rng.below(4) == 0 {
@@ -163,7 +154,7 @@ fn prop_merge_commutative_random_replicas() {
         }
         // B 对 A 的部分节点复验（同 id 语义：全局改写后应落在正确节点上）
         for &id in &reverify {
-            b.record(id, rng.pick_trit(), None, "B 复验").unwrap();
+            b.record(id, pick_trit(&mut rng), None, "B 复验").unwrap();
         }
         drop(b.into_dag().unwrap());
 
@@ -266,7 +257,7 @@ fn prop_propagation_confirmed_breach_never_improves_target() {
 
 #[test]
 fn prop_replay_all_paths_converge_to_same_dag() {
-    let mut rng = Rng(0xFACE_B00C);
+    let mut rng = SeedRng::new(0xFACE_B00C);
     for round in 0..24u64 {
         let p = tmp_path("replay", round);
         let _ = std::fs::remove_file(&p);
@@ -277,7 +268,7 @@ fn prop_replay_all_paths_converge_to_same_dag() {
         let n_ops = 5 + rng.below(15);
         let mut title_n = 0usize;
         for _ in 0..n_ops {
-            let target = ids[rng.below(ids.len() as u64) as usize];
+            let target = ids[rng.below(ids.len())];
             match rng.below(4) {
                 0 => {
                     title_n += 1;
@@ -287,7 +278,7 @@ fn prop_replay_all_paths_converge_to_same_dag() {
                     ids.push(id);
                 }
                 1 | 2 => {
-                    let v = rng.pick_trit();
+                    let v = pick_trit(&mut rng);
                     j.record(target, v, None, "随机裁决").unwrap();
                 }
                 _ => {
@@ -314,8 +305,9 @@ fn prop_replay_all_paths_converge_to_same_dag() {
         // 路径 3：快照 + 尾部 2 条
         let ids_now = ids.clone();
         for _ in 0..2 {
-            let target = ids_now[rng.below(ids_now.len() as u64) as usize];
-            j.record(target, rng.pick_trit(), None, "尾部增量").unwrap();
+            let target = ids_now[rng.below(ids_now.len())];
+            j.record(target, pick_trit(&mut rng), None, "尾部增量")
+                .unwrap();
         }
         let live2 = j.dag().clone();
         let snap2 = Journal::open_as(&p, 0).unwrap();
@@ -331,21 +323,21 @@ fn prop_replay_all_paths_converge_to_same_dag() {
 
 #[test]
 fn prop_convergence_fixing_strictly_increases_ratio() {
-    let mut rng = Rng(0xABCD_1234);
+    let mut rng = SeedRng::new(0xABCD_1234);
     for round in 0..32u64 {
         let mut dag = ImmuneDag::root("main");
-        let n = 3 + rng.below(10) as usize;
+        let n = 3 + rng.below(10);
         let mut ids = vec![NodeId(0)];
         let mut parent = NodeId(0);
         for i in 0..n {
             let id = dag.spawn(parent, NodeKind::Delta, &format!("N{i}"));
-            dag.record(id, rng.pick_trit(), None, "初始");
+            dag.record(id, pick_trit(&mut rng), None, "初始");
             ids.push(id);
             parent = id;
         }
 
         // 随机修一个非 +1 节点（含根）
-        let fix = ids[rng.below(ids.len() as u64) as usize];
+        let fix = ids[rng.below(ids.len())];
         let old = dag.node(fix).verdict;
         let before = dag.convergence();
         dag.record(fix, Trit::Hardened, None, "修复");

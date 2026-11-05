@@ -103,12 +103,10 @@ fn balanced_csv() -> String {
         i64::MAX,
         i64::MIN,
     ];
-    let mut s: u64 = 0x9e37_79b9_7f4a_7c15;
+    // 同一条 xorshift 13/7/17，改吃 trit-fuzz 的 SeedRng（不再各写一份，序列不变）。
+    let mut rng = trit_fuzz::SeedRng::new(0x9e37_79b9_7f4a_7c15);
     for _ in 0..64 {
-        s ^= s << 13;
-        s ^= s >> 7;
-        s ^= s << 17;
-        values.push(s as i64);
+        values.push(rng.next_u64() as i64);
     }
     let mut out = String::from("value,text\n");
     for v in values {

@@ -17,3 +17,6 @@ varisat = "0.2"
 [[bench]]
 name = "core"
 harness = false
+
+[dev-dependencies]
+trit-fuzz.workspace = true

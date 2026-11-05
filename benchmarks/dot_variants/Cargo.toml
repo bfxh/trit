@@ -10,3 +10,6 @@ publish = false
 [dependencies]
 trit-dot = { path = "../../crates/trit-dot" }
 trit-gpu = { path = "../../crates/trit-gpu" }
+trit-bench = { path = "../../crates/trit-bench" }
+trit-core = { path = "../../crates/trit-core" }
+trit-count = { path = "../../crates/trit-count" }

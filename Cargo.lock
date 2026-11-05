@@ -1751,6 +1751,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-bench"
+version = "0.12.0"
+
+[[package]]
 name = "trit-build"
 version = "0.12.0"
 dependencies = [
@@ -1774,6 +1778,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "trit-core",
+ "trit-fuzz",
  "varisat",
 ]
 
@@ -1790,6 +1795,7 @@ dependencies = [
  "trit-capacity",
  "trit-circuit",
  "trit-core",
+ "trit-count",
  "trit-eval",
  "trit-policy",
  "trit-sat",
@@ -1803,6 +1809,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.21",
  "trit-core",
+ "trit-fuzz",
 ]
 
 [[package]]
@@ -1821,8 +1828,10 @@ dependencies = [
  "serde",
  "serde_json",
  "trit-bdd",
+ "trit-bench",
  "trit-core",
  "trit-eval",
+ "trit-fuzz",
  "trit-sat",
 ]
 
@@ -1832,6 +1841,7 @@ version = "0.12.0"
 dependencies = [
  "serde_json",
  "trit-core",
+ "trit-fuzz",
 ]
 
 [[package]]
@@ -1849,6 +1859,15 @@ name = "trit-float"
 version = "0.12.0"
 dependencies = [
  "serde_json",
+ "trit-fuzz",
+]
+
+[[package]]
+name = "trit-fuzz"
+version = "0.12.0"
+dependencies = [
+ "trit-bench",
+ "trit-core",
 ]
 
 [[package]]
@@ -1878,6 +1897,7 @@ dependencies = [
  "rustls",
  "rustls-pemfile",
  "trit-core",
+ "trit-fuzz",
 ]
 
 [[package]]
@@ -2027,6 +2047,7 @@ dependencies = [
  "png",
  "thiserror 2.0.21",
  "trit-core",
+ "trit-fuzz",
 ]
 
 [[package]]
