@@ -18,6 +18,7 @@ trit-eval.workspace = true
 trit-sat.workspace = true
 trit-circuit.workspace = true
 trit-bdd.workspace = true
+trit-count.workspace = true
 trit-policy.workspace = true
 trit-belnap.workspace = true
 trit-schedule.workspace = true
