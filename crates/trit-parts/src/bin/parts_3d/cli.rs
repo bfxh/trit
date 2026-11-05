@@ -19,6 +19,7 @@ pub(crate) fn usage() -> ! {
   parts-3d fuse --scene <dir> --frames 0,1,2,3 [--eval 4,5,6,7] --out <ply> [--cell 0.01] [--min-votes 1] [--voxel 0.01] [--levels 0,2]
   parts-3d splat --scene <dir> --frames 0,2,4,6 --eval 1,3,5,7 [--cells 0.04,0.02,0.01] [--scale-k 2] [--alpha 0.6]
   parts-3d occ --root <renders 根> --scenes <scenes 根> --train 80,81 --eval 84,85 [--cell 0.01] [--steps 20000] [--selfsup] [--views N] [--tau 0.01]
+  parts-3d export-scene --model <occ1> --scene <dir> --frames 0,...,7 --out <dir> [--texture] [--splat-frames 0,2,4,6] [--splat-eval 1,3,5,7]
   parts-3d splat-export --scene <dir> --frames 0,2,4,6 --eval 1,3,5,7 [--cell 0.01] [--fit 30] [--fit-all] --out <ply>
   parts-3d align --scene <dir> --frames 0,1,2,3,4,5,6,7 [--cell 0.01] [--tau 0.01] [--fill]
   parts-3d obs-split --scene <dir> --frames 0,1,2,3,4,5,6,7 --out <ply> [--cell 0.01] [--tau 0.01]

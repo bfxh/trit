@@ -3517,3 +3517,29 @@ parts-splat-verify --splat <ply>
 - 反证 ②：把所有 `f_dc` 置 0 并**同步改写清单哈希** ⇒ 文件“一致”，但重渲 PSNR 10.17/10.19
   vs 清单 29.76/22.99 ⇒ reject（复核不只是比哈希）；
 - 局限：各向同性（无旋转/协方差）、CPU 光栅化（无 GPU 加速）、无 SH 高阶项。
+
+### 6.122 一键场景资产包 `export-scene` + 总复核（2026-11-05）
+
+```text
+parts-3d export-scene --model <occ1> --scene <dir> --frames 0,...,7 --out <dir> \
+  --texture --atlas 1024 --splat-frames 0,2,4,6 --splat-eval 1,3,5,7 \
+  --splat-cell 0.01 --splat-fit 30 --splat-fit-all
+parts-scene-verify --scene <dir>
+```
+
+- 编排而不复制实现：子命令分别跑 `export-asset` 与 `splat-export`，产出 `mesh/`
+  （3 档 PLY + OBJ/MTL/PNG）与 `splat/scene.ply`；总清单只记**子清单哈希**、档数与高斯数。
+  子清单路径存**相对路径** ⇒ 整包可搬移，搬走后仍能复核。
+- `parts-scene-verify`：先核对子清单哈希与读数，再把两个子复核器各起一个新进程；
+  任一不一致 ⇒ `scene.verify.reject.json` + rc=1。
+
+**实测**（scene0084；一条命令 26.7 s，包 47 MB）：
+
+| 组成 | 内容 |
+|---|---|
+| mesh/ | 1/2/4 cm 三档 PLY + 纹理 OBJ/MTL/PNG（45 MB） |
+| splat/ | 43,219 高斯标准 3DGS PLY（2.9 MB） |
+| 复核 | 子清单一致、档数 3/3、高斯 43,219/43,219、两个子复核全 PASS |
+
+- 反证 ①：整包复制到 E: 后给 `mesh/lod-2cm.ply` 尾加 1 字节 ⇒ 子复核未通过、reject、rc=1；
+- 反证 ②：只改总清单里的 mesh 子清单哈希 ⇒ “子清单不一致”、reject、rc=1。
