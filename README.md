@@ -106,7 +106,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-float` | 平衡三进制浮点：舍入模式、同比特范围/精度交换、Takum 式锥形精度原型（同比特精度仍是二进制的 3 倍误差） | `trit-float stats\|range\|rounding` |
 | `trit-attn` | 注意力 = 快权重 FFN 的双视角、三值整数关联记忆、可训练三值注意力块（注意力+残差+FFN，QAT + 全链 STE） | `trit-attn demo\|train` |
 | `trit-bench` | 基准测量底件：确定性三值生成、交错轮次（每轮轮换起始位序）、计时段内重复、min/median/max 与单位换算 | 由各 crate 的 bench 使用 |
-| `trit-fuzz` | 测试语料底件：确定性三值向量、随机三值表达式、变量名表（RNG 复用 `trit-bench` 的 `SeedRng`，同 13/7/17 序列） | `trit-count` 的 crosscheck 语料 |
+| `trit-fuzz` | 测试语料底件：确定性三值向量 / 表达式 / CNF 子句集 / 单值取样（`trit`、`ternary_value`、`bipolar`），RNG 复用 `trit-bench` 的 `SeedRng`（同 13/7/17 序列） | `trit-count --fuzz-cnf`、`trit-count/tests/cnf_fuzz.rs`、`trit-dot`/`trit-codec` 的 stress |
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |
 | `trit-count` | 三值表达式精确模型计数：dual-rail CNF + DPLL + 组件缓存；约束计数（`--constraint` 可重复）；策略文件计数（`--policy` 展开 definitions、assumptions 当约束）；DPLL / 穷举 / BDD 三方对拍（≤12 变量穷举，`--big` 在 n>12 只做 DPLL vs BDD）；`--fuzz-cnf` 跳过编码器直接喂随机子句集对 `2^n` 穷举（实测 nvars 到 20：20 例全对，最慢一次 191µs） | `trit-count --expr "a & b" --constraint a` / `trit-count --policy examples/policy.json` / `trit-count --big 24` / `trit-count --fuzz-cnf --nvars 20` / `cargo run -p trit-count --example matching_family` |

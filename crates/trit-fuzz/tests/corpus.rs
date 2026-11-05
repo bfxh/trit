@@ -5,7 +5,7 @@ use std::collections::BTreeSet;
 use trit_bench::SeedRng;
 use trit_core::ast::Expr;
 use trit_core::value::Ternary;
-use trit_fuzz::corpus::{random_expr, random_trits, var_names};
+use trit_fuzz::corpus::{bipolar, random_expr, random_trits, ternary_value, trit, var_names};
 
 fn depth_of(expr: &Expr) -> usize {
     match expr {
@@ -99,6 +99,30 @@ fn empty_var_table_is_refused_not_silently_degenerate() {
         random_expr(&mut rng, &[], 2)
     });
     assert!(r.is_err(), "空变量表应当 panic，而不是静默产出常量语料");
+}
+
+#[test]
+fn single_draw_helpers_are_balanced_and_typed() {
+    let mut rng = SeedRng::new(77);
+    let tri = (0..3000).map(|_| trit(&mut rng)).collect::<Vec<_>>();
+    let vals = (0..3000)
+        .map(|_| ternary_value(&mut rng))
+        .collect::<Vec<_>>();
+    let bi = (0..3000).map(|_| bipolar(&mut rng)).collect::<Vec<_>>();
+
+    for t in [Ternary::False, Ternary::True, Ternary::Unknown] {
+        let n = tri.iter().filter(|&&v| v == t).count();
+        assert!(n > 800 && n < 1200, "{t:?} 只有 {n} 个");
+    }
+    assert!(
+        vals.iter().all(|&v| (-1..=1).contains(&v)),
+        "ternary_value 出格"
+    );
+    let zeros = vals.iter().filter(|&&v| v == 0).count();
+    assert!(zeros > 800 && zeros < 1200, "0 档只有 {zeros} 个");
+    assert!(bi.iter().all(|&v| v == 1 || v == -1), "bipolar 只能 ±1");
+    let plus = bi.iter().filter(|&&v| v == 1).count();
+    assert!(plus > 1300 && plus < 1700, "+1 只有 {plus}/3000");
 }
 
 #[test]

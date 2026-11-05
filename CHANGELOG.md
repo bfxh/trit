@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added + 更正（`trit-dot` / `trit-codec` 的 stress 改吃 `trit-fuzz`；重复度尺子换成精确尺并当众改数）
+
+- `trit-fuzz` 补三个单值取样件：`trit`（`Ternary`）、`ternary_value`（`-1/0/+1`）、`bipolar`（`±1`）。
+  断言 1 条新增（`single_draw_helpers_are_balanced_and_typed`：3000 次取样每档 800–1200、`bipolar` 只出 `±1`），
+  `trit-fuzz` 现 **11 条**测试；变异登记 7→**9 条**，官方门 **断言抓住 9 / 存活 0 / 崩溃 0 / 假杀 0**。
+- 两个消费者改吃它，各自删掉本地 `struct Rng(u64)`：
+  `crates/trit-dot/tests/stress.rs`（`ternary`/`bipolar`/`ternary_f32` ⇒ `ternary_value`/`bipolar`，5 条测试全绿）、
+  `crates/trit-codec/tests/stress.rs`（`next` ⇒ `next_u64`、`trit` ⇒ `corpus::trit`，5 条测试全绿）。
+  _codec_ 那份本地映射是 `0→False, 1→Unknown, 2→True`，`corpus::trit` 是 `0→False, 1→True, 2→Unknown`
+  —— 两者都均匀，测试断言的是往返/纠错性质而非具体序列；**这一条差异写在测试文件头顶**，不是悄悄换的。
+- **读数更正（我自己的尺子不严谨）**：第一批立项时我用的是宽松尺
+  `grep -rl "<< 13" | xargs grep -l ">> 7|>> 17"`，数到 **64**；这条尺会把**散文里提到的模式**也算进去
+  ——我自己写的 doc 注释就中招了。换成精确尺 `grep -rlE "\^=.*<< 13"`（同一行必须有 `^=`）后：
+  本会话前 **67**（`581d54b`）→ `trit-fuzz` 第一批后 **65** → 本轮两个 stress 改吃后 **63**。
+  三个数都用 `git grep` 在同一份路径集（`crates/*.rs` + `benchmarks/*.rs`）上复算过；
+  旧条目里"64 个文件"就地改成"读数更正见下条"，不抹掉原文。
+- 门线：`claims_evidence` / `test_surface`（更新后见下）/ `docs_hygiene` / `module_budget` / `layers` / `deps` /
+  `publish_graph` / `ci_integrity` / `hazard_gate` / `model_status` 全绿；`cargo clippy --tests` 对
+  `trit-fuzz`/`trit-dot`/`trit-codec` 无告警。
+
 ### Added（`trit-count --fuzz-cnf`：把随机 CNF 对账从测试里搬到工具上）
 
 - 新公开尺 `trit_count::oracle::count_cnf_exhaustive(&Cnf)`（库里那份），与 `tests/cnf_fuzz.rs` 里
@@ -35,8 +55,10 @@
 
 ### Added（`trit-fuzz`：把测试语料生成收进 base 层第一批）
 
-- 立项判据是一条能量化的尺，不是"感觉重复"：`grep -rl "<< 13" --include=*.rs crates/ | xargs grep -l ">> 7\|>> 17"`
-  ⇒ **64 个文件**各自手写一条 xorshift（移位组合略有出入）。其中 `trit-count` 一个包里有两份**逐字相同**的
+- 立项判据是一条能量化的尺，不是"感觉重复"。**读数更正见下方"精确尺"那条**：当时我用宽松尺
+  `grep -rl "<< 13" | xargs grep -l ">> 7\|>> 17"` 数到 **64 个文件**，后来换成精确尺
+  `grep -rlE "\^=.*<< 13"`（要求同一行真有 `^=`）⇒ 本会话前 **67**、这一批合并后 **65**。
+  其中 `trit-count` 一个包里有两份**逐字相同**的
   `random_expr`（`src/main.rs:381` 与 `tests/crosscheck.rs:454`）。
 - 新 crate `crates/trit-fuzz`（base 层，只依赖 `trit-core` + `trit-bench`）：`random_trits`、`random_expr`、
   `var_names`，RNG 本体复用 `trit_bench::SeedRng`（同 13/7/17 移位 ⇒ 换包不换序列），并在 `trit-bench` 上补

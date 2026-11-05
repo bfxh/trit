@@ -21,7 +21,7 @@
 | 新库 | 层 | 为什么现在就该做 | 对拍谁 |
 |---|---|---|---|
 | ~~`trit-bench`~~ **已建**（2026-11-05） | base | 交错 ≥6 轮、min/median/max、规模档表现在**至少 5 份手写实现**（trit-dot main、trit-ops bench、trit-gpu bench、trit-parts parts_bench、`benchmarks/dot_variants`）；这是 §4 第一批要登记的重复能力 | 与 `benchmarks/dot_variants` 的读数对齐 |
-| ~~`trit-fuzz`~~ **已建（第一批）**（2026-11-05） | base | 实测口径：`grep -rl "<< 13" --include=*.rs crates/ \| xargs grep -l ">> 7\|>> 17"` ⇒ **64 个文件**各自手写一条 xorshift；`trit-count` 一个包里两份逐字相同的 `random_expr` 已并进来。收了：三值向量 / 表达式 / 变量名 / **CNF 子句集**（DIMACS 口径，无重字、无永真、无空子句） | 消费者已接上：`crates/trit-count/tests/cnf_fuzz.rs` 用随机 CNF 拿 DPLL 对 `2^n` 穷举（432 个语料逐一对账；把 `dpll.rs:78` 的自由变量因子改错会抓到 96 个不一致） |
+| ~~`trit-fuzz`~~ **已建（第一批）**（2026-11-05） | base | 精确尺 `grep -rlE "\^=.*<< 13" --include=*.rs crates/` ⇒ 本会话前 **67** 个文件各自手写 xorshift；`trit-fuzz` 第一批后 **65**、`trit-dot`/`trit-codec` 的 stress 改吃后 **63**（第一版我用宽松尺数到 64——散文里提到的模式也被算了，换成要求同一行有 `^=` 的精确尺）。收了：三值向量 / 表达式 / 变量名 / **CNF 子句集**（DIMACS 口径，无重字、无永真、无空子句）/ 单值取样 `trit`·`ternary_value`·`bipolar` | 消费者三条：`trit-count/tests/cnf_fuzz.rs`（432 例 DPLL vs `2^n` 穷举；`dpll.rs:78` 改错能抓 96 个不一致）、`trit-dot/tests/stress.rs`、`trit-codec/tests/stress.rs` |
 | `trit-ir` | algo | `.tri`/TTIR 只有"化简 + 打包"，没有 **pass 框架**（常量折叠、等价重写、CSE） | `trit-sat` / `trit-bdd` / `trit-count` 当每个 pass 的 oracle |
 | `trit-mv` | base | 主库只有 K3/Ł3/B3；要"用四值/n 值移植别的算法"先得有代数层（MV-algebra、t-norm 族、De Morgan 格、bilattice） | 真值表穷举 + `trit-belnap` |
 | `trit-num` | ops | 最小二乘现在在 `trit-texture` 里就地写；`parts-depth` 用 f32 四累加器 | 与 f32 参考实现同比特精度对拍 |

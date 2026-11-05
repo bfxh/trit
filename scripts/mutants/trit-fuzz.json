@@ -54,5 +54,21 @@
   "new": "                    let var = rng.below(nvars) as i32;",
   "pkg": "trit-fuzz",
   "filter": "cnf_clauses_are_dimacs_shaped_and_never_degenerate"
+ },
+ {
+  "name": "fuzz: bipolar 出 0（不再是 ±1）",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "    if rng.below(2) == 0 { -1 } else { 1 }",
+  "new": "    if rng.below(2) == 0 { 0 } else { 1 }",
+  "pkg": "trit-fuzz",
+  "filter": "single_draw_helpers_are_balanced_and_typed"
+ },
+ {
+  "name": "fuzz: ternary_value 少了居中平移",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "    rng.below(3) as i32 - 1",
+  "new": "    rng.below(3) as i32",
+  "pkg": "trit-fuzz",
+  "filter": "single_draw_helpers_are_balanced_and_typed"
  }
 ]

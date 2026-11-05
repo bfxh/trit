@@ -1,9 +1,11 @@
 //! 三值测试语料生成（确定性）。
 //!
-//! 立项判据不是"感觉重复"，是一条能量化的尺：
-//! `grep -rl "<< 13" --include=*.rs crates/ | xargs grep -l ">> 7\|>> 17"` 数到 **64 个文件**
-//! 各自手写一条 xorshift（移位组合略有出入），其中 `trit-count` 一个包里就有两份**逐字相同**的
-//! `random_expr`（`src/main.rs` 与 `tests/crosscheck.rs`，本轮已并到这里）。
+//! 立项判据是一条**精确**的尺，不是"感觉重复"：
+//! `grep -rlE "\^=.*<< 13" --include=*.rs crates/` —— 要求同一行真的有 `^=` 移位赋值，
+//! 免得把散文里提到的模式也算进去（第一版我用的是 `<< 13` 配 `>> 7|>> 17` 的宽松尺，
+//! 结果自己写的这段注释都被数进去了，读数是 64；换成精确尺后是 **67 → 65 → 63**：
+//! 本会话前 67、`trit-fuzz` 第一批（`trit-count` 两份逐字相同的 `random_expr` 合并）后 65、
+//! `trit-dot` / `trit-codec` 的 stress 改吃之后 63）。
 //! RNG 本体复用 [`trit_bench::SeedRng`]（同一组 13/7/17 移位），所以"换包"不改变序列口径。
 //!
 //! 只做语料，不做求解：这里出现的任何表达式都不该被当成"产品输入"。
@@ -113,6 +115,28 @@ pub fn random_cnf(
 #[must_use]
 pub fn random_assignment(rng: &mut SeedRng, nvars: usize) -> Vec<bool> {
     (0..nvars).map(|_| rng.below(2) == 1).collect()
+}
+
+/// 单个三值，与 [`random_trits`] 同一口径（`0→False, 1→True, 其余→Unknown`）。
+#[must_use]
+pub fn trit(rng: &mut SeedRng) -> Ternary {
+    match rng.below(3) {
+        0 => Ternary::False,
+        1 => Ternary::True,
+        _ => Ternary::Unknown,
+    }
+}
+
+/// 单个三值的 `-1/0/+1` 形态（位并行那边要的是数，不是 `Ternary`）。
+#[must_use]
+pub fn ternary_value(rng: &mut SeedRng) -> i32 {
+    rng.below(3) as i32 - 1
+}
+
+/// 双极值 `±1`（二进制基线的进料：没有 0 的那一路）。
+#[must_use]
+pub fn bipolar(rng: &mut SeedRng) -> i32 {
+    if rng.below(2) == 0 { -1 } else { 1 }
 }
 
 /// `n` 个变量名（`a`、`b`、`c`…；超过 26 个时接 `a27`…）。
