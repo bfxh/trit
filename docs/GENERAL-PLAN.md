@@ -3437,7 +3437,7 @@ parts-3d export-asset --model <occ1> --scene <dir> --frames 0,...,7 \
 - 三档全水密（边界边 = 0），导出 13 s；
 - **顶点色**：每个顶点投影到各视角、**深度一致才采样**、跨视角平均；无视角看到的（底面/内部）
   标灰——1 cm 只有 6.2% 无观测，粗档因为表面变厚升到 21.5%；
-- **缺口**：还没有 UV/贴图（顶点色是每顶点一色，不是纹素级）；独立复核器见 §6.119。
+- **纹理**：`--texture` 输出 UV 图集 + OBJ/MTL + PNG，见 §6.120；独立复核器见 §6.119。
 
 ### 6.119 资产清单独立复核器：`parts-asset-verify`（2026-11-05）
 
@@ -3448,7 +3448,8 @@ parts-asset-verify --asset runs/assets/scene0084 [--parts-3d <exe>] [--json-out 
 - **不信清单**：新进程重算模型 SHA 与单场景语料指纹（`scenefp::fingerprint_scene_frames`，
   seg/depth/meta × 帧），再把 `export-asset` 重跑到 `<asset>/verify.tmp`；
 - 逐档三项比对：清单记录哈希 = **磁盘交付件**哈希 = **重导出**哈希，外加 cell / 顶点 / 面 /
-  边界边 / 非流形 / 无观测顶点逐项相等；交付目录一个字节都不动；
+  边界边 / 非流形 / 无观测顶点逐项相等；启用 `--texture` 时再比 OBJ/PNG 两份哈希与图集计数
+  （§6.120）；交付目录一个字节都不动；
 - 结果落 `asset.verify.json`；任一不一致写 `asset.verify.reject.json` 且退出码 1；
   `--json-out` 是旁路记录，不碰正式记录（PASS/reject 互斥只在默认路径维护）。
 
@@ -3460,3 +3461,30 @@ parts-asset-verify --asset runs/assets/scene0084 [--parts-3d <exe>] [--json-out 
 | 同一拷贝 + `lod-2cm.ply` 尾加 1 字节 | 2/3 档一致（异常 `lod-2cm.ply`） | `asset.verify.reject.json`（reject，rc=1） |
 
 变异 2/2 caught（档位解析吞掉第一档 / 几何计数漏比无观测顶点）；单测 3 条。
+
+### 6.120 纹素级材质：UV 图集 + OBJ/MTL + PNG（2026-11-05）
+
+```text
+parts-3d export-asset ... --texture [--atlas 1024] [--texels-per-m 0] [--atlas-deg 45]
+```
+
+- 复用已有 `atlas` 的切 chart（法线聚类 + 平面投影 + 货架打包），但纹素颜色不再来自源贴图：
+  新增 `atlas::bake_atlas_with` 把每个纹素反解成三角形重心坐标 → 世界坐标 → 多视角深度一致采样；
+  没有视角看到的纹素保留底色（灰 0.5），并记 `unseen_texels`。
+- 每档输出 `lod-Xcm.obj` + `.mtl` + `.png`；清单新增 `textures`（OBJ/PNG 哈希与字节、
+  图集边长、chart 数、着色纹素数、无观测纹素数）；复核器按清单的
+  `texture / atlas / texels_per_m / normal_deg` 重跑，并做三方比对（清单 = 磁盘交付 = 重导出）。
+
+**demo**（scene0084，同模型；导出 14.7 s，三档合计）：
+
+| 档 | chart | 着色纹素 | 无观测纹素 | 图集 | OBJ | PNG |
+|---|---|---|---|---|---|---|
+| 1 cm | 2,469 | 328,555 | 16,920（5.1%） | 1024² | 26.3 MB | 392 KB |
+| 2 cm | 451 | 311,253 | 28,238（9.1%） | 1024² | 6.1 MB | 295 KB |
+| 4 cm | 172 | 310,811 | 68,549（22.1%） | 1024² | 1.4 MB | 97 KB |
+
+- 图集密度按总面积自动定（与网格分辨率无关）⇒ 三档着色纹素数相近（31–33 万）；
+- **图集连贯性实测**：相邻已着色纹素中 RGB 跳变 >40 的只占 2.0–2.7%（不是随机拼贴）；
+- 复核 PASS（3/3 档纹理一致）；把 `lod-2cm.png` 尾加 1 字节 ⇒ reject、rc=1；
+- 局限：chart 是**投影式**（本路径不做 LSCM 展开），曲面 chart 会有拉伸与接缝；重叠区域共享 UV
+  （`atlas` 模块原有性质）；OBJ 为逐角 `vt`（每三角形 3 个）。

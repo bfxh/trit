@@ -230,3 +230,43 @@ fn atlas_is_deterministic() {
     assert_eq!(a.img, b.img);
     assert_eq!(a.charts.len(), b.charts.len());
 }
+
+#[test]
+fn custom_shade_controls_texels_and_none_keeps_fill() {
+    let m = cube();
+    let fill = [0.5f32, 0.5, 0.5];
+    let a = bake_atlas_with(&m, 128, 40.0, 45.0, fill, |_fi, _p| Some([1.0, 0.0, 0.0])).unwrap();
+    let red = a
+        .img
+        .chunks(3)
+        .filter(|p| p[0] == 1.0 && p[1] == 0.0 && p[2] == 0.0)
+        .count();
+    assert!(red > 100, "shader 全写时应有实心色块，实际 {red} 纹素");
+    for p in a.img.chunks(3) {
+        assert!(p == [1.0, 0.0, 0.0] || p == fill, "意外颜色 {p:?}");
+    }
+    // 返回 None 的纹素必须保留底色（shader 没写就绝不改图）
+    let b = bake_atlas_with(&m, 128, 40.0, 45.0, fill, |_fi, _p| None).unwrap();
+    assert!(b.img.chunks(3).all(|p| p == fill));
+}
+
+#[test]
+fn uv_centroid_samples_a_painted_texel() {
+    let m = cube();
+    let a = bake_atlas_with(&m, 128, 40.0, 45.0, [0.5f32; 3], |_f, _p| {
+        Some([1.0, 0.0, 0.0])
+    })
+    .unwrap();
+    for tri in &a.uv {
+        let u = (tri[0][0] + tri[1][0] + tri[2][0]) / 3.0;
+        let v = (tri[0][1] + tri[1][1] + tri[2][1]) / 3.0;
+        let x = ((u * a.w as f32) as usize).min(a.w - 1);
+        let y = (((1.0 - v) * a.h as f32) as usize).min(a.h - 1);
+        let i = (y * a.w + x) * 3;
+        assert_eq!(
+            &a.img[i..i + 3],
+            &[1.0, 0.0, 0.0],
+            "UV 质心 {u},{v} 应落在着色纹素"
+        );
+    }
+}
