@@ -1,0 +1,198 @@
+//! `export-scene`：一次跑完「网格 LOD + 纹理 + 高斯」，写一个场景总清单。
+//!
+//! ```text
+//! parts-3d export-scene --model <occ1> --scene <dir> --frames 0,...,7 --out <dir> \
+//!   [--cells 0.01,0.02,0.04] [--texture] [--atlas 1024] \
+//!   [--splat-frames 0,2,4,6] [--splat-eval 1,3,5,7] [--splat-cell 0.01] \
+//!   [--splat-fit 30] [--splat-fit-all]
+//! ```
+//!
+//! 子产物分别由 `export-asset` / `splat-export` 生成（各自带清单），本命令只做编排与
+//! 总清单；这样每个子产物仍能单独复核，总包也只记它们的清单哈希，不复制读数。
+
+use std::path::{Path, PathBuf};
+
+use super::cli::{arg, fail, usage};
+
+fn run(bin: &Path, args: &[String], what: &str) -> String {
+    let out = std::process::Command::new(bin)
+        .args(args)
+        .output()
+        .unwrap_or_else(|e| fail(&format!("跑不了 {}: {e}", bin.display())));
+    if !out.status.success() {
+        eprint!("{}", String::from_utf8_lossy(&out.stderr));
+        fail(&format!("{what} 退出码 {:?}", out.status.code()));
+    }
+    String::from_utf8_lossy(&out.stdout).to_string()
+}
+
+fn sibling(name: &str) -> PathBuf {
+    let dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+        .unwrap_or_default();
+    if cfg!(windows) {
+        dir.join(format!("{name}.exe"))
+    } else {
+        dir.join(name)
+    }
+}
+
+/// 去掉 Windows `\\?\` 前缀：清单里存普通路径，别的工具才认得。
+fn plain(p: PathBuf) -> PathBuf {
+    let s = p.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest.to_string());
+    }
+    p
+}
+
+fn count_entries(txt: &str, key: &str) -> usize {
+    let pat = format!("\"{key}\": [");
+    let Some(i) = txt.find(&pat) else {
+        return 0;
+    };
+    let rest = &txt[i + pat.len()..];
+    let end = rest.find(']').unwrap_or(rest.len());
+    rest[..end].matches("{\"cell\": ").count()
+}
+
+pub(crate) fn scene_export_cmd(argv: &[String]) {
+    let model = PathBuf::from(arg(argv, "--model").unwrap_or_else(|| usage()));
+    let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
+    let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
+    let frames = arg(argv, "--frames").unwrap_or_else(|| "0,1,2,3,4,5,6,7".into());
+    let cells = arg(argv, "--cells").unwrap_or_else(|| "0.01,0.02,0.04".into());
+    let texture = argv.iter().any(|a| a == "--texture");
+    let atlas: usize = arg(argv, "--atlas")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(1024);
+    let sfit = arg(argv, "--splat-frames").unwrap_or_else(|| "0,2,4,6".into());
+    let seval = arg(argv, "--splat-eval").unwrap_or_else(|| "1,3,5,7".into());
+    let scell: f32 = arg(argv, "--splat-cell")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.01);
+    let sfit_iters: usize = arg(argv, "--splat-fit")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(30);
+    let sfit_all = argv.iter().any(|a| a == "--splat-fit-all");
+    let scale_k: f32 = arg(argv, "--scale-k")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.6);
+    let alpha: f32 = arg(argv, "--alpha")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.8);
+    let parts3d = arg(argv, "--parts-3d")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| sibling("parts-3d"));
+
+    let mesh_dir = out.join("mesh");
+    let splat_dir = out.join("splat");
+    std::fs::create_dir_all(&mesh_dir)
+        .unwrap_or_else(|e| fail(&format!("{}: {e}", mesh_dir.display())));
+    std::fs::create_dir_all(&splat_dir)
+        .unwrap_or_else(|e| fail(&format!("{}: {e}", splat_dir.display())));
+    // 清单里记绝对路径：复核从任意 cwd 跑都能找到子清单
+    let out = plain(
+        out.canonicalize()
+            .unwrap_or_else(|e| fail(&format!("{}: {e}", out.display()))),
+    );
+    let mesh_dir = out.join("mesh");
+    let splat_dir = out.join("splat");
+
+    let mut margs: Vec<String> = vec![
+        "export-asset".into(),
+        "--model".into(),
+        model.display().to_string(),
+        "--scene".into(),
+        scene.display().to_string(),
+        "--frames".into(),
+        frames.clone(),
+        "--cells".into(),
+        cells.clone(),
+        "--out".into(),
+        mesh_dir.display().to_string(),
+    ];
+    if texture {
+        margs.push("--texture".into());
+        margs.push("--atlas".into());
+        margs.push(atlas.to_string());
+    }
+    run(&parts3d, &margs, "export-asset");
+
+    let splat_ply = splat_dir.join("scene.ply");
+    let mut sargs: Vec<String> = vec![
+        "splat-export".into(),
+        "--scene".into(),
+        scene.display().to_string(),
+        "--frames".into(),
+        sfit.clone(),
+        "--eval".into(),
+        seval.clone(),
+        "--cell".into(),
+        format!("{scell}"),
+        "--scale-k".into(),
+        format!("{scale_k}"),
+        "--alpha".into(),
+        format!("{alpha}"),
+        "--fit".into(),
+        sfit_iters.to_string(),
+        "--out".into(),
+        splat_ply.display().to_string(),
+    ];
+    if sfit_all {
+        sargs.push("--fit-all".into());
+    }
+    run(&parts3d, &sargs, "splat-export");
+
+    let mm = mesh_dir.join("asset.manifest.json");
+    let sm = PathBuf::from(format!("{}.manifest.json", splat_ply.display()));
+    let mtxt =
+        std::fs::read_to_string(&mm).unwrap_or_else(|e| fail(&format!("{}: {e}", mm.display())));
+    let stxt =
+        std::fs::read_to_string(&sm).unwrap_or_else(|e| fail(&format!("{}: {e}", sm.display())));
+    let msha = trit_core::fingerprint::file_sha256(&mm).unwrap_or_default();
+    let ssha = trit_core::fingerprint::file_sha256(&sm).unwrap_or_default();
+    let levels = count_entries(&mtxt, "levels");
+    let count = stxt
+        .find("\"count\": ")
+        .and_then(|i| {
+            let r = &stxt[i + 9..];
+            let e = r.find(|c: char| !c.is_ascii_digit()).unwrap_or(r.len());
+            r[..e].parse::<usize>().ok()
+        })
+        .unwrap_or(0);
+    let commit = trit_parts::partsrun::git_out(&["rev-parse", "--short", "HEAD"])
+        .trim()
+        .to_string();
+    let dirty = !trit_parts::partsrun::git_out(&["status", "--porcelain"])
+        .trim()
+        .is_empty();
+    let argv_json: Vec<String> = std::env::args()
+        .skip(1)
+        .map(|a| trit_parts::partsrun::json_str(&a))
+        .collect();
+    let body = format!(
+        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-scene\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"mesh_frames\": [{}], \"splat_fit_frames\": [{}], \"splat_eval_frames\": [{}], \"cells\": [{}], \"texture\": {texture}, \"atlas\": {atlas}, \"splat_cell\": {scell}, \"splat_fit\": {sfit_iters}, \"splat_fit_all\": {sfit_all}}},\n  \"scene\": {},\n  \"parts\": {{\"mesh\": {{\"manifest\": {{\"path\": {}, \"sha256\": \"{msha}\"}}, \"levels\": {levels}, \"texture\": {texture}}}, \"splat\": {{\"manifest\": {{\"path\": {}, \"sha256\": \"{ssha}\"}}, \"count\": {count}}}}}\n}}\n",
+        trit_parts::partsrun::created_unix(),
+        trit_parts::partsrun::json_str(&commit),
+        argv_json.join(", "),
+        frames,
+        sfit,
+        seval,
+        cells,
+        trit_parts::partsrun::json_str(&trit_parts::scenefp::norm_root(&scene)),
+        trit_parts::partsrun::json_str("mesh/asset.manifest.json"),
+        trit_parts::partsrun::json_str("splat/scene.ply.manifest.json"),
+    );
+    let mp = out.join("scene.manifest.json");
+    std::fs::write(&mp, body).unwrap_or_else(|e| fail(&format!("{}: {e}", mp.display())));
+    println!(
+        "场景包 {}：网格 {levels} 档、高斯 {count} 个",
+        out.display()
+    );
+    println!("总清单 {}", mp.display());
+}

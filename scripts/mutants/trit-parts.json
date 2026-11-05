@@ -126,5 +126,53 @@
     "new": "            png_sha: field(seg, \"sha256\").unwrap_or_default(),",
     "pkg": "trit-parts",
     "filter": "texture_entries_parse_and_catch_mismatch"
+  },
+  {
+    "name": "splat-io: SH 直流项不换算（颜色约定错）",
+    "file": "crates/trit-parts/src/splat/io.rs",
+    "old": "            put((c - 0.5) / SH_C0);",
+    "new": "            put(c);",
+    "pkg": "trit-parts",
+    "filter": "splat::io::tests::roundtrip_preserves_every_field"
+  },
+  {
+    "name": "splat-io: 导出前不排序（HashMap 顺序进文件）",
+    "file": "crates/trit-parts/src/splat/io.rs",
+    "old": "                .then(a.pos[k].total_cmp(&b.pos[k]))\n                .then(a.color[k].total_cmp(&b.color[k]));",
+    "new": "                .then(std::cmp::Ordering::Equal);",
+    "pkg": "trit-parts",
+    "filter": "splat::io::tests::sort_is_total_and_order_independent"
+  },
+  {
+    "name": "splat-verify: PSNR 容差放到 1e9（漂移也放行）",
+    "file": "crates/trit-parts/src/bin/parts_splat_verify.rs",
+    "old": "    want.is_finite() && got.is_finite() && (want - got).abs() <= 1e-3",
+    "new": "    want.is_finite() && got.is_finite() && (want - got).abs() <= 1e9",
+    "pkg": "trit-parts",
+    "filter": "psnr_tolerance_is_tight_and_finite_only"
+  },
+  {
+    "name": "scene-verify: 子清单哈希不比对（伪造也放行）",
+    "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
+    "old": "    !want.is_empty() && want == got",
+    "new": "    true",
+    "pkg": "trit-parts",
+    "filter": "tests::hash_and_count_checks_are_deciding"
+  },
+  {
+    "name": "scene-verify: 0 档/0 高斯也算有效资产",
+    "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
+    "old": "    want > 0 && want == got",
+    "new": "    want == got",
+    "pkg": "trit-parts",
+    "filter": "tests::hash_and_count_checks_are_deciding"
+  },
+  {
+    "name": "scene-verify: 相对子清单不按包目录解析",
+    "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
+    "old": "    if p.is_absolute() { p } else { base.join(p) }",
+    "new": "    let _ = base;\n    p",
+    "pkg": "trit-parts",
+    "filter": "tests::relative_sub_manifest_paths_resolve_against_bundle"
   }
 ]

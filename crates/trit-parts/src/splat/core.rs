@@ -207,6 +207,20 @@ pub fn fit_colors(splats: &mut [Splat], views: &[FitView], iters: usize, lr: f32
 }
 
 /// PSNR（输入 0..1）。
+/// 只在 GT 前景像素（`ids != 0`）上算 PSNR：喷溅表示里没有地板/背景。
+pub fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
+    let mut a = Vec::new();
+    let mut b = Vec::new();
+    for (p, &id) in ids.iter().enumerate() {
+        if id == 0 {
+            continue;
+        }
+        a.extend_from_slice(&img[p * 3..p * 3 + 3]);
+        b.extend_from_slice(&gt[p * 3..p * 3 + 3]);
+    }
+    psnr(&a, &b)
+}
+
 pub fn psnr(a: &[f32], b: &[f32]) -> f64 {
     assert_eq!(a.len(), b.len(), "PSNR 输入长度不一致");
     let mse: f64 = a

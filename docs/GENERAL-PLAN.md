@@ -3488,3 +3488,58 @@ parts-3d export-asset ... --texture [--atlas 1024] [--texels-per-m 0] [--atlas-d
 - 复核 PASS（3/3 档纹理一致）；把 `lod-2cm.png` 尾加 1 字节 ⇒ reject、rc=1；
 - 局限：chart 是**投影式**（本路径不做 LSCM 展开），曲面 chart 会有拉伸与接缝；重叠区域共享 UV
   （`atlas` 模块原有性质）；OBJ 为逐角 `vt`（每三角形 3 个）。
+
+### 6.121 高斯资产：标准 3DGS PLY + 独立复渲复核（2026-11-05）
+
+```text
+parts-3d splat-export --scene <dir> --frames 0,2,4,6 --eval 1,3,5,7 \
+  --cell 0.01 --scale-k 0.6 --alpha 0.8 --fit 30 --fit-all --out <ply>
+parts-splat-verify --splat <ply>
+```
+
+- 复用 §6.7/6.8 的 CPU 可微光栅化：多视角表面采样 → 各向同性高斯 → 全参数拟合；导出前**全序排序**
+  （`build` 走 HashMap，顺序随机），否则同输入两次运行字节不同、重叠次序也不稳；
+- 标准 3DGS 字段：SH 直流项 `f_dc = (c−0.5)/C0`、`opacity = logit(α)`、`scale = ln(r)`、单位四元数；
+  reader 拒绝旋转/各向异性文件（静默近似会让复核自我欺骗）；
+- 清单记超参 / 语料（**含 rgb** 的内容级指纹）/ 高斯数 / 两批 PSNR；复核器**从盘上 PLY 反解高斯**、
+  重渲并重算 PSNR（容差 1e-3 dB），再比语料指纹与文件哈希。
+
+**实测**（scene0084，1 cm，43,219 高斯，导出 14.0 s，2.9 MB）：
+
+| 口径 | 拟合前 | 拟合后 |
+|---|---|---|
+| 拟合视角 0/2/4/6 | 22.96 | **29.76** |
+| 留出视角 1/3/5/7 | 21.98 | **22.99** |
+
+- 同一命令两次导出 **SHA 逐字节相同**（`b6336d8b…`）；
+- 复核 PASS：PLY 哈希 / 语料指纹 / 高斯数 / 两批 PSNR 全一致；
+- 反证 ①：PLY 尾加 1 字节 ⇒ 文件哈希不一致、reject、rc=1；
+- 反证 ②：把所有 `f_dc` 置 0 并**同步改写清单哈希** ⇒ 文件“一致”，但重渲 PSNR 10.17/10.19
+  vs 清单 29.76/22.99 ⇒ reject（复核不只是比哈希）；
+- 局限：各向同性（无旋转/协方差）、CPU 光栅化（无 GPU 加速）、无 SH 高阶项。
+
+### 6.122 一键场景资产包 `export-scene` + 总复核（2026-11-05）
+
+```text
+parts-3d export-scene --model <occ1> --scene <dir> --frames 0,...,7 --out <dir> \
+  --texture --atlas 1024 --splat-frames 0,2,4,6 --splat-eval 1,3,5,7 \
+  --splat-cell 0.01 --splat-fit 30 --splat-fit-all
+parts-scene-verify --scene <dir>
+```
+
+- 编排而不复制实现：子命令分别跑 `export-asset` 与 `splat-export`，产出 `mesh/`
+  （3 档 PLY + OBJ/MTL/PNG）与 `splat/scene.ply`；总清单只记**子清单哈希**、档数与高斯数。
+  子清单路径存**相对路径** ⇒ 整包可搬移，搬走后仍能复核。
+- `parts-scene-verify`：先核对子清单哈希与读数，再把两个子复核器各起一个新进程；
+  任一不一致 ⇒ `scene.verify.reject.json` + rc=1。
+
+**实测**（scene0084；一条命令 26.7 s，包 47 MB）：
+
+| 组成 | 内容 |
+|---|---|
+| mesh/ | 1/2/4 cm 三档 PLY + 纹理 OBJ/MTL/PNG（45 MB） |
+| splat/ | 43,219 高斯标准 3DGS PLY（2.9 MB） |
+| 复核 | 子清单一致、档数 3/3、高斯 43,219/43,219、两个子复核全 PASS |
+
+- 反证 ①：整包复制到 E: 后给 `mesh/lod-2cm.ply` 尾加 1 字节 ⇒ 子复核未通过、reject、rc=1；
+- 反证 ②：只改总清单里的 mesh 子清单哈希 ⇒ “子清单不一致”、reject、rc=1。

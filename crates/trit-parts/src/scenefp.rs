@@ -67,11 +67,33 @@ pub fn fingerprint_scenes(
 
 /// 单场景 + 帧集合的内容级指纹（资产导出/复核共用；只覆盖模型真正读的 seg/depth/meta）。
 pub fn fingerprint_scene_frames(scene: &Path, frames: &[usize]) -> Result<Fp, String> {
+    scene_frames(
+        scene,
+        frames,
+        &[("seg", "npy"), ("depth", "npy"), ("meta", "json")],
+    )
+}
+
+/// 同上并覆盖 `rgb/`（高斯导出要用 RGB 算 PSNR）。
+pub fn fingerprint_scene_frames_rgb(scene: &Path, frames: &[usize]) -> Result<Fp, String> {
+    scene_frames(
+        scene,
+        frames,
+        &[
+            ("seg", "npy"),
+            ("depth", "npy"),
+            ("meta", "json"),
+            ("rgb", "png"),
+        ],
+    )
+}
+
+fn scene_frames(scene: &Path, frames: &[usize], subs: &[(&str, &str)]) -> Result<Fp, String> {
     let mut lines = Vec::new();
     let mut bytes = 0u64;
     let mut files = 0usize;
     for &f in frames {
-        for (sub, ext) in [("seg", "npy"), ("depth", "npy"), ("meta", "json")] {
+        for (sub, ext) in subs {
             let p = scene.join(sub).join(format!("{f:06}.{ext}"));
             let meta = std::fs::metadata(&p).map_err(|e| format!("{}: {e}", p.display()))?;
             bytes += meta.len();
@@ -163,6 +185,23 @@ mod tests {
         assert_eq!(b.files, 6);
         assert_ne!(a.hash, b.hash);
         assert!(fingerprint_scene_frames(&t.0.join("r/scene0080"), &[9]).is_err());
+    }
+
+    #[test]
+    fn rgb_variant_covers_one_more_file_per_frame() {
+        let t = Tmp::new("rgb");
+        scene(&t, 80, &[0, 1]);
+        t.put("r/scene0080/rgb/000000.png", b"png0");
+        t.put("r/scene0080/rgb/000001.png", b"png1");
+        let a = fingerprint_scene_frames(&t.0.join("r/scene0080"), &[0, 1]).unwrap();
+        let b = fingerprint_scene_frames_rgb(&t.0.join("r/scene0080"), &[0, 1]).unwrap();
+        assert_eq!((a.files, b.files), (6, 8));
+        assert_ne!(a.hash, b.hash);
+        let c = fingerprint_scene_frames_rgb(&t.0.join("r/scene0080"), &[0, 1]).unwrap();
+        t.put("r/scene0080/rgb/000000.png", b"pngX");
+        let d = fingerprint_scene_frames_rgb(&t.0.join("r/scene0080"), &[0, 1]).unwrap();
+        assert_eq!(b, c);
+        assert_ne!(b.hash, d.hash, "RGB 变化必须换指纹");
     }
 
     #[test]

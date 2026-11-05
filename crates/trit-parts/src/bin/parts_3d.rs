@@ -24,8 +24,12 @@ mod meshtex;
 mod occ;
 #[path = "parts_3d/recon.rs"]
 mod recon;
+#[path = "parts_3d/scene_export.rs"]
+mod scene_export;
 #[path = "parts_3d/splat.rs"]
 mod splat;
+#[path = "parts_3d/splat_export.rs"]
+mod splat_export;
 #[path = "parts_3d/texgen.rs"]
 mod texgen;
 #[path = "parts_3d/texgen2.rs"]
@@ -43,7 +47,9 @@ use material::{
 use meshtex::mesh_tex_cmd;
 use occ::occ_cmd;
 use recon::{cloud, eval, fuse_cmd, infer, infer_ids_cmd, mesh_cmd};
+use scene_export::scene_export_cmd;
 use splat::{align_cmd, obs_split_cmd, splat_cmd};
+use splat_export::splat_export_cmd;
 use texgen::{tex_cmd, tex_conv_cmd, tex_prior_cmd};
 use texgen2::tex_gen_cmd;
 use texstyle::{tex_quilt_cmd, tex_stylize_cmd};
@@ -57,6 +63,8 @@ fn main() {
         Some("splat") => splat_cmd(&argv),
         Some("occ") => occ_cmd(&argv),
         Some("export-asset") => export_asset_cmd(&argv),
+        Some("export-scene") => scene_export_cmd(&argv),
+        Some("splat-export") => splat_export_cmd(&argv),
         Some("align") => align_cmd(&argv),
         Some("obs-split") => obs_split_cmd(&argv),
         Some("mesh-tex") => mesh_tex_cmd(&argv),

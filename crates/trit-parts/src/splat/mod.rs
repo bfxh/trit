@@ -6,9 +6,11 @@
 
 mod core;
 mod fit;
+mod io;
 
 pub use core::*;
 pub use fit::*;
+pub use io::*;
 
 #[cfg(test)]
 mod tests;
