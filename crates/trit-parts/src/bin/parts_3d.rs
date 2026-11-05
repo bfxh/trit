@@ -10,6 +10,8 @@
 mod asset;
 #[path = "parts_3d/cli.rs"]
 mod cli;
+#[path = "parts_3d/compose.rs"]
+mod compose;
 #[path = "parts_3d/features.rs"]
 mod features;
 #[path = "parts_3d/light.rs"]
@@ -41,6 +43,7 @@ mod texstyle;
 
 use asset::export_asset_cmd;
 use cli::usage;
+use compose::compose_scene_cmd;
 use light::{light_est_cmd, light_fit_cmd, light_relight_cmd, light_relight_normals_cmd};
 use look::{look_cmd, style_cmd};
 use material::{
@@ -68,6 +71,7 @@ fn main() {
         Some("export-asset") => export_asset_cmd(&argv),
         Some("export-scene") => scene_export_cmd(&argv),
         Some("export-objects") => objects_export_cmd(&argv),
+        Some("compose-scene") => compose_scene_cmd(&argv),
         Some("splat-export") => splat_export_cmd(&argv),
         Some("align") => align_cmd(&argv),
         Some("obs-split") => obs_split_cmd(&argv),
