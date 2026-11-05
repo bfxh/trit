@@ -18,6 +18,11 @@
   · **单实例锁**（`scripts/.mutation-check.lock/`，记 pid）。已有活着的门在跑就直接拒；
     持有者已死算陈旧锁，接管并点名。确认要并行：`MUTATION_CHECK_ALLOW_CONCURRENT=1`。
   · **写文件走 temp + os.replace**。踩过：SIGKILL 正好落在 `write_text` 中间 ⇒ 源文件被截成 0 字节。
+  · **等 target 目录锁要单列**：cargo 打 `Blocking waiting for file lock` 后不再静默等满 900 秒；
+    最多等 `MUTANT_LOCK_GRACE_SECS`（默认 120 秒）就杀整棵树，报 `LOCK-WAIT` 并判红（没结论）。
+  · **target 存在性 fail-closed**：变异条目可声明 `target: "wire"` / `"test:wire"` / `"lib"` /
+    `"bin:name"`（或 `targets: [...]`）。声明后只编这些 target；文件不存在、类型认不出，
+    或基线跑出 0 个测试，都在 preflight/基线阶段判红，绝不静默当成"绿"。
 
 语言口径见 RUNNERS：
   cargo  —— `cargo test -p <crate> <测试名> --locked`
@@ -38,6 +43,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -46,6 +52,11 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 DEFAULT_TIMEOUT_SECS = float(os.environ.get("MUTANT_TIMEOUT_SECS", "900"))
 # 超时用哨兵退出码，绝不能与真实 rc 撞上（真实测试失败是 101/10，崩溃是 0xC000…）。
 TIMEOUT_RC = 100_000
+# 等 target 目录锁超时也单列：等锁是"没结论"，不是抓住，也不是存活。
+LOCK_WAIT_RC = 100_001
+# 看到 cargo 的 file lock 消息后再给这么久等锁；默认 120 秒，超了就杀整棵树判红。
+DEFAULT_LOCK_GRACE_SECS = float(os.environ.get("MUTANT_LOCK_GRACE_SECS", "120"))
+LOCK_WAIT_RE = re.compile(r"^\s*Blocking waiting for file lock", re.I)
 LOCK_DIR = pathlib.Path(__file__).resolve().parent / ".mutation-check.lock"
 
 
@@ -109,15 +120,128 @@ def selftest_marker(runner: str) -> str:
     return SELFTEST_MARKER_SH if runner == "bash" else SELFTEST_MARKER
 
 
-def argv_of(pkg: str, test_filter: str, runner: str) -> list[str]:
-    """跑法：脚本走自己的 --self-test，crate 走 cargo test（只点名那一条测试）。"""
-    if runner == "python":
-        # -X utf8 是硬要求：中文 Windows 默认 cp936，子进程打的 `FAIL <例名>` 会被
-        # 按 utf-8 解成乱码 ⇒ 门还能判红，但点名的那条断言读不出人话。
-        return [sys.executable, "-X", "utf8", pkg, "--self-test"]
-    if runner == "bash":
+def declared_targets(mutant: dict) -> list[str]:
+    """读条目的 target/targets；没写 = 保持旧口径（编整包）。
+
+    写成空串、空数组、或同时写两个字段都判错：静默退回"编全包"会让本该缩小的编译面
+    悄悄涨回去，而且没人知道 target 写错了。"""
+    if "target" in mutant and "targets" in mutant:
+        raise ValueError("target 与 targets 只能写一个")
+    raw = mutant.get("targets", mutant.get("target"))
+    if raw is None:
+        return []
+    if isinstance(raw, str) and raw.strip():
+        return [raw.strip()]
+    if (
+        isinstance(raw, list)
+        and raw
+        and all(isinstance(item, str) and item.strip() for item in raw)
+    ):
+        return [item.strip() for item in raw]
+    raise ValueError("target/targets 必须是非空字符串或非空字符串数组")
+
+
+def crate_root(pkg: str, *, root: pathlib.Path = ROOT) -> pathlib.Path | None:
+    """workspace 布局（crates/<pkg>）与单 crate 布局（仓根 package）都认。"""
+    candidate = root / "crates" / pkg
+    if candidate.is_dir():
+        return candidate
+    manifest = root / "Cargo.toml"
+    if manifest.is_file():
+        text = manifest.read_text(encoding="utf-8", errors="replace")
+        match = re.search(r'(?m)^\s*name\s*=\s*"([^"]+)"', text)
+        if match and match.group(1) == pkg:
+            return root
+    return None
+
+
+def target_spec(
+    target: str, pkg: str, *, root: pathlib.Path = ROOT
+) -> tuple[str, str | None]:
+    """把 target 写法解析成 (kind, name)；裸名字按文件事实推断，认不出就判错。"""
+    raw = target.strip()
+    if raw == "lib":
+        return "lib", None
+    if raw.startswith("test:"):
+        name = raw.split(":", 1)[1].strip()
+        if not name:
+            raise ValueError("test: 后面要写 target 名")
+        return "test", name
+    if raw.startswith("bin:"):
+        name = raw.split(":", 1)[1].strip()
+        if not name:
+            raise ValueError("bin: 后面要写 target 名")
+        return "bin", name
+    base = crate_root(pkg, root=root)
+    if base is None:
+        raise ValueError(f"找不到 crate 目录：{pkg}")
+    if (base / "tests" / f"{raw}.rs").is_file():
+        return "test", raw
+    if (base / "src" / "bin" / f"{raw}.rs").is_file() or (
+        base / "src" / "bin" / raw / "main.rs"
+    ).is_file():
+        return "bin", raw
+    if raw == pkg and (base / "src" / "main.rs").is_file():
+        return "bin", raw
+    raise ValueError(
+        f"认不出的 target {raw!r}；写成 lib / test:<名> / bin:<名>，"
+        "或确认 tests/<名>.rs 存在"
+    )
+
+
+def target_problem(pkg: str, target: str, *, root: pathlib.Path = ROOT) -> str | None:
+    """target 必须真实存在；返回人话错误，None 表示通过。"""
+    try:
+        kind, name = target_spec(target, pkg, root=root)
+    except ValueError as exc:
+        return str(exc)
+    base = crate_root(pkg, root=root)
+    if base is None:
+        return f"找不到 crate 目录：{pkg}"
+    if kind == "lib":
+        if not (base / "src" / "lib.rs").is_file():
+            return "lib target 不存在（缺 src/lib.rs）"
+        return None
+    if kind == "test":
+        if not (base / "tests" / f"{name}.rs").is_file():
+            return f"test target 不存在（缺 tests/{name}.rs）"
+        return None
+    candidates = [
+        base / "src" / "bin" / f"{name}.rs",
+        base / "src" / "bin" / name / "main.rs",
+    ]
+    if name == pkg:
+        candidates.append(base / "src" / "main.rs")
+    if not any(path.is_file() for path in candidates):
+        return f"bin target 不存在（缺 src/bin/{name}.rs 或 src/bin/{name}/main.rs）"
+    return None
+
+
+def argv_of(
+    pkg: str,
+    test_filter: str,
+    runner: str,
+    targets: list[str] | None = None,
+) -> list[str]:
+    """跑法：脚本走自己的 --self-test，crate 走 cargo test；声明了 target 就只编它。"""
+    if runner in ("python", "bash"):
+        if targets:
+            raise ValueError(f"{runner} 目标不支持 target/targets（它们不是 cargo target）")
+        if runner == "python":
+            # -X utf8 是硬要求：中文 Windows 默认 cp936，子进程打的 `FAIL <例名>` 会被
+            # 按 utf-8 解成乱码 ⇒ 门还能判红，但点名的那条断言读不出人话。
+            return [sys.executable, "-X", "utf8", pkg, "--self-test"]
         return ["bash", pkg, "--self-test"]
-    return ["cargo", "test", "-q", "-p", pkg, test_filter, "--locked"]
+    flags: list[str] = []
+    for target in targets or []:
+        kind, name = target_spec(target, pkg)
+        if kind == "lib":
+            flags.append("--lib")
+        elif kind == "test":
+            flags.extend(["--test", name or ""])
+        else:
+            flags.extend(["--bin", name or ""])
+    return ["cargo", "test", "-q", "-p", pkg, *flags, test_filter, "--locked"]
 
 
 def kill_tree(proc: subprocess.Popen[str]) -> None:
@@ -160,8 +284,23 @@ def proc_gone(pid: int) -> bool:
     return False
 
 
-def run_command(argv: list[str], timeout: float) -> subprocess.CompletedProcess[str]:
-    """跑一条命令，超时**不当成抓住**：返回哨兵 rc + 点明最常见成因（target 目录锁被别的门占着）。"""
+def run_command(
+    argv: list[str],
+    timeout: float,
+    *,
+    lock_grace: float | None = None,
+    detect_lock: bool = False,
+) -> subprocess.CompletedProcess[str]:
+    """跑一条命令；超时与等锁都**不当成抓住**，各返回独立哨兵 rc。
+
+    这里不能再用 `communicate(timeout=)`：它在进程退出前拿不到任何输出，
+    而 cargo 等锁时只打一行 `Blocking waiting for file lock` 然后静默。
+    改成边读边攒，看到这行就开始计时：最多 `lock_grace` 秒（默认 120）就杀整棵树，
+    报 `LOCK-WAIT`（没结论）；总超时仍按 `timeout` 判 `TIMEOUT`。
+
+    `detect_lock` 只对 cargo 开：python/bash 的自测输出里可能带同样的字样，
+    父门把它当 cargo 等锁会误杀（2026-11-06 门跑自己的自测时真踩到）。
+    """
     kwargs: dict = {
         "cwd": ROOT,
         "stdout": subprocess.PIPE,
@@ -169,28 +308,69 @@ def run_command(argv: list[str], timeout: float) -> subprocess.CompletedProcess[
         "text": True,
         "encoding": "utf-8",
         "errors": "replace",
+        "bufsize": 1,
     }
     if os.name != "nt":
         # POSIX：自成进程组，超时可以整组端掉（CI 的 ubuntu/macos 走这条）。
         kwargs["start_new_session"] = True
     proc = subprocess.Popen(argv, **kwargs)
-    try:
-        out, _ = proc.communicate(timeout=timeout)
-        return subprocess.CompletedProcess(argv, proc.returncode, stdout=out, stderr="")
-    except subprocess.TimeoutExpired as exc:
-        kill_tree(proc)
+    lines: list[str] = []
+    lock_line: list[str] = []
+    lock_seen = threading.Event()
+
+    def pump() -> None:
+        if proc.stdout is None:
+            return
+        for line in proc.stdout:
+            lines.append(line)
+            if detect_lock and not lock_seen.is_set() and LOCK_WAIT_RE.search(line):
+                lock_line.append(line.strip())
+                lock_seen.set()
+
+    reader = threading.Thread(target=pump, daemon=True)
+    reader.start()
+    start = time.monotonic()
+    lock_at: float | None = None
+    grace = DEFAULT_LOCK_GRACE_SECS if lock_grace is None else max(0.0, lock_grace)
+
+    def finish(rc: int, extra: str = "") -> subprocess.CompletedProcess[str]:
+        # 进程已死/已退出：把管道读干净，别丢半截日志。
         with contextlib.suppress(Exception):
-            # 树已死、管道随之关闭：把残留输出收干净，别丢掉半截日志。
-            exc.stdout, _ = proc.communicate(timeout=60)
-        partial = exc.stdout or b""
-        if isinstance(partial, bytes):
-            partial = partial.decode("utf-8", errors="replace")
-        tail = (
-            f"\nMUTANT TIMEOUT {timeout:.0f}s：子进程连同它的测试 exe 已被杀 ⇒ 这条没有结论。"
-            "本机常见原因是另一个门/编译占着 target 目录锁"
-            "（`cargo` 在 `Blocking waiting for file lock`：有 cargo、没有 rustc 子进程）。\n"
-        )
-        return subprocess.CompletedProcess(argv, TIMEOUT_RC, stdout=partial + tail, stderr="")
+            proc.wait(timeout=10)
+        with contextlib.suppress(Exception):
+            reader.join(timeout=5)
+        return subprocess.CompletedProcess(argv, rc, stdout="".join(lines) + extra, stderr="")
+
+    while True:
+        rc = proc.poll()
+        if rc is not None:
+            return finish(rc)
+        now = time.monotonic()
+        if lock_seen.is_set() and lock_at is None:
+            lock_at = now
+            detail = lock_line[-1] if lock_line else "file lock"
+            print(
+                f"LOCK-WAIT：cargo 在等 target 目录锁（{detail}）；"
+                f"最多再等 {grace:g}s 就杀整棵树，不把等锁计成结论。",
+                flush=True,
+            )
+        if lock_at is not None and now - lock_at >= grace:
+            kill_tree(proc)
+            tail = (
+                f"\nMUTANT LOCK-WAIT {grace:g}s：cargo 在等 target 目录锁"
+                "（`Blocking waiting for file lock`），已连同测试 exe 被杀 ⇒ 这条没有结论。"
+                "等锁释放后重跑；并发实例请给每个工人独立的 CARGO_TARGET_DIR。\n"
+            )
+            return finish(LOCK_WAIT_RC, tail)
+        if now - start >= timeout:
+            kill_tree(proc)
+            tail = (
+                f"\nMUTANT TIMEOUT {timeout:.0f}s：子进程连同它的测试 exe 已被杀 ⇒ 这条没有结论。"
+                "本机常见原因是另一个门/编译占着 target 目录锁"
+                "（`cargo` 在 `Blocking waiting for file lock`：有 cargo、没有 rustc 子进程）。\n"
+            )
+            return finish(TIMEOUT_RC, tail)
+        time.sleep(0.2)
 
 
 def hang_secs_of(mutant: dict) -> float | None:
@@ -200,10 +380,19 @@ def hang_secs_of(mutant: dict) -> float | None:
 
 
 def run_tests(
-    pkg: str, test_filter: str, runner: str = "cargo", timeout: float | None = None
+    pkg: str,
+    test_filter: str,
+    runner: str = "cargo",
+    timeout: float | None = None,
+    targets: list[str] | None = None,
+    lock_grace: float | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    return run_command(argv_of(pkg, test_filter, runner),
-                      DEFAULT_TIMEOUT_SECS if timeout is None else timeout)
+    return run_command(
+        argv_of(pkg, test_filter, runner, targets),
+        DEFAULT_TIMEOUT_SECS if timeout is None else timeout,
+        lock_grace=lock_grace,
+        detect_lock=(runner == "cargo"),
+    )
 
 
 # 显式豁免：只有"整个 crate 不含自有逻辑"这种**可以被机器复核**的理由才收在这里。
@@ -337,6 +526,19 @@ def preflight(mutants: list[dict], *, root: pathlib.Path = ROOT) -> list[str]:
     """
     problems: list[str] = []
     for mutant in mutants:
+        runner = runner_of(mutant)
+        try:
+            targets = declared_targets(mutant)
+        except ValueError as exc:
+            problems.append(f"{mutant['name']}: {exc}")
+            targets = []
+        if targets and runner != "cargo":
+            problems.append(f"{mutant['name']}: {runner} 目标不支持 target/targets")
+        for target in targets:
+            problem = target_problem(mutant["pkg"], target, root=root)
+            if problem:
+                problems.append(f"{mutant['name']}: target {target!r} {problem}")
+
         raw = mutant["file"]
         if "\\" in raw:
             problems.append(f"{mutant['name']}: 路径含反斜杠（Linux 打不开）: {raw}")
@@ -351,7 +553,6 @@ def preflight(mutants: list[dict], *, root: pathlib.Path = ROOT) -> list[str]:
             problems.append(f"{mutant['name']}: 锚点出现 {count} 次（{raw}）")
             continue
         anchor = text.find(mutant["old"])
-        runner = runner_of(mutant)
         if runner in ("python", "bash"):
             marker = selftest_marker(runner)
             at = text.rfind(marker)
@@ -512,8 +713,9 @@ def _run(mutants: list[dict]) -> int:
             print(f"  {problem}")
         return 1
 
-    baseline: dict[tuple[str, str], bool] = {}
+    baseline: dict[tuple[str, str, str, tuple[str, ...]], bool] = {}
     timed_out: list[str] = []
+    lock_waits: list[str] = []
     hang_kills: list[str] = []
     no_output: list[str] = []
     survived = 0
@@ -521,15 +723,28 @@ def _run(mutants: list[dict]) -> int:
     crash_kills: list[str] = []
     unnamed: list[str] = []
     for mutant in mutants:
-        key = (mutant["pkg"], mutant["filter"], runner_of(mutant))
-        pkg, filt, runner = key
+        pkg = mutant["pkg"]
+        filt = mutant["filter"]
+        runner = runner_of(mutant)
+        targets = declared_targets(mutant)
+        key = (pkg, filt, runner, tuple(targets))
         if key not in baseline:
-            result = run_tests(pkg, filt, runner)
+            result = run_tests(pkg, filt, runner, targets=targets)
+            if result.returncode == LOCK_WAIT_RC:
+                print(f"BASELINE LOCK-WAIT：{key}\n{result.stdout[-1200:]}")
+                return 1
             if result.returncode == TIMEOUT_RC:
                 print(f"BASELINE TIMEOUT：{key}\n{result.stdout[-1200:]}")
                 return 1
             if result.returncode != 0:
                 print(f"BASELINE RED: {key}\n{result.stdout[-2000:]}")
+                return 1
+            if targets and not ran_any(result.stdout):
+                print(
+                    f"BASELINE NO TESTS：{key}\n"
+                    "声明的 target 里 filter 没匹配到任何测试 ⇒ 判红（fail-closed，"
+                    "不能把“0 个测试”算成基线绿）。"
+                )
                 return 1
             baseline[key] = True
 
@@ -548,12 +763,16 @@ def _run(mutants: list[dict]) -> int:
         # 声明了 hang_secs 的变异：拆掉终止守卫后测试永不返回，短超时即可判死循环
         hang = hang_secs_of(mutant)
         try:
-            result = run_tests(pkg, filt, runner, timeout=hang)
+            result = run_tests(pkg, filt, runner, timeout=hang, targets=targets)
         finally:
             # 恢复按字节，保证工作树回到原样（换行风格也不许被门顺手改掉）
             write_atomic(path, original_bytes)
             assert path.read_bytes() == original_bytes, "恢复失败"
 
+        if result.returncode == LOCK_WAIT_RC:
+            lock_waits.append(mutant["name"])
+            print(f"LOCK-WAIT {mutant['name']}  [等 target 目录锁超时：没有结论，不算抓住也不算存活]")
+            continue
         if result.returncode == TIMEOUT_RC:
             if hang is not None:
                 hang_kills.append(mutant["name"])
@@ -563,11 +782,14 @@ def _run(mutants: list[dict]) -> int:
             print(f"TIMEOUT   {mutant['name']}  [没结论：不算抓住，也不算存活]")
             continue
         if result.returncode == 0:
+            if targets and not ran_any(result.stdout):
+                no_output.append(mutant["name"])
+                print(f"NO-OUTPUT {mutant['name']}  [声明的 target 里 0 个测试：不算存活]")
+                continue
             survived += 1
             print(f"SURVIVED  {mutant['name']}")
             continue
         out = result.stdout
-        runner = runner_of(mutant)
         kind, detail = classify(out, result.returncode, runner)
         if kind == "inconclusive":
             no_output.append(mutant["name"])
@@ -588,14 +810,16 @@ def _run(mutants: list[dict]) -> int:
         print(f"caught    {mutant['name']}  [{detail}]")
 
     killed = (len(mutants) - survived - len(false_kills) - len(crash_kills)
-              - len(timed_out) - len(hang_kills) - len(no_output))
+              - len(timed_out) - len(hang_kills) - len(no_output) - len(lock_waits))
     print(
         f"\n断言抓住 {killed}，死循环抓住 {len(hang_kills)}，崩溃抓住 {len(crash_kills)}，"
         f"编译红假杀 {len(false_kills)}，存活 {survived}，超时 {len(timed_out)}，"
-        f"无输出 {len(no_output)}（共 {len(mutants)}）"
+        f"锁等待 {len(lock_waits)}，无输出 {len(no_output)}（共 {len(mutants)}）"
     )
     for name in timed_out:
         print(f"  TIMEOUT {name}")
+    for name in lock_waits:
+        print(f"  LOCK-WAIT {name}")
     for name in no_output:
         print(f"  NO-OUTPUT {name}")
     for name in false_kills:
@@ -610,9 +834,10 @@ def _run(mutants: list[dict]) -> int:
             print(f"    - {name}")
     if unnamed:
         print(f"  未点名（既无断言也无崩溃签名）: {', '.join(unnamed)}")
-    if survived or false_kills or timed_out or no_output:
+    if survived or false_kills or timed_out or lock_waits or no_output:
         print("⇒ 门判红：假杀的条目要么改成语义变异（编得过、只改行为），要么删除；"
               "超时/无输出的条目要么等锁空闲重跑，要么抬 MUTANT_TIMEOUT_SECS 并写理由；"
+              "锁等待的条目等 target 目录锁释放后重跑，或给并发实例独立的 CARGO_TARGET_DIR；"
               "确实只会死循环的条目在登记表里写 hang_secs 声明，别让它冒充抓住。")
         return 1
     return 0
@@ -645,6 +870,8 @@ def self_test() -> int:
     （编译红当抓住、崩溃当断言、空输出当抓住、脚本落到 cargo、空集放行，这五类都真踩过）。
     失败打印 `FAIL <例名>`（与门脚本族同口径），全过打印 `self-test: N/N passed`。
     """
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     total = 0
     failures: list[str] = []
 
@@ -675,6 +902,8 @@ def self_test() -> int:
     )
     check("python 裸 traceback→crash", classify("Traceback (most recent call last):\nKeyError: 1", 1, "python")[0], "crash")
     check("python AssertionError→caught", classify("AssertionError: 断言失败: x", 1, "python")[0], "caught")
+    check("ran_any: 0 个测试不算跑过", ran_any("test result: ok. 0 passed; 0 failed"), False)
+    check("ran_any: 1 个测试算跑过（反证）", ran_any("test result: ok. 1 passed; 0 failed"), True)
     check(
         "断言文本里的 SyntaxError 不算编译红",
         classify("FAIL python SyntaxError→false_kill: 期望 a，实际 b\nself-test: 26/27 passed", 1, "python")[0],
@@ -746,6 +975,10 @@ def self_test() -> int:
         (root / "scripts" / "plain.py").write_text("print(1)\n", encoding="utf-8")
         (root / "scripts" / "gate.py").write_text("x = 1\ndef self_test():\n    return 0\ny = 2\n", encoding="utf-8")
         (root / "scripts" / "gate.sh").write_text("a=1\nself_test() {\n  :\n}\nb=2\n", encoding="utf-8")
+        (root / "crates" / "real" / "tests").mkdir()
+        (root / "crates" / "real" / "tests" / "wire.rs").write_text("#[test]\nfn t() {}\n", encoding="utf-8")
+        (root / "crates" / "real" / "src" / "bin").mkdir()
+        (root / "crates" / "real" / "src" / "bin" / "tool.rs").write_text("fn main() {}\n", encoding="utf-8")
         check("伞包（只 pub use）→不过期", has_own_logic("umbrella", root=root), False)
         check("自有 fn→过期", has_own_logic("real", root=root), True)
         check("脚本无自测面→不过期", has_own_logic("scripts/plain.py", root=root), False)
@@ -779,6 +1012,95 @@ def self_test() -> int:
         def fixture(file: str, old: str, runner: str) -> list[dict]:
             return [{"name": "fixture", "file": file, "old": old, "pkg": file, "filter": "", "runner": runner}]
 
+        def target_fixture(target: str) -> dict:
+            return {
+                "name": "fixture",
+                "file": "crates/real/src/lib.rs",
+                "old": "1",
+                "pkg": "real",
+                "filter": "t",
+                "target": target,
+            }
+
+        def target_problems(mutant: dict) -> list[str]:
+            return preflight([mutant], root=root)
+
+        def has_problem(mutant: dict, needle: str) -> bool:
+            return any(needle in problem for problem in target_problems(mutant))
+
+        check("target lib 存在→放行", target_problems(target_fixture("lib")), [])
+        check("target test:wire 存在→放行", target_problems(target_fixture("test:wire")), [])
+        check("target 裸 wire 推断 test→放行", target_problems(target_fixture("wire")), [])
+        check("target bin:tool 存在→放行", target_problems(target_fixture("bin:tool")), [])
+        check("target 不存在→判红", has_problem(target_fixture("test:nope"), "test target 不存在"), True)
+        check("target 裸名认不出→判红", has_problem(target_fixture("nope"), "认不出的 target"), True)
+        dual = target_fixture("lib")
+        dual["targets"] = ["lib"]
+        check("target 与 targets 同写→判红", has_problem(dual, "只能写一个"), True)
+        blank = target_fixture("lib")
+        del blank["target"]
+        blank["targets"] = ["lib", " "]
+        check("targets 有空串→判红", has_problem(blank, "非空字符串"), True)
+        script_target = {
+            "name": "fixture",
+            "file": "scripts/gate.py",
+            "old": "x = 1",
+            "pkg": "scripts/gate.py",
+            "filter": "t",
+            "runner": "python",
+            "target": "lib",
+        }
+        check("脚本目标写 target→判红", has_problem(script_target, "不支持 target"), True)
+
+        with tempfile.TemporaryDirectory() as solo:
+            solo_root = pathlib.Path(solo)
+            (solo_root / "src").mkdir()
+            (solo_root / "src" / "lib.rs").write_text("pub fn f() {}\n", encoding="utf-8")
+            (solo_root / "tests").mkdir()
+            (solo_root / "tests" / "one.rs").write_text("#[test]\nfn t() {}\n", encoding="utf-8")
+            (solo_root / "Cargo.toml").write_text('[package]\nname = "solo"\n', encoding="utf-8")
+            check("单 crate 布局 lib target 存在", target_problem("solo", "lib", root=solo_root), None)
+            check("单 crate 布局 test target 存在", target_problem("solo", "test:one", root=solo_root), None)
+
+        check(
+            "无 target 保持旧 argv",
+            argv_of("real", "t", "cargo"),
+            ["cargo", "test", "-q", "-p", "real", "t", "--locked"],
+        )
+        check(
+            "lib target 进 argv",
+            argv_of("real", "t", "cargo", targets=["lib"]),
+            ["cargo", "test", "-q", "-p", "real", "--lib", "t", "--locked"],
+        )
+        check(
+            "test target 进 argv",
+            argv_of("real", "t", "cargo", targets=["test:wire"]),
+            ["cargo", "test", "-q", "-p", "real", "--test", "wire", "t", "--locked"],
+        )
+        check(
+            "bin target 进 argv",
+            argv_of("real", "t", "cargo", targets=["bin:tool"]),
+            ["cargo", "test", "-q", "-p", "real", "--bin", "tool", "t", "--locked"],
+        )
+        many = target_fixture("lib")
+        del many["target"]
+        many["targets"] = ["lib", "test:wire"]
+        check("多个 target 都存在→放行", target_problems(many), [])
+        many_bad = dict(many)
+        many_bad["targets"] = ["lib", "test:nope"]
+        check("多个 target 有一个不存在→判红", has_problem(many_bad, "test target 不存在"), True)
+        check(
+            "多个 target 同时进 argv",
+            argv_of("real", "t", "cargo", targets=["lib", "test:wire"]),
+            ["cargo", "test", "-q", "-p", "real", "--lib", "--test", "wire", "t", "--locked"],
+        )
+        try:
+            argv_of("scripts/gate.py", "t", "python", targets=["lib"])
+            script_argv_raised = False
+        except ValueError:
+            script_argv_raised = True
+        check("脚本 argv 不接受 target", script_argv_raised, True)
+
         check("preflight 锚点在 python 自测面之后→报错", len(preflight(fixture("scripts/gate.py", "y = 2", "python"), root=root)), 1)
         check("preflight 锚点在自测面之前→放行", preflight(fixture("scripts/gate.py", "x = 1", "python"), root=root), [])
         check("preflight 锚点在 bash 自测面之后→报错", len(preflight(fixture("scripts/gate.sh", "b=2", "bash"), root=root)), 1)
@@ -791,6 +1113,45 @@ def self_test() -> int:
     fast = run_command([sys.executable, "-c", "print(1)"], timeout=30)
     check("给足超时的正常命令不该被判超时（反证）", fast.returncode == 0, True)
     check("正常命令不该带超时字样（反证）", "MUTANT TIMEOUT" in fast.stdout, False)
+
+    # 等锁检测：cargo 只打一行 Blocking waiting for file lock 然后静默；
+    # 必须按 grace 提前杀树并单列成 LOCK-WAIT，不能等满 timeout。
+    lock_cmd = [
+        sys.executable,
+        "-c",
+        "import time; print('Blocking waiting for file lock on build directory', flush=True); time.sleep(30)",
+    ]
+    lock_started = time.monotonic()
+    locked = run_command(lock_cmd, timeout=30, lock_grace=0.5, detect_lock=True)
+    lock_elapsed = time.monotonic() - lock_started
+    check("锁等待返回独立哨兵 rc", locked.returncode, LOCK_WAIT_RC)
+    check("锁等待要点名 MUTANT LOCK-WAIT", "MUTANT LOCK-WAIT" in locked.stdout, True)
+    check("锁等待按 grace 提前结束（不等满 timeout）", lock_elapsed < 8, True)
+    quick_lock = run_command(
+        [
+            sys.executable,
+            "-c",
+            "print('Blocking waiting for file lock on build directory'); print('ok')",
+        ],
+        timeout=30,
+        lock_grace=0.5,
+        detect_lock=True,
+    )
+    check("锁消息后很快退出→正常返回（不误杀）", quick_lock.returncode, 0)
+    check("锁消息后很快退出→输出不丢", "ok" in quick_lock.stdout, True)
+    # 反证：python/bash 的 self-test 输出里也可能出现同样的字样，不能被当成 cargo 等锁。
+    decoy = run_command(
+        [
+            sys.executable,
+            "-c",
+            "import time; print('Blocking waiting for file lock on build directory', flush=True); time.sleep(2); print('ok')",
+        ],
+        timeout=10,
+        lock_grace=0.5,
+        detect_lock=False,
+    )
+    check("非 cargo 输出里的锁字样不误判（反证）", decoy.returncode, 0)
+    check("非 cargo 不会被 LOCK-WAIT 杀（反证）", "MUTANT LOCK-WAIT" in decoy.stdout, False)
 
     check("声明 hang_secs 的变异用短超时", hang_secs_of({"hang_secs": 300}), 300.0)
     check("没声明就是 None（走默认 900）", hang_secs_of({}), None)

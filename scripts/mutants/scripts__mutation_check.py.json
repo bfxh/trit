@@ -142,5 +142,41 @@
   "filter": "",
   "pkg": "scripts/mutation_check.py",
   "runner": "python"
- }
+ },
+{
+ "name": "gate: target 存在性检查形同虚设（不存在也放行）",
+ "file": "scripts/mutation_check.py",
+ "old": "        if not (base / \"tests\" / f\"{name}.rs\").is_file():",
+ "new": "        if False:",
+ "pkg": "scripts/mutation_check.py",
+ "filter": "",
+ "runner": "python"
+},
+{
+ "name": "gate: 锁等待不按 grace 提前杀（退回等满 timeout）",
+ "file": "scripts/mutation_check.py",
+ "old": "        if lock_at is not None and now - lock_at >= grace:",
+ "new": "        if False:",
+ "pkg": "scripts/mutation_check.py",
+ "filter": "",
+ "runner": "python"
+},
+{
+ "name": "gate: 锁等待哨兵撞上 TIMEOUT（分类错）",
+ "file": "scripts/mutation_check.py",
+ "old": "            return finish(LOCK_WAIT_RC, tail)",
+ "new": "            return finish(TIMEOUT_RC, tail)",
+ "pkg": "scripts/mutation_check.py",
+ "filter": "",
+ "runner": "python"
+},
+{
+ "name": "gate: target 与 targets 双写不判红",
+ "file": "scripts/mutation_check.py",
+ "old": "    if \"target\" in mutant and \"targets\" in mutant:",
+ "new": "    if False:",
+ "pkg": "scripts/mutation_check.py",
+ "filter": "",
+ "runner": "python"
+}
 ]
