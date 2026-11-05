@@ -76,6 +76,10 @@
    2026-11-06 就是这样让三平台 CI 的 Clippy 步骤一起红）/ `doc` / `cargo test --workspace --locked` /
    `mutation_check` / `module_budget` / `test_surface` / `publish_graph` / `deps` / `ci_integrity` /
    `hazard` / `layers` / `docs_hygiene` / `claims_evidence` / `model_status` / `doc_pointers`。
+6. **合过 `origin/main` 的门线判红要分两笔账**：先 `git diff --name-only origin/main...HEAD` 确认红项所在文件不在本片改动里，
+   再把红归到债务条目（谁的文件谁修）。两条禁区：不许调宽基线来让它变绿，不许把"本片没红"写成"门全绿"。
+   `docs_hygiene` / `claims_evidence` / `tech_collide` 这三道门尚未进 CI，存量红不拦 PR；
+   **一旦并进去，同一批存量红会立刻拦住所有 PR**，所以并 CI 之前要先清零（现状计数见 §8）。
 
 ## 7. 规矩 ↔ 门 的对照（哪条机器判、哪条只能人判）
 
@@ -111,3 +115,9 @@
   `docs_hygiene` 按目录计数进基线，**只许变少**；我没批量改别人的历史记录。
 - `scripts/layers.py` 与 `docs_hygiene.py` 还没挂进 CI（`.github` 目录正被别的会话认领），
   现阶段只在本地与变异面生效——这是本文件所有"门"字目前最大的水分，写在这是为了不被当成已完成。
+- 2026-11-06 在 `feat/trit-bench` 合 `origin/main` 后逐字复跑，存量红三条（都不是这片引入的，
+  逐号与复算尺记在交接账本 **A399** / **A367**）：
+  `docs_hygiene` 拦 1 —— `docs/GENERAL-PLAN.md` 盘符绝对路径 **27** 处 / 基线 24；
+  `claims_evidence` 拦 2 —— `docs/SECURITY-NET.md` 无据能力句 **5** 句 / 基线 4，新建的 `docs/CALIBRATION.md` **2** 句 / 基线 0（新文件没有豁免）；
+  `tech_collide` 拦 8 —— 交接账本 `LEDGER.md` 编号复用 A129/A130/A131/A134/A153/A155/A157/A267。
+  这三条的修法都是改文档而不是改基线；§6 第 6 条规定了改之前不许把这三门并进 CI。
