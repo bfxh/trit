@@ -53,13 +53,13 @@ fn initialize_reports_protocol_and_server_name() {
 }
 
 #[test]
-fn lists_exactly_eleven_tools() {
+fn lists_exactly_twelve_tools() {
     let mut server = Mcp::new();
     let response = server
         .dispatch(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))
         .expect("response");
     let listed = response["result"]["tools"].as_array().expect("tools");
-    assert_eq!(listed.len(), 11);
+    assert_eq!(listed.len(), 12);
     let names: Vec<&str> = listed
         .iter()
         .map(|tool| tool["name"].as_str().expect("name"))
@@ -73,13 +73,14 @@ fn lists_exactly_eleven_tools() {
         "wsp_propose",
         "wsp_explain",
         "wsp_probe",
+        "wsp_localize",
         "wsp_audit",
         "wsp_diff",
         "wsp_merge",
     ] {
         assert!(names.contains(&expected), "缺少工具 {expected}");
     }
-    assert_eq!(tools().len(), 11);
+    assert_eq!(tools().len(), 12);
 }
 
 #[test]
@@ -520,6 +521,49 @@ fn probe_adaptive_pins_output_row() {
     let top = &value["top"][0];
     assert_eq!(top["layer"].as_u64(), Some(1));
     assert_eq!(top["row"].as_u64(), Some(0));
+}
+
+#[test]
+fn localize_returns_row_and_trit() {
+    let net = Net::new(vec![
+        Layer::new(2, 2, &[1, 1, 0, 0], &[0, 0]).expect("l0"),
+        Layer::new(1, 2, &[1, 0], &[0]).expect("l1"),
+    ])
+    .expect("net");
+    let oracle = Oracle::sampled_behavior(&net, 2, 16, 7).expect("oracle");
+    let mut broken = net.clone();
+    Patch::new(vec![Edit::SetTrit {
+        layer: 0,
+        row: 0,
+        col: 0,
+        to: Trit::Zero,
+    }])
+    .apply(&mut broken)
+    .expect("corrupt");
+
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_localize",
+        json!({
+            "artifact": to_wsp(&broken),
+            "oracle": trit_wspace::wire::oracle_to_value(&oracle),
+            "rows": 2,
+            "row_budget": 2,
+            "max_trits": 0,
+            "top_trits": 4,
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert_eq!(value["probe"]["selection"].as_str(), Some("adaptive"));
+    let rows = value["rows"].as_array().expect("rows");
+    assert_eq!(rows.len(), 2);
+    let row0 = rows
+        .iter()
+        .find(|row| row["layer"].as_u64() == Some(0) && row["row"].as_u64() == Some(0))
+        .expect("row0");
+    assert_eq!(row0["top"][0]["after_loss"].as_u64(), Some(0));
 }
 
 #[test]

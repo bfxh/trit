@@ -223,6 +223,25 @@ fn cli_read_verify_patch_repair_round_trip() {
     assert_eq!(adaptive["top"][0]["layer"].as_u64(), Some(1));
     assert_eq!(adaptive["top"][0]["row"].as_u64(), Some(0));
 
+    let localized = stdout_json(&run(&[
+        "localize",
+        &path_string(&broken),
+        "--oracle",
+        &path_string(&oracle),
+        "--rows",
+        "2",
+        "--row-budget",
+        "2",
+        "--max-trits",
+        "0",
+        "--top-trits",
+        "4",
+    ]));
+    assert_eq!(localized["probe"]["selection"].as_str(), Some("adaptive"));
+    let rows = localized["rows"].as_array().expect("rows");
+    assert_eq!(rows.len(), 2);
+    assert!(rows.iter().all(|row| row["top"].is_array()));
+
     let candidate = dir.join("candidate.json");
     let fixed2 = dir.join("fixed2.wsp");
     let log2 = dir.join("audit2.jsonl");

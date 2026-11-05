@@ -27,6 +27,7 @@ use crate::codec::checksum;
 use crate::edit::{Cost, Edit, Patch};
 use crate::error::{Error, Result};
 use crate::explain::{SampleEditImpact, SampleExplanation};
+use crate::localize::{LocalizeReport, RowLocalization, TritImpact};
 use crate::net::Net;
 use crate::oracle::Oracle;
 use crate::probe::{ProbeReport, RowEffect, RowImpact};
@@ -299,6 +300,53 @@ pub fn row_effect_to_value(effect: &RowEffect) -> Value {
         "changed": effect.changed,
         "fixed": effect.fixed,
         "broken": effect.broken,
+    })
+}
+
+/// 两级定位报告 → JSON。
+#[must_use]
+pub fn localize_report_to_value(report: &LocalizeReport) -> Value {
+    json!({
+        "probe": probe_report_to_value(&report.probe),
+        "rows": report
+            .rows
+            .iter()
+            .map(row_localization_to_value)
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// 单行定位结果 → JSON。
+#[must_use]
+pub fn row_localization_to_value(localization: &RowLocalization) -> Value {
+    json!({
+        "layer": localization.layer,
+        "row": localization.row,
+        "cols": localization.cols,
+        "positions": localization.positions,
+        "probed": localization.probed,
+        "sampled": localization.sampled,
+        "stride": localization.stride,
+        "evaluated": localization.evaluated,
+        "top": localization
+            .top
+            .iter()
+            .map(trit_impact_to_value)
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// 单个 trit 编辑的整验证集影响 → JSON。
+#[must_use]
+pub fn trit_impact_to_value(impact: &TritImpact) -> Value {
+    json!({
+        "edit": edit_to_value(&impact.edit),
+        "before_loss": impact.before_loss,
+        "after_loss": impact.after_loss,
+        "gain": impact.gain,
+        "changed": impact.changed,
+        "fixed": impact.fixed,
+        "broken": impact.broken,
     })
 }
 

@@ -30,6 +30,7 @@ trit-wspace <command>
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
   explain <artifact|-> --oracle <json|-> --sample N [--top K]
   probe <artifact|-> --oracle <json|-> [--budget N] [--top K] [--adaptive]
+  localize <artifact|-> --oracle <json|-> [--rows K] [--row-budget N] [--max-trits N] [--top-trits K]
   audit <log|-> [--artifact <initial|->]
   replay <log|-> --artifact <initial|-> [--out <path>]
   diff <a|-> <b|->
@@ -63,6 +64,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "propose" => cmd_propose(&args[1..]),
         "explain" => cmd_explain(&args[1..]),
         "probe" => cmd_probe(&args[1..]),
+        "localize" => cmd_localize(&args[1..]),
         "audit" => cmd_audit(&args[1..]),
         "replay" => cmd_replay(&args[1..]),
         "diff" => cmd_diff(&args[1..]),
@@ -364,6 +366,22 @@ fn cmd_probe(args: &[String]) -> Result<(), String> {
         crate::probe::probe_rows(&net, &oracle, budget, top).map_err(err)?
     };
     emit(&wire::probe_report_to_value(&report))
+}
+
+fn cmd_localize(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    let path = one(&parsed, "localize <artifact|-> --oracle <json|->")?;
+    let oracle_path = value(&parsed, "oracle")?;
+    no_double_stdin(&[path, oracle_path])?;
+    let net = load_net(path)?;
+    let oracle = load_oracle(oracle_path)?;
+    let rows = opt_usize(&parsed, "rows", 3)?;
+    let row_budget = opt_usize(&parsed, "row-budget", 0)?;
+    let max_trits = opt_usize(&parsed, "max-trits", 64)?;
+    let top_trits = opt_usize(&parsed, "top-trits", 8)?;
+    let report = crate::localize::localize(&net, &oracle, row_budget, rows, max_trits, top_trits)
+        .map_err(err)?;
+    emit(&wire::localize_report_to_value(&report))
 }
 
 fn cmd_diff(args: &[String]) -> Result<(), String> {

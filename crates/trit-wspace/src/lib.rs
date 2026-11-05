@@ -30,6 +30,7 @@
 //! - 搜索层：[`mod@repair`] 不走梯度，在离散空间里找精确最小补丁；[`mod@analyze`] 对每个单点
 //!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`mod@explain`] 解释单个样本
 //!   为什么错、哪些单点编辑能让它翻转/变对；[`mod@probe`] 做行级消融测行为漂移（大网读取）；
+//!   [`mod@localize`] 在承重行内做 trit 级定位（行 → 权重两级读取）；
 //!   [`merge`] 负责消掉隐藏单元置换对称性后再合并。
 //!
 //! 规范自由度（不变量）：
@@ -82,8 +83,8 @@
 //!
 //! - CLI：`read / verify / patch / repair / diff / merge`，输入 `-` 读 stdin，报告一律 JSON；
 //! - MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、
-//!   `wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_audit`、
-//!   `wsp_diff`、`wsp_merge` 十一个工具，工具参数与返回格式见 [`wire`]。
+//!   `wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、
+//!   `wsp_audit`、`wsp_diff`、`wsp_merge` 十二个工具，工具参数与返回格式见 [`wire`]。
 //!
 //! 补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
 
@@ -97,6 +98,7 @@ pub mod codec;
 pub mod edit;
 pub mod error;
 pub mod explain;
+pub mod localize;
 pub mod mcp;
 pub mod merge;
 pub mod net;
@@ -117,6 +119,7 @@ pub use codec::{checksum, from_wsp, to_wsp};
 pub use edit::{Cost, Edit, Journal, Patch};
 pub use error::{Error, Result};
 pub use explain::{SampleEditImpact, SampleExplanation, explain_sample};
+pub use localize::{LocalizeReport, RowLocalization, TritImpact, localize, localize_row};
 pub use merge::{align, merge_aligned, merge_vote};
 pub use net::{Layer, Net};
 pub use oracle::{Behavior, Oracle};

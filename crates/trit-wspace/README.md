@@ -68,6 +68,7 @@ trit-wspace propose broken.wsp --oracle xor.json --pairs --limit 8
 trit-wspace propose broken.wsp --oracle xor.json --depth 3 --limit 8
 trit-wspace explain broken.wsp --oracle xor.json --sample 0 --top 8
 trit-wspace probe   xor.wsp --oracle probe.json --budget 64 --top 16 --adaptive
+trit-wspace localize broken.wsp --oracle xor.json --rows 3 --row-budget 64 --max-trits 64 --top-trits 8
 trit-wspace audit  audit.jsonl --artifact start.wsp
 trit-wspace replay audit.jsonl --artifact start.wsp --out final.wsp
 trit-wspace diff   a.wsp b.wsp
@@ -109,7 +110,7 @@ trit-wspace mcp
 }
 ```
 
-十一个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_audit`、`wsp_diff`、`wsp_merge`。
+十二个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
@@ -127,6 +128,9 @@ trit-wspace mcp
 `budget` 超了默认按固定步长均匀抽样，`adaptive=true` 时改用激活活跃度/裕量给行打分、
 优先探“真正在工作”的行并钉住输出层行；报告里明确标 `sampled` / `stride` / `selection`。
 没有验证集时用 `Oracle::sampled_behavior` 以网络当前行为生成确定性随机探针集。
+
+`wsp_localize` 做两级定位：先自适应选承重行，再在每行内逐位置（权重 + 偏置）试替代值、
+整验证集复核；`max_trits` 超了按固定步长抽样，报告标 `sampled` / `stride`。
 
 `wsp_audit` 校验 JSONL 编辑日志的哈希链；给了初始工件就顺带重放并核对最终校验和。
 模板见 [`mcp.example.json`](mcp.example.json)。

@@ -1,4 +1,4 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，十一个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，十二个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
@@ -40,7 +40,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 十一个工具。改数量必须同时改测试断言。
+/// 十二个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -132,6 +132,19 @@ pub fn tools() -> Vec<Value> {
                 "budget": {"type": "integer", "description": "最多探多少行，0=全部"},
                 "top": {"type": "integer", "description": "返回条数，默认 16；0=全部"},
                 "adaptive": {"type": "boolean", "description": "按激活活跃度自适应选行（默认均匀步长）"},
+            }),
+            &["oracle"],
+        ),
+        tool(
+            "wsp_localize",
+            "两级定位：自适应选承重行，再在行内做 trit 级扫描",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "oracle": {"type": "object"},
+                "rows": {"type": "integer", "description": "选多少行，默认 3"},
+                "row_budget": {"type": "integer", "description": "行探针预算，0=全部"},
+                "max_trits": {"type": "integer", "description": "单行最多探多少位置，默认 64；0=全部"},
+                "top_trits": {"type": "integer", "description": "每行返回条数，默认 8；0=全部"},
             }),
             &["oracle"],
         ),
@@ -387,6 +400,19 @@ impl Mcp {
                     crate::probe::probe_rows(&net, &oracle, budget, top).map_err(err)?
                 };
                 Ok(wire::probe_report_to_value(&report))
+            }
+            "wsp_localize" => {
+                let net = load(args)?;
+                let oracle = required_oracle(args)?;
+                let rows = opt_usize(args, "rows", 3);
+                let row_budget = opt_usize(args, "row_budget", 0);
+                let max_trits = opt_usize(args, "max_trits", 64);
+                let top_trits = opt_usize(args, "top_trits", 8);
+                let report = crate::localize::localize(
+                    &net, &oracle, row_budget, rows, max_trits, top_trits,
+                )
+                .map_err(err)?;
+                Ok(wire::localize_report_to_value(&report))
             }
             "wsp_audit" => {
                 let raw = args.get("log").and_then(Value::as_str).ok_or("需要 log")?;

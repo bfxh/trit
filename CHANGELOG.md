@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：行内 trit 定位）
+
+- `localize_row`：在单行内逐位置（权重 + 偏置）试替代值，整验证集复核（`after_loss` /
+  `gain` / `changed` / `fixed` / `broken`）；`max_trits` 超了按固定步长抽样并标 `sampled` / `stride`。
+- `localize`：两级读取——自适应行探针选 top 行，再对每行做行内定位。
+- CLI `localize <artifact> --oracle <json> [--rows K] [--row-budget N] [--max-trits N] [--top-trits K]`；
+  MCP `wsp_localize`（工具 11 → 12）。
+- 读数：打坏的 XOR row0 的 top trit `after_loss=0`；`[6,1]` 的 7 个位置在 `max_trits=3` 下
+  `stride=3`、`probed=3`、`evaluated=6`；两级定位选到活跃 row0、排除全零 row1。
+- 测试 109 → 114 + 1 doctest；变异 61 → **67 条，67/67 caught**；test_surface 台账 2,315 → 2,320。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget(679, 0 超) /
+  publish_graph / hazard_gate(0) / test_surface / layers.py / docs_hygiene 全过。
+
 ### Added（trit-wspace：行级探针的自适应选行）
 
 - `probe_rows_adaptive` / CLI `--adaptive` / MCP `probe.adaptive`：预算不足时不再固定步长，

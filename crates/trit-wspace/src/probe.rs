@@ -134,15 +134,8 @@ fn probe_with(
     top: usize,
 ) -> Result<ProbeReport> {
     oracle.check_arch(net)?;
-    let baseline_outputs = oracle.outputs_of(net)?;
-    let baseline_mismatches: Vec<usize> = baseline_outputs
-        .iter()
-        .zip(oracle.outputs())
-        .enumerate()
-        .filter_map(|(index, (got, want))| (got != want).then_some(index))
-        .collect();
-    let baseline_set: HashSet<usize> = baseline_mismatches.iter().copied().collect();
-    let before_loss = baseline_mismatches.len();
+    let baseline = Baseline::new(net, oracle)?;
+    let before_loss = baseline.loss;
 
     let mut all_rows = Vec::new();
     for (layer, weights) in net.layers().iter().enumerate() {
@@ -168,12 +161,6 @@ fn probe_with(
     let probed_rows = selected.len();
 
     let mut impacts = Vec::with_capacity(probed_rows);
-    let baseline = Baseline {
-        outputs: &baseline_outputs,
-        mismatches: &baseline_mismatches,
-        set: &baseline_set,
-        loss: before_loss,
-    };
     for (layer, row) in selected {
         let cols = net.layer(layer).expect("row came from net").cols();
         let mut zero_edits = Vec::with_capacity(cols + 1);
@@ -313,14 +300,38 @@ fn activity_scores(net: &Net, oracle: &Oracle, max_samples: usize) -> Result<Vec
     Ok(scores.into_iter().flatten().collect())
 }
 
-struct Baseline<'a> {
-    outputs: &'a [Vec<Trit>],
-    mismatches: &'a [usize],
-    set: &'a HashSet<usize>,
-    loss: usize,
+pub(crate) struct Baseline {
+    outputs: Vec<Vec<Trit>>,
+    mismatches: Vec<usize>,
+    set: HashSet<usize>,
+    pub(crate) loss: usize,
 }
 
-fn effect(net: &Net, oracle: &Oracle, patch: &Patch, baseline: &Baseline<'_>) -> Result<RowEffect> {
+impl Baseline {
+    pub(crate) fn new(net: &Net, oracle: &Oracle) -> Result<Self> {
+        let outputs = oracle.outputs_of(net)?;
+        let mismatches: Vec<usize> = outputs
+            .iter()
+            .zip(oracle.outputs())
+            .enumerate()
+            .filter_map(|(index, (got, want))| (got != want).then_some(index))
+            .collect();
+        let set = mismatches.iter().copied().collect();
+        Ok(Self {
+            loss: mismatches.len(),
+            outputs,
+            mismatches,
+            set,
+        })
+    }
+}
+
+pub(crate) fn effect(
+    net: &Net,
+    oracle: &Oracle,
+    patch: &Patch,
+    baseline: &Baseline,
+) -> Result<RowEffect> {
     let mut trial = net.clone();
     patch.apply(&mut trial)?;
     let outputs = oracle.outputs_of(&trial)?;
