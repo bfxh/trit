@@ -232,6 +232,44 @@ pub fn masked_psnr(img: &[f32], gt: &[f32], ids: &[u32]) -> f64 {
     psnr(&a, &b)
 }
 
+/// 世界点 → 多视角颜色（0..1）：投影到每个视角、深度一致才采样、跨视角平均。
+/// 没有任何视角看到 ⇒ `None`（调用方决定标灰/保留底色）。
+pub fn bake_view_color(views: &[View], rgbs: &[Vec<f32>], p: [f32; 3]) -> Option<[f32; 3]> {
+    let mut acc = [0f64; 3];
+    let mut n = 0u32;
+    for (k, view) in views.iter().enumerate() {
+        let Some(rgb) = rgbs.get(k) else {
+            continue;
+        };
+        if rgb.len() != view.w * view.h * 3 {
+            continue;
+        }
+        let Some((u, v, d)) = view.cam.project(p) else {
+            continue;
+        };
+        if u < 0.0 || v < 0.0 || u >= view.w as f64 || v >= view.h as f64 {
+            continue;
+        }
+        let i = v as usize * view.w + u as usize;
+        if d > view.depth[i] as f64 + 0.02 {
+            continue; // 被遮挡
+        }
+        for c in 0..3 {
+            acc[c] += rgb[i * 3 + c] as f64;
+        }
+        n += 1;
+    }
+    if n == 0 {
+        return None;
+    }
+    let s = 1.0 / n as f64;
+    Some([
+        (acc[0] * s) as f32,
+        (acc[1] * s) as f32,
+        (acc[2] * s) as f32,
+    ])
+}
+
 pub fn psnr(a: &[f32], b: &[f32]) -> f64 {
     assert_eq!(a.len(), b.len(), "PSNR 输入长度不一致");
     let mse: f64 = a

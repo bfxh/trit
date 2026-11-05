@@ -36,7 +36,6 @@
     "trit-lsp": "prod",
     "trit-build": "prod",
     "trit-wasm": "prod",
-    "trit-vcs": "prod",
     "trit-orch": "prod",
     "trit-re": "prod",
     "trit-immune": "prod",

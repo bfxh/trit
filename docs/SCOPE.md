@@ -91,7 +91,7 @@
 
 ## 8. 现状与欠账（不粉饰）
 
-- prod 层 12/35 偏重；`trit-vcs`/`trit-orch`/`trit-procscan`/`trit-redteam`/`trit-unsafe`/`trit-lsp`
+- prod 层 11/34 偏重；`trit-orch`/`trit-procscan`/`trit-redteam`/`trit-unsafe`/`trit-lsp`
   方向是拆 `bfxh/trit-tools`，**必须排在分层门进 CI 之后**（见 ROADMAP §3）。
 - 评测协议三件（清单 / 内容指纹 / 独立复核器）还在 `trit-parts` 里，该下沉 `trit-learn`（ROADMAP §1）。
 - `docs/` 存量文档里有本机绝对路径（`GENERAL-PLAN.md`、`DATASETS.md`、`VISUAL-PLAN.md` 等），

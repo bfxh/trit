@@ -89,7 +89,10 @@ pub(crate) fn preview_scene_cmd(argv: &[String]) {
         trit_parts::partsrun::created_unix(),
         trit_parts::partsrun::json_str(&commit),
         argv_json.join(", "),
-        trit_parts::partsrun::json_str(&trit_parts::scenefp::norm_root(&ply)),
+        trit_parts::partsrun::json_str(&trit_parts::partsrun::rel_path(
+            &out,
+            &ply.canonicalize().unwrap_or_else(|_| ply.clone()),
+        )),
         splats.len(),
         nums(lo),
         nums(hi),

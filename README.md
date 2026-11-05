@@ -117,6 +117,14 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-graph` | 三态结构基础：稠密/CSR 三态图、超图、树分解容器、议会、1-WL、图核、PageRank、TriMPNN、端到端三态分类 | 库（无二进制） |
 | `trit-wspace` | 三值权重空间编程：可 diff 的 WSP1 权重 IR、事务式补丁与逐位回滚、原子序列/条件分支脚本、无梯度最小修补（小网络完备 BFS、大网络束搜索）、单点/两编辑/三组合提议（实测失配变化排序）、单样本解释、行级消融探针（大网读取，pilot 消融校准选行）、行内 trit 定位（按位置活跃度选点）、候选直用、哈希链审计日志（权重链 + 行为链，验链 + 重放，分片 header + oracle 表，流式校验/重放，检查点续放）、隐藏单元置换对齐合并；CLI + MCP 十五工具 | `trit-wspace read/verify/script/patch/repair/propose/explain/probe/localize/audit/shard/audit-shards/replay` / `trit-wspace mcp` |
 
+### 拆出去的仓
+
+| 仓 | 内容 | 拆法 |
+|---|---|---|
+| [`bfxh/trit-vcs`](https://github.com/bfxh/trit-vcs) | 内容寻址的协作版本库：BLAKE3 + CDC 分块 + 哈希链审计 + 写前认领门 + MCP 工具面 | `git subtree split` 带 12 笔历史迁出；`trit-core`/`trit-orch` 按 `rev` pin 回本仓，**不复制**（正本仍在这里） |
+
+本仓不再保留 `crates/trit-vcs`，也不保留它的变异登记表与夜间 Git 镜像脚本（`scripts/nightly_mirror.sh` 随仓走）。
+
 ## 三态与三值拓扑
 
 `TriState` 表示 0 / 1 / Z（高阻），与逻辑未知 `X` 区分：`Z` 不驱动总线，可被其他驱动覆盖。
@@ -330,7 +338,7 @@ cargo run --release -p trit-cli -- verify examples/policy.json
   `Limit`／`BudgetExceeded` 错误；策略展开在分配大子树之前扣节点预算。
 - CLI 在默认值上收紧：`table` / REPL 与 WASM 只允许 10 个变量，网表分析最多 10 个主输入。
 
-**可复算的质量数据**：`scripts/mutation_check.py` 的登记表（`scripts/mutants/*.json`）现有 **1,022**
+**可复算的质量数据**：`scripts/mutation_check.py` 的登记表（`scripts/mutants/*.json`）现有 **958**
 条关键规则的单点文本变异，逐条跑对应回归（复算：`python -c "import json,glob;print(sum(len(json.load(open(f,encoding='utf-8'))) for f in glob.glob('scripts/mutants/*.json')))"`）；
 fuzz 目标 8 个（netlist / verilog / atpg / blif / aiger / expr / policy / netlist_json）；
 测试矩阵覆盖 Linux / Windows / macOS 三平台 + MSRV 1.88 + wasm32。贡献流程见
