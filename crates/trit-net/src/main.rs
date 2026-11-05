@@ -533,4 +533,3 @@ fn attack_cmd(args: &[String]) -> Result<(), String> {
     );
     Ok(())
 }
-

@@ -33,7 +33,10 @@ pub(crate) fn calibrate_cmd(args: &[String]) -> Result<(), String> {
             "--benign-tail" => {
                 index += 1;
                 let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
-                benign_tail = Some(raw.parse().map_err(|_| "--benign-tail 不是数字".to_string())?);
+                benign_tail = Some(
+                    raw.parse()
+                        .map_err(|_| "--benign-tail 不是数字".to_string())?,
+                );
             }
             "--rows" | "--epochs" | "--hidden" | "--train-fraction" | "--bands" | "--lr"
             | "--features" | "--test" => {
