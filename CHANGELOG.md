@@ -9,7 +9,7 @@
 - 读数：打乱隐藏行的同一行为网络，未对齐会得到一堆假差分；对齐后差分为 0；
   对齐后再改一个 trit，任务向量恰好 1 条编辑且套用结果等于先对齐后改的行为。
 - 顺手修 CLI 测试的临时目录复用（旧 `audit.jsonl` 会跨轮追加，导致行为链假红）。
-- 测试 146 → 148 + 1 doctest；变异 123 → **126 条，126/126 caught**；test_surface 2,319 → 2,321。
+- 测试 146 → 148 + 1 doctest；变异 123 → **126 条，126/126 caught**；test_surface 合并 main 后 2,326。
 - 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
   hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
 
