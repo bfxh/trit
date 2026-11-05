@@ -3675,7 +3675,7 @@ parts-scene-verify --scene <dir>
 - 所有子清单改记**相对路径**（`partsrun::rel_path`），复核器按清单目录解析 ⇒ 整包可搬移。
 - `parts-scene-verify` 对存在的子包各起一个新进程跑对应 A2 复核器，并交叉核对计数/覆盖率。
 
-**实测**（scene0084；一条命令 44 s，包 129 MB；总复核 21.6 s）：
+**实测**（scene0084；一条命令 33 s（热缓存），包 139 MB；总复核 18.5 s）：
 
 | 子包 | 读数 | 复核 |
 |---|---|---|
@@ -3685,9 +3685,75 @@ parts-scene-verify --scene <dir>
 | compose/ | 52,186 高斯，覆盖 0.791，穿插 0 | PASS |
 | objects-mesh/ | 7 份 OBJ+MTL+PNG + `scene.obj` | PASS |
 | preview/ | 8 视角 + 1024×512 拼图 | PASS |
+| objects-mesh/scene.glb | 7 节点 / 7 材质 / 7 贴图，10.0 MB | PASS + 外部 valid |
 
 - **搬移测试**：整包复制到临时目录后复核仍 PASS（相对路径生效）；
 - 反证 ①：改 `preview/view-03.png` 一个像素 ⇒ 预览 FAIL、总包 reject、rc=1；
 - 反证 ②：总清单 `objects.count` 7→6 ⇒ “对象 7/6=FAIL”、reject、rc=1。
 - 局限：串行编排（44 s 里对象网格占 4 s、总复核里各子复核重复读盘）；包内 OBJ 是文本，
   体积仍是最大项。
+
+### 6.128 引擎资产：单个 GLB（内嵌 PNG + 节点布局）+ 外部校验（2026-11-05）
+
+```text
+parts-3d export-glb --objects-mesh runs/scene-full/scene0084/objects-mesh \
+  --out runs/scene-full/scene0084/objects-mesh/scene.glb
+parts-glb-verify --glb runs/scene-full/scene0084/objects-mesh/scene.glb
+```
+
+- 从对象网格包读 OBJ/PNG/布局，打成 glTF 2.0 二进制：每对象一个 mesh / material / texture / node，
+  PNG 嵌进 BIN chunk；节点只带布局变换（绕 Y 旋转 + 平移，`T = c − R·c + t`）。
+- 顶点按 `(顶点号, uv)` 去重、法线面积加权；bufferView 带 `ARRAY_BUFFER` / `ELEMENT_ARRAY_BUFFER` target。
+- 复核：重算三个输入清单 SHA，**重新打包并逐字节比对**，再验 GLB 头/分块、节点数与 PNG 数。
+- **外部校验**（`qoder-gltf validate`，`qoder-glb-safe` profile）：**valid = true、诊断 0 条**；
+  7 节点 / 7 材质 / 7 贴图 / 172,731 顶点 / 322,692 面；世界包围盒 2.039×0.955×1.537 m。
+
+**实测**：10.0 MB（同场景 OBJ+MTL+PNG 是 76 MB，**小 7.6×**）；打包 0.9 s；
+`export-scene --full` 现在 7 个子包、139 MB，总复核 18.5 s 全 PASS；整包搬移到 E: 后仍 PASS。
+
+- 反证 ①：GLB 尾加 1 字节 ⇒ “版本/长度不对”、reject、rc=1；
+- 反证 ②：改清单里 objects_manifest 的 SHA ⇒ “输入不一致”、reject、rc=1。
+- 局限：无 Draco/网格压缩；PNG 原样嵌入（未重压）；静态资产（无动画/骨骼）。
+
+### 6.129 GLB 转台动画：根节点 360° + 5 关键帧（2026-11-05）
+
+```text
+parts-3d export-glb --objects-mesh <对象网格目录> --out <场景.glb> --spin 4
+parts-3d export-scene ... --full --glb-spin 4
+```
+
+- `--spin N` 把所有对象挂到一个 `turntable` 根节点下，写一条绕 Y 轴 360° 的动画：
+  5 个关键帧（0/90/180/270/360°）、LINEAR、时长 N 秒；动画只转根节点，对象变换不动。
+- 时间/四元数各一个 accessor（时间带 min/max）；清单记 `spin`，复核器按同一时长重建并
+  **逐字节比对**，结构检查动画数/名称/路径。
+- 外部 `qoder-gltf validate`：**valid = true、诊断 0 条**；nodes 8、animations 1、
+  tracks 1、keyframes 5；GLB 10.0 MB（比无动画多 604 B）。
+- 反证：把清单 `spin` 4→0 ⇒ 重建无动画、字节不一致、reject、rc=1。
+- 局限：四元数线性插值（引擎按规范归一化）；只转根节点，不做材质/相机动画。
+
+### 6.130 对象语义标签 + GT 质心对账（2026-11-06）
+
+```text
+parts-3d export-objects --scene <dir> --frames 0,...,7 --out <dir> --scenes <dir>
+parts-3d export-scene ... --full --scenes <dir>
+```
+
+- 读 `scenes/<scene>/objects.json`，按 `pass_index`（= 分割 id）对齐；对象清单每项增加
+  `kind` / `gt_center` / `centroid_error`，`export-scene --full` 原样透传。
+- 复核按清单 `scenes` 重读 GT、重算质心误差（容差 1e-6），并校验 `kind` 与 `gt_center`。
+
+**实测**（scene0084；质心误差 = 重建对象质心到 GT 原语中心的欧氏距离）：
+
+| id | kind | 质心误差 (m) |
+|---|---|---|
+| 1 | cylinder | 0.0693 |
+| 2 | sphere | 0.0732 |
+| 3 | torus | **0.1431** |
+| 4 | part_cube | 0.0823 |
+| 5 | sphere | 0.1301 |
+| 6 | torus | 0.1057 |
+| 7 | sphere | **0.0581** |
+
+- 均值 **0.0945 m**、最大 0.1431、最小 0.0581；按类：torus 均值 0.1244（最差）、sphere 0.0871。
+- 复核 PASS（7/7 对象、标签一致）；把一条 `centroid_error` 改成 0.5 ⇒ 对象 6/7、标签不一致、reject。
+- 局限：只对质心，不比对形状/尺度；`pass_index ↔ 分割 id` 在这套数据成立，真实域需另建对应。

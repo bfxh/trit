@@ -38,6 +38,13 @@ pub struct Config {
     pub features: usize,
     /// 是否按相关性选特征（关掉则用 `features::DEFAULT_RULES`）。
     pub select_features: bool,
+    /// mini-batch 大小（`0/1` = 全批，旧行为；`k>1` 传给训练器）。
+    pub batch_size: usize,
+    /// **良性尾部阈值**（M1 下一步清单第 1 条）：`None` = 对称分位带（旧行为，
+    /// 分位数取自全训练集）；`Some(tail)` = 分位数取自**良性子集**——
+    /// 死区覆盖良性分布主体 `[P(0.5-b), P(1-tail)]`（按规则方向镜像），
+    /// 越出良性尾部才算攻击侧。`tail = 0.05` 即良性 P95。
+    pub benign_tail: Option<f64>,
 }
 
 impl Default for Config {
@@ -52,6 +59,8 @@ impl Default for Config {
             learning_rate: 0.3,
             features: 8,
             select_features: true,
+            batch_size: 0,
+            benign_tail: None,
         }
     }
 }
@@ -72,6 +81,23 @@ impl Selected {
     pub fn name(&self) -> &'static str {
         NAMES.get(self.feature).copied().unwrap_or("?")
     }
+}
+
+/// 一个弃权带的校准产物：带宽度 + 该带的规则集（可落盘供 flow 消费）。
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct BandRules {
+    /// 弃权带宽度。
+    pub band: f64,
+    /// 该带的校准规则集。
+    pub rules: Vec<super::features::Rule>,
+}
+
+/// `run`/`run_split` 的校准产物：曲线 + 选维 + 各带规则（可落盘供 flow 消费）。
+#[derive(Debug, Clone)]
+pub struct CalibOutput {
+    pub reports: Vec<BandReport>,
+    pub selected: Vec<Selected>,
+    pub band_rules: Vec<BandRules>,
 }
 
 /// 单个弃权带的读数。
@@ -202,7 +228,7 @@ pub fn split(samples: &[Sample], fraction: f64, seed: u64) -> (Vec<usize>, Vec<u
     (train, test)
 }
 
-/// 用训练集分位数把选中的特征变成规则。
+/// 用训练集分位数把选中的特征变成规则（对称带，旧行为）。
 pub fn rules_from_quantiles(sorted: &[Vec<f64>], band: f64, selected: &[Selected]) -> Vec<Rule> {
     let low_q = (0.5 - band).clamp(0.0, 1.0);
     let high_q = (0.5 + band).clamp(0.0, 1.0);
@@ -218,11 +244,45 @@ pub fn rules_from_quantiles(sorted: &[Vec<f64>], band: f64, selected: &[Selected
         .collect()
 }
 
+/// **良性尾部阈值**（M1 下一步第 1 条）：分位数取自良性子集而不是全训练集。
+///
+/// 攻击占比高时，全训练集分位数被攻击分布拖走——对称带在两条分布的重叠区
+/// 里砍，误报下不来。良性模式把死区锚在良性分布上：
+///
+/// - `Bias::High`（值越大越可疑）：`low = 良性 P(0.5-b)`，`high = 良性 P(1-tail)`
+///   ——越过良性尾部才算攻击，主体与尾部之间弃权；
+/// - `Bias::Low` 镜像：`high = 良性 P(0.5+b)`，`low = 良性 P(tail)`。
+pub fn rules_from_benign_tail(
+    benign_sorted: &[Vec<f64>],
+    band: f64,
+    tail: f64,
+    selected: &[Selected],
+) -> Vec<Rule> {
+    let inner_low = (0.5 - band).clamp(0.0, 1.0);
+    let inner_high = (0.5 + band).clamp(0.0, 1.0);
+    let tail = tail.clamp(0.0, 0.5);
+    selected
+        .iter()
+        .zip(benign_sorted.iter())
+        .map(|(picked, values)| match picked.bias {
+            Bias::High => Rule {
+                feature: picked.feature,
+                low: quantile(values, inner_low),
+                high: quantile(values, 1.0 - tail),
+                bias: picked.bias,
+            },
+            Bias::Low => Rule {
+                feature: picked.feature,
+                low: quantile(values, tail),
+                high: quantile(values, inner_high),
+                bias: picked.bias,
+            },
+        })
+        .collect()
+}
+
 /// 在同一天上切分后跑曲线。
-pub fn run(
-    samples: &[Sample],
-    config: &Config,
-) -> Result<(Vec<BandReport>, Vec<Selected>), String> {
+pub fn run(samples: &[Sample], config: &Config) -> Result<CalibOutput, String> {
     if samples.is_empty() {
         return Err("数据集为空".to_string());
     }
@@ -244,7 +304,7 @@ pub fn run_split(
     train_set: &[Sample],
     test_set: &[Sample],
     config: &Config,
-) -> Result<(Vec<BandReport>, Vec<Selected>), String> {
+) -> Result<CalibOutput, String> {
     if train_set.is_empty() || test_set.is_empty() {
         return Err("训练集或测试集为空".to_string());
     }
@@ -269,10 +329,35 @@ pub fn run_split(
         .iter()
         .map(|picked| sorted_by_feature(&train_set, picked.feature))
         .collect();
+    // 良性尾部模式：分位数锚在良性子集上（攻击分布不再拖动死区）。
+    let benign_sorted: Vec<Vec<f64>> = if config.benign_tail.is_some() {
+        let benign_only: Vec<Sample> = train_set
+            .iter()
+            .filter(|sample| sample.label == Label::Benign)
+            .copied()
+            .collect();
+        if benign_only.is_empty() {
+            return Err("良性尾部模式需要良性样本（训练集里没有）".to_string());
+        }
+        selected
+            .iter()
+            .map(|picked| sorted_by_feature(&benign_only, picked.feature))
+            .collect()
+    } else {
+        Vec::new()
+    };
 
     let mut reports = Vec::with_capacity(config.bands.len());
+    let mut band_rules: Vec<BandRules> = Vec::with_capacity(config.bands.len());
     for band in &config.bands {
-        let rules = rules_from_quantiles(&sorted, *band, &selected);
+        let rules = match config.benign_tail {
+            Some(tail) => rules_from_benign_tail(&benign_sorted, *band, tail, &selected),
+            None => rules_from_quantiles(&sorted, *band, &selected),
+        };
+        band_rules.push(BandRules {
+            band: *band,
+            rules: rules.clone(),
+        });
         let (model, report) = fit(&train_set, &rules, config)?;
         reports.push(evaluate(
             test_set,
@@ -283,7 +368,11 @@ pub fn run_split(
             &report,
         )?);
     }
-    Ok((reports, selected))
+    Ok(CalibOutput {
+        reports,
+        selected,
+        band_rules,
+    })
 }
 
 /// 多数类下采样到少数类数量（等距取）。三值 STE 全批训练在不平衡数据上
@@ -345,6 +434,7 @@ fn fit(
             epochs: config.epochs,
             learning_rate: config.learning_rate,
             seed: config.seed.wrapping_add(1),
+            batch_size: config.batch_size,
         },
     )
     .map_err(|error| error.to_string())?;

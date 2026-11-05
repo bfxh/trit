@@ -139,6 +139,7 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
     let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
     let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
     let frames = arg(argv, "--frames").unwrap_or_else(|| "0,1,2,3,4,5,6,7".into());
+    let scenes_root = arg(argv, "--scenes").map(PathBuf::from);
     let cells = arg(argv, "--cells").unwrap_or_else(|| "0.01,0.02,0.04".into());
     let texture = argv.iter().any(|a| a == "--texture");
     let atlas: usize = arg(argv, "--atlas")
@@ -172,6 +173,9 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
     let preview_res: usize = arg(argv, "--preview-res")
         .and_then(|v| v.parse().ok())
         .unwrap_or(256);
+    let glb_spin: f32 = arg(argv, "--glb-spin")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0.0);
     let parts3d = arg(argv, "--parts-3d")
         .map(PathBuf::from)
         .unwrap_or_else(|| sibling("parts-3d"));
@@ -252,21 +256,22 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
         let om_dir = out.join("objects-mesh");
         let prev_dir = out.join("preview");
 
-        run(
-            &parts3d,
-            &[
-                "export-objects".into(),
-                "--scene".into(),
-                scene.display().to_string(),
-                "--frames".into(),
-                frames.clone(),
-                "--cell".into(),
-                format!("{scell}"),
-                "--out".into(),
-                obj_dir.display().to_string(),
-            ],
-            "export-objects",
-        );
+        let mut oargs: Vec<String> = vec![
+            "export-objects".into(),
+            "--scene".into(),
+            scene.display().to_string(),
+            "--frames".into(),
+            frames.clone(),
+            "--cell".into(),
+            format!("{scell}"),
+            "--out".into(),
+            obj_dir.display().to_string(),
+        ];
+        if let Some(root) = &scenes_root {
+            oargs.push("--scenes".into());
+            oargs.push(root.display().to_string());
+        }
+        run(&parts3d, &oargs, "export-objects");
         run(
             &parts3d,
             &[
@@ -300,6 +305,19 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
             ],
             "export-object-meshes",
         );
+        let glb_out = om_dir.join("scene.glb");
+        let mut gargs: Vec<String> = vec![
+            "export-glb".into(),
+            "--objects-mesh".into(),
+            om_dir.display().to_string(),
+            "--out".into(),
+            glb_out.display().to_string(),
+        ];
+        if glb_spin > 0.0 {
+            gargs.push("--spin".into());
+            gargs.push(format!("{glb_spin}"));
+        }
+        run(&parts3d, &gargs, "export-glb");
         run(
             &parts3d,
             &[
@@ -319,22 +337,26 @@ pub(crate) fn scene_export_cmd(argv: &[String]) {
         let obj_m = obj_dir.join("objects.manifest.json");
         let om_m = om_dir.join("objects-mesh.manifest.json");
         let prev_m = prev_dir.join("preview.manifest.json");
+        let glb_m = PathBuf::from(format!("{}.manifest.json", glb_out.display()));
         let obj_txt = Sub::read(&obj_m);
         let comp_txt = Sub::read(&compose_manifest);
         let om_txt = Sub::read(&om_m);
         let _ = Sub::read(&prev_m);
+        let glb_txt = Sub::read(&glb_m);
         let n_obj = count_ids(&obj_txt.json, "objects");
         let composed = comp_txt.num_after("\"composed\": {", "count");
         let cov = comp_txt.num_after("\"gate\": {", "coverage");
         let n_omesh = count_ids(&om_txt.json, "objects");
+        let n_glb = glb_txt.num("parts");
         println!(
-            "总包：对象 {n_obj} 个、合成 {composed} 高斯（覆盖 {cov:.3}）、对象网格 {n_omesh} 份"
+            "总包：对象 {n_obj} 个、合成 {composed} 高斯（覆盖 {cov:.3}）、对象网格 {n_omesh} 份、GLB {n_glb} 部件"
         );
         full_parts = format!(
-            ", \"objects\": {{\"manifest\": {{\"path\": \"objects/objects.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_obj}}}, \"compose\": {{\"manifest\": {{\"path\": \"compose/compose.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {composed}, \"coverage\": {cov}}}, \"objects_mesh\": {{\"manifest\": {{\"path\": \"objects-mesh/objects-mesh.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_omesh}}}, \"preview\": {{\"manifest\": {{\"path\": \"preview/preview.manifest.json\", \"sha256\": \"{}\"}}, \"views\": {preview_views}, \"sheet\": \"preview/preview.png\"}}",
+            ", \"objects\": {{\"manifest\": {{\"path\": \"objects/objects.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_obj}}}, \"compose\": {{\"manifest\": {{\"path\": \"compose/compose.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {composed}, \"coverage\": {cov}}}, \"objects_mesh\": {{\"manifest\": {{\"path\": \"objects-mesh/objects-mesh.manifest.json\", \"sha256\": \"{}\"}}, \"count\": {n_omesh}}}, \"glb\": {{\"manifest\": {{\"path\": \"objects-mesh/scene.glb.manifest.json\", \"sha256\": \"{}\"}}, \"parts\": {n_glb}, \"spin\": {glb_spin}}}, \"preview\": {{\"manifest\": {{\"path\": \"preview/preview.manifest.json\", \"sha256\": \"{}\"}}, \"views\": {preview_views}, \"sheet\": \"preview/preview.png\"}}",
             sha(&obj_m),
             sha(&compose_manifest),
             sha(&om_m),
+            sha(&glb_m),
             sha(&prev_m),
         );
     }

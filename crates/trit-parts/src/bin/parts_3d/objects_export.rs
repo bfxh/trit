@@ -46,6 +46,15 @@ pub(crate) fn objects_export_cmd(argv: &[String]) {
     let scene = PathBuf::from(arg(argv, "--scene").unwrap_or_else(|| usage()));
     let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
     let frames = parse_list(argv, "--frames", vec![0, 1, 2, 3, 4, 5, 6, 7]);
+    let scenes = arg(argv, "--scenes").map(PathBuf::from);
+    let labels = scenes.as_ref().map(|root| {
+        let name = scene
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default();
+        let p = root.join(name).join("objects.json");
+        trit_parts::objlabel::load(&p).unwrap_or_else(|e| fail(&e))
+    });
     let cell: f32 = arg(argv, "--cell")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.01);
@@ -108,6 +117,23 @@ pub(crate) fn objects_export_cmd(argv: &[String]) {
         for c in &mut cen {
             *c /= splats.len() as f64;
         }
+        let extra = if let Some(ls) = &labels {
+            let l = ls
+                .iter()
+                .find(|l| l.pass_index == id)
+                .unwrap_or_else(|| fail(&format!("对象 {id} 在 objects.json 里没有标签")));
+            let err = trit_parts::objlabel::centroid_error(cen, l.center);
+            println!("  标签 {}，质心误差 {err:.4} m", l.kind);
+            format!(
+                ", \"kind\": {}, \"gt_center\": [{}, {}, {}], \"centroid_error\": {err}",
+                trit_parts::partsrun::json_str(&l.kind),
+                l.center[0],
+                l.center[1],
+                l.center[2]
+            )
+        } else {
+            String::new()
+        };
         let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
         let sha = trit_core::fingerprint::file_sha256(&p).unwrap_or_default();
         println!(
@@ -119,7 +145,7 @@ pub(crate) fn objects_export_cmd(argv: &[String]) {
             bytes
         );
         entries.push(format!(
-            "{{\"id\": {id}, \"path\": {}, \"sha256\": \"{sha}\", \"bytes\": {bytes}, \"count\": {}, \"bbox_min\": [{}, {}, {}], \"bbox_max\": [{}, {}, {}], \"centroid\": [{}, {}, {}]}}",
+            "{{\"id\": {id}, \"path\": {}, \"sha256\": \"{sha}\", \"bytes\": {bytes}, \"count\": {}, \"bbox_min\": [{}, {}, {}], \"bbox_max\": [{}, {}, {}], \"centroid\": [{}, {}, {}]{extra}}}",
             trit_parts::partsrun::json_str(&name),
             splats.len(),
             lo[0],
@@ -150,9 +176,13 @@ pub(crate) fn objects_export_cmd(argv: &[String]) {
         .map(|a| trit_parts::partsrun::json_str(&a))
         .collect();
     let frames_json: Vec<String> = frames.iter().map(|f| f.to_string()).collect();
+    let scenes_json = scenes
+        .as_ref()
+        .map(|p| trit_parts::partsrun::json_str(&trit_parts::scenefp::norm_root(p)))
+        .unwrap_or_else(|| "null".into());
     let skipped_json: Vec<String> = skipped.iter().map(|i| i.to_string()).collect();
     let body = format!(
-        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-objects\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"frames\": [{}], \"cell\": {cell}, \"scale_k\": {scale_k}, \"alpha\": {alpha}}},\n  \"data\": {{\"files\": {}, \"bytes\": {}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\", \"scene\": {}}},\n  \"objects\": [{}],\n  \"skipped\": [{}]\n}}\n",
+        "{{\n  \"schema\": 1,\n  \"kind\": \"extract-objects\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"frames\": [{}], \"cell\": {cell}, \"scale_k\": {scale_k}, \"alpha\": {alpha}, \"scenes\": {scenes_json}}},\n  \"data\": {{\"files\": {}, \"bytes\": {}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\", \"scene\": {}}},\n  \"objects\": [{}],\n  \"skipped\": [{}]\n}}\n",
         trit_parts::partsrun::created_unix(),
         trit_parts::partsrun::json_str(&commit),
         argv_json.join(", "),

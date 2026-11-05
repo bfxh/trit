@@ -199,6 +199,9 @@ fn main() {
     let preview_verify = arg(&argv, "--preview-verify")
         .map(PathBuf::from)
         .unwrap_or_else(|| sibling("parts-preview-verify"));
+    let glb_verify = arg(&argv, "--glb-verify")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| sibling("parts-glb-verify"));
     let manifest = read(&mpath);
     let parts = object(&manifest, "parts").unwrap_or_else(|| usage());
     let mesh = object(parts, "mesh").unwrap_or_else(|| usage());
@@ -339,6 +342,35 @@ fn main() {
             && read(&v).contains("\"verdict\": \"pass\"");
         extra_ok &= ok;
         extra.push_str(&format!(" 对象网格 {got}/{want}="));
+        extra.push_str(if ok { "ok" } else { "FAIL" });
+    }
+    if let Some(gb) = object(parts, "glb") {
+        let man = object(gb, "manifest").unwrap_or_else(|| usage());
+        let p = resolve(&scene_dir, field(man, "path").unwrap_or_else(|| usage()));
+        let glb_path = p
+            .to_string_lossy()
+            .strip_suffix(".manifest.json")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| p.clone());
+        let want = number(gb, "parts").unwrap_or(-1.0) as usize;
+        let got = object(&read(&p), "glb")
+            .map(|b| number(b, "parts").unwrap_or(-1.0))
+            .unwrap_or(-1.0) as usize;
+        let o = run(
+            &glb_verify,
+            &["--glb".into(), glb_path.display().to_string()],
+            "parts-glb-verify",
+        );
+        let mut v = glb_path.as_os_str().to_owned();
+        v.push(".verify.json");
+        let v = PathBuf::from(v);
+        let ok = sha_matches(&field(man, "sha256").unwrap_or_default(), &hash(&p))
+            && counts_match(want, got)
+            && o.status.success()
+            && v.is_file()
+            && read(&v).contains("\"verdict\": \"pass\"");
+        extra_ok &= ok;
+        extra.push_str(&format!(" GLB {got}/{want}="));
         extra.push_str(if ok { "ok" } else { "FAIL" });
     }
     if let Some(pb) = object(parts, "preview") {
