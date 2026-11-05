@@ -7,10 +7,12 @@
 mod core;
 mod fit;
 mod io;
+mod layout;
 
 pub use core::*;
 pub use fit::*;
 pub use io::*;
+pub use layout::*;
 
 #[cfg(test)]
 mod tests;

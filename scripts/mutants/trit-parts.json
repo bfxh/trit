@@ -206,5 +206,37 @@
     "new": "    true",
     "pkg": "trit-parts",
     "filter": "tests::id_set_must_be_complete"
+  },
+  {
+    "name": "compose-verify: 朝向不比对（转错也放行）",
+    "file": "crates/trit-parts/src/bin/parts_compose_verify.rs",
+    "old": "        && want.yaw == got.yaw",
+    "new": "        && true",
+    "pkg": "trit-parts",
+    "filter": "tests::placement_and_gate_checks_are_deciding"
+  },
+  {
+    "name": "compose-verify: 门不查穿插（只查覆盖）",
+    "file": "crates/trit-parts/src/bin/parts_compose_verify.rs",
+    "old": "    overlap <= 1e-12 && cov >= cov_min",
+    "new": "    cov >= cov_min",
+    "pkg": "trit-parts",
+    "filter": "tests::placement_and_gate_checks_are_deciding"
+  },
+  {
+    "name": "layout: 90° 旋转的最小角用错边",
+    "file": "crates/trit-parts/src/splat/layout.rs",
+    "old": "        90 => (cx + (z0 - cz), cz - (x1 - cx)),",
+    "new": "        90 => (cx + (z1 - cz), cz - (x1 - cx)),",
+    "pkg": "trit-parts",
+    "filter": "splat::layout::tests::placement_bbox_matches_transformed_points"
+  },
+  {
+    "name": "layout: 旋转方向反了（z 分量不取负）",
+    "file": "crates/trit-parts/src/splat/layout.rs",
+    "old": "                90 => (dz, -dx),",
+    "new": "                90 => (dz, dx),",
+    "pkg": "trit-parts",
+    "filter": "splat::layout::tests::yaw_swaps_extents_and_transform_matches_bbox"
   }
 ]
