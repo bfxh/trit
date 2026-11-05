@@ -11,7 +11,7 @@
 - MCP `wsp_audit_shards` 接受 `checkpoint` 与 `checkpoint_every`，返回 `resumed` 与 `checkpoints`。
 - 读数：3 片日志在首片后取点续放，报告逐项等于整段重放；检查点链头/条数/工件被改都会报错；
   CLI 2 片日志写 2 个检查点并从第 1 个续放到同一最终校验和。
-- 测试 135 → 137 + 1 doctest；变异 102 → **111 条，111/111 caught**；test_surface 2,371 → 2,373。
+- 测试 135 → 137 + 1 doctest；变异 102 → **111 条，111/111 caught**；test_surface 2,371 → 2,373（合并 main 移除 trit-vcs 后总表为 2,282）。
 - 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
   hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
 

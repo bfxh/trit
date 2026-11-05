@@ -3686,7 +3686,7 @@ parts-scene-verify --scene <dir>
 | objects-mesh/ | 7 份 OBJ+MTL+PNG + `scene.obj` | PASS |
 | preview/ | 8 视角 + 1024×512 拼图 | PASS |
 
-- **搬移测试**：整包复制到 `E:/tmp` 后复核仍 PASS（相对路径生效）；
+- **搬移测试**：整包复制到临时目录后复核仍 PASS（相对路径生效）；
 - 反证 ①：改 `preview/view-03.png` 一个像素 ⇒ 预览 FAIL、总包 reject、rc=1；
 - 反证 ②：总清单 `objects.count` 7→6 ⇒ “对象 7/6=FAIL”、reject、rc=1。
 - 局限：串行编排（44 s 里对象网格占 4 s、总复核里各子复核重复读盘）；包内 OBJ 是文本，
