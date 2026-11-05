@@ -85,6 +85,10 @@ name = "parts-splat-verify"
 path = "src/bin/parts_splat_verify.rs"
 
 [[bin]]
+name = "parts-scene-verify"
+path = "src/bin/parts_scene_verify.rs"
+
+[[bin]]
 name = "parts-depth-gpu"
 path = "src/bin/parts_depth_gpu.rs"
 required-features = ["gpu"]

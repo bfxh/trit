@@ -150,5 +150,29 @@
     "new": "    want.is_finite() && got.is_finite() && (want - got).abs() <= 1e9",
     "pkg": "trit-parts",
     "filter": "psnr_tolerance_is_tight_and_finite_only"
+  },
+  {
+    "name": "scene-verify: 子清单哈希不比对（伪造也放行）",
+    "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
+    "old": "    !want.is_empty() && want == got",
+    "new": "    true",
+    "pkg": "trit-parts",
+    "filter": "tests::hash_and_count_checks_are_deciding"
+  },
+  {
+    "name": "scene-verify: 0 档/0 高斯也算有效资产",
+    "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
+    "old": "    want > 0 && want == got",
+    "new": "    want == got",
+    "pkg": "trit-parts",
+    "filter": "tests::hash_and_count_checks_are_deciding"
+  },
+  {
+    "name": "scene-verify: 相对子清单不按包目录解析",
+    "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
+    "old": "    if p.is_absolute() { p } else { base.join(p) }",
+    "new": "    let _ = base;\n    p",
+    "pkg": "trit-parts",
+    "filter": "tests::relative_sub_manifest_paths_resolve_against_bundle"
   }
 ]
