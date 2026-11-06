@@ -58,7 +58,37 @@ ARM64 各一批；记录每个样本的 sha256；人工复核 xref 误报/漏报
 > 格式：日期 | 样本数 | 三平台 CI | 对拍四态计数 | 漏检/误报人工比例。
 > 每跑一批追加一行，只许追加不许改写（负结果照实入册）。
 
-（暂无——等第一批真实样本。）
+| 日期 | 样本 | 判定分布 | 对拍四态 | 人工比例 |
+|---|---|---|---|---|
+| 2026-11-07 | **39**（良性 x64 PE 12 + 良性 PE32 12 + 良性 ELF64 11 + 自建模拟样本 4） | 351 判定：false 281 / unknown 42 / **true 28**；账本 110 节点（-28）、门禁 Block | 真实样本对拍：35 真实二进制 × 11 规则 **MATCH 35 / DIFF 0 / SUBSET-GAP（gap_regex+ELF entrypoint 如实）** / OFFICIAL-ERR 0 | **待人工复核**（`review_worksheet.tsv` 351 行已预填机器列；复核对象：良性批 21 条 true 的语义分级 + 模拟样本 7 条检出确认） |
+
+### 首批读数详情（2026-11-07，批次目录 `<base>` = 任选工作目录，管线幂等可弃重跑）
+
+- **样本注册表**（sha256 全表见批次目录 `<base>/samples_manifest.tsv`；此处记构成）：
+  良性 x64 = System32 混选 12（PE32+）；良性 PE32 = SysWOW64 混选 12；良性
+  ELF64 = WSL Ubuntu-24.04 `/usr/bin` 11（ls/cat/grep/bash/tar 等）；模拟样本 =
+  mingw x64 自有源码 `sim_injection.c` 四变体（L1 只取指针 / L2+分配指针 /
+  L3+写与线程指针 / L4 同函数结构化调用 VirtualAllocEx+WriteProcessMemory+
+  CreateRemoteThread，运行时不可达分支、结果全部丢弃）。
+- **检测器验证闭环**：L4 → `injection`/`fn_injection` True（同函数全桶共现
+  触发）；**漏报边界入册**：L1-L3（只取指针不调用）`fn_injection` 全部不
+  触发——导入共现判定对"引用而不调用"形态盲（预期内，载入级检测是
+  另一层的事）。
+- **误报材料（待人工裁决）**：良性批 true 21 条 = `xref_gaps` 19（合法
+  二进制的动态解析导入——事实为真但无侵入权重，**语义分级问题**）+
+  `staged_loader` 1 + `needs_review` 1（WSL 的 busybox 类二进制）。
+- **账本行为**：-28 进账后尾门禁 **Block**（真风险收紧，#51 演练行为在
+  批次规模复现）；44 族折叠（fn_injection 13 成员一族）。
+- **判定语义发现**：`xref_gaps` 的 true 是"事实真、权重轻"——建议后续
+  把它从 -1 权重降级为 0 权重注记（进账但不驱动门禁），待人工复核确认
+  后改判定语义。
+
+## 六、批次工具（本轮沉淀，已进仓）
+
+- 汇总脚本：`scripts/n1_tables.py`（manifest/工作表生成，`python
+  scripts/n1_tables.py <base>`）；
+- 模拟样本源：`tests/fixtures/sim_injection.c`（自有代码；四个变体的
+  SHA-256 在 manifest——重编译与它核对即知样本未被动过）。
 
 ## 六、已知边界
 

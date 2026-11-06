@@ -70,6 +70,7 @@
  "script/module_budget.py": 1,
  "script/mutation_check.py": 1,
  "script/mutation_sweep.py": 1,
+ "script/n1_tables.py": 0,
  "script/oops.py": 1,
  "script/parity_scan.py": 1,
  "script/pr_hygiene.py": 1,
