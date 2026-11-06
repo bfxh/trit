@@ -10,43 +10,34 @@
 //! （触发条件：nightly 工具链，结构相同——invariant 一致）。
 
 #[cfg(feature = "full")]
+// RNG 改吃 trit-fuzz 的 SeedRng（同一条 xorshift 13/7/17 ⇒ 序列不变，只是不再各写一份）。
+use trit_fuzz::SeedRng;
 use trit_immune::{parse_git_log, parse_lsp_stream};
 use trit_immune::{parse_lock, parse_stamped_line};
 
 /// xorshift64：与性质测试同一 RNG（同种子同序列，失败可复现）。
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-}
-
 /// 生成一段随机字节（0..n 长度，全字节域 0..=255）。
-fn random_bytes(rng: &mut Rng) -> Vec<u8> {
-    let n = (rng.next() % 512) as usize;
-    (0..n).map(|_| (rng.next() % 256) as u8).collect()
+fn random_bytes(rng: &mut SeedRng) -> Vec<u8> {
+    let n = (rng.next_u64() % 512) as usize;
+    (0..n).map(|_| (rng.next_u64() % 256) as u8).collect()
 }
 
 /// 生成"结构化污损"文本：拿真实样本随机变异（删/插/替字节）——
 /// 比纯随机更接近真实攻击（格式大体对、局部毒化）。
-fn mutate(rng: &mut Rng, base: &str) -> String {
+fn mutate(rng: &mut SeedRng, base: &str) -> String {
     let mut bytes = base.as_bytes().to_vec();
-    let rounds = 1 + (rng.next() % 8) as usize;
+    let rounds = 1 + (rng.next_u64() % 8) as usize;
     for _ in 0..rounds {
         if bytes.is_empty() {
             break;
         }
-        let pos = (rng.next() % bytes.len() as u64) as usize;
-        match rng.next() % 3 {
+        let pos = (rng.next_u64() % bytes.len() as u64) as usize;
+        match rng.next_u64() % 3 {
             0 => {
                 bytes.remove(pos); // 删
             }
-            1 => bytes.insert(pos, (rng.next() % 256) as u8), // 插
-            2 => bytes[pos] = (rng.next() % 256) as u8,       // 替
+            1 => bytes.insert(pos, (rng.next_u64() % 256) as u8), // 插
+            2 => bytes[pos] = (rng.next_u64() % 256) as u8,       // 替
             _ => unreachable!(),
         }
     }
@@ -57,7 +48,7 @@ fn mutate(rng: &mut Rng, base: &str) -> String {
 
 #[test]
 fn fuzz_json_random_bytes_never_panics() {
-    let mut rng = Rng(0xF00D_0001);
+    let mut rng = SeedRng::new(0xF00D_0001);
     for _ in 0..500 {
         let bytes = random_bytes(&mut rng);
         let text = String::from_utf8_lossy(&bytes).into_owned();
@@ -68,7 +59,7 @@ fn fuzz_json_random_bytes_never_panics() {
 #[cfg(feature = "full")]
 #[test]
 fn fuzz_git_log_random_bytes_never_panics() {
-    let mut rng = Rng(0xF00D_0002);
+    let mut rng = SeedRng::new(0xF00D_0002);
     for _ in 0..500 {
         let bytes = random_bytes(&mut rng);
         let _ = parse_git_log(&String::from_utf8_lossy(&bytes));
@@ -78,7 +69,7 @@ fn fuzz_git_log_random_bytes_never_panics() {
 #[cfg(feature = "full")]
 #[test]
 fn fuzz_lsp_random_bytes_never_panics() {
-    let mut rng = Rng(0xF00D_0003);
+    let mut rng = SeedRng::new(0xF00D_0003);
     for _ in 0..500 {
         let bytes = random_bytes(&mut rng);
         let _ = parse_lsp_stream(&String::from_utf8_lossy(&bytes));
@@ -87,7 +78,7 @@ fn fuzz_lsp_random_bytes_never_panics() {
 
 #[test]
 fn fuzz_lock_random_bytes_never_panics() {
-    let mut rng = Rng(0xF00D_0004);
+    let mut rng = SeedRng::new(0xF00D_0004);
     for _ in 0..500 {
         let bytes = random_bytes(&mut rng);
         let _ = parse_lock(&String::from_utf8_lossy(&bytes));
@@ -105,7 +96,7 @@ const REAL_JOURNAL: &str = "1740000000000:0:0\tRECORD\t1\t+1\t-\t-\t-\t-\t回归
 
 #[test]
 fn fuzz_json_mutated_real_sample_never_panics() {
-    let mut rng = Rng(0xF00D_0011);
+    let mut rng = SeedRng::new(0xF00D_0011);
     for _ in 0..500 {
         let text = mutate(&mut rng, REAL_JSON);
         let _ = trit_immune::json::parse(&text);
@@ -115,7 +106,7 @@ fn fuzz_json_mutated_real_sample_never_panics() {
 #[cfg(feature = "full")]
 #[test]
 fn fuzz_git_log_mutated_never_panics() {
-    let mut rng = Rng(0xF00D_0012);
+    let mut rng = SeedRng::new(0xF00D_0012);
     for _ in 0..500 {
         let _ = parse_git_log(&mutate(&mut rng, REAL_GIT));
     }
@@ -123,7 +114,7 @@ fn fuzz_git_log_mutated_never_panics() {
 
 #[test]
 fn fuzz_lock_mutated_never_panics() {
-    let mut rng = Rng(0xF00D_0014);
+    let mut rng = SeedRng::new(0xF00D_0014);
     for _ in 0..500 {
         let _ = parse_lock(&mutate(&mut rng, REAL_LOCK));
     }
@@ -131,7 +122,7 @@ fn fuzz_lock_mutated_never_panics() {
 
 #[test]
 fn fuzz_journal_line_mutated_never_panics() {
-    let mut rng = Rng(0xF00D_0015);
+    let mut rng = SeedRng::new(0xF00D_0015);
     for _ in 0..500 {
         let _ = parse_stamped_line(&mutate(&mut rng, REAL_JOURNAL));
     }
@@ -140,7 +131,7 @@ fn fuzz_journal_line_mutated_never_panics() {
 #[cfg(feature = "full")]
 #[test]
 fn fuzz_lsp_mutated_never_panics() {
-    let mut rng = Rng(0xF00D_0013);
+    let mut rng = SeedRng::new(0xF00D_0013);
     for _ in 0..500 {
         let _ = parse_lsp_stream(&mutate(&mut rng, REAL_JSON));
     }

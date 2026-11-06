@@ -1,0 +1,56 @@
+[
+ {
+  "name": "doc_pointers: 同名歧义不拦",
+  "file": "scripts/doc_pointers.py",
+  "old": "        if len(hits) > 1:",
+  "new": "        if False:",
+  "pkg": "scripts/doc_pointers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doc_pointers: 行号越界不拦",
+  "file": "scripts/doc_pointers.py",
+  "old": "        if not 1 <= line <= len(lines):",
+  "new": "        if False:",
+  "pkg": "scripts/doc_pointers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doc_pointers: 符号核对整个关掉",
+  "file": "scripts/doc_pointers.py",
+  "old": "            if token not in window:",
+  "new": "            if False:",
+  "pkg": "scripts/doc_pointers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doc_pointers: 说明窗口放宽到整段",
+  "file": "scripts/doc_pointers.py",
+  "old": "    after = text[m.end() : m.end() + 40]",
+  "new": "    after = text[m.end() : m.end() + 400]",
+  "pkg": "scripts/doc_pointers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doc_pointers: 棘轮只许变少失效",
+  "file": "scripts/doc_pointers.py",
+  "old": "        if n > allowed:",
+  "new": "        if False:",
+  "pkg": "scripts/doc_pointers.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "doc_pointers: 每文档只数一条（棘轮被绕过）",
+  "file": "scripts/doc_pointers.py",
+  "old": "        doc = item.split(\"：\", 1)[-1].split(\" 的 \", 1)[0]\n        counts[doc] = counts.get(doc, 0) + 1",
+  "new": "        doc = item.split(\"：\", 1)[-1].split(\" 的 \", 1)[0]\n        counts[doc] = 1",
+  "pkg": "scripts/doc_pointers.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

@@ -1,7 +1,7 @@
 {
   "_comment": "crate → 层 归位表（判据见 docs/LAYERS.md）。层序 base < ops < algo < learn < prod，依赖只能向下；跨层回边必须在 allows 里逐条点名并给原因。",
   "layers": {
-    "base": "语义与表示：值域/代数/AST/编码，换掉任何上层它都不动",
+    "base": "语义与表示：值域/代数/AST/编码，以及不需要理解上层语义的公共底件（测量与夹具）",
     "ops": "算子库：单点计算件，正确性说法是「同输入更快/更省」，可对拍逐位一致",
     "algo": "算法库：解一个问题（等价/可满足/计数/量化/化简/调度/验证），有 oracle 可对拍",
     "learn": "学习库：会改参数，产出权重或指标，需要清单 + 独立复核",
@@ -26,6 +26,7 @@
     "trit-graph": "algo",
     "trit-capacity": "algo",
     "trit-learn": "learn",
+    "trit-wspace": "learn",
     "trit-train": "learn",
     "trit-parts": "learn",
     "trit-attn": "learn",
@@ -41,7 +42,9 @@
     "trit-redteam": "prod",
     "trit-procscan": "prod",
     "trit-unsafe": "prod",
-    "sansheng": "prod"
+    "sansheng": "prod",
+    "trit-bench": "base",
+    "trit-fuzz": "base"
   },
   "allows": [],
   "known_debts": [
@@ -59,6 +62,24 @@
           "measured_gap": "同机同输入交错 9 轮，8K/128K/2M 三档：u64 dispatch 中位 7.6–12.2 ps/trit、u64 portable 12.2–12.5、u32 镜像 48.1–50.7（慢 3.9–5.7×，无交叉点）、i32 标量 168.6–183.5",
           "why_kept": "它是 WGSL 内核的逐字镜像（一个线程一个 32 位字），位宽被 GPU 侧锁死；matmul_words 与真机对拍、CPU/GPU 对照计时都走它。CPU 吞吐请一律用 trit-dot。",
           "bench": "cargo run --release -p trit-dot --example dot_variants"
+        }
+      ]
+    },
+    {
+      "capability": "bench-timing-harness",
+      "authoritative": "trit-bench",
+      "mirrors": [
+        {
+          "crate": "trit-ops",
+          "measured_gap": "A357 复算尺从手写版迁到 trit-bench 后读数同档：u64 dispatch 8.1–9.3 ps/trit（手写 7.6–12.2）、u64 portable 12.7–12.8（12.2–12.5）、u32 镜像 48.5–52.3（48.1–50.7）、i32 标量 170.8–246（168.6–183.5）；小档 8192 trits 手写只报 min=100/med=200 ns 的量化台阶，trit-bench 的 reps 报出 67.5/72.8/82.8 ns",
+          "why_kept": "trit-ops/src/bench.rs 是最完整的手写档（交错 + min/median/max + 轮内轮换位序），trit-bench 的位序轮换就是从它抄的；它挂在 ops 的单测路径里、被现有测试引用，迁移要动的是别人的承重面（该文件被 sess 179ea139 认领中）。先登记不悄悄合",
+          "bench": "cargo run --release -p trit-ops --bin bench"
+        },
+        {
+          "crate": "trit-parts",
+          "measured_gap": "手写 `bench()` 只做「预热 → gpu.sync → iters 次 → elapsed×1000/iters」，报的是**单一均值**（无 min/median/max）、也不与别的实现交错；分项那段（dx/dw/db）按 k=0..2 各测一次，同样是单次均值",
+          "why_kept": "需要真 GPU + 仓外 ckpt（默认 `../trit-data/parts-parity`），本机没有那份数据 ⇒ 无法在迁移前用读数验证尺子没换。按「先验证再下结论」保留手写并登记，验证面补齐再迁",
+          "bench": "cargo run --release -p trit-parts --bin parts-bench -- --dir <parity 目录>"
         }
       ]
     }

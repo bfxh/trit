@@ -166,5 +166,13 @@
   "new": "        let at = insert_unit(&mut numbered, -(branch as i32));",
   "pkg": "trit-count",
   "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "oracle: CNF 穷举把负文字当正文字",
+  "file": "crates/trit-count/src/oracle.rs",
+  "old": "        if lit > 0 { value } else { !value }",
+  "new": "        value",
+  "pkg": "trit-count",
+  "filter": "library_ruler_agrees_with_the_independent_enumeration"
  }
 ]

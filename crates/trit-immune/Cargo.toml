@@ -29,3 +29,6 @@ trit-core.workspace = true
 rustls = { version = "0.23", default-features = false, features = ["ring", "std"], optional = true }
 rustls-pemfile = { version = "2", optional = true }
 rcgen = { version = "0.13", optional = true }
+
+[dev-dependencies]
+trit-fuzz.workspace = true

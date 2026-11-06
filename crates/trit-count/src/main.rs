@@ -3,14 +3,18 @@ use std::process::ExitCode;
 use std::time::Instant;
 
 use trit_core::algebra::Algebra;
-use trit_core::ast::Expr;
 use trit_core::parser::Parser;
 use trit_core::value::Ternary;
 use trit_count::{
-    CROSSCHECK_BDD_LIMITS, count_models_bdd, count_models_under, crosscheck, crosscheck_under,
-    oracle::{self, count_exhaustive_under},
+    CROSSCHECK_BDD_LIMITS,
+    cnf::Cnf,
+    count_models_bdd, count_models_under, crosscheck, crosscheck_under,
+    dpll::count_cnf,
+    oracle::{self, count_cnf_exhaustive, count_exhaustive_under},
     policy::Policy,
 };
+use trit_fuzz::SeedRng;
+use trit_fuzz::corpus::{random_cnf, random_expr};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -40,6 +44,22 @@ fn main() -> ExitCode {
             .and_then(|value| value.parse().ok())
             .unwrap_or(2);
         return run_random(cases);
+    }
+    if args.iter().any(|arg| arg == "--fuzz-cnf") {
+        let cases = flag_value(&args, "--cases")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(1);
+        let max_vars = flag_value(&args, "--nvars")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(16);
+        let clause_len = flag_value(&args, "--len")
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(3);
+        if max_vars > 40 {
+            eprintln!("--fuzz-cnf 的 --nvars 上限取 40：穷举是 2^n，再大只是在等");
+            return ExitCode::from(2);
+        }
+        return run_fuzz_cnf(cases, max_vars, clause_len);
     }
     if let Some(path) = flag_value(&args, "--policy") {
         return run_policy(&path);
@@ -259,8 +279,45 @@ fn run_policy(path: &str) -> ExitCode {
     }
 }
 
+/// 随机 CNF 语料直接打 DPLL：计数必须等于 `2^nvars` 穷举。
+///
+/// 这条链**跳过编码器**——`--random` 那条三方对拍里，编码器一旦把公式写错会同时骗到两边；
+/// 这里喂的是裸子句集，钉的是求解器本体（规范形整理、单元传播、分量分解、缓存键）。
+fn run_fuzz_cnf(cases: usize, max_vars: usize, clause_len: usize) -> ExitCode {
+    let mut rng = SeedRng::new(0xC0FF_EE00_1234_5678);
+    let mut failures = 0usize;
+    let mut total = 0usize;
+    let mut slowest = 0u128;
+    for nvars in 1..=max_vars {
+        for _ in 0..cases {
+            let clauses = random_cnf(&mut rng, nvars, 2 * nvars, clause_len);
+            let formula = Cnf { nvars, clauses };
+            let start = Instant::now();
+            let got = count_cnf(&formula);
+            let dpll_us = start.elapsed().as_micros();
+            slowest = slowest.max(dpll_us);
+            let want = count_cnf_exhaustive(&formula);
+            total += 1;
+            if got.count != want {
+                failures += 1;
+                eprintln!(
+                    "MISMATCH nvars={nvars} DPLL={} 穷举={want} 子句={:?}",
+                    got.count, formula.clauses
+                );
+            }
+        }
+    }
+    if failures == 0 {
+        println!("OK {total} 个随机 CNF 与 2^n 穷举逐一对账一致（最慢一次 {slowest}µs）");
+        ExitCode::SUCCESS
+    } else {
+        eprintln!("MISMATCH: {failures}/{total} 条计数不一致");
+        ExitCode::from(1)
+    }
+}
+
 fn run_random(cases: usize) -> ExitCode {
-    let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+    let mut rng = SeedRng::new(0x9E37_79B9_7F4A_7C15);
     let mut failures = 0usize;
     let mut total = 0usize;
     let mut refused = 0usize;
@@ -319,7 +376,7 @@ fn run_random(cases: usize) -> ExitCode {
 
 /// DPLL vs BDD 对拍（不跑穷举），用于 n>12 的第三方校验。
 fn run_big(cases: usize, max_n: usize) -> ExitCode {
-    let mut rng = Rng(0x5EED_1234_ABCD_EF01);
+    let mut rng = SeedRng::new(0x5EED_1234_ABCD_EF01);
     let mut failures = 0usize;
     let mut total = 0usize;
     let mut refused = 0usize;
@@ -378,43 +435,6 @@ fn run_big(cases: usize, max_n: usize) -> ExitCode {
     }
 }
 
-fn random_expr(rng: &mut Rng, vars: &[String], depth: usize) -> Expr {
-    if depth == 0 || rng.below(4) == 0 {
-        return if rng.below(6) == 0 {
-            Expr::Const(match rng.below(3) {
-                0 => Ternary::False,
-                1 => Ternary::True,
-                _ => Ternary::Unknown,
-            })
-        } else {
-            Expr::Var(vars[rng.below(vars.len())].clone())
-        };
-    }
-    match rng.below(6) {
-        0 => Expr::Not(Box::new(random_expr(rng, vars, depth - 1))),
-        1 => Expr::and(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        2 => Expr::or(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        3 => Expr::xor(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        4 => Expr::implies(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        _ => Expr::equiv(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-    }
-}
-
 fn parse_target(value: &str) -> Result<Ternary, String> {
     match value.trim().to_ascii_lowercase().as_str() {
         "true" | "t" | "1" => Ok(Ternary::True),
@@ -455,6 +475,7 @@ fn usage() {
            trit-count --expr \"a & b\" [--constraint \"a\"] [--constraint \"!c\"] [--vars a,b,c] [--binary a] [--alg k3|l3|b3] [--target true|false|unknown]\n\
            trit-count --random [--cases N]\n\
            trit-count --big [MAX_N] [--cases N]\n\
+           trit-count --fuzz-cnf [--cases N] [--nvars MAX] [--len K]\n\
            trit-count --policy examples/policy.json\n\
          \n\
          说明:\n\
@@ -465,23 +486,9 @@ fn usage() {
            --binary 中的变量只取 false/true；其余变量取 false/true/unknown。\n\
            --random 对 n=1..12 的随机表达式做 DPLL vs 穷举 vs BDD 三方对拍。\n\
            --big 对 n=13..MAX_N 的随机表达式做 DPLL vs BDD 两方对拍（穷举在这个规模跑不动）；\n\
-           BDD 侧受 200k 节点预算限制，超预算只计 refused，不算不一致。"
+           BDD 侧受 200k 节点预算限制，超预算只计 refused，不算不一致。\n\
+           --fuzz-cnf 喂 trit-fuzz 的随机子句集（**跳过编码器**，钉求解器本体）：\n\
+           DPLL 计数必须等于 2^nvars 穷举。默认 nvars=1..=16 各一条，--cases 每个规模多跑几条，\n\
+           --len 是子句长度上界（生成口径：无重字、无永真、无空子句）。"
     );
-}
-
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        let mut value = self.0;
-        value ^= value << 13;
-        value ^= value >> 7;
-        value ^= value << 17;
-        self.0 = value;
-        value
-    }
-
-    fn below(&mut self, limit: usize) -> usize {
-        (self.next() % limit as u64) as usize
-    }
 }
