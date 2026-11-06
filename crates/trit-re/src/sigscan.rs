@@ -269,7 +269,8 @@ pub enum Operand {
     Filesize,
     /// `#a`：串的命中次数（按扫描报告，受 [`MAX_HITS`] 封顶——如实截断）。
     Count(usize),
-    /// `@a[N]`：串第 N 次（0 起）命中的偏移；缺省首次。
+    /// `@a[N]`：串第 N 次（**1 起**，官方 YARA 语义——实测对拍判定）
+    /// 命中的偏移；缺省首次。内部下标已由解析层折成 0 起。
     Offset { index: usize, nth: usize },
     /// `uintN(lit)`：偏移处读 N 字节小端整数；越界 = 不可求值。
     UintRead { size: u8, offset: u64 },

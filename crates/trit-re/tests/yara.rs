@@ -312,6 +312,32 @@ rule ep {
 }
 
 #[test]
+fn string_offset_index_is_one_based() {
+    // 官方 YARA 语义（yara-python 实测判定）：@a[1] = 首次、@a[0] 无效。
+    // 期望 @a[2] = 第二次命中的偏移（内部折成 0 起下标 1）。
+    let src = r#"
+rule off {
+  strings:
+    $a = { 01 }
+  condition:
+    #a == 3 and @a[1] == 0 and @a[2] == 2 and @a[3] == 5
+}
+"#;
+    // $a = {01} 命中在 0, 2, 5
+    let data = [0x01u8, 0xFF, 0x01, 0xFF, 0xFF, 0x01];
+    assert_eq!(scan_one(src, &data), Ternary::True);
+    // @a[2] 若错成 0 起下标会解成 5 ≠ 2 → False（钉死回归）
+    let bad = src.replace("@a[2] == 2", "@a[2] == 5");
+    assert_eq!(scan_one(&bad, &data), Ternary::False);
+    // @a[0] 官方无效：如实 Unsupported（不猜）
+    let zero = src.replace("@a[1] == 0", "@a[0] == 0");
+    assert!(matches!(
+        parse_rules(&zero).unwrap().rules[0],
+        RuleOutcome::Unsupported { .. }
+    ));
+}
+
+#[test]
 fn module_refs_are_unknown_not_false() {
     // pe.* 记名弃权：Kleene U ∨ F = U（绝不假未命中）；T 吞弃权照常报警
     let src = r#"
