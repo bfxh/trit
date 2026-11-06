@@ -15,8 +15,9 @@ fn xor_net() -> Net {
     .expect("xor net")
 }
 
-fn temp_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("trit-wspace-cli-{}", std::process::id()));
+fn temp_dir(tag: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("trit-wspace-cli-{tag}-{}", std::process::id()));
+    // 复用 PID 的残留目录会把上一轮的 audit.jsonl 当本轮输入（A400）。
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).expect("temp dir");
     dir
@@ -45,7 +46,7 @@ fn path_string(path: &Path) -> String {
 
 #[test]
 fn cli_read_verify_patch_repair_round_trip() {
-    let dir = temp_dir();
+    let dir = temp_dir("round-trip");
     let artifact = dir.join("xor.wsp");
     let oracle = dir.join("xor.json");
     let patch = dir.join("break.json");

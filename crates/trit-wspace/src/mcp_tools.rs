@@ -10,7 +10,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 十六个工具。改数量必须同时改测试断言。
+/// 十七个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -148,6 +148,20 @@ pub fn tools() -> Vec<Value> {
                 "aligned": {"type": "boolean"},
             }),
             &["base", "tasks"],
+        ),
+        tool(
+            "wsp_rebase",
+            "把针对 base 写的补丁三方重放到 target；冲突逐条报告，默认整体放弃，skip_conflicts 只落干净部分",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "base": artifact(),
+                "patch": {"type": "object", "description": "version=1 的 edits 列表"},
+                "skip_conflicts": {"type": "boolean"},
+                "oracle": {"type": "object"},
+                "require_before": {"type": "boolean"},
+                "require_after": {"type": "boolean"},
+            }),
+            &["base", "patch"],
         ),
         tool(
             "wsp_run_script",

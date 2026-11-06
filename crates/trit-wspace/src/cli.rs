@@ -28,6 +28,7 @@ trit-wspace <command>
   script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
+  rebase <target|-> --base <base|-> --patch <json|-> [--skip-conflicts] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
   explain <artifact|-> --oracle <json|-> --sample N [--top K]
@@ -66,6 +67,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "script" => cmd_script(&args[1..]),
         "patch" => cmd_patch(&args[1..]),
         "apply-candidate" => cmd_apply_candidate(&args[1..]),
+        "rebase" => cmd_rebase(&args[1..]),
         "repair" => cmd_repair(&args[1..]),
         "propose" => cmd_propose(&args[1..]),
         "explain" => cmd_explain(&args[1..]),
@@ -209,6 +211,56 @@ fn cmd_apply_candidate(args: &[String]) -> Result<(), String> {
     let patch = wire::patch_from_candidate(&candidate).map_err(err)?;
     let oracle = oracle_path.map(load_oracle).transpose()?;
     perform_patch(&parsed, &net, patch, oracle, "cli-apply-candidate")
+}
+
+fn cmd_rebase(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &["skip-conflicts", "require-before", "require-after"])?;
+    let path = one(
+        &parsed,
+        "rebase <target|-> --base <base|-> --patch <json|-> [--skip-conflicts] [--oracle <json|->] [--require-after] [--out <path>]",
+    )?;
+    let base_path = value(&parsed, "base")?;
+    let patch_path = value(&parsed, "patch")?;
+    let oracle_path = parsed.values.get("oracle").map(String::as_str);
+    let mut sources = vec![path, base_path, patch_path];
+    if let Some(oracle) = oracle_path {
+        sources.push(oracle);
+    }
+    no_double_stdin(&sources)?;
+
+    let target = load_net(path)?;
+    let base = load_net(base_path)?;
+    let patch = wire::patch_from_value(&load_json(patch_path)?).map_err(err)?;
+    let oracle = oracle_path.map(load_oracle).transpose()?;
+    let skip_conflicts = parsed.switches.contains("skip-conflicts");
+    let report = crate::rebase::rebase(&base, &target, &patch, skip_conflicts).map_err(err)?;
+    let mut output = wire::rebase_to_value(&report);
+    if report.rejected {
+        output["summary"] = wire::net_summary(&target);
+        output["artifact"] = json!(to_wsp(&target));
+        return emit(&output);
+    }
+    let outcome = ops::apply_patch(
+        &target,
+        report.clean.clone(),
+        oracle.as_ref(),
+        parsed.switches.contains("require-before"),
+        parsed.switches.contains("require-after"),
+    )
+    .map_err(err)?;
+    write_out(&parsed, &outcome.net)?;
+    output["applied"] = json!(outcome.applied);
+    output["rolled_back"] = json!(outcome.rolled_back);
+    output["cost"] = wire::cost_to_value(&report.clean.cost(&target));
+    output["summary"] = wire::net_summary(&outcome.net);
+    output["artifact"] = json!(to_wsp(&outcome.net));
+    if let Some(oracle) = &oracle {
+        output["verify"] = json!({
+            "exact": oracle.exact(&outcome.net).map_err(err)?,
+            "loss": oracle.loss(&outcome.net).map_err(err)?,
+        });
+    }
+    emit(&output)
 }
 
 fn perform_patch(

@@ -1006,5 +1006,117 @@
   "new": "                let aligned = false;",
   "pkg": "trit-wspace",
   "filter": "task_merge_via_mcp"
+ },
+ {
+  "name": "wspace-rebase: 冲突不再整体放弃",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "    let rejected = !conflicts.is_empty() && !skip_conflicts;",
+  "new": "    let rejected = false;",
+  "pkg": "trit-wspace",
+  "filter": "conflict_reports_both_sides_and_keeps_target"
+ },
+ {
+  "name": "wspace-rebase: 忽略 skip_conflicts（有冲突就拒绝）",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "    let rejected = !conflicts.is_empty() && !skip_conflicts;",
+  "new": "    let rejected = !conflicts.is_empty();",
+  "pkg": "trit-wspace",
+  "filter": "skip_conflicts_applies_only_clean_edits"
+ },
+ {
+  "name": "wspace-rebase: 已应用项不再跳过",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "            Verdict::AlreadyApplied => already_applied += 1,",
+  "new": "            Verdict::AlreadyApplied => {}",
+  "pkg": "trit-wspace",
+  "filter": "already_applied_edit_is_skipped"
+ },
+ {
+  "name": "wspace-rebase: 用 base 当 target 比较（冲突全漏）",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "            let now = trit_at(target, layer, row, col)?;",
+  "new": "            let now = trit_at(base, layer, row, col)?;",
+  "pkg": "trit-wspace",
+  "filter": "conflict_reports_both_sides_and_keeps_target"
+ },
+ {
+  "name": "wspace-rebase: 架构不一致不报错",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "    if base.arch() != target.arch() {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "arch_mismatch_is_rejected"
+ },
+ {
+  "name": "wspace-rebase: 行交换已应用检测失效",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "            } else if row_eq(before, a, now, b) && row_eq(before, b, now, a) {",
+  "new": "            } else if false {",
+  "pkg": "trit-wspace",
+  "filter": "swap_rows_already_applied_is_skipped"
+ },
+ {
+  "name": "wspace-rebase: 行取反已应用检测失效",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "            } else if row_eq_negated(before, row, now, row) {",
+  "new": "            } else if false {",
+  "pkg": "trit-wspace",
+  "filter": "negate_row_already_applied_is_skipped"
+ },
+ {
+  "name": "wspace-rebase: scale 冲突漏判",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "            if before.to_bits() == now.to_bits() {",
+  "new": "            if true {",
+  "pkg": "trit-wspace",
+  "filter": "scale_edit_detects_conflict_and_already_applied"
+ },
+ {
+  "name": "wspace-cli: rebase 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        \"rebase\" => cmd_rebase(&args[1..]),",
+  "new": "        \"rebaseX\" => cmd_rebase(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_rebase_reports_conflict_and_leaves_target"
+ },
+ {
+  "name": "wspace-cli: rebase 忽略 --skip-conflicts",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "    let skip_conflicts = parsed.switches.contains(\"skip-conflicts\");",
+  "new": "    let skip_conflicts = false;",
+  "pkg": "trit-wspace",
+  "filter": "cli_rebase_skip_conflicts_writes_partial_and_verifies"
+ },
+ {
+  "name": "wspace-cli: rebase 放弃时仍应用干净子集",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "    if report.rejected {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "cli_rebase_reports_conflict_and_leaves_target"
+ },
+ {
+  "name": "wspace-mcp: wsp_rebase 被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_rebase\" => {",
+  "new": "            \"wsp_rebaseX\" => {",
+  "pkg": "trit-wspace",
+  "filter": "mcp_rebase_returns_clean_artifact_and_conflicts"
+ },
+ {
+  "name": "wspace-mcp: rebase 放弃时仍应用干净子集",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                if report.rejected {",
+  "new": "                if false {",
+  "pkg": "trit-wspace",
+  "filter": "mcp_rebase_returns_clean_artifact_and_conflicts"
+ },
+ {
+  "name": "wspace-mcp: wsp_rebase 工具声明被改坏",
+  "file": "crates/trit-wspace/src/mcp_tools.rs",
+  "old": "            \"wsp_rebase\",",
+  "new": "            \"wsp_rebaseX\",",
+  "pkg": "trit-wspace",
+  "filter": "lists_exactly_seventeen_tools"
  }
 ]

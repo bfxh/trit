@@ -28,7 +28,8 @@
 //!   [`Script`] 把多个 [`Program`] 组合成原子序列或按行为分支的脚本；
 //!   [`AuditLog`] 把每次编辑记成带哈希链的 JSONL，可验链、可从初始工件重放；
 //!   [`mod@shard`] 把长日志切成带 header 与分片内 oracle 表的多文件，跨片仍是同一条链；
-//!   [`Checkpoint`] 可在分片边界保存工件与链头，从检查点续放。
+//!   [`Checkpoint`] 可在分片边界保存工件与链头，从检查点续放；
+//!   [`mod@rebase`] 把针对旧工件写的补丁三方重放到已经前进的工件上（冲突逐条报告）。
 //! - 程序语义：[`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
 //! - 搜索层：[`mod@repair`] 不走梯度，在离散空间里找精确最小补丁；[`mod@analyze`] 对每个单点
 //!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`mod@explain`] 解释单个样本
@@ -88,7 +89,7 @@
 //! - MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、
 //!   `wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、
 //!   `wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、
-//!   `wsp_task_merge` 十六个工具，
+//!   `wsp_task_merge`、`wsp_rebase` 十七个工具，
 //!   工具参数与返回格式见 [`wire`]。
 //!
 //! 补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
@@ -114,6 +115,7 @@ pub mod ops;
 pub mod oracle;
 pub mod probe;
 pub mod program;
+pub mod rebase;
 pub mod repair;
 pub mod shard;
 pub mod task;

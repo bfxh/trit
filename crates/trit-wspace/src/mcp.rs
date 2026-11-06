@@ -1,4 +1,4 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，十六个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，十七个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
@@ -305,6 +305,42 @@ impl Mcp {
                     "cost": wire::cost_to_value(&patch.cost(&base)),
                     "artifact": to_wsp(&merged),
                 }))
+            }
+            "wsp_rebase" => {
+                let target = load(args)?;
+                let base = load_key(args, "base")?;
+                let patch =
+                    wire::patch_from_value(args.get("patch").ok_or("需要 patch")?).map_err(err)?;
+                let report =
+                    crate::rebase::rebase(&base, &target, &patch, flag(args, "skip_conflicts"))
+                        .map_err(err)?;
+                let mut value = wire::rebase_to_value(&report);
+                if report.rejected {
+                    value["summary"] = wire::net_summary(&target);
+                    value["artifact"] = json!(to_wsp(&target));
+                    return Ok(value);
+                }
+                let oracle = optional_oracle(args)?;
+                let outcome = ops::apply_patch(
+                    &target,
+                    report.clean.clone(),
+                    oracle.as_ref(),
+                    flag(args, "require_before"),
+                    flag(args, "require_after"),
+                )
+                .map_err(err)?;
+                value["applied"] = json!(outcome.applied);
+                value["rolled_back"] = json!(outcome.rolled_back);
+                value["cost"] = wire::cost_to_value(&report.clean.cost(&target));
+                value["summary"] = wire::net_summary(&outcome.net);
+                value["artifact"] = json!(to_wsp(&outcome.net));
+                if let Some(oracle) = &oracle {
+                    value["verify"] = json!({
+                        "exact": oracle.exact(&outcome.net).map_err(err)?,
+                        "loss": oracle.loss(&outcome.net).map_err(err)?,
+                    });
+                }
+                Ok(value)
             }
             "wsp_run_script" => {
                 let net = load(args)?;

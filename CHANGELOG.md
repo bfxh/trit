@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：三方补丁重放）
+
+- `rebase`（`crates/trit-wspace/src/rebase.rs`）：把针对旧工件写的补丁落到已经前进的工件上。
+  逐条比较 `base` 与 `target` 的同一坐标：相同则应用，`target` 已是目标值则跳过，否则判冲突；
+  点编辑 / scale / 行交换 / 行取反各有判据。冲突默认整体放弃（工件零改动），
+  `--skip-conflicts` 才只落干净部分，冲突逐条返回（行操作用行指纹）。
+- CLI `rebase <target> --base <base> --patch <json> [--skip-conflicts] [--oracle] [--require-after]`；
+  MCP `wsp_rebase`（16 → 17 工具）。
+- 顺手收口 A400：CLI 夹具按测试名命名临时目录并在建前清理；行为链不符统一按十六进制报。
+- 测试 148 → 161 + 1 doctest；变异 126 → 140（新增 14/14 caught）。
+
 ### Added（trit-wspace：对齐任务向量 + CLI/MCP 开关）
 
 - `TaskVector::between_aligned`：先用 `merge::align` 消隐藏单元置换，再求 `base → tuned` 差分；
