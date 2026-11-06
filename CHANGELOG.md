@@ -13,6 +13,403 @@
 - 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
   hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
 
+### 更正（上一条里的两个读数：盘符债已被 #293 清掉；一次 rc=101 其实是没盘）
+
+- 上一条（`2e7eabf`）写 `docs_hygiene` 拦 1 = `docs/GENERAL-PLAN.md` 盘符 **27** / 基线 24。合完 `origin/main 0b7dd95`
+  （#293）后重跑 `python scripts/docs_hygiene.py` ⇒ **绿**。两版分别数：`git show 2842cd3:docs/GENERAL-PLAN.md` 数到 **27**、
+  `git show 0b7dd95:` 同一把尺数到 **24** ⇒ 那 3 处是 #293 顺手清掉的，不是我清的；"拦 1"这条撤回。
+  §8 里剩下的存量红只有两类：`claims_evidence` 拦 2（`SECURITY-NET` 5 / 基线 4、`CALIBRATION` 2 / 基线 0）与
+  `tech_collide` 拦 8（账本编号复用）。
+- 同一次 `cargo test --workspace --locked -j 1` 出现过 **两种完全不同的红**，都记下来免得下次再糊：
+  1. `rc=101` 且一条 `test result` 都没有，日志里是 `rustc-LLVM ERROR: IO failure on output stream: No space left on device`
+     ⇒ 本机 E: 盘实测 **0 字节空闲**。判据"无 cargo/rustc/gcc 进程 + 目录最后写入 ≥24 h"，回收 6 个构建产物目录 **15.4 G**，
+     回收后空闲 **16.5 G**，重跑才有结果可读。
+  2. `179` 个单位 / **2177 passed / 1 failed**，红的那条是 `trit-wspace` 的
+     `cli_read_verify_patch_repair_round_trip`（`crates/trit-wspace/tests/cli.rs:33`）：
+     报错里的十进制数 `10565135468733683509` 就是十六进制 `0x929ee6bb79c05735`（`print(hex(...))` 可验），
+     而它正是 `/e/tmp/trit-wspace-cli-10096/audit.jsonl`（11-05 05:51 留下）里第一条的 `behavior_before`
+     ⇒ 该夹具的临时目录按 `process::id()` 命名又从不删，PID 复用就把上一轮的审计链当成本轮第一条来核对。
+     单跑该目标 `6 passed` 三次全绿、`--test-threads=1/8` 都绿；GitHub runner 的 `/tmp` 每次全新 ⇒ CI 不受影响，受影响的只有本机。
+     证据与建议改法已回给作者，登记为账本 **A400**（我没有替他们改那片，wsp-pilot 会话仍在跑）。
+- 清盘并定位后同一条命令复跑：**224 个单位 / 2292 passed / 0 failed，rc=0** ⇒ 上面两种红都是环境与残留状态，
+  产品测试面没有回退；本片合 `origin/main` 后的门线以这一条为准。
+- 判据复算尺（逐字）：`python scripts/docs_hygiene.py`；`cargo test --workspace --locked -j 1`；
+  `ls -d /e/tmp/trit-wspace-cli-* | wc -l`；`head -c 200 /e/tmp/trit-wspace-cli-10096/audit.jsonl`。
+### Added（SCOPE §6 第 6 条 + §8：合过 main 的门线怎么分账）
+
+- `docs/SCOPE.md` §6 加第 6 条：合并 `origin/main` 之后门线判红，要先用
+  `git diff --name-only origin/main...HEAD` 确认红项所在文件不在本片改动里，再把红归到债务条目。
+  禁区两条：**不许调宽基线让它变绿**、**不许把"本片没红"写成"门全绿"**。
+  同时写明 `docs_hygiene` / `claims_evidence` / `tech_collide` 三道门并进 CI 之前必须先清零存量红——
+  并进去的那一刻，同一批存量红会拦住所有 PR。
+- `docs/SCOPE.md` §8 记 2026-11-06 逐字复跑的存量红：`docs_hygiene` 拦 1（`docs/GENERAL-PLAN.md` 盘符绝对路径
+  **27** 处 / 基线 24）、`claims_evidence` 拦 2（`docs/SECURITY-NET.md` 无据能力句 **5** 句 / 基线 4；新建的
+  `docs/CALIBRATION.md` **2** 句 / 基线 0，新文件没有豁免）、`tech_collide` 拦 8（交接账本编号复用
+  A129/A130/A131/A134/A153/A155/A157/A267）。逐号与复算尺在账本 **A399** / **A367**，都不是这片引入的。
+
+### Measured（watched literals 的靶子：匹配族 µs/节点基线，release、机器空转、5 次重复）
+
+- `cargo run --release -p trit-count --example matching_family` 在当前头（合完 `origin/main`）的读数，
+  每档给 **中位数（5 次极差）**：8 对 **10.8（9.8–11.1）**、12 对 **16.3（14.2–18.4）**、16 对 **20.9（18.4–22.4）**、
+  20 对 **25.7（24.2–28.2）**、24 对 **31.5（29.8–34.8）**、28 对 **37.1（34.5–40.4）**、32 对 **42.5（39.6–46.3）**、
+  40 对 **52.8（50.2–54.9）**；节点数五次逐位不变（8 对 203 … 40 对 1163）⇒ 变动的只有壁钟。
+- **20 对起 BDD 一律 refused**（`BDD 节点数超过上限 200000`），8–16 对 `ok` ⇒ 这一族确实是
+  "只有 DPLL 出得了数"的靶子。µs/节点从 8 对的 10.8 涨到 40 对的 52.8（**5.0×**）
+  ⇒ 单节点开销随子问题变大，watched literals 的判据就是压平这条上升线。
+- 判决口径：重复极差在小档更宽（12 对 ±13%、16 对 −12%/+7%、20 对 −6%/+10%、40 对 ±5%），
+  所以**判决只看 20 对以上，且改进必须大于当档极差**；8–16 档只用来确认没有回退。
+### Fixed（三平台 CI 的 windows `capacity_exec` 栈溢出：根因找到并修掉，另撤回我一次错判）
+
+- **撤回**：我先前把这次红判成"runner 面"（理由是 `size_of::<Commands>()` 只涨了几十字节 + 本机全绿）。
+  这个判断是错的：main 最近 5 次 CI 全绿，而我的头**两次**红在同一处 ⇒ 触发点在分支上，不在机器上。
+- **本地造出尺子**（不需要 CI）：`RUSTFLAGS="-C link-arg=-Wl,--stack,524288"` 把 `trit.exe` 的主线程栈压到 512 KB，
+  `cargo test -p trit-cli --test capacity_exec` 立刻复现同样的 5 条红 + `thread 'main' has overflowed its stack`
+  （同一把尺下 Windows 默认 1 MB 只是刚好躲过 ⇒ 任何让解析变大的改动都会顶穿 CI）。
+- **根因**：吃掉栈的是 **clap 对 `Commands` 这张 20+ 分支枚举的解析**——debug 构建下每个分支的临时量摊进同一个栈帧。
+  我先试"只把分发搬到工作线程"，**没用**（同一把 512 KB 尺下仍然红，报的还是 `'main' has overflowed`），
+  因为 `Cli::parse()` 本身就在主线程上；改成把 **解析 + 分发**一起搬进 64 MiB 栈的线程才过。
+- 修法：新增 `crates/trit-cli/src/bigtask.rs`（`STACK_BYTES = 64 MiB`，worker panic 以 101 退出，不伪装成功），
+  `main()` 现在只做 `bigtask::on_big_stack(|| run(Cli::parse()))`。子命令的多少不再取决于平台默认栈。
+- 实测（同一把尺，主线程 512 KB）：修前 `capacity_exec` **5 条全红** ⇒ 修后 **5 passed**；
+  整个 `cargo test -p trit-cli` 在 512 KB 下 **105 条全绿**（42 + 35 + 5 + … 共 8 个结果行）。
+  常规构建（默认栈）同样全绿；`bigtask` 自己带 2 条测试：一条用 40 层 × 64 KiB 帧（>2.5 MB 递归）
+  **证明线程真的拿到配给的栈**，一条证明 `Ok`/`Err` 原样带回。
+- 探针那一笔（`3298326`，临时摘掉 `count` 子命令）已用它自己的 revert 撤销（`5ec9e60`），
+  过程中 `test_surface` 因"删测试"判红 —— 保留那个红、没有用 `#[ignore]` 糊门。
+
+
+### Added（再吃掉 4 份手写 xorshift：纹理两条 bench、电路 bench、编解码 example —— 精确尺 60 → 56）
+
+- `crates/trit-texture/benches/sample.rs` 与 `texture.rs`：删掉各自 `struct Rng(u64)`，改吃 `trit_fuzz::SeedRng`。
+  **不只是编译过**：`cargo bench -p trit-texture --bench sample` 真跑出来那张表（双线性 62.72 vs 整图 24.57 ns/样点、
+  各向异性 taps=8 自由 711.27 / 缓存 714.64 ns/样点、显存 1084 KiB vs 16320 KiB = 15.1×）。
+- `crates/trit-circuit/benches/core.rs`：把内联的三行 xorshift 闭包换成 `SeedRng::next_u64`。
+  跑过：`by match` 7.587 vs `by lut` 0.837 ns/op（random 档 9.06×），`exact k=12` 514.63 µs/iter。
+- `crates/trit-codec/examples/ternary_corpus.rs`：同样改吃 `SeedRng`，跑过（写出 171 行 truth / 85 行 balanced 语料）。
+- 四处都是**同一条 13/7/17 移位** ⇒ 语料序列与改动前逐字相同，读数口径没有被悄悄换掉。
+- 顺手抓到自己的一个手误：往 `[dev-dependencies]` 里插 `trit-fuzz` 时插重复了一行（`trit-codec` 那份本来就有），
+  `cargo check` 直接报"cannot load manifest"——靠编译发现，不是靠眼看。六个 manifest 复查计数现在都是 1。
+- 复算尺：`grep -rlE "\^=.*<< 13" --include=*.rs crates/ | wc -l` ⇒ **56**（本会话起点 67）。
+
+
+### 读数（DPLL 在随机 CNF 上的规模档，release 实测）
+
+- `trit-count --fuzz-cnf --nvars N --cases 1`（N=18/20/22/24 各跑 3 次，同一颗种子 ⇒ 语料逐次相同）：
+  **最慢一题** 18–22 变量档 **183–294 µs**（三次分别 189/203/192、183–294、188–192），
+  24 变量档 **490–538 µs**（519/538/490）⇒ 6 个变量涨约 **2.6×**；每一档都是"该规模以内全部题目
+  与 `2^n` 穷举逐条一致"。复算：`cargo run --release -p trit-count -- --fuzz-cnf --nvars 24 --cases 1`。
+- 这不是优化读数，是**地板读数**：以后 DPLL 的任何提速要在同一把尺（同种子、同规模档）上跟它比，
+  否则"快了多少"没有意义。
+
+
+### Added（文档行号指针对账门 `scripts/doc_pointers.py`）
+
+- 仓里大量用 `文件.rs:行` 当复算指针。代码一动行号就漂，而**漂了的那句话仍然通顺**——没人会发现。
+  本门逐条按行号真去读文件：① 文件指不到 ⇒ 拦；② 只写文件名且全仓多命中 ⇒ 拦"歧义"（要求写带目录的路径）；
+  ③ 行号越界 ⇒ 拦并报出真实行数；④ 指针旁边 40 字符内的反引号标识符必须出现在该行 ±2 行内，
+  否则拦"指歪"（这是"行号还在、内容已经不是那件事"唯一可机器判的形式）；⑤ 一条指针都没抓到也判红（失明 ≠ 干净）。
+- 第一版按**整句**核标识符，被一处 `crates/trit-parts/Cargo.toml:9` 的引用误伤：同句后半段提到的一个类型名离指针很远，
+  却被当成"这行写的是什么"的说明 ⇒ 改成只看指针后面 40 字符 + 前面 12 字符，误报清零（口径写进代码注释）。
+- 首跑抓到 **8 条**坏指针，全部当场改对：`CHANGELOG` 两条指向**已被删除的** `random_expr` 副本（改成"已在 `c71314c` 删掉合并"）、
+  两条 `tconv/conv.rs` 与一条 model.rs 的引用是歧义/相对路径（改成带目录的全路径）、`matnet.rs:1-4` 这种区间写法不被认（改成 `:3` 指到结构行）。
+  现 **19 条指针全绿**；台账基线随首建归零（`doc_pointers_baseline.json` 只在有存量时才需要）。
+- 自测 1 正例 + 7 反证 + 1 条"变少允许"；变异登记 6 条，官方门 **断言抓住 6 / 存活 0 / 崩溃 0 / 假杀 0**
+  （第一条跑时有一条存活，定位是我把锚点指在 `main()` 的 `--update` 分支而非 `compare()`，换锚后被抓到）。
+
+
+### Fixed（三平台 CI 的 Clippy 步骤判红：`manual_contains`，以及我本地跑错了口径）
+
+- CI 报红的是**新 lint** `clippy::manual_contains`（rust 1.99）：我在 `crates/trit-bench/tests/bench.rs:170`
+  写的 `seq_a.iter().any(|&v| v == 0)` 该用 `seq_a.contains(&0)`；`-D warnings` 下就是错误，
+  ubuntu/macos/windows 三条作业同时红在 Clippy 步骤。
+- **我本地的复核口径错了**：这轮我只按单个 crate 跑 `cargo clippy -p <crate> --tests`，
+  而 CI 的口径是 `cargo clippy --workspace --all-targets --locked -- -D warnings`
+  ——`--tests` 不含 examples/benches，逐 crate 也漏掉没点名的包。改成**和 CI 逐字同一条命令**复跑，
+  `rc=0` 才算数（本轮实测：修前该命令报 1 条，修后 0 条）。
+
+### Added（`trit-immune/tests/properties.rs` 也改吃 `SeedRng`：重复度 61 → 60）
+
+- 上一轮我写"这件不做，因为要清 20 处 `as usize`"——这轮把它做完了：`below(u64)->u64` ⇒ `SeedRng::below(usize)->usize`，
+  顺带去掉 `rng.below(x.len() as u64) as usize` 一类的转换（逐类替换命中 14 处：4 纯数字、4 `.len()`、2 变量、
+  4 处 `Rng(seed)` 构造；另把 6 处 `rng.pick_trit()` 改成自由函数调用）。
+- `pick_trit` 留在本文件（`Trit` 是 trit-immune 的域概念，不进公共语料件）。
+- 口径核对：本地 `below` 一直是 `next() % n`，`SeedRng::below` 也是 ⇒ **探索序列不变**（每步抽样次数一样）。
+- 实测：`cargo test -p trit-immune` **23 个结果行全 ok**、`clippy --tests` 无告警；
+  精确尺 `grep -rlE "\^=.*<< 13" --include=*.rs crates/` ⇒ **60**（轨迹 67 → 65 → 63 → 61 → 60）。
+
+
+### Added（再吃掉两份手写 RNG：`trit-float` / `trit-immune` 的测试改吃 `SeedRng`）
+
+- `crates/trit-float/tests/stress.rs`：删掉本地 `struct Rng`，`next()` ⇒ `next_u64()`，
+  `unit` / `signed` 留在本文件当自由函数（那是它的进料形状，不是公共件）。测试 **2 条全绿**。
+- `crates/trit-immune/tests/fuzz_smoke.rs`：同样删掉本地 `Rng`，7 个取样点改吃 `SeedRng`。测试 **10 条全绿**。
+- 重复度读数（同一把精确尺 `grep -rlE "\^=.*<< 13" --include=*.rs crates/`）：**63 → 61**。
+  口径注明：把 `benchmarks/` 也算进来是 62，本文引用的都是 `crates/` 口径。
+- 同一条 xorshift（13/7/17）⇒ **序列不变**，所以这两份 fuzz/高压测试探索的输入集合跟改之前一致，
+  没有"顺手换了语料"的隐蔽差别。
+- **没做**：`crates/trit-immune/tests/properties.rs`（它还有本地 `below(u64)->u64` 与 `pick_trit`，
+  换成 `SeedRng::below(usize)->usize` 要连带清 20 处 `as usize` 转换，否则 clippy 的 `unnecessary_cast`
+  会在 CI 的 `-D warnings` 下判红）、`trit-circuit` 的两份（该目录被 sess 179ea139 认领中，不动别人的面）。
+- 门线：`clippy --tests` 对 `trit-float`/`trit-immune` 无告警；`test_surface` / `claims_evidence` /
+  `docs_hygiene` / `module_budget` / `layers` / `deps` / `publish_graph` / `ci_integrity` / `hazard_gate` /
+  `model_status` 全绿。
+
+### Added + 更正（`trit-dot` / `trit-codec` 的 stress 改吃 `trit-fuzz`；重复度尺子换成精确尺并当众改数）
+
+- `trit-fuzz` 补三个单值取样件：`trit`（`Ternary`）、`ternary_value`（`-1/0/+1`）、`bipolar`（`±1`）。
+  断言 1 条新增（`single_draw_helpers_are_balanced_and_typed`：3000 次取样每档 800–1200、`bipolar` 只出 `±1`），
+  `trit-fuzz` 现 **11 条**测试；变异登记 7→**9 条**，官方门 **断言抓住 9 / 存活 0 / 崩溃 0 / 假杀 0**。
+- 两个消费者改吃它，各自删掉本地 `struct Rng(u64)`：
+  `crates/trit-dot/tests/stress.rs`（`ternary`/`bipolar`/`ternary_f32` ⇒ `ternary_value`/`bipolar`，5 条测试全绿）、
+  `crates/trit-codec/tests/stress.rs`（`next` ⇒ `next_u64`、`trit` ⇒ `corpus::trit`，5 条测试全绿）。
+  _codec_ 那份本地映射是 `0→False, 1→Unknown, 2→True`，`corpus::trit` 是 `0→False, 1→True, 2→Unknown`
+  —— 两者都均匀，测试断言的是往返/纠错性质而非具体序列；**这一条差异写在测试文件头顶**，不是悄悄换的。
+- **读数更正（我自己的尺子不严谨）**：第一批立项时我用的是宽松尺
+  `grep -rl "<< 13" | xargs grep -l ">> 7|>> 17"`，数到 **64**；这条尺会把**散文里提到的模式**也算进去
+  ——我自己写的 doc 注释就中招了。换成精确尺 `grep -rlE "\^=.*<< 13"`（同一行必须有 `^=`）后：
+  本会话前 **67**（`581d54b`）→ `trit-fuzz` 第一批后 **65** → 本轮两个 stress 改吃后 **63**。
+  三个数都用 `git grep` 在同一份路径集（`crates/*.rs` + `benchmarks/*.rs`）上复算过；
+  旧条目里"64 个文件"就地改成"读数更正见下条"，不抹掉原文。
+- 门线：`claims_evidence` / `test_surface`（更新后见下）/ `docs_hygiene` / `module_budget` / `layers` / `deps` /
+  `publish_graph` / `ci_integrity` / `hazard_gate` / `model_status` 全绿；`cargo clippy --tests` 对
+  `trit-fuzz`/`trit-dot`/`trit-codec` 无告警。
+
+### Added（`trit-count --fuzz-cnf`：把随机 CNF 对账从测试里搬到工具上）
+
+- 新公开尺 `trit_count::oracle::count_cnf_exhaustive(&Cnf)`（库里那份），与 `tests/cnf_fuzz.rs` 里
+  **故意另写**的朴素枚举互为独立复核——两条链共用一把尺就等于没有复核。
+- CLI：`trit-count --fuzz-cnf [--cases N] [--nvars MAX] [--len K]`，默认 `nvars=1..=16` 各一条；
+  `--nvars` 超过 40 直接用法错误码 2（穷举是 `2^n`，不给它开始等死的机会）。
+  release 实测：`--fuzz-cnf --nvars 20` ⇒ **20 例全对，最慢一次 191µs**（读数也写进 README 那行）。
+- 新增断言 3 条（`cnf_fuzz.rs` 现 **4 条**）：432 例 DPLL vs 穷举、两把穷举尺逐例相同、CLI 报一致 + 越界守卫。
+- 变异登记 `trit-count` 21→**22 条**，新增的 "oracle: CNF 穷举把负文字当正文字"
+  用命名过滤实测 **FAILED**（抓住），源码随即恢复。
+- `cargo clippy -p trit-count --tests` 无告警、`main.rs` 494 行（离 800 行门还远）。
+
+### Added（`trit-fuzz` 第二批：CNF 语料 + 它的第一条消费者）
+
+- `random_cnf(rng, nvars, nclauses, clause_len)`（DIMACS 口径：文字是 `±1..=nvars`）与 `random_assignment`。
+  子句规范化口径写死在生成器里：**无重字、无永真（同变量两符号不同时出现）、无空子句**；
+  `clause_len` 是上界（小 `nvars` 时结果可能更短）；`nvars==0` 或 `clause_len==0` 返回空表，
+  而不是悄悄造一条空子句把公式判死。
+- 新消费者 `crates/trit-count/tests/cnf_fuzz.rs`（**2 条**）：这条链和 `crosscheck.rs` 不同——
+  那里从 `Expr` 出发经编码器造 CNF，编码器写错会**同时**骗到两边；这里跳过编码器直接喂随机子句集，
+  钉的是 DPLL 本体（规范形整理、单元传播、分量分解、缓存键）。
+  实测：**432 个**随机 CNF（`nvars` 1–9 × 长度 1–4 × 12 次）与 `2^nvars` 穷举逐一对账全等。
+- 判决性实测：把 `crates/trit-count/src/dpll.rs:78` 的 `let free = k - assigned - m` 改成 `k - assigned`
+  ⇒ `dpll_counts_random_cnfs_exactly` 报 **432 个里 96 个不一致**。
+- 变异登记从 4 条扩到 **7 条**，官方门 `python scripts/mutation_check.py --pkg trit-fuzz` ⇒
+  **断言抓住 7 / 崩溃 0 / 假杀 0 / 存活 0**。其中一条我先登记后**删除**并如实说明：
+  "永真子句只撤一半"（`clause.remove(i)` 只做一次）在我这套形状断言下**不可观测**——撤一半后子句仍合法，
+  既没有重字也没有永真；它只改变分布强度，而分布不是我要钉的性质。留着自己存活会让门误报"断言太弱"，
+  所以删条目 + 写下"这条性质没被锁住"，比假装锁住诚实。
+- `test_surface` 台账 94 单位 / **2228** 条（+6）。
+
+### Added（`trit-fuzz`：把测试语料生成收进 base 层第一批）
+
+- 立项判据是一条能量化的尺，不是"感觉重复"。**读数更正见下方"精确尺"那条**：当时我用宽松尺
+  `grep -rl "<< 13" | xargs grep -l ">> 7\|>> 17"` 数到 **64 个文件**，后来换成精确尺
+  `grep -rlE "\^=.*<< 13"`（要求同一行真有 `^=`）⇒ 本会话前 **67**、这一批合并后 **65**。
+  其中 `trit-count` 一个包里有两份**逐字相同**的
+  `random_expr`（`trit-count` 的 bin 与 `crosscheck` 测试各一份，两份都已在 `c71314c` 删掉合并）。
+- 新 crate `crates/trit-fuzz`（base 层，只依赖 `trit-core` + `trit-bench`）：`random_trits`、`random_expr`、
+  `var_names`，RNG 本体复用 `trit_bench::SeedRng`（同 13/7/17 移位 ⇒ 换包不换序列），并在 `trit-bench` 上补
+  `SeedRng::below(limit)`（`limit == 0` 直接 panic，不静默回 0）。
+- `trit-count` 两份副本删掉、改吃 `trit-fuzz`：**测试逐条不变**（`cargo test -p trit-count` 16 + 10 全绿，
+  语料序列口径相同 ⇒ 没有金样被顺手改掉）。
+- 断言 6 条（`crates/trit-fuzz/tests/corpus.rs`）：同种子逐条重放、域封闭（不冒出域外变量）、深度上界、
+  `depth=0` 只出叶子、3000 个三值每档落在 800–1200、空变量表判红而不是悄悄全出常量、`var_names` 在 26 处换样式。
+- 变异 4 条 **抓住 4 / 存活 0 / 崩溃 0 / 假杀 0**（`python scripts/mutation_check.py --pkg trit-fuzz`）；
+  `layers.json` 归位 `trit-fuzz = base`，`test_surface` 台账随之更新。
+- **还没做**：CNF/子句夹具（下一步从 `trit-codec`、`trit-dot` 的 stress 语料里收），以及那 60 多份手写 RNG 的逐步改吃——
+  这两件都没动别人的承重面，不在本轮范围。
+
+### Added（完成度表对账门 `scripts/model_status.py`：表里的数字改成机器量的）
+
+- `docs/STATUS.md` §2 那张"六个像模型的东西"的表一直是**手填**的（内联 `#[test]`、被 bin 用、`tests/` 提及、判定词）。
+  手填的表会烂：代码动了表不动，"已跑通 / 组件"就变成假话——正是用户最反感的迷惑性来源。
+- 新门逐行复算四列计数并核对判定词：任一不符 ⇒ 判红；判「已跑通」但 `tests/` 提及 0 且"读数在哪"没指到
+  文件/§/PR ⇒ 判红；判定词漂出 §1 词表 ⇒ 判红；**表头读不出来也判红**（失明不等于对上了）。
+  `--show` 直接打印复算出来的表行，改表不用手数。
+- 第一次对账就抓到我自己写的 5 处不符（列口径从"断言条数"变成"类型名在 tests/ 的代码行提及数"）：
+  `DepthNet` 4→**11**、`TpmModel` 0→**2**、`DepthUNet` 3→**7**、`TriModel` 5→**0**（它的覆盖经由 `to_tri()`/`RefCpu`
+  发生，按类型名数不到）、`TriModel` 被其他模块用 0→**1**。表已按复算口径重写并在表下写明边界与原因。
+- 自测 1 正例 + 7 反证（含"注释行也算提及"这类口径放宽的反证）；变异登记 5 条，
+  `python scripts/mutation_check.py --pkg scripts/model_status.py` ⇒ **断言抓住 5，存活 0，崩溃 0，假杀 0**。
+- 本轮我自己的两个工具性错误（都是老熟人）：**补丁空操作**——用没有 `assert` 的字符串替换改 `planes()` 签名，
+  只有调用点生效；**编码**——自测打印用 `⇒`，中文 Windows 上变异门起子进程是 cp936，直接
+  `UnicodeEncodeError` 把"门自己崩了"伪装成测试失败；已在 `main()` 里显式把 stdout 定成 UTF-8，
+  并把自测失败行改成行首 `FAIL <例名>`（否则门的"未点名判红"口径会把真抓住误读成没点名）。
+
+### 否证（"下一刀省掉分解/拷贝"——消融实测把它打回去了）
+
+- 消融口径：临时把 `crates/trit-count/src/dpll.rs:91` 的 `decompose(renumbered, m)` 强制走 `None`
+  （只是测量，不留在树里；表里 `comps=0` 就是它生效的证据），跑同一个 `--example matching_family`。
+- 读数：**8 对** 2.2 ms / 203 节点 → **23.1 ms / 10,019 节点**；**12 对** 4.7 ms / 323 节点 →
+  **1807 ms / 729,059 节点**（节点数 ×384，时间 ×385）。消融后 µs/节点反而只有 2.3–2.5（子问题变小了）。
+- 结论：分量分解的开销与它省下的搜索**不在同一量级**，所以基线里 µs/节点随规模从 10.7 涨到 47.9 µs
+  是"子问题本身变大"的正常结果，**不是分解做多了**。之前记的"下一刀该减 `decompose`/拷贝"作废，
+  要再提速得往别处找（分支启发式与缓存键；watched literals 的靶子是传播侧，与本条不冲突）。
+- 写回代码注释：`dpll.rs` 头部现在带这组数，免得下一个人（或下一个我）再猜一遍。
+
+### Fixed（`count_cmd.rs` 自己找不到二进制：MSRV 作业里五个测试全红，不是计数命令坏）
+
+- CI 读数：**MSRV (1.88)** 失败的是我新加的 `crates/trit-cli/tests/count_cmd.rs` 5 条，报错
+  `failed to run trit binary: Os { code: 2, kind: NotFound }`；根因是我写的取径
+  `env("CARGO_BIN_EXE_trit").unwrap_or_else(|| format!("trit{}", EXE_SUFFIX))` —— **cargo 在那个作业里没注入该变量**，
+  回退成"让 PATH 去找裸 `trit`"必然找不到。同目录的 `tests/cli.rs` / `capacity_exec.rs` 一直是
+  "env 取不到就按 `current_exe()` 往上两级推 `target/debug/trit`"，我没照抄。
+- 修法：换成同一把尺（`trit_bin()`），并把静默回退改成**显式判红**（`assert!(bin.exists())` +
+  `unwrap_or_else(panic)` 点名路径）——"测试自己找不到二进制"不能伪装成"产品不工作"。
+- 复现验证：直接跑 `target/debug/deps/count_cmd-*.exe`（**不经 cargo**，因此没有 `CARGO_BIN_EXE_*`）
+  ⇒ 改前 5 条全红于同一行，改后 **5 passed**；`cargo test -p trit-cli --test count_cmd` 本地同样 5 passed。
+- 同一次 CI 里 **windows-latest** 挂的是既有 `capacity_exec.rs` 5 条，子进程报
+  `thread 'main' has overflowed its stack`（退出码 `-1073741571` = `0xC00000FD`）。
+  先按证据排除自己：实测 `std::mem::size_of::<Commands>() = 184` 字节（新变体内联只带来十级字节的增量），
+  本机 `cargo test -p trit-cli --test capacity_exec` **5 passed** ⇒ 不像本 PR 的成因；
+  重跑该作业再看是否复现（复现就按 Windows runner 的栈/内存面查，不动别人的测试）。
+
+### 否证（`MatNet` 不改名——原本列为"命名整改"的欠账）
+
+- `docs/STATUS.md` §4 第 4 条提议"是组件就改名 `MatHead`"。读码把它**否证**了：
+  `crates/trit-parts/src/matnet.rs:3` 写的是独立训练的四类分类器（`conv(3→H) → ReLU → conv(H→H) → ReLU → 全局平均 → 线性(H→4)`），
+  不是接在骨干后面的头 ⇒ 叫 `MatHead` 比原名更迷惑。
+- 外部 pin 实测（决定改名有没有代价）：全机代码面只有 `crates/trit-parts/src/bin/parts_3d/material.rs` 引用，
+  其余 `MatNet` 命中都在同一仓的 worktree 副本里；`crates/trit-parts/Cargo.toml:9` 是 `publish = false`
+  ⇒ 本来不受 semver 约束。结论：**维持 `MatNet`**，把它在 §2 表里的判定（组件：1 个 bin 用、无仓内复用）写准。
+  迷惑性的修法是判定与读数，不是换名字。
+
+### Added（把「计时夹具」登记成分层能力：权威 = `trit-bench`，两份手写档带实测差）
+
+- `scripts/layers.json` 的 `capabilities` 新增 `bench-timing-harness`：权威 `trit-bench`，镜像两份——
+  `trit-ops/src/bin/bench.rs`（最完整的手写档：交错 + min/median/max + 轮内轮换，`trit-bench` 的轮换就是从它抄的；
+  该文件被 sess 179ea139 认领中，不悄悄合）与 `trit-parts` 的 `parts-bench`（GPU + 仓外 ckpt，本机跑不起来 ⇒ 无法先验证尺子没换）。
+  每条都带 `measured_gap`（A357 迁移前后同档：u64 dispatch 8.1–9.3 vs 手写 7.6–12.2 ps/trit 等；小档量化台阶
+  100/200 ns → 67.5/72.8/82.8 ns）与 `why_kept`，门报「能力登记 2 条、第二实现 3 份」绿。
+- **我自己写坏过一条复算指针**：先填的是 `cargo test -p trit-ops --release bench`（凭印象猜的），
+  实际 `crates/trit-ops/Cargo.toml:14` 是 `[[bin]] name = "bench"` ⇒ 正确口径 `cargo run --release -p trit-ops --bin bench`；
+  `parts-bench` 的参数也不是位置参数而是 `--dir <parity 目录>`。两处都按 `Cargo.toml` 与 bin 源码逐字改过——
+  复算命令写错等于没有复算尺。
+
+### Added（`trit count models`：把计数引擎接到命令行）
+
+- `trit-cli` 新增子命令 `count models <expr>`（`crates/trit-cli/src/commands/count.rs`，经 `#[command(subcommand)]`
+  嵌套，main.rs 只长 6 行、离 800 行的上帝模块门还有 12 行）。参数：`--vars` / `--constraints` / `--binary` /
+  `--target true|false|unknown` / `--crosscheck` / `--bdd-max-nodes` / `--json`。
+- 实测读数（穷举独立复算过）：`a & b` 为真 **1**；`a | b` 为真 **5**，`--binary a` 收窄到 **4**；
+  `a & b` 为**未定 3**；`a & b` 在约束 `!a` 下 **0**；`--bdd-max-nodes 1` 时报
+  `BDD 拒（BDD 节点数超过上限 1）` 且 `matches=true / three_way=false`（拒绝不等于不一致）。
+- 新测试 `crates/trit-cli/tests/count_cmd.rs`（**5 条**，跑真二进制）。判决性实测：把 DPLL 调用里的
+  `&binary` 换成 `&HashSet::new()` ⇒ 只有 `binary_vars_narrow_the_domain` 判红。
+- 又踩一次**陈旧 exe** 的坑：变异探针把 `trit.exe` 重编译成被改坏的那版，恢复源码后**没重建**就直接跑，
+  于是读到 `--binary a` 报 5（其实是变异体在跑）。重新 `cargo build` 后才报 4。
+  顺手把这条做成锁：文本模式加断言 `!stdout.contains("BDD BDD ")`，同一个坑要用测试而不是记性来挡。
+- `README.md` 加「模型计数」一节（含上面每条读数与复算来源）；`--bdd-max-nodes` 的适用命令列表补 `count`。
+
+### Added（`DepthNet` 的 `tests/` 端到端：三值格不变量、膨胀可达集、留出泛化）
+
+- 第二个 `tests/` 文件 `crates/trit-parts/tests/depthnet_e2e.rs`（**4 条**，全绿）。与内联 7 条**不重叠**：
+  内联测"学斜坡 / 学常数 / mv 门 / save-load / 确定性"，这里测必须跨模块才看得见的东西。
+- **三值格不变量**（这条是三进制命题的行为锁，不是权重检查）：把 `c1.w[0]` 换成同一量化格内的另一个值
+  （`q(w)=round(w).clamp(-1,1)`）⇒ 三值档前向**逐位不变**；`ternary=false` 档同一个扰动**必须改变输出**。
+  两条合起来才排除"标志位被忽略"。判决性实测：`crates/trit-parts/src/tconv/conv.rs:113` 的 `q` 改成恒等 ⇒ **只有这条判红**。
+- **量到一个非显然的实现性质**：膨胀核抽头在 ±dil 的**整数倍**上，所以孤立冲击的可达集落在 dil 格点上——
+  实测 `dil=1` 依赖 16 个像素（{0,1,2,3}²）、`dil=2` 最远 (6,6)、`dil=3` 最远 (9,9)、`dil=5` 最远 (15,15)。
+  第一版夹具选了"角落 (15,15)"，理由是"离冲击够远"，结果 15 不在 `dil=3` 的格点上 ⇒ **报红的是夹具不是实现**。
+  改成 `(6,6)`（`dil=1` 无关 / `dil=3` 相关）后成对判据成立；`crates/trit-parts/src/tconv/conv.rs:151` 的 `self.dil` 改成常量 `1` ⇒ 这条判红。
+- **留出集泛化**（不是训练集）：3 个方向训练、第 4 个方向（反对角）从未出现，1200 步后 MSE **0.1710 → 0.00620**（27.6×）。
+- **部署构成**：`cin=6 / pyr=1 / dil=2 / med=-0.75 / iqr=1.25 / 量化档(1,1,0)` 经 `save`→`load` 全字段一致且前向逐位一致；
+  未知 magic 的报错点名 `不是 DCN1/DCN2/DCN3/DCN4`（不吞成"读出来了"）。
+- `docs/STATUS.md`：§2 表格 `DepthNet` 的 `tests/` 从 0 改 **4**，新增 §2.3 记读数与两条变异；
+  §4 第 3 条收口（仍欠 `DepthHead`/`MatNet`，但按 §1 它们是组件，没有端到端可言）。
+- 本轮我自己的又一次同型错误，如实记（`docs/STATUS.md` §3 有台账）：改 `planes()` 签名时用了一次没有 `assert` 的字符串替换，
+  **补丁空操作**（只有调用点的 `&` 生效、函数签名没改），靠编译报错才发现——判据的输入必须是刚读到的。
+
+### Added（`trit-parts` 第一批 `tests/` 级端到端断言：`DepthUNet` 与 `TriModel` 从"已实现未测"翻篇）
+
+- 新文件 `crates/trit-parts/tests/models_e2e.rs`（**9 条**，`cargo test -p trit-parts --test models_e2e` 全绿）：
+  此前 `crates/trit-parts/tests/` **一个文件都没有**，六个"像模型的东西"的断言全在实现文件的 `mod tests` 里。
+  这条链选的是**不依赖 `gpu` feature** 的那一段（`tpm::from_net` / `net::Net` 都在 `gpu` 后面，CI 默认特性跑不到），
+  改成加载随仓的 `models/parts_id8118.tpm`（13 层 3→32→…→32→16）→ `to_tri()` → `RefCpu::forward`。
+- 读数（2026-11-05 实测）：`DepthUNet` 16×16、h=4、301 步 MSE **0.3602 → 0.01051**（34×），
+  左右两半均值 **−0.586 / +0.580**（目标 ∓0.6）——只看 MSE 会放过塌成常数的解，所以加区域判据；
+  全 false 掩码一步 ⇒ 前向输出**逐位不变**；`save`→`load`→前向**逐位一致**，坏头报 `不是 U1` 不 panic。
+- 三值不变量 + 部署语义：13 层每个 `|E|` 要么 0 要么等于该通道 `|scale|`；`to_tri()` 的 E 与 `TpmLayer::effective()`
+  **逐位相等**（防止中间混进第二次量化）；`truncate_head(4)` 后留下的 4 个平面逐位不变。
+- **金样指纹**（FNV-1a 64）：res=8 `f6de046f0b41c1f6`、res=16 `05f25dc40107c04a`。判决性实测：
+  把 `RefCpu::pool` 的 `m.max(v)` 换成 `(m+v)/2.0` ⇒ **只有金样这条判红，其余 8 条全绿**
+  ⇒ 没有这条 pin，池化写错根本拦不住。这就是"结构测试冒充端到端"的差别，也是 `docs/STATUS.md` §2.2 写它的原因。
+- 尺子自证：`compare_nhwc(a,a)` 报 `(1.0, 0.0)`；翻掉一个像素的 argmax ⇒ 一致率 319/320（既判红又不至于"改一个像素判整帧"）。
+- 本轮我自己的两个夹具错（都当场被门/红抓出，写进 `docs/STATUS.md` §3）：① 第一次"抬平面 0"抬的就是本来就是
+  argmax 的通道 ⇒ 断言红但其实没测到尺子；② 重算覆盖表时用 `grep -c` 单文件不带文件名，被 `awk -F:` 取空 ⇒
+  六个类型全报 0，看着像"补的测试没生效"。
+- `docs/STATUS.md` §2 表格随之更新：`DepthUNet`/`TriModel` 判**已跑通**（CPU 参考层），
+  当时 `tests/` 覆盖仍是 **0** 的还有 `DepthNet`、`DepthHead`、`MatNet`（`DepthNet` 由下一条补掉）。
+
+### Added（能力句门 + 账本去重判定，把"我以为做完了"变成机器判）
+
+- 新门 `scripts/claims_evidence.py`：能力面（`README.md` + `docs/**.md`）里出现完成类动词
+  （支持/已实现/已完成/达标/已跑通/已验证/已落地/已修/已合…）却**既无读数也无复算指针** ⇒ 判红；
+  读数必须带单位（"提升 30"不放行）；指针接受反引号命令、`文件.rs:行`、`PR #N`、`§`、`A<编号>`。
+  **CHANGELOG 明确不算能力面**（历史叙述，"已修 X"是记录不是声明）。
+  存量如实进棘轮基线：18 个文件共 **76 句**（`docs/GENERAL-PLAN.md` 11 句最多），只许变少。
+  自测 3 正例 + 3 反证；变异 4 条 **caught 4 / survived 0**。
+- 上一轮立的 `scripts/tech_collide.py` 补上**账本一半**（`judge_ledger`）：同一编号出现多次 ⇒ 判红，并区分
+  「**编号被两件事复用**」（标题不同，"说 A 完成了指哪一件？"）与「同一件事重复登记」；
+  同条目 open 与 `[x]` 并存也判红。实跑在真账本抓到 **8 对复用**（A129/A130/A131/A134/A153/A155/A157/A267），
+  已带行号立成 LEDGER 独立条目；去重要由原作者改号，我没有替别人重编号。
+- 我这轮三次同类自错，全部当场被自己的门抓出并改正，不写进"已完成"：① `expect` 反向逻辑写错两次
+  （正例被当失败、失败被当通过）；② 变异写成 `re.compile(...) and re.compile(...)` 的**等价变异**（存活，换成实削弱）；
+  ③ 首版把 CHANGELOG 纳入能力面导致 26 句误报（收窄口径）。
+- `docs/SCOPE.md` 的「规矩 ↔ 门」对照表补两行（能力句、同技术撞车）；`docs/STATUS.md` §1 第一条欠账划掉。
+
+### Added（同技术撞车门 + 完成度口径，反"我以为做完了"）
+
+- 新门 `scripts/tech_collide.py`（只读，不改认领表与技术索引）：认领门过去只比**路径**相交，
+  所以两个人在不同文件里造同一个轮子永远不会撞车。本门读 `CLAIMS.md` × `TECHMAP.json`，分三档：
+  两条在效期声明命中**同一条目** ⇒ **拦**并双方点名（附对方条目的 title/why/实测读数）；
+  命中的是**不同条目但共享 ≥2 个标签** ⇒ **只警**，把对方读数与理由印出来，要求 PR 写清适用域差异
+  ——**换了域不算重复**（"你这个不行不代表别的领域不行"）；声明命中不到任何条目 ⇒ 提示先登记索引。
+  读不到索引/声明 ⇒ 判红（不知道有没有撞车不等于没撞车）。self-test 1 正例 + 4 反证，变异 5 条 caught 5。
+- 新 `docs/STATUS.md`：定四个状态词（**已跑通 / 已实现未测 / 组件 / 已否证**），并把"能力句必须带复算命令 + 读数"
+  写成口径；随后按口径量了 `trit-parts` 六个"像模型的东西"：只有 `DepthNet`（4 个 bin、7 条内联测试、有清单与复核读数）
+  与部分 `TpmModel` 够得上已跑通；`DepthUNet`/`TriModel` 是**已实现未测**，`DepthHead`/`MatNet` 是**组件**。
+  最刺眼的一列是 `crates/trit-parts/tests/` 里**0 个文件**提到这六个类型 —— 所有断言都是同文件内联单点测试。
+  表里附了可重跑的复算尺。
+- 我自己这一轮的两个测量错误也写进 STATUS §3/§4：第一次 grep 漏算内联 `#[test]`（得出"全都没测试"的错结论，
+  改正后才有了这张表）；以及"门"字当前只意味着**本地判红 + 变异钉住**，三个新门都还没进 CI（`.github` 被别的会话认领中）。
+- 门第一次实跑就抓到 **8 条拦**：交接账本里**同一编号被两件事复用**（`A129` 既是"化学仓 trit-chem M0"
+  又是"三值卷积栈 vs MLP"；`A130` 同理）⇒「A130 完成了」无法判定指哪件，这正是"我以为做完了"的最硬来源。
+  已写进 `docs/STATUS.md` §3.5，修法与"取号即复验唯一"的纪律也记在那儿；去重是账本侧的活，不由本 PR 代做。
+- 明确没做（§4 欠账）：**能力句的门还没写**——"必须带命令 + 读数"现在还是文字。设计已定：扫 README/docs 的能力句，
+  缺命令或缺数字判红，存量进棘轮基线只许变少（同 `docs_hygiene` 的做法）。下一步先做它，再谈端到端断言补齐与 `MatNet` 改名。
+
+### Added（`trit-bench`：把 8 份手写 xorshift 与不交错计时收成一份底件）
+
+- 立项判据是清点实测（不是"感觉重复"）：仓内同型 `xorshift64` 手写副本 **8 份**；五处主要 bench 里
+  **3 处完全不交错**（热漂移会把 32% 读成 13%）、**2 处只报单次或总均值**（无 min/median 概念），
+  多数没有 `black_box`。最完整的是 `trit-ops/src/bench.rs`（交错 + min/median/max + 规模档），
+  它的"轮内轮换起始位序"做法被抄进本 crate。
+- 新 crate `crates/trit-bench`（base 层，纯 std、零依赖）：`SeedRng`（确定性三值序列，种子 0 防退化）、
+  `Bench`（登记实现 → `run(rounds)` 交错 + 每轮轮换位序；`reps(n)` 在计时段内重复并取平均；
+  `black_box` 兜住返回值）、`Spread`（min/median/max + `ns_per_unit`/`ps_per_unit`）。
+- 复算尺迁过去并且**尺子没变**：`benchmarks/dot_variants` 改用 trit-bench 重跑 A357，读数与手写版同档 ——
+  u64 派发 8.1–9.3 ps/trit（手写 7.6–12.2）、u64 便携 12.7–12.8（12.2–12.5）、
+  u32 镜像 48.5–52.3（48.1–50.7）、i32 标量 170.8–246（168.6–183.5）。
+- **量出一个真问题**：小档位（8192 trits）整个点积只有 1–2 个 tick（本机 `Instant` 分辨率约 100 ns），
+  手写版报的 min=100.0 / med=200.0 ns 就是量化台阶本身；加 `reps` 后同一档报出
+  min=67.5 / med=72.8 / max=82.8 ns，台阶消失 ⇒ 以后所有 bench 默认要在计时段内重复。
+- 归位与文档：`layers.json` 登记 `trit-bench = base`，并把 base 的定义**明确拓宽**为
+  「值域/代数/编码 + 不需要理解上层语义的公共底件（测量与夹具）」，`docs/LAYERS.md` §1 同步改（不是悄悄塞）；
+  README 加一行；ROADMAP §2 的 `trit-bench` 划掉，下一步迁其余 4 份 bench。
+- 测试 9 条（确定性、三值分布、种子 0 不退化、分位数口径、单位换算、轮内交错且轮换位序、
+  `reps` 真按次数放大并平均、`reps(0)` 安全、标签对齐）。变异 5 条 **caught 5 / survived 0**。
+- 三处被自己的门/现实逼出来的纠正，如实记：① 第一版 `seed_zero_does_not_degenerate` 断言的是"不全为 0"，
+  而退化序列其实是**全 -1**（量化偏移）⇒ 变异存活，问题是**我的断言不判决**；改成"不许退化成常数序列"才抓住。
+  ② `Bench` 初版用 `Box<dyn FnMut>` 要求 `'static`，逼调用方 clone ⇒ 改成带生命周期 `'a`，允许直接借用。
+  ③ 本轮我先在旧分支上做，那片没有上一轮的文档与卫生门、CHANGELOG 还是被覆盖后的 29 字节，
+  于是条目被一次没有 assert 的 `replace` 静默丢弃；改动整体搬到 main 之上重做，这次插入前先断言锚点与文件规模。
+
 ### Added（trit-wspace：跨片 oracle 表复用 + 三值任务向量）
 
 - 分片 header 新增 `oracle_parent` + 增量 `oracles`：后续分片只写**新增**验证集，前面的直接复用；

@@ -12,7 +12,7 @@
 
 | 层 | 名字 | 判据（满足全部） | 本仓落位 |
 |---|---|---|---|
-| **L0** | 语义与表示 | 只定义值域/代数/编码，不做「问题求解」；换掉上层任何一个它都不动 | `trit-core`（algebra / ast / parser / value / limits） |
+| **L0** | 语义与表示（+ 底件） | 只定义值域/代数/编码，或提供**不需要理解上层语义**的公共底件（测量与夹具）；换掉上层任何一个它都不动 | `trit-core`（algebra / ast / parser / value / limits）、`trit-bench`（交错计时与确定性生成）、`trit-fuzz`（测试语料：随机三值向量与表达式） |
 | **L1** | **算子库** | 输入→输出的**单点计算件**：给一批 trit 回来一批值；有明确的每秒吞吐口径；能被别家内核逐元素替换 | `trit-ops` `trit-dot` `trit-float` `trit-gpu` `trit-attn` `trit-codec` `trit-texture` |
 | **L2** | **算法库** | 解一个**问题**（等价性、可满足、计数、量化、化简、调度、验证）；有 oracle 可对拍；正确性优先于速度 | `trit-eval` `trit-sat` `trit-bdd` `trit-count` `trit-circuit` `trit-policy` `trit-schedule` `trit-graph` |
 | **L3** | **学习库** | 会**改参数**：训练循环、量化/STE、评测、清单与复核；产出是权重 + 可复现记录 | `trit-learn` `trit-train` `trit-parts`（含 `parts-depth*`） |

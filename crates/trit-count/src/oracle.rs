@@ -7,6 +7,8 @@ use trit_core::ast::Expr;
 use trit_core::value::Ternary;
 use trit_eval::{Assignment, eval};
 
+use crate::cnf::Cnf;
+
 /// Counts assignments over `vars` whose evaluation equals `target`.
 ///
 /// Binary variables range over `{False, True}`; the rest over
@@ -71,6 +73,31 @@ pub fn count_exhaustive_under(
             place += 1;
         }
     }
+}
+
+/// 对 **CNF 本体**穷举 `2^nvars` 个布尔赋值（不经过编码器）。
+///
+/// 用途：`--fuzz-cnf` 直接喂随机子句集时，这把尺钉的是 DPLL 自己（规范形整理、单元传播、
+/// 分量分解、缓存键）。注意 `tests/cnf_fuzz.rs` 里另有一份**故意写得最朴素**的枚举，
+/// 两份互为独立复核——共用一份实现就失去了"复核者不复刻被复核方 bug"的意义。
+#[must_use]
+pub fn count_cnf_exhaustive(cnf: &Cnf) -> u128 {
+    assert!(
+        cnf.nvars < 128,
+        "nvars={} 超出 2^n 穷举的表示范围",
+        cnf.nvars
+    );
+    (0..1u128 << cnf.nvars)
+        .filter(|bits| cnf.clauses.iter().all(|clause| satisfied(clause, *bits)))
+        .count() as u128
+}
+
+fn satisfied(clause: &[i32], bits: u128) -> bool {
+    clause.iter().any(|&lit| {
+        let idx = lit.unsigned_abs() as usize - 1;
+        let value = (bits >> idx) & 1 == 1;
+        if lit > 0 { value } else { !value }
+    })
 }
 
 /// Collects variable names in sorted order.

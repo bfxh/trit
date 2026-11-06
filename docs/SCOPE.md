@@ -71,8 +71,15 @@
    同能力已有权威实现 ⇒ 登记 `capabilities`，第二份必须带**含数字**的 `measured_gap`。
 3. 加 `[[bin]]`/CLI 面 ⇒ 想清楚是不是该进 `trit-cli`（可发布），别让底座 crate 各自长壳。
 4. 数据/夹具 ⇒ 按 §3 三问回答，答案写进 PR 描述。
-5. 收尾：`fmt` / `clippy --all-targets` / `doc` / 测试 / `mutation_check` / `module_budget` /
-   `test_surface` / `publish_graph` / `deps` / `ci_integrity` / `hazard` / `layers` / `docs_hygiene`。
+5. 收尾：`fmt` / **`cargo clippy --workspace --all-targets --locked -- -D warnings`**（逐字这条；
+   `cargo clippy -p <crate> --tests` 是弱口径——少了 examples/benches、也漏掉没点名的包，
+   2026-11-06 就是这样让三平台 CI 的 Clippy 步骤一起红）/ `doc` / `cargo test --workspace --locked` /
+   `mutation_check` / `module_budget` / `test_surface` / `publish_graph` / `deps` / `ci_integrity` /
+   `hazard` / `layers` / `docs_hygiene` / `claims_evidence` / `model_status` / `doc_pointers`。
+6. **合过 `origin/main` 的门线判红要分两笔账**：先 `git diff --name-only origin/main...HEAD` 确认红项所在文件不在本片改动里，
+   再把红归到债务条目（谁的文件谁修）。两条禁区：不许调宽基线来让它变绿，不许把"本片没红"写成"门全绿"。
+   `docs_hygiene` / `claims_evidence` / `tech_collide` 这三道门尚未进 CI，存量红不拦 PR；
+   **一旦并进去，同一批存量红会立刻拦住所有 PR**，所以并 CI 之前要先清零（现状计数见 §8）。
 
 ## 7. 规矩 ↔ 门 的对照（哪条机器判、哪条只能人判）
 
@@ -84,10 +91,20 @@
 | 不搞上帝模块 | `门` `module_budget.py` | 单文件 >800 行且未登记债务 |
 | 测试要真判东西、不许删 | `门` `test_surface.py` | 无断言测试（警告）、计数跌破台账（红） |
 | 关键规则改坏必须被发现 | `门` `mutation_check.py` | 存活变异、锚点找不到、空/等价变异混入 |
+| 文档里的行号指针必须指得到、指得对 | `门` `scripts/doc_pointers.py` | 文件不存在；同名文件歧义（必须写带目录的路径）；行号越界；指针旁边的标识符不在该行 ±2 行内（行号漂了）；坏指针比基线变多 |
+| 能力句必须带读数或复算指针（完成度口径） | `门` `scripts/claims_evidence.py` | 有完成类动词却既无读数又无指针；读数没单位；无据句比基线变多 |
+| 完成度表里的计数与判定必须和代码对得上 | `门` `scripts/model_status.py` | 表里四列计数与复算不符；判「已跑通」但 `tests/` 提及 0 且没指到文件/§/PR；判定词漂出 §1 词表；表头读不出来（失明也判红） |
+| 同技术不许两人各造一份；异域重叠需写清差异 | `门` `scripts/tech_collide.py` | 两条在效期声明命中同一技术索引条目；账本编号被两件事复用 |
 | 仓内文档不写本机路径 / CHANGELOG 不被覆盖 | `门` `scripts/docs_hygiene.py` | 新增盘符路径、CHANGELOG 结构与字节数棘轮跌破 |
 | 密钥不外泄 | `门` secret scan（CI） | 命中形状 |
 | 「换掉这个项目它还有没有意义」（R1） | `人` | 门判不了语义相关性，靠评审；记在这里是为了不假装它是门 |
 | 素材三问（§3） | `人` + PR 描述 | 同上 |
+
+## 7.1 完成度口径（反"我以为做完了"）
+
+句子里出现「支持 / 可以 / 已实现 / 完成 / 达标 / 最快」这类能力断言时，**必须同时给出**
+①可复算的命令或文件行号、②读数（含单位与规模档），否则只能写成 `已实现未测` 或 `组件`。
+状态词只有四个：`已跑通` / `已实现未测` / `组件` / `已否证`。现状实例与证据见 [STATUS.md](STATUS.md)。
 
 ## 8. 现状与欠账（不粉饰）
 
@@ -98,3 +115,14 @@
   `docs_hygiene` 按目录计数进基线，**只许变少**；我没批量改别人的历史记录。
 - `scripts/layers.py` 与 `docs_hygiene.py` 还没挂进 CI（`.github` 目录正被别的会话认领），
   现阶段只在本地与变异面生效——这是本文件所有"门"字目前最大的水分，写在这是为了不被当成已完成。
+- 2026-11-06 在 `feat/trit-bench` 合 `origin/main` 后逐字复跑的存量债（都不是这片引入的，逐号与复算尺记在交接账本 **A399** / **A367**）：
+  `claims_evidence` **拦 2** —— `docs/SECURITY-NET.md` 无据能力句 **5** 句 / 基线 4；新建的 `docs/CALIBRATION.md` **2** 句 / 基线 0（新文件没有豁免）。
+  `tech_collide` **拦 8** —— 交接账本 `LEDGER.md` 编号复用 A129/A130/A131/A134/A153/A155/A157/A267。
+  `docs_hygiene` 同一天内从 **拦 1 → 绿**：`docs/GENERAL-PLAN.md` 的盘符绝对路径 25 → 27 → **24**（= 基线），
+  由 `#293` 那次提交清掉 —— 记在这里是因为它是"存量红会被别人顺手清掉、而读数不会自己跟上"的现场样本，
+  引用旧读数前必须重跑 `python scripts/docs_hygiene.py`。这几条的改法都是改文档而不是改基线；
+  §6 第 6 条规定了存量红清零之前不许把这三道门并进 CI。
+- 本机 E: 盘在 2026-11-06 06:0x 实测 **0 字节空闲**，`cargo test --workspace` 直接报
+  `rustc-LLVM ERROR: IO failure on output stream: No space left on device`（rc=101，`test result` 一条都没有 ⇒ 不是测试红，是盘红）。
+  判据是"无 cargo/rustc/gcc 进程 + 目录最后一次写入 ≥24 h"，据此回收了 6 个构建产物目录共 **15.4 G**（du 口径：7.0+5.4+1.6+0.9+0.3+0.2），
+  回收后 E: 空闲 **16.5 G**。构建产物可再生，但被删的那几个包下次要重编 —— 这条写在这是为了让"红"和"没盘"不再混在同一个 rc 里。
