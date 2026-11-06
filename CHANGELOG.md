@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Changed（trit-count：残基子句表扁平化 —— 每节点分配不再随子句数增长，40 对 1.92×）
+
+- `crates/trit-count/src/dpll.rs` 引入内部 `Table`（一段 `lits` + 一张 `starts`，第 0 段永远是占位空段），
+  `residue` / `renumber` / `decompose` / `choose_var` / `cache_key` / `insert_unit` 全部改用它：
+  每节点**不再为每条子句分配一个 `Vec`**，分解只传段下标而不是克隆子句。公开面 `count_cnf` / `CountStats` 不变。
+- 行为逐位不变（判据不是"看起来一样"）：匹配族八档的**节点 / 分支 / 组件 / 缓存命中-查找四列全部与改前相同**
+  （8 对 203/45/56/90-135 … 40 对 1163/237/344/570-807）；`cargo test -p trit-count` 全绿，
+  含 432 条随机 CNF 的穷举对拍与 CLI 对拍。
+- 分配读数（同一把尺 `examples/matching_alloc_probe.rs`，`allocs/节点`）：
+  **164.1 → 37.3（8 对）**、**925.5 → 41.3（40 对）**；关键是曲线由随规模线性上升（164→925，5.6×）变平（37.3→41.3，1.1×）。
+- 耗时读数（交错 4 轮，同一台机器同一个 release 构建来回切）：µs/节点
+  8 对 **9.9 → 6.6（1.51×，中位数口径，下同）**、20 对 **23.4 → 13.6（1.73×）**、40 对 **48.1 → 25.1（1.92×）**；
+  总耗时 40 对 **55.6 → 30.1 ms**。八档上升线从 4.9× 压到 3.8× ⇒ 分配这一项已经基本吃掉，
+  剩下的随规模增长来自子问题本身（与前面"分解主导搜索"的消融结论一致，不冲突）。
+- **过程里出错并修好的地方照实写**：扁平化第一版把 `Table::sort` 重建段表时少写一个占位 0，
+  于是第一条真实子句被当成占位丢掉，症状是计数**偏大**——`cnf_fuzz` 的 432 条里 **88 条**与穷举不一致。
+  修法之外补了四条不变量测试（`dpll::tests`：占位段为空、段起点单调、末位哨兵=文字总数、表有序，
+  以及 `insert_unit`/`remove_unit` 逐位还原 + 落点邻居），并用"少写那个 0"的变异反证：
+  变异后 2 条测试立刻红（`residue：第 0 段必须是占位空段，实际是 [1, -2]`），还原后 4 条全绿 ⇒ 这不是装饰性测试。
+- 复算尺：`cargo test -p trit-count --locked`；
+  `cargo run --release -p trit-count --example matching_family`；`cargo run --release -p trit-count --example matching_alloc_probe`。
 ### Measured（DPLL 分配口径探针：µs/节点上升线归因到分配，靶子从 watched literals 换成残基子句表扁平化）
 
 - 新 example `crates/trit-count/examples/matching_alloc_probe.rs`：在这个 example 里装一个记数的 `#[global_allocator]`

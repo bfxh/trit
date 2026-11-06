@@ -45,7 +45,7 @@
   5 次重复中位数、机器空转）**，两条线同步线性上升；按自标定单价 **35.4 ns/次 alloc+free**（含计数开销，是上界）折算，
   分配能解释 **≤64%** 的上升 ⇒ 省扫描次数的监视器不是这一刀的瓶颈，`dpll.rs` 头部那句"瓶颈是小分配"只解决了一半：
   CSR 出现表扁平化之后，**残基子句表仍是每条子句一个 `Vec`**。读数出处
-  `crates/trit-count/examples/matching_family.rs` 与 `crates/trit-count/examples/matching_alloc_probe.rs`。）
+  `crates/trit-count/examples/matching_family.rs` 与 `crates/trit-count/examples/matching_alloc_probe.rs`。）**这一刀当天已落地**：`dpll.rs` 换成扁平 `Table` 后 allocs/节点 164.1/925.5 → **37.3/41.3**（曲线变平），40 对 **1.92×**、20 对 **1.73×**，四列计数逐位不变。
   **已被消融否证的路线**：省 `decompose`/拷贝不是下一刀——去掉分解后 12 对从 4.7 ms/323 节点涨到
   1807 ms/729,059 节点（×384），分解的开销跟它省下的搜索不在同一量级。
 - **下月**：`trit-mv` → `trit-ir` → `trit-num`。
