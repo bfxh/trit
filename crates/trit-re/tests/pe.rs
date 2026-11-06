@@ -251,3 +251,68 @@ fn coff_symbols_give_pe32_exact_boundaries() {
     let co: FunctionReport = report;
     assert_eq!(co.cooccurrence(&["process"], true), Ternary::False);
 }
+
+#[test]
+fn coff_and_cfg_jointly_attribute_pe32() {
+    // 联合判定（方向库 PE32 收口的解锁测试）：COFF 符号给出精确区间、
+    // CFG 补隙给出符号没覆盖的可执行隙、指针表种子给出间接入口——
+    // **三路来源同时贡献区间**，调用点落在任何一路里都照常归属，
+    // 共现判定保持确定（exact 不被 Cfg 区间拖回 Unknown）。
+    use crate::support::put_u32;
+    use trit_re::xref::{CallSite, ImportXref, SiteKind, XrefReport};
+
+    let mut bytes = support::pe32_with_symbols();
+    // .rdata @文件 0x680（RVA 0x2080，16 对齐）：连续两个 u32 指针指向
+    // fn_alpha / fn_beta 的 VA（image base = 0x0040_0000）——指针表形状
+    //（连续 ≥2）→ 两个种子。
+    put_u32(&mut bytes, 0x680, 0x0040_0000 + 0x1010);
+    put_u32(&mut bytes, 0x684, 0x0040_0000 + 0x1100);
+
+    let info = pe::parse(&bytes).expect("PE32 must parse");
+    let xref = XrefReport {
+        arch: "x86".into(),
+        scanned_bytes: 0x200,
+        complete: true,
+        imports: vec![ImportXref {
+            import: "KERNEL32.dll!LoadLibraryA".into(),
+            slot: 0x2040,
+            sites: vec![
+                CallSite {
+                    addr: 0x1010, // 精确源（coff-symtab）区间内
+                    file_offset: 0x410,
+                    kind: SiteKind::Call,
+                },
+                CallSite {
+                    addr: 0x1004, // CFG 补隙区间 [0x1000,0x1010) 内
+                    file_offset: 0x404,
+                    kind: SiteKind::Call,
+                },
+            ],
+            status: Ternary::True,
+            note: String::new(),
+        }],
+        notes: vec![],
+    };
+    let report = trit_re::functions::build_pe(&bytes, &info, &xref);
+    // 三路来源同时在场：指针表种子 2 进了补隙注记。
+    assert!(
+        report
+            .notes
+            .iter()
+            .any(|note| note.contains("指针表种子 2")),
+        "指针表种子应被收割：{:?}",
+        report.notes
+    );
+    // 补隙区间进表且来源是 cfg；精确区间不被切分（total 仍 3）。
+    assert_eq!(report.total_functions, 3);
+    // 两个调用点（精确源 + 补隙源各一）全部归属 ⇒ 联合判定成立。
+    assert_eq!(report.attributed_sites, 2);
+    assert_eq!(report.unattributed_sites, 0);
+    // exact 不被 Cfg 区间拖回 Unknown ⇒ 共现给出确定结论。
+    assert!(report.exact);
+    assert_eq!(
+        report.cooccurrence(&["process"], true),
+        Ternary::False,
+        "COFF+CFG 联合区间下共现保持可判"
+    );
+}

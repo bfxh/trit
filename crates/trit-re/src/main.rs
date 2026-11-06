@@ -336,7 +336,15 @@ fn run_sigscan(sample: &Path, rules_path: &Path) -> ExitCode {
             }
         }
     }
-    let report = trit_re::sigscan::SigScan::new(&rules).scan(&bytes, false);
+    // 入口点上下文：PE 头解析出 entry_rva 后换算**文件偏移**（官方 YARA
+    // 的 entrypoint 语义，实测对拍判定——RVA≠offset 的样本官方只认 offset）；
+    // 非 PE / 解析失败 = None → entrypoint 操作数弃权（Unknown）。
+    let entrypoint = trit_re::pe::parse(&bytes).ok().and_then(|info| {
+        info.rva_to_offset(info.entry_rva)
+            .map(|offset| offset as u64)
+    });
+    let report =
+        trit_re::sigscan::SigScan::new(&rules).scan_with_entrypoint(&bytes, false, entrypoint);
     let stdout = io::stdout();
     let mut out = io::BufWriter::new(stdout.lock());
     for verdict in &report.rules {
@@ -358,8 +366,12 @@ fn run_sigscan(sample: &Path, rules_path: &Path) -> ExitCode {
         .iter()
         .filter(|r| r.value == trit_core::value::Ternary::True)
         .count();
+    let entry_note = match entrypoint {
+        Some(offset) => format!("，入口点 {offset:#x}"),
+        None => String::new(),
+    };
     eprintln!(
-        "sigscan：规则 {}（可评估 {}，不支持 {}），命中 {}；样本 {} 字节",
+        "sigscan：规则 {}（可评估 {}，不支持 {}），命中 {}；样本 {} 字节{entry_note}",
         report.rules.len(),
         rules.len(),
         parsed.rules.len() - rules.len(),

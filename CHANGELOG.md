@@ -45,6 +45,106 @@
 - 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
   hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
 
+### Added（trit-re：PE32 联合判定测试——方向库最后一条解锁条件收口）
+
+- `tests/pe.rs::coff_and_cfg_jointly_attribute_pe32`：**三路来源同时贡献
+  区间**的联合判定——COFF 符号精确区间 + CFG 补隙（符号未覆盖的可执行
+  隙）+ 指针表种子（.rdata 连续 ≥2 的 u32 函数指针 → 间接入口）。断言：
+  指针表种子 2 被收割、补隙区间照常归属调用点、精确区间不被切分、
+  `exact` 不被 Cfg 区间拖回 Unknown（共现保持可判）。
+- 方向库「PE32 共现 Unknown 收口」0 项的解锁条件（联合测试）就此满足；
+  边界不变：真实 mingw PE32 样本上的 sha256 记录仍归 N1 批次。
+- 测试 165 → 166；test_surface 台账同步；budget / surface 门绿。
+
+### Added（trit-re：差分测试规模化——再抓两个语义分歧 + xor 组合校准）
+
+- `scripts/yara_scale.py`：**属性驱动的差分测试生成器**（xorshift64 确定性
+  种子，与 fuzz 同款）——核心子集语法 × 随机样本，复用 yara_diff.py 四态
+  对拍；判据 DIFF=0。差分测试此前两次抓出真语义偏差（`at`/`@a`），这是
+  它的规模化形态。
+- **再抓两个真语义分歧并修复**（差分第 3/4 号成果）：
+  ① `for-of` 迭代**整个串集**——官方语义：未命中串也在迭代里（`#`=0、
+  `$`=假、`@`=弃权），`for all of ($a*) : (# > 2)` 的惯用法正依赖全集迭代；
+  此前实现成"只迭代命中串"（实证：针缺席时官方 `for any of … : (# >= 0)`
+  仍命中）。
+  ② **确定的未定义 ≠ 证据缺失**：零命中串的 `@a[N]`、非截断输入的越界
+  `uintN` 读是证据**完整**的确定事实——与官方一致，比较为假；截断输入的
+  uintN / 缺上下文的 entrypoint 才是证据缺失 → 弃权。`resolve()` 升级三态
+  `Val / DefiniteFalse / Unknown`。
+- **xor 组合校准**：官方编译器拒绝 `xor nocase`（探针实测 "invalid modifier
+  combination"）→ 解析层对齐拒绝；`xor wide`（展开后逐字节 XOR）经正例 +
+  反例与官方逐位一致——最后一条"未与官方对拍"的已知边界清零。
+- 规模曲线：10 批（9×40 规则×12 样本 + 1×60×16）**5280 判定对 MATCH 100% /
+  DIFF 0 / SUBSET-GAP 0 / OFFICIAL-ERR 0**。
+- 测试 163 → 165（全集迭代 / 确定未定义双态钉死）；行数预算再拆
+  `sigscan/eval.rs`（三值求值内核，520+309 行）；test_surface 台账
+  --update 登记；门禁 fmt / clippy / test / budget / surface 全过。
+
+### Hardened（trit-re：fuzz 种子库扩到新 YARA 语法）
+
+- `tests/fuzz_sigscan.rs` 的真实规则种子 2 → 5（数值比较 / for-of / xor 区间 /
+  fullword / ascii wide / @ 下标 / Unscannable 正则——变异器从真实形态出发才
+  打得到新语法）；危险字符 alphabet 37 → 56（补 `@ # < > ! . K B M x i n t w
+  1 8 6 f o z`——新词元可被随机拼出）。确定性模糊数千次输入零 panic 不变量
+  不变（外部输入第一道墙随子集一起长大）。
+
+### Added（trit-re：间隙跳板裁定 + 间接调用数据流负结果入册）
+
+- **实测定位**：trit-re.exe 的全部 8 个残余未归属点（全 `jmp`）= 函数间隙里
+  的「`E9 → FF 25`」两级跳板链（增量链接独立跳板）；逐点查证——5/8 无任何
+  引用（E8/E9 调用方、`lea r64,[rip+…]`、imm64/RVA 数据引用全查无果）、
+  3/8 的引用落在非代码节。**间接调用数据流方向的原假设（"残余 = 漏检的
+  数据流"）被否定**：可归因的间接调用早已被跳板展开 + 指针表收割 + 块遍历
+  覆盖，残余是死机器——强行解析就是给死代码找主。
+- **新裁定 `SiteRuling::ThunkGap`**（短名 `thunk-gap`）：站点是 `E9 rel32`
+  且目标是 `FF 25`（rip 相对 jmp 跳板）、且不在任何函数区间 → 如实单列。
+  裁定后读数：trit-re.exe / notepad.exe 的**"疑边界漏检"类别双双清零**
+  （8→0、1→0，残余全部如实归入 thunk-gap / clip）——裁定是证据分类不洗白，
+  方向保守不变。
+- 方向库分诊更新（trit-immune SECURITY-SYSTEM.md）：间接调用数据流
+  **+1 → 0 挂起**（解锁条件：真样本批次出现"疑边界漏检" > 0）。
+- 测试 161 → 162（跳板链判 thunk-gap / 指向普通代码保持 miss 双向钉死）；
+  门禁 fmt / clippy / test 全过。
+
+### Added（trit-re：entrypoint 上下文接线 + `at` 语义对齐官方 + 命中表截断如实弃权）
+
+- **entrypoint 可评估**：`SigScan::scan_with_entrypoint(data, truncated, entrypoint)`
+  接收入口点上下文（`scan()` 无上下文委托、操作数弃权）；CLI 从 PE 头
+  `entry_rva` 过 `rva_to_offset` 取**文件偏移**传入。官方语义实测对拍判定
+  （aadtb.dll / AcpiServiceVnA64.dll：RVA≠offset 的样本上官方只认 offset）——
+  不猜，跑出来的。ELF 侧留白（机器上无样本可验证语义，如实不接）。
+- **`$a at X` 语义修正：首次命中 → 任一命中**（官方 YARA `at` = 在该偏移有
+  命中即可）。真 PE 烟测当场揪出：高频序言 `48 89 5C 24` 在 aadtb.dll 入口
+  前命中 1753 次，首次命中语义会误判 MISS——修正后与官方一致 HIT。
+- **命中表封顶截断 = 扫描不完整**：`MAX_HITS` 1024 → 65536（真样本需要；
+  护栏仍在，且预算 1M 步/模式不变）；触顶即 `complete=false`——`at`/`in`/
+  `@a[N]` 在记录集不能证明时如实弃权（"截断的沉默不是清白"落到命中表上，
+  绝不据残表判假），`#a` 计数按截断值如实下界。
+- 测试 158 → 161（entrypoint 三态 + 截断弃权 + 封顶内命中照常证明）；
+  CLI 真 PE 烟测 `$e at entrypoint` HIT 与官方一致；门禁 fmt / clippy / test 全过。
+
+### Added（trit-re：YARA 完整子集——三值条件求值 + 数值/循环/修饰符）
+
+- `sigscan` 条件求值升级**三值 Kleene**（True/False/Unknown，弃权不折叠成假）：
+  - `Cmp` 数值比较：`filesize`（截断输入上如实弃权）、`uint8/16/32(lit)` 小端读
+    （越界 = 弃权）、`#a` 计数、`@a[N]` 偏移、字面量（十进制/`0x`/`KB`·`MB` 后缀）；
+  - `ForOf`：`for N|any|all of them/($x*) : ( 体 )`，体内 `$`/`#$`/`@$[N]` 绑定
+    当前迭代串；体弃权时 N/any 在「弃权可能补足」时如实上报 Unknown，all 有弃权即 Unknown；
+  - `entrypoint` 与模块/未知函数（`pe.number_of_sections`、`math.entropy(…)`）
+    **记名弃权**：求值恒 Unknown——不猜、不假未命中；
+  - `Const(true/false)`、`CurrentAt`/`CurrentIn`（体内 `$ at entrypoint` 经典形态）。
+- 串层面：正则/`base64`/`base64wide`/`private` → `Pattern::Unscannable` 带原因
+  （**规则保持解析**，其余串照常扫描，整体裁决 Unknown——不再拖累成整条 Unsupported）；
+  `xor`/`xor(k)`/`xor(a-b)` 密钥区间展开（越界/反区间如实报错）、`fullword` 词边界
+  （wide 按宽字符判）、`ascii wide` 双变体；文本扫描也纳入预算（256 路 xor 大文件
+  如实耗尽为 Unknown，不夸大覆盖）。
+- 无 `strings` 的纯数值规则合法（真实规则常见形态）。
+- 行数预算拆分（守 800 行纪律）：`sigscan/{matchers,tests}.rs`、`yaraparse/cond.rs`。
+- 测试：yara 集成 9 → 18（数值比较/无串规则/for-of/entrypoint 弃权/模块弃权/
+  xor/fullword/base64·private Unscannable/算术 bail），全套 49 通过；
+  门禁 fmt / clippy(-D warnings) / test 全过。已知边界：xor+wide 组合语义未与官方
+  逐位对拍（等校准批次）；`in (a..filesize)` 区间端点仅支持字面量。
+
 ### 更正（上一条里的两个读数：盘符债已被 #293 清掉；一次 rc=101 其实是没盘）
 
 - 上一条（`2e7eabf`）写 `docs_hygiene` 拦 1 = `docs/GENERAL-PLAN.md` 盘符 **27** / 基线 24。合完 `origin/main 0b7dd95`
