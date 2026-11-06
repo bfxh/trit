@@ -319,7 +319,9 @@ pub enum Condition {
         op: CmpOp,
         rhs: Operand,
     },
-    /// `for bound of (set) : ( body )`——对集合中每条命中串求体。
+    /// `for bound of (set) : ( body )`——对集合中**每条串**求体（官方
+    /// YARA 语义：未命中串也在迭代里——`#`=0、`$`=假、`@`=弃权；
+    /// `for all of ($a*) : (# > 2)` 的惯用法正依赖全集迭代）。
     ForOf {
         bound: ForBound,
         prefix: Option<String>,
@@ -553,46 +555,80 @@ fn bool3(b: bool) -> Ternary {
     if b { Ternary::True } else { Ternary::False }
 }
 
-/// 操作数解析：`None` = 不可求值（→ `Unknown`，不猜）。
-fn resolve(op: &Operand, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx) -> Option<u64> {
+/// 操作数解析结果的三态（差分测试实测判定，第四个语义分歧的修正）：
+/// - `Val`：有确定值；
+/// - `DefiniteFalse`：**确定的未定义**——零命中串的 `@a[N]`（串客观上没有
+///   第 N 次命中，证据完整）、非截断输入的越界 `uintN` 读（字节客观上不
+///   存在）。官方 YARA 语义：与未定义值的比较一律为假——这是**确定的
+///   判定**，不是证据缺失；
+/// - `Unknown`：**证据缺失**——截断输入的 filesize/uintN、缺上下文的
+///   entrypoint、模块/未知函数。弃权，不猜。
+enum Resolved {
+    Val(u64),
+    DefiniteFalse,
+    Unknown,
+}
+
+fn resolve(op: &Operand, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx) -> Resolved {
     match op {
-        Operand::Lit(v) => Some(*v),
+        Operand::Lit(v) => Resolved::Val(*v),
         Operand::Filesize => {
             if ctx.truncated {
-                None // 截断输入的大小不完整——filesize 上的比较不可信
+                Resolved::Unknown // 截断输入的大小不完整——filesize 上的比较不可信
             } else {
-                Some(ctx.data.len() as u64)
+                Resolved::Val(ctx.data.len() as u64)
             }
         }
-        Operand::Count(index) => occurrences.get(*index).map(|(_, offs)| offs.len() as u64),
-        Operand::Offset { index, nth } => occurrences
+        Operand::Count(index) => occurrences
             .get(*index)
-            .and_then(|(_, offs)| offs.get(*nth))
-            .copied(),
+            .map_or(Resolved::Unknown, |(_, offs)| {
+                Resolved::Val(offs.len() as u64)
+            }),
+        Operand::Offset { index, nth } => {
+            occurrences
+                .get(*index)
+                .map_or(Resolved::Unknown, |(_, offs)| match offs.get(*nth) {
+                    Some(v) => Resolved::Val(*v),
+                    // 零命中 = 确定的未定义（官方：比较为假）；有命中但下标越界
+                    //（命中表可能被 MAX_HITS 截断）= 证据不完整 → 弃权
+                    None if offs.is_empty() => Resolved::DefiniteFalse,
+                    None => Resolved::Unknown,
+                })
+        }
         Operand::UintRead { size, offset } => {
             if ctx.truncated {
-                return None;
+                return Resolved::Unknown;
             }
             let start = *offset as usize;
-            let end = start.checked_add(*size as usize)?;
-            if end > ctx.data.len() {
-                return None; // 越界读：不可求值（不猜 0）
+            match start.checked_add(*size as usize) {
+                Some(end) if end <= ctx.data.len() => {
+                    let mut padded = [0u8; 8];
+                    padded[..*size as usize].copy_from_slice(&ctx.data[start..end]);
+                    Resolved::Val(u64::from_le_bytes(padded))
+                }
+                _ => Resolved::DefiniteFalse, // 非截断的越界读：字节客观不存在
             }
-            let mut padded = [0u8; 8];
-            padded[..*size as usize].copy_from_slice(&ctx.data[start..end]);
-            Some(u64::from_le_bytes(padded))
         }
-        Operand::Entrypoint => ctx.entrypoint, // 调用方传入；缺上下文 = 弃权
-        Operand::Opaque(_) => None,
+        Operand::Entrypoint => match ctx.entrypoint {
+            Some(v) => Resolved::Val(v), // 调用方传入
+            None => Resolved::Unknown,   // 缺上下文 = 弃权
+        },
+        Operand::Opaque(_) => Resolved::Unknown,
         Operand::CurrentCount => ctx
             .binding
             .and_then(|i| occurrences.get(i))
-            .map(|(_, offs)| offs.len() as u64),
-        Operand::CurrentOffset { nth } => ctx
-            .binding
-            .and_then(|i| occurrences.get(i))
-            .and_then(|(_, offs)| offs.get(*nth))
-            .copied(),
+            .map_or(Resolved::Unknown, |(_, offs)| {
+                Resolved::Val(offs.len() as u64)
+            }),
+        Operand::CurrentOffset { nth } => {
+            ctx.binding
+                .and_then(|i| occurrences.get(i))
+                .map_or(Resolved::Unknown, |(_, offs)| match offs.get(*nth) {
+                    Some(v) => Resolved::Val(*v),
+                    None if offs.is_empty() => Resolved::DefiniteFalse,
+                    None => Resolved::Unknown,
+                })
+        }
     }
 }
 
@@ -622,8 +658,10 @@ fn eval(condition: &Condition, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx
                 return bool3(false); // 零命中：无论 offset 是什么都不可在
             }
             match resolve(offset, occurrences, ctx) {
-                Some(v) => bool3(offs.contains(&v)),
-                None => Ternary::Unknown, // offset 不可求值：弃权
+                Resolved::Val(v) => bool3(offs.contains(&v)),
+                // 确定的未定义（如零命中串的 @a[1]）：串不可能"在"那里
+                Resolved::DefiniteFalse => Ternary::False,
+                Resolved::Unknown => Ternary::Unknown, // 证据缺失：弃权
             }
         }
         Condition::In { index, lo, hi } => bool3(
@@ -636,13 +674,17 @@ fn eval(condition: &Condition, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx
                 .get(*index)
                 .is_some_and(|(_, offs)| !offs.is_empty()),
         ),
-        Condition::Cmp { lhs, op, rhs } => match (
-            resolve(lhs, occurrences, ctx),
-            resolve(rhs, occurrences, ctx),
-        ) {
-            (Some(a), Some(b)) => bool3(op.apply(a, b)),
-            _ => Ternary::Unknown,
-        },
+        Condition::Cmp { lhs, op, rhs } => {
+            match (
+                resolve(lhs, occurrences, ctx),
+                resolve(rhs, occurrences, ctx),
+            ) {
+                (Resolved::Val(a), Resolved::Val(b)) => bool3(op.apply(a, b)),
+                // 与"确定的未定义"比较 = 假（官方语义：任何比较都不成立）
+                (Resolved::DefiniteFalse, _) | (_, Resolved::DefiniteFalse) => Ternary::False,
+                _ => Ternary::Unknown,
+            }
+        }
         Condition::ForOf {
             bound,
             prefix,
@@ -661,8 +703,9 @@ fn eval(condition: &Condition, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx
                 return bool3(false);
             }
             match resolve(offset, occurrences, ctx) {
-                Some(v) => bool3(offs.contains(&v)),
-                None => Ternary::Unknown,
+                Resolved::Val(v) => bool3(offs.contains(&v)),
+                Resolved::DefiniteFalse => Ternary::False,
+                Resolved::Unknown => Ternary::Unknown,
             }
         }
         Condition::CurrentIn { lo, hi } => bool3(
@@ -697,9 +740,11 @@ fn eval(condition: &Condition, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx
     }
 }
 
-/// for-of 求值：对集合中每条**命中**串求体（YARA 语义：迭代对象是有命中
-/// 的串）。体弃权（Unknown）不折叠成假——N/any 在「已满足数不足且弃权
-/// 可能补足」时如实上报 Unknown；`all` 有弃权即 Unknown。
+/// for-of 求值：对集合中**每条串**求体（官方 YARA 语义，差分测试实测
+/// 判定：未命中串也在迭代里——`#`=0、`$`=假、`@`=弃权；`for all of
+/// ($a*) : (# > 2)` 的惯用法正依赖全集迭代）。体弃权（Unknown）不折叠
+/// 成假——N/any 在「已满足数不足且弃权可能补足」时如实上报 Unknown；
+/// `all` 有弃权即 Unknown。集合里一条串都没有（空前缀族）= 无从满足。
 fn for_of(
     bound: ForBound,
     prefix: &Option<String>,
@@ -707,21 +752,19 @@ fn for_of(
     occurrences: &[(String, Vec<u64>)],
     ctx: &EvalCtx,
 ) -> Ternary {
-    let matched: Vec<usize> = occurrences
+    let members: Vec<usize> = occurrences
         .iter()
         .enumerate()
-        .filter(|(_, (id, offs))| {
-            prefix.as_deref().is_none_or(|p| id.starts_with(p)) && !offs.is_empty()
-        })
+        .filter(|(_, (id, _))| prefix.as_deref().is_none_or(|p| id.starts_with(p)))
         .map(|(i, _)| i)
         .collect();
-    if matched.is_empty() {
-        return bool3(false); // 空集合：any/N/all 都无从满足（与 OfAll 同口径）
+    if members.is_empty() {
+        return bool3(false); // 空前缀族：没有可迭代的串
     }
-    let total = matched.len();
+    let total = members.len();
     let mut satisfied = 0usize;
     let mut abstained = 0usize;
-    for i in matched {
+    for i in members {
         match eval(body, occurrences, &ctx.with_binding(i)) {
             Ternary::True => satisfied += 1,
             Ternary::Unknown => abstained += 1,

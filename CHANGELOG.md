@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added（trit-re：差分测试规模化——再抓两个语义分歧 + xor 组合校准）
+
+- `scripts/yara_scale.py`：**属性驱动的差分测试生成器**（xorshift64 确定性
+  种子，与 fuzz 同款）——核心子集语法 × 随机样本，复用 yara_diff.py 四态
+  对拍；判据 DIFF=0。差分测试此前两次抓出真语义偏差（`at`/`@a`），这是
+  它的规模化形态。
+- **再抓两个真语义分歧并修复**（差分第 3/4 号成果）：
+  ① `for-of` 迭代**整个串集**——官方语义：未命中串也在迭代里（`#`=0、
+  `$`=假、`@`=弃权），`for all of ($a*) : (# > 2)` 的惯用法正依赖全集迭代；
+  此前实现成"只迭代命中串"（实证：针缺席时官方 `for any of … : (# >= 0)`
+  仍命中）。
+  ② **确定的未定义 ≠ 证据缺失**：零命中串的 `@a[N]`、非截断输入的越界
+  `uintN` 读是证据**完整**的确定事实——与官方一致，比较为假；截断输入的
+  uintN / 缺上下文的 entrypoint 才是证据缺失 → 弃权。`resolve()` 升级三态
+  `Val / DefiniteFalse / Unknown`。
+- **xor 组合校准**：官方编译器拒绝 `xor nocase`（探针实测 "invalid modifier
+  combination"）→ 解析层对齐拒绝；`xor wide`（展开后逐字节 XOR）经正例 +
+  反例与官方逐位一致——最后一条"未与官方对拍"的已知边界清零。
+- 规模曲线：10 批（9×40 规则×12 样本 + 1×60×16）**5280 判定对 MATCH 100% /
+  DIFF 0 / SUBSET-GAP 0 / OFFICIAL-ERR 0**。
+- 测试 163 → 165（全集迭代 / 确定未定义双态钉死）；门禁 fmt / clippy / test
+  全过。
+
 ### Hardened（trit-re：fuzz 种子库扩到新 YARA 语法）
 
 - `tests/fuzz_sigscan.rs` 的真实规则种子 2 → 5（数值比较 / for-of / xor 区间 /
