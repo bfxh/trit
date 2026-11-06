@@ -10,7 +10,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 十七个工具。改数量必须同时改测试断言。
+/// 十八个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -162,6 +162,20 @@ pub fn tools() -> Vec<Value> {
                 "require_after": {"type": "boolean"},
             }),
             &["base", "patch"],
+        ),
+        tool(
+            "wsp_transplant",
+            "把 source 第 layer 层 rows 里的隐藏单元（入边 + 偏置 + scale + 出边）移植到 target，返回补丁与新工件",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "source": artifact(),
+                "layer": {"type": "integer"},
+                "rows": {"type": "array", "items": {"type": "integer"}},
+                "oracle": {"type": "object"},
+                "require_before": {"type": "boolean"},
+                "require_after": {"type": "boolean"},
+            }),
+            &["source", "layer", "rows"],
         ),
         tool(
             "wsp_run_script",

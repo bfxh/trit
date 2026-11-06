@@ -105,6 +105,13 @@ pub enum Error {
         /// 验证集条数。
         len: usize,
     },
+    /// 同一层里重复指定了同一行。
+    DuplicateRow {
+        /// 层号。
+        layer: usize,
+        /// 重复的行号。
+        row: usize,
+    },
 }
 
 /// 库内统一 `Result`。
@@ -159,6 +166,9 @@ impl fmt::Display for Error {
             ),
             Self::SampleIndex { index, len } => {
                 write!(f, "样本下标 {index} 越界（验证集 {len} 条）")
+            }
+            Self::DuplicateRow { layer, row } => {
+                write!(f, "第 {layer} 层的第 {row} 行被重复指定")
             }
         }
     }

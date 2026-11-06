@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：跨层单元移植）
+
+- `transplant_units`（`crates/trit-wspace/src/transplant.rs`）：把一个隐藏单元整体搬到另一个网络——
+  第 `l` 层第 `r` 行（入边）、偏置、scale，加上第 `l+1` 层第 `r` 列（出边）；输出层只搬行。
+  只生成与目标不同的编辑，产物是普通补丁（可继续走事务 / 审计 / 三方重放）。
+- CLI `transplant <dest> --from <source> --layer L --rows i,j`；MCP `wsp_transplant`（17 → 18 工具）。
+- 重复行号判错；架构不同直接拒绝。
+
 ### Added（trit-wspace：三方补丁重放）
 
 - `rebase`（`crates/trit-wspace/src/rebase.rs`）：把针对旧工件写的补丁落到已经前进的工件上。

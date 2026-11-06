@@ -77,7 +77,7 @@
   "old": "let tools = tools();",
   "new": "let tools: Vec<Value> = Vec::new();",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_seventeen_tools"
+  "filter": "lists_exactly_eighteen_tools"
  },
  {
   "name": "wspace-mcp: 错误结果不再标 isError",
@@ -1117,6 +1117,86 @@
   "old": "            \"wsp_rebase\",",
   "new": "            \"wsp_rebaseX\",",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_seventeen_tools"
+  "filter": "lists_exactly_eighteen_tools"
+ },
+ {
+  "name": "wspace-transplant: 架构不一致不报错",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "    if source.arch() != dest.arch() {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_rejects_bad_rows_and_arch"
+ },
+ {
+  "name": "wspace-transplant: 重复行不判错",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "        if !seen.insert(row) {",
+  "new": "        if !seen.insert(row) && false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_rejects_bad_rows_and_arch"
+ },
+ {
+  "name": "wspace-transplant: 越界行不判错",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "        if row >= src.rows() {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_rejects_bad_rows_and_arch"
+ },
+ {
+  "name": "wspace-transplant: 不搬出边列",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "            for dest_row in 0..next_src.rows() {",
+  "new": "            for dest_row in 0..0 {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_copies_row_bias_and_outgoing_column"
+ },
+ {
+  "name": "wspace-transplant: 不搬行内权重",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "            if dst.trit(row, col) != Some(to) {",
+  "new": "            if false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_copies_row_bias_and_outgoing_column"
+ },
+ {
+  "name": "wspace-transplant: 不搬偏置",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "        if dst.bias_trit(row) != Some(bias) {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_copies_row_bias_and_outgoing_column"
+ },
+ {
+  "name": "wspace-transplant: 不搬 scale",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "        if dst.scale(row).map(f32::to_bits) != Some(scale.to_bits()) {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_copies_scale"
+ },
+ {
+  "name": "wspace-cli: transplant 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        \"transplant\" => cmd_transplant(&args[1..]),",
+  "new": "        \"transplantX\" => cmd_transplant(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_transplant_writes_artifact_and_verifies"
+ },
+ {
+  "name": "wspace-mcp: wsp_transplant 被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_transplant\" => {",
+  "new": "            \"wsp_transplantX\" => {",
+  "pkg": "trit-wspace",
+  "filter": "mcp_transplant_returns_patch_and_artifact"
+ },
+ {
+  "name": "wspace-mcp: wsp_transplant 工具声明被改坏",
+  "file": "crates/trit-wspace/src/mcp_tools.rs",
+  "old": "            \"wsp_transplant\",",
+  "new": "            \"wsp_transplantX\",",
+  "pkg": "trit-wspace",
+  "filter": "lists_exactly_eighteen_tools"
  }
 ]

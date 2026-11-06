@@ -29,6 +29,7 @@ trit-wspace <command>
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   rebase <target|-> --base <base|-> --patch <json|-> [--skip-conflicts] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
+  transplant <dest|-> --from <source|-> --layer N --rows i,j [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
   explain <artifact|-> --oracle <json|-> --sample N [--top K]
@@ -68,6 +69,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "patch" => cmd_patch(&args[1..]),
         "apply-candidate" => cmd_apply_candidate(&args[1..]),
         "rebase" => cmd_rebase(&args[1..]),
+        "transplant" => cmd_transplant(&args[1..]),
         "repair" => cmd_repair(&args[1..]),
         "propose" => cmd_propose(&args[1..]),
         "explain" => cmd_explain(&args[1..]),
@@ -261,6 +263,77 @@ fn cmd_rebase(args: &[String]) -> Result<(), String> {
         });
     }
     emit(&output)
+}
+
+fn cmd_transplant(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &["require-before", "require-after"])?;
+    let path = one(
+        &parsed,
+        "transplant <dest|-> --from <source|-> --layer N --rows i,j [--oracle <json|->] [--require-after] [--out <path>]",
+    )?;
+    let from = value(&parsed, "from")?;
+    let layer = req_usize(&parsed, "layer")?;
+    let rows = parse_rows(value(&parsed, "rows")?)?;
+    let oracle_path = parsed.values.get("oracle").map(String::as_str);
+    let mut sources = vec![path, from];
+    if let Some(oracle) = oracle_path {
+        sources.push(oracle);
+    }
+    no_double_stdin(&sources)?;
+
+    let dest = load_net(path)?;
+    let source = load_net(from)?;
+    let patch = crate::transplant::transplant_units(&source, &dest, layer, &rows).map_err(err)?;
+    let oracle = oracle_path.map(load_oracle).transpose()?;
+    let cost = patch.cost(&dest);
+    let outcome = ops::apply_patch(
+        &dest,
+        patch.clone(),
+        oracle.as_ref(),
+        parsed.switches.contains("require-before"),
+        parsed.switches.contains("require-after"),
+    )
+    .map_err(err)?;
+    write_out(&parsed, &outcome.net)?;
+    let mut output = json!({
+        "layer": layer,
+        "rows": rows,
+        "patch": wire::patch_to_value(&patch),
+        "cost": wire::cost_to_value(&cost),
+        "applied": outcome.applied,
+        "rolled_back": outcome.rolled_back,
+        "summary": wire::net_summary(&outcome.net),
+        "artifact": to_wsp(&outcome.net),
+    });
+    if let Some(oracle) = &oracle {
+        output["verify"] = json!({
+            "exact": oracle.exact(&outcome.net).map_err(err)?,
+            "loss": oracle.loss(&outcome.net).map_err(err)?,
+        });
+    }
+    emit(&output)
+}
+
+fn req_usize(parsed: &Parsed, name: &str) -> Result<usize, String> {
+    let raw = parsed
+        .values
+        .get(name)
+        .ok_or_else(|| format!("需要 --{name}"))?;
+    raw.parse::<usize>()
+        .map_err(|_| format!("--{name} 需要非负整数，得到 `{raw}`"))
+}
+
+fn parse_rows(raw: &str) -> Result<Vec<usize>, String> {
+    if raw.is_empty() {
+        return Err("--rows 不能为空".into());
+    }
+    raw.split(',')
+        .map(|part| {
+            part.trim()
+                .parse::<usize>()
+                .map_err(|_| format!("--rows 需要逗号分隔的非负整数，得到 `{part}`"))
+        })
+        .collect()
 }
 
 fn perform_patch(

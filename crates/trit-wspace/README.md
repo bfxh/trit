@@ -26,7 +26,7 @@
 | 层 | 需要什么 | 本 crate | 缺口 |
 |---|---|---|---|
 | L0 表示 | 规范文本、逐 trit 可读、校验和、可 diff | `codec`（WSP1） | 大模型分片/压缩 |
-| L1 原语 | 改 trit/偏置/scale、换行、取反 | `edit`（`Edit`） | 子张量/跨层批量操作 |
+| L1 原语 | 改 trit/偏置/scale、换行、取反 | `edit`（`Edit`）+ `transplant`（单元级跨层搬运） | 任意块/子张量编辑 |
 | L2 事务 | 整体校验、失败零改动、逐位回滚 | `Patch` + `Journal` + `rebase`（三方重放） | 并发写锁 |
 | L3 程序语义 | 前置/后置行为条件、失败原样回滚 | `program` | 程序组合、条件跳转 |
 | L4 读取 | 行为穷举、指纹、f32 裕量读数 | `oracle` + `readout` | 大模型探针/解释器 |
@@ -65,6 +65,7 @@ trit-wspace script xor.wsp --script repair.json --oracle xor.json --out fixed.ws
 trit-wspace patch  xor.wsp --patch break.json --oracle xor.json --require-after --out fixed.wsp
 trit-wspace apply-candidate broken.wsp --candidate fix.json --oracle xor.json --require-after --out fixed.wsp --log audit.jsonl
 trit-wspace rebase newer.wsp --base older.wsp --patch fix.json --oracle xor.json --require-after --out fixed.wsp
+trit-wspace transplant dest.wsp --from src.wsp --layer 0 --rows 0,1 --oracle xor.json --require-after --out fixed.wsp
 trit-wspace repair broken.wsp --oracle xor.json --max-edits 2 --out fixed.wsp
 trit-wspace propose broken.wsp --oracle xor.json --limit 8
 trit-wspace propose broken.wsp --oracle xor.json --pairs --limit 8
@@ -117,7 +118,7 @@ trit-wspace mcp
 }
 ```
 
-十七个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`。
+十八个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_transplant`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
@@ -130,6 +131,11 @@ trit-wspace mcp
 就判冲突。默认只要有冲突就整体放弃（`rejected=true`，工件一个字节都不改）；`skip_conflicts`
 才只落干净的那部分，冲突仍逐条返回（点编辑给三值字符，scale 给数值，行操作给行指纹）。
 CLI 对应 `rebase <target> --base <base> --patch <json>`。
+
+`wsp_transplant` 把一个**隐藏单元整体**从 `source` 搬到 target：第 `l` 层第 `r` 行（入边）、
+偏置、scale，以及第 `l+1` 层第 `r` 列（出边）一起改；输出层没有下游列，只搬行。
+产物是普通补丁，可以再走事务 / 审计日志 / 三方重放；只生成与目标不同的编辑。
+CLI 对应 `transplant <dest> --from <source> --layer L --rows i,j`。
 
 `wsp_apply_candidate` 直接吃 `wsp_propose` 的 `candidates[i]`（`edit` 或 `edits`），
 可选 `require_after`；给了 `log` 就把这次编辑追加进 JSONL 日志（日志文本随结果返回，不写盘）。

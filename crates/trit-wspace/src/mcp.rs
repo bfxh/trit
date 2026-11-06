@@ -1,4 +1,4 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，十七个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，十八个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
@@ -334,6 +334,52 @@ impl Mcp {
                 value["cost"] = wire::cost_to_value(&report.clean.cost(&target));
                 value["summary"] = wire::net_summary(&outcome.net);
                 value["artifact"] = json!(to_wsp(&outcome.net));
+                if let Some(oracle) = &oracle {
+                    value["verify"] = json!({
+                        "exact": oracle.exact(&outcome.net).map_err(err)?,
+                        "loss": oracle.loss(&outcome.net).map_err(err)?,
+                    });
+                }
+                Ok(value)
+            }
+            "wsp_transplant" => {
+                let dest = load(args)?;
+                let source = load_key(args, "source")?;
+                let layer = args
+                    .get("layer")
+                    .and_then(Value::as_u64)
+                    .ok_or("需要 layer（非负整数）")?;
+                let layer = usize::try_from(layer).map_err(|_| "layer 超出 usize")?;
+                let raws = args
+                    .get("rows")
+                    .and_then(Value::as_array)
+                    .ok_or("需要 rows 数组")?;
+                let mut rows = Vec::with_capacity(raws.len());
+                for raw in raws {
+                    let row = raw.as_u64().ok_or("rows 必须是非负整数数组")?;
+                    rows.push(usize::try_from(row).map_err(|_| "row 超出 usize")?);
+                }
+                let patch = crate::transplant::transplant_units(&source, &dest, layer, &rows)
+                    .map_err(err)?;
+                let oracle = optional_oracle(args)?;
+                let outcome = ops::apply_patch(
+                    &dest,
+                    patch.clone(),
+                    oracle.as_ref(),
+                    flag(args, "require_before"),
+                    flag(args, "require_after"),
+                )
+                .map_err(err)?;
+                let mut value = json!({
+                    "layer": layer,
+                    "rows": rows,
+                    "patch": wire::patch_to_value(&patch),
+                    "cost": wire::cost_to_value(&patch.cost(&dest)),
+                    "applied": outcome.applied,
+                    "rolled_back": outcome.rolled_back,
+                    "summary": wire::net_summary(&outcome.net),
+                    "artifact": to_wsp(&outcome.net),
+                });
                 if let Some(oracle) = &oracle {
                     value["verify"] = json!({
                         "exact": oracle.exact(&outcome.net).map_err(err)?,
