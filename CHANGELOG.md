@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-re：PE32 联合判定测试——方向库最后一条解锁条件收口）
+
+- `tests/pe.rs::coff_and_cfg_jointly_attribute_pe32`：**三路来源同时贡献
+  区间**的联合判定——COFF 符号精确区间 + CFG 补隙（符号未覆盖的可执行
+  隙）+ 指针表种子（.rdata 连续 ≥2 的 u32 函数指针 → 间接入口）。断言：
+  指针表种子 2 被收割、补隙区间照常归属调用点、精确区间不被切分、
+  `exact` 不被 Cfg 区间拖回 Unknown（共现保持可判）。
+- 方向库「PE32 共现 Unknown 收口」0 项的解锁条件（联合测试）就此满足；
+  边界不变：真实 mingw PE32 样本上的 sha256 记录仍归 N1 批次。
+- 测试 165 → 166；test_surface 台账同步；budget / surface 门绿。
+
 ### Added（trit-re：差分测试规模化——再抓两个语义分歧 + xor 组合校准）
 
 - `scripts/yara_scale.py`：**属性驱动的差分测试生成器**（xorshift64 确定性
