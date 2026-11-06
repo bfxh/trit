@@ -377,11 +377,17 @@ impl<'a> CondParser<'a> {
     }
 
     /// `@` 后的串名与可选 `[N]`：`@a` / `@a[2]` / `@$` / 裸 `@$[2]`。
+    /// **下标 1 起**（官方 YARA 语义，yara-python 实测判定：`@a[1]` =
+    /// 首次、`@a[0]` 无效）——解析成 0 起的内部下标。
     fn offset_operand(&mut self, rest: &str) -> Result<Operand, String> {
         let current = rest.is_empty() || rest == "$";
         let mut nth = 0usize;
         if self.eat_sym('[') {
-            nth = self.parse_int()? as usize;
+            let n = self.parse_int()? as usize;
+            if n == 0 {
+                return self.bail("@ 下标从 1 起（官方 YARA 语义）");
+            }
+            nth = n - 1;
             if !self.eat_sym(']') {
                 return self.bail("@ 偏移下标未闭合");
             }
