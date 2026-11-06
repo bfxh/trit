@@ -22,9 +22,12 @@
 //!   `ascii wide` 组合产双变体；xor 对 wide 展开后的字节逐位 XOR（该组合
 //!   未与官方逐位对拍，等校准批次）；正则/base64/private 串**可解析不可
 //!   扫描**——记原因、整条规则判 `Unknown`（fail-closed，不假未命中）；
-//!   `entrypoint` 与模块/未知函数（`pe.*`、`math.*`）记名保留、求值恒
-//!   `Unknown`。
-//! - 每模式命中数上限 [`MAX_HITS`]（1024），跳跃上限 [`MAX_JUMP`]，
+//!   `entrypoint` = 入口点**文件偏移**（官方语义，实测对拍判定），由调用方
+//!   经 [`SigScan::scan_with_entrypoint`] 传入、缺上下文时弃权；模块/未知
+//!   函数（`pe.*`、`math.*`）记名保留、求值恒 `Unknown`。
+//! - 每模式命中数上限 [`MAX_HITS`]（65536，**封顶截断 = 扫描不完整**
+//!   ——`at`/`in` 等位置性条件据此弃权，绝不据残表判假），跳跃上限
+//!   [`MAX_JUMP`]，
 //!   单模式步数预算 [`SCAN_BUDGET`]（跳跃回溯在对抗数据上会指数爆炸——
 //!   预算耗尽 = 扫描不完整 = 规则裁决 `Unknown`，与截断输入同一纪律）；
 //!   病态模式在收割侧截断，**不挂起**。
@@ -48,8 +51,11 @@
 
 use trit_core::value::Ternary;
 
-/// 每个模式保留的命中数上限（病态输入护栏；计数受影响时如实截断）。
-pub const MAX_HITS: usize = 1024;
+/// 每个模式保留的命中数上限（病态输入护栏）。**封顶截断 = 命中表不完整
+/// = 扫描不完整**——`at`/`in`/`@a[N]` 等位置性条件在记录集不能证明时
+/// 如实弃权（"截断的沉默不是清白"落到命中表上），`#a` 计数按截断值如实
+/// 下界。
+pub const MAX_HITS: usize = 65536;
 /// 单次跳跃的最大跨度（`[n-m]` 的 m 上限；YARA 自身也有同类上限）。
 pub const MAX_JUMP: u32 = 0x1000;
 
@@ -267,7 +273,8 @@ pub enum Operand {
     Offset { index: usize, nth: usize },
     /// `uintN(lit)`：偏移处读 N 字节小端整数；越界 = 不可求值。
     UintRead { size: u8, offset: u64 },
-    /// `entrypoint`：需 PE 上下文，无联动 → 不可求值（`Unknown`，如实）。
+    /// `entrypoint`：入口点的**文件偏移**（官方 YARA 语义，实测对拍判定）。
+    /// 值由调用方经 [`SigScan::scan_with_entrypoint`] 传入；缺上下文 = 弃权。
     Entrypoint,
     /// 模块引用与未实现函数（`pe.number_of_sections`、`math.entropy(…)`）
     /// ——记原文，求值恒 `Unknown`。
@@ -298,7 +305,8 @@ pub enum Condition {
     Any,
     /// 至少 n 条命中。
     Count(usize),
-    /// 指定串的首次命中恰在 `offset`（操作数可为字面量 / `entrypoint` 等）。
+    /// 指定串**任一**命中恰在 `offset`（官方 YARA `at` 语义——不只是首次；
+    /// 操作数可为字面量 / `entrypoint` 等）。
     At { index: usize, offset: Operand },
     /// 指定串有命中落在 `[lo, hi]`。
     In { index: usize, lo: u64, hi: u64 },
@@ -318,7 +326,7 @@ pub enum Condition {
     },
     /// for-of 体内的 `$`（当前串有命中；体外出现 = 解析层拒绝）。
     CurrentRef,
-    /// for-of 体内 `$ at X`：当前串的首次命中恰在 X。
+    /// for-of 体内 `$ at X`：当前串**任一**命中恰在 X（官方 `at` 语义）。
     CurrentAt { offset: Operand },
     /// for-of 体内 `$ in (a..b)`：当前串有命中落在区间。
     CurrentIn { lo: u64, hi: u64 },
@@ -417,6 +425,20 @@ impl<'a> SigScan<'a> {
 
     /// 扫描一段字节。`truncated` = 调用方声明输入不完整（读取中断/分片）。
     pub fn scan(&self, data: &[u8], truncated: bool) -> SigReport {
+        self.scan_with_entrypoint(data, truncated, None)
+    }
+
+    /// 带入口点上下文的扫描。`entrypoint` = 入口点的**文件偏移**——与官方
+    /// YARA 语义一致（已实测对拍：RVA≠文件偏移的样本上，官方命中 offset
+    /// 不命中 RVA）；由调用方从 PE/ELF 头解析传入（PE：`pe::parse` 的
+    /// `entry_rva` 过 `rva_to_offset`）。`None` = 非可执行文件/解析失败 →
+    /// `entrypoint` 操作数如实弃权（Unknown），绝不猜。
+    pub fn scan_with_entrypoint(
+        &self,
+        data: &[u8],
+        truncated: bool,
+        entrypoint: Option<u64>,
+    ) -> SigReport {
         let mut rules = Vec::new();
         for rule in self.rules {
             // 每个模式的命中偏移（首个起，最多 MAX_HITS 个）+ 扫描完成度
@@ -441,6 +463,7 @@ impl<'a> SigScan<'a> {
                 data,
                 truncated,
                 binding: None,
+                entrypoint,
             };
             let met = eval(&rule.condition, &occurrences, &ctx);
             let hits: Vec<(String, u64)> = occurrences
@@ -478,11 +501,13 @@ impl<'a> SigScan<'a> {
 }
 
 /// 求值上下文：扫描数据（filesize / uintN 的来源）+ 截断标志 +
-/// for-of 循环的当前串绑定（occurrences 的下标）。
+/// for-of 循环的当前串绑定（occurrences 的下标）+ 入口点文件偏移
+///（调用方从可执行头解析传入；`None` = 上下文缺失，entrypoint 弃权）。
 struct EvalCtx<'d> {
     data: &'d [u8],
     truncated: bool,
     binding: Option<usize>,
+    entrypoint: Option<u64>,
 }
 
 impl EvalCtx<'_> {
@@ -491,6 +516,7 @@ impl EvalCtx<'_> {
             data: self.data,
             truncated: self.truncated,
             binding: Some(index),
+            entrypoint: self.entrypoint,
         }
     }
 }
@@ -555,7 +581,7 @@ fn resolve(op: &Operand, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx) -> O
             padded[..*size as usize].copy_from_slice(&ctx.data[start..end]);
             Some(u64::from_le_bytes(padded))
         }
-        Operand::Entrypoint => None, // PE 上下文未联动（N4 边界，如实弃权）
+        Operand::Entrypoint => ctx.entrypoint, // 调用方传入；缺上下文 = 弃权
         Operand::Opaque(_) => None,
         Operand::CurrentCount => ctx
             .binding
@@ -588,15 +614,15 @@ fn eval(condition: &Condition, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx
             bool3(occurrences.iter().filter(|(_, o)| !o.is_empty()).count() >= *n)
         }
         Condition::At { index, offset } => {
-            match occurrences
-                .get(*index)
-                .and_then(|(_, offs)| offs.first().copied())
-            {
-                Some(first) => match resolve(offset, occurrences, ctx) {
-                    Some(v) => bool3(first == v),
-                    None => Ternary::Unknown,
-                },
-                None => bool3(false), // 串零命中：无"首次命中"，At 恒假
+            let Some((_, offs)) = occurrences.get(*index) else {
+                return bool3(false); // 串下标越界：恒假
+            };
+            if offs.is_empty() {
+                return bool3(false); // 零命中：无论 offset 是什么都不可在
+            }
+            match resolve(offset, occurrences, ctx) {
+                Some(v) => bool3(offs.contains(&v)),
+                None => Ternary::Unknown, // offset 不可求值：弃权
             }
         }
         Condition::In { index, lo, hi } => bool3(
@@ -627,16 +653,15 @@ fn eval(condition: &Condition, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx
                 .is_some_and(|(_, offs)| !offs.is_empty()),
         ),
         Condition::CurrentAt { offset } => {
-            match ctx
-                .binding
-                .and_then(|i| occurrences.get(i))
-                .and_then(|(_, offs)| offs.first().copied())
-            {
-                Some(first) => match resolve(offset, occurrences, ctx) {
-                    Some(v) => bool3(first == v),
-                    None => Ternary::Unknown,
-                },
-                None => bool3(false),
+            let Some((_, offs)) = ctx.binding.and_then(|i| occurrences.get(i)) else {
+                return bool3(false);
+            };
+            if offs.is_empty() {
+                return bool3(false);
+            }
+            match resolve(offset, occurrences, ctx) {
+                Some(v) => bool3(offs.contains(&v)),
+                None => Ternary::Unknown,
             }
         }
         Condition::CurrentIn { lo, hi } => bool3(

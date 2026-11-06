@@ -177,10 +177,42 @@ fn overall_is_kleene_or() {
 #[test]
 fn hits_are_capped() {
     // 0x00 填满 + 模式 00 → 命中数封顶 MAX_HITS
-    let data = vec![0x00u8; 5000];
+    let data = vec![0x00u8; 70000];
     let rules = [rule("r", "a", Pattern::hex("00").unwrap())];
     let report = SigScan::new(&rules).scan(&data, false);
     assert_eq!(report.rules[0].hits.len(), MAX_HITS);
+    // 命中存在 → True 不受截断影响（命中不依赖完整性）
+    assert_eq!(report.rules[0].value, Ternary::True);
+}
+
+#[test]
+fn hit_cap_truncates_positional_conditions_honestly() {
+    // 命中表封顶截断 = 不完整：位置性条件（at）在记录集不能证明时
+    // 如实弃权——截断的沉默不是清白，绝不据残表判 False
+    let data = vec![0x00u8; 70000];
+    // offset 69999 处确有命中，但封顶后未记录 → Unknown
+    let rules = [Rule::new("r")
+        .push("a", Pattern::hex("00").unwrap())
+        .condition(Condition::At {
+            index: 0,
+            offset: Operand::Lit(69999),
+        })];
+    let report = SigScan::new(&rules).scan(&data, false);
+    assert_eq!(report.rules[0].hits.len(), MAX_HITS, "封顶生效");
+    assert_eq!(
+        report.rules[0].value,
+        Ternary::Unknown,
+        "残表不能证伪位置性命中"
+    );
+    // 记录集内的命中照常证明：offset 10 在前 65536 里 → True
+    let rules = [Rule::new("r")
+        .push("a", Pattern::hex("00").unwrap())
+        .condition(Condition::At {
+            index: 0,
+            offset: Operand::Lit(10),
+        })];
+    let report = SigScan::new(&rules).scan(&data, false);
+    assert_eq!(report.rules[0].value, Ternary::True);
 }
 
 #[test]
@@ -206,4 +238,43 @@ fn normal_patterns_still_false_within_budget() {
     let p = Pattern::hex("90 [0-8] 00 [0-8] 00 [0-8] 00").unwrap();
     let report = SigScan::new(&[Rule::new("r").push("a", p)]).scan(&data, false);
     assert_eq!(report.rules[0].value, Ternary::False, "小数据完整扫描");
+}
+
+#[test]
+fn entrypoint_context_resolves_at_condition() {
+    // entrypoint = 入口点文件偏移（官方 YARA 语义，实测对拍判定）：
+    // 有上下文可评估，缺上下文如实弃权（绝不 False）
+    let rules = [Rule::new("r")
+        .push("a", Pattern::hex("4D 5A 90 00").unwrap())
+        .condition(Condition::At {
+            index: 0,
+            offset: Operand::Entrypoint,
+        })];
+    let data = [0x4Du8, 0x5A, 0x90, 0x00, 0xCC];
+    // 命中恰在入口 → True
+    let report = SigScan::new(&rules).scan_with_entrypoint(&data, false, Some(0));
+    assert_eq!(report.rules[0].value, Ternary::True);
+    // 入口在 1：首次命中在 0 → False
+    let report = SigScan::new(&rules).scan_with_entrypoint(&data, false, Some(1));
+    assert_eq!(report.rules[0].value, Ternary::False);
+    // 无上下文（非可执行文件/解析失败）→ Unknown
+    let report = SigScan::new(&rules).scan_with_entrypoint(&data, false, None);
+    assert_eq!(
+        report.rules[0].value,
+        Ternary::Unknown,
+        "缺上下文不假未命中"
+    );
+    // scan() 无上下文委托，同 Unknown
+    let report = SigScan::new(&rules).scan(&data, false);
+    assert_eq!(report.rules[0].value, Ternary::Unknown);
+    // Cmp 侧：entrypoint == 0 → True（filesize 同通道的上下文操作数）
+    let cmp = [Rule::new("c").condition(Condition::Cmp {
+        lhs: Operand::Entrypoint,
+        op: CmpOp::Eq,
+        rhs: Operand::Lit(0),
+    })];
+    let report = SigScan::new(&cmp).scan_with_entrypoint(&data, false, Some(0));
+    assert_eq!(report.rules[0].value, Ternary::True);
+    let report = SigScan::new(&cmp).scan_with_entrypoint(&data, false, None);
+    assert_eq!(report.rules[0].value, Ternary::Unknown);
 }
