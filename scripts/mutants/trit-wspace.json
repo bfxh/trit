@@ -1224,14 +1224,6 @@
   "filter": "drop_selection_is_pinned_for_seed_seven"
  },
  {
-  "name": "wspace-dare: 零丢弃率也重标度",
-  "file": "crates/trit-wspace/src/dare.rs",
-  "old": "            if kept_any && rate > 0.0 {",
-  "new": "            if kept_any {",
-  "pkg": "trit-wspace",
-  "filter": "rate_zero_keeps_full_delta_without_rescale"
- },
- {
   "name": "wspace-dare: 全丢的行也重标度",
   "file": "crates/trit-wspace/src/dare.rs",
   "old": "            if kept_any && rate > 0.0 {",
