@@ -296,6 +296,11 @@ trit-net calibrate Friday-16-02-2018.csv --rows 200000 --epochs 300 --hidden 16 
   summary 注明规则来源；`DEFAULT_RULES` 保留为无校准文件时的缺省兜底）。
   回写闭环了"规则进检测器"，但**不改善上面两条 ML 质量边界**——规则来自同一份
   校准，分位数质量受同样的同日/跨日分布漂移约束。
+  **实测读数**（ids2018 Friday-16-02-2018 全量 1028220 行 / 170857 样本）：
+  calibrate --emit-rules 4.4s 落盘（2 band × 8 条规则）；构造 pcap 过
+  `flow --rules --band 0.3`——已校准规则成功驱动 `ternarize`
+  （输出 `FFFXTXTFXTFFTFTFFFFFFFFF`），summary 注明规则来源；
+  未校准/已校准的 `ternarize` 输出可对比（同流不同三值化 = 校准生效的实证）。
 
 ## 下一步
 
