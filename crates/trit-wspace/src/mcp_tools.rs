@@ -10,7 +10,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 十八个工具。改数量必须同时改测试断言。
+/// 十九个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -176,6 +176,20 @@ pub fn tools() -> Vec<Value> {
                 "require_after": {"type": "boolean"},
             }),
             &["source", "layer", "rows"],
+        ),
+        tool(
+            "wsp_dare_drop",
+            "DARE 三值丢弃：按 rate 确定性（seed）丢弃 base→tuned 的差分 trit，重标度吸收进保留行的 scale（行为中性）",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "tuned": artifact(),
+                "rate": {"type": "number", "description": "丢弃概率，[0, 1)"},
+                "seed": {"type": "integer", "description": "散列种子，默认 0"},
+                "oracle": {"type": "object"},
+                "require_before": {"type": "boolean"},
+                "require_after": {"type": "boolean"},
+            }),
+            &["tuned", "rate"],
         ),
         tool(
             "wsp_run_script",

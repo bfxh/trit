@@ -112,6 +112,11 @@ pub enum Error {
         /// 重复的行号。
         row: usize,
     },
+    /// DARE 丢弃率必须是 `[0, 1)` 内的有限数。
+    InvalidRate {
+        /// 非法的丢弃率。
+        rate: f32,
+    },
 }
 
 /// 库内统一 `Result`。
@@ -169,6 +174,9 @@ impl fmt::Display for Error {
             }
             Self::DuplicateRow { layer, row } => {
                 write!(f, "第 {layer} 层的第 {row} 行被重复指定")
+            }
+            Self::InvalidRate { rate } => {
+                write!(f, "丢弃率 {rate} 必须是 [0, 1) 内的有限数")
             }
         }
     }

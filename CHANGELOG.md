@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：DARE 三值丢弃）
+
+- `dare_drop`（`crates/trit-wspace/src/dare.rs`）：DARE 的三值对应物。对 `base → tuned` 的
+  差分 trit/偏置按 `rate` 丢弃（丢回基准值），丢弃决定由 splitmix64 对 `(seed, layer, row, col)`
+  确定性散列，同种子永远同结果。三值写不下 `1/(1-rate)` 重标度，吸收进**有保留差分的行**的
+  scale——正标尺自由度，只改 f32 读数、不改符号行为（对穷举判决中性）。
+- `rate` 必须在 `[0, 1)`（`InvalidRate` 判错）；`rate=0` 等价完整差分且不重标度；
+  架构不同直接拒绝。产物是普通补丁，可接事务 / 审计 / 三方重放 / 任务向量合并前稀疏化。
+- CLI `dare-drop <base> --tuned <tuned> --rate R [--seed N]`；MCP `wsp_dare_drop`（18 → 19 工具）。
+- 测试 170 → 184 + 1 doctest；变异 150 → 169（新增 19，含钉死种子的选择集与重标度行集）。
+
 ### Added（trit-wspace：跨层单元移植）
 
 - `transplant_units`（`crates/trit-wspace/src/transplant.rs`）：把一个隐藏单元整体搬到另一个网络——

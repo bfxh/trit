@@ -30,6 +30,7 @@ trit-wspace <command>
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   rebase <target|-> --base <base|-> --patch <json|-> [--skip-conflicts] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
   transplant <dest|-> --from <source|-> --layer N --rows i,j [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
+  dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
   explain <artifact|-> --oracle <json|-> --sample N [--top K]
@@ -70,6 +71,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "apply-candidate" => cmd_apply_candidate(&args[1..]),
         "rebase" => cmd_rebase(&args[1..]),
         "transplant" => cmd_transplant(&args[1..]),
+        "dare-drop" => cmd_dare_drop(&args[1..]),
         "repair" => cmd_repair(&args[1..]),
         "propose" => cmd_propose(&args[1..]),
         "explain" => cmd_explain(&args[1..]),
@@ -314,6 +316,58 @@ fn cmd_transplant(args: &[String]) -> Result<(), String> {
     emit(&output)
 }
 
+fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &["require-before", "require-after"])?;
+    let path = one(
+        &parsed,
+        "dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--oracle <json|->] [--require-after] [--out <path>]",
+    )?;
+    let tuned_path = value(&parsed, "tuned")?;
+    let rate = req_f32(&parsed, "rate")?;
+    let seed = opt_u64(&parsed, "seed", 0)?;
+    let oracle_path = parsed.values.get("oracle").map(String::as_str);
+    let mut sources = vec![path, tuned_path];
+    if let Some(oracle) = oracle_path {
+        sources.push(oracle);
+    }
+    no_double_stdin(&sources)?;
+
+    let base = load_net(path)?;
+    let tuned = load_net(tuned_path)?;
+    let outcome = crate::dare::dare_drop(&base, &tuned, rate, seed).map_err(err)?;
+    let oracle = oracle_path.map(load_oracle).transpose()?;
+    let cost = outcome.patch.cost(&base);
+    let applied_outcome = ops::apply_patch(
+        &base,
+        outcome.patch.clone(),
+        oracle.as_ref(),
+        parsed.switches.contains("require-before"),
+        parsed.switches.contains("require-after"),
+    )
+    .map_err(err)?;
+    write_out(&parsed, &applied_outcome.net)?;
+    let mut output = json!({
+        "rate": rate,
+        "seed": seed,
+        "kept": outcome.kept,
+        "dropped": outcome.dropped,
+        "rescaled_rows": outcome.rescaled_rows,
+        "patch": wire::patch_to_value(&outcome.patch),
+        "cost": wire::cost_to_value(&cost),
+        "applied": applied_outcome.applied,
+        "rolled_back": applied_outcome.rolled_back,
+        "summary": wire::net_summary(&applied_outcome.net),
+        "artifact": to_wsp(&applied_outcome.net),
+    });
+    if let Some(oracle) = &oracle {
+        output["verify"] = json!({
+            "exact": oracle.exact(&applied_outcome.net).map_err(err)?,
+            "loss": oracle.loss(&applied_outcome.net).map_err(err)?,
+        });
+    }
+    emit(&output)
+}
+
 fn req_usize(parsed: &Parsed, name: &str) -> Result<usize, String> {
     let raw = parsed
         .values
@@ -321,6 +375,15 @@ fn req_usize(parsed: &Parsed, name: &str) -> Result<usize, String> {
         .ok_or_else(|| format!("需要 --{name}"))?;
     raw.parse::<usize>()
         .map_err(|_| format!("--{name} 需要非负整数，得到 `{raw}`"))
+}
+
+fn req_f32(parsed: &Parsed, name: &str) -> Result<f32, String> {
+    let raw = parsed
+        .values
+        .get(name)
+        .ok_or_else(|| format!("需要 --{name}"))?;
+    raw.parse::<f32>()
+        .map_err(|_| format!("--{name} 需要数字，得到 `{raw}`"))
 }
 
 fn parse_rows(raw: &str) -> Result<Vec<usize>, String> {

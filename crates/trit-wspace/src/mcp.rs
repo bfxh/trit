@@ -1,4 +1,4 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，十八个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，十九个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
@@ -384,6 +384,46 @@ impl Mcp {
                     value["verify"] = json!({
                         "exact": oracle.exact(&outcome.net).map_err(err)?,
                         "loss": oracle.loss(&outcome.net).map_err(err)?,
+                    });
+                }
+                Ok(value)
+            }
+            "wsp_dare_drop" => {
+                let base = load(args)?;
+                let tuned = load_key(args, "tuned")?;
+                let rate = args
+                    .get("rate")
+                    .and_then(Value::as_f64)
+                    .ok_or("需要 rate（[0, 1) 内的数字）")?;
+                let rate = rate as f32;
+                let seed = opt_u64(args, "seed", 0);
+                let outcome = crate::dare::dare_drop(&base, &tuned, rate, seed).map_err(err)?;
+                let oracle = optional_oracle(args)?;
+                let applied = ops::apply_patch(
+                    &base,
+                    outcome.patch.clone(),
+                    oracle.as_ref(),
+                    flag(args, "require_before"),
+                    flag(args, "require_after"),
+                )
+                .map_err(err)?;
+                let mut value = json!({
+                    "rate": rate,
+                    "seed": seed,
+                    "kept": outcome.kept,
+                    "dropped": outcome.dropped,
+                    "rescaled_rows": outcome.rescaled_rows,
+                    "patch": wire::patch_to_value(&outcome.patch),
+                    "cost": wire::cost_to_value(&outcome.patch.cost(&base)),
+                    "applied": applied.applied,
+                    "rolled_back": applied.rolled_back,
+                    "summary": wire::net_summary(&applied.net),
+                    "artifact": to_wsp(&applied.net),
+                });
+                if let Some(oracle) = &oracle {
+                    value["verify"] = json!({
+                        "exact": oracle.exact(&applied.net).map_err(err)?,
+                        "loss": oracle.loss(&applied.net).map_err(err)?,
                     });
                 }
                 Ok(value)

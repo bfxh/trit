@@ -31,7 +31,7 @@
 | L3 程序语义 | 前置/后置行为条件、失败原样回滚 | `program` | 程序组合、条件跳转 |
 | L4 读取 | 行为穷举、指纹、f32 裕量读数 | `oracle` + `readout` | 大模型探针/解释器 |
 | L5 搜索 | 无梯度精确修补、最小编辑数 | `repair`（小网络完备 BFS；大网络半径 1/2 + 束搜索） | 大规模目标、学习式提议器 |
-| L6 代数 | 消置换对称性、合并 | `merge`（贪心对齐 + 符号投票） | TIES/DARE 的三值对应物、任务向量 |
+| L6 代数 | 消置换对称性、合并 | `merge`（贪心对齐 + 符号投票）+ `task`（任务向量投票）+ `dare`（DARE 丢弃） | 大规模合并 |
 | L7 规模 | GPU、外部 LLM 读写协议、模型库 | — | 全部 |
 
 ## 三值的两条规范自由度（本库钉死）
@@ -66,6 +66,7 @@ trit-wspace patch  xor.wsp --patch break.json --oracle xor.json --require-after 
 trit-wspace apply-candidate broken.wsp --candidate fix.json --oracle xor.json --require-after --out fixed.wsp --log audit.jsonl
 trit-wspace rebase newer.wsp --base older.wsp --patch fix.json --oracle xor.json --require-after --out fixed.wsp
 trit-wspace transplant dest.wsp --from src.wsp --layer 0 --rows 0,1 --oracle xor.json --require-after --out fixed.wsp
+trit-wspace dare-drop base.wsp --tuned tuned.wsp --rate 0.5 --seed 7 --out dropped.wsp
 trit-wspace repair broken.wsp --oracle xor.json --max-edits 2 --out fixed.wsp
 trit-wspace propose broken.wsp --oracle xor.json --limit 8
 trit-wspace propose broken.wsp --oracle xor.json --pairs --limit 8
@@ -118,7 +119,7 @@ trit-wspace mcp
 }
 ```
 
-十八个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_transplant`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`。
+十九个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
@@ -136,6 +137,13 @@ CLI 对应 `rebase <target> --base <base> --patch <json>`。
 偏置、scale，以及第 `l+1` 层第 `r` 列（出边）一起改；输出层没有下游列，只搬行。
 产物是普通补丁，可以再走事务 / 审计日志 / 三方重放；只生成与目标不同的编辑。
 CLI 对应 `transplant <dest> --from <source> --layer L --rows i,j`。
+
+`wsp_dare_drop` 是 DARE 的三值对应物：对 `base → tuned` 的差分 trit 按 `rate` 随机丢弃
+（丢回基准值），保留部分照常落位。丢弃决定由 splitmix64 对 `(seed, layer, row, col)`
+散列得出，同种子永远同结果。三值写不下 `1/(1-rate)` 重标度，就把它吸收进**有保留差分的行**
+的 scale——scale 是正标尺自由度，只改 f32 读数、不改符号行为，对穷举判决是中性记录。
+`rate=0` 等价完整差分；`rate` 必须在 `[0, 1)`。产物是普通补丁，可接 `wsp_task_merge` 前先稀疏化。
+CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N]`。
 
 `wsp_apply_candidate` 直接吃 `wsp_propose` 的 `candidates[i]`（`edit` 或 `edits`），
 可选 `require_after`；给了 `log` 就把这次编辑追加进 JSONL 日志（日志文本随结果返回，不写盘）。
