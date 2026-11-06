@@ -1,7 +1,8 @@
 //! # sigscan —— YARA 子集的三值匹配（路线图 N4 第一层）
 //!
 //! 恶意软件签名匹配的核心子集：**hex 串（通配 + 跳跃）、文本串
-//! （ascii/nocase/wide）、声明式条件**（All/Any/Count/At/In）。
+//! （ascii/nocase/wide/xor/fullword）、声明式条件**（All/Any/Count/At/In、
+//! 数值比较 filesize/uintN/#a/@a、for-of 循环）。
 //!
 //! ## 三值纪律（与验收判据逐字对应）
 //!
@@ -18,7 +19,11 @@
 //!   独立层）；与官方 YARA 的命中集合对拍（N4 验收的另一半）等规则文件
 //!   解析 + 真实样本批次就位后做（N1 口径）。
 //! - hex 只认 `??` 通配与 `[n]`/`[n-m]` 跳跃；文本大小写折叠仅 ASCII；
-//!   wide 只产 UTF-16LE 变体（无 `fullword` 语义）。
+//!   `ascii wide` 组合产双变体；xor 对 wide 展开后的字节逐位 XOR（该组合
+//!   未与官方逐位对拍，等校准批次）；正则/base64/private 串**可解析不可
+//!   扫描**——记原因、整条规则判 `Unknown`（fail-closed，不假未命中）；
+//!   `entrypoint` 与模块/未知函数（`pe.*`、`math.*`）记名保留、求值恒
+//!   `Unknown`。
 //! - 每模式命中数上限 [`MAX_HITS`]（1024），跳跃上限 [`MAX_JUMP`]，
 //!   单模式步数预算 [`SCAN_BUDGET`]（跳跃回溯在对抗数据上会指数爆炸——
 //!   预算耗尽 = 扫描不完整 = 规则裁决 `Unknown`，与截断输入同一纪律）；
@@ -71,11 +76,29 @@ pub struct HexPattern {
 }
 
 /// 文本串模式：修饰符在构造时展开成字节变体
-/// （ascii → 原样；wide → UTF-16LE；两者都开 → 两个变体都试）。
+/// （ascii → 原样；wide → UTF-16LE；`ascii wide` → 两个变体都试）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextPattern {
-    variants: Vec<Vec<u8>>,
+    variants: Vec<TextVariant>,
     nocase: bool,
+    /// XOR 密钥闭区间（`xor` → 全键 0x00..=0xFF；`xor(k)` / `xor(a-b)` → 子区间）。
+    xor: Option<(u8, u8)>,
+    /// `fullword`：命中两端不得邻接「字母数字下划线」（wide 按宽字符判）。
+    fullword: bool,
+}
+
+/// 文本串的一个变体：字节 + 是否宽字符（fullword 的边界判定要用）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TextVariant {
+    bytes: Vec<u8>,
+    wide: bool,
+}
+
+/// 不可扫描的串形态（正则 / base64 / private 等）：带原因。
+/// 扫描时整条规则按 `Unknown` 裁决——评估不了的串不能报"没命中"。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Unscannable {
+    pub reason: String,
 }
 
 /// 字符串模式。
@@ -83,6 +106,8 @@ pub struct TextPattern {
 pub enum Pattern {
     Hex(HexPattern),
     Text(TextPattern),
+    /// 可解析不可扫描（正则 / base64 / private）：整条规则判 `Unknown`。
+    Unscannable(Unscannable),
 }
 
 impl Pattern {
@@ -148,17 +173,42 @@ impl Pattern {
     /// 文本串：`nocase`（ASCII 大小写折叠，两形态都生效）；`wide` 对齐
     /// YARA 语义——`false` = 仅 ASCII 原样，`true` = 仅 UTF-16LE 变体。
     pub fn text(needle: &str, nocase: bool, wide: bool) -> Self {
-        let variants = if wide {
-            vec![
-                needle
-                    .encode_utf16()
-                    .flat_map(|u| u.to_le_bytes())
-                    .collect(),
-            ]
-        } else {
-            vec![needle.as_bytes().to_vec()]
+        Self::text_ext(needle, nocase, wide, false, None, false)
+    }
+
+    /// 全参构造（解析器用）：`ascii_too` 与 `wide` 同开 = 双变体都试；
+    /// `xor = Some((lo, hi))` 密钥闭区间展开（对变体最终字节逐位 XOR）；
+    /// `fullword` 词边界。
+    pub fn text_ext(
+        needle: &str,
+        nocase: bool,
+        wide: bool,
+        ascii_too: bool,
+        xor: Option<(u8, u8)>,
+        fullword: bool,
+    ) -> Self {
+        let ascii = TextVariant {
+            bytes: needle.as_bytes().to_vec(),
+            wide: false,
         };
-        Pattern::Text(TextPattern { variants, nocase })
+        let wided = TextVariant {
+            bytes: needle
+                .encode_utf16()
+                .flat_map(|u| u.to_le_bytes())
+                .collect(),
+            wide: true,
+        };
+        let variants = match (wide, ascii_too) {
+            (false, _) => vec![ascii],
+            (true, false) => vec![wided],
+            (true, true) => vec![ascii, wided],
+        };
+        Pattern::Text(TextPattern {
+            variants,
+            nocase,
+            xor,
+            fullword,
+        })
     }
 }
 
@@ -179,6 +229,66 @@ fn parse_hex_byte(tok: &str) -> Result<HexByte, String> {
     ))
 }
 
+/// 数值比较算子。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CmpOp {
+    Eq,
+    Ne,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+}
+
+impl CmpOp {
+    fn apply(self, a: u64, b: u64) -> bool {
+        match self {
+            CmpOp::Eq => a == b,
+            CmpOp::Ne => a != b,
+            CmpOp::Lt => a < b,
+            CmpOp::Le => a <= b,
+            CmpOp::Gt => a > b,
+            CmpOp::Ge => a >= b,
+        }
+    }
+}
+
+/// 数值操作数：比较两侧的可求值项（`#a` / `@a[N]` / `filesize` /
+/// `uintN(lit)` / 字面量 / 记名弃权项）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Operand {
+    /// 整数字面量（十进制 / `0x` 十六进制 / `KB`·`MB` 后缀）。
+    Lit(u64),
+    /// `filesize`（截断输入上大小本身不完整 → 不可求值）。
+    Filesize,
+    /// `#a`：串的命中次数（按扫描报告，受 [`MAX_HITS`] 封顶——如实截断）。
+    Count(usize),
+    /// `@a[N]`：串第 N 次（0 起）命中的偏移；缺省首次。
+    Offset { index: usize, nth: usize },
+    /// `uintN(lit)`：偏移处读 N 字节小端整数；越界 = 不可求值。
+    UintRead { size: u8, offset: u64 },
+    /// `entrypoint`：需 PE 上下文，无联动 → 不可求值（`Unknown`，如实）。
+    Entrypoint,
+    /// 模块引用与未实现函数（`pe.number_of_sections`、`math.entropy(…)`）
+    /// ——记原文，求值恒 `Unknown`。
+    Opaque(String),
+    /// for-of 体内的 `#$`：当前绑定串的命中次数。
+    CurrentCount,
+    /// for-of 体内的 `@$` / `@$[N]`：当前绑定串的命中偏移。
+    CurrentOffset { nth: usize },
+}
+
+/// `for <bound> of <集合> : ( 体 )` 的量词。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ForBound {
+    /// 至少 n 条命中串满足体。
+    N(usize),
+    /// 任一（≥1）。
+    Any,
+    /// 全部（集合为空 = 假，与 [`Condition::OfAll`] 同口径）。
+    All,
+}
+
 /// 条件：声明式子集 + YARA 规则文件解析（N4 后半）产出的表达式树。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Condition {
@@ -188,12 +298,32 @@ pub enum Condition {
     Any,
     /// 至少 n 条命中。
     Count(usize),
-    /// 指定串的首次命中恰在 `offset`。
-    At { index: usize, offset: u64 },
+    /// 指定串的首次命中恰在 `offset`（操作数可为字面量 / `entrypoint` 等）。
+    At { index: usize, offset: Operand },
     /// 指定串有命中落在 `[lo, hi]`。
     In { index: usize, lo: u64, hi: u64 },
     /// 单串引用 `$id`：有命中即真（解析器按规则串表解析成下标）。
     Ref(usize),
+    /// 数值比较 `lhs op rhs`（`filesize < 100KB`、`#a > 3`、`uint8(0) == 0x4D`）。
+    Cmp {
+        lhs: Operand,
+        op: CmpOp,
+        rhs: Operand,
+    },
+    /// `for bound of (set) : ( body )`——对集合中每条命中串求体。
+    ForOf {
+        bound: ForBound,
+        prefix: Option<String>,
+        body: Box<Condition>,
+    },
+    /// for-of 体内的 `$`（当前串有命中；体外出现 = 解析层拒绝）。
+    CurrentRef,
+    /// for-of 体内 `$ at X`：当前串的首次命中恰在 X。
+    CurrentAt { offset: Operand },
+    /// for-of 体内 `$ in (a..b)`：当前串有命中落在区间。
+    CurrentIn { lo: u64, hi: u64 },
+    /// `true` / `false` 字面量。
+    Const(bool),
     /// 逻辑与。
     And(Vec<Condition>),
     /// 逻辑或。
@@ -290,28 +420,42 @@ impl<'a> SigScan<'a> {
         let mut rules = Vec::new();
         for rule in self.rules {
             // 每个模式的命中偏移（首个起，最多 MAX_HITS 个）+ 扫描完成度
-            //（hex 预算耗尽 = 不完整——"未命中只在完整扫描后给出"）
+            //（hex/文本预算耗尽 = 不完整——"未命中只在完整扫描后给出"）
             let mut occurrences: Vec<(String, Vec<u64>)> = Vec::new();
             let mut complete = true;
+            let mut has_unscannable = false;
             for (id, pattern) in &rule.patterns {
                 let (hits, pattern_complete) = match pattern {
                     Pattern::Hex(hp) => find_hex(data, hp),
-                    Pattern::Text(tp) => (find_text(data, tp), true),
+                    Pattern::Text(tp) => find_text(data, tp),
+                    Pattern::Unscannable(_) => {
+                        // 评估不了的串不能报"没命中"：整条规则按 Unknown 落账
+                        has_unscannable = true;
+                        (Vec::new(), true)
+                    }
                 };
                 complete &= pattern_complete;
                 occurrences.push((id.clone(), hits));
             }
-            let met = eval(&rule.condition, &occurrences);
+            let ctx = EvalCtx {
+                data,
+                truncated,
+                binding: None,
+            };
+            let met = eval(&rule.condition, &occurrences, &ctx);
             let hits: Vec<(String, u64)> = occurrences
                 .iter()
                 .flat_map(|(id, offs)| offs.iter().map(move |o| (id.clone(), *o)))
                 .collect();
-            let value = if met {
-                Ternary::True
-            } else if truncated || !complete {
+            let value = if has_unscannable {
                 Ternary::Unknown
             } else {
-                Ternary::False
+                match met {
+                    Ternary::True => Ternary::True,
+                    Ternary::Unknown => Ternary::Unknown,
+                    Ternary::False if truncated || !complete => Ternary::Unknown,
+                    Ternary::False => Ternary::False,
+                }
             };
             rules.push(RuleVerdict {
                 rule: rule.name.clone(),
@@ -333,349 +477,268 @@ impl<'a> SigScan<'a> {
     }
 }
 
-/// 条件求值（基于每模式的命中偏移表）。
-fn eval(condition: &Condition, occurrences: &[(String, Vec<u64>)]) -> bool {
-    let set = |prefix: &Option<String>| -> Vec<&(String, Vec<u64>)> {
+/// 求值上下文：扫描数据（filesize / uintN 的来源）+ 截断标志 +
+/// for-of 循环的当前串绑定（occurrences 的下标）。
+struct EvalCtx<'d> {
+    data: &'d [u8],
+    truncated: bool,
+    binding: Option<usize>,
+}
+
+impl EvalCtx<'_> {
+    fn with_binding(&self, index: usize) -> EvalCtx<'_> {
+        EvalCtx {
+            data: self.data,
+            truncated: self.truncated,
+            binding: Some(index),
+        }
+    }
+}
+
+/// Kleene 合取：F 吞一切；T∧T=T；其余 U。
+fn kleene_and(a: Ternary, b: Ternary) -> Ternary {
+    match (a, b) {
+        (Ternary::False, _) | (_, Ternary::False) => Ternary::False,
+        (Ternary::True, Ternary::True) => Ternary::True,
+        _ => Ternary::Unknown,
+    }
+}
+
+/// Kleene 析取：T 吞一切；F∨F=F；其余 U。
+fn kleene_or(a: Ternary, b: Ternary) -> Ternary {
+    match (a, b) {
+        (Ternary::True, _) | (_, Ternary::True) => Ternary::True,
+        (Ternary::False, Ternary::False) => Ternary::False,
+        _ => Ternary::Unknown,
+    }
+}
+
+/// Kleene 取反：U 不塌缩。
+fn kleene_not(v: Ternary) -> Ternary {
+    match v {
+        Ternary::True => Ternary::False,
+        Ternary::False => Ternary::True,
+        Ternary::Unknown => Ternary::Unknown,
+    }
+}
+
+fn bool3(b: bool) -> Ternary {
+    if b { Ternary::True } else { Ternary::False }
+}
+
+/// 操作数解析：`None` = 不可求值（→ `Unknown`，不猜）。
+fn resolve(op: &Operand, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx) -> Option<u64> {
+    match op {
+        Operand::Lit(v) => Some(*v),
+        Operand::Filesize => {
+            if ctx.truncated {
+                None // 截断输入的大小不完整——filesize 上的比较不可信
+            } else {
+                Some(ctx.data.len() as u64)
+            }
+        }
+        Operand::Count(index) => occurrences.get(*index).map(|(_, offs)| offs.len() as u64),
+        Operand::Offset { index, nth } => occurrences
+            .get(*index)
+            .and_then(|(_, offs)| offs.get(*nth))
+            .copied(),
+        Operand::UintRead { size, offset } => {
+            if ctx.truncated {
+                return None;
+            }
+            let start = *offset as usize;
+            let end = start.checked_add(*size as usize)?;
+            if end > ctx.data.len() {
+                return None; // 越界读：不可求值（不猜 0）
+            }
+            let mut padded = [0u8; 8];
+            padded[..*size as usize].copy_from_slice(&ctx.data[start..end]);
+            Some(u64::from_le_bytes(padded))
+        }
+        Operand::Entrypoint => None, // PE 上下文未联动（N4 边界，如实弃权）
+        Operand::Opaque(_) => None,
+        Operand::CurrentCount => ctx
+            .binding
+            .and_then(|i| occurrences.get(i))
+            .map(|(_, offs)| offs.len() as u64),
+        Operand::CurrentOffset { nth } => ctx
+            .binding
+            .and_then(|i| occurrences.get(i))
+            .and_then(|(_, offs)| offs.get(*nth))
+            .copied(),
+    }
+}
+
+/// 条件求值（三值 Kleene；基于每模式的命中偏移表）。
+/// `True` = 判真；`False` = 完整证据下的判假；`Unknown` = 证据不足
+///（不可求值的操作数 / 循环体弃权）——绝不把弃权折叠成假。
+fn eval(condition: &Condition, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx) -> Ternary {
+    let set = |prefix: &Option<String>| -> Vec<usize> {
         occurrences
             .iter()
-            .filter(|(id, _)| prefix.as_deref().is_none_or(|p| id.starts_with(p)))
+            .enumerate()
+            .filter(|(_, (id, _))| prefix.as_deref().is_none_or(|p| id.starts_with(p)))
+            .map(|(i, _)| i)
             .collect()
     };
     match condition {
-        Condition::All => occurrences.iter().all(|(_, offs)| !offs.is_empty()),
-        Condition::Any => occurrences.iter().any(|(_, offs)| !offs.is_empty()),
-        Condition::Count(n) => occurrences.iter().filter(|(_, o)| !o.is_empty()).count() >= *n,
-        Condition::At { index, offset } => occurrences
-            .get(*index)
-            .is_some_and(|(_, offs)| offs.first() == Some(offset)),
-        Condition::In { index, lo, hi } => occurrences
-            .get(*index)
-            .is_some_and(|(_, offs)| offs.iter().any(|o| o >= lo && o <= hi)),
-        Condition::Ref(index) => occurrences
-            .get(*index)
-            .is_some_and(|(_, offs)| !offs.is_empty()),
-        Condition::And(conds) => conds.iter().all(|c| eval(c, occurrences)),
-        Condition::Or(conds) => conds.iter().any(|c| eval(c, occurrences)),
-        Condition::Not(inner) => !eval(inner, occurrences),
-        Condition::OfAny { prefix } => set(prefix).iter().any(|(_, o)| !o.is_empty()),
+        Condition::All => bool3(occurrences.iter().all(|(_, offs)| !offs.is_empty())),
+        Condition::Any => bool3(occurrences.iter().any(|(_, offs)| !offs.is_empty())),
+        Condition::Count(n) => {
+            bool3(occurrences.iter().filter(|(_, o)| !o.is_empty()).count() >= *n)
+        }
+        Condition::At { index, offset } => {
+            match occurrences
+                .get(*index)
+                .and_then(|(_, offs)| offs.first().copied())
+            {
+                Some(first) => match resolve(offset, occurrences, ctx) {
+                    Some(v) => bool3(first == v),
+                    None => Ternary::Unknown,
+                },
+                None => bool3(false), // 串零命中：无"首次命中"，At 恒假
+            }
+        }
+        Condition::In { index, lo, hi } => bool3(
+            occurrences
+                .get(*index)
+                .is_some_and(|(_, offs)| offs.iter().any(|o| o >= lo && o <= hi)),
+        ),
+        Condition::Ref(index) => bool3(
+            occurrences
+                .get(*index)
+                .is_some_and(|(_, offs)| !offs.is_empty()),
+        ),
+        Condition::Cmp { lhs, op, rhs } => match (
+            resolve(lhs, occurrences, ctx),
+            resolve(rhs, occurrences, ctx),
+        ) {
+            (Some(a), Some(b)) => bool3(op.apply(a, b)),
+            _ => Ternary::Unknown,
+        },
+        Condition::ForOf {
+            bound,
+            prefix,
+            body,
+        } => for_of(*bound, prefix, body, occurrences, ctx),
+        Condition::CurrentRef => bool3(
+            ctx.binding
+                .and_then(|i| occurrences.get(i))
+                .is_some_and(|(_, offs)| !offs.is_empty()),
+        ),
+        Condition::CurrentAt { offset } => {
+            match ctx
+                .binding
+                .and_then(|i| occurrences.get(i))
+                .and_then(|(_, offs)| offs.first().copied())
+            {
+                Some(first) => match resolve(offset, occurrences, ctx) {
+                    Some(v) => bool3(first == v),
+                    None => Ternary::Unknown,
+                },
+                None => bool3(false),
+            }
+        }
+        Condition::CurrentIn { lo, hi } => bool3(
+            ctx.binding
+                .and_then(|i| occurrences.get(i))
+                .is_some_and(|(_, offs)| offs.iter().any(|o| o >= lo && o <= hi)),
+        ),
+        Condition::Const(b) => bool3(*b),
+        Condition::And(conds) => conds
+            .iter()
+            .map(|c| eval(c, occurrences, ctx))
+            .fold(Ternary::True, kleene_and),
+        Condition::Or(conds) => conds
+            .iter()
+            .map(|c| eval(c, occurrences, ctx))
+            .fold(Ternary::False, kleene_or),
+        Condition::Not(inner) => kleene_not(eval(inner, occurrences, ctx)),
+        Condition::OfAny { prefix } => {
+            bool3(set(prefix).iter().any(|i| !occurrences[*i].1.is_empty()))
+        }
         Condition::OfAll { prefix } => {
             let set = set(prefix);
-            !set.is_empty() && set.iter().all(|(_, o)| !o.is_empty())
+            bool3(!set.is_empty() && set.iter().all(|i| !occurrences[*i].1.is_empty()))
         }
-        Condition::OfCount { n, prefix } => {
-            set(prefix).iter().filter(|(_, o)| !o.is_empty()).count() >= *n
-        }
+        Condition::OfCount { n, prefix } => bool3(
+            set(prefix)
+                .iter()
+                .filter(|i| !occurrences[**i].1.is_empty())
+                .count()
+                >= *n,
+        ),
     }
 }
 
-/// 单模式扫描的步数预算（段尝试 + 首段候选比较合计）。跳跃模式的回溯在
-/// 对抗数据上会指数爆炸（`{ 90 [0-4096] 90 [0-4096] … }` 配全 0x90 数据），
-/// 预算封顶 = **不挂起**（"任何输入不 panic 不挂起"不变量的扫描面）。
-/// 耗尽 = 扫描不完整 → 规则裁决按 `Unknown` 落账（**"未命中只在完整扫描
-/// 后给出"的组成面**：截断的沉默不是清白，预算耗尽的沉默同样不是）；
-/// YARA 用时间超时，我们用确定性预算——同样的 fail-closed，可复算。
-pub const SCAN_BUDGET: u64 = 1_000_000;
-
-/// hex 模式匹配结果：命中 + 扫描是否完整（预算耗尽 = 不完整）。
-fn find_hex(data: &[u8], hp: &HexPattern) -> (Vec<u64>, bool) {
-    let mut hits = Vec::new();
-    let mut budget = SCAN_BUDGET;
-    let mut complete = true;
-    for pos in 0..data.len() {
-        budget = budget.saturating_sub(1);
-        if budget == 0 {
-            complete = false;
-            break; // 预算耗尽：该模式停止搜索（不挂起）
-        }
-        if chunk_matches(data, pos, &hp.lead)
-            && extend_rest(data, &hp.rest, pos + hp.lead.len(), &mut budget)
-        {
-            hits.push(pos as u64);
-            if hits.len() >= MAX_HITS {
-                break;
-            }
-        }
-    }
-    (hits, complete)
-}
-
-/// 从 `pos` 起，按 `rest` 的（跳跃, 段）序列依次匹配——每段起点 ∈
-/// `[前段末尾+min, 前段末尾+max]`（YARA 跳跃语义），全部段落位即成功。
-/// 每次段尝试扣一步预算，耗尽即整条放弃（fail-closed 不挂起）。
-fn extend_rest(data: &[u8], rest: &[(Jump, Vec<HexByte>)], pos: usize, budget: &mut u64) -> bool {
-    let Some((jump, chunk)) = rest.first() else {
-        return true; // 没有后续段：首段落位即整条命中
-    };
-    let start = pos.saturating_add(jump.min as usize);
-    let last = pos.saturating_add(jump.max as usize);
-    for seg_start in start..=last {
-        *budget = budget.saturating_sub(1);
-        if *budget == 0 {
-            return false; // 预算耗尽：放弃（不挂起）
-        }
-        if seg_start + chunk.len() > data.len() {
-            break;
-        }
-        if chunk_matches(data, seg_start, chunk)
-            && extend_rest(data, &rest[1..], seg_start + chunk.len(), budget)
-        {
-            return true;
-        }
-    }
-    false
-}
-
-fn chunk_matches(data: &[u8], pos: usize, chunk: &[HexByte]) -> bool {
-    pos + chunk.len() <= data.len()
-        && chunk.iter().enumerate().all(|(i, b)| match b {
-            HexByte::Lit(v) => data[pos + i] == *v,
-            HexByte::Wild => true,
+/// for-of 求值：对集合中每条**命中**串求体（YARA 语义：迭代对象是有命中
+/// 的串）。体弃权（Unknown）不折叠成假——N/any 在「已满足数不足且弃权
+/// 可能补足」时如实上报 Unknown；`all` 有弃权即 Unknown。
+fn for_of(
+    bound: ForBound,
+    prefix: &Option<String>,
+    body: &Condition,
+    occurrences: &[(String, Vec<u64>)],
+    ctx: &EvalCtx,
+) -> Ternary {
+    let matched: Vec<usize> = occurrences
+        .iter()
+        .enumerate()
+        .filter(|(_, (id, offs))| {
+            prefix.as_deref().is_none_or(|p| id.starts_with(p)) && !offs.is_empty()
         })
-}
-
-/// 文本匹配：逐变体找全部命中（nocase = ASCII 折叠）。
-fn find_text(data: &[u8], tp: &TextPattern) -> Vec<u64> {
-    let mut hits = Vec::new();
-    for variant in &tp.variants {
-        let folded = if tp.nocase {
-            variant.to_ascii_lowercase()
-        } else {
-            variant.clone()
-        };
-        if folded.is_empty() {
-            continue;
+        .map(|(i, _)| i)
+        .collect();
+    if matched.is_empty() {
+        return bool3(false); // 空集合：any/N/all 都无从满足（与 OfAll 同口径）
+    }
+    let total = matched.len();
+    let mut satisfied = 0usize;
+    let mut abstained = 0usize;
+    for i in matched {
+        match eval(body, occurrences, &ctx.with_binding(i)) {
+            Ternary::True => satisfied += 1,
+            Ternary::Unknown => abstained += 1,
+            Ternary::False => {}
         }
-        let mut from = 0usize;
-        while from + folded.len() <= data.len() {
-            let window = if tp.nocase {
-                data[from..from + folded.len()].to_ascii_lowercase()
+    }
+    match bound {
+        ForBound::N(n) => {
+            if satisfied >= n {
+                Ternary::True
+            } else if satisfied + abstained >= n {
+                Ternary::Unknown
             } else {
-                data[from..from + folded.len()].to_vec()
-            };
-            if window == folded {
-                hits.push(from as u64);
-                if hits.len() >= MAX_HITS {
-                    return hits;
-                }
-                from += folded.len();
+                Ternary::False
+            }
+        }
+        ForBound::Any => {
+            if satisfied >= 1 {
+                Ternary::True
+            } else if abstained >= 1 {
+                Ternary::Unknown
             } else {
-                from += 1;
+                Ternary::False
+            }
+        }
+        ForBound::All => {
+            if satisfied == total {
+                Ternary::True
+            } else if abstained > 0 {
+                Ternary::Unknown
+            } else {
+                Ternary::False
             }
         }
     }
-    hits.sort_unstable();
-    hits.dedup();
-    hits
 }
+
+// ── 字节级匹配引擎（拆出守 800 行预算）──────────────────────────────────
+
+mod matchers;
+
+pub use matchers::SCAN_BUDGET;
+use matchers::{find_hex, find_text};
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn rule(name: &str, id: &str, pattern: Pattern) -> Rule {
-        Rule::new(name).push(id, pattern)
-    }
-
-    #[test]
-    fn hex_literal_and_wildcard() {
-        let p = Pattern::hex("4D 5A").unwrap();
-        let data = [0x00, 0x4D, 0x5A, 0x90];
-        let report = SigScan::new(&[rule("r", "a", p)]).scan(&data, false);
-        assert_eq!(report.rules[0].value, Ternary::True);
-        assert_eq!(report.rules[0].hits, vec![("a".into(), 1)]);
-        let wild = Pattern::hex("4D ?? 90").unwrap();
-        let data = [0x4D, 0x11, 0x90];
-        assert_eq!(
-            SigScan::new(&[rule("r", "a", wild)])
-                .scan(&data, false)
-                .rules[0]
-                .value,
-            Ternary::True
-        );
-    }
-
-    #[test]
-    fn hex_jump_window() {
-        // 4D 5A [2-4] 50：间隔 2..=4 字节
-        let p = Pattern::hex("4D 5A [2-4] 50").unwrap();
-        let ok = [0x4D, 0x5A, 1, 2, 0x50]; // 间隔 2
-        let ok4 = [0x4D, 0x5A, 1, 2, 3, 4, 0x50]; // 间隔 4
-        let too_far = [0x4D, 0x5A, 1, 2, 3, 4, 5, 0x50]; // 间隔 5
-        let scan = |d: &[u8]| SigScan::new(&[rule("r", "a", p.clone())]).scan(d, false);
-        assert_eq!(scan(&ok).rules[0].value, Ternary::True);
-        assert_eq!(scan(&ok4).rules[0].value, Ternary::True);
-        assert_eq!(scan(&too_far).rules[0].value, Ternary::False);
-        // 语法：[n] 定长
-        let fixed = Pattern::hex("4D 5A [2] 50").unwrap();
-        let scan =
-            |d: &[u8]| SigScan::new(&[Rule::new("r").push("a", fixed.clone())]).scan(d, false);
-        assert_eq!(scan(&ok).rules[0].value, Ternary::True);
-        assert_eq!(scan(&ok4).rules[0].value, Ternary::False, "[2] 不容间隔 4");
-    }
-
-    #[test]
-    fn hex_spec_errors_fail_closed() {
-        assert!(Pattern::hex("4D 5A [2-").is_err(), "跳跃未闭合");
-        assert!(Pattern::hex("4D 5A [4-2] 50").is_err(), "区间反了");
-        assert!(Pattern::hex("4D [2-4]").is_err(), "跳跃后必须有字节段");
-        assert!(Pattern::hex("4D 5A [2-4]").is_err(), "以跳跃结尾不合法");
-        assert!(Pattern::hex("4D 5A [0x10] 50").is_err(), "非法数字");
-        assert!(Pattern::hex("4D ZZ").is_err(), "非法字节");
-        assert!(Pattern::hex("?? ??").is_ok(), "通配开头合法");
-    }
-
-    #[test]
-    fn text_nocase_and_wide() {
-        let p = Pattern::text("CreateRemoteThread", false, false);
-        let data = b"xx CreateRemoteThread yy";
-        assert_eq!(
-            SigScan::new(&[rule("r", "a", p.clone())])
-                .scan(data, false)
-                .rules[0]
-                .value,
-            Ternary::True
-        );
-        let nocase = Pattern::text("createremotethread", true, false);
-        assert_eq!(
-            SigScan::new(&[Rule::new("r").push("a", nocase)])
-                .scan(data, false)
-                .rules[0]
-                .value,
-            Ternary::True,
-            "nocase = ASCII 折叠"
-        );
-        // wide：仅 UTF-16LE 变体（对齐 YARA `wide` 语义：ascii 变体不再命中）
-        let wide = Pattern::text("AZ", false, true);
-        let wdata: Vec<u8> = "AZ".encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
-        assert_eq!(
-            SigScan::new(&[Rule::new("r").push("a", wide.clone())])
-                .scan(&wdata, false)
-                .rules[0]
-                .value,
-            Ternary::True
-        );
-        assert_eq!(
-            SigScan::new(&[Rule::new("r").push("a", wide)])
-                .scan(b"AZ", false)
-                .rules[0]
-                .value,
-            Ternary::False,
-            "wide=true 时 ASCII 形态不命中"
-        );
-    }
-
-    #[test]
-    fn conditions_all_any_count_at_in() {
-        let a = Pattern::hex("01").unwrap();
-        let b = Pattern::hex("02").unwrap();
-        let data = [0x01, 0xFF, 0x02];
-        let s = |c: Condition| {
-            SigScan::new(&[Rule::new("r")
-                .push("a", a.clone())
-                .push("b", b.clone())
-                .condition(c)])
-            .scan(&data, false)
-            .rules[0]
-                .value
-        };
-        assert_eq!(s(Condition::All), Ternary::True);
-        assert_eq!(s(Condition::Any), Ternary::True);
-        assert_eq!(s(Condition::Count(2)), Ternary::True);
-        assert_eq!(s(Condition::Count(3)), Ternary::False);
-        // $a at 1（首次命中恰在偏移 1？a 首次命中在 0）→ False
-        assert_eq!(
-            s(Condition::At {
-                index: 0,
-                offset: 1
-            }),
-            Ternary::False
-        );
-        assert_eq!(
-            s(Condition::At {
-                index: 0,
-                offset: 0
-            }),
-            Ternary::True
-        );
-        // $b in (1..=2)：b 命中在 2
-        assert_eq!(
-            s(Condition::In {
-                index: 1,
-                lo: 1,
-                hi: 2
-            }),
-            Ternary::True
-        );
-        assert_eq!(
-            s(Condition::In {
-                index: 1,
-                lo: 0,
-                hi: 1
-            }),
-            Ternary::False
-        );
-    }
-
-    #[test]
-    fn truncated_input_never_false() {
-        // 验收判据的本体："未命中"只在完整扫描后给出
-        let p = Pattern::hex("4D 5A 90 00").unwrap();
-        let rules = [rule("r", "a", p)];
-        let report = SigScan::new(&rules).scan(&[0x4D], true);
-        assert_eq!(report.rules[0].value, Ternary::Unknown);
-        assert_eq!(report.value, Ternary::Unknown);
-        // 命中不依赖完整性：截断但有命中 → True
-        let report = SigScan::new(&rules).scan(&[0x4D, 0x5A, 0x90, 0x00], true);
-        assert_eq!(report.rules[0].value, Ternary::True);
-        // 完整 + 未命中 → False
-        let report = SigScan::new(&rules).scan(&[0x00, 0x00], false);
-        assert_eq!(report.rules[0].value, Ternary::False);
-    }
-
-    #[test]
-    fn overall_is_kleene_or() {
-        let hit = rule("hit", "a", Pattern::hex("01").unwrap());
-        let miss = rule("miss", "b", Pattern::hex("99").unwrap());
-        let rules = [hit, miss];
-        // True ∨ False = True（报警语义）
-        let report = SigScan::new(&rules).scan(&[0x01], false);
-        assert_eq!(report.value, Ternary::True);
-        // False ∨ False = False
-        let report = SigScan::new(&rules).scan(&[0x00], false);
-        assert_eq!(report.value, Ternary::False);
-    }
-
-    #[test]
-    fn hits_are_capped() {
-        // 0x00 填满 + 模式 00 → 命中数封顶 MAX_HITS
-        let data = vec![0x00u8; 5000];
-        let rules = [rule("r", "a", Pattern::hex("00").unwrap())];
-        let report = SigScan::new(&rules).scan(&data, false);
-        assert_eq!(report.rules[0].hits.len(), MAX_HITS);
-    }
-
-    #[test]
-    fn pathological_jump_pattern_yields_unknown_not_hang() {
-        // 全 0x90 数据 + 永不成立的跳跃链：朴素回溯 ≈ 4096³ 条路径（挂起）；
-        // 预算封顶后立即返回，且耗尽 = 扫描不完整 → Unknown 而非 False
-        //（"未命中只在完整扫描后给出"——预算耗尽的沉默不是清白）
-        let data = vec![0x90u8; 8192];
-        let p = Pattern::hex("90 [0-4096] 00 [0-4096] 00 [0-4096] 00").unwrap();
-        let report = SigScan::new(&[Rule::new("r").push("a", p)]).scan(&data, false);
-        assert_eq!(
-            report.rules[0].value,
-            Ternary::Unknown,
-            "预算耗尽 = 不完整扫描 → Unknown（绝不挂起、绝不误判 False）"
-        );
-        assert_eq!(report.value, Ternary::Unknown);
-    }
-
-    #[test]
-    fn normal_patterns_still_false_within_budget() {
-        // 小数据正常模式：预算远未耗尽 → MISS 照旧判 False（语义不漂移）
-        let data = vec![0x90u8; 64];
-        let p = Pattern::hex("90 [0-8] 00 [0-8] 00 [0-8] 00").unwrap();
-        let report = SigScan::new(&[Rule::new("r").push("a", p)]).scan(&data, false);
-        assert_eq!(report.rules[0].value, Ternary::False, "小数据完整扫描");
-    }
-}
+mod tests;

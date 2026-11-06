@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added（trit-re：YARA 完整子集——三值条件求值 + 数值/循环/修饰符）
+
+- `sigscan` 条件求值升级**三值 Kleene**（True/False/Unknown，弃权不折叠成假）：
+  - `Cmp` 数值比较：`filesize`（截断输入上如实弃权）、`uint8/16/32(lit)` 小端读
+    （越界 = 弃权）、`#a` 计数、`@a[N]` 偏移、字面量（十进制/`0x`/`KB`·`MB` 后缀）；
+  - `ForOf`：`for N|any|all of them/($x*) : ( 体 )`，体内 `$`/`#$`/`@$[N]` 绑定
+    当前迭代串；体弃权时 N/any 在「弃权可能补足」时如实上报 Unknown，all 有弃权即 Unknown；
+  - `entrypoint` 与模块/未知函数（`pe.number_of_sections`、`math.entropy(…)`）
+    **记名弃权**：求值恒 Unknown——不猜、不假未命中；
+  - `Const(true/false)`、`CurrentAt`/`CurrentIn`（体内 `$ at entrypoint` 经典形态）。
+- 串层面：正则/`base64`/`base64wide`/`private` → `Pattern::Unscannable` 带原因
+  （**规则保持解析**，其余串照常扫描，整体裁决 Unknown——不再拖累成整条 Unsupported）；
+  `xor`/`xor(k)`/`xor(a-b)` 密钥区间展开（越界/反区间如实报错）、`fullword` 词边界
+  （wide 按宽字符判）、`ascii wide` 双变体；文本扫描也纳入预算（256 路 xor 大文件
+  如实耗尽为 Unknown，不夸大覆盖）。
+- 无 `strings` 的纯数值规则合法（真实规则常见形态）。
+- 行数预算拆分（守 800 行纪律）：`sigscan/{matchers,tests}.rs`、`yaraparse/cond.rs`。
+- 测试：yara 集成 9 → 18（数值比较/无串规则/for-of/entrypoint 弃权/模块弃权/
+  xor/fullword/base64·private Unscannable/算术 bail），全套 49 通过；
+  门禁 fmt / clippy(-D warnings) / test 全过。已知边界：xor+wide 组合语义未与官方
+  逐位对拍（等校准批次）；`in (a..filesize)` 区间端点仅支持字面量。
+
 ### 更正（上一条里的两个读数：盘符债已被 #293 清掉；一次 rc=101 其实是没盘）
 
 - 上一条（`2e7eabf`）写 `docs_hygiene` 拦 1 = `docs/GENERAL-PLAN.md` 盘符 **27** / 基线 24。合完 `origin/main 0b7dd95`
