@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（trit-re：间隙跳板裁定 + 间接调用数据流负结果入册）
+
+- **实测定位**：trit-re.exe 的全部 8 个残余未归属点（全 `jmp`）= 函数间隙里
+  的「`E9 → FF 25`」两级跳板链（增量链接独立跳板）；逐点查证——5/8 无任何
+  引用（E8/E9 调用方、`lea r64,[rip+…]`、imm64/RVA 数据引用全查无果）、
+  3/8 的引用落在非代码节。**间接调用数据流方向的原假设（"残余 = 漏检的
+  数据流"）被否定**：可归因的间接调用早已被跳板展开 + 指针表收割 + 块遍历
+  覆盖，残余是死机器——强行解析就是给死代码找主。
+- **新裁定 `SiteRuling::ThunkGap`**（短名 `thunk-gap`）：站点是 `E9 rel32`
+  且目标是 `FF 25`（rip 相对 jmp 跳板）、且不在任何函数区间 → 如实单列。
+  裁定后读数：trit-re.exe / notepad.exe 的**"疑边界漏检"类别双双清零**
+  （8→0、1→0，残余全部如实归入 thunk-gap / clip）——裁定是证据分类不洗白，
+  方向保守不变。
+- 方向库分诊更新（trit-immune SECURITY-SYSTEM.md）：间接调用数据流
+  **+1 → 0 挂起**（解锁条件：真样本批次出现"疑边界漏检" > 0）。
+- 测试 161 → 162（跳板链判 thunk-gap / 指向普通代码保持 miss 双向钉死）；
+  门禁 fmt / clippy / test 全过。
+
 ### Added（trit-re：entrypoint 上下文接线 + `at` 语义对齐官方 + 命中表截断如实弃权）
 
 - **entrypoint 可评估**：`SigScan::scan_with_entrypoint(data, truncated, entrypoint)`
