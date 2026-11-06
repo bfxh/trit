@@ -256,8 +256,74 @@ rule loops {
     assert_eq!(scan_one(src, b"ab__cd"), Ternary::True);
     // "ab" 两次 → # == 2 → False
     assert_eq!(scan_one(src, b"abab_cd"), Ternary::False);
-    // 集合零命中 → False（与 OfAll 同口径）
+    // 未命中串也在迭代里（# = 0）→ 体假 → False（官方语义，差分实测判定）
     assert_eq!(scan_one(src, b"____cd"), Ternary::False);
+}
+
+#[test]
+fn for_of_iterates_unmatched_strings() {
+    // 差分测试抓到的第三个语义偏差：官方 for-of 迭代**整个串集**——
+    // 未命中串 `#` = 0 → `# >= 0` 为真 → any 命中（即使针完全缺席）
+    let src = r#"
+rule v {
+  strings:
+    $a = "ab"
+  condition:
+    for any of ($a*) : ( # >= 0 )
+}
+"#;
+    assert_eq!(
+        scan_one(src, b"xxxxxxxx"),
+        Ternary::True,
+        "未命中串 #=0 满足体"
+    );
+    // `$`（当前串引用）对未命中串 = 假 → 体假 → any 无满足 → False
+    let src2 = r#"
+rule w {
+  strings:
+    $a = "ab"
+  condition:
+    for any of ($a*) : ( $ )
+}
+"#;
+    assert_eq!(scan_one(src2, b"xxxxxxxx"), Ternary::False);
+    assert_eq!(scan_one(src2, b"abxx"), Ternary::True);
+}
+
+#[test]
+fn definite_undefined_compares_false_not_unknown() {
+    // 差分测试抓到的第四个语义分歧：零命中串的 @a[N] 与非截断的越界
+    // uintN 读是**确定的未定义**（证据完整）——与官方一致，比较为假；
+    // 截断输入的 uintN 才是证据缺失 → Unknown。两种"无值"不混同。
+    let absent_offset = r#"
+rule o {
+  strings:
+    $a = "ab"
+  condition:
+    #a == 0 and @a[1] < 100
+}
+"#;
+    // 官方：@a[1] 未定义 → 比较为假 → 整条 False（不是 Unknown）
+    assert_eq!(scan_one(absent_offset, b"xxxxxxxx"), Ternary::False);
+    let oob = r#"
+rule u {
+  condition:
+    uint32(1000000) == 0
+}
+"#;
+    // 非截断的越界读：字节客观不存在 → 比较假
+    assert_eq!(scan_one(oob, b"xxxxxxxx"), Ternary::False);
+    // 截断输入的 uintN：证据缺失 → Unknown（fail-closed 不变）
+    let out = parse_rules(oob).unwrap();
+    let RuleOutcome::Parsed(rule) = &out.rules[0] else {
+        panic!("应为 Parsed");
+    };
+    let r = SigScan::new(std::slice::from_ref(rule)).scan(b"xxxxxxxx", true);
+    assert_eq!(
+        r.rules[0].value,
+        Ternary::Unknown,
+        "截断 = 证据缺失，照旧弃权"
+    );
 }
 
 #[test]

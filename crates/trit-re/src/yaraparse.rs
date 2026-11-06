@@ -525,6 +525,11 @@ impl Parser {
         if let Some(reason) = unscannable {
             return Ok(Some(Pattern::Unscannable(Unscannable { reason })));
         }
+        if xor.is_some() && nocase {
+            // 官方 YARA 编译器拒绝 xor nocase（"invalid modifier combination"，
+            // 差分探针实测）——对齐拒绝，不给超集扩展留静默面。
+            return Err(format!("规则 {rule_name}：xor 与 nocase 组合官方不合法"));
+        }
         if let Value::Regex(body) = &value {
             // 可解析不可扫描：正则引擎不实现——串记原文形态，规则仍解析
             //（其他串照常扫描），整体在扫描时判 Unknown。
