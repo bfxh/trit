@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Hardened（trit-re：fuzz 种子库扩到新 YARA 语法）
+
+- `tests/fuzz_sigscan.rs` 的真实规则种子 2 → 5（数值比较 / for-of / xor 区间 /
+  fullword / ascii wide / @ 下标 / Unscannable 正则——变异器从真实形态出发才
+  打得到新语法）；危险字符 alphabet 37 → 56（补 `@ # < > ! . K B M x i n t w
+  1 8 6 f o z`——新词元可被随机拼出）。确定性模糊数千次输入零 panic 不变量
+  不变（外部输入第一道墙随子集一起长大）。
+
 ### Added（trit-re：间隙跳板裁定 + 间接调用数据流负结果入册）
 
 - **实测定位**：trit-re.exe 的全部 8 个残余未归属点（全 `jmp`）= 函数间隙里

@@ -29,11 +29,14 @@ impl Rng {
 }
 
 /// 危险字符 alphabet：括号/引号/反斜杠/十六进制/中文/控制邻居全混。
+/// 2026-11-07 补新子集词元：`@ # < > ! . K B M x i n t w 1 8 6`——
+/// 数值比较 / for-of / xor / fullword / @ 下标都能被随机拼出来。
 fn random_char(rng: &mut Rng) -> char {
     const ALPHABET: &[char] = &[
         '4', 'D', '5', 'A', '0', '9', 'F', '?', '?', '[', ']', '-', '(', ')', '{', '}', '"', '\\',
         '/', '$', '*', ' ', '\t', '\n', 'r', 'u', 'l', 'e', ':', '=', 'a', 'b', 'c', '注', '入',
-        '打', '✓', '\u{7f}', '2', 'e',
+        '打', '✓', '\u{7f}', '2', 'e', '@', '#', '<', '>', '!', '.', 'x', 'K', 'B', 'M', 'i', 'n',
+        't', 'w', '1', '8', '6', 'f', 'o', 'z',
     ];
     ALPHABET[rng.below(ALPHABET.len())]
 }
@@ -65,6 +68,8 @@ fn mutate(rng: &mut Rng, s: &str) -> String {
 }
 
 /// 真实规则样本（与 tests/yara.rs 的夹具同源——结构变异的基底）。
+/// 2026-11-07 补新子集种子：数值比较 / for-of / xor / fullword /
+/// @ 下标 / Unscannable 串——变异器从真实形态出发才打得到新语法。
 const REAL_RULES: &[&str] = &[
     r#"rule demo {
   strings:
@@ -79,6 +84,27 @@ const REAL_RULES: &[&str] = &[
     $r = /evil[0-9]+/
   condition:
     $h or $r in (1..100)
+}"#,
+    r#"rule numeric {
+  strings:
+    $m = { 4D }
+  condition:
+    uint16(0) == 0x5A4D and filesize > 2KB and #m == 1 and @m[1] < 16
+}"#,
+    r#"rule loops {
+  strings:
+    $a = "ab"
+    $b = { 02 }
+  condition:
+    for all of ($a*) : ( # == 1 ) or for 2 of them : ( $ at entrypoint ) or ($b and not $a)
+}"#,
+    r#"rule mods {
+  strings:
+    $x = "AZ" xor(0x10-0x20) fullword
+    $w = "宽" ascii wide nocase
+    $re = /mshta\.exe/ nocase
+  condition:
+    any of them
 }"#,
 ];
 
