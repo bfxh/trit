@@ -100,6 +100,10 @@ pub enum SiteRuling {
     BoundaryMiss,
     /// **不在可执行节**：字节模式匹配的误报候选（数据段里恰好长得像指令）。
     NonExec,
+    /// **间隙跳板**：站点是 `E9 rel32` 且目标是 `FF 25`（rip 相对 jmp 跳板）
+    /// ——两级跳板链落在函数间隙里（增量链接的独立跳板）。既可能是无引用
+    /// 的死机器，也可能是未建界叶函数的尾跳：如实携带形态，不强行归因。
+    ThunkGap,
 }
 
 impl SiteRuling {
@@ -109,6 +113,7 @@ impl SiteRuling {
             Self::BoundaryClip => "boundary-clip",
             Self::BoundaryMiss => "boundary-miss",
             Self::NonExec => "non-exec",
+            Self::ThunkGap => "thunk-gap",
         }
     }
 }
@@ -150,12 +155,14 @@ pub struct FunctionReport {
     pub unattributed_buckets: Vec<&'static str>,
     /// 未归属调用点的**逐条裁定**（超过 [`MAX_RULED_SITES`] 条截断，计数仍完整）。
     pub ruled_sites: Vec<RuledSite>,
-    /// 三类裁定的总数（与截断无关）。
+    /// 各类裁定的总数（与截断无关）。
     pub ruling_clip: usize,
     /// 疑边界漏检数。
     pub ruling_miss: usize,
     /// 非执行节误报候选数。
     pub ruling_nonexec: usize,
+    /// 间隙跳板数（`E9 → FF 25` 两级跳板链落在函数间隙）。
+    pub ruling_thunk_gap: usize,
     /// 说明。
     pub notes: Vec<String>,
 }
@@ -607,6 +614,7 @@ fn attribute(
     let mut ruling_clip = 0usize;
     let mut ruling_miss = 0usize;
     let mut ruling_nonexec = 0usize;
+    let mut ruling_thunk_gap = 0usize;
     for row in &xref.imports {
         for site in &row.sites {
             match locate(ranges, site.addr) {
@@ -641,6 +649,8 @@ fn attribute(
                     let distance = nearest_boundary_distance(ranges, site.addr);
                     let (ruling, counter) = if !in_exec {
                         (SiteRuling::NonExec, &mut ruling_nonexec)
+                    } else if is_thunk_gap(exec, site.addr) {
+                        (SiteRuling::ThunkGap, &mut ruling_thunk_gap)
                     } else if distance <= BOUNDARY_CLIP_BYTES {
                         (SiteRuling::BoundaryClip, &mut ruling_clip)
                     } else {
@@ -683,7 +693,7 @@ fn attribute(
             samples.join(", ")
         ));
         notes.push(format!(
-            "逐条裁定：疑边界裁剪（≤{BOUNDARY_CLIP_BYTES}B）{ruling_clip}、疑边界漏检（exec 内远距）{ruling_miss}、非执行节（误报候选）{ruling_nonexec}；明细见 ruled_sites（≤{MAX_RULED_SITES} 条）"
+            "逐条裁定：疑边界裁剪（≤{BOUNDARY_CLIP_BYTES}B）{ruling_clip}、疑边界漏检（exec 内远距）{ruling_miss}、非执行节（误报候选）{ruling_nonexec}、间隙跳板（E9→跳板链，孤立或未建界叶尾跳）{ruling_thunk_gap}；明细见 ruled_sites（≤{MAX_RULED_SITES} 条）"
         ));
     }
 
@@ -700,6 +710,7 @@ fn attribute(
         ruling_clip,
         ruling_miss,
         ruling_nonexec,
+        ruling_thunk_gap,
         notes,
     }
 }
@@ -719,6 +730,28 @@ fn nearest_boundary_distance(ranges: &[Function], addr: u64) -> u64 {
         })
         .min()
         .unwrap_or(u64::MAX)
+}
+
+/// 间隙跳板判定：站点指令是 `E9 rel32` 且目标是 `FF 25`（rip 相对 jmp
+/// 跳板）。实测形态（trit-re.exe 全部残余站点）：增量链接在函数间隙留
+/// 下「E9 → ILT 跳板」两级链——无 E8/E9 调用方、多数无任何引用（死机器），
+/// 少数被数据引用。既不该算"边界漏检"也不该强行归因——如实单列。
+fn is_thunk_gap(exec: &[(u64, &[u8])], addr: u64) -> bool {
+    let read = |at: u64, n: usize| -> Option<Vec<u8>> {
+        exec.iter().find_map(|(start, data)| {
+            let offset = at.checked_sub(*start)? as usize;
+            data.get(offset..offset + n).map(<[u8]>::to_vec)
+        })
+    };
+    let Some(insn) = read(addr, 5) else {
+        return false;
+    };
+    if insn[0] != 0xE9 {
+        return false;
+    }
+    let rel = i32::from_le_bytes([insn[1], insn[2], insn[3], insn[4]]);
+    let target = addr.wrapping_add(5).wrapping_add(rel as i64 as u64);
+    read(target, 2).is_some_and(|t| t == [0xFF, 0x25])
 }
 
 fn locate(ranges: &[Function], addr: u64) -> Option<usize> {
