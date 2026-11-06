@@ -8,6 +8,8 @@ use trit_count::{
     CROSSCHECK_BDD_LIMITS, count_models, count_models_bdd, count_models_under, crosscheck,
     crosscheck_under, crosscheck_under_with_limits,
 };
+use trit_fuzz::SeedRng;
+use trit_fuzz::corpus::random_expr;
 
 fn parse(source: &str) -> Expr {
     Parser::parse(source).expect("test expression must parse")
@@ -120,7 +122,7 @@ fn unused_variables_still_count() {
 
 #[test]
 fn random_n_up_to_eight_match_exhaustive() {
-    let mut rng = Rng(0xD1B5_4A32_D192_ED03);
+    let mut rng = SeedRng::new(0xD1B5_4A32_D192_ED03);
     for n in 1..=8usize {
         let vars: Vec<String> = (0..n).map(|index| format!("v{index}")).collect();
         for _ in 0..3 {
@@ -151,7 +153,7 @@ fn random_n_up_to_eight_match_exhaustive() {
 #[test]
 fn random_n_twelve_match_exhaustive() {
     let vars: Vec<String> = (0..12).map(|index| format!("v{index}")).collect();
-    let mut rng = Rng(0x1234_5678_9ABC_DEF0);
+    let mut rng = SeedRng::new(0x1234_5678_9ABC_DEF0);
     for alg in Algebra::ALL {
         for target in [Ternary::False, Ternary::True, Ternary::Unknown] {
             let expr = random_expr(&mut rng, &vars, 4);
@@ -228,7 +230,7 @@ fn matching_family_blows_the_bdd_budget() {
 
 #[test]
 fn dpll_and_bdd_agree_beyond_exhaustive() {
-    let mut rng = Rng(0xB1B0_DDEA_D1CC_0001);
+    let mut rng = SeedRng::new(0xB1B0_DDEA_D1CC_0001);
     for n in [13usize, 17, 21] {
         let vars: Vec<String> = (0..n).map(|index| format!("v{index}")).collect();
         for _ in 0..2 {
@@ -257,7 +259,7 @@ fn dpll_and_bdd_agree_beyond_exhaustive() {
 #[test]
 fn bdd_budget_refusal_is_not_a_mismatch() {
     let vars: Vec<String> = (0..6).map(|index| format!("v{index}")).collect();
-    let expr = random_expr(&mut Rng(0x0F1C_1CE5_5EED_1234), &vars, 4);
+    let expr = random_expr(&mut SeedRng::new(0x0F1C_1CE5_5EED_1234), &vars, 4);
     let tiny = trit_bdd::BddLimits { max_nodes: 1 };
     let refused = count_models_bdd(
         &expr,
@@ -339,7 +341,7 @@ fn component_product_multiplies_independent_parts() {
 
 #[test]
 fn positive_count_matches_trit_sat_satisfiable() {
-    let mut rng = Rng(0x0BAD_F00D_DEAD_BEEF);
+    let mut rng = SeedRng::new(0x0BAD_F00D_DEAD_BEEF);
     for n in 1..=8usize {
         let vars: Vec<String> = (0..n).map(|index| format!("v{index}")).collect();
         for _ in 0..5 {
@@ -448,59 +450,5 @@ fn constraints_combine_and_cover_unused_variables() {
             })
             .sum();
         assert_eq!(total, 9, "{}", alg.as_str());
-    }
-}
-
-fn random_expr(rng: &mut Rng, vars: &[String], depth: usize) -> Expr {
-    if depth == 0 || rng.below(4) == 0 {
-        return if rng.below(6) == 0 {
-            Expr::Const(match rng.below(3) {
-                0 => Ternary::False,
-                1 => Ternary::True,
-                _ => Ternary::Unknown,
-            })
-        } else {
-            Expr::Var(vars[rng.below(vars.len())].clone())
-        };
-    }
-    match rng.below(6) {
-        0 => Expr::Not(Box::new(random_expr(rng, vars, depth - 1))),
-        1 => Expr::and(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        2 => Expr::or(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        3 => Expr::xor(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        4 => Expr::implies(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-        _ => Expr::equiv(
-            random_expr(rng, vars, depth - 1),
-            random_expr(rng, vars, depth - 1),
-        ),
-    }
-}
-
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        let mut value = self.0;
-        value ^= value << 13;
-        value ^= value >> 7;
-        value ^= value << 17;
-        self.0 = value;
-        value
-    }
-
-    fn below(&mut self, limit: usize) -> usize {
-        (self.next() % limit as u64) as usize
     }
 }

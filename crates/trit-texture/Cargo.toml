@@ -53,3 +53,6 @@ required-features = ["png"]
 [[bench]]
 name = "sample"
 harness = false
+
+[dev-dependencies]
+trit-fuzz.workspace = true

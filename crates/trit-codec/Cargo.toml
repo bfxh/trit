@@ -12,3 +12,6 @@ publish = false
 trit-core.workspace = true
 serde_json = "1.0.154"
 thiserror = "2.0.21"
+
+[dev-dependencies]
+trit-fuzz.workspace = true

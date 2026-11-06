@@ -1,0 +1,38 @@
+[
+ {
+  "name": "claims_evidence: 无据能力句不拦",
+  "file": "scripts/claims_evidence.py",
+  "old": "        if count > allowed:",
+  "new": "        if False:",
+  "pkg": "scripts/claims_evidence.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims_evidence: 复算指针不认",
+  "file": "scripts/claims_evidence.py",
+  "old": "POINTER = re.compile(r\"`[^`]*(?:--|\\.(?:rs|py|md|json|wgsl)|cargo |python |bash )|(?:[\\w./-]+)[.:]\\d+|PR\\s*#\\d+|§|A\\d{2,}\")",
+  "new": "POINTER = re.compile(r\"(?!)\")",
+  "pkg": "scripts/claims_evidence.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims_evidence: 读数不必带单位",
+  "file": "scripts/claims_evidence.py",
+  "old": "MEASUREMENT = re.compile(",
+  "new": "MEASUREMENT = re.compile(r\"\\d\")  # 有数字就算读数 ⇒ \"提升 30\" 也放行",
+  "pkg": "scripts/claims_evidence.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims_evidence: 完成类动词不识别",
+  "file": "scripts/claims_evidence.py",
+  "old": "CAPABILITY = re.compile(",
+  "new": "CAPABILITY = re.compile(r\"已否证\")  # 完成类词全不认 ⇒ 无据句永不拦",
+  "pkg": "scripts/claims_evidence.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

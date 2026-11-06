@@ -20,8 +20,8 @@
 
 | 新库 | 层 | 为什么现在就该做 | 对拍谁 |
 |---|---|---|---|
-| `trit-bench` | 门/框架 | 交错 ≥6 轮、min/median/max、规模档表现在**至少 5 份手写实现**（trit-dot main、trit-ops bench、trit-gpu bench、trit-parts parts_bench、`benchmarks/dot_variants`）；这是 §4 第一批要登记的重复能力 | 与 `benchmarks/dot_variants` 的读数对齐 |
-| `trit-fuzz` | 语料 | 随机表达式 / CNF / 三值向量生成器现在 5+ 处各写一套 RNG（含 trit-count 里我自己重写的那份） | 各 crate 现有 fuzz_smoke |
+| ~~`trit-bench`~~ **已建**（2026-11-05） | base | 交错 ≥6 轮、min/median/max、规模档表现在**至少 5 份手写实现**（trit-dot main、trit-ops bench、trit-gpu bench、trit-parts parts_bench、`benchmarks/dot_variants`）；这是 §4 第一批要登记的重复能力 | 与 `benchmarks/dot_variants` 的读数对齐 |
+| ~~`trit-fuzz`~~ **已建（第一批）**（2026-11-05） | base | 精确尺 `grep -rlE "\^=.*<< 13" --include=*.rs crates/` ⇒ 本会话前 **67** 个文件各自手写 xorshift；`trit-fuzz` 第一批后 **65**、`trit-dot`/`trit-codec` 的 stress 改吃后 **63**、再吃下 `trit-float`/`trit-immune` 三份测试后 **60**（口径 `crates/`；含 `benchmarks/` 再多 1）（第一版我用宽松尺数到 64——散文里提到的模式也被算了，换成要求同一行有 `^=` 的精确尺）。收了：三值向量 / 表达式 / 变量名 / **CNF 子句集**（DIMACS 口径，无重字、无永真、无空子句）/ 单值取样 `trit`·`ternary_value`·`bipolar` | 消费者五条：`trit-count/tests/cnf_fuzz.rs`（432 例 DPLL vs `2^n` 穷举；`dpll.rs:78` 改错能抓 96 个不一致）+ CLI `trit-count --fuzz-cnf`（规模档地板：`--nvars 18/20/22` 最慢一题 183–294µs、24 档 490–538µs，各 3 次同种子同语料，全部与穷举一致）、`trit-dot/tests/stress.rs`、`trit-codec/tests/stress.rs`、`trit-float/tests/stress.rs`、`trit-immune/tests/fuzz_smoke.rs` |
 | `trit-ir` | algo | `.tri`/TTIR 只有"化简 + 打包"，没有 **pass 框架**（常量折叠、等价重写、CSE） | `trit-sat` / `trit-bdd` / `trit-count` 当每个 pass 的 oracle |
 | `trit-mv` | base | 主库只有 K3/Ł3/B3；要"用四值/n 值移植别的算法"先得有代数层（MV-algebra、t-norm 族、De Morgan 格、bilattice） | 真值表穷举 + `trit-belnap` |
 | `trit-num` | ops | 最小二乘现在在 `trit-texture` 里就地写；`parts-depth` 用 f32 四累加器 | 与 f32 参考实现同比特精度对拍 |
@@ -38,9 +38,12 @@
 
 ## 4. 排序
 
-- **本周**：`trit-bench` 立项吃掉那 5 份重复 bench（并存必须在 `layers.json` 的 `capabilities` 里带数字读数）；
+- **本周**：~~`trit-bench` 立项吃掉那 5 份重复 bench~~ **已做**（PR #299；`layers.json` 的 `capabilities`
+  登记了 `bench-timing-harness`，两份未迁的手写档各带实测差与保留理由——"并存"这条已按口径办）。
   评测协议从 `trit-parts` 下沉 `trit-learn`；watched literals（靶子：匹配族 20 对起只有 DPLL 出得了数，
-  µs/节点 67.6→426.7 同比子句数）。
+  µs/节点 10.7→47.9 随子句数增长，见 `crates/trit-count/src/dpll.rs` 头部）。
+  **已被消融否证的路线**：省 `decompose`/拷贝不是下一刀——去掉分解后 12 对从 4.7 ms/323 节点涨到
+  1807 ms/729,059 节点（×384），分解的开销跟它省下的搜索不在同一量级。
 - **下月**：`trit-mv` → `trit-ir` → `trit-num`。
 - **择期**：`trit-tools` 拆分；改名（顺序见 LAYERS §6，外部 5 面证据已列全）。
 
@@ -53,7 +56,8 @@
 - **本轮翻面：`trit-count` → 可发布**（名字在 crates.io 实测未占用：`GET /api/v1/crates/trit-count` = 404）。
   判据不是"它成熟了"这种虚话，而是三条具体的：① 计数有**三方独立对拍**（DPLL / 穷举 / 闭式解 / BDD）；
   ② 有 26 条测试 + 16 条变异全抓；③ 它依赖的 `trit-core` / `trit-eval` / `trit-bdd` 本来就可发布，
-  翻面不引入新的约束。 ⇒ 于是 `trit-cli` 可以接 `count` 子命令了（下一片）。
+  翻面不引入新的约束。 ⇒ `trit-cli` 的 `count models` 子命令已接上（PR #299）：
+  `crates/trit-cli/tests/count_cmd.rs` 5 条二进制级断言，读数写在 README「模型计数」一节。
 - **翻面 ≠ 发布**。真发 crates.io 是单独一次授权动作（登录 ≠ 授权、邮箱验证、新包限流、token 不落聊天记录），
   要发的时候单独说，我按 `scripts/publish.sh` 口径走。
 

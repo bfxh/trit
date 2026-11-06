@@ -1,0 +1,74 @@
+[
+ {
+  "name": "fuzz: 三值向量丢掉 Unknown",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "            0 => Ternary::False,\n            1 => Ternary::True,\n            _ => Ternary::Unknown,",
+  "new": "            0 => Ternary::False,\n            1 => Ternary::True,\n            _ => Ternary::True,",
+  "pkg": "trit-fuzz",
+  "filter": "trits_cover_all_three_values_in_proportion"
+ },
+ {
+  "name": "fuzz: 三值取成二值",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "map(|_| match rng.below(3) {",
+  "new": "map(|_| match rng.below(2) {",
+  "pkg": "trit-fuzz",
+  "filter": "trits_cover_all_three_values_in_proportion"
+ },
+ {
+  "name": "fuzz: 26 个之后仍按字母发号",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "            if i < 26 {",
+  "new": "            if i < 25 {",
+  "pkg": "trit-fuzz",
+  "filter": "var_names_switches_letter_style_at_26"
+ },
+ {
+  "name": "fuzz: 超出 26 个不再换命名样式",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "                format!(\"v{i}\")",
+  "new": "                String::from((b'a' + i as u8) as char)",
+  "pkg": "trit-fuzz",
+  "filter": "var_names_switches_letter_style_at_26"
+ },
+ {
+  "name": "fuzz: 子句里的重字不去掉",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "            clause.remove(i + 1);\n            continue;",
+  "new": "            i += 1;\n            continue;",
+  "pkg": "trit-fuzz",
+  "filter": "cnf_clauses_are_dimacs_shaped_and_never_degenerate"
+ },
+ {
+  "name": "fuzz: 被消空的子句不再补一条",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "            if clause.is_empty() {",
+  "new": "            if false {",
+  "pkg": "trit-fuzz",
+  "filter": "cnf_clauses_are_dimacs_shaped_and_never_degenerate"
+ },
+ {
+  "name": "fuzz: 文字从 0 开始编号",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "                    let var = (rng.below(nvars) + 1) as i32;",
+  "new": "                    let var = rng.below(nvars) as i32;",
+  "pkg": "trit-fuzz",
+  "filter": "cnf_clauses_are_dimacs_shaped_and_never_degenerate"
+ },
+ {
+  "name": "fuzz: bipolar 出 0（不再是 ±1）",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "    if rng.below(2) == 0 { -1 } else { 1 }",
+  "new": "    if rng.below(2) == 0 { 0 } else { 1 }",
+  "pkg": "trit-fuzz",
+  "filter": "single_draw_helpers_are_balanced_and_typed"
+ },
+ {
+  "name": "fuzz: ternary_value 少了居中平移",
+  "file": "crates/trit-fuzz/src/corpus.rs",
+  "old": "    rng.below(3) as i32 - 1",
+  "new": "    rng.below(3) as i32",
+  "pkg": "trit-fuzz",
+  "filter": "single_draw_helpers_are_balanced_and_typed"
+ }
+]
