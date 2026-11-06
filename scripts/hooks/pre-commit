@@ -1,0 +1,20 @@
+#!/bin/sh
+# 训练必须 Rust 三进制；提交前只检查 staged 的 Python/路径。
+# CI 仍会跑全仓版（scripts/no_python_training.py）。
+set -e
+root=$(git rev-parse --show-toplevel)
+gate="$root/scripts/no_python_training.py"
+[ -f "$gate" ] || exit 0
+
+if command -v python >/dev/null 2>&1 && python -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1; then
+  py=python
+elif command -v python3 >/dev/null 2>&1 && python3 -c 'import sys; raise SystemExit(0 if sys.version_info >= (3, 8) else 1)' >/dev/null 2>&1; then
+  py=python3
+elif command -v py >/dev/null 2>&1; then
+  py="py -3"
+else
+  echo "[no-python-training] 找不到 Python；跳过本地门（CI 仍会跑）" >&2
+  exit 0
+fi
+
+exec $py "$gate" --root "$root" --staged

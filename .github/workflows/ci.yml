@@ -166,6 +166,18 @@ jobs:
       - name: Every file within budget or shrinking-only debt
         run: python3 scripts/module_budget.py
 
+  no-python-training:
+    name: no python training (Rust ternary only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 死命令：训练必须 Rust 三进制；Python 只作对齐基线/工具。
+      - name: Gate self-test (positive + counterexamples)
+        run: python3 scripts/no_python_training.py --self-test
+      - name: No Python training entries/frameworks, no .yanagent model paths
+        run: python3 scripts/no_python_training.py
+
   hazard:
     name: hazard gate (concurrency/memory)
     runs-on: ubuntu-latest
