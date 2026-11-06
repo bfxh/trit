@@ -28,6 +28,7 @@ pub(super) fn find_hex(data: &[u8], hp: &HexPattern) -> (Vec<u64>, bool) {
         {
             hits.push(pos as u64);
             if hits.len() >= MAX_HITS {
+                complete = false; // 命中表封顶截断 = 不完整（位置性条件弃权）
                 break;
             }
         }
@@ -105,6 +106,7 @@ pub(super) fn find_text(data: &[u8], tp: &TextPattern) -> (Vec<u64>, bool) {
                 if hit && (!tp.fullword || word_bounded(data, from, needle.len(), variant.wide)) {
                     hits.push(from as u64);
                     if hits.len() >= MAX_HITS {
+                        complete = false; // 命中表封顶截断 = 不完整
                         break 'keys;
                     }
                     from += needle.len(); // 非重叠推进（对齐官方与既有行为）

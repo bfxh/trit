@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（trit-re：entrypoint 上下文接线 + `at` 语义对齐官方 + 命中表截断如实弃权）
+
+- **entrypoint 可评估**：`SigScan::scan_with_entrypoint(data, truncated, entrypoint)`
+  接收入口点上下文（`scan()` 无上下文委托、操作数弃权）；CLI 从 PE 头
+  `entry_rva` 过 `rva_to_offset` 取**文件偏移**传入。官方语义实测对拍判定
+  （aadtb.dll / AcpiServiceVnA64.dll：RVA≠offset 的样本上官方只认 offset）——
+  不猜，跑出来的。ELF 侧留白（机器上无样本可验证语义，如实不接）。
+- **`$a at X` 语义修正：首次命中 → 任一命中**（官方 YARA `at` = 在该偏移有
+  命中即可）。真 PE 烟测当场揪出：高频序言 `48 89 5C 24` 在 aadtb.dll 入口
+  前命中 1753 次，首次命中语义会误判 MISS——修正后与官方一致 HIT。
+- **命中表封顶截断 = 扫描不完整**：`MAX_HITS` 1024 → 65536（真样本需要；
+  护栏仍在，且预算 1M 步/模式不变）；触顶即 `complete=false`——`at`/`in`/
+  `@a[N]` 在记录集不能证明时如实弃权（"截断的沉默不是清白"落到命中表上，
+  绝不据残表判假），`#a` 计数按截断值如实下界。
+- 测试 158 → 161（entrypoint 三态 + 截断弃权 + 封顶内命中照常证明）；
+  CLI 真 PE 烟测 `$e at entrypoint` HIT 与官方一致；门禁 fmt / clippy / test 全过。
+
 ### Added（trit-re：YARA 完整子集——三值条件求值 + 数值/循环/修饰符）
 
 - `sigscan` 条件求值升级**三值 Kleene**（True/False/Unknown，弃权不折叠成假）：

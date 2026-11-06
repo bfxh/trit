@@ -261,9 +261,9 @@ rule loops {
 }
 
 #[test]
-fn for_any_with_entrypoint_is_unknown() {
-    // 经典形态 `$ at entrypoint`：entrypoint 不可求值 → 体弃权 →
-    // any = 已满足 0 + 弃权 1 → Unknown（绝不折叠成 False）
+fn for_any_with_entrypoint_context_evaluates() {
+    // 经典形态 `$ at entrypoint`：调用方传入入口点上下文后可评估——
+    // 无上下文仍弃权（Unknown），有上下文按命中判定
     let src = r#"
 rule ep {
   strings:
@@ -272,7 +272,43 @@ rule ep {
     for any of ($a*) : ( $ at entrypoint )
 }
 "#;
-    assert_eq!(scan_one(src, &[0x4D, 0x5A, 0x90]), Ternary::Unknown);
+    let out = parse_rules(src).unwrap();
+    let RuleOutcome::Parsed(rule) = &out.rules[0] else {
+        panic!("应为 Parsed");
+    };
+    let data = [0x90u8, 0x4D, 0x5A];
+    // 无上下文：体弃权 → any = 0 满足 + 1 弃权 → Unknown
+    let r = SigScan::new(std::slice::from_ref(rule)).scan(&data, false);
+    assert_eq!(r.rules[0].value, Ternary::Unknown);
+    // 入口点 = 0：$a 首次命中在 1 ≠ 0 → 体 False → any 无满足 → False
+    let r = SigScan::new(std::slice::from_ref(rule)).scan_with_entrypoint(&data, false, Some(0));
+    assert_eq!(r.rules[0].value, Ternary::False);
+    // 入口点 = 1：命中恰在入口 → True
+    let r = SigScan::new(std::slice::from_ref(rule)).scan_with_entrypoint(&data, false, Some(1));
+    assert_eq!(r.rules[0].value, Ternary::True);
+}
+
+#[test]
+fn at_entrypoint_direct_condition_evaluates() {
+    let src = r#"
+rule ep {
+  strings:
+    $mz = { 4D 5A 90 00 }
+  condition:
+    $mz at entrypoint
+}
+"#;
+    let out = parse_rules(src).unwrap();
+    let RuleOutcome::Parsed(rule) = &out.rules[0] else {
+        panic!("应为 Parsed");
+    };
+    let data = [0x4Du8, 0x5A, 0x90, 0x00, 0xCC];
+    let r = SigScan::new(std::slice::from_ref(rule)).scan_with_entrypoint(&data, false, Some(0));
+    assert_eq!(r.rules[0].value, Ternary::True);
+    let r = SigScan::new(std::slice::from_ref(rule)).scan_with_entrypoint(&data, false, Some(2));
+    assert_eq!(r.rules[0].value, Ternary::False);
+    let r = SigScan::new(std::slice::from_ref(rule)).scan(&data, false);
+    assert_eq!(r.rules[0].value, Ternary::Unknown, "无上下文绝不 False");
 }
 
 #[test]
