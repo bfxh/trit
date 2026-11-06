@@ -27,7 +27,7 @@
  "crate/trit-parts": 221,
  "crate/trit-policy": 24,
  "crate/trit-procscan": 28,
- "crate/trit-re": 145,
+ "crate/trit-re": 162,
  "crate/trit-redteam": 43,
  "crate/trit-sat": 11,
  "crate/trit-schedule": 49,
@@ -93,5 +93,6 @@
  "script/train_guarded.sh": 0,
  "script/vendor.py": 1,
  "script/verify_materials.py": 0,
- "script/yara_diff.py": 0
+ "script/yara_diff.py": 0,
+ "script/yara_scale.py": 0
 }

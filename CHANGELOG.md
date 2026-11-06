@@ -22,8 +22,9 @@
   反例与官方逐位一致——最后一条"未与官方对拍"的已知边界清零。
 - 规模曲线：10 批（9×40 规则×12 样本 + 1×60×16）**5280 判定对 MATCH 100% /
   DIFF 0 / SUBSET-GAP 0 / OFFICIAL-ERR 0**。
-- 测试 163 → 165（全集迭代 / 确定未定义双态钉死）；门禁 fmt / clippy / test
-  全过。
+- 测试 163 → 165（全集迭代 / 确定未定义双态钉死）；行数预算再拆
+  `sigscan/eval.rs`（三值求值内核，520+309 行）；test_surface 台账
+  --update 登记；门禁 fmt / clippy / test / budget / surface 全过。
 
 ### Hardened（trit-re：fuzz 种子库扩到新 YARA 语法）
 
