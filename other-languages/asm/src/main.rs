@@ -751,6 +751,11 @@ fn pin_to_cpu(cpu: usize) {
 fn pin_to_cpu(_cpu: usize) {}
 
 fn main() {
+    if std::env::args().any(|a| a == "--conformance") {
+        let ok = pack5::conformance();
+        std::process::exit(if ok { 0 } else { 1 });
+    }
+
     println!("trit asm verification — K3 bit-sliced AND/OR/NOT");
     println!(
         "arch={} os={}",
