@@ -22,6 +22,7 @@ use crate::shard::{ShardReplay, ShardedLog};
 use crate::wire;
 
 mod mcp_dare;
+mod mcp_task;
 
 /// MCP 协议版本。
 pub const PROTOCOL_VERSION: &str = "2024-11-05";
@@ -280,59 +281,7 @@ impl Mcp {
                 .map_err(err)?;
                 Ok(wire::localize_report_to_value(&report))
             }
-            "wsp_task_merge" => {
-                let base = load_key(args, "base")?;
-                let raws = args
-                    .get("tasks")
-                    .and_then(Value::as_array)
-                    .ok_or("需要 tasks 数组")?;
-                let mut tasks = Vec::with_capacity(raws.len());
-                let aligned = flag(args, "aligned");
-                for raw in raws {
-                    let text = raw.as_str().ok_or("tasks 必须是字符串数组")?;
-                    let tuned = parse_or_path(text)?;
-                    let vector = if aligned {
-                        crate::task::TaskVector::between_aligned(&base, &tuned)
-                    } else {
-                        crate::task::TaskVector::between(&base, &tuned)
-                    };
-                    tasks.push(vector.map_err(err)?);
-                }
-                let dare_rate = args
-                    .get("dare_rate")
-                    .and_then(Value::as_f64)
-                    .map(|rate| rate as f32);
-                let dare_per_task = args
-                    .get("dare_per_task")
-                    .and_then(Value::as_f64)
-                    .map(|rate| rate as f32);
-                let dare_seed = opt_u64(args, "dare_seed", 0);
-                let merged = match (dare_rate, dare_per_task) {
-                    (Some(_), Some(_)) => {
-                        return Err("dare_rate 与 dare_per_task 只能给一个".into());
-                    }
-                    (Some(rate), None) => {
-                        crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed)
-                            .map_err(err)?
-                    }
-                    (None, Some(rate)) => {
-                        crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed)
-                            .map_err(err)?
-                    }
-                    (None, None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,
-                };
-                let patch = Patch::diff(&base, &merged).map_err(err)?;
-                Ok(json!({
-                    "tasks": tasks.len(),
-                    "dare_rate": dare_rate,
-                    "dare_per_task": dare_per_task,
-                    "dare_seed": dare_seed,
-                    "summary": wire::net_summary(&merged),
-                    "patch": wire::patch_to_value(&patch),
-                    "cost": wire::cost_to_value(&patch.cost(&base)),
-                    "artifact": to_wsp(&merged),
-                }))
-            }
+            "wsp_task_merge" => mcp_task::task_merge(args),
             "wsp_rebase" => {
                 let target = load(args)?;
                 let base = load_key(args, "base")?;

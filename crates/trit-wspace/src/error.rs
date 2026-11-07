@@ -117,6 +117,13 @@ pub enum Error {
         /// 非法的丢弃率。
         rate: f32,
     },
+    /// 任务权重必须是有限非负数。
+    InvalidWeight {
+        /// 第几个任务（从 0 开始）。
+        index: usize,
+        /// 非法的权重。
+        weight: f32,
+    },
 }
 
 /// 库内统一 `Result`。
@@ -177,6 +184,9 @@ impl fmt::Display for Error {
             }
             Self::InvalidRate { rate } => {
                 write!(f, "丢弃率 {rate} 必须是 [0, 1) 内的有限数")
+            }
+            Self::InvalidWeight { index, weight } => {
+                write!(f, "第 {index} 个任务的权重 {weight} 必须是有限非负数")
             }
         }
     }
