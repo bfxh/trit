@@ -17,6 +17,7 @@
 #![forbid(unsafe_code)]
 
 pub mod collect;
+pub mod dynres;
 pub mod elf;
 pub mod entropy;
 pub mod functions;

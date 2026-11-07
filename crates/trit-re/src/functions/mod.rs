@@ -17,6 +17,7 @@
 mod arm64walk;
 mod cfg;
 mod cooccurrence;
+pub(crate) mod stackstrings;
 mod x86len;
 
 use std::collections::{BTreeMap, BTreeSet};
