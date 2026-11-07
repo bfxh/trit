@@ -61,6 +61,7 @@ ARM64 各一批；记录每个样本的 sha256；人工复核 xref 误报/漏报
 | 日期 | 样本 | 判定分布 | 对拍四态 | 人工比例 |
 |---|---|---|---|---|
 | 2026-11-07 | **39**（良性 x64 PE 12 + 良性 PE32 12 + 良性 ELF64 11 + 自建模拟样本 4） | 351 判定：false 281 / unknown 42 / **true 28**；账本 110 节点（-28）、门禁 Block | 真实样本对拍：35 真实二进制 × 11 规则 **MATCH 35 / DIFF 0 / SUBSET-GAP（gap_regex+ELF entrypoint 如实）** / OFFICIAL-ERR 0 | **待人工复核**（`review_worksheet.tsv` 351 行已预填机器列；复核对象：良性批 21 条 true 的语义分级 + 模拟样本 7 条检出确认） |
+| 2026-11-07（语义降权重跑，同批） | 39（同批） | 351 判定：false 281 / unknown 65 / **true 5**；账本 110 节点（**-5**）、门禁 Block | 同上（N4 对拍不受影响） | **人工面收窄：21 → 2**（剩余 = benign-elf64 的 staged_loader 1 + needs_review 1；true 明细 = attack-sim 的 injection/fn_injection/needs_review 3 + benign 2）——`xref_gaps` 降为 Unknown 注记后门禁由真实注入检出驱动 |
 
 ### 首批读数详情（2026-11-07，批次目录 `<base>` = 任选工作目录，管线幂等可弃重跑）
 
