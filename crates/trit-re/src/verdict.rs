@@ -115,14 +115,20 @@ pub fn default_hypotheses() -> Vec<Hypothesis> {
         var("dynres.resolver_imported"),
         var("dynres.hidden_api_strings"),
     );
+    // 栈串形态（逐字节写栈拼 API 名）：高信号单证据即可立——误对齐的
+    // 立即数字节几乎不可能拼出 ≥1 个完整敏感名。
+    let stack_strings = var("dynres.stack_strings");
     let needs_review = or(
-        any4(
-            var("packed"),
-            var("injection"),
-            var("staged_loader"),
-            var("credential_theft"),
+        or(
+            any4(
+                var("packed"),
+                var("injection"),
+                var("staged_loader"),
+                var("credential_theft"),
+            ),
+            var("dynamic_resolution"),
         ),
-        var("dynamic_resolution"),
+        var("dynres.stack_strings"),
     );
 
     vec![
@@ -178,6 +184,12 @@ pub fn default_hypotheses() -> Vec<Hypothesis> {
             id: "dynamic_resolution",
             title: "动态解析链：解析器在表，敏感 API 名以字符串藏于数据段且不在导入表",
             expr: dynamic_resolution,
+            benign: None,
+        },
+        Hypothesis {
+            id: "stack_strings",
+            title: "栈串形态：可执行节立即数流拼出敏感 API 名",
+            expr: stack_strings,
             benign: None,
         },
         Hypothesis {
