@@ -185,6 +185,7 @@ pub fn tools() -> Vec<Value> {
                 "tuned": artifact(),
                 "rate": {"type": "number", "description": "丢弃概率，[0, 1)"},
                 "seed": {"type": "integer", "description": "散列种子，默认 0"},
+                "by_row": {"type": "boolean", "description": "整行（trit+偏置）一起保留或丢弃；默认按坐标"},
                 "oracle": {"type": "object"},
                 "require_before": {"type": "boolean"},
                 "require_after": {"type": "boolean"},

@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：DARE 行级丢弃）
+
+- `dare_drop_rows`（`crates/trit-wspace/src/dare.rs`）：DARE 的**整行**版本。决策单位是
+  `(seed, layer, row)`：一行只要有任何 trit/偏置差分，就整行保留或整行丢回基准值，不会出现
+  “半行保留”。行标记用 `usize::MAX - 1`（与偏置坐标 `usize::MAX` 区分），只改本层该行的
+  入边与偏置，不碰下一层的出边列（单元粒度整体搬运仍归 `transplant_units`）。
+  `kept` / `dropped` 仍按差分坐标数计数，`rescaled_rows` 仍是写了 scale 的行数。
+- CLI `dare-drop ... --by-row`，MCP `wsp_dare_drop.by_row`；默认仍是坐标级。
+- 测试 184 → 192 + 1 doctest（`tests/dare.rs` 14 → 22）；变异 168 → 178（新增 10 条行级目标）。
+
 ### Added（trit-re：ELF entrypoint 接线——语义实证判定后补齐）
 
 - **语义实证**：官方 YARA 的 ELF `entrypoint` = **文件偏移**——yara-python
