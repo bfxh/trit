@@ -63,6 +63,20 @@ ARM64 各一批；记录每个样本的 sha256；人工复核 xref 误报/漏报
 | 2026-11-07 | **39**（良性 x64 PE 12 + 良性 PE32 12 + 良性 ELF64 11 + 自建模拟样本 4） | 351 判定：false 281 / unknown 42 / **true 28**；账本 110 节点（-28）、门禁 Block | 真实样本对拍：35 真实二进制 × 11 规则 **MATCH 35 / DIFF 0 / SUBSET-GAP（gap_regex+ELF entrypoint 如实）** / OFFICIAL-ERR 0 | **待人工复核**（`review_worksheet.tsv` 351 行已预填机器列；复核对象：良性批 21 条 true 的语义分级 + 模拟样本 7 条检出确认） |
 | 2026-11-07（语义降权重跑，同批） | 39（同批） | 351 判定：false 281 / unknown 65 / **true 5**；账本 110 节点（**-5**）、门禁 Block | 同上（N4 对拍不受影响） | **人工面收窄：21 → 2**（剩余 = benign-elf64 的 staged_loader 1 + needs_review 1；true 明细 = attack-sim 的 injection/fn_injection/needs_review 3 + benign 2）——`xref_gaps` 降为 Unknown 注记后门禁由真实注入检出驱动 |
 | 2026-11-07（**ARM64-ELF 象限解锁**） | **51**（+12 = Ubuntu ports arm64 系统工具包，良性；首次真 ARM64 样本） | 全表 459 判定：false 383 / unknown 67 / true 9；ARM64 子批 12×~9 判定、-4（staged_loader+needs_review 各 2 = loader+network 家族，与 bash 同款） | ARM64 真实对拍：12 样本 × 11 规则——首跑 **DIFF 1**（`fullword` 词字符语义，见下），修复后 **MATCH 12 / DIFF 0**；真实样本对拍累计 **47 全 MATCH** | 人工面 +4（arm64 的 loader+network 同款家族，复核辅助同口径） |
+| 2026-11-07（**dynres 检测链 + L5 逃逸变体**） | **52**（+1 = sim_lvl5 纯动态解析形态） | 全表 520 判定：false 440 / unknown 69 / **true 11**；`dynamic_resolution` = True 仅在 sim_lvl5（**良性批 0 误报**，阈值 ≥3 个隐藏敏感名有效） | 同上 | **检测能力净增（响应"弱鸡"批评）**：L5 形态（导入表只有 GetProcAddress，敏感 API 名以字符串藏于数据段，不调用）在旧链全盲（`fn_injection` False）→ **`dynamic_resolution` True**——N1 记录的逃逸边界闭合；误报面 0 增量 |
+
+### dynres 检测链（2026-11-07，响应"检测器弱鸡"批评）
+
+- **形态**：真实 loader 的标准逃逸 = 动态解析（GetProcAddress 取函数指针，
+  敏感 API 不进导入表）——导入共现判定对此全盲（N1 首批记录的漏报边界）。
+- **证据链**：`dynres.resolver_imported`（GetProcAddress/dlsym 在表）∧
+  `dynres.hidden_api_strings`（≥3 个敏感 API 名 + NUL 字面串藏于非可执行
+  节、**不在导入表**；1-2 = Unknown；0 = False）。词汇表随 BUCKETS 自动
+  同步（注入/凭据家族）；load 家族不入表（良性串太多）。
+- **验证**：sim_lvl5（纯动态解析）→ True；良性批 51 样本 → 0 误报；
+  L1-L4 行为不变。已知边界：可执行节里的栈串形态（mov-immediate）是
+  下一层；ELF 侧词汇表是 Windows API 名——Linux 侧解析族（dlsym +
+  ptrace/memfd 名单）待扩。
 
 ### 第五号语义分歧（fullword 词字符，ARM64 批差分揪出）
 
