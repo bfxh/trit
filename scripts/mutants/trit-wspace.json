@@ -1678,5 +1678,37 @@
  "new": "    let mut net = merge_tasks(base, &sparse)?;",
  "pkg": "trit-wspace",
  "filter": "merge_weighted_per_task_dare_keeps_weights"
+},
+{
+ "name": "wspace-verify: CLI 不给读数（verify 恒 null）",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "    let verify = if let Some(path) = oracle_path {",
+ "new": "    let verify = if let Some(path) = oracle_path.filter(|_| false) {",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_verify_readings"
+},
+{
+ "name": "wspace-verify: CLI after 用基准",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "            \"after\": wire::metrics_value(&merged, &oracle).map_err(err)?,",
+ "new": "            \"after\": wire::metrics_value(&base, &oracle).map_err(err)?,",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_verify_readings"
+},
+{
+ "name": "wspace-verify: MCP 不给读数（verify 恒 null）",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "    let verify = if let Some(oracle) = oracle.as_ref() {",
+ "new": "    let verify = if let Some(oracle) = oracle.as_ref().filter(|_| false) {",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_merge_verify_readings"
+},
+{
+ "name": "wspace-verify: MCP after 用基准",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "            \"after\": wire::metrics_value(&merged, oracle).map_err(err)?,",
+ "new": "            \"after\": wire::metrics_value(&base, oracle).map_err(err)?,",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_merge_verify_readings"
 }
 ]

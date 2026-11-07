@@ -6,16 +6,21 @@ use crate::edit::Patch;
 use crate::to_wsp;
 use crate::wire;
 
-use super::{emit, err, load_net, no_double_stdin, opt_u64, parse, write_out};
+use super::{emit, err, load_net, load_oracle, no_double_stdin, opt_u64, parse, write_out};
 
 pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &["aligned"])?;
     if parsed.positional.len() < 2 {
         return Err(
-            "用法：trit-wspace task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--out <path>]".into(),
+            "用法：trit-wspace task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--oracle <json|->] [--out <path>]".into(),
         );
     }
-    no_double_stdin(&parsed.positional)?;
+    let oracle_path = parsed.values.get("oracle");
+    let mut sources: Vec<&str> = parsed.positional.iter().map(String::as_str).collect();
+    if let Some(path) = oracle_path {
+        sources.push(path.as_str());
+    }
+    no_double_stdin(&sources)?;
     let aligned = parsed.switches.contains("aligned");
     let base = load_net(&parsed.positional[0])?;
     let mut tasks = Vec::with_capacity(parsed.positional.len() - 1);
@@ -68,10 +73,20 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
         (None, None, None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,
     };
     write_out(&parsed, &merged)?;
+    let verify = if let Some(path) = oracle_path {
+        let oracle = load_oracle(path)?;
+        Some(json!({
+            "before": wire::metrics_value(&base, &oracle).map_err(err)?,
+            "after": wire::metrics_value(&merged, &oracle).map_err(err)?,
+        }))
+    } else {
+        None
+    };
     let patch = Patch::diff(&base, &merged).map_err(err)?;
     emit(&json!({
         "tasks": tasks.len(),
         "weights": weights,
+        "verify": verify,
         "dare_rate": dare_rate,
         "dare_per_task": dare_per_task,
         "dare_seed": dare_seed,
