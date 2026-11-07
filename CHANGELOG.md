@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：验证集自动选任务权重）
+
+- `tune_task_weights` / `WeightTuning`（`crates/trit-wspace/src/task.rs`）：从等权出发做坐标下降，
+  候选权重 `{0, 0.5, 1, 2}`；每轮逐任务试候选，只接受验证集 `loss` 严格下降的改动，某轮无改进
+  提前停；返回选出的权重、调优前后 loss 与实际评估次数。空任务判错，`rounds=0` 只算等权基线。
+- CLI `task-merge ... --tune-weights [--tune-rounds N]`，MCP `wsp_task_merge.tune_weights /
+  tune_rounds`；需要 oracle，与显式 `weights` 互斥。结果新增 `tuning` 报告；`weights` 为选出的权重。
+- 测试 234 → 240 + 1 doctest（新增 `tests/task_tune.rs` 6 条）；变异 214 → 223（新增 9 条目标）。
+
 ### Added（trit-wspace：任务合并的验证集读数）
 
 - `wire::metrics_value`：`loss` / `exact` / `accuracy` 的共用 JSON 读数（CLI 与 MCP 复用）。
