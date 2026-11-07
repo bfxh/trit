@@ -24,14 +24,15 @@ int main(void) {
 #if SIM_LEVEL >= 2
     g_sink[1] = (void *)&VirtualAlloc; /* 分配桶：只取指针（不在桶内——alloc 组要 Ex 版） */
 #endif
-#if SIM_LEVEL >= 3
+#if SIM_LEVEL == 3
     g_sink[3] = (void *)&WriteProcessMemory; /* 写桶：只取指针 */
     g_sink[4] = (void *)&CreateRemoteThread; /* 执行桶：只取指针 */
 #endif
-#if SIM_LEVEL >= 4
+#if SIM_LEVEL == 4
     /* 检测器验证变体：同函数内结构化调用注入类全桶 API（运行时不可达
      * 分支，结果全部丢弃）。VirtualAlloc 不在 alloc 桶内——alloc 组要
-     * VirtualAllocEx（#51 演练同款，本轮差分实测再次确认）。 */
+     * VirtualAllocEx（#51 演练同款，本轮差分实测再次确认）。
+     * == 精确门：L5 是纯动态解析形态，不能叠加本块。 */
     if (g_sink[1] != 0) {
         HANDLE fake = (HANDLE)(uintptr_t)0x0DeadBeef; /* 无效句柄：运行时永不执行 */
         void *p = VirtualAllocEx(fake, 0, 0x1000, MEM_RESERVE, PAGE_NOACCESS);
@@ -42,6 +43,18 @@ int main(void) {
             g_sink[7] = (void *)(uintptr_t)CreateRemoteThread(fake, 0, 0, 0, 0, 0, 0);
         }
     }
+#endif
+#if SIM_LEVEL >= 5
+    /* 逃逸形态变体（dynres 检测链的验证目标）：动态解析——导入表只有
+     * 解析器（GetProcAddress），敏感 API 名以字符串字面量出现在数据段
+     *（GetProcAddress 取指针，不导入、不调用）。旧检测链对此全盲
+     *（fn_injection False——CALIBRATION 首批读数的漏报边界）；
+     * dynres 链（resolver ∧ hidden strings）应当 True。 */
+    HMODULE k32 = GetModuleHandleA("kernel32.dll");
+    FARPROC q1 = GetProcAddress(k32, "VirtualAllocEx");
+    FARPROC q2 = GetProcAddress(k32, "WriteProcessMemory");
+    FARPROC q3 = GetProcAddress(k32, "CreateRemoteThread");
+    g_sink[8] = (void *)((uintptr_t)q1 ^ (uintptr_t)q2 ^ (uintptr_t)q3);
 #endif
     return (int)(g_sink[0] != 0);
 }

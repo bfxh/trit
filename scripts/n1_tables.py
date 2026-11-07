@@ -18,7 +18,7 @@ import sys
 from collections import Counter
 from pathlib import Path
 
-BATCHES = ['benign-x64', 'benign-pe32', 'benign-elf64', 'attack-sim-x64']
+BATCHES = ['benign-x64', 'benign-pe32', 'benign-elf64', 'attack-sim-x64', 'benign-arm64-elf-curated']
 
 
 def main() -> int:
