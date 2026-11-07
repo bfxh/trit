@@ -1,0 +1,70 @@
+{
+  "spec_version": "0.1.0",
+  "profile": "k3",
+  "encoding": "bitplane",
+  "vectors": [
+    {
+      "id": "k3.bitplane.encode.f",
+      "op": "encode_bitplane",
+      "input": "F",
+      "expected": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "k3.bitplane.encode.u",
+      "op": "encode_bitplane",
+      "input": "U",
+      "expected": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "k3.bitplane.encode.t",
+      "op": "encode_bitplane",
+      "input": "T",
+      "expected": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "k3.bitplane.decode.00",
+      "op": "decode_bitplane",
+      "input": [
+        0,
+        0
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "k3.bitplane.decode.01",
+      "op": "decode_bitplane",
+      "input": [
+        0,
+        1
+      ],
+      "expected": "U"
+    },
+    {
+      "id": "k3.bitplane.decode.10",
+      "op": "decode_bitplane",
+      "input": [
+        1,
+        0
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "k3.bitplane.decode.invalid.11",
+      "op": "decode_bitplane",
+      "input": [
+        1,
+        1
+      ],
+      "expect_error": "invalid_bitplane"
+    }
+  ]
+}

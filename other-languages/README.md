@@ -6,7 +6,7 @@
 
 1. **非默认**：不进入 Cargo 工作区，不被任何 Rust crate 依赖，不参与默认 CI、发布和版本号。
 2. **非稳定 API**：参考实现的 API 没有兼容性承诺，可以随时改写或删除。
-3. **统一互操作**：稳定语义与字节格式必须遵守本文件的互操作契约；前沿想法只能进实验 profile，不得污染稳定核心。
+3. **统一互操作**：稳定语义与字节格式必须遵守 [interop 契约](../interop/spec/v0.md)；前沿想法只能进实验 profile，不得污染稳定核心。
 4. **零外部依赖**：参考实现只依赖标准库；不引入模型、训练框架或二进制现成件。
 5. **结论仍按 A/B/C/D**：性能/精度结论必须带二进制基线，并按 [`docs/TERNARY-BOUNDARIES.md`](../docs/TERNARY-BOUNDARIES.md) 归类。
 6. **保持最小**：每个实现只覆盖“能读懂语义”的最小切片；完整能力以 Rust 工作区为准。
@@ -57,41 +57,15 @@
 4. **互操作**：汇编实现必须通过统一 golden vectors；不得自创语义。
 5. **结论口径**：汇编在二进制 ISA 上是 **B 类（二进制模拟三态）优化**，不是 A 类原生红利；SAT/BDD/ATPG 是 D 类算法瓶颈，不作为汇编优先目标。
 
-## 三进制互操作契约（v0 草案）
+## 三进制互操作契约
 
-目标：不同语言、不同实现之间，**语义和字节格式必须能互相验证**；前沿想法可以存在，但不得污染稳定核心。
+稳定核心、实验 profile 与 golden vectors 已拆分到 [`interop/`](../interop/README.md)：
 
-### 稳定核心（v0）
+- 规范：[`interop/spec/v0.md`](../interop/spec/v0.md)
+- 向量：[`interop/vectors/`](../interop/vectors/)
+- 格式：[`interop/schema/vector.schema.json`](../interop/schema/vector.schema.json)
 
-1. **语义 profile**：
-   - K3 三值：`False` / `Unknown` / `True`；`Unknown` 是缺证据，不是概率 0.5。
-   - 平衡三进制：`-1` / `0` / `+1`，低位在前；负数不单独设符号位。
-   - `KGate(required, verified)` 准入表；`required=Unknown` 时，即使前驱 `True` 也保持 `Unknown`。
-   - Belnap 四值（T/F/B/N）是 **opt-in profile**，不进入 K3 核心。
-2. **字节格式 `pack5`**：
-   - 5 trits/byte，字节内低位在前；trit 映射为 digit `0/1/2` 表示 `-1/0/+1`；字节值 = `Σ digit_i × 3^i`。
-   - 有效字节 `0..242`；`243..255` 保留。末组缺位用 `Zero`（digit 1）填充，由 `trit_count` 截断。
-   - 跨进程容器必须显式带：magic、version、profile、`trit_count`、`payload_len`、checksum、字节序；**不允许**直接复用某个语言的内存布局。
-3. **Conformance**：
-   - 每种 profile 提供语言中立的 golden vectors（JSON/CSV）：编码/解码往返、K3 真值表、`KGate` 3×3、边界与溢出。
-   - 所有实现必须通过同一组 vectors；跨语言 A→B→A 往返必须字节级一致；语义表逐项一致。
-4. **参考与版本**：
-   - 目标：**Lean 4 为形式语义，Rust 为参考实现**；两者不一致时以 Lean 4 的语义定义为准，Rust 修实现。Lean 4 落地前，Rust 是唯一参考。
-   - 稳定核心只增不改；破坏性变更走新 profile / 新 major，不静默改语义。
-
-### 前沿互操作（实验区）
-
-- 多值编码：Belnap 4、5-valued、9-valued；
-- 变长/压缩 trit 流、稀疏三值、GPU/WASM 共享缓冲区；
-- 零拷贝视图、跨语言 FFI 布局、JVM/Panama/Go cgo 桥；
-- 这些必须放在 `experimental/` profile，不得被稳定核心依赖；新想法先写 profile + golden vectors，再谈实现。
-
-### 互操作验收
-
-- 每语言实现必须通过同一组 golden vectors；
-- 跨语言 A→B→A 必须字节级一致；
-- K3 真值表/`KGate` 必须逐项一致；
-- 任何“新想法”不得直接改稳定核心；先加实验 profile 与测试向量。
+实现必须通过所声明 profile 的全部 vectors；手写穷举 vectors 是规范，随机长向量只作回归。不得用被测实现生成期望值自证。
 
 ## 当前实现
 
