@@ -30,7 +30,7 @@ trit-wspace <command>
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   rebase <target|-> --base <base|-> --patch <json|-> [--skip-conflicts] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
   transplant <dest|-> --from <source|-> --layer N --rows i,j [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
-  dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
+  dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--by-row] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
   explain <artifact|-> --oracle <json|-> --sample N [--top K]
@@ -317,10 +317,10 @@ fn cmd_transplant(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["require-before", "require-after"])?;
+    let parsed = parse(args, &["require-before", "require-after", "by-row"])?;
     let path = one(
         &parsed,
-        "dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--oracle <json|->] [--require-after] [--out <path>]",
+        "dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--by-row] [--oracle <json|->] [--require-after] [--out <path>]",
     )?;
     let tuned_path = value(&parsed, "tuned")?;
     let rate = req_f32(&parsed, "rate")?;
@@ -334,7 +334,12 @@ fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
 
     let base = load_net(path)?;
     let tuned = load_net(tuned_path)?;
-    let outcome = crate::dare::dare_drop(&base, &tuned, rate, seed).map_err(err)?;
+    let by_row = parsed.switches.contains("by-row");
+    let outcome = if by_row {
+        crate::dare::dare_drop_rows(&base, &tuned, rate, seed).map_err(err)?
+    } else {
+        crate::dare::dare_drop(&base, &tuned, rate, seed).map_err(err)?
+    };
     let oracle = oracle_path.map(load_oracle).transpose()?;
     let cost = outcome.patch.cost(&base);
     let applied_outcome = ops::apply_patch(
@@ -349,6 +354,7 @@ fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
     let mut output = json!({
         "rate": rate,
         "seed": seed,
+        "by_row": by_row,
         "kept": outcome.kept,
         "dropped": outcome.dropped,
         "rescaled_rows": outcome.rescaled_rows,
