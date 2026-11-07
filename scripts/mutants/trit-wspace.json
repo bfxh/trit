@@ -1550,5 +1550,69 @@
  "new": "        (Some(rate), Some(_)) => crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?,",
  "pkg": "trit-wspace",
  "filter": "cli_task_merge_rejects_both_dare_modes"
+},
+{
+ "name": "wspace-scale: 任务向量不记 scale",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "                Edit::SetScale { layer, row, to } => scales.push((*layer, *row, *to)),",
+ "new": "                Edit::SetScale { .. } => {}",
+ "pkg": "trit-wspace",
+ "filter": "task_vector_records_scale_delta"
+},
+{
+ "name": "wspace-scale: apply 不应用 scale",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        let scale_edits: Vec<Edit> = self\n            .scales\n            .iter()\n            .map(|(layer, row, to)| Edit::SetScale {\n                layer: *layer,\n                row: *row,\n                to: *to,\n            })\n            .collect();\n        Patch::new(scale_edits).apply(&mut net)?;",
+ "new": "        Patch::new(Vec::<Edit>::new()).apply(&mut net)?;",
+ "pkg": "trit-wspace",
+ "filter": "task_vector_records_scale_delta"
+},
+{
+ "name": "wspace-scale: 合并不应用 scale",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    let mut net = base.clone();\n    Patch::new(edits).apply(&mut net)?;\n    Patch::new(scale_edits).apply(&mut net)?;\n    Ok(net)",
+ "new": "    let mut net = base.clone();\n    Patch::new(edits).apply(&mut net)?;\n    Patch::new(Vec::<Edit>::new()).apply(&mut net)?;\n    Ok(net)",
+ "pkg": "trit-wspace",
+ "filter": "merge_single_scale_delta"
+},
+{
+ "name": "wspace-scale: 中位数取最大",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "            values[values.len() / 2]",
+ "new": "            values[values.len() - 1]",
+ "pkg": "trit-wspace",
+ "filter": "merge_scale_median_odd"
+},
+{
+ "name": "wspace-scale: 偶数中位数不平均",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "            (values[mid - 1] + values[mid]) * 0.5",
+ "new": "            values[mid]",
+ "pkg": "trit-wspace",
+ "filter": "merge_scale_median_even"
+},
+{
+ "name": "wspace-scale: 未改也写 scale",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        if merged.to_bits() != current.to_bits() {",
+ "new": "        if merged.to_bits() == current.to_bits() {",
+ "pkg": "trit-wspace",
+ "filter": "merge_single_scale_delta"
+},
+{
+ "name": "wspace-scale: scales() 返回空",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    pub fn scales(&self) -> &[(usize, usize, f32)] {\n        &self.scales\n    }",
+ "new": "    pub fn scales(&self) -> &[(usize, usize, f32)] {\n        &[]\n    }",
+ "pkg": "trit-wspace",
+ "filter": "merge_single_scale_delta"
+},
+{
+ "name": "wspace-scale: per-task 丢任务 scale",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "            scales: task.scales().to_vec(),",
+ "new": "            scales: Vec::new(),",
+ "pkg": "trit-wspace",
+ "filter": "merge_per_task_keeps_task_scales"
 }
 ]
