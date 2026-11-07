@@ -17,6 +17,7 @@ use serde_json::json;
 use trit_learn::{Activation, Adam, Ste, TernaryDense, cross_entropy};
 use trit_wspace::{
     Layer, Net, Oracle, TaskVector, Trit, merge_tasks_weighted, to_wsp, tune_task_weights,
+    tune_task_weights_argmax, tune_task_weights_hamming,
 };
 
 const IN: usize = 64;
@@ -357,8 +358,17 @@ fn main() {
         TaskVector::between(&base_net, &b_net).expect("b vector"),
     ];
     let equal = merge_tasks_weighted(&base_net, &tasks, &[1.0, 1.0]).expect("equal merge");
-    let tuning = tune_task_weights(&base_net, &tasks, &oracle, 2).expect("tune");
-    let tuned = merge_tasks_weighted(&base_net, &tasks, tuning.weights()).expect("tuned merge");
+    let tuning_exact = tune_task_weights(&base_net, &tasks, &oracle, 2).expect("tune exact");
+    let tuned_exact =
+        merge_tasks_weighted(&base_net, &tasks, tuning_exact.weights()).expect("tuned exact");
+    let tuning_hamming =
+        tune_task_weights_hamming(&base_net, &tasks, &oracle, 2).expect("tune hamming");
+    let tuned_hamming =
+        merge_tasks_weighted(&base_net, &tasks, tuning_hamming.weights()).expect("tuned hamming");
+    let tuning_argmax =
+        tune_task_weights_argmax(&base_net, &tasks, &oracle, 2).expect("tune argmax");
+    let tuned_argmax =
+        merge_tasks_weighted(&base_net, &tasks, tuning_argmax.weights()).expect("tuned argmax");
 
     let report_value = json!({
         "mode": if binary { "binary-cat-vs-dog" } else { "10-class" },
@@ -378,14 +388,30 @@ fn main() {
         "task_a": report(&a_net, &test_inputs, &test_labels, &oracle, binary),
         "task_b": report(&b_net, &test_inputs, &test_labels, &oracle, binary),
         "equal_merge": report(&equal, &test_inputs, &test_labels, &oracle, binary),
-        "tuned_merge": report(&tuned, &test_inputs, &test_labels, &oracle, binary),
+        "tuned_exact": report(&tuned_exact, &test_inputs, &test_labels, &oracle, binary),
+        "tuned_hamming": report(&tuned_hamming, &test_inputs, &test_labels, &oracle, binary),
+        "tuned_argmax": report(&tuned_argmax, &test_inputs, &test_labels, &oracle, binary),
         "tuning": {
-            "weights": tuning.weights(),
-            "initial_loss": tuning.initial_loss(),
-            "tuned_loss": tuning.loss(),
-            "evaluations": tuning.evaluations(),
+            "exact": {
+                "weights": tuning_exact.weights(),
+                "initial_loss": tuning_exact.initial_loss(),
+                "tuned_loss": tuning_exact.loss(),
+                "evaluations": tuning_exact.evaluations(),
+            },
+            "hamming": {
+                "weights": tuning_hamming.weights(),
+                "initial_loss": tuning_hamming.initial_loss(),
+                "tuned_loss": tuning_hamming.loss(),
+                "evaluations": tuning_hamming.evaluations(),
+            },
+            "argmax": {
+                "weights": tuning_argmax.weights(),
+                "initial_loss": tuning_argmax.initial_loss(),
+                "tuned_loss": tuning_argmax.loss(),
+                "evaluations": tuning_argmax.evaluations(),
+            },
         },
-        "artifact": to_wsp(&tuned),
+        "artifact": to_wsp(&tuned_argmax),
     });
     println!(
         "{}",

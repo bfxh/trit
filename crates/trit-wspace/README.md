@@ -191,6 +191,10 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 结果里的 `tuning` 给出 `rounds` / `evaluations` / `initial_loss` / `tuned_loss`，`weights` 是选出的权重。
 评估的是加权投票合并（不含 DARE）；`tune_weights` 与显式 `weights` 互斥且必需 oracle；
 `tune_rounds=0` 只算等权基线。
+`tune_metric` / `--tune-metric` 选调权目标：`exact`（默认，逐样本完全匹配）、`hamming`
+（逐位失配数）或 `argmax`（分类错误数，多类 one-hot 最贴合指标）。库层对应
+`tune_task_weights` / `tune_task_weights_hamming` / `tune_task_weights_argmax`；通用入口是
+`tune_task_weights_with(base, tasks, rounds, evaluate)`。
 
 真实数据读数见 `examples/cifar_tasks.rs`（CIFAR-10 8×8 灰度 → 三值 MLP → WSP1 → 合并/调权）；
 它需要外部数据夹具，CI 只编译不运行。

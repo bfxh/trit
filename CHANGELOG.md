@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：argmax 调权目标）
+
+- `tune_task_weights_argmax`：输出与期望各取 argmax 后统计分类错误数，直接优化多类 one-hot 的
+  分类指标；CLI/MCP `tune_metric=argmax`（与 exact / hamming 并列）。
+- CIFAR-10 10 类复测（hidden 64、每类 500、10 epochs）：exact 987→987（argmax 14.7%）、
+  hamming 4465→4457（13.6%）、argmax 853→848（weights `[2, 1]`，argmax **15.2%**）。
+  直接优化分类指标比 exact/hamming 更贴合目标，但绝对提升仍只有 0.5 个点。
+- 测试 244 → 248 + 1 doctest（`tests/task_tune.rs` 10 → 14）；变异 228 → 231（新增 3 条目标）。
+
+### Added（trit-wspace：调权目标可选 exact / hamming）
+
+- `tune_task_weights_with(base, tasks, rounds, evaluate)`：调权接受任意评估闭包；原
+  `tune_task_weights` 保持“逐样本完全匹配”，新增 `tune_task_weights_hamming`（逐位失配数）。
+- CLI `task-merge ... --tune-metric exact|hamming`，MCP `wsp_task_merge.tune_metric`；默认
+  `exact`，非法值报错；结果 `tuning.metric` 标出实际目标。
+- 背景读数（CIFAR-10 10 类、hidden 64、每类 500、10 epochs）：exact 987→987（weights 不变），
+  hamming 4465→4457（-0.18%，weights `[0.5, 1]`），argmax 14.7% → 13.6%（未改善）。
+  机制在构造的 one-hot 冲突夹具上可把 hamming 8→4，但真实任务收益很小。
+- 测试 240 → 244 + 1 doctest（`tests/task_tune.rs` 6 → 10）；变异 223 → 228（新增 5 条目标）。
+
 ### Experiments（trit-wspace：CIFAR-10 真实训练集上的合并/调权读数）
 
 - 新增可复现实验 `crates/trit-wspace/examples/cifar_tasks.rs`：CIFAR-10 降采样成 8×8 灰度夹具
