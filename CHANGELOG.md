@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Experiments（trit-wspace：CIFAR-10 真实训练集上的合并/调权读数）
+
+- 新增可复现实验 `crates/trit-wspace/examples/cifar_tasks.rs`：CIFAR-10 降采样成 8×8 灰度夹具
+  → 三值量化 → `trit-learn` 的三值 MLP（STE 训练）→ 导出 WSP1 → `trit-wspace` 的任务向量合并 /
+  加权合并 / 验证集调权，在**真实测试集**上报告 argmax 与逐样本匹配率。
+- 单次读数（固定 seed 7；8×8 灰度、三值输入，属容量下限实验，不是 trit 训练层上限）：
+  · 10 类（hidden 32、每类 500、10 epochs）：base 13.9% / 等权 14.1% / 调权 14.1%；
+    调权目标（逐样本完全匹配）只有 991→988，信号稀疏。
+  · 二分类 cat-vs-dog（hidden 32、每类 1000、10 epochs）：base 51.75% / 等权 51.0% /
+    调权 50.75%（loss 215→212，weights `[0.0, 1.0]`）。
+  · 二分类 cat-vs-dog（hidden 64、每类 1000、20 epochs）：base 44.5% / 等权 45.75% /
+    调权 **50.75%**（loss 226→214，weights `[0.0, 1.0]`）。
+- 结论：链路已跑通（真实训练集 → WSP1 → 合并/调权 → 真实测试集读数）；在 8×8 灰度三值输入与
+  2k 样本下模型很弱，绝对精度不能当 trit 训练层的上限；调权的完全匹配目标与 argmax 指标不一致
+  （10 类无信号；二分类可提升 argmax，但单次读数波动大）。
+- 未证栏：单次读数、未做多 seed 均值/方差；未跑同架构 f32 基线；数据夹具由 `cifar32.npz`
+  降采样得到（一次性夹具，不交付 Python 训练）；example 需要外部数据，CI 只编译不运行。
+
 ### Added（trit-wspace：验证集自动选任务权重）
 
 - `tune_task_weights` / `WeightTuning`（`crates/trit-wspace/src/task.rs`）：从等权出发做坐标下降，
