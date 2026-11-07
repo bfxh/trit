@@ -298,10 +298,21 @@ impl Mcp {
                     };
                     tasks.push(vector.map_err(err)?);
                 }
-                let merged = crate::task::merge_tasks(&base, &tasks).map_err(err)?;
+                let dare_rate = args
+                    .get("dare_rate")
+                    .and_then(Value::as_f64)
+                    .map(|rate| rate as f32);
+                let dare_seed = opt_u64(args, "dare_seed", 0);
+                let merged = match dare_rate {
+                    Some(rate) => crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed)
+                        .map_err(err)?,
+                    None => crate::task::merge_tasks(&base, &tasks).map_err(err)?,
+                };
                 let patch = Patch::diff(&base, &merged).map_err(err)?;
                 Ok(json!({
                     "tasks": tasks.len(),
+                    "dare_rate": dare_rate,
+                    "dare_seed": dare_seed,
                     "summary": wire::net_summary(&merged),
                     "patch": wire::patch_to_value(&patch),
                     "cost": wire::cost_to_value(&patch.cost(&base)),

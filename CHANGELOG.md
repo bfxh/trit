@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：任务合并后 DARE 稀疏化）
+
+- `merge_tasks_dare`（`crates/trit-wspace/src/task.rs`）：先按坐标投票合并，再对 `base → merged`
+  的差分做一次**坐标级** DARE（`dare_drop`）并应用。投票阶段使用完整任务向量，避免丢弃改变
+  投票结果；`rate=0` 与 `merge_tasks` 完全一致；`rate` 非 `[0, 1)` 判错。
+- CLI `task-merge ... --dare-rate R [--dare-seed N]`，MCP `wsp_task_merge.dare_rate/dare_seed`；
+  不传时输出 `dare_rate: null`、行为与原来一致。
+- 测试 192 → 202 + 1 doctest（`tests/task.rs` 7 → 17）；变异 178 → 186（新增 8 条目标）。
+
 ### Added（trit-re：dynres 动态解析检测链——响应"检测器弱鸡"的能力净增）
 
 - **形态与证据链**：真实 loader 的标准逃逸 = 动态解析（GetProcAddress 取
@@ -204,6 +213,7 @@
   产品测试面没有回退；本片合 `origin/main` 后的门线以这一条为准。
 - 判据复算尺（逐字）：`python scripts/docs_hygiene.py`；`cargo test --workspace --locked -j 1`；
   `ls -d /e/tmp/trit-wspace-cli-* | wc -l`；`head -c 200 /e/tmp/trit-wspace-cli-10096/audit.jsonl`。
+
 ### Added（SCOPE §6 第 6 条 + §8：合过 main 的门线怎么分账）
 
 - `docs/SCOPE.md` §6 加第 6 条：合并 `origin/main` 之后门线判红，要先用
@@ -227,6 +237,7 @@
   ⇒ 单节点开销随子问题变大，watched literals 的判据就是压平这条上升线。
 - 判决口径：重复极差在小档更宽（12 对 ±13%、16 对 −12%/+7%、20 对 −6%/+10%、40 对 ±5%），
   所以**判决只看 20 对以上，且改进必须大于当档极差**；8–16 档只用来确认没有回退。
+
 ### Fixed（三平台 CI 的 windows `capacity_exec` 栈溢出：根因找到并修掉，另撤回我一次错判）
 
 - **撤回**：我先前把这次红判成"runner 面"（理由是 `size_of::<Commands>()` 只涨了几十字节 + 本机全绿）。
@@ -937,6 +948,7 @@
 - 测试 +4（结构/证据与 reach 贯通含见证、全 X 主机、幂等 + LWW 刷新 + 人工改写、
   findings JSONL 往返与坏行拒绝）；变异门 +2（主机应答 any→all、服务节点证据
   被升成 T）。
+
 ### Fixed（trit-re：N4 加固轮——扫描预算 + 确定性模糊测试，对抗性输入不挂起）
 
 - **审查发现一个真风险**：hex 跳跃模式的回溯在对抗数据上指数爆炸——
@@ -1111,6 +1123,7 @@
   `tests/pe.rs` COFF 夹具断言更新（total 2→3：隙里 E8 形字节产 Cfg 候选——
   正是补隙语义，精确区间原样）。
 - 变异门 31 条全抓住（本片未新增判决逻辑，登记表不变）。
+
 ### Added（仓库边界文档 + 文档卫生门）
 
 - 新 `docs/SCOPE.md`：**主库存什么、不存什么**的一次定案 —— 收进来的四条判据（R1 与具体项目无关、
@@ -1454,6 +1467,7 @@
   三值 vs f32 argmax 0.987118、幅值 4.78→1.25 ⇒ 事后三值化不可用，必须 QAT+STE。
 - **未做**：反向内核、训练循环、清单约束 argmax。交付模型仍缺，等这三件。
 - 夹具不进 git：`D:\KF\trit-data\parts-parity`（22 MB）。
+
 ### Added（无损回退底座 + 依赖脱离体检）
 
 - `scripts/snapshot.py`：不依赖 git 的字节级快照（内容寻址对象库）——`save` / `verify` / `restore` / `list`。

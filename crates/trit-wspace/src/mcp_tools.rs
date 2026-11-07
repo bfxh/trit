@@ -146,6 +146,8 @@ pub fn tools() -> Vec<Value> {
                 "base": artifact(),
                 "tasks": {"type": "array", "items": {"type": "string"}},
                 "aligned": {"type": "boolean"},
+                "dare_rate": {"type": "number", "description": "合并后对差分做 DARE 稀疏化的丢弃率，[0, 1)"},
+                "dare_seed": {"type": "integer", "description": "DARE 散列种子，默认 0"},
             }),
             &["base", "tasks"],
         ),
