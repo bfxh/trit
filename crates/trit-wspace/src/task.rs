@@ -618,6 +618,43 @@ pub fn tune_task_weights_with(
 }
 
 /// 逐位 Hamming 失配数（所有样本、所有输出位）。
+/// 用验证集的**分类错误数**（输出与期望各自取 argmax）选任务权重。
+///
+/// 期望向量按 argmax 解释（通常是 one-hot）；一维输出会退化成“所有样本 argmax=0”，
+/// 这时应改用 [`tune_task_weights`] 或 [`tune_task_weights_hamming`]。
+pub fn tune_task_weights_argmax(
+    base: &Net,
+    tasks: &[TaskVector],
+    oracle: &Oracle,
+    rounds: usize,
+) -> Result<WeightTuning> {
+    tune_task_weights_with(base, tasks, rounds, |net| argmax_loss(oracle, net))
+}
+
+/// 分类错误数：输出与期望分别取 argmax 后比较。
+fn argmax_loss(oracle: &Oracle, net: &Net) -> Result<usize> {
+    let actual = oracle.outputs_of(net)?;
+    let expected = oracle.outputs();
+    Ok(actual
+        .iter()
+        .zip(expected)
+        .map(|(got, want)| usize::from(argmax(got) != argmax(want)))
+        .sum())
+}
+
+fn argmax(values: &[Trit]) -> usize {
+    let mut best = 0usize;
+    let mut best_value = i8::MIN;
+    for (index, trit) in values.iter().enumerate() {
+        let value = trit.to_i8();
+        if value > best_value {
+            best_value = value;
+            best = index;
+        }
+    }
+    best
+}
+
 fn hamming_loss(oracle: &Oracle, net: &Net) -> Result<usize> {
     let actual = oracle.outputs_of(net)?;
     let expected = oracle.outputs();
