@@ -1,0 +1,79 @@
+{
+  "spec_version": "0.1.0",
+  "profile": "belnap4",
+  "encoding": "bitplane",
+  "vectors": [
+    {
+      "id": "belnap4.bitplane.encode.n",
+      "op": "encode_bitplane",
+      "input": "N",
+      "expected": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "belnap4.bitplane.encode.t",
+      "op": "encode_bitplane",
+      "input": "T",
+      "expected": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "belnap4.bitplane.encode.f",
+      "op": "encode_bitplane",
+      "input": "F",
+      "expected": [
+        0,
+        1
+      ]
+    },
+    {
+      "id": "belnap4.bitplane.encode.b",
+      "op": "encode_bitplane",
+      "input": "B",
+      "expected": [
+        1,
+        1
+      ]
+    },
+    {
+      "id": "belnap4.bitplane.decode.00",
+      "op": "decode_bitplane",
+      "input": [
+        0,
+        0
+      ],
+      "expected": "N"
+    },
+    {
+      "id": "belnap4.bitplane.decode.10",
+      "op": "decode_bitplane",
+      "input": [
+        1,
+        0
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.bitplane.decode.01",
+      "op": "decode_bitplane",
+      "input": [
+        0,
+        1
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.bitplane.decode.11",
+      "op": "decode_bitplane",
+      "input": [
+        1,
+        1
+      ],
+      "expected": "B"
+    }
+  ]
+}

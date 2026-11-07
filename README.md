@@ -139,6 +139,8 @@ GitHub Releases（`v0.3.1` 起）提供：
 
 新增语言前先读 [other-languages/README.md](other-languages/README.md)：只有存在明确消费方或生态桥接时才加，避免把维护面摊大。
 
+跨语言互操作规范与 golden vectors 见 [interop/](interop/README.md)。
+
 ## 三态与三值拓扑
 
 `TriState` 表示 0 / 1 / Z（高阻），与逻辑未知 `X` 区分：`Z` 不驱动总线，可被其他驱动覆盖。
