@@ -151,6 +151,8 @@ pub fn tools() -> Vec<Value> {
                 "dare_seed": {"type": "integer", "description": "DARE 散列种子，默认 0"},
                 "weights": {"type": "array", "items": {"type": "number"}, "description": "与 tasks 等长的任务权重（有限非负，0=忽略该任务）；默认等权"},
                 "oracle": {"type": "object", "description": "可选验证集（与 wsp_verify 相同格式）；给了就返回合并前后的 loss/exact/accuracy"},
+                "tune_weights": {"type": "boolean", "description": "用 oracle 坐标下降选权重（候选 0/0.5/1/2）；需要 oracle，与 weights 互斥"},
+                "tune_rounds": {"type": "integer", "description": "调权轮数，默认 1；0 表示只算等权基线"},
             }),
             &["base", "tasks"],
         ),

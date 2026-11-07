@@ -6,13 +6,15 @@ use crate::edit::Patch;
 use crate::to_wsp;
 use crate::wire;
 
-use super::{emit, err, load_net, load_oracle, no_double_stdin, opt_u64, parse, write_out};
+use super::{
+    emit, err, load_net, load_oracle, no_double_stdin, opt_u64, opt_usize, parse, write_out,
+};
 
 pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["aligned"])?;
+    let parsed = parse(args, &["aligned", "tune-weights"])?;
     if parsed.positional.len() < 2 {
         return Err(
-            "用法：trit-wspace task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--oracle <json|->] [--out <path>]".into(),
+            "用法：trit-wspace task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--oracle <json|->] [--tune-weights [--tune-rounds N]] [--out <path>]".into(),
         );
     }
     let oracle_path = parsed.values.get("oracle");
@@ -46,11 +48,31 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
         .transpose()
         .map_err(|_| "--dare-per-task 需要数字".to_string())?;
     let dare_seed = opt_u64(&parsed, "dare-seed", 0)?;
-    let weights = parsed
+    let mut weights = parsed
         .values
         .get("weight")
         .map(|raw| parse_weights(raw))
         .transpose()?;
+    let mut tuning = None;
+    if parsed.switches.contains("tune-weights") {
+        let Some(path) = oracle_path else {
+            return Err("--tune-weights 需要 --oracle".into());
+        };
+        if weights.is_some() {
+            return Err("--tune-weights 与 --weight 只能给一个".into());
+        }
+        let tuning_oracle = load_oracle(path)?;
+        let rounds = opt_usize(&parsed, "tune-rounds", 1)?;
+        let report =
+            crate::task::tune_task_weights(&base, &tasks, &tuning_oracle, rounds).map_err(err)?;
+        weights = Some(report.weights().to_vec());
+        tuning = Some(json!({
+            "rounds": rounds,
+            "evaluations": report.evaluations(),
+            "initial_loss": report.initial_loss(),
+            "tuned_loss": report.loss(),
+        }));
+    }
     let merged = match (dare_rate, dare_per_task, weights.as_deref()) {
         (Some(_), Some(_), _) => return Err("--dare-rate 与 --dare-per-task 只能给一个".into()),
         (Some(rate), None, Some(weights)) => {
@@ -86,6 +108,7 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
     emit(&json!({
         "tasks": tasks.len(),
         "weights": weights,
+        "tuning": tuning,
         "verify": verify,
         "dare_rate": dare_rate,
         "dare_per_task": dare_per_task,
