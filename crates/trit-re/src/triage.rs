@@ -402,7 +402,6 @@ fn fill_pe(bytes: &[u8], info: &pe::PeInfo, triage: &mut Triage) {
             bytes.get(start..start.checked_add(section.raw_size as usize)?)
         })
         .collect();
-<<<<<<< HEAD
     let exec: Vec<&[u8]> = info
         .sections
         .iter()
@@ -421,36 +420,6 @@ fn fill_pe(bytes: &[u8], info: &pe::PeInfo, triage: &mut Triage) {
         &nonexec,
         &exec,
         false,
-=======
-    let hidden = imports::hidden_api_strings(
-        &nonexec,
-        &imported_apis,
-        &imports::windows_sensitive_vocab(),
-    );
-    let resolver =
-        imports::resolver_imported(flattened.as_deref().unwrap_or(&[]), &["GetProcAddress"]);
-    facts.set(
-        "dynres.resolver_imported",
-        Ternary::from(resolver),
-        "GetProcAddress 在导入表（动态解析链前半段）",
-    );
-    let hidden_note = if hidden.is_empty() {
-        "（无）".to_string()
-    } else {
-        hidden.join(", ")
-    };
-    facts.set(
-        "dynres.hidden_api_strings",
-        match hidden.len() {
-            0 => Ternary::False,
-            1..=2 => Ternary::Unknown,
-            _ => Ternary::True,
-        },
-        format!(
-            "非可执行节里发现 {} 个不在导入表的敏感 API 名：{hidden_note}（阈值 ≥3 = True）",
-            hidden.len()
-        ),
->>>>>>> origin/main
     );
 }
 
@@ -542,7 +511,6 @@ fn fill_elf(bytes: &[u8], info: &elf::ElfInfo, triage: &mut Triage) {
             bytes.get(start..start.checked_add(section.size as usize)?)
         })
         .collect();
-<<<<<<< HEAD
     let exec: Vec<&[u8]> = info
         .sections
         .iter()
@@ -561,32 +529,6 @@ fn fill_elf(bytes: &[u8], info: &elf::ElfInfo, triage: &mut Triage) {
         &nonexec,
         &exec,
         true,
-=======
-    let hidden =
-        imports::hidden_api_strings(&nonexec, &imported_apis, imports::LINUX_SENSITIVE_APIS);
-    let resolver = imports::resolver_imported(info.imports.as_deref().unwrap_or(&[]), &["dlsym"]);
-    facts.set(
-        "dynres.resolver_imported",
-        Ternary::from(resolver),
-        "dlsym 在动态符号表（动态解析链前半段）",
-    );
-    let hidden_note = if hidden.is_empty() {
-        "（无）".to_string()
-    } else {
-        hidden.join(", ")
-    };
-    facts.set(
-        "dynres.hidden_api_strings",
-        match hidden.len() {
-            0 => Ternary::False,
-            1..=2 => Ternary::Unknown,
-            _ => Ternary::True,
-        },
-        format!(
-            "非可执行节里发现 {} 个不在动态符号表的敏感 API 名：{hidden_note}（阈值 ≥3 = True）",
-            hidden.len()
-        ),
->>>>>>> origin/main
     );
 }
 
