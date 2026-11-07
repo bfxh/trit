@@ -192,6 +192,9 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 评估的是加权投票合并（不含 DARE）；`tune_weights` 与显式 `weights` 互斥且必需 oracle；
 `tune_rounds=0` 只算等权基线。
 
+真实数据读数见 `examples/cifar_tasks.rs`（CIFAR-10 8×8 灰度 → 三值 MLP → WSP1 → 合并/调权）；
+它需要外部数据夹具，CI 只编译不运行。
+
 `wsp_run_script` 执行组合脚本：`sequence` 默认原子（任一步失败/回滚则整段恢复原样，
 `atomic=false` 保留已成功步骤），`when` 按当前行为（完整逐样本输出）选择 `then` / `otherwise`，
 报告是树形的 `steps` / `matched` / `chosen`。CLI 对应 `script`。
