@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-re：ELF entrypoint 接线——语义实证判定后补齐）
+
+- **语义实证**：官方 YARA 的 ELF `entrypoint` = **文件偏移**——yara-python
+  判别协议（3 个 ET_EXEC 样本，e_entry vaddr ≠ 文件偏移）实测 vaddr 全不
+  匹配、offset 全匹配，与 PE 同语义。不猜，跑出来的。
+- **接线**：`ElfInfo::entry_file_offset()`（`e_entry` 过 PT_LOAD 映射，
+  BSS/入口为 0/无程序头如实 `None`）+ CLI 的 PE-or-ELF 回退——ELF 样本上
+  `$e at entrypoint` 从恒弃权变可评估。
+- 测试 166 → 167（PT_LOAD 映射 + 端到端 at-entrypoint 三态）；门禁 fmt /
+  clippy / test 全过。
+
 ### Added（trit-re：PE32 联合判定测试——方向库最后一条解锁条件收口）
 
 - `tests/pe.rs::coff_and_cfg_jointly_attribute_pe32`：**三路来源同时贡献
