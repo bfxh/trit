@@ -12,6 +12,8 @@
 use std::hint::black_box;
 use std::time::Instant;
 
+mod avx512;
+mod belnap4;
 mod gf3;
 mod pack5;
 
@@ -782,4 +784,6 @@ fn main() {
 
     pack5::run();
     gf3::run();
+    belnap4::run();
+    avx512::run();
 }
