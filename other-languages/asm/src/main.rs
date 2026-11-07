@@ -12,6 +12,9 @@
 use std::hint::black_box;
 use std::time::Instant;
 
+mod gf3;
+mod pack5;
+
 #[cfg(not(target_arch = "x86_64"))]
 compile_error!("trit-asm-verify targets x86-64");
 
@@ -552,7 +555,7 @@ fn run_once(f: &mut impl FnMut()) -> (u64, u128) {
     (c1.wrapping_sub(c0), (t1 - t0).as_nanos())
 }
 
-fn measure3(
+pub(crate) fn measure3(
     f1: &mut impl FnMut(),
     f2: &mut impl FnMut(),
     f3: &mut impl FnMut(),
@@ -593,6 +596,34 @@ fn measure3(
     out
 }
 
+pub(crate) fn measure2(
+    f1: &mut impl FnMut(),
+    f2: &mut impl FnMut(),
+    iters: usize,
+) -> [(u64, u128); 2] {
+    for _ in 0..3 {
+        f1();
+        f2();
+    }
+    let mut cycles = [Vec::with_capacity(iters), Vec::with_capacity(iters)];
+    let mut nanos = [Vec::with_capacity(iters), Vec::with_capacity(iters)];
+    for _ in 0..iters {
+        let a = run_once(f1);
+        let b = run_once(f2);
+        cycles[0].push(a.0);
+        nanos[0].push(a.1);
+        cycles[1].push(b.0);
+        nanos[1].push(b.1);
+    }
+    let mut out = [(0u64, 0u128); 2];
+    for i in 0..2 {
+        cycles[i].sort_unstable();
+        nanos[i].sort_unstable();
+        out[i] = (cycles[i][cycles[i].len() / 2], nanos[i][nanos[i].len() / 2]);
+    }
+    out
+}
+
 fn report(name: &str, words: usize, bytes: u128, scalar_cycles: u64, cycles: u64, ns: u128) {
     let cycles_per_word = cycles as f64 / words as f64;
     let ns_per_word = ns as f64 / words as f64;
@@ -601,6 +632,22 @@ fn report(name: &str, words: usize, bytes: u128, scalar_cycles: u64, cycles: u64
     println!(
         "{name:<14} {cycles_per_word:>10.3} {ns_per_word:>10.3} {gib_per_s:>8.2} {speedup:>7.2}x"
     );
+}
+
+pub(crate) fn report_unit(
+    name: &str,
+    units: usize,
+    bytes: u128,
+    base_cycles: u64,
+    cycles: u64,
+    ns: u128,
+    unit: &str,
+) {
+    let c = cycles as f64 / units as f64;
+    let n = ns as f64 / units as f64;
+    let gib = bytes as f64 / ns as f64 / 1.073_741_824;
+    let speedup = base_cycles as f64 / cycles as f64;
+    println!("{name:<14} {c:>10.3} {n:>10.3} {gib:>8.2} {speedup:>7.2}x  [{unit}]");
 }
 
 fn bench_size(words: usize, iters: usize) {
@@ -732,4 +779,7 @@ fn main() {
     for &(words, iters) in &[(1usize << 14, 100usize), (1usize << 20, 50usize)] {
         bench_size(words, iters);
     }
+
+    pack5::run();
+    gf3::run();
 }
