@@ -48,14 +48,16 @@ jobs:
         run: cd other-languages/asm && cargo run --release -- --conformance
 
   arm64-neon:
-    name: arm64 neon (macOS-14)
-    runs-on: macos-14
+    name: arm64 neon (ubuntu-24.04-arm)
+    runs-on: ubuntu-24.04-arm
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - name: Run NEON correctness + benchmark
-        run: cd other-languages/asm-arm64 && cargo run --release
+        run: |
+          uname -m
+          cd other-languages/asm-arm64 && cargo run --release
 
   avx512:
     name: avx512 probe
