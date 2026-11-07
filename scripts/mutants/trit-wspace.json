@@ -1822,5 +1822,29 @@
  "new": "        let metric = \"exact\";",
  "pkg": "trit-wspace",
  "filter": "mcp_task_merge_tune_metric"
+},
+{
+ "name": "wspace-tune: argmax 按输出向量比较",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        .map(|(got, want)| usize::from(argmax(got) != argmax(want)))",
+ "new": "        .map(|(got, want)| usize::from(got != want))",
+ "pkg": "trit-wspace",
+ "filter": "tune_metric_argmax_counts_classification_errors"
+},
+{
+ "name": "wspace-tune: argmax 取最小",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        if value > best_value {",
+ "new": "        if value < best_value {",
+ "pkg": "trit-wspace",
+ "filter": "tune_metric_argmax_counts_classification_errors"
+},
+{
+ "name": "wspace-tune: argmax 不计错误",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        .map(|(got, want)| usize::from(argmax(got) != argmax(want)))",
+ "new": "        .map(|(got, want)| usize::from(argmax(got) == argmax(want)))",
+ "pkg": "trit-wspace",
+ "filter": "tune_metric_argmax_counts_classification_errors"
 }
 ]

@@ -72,9 +72,12 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
             "hamming" => {
                 crate::task::tune_task_weights_hamming(&base, &tasks, &tuning_oracle, rounds)
             }
+            "argmax" => {
+                crate::task::tune_task_weights_argmax(&base, &tasks, &tuning_oracle, rounds)
+            }
             other => {
                 return Err(format!(
-                    "--tune-metric 只支持 exact / hamming，得到 `{other}`"
+                    "--tune-metric 只支持 exact / hamming / argmax，得到 `{other}`"
                 ));
             }
         }

@@ -17,7 +17,7 @@ use serde_json::json;
 use trit_learn::{Activation, Adam, Ste, TernaryDense, cross_entropy};
 use trit_wspace::{
     Layer, Net, Oracle, TaskVector, Trit, merge_tasks_weighted, to_wsp, tune_task_weights,
-    tune_task_weights_hamming,
+    tune_task_weights_argmax, tune_task_weights_hamming,
 };
 
 const IN: usize = 64;
@@ -365,6 +365,10 @@ fn main() {
         tune_task_weights_hamming(&base_net, &tasks, &oracle, 2).expect("tune hamming");
     let tuned_hamming =
         merge_tasks_weighted(&base_net, &tasks, tuning_hamming.weights()).expect("tuned hamming");
+    let tuning_argmax =
+        tune_task_weights_argmax(&base_net, &tasks, &oracle, 2).expect("tune argmax");
+    let tuned_argmax =
+        merge_tasks_weighted(&base_net, &tasks, tuning_argmax.weights()).expect("tuned argmax");
 
     let report_value = json!({
         "mode": if binary { "binary-cat-vs-dog" } else { "10-class" },
@@ -386,6 +390,7 @@ fn main() {
         "equal_merge": report(&equal, &test_inputs, &test_labels, &oracle, binary),
         "tuned_exact": report(&tuned_exact, &test_inputs, &test_labels, &oracle, binary),
         "tuned_hamming": report(&tuned_hamming, &test_inputs, &test_labels, &oracle, binary),
+        "tuned_argmax": report(&tuned_argmax, &test_inputs, &test_labels, &oracle, binary),
         "tuning": {
             "exact": {
                 "weights": tuning_exact.weights(),
@@ -399,8 +404,14 @@ fn main() {
                 "tuned_loss": tuning_hamming.loss(),
                 "evaluations": tuning_hamming.evaluations(),
             },
+            "argmax": {
+                "weights": tuning_argmax.weights(),
+                "initial_loss": tuning_argmax.initial_loss(),
+                "tuned_loss": tuning_argmax.loss(),
+                "evaluations": tuning_argmax.evaluations(),
+            },
         },
-        "artifact": to_wsp(&tuned_hamming),
+        "artifact": to_wsp(&tuned_argmax),
     });
     println!(
         "{}",
