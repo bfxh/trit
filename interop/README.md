@@ -33,14 +33,13 @@
 
 - **Rust runner**：738/738（`interop/runner`，独立实现 spec）。
 - **Go**：`k3` 21/21、`kgate` 9/9、`pack5` 657/657（错误向量映射到 `ErrTrit` / `ErrPackRange` / `ErrShortData`）；未实现 Belnap4/bitplane。
-- **asm**：`pack5` 644 pass / 0 fail / 15 skipped（错误向量跳过；asm 快路径假设合法输入）。
-- **asm K3/Belnap4**：语义向量接入待补；当前由 runner/Go 覆盖。
+- **asm**：K3 21/21、Belnap4 36/36、pack5 644 pass / 0 fail / 15 skipped（错误向量跳过；asm 快路径假设合法输入）。
 
 ## 各实现怎么接
 
 - **Rust**：`interop/runner` 独立实现 spec；`cd interop/runner && cargo run --release`（默认读 `../vectors`）。
 - **Go**：`other-languages/go/conformance_test.go` 读取同一组 JSON，覆盖 k3/kgate/pack5；不复制期望值。
-- **汇编验证**：`other-languages/asm` 用 `--conformance` 覆盖 pack5；K3/Belnap4 语义向量待补。
+- **汇编验证**：`other-languages/asm` 用 `--conformance` 覆盖 K3/Belnap4/pack5。
 - **未来语言**：先实现 spec 的语义与 pack5，再跑 vectors；不要先写优化。
 
 ## 版本与新增 vector
@@ -60,8 +59,7 @@ Lean 4 落地前，规范与 Rust 不一致时以规范为准，修 Rust 并补�
 
 ## 下一步
 
-- asm 的 K3/Belnap4 语义 conformance（当前只接了 pack5）。
-- 可选：非默认 `conformance` CI job（runner + Go test + asm pack5）。
+- 非默认 `conformance` workflow 已加（runner + Go + asm）；后续按需纳入分支保护。
 - 跨进程容器 v0.2（magic/version/profile/trit_count/payload_len/CRC32C）；在 vectors 补齐前不声称支持。
 
 ## 许可

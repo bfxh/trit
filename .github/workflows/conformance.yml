@@ -1,0 +1,46 @@
+name: conformance
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "interop/**"
+      - "other-languages/go/**"
+      - "other-languages/asm/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conformance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  runner:
+    name: interop runner (738 vectors)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Run conformance runner
+        run: cd interop/runner && cargo run --release
+
+  go:
+    name: go conformance
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Run Go tests (includes golden vectors)
+        run: cd other-languages/go && go test ./...
+
+  asm:
+    name: asm conformance (K3/Belnap4/pack5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Run asm conformance
+        run: cd other-languages/asm && cargo run --release -- --conformance

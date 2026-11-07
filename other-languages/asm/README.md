@@ -183,9 +183,9 @@
 cd other-languages/asm
 cargo run --release
 
-# 互操作 conformance：pack5（644 pass / 0 fail / 15 skipped）
+# 互操作 conformance：K3/Belnap4/pack5（701 pass / 0 fail / 15 skipped）
 cargo run --release -- --conformance
-# 当前只覆盖 pack5；K3/Belnap4 语义向量待补（由 runner/Go 覆盖）
+# 错误向量跳过；asm 快路径假设合法输入，错误语义由 runner/Go 覆盖
 
 # ARM64：只做交叉编译检查（无硬件运行）
 cd other-languages/asm-arm64
