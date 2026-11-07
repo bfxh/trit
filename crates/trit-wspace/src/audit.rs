@@ -424,8 +424,10 @@ impl ReplayState {
             let sig = Behavior::of(&self.current, oracle)?.signature();
             if Some(sig) != entry.behavior_before {
                 return Err(Error::Audit(format!(
-                    "第 {} 条 behavior_before 不符（记录 {:?}，重算 {:016x}）",
-                    entry.seq, entry.behavior_before, sig
+                    "第 {} 条 behavior_before 不符（记录 {}，重算 {:016x}）",
+                    entry.seq,
+                    hex_opt(entry.behavior_before),
+                    sig
                 )));
             }
         }
@@ -458,8 +460,10 @@ impl ReplayState {
             let sig = Behavior::of(&self.current, oracle)?.signature();
             if Some(sig) != entry.behavior_after {
                 return Err(Error::Audit(format!(
-                    "第 {} 条 behavior_after 不符（记录 {:?}，重算 {:016x}）",
-                    entry.seq, entry.behavior_after, sig
+                    "第 {} 条 behavior_after 不符（记录 {}，重算 {:016x}）",
+                    entry.seq,
+                    hex_opt(entry.behavior_after),
+                    sig
                 )));
             }
             self.behavior_checked += 1;
@@ -541,6 +545,10 @@ pub(crate) fn fnv(bytes: &[u8]) -> u64 {
 
 pub(crate) fn hex(value: u64) -> String {
     format!("{value:016x}")
+}
+
+fn hex_opt(value: Option<u64>) -> String {
+    value.map_or_else(|| "无".to_string(), hex)
 }
 
 fn hex_field(value: &Value, name: &str) -> Result<u64> {

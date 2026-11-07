@@ -77,7 +77,7 @@
   "old": "let tools = tools();",
   "new": "let tools: Vec<Value> = Vec::new();",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_sixteen_tools"
+  "filter": "lists_exactly_nineteen_tools"
  },
  {
   "name": "wspace-mcp: 错误结果不再标 isError",
@@ -982,5 +982,365 @@
   "new": "            \"wsp_task_mergeX\" =>",
   "pkg": "trit-wspace",
   "filter": "task_merge_via_mcp"
+ },
+ {
+  "name": "wspace-task: between_aligned 不对齐",
+  "file": "crates/trit-wspace/src/task.rs",
+  "old": "        let aligned = crate::merge::align(base, tuned)?;",
+  "new": "        let aligned = tuned.clone();",
+  "pkg": "trit-wspace",
+  "filter": "aligned_vector_ignores_hidden_permutation"
+ },
+ {
+  "name": "wspace-cli: task-merge 忽略 --aligned",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "    let aligned = parsed.switches.contains(\"aligned\");",
+  "new": "    let aligned = false;",
+  "pkg": "trit-wspace",
+  "filter": "task_merge_aligned_ignores_hidden_permutation"
+ },
+ {
+  "name": "wspace-mcp: wsp_task_merge 忽略 aligned",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                let aligned = flag(args, \"aligned\");",
+  "new": "                let aligned = false;",
+  "pkg": "trit-wspace",
+  "filter": "task_merge_via_mcp"
+ },
+ {
+  "name": "wspace-rebase: 冲突不再整体放弃",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "    let rejected = !conflicts.is_empty() && !skip_conflicts;",
+  "new": "    let rejected = false;",
+  "pkg": "trit-wspace",
+  "filter": "conflict_reports_both_sides_and_keeps_target"
+ },
+ {
+  "name": "wspace-rebase: 忽略 skip_conflicts（有冲突就拒绝）",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "    let rejected = !conflicts.is_empty() && !skip_conflicts;",
+  "new": "    let rejected = !conflicts.is_empty();",
+  "pkg": "trit-wspace",
+  "filter": "skip_conflicts_applies_only_clean_edits"
+ },
+ {
+  "name": "wspace-rebase: 已应用项不再跳过",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "            Verdict::AlreadyApplied => already_applied += 1,",
+  "new": "            Verdict::AlreadyApplied => {}",
+  "pkg": "trit-wspace",
+  "filter": "already_applied_edit_is_skipped"
+ },
+ {
+  "name": "wspace-rebase: 用 base 当 target 比较（冲突全漏）",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "            let now = trit_at(target, layer, row, col)?;",
+  "new": "            let now = trit_at(base, layer, row, col)?;",
+  "pkg": "trit-wspace",
+  "filter": "conflict_reports_both_sides_and_keeps_target"
+ },
+ {
+  "name": "wspace-rebase: 架构不一致不报错",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "    if base.arch() != target.arch() {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "arch_mismatch_is_rejected"
+ },
+ {
+  "name": "wspace-rebase: 行交换已应用检测失效",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "            } else if row_eq(before, a, now, b) && row_eq(before, b, now, a) {",
+  "new": "            } else if false {",
+  "pkg": "trit-wspace",
+  "filter": "swap_rows_already_applied_is_skipped"
+ },
+ {
+  "name": "wspace-rebase: 行取反已应用检测失效",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "            } else if row_eq_negated(before, row, now, row) {",
+  "new": "            } else if false {",
+  "pkg": "trit-wspace",
+  "filter": "negate_row_already_applied_is_skipped"
+ },
+ {
+  "name": "wspace-rebase: scale 冲突漏判",
+  "file": "crates/trit-wspace/src/rebase.rs",
+  "old": "            if before.to_bits() == now.to_bits() {",
+  "new": "            if true {",
+  "pkg": "trit-wspace",
+  "filter": "scale_edit_detects_conflict_and_already_applied"
+ },
+ {
+  "name": "wspace-cli: rebase 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        \"rebase\" => cmd_rebase(&args[1..]),",
+  "new": "        \"rebaseX\" => cmd_rebase(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_rebase_reports_conflict_and_leaves_target"
+ },
+ {
+  "name": "wspace-cli: rebase 忽略 --skip-conflicts",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "    let skip_conflicts = parsed.switches.contains(\"skip-conflicts\");",
+  "new": "    let skip_conflicts = false;",
+  "pkg": "trit-wspace",
+  "filter": "cli_rebase_skip_conflicts_writes_partial_and_verifies"
+ },
+ {
+  "name": "wspace-cli: rebase 放弃时仍应用干净子集",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "    if report.rejected {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "cli_rebase_reports_conflict_and_leaves_target"
+ },
+ {
+  "name": "wspace-mcp: wsp_rebase 被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_rebase\" => {",
+  "new": "            \"wsp_rebaseX\" => {",
+  "pkg": "trit-wspace",
+  "filter": "mcp_rebase_returns_clean_artifact_and_conflicts"
+ },
+ {
+  "name": "wspace-mcp: rebase 放弃时仍应用干净子集",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                if report.rejected {",
+  "new": "                if false {",
+  "pkg": "trit-wspace",
+  "filter": "mcp_rebase_returns_clean_artifact_and_conflicts"
+ },
+ {
+  "name": "wspace-mcp: wsp_rebase 工具声明被改坏",
+  "file": "crates/trit-wspace/src/mcp_tools.rs",
+  "old": "            \"wsp_rebase\",",
+  "new": "            \"wsp_rebaseX\",",
+  "pkg": "trit-wspace",
+  "filter": "lists_exactly_nineteen_tools"
+ },
+ {
+  "name": "wspace-transplant: 架构不一致不报错",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "    if source.arch() != dest.arch() {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_rejects_bad_rows_and_arch"
+ },
+ {
+  "name": "wspace-transplant: 重复行不判错",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "        if !seen.insert(row) {",
+  "new": "        if !seen.insert(row) && false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_rejects_bad_rows_and_arch"
+ },
+ {
+  "name": "wspace-transplant: 越界行不判错",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "        if row >= src.rows() {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_rejects_bad_rows_and_arch"
+ },
+ {
+  "name": "wspace-transplant: 不搬出边列",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "            for dest_row in 0..next_src.rows() {",
+  "new": "            for dest_row in 0..0 {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_copies_row_bias_and_outgoing_column"
+ },
+ {
+  "name": "wspace-transplant: 不搬行内权重",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "            if dst.trit(row, col) != Some(to) {",
+  "new": "            if false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_copies_row_bias_and_outgoing_column"
+ },
+ {
+  "name": "wspace-transplant: 不搬偏置",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "        if dst.bias_trit(row) != Some(bias) {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_copies_row_bias_and_outgoing_column"
+ },
+ {
+  "name": "wspace-transplant: 不搬 scale",
+  "file": "crates/trit-wspace/src/transplant.rs",
+  "old": "        if dst.scale(row).map(f32::to_bits) != Some(scale.to_bits()) {",
+  "new": "        if false {",
+  "pkg": "trit-wspace",
+  "filter": "transplant_copies_scale"
+ },
+ {
+  "name": "wspace-cli: transplant 子命令被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        \"transplant\" => cmd_transplant(&args[1..]),",
+  "new": "        \"transplantX\" => cmd_transplant(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_transplant_writes_artifact_and_verifies"
+ },
+ {
+  "name": "wspace-mcp: wsp_transplant 被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_transplant\" => {",
+  "new": "            \"wsp_transplantX\" => {",
+  "pkg": "trit-wspace",
+  "filter": "mcp_transplant_returns_patch_and_artifact"
+ },
+ {
+  "name": "wspace-mcp: wsp_transplant 工具声明被改坏",
+  "file": "crates/trit-wspace/src/mcp_tools.rs",
+  "old": "            \"wsp_transplant\",",
+  "new": "            \"wsp_transplantX\",",
+  "pkg": "trit-wspace",
+  "filter": "lists_exactly_nineteen_tools"
+ },
+ {
+  "name": "wspace-dare: 架构不同不判错",
+  "file": "crates/trit-wspace/src/dare.rs",
+  "old": "    if base.arch() != tuned.arch() {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "arch_mismatch_is_error"
+ },
+ {
+  "name": "wspace-dare: 丢弃率不校验",
+  "file": "crates/trit-wspace/src/dare.rs",
+  "old": "    if !rate.is_finite() || !(0.0..1.0).contains(&rate) {",
+  "new": "    if false {",
+  "pkg": "trit-wspace",
+  "filter": "invalid_rate_is_error"
+ },
+ {
+  "name": "wspace-dare: 保留判据取反",
+  "file": "crates/trit-wspace/src/dare.rs",
+  "old": "    unit >= f64::from(rate)",
+  "new": "    unit < f64::from(rate)",
+  "pkg": "trit-wspace",
+  "filter": "drop_selection_is_pinned_for_seed_seven"
+ },
+ {
+  "name": "wspace-dare: 全丢的行也重标度",
+  "file": "crates/trit-wspace/src/dare.rs",
+  "old": "            if kept_any && rate > 0.0 {",
+  "new": "            if !kept_any && rate > 0.0 {",
+  "pkg": "trit-wspace",
+  "filter": "rescale_only_rows_with_kept_deltas"
+ },
+ {
+  "name": "wspace-dare: 重标度因子写反",
+  "file": "crates/trit-wspace/src/dare.rs",
+  "old": "    let factor = 1.0 / (1.0 - rate);",
+  "new": "    let factor = 1.0 / (1.0 + rate);",
+  "pkg": "trit-wspace",
+  "filter": "rescale_only_rows_with_kept_deltas"
+ },
+ {
+  "name": "wspace-dare: 偏置坐标标记撞车",
+  "file": "crates/trit-wspace/src/dare.rs",
+  "old": "                if keep(seed, layer, row, usize::MAX, rate) {",
+  "new": "                if keep(seed, layer, row, 0, rate) {",
+  "pkg": "trit-wspace",
+  "filter": "drop_selection_is_pinned_for_seed_seven"
+ },
+ {
+  "name": "wspace-dare: 散列不吃种子",
+  "file": "crates/trit-wspace/src/dare.rs",
+  "old": "    let mixed = seed",
+  "new": "    let mixed = 0",
+  "pkg": "trit-wspace",
+  "filter": "different_seed_changes_selection"
+ },
+ {
+  "name": "wspace-dare: 散列不吃行号",
+  "file": "crates/trit-wspace/src/dare.rs",
+  "old": "        ^ (row as u64).wrapping_mul(0xD1B5_4A32_D192_ED03)",
+  "new": "        ^ (0 as u64).wrapping_mul(0xD1B5_4A32_D192_ED03)",
+  "pkg": "trit-wspace",
+  "filter": "drop_selection_is_pinned_for_seed_seven"
+ },
+ {
+  "name": "wspace-dare: 散列不吃列号",
+  "file": "crates/trit-wspace/src/dare.rs",
+  "old": "        ^ (col as u64).wrapping_mul(0x94D0_49BB_1331_11EB);",
+  "new": "        ^ (0 as u64).wrapping_mul(0x94D0_49BB_1331_11EB);",
+  "pkg": "trit-wspace",
+  "filter": "drop_selection_is_pinned_for_seed_seven"
+ },
+ {
+  "name": "wspace-dare: splitmix64 少一轮混合",
+  "file": "crates/trit-wspace/src/dare.rs",
+  "old": "    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);\n    z ^ (z >> 31)",
+  "new": "    z ^ (z >> 31)",
+  "pkg": "trit-wspace",
+  "filter": "drop_selection_is_pinned_for_seed_seven"
+ },
+ {
+  "name": "wspace-dare: 读数 kept/dropped 对调",
+  "file": "crates/trit-wspace/src/dare.rs",
+  "old": "        dropped,\n        kept,",
+  "new": "        dropped: kept,\n        kept: dropped,",
+  "pkg": "trit-wspace",
+  "filter": "mcp_dare_drop_round_trip"
+ },
+ {
+  "name": "wspace-dare: CLI rate 缺省吞错",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "    let rate = req_f32(&parsed, \"rate\")?;",
+  "new": "    let rate = parsed.values.get(\"rate\").map_or(0.0, |raw| raw.parse::<f32>().unwrap_or(0.0));",
+  "pkg": "trit-wspace",
+  "filter": "cli_dare_drop_bad_rate_fails"
+ },
+ {
+  "name": "wspace-dare: CLI dare-drop 入口被改坏",
+  "file": "crates/trit-wspace/src/cli.rs",
+  "old": "        \"dare-drop\" => cmd_dare_drop(&args[1..]),",
+  "new": "        \"dare-dropX\" => cmd_dare_drop(&args[1..]),",
+  "pkg": "trit-wspace",
+  "filter": "cli_dare_drop_writes_artifact_and_verifies"
+ },
+ {
+  "name": "wspace-dare: MCP 种子被钉死",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                let seed = opt_u64(args, \"seed\", 0);",
+  "new": "                let seed = 0;",
+  "pkg": "trit-wspace",
+  "filter": "mcp_dare_drop_round_trip"
+ },
+ {
+  "name": "wspace-dare: MCP 返回原工件",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "                    \"artifact\": to_wsp(&applied.net),",
+  "new": "                    \"artifact\": to_wsp(&base),",
+  "pkg": "trit-wspace",
+  "filter": "mcp_dare_drop_round_trip"
+ },
+ {
+  "name": "wspace-dare: MCP dare 分支被改坏",
+  "file": "crates/trit-wspace/src/mcp.rs",
+  "old": "            \"wsp_dare_drop\" => {",
+  "new": "            \"wsp_dare_dropX\" => {",
+  "pkg": "trit-wspace",
+  "filter": "mcp_dare_drop_round_trip"
+ },
+ {
+  "name": "wspace-dare: dare 工具声明被改坏",
+  "file": "crates/trit-wspace/src/mcp_tools.rs",
+  "old": "            \"wsp_dare_drop\",",
+  "new": "            \"wsp_dare_dropX\",",
+  "pkg": "trit-wspace",
+  "filter": "lists_exactly_nineteen_tools"
+ },
+ {
+  "name": "wspace-dare: 工具清单返回空",
+  "file": "crates/trit-wspace/src/mcp_tools.rs",
+  "old": "pub fn tools() -> Vec<Value> {",
+  "new": "pub fn tools() -> Vec<Value> {\n    if true { return Vec::new(); }",
+  "pkg": "trit-wspace",
+  "filter": "lists_exactly_nineteen_tools"
  }
 ]

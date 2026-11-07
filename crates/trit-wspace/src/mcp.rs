@@ -1,4 +1,4 @@
-//! MCP 工具面 v0：stdio JSON-RPC 2.0，十六个工具，无网络面。
+//! MCP 工具面 v0：stdio JSON-RPC 2.0，十九个工具，无网络面。
 //!
 //! 设计目标是让默认模型**一次调用拿到结构化结论**：读工件、验证行为、应用补丁、
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
@@ -285,10 +285,16 @@ impl Mcp {
                     .and_then(Value::as_array)
                     .ok_or("需要 tasks 数组")?;
                 let mut tasks = Vec::with_capacity(raws.len());
+                let aligned = flag(args, "aligned");
                 for raw in raws {
                     let text = raw.as_str().ok_or("tasks 必须是字符串数组")?;
                     let tuned = parse_or_path(text)?;
-                    tasks.push(crate::task::TaskVector::between(&base, &tuned).map_err(err)?);
+                    let vector = if aligned {
+                        crate::task::TaskVector::between_aligned(&base, &tuned)
+                    } else {
+                        crate::task::TaskVector::between(&base, &tuned)
+                    };
+                    tasks.push(vector.map_err(err)?);
                 }
                 let merged = crate::task::merge_tasks(&base, &tasks).map_err(err)?;
                 let patch = Patch::diff(&base, &merged).map_err(err)?;
@@ -299,6 +305,128 @@ impl Mcp {
                     "cost": wire::cost_to_value(&patch.cost(&base)),
                     "artifact": to_wsp(&merged),
                 }))
+            }
+            "wsp_rebase" => {
+                let target = load(args)?;
+                let base = load_key(args, "base")?;
+                let patch =
+                    wire::patch_from_value(args.get("patch").ok_or("需要 patch")?).map_err(err)?;
+                let report =
+                    crate::rebase::rebase(&base, &target, &patch, flag(args, "skip_conflicts"))
+                        .map_err(err)?;
+                let mut value = wire::rebase_to_value(&report);
+                if report.rejected {
+                    value["summary"] = wire::net_summary(&target);
+                    value["artifact"] = json!(to_wsp(&target));
+                    return Ok(value);
+                }
+                let oracle = optional_oracle(args)?;
+                let outcome = ops::apply_patch(
+                    &target,
+                    report.clean.clone(),
+                    oracle.as_ref(),
+                    flag(args, "require_before"),
+                    flag(args, "require_after"),
+                )
+                .map_err(err)?;
+                value["applied"] = json!(outcome.applied);
+                value["rolled_back"] = json!(outcome.rolled_back);
+                value["cost"] = wire::cost_to_value(&report.clean.cost(&target));
+                value["summary"] = wire::net_summary(&outcome.net);
+                value["artifact"] = json!(to_wsp(&outcome.net));
+                if let Some(oracle) = &oracle {
+                    value["verify"] = json!({
+                        "exact": oracle.exact(&outcome.net).map_err(err)?,
+                        "loss": oracle.loss(&outcome.net).map_err(err)?,
+                    });
+                }
+                Ok(value)
+            }
+            "wsp_transplant" => {
+                let dest = load(args)?;
+                let source = load_key(args, "source")?;
+                let layer = args
+                    .get("layer")
+                    .and_then(Value::as_u64)
+                    .ok_or("需要 layer（非负整数）")?;
+                let layer = usize::try_from(layer).map_err(|_| "layer 超出 usize")?;
+                let raws = args
+                    .get("rows")
+                    .and_then(Value::as_array)
+                    .ok_or("需要 rows 数组")?;
+                let mut rows = Vec::with_capacity(raws.len());
+                for raw in raws {
+                    let row = raw.as_u64().ok_or("rows 必须是非负整数数组")?;
+                    rows.push(usize::try_from(row).map_err(|_| "row 超出 usize")?);
+                }
+                let patch = crate::transplant::transplant_units(&source, &dest, layer, &rows)
+                    .map_err(err)?;
+                let oracle = optional_oracle(args)?;
+                let outcome = ops::apply_patch(
+                    &dest,
+                    patch.clone(),
+                    oracle.as_ref(),
+                    flag(args, "require_before"),
+                    flag(args, "require_after"),
+                )
+                .map_err(err)?;
+                let mut value = json!({
+                    "layer": layer,
+                    "rows": rows,
+                    "patch": wire::patch_to_value(&patch),
+                    "cost": wire::cost_to_value(&patch.cost(&dest)),
+                    "applied": outcome.applied,
+                    "rolled_back": outcome.rolled_back,
+                    "summary": wire::net_summary(&outcome.net),
+                    "artifact": to_wsp(&outcome.net),
+                });
+                if let Some(oracle) = &oracle {
+                    value["verify"] = json!({
+                        "exact": oracle.exact(&outcome.net).map_err(err)?,
+                        "loss": oracle.loss(&outcome.net).map_err(err)?,
+                    });
+                }
+                Ok(value)
+            }
+            "wsp_dare_drop" => {
+                let base = load(args)?;
+                let tuned = load_key(args, "tuned")?;
+                let rate = args
+                    .get("rate")
+                    .and_then(Value::as_f64)
+                    .ok_or("需要 rate（[0, 1) 内的数字）")?;
+                let rate = rate as f32;
+                let seed = opt_u64(args, "seed", 0);
+                let outcome = crate::dare::dare_drop(&base, &tuned, rate, seed).map_err(err)?;
+                let oracle = optional_oracle(args)?;
+                let applied = ops::apply_patch(
+                    &base,
+                    outcome.patch.clone(),
+                    oracle.as_ref(),
+                    flag(args, "require_before"),
+                    flag(args, "require_after"),
+                )
+                .map_err(err)?;
+                let mut value = json!({
+                    "rate": rate,
+                    "seed": seed,
+                    "kept": outcome.kept,
+                    "dropped": outcome.dropped,
+                    "rescaled_rows": outcome.rescaled_rows,
+                    "patch": wire::patch_to_value(&outcome.patch),
+                    "cost": wire::cost_to_value(&outcome.patch.cost(&base)),
+                    "applied": applied.applied,
+                    "rolled_back": applied.rolled_back,
+                    "summary": wire::net_summary(&applied.net),
+                    "artifact": to_wsp(&applied.net),
+                });
+                if let Some(oracle) = &oracle {
+                    value["verify"] = json!({
+                        "exact": oracle.exact(&applied.net).map_err(err)?,
+                        "loss": oracle.loss(&applied.net).map_err(err)?,
+                    });
+                }
+                Ok(value)
             }
             "wsp_run_script" => {
                 let net = load(args)?;

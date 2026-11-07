@@ -32,6 +32,7 @@ use crate::net::Net;
 use crate::oracle::Oracle;
 use crate::probe::{ProbeReport, RowEffect, RowImpact};
 use crate::program::Report;
+use crate::rebase::RebaseReport;
 use crate::repair::Repair;
 use crate::trit::Trit;
 
@@ -49,6 +50,28 @@ pub const PATCH_VERSION: u64 = 1;
 pub fn patch_to_value(patch: &Patch) -> Value {
     let edits: Vec<Value> = patch.edits().iter().map(edit_to_value).collect();
     json!({"version": PATCH_VERSION, "edits": edits})
+}
+
+/// 三方重放报告 → JSON（不含最终工件；`clean` 是待应用/已应用的编辑）。
+#[must_use]
+pub fn rebase_to_value(report: &RebaseReport) -> Value {
+    let conflicts: Vec<Value> = report
+        .conflicts
+        .iter()
+        .map(|conflict| {
+            json!({
+                "edit": edit_to_value(&conflict.edit),
+                "base": &conflict.base,
+                "target": &conflict.target,
+            })
+        })
+        .collect();
+    json!({
+        "rejected": report.rejected,
+        "already_applied": report.already_applied,
+        "conflicts": conflicts,
+        "clean": patch_to_value(&report.clean),
+    })
 }
 
 /// 单条编辑 → JSON。
