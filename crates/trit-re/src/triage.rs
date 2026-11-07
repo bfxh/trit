@@ -220,6 +220,19 @@ pub fn analyze(bytes: &[u8]) -> Triage {
             };
             triage.facts.set(id, value, detail);
         }
+        // 有序共现（强于无序桶）：注入三件套的地址序 alloc → write → exec
+        let ordered = report.cooccurrence_ordered(
+            &["imports.inj.alloc", "imports.inj.write", "imports.inj.exec"],
+            xref_complete,
+        );
+        let ordered_detail = match ordered {
+            Ternary::True => "同一函数内按地址序出现注入三件套（申请→写→执行）".to_string(),
+            Ternary::False => "精确边界下未见地址序成立的注入三件套（无序共现也未见）".to_string(),
+            Ternary::Unknown => "无法排除有序注入共现（边界或交叉引用不完整）".to_string(),
+        };
+        triage
+            .facts
+            .set("fn.injection_ordered", ordered, ordered_detail);
         triage.notes.push(format!(
             "函数归属：{} 个函数，归属 {} 个调用点，{} 个未归属",
             report.total_functions, report.attributed_sites, report.unattributed_sites

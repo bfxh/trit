@@ -181,6 +181,12 @@ pub fn default_hypotheses() -> Vec<Hypothesis> {
             benign: None,
         },
         Hypothesis {
+            id: "fn_injection_ordered",
+            title: "注入三件套按地址序出现在同一函数内（申请→写→执行，强于无序桶）",
+            expr: var("fn.injection_ordered"),
+            benign: None,
+        },
+        Hypothesis {
             id: "needs_review",
             title: "需要人工复核",
             expr: needs_review,
