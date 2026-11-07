@@ -207,3 +207,57 @@ fn entry_file_offset_maps_through_pt_load() {
     let r = SigScan::new(std::slice::from_ref(rule)).scan(&bytes, false);
     assert_eq!(r.rules[0].value, Ternary::Unknown, "无上下文绝不 False");
 }
+
+#[test]
+fn linux_dynres_chain_fires_on_dlsym_plus_hidden_strings() {
+    // Linux 侧 dynres：dlsym 在动态符号表（解析器）+ 敏感 API 名
+    //（ptrace/memfd_create/process_vm_writev）以 NUL 串藏于非可执行节
+    // 且不在符号表 → dynamic_resolution True。未变异夹具 = False（FPR 锚）。
+    let mut bytes = support::elf_sample(false, false); // 未删节表：dynres 扫描依赖节范围
+    // .dynstr @0x301：socket → dlsym（短一字节；原 0x307 的 't' 变残留但
+    // NUL 在 0x306 先终止，符号名读作 "dlsym"）
+    bytes[0x301..0x307].copy_from_slice(b"dlsym\0");
+    // .comment 区 @0x3B0（非可执行节，大小 0x20）：藏三个敏感名
+    //（30 字节 ≤ 0x20——更长的串会跨出节尾被扫描切片截掉）
+    bytes[0x3B0..0x3B7].copy_from_slice(b"ptrace\0");
+    bytes[0x3B7..0x3BE].copy_from_slice(b"keyctl\0");
+    bytes[0x3BE..0x3CF].copy_from_slice(b"process_vm_readv\0");
+    let triage = analyze(&bytes);
+    for w in triage.facts.iter() {
+        if w.id.contains("dynres") {
+            eprintln!("DBG fact {} = {:?} note: {}", w.id, w.value, w.detail);
+        }
+    }
+    assert_eq!(
+        triage.facts.get("dynres.resolver_imported"),
+        Some(Ternary::True)
+    );
+    assert_eq!(
+        triage.facts.get("dynres.hidden_api_strings"),
+        Some(Ternary::True)
+    );
+    eprintln!("DBG sections: {:?}", triage.sections);
+    for w in triage.facts.iter() {
+        if w.id.contains("dynres") {
+            eprintln!("DBG fact {} = {:?} note: {}", w.id, w.value, w.detail);
+        }
+    }
+    let dr = triage
+        .judgments
+        .iter()
+        .find(|j| j.id == "dynamic_resolution")
+        .unwrap();
+    assert_eq!(dr.value, Ternary::True);
+    // FPR 锚：未变异夹具（socket 导入、无隐藏串）→ False
+    let clean = analyze(&support::elf_sample(false, true));
+    assert_eq!(
+        clean.facts.get("dynres.hidden_api_strings"),
+        Some(Ternary::False)
+    );
+    let dr = clean
+        .judgments
+        .iter()
+        .find(|j| j.id == "dynamic_resolution")
+        .unwrap();
+    assert_eq!(dr.value, Ternary::False);
+}
