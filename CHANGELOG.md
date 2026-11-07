@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：任务向量的 scale 差分）
+
+- `TaskVector` 现在把逐行 scale 差分（`(layer, row, target)`）与 trit/偏置编辑分开保存；
+  `between` / `between_aligned` 收集 `SetScale`，`apply` 一并应用，`scales()` 可读。
+- `merge_tasks` 对同一行的多任务 scale 目标值取**中位数**（偶数个取中间两个的平均），
+  与基准位相同则不生成编辑；scale 与 trit/偏置投票互不影响。`merge_tasks_dare` /
+  `merge_tasks_per_task_dare` 自动继承（per-task 稀疏化不丢 scale 差分）。
+- 测试 211 → 220 + 1 doctest（`tests/task.rs` 26 → 35，新增 9 条：记录/apply/单任务合并/
+  奇数与偶数中位数/未改不写/与 trit 独立/per-task 保留/CLI/MCP）；变异 194 → 202（新增 8 条目标）。
+
 ### Added（trit-wspace：每任务先 DARE 再投票）
 
 - `merge_tasks_per_task_dare`（`crates/trit-wspace/src/task.rs`）：与 `merge_tasks_dare` 相反的

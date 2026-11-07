@@ -566,3 +566,129 @@ fn merge_per_task_seeds_differ_per_task() {
         "不同任务必须用独立子种子（否则同坐标的票同步丢弃，结果恒为基准）"
     );
 }
+
+fn with_scale(base: &Net, layer: usize, row: usize, scale: f32) -> Net {
+    let mut net = base.clone();
+    Patch::new(vec![Edit::SetScale {
+        layer,
+        row,
+        to: scale,
+    }])
+    .apply(&mut net)
+    .expect("scale");
+    net
+}
+
+#[test]
+fn task_vector_records_scale_delta() {
+    let base = xor_net();
+    let tuned = with_scale(&base, 0, 0, 2.0);
+    let vector = TaskVector::between(&base, &tuned).expect("vector");
+    assert_eq!(vector.scales(), &[(0, 0, 2.0)]);
+    assert!(vector.edits().is_empty(), "scale 不进 trit 编辑");
+    assert_eq!(vector.apply(&base).expect("apply"), tuned);
+}
+
+#[test]
+fn merge_single_scale_delta() {
+    let base = xor_net();
+    let tuned = with_scale(&base, 0, 0, 2.0);
+    let tasks = [TaskVector::between(&base, &tuned).expect("task")];
+    let merged = merge_tasks(&base, &tasks).expect("merge");
+    assert_eq!(merged.layer(0).expect("l0").scale(0), Some(2.0));
+}
+
+#[test]
+fn merge_scale_median_odd() {
+    let base = xor_net();
+    let tasks = [1.5_f32, 2.0, 2.5]
+        .map(|scale| TaskVector::between(&base, &with_scale(&base, 0, 0, scale)).expect("task"));
+    let merged = merge_tasks(&base, &tasks).expect("merge");
+    assert_eq!(merged.layer(0).expect("l0").scale(0), Some(2.0));
+}
+
+#[test]
+fn merge_scale_median_even() {
+    let base = xor_net();
+    let tasks = [2.0_f32, 4.0]
+        .map(|scale| TaskVector::between(&base, &with_scale(&base, 0, 0, scale)).expect("task"));
+    let merged = merge_tasks(&base, &tasks).expect("merge");
+    assert_eq!(merged.layer(0).expect("l0").scale(0), Some(3.0));
+}
+
+#[test]
+fn merge_scale_unchanged_keeps_base() {
+    let base = xor_net();
+    let tuned = tuned(&base, vec![set(0, 0, 0, Trit::Pos)]);
+    let tasks = [TaskVector::between(&base, &tuned).expect("task")];
+    let merged = merge_tasks(&base, &tasks).expect("merge");
+    assert_eq!(merged.layer(0).expect("l0").scale(0), Some(1.0));
+    assert!(
+        Patch::diff(&base, &merged)
+            .expect("diff")
+            .edits()
+            .iter()
+            .all(|edit| !matches!(edit, Edit::SetScale { .. })),
+        "未改 scale 的行不应产生 SetScale"
+    );
+}
+
+#[test]
+fn merge_per_task_keeps_task_scales() {
+    let base = xor_net();
+    let tuned = with_scale(&base, 0, 0, 2.0);
+    let tasks = [TaskVector::between(&base, &tuned).expect("task")];
+    let out = merge_tasks_per_task_dare(&base, &tasks, 0.5, 7).expect("per task");
+    assert_eq!(out.layer(0).expect("l0").scale(0), Some(2.0));
+}
+
+#[test]
+fn merge_scale_and_trit_are_independent() {
+    let base = xor_net();
+    let mut tuned = with_scale(&base, 0, 0, 2.0);
+    Patch::new(vec![set(0, 0, 0, Trit::Pos)])
+        .apply(&mut tuned)
+        .expect("trit");
+    let tasks = [TaskVector::between(&base, &tuned).expect("task")];
+    let merged = merge_tasks(&base, &tasks).expect("merge");
+    let layer = merged.layer(0).expect("l0");
+    assert_eq!(layer.trit(0, 0), Some(Trit::Pos));
+    assert_eq!(layer.scale(0), Some(2.0));
+}
+
+#[test]
+fn cli_task_merge_applies_scale_delta() {
+    let dir = temp_dir("cli-scale");
+    let base = xor_net();
+    let tuned = with_scale(&base, 0, 0, 2.0);
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    fs::write(&base_path, to_wsp(&base)).expect("write base");
+    fs::write(&tuned_path, to_wsp(&tuned)).expect("write tuned");
+    let output = stdout_json(&run(&[
+        "task-merge",
+        &path_string(&base_path),
+        &path_string(&tuned_path),
+    ]));
+    let artifact = output["artifact"].as_str().expect("artifact");
+    let merged = trit_wspace::from_wsp(artifact).expect("parse");
+    assert_eq!(merged.layer(0).expect("l0").scale(0), Some(2.0));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mcp_task_merge_applies_scale_delta() {
+    let base = xor_net();
+    let tuned = with_scale(&base, 0, 0, 2.0);
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_task_merge",
+        json!({"base": to_wsp(&base), "tasks": [to_wsp(&tuned)]}),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    let artifact = value["artifact"].as_str().expect("artifact");
+    let merged = trit_wspace::from_wsp(artifact).expect("parse");
+    assert_eq!(merged.layer(0).expect("l0").scale(0), Some(2.0));
+}
