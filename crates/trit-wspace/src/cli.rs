@@ -20,11 +20,13 @@ use crate::oracle::{Behavior, Oracle};
 use crate::repair::RepairOptions;
 use crate::wire;
 
+mod cli_task;
+
 const USAGE: &str = "\
 trit-wspace <command>
   read <artifact|-> [--out <path>]
   verify <artifact|-> --oracle <json|-> [--limit N]
-  task-merge <base|-> <tuned|->... [--aligned] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--out <path>]
+  task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--out <path>]
   script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
@@ -65,7 +67,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
     match command {
         "read" => cmd_read(&args[1..]),
         "verify" => cmd_verify(&args[1..]),
-        "task-merge" => cmd_task_merge(&args[1..]),
+        "task-merge" => cli_task::task_merge(&args[1..]),
         "script" => cmd_script(&args[1..]),
         "patch" => cmd_patch(&args[1..]),
         "apply-candidate" => cmd_apply_candidate(&args[1..]),
@@ -119,63 +121,6 @@ fn cmd_verify(args: &[String]) -> Result<(), String> {
         "signature": format!("{:016x}", Behavior::of(&net, &oracle).map_err(err)?.signature()),
         "summary": wire::net_summary(&net),
         "mismatches": wire::mismatches_value(&net, &oracle, limit).map_err(err)?,
-    }))
-}
-
-fn cmd_task_merge(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["aligned"])?;
-    if parsed.positional.len() < 2 {
-        return Err(
-            "用法：trit-wspace task-merge <base|-> <tuned|->... [--aligned] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--out <path>]".into(),
-        );
-    }
-    no_double_stdin(&parsed.positional)?;
-    let aligned = parsed.switches.contains("aligned");
-    let base = load_net(&parsed.positional[0])?;
-    let mut tasks = Vec::with_capacity(parsed.positional.len() - 1);
-    for path in &parsed.positional[1..] {
-        let tuned = load_net(path)?;
-        let vector = if aligned {
-            crate::task::TaskVector::between_aligned(&base, &tuned)
-        } else {
-            crate::task::TaskVector::between(&base, &tuned)
-        };
-        tasks.push(vector.map_err(err)?);
-    }
-    let dare_rate = parsed
-        .values
-        .get("dare-rate")
-        .map(|raw| raw.parse::<f32>())
-        .transpose()
-        .map_err(|_| "--dare-rate 需要数字".to_string())?;
-    let dare_per_task = parsed
-        .values
-        .get("dare-per-task")
-        .map(|raw| raw.parse::<f32>())
-        .transpose()
-        .map_err(|_| "--dare-per-task 需要数字".to_string())?;
-    let dare_seed = opt_u64(&parsed, "dare-seed", 0)?;
-    let merged = match (dare_rate, dare_per_task) {
-        (Some(_), Some(_)) => return Err("--dare-rate 与 --dare-per-task 只能给一个".into()),
-        (Some(rate), None) => {
-            crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?
-        }
-        (None, Some(rate)) => {
-            crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed).map_err(err)?
-        }
-        (None, None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,
-    };
-    write_out(&parsed, &merged)?;
-    let patch = Patch::diff(&base, &merged).map_err(err)?;
-    emit(&json!({
-        "tasks": tasks.len(),
-        "dare_rate": dare_rate,
-        "dare_per_task": dare_per_task,
-        "dare_seed": dare_seed,
-        "summary": wire::net_summary(&merged),
-        "patch": wire::patch_to_value(&patch),
-        "cost": wire::cost_to_value(&patch.cost(&base)),
-        "artifact": to_wsp(&merged),
     }))
 }
 
@@ -707,7 +652,7 @@ pub(crate) fn opt_usize(parsed: &Parsed, name: &str, default: usize) -> Result<u
     })
 }
 
-fn opt_u64(parsed: &Parsed, name: &str, default: u64) -> Result<u64, String> {
+pub(super) fn opt_u64(parsed: &Parsed, name: &str, default: u64) -> Result<u64, String> {
     parsed.values.get(name).map_or(Ok(default), |raw| {
         raw.parse::<u64>()
             .map_err(|_| format!("--{name} 需要非负整数，得到 `{raw}`"))
