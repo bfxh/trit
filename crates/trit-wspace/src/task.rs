@@ -143,6 +143,71 @@ pub fn merge_tasks_dare(base: &Net, tasks: &[TaskVector], rate: f32, seed: u64) 
     Ok(net)
 }
 
+/// 每个任务**先**做坐标级 DARE 再投票（与 [`merge_tasks_dare`] 的“先合并再稀疏化”相对）。
+///
+/// 丢弃发生在投票之前：被丢的坐标不参与投票，可能改变投票结果。每个任务用
+/// `seed ^ index * 常数` 派生子种子，保证多任务之间选择集独立；合并后对有差异的行
+/// 统一乘一次 `1/(1-rate)`（近似 DARE 重标度，不是每任务各乘一次）。`rate=0` 与
+/// [`merge_tasks`] 完全一致。
+pub fn merge_tasks_per_task_dare(
+    base: &Net,
+    tasks: &[TaskVector],
+    rate: f32,
+    seed: u64,
+) -> Result<Net> {
+    if !rate.is_finite() || !(0.0..1.0).contains(&rate) {
+        return Err(Error::InvalidRate { rate });
+    }
+    if rate == 0.0 {
+        return merge_tasks(base, tasks);
+    }
+    let factor = 1.0 / (1.0 - rate);
+    let mut sparse = Vec::with_capacity(tasks.len());
+    for (index, task) in tasks.iter().enumerate() {
+        let task_seed = seed ^ (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
+        let edits: Vec<Edit> = task
+            .edits()
+            .iter()
+            .filter(|edit| match edit {
+                Edit::SetTrit {
+                    layer, row, col, ..
+                } => crate::dare::keep(task_seed, *layer, *row, *col, rate),
+                Edit::SetBias { layer, row, .. } => {
+                    crate::dare::keep(task_seed, *layer, *row, usize::MAX, rate)
+                }
+                _ => true,
+            })
+            .cloned()
+            .collect();
+        sparse.push(TaskVector {
+            base: task.base,
+            edits,
+        });
+    }
+    let mut net = merge_tasks(base, &sparse)?;
+    let mut rescale = Vec::new();
+    for (layer, (src, dst)) in base.layers().iter().zip(net.layers()).enumerate() {
+        for row in 0..src.rows() {
+            let changed = (0..src.cols()).any(|col| src.trit(row, col) != dst.trit(row, col))
+                || src.bias_trit(row) != dst.bias_trit(row);
+            if !changed {
+                continue;
+            }
+            let scale = dst.scale(row).expect("row in range");
+            let rescaled = scale * factor;
+            if rescaled.to_bits() != scale.to_bits() {
+                rescale.push(Edit::SetScale {
+                    layer,
+                    row,
+                    to: rescaled,
+                });
+            }
+        }
+    }
+    Patch::new(rescale).apply(&mut net)?;
+    Ok(net)
+}
+
 fn current_value(base: &Net, layer: usize, row: usize, col: usize) -> Result<Trit> {
     let target = base
         .layer(layer)

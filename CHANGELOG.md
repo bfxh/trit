@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：每任务先 DARE 再投票）
+
+- `merge_tasks_per_task_dare`（`crates/trit-wspace/src/task.rs`）：与 `merge_tasks_dare` 相反的
+  次序——每个任务先按 `seed ^ index * 常数` 派生子种子做坐标级 DARE，再投票；被丢的票不参与
+  投票，可能改变结果。合并后对有差异的行统一乘一次 `1/(1-rate)`（近似重标度，不是每任务各乘一次）。
+  `rate=0` 与 `merge_tasks` 完全一致；`rate` 非 `[0, 1)` 判错。
+- CLI `task-merge ... --dare-per-task R [--dare-seed N]`，MCP `wsp_task_merge.dare_per_task`；
+  与 `--dare-rate` / `dare_rate` **互斥**（同时给直接报错）；不传时行为不变。
+- 测试 202 → 210 + 1 doctest（`tests/task.rs` 17 → 26）；变异 186 → 194（新增 8 条目标）。
+
 ### Added（trit-wspace：任务合并后 DARE 稀疏化）
 
 - `merge_tasks_dare`（`crates/trit-wspace/src/task.rs`）：先按坐标投票合并，再对 `base → merged`

@@ -302,16 +302,30 @@ impl Mcp {
                     .get("dare_rate")
                     .and_then(Value::as_f64)
                     .map(|rate| rate as f32);
+                let dare_per_task = args
+                    .get("dare_per_task")
+                    .and_then(Value::as_f64)
+                    .map(|rate| rate as f32);
                 let dare_seed = opt_u64(args, "dare_seed", 0);
-                let merged = match dare_rate {
-                    Some(rate) => crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed)
-                        .map_err(err)?,
-                    None => crate::task::merge_tasks(&base, &tasks).map_err(err)?,
+                let merged = match (dare_rate, dare_per_task) {
+                    (Some(_), Some(_)) => {
+                        return Err("dare_rate 与 dare_per_task 只能给一个".into());
+                    }
+                    (Some(rate), None) => {
+                        crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed)
+                            .map_err(err)?
+                    }
+                    (None, Some(rate)) => {
+                        crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed)
+                            .map_err(err)?
+                    }
+                    (None, None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,
                 };
                 let patch = Patch::diff(&base, &merged).map_err(err)?;
                 Ok(json!({
                     "tasks": tasks.len(),
                     "dare_rate": dare_rate,
+                    "dare_per_task": dare_per_task,
                     "dare_seed": dare_seed,
                     "summary": wire::net_summary(&merged),
                     "patch": wire::patch_to_value(&patch),

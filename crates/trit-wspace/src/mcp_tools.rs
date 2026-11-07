@@ -147,6 +147,7 @@ pub fn tools() -> Vec<Value> {
                 "tasks": {"type": "array", "items": {"type": "string"}},
                 "aligned": {"type": "boolean"},
                 "dare_rate": {"type": "number", "description": "合并后对差分做 DARE 稀疏化的丢弃率，[0, 1)"},
+                "dare_per_task": {"type": "number", "description": "每个任务先 DARE 再投票的丢弃率，[0, 1)；与 dare_rate 互斥"},
                 "dare_seed": {"type": "integer", "description": "DARE 散列种子，默认 0"},
             }),
             &["base", "tasks"],

@@ -176,7 +176,7 @@ fn dare_drop_impl(
     })
 }
 
-fn keep(seed: u64, layer: usize, row: usize, col: usize, rate: f32) -> bool {
+pub(crate) fn keep(seed: u64, layer: usize, row: usize, col: usize, rate: f32) -> bool {
     let mixed = seed
         ^ (layer as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15)
         ^ (row as u64).wrapping_mul(0xD1B5_4A32_D192_ED03)

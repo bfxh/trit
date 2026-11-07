@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use trit_wspace::mcp::Mcp;
 use trit_wspace::{
     Edit, Layer, Net, Patch, TaskVector, Trit, checksum, dare_drop, merge_tasks, merge_tasks_dare,
-    to_wsp,
+    merge_tasks_per_task_dare, to_wsp,
 };
 
 fn xor_net() -> Net {
@@ -376,5 +376,193 @@ fn mcp_task_merge_without_dare_is_unchanged() {
     assert_eq!(
         trit_wspace::from_wsp(artifact).expect("parse").state_hash(),
         expected.state_hash()
+    );
+}
+
+#[test]
+fn merge_per_task_rate_zero_matches_plain_merge() {
+    let base = xor_net();
+    let left = tuned(&base, vec![set(0, 0, 0, Trit::Zero)]);
+    let right = tuned(&base, vec![set(0, 0, 1, Trit::Zero)]);
+    let tasks = [
+        TaskVector::between(&base, &left).expect("left"),
+        TaskVector::between(&base, &right).expect("right"),
+    ];
+    let plain = merge_tasks(&base, &tasks).expect("plain merge");
+    let per = merge_tasks_per_task_dare(&base, &tasks, 0.0, 7).expect("per task");
+    assert_eq!(per, plain);
+}
+
+#[test]
+fn merge_per_task_drops_votes_before_voting() {
+    let base = xor_net();
+    let pos = tuned(&base, vec![set(0, 0, 0, Trit::Pos)]);
+    let zero = tuned(&base, vec![set(0, 0, 0, Trit::Zero)]);
+    let tasks = [
+        TaskVector::between(&base, &pos).expect("pos"),
+        TaskVector::between(&base, &zero).expect("zero"),
+    ];
+    let plain = merge_tasks(&base, &tasks).expect("plain");
+    assert_eq!(
+        plain.layer(0).expect("l0").trit(0, 0),
+        Some(Trit::Pos),
+        "+1 与 0 投票应取 +1"
+    );
+    let mut differed = false;
+    for seed in 0..64 {
+        let per = merge_tasks_per_task_dare(&base, &tasks, 0.5, seed).expect("per");
+        if per != plain {
+            differed = true;
+            break;
+        }
+    }
+    assert!(differed, "per-task 丢票必须能改变投票结果");
+}
+
+#[test]
+fn merge_per_task_seed_changes_selection() {
+    let base = full_net(-1);
+    let tuned = full_net(1);
+    let tasks = [TaskVector::between(&base, &tuned).expect("task")];
+    let a = merge_tasks_per_task_dare(&base, &tasks, 0.5, 7).expect("seed 7");
+    let b = merge_tasks_per_task_dare(&base, &tasks, 0.5, 8).expect("seed 8");
+    assert_ne!(a, b);
+}
+
+#[test]
+fn merge_per_task_rescales_changed_rows() {
+    let base = full_net(-1);
+    let tuned = full_net(1);
+    let tasks = [TaskVector::between(&base, &tuned).expect("task")];
+    let out = merge_tasks_per_task_dare(&base, &tasks, 0.5, 7).expect("per task");
+    let mut changed = 0;
+    for layer in 0..2 {
+        let b = base.layer(layer).expect("base layer");
+        let o = out.layer(layer).expect("out layer");
+        for row in 0..b.rows() {
+            let diff = (0..b.cols()).any(|col| b.trit(row, col) != o.trit(row, col))
+                || b.bias_trit(row) != o.bias_trit(row);
+            if diff {
+                assert_eq!(o.scale(row), Some(2.0), "有差异的行必须重标度");
+                changed += 1;
+            }
+        }
+    }
+    assert!(changed > 0);
+}
+
+#[test]
+fn merge_per_task_rejects_invalid_rate() {
+    let base = full_net(-1);
+    let tuned = full_net(1);
+    let tasks = [TaskVector::between(&base, &tuned).expect("task")];
+    assert!(merge_tasks_per_task_dare(&base, &tasks, 1.0, 0).is_err());
+    assert!(merge_tasks_per_task_dare(&base, &tasks, -0.5, 0).is_err());
+    assert!(merge_tasks_per_task_dare(&base, &tasks, f32::NAN, 0).is_err());
+}
+
+#[test]
+fn cli_task_merge_per_task_dare() {
+    let dir = temp_dir("cli-per-task");
+    let base = full_net(-1);
+    let tuned = full_net(1);
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    let out_path = dir.join("out.wsp");
+    fs::write(&base_path, to_wsp(&base)).expect("write base");
+    fs::write(&tuned_path, to_wsp(&tuned)).expect("write tuned");
+    let output = stdout_json(&run(&[
+        "task-merge",
+        &path_string(&base_path),
+        &path_string(&tuned_path),
+        "--dare-per-task",
+        "0.5",
+        "--dare-seed",
+        "7",
+        "--out",
+        &path_string(&out_path),
+    ]));
+    assert!(output["dare_rate"].is_null());
+    assert_eq!(output["dare_per_task"], json!(0.5));
+    assert_eq!(output["dare_seed"], json!(7));
+    let tasks = [TaskVector::between(&base, &tuned).expect("task")];
+    let expected = merge_tasks_per_task_dare(&base, &tasks, 0.5, 7).expect("expected");
+    let written =
+        trit_wspace::from_wsp(&fs::read_to_string(&out_path).expect("read out")).expect("parse");
+    assert_eq!(written.state_hash(), expected.state_hash());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn cli_task_merge_rejects_both_dare_modes() {
+    let dir = temp_dir("cli-both");
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    fs::write(&base_path, to_wsp(&full_net(-1))).expect("write base");
+    fs::write(&tuned_path, to_wsp(&full_net(1))).expect("write tuned");
+    let output = run(&[
+        "task-merge",
+        &path_string(&base_path),
+        &path_string(&tuned_path),
+        "--dare-rate",
+        "0.5",
+        "--dare-per-task",
+        "0.5",
+    ]);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("只能给一个"), "stderr: {stderr}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mcp_task_merge_per_task_dare() {
+    let base = full_net(-1);
+    let tuned = full_net(1);
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_task_merge",
+        json!({
+            "base": to_wsp(&base),
+            "tasks": [to_wsp(&tuned)],
+            "dare_per_task": 0.5,
+            "dare_seed": 7,
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert!(value["dare_rate"].is_null());
+    assert_eq!(value["dare_per_task"], json!(0.5));
+    let tasks = [TaskVector::between(&base, &tuned).expect("task")];
+    let expected = merge_tasks_per_task_dare(&base, &tasks, 0.5, 7).expect("expected");
+    let artifact = value["artifact"].as_str().expect("artifact");
+    assert_eq!(
+        trit_wspace::from_wsp(artifact).expect("parse").state_hash(),
+        expected.state_hash()
+    );
+}
+
+#[test]
+fn merge_per_task_seeds_differ_per_task() {
+    let base = tuned(&xor_net(), vec![set(0, 0, 0, Trit::Zero)]);
+    let pos = tuned(&base, vec![set(0, 0, 0, Trit::Pos)]);
+    let neg = tuned(&base, vec![set(0, 0, 0, Trit::Neg)]);
+    let tasks = [
+        TaskVector::between(&base, &pos).expect("pos"),
+        TaskVector::between(&base, &neg).expect("neg"),
+    ];
+    let mut saw_asymmetry = false;
+    for seed in 0..64 {
+        let out = merge_tasks_per_task_dare(&base, &tasks, 0.5, seed).expect("per");
+        let value = out.layer(0).expect("l0").trit(0, 0).expect("in range");
+        if value != Trit::Zero {
+            saw_asymmetry = true;
+            break;
+        }
+    }
+    assert!(
+        saw_asymmetry,
+        "不同任务必须用独立子种子（否则同坐标的票同步丢弃，结果恒为基准）"
     );
 }
