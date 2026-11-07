@@ -34,6 +34,7 @@
 - **Rust runner**：738/738（`interop/runner`，独立实现 spec）。
 - **Go**：`k3` 21/21、`kgate` 9/9、`pack5` 657/657（错误向量映射到 `ErrTrit` / `ErrPackRange` / `ErrShortData`）；未实现 Belnap4/bitplane。
 - **asm**：K3 21/21、Belnap4 36/36、pack5 644 pass / 0 fail / 15 skipped（错误向量跳过；asm 快路径假设合法输入）。
+- **执行证据**：ARM64 NEON / AVX-512 的 CI 读数见 [other-languages/asm/README.md](../other-languages/asm/README.md)。
 
 ## 各实现怎么接
 
