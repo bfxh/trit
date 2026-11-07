@@ -546,17 +546,45 @@ const TUNE_CANDIDATES: [f32; 4] = [0.0, 0.5, 1.0, 2.0];
 /// 从等权（全 1）出发；每轮按任务顺序更新，只有 `loss` 严格下降才接受；某轮没有任何改进
 /// 就提前停。评估的是**加权投票合并**（不含 DARE），调用方拿到权重后再执行自己需要的
 /// 合并次序。`rounds=0` 返回等权与等权 loss（只做一次评估）。空任务判错。
+/// 用验证集（逐样本完全匹配）选任务权重。
 pub fn tune_task_weights(
     base: &Net,
     tasks: &[TaskVector],
     oracle: &Oracle,
     rounds: usize,
 ) -> Result<WeightTuning> {
+    tune_task_weights_with(base, tasks, rounds, |net| oracle.loss(net))
+}
+
+/// 用验证集的**逐位 Hamming 失配数**选任务权重。
+///
+/// 多类 one-hot 输出下，逐样本完全匹配几乎恒满（无信号）；逐位统计能把“接近”与“全错”
+/// 区分开。目标越小越好，其余行为与 [`tune_task_weights`] 相同。
+pub fn tune_task_weights_hamming(
+    base: &Net,
+    tasks: &[TaskVector],
+    oracle: &Oracle,
+    rounds: usize,
+) -> Result<WeightTuning> {
+    tune_task_weights_with(base, tasks, rounds, |net| hamming_loss(oracle, net))
+}
+
+/// 通用调权：`evaluate` 给一个候选网络打分，越小越好。
+///
+/// 从等权（全 1）出发；每轮对每个任务试候选集，只有分数严格下降才接受；某轮没有任何
+/// 改进就提前停。评估的是**加权投票合并**（不含 DARE）。`rounds=0` 返回等权与等权分数
+/// （只做一次评估）。空任务判错。
+pub fn tune_task_weights_with(
+    base: &Net,
+    tasks: &[TaskVector],
+    rounds: usize,
+    evaluate: impl Fn(&Net) -> Result<usize>,
+) -> Result<WeightTuning> {
     if tasks.is_empty() {
         return Err(Error::Audit("调优需要至少一个任务".into()));
     }
     let mut weights = vec![1.0_f32; tasks.len()];
-    let mut best_loss = oracle.loss(&merge_tasks_weighted(base, tasks, &weights)?)?;
+    let mut best_loss = evaluate(&merge_tasks_weighted(base, tasks, &weights)?)?;
     let initial_loss = best_loss;
     let mut evaluations = 1usize;
     for _ in 0..rounds {
@@ -568,7 +596,7 @@ pub fn tune_task_weights(
                 }
                 let mut trial = weights.clone();
                 trial[index] = candidate;
-                let loss = oracle.loss(&merge_tasks_weighted(base, tasks, &trial)?)?;
+                let loss = evaluate(&merge_tasks_weighted(base, tasks, &trial)?)?;
                 evaluations += 1;
                 if loss < best_loss {
                     best_loss = loss;
@@ -587,6 +615,17 @@ pub fn tune_task_weights(
         initial_loss,
         evaluations,
     })
+}
+
+/// 逐位 Hamming 失配数（所有样本、所有输出位）。
+fn hamming_loss(oracle: &Oracle, net: &Net) -> Result<usize> {
+    let actual = oracle.outputs_of(net)?;
+    let expected = oracle.outputs();
+    Ok(actual
+        .iter()
+        .zip(expected)
+        .map(|(got, want)| got.iter().zip(want).filter(|(a, b)| a != b).count())
+        .sum())
 }
 
 fn current_value(base: &Net, layer: usize, row: usize, col: usize) -> Result<Trit> {

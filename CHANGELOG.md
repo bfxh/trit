@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：调权目标可选 exact / hamming）
+
+- `tune_task_weights_with(base, tasks, rounds, evaluate)`：调权接受任意评估闭包；原
+  `tune_task_weights` 保持“逐样本完全匹配”，新增 `tune_task_weights_hamming`（逐位失配数）。
+- CLI `task-merge ... --tune-metric exact|hamming`，MCP `wsp_task_merge.tune_metric`；默认
+  `exact`，非法值报错；结果 `tuning.metric` 标出实际目标。
+- 背景读数（CIFAR-10 10 类、hidden 64、每类 500、10 epochs）：exact 987→987（weights 不变），
+  hamming 4465→4457（-0.18%，weights `[0.5, 1]`），argmax 14.7% → 13.6%（未改善）。
+  机制在构造的 one-hot 冲突夹具上可把 hamming 8→4，但真实任务收益很小。
+- 测试 240 → 244 + 1 doctest（`tests/task_tune.rs` 6 → 10）；变异 223 → 228（新增 5 条目标）。
+
 ### Experiments（trit-wspace：CIFAR-10 真实训练集上的合并/调权读数）
 
 - 新增可复现实验 `crates/trit-wspace/examples/cifar_tasks.rs`：CIFAR-10 降采样成 8×8 灰度夹具

@@ -1782,5 +1782,45 @@
  "new": "        weights = Some(vec![1.0; tasks.len()]);",
  "pkg": "trit-wspace",
  "filter": "mcp_task_merge_tune_weights"
+},
+{
+ "name": "wspace-tune: hamming 按样本计数",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        .map(|(got, want)| got.iter().zip(want).filter(|(a, b)| a != b).count())",
+ "new": "        .map(|(got, want)| usize::from(got != want))",
+ "pkg": "trit-wspace",
+ "filter": "tune_metric_hamming_moves_weights"
+},
+{
+ "name": "wspace-tune: hamming 数匹配位",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        .map(|(got, want)| got.iter().zip(want).filter(|(a, b)| a != b).count())",
+ "new": "        .map(|(got, want)| got.iter().zip(want).filter(|(a, b)| a == b).count())",
+ "pkg": "trit-wspace",
+ "filter": "tune_metric_hamming_moves_weights"
+},
+{
+ "name": "wspace-tune: 调权初始分数固定 0",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    let mut best_loss = evaluate(&merge_tasks_weighted(base, tasks, &weights)?)?;",
+ "new": "    let mut best_loss = 0usize;",
+ "pkg": "trit-wspace",
+ "filter": "tune_weight_finds_lower_loss"
+},
+{
+ "name": "wspace-tune: CLI metric 被忽略",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "        let metric = parsed\n            .values\n            .get(\"tune-metric\")\n            .map_or(\"exact\", String::as_str);",
+ "new": "        let metric = \"exact\";",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_tune_metric"
+},
+{
+ "name": "wspace-tune: MCP metric 被忽略",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "        let metric = args\n            .get(\"tune_metric\")\n            .and_then(Value::as_str)\n            .unwrap_or(\"exact\");",
+ "new": "        let metric = \"exact\";",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_merge_tune_metric"
 }
 ]
