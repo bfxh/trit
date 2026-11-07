@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（trit-re：dynres 动态解析检测链——响应"检测器弱鸡"的能力净增）
+
+- **形态与证据链**：真实 loader 的标准逃逸 = 动态解析（GetProcAddress 取
+  函数指针，敏感 API 不进导入表）——导入共现对此全盲（N1 首批记录的漏报
+  边界）。新链 = `dynres.resolver_imported`（GetProcAddress/dlsym 在表）∧
+  `dynres.hidden_api_strings`（≥3 个敏感 API 名 + NUL 字面串藏于非可执行
+  节且**不在导入表**；1-2 = Unknown；0 = False）。词汇表随 BUCKETS 自动
+  同步；load 家族不入表。
+- **端到端验证**：新模拟变体 sim_lvl5（纯动态解析形态）→ `dynamic_resolution`
+  **True**，旧链 `fn_injection` False（盲区如实）；良性批 51 样本 → **0 误报**
+  （阈值 ≥3 有效）；L1-L4 行为不变。全表 520 判定。
+- 单测：hidden_api_strings（已导入排除 + 短名跳过）、resolver_imported
+  （大小写不敏感 + dlsym）。测试 167 → 169。
+- 已知边界：可执行节里的栈串形态（mov-immediate）下一层；ELF 词汇表是
+  Windows API 名（Linux 解析族待扩）。
+
 ### Added（trit-wspace：DARE 行级丢弃）
 
 - `dare_drop_rows`（`crates/trit-wspace/src/dare.rs`）：DARE 的**整行**版本。决策单位是
