@@ -10,6 +10,7 @@
 |---|---|
 | [`spec/v0.md`](spec/v0.md) | 规范正文：K3、KGate、pack5、Belnap4 的语义、编码、错误与版本规则 |
 | [`schema/vector.schema.json`](schema/vector.schema.json) | vector 文件的 JSON Schema（draft 2020-12） |
+| [`runner/`](runner/) | Rust conformance runner（独立实现 spec；738/738） |
 | [`vectors/k3.json`](vectors/k3.json) | K3 NOT/AND/OR 语义向量（21） |
 | [`vectors/k3_bitplane.json`](vectors/k3_bitplane.json) | K3 位平面 encode/decode 与 `(1,1)` 非法（7） |
 | [`vectors/kgate.json`](vectors/kgate.json) | `KGate` 3×3 准入表（9） |
@@ -28,11 +29,18 @@
 5. Vectors 是**规范来源**：不得用被测实现生成期望值来自证；新增 vector 必须能由规范真值表/公式复算。
 6. 手写穷举小集合（K3/KGate/Belnap4/pack5）是 normative；未来的随机长向量只能作回归，不得替代穷举。
 
+## 当前 conformance 状态（2026-11-08）
+
+- **Rust runner**：738/738（`interop/runner`，独立实现 spec）。
+- **Go**：`k3` 21/21、`kgate` 9/9、`pack5` 657/657（错误向量映射到 `ErrTrit` / `ErrPackRange` / `ErrShortData`）；未实现 Belnap4/bitplane。
+- **asm**：`pack5` 644 pass / 0 fail / 15 skipped（错误向量跳过；asm 快路径假设合法输入）。
+- **asm K3/Belnap4**：语义向量接入待补；当前由 runner/Go 覆盖。
+
 ## 各实现怎么接
 
-- **Rust**：参考实现；conformance runner 下一步加到 `interop/runner`（Rust，独立 workspace）。
-- **Go**：`other-languages/go` 的测试读取同一组 JSON，逐条比较；不复制期望值。
-- **汇编验证**：`other-languages/asm` 的对拍测试读取同一组 JSON；K3/pack5/GF(3) 各自覆盖对应 profile。
+- **Rust**：`interop/runner` 独立实现 spec；`cd interop/runner && cargo run --release`（默认读 `../vectors`）。
+- **Go**：`other-languages/go/conformance_test.go` 读取同一组 JSON，覆盖 k3/kgate/pack5；不复制期望值。
+- **汇编验证**：`other-languages/asm` 用 `--conformance` 覆盖 pack5；K3/Belnap4 语义向量待补。
 - **未来语言**：先实现 spec 的语义与 pack5，再跑 vectors；不要先写优化。
 
 ## 版本与新增 vector
@@ -52,9 +60,8 @@ Lean 4 落地前，规范与 Rust 不一致时以规范为准，修 Rust 并补�
 
 ## 下一步
 
-- Rust conformance runner（读 vectors、逐条判红、输出 profile 汇总）。
-- Go/asm 测试接同一组 vectors。
-- 可选：非默认 `conformance` CI job（不改变主 Rust 工作区默认门禁）。
+- asm 的 K3/Belnap4 语义 conformance（当前只接了 pack5）。
+- 可选：非默认 `conformance` CI job（runner + Go test + asm pack5）。
 - 跨进程容器 v0.2（magic/version/profile/trit_count/payload_len/CRC32C）；在 vectors 补齐前不声称支持。
 
 ## 许可
