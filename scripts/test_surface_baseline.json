@@ -59,6 +59,7 @@
  "script/fetch_textures.py": 0,
  "script/flake_ledger.py": 1,
  "script/gen_docs_charts.py": 0,
+ "script/ghost_sim.py": 0,
  "script/gitflow.py": 1,
  "script/green_audit.py": 1,
  "script/hazard_gate.py": 1,

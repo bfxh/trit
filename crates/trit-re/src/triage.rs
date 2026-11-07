@@ -136,12 +136,21 @@ pub fn analyze(bytes: &[u8]) -> Triage {
         triage.facts.set(
             "xref.has_unreferenced",
             if report.complete {
-                Ternary::from(report.unreferenced() > 0)
+                // N1 首批读数（2026-11-07）驱动的语义降权：良性批 19/19 全部
+                // 触发 true——动态解析导入在合法二进制上是常态，「有无未引用
+                // 导入」事实为真但**无侵入权重**。有未引用导入 → Unknown
+                // （0 权重注记：事实与计数留在本注记里，门禁不被它收紧）；
+                // 全部有调用点 → False。人工复核可推翻（review_worksheet）。
+                if report.unreferenced() > 0 {
+                    Ternary::Unknown
+                } else {
+                    Ternary::False
+                }
             } else {
                 Ternary::Unknown
             },
             format!(
-                "有调用点 {} / 无调用点 {} / 未知 {}",
+                "有调用点 {} / 无调用点 {} / 未知 {}（未引用导入 = 动态解析/死导入的常态注记，不构成侵入证据）",
                 report.referenced(),
                 report.unreferenced(),
                 report.unknown()
