@@ -49,6 +49,16 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |
 
+## 其他语言参考实现（非默认）
+
+`other-languages/` 存放跨语言**参考实现**，只用于借鉴语义与边界；**不进入 Cargo 工作区、不参与默认 CI/发布、不作为本仓默认实现**。
+
+| 语言 | 路径 | 范围 | 状态 |
+|---|---|---|---|
+| Go | `other-languages/go/` | 平衡三进制整数 + K3 + 5 trits/byte + 准入表 | 参考实现，`go test` 通过 |
+
+新增语言前先读 [other-languages/README.md](other-languages/README.md)：只有存在明确消费方或生态桥接时才加，避免把维护面摊大。
+
 ## 三态与三值拓扑
 
 `TriState` 表示 0 / 1 / Z（高阻），与逻辑未知 `X` 区分：`Z` 不驱动总线，可被其他驱动覆盖。
