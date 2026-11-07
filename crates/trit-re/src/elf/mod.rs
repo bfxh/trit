@@ -449,6 +449,26 @@ impl ElfInfo {
         if self.class == 2 { "elf64" } else { "elf32" }
     }
 
+    /// 入口的**文件偏移**：`e_entry` 过 PT_LOAD 映射（官方 YARA 的
+    /// `entrypoint` 语义——yara-python 实测判定：3 个 ET_EXEC 判别样本上
+    /// vaddr 全不匹配、文件偏移全匹配，与 PE 同语义）。无程序头/入口为 0/
+    /// 入口不在任何 PT_LOAD 文件段内 → `None`（调用方如实弃权）。
+    pub fn entry_file_offset(&self) -> Option<u64> {
+        if self.phdrs.is_empty() || self.entry == 0 {
+            return None;
+        }
+        self.phdrs.iter().find_map(|phdr| {
+            if phdr.p_type != PT_LOAD || self.entry < phdr.vaddr {
+                return None;
+            }
+            let delta = self.entry.checked_sub(phdr.vaddr)?;
+            if delta >= phdr.filesz {
+                return None; // 入口落在 BSS/文件外段：无文件偏移
+            }
+            phdr.offset.checked_add(delta)
+        })
+    }
+
     /// 入口是否落在可执行段内；没有程序头时返回 `None`。
     pub fn entry_in_executable(&self) -> Option<bool> {
         if self.phdrs.is_empty() {

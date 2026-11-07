@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-re：ELF entrypoint 接线——语义实证判定后补齐）
+
+- **语义实证**：官方 YARA 的 ELF `entrypoint` = **文件偏移**——yara-python
+  判别协议（3 个 ET_EXEC 样本，e_entry vaddr ≠ 文件偏移）实测 vaddr 全不
+  匹配、offset 全匹配，与 PE 同语义。不猜，跑出来的。
+- **接线**：`ElfInfo::entry_file_offset()`（`e_entry` 过 PT_LOAD 映射，
+  BSS/入口为 0/无程序头如实 `None`）+ CLI 的 PE-or-ELF 回退——ELF 样本上
+  `$e at entrypoint` 从恒弃权变可评估。
+- 测试 166 → 167（PT_LOAD 映射 + 端到端 at-entrypoint 三态）；门禁 fmt /
+  clippy / test 全过。
+
 ### Added（trit-wspace：DARE 三值丢弃）
 
 - `dare_drop`（`crates/trit-wspace/src/dare.rs`）：DARE 的三值对应物。对 `base → tuned` 的
@@ -29,7 +40,7 @@
   逐条比较 `base` 与 `target` 的同一坐标：相同则应用，`target` 已是目标值则跳过，否则判冲突；
   点编辑 / scale / 行交换 / 行取反各有判据。冲突默认整体放弃（工件零改动），
   `--skip-conflicts` 才只落干净部分，冲突逐条返回（行操作用行指纹）。
-- CLI `rebase <target> --base <base> --patch <json> [--skip-conflicts] [--oracle] [--require-after]`；
+- CLI `rebase <target> --base <base> --patch <json> [--skip-conflicts] [--require-after]`；
   MCP `wsp_rebase`（16 → 17 工具）。
 - 顺手收口 A400：CLI 夹具按测试名命名临时目录并在建前清理；行为链不符统一按十六进制报。
 - 测试 148 → 161 + 1 doctest；变异 126 → 140（新增 14/14 caught）。

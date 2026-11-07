@@ -22,9 +22,10 @@
 //!   `ascii wide` 组合产双变体；xor 对 wide 展开后的字节逐位 XOR（该组合
 //!   未与官方逐位对拍，等校准批次）；正则/base64/private 串**可解析不可
 //!   扫描**——记原因、整条规则判 `Unknown`（fail-closed，不假未命中）；
-//!   `entrypoint` = 入口点**文件偏移**（官方语义，实测对拍判定），由调用方
-//!   经 [`SigScan::scan_with_entrypoint`] 传入、缺上下文时弃权；模块/未知
-//!   函数（`pe.*`、`math.*`）记名保留、求值恒 `Unknown`。
+//!   `entrypoint` = 入口点**文件偏移**（官方语义，PE 与 ELF 双实测对拍判定：
+//!   PE 的 RVA≠offset 判别样本与 ELF 的 ET_EXEC 判别样本都只认 offset），
+//!   由调用方经 [`SigScan::scan_with_entrypoint`] 传入、缺上下文时弃权；
+//!   模块/未知函数（`pe.*`、`math.*`）记名保留、求值恒 `Unknown`。
 //! - 每模式命中数上限 [`MAX_HITS`]（65536，**封顶截断 = 扫描不完整**
 //!   ——`at`/`in` 等位置性条件据此弃权，绝不据残表判假），跳跃上限
 //!   [`MAX_JUMP`]，

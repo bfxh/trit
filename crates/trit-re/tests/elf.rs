@@ -177,3 +177,33 @@ fn stripped_section_table_turns_import_evidence_unknown() {
         .unwrap();
     assert_eq!(injection.value, Ternary::Unknown);
 }
+
+#[test]
+fn entry_file_offset_maps_through_pt_load() {
+    // 官方 YARA 的 ELF entrypoint = **文件偏移**（yara-python 实测判定：
+    // 3 个 ET_EXEC 判别样本 vaddr 全不匹配、offset 全匹配——与 PE 同语义）。
+    // 夹具：e_entry=0x400100，PT_LOAD(offset=0, vaddr=0x400000) → 0x100。
+    let bytes = support::elf_sample(false, true);
+    let info = elf::parse(&bytes).expect("elf sample must parse");
+    assert_eq!(info.entry, 0x40_0100);
+    assert_eq!(info.entry_file_offset(), Some(0x100));
+
+    // 端到端：入口处的 4 字节作针，`$e at entrypoint` 经上下文求值命中；
+    // 无上下文（库直调不传）→ Unknown，绝不 False。
+    let needle = bytes[0x100..0x104].to_vec();
+    let hex_spec: Vec<String> = needle.iter().map(|b| format!("{b:02X}")).collect();
+    let src = format!(
+        "rule at_ep {{\n  strings:\n    $e = {{ {} }}\n  condition:\n    $e at entrypoint\n}}\n",
+        hex_spec.join(" ")
+    );
+    let parsed = trit_re::yaraparse::parse_rules(&src).unwrap();
+    let trit_re::yaraparse::RuleOutcome::Parsed(rule) = &parsed.rules[0] else {
+        panic!("应为 Parsed");
+    };
+    use trit_re::sigscan::SigScan;
+    let r =
+        SigScan::new(std::slice::from_ref(rule)).scan_with_entrypoint(&bytes, false, Some(0x100));
+    assert_eq!(r.rules[0].value, Ternary::True);
+    let r = SigScan::new(std::slice::from_ref(rule)).scan(&bytes, false);
+    assert_eq!(r.rules[0].value, Ternary::Unknown, "无上下文绝不 False");
+}
