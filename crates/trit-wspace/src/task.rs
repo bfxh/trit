@@ -128,6 +128,21 @@ pub fn merge_tasks(base: &Net, tasks: &[TaskVector]) -> Result<Net> {
     Ok(net)
 }
 
+/// 先按投票合并，再对 `base → merged` 的差分做一次**坐标级** DARE 稀疏化。
+///
+/// 这是“合并结果稀疏化”，不是“每个任务先稀疏化再投票”：投票阶段仍使用完整任务向量，
+/// 避免丢弃改变投票结果；`rate=0` 与 [`merge_tasks`] 完全一致。`seed` 只影响 DARE 选点。
+pub fn merge_tasks_dare(base: &Net, tasks: &[TaskVector], rate: f32, seed: u64) -> Result<Net> {
+    let merged = merge_tasks(base, tasks)?;
+    if rate == 0.0 {
+        return Ok(merged);
+    }
+    let outcome = crate::dare::dare_drop(base, &merged, rate, seed)?;
+    let mut net = base.clone();
+    outcome.patch.apply(&mut net)?;
+    Ok(net)
+}
+
 fn current_value(base: &Net, layer: usize, row: usize, col: usize) -> Result<Trit> {
     let target = base
         .layer(layer)

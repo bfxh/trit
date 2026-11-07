@@ -24,7 +24,7 @@ const USAGE: &str = "\
 trit-wspace <command>
   read <artifact|-> [--out <path>]
   verify <artifact|-> --oracle <json|-> [--limit N]
-  task-merge <base|-> <tuned|->... [--aligned] [--out <path>]
+  task-merge <base|-> <tuned|->... [--aligned] [--dare-rate R] [--dare-seed N] [--out <path>]
   script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
@@ -126,7 +126,7 @@ fn cmd_task_merge(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &["aligned"])?;
     if parsed.positional.len() < 2 {
         return Err(
-            "用法：trit-wspace task-merge <base|-> <tuned|->... [--aligned] [--out <path>]".into(),
+            "用法：trit-wspace task-merge <base|-> <tuned|->... [--aligned] [--dare-rate R] [--dare-seed N] [--out <path>]".into(),
         );
     }
     no_double_stdin(&parsed.positional)?;
@@ -142,11 +142,23 @@ fn cmd_task_merge(args: &[String]) -> Result<(), String> {
         };
         tasks.push(vector.map_err(err)?);
     }
-    let merged = crate::task::merge_tasks(&base, &tasks).map_err(err)?;
+    let dare_rate = parsed
+        .values
+        .get("dare-rate")
+        .map(|raw| raw.parse::<f32>())
+        .transpose()
+        .map_err(|_| "--dare-rate 需要数字".to_string())?;
+    let dare_seed = opt_u64(&parsed, "dare-seed", 0)?;
+    let merged = match dare_rate {
+        Some(rate) => crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?,
+        None => crate::task::merge_tasks(&base, &tasks).map_err(err)?,
+    };
     write_out(&parsed, &merged)?;
     let patch = Patch::diff(&base, &merged).map_err(err)?;
     emit(&json!({
         "tasks": tasks.len(),
+        "dare_rate": dare_rate,
+        "dare_seed": dare_seed,
         "summary": wire::net_summary(&merged),
         "patch": wire::patch_to_value(&patch),
         "cost": wire::cost_to_value(&patch.cost(&base)),

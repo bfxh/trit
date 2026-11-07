@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：任务合并后 DARE 稀疏化）
+
+- `merge_tasks_dare`（`crates/trit-wspace/src/task.rs`）：先按坐标投票合并，再对 `base → merged`
+  的差分做一次**坐标级** DARE（`dare_drop`）并应用。投票阶段使用完整任务向量，避免丢弃改变
+  投票结果；`rate=0` 与 `merge_tasks` 完全一致；`rate` 非 `[0, 1)` 判错。
+- CLI `task-merge ... --dare-rate R [--dare-seed N]`，MCP `wsp_task_merge.dare_rate/dare_seed`；
+  不传时输出 `dare_rate: null`、行为与原来一致。
+- 测试 192 → 202 + 1 doctest（`tests/task.rs` 7 → 17）；变异 178 → 186（新增 8 条目标）。
+
 ### Added（trit-wspace：DARE 行级丢弃）
 
 - `dare_drop_rows`（`crates/trit-wspace/src/dare.rs`）：DARE 的**整行**版本。决策单位是
