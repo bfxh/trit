@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：任务加权合并）
+
+- `merge_tasks_weighted`（`crates/trit-wspace/src/task.rs`）：每个任务带一个权重，trit/偏置的
+  票和按权重累加；`0.0` 表示忽略该任务（票与 scale 统计都不进）。权重必须与任务数等长、
+  有限非负（长度不符给 `Shape`，负/NaN/无穷给 `InvalidWeight`）。权重全为 1 时与
+  `merge_tasks` 逐位一致。
+- scale 改用**加权中位数**：排序后取累计权重达到总权重一半处的值，恰好落在两个值中间时取平均
+  （等权时退化为普通中位数，奇数取中间、偶数取平均）。
+- `merge_tasks_weighted_dare` / `merge_tasks_weighted_per_task_dare`：把权重带进“先合并再 DARE”
+  与“每任务先 DARE 再投票”两条路；`rate=0` 与 `merge_tasks_weighted` 完全一致。
+- CLI `task-merge ... --weight W[,W...]`，MCP `wsp_task_merge.weights`；可与 `--dare-rate` /
+  `--dare-per-task` 同用。不传时输出 `weights: null`、行为不变。
+- 测试 220 → 231 + 1 doctest（新增 `tests/task_weight.rs` 11 条：等权一致/翻转平票/零权重忽略/
+  加权中位数/非法权重/空输入/DARE 组合/per-task 组合/CLI/MCP）；变异 202 → 210（新增 9 条目标，
+  其中「零权重仍进 scale 统计」与 `weighted_median` 内部的正权重过滤等价，按门规删除，净增 8）。
 ### Added（trit-re：dynres Linux 词汇表——dlsym 解析族覆盖）
 
 - `hidden_api_strings` 词汇表参数化（调用方按平台给表）：PE = 桶派生
