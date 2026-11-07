@@ -17,6 +17,18 @@
 - 测试 220 → 231 + 1 doctest（新增 `tests/task_weight.rs` 11 条：等权一致/翻转平票/零权重忽略/
   加权中位数/非法权重/空输入/DARE 组合/per-task 组合/CLI/MCP）；变异 202 → 210（新增 9 条目标，
   其中「零权重仍进 scale 统计」与 `weighted_median` 内部的正权重过滤等价，按门规删除，净增 8）。
+### Added（trit-re：dynres Linux 词汇表——dlsym 解析族覆盖）
+
+- `hidden_api_strings` 词汇表参数化（调用方按平台给表）：PE = 桶派生
+  Windows 词表（不变）；ELF = **`LINUX_SENSITIVE_APIS`**——ptrace /
+  process_vm_readv / process_vm_writev / memfd_create / pidfd_getfd /
+  keyctl / init_module / finit_module（保守选型：**刻意排除 mmap/socket
+  等万能常态调用**，做了就是全量误报）。
+- 端到端测试：合成 ELF（dynstr 改 dlsym + .comment 区藏三个 Linux 敏感
+  名）→ `dynamic_resolution` True；未变异夹具 False（FPR 锚）。真实批
+  复核：ELF64 良性 11 样本 → 0 误报（bash 的 dlsym 在表但无隐藏串）。
+- 已知边界：Linux 侧词汇表是 AArch64/x86 通用 syscall-wrapper 名单——
+  纯 vDSO/直接 syscall 形态（无 libc 符号）不受覆盖（下一层）。
 
 ### Added（trit-wspace：任务向量的 scale 差分）
 
