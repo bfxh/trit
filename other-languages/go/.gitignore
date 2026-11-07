@@ -1,0 +1,5 @@
+# Go build/test outputs for the reference implementation
+/demo
+/demo.exe
+*.test
+coverage.out
