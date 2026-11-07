@@ -78,6 +78,13 @@ ARM64 各一批；记录每个样本的 sha256；人工复核 xref 误报/漏报
 - **误报材料（待人工裁决）**：良性批 true 21 条 = `xref_gaps` 19（合法
   二进制的动态解析导入——事实为真但无侵入权重，**语义分级问题**）+
   `staged_loader` 1 + `needs_review` 1（WSL 的 busybox 类二进制）。
+  **复核辅助（2026-11-07 语义降权后，人工面收窄至 2 条且同源）**：两条
+  都指 `benign-elf64/bash`（sha256 见 manifest）——`staged_loader` =
+  `imports.loader`（dlopen/NSS 动态装载）+ `imports.network`（socket，
+  bash 内建 /dev/tcp）共现，`needs_review` 是它的元假设（support 指向
+  staged_loader）。机器判定：**能力模式为真**（bash 确实具备该能力）；
+  人工待裁的是**意图面**——能力≠意图的经典边界。若人工裁为良性，可
+  考虑的语义选项：shell 解释器上下文的 loader+network 降权（登记后再议）。
 - **账本行为**：-28 进账后尾门禁 **Block**（真风险收紧，#51 演练行为在
   批次规模复现）；44 族折叠（fn_injection 13 成员一族）。
 - **判定语义发现**：`xref_gaps` 的 true 是"事实真、权重轻"——建议后续
