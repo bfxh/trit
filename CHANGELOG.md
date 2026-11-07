@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：任务合并的验证集读数）
+
+- `wire::metrics_value`：`loss` / `exact` / `accuracy` 的共用 JSON 读数（CLI 与 MCP 复用）。
+- CLI `task-merge ... --oracle <json|->`，MCP `wsp_task_merge.oracle`：给了验证集就在结果里返回
+  `verify.before` / `verify.after` 的 `loss` / `exact` / `accuracy`；不传时 `verify: null`，
+  不额外跑前向。验证集格式与 `verify` 相同，可与 `--aligned` / `--weight` / DARE 参数同用。
+- 测试 232 → 234 + 1 doctest（新增 `tests/task_verify.rs` 2 条：CLI / MCP）；变异 210 → 214
+  （新增 4 条目标）。
+
 ### Added（trit-wspace：任务加权合并）
 
 - `merge_tasks_weighted`（`crates/trit-wspace/src/task.rs`）：每个任务带一个权重，trit/偏置的

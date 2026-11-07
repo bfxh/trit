@@ -183,6 +183,9 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 取累计权重达到总权重一半处的值，恰好落在两个值中间时取平均（等权时退化为普通中位数）；
 权重全为 1 时与不带权重的合并逐位一致。权重可与 `dare_rate` / `dare_per_task` 同用，
 稀疏化的次序不变，投票阶段按权重累加。
+`oracle` / `--oracle <json|->` 是可选验证集（格式同 `verify`）：给了就在结果里返回
+`verify.before` / `verify.after` 的 `loss` / `exact` / `accuracy`，用来判断这次合并
+相对基准是改善还是退化；不传时 `verify: null`、不额外跑前向。
 
 `wsp_run_script` 执行组合脚本：`sequence` 默认原子（任一步失败/回滚则整段恢复原样，
 `atomic=false` 保留已成功步骤），`when` 按当前行为（完整逐样本输出）选择 `then` / `otherwise`，
