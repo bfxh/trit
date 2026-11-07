@@ -149,6 +149,9 @@ pub use probe::{
 pub use program::{Program, Report, Script, ScriptReport};
 pub use repair::{Repair, RepairOptions, repair};
 pub use shard::{Checkpoint, Shard, ShardCursor, ShardHeader, ShardReplay, ShardedLog};
-pub use task::{TaskVector, merge_tasks};
+pub use task::{
+    TaskVector, merge_tasks, merge_tasks_dare, merge_tasks_per_task_dare, merge_tasks_weighted,
+    merge_tasks_weighted_dare, merge_tasks_weighted_per_task_dare,
+};
 pub use transplant::transplant_units;
 pub use trit::Trit;

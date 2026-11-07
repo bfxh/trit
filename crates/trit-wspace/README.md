@@ -61,6 +61,9 @@ python scripts/module_budget.py
 trit-wspace read   xor.wsp
 trit-wspace verify xor.wsp --oracle xor.json
 trit-wspace task-merge base.wsp tuned-a.wsp tuned-b.wsp --aligned --out merged.wsp
+trit-wspace task-merge base.wsp tuned-a.wsp tuned-b.wsp --aligned --dare-rate 0.5 --dare-seed 7 --out merged.wsp
+trit-wspace task-merge base.wsp tuned-a.wsp tuned-b.wsp --aligned --dare-per-task 0.5 --dare-seed 7 --out merged.wsp
+trit-wspace task-merge base.wsp tuned-a.wsp tuned-b.wsp --weight 2,1 --out merged.wsp
 trit-wspace script xor.wsp --script repair.json --oracle xor.json --out fixed.wsp
 trit-wspace patch  xor.wsp --patch break.json --oracle xor.json --require-after --out fixed.wsp
 trit-wspace apply-candidate broken.wsp --candidate fix.json --oracle xor.json --require-after --out fixed.wsp --log audit.jsonl
@@ -167,7 +170,22 @@ CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N] [--by-row]`。
 报告标 `selection=adaptive` / `sampled` / `stride=0`。
 
 `wsp_task_merge` 做三值任务向量合并：每个任务只对**它改过的坐标**投票，票和取符号、平票
-保留基准，全体投 `0` 时取 `0`；任务向量带基准校验和，拿错基准会报错；`aligned=true` / `--aligned` 先消隐藏单元置换再求差分。CLI 对应 `task-merge`。
+保留基准，全体投 `0` 时取 `0`；任务向量带基准校验和，拿错基准会报错；`aligned=true` / `--aligned` 先消隐藏单元置换再求差分。
+scale 按**行**单独记录差分，合并时对同一行取各任务目标值的**中位数**（偶数个取中间两个的平均），
+与基准位相同则不写编辑——不再丢弃任务的 scale 调优。
+`dare_rate` / `--dare-rate`（配 `dare_seed` / `--dare-seed`）在投票合并**之后**对合并差分做一次
+坐标级 DARE 稀疏化：投票仍用完整任务向量，`rate=0` 与不传完全一致；`rate` 非 `[0, 1)` 判错。
+`dare_per_task` / `--dare-per-task` 是相反的次序：每个任务**先**用自己的子种子
+（`seed ^ index * 常数`）丢坐标，再投票——被丢的票不参与投票，可能改变结果；合并后对有差异的
+行统一乘一次 `1/(1-rate)`。两个参数互斥。CLI 对应 `task-merge`。
+`weights` / `--weight W[,W...]` 给每个任务一个权重（与任务数等长、有限非负）：trit/偏置的票和
+按权重累加，权重 `0` 的任务完全不参与（票与 scale 统计都不进）。scale 用**加权中位数**——排序后
+取累计权重达到总权重一半处的值，恰好落在两个值中间时取平均（等权时退化为普通中位数）；
+权重全为 1 时与不带权重的合并逐位一致。权重可与 `dare_rate` / `dare_per_task` 同用，
+稀疏化的次序不变，投票阶段按权重累加。
+`oracle` / `--oracle <json|->` 是可选验证集（格式同 `verify`）：给了就在结果里返回
+`verify.before` / `verify.after` 的 `loss` / `exact` / `accuracy`，用来判断这次合并
+相对基准是改善还是退化；不传时 `verify: null`、不额外跑前向。
 
 `wsp_run_script` 执行组合脚本：`sequence` 默认原子（任一步失败/回滚则整段恢复原样，
 `atomic=false` 保留已成功步骤），`when` 按当前行为（完整逐样本输出）选择 `then` / `otherwise`，

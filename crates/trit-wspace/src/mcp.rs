@@ -22,6 +22,7 @@ use crate::shard::{ShardReplay, ShardedLog};
 use crate::wire;
 
 mod mcp_dare;
+mod mcp_task;
 
 /// MCP 协议版本。
 pub const PROTOCOL_VERSION: &str = "2024-11-05";
@@ -280,34 +281,7 @@ impl Mcp {
                 .map_err(err)?;
                 Ok(wire::localize_report_to_value(&report))
             }
-            "wsp_task_merge" => {
-                let base = load_key(args, "base")?;
-                let raws = args
-                    .get("tasks")
-                    .and_then(Value::as_array)
-                    .ok_or("需要 tasks 数组")?;
-                let mut tasks = Vec::with_capacity(raws.len());
-                let aligned = flag(args, "aligned");
-                for raw in raws {
-                    let text = raw.as_str().ok_or("tasks 必须是字符串数组")?;
-                    let tuned = parse_or_path(text)?;
-                    let vector = if aligned {
-                        crate::task::TaskVector::between_aligned(&base, &tuned)
-                    } else {
-                        crate::task::TaskVector::between(&base, &tuned)
-                    };
-                    tasks.push(vector.map_err(err)?);
-                }
-                let merged = crate::task::merge_tasks(&base, &tasks).map_err(err)?;
-                let patch = Patch::diff(&base, &merged).map_err(err)?;
-                Ok(json!({
-                    "tasks": tasks.len(),
-                    "summary": wire::net_summary(&merged),
-                    "patch": wire::patch_to_value(&patch),
-                    "cost": wire::cost_to_value(&patch.cost(&base)),
-                    "artifact": to_wsp(&merged),
-                }))
-            }
+            "wsp_task_merge" => mcp_task::task_merge(args),
             "wsp_rebase" => {
                 let target = load(args)?;
                 let base = load_key(args, "base")?;

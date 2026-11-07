@@ -464,6 +464,15 @@ pub fn oracle_from_value(value: &Value) -> Result<Oracle> {
     }
 }
 
+/// 验证集读数（loss / exact / accuracy）→ JSON；CLI 与 MCP 共用。
+pub fn metrics_value(net: &Net, oracle: &Oracle) -> Result<Value> {
+    Ok(json!({
+        "loss": oracle.loss(net)?,
+        "exact": oracle.exact(net)?,
+        "accuracy": oracle.accuracy(net)?,
+    }))
+}
+
 /// 失配见证 → JSON；`limit` 控制返回条数（`count` 始终是全量）。
 pub fn mismatches_value(net: &Net, oracle: &Oracle, limit: usize) -> Result<Value> {
     let actual = oracle.outputs_of(net)?;
