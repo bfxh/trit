@@ -1422,5 +1422,133 @@
  "new": "    let by_row = false;",
  "pkg": "trit-wspace",
  "filter": "mcp_dare_drop_by_row_round_trip"
+},
+{
+ "name": "wspace-merge: 合并后改用行级丢弃",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    let outcome = crate::dare::dare_drop(base, &merged, rate, seed)?;",
+ "new": "    let outcome = crate::dare::dare_drop_rows(base, &merged, rate, seed)?;",
+ "pkg": "trit-wspace",
+ "filter": "merge_dare_sparsifies_after_vote"
+},
+{
+ "name": "wspace-merge: 丢弃结果没应用",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    let mut net = base.clone();\n    outcome.patch.apply(&mut net)?;\n    Ok(net)",
+ "new": "    let mut net = base.clone();\n    outcome.patch.apply(&mut net)?;\n    Ok(merged)",
+ "pkg": "trit-wspace",
+ "filter": "merge_dare_sparsifies_after_vote"
+},
+{
+ "name": "wspace-merge: seed 被忽略",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    let outcome = crate::dare::dare_drop(base, &merged, rate, seed)?;",
+ "new": "    let outcome = crate::dare::dare_drop(base, &merged, rate, 0)?;",
+ "pkg": "trit-wspace",
+ "filter": "merge_dare_seed_changes_selection"
+},
+{
+ "name": "wspace-merge: rate 被忽略（恒 0）",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    let outcome = crate::dare::dare_drop(base, &merged, rate, seed)?;",
+ "new": "    let outcome = crate::dare::dare_drop(base, &merged, 0.0, seed)?;",
+ "pkg": "trit-wspace",
+ "filter": "merge_dare_sparsifies_after_vote"
+},
+{
+ "name": "wspace-merge: CLI dare 分支没接线",
+ "file": "crates/trit-wspace/src/cli.rs",
+ "old": "        (Some(rate), None) => {\n            crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?\n        }",
+ "new": "        (Some(_rate), None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_dare_writes_artifact"
+},
+{
+ "name": "wspace-merge: CLI dare 种子被钉死",
+ "file": "crates/trit-wspace/src/cli.rs",
+ "old": "    let dare_seed = opt_u64(&parsed, \"dare-seed\", 0)?;",
+ "new": "    let dare_seed = 0;",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_dare_writes_artifact"
+},
+{
+ "name": "wspace-merge: MCP dare 分支没接线",
+ "file": "crates/trit-wspace/src/mcp.rs",
+ "old": "                    (Some(rate), None) => {\n                        crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed)\n                            .map_err(err)?\n                    }",
+ "new": "                    (Some(_rate), None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_merge_dare_round_trip"
+},
+{
+ "name": "wspace-merge: MCP dare 种子被钉死",
+ "file": "crates/trit-wspace/src/mcp.rs",
+ "old": "                let dare_seed = opt_u64(args, \"dare_seed\", 0);",
+ "new": "                let dare_seed = 0;",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_merge_dare_round_trip"
+},
+{
+ "name": "wspace-per-task: 不丢票直接合并",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    if rate == 0.0 {\n        return merge_tasks(base, tasks);\n    }\n    let factor = 1.0 / (1.0 - rate);",
+ "new": "    if true {\n        return merge_tasks(base, tasks);\n    }\n    let factor = 1.0 / (1.0 - rate);",
+ "pkg": "trit-wspace",
+ "filter": "merge_per_task_drops_votes_before_voting"
+},
+{
+ "name": "wspace-per-task: 子种子忽略任务号",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        let task_seed = seed ^ (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);",
+ "new": "        let task_seed = seed;",
+ "pkg": "trit-wspace",
+ "filter": "merge_per_task_seeds_differ_per_task"
+},
+{
+ "name": "wspace-per-task: 任务编辑不丢弃",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "            .filter(|edit| match edit {\n                Edit::SetTrit {\n                    layer, row, col, ..\n                } => crate::dare::keep(task_seed, *layer, *row, *col, rate),\n                Edit::SetBias { layer, row, .. } => {\n                    crate::dare::keep(task_seed, *layer, *row, usize::MAX, rate)\n                }\n                _ => true,\n            })",
+ "new": "            .filter(|_edit| true)",
+ "pkg": "trit-wspace",
+ "filter": "merge_per_task_seed_changes_selection"
+},
+{
+ "name": "wspace-per-task: 有差异行不重标度",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "            let rescaled = scale * factor;",
+ "new": "            let rescaled = scale;",
+ "pkg": "trit-wspace",
+ "filter": "merge_per_task_rescales_changed_rows"
+},
+{
+ "name": "wspace-per-task: 重标度因子写反",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    let factor = 1.0 / (1.0 - rate);",
+ "new": "    let factor = 1.0 / (1.0 + rate);",
+ "pkg": "trit-wspace",
+ "filter": "merge_per_task_rescales_changed_rows"
+},
+{
+ "name": "wspace-per-task: CLI per-task 没接线",
+ "file": "crates/trit-wspace/src/cli.rs",
+ "old": "        (None, Some(rate)) => {\n            crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed).map_err(err)?\n        }",
+ "new": "        (None, Some(_rate)) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_per_task_dare"
+},
+{
+ "name": "wspace-per-task: MCP per-task 没接线",
+ "file": "crates/trit-wspace/src/mcp.rs",
+ "old": "                    (None, Some(rate)) => {\n                        crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed)\n                            .map_err(err)?\n                    }",
+ "new": "                    (None, Some(_rate)) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_merge_per_task_dare"
+},
+{
+ "name": "wspace-per-task: CLI 互斥检查失效",
+ "file": "crates/trit-wspace/src/cli.rs",
+ "old": "        (Some(_), Some(_)) => return Err(\"--dare-rate 与 --dare-per-task 只能给一个\".into()),",
+ "new": "        (Some(rate), Some(_)) => crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?,",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_rejects_both_dare_modes"
 }
 ]

@@ -61,6 +61,8 @@ python scripts/module_budget.py
 trit-wspace read   xor.wsp
 trit-wspace verify xor.wsp --oracle xor.json
 trit-wspace task-merge base.wsp tuned-a.wsp tuned-b.wsp --aligned --out merged.wsp
+trit-wspace task-merge base.wsp tuned-a.wsp tuned-b.wsp --aligned --dare-rate 0.5 --dare-seed 7 --out merged.wsp
+trit-wspace task-merge base.wsp tuned-a.wsp tuned-b.wsp --aligned --dare-per-task 0.5 --dare-seed 7 --out merged.wsp
 trit-wspace script xor.wsp --script repair.json --oracle xor.json --out fixed.wsp
 trit-wspace patch  xor.wsp --patch break.json --oracle xor.json --require-after --out fixed.wsp
 trit-wspace apply-candidate broken.wsp --candidate fix.json --oracle xor.json --require-after --out fixed.wsp --log audit.jsonl
@@ -167,7 +169,12 @@ CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N] [--by-row]`。
 报告标 `selection=adaptive` / `sampled` / `stride=0`。
 
 `wsp_task_merge` 做三值任务向量合并：每个任务只对**它改过的坐标**投票，票和取符号、平票
-保留基准，全体投 `0` 时取 `0`；任务向量带基准校验和，拿错基准会报错；`aligned=true` / `--aligned` 先消隐藏单元置换再求差分。CLI 对应 `task-merge`。
+保留基准，全体投 `0` 时取 `0`；任务向量带基准校验和，拿错基准会报错；`aligned=true` / `--aligned` 先消隐藏单元置换再求差分。
+`dare_rate` / `--dare-rate`（配 `dare_seed` / `--dare-seed`）在投票合并**之后**对合并差分做一次
+坐标级 DARE 稀疏化：投票仍用完整任务向量，`rate=0` 与不传完全一致；`rate` 非 `[0, 1)` 判错。
+`dare_per_task` / `--dare-per-task` 是相反的次序：每个任务**先**用自己的子种子
+（`seed ^ index * 常数`）丢坐标，再投票——被丢的票不参与投票，可能改变结果；合并后对有差异的
+行统一乘一次 `1/(1-rate)`。两个参数互斥。CLI 对应 `task-merge`。
 
 `wsp_run_script` 执行组合脚本：`sequence` 默认原子（任一步失败/回滚则整段恢复原样，
 `atomic=false` 保留已成功步骤），`when` 按当前行为（完整逐样本输出）选择 `then` / `otherwise`，
