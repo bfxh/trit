@@ -124,7 +124,9 @@ pub(super) fn find_text(data: &[u8], tp: &TextPattern) -> (Vec<u64>, bool) {
 /// fullword 的词边界：命中前后不得是「字母数字下划线」；宽串按宽字符判
 ///（前邻 = 两字节 `(字母, 0x00)`，后邻同理）。
 fn word_bounded(data: &[u8], pos: usize, len: usize, wide: bool) -> bool {
-    let is_word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    // 官方 fullword 的词字符 = **仅字母数字**（yara-python 实测判定：
+    // `ab_cat_cd` 官方 HIT——下划线不算词字符，与正则 `\b` 不同）。
+    let is_word = |b: u8| b.is_ascii_alphanumeric();
     if wide {
         let preceded = pos >= 2 && is_word(data[pos - 2]) && data[pos - 1] == 0x00;
         let followed =

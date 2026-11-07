@@ -474,7 +474,12 @@ rule w {
 "#;
     assert_eq!(scan_one(ascii, b"cat dog"), Ternary::True);
     assert_eq!(scan_one(ascii, b"scatter"), Ternary::False, "词中命中不算");
-    assert_eq!(scan_one(ascii, b"a_cat"), Ternary::False, "下划线邻接不算");
+    // 下划线不算词字符（官方语义，yara-python 实测判定——与正则 \b 不同）
+    assert_eq!(
+        scan_one(ascii, b"a_cat"),
+        Ternary::True,
+        "下划线邻接 = fullword 可命中"
+    );
     let wide = r#"
 rule ww {
   strings:
