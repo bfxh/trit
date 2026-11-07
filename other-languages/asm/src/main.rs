@@ -9,6 +9,7 @@
 //! The assembly is a *binary* ISA implementation of ternary logic: it is B-class
 //! emulation, not native ternary hardware. See `other-languages/README.md`.
 
+use serde_json::Value;
 use std::hint::black_box;
 use std::time::Instant;
 
@@ -750,9 +751,159 @@ fn pin_to_cpu(cpu: usize) {
 #[cfg(not(target_os = "windows"))]
 fn pin_to_cpu(_cpu: usize) {}
 
+fn k3_bits(s: &str) -> Option<(bool, bool)> {
+    match s {
+        "F" => Some((false, false)),
+        "T" => Some((true, false)),
+        "U" => Some((false, true)),
+        _ => None,
+    }
+}
+
+fn plane_is(p: &Plane, one: bool, unknown: bool) -> bool {
+    let o = if one { !0 } else { 0 };
+    let u = if unknown { !0 } else { 0 };
+    p.ones.iter().all(|&x| x == o) && p.unk.iter().all(|&x| x == u)
+}
+
+fn k3_conformance() -> bool {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../interop/vectors/k3.json");
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("k3 conformance: cannot read {}: {e}", path.display());
+            return false;
+        }
+    };
+    let root: Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("k3 conformance: invalid JSON: {e}");
+            return false;
+        }
+    };
+    let vectors = match root.get("vectors").and_then(Value::as_array) {
+        Some(v) => v,
+        None => {
+            eprintln!("k3 conformance: missing vectors");
+            return false;
+        }
+    };
+
+    let mut pass = 0usize;
+    let mut fail = 0usize;
+    for v in vectors {
+        let id = v.get("id").and_then(Value::as_str).unwrap_or("<missing>");
+        let op = v.get("op").and_then(Value::as_str).unwrap_or("");
+        let expected = match v.get("expected").and_then(Value::as_str).and_then(k3_bits) {
+            Some(x) => x,
+            None => {
+                fail += 1;
+                eprintln!("FAIL {id}: bad expected");
+                continue;
+            }
+        };
+        let input = &v["input"];
+        let mut s = Plane::zeros(4);
+        let mut vp = Plane::zeros(4);
+        let mut m = Plane::zeros(4);
+        let ok = match op {
+            "not" => {
+                let a = match input.as_str().and_then(k3_bits) {
+                    Some(x) => x,
+                    None => {
+                        fail += 1;
+                        eprintln!("FAIL {id}: bad input");
+                        continue;
+                    }
+                };
+                let a = Plane::filled(4, a.0, a.1);
+                scalar_not(&a, &mut s, 4);
+                if avx2_available() {
+                    unsafe {
+                        avx2_not(&a, &mut vp, 4);
+                        asm_not(&a, &mut m, 4);
+                    }
+                }
+                plane_is(&s, expected.0, expected.1)
+                    && (!avx2_available()
+                        || (plane_is(&vp, expected.0, expected.1)
+                            && plane_is(&m, expected.0, expected.1)))
+            }
+            "and" | "or" => {
+                let arr = match input.as_array() {
+                    Some(a) => a,
+                    None => {
+                        fail += 1;
+                        eprintln!("FAIL {id}: bad input");
+                        continue;
+                    }
+                };
+                if arr.len() != 2 {
+                    fail += 1;
+                    eprintln!("FAIL {id}: input length {}", arr.len());
+                    continue;
+                }
+                let a = match arr[0].as_str().and_then(k3_bits) {
+                    Some(x) => x,
+                    None => {
+                        fail += 1;
+                        eprintln!("FAIL {id}: bad input[0]");
+                        continue;
+                    }
+                };
+                let b = match arr[1].as_str().and_then(k3_bits) {
+                    Some(x) => x,
+                    None => {
+                        fail += 1;
+                        eprintln!("FAIL {id}: bad input[1]");
+                        continue;
+                    }
+                };
+                let a = Plane::filled(4, a.0, a.1);
+                let b = Plane::filled(4, b.0, b.1);
+                if op == "and" {
+                    scalar_and(&a, &b, &mut s, 4);
+                } else {
+                    scalar_or(&a, &b, &mut s, 4);
+                }
+                if avx2_available() {
+                    unsafe {
+                        if op == "and" {
+                            avx2_and(&a, &b, &mut vp, 4);
+                            asm_and(&a, &b, &mut m, 4);
+                        } else {
+                            avx2_or(&a, &b, &mut vp, 4);
+                            asm_or(&a, &b, &mut m, 4);
+                        }
+                    }
+                }
+                plane_is(&s, expected.0, expected.1)
+                    && (!avx2_available()
+                        || (plane_is(&vp, expected.0, expected.1)
+                            && plane_is(&m, expected.0, expected.1)))
+            }
+            _ => false,
+        };
+        if ok {
+            pass += 1;
+        } else {
+            fail += 1;
+            eprintln!("FAIL {id}");
+        }
+    }
+    println!("k3 asm conformance: {pass} pass, {fail} fail");
+    fail == 0
+}
+
 fn main() {
     if std::env::args().any(|a| a == "--conformance") {
-        let ok = pack5::conformance();
+        let k3 = k3_conformance();
+        let belnap = belnap4::conformance();
+        let pack = pack5::conformance();
+        let ok = k3 & belnap & pack;
+        println!("asm conformance: {}", if ok { "PASS" } else { "FAIL" });
         std::process::exit(if ok { 0 } else { 1 });
     }
 
