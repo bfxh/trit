@@ -290,19 +290,25 @@ unsafe fn asm_pack(input: &[i8], out: &mut [u8], n: usize, lut: &[u8; PACK_LUT_L
 }
 
 unsafe fn asm_unpack(input: &[u8], out: &mut [i8], n: usize, lut: &[u64; 243]) -> Result<(), ()> {
-    let full_groups = n / TRITS_PER_BYTE;
-    let groups = full_groups.saturating_sub(1);
     #[cfg(all(target_arch = "x86_64", target_os = "windows"))]
-    if groups > 0 {
-        let ctx = UnpackCtx {
-            input: input.as_ptr(),
-            output: out.as_mut_ptr(),
-            groups,
-            lut: lut.as_ptr(),
-        };
-        asm_unpack5_lut(&ctx);
+    {
+        let full_groups = n / TRITS_PER_BYTE;
+        let groups = full_groups.saturating_sub(1);
+        if groups > 0 {
+            let ctx = UnpackCtx {
+                input: input.as_ptr(),
+                output: out.as_mut_ptr(),
+                groups,
+                lut: lut.as_ptr(),
+            };
+            asm_unpack5_lut(&ctx);
+        }
+        unpack_lut_from(input, out, n, lut, groups)
     }
-    unpack_lut_from(input, out, n, lut, groups)
+    #[cfg(not(all(target_arch = "x86_64", target_os = "windows")))]
+    {
+        unpack_lut_from(input, out, n, lut, 0)
+    }
 }
 
 fn bmi2_available() -> bool {
