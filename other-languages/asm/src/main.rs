@@ -438,6 +438,10 @@ fn all_bits(plane: &Plane, want: (bool, bool)) -> bool {
 }
 
 fn check_truth_tables() {
+    if !avx2_available() {
+        println!("AVX2 not available; skipping AVX2/asm correctness checks");
+        return;
+    }
     let states = [(false, false), (false, true), (true, false)];
     let words = 64usize;
     for &a in &states {
@@ -490,6 +494,10 @@ fn check_truth_tables() {
 }
 
 fn check_lengths() {
+    if !avx2_available() {
+        println!("AVX2 not available; skipping AVX2/asm correctness checks");
+        return;
+    }
     let lengths = [
         0usize, 1, 2, 3, 4, 5, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129, 1000,
         4096,
