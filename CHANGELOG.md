@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：argmax 一维分类 + readout 置信度目标）
+
+- `tune_task_weights_argmax` 的一维输出改为按符号分类（`>0` 记 1），二分类不再退化成
+  “所有样本同类”。
+- 新增 `tune_task_weights_readout`：用 `Net::readout` 的 f32 连续分数取最大，不先把输出压成
+  三值，能区分“都是 Pos 但分数不同”的类别；CLI/MCP `tune_metric=readout`。
+- CIFAR-10 10 类复测（hidden 64、每类 500、10 epochs）：readout 847→788（-7%，weights
+  `[0, 0]`，argmax 14.9%）、argmax 853→848（weights `[2, 1]`，argmax 15.2%）。
+  readout 分数降得更多，但部署时的三值输出指标没有跟着涨——f32 读数与三值输出存在差距。
+- 测试 248 → 252 + 1 doctest（`tests/task_tune.rs` 14 → 18）；变异 231 → 234（新增 3 条目标）。
+
 ### Added（trit-wspace：argmax 调权目标）
 
 - `tune_task_weights_argmax`：输出与期望各取 argmax 后统计分类错误数，直接优化多类 one-hot 的

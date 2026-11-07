@@ -152,7 +152,8 @@ pub use shard::{Checkpoint, Shard, ShardCursor, ShardHeader, ShardReplay, Sharde
 pub use task::{
     TaskVector, WeightTuning, merge_tasks, merge_tasks_dare, merge_tasks_per_task_dare,
     merge_tasks_weighted, merge_tasks_weighted_dare, merge_tasks_weighted_per_task_dare,
-    tune_task_weights, tune_task_weights_argmax, tune_task_weights_hamming, tune_task_weights_with,
+    tune_task_weights, tune_task_weights_argmax, tune_task_weights_hamming,
+    tune_task_weights_readout, tune_task_weights_with,
 };
 pub use transplant::transplant_units;
 pub use trit::Trit;
