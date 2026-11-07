@@ -21,6 +21,8 @@ use crate::repair::RepairOptions;
 use crate::shard::{ShardReplay, ShardedLog};
 use crate::wire;
 
+mod mcp_dare;
+
 /// MCP 协议版本。
 pub const PROTOCOL_VERSION: &str = "2024-11-05";
 
@@ -388,46 +390,7 @@ impl Mcp {
                 }
                 Ok(value)
             }
-            "wsp_dare_drop" => {
-                let base = load(args)?;
-                let tuned = load_key(args, "tuned")?;
-                let rate = args
-                    .get("rate")
-                    .and_then(Value::as_f64)
-                    .ok_or("需要 rate（[0, 1) 内的数字）")?;
-                let rate = rate as f32;
-                let seed = opt_u64(args, "seed", 0);
-                let outcome = crate::dare::dare_drop(&base, &tuned, rate, seed).map_err(err)?;
-                let oracle = optional_oracle(args)?;
-                let applied = ops::apply_patch(
-                    &base,
-                    outcome.patch.clone(),
-                    oracle.as_ref(),
-                    flag(args, "require_before"),
-                    flag(args, "require_after"),
-                )
-                .map_err(err)?;
-                let mut value = json!({
-                    "rate": rate,
-                    "seed": seed,
-                    "kept": outcome.kept,
-                    "dropped": outcome.dropped,
-                    "rescaled_rows": outcome.rescaled_rows,
-                    "patch": wire::patch_to_value(&outcome.patch),
-                    "cost": wire::cost_to_value(&outcome.patch.cost(&base)),
-                    "applied": applied.applied,
-                    "rolled_back": applied.rolled_back,
-                    "summary": wire::net_summary(&applied.net),
-                    "artifact": to_wsp(&applied.net),
-                });
-                if let Some(oracle) = &oracle {
-                    value["verify"] = json!({
-                        "exact": oracle.exact(&applied.net).map_err(err)?,
-                        "loss": oracle.loss(&applied.net).map_err(err)?,
-                    });
-                }
-                Ok(value)
-            }
+            "wsp_dare_drop" => mcp_dare::dare_drop(args),
             "wsp_run_script" => {
                 let net = load(args)?;
                 let script = wire::script_from_value(args.get("script").ok_or("需要 script")?)

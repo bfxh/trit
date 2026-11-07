@@ -67,6 +67,7 @@ trit-wspace apply-candidate broken.wsp --candidate fix.json --oracle xor.json --
 trit-wspace rebase newer.wsp --base older.wsp --patch fix.json --oracle xor.json --require-after --out fixed.wsp
 trit-wspace transplant dest.wsp --from src.wsp --layer 0 --rows 0,1 --oracle xor.json --require-after --out fixed.wsp
 trit-wspace dare-drop base.wsp --tuned tuned.wsp --rate 0.5 --seed 7 --out dropped.wsp
+trit-wspace dare-drop base.wsp --tuned tuned.wsp --rate 0.5 --seed 7 --by-row --out dropped.wsp
 trit-wspace repair broken.wsp --oracle xor.json --max-edits 2 --out fixed.wsp
 trit-wspace propose broken.wsp --oracle xor.json --limit 8
 trit-wspace propose broken.wsp --oracle xor.json --pairs --limit 8
@@ -143,7 +144,11 @@ CLI 对应 `transplant <dest> --from <source> --layer L --rows i,j`。
 散列得出，同种子永远同结果。三值写不下 `1/(1-rate)` 重标度，就把它吸收进**有保留差分的行**
 的 scale——scale 是正标尺自由度，只改 f32 读数、不改符号行为，对穷举判决是中性记录。
 `rate=0` 等价完整差分；`rate` 必须在 `[0, 1)`。产物是普通补丁，可接 `wsp_task_merge` 前先稀疏化。
-CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N]`。
+默认按**坐标**决策；`--by-row`（MCP `by_row`）改成**整行**决策：一行只要有任何 trit/偏置差分，
+就整行保留或整行丢回基准值，不会出现“半行保留”。行级决策用 `(seed, layer, row)` 散列
+（列标记 `usize::MAX - 1`，与偏置的 `usize::MAX` 区分），只改本层该行的入边与偏置，
+不碰下一层的出边列（单元粒度整体搬运见 `wsp_transplant`）。`kept` / `dropped` 仍按差分坐标数计数。
+CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N] [--by-row]`。
 
 `wsp_apply_candidate` 直接吃 `wsp_propose` 的 `candidates[i]`（`edit` 或 `edits`），
 可选 `require_after`；给了 `log` 就把这次编辑追加进 JSONL 日志（日志文本随结果返回，不写盘）。

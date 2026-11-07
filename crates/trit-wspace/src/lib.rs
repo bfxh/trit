@@ -132,7 +132,7 @@ pub use analyze::{
 };
 pub use audit::{AuditLog, LogEntry, ReplayReport};
 pub use codec::{checksum, from_wsp, to_wsp};
-pub use dare::{DropOutcome, dare_drop};
+pub use dare::{DropOutcome, dare_drop, dare_drop_rows};
 pub use edit::{Cost, Edit, Journal, Patch};
 pub use error::{Error, Result};
 pub use explain::{SampleEditImpact, SampleExplanation, explain_sample};

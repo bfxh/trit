@@ -7,7 +7,8 @@ use std::process::{Command, Output};
 use serde_json::{Value, json};
 use trit_wspace::mcp::Mcp;
 use trit_wspace::{
-    Behavior, Edit, Error, Layer, Net, Oracle, Patch, Trit, dare_drop, from_wsp, to_wsp,
+    Behavior, Edit, Error, Layer, Net, Oracle, Patch, Trit, dare_drop, dare_drop_rows, from_wsp,
+    to_wsp,
 };
 
 fn flat_net(rows: usize, cols: usize, layers: usize, value: i8) -> Net {
@@ -421,4 +422,175 @@ fn mcp_dare_drop_missing_rate_is_error() {
     assert_eq!(result["isError"], true);
     let text = result["content"][0]["text"].as_str().expect("text");
     assert!(text.contains("rate"), "text: {text}");
+}
+
+#[test]
+fn row_drop_keeps_or_drops_whole_rows() {
+    let base = base_net();
+    let tuned = tuned_net();
+    let outcome = dare_drop_rows(&base, &tuned, 0.5, 7).expect("drop rows");
+    assert_eq!(outcome.kept, 25);
+    assert_eq!(outcome.dropped, 15);
+    assert_eq!(outcome.rescaled_rows, 5);
+    let mut per_row: std::collections::BTreeMap<(usize, usize), usize> =
+        std::collections::BTreeMap::new();
+    for edit in outcome.patch.edits() {
+        match edit {
+            Edit::SetTrit { layer, row, .. } | Edit::SetBias { layer, row, .. } => {
+                let key = (*layer, *row);
+                *per_row.entry(key).or_default() += 1;
+            }
+            Edit::SetScale { .. } => {}
+            other => panic!("意外编辑 {other:?}"),
+        }
+    }
+    let kept_rows: Vec<(usize, usize)> = per_row.keys().copied().collect();
+    assert_eq!(kept_rows, vec![(0, 0), (0, 2), (1, 0), (1, 2), (1, 3)]);
+    assert!(
+        per_row.values().all(|count| *count == 5),
+        "每行必须整行保留（4 trit + 1 bias）：{per_row:?}"
+    );
+}
+
+#[test]
+fn row_drop_applies_whole_row_deltas() {
+    let base = base_net();
+    let tuned = tuned_net();
+    let outcome = dare_drop_rows(&base, &tuned, 0.5, 7).expect("drop rows");
+    let work = apply(&base, &outcome.patch);
+    let kept = [(0usize, 0usize), (0, 2), (1, 0), (1, 2), (1, 3)];
+    for layer in 0..2 {
+        let b = base.layer(layer).expect("base layer");
+        let t = tuned.layer(layer).expect("tuned layer");
+        let w = work.layer(layer).expect("work layer");
+        for row in 0..b.rows() {
+            if kept.contains(&(layer, row)) {
+                assert_eq!(w.row(row), t.row(row), "kept row ({layer},{row})");
+                assert_eq!(w.bias_trit(row), t.bias_trit(row));
+            } else {
+                assert_eq!(w.row(row), b.row(row), "dropped row ({layer},{row})");
+                assert_eq!(w.bias_trit(row), b.bias_trit(row));
+            }
+        }
+    }
+}
+
+#[test]
+fn row_drop_selection_is_pinned_and_seed_sensitive() {
+    let base = base_net();
+    let tuned = tuned_net();
+    let first = dare_drop_rows(&base, &tuned, 0.5, 7).expect("rows");
+    let again = dare_drop_rows(&base, &tuned, 0.5, 7).expect("rows");
+    assert_eq!(first, again);
+    let other = dare_drop_rows(&base, &tuned, 0.5, 8).expect("rows");
+    assert_ne!(first.patch.edits(), other.patch.edits());
+}
+
+#[test]
+fn row_drop_differs_from_coordinate_drop() {
+    let base = base_net();
+    let tuned = tuned_net();
+    let rows = dare_drop_rows(&base, &tuned, 0.5, 7).expect("rows");
+    let coords = dare_drop(&base, &tuned, 0.5, 7).expect("coords");
+    assert_ne!(rows.patch.edits(), coords.patch.edits());
+    assert_ne!(rows.kept, coords.kept);
+}
+
+#[test]
+fn row_drop_rate_zero_is_full_delta() {
+    let base = base_net();
+    let tuned = tuned_net();
+    let outcome = dare_drop_rows(&base, &tuned, 0.0, 7).expect("rows");
+    assert_eq!(outcome.kept, 40);
+    assert_eq!(outcome.dropped, 0);
+    assert_eq!(outcome.rescaled_rows, 0);
+    let full = Patch::diff(&base, &tuned).expect("diff");
+    assert_eq!(outcome.patch.edits(), full.edits());
+    assert_eq!(
+        apply(&base, &outcome.patch).state_hash(),
+        tuned.state_hash()
+    );
+}
+
+#[test]
+fn row_drop_rejects_bad_rate_and_arch() {
+    let base = base_net();
+    let tuned = tuned_net();
+    for rate in [1.0_f32, -0.1, f32::INFINITY] {
+        assert_eq!(
+            dare_drop_rows(&base, &tuned, rate, 0),
+            Err(Error::InvalidRate { rate })
+        );
+    }
+    assert!(matches!(
+        dare_drop_rows(&base, &tuned, f32::NAN, 0),
+        Err(Error::InvalidRate { .. })
+    ));
+    assert_eq!(
+        dare_drop_rows(&base, &xor_net(), 0.5, 0),
+        Err(Error::ArchMismatch)
+    );
+}
+
+#[test]
+fn cli_dare_drop_by_row_reports_and_applies() {
+    let dir = temp_dir("cli-row");
+    let base = base_net();
+    let tuned = tuned_net();
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    let out_path = dir.join("out.wsp");
+    fs::write(&base_path, to_wsp(&base)).expect("write base");
+    fs::write(&tuned_path, to_wsp(&tuned)).expect("write tuned");
+    let output = stdout_json(&run(&[
+        "dare-drop",
+        &path_string(&base_path),
+        "--tuned",
+        &path_string(&tuned_path),
+        "--rate",
+        "0.5",
+        "--seed",
+        "7",
+        "--by-row",
+        "--out",
+        &path_string(&out_path),
+    ]));
+    assert_eq!(output["by_row"], json!(true));
+    assert_eq!(output["kept"], json!(25));
+    assert_eq!(output["dropped"], json!(15));
+    assert_eq!(output["rescaled_rows"], json!(5));
+    let expected = dare_drop_rows(&base, &tuned, 0.5, 7).expect("rows");
+    let work = apply(&base, &expected.patch);
+    let written = from_wsp(&fs::read_to_string(&out_path).expect("read out")).expect("parse");
+    assert_eq!(written.state_hash(), work.state_hash());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mcp_dare_drop_by_row_round_trip() {
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_dare_drop",
+        json!({
+            "artifact": to_wsp(&base_net()),
+            "tuned": to_wsp(&tuned_net()),
+            "rate": 0.5,
+            "seed": 7,
+            "by_row": true,
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert_eq!(value["by_row"], json!(true));
+    assert_eq!(value["kept"], json!(25));
+    assert_eq!(value["dropped"], json!(15));
+    assert_eq!(value["rescaled_rows"], json!(5));
+    let expected = dare_drop_rows(&base_net(), &tuned_net(), 0.5, 7).expect("rows");
+    let work = apply(&base_net(), &expected.patch);
+    let artifact = value["artifact"].as_str().expect("artifact");
+    assert_eq!(
+        from_wsp(artifact).expect("parse").state_hash(),
+        work.state_hash()
+    );
 }
