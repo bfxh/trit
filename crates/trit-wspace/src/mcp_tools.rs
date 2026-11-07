@@ -10,7 +10,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 十六个工具。改数量必须同时改测试断言。
+/// 十九个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -145,8 +145,51 @@ pub fn tools() -> Vec<Value> {
             json!({
                 "base": artifact(),
                 "tasks": {"type": "array", "items": {"type": "string"}},
+                "aligned": {"type": "boolean"},
             }),
             &["base", "tasks"],
+        ),
+        tool(
+            "wsp_rebase",
+            "把针对 base 写的补丁三方重放到 target；冲突逐条报告，默认整体放弃，skip_conflicts 只落干净部分",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "base": artifact(),
+                "patch": {"type": "object", "description": "version=1 的 edits 列表"},
+                "skip_conflicts": {"type": "boolean"},
+                "oracle": {"type": "object"},
+                "require_before": {"type": "boolean"},
+                "require_after": {"type": "boolean"},
+            }),
+            &["base", "patch"],
+        ),
+        tool(
+            "wsp_transplant",
+            "把 source 第 layer 层 rows 里的隐藏单元（入边 + 偏置 + scale + 出边）移植到 target，返回补丁与新工件",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "source": artifact(),
+                "layer": {"type": "integer"},
+                "rows": {"type": "array", "items": {"type": "integer"}},
+                "oracle": {"type": "object"},
+                "require_before": {"type": "boolean"},
+                "require_after": {"type": "boolean"},
+            }),
+            &["source", "layer", "rows"],
+        ),
+        tool(
+            "wsp_dare_drop",
+            "DARE 三值丢弃：按 rate 确定性（seed）丢弃 base→tuned 的差分 trit，重标度吸收进保留行的 scale（行为中性）",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "tuned": artifact(),
+                "rate": {"type": "number", "description": "丢弃概率，[0, 1)"},
+                "seed": {"type": "integer", "description": "散列种子，默认 0"},
+                "oracle": {"type": "object"},
+                "require_before": {"type": "boolean"},
+                "require_after": {"type": "boolean"},
+            }),
+            &["tuned", "rate"],
         ),
         tool(
             "wsp_run_script",

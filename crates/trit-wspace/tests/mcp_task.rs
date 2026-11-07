@@ -65,4 +65,18 @@ fn task_merge_via_mcp() {
     let layer = merged.layer(0).expect("layer");
     assert_eq!(layer.trit(0, 0), Some(Trit::Zero));
     assert_eq!(layer.trit(0, 1), Some(Trit::Zero));
+
+    let permuted = xor_net().permute_rows(0, &[1, 0]).expect("permute");
+    let aligned = payload(&call(
+        &mut server,
+        "wsp_task_merge",
+        json!({
+            "base": to_wsp(&xor_net()),
+            "tasks": [to_wsp(&permuted)],
+            "aligned": true,
+        }),
+    ));
+    assert_eq!(aligned["cost"]["trits"].as_u64(), Some(0));
+    let net = from_wsp(aligned["artifact"].as_str().expect("artifact")).expect("parse");
+    assert_eq!(net, xor_net());
 }

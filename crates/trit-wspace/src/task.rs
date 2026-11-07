@@ -37,6 +37,15 @@ impl TaskVector {
         })
     }
 
+    /// 先消隐藏单元置换再求差分（`merge::align`，用于独立训练/重排过的网络）。
+    pub fn between_aligned(base: &Net, tuned: &Net) -> Result<Self> {
+        if base.arch() != tuned.arch() {
+            return Err(Error::ArchMismatch);
+        }
+        let aligned = crate::merge::align(base, tuned)?;
+        Self::between(base, &aligned)
+    }
+
     /// 基准网络的校验和（防止拿错基准套用）。
     #[must_use]
     pub fn base(&self) -> u64 {

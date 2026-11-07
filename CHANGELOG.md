@@ -13,6 +13,49 @@
 - 测试 166 → 167（PT_LOAD 映射 + 端到端 at-entrypoint 三态）；门禁 fmt /
   clippy / test 全过。
 
+### Added（trit-wspace：DARE 三值丢弃）
+
+- `dare_drop`（`crates/trit-wspace/src/dare.rs`）：DARE 的三值对应物。对 `base → tuned` 的
+  差分 trit/偏置按 `rate` 丢弃（丢回基准值），丢弃决定由 splitmix64 对 `(seed, layer, row, col)`
+  确定性散列，同种子永远同结果。三值写不下 `1/(1-rate)` 重标度，吸收进**有保留差分的行**的
+  scale——正标尺自由度，只改 f32 读数、不改符号行为（对穷举判决中性）。
+- `rate` 必须在 `[0, 1)`（`InvalidRate` 判错）；`rate=0` 等价完整差分且不重标度；
+  架构不同直接拒绝。产物是普通补丁，可接事务 / 审计 / 三方重放 / 任务向量合并前稀疏化。
+- CLI `dare-drop <base> --tuned <tuned> --rate R [--seed N]`；MCP `wsp_dare_drop`（18 → 19 工具）。
+- 测试 170 → 184 + 1 doctest；变异 150 → 168（新增 19，含钉死种子的选择集与重标度行集；
+  其中「零丢弃率也重标度」为等价变异——`rate=0` 时 `1/(1-rate)=1.0`，`scale*1.0` 位等价，
+  首轮全量 169 条里的唯一存活，按门规删除并披露，终态 168/168 caught）。
+
+### Added（trit-wspace：跨层单元移植）
+
+- `transplant_units`（`crates/trit-wspace/src/transplant.rs`）：把一个隐藏单元整体搬到另一个网络——
+  第 `l` 层第 `r` 行（入边）、偏置、scale，加上第 `l+1` 层第 `r` 列（出边）；输出层只搬行。
+  只生成与目标不同的编辑，产物是普通补丁（可继续走事务 / 审计 / 三方重放）。
+- CLI `transplant <dest> --from <source> --layer L --rows i,j`；MCP `wsp_transplant`（17 → 18 工具）。
+- 重复行号判错；架构不同直接拒绝。
+
+### Added（trit-wspace：三方补丁重放）
+
+- `rebase`（`crates/trit-wspace/src/rebase.rs`）：把针对旧工件写的补丁落到已经前进的工件上。
+  逐条比较 `base` 与 `target` 的同一坐标：相同则应用，`target` 已是目标值则跳过，否则判冲突；
+  点编辑 / scale / 行交换 / 行取反各有判据。冲突默认整体放弃（工件零改动），
+  `--skip-conflicts` 才只落干净部分，冲突逐条返回（行操作用行指纹）。
+- CLI `rebase <target> --base <base> --patch <json> [--skip-conflicts] [--require-after]`；
+  MCP `wsp_rebase`（16 → 17 工具）。
+- 顺手收口 A400：CLI 夹具按测试名命名临时目录并在建前清理；行为链不符统一按十六进制报。
+- 测试 148 → 161 + 1 doctest；变异 126 → 140（新增 14/14 caught）。
+
+### Added（trit-wspace：对齐任务向量 + CLI/MCP 开关）
+
+- `TaskVector::between_aligned`：先用 `merge::align` 消隐藏单元置换，再求 `base → tuned` 差分；
+  CLI `task-merge --aligned`，MCP `wsp_task_merge.aligned`。
+- 读数：打乱隐藏行的同一行为网络，未对齐会得到一堆假差分；对齐后差分为 0；
+  对齐后再改一个 trit，任务向量恰好 1 条编辑且套用结果等于先对齐后改的行为。
+- 顺手修 CLI 测试的临时目录复用（旧 `audit.jsonl` 会跨轮追加，导致行为链假红）。
+- 测试 146 → 148 + 1 doctest；变异 123 → **126 条，126/126 caught**；test_surface 合并 main 后 2,326。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
 ### Added（trit-re：PE32 联合判定测试——方向库最后一条解锁条件收口）
 
 - `tests/pe.rs::coff_and_cfg_jointly_attribute_pe32`：**三路来源同时贡献

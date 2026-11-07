@@ -88,6 +88,27 @@ fn merge_votes_targets_and_breaks_ties_to_base() {
 }
 
 #[test]
+fn aligned_vector_ignores_hidden_permutation() {
+    let base = xor_net();
+    let permuted = base.permute_rows(0, &[1, 0]).expect("permute");
+    let naive = TaskVector::between(&base, &permuted).expect("naive");
+    assert!(!naive.edits().is_empty(), "未对齐会看到大量假差分");
+    let aligned = TaskVector::between_aligned(&base, &permuted).expect("aligned");
+    assert!(aligned.edits().is_empty(), "对齐后同一行为应无差分");
+
+    let mut edited = permuted.clone();
+    Patch::new(vec![set(0, 0, 0, Trit::Zero)])
+        .apply(&mut edited)
+        .expect("edit");
+    let vector = TaskVector::between_aligned(&base, &edited).expect("aligned edit");
+    assert_eq!(vector.edits().len(), 1);
+    assert_eq!(
+        vector.apply(&base).expect("apply"),
+        trit_wspace::merge::align(&base, &edited).expect("align")
+    );
+}
+
+#[test]
 fn merge_rejects_foreign_base() {
     let base = xor_net();
     let other = tuned(&base, vec![set(0, 0, 0, Trit::Zero)]);
