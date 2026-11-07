@@ -63,11 +63,26 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
         }
         let tuning_oracle = load_oracle(path)?;
         let rounds = opt_usize(&parsed, "tune-rounds", 1)?;
-        let report =
-            crate::task::tune_task_weights(&base, &tasks, &tuning_oracle, rounds).map_err(err)?;
+        let metric = parsed
+            .values
+            .get("tune-metric")
+            .map_or("exact", String::as_str);
+        let report = match metric {
+            "exact" => crate::task::tune_task_weights(&base, &tasks, &tuning_oracle, rounds),
+            "hamming" => {
+                crate::task::tune_task_weights_hamming(&base, &tasks, &tuning_oracle, rounds)
+            }
+            other => {
+                return Err(format!(
+                    "--tune-metric 只支持 exact / hamming，得到 `{other}`"
+                ));
+            }
+        }
+        .map_err(err)?;
         weights = Some(report.weights().to_vec());
         tuning = Some(json!({
             "rounds": rounds,
+            "metric": metric,
             "evaluations": report.evaluations(),
             "initial_loss": report.initial_loss(),
             "tuned_loss": report.loss(),
