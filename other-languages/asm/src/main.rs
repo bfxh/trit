@@ -898,6 +898,11 @@ fn k3_conformance() -> bool {
 }
 
 fn main() {
+    if std::env::args().any(|a| a == "--avx512") {
+        avx512::run();
+        return;
+    }
+
     if std::env::args().any(|a| a == "--conformance") {
         let k3 = k3_conformance();
         let belnap = belnap4::conformance();

@@ -7,6 +7,8 @@ on:
       - "interop/**"
       - "other-languages/go/**"
       - "other-languages/asm/**"
+      - "other-languages/asm-arm64/**"
+      - ".github/workflows/conformance.yml"
 
 permissions:
   contents: read
@@ -44,3 +46,30 @@ jobs:
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - name: Run asm conformance
         run: cd other-languages/asm && cargo run --release -- --conformance
+
+  arm64-neon:
+    name: arm64 neon (ubuntu-24.04-arm)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Run NEON correctness + benchmark
+        run: |
+          uname -m
+          cd other-languages/asm-arm64 && cargo run --release
+
+  avx512:
+    name: avx512 probe
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Probe CPU and run AVX-512 path
+        run: |
+          if grep -qm1 avx512f /proc/cpuinfo; then
+            cd other-languages/asm && cargo run --release -- --avx512
+          else
+            echo "AVX512_AVAILABLE=false (runner lacks avx512f)"
+          fi

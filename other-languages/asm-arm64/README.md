@@ -1,12 +1,21 @@
-# AArch64 NEON 参考验证（编译检查）
+# AArch64 NEON 参考验证（CI 实机）
 
-状态：**只做交叉编译检查**；本机没有 ARM64 硬件/QEMU，因此没有运行正确性或性能读数。
+状态：本地 x86-64 只做交叉编译检查；GitHub Actions `ubuntu-24.04-arm` 已实机运行正确性与 NEON 基准。
 
 ## 范围
 
 - `GF(3) add/mul`：NEON `vqtbl1q_u8` 16 项查表，对标 scalar LUT。
 - 输入输出为字节 `0/1/2`；`add` 索引 `a+b`，`mul` 索引 `3a+b`。
 - 代码：[src/main.rs](src/main.rs)。
+
+## CI 实测（2026-11-08，ubuntu-24.04-arm）
+
+- `arch=aarch64 os=linux`
+- 正确性：20 种长度 + 9 真值对全过
+- GF(3) add：scalar 1.075 ns/B，NEON 0.047 ns/B，**23.03×**
+- GF(3) mul：scalar 1.073 ns/B，NEON 0.047 ns/B，**23.02×**
+
+> CI runner 型号/频率未记录；这是单次 CI 读数，不跨机承诺。
 
 ## 检查命令
 
@@ -17,12 +26,16 @@ cargo check --target aarch64-unknown-linux-gnu
 
 在 x86-64 主机上直接 `cargo check` 会触发 `compile_error!`，这是刻意的：该 crate 只面向 AArch64。
 
-## 运行条件
+## 运行
+
+CI 的 `conformance` workflow `arm64-neon` job 在 `ubuntu-24.04-arm` 上执行：
 
 ```bash
-# 需要 AArch64 链接器/运行环境；当前机器没有
-cargo run --release --target aarch64-unknown-linux-gnu
+cd other-languages/asm-arm64
+cargo run --release
 ```
+
+本地 x86-64 只能做交叉编译检查，不能运行。
 
 ## SVE
 
@@ -35,5 +48,6 @@ SVE 暂不实现：
 
 ## 证据等级
 
-- **编译检查**：`cargo check --target aarch64-unknown-linux-gnu` 通过。
-- **未运行**：没有 ARM64 执行证据，不写性能数字，不当成“NEON 更快”的结论。
+- **编译检查**：本地 `cargo check --target aarch64-unknown-linux-gnu` 通过。
+- **CI 实机**：`ubuntu-24.04-arm` 上 `cargo run --release` 通过，读数见上。
+- **SVE**：未实机验证，不写性能结论。
