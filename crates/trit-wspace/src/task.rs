@@ -2,7 +2,8 @@
 //!
 //! 与 TIES 的对应关系：每个任务只对**它改过的坐标**投票，投票值是目标 trit；
 //! 票和为正/负取该符号，出现平票（如 `+` 与 `-`）保留基准值；全体都投 `0` 时取 `0`。
-//! scale 是正标尺自由度，不进任务向量（合并后沿用基准的 scale）。
+//! scale 是正标尺自由度，按**行**单独记录差分；合并时对同一行取各任务目标值的
+//! 中位数（偶数个取中间两个的平均），与基准位相同则不写编辑。
 
 use std::collections::BTreeMap;
 
@@ -17,6 +18,8 @@ use crate::trit::Trit;
 pub struct TaskVector {
     base: u64,
     edits: Vec<Edit>,
+    /// 与基准不同的逐行 scale：`(layer, row, target)`。
+    scales: Vec<(usize, usize, f32)>,
 }
 
 impl TaskVector {
@@ -25,15 +28,20 @@ impl TaskVector {
         if base.arch() != tuned.arch() {
             return Err(Error::ArchMismatch);
         }
-        let edits: Vec<Edit> = Patch::diff(base, tuned)?
-            .edits()
-            .iter()
-            .filter(|edit| matches!(edit, Edit::SetTrit { .. } | Edit::SetBias { .. }))
-            .cloned()
-            .collect();
+        let diff = Patch::diff(base, tuned)?;
+        let mut edits = Vec::new();
+        let mut scales = Vec::new();
+        for edit in diff.edits() {
+            match edit {
+                Edit::SetTrit { .. } | Edit::SetBias { .. } => edits.push(edit.clone()),
+                Edit::SetScale { layer, row, to } => scales.push((*layer, *row, *to)),
+                _ => {}
+            }
+        }
         Ok(Self {
             base: checksum(base),
             edits,
+            scales,
         })
     }
 
@@ -52,10 +60,16 @@ impl TaskVector {
         self.base
     }
 
-    /// 差分编辑。
+    /// 差分编辑（trit / 偏置）。
     #[must_use]
     pub fn edits(&self) -> &[Edit] {
         &self.edits
+    }
+
+    /// 逐行 scale 差分：`(layer, row, target)`。
+    #[must_use]
+    pub fn scales(&self) -> &[(usize, usize, f32)] {
+        &self.scales
     }
 
     /// 把本任务向量应用到 `base`（基准校验和必须一致）。
@@ -65,6 +79,16 @@ impl TaskVector {
         }
         let mut net = base.clone();
         Patch::new(self.edits.clone()).apply(&mut net)?;
+        let scale_edits: Vec<Edit> = self
+            .scales
+            .iter()
+            .map(|(layer, row, to)| Edit::SetScale {
+                layer: *layer,
+                row: *row,
+                to: *to,
+            })
+            .collect();
+        Patch::new(scale_edits).apply(&mut net)?;
         Ok(net)
     }
 }
@@ -123,8 +147,36 @@ pub fn merge_tasks(base: &Net, tasks: &[TaskVector]) -> Result<Net> {
             });
         }
     }
+    let mut scale_votes: BTreeMap<(usize, usize), Vec<f32>> = BTreeMap::new();
+    for task in tasks {
+        for (layer, row, value) in task.scales() {
+            scale_votes.entry((*layer, *row)).or_default().push(*value);
+        }
+    }
+    let mut scale_edits = Vec::new();
+    for ((layer, row), mut values) in scale_votes {
+        values.sort_by(f32::total_cmp);
+        let merged = if values.len() % 2 == 1 {
+            values[values.len() / 2]
+        } else {
+            let mid = values.len() / 2;
+            (values[mid - 1] + values[mid]) * 0.5
+        };
+        let current = base
+            .layer(layer)
+            .and_then(|layer| layer.scale(row))
+            .ok_or(Error::OutOfBounds { layer, row, col: 0 })?;
+        if merged.to_bits() != current.to_bits() {
+            scale_edits.push(Edit::SetScale {
+                layer,
+                row,
+                to: merged,
+            });
+        }
+    }
     let mut net = base.clone();
     Patch::new(edits).apply(&mut net)?;
+    Patch::new(scale_edits).apply(&mut net)?;
     Ok(net)
 }
 
@@ -182,6 +234,7 @@ pub fn merge_tasks_per_task_dare(
         sparse.push(TaskVector {
             base: task.base,
             edits,
+            scales: task.scales().to_vec(),
         });
     }
     let mut net = merge_tasks(base, &sparse)?;

@@ -170,6 +170,8 @@ CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N] [--by-row]`。
 
 `wsp_task_merge` 做三值任务向量合并：每个任务只对**它改过的坐标**投票，票和取符号、平票
 保留基准，全体投 `0` 时取 `0`；任务向量带基准校验和，拿错基准会报错；`aligned=true` / `--aligned` 先消隐藏单元置换再求差分。
+scale 按**行**单独记录差分，合并时对同一行取各任务目标值的**中位数**（偶数个取中间两个的平均），
+与基准位相同则不写编辑——不再丢弃任务的 scale 调优。
 `dare_rate` / `--dare-rate`（配 `dare_seed` / `--dare-seed`）在投票合并**之后**对合并差分做一次
 坐标级 DARE 稀疏化：投票仍用完整任务向量，`rate=0` 与不传完全一致；`rate` 非 `[0, 1)` 判错。
 `dare_per_task` / `--dare-per-task` 是相反的次序：每个任务**先**用自己的子种子
