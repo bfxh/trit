@@ -183,6 +183,17 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 取累计权重达到总权重一半处的值，恰好落在两个值中间时取平均（等权时退化为普通中位数）；
 权重全为 1 时与不带权重的合并逐位一致。权重可与 `dare_rate` / `dare_per_task` 同用，
 稀疏化的次序不变，投票阶段按权重累加。
+`oracle` / `--oracle <json|->` 是可选验证集（格式同 `verify`）：给了就在结果里返回
+`verify.before` / `verify.after` 的 `loss` / `exact` / `accuracy`，用来判断这次合并
+相对基准是改善还是退化；不传时 `verify: null`、不额外跑前向。
+`tune_weights` / `--tune-weights`（配 `tune_rounds` / `--tune-rounds`，默认 1）用 `oracle` 做坐标下降：
+从等权出发，每轮对每个任务试 `{0, 0.5, 1, 2}`，只接受验证集 `loss` 严格下降的改动，某轮无改进就停。
+结果里的 `tuning` 给出 `rounds` / `evaluations` / `initial_loss` / `tuned_loss`，`weights` 是选出的权重。
+评估的是加权投票合并（不含 DARE）；`tune_weights` 与显式 `weights` 互斥且必需 oracle；
+`tune_rounds=0` 只算等权基线。
+
+真实数据读数见 `examples/cifar_tasks.rs`（CIFAR-10 8×8 灰度 → 三值 MLP → WSP1 → 合并/调权）；
+它需要外部数据夹具，CI 只编译不运行。
 
 `wsp_run_script` 执行组合脚本：`sequence` 默认原子（任一步失败/回滚则整段恢复原样，
 `atomic=false` 保留已成功步骤），`when` 按当前行为（完整逐样本输出）选择 `then` / `otherwise`，

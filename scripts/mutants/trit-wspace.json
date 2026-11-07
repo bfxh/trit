@@ -1678,5 +1678,109 @@
  "new": "    let mut net = merge_tasks(base, &sparse)?;",
  "pkg": "trit-wspace",
  "filter": "merge_weighted_per_task_dare_keeps_weights"
+},
+{
+ "name": "wspace-verify: CLI 不给读数（verify 恒 null）",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "    let verify = if let Some(path) = oracle_path {",
+ "new": "    let verify = if let Some(path) = oracle_path.filter(|_| false) {",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_verify_readings"
+},
+{
+ "name": "wspace-verify: CLI after 用基准",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "            \"after\": wire::metrics_value(&merged, &oracle).map_err(err)?,",
+ "new": "            \"after\": wire::metrics_value(&base, &oracle).map_err(err)?,",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_verify_readings"
+},
+{
+ "name": "wspace-verify: MCP 不给读数（verify 恒 null）",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "    let verify = if let Some(oracle) = oracle.as_ref() {",
+ "new": "    let verify = if let Some(oracle) = oracle.as_ref().filter(|_| false) {",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_merge_verify_readings"
+},
+{
+ "name": "wspace-verify: MCP after 用基准",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "            \"after\": wire::metrics_value(&merged, oracle).map_err(err)?,",
+ "new": "            \"after\": wire::metrics_value(&base, oracle).map_err(err)?,",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_merge_verify_readings"
+},
+{
+ "name": "wspace-tune: 不更新权重",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "                    weights[index] = candidate;",
+ "new": "                    let _ = candidate;",
+ "pkg": "trit-wspace",
+ "filter": "tune_weight_finds_lower_loss"
+},
+{
+ "name": "wspace-tune: 不比较 loss",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "                if loss < best_loss {",
+ "new": "                if true {",
+ "pkg": "trit-wspace",
+ "filter": "tune_weight_finds_lower_loss"
+},
+{
+ "name": "wspace-tune: 改进条件反了",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "                if loss < best_loss {",
+ "new": "                if loss > best_loss {",
+ "pkg": "trit-wspace",
+ "filter": "tune_weight_finds_lower_loss"
+},
+{
+ "name": "wspace-tune: 不计评估次数",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "                evaluations += 1;",
+ "new": "                evaluations += 0;",
+ "pkg": "trit-wspace",
+ "filter": "tune_weight_counts_evaluations"
+},
+{
+ "name": "wspace-tune: 轮数被忽略",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    for _ in 0..rounds {",
+ "new": "    for _ in 0..0 {",
+ "pkg": "trit-wspace",
+ "filter": "tune_weight_finds_lower_loss"
+},
+{
+ "name": "wspace-tune: CLI 不接线",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "    if parsed.switches.contains(\"tune-weights\") {",
+ "new": "    if false {",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_tune_weights"
+},
+{
+ "name": "wspace-tune: CLI 调优后仍等权",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "        weights = Some(report.weights().to_vec());",
+ "new": "        weights = Some(vec![1.0; tasks.len()]);",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_tune_weights"
+},
+{
+ "name": "wspace-tune: MCP 不接线",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "    if tune_weights {",
+ "new": "    if false {",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_merge_tune_weights"
+},
+{
+ "name": "wspace-tune: MCP 调优后仍等权",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "        weights = Some(report.weights().to_vec());",
+ "new": "        weights = Some(vec![1.0; tasks.len()]);",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_merge_tune_weights"
 }
 ]

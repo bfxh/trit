@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 
 use crate::{Patch, to_wsp, wire};
 
-use super::{err, flag, load_key, opt_u64, parse_or_path};
+use super::{err, flag, load_key, opt_u64, opt_usize, optional_oracle, parse_or_path};
 
 pub(super) fn task_merge(args: &Value) -> Result<Value, String> {
     let base = load_key(args, "base")?;
@@ -33,7 +33,9 @@ pub(super) fn task_merge(args: &Value) -> Result<Value, String> {
         .and_then(Value::as_f64)
         .map(|rate| rate as f32);
     let dare_seed = opt_u64(args, "dare_seed", 0);
-    let weights = match args.get("weights") {
+    let oracle = optional_oracle(args)?;
+    let tune_weights = flag(args, "tune_weights");
+    let mut weights = match args.get("weights") {
         None | Some(Value::Null) => None,
         Some(Value::Array(items)) => {
             let mut parsed = Vec::with_capacity(items.len());
@@ -45,6 +47,25 @@ pub(super) fn task_merge(args: &Value) -> Result<Value, String> {
         }
         Some(_) => return Err("weights 必须是数字数组".into()),
     };
+    let mut tuning = None;
+    if tune_weights {
+        let Some(oracle_ref) = oracle.as_ref() else {
+            return Err("tune_weights 需要 oracle".into());
+        };
+        if weights.is_some() {
+            return Err("tune_weights 与 weights 只能给一个".into());
+        }
+        let rounds = opt_usize(args, "tune_rounds", 1);
+        let report =
+            crate::task::tune_task_weights(&base, &tasks, oracle_ref, rounds).map_err(err)?;
+        weights = Some(report.weights().to_vec());
+        tuning = Some(json!({
+            "rounds": rounds,
+            "evaluations": report.evaluations(),
+            "initial_loss": report.initial_loss(),
+            "tuned_loss": report.loss(),
+        }));
+    }
     let merged = match (dare_rate, dare_per_task, weights.as_deref()) {
         (Some(_), Some(_), _) => {
             return Err("dare_rate 与 dare_per_task 只能给一个".into());
@@ -68,10 +89,20 @@ pub(super) fn task_merge(args: &Value) -> Result<Value, String> {
         }
         (None, None, None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,
     };
+    let verify = if let Some(oracle) = oracle.as_ref() {
+        Some(json!({
+            "before": wire::metrics_value(&base, oracle).map_err(err)?,
+            "after": wire::metrics_value(&merged, oracle).map_err(err)?,
+        }))
+    } else {
+        None
+    };
     let patch = Patch::diff(&base, &merged).map_err(err)?;
     Ok(json!({
         "tasks": tasks.len(),
         "weights": weights,
+        "tuning": tuning,
+        "verify": verify,
         "dare_rate": dare_rate,
         "dare_per_task": dare_per_task,
         "dare_seed": dare_seed,

@@ -13,6 +13,7 @@ use crate::codec::checksum;
 use crate::edit::{Edit, Patch};
 use crate::error::{Error, Result};
 use crate::net::Net;
+use crate::oracle::Oracle;
 use crate::trit::Trit;
 
 /// 相对某个基准网络的任务向量。
@@ -500,6 +501,92 @@ pub fn merge_tasks_per_task_dare(
     }
     Patch::new(rescale).apply(&mut net)?;
     Ok(net)
+}
+
+/// 用验证集选任务权重的结果。
+#[derive(Clone, Debug, PartialEq)]
+pub struct WeightTuning {
+    weights: Vec<f32>,
+    loss: usize,
+    initial_loss: usize,
+    evaluations: usize,
+}
+
+impl WeightTuning {
+    /// 选出的权重（与任务顺序对应）。
+    #[must_use]
+    pub fn weights(&self) -> &[f32] {
+        &self.weights
+    }
+
+    /// 调优后的验证集失配数。
+    #[must_use]
+    pub fn loss(&self) -> usize {
+        self.loss
+    }
+
+    /// 等权起点的验证集失配数。
+    #[must_use]
+    pub fn initial_loss(&self) -> usize {
+        self.initial_loss
+    }
+
+    /// 实际做了多少次“合并 + 验证集前向”。
+    #[must_use]
+    pub fn evaluations(&self) -> usize {
+        self.evaluations
+    }
+}
+
+/// 坐标下降的候选权重：0 表示忽略该任务，2 表示加倍。
+const TUNE_CANDIDATES: [f32; 4] = [0.0, 0.5, 1.0, 2.0];
+
+/// 用验证集坐标下降地选任务权重：每轮对每个任务试候选集，保留验证集 `loss` 更小的。
+///
+/// 从等权（全 1）出发；每轮按任务顺序更新，只有 `loss` 严格下降才接受；某轮没有任何改进
+/// 就提前停。评估的是**加权投票合并**（不含 DARE），调用方拿到权重后再执行自己需要的
+/// 合并次序。`rounds=0` 返回等权与等权 loss（只做一次评估）。空任务判错。
+pub fn tune_task_weights(
+    base: &Net,
+    tasks: &[TaskVector],
+    oracle: &Oracle,
+    rounds: usize,
+) -> Result<WeightTuning> {
+    if tasks.is_empty() {
+        return Err(Error::Audit("调优需要至少一个任务".into()));
+    }
+    let mut weights = vec![1.0_f32; tasks.len()];
+    let mut best_loss = oracle.loss(&merge_tasks_weighted(base, tasks, &weights)?)?;
+    let initial_loss = best_loss;
+    let mut evaluations = 1usize;
+    for _ in 0..rounds {
+        let mut improved = false;
+        for index in 0..weights.len() {
+            for &candidate in &TUNE_CANDIDATES {
+                if candidate == weights[index] {
+                    continue;
+                }
+                let mut trial = weights.clone();
+                trial[index] = candidate;
+                let loss = oracle.loss(&merge_tasks_weighted(base, tasks, &trial)?)?;
+                evaluations += 1;
+                if loss < best_loss {
+                    best_loss = loss;
+                    weights[index] = candidate;
+                    improved = true;
+                }
+            }
+        }
+        if !improved {
+            break;
+        }
+    }
+    Ok(WeightTuning {
+        weights,
+        loss: best_loss,
+        initial_loss,
+        evaluations,
+    })
 }
 
 fn current_value(base: &Net, layer: usize, row: usize, col: usize) -> Result<Trit> {
