@@ -208,7 +208,7 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 返回 `verify`（loss/exact/accuracy），批量结果在 `results` 数组中（不含 `artifact`）。
 
 真实数据读数见 `examples/cifar_tasks.rs`（CIFAR-10 8×8 灰度 → 三值 MLP → WSP1 → 合并/调权）；
-它支持 `--size`（8/16）、`--color`（16×16×3）、`--hidden N`、`--seeds N`（多 seed 均值/方差）
+它支持 `--size`（8/16/32）、`--color`（16×16×3 或 32×32×3）、`--hidden N`、`--seeds N`（多 seed 均值/方差）
 与同架构 f32 基线（连续输入 + 连续权重），需要外部数据夹具，CI 只编译不运行。
 
 `wsp_run_script` 执行组合脚本：`sequence` 默认原子（任一步失败/回滚则整段恢复原样，
