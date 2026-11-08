@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
+
+- `merge_tasks_weighted_report` 返回 `(Net, MergeReport)`：任务数、被零权重忽略的任务数、
+  有票坐标数、平票坐标数、实际 trit/偏置编辑数、写出的 scale 行数。`merge_tasks_weighted`
+  保持返回 `Net`。CLI/MCP 在非 DARE 路径输出 `merge_report`（DARE 路径为 `null`）。
+- `DEFAULT_TUNE_GRID` + `TuneMetric` / `TuneMerge` + `tune_task_weights_metric`：
+  调权可换候选网格与评估合并方式。CLI `--tune-grid G[,G...]`、`--tune-with-dare`；
+  MCP `tune_grid`、`tune_with_dare`。`TuneMerge::{Plain, Dare, PerTaskDare}` 让评估与最终
+  DARE 合并路径对齐。
+- 测试 252 → 258 + 1 doctest（`tests/task_tune.rs` 18 → 24）；变异 234 → 245（新增 11 条目标，
+  其中 PerTaskDare 分支补测后 3/3 caught）。
+- 未证栏：DARE 路径不返回 `merge_report`（只报告投票阶段）；`ties` 定义为“票和为零且票值不全相同”；
+  `tune_grid` 未做去重/上限。
+
 ### Experiments（trit-wspace：16×16 彩色 + hidden 128）
 
 - `examples/cifar_tasks.rs` 支持 `--color`（16×16×3 = 768 维）与 `--hidden N`；本地新增 16×16 彩色夹具。
