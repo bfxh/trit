@@ -12,8 +12,9 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use serde_json::{Value, json};
 
-use crate::build_source;
+use crate::egraph::RewriteOptions;
 use crate::schedule::{self, Prefer, Track};
+use crate::{BuildOptions, build_source};
 use trit_core::Algebra;
 
 // ---------- 双轨并行（--manifest） ----------
@@ -157,11 +158,17 @@ pub(crate) fn execute_job(job: &JobSpec, algebra: Algebra, out_root: &Path) -> V
             build_source(
                 source,
                 &out,
-                algebra,
-                false,
-                job.output.as_deref(),
-                job.expect.as_deref(),
-                job.emit_verilog,
+                BuildOptions {
+                    algebra,
+                    force: false,
+                    output: job.output.as_deref(),
+                    expect: job.expect.as_deref(),
+                    emit_verilog: job.emit_verilog,
+                    verify_hdl: false,
+                    emit_gpu: false,
+                    threads: 1,
+                    egraph: RewriteOptions::default(),
+                },
             )
             .map(|summary| {
                 json!({

@@ -5,12 +5,16 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "三进制构建工具（M0）：.tri → 化简 + 精确复核 → TRB1/CSV/C"
+description = "三进制构建工具（M0–M3）：.tri/Verilog → 饱和重写 → TRB2/CSV/C/双导轨/WGSL"
 publish = false
 
 [[bin]]
 name = "trit-build"
 path = "src/main.rs"
+
+[features]
+# GPU 导出本身不需要 wgpu；只有真机对拍测试用 `--features gpu` 拉依赖。
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
 
 [dependencies]
 trit-core.workspace = true
@@ -19,3 +23,6 @@ trit-circuit.workspace = true
 anyhow = "1.0.104"
 clap = { version = "4.6.7", features = ["derive"] }
 serde_json = "1.0.154"
+wgpu = { version = "30", optional = true }
+pollster = { version = "0.4", optional = true }
+bytemuck = { version = "1", optional = true }
