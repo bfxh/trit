@@ -73,6 +73,7 @@ Lean 4 形式化入口：[`interop/lean/`](../interop/lean/)（K3/KGate/Belnap4/
 
 | 语言 | 路径 | 范围 | 运行 |
 |---|---|---|---|
+| C | [`c/`](c/) | K3、KGate、5 trits/byte（含尾部/错误），header-only | `cd c && make test`；conformance 见 [`c/README.md`](c/README.md) |
 | Go | [`go/`](go/) | 平衡三进制整数、K3、5 trits/byte、KGate | `cd go && go test ./...` |
 
 ## 其余语言评估
