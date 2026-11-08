@@ -1,8 +1,10 @@
-/* TRB2 主机侧运行时（M2）：解码 + 校验，不含求值。
+/* TRB2 主机侧运行时（M2/M2.1）：解码 + 校验，不含求值。
  *
  * 求值走 `lookup.c`（`trit-build` 直接产出的表）；这里只负责把 TRB2 blob
- * 还原成逐 trit 的数组，并**独立**复算 GF(3) CRC-3 —— 与 Rust 实现互相验证，
- * 避免"编码和解码一起错"的假通过。
+ * 还原成逐 trit 的数组，并**独立**复算 GF(3) CRC-3 与名字段 FNV-1a —— 与 Rust
+ * 实现互相验证，避免"编码和解码一起错"的假通过。
+ * 支持 v2（11 字节头、无名）与 v3（19 字节头 + 变量名段）。变量名不参与求值，
+ * 解码时只校验长度与哈希，不对外暴露。
  */
 #ifndef TRIT_RUNTIME_H
 #define TRIT_RUNTIME_H
@@ -25,6 +27,7 @@
 #define TRIT_ERR_CRC (-7)     /* CRC-3 不匹配 */
 #define TRIT_ERR_COUNT (-8)   /* count != 3^nvars */
 #define TRIT_ERR_CANON (-10) /* 末字节闲置的 trit 槽非零（非规范编码） */
+#define TRIT_ERR_NAMES (-11) /* v3 名字段截断/空名/哈希不符 */
 #define TRIT_ERR_NOMEM (-9)
 
 typedef struct {

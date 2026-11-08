@@ -9,7 +9,7 @@
 /// 两条构建轨。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Track {
-    /// 三进制轨：本工具的 `.tri → TRB1` 任务。
+    /// 三进制轨：本工具的 `.tri → TRB2` 任务。
     Ternary,
     /// 二进制轨：外部 `cargo`/`rustc`/`llvm` 命令。
     Binary,

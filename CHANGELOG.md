@@ -19,6 +19,35 @@
   容量不是三值瓶颈的主因，分辨率/三值编码仍是限制。
 - 限制：32×32 与 16×16 的训练规模不同（hidden 64 vs 128、per-class 500 vs 1000），
   不能把差异归因于分辨率。
+### Added（`trit-build`：补齐 M2/M3 的六项遗留，2026-11-08）
+
+- **TRB2 v3：变量名进 blob**。固定头后加 `names_hash u64` + `nvars × (len u8 | UTF-8)`；
+  `--decode` 重建的 `truth.csv` 表头与原表逐字节一致。Rust、C 运行时（`trit_runtime.c`）
+  与 red-team 独立解析器同步支持 v2/v3；v2 仍可解（列名回退 `v0..vN`）。
+  体积：3 变量 31 B（v2 17 B；TRB1 35 B）、12 变量 **106,346 B**（v2 106,300 B；TRB1 132,883 B，−19.97%）。
+- **Ł3/B3 双导轨 Verilog 导出**。K3 保留手写少门公式；Ł3/B3 从该语义 3×3 真值表合成
+  两轨 DNF（`--emit-verilog --algebra lukasiewicz|bochvar`）。验证有三路：测试内位级解释器、
+  `trit-circuit::parse_verilog` 回读 + `propagate`、以及 iverilog 真仿真。
+- **HDL 真仿真**：`--verify-hdl` 生成数组循环的 `design_tb.v` + `expected.mem`，调用
+  iverilog 14/vvp 逐行比对；`(1,1)` 非法导轨也算失败。故意改坏的 `design.v` 会触发
+  `MISMATCH` 退出非 0；0 变量常量表达式也覆盖。
+- **GPU 导出**：`--emit-gpu` 产出 `truth.wgsl`（WGSL 查表内核）、`truth.gpu.bin`
+  （`TGPU` 头 + 2 bit/trit 的 pos/neg 位平面）与 `truth_gpu.json`。`--features gpu` 的
+  wgpu 单测在 RTX 4060 Ti 上对 K3/Ł3/B3 逐 code 对拍，越界 code 输出 0。
+- **e-graph 饱和求解 + 代价模型**：重写到不动点（无新合并即停），`--egraph-rounds` /
+  `--egraph-node-limit` 兜底；`build.json` 的 `verified.egraph` 记录
+  `rounds/eNodes/saturated/cost/nodes`。提取支持 `--cost nodes|gates`；
+  测试构造同一 e-class 验证 nodes 选 `a≡b`、gates 选 `(a∧b)∧c`。
+- **位并行多线程**：按 64 行对齐切块，`--threads 0` 自动（24 逻辑核）。
+  12 变量 531,441 行：标量 297 ms → 单线程位并行 23.7 ms → **3.74 ms（6.3×）**；
+  1/2/3/4/8/auto 线程逐 trit 相同，`truth.csv`/`truth.tritbin`/`lookup.c` 与线程数无关。
+- CLI 新增 `--verify-hdl`、`--emit-gpu`、`--threads`、`--cost`、`--egraph-rounds`、
+  `--egraph-node-limit`；缓存键覆盖所有会改变产物的选项（线程数除外）。
+- 测试：新增 TRB2 v3 名字段（含篡改/UTF-8/不安全字符）、v2 兼容、三语义双导轨回读、
+  iverilog 正反例、GPU 布局与真机对拍、e-graph 饱和/触顶/代价模型、线程一致性等用例。
+  `cargo test -p trit-build -p trit-redteam` 全绿；
+  `cargo clippy -p trit-build -p trit-redteam --all-targets -D warnings` 干净
+  （`trit-build --features gpu` 另跑一条）。
 
 ### Added（trit-wspace：任务向量缩放 + 块级 DARE + 分类读数）
 
