@@ -167,6 +167,7 @@ pub fn tools() -> Vec<Value> {
                 "tuned": {"type": "string"},
                 "lambda": {"type": "number", "description": "单个缩放系数；与 lambdas 互斥"},
                 "lambdas": {"type": "array", "items": {"type": "number"}, "description": "λ 扫描列表；批量时返回 results（不含 artifact）"},
+                "layer_lambdas": {"type": "array", "items": {"type": "number"}, "description": "按层 λ（每层一个；0=丢弃、<0 取反、>0 原样）；与 lambda/lambdas 互斥"},
                 "oracle": {"type": "object", "description": "可选验证集；给了就给每个 λ 返回 verify 读数"},
             }),
             &["base", "tuned"],

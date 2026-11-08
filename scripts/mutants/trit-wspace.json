@@ -1962,8 +1962,8 @@
 {
  "name": "wspace-task-scale: λ=0 不丢弃",
  "file": "crates/trit-wspace/src/task.rs",
- "old": "    if lambda == 0.0 {",
- "new": "    if false {",
+ "old": "    if lambda == 0.0 {\n        return Ok(TaskVector {",
+ "new": "    if false {\n        return Ok(TaskVector {",
  "pkg": "trit-wspace",
  "filter": "scale_zero_drops"
 },
@@ -1986,8 +1986,8 @@
 {
  "name": "wspace-task-scale: 非法 λ 不报错",
  "file": "crates/trit-wspace/src/task.rs",
- "old": "    if !lambda.is_finite() {",
- "new": "    if false {",
+ "old": "    if !lambda.is_finite() {\n        return Err(Error::InvalidLambda { lambda });\n    }",
+ "new": "    if false {\n        return Err(Error::InvalidLambda { lambda });\n    }",
  "pkg": "trit-wspace",
  "filter": "scale_rejects_non_finite"
 },
@@ -2146,17 +2146,57 @@
 {
  "name": "wspace-task-scale: CLI 批量不输出 verify",
  "file": "crates/trit-wspace/src/cli/cli_task.rs",
- "old": "            row[\"verify\"] = wire::metrics_value(&net, oracle).map_err(err)?;",
- "new": "            let _ = oracle;\n            row[\"verify\"] = serde_json::Value::Null;",
+ "old": "        if let Some(oracle) = &oracle {\n            row[\"verify\"] = wire::metrics_value(&net, oracle).map_err(err)?;\n        }\n        results.push(row);",
+ "new": "        if let Some(oracle) = None::<&crate::oracle::Oracle> {\n            let _ = oracle;\n            row[\"verify\"] = wire::metrics_value(&net, oracle).map_err(err)?;\n        }\n        results.push(row);",
  "pkg": "trit-wspace",
  "filter": "cli_task_scale_lambdas_scan"
 },
 {
  "name": "wspace-task-scale: MCP 批量不输出 verify",
  "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
- "old": "            row[\"verify\"] = wire::metrics_value(&net, oracle).map_err(err)?;",
- "new": "            let _ = oracle;\n            row[\"verify\"] = serde_json::Value::Null;",
+ "old": "        if let Some(oracle) = &oracle {\n            row[\"verify\"] = wire::metrics_value(&net, oracle).map_err(err)?;\n        }\n        results.push(row);",
+ "new": "        if let Some(oracle) = None::<&crate::oracle::Oracle> {\n            let _ = oracle;\n            row[\"verify\"] = wire::metrics_value(&net, oracle).map_err(err)?;\n        }\n        results.push(row);",
  "pkg": "trit-wspace",
  "filter": "mcp_task_scale_lambdas_scan"
+},
+{
+ "name": "wspace-task-scale: 按层 λ 忽略层级",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        let lambda = *lambdas.get(layer).ok_or(Error::Shape {\n            what: \"layer_lambdas\",\n            expected: layer + 1,\n            got: lambdas.len(),\n        })?;\n        if lambda == 0.0 {\n            continue;\n        }",
+ "new": "        let lambda = lambdas[0];\n        if lambda == 0.0 {\n            continue;\n        }",
+ "pkg": "trit-wspace",
+ "filter": "layer_lambdas_scale_per_layer"
+},
+{
+ "name": "wspace-task-scale: 按层 λ=0 未丢",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        if lambda == 0.0 {\n            continue;\n        }",
+ "new": "        if false {\n            continue;\n        }",
+ "pkg": "trit-wspace",
+ "filter": "layer_lambdas_scale_per_layer"
+},
+{
+ "name": "wspace-task-scale: CLI 层 λ 未接线",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "    let layer_lambdas = parsed\n        .values\n        .get(\"layer-lambdas\")\n        .map(|raw| parse_lambdas(raw))\n        .transpose()?;",
+ "new": "    let layer_lambdas: Option<Vec<f32>> = None;",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_scale_layer_lambdas_round_trip"
+},
+{
+ "name": "wspace-task-scale: MCP 层 λ 未接线",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "    let layer_lambdas = match args.get(\"layer_lambdas\") {",
+ "new": "    let layer_lambdas = match None::<Value> {",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_scale_layer_lambdas_round_trip"
+},
+{
+ "name": "wspace-task-scale: 层 λ 长度不校验",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "        if layer_lambdas.len() != base.layers().len() {\n            return Err(format!(\n                \"--layer-lambdas 需要 {} 个（每层一个），得到 {}\",\n                base.layers().len(),\n                layer_lambdas.len()\n            ));\n        }",
+ "new": "        if false {\n            return Err(format!(\n                \"--layer-lambdas 需要 {} 个（每层一个），得到 {}\",\n                base.layers().len(),\n                layer_lambdas.len()\n            ));\n        }",
+ "pkg": "trit-wspace",
+ "filter": "layer_lambdas_length_checked_by_cli"
 }
 ]

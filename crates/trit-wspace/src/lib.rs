@@ -153,7 +153,7 @@ pub use shard::{Checkpoint, Shard, ShardCursor, ShardHeader, ShardReplay, Sharde
 pub use task::{
     MergeReport, TaskVector, merge_tasks, merge_tasks_dare, merge_tasks_per_task_dare,
     merge_tasks_weighted, merge_tasks_weighted_dare, merge_tasks_weighted_per_task_dare,
-    merge_tasks_weighted_report, scale_task,
+    merge_tasks_weighted_report, scale_task, scale_task_layers,
 };
 pub use transplant::transplant_units;
 pub use trit::Trit;

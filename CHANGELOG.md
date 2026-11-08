@@ -12,8 +12,13 @@
   f32 base **27.35% ± 0.97%**。
 - 二分类（cat/dog、500/类、10 epochs、3 seeds、400 test）：三值 base 43.75% ± 1.50%、
   argmax/readout **46.75% ± 1.30%**、f32 base **56.0% ± 1.5%**。
+- hidden 128 对照（32×32 彩色、per-class 500、3 seeds、10 epochs）：10 类三值 base
+  **18.20% ± 0.98%**、argmax 18.63% ± 0.84%、f32 **29.83% ± 0.95%**；二分类三值 base
+  **45.17% ± 3.64%**、argmax 45.92% ± 2.36%、f32 **55.33% ± 1.70%**。与 hidden 64 相比：
+  三值 10 类基本持平（18.10% → 18.20%），f32 升 2.5 点；二分类三值升 1.4 点但 std 增大。
+  容量不是三值瓶颈的主因，分辨率/三值编码仍是限制。
 - 限制：32×32 与 16×16 的训练规模不同（hidden 64 vs 128、per-class 500 vs 1000），
-  不能把差异归因于分辨率；单档实验，未做 32×32 的 hidden 128/多 epoch 对照。
+  不能把差异归因于分辨率。
 
 ### Added（trit-wspace：任务向量缩放 + 块级 DARE + 分类读数）
 
@@ -28,9 +33,11 @@
   MCP `wsp_dare_drop.by_layer`（与 `by_row` / `block` 互斥）。
 - `task-scale --lambdas L,L...` / `wsp_task_scale.lambdas`：批量 λ 扫描；配 `--oracle` 时
   每个 λ 返回 `verify`，批量结果在 `results`（不含 `artifact`）。
-- 测试 258 → 281 + 1 doctest（新增 `tests/task_scale.rs` 9、`tests/classification.rs` 4、
-  `tests/dare.rs` +5、`tests/dare_layer.rs` 5）；变异 245 → 270（新增 25 条目标，子集
-  6/6、4/4、5/5、5/5、11/11 caught）。
+- `task-scale --layer-lambdas L0,L1...` / `wsp_task_scale.layer_lambdas`：按层给系数（每层
+  一个；0 丢弃该层、<0 取反该层），与 `lambda` / `lambdas` 互斥；长度必须等于层数。
+- 测试 258 → 285 + 1 doctest（新增 `tests/task_scale.rs` 13、`tests/classification.rs` 4、
+  `tests/dare.rs` +5、`tests/dare_layer.rs` 5）；变异 245 → 275（新增 30 条目标，子集
+  6/6、4/4、5/5、5/5、16/16 caught）。
 
 ### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
 

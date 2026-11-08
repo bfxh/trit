@@ -207,8 +207,46 @@ pub(super) fn task_scale(args: &Value) -> Result<Value, String> {
         Some(_) => return Err("lambdas 需要数字数组".into()),
         None => None,
     };
+    let layer_lambdas = match args.get("layer_lambdas") {
+        Some(Value::Array(items)) => {
+            let mut values = Vec::new();
+            for item in items {
+                values.push(item.as_f64().ok_or("layer_lambdas 需要数字数组")? as f32);
+            }
+            Some(values)
+        }
+        Some(_) => return Err("layer_lambdas 需要数字数组".into()),
+        None => None,
+    };
     if lambda.is_some() && lambdas.is_some() {
         return Err("lambda 与 lambdas 只能给一个".into());
+    }
+    if layer_lambdas.is_some() && (lambda.is_some() || lambdas.is_some()) {
+        return Err("layer_lambdas 与 lambda/lambdas 只能给一个".into());
+    }
+    if let Some(layer_lambdas) = layer_lambdas {
+        if layer_lambdas.len() != base.layers().len() {
+            return Err(format!(
+                "layer_lambdas 需要 {} 个（每层一个），得到 {}",
+                base.layers().len(),
+                layer_lambdas.len()
+            ));
+        }
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled = crate::task::scale_task_layers(&vector, &layer_lambdas).map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let mut row = json!({
+            "layer_lambdas": layer_lambdas,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return Ok(row);
     }
     let values = match lambdas {
         Some(values) => values,
