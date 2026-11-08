@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Experiments（trit-wspace：多 seed 均值/方差 + 同架构 f32 基线）
+
+- `examples/cifar_tasks.rs` 增加 `--seeds N`：每个 seed 训练 base + 两个任务并跑四种调权，
+  报告 mean/std；同时训练同架构 f32 MLP（只解除权重三值化，输入/数据/架构/epochs 不变）作基线。
+- 读数（3 seeds：7/8/9）：
+  · 10 类（hidden 64、每类 500、10 epochs、test 1000）：三值 base **15.67% ± 0.71%**，
+    等权 14.73% ± 0.35%，argmax 调权 15.57% ± 0.64%，readout 15.67% ± 0.71%；
+    **f32 base 26.97% ± 0.76%**（权重三值化损失约 11.3 个点）。
+  · 二分类 cat-vs-dog（hidden 64、每类 1000、10 epochs、test 400）：三值 base **47.0% ± 3.4%**，
+    等权 48.0% ± 3.4%，exact/hamming/argmax/readout 调权均 **52.92% ± 2.67%**；
+    **f32 base 56.67% ± 0.38%**（三值 base 差 9.7 点，调权后差 3.7 点）。
+- 结论：权重三值化在本设置下损失约 9–11 个点；任务合并/调权能部分补回（二分类 +5.9 点），
+  但没有追平 f32；10 类的调权收益仍在噪声内（±0.7 点）。
+- 未证栏：输入仍是 8×8 灰度三值（64 维），不是 32×32/彩色；f32 基线只解除权重三值化，
+  不是完整 f32 训练流程；3 个 seed 的 std 仍偏大（二分类 ±3 点）。
+
 ### Added（trit-wspace：argmax 一维分类 + readout 置信度目标）
 
 - `tune_task_weights_argmax` 的一维输出改为按符号分类（`>0` 记 1），二分类不再退化成
