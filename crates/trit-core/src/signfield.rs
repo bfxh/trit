@@ -353,6 +353,243 @@ pub fn extract_surface(field: &SignField3D, origin: [f32; 3], h: f32) -> SignMes
     mesh
 }
 
+// ---------------------------------------------------------------------------
+// 符号 / 距离解耦
+// ---------------------------------------------------------------------------
+
+/// 三态符号 + 距离的混合场。
+///
+/// 纯符号场（[`SignField3D`]）在体素尺度上会碎片化：状态是硬判定、顶点只能取界面边中点，
+/// 面积被打碎成约十份（CHG-2026-11-09-Y 实测 9.8 倍）。这里把**平滑交回给距离**：
+/// 每条跨界边按 `d0/(d0-d1)` 插值出零交叉点，顶点因此贴着真实界面，而不是 cube 中心。
+///
+/// `Null` 体素也允许带距离（≈0，表示落在面元平面上），这样薄壳的 `Null | Outside`
+/// 界面同样能插值——薄壳仍是**单层**（同号内部不生成面），但不再是锯齿。
+#[derive(Clone, Debug)]
+pub struct MixedSignField {
+    signs: SignField3D,
+    /// 每体素的有符号距离（inside 负 / outside 正 / null ≈0）；`NaN` 表示缺失。
+    dist: Vec<f32>,
+}
+
+impl MixedSignField {
+    pub fn new(n: u32) -> Self {
+        let vox = (n as usize).pow(3);
+        Self {
+            signs: SignField3D::new(n),
+            dist: vec![f32::NAN; vox],
+        }
+    }
+
+    pub fn signs(&self) -> &SignField3D {
+        &self.signs
+    }
+
+    pub fn n(&self) -> u32 {
+        self.signs.n()
+    }
+
+    pub fn counts(&self) -> [usize; 3] {
+        self.signs.counts()
+    }
+
+    #[inline]
+    fn index(&self, x: u32, y: u32, z: u32) -> usize {
+        let n = self.signs.n() as usize;
+        z as usize * n * n + y as usize * n + x as usize
+    }
+
+    pub fn sign_at(&self, x: u32, y: u32, z: u32) -> TriSign {
+        self.signs.at(x, y, z)
+    }
+
+    pub fn dist_at(&self, x: u32, y: u32, z: u32) -> f32 {
+        self.dist[self.index(x, y, z)]
+    }
+
+    /// 同时设置符号与距离。
+    pub fn set(&mut self, x: u32, y: u32, z: u32, sign: TriSign, dist: f32) {
+        self.signs.set(x, y, z, sign);
+        let i = self.index(x, y, z);
+        self.dist[i] = dist;
+    }
+}
+
+/// 跨符号边的插值点（网格坐标）；同号返回 `None`。
+fn cross_point(field: &MixedSignField, p: (u32, u32, u32), q: (u32, u32, u32)) -> Option<[f32; 3]> {
+    if field.sign_at(p.0, p.1, p.2) == field.sign_at(q.0, q.1, q.2) {
+        return None;
+    }
+    let d0 = field.dist_at(p.0, p.1, p.2);
+    let d1 = field.dist_at(q.0, q.1, q.2);
+    let t = if d0.is_finite() && d1.is_finite() {
+        let denom = d0 - d1;
+        if denom.abs() < 1e-12 {
+            0.5
+        } else {
+            (d0 / denom).clamp(0.0, 1.0)
+        }
+    } else {
+        0.5
+    };
+    Some([
+        p.0 as f32 + (q.0 as f32 - p.0 as f32) * t,
+        p.1 as f32 + (q.1 as f32 - p.1 as f32) * t,
+        p.2 as f32 + (q.2 as f32 - p.2 as f32) * t,
+    ])
+}
+
+/// 混合提取：符号不同的边生成面（含 `Null | ±1` 界面），顶点位置按距离插值。
+///
+/// 与 [`extract_surface`] 的唯一差别就在顶点位置：那里取「界面边中点平均」，
+/// 这里取「按距离插值的零交叉点平均」——这是削掉碎片化的关键。
+pub fn extract_surface_mixed(field: &MixedSignField, origin: [f32; 3], h: f32) -> SignMesh {
+    let n = field.n();
+    let mut mesh = SignMesh::default();
+    if n < 2 {
+        return mesh;
+    }
+    let cn = (n - 1) as usize;
+    let cube_index = |x: usize, y: usize, z: usize| (z * cn + y) * cn + x;
+    let mut cube_vert = vec![u32::MAX; cn * cn * cn];
+
+    // 1. cube 顶点 = 该 cube 内所有跨界边插值点的平均
+    for cz in 0..cn {
+        for cy in 0..cn {
+            for cx in 0..cn {
+                let mut acc = [0.0f32; 3];
+                let mut cnt = 0u32;
+                for axis in 0..3 {
+                    for a in 0..2u32 {
+                        for b in 0..2u32 {
+                            let (p, q) = match axis {
+                                0 => (
+                                    (cx as u32, cy as u32 + a, cz as u32 + b),
+                                    (cx as u32 + 1, cy as u32 + a, cz as u32 + b),
+                                ),
+                                1 => (
+                                    (cx as u32 + a, cy as u32, cz as u32 + b),
+                                    (cx as u32 + a, cy as u32 + 1, cz as u32 + b),
+                                ),
+                                _ => (
+                                    (cx as u32 + a, cy as u32 + b, cz as u32),
+                                    (cx as u32 + a, cy as u32 + b, cz as u32 + 1),
+                                ),
+                            };
+                            if let Some(pos) = cross_point(field, p, q) {
+                                acc[0] += pos[0];
+                                acc[1] += pos[1];
+                                acc[2] += pos[2];
+                                cnt += 1;
+                            }
+                        }
+                    }
+                }
+                if cnt == 0 {
+                    continue;
+                }
+                let inv = 1.0 / cnt as f32;
+                cube_vert[cube_index(cx, cy, cz)] = mesh.positions.len() as u32;
+                mesh.positions.push([
+                    origin[0] + acc[0] * inv * h,
+                    origin[1] + acc[1] * inv * h,
+                    origin[2] + acc[2] * inv * h,
+                ]);
+            }
+        }
+    }
+
+    // 2. 每条跨界边 → 4 邻 cube 顶点 → 两个三角形
+    for axis in 0..3 {
+        for z in 0..n {
+            for y in 0..n {
+                for x in 0..n {
+                    let (p, q, dir) = match axis {
+                        0 => {
+                            if x + 1 >= n {
+                                continue;
+                            }
+                            ((x, y, z), (x + 1, y, z), [1.0f32, 0.0, 0.0])
+                        }
+                        1 => {
+                            if y + 1 >= n {
+                                continue;
+                            }
+                            ((x, y, z), (x, y + 1, z), [0.0f32, 1.0, 0.0])
+                        }
+                        _ => {
+                            if z + 1 >= n {
+                                continue;
+                            }
+                            ((x, y, z), (x, y, z + 1), [0.0f32, 0.0, 1.0])
+                        }
+                    };
+                    let s0 = field.sign_at(p.0, p.1, p.2);
+                    let s1 = field.sign_at(q.0, q.1, q.2);
+                    if s0 == s1 {
+                        continue;
+                    }
+                    let offs: [(i32, i32, i32); 4] = match axis {
+                        0 => [(0, -1, -1), (0, 0, -1), (0, 0, 0), (0, -1, 0)],
+                        1 => [(-1, 0, -1), (0, 0, -1), (0, 0, 0), (-1, 0, 0)],
+                        _ => [(-1, -1, 0), (-1, 0, 0), (0, 0, 0), (0, -1, 0)],
+                    };
+                    let mut v = [u32::MAX; 4];
+                    let mut ok = true;
+                    for (i, (ox, oy, oz)) in offs.iter().enumerate() {
+                        let cx = x as i32 + ox;
+                        let cy = y as i32 + oy;
+                        let cz = z as i32 + oz;
+                        if cx < 0 || cy < 0 || cz < 0 {
+                            ok = false;
+                            break;
+                        }
+                        let (cx, cy, cz) = (cx as usize, cy as usize, cz as usize);
+                        if cx >= cn || cy >= cn || cz >= cn {
+                            ok = false;
+                            break;
+                        }
+                        let id = cube_vert[cube_index(cx, cy, cz)];
+                        if id == u32::MAX {
+                            ok = false;
+                            break;
+                        }
+                        v[i] = id;
+                    }
+                    if !ok {
+                        continue;
+                    }
+                    let want = if s1.as_i8() > s0.as_i8() {
+                        dir
+                    } else {
+                        [-dir[0], -dir[1], -dir[2]]
+                    };
+                    for tri in [[v[0], v[1], v[2]], [v[0], v[2], v[3]]] {
+                        let a = mesh.positions[tri[0] as usize];
+                        let b = mesh.positions[tri[1] as usize];
+                        let c = mesh.positions[tri[2] as usize];
+                        let ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+                        let ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+                        let nn = [
+                            ab[1] * ac[2] - ab[2] * ac[1],
+                            ab[2] * ac[0] - ab[0] * ac[2],
+                            ab[0] * ac[1] - ab[1] * ac[0],
+                        ];
+                        let dot = nn[0] * want[0] + nn[1] * want[1] + nn[2] * want[2];
+                        if dot >= 0.0 {
+                            mesh.indices.extend_from_slice(&tri);
+                        } else {
+                            mesh.indices.extend_from_slice(&[tri[0], tri[2], tri[1]]);
+                        }
+                    }
+                    mesh.quads += 1;
+                }
+            }
+        }
+    }
+    mesh
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -364,6 +601,60 @@ mod tests {
         }
         assert!(TriSign::Inside.is_decided());
         assert!(!TriSign::Null.is_decided());
+    }
+
+    #[test]
+    fn mixed_field_interpolates_by_distance() {
+        // 平面 z=4：inside 在 z<4、outside 在 z>=4，距离线性。
+        // 顶点必须落在零交叉附近（z≈4），而不是 cube 中心（3.5/4.5）。
+        let n = 9;
+        let mut f = MixedSignField::new(n);
+        for z in 0..n {
+            for y in 0..n {
+                for x in 0..n {
+                    let d = z as f32 - 4.0;
+                    let s = if d < 0.0 {
+                        TriSign::Inside
+                    } else {
+                        TriSign::Outside
+                    };
+                    f.set(x, y, z, s, d);
+                }
+            }
+        }
+        let m = extract_surface_mixed(&f, [0.0; 3], 1.0);
+        assert!(!m.indices.is_empty(), "应产出网格");
+        for p in &m.positions {
+            assert!(
+                (p[2] - 4.0).abs() < 0.6,
+                "顶点未落在零交叉附近（应≈4）：{p:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_null_sandwich_still_produces_mesh() {
+        // +1 | 0 | +1：Null 层与两侧各形成一道界面；同号内部不生成面。
+        let n = 9;
+        let mut f = MixedSignField::new(n);
+        for z in 0..n {
+            for y in 0..n {
+                for x in 0..n {
+                    let d = (z as f32 - 4.0).abs();
+                    let s = if z == 4 {
+                        TriSign::Null
+                    } else if z < 4 {
+                        TriSign::Inside
+                    } else {
+                        TriSign::Outside
+                    };
+                    f.set(x, y, z, s, d);
+                }
+            }
+        }
+        let m = extract_surface_mixed(&f, [0.0; 3], 1.0);
+        assert!(!m.indices.is_empty(), "薄壳夹层应产出网格");
+        assert!(m.quads > 0);
     }
 
     #[test]
