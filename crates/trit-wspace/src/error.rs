@@ -131,6 +131,16 @@ pub enum Error {
         /// 非法的候选值。
         value: f32,
     },
+    /// 任务向量缩放系数必须是有限数。
+    InvalidLambda {
+        /// 非法的缩放系数。
+        lambda: f32,
+    },
+    /// DARE 块大小必须非零。
+    InvalidBlock {
+        /// 非法的块大小。
+        block: usize,
+    },
 }
 
 /// 库内统一 `Result`。
@@ -197,6 +207,12 @@ impl fmt::Display for Error {
             }
             Self::InvalidGrid { index, value } => {
                 write!(f, "第 {index} 个调权候选 {value} 必须是有限非负数")
+            }
+            Self::InvalidLambda { lambda } => {
+                write!(f, "任务向量缩放系数 {lambda} 必须是有限数")
+            }
+            Self::InvalidBlock { block } => {
+                write!(f, "DARE 块大小 {block} 必须大于 0")
             }
         }
     }

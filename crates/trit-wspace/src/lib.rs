@@ -133,7 +133,7 @@ pub use analyze::{
 };
 pub use audit::{AuditLog, LogEntry, ReplayReport};
 pub use codec::{checksum, from_wsp, to_wsp};
-pub use dare::{DropOutcome, dare_drop, dare_drop_rows};
+pub use dare::{DropOutcome, dare_drop, dare_drop_blocks, dare_drop_rows};
 pub use edit::{Cost, Edit, Journal, Patch};
 pub use error::{Error, Result};
 pub use explain::{SampleEditImpact, SampleExplanation, explain_sample};
@@ -153,7 +153,7 @@ pub use shard::{Checkpoint, Shard, ShardCursor, ShardHeader, ShardReplay, Sharde
 pub use task::{
     MergeReport, TaskVector, merge_tasks, merge_tasks_dare, merge_tasks_per_task_dare,
     merge_tasks_weighted, merge_tasks_weighted_dare, merge_tasks_weighted_per_task_dare,
-    merge_tasks_weighted_report,
+    merge_tasks_weighted_report, scale_task,
 };
 pub use transplant::transplant_units;
 pub use trit::Trit;

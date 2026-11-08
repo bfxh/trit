@@ -123,7 +123,7 @@ trit-wspace mcp
 }
 ```
 
-十九个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`。
+二十个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`、`wsp_task_scale`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
@@ -151,7 +151,8 @@ CLI 对应 `transplant <dest> --from <source> --layer L --rows i,j`。
 就整行保留或整行丢回基准值，不会出现“半行保留”。行级决策用 `(seed, layer, row)` 散列
 （列标记 `usize::MAX - 1`，与偏置的 `usize::MAX` 区分），只改本层该行的入边与偏置，
 不碰下一层的出边列（单元粒度整体搬运见 `wsp_transplant`）。`kept` / `dropped` 仍按差分坐标数计数。
-CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N] [--by-row]`。
+CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N] [--by-row|--block N]`；
+`--block N` 把同一行的列按 `N` 一块整体保留/丢弃（`N=1` 退化为坐标级，`N=0` 判错）。
 
 `wsp_apply_candidate` 直接吃 `wsp_propose` 的 `candidates[i]`（`edit` 或 `edits`），
 可选 `require_after`；给了 `log` 就把这次编辑追加进 JSONL 日志（日志文本随结果返回，不写盘）。
