@@ -6,7 +6,7 @@
 - 依赖：仅 Lean 核心；不依赖 Mathlib
 - 构建：`cd interop/lean && lake build`
 - 数据桥：`lake exe tritLean > /tmp/lean-vectors.jsonl`，再由 `interop/runner -- --lean ...` 对比 golden vectors
-- CI：`conformance` workflow 的 `lean 4 semantics` job（2026-11-08 已通过；含 Lean→Rust 桥）
+- CI：`conformance` workflow 的 `lean 4 semantics` job（语义层 2026-11-08 已通过；Lean→Rust 桥随 P2.1 加入）
 
 ## 文件
 
@@ -32,7 +32,7 @@
 - `Pack5.unpackGroup_invalidByte`、`Pack5.unpackGroup_shortInput`（错误语义）
 - `Pack5.ofInt_neg_one`、`Pack5.ofInt_two`（`invalid_trit` 的类型外入口）
 
-> `Pack5` 的有限枚举证明已从 `native_decide` 换成 `decide`（kernel 检查）；没有 `sorry`。
+> `Pack5` 的有限枚举证明已从 `native_decide` 换成 kernel 检查；`pack`/`unpack` 与 `pack < 243` 用 `decide`，`Except` 等式因核心库无 `DecidableEq` 实例而用 `rfl`；没有 `sorry`。
 
 ## Lean→Rust 数据桥
 

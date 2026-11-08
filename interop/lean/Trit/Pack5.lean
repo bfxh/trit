@@ -58,23 +58,23 @@ def unpackGroup (n count : Nat) : Except PackError (List PackTrit) :=
 
 theorem unpackGroup_packGroup1 (a : PackTrit) :
     unpackGroup (packGroup [a]) 1 = .ok [a] := by
-  cases a <;> decide
+  cases a <;> rfl
 
 theorem unpackGroup_packGroup2 (a b : PackTrit) :
     unpackGroup (packGroup [a, b]) 2 = .ok [a, b] := by
-  cases a <;> cases b <;> decide
+  cases a <;> cases b <;> rfl
 
 theorem unpackGroup_packGroup3 (a b c : PackTrit) :
     unpackGroup (packGroup [a, b, c]) 3 = .ok [a, b, c] := by
-  cases a <;> cases b <;> cases c <;> decide
+  cases a <;> cases b <;> cases c <;> rfl
 
 theorem unpackGroup_packGroup4 (a b c d : PackTrit) :
     unpackGroup (packGroup [a, b, c, d]) 4 = .ok [a, b, c, d] := by
-  cases a <;> cases b <;> cases c <;> cases d <;> decide
+  cases a <;> cases b <;> cases c <;> cases d <;> rfl
 
 theorem unpackGroup_packGroup5 (a b c d e : PackTrit) :
     unpackGroup (packGroup [a, b, c, d, e]) 5 = .ok [a, b, c, d, e] := by
-  cases a <;> cases b <;> cases c <;> cases d <;> cases e <;> decide
+  cases a <;> cases b <;> cases c <;> cases d <;> cases e <;> rfl
 
 theorem unpackGroup_invalidByte (n count : Nat) (h : 243 ≤ n) :
     unpackGroup n count = .error .invalidByte := by
@@ -91,10 +91,10 @@ def ofInt (n : Int) : Except PackError PackTrit :=
   else .error .invalidTrit
 
 theorem ofInt_neg_one : ofInt (-1) = .ok .neg := by
-  decide
+  rfl
 
 theorem ofInt_two : ofInt 2 = .error .invalidTrit := by
-  decide
+  rfl
 
 end Pack5
 
