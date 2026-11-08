@@ -4,7 +4,8 @@
 
 use crate::edit::Edit;
 use crate::error::{Error, Result};
-use crate::task::TaskVector;
+use crate::net::Net;
+use crate::task::{TaskVector, merge_tasks_weighted};
 use crate::trit::Trit;
 
 /// 三值任务算术：`lambda > 0` 原样、`lambda == 0` 丢弃、`lambda < 0` 取反。
@@ -195,6 +196,30 @@ pub fn scale_task_blocks(
     block: usize,
 ) -> Result<TaskVector> {
     scale_task_units(vector, lambdas, dims, ScaleUnit::Block(block))
+}
+
+/// 三值任务算术组合：对每个任务按 `lambdas[i]` 缩放后加权合并。
+///
+/// `λ > 0` 保留、`λ == 0` 丢弃、`λ < 0` 取反；合并权重取 `|λ|`（三值没有幅度，
+/// 绝对值只影响投票权重，不改变符号）。`tasks` 与 `lambdas` 必须等长。
+pub fn combine_tasks(base: &Net, tasks: &[TaskVector], lambdas: &[f32]) -> Result<Net> {
+    if tasks.len() != lambdas.len() {
+        return Err(Error::Shape {
+            what: "lambdas",
+            expected: tasks.len(),
+            got: lambdas.len(),
+        });
+    }
+    let mut scaled = Vec::with_capacity(tasks.len());
+    let mut weights = Vec::with_capacity(tasks.len());
+    for (task, lambda) in tasks.iter().zip(lambdas) {
+        if !lambda.is_finite() {
+            return Err(Error::InvalidLambda { lambda: *lambda });
+        }
+        scaled.push(scale_task(task, *lambda)?);
+        weights.push(lambda.abs());
+    }
+    merge_tasks_weighted(base, &scaled, &weights)
 }
 
 /// 按层缩放：`lambdas[layer]` 逐个作用在该层的差分上（`0` 丢弃、`<0` 取反、`>0` 原样）。

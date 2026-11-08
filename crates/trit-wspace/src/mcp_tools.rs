@@ -176,6 +176,16 @@ pub fn tools() -> Vec<Value> {
             &["base", "tuned"],
         ),
         tool(
+            "wsp_task_combine",
+            "三值任务算术：按 λ 组合多个任务向量（λ<0 取反、0 丢弃；权重取 |λ|）",
+            json!({
+                "base": artifact(),
+                "tasks": {"type": "array", "items": {"type": "string"}},
+                "lambdas": {"type": "array", "items": {"type": "number"}},
+            }),
+            &["base", "tasks", "lambdas"],
+        ),
+        tool(
             "wsp_rebase",
             "把针对 base 写的补丁三方重放到 target；冲突逐条报告，默认整体放弃，skip_conflicts 只落干净部分",
             json!({

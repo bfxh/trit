@@ -70,9 +70,11 @@
 - `task-scale --row-lambdas L...` / `--block-lambdas L... --block-size N`（MCP `row_lambdas` /
   `block_lambdas` / `block_size`）：按行/按列块缩放；长度分别等于总行数/总块数，与全局/按层
   λ 互斥。
-- 测试 258 → 290 + 1 doctest（新增 `tests/task_scale.rs` 18、`tests/classification.rs` 4、
-  `tests/dare.rs` +5、`tests/dare_layer.rs` 5）；变异 245 → 281（新增 36 条目标，子集
-  6/6、4/4、5/5、5/5、22/22 caught）。
+- `combine_tasks` / `task-combine <base> --tasks a,b,... --lambdas L,L...` /
+  `wsp_task_combine`：多任务加/减（λ<0 取反、0 丢弃，合并权重取 |λ|）；工具数 20 → 21。
+- 测试 258 → 294 + 1 doctest（新增 `tests/task_scale.rs` 18、`tests/classification.rs` 4、
+  `tests/dare.rs` +5、`tests/dare_layer.rs` 5、`tests/task_combine.rs` 4）；变异 245 → 286
+  （新增 41 条目标，子集 6/6、4/4、5/5、5/5、22/22、5/5 caught）。
 
 ### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
 

@@ -151,7 +151,8 @@ pub use probe::{
 pub use program::{Program, Report, Script, ScriptReport};
 pub use repair::{Repair, RepairOptions, repair};
 pub use scale::{
-    ScaleUnit, scale_task, scale_task_blocks, scale_task_layers, scale_task_rows, scale_task_units,
+    ScaleUnit, combine_tasks, scale_task, scale_task_blocks, scale_task_layers, scale_task_rows,
+    scale_task_units,
 };
 pub use shard::{Checkpoint, Shard, ShardCursor, ShardHeader, ShardReplay, ShardedLog};
 pub use task::{
