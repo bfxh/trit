@@ -11,12 +11,12 @@ inductive PackTrit where
 namespace Pack5
 
 def digit : PackTrit → Nat
-  | neg => 0
-  | zero => 1
-  | pos => 2
+  | .neg => 0
+  | .zero => 1
+  | .pos => 2
 
 def ofDigit (n : Nat) : PackTrit :=
-  if n = 0 then neg else if n = 1 then zero else pos
+  if n = 0 then .neg else if n = 1 then .zero else .pos
 
 def pack (a b c d e : PackTrit) : Nat :=
   digit a + 3 * digit b + 9 * digit c + 27 * digit d + 81 * digit e
