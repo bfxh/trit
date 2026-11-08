@@ -7,11 +7,14 @@
 //! cd interop/runner
 //! cargo run --release
 //! cargo run --release -- --vectors ../vectors
+//! cargo run --release -- --bridge /tmp/lean-vectors.jsonl
+//! cargo run --release -- --bridge /tmp/c-vectors.jsonl --profiles k3,kgate,pack5
 //! ```
 
 use serde_json::{json, Value};
+use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const SPEC_VERSION: &str = "0.1.0";
 const FILES: [&str; 6] = [
@@ -24,7 +27,11 @@ const FILES: [&str; 6] = [
 ];
 
 fn main() {
-    let dir = parse_args();
+    let (dir, bridge_path, profiles) = parse_args();
+    if let Some(path) = bridge_path {
+        let ok = check_bridge(&dir, &path, profiles.as_ref());
+        std::process::exit(if ok { 0 } else { 1 });
+    }
     let mut total = 0usize;
     let mut failed = 0usize;
 
@@ -100,17 +107,184 @@ fn main() {
     }
 }
 
-fn parse_args() -> PathBuf {
+fn parse_args() -> (PathBuf, Option<PathBuf>, Option<HashSet<String>>) {
     let mut args = std::env::args().skip(1);
     let mut dir = PathBuf::from("../vectors");
+    let mut bridge = None;
+    let mut profiles = None;
     while let Some(arg) = args.next() {
         if arg == "--vectors" {
             dir = PathBuf::from(args.next().expect("--vectors requires a directory"));
+        } else if arg == "--bridge" || arg == "--lean" {
+            bridge = Some(PathBuf::from(
+                args.next().expect("--bridge requires a file"),
+            ));
+        } else if arg == "--profiles" {
+            let list = args
+                .next()
+                .expect("--profiles requires a comma-separated list");
+            profiles = Some(
+                list.split(',')
+                    .map(str::trim)
+                    .filter(|p| !p.is_empty())
+                    .map(str::to_string)
+                    .collect(),
+            );
         } else {
             dir = PathBuf::from(arg);
         }
     }
-    dir
+    (dir, bridge, profiles)
+}
+
+fn check_bridge(dir: &Path, bridge_path: &Path, profiles: Option<&HashSet<String>>) -> bool {
+    if let Some(want) = profiles {
+        if want.is_empty() {
+            eprintln!("bridge: --profiles is empty");
+            return false;
+        }
+    }
+    let text = match fs::read_to_string(bridge_path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("bridge: cannot read {}: {e}", bridge_path.display());
+            return false;
+        }
+    };
+    let mut actual: HashMap<String, Value> = HashMap::new();
+    for (line_no, line) in text.lines().enumerate() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let v: Value = match serde_json::from_str(line) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("bridge: line {} invalid JSON: {e}", line_no + 1);
+                return false;
+            }
+        };
+        let id = match v.get("id").and_then(Value::as_str) {
+            Some(id) => id.to_string(),
+            None => {
+                eprintln!("bridge: line {} missing id", line_no + 1);
+                return false;
+            }
+        };
+        if actual.insert(id.clone(), v).is_some() {
+            eprintln!("bridge: duplicate id {id}");
+            return false;
+        }
+    }
+
+    let mut golden_ids = HashSet::new();
+    let mut checked_profiles = HashSet::new();
+    let mut total = 0usize;
+    let mut passed = 0usize;
+    let mut failed = 0usize;
+
+    for file in FILES {
+        let path = dir.join(file);
+        let text = match fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("bridge: cannot read {}: {e}", path.display());
+                failed += 1;
+                continue;
+            }
+        };
+        let root: Value = match serde_json::from_str(&text) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("bridge: {file} invalid JSON: {e}");
+                failed += 1;
+                continue;
+            }
+        };
+        if root.get("spec_version").and_then(Value::as_str) != Some(SPEC_VERSION) {
+            eprintln!("bridge: {file} spec_version mismatch");
+            failed += 1;
+            continue;
+        }
+        let profile = match root.get("profile").and_then(Value::as_str) {
+            Some(p) => p,
+            None => {
+                eprintln!("bridge: {file} missing profile");
+                failed += 1;
+                continue;
+            }
+        };
+        if let Some(want) = profiles {
+            if !want.contains(profile) {
+                continue;
+            }
+            checked_profiles.insert(profile.to_string());
+        }
+        let vectors = match root.get("vectors").and_then(Value::as_array) {
+            Some(v) => v,
+            None => {
+                eprintln!("bridge: {file} missing vectors");
+                failed += 1;
+                continue;
+            }
+        };
+        for vector in vectors {
+            total += 1;
+            let id = vector
+                .get("id")
+                .and_then(Value::as_str)
+                .unwrap_or("<missing-id>");
+            golden_ids.insert(id.to_string());
+            let line = match actual.get(id) {
+                Some(v) => v,
+                None => {
+                    failed += 1;
+                    eprintln!("FAIL bridge missing {id}");
+                    continue;
+                }
+            };
+            let ok = match (vector.get("expected"), vector.get("expect_error")) {
+                (Some(expected), None) => {
+                    line.get("expected").is_some_and(|value| value == expected)
+                }
+                (None, Some(expected_error)) => {
+                    let want = expected_error.as_str().unwrap_or("");
+                    line.get("error").and_then(Value::as_str) == Some(want)
+                }
+                _ => false,
+            };
+            if ok {
+                passed += 1;
+            } else {
+                failed += 1;
+                eprintln!("FAIL bridge {id}: golden={vector} actual={line}");
+            }
+        }
+    }
+
+    if let Some(want) = profiles {
+        let mut missing: Vec<&String> = want
+            .iter()
+            .filter(|p| !checked_profiles.contains(*p))
+            .collect();
+        missing.sort();
+        for profile in missing {
+            failed += 1;
+            eprintln!("bridge: profile {profile} has no vector file");
+        }
+    }
+
+    for id in actual.keys() {
+        if !golden_ids.contains(id) {
+            failed += 1;
+            eprintln!("FAIL bridge extra {id}");
+        }
+    }
+
+    println!(
+        "bridge: {passed}/{total} pass, {failed} fail, {} lines",
+        actual.len()
+    );
+    failed == 0
 }
 
 fn check_vector(profile: &str, encoding: &str, v: &Value) -> Result<(), String> {

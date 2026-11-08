@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "interop/**"
+      - "other-languages/c/**"
       - "other-languages/go/**"
       - "other-languages/asm/**"
       - "other-languages/asm-arm64/**"
@@ -36,6 +37,20 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Run Go tests (includes golden vectors)
         run: cd other-languages/go && go test ./...
+
+  c:
+    name: c conformance (core)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Build and run C tests
+        run: cd other-languages/c && make test
+      - name: Generate C conformance output
+        run: cd other-languages/c && make conformance
+      - name: Compare C output with golden vectors
+        run: cd interop/runner && cargo run --release -- --bridge ../../other-languages/c/build/c-vectors.jsonl --profiles k3,kgate,pack5
 
   asm:
     name: asm conformance (K3/Belnap4/pack5)
@@ -88,3 +103,8 @@ jobs:
           test: "false"
           lint: "false"
           use-mathlib-cache: "false"
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Generate Lean conformance output
+        run: cd interop/lean && lake exe tritLean > /tmp/lean-vectors.jsonl
+      - name: Compare Lean output with golden vectors
+        run: cd interop/runner && cargo run --release -- --bridge /tmp/lean-vectors.jsonl
