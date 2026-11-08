@@ -24,5 +24,9 @@ jobs:
           python3 interop/lean/openai_math/audit.py
           --repo "$RUNNER_TEMP/openai-math"
           --json "$RUNNER_TEMP/openai-math-audit.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: openai-math-audit
+          path: ${{ runner.temp }}/openai-math-audit.json
       - name: Show report
         run: cat "$RUNNER_TEMP/openai-math-audit.json"
