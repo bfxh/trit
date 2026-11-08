@@ -1,0 +1,13 @@
+[package]
+name = "trit-3d"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三值 3D 资产神经组件实验层：体素编码器（AttentionBlock / TernaryDense 堆叠）+ 几何头（不属于稳定 API）"
+publish = false
+
+[dependencies]
+trit-learn.workspace = true
+trit-attn = { path = "../trit-attn" }

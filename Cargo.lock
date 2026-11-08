@@ -1536,6 +1536,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-3d"
+version = "0.12.0"
+dependencies = [
+ "trit-attn",
+ "trit-learn",
+]
+
+[[package]]
 name = "trit-attn"
 version = "0.12.0"
 dependencies = [
