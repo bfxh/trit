@@ -116,6 +116,17 @@ mod tests {
     use crate::bitplan;
     use trit_core::Parser;
 
+    #[test]
+    fn wgsl_kernel_parses_and_validates_without_a_gpu() {
+        let module = naga::front::wgsl::parse_str(KERNEL).expect("truth.wgsl 必须能解析");
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .expect("truth.wgsl 必须通过 naga 校验");
+    }
+
     fn unpack(bin: &[u8]) -> (usize, usize, Vec<u32>, Vec<u32>) {
         assert_eq!(&bin[..4], MAGIC);
         assert_eq!(bin[4], VERSION);

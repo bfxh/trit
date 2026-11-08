@@ -127,3 +127,19 @@ pub fn verify(out_dir: &Path) -> Result<String> {
     fs::remove_file(out_dir.join("design.vvp")).ok();
     Ok(ok_line)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn expected_mem_encodes_rails() {
+        assert_eq!(
+            expected_mem(&[Ternary::True, Ternary::False, Ternary::Unknown]),
+            "2
+1
+0
+"
+        );
+    }
+}
