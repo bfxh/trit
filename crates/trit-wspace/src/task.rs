@@ -617,11 +617,10 @@ pub fn tune_task_weights_with(
     })
 }
 
-/// 逐位 Hamming 失配数（所有样本、所有输出位）。
-/// 用验证集的**分类错误数**（输出与期望各自取 argmax）选任务权重。
+/// 用验证集的**分类错误数**选任务权重。
 ///
-/// 期望向量按 argmax 解释（通常是 one-hot）；一维输出会退化成“所有样本 argmax=0”，
-/// 这时应改用 [`tune_task_weights`] 或 [`tune_task_weights_hamming`]。
+/// 多维输出按最大 trit 的位置比较；一维输出按符号分类（`>0` 记 1，否则 0），
+/// 因此二分类不会退化成“所有样本同类”。
 pub fn tune_task_weights_argmax(
     base: &Net,
     tasks: &[TaskVector],
@@ -631,15 +630,23 @@ pub fn tune_task_weights_argmax(
     tune_task_weights_with(base, tasks, rounds, |net| argmax_loss(oracle, net))
 }
 
-/// 分类错误数：输出与期望分别取 argmax 后比较。
+/// 分类错误数：输出与期望分别分类后比较。
 fn argmax_loss(oracle: &Oracle, net: &Net) -> Result<usize> {
     let actual = oracle.outputs_of(net)?;
     let expected = oracle.outputs();
     Ok(actual
         .iter()
         .zip(expected)
-        .map(|(got, want)| usize::from(argmax(got) != argmax(want)))
+        .map(|(got, want)| usize::from(classify(got) != classify(want)))
         .sum())
+}
+
+/// 一维按符号分类（`>0` 为 1），多维按最大 trit 的位置。
+fn classify(values: &[Trit]) -> usize {
+    if values.len() == 1 {
+        return usize::from(values[0].to_i8() > 0);
+    }
+    argmax(values)
 }
 
 fn argmax(values: &[Trit]) -> usize {
@@ -655,6 +662,49 @@ fn argmax(values: &[Trit]) -> usize {
     best
 }
 
+/// 用验证集的 **f32 readout** 分类错误数选任务权重。
+///
+/// 与 [`tune_task_weights_argmax`] 的区别：这里用 `Net::readout` 的连续分数取最大，
+/// 不先把输出压成三值，能区分“都是 Pos 但分数不同”的类别。
+pub fn tune_task_weights_readout(
+    base: &Net,
+    tasks: &[TaskVector],
+    oracle: &Oracle,
+    rounds: usize,
+) -> Result<WeightTuning> {
+    tune_task_weights_with(base, tasks, rounds, |net| readout_loss(oracle, net))
+}
+
+fn readout_loss(oracle: &Oracle, net: &Net) -> Result<usize> {
+    let mut errors = 0usize;
+    for (input, want) in oracle.inputs().iter().zip(oracle.outputs()) {
+        let input_f32: Vec<f32> = input.iter().map(|trit| f32::from(trit.to_i8())).collect();
+        let got = net.readout(&input_f32)?;
+        let index = if got.len() == 1 {
+            usize::from(got[0] > 0.0)
+        } else {
+            argmax_f32(&got)
+        };
+        if index != classify(want) {
+            errors += 1;
+        }
+    }
+    Ok(errors)
+}
+
+fn argmax_f32(values: &[f32]) -> usize {
+    let mut best = 0usize;
+    let mut best_value = f32::NEG_INFINITY;
+    for (index, value) in values.iter().enumerate() {
+        if *value > best_value {
+            best_value = *value;
+            best = index;
+        }
+    }
+    best
+}
+
+/// 逐位 Hamming 失配数（所有样本、所有输出位）。
 fn hamming_loss(oracle: &Oracle, net: &Net) -> Result<usize> {
     let actual = oracle.outputs_of(net)?;
     let expected = oracle.outputs();

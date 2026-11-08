@@ -17,7 +17,7 @@ use serde_json::json;
 use trit_learn::{Activation, Adam, Ste, TernaryDense, cross_entropy};
 use trit_wspace::{
     Layer, Net, Oracle, TaskVector, Trit, merge_tasks_weighted, to_wsp, tune_task_weights,
-    tune_task_weights_argmax, tune_task_weights_hamming,
+    tune_task_weights_argmax, tune_task_weights_hamming, tune_task_weights_readout,
 };
 
 const IN: usize = 64;
@@ -369,6 +369,10 @@ fn main() {
         tune_task_weights_argmax(&base_net, &tasks, &oracle, 2).expect("tune argmax");
     let tuned_argmax =
         merge_tasks_weighted(&base_net, &tasks, tuning_argmax.weights()).expect("tuned argmax");
+    let tuning_readout =
+        tune_task_weights_readout(&base_net, &tasks, &oracle, 2).expect("tune readout");
+    let tuned_readout =
+        merge_tasks_weighted(&base_net, &tasks, tuning_readout.weights()).expect("tuned readout");
 
     let report_value = json!({
         "mode": if binary { "binary-cat-vs-dog" } else { "10-class" },
@@ -391,6 +395,7 @@ fn main() {
         "tuned_exact": report(&tuned_exact, &test_inputs, &test_labels, &oracle, binary),
         "tuned_hamming": report(&tuned_hamming, &test_inputs, &test_labels, &oracle, binary),
         "tuned_argmax": report(&tuned_argmax, &test_inputs, &test_labels, &oracle, binary),
+        "tuned_readout": report(&tuned_readout, &test_inputs, &test_labels, &oracle, binary),
         "tuning": {
             "exact": {
                 "weights": tuning_exact.weights(),
@@ -410,8 +415,14 @@ fn main() {
                 "tuned_loss": tuning_argmax.loss(),
                 "evaluations": tuning_argmax.evaluations(),
             },
+            "readout": {
+                "weights": tuning_readout.weights(),
+                "initial_loss": tuning_readout.initial_loss(),
+                "tuned_loss": tuning_readout.loss(),
+                "evaluations": tuning_readout.evaluations(),
+            },
         },
-        "artifact": to_wsp(&tuned_argmax),
+        "artifact": to_wsp(&tuned_readout),
     });
     println!(
         "{}",

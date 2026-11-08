@@ -1826,7 +1826,7 @@
 {
  "name": "wspace-tune: argmax 按输出向量比较",
  "file": "crates/trit-wspace/src/task.rs",
- "old": "        .map(|(got, want)| usize::from(argmax(got) != argmax(want)))",
+ "old": "        .map(|(got, want)| usize::from(classify(got) != classify(want)))",
  "new": "        .map(|(got, want)| usize::from(got != want))",
  "pkg": "trit-wspace",
  "filter": "tune_metric_argmax_counts_classification_errors"
@@ -1842,9 +1842,33 @@
 {
  "name": "wspace-tune: argmax 不计错误",
  "file": "crates/trit-wspace/src/task.rs",
- "old": "        .map(|(got, want)| usize::from(argmax(got) != argmax(want)))",
- "new": "        .map(|(got, want)| usize::from(argmax(got) == argmax(want)))",
+ "old": "        .map(|(got, want)| usize::from(classify(got) != classify(want)))",
+ "new": "        .map(|(got, want)| usize::from(classify(got) == classify(want)))",
  "pkg": "trit-wspace",
  "filter": "tune_metric_argmax_counts_classification_errors"
+},
+{
+ "name": "wspace-tune: 一维分类退化成恒 0",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    if values.len() == 1 {\n        return usize::from(values[0].to_i8() > 0);\n    }",
+ "new": "    if values.len() == 1 {\n        return 0;\n    }",
+ "pkg": "trit-wspace",
+ "filter": "tune_metric_argmax_handles_binary"
+},
+{
+ "name": "wspace-tune: readout 退化成三值 argmax",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        let got = net.readout(&input_f32)?;\n        let index = if got.len() == 1 {\n            usize::from(got[0] > 0.0)\n        } else {\n            argmax_f32(&got)\n        };",
+ "new": "        let got = net.forward(input)?;\n        let index = classify(&got);",
+ "pkg": "trit-wspace",
+ "filter": "tune_metric_readout_uses_continuous_scores"
+},
+{
+ "name": "wspace-tune: readout argmax 取最小",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "        if *value > best_value {",
+ "new": "        if *value < best_value {",
+ "pkg": "trit-wspace",
+ "filter": "tune_metric_readout_uses_continuous_scores"
 }
 ]
