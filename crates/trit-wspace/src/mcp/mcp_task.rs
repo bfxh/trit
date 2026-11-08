@@ -218,12 +218,42 @@ pub(super) fn task_scale(args: &Value) -> Result<Value, String> {
         Some(_) => return Err("layer_lambdas 需要数字数组".into()),
         None => None,
     };
-    if lambda.is_some() && lambdas.is_some() {
-        return Err("lambda 与 lambdas 只能给一个".into());
+    let row_lambdas = match args.get("row_lambdas") {
+        Some(Value::Array(items)) => {
+            let mut values = Vec::new();
+            for item in items {
+                values.push(item.as_f64().ok_or("row_lambdas 需要数字数组")? as f32);
+            }
+            Some(values)
+        }
+        Some(_) => return Err("row_lambdas 需要数字数组".into()),
+        None => None,
+    };
+    let block_lambdas = match args.get("block_lambdas") {
+        Some(Value::Array(items)) => {
+            let mut values = Vec::new();
+            for item in items {
+                values.push(item.as_f64().ok_or("block_lambdas 需要数字数组")? as f32);
+            }
+            Some(values)
+        }
+        Some(_) => return Err("block_lambdas 需要数字数组".into()),
+        None => None,
+    };
+    if usize::from(lambda.is_some())
+        + usize::from(lambdas.is_some())
+        + usize::from(layer_lambdas.is_some())
+        + usize::from(row_lambdas.is_some())
+        + usize::from(block_lambdas.is_some())
+        > 1
+    {
+        return Err("lambda/lambdas/layer_lambdas/row_lambdas/block_lambdas 只能给一个".into());
     }
-    if layer_lambdas.is_some() && (lambda.is_some() || lambdas.is_some()) {
-        return Err("layer_lambdas 与 lambda/lambdas 只能给一个".into());
-    }
+    let dims: Vec<(usize, usize)> = base
+        .layers()
+        .iter()
+        .map(|layer| (layer.rows(), layer.cols()))
+        .collect();
     if let Some(layer_lambdas) = layer_lambdas {
         if layer_lambdas.len() != base.layers().len() {
             return Err(format!(
@@ -233,11 +263,68 @@ pub(super) fn task_scale(args: &Value) -> Result<Value, String> {
             ));
         }
         let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
-        let scaled = crate::task::scale_task_layers(&vector, &layer_lambdas).map_err(err)?;
+        let scaled = crate::scale::scale_task_layers(&vector, &layer_lambdas).map_err(err)?;
         let net = scaled.apply(&base).map_err(err)?;
         let patch = Patch::diff(&base, &net).map_err(err)?;
         let mut row = json!({
             "layer_lambdas": layer_lambdas,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return Ok(row);
+    }
+    if let Some(row_lambdas) = row_lambdas {
+        let total: usize = dims.iter().map(|(rows, _)| *rows).sum();
+        if row_lambdas.len() != total {
+            return Err(format!(
+                "row_lambdas 需要 {total} 个（每行一个），得到 {}",
+                row_lambdas.len()
+            ));
+        }
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled = crate::scale::scale_task_rows(&vector, &row_lambdas, &dims).map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let mut row = json!({
+            "row_lambdas": row_lambdas,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return Ok(row);
+    }
+    if let Some(block_lambdas) = block_lambdas {
+        let block_size = args
+            .get("block_size")
+            .and_then(Value::as_u64)
+            .ok_or("block_size 需要正整数")? as usize;
+        let total: usize = dims
+            .iter()
+            .map(|(rows, cols)| *rows * cols.div_ceil(block_size))
+            .sum();
+        if block_lambdas.len() != total {
+            return Err(format!(
+                "block_lambdas 需要 {total} 个（每块一个），得到 {}",
+                block_lambdas.len()
+            ));
+        }
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled = crate::scale::scale_task_blocks(&vector, &block_lambdas, &dims, block_size)
+            .map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let mut row = json!({
+            "block_lambdas": block_lambdas,
+            "block_size": block_size,
             "summary": wire::net_summary(&net),
             "patch": wire::patch_to_value(&patch),
             "cost": wire::cost_to_value(&patch.cost(&base)),
@@ -256,7 +343,7 @@ pub(super) fn task_scale(args: &Value) -> Result<Value, String> {
     let mut results = Vec::new();
     let mut single: Option<crate::Net> = None;
     for lambda in values {
-        let scaled = crate::task::scale_task(&vector, lambda).map_err(err)?;
+        let scaled = crate::scale::scale_task(&vector, lambda).map_err(err)?;
         let net = scaled.apply(&base).map_err(err)?;
         let patch = Patch::diff(&base, &net).map_err(err)?;
         let mut row = json!({

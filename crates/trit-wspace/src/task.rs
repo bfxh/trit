@@ -18,10 +18,10 @@ use crate::trit::Trit;
 /// 相对某个基准网络的任务向量。
 #[derive(Clone, Debug, PartialEq)]
 pub struct TaskVector {
-    base: u64,
-    edits: Vec<Edit>,
+    pub(crate) base: u64,
+    pub(crate) edits: Vec<Edit>,
     /// 与基准不同的逐行 scale：`(layer, row, target)`。
-    scales: Vec<(usize, usize, f32)>,
+    pub(crate) scales: Vec<(usize, usize, f32)>,
 }
 
 impl TaskVector {
@@ -92,130 +92,6 @@ impl TaskVector {
             .collect();
         Patch::new(scale_edits).apply(&mut net)?;
         Ok(net)
-    }
-}
-
-/// 三值任务算术：`lambda > 0` 原样、`lambda == 0` 丢弃、`lambda < 0` 取反。
-///
-/// 三值权重没有幅度，正系数不改变符号；因此只有符号/丢弃两种结果。`lambda < 0` 时
-/// trit 与偏置取反，**scale 差分丢弃**（负 scale 非法，而正的倍率在取反后无法保持语义）。
-pub fn scale_task(vector: &TaskVector, lambda: f32) -> Result<TaskVector> {
-    if !lambda.is_finite() {
-        return Err(Error::InvalidLambda { lambda });
-    }
-    if lambda == 0.0 {
-        return Ok(TaskVector {
-            base: vector.base,
-            edits: Vec::new(),
-            scales: Vec::new(),
-        });
-    }
-    if lambda > 0.0 {
-        return Ok(vector.clone());
-    }
-    let edits = vector
-        .edits()
-        .iter()
-        .map(|edit| match edit {
-            Edit::SetTrit {
-                layer,
-                row,
-                col,
-                to,
-            } => Edit::SetTrit {
-                layer: *layer,
-                row: *row,
-                col: *col,
-                to: negate_trit(*to),
-            },
-            Edit::SetBias { layer, row, to } => Edit::SetBias {
-                layer: *layer,
-                row: *row,
-                to: negate_trit(*to),
-            },
-            other => other.clone(),
-        })
-        .collect();
-    Ok(TaskVector {
-        base: vector.base,
-        edits,
-        scales: Vec::new(),
-    })
-}
-
-/// 按层缩放：`lambdas[layer]` 逐个作用在该层的差分上（`0` 丢弃、`<0` 取反、`>0` 原样）。
-///
-/// 与 [`scale_task`] 的全局系数不同，这里每个层可以给不同的 λ。`TaskVector` 只记录
-/// 有差分的层，所以超出 `lambdas` 长度的层会判 `Shape`；CLI 会先用 `base.layers().len()`
-/// 校验总长度。`λ <= 0` 的层其 scale 差分也丢弃（与 [`scale_task`] 的负系数语义一致）。
-pub fn scale_task_layers(vector: &TaskVector, lambdas: &[f32]) -> Result<TaskVector> {
-    for lambda in lambdas {
-        if !lambda.is_finite() {
-            return Err(Error::InvalidLambda { lambda: *lambda });
-        }
-    }
-    let mut edits = Vec::new();
-    for edit in vector.edits() {
-        let layer = match edit {
-            Edit::SetTrit { layer, .. } | Edit::SetBias { layer, .. } => *layer,
-            _ => continue,
-        };
-        let lambda = *lambdas.get(layer).ok_or(Error::Shape {
-            what: "layer_lambdas",
-            expected: layer + 1,
-            got: lambdas.len(),
-        })?;
-        if lambda == 0.0 {
-            continue;
-        }
-        let edit = if lambda < 0.0 {
-            match edit {
-                Edit::SetTrit {
-                    layer,
-                    row,
-                    col,
-                    to,
-                } => Edit::SetTrit {
-                    layer: *layer,
-                    row: *row,
-                    col: *col,
-                    to: negate_trit(*to),
-                },
-                Edit::SetBias { layer, row, to } => Edit::SetBias {
-                    layer: *layer,
-                    row: *row,
-                    to: negate_trit(*to),
-                },
-                other => other.clone(),
-            }
-        } else {
-            edit.clone()
-        };
-        edits.push(edit);
-    }
-    let mut scales = Vec::new();
-    for (layer, row, scale) in vector.scales() {
-        let lambda = *lambdas.get(*layer).ok_or(Error::Shape {
-            what: "layer_lambdas",
-            expected: layer + 1,
-            got: lambdas.len(),
-        })?;
-        if lambda > 0.0 {
-            scales.push((*layer, *row, *scale));
-        }
-    }
-    Ok(TaskVector {
-        base: vector.base,
-        edits,
-        scales,
-    })
-}
-
-fn negate_trit(trit: Trit) -> Trit {
-    match trit {
-        Trit::Pos => Trit::Neg,
-        Trit::Neg => Trit::Pos,
-        Trit::Zero => Trit::Zero,
     }
 }
 

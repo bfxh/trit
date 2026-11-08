@@ -17,6 +17,9 @@
   **45.17% ± 3.64%**、argmax 45.92% ± 2.36%、f32 **55.33% ± 1.70%**。与 hidden 64 相比：
   三值 10 类基本持平（18.10% → 18.20%），f32 升 2.5 点；二分类三值升 1.4 点但 std 增大。
   容量不是三值瓶颈的主因，分辨率/三值编码仍是限制。
+- 5 seeds / per-class 1000 复核（32×32 彩色、hidden 128、10 epochs）：10 类三值 base
+  **18.86% ± 0.47%**、equal 14.70% ± 0.86%、argmax **19.09% ± 0.79%**、f32 **30.31% ± 1.03%**；
+  std 从 0.98 压到 0.47，合并掉点更明显（equal/exact/hamming 14.7–15.2%）。
 - 限制：32×32 与 16×16 的训练规模不同（hidden 64 vs 128、per-class 500 vs 1000），
   不能把差异归因于分辨率。
 ### Added（`trit-build`：补齐 M2/M3 的六项遗留，2026-11-08）
@@ -64,9 +67,12 @@
   每个 λ 返回 `verify`，批量结果在 `results`（不含 `artifact`）。
 - `task-scale --layer-lambdas L0,L1...` / `wsp_task_scale.layer_lambdas`：按层给系数（每层
   一个；0 丢弃该层、<0 取反该层），与 `lambda` / `lambdas` 互斥；长度必须等于层数。
-- 测试 258 → 285 + 1 doctest（新增 `tests/task_scale.rs` 13、`tests/classification.rs` 4、
-  `tests/dare.rs` +5、`tests/dare_layer.rs` 5）；变异 245 → 275（新增 30 条目标，子集
-  6/6、4/4、5/5、5/5、16/16 caught）。
+- `task-scale --row-lambdas L...` / `--block-lambdas L... --block-size N`（MCP `row_lambdas` /
+  `block_lambdas` / `block_size`）：按行/按列块缩放；长度分别等于总行数/总块数，与全局/按层
+  λ 互斥。
+- 测试 258 → 290 + 1 doctest（新增 `tests/task_scale.rs` 18、`tests/classification.rs` 4、
+  `tests/dare.rs` +5、`tests/dare_layer.rs` 5）；变异 245 → 281（新增 36 条目标，子集
+  6/6、4/4、5/5、5/5、22/22 caught）。
 
 ### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
 
