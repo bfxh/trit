@@ -154,6 +154,8 @@ pub fn tools() -> Vec<Value> {
                 "tune_weights": {"type": "boolean", "description": "用 oracle 坐标下降选权重（候选 0/0.5/1/2）；需要 oracle，与 weights 互斥"},
                 "tune_rounds": {"type": "integer", "description": "调权轮数，默认 1；0 表示只算等权基线"},
                 "tune_metric": {"type": "string", "enum": ["exact", "hamming", "argmax", "readout"], "description": "调权目标：exact=逐样本完全匹配（默认），hamming=逐位失配数，argmax=三值输出分类错误数（一维按符号），readout=f32 连续输出分类错误数"},
+                "tune_grid": {"type": "array", "items": {"type": "number"}, "description": "调权候选权重网格（有限非负，默认 [0, 0.5, 1, 2]）"},
+                "tune_with_dare": {"type": "boolean", "description": "调权评估走最终 DARE 合并路径（需要 dare_rate 或 dare_per_task）"},
             }),
             &["base", "tasks"],
         ),

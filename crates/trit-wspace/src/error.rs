@@ -124,6 +124,13 @@ pub enum Error {
         /// 非法的权重。
         weight: f32,
     },
+    /// 调权候选网格必须是有限非负数。
+    InvalidGrid {
+        /// 第几个候选（从 0 开始）。
+        index: usize,
+        /// 非法的候选值。
+        value: f32,
+    },
 }
 
 /// 库内统一 `Result`。
@@ -187,6 +194,9 @@ impl fmt::Display for Error {
             }
             Self::InvalidWeight { index, weight } => {
                 write!(f, "第 {index} 个任务的权重 {weight} 必须是有限非负数")
+            }
+            Self::InvalidGrid { index, value } => {
+                write!(f, "第 {index} 个调权候选 {value} 必须是有限非负数")
             }
         }
     }

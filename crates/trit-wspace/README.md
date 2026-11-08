@@ -196,6 +196,10 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 （`Net::readout` 的 f32 连续分数分类错误数，能区分同号不同分）。库层对应
 `tune_task_weights` / `tune_task_weights_hamming` / `tune_task_weights_argmax` /
 `tune_task_weights_readout`；通用入口是 `tune_task_weights_with(base, tasks, rounds, evaluate)`。
+`tune_grid` / `--tune-grid G[,G...]` 换候选权重网格（默认 `[0, 0.5, 1, 2]`）；
+`tune_with_dare` / `--tune-with-dare` 让调权评估走最终 DARE 合并路径（配 `dare_rate` 或
+`dare_per_task`）。非 DARE 路径还会在结果里返回 `merge_report`（投票数/平票数/忽略任务数/
+改动数/scale 行数）。
 
 真实数据读数见 `examples/cifar_tasks.rs`（CIFAR-10 8×8 灰度 → 三值 MLP → WSP1 → 合并/调权）；
 它支持 `--size`（8/16）、`--color`（16×16×3）、`--hidden N`、`--seeds N`（多 seed 均值/方差）
