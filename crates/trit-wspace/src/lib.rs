@@ -120,6 +120,7 @@ pub mod probe;
 pub mod program;
 pub mod rebase;
 pub mod repair;
+pub mod scale;
 pub mod shard;
 pub mod task;
 pub mod transplant;
@@ -149,11 +150,14 @@ pub use probe::{
 };
 pub use program::{Program, Report, Script, ScriptReport};
 pub use repair::{Repair, RepairOptions, repair};
+pub use scale::{
+    ScaleUnit, scale_task, scale_task_blocks, scale_task_layers, scale_task_rows, scale_task_units,
+};
 pub use shard::{Checkpoint, Shard, ShardCursor, ShardHeader, ShardReplay, ShardedLog};
 pub use task::{
     MergeReport, TaskVector, merge_tasks, merge_tasks_dare, merge_tasks_per_task_dare,
     merge_tasks_weighted, merge_tasks_weighted_dare, merge_tasks_weighted_per_task_dare,
-    merge_tasks_weighted_report, scale_task, scale_task_layers,
+    merge_tasks_weighted_report,
 };
 pub use transplant::transplant_units;
 pub use trit::Trit;

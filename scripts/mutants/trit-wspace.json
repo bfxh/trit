@@ -1961,7 +1961,7 @@
 },
 {
  "name": "wspace-task-scale: λ=0 不丢弃",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/scale.rs",
  "old": "    if lambda == 0.0 {\n        return Ok(TaskVector {",
  "new": "    if false {\n        return Ok(TaskVector {",
  "pkg": "trit-wspace",
@@ -1969,7 +1969,7 @@
 },
 {
  "name": "wspace-task-scale: λ<0 不取反",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/scale.rs",
  "old": "            } => Edit::SetTrit {\n                layer: *layer,\n                row: *row,\n                col: *col,\n                to: negate_trit(*to),\n            },",
  "new": "            } => Edit::SetTrit {\n                layer: *layer,\n                row: *row,\n                col: *col,\n                to: *to,\n            },",
  "pkg": "trit-wspace",
@@ -1977,7 +1977,7 @@
 },
 {
  "name": "wspace-task-scale: λ<0 保留 scale",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/scale.rs",
  "old": "    Ok(TaskVector {\n        base: vector.base,\n        edits,\n        scales: Vec::new(),\n    })",
  "new": "    Ok(TaskVector {\n        base: vector.base,\n        edits,\n        scales: vector.scales().to_vec(),\n    })",
  "pkg": "trit-wspace",
@@ -1985,7 +1985,7 @@
 },
 {
  "name": "wspace-task-scale: 非法 λ 不报错",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/scale.rs",
  "old": "    if !lambda.is_finite() {\n        return Err(Error::InvalidLambda { lambda });\n    }",
  "new": "    if false {\n        return Err(Error::InvalidLambda { lambda });\n    }",
  "pkg": "trit-wspace",
@@ -2138,8 +2138,8 @@
 {
  "name": "wspace-task-scale: λ 互斥失效",
  "file": "crates/trit-wspace/src/cli/cli_task.rs",
- "old": "    if lambda.is_some() && lambdas.is_some() {\n        return Err(\"--lambda 与 --lambdas 只能给一个\".into());\n    }",
- "new": "    if false {\n        return Err(\"--lambda 与 --lambdas 只能给一个\".into());\n    }",
+ "old": "    if usize::from(lambda.is_some())\n        + usize::from(lambdas.is_some())\n        + usize::from(layer_lambdas.is_some())\n        + usize::from(row_lambdas.is_some())\n        + usize::from(block_lambdas.is_some())\n        > 1\n    {\n        return Err(\n            \"--lambda/--lambdas/--layer-lambdas/--row-lambdas/--block-lambdas 只能给一个\".into(),\n        );\n    }",
+ "new": "    if false {\n        return Err(\n            \"--lambda/--lambdas/--layer-lambdas/--row-lambdas/--block-lambdas 只能给一个\".into(),\n        );\n    }",
  "pkg": "trit-wspace",
  "filter": "cli_task_scale_rejects_lambda_and_lambdas"
 },
@@ -2161,7 +2161,7 @@
 },
 {
  "name": "wspace-task-scale: 按层 λ 忽略层级",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/scale.rs",
  "old": "        let lambda = *lambdas.get(layer).ok_or(Error::Shape {\n            what: \"layer_lambdas\",\n            expected: layer + 1,\n            got: lambdas.len(),\n        })?;\n        if lambda == 0.0 {\n            continue;\n        }",
  "new": "        let lambda = lambdas[0];\n        if lambda == 0.0 {\n            continue;\n        }",
  "pkg": "trit-wspace",
@@ -2169,9 +2169,9 @@
 },
 {
  "name": "wspace-task-scale: 按层 λ=0 未丢",
- "file": "crates/trit-wspace/src/task.rs",
- "old": "        if lambda == 0.0 {\n            continue;\n        }",
- "new": "        if false {\n            continue;\n        }",
+ "file": "crates/trit-wspace/src/scale.rs",
+ "old": "        let lambda = *lambdas.get(layer).ok_or(Error::Shape {\n            what: \"layer_lambdas\",\n            expected: layer + 1,\n            got: lambdas.len(),\n        })?;\n        if lambda == 0.0 {\n            continue;\n        }",
+ "new": "        let lambda = *lambdas.get(layer).ok_or(Error::Shape {\n            what: \"layer_lambdas\",\n            expected: layer + 1,\n            got: lambdas.len(),\n        })?;\n        if false {\n            continue;\n        }",
  "pkg": "trit-wspace",
  "filter": "layer_lambdas_scale_per_layer"
 },
@@ -2198,5 +2198,53 @@
  "new": "        if false {\n            return Err(format!(\n                \"--layer-lambdas 需要 {} 个（每层一个），得到 {}\",\n                base.layers().len(),\n                layer_lambdas.len()\n            ));\n        }",
  "pkg": "trit-wspace",
  "filter": "layer_lambdas_length_checked_by_cli"
+},
+{
+ "name": "wspace-task-scale: 行 λ 忽略层偏移",
+ "file": "crates/trit-wspace/src/scale.rs",
+ "old": "                let mut offset = 0usize;\n                for (rows, _) in dims.iter().take(layer) {\n                    offset += rows;\n                }\n                if dims.get(layer).is_none() {",
+ "new": "                let mut offset = 0usize;\n                for (rows, _) in dims.iter().take(0) {\n                    offset += rows;\n                }\n                if dims.get(layer).is_none() {",
+ "pkg": "trit-wspace",
+ "filter": "row_lambdas_scale_per_row"
+},
+{
+ "name": "wspace-task-scale: 块 λ 忽略行",
+ "file": "crates/trit-wspace/src/scale.rs",
+ "old": "                Ok(offset + row * cols.div_ceil(block) + col / block)",
+ "new": "                Ok(offset + col / block)",
+ "pkg": "trit-wspace",
+ "filter": "block_lambdas_scale_per_block"
+},
+{
+ "name": "wspace-task-scale: 按单位 λ=0 未丢",
+ "file": "crates/trit-wspace/src/scale.rs",
+ "old": "        let lambda = *lambdas.get(index).ok_or(Error::Shape {\n            what: \"unit_lambdas\",\n            expected: index + 1,\n            got: lambdas.len(),\n        })?;\n        if lambda == 0.0 {\n            continue;\n        }",
+ "new": "        let lambda = *lambdas.get(index).ok_or(Error::Shape {\n            what: \"unit_lambdas\",\n            expected: index + 1,\n            got: lambdas.len(),\n        })?;\n        if false {\n            continue;\n        }",
+ "pkg": "trit-wspace",
+ "filter": "row_lambdas_scale_per_row"
+},
+{
+ "name": "wspace-task-scale: CLI 行 λ 未接线",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "    let row_lambdas = parsed\n        .values\n        .get(\"row-lambdas\")\n        .map(|raw| parse_lambdas(raw))\n        .transpose()?;",
+ "new": "    let row_lambdas: Option<Vec<f32>> = None;",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_scale_row_lambdas_round_trip"
+},
+{
+ "name": "wspace-task-scale: MCP 行 λ 未接线",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "    let row_lambdas = match args.get(\"row_lambdas\") {",
+ "new": "    let row_lambdas = match None::<Value> {",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_scale_row_lambdas_round_trip"
+},
+{
+ "name": "wspace-task-scale: 行 λ 长度不校验",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "        if row_lambdas.len() != total {\n            return Err(format!(\n                \"--row-lambdas 需要 {total} 个（每行一个），得到 {}\",\n                row_lambdas.len()\n            ));\n        }",
+ "new": "        if false {\n            return Err(format!(\n                \"--row-lambdas 需要 {total} 个（每行一个），得到 {}\",\n                row_lambdas.len()\n            ));\n        }",
+ "pkg": "trit-wspace",
+ "filter": "row_lambdas_length_checked_by_cli"
 }
 ]

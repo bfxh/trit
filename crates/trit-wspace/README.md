@@ -206,8 +206,9 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 `task-scale` / `wsp_task_scale` 做三值任务算术：`--lambda L` 单系数（`L>0` 原样、`L=0` 丢弃、
 `L<0` 取反 trit/偏置且丢 scale 差分）；`--lambdas L,L...` 批量扫描，配 `--oracle` 时每个 λ
 返回 `verify`（loss/exact/accuracy），批量结果在 `results` 数组中（不含 `artifact`）；
-`--layer-lambdas L0,L1...` 按层给系数（每层一个；0 丢弃该层、<0 取反该层），与
-`--lambda/--lambdas` 互斥。
+`--layer-lambdas L0,L1...` 按层给系数（每层一个；0 丢弃该层、<0 取反该层）；
+`--row-lambdas L...`（长度=总行数）与 `--block-lambdas L... --block-size N`（长度=总块数）
+把系数扩到行/列块；以上四种与 `--lambda/--lambdas` 互斥。
 
 `task-scale` / `wsp_task_scale` 做三值任务算术：`--lambda L` 单系数（`L>0` 原样、`L=0` 丢弃、
 `L<0` 取反 trit/偏置且丢 scale 差分）；`--lambdas L,L...` 批量扫描，配 `--oracle` 时每个 λ
