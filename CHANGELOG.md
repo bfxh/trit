@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Experiments（trit-wspace：16×16 彩色 + hidden 128）
+
+- `examples/cifar_tasks.rs` 支持 `--color`（16×16×3 = 768 维）与 `--hidden N`；本地新增 16×16 彩色夹具。
+- 读数：
+  · 二分类 cat-vs-dog（16×16 彩色、hidden 128、每类 500、10 epochs、test 200、5 seeds）：三值 base
+    **49.3% ± 3.5%**、等权 41.6% ± 1.2%、exact/hamming 49.9% ± 2.5%、argmax/readout 48.6% ± 4.0%；
+    **f32 base 53.0% ± 3.3%**。
+  · 10 类（16×16 彩色、hidden 128、每类 200、10 epochs、test 500、3 seeds）：三值 base
+    **16.93% ± 0.61%**、hamming/argmax/readout 17.73–17.8% ± 0.7–0.8%、等权 15.93% ± 0.95%；
+    **f32 base 25.67% ± 0.50%**。
+- 对照 16×16 灰度 hidden 64（CHG-2026-11-08-H）：10 类三值 15.36% → 16.93%（+1.6 点）；
+  二分类三值 47.8% → 49.3%（+1.5 点）。彩色 + 更大 hidden 有小幅提升，但没有改变
+  “三值化仍差 8–9 点、调权只补回一部分”的结论；cat-vs-dog 仍难。
+- 未证栏：32×32 未试（训练成本高）；f32 基线仍是 2 层 MLP；per-class 200–500 的数据量下
+  std 仍大（二分类 ±3.5 点）。
+
 ### Experiments（trit-wspace：16×16 输入 + 连续 f32 基线 + 5 seeds）
 
 - `examples/cifar_tasks.rs` 支持 `--size`（8/16，夹具 `{split}_x{size}.bin`）；f32 基线改用**连续灰度输入**
