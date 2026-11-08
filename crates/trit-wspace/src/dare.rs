@@ -19,6 +19,9 @@ use crate::net::Net;
 /// 行级决策的列标记（与偏置的 `usize::MAX` 区分）。
 const ROW_UNIT: usize = usize::MAX - 1;
 
+/// 层级的决策标记（与行级、偏置区分）。
+const LAYER_UNIT: usize = usize::MAX - 2;
+
 /// 丢弃的决策单位。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DareMode {
@@ -28,6 +31,8 @@ enum DareMode {
     Row,
     /// 按固定列块（`col / block`）一起。
     Block(usize),
+    /// 整层一起。
+    Layer,
 }
 
 /// 丢弃结果：补丁 + 读数。
@@ -62,6 +67,14 @@ pub fn dare_drop(base: &Net, tuned: &Net, rate: f32, seed: u64) -> Result<DropOu
 /// [`crate::transplant`]）。
 pub fn dare_drop_rows(base: &Net, tuned: &Net, rate: f32, seed: u64) -> Result<DropOutcome> {
     dare_drop_impl(base, tuned, rate, seed, DareMode::Row)
+}
+
+/// 层 DARE：整层（所有行、所有 trit 与偏置）一起保留或一起丢弃。
+///
+/// 决策单位是 `(seed, layer)`；`kept` / `dropped` 仍按差分坐标数计数，重标度只落在
+/// 有保留差分的行上。
+pub fn dare_drop_layers(base: &Net, tuned: &Net, rate: f32, seed: u64) -> Result<DropOutcome> {
+    dare_drop_impl(base, tuned, rate, seed, DareMode::Layer)
 }
 
 /// 块级 DARE：同一行内按固定列块（`col / block`）一起保留或一起丢弃。
@@ -100,6 +113,67 @@ fn dare_drop_impl(
     let mut kept = 0usize;
     let mut rescaled_rows = 0usize;
     for (layer, (src, dst)) in base.layers().iter().zip(tuned.layers()).enumerate() {
+        if matches!(mode, DareMode::Layer) {
+            let mut layer_edits = Vec::new();
+            let mut deltas = 0usize;
+            for row in 0..src.rows() {
+                for col in 0..src.cols() {
+                    let from = src.trit(row, col).expect("row/col in range");
+                    let to = dst.trit(row, col).expect("row/col in range");
+                    if from != to {
+                        layer_edits.push(Edit::SetTrit {
+                            layer,
+                            row,
+                            col,
+                            to,
+                        });
+                        deltas += 1;
+                    }
+                }
+                let from_bias = src.bias_trit(row).expect("row in range");
+                let to_bias = dst.bias_trit(row).expect("row in range");
+                if from_bias != to_bias {
+                    layer_edits.push(Edit::SetBias {
+                        layer,
+                        row,
+                        to: to_bias,
+                    });
+                    deltas += 1;
+                }
+            }
+            if deltas == 0 {
+                continue;
+            }
+            let mut layer_rescaled = 0usize;
+            if rate > 0.0 {
+                for row in 0..src.rows() {
+                    let row_diff = (0..src.cols())
+                        .any(|col| src.trit(row, col) != dst.trit(row, col))
+                        || src.bias_trit(row) != dst.bias_trit(row);
+                    if !row_diff {
+                        continue;
+                    }
+                    let scale = dst.scale(row).expect("row in range");
+                    let rescaled = scale * factor;
+                    if rescaled.to_bits() != scale.to_bits() {
+                        layer_edits.push(Edit::SetScale {
+                            layer,
+                            row,
+                            to: rescaled,
+                        });
+                        layer_rescaled += 1;
+                    }
+                }
+            }
+            if keep(seed, layer, LAYER_UNIT, LAYER_UNIT, rate) {
+                kept += deltas;
+                rescaled_rows += layer_rescaled;
+                edits.extend(layer_edits);
+            } else {
+                dropped += deltas;
+            }
+            continue;
+        }
         for row in 0..src.rows() {
             if matches!(mode, DareMode::Row) {
                 let mut row_edits = Vec::new();
@@ -158,6 +232,7 @@ fn dare_drop_impl(
                     DareMode::Coord => col,
                     DareMode::Block(block) => col / block,
                     DareMode::Row => unreachable!(),
+                    DareMode::Layer => unreachable!(),
                 };
                 if keep(seed, layer, row, unit_col, rate) {
                     edits.push(Edit::SetTrit {

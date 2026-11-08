@@ -11,8 +11,11 @@
 - `wire::classification_value`：per-class 精度 + 混淆矩阵（一维输出按 2 类）；
   `verify` 与 `task-merge` 的 `verify` 块输出 `classification` / `before_classification` /
   `after_classification`。
-- 测试 258 → 273 + 1 doctest（新增 `tests/task_scale.rs` 6、`tests/classification.rs` 4、
-  `tests/dare.rs` +5）；变异 245 → 260（新增 15 条目标，三个子集 6/6、4/4、5/5 caught）。
+- `dare_drop_layers`：整层（所有行、所有 trit 与偏置）一起保留/丢弃；CLI `--by-layer`，
+  MCP `wsp_dare_drop.by_layer`（与 `by_row` / `block` 互斥）。
+- 测试 258 → 278 + 1 doctest（新增 `tests/task_scale.rs` 6、`tests/classification.rs` 4、
+  `tests/dare.rs` +5、`tests/dare_layer.rs` 5）；变异 245 → 265（新增 20 条目标，子集
+  6/6、4/4、5/5、5/5 caught）。
 
 ### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
 
