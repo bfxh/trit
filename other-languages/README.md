@@ -25,7 +25,7 @@
 
 > Assembly 与 Rust 同属 Tier 0，但职责不同：Rust 是可维护、可审计的参考实现；Assembly 是**热点/多值路径的性能与可行性验证**。任何“汇编更快”的结论，必须与 C/Rust 同算法、同数据、同基线对比。
 
-Lean 4 形式化入口：[`interop/lean/`](../interop/lean/)（K3/KGate/Belnap4/pack5 核心定理；Lean 4.35.0，无 Mathlib）。
+Lean 4 形式化入口：[`interop/lean/`](../interop/lean/)（K3/KGate/Belnap4/pack5 核心定理；Lean 4.35.0，无 Mathlib）。`openai/math` 外置评测见 [`interop/lean/openai_math/`](../interop/lean/openai_math/)。
 
 ## Java 选型
 

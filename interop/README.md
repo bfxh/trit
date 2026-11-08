@@ -65,7 +65,7 @@ Lean 4 落地前，规范与 Rust 不一致时以规范为准，修 Rust 并补�
 
 ## 下一步
 
-- Lean：`openai/math` 应用评测（核心定理与 Lean→Rust 数据桥已完成）。
+- Lean：`openai/math` 外置评测已接入（固定 commit + 目录审计 208 条 `main_results`；Comparator 动态未运行）。
 - C：core profile 已接入；C++ 适配器等有明确消费方再做。
 - 非默认 `conformance` workflow 已加（runner + Go + C + asm + Lean）；后续按需纳入分支保护。
 - 跨进程容器 v0.2（magic/version/profile/trit_count/payload_len/CRC32C）；在 vectors 补齐前不声称支持。
