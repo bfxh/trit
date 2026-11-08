@@ -24,7 +24,7 @@ def b4Id : B4 → String
   | .F => "f"
   | .B => "b"
 
-def tritName : Pack5.PackTrit → String
+def tritName : PackTrit → String
   | .neg => "-1"
   | .zero => "0"
   | .pos => "1"
@@ -44,25 +44,25 @@ def joinComma : List String → String
   | x :: xs => x ++ "," ++ joinComma xs
 
 def emitStr (id val : String) : IO Unit :=
-  IO.println s!"{{\"id\":\"{id}\",\"expected\":\"{val}\"}}"
+  IO.println ("{\"id\":\"" ++ id ++ "\",\"expected\":\"" ++ val ++ "\"}")
 
 def emitNat (id : String) (n : Nat) : IO Unit :=
-  IO.println s!"{{\"id\":\"{id}\",\"expected\":{n}}}"
+  IO.println ("{\"id\":\"" ++ id ++ "\",\"expected\":" ++ toString n ++ "}")
 
 def emitBits (id : String) (b : Bool × Bool) : IO Unit :=
-  IO.println s!"{{\"id\":\"{id}\",\"expected\":[{bitName b.1},{bitName b.2}]}}"
+  IO.println ("{\"id\":\"" ++ id ++ "\",\"expected\":[" ++ bitName b.1 ++ "," ++ bitName b.2 ++ "]}")
 
-def emitTrits (id : String) (ts : List Pack5.PackTrit) : IO Unit :=
-  IO.println s!"{{\"id\":\"{id}\",\"expected\":[{joinComma (ts.map tritName)}]}}"
+def emitTrits (id : String) (ts : List PackTrit) : IO Unit :=
+  IO.println ("{\"id\":\"" ++ id ++ "\",\"expected\":[" ++ joinComma (ts.map tritName) ++ "]}")
 
 def emitError (id err : String) : IO Unit :=
-  IO.println s!"{{\"id\":\"{id}\",\"error\":\"{err}\"}}"
+  IO.println ("{\"id\":\"" ++ id ++ "\",\"error\":\"" ++ err ++ "\"}")
 
 def k3Values : List K3 := [.F, .U, .T]
 def b4Values : List B4 := [.N, .T, .F, .B]
-def allTrits : List Pack5.PackTrit := [.neg, .zero, .pos]
+def allTrits : List PackTrit := [.neg, .zero, .pos]
 
-def listsOfLen : Nat → List (List Pack5.PackTrit)
+def listsOfLen : Nat → List (List PackTrit)
   | 0 => [[]]
   | n + 1 => (listsOfLen n).bind fun xs => allTrits.map fun t => xs ++ [t]
 
