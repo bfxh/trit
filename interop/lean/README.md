@@ -16,6 +16,7 @@
 | `Trit/Belnap4.lean` | Belnap4 的 NOT/AND/OR、位平面公式、`N∧B=F`、`N∨B=T` 等关键值 |
 | `Trit/Pack5.lean` | 5-trit `pack`/`unpack` 往返、尾部填充、错误语义、`pack < 243` |
 | `Main.lean` | `tritLean` 可执行：输出 738 条 conformance JSONL |
+| `openai_math/` | 外置 `openai/math` 评测：固定提交、稀疏拉取、目录审计与手动 Comparator 入口 |
 | `Trit.lean` | 汇总导入 |
 
 ## 已证明
@@ -47,4 +48,9 @@
 
 ## 与 `openai/math` 的关系
 
-Lean 侧保持**无 Mathlib 依赖**，保证 CI 可复现；`openai/math` 的 Lean 语料是未来的应用/评测目标，不是本目录的依赖。后续可以在不改变本目录核心定理的前提下，把更完整的数学/证明语料接进来。
+Lean 侧保持**无 Mathlib 依赖**，保证 CI 可复现；`openai/math` 作为**外置评测语料**接入，不是本目录的依赖，也不与 4.34.1 + Mathlib 的 Lake 项目混编。
+
+- 入口：[`openai_math/`](openai_math/)（固定 commit `4eaee87`，Lean 4.34.1）。
+- 目录审计（A，已实测）：176 sources、208 条 `main_results`、192 个唯一 comparator 配置；文件/模块/定理名/依赖钉全部自洽；基线见 [`results/2026-11-08-4eaee87.json`](openai_math/results/2026-11-08-4eaee87.json)。
+- Comparator 动态校验：脚本已备（Linux + `landrun`/`lean4export`），**未运行**，不声称通过。
+- 上游 README 的 300/719 (~42%) 覆盖率是 B 类口径，与 catalogue 的 208 条 `main_results` 不可互换。

@@ -1,0 +1,28 @@
+name: openai-math-audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openai-math-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    name: openai/math catalogue audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Sparse-fetch pinned corpus
+        run: interop/lean/openai_math/fetch_sparse.sh "$RUNNER_TEMP/openai-math"
+      - name: Audit catalogue
+        run: >-
+          python3 interop/lean/openai_math/audit.py
+          --repo "$RUNNER_TEMP/openai-math"
+          --json "$RUNNER_TEMP/openai-math-audit.json"
+      - name: Show report
+        run: cat "$RUNNER_TEMP/openai-math-audit.json"
