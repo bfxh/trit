@@ -5,7 +5,7 @@
 - Lean：`4.35.0`（`lean-toolchain` 固定）
 - 依赖：仅 Lean 核心；不依赖 Mathlib
 - 构建：`cd interop/lean && lake build`
-- 数据桥：`lake exe tritLean > /tmp/lean-vectors.jsonl`，再由 `interop/runner -- --lean ...` 对比 golden vectors
+- 数据桥：`lake exe tritLean > /tmp/lean-vectors.jsonl`，再由 `interop/runner -- --bridge ...` 对比 golden vectors
 - CI：`conformance` workflow 的 `lean 4 semantics` job（2026-11-08 已通过；含 738/738 Lean→Rust 数据桥）
 
 ## 文件
@@ -37,7 +37,7 @@
 ## Lean→Rust 数据桥
 
 - Lean 端：`lake exe tritLean` 按 golden vector 的 `id` 输出 738 条 JSONL（`expected` 或 `error`）。
-- Rust 端：`interop/runner -- --lean <file>` 逐条与 `interop/vectors` 对比；缺项、多项、值不一致都判红。
+- Rust 端：`interop/runner -- --bridge <file>` 逐条与 `interop/vectors` 对比；缺项、多项、值不一致都判红。
 - 这是**数据级**桥：Rust 调 Lean 可执行产物并比对，不是 Lean runtime FFI；后者仍未做。
 
 ## 未覆盖
