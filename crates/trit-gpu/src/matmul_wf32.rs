@@ -59,7 +59,12 @@ impl Wf32Gpu {
             compilation_options: Default::default(),
             cache: None,
         });
-        Some(Self { device, queue, pipeline, layout })
+        Some(Self {
+            device,
+            queue,
+            pipeline,
+            layout,
+        })
     }
 
     /// `C[m][n] = Σ_k A[m][k]·B[n][k]`。
@@ -119,11 +124,26 @@ impl Wf32Gpu {
             label: None,
             layout: &self.layout,
             entries: &[
-                wgpu::BindGroupEntry { binding: 0, resource: a_pos_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 1, resource: a_neg_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 2, resource: b_buf.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 3, resource: out.as_entire_binding() },
-                wgpu::BindGroupEntry { binding: 4, resource: params_buf.as_entire_binding() },
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: a_pos_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: a_neg_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: b_buf.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: out.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: params_buf.as_entire_binding(),
+                },
             ],
         });
 
@@ -215,7 +235,10 @@ mod tests {
                     want += a[r * k + kk] as f32 * b[c * words * 32 + kk];
                 }
                 let got = out[r * n + c];
-                assert!((got - want).abs() < 1e-4, "r={r} c={c} got={got} want={want}");
+                assert!(
+                    (got - want).abs() < 1e-4,
+                    "r={r} c={c} got={got} want={want}"
+                );
             }
         }
     }

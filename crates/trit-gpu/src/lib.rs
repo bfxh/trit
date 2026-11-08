@@ -24,6 +24,9 @@
 //!
 //! TT3 块纹理解码内核（`texture.rs`）与 trit-texture 的 CPU 解码逐字节对拍——
 //! WGSL 里的基 3 取位与块网格行主序映射均已真机验证。
+//!
+//! ⚠️ `texture.rs` 是 **4×10、12 字节** 的老 TT3 布局，与现行 trit-texture
+//! （4×8、11 字节）不符；新代码一律用 `texture2`（TTX2，含直采样 `ttx_sample_at`）。
 
 #![forbid(unsafe_code)]
 
@@ -173,13 +176,15 @@ pub mod gpu;
 #[cfg(feature = "gpu")]
 pub mod matmul;
 #[cfg(feature = "gpu")]
-pub mod matmul_wf32;
-#[cfg(feature = "gpu")]
 mod matmul_f32;
+#[cfg(feature = "gpu")]
+pub mod matmul_wf32;
 #[cfg(feature = "gpu")]
 mod popc;
 #[cfg(feature = "gpu")]
 pub mod texture;
+#[cfg(feature = "gpu")]
+pub mod texture2;
 
 #[cfg(test)]
 mod tests {
