@@ -88,3 +88,8 @@ jobs:
           test: "false"
           lint: "false"
           use-mathlib-cache: "false"
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      - name: Generate Lean conformance output
+        run: cd interop/lean && lake exe tritLean > /tmp/lean-vectors.jsonl
+      - name: Compare Lean output with golden vectors
+        run: cd interop/runner && cargo run --release -- --lean /tmp/lean-vectors.jsonl
