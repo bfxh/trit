@@ -62,9 +62,13 @@ def k3Values : List K3 := [.F, .U, .T]
 def b4Values : List B4 := [.N, .T, .F, .B]
 def allTrits : List PackTrit := [.neg, .zero, .pos]
 
+def concatMap {α β : Type} (f : α → List β) : List α → List β
+  | [] => []
+  | x :: xs => f x ++ concatMap f xs
+
 def listsOfLen : Nat → List (List PackTrit)
   | 0 => [[]]
-  | n + 1 => (listsOfLen n).bind fun xs => allTrits.map fun t => xs ++ [t]
+  | n + 1 => concatMap (fun xs => allTrits.map fun t => xs ++ [t]) (listsOfLen n)
 
 def main : IO Unit := do
   -- K3 semantic
