@@ -214,7 +214,7 @@ pub(super) fn task_scale(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
     if parsed.positional.len() != 2 {
         return Err(
-            "用法：trit-wspace task-scale <base|-> <tuned|-> (--lambda L | --lambdas L,L...) [--oracle <json|->] [--out <path>]"
+            "用法：trit-wspace task-scale <base|-> <tuned|-> (--lambda L | --lambdas L,L... | --layer-lambdas L0,L1...) [--oracle <json|->] [--out <path>]"
                 .into(),
         );
     }
@@ -240,8 +240,41 @@ pub(super) fn task_scale(args: &[String]) -> Result<(), String> {
         .get("lambdas")
         .map(|raw| parse_lambdas(raw))
         .transpose()?;
+    let layer_lambdas = parsed
+        .values
+        .get("layer-lambdas")
+        .map(|raw| parse_lambdas(raw))
+        .transpose()?;
     if lambda.is_some() && lambdas.is_some() {
         return Err("--lambda 与 --lambdas 只能给一个".into());
+    }
+    if layer_lambdas.is_some() && (lambda.is_some() || lambdas.is_some()) {
+        return Err("--layer-lambdas 与 --lambda/--lambdas 只能给一个".into());
+    }
+    if let Some(layer_lambdas) = layer_lambdas {
+        if layer_lambdas.len() != base.layers().len() {
+            return Err(format!(
+                "--layer-lambdas 需要 {} 个（每层一个），得到 {}",
+                base.layers().len(),
+                layer_lambdas.len()
+            ));
+        }
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled = crate::task::scale_task_layers(&vector, &layer_lambdas).map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        write_out(&parsed, &net)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let mut row = json!({
+            "layer_lambdas": layer_lambdas,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return emit(&row);
     }
     let values = match lambdas {
         Some(values) => values,
