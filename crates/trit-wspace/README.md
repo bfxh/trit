@@ -123,7 +123,7 @@ trit-wspace mcp
 }
 ```
 
-二十个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`、`wsp_task_scale`。
+二十一个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`、`wsp_task_scale`、`wsp_task_combine`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
@@ -209,6 +209,9 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 `--layer-lambdas L0,L1...` 按层给系数（每层一个；0 丢弃该层、<0 取反该层）；
 `--row-lambdas L...`（长度=总行数）与 `--block-lambdas L... --block-size N`（长度=总块数）
 把系数扩到行/列块；以上四种与 `--lambda/--lambdas` 互斥。
+
+`task-combine <base> --tasks a,b,... --lambdas L,L...` / `wsp_task_combine` 按 λ 组合多个任务
+向量（λ<0 取反、0 丢弃；合并权重取 |λ|，三值没有幅度）。
 
 `task-scale` / `wsp_task_scale` 做三值任务算术：`--lambda L` 单系数（`L>0` 原样、`L=0` 丢弃、
 `L<0` 取反 trit/偏置且丢 scale 差分）；`--lambdas L,L...` 批量扫描，配 `--oracle` 时每个 λ

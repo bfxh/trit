@@ -369,3 +369,37 @@ pub(super) fn task_scale(args: &Value) -> Result<Value, String> {
         Ok(json!({"lambdas": lambdas, "results": results}))
     }
 }
+
+pub(super) fn task_combine(args: &Value) -> Result<Value, String> {
+    let base = load_key(args, "base")?;
+    let task_values = args
+        .get("tasks")
+        .and_then(Value::as_array)
+        .ok_or("需要 tasks 数组")?;
+    let lambdas: Vec<f32> = args
+        .get("lambdas")
+        .and_then(Value::as_array)
+        .ok_or("需要 lambdas 数组")?
+        .iter()
+        .map(|item| {
+            item.as_f64()
+                .map(|value| value as f32)
+                .ok_or_else(|| "lambdas 需要数字数组".to_string())
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut tasks = Vec::with_capacity(task_values.len());
+    for item in task_values {
+        let text = item.as_str().ok_or("tasks 需要字符串数组")?;
+        let net = parse_or_path(text)?;
+        tasks.push(crate::task::TaskVector::between(&base, &net).map_err(err)?);
+    }
+    let merged = crate::scale::combine_tasks(&base, &tasks, &lambdas).map_err(err)?;
+    let patch = Patch::diff(&base, &merged).map_err(err)?;
+    Ok(json!({
+        "lambdas": lambdas,
+        "summary": wire::net_summary(&merged),
+        "patch": wire::patch_to_value(&patch),
+        "cost": wire::cost_to_value(&patch.cost(&base)),
+        "artifact": to_wsp(&merged),
+    }))
+}

@@ -69,6 +69,7 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "verify" => cmd_verify(&args[1..]),
         "task-merge" => cli_task::task_merge(&args[1..]),
         "task-scale" => cli_task::task_scale(&args[1..]),
+        "task-combine" => cli_task::task_combine(&args[1..]),
         "script" => cmd_script(&args[1..]),
         "patch" => cmd_patch(&args[1..]),
         "apply-candidate" => cmd_apply_candidate(&args[1..]),

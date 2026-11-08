@@ -284,6 +284,7 @@ impl Mcp {
             }
             "wsp_task_merge" => mcp_task::task_merge(args),
             "wsp_task_scale" => mcp_task::task_scale(args),
+            "wsp_task_combine" => mcp_task::task_combine(args),
             "wsp_rebase" => {
                 let target = load(args)?;
                 let base = load_key(args, "base")?;
