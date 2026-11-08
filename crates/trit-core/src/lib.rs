@@ -11,6 +11,7 @@ pub mod parallel;
 pub mod parser;
 pub mod topology;
 pub mod tristate;
+pub mod signfield;
 pub mod value;
 
 pub use algebra::Algebra;
@@ -25,3 +26,4 @@ pub use tristate::{
     resolve_drivers,
 };
 pub use value::Ternary;
+pub use signfield::{SignField3D, SignMesh, TriSign, extract_surface};
