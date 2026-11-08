@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Experiments（trit-wspace：32×32 彩色 + f32 基线）
+
+- 夹具：`cifar32.npz` 导出 `train_x32.bin`（1024 维灰度）/`train_x32c.bin`（3072 维彩色）/
+  `test_x32*.bin`；example 的 `--size 32` 直接可用（无需改代码）。
+- 10 类读数（32×32 彩色、hidden 64、per-class 500、5 epochs、3 seeds、2k test）：
+  三值 base **18.10% ± 0.72%**、equal 19.10% ± 2.23%、exact 18.73% ± 2.48%、
+  hamming 18.98% ± 2.17%、argmax **19.42% ± 1.69%**、readout 18.10% ± 0.72%；
+  f32 base **27.35% ± 0.97%**。
+- 二分类（cat/dog、500/类、10 epochs、3 seeds、400 test）：三值 base 43.75% ± 1.50%、
+  argmax/readout **46.75% ± 1.30%**、f32 base **56.0% ± 1.5%**。
+- 限制：32×32 与 16×16 的训练规模不同（hidden 64 vs 128、per-class 500 vs 1000），
+  不能把差异归因于分辨率；单档实验，未做 32×32 的 hidden 128/多 epoch 对照。
+
 ### Added（trit-wspace：任务向量缩放 + 块级 DARE + 分类读数）
 
 - `scale_task`：三值任务算术——`λ>0` 原样、`λ=0` 丢弃、`λ<0` 取反 trit/偏置（scale 差分丢弃）。
