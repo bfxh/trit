@@ -5,7 +5,7 @@
 - Lean：`4.35.0`（`lean-toolchain` 固定）
 - 依赖：仅 Lean 核心；不依赖 Mathlib
 - 构建：`cd interop/lean && lake build`
-- CI：`conformance` workflow 的 `lean 4 semantics` job
+- CI：`conformance` workflow 的 `lean 4 semantics` job（2026-11-08 已通过）
 
 ## 文件
 
