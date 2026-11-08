@@ -17,6 +17,7 @@
 //! 高斯/UV/材质/光照头是后续步骤。
 
 pub mod gaussian;
+pub mod lut;
 pub mod mesh;
 
 use trit_attn::{AttentionBlock, BlockOptimizers};
