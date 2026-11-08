@@ -17,6 +17,11 @@ fn main() {
         .unwrap_or_else(|| "0.5".to_string())
         .parse()
         .expect("lambda");
+    let mu: f32 = std::env::args()
+        .nth(5)
+        .unwrap_or_else(|| "0".to_string())
+        .parse()
+        .expect("mu");
 
     let mesh = TriMesh::from_obj(std::path::Path::new(&input)).expect("读 OBJ");
     let mut nbrs: Vec<Vec<u32>> = vec![Vec::new(); mesh.verts.len()];
@@ -29,7 +34,7 @@ fn main() {
         }
     }
     let mut v = mesh.verts.clone();
-    for _ in 0..iters {
+    let mut pass = |v: &mut Vec<[f32; 3]>, factor: f32| {
         let old = v.clone();
         for i in 0..v.len() {
             let ns = &nbrs[i];
@@ -45,8 +50,14 @@ fn main() {
             let inv = 1.0 / ns.len() as f32;
             for k in 0..3 {
                 let avg = sum[k] * inv;
-                v[i][k] = old[i][k] + lambda * (avg - old[i][k]);
+                v[i][k] = old[i][k] + factor * (avg - old[i][k]);
             }
+        }
+    };
+    for _ in 0..iters {
+        pass(&mut v, lambda);
+        if mu != 0.0 {
+            pass(&mut v, mu);
         }
     }
 
