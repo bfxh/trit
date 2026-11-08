@@ -17,6 +17,85 @@ use trit_eval::eval::{Assignment, eval};
 /// e-class 编号。
 type ClassId = usize;
 
+/// 提取代价模型：`nodes` 按 AST 节点数，`gates` 按门数（变量/常量为 0，蕴含/等价更贵）。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CostModel {
+    Nodes,
+    Gates,
+}
+
+impl CostModel {
+    pub(crate) fn parse(name: &str) -> Option<Self> {
+        match name.trim().to_ascii_lowercase().as_str() {
+            "nodes" | "node" => Some(Self::Nodes),
+            "gates" | "gate" => Some(Self::Gates),
+            _ => None,
+        }
+    }
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Self::Nodes => "nodes",
+            Self::Gates => "gates",
+        }
+    }
+
+    const fn leaf(self) -> u64 {
+        match self {
+            Self::Nodes => 1,
+            Self::Gates => 0,
+        }
+    }
+
+    const fn op(self, op: Op) -> u64 {
+        match self {
+            Self::Nodes => 1,
+            Self::Gates => match op {
+                Op::And | Op::Or => 1,
+                Op::Xor | Op::Implies => 2,
+                Op::Equiv => 3,
+            },
+        }
+    }
+
+    const fn not(self) -> u64 {
+        match self {
+            Self::Nodes => 1,
+            Self::Gates => 1,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RewriteOptions {
+    /// 最大轮数；通常远早于上限就到达不动点。0 表示不进图。
+    pub max_rounds: usize,
+    /// e-node 上限（防止病态表达式把内存吃光）。
+    pub node_limit: usize,
+    pub cost: CostModel,
+}
+
+impl Default for RewriteOptions {
+    fn default() -> Self {
+        Self {
+            max_rounds: 64,
+            node_limit: 4096,
+            cost: CostModel::Nodes,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct RewriteReport {
+    pub expr: Expr,
+    pub rules: Vec<&'static str>,
+    pub rounds: usize,
+    pub e_nodes: usize,
+    pub saturated: bool,
+    pub cost: u64,
+    pub nodes: u64,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 enum Op {
     And,
@@ -492,32 +571,53 @@ impl EGraph {
         }
     }
 
-    /// 最小代价提取（代价 = 节点数）；固定点迭代 + 严格小于，保证确定性。
-    fn extract(&mut self, root: ClassId) -> Expr {
+    fn kind_stats(
+        &self,
+        kind: &Kind,
+        best: &HashMap<ClassId, (u64, u64)>,
+        model: CostModel,
+    ) -> Option<(u64, u64)> {
+        match kind {
+            Kind::Var(_) | Kind::Const(_) => Some((model.leaf(), 1)),
+            Kind::Not(child) => best
+                .get(child)
+                .map(|(cost, nodes)| (cost.saturating_add(model.not()), nodes + 1)),
+            Kind::Bin(op, left, right) => {
+                let (left_cost, left_nodes) = *best.get(left)?;
+                let (right_cost, right_nodes) = *best.get(right)?;
+                Some((
+                    left_cost
+                        .saturating_add(right_cost)
+                        .saturating_add(model.op(*op)),
+                    left_nodes + right_nodes + 1,
+                ))
+            }
+        }
+    }
+
+    /// 最小 (代价, 节点数) 提取；固定点迭代 + 严格小于，保证确定性。
+    fn extract(&mut self, root: ClassId, model: CostModel) -> (Expr, u64, u64) {
         let roots: Vec<ClassId> = (0..self.classes.len())
             .filter(|class| self.find(*class) == *class)
             .collect();
-        let mut cost: HashMap<ClassId, usize> = HashMap::new();
-        for _ in 0..64 {
+        let mut best: HashMap<ClassId, (u64, u64)> = HashMap::new();
+        // 每条边至少把子节点信息传一层；|roots| 轮一定覆盖最长链。
+        for _ in 0..=roots.len() {
             let mut changed = false;
             for class in &roots {
-                let kinds = self.classes[*class].clone();
-                let mut best = usize::MAX;
-                for kind in &kinds {
-                    let candidate = match kind {
-                        Kind::Var(_) | Kind::Const(_) => Some(1),
-                        Kind::Not(child) => cost.get(child).map(|c| c + 1),
-                        Kind::Bin(_, left, right) => match (cost.get(left), cost.get(right)) {
-                            (Some(l), Some(r)) => Some(l + r + 1),
-                            _ => None,
-                        },
+                let mut choice: Option<(u64, u64)> = None;
+                for kind in &self.classes[*class] {
+                    let Some(candidate) = self.kind_stats(kind, &best, model) else {
+                        continue;
                     };
-                    if let Some(candidate) = candidate {
-                        best = best.min(candidate);
+                    if choice.is_none_or(|current| candidate < current) {
+                        choice = Some(candidate);
                     }
                 }
-                if best != usize::MAX && cost.get(class) != Some(&best) {
-                    cost.insert(*class, best);
+                if let Some(candidate) = choice
+                    && best.get(class) != Some(&candidate)
+                {
+                    best.insert(*class, candidate);
                     changed = true;
                 }
             }
@@ -526,40 +626,50 @@ impl EGraph {
             }
         }
         let root = self.find(root);
-        self.build(root, &cost, 0)
+        let (cost, nodes) = best.get(&root).copied().unwrap_or((u64::MAX, u64::MAX));
+        (self.build(root, &best, model, 0), cost, nodes)
     }
 
-    fn build(&self, class: ClassId, cost: &HashMap<ClassId, usize>, depth: usize) -> Expr {
-        // `class` 已按 root 规范化（提取入口/`follow` 保证）。
-        let kinds = &self.classes[class];
-        let mut best: Option<(usize, &Kind)> = None;
-        for kind in kinds {
-            let candidate = match kind {
-                Kind::Var(_) | Kind::Const(_) => Some(1),
-                Kind::Not(child) => cost.get(child).map(|c| c + 1),
-                Kind::Bin(_, left, right) => match (cost.get(left), cost.get(right)) {
-                    (Some(l), Some(r)) => Some(l + r + 1),
-                    _ => None,
-                },
+    fn choose_kind(
+        &self,
+        class: ClassId,
+        best: &HashMap<ClassId, (u64, u64)>,
+        model: CostModel,
+    ) -> Option<(u64, u64, &Kind)> {
+        let mut chosen: Option<(u64, u64, &Kind)> = None;
+        for kind in &self.classes[class] {
+            let Some((cost, nodes)) = self.kind_stats(kind, best, model) else {
+                continue;
             };
-            let Some(candidate) = candidate else { continue };
-            if best.is_none_or(|(best_cost, _)| candidate < best_cost) {
-                best = Some((candidate, kind));
+            if chosen
+                .is_none_or(|(best_cost, best_nodes, _)| (cost, nodes) < (best_cost, best_nodes))
+            {
+                chosen = Some((cost, nodes, kind));
             }
         }
-        let Some((_, kind)) = best else {
-            return Expr::Const(Ternary::Unknown);
-        };
-        if depth > 64 {
+        chosen
+    }
+
+    fn build(
+        &self,
+        class: ClassId,
+        best: &HashMap<ClassId, (u64, u64)>,
+        model: CostModel,
+        depth: usize,
+    ) -> Expr {
+        if depth > 256 {
             return Expr::Const(Ternary::Unknown);
         }
+        let Some((_, _, kind)) = self.choose_kind(class, best, model) else {
+            return Expr::Const(Ternary::Unknown);
+        };
         match kind {
             Kind::Var(index) => Expr::Var(self.names[*index].clone()),
             Kind::Const(value) => Expr::Const(*value),
-            Kind::Not(child) => Expr::Not(Box::new(self.follow(*child, cost, depth + 1))),
+            Kind::Not(child) => Expr::Not(Box::new(self.follow(*child, best, model, depth + 1))),
             Kind::Bin(op, left, right) => {
-                let left = Box::new(self.follow(*left, cost, depth + 1));
-                let right = Box::new(self.follow(*right, cost, depth + 1));
+                let left = Box::new(self.follow(*left, best, model, depth + 1));
+                let right = Box::new(self.follow(*right, best, model, depth + 1));
                 match op {
                     Op::And => Expr::And(left, right),
                     Op::Or => Expr::Or(left, right),
@@ -571,29 +681,92 @@ impl EGraph {
         }
     }
 
-    fn follow(&self, class: ClassId, cost: &HashMap<ClassId, usize>, depth: usize) -> Expr {
+    fn follow(
+        &self,
+        class: ClassId,
+        best: &HashMap<ClassId, (u64, u64)>,
+        model: CostModel,
+        depth: usize,
+    ) -> Expr {
         // 子节点 id 在 rebuild 后可能指向非根，这里沿 parent 走到根。
         let mut class = class;
         while self.parent[class] != class {
             class = self.parent[class];
         }
-        self.build(class, cost, depth)
+        self.build(class, best, model, depth)
+    }
+}
+
+fn expr_stats(expr: &Expr, model: CostModel) -> (u64, u64) {
+    match expr {
+        Expr::Const(_) | Expr::Var(_) => (model.leaf(), 1),
+        Expr::Not(inner) => {
+            let (cost, nodes) = expr_stats(inner, model);
+            (cost.saturating_add(model.not()), nodes + 1)
+        }
+        Expr::And(left, right)
+        | Expr::Or(left, right)
+        | Expr::Xor(left, right)
+        | Expr::Implies(left, right)
+        | Expr::Equiv(left, right) => {
+            let op = match expr {
+                Expr::And(..) => Op::And,
+                Expr::Or(..) => Op::Or,
+                Expr::Xor(..) => Op::Xor,
+                Expr::Implies(..) => Op::Implies,
+                _ => Op::Equiv,
+            };
+            let (left_cost, left_nodes) = expr_stats(left, model);
+            let (right_cost, right_nodes) = expr_stats(right, model);
+            (
+                left_cost
+                    .saturating_add(right_cost)
+                    .saturating_add(model.op(op)),
+                left_nodes + right_nodes + 1,
+            )
+        }
     }
 }
 
 /// 重写入口：返回（重写后的表达式，实际触发过的规则名）。
+#[cfg(test)]
 pub(crate) fn rewrite(expr: &Expr, alg: Algebra, max_rounds: usize) -> (Expr, Vec<&'static str>) {
+    let report = rewrite_with(
+        expr,
+        alg,
+        RewriteOptions {
+            max_rounds,
+            ..RewriteOptions::default()
+        },
+    );
+    (report.expr, report.rules)
+}
+
+/// 饱和重写：每轮应用所有规则，直到没有新的合并（不动点）或触到轮数/节点上限。
+pub(crate) fn rewrite_with(expr: &Expr, alg: Algebra, options: RewriteOptions) -> RewriteReport {
     let rules: Vec<Rule> = rule_book()
         .into_iter()
         .filter(|rule| rule_holds(rule, alg))
         .collect();
     if rules.is_empty() {
-        return (expr.clone(), Vec::new());
+        let (cost, nodes) = expr_stats(expr, options.cost);
+        return RewriteReport {
+            expr: expr.clone(),
+            rules: Vec::new(),
+            rounds: 0,
+            e_nodes: 0,
+            saturated: true,
+            cost,
+            nodes,
+        };
     }
     let mut graph = EGraph::new();
     let root = graph.add(expr);
     let mut fired: Vec<&'static str> = Vec::new();
-    for _ in 0..max_rounds {
+    let mut rounds = 0;
+    let mut saturated = false;
+    for _ in 0..options.max_rounds {
+        rounds += 1;
         let mut changed = false;
         let classes: Vec<ClassId> = (0..graph.classes.len())
             .filter(|class| graph.find(*class) == *class)
@@ -611,18 +784,33 @@ pub(crate) fn rewrite(expr: &Expr, alg: Algebra, max_rounds: usize) -> (Expr, Ve
                     changed = true;
                 }
             }
-            if graph.classes.len() > 4096 {
+            if graph.classes.len() > options.node_limit {
                 break;
             }
         }
-        if !changed || graph.classes.len() > 4096 {
+        if graph.classes.len() > options.node_limit {
+            break;
+        }
+        if !changed {
+            saturated = true;
             break;
         }
     }
-    let rewritten = graph.extract(root);
+    let e_nodes = (0..graph.classes.len())
+        .filter(|class| graph.find(*class) == *class)
+        .count();
+    let (rewritten, cost, nodes) = graph.extract(root, options.cost);
     fired.sort_unstable();
     fired.dedup();
-    (rewritten, fired)
+    RewriteReport {
+        expr: rewritten,
+        rules: fired,
+        rounds,
+        e_nodes,
+        saturated,
+        cost,
+        nodes,
+    }
 }
 
 #[cfg(test)]
@@ -702,8 +890,8 @@ mod tests {
             for alg in ALGEBRAS {
                 let (rewritten, _) = rewrite(&expr, alg, 32);
                 assert_eq!(
-                    bitplan::table(&rewritten, &vars, alg).unwrap(),
-                    bitplan::table(&expr, &vars, alg).unwrap(),
+                    bitplan::table(&rewritten, &vars, alg, 1).unwrap(),
+                    bitplan::table(&expr, &vars, alg, 1).unwrap(),
                     "{source} @ {alg:?} 重写后语义变了：{source} → {}",
                     rewritten.to_infix()
                 );
@@ -723,5 +911,72 @@ mod tests {
         );
         let (second_pass, _) = rewrite(&first, Algebra::Kleene, 32);
         assert_eq!(first.to_infix(), second_pass.to_infix(), "重写必须是固定点");
+    }
+
+    #[test]
+    fn saturation_stops_at_a_fixed_point() {
+        let expr = Parser::parse("(((a & b) | (a & c)) & !(b & c)) | (a & b)").unwrap();
+        let options = RewriteOptions::default();
+        let first = rewrite_with(&expr, Algebra::Kleene, options);
+        assert!(first.saturated, "默认上限内必须饱和：{first:?}");
+        assert!(first.e_nodes > 0, "进图后应留下 e-class");
+        assert!(first.rounds <= options.max_rounds);
+
+        let second = rewrite_with(&first.expr, Algebra::Kleene, options);
+        assert_eq!(first.expr.to_infix(), second.expr.to_infix());
+        assert!(second.saturated);
+        assert!(second.rounds <= 2, "固定点重跑最多再多一轮归一化");
+    }
+
+    #[test]
+    fn nodes_limit_marks_the_run_unsaturated() {
+        let expr = Parser::parse("((a & b) | (a & c)) & ((b & c) | (b & d))").unwrap();
+        let report = rewrite_with(
+            &expr,
+            Algebra::Kleene,
+            RewriteOptions {
+                node_limit: 1,
+                ..RewriteOptions::default()
+            },
+        );
+        assert!(!report.saturated, "触到节点上限不能声称饱和");
+    }
+
+    #[test]
+    fn cost_model_chooses_a_different_expression() {
+        // A：5 个节点、2 个门；B：3 个节点、3 个门（等价/蕴含按多门算）。
+        // 节点模型选 B，门模型选 A——这正是「有代价模型」与「只数节点」的差别。
+        let a = Parser::parse("(a & b) & c").unwrap();
+        let b = Parser::parse("a <=> b").unwrap();
+        let mut graph = EGraph::new();
+        let left = graph.add(&a);
+        let right = graph.add(&b);
+        graph.union(left, right);
+        let (by_nodes, nodes_cost, _) = graph.extract(left, CostModel::Nodes);
+        let (by_gates, gates_cost, _) = graph.extract(left, CostModel::Gates);
+        assert_eq!(by_nodes.to_infix(), "(a ≡ b)", "节点数 3 < 5");
+        assert_eq!(by_gates.to_infix(), "((a ∧ b) ∧ c)", "门数 2 < 3");
+        assert_eq!(nodes_cost, 3);
+        assert_eq!(gates_cost, 2);
+    }
+
+    #[test]
+    fn report_cost_matches_the_model() {
+        let expr = Parser::parse("a => b").unwrap();
+        for model in [CostModel::Nodes, CostModel::Gates] {
+            let report = rewrite_with(
+                &expr,
+                Algebra::Kleene,
+                RewriteOptions {
+                    cost: model,
+                    ..RewriteOptions::default()
+                },
+            );
+            assert_eq!(
+                (report.cost, report.nodes),
+                expr_stats(&report.expr, model),
+                "{model:?} 的报告代价必须与表达式重算一致"
+            );
+        }
     }
 }

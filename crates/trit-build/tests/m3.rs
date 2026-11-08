@@ -111,6 +111,60 @@ fn rule_set_is_filtered_by_algebra() {
 }
 
 #[test]
+fn egraph_saturation_and_cost_model_are_reported() {
+    let dir = scratch("saturate");
+    let source = "((a & b) | (a & c)) & !(b & c)";
+    let (stdout, stderr, code) = build(&dir, "sat", source, &[]);
+    assert_eq!(code, 0, "{stderr}");
+    let summary = manifest(&stdout);
+    let egraph = &summary["verified"]["egraph"];
+    assert_eq!(egraph["saturated"], true, "{summary}");
+    assert_eq!(egraph["costModel"], "nodes", "{summary}");
+    assert!(egraph["eNodes"].as_u64().unwrap() > 0, "{summary}");
+    assert!(egraph["rounds"].as_u64().unwrap() >= 1, "{summary}");
+    assert!(
+        egraph["nodes"].as_u64().unwrap() < 12,
+        "重写应缩节点：{summary}"
+    );
+
+    // 代价模型进入缓存键：换模型必须重建，且产物仍然等价（truth.csv 不变）。
+    let (stdout, stderr, code) = build(&dir, "sat", source, &["--cost", "gates"]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(stdout.contains("\"cached\":false"), "{stdout}");
+    let gates = manifest(&stdout);
+    assert_eq!(gates["verified"]["egraph"]["costModel"], "gates");
+    assert_eq!(gates["verified"]["egraph"]["saturated"], true);
+
+    // 节点上限触顶必须如实报 false，而不是假装饱和。
+    let (stdout, stderr, code) = build(&dir, "sat", source, &["--egraph-node-limit", "1"]);
+    assert_eq!(code, 0, "{stderr}");
+    let limited = manifest(&stdout);
+    assert_eq!(
+        limited["verified"]["egraph"]["saturated"], false,
+        "{limited}"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn threading_does_not_change_artifacts() {
+    let dir = scratch("threads");
+    let source = "(v0 & v1) | (v2 ^ v3) | !(v4 => v5) | (v6 <=> v7)";
+    let (_, stderr, code) = build(&dir, "single", source, &["--threads", "1"]);
+    assert_eq!(code, 0, "{stderr}");
+    let (_, stderr, code) = build(&dir, "multi", source, &["--threads", "8"]);
+    assert_eq!(code, 0, "{stderr}");
+    for name in ["truth.csv", "truth.tritbin", "lookup.c"] {
+        assert_eq!(
+            fs::read(dir.join(format!("single-out/{name}"))).unwrap(),
+            fs::read(dir.join(format!("multi-out/{name}"))).unwrap(),
+            "{name} 必须与线程数无关"
+        );
+    }
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn bit_parallel_build_keeps_row_order() {
     let dir = scratch("order");
     let (stdout, stderr, code) = build(&dir, "two", "a & b", &[]);
