@@ -11,6 +11,7 @@
 | [`spec/v0.md`](spec/v0.md) | 规范正文：K3、KGate、pack5、Belnap4 的语义、编码、错误与版本规则 |
 | [`schema/vector.schema.json`](schema/vector.schema.json) | vector 文件的 JSON Schema（draft 2020-12） |
 | [`runner/`](runner/) | Rust conformance runner（独立实现 spec；738/738） |
+| [`lean/`](lean/) | Lean 4 形式化：K3/KGate/Belnap4/pack5 核心定理 |
 | [`vectors/k3.json`](vectors/k3.json) | K3 NOT/AND/OR 语义向量（21） |
 | [`vectors/k3_bitplane.json`](vectors/k3_bitplane.json) | K3 位平面 encode/decode 与 `(1,1)` 非法（7） |
 | [`vectors/kgate.json`](vectors/kgate.json) | `KGate` 3×3 准入表（9） |
