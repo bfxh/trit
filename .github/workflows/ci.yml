@@ -164,7 +164,7 @@ jobs:
       # 有 adapter 时 gpu::tests 会再跑真机对拍，没有就跳过（naga 那条仍必跑）。
       - name: Test (trit-build gpu feature, naga shader smoke)
         if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux' && steps.crates.outputs.needs_build_gpu == 'true'
-        run: cargo test -p trit-build --features gpu --bin trit-build gpu:: --locked
+        run: "cargo test -p trit-build --features gpu --bin trit-build gpu:: --locked"
       - name: Clippy (trit-build gpu feature)
         if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux' && steps.crates.outputs.needs_build_gpu == 'true'
         run: cargo clippy -p trit-build --features gpu --all-targets --locked -- -D warnings
