@@ -174,12 +174,40 @@ impl Ternary {
         !matches!(self, Self::Unknown)
     }
 
+    /// 三值 → 二值的**唯一收口**：把「`Unknown` 该怎么办」变成显式策略。
+    ///
+    /// 任何 `Ternary → bool` 的降级都应走这里，不要手写 `is_true()` / `match`：
+    /// 手写会把「未知」静默折成某一边，且无法在审计时定位。
+    pub const fn collapse(self, policy: BinaryCollapse) -> Option<bool> {
+        match (self, policy) {
+            (Self::True, _) => Some(true),
+            (Self::False, _) => Some(false),
+            (Self::Unknown, BinaryCollapse::ToFalse) => Some(false),
+            (Self::Unknown, BinaryCollapse::ToTrue) => Some(true),
+            (Self::Unknown, BinaryCollapse::Reject) => None,
+        }
+    }
+
+    /// 同 [`collapse`](Self::collapse)，但策略为 `Reject` 时回落 `default`。
+    pub const fn collapse_or(self, policy: BinaryCollapse, default: bool) -> bool {
+        match self.collapse(policy) {
+            Some(b) => b,
+            None => default,
+        }
+    }
+
     /// 经典二值化：把 `X` 折成假。
+    ///
+    /// 等价于 `collapse(BinaryCollapse::ToFalse).unwrap()`。
+    /// 新代码请直接用 [`collapse`](Self::collapse)，把策略写在调用点上。
     pub const fn to_bool_strict(self) -> bool {
         matches!(self, Self::True)
     }
 
     /// 经典二值化：把 `X` 折成真。
+    ///
+    /// 等价于 `collapse(BinaryCollapse::ToTrue).unwrap()`。
+    /// 新代码请直接用 [`collapse`](Self::collapse)，把策略写在调用点上。
     pub const fn to_bool_loose(self) -> bool {
         !matches!(self, Self::False)
     }
@@ -220,6 +248,31 @@ impl fmt::Display for Ternary {
             Self::Unknown => "X",
             Self::True => "1",
         })
+    }
+}
+
+/// 把 `Unknown` 折成布尔时的策略——三值 → 二值的**唯一**收口。
+///
+/// 三值纪律：任何降级都必须在这里选一个策略，而不是在调用点手写
+/// `is_true()` / `match`（那样「未知」会被静默折成某一边，审计时无法定位）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum BinaryCollapse {
+    /// 把 `Unknown` 折成假（Kleene：只认「确定真」）。
+    ToFalse,
+    /// 把 `Unknown` 折成真（Bochvar：只排除「确定假」）。
+    ToTrue,
+    /// 拒绝折叠：遇到 `Unknown` 返回 `None`。
+    Reject,
+}
+
+impl BinaryCollapse {
+    /// 策略名（审计与日志用）。
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::ToFalse => "to_false",
+            Self::ToTrue => "to_true",
+            Self::Reject => "reject",
+        }
     }
 }
 
@@ -291,5 +344,29 @@ mod tests {
         assert!(Ternary::True.to_bool_strict());
         assert!(Ternary::False.is_known());
         assert!(!Ternary::Unknown.is_known());
+    }
+
+    #[test]
+    fn collapse_policies_are_the_single_funnel() {
+        use BinaryCollapse as C;
+        assert_eq!(Ternary::Unknown.collapse(C::ToFalse), Some(false));
+        assert_eq!(Ternary::Unknown.collapse(C::ToTrue), Some(true));
+        assert_eq!(Ternary::Unknown.collapse(C::Reject), None);
+        assert_eq!(Ternary::True.collapse(C::Reject), Some(true));
+        assert_eq!(Ternary::False.collapse(C::Reject), Some(false));
+        assert!(!Ternary::Unknown.collapse_or(C::Reject, false));
+        assert!(Ternary::Unknown.collapse_or(C::Reject, true));
+        assert!(Ternary::True.collapse_or(C::Reject, false));
+        // 与旧 API 必须等价（迁移期不改语义）
+        assert_eq!(
+            Ternary::Unknown.collapse(C::ToFalse),
+            Some(Ternary::Unknown.to_bool_strict())
+        );
+        assert_eq!(
+            Ternary::Unknown.collapse(C::ToTrue),
+            Some(Ternary::Unknown.to_bool_loose())
+        );
+        assert_eq!(C::ToFalse.name(), "to_false");
+        assert_eq!(C::Reject.name(), "reject");
     }
 }

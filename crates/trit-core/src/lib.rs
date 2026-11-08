@@ -25,5 +25,5 @@ pub use tristate::{
     BusError, LaneConflict, TriState, TriStateBus, TriStateConflict, TriStateDriver,
     resolve_drivers,
 };
-pub use value::Ternary;
+pub use value::{BinaryCollapse, Ternary};
 pub use signfield::{SignField3D, SignMesh, TriSign, extract_surface};
