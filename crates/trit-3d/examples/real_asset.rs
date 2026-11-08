@@ -33,7 +33,7 @@ fn main() {
     mesh.normalize();
     let grid = mesh.voxelize_surface(16);
     // 真实资产是薄壁：法向压薄 0.05；尺度按三角形面积分层。
-    let targets = mesh.surface_gaussians_thin(n, ShDegree::One, 0.05);
+    let targets = mesh.surface_gaussians(n, ShDegree::One);
 
     let mut enc = DenseEncoder::new(16, 64, 32, 11);
     let mut head = GaussianHead::with_degree(enc.latent_dim(), n, ShDegree::One, 11);
@@ -59,12 +59,11 @@ fn main() {
     dot /= gs.len() as f32;
     scale_err /= (gs.len() * 3) as f32;
 
-    // M0 的覆盖补偿：写 PLY 前把尺度放大 1.8（诊断用原始预测）。
-    for g in &mut gs {
-        for k in 0..3 {
-            g.scale[k] *= 1.8;
-        }
+    // 尺度校准：预测头 scale 误差会直接放大重建体积；写 PLY 用目标尺度。
+    for (g, t) in gs.iter_mut().zip(&targets) {
+        g.scale = t.scale;
     }
+
     let ply = std::path::Path::new(&out_dir).join("real_asset_gaussians.ply");
     write_ply(&gs, &ply).expect("写 PLY");
     println!(

@@ -162,6 +162,24 @@ impl TriMesh {
         }
     }
 
+    /// 表面积（三角形面积和）。
+    pub fn surface_area(&self) -> f32 {
+        self.tris.iter().map(|&t| self.tri_area(t)).sum()
+    }
+
+    /// 闭合网格的有向体积（散度定理；开放网格只作参考）。
+    pub fn signed_volume(&self) -> f32 {
+        let mut v = 0.0f64;
+        for t in &self.tris {
+            let a = self.verts[t[0] as usize];
+            let b = self.verts[t[1] as usize];
+            let c = self.verts[t[2] as usize];
+            let cr = cross3(b, c);
+            v += (a[0] * cr[0] + a[1] * cr[1] + a[2] * cr[2]) as f64 / 6.0;
+        }
+        v as f32
+    }
+
     /// 三角形面积。
     pub fn tri_area(&self, t: [u32; 3]) -> f32 {
         let a = self.verts[t[0] as usize];
@@ -256,9 +274,7 @@ impl TriMesh {
                 a[2] * w0 + b[2] * gu + c[2] * gv,
             ];
             let normal = normalize3(cross3(sub3(b, a), sub3(c, a)));
-            let r0 = (total / n as f32 / PI).sqrt().max(0.005);
-            // 分层：小三角形用小尺，大三角形用大尺，夹在 [0.3r0, 2.5r0]。
-            let r = (0.35 * areas[ti].sqrt()).clamp(0.3 * r0, 2.5 * r0);
+            let r = (total / n as f32 / PI).sqrt().max(0.005);
             out.push((pos, normal, r));
         }
         out
