@@ -77,7 +77,7 @@
   "old": "let tools = tools();",
   "new": "let tools: Vec<Value> = Vec::new();",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_nineteen_tools"
+  "filter": "lists_exactly_twenty_tools"
  },
  {
   "name": "wspace-mcp: 错误结果不再标 isError",
@@ -1117,7 +1117,7 @@
   "old": "            \"wsp_rebase\",",
   "new": "            \"wsp_rebaseX\",",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_nineteen_tools"
+  "filter": "lists_exactly_twenty_tools"
  },
  {
   "name": "wspace-transplant: 架构不一致不报错",
@@ -1197,7 +1197,7 @@
   "old": "            \"wsp_transplant\",",
   "new": "            \"wsp_transplantX\",",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_nineteen_tools"
+  "filter": "lists_exactly_twenty_tools"
  },
  {
   "name": "wspace-dare: 架构不同不判错",
@@ -1333,7 +1333,7 @@
   "old": "            \"wsp_dare_drop\",",
   "new": "            \"wsp_dare_dropX\",",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_nineteen_tools"
+  "filter": "lists_exactly_twenty_tools"
  },
  {
   "name": "wspace-dare: 工具清单返回空",
@@ -1341,7 +1341,7 @@
   "old": "pub fn tools() -> Vec<Value> {",
   "new": "pub fn tools() -> Vec<Value> {\n    if true { return Vec::new(); }",
   "pkg": "trit-wspace",
-  "filter": "lists_exactly_nineteen_tools"
+  "filter": "lists_exactly_twenty_tools"
  },
 {
  "name": "wspace-dare-row: 行级忽略行号",
@@ -1458,8 +1458,8 @@
 {
  "name": "wspace-merge: CLI dare 分支没接线",
  "file": "crates/trit-wspace/src/cli/cli_task.rs",
- "old": "        (Some(rate), None, None) => {\n            crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?\n        }",
- "new": "        (Some(_rate), None, None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
+ "old": "                None => {\n                    crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?\n                }",
+ "new": "                None => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
  "pkg": "trit-wspace",
  "filter": "cli_task_merge_dare_writes_artifact"
 },
@@ -1474,8 +1474,8 @@
 {
  "name": "wspace-merge: MCP dare 分支没接线",
  "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
- "old": "        (Some(rate), None, None) => {\n            crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?\n        }",
- "new": "        (Some(_rate), None, None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
+ "old": "                None => {\n                    crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?\n                }",
+ "new": "                None => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
  "pkg": "trit-wspace",
  "filter": "mcp_task_merge_dare_round_trip"
 },
@@ -1530,24 +1530,24 @@
 {
  "name": "wspace-per-task: CLI per-task 没接线",
  "file": "crates/trit-wspace/src/cli/cli_task.rs",
- "old": "        (None, Some(rate), None) => {\n            crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed).map_err(err)?\n        }",
- "new": "        (None, Some(_rate), None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
+ "old": "                None => crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed)\n                    .map_err(err)?,",
+ "new": "                None => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
  "pkg": "trit-wspace",
  "filter": "cli_task_merge_per_task_dare"
 },
 {
  "name": "wspace-per-task: MCP per-task 没接线",
  "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
- "old": "        (None, Some(rate), None) => {\n            crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed).map_err(err)?\n        }",
- "new": "        (None, Some(_rate), None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
+ "old": "                None => crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed)\n                    .map_err(err)?,",
+ "new": "                None => crate::task::merge_tasks(&base, &tasks).map_err(err)?,",
  "pkg": "trit-wspace",
  "filter": "mcp_task_merge_per_task_dare"
 },
 {
  "name": "wspace-per-task: CLI 互斥检查失效",
  "file": "crates/trit-wspace/src/cli/cli_task.rs",
- "old": "        (Some(_), Some(_), _) => return Err(\"--dare-rate 与 --dare-per-task 只能给一个\".into()),",
- "new": "        (Some(rate), Some(_), _) => crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?,",
+ "old": "            (Some(_), Some(_)) => {\n                return Err(\"--dare-rate 与 --dare-per-task 只能给一个\".into());\n            }",
+ "new": "            (Some(rate), Some(_)) => crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?,",
  "pkg": "trit-wspace",
  "filter": "cli_task_merge_rejects_both_dare_modes"
 },
@@ -1713,7 +1713,7 @@
 },
 {
  "name": "wspace-tune: 不更新权重",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "                    weights[index] = candidate;",
  "new": "                    let _ = candidate;",
  "pkg": "trit-wspace",
@@ -1721,7 +1721,7 @@
 },
 {
  "name": "wspace-tune: 不比较 loss",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "                if loss < best_loss {",
  "new": "                if true {",
  "pkg": "trit-wspace",
@@ -1729,7 +1729,7 @@
 },
 {
  "name": "wspace-tune: 改进条件反了",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "                if loss < best_loss {",
  "new": "                if loss > best_loss {",
  "pkg": "trit-wspace",
@@ -1737,7 +1737,7 @@
 },
 {
  "name": "wspace-tune: 不计评估次数",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "                evaluations += 1;",
  "new": "                evaluations += 0;",
  "pkg": "trit-wspace",
@@ -1745,7 +1745,7 @@
 },
 {
  "name": "wspace-tune: 轮数被忽略",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "    for _ in 0..rounds {",
  "new": "    for _ in 0..0 {",
  "pkg": "trit-wspace",
@@ -1785,7 +1785,7 @@
 },
 {
  "name": "wspace-tune: hamming 按样本计数",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "        .map(|(got, want)| got.iter().zip(want).filter(|(a, b)| a != b).count())",
  "new": "        .map(|(got, want)| usize::from(got != want))",
  "pkg": "trit-wspace",
@@ -1793,7 +1793,7 @@
 },
 {
  "name": "wspace-tune: hamming 数匹配位",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "        .map(|(got, want)| got.iter().zip(want).filter(|(a, b)| a != b).count())",
  "new": "        .map(|(got, want)| got.iter().zip(want).filter(|(a, b)| a == b).count())",
  "pkg": "trit-wspace",
@@ -1801,8 +1801,8 @@
 },
 {
  "name": "wspace-tune: 调权初始分数固定 0",
- "file": "crates/trit-wspace/src/task.rs",
- "old": "    let mut best_loss = evaluate(&merge_tasks_weighted(base, tasks, &weights)?)?;",
+ "file": "crates/trit-wspace/src/tune.rs",
+ "old": "    let mut best_loss = evaluate(&merged(&weights)?)?;",
  "new": "    let mut best_loss = 0usize;",
  "pkg": "trit-wspace",
  "filter": "tune_weight_finds_lower_loss"
@@ -1810,22 +1810,22 @@
 {
  "name": "wspace-tune: CLI metric 被忽略",
  "file": "crates/trit-wspace/src/cli/cli_task.rs",
- "old": "        let metric = parsed\n            .values\n            .get(\"tune-metric\")\n            .map_or(\"exact\", String::as_str);",
- "new": "        let metric = \"exact\";",
+ "old": "        let metric_name = parsed\n            .values\n            .get(\"tune-metric\")\n            .map_or(\"exact\", String::as_str);",
+ "new": "        let metric_name = \"exact\";",
  "pkg": "trit-wspace",
  "filter": "cli_task_merge_tune_metric"
 },
 {
  "name": "wspace-tune: MCP metric 被忽略",
  "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
- "old": "        let metric = args\n            .get(\"tune_metric\")\n            .and_then(Value::as_str)\n            .unwrap_or(\"exact\");",
- "new": "        let metric = \"exact\";",
+ "old": "        let metric_name = args\n            .get(\"tune_metric\")\n            .and_then(Value::as_str)\n            .unwrap_or(\"exact\");",
+ "new": "        let metric_name = \"exact\";",
  "pkg": "trit-wspace",
  "filter": "mcp_task_merge_tune_metric"
 },
 {
  "name": "wspace-tune: argmax 按输出向量比较",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "        .map(|(got, want)| usize::from(classify(got) != classify(want)))",
  "new": "        .map(|(got, want)| usize::from(got != want))",
  "pkg": "trit-wspace",
@@ -1833,7 +1833,7 @@
 },
 {
  "name": "wspace-tune: argmax 取最小",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "        if value > best_value {",
  "new": "        if value < best_value {",
  "pkg": "trit-wspace",
@@ -1841,7 +1841,7 @@
 },
 {
  "name": "wspace-tune: argmax 不计错误",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "        .map(|(got, want)| usize::from(classify(got) != classify(want)))",
  "new": "        .map(|(got, want)| usize::from(classify(got) == classify(want)))",
  "pkg": "trit-wspace",
@@ -1849,7 +1849,7 @@
 },
 {
  "name": "wspace-tune: 一维分类退化成恒 0",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "    if values.len() == 1 {\n        return usize::from(values[0].to_i8() > 0);\n    }",
  "new": "    if values.len() == 1 {\n        return 0;\n    }",
  "pkg": "trit-wspace",
@@ -1857,7 +1857,7 @@
 },
 {
  "name": "wspace-tune: readout 退化成三值 argmax",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "        let got = net.readout(&input_f32)?;\n        let index = if got.len() == 1 {\n            usize::from(got[0] > 0.0)\n        } else {\n            argmax_f32(&got)\n        };",
  "new": "        let got = net.forward(input)?;\n        let index = classify(&got);",
  "pkg": "trit-wspace",
@@ -1865,10 +1865,218 @@
 },
 {
  "name": "wspace-tune: readout argmax 取最小",
- "file": "crates/trit-wspace/src/task.rs",
+ "file": "crates/trit-wspace/src/tune.rs",
  "old": "        if *value > best_value {",
  "new": "        if *value < best_value {",
  "pkg": "trit-wspace",
  "filter": "tune_metric_readout_uses_continuous_scores"
+},
+{
+ "name": "wspace-report: ignored 不按 0 权重计",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    let ignored_tasks = weights.iter().filter(|weight| **weight == 0.0).count();",
+ "new": "    let ignored_tasks = 0;",
+ "pkg": "trit-wspace",
+ "filter": "merge_report_counts_votes_ties_and_ignored"
+},
+{
+ "name": "wspace-report: ties 不计数",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "            ties += 1;",
+ "new": "            ties += 0;",
+ "pkg": "trit-wspace",
+ "filter": "merge_report_counts_votes_ties_and_ignored"
+},
+{
+ "name": "wspace-report: scale_rows 恒 0",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    let scale_rows = scales.len();",
+ "new": "    let scale_rows = 0;",
+ "pkg": "trit-wspace",
+ "filter": "merge_report_counts_votes_ties_and_ignored"
+},
+{
+ "name": "wspace-report: voted 记成任务数",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    let voted = votes.len();",
+ "new": "    let voted = tasks.len();",
+ "pkg": "trit-wspace",
+ "filter": "merge_report_counts_votes_ties_and_ignored"
+},
+{
+ "name": "wspace-grid: 忽略自定义网格",
+ "file": "crates/trit-wspace/src/tune.rs",
+ "old": "            for &candidate in grid {",
+ "new": "            for &candidate in &DEFAULT_TUNE_GRID {",
+ "pkg": "trit-wspace",
+ "filter": "tune_grid_is_configurable"
+},
+{
+ "name": "wspace-grid: 不校验负值",
+ "file": "crates/trit-wspace/src/tune.rs",
+ "old": "        if !value.is_finite() || *value < 0.0 {",
+ "new": "        if !value.is_finite() {",
+ "pkg": "trit-wspace",
+ "filter": "tune_grid_is_configurable"
+},
+{
+ "name": "wspace-grid: CLI 未接线",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "            .get(\"tune-grid\")",
+ "new": "            .get(\"tune-grid-unused\")",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_grid_and_report"
+},
+{
+ "name": "wspace-grid: MCP 未接线",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "        let grid = match args.get(\"tune_grid\") {",
+ "new": "        let grid = match args.get(\"tune_grid_unused\") {",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_merge_grid_and_report"
+},
+{
+ "name": "wspace-dare: Dare 退回 Plain",
+ "file": "crates/trit-wspace/src/tune.rs",
+ "old": "            TuneMerge::Dare { rate, seed } => {\n                merge_tasks_weighted_dare(base, tasks, weights, rate, seed)\n            }",
+ "new": "            TuneMerge::Dare { .. } => merge_tasks_weighted(base, tasks, weights),",
+ "pkg": "trit-wspace",
+ "filter": "tune_with_dare_changes_initial_loss"
+},
+{
+ "name": "wspace-dare: PerTaskDare 退回 Plain",
+ "file": "crates/trit-wspace/src/tune.rs",
+ "old": "            TuneMerge::PerTaskDare { rate, seed } => {\n                merge_tasks_weighted_per_task_dare(base, tasks, weights, rate, seed)\n            }",
+ "new": "            TuneMerge::PerTaskDare { .. } => merge_tasks_weighted(base, tasks, weights),",
+ "pkg": "trit-wspace",
+ "filter": "tune_with_dare_changes_initial_loss"
+},
+{
+ "name": "wspace-dare: CLI 开关未接线",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "        let merge = if parsed.switches.contains(\"tune-with-dare\") {",
+ "new": "        let merge = if false {",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_merge_tune_with_dare"
+},
+{
+ "name": "wspace-task-scale: λ=0 不丢弃",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    if lambda == 0.0 {",
+ "new": "    if false {",
+ "pkg": "trit-wspace",
+ "filter": "scale_zero_drops"
+},
+{
+ "name": "wspace-task-scale: λ<0 不取反",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "            } => Edit::SetTrit {\n                layer: *layer,\n                row: *row,\n                col: *col,\n                to: negate_trit(*to),\n            },",
+ "new": "            } => Edit::SetTrit {\n                layer: *layer,\n                row: *row,\n                col: *col,\n                to: *to,\n            },",
+ "pkg": "trit-wspace",
+ "filter": "scale_negative_negates_and_drops_scale"
+},
+{
+ "name": "wspace-task-scale: λ<0 保留 scale",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    Ok(TaskVector {\n        base: vector.base,\n        edits,\n        scales: Vec::new(),\n    })",
+ "new": "    Ok(TaskVector {\n        base: vector.base,\n        edits,\n        scales: vector.scales().to_vec(),\n    })",
+ "pkg": "trit-wspace",
+ "filter": "scale_negative_negates_and_drops_scale"
+},
+{
+ "name": "wspace-task-scale: 非法 λ 不报错",
+ "file": "crates/trit-wspace/src/task.rs",
+ "old": "    if !lambda.is_finite() {",
+ "new": "    if false {",
+ "pkg": "trit-wspace",
+ "filter": "scale_rejects_non_finite"
+},
+{
+ "name": "wspace-task-scale: CLI 未接线",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "    let lambda = req_f32(&parsed, \"lambda\")?;",
+ "new": "    let lambda = 1.0;",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_scale_round_trip"
+},
+{
+ "name": "wspace-task-scale: MCP 未接线",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "    let lambda = args\n        .get(\"lambda\")\n        .and_then(Value::as_f64)\n        .ok_or(\"需要 lambda\")? as f32;",
+ "new": "    let lambda = 1.0;",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_scale_round_trip"
+},
+{
+ "name": "wspace-dare-block: 按坐标丢弃",
+ "file": "crates/trit-wspace/src/dare.rs",
+ "old": "                let unit_col = match mode {\n                    DareMode::Coord => col,\n                    DareMode::Block(block) => col / block,\n                    DareMode::Row => unreachable!(),\n                };",
+ "new": "                let unit_col = col;",
+ "pkg": "trit-wspace",
+ "filter": "block_drop_keeps_blocks_whole"
+},
+{
+ "name": "wspace-dare-block: block=0 不报错",
+ "file": "crates/trit-wspace/src/dare.rs",
+ "old": "    if block == 0 {\n        return Err(Error::InvalidBlock { block });\n    }",
+ "new": "    if false {\n        return Err(Error::InvalidBlock { block });\n    }",
+ "pkg": "trit-wspace",
+ "filter": "block_zero_rejected"
+},
+{
+ "name": "wspace-dare-block: CLI 未接线",
+ "file": "crates/trit-wspace/src/cli.rs",
+ "old": "        Some(req_usize(&parsed, \"block\")?)",
+ "new": "        None",
+ "pkg": "trit-wspace",
+ "filter": "cli_dare_drop_by_block_round_trip"
+},
+{
+ "name": "wspace-dare-block: MCP 未接线",
+ "file": "crates/trit-wspace/src/mcp/mcp_dare.rs",
+ "old": "    let block = args\n        .get(\"block\")\n        .and_then(Value::as_u64)\n        .map(|v| v as usize);",
+ "new": "    let block: Option<usize> = None;",
+ "pkg": "trit-wspace",
+ "filter": "mcp_dare_drop_by_block_round_trip"
+},
+{
+ "name": "wspace-class: 一维 classes 记成 1",
+ "file": "crates/trit-wspace/src/wire/mod.rs",
+ "old": "        .map_or(1, |row| if row.len() == 1 { 2 } else { row.len() });",
+ "new": "        .map_or(1, |row| row.len());",
+ "pkg": "trit-wspace",
+ "filter": "classification_one_dim_uses_two_classes"
+},
+{
+ "name": "wspace-class: 混淆矩阵转置",
+ "file": "crates/trit-wspace/src/wire/mod.rs",
+ "old": "            confusion[want_class][got_class] += 1;",
+ "new": "            confusion[got_class][want_class] += 1;",
+ "pkg": "trit-wspace",
+ "filter": "classification_per_class_and_confusion"
+},
+{
+ "name": "wspace-class: correct 不累加",
+ "file": "crates/trit-wspace/src/wire/mod.rs",
+ "old": "                correct[want_class] += 1;",
+ "new": "                correct[want_class] += 0;",
+ "pkg": "trit-wspace",
+ "filter": "classification_per_class_and_confusion"
+},
+{
+ "name": "wspace-class: CLI verify 未接线",
+ "file": "crates/trit-wspace/src/cli.rs",
+ "old": "        \"classification\": wire::classification_value(&net, &oracle).map_err(err)?,",
+ "new": "        \"classification\": serde_json::Value::Null,",
+ "pkg": "trit-wspace",
+ "filter": "cli_verify_reports_classification"
+},
+{
+ "name": "wspace-class: MCP verify 未接线",
+ "file": "crates/trit-wspace/src/mcp.rs",
+ "old": "                    \"classification\": wire::classification_value(&net, &oracle).map_err(err)?,",
+ "new": "                    \"classification\": serde_json::Value::Null,",
+ "pkg": "trit-wspace",
+ "filter": "mcp_verify_reports_classification"
 }
 ]

@@ -19,6 +19,17 @@ use crate::net::Net;
 /// 行级决策的列标记（与偏置的 `usize::MAX` 区分）。
 const ROW_UNIT: usize = usize::MAX - 1;
 
+/// 丢弃的决策单位。
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DareMode {
+    /// 每个差分坐标独立。
+    Coord,
+    /// 整行（trit + 偏置）一起。
+    Row,
+    /// 按固定列块（`col / block`）一起。
+    Block(usize),
+}
+
 /// 丢弃结果：补丁 + 读数。
 #[derive(Clone, Debug, PartialEq)]
 pub struct DropOutcome {
@@ -40,7 +51,7 @@ pub struct DropOutcome {
 ///
 /// 这是**坐标级**版本：每个差分坐标独立决定保留或丢弃。
 pub fn dare_drop(base: &Net, tuned: &Net, rate: f32, seed: u64) -> Result<DropOutcome> {
-    dare_drop_impl(base, tuned, rate, seed, false)
+    dare_drop_impl(base, tuned, rate, seed, DareMode::Coord)
 }
 
 /// 行级 DARE：整行（trit + 偏置）一起保留或一起丢回基准值。
@@ -50,7 +61,24 @@ pub fn dare_drop(base: &Net, tuned: &Net, rate: f32, seed: u64) -> Result<DropOu
 /// 只改本层该行的入边与偏置，不碰下一层的出边列（单元粒度整体搬运见
 /// [`crate::transplant`]）。
 pub fn dare_drop_rows(base: &Net, tuned: &Net, rate: f32, seed: u64) -> Result<DropOutcome> {
-    dare_drop_impl(base, tuned, rate, seed, true)
+    dare_drop_impl(base, tuned, rate, seed, DareMode::Row)
+}
+
+/// 块级 DARE：同一行内按固定列块（`col / block`）一起保留或一起丢弃。
+///
+/// 偏置仍按坐标级单独决策；`block = 1` 退化为坐标级。`block = 0` 判错。
+/// `kept` / `dropped` 仍按差分坐标数计数。
+pub fn dare_drop_blocks(
+    base: &Net,
+    tuned: &Net,
+    rate: f32,
+    seed: u64,
+    block: usize,
+) -> Result<DropOutcome> {
+    if block == 0 {
+        return Err(Error::InvalidBlock { block });
+    }
+    dare_drop_impl(base, tuned, rate, seed, DareMode::Block(block))
 }
 
 fn dare_drop_impl(
@@ -58,7 +86,7 @@ fn dare_drop_impl(
     tuned: &Net,
     rate: f32,
     seed: u64,
-    by_row: bool,
+    mode: DareMode,
 ) -> Result<DropOutcome> {
     if base.arch() != tuned.arch() {
         return Err(Error::ArchMismatch);
@@ -73,7 +101,7 @@ fn dare_drop_impl(
     let mut rescaled_rows = 0usize;
     for (layer, (src, dst)) in base.layers().iter().zip(tuned.layers()).enumerate() {
         for row in 0..src.rows() {
-            if by_row {
+            if matches!(mode, DareMode::Row) {
                 let mut row_edits = Vec::new();
                 for col in 0..src.cols() {
                     let from = src.trit(row, col).expect("row/col in range");
@@ -126,7 +154,12 @@ fn dare_drop_impl(
                 if from == to {
                     continue;
                 }
-                if keep(seed, layer, row, col, rate) {
+                let unit_col = match mode {
+                    DareMode::Coord => col,
+                    DareMode::Block(block) => col / block,
+                    DareMode::Row => unreachable!(),
+                };
+                if keep(seed, layer, row, unit_col, rate) {
                     edits.push(Edit::SetTrit {
                         layer,
                         row,

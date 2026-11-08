@@ -124,6 +124,7 @@ pub mod shard;
 pub mod task;
 pub mod transplant;
 pub mod trit;
+pub mod tune;
 pub mod wire;
 
 pub use analyze::{
@@ -132,7 +133,7 @@ pub use analyze::{
 };
 pub use audit::{AuditLog, LogEntry, ReplayReport};
 pub use codec::{checksum, from_wsp, to_wsp};
-pub use dare::{DropOutcome, dare_drop, dare_drop_rows};
+pub use dare::{DropOutcome, dare_drop, dare_drop_blocks, dare_drop_rows};
 pub use edit::{Cost, Edit, Journal, Patch};
 pub use error::{Error, Result};
 pub use explain::{SampleEditImpact, SampleExplanation, explain_sample};
@@ -150,10 +151,14 @@ pub use program::{Program, Report, Script, ScriptReport};
 pub use repair::{Repair, RepairOptions, repair};
 pub use shard::{Checkpoint, Shard, ShardCursor, ShardHeader, ShardReplay, ShardedLog};
 pub use task::{
-    TaskVector, WeightTuning, merge_tasks, merge_tasks_dare, merge_tasks_per_task_dare,
+    MergeReport, TaskVector, merge_tasks, merge_tasks_dare, merge_tasks_per_task_dare,
     merge_tasks_weighted, merge_tasks_weighted_dare, merge_tasks_weighted_per_task_dare,
-    tune_task_weights, tune_task_weights_argmax, tune_task_weights_hamming,
-    tune_task_weights_readout, tune_task_weights_with,
+    merge_tasks_weighted_report, scale_task,
 };
 pub use transplant::transplant_units;
 pub use trit::Trit;
+pub use tune::{
+    DEFAULT_TUNE_GRID, TuneMerge, TuneMetric, WeightTuning, tune_task_weights,
+    tune_task_weights_argmax, tune_task_weights_hamming, tune_task_weights_metric,
+    tune_task_weights_readout, tune_task_weights_with,
+};

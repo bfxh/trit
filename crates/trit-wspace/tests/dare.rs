@@ -5,10 +5,12 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use serde_json::{Value, json};
+use std::collections::BTreeSet;
 use trit_wspace::mcp::Mcp;
+
 use trit_wspace::{
-    Behavior, Edit, Error, Layer, Net, Oracle, Patch, Trit, dare_drop, dare_drop_rows, from_wsp,
-    to_wsp,
+    Behavior, Edit, Error, Layer, Net, Oracle, Patch, Trit, dare_drop, dare_drop_blocks,
+    dare_drop_rows, from_wsp, to_wsp,
 };
 
 fn flat_net(rows: usize, cols: usize, layers: usize, value: i8) -> Net {
@@ -587,6 +589,118 @@ fn mcp_dare_drop_by_row_round_trip() {
     assert_eq!(value["dropped"], json!(15));
     assert_eq!(value["rescaled_rows"], json!(5));
     let expected = dare_drop_rows(&base_net(), &tuned_net(), 0.5, 7).expect("rows");
+    let work = apply(&base_net(), &expected.patch);
+    let artifact = value["artifact"].as_str().expect("artifact");
+    assert_eq!(
+        from_wsp(artifact).expect("parse").state_hash(),
+        work.state_hash()
+    );
+}
+
+#[test]
+fn block_drop_keeps_blocks_whole() {
+    let base = base_net();
+    let tuned = tuned_net();
+    let outcome = dare_drop_blocks(&base, &tuned, 0.5, 7, 2).expect("blocks");
+    let mut present: BTreeSet<(usize, usize, usize)> = BTreeSet::new();
+    for edit in outcome.patch.edits() {
+        if let Edit::SetTrit {
+            layer, row, col, ..
+        } = edit
+        {
+            present.insert((*layer, *row, *col));
+        }
+    }
+    for layer in 0..2 {
+        for row in 0..4 {
+            for block in 0..2 {
+                let first = present.contains(&(layer, row, block * 2));
+                for offset in 0..2 {
+                    let col = block * 2 + offset;
+                    assert_eq!(
+                        present.contains(&(layer, row, col)),
+                        first,
+                        "块 ({layer},{row},{block}) 必须整块保留或整块丢弃"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn block_one_matches_coord() {
+    let base = base_net();
+    let tuned = tuned_net();
+    let coord = dare_drop(&base, &tuned, 0.5, 7).expect("coord");
+    let block = dare_drop_blocks(&base, &tuned, 0.5, 7, 1).expect("block");
+    assert_eq!(block.kept, coord.kept);
+    assert_eq!(block.dropped, coord.dropped);
+    assert_eq!(block.rescaled_rows, coord.rescaled_rows);
+    assert_eq!(block.patch.edits(), coord.patch.edits());
+}
+
+#[test]
+fn block_zero_rejected() {
+    let base = base_net();
+    let tuned = tuned_net();
+    assert!(matches!(
+        dare_drop_blocks(&base, &tuned, 0.5, 7, 0),
+        Err(Error::InvalidBlock { block: 0 })
+    ));
+}
+
+#[test]
+fn cli_dare_drop_by_block_round_trip() {
+    let dir = temp_dir("cli-block");
+    let base = base_net();
+    let tuned = tuned_net();
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    let out_path = dir.join("out.wsp");
+    fs::write(&base_path, to_wsp(&base)).expect("write base");
+    fs::write(&tuned_path, to_wsp(&tuned)).expect("write tuned");
+    let output = stdout_json(&run(&[
+        "dare-drop",
+        &path_string(&base_path),
+        "--tuned",
+        &path_string(&tuned_path),
+        "--rate",
+        "0.5",
+        "--seed",
+        "7",
+        "--block",
+        "2",
+        "--out",
+        &path_string(&out_path),
+    ]));
+    assert_eq!(output["by_row"], json!(false));
+    assert_eq!(output["block"], json!(2));
+    let expected = dare_drop_blocks(&base, &tuned, 0.5, 7, 2).expect("blocks");
+    let work = apply(&base, &expected.patch);
+    let written = from_wsp(&fs::read_to_string(&out_path).expect("read out")).expect("parse");
+    assert_eq!(written.state_hash(), work.state_hash());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mcp_dare_drop_by_block_round_trip() {
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_dare_drop",
+        json!({
+            "artifact": to_wsp(&base_net()),
+            "tuned": to_wsp(&tuned_net()),
+            "rate": 0.5,
+            "seed": 7,
+            "block": 2,
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert_eq!(value["block"], json!(2));
+    let expected = dare_drop_blocks(&base_net(), &tuned_net(), 0.5, 7, 2).expect("blocks");
     let work = apply(&base_net(), &expected.patch);
     let artifact = value["artifact"].as_str().expect("artifact");
     assert_eq!(

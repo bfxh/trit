@@ -7,14 +7,15 @@ use crate::to_wsp;
 use crate::wire;
 
 use super::{
-    emit, err, load_net, load_oracle, no_double_stdin, opt_u64, opt_usize, parse, write_out,
+    emit, err, load_net, load_oracle, no_double_stdin, opt_u64, opt_usize, parse, req_f32,
+    write_out,
 };
 
 pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["aligned", "tune-weights"])?;
+    let parsed = parse(args, &["aligned", "tune-weights", "tune-with-dare"])?;
     if parsed.positional.len() < 2 {
         return Err(
-            "用法：trit-wspace task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--oracle <json|->] [--tune-weights [--tune-rounds N]] [--out <path>]".into(),
+            "用法：trit-wspace task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--oracle <json|->] [--tune-weights [--tune-rounds N] [--tune-grid G[,G...]] [--tune-with-dare]] [--out <path>]".into(),
         );
     }
     let oracle_path = parsed.values.get("oracle");
@@ -63,57 +64,102 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
         }
         let tuning_oracle = load_oracle(path)?;
         let rounds = opt_usize(&parsed, "tune-rounds", 1)?;
-        let metric = parsed
+        let metric_name = parsed
             .values
             .get("tune-metric")
             .map_or("exact", String::as_str);
-        let report = match metric {
-            "exact" => crate::task::tune_task_weights(&base, &tasks, &tuning_oracle, rounds),
-            "hamming" => {
-                crate::task::tune_task_weights_hamming(&base, &tasks, &tuning_oracle, rounds)
-            }
-            "argmax" => {
-                crate::task::tune_task_weights_argmax(&base, &tasks, &tuning_oracle, rounds)
-            }
-            "readout" => {
-                crate::task::tune_task_weights_readout(&base, &tasks, &tuning_oracle, rounds)
-            }
+        let metric = match metric_name {
+            "exact" => crate::tune::TuneMetric::Exact,
+            "hamming" => crate::tune::TuneMetric::Hamming,
+            "argmax" => crate::tune::TuneMetric::Argmax,
+            "readout" => crate::tune::TuneMetric::Readout,
             other => {
                 return Err(format!(
                     "--tune-metric 只支持 exact / hamming / argmax / readout，得到 `{other}`"
                 ));
             }
-        }
+        };
+        let grid = parsed
+            .values
+            .get("tune-grid")
+            .map(|raw| parse_weights(raw))
+            .transpose()?
+            .unwrap_or_else(|| crate::tune::DEFAULT_TUNE_GRID.to_vec());
+        let merge = if parsed.switches.contains("tune-with-dare") {
+            match (dare_rate, dare_per_task) {
+                (Some(rate), None) => crate::tune::TuneMerge::Dare {
+                    rate,
+                    seed: dare_seed,
+                },
+                (None, Some(rate)) => crate::tune::TuneMerge::PerTaskDare {
+                    rate,
+                    seed: dare_seed,
+                },
+                _ => {
+                    return Err("--tune-with-dare 需要 --dare-rate 或 --dare-per-task".into());
+                }
+            }
+        } else {
+            crate::tune::TuneMerge::Plain
+        };
+        let merge_label = match merge {
+            crate::tune::TuneMerge::Plain => "plain",
+            crate::tune::TuneMerge::Dare { .. } => "dare",
+            crate::tune::TuneMerge::PerTaskDare { .. } => "per-task-dare",
+        };
+        let report = crate::tune::tune_task_weights_metric(
+            &base,
+            &tasks,
+            &tuning_oracle,
+            rounds,
+            metric,
+            &grid,
+            merge,
+        )
         .map_err(err)?;
         weights = Some(report.weights().to_vec());
         tuning = Some(json!({
             "rounds": rounds,
-            "metric": metric,
+            "metric": metric_name,
+            "grid": grid,
+            "merge": merge_label,
             "evaluations": report.evaluations(),
             "initial_loss": report.initial_loss(),
             "tuned_loss": report.loss(),
         }));
     }
-    let merged = match (dare_rate, dare_per_task, weights.as_deref()) {
-        (Some(_), Some(_), _) => return Err("--dare-rate 与 --dare-per-task 只能给一个".into()),
-        (Some(rate), None, Some(weights)) => {
-            crate::task::merge_tasks_weighted_dare(&base, &tasks, weights, rate, dare_seed)
-                .map_err(err)?
-        }
-        (Some(rate), None, None) => {
-            crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?
-        }
-        (None, Some(rate), Some(weights)) => {
-            crate::task::merge_tasks_weighted_per_task_dare(&base, &tasks, weights, rate, dare_seed)
-                .map_err(err)?
-        }
-        (None, Some(rate), None) => {
-            crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed).map_err(err)?
-        }
-        (None, None, Some(weights)) => {
-            crate::task::merge_tasks_weighted(&base, &tasks, weights).map_err(err)?
-        }
-        (None, None, None) => crate::task::merge_tasks(&base, &tasks).map_err(err)?,
+    let ones = vec![1.0_f32; tasks.len()];
+    let effective_weights = weights.as_deref().unwrap_or(&ones);
+    let (merged, merge_report) = if dare_rate.is_none() && dare_per_task.is_none() {
+        let (net, report) =
+            crate::task::merge_tasks_weighted_report(&base, &tasks, effective_weights)
+                .map_err(err)?;
+        (net, Some(report))
+    } else {
+        let net = match (dare_rate, dare_per_task) {
+            (Some(_), Some(_)) => {
+                return Err("--dare-rate 与 --dare-per-task 只能给一个".into());
+            }
+            (Some(rate), None) => match weights.as_deref() {
+                Some(weights) => {
+                    crate::task::merge_tasks_weighted_dare(&base, &tasks, weights, rate, dare_seed)
+                        .map_err(err)?
+                }
+                None => {
+                    crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?
+                }
+            },
+            (None, Some(rate)) => match weights.as_deref() {
+                Some(weights) => crate::task::merge_tasks_weighted_per_task_dare(
+                    &base, &tasks, weights, rate, dare_seed,
+                )
+                .map_err(err)?,
+                None => crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed)
+                    .map_err(err)?,
+            },
+            (None, None) => unreachable!(),
+        };
+        (net, None)
     };
     write_out(&parsed, &merged)?;
     let verify = if let Some(path) = oracle_path {
@@ -121,6 +167,8 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
         Some(json!({
             "before": wire::metrics_value(&base, &oracle).map_err(err)?,
             "after": wire::metrics_value(&merged, &oracle).map_err(err)?,
+            "before_classification": wire::classification_value(&base, &oracle).map_err(err)?,
+            "after_classification": wire::classification_value(&merged, &oracle).map_err(err)?,
         }))
     } else {
         None
@@ -130,6 +178,14 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
         "tasks": tasks.len(),
         "weights": weights,
         "tuning": tuning,
+        "merge_report": merge_report.map(|report| json!({
+            "tasks": report.tasks(),
+            "ignored_tasks": report.ignored_tasks(),
+            "voted": report.voted(),
+            "ties": report.ties(),
+            "changed": report.changed(),
+            "scale_rows": report.scale_rows(),
+        })),
         "verify": verify,
         "dare_rate": dare_rate,
         "dare_per_task": dare_per_task,
@@ -152,4 +208,29 @@ fn parse_weights(raw: &str) -> Result<Vec<f32>, String> {
                 .map_err(|_| format!("--weight 需要逗号分隔的数字，得到 `{part}`"))
         })
         .collect()
+}
+
+pub(super) fn task_scale(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    if parsed.positional.len() != 2 {
+        return Err(
+            "用法：trit-wspace task-scale <base|-> <tuned|-> --lambda L [--out <path>]".into(),
+        );
+    }
+    no_double_stdin(&parsed.positional)?;
+    let base = load_net(&parsed.positional[0])?;
+    let tuned = load_net(&parsed.positional[1])?;
+    let lambda = req_f32(&parsed, "lambda")?;
+    let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+    let scaled = crate::task::scale_task(&vector, lambda).map_err(err)?;
+    let net = scaled.apply(&base).map_err(err)?;
+    write_out(&parsed, &net)?;
+    let patch = Patch::diff(&base, &net).map_err(err)?;
+    emit(&json!({
+        "lambda": lambda,
+        "summary": wire::net_summary(&net),
+        "patch": wire::patch_to_value(&patch),
+        "cost": wire::cost_to_value(&patch.cost(&base)),
+        "artifact": to_wsp(&net),
+    }))
 }

@@ -24,6 +24,31 @@
   不能把 1/208 外推成全语料通过。
 - 未证栏：动态 Comparator 只跑了 **1/208** 主结果（LipschitzEquivalence，通过）；其余 207 未跑，
   不能表述为“全语料通过”。
+### Added（trit-wspace：任务向量缩放 + 块级 DARE + 分类读数）
+
+- `scale_task`：三值任务算术——`λ>0` 原样、`λ=0` 丢弃、`λ<0` 取反 trit/偏置（scale 差分丢弃）。
+  CLI `task-scale <base> <tuned> --lambda L`，MCP `wsp_task_scale`（工具数 19 → 20）。
+- `dare_drop_blocks`：同一行列按 `col/block` 整块保留/丢弃；`block=1` 退化为坐标级，
+  `block=0` 判 `InvalidBlock`。CLI `dare-drop ... --block N`，MCP `wsp_dare_drop.block`。
+- `wire::classification_value`：per-class 精度 + 混淆矩阵（一维输出按 2 类）；
+  `verify` 与 `task-merge` 的 `verify` 块输出 `classification` / `before_classification` /
+  `after_classification`。
+- 测试 258 → 273 + 1 doctest（新增 `tests/task_scale.rs` 6、`tests/classification.rs` 4、
+  `tests/dare.rs` +5）；变异 245 → 260（新增 15 条目标，三个子集 6/6、4/4、5/5 caught）。
+
+### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
+
+- `merge_tasks_weighted_report` 返回 `(Net, MergeReport)`：任务数、被零权重忽略的任务数、
+  有票坐标数、平票坐标数、实际 trit/偏置编辑数、写出的 scale 行数。`merge_tasks_weighted`
+  保持返回 `Net`。CLI/MCP 在非 DARE 路径输出 `merge_report`（DARE 路径为 `null`）。
+- `DEFAULT_TUNE_GRID` + `TuneMetric` / `TuneMerge` + `tune_task_weights_metric`：
+  调权可换候选网格与评估合并方式。CLI `--tune-grid G[,G...]`、`--tune-with-dare`；
+  MCP `tune_grid`、`tune_with_dare`。`TuneMerge::{Plain, Dare, PerTaskDare}` 让评估与最终
+  DARE 合并路径对齐。
+- 测试 252 → 258 + 1 doctest（`tests/task_tune.rs` 18 → 24）；变异 234 → 245（新增 11 条目标，
+  其中 PerTaskDare 分支补测后 3/3 caught）。
+- 未证栏：DARE 路径不返回 `merge_report`（只报告投票阶段）；`ties` 定义为“票和为零且票值不全相同”；
+  `tune_grid` 未做去重/上限。
 
 ### Experiments（trit-wspace：16×16 彩色 + hidden 128）
 
