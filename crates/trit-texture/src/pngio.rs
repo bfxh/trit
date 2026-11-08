@@ -93,8 +93,8 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let image = RgbaImage {
             width: 8,
-            height: 20,
-            rgba: (0..8 * 20 * 4).map(|i| (i % 251) as u8).collect(),
+            height: 16,
+            rgba: (0..8 * 16 * 4).map(|i| (i % 251) as u8).collect(),
         };
         let png_path = dir.join("src.png");
         save_png_rgba(&png_path, &image).unwrap();
