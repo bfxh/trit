@@ -16,8 +16,14 @@
 - 依赖更新：`cargo update` 更新 21 个包（保持在 MSRV 1.88 内）；`Cargo.lock` 42 增 46 删。
   `cargo test --workspace --locked` ⇒ **2424 passed / 0 failed**（230 个测试目标）；
   `cargo clippy --workspace --all-targets --locked -- -D warnings` 通过；`cargo fmt --check` 通过。
-- 未证栏：动态 Comparator 仍未运行（需要 Linux + `comparator`/`landrun`/`lean4export` + Mathlib 构建）；
-  本次只把静态审计脚本自身纳入门禁，不改变「kernel/comparator 未验」的结论。
+- **动态 Comparator（2026-11-08，WSL2，A）**：对 `ComparatorChallenges/LipschitzEquivalence.json`
+  （定理 `OAI.LipschitzCounterexample.main`）跑通 comparator：
+  `Lean default kernel accepts the solution` / `Your solution is okay!`，用时 7m31.734s；
+  结果与日志在 `interop/lean/openai_math/results/comparator-2026-11-08-LipschitzEquivalence.{json,log}`。
+  口径：最小 Lake 项目（只依赖 Mathlib），挑战/证明模块来自固定提交 `4eaee87`，其余 207 主结果未跑；
+  不能把 1/208 外推成全语料通过。
+- 未证栏：动态 Comparator 只跑了 **1/208** 主结果（LipschitzEquivalence，通过）；其余 207 未跑，
+  不能表述为“全语料通过”。
 
 ### Experiments（trit-wspace：16×16 彩色 + hidden 128）
 

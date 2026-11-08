@@ -1,0 +1,18 @@
+start: 12:18:47Z
+Building ComparatorChallenges.LipschitzEquivalence
+⚠ [8924/8924] Replayed ComparatorChallenges.LipschitzEquivalence
+warning: ComparatorChallenges/LipschitzEquivalence.lean:38:8: declaration uses `sorry`
+Build completed successfully (8924 jobs).
+Exporting #[Quot, Quot.mk, Quot.lift, Quot.ind, OAI.LipschitzCounterexample.main, propext, Quot.sound, Classical.choice, Nat.add, Nat.sub, Nat.mul, Nat.pow, Nat.gcd, Nat.div, Nat.mod, Nat.beq, Nat.ble, Nat.land, Nat.lor, Nat.xor, Nat.shiftLeft, Nat.shiftRight, String.ofList, Char.ofNat, List, eagerReduce, Nat, String, String.mk, Char, optParam, autoParam, semiOutParam, outParam] from ComparatorChallenges.LipschitzEquivalence
+Building OAI.Analysis.LipschitzEquivalence.Main
+Build completed successfully (8983 jobs).
+Exporting #[Quot, Quot.mk, Quot.lift, Quot.ind, OAI.LipschitzCounterexample.main, propext, Quot.sound, Classical.choice, Nat.add, Nat.sub, Nat.mul, Nat.pow, Nat.gcd, Nat.div, Nat.mod, Nat.beq, Nat.ble, Nat.land, Nat.lor, Nat.xor, Nat.shiftLeft, Nat.shiftRight, String.ofList, Char.ofNat, List, eagerReduce, Nat, String, String.mk, Char, optParam, autoParam, semiOutParam, outParam] from OAI.Analysis.LipschitzEquivalence.Main
+Running Lean default kernel on solution.
+Lean default kernel accepts the solution
+Your solution is okay!
+COMPARATOR_RC=0
+
+real	7m31.734s
+user	3m51.075s
+sys	2m25.041s
+end: 12:26:19Z

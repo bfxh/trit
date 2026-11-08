@@ -79,6 +79,28 @@ python3 interop/lean/openai_math/audit.py --self-test
 - JSON 报告固定 LF 行尾；固定提交复跑的输出与 `results/2026-11-08-4eaee87.json` **逐字节一致**
   （`cmp` 通过）。CI 也会跑自测并对基线做 `diff`，漂移就判红。
 
+## 动态 Comparator 记录（2026-11-08）
+
+2026-11-08 在 WSL2 上对 **1 个主结果**做了动态校验（A 级，本地实测）：
+
+| 项 | 值 |
+|---|---|
+| 挑战 | `ComparatorChallenges/LipschitzEquivalence.json` |
+| 定理 | `OAI.LipschitzCounterexample.main` |
+| 结果 | **pass**：`Lean default kernel accepts the solution` / `Your solution is okay!` |
+| 用时 | 7m31.734s（挑战+证明模块编译、两次导出、内核检查） |
+| 环境 | WSL2 Ubuntu 24.04 / kernel 6.18.54.1；Lean 4.34.1；comparator `d03acab154`；lean4export `076e8e5770`；landrun 0.1.18 |
+| 语料 | 固定提交 `4eaee87` 的 61 个 OAI 证明模块 + 挑战文件；Mathlib `d13f23b` 官方缓存 |
+| 结果文件 | [`results/comparator-2026-11-08-LipschitzEquivalence.json`](results/comparator-2026-11-08-LipschitzEquivalence.json) |
+
+口径与限制：
+
+- 这是一个**最小 Lake 项目**：只依赖 Mathlib；该挑战/证明不导入其余 29 个语料依赖，因此没有拉取它们。
+  这不改变 comparator 对该定理的检查范围，但**不等于**整个 openai/math 语料已通过。
+- 挑战模块本身含 `sorry`（符合 comparator 的 challenge 约定）；通过的是证明模块对同一 `MainClaim` 的内核验证。
+- 其余 **207** 个主结果**未跑**；不要把 1/208 外推成全语料通过。
+- 复算入口仍是 `run_comparator.sh`（完整 checkout 版）；本条记录给出的是 WSL2 本地实测环境与结果。
+
 ## CI
 
 `openai-math-audit` workflow 仅 `workflow_dispatch` 手动触发，执行稀疏拉取 + 审计；Comparator 动态校验不进 CI（成本与 landrun 依赖不适合默认跑道）。
@@ -89,5 +111,5 @@ python3 interop/lean/openai_math/audit.py --self-test
 |---|---|
 | 固定提交的 catalogue 计数与结构自洽 | A（本仓脚本实测） |
 | README 的 300/719 覆盖率 | B（上游陈述，未复算） |
-| Comparator/kernel 实际通过 | 未运行（脚本已备，不能算结果） |
+| Comparator/kernel 实际通过（单题） | **1/208** 主结果本地动态通过：LipschitzEquivalence，2026-11-08，A（其余 207 未跑） |
 | 审计脚本自身的正例/反例与变异钉住 | A（32 条断言；25 条变异 caught 25 / 存活 0，本地实测） |

@@ -1,0 +1,31 @@
+{
+  "schema": "trit.openai-math-comparator/v1",
+  "commit": "4eaee87548250b2682affda7d05d947c05554bae",
+  "toolchain": "leanprover/lean4:v4.34.1",
+  "challenge": "ComparatorChallenges/LipschitzEquivalence.json",
+  "theorem": "OAI.LipschitzCounterexample.main",
+  "exit_code": 0,
+  "status": "pass",
+  "started_at": "2026-11-08T12:18:47Z",
+  "checked_at": "2026-11-08T12:26:19Z",
+  "duration_seconds": 451,
+  "duration_text": "7m31.734s",
+  "log": "interop/lean/openai_math/results/comparator-2026-11-08-LipschitzEquivalence.log",
+  "output": "Lean default kernel accepts the solution; Your solution is okay!",
+  "environment": {
+    "os": "Ubuntu 24.04 on WSL2",
+    "kernel": "6.18.54.1-microsoft-standard-WSL2",
+    "comparator": "leanprover/comparator@d03acab154d269c06e60e4de7e4cc85deebff94b (built with Lean 4.34.1)",
+    "lean4export": "leanprover/lean4export@076e8e57707e813375e8f9da8bf989799ace9680 (built with Lean 4.34.1)",
+    "landrun": "0.1.18",
+    "mathlib": "d13f23b723b8a846827a245b89c10fc7d3f11612 (official cache)"
+  },
+  "project": {
+    "kind": "minimal Lake project (only Mathlib dependency)",
+    "source_commit": "4eaee87548250b2682affda7d05d947c05554bae",
+    "files": 63,
+    "manifest_sha256": "29a6503a626c1e46cb9f578c1c0d2bab7a966e662641d9c4eee3529e05c716b3",
+    "pruned": "the challenge/solution import only Mathlib plus local OAI modules; the other 29 corpus requires are not imported"
+  },
+  "evidence": "A (local run; challenge/solution modules copied from pinned commit 4eaee87; Mathlib official cache; unrelated corpus deps pruned)"
+}
