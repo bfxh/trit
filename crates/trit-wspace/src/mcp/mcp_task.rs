@@ -194,19 +194,53 @@ pub(super) fn task_scale(args: &Value) -> Result<Value, String> {
             .and_then(Value::as_str)
             .ok_or("需要 tuned")?,
     )?;
-    let lambda = args
-        .get("lambda")
-        .and_then(Value::as_f64)
-        .ok_or("需要 lambda")? as f32;
+    let oracle = optional_oracle(args)?;
+    let lambda = args.get("lambda").and_then(Value::as_f64).map(|v| v as f32);
+    let lambdas = match args.get("lambdas") {
+        Some(Value::Array(items)) => {
+            let mut values = Vec::new();
+            for item in items {
+                values.push(item.as_f64().ok_or("lambdas 需要数字数组")? as f32);
+            }
+            Some(values)
+        }
+        Some(_) => return Err("lambdas 需要数字数组".into()),
+        None => None,
+    };
+    if lambda.is_some() && lambdas.is_some() {
+        return Err("lambda 与 lambdas 只能给一个".into());
+    }
+    let values = match lambdas {
+        Some(values) => values,
+        None => vec![lambda.ok_or("需要 lambda 或 lambdas")?],
+    };
     let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
-    let scaled = crate::task::scale_task(&vector, lambda).map_err(err)?;
-    let net = scaled.apply(&base).map_err(err)?;
-    let patch = Patch::diff(&base, &net).map_err(err)?;
-    Ok(json!({
-        "lambda": lambda,
-        "summary": wire::net_summary(&net),
-        "patch": wire::patch_to_value(&patch),
-        "cost": wire::cost_to_value(&patch.cost(&base)),
-        "artifact": to_wsp(&net),
-    }))
+    let mut results = Vec::new();
+    let mut single: Option<crate::Net> = None;
+    for lambda in values {
+        let scaled = crate::task::scale_task(&vector, lambda).map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let mut row = json!({
+            "lambda": lambda,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        results.push(row);
+        single = Some(net);
+    }
+    if results.len() == 1 {
+        let net = single.expect("single result");
+        let mut out = results.pop().expect("single row");
+        out["artifact"] = json!(to_wsp(&net));
+        Ok(out)
+    } else {
+        let lambdas: Vec<serde_json::Value> =
+            results.iter().map(|row| row["lambda"].clone()).collect();
+        Ok(json!({"lambdas": lambdas, "results": results}))
+    }
 }

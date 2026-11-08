@@ -203,6 +203,10 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 `dare_per_task`）。非 DARE 路径还会在结果里返回 `merge_report`（投票数/平票数/忽略任务数/
 改动数/scale 行数）。
 
+`task-scale` / `wsp_task_scale` 做三值任务算术：`--lambda L` 单系数（`L>0` 原样、`L=0` 丢弃、
+`L<0` 取反 trit/偏置且丢 scale 差分）；`--lambdas L,L...` 批量扫描，配 `--oracle` 时每个 λ
+返回 `verify`（loss/exact/accuracy），批量结果在 `results` 数组中（不含 `artifact`）。
+
 真实数据读数见 `examples/cifar_tasks.rs`（CIFAR-10 8×8 灰度 → 三值 MLP → WSP1 → 合并/调权）；
 它支持 `--size`（8/16）、`--color`（16×16×3）、`--hidden N`、`--seeds N`（多 seed 均值/方差）
 与同架构 f32 基线（连续输入 + 连续权重），需要外部数据夹具，CI 只编译不运行。

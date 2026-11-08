@@ -6,7 +6,7 @@ use std::process::{Command, Output};
 
 use serde_json::{Value, json};
 use trit_wspace::mcp::Mcp;
-use trit_wspace::{Edit, Layer, Net, Patch, TaskVector, Trit, scale_task, to_wsp};
+use trit_wspace::{Edit, Layer, Net, Oracle, Patch, TaskVector, Trit, scale_task, to_wsp};
 
 fn xor_net() -> Net {
     Net::new(vec![
@@ -200,4 +200,96 @@ fn mcp_task_scale_round_trip() {
         json!({"base": to_wsp(&base), "tuned": to_wsp(&tuned_net), "lambda": "x"}),
     );
     assert_eq!(bad["isError"], true);
+}
+
+#[test]
+fn cli_task_scale_lambdas_scan() {
+    let dir = temp_dir("scan");
+    let (base, tuned_net) = scale_fixture();
+    let oracle =
+        Oracle::new(vec![vec![Trit::Neg, Trit::Neg]], vec![vec![Trit::Pos]]).expect("oracle");
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    let oracle_path = dir.join("oracle.json");
+    fs::write(&base_path, to_wsp(&base)).expect("write base");
+    fs::write(&tuned_path, to_wsp(&tuned_net)).expect("write tuned");
+    fs::write(
+        &oracle_path,
+        serde_json::to_string(&trit_wspace::wire::oracle_to_value(&oracle)).expect("oracle json"),
+    )
+    .expect("write oracle");
+    let value = stdout_json(&run(&[
+        "task-scale",
+        &path_string(&base_path),
+        &path_string(&tuned_path),
+        "--lambdas",
+        "-1,0,1",
+        "--oracle",
+        &path_string(&oracle_path),
+    ]));
+    assert_eq!(value["lambdas"], json!([-1.0, 0.0, 1.0]));
+    let results = value["results"].as_array().expect("results");
+    assert_eq!(results.len(), 3);
+    assert!(results[0]["verify"]["loss"].is_number());
+    assert!(results[1]["verify"]["loss"].is_number());
+    assert_eq!(
+        results[1]["verify"]["loss"],
+        json!(oracle.loss(&base).expect("base loss"))
+    );
+    assert_eq!(
+        results[2]["verify"]["loss"],
+        json!(oracle.loss(&tuned_net).expect("tuned loss"))
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn cli_task_scale_rejects_lambda_and_lambdas() {
+    let dir = temp_dir("scan-conflict");
+    let (base, tuned_net) = scale_fixture();
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    fs::write(&base_path, to_wsp(&base)).expect("write base");
+    fs::write(&tuned_path, to_wsp(&tuned_net)).expect("write tuned");
+    let output = run(&[
+        "task-scale",
+        &path_string(&base_path),
+        &path_string(&tuned_path),
+        "--lambda",
+        "1",
+        "--lambdas",
+        "0,1",
+    ]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("只能给一个"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mcp_task_scale_lambdas_scan() {
+    let (base, tuned_net) = scale_fixture();
+    let oracle =
+        Oracle::new(vec![vec![Trit::Neg, Trit::Neg]], vec![vec![Trit::Pos]]).expect("oracle");
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_task_scale",
+        json!({
+            "base": to_wsp(&base),
+            "tuned": to_wsp(&tuned_net),
+            "lambdas": [-1.0, 0.0, 1.0],
+            "oracle": trit_wspace::wire::oracle_to_value(&oracle),
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    assert_eq!(value["lambdas"], json!([-1.0, 0.0, 1.0]));
+    let results = value["results"].as_array().expect("results");
+    assert_eq!(results.len(), 3);
+    assert!(results[0]["verify"]["loss"].is_number());
+    assert!(results[2]["verify"]["loss"].is_number());
 }
