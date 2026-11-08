@@ -180,6 +180,15 @@ jobs:
       - name: Every file within budget or shrinking-only debt
         run: python3 scripts/module_budget.py
 
+  release-preflight:
+    name: release preflight (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Release preflight self-test
+        run: python3 scripts/release_preflight.py --self-test
+
   hazard:
     name: hazard gate (concurrency/memory)
     runs-on: ubuntu-latest
