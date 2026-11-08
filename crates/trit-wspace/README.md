@@ -151,8 +151,9 @@ CLI 对应 `transplant <dest> --from <source> --layer L --rows i,j`。
 就整行保留或整行丢回基准值，不会出现“半行保留”。行级决策用 `(seed, layer, row)` 散列
 （列标记 `usize::MAX - 1`，与偏置的 `usize::MAX` 区分），只改本层该行的入边与偏置，
 不碰下一层的出边列（单元粒度整体搬运见 `wsp_transplant`）。`kept` / `dropped` 仍按差分坐标数计数。
-CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N] [--by-row|--block N]`；
-`--block N` 把同一行的列按 `N` 一块整体保留/丢弃（`N=1` 退化为坐标级，`N=0` 判错）。
+CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N] [--by-row|--by-layer|--block N]`；
+`--block N` 把同一行的列按 `N` 一块整体保留/丢弃（`N=1` 退化为坐标级，`N=0` 判错）；
+`--by-layer` 整层（所有行、所有 trit 与偏置）一起保留/丢弃。
 
 `wsp_apply_candidate` 直接吃 `wsp_propose` 的 `candidates[i]`（`edit` 或 `edits`），
 可选 `require_after`；给了 `log` 就把这次编辑追加进 JSONL 日志（日志文本随结果返回，不写盘）。

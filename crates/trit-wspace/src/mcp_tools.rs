@@ -206,6 +206,7 @@ pub fn tools() -> Vec<Value> {
                 "rate": {"type": "number", "description": "丢弃概率，[0, 1)"},
                 "seed": {"type": "integer", "description": "散列种子，默认 0"},
                 "by_row": {"type": "boolean", "description": "整行（trit+偏置）一起保留或丢弃；默认按坐标"},
+                "by_layer": {"type": "boolean", "description": "整层一起保留或丢弃；与 by_row/block 互斥"},
                 "block": {"type": "integer", "description": "按固定列块（col/block）一起保留/丢弃；与 by_row 互斥"},
                 "oracle": {"type": "object"},
                 "require_before": {"type": "boolean"},

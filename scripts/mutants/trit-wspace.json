@@ -1394,8 +1394,8 @@
 {
  "name": "wspace-dare-row: 整行判定忽略偏置差分",
  "file": "crates/trit-wspace/src/dare.rs",
- "old": "                if from_bias != to_bias {",
- "new": "                if false {",
+ "old": "                if from_bias != to_bias {\n                    row_edits.push(Edit::SetBias {",
+ "new": "                if false {\n                    row_edits.push(Edit::SetBias {",
  "pkg": "trit-wspace",
  "filter": "row_drop_keeps_or_drops_whole_rows"
 },
@@ -2010,7 +2010,7 @@
 {
  "name": "wspace-dare-block: 按坐标丢弃",
  "file": "crates/trit-wspace/src/dare.rs",
- "old": "                let unit_col = match mode {\n                    DareMode::Coord => col,\n                    DareMode::Block(block) => col / block,\n                    DareMode::Row => unreachable!(),\n                };",
+ "old": "                let unit_col = match mode {\n                    DareMode::Coord => col,\n                    DareMode::Block(block) => col / block,\n                    DareMode::Row => unreachable!(),\n                    DareMode::Layer => unreachable!(),\n                };",
  "new": "                let unit_col = col;",
  "pkg": "trit-wspace",
  "filter": "block_drop_keeps_blocks_whole"
@@ -2078,5 +2078,45 @@
  "new": "                    \"classification\": serde_json::Value::Null,",
  "pkg": "trit-wspace",
  "filter": "mcp_verify_reports_classification"
+},
+{
+ "name": "wspace-dare-layer: 恒保留",
+ "file": "crates/trit-wspace/src/dare.rs",
+ "old": "            if keep(seed, layer, LAYER_UNIT, LAYER_UNIT, rate) {",
+ "new": "            if true {",
+ "pkg": "trit-wspace",
+ "filter": "layer_drop_keeps_layers_whole_and_can_drop"
+},
+{
+ "name": "wspace-dare-layer: 整层跳过",
+ "file": "crates/trit-wspace/src/dare.rs",
+ "old": "            if deltas == 0 {\n                continue;\n            }",
+ "new": "            if true {\n                continue;\n            }",
+ "pkg": "trit-wspace",
+ "filter": "layer_drop_keeps_layers_whole_and_can_drop"
+},
+{
+ "name": "wspace-dare-layer: CLI 未接线",
+ "file": "crates/trit-wspace/src/cli.rs",
+ "old": "    let by_layer = parsed.switches.contains(\"by-layer\");",
+ "new": "    let by_layer = false;",
+ "pkg": "trit-wspace",
+ "filter": "cli_dare_drop_by_layer_round_trip"
+},
+{
+ "name": "wspace-dare-layer: MCP 未接线",
+ "file": "crates/trit-wspace/src/mcp/mcp_dare.rs",
+ "old": "    let by_layer = flag(args, \"by_layer\");",
+ "new": "    let by_layer = false;",
+ "pkg": "trit-wspace",
+ "filter": "mcp_dare_drop_by_layer_round_trip"
+},
+{
+ "name": "wspace-dare-layer: 互斥检查失效",
+ "file": "crates/trit-wspace/src/cli.rs",
+ "old": "    if usize::from(by_row) + usize::from(by_layer) + usize::from(block.is_some()) > 1 {\n        return Err(\"--by-row / --by-layer / --block 只能给一个\".into());\n    }",
+ "new": "    if false {\n        return Err(\"--by-row / --by-layer / --block 只能给一个\".into());\n    }",
+ "pkg": "trit-wspace",
+ "filter": "cli_dare_drop_rejects_conflicting_units"
 }
 ]
