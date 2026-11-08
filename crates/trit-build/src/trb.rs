@@ -346,6 +346,19 @@ mod tests {
     }
 
     #[test]
+    fn decode_rejects_unsafe_name_even_with_a_valid_names_hash() {
+        let values = vec![Ternary::Unknown; 3];
+        let blob = encode_named(&values, Algebra::Kleene, &["a".to_string()]).unwrap();
+        let mut forged = blob.clone();
+        // 名字段 = [len=1, 'a']，把 'a' 换成不安全字符并重算 names_hash。
+        forged[20] = b'*';
+        let section = forged[HEADER_V3..21].to_vec();
+        forged[11..19].copy_from_slice(&fnv64(&section).to_le_bytes());
+        let error = decode(&forged).unwrap_err().to_string();
+        assert!(error.contains("不安全字符"), "{error}");
+    }
+
+    #[test]
     fn v2_blobs_still_decode_with_synthetic_names() {
         let values = vec![Ternary::True, Ternary::False, Ternary::Unknown];
         let blob = encode(&values, Algebra::Kleene, 1);

@@ -14,7 +14,7 @@ path = "src/main.rs"
 
 [features]
 # GPU 导出本身不需要 wgpu；只有真机对拍测试用 `--features gpu` 拉依赖。
-gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck", "dep:naga"]
 
 [dependencies]
 trit-core.workspace = true
@@ -26,3 +26,4 @@ serde_json = "1.0.154"
 wgpu = { version = "30", optional = true }
 pollster = { version = "0.4", optional = true }
 bytemuck = { version = "1", optional = true }
+naga = { version = "30", optional = true }
