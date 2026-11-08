@@ -35,7 +35,7 @@
 - **Rust runner**：738/738（`interop/runner`，独立实现 spec）。
 - **Go**：`k3` 21/21、`kgate` 9/9、`pack5` 657/657（错误向量映射到 `ErrTrit` / `ErrPackRange` / `ErrShortData`）；未实现 Belnap4/bitplane。
 - **asm**：K3 21/21、Belnap4 36/36、pack5 644 pass / 0 fail / 15 skipped（错误向量跳过；asm 快路径假设合法输入）。
-- **Lean 4**：`lake build` 通过（Lean 4.35.0，无 Mathlib）；K3/KGate/Belnap4/pack5 核心定理。
+- **Lean 4**：`lake build` 通过（Lean 4.35.0，无 Mathlib）；K3/KGate/Belnap4/pack5 核心定理；`lake exe tritLean` 输出 738 条 JSONL，经 `runner -- --lean` 对比 **738/738**。
 - **执行证据**：ARM64 NEON / AVX-512 的 CI 读数见 [other-languages/asm/README.md](../other-languages/asm/README.md)。
 
 ## 各实现怎么接
@@ -43,7 +43,7 @@
 - **Rust**：`interop/runner` 独立实现 spec；`cd interop/runner && cargo run --release`（默认读 `../vectors`）。
 - **Go**：`other-languages/go/conformance_test.go` 读取同一组 JSON，覆盖 k3/kgate/pack5；不复制期望值。
 - **汇编验证**：`other-languages/asm` 用 `--conformance` 覆盖 K3/Belnap4/pack5。
-- **Lean 4**：`interop/lean` 是形式语义锚点；`cd interop/lean && lake build`（CI `lean 4 semantics`）。
+- **Lean 4**：`interop/lean` 是形式语义锚点；`cd interop/lean && lake build`；数据桥 `lake exe tritLean > /tmp/lean-vectors.jsonl` + `cd interop/runner && cargo run --release -- --lean /tmp/lean-vectors.jsonl`。
 - **未来语言**：先实现 spec 的语义与 pack5，再跑 vectors；不要先写优化。
 
 ## 版本与新增 vector
@@ -63,7 +63,7 @@ Lean 4 落地前，规范与 Rust 不一致时以规范为准，修 Rust 并补�
 
 ## 下一步
 
-- Lean：pack5 尾部/错误语义、Lean↔Rust 桥、`openai/math` 应用评测（核心定理已过）。
+- Lean：`openai/math` 应用评测（核心定理与 Lean→Rust 数据桥已完成）。
 - 非默认 `conformance` workflow 已加（runner + Go + asm + Lean）；后续按需纳入分支保护。
 - 跨进程容器 v0.2（magic/version/profile/trit_count/payload_len/CRC32C）；在 vectors 补齐前不声称支持。
 

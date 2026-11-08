@@ -6,7 +6,7 @@
 - 依赖：仅 Lean 核心；不依赖 Mathlib
 - 构建：`cd interop/lean && lake build`
 - 数据桥：`lake exe tritLean > /tmp/lean-vectors.jsonl`，再由 `interop/runner -- --lean ...` 对比 golden vectors
-- CI：`conformance` workflow 的 `lean 4 semantics` job（语义层 2026-11-08 已通过；Lean→Rust 桥随 P2.1 加入）
+- CI：`conformance` workflow 的 `lean 4 semantics` job（2026-11-08 已通过；含 738/738 Lean→Rust 数据桥）
 
 ## 文件
 
