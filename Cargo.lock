@@ -1761,6 +1761,7 @@ dependencies = [
  "anyhow",
  "bytemuck",
  "clap",
+ "naga",
  "pollster",
  "serde_json",
  "trit-circuit",

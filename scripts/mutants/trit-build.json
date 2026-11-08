@@ -118,5 +118,53 @@
   "new": "        if false {",
   "pkg": "trit-build",
   "filter": "cross_check_rejects_wrong_expression"
+ },
+ {
+  "name": "trb: names_hash 不校验",
+  "file": "crates/trit-build/src/trb.rs",
+  "old": "            if fnv64(&blob[HEADER_V3..offset]) != stored_hash {",
+  "new": "            if false {",
+  "pkg": "trit-build",
+  "filter": "trb::tests::encode_decode_round_trips_and_rejects_tampering"
+ },
+ {
+  "name": "trb: 不安全名字放行",
+  "file": "crates/trit-build/src/trb.rs",
+  "old": "                if !is_safe_name(name) {",
+  "new": "                if false {",
+  "pkg": "trit-build",
+  "filter": "trb::tests::decode_rejects_unsafe_name_even_with_a_valid_names_hash"
+ },
+ {
+  "name": "egraph: 不动点也报未饱和",
+  "file": "crates/trit-build/src/egraph.rs",
+  "old": "        if !changed {\n            saturated = true;\n            break;\n        }",
+  "new": "        if !changed {\n            saturated = false;\n            break;\n        }",
+  "pkg": "trit-build",
+  "filter": "egraph::tests::saturation_stops_at_a_fixed_point"
+ },
+ {
+  "name": "hdl: expected.mem 把 True 编成 Unknown",
+  "file": "crates/trit-build/src/hdl.rs",
+  "old": "        Ternary::True => 2,",
+  "new": "        Ternary::True => 0,",
+  "pkg": "trit-build",
+  "filter": "hdl::tests::expected_mem_encodes_rails"
+ },
+ {
+  "name": "gpu: 真值表位平面把 True 写进负轨",
+  "file": "crates/trit-build/src/gpu.rs",
+  "old": "            Ternary::True => pos[code / 32] |= bit,",
+  "new": "            Ternary::True => neg[code / 32] |= bit,",
+  "pkg": "trit-build",
+  "filter": "gpu_export_is_self_describing_and_matches_truth_csv"
+ },
+ {
+  "name": "bitplan: 尾块不按剩余行裁剪",
+  "file": "crates/trit-build/src/bitplan.rs",
+  "old": "        let rows = (width * 64).min(count - start_row);",
+  "new": "        let rows = width * 64;",
+  "pkg": "trit-build",
+  "filter": "bitplan::tests::threaded_table_matches_single_thread"
  }
 ]
