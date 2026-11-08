@@ -21,7 +21,6 @@ use trit_wspace::{
     tune_task_weights_argmax, tune_task_weights_hamming, tune_task_weights_readout,
 };
 
-const IN: usize = 64;
 const HIDDEN: usize = 64;
 const ALL_CLASSES: usize = 10;
 
@@ -57,13 +56,13 @@ struct Mlp {
 }
 
 impl Mlp {
-    fn new(seed: u64, classes: usize) -> Self {
+    fn new(seed: u64, classes: usize, input_dim: usize) -> Self {
         let mut rng = Rng(seed);
         let first = TernaryDense::new(
             HIDDEN,
-            IN,
+            input_dim,
             |_, _| (rng.f32() * 2.0 - 1.0) * 0.5,
-            |_| 1.0 / (IN as f32).sqrt(),
+            |_| 1.0 / (input_dim as f32).sqrt(),
             Ste::Identity,
         );
         let second = TernaryDense::new(
@@ -106,7 +105,7 @@ fn train_ternary(
         rng.shuffle(&mut order);
         for chunk in order.chunks(32) {
             let batch = chunk.len();
-            let mut input = Vec::with_capacity(batch * IN);
+            let mut input = Vec::new();
             for &index in chunk {
                 input.extend_from_slice(&samples[index].0);
             }
@@ -140,7 +139,7 @@ fn train_ternary(
 fn to_net(mlp: &Mlp, output_rows: usize) -> Net {
     let first = Layer::with_scales(
         HIDDEN,
-        IN,
+        mlp.first.cols(),
         &mlp.first
             .quantized()
             .into_iter()
@@ -249,11 +248,11 @@ struct MlpF32 {
 }
 
 impl MlpF32 {
-    fn new(seed: u64, classes: usize) -> Self {
+    fn new(seed: u64, classes: usize, input_dim: usize) -> Self {
         let mut rng = Rng(seed);
         let mut init = |_: usize, _: usize| (rng.f32() * 2.0 - 1.0) * 0.5;
         Self {
-            first: DenseF32::new(HIDDEN, IN, &mut init),
+            first: DenseF32::new(HIDDEN, input_dim, &mut init),
             second: DenseF32::new(classes, HIDDEN, &mut init),
         }
     }
@@ -288,7 +287,7 @@ fn train_f32(
         rng.shuffle(&mut order);
         for chunk in order.chunks(32) {
             let batch = chunk.len();
-            let mut input = Vec::with_capacity(batch * IN);
+            let mut input = Vec::new();
             for &index in chunk {
                 input.extend_from_slice(&samples[index].0);
             }
@@ -345,12 +344,13 @@ fn f32_accuracy(mlp: &mut MlpF32, inputs: &[Vec<f32>], labels: &[usize], binary:
 
 // ---------- 数据 ----------
 
-fn load(dir: &str, split: &str) -> (Vec<Vec<u8>>, Vec<usize>) {
-    let raw = fs::read(Path::new(dir).join(format!("{split}_x8.bin"))).expect("read x8");
+fn load(dir: &str, split: &str, size: usize) -> (Vec<Vec<u8>>, Vec<usize>) {
+    let pixel = size * size;
+    let raw = fs::read(Path::new(dir).join(format!("{split}_x{size}.bin"))).expect("read image");
     let labels = fs::read(Path::new(dir).join(format!("{split}_y.bin"))).expect("read y");
-    assert!(raw.len().is_multiple_of(IN));
-    assert_eq!(raw.len() / IN, labels.len());
-    let images = raw.chunks(IN).map(<[u8]>::to_vec).collect();
+    assert!(raw.len().is_multiple_of(pixel));
+    assert_eq!(raw.len() / pixel, labels.len());
+    let images = raw.chunks(pixel).map(<[u8]>::to_vec).collect();
     (images, labels.into_iter().map(usize::from).collect())
 }
 
@@ -369,12 +369,16 @@ fn quantize(image: &[u8]) -> Vec<f32> {
         .collect()
 }
 
+fn normalize(image: &[u8]) -> Vec<f32> {
+    image.iter().map(|v| f32::from(*v) / 127.5 - 1.0).collect()
+}
+
 fn take_per_class(
     images: &[Vec<u8>],
     labels: &[usize],
     per_class: usize,
     classes: &[usize],
-) -> Vec<(Vec<f32>, usize)> {
+) -> Vec<(Vec<u8>, usize)> {
     let mut counts = [0usize; ALL_CLASSES];
     let mut out = Vec::new();
     for (image, &label) in images.iter().zip(labels) {
@@ -382,7 +386,7 @@ fn take_per_class(
             continue;
         }
         counts[label] += 1;
-        out.push((quantize(image), label));
+        out.push((image.clone(), label));
     }
     out
 }
@@ -393,7 +397,7 @@ fn take_binary(
     per_class: usize,
     first: usize,
     second: usize,
-) -> Vec<(Vec<f32>, usize)> {
+) -> Vec<(Vec<u8>, usize)> {
     let mut counts = [0usize; 2];
     let mut out = Vec::new();
     for (image, &label) in images.iter().zip(labels) {
@@ -408,24 +412,46 @@ fn take_binary(
             continue;
         }
         counts[target] += 1;
-        out.push((quantize(image), target));
+        out.push((image.clone(), target));
     }
     out
 }
 
 struct Dataset {
-    mixed: Vec<(Vec<f32>, usize)>,
-    left: Vec<(Vec<f32>, usize)>,
-    right: Vec<(Vec<f32>, usize)>,
-    test: Vec<(Vec<f32>, usize)>,
+    mixed: Vec<(Vec<u8>, usize)>,
+    left: Vec<(Vec<u8>, usize)>,
+    right: Vec<(Vec<u8>, usize)>,
+    test: Vec<(Vec<u8>, usize)>,
     classes: usize,
     output_rows: usize,
     binary: bool,
+    size: usize,
+    input_dim: usize,
 }
 
-fn load_dataset(dir: &str, binary: bool, per_class: usize, test_per_class: usize) -> Dataset {
-    let (train_images, train_labels) = load(dir, "train");
-    let (test_images, test_labels) = load(dir, "test");
+fn ternary_samples(samples: &[(Vec<u8>, usize)]) -> Vec<(Vec<f32>, usize)> {
+    samples
+        .iter()
+        .map(|(image, label)| (quantize(image), *label))
+        .collect()
+}
+
+fn continuous_samples(samples: &[(Vec<u8>, usize)]) -> Vec<(Vec<f32>, usize)> {
+    samples
+        .iter()
+        .map(|(image, label)| (normalize(image), *label))
+        .collect()
+}
+
+fn load_dataset(
+    dir: &str,
+    size: usize,
+    binary: bool,
+    per_class: usize,
+    test_per_class: usize,
+) -> Dataset {
+    let (train_images, train_labels) = load(dir, "train", size);
+    let (test_images, test_labels) = load(dir, "test", size);
     let (mixed, left, right, test, classes, output_rows) = if binary {
         let all = take_binary(&train_images, &train_labels, per_class, 3, 5);
         let split = all.len() / 2;
@@ -449,6 +475,8 @@ fn load_dataset(dir: &str, binary: bool, per_class: usize, test_per_class: usize
         classes,
         output_rows,
         binary,
+        size,
+        input_dim: size * size,
     }
 }
 
@@ -489,12 +517,12 @@ fn run_ternary(seed: u64, data: &Dataset, epochs: usize) -> Value {
         .test
         .iter()
         .map(|(image, _)| {
-            image
-                .iter()
+            quantize(image)
+                .into_iter()
                 .map(|v| {
-                    if *v < 0.0 {
+                    if v < 0.0 {
                         Trit::Neg
-                    } else if *v > 0.0 {
+                    } else if v > 0.0 {
                         Trit::Pos
                     } else {
                         Trit::Zero
@@ -516,12 +544,15 @@ fn run_ternary(seed: u64, data: &Dataset, epochs: usize) -> Value {
         .collect();
     let oracle = Oracle::new(test_inputs.clone(), oracle_outputs).expect("oracle");
 
-    let mut base = Mlp::new(seed, data.classes);
-    let base_loss = train_ternary(&mut base, &data.mixed, data.classes, epochs, 0.05);
+    let mixed = ternary_samples(&data.mixed);
+    let left = ternary_samples(&data.left);
+    let right = ternary_samples(&data.right);
+    let mut base = Mlp::new(seed, data.classes, data.input_dim);
+    let base_loss = train_ternary(&mut base, &mixed, data.classes, epochs, 0.05);
     let mut task_a = base.clone();
-    let a_loss = train_ternary(&mut task_a, &data.left, data.classes, epochs, 0.02);
+    let a_loss = train_ternary(&mut task_a, &left, data.classes, epochs, 0.02);
     let mut task_b = base.clone();
-    let b_loss = train_ternary(&mut task_b, &data.right, data.classes, epochs, 0.02);
+    let b_loss = train_ternary(&mut task_b, &right, data.classes, epochs, 0.02);
 
     let base_net = to_net(&base, data.output_rows);
     let a_net = to_net(&task_a, data.output_rows);
@@ -568,14 +599,21 @@ fn run_ternary(seed: u64, data: &Dataset, epochs: usize) -> Value {
 }
 
 fn run_f32(seed: u64, data: &Dataset, epochs: usize) -> Value {
-    let test_inputs: Vec<Vec<f32>> = data.test.iter().map(|(image, _)| image.clone()).collect();
+    let test_inputs: Vec<Vec<f32>> = data
+        .test
+        .iter()
+        .map(|(image, _)| normalize(image))
+        .collect();
     let test_labels: Vec<usize> = data.test.iter().map(|(_, label)| *label).collect();
-    let mut base = MlpF32::new(seed, data.classes);
-    let base_loss = train_f32(&mut base, &data.mixed, data.classes, epochs, 0.01);
+    let mixed = continuous_samples(&data.mixed);
+    let left = continuous_samples(&data.left);
+    let right = continuous_samples(&data.right);
+    let mut base = MlpF32::new(seed, data.classes, data.input_dim);
+    let base_loss = train_f32(&mut base, &mixed, data.classes, epochs, 0.01);
     let mut task_a = base.clone();
-    let a_loss = train_f32(&mut task_a, &data.left, data.classes, epochs, 0.005);
+    let a_loss = train_f32(&mut task_a, &left, data.classes, epochs, 0.005);
     let mut task_b = base.clone();
-    let b_loss = train_f32(&mut task_b, &data.right, data.classes, epochs, 0.005);
+    let b_loss = train_f32(&mut task_b, &right, data.classes, epochs, 0.005);
     let acc = |mlp: &mut MlpF32| f32_accuracy(mlp, &test_inputs, &test_labels, data.binary);
     json!({
         "base": acc(&mut base),
@@ -636,9 +674,11 @@ fn main() {
     let mut test_per_class = 100usize;
     let mut binary = false;
     let mut seeds = 1usize;
+    let mut size = 16usize;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--data" => data_dir = args.next(),
+            "--size" => size = args.next().expect("size").parse().expect("num"),
             "--per-class" => per_class = args.next().expect("per-class").parse().expect("num"),
             "--epochs" => epochs = args.next().expect("epochs").parse().expect("num"),
             "--test-per-class" => {
@@ -650,7 +690,7 @@ fn main() {
         }
     }
     let data_dir = data_dir.expect("--data <dir>");
-    let data = load_dataset(&data_dir, binary, per_class, test_per_class);
+    let data = load_dataset(&data_dir, size, binary, per_class, test_per_class);
     let mut ternary = Vec::with_capacity(seeds);
     let mut f32_runs = Vec::with_capacity(seeds);
     for offset in 0..seeds {
@@ -666,6 +706,7 @@ fn main() {
             "task_a": data.left.len(),
             "task_b": data.right.len(),
             "test": data.test.len(),
+            "size": data.size,
             "epochs": epochs,
         },
         "ternary": summarize_ternary(&ternary),
