@@ -17,6 +17,8 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Self-test (fixtures, offline)
+        run: python3 interop/lean/openai_math/audit.py --self-test
       - name: Sparse-fetch pinned corpus
         run: interop/lean/openai_math/fetch_sparse.sh "$RUNNER_TEMP/openai-math"
       - name: Audit catalogue
@@ -24,6 +26,10 @@ jobs:
           python3 interop/lean/openai_math/audit.py
           --repo "$RUNNER_TEMP/openai-math"
           --json "$RUNNER_TEMP/openai-math-audit.json"
+      - name: Compare against committed baseline
+        run: >-
+          diff -u interop/lean/openai_math/results/2026-11-08-4eaee87.json
+          "$RUNNER_TEMP/openai-math-audit.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: openai-math-audit

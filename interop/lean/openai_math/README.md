@@ -61,6 +61,24 @@ interop/lean/openai_math/run_comparator.sh \
 - 这是**可信语料**的手动校验，不额外用 `systemd-run` 隔离；不要把不可信 solution 交给它。
 - openai/math 固定 4.34.1；虽然 Lean 4.35 已把 comparator 并入核心（`lake comparator`），本接入不强制升级语料。
 
+## 自测与门禁
+
+`audit.py` 自带离线自测（不需要网络、不需要 Lean）：
+
+```sh
+python3 interop/lean/openai_math/audit.py --self-test
+# self-test: 32/32 passed
+```
+
+- 正例 + 逐项反证：提交/toolchain/catalogue 版本、脏工作树、缺失 OAI 文件、缺失/不可读 comparator
+  配置、`declaration` 不在 `theorem_names`、solution/challenge 模块缺失、未钉 SHA 的 require、
+  不完整条目、非标准公理、未引用配置、nanoda 分布、共享配置、非 git 目录、红报告渲染。
+- 变异登记 `scripts/mutants/interop__lean__openai_math__audit.py.json` 25 条，逐条用自测判红：
+  `python3 scripts/mutation_check.py --pkg interop/lean/openai_math/audit.py`
+  ⇒ **caught 25 / 存活 0 / 假杀 0**（本地实测）。
+- JSON 报告固定 LF 行尾；固定提交复跑的输出与 `results/2026-11-08-4eaee87.json` **逐字节一致**
+  （`cmp` 通过）。CI 也会跑自测并对基线做 `diff`，漂移就判红。
+
 ## CI
 
 `openai-math-audit` workflow 仅 `workflow_dispatch` 手动触发，执行稀疏拉取 + 审计；Comparator 动态校验不进 CI（成本与 landrun 依赖不适合默认跑道）。
@@ -72,3 +90,4 @@ interop/lean/openai_math/run_comparator.sh \
 | 固定提交的 catalogue 计数与结构自洽 | A（本仓脚本实测） |
 | README 的 300/719 覆盖率 | B（上游陈述，未复算） |
 | Comparator/kernel 实际通过 | 未运行（脚本已备，不能算结果） |
+| 审计脚本自身的正例/反例与变异钉住 | A（32 条断言；25 条变异 caught 25 / 存活 0，本地实测） |

@@ -3,6 +3,10 @@
 
 This checks catalogue/file/module consistency and dependency pins. It does not
 build Lean and does not claim Comparator/kernel validity. Standard library only.
+
+Usage:
+  python3 audit.py --repo /path/to/openai-math [--json report.json]
+  python3 audit.py --self-test
 """
 
 from __future__ import annotations
@@ -64,9 +68,10 @@ def parse_requires(text: str) -> list[dict[str, str | None]]:
         block = "\n".join(lines[i : i + 4])
         sha = re.search(r'@\s*"([0-9a-f]{40})"', block)
         url = re.search(r'from\s+git\s*\n\s*"([^"]+)"', block)
+        name = re.sub(r"\s+from\s+git\s*$", "", head.group(1).strip())
         out.append(
             {
-                "name": head.group(1).strip(),
+                "name": name,
                 "url": url.group(1) if url else None,
                 "sha": sha.group(1) if sha else None,
             }
@@ -78,21 +83,24 @@ def module_path(module: str) -> str:
     return "lean/" + module.replace(".", "/") + ".lean"
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", required=True, help="openai/math checkout")
-    parser.add_argument("--pin", default=str(DEFAULT_PIN))
-    parser.add_argument("--json", help="write the report to this path")
-    args = parser.parse_args()
+def read_local_toolchain() -> str | None:
+    return (
+        LOCAL_TOOLCHAIN.read_text(encoding="utf-8").strip()
+        if LOCAL_TOOLCHAIN.exists()
+        else None
+    )
 
-    repo = pathlib.Path(args.repo).resolve()
-    pin = json.loads(pathlib.Path(args.pin).read_text(encoding="utf-8"))
+
+def audit_repo(
+    repo: pathlib.Path,
+    pin: dict,
+    *,
+    local_toolchain: str | None = None,
+) -> dict:
+    if not (repo / ".git").exists():
+        raise ValueError(f"not a git checkout: {repo}")
     errors: list[str] = []
     warnings: list[str] = []
-
-    if not (repo / ".git").exists():
-        print(f"not a git checkout: {repo}", file=sys.stderr)
-        return 2
 
     commit = run(["git", "rev-parse", "HEAD"], repo)
     if commit != pin["commit"]:
@@ -108,11 +116,6 @@ def main() -> int:
         errors.append(
             f"lean-toolchain {toolchain} != pinned {pin['lean_toolchain']}"
         )
-    local_toolchain = (
-        LOCAL_TOOLCHAIN.read_text(encoding="utf-8").strip()
-        if LOCAL_TOOLCHAIN.exists()
-        else None
-    )
     if local_toolchain and local_toolchain != toolchain:
         warnings.append(
             f"toolchains differ (openai/math {toolchain}, this repo {local_toolchain}); do not mix Lake projects"
@@ -213,7 +216,7 @@ def main() -> int:
     unreferenced = [p for p in tree_json if p not in referenced]
     per_config = Counter("lean/" + e["comparator_config"] for e in entries)
 
-    report = {
+    return {
         "schema": "trit.openai-math-audit/v1",
         "repo": pin["repo"],
         "commit": commit,
@@ -264,39 +267,79 @@ def main() -> int:
         "errors": errors,
     }
 
-    if args.json:
-        out = pathlib.Path(args.json)
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-        )
 
+def exit_code(report: dict) -> int:
+    return 0 if not report["errors"] else 1
+
+
+def write_report(report: dict, path: pathlib.Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def render_report(report: dict) -> int:
     cat = report["catalogue"]
-    print(f"openai/math audit @ {commit[:7]} ({toolchain})")
+    require_count = report["requires"]["total"]
+    print(f"openai/math audit @ {report['commit'][:7]} ({report['toolchain']['corpus']})")
     print(
         "sources={sources} main_results={main_results} unique_configs={unique_comparator_configs} "
         "challenge_json={challenge_json} challenge_lean={challenge_lean}".format(**cat)
     )
+    mathlib = report["requires"]["mathlib_sha"]
     print(
-        f"requires={len(require_list)}/{len(require_list)} pinned; "
-        f"mathlib={mathlib['sha'][:7] if mathlib else 'none'}"
+        f"requires={require_count - len(report['requires']['unpinned'])}/{require_count} pinned; "
+        f"mathlib={mathlib[:7] if mathlib else 'none'}"
     )
+    checks = report["checks"]
     print(
         "checks: "
-        f"files={len(missing_files)} missing, configs={len(missing_configs)} missing, "
-        f"declarations={len(entries) - len(declaration_missing)}/{len(entries)}, "
-        f"solution_modules={len(entries) - len(missing_solution_modules)}/{len(entries)}"
+        f"files={len(checks['missing_files'])} missing, "
+        f"configs={len(checks['missing_configs'])} missing, "
+        f"declarations={cat['main_results'] - len(checks['declaration_not_in_theorem_names'])}/{cat['main_results']}, "
+        f"solution_modules={cat['main_results'] - len(checks['missing_solution_modules'])}/{cat['main_results']}"
     )
     print(
-        f"unreferenced_configs={len(unreferenced)} "
+        f"unreferenced_configs={cat['unreferenced_configs']} "
         f"(catalogue main_results are not the full challenge set)"
     )
-    for warning in warnings:
+    for warning in report["warnings"]:
         print(f"WARN: {warning}")
-    for error in errors:
+    for error in report["errors"]:
         print(f"ERROR: {error}", file=sys.stderr)
-    print("audit: " + ("green" if not errors else "red"))
-    return 0 if not errors else 1
+    print("audit: " + ("green" if not report["errors"] else "red"))
+    return exit_code(report)
+
+
+def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if "--self-test" in argv:
+        from audit_selftest import self_test
+
+        return self_test()
+
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--repo", required=True, help="openai/math checkout")
+    parser.add_argument("--pin", default=str(DEFAULT_PIN))
+    parser.add_argument("--json", help="write the report to this path")
+    args = parser.parse_args(argv)
+
+    repo = pathlib.Path(args.repo).resolve()
+    pin = json.loads(pathlib.Path(args.pin).read_text(encoding="utf-8"))
+    try:
+        report = audit_repo(repo, pin, local_toolchain=read_local_toolchain())
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
+    if args.json:
+        write_report(report, pathlib.Path(args.json))
+
+    return render_report(report)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,227 @@
+[
+ {
+  "name": "audit: 提交不一致不再报错（固定快照失守）",
+  "old": "    if commit != pin[\"commit\"]:",
+  "new": "    if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 脏工作树不再告警",
+  "old": "    if run([\"git\", \"status\", \"--porcelain\"], repo):",
+  "new": "    if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 语料 toolchain 与 pin 不一致不再报错",
+  "old": "    if toolchain != pin[\"lean_toolchain\"]:",
+  "new": "    if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 本仓与语料 toolchain 不同不再告警",
+  "old": "    if local_toolchain and local_toolchain != toolchain:",
+  "new": "    if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: catalogue 版本不符不再告警",
+  "old": "    if version != pin[\"catalogue_version\"]:",
+  "new": "    if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 未钉 SHA 的 require 不再报错",
+  "old": "    if unpinned:",
+  "new": "    if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 未钉 SHA 清单恒空",
+  "old": "    unpinned = [r[\"name\"] for r in require_list if not r[\"sha\"]]",
+  "new": "    unpinned = []",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: catalogue 文件缺失不再报错",
+  "old": "        if file_rel not in paths:",
+  "new": "        if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: comparator 配置缺失不再报错",
+  "old": "        if cfg_rel not in paths:",
+  "new": "        if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 声明不在 theorem_names 不再报错",
+  "old": "        if entry[\"declaration\"] not in theorem_names:",
+  "new": "        if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: solution 模块缺失不再报错",
+  "old": "        if module_path(solution) not in paths:",
+  "new": "        if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: challenge 模块缺失不再报错",
+  "old": "        if module_path(challenge) not in paths:",
+  "new": "        if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 不完整 catalogue 条目不再报错",
+  "old": "    if incomplete:",
+  "new": "    if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 非标准公理不再告警",
+  "old": "    if unexpected_axioms:",
+  "new": "    if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 未被引用的 comparator 配置数恒 0",
+  "old": "    unreferenced = [p for p in tree_json if p not in referenced]",
+  "new": "    unreferenced = []",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: checks.ok 恒真（红报告冒充绿）",
+  "old": "            \"ok\": not errors,",
+  "new": "            \"ok\": True,",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 公理分布不计数",
+  "old": "        axioms[\"+\".join(sorted(config.get(\"permitted_axioms\", [])))] += 1",
+  "new": "        axioms[\"+\".join(sorted(config.get(\"permitted_axioms\", [])))] += 0",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: nanoda 分布不计数",
+  "old": "        nanoda[\"absent\" if key is None else str(bool(key)).lower()] += 1",
+  "new": "        nanoda[\"absent\" if key is None else str(bool(key)).lower()] += 0",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: require 名字不剥 from git",
+  "old": "        name = re.sub(r\"\\s+from\\s+git\\s*$\", \"\", head.group(1).strip())",
+  "new": "        name = head.group(1).strip()",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 红报告退出码恒 0",
+  "old": "    return 0 if not report[\"errors\"] else 1",
+  "new": "    return 0",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: 红报告打印绿",
+  "old": "    print(\"audit: \" + (\"green\" if not report[\"errors\"] else \"red\"))",
+  "new": "    print(\"audit: green\")",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: mathlib SHA 不读 requires",
+  "old": "    mathlib = next((r for r in require_list if \"mathlib\" in (r[\"url\"] or \"\")), None)",
+  "new": "    mathlib = None",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: sources 计数不生效",
+  "old": "        if section == \"sources\" and re.match(r\"^  - title:\", line):",
+  "new": "        if False:",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: catalogue 版本解析恒空",
+  "old": "            version = line.split(\":\", 1)[1].strip().strip('\"')",
+  "new": "            version = \"\"",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "audit: require SHA 长度判据放松",
+  "old": "        sha = re.search(r'@\\s*\"([0-9a-f]{40})\"', block)",
+  "new": "        sha = re.search(r'@\\s*\"([0-9a-f]{39})\"', block)",
+  "file": "interop/lean/openai_math/audit.py",
+  "pkg": "interop/lean/openai_math/audit.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

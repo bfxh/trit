@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Interop（openai/math 审计自测 + 变异门）
+
+- `interop/lean/openai_math/audit.py` 拆出 `audit_repo` / `render_report` / `write_report`，新增离线
+  `--self-test`（32 条断言：正例 + 每个检查的反例）。自测夹具独立在 `audit_selftest.py`，两个文件都在
+  仓库 800 行模块预算内。
+- 新增变异登记 `scripts/mutants/interop__lean__openai_math__audit.py.json`（25 条）：
+  `python3 scripts/mutation_check.py --pkg interop/lean/openai_math/audit.py` ⇒
+  **caught 25 / 存活 0 / 崩溃 0 / 假杀 0**。
+- `audit.py --json` 固定 LF 行尾；固定提交 `4eaee87` 复跑的输出与
+  `interop/lean/openai_math/results/2026-11-08-4eaee87.json` **逐字节一致**。
+- `openai-math-audit` workflow 增加自测步骤与「生成报告 vs 提交基线」的 `diff`（漂移判红）。
+- 依赖更新：`cargo update` 更新 21 个包（保持在 MSRV 1.88 内）；`Cargo.lock` 42 增 46 删。
+  `cargo test --workspace --locked` ⇒ **2424 passed / 0 failed**（230 个测试目标）；
+  `cargo clippy --workspace --all-targets --locked -- -D warnings` 通过；`cargo fmt --check` 通过。
+- 未证栏：动态 Comparator 仍未运行（需要 Linux + `comparator`/`landrun`/`lean4export` + Mathlib 构建）；
+  本次只把静态审计脚本自身纳入门禁，不改变「kernel/comparator 未验」的结论。
+
 ### Experiments（trit-wspace：16×16 彩色 + hidden 128）
 
 - `examples/cifar_tasks.rs` 支持 `--color`（16×16×3 = 768 维）与 `--hidden N`；本地新增 16×16 彩色夹具。
