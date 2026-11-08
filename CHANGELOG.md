@@ -13,9 +13,11 @@
   `after_classification`。
 - `dare_drop_layers`：整层（所有行、所有 trit 与偏置）一起保留/丢弃；CLI `--by-layer`，
   MCP `wsp_dare_drop.by_layer`（与 `by_row` / `block` 互斥）。
-- 测试 258 → 278 + 1 doctest（新增 `tests/task_scale.rs` 6、`tests/classification.rs` 4、
-  `tests/dare.rs` +5、`tests/dare_layer.rs` 5）；变异 245 → 265（新增 20 条目标，子集
-  6/6、4/4、5/5、5/5 caught）。
+- `task-scale --lambdas L,L...` / `wsp_task_scale.lambdas`：批量 λ 扫描；配 `--oracle` 时
+  每个 λ 返回 `verify`，批量结果在 `results`（不含 `artifact`）。
+- 测试 258 → 281 + 1 doctest（新增 `tests/task_scale.rs` 9、`tests/classification.rs` 4、
+  `tests/dare.rs` +5、`tests/dare_layer.rs` 5）；变异 245 → 270（新增 25 条目标，子集
+  6/6、4/4、5/5、5/5、11/11 caught）。
 
 ### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
 

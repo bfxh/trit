@@ -214,23 +214,80 @@ pub(super) fn task_scale(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
     if parsed.positional.len() != 2 {
         return Err(
-            "用法：trit-wspace task-scale <base|-> <tuned|-> --lambda L [--out <path>]".into(),
+            "用法：trit-wspace task-scale <base|-> <tuned|-> (--lambda L | --lambdas L,L...) [--oracle <json|->] [--out <path>]"
+                .into(),
         );
     }
-    no_double_stdin(&parsed.positional)?;
+    let mut sources = vec![parsed.positional[0].as_str(), parsed.positional[1].as_str()];
+    if let Some(oracle) = parsed.values.get("oracle") {
+        sources.push(oracle.as_str());
+    }
+    no_double_stdin(&sources)?;
     let base = load_net(&parsed.positional[0])?;
     let tuned = load_net(&parsed.positional[1])?;
-    let lambda = req_f32(&parsed, "lambda")?;
+    let oracle = parsed
+        .values
+        .get("oracle")
+        .map(|path| load_oracle(path))
+        .transpose()?;
+    let lambda = if parsed.values.contains_key("lambda") {
+        Some(req_f32(&parsed, "lambda")?)
+    } else {
+        None
+    };
+    let lambdas = parsed
+        .values
+        .get("lambdas")
+        .map(|raw| parse_lambdas(raw))
+        .transpose()?;
+    if lambda.is_some() && lambdas.is_some() {
+        return Err("--lambda 与 --lambdas 只能给一个".into());
+    }
+    let values = match lambdas {
+        Some(values) => values,
+        None => vec![lambda.ok_or("需要 --lambda 或 --lambdas")?],
+    };
     let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
-    let scaled = crate::task::scale_task(&vector, lambda).map_err(err)?;
-    let net = scaled.apply(&base).map_err(err)?;
-    write_out(&parsed, &net)?;
-    let patch = Patch::diff(&base, &net).map_err(err)?;
-    emit(&json!({
-        "lambda": lambda,
-        "summary": wire::net_summary(&net),
-        "patch": wire::patch_to_value(&patch),
-        "cost": wire::cost_to_value(&patch.cost(&base)),
-        "artifact": to_wsp(&net),
-    }))
+    let mut results = Vec::new();
+    let mut single: Option<crate::Net> = None;
+    for lambda in values {
+        let scaled = crate::task::scale_task(&vector, lambda).map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let mut row = json!({
+            "lambda": lambda,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        results.push(row);
+        single = Some(net);
+    }
+    if results.len() == 1 {
+        let net = single.expect("single result");
+        write_out(&parsed, &net)?;
+        let mut out = results.pop().expect("single row");
+        out["artifact"] = json!(to_wsp(&net));
+        emit(&out)
+    } else {
+        let lambdas: Vec<serde_json::Value> =
+            results.iter().map(|row| row["lambda"].clone()).collect();
+        emit(&json!({"lambdas": lambdas, "results": results}))
+    }
+}
+
+fn parse_lambdas(raw: &str) -> Result<Vec<f32>, String> {
+    if raw.is_empty() {
+        return Err("--lambdas 不能为空".into());
+    }
+    raw.split(',')
+        .map(|part| {
+            part.trim()
+                .parse::<f32>()
+                .map_err(|_| format!("--lambdas 需要逗号分隔的数字，得到 `{part}`"))
+        })
+        .collect()
 }

@@ -1994,16 +1994,16 @@
 {
  "name": "wspace-task-scale: CLI 未接线",
  "file": "crates/trit-wspace/src/cli/cli_task.rs",
- "old": "    let lambda = req_f32(&parsed, \"lambda\")?;",
- "new": "    let lambda = 1.0;",
+ "old": "        Some(req_f32(&parsed, \"lambda\")?)",
+ "new": "        Some(1.0)",
  "pkg": "trit-wspace",
  "filter": "cli_task_scale_round_trip"
 },
 {
  "name": "wspace-task-scale: MCP 未接线",
  "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
- "old": "    let lambda = args\n        .get(\"lambda\")\n        .and_then(Value::as_f64)\n        .ok_or(\"需要 lambda\")? as f32;",
- "new": "    let lambda = 1.0;",
+ "old": "    let lambda = args.get(\"lambda\").and_then(Value::as_f64).map(|v| v as f32);",
+ "new": "    let lambda = Some(1.0);",
  "pkg": "trit-wspace",
  "filter": "mcp_task_scale_round_trip"
 },
@@ -2118,5 +2118,45 @@
  "new": "    if false {\n        return Err(\"--by-row / --by-layer / --block 只能给一个\".into());\n    }",
  "pkg": "trit-wspace",
  "filter": "cli_dare_drop_rejects_conflicting_units"
+},
+{
+ "name": "wspace-task-scale: 扫描只取第一个",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "        Some(values) => values,",
+ "new": "        Some(values) => vec![values[0]],",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_scale_lambdas_scan"
+},
+{
+ "name": "wspace-task-scale: MCP 扫描只取第一个",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "        Some(values) => values,",
+ "new": "        Some(values) => vec![values[0]],",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_scale_lambdas_scan"
+},
+{
+ "name": "wspace-task-scale: λ 互斥失效",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "    if lambda.is_some() && lambdas.is_some() {\n        return Err(\"--lambda 与 --lambdas 只能给一个\".into());\n    }",
+ "new": "    if false {\n        return Err(\"--lambda 与 --lambdas 只能给一个\".into());\n    }",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_scale_rejects_lambda_and_lambdas"
+},
+{
+ "name": "wspace-task-scale: CLI 批量不输出 verify",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "            row[\"verify\"] = wire::metrics_value(&net, oracle).map_err(err)?;",
+ "new": "            let _ = oracle;\n            row[\"verify\"] = serde_json::Value::Null;",
+ "pkg": "trit-wspace",
+ "filter": "cli_task_scale_lambdas_scan"
+},
+{
+ "name": "wspace-task-scale: MCP 批量不输出 verify",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "            row[\"verify\"] = wire::metrics_value(&net, oracle).map_err(err)?;",
+ "new": "            let _ = oracle;\n            row[\"verify\"] = serde_json::Value::Null;",
+ "pkg": "trit-wspace",
+ "filter": "mcp_task_scale_lambdas_scan"
 }
 ]

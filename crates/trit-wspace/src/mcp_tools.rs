@@ -165,9 +165,11 @@ pub fn tools() -> Vec<Value> {
             json!({
                 "base": artifact(),
                 "tuned": {"type": "string"},
-                "lambda": {"type": "number"},
+                "lambda": {"type": "number", "description": "单个缩放系数；与 lambdas 互斥"},
+                "lambdas": {"type": "array", "items": {"type": "number"}, "description": "λ 扫描列表；批量时返回 results（不含 artifact）"},
+                "oracle": {"type": "object", "description": "可选验证集；给了就给每个 λ 返回 verify 读数"},
             }),
-            &["base", "tuned", "lambda"],
+            &["base", "tuned"],
         ),
         tool(
             "wsp_rebase",
