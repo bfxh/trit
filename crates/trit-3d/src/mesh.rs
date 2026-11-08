@@ -210,12 +210,17 @@ impl TriMesh {
 
     /// 面积加权表面采样：返回 `n` 个面元高斯（法向压薄 1/10）。
     pub fn surface_gaussians(&self, n: usize, degree: ShDegree) -> Vec<Gaussian> {
+        self.surface_gaussians_thin(n, degree, 0.1)
+    }
+
+    /// 带法向压薄系数的版本（真实资产薄壁用 0.05）。
+    pub fn surface_gaussians_thin(&self, n: usize, degree: ShDegree, thin: f32) -> Vec<Gaussian> {
         let sh = target_sh(degree);
         self.surface_frames(n)
             .into_iter()
             .map(|(pos, normal, r)| Gaussian {
                 pos,
-                scale: [r, r, r * 0.1],
+                scale: [r, r, r * thin.clamp(0.01, 1.0)],
                 rotation: quat_from_z(normal),
                 opacity: 1.0,
                 sh: sh.clone(),
@@ -251,7 +256,9 @@ impl TriMesh {
                 a[2] * w0 + b[2] * gu + c[2] * gv,
             ];
             let normal = normalize3(cross3(sub3(b, a), sub3(c, a)));
-            let r = (total / n as f32 / PI).sqrt().max(0.005);
+            let r0 = (total / n as f32 / PI).sqrt().max(0.005);
+            // 分层：小三角形用小尺，大三角形用大尺，夹在 [0.3r0, 2.5r0]。
+            let r = (0.35 * areas[ti].sqrt()).clamp(0.3 * r0, 2.5 * r0);
             out.push((pos, normal, r));
         }
         out
