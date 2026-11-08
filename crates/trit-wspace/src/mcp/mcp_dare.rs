@@ -16,8 +16,17 @@ pub(super) fn dare_drop(args: &Value) -> Result<Value, String> {
     let rate = rate as f32;
     let seed = opt_u64(args, "seed", 0);
     let by_row = flag(args, "by_row");
+    let block = args
+        .get("block")
+        .and_then(Value::as_u64)
+        .map(|v| v as usize);
+    if by_row && block.is_some() {
+        return Err("by_row 与 block 只能给一个".into());
+    }
     let outcome = if by_row {
         crate::dare::dare_drop_rows(&base, &tuned, rate, seed).map_err(err)?
+    } else if let Some(block) = block {
+        crate::dare::dare_drop_blocks(&base, &tuned, rate, seed, block).map_err(err)?
     } else {
         crate::dare::dare_drop(&base, &tuned, rate, seed).map_err(err)?
     };
@@ -34,6 +43,7 @@ pub(super) fn dare_drop(args: &Value) -> Result<Value, String> {
         "rate": rate,
         "seed": seed,
         "by_row": by_row,
+        "block": block,
         "kept": outcome.kept,
         "dropped": outcome.dropped,
         "rescaled_rows": outcome.rescaled_rows,

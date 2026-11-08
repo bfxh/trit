@@ -95,6 +95,62 @@ impl TaskVector {
     }
 }
 
+/// 三值任务算术：`lambda > 0` 原样、`lambda == 0` 丢弃、`lambda < 0` 取反。
+///
+/// 三值权重没有幅度，正系数不改变符号；因此只有符号/丢弃两种结果。`lambda < 0` 时
+/// trit 与偏置取反，**scale 差分丢弃**（负 scale 非法，而正的倍率在取反后无法保持语义）。
+pub fn scale_task(vector: &TaskVector, lambda: f32) -> Result<TaskVector> {
+    if !lambda.is_finite() {
+        return Err(Error::InvalidLambda { lambda });
+    }
+    if lambda == 0.0 {
+        return Ok(TaskVector {
+            base: vector.base,
+            edits: Vec::new(),
+            scales: Vec::new(),
+        });
+    }
+    if lambda > 0.0 {
+        return Ok(vector.clone());
+    }
+    let edits = vector
+        .edits()
+        .iter()
+        .map(|edit| match edit {
+            Edit::SetTrit {
+                layer,
+                row,
+                col,
+                to,
+            } => Edit::SetTrit {
+                layer: *layer,
+                row: *row,
+                col: *col,
+                to: negate_trit(*to),
+            },
+            Edit::SetBias { layer, row, to } => Edit::SetBias {
+                layer: *layer,
+                row: *row,
+                to: negate_trit(*to),
+            },
+            other => other.clone(),
+        })
+        .collect();
+    Ok(TaskVector {
+        base: vector.base,
+        edits,
+        scales: Vec::new(),
+    })
+}
+
+fn negate_trit(trit: Trit) -> Trit {
+    match trit {
+        Trit::Pos => Trit::Neg,
+        Trit::Neg => Trit::Pos,
+        Trit::Zero => Trit::Zero,
+    }
+}
+
 /// 多任务合并：按坐标对目标 trit 投票（只算改过该坐标的任务）。
 pub fn merge_tasks(base: &Net, tasks: &[TaskVector]) -> Result<Net> {
     let expected = checksum(base);

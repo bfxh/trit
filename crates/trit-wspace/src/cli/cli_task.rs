@@ -7,7 +7,8 @@ use crate::to_wsp;
 use crate::wire;
 
 use super::{
-    emit, err, load_net, load_oracle, no_double_stdin, opt_u64, opt_usize, parse, write_out,
+    emit, err, load_net, load_oracle, no_double_stdin, opt_u64, opt_usize, parse, req_f32,
+    write_out,
 };
 
 pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
@@ -166,6 +167,8 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
         Some(json!({
             "before": wire::metrics_value(&base, &oracle).map_err(err)?,
             "after": wire::metrics_value(&merged, &oracle).map_err(err)?,
+            "before_classification": wire::classification_value(&base, &oracle).map_err(err)?,
+            "after_classification": wire::classification_value(&merged, &oracle).map_err(err)?,
         }))
     } else {
         None
@@ -205,4 +208,29 @@ fn parse_weights(raw: &str) -> Result<Vec<f32>, String> {
                 .map_err(|_| format!("--weight 需要逗号分隔的数字，得到 `{part}`"))
         })
         .collect()
+}
+
+pub(super) fn task_scale(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    if parsed.positional.len() != 2 {
+        return Err(
+            "用法：trit-wspace task-scale <base|-> <tuned|-> --lambda L [--out <path>]".into(),
+        );
+    }
+    no_double_stdin(&parsed.positional)?;
+    let base = load_net(&parsed.positional[0])?;
+    let tuned = load_net(&parsed.positional[1])?;
+    let lambda = req_f32(&parsed, "lambda")?;
+    let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+    let scaled = crate::task::scale_task(&vector, lambda).map_err(err)?;
+    let net = scaled.apply(&base).map_err(err)?;
+    write_out(&parsed, &net)?;
+    let patch = Patch::diff(&base, &net).map_err(err)?;
+    emit(&json!({
+        "lambda": lambda,
+        "summary": wire::net_summary(&net),
+        "patch": wire::patch_to_value(&patch),
+        "cost": wire::cost_to_value(&patch.cost(&base)),
+        "artifact": to_wsp(&net),
+    }))
 }

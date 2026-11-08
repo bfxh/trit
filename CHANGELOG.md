@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：任务向量缩放 + 块级 DARE + 分类读数）
+
+- `scale_task`：三值任务算术——`λ>0` 原样、`λ=0` 丢弃、`λ<0` 取反 trit/偏置（scale 差分丢弃）。
+  CLI `task-scale <base> <tuned> --lambda L`，MCP `wsp_task_scale`（工具数 19 → 20）。
+- `dare_drop_blocks`：同一行列按 `col/block` 整块保留/丢弃；`block=1` 退化为坐标级，
+  `block=0` 判 `InvalidBlock`。CLI `dare-drop ... --block N`，MCP `wsp_dare_drop.block`。
+- `wire::classification_value`：per-class 精度 + 混淆矩阵（一维输出按 2 类）；
+  `verify` 与 `task-merge` 的 `verify` 块输出 `classification` / `before_classification` /
+  `after_classification`。
+- 测试 258 → 273 + 1 doctest（新增 `tests/task_scale.rs` 6、`tests/classification.rs` 4、
+  `tests/dare.rs` +5）；变异 245 → 260（新增 15 条目标，三个子集 6/6、4/4、5/5 caught）。
+
 ### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
 
 - `merge_tasks_weighted_report` 返回 `(Net, MergeReport)`：任务数、被零权重忽略的任务数、

@@ -111,6 +111,7 @@ impl Mcp {
                     "accuracy": oracle.accuracy(&net).map_err(err)?,
                     "summary": wire::net_summary(&net),
                     "mismatches": wire::mismatches_value(&net, &oracle, limit).map_err(err)?,
+                    "classification": wire::classification_value(&net, &oracle).map_err(err)?,
                 }))
             }
             "wsp_patch" => {
@@ -282,6 +283,7 @@ impl Mcp {
                 Ok(wire::localize_report_to_value(&report))
             }
             "wsp_task_merge" => mcp_task::task_merge(args),
+            "wsp_task_scale" => mcp_task::task_scale(args),
             "wsp_rebase" => {
                 let target = load(args)?;
                 let base = load_key(args, "base")?;

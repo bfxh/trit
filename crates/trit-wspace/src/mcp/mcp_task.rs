@@ -157,6 +157,8 @@ pub(super) fn task_merge(args: &Value) -> Result<Value, String> {
         Some(json!({
             "before": wire::metrics_value(&base, oracle).map_err(err)?,
             "after": wire::metrics_value(&merged, oracle).map_err(err)?,
+            "before_classification": wire::classification_value(&base, oracle).map_err(err)?,
+            "after_classification": wire::classification_value(&merged, oracle).map_err(err)?,
         }))
     } else {
         None
@@ -182,5 +184,29 @@ pub(super) fn task_merge(args: &Value) -> Result<Value, String> {
         "patch": wire::patch_to_value(&patch),
         "cost": wire::cost_to_value(&patch.cost(&base)),
         "artifact": to_wsp(&merged),
+    }))
+}
+
+pub(super) fn task_scale(args: &Value) -> Result<Value, String> {
+    let base = load_key(args, "base")?;
+    let tuned = parse_or_path(
+        args.get("tuned")
+            .and_then(Value::as_str)
+            .ok_or("需要 tuned")?,
+    )?;
+    let lambda = args
+        .get("lambda")
+        .and_then(Value::as_f64)
+        .ok_or("需要 lambda")? as f32;
+    let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+    let scaled = crate::task::scale_task(&vector, lambda).map_err(err)?;
+    let net = scaled.apply(&base).map_err(err)?;
+    let patch = Patch::diff(&base, &net).map_err(err)?;
+    Ok(json!({
+        "lambda": lambda,
+        "summary": wire::net_summary(&net),
+        "patch": wire::patch_to_value(&patch),
+        "cost": wire::cost_to_value(&patch.cost(&base)),
+        "artifact": to_wsp(&net),
     }))
 }
