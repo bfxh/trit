@@ -212,6 +212,11 @@ def main() -> int:
 
 def self_test() -> int:
     failures: list[str] = []
+
+    def check(condition: bool, message: str) -> None:
+        if not condition:
+            failures.append(message)
+
     with tempfile.TemporaryDirectory(prefix="trit-preflight-") as tmp:
         root = Path(tmp) / "repo"
         root.mkdir()
@@ -227,37 +232,38 @@ def self_test() -> int:
         def invoke(*extra: str) -> subprocess.CompletedProcess[str]:
             return run([sys.executable, script, "--root", str(root), "--json", *extra])
 
-        if invoke().returncode != 0:
-            failures.append("clean main 应该通过")
+        check(invoke().returncode == 0, "clean main 应该通过")
         (root / "dirty.txt").write_text("x\n", encoding="utf-8")
-        if invoke().returncode == 0:
-            failures.append("untracked 脏文件应该拒绝")
+        check(invoke().returncode != 0, "untracked 脏文件应该拒绝")
         (root / "dirty.txt").unlink()
         run(["git", "checkout", "-b", "feature/x"], cwd=root)
-        if invoke().returncode == 0:
-            failures.append("非发布分支应该拒绝")
+        check(invoke().returncode != 0, "非发布分支应该拒绝")
         run(["git", "checkout", "main"], cwd=root)
         run(["git", "remote", "set-url", "origin", "git@github.com:other/trit.git"], cwd=root)
-        if invoke().returncode == 0:
-            failures.append("错误 origin 应该拒绝")
+        check(invoke().returncode != 0, "错误 origin 应该拒绝")
         run(["git", "remote", "set-url", "origin", "git@github.com:bfxh/trit.git"], cwd=root)
 
         linked = Path(tmp) / "linked"
         run(["git", "worktree", "add", "-b", "release/1", str(linked)], cwd=root)
-        if run([sys.executable, script, "--root", str(linked), "--json"]).returncode == 0:
-            failures.append("linked worktree 默认应该拒绝")
-        if run([sys.executable, script, "--root", str(linked), "--json", "--allow-noncanonical"]).returncode != 0:
-            failures.append("--allow-noncanonical 应该通过")
+        check(
+            run([sys.executable, script, "--root", str(linked), "--json"]).returncode != 0,
+            "linked worktree 默认应该拒绝",
+        )
+        check(
+            run([sys.executable, script, "--root", str(linked), "--json", "--allow-noncanonical"]).returncode == 0,
+            "--allow-noncanonical 应该通过",
+        )
 
         sample = Path(tmp) / "artifact.bin"
         sample.write_bytes(b"trit")
         ok = invoke("--artifact", str(sample), "--out", str(Path(tmp) / "manifest.json"))
-        if ok.returncode != 0:
-            failures.append("artifact 应通过")
-        else:
+        check(ok.returncode == 0, "artifact 应通过")
+        if ok.returncode == 0:
             data = json.loads(ok.stdout)
-            if data["artifacts"][0]["sha256"] != hashlib.sha256(b"trit").hexdigest():
-                failures.append("artifact sha256 不对")
+            check(
+                data["artifacts"][0]["sha256"] == hashlib.sha256(b"trit").hexdigest(),
+                "artifact sha256 不对",
+            )
 
     if failures:
         print("\n".join(f"FAIL {item}" for item in failures))
