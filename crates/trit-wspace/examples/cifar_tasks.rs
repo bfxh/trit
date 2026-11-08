@@ -21,7 +21,6 @@ use trit_wspace::{
     tune_task_weights_argmax, tune_task_weights_hamming, tune_task_weights_readout,
 };
 
-const HIDDEN: usize = 64;
 const ALL_CLASSES: usize = 10;
 
 struct Rng(u64);
@@ -56,10 +55,10 @@ struct Mlp {
 }
 
 impl Mlp {
-    fn new(seed: u64, classes: usize, input_dim: usize) -> Self {
+    fn new(seed: u64, classes: usize, input_dim: usize, hidden: usize) -> Self {
         let mut rng = Rng(seed);
         let first = TernaryDense::new(
-            HIDDEN,
+            hidden,
             input_dim,
             |_, _| (rng.f32() * 2.0 - 1.0) * 0.5,
             |_| 1.0 / (input_dim as f32).sqrt(),
@@ -67,9 +66,9 @@ impl Mlp {
         );
         let second = TernaryDense::new(
             classes,
-            HIDDEN,
+            hidden,
             |_, _| (rng.f32() * 2.0 - 1.0) * 0.5,
-            |_| 1.0 / (HIDDEN as f32).sqrt(),
+            |_| 1.0 / (hidden as f32).sqrt(),
             Ste::Identity,
         );
         Self { first, second }
@@ -110,6 +109,7 @@ fn train_ternary(
                 input.extend_from_slice(&samples[index].0);
             }
             let (logits, hidden) = mlp.forward(&input);
+            let hidden_dim = mlp.first.rows();
             let mut grad_logits = vec![0.0f32; batch * classes];
             for (t, &index) in chunk.iter().enumerate() {
                 let (loss, grad) =
@@ -119,10 +119,10 @@ fn train_ternary(
                 grad_logits[t * classes..(t + 1) * classes].copy_from_slice(&grad);
             }
             let grad_hidden = mlp.second.backward(&grad_logits);
-            let mut grad_pre = vec![0.0f32; batch * HIDDEN];
+            let mut grad_pre = vec![0.0f32; batch * hidden_dim];
             for t in 0..batch {
-                for r in 0..HIDDEN {
-                    let idx = t * HIDDEN + r;
+                for r in 0..hidden_dim {
+                    let idx = t * hidden_dim + r;
                     grad_pre[idx] = grad_hidden[idx] * Activation::Tanh.backward(hidden[idx]);
                 }
             }
@@ -137,25 +137,26 @@ fn train_ternary(
 }
 
 fn to_net(mlp: &Mlp, output_rows: usize) -> Net {
+    let hidden = mlp.first.rows();
     let first = Layer::with_scales(
-        HIDDEN,
+        hidden,
         mlp.first.cols(),
         &mlp.first
             .quantized()
             .into_iter()
             .flatten()
             .collect::<Vec<_>>(),
-        &[0i8; HIDDEN],
+        &vec![0i8; hidden],
         mlp.first.scales().to_vec(),
     )
     .expect("first layer");
-    let mut trits = Vec::with_capacity(output_rows * HIDDEN);
+    let mut trits = Vec::with_capacity(output_rows * hidden);
     let mut scales = Vec::with_capacity(output_rows);
     for row in 0..output_rows {
         trits.extend_from_slice(&mlp.second.quantized()[row]);
         scales.push(mlp.second.scales()[row]);
     }
-    let second = Layer::with_scales(output_rows, HIDDEN, &trits, &vec![0i8; output_rows], scales)
+    let second = Layer::with_scales(output_rows, hidden, &trits, &vec![0i8; output_rows], scales)
         .expect("second layer");
     Net::new(vec![first, second]).expect("net")
 }
@@ -175,6 +176,10 @@ struct DenseF32 {
 }
 
 impl DenseF32 {
+    fn rows(&self) -> usize {
+        self.rows
+    }
+
     fn new(rows: usize, cols: usize, mut init: impl FnMut(usize, usize) -> f32) -> Self {
         let mut weight = Vec::with_capacity(rows * cols);
         for r in 0..rows {
@@ -248,12 +253,12 @@ struct MlpF32 {
 }
 
 impl MlpF32 {
-    fn new(seed: u64, classes: usize, input_dim: usize) -> Self {
+    fn new(seed: u64, classes: usize, input_dim: usize, hidden: usize) -> Self {
         let mut rng = Rng(seed);
         let mut init = |_: usize, _: usize| (rng.f32() * 2.0 - 1.0) * 0.5;
         Self {
-            first: DenseF32::new(HIDDEN, input_dim, &mut init),
-            second: DenseF32::new(classes, HIDDEN, &mut init),
+            first: DenseF32::new(hidden, input_dim, &mut init),
+            second: DenseF32::new(classes, hidden, &mut init),
         }
     }
 
@@ -292,6 +297,7 @@ fn train_f32(
                 input.extend_from_slice(&samples[index].0);
             }
             let (logits, hidden) = mlp.forward(&input);
+            let hidden_dim = mlp.first.rows();
             let mut grad_logits = vec![0.0f32; batch * classes];
             for (t, &index) in chunk.iter().enumerate() {
                 let (loss, grad) =
@@ -301,10 +307,10 @@ fn train_f32(
                 grad_logits[t * classes..(t + 1) * classes].copy_from_slice(&grad);
             }
             let grad_hidden = mlp.second.backward(&grad_logits);
-            let mut grad_pre = vec![0.0f32; batch * HIDDEN];
+            let mut grad_pre = vec![0.0f32; batch * hidden_dim];
             for t in 0..batch {
-                for r in 0..HIDDEN {
-                    let idx = t * HIDDEN + r;
+                for r in 0..hidden_dim {
+                    let idx = t * hidden_dim + r;
                     grad_pre[idx] = grad_hidden[idx] * Activation::Tanh.backward(hidden[idx]);
                 }
             }
@@ -344,9 +350,11 @@ fn f32_accuracy(mlp: &mut MlpF32, inputs: &[Vec<f32>], labels: &[usize], binary:
 
 // ---------- 数据 ----------
 
-fn load(dir: &str, split: &str, size: usize) -> (Vec<Vec<u8>>, Vec<usize>) {
-    let pixel = size * size;
-    let raw = fs::read(Path::new(dir).join(format!("{split}_x{size}.bin"))).expect("read image");
+fn load(dir: &str, split: &str, size: usize, color: bool) -> (Vec<Vec<u8>>, Vec<usize>) {
+    let pixel = size * size * if color { 3 } else { 1 };
+    let suffix = if color { "c" } else { "" };
+    let raw =
+        fs::read(Path::new(dir).join(format!("{split}_x{size}{suffix}.bin"))).expect("read image");
     let labels = fs::read(Path::new(dir).join(format!("{split}_y.bin"))).expect("read y");
     assert!(raw.len().is_multiple_of(pixel));
     assert_eq!(raw.len() / pixel, labels.len());
@@ -426,6 +434,7 @@ struct Dataset {
     output_rows: usize,
     binary: bool,
     size: usize,
+    color: bool,
     input_dim: usize,
 }
 
@@ -446,12 +455,13 @@ fn continuous_samples(samples: &[(Vec<u8>, usize)]) -> Vec<(Vec<f32>, usize)> {
 fn load_dataset(
     dir: &str,
     size: usize,
+    color: bool,
     binary: bool,
     per_class: usize,
     test_per_class: usize,
 ) -> Dataset {
-    let (train_images, train_labels) = load(dir, "train", size);
-    let (test_images, test_labels) = load(dir, "test", size);
+    let (train_images, train_labels) = load(dir, "train", size, color);
+    let (test_images, test_labels) = load(dir, "test", size, color);
     let (mixed, left, right, test, classes, output_rows) = if binary {
         let all = take_binary(&train_images, &train_labels, per_class, 3, 5);
         let split = all.len() / 2;
@@ -476,7 +486,8 @@ fn load_dataset(
         output_rows,
         binary,
         size,
-        input_dim: size * size,
+        color,
+        input_dim: size * size * if color { 3 } else { 1 },
     }
 }
 
@@ -512,7 +523,7 @@ fn net_accuracy(net: &Net, inputs: &[Vec<Trit>], labels: &[usize], binary: bool)
 
 // ---------- 单次运行 ----------
 
-fn run_ternary(seed: u64, data: &Dataset, epochs: usize) -> Value {
+fn run_ternary(seed: u64, data: &Dataset, epochs: usize, hidden: usize) -> Value {
     let test_inputs: Vec<Vec<Trit>> = data
         .test
         .iter()
@@ -547,7 +558,7 @@ fn run_ternary(seed: u64, data: &Dataset, epochs: usize) -> Value {
     let mixed = ternary_samples(&data.mixed);
     let left = ternary_samples(&data.left);
     let right = ternary_samples(&data.right);
-    let mut base = Mlp::new(seed, data.classes, data.input_dim);
+    let mut base = Mlp::new(seed, data.classes, data.input_dim, hidden);
     let base_loss = train_ternary(&mut base, &mixed, data.classes, epochs, 0.05);
     let mut task_a = base.clone();
     let a_loss = train_ternary(&mut task_a, &left, data.classes, epochs, 0.02);
@@ -598,7 +609,7 @@ fn run_ternary(seed: u64, data: &Dataset, epochs: usize) -> Value {
     })
 }
 
-fn run_f32(seed: u64, data: &Dataset, epochs: usize) -> Value {
+fn run_f32(seed: u64, data: &Dataset, epochs: usize, hidden: usize) -> Value {
     let test_inputs: Vec<Vec<f32>> = data
         .test
         .iter()
@@ -608,7 +619,7 @@ fn run_f32(seed: u64, data: &Dataset, epochs: usize) -> Value {
     let mixed = continuous_samples(&data.mixed);
     let left = continuous_samples(&data.left);
     let right = continuous_samples(&data.right);
-    let mut base = MlpF32::new(seed, data.classes, data.input_dim);
+    let mut base = MlpF32::new(seed, data.classes, data.input_dim, hidden);
     let base_loss = train_f32(&mut base, &mixed, data.classes, epochs, 0.01);
     let mut task_a = base.clone();
     let a_loss = train_f32(&mut task_a, &left, data.classes, epochs, 0.005);
@@ -675,10 +686,14 @@ fn main() {
     let mut binary = false;
     let mut seeds = 1usize;
     let mut size = 16usize;
+    let mut hidden = 64usize;
+    let mut color = false;
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--data" => data_dir = args.next(),
             "--size" => size = args.next().expect("size").parse().expect("num"),
+            "--hidden" => hidden = args.next().expect("hidden").parse().expect("num"),
+            "--color" => color = true,
             "--per-class" => per_class = args.next().expect("per-class").parse().expect("num"),
             "--epochs" => epochs = args.next().expect("epochs").parse().expect("num"),
             "--test-per-class" => {
@@ -690,13 +705,13 @@ fn main() {
         }
     }
     let data_dir = data_dir.expect("--data <dir>");
-    let data = load_dataset(&data_dir, size, binary, per_class, test_per_class);
+    let data = load_dataset(&data_dir, size, color, binary, per_class, test_per_class);
     let mut ternary = Vec::with_capacity(seeds);
     let mut f32_runs = Vec::with_capacity(seeds);
     for offset in 0..seeds {
         let seed = 7 + offset as u64;
-        ternary.push(run_ternary(seed, &data, epochs));
-        f32_runs.push(run_f32(seed, &data, epochs));
+        ternary.push(run_ternary(seed, &data, epochs, hidden));
+        f32_runs.push(run_f32(seed, &data, epochs, hidden));
     }
     let report = json!({
         "mode": if binary { "binary-cat-vs-dog" } else { "10-class" },
@@ -707,6 +722,8 @@ fn main() {
             "task_b": data.right.len(),
             "test": data.test.len(),
             "size": data.size,
+            "color": data.color,
+            "hidden": hidden,
             "epochs": epochs,
         },
         "ternary": summarize_ternary(&ternary),
