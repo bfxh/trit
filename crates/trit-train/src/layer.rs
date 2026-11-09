@@ -127,6 +127,31 @@ impl TernaryLinear {
         }
         loss
     }
+
+    /// 用输出梯度更新一层，并返回输入梯度（供上一层反向）。
+    ///
+    /// `output_grad[r] = ∂L/∂y[r]`；内部按 STE 更新 latent/scale，返回
+    /// `∂L/∂x[c] = Σ_r output_grad[r] · scale[r] · q[r,c]`（用更新前的三值权重）。
+    pub fn train_step_with_grad(&mut self, input: &[f32], output_grad: &[f32]) -> Vec<f32> {
+        assert_eq!(input.len(), self.cols, "输入长度必须是 cols");
+        assert_eq!(output_grad.len(), self.rows, "梯度长度必须是 rows");
+        let mut input_grad = vec![0.0f32; self.cols];
+        let (lr, ste, cols) = (self.lr, self.ste, self.cols);
+        for (r, &dy_r) in output_grad.iter().enumerate() {
+            let scale = self.scale[r];
+            let row = &self.latent[r * cols..(r + 1) * cols];
+            let q = quantize_with_scale(row, scale);
+            for (c, &xc) in input.iter().enumerate() {
+                input_grad[c] += dy_r * scale * f32::from(q[c]);
+                let grad_q = dy_r * scale * xc;
+                let idx = r * cols + c;
+                let grad = ste.backward(self.latent[idx], scale, grad_q);
+                self.latent[idx] -= lr * grad;
+            }
+            self.scale[r] = (scale - lr * dy_r * scale_grad(&q, input)).max(1e-4);
+        }
+        input_grad
+    }
 }
 
 /// `q·x`，`q ∈ {-1,0,+1}`；可选软件预取（每 16 个元素预取 32 个后）。
@@ -240,5 +265,45 @@ mod tests {
         for (got, want) in y.iter().zip(&want) {
             assert!((got - want).abs() < 1e-5, "{got} vs {want}");
         }
+    }
+
+    #[test]
+    fn grad_step_matches_train_step_for_output_layer() {
+        let mut a = TernaryLinear::new(
+            2,
+            3,
+            |r, c| ((r * 7 + c * 5) as f32) / 9.0 - 0.4,
+            Ste::Identity,
+            0.05,
+            1.0,
+        );
+        let mut b = a.clone();
+        let input = [0.5, -1.0, 0.25];
+        let target = [0.2, -0.1];
+        let y = b.forward(&input);
+        let dy: Vec<f32> = y.iter().zip(&target).map(|(y, t)| y - t).collect();
+        a.train_step(&input, &target);
+        let _ = b.train_step_with_grad(&input, &dy);
+        for (x, y) in a.latent().iter().zip(b.latent()) {
+            assert!((x - y).abs() < 1e-6);
+        }
+        for (x, y) in a.scales().iter().zip(b.scales()) {
+            assert!((x - y).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn grad_step_returns_input_gradient() {
+        let mut layer = TernaryLinear::new(
+            2,
+            2,
+            |r, c| if r == c { 1.0 } else { 0.0 },
+            Ste::Identity,
+            0.0,
+            1.0,
+        );
+        let input = [2.0, -3.0];
+        let grad = layer.train_step_with_grad(&input, &[1.0, -1.0]);
+        assert_eq!(grad, vec![1.0, -1.0]);
     }
 }

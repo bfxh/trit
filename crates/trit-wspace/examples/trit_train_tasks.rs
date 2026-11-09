@@ -12,8 +12,9 @@ use serde_json::{Value, json};
 use trit_train::layer::TernaryLinear;
 use trit_train::quant::Ste;
 use trit_wspace::{
-    Layer, Net, Oracle, TaskVector, Trit, combine_tasks, from_wsp, merge_tasks_weighted, to_wsp,
-    tune_task_weights,
+    DEFAULT_TUNE_GRID, Layer, Net, Oracle, TaskVector, Trit, TuneMerge, TuneMetric, combine_tasks,
+    dare_drop, dare_drop_blocks, from_wsp, merge_tasks_weighted, merge_tasks_weighted_dare, to_wsp,
+    tune_task_weights, tune_task_weights_metric,
 };
 
 const ALL_CLASSES: usize = 10;
@@ -229,20 +230,24 @@ impl Model {
 
     fn train(&mut self, samples: &[(Vec<f32>, usize)], epochs: usize, output_rows: usize) {
         if self.layers.len() == 2 {
-            let hidden = self.layers[0].rows();
-            for _ in 0..epochs.max(1) {
-                for (input, _) in samples {
-                    let target: Vec<f32> = input.iter().take(hidden).copied().collect();
-                    self.layers[0].train_step(input, &target);
-                }
-            }
-            let features: Vec<(Vec<f32>, usize)> = samples
-                .iter()
-                .map(|(input, label)| (tanh_vec(&self.layers[0].forward(input)), *label))
-                .collect();
             for _ in 0..epochs {
-                for (feature, label) in &features {
-                    self.layers[1].train_step(feature, &one_hot(*label, output_rows));
+                for (input, label) in samples {
+                    let hidden_raw = self.layers[0].forward(input);
+                    let hidden = tanh_vec(&hidden_raw);
+                    let output = self.layers[1].forward(&hidden);
+                    let target = one_hot(*label, output_rows);
+                    let dy: Vec<f32> = output
+                        .iter()
+                        .zip(&target)
+                        .map(|(y, t)| (y - t) / output_rows as f32)
+                        .collect();
+                    let dh = self.layers[1].train_step_with_grad(&hidden, &dy);
+                    let dh_raw: Vec<f32> = dh
+                        .iter()
+                        .zip(&hidden)
+                        .map(|(grad, value)| grad * (1.0 - value * value))
+                        .collect();
+                    self.layers[0].train_step_with_grad(input, &dh_raw);
                 }
             }
         } else {
@@ -304,6 +309,29 @@ fn mean_std(values: &[f64]) -> Value {
     json!({"mean": mean, "std": variance.sqrt(), "values": values})
 }
 
+struct DareOptions {
+    rate: Option<f32>,
+    per_task: bool,
+    block: Option<usize>,
+    tune_with_dare: bool,
+    seed: u64,
+}
+
+fn dare_vector(base: &Net, tuned: &Net, options: &DareOptions) -> TaskVector {
+    let rate = options
+        .rate
+        .expect("--dare-rate/--dare-per-task 需要丢弃率");
+    let outcome = match options.block {
+        Some(block) => {
+            dare_drop_blocks(base, tuned, rate, options.seed, block).expect("dare blocks")
+        }
+        None => dare_drop(base, tuned, rate, options.seed).expect("dare"),
+    };
+    let mut work = base.clone();
+    outcome.patch.apply(&mut work).expect("apply dare");
+    TaskVector::between(base, &work).expect("dare vector")
+}
+
 fn run(
     seed: u64,
     data: &Dataset,
@@ -311,6 +339,7 @@ fn run(
     hidden: usize,
     out_root: &Path,
     lambdas: &[f32],
+    dare: &DareOptions,
 ) -> Value {
     let train = |samples: &[(Vec<u8>, usize)]| {
         let mut model = Model::new(data.input_dim, hidden, data.output_rows, seed);
@@ -334,10 +363,14 @@ fn run(
         from_wsp(&fs::read_to_string(dir.join("base.wsp")).expect("read base")).expect("parse");
     let a = from_wsp(&fs::read_to_string(dir.join("a.wsp")).expect("read a")).expect("parse");
     let b = from_wsp(&fs::read_to_string(dir.join("b.wsp")).expect("read b")).expect("parse");
-    let tasks = [
-        TaskVector::between(&base, &a).expect("a vector"),
-        TaskVector::between(&base, &b).expect("b vector"),
-    ];
+    let tasks = if dare.per_task {
+        [dare_vector(&base, &a, dare), dare_vector(&base, &b, dare)]
+    } else {
+        [
+            TaskVector::between(&base, &a).expect("a vector"),
+            TaskVector::between(&base, &b).expect("b vector"),
+        ]
+    };
     let test_inputs: Vec<Vec<Trit>> = data
         .test
         .iter()
@@ -357,9 +390,34 @@ fn run(
             .collect(),
     )
     .expect("oracle");
-    let equal = merge_tasks_weighted(&base, &tasks, &[1.0, 1.0]).expect("equal");
-    let tuned = tune_task_weights(&base, &tasks, &oracle, 2).expect("tune");
-    let tuned_net = merge_tasks_weighted(&base, &tasks, tuned.weights()).expect("tuned merge");
+    let equal = if let Some(rate) = dare.rate {
+        merge_tasks_weighted_dare(&base, &tasks, &[1.0, 1.0], rate, dare.seed).expect("equal dare")
+    } else {
+        merge_tasks_weighted(&base, &tasks, &[1.0, 1.0]).expect("equal")
+    };
+    let tuned = if dare.tune_with_dare {
+        tune_task_weights_metric(
+            &base,
+            &tasks,
+            &oracle,
+            2,
+            TuneMetric::Exact,
+            &DEFAULT_TUNE_GRID,
+            TuneMerge::Dare {
+                rate: dare.rate.expect("--tune-with-dare 需要 --dare-rate"),
+                seed: dare.seed,
+            },
+        )
+        .expect("tune dare")
+    } else {
+        tune_task_weights(&base, &tasks, &oracle, 2).expect("tune")
+    };
+    let tuned_net = if let Some(rate) = dare.rate {
+        merge_tasks_weighted_dare(&base, &tasks, tuned.weights(), rate, dare.seed)
+            .expect("tuned dare merge")
+    } else {
+        merge_tasks_weighted(&base, &tasks, tuned.weights()).expect("tuned merge")
+    };
     let lambda_scan: Vec<Value> = lambdas
         .iter()
         .map(|lambda| {
@@ -380,6 +438,13 @@ fn run(
         "weights": tuned.weights(),
         "task_edits": [tasks[0].edits().len(), tasks[1].edits().len()],
         "lambda_scan": lambda_scan,
+        "dare": {
+            "rate": dare.rate,
+            "per_task": dare.per_task,
+            "block": dare.block,
+            "tune_with_dare": dare.tune_with_dare,
+            "seed": dare.seed,
+        },
     })
 }
 
@@ -401,6 +466,13 @@ fn main() {
     let mut hidden = 0usize;
     let mut out = std::env::temp_dir().join(format!("trit-train-artifacts-{}", std::process::id()));
     let mut lambdas = vec![-1.0f32, 0.0, 0.5, 1.0];
+    let mut dare = DareOptions {
+        rate: None,
+        per_task: false,
+        block: None,
+        tune_with_dare: false,
+        seed: 7,
+    };
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
         match arg.as_str() {
@@ -417,6 +489,20 @@ fn main() {
             "--hidden" => hidden = args.next().expect("hidden").parse().expect("num"),
             "--out" => out = PathBuf::from(args.next().expect("out")),
             "--lambdas" => lambdas = parse_lambdas(&args.next().expect("lambdas")),
+            "--dare-rate" => {
+                dare.rate = Some(args.next().expect("dare-rate").parse().expect("num"));
+            }
+            "--dare-per-task" => {
+                dare.rate = Some(args.next().expect("dare-per-task").parse().expect("num"));
+                dare.per_task = true;
+            }
+            "--by-block" => {
+                dare.block = Some(args.next().expect("by-block").parse().expect("num"));
+            }
+            "--tune-with-dare" => dare.tune_with_dare = true,
+            "--dare-seed" => {
+                dare.seed = args.next().expect("dare-seed").parse().expect("num");
+            }
             other => panic!("unknown arg {other}"),
         }
     }
@@ -426,7 +512,17 @@ fn main() {
         None => toy_dataset(),
     };
     let runs: Vec<Value> = (0..seeds)
-        .map(|offset| run(7 + offset as u64, &data, epochs, hidden, &out, &lambdas))
+        .map(|offset| {
+            run(
+                7 + offset as u64,
+                &data,
+                epochs,
+                hidden,
+                &out,
+                &lambdas,
+                &dare,
+            )
+        })
         .collect();
     let column = |key: &str| -> Vec<f64> {
         runs.iter()
