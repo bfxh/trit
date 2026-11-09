@@ -10,8 +10,13 @@ publish = false
 
 [dependencies]
 trit-learn.workspace = true
+trit-core.workspace = true
 serde_json = "1.0.154"
 
 [[bin]]
 name = "diffusion_demo"
 path = "src/bin/diffusion_demo.rs"
+
+[[bin]]
+name = "field_demo"
+path = "src/bin/field_demo.rs"

@@ -18,12 +18,17 @@
 
 pub mod data;
 pub mod denoiser;
+pub mod field;
 pub mod sample;
 pub mod schedule;
 pub mod train;
 
 pub use data::{Xorshift, sample_ring};
 pub use denoiser::{Denoiser, TernaryMlp};
+pub use field::{
+    FieldMlp, FieldTrainOptions, FieldTrainReport, cube, decode, encode, field_dim, inside_iou,
+    ratios, sample_fields, sphere, torus, train_field,
+};
 pub use sample::{RingStats, ddim_sample, ddpm_sample, ring_stats};
 pub use schedule::{DiffusionSchedule, Schedule};
 pub use train::{TrainOptions, TrainReport, train};

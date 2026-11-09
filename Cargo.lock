@@ -1637,6 +1637,7 @@ name = "trit-diffusion"
 version = "0.12.0"
 dependencies = [
  "serde_json",
+ "trit-core",
  "trit-learn",
 ]
 
