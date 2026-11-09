@@ -20,7 +20,7 @@
 use serde::Deserialize;
 
 /// 校准报告里本门消费的字段（`calibrate --json` 的 `bands` 数组元素）。
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct BandReading {
     /// 弃权带宽度（对账键）。
     pub band: f64,
@@ -30,6 +30,10 @@ pub struct BandReading {
     pub tpr: f64,
     /// 弃权率。
     pub abstain: f64,
+    /// 逐特征三值分布（`[False, Unknown, True]` 占比）。旧基线缺这个字段时
+    /// 逐特征归因不可用，只做 band 级读数对账（见 [`DriftVerdict::feature_attribution`]）。
+    #[serde(default)]
+    pub feature_hist: Option<Vec<[f64; 3]>>,
 }
 
 /// 整份校准读数（只取 `bands`，其余字段忽略——向前兼容）。
@@ -48,6 +52,10 @@ pub struct DriftLimits {
     pub max_tpr_delta: f64,
     /// 弃权允许的最大上升。
     pub max_abstain_delta: f64,
+    /// 单特征三值占比允许的最大变化（逐特征归因阈值）。
+    pub max_feature_delta: f64,
+    /// 是否要求基线必须带逐特征读数（`true` 时缺失即红；默认 `false` 仅标记不可用）。
+    pub require_feature_hist: bool,
 }
 
 impl Default for DriftLimits {
@@ -56,8 +64,21 @@ impl Default for DriftLimits {
             max_fpr_delta: 0.1,
             max_tpr_delta: 0.1,
             max_abstain_delta: 0.2,
+            max_feature_delta: 0.1,
+            require_feature_hist: false,
         }
     }
+}
+
+/// 单个特征的漂移条目（逐特征归因的输出）。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct FeatureShift {
+    /// 特征下标（对应 `flow::NAMES`）。
+    pub feature: usize,
+    /// 三值状态：`F` / `X` / `T`。
+    pub state: &'static str,
+    /// 当前占比 − 基线占比（绝对值超阈值才记录）。
+    pub delta: f64,
 }
 
 /// 单个 band 的对账结果。
@@ -73,6 +94,8 @@ pub struct BandDelta {
     pub dabstain: f64,
     /// 触红的理由（空 = 该 band 绿）。
     pub reasons: Vec<String>,
+    /// 逐特征超阈值的漂移（空 = 无特征级漂移；基线缺读数时也为空）。
+    pub feature_shifts: Vec<FeatureShift>,
 }
 
 /// 漂移门的完整判决。
@@ -84,6 +107,9 @@ pub struct DriftVerdict {
     pub bands: Vec<BandDelta>,
     /// 结构性红（缺 band / 多 band / 解析失败 / 阈值非法）的理由。
     pub structural: Vec<String>,
+    /// 逐特征归因可用性：`ok`（基线与当前都带逐特征读数）/
+    /// `unavailable`（基线或当前缺 `feature_hist`，只做 band 级对账）。
+    pub feature_attribution: &'static str,
 }
 
 use serde::Serialize;
@@ -117,9 +143,11 @@ pub fn drift_check(
     if limits.max_fpr_delta < 0.0
         || limits.max_tpr_delta < 0.0
         || limits.max_abstain_delta < 0.0
+        || limits.max_feature_delta < 0.0
         || !limits.max_fpr_delta.is_finite()
         || !limits.max_tpr_delta.is_finite()
         || !limits.max_abstain_delta.is_finite()
+        || !limits.max_feature_delta.is_finite()
     {
         structural.push("阈值为负或非有限——漂移门不猜，拒绝运行".to_string());
     }
@@ -129,8 +157,9 @@ pub fn drift_check(
             .bands
             .iter()
             .find(|reading| reading.band == band)
-            .copied()
+            .cloned()
     };
+    let mut attribution_available = true;
     let mut bands: Vec<BandDelta> = Vec::new();
     for base in &baseline.bands {
         match find(current, base.band) {
@@ -151,12 +180,56 @@ pub fn drift_check(
                         limits.max_abstain_delta
                     ));
                 }
+                // 逐特征归因：三值占比的绝对变化超阈值即记录并判红。
+                let mut feature_shifts = Vec::new();
+                match (&base.feature_hist, &now.feature_hist) {
+                    (Some(b), Some(c)) if b.len() != c.len() => {
+                        structural.push(format!(
+                            "band {} 的逐特征维数不一致（基线 {} vs 当前 {}）——fail-closed",
+                            base.band,
+                            b.len(),
+                            c.len()
+                        ));
+                        attribution_available = false;
+                    }
+                    (Some(b), Some(c)) => {
+                        const STATES: [&str; 3] = ["F", "X", "T"];
+                        for (feature, (before, after)) in b.iter().zip(c).enumerate() {
+                            for k in 0..3 {
+                                let delta = after[k] - before[k];
+                                if delta.abs() > limits.max_feature_delta {
+                                    feature_shifts.push(FeatureShift {
+                                        feature,
+                                        state: STATES[k],
+                                        delta,
+                                    });
+                                }
+                            }
+                        }
+                        for shift in &feature_shifts {
+                            reasons.push(format!(
+                                "特征 #{} 的 {} 态占比漂移 {:+.3} > {}",
+                                shift.feature, shift.state, shift.delta, limits.max_feature_delta
+                            ));
+                        }
+                    }
+                    _ => {
+                        attribution_available = false;
+                        if limits.require_feature_hist {
+                            structural.push(format!(
+                                "band {} 缺逐特征读数而 --require-feature-hist 已开启——fail-closed",
+                                base.band
+                            ));
+                        }
+                    }
+                }
                 bands.push(BandDelta {
                     band: base.band,
                     dfpr,
                     dtpr,
                     dabstain,
                     reasons,
+                    feature_shifts,
                 });
             }
             None => structural.push(format!(
@@ -178,5 +251,10 @@ pub fn drift_check(
         verdict: if red { "red" } else { "green" },
         bands,
         structural,
+        feature_attribution: if attribution_available {
+            "ok"
+        } else {
+            "unavailable"
+        },
     }
 }

@@ -145,6 +145,11 @@ pub struct BandReport {
     pub train_accuracy: f64,
     /// 影子（未量化）模型在训练集上的精度。
     pub shadow_accuracy: f64,
+    /// 逐特征三值分布：`feature_hist[i] = [False 占比, Unknown 占比, True 占比]`。
+    ///
+    /// 这是漂移门的**逐特征归因**输入：band 级读数（FPR/TPR/弃权）只说明"变坏了"，
+    /// 这里才能指向"哪个特征的三值分布漂了"。分母是该 band 的测试样本数。
+    pub feature_hist: Vec<[f64; 3]>,
 }
 
 /// 按标签与特征的相关系数选前 `k` 维，方向由符号定。
@@ -456,8 +461,18 @@ fn evaluate(
     let mut attack_abstain = 0usize;
     let mut benign_abstain = 0usize;
     let mut attack = 0usize;
+    // 逐特征三值计数（`[False, Unknown, True]`），供逐特征漂移归因。
+    let mut feat_counts = vec![[0usize; 3]; N];
     for sample in test_set {
         let inputs = ternarize(&sample.features, rules);
+        for (i, value) in inputs.iter().enumerate() {
+            let slot = match value {
+                Ternary::False => 0,
+                Ternary::Unknown => 1,
+                Ternary::True => 2,
+            };
+            feat_counts[i][slot] += 1;
+        }
         let decision = decide(model, &inputs, DEFAULT_BUDGET).map_err(|error| error.to_string())?;
         let malicious = sample.label == Label::Malicious;
         if malicious {
@@ -504,6 +519,17 @@ fn evaluate(
         train_loss: f64::from(report.final_loss),
         train_accuracy: f64::from(report.ternary_accuracy),
         shadow_accuracy: f64::from(report.shadow_accuracy),
+        feature_hist: feat_counts
+            .iter()
+            .map(|counts| {
+                let total = (counts[0] + counts[1] + counts[2]).max(1) as f64;
+                [
+                    counts[0] as f64 / total,
+                    counts[1] as f64 / total,
+                    counts[2] as f64 / total,
+                ]
+            })
+            .collect(),
     })
 }
 

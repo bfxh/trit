@@ -105,8 +105,9 @@ pub fn bridge_cmd(args: &[String]) -> Result<(), String> {
 }
 
 /// `trit-net drift <基线.json> <当前.json> [--max-fpr-delta F] [--max-tpr-delta F]
-/// [--max-abstain-delta F]`：漂移门——基线与当前校准读数按 band 对账，
-/// 变坏超阈值即红（退出码非零），结构不对齐一律红（fail-closed）。
+/// [--max-abstain-delta F] [--max-feature-delta F] [--require-feature-hist]`：
+/// 漂移门——基线与当前校准读数按 band 对账，变坏超阈值即红（退出码非零），
+/// 结构不对齐一律红（fail-closed）。基线带 `feature_hist` 时做逐特征归因。
 pub fn drift_cmd(args: &[String]) -> Result<(), String> {
     use trit_net::netsec::drift::{DriftLimits, drift_check, parse_report};
 
@@ -117,13 +118,15 @@ pub fn drift_cmd(args: &[String]) -> Result<(), String> {
     while index < args.len() {
         let flag = args[index].clone();
         match flag.as_str() {
-            "--max-fpr-delta" | "--max-tpr-delta" | "--max-abstain-delta" => {
+            "--require-feature-hist" => limits.require_feature_hist = true,
+            "--max-fpr-delta" | "--max-tpr-delta" | "--max-abstain-delta" | "--max-feature-delta" => {
                 index += 1;
                 let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
                 let value: f64 = raw.parse().map_err(|_| format!("{flag} 不是数字"))?;
                 match flag.as_str() {
                     "--max-fpr-delta" => limits.max_fpr_delta = value,
                     "--max-tpr-delta" => limits.max_tpr_delta = value,
+                    "--max-feature-delta" => limits.max_feature_delta = value,
                     _ => limits.max_abstain_delta = value,
                 }
             }

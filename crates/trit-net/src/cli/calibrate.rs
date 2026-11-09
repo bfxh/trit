@@ -159,6 +159,7 @@ pub(crate) fn calibrate_cmd(args: &[String]) -> Result<(), String> {
                     "fn": report.fn_,
                     "attack_abstain": report.attack_abstain,
                     "benign_abstain": report.benign_abstain,
+                    "feature_hist": report.feature_hist,
                 })
             })
             .collect();
