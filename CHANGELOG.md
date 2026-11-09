@@ -23,10 +23,13 @@
 - 二分类 5 seeds / per-class 1000 复核（同配置）：三值 base **46.40% ± 1.04%**、equal
   43.35% ± 2.10%、exact/hamming **46.75% ± 0.97%**、argmax/readout **46.80% ± 1.11%**、
   f32 **55.15% ± 1.83%**。
-- 二分类 hidden 64 同规模对照（5 seeds、per-class 1000、10 epochs）：三值 base
-  **45.55% ± 3.21%**、equal 45.15% ± 0.29%、exact/hamming **47.50% ± 1.40%**、
-  argmax/readout **47.55% ± 1.35%**、f32 **55.10% ± 1.92%**。与 hidden 128 相比：base +0.85、
-  argmax −0.75、f32 +0.05，容量差异小，进一步说明瓶颈不在容量。
+- 二分类 hidden 32/64/128/256 容量曲线（5 seeds、per-class 1000、10 epochs）：
+  · h32：三值 base **45.05% ± 2.22%**、argmax **48.95% ± 2.30%**、f32 **56.00% ± 2.26%**
+  · h64：45.55% ± 3.21%、argmax 47.55% ± 1.35%、f32 55.10% ± 1.92%
+  · h128：46.40% ± 1.04%、argmax 46.80% ± 1.11%、f32 55.15% ± 1.83%
+  · h256：47.75% ± 3.80%、argmax 48.20% ± 4.11%、f32 53.55% ± 1.87%
+  容量 32→256 三值 base +2.7 点但 std 增大到 3.8；f32 反而 −2.45；argmax 在 h32 最高。
+  没有稳定单调容量收益，瓶颈不在容量。
 - 限制：32×32 与 16×16 的训练规模不同（hidden 64 vs 128、per-class 500 vs 1000），
   不能把差异归因于分辨率。
 ### Added（`trit-build`：补齐 M2/M3 的六项遗留，2026-11-08）
@@ -82,11 +85,12 @@
 - `task-scale --row-lambdas-file` / `--block-lambdas-file`（MCP `row_lambdas_map` /
   `block_lambdas_map`）：稀疏 `(layer,row)` / `(layer,row,block)` 键值对 λ，未给出的行/块默认 1。
 - `task-scale --row-lambdas-patterns` / `--block-lambdas-patterns`（MCP `row_lambdas_patterns` /
-  `block_lambdas_patterns`）：通配/区间模式（`*`、`a-b`）；精确段 > 区间 > 通配，未匹配默认 1。
-- 测试 258 → 305 + 1 doctest（新增 `tests/task_scale.rs` 23、`tests/task_scale_patterns.rs` 6、
+  `block_lambdas_patterns`）：通配/区间/集合模式（`*`、`a-b`、`a|b`）；精确段 > 集合/区间 >
+  通配，未匹配默认 1。
+- 测试 258 → 308 + 1 doctest（新增 `tests/task_scale.rs` 23、`tests/task_scale_patterns.rs` 9、
   `tests/classification.rs` 4、`tests/dare.rs` +5、`tests/dare_layer.rs` 5、
-  `tests/task_combine.rs` 4）；变异 245 → 297（新增 52 条目标，子集 6/6、4/4、5/5、5/5、
-  33/33、5/5 caught）。
+  `tests/task_combine.rs` 4）；变异 245 → 300（新增 55 条目标，子集 6/6、4/4、5/5、5/5、
+  36/36、5/5 caught）。
 
 ### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
 

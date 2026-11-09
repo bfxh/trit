@@ -2330,16 +2330,16 @@
 {
  "name": "wspace-task-scale: 模式通配未匹配",
  "file": "crates/trit-wspace/src/scale.rs",
- "old": "            None => true,",
- "new": "            None => false,",
+ "old": "            UnitPart::Any => true,",
+ "new": "            UnitPart::Any => false,",
  "pkg": "trit-wspace",
  "filter": "row_patterns_wildcard"
 },
 {
  "name": "wspace-task-scale: 模式区间不含右端",
  "file": "crates/trit-wspace/src/scale.rs",
- "old": "            Some(range) => range.contains(value),",
- "new": "            Some(range) => *range.start() <= *value && *value < *range.end(),",
+ "old": "            UnitPart::Ranges(ranges) => ranges.iter().any(|range| range.contains(value)),",
+ "new": "            UnitPart::Ranges(ranges) => ranges.iter().any(|range| *range.start() <= *value && *value < *range.end()),",
  "pkg": "trit-wspace",
  "filter": "block_patterns_range"
 },
@@ -2370,9 +2370,33 @@
 {
  "name": "wspace-task-scale: 区间顺序不校验",
  "file": "crates/trit-wspace/src/cli/cli_task.rs",
- "old": "        if start > end {\n            return Err(format!(\"{part} 的起点大于终点\"));\n        }",
- "new": "        if false {\n            return Err(format!(\"{part} 的起点大于终点\"));\n        }",
+ "old": "            if start > end {\n                return Err(format!(\"{piece} 的起点大于终点\"));\n            }",
+ "new": "            if false {\n                return Err(format!(\"{piece} 的起点大于终点\"));\n            }",
  "pkg": "trit-wspace",
  "filter": "row_patterns_reject_bad_range"
+},
+{
+ "name": "wspace-task-scale: 集合只取第一个",
+ "file": "crates/trit-wspace/src/scale.rs",
+ "old": "            UnitPart::Ranges(ranges) => ranges.iter().any(|range| range.contains(value)),",
+ "new": "            UnitPart::Ranges(ranges) => ranges.first().is_some_and(|range| range.contains(value)),",
+ "pkg": "trit-wspace",
+ "filter": "row_patterns_set"
+},
+{
+ "name": "wspace-task-scale: 集合只取第一段",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "    for piece in part.split('|') {",
+ "new": "    for piece in part.split('|').take(1) {",
+ "pkg": "trit-wspace",
+ "filter": "cli_row_patterns_set_round_trip"
+},
+{
+ "name": "wspace-task-scale: * 混用不报错",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "        if piece == \"*\" {\n            return Err(format!(\"{part} 不能把 * 与数字混用\"));\n        }",
+ "new": "        if false {\n            return Err(format!(\"{part} 不能把 * 与数字混用\"));\n        }",
+ "pkg": "trit-wspace",
+ "filter": "row_patterns_reject_mixed_star"
 }
 ]

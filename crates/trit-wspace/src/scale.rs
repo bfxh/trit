@@ -200,11 +200,41 @@ pub fn scale_task_blocks(
     scale_task_units(vector, lambdas, dims, ScaleUnit::Block(block))
 }
 
-/// 单位键模式：每段是 `None`（`*`，任意）或闭区间 `a..=b`（`a` 等同于 `a..=a`）。
+/// 单位键的一段：`*`（任意）或数字集合（`1|3-5`）。
+#[derive(Clone, Debug, PartialEq)]
+pub enum UnitPart {
+    /// `*`：任意值。
+    Any,
+    /// 数字/闭区间集合，如 `1`、`1-3`、`1|3-5`。
+    Ranges(Vec<std::ops::RangeInclusive<usize>>),
+}
+
+impl UnitPart {
+    fn matches(&self, value: &usize) -> bool {
+        match self {
+            UnitPart::Any => true,
+            UnitPart::Ranges(ranges) => ranges.iter().any(|range| range.contains(value)),
+        }
+    }
+
+    fn specificity(&self) -> usize {
+        match self {
+            UnitPart::Any => 0,
+            UnitPart::Ranges(ranges)
+                if ranges.len() == 1 && ranges[0].start() == ranges[0].end() =>
+            {
+                2
+            }
+            UnitPart::Ranges(_) => 1,
+        }
+    }
+}
+
+/// 单位键模式：每段是 [`UnitPart`]。
 #[derive(Clone, Debug, PartialEq)]
 pub struct UnitPattern {
-    /// 键的每一段；`None` 表示任意值。
-    pub parts: Vec<Option<std::ops::RangeInclusive<usize>>>,
+    /// 键的每一段。
+    pub parts: Vec<UnitPart>,
     /// 匹配时使用的 λ。
     pub lambda: f32,
 }
@@ -214,21 +244,14 @@ impl UnitPattern {
         if self.parts.len() != key.len() {
             return false;
         }
-        self.parts.iter().zip(key).all(|(part, value)| match part {
-            None => true,
-            Some(range) => range.contains(value),
-        })
+        self.parts
+            .iter()
+            .zip(key)
+            .all(|(part, value)| part.matches(value))
     }
 
     fn specificity(&self) -> usize {
-        self.parts
-            .iter()
-            .map(|part| match part {
-                None => 0,
-                Some(range) if range.start() == range.end() => 2,
-                Some(_) => 1,
-            })
-            .sum()
+        self.parts.iter().map(UnitPart::specificity).sum()
     }
 }
 

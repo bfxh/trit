@@ -588,34 +588,59 @@ fn parse_unit_patterns(
     Ok(patterns)
 }
 
-fn parse_pattern_part(part: &str) -> Result<Option<std::ops::RangeInclusive<usize>>, String> {
+fn parse_pattern_part(part: &str) -> Result<crate::scale::UnitPart, String> {
     if part == "*" {
-        return Ok(None);
+        return Ok(crate::scale::UnitPart::Any);
     }
-    if let Some((start, end)) = part.split_once('-') {
-        let start = start
-            .parse::<usize>()
-            .map_err(|_| format!("{part} 的起点非法"))?;
-        let end = end
-            .parse::<usize>()
-            .map_err(|_| format!("{part} 的终点非法"))?;
-        if start > end {
-            return Err(format!("{part} 的起点大于终点"));
+    let mut ranges = Vec::new();
+    for piece in part.split('|') {
+        let piece = piece.trim();
+        if piece.is_empty() {
+            return Err(format!("{part} 有空段"));
         }
-        Ok(Some(start..=end))
-    } else {
-        let value = part.parse::<usize>().map_err(|_| format!("{part} 非法"))?;
-        Ok(Some(value..=value))
+        if piece == "*" {
+            return Err(format!("{part} 不能把 * 与数字混用"));
+        }
+        if let Some((start, end)) = piece.split_once('-') {
+            let start = start
+                .parse::<usize>()
+                .map_err(|_| format!("{piece} 的起点非法"))?;
+            let end = end
+                .parse::<usize>()
+                .map_err(|_| format!("{piece} 的终点非法"))?;
+            if start > end {
+                return Err(format!("{piece} 的起点大于终点"));
+            }
+            ranges.push(start..=end);
+        } else {
+            let value = piece
+                .parse::<usize>()
+                .map_err(|_| format!("{piece} 非法"))?;
+            ranges.push(value..=value);
+        }
     }
+    if ranges.is_empty() {
+        return Err(format!("{part} 不能为空"));
+    }
+    Ok(crate::scale::UnitPart::Ranges(ranges))
 }
 
-fn render_pattern(parts: &[Option<std::ops::RangeInclusive<usize>>]) -> String {
+fn render_pattern(parts: &[crate::scale::UnitPart]) -> String {
     parts
         .iter()
         .map(|part| match part {
-            None => "*".to_string(),
-            Some(range) if range.start() == range.end() => range.start().to_string(),
-            Some(range) => format!("{}-{}", range.start(), range.end()),
+            crate::scale::UnitPart::Any => "*".to_string(),
+            crate::scale::UnitPart::Ranges(ranges) => ranges
+                .iter()
+                .map(|range| {
+                    if range.start() == range.end() {
+                        range.start().to_string()
+                    } else {
+                        format!("{}-{}", range.start(), range.end())
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join("|"),
         })
         .collect::<Vec<_>>()
         .join(":")
