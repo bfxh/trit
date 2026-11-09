@@ -24,6 +24,15 @@
 - `trit-train` 作为 `trit-wspace` 的 dev-dependency（同层 L3）；新增
   `tests/trit_train_artifacts.rs`（WSP1 往返 + 零任务合并）。
 - 测试 308 → 309（含 1 doctest）。
+- `trit_train_tasks` 新增 `--init modulo|xorshift`（`xorshift` 是 SplitMix64 逐层独立流，
+  由 seed 决定、可复算；`modulo` 保留历史周期 11 口径）与报告字段 `data.init`；
+  `to_net` 改用 `Layer::with_scales`，把训练出的 per-row scale 写进 WSP1（此前恒写 1.0；
+  三值前向读数不变，但 `readout`/合并不再丢 scale）。smoke 增加初始化差异与 scale 行断言。
+- 读数（32×32 彩色、per-class 1000、test 1000、hidden 8,16、tanh、5 seeds）：
+  `modulo` / 2 epochs base **13.50% ± 0.66%**、equal/tuned 9.69% ± 3.39%；
+  `xorshift` / 2 epochs base **13.31% ± 1.37%**、equal/tuned 11.49% ± 1.86%；
+  `xorshift` / 10 epochs base **13.43% ± 1.04%**、equal/tuned 13.95% ± 0.79%。
+  3 层 `8,16,16` / 10 epochs / 1 seed：base 11.16%、equal/tuned 15.96%（单 seed，不作结论）。
 
 ### Experiments（trit-wspace：32×32 彩色 + f32 基线）
 
