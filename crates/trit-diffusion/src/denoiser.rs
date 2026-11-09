@@ -21,7 +21,7 @@ use trit_learn::quant::Ste;
 use crate::data::Xorshift;
 
 /// 时间步嵌入维数（4 个频率的 sin/cos）。
-pub const EMB: usize = 8;
+pub const EMB: usize = 16;
 
 /// 去噪网络的行为（三值与 FP 共用，便于训练/采样代码只写一遍）。
 pub trait Denoiser {

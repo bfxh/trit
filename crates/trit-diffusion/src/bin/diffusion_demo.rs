@@ -21,6 +21,7 @@ struct Args {
     timesteps: usize,
     samples: usize,
     ddim: usize,
+    data: usize,
 }
 
 impl Default for Args {
@@ -36,6 +37,7 @@ impl Default for Args {
             // 默认 DDIM：DDPM 在短步数（200）cosine 调度下末端 β→0.999、`1/√α≈31.6`，
             // 每步放大预测误差，实测采样半径会漂到 1e3 量级（三值与 FP 都如此）。
             ddim: 1,
+            data: 16384,
         }
     }
 }
@@ -56,12 +58,16 @@ fn parse_args() -> Result<Args, String> {
             "--timesteps" => a.timesteps = val.parse().map_err(|_| "timesteps 不是整数")?,
             "--samples" => a.samples = val.parse().map_err(|_| "samples 不是整数")?,
             "--ddim" => a.ddim = val.parse().map_err(|_| "ddim 不是整数")?,
+            "--data" => a.data = val.parse().map_err(|_| "data 不是整数")?,
             other => return Err(format!("未知参数 {other}")),
         }
         i += 2;
     }
     if a.steps == 0 || a.batch == 0 || a.hidden == 0 || a.samples == 0 || a.timesteps == 0 {
         return Err("steps/batch/hidden/samples/timesteps 都必须大于 0".to_string());
+    }
+    if a.data == 0 {
+        return Err("data 必须大于 0".to_string());
     }
     if !a.lr.is_finite() || a.lr <= 0.0 {
         return Err("lr 必须是正的有限值".to_string());
@@ -79,7 +85,7 @@ fn main() {
     };
     let sched = DiffusionSchedule::new(Schedule::Cosine, args.timesteps);
     let mut data_rng = Xorshift::new(args.seed);
-    let data = sample_ring(4096, &mut data_rng);
+    let data = sample_ring(args.data, &mut data_rng);
     let opts = TrainOptions {
         steps: args.steps,
         batch: args.batch,
