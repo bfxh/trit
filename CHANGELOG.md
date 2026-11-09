@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：真实 trit-train 产物接入）
+
+- 新增 `examples/trit_train_tasks.rs`：用 `trit-train::layer::TernaryLinear` 训练 → 导出 WSP1 →
+  读回 → 任务合并/调权（玩具数据：base 1.0、equal/tuned 0.5，证明产物路径可用）。
+- `trit-train` 作为 `trit-wspace` 的 dev-dependency（同层 L3）；新增
+  `tests/trit_train_artifacts.rs`（WSP1 往返 + 零任务合并）。
+- 测试 308 → 309（含 1 doctest）。
+
 ### Experiments（trit-wspace：32×32 彩色 + f32 基线）
 
 - 夹具：`cifar32.npz` 导出 `train_x32.bin`（1024 维灰度）/`train_x32c.bin`（3072 维彩色）/
