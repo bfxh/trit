@@ -1,0 +1,17 @@
+[package]
+name = "trit-diffusion"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三值权重的扩散模型实验层：DDPM/DDIM 训练与采样（不属于稳定 API）"
+publish = false
+
+[dependencies]
+trit-learn.workspace = true
+serde_json = "1.0.154"
+
+[[bin]]
+name = "diffusion_demo"
+path = "src/bin/diffusion_demo.rs"

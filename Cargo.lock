@@ -1633,6 +1633,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-diffusion"
+version = "0.12.0"
+dependencies = [
+ "serde_json",
+ "trit-learn",
+]
+
+[[package]]
 name = "trit-dot"
 version = "0.12.0"
 dependencies = [

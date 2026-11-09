@@ -33,6 +33,7 @@ members = [
     "crates/trit-ops",
     "crates/trit-capacity",
     "crates/trit-3d",
+    "crates/trit-diffusion",
 ]
 
 [workspace.package]
