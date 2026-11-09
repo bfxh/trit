@@ -3,7 +3,9 @@
 //! 玩具模式（无 `--data`）：4 样本线性可分。
 //! CIFAR 模式：`--data <dir> --size 8|16|32 [--color] --per-class N --epochs N
 //! --test-per-class N [--binary] --seeds N`。
-//! 多层：`--hidden N`（N>0 时两层；第一层贪心恒等、第二层分类，无端到端反向）。
+//! 多层：`--hidden 8,16`（逗号分隔任意层，端到端反向）。
+//! 初始化：`--init modulo`（历史口径，周期 11 的确定性模式）或 `--init xorshift`
+//! （SplitMix64 逐层独立流）；两者都由 seed 决定、可复算。
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -187,6 +189,42 @@ fn init_weight(r: usize, c: usize, seed: u64) -> f32 {
 }
 
 #[derive(Clone, Copy)]
+enum Init {
+    /// 历史口径：周期 11 的确定性模式（保留以便与旧读数对比）。
+    Modulo,
+    /// SplitMix64：逐层独立流，`[-0.5, 0.5)` 上均匀。
+    SplitMix,
+}
+
+impl Init {
+    fn name(self) -> &'static str {
+        match self {
+            Init::Modulo => "modulo",
+            Init::SplitMix => "xorshift",
+        }
+    }
+}
+
+/// SplitMix64：给每层一条独立、可复算的权重初始化流。
+struct SplitMix64(u64);
+
+impl SplitMix64 {
+    fn next_u64(&mut self) -> u64 {
+        self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+        let mut z = self.0;
+        z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+        z ^ (z >> 31)
+    }
+
+    /// `[-0.5, 0.5)` 上的均匀值。
+    fn next_signed_unit(&mut self) -> f32 {
+        let unit = (self.next_u64() >> 40) as f32 / (1u64 << 24) as f32;
+        unit - 0.5
+    }
+}
+
+#[derive(Clone, Copy)]
 enum Activation {
     Tanh,
     Relu,
@@ -233,17 +271,24 @@ impl Model {
         output_rows: usize,
         seed: u64,
         activation: Activation,
+        init: Init,
     ) -> Self {
         let mut dims = vec![input_dim];
         dims.extend_from_slice(hidden);
         dims.push(output_rows);
         let layers = dims
             .windows(2)
-            .map(|window| {
+            .enumerate()
+            .map(|(index, window)| {
+                let layer_seed = seed ^ (index as u64 + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15);
+                let mut rng = SplitMix64(layer_seed);
                 TernaryLinear::new(
                     window[1],
                     window[0],
-                    |r, c| init_weight(r, c, seed),
+                    |r, c| match init {
+                        Init::Modulo => init_weight(r, c, seed),
+                        Init::SplitMix => rng.next_signed_unit(),
+                    },
                     Ste::Identity,
                     0.05,
                     0.5,
@@ -296,7 +341,8 @@ impl Model {
                 let rows = layer.rows();
                 let cols = layer.cols();
                 let flat: Vec<i8> = layer.quantized().into_iter().flatten().collect();
-                Layer::new(rows, cols, &flat, &vec![0i8; rows]).expect("layer")
+                Layer::with_scales(rows, cols, &flat, &vec![0i8; rows], layer.scales().to_vec())
+                    .expect("layer")
             })
             .collect();
         Net::new(layers).expect("net")
@@ -368,12 +414,20 @@ fn run(
     epochs: usize,
     hidden: &[usize],
     activation: Activation,
+    init: Init,
     out_root: &Path,
     lambdas: &[f32],
     dare: &DareOptions,
 ) -> Value {
     let train = |samples: &[(Vec<u8>, usize)]| {
-        let mut model = Model::new(data.input_dim, hidden, data.output_rows, seed, activation);
+        let mut model = Model::new(
+            data.input_dim,
+            hidden,
+            data.output_rows,
+            seed,
+            activation,
+            init,
+        );
         let samples: Vec<(Vec<f32>, usize)> = samples
             .iter()
             .map(|(image, label)| (quantize(image), *label))
@@ -505,6 +559,7 @@ fn main() {
     let mut seeds = 1usize;
     let mut hidden: Vec<usize> = Vec::new();
     let mut activation = Activation::Tanh;
+    let mut init = Init::Modulo;
     let mut out = std::env::temp_dir().join(format!("trit-train-artifacts-{}", std::process::id()));
     let mut lambdas = vec![-1.0f32, 0.0, 0.5, 1.0];
     let mut dare = DareOptions {
@@ -533,6 +588,13 @@ fn main() {
                     "tanh" => Activation::Tanh,
                     "relu" => Activation::Relu,
                     other => panic!("unknown activation {other}"),
+                };
+            }
+            "--init" => {
+                init = match args.next().expect("init").as_str() {
+                    "modulo" => Init::Modulo,
+                    "xorshift" => Init::SplitMix,
+                    other => panic!("unknown init {other}"),
                 };
             }
             "--out" => out = PathBuf::from(args.next().expect("out")),
@@ -567,6 +629,7 @@ fn main() {
                 epochs,
                 &hidden,
                 activation,
+                init,
                 &out,
                 &lambdas,
                 &dare,
@@ -610,6 +673,7 @@ fn main() {
             "color": data.color,
             "hidden": hidden,
             "activation": activation.name(),
+            "init": init.name(),
             "epochs": epochs,
         },
         "seeds": seeds,
