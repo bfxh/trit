@@ -175,10 +175,6 @@ fn trit_of(value: f32) -> Trit {
     }
 }
 
-fn tanh_vec(values: &[f32]) -> Vec<f32> {
-    values.iter().map(|value| value.tanh()).collect()
-}
-
 fn one_hot(label: usize, rows: usize) -> Vec<f32> {
     (0..rows)
         .map(|index| if index == label { 1.0 } else { 0.0 })
@@ -190,70 +186,103 @@ fn init_weight(r: usize, c: usize, seed: u64) -> f32 {
     mixed as f32 / 11.0 - 0.5
 }
 
+#[derive(Clone, Copy)]
+enum Activation {
+    Tanh,
+    Relu,
+}
+
+impl Activation {
+    fn apply(self, value: f32) -> f32 {
+        match self {
+            Activation::Tanh => value.tanh(),
+            Activation::Relu => value.max(0.0),
+        }
+    }
+
+    fn derivative(self, output: f32) -> f32 {
+        match self {
+            Activation::Tanh => 1.0 - output * output,
+            Activation::Relu => {
+                if output > 0.0 {
+                    1.0
+                } else {
+                    0.0
+                }
+            }
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Activation::Tanh => "tanh",
+            Activation::Relu => "relu",
+        }
+    }
+}
+
 struct Model {
     layers: Vec<TernaryLinear>,
+    activation: Activation,
 }
 
 impl Model {
-    fn new(input_dim: usize, hidden: usize, output_rows: usize, seed: u64) -> Self {
-        let layers = if hidden == 0 {
-            vec![TernaryLinear::new(
-                output_rows,
-                input_dim,
-                |r, c| init_weight(r, c, seed),
-                Ste::Identity,
-                0.05,
-                0.5,
-            )]
-        } else {
-            vec![
+    fn new(
+        input_dim: usize,
+        hidden: &[usize],
+        output_rows: usize,
+        seed: u64,
+        activation: Activation,
+    ) -> Self {
+        let mut dims = vec![input_dim];
+        dims.extend_from_slice(hidden);
+        dims.push(output_rows);
+        let layers = dims
+            .windows(2)
+            .map(|window| {
                 TernaryLinear::new(
-                    hidden,
-                    input_dim,
+                    window[1],
+                    window[0],
                     |r, c| init_weight(r, c, seed),
                     Ste::Identity,
                     0.05,
                     0.5,
-                ),
-                TernaryLinear::new(
-                    output_rows,
-                    hidden,
-                    |r, c| init_weight(r, c, seed),
-                    Ste::Identity,
-                    0.05,
-                    0.5,
-                ),
-            ]
-        };
-        Self { layers }
+                )
+            })
+            .collect();
+        Self { layers, activation }
     }
 
     fn train(&mut self, samples: &[(Vec<f32>, usize)], epochs: usize, output_rows: usize) {
-        if self.layers.len() == 2 {
-            for _ in 0..epochs {
-                for (input, label) in samples {
-                    let hidden_raw = self.layers[0].forward(input);
-                    let hidden = tanh_vec(&hidden_raw);
-                    let output = self.layers[1].forward(&hidden);
-                    let target = one_hot(*label, output_rows);
-                    let dy: Vec<f32> = output
-                        .iter()
-                        .zip(&target)
-                        .map(|(y, t)| (y - t) / output_rows as f32)
-                        .collect();
-                    let dh = self.layers[1].train_step_with_grad(&hidden, &dy);
-                    let dh_raw: Vec<f32> = dh
-                        .iter()
-                        .zip(&hidden)
-                        .map(|(grad, value)| grad * (1.0 - value * value))
-                        .collect();
-                    self.layers[0].train_step_with_grad(input, &dh_raw);
+        for _ in 0..epochs {
+            for (input, label) in samples {
+                let mut inputs = Vec::with_capacity(self.layers.len());
+                let mut outputs = Vec::with_capacity(self.layers.len());
+                let mut current = input.clone();
+                for (index, layer) in self.layers.iter().enumerate() {
+                    inputs.push(current.clone());
+                    let raw = layer.forward(&current);
+                    let out = if index + 1 < self.layers.len() {
+                        raw.iter()
+                            .map(|value| self.activation.apply(*value))
+                            .collect()
+                    } else {
+                        raw
+                    };
+                    outputs.push(out.clone());
+                    current = out;
                 }
-            }
-        } else {
-            for _ in 0..epochs {
-                for (input, label) in samples {
-                    self.layers[0].train_step(input, &one_hot(*label, output_rows));
+                let target = one_hot(*label, output_rows);
+                let mut dy: Vec<f32> = current.iter().zip(&target).map(|(y, t)| y - t).collect();
+                for index in (0..self.layers.len()).rev() {
+                    let grad = self.layers[index].train_step_with_grad(&inputs[index], &dy);
+                    if index > 0 {
+                        dy = grad
+                            .iter()
+                            .zip(&outputs[index - 1])
+                            .map(|(grad, output)| grad * self.activation.derivative(*output))
+                            .collect();
+                    }
                 }
             }
         }
@@ -332,17 +361,19 @@ fn dare_vector(base: &Net, tuned: &Net, options: &DareOptions) -> TaskVector {
     TaskVector::between(base, &work).expect("dare vector")
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run(
     seed: u64,
     data: &Dataset,
     epochs: usize,
-    hidden: usize,
+    hidden: &[usize],
+    activation: Activation,
     out_root: &Path,
     lambdas: &[f32],
     dare: &DareOptions,
 ) -> Value {
     let train = |samples: &[(Vec<u8>, usize)]| {
-        let mut model = Model::new(data.input_dim, hidden, data.output_rows, seed);
+        let mut model = Model::new(data.input_dim, hidden, data.output_rows, seed, activation);
         let samples: Vec<(Vec<f32>, usize)> = samples
             .iter()
             .map(|(image, label)| (quantize(image), *label))
@@ -448,6 +479,15 @@ fn run(
     })
 }
 
+fn parse_hidden(raw: &str) -> Vec<usize> {
+    raw.split(',')
+        .map(|part| part.trim())
+        .filter(|part| !part.is_empty())
+        .map(|part| part.parse::<usize>().expect("hidden"))
+        .filter(|value| *value > 0)
+        .collect()
+}
+
 fn parse_lambdas(raw: &str) -> Vec<f32> {
     raw.split(',')
         .map(|part| part.trim().parse::<f32>().expect("lambda"))
@@ -463,7 +503,8 @@ fn main() {
     let mut test_per_class = 100usize;
     let mut binary = false;
     let mut seeds = 1usize;
-    let mut hidden = 0usize;
+    let mut hidden: Vec<usize> = Vec::new();
+    let mut activation = Activation::Tanh;
     let mut out = std::env::temp_dir().join(format!("trit-train-artifacts-{}", std::process::id()));
     let mut lambdas = vec![-1.0f32, 0.0, 0.5, 1.0];
     let mut dare = DareOptions {
@@ -486,7 +527,14 @@ fn main() {
             }
             "--binary" => binary = true,
             "--seeds" => seeds = args.next().expect("seeds").parse().expect("num"),
-            "--hidden" => hidden = args.next().expect("hidden").parse().expect("num"),
+            "--hidden" => hidden = parse_hidden(&args.next().expect("hidden")),
+            "--activation" => {
+                activation = match args.next().expect("activation").as_str() {
+                    "tanh" => Activation::Tanh,
+                    "relu" => Activation::Relu,
+                    other => panic!("unknown activation {other}"),
+                };
+            }
             "--out" => out = PathBuf::from(args.next().expect("out")),
             "--lambdas" => lambdas = parse_lambdas(&args.next().expect("lambdas")),
             "--dare-rate" => {
@@ -517,7 +565,8 @@ fn main() {
                 7 + offset as u64,
                 &data,
                 epochs,
-                hidden,
+                &hidden,
+                activation,
                 &out,
                 &lambdas,
                 &dare,
@@ -560,6 +609,7 @@ fn main() {
             "size": data.size,
             "color": data.color,
             "hidden": hidden,
+            "activation": activation.name(),
             "epochs": epochs,
         },
         "seeds": seeds,

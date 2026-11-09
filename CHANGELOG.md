@@ -15,6 +15,11 @@
   `--dare-seed`；CIFAR 读数：5 seeds/per-class 200（hidden 16、2 epochs）base
   **10.2% ± 3.6%**、equal/tuned **9.2% ± 4.1%**；块级 DARE（rate 0.5、block 16、
   tune-with-dare、2 seeds）base **11.25% ± 2.19%**、equal/tuned **12.45% ± 0.49%**。
+- `trit_train_tasks` 支持 `--hidden 8,16`（任意层）与 `--activation tanh|relu`（端到端反向）；
+  新增 `scripts/trit_train_tasks_smoke.py`（toy 数据 → WSP1 产物 + JSON 字段校验）。
+- 读数：5 seeds / per-class 500 + 块级 DARE（hidden 8,16、tanh、2 epochs）base
+  **11.66% ± 3.93%**、equal/tuned **10.72% ± 2.88%**；更深栈 + relu（hidden 8,16、1 epoch）
+  base **10.65% ± 0.49%**、equal/tuned **10.1% ± 0.28%**。
 - 测试 309 → 319（`trit-train` +2；`cargo test -p trit-wspace -p trit-train`）。
 - `trit-train` 作为 `trit-wspace` 的 dev-dependency（同层 L3）；新增
   `tests/trit_train_artifacts.rs`（WSP1 往返 + 零任务合并）。
