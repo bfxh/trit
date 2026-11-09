@@ -2,6 +2,8 @@
 //!
 //! 三值任务算术：全局 λ、按层、按行、按列块；`0` 丢弃、`<0` 取反、`>0` 原样。
 
+use std::collections::BTreeMap;
+
 use crate::edit::Edit;
 use crate::error::{Error, Result};
 use crate::net::Net;
@@ -196,6 +198,120 @@ pub fn scale_task_blocks(
     block: usize,
 ) -> Result<TaskVector> {
     scale_task_units(vector, lambdas, dims, ScaleUnit::Block(block))
+}
+
+/// 按 `(layer, row)` 键值对缩放；未给出的行默认保留（λ=1）。
+///
+/// 键值对是**稀疏**形式：只写出需要改的行，其余行按 λ=1 处理。`λ=0` 丢弃该行、
+/// `<0` 取反、`>0` 原样；`λ <= 0` 的 scale 差分丢弃。
+pub fn scale_task_rows_map(
+    vector: &TaskVector,
+    lambdas: &BTreeMap<(usize, usize), f32>,
+) -> Result<TaskVector> {
+    validate_map(lambdas.values())?;
+    let mut edits = Vec::new();
+    for edit in vector.edits() {
+        let (layer, row, _) = edit_key(edit);
+        let lambda = lambdas.get(&(layer, row)).copied().unwrap_or(1.0);
+        if let Some(edit) = scaled_edit(edit, lambda) {
+            edits.push(edit);
+        }
+    }
+    let mut scales = Vec::new();
+    for (layer, row, scale) in vector.scales() {
+        let lambda = lambdas.get(&(*layer, *row)).copied().unwrap_or(1.0);
+        if lambda > 0.0 {
+            scales.push((*layer, *row, *scale));
+        }
+    }
+    Ok(TaskVector {
+        base: vector.base,
+        edits,
+        scales,
+    })
+}
+
+/// 按 `(layer, row, block)` 键值对缩放；未给出的块默认保留（λ=1）。
+///
+/// 块索引是 `col / block`；`block` 必须大于 0。
+pub fn scale_task_blocks_map(
+    vector: &TaskVector,
+    lambdas: &BTreeMap<(usize, usize, usize), f32>,
+    block: usize,
+) -> Result<TaskVector> {
+    if block == 0 {
+        return Err(Error::InvalidBlock { block });
+    }
+    validate_map(lambdas.values())?;
+    let mut edits = Vec::new();
+    for edit in vector.edits() {
+        let (layer, row, col) = edit_key(edit);
+        let unit = col / block;
+        let lambda = lambdas.get(&(layer, row, unit)).copied().unwrap_or(1.0);
+        if let Some(edit) = scaled_edit(edit, lambda) {
+            edits.push(edit);
+        }
+    }
+    let mut scales = Vec::new();
+    for (layer, row, scale) in vector.scales() {
+        let lambda = lambdas.get(&(*layer, *row, 0)).copied().unwrap_or(1.0);
+        if lambda > 0.0 {
+            scales.push((*layer, *row, *scale));
+        }
+    }
+    Ok(TaskVector {
+        base: vector.base,
+        edits,
+        scales,
+    })
+}
+
+fn validate_map<'a>(values: impl Iterator<Item = &'a f32>) -> Result<()> {
+    for value in values {
+        if !value.is_finite() {
+            return Err(Error::InvalidLambda { lambda: *value });
+        }
+    }
+    Ok(())
+}
+
+fn edit_key(edit: &Edit) -> (usize, usize, usize) {
+    match edit {
+        Edit::SetTrit {
+            layer, row, col, ..
+        } => (*layer, *row, *col),
+        Edit::SetBias { layer, row, .. } => (*layer, *row, 0),
+        _ => (0, 0, 0),
+    }
+}
+
+fn scaled_edit(edit: &Edit, lambda: f32) -> Option<Edit> {
+    if lambda == 0.0 {
+        return None;
+    }
+    Some(if lambda < 0.0 {
+        match edit {
+            Edit::SetTrit {
+                layer,
+                row,
+                col,
+                to,
+            } => Edit::SetTrit {
+                layer: *layer,
+                row: *row,
+                col: *col,
+                to: negate_trit(*to),
+            },
+            Edit::SetBias { layer, row, to } => Edit::SetBias {
+                layer: *layer,
+                row: *row,
+                to: negate_trit(*to),
+            },
+            other => other.clone(),
+        }
+    } else {
+        edit.clone()
+    })
 }
 
 /// 三值任务算术组合：对每个任务按 `lambdas[i]` 缩放后加权合并。

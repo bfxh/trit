@@ -1,6 +1,6 @@
 //! CLI `task-merge`：加权任务向量合并（从 `cli.rs` 拆出，控制单文件行数）。
 
-use serde_json::json;
+use serde_json::{Value, json};
 
 use crate::edit::Patch;
 use crate::to_wsp;
@@ -255,11 +255,23 @@ pub(super) fn task_scale(args: &[String]) -> Result<(), String> {
         .get("block-lambdas")
         .map(|raw| parse_lambdas(raw))
         .transpose()?;
+    let row_map = parsed
+        .values
+        .get("row-lambdas-file")
+        .map(|path| read_json(path).and_then(|raw| parse_row_map(&raw)))
+        .transpose()?;
+    let block_map = parsed
+        .values
+        .get("block-lambdas-file")
+        .map(|path| read_json(path).and_then(|raw| parse_block_map(&raw)))
+        .transpose()?;
     if usize::from(lambda.is_some())
         + usize::from(lambdas.is_some())
         + usize::from(layer_lambdas.is_some())
         + usize::from(row_lambdas.is_some())
         + usize::from(block_lambdas.is_some())
+        + usize::from(row_map.is_some())
+        + usize::from(block_map.is_some())
         > 1
     {
         return Err(
@@ -311,6 +323,53 @@ pub(super) fn task_scale(args: &[String]) -> Result<(), String> {
         let patch = Patch::diff(&base, &net).map_err(err)?;
         let mut row = json!({
             "row_lambdas": row_lambdas,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return emit(&row);
+    }
+    if let Some(row_map) = row_map {
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled = crate::scale::scale_task_rows_map(&vector, &row_map).map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        write_out(&parsed, &net)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let map_value: serde_json::Map<String, Value> = row_map
+            .iter()
+            .map(|((layer, row), value)| (format!("{layer}:{row}"), json!(value)))
+            .collect();
+        let mut row = json!({
+            "row_lambdas_map": map_value,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return emit(&row);
+    }
+    if let Some(block_map) = block_map {
+        let block_size = req_usize(&parsed, "block-size")?;
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled =
+            crate::scale::scale_task_blocks_map(&vector, &block_map, block_size).map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        write_out(&parsed, &net)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let map_value: serde_json::Map<String, Value> = block_map
+            .iter()
+            .map(|((layer, row, unit), value)| (format!("{layer}:{row}:{unit}"), json!(value)))
+            .collect();
+        let mut row = json!({
+            "block_lambdas_map": map_value,
+            "block_size": block_size,
             "summary": wire::net_summary(&net),
             "patch": wire::patch_to_value(&patch),
             "cost": wire::cost_to_value(&patch.cost(&base)),
@@ -440,4 +499,65 @@ fn parse_paths(raw: &str) -> Result<Vec<String>, String> {
         return Err("--tasks 不能为空".into());
     }
     Ok(paths)
+}
+
+fn read_json(path: &str) -> Result<String, String> {
+    if path == "-" {
+        std::io::read_to_string(std::io::stdin()).map_err(|error| error.to_string())
+    } else {
+        std::fs::read_to_string(path).map_err(|error| format!("{path}: {error}"))
+    }
+}
+
+fn parse_row_map(raw: &str) -> Result<std::collections::BTreeMap<(usize, usize), f32>, String> {
+    let value: Value = serde_json::from_str(raw)
+        .map_err(|error| format!("--row-lambdas-file 需要 JSON 对象: {error}"))?;
+    let object = value
+        .as_object()
+        .ok_or("--row-lambdas-file 需要 JSON 对象")?;
+    let mut map = std::collections::BTreeMap::new();
+    for (key, value) in object {
+        let parts: Vec<&str> = key.split(':').collect();
+        if parts.len() != 2 {
+            return Err(format!("键 {key} 需要 layer:row"));
+        }
+        let layer = parts[0]
+            .parse::<usize>()
+            .map_err(|_| format!("键 {key} 的 layer 非法"))?;
+        let row = parts[1]
+            .parse::<usize>()
+            .map_err(|_| format!("键 {key} 的 row 非法"))?;
+        let lambda = value.as_f64().ok_or_else(|| format!("键 {key} 需要数字"))? as f32;
+        map.insert((layer, row), lambda);
+    }
+    Ok(map)
+}
+
+fn parse_block_map(
+    raw: &str,
+) -> Result<std::collections::BTreeMap<(usize, usize, usize), f32>, String> {
+    let value: Value = serde_json::from_str(raw)
+        .map_err(|error| format!("--block-lambdas-file 需要 JSON 对象: {error}"))?;
+    let object = value
+        .as_object()
+        .ok_or("--block-lambdas-file 需要 JSON 对象")?;
+    let mut map = std::collections::BTreeMap::new();
+    for (key, value) in object {
+        let parts: Vec<&str> = key.split(':').collect();
+        if parts.len() != 3 {
+            return Err(format!("键 {key} 需要 layer:row:block"));
+        }
+        let layer = parts[0]
+            .parse::<usize>()
+            .map_err(|_| format!("键 {key} 的 layer 非法"))?;
+        let row = parts[1]
+            .parse::<usize>()
+            .map_err(|_| format!("键 {key} 的 row 非法"))?;
+        let unit = parts[2]
+            .parse::<usize>()
+            .map_err(|_| format!("键 {key} 的 block 非法"))?;
+        let lambda = value.as_f64().ok_or_else(|| format!("键 {key} 需要数字"))? as f32;
+        map.insert((layer, row, unit), lambda);
+    }
+    Ok(map)
 }

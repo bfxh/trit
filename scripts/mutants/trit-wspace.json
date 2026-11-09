@@ -1970,8 +1970,8 @@
 {
  "name": "wspace-task-scale: λ<0 不取反",
  "file": "crates/trit-wspace/src/scale.rs",
- "old": "            } => Edit::SetTrit {\n                layer: *layer,\n                row: *row,\n                col: *col,\n                to: negate_trit(*to),\n            },",
- "new": "            } => Edit::SetTrit {\n                layer: *layer,\n                row: *row,\n                col: *col,\n                to: *to,\n            },",
+ "old": "        .map(|edit| match edit {\n            Edit::SetTrit {\n                layer,\n                row,\n                col,\n                to,\n            } => Edit::SetTrit {\n                layer: *layer,\n                row: *row,\n                col: *col,\n                to: negate_trit(*to),\n            },",
+ "new": "        .map(|edit| match edit {\n            Edit::SetTrit {\n                layer,\n                row,\n                col,\n                to,\n            } => Edit::SetTrit {\n                layer: *layer,\n                row: *row,\n                col: *col,\n                to: *to,\n            },",
  "pkg": "trit-wspace",
  "filter": "scale_negative_negates_and_drops_scale"
 },
@@ -2138,7 +2138,7 @@
 {
  "name": "wspace-task-scale: λ 互斥失效",
  "file": "crates/trit-wspace/src/cli/cli_task.rs",
- "old": "    if usize::from(lambda.is_some())\n        + usize::from(lambdas.is_some())\n        + usize::from(layer_lambdas.is_some())\n        + usize::from(row_lambdas.is_some())\n        + usize::from(block_lambdas.is_some())\n        > 1\n    {\n        return Err(\n            \"--lambda/--lambdas/--layer-lambdas/--row-lambdas/--block-lambdas 只能给一个\".into(),\n        );\n    }",
+ "old": "    if usize::from(lambda.is_some())\n        + usize::from(lambdas.is_some())\n        + usize::from(layer_lambdas.is_some())\n        + usize::from(row_lambdas.is_some())\n        + usize::from(block_lambdas.is_some())\n        + usize::from(row_map.is_some())\n        + usize::from(block_map.is_some())\n        > 1\n    {\n        return Err(\n            \"--lambda/--lambdas/--layer-lambdas/--row-lambdas/--block-lambdas 只能给一个\".into(),\n        );\n    }",
  "new": "    if false {\n        return Err(\n            \"--lambda/--lambdas/--layer-lambdas/--row-lambdas/--block-lambdas 只能给一个\".into(),\n        );\n    }",
  "pkg": "trit-wspace",
  "filter": "cli_task_scale_rejects_lambda_and_lambdas"
@@ -2286,5 +2286,45 @@
  "new": "            \"wsp_task_combine\" => mcp_task::task_scale(args),",
  "pkg": "trit-wspace",
  "filter": "mcp_task_combine_round_trip"
+},
+{
+ "name": "wspace-task-scale: 行 map 默认丢弃",
+ "file": "crates/trit-wspace/src/scale.rs",
+ "old": "        let lambda = lambdas.get(&(layer, row)).copied().unwrap_or(1.0);",
+ "new": "        let lambda = lambdas.get(&(layer, row)).copied().unwrap_or(0.0);",
+ "pkg": "trit-wspace",
+ "filter": "row_lambdas_map_sparse"
+},
+{
+ "name": "wspace-task-scale: 行 map 键忽略层",
+ "file": "crates/trit-wspace/src/scale.rs",
+ "old": "        let lambda = lambdas.get(&(layer, row)).copied().unwrap_or(1.0);",
+ "new": "        let lambda = lambdas.get(&(0, row)).copied().unwrap_or(1.0);",
+ "pkg": "trit-wspace",
+ "filter": "row_lambdas_map_sparse"
+},
+{
+ "name": "wspace-task-scale: 块 map 键忽略块",
+ "file": "crates/trit-wspace/src/scale.rs",
+ "old": "        let unit = col / block;",
+ "new": "        let unit = col;",
+ "pkg": "trit-wspace",
+ "filter": "block_lambdas_map_sparse"
+},
+{
+ "name": "wspace-task-scale: CLI 行 map 未接线",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "        .get(\"row-lambdas-file\")",
+ "new": "        .get(\"row-lambdas-file-disabled\")",
+ "pkg": "trit-wspace",
+ "filter": "cli_row_lambdas_map_round_trip"
+},
+{
+ "name": "wspace-task-scale: MCP 行 map 未接线",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "        .get(\"row_lambdas_map\")",
+ "new": "        .get(\"row_lambdas_map_disabled\")",
+ "pkg": "trit-wspace",
+ "filter": "mcp_row_lambdas_map_round_trip"
 }
 ]
