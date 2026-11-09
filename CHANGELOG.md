@@ -6,6 +6,10 @@
 
 - 新增 `examples/trit_train_tasks.rs`：用 `trit-train::layer::TernaryLinear` 训练 → 导出 WSP1 →
   读回 → 任务合并/调权（玩具数据：base 1.0、equal/tuned 0.5，证明产物路径可用）。
+- 扩展 `trit_train_tasks`：`--data` 接 CIFAR 夹具、`--hidden N` 两层 `TernaryLinear`（贪心逐层、
+  第一层恒等、第二层分类）、`--lambdas` 输出 λ 扫描读数。CIFAR 小规模（32×32 彩色、
+  per-class 50、1 epoch、hidden 8、2 seeds）：base **10.5% ± 0.14%**、equal/tuned
+  **9.3% ± 3.25%**、λ 扫描 7.2–9.3%。
 - `trit-train` 作为 `trit-wspace` 的 dev-dependency（同层 L3）；新增
   `tests/trit_train_artifacts.rs`（WSP1 往返 + 零任务合并）。
 - 测试 308 → 309（含 1 doctest）。
