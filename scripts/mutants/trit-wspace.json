@@ -2138,7 +2138,7 @@
 {
  "name": "wspace-task-scale: λ 互斥失效",
  "file": "crates/trit-wspace/src/cli/cli_task.rs",
- "old": "    if usize::from(lambda.is_some())\n        + usize::from(lambdas.is_some())\n        + usize::from(layer_lambdas.is_some())\n        + usize::from(row_lambdas.is_some())\n        + usize::from(block_lambdas.is_some())\n        + usize::from(row_map.is_some())\n        + usize::from(block_map.is_some())\n        > 1\n    {\n        return Err(\n            \"--lambda/--lambdas/--layer-lambdas/--row-lambdas/--block-lambdas 只能给一个\".into(),\n        );\n    }",
+ "old": "    if usize::from(lambda.is_some())\n        + usize::from(lambdas.is_some())\n        + usize::from(layer_lambdas.is_some())\n        + usize::from(row_lambdas.is_some())\n        + usize::from(block_lambdas.is_some())\n        + usize::from(row_map.is_some())\n        + usize::from(block_map.is_some())\n        + usize::from(row_patterns.is_some())\n        + usize::from(block_patterns.is_some())\n        > 1\n    {\n        return Err(\n            \"--lambda/--lambdas/--layer-lambdas/--row-lambdas/--block-lambdas 只能给一个\".into(),\n        );\n    }",
  "new": "    if false {\n        return Err(\n            \"--lambda/--lambdas/--layer-lambdas/--row-lambdas/--block-lambdas 只能给一个\".into(),\n        );\n    }",
  "pkg": "trit-wspace",
  "filter": "cli_task_scale_rejects_lambda_and_lambdas"
@@ -2326,5 +2326,53 @@
  "new": "        .get(\"row_lambdas_map_disabled\")",
  "pkg": "trit-wspace",
  "filter": "mcp_row_lambdas_map_round_trip"
+},
+{
+ "name": "wspace-task-scale: 模式通配未匹配",
+ "file": "crates/trit-wspace/src/scale.rs",
+ "old": "            None => true,",
+ "new": "            None => false,",
+ "pkg": "trit-wspace",
+ "filter": "row_patterns_wildcard"
+},
+{
+ "name": "wspace-task-scale: 模式区间不含右端",
+ "file": "crates/trit-wspace/src/scale.rs",
+ "old": "            Some(range) => range.contains(value),",
+ "new": "            Some(range) => *range.start() <= *value && *value < *range.end(),",
+ "pkg": "trit-wspace",
+ "filter": "block_patterns_range"
+},
+{
+ "name": "wspace-task-scale: 模式优先级反了",
+ "file": "crates/trit-wspace/src/scale.rs",
+ "old": "pub fn scale_task_rows_patterns(\n    vector: &TaskVector,\n    patterns: &[UnitPattern],\n) -> Result<TaskVector> {\n    validate_patterns(patterns)?;\n    let mut ordered = patterns.to_vec();\n    ordered.sort_by_key(|pattern| std::cmp::Reverse(pattern.specificity()));",
+ "new": "pub fn scale_task_rows_patterns(\n    vector: &TaskVector,\n    patterns: &[UnitPattern],\n) -> Result<TaskVector> {\n    validate_patterns(patterns)?;\n    let mut ordered = patterns.to_vec();\n    ordered.sort_by_key(|pattern| pattern.specificity());",
+ "pkg": "trit-wspace",
+ "filter": "row_patterns_exact_beats_wildcard"
+},
+{
+ "name": "wspace-task-scale: CLI 模式未接线",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "        .get(\"row-lambdas-patterns\")",
+ "new": "        .get(\"row-lambdas-patterns-disabled\")",
+ "pkg": "trit-wspace",
+ "filter": "cli_row_patterns_round_trip"
+},
+{
+ "name": "wspace-task-scale: MCP 模式未接线",
+ "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
+ "old": "        .get(\"row_lambdas_patterns\")",
+ "new": "        .get(\"row_lambdas_patterns_disabled\")",
+ "pkg": "trit-wspace",
+ "filter": "mcp_row_patterns_round_trip"
+},
+{
+ "name": "wspace-task-scale: 区间顺序不校验",
+ "file": "crates/trit-wspace/src/cli/cli_task.rs",
+ "old": "        if start > end {\n            return Err(format!(\"{part} 的起点大于终点\"));\n        }",
+ "new": "        if false {\n            return Err(format!(\"{part} 的起点大于终点\"));\n        }",
+ "pkg": "trit-wspace",
+ "filter": "row_patterns_reject_bad_range"
 }
 ]

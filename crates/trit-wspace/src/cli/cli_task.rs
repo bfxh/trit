@@ -265,6 +265,20 @@ pub(super) fn task_scale(args: &[String]) -> Result<(), String> {
         .get("block-lambdas-file")
         .map(|path| read_json(path).and_then(|raw| parse_block_map(&raw)))
         .transpose()?;
+    let row_patterns = parsed
+        .values
+        .get("row-lambdas-patterns")
+        .map(|path| {
+            read_json(path).and_then(|raw| parse_unit_patterns(&raw, 2, "--row-lambdas-patterns"))
+        })
+        .transpose()?;
+    let block_patterns = parsed
+        .values
+        .get("block-lambdas-patterns")
+        .map(|path| {
+            read_json(path).and_then(|raw| parse_unit_patterns(&raw, 3, "--block-lambdas-patterns"))
+        })
+        .transpose()?;
     if usize::from(lambda.is_some())
         + usize::from(lambdas.is_some())
         + usize::from(layer_lambdas.is_some())
@@ -272,6 +286,8 @@ pub(super) fn task_scale(args: &[String]) -> Result<(), String> {
         + usize::from(block_lambdas.is_some())
         + usize::from(row_map.is_some())
         + usize::from(block_map.is_some())
+        + usize::from(row_patterns.is_some())
+        + usize::from(block_patterns.is_some())
         > 1
     {
         return Err(
@@ -369,6 +385,53 @@ pub(super) fn task_scale(args: &[String]) -> Result<(), String> {
             .collect();
         let mut row = json!({
             "block_lambdas_map": map_value,
+            "block_size": block_size,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return emit(&row);
+    }
+    if let Some(patterns) = row_patterns {
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled = crate::scale::scale_task_rows_patterns(&vector, &patterns).map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        write_out(&parsed, &net)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let map_value: serde_json::Map<String, Value> = patterns
+            .iter()
+            .map(|pattern| (render_pattern(&pattern.parts), json!(pattern.lambda)))
+            .collect();
+        let mut row = json!({
+            "row_lambdas_patterns": map_value,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return emit(&row);
+    }
+    if let Some(patterns) = block_patterns {
+        let block_size = req_usize(&parsed, "block-size")?;
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled = crate::scale::scale_task_blocks_patterns(&vector, &patterns, block_size)
+            .map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        write_out(&parsed, &net)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let map_value: serde_json::Map<String, Value> = patterns
+            .iter()
+            .map(|pattern| (render_pattern(&pattern.parts), json!(pattern.lambda)))
+            .collect();
+        let mut row = json!({
+            "block_lambdas_patterns": map_value,
             "block_size": block_size,
             "summary": wire::net_summary(&net),
             "patch": wire::patch_to_value(&patch),
@@ -560,4 +623,66 @@ fn parse_block_map(
         map.insert((layer, row, unit), lambda);
     }
     Ok(map)
+}
+
+fn parse_unit_patterns(
+    raw: &str,
+    arity: usize,
+    flag: &str,
+) -> Result<Vec<crate::scale::UnitPattern>, String> {
+    let value: Value =
+        serde_json::from_str(raw).map_err(|error| format!("{flag} 需要 JSON 对象: {error}"))?;
+    let object = value
+        .as_object()
+        .ok_or_else(|| format!("{flag} 需要 JSON 对象"))?;
+    let mut patterns = Vec::new();
+    for (key, value) in object {
+        let parts: Vec<&str> = key.split(':').collect();
+        if parts.len() != arity {
+            return Err(format!("键 {key} 需要 {arity} 段"));
+        }
+        let mut parsed = Vec::with_capacity(arity);
+        for part in parts {
+            parsed.push(parse_pattern_part(part).map_err(|error| format!("键 {key}: {error}"))?);
+        }
+        let lambda = value.as_f64().ok_or_else(|| format!("键 {key} 需要数字"))? as f32;
+        patterns.push(crate::scale::UnitPattern {
+            parts: parsed,
+            lambda,
+        });
+    }
+    Ok(patterns)
+}
+
+fn parse_pattern_part(part: &str) -> Result<Option<std::ops::RangeInclusive<usize>>, String> {
+    if part == "*" {
+        return Ok(None);
+    }
+    if let Some((start, end)) = part.split_once('-') {
+        let start = start
+            .parse::<usize>()
+            .map_err(|_| format!("{part} 的起点非法"))?;
+        let end = end
+            .parse::<usize>()
+            .map_err(|_| format!("{part} 的终点非法"))?;
+        if start > end {
+            return Err(format!("{part} 的起点大于终点"));
+        }
+        Ok(Some(start..=end))
+    } else {
+        let value = part.parse::<usize>().map_err(|_| format!("{part} 非法"))?;
+        Ok(Some(value..=value))
+    }
+}
+
+fn render_pattern(parts: &[Option<std::ops::RangeInclusive<usize>>]) -> String {
+    parts
+        .iter()
+        .map(|part| match part {
+            None => "*".to_string(),
+            Some(range) if range.start() == range.end() => range.start().to_string(),
+            Some(range) => format!("{}-{}", range.start(), range.end()),
+        })
+        .collect::<Vec<_>>()
+        .join(":")
 }

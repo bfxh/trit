@@ -173,6 +173,8 @@ pub fn tools() -> Vec<Value> {
                 "block_size": {"type": "integer", "description": "按块 λ 的列块大小（>0）"},
                 "row_lambdas_map": {"type": "object", "description": "稀疏按行 λ：键 `layer:row`，未给的行默认 1"},
                 "block_lambdas_map": {"type": "object", "description": "稀疏按块 λ：键 `layer:row:block`，未给的块默认 1（需 block_size）"},
+                "row_lambdas_patterns": {"type": "object", "description": "按行 λ 模式：键 `layer:row`，段可为 `*` 或 `a-b`；未匹配默认 1"},
+                "block_lambdas_patterns": {"type": "object", "description": "按块 λ 模式：键 `layer:row:block`，段可为 `*` 或 `a-b`（需 block_size）"},
                 "oracle": {"type": "object", "description": "可选验证集；给了就给每个 λ 返回 verify 读数"},
             }),
             &["base", "tuned"],

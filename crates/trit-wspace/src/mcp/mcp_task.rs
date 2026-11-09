@@ -288,6 +288,16 @@ pub(super) fn task_scale(args: &Value) -> Result<Value, String> {
         .and_then(Value::as_object)
         .map(parse_block_map)
         .transpose()?;
+    let row_patterns = args
+        .get("row_lambdas_patterns")
+        .and_then(Value::as_object)
+        .map(|object| parse_unit_patterns(object, 2))
+        .transpose()?;
+    let block_patterns = args
+        .get("block_lambdas_patterns")
+        .and_then(Value::as_object)
+        .map(|object| parse_unit_patterns(object, 3))
+        .transpose()?;
     if let Some(row_map) = row_map {
         let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
         let scaled = crate::scale::scale_task_rows_map(&vector, &row_map).map_err(err)?;
@@ -325,6 +335,54 @@ pub(super) fn task_scale(args: &Value) -> Result<Value, String> {
             .collect();
         let mut row = json!({
             "block_lambdas_map": map_value,
+            "block_size": block_size,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return Ok(row);
+    }
+    if let Some(patterns) = row_patterns {
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled = crate::scale::scale_task_rows_patterns(&vector, &patterns).map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let map_value: serde_json::Map<String, Value> = patterns
+            .iter()
+            .map(|pattern| (render_pattern(&pattern.parts), json!(pattern.lambda)))
+            .collect();
+        let mut row = json!({
+            "row_lambdas_patterns": map_value,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return Ok(row);
+    }
+    if let Some(patterns) = block_patterns {
+        let block_size = args
+            .get("block_size")
+            .and_then(Value::as_u64)
+            .ok_or("block_size 需要正整数")? as usize;
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled = crate::scale::scale_task_blocks_patterns(&vector, &patterns, block_size)
+            .map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let map_value: serde_json::Map<String, Value> = patterns
+            .iter()
+            .map(|pattern| (render_pattern(&pattern.parts), json!(pattern.lambda)))
+            .collect();
+        let mut row = json!({
+            "block_lambdas_patterns": map_value,
             "block_size": block_size,
             "summary": wire::net_summary(&net),
             "patch": wire::patch_to_value(&patch),
@@ -505,4 +563,60 @@ fn parse_block_map(
         map.insert((layer, row, unit), lambda);
     }
     Ok(map)
+}
+
+fn parse_unit_patterns(
+    object: &serde_json::Map<String, Value>,
+    arity: usize,
+) -> Result<Vec<crate::scale::UnitPattern>, String> {
+    let mut patterns = Vec::new();
+    for (key, value) in object {
+        let parts: Vec<&str> = key.split(':').collect();
+        if parts.len() != arity {
+            return Err(format!("键 {key} 需要 {arity} 段"));
+        }
+        let mut parsed = Vec::with_capacity(arity);
+        for part in parts {
+            parsed.push(parse_pattern_part(part).map_err(|error| format!("键 {key}: {error}"))?);
+        }
+        let lambda = value.as_f64().ok_or_else(|| format!("键 {key} 需要数字"))? as f32;
+        patterns.push(crate::scale::UnitPattern {
+            parts: parsed,
+            lambda,
+        });
+    }
+    Ok(patterns)
+}
+
+fn parse_pattern_part(part: &str) -> Result<Option<std::ops::RangeInclusive<usize>>, String> {
+    if part == "*" {
+        return Ok(None);
+    }
+    if let Some((start, end)) = part.split_once('-') {
+        let start = start
+            .parse::<usize>()
+            .map_err(|_| format!("{part} 的起点非法"))?;
+        let end = end
+            .parse::<usize>()
+            .map_err(|_| format!("{part} 的终点非法"))?;
+        if start > end {
+            return Err(format!("{part} 的起点大于终点"));
+        }
+        Ok(Some(start..=end))
+    } else {
+        let value = part.parse::<usize>().map_err(|_| format!("{part} 非法"))?;
+        Ok(Some(value..=value))
+    }
+}
+
+fn render_pattern(parts: &[Option<std::ops::RangeInclusive<usize>>]) -> String {
+    parts
+        .iter()
+        .map(|part| match part {
+            None => "*".to_string(),
+            Some(range) if range.start() == range.end() => range.start().to_string(),
+            Some(range) => format!("{}-{}", range.start(), range.end()),
+        })
+        .collect::<Vec<_>>()
+        .join(":")
 }

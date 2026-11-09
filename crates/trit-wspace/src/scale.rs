@@ -200,6 +200,123 @@ pub fn scale_task_blocks(
     scale_task_units(vector, lambdas, dims, ScaleUnit::Block(block))
 }
 
+/// 单位键模式：每段是 `None`（`*`，任意）或闭区间 `a..=b`（`a` 等同于 `a..=a`）。
+#[derive(Clone, Debug, PartialEq)]
+pub struct UnitPattern {
+    /// 键的每一段；`None` 表示任意值。
+    pub parts: Vec<Option<std::ops::RangeInclusive<usize>>>,
+    /// 匹配时使用的 λ。
+    pub lambda: f32,
+}
+
+impl UnitPattern {
+    fn matches(&self, key: &[usize]) -> bool {
+        if self.parts.len() != key.len() {
+            return false;
+        }
+        self.parts.iter().zip(key).all(|(part, value)| match part {
+            None => true,
+            Some(range) => range.contains(value),
+        })
+    }
+
+    fn specificity(&self) -> usize {
+        self.parts
+            .iter()
+            .map(|part| match part {
+                None => 0,
+                Some(range) if range.start() == range.end() => 2,
+                Some(_) => 1,
+            })
+            .sum()
+    }
+}
+
+/// 按行模式缩放：键是 `[layer, row]`，支持 `*` 与 `a-b` 区间。
+///
+/// 匹配优先级：精确段 > 区间段 > 通配段（按具体度降序）；同具体度按传入顺序。
+/// 未匹配的行默认 λ=1。
+pub fn scale_task_rows_patterns(
+    vector: &TaskVector,
+    patterns: &[UnitPattern],
+) -> Result<TaskVector> {
+    validate_patterns(patterns)?;
+    let mut ordered = patterns.to_vec();
+    ordered.sort_by_key(|pattern| std::cmp::Reverse(pattern.specificity()));
+    let mut edits = Vec::new();
+    for edit in vector.edits() {
+        let (layer, row, _) = edit_key(edit);
+        let lambda = pattern_lambda(&ordered, &[layer, row]);
+        if let Some(edit) = scaled_edit(edit, lambda) {
+            edits.push(edit);
+        }
+    }
+    let mut scales = Vec::new();
+    for (layer, row, scale) in vector.scales() {
+        let lambda = pattern_lambda(&ordered, &[*layer, *row]);
+        if lambda > 0.0 {
+            scales.push((*layer, *row, *scale));
+        }
+    }
+    Ok(TaskVector {
+        base: vector.base,
+        edits,
+        scales,
+    })
+}
+
+/// 按块模式缩放：键是 `[layer, row, col/block]`，支持 `*` 与 `a-b` 区间。
+pub fn scale_task_blocks_patterns(
+    vector: &TaskVector,
+    patterns: &[UnitPattern],
+    block: usize,
+) -> Result<TaskVector> {
+    if block == 0 {
+        return Err(Error::InvalidBlock { block });
+    }
+    validate_patterns(patterns)?;
+    let mut ordered = patterns.to_vec();
+    ordered.sort_by_key(|pattern| std::cmp::Reverse(pattern.specificity()));
+    let mut edits = Vec::new();
+    for edit in vector.edits() {
+        let (layer, row, col) = edit_key(edit);
+        let lambda = pattern_lambda(&ordered, &[layer, row, col / block]);
+        if let Some(edit) = scaled_edit(edit, lambda) {
+            edits.push(edit);
+        }
+    }
+    let mut scales = Vec::new();
+    for (layer, row, scale) in vector.scales() {
+        let lambda = pattern_lambda(&ordered, &[*layer, *row, 0]);
+        if lambda > 0.0 {
+            scales.push((*layer, *row, *scale));
+        }
+    }
+    Ok(TaskVector {
+        base: vector.base,
+        edits,
+        scales,
+    })
+}
+
+fn validate_patterns(patterns: &[UnitPattern]) -> Result<()> {
+    for pattern in patterns {
+        if !pattern.lambda.is_finite() {
+            return Err(Error::InvalidLambda {
+                lambda: pattern.lambda,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn pattern_lambda(patterns: &[UnitPattern], key: &[usize]) -> f32 {
+    patterns
+        .iter()
+        .find(|pattern| pattern.matches(key))
+        .map_or(1.0, |pattern| pattern.lambda)
+}
+
 /// 按 `(layer, row)` 键值对缩放；未给出的行默认保留（λ=1）。
 ///
 /// 键值对是**稀疏**形式：只写出需要改的行，其余行按 λ=1 处理。`λ=0` 丢弃该行、
