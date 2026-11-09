@@ -2090,6 +2090,7 @@ version = "0.12.0"
 dependencies = [
  "serde_json",
  "trit-learn",
+ "trit-train",
 ]
 
 [[package]]
