@@ -210,6 +210,9 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 `--row-lambdas L...`（长度=总行数）与 `--block-lambdas L... --block-size N`（长度=总块数）
 把系数扩到行/列块；以上四种与 `--lambda/--lambdas` 互斥。
 
+`--row-lambdas-file <json>` / `--block-lambdas-file <json> --block-size N` 用稀疏键值对
+（如 `{"0:1": 0.0}` / `{"0:0:0": -1.0}`；未给出的行/块默认 1）给按行/按块系数。
+
 `task-combine <base> --tasks a,b,... --lambdas L,L...` / `wsp_task_combine` 按 λ 组合多个任务
 向量（λ<0 取反、0 丢弃；合并权重取 |λ|，三值没有幅度）。
 

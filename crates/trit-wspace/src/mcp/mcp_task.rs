@@ -278,6 +278,64 @@ pub(super) fn task_scale(args: &Value) -> Result<Value, String> {
         }
         return Ok(row);
     }
+    let row_map = args
+        .get("row_lambdas_map")
+        .and_then(Value::as_object)
+        .map(parse_row_map)
+        .transpose()?;
+    let block_map = args
+        .get("block_lambdas_map")
+        .and_then(Value::as_object)
+        .map(parse_block_map)
+        .transpose()?;
+    if let Some(row_map) = row_map {
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled = crate::scale::scale_task_rows_map(&vector, &row_map).map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let map_value: serde_json::Map<String, Value> = row_map
+            .iter()
+            .map(|((layer, row), value)| (format!("{layer}:{row}"), json!(value)))
+            .collect();
+        let mut row = json!({
+            "row_lambdas_map": map_value,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return Ok(row);
+    }
+    if let Some(block_map) = block_map {
+        let block_size = args
+            .get("block_size")
+            .and_then(Value::as_u64)
+            .ok_or("block_size 需要正整数")? as usize;
+        let vector = crate::task::TaskVector::between(&base, &tuned).map_err(err)?;
+        let scaled =
+            crate::scale::scale_task_blocks_map(&vector, &block_map, block_size).map_err(err)?;
+        let net = scaled.apply(&base).map_err(err)?;
+        let patch = Patch::diff(&base, &net).map_err(err)?;
+        let map_value: serde_json::Map<String, Value> = block_map
+            .iter()
+            .map(|((layer, row, unit), value)| (format!("{layer}:{row}:{unit}"), json!(value)))
+            .collect();
+        let mut row = json!({
+            "block_lambdas_map": map_value,
+            "block_size": block_size,
+            "summary": wire::net_summary(&net),
+            "patch": wire::patch_to_value(&patch),
+            "cost": wire::cost_to_value(&patch.cost(&base)),
+            "artifact": to_wsp(&net),
+        });
+        if let Some(oracle) = &oracle {
+            row["verify"] = wire::metrics_value(&net, oracle).map_err(err)?;
+        }
+        return Ok(row);
+    }
     if let Some(row_lambdas) = row_lambdas {
         let total: usize = dims.iter().map(|(rows, _)| *rows).sum();
         if row_lambdas.len() != total {
@@ -402,4 +460,49 @@ pub(super) fn task_combine(args: &Value) -> Result<Value, String> {
         "cost": wire::cost_to_value(&patch.cost(&base)),
         "artifact": to_wsp(&merged),
     }))
+}
+
+fn parse_row_map(
+    object: &serde_json::Map<String, Value>,
+) -> Result<std::collections::BTreeMap<(usize, usize), f32>, String> {
+    let mut map = std::collections::BTreeMap::new();
+    for (key, value) in object {
+        let parts: Vec<&str> = key.split(':').collect();
+        if parts.len() != 2 {
+            return Err(format!("键 {key} 需要 layer:row"));
+        }
+        let layer = parts[0]
+            .parse::<usize>()
+            .map_err(|_| format!("键 {key} 的 layer 非法"))?;
+        let row = parts[1]
+            .parse::<usize>()
+            .map_err(|_| format!("键 {key} 的 row 非法"))?;
+        let lambda = value.as_f64().ok_or_else(|| format!("键 {key} 需要数字"))? as f32;
+        map.insert((layer, row), lambda);
+    }
+    Ok(map)
+}
+
+fn parse_block_map(
+    object: &serde_json::Map<String, Value>,
+) -> Result<std::collections::BTreeMap<(usize, usize, usize), f32>, String> {
+    let mut map = std::collections::BTreeMap::new();
+    for (key, value) in object {
+        let parts: Vec<&str> = key.split(':').collect();
+        if parts.len() != 3 {
+            return Err(format!("键 {key} 需要 layer:row:block"));
+        }
+        let layer = parts[0]
+            .parse::<usize>()
+            .map_err(|_| format!("键 {key} 的 layer 非法"))?;
+        let row = parts[1]
+            .parse::<usize>()
+            .map_err(|_| format!("键 {key} 的 row 非法"))?;
+        let unit = parts[2]
+            .parse::<usize>()
+            .map_err(|_| format!("键 {key} 的 block 非法"))?;
+        let lambda = value.as_f64().ok_or_else(|| format!("键 {key} 需要数字"))? as f32;
+        map.insert((layer, row, unit), lambda);
+    }
+    Ok(map)
 }

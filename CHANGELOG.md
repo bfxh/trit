@@ -20,6 +20,9 @@
 - 5 seeds / per-class 1000 复核（32×32 彩色、hidden 128、10 epochs）：10 类三值 base
   **18.86% ± 0.47%**、equal 14.70% ± 0.86%、argmax **19.09% ± 0.79%**、f32 **30.31% ± 1.03%**；
   std 从 0.98 压到 0.47，合并掉点更明显（equal/exact/hamming 14.7–15.2%）。
+- 二分类 5 seeds / per-class 1000 复核（同配置）：三值 base **46.40% ± 1.04%**、equal
+  43.35% ± 2.10%、exact/hamming **46.75% ± 0.97%**、argmax/readout **46.80% ± 1.11%**、
+  f32 **55.15% ± 1.83%**。
 - 限制：32×32 与 16×16 的训练规模不同（hidden 64 vs 128、per-class 500 vs 1000），
   不能把差异归因于分辨率。
 ### Added（`trit-build`：补齐 M2/M3 的六项遗留，2026-11-08）
@@ -72,9 +75,11 @@
   λ 互斥。
 - `combine_tasks` / `task-combine <base> --tasks a,b,... --lambdas L,L...` /
   `wsp_task_combine`：多任务加/减（λ<0 取反、0 丢弃，合并权重取 |λ|）；工具数 20 → 21。
-- 测试 258 → 294 + 1 doctest（新增 `tests/task_scale.rs` 18、`tests/classification.rs` 4、
-  `tests/dare.rs` +5、`tests/dare_layer.rs` 5、`tests/task_combine.rs` 4）；变异 245 → 286
-  （新增 41 条目标，子集 6/6、4/4、5/5、5/5、22/22、5/5 caught）。
+- `task-scale --row-lambdas-file` / `--block-lambdas-file`（MCP `row_lambdas_map` /
+  `block_lambdas_map`）：稀疏 `(layer,row)` / `(layer,row,block)` 键值对 λ，未给出的行/块默认 1。
+- 测试 258 → 299 + 1 doctest（新增 `tests/task_scale.rs` 23、`tests/classification.rs` 4、
+  `tests/dare.rs` +5、`tests/dare_layer.rs` 5、`tests/task_combine.rs` 4）；变异 245 → 291
+  （新增 46 条目标，子集 6/6、4/4、5/5、5/5、27/27、5/5 caught）。
 
 ### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
 

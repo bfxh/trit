@@ -5,10 +5,12 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use serde_json::{Value, json};
+use std::collections::BTreeMap;
 use trit_wspace::mcp::Mcp;
+
 use trit_wspace::{
     Edit, Layer, Net, Oracle, Patch, TaskVector, Trit, scale_task, scale_task_blocks,
-    scale_task_layers, scale_task_rows, to_wsp,
+    scale_task_blocks_map, scale_task_layers, scale_task_rows, scale_task_rows_map, to_wsp,
 };
 
 fn xor_net() -> Net {
@@ -532,6 +534,131 @@ fn row_lambdas_length_checked_by_cli() {
     assert!(!output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("需要 3 个"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn row_lambdas_map_sparse() {
+    let base = xor_net();
+    let tuned_net = tuned(
+        &base,
+        vec![
+            set(0, 0, 0, Trit::Pos),
+            set(0, 1, 0, Trit::Pos),
+            set(1, 0, 0, Trit::Pos),
+        ],
+    );
+    let vector = TaskVector::between(&base, &tuned_net).expect("vector");
+    let mut map = BTreeMap::new();
+    map.insert((0, 0), 0.0);
+    let scaled = scale_task_rows_map(&vector, &map).expect("rows map");
+    let net = scaled.apply(&base).expect("apply");
+    assert_eq!(net.layer(0).expect("l0").trit(0, 0), Some(Trit::Neg));
+    assert_eq!(net.layer(0).expect("l0").trit(1, 0), Some(Trit::Pos));
+    assert_eq!(net.layer(1).expect("l1").trit(0, 0), Some(Trit::Pos));
+}
+
+#[test]
+fn block_lambdas_map_sparse() {
+    let base = xor_net();
+    let tuned_net = tuned(
+        &base,
+        vec![
+            set(0, 0, 0, Trit::Pos),
+            set(0, 0, 1, Trit::Pos),
+            set(0, 1, 0, Trit::Pos),
+            set(1, 0, 0, Trit::Pos),
+        ],
+    );
+    let vector = TaskVector::between(&base, &tuned_net).expect("vector");
+    let mut map = BTreeMap::new();
+    map.insert((0, 0, 0), 0.0);
+    let scaled = scale_task_blocks_map(&vector, &map, 2).expect("blocks map");
+    let net = scaled.apply(&base).expect("apply");
+    assert_eq!(net.layer(0).expect("l0").trit(0, 0), Some(Trit::Neg));
+    assert_eq!(net.layer(0).expect("l0").trit(0, 1), Some(Trit::Neg));
+    assert_eq!(net.layer(0).expect("l0").trit(1, 0), Some(Trit::Pos));
+    assert_eq!(net.layer(1).expect("l1").trit(0, 0), Some(Trit::Pos));
+}
+
+#[test]
+fn cli_row_lambdas_map_round_trip() {
+    let dir = temp_dir("row-map");
+    let base = xor_net();
+    let tuned_net = tuned(
+        &base,
+        vec![set(0, 0, 0, Trit::Pos), set(0, 1, 0, Trit::Pos)],
+    );
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    let map_path = dir.join("map.json");
+    fs::write(&base_path, to_wsp(&base)).expect("write base");
+    fs::write(&tuned_path, to_wsp(&tuned_net)).expect("write tuned");
+    fs::write(&map_path, "{\"0:0\": 0.0}").expect("write map");
+    let value = stdout_json(&run(&[
+        "task-scale",
+        &path_string(&base_path),
+        &path_string(&tuned_path),
+        "--row-lambdas-file",
+        &path_string(&map_path),
+    ]));
+    assert_eq!(value["row_lambdas_map"]["0:0"], json!(0.0));
+    let artifact = value["artifact"].as_str().expect("artifact");
+    let net = trit_wspace::from_wsp(artifact).expect("parse");
+    assert_eq!(net.layer(0).expect("l0").trit(0, 0), Some(Trit::Neg));
+    assert_eq!(net.layer(0).expect("l0").trit(1, 0), Some(Trit::Pos));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mcp_row_lambdas_map_round_trip() {
+    let base = xor_net();
+    let tuned_net = tuned(
+        &base,
+        vec![set(0, 0, 0, Trit::Pos), set(0, 1, 0, Trit::Pos)],
+    );
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_task_scale",
+        json!({
+            "base": to_wsp(&base),
+            "tuned": to_wsp(&tuned_net),
+            "row_lambdas_map": {"0:0": 0.0},
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    let artifact = value["artifact"].as_str().expect("artifact");
+    let net = trit_wspace::from_wsp(artifact).expect("parse");
+    assert_eq!(net.layer(0).expect("l0").trit(0, 0), Some(Trit::Neg));
+    assert_eq!(net.layer(0).expect("l0").trit(1, 0), Some(Trit::Pos));
+}
+
+#[test]
+fn row_lambdas_map_rejects_bad_key() {
+    let dir = temp_dir("row-map-bad");
+    let base = xor_net();
+    let tuned_net = tuned(&base, vec![set(0, 0, 0, Trit::Pos)]);
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    let map_path = dir.join("map.json");
+    fs::write(&base_path, to_wsp(&base)).expect("write base");
+    fs::write(&tuned_path, to_wsp(&tuned_net)).expect("write tuned");
+    fs::write(&map_path, "{\"0:x\": 0.0}").expect("write map");
+    let output = run(&[
+        "task-scale",
+        &path_string(&base_path),
+        &path_string(&tuned_path),
+        "--row-lambdas-file",
+        &path_string(&map_path),
+    ]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("row 非法"),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
