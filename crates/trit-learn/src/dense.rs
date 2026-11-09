@@ -35,6 +35,11 @@ pub struct TernaryDense {
     grad_latent: Vec<f32>,
     /// 累积的 scale 梯度（`∂L/∂scale`）。
     grad_scale: Vec<f32>,
+    /// 量化权重缓存（`rows × cols` 行主序）：前向/反向热路径直接读它，
+    /// 避免每个 `(批行, 输出行)` 都重新量化并分配一次 `Vec<i8>`。
+    qc: Vec<i8>,
+    /// `qc` 是否与当前 `latent`/`scale` 不一致（`update` 后置脏）。
+    qc_dirty: bool,
 }
 
 impl TernaryDense {
@@ -63,6 +68,8 @@ impl TernaryDense {
             batch_rows: 0,
             grad_latent: vec![0.0; rows * cols],
             grad_scale: vec![0.0; rows],
+            qc: vec![0; rows * cols],
+            qc_dirty: true,
         }
     }
 
@@ -109,6 +116,20 @@ impl TernaryDense {
         (0..self.rows).map(|r| self.quantized_row(r)).collect()
     }
 
+    /// 确保量化缓存与当前 `latent`/`scale` 一致（`update` 后置脏、下次前向重建）。
+    fn ensure_q(&mut self) {
+        if !self.qc_dirty {
+            return;
+        }
+        let (rows, cols) = (self.rows, self.cols);
+        for r in 0..rows {
+            let base = r * cols;
+            let q = quantize_with_scale(&self.latent[base..base + cols], self.scale[r]);
+            self.qc[base..base + cols].copy_from_slice(&q);
+        }
+        self.qc_dirty = false;
+    }
+
     /// 批前向：`batch` 是 `T × cols` 行主序扁平数组，返回 `T × rows`。
     ///
     /// 输入批会被缓存到下一次 forward。
@@ -123,11 +144,12 @@ impl TernaryDense {
         self.input.clear();
         self.input.extend_from_slice(batch);
         self.batch_rows = rows_of_batch;
+        self.ensure_q();
         let mut out = vec![0.0f32; rows_of_batch * self.rows];
         for t in 0..rows_of_batch {
             let x = &batch[t * self.cols..(t + 1) * self.cols];
             for r in 0..self.rows {
-                let q = self.quantized_row(r);
+                let q = &self.qc[r * self.cols..(r + 1) * self.cols];
                 let dot: f32 = q
                     .iter()
                     .zip(x.iter())
@@ -151,6 +173,7 @@ impl TernaryDense {
             self.batch_rows * self.rows,
             grad_out.len()
         );
+        self.ensure_q();
         let mut grad_in = vec![0.0f32; self.batch_rows * self.cols];
         for t in 0..self.batch_rows {
             let x = &self.input[t * self.cols..(t + 1) * self.cols];
@@ -159,10 +182,10 @@ impl TernaryDense {
                 if dy == 0.0 {
                     continue;
                 }
-                let q = self.quantized_row(r);
                 let base = r * self.cols;
+                let q = &self.qc[base..base + self.cols];
                 // ∂L/∂scale = Σ_t dy · (q·x)（前向 y = scale·Σq·x，q 对 scale 视为常数）。
-                self.grad_scale[r] += dy * scale_grad(&q, x);
+                self.grad_scale[r] += dy * scale_grad(q, x);
                 for (c, &xc) in x.iter().enumerate() {
                     // ∂L/∂q[r,c] = Σ_t dy_t · scale_r · x_t,c，再过 STE 门回 latent。
                     let grad_q = dy * self.scale[r] * xc;
@@ -193,6 +216,8 @@ impl TernaryDense {
         for scale in self.scale.iter_mut() {
             *scale = scale.max(MIN_SCALE);
         }
+        // latent/scale 变了 ⇒ 量化缓存失效，下次 forward/backward 重建。
+        self.qc_dirty = true;
     }
 }
 
