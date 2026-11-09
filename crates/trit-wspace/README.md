@@ -212,8 +212,9 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 
 `--row-lambdas-file <json>` / `--block-lambdas-file <json> --block-size N` 用稀疏键值对
 （如 `{"0:1": 0.0}` / `{"0:0:0": -1.0}`；未给出的行/块默认 1）给按行/按块系数；
-`--row-lambdas-patterns <json>` / `--block-lambdas-patterns <json> --block-size N` 支持通配/区间
-（如 `{"0:*": 0.5}`、`{"0:1-3": -1.0}`；精确段优先于区间/通配，未匹配默认 1）。
+`--row-lambdas-patterns <json>` / `--block-lambdas-patterns <json> --block-size N` 支持通配/区间/
+集合（如 `{"0:*": 0.5}`、`{"0:1-3": -1.0}`、`{"0:1|3": 0.5}`；精确段优先于区间/集合/通配，
+未匹配默认 1）。
 
 `task-combine <base> --tasks a,b,... --lambdas L,L...` / `wsp_task_combine` 按 λ 组合多个任务
 向量（λ<0 取反、0 丢弃；合并权重取 |λ|，三值没有幅度）。

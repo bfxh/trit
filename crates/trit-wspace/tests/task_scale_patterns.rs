@@ -1,5 +1,7 @@
 //! 按行/按块 λ 的通配/区间模式（从 `tests/task_scale.rs` 拆出）。
 
+#![allow(clippy::single_range_in_vec_init)]
+
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -7,7 +9,7 @@ use std::process::{Command, Output};
 use serde_json::{Value, json};
 use trit_wspace::mcp::Mcp;
 use trit_wspace::{
-    Edit, Layer, Net, Patch, TaskVector, Trit, UnitPattern, scale_task_blocks_patterns,
+    Edit, Layer, Net, Patch, TaskVector, Trit, UnitPart, UnitPattern, scale_task_blocks_patterns,
     scale_task_rows_patterns, to_wsp,
 };
 
@@ -79,7 +81,7 @@ fn payload(result: &Value) -> Value {
     serde_json::from_str(raw).expect("json payload")
 }
 
-fn row_pattern(parts: Vec<Option<std::ops::RangeInclusive<usize>>>, lambda: f32) -> UnitPattern {
+fn row_pattern(parts: Vec<UnitPart>, lambda: f32) -> UnitPattern {
     UnitPattern { parts, lambda }
 }
 
@@ -95,7 +97,10 @@ fn row_patterns_wildcard() {
         ],
     );
     let vector = TaskVector::between(&base, &tuned_net).expect("vector");
-    let patterns = vec![row_pattern(vec![Some(0..=0), None], 0.0)];
+    let patterns = vec![row_pattern(
+        vec![UnitPart::Ranges(vec![0..=0]), UnitPart::Any],
+        0.0,
+    )];
     let net = scale_task_rows_patterns(&vector, &patterns)
         .expect("patterns")
         .apply(&base)
@@ -118,8 +123,11 @@ fn row_patterns_exact_beats_wildcard() {
     );
     let vector = TaskVector::between(&base, &tuned_net).expect("vector");
     let patterns = vec![
-        row_pattern(vec![None, None], 0.0),
-        row_pattern(vec![Some(0..=0), Some(0..=0)], 1.0),
+        row_pattern(vec![UnitPart::Any, UnitPart::Any], 0.0),
+        row_pattern(
+            vec![UnitPart::Ranges(vec![0..=0]), UnitPart::Ranges(vec![0..=0])],
+            1.0,
+        ),
     ];
     let net = scale_task_rows_patterns(&vector, &patterns)
         .expect("patterns")
@@ -144,7 +152,11 @@ fn block_patterns_range() {
     );
     let vector = TaskVector::between(&base, &tuned_net).expect("vector");
     let patterns = vec![row_pattern(
-        vec![Some(0..=0), Some(0..=0), Some(0..=1)],
+        vec![
+            UnitPart::Ranges(vec![0..=0]),
+            UnitPart::Ranges(vec![0..=0]),
+            UnitPart::Ranges(vec![0..=1]),
+        ],
         0.0,
     )];
     let net = scale_task_blocks_patterns(&vector, &patterns, 2)
@@ -240,6 +252,94 @@ fn row_patterns_reject_bad_range() {
     assert!(!output.status.success());
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("起点大于终点"),
+        "stderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn row_patterns_set() {
+    let base = xor_net();
+    let tuned_net = tuned(
+        &base,
+        vec![
+            set(0, 0, 0, Trit::Pos),
+            set(0, 1, 0, Trit::Pos),
+            set(1, 0, 0, Trit::Pos),
+        ],
+    );
+    let vector = TaskVector::between(&base, &tuned_net).expect("vector");
+    let patterns = vec![row_pattern(
+        vec![
+            UnitPart::Ranges(vec![0..=0]),
+            UnitPart::Ranges(vec![0..=0, 1..=1]),
+        ],
+        0.0,
+    )];
+    let net = scale_task_rows_patterns(&vector, &patterns)
+        .expect("patterns")
+        .apply(&base)
+        .expect("apply");
+    assert_eq!(net.layer(0).expect("l0").trit(0, 0), Some(Trit::Neg));
+    assert_eq!(net.layer(0).expect("l0").trit(1, 0), Some(Trit::Neg));
+    assert_eq!(net.layer(1).expect("l1").trit(0, 0), Some(Trit::Pos));
+}
+
+#[test]
+fn cli_row_patterns_set_round_trip() {
+    let dir = temp_dir("row-patterns-set");
+    let base = xor_net();
+    let tuned_net = tuned(
+        &base,
+        vec![
+            set(0, 0, 0, Trit::Pos),
+            set(0, 1, 0, Trit::Pos),
+            set(1, 0, 0, Trit::Pos),
+        ],
+    );
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    let map_path = dir.join("map.json");
+    fs::write(&base_path, to_wsp(&base)).expect("write base");
+    fs::write(&tuned_path, to_wsp(&tuned_net)).expect("write tuned");
+    fs::write(&map_path, "{\"0:0|1\": 0.0}").expect("write map");
+    let value = stdout_json(&run(&[
+        "task-scale",
+        &path_string(&base_path),
+        &path_string(&tuned_path),
+        "--row-lambdas-patterns",
+        &path_string(&map_path),
+    ]));
+    let artifact = value["artifact"].as_str().expect("artifact");
+    let net = trit_wspace::from_wsp(artifact).expect("parse");
+    assert_eq!(net.layer(0).expect("l0").trit(0, 0), Some(Trit::Neg));
+    assert_eq!(net.layer(0).expect("l0").trit(1, 0), Some(Trit::Neg));
+    assert_eq!(net.layer(1).expect("l1").trit(0, 0), Some(Trit::Pos));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn row_patterns_reject_mixed_star() {
+    let dir = temp_dir("row-patterns-mixed");
+    let base = xor_net();
+    let tuned_net = tuned(&base, vec![set(0, 0, 0, Trit::Pos)]);
+    let base_path = dir.join("base.wsp");
+    let tuned_path = dir.join("tuned.wsp");
+    let map_path = dir.join("map.json");
+    fs::write(&base_path, to_wsp(&base)).expect("write base");
+    fs::write(&tuned_path, to_wsp(&tuned_net)).expect("write tuned");
+    fs::write(&map_path, "{\"0:*|1\": 0.0}").expect("write map");
+    let output = run(&[
+        "task-scale",
+        &path_string(&base_path),
+        &path_string(&tuned_path),
+        "--row-lambdas-patterns",
+        &path_string(&map_path),
+    ]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("不能把 * 与数字混用"),
         "stderr: {}",
         String::from_utf8_lossy(&output.stderr)
     );
