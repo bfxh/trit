@@ -33,6 +33,19 @@
   `xorshift` / 2 epochs base **13.31% ± 1.37%**、equal/tuned 11.49% ± 1.86%；
   `xorshift` / 10 epochs base **13.43% ± 1.04%**、equal/tuned 13.95% ± 0.79%。
   3 层 `8,16,16` / 10 epochs / 1 seed：base 11.16%、equal/tuned 15.96%（单 seed，不作结论）。
+- `trit-train::layer::Adam`：按参数对应的 Adam 状态（beta1 0.9 / beta2 0.999 / eps 1e-8、
+  偏置校正、`step()`）；`TernaryLinear::train_step_with_grad_adam(input, output_grad, latent_opt,
+  scale_opt)` 用 Adam 更新 latent/scale 并返回输入梯度，三值量化与 STE 口径与
+  `train_step_with_grad` 相同。
+- `trit_train_tasks` 训练改用每层 Adam（latent lr 0.02 / scale lr 0.002），每个 epoch 用 seed
+  派生的顺序打乱样本；隐藏层初始 scale 从固定 0.5 改为 `1/sqrt(cols)`（对齐 `cifar_tasks` 口径）。
+  报告新增 `data.optimizer = "adam"` / `data.lr`；`--lr` 可改 latent 步长（scale 固定 `lr × 0.1`）。
+- 读数（32×32 彩色、per-class 1000、test 1000、hidden 64、tanh、10 epochs、5 seeds）：
+  base **15.69% ± 1.21%**、equal/tuned **12.96% ± 2.40%**。同配置 1 seed 对照：旧 SGD
+  12.91%、只修 scale/shuffle 8.14%、Adam 15.04%——瓶颈是优化器，不是 hidden。
+  20 epochs / 2 seeds（同配置）：base **15.71% ± 0.22%**、equal/tuned 14.52% ± 2.21%；
+  epochs 10→20 没有额外收益，说明收敛不是靠训练轮数。
+- 测试 319 → 323（`trit-train` 10 → 14）；变异 `trit-train` **9/9 抓住**（新增 5 条 Adam 变异）。
 
 ### Experiments（trit-wspace：32×32 彩色 + f32 基线）
 
