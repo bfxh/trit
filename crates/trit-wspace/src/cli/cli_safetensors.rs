@@ -56,12 +56,13 @@ pub(super) fn import(args: &[String]) -> Result<(), String> {
     let mut layers = Vec::with_capacity(names.len());
     let mut report = Vec::with_capacity(names.len());
     for name in &names {
-        let weights = safetensors::read_tensor(path, name).map_err(err)?;
+        let (weights, vector) = safetensors::read_weights(path, name).map_err(err)?;
         report.push(json!({
             "name": name,
             "rows": weights.rows,
             "cols": weights.cols,
             "values": weights.values.len(),
+            "vector": vector,
             "bias": bias_name,
         }));
         layers.push(
@@ -84,11 +85,12 @@ pub(super) fn import(args: &[String]) -> Result<(), String> {
 }
 
 pub(super) fn export(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
+    let parsed = parse(args, &["vector"])?;
     let path = one(
         &parsed,
-        "export-safetensors <artifact|-> --out <path> [--tensor <name>[,<name>...]]",
+        "export-safetensors <artifact|-> --out <path> [--tensor <name>[,<name>...]] [--vector]",
     )?;
+    let vector = parsed.switches.contains("vector");
     let out = value(&parsed, "out")?;
     let net = load_net(path)?;
     let layers = net.layers();
@@ -130,6 +132,7 @@ pub(super) fn export(args: &[String]) -> Result<(), String> {
             name,
             rows: *rows,
             cols: *cols,
+            vector,
             values,
         })
         .collect();
@@ -172,7 +175,7 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
     let mut manifest = Vec::new();
     let mut skipped = Vec::new();
     for info in &tensors {
-        if info.shape.len() != 2 {
+        if info.shape.len() > 2 {
             skipped.push(json!({
                 "name": info.name,
                 "reason": format!("{} 维", info.shape.len()),
@@ -186,7 +189,7 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
             }));
             continue;
         }
-        let weights = safetensors::read_tensor(source, &info.name).map_err(err)?;
+        let (weights, vector) = safetensors::read_weights(source, &info.name).map_err(err)?;
         let mut bias_name = info.name.strip_suffix(".weight").and_then(|stem| {
             let candidate = format!("{stem}.bias");
             names.contains(candidate.as_str()).then_some(candidate)
@@ -212,6 +215,7 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
             "file": file,
             "rows": weights.rows,
             "cols": weights.cols,
+            "vector": vector,
             "bias": bias_name,
         }));
     }
@@ -250,7 +254,7 @@ pub(super) fn export_dir(args: &[String]) -> Result<(), String> {
         return Err("manifest 里没有张量".into());
     }
     let mut names: Vec<String> = Vec::with_capacity(entries.len());
-    let mut buffered: Vec<(usize, usize, Vec<f32>)> = Vec::with_capacity(entries.len());
+    let mut buffered: Vec<(usize, usize, bool, Vec<f32>)> = Vec::with_capacity(entries.len());
     for entry in entries {
         let name = entry
             .get("name")
@@ -260,6 +264,10 @@ pub(super) fn export_dir(args: &[String]) -> Result<(), String> {
             .get("file")
             .and_then(Value::as_str)
             .ok_or_else(|| format!("{name} 缺 file"))?;
+        let vector = entry
+            .get("vector")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
         let path = Path::new(dir).join(file);
         let text =
             fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
@@ -281,7 +289,7 @@ pub(super) fn export_dir(args: &[String]) -> Result<(), String> {
             }
         }
         names.push(name.to_string());
-        buffered.push((rows, cols, values));
+        buffered.push((rows, cols, vector, values));
     }
     let unique: BTreeSet<&String> = names.iter().collect();
     if unique.len() != names.len() {
@@ -290,15 +298,21 @@ pub(super) fn export_dir(args: &[String]) -> Result<(), String> {
     let tensors: Vec<safetensors::TensorOut> = names
         .iter()
         .zip(&buffered)
-        .map(|(name, (rows, cols, values))| safetensors::TensorOut {
-            name,
-            rows: *rows,
-            cols: *cols,
-            values,
-        })
+        .map(
+            |(name, (rows, cols, vector, values))| safetensors::TensorOut {
+                name,
+                rows: *rows,
+                cols: *cols,
+                vector: *vector,
+                values,
+            },
+        )
         .collect();
     safetensors::write_tensors(out, &tensors).map_err(err)?;
-    let bytes: usize = buffered.iter().map(|(_, _, values)| values.len() * 4).sum();
+    let bytes: usize = buffered
+        .iter()
+        .map(|(_, _, _, values)| values.len() * 4)
+        .sum();
     emit(&json!({
         "dir": dir,
         "out": out,

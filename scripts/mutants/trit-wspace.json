@@ -2558,5 +2558,29 @@
  "new": ".filter(|_| true)",
  "pkg": "trit-wspace",
  "filter": "cli_dir_ignores_bias_with_wrong_len"
+},
+{
+ "name": "safetensors: 1D 读成 N×N",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "        1 => Ok((\n            Weights {\n                rows: 1,\n                cols: info.shape[0],",
+ "new": "        1 => Ok((\n            Weights {\n                rows: info.shape[0],\n                cols: info.shape[0],",
+ "pkg": "trit-wspace",
+ "filter": "cli_import_vector_and_export_vector_shape"
+},
+{
+ "name": "safetensors: vector 写出仍用 2D shape",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "json!([tensor.cols])",
+ "new": "json!([tensor.rows, tensor.cols])",
+ "pkg": "trit-wspace",
+ "filter": "cli_import_vector_and_export_vector_shape"
+},
+{
+ "name": "safetensors-dir: 1D 仍跳过",
+ "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
+ "old": "        if info.shape.len() > 2 {",
+ "new": "        if info.shape.len() > 1 {",
+ "pkg": "trit-wspace",
+ "filter": "cli_dir_imports_vectors_and_skips_non_float"
 }
 ]

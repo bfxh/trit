@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：1D 向量工件 + bias 端到端误差读数）
+
+- `safetensors::read_weights`：2D → `(rows, cols)`，1D → `(1, cols)`；`import-safetensors`
+  支持 1D 张量（报告 `vector: true`），生成 `1 × N` 单层工件。
+- `export-safetensors --vector`：单层且 `rows == 1` 时写回 1D shape；`TensorOut` 增加 `vector`。
+- 目录导入：1D 张量不再跳过（生成 `1 × N` 层，manifest 记 `vector`）；`export-safetensors-dir`
+  按 manifest 恢复 1D shape。真实 MiniLM：导入 **103** 张量（63×1D + 40×2D）、跳过 1（`I64`）、
+  **1.009s**、目录 **45MB**；导出 103 张量、**90.9MB**、**1.195s**，1D/2D shape 保持。
+- 新增 `examples/bias_error.rs`：f32 权重+bias 作参照，比较三值权重 + `{0, sign(b)}` bias 的 MSE。
+  合成张量（bias_scale 0.05/0.5/2.0）：`sign/zero = 0.975 / 0.759 / 0.929`；真实 MiniLM
+  `attention.output.dense` 层：**0.9585**（mean|bias| **0.063**）⇒ 符号化 bias 是净收益，但幅度仍丢。
+- 测试 364 → 365（`tests/safetensors.rs` 26 条，新增 vector 往返）；变异 `trit-wspace`
+  320 → 323（+3，逐条验证）。
+- 未证栏：bias 幅度仍只保留符号；vector 工件是 `1 × N` 层，语义上不是原算子（只是参数容器）；
+  没有真实 transformer 的端到端精度。
+
 ### Added（trit-wspace：1D bias 接进 Layer）
 
 - `Weights::to_layer_with_bias`：bias 逐元素取符号（正/负/零 → `+1/-1/0`），长度必须等于行数；

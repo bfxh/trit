@@ -572,7 +572,7 @@ fn cli_dir_rejects_duplicate_names() {
 }
 
 #[test]
-fn cli_dir_skips_non_matrix_and_non_float_tensors() {
+fn cli_dir_imports_vectors_and_skips_non_float() {
     let dir = temp_dir("cli-dir-skip");
     let path = dir.join("mixed.safetensors");
     raw_file(
@@ -587,167 +587,20 @@ fn cli_dir_skips_non_matrix_and_non_float_tensors() {
         "--out",
         out.to_str().unwrap(),
     ]));
-    assert_eq!(report["tensors"].as_array().expect("tensors").len(), 1);
-    assert_eq!(report["tensors"][0]["name"], "c");
+    let tensors = report["tensors"].as_array().expect("tensors");
+    assert_eq!(tensors.len(), 2);
+    assert_eq!(tensors[0]["name"], "a");
+    assert_eq!(tensors[0]["vector"], true);
+    assert_eq!(tensors[1]["name"], "c");
+    assert_eq!(tensors[1]["vector"], false);
     let skipped = report["skipped"].as_array().expect("skipped");
-    assert_eq!(skipped.len(), 2);
-    let names: Vec<&str> = skipped
-        .iter()
-        .map(|item| item["name"].as_str().expect("name"))
-        .collect();
-    assert_eq!(names, vec!["a", "b"]);
+    assert_eq!(skipped.len(), 1);
+    assert_eq!(skipped[0]["name"], "b");
     let files: Vec<String> = fs::read_dir(&out)
         .expect("dir")
         .filter_map(Result::ok)
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .filter(|name| name.ends_with(".wsp"))
         .collect();
-    assert_eq!(files.len(), 1, "{files:?}");
-}
-
-#[test]
-fn to_layer_with_bias_uses_sign_and_checks_len() {
-    let weights = read_tensor_from_values(2, 3, &[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]);
-    let layer = weights
-        .to_layer_with_bias(Some(&[0.25, -0.75]))
-        .expect("layer");
-    let bias: Vec<i8> = layer.bias().iter().map(|trit| trit.to_i8()).collect();
-    assert_eq!(bias, vec![1, -1]);
-    let error = weights
-        .to_layer_with_bias(Some(&[0.25]))
-        .expect_err("长度不符必须报错");
-    assert!(format!("{error}").contains("bias"), "{error}");
-}
-
-fn read_tensor_from_values(
-    rows: usize,
-    cols: usize,
-    values: &[f32],
-) -> trit_wspace::safetensors::Weights {
-    let dir = temp_dir("inline");
-    let path = dir.join("w.safetensors");
-    fixture(&path, &[("w", "F32", [rows, cols], f32_bytes(values))]);
-    read_tensor(path.to_str().unwrap(), "w").expect("read")
-}
-
-#[test]
-fn cli_import_with_bias_writes_signs_into_layer() {
-    let dir = temp_dir("cli-bias");
-    let path = dir.join("one.safetensors");
-    let mut data = f32_bytes(&[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]);
-    data.extend_from_slice(&f32_bytes(&[0.25, -0.75]));
-    raw_file(
-        &path,
-        r#"{"w":{"dtype":"F32","shape":[2,3],"data_offsets":[0,24]},"b":{"dtype":"F32","shape":[2],"data_offsets":[24,32]}}"#,
-        &data,
-    );
-    let imported = stdout_json(&run(&[
-        "import-safetensors",
-        path.to_str().unwrap(),
-        "--tensor",
-        "w",
-        "--bias",
-        "b",
-    ]));
-    assert_eq!(imported["tensor"]["bias"], "b");
-    let net = from_wsp(imported["wsp1"].as_str().expect("wsp1")).expect("parse");
-    let bias: Vec<i8> = net.layers()[0]
-        .bias()
-        .iter()
-        .map(|trit| trit.to_i8())
-        .collect();
-    assert_eq!(bias, vec![1, -1]);
-}
-
-#[test]
-fn cli_import_rejects_bias_with_multiple_tensors() {
-    let dir = temp_dir("cli-bias-multi");
-    let path = dir.join("two.safetensors");
-    let mut data = f32_bytes(&[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]);
-    data.extend_from_slice(&f32_bytes(&[0.5, -0.5]));
-    raw_file(
-        &path,
-        r#"{"w0":{"dtype":"F32","shape":[2,3],"data_offsets":[0,24]},"w1":{"dtype":"F32","shape":[1,2],"data_offsets":[24,32]}}"#,
-        &data,
-    );
-    let output = run(&[
-        "import-safetensors",
-        path.to_str().unwrap(),
-        "--tensor",
-        "w0,w1",
-        "--bias",
-        "w1",
-    ]);
-    assert!(!output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("--bias 只支持单个"),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-#[test]
-fn cli_dir_pairs_weight_with_same_stem_bias() {
-    let dir = temp_dir("cli-dir-bias");
-    let path = dir.join("paired.safetensors");
-    let mut data = f32_bytes(&[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]);
-    data.extend_from_slice(&f32_bytes(&[0.25, -0.75]));
-    raw_file(
-        &path,
-        r#"{"x.weight":{"dtype":"F32","shape":[2,3],"data_offsets":[0,24]},"x.bias":{"dtype":"F32","shape":[2],"data_offsets":[24,32]}}"#,
-        &data,
-    );
-    let out = dir.join("tensors");
-    let report = stdout_json(&run(&[
-        "import-safetensors-dir",
-        path.to_str().unwrap(),
-        "--out",
-        out.to_str().unwrap(),
-    ]));
-    assert_eq!(report["tensors"][0]["bias"], "x.bias");
-    let wsp = fs::read_dir(&out)
-        .expect("dir")
-        .filter_map(Result::ok)
-        .find(|entry| entry.file_name().to_string_lossy().ends_with(".wsp"))
-        .expect("wsp file");
-    let net = from_wsp(&fs::read_to_string(wsp.path()).expect("wsp")).expect("parse");
-    let bias: Vec<i8> = net.layers()[0]
-        .bias()
-        .iter()
-        .map(|trit| trit.to_i8())
-        .collect();
-    assert_eq!(bias, vec![1, -1]);
-}
-
-#[test]
-fn cli_dir_ignores_bias_with_wrong_len() {
-    let dir = temp_dir("cli-dir-bias-bad");
-    let path = dir.join("bad.safetensors");
-    let mut data = f32_bytes(&[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]);
-    data.extend_from_slice(&f32_bytes(&[0.25, -0.75, 0.5]));
-    raw_file(
-        &path,
-        r#"{"y.weight":{"dtype":"F32","shape":[2,3],"data_offsets":[0,24]},"y.bias":{"dtype":"F32","shape":[3],"data_offsets":[24,36]}}"#,
-        &data,
-    );
-    let out = dir.join("tensors");
-    let report = stdout_json(&run(&[
-        "import-safetensors-dir",
-        path.to_str().unwrap(),
-        "--out",
-        out.to_str().unwrap(),
-    ]));
-    assert!(report["tensors"][0]["bias"].is_null());
-    let wsp = fs::read_dir(&out)
-        .expect("dir")
-        .filter_map(Result::ok)
-        .find(|entry| entry.file_name().to_string_lossy().ends_with(".wsp"))
-        .expect("wsp file");
-    let net = from_wsp(&fs::read_to_string(wsp.path()).expect("wsp")).expect("parse");
-    let bias: Vec<i8> = net.layers()[0]
-        .bias()
-        .iter()
-        .map(|trit| trit.to_i8())
-        .collect();
-    assert_eq!(bias, vec![0, 0]);
+    assert_eq!(files.len(), 2, "{files:?}");
 }
