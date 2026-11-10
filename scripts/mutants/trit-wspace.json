@@ -2542,5 +2542,21 @@
  "new": "            _ => -1,",
  "pkg": "trit-wspace",
  "filter": "rejects_illegal_2bit_code"
+},
+{
+ "name": "bias: 符号反转",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "                    if *value > 0.0 {\n                        1\n                    } else if *value < 0.0 {\n                        -1\n                    } else {",
+ "new": "                    if *value > 0.0 {\n                        -1\n                    } else if *value < 0.0 {\n                        1\n                    } else {",
+ "pkg": "trit-wspace",
+ "filter": "to_layer_with_bias_uses_sign_and_checks_len"
+},
+{
+ "name": "safetensors-dir: bias 长度不检查",
+ "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
+ "old": ".filter(|values| values.len() == weights.rows)",
+ "new": ".filter(|_| true)",
+ "pkg": "trit-wspace",
+ "filter": "cli_dir_ignores_bias_with_wrong_len"
 }
 ]

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：1D bias 接进 Layer）
+
+- `Weights::to_layer_with_bias`：bias 逐元素取符号（正/负/零 → `+1/-1/0`），长度必须等于行数；
+  `read_vector` 读 1D F32/F16/BF16 张量。
+- CLI `import-safetensors --tensor <name> --bias <name>`（`--bias` 只支持单个张量）；
+  `import-safetensors-dir` 自动把 `<stem>.bias` 配到 `<stem>.weight`，长度不符或不可读则不配对
+  （manifest 的 `bias` 记 `null`）。
+- 真实 MiniLM 整模型：40 个 2D 张量中 **37** 个配上 `.bias`（3 个 embedding 无 bias），
+  导入 **1.011s**。
+- 测试 359 → 364（新增 5 条：符号/长度校验、CLI `--bias`、多张量拒绝、目录配对、长度不符不配对）。
+- 变异 `trit-wspace` 318 → 320（+2；「bias 长度不校验」与 `Layer::with_scales` 的长度校验等价，
+  已验证并删除公示）。
+- 未证栏：bias 只保留符号，f32 幅度丢失；LayerNorm 的 1D `weight/bias` 仍跳过（没有 2D 主张量可配）。
+
 ### Added（trit-wspace：WSP2 2-bit 压缩容器）
 
 - `trit-wspace::wsp2`：`to_wsp2` / `from_wsp2`，把每个 trit 压到 2 bit（`-1/0/+1 → 0/1/2`，
