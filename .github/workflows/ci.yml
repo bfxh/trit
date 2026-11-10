@@ -104,6 +104,11 @@ jobs:
             fallback "ci_scope 运行失败"
           fi
 
+      # `--verify-hdl` 的 tests/hdl.rs 没有 iverilog 会静默跳过；Linux 装上让真仿真进 CI。
+      - name: Install iverilog (Linux)
+        if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq iverilog
+
       - name: Check formatting
         if: steps.scope.outputs.only_docs != 'true'
         run: cargo fmt --all -- --check
@@ -155,6 +160,15 @@ jobs:
         if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
         run: cargo clippy -p trit-gpu --features gpu --all-targets --locked -- -D warnings
 
+      # trit-build 的 gpu feature 同样默认关：至少让 WGSL 过 naga 解析/校验；
+      # 有 adapter 时 gpu::tests 会再跑真机对拍，没有就跳过（naga 那条仍必跑）。
+      - name: Test (trit-build gpu feature, naga shader smoke)
+        if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux' && steps.crates.outputs.needs_build_gpu == 'true'
+        run: "cargo test -p trit-build --features gpu --bin trit-build gpu:: --locked"
+      - name: Clippy (trit-build gpu feature)
+        if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux' && steps.crates.outputs.needs_build_gpu == 'true'
+        run: cargo clippy -p trit-build --features gpu --all-targets --locked -- -D warnings
+
   module-budget:
     name: module budget (god objects)
     runs-on: ubuntu-latest
@@ -165,6 +179,15 @@ jobs:
         run: python3 scripts/module_budget.py --self-test
       - name: Every file within budget or shrinking-only debt
         run: python3 scripts/module_budget.py
+
+  release-preflight:
+    name: release preflight (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Release preflight self-test
+        run: python3 scripts/release_preflight.py --self-test
 
   hazard:
     name: hazard gate (concurrency/memory)

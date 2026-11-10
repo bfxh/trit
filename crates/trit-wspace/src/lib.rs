@@ -28,13 +28,16 @@
 //!   [`Script`] 把多个 [`Program`] 组合成原子序列或按行为分支的脚本；
 //!   [`AuditLog`] 把每次编辑记成带哈希链的 JSONL，可验链、可从初始工件重放；
 //!   [`mod@shard`] 把长日志切成带 header 与分片内 oracle 表的多文件，跨片仍是同一条链；
-//!   [`Checkpoint`] 可在分片边界保存工件与链头，从检查点续放。
+//!   [`Checkpoint`] 可在分片边界保存工件与链头，从检查点续放；
+//!   [`mod@rebase`] 把针对旧工件写的补丁三方重放到已经前进的工件上（冲突逐条报告）；
+//!   [`mod@transplant`] 把一个隐藏单元（入边 + 偏置 + scale + 出边）整体搬到另一个网络。
 //! - 程序语义：[`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
 //! - 搜索层：[`mod@repair`] 不走梯度，在离散空间里找精确最小补丁；[`mod@analyze`] 对每个单点
 //!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`mod@explain`] 解释单个样本
 //!   为什么错、哪些单点编辑能让它翻转/变对；[`mod@probe`] 做行级消融测行为漂移（大网读取）；
 //!   [`mod@localize`] 在承重行内做 trit 级定位（行 → 权重两级读取）；
-//!   [`merge`] 负责消掉隐藏单元置换对称性后再合并；[`mod@task`] 做三值任务向量投票合并。
+//!   [`merge`] 负责消掉隐藏单元置换对称性后再合并；[`mod@task`] 做三值任务向量投票合并；
+//!   [`mod@dare`] 做 DARE 的三值对应物：按种子确定性丢弃差分 trit，重标度吸收进 scale。
 //!
 //! 规范自由度（不变量）：
 //!
@@ -88,7 +91,7 @@
 //! - MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、
 //!   `wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、
 //!   `wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、
-//!   `wsp_task_merge` 十六个工具，
+//!   `wsp_task_merge`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop` 十九个工具，
 //!   工具参数与返回格式见 [`wire`]。
 //!
 //! 补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
@@ -101,6 +104,7 @@ pub mod audit;
 pub mod cli;
 mod cli_audit;
 pub mod codec;
+pub mod dare;
 pub mod edit;
 pub mod error;
 pub mod explain;
@@ -114,10 +118,14 @@ pub mod ops;
 pub mod oracle;
 pub mod probe;
 pub mod program;
+pub mod rebase;
 pub mod repair;
+pub mod scale;
 pub mod shard;
 pub mod task;
+pub mod transplant;
 pub mod trit;
+pub mod tune;
 pub mod wire;
 
 pub use analyze::{
@@ -126,6 +134,7 @@ pub use analyze::{
 };
 pub use audit::{AuditLog, LogEntry, ReplayReport};
 pub use codec::{checksum, from_wsp, to_wsp};
+pub use dare::{DropOutcome, dare_drop, dare_drop_blocks, dare_drop_layers, dare_drop_rows};
 pub use edit::{Cost, Edit, Journal, Patch};
 pub use error::{Error, Result};
 pub use explain::{SampleEditImpact, SampleExplanation, explain_sample};
@@ -141,6 +150,21 @@ pub use probe::{
 };
 pub use program::{Program, Report, Script, ScriptReport};
 pub use repair::{Repair, RepairOptions, repair};
+pub use scale::{
+    ScaleUnit, UnitPart, UnitPattern, combine_tasks, scale_task, scale_task_blocks,
+    scale_task_blocks_map, scale_task_blocks_patterns, scale_task_layers, scale_task_rows,
+    scale_task_rows_map, scale_task_rows_patterns, scale_task_units,
+};
 pub use shard::{Checkpoint, Shard, ShardCursor, ShardHeader, ShardReplay, ShardedLog};
-pub use task::{TaskVector, merge_tasks};
+pub use task::{
+    MergeReport, TaskVector, merge_tasks, merge_tasks_dare, merge_tasks_per_task_dare,
+    merge_tasks_weighted, merge_tasks_weighted_dare, merge_tasks_weighted_per_task_dare,
+    merge_tasks_weighted_report,
+};
+pub use transplant::transplant_units;
 pub use trit::Trit;
+pub use tune::{
+    DEFAULT_TUNE_GRID, TuneMerge, TuneMetric, WeightTuning, tune_task_weights,
+    tune_task_weights_argmax, tune_task_weights_hamming, tune_task_weights_metric,
+    tune_task_weights_readout, tune_task_weights_with,
+};

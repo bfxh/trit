@@ -12,9 +12,9 @@
 const BLOCK_W: u32 = 8u;
 const BLOCK_H: u32 = 8u;
 //
-// 块布局（每块 12 字节 = 3 个 u32）：
-//   word0: e0hi e0lo e1hi e1lo（e0/e1 为 RGB565 的 BE u16）
-//   word1-2: 40 纹素 × 1 trit，5 trit/字节（基 3 打包，低位在前）
+// 块布局（每块 17 字节，GPU 侧补齐到 20 字节 = 5 个 u32，见下方块基址注释）：
+//   字节 0-3: e0hi e0lo e1hi e1lo（e0/e1 为 RGB565 的 BE u16）
+//   字节 4-16: 64 纹素 × 1 trit，13 载荷字节，5 trit/字节（基 3 打包，低位在前）
 
 struct Level {
     // 该级在块流里的起始块序号

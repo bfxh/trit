@@ -105,6 +105,42 @@ pub enum Error {
         /// 验证集条数。
         len: usize,
     },
+    /// 同一层里重复指定了同一行。
+    DuplicateRow {
+        /// 层号。
+        layer: usize,
+        /// 重复的行号。
+        row: usize,
+    },
+    /// DARE 丢弃率必须是 `[0, 1)` 内的有限数。
+    InvalidRate {
+        /// 非法的丢弃率。
+        rate: f32,
+    },
+    /// 任务权重必须是有限非负数。
+    InvalidWeight {
+        /// 第几个任务（从 0 开始）。
+        index: usize,
+        /// 非法的权重。
+        weight: f32,
+    },
+    /// 调权候选网格必须是有限非负数。
+    InvalidGrid {
+        /// 第几个候选（从 0 开始）。
+        index: usize,
+        /// 非法的候选值。
+        value: f32,
+    },
+    /// 任务向量缩放系数必须是有限数。
+    InvalidLambda {
+        /// 非法的缩放系数。
+        lambda: f32,
+    },
+    /// DARE 块大小必须非零。
+    InvalidBlock {
+        /// 非法的块大小。
+        block: usize,
+    },
 }
 
 /// 库内统一 `Result`。
@@ -159,6 +195,24 @@ impl fmt::Display for Error {
             ),
             Self::SampleIndex { index, len } => {
                 write!(f, "样本下标 {index} 越界（验证集 {len} 条）")
+            }
+            Self::DuplicateRow { layer, row } => {
+                write!(f, "第 {layer} 层的第 {row} 行被重复指定")
+            }
+            Self::InvalidRate { rate } => {
+                write!(f, "丢弃率 {rate} 必须是 [0, 1) 内的有限数")
+            }
+            Self::InvalidWeight { index, weight } => {
+                write!(f, "第 {index} 个任务的权重 {weight} 必须是有限非负数")
+            }
+            Self::InvalidGrid { index, value } => {
+                write!(f, "第 {index} 个调权候选 {value} 必须是有限非负数")
+            }
+            Self::InvalidLambda { lambda } => {
+                write!(f, "任务向量缩放系数 {lambda} 必须是有限数")
+            }
+            Self::InvalidBlock { block } => {
+                write!(f, "DARE 块大小 {block} 必须大于 0")
             }
         }
     }

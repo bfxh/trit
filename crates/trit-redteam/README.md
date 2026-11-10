@@ -2,6 +2,9 @@
 
 三进制产物（TRB2 blob、双导轨 `design.v`）的**红队/加固检查器**。
 
+支持 TRB2 **v2**（历史产物，11 字节头）与 **v3**（19 字节头 + `names_hash` + 变量名段）；
+两版的长度/CRC/规范形检查同一口径，v3 额外校验名字段哈希。
+
 ## 边界
 
 - 只读**本仓自己的产物**：`trit-build` 生成的 `truth.tritbin` 与 `--emit-verilog` 的 `design.v`。

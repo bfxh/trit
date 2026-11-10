@@ -45,6 +45,507 @@
   ROADMAP §4 那句"watched literals（µs/节点 10.7→47.9）"已按本轮读数改写，旧靶子用删除线留在原处。
 - 复算尺：`cargo run --release -p trit-count --example matching_alloc_probe`、
   `cargo run --release -p trit-count --example matching_family`（两条都要在机器空转时跑，µs/节点那列取 5 次中位数）。
+### Added（trit-wspace：真实 trit-train 产物接入）
+
+- 新增 `examples/trit_train_tasks.rs`：用 `trit-train::layer::TernaryLinear` 训练 → 导出 WSP1 →
+  读回 → 任务合并/调权（玩具数据：base 1.0、equal/tuned 0.5，证明产物路径可用）。
+- 扩展 `trit_train_tasks`：`--data` 接 CIFAR 夹具、`--hidden N` 两层 `TernaryLinear`、
+  `--lambdas` 输出 λ 扫描读数。CIFAR 小规模（32×32 彩色、per-class 50、1 epoch、
+  hidden 8、2 seeds）：base **10.5% ± 0.14%**、equal/tuned **9.3% ± 3.25%**、λ 扫描 7.2–9.3%。
+- `trit-train::layer::TernaryLinear::train_step_with_grad`：输出梯度更新 + 返回输入梯度；
+  `trit_train_tasks` 的两层训练改为**端到端反向**（tanh 激活），不再贪心逐层。
+- `trit_train_tasks` 增加 `--dare-rate` / `--dare-per-task` / `--by-block` / `--tune-with-dare` /
+  `--dare-seed`；CIFAR 读数：5 seeds/per-class 200（hidden 16、2 epochs）base
+  **10.2% ± 3.6%**、equal/tuned **9.2% ± 4.1%**；块级 DARE（rate 0.5、block 16、
+  tune-with-dare、2 seeds）base **11.25% ± 2.19%**、equal/tuned **12.45% ± 0.49%**。
+- `trit_train_tasks` 支持 `--hidden 8,16`（任意层）与 `--activation tanh|relu`（端到端反向）；
+  新增 `scripts/trit_train_tasks_smoke.py`（toy 数据 → WSP1 产物 + JSON 字段校验）。
+- 读数：5 seeds / per-class 500 + 块级 DARE（hidden 8,16、tanh、2 epochs）base
+  **11.66% ± 3.93%**、equal/tuned **10.72% ± 2.88%**；更深栈 + relu（hidden 8,16、1 epoch）
+  base **10.65% ± 0.49%**、equal/tuned **10.1% ± 0.28%**。
+- 测试 309 → 319（`trit-train` +2；`cargo test -p trit-wspace -p trit-train`）。
+- `trit-train` 作为 `trit-wspace` 的 dev-dependency（同层 L3）；新增
+  `tests/trit_train_artifacts.rs`（WSP1 往返 + 零任务合并）。
+- 测试 308 → 309（含 1 doctest）。
+- `trit_train_tasks` 新增 `--init modulo|xorshift`（`xorshift` 是 SplitMix64 逐层独立流，
+  由 seed 决定、可复算；`modulo` 保留历史周期 11 口径）与报告字段 `data.init`；
+  `to_net` 改用 `Layer::with_scales`，把训练出的 per-row scale 写进 WSP1（此前恒写 1.0；
+  三值前向读数不变，但 `readout`/合并不再丢 scale）。smoke 增加初始化差异与 scale 行断言。
+- 读数（32×32 彩色、per-class 1000、test 1000、hidden 8,16、tanh、5 seeds）：
+  `modulo` / 2 epochs base **13.50% ± 0.66%**、equal/tuned 9.69% ± 3.39%；
+  `xorshift` / 2 epochs base **13.31% ± 1.37%**、equal/tuned 11.49% ± 1.86%；
+  `xorshift` / 10 epochs base **13.43% ± 1.04%**、equal/tuned 13.95% ± 0.79%。
+  3 层 `8,16,16` / 10 epochs / 1 seed：base 11.16%、equal/tuned 15.96%（单 seed，不作结论）。
+- `trit-train::layer::Adam`：按参数对应的 Adam 状态（beta1 0.9 / beta2 0.999 / eps 1e-8、
+  偏置校正、`step()`）；`TernaryLinear::train_step_with_grad_adam(input, output_grad, latent_opt,
+  scale_opt)` 用 Adam 更新 latent/scale 并返回输入梯度，三值量化与 STE 口径与
+  `train_step_with_grad` 相同。
+- `trit_train_tasks` 训练改用每层 Adam（latent lr 0.02 / scale lr 0.002），每个 epoch 用 seed
+  派生的顺序打乱样本；隐藏层初始 scale 从固定 0.5 改为 `1/sqrt(cols)`（对齐 `cifar_tasks` 口径）。
+  报告新增 `data.optimizer = "adam"` / `data.lr`；`--lr` 可改 latent 步长（scale 固定 `lr × 0.1`）。
+- 读数（32×32 彩色、per-class 1000、test 1000、hidden 64、tanh、10 epochs、5 seeds）：
+  base **15.69% ± 1.21%**、equal/tuned **12.96% ± 2.40%**。同配置 1 seed 对照：旧 SGD
+  12.91%、只修 scale/shuffle 8.14%、Adam 15.04%——瓶颈是优化器，不是 hidden。
+  20 epochs / 2 seeds（同配置）：base **15.71% ± 0.22%**、equal/tuned 14.52% ± 2.21%；
+  epochs 10→20 没有额外收益，说明收敛不是靠训练轮数。
+- 测试 319 → 323（`trit-train` 10 → 14）；变异 `trit-train` **9/9 抓住**（新增 5 条 Adam 变异）。
+
+### Experiments（trit-wspace：32×32 彩色 + f32 基线）
+
+- 夹具：`cifar32.npz` 导出 `train_x32.bin`（1024 维灰度）/`train_x32c.bin`（3072 维彩色）/
+  `test_x32*.bin`；example 的 `--size 32` 直接可用（无需改代码）。
+- 10 类读数（32×32 彩色、hidden 64、per-class 500、5 epochs、3 seeds、2k test）：
+  三值 base **18.10% ± 0.72%**、equal 19.10% ± 2.23%、exact 18.73% ± 2.48%、
+  hamming 18.98% ± 2.17%、argmax **19.42% ± 1.69%**、readout 18.10% ± 0.72%；
+  f32 base **27.35% ± 0.97%**。
+- 二分类（cat/dog、500/类、10 epochs、3 seeds、400 test）：三值 base 43.75% ± 1.50%、
+  argmax/readout **46.75% ± 1.30%**、f32 base **56.0% ± 1.5%**。
+- hidden 128 对照（32×32 彩色、per-class 500、3 seeds、10 epochs）：10 类三值 base
+  **18.20% ± 0.98%**、argmax 18.63% ± 0.84%、f32 **29.83% ± 0.95%**；二分类三值 base
+  **45.17% ± 3.64%**、argmax 45.92% ± 2.36%、f32 **55.33% ± 1.70%**。与 hidden 64 相比：
+  三值 10 类基本持平（18.10% → 18.20%），f32 升 2.5 点；二分类三值升 1.4 点但 std 增大。
+  容量不是三值瓶颈的主因，分辨率/三值编码仍是限制。
+- 5 seeds / per-class 1000 复核（32×32 彩色、hidden 128、10 epochs）：10 类三值 base
+  **18.86% ± 0.47%**、equal 14.70% ± 0.86%、argmax **19.09% ± 0.79%**、f32 **30.31% ± 1.03%**；
+  std 从 0.98 压到 0.47，合并掉点更明显（equal/exact/hamming 14.7–15.2%）。
+- 二分类 5 seeds / per-class 1000 复核（同配置）：三值 base **46.40% ± 1.04%**、equal
+  43.35% ± 2.10%、exact/hamming **46.75% ± 0.97%**、argmax/readout **46.80% ± 1.11%**、
+  f32 **55.15% ± 1.83%**。
+- 二分类 hidden 32/64/128/256 容量曲线（5 seeds、per-class 1000、10 epochs）：
+  · h32：三值 base **45.05% ± 2.22%**、argmax **48.95% ± 2.30%**、f32 **56.00% ± 2.26%**
+  · h64：45.55% ± 3.21%、argmax 47.55% ± 1.35%、f32 55.10% ± 1.92%
+  · h128：46.40% ± 1.04%、argmax 46.80% ± 1.11%、f32 55.15% ± 1.83%
+  · h256：47.75% ± 3.80%、argmax 48.20% ± 4.11%、f32 53.55% ± 1.87%
+  容量 32→256 三值 base +2.7 点但 std 增大到 3.8；f32 反而 −2.45；argmax 在 h32 最高。
+  没有稳定单调容量收益，瓶颈不在容量。
+- 限制：32×32 与 16×16 的训练规模不同（hidden 64 vs 128、per-class 500 vs 1000），
+  不能把差异归因于分辨率。
+### Added（`trit-build`：补齐 M2/M3 的六项遗留，2026-11-08）
+
+- **TRB2 v3：变量名进 blob**。固定头后加 `names_hash u64` + `nvars × (len u8 | UTF-8)`；
+  `--decode` 重建的 `truth.csv` 表头与原表逐字节一致。Rust、C 运行时（`trit_runtime.c`）
+  与 red-team 独立解析器同步支持 v2/v3；v2 仍可解（列名回退 `v0..vN`）。
+  体积：3 变量 31 B（v2 17 B；TRB1 35 B）、12 变量 **106,346 B**（v2 106,300 B；TRB1 132,883 B，−19.97%）。
+- **Ł3/B3 双导轨 Verilog 导出**。K3 保留手写少门公式；Ł3/B3 从该语义 3×3 真值表合成
+  两轨 DNF（`--emit-verilog --algebra lukasiewicz|bochvar`）。验证有三路：测试内位级解释器、
+  `trit-circuit::parse_verilog` 回读 + `propagate`、以及 iverilog 真仿真。
+- **HDL 真仿真**：`--verify-hdl` 生成数组循环的 `design_tb.v` + `expected.mem`，调用
+  iverilog 14/vvp 逐行比对；`(1,1)` 非法导轨也算失败。故意改坏的 `design.v` 会触发
+  `MISMATCH` 退出非 0；0 变量常量表达式也覆盖。
+- **GPU 导出**：`--emit-gpu` 产出 `truth.wgsl`（WGSL 查表内核）、`truth.gpu.bin`
+  （`TGPU` 头 + 2 bit/trit 的 pos/neg 位平面）与 `truth_gpu.json`。`--features gpu` 的
+  wgpu 单测在 RTX 4060 Ti 上对 K3/Ł3/B3 逐 code 对拍，越界 code 输出 0。
+- **e-graph 饱和求解 + 代价模型**：重写到不动点（无新合并即停），`--egraph-rounds` /
+  `--egraph-node-limit` 兜底；`build.json` 的 `verified.egraph` 记录
+  `rounds/eNodes/saturated/cost/nodes`。提取支持 `--cost nodes|gates`；
+  测试构造同一 e-class 验证 nodes 选 `a≡b`、gates 选 `(a∧b)∧c`。
+- **位并行多线程**：按 64 行对齐切块，`--threads 0` 自动（24 逻辑核）。
+  12 变量 531,441 行：标量 297 ms → 单线程位并行 23.7 ms → **3.74 ms（6.3×）**；
+  1/2/3/4/8/auto 线程逐 trit 相同，`truth.csv`/`truth.tritbin`/`lookup.c` 与线程数无关。
+- CLI 新增 `--verify-hdl`、`--emit-gpu`、`--threads`、`--cost`、`--egraph-rounds`、
+  `--egraph-node-limit`；缓存键覆盖所有会改变产物的选项（线程数除外）。
+- 测试：新增 TRB2 v3 名字段（含篡改/UTF-8/不安全字符）、v2 兼容、三语义双导轨回读、
+  iverilog 正反例、GPU 布局与真机对拍、e-graph 饱和/触顶/代价模型、线程一致性等用例。
+  `cargo test -p trit-build -p trit-redteam` 全绿；
+  `cargo clippy -p trit-build -p trit-redteam --all-targets -D warnings` 干净
+  （`trit-build --features gpu` 另跑一条）。
+
+### Added（trit-wspace：任务向量缩放 + 块级 DARE + 分类读数）
+
+- `scale_task`：三值任务算术——`λ>0` 原样、`λ=0` 丢弃、`λ<0` 取反 trit/偏置（scale 差分丢弃）。
+  CLI `task-scale <base> <tuned> --lambda L`，MCP `wsp_task_scale`（工具数 19 → 20）。
+- `dare_drop_blocks`：同一行列按 `col/block` 整块保留/丢弃；`block=1` 退化为坐标级，
+  `block=0` 判 `InvalidBlock`。CLI `dare-drop ... --block N`，MCP `wsp_dare_drop.block`。
+- `wire::classification_value`：per-class 精度 + 混淆矩阵（一维输出按 2 类）；
+  `verify` 与 `task-merge` 的 `verify` 块输出 `classification` / `before_classification` /
+  `after_classification`。
+- `dare_drop_layers`：整层（所有行、所有 trit 与偏置）一起保留/丢弃；CLI `--by-layer`，
+  MCP `wsp_dare_drop.by_layer`（与 `by_row` / `block` 互斥）。
+- `task-scale --lambdas L,L...` / `wsp_task_scale.lambdas`：批量 λ 扫描；配 `--oracle` 时
+  每个 λ 返回 `verify`，批量结果在 `results`（不含 `artifact`）。
+- `task-scale --layer-lambdas L0,L1...` / `wsp_task_scale.layer_lambdas`：按层给系数（每层
+  一个；0 丢弃该层、<0 取反该层），与 `lambda` / `lambdas` 互斥；长度必须等于层数。
+- `task-scale --row-lambdas L...` / `--block-lambdas L... --block-size N`（MCP `row_lambdas` /
+  `block_lambdas` / `block_size`）：按行/按列块缩放；长度分别等于总行数/总块数，与全局/按层
+  λ 互斥。
+- `combine_tasks` / `task-combine <base> --tasks a,b,... --lambdas L,L...` /
+  `wsp_task_combine`：多任务加/减（λ<0 取反、0 丢弃，合并权重取 |λ|）；工具数 20 → 21。
+- `task-scale --row-lambdas-file` / `--block-lambdas-file`（MCP `row_lambdas_map` /
+  `block_lambdas_map`）：稀疏 `(layer,row)` / `(layer,row,block)` 键值对 λ，未给出的行/块默认 1。
+- `task-scale --row-lambdas-patterns` / `--block-lambdas-patterns`（MCP `row_lambdas_patterns` /
+  `block_lambdas_patterns`）：通配/区间/集合模式（`*`、`a-b`、`a|b`）；精确段 > 集合/区间 >
+  通配，未匹配默认 1。
+- 测试 258 → 308 + 1 doctest（新增 `tests/task_scale.rs` 23、`tests/task_scale_patterns.rs` 9、
+  `tests/classification.rs` 4、`tests/dare.rs` +5、`tests/dare_layer.rs` 5、
+  `tests/task_combine.rs` 4）；变异 245 → 300（新增 55 条目标，子集 6/6、4/4、5/5、5/5、
+  36/36、5/5 caught）。
+
+### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
+
+- `merge_tasks_weighted_report` 返回 `(Net, MergeReport)`：任务数、被零权重忽略的任务数、
+  有票坐标数、平票坐标数、实际 trit/偏置编辑数、写出的 scale 行数。`merge_tasks_weighted`
+  保持返回 `Net`。CLI/MCP 在非 DARE 路径输出 `merge_report`（DARE 路径为 `null`）。
+- `DEFAULT_TUNE_GRID` + `TuneMetric` / `TuneMerge` + `tune_task_weights_metric`：
+  调权可换候选网格与评估合并方式。CLI `--tune-grid G[,G...]`、`--tune-with-dare`；
+  MCP `tune_grid`、`tune_with_dare`。`TuneMerge::{Plain, Dare, PerTaskDare}` 让评估与最终
+  DARE 合并路径对齐。
+- 测试 252 → 258 + 1 doctest（`tests/task_tune.rs` 18 → 24）；变异 234 → 245（新增 11 条目标，
+  其中 PerTaskDare 分支补测后 3/3 caught）。
+- 未证栏：DARE 路径不返回 `merge_report`（只报告投票阶段）；`ties` 定义为“票和为零且票值不全相同”；
+  `tune_grid` 未做去重/上限。
+
+### Experiments（trit-wspace：16×16 彩色 + hidden 128）
+
+- `examples/cifar_tasks.rs` 支持 `--color`（16×16×3 = 768 维）与 `--hidden N`；本地新增 16×16 彩色夹具。
+- 读数：
+  · 二分类 cat-vs-dog（16×16 彩色、hidden 128、每类 500、10 epochs、test 200、5 seeds）：三值 base
+    **49.3% ± 3.5%**、等权 41.6% ± 1.2%、exact/hamming 49.9% ± 2.5%、argmax/readout 48.6% ± 4.0%；
+    **f32 base 53.0% ± 3.3%**。
+  · 10 类（16×16 彩色、hidden 128、每类 200、10 epochs、test 500、3 seeds）：三值 base
+    **16.93% ± 0.61%**、hamming/argmax/readout 17.73–17.8% ± 0.7–0.8%、等权 15.93% ± 0.95%；
+    **f32 base 25.67% ± 0.50%**。
+- 对照 16×16 灰度 hidden 64（CHG-2026-11-08-H）：10 类三值 15.36% → 16.93%（+1.6 点）；
+  二分类三值 47.8% → 49.3%（+1.5 点）。彩色 + 更大 hidden 有小幅提升，但没有改变
+  “三值化仍差 8–9 点、调权只补回一部分”的结论；cat-vs-dog 仍难。
+- 未证栏：32×32 未试（训练成本高）；f32 基线仍是 2 层 MLP；per-class 200–500 的数据量下
+  std 仍大（二分类 ±3.5 点）。
+
+### Experiments（trit-wspace：16×16 输入 + 连续 f32 基线 + 5 seeds）
+
+- `examples/cifar_tasks.rs` 支持 `--size`（8/16，夹具 `{split}_x{size}.bin`）；f32 基线改用**连续灰度输入**
+  （`v/127.5 - 1`），不再把输入三值化——三值 vs f32 的差异现在同时覆盖输入与权重。
+- 5 seeds（7–11）读数：
+  · 10 类（16×16、hidden 64、每类 500、10 epochs、test 1000）：三值 base **15.36% ± 0.59%**，
+    argmax 调权 15.22% ± 0.99%；**f32 base 26.28% ± 1.22%**。
+  · 二分类 cat-vs-dog（16×16、每类 1000、10 epochs、test 400）：三值 base **47.8% ± 1.96%**，
+    等权 49.6% ± 1.56%，调权 **51.05% ± 1.30%**；**f32 base 54.65% ± 2.57%**。
+- 对照 8×8（CHG-2026-11-08-G）：10 类三值 15.67% ± 0.71% → 16×16 15.36% ± 0.59%，
+  分辨率翻倍没有带来精度提升 ⇒ 当前瓶颈是容量/训练/三值化，不是输入分辨率。
+- 结论：完整 f32（连续输入 + 连续权重）仍领先 10.9 点（10 类）/ 6.9 点（二分类 base）；
+  二分类调权后差距缩到 3.6 点；5 seeds 把三值二分类 std 从 ±3.4 点压到 ±2.0 点。
+- 未证栏：网络仍是 2 层 64 隐藏 MLP（未试更大容量/更多 epochs）；cat-vs-dog 本身难；
+  f32 基线只是同架构 2 层 MLP，不是强基线。
+
+### Experiments（trit-wspace：多 seed 均值/方差 + 同架构 f32 基线）
+
+- `examples/cifar_tasks.rs` 增加 `--seeds N`：每个 seed 训练 base + 两个任务并跑四种调权，
+  报告 mean/std；同时训练同架构 f32 MLP（只解除权重三值化，输入/数据/架构/epochs 不变）作基线。
+- 读数（3 seeds：7/8/9）：
+  · 10 类（hidden 64、每类 500、10 epochs、test 1000）：三值 base **15.67% ± 0.71%**，
+    等权 14.73% ± 0.35%，argmax 调权 15.57% ± 0.64%，readout 15.67% ± 0.71%；
+    **f32 base 26.97% ± 0.76%**（权重三值化损失约 11.3 个点）。
+  · 二分类 cat-vs-dog（hidden 64、每类 1000、10 epochs、test 400）：三值 base **47.0% ± 3.4%**，
+    等权 48.0% ± 3.4%，exact/hamming/argmax/readout 调权均 **52.92% ± 2.67%**；
+    **f32 base 56.67% ± 0.38%**（三值 base 差 9.7 点，调权后差 3.7 点）。
+- 结论：权重三值化在本设置下损失约 9–11 个点；任务合并/调权能部分补回（二分类 +5.9 点），
+  但没有追平 f32；10 类的调权收益仍在噪声内（±0.7 点）。
+- 未证栏：输入仍是 8×8 灰度三值（64 维），不是 32×32/彩色；f32 基线只解除权重三值化，
+  不是完整 f32 训练流程；3 个 seed 的 std 仍偏大（二分类 ±3 点）。
+
+### Added（trit-wspace：argmax 一维分类 + readout 置信度目标）
+
+- `tune_task_weights_argmax` 的一维输出改为按符号分类（`>0` 记 1），二分类不再退化成
+  “所有样本同类”。
+- 新增 `tune_task_weights_readout`：用 `Net::readout` 的 f32 连续分数取最大，不先把输出压成
+  三值，能区分“都是 Pos 但分数不同”的类别；CLI/MCP `tune_metric=readout`。
+- CIFAR-10 10 类复测（hidden 64、每类 500、10 epochs）：readout 847→788（-7%，weights
+  `[0, 0]`，argmax 14.9%）、argmax 853→848（weights `[2, 1]`，argmax 15.2%）。
+  readout 分数降得更多，但部署时的三值输出指标没有跟着涨——f32 读数与三值输出存在差距。
+- 测试 248 → 252 + 1 doctest（`tests/task_tune.rs` 14 → 18）；变异 231 → 234（新增 3 条目标）。
+
+### Added（trit-wspace：argmax 调权目标）
+
+- `tune_task_weights_argmax`：输出与期望各取 argmax 后统计分类错误数，直接优化多类 one-hot 的
+  分类指标；CLI/MCP `tune_metric=argmax`（与 exact / hamming 并列）。
+- CIFAR-10 10 类复测（hidden 64、每类 500、10 epochs）：exact 987→987（argmax 14.7%）、
+  hamming 4465→4457（13.6%）、argmax 853→848（weights `[2, 1]`，argmax **15.2%**）。
+  直接优化分类指标比 exact/hamming 更贴合目标，但绝对提升仍只有 0.5 个点。
+- 测试 244 → 248 + 1 doctest（`tests/task_tune.rs` 10 → 14）；变异 228 → 231（新增 3 条目标）。
+
+### Added（trit-wspace：调权目标可选 exact / hamming）
+
+- `tune_task_weights_with(base, tasks, rounds, evaluate)`：调权接受任意评估闭包；原
+  `tune_task_weights` 保持“逐样本完全匹配”，新增 `tune_task_weights_hamming`（逐位失配数）。
+- CLI `task-merge ... --tune-metric exact|hamming`，MCP `wsp_task_merge.tune_metric`；默认
+  `exact`，非法值报错；结果 `tuning.metric` 标出实际目标。
+- 背景读数（CIFAR-10 10 类、hidden 64、每类 500、10 epochs）：exact 987→987（weights 不变），
+  hamming 4465→4457（-0.18%，weights `[0.5, 1]`），argmax 14.7% → 13.6%（未改善）。
+  机制在构造的 one-hot 冲突夹具上可把 hamming 8→4，但真实任务收益很小。
+- 测试 240 → 244 + 1 doctest（`tests/task_tune.rs` 6 → 10）；变异 223 → 228（新增 5 条目标）。
+
+### Experiments（trit-wspace：CIFAR-10 真实训练集上的合并/调权读数）
+
+- 新增可复现实验 `crates/trit-wspace/examples/cifar_tasks.rs`：CIFAR-10 降采样成 8×8 灰度夹具
+  → 三值量化 → `trit-learn` 的三值 MLP（STE 训练）→ 导出 WSP1 → `trit-wspace` 的任务向量合并 /
+  加权合并 / 验证集调权，在**真实测试集**上报告 argmax 与逐样本匹配率。
+- 单次读数（固定 seed 7；8×8 灰度、三值输入，属容量下限实验，不是 trit 训练层上限）：
+  · 10 类（hidden 32、每类 500、10 epochs）：base 13.9% / 等权 14.1% / 调权 14.1%；
+    调权目标（逐样本完全匹配）只有 991→988，信号稀疏。
+  · 二分类 cat-vs-dog（hidden 32、每类 1000、10 epochs）：base 51.75% / 等权 51.0% /
+    调权 50.75%（loss 215→212，weights `[0.0, 1.0]`）。
+  · 二分类 cat-vs-dog（hidden 64、每类 1000、20 epochs）：base 44.5% / 等权 45.75% /
+    调权 **50.75%**（loss 226→214，weights `[0.0, 1.0]`）。
+- 结论：链路已跑通（真实训练集 → WSP1 → 合并/调权 → 真实测试集读数）；在 8×8 灰度三值输入与
+  2k 样本下模型很弱，绝对精度不能当 trit 训练层的上限；调权的完全匹配目标与 argmax 指标不一致
+  （10 类无信号；二分类可提升 argmax，但单次读数波动大）。
+- 未证栏：单次读数、未做多 seed 均值/方差；未跑同架构 f32 基线；数据夹具由 `cifar32.npz`
+  降采样得到（一次性夹具，不交付 Python 训练）；example 需要外部数据，CI 只编译不运行。
+
+### Added（trit-wspace：验证集自动选任务权重）
+
+- `tune_task_weights` / `WeightTuning`（`crates/trit-wspace/src/task.rs`）：从等权出发做坐标下降，
+  候选权重 `{0, 0.5, 1, 2}`；每轮逐任务试候选，只接受验证集 `loss` 严格下降的改动，某轮无改进
+  提前停；返回选出的权重、调优前后 loss 与实际评估次数。空任务判错，`rounds=0` 只算等权基线。
+- CLI `task-merge ... --tune-weights [--tune-rounds N]`，MCP `wsp_task_merge.tune_weights /
+  tune_rounds`；需要 oracle，与显式 `weights` 互斥。结果新增 `tuning` 报告；`weights` 为选出的权重。
+- 测试 234 → 240 + 1 doctest（新增 `tests/task_tune.rs` 6 条）；变异 214 → 223（新增 9 条目标）。
+
+### Added（trit-wspace：任务合并的验证集读数）
+
+- `wire::metrics_value`：`loss` / `exact` / `accuracy` 的共用 JSON 读数（CLI 与 MCP 复用）。
+- CLI `task-merge ... --oracle <json|->`，MCP `wsp_task_merge.oracle`：给了验证集就在结果里返回
+  `verify.before` / `verify.after` 的 `loss` / `exact` / `accuracy`；不传时 `verify: null`，
+  不额外跑前向。验证集格式与 `verify` 相同，可与 `--aligned` / `--weight` / DARE 参数同用。
+- 测试 232 → 234 + 1 doctest（新增 `tests/task_verify.rs` 2 条：CLI / MCP）；变异 210 → 214
+  （新增 4 条目标）。
+
+### Added（trit-wspace：任务加权合并）
+
+- `merge_tasks_weighted`（`crates/trit-wspace/src/task.rs`）：每个任务带一个权重，trit/偏置的
+  票和按权重累加；`0.0` 表示忽略该任务（票与 scale 统计都不进）。权重必须与任务数等长、
+  有限非负（长度不符给 `Shape`，负/NaN/无穷给 `InvalidWeight`）。权重全为 1 时与
+  `merge_tasks` 逐位一致。
+- scale 改用**加权中位数**：排序后取累计权重达到总权重一半处的值，恰好落在两个值中间时取平均
+  （等权时退化为普通中位数，奇数取中间、偶数取平均）。
+- `merge_tasks_weighted_dare` / `merge_tasks_weighted_per_task_dare`：把权重带进“先合并再 DARE”
+  与“每任务先 DARE 再投票”两条路；`rate=0` 与 `merge_tasks_weighted` 完全一致。
+- CLI `task-merge ... --weight W[,W...]`，MCP `wsp_task_merge.weights`；可与 `--dare-rate` /
+  `--dare-per-task` 同用。不传时输出 `weights: null`、行为不变。
+- 测试 220 → 231 + 1 doctest（新增 `tests/task_weight.rs` 11 条：等权一致/翻转平票/零权重忽略/
+  加权中位数/非法权重/空输入/DARE 组合/per-task 组合/CLI/MCP）；变异 202 → 210（新增 9 条目标，
+  其中「零权重仍进 scale 统计」与 `weighted_median` 内部的正权重过滤等价，按门规删除，净增 8）。
+### Added（trit-re：dynres Linux 词汇表——dlsym 解析族覆盖）
+
+- `hidden_api_strings` 词汇表参数化（调用方按平台给表）：PE = 桶派生
+  Windows 词表（不变）；ELF = **`LINUX_SENSITIVE_APIS`**——ptrace /
+  process_vm_readv / process_vm_writev / memfd_create / pidfd_getfd /
+  keyctl / init_module / finit_module（保守选型：**刻意排除 mmap/socket
+  等万能常态调用**，做了就是全量误报）。
+- 端到端测试：合成 ELF（dynstr 改 dlsym + .comment 区藏三个 Linux 敏感
+  名）→ `dynamic_resolution` True；未变异夹具 False（FPR 锚）。真实批
+  复核：ELF64 良性 11 样本 → 0 误报（bash 的 dlsym 在表但无隐藏串）。
+- 已知边界：Linux 侧词汇表是 AArch64/x86 通用 syscall-wrapper 名单——
+  纯 vDSO/直接 syscall 形态（无 libc 符号）不受覆盖（下一层）。
+
+### Added（trit-wspace：任务向量的 scale 差分）
+
+- `TaskVector` 现在把逐行 scale 差分（`(layer, row, target)`）与 trit/偏置编辑分开保存；
+  `between` / `between_aligned` 收集 `SetScale`，`apply` 一并应用，`scales()` 可读。
+- `merge_tasks` 对同一行的多任务 scale 目标值取**中位数**（偶数个取中间两个的平均），
+  与基准位相同则不生成编辑；scale 与 trit/偏置投票互不影响。`merge_tasks_dare` /
+  `merge_tasks_per_task_dare` 自动继承（per-task 稀疏化不丢 scale 差分）。
+- 测试 211 → 220 + 1 doctest（`tests/task.rs` 26 → 35，新增 9 条：记录/apply/单任务合并/
+  奇数与偶数中位数/未改不写/与 trit 独立/per-task 保留/CLI/MCP）；变异 194 → 202（新增 8 条目标）。
+
+### Added（trit-wspace：每任务先 DARE 再投票）
+
+- `merge_tasks_per_task_dare`（`crates/trit-wspace/src/task.rs`）：与 `merge_tasks_dare` 相反的
+  次序——每个任务先按 `seed ^ index * 常数` 派生子种子做坐标级 DARE，再投票；被丢的票不参与
+  投票，可能改变结果。合并后对有差异的行统一乘一次 `1/(1-rate)`（近似重标度，不是每任务各乘一次）。
+  `rate=0` 与 `merge_tasks` 完全一致；`rate` 非 `[0, 1)` 判错。
+- CLI `task-merge ... --dare-per-task R [--dare-seed N]`，MCP `wsp_task_merge.dare_per_task`；
+  与 `--dare-rate` / `dare_rate` **互斥**（同时给直接报错）；不传时行为不变。
+- 测试 202 → 210 + 1 doctest（`tests/task.rs` 17 → 26）；变异 186 → 194（新增 8 条目标）。
+
+### Added（trit-wspace：任务合并后 DARE 稀疏化）
+
+- `merge_tasks_dare`（`crates/trit-wspace/src/task.rs`）：先按坐标投票合并，再对 `base → merged`
+  的差分做一次**坐标级** DARE（`dare_drop`）并应用。投票阶段使用完整任务向量，避免丢弃改变
+  投票结果；`rate=0` 与 `merge_tasks` 完全一致；`rate` 非 `[0, 1)` 判错。
+- CLI `task-merge ... --dare-rate R [--dare-seed N]`，MCP `wsp_task_merge.dare_rate/dare_seed`；
+  不传时输出 `dare_rate: null`、行为与原来一致。
+- 测试 192 → 202 + 1 doctest（`tests/task.rs` 7 → 17）；变异 178 → 186（新增 8 条目标）。
+
+### Added（trit-re：dynres 动态解析检测链——响应"检测器弱鸡"的能力净增）
+
+- **形态与证据链**：真实 loader 的标准逃逸 = 动态解析（GetProcAddress 取
+  函数指针，敏感 API 不进导入表）——导入共现对此全盲（N1 首批记录的漏报
+  边界）。新链 = `dynres.resolver_imported`（GetProcAddress/dlsym 在表）∧
+  `dynres.hidden_api_strings`（≥3 个敏感 API 名 + NUL 字面串藏于非可执行
+  节且**不在导入表**；1-2 = Unknown；0 = False）。词汇表随 BUCKETS 自动
+  同步；load 家族不入表。
+- **端到端验证**：新模拟变体 sim_lvl5（纯动态解析形态）→ `dynamic_resolution`
+  **True**，旧链 `fn_injection` False（盲区如实）；良性批 51 样本 → **0 误报**
+  （阈值 ≥3 有效）；L1-L4 行为不变。全表 520 判定。
+- 单测：hidden_api_strings（已导入排除 + 短名跳过）、resolver_imported
+  （大小写不敏感 + dlsym）。测试 167 → 169。
+- 已知边界：可执行节里的栈串形态（mov-immediate）下一层；ELF 词汇表是
+  Windows API 名（Linux 解析族待扩）。
+
+### Added（trit-wspace：DARE 行级丢弃）
+
+- `dare_drop_rows`（`crates/trit-wspace/src/dare.rs`）：DARE 的**整行**版本。决策单位是
+  `(seed, layer, row)`：一行只要有任何 trit/偏置差分，就整行保留或整行丢回基准值，不会出现
+  “半行保留”。行标记用 `usize::MAX - 1`（与偏置坐标 `usize::MAX` 区分），只改本层该行的
+  入边与偏置，不碰下一层的出边列（单元粒度整体搬运仍归 `transplant_units`）。
+  `kept` / `dropped` 仍按差分坐标数计数，`rescaled_rows` 仍是写了 scale 的行数。
+- CLI `dare-drop ... --by-row`，MCP `wsp_dare_drop.by_row`；默认仍是坐标级。
+- 测试 184 → 192 + 1 doctest（`tests/dare.rs` 14 → 22）；变异 168 → 178（新增 10 条行级目标）。
+
+### Added（trit-re：ELF entrypoint 接线——语义实证判定后补齐）
+
+- **语义实证**：官方 YARA 的 ELF `entrypoint` = **文件偏移**——yara-python
+  判别协议（3 个 ET_EXEC 样本，e_entry vaddr ≠ 文件偏移）实测 vaddr 全不
+  匹配、offset 全匹配，与 PE 同语义。不猜，跑出来的。
+- **接线**：`ElfInfo::entry_file_offset()`（`e_entry` 过 PT_LOAD 映射，
+  BSS/入口为 0/无程序头如实 `None`）+ CLI 的 PE-or-ELF 回退——ELF 样本上
+  `$e at entrypoint` 从恒弃权变可评估。
+- 测试 166 → 167（PT_LOAD 映射 + 端到端 at-entrypoint 三态）；门禁 fmt /
+  clippy / test 全过。
+
+### Added（trit-wspace：DARE 三值丢弃）
+
+- `dare_drop`（`crates/trit-wspace/src/dare.rs`）：DARE 的三值对应物。对 `base → tuned` 的
+  差分 trit/偏置按 `rate` 丢弃（丢回基准值），丢弃决定由 splitmix64 对 `(seed, layer, row, col)`
+  确定性散列，同种子永远同结果。三值写不下 `1/(1-rate)` 重标度，吸收进**有保留差分的行**的
+  scale——正标尺自由度，只改 f32 读数、不改符号行为（对穷举判决中性）。
+- `rate` 必须在 `[0, 1)`（`InvalidRate` 判错）；`rate=0` 等价完整差分且不重标度；
+  架构不同直接拒绝。产物是普通补丁，可接事务 / 审计 / 三方重放 / 任务向量合并前稀疏化。
+- CLI `dare-drop <base> --tuned <tuned> --rate R [--seed N]`；MCP `wsp_dare_drop`（18 → 19 工具）。
+- 测试 170 → 184 + 1 doctest；变异 150 → 168（新增 19，含钉死种子的选择集与重标度行集；
+  其中「零丢弃率也重标度」为等价变异——`rate=0` 时 `1/(1-rate)=1.0`，`scale*1.0` 位等价，
+  首轮全量 169 条里的唯一存活，按门规删除并披露，终态 168/168 caught）。
+
+### Added（trit-wspace：跨层单元移植）
+
+- `transplant_units`（`crates/trit-wspace/src/transplant.rs`）：把一个隐藏单元整体搬到另一个网络——
+  第 `l` 层第 `r` 行（入边）、偏置、scale，加上第 `l+1` 层第 `r` 列（出边）；输出层只搬行。
+  只生成与目标不同的编辑，产物是普通补丁（可继续走事务 / 审计 / 三方重放）。
+- CLI `transplant <dest> --from <source> --layer L --rows i,j`；MCP `wsp_transplant`（17 → 18 工具）。
+- 重复行号判错；架构不同直接拒绝。
+
+### Added（trit-wspace：三方补丁重放）
+
+- `rebase`（`crates/trit-wspace/src/rebase.rs`）：把针对旧工件写的补丁落到已经前进的工件上。
+  逐条比较 `base` 与 `target` 的同一坐标：相同则应用，`target` 已是目标值则跳过，否则判冲突；
+  点编辑 / scale / 行交换 / 行取反各有判据。冲突默认整体放弃（工件零改动），
+  `--skip-conflicts` 才只落干净部分，冲突逐条返回（行操作用行指纹）。
+- CLI `rebase <target> --base <base> --patch <json> [--skip-conflicts] [--require-after]`；
+  MCP `wsp_rebase`（16 → 17 工具）。
+- 顺手收口 A400：CLI 夹具按测试名命名临时目录并在建前清理；行为链不符统一按十六进制报。
+- 测试 148 → 161 + 1 doctest；变异 126 → 140（新增 14/14 caught）。
+
+### Added（trit-wspace：对齐任务向量 + CLI/MCP 开关）
+
+- `TaskVector::between_aligned`：先用 `merge::align` 消隐藏单元置换，再求 `base → tuned` 差分；
+  CLI `task-merge --aligned`，MCP `wsp_task_merge.aligned`。
+- 读数：打乱隐藏行的同一行为网络，未对齐会得到一堆假差分；对齐后差分为 0；
+  对齐后再改一个 trit，任务向量恰好 1 条编辑且套用结果等于先对齐后改的行为。
+- 顺手修 CLI 测试的临时目录复用（旧 `audit.jsonl` 会跨轮追加，导致行为链假红）。
+- 测试 146 → 148 + 1 doctest；变异 123 → **126 条，126/126 caught**；test_surface 合并 main 后 2,326。
+- 门禁：fmt / clippy(-D warnings) / doc(-D warnings) / test / module_budget / publish_graph /
+  hazard_gate / test_surface / layers.py / docs_hygiene / MSRV 1.88 全过。
+
+### Added（trit-re：PE32 联合判定测试——方向库最后一条解锁条件收口）
+
+- `tests/pe.rs::coff_and_cfg_jointly_attribute_pe32`：**三路来源同时贡献
+  区间**的联合判定——COFF 符号精确区间 + CFG 补隙（符号未覆盖的可执行
+  隙）+ 指针表种子（.rdata 连续 ≥2 的 u32 函数指针 → 间接入口）。断言：
+  指针表种子 2 被收割、补隙区间照常归属调用点、精确区间不被切分、
+  `exact` 不被 Cfg 区间拖回 Unknown（共现保持可判）。
+- 方向库「PE32 共现 Unknown 收口」0 项的解锁条件（联合测试）就此满足；
+  边界不变：真实 mingw PE32 样本上的 sha256 记录仍归 N1 批次。
+- 测试 165 → 166；test_surface 台账同步；budget / surface 门绿。
+
+### Added（trit-re：差分测试规模化——再抓两个语义分歧 + xor 组合校准）
+
+- `scripts/yara_scale.py`：**属性驱动的差分测试生成器**（xorshift64 确定性
+  种子，与 fuzz 同款）——核心子集语法 × 随机样本，复用 yara_diff.py 四态
+  对拍；判据 DIFF=0。差分测试此前两次抓出真语义偏差（`at`/`@a`），这是
+  它的规模化形态。
+- **再抓两个真语义分歧并修复**（差分第 3/4 号成果）：
+  ① `for-of` 迭代**整个串集**——官方语义：未命中串也在迭代里（`#`=0、
+  `$`=假、`@`=弃权），`for all of ($a*) : (# > 2)` 的惯用法正依赖全集迭代；
+  此前实现成"只迭代命中串"（实证：针缺席时官方 `for any of … : (# >= 0)`
+  仍命中）。
+  ② **确定的未定义 ≠ 证据缺失**：零命中串的 `@a[N]`、非截断输入的越界
+  `uintN` 读是证据**完整**的确定事实——与官方一致，比较为假；截断输入的
+  uintN / 缺上下文的 entrypoint 才是证据缺失 → 弃权。`resolve()` 升级三态
+  `Val / DefiniteFalse / Unknown`。
+- **xor 组合校准**：官方编译器拒绝 `xor nocase`（探针实测 "invalid modifier
+  combination"）→ 解析层对齐拒绝；`xor wide`（展开后逐字节 XOR）经正例 +
+  反例与官方逐位一致——最后一条"未与官方对拍"的已知边界清零。
+- 规模曲线：10 批（9×40 规则×12 样本 + 1×60×16）**5280 判定对 MATCH 100% /
+  DIFF 0 / SUBSET-GAP 0 / OFFICIAL-ERR 0**。
+- 测试 163 → 165（全集迭代 / 确定未定义双态钉死）；行数预算再拆
+  `sigscan/eval.rs`（三值求值内核，520+309 行）；test_surface 台账
+  --update 登记；门禁 fmt / clippy / test / budget / surface 全过。
+
+### Hardened（trit-re：fuzz 种子库扩到新 YARA 语法）
+
+- `tests/fuzz_sigscan.rs` 的真实规则种子 2 → 5（数值比较 / for-of / xor 区间 /
+  fullword / ascii wide / @ 下标 / Unscannable 正则——变异器从真实形态出发才
+  打得到新语法）；危险字符 alphabet 37 → 56（补 `@ # < > ! . K B M x i n t w
+  1 8 6 f o z`——新词元可被随机拼出）。确定性模糊数千次输入零 panic 不变量
+  不变（外部输入第一道墙随子集一起长大）。
+
+### Added（trit-re：间隙跳板裁定 + 间接调用数据流负结果入册）
+
+- **实测定位**：trit-re.exe 的全部 8 个残余未归属点（全 `jmp`）= 函数间隙里
+  的「`E9 → FF 25`」两级跳板链（增量链接独立跳板）；逐点查证——5/8 无任何
+  引用（E8/E9 调用方、`lea r64,[rip+…]`、imm64/RVA 数据引用全查无果）、
+  3/8 的引用落在非代码节。**间接调用数据流方向的原假设（"残余 = 漏检的
+  数据流"）被否定**：可归因的间接调用早已被跳板展开 + 指针表收割 + 块遍历
+  覆盖，残余是死机器——强行解析就是给死代码找主。
+- **新裁定 `SiteRuling::ThunkGap`**（短名 `thunk-gap`）：站点是 `E9 rel32`
+  且目标是 `FF 25`（rip 相对 jmp 跳板）、且不在任何函数区间 → 如实单列。
+  裁定后读数：trit-re.exe / notepad.exe 的**"疑边界漏检"类别双双清零**
+  （8→0、1→0，残余全部如实归入 thunk-gap / clip）——裁定是证据分类不洗白，
+  方向保守不变。
+- 方向库分诊更新（trit-immune SECURITY-SYSTEM.md）：间接调用数据流
+  **+1 → 0 挂起**（解锁条件：真样本批次出现"疑边界漏检" > 0）。
+- 测试 161 → 162（跳板链判 thunk-gap / 指向普通代码保持 miss 双向钉死）；
+  门禁 fmt / clippy / test 全过。
+
+### Added（trit-re：entrypoint 上下文接线 + `at` 语义对齐官方 + 命中表截断如实弃权）
+
+- **entrypoint 可评估**：`SigScan::scan_with_entrypoint(data, truncated, entrypoint)`
+  接收入口点上下文（`scan()` 无上下文委托、操作数弃权）；CLI 从 PE 头
+  `entry_rva` 过 `rva_to_offset` 取**文件偏移**传入。官方语义实测对拍判定
+  （aadtb.dll / AcpiServiceVnA64.dll：RVA≠offset 的样本上官方只认 offset）——
+  不猜，跑出来的。ELF 侧留白（机器上无样本可验证语义，如实不接）。
+- **`$a at X` 语义修正：首次命中 → 任一命中**（官方 YARA `at` = 在该偏移有
+  命中即可）。真 PE 烟测当场揪出：高频序言 `48 89 5C 24` 在 aadtb.dll 入口
+  前命中 1753 次，首次命中语义会误判 MISS——修正后与官方一致 HIT。
+- **命中表封顶截断 = 扫描不完整**：`MAX_HITS` 1024 → 65536（真样本需要；
+  护栏仍在，且预算 1M 步/模式不变）；触顶即 `complete=false`——`at`/`in`/
+  `@a[N]` 在记录集不能证明时如实弃权（"截断的沉默不是清白"落到命中表上，
+  绝不据残表判假），`#a` 计数按截断值如实下界。
+- 测试 158 → 161（entrypoint 三态 + 截断弃权 + 封顶内命中照常证明）；
+  CLI 真 PE 烟测 `$e at entrypoint` HIT 与官方一致；门禁 fmt / clippy / test 全过。
+
+### Added（trit-re：YARA 完整子集——三值条件求值 + 数值/循环/修饰符）
+
+- `sigscan` 条件求值升级**三值 Kleene**（True/False/Unknown，弃权不折叠成假）：
+  - `Cmp` 数值比较：`filesize`（截断输入上如实弃权）、`uint8/16/32(lit)` 小端读
+    （越界 = 弃权）、`#a` 计数、`@a[N]` 偏移、字面量（十进制/`0x`/`KB`·`MB` 后缀）；
+  - `ForOf`：`for N|any|all of them/($x*) : ( 体 )`，体内 `$`/`#$`/`@$[N]` 绑定
+    当前迭代串；体弃权时 N/any 在「弃权可能补足」时如实上报 Unknown，all 有弃权即 Unknown；
+  - `entrypoint` 与模块/未知函数（`pe.number_of_sections`、`math.entropy(…)`）
+    **记名弃权**：求值恒 Unknown——不猜、不假未命中；
+  - `Const(true/false)`、`CurrentAt`/`CurrentIn`（体内 `$ at entrypoint` 经典形态）。
+- 串层面：正则/`base64`/`base64wide`/`private` → `Pattern::Unscannable` 带原因
+  （**规则保持解析**，其余串照常扫描，整体裁决 Unknown——不再拖累成整条 Unsupported）；
+  `xor`/`xor(k)`/`xor(a-b)` 密钥区间展开（越界/反区间如实报错）、`fullword` 词边界
+  （wide 按宽字符判）、`ascii wide` 双变体；文本扫描也纳入预算（256 路 xor 大文件
+  如实耗尽为 Unknown，不夸大覆盖）。
+- 无 `strings` 的纯数值规则合法（真实规则常见形态）。
+- 行数预算拆分（守 800 行纪律）：`sigscan/{matchers,tests}.rs`、`yaraparse/cond.rs`。
+- 测试：yara 集成 9 → 18（数值比较/无串规则/for-of/entrypoint 弃权/模块弃权/
+  xor/fullword/base64·private Unscannable/算术 bail），全套 49 通过；
+  门禁 fmt / clippy(-D warnings) / test 全过。已知边界：xor+wide 组合语义未与官方
+  逐位对拍（等校准批次）；`in (a..filesize)` 区间端点仅支持字面量。
+
 ### 更正（上一条里的两个读数：盘符债已被 #293 清掉；一次 rc=101 其实是没盘）
 
 - 上一条（`2e7eabf`）写 `docs_hygiene` 拦 1 = `docs/GENERAL-PLAN.md` 盘符 **27** / 基线 24。合完 `origin/main 0b7dd95`
@@ -67,6 +568,7 @@
   产品测试面没有回退；本片合 `origin/main` 后的门线以这一条为准。
 - 判据复算尺（逐字）：`python scripts/docs_hygiene.py`；`cargo test --workspace --locked -j 1`；
   `ls -d /e/tmp/trit-wspace-cli-* | wc -l`；`head -c 200 /e/tmp/trit-wspace-cli-10096/audit.jsonl`。
+
 ### Added（SCOPE §6 第 6 条 + §8：合过 main 的门线怎么分账）
 
 - `docs/SCOPE.md` §6 加第 6 条：合并 `origin/main` 之后门线判红，要先用
@@ -90,6 +592,7 @@
   ⇒ 单节点开销随子问题变大，watched literals 的判据就是压平这条上升线。
 - 判决口径：重复极差在小档更宽（12 对 ±13%、16 对 −12%/+7%、20 对 −6%/+10%、40 对 ±5%），
   所以**判决只看 20 对以上，且改进必须大于当档极差**；8–16 档只用来确认没有回退。
+
 ### Fixed（三平台 CI 的 windows `capacity_exec` 栈溢出：根因找到并修掉，另撤回我一次错判）
 
 - **撤回**：我先前把这次红判成"runner 面"（理由是 `size_of::<Commands>()` 只涨了几十字节 + 本机全绿）。
@@ -800,6 +1303,7 @@
 - 测试 +4（结构/证据与 reach 贯通含见证、全 X 主机、幂等 + LWW 刷新 + 人工改写、
   findings JSONL 往返与坏行拒绝）；变异门 +2（主机应答 any→all、服务节点证据
   被升成 T）。
+
 ### Fixed（trit-re：N4 加固轮——扫描预算 + 确定性模糊测试，对抗性输入不挂起）
 
 - **审查发现一个真风险**：hex 跳跃模式的回溯在对抗数据上指数爆炸——
@@ -974,6 +1478,7 @@
   `tests/pe.rs` COFF 夹具断言更新（total 2→3：隙里 E8 形字节产 Cfg 候选——
   正是补隙语义，精确区间原样）。
 - 变异门 31 条全抓住（本片未新增判决逻辑，登记表不变）。
+
 ### Added（仓库边界文档 + 文档卫生门）
 
 - 新 `docs/SCOPE.md`：**主库存什么、不存什么**的一次定案 —— 收进来的四条判据（R1 与具体项目无关、
@@ -1317,6 +1822,7 @@
   三值 vs f32 argmax 0.987118、幅值 4.78→1.25 ⇒ 事后三值化不可用，必须 QAT+STE。
 - **未做**：反向内核、训练循环、清单约束 argmax。交付模型仍缺，等这三件。
 - 夹具不进 git：`D:\KF\trit-data\parts-parity`（22 MB）。
+
 ### Added（无损回退底座 + 依赖脱离体检）
 
 - `scripts/snapshot.py`：不依赖 git 的字节级快照（内容寻址对象库）——`save` / `verify` / `restore` / `list`。

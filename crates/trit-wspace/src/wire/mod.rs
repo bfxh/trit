@@ -32,6 +32,7 @@ use crate::net::Net;
 use crate::oracle::Oracle;
 use crate::probe::{ProbeReport, RowEffect, RowImpact};
 use crate::program::Report;
+use crate::rebase::RebaseReport;
 use crate::repair::Repair;
 use crate::trit::Trit;
 
@@ -49,6 +50,28 @@ pub const PATCH_VERSION: u64 = 1;
 pub fn patch_to_value(patch: &Patch) -> Value {
     let edits: Vec<Value> = patch.edits().iter().map(edit_to_value).collect();
     json!({"version": PATCH_VERSION, "edits": edits})
+}
+
+/// 三方重放报告 → JSON（不含最终工件；`clean` 是待应用/已应用的编辑）。
+#[must_use]
+pub fn rebase_to_value(report: &RebaseReport) -> Value {
+    let conflicts: Vec<Value> = report
+        .conflicts
+        .iter()
+        .map(|conflict| {
+            json!({
+                "edit": edit_to_value(&conflict.edit),
+                "base": &conflict.base,
+                "target": &conflict.target,
+            })
+        })
+        .collect();
+    json!({
+        "rejected": report.rejected,
+        "already_applied": report.already_applied,
+        "conflicts": conflicts,
+        "clean": patch_to_value(&report.clean),
+    })
 }
 
 /// 单条编辑 → JSON。
@@ -439,6 +462,71 @@ pub fn oracle_from_value(value: &Value) -> Result<Oracle> {
         }
         other => Err(wire(format!("未知 domain `{other}`（boolean / ternary）"))),
     }
+}
+
+/// 验证集读数（loss / exact / accuracy）→ JSON；CLI 与 MCP 共用。
+pub fn metrics_value(net: &Net, oracle: &Oracle) -> Result<Value> {
+    Ok(json!({
+        "loss": oracle.loss(net)?,
+        "exact": oracle.exact(net)?,
+        "accuracy": oracle.accuracy(net)?,
+    }))
+}
+
+/// 分类读数：per-class 精度与混淆矩阵（期望类别 × 预测类别）。
+///
+/// 一维输出按符号分类（2 类）；多维输出按最大 trit 的位置分类。输出维度同时作为
+/// 类别数。样本的期望类别与预测类别都落在 `0..classes`（越界样本不计入）。
+pub fn classification_value(net: &Net, oracle: &Oracle) -> Result<Value> {
+    let actual = oracle.outputs_of(net)?;
+    let expected = oracle.outputs();
+    let classes = expected
+        .first()
+        .map_or(1, |row| if row.len() == 1 { 2 } else { row.len() });
+    let mut confusion = vec![vec![0usize; classes]; classes];
+    let mut counts = vec![0usize; classes];
+    let mut correct = vec![0usize; classes];
+    for (got, want) in actual.iter().zip(expected) {
+        let want_class = class_of(want);
+        let got_class = class_of(got);
+        if want_class < classes && got_class < classes {
+            confusion[want_class][got_class] += 1;
+            counts[want_class] += 1;
+            if want_class == got_class {
+                correct[want_class] += 1;
+            }
+        }
+    }
+    let per_class: Vec<Value> = (0..classes)
+        .map(|label| {
+            json!({
+                "label": label,
+                "count": counts[label],
+                "correct": correct[label],
+                "accuracy": if counts[label] == 0 { 0.0 } else { correct[label] as f64 / counts[label] as f64 },
+            })
+        })
+        .collect();
+    Ok(json!({
+        "classes": classes,
+        "per_class": per_class,
+        "confusion": confusion,
+    }))
+}
+
+fn class_of(values: &[Trit]) -> usize {
+    if values.len() == 1 {
+        return usize::from(values[0].to_i8() > 0);
+    }
+    let mut best = 0usize;
+    let mut best_value = i8::MIN;
+    for (index, trit) in values.iter().enumerate() {
+        if trit.to_i8() > best_value {
+            best_value = trit.to_i8();
+            best = index;
+        }
+    }
+    best
 }
 
 /// 失配见证 → JSON；`limit` 控制返回条数（`count` 始终是全量）。

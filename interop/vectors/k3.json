@@ -1,0 +1,187 @@
+{
+  "spec_version": "0.1.0",
+  "profile": "k3",
+  "encoding": "semantic",
+  "vectors": [
+    {
+      "id": "k3.not.f",
+      "op": "not",
+      "input": "F",
+      "expected": "T"
+    },
+    {
+      "id": "k3.not.u",
+      "op": "not",
+      "input": "U",
+      "expected": "U"
+    },
+    {
+      "id": "k3.not.t",
+      "op": "not",
+      "input": "T",
+      "expected": "F"
+    },
+    {
+      "id": "k3.and.f.f",
+      "op": "and",
+      "input": [
+        "F",
+        "F"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "k3.or.f.f",
+      "op": "or",
+      "input": [
+        "F",
+        "F"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "k3.and.f.u",
+      "op": "and",
+      "input": [
+        "F",
+        "U"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "k3.or.f.u",
+      "op": "or",
+      "input": [
+        "F",
+        "U"
+      ],
+      "expected": "U"
+    },
+    {
+      "id": "k3.and.f.t",
+      "op": "and",
+      "input": [
+        "F",
+        "T"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "k3.or.f.t",
+      "op": "or",
+      "input": [
+        "F",
+        "T"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "k3.and.u.f",
+      "op": "and",
+      "input": [
+        "U",
+        "F"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "k3.or.u.f",
+      "op": "or",
+      "input": [
+        "U",
+        "F"
+      ],
+      "expected": "U"
+    },
+    {
+      "id": "k3.and.u.u",
+      "op": "and",
+      "input": [
+        "U",
+        "U"
+      ],
+      "expected": "U"
+    },
+    {
+      "id": "k3.or.u.u",
+      "op": "or",
+      "input": [
+        "U",
+        "U"
+      ],
+      "expected": "U"
+    },
+    {
+      "id": "k3.and.u.t",
+      "op": "and",
+      "input": [
+        "U",
+        "T"
+      ],
+      "expected": "U"
+    },
+    {
+      "id": "k3.or.u.t",
+      "op": "or",
+      "input": [
+        "U",
+        "T"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "k3.and.t.f",
+      "op": "and",
+      "input": [
+        "T",
+        "F"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "k3.or.t.f",
+      "op": "or",
+      "input": [
+        "T",
+        "F"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "k3.and.t.u",
+      "op": "and",
+      "input": [
+        "T",
+        "U"
+      ],
+      "expected": "U"
+    },
+    {
+      "id": "k3.or.t.u",
+      "op": "or",
+      "input": [
+        "T",
+        "U"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "k3.and.t.t",
+      "op": "and",
+      "input": [
+        "T",
+        "T"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "k3.or.t.t",
+      "op": "or",
+      "input": [
+        "T",
+        "T"
+      ],
+      "expected": "T"
+    }
+  ]
+}

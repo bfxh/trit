@@ -1,0 +1,7836 @@
+{
+  "spec_version": "0.1.0",
+  "profile": "pack5",
+  "encoding": "pack5",
+  "vectors": [
+    {
+      "id": "pack5.pack.000",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 0
+    },
+    {
+      "id": "pack5.pack.081",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 81
+    },
+    {
+      "id": "pack5.pack.162",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 162
+    },
+    {
+      "id": "pack5.pack.027",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 27
+    },
+    {
+      "id": "pack5.pack.108",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        0,
+        0
+      ],
+      "expected": 108
+    },
+    {
+      "id": "pack5.pack.189",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        0,
+        1
+      ],
+      "expected": 189
+    },
+    {
+      "id": "pack5.pack.054",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 54
+    },
+    {
+      "id": "pack5.pack.135",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        1,
+        0
+      ],
+      "expected": 135
+    },
+    {
+      "id": "pack5.pack.216",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        1,
+        1
+      ],
+      "expected": 216
+    },
+    {
+      "id": "pack5.pack.009",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 9
+    },
+    {
+      "id": "pack5.pack.090",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        -1,
+        0
+      ],
+      "expected": 90
+    },
+    {
+      "id": "pack5.pack.171",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        -1,
+        1
+      ],
+      "expected": 171
+    },
+    {
+      "id": "pack5.pack.036",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        0,
+        -1
+      ],
+      "expected": 36
+    },
+    {
+      "id": "pack5.pack.117",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        0,
+        0
+      ],
+      "expected": 117
+    },
+    {
+      "id": "pack5.pack.198",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        0,
+        1
+      ],
+      "expected": 198
+    },
+    {
+      "id": "pack5.pack.063",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        1,
+        -1
+      ],
+      "expected": 63
+    },
+    {
+      "id": "pack5.pack.144",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        1,
+        0
+      ],
+      "expected": 144
+    },
+    {
+      "id": "pack5.pack.225",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        1,
+        1
+      ],
+      "expected": 225
+    },
+    {
+      "id": "pack5.pack.018",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 18
+    },
+    {
+      "id": "pack5.pack.099",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        -1,
+        0
+      ],
+      "expected": 99
+    },
+    {
+      "id": "pack5.pack.180",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        -1,
+        1
+      ],
+      "expected": 180
+    },
+    {
+      "id": "pack5.pack.045",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        0,
+        -1
+      ],
+      "expected": 45
+    },
+    {
+      "id": "pack5.pack.126",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        0,
+        0
+      ],
+      "expected": 126
+    },
+    {
+      "id": "pack5.pack.207",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        0,
+        1
+      ],
+      "expected": 207
+    },
+    {
+      "id": "pack5.pack.072",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        1,
+        -1
+      ],
+      "expected": 72
+    },
+    {
+      "id": "pack5.pack.153",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        1,
+        0
+      ],
+      "expected": 153
+    },
+    {
+      "id": "pack5.pack.234",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        1,
+        1
+      ],
+      "expected": 234
+    },
+    {
+      "id": "pack5.pack.003",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 3
+    },
+    {
+      "id": "pack5.pack.084",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 84
+    },
+    {
+      "id": "pack5.pack.165",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 165
+    },
+    {
+      "id": "pack5.pack.030",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 30
+    },
+    {
+      "id": "pack5.pack.111",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        0,
+        0
+      ],
+      "expected": 111
+    },
+    {
+      "id": "pack5.pack.192",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        0,
+        1
+      ],
+      "expected": 192
+    },
+    {
+      "id": "pack5.pack.057",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 57
+    },
+    {
+      "id": "pack5.pack.138",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        1,
+        0
+      ],
+      "expected": 138
+    },
+    {
+      "id": "pack5.pack.219",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        1,
+        1
+      ],
+      "expected": 219
+    },
+    {
+      "id": "pack5.pack.012",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 12
+    },
+    {
+      "id": "pack5.pack.093",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        -1,
+        0
+      ],
+      "expected": 93
+    },
+    {
+      "id": "pack5.pack.174",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        -1,
+        1
+      ],
+      "expected": 174
+    },
+    {
+      "id": "pack5.pack.039",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        0,
+        -1
+      ],
+      "expected": 39
+    },
+    {
+      "id": "pack5.pack.120",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expected": 120
+    },
+    {
+      "id": "pack5.pack.201",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        0,
+        1
+      ],
+      "expected": 201
+    },
+    {
+      "id": "pack5.pack.066",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        1,
+        -1
+      ],
+      "expected": 66
+    },
+    {
+      "id": "pack5.pack.147",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        1,
+        0
+      ],
+      "expected": 147
+    },
+    {
+      "id": "pack5.pack.228",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        1,
+        1
+      ],
+      "expected": 228
+    },
+    {
+      "id": "pack5.pack.021",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 21
+    },
+    {
+      "id": "pack5.pack.102",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        -1,
+        0
+      ],
+      "expected": 102
+    },
+    {
+      "id": "pack5.pack.183",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        -1,
+        1
+      ],
+      "expected": 183
+    },
+    {
+      "id": "pack5.pack.048",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        0,
+        -1
+      ],
+      "expected": 48
+    },
+    {
+      "id": "pack5.pack.129",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        0,
+        0
+      ],
+      "expected": 129
+    },
+    {
+      "id": "pack5.pack.210",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        0,
+        1
+      ],
+      "expected": 210
+    },
+    {
+      "id": "pack5.pack.075",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        1,
+        -1
+      ],
+      "expected": 75
+    },
+    {
+      "id": "pack5.pack.156",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        1,
+        0
+      ],
+      "expected": 156
+    },
+    {
+      "id": "pack5.pack.237",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        1,
+        1
+      ],
+      "expected": 237
+    },
+    {
+      "id": "pack5.pack.006",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 6
+    },
+    {
+      "id": "pack5.pack.087",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 87
+    },
+    {
+      "id": "pack5.pack.168",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 168
+    },
+    {
+      "id": "pack5.pack.033",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 33
+    },
+    {
+      "id": "pack5.pack.114",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        0,
+        0
+      ],
+      "expected": 114
+    },
+    {
+      "id": "pack5.pack.195",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        0,
+        1
+      ],
+      "expected": 195
+    },
+    {
+      "id": "pack5.pack.060",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 60
+    },
+    {
+      "id": "pack5.pack.141",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        1,
+        0
+      ],
+      "expected": 141
+    },
+    {
+      "id": "pack5.pack.222",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        1,
+        1
+      ],
+      "expected": 222
+    },
+    {
+      "id": "pack5.pack.015",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 15
+    },
+    {
+      "id": "pack5.pack.096",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        -1,
+        0
+      ],
+      "expected": 96
+    },
+    {
+      "id": "pack5.pack.177",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        -1,
+        1
+      ],
+      "expected": 177
+    },
+    {
+      "id": "pack5.pack.042",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        0,
+        -1
+      ],
+      "expected": 42
+    },
+    {
+      "id": "pack5.pack.123",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        0,
+        0
+      ],
+      "expected": 123
+    },
+    {
+      "id": "pack5.pack.204",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        0,
+        1
+      ],
+      "expected": 204
+    },
+    {
+      "id": "pack5.pack.069",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        1,
+        -1
+      ],
+      "expected": 69
+    },
+    {
+      "id": "pack5.pack.150",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        1,
+        0
+      ],
+      "expected": 150
+    },
+    {
+      "id": "pack5.pack.231",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        1,
+        1
+      ],
+      "expected": 231
+    },
+    {
+      "id": "pack5.pack.024",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 24
+    },
+    {
+      "id": "pack5.pack.105",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        -1,
+        0
+      ],
+      "expected": 105
+    },
+    {
+      "id": "pack5.pack.186",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        -1,
+        1
+      ],
+      "expected": 186
+    },
+    {
+      "id": "pack5.pack.051",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        0,
+        -1
+      ],
+      "expected": 51
+    },
+    {
+      "id": "pack5.pack.132",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        0,
+        0
+      ],
+      "expected": 132
+    },
+    {
+      "id": "pack5.pack.213",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        0,
+        1
+      ],
+      "expected": 213
+    },
+    {
+      "id": "pack5.pack.078",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        1,
+        -1
+      ],
+      "expected": 78
+    },
+    {
+      "id": "pack5.pack.159",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        1,
+        0
+      ],
+      "expected": 159
+    },
+    {
+      "id": "pack5.pack.240",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected": 240
+    },
+    {
+      "id": "pack5.pack.001",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 1
+    },
+    {
+      "id": "pack5.pack.082",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 82
+    },
+    {
+      "id": "pack5.pack.163",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 163
+    },
+    {
+      "id": "pack5.pack.028",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 28
+    },
+    {
+      "id": "pack5.pack.109",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        0,
+        0
+      ],
+      "expected": 109
+    },
+    {
+      "id": "pack5.pack.190",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        0,
+        1
+      ],
+      "expected": 190
+    },
+    {
+      "id": "pack5.pack.055",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 55
+    },
+    {
+      "id": "pack5.pack.136",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        1,
+        0
+      ],
+      "expected": 136
+    },
+    {
+      "id": "pack5.pack.217",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        1,
+        1
+      ],
+      "expected": 217
+    },
+    {
+      "id": "pack5.pack.010",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 10
+    },
+    {
+      "id": "pack5.pack.091",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        -1,
+        0
+      ],
+      "expected": 91
+    },
+    {
+      "id": "pack5.pack.172",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        -1,
+        1
+      ],
+      "expected": 172
+    },
+    {
+      "id": "pack5.pack.037",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        0,
+        -1
+      ],
+      "expected": 37
+    },
+    {
+      "id": "pack5.pack.118",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        0,
+        0
+      ],
+      "expected": 118
+    },
+    {
+      "id": "pack5.pack.199",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        0,
+        1
+      ],
+      "expected": 199
+    },
+    {
+      "id": "pack5.pack.064",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        1,
+        -1
+      ],
+      "expected": 64
+    },
+    {
+      "id": "pack5.pack.145",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        1,
+        0
+      ],
+      "expected": 145
+    },
+    {
+      "id": "pack5.pack.226",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        1,
+        1
+      ],
+      "expected": 226
+    },
+    {
+      "id": "pack5.pack.019",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 19
+    },
+    {
+      "id": "pack5.pack.100",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        -1,
+        0
+      ],
+      "expected": 100
+    },
+    {
+      "id": "pack5.pack.181",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        -1,
+        1
+      ],
+      "expected": 181
+    },
+    {
+      "id": "pack5.pack.046",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        0,
+        -1
+      ],
+      "expected": 46
+    },
+    {
+      "id": "pack5.pack.127",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        0,
+        0
+      ],
+      "expected": 127
+    },
+    {
+      "id": "pack5.pack.208",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        0,
+        1
+      ],
+      "expected": 208
+    },
+    {
+      "id": "pack5.pack.073",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        1,
+        -1
+      ],
+      "expected": 73
+    },
+    {
+      "id": "pack5.pack.154",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        1,
+        0
+      ],
+      "expected": 154
+    },
+    {
+      "id": "pack5.pack.235",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        1,
+        1
+      ],
+      "expected": 235
+    },
+    {
+      "id": "pack5.pack.004",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 4
+    },
+    {
+      "id": "pack5.pack.085",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 85
+    },
+    {
+      "id": "pack5.pack.166",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 166
+    },
+    {
+      "id": "pack5.pack.031",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 31
+    },
+    {
+      "id": "pack5.pack.112",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        0,
+        0
+      ],
+      "expected": 112
+    },
+    {
+      "id": "pack5.pack.193",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        0,
+        1
+      ],
+      "expected": 193
+    },
+    {
+      "id": "pack5.pack.058",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 58
+    },
+    {
+      "id": "pack5.pack.139",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        1,
+        0
+      ],
+      "expected": 139
+    },
+    {
+      "id": "pack5.pack.220",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        1,
+        1
+      ],
+      "expected": 220
+    },
+    {
+      "id": "pack5.pack.013",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 13
+    },
+    {
+      "id": "pack5.pack.094",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        -1,
+        0
+      ],
+      "expected": 94
+    },
+    {
+      "id": "pack5.pack.175",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        -1,
+        1
+      ],
+      "expected": 175
+    },
+    {
+      "id": "pack5.pack.040",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        0,
+        -1
+      ],
+      "expected": 40
+    },
+    {
+      "id": "pack5.pack.121",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expected": 121
+    },
+    {
+      "id": "pack5.pack.202",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ],
+      "expected": 202
+    },
+    {
+      "id": "pack5.pack.067",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        1,
+        -1
+      ],
+      "expected": 67
+    },
+    {
+      "id": "pack5.pack.148",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ],
+      "expected": 148
+    },
+    {
+      "id": "pack5.pack.229",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        1,
+        1
+      ],
+      "expected": 229
+    },
+    {
+      "id": "pack5.pack.022",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 22
+    },
+    {
+      "id": "pack5.pack.103",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        -1,
+        0
+      ],
+      "expected": 103
+    },
+    {
+      "id": "pack5.pack.184",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        -1,
+        1
+      ],
+      "expected": 184
+    },
+    {
+      "id": "pack5.pack.049",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        0,
+        -1
+      ],
+      "expected": 49
+    },
+    {
+      "id": "pack5.pack.130",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ],
+      "expected": 130
+    },
+    {
+      "id": "pack5.pack.211",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        0,
+        1
+      ],
+      "expected": 211
+    },
+    {
+      "id": "pack5.pack.076",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        1,
+        -1
+      ],
+      "expected": 76
+    },
+    {
+      "id": "pack5.pack.157",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        1,
+        0
+      ],
+      "expected": 157
+    },
+    {
+      "id": "pack5.pack.238",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        1,
+        1
+      ],
+      "expected": 238
+    },
+    {
+      "id": "pack5.pack.007",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 7
+    },
+    {
+      "id": "pack5.pack.088",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 88
+    },
+    {
+      "id": "pack5.pack.169",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 169
+    },
+    {
+      "id": "pack5.pack.034",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 34
+    },
+    {
+      "id": "pack5.pack.115",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        0,
+        0
+      ],
+      "expected": 115
+    },
+    {
+      "id": "pack5.pack.196",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        0,
+        1
+      ],
+      "expected": 196
+    },
+    {
+      "id": "pack5.pack.061",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 61
+    },
+    {
+      "id": "pack5.pack.142",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        1,
+        0
+      ],
+      "expected": 142
+    },
+    {
+      "id": "pack5.pack.223",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        1,
+        1
+      ],
+      "expected": 223
+    },
+    {
+      "id": "pack5.pack.016",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 16
+    },
+    {
+      "id": "pack5.pack.097",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        -1,
+        0
+      ],
+      "expected": 97
+    },
+    {
+      "id": "pack5.pack.178",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        -1,
+        1
+      ],
+      "expected": 178
+    },
+    {
+      "id": "pack5.pack.043",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        0,
+        -1
+      ],
+      "expected": 43
+    },
+    {
+      "id": "pack5.pack.124",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ],
+      "expected": 124
+    },
+    {
+      "id": "pack5.pack.205",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        0,
+        1
+      ],
+      "expected": 205
+    },
+    {
+      "id": "pack5.pack.070",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        1,
+        -1
+      ],
+      "expected": 70
+    },
+    {
+      "id": "pack5.pack.151",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        1,
+        0
+      ],
+      "expected": 151
+    },
+    {
+      "id": "pack5.pack.232",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        1,
+        1
+      ],
+      "expected": 232
+    },
+    {
+      "id": "pack5.pack.025",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 25
+    },
+    {
+      "id": "pack5.pack.106",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        -1,
+        0
+      ],
+      "expected": 106
+    },
+    {
+      "id": "pack5.pack.187",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        -1,
+        1
+      ],
+      "expected": 187
+    },
+    {
+      "id": "pack5.pack.052",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        0,
+        -1
+      ],
+      "expected": 52
+    },
+    {
+      "id": "pack5.pack.133",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        0,
+        0
+      ],
+      "expected": 133
+    },
+    {
+      "id": "pack5.pack.214",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        0,
+        1
+      ],
+      "expected": 214
+    },
+    {
+      "id": "pack5.pack.079",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        1,
+        -1
+      ],
+      "expected": 79
+    },
+    {
+      "id": "pack5.pack.160",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        1,
+        0
+      ],
+      "expected": 160
+    },
+    {
+      "id": "pack5.pack.241",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected": 241
+    },
+    {
+      "id": "pack5.pack.002",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 2
+    },
+    {
+      "id": "pack5.pack.083",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 83
+    },
+    {
+      "id": "pack5.pack.164",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 164
+    },
+    {
+      "id": "pack5.pack.029",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 29
+    },
+    {
+      "id": "pack5.pack.110",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        0,
+        0
+      ],
+      "expected": 110
+    },
+    {
+      "id": "pack5.pack.191",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        0,
+        1
+      ],
+      "expected": 191
+    },
+    {
+      "id": "pack5.pack.056",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 56
+    },
+    {
+      "id": "pack5.pack.137",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        1,
+        0
+      ],
+      "expected": 137
+    },
+    {
+      "id": "pack5.pack.218",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        1,
+        1
+      ],
+      "expected": 218
+    },
+    {
+      "id": "pack5.pack.011",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 11
+    },
+    {
+      "id": "pack5.pack.092",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        -1,
+        0
+      ],
+      "expected": 92
+    },
+    {
+      "id": "pack5.pack.173",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        -1,
+        1
+      ],
+      "expected": 173
+    },
+    {
+      "id": "pack5.pack.038",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        0,
+        -1
+      ],
+      "expected": 38
+    },
+    {
+      "id": "pack5.pack.119",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        0,
+        0
+      ],
+      "expected": 119
+    },
+    {
+      "id": "pack5.pack.200",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        0,
+        1
+      ],
+      "expected": 200
+    },
+    {
+      "id": "pack5.pack.065",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        1,
+        -1
+      ],
+      "expected": 65
+    },
+    {
+      "id": "pack5.pack.146",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        1,
+        0
+      ],
+      "expected": 146
+    },
+    {
+      "id": "pack5.pack.227",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        1,
+        1
+      ],
+      "expected": 227
+    },
+    {
+      "id": "pack5.pack.020",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 20
+    },
+    {
+      "id": "pack5.pack.101",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        -1,
+        0
+      ],
+      "expected": 101
+    },
+    {
+      "id": "pack5.pack.182",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        -1,
+        1
+      ],
+      "expected": 182
+    },
+    {
+      "id": "pack5.pack.047",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        0,
+        -1
+      ],
+      "expected": 47
+    },
+    {
+      "id": "pack5.pack.128",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        0,
+        0
+      ],
+      "expected": 128
+    },
+    {
+      "id": "pack5.pack.209",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        0,
+        1
+      ],
+      "expected": 209
+    },
+    {
+      "id": "pack5.pack.074",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        1,
+        -1
+      ],
+      "expected": 74
+    },
+    {
+      "id": "pack5.pack.155",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        1,
+        0
+      ],
+      "expected": 155
+    },
+    {
+      "id": "pack5.pack.236",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        1,
+        1
+      ],
+      "expected": 236
+    },
+    {
+      "id": "pack5.pack.005",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 5
+    },
+    {
+      "id": "pack5.pack.086",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 86
+    },
+    {
+      "id": "pack5.pack.167",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 167
+    },
+    {
+      "id": "pack5.pack.032",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 32
+    },
+    {
+      "id": "pack5.pack.113",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        0,
+        0
+      ],
+      "expected": 113
+    },
+    {
+      "id": "pack5.pack.194",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        0,
+        1
+      ],
+      "expected": 194
+    },
+    {
+      "id": "pack5.pack.059",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 59
+    },
+    {
+      "id": "pack5.pack.140",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        1,
+        0
+      ],
+      "expected": 140
+    },
+    {
+      "id": "pack5.pack.221",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        1,
+        1
+      ],
+      "expected": 221
+    },
+    {
+      "id": "pack5.pack.014",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 14
+    },
+    {
+      "id": "pack5.pack.095",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        -1,
+        0
+      ],
+      "expected": 95
+    },
+    {
+      "id": "pack5.pack.176",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        -1,
+        1
+      ],
+      "expected": 176
+    },
+    {
+      "id": "pack5.pack.041",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        0,
+        -1
+      ],
+      "expected": 41
+    },
+    {
+      "id": "pack5.pack.122",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expected": 122
+    },
+    {
+      "id": "pack5.pack.203",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        0,
+        1
+      ],
+      "expected": 203
+    },
+    {
+      "id": "pack5.pack.068",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        1,
+        -1
+      ],
+      "expected": 68
+    },
+    {
+      "id": "pack5.pack.149",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        1,
+        0
+      ],
+      "expected": 149
+    },
+    {
+      "id": "pack5.pack.230",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        1,
+        1
+      ],
+      "expected": 230
+    },
+    {
+      "id": "pack5.pack.023",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 23
+    },
+    {
+      "id": "pack5.pack.104",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        -1,
+        0
+      ],
+      "expected": 104
+    },
+    {
+      "id": "pack5.pack.185",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        -1,
+        1
+      ],
+      "expected": 185
+    },
+    {
+      "id": "pack5.pack.050",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        0,
+        -1
+      ],
+      "expected": 50
+    },
+    {
+      "id": "pack5.pack.131",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        0,
+        0
+      ],
+      "expected": 131
+    },
+    {
+      "id": "pack5.pack.212",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        0,
+        1
+      ],
+      "expected": 212
+    },
+    {
+      "id": "pack5.pack.077",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        1,
+        -1
+      ],
+      "expected": 77
+    },
+    {
+      "id": "pack5.pack.158",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        1,
+        0
+      ],
+      "expected": 158
+    },
+    {
+      "id": "pack5.pack.239",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        1,
+        1
+      ],
+      "expected": 239
+    },
+    {
+      "id": "pack5.pack.008",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 8
+    },
+    {
+      "id": "pack5.pack.089",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 89
+    },
+    {
+      "id": "pack5.pack.170",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 170
+    },
+    {
+      "id": "pack5.pack.035",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 35
+    },
+    {
+      "id": "pack5.pack.116",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        0,
+        0
+      ],
+      "expected": 116
+    },
+    {
+      "id": "pack5.pack.197",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        0,
+        1
+      ],
+      "expected": 197
+    },
+    {
+      "id": "pack5.pack.062",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 62
+    },
+    {
+      "id": "pack5.pack.143",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        1,
+        0
+      ],
+      "expected": 143
+    },
+    {
+      "id": "pack5.pack.224",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        1,
+        1
+      ],
+      "expected": 224
+    },
+    {
+      "id": "pack5.pack.017",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 17
+    },
+    {
+      "id": "pack5.pack.098",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        -1,
+        0
+      ],
+      "expected": 98
+    },
+    {
+      "id": "pack5.pack.179",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        -1,
+        1
+      ],
+      "expected": 179
+    },
+    {
+      "id": "pack5.pack.044",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        0,
+        -1
+      ],
+      "expected": 44
+    },
+    {
+      "id": "pack5.pack.125",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        0,
+        0
+      ],
+      "expected": 125
+    },
+    {
+      "id": "pack5.pack.206",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        0,
+        1
+      ],
+      "expected": 206
+    },
+    {
+      "id": "pack5.pack.071",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        1,
+        -1
+      ],
+      "expected": 71
+    },
+    {
+      "id": "pack5.pack.152",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        1,
+        0
+      ],
+      "expected": 152
+    },
+    {
+      "id": "pack5.pack.233",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        1,
+        1
+      ],
+      "expected": 233
+    },
+    {
+      "id": "pack5.pack.026",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 26
+    },
+    {
+      "id": "pack5.pack.107",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        -1,
+        0
+      ],
+      "expected": 107
+    },
+    {
+      "id": "pack5.pack.188",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        -1,
+        1
+      ],
+      "expected": 188
+    },
+    {
+      "id": "pack5.pack.053",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        0,
+        -1
+      ],
+      "expected": 53
+    },
+    {
+      "id": "pack5.pack.134",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        0,
+        0
+      ],
+      "expected": 134
+    },
+    {
+      "id": "pack5.pack.215",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        0,
+        1
+      ],
+      "expected": 215
+    },
+    {
+      "id": "pack5.pack.080",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        1,
+        -1
+      ],
+      "expected": 80
+    },
+    {
+      "id": "pack5.pack.161",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        1,
+        0
+      ],
+      "expected": 161
+    },
+    {
+      "id": "pack5.pack.242",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected": 242
+    },
+    {
+      "id": "pack5.pack.tail.1.120",
+      "op": "pack",
+      "input": [
+        -1
+      ],
+      "expected": 120
+    },
+    {
+      "id": "pack5.pack.tail.1.121",
+      "op": "pack",
+      "input": [
+        0
+      ],
+      "expected": 121
+    },
+    {
+      "id": "pack5.pack.tail.1.122",
+      "op": "pack",
+      "input": [
+        1
+      ],
+      "expected": 122
+    },
+    {
+      "id": "pack5.pack.tail.2.117",
+      "op": "pack",
+      "input": [
+        -1,
+        -1
+      ],
+      "expected": 117
+    },
+    {
+      "id": "pack5.pack.tail.2.120",
+      "op": "pack",
+      "input": [
+        -1,
+        0
+      ],
+      "expected": 120
+    },
+    {
+      "id": "pack5.pack.tail.2.123",
+      "op": "pack",
+      "input": [
+        -1,
+        1
+      ],
+      "expected": 123
+    },
+    {
+      "id": "pack5.pack.tail.2.118",
+      "op": "pack",
+      "input": [
+        0,
+        -1
+      ],
+      "expected": 118
+    },
+    {
+      "id": "pack5.pack.tail.2.121",
+      "op": "pack",
+      "input": [
+        0,
+        0
+      ],
+      "expected": 121
+    },
+    {
+      "id": "pack5.pack.tail.2.124",
+      "op": "pack",
+      "input": [
+        0,
+        1
+      ],
+      "expected": 124
+    },
+    {
+      "id": "pack5.pack.tail.2.119",
+      "op": "pack",
+      "input": [
+        1,
+        -1
+      ],
+      "expected": 119
+    },
+    {
+      "id": "pack5.pack.tail.2.122",
+      "op": "pack",
+      "input": [
+        1,
+        0
+      ],
+      "expected": 122
+    },
+    {
+      "id": "pack5.pack.tail.2.125",
+      "op": "pack",
+      "input": [
+        1,
+        1
+      ],
+      "expected": 125
+    },
+    {
+      "id": "pack5.pack.tail.3.108",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 108
+    },
+    {
+      "id": "pack5.pack.tail.3.117",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0
+      ],
+      "expected": 117
+    },
+    {
+      "id": "pack5.pack.tail.3.126",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1
+      ],
+      "expected": 126
+    },
+    {
+      "id": "pack5.pack.tail.3.111",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1
+      ],
+      "expected": 111
+    },
+    {
+      "id": "pack5.pack.tail.3.120",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0
+      ],
+      "expected": 120
+    },
+    {
+      "id": "pack5.pack.tail.3.129",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1
+      ],
+      "expected": 129
+    },
+    {
+      "id": "pack5.pack.tail.3.114",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1
+      ],
+      "expected": 114
+    },
+    {
+      "id": "pack5.pack.tail.3.123",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0
+      ],
+      "expected": 123
+    },
+    {
+      "id": "pack5.pack.tail.3.132",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1
+      ],
+      "expected": 132
+    },
+    {
+      "id": "pack5.pack.tail.3.109",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1
+      ],
+      "expected": 109
+    },
+    {
+      "id": "pack5.pack.tail.3.118",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0
+      ],
+      "expected": 118
+    },
+    {
+      "id": "pack5.pack.tail.3.127",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1
+      ],
+      "expected": 127
+    },
+    {
+      "id": "pack5.pack.tail.3.112",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1
+      ],
+      "expected": 112
+    },
+    {
+      "id": "pack5.pack.tail.3.121",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0
+      ],
+      "expected": 121
+    },
+    {
+      "id": "pack5.pack.tail.3.130",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1
+      ],
+      "expected": 130
+    },
+    {
+      "id": "pack5.pack.tail.3.115",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1
+      ],
+      "expected": 115
+    },
+    {
+      "id": "pack5.pack.tail.3.124",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0
+      ],
+      "expected": 124
+    },
+    {
+      "id": "pack5.pack.tail.3.133",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1
+      ],
+      "expected": 133
+    },
+    {
+      "id": "pack5.pack.tail.3.110",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1
+      ],
+      "expected": 110
+    },
+    {
+      "id": "pack5.pack.tail.3.119",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0
+      ],
+      "expected": 119
+    },
+    {
+      "id": "pack5.pack.tail.3.128",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1
+      ],
+      "expected": 128
+    },
+    {
+      "id": "pack5.pack.tail.3.113",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1
+      ],
+      "expected": 113
+    },
+    {
+      "id": "pack5.pack.tail.3.122",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0
+      ],
+      "expected": 122
+    },
+    {
+      "id": "pack5.pack.tail.3.131",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1
+      ],
+      "expected": 131
+    },
+    {
+      "id": "pack5.pack.tail.3.116",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1
+      ],
+      "expected": 116
+    },
+    {
+      "id": "pack5.pack.tail.3.125",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0
+      ],
+      "expected": 125
+    },
+    {
+      "id": "pack5.pack.tail.3.134",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1
+      ],
+      "expected": 134
+    },
+    {
+      "id": "pack5.pack.tail.4.081",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 81
+    },
+    {
+      "id": "pack5.pack.tail.4.108",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 108
+    },
+    {
+      "id": "pack5.pack.tail.4.135",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 135
+    },
+    {
+      "id": "pack5.pack.tail.4.090",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 90
+    },
+    {
+      "id": "pack5.pack.tail.4.117",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        0
+      ],
+      "expected": 117
+    },
+    {
+      "id": "pack5.pack.tail.4.144",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        0,
+        1
+      ],
+      "expected": 144
+    },
+    {
+      "id": "pack5.pack.tail.4.099",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 99
+    },
+    {
+      "id": "pack5.pack.tail.4.126",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        0
+      ],
+      "expected": 126
+    },
+    {
+      "id": "pack5.pack.tail.4.153",
+      "op": "pack",
+      "input": [
+        -1,
+        -1,
+        1,
+        1
+      ],
+      "expected": 153
+    },
+    {
+      "id": "pack5.pack.tail.4.084",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 84
+    },
+    {
+      "id": "pack5.pack.tail.4.111",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        0
+      ],
+      "expected": 111
+    },
+    {
+      "id": "pack5.pack.tail.4.138",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        -1,
+        1
+      ],
+      "expected": 138
+    },
+    {
+      "id": "pack5.pack.tail.4.093",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        -1
+      ],
+      "expected": 93
+    },
+    {
+      "id": "pack5.pack.tail.4.120",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        0
+      ],
+      "expected": 120
+    },
+    {
+      "id": "pack5.pack.tail.4.147",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        0,
+        1
+      ],
+      "expected": 147
+    },
+    {
+      "id": "pack5.pack.tail.4.102",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        -1
+      ],
+      "expected": 102
+    },
+    {
+      "id": "pack5.pack.tail.4.129",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        0
+      ],
+      "expected": 129
+    },
+    {
+      "id": "pack5.pack.tail.4.156",
+      "op": "pack",
+      "input": [
+        -1,
+        0,
+        1,
+        1
+      ],
+      "expected": 156
+    },
+    {
+      "id": "pack5.pack.tail.4.087",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 87
+    },
+    {
+      "id": "pack5.pack.tail.4.114",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        0
+      ],
+      "expected": 114
+    },
+    {
+      "id": "pack5.pack.tail.4.141",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        -1,
+        1
+      ],
+      "expected": 141
+    },
+    {
+      "id": "pack5.pack.tail.4.096",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        -1
+      ],
+      "expected": 96
+    },
+    {
+      "id": "pack5.pack.tail.4.123",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        0
+      ],
+      "expected": 123
+    },
+    {
+      "id": "pack5.pack.tail.4.150",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        0,
+        1
+      ],
+      "expected": 150
+    },
+    {
+      "id": "pack5.pack.tail.4.105",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        -1
+      ],
+      "expected": 105
+    },
+    {
+      "id": "pack5.pack.tail.4.132",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        0
+      ],
+      "expected": 132
+    },
+    {
+      "id": "pack5.pack.tail.4.159",
+      "op": "pack",
+      "input": [
+        -1,
+        1,
+        1,
+        1
+      ],
+      "expected": 159
+    },
+    {
+      "id": "pack5.pack.tail.4.082",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 82
+    },
+    {
+      "id": "pack5.pack.tail.4.109",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 109
+    },
+    {
+      "id": "pack5.pack.tail.4.136",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 136
+    },
+    {
+      "id": "pack5.pack.tail.4.091",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 91
+    },
+    {
+      "id": "pack5.pack.tail.4.118",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        0
+      ],
+      "expected": 118
+    },
+    {
+      "id": "pack5.pack.tail.4.145",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        0,
+        1
+      ],
+      "expected": 145
+    },
+    {
+      "id": "pack5.pack.tail.4.100",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 100
+    },
+    {
+      "id": "pack5.pack.tail.4.127",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        0
+      ],
+      "expected": 127
+    },
+    {
+      "id": "pack5.pack.tail.4.154",
+      "op": "pack",
+      "input": [
+        0,
+        -1,
+        1,
+        1
+      ],
+      "expected": 154
+    },
+    {
+      "id": "pack5.pack.tail.4.085",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 85
+    },
+    {
+      "id": "pack5.pack.tail.4.112",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        0
+      ],
+      "expected": 112
+    },
+    {
+      "id": "pack5.pack.tail.4.139",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        -1,
+        1
+      ],
+      "expected": 139
+    },
+    {
+      "id": "pack5.pack.tail.4.094",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        -1
+      ],
+      "expected": 94
+    },
+    {
+      "id": "pack5.pack.tail.4.121",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        0
+      ],
+      "expected": 121
+    },
+    {
+      "id": "pack5.pack.tail.4.148",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        0,
+        1
+      ],
+      "expected": 148
+    },
+    {
+      "id": "pack5.pack.tail.4.103",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        -1
+      ],
+      "expected": 103
+    },
+    {
+      "id": "pack5.pack.tail.4.130",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        0
+      ],
+      "expected": 130
+    },
+    {
+      "id": "pack5.pack.tail.4.157",
+      "op": "pack",
+      "input": [
+        0,
+        0,
+        1,
+        1
+      ],
+      "expected": 157
+    },
+    {
+      "id": "pack5.pack.tail.4.088",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 88
+    },
+    {
+      "id": "pack5.pack.tail.4.115",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        0
+      ],
+      "expected": 115
+    },
+    {
+      "id": "pack5.pack.tail.4.142",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        -1,
+        1
+      ],
+      "expected": 142
+    },
+    {
+      "id": "pack5.pack.tail.4.097",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        -1
+      ],
+      "expected": 97
+    },
+    {
+      "id": "pack5.pack.tail.4.124",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        0
+      ],
+      "expected": 124
+    },
+    {
+      "id": "pack5.pack.tail.4.151",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        0,
+        1
+      ],
+      "expected": 151
+    },
+    {
+      "id": "pack5.pack.tail.4.106",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        -1
+      ],
+      "expected": 106
+    },
+    {
+      "id": "pack5.pack.tail.4.133",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        0
+      ],
+      "expected": 133
+    },
+    {
+      "id": "pack5.pack.tail.4.160",
+      "op": "pack",
+      "input": [
+        0,
+        1,
+        1,
+        1
+      ],
+      "expected": 160
+    },
+    {
+      "id": "pack5.pack.tail.4.083",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        -1
+      ],
+      "expected": 83
+    },
+    {
+      "id": "pack5.pack.tail.4.110",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        0
+      ],
+      "expected": 110
+    },
+    {
+      "id": "pack5.pack.tail.4.137",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        -1,
+        1
+      ],
+      "expected": 137
+    },
+    {
+      "id": "pack5.pack.tail.4.092",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        -1
+      ],
+      "expected": 92
+    },
+    {
+      "id": "pack5.pack.tail.4.119",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        0
+      ],
+      "expected": 119
+    },
+    {
+      "id": "pack5.pack.tail.4.146",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        0,
+        1
+      ],
+      "expected": 146
+    },
+    {
+      "id": "pack5.pack.tail.4.101",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        -1
+      ],
+      "expected": 101
+    },
+    {
+      "id": "pack5.pack.tail.4.128",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        0
+      ],
+      "expected": 128
+    },
+    {
+      "id": "pack5.pack.tail.4.155",
+      "op": "pack",
+      "input": [
+        1,
+        -1,
+        1,
+        1
+      ],
+      "expected": 155
+    },
+    {
+      "id": "pack5.pack.tail.4.086",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        -1
+      ],
+      "expected": 86
+    },
+    {
+      "id": "pack5.pack.tail.4.113",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        0
+      ],
+      "expected": 113
+    },
+    {
+      "id": "pack5.pack.tail.4.140",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        -1,
+        1
+      ],
+      "expected": 140
+    },
+    {
+      "id": "pack5.pack.tail.4.095",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        -1
+      ],
+      "expected": 95
+    },
+    {
+      "id": "pack5.pack.tail.4.122",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        0
+      ],
+      "expected": 122
+    },
+    {
+      "id": "pack5.pack.tail.4.149",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        0,
+        1
+      ],
+      "expected": 149
+    },
+    {
+      "id": "pack5.pack.tail.4.104",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        -1
+      ],
+      "expected": 104
+    },
+    {
+      "id": "pack5.pack.tail.4.131",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        0
+      ],
+      "expected": 131
+    },
+    {
+      "id": "pack5.pack.tail.4.158",
+      "op": "pack",
+      "input": [
+        1,
+        0,
+        1,
+        1
+      ],
+      "expected": 158
+    },
+    {
+      "id": "pack5.pack.tail.4.089",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        -1
+      ],
+      "expected": 89
+    },
+    {
+      "id": "pack5.pack.tail.4.116",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        0
+      ],
+      "expected": 116
+    },
+    {
+      "id": "pack5.pack.tail.4.143",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        -1,
+        1
+      ],
+      "expected": 143
+    },
+    {
+      "id": "pack5.pack.tail.4.098",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        -1
+      ],
+      "expected": 98
+    },
+    {
+      "id": "pack5.pack.tail.4.125",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        0
+      ],
+      "expected": 125
+    },
+    {
+      "id": "pack5.pack.tail.4.152",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        0,
+        1
+      ],
+      "expected": 152
+    },
+    {
+      "id": "pack5.pack.tail.4.107",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        -1
+      ],
+      "expected": 107
+    },
+    {
+      "id": "pack5.pack.tail.4.134",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        0
+      ],
+      "expected": 134
+    },
+    {
+      "id": "pack5.pack.tail.4.161",
+      "op": "pack",
+      "input": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "expected": 161
+    },
+    {
+      "id": "pack5.unpack.000",
+      "op": "unpack",
+      "input": 0,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.001",
+      "op": "unpack",
+      "input": 1,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.002",
+      "op": "unpack",
+      "input": 2,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.003",
+      "op": "unpack",
+      "input": 3,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.004",
+      "op": "unpack",
+      "input": 4,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.005",
+      "op": "unpack",
+      "input": 5,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.006",
+      "op": "unpack",
+      "input": 6,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.007",
+      "op": "unpack",
+      "input": 7,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.008",
+      "op": "unpack",
+      "input": 8,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.009",
+      "op": "unpack",
+      "input": 9,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        0,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.010",
+      "op": "unpack",
+      "input": 10,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        0,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.011",
+      "op": "unpack",
+      "input": 11,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        0,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.012",
+      "op": "unpack",
+      "input": 12,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        0,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.013",
+      "op": "unpack",
+      "input": 13,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        0,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.014",
+      "op": "unpack",
+      "input": 14,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        0,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.015",
+      "op": "unpack",
+      "input": 15,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        0,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.016",
+      "op": "unpack",
+      "input": 16,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        0,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.017",
+      "op": "unpack",
+      "input": 17,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        0,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.018",
+      "op": "unpack",
+      "input": 18,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.019",
+      "op": "unpack",
+      "input": 19,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.020",
+      "op": "unpack",
+      "input": 20,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.021",
+      "op": "unpack",
+      "input": 21,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.022",
+      "op": "unpack",
+      "input": 22,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.023",
+      "op": "unpack",
+      "input": 23,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.024",
+      "op": "unpack",
+      "input": 24,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.025",
+      "op": "unpack",
+      "input": 25,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.026",
+      "op": "unpack",
+      "input": 26,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.027",
+      "op": "unpack",
+      "input": 27,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        -1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.028",
+      "op": "unpack",
+      "input": 28,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        -1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.029",
+      "op": "unpack",
+      "input": 29,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        -1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.030",
+      "op": "unpack",
+      "input": 30,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        -1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.031",
+      "op": "unpack",
+      "input": 31,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        -1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.032",
+      "op": "unpack",
+      "input": 32,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        -1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.033",
+      "op": "unpack",
+      "input": 33,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        -1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.034",
+      "op": "unpack",
+      "input": 34,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        -1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.035",
+      "op": "unpack",
+      "input": 35,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        -1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.036",
+      "op": "unpack",
+      "input": 36,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.037",
+      "op": "unpack",
+      "input": 37,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.038",
+      "op": "unpack",
+      "input": 38,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.039",
+      "op": "unpack",
+      "input": 39,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.040",
+      "op": "unpack",
+      "input": 40,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.041",
+      "op": "unpack",
+      "input": 41,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.042",
+      "op": "unpack",
+      "input": 42,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.043",
+      "op": "unpack",
+      "input": 43,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.044",
+      "op": "unpack",
+      "input": 44,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        0,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.045",
+      "op": "unpack",
+      "input": 45,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.046",
+      "op": "unpack",
+      "input": 46,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.047",
+      "op": "unpack",
+      "input": 47,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.048",
+      "op": "unpack",
+      "input": 48,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.049",
+      "op": "unpack",
+      "input": 49,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.050",
+      "op": "unpack",
+      "input": 50,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.051",
+      "op": "unpack",
+      "input": 51,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.052",
+      "op": "unpack",
+      "input": 52,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.053",
+      "op": "unpack",
+      "input": 53,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.054",
+      "op": "unpack",
+      "input": 54,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.055",
+      "op": "unpack",
+      "input": 55,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.056",
+      "op": "unpack",
+      "input": 56,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.057",
+      "op": "unpack",
+      "input": 57,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.058",
+      "op": "unpack",
+      "input": 58,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.059",
+      "op": "unpack",
+      "input": 59,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.060",
+      "op": "unpack",
+      "input": 60,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.061",
+      "op": "unpack",
+      "input": 61,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.062",
+      "op": "unpack",
+      "input": 62,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        -1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.063",
+      "op": "unpack",
+      "input": 63,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        0,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.064",
+      "op": "unpack",
+      "input": 64,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        0,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.065",
+      "op": "unpack",
+      "input": 65,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        0,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.066",
+      "op": "unpack",
+      "input": 66,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        0,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.067",
+      "op": "unpack",
+      "input": 67,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        0,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.068",
+      "op": "unpack",
+      "input": 68,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        0,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.069",
+      "op": "unpack",
+      "input": 69,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        0,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.070",
+      "op": "unpack",
+      "input": 70,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        0,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.071",
+      "op": "unpack",
+      "input": 71,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        0,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.072",
+      "op": "unpack",
+      "input": 72,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.073",
+      "op": "unpack",
+      "input": 73,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.074",
+      "op": "unpack",
+      "input": 74,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.075",
+      "op": "unpack",
+      "input": 75,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.076",
+      "op": "unpack",
+      "input": 76,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.077",
+      "op": "unpack",
+      "input": 77,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.078",
+      "op": "unpack",
+      "input": 78,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.079",
+      "op": "unpack",
+      "input": 79,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.080",
+      "op": "unpack",
+      "input": 80,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        1,
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.081",
+      "op": "unpack",
+      "input": 81,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        -1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.082",
+      "op": "unpack",
+      "input": 82,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        -1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.083",
+      "op": "unpack",
+      "input": 83,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        -1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.084",
+      "op": "unpack",
+      "input": 84,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        -1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.085",
+      "op": "unpack",
+      "input": 85,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        -1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.086",
+      "op": "unpack",
+      "input": 86,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        -1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.087",
+      "op": "unpack",
+      "input": 87,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        -1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.088",
+      "op": "unpack",
+      "input": 88,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        -1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.089",
+      "op": "unpack",
+      "input": 89,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        -1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.090",
+      "op": "unpack",
+      "input": 90,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.091",
+      "op": "unpack",
+      "input": 91,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.092",
+      "op": "unpack",
+      "input": 92,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.093",
+      "op": "unpack",
+      "input": 93,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.094",
+      "op": "unpack",
+      "input": 94,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.095",
+      "op": "unpack",
+      "input": 95,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.096",
+      "op": "unpack",
+      "input": 96,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.097",
+      "op": "unpack",
+      "input": 97,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.098",
+      "op": "unpack",
+      "input": 98,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        0,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.099",
+      "op": "unpack",
+      "input": 99,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.100",
+      "op": "unpack",
+      "input": 100,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.101",
+      "op": "unpack",
+      "input": 101,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.102",
+      "op": "unpack",
+      "input": 102,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.103",
+      "op": "unpack",
+      "input": 103,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.104",
+      "op": "unpack",
+      "input": 104,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.105",
+      "op": "unpack",
+      "input": 105,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.106",
+      "op": "unpack",
+      "input": 106,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.107",
+      "op": "unpack",
+      "input": 107,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        1,
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.108",
+      "op": "unpack",
+      "input": 108,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        -1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.109",
+      "op": "unpack",
+      "input": 109,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        -1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.110",
+      "op": "unpack",
+      "input": 110,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        -1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.111",
+      "op": "unpack",
+      "input": 111,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        -1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.112",
+      "op": "unpack",
+      "input": 112,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        -1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.113",
+      "op": "unpack",
+      "input": 113,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        -1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.114",
+      "op": "unpack",
+      "input": 114,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        -1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.115",
+      "op": "unpack",
+      "input": 115,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        -1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.116",
+      "op": "unpack",
+      "input": 116,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        -1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.117",
+      "op": "unpack",
+      "input": 117,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.118",
+      "op": "unpack",
+      "input": 118,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.119",
+      "op": "unpack",
+      "input": 119,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.120",
+      "op": "unpack",
+      "input": 120,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.121",
+      "op": "unpack",
+      "input": 121,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.122",
+      "op": "unpack",
+      "input": 122,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.123",
+      "op": "unpack",
+      "input": 123,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.124",
+      "op": "unpack",
+      "input": 124,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.125",
+      "op": "unpack",
+      "input": 125,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.126",
+      "op": "unpack",
+      "input": 126,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.127",
+      "op": "unpack",
+      "input": 127,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.128",
+      "op": "unpack",
+      "input": 128,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.129",
+      "op": "unpack",
+      "input": 129,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.130",
+      "op": "unpack",
+      "input": 130,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.131",
+      "op": "unpack",
+      "input": 131,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.132",
+      "op": "unpack",
+      "input": 132,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.133",
+      "op": "unpack",
+      "input": 133,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.134",
+      "op": "unpack",
+      "input": 134,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.135",
+      "op": "unpack",
+      "input": 135,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        -1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.136",
+      "op": "unpack",
+      "input": 136,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        -1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.137",
+      "op": "unpack",
+      "input": 137,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        -1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.138",
+      "op": "unpack",
+      "input": 138,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        -1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.139",
+      "op": "unpack",
+      "input": 139,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        -1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.140",
+      "op": "unpack",
+      "input": 140,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        -1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.141",
+      "op": "unpack",
+      "input": 141,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        -1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.142",
+      "op": "unpack",
+      "input": 142,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        -1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.143",
+      "op": "unpack",
+      "input": 143,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        -1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.144",
+      "op": "unpack",
+      "input": 144,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.145",
+      "op": "unpack",
+      "input": 145,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.146",
+      "op": "unpack",
+      "input": 146,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.147",
+      "op": "unpack",
+      "input": 147,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.148",
+      "op": "unpack",
+      "input": 148,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.149",
+      "op": "unpack",
+      "input": 149,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.150",
+      "op": "unpack",
+      "input": 150,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.151",
+      "op": "unpack",
+      "input": 151,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.152",
+      "op": "unpack",
+      "input": 152,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.153",
+      "op": "unpack",
+      "input": 153,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.154",
+      "op": "unpack",
+      "input": 154,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.155",
+      "op": "unpack",
+      "input": 155,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.156",
+      "op": "unpack",
+      "input": 156,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.157",
+      "op": "unpack",
+      "input": 157,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.158",
+      "op": "unpack",
+      "input": 158,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.159",
+      "op": "unpack",
+      "input": 159,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.160",
+      "op": "unpack",
+      "input": 160,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.161",
+      "op": "unpack",
+      "input": 161,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        1,
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.162",
+      "op": "unpack",
+      "input": 162,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        -1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.163",
+      "op": "unpack",
+      "input": 163,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        -1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.164",
+      "op": "unpack",
+      "input": 164,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        -1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.165",
+      "op": "unpack",
+      "input": 165,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        -1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.166",
+      "op": "unpack",
+      "input": 166,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        -1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.167",
+      "op": "unpack",
+      "input": 167,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        -1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.168",
+      "op": "unpack",
+      "input": 168,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        -1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.169",
+      "op": "unpack",
+      "input": 169,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        -1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.170",
+      "op": "unpack",
+      "input": 170,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        -1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.171",
+      "op": "unpack",
+      "input": 171,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        0,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.172",
+      "op": "unpack",
+      "input": 172,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        0,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.173",
+      "op": "unpack",
+      "input": 173,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        0,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.174",
+      "op": "unpack",
+      "input": 174,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        0,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.175",
+      "op": "unpack",
+      "input": 175,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        0,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.176",
+      "op": "unpack",
+      "input": 176,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        0,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.177",
+      "op": "unpack",
+      "input": 177,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        0,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.178",
+      "op": "unpack",
+      "input": 178,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        0,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.179",
+      "op": "unpack",
+      "input": 179,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        0,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.180",
+      "op": "unpack",
+      "input": 180,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.181",
+      "op": "unpack",
+      "input": 181,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.182",
+      "op": "unpack",
+      "input": 182,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.183",
+      "op": "unpack",
+      "input": 183,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.184",
+      "op": "unpack",
+      "input": 184,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.185",
+      "op": "unpack",
+      "input": 185,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.186",
+      "op": "unpack",
+      "input": 186,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.187",
+      "op": "unpack",
+      "input": 187,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.188",
+      "op": "unpack",
+      "input": 188,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        1,
+        -1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.189",
+      "op": "unpack",
+      "input": 189,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        -1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.190",
+      "op": "unpack",
+      "input": 190,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        -1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.191",
+      "op": "unpack",
+      "input": 191,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        -1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.192",
+      "op": "unpack",
+      "input": 192,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        -1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.193",
+      "op": "unpack",
+      "input": 193,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        -1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.194",
+      "op": "unpack",
+      "input": 194,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        -1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.195",
+      "op": "unpack",
+      "input": 195,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        -1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.196",
+      "op": "unpack",
+      "input": 196,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        -1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.197",
+      "op": "unpack",
+      "input": 197,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        -1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.198",
+      "op": "unpack",
+      "input": 198,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.199",
+      "op": "unpack",
+      "input": 199,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.200",
+      "op": "unpack",
+      "input": 200,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.201",
+      "op": "unpack",
+      "input": 201,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.202",
+      "op": "unpack",
+      "input": 202,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.203",
+      "op": "unpack",
+      "input": 203,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.204",
+      "op": "unpack",
+      "input": 204,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.205",
+      "op": "unpack",
+      "input": 205,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.206",
+      "op": "unpack",
+      "input": 206,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.207",
+      "op": "unpack",
+      "input": 207,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.208",
+      "op": "unpack",
+      "input": 208,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.209",
+      "op": "unpack",
+      "input": 209,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.210",
+      "op": "unpack",
+      "input": 210,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.211",
+      "op": "unpack",
+      "input": 211,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.212",
+      "op": "unpack",
+      "input": 212,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.213",
+      "op": "unpack",
+      "input": 213,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.214",
+      "op": "unpack",
+      "input": 214,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.215",
+      "op": "unpack",
+      "input": 215,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        1,
+        0,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.216",
+      "op": "unpack",
+      "input": 216,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        -1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.217",
+      "op": "unpack",
+      "input": 217,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        -1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.218",
+      "op": "unpack",
+      "input": 218,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        -1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.219",
+      "op": "unpack",
+      "input": 219,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        -1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.220",
+      "op": "unpack",
+      "input": 220,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        -1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.221",
+      "op": "unpack",
+      "input": 221,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        -1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.222",
+      "op": "unpack",
+      "input": 222,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        -1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.223",
+      "op": "unpack",
+      "input": 223,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        -1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.224",
+      "op": "unpack",
+      "input": 224,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        -1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.225",
+      "op": "unpack",
+      "input": 225,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.226",
+      "op": "unpack",
+      "input": 226,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.227",
+      "op": "unpack",
+      "input": 227,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.228",
+      "op": "unpack",
+      "input": 228,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.229",
+      "op": "unpack",
+      "input": 229,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.230",
+      "op": "unpack",
+      "input": 230,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.231",
+      "op": "unpack",
+      "input": 231,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.232",
+      "op": "unpack",
+      "input": 232,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.233",
+      "op": "unpack",
+      "input": 233,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        0,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.234",
+      "op": "unpack",
+      "input": 234,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        -1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.235",
+      "op": "unpack",
+      "input": 235,
+      "trit_count": 5,
+      "expected": [
+        0,
+        -1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.236",
+      "op": "unpack",
+      "input": 236,
+      "trit_count": 5,
+      "expected": [
+        1,
+        -1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.237",
+      "op": "unpack",
+      "input": 237,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        0,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.238",
+      "op": "unpack",
+      "input": 238,
+      "trit_count": 5,
+      "expected": [
+        0,
+        0,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.239",
+      "op": "unpack",
+      "input": 239,
+      "trit_count": 5,
+      "expected": [
+        1,
+        0,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.240",
+      "op": "unpack",
+      "input": 240,
+      "trit_count": 5,
+      "expected": [
+        -1,
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.241",
+      "op": "unpack",
+      "input": 241,
+      "trit_count": 5,
+      "expected": [
+        0,
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.242",
+      "op": "unpack",
+      "input": 242,
+      "trit_count": 5,
+      "expected": [
+        1,
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.1.000",
+      "op": "unpack",
+      "input": 0,
+      "trit_count": 1,
+      "expected": [
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.1.001",
+      "op": "unpack",
+      "input": 1,
+      "trit_count": 1,
+      "expected": [
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.1.002",
+      "op": "unpack",
+      "input": 2,
+      "trit_count": 1,
+      "expected": [
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.1.003",
+      "op": "unpack",
+      "input": 3,
+      "trit_count": 1,
+      "expected": [
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.1.040",
+      "op": "unpack",
+      "input": 40,
+      "trit_count": 1,
+      "expected": [
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.1.080",
+      "op": "unpack",
+      "input": 80,
+      "trit_count": 1,
+      "expected": [
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.1.121",
+      "op": "unpack",
+      "input": 121,
+      "trit_count": 1,
+      "expected": [
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.1.122",
+      "op": "unpack",
+      "input": 122,
+      "trit_count": 1,
+      "expected": [
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.1.242",
+      "op": "unpack",
+      "input": 242,
+      "trit_count": 1,
+      "expected": [
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.2.000",
+      "op": "unpack",
+      "input": 0,
+      "trit_count": 2,
+      "expected": [
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.2.001",
+      "op": "unpack",
+      "input": 1,
+      "trit_count": 2,
+      "expected": [
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.2.002",
+      "op": "unpack",
+      "input": 2,
+      "trit_count": 2,
+      "expected": [
+        1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.2.003",
+      "op": "unpack",
+      "input": 3,
+      "trit_count": 2,
+      "expected": [
+        -1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.2.040",
+      "op": "unpack",
+      "input": 40,
+      "trit_count": 2,
+      "expected": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.2.080",
+      "op": "unpack",
+      "input": 80,
+      "trit_count": 2,
+      "expected": [
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.2.121",
+      "op": "unpack",
+      "input": 121,
+      "trit_count": 2,
+      "expected": [
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.2.122",
+      "op": "unpack",
+      "input": 122,
+      "trit_count": 2,
+      "expected": [
+        1,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.2.242",
+      "op": "unpack",
+      "input": 242,
+      "trit_count": 2,
+      "expected": [
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.3.000",
+      "op": "unpack",
+      "input": 0,
+      "trit_count": 3,
+      "expected": [
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.3.001",
+      "op": "unpack",
+      "input": 1,
+      "trit_count": 3,
+      "expected": [
+        0,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.3.002",
+      "op": "unpack",
+      "input": 2,
+      "trit_count": 3,
+      "expected": [
+        1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.3.003",
+      "op": "unpack",
+      "input": 3,
+      "trit_count": 3,
+      "expected": [
+        -1,
+        0,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.3.040",
+      "op": "unpack",
+      "input": 40,
+      "trit_count": 3,
+      "expected": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.3.080",
+      "op": "unpack",
+      "input": 80,
+      "trit_count": 3,
+      "expected": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.3.121",
+      "op": "unpack",
+      "input": 121,
+      "trit_count": 3,
+      "expected": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.3.122",
+      "op": "unpack",
+      "input": 122,
+      "trit_count": 3,
+      "expected": [
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.3.242",
+      "op": "unpack",
+      "input": 242,
+      "trit_count": 3,
+      "expected": [
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.4.000",
+      "op": "unpack",
+      "input": 0,
+      "trit_count": 4,
+      "expected": [
+        -1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.4.001",
+      "op": "unpack",
+      "input": 1,
+      "trit_count": 4,
+      "expected": [
+        0,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.4.002",
+      "op": "unpack",
+      "input": 2,
+      "trit_count": 4,
+      "expected": [
+        1,
+        -1,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.4.003",
+      "op": "unpack",
+      "input": 3,
+      "trit_count": 4,
+      "expected": [
+        -1,
+        0,
+        -1,
+        -1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.4.040",
+      "op": "unpack",
+      "input": 40,
+      "trit_count": 4,
+      "expected": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.4.080",
+      "op": "unpack",
+      "input": 80,
+      "trit_count": 4,
+      "expected": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.4.121",
+      "op": "unpack",
+      "input": 121,
+      "trit_count": 4,
+      "expected": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.4.122",
+      "op": "unpack",
+      "input": 122,
+      "trit_count": 4,
+      "expected": [
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "id": "pack5.unpack.tail.4.242",
+      "op": "unpack",
+      "input": 242,
+      "trit_count": 4,
+      "expected": [
+        1,
+        1,
+        1,
+        1
+      ]
+    },
+    {
+      "id": "pack5.unpack.invalid.243",
+      "op": "unpack",
+      "input": 243,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.244",
+      "op": "unpack",
+      "input": 244,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.245",
+      "op": "unpack",
+      "input": 245,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.246",
+      "op": "unpack",
+      "input": 246,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.247",
+      "op": "unpack",
+      "input": 247,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.248",
+      "op": "unpack",
+      "input": 248,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.249",
+      "op": "unpack",
+      "input": 249,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.250",
+      "op": "unpack",
+      "input": 250,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.251",
+      "op": "unpack",
+      "input": 251,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.252",
+      "op": "unpack",
+      "input": 252,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.253",
+      "op": "unpack",
+      "input": 253,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.254",
+      "op": "unpack",
+      "input": 254,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.invalid.255",
+      "op": "unpack",
+      "input": 255,
+      "trit_count": 5,
+      "expect_error": "invalid_byte"
+    },
+    {
+      "id": "pack5.unpack.short_input.006.001",
+      "op": "unpack",
+      "input": 0,
+      "trit_count": 6,
+      "expect_error": "short_input"
+    },
+    {
+      "id": "pack5.pack.invalid_trit.2",
+      "op": "pack",
+      "input": [
+        2,
+        0,
+        0,
+        0,
+        0
+      ],
+      "expect_error": "invalid_trit"
+    }
+  ]
+}

@@ -20,14 +20,19 @@ use crate::oracle::{Behavior, Oracle};
 use crate::repair::RepairOptions;
 use crate::wire;
 
+mod cli_task;
+
 const USAGE: &str = "\
 trit-wspace <command>
   read <artifact|-> [--out <path>]
   verify <artifact|-> --oracle <json|-> [--limit N]
-  task-merge <base|-> <tuned|->... [--out <path>]
+  task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--out <path>]
   script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
+  rebase <target|-> --base <base|-> --patch <json|-> [--skip-conflicts] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
+  transplant <dest|-> --from <source|-> --layer N --rows i,j [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
+  dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--by-row] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
   explain <artifact|-> --oracle <json|-> --sample N [--top K]
@@ -62,10 +67,15 @@ pub fn run(args: &[String]) -> Result<(), String> {
     match command {
         "read" => cmd_read(&args[1..]),
         "verify" => cmd_verify(&args[1..]),
-        "task-merge" => cmd_task_merge(&args[1..]),
+        "task-merge" => cli_task::task_merge(&args[1..]),
+        "task-scale" => cli_task::task_scale(&args[1..]),
+        "task-combine" => cli_task::task_combine(&args[1..]),
         "script" => cmd_script(&args[1..]),
         "patch" => cmd_patch(&args[1..]),
         "apply-candidate" => cmd_apply_candidate(&args[1..]),
+        "rebase" => cmd_rebase(&args[1..]),
+        "transplant" => cmd_transplant(&args[1..]),
+        "dare-drop" => cmd_dare_drop(&args[1..]),
         "repair" => cmd_repair(&args[1..]),
         "propose" => cmd_propose(&args[1..]),
         "explain" => cmd_explain(&args[1..]),
@@ -113,29 +123,7 @@ fn cmd_verify(args: &[String]) -> Result<(), String> {
         "signature": format!("{:016x}", Behavior::of(&net, &oracle).map_err(err)?.signature()),
         "summary": wire::net_summary(&net),
         "mismatches": wire::mismatches_value(&net, &oracle, limit).map_err(err)?,
-    }))
-}
-
-fn cmd_task_merge(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    if parsed.positional.len() < 2 {
-        return Err("用法：trit-wspace task-merge <base|-> <tuned|->... [--out <path>]".into());
-    }
-    no_double_stdin(&parsed.positional)?;
-    let base = load_net(&parsed.positional[0])?;
-    let mut tasks = Vec::with_capacity(parsed.positional.len() - 1);
-    for path in &parsed.positional[1..] {
-        tasks.push(crate::task::TaskVector::between(&base, &load_net(path)?).map_err(err)?);
-    }
-    let merged = crate::task::merge_tasks(&base, &tasks).map_err(err)?;
-    write_out(&parsed, &merged)?;
-    let patch = Patch::diff(&base, &merged).map_err(err)?;
-    emit(&json!({
-        "tasks": tasks.len(),
-        "summary": wire::net_summary(&merged),
-        "patch": wire::patch_to_value(&patch),
-        "cost": wire::cost_to_value(&patch.cost(&base)),
-        "artifact": to_wsp(&merged),
+        "classification": wire::classification_value(&net, &oracle).map_err(err)?,
     }))
 }
 
@@ -200,6 +188,212 @@ fn cmd_apply_candidate(args: &[String]) -> Result<(), String> {
     let patch = wire::patch_from_candidate(&candidate).map_err(err)?;
     let oracle = oracle_path.map(load_oracle).transpose()?;
     perform_patch(&parsed, &net, patch, oracle, "cli-apply-candidate")
+}
+
+fn cmd_rebase(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &["skip-conflicts", "require-before", "require-after"])?;
+    let path = one(
+        &parsed,
+        "rebase <target|-> --base <base|-> --patch <json|-> [--skip-conflicts] [--oracle <json|->] [--require-after] [--out <path>]",
+    )?;
+    let base_path = value(&parsed, "base")?;
+    let patch_path = value(&parsed, "patch")?;
+    let oracle_path = parsed.values.get("oracle").map(String::as_str);
+    let mut sources = vec![path, base_path, patch_path];
+    if let Some(oracle) = oracle_path {
+        sources.push(oracle);
+    }
+    no_double_stdin(&sources)?;
+
+    let target = load_net(path)?;
+    let base = load_net(base_path)?;
+    let patch = wire::patch_from_value(&load_json(patch_path)?).map_err(err)?;
+    let oracle = oracle_path.map(load_oracle).transpose()?;
+    let skip_conflicts = parsed.switches.contains("skip-conflicts");
+    let report = crate::rebase::rebase(&base, &target, &patch, skip_conflicts).map_err(err)?;
+    let mut output = wire::rebase_to_value(&report);
+    if report.rejected {
+        output["summary"] = wire::net_summary(&target);
+        output["artifact"] = json!(to_wsp(&target));
+        return emit(&output);
+    }
+    let outcome = ops::apply_patch(
+        &target,
+        report.clean.clone(),
+        oracle.as_ref(),
+        parsed.switches.contains("require-before"),
+        parsed.switches.contains("require-after"),
+    )
+    .map_err(err)?;
+    write_out(&parsed, &outcome.net)?;
+    output["applied"] = json!(outcome.applied);
+    output["rolled_back"] = json!(outcome.rolled_back);
+    output["cost"] = wire::cost_to_value(&report.clean.cost(&target));
+    output["summary"] = wire::net_summary(&outcome.net);
+    output["artifact"] = json!(to_wsp(&outcome.net));
+    if let Some(oracle) = &oracle {
+        output["verify"] = json!({
+            "exact": oracle.exact(&outcome.net).map_err(err)?,
+            "loss": oracle.loss(&outcome.net).map_err(err)?,
+        });
+    }
+    emit(&output)
+}
+
+fn cmd_transplant(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &["require-before", "require-after"])?;
+    let path = one(
+        &parsed,
+        "transplant <dest|-> --from <source|-> --layer N --rows i,j [--oracle <json|->] [--require-after] [--out <path>]",
+    )?;
+    let from = value(&parsed, "from")?;
+    let layer = req_usize(&parsed, "layer")?;
+    let rows = parse_rows(value(&parsed, "rows")?)?;
+    let oracle_path = parsed.values.get("oracle").map(String::as_str);
+    let mut sources = vec![path, from];
+    if let Some(oracle) = oracle_path {
+        sources.push(oracle);
+    }
+    no_double_stdin(&sources)?;
+
+    let dest = load_net(path)?;
+    let source = load_net(from)?;
+    let patch = crate::transplant::transplant_units(&source, &dest, layer, &rows).map_err(err)?;
+    let oracle = oracle_path.map(load_oracle).transpose()?;
+    let cost = patch.cost(&dest);
+    let outcome = ops::apply_patch(
+        &dest,
+        patch.clone(),
+        oracle.as_ref(),
+        parsed.switches.contains("require-before"),
+        parsed.switches.contains("require-after"),
+    )
+    .map_err(err)?;
+    write_out(&parsed, &outcome.net)?;
+    let mut output = json!({
+        "layer": layer,
+        "rows": rows,
+        "patch": wire::patch_to_value(&patch),
+        "cost": wire::cost_to_value(&cost),
+        "applied": outcome.applied,
+        "rolled_back": outcome.rolled_back,
+        "summary": wire::net_summary(&outcome.net),
+        "artifact": to_wsp(&outcome.net),
+    });
+    if let Some(oracle) = &oracle {
+        output["verify"] = json!({
+            "exact": oracle.exact(&outcome.net).map_err(err)?,
+            "loss": oracle.loss(&outcome.net).map_err(err)?,
+        });
+    }
+    emit(&output)
+}
+
+fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
+    let parsed = parse(
+        args,
+        &["require-before", "require-after", "by-row", "by-layer"],
+    )?;
+    let path = one(
+        &parsed,
+        "dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--by-row|--by-layer|--block N] [--oracle <json|->] [--require-after] [--out <path>]",
+    )?;
+    let tuned_path = value(&parsed, "tuned")?;
+    let rate = req_f32(&parsed, "rate")?;
+    let seed = opt_u64(&parsed, "seed", 0)?;
+    let oracle_path = parsed.values.get("oracle").map(String::as_str);
+    let mut sources = vec![path, tuned_path];
+    if let Some(oracle) = oracle_path {
+        sources.push(oracle);
+    }
+    no_double_stdin(&sources)?;
+
+    let base = load_net(path)?;
+    let tuned = load_net(tuned_path)?;
+    let by_row = parsed.switches.contains("by-row");
+    let by_layer = parsed.switches.contains("by-layer");
+    let block = if parsed.values.contains_key("block") {
+        Some(req_usize(&parsed, "block")?)
+    } else {
+        None
+    };
+    if usize::from(by_row) + usize::from(by_layer) + usize::from(block.is_some()) > 1 {
+        return Err("--by-row / --by-layer / --block 只能给一个".into());
+    }
+    let outcome = if by_layer {
+        crate::dare::dare_drop_layers(&base, &tuned, rate, seed).map_err(err)?
+    } else if by_row {
+        crate::dare::dare_drop_rows(&base, &tuned, rate, seed).map_err(err)?
+    } else if let Some(block) = block {
+        crate::dare::dare_drop_blocks(&base, &tuned, rate, seed, block).map_err(err)?
+    } else {
+        crate::dare::dare_drop(&base, &tuned, rate, seed).map_err(err)?
+    };
+    let oracle = oracle_path.map(load_oracle).transpose()?;
+    let cost = outcome.patch.cost(&base);
+    let applied_outcome = ops::apply_patch(
+        &base,
+        outcome.patch.clone(),
+        oracle.as_ref(),
+        parsed.switches.contains("require-before"),
+        parsed.switches.contains("require-after"),
+    )
+    .map_err(err)?;
+    write_out(&parsed, &applied_outcome.net)?;
+    let mut output = json!({
+        "rate": rate,
+        "seed": seed,
+        "by_row": by_row,
+        "by_layer": by_layer,
+        "block": block,
+        "kept": outcome.kept,
+        "dropped": outcome.dropped,
+        "rescaled_rows": outcome.rescaled_rows,
+        "patch": wire::patch_to_value(&outcome.patch),
+        "cost": wire::cost_to_value(&cost),
+        "applied": applied_outcome.applied,
+        "rolled_back": applied_outcome.rolled_back,
+        "summary": wire::net_summary(&applied_outcome.net),
+        "artifact": to_wsp(&applied_outcome.net),
+    });
+    if let Some(oracle) = &oracle {
+        output["verify"] = json!({
+            "exact": oracle.exact(&applied_outcome.net).map_err(err)?,
+            "loss": oracle.loss(&applied_outcome.net).map_err(err)?,
+        });
+    }
+    emit(&output)
+}
+
+fn req_usize(parsed: &Parsed, name: &str) -> Result<usize, String> {
+    let raw = parsed
+        .values
+        .get(name)
+        .ok_or_else(|| format!("需要 --{name}"))?;
+    raw.parse::<usize>()
+        .map_err(|_| format!("--{name} 需要非负整数，得到 `{raw}`"))
+}
+
+fn req_f32(parsed: &Parsed, name: &str) -> Result<f32, String> {
+    let raw = parsed
+        .values
+        .get(name)
+        .ok_or_else(|| format!("需要 --{name}"))?;
+    raw.parse::<f32>()
+        .map_err(|_| format!("--{name} 需要数字，得到 `{raw}`"))
+}
+
+fn parse_rows(raw: &str) -> Result<Vec<usize>, String> {
+    if raw.is_empty() {
+        return Err("--rows 不能为空".into());
+    }
+    raw.split(',')
+        .map(|part| {
+            part.trim()
+                .parse::<usize>()
+                .map_err(|_| format!("--rows 需要逗号分隔的非负整数，得到 `{part}`"))
+        })
+        .collect()
 }
 
 fn perform_patch(
@@ -479,7 +673,7 @@ pub(crate) fn opt_usize(parsed: &Parsed, name: &str, default: usize) -> Result<u
     })
 }
 
-fn opt_u64(parsed: &Parsed, name: &str, default: u64) -> Result<u64, String> {
+pub(super) fn opt_u64(parsed: &Parsed, name: &str, default: u64) -> Result<u64, String> {
     parsed.values.get(name).map_or(Ok(default), |raw| {
         raw.parse::<u64>()
             .map_err(|_| format!("--{name} 需要非负整数，得到 `{raw}`"))

@@ -10,7 +10,7 @@ fn tool(name: &str, description: &str, props: Value, required: &[&str]) -> Value
     })
 }
 
-/// 十六个工具。改数量必须同时改测试断言。
+/// 十九个工具。改数量必须同时改测试断言。
 #[must_use]
 pub fn tools() -> Vec<Value> {
     let artifact =
@@ -145,8 +145,94 @@ pub fn tools() -> Vec<Value> {
             json!({
                 "base": artifact(),
                 "tasks": {"type": "array", "items": {"type": "string"}},
+                "aligned": {"type": "boolean"},
+                "dare_rate": {"type": "number", "description": "合并后对差分做 DARE 稀疏化的丢弃率，[0, 1)"},
+                "dare_per_task": {"type": "number", "description": "每个任务先 DARE 再投票的丢弃率，[0, 1)；与 dare_rate 互斥"},
+                "dare_seed": {"type": "integer", "description": "DARE 散列种子，默认 0"},
+                "weights": {"type": "array", "items": {"type": "number"}, "description": "与 tasks 等长的任务权重（有限非负，0=忽略该任务）；默认等权"},
+                "oracle": {"type": "object", "description": "可选验证集（与 wsp_verify 相同格式）；给了就返回合并前后的 loss/exact/accuracy"},
+                "tune_weights": {"type": "boolean", "description": "用 oracle 坐标下降选权重（候选 0/0.5/1/2）；需要 oracle，与 weights 互斥"},
+                "tune_rounds": {"type": "integer", "description": "调权轮数，默认 1；0 表示只算等权基线"},
+                "tune_metric": {"type": "string", "enum": ["exact", "hamming", "argmax", "readout"], "description": "调权目标：exact=逐样本完全匹配（默认），hamming=逐位失配数，argmax=三值输出分类错误数（一维按符号），readout=f32 连续输出分类错误数"},
+                "tune_grid": {"type": "array", "items": {"type": "number"}, "description": "调权候选权重网格（有限非负，默认 [0, 0.5, 1, 2]）"},
+                "tune_with_dare": {"type": "boolean", "description": "调权评估走最终 DARE 合并路径（需要 dare_rate 或 dare_per_task）"},
             }),
             &["base", "tasks"],
+        ),
+        tool(
+            "wsp_task_scale",
+            "三值任务算术：λ>0 原样、λ=0 丢弃、λ<0 取反 trit/偏置（scale 差分丢弃）",
+            json!({
+                "base": artifact(),
+                "tuned": {"type": "string"},
+                "lambda": {"type": "number", "description": "单个缩放系数；与 lambdas 互斥"},
+                "lambdas": {"type": "array", "items": {"type": "number"}, "description": "λ 扫描列表；批量时返回 results（不含 artifact）"},
+                "layer_lambdas": {"type": "array", "items": {"type": "number"}, "description": "按层 λ（每层一个；0=丢弃、<0 取反、>0 原样）；与 lambda/lambdas 互斥"},
+                "row_lambdas": {"type": "array", "items": {"type": "number"}, "description": "按行 λ（长度=总行数；0=丢弃、<0 取反）"},
+                "block_lambdas": {"type": "array", "items": {"type": "number"}, "description": "按列块 λ（长度=总块数；需 block_size）"},
+                "block_size": {"type": "integer", "description": "按块 λ 的列块大小（>0）"},
+                "row_lambdas_map": {"type": "object", "description": "稀疏按行 λ：键 `layer:row`，未给的行默认 1"},
+                "block_lambdas_map": {"type": "object", "description": "稀疏按块 λ：键 `layer:row:block`，未给的块默认 1（需 block_size）"},
+                "row_lambdas_patterns": {"type": "object", "description": "按行 λ 模式：键 `layer:row`，段可为 `*` 或 `a-b`；未匹配默认 1"},
+                "block_lambdas_patterns": {"type": "object", "description": "按块 λ 模式：键 `layer:row:block`，段可为 `*` 或 `a-b`（需 block_size）"},
+                "oracle": {"type": "object", "description": "可选验证集；给了就给每个 λ 返回 verify 读数"},
+            }),
+            &["base", "tuned"],
+        ),
+        tool(
+            "wsp_task_combine",
+            "三值任务算术：按 λ 组合多个任务向量（λ<0 取反、0 丢弃；权重取 |λ|）",
+            json!({
+                "base": artifact(),
+                "tasks": {"type": "array", "items": {"type": "string"}},
+                "lambdas": {"type": "array", "items": {"type": "number"}},
+            }),
+            &["base", "tasks", "lambdas"],
+        ),
+        tool(
+            "wsp_rebase",
+            "把针对 base 写的补丁三方重放到 target；冲突逐条报告，默认整体放弃，skip_conflicts 只落干净部分",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "base": artifact(),
+                "patch": {"type": "object", "description": "version=1 的 edits 列表"},
+                "skip_conflicts": {"type": "boolean"},
+                "oracle": {"type": "object"},
+                "require_before": {"type": "boolean"},
+                "require_after": {"type": "boolean"},
+            }),
+            &["base", "patch"],
+        ),
+        tool(
+            "wsp_transplant",
+            "把 source 第 layer 层 rows 里的隐藏单元（入边 + 偏置 + scale + 出边）移植到 target，返回补丁与新工件",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "source": artifact(),
+                "layer": {"type": "integer"},
+                "rows": {"type": "array", "items": {"type": "integer"}},
+                "oracle": {"type": "object"},
+                "require_before": {"type": "boolean"},
+                "require_after": {"type": "boolean"},
+            }),
+            &["source", "layer", "rows"],
+        ),
+        tool(
+            "wsp_dare_drop",
+            "DARE 三值丢弃：按 rate 确定性（seed）丢弃 base→tuned 的差分 trit，重标度吸收进保留行的 scale（行为中性）",
+            json!({
+                "artifact": artifact(), "path": {"type": "string"},
+                "tuned": artifact(),
+                "rate": {"type": "number", "description": "丢弃概率，[0, 1)"},
+                "seed": {"type": "integer", "description": "散列种子，默认 0"},
+                "by_row": {"type": "boolean", "description": "整行（trit+偏置）一起保留或丢弃；默认按坐标"},
+                "by_layer": {"type": "boolean", "description": "整层一起保留或丢弃；与 by_row/block 互斥"},
+                "block": {"type": "integer", "description": "按固定列块（col/block）一起保留/丢弃；与 by_row 互斥"},
+                "oracle": {"type": "object"},
+                "require_before": {"type": "boolean"},
+                "require_after": {"type": "boolean"},
+            }),
+            &["tuned", "rate"],
         ),
         tool(
             "wsp_run_script",
