@@ -23,6 +23,7 @@ use crate::wire;
 mod cli_artifact_shard;
 mod cli_safetensors;
 mod cli_task;
+mod cli_wsp2;
 
 const USAGE: &str = "\
 trit-wspace <command>
@@ -53,6 +54,8 @@ trit-wspace <command>
   export-safetensors-dir <dir> --out <file>
   split-artifact <artifact|-> --rows N --out <dir>
   join-artifact <dir> --out <path>
+  pack-artifact <artifact|-> --out <bin>
+  unpack-artifact <bin> --out <path>
   mcp";
 
 /// 进程入口：返回退出码（0 成功，1 失败）。
@@ -103,6 +106,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "export-safetensors-dir" => cli_safetensors::export_dir(&args[1..]),
         "split-artifact" => cli_artifact_shard::split(&args[1..]),
         "join-artifact" => cli_artifact_shard::join(&args[1..]),
+        "pack-artifact" => cli_wsp2::pack(&args[1..]),
+        "unpack-artifact" => cli_wsp2::unpack(&args[1..]),
         "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
             .map_err(|error| error.to_string()),
         "--help" | "-h" | "help" => {

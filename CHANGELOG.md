@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：WSP2 2-bit 压缩容器）
+
+- `trit-wspace::wsp2`：`to_wsp2` / `from_wsp2`，把每个 trit 压到 2 bit（`-1/0/+1 → 0/1/2`，
+  3 判非法），bias 同样打包，scale 保持 f32，末尾带 FNV-1a 校验和；magic/版本/层数/截断/
+  校验和/非法 2-bit 全部报错。WSP2 是**缓存/传输格式**，解包后回到 WSP1 规范文本。
+- CLI：`pack-artifact <artifact|-> --out <bin>`、`unpack-artifact <bin> --out <path>`。
+- 体积（小网络 2 层 2×3）：WSP1 128 B → WSP2 **48 B**（header/scales 占比高）；
+  真实 30522×384 张量：WSP1 **23 MB** → WSP2 **3.0 MB**（7.6×），pack 0.828s、unpack 0.252s，
+  解包后与原始 WSP1 **逐字节一致**。
+- 测试 351 → 359（新增 `tests/wsp2.rs` 8 条：往返、体积、坏 magic/版本/截断/校验和/
+  非法 2-bit/零层、CLI 往返与坏文件）。
+- 变异 `trit-wspace` 314 → 318（+4，逐条验证）。
+- 未证栏：不是规范形式（不能替代 WSP1 的 diff/审计）；没有 zstd/RLE 二级压缩。
+
 ### Added（trit-wspace：WSP1 按行分片/合并）
 
 - `trit-wspace::artifact_shard`：`split(net, shard_rows)` 把单层网络按行切成多个**合法 WSP1**
