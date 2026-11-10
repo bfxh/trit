@@ -34,7 +34,7 @@ pub(super) fn import(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
     let path = one(
         &parsed,
-        "import-safetensors <file> --tensor <name>[,<name>...] [--out <path>]",
+        "import-safetensors <file> --tensor <name>[,<name>...] [--bias <name>] [--out <path>]",
     )?;
     let raw = value(&parsed, "tensor")?;
     let names: Vec<&str> = raw
@@ -45,6 +45,14 @@ pub(super) fn import(args: &[String]) -> Result<(), String> {
     if names.is_empty() {
         return Err("--tensor 不能为空".into());
     }
+    let bias_name = parsed.values.get("bias").map(String::as_str);
+    if bias_name.is_some() && names.len() != 1 {
+        return Err("--bias 只支持单个 --tensor".into());
+    }
+    let bias_values = match bias_name {
+        Some(name) => Some(safetensors::read_vector(path, name).map_err(err)?),
+        None => None,
+    };
     let mut layers = Vec::with_capacity(names.len());
     let mut report = Vec::with_capacity(names.len());
     for name in &names {
@@ -54,8 +62,13 @@ pub(super) fn import(args: &[String]) -> Result<(), String> {
             "rows": weights.rows,
             "cols": weights.cols,
             "values": weights.values.len(),
+            "bias": bias_name,
         }));
-        layers.push(weights.to_layer().map_err(err)?);
+        layers.push(
+            weights
+                .to_layer_with_bias(bias_values.as_deref())
+                .map_err(err)?,
+        );
     }
     let net = crate::Net::new(layers).map_err(err)?;
     write_out(&parsed, &net)?;
@@ -154,6 +167,7 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
     let source = one(&parsed, "import-safetensors-dir <file> --out <dir>")?;
     let out = value(&parsed, "out")?;
     let tensors = safetensors::list(source).map_err(err)?;
+    let names: BTreeSet<&str> = tensors.iter().map(|info| info.name.as_str()).collect();
     fs::create_dir_all(out).map_err(|error| format!("{out}: {error}"))?;
     let mut manifest = Vec::new();
     let mut skipped = Vec::new();
@@ -173,7 +187,22 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
             continue;
         }
         let weights = safetensors::read_tensor(source, &info.name).map_err(err)?;
-        let layer = weights.to_layer().map_err(err)?;
+        let mut bias_name = info.name.strip_suffix(".weight").and_then(|stem| {
+            let candidate = format!("{stem}.bias");
+            names.contains(candidate.as_str()).then_some(candidate)
+        });
+        let bias_values = match bias_name.as_ref() {
+            Some(name) => safetensors::read_vector(source, name)
+                .ok()
+                .filter(|values| values.len() == weights.rows),
+            None => None,
+        };
+        if bias_values.is_none() {
+            bias_name = None;
+        }
+        let layer = weights
+            .to_layer_with_bias(bias_values.as_deref())
+            .map_err(err)?;
         let net = crate::Net::new(vec![layer]).map_err(err)?;
         let file = format!("{:04}-{}.wsp", manifest.len(), safe_name(&info.name));
         let path = Path::new(out).join(&file);
@@ -183,6 +212,7 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
             "file": file,
             "rows": weights.rows,
             "cols": weights.cols,
+            "bias": bias_name,
         }));
     }
     if manifest.is_empty() {

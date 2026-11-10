@@ -83,7 +83,44 @@ pub struct Weights {
 impl Weights {
     /// 按 absmean 三值化成一层；偏置全零。
     pub fn to_layer(&self) -> Result<Layer> {
-        Layer::from_f32(self.rows, self.cols, &self.values, &vec![0.0; self.rows])
+        self.to_layer_with_bias(None)
+    }
+
+    /// 按 absmean 三值化成一层；`bias` 逐元素取符号（正/负/零 → `+1/-1/0`），
+    /// 长度必须等于行数。真实模型的 1D bias 是 f32，这里只保留方向信息。
+    pub fn to_layer_with_bias(&self, bias: Option<&[f32]>) -> Result<Layer> {
+        if let Some(values) = bias
+            && values.len() != self.rows
+        {
+            return Err(Error::Shape {
+                what: "bias",
+                expected: self.rows,
+                got: values.len(),
+            });
+        }
+        let mut trits = Vec::with_capacity(self.rows * self.cols);
+        let mut scales = Vec::with_capacity(self.rows);
+        for row in 0..self.rows {
+            let q = trit_learn::ternarize(&self.values[row * self.cols..(row + 1) * self.cols]);
+            trits.extend_from_slice(&q.q);
+            scales.push(if q.scale == 0.0 { 1.0 } else { q.scale });
+        }
+        let bias_trits: Vec<i8> = match bias {
+            Some(values) => values
+                .iter()
+                .map(|value| {
+                    if *value > 0.0 {
+                        1
+                    } else if *value < 0.0 {
+                        -1
+                    } else {
+                        0
+                    }
+                })
+                .collect(),
+            None => vec![0; self.rows],
+        };
+        Layer::with_scales(self.rows, self.cols, &trits, &bias_trits, scales)
     }
 }
 
@@ -216,6 +253,35 @@ pub fn list(path: &str) -> Result<Vec<TensorInfo>> {
 
 /// 读取一个 2D 张量。
 pub fn read_tensor(path: &str, name: &str) -> Result<Weights> {
+    let (info, values) = read_values(path, name)?;
+    if info.shape.len() != 2 {
+        return Err(fail(&format!(
+            "张量 `{name}` 是 {} 维（shape {:?}），不是 2D，不能作为 Layer 权重",
+            info.shape.len(),
+            info.shape
+        )));
+    }
+    Ok(Weights {
+        rows: info.shape[0],
+        cols: info.shape[1],
+        values,
+    })
+}
+
+/// 读取一个 1D 张量（真实模型的 bias / LayerNorm 参数）。
+pub fn read_vector(path: &str, name: &str) -> Result<Vec<f32>> {
+    let (info, values) = read_values(path, name)?;
+    if info.shape.len() != 1 {
+        return Err(fail(&format!(
+            "张量 `{name}` 是 {} 维（shape {:?}），不是 1D",
+            info.shape.len(),
+            info.shape
+        )));
+    }
+    Ok(values)
+}
+
+fn read_values(path: &str, name: &str) -> Result<(TensorInfo, Vec<f32>)> {
     let (mut file, data_start, entries) = open(path)?;
     let entry = entries
         .get(name)
@@ -226,14 +292,7 @@ pub fn read_tensor(path: &str, name: &str) -> Result<Weights> {
             entry.info.dtype
         ))
     })?;
-    let info = &entry.info;
-    if info.shape.len() != 2 {
-        return Err(fail(&format!(
-            "张量 `{name}` 是 {} 维（shape {:?}），不是 2D，不能作为 Layer 权重",
-            info.shape.len(),
-            info.shape
-        )));
-    }
+    let info = entry.info.clone();
     let (start, end) = info.offsets;
     file.seek(SeekFrom::Start(data_start + start as u64))
         .map_err(|error| fail(&format!("seek 失败：{error}")))?;
@@ -246,11 +305,7 @@ pub fn read_tensor(path: &str, name: &str) -> Result<Weights> {
             "张量 `{name}` 第 {index} 个元素是 {value}（非有限值不能三值化）"
         )));
     }
-    Ok(Weights {
-        rows: info.shape[0],
-        cols: info.shape[1],
-        values,
-    })
+    Ok((info, values))
 }
 
 fn decode(dtype: Dtype, raw: &[u8]) -> Vec<f32> {
