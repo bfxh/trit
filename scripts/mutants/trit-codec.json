@@ -110,5 +110,21 @@
   "new": "if u16::from(*byte) > COMBINATIONS {",
   "pkg": "trit-codec",
   "filter": "invalid_byte_is_rejected"
+ },
+ {
+  "name": "gray: 指数退回 as u32 截断",
+  "file": "crates/trit-codec/src/gray.rs",
+  "old": "    u32::try_from(n)\n        .ok()\n        .and_then(|exp| 3usize.checked_pow(exp))",
+  "new": "    Some(n as u32)\n        .and_then(|exp| 3usize.checked_pow(exp))",
+  "pkg": "trit-codec",
+  "filter": "code_space_bounds_and_huge_width_does_not_wrap"
+ },
+ {
+  "name": "count: 立方体指数退回 as u32 截断",
+  "file": "crates/trit-codec/src/count.rs",
+  "old": "    u32::try_from(n)\n        .ok()\n        .and_then(|exp| 3u128.checked_pow(exp))",
+  "new": "    Some(n as u32)\n        .and_then(|exp| 3u128.checked_pow(exp))",
+  "pkg": "trit-codec",
+  "filter": "cube_size_bounds_and_huge_width_does_not_wrap"
  }
 ]

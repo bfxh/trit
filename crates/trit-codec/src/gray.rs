@@ -23,17 +23,22 @@
 //!
 //! - `n = 0`：只有 `index == 0` 合法，码字为空、解码空码字得 0；
 //! - `index >= 3^n` → [`CodecError::GrayIndexOutOfRange`]；
-//! - `3^n` 用 `checked_pow` 算，n 大到溢出 usize 时也归为越界。64 位 usize 在
-//!   `n ≥ 41` 时溢出，实验用途（n ≤ 12）远在安全区内。
+//! - `3^n` 用 `checked_pow` 算，n 超出 `u32` 指数范围或 `3^n` 溢出 usize 时也归为
+//!   越界。64 位 usize 在 `n ≥ 41` 时溢出，实验用途（n ≤ 12）远在安全区内。
 
 use crate::CodecError;
 use trit_core::value::Ternary;
 
+/// 码字空间大小 `3^n`；`n` 超出 `u32` 或结果放不进 `usize` 时返回 `None`。
+fn code_space(n: usize) -> Option<usize> {
+    u32::try_from(n)
+        .ok()
+        .and_then(|exp| 3usize.checked_pow(exp))
+}
+
 /// 编码：把 `index` 编成长度为 `n` 的三值格雷码字（LSB 在前）。
 pub fn encode(index: usize, n: usize) -> Result<Vec<Ternary>, CodecError> {
-    let size = 3usize
-        .checked_pow(n as u32)
-        .ok_or(CodecError::GrayIndexOutOfRange { index, n })?;
+    let size = code_space(n).ok_or(CodecError::GrayIndexOutOfRange { index, n })?;
     if index >= size {
         return Err(CodecError::GrayIndexOutOfRange { index, n });
     }
@@ -218,5 +223,28 @@ mod tests {
         assert_eq!(decode(&word), usize::MAX);
         // 空字仍得 0（不受饱和影响）。
         assert_eq!(decode(&[]), 0);
+    }
+
+    #[test]
+    fn code_space_bounds_and_huge_width_does_not_wrap() {
+        assert_eq!(code_space(0), Some(1));
+        assert_eq!(code_space(2), Some(9));
+        assert_eq!(code_space(usize::BITS as usize), None);
+        #[cfg(target_pointer_width = "64")]
+        for n in [u32::MAX as usize + 1, u32::MAX as usize + 2] {
+            assert_eq!(code_space(n), None);
+        }
+    }
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn huge_width_must_not_wrap_to_zero() {
+        // 超出 u32 的位数必须在分配码字之前就报越界，且错误里保留原始 n。
+        for n in [u32::MAX as usize + 1, u32::MAX as usize + 2] {
+            assert!(matches!(
+                encode(0, n),
+                Err(CodecError::GrayIndexOutOfRange { index: 0, n: actual }) if actual == n
+            ));
+        }
     }
 }

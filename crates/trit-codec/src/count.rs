@@ -30,6 +30,14 @@ const MAX_TERMS: usize = 63;
 /// 位数硬上限：返回类型是 `u64`，而并集大小 ≤ `3^n`；`3^40 < u64::MAX < 3^41`。
 const MAX_N: usize = 40;
 
+/// 立方体大小 `3^n`；`n` 超出 `u32` 或结果放不进 `u64` 时返回 `None`。
+fn cube_size(n: usize) -> Option<u128> {
+    u32::try_from(n)
+        .ok()
+        .and_then(|exp| 3u128.checked_pow(exp))
+        .filter(|c| *c <= u64::MAX as u128)
+}
+
 /// 两条积项求交：返回 `Some(intersection)`，冲突（两位都是具体值且不等）返回 `None`。
 fn intersect(a: &[Ternary], b: &[Ternary]) -> Option<Vec<Ternary>> {
     if a.len() != b.len() {
@@ -83,10 +91,7 @@ pub fn count(terms: &[Vec<Ternary>]) -> Result<u64, CodecError> {
         });
     }
     // 并集大小 ≤ 3^n；先确认 3^n 能放进 u64，后面所有子集规模都不可能更大。
-    let cube = 3u128
-        .checked_pow(n as u32)
-        .filter(|c| *c <= u64::MAX as u128)
-        .ok_or(CodecError::CubeTooLarge { n, max: MAX_N })?;
+    let cube = cube_size(n).ok_or(CodecError::CubeTooLarge { n, max: MAX_N })?;
     debug_assert!(cube > 0);
 
     let mut total: i128 = 0;
@@ -129,6 +134,18 @@ mod tests {
 
     fn t(s: &str) -> Vec<Ternary> {
         s.chars().map(|c| Ternary::parse_char(c).unwrap()).collect()
+    }
+
+    #[test]
+    fn cube_size_bounds_and_huge_width_does_not_wrap() {
+        assert_eq!(cube_size(0), Some(1));
+        assert_eq!(cube_size(MAX_N), Some(3u128.pow(MAX_N as u32)));
+        assert_eq!(cube_size(MAX_N + 1), None);
+        // 超出 u32 的位数不得被当成小指数。
+        #[cfg(target_pointer_width = "64")]
+        for n in [u32::MAX as usize + 1, u32::MAX as usize + 2] {
+            assert_eq!(cube_size(n), None);
+        }
     }
 
     #[test]
