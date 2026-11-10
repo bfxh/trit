@@ -129,6 +129,7 @@ pub mod transplant;
 pub mod trit;
 pub mod tune;
 pub mod wire;
+pub mod wsp2;
 
 pub use analyze::{
     Analysis, EditImpact, PairAnalysis, PairImpact, TripleAnalysis, TripleImpact, analyze,
@@ -171,3 +172,4 @@ pub use tune::{
     tune_task_weights_argmax, tune_task_weights_hamming, tune_task_weights_metric,
     tune_task_weights_readout, tune_task_weights_with,
 };
+pub use wsp2::{from_wsp2, to_wsp2};

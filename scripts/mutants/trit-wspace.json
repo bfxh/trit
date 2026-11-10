@@ -2510,5 +2510,37 @@
  "new": "        if false {",
  "pkg": "trit-wspace",
  "filter": "cli_dir_skips_non_matrix_and_non_float_tensors"
+},
+{
+ "name": "wsp2: 打包每字节只放 2 个 trit",
+ "file": "crates/trit-wspace/src/wsp2.rs",
+ "old": "out[index / 4] |= code << ((index % 4) * 2);",
+ "new": "out[index / 2] |= code << ((index % 2) * 2);",
+ "pkg": "trit-wspace",
+ "filter": "round_trip_preserves_weights"
+},
+{
+ "name": "wsp2: 解包位移错",
+ "file": "crates/trit-wspace/src/wsp2.rs",
+ "old": "let code = (bytes[index / 4] >> ((index % 4) * 2)) & 0b11;",
+ "new": "let code = (bytes[index / 4] >> (index % 4)) & 0b11;",
+ "pkg": "trit-wspace",
+ "filter": "round_trip_preserves_weights"
+},
+{
+ "name": "wsp2: 校验和不比对",
+ "file": "crates/trit-wspace/src/wsp2.rs",
+ "old": "if got != expected {",
+ "new": "if false {",
+ "pkg": "trit-wspace",
+ "filter": "rejects_checksum_tamper"
+},
+{
+ "name": "wsp2: 非法 2-bit 值当 -1",
+ "file": "crates/trit-wspace/src/wsp2.rs",
+ "old": "            _ => return Err(Error::InvalidTrit(3)),",
+ "new": "            _ => -1,",
+ "pkg": "trit-wspace",
+ "filter": "rejects_illegal_2bit_code"
 }
 ]
