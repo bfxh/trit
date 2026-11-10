@@ -2486,5 +2486,21 @@
  "new": "    if false {",
  "pkg": "trit-wspace",
  "filter": "rejects_unknown_dtype_and_reads_only_2d"
+},
+{
+ "name": "shard: 块行数不按剩余行取小",
+ "file": "crates/trit-wspace/src/artifact_shard.rs",
+ "old": "let take = shard_rows.min(rows - start);",
+ "new": "let take = shard_rows;",
+ "pkg": "trit-wspace",
+ "filter": "split_join_round_trip"
+},
+{
+ "name": "shard: 合并不校验块顺序",
+ "file": "crates/trit-wspace/src/artifact_shard.rs",
+ "old": "if shard.start != next {",
+ "new": "if false {",
+ "pkg": "trit-wspace",
+ "filter": "join_rejects_bad_order_and_counts"
 }
 ]

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：WSP1 按行分片/合并）
+
+- `trit-wspace::artifact_shard`：`split(net, shard_rows)` 把单层网络按行切成多个**合法 WSP1**
+  （每块可单独 `read`/`patch`/校验）+ `manifest.json`（总行数/cols/块顺序与行范围）；
+  `join(manifest, texts)` 校验块顺序、cols、总行数与块形状后合并。
+- CLI：`split-artifact <artifact|-> --rows N --out <dir>`、`join-artifact <dir> --out <path>`。
+- 测试 342 → 350（新增 `tests/artifact_shard.rs` 8 条：往返、单块、多层/零行拒绝、
+  顺序/总行数/cols 校验、manifest JSON、CLI 往返、缺片、多层拒绝）。
+- 变异 `trit-wspace` 311 → 313（+2；「合并不校验总行数」经验证与 `Layer` 形状校验等价，已删除并公示）。
+- 未证栏：只支持单层网络；只做拆分，没有压缩。
+
 ### Fixed（trit-wspace：真实 safetensors 的 1D/4D 与非浮点 dtype 兼容）
 
 - `list-safetensors` 现在列出任意维度张量，`dtype` 原样保留（`I64` / `BOOL` 不再让整个文件失败）；
