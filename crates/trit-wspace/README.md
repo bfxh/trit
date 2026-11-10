@@ -32,7 +32,7 @@
 | L4 读取 | 行为穷举、指纹、f32 裕量读数 | `oracle` + `readout` | 大模型探针/解释器 |
 | L5 搜索 | 无梯度精确修补、最小编辑数 | `repair`（小网络完备 BFS；大网络半径 1/2 + 束搜索） | 大规模目标、学习式提议器 |
 | L6 代数 | 消置换对称性、合并 | `merge`（贪心对齐 + 符号投票）+ `task`（任务向量投票）+ `dare`（DARE 丢弃） | 大规模合并 |
-| L7 规模 | GPU、外部 LLM 读写协议、模型库 | — | 全部 |
+| L7 规模 | GPU、外部 LLM 读写协议、模型库 | `safetensors`（单张量 `list`/`import`/`export`，F32/F16/BF16） | 整模型分片/压缩、GPU、模型库 |
 
 ## 三值的两条规范自由度（本库钉死）
 
@@ -86,6 +86,9 @@ trit-wspace audit-shards shards/ --resume cps/checkpoint-016.json --out final.ws
 trit-wspace replay audit.jsonl --artifact start.wsp --out final.wsp
 trit-wspace diff   a.wsp b.wsp
 trit-wspace merge  a.wsp b.wsp --aligned --out merged.wsp
+trit-wspace list-safetensors model.safetensors
+trit-wspace import-safetensors model.safetensors --tensor model.layers.0.mlp.up_proj.weight --out up.wsp
+trit-wspace export-safetensors up.wsp --out up.safetensors --tensor up_proj.weight
 trit-wspace mcp
 ```
 

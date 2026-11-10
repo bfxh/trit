@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：safetensors 外部权重读写）
+
+- `trit-wspace::safetensors`：`list` / `read_tensor` / `write_tensor`，只处理 2D 张量
+  （`F32` / `F16` / `BF16`）。读取只 seek 目标张量、不把整个权重文件读进内存；
+  header 长度、`data_offsets` 越界、形状×字节数不符、非 2D、未知 dtype、非有限值全部报
+  结构化错误（`Error::External`）。
+- CLI：`list-safetensors <file>`、`import-safetensors <file> --tensor <name> [--out <path>]`、
+  `export-safetensors <artifact|-> --out <path> [--tensor <name>]`。导入走 absmean 三值化
+  （`Layer::from_f32`）生成单层 WSP1；导出把单层 WSP1 按行 `trit × scale` 反量化成 f32。
+- 测试 323 → 335（新增 `tests/safetensors.rs` 12 条：F32/F16 次正规/BF16 解码、三值化
+  与 `from_f32` 一致、写读往返、越界/字节数/非 2D/非有限值坏输入、CLI 端到端）。
+- 变异 `trit-wspace` 300 → 305（新增 5 条 safetensors 目标，逐条 `--only` 验证）。
+- 未证栏：只做单张量读写；整模型多张量分片/压缩（L0）与 GPU（L7）仍未做。
+
 ### Changed（CI：非 Rust 改动不再跑 cargo 矩阵 —— 脚本类 PR 的 Windows job 12min → 约 1min）
 
 - `.github/workflows/ci.yml` 的改动集检测从「纯文档」扩为「**不含 Rust 面**」：`scripts/`、`.github/`、
