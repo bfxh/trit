@@ -2502,5 +2502,13 @@
  "new": "if false {",
  "pkg": "trit-wspace",
  "filter": "join_rejects_bad_order_and_counts"
+},
+{
+ "name": "safetensors-dir: 目录导入不跳过非 2D",
+ "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
+ "old": "        if info.shape.len() != 2 {",
+ "new": "        if false {",
+ "pkg": "trit-wspace",
+ "filter": "cli_dir_skips_non_matrix_and_non_float_tensors"
 }
 ]

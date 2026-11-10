@@ -154,16 +154,28 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
     let source = one(&parsed, "import-safetensors-dir <file> --out <dir>")?;
     let out = value(&parsed, "out")?;
     let tensors = safetensors::list(source).map_err(err)?;
-    if tensors.is_empty() {
-        return Err(format!("{source} 里没有 2D 张量"));
-    }
     fs::create_dir_all(out).map_err(|error| format!("{out}: {error}"))?;
-    let mut manifest = Vec::with_capacity(tensors.len());
-    for (index, info) in tensors.iter().enumerate() {
+    let mut manifest = Vec::new();
+    let mut skipped = Vec::new();
+    for info in &tensors {
+        if info.shape.len() != 2 {
+            skipped.push(json!({
+                "name": info.name,
+                "reason": format!("{} 维", info.shape.len()),
+            }));
+            continue;
+        }
+        if !matches!(info.dtype.as_str(), "F32" | "F16" | "BF16") {
+            skipped.push(json!({
+                "name": info.name,
+                "reason": format!("dtype {}", info.dtype),
+            }));
+            continue;
+        }
         let weights = safetensors::read_tensor(source, &info.name).map_err(err)?;
         let layer = weights.to_layer().map_err(err)?;
         let net = crate::Net::new(vec![layer]).map_err(err)?;
-        let file = format!("{index:04}-{}.wsp", safe_name(&info.name));
+        let file = format!("{:04}-{}.wsp", manifest.len(), safe_name(&info.name));
         let path = Path::new(out).join(&file);
         fs::write(&path, to_wsp(&net)).map_err(|error| format!("{}: {error}", path.display()))?;
         manifest.push(json!({
@@ -173,7 +185,13 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
             "cols": weights.cols,
         }));
     }
-    let manifest = json!({ "source": source, "tensors": manifest });
+    if manifest.is_empty() {
+        return Err(format!(
+            "{source} 里没有可导入的 2D 浮点张量（跳过 {} 个）",
+            skipped.len()
+        ));
+    }
+    let manifest = json!({ "source": source, "tensors": manifest, "skipped": skipped });
     let text = serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;
     let path = Path::new(out).join("manifest.json");
     fs::write(&path, text).map_err(|error| format!("{}: {error}", path.display()))?;
@@ -181,6 +199,7 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
         "out": out,
         "manifest": path.display().to_string(),
         "tensors": manifest["tensors"],
+        "skipped": manifest["skipped"],
     }))
 }
 
