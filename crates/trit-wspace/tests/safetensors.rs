@@ -577,8 +577,8 @@ fn cli_dir_imports_vectors_and_skips_non_float() {
     let path = dir.join("mixed.safetensors");
     raw_file(
         &path,
-        r#"{"a":{"dtype":"F32","shape":[3],"data_offsets":[0,12]},"b":{"dtype":"I64","shape":[2],"data_offsets":[12,28]},"c":{"dtype":"F32","shape":[2,3],"data_offsets":[28,52]}}"#,
-        &[0u8; 52],
+        r#"{"a":{"dtype":"F32","shape":[3],"data_offsets":[0,12]},"b":{"dtype":"I64","shape":[2],"data_offsets":[12,28]},"c":{"dtype":"F32","shape":[2,3],"data_offsets":[28,52]},"d":{"dtype":"F32","shape":[2,2,2,2],"data_offsets":[52,116]}}"#,
+        &[0u8; 116],
     );
     let out = dir.join("tensors");
     let report = stdout_json(&run(&[
@@ -594,8 +594,9 @@ fn cli_dir_imports_vectors_and_skips_non_float() {
     assert_eq!(tensors[1]["name"], "c");
     assert_eq!(tensors[1]["vector"], false);
     let skipped = report["skipped"].as_array().expect("skipped");
-    assert_eq!(skipped.len(), 1);
+    assert_eq!(skipped.len(), 2);
     assert_eq!(skipped[0]["name"], "b");
+    assert_eq!(skipped[1]["name"], "d");
     let files: Vec<String> = fs::read_dir(&out)
         .expect("dir")
         .filter_map(Result::ok)
