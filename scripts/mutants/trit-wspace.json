@@ -2470,5 +2470,21 @@
  "new": "if false {",
  "pkg": "trit-wspace",
  "filter": "cli_dir_rejects_duplicate_names"
+},
+{
+ "name": "safetensors: 非浮点 dtype 当 F32 读",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "    let dtype = entry.dtype.ok_or_else(|| {\n        fail(&format!(\n            \"张量 `{name}` 的 dtype `{}` 不受支持（只支持 F32/F16/BF16）\",\n            entry.info.dtype\n        ))\n    })?;",
+ "new": "    let dtype = Dtype::F32;",
+ "pkg": "trit-wspace",
+ "filter": "rejects_unknown_dtype_and_reads_only_2d"
+},
+{
+ "name": "safetensors: 非 2D 张量不拦",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "    if info.shape.len() != 2 {",
+ "new": "    if false {",
+ "pkg": "trit-wspace",
+ "filter": "rejects_unknown_dtype_and_reads_only_2d"
 }
 ]

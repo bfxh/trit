@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed（trit-wspace：真实 safetensors 的 1D/4D 与非浮点 dtype 兼容）
+
+- `list-safetensors` 现在列出任意维度张量，`dtype` 原样保留（`I64` / `BOOL` 不再让整个文件失败）；
+  `read_tensor` 仍只收 2D 浮点（F32/F16/BF16），非 2D / 非浮点给出明确错误。
+- 真实往返（`all-MiniLM-L6-v2/model.safetensors` 的 `embeddings.word_embeddings.weight`，
+  30522×384 F32）：导入 **0.485s → WSP1 23MB**；导出 **0.573s → 45MB f32**；再导入 **0.463s**——
+  trits 逐位一致，`scale` 按 absmean 重算（最大相对差 **44%**，三值前向行为不变）。
+- 测试 342（`tests/safetensors.rs` 19 条；新增覆盖 1D/4D list 与 I64 拒绝）；变异 `trit-wspace`
+  309 → **311**（+2，逐条验证）。
+
 ### Added（trit-wspace：safetensors 外部权重读写）
 
 - `trit-wspace::safetensors`：`list` / `read_tensor` / `write_tensor`，只处理 2D 张量
