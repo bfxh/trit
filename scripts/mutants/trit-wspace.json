@@ -2458,7 +2458,7 @@
 {
  "name": "safetensors-dir: 导入文件名不按序号唯一",
  "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
- "old": "let file = format!(\"{index:04}-{}.wsp\", safe_name(&info.name));",
+ "old": "let file = format!(\"{:04}-{}.wsp\", manifest.len(), safe_name(&info.name));",
  "new": "let file = format!(\"0000-{}.wsp\", safe_name(&info.name));",
  "pkg": "trit-wspace",
  "filter": "cli_dir_round_trip"
@@ -2486,5 +2486,29 @@
  "new": "    if false {",
  "pkg": "trit-wspace",
  "filter": "rejects_unknown_dtype_and_reads_only_2d"
+},
+{
+ "name": "shard: 块行数不按剩余行取小",
+ "file": "crates/trit-wspace/src/artifact_shard.rs",
+ "old": "let take = shard_rows.min(rows - start);",
+ "new": "let take = shard_rows;",
+ "pkg": "trit-wspace",
+ "filter": "split_join_round_trip"
+},
+{
+ "name": "shard: 合并不校验块顺序",
+ "file": "crates/trit-wspace/src/artifact_shard.rs",
+ "old": "if shard.start != next {",
+ "new": "if false {",
+ "pkg": "trit-wspace",
+ "filter": "join_rejects_bad_order_and_counts"
+},
+{
+ "name": "safetensors-dir: 目录导入不跳过非 2D",
+ "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
+ "old": "        if info.shape.len() != 2 {",
+ "new": "        if false {",
+ "pkg": "trit-wspace",
+ "filter": "cli_dir_skips_non_matrix_and_non_float_tensors"
 }
 ]

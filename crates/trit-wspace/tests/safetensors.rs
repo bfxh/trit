@@ -570,3 +570,37 @@ fn cli_dir_rejects_duplicate_names() {
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stderr).contains("重复张量名"));
 }
+
+#[test]
+fn cli_dir_skips_non_matrix_and_non_float_tensors() {
+    let dir = temp_dir("cli-dir-skip");
+    let path = dir.join("mixed.safetensors");
+    raw_file(
+        &path,
+        r#"{"a":{"dtype":"F32","shape":[3],"data_offsets":[0,12]},"b":{"dtype":"I64","shape":[2],"data_offsets":[12,28]},"c":{"dtype":"F32","shape":[2,3],"data_offsets":[28,52]}}"#,
+        &[0u8; 52],
+    );
+    let out = dir.join("tensors");
+    let report = stdout_json(&run(&[
+        "import-safetensors-dir",
+        path.to_str().unwrap(),
+        "--out",
+        out.to_str().unwrap(),
+    ]));
+    assert_eq!(report["tensors"].as_array().expect("tensors").len(), 1);
+    assert_eq!(report["tensors"][0]["name"], "c");
+    let skipped = report["skipped"].as_array().expect("skipped");
+    assert_eq!(skipped.len(), 2);
+    let names: Vec<&str> = skipped
+        .iter()
+        .map(|item| item["name"].as_str().expect("name"))
+        .collect();
+    assert_eq!(names, vec!["a", "b"]);
+    let files: Vec<String> = fs::read_dir(&out)
+        .expect("dir")
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".wsp"))
+        .collect();
+    assert_eq!(files.len(), 1, "{files:?}");
+}

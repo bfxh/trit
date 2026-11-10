@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：WSP1 按行分片/合并）
+
+- `trit-wspace::artifact_shard`：`split(net, shard_rows)` 把单层网络按行切成多个**合法 WSP1**
+  （每块可单独 `read`/`patch`/校验）+ `manifest.json`（总行数/cols/块顺序与行范围）；
+  `join(manifest, texts)` 校验块顺序、cols、总行数与块形状后合并。
+- CLI：`split-artifact <artifact|-> --rows N --out <dir>`、`join-artifact <dir> --out <path>`。
+- 目录导入兼容真实模型：`import-safetensors-dir` 跳过 1D/4D 与非浮点张量，报告 `skipped`
+  （含原因），`manifest.json` 同步记录；没有可导入张量时才报错。
+- 真实整模型读数（`all-MiniLM-L6-v2/model.safetensors`）：导入 **40** 个 2D 浮点张量、
+  跳过 **64** 个（63 个 1D + 1 个 `I64`），**0.99s**、目录 **45MB**。
+- 测试 342 → 351（`tests/artifact_shard.rs` 8 条 + 目录跳过 1 条）。
+- 变异 `trit-wspace` 311 → 314（+3；「合并不校验总行数」经验证与 `Layer` 形状校验等价，已删除并公示）。
+- 未证栏：只支持单层网络；只做拆分，没有压缩。
+
 ### Fixed（trit-wspace：真实 safetensors 的 1D/4D 与非浮点 dtype 兼容）
 
 - `list-safetensors` 现在列出任意维度张量，`dtype` 原样保留（`I64` / `BOOL` 不再让整个文件失败）；

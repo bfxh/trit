@@ -20,6 +20,7 @@ use crate::oracle::{Behavior, Oracle};
 use crate::repair::RepairOptions;
 use crate::wire;
 
+mod cli_artifact_shard;
 mod cli_safetensors;
 mod cli_task;
 
@@ -50,6 +51,8 @@ trit-wspace <command>
   export-safetensors <artifact|-> --out <path> [--tensor <name>]
   import-safetensors-dir <file> --out <dir>
   export-safetensors-dir <dir> --out <file>
+  split-artifact <artifact|-> --rows N --out <dir>
+  join-artifact <dir> --out <path>
   mcp";
 
 /// 进程入口：返回退出码（0 成功，1 失败）。
@@ -98,6 +101,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "export-safetensors" => cli_safetensors::export(&args[1..]),
         "import-safetensors-dir" => cli_safetensors::import_dir(&args[1..]),
         "export-safetensors-dir" => cli_safetensors::export_dir(&args[1..]),
+        "split-artifact" => cli_artifact_shard::split(&args[1..]),
+        "join-artifact" => cli_artifact_shard::join(&args[1..]),
         "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
             .map_err(|error| error.to_string()),
         "--help" | "-h" | "help" => {

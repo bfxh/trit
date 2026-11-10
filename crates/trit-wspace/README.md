@@ -25,7 +25,7 @@
 
 | 层 | 需要什么 | 本 crate | 缺口 |
 |---|---|---|---|
-| L0 表示 | 规范文本、逐 trit 可读、校验和、可 diff | `codec`（WSP1） | 大模型分片/压缩 |
+| L0 表示 | 规范文本、逐 trit 可读、校验和、可 diff | `codec`（WSP1）+ `artifact_shard`（单层按行分片/合并） | 压缩 |
 | L1 原语 | 改 trit/偏置/scale、换行、取反 | `edit`（`Edit`）+ `transplant`（单元级跨层搬运） | 任意块/子张量编辑 |
 | L2 事务 | 整体校验、失败零改动、逐位回滚 | `Patch` + `Journal` + `rebase`（三方重放） | 并发写锁 |
 | L3 程序语义 | 前置/后置行为条件、失败原样回滚 | `program` | 程序组合、条件跳转 |
@@ -91,6 +91,8 @@ trit-wspace import-safetensors model.safetensors --tensor model.layers.0.mlp.up_
 trit-wspace import-safetensors model.safetensors --tensor up_proj.weight,down_proj.weight --out mlp.wsp
 trit-wspace import-safetensors-dir model.safetensors --out tensors/
 trit-wspace export-safetensors-dir tensors/ --out model.safetensors
+trit-wspace split-artifact word.wsp --rows 4096 --out parts/
+trit-wspace join-artifact parts/ --out word.wsp
 trit-wspace export-safetensors up.wsp --out up.safetensors --tensor up_proj.weight
 trit-wspace mcp
 ```

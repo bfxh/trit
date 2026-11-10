@@ -100,6 +100,7 @@
 #![forbid(unsafe_code)]
 
 pub mod analyze;
+pub mod artifact_shard;
 pub mod audit;
 pub mod cli;
 mod cli_audit;
