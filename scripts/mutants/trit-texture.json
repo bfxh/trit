@@ -158,5 +158,13 @@
   "new": "            checked += 0;",
   "pkg": "trit-texture",
   "filter": "pack::tests::encode_is_deterministic_and_metrics_are_sane"
+ },
+ {
+  "name": "ttx3: Strength 瓦片步长漏乘份数",
+  "file": "crates/trit-texture/src/ttx3.rs",
+  "old": "                let tile_stride = TILE_DATA_BYTES as u64 * level.policy.copies() as u64;",
+  "new": "                let tile_stride = TILE_DATA_BYTES as u64;",
+  "pkg": "trit-texture",
+  "filter": "strength_level_with_many_tiles_round_trips_and_keeps_redundancy"
  }
 ]
