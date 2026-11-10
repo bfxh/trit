@@ -579,8 +579,7 @@ fn attribute(
         buckets_of.insert(row.import.clone(), hits.keys().copied().collect());
     }
 
-    let mut per_function: Vec<PerFunction> =
-        vec![PerFunction::default(); ranges.len()];
+    let mut per_function: Vec<PerFunction> = vec![PerFunction::default(); ranges.len()];
     let mut attributed = 0usize;
     let mut unattributed = 0usize;
     let mut unattributed_calls = 0usize;
