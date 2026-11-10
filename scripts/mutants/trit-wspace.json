@@ -2458,7 +2458,7 @@
 {
  "name": "safetensors-dir: 导入文件名不按序号唯一",
  "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
- "old": "let file = format!(\"{index:04}-{}.wsp\", safe_name(&info.name));",
+ "old": "let file = format!(\"{:04}-{}.wsp\", manifest.len(), safe_name(&info.name));",
  "new": "let file = format!(\"0000-{}.wsp\", safe_name(&info.name));",
  "pkg": "trit-wspace",
  "filter": "cli_dir_round_trip"
