@@ -279,46 +279,72 @@ fn f16_to_f32(bits: u16) -> f32 {
     sign * magnitude
 }
 
-/// 写一个 2D F32 张量（单张量文件）。
-pub fn write_tensor(
-    path: &str,
-    name: &str,
-    rows: usize,
-    cols: usize,
-    values: &[f32],
-) -> Result<()> {
-    if rows == 0 || cols == 0 {
-        return Err(Error::EmptyLayer { rows, cols });
+/// 一个待写出的 2D F32 张量。
+pub struct TensorOut<'a> {
+    /// 张量名。
+    pub name: &'a str,
+    /// 行数。
+    pub rows: usize,
+    /// 列数。
+    pub cols: usize,
+    /// 行主序权重。
+    pub values: &'a [f32],
+}
+
+/// 写出一个或多个 2D F32 张量（单个 safetensors 文件）。
+pub fn write_tensors(path: &str, tensors: &[TensorOut<'_>]) -> Result<()> {
+    if tensors.is_empty() {
+        return Err(fail("至少需要一个张量"));
     }
-    if values.len() != rows * cols {
-        return Err(Error::Shape {
-            what: "safetensors values",
-            expected: rows * cols,
-            got: values.len(),
-        });
-    }
-    if let Some((index, value)) = values.iter().enumerate().find(|(_, v)| !v.is_finite()) {
-        return Err(fail(&format!("第 {index} 个权重是 {value}（非有限值）")));
-    }
-    let bytes_len = values.len() * 4;
-    let header = json!({
-        name: {
-            "dtype": Dtype::F32.name(),
-            "shape": [rows, cols],
-            "data_offsets": [0, bytes_len],
+    let mut header = serde_json::Map::new();
+    let mut data: Vec<u8> = Vec::new();
+    for tensor in tensors {
+        if tensor.rows == 0 || tensor.cols == 0 {
+            return Err(Error::EmptyLayer {
+                rows: tensor.rows,
+                cols: tensor.cols,
+            });
         }
-    });
-    let mut header = serde_json::to_vec(&header)
+        if tensor.values.len() != tensor.rows * tensor.cols {
+            return Err(Error::Shape {
+                what: "safetensors values",
+                expected: tensor.rows * tensor.cols,
+                got: tensor.values.len(),
+            });
+        }
+        if let Some((index, value)) = tensor
+            .values
+            .iter()
+            .enumerate()
+            .find(|(_, value)| !value.is_finite())
+        {
+            return Err(fail(&format!(
+                "张量 `{}` 第 {index} 个权重是 {value}（非有限值）",
+                tensor.name
+            )));
+        }
+        let start = data.len();
+        for value in tensor.values {
+            data.extend_from_slice(&value.to_le_bytes());
+        }
+        header.insert(
+            tensor.name.to_string(),
+            json!({
+                "dtype": Dtype::F32.name(),
+                "shape": [tensor.rows, tensor.cols],
+                "data_offsets": [start, data.len()],
+            }),
+        );
+    }
+    let mut header = serde_json::to_vec(&Value::Object(header))
         .map_err(|error| fail(&format!("header 序列化失败：{error}")))?;
     while !header.len().is_multiple_of(8) {
         header.push(b' ');
     }
-    let mut out = Vec::with_capacity(8 + header.len() + bytes_len);
+    let mut out = Vec::with_capacity(8 + header.len() + data.len());
     out.extend_from_slice(&(header.len() as u64).to_le_bytes());
     out.extend_from_slice(&header);
-    for value in values {
-        out.extend_from_slice(&value.to_le_bytes());
-    }
+    out.extend_from_slice(&data);
     let temp = format!("{path}.tmp-{}", std::process::id());
     fs::write(&temp, &out).map_err(|error| fail(&format!("{temp}: {error}")))?;
     match fs::rename(&temp, path) {
@@ -328,4 +354,23 @@ pub fn write_tensor(
             fs::rename(&temp, path).map_err(|error| fail(&format!("{path}: {error}")))
         }
     }
+}
+
+/// 写一个 2D F32 张量（单张量文件）。
+pub fn write_tensor(
+    path: &str,
+    name: &str,
+    rows: usize,
+    cols: usize,
+    values: &[f32],
+) -> Result<()> {
+    write_tensors(
+        path,
+        &[TensorOut {
+            name,
+            rows,
+            cols,
+            values,
+        }],
+    )
 }

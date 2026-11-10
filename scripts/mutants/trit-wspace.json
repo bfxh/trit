@@ -2438,5 +2438,21 @@
  "new": "let bytes_len = values.len() * 2;",
  "pkg": "trit-wspace",
  "filter": "write_read_round_trip_preserves_trits_and_scales"
+},
+{
+ "name": "safetensors-multi: 第二个张量的 offsets 从 0 开始",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "let start = data.len();",
+ "new": "let start = 0;",
+ "pkg": "trit-wspace",
+ "filter": "cli_multi_tensor_round_trip"
+},
+{
+ "name": "safetensors-multi: 导入顺序反转",
+ "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
+ "old": "for name in &names {",
+ "new": "for name in names.iter().rev() {",
+ "pkg": "trit-wspace",
+ "filter": "cli_multi_tensor_round_trip"
 }
 ]
