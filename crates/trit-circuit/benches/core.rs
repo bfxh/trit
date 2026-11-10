@@ -125,13 +125,9 @@ fn branch_probe() {
         GateKind::Nor,
     ];
 
-    let mut state = 0x9E37_79B9_7F4A_7C15u64;
-    let mut next = || {
-        state ^= state << 13;
-        state ^= state >> 7;
-        state ^= state << 17;
-        state
-    };
+    // RNG 改吃 trit-fuzz 的 SeedRng（同一条 xorshift 13/7/17 ⇒ 语料序列不变）。
+    let mut rng = trit_fuzz::SeedRng::new(0x9E37_79B9_7F4A_7C15);
+    let mut next = || rng.next_u64();
     // 第二项是 KINDS 的下标，避免在计时循环里再做一次门类型查找。
     let random: Vec<(usize, Ternary, Ternary)> = (0..N)
         .map(|i| {

@@ -7,9 +7,9 @@
 //! 0     4    magic "TTX1"
 //! 4     4    width  (u32，BLOCK_WIDTH 的倍数)
 //! 8     4    height (u32，BLOCK_HEIGHT 的倍数)
-//! 12    4    blocks (u32，块数 = (width/4)·(height/8))
-//! 16    N    块载荷：每块 TRIT_BLOCK_BYTES(11) 字节
-//! 16+N  1    GF(3) CRC-3：对全部块的 32·blocks 个**索引 trit** 计算
+//! 12    4    blocks (u32，块数 = (width/8)·(height/8))
+//! 16    N    块载荷：每块 TRIT_BLOCK_BYTES(17) 字节
+//! 16+N  1    GF(3) CRC-3：对全部块的 64·blocks 个**索引 trit** 计算
 //! ```
 //!
 //! 与二进制容器（PNG 等）的差异：校验和不是比特 CRC，而是 **GF(3) 上的
@@ -186,14 +186,13 @@ mod tests {
 
     #[test]
     fn round_trips_through_container() {
-        let pixels = sample(8, BLOCK_HEIGHT);
-        let texture = encode_rgba(&pixels, 8, BLOCK_HEIGHT).unwrap();
+        let pixels = sample(8, 8);
+        let texture = encode_rgba(&pixels, 8, 8).unwrap();
         let container = to_ttx(&texture);
-        // 布局：16 头 + 2 块×11 + 1 校验（8 宽 → 2 列块）。写成表达式，
-        // 块尺寸常量变了这里会跟着走，不会再钉死一个过期数字。
+        // 布局：16 头 + 1 块×17 + 1 校验（8×8 一块）。
         assert_eq!(
             container.len(),
-            HEADER_BYTES + 2 * crate::TRIT_BLOCK_BYTES + CHECKSUM_BYTES
+            HEADER_BYTES + TRIT_BLOCK_BYTES + CHECKSUM_BYTES
         );
         assert_eq!(&container[..4], &MAGIC);
         let back = from_ttx(&container).unwrap();
@@ -203,7 +202,7 @@ mod tests {
 
     #[test]
     fn rejects_bad_magic_truncation_and_block_count() {
-        let texture = encode_rgba(&sample(4, BLOCK_HEIGHT), 4, BLOCK_HEIGHT).unwrap();
+        let texture = encode_rgba(&sample(8, 8), 8, 8).unwrap();
         let mut container = to_ttx(&texture);
         // 魔数错。
         container[0] = b'X';
@@ -234,7 +233,7 @@ mod tests {
     fn payload_corruption_is_caught_by_gf3_checksum() {
         // 翻转载荷里的一个 trit（字节 16 = 首块索引 trit 打包首字节）：
         // GF(3) CRC-3 对单符号错全检。
-        let texture = encode_rgba(&sample(4, BLOCK_HEIGHT), 4, BLOCK_HEIGHT).unwrap();
+        let texture = encode_rgba(&sample(8, 8), 8, 8).unwrap();
         let mut container = to_ttx(&texture);
         container[HEADER_BYTES + 4] ^= 0x1;
         assert!(matches!(
@@ -245,9 +244,9 @@ mod tests {
 
     #[test]
     fn multi_block_checksum_covers_every_block() {
-        // 8×16 = 4 块：把最后一块载荷打翻，校验和必须仍然抓到——
+        // 8×20 = 4 块：把最后一块载荷打翻，校验和必须仍然抓到——
         // 防止"只校验了第一块"的假实现。
-        let texture = encode_rgba(&sample(8, 16), 8, 16).unwrap();
+        let texture = encode_rgba(&sample(16, 16), 16, 16).unwrap();
         assert_eq!(texture.blocks.len(), 4);
         let mut container = to_ttx(&texture);
         let last_block_payload = HEADER_BYTES + 3 * TRIT_BLOCK_BYTES + 4;
@@ -260,16 +259,16 @@ mod tests {
 
     #[test]
     fn absurd_block_declarations_are_rejected_without_allocation() {
-        // 块数声明落在 32 位回绕区（blocks×11 > u32::MAX）：必须报 TtxTruncated，
+        // 块数声明落在 32 位回绕区（blocks×12 > u32::MAX）：必须报 TtxTruncated，
         // 绝不做按声明数的分配（payload_len 用 checked 乘法兜底）。
         // 64 位 CI 上这条与「长度不符」同错误码；32 位回绕路径本身无法在 64 位
         // 触发——不变式靠 checked 算术显式成立，故无对应变异锚点（锚点在 64 位
         // 上必然存活，照实记）。
-        let texture = encode_rgba(&sample(4, BLOCK_HEIGHT), 4, BLOCK_HEIGHT).unwrap();
+        let texture = encode_rgba(&sample(8, 8), 8, 8).unwrap();
         let mut container = to_ttx(&texture);
-        let width = 800_000_000u32; // 4 的倍数；expected = 2e8 × 2 = 4e8 块
-        let height = 16u32; // 必须是 BLOCK_HEIGHT 的倍数，否则先撞 Shape 而非回绕路径
-        let blocks = 400_000_000u32; // blocks × 11 = 4.4e9 > u32::MAX
+        let width = 800_000_000u32; // 8 的倍数；expected = 1e8 × 2 = 2e8 块
+        let height = 16u32;
+        let blocks = 200_000_000u32; // blocks × 17 = 3.4e9 字节，远超实际容器
         container[4..8].copy_from_slice(&width.to_le_bytes());
         container[8..12].copy_from_slice(&height.to_le_bytes());
         container[12..16].copy_from_slice(&blocks.to_le_bytes());

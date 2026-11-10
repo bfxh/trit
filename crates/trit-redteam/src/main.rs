@@ -16,6 +16,7 @@ mod chain;
 mod crc;
 mod fuzz;
 mod rail;
+mod secrets;
 mod sidechannel;
 
 use std::fs;

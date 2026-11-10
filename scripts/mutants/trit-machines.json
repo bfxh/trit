@@ -1,0 +1,66 @@
+[
+ {
+  "name": "ca: 规则表倒序查",
+  "file": "crates/trit-machines/src/ca.rs",
+  "old": "next.push(rule.0[sum]);",
+  "new": "next.push(rule.0[6 - sum]);",
+  "pkg": "trit-machines",
+  "filter": "single_seed_spreads_to_the_whole_line"
+ },
+ {
+  "name": "machines: 强化把同号写成抑制",
+  "file": "crates/trit-machines/src/graded.rs",
+  "old": "                let sign = polarity[source].signum() * polarity[listener].signum();",
+  "new": "                let sign = -polarity[source].signum() * polarity[listener].signum();",
+  "pkg": "trit-machines",
+  "filter": "reinforcement_only_fills_empty_links"
+ },
+ {
+  "name": "machines: 搜寻取最低分块而不是最高分",
+  "file": "crates/trit-machines/src/graded.rs",
+  "old": "    scored.sort_by(|left, right| right.0.cmp(&left.0).then(left.1.cmp(&right.1)));",
+  "new": "    scored.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.cmp(&right.1)));",
+  "pkg": "trit-machines",
+  "filter": "search_picks_the_block_that_drives_the_rest"
+ },
+ {
+  "name": "machines: 收敛计数把相同判成不同",
+  "file": "crates/trit-machines/src/graded.rs",
+  "old": "        } else if outcome == last {",
+  "new": "        } else if outcome != last {",
+  "pkg": "trit-machines",
+  "filter": "two_groups_converge_to_positive"
+ },
+ {
+  "name": "snn: 不限制 tick 预算",
+  "file": "crates/trit-machines/src/snn.rs",
+  "old": "    if ticks > MAX_TICKS {",
+  "new": "    if false {",
+  "pkg": "trit-machines",
+  "filter": "invalid_networks_are_rejected_instead_of_panicking"
+ },
+ {
+  "name": "snn: 抑制阈值写成严格小于",
+  "file": "crates/trit-machines/src/snn.rs",
+  "old": "} else if potential <= -i64::from(network.threshold) {",
+  "new": "} else if potential < -i64::from(network.threshold) {",
+  "pkg": "trit-machines",
+  "filter": "negative_drive_produces_inhibitory_spike"
+ },
+ {
+  "name": "snn: 模拟前不校验网络",
+  "file": "crates/trit-machines/src/snn.rs",
+  "old": "    network.validate()?;",
+  "new": "    let _ = network;",
+  "pkg": "trit-machines",
+  "filter": "invalid_networks_are_rejected_instead_of_panicking"
+ },
+ {
+  "name": "vm: X 分叉跳到错误位置",
+  "file": "crates/trit-machines/src/vm.rs",
+  "old": "queue.push((target, stack.clone()));",
+  "new": "queue.push((pc + 1, stack.clone()));",
+  "pkg": "trit-machines",
+  "filter": "branch_on_unknown_with_different_outputs_is_ambiguous"
+ }
+]

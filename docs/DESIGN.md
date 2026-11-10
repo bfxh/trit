@@ -2,7 +2,7 @@
 
 ## 一句话
 
-**可嵌入、可判红的三值推理工具箱**：让 `Unknown` 成为一等公民，并且能在 CI 里对策略/网表/公式给出
+**可嵌入、可判红的三值推理底座**：让 `Unknown` 成为一等公民，并且能在 CI 里对策略/网表/公式给出
 确定结论或反例。不做 EDA 全流程，也不做通用模型检验器。
 
 ## 系统分层
@@ -65,7 +65,7 @@
 
 - 归因规则见 [TERNARY-BOUNDARIES.md](TERNARY-BOUNDARIES.md)：A 原生红利 / B 模拟税 /
   C 生态路径依赖 / D 基数无关复杂度，四类不得混谈。
-- 故障与检查策略见工作区策略 `D:\KF\POLICY.md`（不在本仓，故不在此做链接）：bug 分
+- 故障与检查策略见工作区策略（不在本仓，故不在此做链接）：bug 分
   K1 保留并告知 / K2 失败即停 / K3 故意探针；并发只接受「定义良好的无锁或显式随机」；
   检查按编译器式多层独立门，不堆同质断言。
 - 时序模型检验、CTL/LTL、不动点（TVLA 那条线是另一个产品）。
@@ -88,8 +88,8 @@
 
 ## 实验层（`publish = false`）
 
-有七个 crate 是**实验层**：`trit-net`、`trit-machines`、`trit-codec`、`trit-float`、`trit-attn`、
-`trit-dot`、`trit-gpu`。规则：
+有八个 crate 是**实验层**：`trit-net`、`trit-machines`、`trit-codec`、`trit-float`、`trit-attn`、
+`trit-dot`、`trit-gpu`、`trit-texture`。规则：
 
 - **不属于稳定 API**：可以随时改签名、删模块，不进 crates.io，不发版；
 - **彼此不许互相依赖**：`cargo package --workspace` 会连实验层一起打包，而指向未发布 crate 的

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="940" height="378" viewBox="0 0 940 378" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif">
+<rect width="940" height="378" fill="#ffffff"/>
+<text x="260" y="38" font-size="22" font-weight="700" fill="#111">每参数存储：字节数</text>
+<text x="260" y="64" font-size="14" fill="#666">越低越好；1.34 亿参数从 537 MB（f32）到 27 MB（tryte）</text>
+<text x="246" y="113" text-anchor="end" font-size="14" fill="#222">f32</text>
+<rect x="260" y="92" width="530" height="30" rx="4" fill="#8a8f98"/>
+<text x="800" y="113" font-size="14" font-weight="600" fill="#111">4.00 B</text>
+<text x="246" y="159" text-anchor="end" font-size="14" fill="#222">f16</text>
+<rect x="260" y="138" width="265" height="30" rx="4" fill="#8a8f98"/>
+<text x="535" y="159" font-size="14" font-weight="600" fill="#111">2.00 B</text>
+<text x="246" y="205" text-anchor="end" font-size="14" fill="#222">Q4_0</text>
+<rect x="260" y="184" width="66" height="30" rx="4" fill="#8a8f98"/>
+<text x="336" y="205" font-size="14" font-weight="600" fill="#111">0.50 B</text>
+<text x="246" y="251" text-anchor="end" font-size="14" fill="#222">三值 · 双导轨</text>
+<rect x="260" y="230" width="33" height="30" rx="4" fill="#1f7a4d"/>
+<text x="303" y="251" font-size="14" font-weight="600" fill="#111">0.25 B</text>
+<text x="246" y="297" text-anchor="end" font-size="14" fill="#222">三值 · tryte</text>
+<rect x="260" y="276" width="26" height="30" rx="4" fill="#1f7a4d"/>
+<text x="296" y="297" font-size="14" font-weight="600" fill="#111">0.20 B</text>
+<text x="260" y="360" font-size="12" fill="#777">来源同左表；三值权重无浮点乘法，掩码内核按位加减</text>
+</svg>

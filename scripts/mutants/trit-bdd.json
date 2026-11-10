@@ -1,0 +1,74 @@
+[
+ {
+  "name": "bdd: is_valid 退回布尔全集",
+  "file": "crates/trit-bdd/src/quantify.rs",
+  "old": "        self.bdd.not().and(&self.valid_free).is_false()",
+  "new": "        self.bdd.is_true()",
+  "pkg": "trit-bdd",
+  "filter": "forall_with_free_ternary_variable_is_judged_on_valid_domain"
+ },
+ {
+  "name": "bdd: satisfiable 不限制合法域",
+  "file": "crates/trit-bdd/src/equiv.rs",
+  "old": "    let sat = enc.guard(enc.valid()?.and(&node.t).and(&node.x.not()))?;",
+  "new": "    let sat = enc.guard(node.t.and(&node.x.not()))?;",
+  "pkg": "trit-bdd",
+  "filter": "satisfiable_requires_a_legal_valuation"
+ },
+ {
+  "name": "bdd: 节点预算永不触发",
+  "file": "crates/trit-bdd/src/encode.rs",
+  "old": "    pub(crate) fn guard(&self, bdd: Bdd) -> Result<Bdd, BddError> {\n        if bdd.size() > self.limits.max_nodes {",
+  "new": "    pub(crate) fn guard(&self, bdd: Bdd) -> Result<Bdd, BddError> {\n        if false {",
+  "pkg": "trit-bdd",
+  "filter": "budget_rejects"
+ },
+ {
+  "name": "bdd: 频率降序写反",
+  "file": "crates/trit-bdd/src/order.rs",
+  "old": "                    cr.cmp(&cl)",
+  "new": "                    cl.cmp(&cr)",
+  "pkg": "trit-bdd",
+  "filter": "frequency_order"
+ },
+ {
+  "name": "count: 计数不并入合法域",
+  "file": "crates/trit-bdd/src/count.rs",
+  "old": "    let bdd = enc.guard(enc.valid()?.and(&acc))?;",
+  "new": "    let bdd = enc.guard(acc)?;",
+  "pkg": "trit-bdd",
+  "filter": "unused_variables_are_still_counted"
+ },
+ {
+  "name": "count: True 与 Unknown 的导轨目标互换",
+  "file": "crates/trit-bdd/src/count.rs",
+  "old": "        Ternary::True => node.t.and(&node.x.not()),\n        Ternary::False => node.t.not().and(&node.x.not()),\n        Ternary::Unknown => node.t.not().and(&node.x),",
+  "new": "        Ternary::True => node.t.not().and(&node.x),\n        Ternary::False => node.t.not().and(&node.x.not()),\n        Ternary::Unknown => node.t.and(&node.x.not()),",
+  "pkg": "trit-bdd",
+  "filter": "counts_match_brute_force_across_algebras"
+ },
+ {
+  "name": "count: 约束由 AND 折成 OR",
+  "file": "crates/trit-bdd/src/count.rs",
+  "old": "        acc = enc.guard(acc.and(&holds))?;",
+  "new": "        acc = enc.guard(acc.or(&holds))?;",
+  "pkg": "trit-bdd",
+  "filter": "constraints_filter_the_domain"
+ },
+ {
+  "name": "count: 约束极性写成「取未知」",
+  "file": "crates/trit-bdd/src/count.rs",
+  "old": "        let holds = enc.guard(node.t.and(&node.x.not()))?;",
+  "new": "        let holds = enc.guard(node.t.not().and(&node.x))?;",
+  "pkg": "trit-bdd",
+  "filter": "constraints_filter_the_domain"
+ },
+ {
+  "name": "count: 超过 u128 不判红而是回 0",
+  "file": "crates/trit-bdd/src/count.rs",
+  "old": "    u128::try_from(cardinality).map_err(|_| BddError::CountTooLarge)",
+  "new": "    Ok(u128::try_from(cardinality).unwrap_or(0))",
+  "pkg": "trit-bdd",
+  "filter": "counts_beyond_u128_are_rejected_not_wrapped"
+ }
+]

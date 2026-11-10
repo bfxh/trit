@@ -1,0 +1,88 @@
+{
+  "spec_version": "0.1.0",
+  "profile": "kgate",
+  "encoding": "semantic",
+  "vectors": [
+    {
+      "id": "kgate.f.f",
+      "op": "gate",
+      "input": [
+        "F",
+        "F"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "kgate.f.u",
+      "op": "gate",
+      "input": [
+        "F",
+        "U"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "kgate.f.t",
+      "op": "gate",
+      "input": [
+        "F",
+        "T"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "kgate.u.f",
+      "op": "gate",
+      "input": [
+        "U",
+        "F"
+      ],
+      "expected": "U"
+    },
+    {
+      "id": "kgate.u.u",
+      "op": "gate",
+      "input": [
+        "U",
+        "U"
+      ],
+      "expected": "U"
+    },
+    {
+      "id": "kgate.u.t",
+      "op": "gate",
+      "input": [
+        "U",
+        "T"
+      ],
+      "expected": "U"
+    },
+    {
+      "id": "kgate.t.f",
+      "op": "gate",
+      "input": [
+        "T",
+        "F"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "kgate.t.u",
+      "op": "gate",
+      "input": [
+        "T",
+        "U"
+      ],
+      "expected": "U"
+    },
+    {
+      "id": "kgate.t.t",
+      "op": "gate",
+      "input": [
+        "T",
+        "T"
+      ],
+      "expected": "T"
+    }
+  ]
+}

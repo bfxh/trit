@@ -1,0 +1,170 @@
+[
+ {
+  "name": "bitplan: 与门用错算子",
+  "file": "crates/trit-build/src/bitplan.rs",
+  "old": "                Expr::And(..) => alg.and(*a, *b),",
+  "new": "                Expr::And(..) => alg.or(*a, *b),",
+  "pkg": "trit-build",
+  "filter": "every_operator_matches_scalar"
+ },
+ {
+  "name": "build: 校验忽略不一致",
+  "file": "crates/trit-build/src/main.rs",
+  "old": "    let ok = bad.is_empty();",
+  "new": "    let ok = true;",
+  "pkg": "trit-build",
+  "filter": "check_detects_tampered_artifact"
+ },
+ {
+  "name": "build: 缓存不比对产物哈希",
+  "file": "crates/trit-build/src/main.rs",
+  "old": "        if hash64(&bytes) != u64::from_str_radix(info.get(\"hash\")?.as_str()?, 16).ok()? {",
+  "new": "        if false {",
+  "pkg": "trit-build",
+  "filter": "cache_miss_when_artifact_was_tampered"
+ },
+ {
+  "name": "build: 缓存键漏掉 --emit-verilog",
+  "file": "crates/trit-build/src/main.rs",
+  "old": "            options.emit_verilog,\n            options.verify_hdl,",
+  "new": "            false,\n            options.verify_hdl,",
+  "pkg": "trit-build",
+  "filter": "emit_verilog_is_not_served_from_a_plain_cache"
+ },
+ {
+  "name": "egraph: 规则加载不做自证",
+  "file": "crates/trit-build/src/egraph.rs",
+  "old": "        if eval(&lhs, &empty, alg) != eval(&rhs, &empty, alg) {",
+  "new": "        if false {",
+  "pkg": "trit-build",
+  "filter": "loader_filters_rules_by_algebra"
+ },
+ {
+  "name": "egraph: 重写结果没接进构建",
+  "file": "crates/trit-build/src/main.rs",
+  "old": "        } = egraph::rewrite_with(&simplified, algebra, options.egraph);",
+  "new": "        } = egraph::rewrite_with(&simplified, algebra, RewriteOptions { max_rounds: 0, ..options.egraph });",
+  "pkg": "trit-build",
+  "filter": "rewrite_fires_and_preserves_truth_table"
+ },
+ {
+  "name": "rail: K3 与门的负轨用 AND",
+  "file": "crates/trit-build/src/rail.rs",
+  "old": "            Expr::And(..) => self.wire(format!(\"({lp} & {rp})\"), format!(\"({ln} | {rn})\")),",
+  "new": "            Expr::And(..) => self.wire(format!(\"({lp} & {rp})\"), format!(\"({ln} & {rn})\")),",
+  "pkg": "trit-build",
+  "filter": "emitted_two_rail_matches_truth_table"
+ },
+ {
+  "name": "rail: 强加法按布尔异或导出",
+  "file": "crates/trit-build/src/rail.rs",
+  "old": "                    format!(\"((~{truth}) & ({lp} | {ln}) & ({rp} | {rn}))\"),",
+  "new": "                    format!(\"(({ln} & {rp}) | ({lp} & {rn}))\"),",
+  "pkg": "trit-build",
+  "filter": "emitted_two_rail_matches_truth_table_for_strong_add"
+ },
+ {
+  "name": "runtime: C 解码器放行非规范编码",
+  "file": "crates/trit-build/runtime/trit_runtime.c",
+  "old": "    if ((uint32_t)blob[len - 1] >= limit) {",
+  "new": "    if (0) {",
+  "pkg": "trit-build",
+  "filter": "both_decoders_reject_non_canonical_padding"
+ },
+ {
+  "name": "schedule: 二进制抢先于三进制",
+  "file": "crates/trit-build/src/schedule.rs",
+  "old": "    if primary_pending > 0 && primary_running < slots {",
+  "new": "    if false {",
+  "pkg": "trit-build",
+  "filter": "ternary_wins_while_slots_remain"
+ },
+ {
+  "name": "schedule: 允许超槽位",
+  "file": "crates/trit-build/src/schedule.rs",
+  "old": "    if slots == 0 || load.running() >= slots {",
+  "new": "    if slots == 0 {",
+  "pkg": "trit-build",
+  "filter": "never_exceeds_slots_or_returns_none_without_work"
+ },
+ {
+  "name": "trb: 放行非法字节 243",
+  "file": "crates/trit-build/src/trb.rs",
+  "old": "        if *byte >= 243 {",
+  "new": "        if *byte > 243 {",
+  "pkg": "trit-build",
+  "filter": "pack_round_trips_every_byte"
+ },
+ {
+  "name": "trb: 生产解码器放行非规范编码",
+  "file": "crates/trit-build/src/trb.rs",
+  "old": "    if u32::from(*blob.last().expect(\"非空\")) >= 3u32.pow(used_in_last as u32) {",
+  "new": "    if false {",
+  "pkg": "trit-build",
+  "filter": "rejects_non_canonical_padding"
+ },
+ {
+  "name": "trb: 解码丢掉语义字节（B3 当 K3）",
+  "file": "crates/trit-build/src/trb.rs",
+  "old": "        2 => Algebra::Bochvar,",
+  "new": "        2 => Algebra::Kleene,",
+  "pkg": "trit-build",
+  "filter": "decode_then_encode_is_byte_identical_for_any_length"
+ },
+ {
+  "name": "verilog: 对拍不一致不报错",
+  "file": "crates/trit-build/src/verilog.rs",
+  "old": "        if actual != *expected {",
+  "new": "        if false {",
+  "pkg": "trit-build",
+  "filter": "cross_check_rejects_wrong_expression"
+ },
+ {
+  "name": "trb: names_hash 不校验",
+  "file": "crates/trit-build/src/trb.rs",
+  "old": "            if fnv64(&blob[HEADER_V3..offset]) != stored_hash {",
+  "new": "            if false {",
+  "pkg": "trit-build",
+  "filter": "trb::tests::encode_decode_round_trips_and_rejects_tampering"
+ },
+ {
+  "name": "trb: 不安全名字放行",
+  "file": "crates/trit-build/src/trb.rs",
+  "old": "                if !is_safe_name(name) {",
+  "new": "                if false {",
+  "pkg": "trit-build",
+  "filter": "trb::tests::decode_rejects_unsafe_name_even_with_a_valid_names_hash"
+ },
+ {
+  "name": "egraph: 不动点也报未饱和",
+  "file": "crates/trit-build/src/egraph.rs",
+  "old": "        if !changed {\n            saturated = true;\n            break;\n        }",
+  "new": "        if !changed {\n            saturated = false;\n            break;\n        }",
+  "pkg": "trit-build",
+  "filter": "egraph::tests::saturation_stops_at_a_fixed_point"
+ },
+ {
+  "name": "hdl: expected.mem 把 True 编成 Unknown",
+  "file": "crates/trit-build/src/hdl.rs",
+  "old": "        Ternary::True => 2,",
+  "new": "        Ternary::True => 0,",
+  "pkg": "trit-build",
+  "filter": "hdl::tests::expected_mem_encodes_rails"
+ },
+ {
+  "name": "gpu: 真值表位平面把 True 写进负轨",
+  "file": "crates/trit-build/src/gpu.rs",
+  "old": "            Ternary::True => pos[code / 32] |= bit,",
+  "new": "            Ternary::True => neg[code / 32] |= bit,",
+  "pkg": "trit-build",
+  "filter": "gpu_export_is_self_describing_and_matches_truth_csv"
+ },
+ {
+  "name": "bitplan: 尾块不按剩余行裁剪",
+  "file": "crates/trit-build/src/bitplan.rs",
+  "old": "        let rows = (width * 64).min(count - start_row);",
+  "new": "        let rows = width * 64;",
+  "pkg": "trit-build",
+  "filter": "bitplan::tests::threaded_table_matches_single_thread"
+ }
+]

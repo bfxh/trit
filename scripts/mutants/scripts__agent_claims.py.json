@@ -1,0 +1,353 @@
+[
+ {
+  "name": "agent-claims: --paths 只取第一个值（声明面被丢掉）",
+  "file": "scripts/agent_claims.py",
+  "old": "            out.append(argv[index])\n            index += 1",
+  "new": "            out.append(argv[index])\n            index = len(argv)",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: release 的两个筛选条件是或不是且（一次删光别人的声明）",
+  "file": "scripts/agent_claims.py",
+  "old": "                    and (not cid or c[\"id\"] == cid))]",
+  "new": "                    or (not cid or c[\"id\"] == cid))]",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 一个会话不能同时守两个仓",
+  "file": "scripts/agent_claims.py",
+  "old": "    dupes = [c for c in claims if c[\"who\"] == who and c[\"repo\"] == repo",
+  "new": "    dupes = [c for c in claims if c[\"who\"] == who",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 允许 ttl=0 永久占用",
+  "file": "scripts/agent_claims.py",
+  "old": "    if ttl <= 0:",
+  "new": "    if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 写侧不转义 |（名单被自己写坏）",
+  "file": "scripts/agent_claims.py",
+  "old": "        lines.append(\"| \" + \" | \".join(str(cell).replace(\"|\", \"/\") for cell in cells) + \" |\")",
+  "new": "        lines.append(\"| \" + \" | \".join(str(cell) for cell in cells) + \" |\")",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 前缀相交检不出来",
+  "file": "scripts/agent_claims.py",
+  "old": "            if x == y or x.startswith(y.rstrip(\"/\") + \"/\") or y.startswith(x.rstrip(\"/\") + \"/\"):",
+  "new": "            if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 同仓一律判红（路径不相交也拦，闸门自己变噪音）",
+  "file": "scripts/agent_claims.py",
+  "old": "if same_repo and overlaps(left[\"paths\"], right[\"paths\"]):",
+  "new": "if same_repo:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 同仓但路径不相交时不出声（共享工作树的提醒丢失）",
+  "file": "scripts/agent_claims.py",
+  "old": "elif same_repo:",
+  "new": "elif False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 同仓判断整个摘掉（真相交的两份也提醒不到）",
+  "file": "scripts/agent_claims.py",
+  "old": "            same_repo = bool(left[\"repo\"].strip()) and left[\"repo\"].strip() == right[\"repo\"].strip()",
+  "new": "            same_repo = False",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 坏行不判红",
+  "file": "scripts/agent_claims.py",
+  "old": "    red += [f\"名单里有解析不了的行（不知道是谁在动什么 ⇒ 判红）：{line}\" for line in broken]",
+  "new": "    red += []",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 所有声明都当在效期内",
+  "file": "scripts/agent_claims.py",
+  "old": "    return claim[\"ttl\"] <= 0 or at - claim[\"ts\"] <= claim[\"ttl\"] * 60",
+  "new": "    return True",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 控制台编码崩掉闸门输出",
+  "file": "scripts/agent_claims.py",
+  "old": "    try:\n        print(text)\n    except UnicodeEncodeError:\n        print(text.encode(encoding, \"replace\").decode(encoding, \"replace\"))",
+  "new": "    print(text)",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 没有声明文件时不说\"闸门还没启用\"",
+  "file": "scripts/agent_claims.py",
+  "old": "                \"warn\": [\"没有任何声明文件：新会话开工前请先 claim（这条不判红，但等于没闸门）\"],",
+  "new": "                \"warn\": [],",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 空路径集不再等于整仓",
+  "file": "scripts/agent_claims.py",
+  "old": "    if not a or not b:",
+  "new": "    if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 表头行被当坏行（自己写的名单自己判红）",
+  "file": "scripts/agent_claims.py",
+  "old": "        if not cells or cells[0] in (\"\", \"id\") or all(set(cell) <= set(\"-: \") for cell in cells):",
+  "new": "        if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 解析不了的行静默丢掉",
+  "file": "scripts/agent_claims.py",
+  "old": "        if not match:\n            broken.append(line[:120])",
+  "new": "        if not match:\n            continue",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 跨仓同名路径不吭声（两份副本无人知）",
+  "file": "scripts/agent_claims.py",
+  "old": "            elif overlaps(left[\"paths\"], right[\"paths\"]):",
+  "new": "            elif False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "agent-claims: 跨仓路径名相交也判红（单体仓副本与独立仓常态形状被当成撞车）",
+  "file": "scripts/agent_claims.py",
+  "old": "if same_repo and overlaps(left[\"paths\"], right[\"paths\"]):",
+  "new": "if overlaps(left[\"paths\"], right[\"paths\"]):",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 同一个仓也算「两个落点」（拦/警两档被混成一条）",
+  "file": "scripts/agent_claims.py",
+  "old": "    if not left_repo or not right_repo or left_repo == right_repo:",
+  "new": "    if not left_repo or not right_repo:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 单体仓→独立仓那个方向不再认（两个落点漏一半）",
+  "file": "scripts/agent_claims.py",
+  "old": "    if right_crate in left_crates and overlaps(left_crates[right_crate], right[\"paths\"]):",
+  "new": "    if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 独立仓→单体仓那个方向不再认（漏另一半）",
+  "file": "scripts/agent_claims.py",
+  "old": "    if left_crate in right_crates and overlaps(right_crates[left_crate], left[\"paths\"]):",
+  "new": "    if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 不再识别 crates/<名>/ 形状（整条两个落点规则失效）",
+  "file": "scripts/agent_claims.py",
+  "old": "        if len(parts) >= 3 and parts[0] == \"crates\" and parts[1]:",
+  "new": "        if False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 两个落点的警告分支被摘掉（今天这种撞车又看不见）",
+  "file": "scripts/agent_claims.py",
+  "old": "            elif crate_twin(left, right):",
+  "new": "            elif False:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 归一时把 crate 名当相对路径（永远不相交）",
+  "file": "scripts/agent_claims.py",
+  "old": "            out.setdefault(parts[1], []).append(\"/\".join(parts[2:]))",
+  "new": "            out.setdefault(parts[1], []).append(parts[1])",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 别人的声明也算自己的（owner 不比就把自己的在效声明判成撞车）",
+  "file": "scripts/agent_claims.py",
+  "old": "            if owner != want and any(paths_overlap(scope, path) for scope in scopes):",
+  "new": "            if any(paths_overlap(scope, path) for scope in scopes):",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 撞了只报 unknown（该拦的时候放行，双方各写各的）",
+  "file": "scripts/agent_claims.py",
+  "old": "                return \"false\"",
+  "new": "                return \"unknown\"",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 没覆盖全也报 true（没登记当成登记过）",
+  "file": "scripts/agent_claims.py",
+  "old": "            return \"unknown\"\n    return \"true\"",
+  "new": "            return \"true\"\n    return \"true\"",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: covers 不认等值路径（自己声明 src/a.rs 却说自己没声明）",
+  "file": "scripts/agent_claims.py",
+  "old": "    return scope == path or path.startswith(scope + \"/\")",
+  "new": "    return path.startswith(scope + \"/\")",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 到期边界写成闭区间（恰好到点的声明还算在效，与库里的 > 分叉）",
+  "file": "scripts/agent_claims.py",
+  "old": "if expires > at]",
+  "new": "if expires >= at]",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate: 不归一路径（同一个文件两种写法就漏判）",
+  "file": "scripts/agent_claims.py",
+  "old": "    path = (raw or \"\").strip().replace(\"\\\\\", \"/\").strip(\"/\")",
+  "new": "    path = (raw or \"\").strip().strip(\"/\")",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gate 子命令撞车也退 0（当 CLI 用的人看不出被拦）",
+  "file": "scripts/agent_claims.py",
+  "old": "    return 1 if verdict == \"false\" else 0",
+  "new": "    return 0",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 归不出的 who 也放行（release 永远收不掉）",
+  "old": "    if not who:\n        _say(f\"FAIL --who {raw_who!r}",
+  "new": "    if False:\n        _say(f\"FAIL --who {raw_who!r}",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 新声明不设 TTL 上限（过期声明长期占位）",
+  "old": "    if ttl > TTL_CAP_MIN:",
+  "new": "    if False:",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 同名 id 不判红（按 id 收声明会收错人）",
+  "old": "        if len(owners) > 1:",
+  "new": "        if False:",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 旧 who 不给归一建议（精确匹配的坑留给人踩）",
+  "old": "        elif fixed != claim[\"who\"]:",
+  "new": "        elif False:",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: 历史行 ttl 超上限不出声",
+  "old": "        if claim[\"ttl\"] > TTL_CAP_MIN:",
+  "new": "        if False:",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: renew 不计数（看不出有没有在续期）",
+  "old": "        claim[\"renewed\"] = claim.get(\"renewed\", 0) + 1",
+  "new": "        claim[\"renewed\"] = claim.get(\"renewed\", 0)",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: renew 绕过 TTL 上限（一次占到底又回来了）",
+  "old": "    if ttl and ttl > TTL_CAP_MIN:",
+  "new": "    if False:",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: release 不归一 who（旧写法收不掉自己的声明）",
+  "old": "    who_key = canonical_who(who)",
+  "new": "    who_key = \"\"",
+  "file": "scripts/agent_claims.py",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

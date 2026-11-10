@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "纹理优化实验层——三进制块纹理压缩（TTX1/TTX2/TT3）：4×10 块、RGB565 端点对、每纹素 1 trit 的 3 级调色板。定位为『纹理优化/压缩容器』而非稳定 GPU 格式：实测相对 PNG 无体积优势（平坦层差 10–39×），单层解码约快 1.44×，产物暂只有 1 级 mip。（不属于稳定 API）"
+description = "三进制块纹理压缩实验层：8×8 块、RGB565 端点对、每纹素 1 trit 的 3 级调色板、端点最小二乘精修（不属于稳定 API）"
 publish = false
 
 [features]
@@ -32,6 +32,27 @@ required-features = ["png"]
 name = "gguf-to-mod"
 path = "src/bin/gguf-to-mod.rs"
 
+[[bin]]
+name = "ttx-pack"
+path = "src/bin/ttx-pack.rs"
+required-features = ["png"]
+
+[[bin]]
+name = "ttx-verify"
+path = "src/bin/ttx-verify.rs"
+required-features = ["png"]
+
 [[bench]]
 name = "texture"
 harness = false
+
+[[example]]
+name = "render_scene"
+required-features = ["png"]
+
+[[bench]]
+name = "sample"
+harness = false
+
+[dev-dependencies]
+trit-fuzz.workspace = true

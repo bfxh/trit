@@ -90,9 +90,16 @@ fn mask_tail(plane: &mut [u64], count: usize) {
     }
 }
 
-fn var_planes(vars: &[String], shape: Shape) -> Vec<Planes> {
+/// 从全局行号 `start`（必须是 64 的倍数）开始，铺 `shape.count` 行的变量位平面。
+fn var_planes_range(vars: &[String], shape: Shape, start: usize) -> Vec<Planes> {
     let mut planes: Vec<Planes> = vars.iter().map(|_| Planes::zeros(shape)).collect();
     let mut digits = vec![0u8; vars.len()];
+    let mut rest = start;
+    for digit in digits.iter_mut() {
+        *digit = (rest % 3) as u8;
+        rest /= 3;
+    }
+    debug_assert_eq!(rest, 0, "起始行必须是合法的 base-3 编码");
     for code in 0..shape.count {
         let (word, bit) = (code / 64, 1u64 << (code % 64));
         for (index, digit) in digits.iter().enumerate() {
@@ -182,14 +189,15 @@ fn eval(
     }
 }
 
-/// 位并行求全表；行序与 `enumerate`（标量路径）一致。
-pub(crate) fn table(expr: &Expr, vars: &[String], alg: Algebra) -> Result<Vec<Ternary>> {
-    let count = 3u64
-        .checked_pow(vars.len() as u32)
-        .context("变量太多，3^n 溢出")?;
-    let count = usize::try_from(count).context("3^n 超出本机地址空间")?;
+fn table_range(
+    expr: &Expr,
+    vars: &[String],
+    alg: Algebra,
+    start: usize,
+    count: usize,
+) -> Result<Vec<Ternary>> {
     let shape = Shape::new(count);
-    let planes = var_planes(vars, shape);
+    let planes = var_planes_range(vars, shape, start);
     let index: HashMap<&str, usize> = vars
         .iter()
         .enumerate()
@@ -210,6 +218,60 @@ pub(crate) fn table(expr: &Expr, vars: &[String], alg: Algebra) -> Result<Vec<Te
     Ok(out)
 }
 
+/// 位并行求全表；行序与 `enumerate`（标量路径）一致。
+///
+/// 按 64 行对齐切块：每个线程独立算一段位平面，最后按全局行序拼接。
+/// 结果与线程数无关（有测试逐 trit 对拍 1 线程 vs N 线程）。
+pub(crate) fn table(
+    expr: &Expr,
+    vars: &[String],
+    alg: Algebra,
+    threads: usize,
+) -> Result<Vec<Ternary>> {
+    let count = 3u64
+        .checked_pow(vars.len() as u32)
+        .context("变量太多，3^n 溢出")?;
+    let count = usize::try_from(count).context("3^n 超出本机地址空间")?;
+    let words = count.div_ceil(64);
+    let threads = if threads == 0 {
+        std::thread::available_parallelism()
+            .map(std::num::NonZeroUsize::get)
+            .unwrap_or(1)
+    } else {
+        threads
+    };
+    let chunks = threads.min(words).max(1);
+    // 小表不值当起线程：一次 64 位算表本身就比线程同步便宜。
+    if chunks <= 1 || words < 2 {
+        return table_range(expr, vars, alg, 0, count);
+    }
+    let base = words / chunks;
+    let extra = words % chunks;
+    let mut ranges = Vec::with_capacity(chunks);
+    let mut start_word = 0usize;
+    for chunk in 0..chunks {
+        let width = base + usize::from(chunk < extra);
+        let start_row = start_word * 64;
+        let rows = (width * 64).min(count - start_row);
+        ranges.push((start_row, rows));
+        start_word += width;
+    }
+    std::thread::scope(|scope| {
+        let mut handles = Vec::with_capacity(chunks - 1);
+        for &(start, rows) in &ranges[1..] {
+            handles.push(scope.spawn(move || table_range(expr, vars, alg, start, rows)));
+        }
+        let mut out = table_range(expr, vars, alg, ranges[0].0, ranges[0].1)?;
+        for handle in handles {
+            let chunk = handle
+                .join()
+                .map_err(|_| anyhow::anyhow!("位并行工作线程 panic"))??;
+            out.extend(chunk);
+        }
+        Ok(out)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,7 +284,7 @@ mod tests {
         let expr = Parser::parse(source).expect("解析");
         let vars = expr.variables();
         for alg in ALGEBRAS {
-            let fast = table(&expr, &vars, alg).expect("位并行");
+            let fast = table(&expr, &vars, alg, 1).expect("位并行");
             let slow = enumerate(&expr, &vars, alg).expect("标量");
             assert_eq!(fast, slow, "{source} @ {alg:?} 位并行与标量不一致");
         }
@@ -232,7 +294,7 @@ mod tests {
     fn row_order_is_code_base_three() {
         let expr = Parser::parse("a").unwrap();
         let vars = expr.variables();
-        let values = table(&expr, &vars, Algebra::Kleene).unwrap();
+        let values = table(&expr, &vars, Algebra::Kleene, 1).unwrap();
         assert_eq!(
             values,
             vec![Ternary::False, Ternary::Unknown, Ternary::True],
@@ -285,9 +347,19 @@ mod tests {
         let slow = enumerate(&expr, &vars, Algebra::Kleene).unwrap();
         let scalar = started.elapsed();
         let started = std::time::Instant::now();
-        let fast = table(&expr, &vars, Algebra::Kleene).unwrap();
-        let parallel = started.elapsed();
-        eprintln!("12 vars / 531441 rows: scalar {scalar:?} → bit-parallel {parallel:?}");
+        let single = table(&expr, &vars, Algebra::Kleene, 1).unwrap();
+        let single_thread = started.elapsed();
+        let started = std::time::Instant::now();
+        let fast = table(&expr, &vars, Algebra::Kleene, 0).unwrap();
+        let multi_thread = started.elapsed();
+        eprintln!(
+            "12 vars / 531441 rows: scalar {scalar:?} → bit-parallel 1 thread {single_thread:?} → {} threads {multi_thread:?}（{:.1}×）",
+            std::thread::available_parallelism()
+                .map(std::num::NonZeroUsize::get)
+                .unwrap_or(1),
+            single_thread.as_secs_f64() / multi_thread.as_secs_f64()
+        );
+        assert_eq!(slow, single);
         assert_eq!(slow, fast);
 
         // 构建其余阶段的占比：化简 + e-graph 重写 + 等价复核。
@@ -335,10 +407,29 @@ mod tests {
         assert_eq!(vars.len(), 6);
         for alg in ALGEBRAS {
             assert_eq!(
-                table(&expr, &vars, alg).unwrap(),
+                table(&expr, &vars, alg, 1).unwrap(),
                 enumerate(&expr, &vars, alg).unwrap(),
                 "{source} @ {alg:?}"
             );
+        }
+    }
+
+    #[test]
+    fn threaded_table_matches_single_thread() {
+        // 8 变量 = 6561 行 / 103 个字，足够切成多块；三种语义、所有算子都比。
+        let source = "(v0 & v1) | (v2 ^ v3) | !(v4 => v5) | (v6 <=> v7)";
+        let expr = Parser::parse(source).unwrap();
+        let vars = expr.variables();
+        assert_eq!(vars.len(), 8);
+        for alg in ALGEBRAS {
+            let single = table(&expr, &vars, alg, 1).unwrap();
+            for threads in [2, 3, 4, 8, 0] {
+                assert_eq!(
+                    table(&expr, &vars, alg, threads).unwrap(),
+                    single,
+                    "{source} @ {alg:?} threads={threads} 结果必须与单线程一致"
+                );
+            }
         }
     }
 }

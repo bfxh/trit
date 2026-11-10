@@ -115,6 +115,62 @@ mod imp {
         hsum(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3)))
     }
 
+    /// 两行共享一次 `x` 装载（行阻塞 2）。
+    ///
+    /// 每 8 trit 的装载从「2 行 × (1 x + 2 掩码表)」降到「1 x + 4 掩码表」，
+    /// 即每 8 trit 省一次 32 B 装入；两行各用 4 路累加器，累加顺序与
+    /// [`row_dot_mask`] 逐位一致（每一步都按同样的 k%4 累加器展开）。
+    ///
+    /// # Safety
+    /// 需要 AVX2 + FMA；`x` 长度至少 `pos_a.len() * 64`，两行 bpr 相同。
+    #[target_feature(enable = "avx2,fma")]
+    pub unsafe fn row_dot_mask2(
+        pos_a: &[u64],
+        neg_a: &[u64],
+        pos_b: &[u64],
+        neg_b: &[u64],
+        x: &[f32],
+    ) -> (f32, f32) {
+        macro_rules! step2 {
+            ($acc:ident, $accb:ident, $k:expr, $pa:expr, $na:expr, $pb:expr, $nb:expr, $base:expr) => {{
+                let ba = (($pa >> ($k * 8)) & 0xFF) as usize;
+                let bna = (($na >> ($k * 8)) & 0xFF) as usize;
+                let bb = (($pb >> ($k * 8)) & 0xFF) as usize;
+                let bnb = (($nb >> ($k * 8)) & 0xFF) as usize;
+                // SAFETY: x 已补齐到 64 的倍数。
+                let xv = _mm256_loadu_ps(x.as_ptr().add($base + $k * 8));
+                let mpa = _mm256_loadu_si256(MASK_LUT[ba].as_ptr() as *const __m256i);
+                let mna = _mm256_loadu_si256(MASK_LUT[bna].as_ptr() as *const __m256i);
+                let mpb = _mm256_loadu_si256(MASK_LUT[bb].as_ptr() as *const __m256i);
+                let mnb = _mm256_loadu_si256(MASK_LUT[bnb].as_ptr() as *const __m256i);
+                $acc = _mm256_add_ps($acc, _mm256_and_ps(xv, _mm256_castsi256_ps(mpa)));
+                $acc = _mm256_sub_ps($acc, _mm256_and_ps(xv, _mm256_castsi256_ps(mna)));
+                $accb = _mm256_add_ps($accb, _mm256_and_ps(xv, _mm256_castsi256_ps(mpb)));
+                $accb = _mm256_sub_ps($accb, _mm256_and_ps(xv, _mm256_castsi256_ps(mnb)));
+            }};
+        }
+        let zero = _mm256_setzero_ps();
+        let (mut a0, mut a1, mut a2, mut a3) = (zero, zero, zero, zero);
+        let (mut b0, mut b1, mut b2, mut b3) = (zero, zero, zero, zero);
+        for (w, (((&pa, &na), &pb), &nb)) in
+            pos_a.iter().zip(neg_a).zip(pos_b).zip(neg_b).enumerate()
+        {
+            let base = w * 64;
+            step2!(a0, b0, 0, pa, na, pb, nb, base);
+            step2!(a1, b1, 1, pa, na, pb, nb, base);
+            step2!(a2, b2, 2, pa, na, pb, nb, base);
+            step2!(a3, b3, 3, pa, na, pb, nb, base);
+            step2!(a0, b0, 4, pa, na, pb, nb, base);
+            step2!(a1, b1, 5, pa, na, pb, nb, base);
+            step2!(a2, b2, 6, pa, na, pb, nb, base);
+            step2!(a3, b3, 7, pa, na, pb, nb, base);
+        }
+        (
+            hsum(_mm256_add_ps(_mm256_add_ps(a0, a1), _mm256_add_ps(a2, a3))),
+            hsum(_mm256_add_ps(_mm256_add_ps(b0, b1), _mm256_add_ps(b2, b3))),
+        )
+    }
+
     /// f32 行 × f32 激活（基线）。
     ///
     /// # Safety
@@ -213,7 +269,9 @@ mod imp {
 }
 
 #[cfg(target_arch = "x86_64")]
-pub use imp::{f16_to_f32, hsum, row_dot_f16, row_dot_f32, row_dot_mask, row_dot_q4};
+pub use imp::{
+    f16_to_f32, hsum, row_dot_f16, row_dot_f32, row_dot_mask, row_dot_mask2, row_dot_q4,
+};
 
 /// 非 x86_64 的标量回退。
 ///
@@ -254,6 +312,20 @@ mod scalar {
             }
         }
         acc
+    }
+
+    /// 双导轨行 × f32 激活（标量，两行）。
+    ///
+    /// # Safety
+    /// 同 [`row_dot_mask`]。
+    pub unsafe fn row_dot_mask2(
+        pos_a: &[u64],
+        neg_a: &[u64],
+        pos_b: &[u64],
+        neg_b: &[u64],
+        x: &[f32],
+    ) -> (f32, f32) {
+        (row_dot_mask(pos_a, neg_a, x), row_dot_mask(pos_b, neg_b, x))
     }
 
     /// f32 行 × f32 激活（标量基线）。
@@ -298,7 +370,7 @@ mod scalar {
 }
 
 #[cfg(not(target_arch = "x86_64"))]
-pub use scalar::{row_dot_f16, row_dot_f32, row_dot_mask, row_dot_q4};
+pub use scalar::{row_dot_f16, row_dot_f32, row_dot_mask, row_dot_mask2, row_dot_q4};
 
 /// 把 f32 激活量化成 Q8（每 32 元素一个 scale），供 Q4 基线使用。
 pub fn quantize_act_q8(x: &[f32]) -> (Vec<i8>, Vec<f32>) {
@@ -363,6 +435,30 @@ mod tests {
             let (fast, slow) =
                 unsafe { (imp::row_dot_mask(p, n, &x), scalar::row_dot_mask(p, n, &x)) };
             assert!(close(fast, slow), "mask row {r}: avx2={fast} scalar={slow}");
+        }
+    }
+
+    #[test]
+    fn mask2_matches_single_bitwise() {
+        if !avx2() {
+            return;
+        }
+        let (rows, cols) = (8usize, 576usize);
+        let (pos, neg, x) = rails(rows, cols);
+        let bpr = cols.div_ceil(64);
+        for r in (0..rows).step_by(2) {
+            let (pa, na) = (&pos[r * bpr..(r + 1) * bpr], &neg[r * bpr..(r + 1) * bpr]);
+            let (pb, nb) = (
+                &pos[(r + 1) * bpr..(r + 2) * bpr],
+                &neg[(r + 1) * bpr..(r + 2) * bpr],
+            );
+            // SAFETY: x 已补齐到 bpr*64。
+            let (a, b) = unsafe { imp::row_dot_mask2(pa, na, pb, nb, &x) };
+            // SAFETY: 同上。
+            let (sa, sb) =
+                unsafe { (imp::row_dot_mask(pa, na, &x), imp::row_dot_mask(pb, nb, &x)) };
+            assert_eq!(a, sa, "row {r} 两行版与单行版必须逐位一致");
+            assert_eq!(b, sb, "row {} 两行版与单行版必须逐位一致", r + 1);
         }
     }
 

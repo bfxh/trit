@@ -81,12 +81,20 @@ pub(crate) fn uniform(binding: u32) -> wgpu::BindGroupLayoutEntry {
     }
 }
 
-/// 跑一个三值变体：建 pipeline → 预热 20 次 → 计时 → 读回 → 与期望比对。
+/// 变体结果的比对口径。
+pub(crate) enum Check<'a> {
+    /// 三值整数输出：按补码与期望 i64 逐元素相等。
+    Exact(&'a [i64]),
+    /// f32 输出：`|got − want| ≤ |want|·1e-3 + 1e-3`。
+    F32(&'a [i64]),
+}
+
+/// 跑一个内核变体：建 pipeline → 预热 20 次 → 计时 → 读回 → 按 `check` 比对。
 ///
-/// `reg4` / `o3` / `o2` 三个变体只有 entry point 和 grid 不同，流程完全一致；
-/// 抽到这里既去掉三份重复，也让 `matmul.rs` 留在 800 行预算内。
+/// 所有变体（三值 / f32、1D / 2D / split-K 的 3D grid、要不要先清输出）流程一致，
+/// 只有 entry point、grid 与比对口径不同；抽到这里去掉十份重复。
 ///
-/// 返回 `(ns/MAC, 是否与期望逐元素相等)`。
+/// 返回 `(ns/MAC, 是否通过比对)`。
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn bench_variant(
     device: &wgpu::Device,
@@ -97,10 +105,11 @@ pub(crate) fn bench_variant(
     out: &wgpu::Buffer,
     label: &str,
     entry: &str,
-    grid: (u32, u32),
+    grid: (u32, u32, u32),
     macs: usize,
     elems: usize,
-    expected: &[i64],
+    check: Check<'_>,
+    clear: bool,
 ) -> Option<(f64, bool)> {
     let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
         label: Some(label),
@@ -113,11 +122,15 @@ pub(crate) fn bench_variant(
     let dispatch = || {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        if clear {
+            // split-K 走 atomicAdd，输出必须先清零。
+            encoder.clear_buffer(out, 0, None);
+        }
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, bind, &[]);
-            pass.dispatch_workgroups(grid.0, grid.1, 1);
+            pass.dispatch_workgroups(grid.0, grid.1, grid.2);
         }
         queue.submit([encoder.finish()]);
     };
@@ -129,9 +142,14 @@ pub(crate) fn bench_variant(
         .expect("poll");
     let ns_per_mac = median_ns_per(device, macs, dispatch);
     let got = read_u32s(device, queue, out, elems)?;
-    let matches = got
-        .iter()
-        .zip(expected.iter())
-        .all(|(g, e)| i64::from(*g as i32) == *e);
+    let matches = match check {
+        Check::Exact(expected) => got
+            .iter()
+            .zip(expected.iter())
+            .all(|(g, e)| i64::from(*g as i32) == *e),
+        Check::F32(expected) => got.iter().zip(expected.iter()).all(|(bits, want)| {
+            (f32::from_bits(*bits) - *want as f32).abs() <= (*want as f32).abs() * 1e-3 + 1e-3
+        }),
+    };
     Some((ns_per_mac, matches))
 }

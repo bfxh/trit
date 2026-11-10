@@ -1,0 +1,146 @@
+[
+ {
+  "name": "core: B3 或忘记扣掉未知位",
+  "file": "crates/trit-core/src/bits.rs",
+  "old": "let res1 = (a1 | b1) & !resx;",
+  "new": "let res1 = a1 | b1;",
+  "pkg": "trit-core",
+  "filter": "ops_never_produce_illegal_rails"
+ },
+ {
+  "name": "core: K3 strong_add 用 OR 代替 AND",
+  "file": "crates/trit-core/src/algebra.rs",
+  "old": "    pub const fn strong_and(self, a: Ternary, b: Ternary) -> Ternary {\n        match self {\n            Self::Lukasiewicz => {\n                let s = a.as_f64() + b.as_f64() - 1.0;\n                if s <= 0.0 {\n                    Ternary::False\n                } else if s >= 1.0 {\n                    Ternary::True\n                } else {\n                    Ternary::Unknown\n                }\n            }\n            Self::Kleene | Self::Bochvar => {\n                if a.is_unknown() || b.is_unknown() {\n                    Ternary::Unknown\n                } else if a.is_true() && b.is_true() {",
+  "new": "    pub const fn strong_and(self, a: Ternary, b: Ternary) -> Ternary {\n        match self {\n            Self::Lukasiewicz => {\n                let s = a.as_f64() + b.as_f64() - 1.0;\n                if s <= 0.0 {\n                    Ternary::False\n                } else if s >= 1.0 {\n                    Ternary::True\n                } else {\n                    Ternary::Unknown\n                }\n            }\n            Self::Kleene | Self::Bochvar => {\n                if a.is_unknown() || b.is_unknown() {\n                    Ternary::Unknown\n                } else if a.is_true() || b.is_true() {",
+  "pkg": "trit-core",
+  "filter": "strong_and_lukasiewicz_matches_formula"
+ },
+ {
+  "name": "core: TriVec 位平面不足不报错",
+  "file": "crates/trit-core/src/bulk.rs",
+  "old": "        if ones.len() < need {\n",
+  "new": "        if false {\n",
+  "pkg": "trit-core",
+  "filter": "fallible_constructors_and_accessors_report_bounds"
+ },
+ {
+  "name": "core: TriVec 相等忽略 unknown 平面",
+  "file": "crates/trit-core/src/bulk.rs",
+  "old": "            if *ones != other.ones[w] || left != right {\n",
+  "new": "            if *ones != other.ones[w] {\n",
+  "pkg": "trit-core",
+  "filter": "eq_compares_values_not_storage"
+ },
+ {
+  "name": "core: from_binary 不截断多余字",
+  "file": "crates/trit-core/src/bulk.rs",
+  "old": "        ones.truncate(need);",
+  "new": "        let _ = need;",
+  "pkg": "trit-core",
+  "filter": "from_binary_normalizes"
+ },
+ {
+  "name": "core: 取反把 X 变成 0",
+  "file": "crates/trit-core/src/value.rs",
+  "old": "            Self::Unknown => Self::Unknown,\n        }\n    }\n}\n\n/// **Kleene** 合取",
+  "new": "            Self::Unknown => Self::False,\n        }\n    }\n}\n\n/// **Kleene** 合取",
+  "pkg": "trit-core",
+  "filter": "operators_use_kleene_and_classic_xor"
+ },
+ {
+  "name": "core: 序号还原把 Unknown 当成 True",
+  "file": "crates/trit-core/src/value.rs",
+  "old": "            1 => Self::Unknown,",
+  "new": "            1 => Self::True,",
+  "pkg": "trit-core",
+  "filter": "index_round_trips_and_lut_stride_is_three_wide"
+ },
+ {
+  "name": "core: 枚举变量数预算失效",
+  "file": "crates/trit-core/src/bits.rs",
+  "old": "        if self.variables.len() > limits.max_vars {\n",
+  "new": "        if false {\n",
+  "pkg": "trit-core",
+  "filter": "evaluate_within_enforces_var_budget_directly"
+ },
+ {
+  "name": "core: 清空最后一个 Unknown 不规范化平面",
+  "file": "crates/trit-core/src/bulk.rs",
+  "old": "        if cleared_last_unknown {\n            self.unknowns = None;\n        }\n",
+  "new": "        if false {\n            self.unknowns = None;\n        }\n",
+  "pkg": "trit-core",
+  "filter": "eq_compares_values_not_storage"
+ },
+ {
+  "name": "parser: 二元链不累计深度",
+  "file": "crates/trit-core/src/parser.rs",
+  "old": "        let depth = 1 + left.1.max(right.1);\n",
+  "new": "        let depth = 1;\n",
+  "pkg": "trit-core",
+  "filter": "rejects_long_flat_binary_chain"
+ },
+ {
+  "name": "parser: 解析期节点预算失效",
+  "file": "crates/trit-core/src/parser.rs",
+  "old": "        if self.nodes > self.limits.max_nodes {\n",
+  "new": "        if false {\n",
+  "pkg": "trit-core",
+  "filter": "node_budget_is_enforced_while_parsing"
+ },
+ {
+  "name": "parser: 输入字节上限失效",
+  "file": "crates/trit-core/src/parser.rs",
+  "old": "        if input.len() > MAX_INPUT_BYTES {\n",
+  "new": "        if false {\n",
+  "pkg": "trit-core",
+  "filter": "oversized_input_is_rejected_before_collecting_chars"
+ },
+ {
+  "name": "topology: True 传播也走 Unknown 边",
+  "file": "crates/trit-core/src/topology.rs",
+  "old": "                if value == Ternary::True && best[next] == Ternary::False {\n                    best[next] = Ternary::True;\n",
+  "new": "                if value != Ternary::False && best[next] == Ternary::False {\n                    best[next] = Ternary::True;\n",
+  "pkg": "trit-core",
+  "filter": "unknown_edge_propagates_unknown_until_true_path_exists"
+ },
+ {
+  "name": "topology: Unknown 传播只走 Unknown 边",
+  "file": "crates/trit-core/src/topology.rs",
+  "old": "                if value != Ternary::False && best[next] == Ternary::False {\n                    best[next] = Ternary::Unknown;\n",
+  "new": "                if value == Ternary::Unknown && best[next] == Ternary::False {\n                    best[next] = Ternary::Unknown;\n",
+  "pkg": "trit-core",
+  "filter": "unknown_edge_propagates_unknown_until_true_path_exists"
+ },
+ {
+  "name": "topology: 未定判成通过",
+  "file": "crates/trit-core/src/topology.rs",
+  "old": "            verdict: Verdict::Undetermined,",
+  "new": "            verdict: Verdict::Proved,",
+  "pkg": "trit-core",
+  "filter": "explain_reports_unknown_edges_for_contingent_path"
+ },
+ {
+  "name": "topology: 证书不收集 Unknown 边",
+  "file": "crates/trit-core/src/topology.rs",
+  "old": "            .filter(|&&node| weak_via[node] == Some(Ternary::Unknown))",
+  "new": "            .filter(|&&node| weak_via[node] == Some(Ternary::True))",
+  "pkg": "trit-core",
+  "filter": "explain_reports_unknown_edges_for_contingent_path"
+ },
+ {
+  "name": "tristate: Z 不吸收",
+  "file": "crates/trit-core/src/tristate.rs",
+  "old": "            (Self::HighZ, value) | (value, Self::HighZ) => Ok(value),\n",
+  "new": "            (Self::HighZ, Self::HighZ) => Ok(Self::HighZ),\n",
+  "pkg": "trit-core",
+  "filter": "resolution_table_and_conflict"
+ },
+ {
+  "name": "tristate: 总线宽度不校验",
+  "file": "crates/trit-core/src/tristate.rs",
+  "old": "        if self.width() != other.width() {\n",
+  "new": "        if false {\n",
+  "pkg": "trit-core",
+  "filter": "bus_resolves_lane_by_lane_and_checks_widths"
+ }
+]

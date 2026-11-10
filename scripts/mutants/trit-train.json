@@ -1,0 +1,74 @@
+[
+ {
+  "name": "train: ¬ 不再交换两轨（恒等）",
+  "file": "crates/trit-train/src/plane/alu.rs",
+  "old": "pos: self.neg.clone(),\n            neg: self.pos.clone(),",
+  "new": "pos: self.pos.clone(),\n            neg: self.neg.clone(),",
+  "pkg": "trit-train",
+  "filter": "not_matches_scalar_and_is_involutive"
+ },
+ {
+  "name": "train: ∧ 的假导轨该 OR 写成 AND",
+  "file": "crates/trit-train/src/plane/alu.rs",
+  "old": "(ap & bp, an | bn),",
+  "new": "(ap & bp, an & bn),",
+  "pkg": "trit-train",
+  "filter": "exhaustive_binary_ops_match_scalar"
+ },
+ {
+  "name": "train: ∨ 的假导轨该 AND 写成 OR",
+  "file": "crates/trit-train/src/plane/alu.rs",
+  "old": "(ap | bp, an & bn),",
+  "new": "(ap | bp, an | bn),",
+  "pkg": "trit-train",
+  "filter": "exhaustive_binary_ops_match_scalar"
+ },
+ {
+  "name": "train: 尾部位不再清零",
+  "file": "crates/trit-train/src/plane/alu.rs",
+  "old": "if word + 1 < self.words() || tail == 0 {",
+  "new": "if true {",
+  "pkg": "trit-train",
+  "filter": "tail_bits_stay_clean"
+ },
+ {
+  "name": "train: Adam 一阶矩不再累积新梯度",
+  "file": "crates/trit-train/src/layer.rs",
+  "old": "*m = self.beta1 * *m + (1.0 - self.beta1) * grad;",
+  "new": "*m = self.beta1 * *m;",
+  "pkg": "trit-train",
+  "filter": "adam_learns_ternary_targets"
+ },
+ {
+  "name": "train: Adam 二阶矩不再累积新梯度",
+  "file": "crates/trit-train/src/layer.rs",
+  "old": "*v = self.beta2 * *v + (1.0 - self.beta2) * grad * grad;",
+  "new": "*v = self.beta2 * *v;",
+  "pkg": "trit-train",
+  "filter": "adam_learns_ternary_targets"
+ },
+ {
+  "name": "train: Adam 更新方向反了",
+  "file": "crates/trit-train/src/layer.rs",
+  "old": "value - self.lr * m_hat / (v_hat.sqrt() + self.eps)",
+  "new": "value + self.lr * m_hat / (v_hat.sqrt() + self.eps)",
+  "pkg": "trit-train",
+  "filter": "adam_learns_ternary_targets"
+ },
+ {
+  "name": "train: Adam 偏置校正被丢掉",
+  "file": "crates/trit-train/src/layer.rs",
+  "old": "let m_hat = *m / self.bias1;",
+  "new": "let m_hat = *m;",
+  "pkg": "trit-train",
+  "filter": "adam_first_step_matches_closed_form"
+ },
+ {
+  "name": "train: Adam 步数不自增",
+  "file": "crates/trit-train/src/layer.rs",
+  "old": "self.step = self.step.saturating_add(1);",
+  "new": "self.step = self.step.saturating_add(0);",
+  "pkg": "trit-train",
+  "filter": "adam_counts_steps_per_layer_call"
+ }
+]

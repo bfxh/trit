@@ -1,0 +1,63 @@
+diff --git a/crates/trit-immune/src/compat.rs b/crates/trit-immune/src/compat.rs
+new file mode 100644
+--- /dev/null
++++ b/crates/trit-immune/src/compat.rs
+@@ -0,0 +1,58 @@
++//! trit-core 互操作：`Trit` ↔ `Ternary` 双向映射。
++//!
++//! 两个类型完全同构：映射 Vulnerable 对 False、Unknown 对 Unknown、
++//! Hardened 对 True 之后，K3 AND 恰是 Ternary 的 Kleene 合取
++//! （False 与 Vulnerable 都是支配元，Ord 都是坏到好）。
++//! 本模块提供双向 From 与 3×3 全空间同构穷举测试。
++//!
++//! 设计立场（PR.md）：trit-immune 是 trit-core `Ternary` 的消费者，
++//! 不是竞品——内核逻辑用本地 `Trit` 保有安全域命名，边界处经本模块
++//! 与 trit-core 生态互换值。
++
++use crate::trit::Trit;
++use trit_core::Ternary;
++
++impl From<Trit> for Ternary {
++    fn from(t: Trit) -> Self {
++        match t {
++            Trit::Vulnerable => Ternary::False,
++            Trit::Unknown => Ternary::Unknown,
++            Trit::Hardened => Ternary::True,
++        }
++    }
++}
++
++impl From<Ternary> for Trit {
++    fn from(t: Ternary) -> Self {
++        match t {
++            Ternary::False => Trit::Vulnerable,
++            Ternary::Unknown => Trit::Unknown,
++            Ternary::True => Trit::Hardened,
++        }
++    }
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn roundtrip_is_identity() {
++        let all = [Trit::Vulnerable, Trit::Unknown, Trit::Hardened];
++        for t in all {
++            assert_eq!(Trit::from(Ternary::from(t)), t);
++        }
++    }
++
++    /// K3 AND 与 Kleene 合取同构（3x3 全空间穷举）。
++    #[test]
++    fn and_is_homomorphic_to_bitand() {
++        let trits = [Trit::Vulnerable, Trit::Unknown, Trit::Hardened];
++        let terns = [Ternary::False, Ternary::Unknown, Ternary::True];
++        for (&a, &ta) in trits.iter().zip(terns.iter()) {
++            for (&b, &tb) in trits.iter().zip(terns.iter()) {
++                assert_eq!(Ternary::from(a.and(b)), ta & tb);
++            }
++        }
++    }
++}

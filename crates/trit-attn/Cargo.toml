@@ -5,8 +5,9 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "三值注意力与快权重记忆实验层：注意力=FFN 双视角、三值关联记忆（不属于稳定 API）"
+description = "三值注意力与快权重记忆实验层：注意力=FFN 双视角、三值关联记忆、可训练三值注意力块（不属于稳定 API）"
 publish = false
 
 [dependencies]
+trit-learn.workspace = true
 serde_json = "1.0.154"

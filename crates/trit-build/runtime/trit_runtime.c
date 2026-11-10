@@ -3,11 +3,22 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define HEADER 11u
-#define VERSION 2u
+#define HEADER_V2 11u
+#define HEADER_V3 19u
+#define VERSION_V2 2u
+#define VERSION_V3 3u
 #define MAGIC "TRB2"
 
 static uint8_t crc_coefficients[4] = {1, 0, 2, 1}; /* x^3 + 2x + 1 */
+
+static uint64_t fnv1a(const uint8_t *bytes, size_t len) {
+    uint64_t hash = 0xcbf29ce484222325ULL;
+    for (size_t i = 0; i < len; i++) {
+        hash ^= (uint64_t)bytes[i];
+        hash *= 0x100000001b3ULL;
+    }
+    return hash;
+}
 
 static uint32_t pow3(uint8_t nvars) {
     uint32_t value = 1;
@@ -48,13 +59,13 @@ int trit_trb2_decode(const uint8_t *blob, size_t len, trit_table *out) {
     if (blob == NULL || out == NULL) {
         return TRIT_ERR_NOMEM;
     }
-    if (len < HEADER + 1u) {
+    if (len < HEADER_V2 + 1u) {
         return TRIT_ERR_SHORT;
     }
     if (memcmp(blob, MAGIC, 4) != 0) {
         return TRIT_ERR_MAGIC;
     }
-    if (blob[4] != VERSION) {
+    if (blob[4] != VERSION_V2 && blob[4] != VERSION_V3) {
         return TRIT_ERR_VERSION;
     }
     if (blob[5] > 2u) {
@@ -66,17 +77,44 @@ int trit_trb2_decode(const uint8_t *blob, size_t len, trit_table *out) {
     }
     uint32_t count = (uint32_t)blob[7] | ((uint32_t)blob[8] << 8) |
                      ((uint32_t)blob[9] << 16) | ((uint32_t)blob[10] << 24);
-    uint32_t payload = count + 3u;
-    size_t expected = HEADER + ((size_t)payload + 4u) / 5u;
-    if (len != expected) {
-        return TRIT_ERR_LENGTH;
-    }
     if (count != pow3(nvars)) {
         return TRIT_ERR_COUNT;
     }
 
+    /* v3 固定头之后是名字段：nvars ×（u8 长度 + UTF-8 字节），再跟载荷。 */
+    size_t offset = HEADER_V2;
+    if (blob[4] == VERSION_V3) {
+        if (len < HEADER_V3) {
+            return TRIT_ERR_SHORT;
+        }
+        uint64_t stored_hash = 0;
+        for (size_t i = 0; i < 8; i++) {
+            stored_hash |= (uint64_t)blob[HEADER_V2 + i] << (8u * i);
+        }
+        offset = HEADER_V3;
+        for (uint8_t i = 0; i < nvars; i++) {
+            if (offset >= len) {
+                return TRIT_ERR_NAMES;
+            }
+            uint8_t name_len = blob[offset++];
+            if (name_len == 0 || offset + name_len > len) {
+                return TRIT_ERR_NAMES;
+            }
+            offset += name_len;
+        }
+        if (fnv1a(blob + HEADER_V3, offset - HEADER_V3) != stored_hash) {
+            return TRIT_ERR_NAMES;
+        }
+    }
+
+    uint32_t payload = count + 3u;
+    size_t expected = offset + ((size_t)payload + 4u) / 5u;
+    if (len != expected) {
+        return TRIT_ERR_LENGTH;
+    }
+
     /* 规范形：末字节里没用到的 trit 槽必须为 0（与 Rust 端同一契约）。 */
-    uint32_t payload_bytes = (uint32_t)(len - HEADER);
+    uint32_t payload_bytes = (uint32_t)(len - offset);
     uint32_t used_in_last = payload - 5u * (payload_bytes - 1u);
     uint32_t limit = 1u;
     for (uint32_t i = 0; i < used_in_last; i++) {
@@ -91,7 +129,7 @@ int trit_trb2_decode(const uint8_t *blob, size_t len, trit_table *out) {
         return TRIT_ERR_NOMEM;
     }
     size_t filled = 0;
-    for (size_t i = HEADER; i < len && filled < payload; i++) {
+    for (size_t i = offset; i < len && filled < payload; i++) {
         uint32_t byte = blob[i];
         if (byte >= 243u) {
             free(digits);

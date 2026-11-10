@@ -1,0 +1,42 @@
+[
+ {
+  "name": "gpu: +1 写进负导轨",
+  "file": "crates/trit-gpu/src/lib.rs",
+  "old": "            1 => pos[index / TRITS_PER_WORD] |= bit,",
+  "new": "            1 => neg[index / TRITS_PER_WORD] |= bit,",
+  "pkg": "trit-gpu",
+  "filter": "positive_vectors_do_not_land_on_the_negative_rail"
+ },
+ {
+  "name": "gpu: matmul 行基址按 n 步进",
+  "file": "crates/trit-gpu/src/lib.rs",
+  "old": "        let a_base = row * words;",
+  "new": "        let a_base = row * n;",
+  "pkg": "trit-gpu",
+  "filter": "column_packing_and_matmul_match_scalar_reference"
+ },
+ {
+  "name": "gpu: 位并行少减一项",
+  "file": "crates/trit-gpu/src/lib.rs",
+  "old": "        total += i64::from(pp) - i64::from(pn) - i64::from(np) + i64::from(nn);",
+  "new": "        total += i64::from(pp) - i64::from(pn) + i64::from(nn);",
+  "pkg": "trit-gpu",
+  "filter": "all_four_sign_products_are_counted"
+ },
+ {
+  "name": "gpu: 列打包正负导轨互换",
+  "file": "crates/trit-gpu/src/lib.rs",
+  "old": "                1 => pos[col * words + row / TRITS_PER_WORD] |= bit,\n                -1 => neg[col * words + row / TRITS_PER_WORD] |= bit,",
+  "new": "                1 => neg[col * words + row / TRITS_PER_WORD] |= bit,\n                -1 => pos[col * words + row / TRITS_PER_WORD] |= bit,",
+  "pkg": "trit-gpu",
+  "filter": "column_packing_and_matmul_match_scalar_reference"
+ },
+ {
+  "name": "gpu: 标量参考改成加法",
+  "file": "crates/trit-gpu/src/lib.rs",
+  "old": "        .map(|(x, y)| i64::from(*x) * i64::from(*y))",
+  "new": "        .map(|(x, y)| i64::from(*x) + i64::from(*y))",
+  "pkg": "trit-gpu",
+  "filter": "packing_round_trips_across_word_boundaries"
+ }
+]

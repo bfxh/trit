@@ -37,6 +37,8 @@ pub enum NetworkError {
     Decay(i32, i32),
     /// 规模超限。
     Limit(String),
+    /// 上层驱动的参数配置非法。
+    Config(String),
     /// 膜电位超出 `i32`。
     Overflow {
         /// tick 下标。
@@ -71,6 +73,7 @@ impl std::fmt::Display for NetworkError {
                 "decay 必须是非负分子与正分母，实际 {numerator}/{denominator}"
             ),
             Self::Limit(message) => write!(formatter, "规模超限：{message}"),
+            Self::Config(message) => write!(formatter, "参数非法：{message}"),
             Self::Overflow { tick, neuron } => {
                 write!(
                     formatter,
@@ -222,6 +225,58 @@ pub fn simulate_with_drive(
     ticks: usize,
     external: &[i32],
 ) -> Result<Stats, NetworkError> {
+    Ok(simulate_with_input(network, ticks, |tick, _| {
+        external.get(tick).copied().unwrap_or(0)
+    })?
+    .stats)
+}
+
+/// 一次模拟的完整读数。
+#[derive(Debug, Clone, PartialEq)]
+pub struct Run {
+    /// 统计。
+    pub stats: Stats,
+    /// 末态（可回灌给 [`simulate_with_input_from`] 续跑）。
+    pub state: State,
+    /// 每个神经元本次发出的脉冲数。
+    pub fired: Vec<u32>,
+    /// 每个神经元本次的脉冲极性合计（`+1` 与 `-1` 相加）。
+    pub polarity: Vec<i32>,
+}
+
+/// 同 [`simulate`]，但每个 tick、每个神经元可以拿到不同的外部驱动。
+///
+/// `input(tick, neuron)` 返回该 tick 加给该神经元的电位；从全零膜电位起步。
+pub fn simulate_with_input<F>(
+    network: &Network,
+    ticks: usize,
+    input: F,
+) -> Result<Run, NetworkError>
+where
+    F: FnMut(usize, usize) -> i32,
+{
+    simulate_with_input_from(network, &State::default(), ticks, input)
+}
+
+/// 从给定末态续跑：膜电位/不应期/上一步脉冲都接着用，其余语义同 [`simulate_with_input`]。
+///
+/// `start` 的向量长度不足时按 0 补齐，超出时截断——跨阶段续跑不必自己对齐长度。
+pub fn simulate_with_input_from<F>(
+    network: &Network,
+    start: &State,
+    ticks: usize,
+    input: F,
+) -> Result<Run, NetworkError>
+where
+    F: FnMut(usize, usize) -> i32,
+{
+    run(network, start, ticks, input)
+}
+
+fn run<F>(network: &Network, start: &State, ticks: usize, mut input: F) -> Result<Run, NetworkError>
+where
+    F: FnMut(usize, usize) -> i32,
+{
     network.validate()?;
     if ticks > MAX_TICKS {
         return Err(NetworkError::Limit(format!(
@@ -230,10 +285,12 @@ pub fn simulate_with_drive(
     }
     let size = network.size();
     let mut state = State {
-        membrane: vec![0; size],
-        refractory: vec![0; size],
-        spikes: vec![0; size],
+        membrane: sized(&start.membrane, size),
+        refractory: sized(&start.refractory, size),
+        spikes: sized(&start.spikes, size),
     };
+    let mut fired_counts = vec![0u32; size];
+    let mut polarity = vec![0i32; size];
     let mut stats = Stats {
         ticks,
         spikes: 0,
@@ -253,7 +310,7 @@ pub fn simulate_with_drive(
                     .sum()
             })
             .collect();
-        let mut fired = 0usize;
+        let mut fired_now = 0usize;
         for neuron in 0..size {
             if state.refractory[neuron] > 0 {
                 state.refractory[neuron] -= 1;
@@ -266,7 +323,7 @@ pub fn simulate_with_drive(
             }
             let leaked = i64::from(state.membrane[neuron]) * i64::from(network.decay.0)
                 / i64::from(network.decay.1);
-            let kick = i64::from(external.get(tick).copied().unwrap_or(0));
+            let kick = i64::from(input(tick, neuron));
             let potential = leaked + drive[neuron] + kick;
             let spike = if potential >= i64::from(network.threshold) {
                 1
@@ -281,7 +338,9 @@ pub fn simulate_with_drive(
                 stats.negative += 1;
             }
             if spike != 0 {
-                fired += 1;
+                fired_now += 1;
+                fired_counts[neuron] += 1;
+                polarity[neuron] += spike;
                 ever_spiked[neuron] = true;
                 state.membrane[neuron] = 0;
                 state.refractory[neuron] = network.refractory;
@@ -291,15 +350,27 @@ pub fn simulate_with_drive(
             }
             state.spikes[neuron] = spike;
         }
-        stats.spikes += fired;
-        stats.per_tick.push(fired);
+        stats.spikes += fired_now;
+        stats.per_tick.push(fired_now);
     }
     stats.active_fraction = if size == 0 {
         0.0
     } else {
         ever_spiked.iter().filter(|fired| **fired).count() as f64 / size as f64
     };
-    Ok(stats)
+    Ok(Run {
+        stats,
+        state,
+        fired: fired_counts,
+        polarity,
+    })
+}
+
+/// 把续跑状态对齐到当前网络规模：不足补 0，超出截断。
+fn sized<T: Clone + Default>(source: &[T], size: usize) -> Vec<T> {
+    let mut values = source.to_vec();
+    values.resize(size, T::default());
+    values
 }
 
 #[cfg(test)]

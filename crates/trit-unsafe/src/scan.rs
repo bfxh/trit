@@ -17,7 +17,7 @@ use trit_core::value::Ternary;
 use crate::lexer::scrub;
 
 /// 常见的高危 unsafe API / 形态。
-const RISKY_APIS: [(&str, &str); 14] = [
+const RISKY_APIS: [(&str, &str); 17] = [
     ("transmute", "类型双关"),
     ("from_raw_parts", "裸指针造切片"),
     ("get_unchecked", "越界检查被跳过"),
@@ -27,14 +27,19 @@ const RISKY_APIS: [(&str, &str); 14] = [
     ("ptr::read", "裸指针读"),
     ("ptr::write", "裸指针写"),
     ("static mut", "可变静态"),
-    ("extern \"C\"", "FFI 边界"),
+    // 注意：窗口来自 scrub 后的文本，字符串字面量内容已被抹成空格，
+    // 所以模式不能带引号——`extern "C"` 这个旧写法永远匹配不到（死条目已改）。
+    ("extern", "FFI 边界"),
     ("unreachable_unchecked", "承诺不可达"),
     ("new_unchecked", "跳过有效性检查"),
     ("align_to", "对齐相关的重解释"),
     ("offset_from", "指针距离（同分配约束）"),
+    ("MaybeUninit", "未初始化内存包装"),
+    ("mem::forget", "所有权被遗忘（泄漏）"),
+    ("write_bytes", "裸内存填充"),
 ];
 
-const GUARDS: [&str; 16] = [
+const GUARDS: [&str; 19] = [
     "assert",
     "debug_assert",
     "is_null",
@@ -51,6 +56,9 @@ const GUARDS: [&str; 16] = [
     "matches!",
     "is_empty",
     "saturating_",
+    "is_aligned",
+    "NonNull",
+    "size_of",
 ];
 
 #[derive(Debug, Clone)]
@@ -127,6 +135,8 @@ fn classify_kind(rest: &str) -> Option<&'static str> {
         Some("impl")
     } else if trimmed.starts_with("trait") {
         Some("trait")
+    } else if trimmed.starts_with("extern") {
+        Some("extern")
     } else {
         None
     }
@@ -140,7 +150,7 @@ pub fn join(a: Ternary, b: Ternary) -> Ternary {
 pub fn verdict_of(documented: bool, guarded: bool, apis: &[&'static str], kind: &str) -> Ternary {
     // 签名级 unsafe（fn/impl/trait）只是「承诺面」，本工具不会把它判成 Risky；
     // 未文档化的签名单独计数（undocumented_signatures），不混进风险数。
-    if matches!(kind, "fn" | "impl" | "trait") {
+    if matches!(kind, "fn" | "impl" | "trait" | "extern") {
         return Ternary::Unknown;
     }
     if apis.is_empty() {
@@ -382,6 +392,42 @@ mod tests {
         assert_eq!(sites[0].kind, "block");
         assert_eq!(sites[0].verdict, Ternary::True, "{:?}", sites[0]);
         assert!(sites[0].apis.contains(&"transmute"));
+    }
+
+    #[test]
+    fn new_taxonomy_entries_are_recognized() {
+        // MaybeUninit / mem::forget / write_bytes 都要进高危形态表。
+        // 调用必须在 unsafe 行后 3 行内（证据窗口的声明边界）。
+        let source = "fn f() {\n    unsafe {\n        let u = MaybeUninit::<u8>::uninit();\n        std::mem::forget(&u);\n        std::ptr::write_bytes(ptr, 0, 1);\n    }\n}\n";
+        let sites = scan_source(source, "t.rs");
+        assert_eq!(sites.len(), 1);
+        let site = &sites[0];
+        for api in ["MaybeUninit", "mem::forget", "write_bytes"] {
+            assert!(site.apis.contains(&api), "缺 {api}：{:?}", site.apis);
+        }
+        assert_eq!(site.verdict, Ternary::True);
+    }
+
+    #[test]
+    fn extern_block_is_a_site_and_stays_unknown() {
+        // edition 2024 的 `unsafe extern` 声明块以前根本不被识别成站点；
+        // scrub 会抹掉 "C"，所以 FFI 边界靠 scrub 后的 `extern` 关键字匹配。
+        let source = "unsafe extern \"C\" {\n    fn f(x: i32) -> i32;\n}\n";
+        let sites = scan_source(source, "t.rs");
+        assert_eq!(sites.len(), 1, "extern 声明块应是一个站点：{:?}", sites);
+        assert_eq!(sites[0].kind, "extern");
+        assert!(sites[0].apis.contains(&"extern"), "{:?}", sites[0].apis);
+        // 声明面只是承诺：不管有没有说明，都不判 Risky。
+        assert_eq!(sites[0].verdict, Ternary::Unknown);
+    }
+
+    #[test]
+    fn alignment_guards_are_recognized() {
+        let source = "// SAFETY: 指针已对齐且非空\nfn f(p: *const u8) {\n    debug_assert!(p.is_aligned());\n    let _ = std::ptr::NonNull::new(p);\n    unsafe { p.read() }\n}\n";
+        let sites = scan_source(source, "t.rs");
+        assert_eq!(sites.len(), 1);
+        assert!(sites[0].guarded, "{:?}", sites[0]);
+        assert!(sites[0].documented);
     }
 
     #[test]

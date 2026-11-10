@@ -1,12 +1,16 @@
 //! `trit-net`：三值权重网络的最小 CLI（实验层）。
 
+mod cli;
+mod netsec_cli;
+use cli::calibrate_cmd;
+
 use std::path::PathBuf;
 use std::process::ExitCode;
 
 use trit_core::value::Ternary;
 use trit_net::{
     Analysis, DEFAULT_BUDGET, Layer, Model, Outcome, TrainOptions, analyze, format,
-    majority_dataset, train,
+    majority_dataset, netsec, train,
 };
 
 fn main() -> ExitCode {
@@ -14,6 +18,12 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("format") => format_cmd(&args[1..]),
         Some("train") => train_cmd(&args[1..]),
+        Some("flow") => flow_cmd(&args[1..]),
+        Some("calibrate") => calibrate_cmd(&args[1..]),
+        Some("attack") => attack_cmd(&args[1..]),
+        Some("probe") => netsec_cli::probe_cmd(&args[1..]),
+        Some("bridge") => netsec_cli::bridge_cmd(&args[1..]),
+        Some("drift") => netsec_cli::drift_cmd(&args[1..]),
         _ => run(),
     };
     match result {
@@ -120,6 +130,7 @@ fn train_cmd(args: &[String]) -> Result<(), String> {
             epochs,
             learning_rate,
             seed: 11,
+            batch_size: 0,
         },
     )
     .map_err(|error| error.to_string())?;
@@ -183,7 +194,172 @@ fn parse_args() -> Result<Args, String> {
 }
 
 fn usage() -> String {
-    "用法：trit-net <infer MODEL.json --inputs 1,X,0 [--budget N] [--json] | format encode|decode | train [--epochs N]>".to_string()
+    "用法：trit-net <infer MODEL.json --inputs 1,X,0 [--budget N] [--json] | format encode|decode | train [--epochs N] | flow PCAP [--model MODEL] [--budget N] | calibrate CSV [--rows N] [--epochs N] [--hidden N] [--bands 0,0.1,…] [--train-fraction F] [--json]>".to_string()
+}
+
+fn flow_cmd(args: &[String]) -> Result<(), String> {
+    let mut path: Option<String> = None;
+    let mut model_path: Option<String> = None;
+    let mut rules_path: Option<String> = None;
+    let mut band: Option<f64> = None;
+    let mut budget = DEFAULT_BUDGET;
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--model" => {
+                index += 1;
+                model_path = Some(args.get(index).ok_or("--model 缺少参数")?.clone());
+            }
+            "--rules" => {
+                index += 1;
+                rules_path = Some(args.get(index).ok_or("--rules 缺少参数")?.clone());
+            }
+            "--band" => {
+                index += 1;
+                let raw = args.get(index).ok_or("--band 缺少参数")?;
+                band = Some(raw.parse().map_err(|_| format!("--band 不是数字: {raw}"))?);
+            }
+            "--budget" => {
+                index += 1;
+                let raw = args.get(index).ok_or("--budget 缺少参数")?;
+                budget = raw
+                    .parse()
+                    .map_err(|_| format!("--budget 不是整数: {raw}"))?;
+            }
+            other if other.starts_with("--") => return Err(format!("未知参数 {other}")),
+            other => {
+                if path.is_some() {
+                    return Err(format!("多余的参数 {other}"));
+                }
+                path = Some(other.to_string());
+            }
+        }
+        index += 1;
+    }
+    // 校准规则回写消费：calibrate --emit-rules 的 JSON → flow 用已校准规则
+    // 三值化（替代 DEFAULT_RULES 占位）。--band 选带（缺省取第一条）。
+    let calibrated_rules = match rules_path.as_deref() {
+        Some(rules_path) => {
+            let text = std::fs::read_to_string(rules_path)
+                .map_err(|error| format!("读取 {rules_path} 失败：{error}"))?;
+            let band_rules: Vec<netsec::calibrate::BandRules> = serde_json::from_str(&text)
+                .map_err(|error| format!("规则文件 {rules_path} 不合法：{error}"))?;
+            let picked = match band {
+                Some(band) => band_rules
+                    .iter()
+                    .find(|entry| (entry.band - band).abs() < 1e-9)
+                    .ok_or_else(|| {
+                        format!(
+                            "规则文件里没有 band={band}（有：{:?}）",
+                            band_rules
+                                .iter()
+                                .map(|entry| entry.band)
+                                .collect::<Vec<_>>()
+                        )
+                    })?,
+                None => band_rules.first().ok_or("规则文件为空")?,
+            };
+            Some((picked.band, picked.rules.clone()))
+        }
+        None => None,
+    };
+    let rules: &[netsec::features::Rule] = match &calibrated_rules {
+        Some((_, rules)) => rules,
+        None => &netsec::features::DEFAULT_RULES,
+    };
+    let path = path.ok_or("flow 需要 PCAP 路径")?;
+    let data = std::fs::read(&path).map_err(|error| format!("读取 {path} 失败：{error}"))?;
+    let model = match model_path.as_deref() {
+        Some(model_path) => {
+            let bytes = std::fs::read(model_path)
+                .map_err(|error| format!("读取模型失败 {model_path}：{error}"))?;
+            let model = if model_path.ends_with(".trn") {
+                format::decode(&bytes).map_err(|error| error.to_string())?
+            } else {
+                let text = String::from_utf8(bytes)
+                    .map_err(|_| format!("模型 {model_path} 不是 UTF-8 JSON"))?;
+                Model::from_json(&text).map_err(|error| error.to_string())?
+            };
+            if model.inputs() != netsec::flow::N {
+                return Err(format!(
+                    "模型输入维数 {} 与特征维数 {} 不一致",
+                    model.inputs(),
+                    netsec::flow::N
+                ));
+            }
+            Some(model)
+        }
+        None => None,
+    };
+
+    let reader = netsec::pcap::Reader::new(&data).map_err(|error| error.to_string())?;
+    let link = reader.link_type();
+    let nanos = reader.nanos();
+    let mut table = netsec::flow::FlowTable::new();
+    let mut packets = 0usize;
+    let mut skips: std::collections::BTreeMap<&'static str, usize> =
+        std::collections::BTreeMap::new();
+    for record in reader {
+        let record = record.map_err(|error| error.to_string())?;
+        let ts = record.timestamp_seconds(nanos);
+        match netsec::packet::decode(link, record.data) {
+            Ok(packet) => {
+                table.ingest(ts, &packet);
+                packets += 1;
+            }
+            Err(skip) => *skips.entry(skip.as_str()).or_default() += 1,
+        }
+    }
+    let flows = table.finish();
+    for flow in &flows {
+        let values = flow.features.values();
+        let inputs = netsec::features::ternarize(&values, rules);
+        let features = netsec::flow::NAMES
+            .iter()
+            .zip(values.iter())
+            .map(|(name, value)| (name.to_string(), serde_json::json!(value)))
+            .collect::<serde_json::Map<String, serde_json::Value>>();
+        let mut obj = serde_json::json!({
+            "src": flow.src().to_string(),
+            "dst": flow.dst().to_string(),
+            "proto": flow.key.proto,
+            "first_ts": flow.first_ts,
+            "packets": flow.features.fwd_pkts + flow.features.bwd_pkts,
+            "inputs": netsec::features::encode(&inputs),
+            "features": features,
+        });
+        if let Some(model) = &model {
+            let decision = netsec::decision::decide(model, &inputs, budget)
+                .map_err(|error| error.to_string())?;
+            obj["verdict"] = serde_json::json!(decision.verdict.as_str());
+            obj["reason"] = serde_json::json!(decision.reason);
+            obj["exact"] = serde_json::json!(decision.exact);
+            obj["completions"] = serde_json::json!(decision.completions);
+            obj["unknown_inputs"] = serde_json::json!(decision.unknown_inputs);
+        }
+        println!(
+            "{}",
+            serde_json::to_string(&obj).map_err(|error| format!("JSON 序列化失败：{error}"))?
+        );
+    }
+    let mut summary = format!("报文 {packets} 条，流 {} 条", flows.len());
+    if model.is_some() {
+        match &calibrated_rules {
+            Some((band, rules)) => summary.push_str(&format!(
+                "；规则集 已校准（band={band}，{} 条）",
+                rules.len()
+            )),
+            None => summary.push_str("；规则集 DEFAULT_RULES（未校准）"),
+        }
+    }
+    if !skips.is_empty() {
+        summary.push_str("；跳过：");
+        for (reason, count) in &skips {
+            summary.push_str(&format!(" {reason}={count}"));
+        }
+    }
+    eprintln!("{summary}");
+    Ok(())
 }
 
 fn parse_inputs(raw: &str) -> Result<Vec<Ternary>, String> {
@@ -313,4 +489,95 @@ fn print_table(model: &Model, inputs: &[Ternary], analysis: &Analysis) {
         analysis.outputs.len(),
         analysis.conservative_definite_count()
     );
+}
+
+fn attack_cmd(args: &[String]) -> Result<(), String> {
+    use trit_net::netsec::attack::{AttackGraph, Limits};
+
+    let mut path: Option<String> = None;
+    let mut src: Option<String> = None;
+    let mut dst: Option<String> = None;
+    let mut limits = Limits::default();
+    let mut index = 0;
+    while index < args.len() {
+        let flag = args[index].clone();
+        match flag.as_str() {
+            "--src" | "--dst" | "--max-depth" | "--max-paths" => {
+                index += 1;
+                let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
+                match flag.as_str() {
+                    "--src" => src = Some(raw.clone()),
+                    "--dst" => dst = Some(raw.clone()),
+                    "--max-depth" => {
+                        limits.max_depth = raw
+                            .parse()
+                            .map_err(|_| "--max-depth 不是整数".to_string())?
+                    }
+                    _ => {
+                        limits.max_paths = raw
+                            .parse()
+                            .map_err(|_| "--max-paths 不是整数".to_string())?
+                    }
+                }
+            }
+            other if other.starts_with("--") => return Err(format!("未知参数 {other}")),
+            other => {
+                if path.is_some() {
+                    return Err(format!("多余的参数 {other}"));
+                }
+                path = Some(other.to_string());
+            }
+        }
+        index += 1;
+    }
+    let path = path.ok_or("attack 需要 JSONL 台账路径")?;
+    let src = src.ok_or("attack 需要 --src <节点label>")?;
+    let dst = dst.ok_or("attack 需要 --dst <节点label>")?;
+    let text =
+        std::fs::read_to_string(&path).map_err(|error| format!("读取 {path} 失败：{error}"))?;
+    let graph = AttackGraph::from_jsonl(&text).map_err(|error| error.to_string())?;
+    let resolve = |name: &str, flag: &str| {
+        graph
+            .node_id(name)
+            .ok_or_else(|| format!("{flag} 的节点 {name:?} 不在台账里"))
+    };
+    let src_id = resolve(&src, "--src")?;
+    let dst_id = resolve(&dst, "--dst")?;
+    let reach = graph
+        .reach(src_id, dst_id, limits)
+        .map_err(|error| error.to_string())?;
+    let label_of = |id: u32| {
+        graph
+            .node(id)
+            .map(|node| node.label.as_str())
+            .unwrap_or("?")
+    };
+    let paths: Vec<serde_json::Value> = reach
+        .paths
+        .iter()
+        .map(|path| {
+            serde_json::json!({
+                "nodes": path.nodes.iter().map(|id| label_of(*id)).collect::<Vec<_>>(),
+                "fold": path.fold.as_char(),
+                "open": path.open.iter().map(|step| {
+                    match step.edge_to {
+                        Some(to) => format!("{} -> {}", label_of(step.node), label_of(to)),
+                        None => label_of(step.node).to_string(),
+                    }
+                }).collect::<Vec<_>>(),
+            })
+        })
+        .collect();
+    println!(
+        "{}",
+        serde_json::json!({
+            "src": src,
+            "dst": dst,
+            "verdict": reach.verdict.as_char(),
+            "reason": reach.reason,
+            "truncated": reach.truncated,
+            "paths": paths,
+        })
+    );
+    Ok(())
 }

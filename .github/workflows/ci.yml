@@ -24,34 +24,150 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      # macOS 按 10×、Windows 按 2× 计费；PR 门跑 ubuntu+windows，
-      # macOS（aarch64 信号）在每次合并后的 main push 上全量跑，覆盖不减。
+      # macOS 按 10×、Windows 按 2× 计费，但 #147 的事故证明「PR 不跑 macOS ⇒
+      # 合入后 main 才红」的代价更高：aarch64 缺实现只能在 macOS 上暴露。
+      # 三个 OS 都跑，PR 与 main 同矩阵。
       matrix:
-        os: ${{ fromJSON(github.event_name == 'push' && '["ubuntu-latest", "windows-latest", "macos-latest"]' || '["ubuntu-latest", "windows-latest"]') }}
+        os: ["ubuntu-latest", "windows-latest", "macos-latest"]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect docs-only (PR only)
+        id: scope
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "${BASE_SHA:-}" ]; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE_SHA"...HEAD || true)
+          if [ -z "$files" ]; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if printf '%s\n' "$files" | grep -Ev '^(docs/|.*\.md$|README|LICENSE|CHANGELOG)' | grep -q .; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "only_docs=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "changed files:"; printf '%s\n' "$files" | head -50
 
       - name: Install Rust
+        if: steps.scope.outputs.only_docs != 'true'
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        if: steps.scope.outputs.only_docs != 'true'
+
+      # 收窄判据本身要有人盯：它坏了不能悄悄把整条测试面关掉。
+      - name: Scope self-test (ci_scope)
+        if: steps.scope.outputs.only_docs != 'true'
+        run: python3 scripts/ci_scope.py --self-test
+
+      # 编译/测试面按「直改 crate + 反向依赖闭包」收窄（scripts/ci_scope.py）。
+      # 拿不到依赖图就退回全量：full 永远是安全方向。
+      - name: Scope crates (PR only)
+        id: crates
+        if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          fallback() {
+            {
+              echo "args="
+              echo "needs_png=true"
+              echo "needs_gpu=true"
+              echo "reason=$1"
+            } >> "$GITHUB_OUTPUT"
+            echo "收窄不可用，走全量：$1"
+          }
+          if [ "$EVENT" != "pull_request" ] || [ -z "${BASE_SHA:-}" ]; then
+            fallback "非 PR 或拿不到 base"
+            exit 0
+          fi
+          if ! python3 scripts/ci_scope.py --base "$BASE_SHA" --github-output >> "$GITHUB_OUTPUT"; then
+            fallback "ci_scope 运行失败"
+          fi
+
+      # `--verify-hdl` 的 tests/hdl.rs 没有 iverilog 会静默跳过；Linux 装上让真仿真进 CI。
+      - name: Install iverilog (Linux)
+        if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq iverilog
 
       - name: Check formatting
+        if: steps.scope.outputs.only_docs != 'true'
         run: cargo fmt --all -- --check
 
+      # args 为空 = 全量：非 PR、改到 workspace 级文件、闭包吃掉大半仓，都走这条路。
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo clippy $SCOPE_ARGS --all-targets --locked -- -D warnings
+          else
+            cargo clippy --workspace --all-targets --locked -- -D warnings
+          fi
 
       - name: Test
-        run: cargo test --workspace --locked
+        if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo test $SCOPE_ARGS --locked
+          else
+            cargo test --workspace --locked
+          fi
 
       # png feature（默认关）：单独测 + clippy，否则 CI 永远碰不到这些代码。
+      # 收窄后只在闭包真含 trit-texture 时才跑，否则这条 step 白等一趟编译。
       - name: Test (trit-texture png feature)
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_png == 'true'
         run: cargo test -p trit-texture --features png --locked
       - name: Clippy (trit-texture png feature)
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_png == 'true'
         run: cargo clippy -p trit-texture --features png --all-targets --locked -- -D warnings
+
+      # gpu feature（默认关）：同上。#149 的事故就是这块代码从没被门编译过
+      # （matmul.rs 在内核 feature 后，PR 绿、main 的 macOS 红）。
+      #
+      # 只跑 1×1×1 冒烟用例：CI 的软件后端（Windows WARP 等）跑完整 matmul
+      # （512×4096×512）要十几分钟；而 1×1×1 同样会创建全部 shader module，
+      # f16 扩展缺失这类错照样能抓到。完整形状在开发者本机跑。
+      - name: Test (trit-gpu gpu feature, shader smoke)
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
+        run: cargo test -p trit-gpu --features gpu --locked --test matmul gpu_reg_matmul_tiny_case
+      - name: Clippy (trit-gpu gpu feature)
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
+        run: cargo clippy -p trit-gpu --features gpu --all-targets --locked -- -D warnings
+
+      # trit-build 的 gpu feature 同样默认关：至少让 WGSL 过 naga 解析/校验；
+      # 有 adapter 时 gpu::tests 会再跑真机对拍，没有就跳过（naga 那条仍必跑）。
+      - name: Test (trit-build gpu feature, naga shader smoke)
+        if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux' && steps.crates.outputs.needs_build_gpu == 'true'
+        run: "cargo test -p trit-build --features gpu --bin trit-build gpu:: --locked"
+      - name: Clippy (trit-build gpu feature)
+        if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux' && steps.crates.outputs.needs_build_gpu == 'true'
+        run: cargo clippy -p trit-build --features gpu --all-targets --locked -- -D warnings
 
   module-budget:
     name: module budget (god objects)
@@ -63,6 +179,178 @@ jobs:
         run: python3 scripts/module_budget.py --self-test
       - name: Every file within budget or shrinking-only debt
         run: python3 scripts/module_budget.py
+
+  release-preflight:
+    name: release preflight (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Release preflight self-test
+        run: python3 scripts/release_preflight.py --self-test
+
+  hazard:
+    name: hazard gate (concurrency/memory)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Gate self-test (positive + counterexamples)
+        run: python3 scripts/hazard_gate.py --self-test
+      - name: Concurrency/memory hazards within the design policy
+        run: python3 scripts/hazard_gate.py
+
+  mutation-gate:
+    name: mutation gate (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 门的判定链自身也要有人盯：编译红当抓住、崩溃当断言、脚本落 cargo、空集放行
+      - name: Gate self-test (verdicts / runner inference / empty selection)
+        run: python3 scripts/mutation_check.py --self-test
+
+  snapshot:
+    name: snapshot (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 回退底座按字节还原、dry-run 不改文件、不清新文件、对象被篡改要报错
+      - name: Snapshot self-test (save / verify / restore / prune)
+        run: python3 scripts/snapshot.py --self-test
+      # 一条命令 = 先快照、失败自动回退（含删掉命令新建的文件）
+      - name: Autoflow self-test (run / auto-restore / keep-on-fail)
+        run: python3 scripts/autoflow.py --self-test
+      # 一句话提交 GitHub：密钥/敏感文件拒收、显式点名文件、dry-run 只打印
+      - name: Gitflow self-test (secret scan / explicit files / dry-run plan)
+        run: python3 scripts/gitflow.py --self-test
+
+  deps:
+    name: deps plan (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 「能不能整块摘出去」的判据：继承字段 / 内部依赖 / 内部 dev / 越界引用 / build.rs
+      - name: Dependency detach self-test
+        run: python3 scripts/deps.py --self-test
+
+  vendor:
+    name: vendor (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 离线自足开关的配置拼接/还原：重复 save 不重复插段、restore 优先按备份、备份只做一次
+      - name: Vendor config splice self-test
+        run: python3 scripts/vendor.py --self-test
+
+  secret-scan:
+    name: secret scan (repo-wide)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Self-test (patterns / binary skip / allow marker)
+        run: python3 scripts/secret_scan.py --self-test
+      # 与 GitHub push protection 互补：合成夹具用 `secret-scan: allow` 显式豁免
+      - name: Scan repository for high-confidence secrets
+        run: python3 scripts/secret_scan.py
+
+  ci-integrity:
+    name: ci integrity (protection ↔ workflows)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Self-test (typo / push-only / if-guard)
+        run: python3 scripts/ci_integrity.py --self-test
+      # 拼错的必需检查 = 永久卡死；只在 push 触发的 job 设成必需 = PR 永远等不到
+      - name: Required checks match workflow jobs
+        run: python3 scripts/ci_integrity.py
+
+  surface:
+    name: test surface (ratchet)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 每条规则都要有真的会红的反证：空壳 #[test]、裸 #[ignore]、空 self_test、棘轮
+      - name: Self-test (hollow tests / bare ignore / ratchet)
+        run: python3 scripts/test_surface.py --self-test
+      # 台账棘轮：删测试不会让任何别的手段变红，所以在这里拦
+      - name: Repo test surface
+        run: python3 scripts/test_surface.py
+      # 绿即合之前的证据审计：必需检查 skipped / 压根没上报 / run 里 0 个 job 都判红
+      - name: Green audit self-test (execution evidence)
+        run: python3 scripts/green_audit.py --self-test
+
+  flake:
+    name: flake ledger (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 重跑掩盖 + 隔离台账（owner/理由/到期/复验）的判定链反证
+      - name: Flake ledger self-test
+        run: python3 scripts/flake_ledger.py --self-test
+      # 离线只审台账本身：查 API 要 token，这一步保证"台账不合规"当天就红
+      - name: Quarantine ledger audit
+        run: python3 scripts/flake_ledger.py ledger
+
+  wiring:
+    name: secret wiring (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 引用解析 / 环境归属 / 外部声明格式的反证
+      - name: Secret wiring self-test
+        run: python3 scripts/secret_wiring.py --self-test
+      # 真对账需要能列本仓 secrets：本组织的 GITHUB_TOKEN 上限是"只读仓库内容"，
+      # job 级 `actions: read` 抬不上去（实测 CI 报"取不到密钥/变量清单"⇒ 门按口径判红，
+      # 那个红是对的，但在 CI 里它证明不了任何接线面）。所以：
+      #   - CI 跑静态面（引用解析 / 环境归属 / 外部声明格式），并公示没跟线上对过账；
+      #   - 线上对账在本地带 PAT 跑，或以后加一条用仓库 secret 的定时流（那才是它真正的用武之地）。
+      - name: Wiring static surface (offline)
+        run: python3 scripts/secret_wiring.py --offline
+
+  budget:
+    name: ci budget (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 静态面（workflow 缺 concurrency / job 缺 timeout / 台账无理由）的反证
+      - name: CI budget self-test
+        run: python3 scripts/ci_budget.py --self-test
+      # 线上耗时对账要 runs 清单；GITHUB_TOKEN 抬不到那个权限，所以 CI 只跑能证明的部分并公示
+      - name: CI budget static audit
+        run: python3 scripts/ci_budget.py --offline
+
+  recovery:
+    name: oops recovery (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 找回链路全在临时仓里跑：reflog/fsck/stash 三路取证 + "先快照再建分支、不动 HEAD"
+      - name: oops self-test
+        run: python3 scripts/oops.py --self-test
+
+  forensics:
+    name: merge forensics (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 夹具现造真仓库真冲突：整块取一边、文件没了、算不出 merge-base 都要判红
+      - name: Merge forensics self-test (dropped side / vanished file)
+        run: python3 scripts/merge_forensics.py --self-test
 
   stress:
     name: stress (high pressure invariants)

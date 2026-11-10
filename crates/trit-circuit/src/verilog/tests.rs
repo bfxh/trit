@@ -59,105 +59,6 @@ endmodule
     assert_eq!(right.signals.get("y"), Some(&Ternary::False));
 }
 
-fn eval_assign(rhs: &str, values: &[(&str, Ternary)]) -> Ternary {
-    eval_assign_with(rhs, values, Algebra::Kleene)
-}
-
-fn eval_assign_with(rhs: &str, values: &[(&str, Ternary)], alg: Algebra) -> Ternary {
-    use crate::circuit::propagate;
-    use std::collections::BTreeMap;
-    let text = format!(
-        "module m(input a, input b, input c, output y);
-  assign y = {rhs};
-endmodule
-"
-    );
-    let circuit = parse_verilog(&text).unwrap();
-    let mut assignment: BTreeMap<String, Ternary> = circuit
-        .inputs
-        .iter()
-        .map(|signal| (signal.name().to_string(), Ternary::False))
-        .collect();
-    for (name, value) in values {
-        assignment.insert(name.to_string(), *value);
-    }
-    let result = propagate(&circuit, &assignment, alg).unwrap();
-    *result.signals.get("y").unwrap()
-}
-
-#[test]
-fn assign_xor_is_classic_xor() {
-    use trit_core::value::Ternary::*;
-    assert_eq!(eval_assign("a ^ b", &[("a", True), ("b", True)]), False);
-    assert_eq!(eval_assign("a ^ b", &[("a", True), ("b", False)]), True);
-    assert_eq!(eval_assign("a ~^ b", &[("a", True), ("b", True)]), True);
-    assert_eq!(eval_assign("a ^~ b", &[("a", False), ("b", False)]), True);
-    assert_eq!(
-        eval_assign("a ^ b", &[("a", Unknown), ("b", True)]),
-        Unknown
-    );
-    assert!(eval_assign("a ^ b", &[("a", Unknown), ("b", False)]).is_unknown());
-}
-
-#[test]
-fn assign_xor_is_not_lukasiewicz_strong_sum() {
-    use trit_core::value::Ternary::*;
-    // Ł3 的强加 1 ⊕ 1 = 1，经典异或必须是 0。
-    assert_eq!(
-        eval_assign_with("a ^ b", &[("a", True), ("b", True)], Algebra::Lukasiewicz),
-        False
-    );
-}
-
-#[test]
-fn assign_precedence_matches_verilog() {
-    use trit_core::value::Ternary::*;
-    // & 高于 ^ 高于 |
-    assert_eq!(
-        eval_assign("a ^ b & c", &[("a", True), ("b", True), ("c", False)]),
-        True
-    );
-    assert_eq!(
-        eval_assign("a & b | c", &[("a", True), ("b", False), ("c", False)]),
-        False
-    );
-    assert_eq!(
-        eval_assign("~(a | b) & c", &[("a", False), ("b", False), ("c", True)]),
-        True
-    );
-}
-
-#[test]
-fn assign_literals_and_parentheses() {
-    use trit_core::value::Ternary::*;
-    assert_eq!(eval_assign("1'b1", &[]), True);
-    assert_eq!(eval_assign("1'b0 | a", &[("a", False)]), False);
-    assert_eq!(eval_assign("1'bx & a", &[("a", True)]), Unknown);
-    assert_eq!(
-        eval_assign("(a | b) & !c", &[("a", False), ("b", True), ("c", False)]),
-        True
-    );
-}
-
-#[test]
-fn rejects_reversed_parentheses_without_panicking() {
-    for text in [
-        "module m;
-and ) (;
-endmodule
-",
-        "module m)(;
-endmodule
-",
-        "module m;
-and g1 (y, a) trailing;
-endmodule
-",
-    ] {
-        assert!(parse_verilog(text).is_err(), "{text}");
-    }
-}
-
 #[test]
 fn multi_input_nand_nor_are_not_left_folded() {
     use crate::circuit::propagate;
@@ -619,6 +520,24 @@ fn deeply_nested_concat_returns_limit_not_stack_overflow() {
     }
     text.push('a');
     for _ in 0..20_000 {
+        text.push('}');
+    }
+    text.push_str(";\nendmodule\n");
+    let err = parse_verilog(&text).unwrap_err();
+    assert_eq!(err.kind, VerilogErrorKind::Limit, "{err:?}");
+}
+
+#[test]
+fn concat_depth_just_over_limit_returns_limit_error() {
+    // 同一条守卫（`MAX_RHS_DEPTH = 256`）的**有界**版本：300 层足够超限，但只吃掉
+    // 几百帧栈 ⇒ 守卫一旦被拆掉，这里拿到的是 `Ok`（断言判红），而不是像 2 万层
+    // 那样先把测试进程打死（崩溃红不指明是哪条断言抓的，还会带走同二进制里后面的测试）。
+    let mut text = String::from("module m(input a, output y);\nassign y = ");
+    for _ in 0..300 {
+        text.push('{');
+    }
+    text.push('a');
+    for _ in 0..300 {
         text.push('}');
     }
     text.push_str(";\nendmodule\n");

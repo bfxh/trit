@@ -1,0 +1,25 @@
+{
+  "family": "extract",
+  "out_dir": "runs/extract/sweep-lod-budget",
+  "base": {"cell": 0.02, "steps": 20000},
+  "grid": {"cell": [0.02, 0.04]},
+  "producer": {
+    "bin": "parts-3d",
+    "argv": [
+      "occ",
+      "--root", "E:/trit-data/s1/renders_v6",
+      "--scenes", "E:/trit-data/s1/scenes_v6",
+      "--train", "80,81,82,83",
+      "--eval", "84,85,86,87,88,89,90,91",
+      "--cell", "{cell}",
+      "--steps", "{steps}",
+      "--save-model", "{model}",
+      "--run-manifest", "{model}.manifest.json"
+    ]
+  },
+  "verifier": {"bin": "parts-extract-verify", "argv": ["--model", "{model}"]},
+  "model": "{out}/{tag}.occ1",
+  "jobs": 1,
+  "promote": {"metric": "iou_mean", "min": 0.35},
+  "catalogue": true
+}

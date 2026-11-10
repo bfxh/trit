@@ -1,0 +1,86 @@
+# 提取结果目录（自动生成）
+
+> 由 `scripts/depth_catalogue.py` 从 `runs/extract/*.manifest.json` 生成，**不要手改**。本族只把 **N2 学习式占据补全**接线：清单记语料内容级 SHA-256、模型 SHA、1 cm 体素上的体积 IoU 与网格闭合率；复核器 `parts-extract-verify` 用 `--load-model` 在新进程重跑同一评测，IoU 差 >1e-4 或闭合数不同即判红。N1/N3–N7 仍只有文档读数，**不在本目录**。
+
+## 结果族：S1 提取（N2 占据补全）
+
+| 模型 | 配置 | 语料（场景/文件） | 体积 IoU（均值 / 最低） | 闭合 | 非流形边（债） | 指纹（模型前 12） | 来源 | 时间 |
+|---|---|---|---|---|---|---|---|---|
+| `sweep-lod-selfsup/cell0.04-seed5.occ1` | cell 0.04 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7129 / 0.6155 | ✅ 8/8 | 171 | `c5f1213abdff` | `40010a3+dirty` | 2026-11-04 21:28 UTC |
+| `sweep-lod-selfsup/cell0.04-seed3.occ1` | cell 0.04 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.6869 / 0.5990 | ✅ 8/8 | 211 | `bc0a8a78c632` | `40010a3+dirty` | 2026-11-04 21:28 UTC |
+| `sweep-lod-selfsup/cell0.04-seed2.occ1` | cell 0.04 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7704 / 0.6769 | ✅ 8/8 | 132 | `3223e9ae3ecb` | `40010a3+dirty` | 2026-11-04 21:28 UTC |
+| `sweep-lod-selfsup/cell0.02-seed5.occ1` | cell 0.02 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7988 / 0.7069 | ✅ 8/8 | 322 | `177fd3be8760` | `40010a3+dirty` | 2026-11-04 21:27 UTC |
+| `sweep-lod-selfsup/cell0.02-seed3.occ1` | cell 0.02 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7683 / 0.6675 | ✅ 8/8 | 536 | `3e8af285e5c0` | `40010a3+dirty` | 2026-11-04 21:27 UTC |
+| `sweep-lod-selfsup/cell0.02-seed2.occ1` | cell 0.02 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7866 / 0.6975 | ✅ 8/8 | 339 | `6fca474631c3` | `40010a3+dirty` | 2026-11-04 21:26 UTC |
+| `sweep-lod-selfsup/cell0.01-seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.8026 / 0.7148 | ✅ 8/8 | 1563 | `a30f6dd6031f` | `40010a3+dirty` | 2026-11-04 21:24 UTC |
+| `sweep-lod-selfsup/cell0.01-seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7941 / 0.7040 | ✅ 8/8 | 1510 | `ec5134af10a5` | `40010a3+dirty` | 2026-11-04 21:21 UTC |
+| `sweep-lod-selfsup/cell0.01-seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7775 / 0.6961 | ✅ 8/8 | 1251 | `ede9ab23affd` | `40010a3+dirty` | 2026-11-04 21:18 UTC |
+| `sweep-selfsup-seeds/seed5-tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.6453 / 0.5758 | ✅ 8/8 | 1677 | `605702fd9f29` | `64b6eac+dirty` | 2026-11-04 20:54 UTC |
+| `sweep-selfsup-seeds/seed5-tau0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.01 | 12 / 300 | 0.6386 / 0.5612 | ✅ 8/8 | 1766 | `2faf286ff1c5` | `64b6eac+dirty` | 2026-11-04 20:52 UTC |
+| `sweep-selfsup-seeds/seed3-tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.6129 / 0.5326 | ✅ 8/8 | 2606 | `b9f407077757` | `64b6eac+dirty` | 2026-11-04 20:51 UTC |
+| `sweep-selfsup-seeds/seed3-tau0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.01 | 12 / 300 | 0.5786 / 0.4988 | ✅ 8/8 | 2350 | `c7b41d05a14d` | `64b6eac+dirty` | 2026-11-04 20:50 UTC |
+| `sweep-selfsup-seeds/seed2-tau0.02.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.02 | 12 / 300 | 0.7301 / 0.6513 | ✅ 8/8 | 1081 | `a5464fad584c` | `64b6eac+dirty` | 2026-11-04 20:48 UTC |
+| `sweep-selfsup-seeds/seed2-tau0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 · selfsup τ0.01 | 12 / 300 | 0.7280 / 0.6535 | ✅ 8/8 | 1106 | `39e3f86c6086` | `64b6eac+dirty` | 2026-11-04 20:47 UTC |
+| `sweep-24scenes-selfsup/seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.8026 / 0.7148 | ✅ 8/8 | 1563 | `a30f6dd6031f` | `64b6eac+dirty` | 2026-11-04 20:45 UTC |
+| `sweep-24scenes-selfsup/seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7941 / 0.7040 | ✅ 8/8 | 1510 | `ec5134af10a5` | `64b6eac+dirty` | 2026-11-04 20:42 UTC |
+| `sweep-24scenes-selfsup/seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 · selfsup τ0.01 | 32 / 800 | 0.7775 / 0.6961 | ✅ 8/8 | 1251 | `ede9ab23affd` | `64b6eac+dirty` | 2026-11-04 20:38 UTC |
+| `sweep-24scenes-hid128/hid128-seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6552 / 0.5707 | ✅ 8/8 | 2617 | `3a245091e5bd` | `288f981+dirty` | 2026-11-04 19:32 UTC |
+| `sweep-24scenes-hid128/hid128-seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6561 / 0.5851 | ✅ 8/8 | 1809 | `8a48618dd7fa` | `288f981+dirty` | 2026-11-04 19:26 UTC |
+| `sweep-24scenes-hid128/hid128-seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6929 / 0.6144 | ✅ 8/8 | 1563 | `31e10c43cc35` | `288f981+dirty` | 2026-11-04 19:19 UTC |
+| `sweep-24scenes-hid/hid64-seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.7191 / 0.6392 | ✅ 8/8 | 2308 | `0747df81501e` | `288f981+dirty` | 2026-11-04 19:11 UTC |
+| `sweep-24scenes-hid/hid64-seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6589 / 0.5827 | ✅ 8/8 | 1911 | `a6601149ee74` | `288f981+dirty` | 2026-11-04 19:07 UTC |
+| `sweep-24scenes-hid/hid64-seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6821 / 0.6006 | ✅ 8/8 | 2506 | `0e616ab415ff` | `288f981+dirty` | 2026-11-04 19:03 UTC |
+| `sweep-24scenes-hid/hid32-seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6800 / 0.6038 | ✅ 8/8 | 2039 | `22e8c23d1517` | `288f981+dirty` | 2026-11-04 19:00 UTC |
+| `sweep-24scenes-hid/hid32-seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6407 / 0.5518 | ✅ 8/8 | 2369 | `103e64fd48da` | `288f981+dirty` | 2026-11-04 18:57 UTC |
+| `sweep-24scenes-hid/hid32-seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6449 / 0.5609 | ✅ 8/8 | 2392 | `13c1fb606836` | `288f981+dirty` | 2026-11-04 18:54 UTC |
+| `sweep-24scenes-hid/hid16-seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6038 / 0.5217 | ✅ 8/8 | 2415 | `b24aeb9bcf30` | `288f981+dirty` | 2026-11-04 18:52 UTC |
+| `sweep-24scenes-hid/hid16-seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.7572 / 0.6762 | ✅ 8/8 | 1045 | `daa51975488f` | `288f981+dirty` | 2026-11-04 18:50 UTC |
+| `sweep-24scenes-hid/hid16-seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6619 / 0.5869 | ✅ 8/8 | 2261 | `15974046fbf3` | `288f981+dirty` | 2026-11-04 18:47 UTC |
+| `sweep-24scenes-decay/seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6038 / 0.5217 | ✅ 8/8 | 2415 | `b24aeb9bcf30` | `f408043+dirty` | 2026-11-04 18:08 UTC |
+| `sweep-24scenes-decay/seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.7572 / 0.6762 | ✅ 8/8 | 1045 | `daa51975488f` | `f408043+dirty` | 2026-11-04 18:06 UTC |
+| `sweep-24scenes-decay/seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6619 / 0.5869 | ✅ 8/8 | 2261 | `15974046fbf3` | `f408043+dirty` | 2026-11-04 18:04 UTC |
+| `sweep-24scenes-lr01/seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6138 / 0.5386 | ✅ 8/8 | 1962 | `f6304d84ef52` | `4ad9923+dirty` | 2026-11-04 17:42 UTC |
+| `sweep-24scenes-lr01/seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.4923 / 0.4116 | ✅ 8/8 | 2842 | `c77feaf03972` | `4ad9923+dirty` | 2026-11-04 17:40 UTC |
+| `sweep-24scenes-lr01/seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.5864 / 0.5016 | ✅ 8/8 | 2470 | `e0ac74f76ca3` | `4ad9923+dirty` | 2026-11-04 17:38 UTC |
+| `sweep-24scenes/seed5.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.3999 / 0.3226 | ✅ 8/8 | 1259 | `8b65c1cc83f6` | `4ad9923+dirty` | 2026-11-04 17:33 UTC |
+| `sweep-24scenes/seed3.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6990 / 0.6100 | ✅ 8/8 | 971 | `c46bcfa0d653` | `4ad9923+dirty` | 2026-11-04 17:31 UTC |
+| `sweep-24scenes/seed2.occ1` | cell 0.01 m · 30000 步 · 8 视角 | 32 / 800 | 0.6986 / 0.6077 | ✅ 8/8 | 882 | `08576b89cd82` | `4ad9923+dirty` | 2026-11-04 17:29 UTC |
+| `sweep-lod-cells-20k-seeds/cell0.04-seed5.occ1` | cell 0.04 m · 20000 步 · 8 视角 | 12 / 300 | 0.5765 / 0.5021 | ✅ 8/8 | 186 | `7916ce660f58` | `4c0f110+dirty` | 2026-11-04 17:08 UTC |
+| `sweep-lod-cells-20k-seeds/cell0.04-seed3.occ1` | cell 0.04 m · 20000 步 · 8 视角 | 12 / 300 | 0.6554 / 0.5603 | ✅ 8/8 | 91 | `5c8e0afb0f69` | `4c0f110+dirty` | 2026-11-04 17:07 UTC |
+| `sweep-lod-cells-20k-seeds/cell0.04-seed2.occ1` | cell 0.04 m · 20000 步 · 8 视角 | 12 / 300 | 0.3500 / 0.2837 | ✅ 8/8 | 176 | `5d5036b0f445` | `4c0f110+dirty` | 2026-11-04 17:07 UTC |
+| `sweep-lod-cells-20k-seeds/cell0.02-seed5.occ1` | cell 0.02 m · 20000 步 · 8 视角 | 12 / 300 | 0.5934 / 0.5174 | ✅ 8/8 | 516 | `13e6b8767399` | `4c0f110+dirty` | 2026-11-04 17:07 UTC |
+| `sweep-lod-cells-20k-seeds/cell0.02-seed3.occ1` | cell 0.02 m · 20000 步 · 8 视角 | 12 / 300 | 0.5312 / 0.4484 | ✅ 8/8 | 734 | `3c2a5f10b66a` | `4c0f110+dirty` | 2026-11-04 17:07 UTC |
+| `sweep-lod-cells-20k-seeds/cell0.02-seed2.occ1` | cell 0.02 m · 20000 步 · 8 视角 | 12 / 300 | 0.6826 / 0.6128 | ✅ 8/8 | 308 | `a9a823c977b5` | `4c0f110+dirty` | 2026-11-04 17:07 UTC |
+| `sweep-lod-cells-seeds/cell0.04-seed5.occ1` | cell 0.04 m · 5000 步 · 8 视角 | 12 / 300 | 0.5640 / 0.4953 | ✅ 8/8 | 129 | `6168f0bb310d` | `4c0f110+dirty` | 2026-11-04 17:04 UTC |
+| `sweep-lod-cells-seeds/cell0.04-seed3.occ1` | cell 0.04 m · 5000 步 · 8 视角 | 12 / 300 | 0.5222 / 0.4505 | ✅ 8/8 | 167 | `80ebcbe2d274` | `4c0f110+dirty` | 2026-11-04 17:04 UTC |
+| `sweep-lod-cells-seeds/cell0.04-seed2.occ1` | cell 0.04 m · 5000 步 · 8 视角 | 12 / 300 | 0.7287 / 0.6474 | ✅ 8/8 | 92 | `c6592ced9846` | `4c0f110+dirty` | 2026-11-04 17:04 UTC |
+| `sweep-lod-cells-seeds/cell0.02-seed5.occ1` | cell 0.02 m · 5000 步 · 8 视角 | 12 / 300 | 0.6218 / 0.5658 | ✅ 8/8 | 427 | `636f4b6169c9` | `4c0f110+dirty` | 2026-11-04 17:04 UTC |
+| `sweep-lod-cells-seeds/cell0.02-seed3.occ1` | cell 0.02 m · 5000 步 · 8 视角 | 12 / 300 | 0.4005 / 0.3215 | ✅ 8/8 | 572 | `45340764b767` | `4c0f110+dirty` | 2026-11-04 17:03 UTC |
+| `sweep-lod-cells-seeds/cell0.02-seed2.occ1` | cell 0.02 m · 5000 步 · 8 视角 | 12 / 300 | 0.6532 / 0.5828 | ✅ 8/8 | 240 | `7863082fb938` | `4c0f110+dirty` | 2026-11-04 17:03 UTC |
+| `sweep-1cm-seeds/seed5-steps20000.occ1` | cell 0.01 m · 20000 步 · 8 视角 | 12 / 300 | 0.5661 / 0.4842 | ✅ 8/8 | 1693 | `5e523dd35e00` | `241359f+dirty` | 2026-11-04 13:49 UTC |
+| `sweep-1cm-seeds/seed5-steps10000.occ1` | cell 0.01 m · 10000 步 · 8 视角 | 12 / 300 | 0.5150 / 0.4521 | ✅ 8/8 | 1734 | `14f6a85c21a9` | `241359f+dirty` | 2026-11-04 13:47 UTC |
+| `sweep-1cm-seeds/seed5-steps5000.occ1` | cell 0.01 m · 5000 步 · 8 视角 | 12 / 300 | 0.6363 / 0.5573 | ✅ 8/8 | 1957 | `b242335bfd68` | `241359f+dirty` | 2026-11-04 13:46 UTC |
+| `sweep-1cm-seeds/seed3-steps20000.occ1` | cell 0.01 m · 20000 步 · 8 视角 | 12 / 300 | 0.6570 / 0.5914 | ✅ 8/8 | 1606 | `ecf1fdfe4162` | `241359f+dirty` | 2026-11-04 13:44 UTC |
+| `sweep-1cm-seeds/seed3-steps10000.occ1` | cell 0.01 m · 10000 步 · 8 视角 | 12 / 300 | 0.5709 / 0.4994 | ✅ 8/8 | 2069 | `e9b4bd190685` | `241359f+dirty` | 2026-11-04 13:43 UTC |
+| `sweep-1cm-seeds/seed3-steps5000.occ1` | cell 0.01 m · 5000 步 · 8 视角 | 12 / 300 | 0.5912 / 0.5088 | ✅ 8/8 | 2281 | `504fd3a7755f` | `241359f+dirty` | 2026-11-04 13:42 UTC |
+| `sweep-1cm-seeds/seed2-steps20000.occ1` | cell 0.01 m · 20000 步 · 8 视角 | 12 / 300 | 0.5819 / 0.5075 | ✅ 8/8 | 1377 | `2c288196509a` | `241359f+dirty` | 2026-11-04 13:40 UTC |
+| `sweep-1cm-seeds/seed2-steps10000.occ1` | cell 0.01 m · 10000 步 · 8 视角 | 12 / 300 | 0.5234 / 0.4406 | ✅ 8/8 | 1494 | `bcedca3c98b5` | `241359f+dirty` | 2026-11-04 13:39 UTC |
+| `sweep-1cm-seeds/seed2-steps5000.occ1` | cell 0.01 m · 5000 步 · 8 视角 | 12 / 300 | 0.6643 / 0.5906 | ✅ 8/8 | 1156 | `1b6f8014829f` | `241359f+dirty` | 2026-11-04 13:38 UTC |
+| `sweep-lod-40k/cell0.02-steps40000.occ1` | cell 0.02 m · 40000 步 · 8 视角 | 12 / 300 | 0.6092 / 0.5354 | ✅ 8/8 | 666 | `48bb00ab13ca` | `eaa071b+dirty` | 2026-11-04 12:33 UTC |
+| `sweep-lod-budget/cell0.04.occ1` | cell 0.04 m · 20000 步 · 8 视角 | 12 / 300 | 0.5101 / 0.4152 | ✅ 8/8 | 175 | `e0b16a2a038c` | `c9af11c+dirty` | 2026-11-04 11:53 UTC |
+| `sweep-lod-budget/cell0.02.occ1` | cell 0.02 m · 20000 步 · 8 视角 | 12 / 300 | 0.6631 / 0.5842 | ✅ 8/8 | 800 | `5f67e82337a2` | `c9af11c+dirty` | 2026-11-04 11:53 UTC |
+| `sweep-lod/cell0.04.occ1` | cell 0.04 m · 5000 步 · 8 视角 | 12 / 300 | 0.6370 / 0.5613 | ✅ 8/8 | 81 | `2b6c9ec307be` | `5dfbb8a+dirty` | 2026-11-04 11:10 UTC |
+| `sweep-lod/cell0.02.occ1` | cell 0.02 m · 5000 步 · 8 视角 | 12 / 300 | 0.5094 / 0.4400 | ✅ 8/8 | 393 | `b21d255806d6` | `5dfbb8a+dirty` | 2026-11-04 11:10 UTC |
+| `sweep-lod/cell0.01.occ1` | cell 0.01 m · 5000 步 · 8 视角 | 12 / 300 | 0.7035 / 0.6249 | ✅ 8/8 | 1504 | `bdd078bace72` | `5dfbb8a+dirty` | 2026-11-04 11:09 UTC |
+| `sweep-steps/steps20000.occ1` | cell 0.01 m · 20000 步 · 8 视角 | 12 / 300 | 0.5535 / 0.4635 | ✅ 8/8 | 2083 | `9f05847034c6` | `d0ccaee+dirty` | 2026-11-03 23:40 UTC |
+| `sweep-steps/steps10000.occ1` | cell 0.01 m · 10000 步 · 8 视角 | 12 / 300 | 0.6981 / 0.6267 | ✅ 8/8 | 1613 | `3bf5408ecb45` | `d0ccaee+dirty` | 2026-11-03 23:38 UTC |
+| `sweep-steps/steps5000.occ1` | cell 0.01 m · 5000 步 · 8 视角 | 12 / 300 | 0.7035 / 0.6249 | ✅ 8/8 | 1504 | `bdd078bace72` | `d0ccaee+dirty` | 2026-11-03 23:37 UTC |
+| `sweep-steps/steps2500.occ1` | cell 0.01 m · 2500 步 · 8 视角 | 12 / 300 | 0.6858 / 0.5971 | ✅ 8/8 | 1075 | `3ef752ea61ec` | `d0ccaee+dirty` | 2026-11-03 23:36 UTC |
+| `extract/n2.occ1` | cell 0.01 m · 20000 步 · 8 视角 | 12 / 300 | 0.5535 / 0.4635 | ✅ 8/8 | 2083 | `9f05847034c6` | `5b1ba6d` | 2026-11-03 23:09 UTC |
+
+## 如何复核一行
+
+```sh
+parts-extract-verify --model <n2.occ1>   # 清单缺省 <模型>.manifest.json
+```
+

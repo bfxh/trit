@@ -11,3 +11,17 @@ __pycache__/
 
 # 本地智能体状态（#121/#122 曾误提交，见 CHG-AJ）
 .yanagent/
+
+# 快照底座的本地产物（scripts/snapshot.py）：对象库与清单不进版本库
+.trit/
+
+# 离线自足（scripts/vendor.py）：vendor 目录与配置备份不进版本库
+/vendor/
+.cargo/config.toml.tritbak
+
+# 本地评测产物（scripts/regress_holdout.sh 等）
+/runs/
+
+# 变异门单实例锁（运行时目录，不入库）
+scripts/.mutation-check.lock/
+*.mutant-tmp

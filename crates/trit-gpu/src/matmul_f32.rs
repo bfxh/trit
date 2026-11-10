@@ -50,7 +50,9 @@ pub(crate) fn run_f16(
     });
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("matmul-f32-f16"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("matmul_f32.wgsl").into()),
+        // 独立文件才有 `enable f16;`：f32 基线共享的 matmul_f32.wgsl 不能带它，
+        // 否则不支持 SHADER_F16 的 adapter 连 f32 着色器都建不出来。
+        source: wgpu::ShaderSource::Wgsl(include_str!("matmul_f16.wgsl").into()),
     });
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: Some("f16"),

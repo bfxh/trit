@@ -1,0 +1,146 @@
+[
+ {
+  "name": "deps: build.rs 不体检",
+  "file": "scripts/deps.py",
+  "old": "    if (root / crate.rel / \"build.rs\").is_file():",
+  "new": "    if False:",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: dev 传递依赖漏拷",
+  "file": "scripts/deps.py",
+  "old": "            if blocker[\"kind\"] == \"内部 dev\":\n                stack.append(blocker[\"detail\"].split(\"（\", 1)[0])",
+  "new": "            if False:\n                stack.append(blocker[\"detail\"].split(\"（\", 1)[0])",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: dev 依赖被当成普通内部依赖",
+  "file": "scripts/deps.py",
+  "old": "                kind = \"内部 dev\" if section == \"dev-dependencies\" else \"内部依赖\"",
+  "new": "                kind = \"内部依赖\"",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: workspace 依赖里的内部 crate 被判成外部",
+  "file": "scripts/deps.py",
+  "old": "            kind = \"internal\" if \"path\" in base else \"external\"",
+  "new": "            kind = \"external\"",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 不可发布的依赖没被标出",
+  "file": "scripts/deps.py",
+  "old": "        publish = package.get(\"publish\", True)",
+  "new": "        publish = True",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 不看 dev-dependencies",
+  "file": "scripts/deps.py",
+  "old": "DEP_SECTIONS = (\"dependencies\", \"dev-dependencies\", \"build-dependencies\")",
+  "new": "DEP_SECTIONS = (\"dependencies\", \"build-dependencies\")",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 不解析相对路径（crate 内的 ../ 被误报越界）",
+  "file": "scripts/deps.py",
+  "old": "                target = (path.parent / ref).resolve()",
+  "new": "                target = path.parent / ref",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 内部依赖不进图（graph 会空）",
+  "file": "scripts/deps.py",
+  "old": "                if section != \"dev-dependencies\":\n                    internal.append(name)",
+  "new": "                if section != \"dev-dependencies\":\n                    pass",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 内部依赖的 path 不改指新布局",
+  "file": "scripts/deps.py",
+  "old": "    if \"path\" in merged and name in closure:\n        merged[\"path\"] = f\"../{name}\"",
+  "new": "    if False:\n        merged[\"path\"] = f\"../{name}\"",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 写回时没用重写后的清单",
+  "file": "scripts/deps.py",
+  "old": "        manifest.write_text(new_text, encoding=\"utf-8\", newline=\"\")",
+  "new": "        manifest.write_text(text, encoding=\"utf-8\", newline=\"\")",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 只带走直接依赖（传递依赖漏拷）",
+  "file": "scripts/deps.py",
+  "old": "        for dep in plan[\"internal_deps\"]:\n            stack.append(dep)",
+  "new": "        for dep in plan[\"internal_deps\"]:\n            pass",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 指向不存在的文件不报",
+  "file": "scripts/deps.py",
+  "old": "                elif not target.is_file():",
+  "new": "                elif False:",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 点号形式的 workspace 依赖不展开",
+  "file": "scripts/deps.py",
+  "old": "            if section_tail in DEP_SECTIONS:",
+  "new": "            if False:",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 直接 path 依赖不算内部",
+  "file": "scripts/deps.py",
+  "old": "    if isinstance(spec, dict) and \"path\" in spec:",
+  "new": "    if False:",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 继承字段识别失效（摘出去才会炸）",
+  "file": "scripts/deps.py",
+  "old": "        if isinstance(v, dict) and v.get(\"workspace\") is True\n    ]",
+  "new": "        if False\n    ]",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "deps: 越界引用不再单列（../ 指到 crate 外也放行）",
+  "file": "scripts/deps.py",
+  "old": "                if not inside:",
+  "new": "                if False:",
+  "pkg": "scripts/deps.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
