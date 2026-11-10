@@ -1,6 +1,7 @@
 //! safetensors 外部权重读写：把真实模型的 2D 权重张量读成三值 [`Layer`]，或写回 f32。
 //!
-//! 只处理 2D 张量（`rows × cols`）与 `F32` / `F16` / `BF16` 三种 dtype；这是“权重空间
+//! `list` 接受任意维度的张量（真实模型里常见的 1D/4D 也能列出来）；`read_tensor` /
+//! `write_tensor` 只处理 2D（`rows × cols`）与 `F32` / `F16` / `BF16` 三种 dtype。这是“权重空间
 //! 模型”接真实权重的第一条入口，整模型分片/压缩仍另做。文件格式是 safetensors 的
 //! 公开布局：8 字节小端 header 长度 + JSON header + 数据区，`data_offsets` 相对数据区
 //! 起点。读取只 seek 到目标张量，不把整个权重文件读进内存。
@@ -60,8 +61,8 @@ impl Dtype {
 pub struct TensorInfo {
     /// 张量名。
     pub name: String,
-    /// 元素类型。
-    pub dtype: Dtype,
+    /// 元素类型（原样保留 header 里的字符串，`I64`/`BOOL` 等也列出来）。
+    pub dtype: String,
     /// 形状（2D，`[rows, cols]`）。
     pub shape: Vec<usize>,
     /// 数据区内的字节范围 `[start, end)`。
@@ -88,6 +89,7 @@ impl Weights {
 
 struct Entry {
     info: TensorInfo,
+    dtype: Option<Dtype>,
 }
 
 fn fail(what: &str) -> Error {
@@ -125,12 +127,11 @@ fn parse_header(file: &mut File, total: u64) -> Result<(u64, BTreeMap<String, En
         if name == "__metadata__" {
             continue;
         }
-        let dtype = value
+        let dtype_name = value
             .get("dtype")
             .and_then(Value::as_str)
             .ok_or_else(|| fail(&format!("张量 {name} 缺 dtype")))?;
-        let dtype = Dtype::parse(dtype)
-            .ok_or_else(|| fail(&format!("张量 {name} 的 dtype `{dtype}` 不受支持")))?;
+        let dtype = Dtype::parse(dtype_name);
         let shape: Vec<usize> = value
             .get("shape")
             .and_then(Value::as_array)
@@ -142,10 +143,8 @@ fn parse_header(file: &mut File, total: u64) -> Result<(u64, BTreeMap<String, En
                     .ok_or_else(|| fail(&format!("张量 {name} 的 shape 含非整数")))
             })
             .collect::<Result<Vec<_>>>()?;
-        if shape.len() != 2 || shape[0] == 0 || shape[1] == 0 {
-            return Err(fail(&format!(
-                "张量 {name} 的形状 {shape:?} 不是非空 2D（只支持 [rows, cols]）"
-            )));
+        if shape.contains(&0) {
+            return Err(fail(&format!("张量 {name} 的形状 {shape:?} 含 0")));
         }
         let offsets = value
             .get("data_offsets")
@@ -167,28 +166,32 @@ fn parse_header(file: &mut File, total: u64) -> Result<(u64, BTreeMap<String, En
                 "张量 {name} 的 data_offsets [{start}, {end}) 越界（数据区 {data_len} 字节）"
             )));
         }
-        let elements = shape[0]
-            .checked_mul(shape[1])
+        let elements = shape
+            .iter()
+            .try_fold(1usize, |acc, dim| acc.checked_mul(*dim))
             .ok_or_else(|| fail(&format!("张量 {name} 的元素数溢出")))?;
-        let want = elements
-            .checked_mul(dtype.size())
-            .ok_or_else(|| fail(&format!("张量 {name} 的字节数溢出")))?;
-        if end - start != want {
-            return Err(fail(&format!(
-                "张量 {name} 的 data_offsets 跨 {} 字节，形状 {shape:?} × {} 需要 {want}",
-                end - start,
-                dtype.size()
-            )));
+        if let Some(dtype) = dtype {
+            let want = elements
+                .checked_mul(dtype.size())
+                .ok_or_else(|| fail(&format!("张量 {name} 的字节数溢出")))?;
+            if end - start != want {
+                return Err(fail(&format!(
+                    "张量 {name} 的 data_offsets 跨 {} 字节，形状 {shape:?} × {} 需要 {want}",
+                    end - start,
+                    dtype.size()
+                )));
+            }
         }
         entries.insert(
             name.clone(),
             Entry {
                 info: TensorInfo {
                     name: name.clone(),
-                    dtype,
+                    dtype: dtype_name.to_string(),
                     shape,
                     offsets: (start, end),
                 },
+                dtype,
             },
         );
     }
@@ -217,14 +220,27 @@ pub fn read_tensor(path: &str, name: &str) -> Result<Weights> {
     let entry = entries
         .get(name)
         .ok_or_else(|| fail(&format!("{path} 里没有张量 `{name}`")))?;
+    let dtype = entry.dtype.ok_or_else(|| {
+        fail(&format!(
+            "张量 `{name}` 的 dtype `{}` 不受支持（只支持 F32/F16/BF16）",
+            entry.info.dtype
+        ))
+    })?;
     let info = &entry.info;
+    if info.shape.len() != 2 {
+        return Err(fail(&format!(
+            "张量 `{name}` 是 {} 维（shape {:?}），不是 2D，不能作为 Layer 权重",
+            info.shape.len(),
+            info.shape
+        )));
+    }
     let (start, end) = info.offsets;
     file.seek(SeekFrom::Start(data_start + start as u64))
         .map_err(|error| fail(&format!("seek 失败：{error}")))?;
     let mut raw = vec![0u8; end - start];
     file.read_exact(&mut raw)
         .map_err(|error| fail(&format!("读取张量 `{name}` 失败：{error}")))?;
-    let values = decode(info.dtype, &raw);
+    let values = decode(dtype, &raw);
     if let Some((index, value)) = values.iter().enumerate().find(|(_, v)| !v.is_finite()) {
         return Err(fail(&format!(
             "张量 `{name}` 第 {index} 个元素是 {value}（非有限值不能三值化）"

@@ -21,7 +21,7 @@ pub(super) fn list(args: &[String]) -> Result<(), String> {
         .map(|tensor| {
             json!({
                 "name": tensor.name,
-                "dtype": tensor.dtype.name(),
+                "dtype": tensor.dtype,
                 "shape": tensor.shape,
                 "bytes": tensor.offsets.1.saturating_sub(tensor.offsets.0),
             })

@@ -64,7 +64,7 @@ fn list_reports_shape_dtype_and_bytes() {
     let tensors = list(path.to_str().unwrap()).expect("list");
     assert_eq!(tensors.len(), 1);
     assert_eq!(tensors[0].name, "w");
-    assert_eq!(tensors[0].dtype.name(), "F32");
+    assert_eq!(tensors[0].dtype, "F32");
     assert_eq!(tensors[0].shape, vec![2, 3]);
     assert_eq!(tensors[0].offsets, (0, 24));
 }
@@ -192,7 +192,7 @@ fn rejects_shape_byte_mismatch() {
 }
 
 #[test]
-fn rejects_unknown_dtype_and_non_2d() {
+fn rejects_unknown_dtype_and_reads_only_2d() {
     let dir = temp_dir("dtype");
     let path = dir.join("bad.safetensors");
     raw_file(
@@ -200,15 +200,31 @@ fn rejects_unknown_dtype_and_non_2d() {
         r#"{"w":{"dtype":"I64","shape":[1,1],"data_offsets":[0,8]}}"#,
         &[0u8; 8],
     );
-    assert!(list(path.to_str().unwrap()).is_err());
+    let listed = list(path.to_str().unwrap()).expect("非浮点 dtype 也应能列出");
+    assert_eq!(listed[0].dtype, "I64");
+    let error = read_tensor(path.to_str().unwrap(), "w").expect_err("I64 不能读");
+    assert!(format!("{error}").contains("不受支持"), "{error}");
 
+    // 真实模型里 1D bias / 4D conv 权重很常见：list 必须能列出来，read_tensor 只收 2D。
     let path = dir.join("flat.safetensors");
     raw_file(
         &path,
         r#"{"w":{"dtype":"F32","shape":[4],"data_offsets":[0,16]}}"#,
         &[0u8; 16],
     );
-    assert!(list(path.to_str().unwrap()).is_err());
+    let listed = list(path.to_str().unwrap()).expect("1D 应该能列出");
+    assert_eq!(listed[0].shape, vec![4]);
+    let error = read_tensor(path.to_str().unwrap(), "w").expect_err("1D 不能作为 Layer");
+    assert!(format!("{error}").contains("不是 2D"), "{error}");
+
+    let path = dir.join("conv.safetensors");
+    raw_file(
+        &path,
+        r#"{"w":{"dtype":"F32","shape":[2,2,2,2],"data_offsets":[0,64]}}"#,
+        &[0u8; 64],
+    );
+    let listed = list(path.to_str().unwrap()).expect("4D 应该能列出");
+    assert_eq!(listed[0].shape, vec![2, 2, 2, 2]);
 }
 
 #[test]
