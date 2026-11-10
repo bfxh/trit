@@ -68,6 +68,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "read" => cmd_read(&args[1..]),
         "verify" => cmd_verify(&args[1..]),
         "task-merge" => cli_task::task_merge(&args[1..]),
+        "task-scale" => cli_task::task_scale(&args[1..]),
+        "task-combine" => cli_task::task_combine(&args[1..]),
         "script" => cmd_script(&args[1..]),
         "patch" => cmd_patch(&args[1..]),
         "apply-candidate" => cmd_apply_candidate(&args[1..]),
@@ -121,6 +123,7 @@ fn cmd_verify(args: &[String]) -> Result<(), String> {
         "signature": format!("{:016x}", Behavior::of(&net, &oracle).map_err(err)?.signature()),
         "summary": wire::net_summary(&net),
         "mismatches": wire::mismatches_value(&net, &oracle, limit).map_err(err)?,
+        "classification": wire::classification_value(&net, &oracle).map_err(err)?,
     }))
 }
 
@@ -287,10 +290,13 @@ fn cmd_transplant(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["require-before", "require-after", "by-row"])?;
+    let parsed = parse(
+        args,
+        &["require-before", "require-after", "by-row", "by-layer"],
+    )?;
     let path = one(
         &parsed,
-        "dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--by-row] [--oracle <json|->] [--require-after] [--out <path>]",
+        "dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--by-row|--by-layer|--block N] [--oracle <json|->] [--require-after] [--out <path>]",
     )?;
     let tuned_path = value(&parsed, "tuned")?;
     let rate = req_f32(&parsed, "rate")?;
@@ -305,8 +311,21 @@ fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
     let base = load_net(path)?;
     let tuned = load_net(tuned_path)?;
     let by_row = parsed.switches.contains("by-row");
-    let outcome = if by_row {
+    let by_layer = parsed.switches.contains("by-layer");
+    let block = if parsed.values.contains_key("block") {
+        Some(req_usize(&parsed, "block")?)
+    } else {
+        None
+    };
+    if usize::from(by_row) + usize::from(by_layer) + usize::from(block.is_some()) > 1 {
+        return Err("--by-row / --by-layer / --block 只能给一个".into());
+    }
+    let outcome = if by_layer {
+        crate::dare::dare_drop_layers(&base, &tuned, rate, seed).map_err(err)?
+    } else if by_row {
         crate::dare::dare_drop_rows(&base, &tuned, rate, seed).map_err(err)?
+    } else if let Some(block) = block {
+        crate::dare::dare_drop_blocks(&base, &tuned, rate, seed, block).map_err(err)?
     } else {
         crate::dare::dare_drop(&base, &tuned, rate, seed).map_err(err)?
     };
@@ -325,6 +344,8 @@ fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
         "rate": rate,
         "seed": seed,
         "by_row": by_row,
+        "by_layer": by_layer,
+        "block": block,
         "kept": outcome.kept,
         "dropped": outcome.dropped,
         "rescaled_rows": outcome.rescaled_rows,

@@ -1759,11 +1759,15 @@ name = "trit-build"
 version = "0.12.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "clap",
+ "naga",
+ "pollster",
  "serde_json",
  "trit-circuit",
  "trit-core",
  "trit-eval",
+ "wgpu",
 ]
 
 [[package]]
@@ -2086,6 +2090,7 @@ version = "0.12.0"
 dependencies = [
  "serde_json",
  "trit-learn",
+ "trit-train",
 ]
 
 [[package]]

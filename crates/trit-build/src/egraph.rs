@@ -14,6 +14,11 @@ use trit_core::value::Ternary;
 use trit_core::{Algebra, Expr};
 use trit_eval::eval::{Assignment, eval};
 
+mod cost;
+
+use cost::expr_stats;
+pub(crate) use cost::{CostModel, RewriteOptions, RewriteReport};
+
 /// e-class 编号。
 type ClassId = usize;
 
@@ -492,32 +497,53 @@ impl EGraph {
         }
     }
 
-    /// 最小代价提取（代价 = 节点数）；固定点迭代 + 严格小于，保证确定性。
-    fn extract(&mut self, root: ClassId) -> Expr {
+    fn kind_stats(
+        &self,
+        kind: &Kind,
+        best: &HashMap<ClassId, (u64, u64)>,
+        model: CostModel,
+    ) -> Option<(u64, u64)> {
+        match kind {
+            Kind::Var(_) | Kind::Const(_) => Some((model.leaf(), 1)),
+            Kind::Not(child) => best
+                .get(child)
+                .map(|(cost, nodes)| (cost.saturating_add(model.not()), nodes + 1)),
+            Kind::Bin(op, left, right) => {
+                let (left_cost, left_nodes) = *best.get(left)?;
+                let (right_cost, right_nodes) = *best.get(right)?;
+                Some((
+                    left_cost
+                        .saturating_add(right_cost)
+                        .saturating_add(model.op(*op)),
+                    left_nodes + right_nodes + 1,
+                ))
+            }
+        }
+    }
+
+    /// 最小 (代价, 节点数) 提取；固定点迭代 + 严格小于，保证确定性。
+    fn extract(&mut self, root: ClassId, model: CostModel) -> (Expr, u64, u64) {
         let roots: Vec<ClassId> = (0..self.classes.len())
             .filter(|class| self.find(*class) == *class)
             .collect();
-        let mut cost: HashMap<ClassId, usize> = HashMap::new();
-        for _ in 0..64 {
+        let mut best: HashMap<ClassId, (u64, u64)> = HashMap::new();
+        // 每条边至少把子节点信息传一层；|roots| 轮一定覆盖最长链。
+        for _ in 0..=roots.len() {
             let mut changed = false;
             for class in &roots {
-                let kinds = self.classes[*class].clone();
-                let mut best = usize::MAX;
-                for kind in &kinds {
-                    let candidate = match kind {
-                        Kind::Var(_) | Kind::Const(_) => Some(1),
-                        Kind::Not(child) => cost.get(child).map(|c| c + 1),
-                        Kind::Bin(_, left, right) => match (cost.get(left), cost.get(right)) {
-                            (Some(l), Some(r)) => Some(l + r + 1),
-                            _ => None,
-                        },
+                let mut choice: Option<(u64, u64)> = None;
+                for kind in &self.classes[*class] {
+                    let Some(candidate) = self.kind_stats(kind, &best, model) else {
+                        continue;
                     };
-                    if let Some(candidate) = candidate {
-                        best = best.min(candidate);
+                    if choice.is_none_or(|current| candidate < current) {
+                        choice = Some(candidate);
                     }
                 }
-                if best != usize::MAX && cost.get(class) != Some(&best) {
-                    cost.insert(*class, best);
+                if let Some(candidate) = choice
+                    && best.get(class) != Some(&candidate)
+                {
+                    best.insert(*class, candidate);
                     changed = true;
                 }
             }
@@ -526,40 +552,50 @@ impl EGraph {
             }
         }
         let root = self.find(root);
-        self.build(root, &cost, 0)
+        let (cost, nodes) = best.get(&root).copied().unwrap_or((u64::MAX, u64::MAX));
+        (self.build(root, &best, model, 0), cost, nodes)
     }
 
-    fn build(&self, class: ClassId, cost: &HashMap<ClassId, usize>, depth: usize) -> Expr {
-        // `class` 已按 root 规范化（提取入口/`follow` 保证）。
-        let kinds = &self.classes[class];
-        let mut best: Option<(usize, &Kind)> = None;
-        for kind in kinds {
-            let candidate = match kind {
-                Kind::Var(_) | Kind::Const(_) => Some(1),
-                Kind::Not(child) => cost.get(child).map(|c| c + 1),
-                Kind::Bin(_, left, right) => match (cost.get(left), cost.get(right)) {
-                    (Some(l), Some(r)) => Some(l + r + 1),
-                    _ => None,
-                },
+    fn choose_kind(
+        &self,
+        class: ClassId,
+        best: &HashMap<ClassId, (u64, u64)>,
+        model: CostModel,
+    ) -> Option<(u64, u64, &Kind)> {
+        let mut chosen: Option<(u64, u64, &Kind)> = None;
+        for kind in &self.classes[class] {
+            let Some((cost, nodes)) = self.kind_stats(kind, best, model) else {
+                continue;
             };
-            let Some(candidate) = candidate else { continue };
-            if best.is_none_or(|(best_cost, _)| candidate < best_cost) {
-                best = Some((candidate, kind));
+            if chosen
+                .is_none_or(|(best_cost, best_nodes, _)| (cost, nodes) < (best_cost, best_nodes))
+            {
+                chosen = Some((cost, nodes, kind));
             }
         }
-        let Some((_, kind)) = best else {
-            return Expr::Const(Ternary::Unknown);
-        };
-        if depth > 64 {
+        chosen
+    }
+
+    fn build(
+        &self,
+        class: ClassId,
+        best: &HashMap<ClassId, (u64, u64)>,
+        model: CostModel,
+        depth: usize,
+    ) -> Expr {
+        if depth > 256 {
             return Expr::Const(Ternary::Unknown);
         }
+        let Some((_, _, kind)) = self.choose_kind(class, best, model) else {
+            return Expr::Const(Ternary::Unknown);
+        };
         match kind {
             Kind::Var(index) => Expr::Var(self.names[*index].clone()),
             Kind::Const(value) => Expr::Const(*value),
-            Kind::Not(child) => Expr::Not(Box::new(self.follow(*child, cost, depth + 1))),
+            Kind::Not(child) => Expr::Not(Box::new(self.follow(*child, best, model, depth + 1))),
             Kind::Bin(op, left, right) => {
-                let left = Box::new(self.follow(*left, cost, depth + 1));
-                let right = Box::new(self.follow(*right, cost, depth + 1));
+                let left = Box::new(self.follow(*left, best, model, depth + 1));
+                let right = Box::new(self.follow(*right, best, model, depth + 1));
                 match op {
                     Op::And => Expr::And(left, right),
                     Op::Or => Expr::Or(left, right),
@@ -571,29 +607,61 @@ impl EGraph {
         }
     }
 
-    fn follow(&self, class: ClassId, cost: &HashMap<ClassId, usize>, depth: usize) -> Expr {
+    fn follow(
+        &self,
+        class: ClassId,
+        best: &HashMap<ClassId, (u64, u64)>,
+        model: CostModel,
+        depth: usize,
+    ) -> Expr {
         // 子节点 id 在 rebuild 后可能指向非根，这里沿 parent 走到根。
         let mut class = class;
         while self.parent[class] != class {
             class = self.parent[class];
         }
-        self.build(class, cost, depth)
+        self.build(class, best, model, depth)
     }
 }
 
 /// 重写入口：返回（重写后的表达式，实际触发过的规则名）。
+#[cfg(test)]
 pub(crate) fn rewrite(expr: &Expr, alg: Algebra, max_rounds: usize) -> (Expr, Vec<&'static str>) {
+    let report = rewrite_with(
+        expr,
+        alg,
+        RewriteOptions {
+            max_rounds,
+            ..RewriteOptions::default()
+        },
+    );
+    (report.expr, report.rules)
+}
+
+/// 饱和重写：每轮应用所有规则，直到没有新的合并（不动点）或触到轮数/节点上限。
+pub(crate) fn rewrite_with(expr: &Expr, alg: Algebra, options: RewriteOptions) -> RewriteReport {
     let rules: Vec<Rule> = rule_book()
         .into_iter()
         .filter(|rule| rule_holds(rule, alg))
         .collect();
     if rules.is_empty() {
-        return (expr.clone(), Vec::new());
+        let (cost, nodes) = expr_stats(expr, options.cost);
+        return RewriteReport {
+            expr: expr.clone(),
+            rules: Vec::new(),
+            rounds: 0,
+            e_nodes: 0,
+            saturated: true,
+            cost,
+            nodes,
+        };
     }
     let mut graph = EGraph::new();
     let root = graph.add(expr);
     let mut fired: Vec<&'static str> = Vec::new();
-    for _ in 0..max_rounds {
+    let mut rounds = 0;
+    let mut saturated = false;
+    for _ in 0..options.max_rounds {
+        rounds += 1;
         let mut changed = false;
         let classes: Vec<ClassId> = (0..graph.classes.len())
             .filter(|class| graph.find(*class) == *class)
@@ -611,117 +679,34 @@ pub(crate) fn rewrite(expr: &Expr, alg: Algebra, max_rounds: usize) -> (Expr, Ve
                     changed = true;
                 }
             }
-            if graph.classes.len() > 4096 {
+            if graph.classes.len() > options.node_limit {
                 break;
             }
         }
-        if !changed || graph.classes.len() > 4096 {
+        if graph.classes.len() > options.node_limit {
+            break;
+        }
+        if !changed {
+            saturated = true;
             break;
         }
     }
-    let rewritten = graph.extract(root);
+    let e_nodes = (0..graph.classes.len())
+        .filter(|class| graph.find(*class) == *class)
+        .count();
+    let (rewritten, cost, nodes) = graph.extract(root, options.cost);
     fired.sort_unstable();
     fired.dedup();
-    (rewritten, fired)
+    RewriteReport {
+        expr: rewritten,
+        rules: fired,
+        rounds,
+        e_nodes,
+        saturated,
+        cost,
+        nodes,
+    }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::bitplan;
-    use trit_core::Parser;
-
-    const ALGEBRAS: [Algebra; 3] = [Algebra::Kleene, Algebra::Lukasiewicz, Algebra::Bochvar];
-
-    #[test]
-    fn every_registered_rule_passes_self_check_in_kleene() {
-        let active = active_rules(Algebra::Kleene);
-        assert!(active.len() >= 15, "K3 规则集太窄：{active:?}");
-        for name in [
-            "de-morgan-and",
-            "factor-and-or",
-            "implies-elim",
-            "equiv-elim",
-        ] {
-            assert!(active.contains(&name), "K3 缺少 {name}：{active:?}");
-        }
-        assert!(
-            !active.contains(&"xor-elim"),
-            "Xor 是强加法，不能按布尔异或消去"
-        );
-    }
-
-    #[test]
-    fn loader_filters_rules_by_algebra() {
-        // 蕴含消去在 K3 成立；Ł3 的蕴含是 1-a+b，`a=>b ≡ !a|b` 不成立（U=>U=1 vs U|U=U）。
-        assert!(active_rules(Algebra::Kleene).contains(&"implies-elim"));
-        assert!(!active_rules(Algebra::Lukasiewicz).contains(&"implies-elim"));
-        // 等价消去反过来：`equiv` 本身就是这么定义的（`(a⇒b) ∧ (b⇒a)`），所以三种语义都过。
-        for alg in ALGEBRAS {
-            assert!(
-                active_rules(alg).contains(&"equiv-elim"),
-                "{alg:?} 应保留 equiv-elim"
-            );
-        }
-    }
-
-    #[test]
-    fn broken_rule_fails_self_check() {
-        // 排中律在 K3 不成立：U | !U = U ≠ 1。
-        let lhs = Expr::Or(
-            Box::new(Expr::Var("a".into())),
-            Box::new(Expr::Not(Box::new(Expr::Var("a".into())))),
-        );
-        let rhs = Expr::Const(Ternary::True);
-        assert!(!self_check(&lhs, &rhs, Algebra::Kleene));
-        // 同样的式子在三值上不成立、不过滤就进图的话，重写会静默改变语义。
-        assert!(!self_check(&lhs, &rhs, Algebra::Lukasiewicz));
-    }
-
-    #[test]
-    fn factoring_reduces_node_count() {
-        let expr = Parser::parse("(a & b) | (a & c)").unwrap();
-        let (rewritten, fired) = rewrite(&expr, Algebra::Kleene, 32);
-        assert_eq!(rewritten.to_infix(), "(a ∧ (b ∨ c))", "fired={fired:?}");
-        assert!(fired.contains(&"factor-and-or"), "fired={fired:?}");
-    }
-
-    #[test]
-    fn rewrite_preserves_semantics_for_every_algebra() {
-        for source in [
-            "(a & b) | (a & c)",
-            "!!(a | b)",
-            "!(a & b) | c",
-            "(a => b) & (b => a)",
-            "(a ^ b) | (b & c)",
-            "a & (a | b)",
-            "((a & b) | (a & c)) & !d",
-        ] {
-            let expr = Parser::parse(source).unwrap();
-            let vars = expr.variables();
-            for alg in ALGEBRAS {
-                let (rewritten, _) = rewrite(&expr, alg, 32);
-                assert_eq!(
-                    bitplan::table(&rewritten, &vars, alg).unwrap(),
-                    bitplan::table(&expr, &vars, alg).unwrap(),
-                    "{source} @ {alg:?} 重写后语义变了：{source} → {}",
-                    rewritten.to_infix()
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn rewrite_is_deterministic_and_stable() {
-        let expr = Parser::parse("((a & b) | (a & c)) & !(b & c)").unwrap();
-        let (first, _) = rewrite(&expr, Algebra::Kleene, 32);
-        let (again, _) = rewrite(&expr, Algebra::Kleene, 32);
-        assert_eq!(
-            first.to_infix(),
-            again.to_infix(),
-            "同一输入两次结果必须相同"
-        );
-        let (second_pass, _) = rewrite(&first, Algebra::Kleene, 32);
-        assert_eq!(first.to_infix(), second_pass.to_infix(), "重写必须是固定点");
-    }
-}
+mod tests;

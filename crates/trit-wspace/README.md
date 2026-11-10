@@ -123,7 +123,7 @@ trit-wspace mcp
 }
 ```
 
-十九个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`。
+二十一个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`、`wsp_task_scale`、`wsp_task_combine`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
@@ -151,7 +151,9 @@ CLI 对应 `transplant <dest> --from <source> --layer L --rows i,j`。
 就整行保留或整行丢回基准值，不会出现“半行保留”。行级决策用 `(seed, layer, row)` 散列
 （列标记 `usize::MAX - 1`，与偏置的 `usize::MAX` 区分），只改本层该行的入边与偏置，
 不碰下一层的出边列（单元粒度整体搬运见 `wsp_transplant`）。`kept` / `dropped` 仍按差分坐标数计数。
-CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N] [--by-row]`。
+CLI 对应 `dare-drop <base> --tuned <tuned> --rate R [--seed N] [--by-row|--by-layer|--block N]`；
+`--block N` 把同一行的列按 `N` 一块整体保留/丢弃（`N=1` 退化为坐标级，`N=0` 判错）；
+`--by-layer` 整层（所有行、所有 trit 与偏置）一起保留/丢弃。
 
 `wsp_apply_candidate` 直接吃 `wsp_propose` 的 `candidates[i]`（`edit` 或 `edits`），
 可选 `require_after`；给了 `log` 就把这次编辑追加进 JSONL 日志（日志文本随结果返回，不写盘）。
@@ -192,12 +194,43 @@ scale 按**行**单独记录差分，合并时对同一行取各任务目标值�
 评估的是加权投票合并（不含 DARE）；`tune_weights` 与显式 `weights` 互斥且必需 oracle；
 `tune_rounds=0` 只算等权基线。
 `tune_metric` / `--tune-metric` 选调权目标：`exact`（默认，逐样本完全匹配）、`hamming`
-（逐位失配数）或 `argmax`（分类错误数，多类 one-hot 最贴合指标）。库层对应
-`tune_task_weights` / `tune_task_weights_hamming` / `tune_task_weights_argmax`；通用入口是
-`tune_task_weights_with(base, tasks, rounds, evaluate)`。
+（逐位失配数）、`argmax`（分类错误数；多维按最大 trit，**一维按符号**）或 `readout`
+（`Net::readout` 的 f32 连续分数分类错误数，能区分同号不同分）。库层对应
+`tune_task_weights` / `tune_task_weights_hamming` / `tune_task_weights_argmax` /
+`tune_task_weights_readout`；通用入口是 `tune_task_weights_with(base, tasks, rounds, evaluate)`。
+`tune_grid` / `--tune-grid G[,G...]` 换候选权重网格（默认 `[0, 0.5, 1, 2]`）；
+`tune_with_dare` / `--tune-with-dare` 让调权评估走最终 DARE 合并路径（配 `dare_rate` 或
+`dare_per_task`）。非 DARE 路径还会在结果里返回 `merge_report`（投票数/平票数/忽略任务数/
+改动数/scale 行数）。
+
+`task-scale` / `wsp_task_scale` 做三值任务算术：`--lambda L` 单系数（`L>0` 原样、`L=0` 丢弃、
+`L<0` 取反 trit/偏置且丢 scale 差分）；`--lambdas L,L...` 批量扫描，配 `--oracle` 时每个 λ
+返回 `verify`（loss/exact/accuracy），批量结果在 `results` 数组中（不含 `artifact`）；
+`--layer-lambdas L0,L1...` 按层给系数（每层一个；0 丢弃该层、<0 取反该层）；
+`--row-lambdas L...`（长度=总行数）与 `--block-lambdas L... --block-size N`（长度=总块数）
+把系数扩到行/列块；以上四种与 `--lambda/--lambdas` 互斥。
+
+`--row-lambdas-file <json>` / `--block-lambdas-file <json> --block-size N` 用稀疏键值对
+（如 `{"0:1": 0.0}` / `{"0:0:0": -1.0}`；未给出的行/块默认 1）给按行/按块系数；
+`--row-lambdas-patterns <json>` / `--block-lambdas-patterns <json> --block-size N` 支持通配/区间/
+集合（如 `{"0:*": 0.5}`、`{"0:1-3": -1.0}`、`{"0:1|3": 0.5}`；精确段优先于区间/集合/通配，
+未匹配默认 1）。
+
+`task-combine <base> --tasks a,b,... --lambdas L,L...` / `wsp_task_combine` 按 λ 组合多个任务
+向量（λ<0 取反、0 丢弃；合并权重取 |λ|，三值没有幅度）。
+
+`task-scale` / `wsp_task_scale` 做三值任务算术：`--lambda L` 单系数（`L>0` 原样、`L=0` 丢弃、
+`L<0` 取反 trit/偏置且丢 scale 差分）；`--lambdas L,L...` 批量扫描，配 `--oracle` 时每个 λ
+返回 `verify`（loss/exact/accuracy），批量结果在 `results` 数组中（不含 `artifact`）。
 
 真实数据读数见 `examples/cifar_tasks.rs`（CIFAR-10 8×8 灰度 → 三值 MLP → WSP1 → 合并/调权）；
-它需要外部数据夹具，CI 只编译不运行。
+真实训练产物接入见 `examples/trit_train_tasks.rs`（`trit-train::layer::TernaryLinear` 训练 →
+写 WSP1 → 读回 → 合并/调权/λ 扫描；支持 `--data` CIFAR 夹具、`--hidden 8,16` 任意层端到端反向、
+`--activation tanh|relu`、`--init modulo|xorshift`、每层 Adam（latent/scale 分开 lr）、
+`--dare-rate`/`--dare-per-task`/`--by-block`/`--tune-with-dare`；
+`trit-train` 作为 dev-dependency，同为 L3；可复算 smoke：`python scripts/trit_train_tasks_smoke.py`）；
+它支持 `--size`（8/16/32）、`--color`（16×16×3 或 32×32×3）、`--hidden N`、`--seeds N`（多 seed 均值/方差）
+与同架构 f32 基线（连续输入 + 连续权重），需要外部数据夹具，CI 只编译不运行。
 
 `wsp_run_script` 执行组合脚本：`sequence` 默认原子（任一步失败/回滚则整段恢复原样，
 `atomic=false` 保留已成功步骤），`when` 按当前行为（完整逐样本输出）选择 `then` / `otherwise`，

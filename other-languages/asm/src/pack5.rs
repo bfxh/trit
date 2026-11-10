@@ -5,6 +5,7 @@
 //! The fast paths assume valid pack5 bytes (0..=242) on unpack.
 
 use crate::{measure2, measure3, report_unit};
+use serde_json::Value;
 use std::hint::black_box;
 
 const PACK_LUT_LEN: usize = 1024;
@@ -289,19 +290,25 @@ unsafe fn asm_pack(input: &[i8], out: &mut [u8], n: usize, lut: &[u8; PACK_LUT_L
 }
 
 unsafe fn asm_unpack(input: &[u8], out: &mut [i8], n: usize, lut: &[u64; 243]) -> Result<(), ()> {
-    let full_groups = n / TRITS_PER_BYTE;
-    let groups = full_groups.saturating_sub(1);
     #[cfg(all(target_arch = "x86_64", target_os = "windows"))]
-    if groups > 0 {
-        let ctx = UnpackCtx {
-            input: input.as_ptr(),
-            output: out.as_mut_ptr(),
-            groups,
-            lut: lut.as_ptr(),
-        };
-        asm_unpack5_lut(&ctx);
+    {
+        let full_groups = n / TRITS_PER_BYTE;
+        let groups = full_groups.saturating_sub(1);
+        if groups > 0 {
+            let ctx = UnpackCtx {
+                input: input.as_ptr(),
+                output: out.as_mut_ptr(),
+                groups,
+                lut: lut.as_ptr(),
+            };
+            asm_unpack5_lut(&ctx);
+        }
+        unpack_lut_from(input, out, n, lut, groups)
     }
-    unpack_lut_from(input, out, n, lut, groups)
+    #[cfg(not(all(target_arch = "x86_64", target_os = "windows")))]
+    {
+        unpack_lut_from(input, out, n, lut, 0)
+    }
 }
 
 fn bmi2_available() -> bool {
@@ -480,4 +487,187 @@ pub fn run() {
         bench_pack(n, iters, &pack_lut);
         bench_unpack(n, iters, &pack_lut, &unpack_lut);
     }
+}
+
+/// Run the pack5 golden vectors against scalar/intrinsic/asm paths.
+/// Error vectors are skipped: asm fast paths assume valid input; the Rust
+/// interop runner and the Go tests cover error semantics.
+pub(crate) fn conformance() -> bool {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../interop/vectors/pack5.json");
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("pack5 conformance: cannot read {}: {e}", path.display());
+            return false;
+        }
+    };
+    let root: Value = match serde_json::from_str(&text) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("pack5 conformance: invalid JSON: {e}");
+            return false;
+        }
+    };
+    let vectors = match root.get("vectors").and_then(Value::as_array) {
+        Some(v) => v,
+        None => {
+            eprintln!("pack5 conformance: missing vectors");
+            return false;
+        }
+    };
+
+    let pack_lut = build_pack_lut();
+    let unpack_lut = build_unpack_lut();
+    let mut pass = 0usize;
+    let mut fail = 0usize;
+    let mut skipped = 0usize;
+    let mut long_trits: Vec<i8> = Vec::new();
+    let mut long_bytes: Vec<u8> = Vec::new();
+
+    for v in vectors {
+        let id = v.get("id").and_then(Value::as_str).unwrap_or("<missing>");
+        if v.get("expect_error").is_some() {
+            skipped += 1;
+            continue;
+        }
+        let op = v.get("op").and_then(Value::as_str).unwrap_or("");
+        match op {
+            "pack" => {
+                let trits: Vec<i8> = match v.get("input").and_then(Value::as_array) {
+                    Some(arr) => arr
+                        .iter()
+                        .filter_map(|x| x.as_i64().map(|n| n as i8))
+                        .collect(),
+                    None => {
+                        fail += 1;
+                        eprintln!("FAIL {id}: bad pack input");
+                        continue;
+                    }
+                };
+                let expected = match v.get("expected").and_then(Value::as_u64) {
+                    Some(n) => n as u8,
+                    None => {
+                        fail += 1;
+                        eprintln!("FAIL {id}: bad pack expected");
+                        continue;
+                    }
+                };
+                let mut a = vec![0u8; 1];
+                let mut b = vec![0u8; 1];
+                let mut c = vec![0u8; 1];
+                scalar_pack_arith(&trits, &mut a, trits.len());
+                scalar_pack_lut(&trits, &mut b, trits.len(), &pack_lut);
+                let mut ok = a[0] == expected && b[0] == expected;
+                if ok && bmi2_available() {
+                    unsafe {
+                        pack_pext_intrinsic(&trits, &mut c, trits.len(), &pack_lut);
+                        ok &= c[0] == expected;
+                        asm_pack(&trits, &mut c, trits.len(), &pack_lut);
+                        ok &= c[0] == expected;
+                    }
+                }
+                if ok {
+                    pass += 1;
+                } else {
+                    fail += 1;
+                    eprintln!(
+                        "FAIL {id}: expected {expected}, scalar {} {} asm {}",
+                        a[0], b[0], c[0]
+                    );
+                }
+                if trits.len() == 5 {
+                    long_trits.extend_from_slice(&trits);
+                    long_bytes.push(expected);
+                }
+            }
+            "unpack" => {
+                let byte = match v.get("input").and_then(Value::as_u64) {
+                    Some(n) => n as u8,
+                    None => {
+                        fail += 1;
+                        eprintln!("FAIL {id}: bad unpack input");
+                        continue;
+                    }
+                };
+                let count = match v.get("trit_count").and_then(Value::as_u64) {
+                    Some(n) => n as usize,
+                    None => {
+                        fail += 1;
+                        eprintln!("FAIL {id}: missing trit_count");
+                        continue;
+                    }
+                };
+                let expected: Vec<i8> = match v.get("expected").and_then(Value::as_array) {
+                    Some(arr) => arr
+                        .iter()
+                        .filter_map(|x| x.as_i64().map(|n| n as i8))
+                        .collect(),
+                    None => {
+                        fail += 1;
+                        eprintln!("FAIL {id}: bad unpack expected");
+                        continue;
+                    }
+                };
+                let mut a = vec![0i8; count];
+                let mut b = vec![0i8; count];
+                let mut c = vec![0i8; count];
+                if scalar_unpack_arith(&[byte], &mut a, count).is_err()
+                    || scalar_unpack_lut(&[byte], &mut b, count, &unpack_lut).is_err()
+                {
+                    fail += 1;
+                    eprintln!("FAIL {id}: scalar unpack error");
+                    continue;
+                }
+                let mut ok = a == expected && b == expected;
+                unsafe {
+                    if asm_unpack(&[byte], &mut c, count, &unpack_lut).is_err() {
+                        ok = false;
+                    }
+                }
+                ok &= c == expected;
+                if ok {
+                    pass += 1;
+                } else {
+                    fail += 1;
+                    eprintln!("FAIL {id}: unpack mismatch");
+                }
+            }
+            _ => {
+                fail += 1;
+                eprintln!("FAIL {id}: unknown op {op}");
+            }
+        }
+    }
+
+    // Per-vector lengths are too short for the asm paths; concatenate the full
+    // 5-trit vectors into a long run to exercise BMI2/asm for real.
+    if bmi2_available() && !long_trits.is_empty() {
+        let mut asm_bytes = vec![0u8; long_trits.len().div_ceil(5)];
+        unsafe {
+            asm_pack(&long_trits, &mut asm_bytes, long_trits.len(), &pack_lut);
+        }
+        if asm_bytes == long_bytes {
+            pass += 1;
+        } else {
+            fail += 1;
+            eprintln!("FAIL pack5.long.pack: asm mismatch");
+        }
+
+        let mut asm_trits = vec![0i8; long_trits.len()];
+        unsafe {
+            if asm_unpack(&long_bytes, &mut asm_trits, long_trits.len(), &unpack_lut).is_err() {
+                fail += 1;
+                eprintln!("FAIL pack5.long.unpack: asm error");
+            } else if asm_trits != long_trits {
+                fail += 1;
+                eprintln!("FAIL pack5.long.unpack: asm mismatch");
+            } else {
+                pass += 1;
+            }
+        }
+    }
+
+    println!("pack5 asm conformance: {pass} pass, {fail} fail, {skipped} skipped (error vectors)");
+    fail == 0
 }

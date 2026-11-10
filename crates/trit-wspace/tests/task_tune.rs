@@ -9,6 +9,7 @@ use trit_wspace::mcp::Mcp;
 use trit_wspace::{
     Edit, Layer, Net, Oracle, Patch, TaskVector, Trit, merge_tasks_weighted, to_wsp,
     tune_task_weights, tune_task_weights_argmax, tune_task_weights_hamming,
+    tune_task_weights_readout,
 };
 
 fn xor_net() -> Net {
@@ -610,6 +611,141 @@ fn mcp_task_merge_argmax_metric() {
     let value = payload(&result);
     let expected = tune_task_weights_argmax(&base, &tasks, &oracle, 2).expect("expected");
     assert_eq!(value["tuning"]["metric"], json!("argmax"));
+    assert_eq!(value["weights"], json!(expected.weights()));
+    assert_eq!(value["tuning"]["tuned_loss"], json!(0));
+}
+
+/// 一维输出夹具：base 是 0（分类 0），A 是 +1（分类 1），B 是 -1（分类 0）。
+fn binary_fixture() -> (Net, Vec<TaskVector>, Oracle) {
+    let base = Net::new(vec![
+        Layer::new(2, 2, &[0i8; 4], &[0i8; 2]).expect("l0"),
+        Layer::new(1, 2, &[0i8; 2], &[0i8; 1]).expect("l1"),
+    ])
+    .expect("net");
+    let a = tuned(
+        &base,
+        vec![Edit::SetBias {
+            layer: 1,
+            row: 0,
+            to: Trit::Pos,
+        }],
+    );
+    let b = tuned(
+        &base,
+        vec![Edit::SetBias {
+            layer: 1,
+            row: 0,
+            to: Trit::Neg,
+        }],
+    );
+    let tasks = vec![
+        TaskVector::between(&base, &a).expect("a"),
+        TaskVector::between(&base, &b).expect("b"),
+    ];
+    let oracle = Oracle::new(four_inputs(), vec![vec![Trit::Pos]; 4]).expect("oracle");
+    (base, tasks, oracle)
+}
+
+#[test]
+fn tune_metric_argmax_handles_binary() {
+    let (base, tasks, oracle) = binary_fixture();
+    let tuning = tune_task_weights_argmax(&base, &tasks, &oracle, 2).expect("argmax");
+    assert_eq!(
+        tuning.initial_loss(),
+        4,
+        "一维输出必须按符号分类：等权平票回到 0，4 条全错"
+    );
+    assert_eq!(tuning.loss(), 0);
+    assert_eq!(tuning.weights()[0], 2.0);
+}
+
+/// 输出层两行都是 Pos，但 scale 不同：三值 argmax=0，f32 readout argmax=1。
+fn readout_fixture() -> (Net, Vec<TaskVector>, Oracle) {
+    let base = Net::new(vec![
+        Layer::new(2, 2, &[1, 0, 0, 1], &[0, 0]).expect("l0"),
+        Layer::with_scales(2, 2, &[1, 0, 1, 0], &[0, 0], vec![1.0, 3.0]).expect("l1"),
+    ])
+    .expect("net");
+    let tasks = vec![TaskVector::between(&base, &base).expect("identity")];
+    let inputs = four_inputs();
+    let expected: Vec<Vec<Trit>> = inputs
+        .iter()
+        .map(|input| {
+            let raw: Vec<f32> = input.iter().map(|trit| f32::from(trit.to_i8())).collect();
+            let got = base.readout(&raw).expect("readout");
+            let index = if got[0] > got[1] { 0 } else { 1 };
+            let mut row = vec![Trit::Neg; 2];
+            row[index] = Trit::Pos;
+            row
+        })
+        .collect();
+    let oracle = Oracle::new(inputs, expected).expect("oracle");
+    (base, tasks, oracle)
+}
+
+#[test]
+fn tune_metric_readout_uses_continuous_scores() {
+    let (base, tasks, oracle) = readout_fixture();
+    let readout = tune_task_weights_readout(&base, &tasks, &oracle, 0).expect("readout");
+    assert_eq!(readout.loss(), 0, "readout 按连续分数应全对");
+    let trits = tune_task_weights_argmax(&base, &tasks, &oracle, 0).expect("argmax");
+    assert!(
+        trits.loss() > 0,
+        "三值输出同号时 argmax 退化，必须与 readout 区分开"
+    );
+}
+
+#[test]
+fn cli_task_merge_readout_metric() {
+    let dir = temp_dir("cli-readout");
+    let (base, tasks, oracle) = readout_fixture();
+    let base_path = dir.join("base.wsp");
+    let oracle_path = dir.join("oracle.json");
+    fs::write(&base_path, to_wsp(&base)).expect("write base");
+    fs::write(
+        &oracle_path,
+        serde_json::to_string(&oracle_value(&oracle)).expect("oracle json"),
+    )
+    .expect("write oracle");
+    let output = stdout_json(&run(&[
+        "task-merge",
+        &path_string(&base_path),
+        &path_string(&base_path),
+        "--oracle",
+        &path_string(&oracle_path),
+        "--tune-weights",
+        "--tune-metric",
+        "readout",
+        "--tune-rounds",
+        "0",
+    ]));
+    assert_eq!(output["tuning"]["metric"], json!("readout"));
+    let expected = tune_task_weights_readout(&base, &tasks, &oracle, 0).expect("expected");
+    assert_eq!(output["weights"], json!(expected.weights()));
+    assert_eq!(output["tuning"]["tuned_loss"], json!(0));
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn mcp_task_merge_readout_metric() {
+    let (base, tasks, oracle) = readout_fixture();
+    let mut server = Mcp::new();
+    let result = call(
+        &mut server,
+        "wsp_task_merge",
+        json!({
+            "base": to_wsp(&base),
+            "tasks": [to_wsp(&base)],
+            "oracle": oracle_value(&oracle),
+            "tune_weights": true,
+            "tune_metric": "readout",
+            "tune_rounds": 0,
+        }),
+    );
+    assert_eq!(result["isError"], false);
+    let value = payload(&result);
+    let expected = tune_task_weights_readout(&base, &tasks, &oracle, 0).expect("expected");
+    assert_eq!(value["tuning"]["metric"], json!("readout"));
     assert_eq!(value["weights"], json!(expected.weights()));
     assert_eq!(value["tuning"]["tuned_loss"], json!(0));
 }

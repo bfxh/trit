@@ -14,8 +14,8 @@
   - `intrinsics`：Rust `core::arch::x86_64` 的 AVX2 / BMI2。
   - `asm`：手写汇编（Windows x64；其他平台回退到 intrinsics 或标量）。
 - 另外：
-  - **ARM64 NEON**：独立 `asm-arm64/` crate，只做交叉编译检查（无 ARM64 硬件/QEMU）。
-  - **AVX-512 VBMI**：`src/avx512.rs` 的 GF(3) 路径，本机无 AVX-512，只编译不执行。
+  - **ARM64 NEON**：独立 `asm-arm64/` crate；本地 x86-64 做交叉编译检查，GitHub `ubuntu-24.04-arm` CI 实跑。
+  - **AVX-512 VBMI**：`src/avx512.rs` 的 GF(3) 路径；本机无 AVX-512，GitHub `ubuntu-latest` CI 有，已实跑。
 - 本机：Intel Core Ultra 7 270K Plus，Windows x64；`avx2=true`、`bmi2=true`、`avx512f=false`。
 - 汇编是二进制 ISA 上的 **B 类模拟**，不是原生三值硬件；SAT/BDD/ATPG 等 D 类算法瓶颈不在本片范围。
 
@@ -152,26 +152,34 @@
 
 **解读**：Belnap 4 只是两条位平面上的 `and/or` 与交换，编译器已经做得很好；AVX2 只有 1.03–1.11×，汇编没有优势。多值位平面的价值在表示与真值表，不在手写指令。
 
-## ARM64 NEON / AVX-512（编译验证）
+## ARM64 NEON / AVX-512（2026-11-08 CI 实机）
 
-- **ARM64 NEON**：[`asm-arm64/`](../asm-arm64/) 实现 GF(3) `add/mul` 的 `vqtbl1q_u8` 查表；`cargo check --target aarch64-unknown-linux-gnu` 通过。**没有 ARM64 硬件/QEMU，未运行**，因此不写 NEON 性能数字。
-- **SVE**：稳定 Rust 1.99 的 SVE intrinsics 仍是 `stdarch_aarch64_sve` 不稳定特性（rust-lang/rust#145052），且本机无 SVE 硬件；暂缓，NEON 先行。
-- **AVX-512 VBMI**：[`src/avx512.rs`](src/avx512.rs) 用 `_mm512_permutexvar_epi8` 做 GF(3) add/mul（`vpermb` 64 字节查表）；代码已编译。本机无 `avx512f/bw/vbmi`，`run()` 直接跳过，**未执行**、不写性能数字。
+- **ARM64 NEON**：GitHub Actions `ubuntu-24.04-arm`（Linux aarch64）实跑 [`asm-arm64/`](../asm-arm64/)：
+  - 正确性：20 种长度 + 9 真值对全过。
+  - GF(3) add：scalar 1.075 ns/B，NEON 0.047 ns/B，**23.03×**。
+  - GF(3) mul：scalar 1.073 ns/B，NEON 0.047 ns/B，**23.02×**。
+  - 本机 x86-64 仍只能交叉编译检查；CI 提供 ARM64 执行证据。SVE 仍暂缓。
+- **AVX-512 VBMI**：GitHub Actions `ubuntu-latest`（x86-64，`avx512f/bw/vbmi` 可用）实跑 [`src/avx512.rs`](src/avx512.rs)：
+  - `AVX512_AVAILABLE=true`、`AVX512_EXECUTED=true`
+  - GF(3) add：0.067 cyc/B、0.026 ns/B、109.11 GiB/s，**19.31×** vs scalar LUT
+  - GF(3) mul：0.066 cyc/B、0.025 ns/B、110.06 GiB/s，**19.39×** vs scalar LUT
+  - runner 型号/频率未记录；这是 CI 实机读数，不是跨机承诺。
+- **SVE**：稳定 Rust 1.99 的 SVE intrinsics 仍是 `stdarch_aarch64_sve` 不稳定特性（rust-lang/rust#145052）；暂缓。
 
 ## 结论
 
 1. **K3 位运算不是汇编的优势区**：AVX2 intrinsics 对 `AND/OR` 有 1.13–1.24× 提升；手写汇编只有 1.03–1.07×，没有打赢 intrinsics。
 2. **5 trits/byte 是真正的低位宽收益区**：BMI2 `pext` + LUT 对 pack 有约 **4×**，unpack LUT 有 **1.3–1.5×**。
-3. **GF(3) 是 SIMD 的强收益区**：`vpshufb` 查表对 add/mul 有 **12–19×**。
+3. **GF(3) 是 SIMD 的强收益区**：本机 AVX2 `vpshufb` 对 add/mul 有 **12–19×**；CI AVX-512 `vpermb` 为 **19.3×**，ARM64 NEON 为 **23.0×**。
 4. **Belnap 4 多值位平面偏编译器友好**：AVX2 只有 1.03–1.11×，汇编没有优势；多值的价值在表示与真值表。
 5. **大赢来自指令集，不是汇编语法**：pack 的 `pext`、GF(3) 的 `vpshufb` 都可以通过 Rust intrinsics 直接拿到；手写 asm 与 intrinsics 基本持平。汇编的价值在跨 ISA / ABI / 编译器 codegen 弱的场景。
-6. **ARM64/AVX-512 目前只有编译证据**：NEON 交叉检查通过、AVX-512 路径编译通过；没有硬件执行数据，不能写成“更快”。
+6. **ARM64/AVX-512 已有 CI 实机证据**：`ubuntu-24.04-arm` 上 NEON 约 23×，`ubuntu-latest` 上 AVX-512 VBMI 约 19.3×；SVE 仍暂缓。数字以 CI 日志为准，不跨机承诺。
 7. **汇编仍是 Tier 0，但按内核选型**：优先把低位宽/SIMD 内核做到位（pack5、GF(3)、多值位平面），默认用 intrinsics；只有 asm 比 intrinsics 稳定快一个约定幅度（如 ≥10%）且可复现时，才让 asm 进默认路径。
 
 ## 下一步（按优先级）
 
-- **ARM64 硬件/QEMU**：跑 `asm-arm64` 的正确性与 NEON 基准；没有执行数据前不写“NEON 更快”。
-- **AVX-512 硬件/Intel SDE**：跑 `src/avx512.rs`；再考虑 `vpternlogd`（K3/Belnap）与 `vpermb`（pack5）。
+- **ARM64/AVX-512 扩展内核**：在 CI 上把 pack5/Belnap 也跑 ARM64 NEON / AVX-512（当前只跑了 GF(3)）。
+- **AVX-512 `vpternlogd`**：K3/Belnap 的三输入布尔函数；当前只验证了 GF(3) `vpermb`。
 - **SVE**：等 `stdarch_aarch64_sve` 稳定 + SVE 硬件。
 - **unpack 的 `pdep` / AVX-512 VBMI 版本**：当前 asm LUT 是 1.3–1.5×，看更小的表/更宽的查表能否再赢。
 - **合并门槛**：正确性全过、同算法同数据、比 intrinsics 基线至少快一个预先约定的幅度（例如 ≥10%）、跨大小/跨机器可复现；否则保留 intrinsics。
@@ -183,7 +191,15 @@
 cd other-languages/asm
 cargo run --release
 
-# ARM64：只做交叉编译检查（无硬件运行）
+# AVX-512 GF(3) 路径：本机无 AVX-512 会打印 AVAILABLE=false；CI Ubuntu runner 实跑
+cargo run --release -- --avx512
+
+# 互操作 conformance：K3/Belnap4/pack5（701 pass / 0 fail / 15 skipped）
+cargo run --release -- --conformance
+# 错误向量跳过；asm 快路径假设合法输入，错误语义由 runner/Go 覆盖
+
+# ARM64：CI conformance workflow 的 `arm64-neon` job 在 ubuntu-24.04-arm 上跑 `cargo run --release`
+# 本地 x86-64 只能做交叉编译检查
 cd other-languages/asm-arm64
 cargo check --target aarch64-unknown-linux-gnu
 ```

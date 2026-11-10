@@ -794,10 +794,11 @@ OK     free slot must not reject on unknown hopelessness
 
 - 三进制红利 / 模拟税 / 生态路径依赖 / 基数无关复杂度是四类不同问题，讨论前先归类：
   [docs/TERNARY-BOUNDARIES.md](docs/TERNARY-BOUNDARIES.md)。
-- 三进制构建工具（M0–M3）：`.tri`/Verilog 子集 → 化简 + e-graph 重写（规则逐条自证）
-  → 位并行真值表 → `TRB2` blob/CSV/`lookup.c`，
-  `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog]`；为什么只做这一层、
-  哪部分仍靠 LLVM/Rust 见 [docs/TERNARY-TOOLCHAIN.md](docs/TERNARY-TOOLCHAIN.md)。
+- 三进制构建工具（M0–M3 + 2026-11-08 补齐）：`.tri`/Verilog 子集 → 化简 + e-graph **饱和重写**
+  （规则逐条自证，`--cost nodes|gates` 代价模型）→ **多线程**位并行真值表 →
+  `TRB2` v3（含变量名）/CSV/`lookup.c`/双导轨 Verilog/WGSL 查表内核；
+  `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog] [--verify-hdl] [--emit-gpu] [--threads N]`；
+  为什么只做这一层、哪部分仍靠 LLVM/Rust 见 [docs/TERNARY-TOOLCHAIN.md](docs/TERNARY-TOOLCHAIN.md)。
 - 三进制训练实验（`trit-train`）：三值 STE（Identity/Clipped/Soft）+ 每行 scale、
   位平面 ALU（Kleene/Łukasiewicz/Bochvar）+ 并发/预取剖析。边界与读数见
   [crates/trit-train/README.md](crates/trit-train/README.md)。
@@ -805,7 +806,7 @@ OK     free slot must not reject on unknown hopelessness
   语义直接复用 `trit-core` / `trit-eval`，不另写解析器。见
   [crates/trit-lsp/README.md](crates/trit-lsp/README.md)。
 - 只做**真值函数**三值逻辑；硬件四态 `0/1/X/Z` 与 X-optimism 不在范围内。
-- 不做时序模型检验、通用 SMT、完整硬件仿真。
+- 不做时序模型检验、通用 SMT、通用硬件仿真；导出的组合子集用 iverilog 自检（`--verify-hdl`）。
 - 穷举参考是逐赋值的，18 变量约 12.6 s，仅用于小规模对拍。
 
 ## 开发

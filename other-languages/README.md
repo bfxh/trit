@@ -25,6 +25,8 @@
 
 > Assembly 与 Rust 同属 Tier 0，但职责不同：Rust 是可维护、可审计的参考实现；Assembly 是**热点/多值路径的性能与可行性验证**。任何“汇编更快”的结论，必须与 C/Rust 同算法、同数据、同基线对比。
 
+Lean 4 形式化入口：[`interop/lean/`](../interop/lean/)（K3/KGate/Belnap4/pack5 核心定理；Lean 4.35.0，无 Mathlib）。`openai/math` 外置评测见 [`interop/lean/openai_math/`](../interop/lean/openai_math/)。
+
 ## Java 选型
 
 > 以下按 **MC = Minecraft Java Edition** 理解；如果 MC 指 Mission Critical，选型会变。
@@ -71,6 +73,7 @@
 
 | 语言 | 路径 | 范围 | 运行 |
 |---|---|---|---|
+| C | [`c/`](c/) | K3、KGate、5 trits/byte（含尾部/错误），header-only | `cd c && make test`；conformance 见 [`c/README.md`](c/README.md) |
 | Go | [`go/`](go/) | 平衡三进制整数、K3、5 trits/byte、KGate | `cd go && go test ./...` |
 
 ## 其余语言评估

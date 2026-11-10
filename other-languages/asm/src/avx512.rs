@@ -168,9 +168,13 @@ fn bench(n: usize, iters: usize) {
 pub fn run() {
     println!("\n== avx512: GF(3) VBMI path ==");
     if !avx512_available() {
+        println!("AVX512_AVAILABLE=false");
         println!("AVX-512 F/BW/VBMI not available; code compiled but not executed");
+        println!("AVX512_EXECUTED=false");
         return;
     }
+    println!("AVX512_AVAILABLE=true");
     check();
     bench(1 << 20, 50);
+    println!("AVX512_EXECUTED=true");
 }

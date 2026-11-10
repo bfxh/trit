@@ -36,6 +36,8 @@ go test ./...
 go run ./cmd/demo
 ```
 
+> `go test ./...` 同时跑 `conformance_test.go`：读取 `../../interop/vectors` 的 `k3` / `kgate` / `pack5`，不复制期望值。
+
 > 本目录不接入默认 CI；修改 Go 参考实现时请手动跑上面的命令。
 
 本机读数（2026-11-07，Go 1.27.3）：`go test ./...` 通过，库包覆盖率 91.0%（`cmd/demo` 只做演示，未计覆盖率）。

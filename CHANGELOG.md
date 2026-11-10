@@ -2,6 +2,214 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：真实 trit-train 产物接入）
+
+- 新增 `examples/trit_train_tasks.rs`：用 `trit-train::layer::TernaryLinear` 训练 → 导出 WSP1 →
+  读回 → 任务合并/调权（玩具数据：base 1.0、equal/tuned 0.5，证明产物路径可用）。
+- 扩展 `trit_train_tasks`：`--data` 接 CIFAR 夹具、`--hidden N` 两层 `TernaryLinear`、
+  `--lambdas` 输出 λ 扫描读数。CIFAR 小规模（32×32 彩色、per-class 50、1 epoch、
+  hidden 8、2 seeds）：base **10.5% ± 0.14%**、equal/tuned **9.3% ± 3.25%**、λ 扫描 7.2–9.3%。
+- `trit-train::layer::TernaryLinear::train_step_with_grad`：输出梯度更新 + 返回输入梯度；
+  `trit_train_tasks` 的两层训练改为**端到端反向**（tanh 激活），不再贪心逐层。
+- `trit_train_tasks` 增加 `--dare-rate` / `--dare-per-task` / `--by-block` / `--tune-with-dare` /
+  `--dare-seed`；CIFAR 读数：5 seeds/per-class 200（hidden 16、2 epochs）base
+  **10.2% ± 3.6%**、equal/tuned **9.2% ± 4.1%**；块级 DARE（rate 0.5、block 16、
+  tune-with-dare、2 seeds）base **11.25% ± 2.19%**、equal/tuned **12.45% ± 0.49%**。
+- `trit_train_tasks` 支持 `--hidden 8,16`（任意层）与 `--activation tanh|relu`（端到端反向）；
+  新增 `scripts/trit_train_tasks_smoke.py`（toy 数据 → WSP1 产物 + JSON 字段校验）。
+- 读数：5 seeds / per-class 500 + 块级 DARE（hidden 8,16、tanh、2 epochs）base
+  **11.66% ± 3.93%**、equal/tuned **10.72% ± 2.88%**；更深栈 + relu（hidden 8,16、1 epoch）
+  base **10.65% ± 0.49%**、equal/tuned **10.1% ± 0.28%**。
+- 测试 309 → 319（`trit-train` +2；`cargo test -p trit-wspace -p trit-train`）。
+- `trit-train` 作为 `trit-wspace` 的 dev-dependency（同层 L3）；新增
+  `tests/trit_train_artifacts.rs`（WSP1 往返 + 零任务合并）。
+- 测试 308 → 309（含 1 doctest）。
+- `trit_train_tasks` 新增 `--init modulo|xorshift`（`xorshift` 是 SplitMix64 逐层独立流，
+  由 seed 决定、可复算；`modulo` 保留历史周期 11 口径）与报告字段 `data.init`；
+  `to_net` 改用 `Layer::with_scales`，把训练出的 per-row scale 写进 WSP1（此前恒写 1.0；
+  三值前向读数不变，但 `readout`/合并不再丢 scale）。smoke 增加初始化差异与 scale 行断言。
+- 读数（32×32 彩色、per-class 1000、test 1000、hidden 8,16、tanh、5 seeds）：
+  `modulo` / 2 epochs base **13.50% ± 0.66%**、equal/tuned 9.69% ± 3.39%；
+  `xorshift` / 2 epochs base **13.31% ± 1.37%**、equal/tuned 11.49% ± 1.86%；
+  `xorshift` / 10 epochs base **13.43% ± 1.04%**、equal/tuned 13.95% ± 0.79%。
+  3 层 `8,16,16` / 10 epochs / 1 seed：base 11.16%、equal/tuned 15.96%（单 seed，不作结论）。
+- `trit-train::layer::Adam`：按参数对应的 Adam 状态（beta1 0.9 / beta2 0.999 / eps 1e-8、
+  偏置校正、`step()`）；`TernaryLinear::train_step_with_grad_adam(input, output_grad, latent_opt,
+  scale_opt)` 用 Adam 更新 latent/scale 并返回输入梯度，三值量化与 STE 口径与
+  `train_step_with_grad` 相同。
+- `trit_train_tasks` 训练改用每层 Adam（latent lr 0.02 / scale lr 0.002），每个 epoch 用 seed
+  派生的顺序打乱样本；隐藏层初始 scale 从固定 0.5 改为 `1/sqrt(cols)`（对齐 `cifar_tasks` 口径）。
+  报告新增 `data.optimizer = "adam"` / `data.lr`；`--lr` 可改 latent 步长（scale 固定 `lr × 0.1`）。
+- 读数（32×32 彩色、per-class 1000、test 1000、hidden 64、tanh、10 epochs、5 seeds）：
+  base **15.69% ± 1.21%**、equal/tuned **12.96% ± 2.40%**。同配置 1 seed 对照：旧 SGD
+  12.91%、只修 scale/shuffle 8.14%、Adam 15.04%——瓶颈是优化器，不是 hidden。
+  20 epochs / 2 seeds（同配置）：base **15.71% ± 0.22%**、equal/tuned 14.52% ± 2.21%；
+  epochs 10→20 没有额外收益，说明收敛不是靠训练轮数。
+- 测试 319 → 323（`trit-train` 10 → 14）；变异 `trit-train` **9/9 抓住**（新增 5 条 Adam 变异）。
+
+### Experiments（trit-wspace：32×32 彩色 + f32 基线）
+
+- 夹具：`cifar32.npz` 导出 `train_x32.bin`（1024 维灰度）/`train_x32c.bin`（3072 维彩色）/
+  `test_x32*.bin`；example 的 `--size 32` 直接可用（无需改代码）。
+- 10 类读数（32×32 彩色、hidden 64、per-class 500、5 epochs、3 seeds、2k test）：
+  三值 base **18.10% ± 0.72%**、equal 19.10% ± 2.23%、exact 18.73% ± 2.48%、
+  hamming 18.98% ± 2.17%、argmax **19.42% ± 1.69%**、readout 18.10% ± 0.72%；
+  f32 base **27.35% ± 0.97%**。
+- 二分类（cat/dog、500/类、10 epochs、3 seeds、400 test）：三值 base 43.75% ± 1.50%、
+  argmax/readout **46.75% ± 1.30%**、f32 base **56.0% ± 1.5%**。
+- hidden 128 对照（32×32 彩色、per-class 500、3 seeds、10 epochs）：10 类三值 base
+  **18.20% ± 0.98%**、argmax 18.63% ± 0.84%、f32 **29.83% ± 0.95%**；二分类三值 base
+  **45.17% ± 3.64%**、argmax 45.92% ± 2.36%、f32 **55.33% ± 1.70%**。与 hidden 64 相比：
+  三值 10 类基本持平（18.10% → 18.20%），f32 升 2.5 点；二分类三值升 1.4 点但 std 增大。
+  容量不是三值瓶颈的主因，分辨率/三值编码仍是限制。
+- 5 seeds / per-class 1000 复核（32×32 彩色、hidden 128、10 epochs）：10 类三值 base
+  **18.86% ± 0.47%**、equal 14.70% ± 0.86%、argmax **19.09% ± 0.79%**、f32 **30.31% ± 1.03%**；
+  std 从 0.98 压到 0.47，合并掉点更明显（equal/exact/hamming 14.7–15.2%）。
+- 二分类 5 seeds / per-class 1000 复核（同配置）：三值 base **46.40% ± 1.04%**、equal
+  43.35% ± 2.10%、exact/hamming **46.75% ± 0.97%**、argmax/readout **46.80% ± 1.11%**、
+  f32 **55.15% ± 1.83%**。
+- 二分类 hidden 32/64/128/256 容量曲线（5 seeds、per-class 1000、10 epochs）：
+  · h32：三值 base **45.05% ± 2.22%**、argmax **48.95% ± 2.30%**、f32 **56.00% ± 2.26%**
+  · h64：45.55% ± 3.21%、argmax 47.55% ± 1.35%、f32 55.10% ± 1.92%
+  · h128：46.40% ± 1.04%、argmax 46.80% ± 1.11%、f32 55.15% ± 1.83%
+  · h256：47.75% ± 3.80%、argmax 48.20% ± 4.11%、f32 53.55% ± 1.87%
+  容量 32→256 三值 base +2.7 点但 std 增大到 3.8；f32 反而 −2.45；argmax 在 h32 最高。
+  没有稳定单调容量收益，瓶颈不在容量。
+- 限制：32×32 与 16×16 的训练规模不同（hidden 64 vs 128、per-class 500 vs 1000），
+  不能把差异归因于分辨率。
+### Added（`trit-build`：补齐 M2/M3 的六项遗留，2026-11-08）
+
+- **TRB2 v3：变量名进 blob**。固定头后加 `names_hash u64` + `nvars × (len u8 | UTF-8)`；
+  `--decode` 重建的 `truth.csv` 表头与原表逐字节一致。Rust、C 运行时（`trit_runtime.c`）
+  与 red-team 独立解析器同步支持 v2/v3；v2 仍可解（列名回退 `v0..vN`）。
+  体积：3 变量 31 B（v2 17 B；TRB1 35 B）、12 变量 **106,346 B**（v2 106,300 B；TRB1 132,883 B，−19.97%）。
+- **Ł3/B3 双导轨 Verilog 导出**。K3 保留手写少门公式；Ł3/B3 从该语义 3×3 真值表合成
+  两轨 DNF（`--emit-verilog --algebra lukasiewicz|bochvar`）。验证有三路：测试内位级解释器、
+  `trit-circuit::parse_verilog` 回读 + `propagate`、以及 iverilog 真仿真。
+- **HDL 真仿真**：`--verify-hdl` 生成数组循环的 `design_tb.v` + `expected.mem`，调用
+  iverilog 14/vvp 逐行比对；`(1,1)` 非法导轨也算失败。故意改坏的 `design.v` 会触发
+  `MISMATCH` 退出非 0；0 变量常量表达式也覆盖。
+- **GPU 导出**：`--emit-gpu` 产出 `truth.wgsl`（WGSL 查表内核）、`truth.gpu.bin`
+  （`TGPU` 头 + 2 bit/trit 的 pos/neg 位平面）与 `truth_gpu.json`。`--features gpu` 的
+  wgpu 单测在 RTX 4060 Ti 上对 K3/Ł3/B3 逐 code 对拍，越界 code 输出 0。
+- **e-graph 饱和求解 + 代价模型**：重写到不动点（无新合并即停），`--egraph-rounds` /
+  `--egraph-node-limit` 兜底；`build.json` 的 `verified.egraph` 记录
+  `rounds/eNodes/saturated/cost/nodes`。提取支持 `--cost nodes|gates`；
+  测试构造同一 e-class 验证 nodes 选 `a≡b`、gates 选 `(a∧b)∧c`。
+- **位并行多线程**：按 64 行对齐切块，`--threads 0` 自动（24 逻辑核）。
+  12 变量 531,441 行：标量 297 ms → 单线程位并行 23.7 ms → **3.74 ms（6.3×）**；
+  1/2/3/4/8/auto 线程逐 trit 相同，`truth.csv`/`truth.tritbin`/`lookup.c` 与线程数无关。
+- CLI 新增 `--verify-hdl`、`--emit-gpu`、`--threads`、`--cost`、`--egraph-rounds`、
+  `--egraph-node-limit`；缓存键覆盖所有会改变产物的选项（线程数除外）。
+- 测试：新增 TRB2 v3 名字段（含篡改/UTF-8/不安全字符）、v2 兼容、三语义双导轨回读、
+  iverilog 正反例、GPU 布局与真机对拍、e-graph 饱和/触顶/代价模型、线程一致性等用例。
+  `cargo test -p trit-build -p trit-redteam` 全绿；
+  `cargo clippy -p trit-build -p trit-redteam --all-targets -D warnings` 干净
+  （`trit-build --features gpu` 另跑一条）。
+
+### Added（trit-wspace：任务向量缩放 + 块级 DARE + 分类读数）
+
+- `scale_task`：三值任务算术——`λ>0` 原样、`λ=0` 丢弃、`λ<0` 取反 trit/偏置（scale 差分丢弃）。
+  CLI `task-scale <base> <tuned> --lambda L`，MCP `wsp_task_scale`（工具数 19 → 20）。
+- `dare_drop_blocks`：同一行列按 `col/block` 整块保留/丢弃；`block=1` 退化为坐标级，
+  `block=0` 判 `InvalidBlock`。CLI `dare-drop ... --block N`，MCP `wsp_dare_drop.block`。
+- `wire::classification_value`：per-class 精度 + 混淆矩阵（一维输出按 2 类）；
+  `verify` 与 `task-merge` 的 `verify` 块输出 `classification` / `before_classification` /
+  `after_classification`。
+- `dare_drop_layers`：整层（所有行、所有 trit 与偏置）一起保留/丢弃；CLI `--by-layer`，
+  MCP `wsp_dare_drop.by_layer`（与 `by_row` / `block` 互斥）。
+- `task-scale --lambdas L,L...` / `wsp_task_scale.lambdas`：批量 λ 扫描；配 `--oracle` 时
+  每个 λ 返回 `verify`，批量结果在 `results`（不含 `artifact`）。
+- `task-scale --layer-lambdas L0,L1...` / `wsp_task_scale.layer_lambdas`：按层给系数（每层
+  一个；0 丢弃该层、<0 取反该层），与 `lambda` / `lambdas` 互斥；长度必须等于层数。
+- `task-scale --row-lambdas L...` / `--block-lambdas L... --block-size N`（MCP `row_lambdas` /
+  `block_lambdas` / `block_size`）：按行/按列块缩放；长度分别等于总行数/总块数，与全局/按层
+  λ 互斥。
+- `combine_tasks` / `task-combine <base> --tasks a,b,... --lambdas L,L...` /
+  `wsp_task_combine`：多任务加/减（λ<0 取反、0 丢弃，合并权重取 |λ|）；工具数 20 → 21。
+- `task-scale --row-lambdas-file` / `--block-lambdas-file`（MCP `row_lambdas_map` /
+  `block_lambdas_map`）：稀疏 `(layer,row)` / `(layer,row,block)` 键值对 λ，未给出的行/块默认 1。
+- `task-scale --row-lambdas-patterns` / `--block-lambdas-patterns`（MCP `row_lambdas_patterns` /
+  `block_lambdas_patterns`）：通配/区间/集合模式（`*`、`a-b`、`a|b`）；精确段 > 集合/区间 >
+  通配，未匹配默认 1。
+- 测试 258 → 308 + 1 doctest（新增 `tests/task_scale.rs` 23、`tests/task_scale_patterns.rs` 9、
+  `tests/classification.rs` 4、`tests/dare.rs` +5、`tests/dare_layer.rs` 5、
+  `tests/task_combine.rs` 4）；变异 245 → 300（新增 55 条目标，子集 6/6、4/4、5/5、5/5、
+  36/36、5/5 caught）。
+
+### Added（trit-wspace：合并报告 + 调权网格 + DARE 评估目标）
+
+- `merge_tasks_weighted_report` 返回 `(Net, MergeReport)`：任务数、被零权重忽略的任务数、
+  有票坐标数、平票坐标数、实际 trit/偏置编辑数、写出的 scale 行数。`merge_tasks_weighted`
+  保持返回 `Net`。CLI/MCP 在非 DARE 路径输出 `merge_report`（DARE 路径为 `null`）。
+- `DEFAULT_TUNE_GRID` + `TuneMetric` / `TuneMerge` + `tune_task_weights_metric`：
+  调权可换候选网格与评估合并方式。CLI `--tune-grid G[,G...]`、`--tune-with-dare`；
+  MCP `tune_grid`、`tune_with_dare`。`TuneMerge::{Plain, Dare, PerTaskDare}` 让评估与最终
+  DARE 合并路径对齐。
+- 测试 252 → 258 + 1 doctest（`tests/task_tune.rs` 18 → 24）；变异 234 → 245（新增 11 条目标，
+  其中 PerTaskDare 分支补测后 3/3 caught）。
+- 未证栏：DARE 路径不返回 `merge_report`（只报告投票阶段）；`ties` 定义为“票和为零且票值不全相同”；
+  `tune_grid` 未做去重/上限。
+
+### Experiments（trit-wspace：16×16 彩色 + hidden 128）
+
+- `examples/cifar_tasks.rs` 支持 `--color`（16×16×3 = 768 维）与 `--hidden N`；本地新增 16×16 彩色夹具。
+- 读数：
+  · 二分类 cat-vs-dog（16×16 彩色、hidden 128、每类 500、10 epochs、test 200、5 seeds）：三值 base
+    **49.3% ± 3.5%**、等权 41.6% ± 1.2%、exact/hamming 49.9% ± 2.5%、argmax/readout 48.6% ± 4.0%；
+    **f32 base 53.0% ± 3.3%**。
+  · 10 类（16×16 彩色、hidden 128、每类 200、10 epochs、test 500、3 seeds）：三值 base
+    **16.93% ± 0.61%**、hamming/argmax/readout 17.73–17.8% ± 0.7–0.8%、等权 15.93% ± 0.95%；
+    **f32 base 25.67% ± 0.50%**。
+- 对照 16×16 灰度 hidden 64（CHG-2026-11-08-H）：10 类三值 15.36% → 16.93%（+1.6 点）；
+  二分类三值 47.8% → 49.3%（+1.5 点）。彩色 + 更大 hidden 有小幅提升，但没有改变
+  “三值化仍差 8–9 点、调权只补回一部分”的结论；cat-vs-dog 仍难。
+- 未证栏：32×32 未试（训练成本高）；f32 基线仍是 2 层 MLP；per-class 200–500 的数据量下
+  std 仍大（二分类 ±3.5 点）。
+
+### Experiments（trit-wspace：16×16 输入 + 连续 f32 基线 + 5 seeds）
+
+- `examples/cifar_tasks.rs` 支持 `--size`（8/16，夹具 `{split}_x{size}.bin`）；f32 基线改用**连续灰度输入**
+  （`v/127.5 - 1`），不再把输入三值化——三值 vs f32 的差异现在同时覆盖输入与权重。
+- 5 seeds（7–11）读数：
+  · 10 类（16×16、hidden 64、每类 500、10 epochs、test 1000）：三值 base **15.36% ± 0.59%**，
+    argmax 调权 15.22% ± 0.99%；**f32 base 26.28% ± 1.22%**。
+  · 二分类 cat-vs-dog（16×16、每类 1000、10 epochs、test 400）：三值 base **47.8% ± 1.96%**，
+    等权 49.6% ± 1.56%，调权 **51.05% ± 1.30%**；**f32 base 54.65% ± 2.57%**。
+- 对照 8×8（CHG-2026-11-08-G）：10 类三值 15.67% ± 0.71% → 16×16 15.36% ± 0.59%，
+  分辨率翻倍没有带来精度提升 ⇒ 当前瓶颈是容量/训练/三值化，不是输入分辨率。
+- 结论：完整 f32（连续输入 + 连续权重）仍领先 10.9 点（10 类）/ 6.9 点（二分类 base）；
+  二分类调权后差距缩到 3.6 点；5 seeds 把三值二分类 std 从 ±3.4 点压到 ±2.0 点。
+- 未证栏：网络仍是 2 层 64 隐藏 MLP（未试更大容量/更多 epochs）；cat-vs-dog 本身难；
+  f32 基线只是同架构 2 层 MLP，不是强基线。
+
+### Experiments（trit-wspace：多 seed 均值/方差 + 同架构 f32 基线）
+
+- `examples/cifar_tasks.rs` 增加 `--seeds N`：每个 seed 训练 base + 两个任务并跑四种调权，
+  报告 mean/std；同时训练同架构 f32 MLP（只解除权重三值化，输入/数据/架构/epochs 不变）作基线。
+- 读数（3 seeds：7/8/9）：
+  · 10 类（hidden 64、每类 500、10 epochs、test 1000）：三值 base **15.67% ± 0.71%**，
+    等权 14.73% ± 0.35%，argmax 调权 15.57% ± 0.64%，readout 15.67% ± 0.71%；
+    **f32 base 26.97% ± 0.76%**（权重三值化损失约 11.3 个点）。
+  · 二分类 cat-vs-dog（hidden 64、每类 1000、10 epochs、test 400）：三值 base **47.0% ± 3.4%**，
+    等权 48.0% ± 3.4%，exact/hamming/argmax/readout 调权均 **52.92% ± 2.67%**；
+    **f32 base 56.67% ± 0.38%**（三值 base 差 9.7 点，调权后差 3.7 点）。
+- 结论：权重三值化在本设置下损失约 9–11 个点；任务合并/调权能部分补回（二分类 +5.9 点），
+  但没有追平 f32；10 类的调权收益仍在噪声内（±0.7 点）。
+- 未证栏：输入仍是 8×8 灰度三值（64 维），不是 32×32/彩色；f32 基线只解除权重三值化，
+  不是完整 f32 训练流程；3 个 seed 的 std 仍偏大（二分类 ±3 点）。
+
+### Added（trit-wspace：argmax 一维分类 + readout 置信度目标）
+
+- `tune_task_weights_argmax` 的一维输出改为按符号分类（`>0` 记 1），二分类不再退化成
+  “所有样本同类”。
+- 新增 `tune_task_weights_readout`：用 `Net::readout` 的 f32 连续分数取最大，不先把输出压成
+  三值，能区分“都是 Pos 但分数不同”的类别；CLI/MCP `tune_metric=readout`。
+- CIFAR-10 10 类复测（hidden 64、每类 500、10 epochs）：readout 847→788（-7%，weights
+  `[0, 0]`，argmax 14.9%）、argmax 853→848（weights `[2, 1]`，argmax 15.2%）。
+  readout 分数降得更多，但部署时的三值输出指标没有跟着涨——f32 读数与三值输出存在差距。
+- 测试 248 → 252 + 1 doctest（`tests/task_tune.rs` 14 → 18）；变异 231 → 234（新增 3 条目标）。
+
 ### Added（trit-wspace：argmax 调权目标）
 
 - `tune_task_weights_argmax`：输出与期望各取 argmax 后统计分类错误数，直接优化多类 one-hot 的

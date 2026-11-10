@@ -6,6 +6,71 @@
 
 use crate::quant::{Ste, quantize_with_scale, scale_grad};
 
+/// Adam 优化器状态：与一组参数一一对应。
+///
+/// 只存一阶/二阶矩与步数；`lr`、`beta`、`eps` 是构造时固定的超参数。
+#[derive(Clone, Debug)]
+pub struct Adam {
+    lr: f32,
+    beta1: f32,
+    beta2: f32,
+    eps: f32,
+    step: u32,
+    bias1: f32,
+    bias2: f32,
+    m: Vec<f32>,
+    v: Vec<f32>,
+}
+
+impl Adam {
+    /// 新建：`size` 是参数个数，`lr` 是步长。
+    pub fn new(size: usize, lr: f32) -> Self {
+        Self {
+            lr,
+            beta1: 0.9,
+            beta2: 0.999,
+            eps: 1e-8,
+            step: 0,
+            bias1: 1.0,
+            bias2: 1.0,
+            m: vec![0.0; size],
+            v: vec![0.0; size],
+        }
+    }
+
+    /// 参数个数。
+    pub fn len(&self) -> usize {
+        self.m.len()
+    }
+
+    /// 是否没有参数。
+    pub fn is_empty(&self) -> bool {
+        self.m.is_empty()
+    }
+
+    /// 已执行步数。
+    pub fn step(&self) -> u32 {
+        self.step
+    }
+
+    fn begin(&mut self) {
+        self.step = self.step.saturating_add(1);
+        let t = self.step as i32;
+        self.bias1 = 1.0 - self.beta1.powi(t);
+        self.bias2 = 1.0 - self.beta2.powi(t);
+    }
+
+    fn apply(&mut self, index: usize, grad: f32, value: f32) -> f32 {
+        let m = &mut self.m[index];
+        *m = self.beta1 * *m + (1.0 - self.beta1) * grad;
+        let v = &mut self.v[index];
+        *v = self.beta2 * *v + (1.0 - self.beta2) * grad * grad;
+        let m_hat = *m / self.bias1;
+        let v_hat = *v / self.bias2;
+        value - self.lr * m_hat / (v_hat.sqrt() + self.eps)
+    }
+}
+
 /// 一个三值线性层。
 #[derive(Clone, Debug)]
 pub struct TernaryLinear {
@@ -127,6 +192,67 @@ impl TernaryLinear {
         }
         loss
     }
+
+    /// 用输出梯度更新一层，并返回输入梯度（供上一层反向）。
+    ///
+    /// `output_grad[r] = ∂L/∂y[r]`；内部按 STE 更新 latent/scale，返回
+    /// `∂L/∂x[c] = Σ_r output_grad[r] · scale[r] · q[r,c]`（用更新前的三值权重）。
+    pub fn train_step_with_grad(&mut self, input: &[f32], output_grad: &[f32]) -> Vec<f32> {
+        assert_eq!(input.len(), self.cols, "输入长度必须是 cols");
+        assert_eq!(output_grad.len(), self.rows, "梯度长度必须是 rows");
+        let mut input_grad = vec![0.0f32; self.cols];
+        let (lr, ste, cols) = (self.lr, self.ste, self.cols);
+        for (r, &dy_r) in output_grad.iter().enumerate() {
+            let scale = self.scale[r];
+            let row = &self.latent[r * cols..(r + 1) * cols];
+            let q = quantize_with_scale(row, scale);
+            for (c, &xc) in input.iter().enumerate() {
+                input_grad[c] += dy_r * scale * f32::from(q[c]);
+                let grad_q = dy_r * scale * xc;
+                let idx = r * cols + c;
+                let grad = ste.backward(self.latent[idx], scale, grad_q);
+                self.latent[idx] -= lr * grad;
+            }
+            self.scale[r] = (scale - lr * dy_r * scale_grad(&q, input)).max(1e-4);
+        }
+        input_grad
+    }
+
+    /// 用 Adam 更新一层，并返回输入梯度（供上一层反向）。
+    ///
+    /// 三值量化与 STE 口径与 [`Self::train_step_with_grad`] 相同；`latent_opt` /
+    /// `scale_opt` 的参数个数必须分别是 `rows * cols` / `rows`。
+    pub fn train_step_with_grad_adam(
+        &mut self,
+        input: &[f32],
+        output_grad: &[f32],
+        latent_opt: &mut Adam,
+        scale_opt: &mut Adam,
+    ) -> Vec<f32> {
+        assert_eq!(input.len(), self.cols, "输入长度必须是 cols");
+        assert_eq!(output_grad.len(), self.rows, "梯度长度必须是 rows");
+        assert_eq!(latent_opt.len(), self.latent.len(), "latent 优化器大小");
+        assert_eq!(scale_opt.len(), self.rows, "scale 优化器大小");
+        latent_opt.begin();
+        scale_opt.begin();
+        let (ste, cols) = (self.ste, self.cols);
+        let mut input_grad = vec![0.0f32; self.cols];
+        for (r, &dy_r) in output_grad.iter().enumerate() {
+            let scale = self.scale[r];
+            let row = &self.latent[r * cols..(r + 1) * cols];
+            let q = quantize_with_scale(row, scale);
+            for (c, &xc) in input.iter().enumerate() {
+                input_grad[c] += dy_r * scale * f32::from(q[c]);
+                let grad_q = dy_r * scale * xc;
+                let idx = r * cols + c;
+                let grad = ste.backward(self.latent[idx], scale, grad_q);
+                self.latent[idx] = latent_opt.apply(idx, grad, self.latent[idx]);
+            }
+            let grad_scale = dy_r * scale_grad(&q, input);
+            self.scale[r] = scale_opt.apply(r, grad_scale, scale).max(1e-4);
+        }
+        input_grad
+    }
 }
 
 /// `q·x`，`q ∈ {-1,0,+1}`；可选软件预取（每 16 个元素预取 32 个后）。
@@ -240,5 +366,140 @@ mod tests {
         for (got, want) in y.iter().zip(&want) {
             assert!((got - want).abs() < 1e-5, "{got} vs {want}");
         }
+    }
+
+    #[test]
+    fn grad_step_matches_train_step_for_output_layer() {
+        let mut a = TernaryLinear::new(
+            2,
+            3,
+            |r, c| ((r * 7 + c * 5) as f32) / 9.0 - 0.4,
+            Ste::Identity,
+            0.05,
+            1.0,
+        );
+        let mut b = a.clone();
+        let input = [0.5, -1.0, 0.25];
+        let target = [0.2, -0.1];
+        let y = b.forward(&input);
+        let dy: Vec<f32> = y.iter().zip(&target).map(|(y, t)| y - t).collect();
+        a.train_step(&input, &target);
+        let _ = b.train_step_with_grad(&input, &dy);
+        for (x, y) in a.latent().iter().zip(b.latent()) {
+            assert!((x - y).abs() < 1e-6);
+        }
+        for (x, y) in a.scales().iter().zip(b.scales()) {
+            assert!((x - y).abs() < 1e-6);
+        }
+    }
+
+    #[test]
+    fn grad_step_returns_input_gradient() {
+        let mut layer = TernaryLinear::new(
+            2,
+            2,
+            |r, c| if r == c { 1.0 } else { 0.0 },
+            Ste::Identity,
+            0.0,
+            1.0,
+        );
+        let input = [2.0, -3.0];
+        let grad = layer.train_step_with_grad(&input, &[1.0, -1.0]);
+        assert_eq!(grad, vec![1.0, -1.0]);
+    }
+
+    fn train_all_adam(steps: usize) -> (TernaryLinear, f32) {
+        let (rows, cols) = (2usize, 3usize);
+        let mut layer = TernaryLinear::new(
+            rows,
+            cols,
+            |r, c| ((r * 7 + c * 5) as f32) / 9.0 - 0.4,
+            Ste::Identity,
+            0.05,
+            0.5,
+        );
+        let mut latent_opt = Adam::new(rows * cols, 0.05);
+        let mut scale_opt = Adam::new(rows, 0.005);
+        let mut data = 0xdead_beef_0bad_f00du64;
+        for _ in 0..steps {
+            let x = sample_x(&mut data, cols);
+            let y: Vec<f32> = (0..rows)
+                .map(|r| (0..cols).map(|c| target(r, c) * x[c]).sum())
+                .collect();
+            let out = layer.forward(&x);
+            let dy: Vec<f32> = out.iter().zip(&y).map(|(o, t)| o - t).collect();
+            layer.train_step_with_grad_adam(&x, &dy, &mut latent_opt, &mut scale_opt);
+        }
+        let x = sample_x(&mut data, cols);
+        let y: Vec<f32> = (0..rows)
+            .map(|r| (0..cols).map(|c| target(r, c) * x[c]).sum())
+            .collect();
+        let out = layer.forward(&x);
+        let loss = out
+            .iter()
+            .zip(&y)
+            .map(|(o, t)| 0.5 * (o - t).powi(2))
+            .sum::<f32>()
+            / rows as f32;
+        (layer, loss)
+    }
+
+    #[test]
+    fn adam_learns_ternary_targets() {
+        let (layer, loss) = train_all_adam(4000);
+        assert!(loss < 0.05, "loss={loss}");
+        let q = layer.quantized();
+        let hits: usize = q
+            .iter()
+            .enumerate()
+            .map(|(r, row)| {
+                row.iter()
+                    .enumerate()
+                    .filter(|&(c, &got)| f32::from(got) == target(r, c))
+                    .count()
+            })
+            .sum();
+        assert!(hits >= 4, "q={q:?}");
+    }
+
+    #[test]
+    fn adam_first_step_matches_closed_form() {
+        let mut layer = TernaryLinear::new(1, 1, |_, _| 1.0, Ste::Identity, 0.0, 1.0);
+        let mut latent_opt = Adam::new(1, 0.1);
+        let mut scale_opt = Adam::new(1, 0.0);
+        // 输入 1、输出梯度 2 ⇒ ∂L/∂latent = 2；第一步 mhat=2、vhat=4。
+        layer.train_step_with_grad_adam(&[1.0], &[2.0], &mut latent_opt, &mut scale_opt);
+        let got = layer.latent()[0];
+        assert!(
+            (got - 0.9).abs() < 1e-5,
+            "latent={got}（偏置校正后应为 1 - 0.1 = 0.9）"
+        );
+    }
+
+    #[test]
+    fn adam_counts_steps_per_layer_call() {
+        let mut layer = TernaryLinear::new(2, 3, |_, _| 0.1, Ste::Identity, 0.05, 0.5);
+        let mut latent_opt = Adam::new(6, 0.05);
+        let mut scale_opt = Adam::new(2, 0.005);
+        assert_eq!(latent_opt.step(), 0);
+        for _ in 0..3 {
+            layer.train_step_with_grad_adam(
+                &[1.0, 0.0, 0.0],
+                &[1.0, -1.0],
+                &mut latent_opt,
+                &mut scale_opt,
+            );
+        }
+        assert_eq!(latent_opt.step(), 3);
+        assert_eq!(scale_opt.step(), 3);
+    }
+
+    #[test]
+    #[should_panic(expected = "latent 优化器大小")]
+    fn adam_rejects_wrong_latent_state() {
+        let mut layer = TernaryLinear::new(2, 3, |_, _| 0.1, Ste::Identity, 0.05, 0.5);
+        let mut latent_opt = Adam::new(5, 0.05);
+        let mut scale_opt = Adam::new(2, 0.005);
+        layer.train_step_with_grad_adam(&[0.0; 3], &[0.0; 2], &mut latent_opt, &mut scale_opt);
     }
 }

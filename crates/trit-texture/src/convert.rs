@@ -186,12 +186,12 @@ mod tests {
     fn downgrade_rejects_mip_chains_and_model_kind() {
         let pixels = sample(16, 16);
         let mips = rgba_to_ttx2_mips(&pixels, 16, 16).unwrap();
-        // 8×20 的下一级 4×10 仍对齐 ⇒ 至少两级；降级必须拒绝。
+        // 16×16 的下一级 8×8 仍对齐 ⇒ 至少两级；降级必须拒绝。
         assert!(matches!(
             ttx2_to_ttx1(&mips),
             Err(TextureError::TtxMip { level: 1 })
         ));
-        // 取级钉死：mip 链解码取**第 0 级**（8×20），不是末级。
+        // 取级钉死：mip 链解码取**第 0 级**（16×16），不是末级。
         let level0 = ttx2_to_rgba(&mips).unwrap();
         assert_eq!((level0.width, level0.height), (16, 16));
         // MOD 不是图：ttx2_to_rgba 显式拒绝。
@@ -239,7 +239,7 @@ mod tests {
             );
             assert_eq!(coarse.rgba[3], 255, "alpha 恒 255");
         }
-        // 8×20 → 4×10 →（2 或 5 不再对齐）停：恰好两级。
+        // 16×16 → 8×8 →（4×4 小于块、不再对齐）停：恰好两级。
         let levels = build_mip_chain(&pixels, 16, 16).unwrap();
         assert_eq!(
             levels

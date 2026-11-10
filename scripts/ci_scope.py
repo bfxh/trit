@@ -40,7 +40,11 @@ for _stream in (sys.stdout, sys.stderr):
 
 NAME_OK = re.compile(r"^[A-Za-z0-9_.-]+$")
 # 需要单独 feature 才编译得到的 crate：闭包里含它，才跑那条 step。
-FEATURE_GATES = {"needs_png": ("png", "trit-texture"), "needs_gpu": ("gpu", "trit-gpu")}
+FEATURE_GATES = {
+    "needs_png": ("png", "trit-texture"),
+    "needs_gpu": ("gpu", "trit-gpu"),
+    "needs_build_gpu": ("gpu", "trit-build"),
+}
 # 闭包占全仓的比例阈值：超过就全量。
 CLOSURE_RATIO = 2.0 / 3.0
 
@@ -220,6 +224,7 @@ def emit(decision: dict, mode: str, stream) -> None:
         "full",
         "needs_png",
         "needs_gpu",
+        "needs_build_gpu",
         "crates",
         "changed",
         "args",

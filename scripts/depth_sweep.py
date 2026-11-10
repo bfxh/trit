@@ -238,7 +238,8 @@ def detect_gpu_pool(bin_path):
     """探测卡池；失败按 `[0]`。"""
     try:
         p = subprocess.run(
-            [str(bin_path), "--list-gpus"], capture_output=True, text=True, timeout=60
+            [str(bin_path), "--list-gpus"], capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=60
         )
         if p.returncode != 0:
             return [0]

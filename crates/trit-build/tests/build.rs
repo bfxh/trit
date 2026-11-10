@@ -64,10 +64,11 @@ fn build_emits_artifacts_and_is_incremental() {
     let csv = fs::read_to_string(out.join("truth.csv")).unwrap();
     // 3 变量 → 27 行 + 表头。
     assert_eq!(csv.lines().count(), 28, "{csv}");
-    // TRB2：27 + 3（CRC-3）trit → 5 trit/字节 = 6 字节，头 11 字节。
+    // TRB2 v3：27 + 3（CRC-3）trit → 5 trit/字节 = 6 字节；固定头 19 + 名字段 3×(1+1)。
     let blob = fs::read(out.join("truth.tritbin")).unwrap();
     assert_eq!(&blob[..4], b"TRB2");
-    assert_eq!(blob.len(), 11 + 6, "blob 大小 {}", blob.len());
+    assert_eq!(blob[4], 3, "新产物必须是 v3（带变量名）");
+    assert_eq!(blob.len(), 19 + 6 + 6, "blob 大小 {}", blob.len());
 
     // 第二次：命中缓存，不重写产物。
     let (stdout2, _, code2) = run(&[src, "--out", outdir]);

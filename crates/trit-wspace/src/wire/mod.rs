@@ -473,6 +473,62 @@ pub fn metrics_value(net: &Net, oracle: &Oracle) -> Result<Value> {
     }))
 }
 
+/// 分类读数：per-class 精度与混淆矩阵（期望类别 × 预测类别）。
+///
+/// 一维输出按符号分类（2 类）；多维输出按最大 trit 的位置分类。输出维度同时作为
+/// 类别数。样本的期望类别与预测类别都落在 `0..classes`（越界样本不计入）。
+pub fn classification_value(net: &Net, oracle: &Oracle) -> Result<Value> {
+    let actual = oracle.outputs_of(net)?;
+    let expected = oracle.outputs();
+    let classes = expected
+        .first()
+        .map_or(1, |row| if row.len() == 1 { 2 } else { row.len() });
+    let mut confusion = vec![vec![0usize; classes]; classes];
+    let mut counts = vec![0usize; classes];
+    let mut correct = vec![0usize; classes];
+    for (got, want) in actual.iter().zip(expected) {
+        let want_class = class_of(want);
+        let got_class = class_of(got);
+        if want_class < classes && got_class < classes {
+            confusion[want_class][got_class] += 1;
+            counts[want_class] += 1;
+            if want_class == got_class {
+                correct[want_class] += 1;
+            }
+        }
+    }
+    let per_class: Vec<Value> = (0..classes)
+        .map(|label| {
+            json!({
+                "label": label,
+                "count": counts[label],
+                "correct": correct[label],
+                "accuracy": if counts[label] == 0 { 0.0 } else { correct[label] as f64 / counts[label] as f64 },
+            })
+        })
+        .collect();
+    Ok(json!({
+        "classes": classes,
+        "per_class": per_class,
+        "confusion": confusion,
+    }))
+}
+
+fn class_of(values: &[Trit]) -> usize {
+    if values.len() == 1 {
+        return usize::from(values[0].to_i8() > 0);
+    }
+    let mut best = 0usize;
+    let mut best_value = i8::MIN;
+    for (index, trit) in values.iter().enumerate() {
+        if trit.to_i8() > best_value {
+            best_value = trit.to_i8();
+            best = index;
+        }
+    }
+    best
+}
+
 /// 失配见证 → JSON；`limit` 控制返回条数（`count` 始终是全量）。
 pub fn mismatches_value(net: &Net, oracle: &Oracle, limit: usize) -> Result<Value> {
     let actual = oracle.outputs_of(net)?;

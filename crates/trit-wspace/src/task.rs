@@ -13,16 +13,15 @@ use crate::codec::checksum;
 use crate::edit::{Edit, Patch};
 use crate::error::{Error, Result};
 use crate::net::Net;
-use crate::oracle::Oracle;
 use crate::trit::Trit;
 
 /// 相对某个基准网络的任务向量。
 #[derive(Clone, Debug, PartialEq)]
 pub struct TaskVector {
-    base: u64,
-    edits: Vec<Edit>,
+    pub(crate) base: u64,
+    pub(crate) edits: Vec<Edit>,
     /// 与基准不同的逐行 scale：`(layer, row, target)`。
-    scales: Vec<(usize, usize, f32)>,
+    pub(crate) scales: Vec<(usize, usize, f32)>,
 }
 
 impl TaskVector {
@@ -189,7 +188,67 @@ pub fn merge_tasks(base: &Net, tasks: &[TaskVector]) -> Result<Net> {
 /// （它的 trit/偏置票不进投票，scale 也不进统计）。权重全为 1 时与
 /// [`merge_tasks`] 逐位一致。scale 用**加权中位数**：排序后取累计权重达到总权重
 /// 一半处的值，恰好落在两个值之间时取平均（等权时退化为普通中位数）。
+/// 合并报告：投票/平票/忽略/改动/scale 行数。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MergeReport {
+    tasks: usize,
+    ignored_tasks: usize,
+    voted: usize,
+    ties: usize,
+    changed: usize,
+    scale_rows: usize,
+}
+
+impl MergeReport {
+    /// 参与合并的任务数。
+    #[must_use]
+    pub fn tasks(&self) -> usize {
+        self.tasks
+    }
+
+    /// 权重为 0、完全不参与的任务数。
+    #[must_use]
+    pub fn ignored_tasks(&self) -> usize {
+        self.ignored_tasks
+    }
+
+    /// 至少收到一票的坐标数。
+    #[must_use]
+    pub fn voted(&self) -> usize {
+        self.voted
+    }
+
+    /// 平票（票和为零且票值不全相同）而保留基准的坐标数。
+    #[must_use]
+    pub fn ties(&self) -> usize {
+        self.ties
+    }
+
+    /// 实际写出的 trit/偏置编辑数。
+    #[must_use]
+    pub fn changed(&self) -> usize {
+        self.changed
+    }
+
+    /// 实际写出的 scale 行数。
+    #[must_use]
+    pub fn scale_rows(&self) -> usize {
+        self.scale_rows
+    }
+}
+
+/// 多任务加权合并：返回网络（不带报告）。
 pub fn merge_tasks_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<Net> {
+    validate_weights(tasks.len(), weights)?;
+    merge_weighted(base, tasks, weights).map(|(net, _)| net)
+}
+
+/// 多任务加权合并：同时返回投票/平票/忽略等统计。
+pub fn merge_tasks_weighted_report(
+    base: &Net,
+    tasks: &[TaskVector],
+    weights: &[f32],
+) -> Result<(Net, MergeReport)> {
     validate_weights(tasks.len(), weights)?;
     merge_weighted(base, tasks, weights)
 }
@@ -213,11 +272,12 @@ fn validate_weights(task_count: usize, weights: &[f32]) -> Result<()> {
     Ok(())
 }
 
-fn merge_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<Net> {
+fn merge_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<(Net, MergeReport)> {
     let base_checksum = checksum(base);
     if tasks.iter().any(|task| task.base != base_checksum) {
         return Err(Error::Audit("任务向量的基准工件不一致".into()));
     }
+    let ignored_tasks = weights.iter().filter(|weight| **weight == 0.0).count();
     let mut votes: BTreeMap<(usize, usize, usize), Vec<(Trit, f64)>> = BTreeMap::new();
     for (task, weight) in tasks.iter().zip(weights) {
         let weighted = f64::from(*weight);
@@ -243,6 +303,8 @@ fn merge_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<N
             }
         }
     }
+    let voted = votes.len();
+    let mut ties = 0usize;
     let mut weighted_edits = Vec::new();
     for ((layer, row, col), targets) in votes {
         let current = current_value(base, layer, row, col)?;
@@ -257,6 +319,7 @@ fn merge_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<N
         } else if targets.iter().all(|(target, _)| *target == targets[0].0) {
             targets[0].0
         } else {
+            ties += 1;
             current
         };
         if merged != current {
@@ -276,6 +339,7 @@ fn merge_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<N
             });
         }
     }
+    let changed = weighted_edits.len();
     let mut scale_votes: BTreeMap<(usize, usize), Vec<(f32, f64)>> = BTreeMap::new();
     for (task, weight) in tasks.iter().zip(weights) {
         if *weight == 0.0 {
@@ -305,10 +369,21 @@ fn merge_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<N
             });
         }
     }
+    let scale_rows = scales.len();
     let mut net = base.clone();
     Patch::new(weighted_edits).apply(&mut net)?;
     Patch::new(scales).apply(&mut net)?;
-    Ok(net)
+    Ok((
+        net,
+        MergeReport {
+            tasks: tasks.len(),
+            ignored_tasks,
+            voted,
+            ties,
+            changed,
+            scale_rows,
+        },
+    ))
 }
 
 fn weighted_median(mut items: Vec<(f32, f64)>) -> Option<f32> {
@@ -501,168 +576,6 @@ pub fn merge_tasks_per_task_dare(
     }
     Patch::new(rescale).apply(&mut net)?;
     Ok(net)
-}
-
-/// 用验证集选任务权重的结果。
-#[derive(Clone, Debug, PartialEq)]
-pub struct WeightTuning {
-    weights: Vec<f32>,
-    loss: usize,
-    initial_loss: usize,
-    evaluations: usize,
-}
-
-impl WeightTuning {
-    /// 选出的权重（与任务顺序对应）。
-    #[must_use]
-    pub fn weights(&self) -> &[f32] {
-        &self.weights
-    }
-
-    /// 调优后的验证集失配数。
-    #[must_use]
-    pub fn loss(&self) -> usize {
-        self.loss
-    }
-
-    /// 等权起点的验证集失配数。
-    #[must_use]
-    pub fn initial_loss(&self) -> usize {
-        self.initial_loss
-    }
-
-    /// 实际做了多少次“合并 + 验证集前向”。
-    #[must_use]
-    pub fn evaluations(&self) -> usize {
-        self.evaluations
-    }
-}
-
-/// 坐标下降的候选权重：0 表示忽略该任务，2 表示加倍。
-const TUNE_CANDIDATES: [f32; 4] = [0.0, 0.5, 1.0, 2.0];
-
-/// 用验证集坐标下降地选任务权重：每轮对每个任务试候选集，保留验证集 `loss` 更小的。
-///
-/// 从等权（全 1）出发；每轮按任务顺序更新，只有 `loss` 严格下降才接受；某轮没有任何改进
-/// 就提前停。评估的是**加权投票合并**（不含 DARE），调用方拿到权重后再执行自己需要的
-/// 合并次序。`rounds=0` 返回等权与等权 loss（只做一次评估）。空任务判错。
-/// 用验证集（逐样本完全匹配）选任务权重。
-pub fn tune_task_weights(
-    base: &Net,
-    tasks: &[TaskVector],
-    oracle: &Oracle,
-    rounds: usize,
-) -> Result<WeightTuning> {
-    tune_task_weights_with(base, tasks, rounds, |net| oracle.loss(net))
-}
-
-/// 用验证集的**逐位 Hamming 失配数**选任务权重。
-///
-/// 多类 one-hot 输出下，逐样本完全匹配几乎恒满（无信号）；逐位统计能把“接近”与“全错”
-/// 区分开。目标越小越好，其余行为与 [`tune_task_weights`] 相同。
-pub fn tune_task_weights_hamming(
-    base: &Net,
-    tasks: &[TaskVector],
-    oracle: &Oracle,
-    rounds: usize,
-) -> Result<WeightTuning> {
-    tune_task_weights_with(base, tasks, rounds, |net| hamming_loss(oracle, net))
-}
-
-/// 通用调权：`evaluate` 给一个候选网络打分，越小越好。
-///
-/// 从等权（全 1）出发；每轮对每个任务试候选集，只有分数严格下降才接受；某轮没有任何
-/// 改进就提前停。评估的是**加权投票合并**（不含 DARE）。`rounds=0` 返回等权与等权分数
-/// （只做一次评估）。空任务判错。
-pub fn tune_task_weights_with(
-    base: &Net,
-    tasks: &[TaskVector],
-    rounds: usize,
-    evaluate: impl Fn(&Net) -> Result<usize>,
-) -> Result<WeightTuning> {
-    if tasks.is_empty() {
-        return Err(Error::Audit("调优需要至少一个任务".into()));
-    }
-    let mut weights = vec![1.0_f32; tasks.len()];
-    let mut best_loss = evaluate(&merge_tasks_weighted(base, tasks, &weights)?)?;
-    let initial_loss = best_loss;
-    let mut evaluations = 1usize;
-    for _ in 0..rounds {
-        let mut improved = false;
-        for index in 0..weights.len() {
-            for &candidate in &TUNE_CANDIDATES {
-                if candidate == weights[index] {
-                    continue;
-                }
-                let mut trial = weights.clone();
-                trial[index] = candidate;
-                let loss = evaluate(&merge_tasks_weighted(base, tasks, &trial)?)?;
-                evaluations += 1;
-                if loss < best_loss {
-                    best_loss = loss;
-                    weights[index] = candidate;
-                    improved = true;
-                }
-            }
-        }
-        if !improved {
-            break;
-        }
-    }
-    Ok(WeightTuning {
-        weights,
-        loss: best_loss,
-        initial_loss,
-        evaluations,
-    })
-}
-
-/// 逐位 Hamming 失配数（所有样本、所有输出位）。
-/// 用验证集的**分类错误数**（输出与期望各自取 argmax）选任务权重。
-///
-/// 期望向量按 argmax 解释（通常是 one-hot）；一维输出会退化成“所有样本 argmax=0”，
-/// 这时应改用 [`tune_task_weights`] 或 [`tune_task_weights_hamming`]。
-pub fn tune_task_weights_argmax(
-    base: &Net,
-    tasks: &[TaskVector],
-    oracle: &Oracle,
-    rounds: usize,
-) -> Result<WeightTuning> {
-    tune_task_weights_with(base, tasks, rounds, |net| argmax_loss(oracle, net))
-}
-
-/// 分类错误数：输出与期望分别取 argmax 后比较。
-fn argmax_loss(oracle: &Oracle, net: &Net) -> Result<usize> {
-    let actual = oracle.outputs_of(net)?;
-    let expected = oracle.outputs();
-    Ok(actual
-        .iter()
-        .zip(expected)
-        .map(|(got, want)| usize::from(argmax(got) != argmax(want)))
-        .sum())
-}
-
-fn argmax(values: &[Trit]) -> usize {
-    let mut best = 0usize;
-    let mut best_value = i8::MIN;
-    for (index, trit) in values.iter().enumerate() {
-        let value = trit.to_i8();
-        if value > best_value {
-            best_value = value;
-            best = index;
-        }
-    }
-    best
-}
-
-fn hamming_loss(oracle: &Oracle, net: &Net) -> Result<usize> {
-    let actual = oracle.outputs_of(net)?;
-    let expected = oracle.outputs();
-    Ok(actual
-        .iter()
-        .zip(expected)
-        .map(|(got, want)| got.iter().zip(want).filter(|(a, b)| a != b).count())
-        .sum())
 }
 
 fn current_value(base: &Net, layer: usize, row: usize, col: usize) -> Result<Trit> {
