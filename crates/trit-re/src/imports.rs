@@ -176,9 +176,72 @@ pub fn classify(imports: &[String]) -> BTreeMap<&'static str, Vec<String>> {
     hits
 }
 
+/// Windows 侧动态解析词汇表：注入/凭据家族的全部桶内 API 名
+///（随 BUCKETS 自动同步）；load 家族不入表（良性串太多）。
+pub fn windows_sensitive_vocab() -> Vec<&'static str> {
+    BUCKETS
+        .iter()
+        .filter(|b| b.id.starts_with("imports.inj.") || b.id == "imports.credential")
+        .flat_map(|b| b.apis.iter().copied())
+        .collect()
+}
+
+/// Linux 侧敏感 API 词汇表（dlsym 动态解析的目标面）。保守选择：
+/// 经典注入/文件无痕/跨进程读写/内核钥匙环——**刻意排除 mmap/socket 等
+/// 万能常态调用**（良性二进制几乎全带，做了就是全量误报）。
+pub const LINUX_SENSITIVE_APIS: &[&str] = &[
+    "ptrace",
+    "process_vm_readv",
+    "process_vm_writev",
+    "memfd_create",
+    "pidfd_getfd",
+    "keyctl",
+    "init_module",
+    "finit_module",
+];
+
+/// 动态解析链的字符串证据：数据段里出现「敏感 API 名 + NUL」字面串，
+/// 且该 API **不在导入表/动态符号表**——表里可见的 API 不算"藏"。
+/// 只搜 ASCII、名字 ≥6 字符（短名误报率高）。调用方给非可执行节的
+/// 字节切片（可执行节里的栈串形态是下一层）+ 平台词汇表
+///（PE = [`windows_sensitive_vocab`]，ELF = [`LINUX_SENSITIVE_APIS`]）。
+pub fn hidden_api_strings(
+    slices: &[&[u8]],
+    imported_apis: &std::collections::BTreeSet<String>,
+    vocab: &[&'static str],
+) -> Vec<&'static str> {
+    let mut found = std::collections::BTreeSet::new();
+    for &name in vocab {
+        if name.len() < 6 || imported_apis.contains(name) {
+            continue;
+        }
+        let mut needle = name.as_bytes().to_vec();
+        needle.push(0);
+        for slice in slices {
+            if slice.windows(needle.len()).any(|w| w == needle.as_slice()) {
+                found.insert(name);
+                break;
+            }
+        }
+    }
+    found.into_iter().collect()
+}
+
+/// 动态解析器是否在导入表（链的前半段证据）：PE = `GetProcAddress`，
+/// ELF = `dlsym`（调用方给解析器名单；`api_name` 已剥版本后缀）。
+pub fn resolver_imported(imports: &[String], resolvers: &[&str]) -> bool {
+    imports.iter().any(|i| {
+        let api = api_name(i);
+        resolvers.iter().any(|r| r.eq_ignore_ascii_case(api))
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{api_name, classify};
+    use super::{
+        LINUX_SENSITIVE_APIS, api_name, classify, hidden_api_strings, resolver_imported,
+        windows_sensitive_vocab,
+    };
 
     #[test]
     fn strips_dll_and_version() {
@@ -214,5 +277,37 @@ mod tests {
     #[test]
     fn unknown_apis_stay_unclassified() {
         assert!(classify(&["KERNEL32.dll!ExitProcess".to_string()]).is_empty());
+    }
+
+    #[test]
+    fn hidden_api_strings_skips_imported_and_short() {
+        use std::collections::BTreeSet;
+        let mut imported = BTreeSet::new();
+        imported.insert("VirtualAllocEx".to_string()); // 已导入 = 可见，不算"藏"
+        let slice = b"padding\x00WriteProcessMemory\x00tail\x00VirtualAllocEx\x00" as &[u8];
+        let found = hidden_api_strings(&[slice], &imported, &windows_sensitive_vocab());
+        assert_eq!(found, vec!["WriteProcessMemory"], "已导入的被排除");
+        // 短名（<6 字符）不入词汇表：误报率高
+        let short = b"x\x00sed\x00tail\x00" as &[u8];
+        assert!(
+            hidden_api_strings(&[short], &BTreeSet::new(), &windows_sensitive_vocab()).is_empty()
+        );
+        // Linux 词汇表：ptrace 族命中
+        let linux = b"data\x00ptrace\x00tail\x00" as &[u8];
+        assert_eq!(
+            hidden_api_strings(&[linux], &BTreeSet::new(), LINUX_SENSITIVE_APIS),
+            vec!["ptrace"]
+        );
+    }
+
+    #[test]
+    fn resolver_imported_matches_case_insensitively() {
+        let imports = vec![
+            "KERNEL32.dll!GetModuleHandleA".to_string(),
+            "KERNEL32.dll!getprocaddress".to_string(),
+        ];
+        assert!(resolver_imported(&imports, &["GetProcAddress"]));
+        assert!(resolver_imported(&imports, &["GetModuleHandleA"]));
+        assert!(!resolver_imported(&imports, &["dlsym"]));
     }
 }

@@ -1,0 +1,47 @@
+[
+ {
+  "name": "tech_collide: 同技术撞车不拦",
+  "file": "scripts/tech_collide.py",
+  "old": "            if shared:",
+  "new": "            if False:",
+  "pkg": "scripts/tech_collide.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "tech_collide: 过期声明也算在效期",
+  "file": "scripts/tech_collide.py",
+  "old": "    return claim[\"claimed_at\"] + claim[\"ttl_min\"] * 60 >= now",
+  "new": "    return True",
+  "pkg": "scripts/tech_collide.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "tech_collide: 未命中条目不提示",
+  "file": "scripts/tech_collide.py",
+  "old": "        if not hits[f\"{claim['id']}|{claim['who']}\"]:",
+  "new": "        if False:",
+  "pkg": "scripts/tech_collide.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "tech_collide: 异域告警阈值设成不可能命中",
+  "file": "scripts/tech_collide.py",
+  "old": "SHARED_TAGS_TO_WARN = 2",
+  "new": "SHARED_TAGS_TO_WARN = 99",
+  "pkg": "scripts/tech_collide.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "tech_collide: 读不到索引当成没事",
+  "file": "scripts/tech_collide.py",
+  "old": "        print(f\"FAIL 读不到声明或技术索引：{claims_path} / {tech_path} —— 不知道有没有撞车不等于没撞车\")\n        return 1",
+  "new": "        print(\"OK 读不到索引，按没撞车处理\")\n        return 0",
+  "pkg": "scripts/tech_collide.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

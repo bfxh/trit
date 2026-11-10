@@ -713,8 +713,8 @@
  {
   "name": "gitflow: 落后主干却报成功（把该并主干的活吞掉）",
   "file": "scripts/gitflow.py",
-  "old": "            print(\"  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply\")\n            return 1",
-  "new": "            print(\"  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply\")\n            return 0",
+  "old": "                print(\"  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply\")\n                return 1",
+  "new": "                print(\"  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply\")\n                return 0",
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
@@ -886,6 +886,60 @@
   "file": "scripts/gitflow.py",
   "old": "        if any(mark in reason for mark in MERGE_BLOCKED_FOREVER):",
   "new": "        if True:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: --auto-sync 被吞（说要自动同步其实从不）",
+  "file": "scripts/gitflow.py",
+  "old": "            if not auto_sync:",
+  "new": "            if True:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 自动同步没有额度上限（主干一直动就一路刷 merge commit）",
+  "file": "scripts/gitflow.py",
+  "old": "            if syncs_left <= 0:",
+  "new": "            if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 额度不减（第二次同步之后就停不下来了）",
+  "file": "scripts/gitflow.py",
+  "old": "            syncs_left -= 1\n            print(f\"自动同步（剩 {syncs_left} 次额度）：把主干合进 #{number}（不 force-push、不改写历史）\")",
+  "new": "            print(f\"自动同步（剩 {syncs_left} 次额度）：把主干合进 #{number}（不 force-push、不改写历史）\")",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 编号不唯一也照样同步（可能动别人的 PR）",
+  "file": "scripts/gitflow.py",
+  "old": "            if not number:",
+  "new": "            if False:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 多个候选时取第一个（把「不猜」变成「猜得挺像」）",
+  "file": "scripts/gitflow.py",
+  "old": "    return hits[0] if len(hits) == 1 else \"\"",
+  "new": "    return hits[0] if hits else \"\"",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 命令行 --auto-sync 开关被吞",
+  "file": "scripts/gitflow.py",
+  "old": "                               auto_sync=\"--auto-sync\" in argv)",
+  "new": "                               auto_sync=False)",
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"

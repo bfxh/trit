@@ -48,3 +48,21 @@
 - **文件行数不等于结构**：一个 786 行的文件里可以有 655 行的单函数；拆模块时要按职责看，
   而不是只看行数。
 - **文档用仓库相对路径**：不写本机绝对路径，别人拿到仓库就能点开。
+- **wgpu 30 复用 staging buffer 必须显式 `Buffer::unmap()`**：`BufferView` 的 `Drop`
+  只清 host 侧映射记录，显存侧仍算 mapped；下一次 `submit` 直接判
+  `Buffer ... is still mapped`。一次性 buffer 的写法（每次新建）掩盖了这条，
+  改成持久 buffer 才暴露（WF32 `Wf32Plan`，PR #255）。
+- **拿备份文件回滚源码后要 `touch` 它**：`mv x.bak x` 恢复的 mtime 可能比构建产物还旧，
+  cargo 判定「没变更」继续链那份被变异过的 rlib —— 于是测试红的是刚刚已经被撤销的变异，
+  而源码看起来是对的。做「删一行看测试会不会挂」这类验证时必踩（WF32 链式内核实测）。
+- **本地门线要用 CI 的逐字命令，不要自创弱口径**：`cargo clippy -p <crate> --tests` 少了 examples/benches、
+  也漏掉没点名的包；CI 是 `cargo clippy --workspace --all-targets --locked -- -D warnings`。
+  2026-11-06 就是靠这条差别让三平台的 Clippy 步骤一起红（rust 1.99 新 lint `manual_contains`）。
+- **两张门的口径不能互相顶牛**：`doc_pointers.py` 要求"同名文件必须写带目录的全路径"，而 `model_status.py`
+  第一版只认 `src/` 相对 —— 表一改成全路径它就自己报红。改完它两种都认，并补一条变异钉住（`scripts/mutants/scripts__model_status.py.json`）。
+- **一片做完再推**：同一分支连续 push 会把在跑的 run 顶掉（实测连续 4 次推 ⇒ 前一趟 CI 被 cancelled），
+  白等一轮 8–10 分钟。收尾的门线全绿之后再推一次，比边写边推省时间。
+- **CLI 的解析本身就吃栈**：clap 派生在 debug 下会把 20+ 个分支的临时量摊进同一个栈帧。
+  只把**分发**搬到工作线程没用——`Cli::parse()` 还在主线程上；要连解析一起搬。
+  本地尺子：`RUSTFLAGS="-C link-arg=-Wl,--stack,524288" cargo test -p trit-cli --test capacity_exec`
+  （压小主线程栈就能稳定复现，不必等 CI 抽奖）。见 `crates/trit-cli/src/bigtask.rs`。

@@ -6,8 +6,8 @@
 //!
 //! 目前是**一层消息传递 + 表级监督拟合**；整图标签的端到端训练在后续里程碑。
 
+use trit_core::quant::Ste;
 use trit_core::value::Ternary;
-use trit_learn::Ste;
 
 use crate::council::tally;
 use crate::view::TriGraphView;

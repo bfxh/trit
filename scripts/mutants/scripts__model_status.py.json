@@ -1,0 +1,56 @@
+[
+ {
+  "name": "model_status: 计数不符不拦",
+  "file": "scripts/model_status.py",
+  "old": "            elif want != got[key]:",
+  "new": "            elif False:",
+  "pkg": "scripts/model_status.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "model_status: 已跑通不要求证据",
+  "file": "scripts/model_status.py",
+  "old": "        if verdict == \"已跑通\" and got[\"tests\"] == 0:",
+  "new": "        if False:",
+  "pkg": "scripts/model_status.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "model_status: 判定词漂移不拦",
+  "file": "scripts/model_status.py",
+  "old": "        if verdict is None:",
+  "new": "        if False:",
+  "pkg": "scripts/model_status.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "model_status: 表头读不到也当通过",
+  "file": "scripts/model_status.py",
+  "old": "        raise ValueError(f\"{DOC.name} 里找不到 §2 那张表的表头（口径漂移，门失明）\")",
+  "new": "        return []",
+  "pkg": "scripts/model_status.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "model_status: 注释行也算提及（口径被放宽）",
+  "file": "scripts/model_status.py",
+  "old": "        if not line.lstrip().startswith((\"//\", \"/*\", \"*\"))",
+  "new": "        if True",
+  "pkg": "scripts/model_status.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "model_status: 定义处不再认全路径（与 doc_pointers 打架）",
+  "file": "scripts/model_status.py",
+  "old": "        crate_dir / \"src\" / pathlib.PurePosixPath(*parts[2:]).as_posix() if len(parts) > 2 else crate_dir,",
+  "new": "        crate_dir / \"src\" / \"_never_.rs\",",
+  "pkg": "scripts/model_status.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

@@ -1,8 +1,10 @@
 [workspace]
 resolver = "3"
 # cargo-fuzz 需要 nightly 与独立 target，不并入 workspace。
-exclude = ["fuzz", "t3"]
+exclude = ["fuzz", "t3", "benchmarks/dot_variants"]
 members = [
+    "crates/trit-bench",
+    "crates/trit-fuzz",
     "crates/trit-core",
     "crates/trit-learn",
     "crates/trit-graph",
@@ -10,6 +12,7 @@ members = [
     "crates/trit-lsp",
     "crates/trit-eval",
     "crates/trit-sat",
+    "crates/trit-count",
     "crates/trit-circuit",
     "crates/trit-cli",
     "crates/trit-build",
@@ -21,6 +24,7 @@ members = [
     "crates/sansheng",
     "crates/trit-schedule",
     "crates/trit-net",
+    "crates/trit-parts",
     "crates/trit-machines",
     "crates/trit-codec",
     "crates/trit-attn",
@@ -34,6 +38,8 @@ members = [
     "crates/trit-capacity",
     "crates/trit-re",
     "crates/trit-immune",
+    "crates/trit-orch",
+    "crates/trit-wspace",
 ]
 
 [workspace.package]
@@ -51,9 +57,14 @@ trit-eval = { path = "crates/trit-eval", version = "0.12.0" }
 trit-sat = { path = "crates/trit-sat", version = "0.12.0" }
 trit-circuit = { path = "crates/trit-circuit", version = "0.12.0" }
 trit-bdd = { path = "crates/trit-bdd", version = "0.12.0" }
+trit-bench = { path = "crates/trit-bench", version = "0.12.0" }
+trit-fuzz = { path = "crates/trit-fuzz", version = "0.12.0" }
+trit-count = { path = "crates/trit-count", version = "0.12.0" }
 trit-policy = { path = "crates/trit-policy", version = "0.12.0" }
 trit-belnap = { path = "crates/trit-belnap", version = "0.12.0" }
 trit-codec = { path = "crates/trit-codec", version = "0.12.0" }
 trit-wasm = { path = "crates/trit-wasm", version = "0.12.0" }
 sansheng = { path = "crates/sansheng", version = "0.12.0" }
 trit-schedule = { path = "crates/trit-schedule", version = "0.12.0" }
+trit-orch = { path = "crates/trit-orch", version = "0.12.0" }
+trit-wspace = { path = "crates/trit-wspace", version = "0.12.0" }
