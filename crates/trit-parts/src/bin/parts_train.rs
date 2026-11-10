@@ -5,7 +5,7 @@
 //!
 //! 例（4 帧过拟合自检）：
 //! ```text
-//! parts-train --data D:/KF/.yanagent/drift-data/big-r2.4 --init D:/KF/trit-data/parts-parity \
+//! parts-train --data D:/KF/trit-data/drift-data/big-r2.4 --init D:/KF/trit-data/parts-parity \
 //!   --limit 4 --steps 120 --lr 1e-3 --report 20
 //! ```
 

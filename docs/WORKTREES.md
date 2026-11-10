@@ -45,7 +45,7 @@
 
 两份 `trit-tml` 的 `third_party/trit` 已统一到 `46e7eb2`（main HEAD），且本地 submodule origin 已指回 `.gitmodules` 的 GitHub URL：
 - `Projects/trit-tml`：本地提交 `06298af`，`cargo check` 通过；
-- `.yanagent/repos/trit-tml`：本地提交 `6f050d7`，`cargo check` 通过。
+- `trit-tml`（原 `.yanagent/repos/trit-tml`，YAN 清理时迁出）：本地提交 `6f050d7`，`cargo check` 通过。
 两笔 trit-tml 提交尚未 push；如果 trit-tml 的 remote 需要同步，单独走 trit-tml 仓的 PR。
 
 ## 发布 preflight
