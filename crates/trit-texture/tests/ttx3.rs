@@ -1,8 +1,9 @@
 //! TTX3 万级大纹理档案的集成测试（公开 API 面）。
 
 use trit_texture::ttx3::{
-    LargeTexture, LevelPolicy, TILE_BLOCKS, TILE_DATA_BYTES, TILE_ENTRY_BYTES, TILE_HEIGHT,
-    TILE_TEXELS, TILE_WIDTH, TileRgba, Ttx3Archive, level_storage_bytes, suggest_chain,
+    HEADER_BYTES, LargeTexture, LevelPolicy, TILE_BLOCKS, TILE_DATA_BYTES, TILE_ENTRY_BYTES,
+    TILE_HEIGHT, TILE_TEXELS, TILE_WIDTH, TileRgba, Ttx3Archive, level_storage_bytes,
+    suggest_chain,
 };
 use trit_texture::{
     BLOCK_PIXELS, TRIT_BLOCK_BYTES, TextureError, decode_rgba, decode_rgba_into, encode_rgba,
@@ -143,6 +144,84 @@ fn both_copies_corrupt_is_structured_error() {
     let broken = Ttx3Archive::parse(&bytes).expect("解析");
     let error = broken.tile_blocks(1, 0, 0).unwrap_err();
     assert!(error.to_string().contains("两份冗余副本都损坏"), "{error}");
+}
+
+/// 级 0 的瓦片目录起点（级目录第 0 项的 `dir_offset` 字段）。
+fn level0_dir_offset(bytes: &[u8]) -> usize {
+    let at = HEADER_BYTES + 12;
+    u64::from_le_bytes(bytes[at..at + 8].try_into().unwrap()) as usize
+}
+
+/// 解析并全量校验；任何 panic 都会让测试失败。
+fn verify_bytes(bytes: &[u8]) -> Result<usize, TextureError> {
+    Ttx3Archive::parse(bytes)?.verify()
+}
+
+#[test]
+fn hostile_level_dir_offset_is_truncation_error() {
+    let (texture, _) = sample();
+    let mut bytes = texture.to_bytes();
+    let at = HEADER_BYTES + 12;
+    for offset in [
+        u64::MAX,
+        u64::MAX - TILE_ENTRY_BYTES as u64,
+        bytes.len() as u64,
+    ] {
+        bytes[at..at + 8].copy_from_slice(&offset.to_le_bytes());
+        assert!(
+            matches!(
+                verify_bytes(&bytes),
+                Err(TextureError::Ttx3Truncated { .. })
+            ),
+            "dir_offset={offset}"
+        );
+    }
+}
+
+#[test]
+fn hostile_tile_offset_is_truncation_error() {
+    let (texture, _) = sample();
+    let mut bytes = texture.to_bytes();
+    let entry = level0_dir_offset(&bytes);
+    for offset in [u64::MAX, u64::MAX - 5, bytes.len() as u64] {
+        bytes[entry..entry + 8].copy_from_slice(&offset.to_le_bytes());
+        assert!(
+            matches!(
+                verify_bytes(&bytes),
+                Err(TextureError::Ttx3Truncated { .. })
+            ),
+            "off1={offset}"
+        );
+    }
+}
+
+#[test]
+fn tile_len_other_than_tile_data_bytes_is_rejected() {
+    let (texture, _) = sample();
+    let pristine = texture.to_bytes();
+    let entry = level0_dir_offset(&pristine);
+    for len in [
+        0,
+        1,
+        TRIT_BLOCK_BYTES,
+        TILE_DATA_BYTES - 1,
+        TILE_DATA_BYTES + 1,
+    ] {
+        let mut bytes = pristine.clone();
+        bytes[entry + 16..entry + 20].copy_from_slice(&(len as u32).to_le_bytes());
+        assert!(
+            matches!(
+                verify_bytes(&bytes),
+                Err(TextureError::Ttx3Tile {
+                    level: 0,
+                    tx: 0,
+                    ty: 0,
+                    ..
+                })
+            ),
+            "len={len}"
+        );
+    }
 }
 
 #[test]
