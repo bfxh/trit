@@ -95,6 +95,44 @@ fn strength_recovers_single_copy_corruption() {
 }
 
 #[test]
+fn strength_level_with_many_tiles_round_trips_and_keeps_redundancy() {
+    // 4 个瓦片的 Strength 级：每片的两份副本都要指向它自己的数据。
+    let (width, height) = (TILE_WIDTH * 2, TILE_HEIGHT * 2);
+    let rgba = gradient_rgba(width, height);
+    let mut texture = LargeTexture::new(width, height, &[LevelPolicy::Strength]).expect("尺寸合法");
+    texture.push_level_rgba(0, &rgba).expect("编码");
+    let bytes = texture.to_bytes();
+    let archive = Ttx3Archive::parse(&bytes).expect("解析");
+    assert_eq!(archive.verify().unwrap(), 4);
+
+    let reference =
+        decode_rgba(&encode_rgba(&rgba, width, height).expect("参照")).expect("参照解码");
+    for ty in 0..2 {
+        for tx in 0..2 {
+            let (off1, off2, len, _) = archive.tile_entry(0, tx, ty).unwrap();
+            assert_eq!(off2, off1 + u64::from(len), "tile=({tx},{ty})");
+            for (copy, offset) in [(1, off1), (2, off2)] {
+                let mut damaged = bytes.clone();
+                damaged[offset as usize] ^= 0xFF;
+                let tile = Ttx3Archive::parse(&damaged)
+                    .expect("解析")
+                    .decode_tile(0, tx, ty)
+                    .unwrap_or_else(|e| panic!("tile=({tx},{ty}) copy{copy} 损坏应能恢复：{e}"));
+                for row in 0..TILE_HEIGHT {
+                    let src_at = ((ty * TILE_HEIGHT + row) * width + tx * TILE_WIDTH) * 4;
+                    let got_at = row * TILE_WIDTH * 4;
+                    assert_eq!(
+                        &tile[got_at..got_at + TILE_WIDTH * 4],
+                        &reference[src_at..src_at + TILE_WIDTH * 4],
+                        "tile=({tx},{ty}) copy{copy} row={row}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn both_copies_corrupt_is_structured_error() {
     let (texture, _) = sample();
     let mut bytes = texture.to_bytes();

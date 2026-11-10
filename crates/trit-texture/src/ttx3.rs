@@ -358,7 +358,9 @@ impl LargeTexture {
                 }
                 let crc = tile_crc(&tile_bytes);
                 let data_start = dir_start + tiles * TILE_ENTRY_BYTES;
-                let off1 = data_start as u64 + tile_index as u64 * TILE_DATA_BYTES as u64;
+                // 数据区按瓦片连续存放，每片占 `copies` 份 TILE_DATA_BYTES。
+                let tile_stride = TILE_DATA_BYTES as u64 * level.policy.copies() as u64;
+                let off1 = data_start as u64 + tile_index as u64 * tile_stride;
                 let off2 = if level.policy == LevelPolicy::Strength {
                     off1 + TILE_DATA_BYTES as u64
                 } else {
