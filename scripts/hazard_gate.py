@@ -73,6 +73,11 @@ ALLOW_RELAXED: dict[str, str] = {
     "crates/trit-orch/src/effects.rs": (
         "SAVE_SEQ 只为台账原子写生成唯一临时名；Relaxed 只用于计数，不承担同步"
     ),
+    "crates/trit-count/examples/matching_alloc_probe.rs": (
+        "分配口径探针（example，不在产品路径）：三个 AtomicU64 只做 alloc/free 的次数与"
+        "字节累加，读数只依赖 fetch_add 自身的原子性与 main 的单线程顺序，"
+        "不用于任何跨线程同步或可见性屏障"
+    ),
 }
 
 # ---------------------------------------------------------------------------
