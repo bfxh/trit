@@ -6,12 +6,14 @@
 //! 多层：`--hidden 8,16`（逗号分隔任意层，端到端反向）。
 //! 初始化：`--init modulo`（历史口径，周期 11 的确定性模式）或 `--init xorshift`
 //! （SplitMix64 逐层独立流）；两者都由 seed 决定、可复算。
+//! 训练：每层一个 `trit-train::layer::Adam`（默认 latent lr 0.02、scale 取 lr×0.1，`--lr` 可改），
+//! 每个 epoch 用 seed 派生的顺序打乱样本；隐藏层初始 scale 取 `1/sqrt(cols)`。
 
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde_json::{Value, json};
-use trit_train::layer::TernaryLinear;
+use trit_train::layer::{Adam, TernaryLinear};
 use trit_train::quant::Ste;
 use trit_wspace::{
     DEFAULT_TUNE_GRID, Layer, Net, Oracle, TaskVector, Trit, TuneMerge, TuneMetric, combine_tasks,
@@ -262,6 +264,9 @@ impl Activation {
 struct Model {
     layers: Vec<TernaryLinear>,
     activation: Activation,
+    seed: u64,
+    latent_opts: Vec<Adam>,
+    scale_opts: Vec<Adam>,
 }
 
 impl Model {
@@ -272,11 +277,12 @@ impl Model {
         seed: u64,
         activation: Activation,
         init: Init,
+        lr: f32,
     ) -> Self {
         let mut dims = vec![input_dim];
         dims.extend_from_slice(hidden);
         dims.push(output_rows);
-        let layers = dims
+        let layers: Vec<TernaryLinear> = dims
             .windows(2)
             .enumerate()
             .map(|(index, window)| {
@@ -291,16 +297,37 @@ impl Model {
                     },
                     Ste::Identity,
                     0.05,
-                    0.5,
+                    1.0 / (window[0] as f32).sqrt(),
                 )
             })
             .collect();
-        Self { layers, activation }
+        let latent_opts = layers
+            .iter()
+            .map(|layer| Adam::new(layer.rows() * layer.cols(), lr))
+            .collect();
+        let scale_opts = layers
+            .iter()
+            .map(|layer| Adam::new(layer.rows(), lr * 0.1))
+            .collect();
+        Self {
+            layers,
+            activation,
+            seed,
+            latent_opts,
+            scale_opts,
+        }
     }
 
     fn train(&mut self, samples: &[(Vec<f32>, usize)], epochs: usize, output_rows: usize) {
+        let mut order: Vec<usize> = (0..samples.len()).collect();
+        let mut rng = SplitMix64(self.seed ^ 0x5eed_2026);
         for _ in 0..epochs {
-            for (input, label) in samples {
+            for i in (1..order.len()).rev() {
+                let j = (rng.next_u64() as usize) % (i + 1);
+                order.swap(i, j);
+            }
+            for &index in &order {
+                let (input, label) = &samples[index];
                 let mut inputs = Vec::with_capacity(self.layers.len());
                 let mut outputs = Vec::with_capacity(self.layers.len());
                 let mut current = input.clone();
@@ -320,7 +347,12 @@ impl Model {
                 let target = one_hot(*label, output_rows);
                 let mut dy: Vec<f32> = current.iter().zip(&target).map(|(y, t)| y - t).collect();
                 for index in (0..self.layers.len()).rev() {
-                    let grad = self.layers[index].train_step_with_grad(&inputs[index], &dy);
+                    let grad = self.layers[index].train_step_with_grad_adam(
+                        &inputs[index],
+                        &dy,
+                        &mut self.latent_opts[index],
+                        &mut self.scale_opts[index],
+                    );
                     if index > 0 {
                         dy = grad
                             .iter()
@@ -415,6 +447,7 @@ fn run(
     hidden: &[usize],
     activation: Activation,
     init: Init,
+    lr: f32,
     out_root: &Path,
     lambdas: &[f32],
     dare: &DareOptions,
@@ -427,6 +460,7 @@ fn run(
             seed,
             activation,
             init,
+            lr,
         );
         let samples: Vec<(Vec<f32>, usize)> = samples
             .iter()
@@ -560,6 +594,7 @@ fn main() {
     let mut hidden: Vec<usize> = Vec::new();
     let mut activation = Activation::Tanh;
     let mut init = Init::Modulo;
+    let mut lr = 0.02f32;
     let mut out = std::env::temp_dir().join(format!("trit-train-artifacts-{}", std::process::id()));
     let mut lambdas = vec![-1.0f32, 0.0, 0.5, 1.0];
     let mut dare = DareOptions {
@@ -597,6 +632,7 @@ fn main() {
                     other => panic!("unknown init {other}"),
                 };
             }
+            "--lr" => lr = args.next().expect("lr").parse().expect("num"),
             "--out" => out = PathBuf::from(args.next().expect("out")),
             "--lambdas" => lambdas = parse_lambdas(&args.next().expect("lambdas")),
             "--dare-rate" => {
@@ -630,6 +666,7 @@ fn main() {
                 &hidden,
                 activation,
                 init,
+                lr,
                 &out,
                 &lambdas,
                 &dare,
@@ -674,6 +711,8 @@ fn main() {
             "hidden": hidden,
             "activation": activation.name(),
             "init": init.name(),
+            "optimizer": "adam",
+            "lr": lr,
             "epochs": epochs,
         },
         "seeds": seeds,
