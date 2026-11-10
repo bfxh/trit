@@ -1,0 +1,155 @@
+[
+  {
+    "name": "promote: 上限判断反向",
+    "file": "scripts/depth_sweep.py",
+    "old": "    if \"max\" in rule and rel > rule[\"max\"]:",
+    "new": "    if \"max\" in rule and rel < rule[\"max\"]:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "promote: 基线差判断反向",
+    "file": "scripts/depth_sweep.py",
+    "old": "        if gap < rule[\"beat_baseline_pp\"]:",
+    "new": "        if gap > rule[\"beat_baseline_pp\"]:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "promote: 未复核也放行",
+    "file": "scripts/depth_sweep.py",
+    "old": "    if row.get(\"status\") != \"verified\":",
+    "new": "    if row.get(\"status\") == \"verified\":",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "promote: 忽略自定义 metric",
+    "file": "scripts/depth_sweep.py",
+    "old": "    metric = rule.get(\"metric\", \"rel_pct\")",
+    "new": "    metric = \"rel_pct\"",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "gpu: 槽分配不轮转",
+    "file": "scripts/depth_sweep.py",
+    "old": "    return [pool[i % len(pool)] for i in range(max(1, jobs))]",
+    "new": "    return [pool[0] for i in range(max(1, jobs))]",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "resume: 清单配置永远算匹配",
+    "file": "scripts/depth_sweep.py",
+    "old": "    return all(k in manifest_cfg and manifest_cfg[k] == v for k, v in cfg.items())",
+    "new": "    return True",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "resume: 不看复核记录就算完成",
+    "file": "scripts/depth_sweep.py",
+    "old": "    if verify_enabled and not pathlib.Path(str(model) + \".verify.json\").exists():",
+    "new": "    if False:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "retry: 失败不重试",
+    "file": "scripts/depth_sweep.py",
+    "old": "    return rc != 0 and not rejected",
+    "new": "    return rc == 0 and not rejected",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "resume: 不清理残留进程",
+    "file": "scripts/depth_sweep.py",
+    "old": "        if isinstance(st, dict) and st.get(\"state\") == \"running\" and st.get(\"pid\")",
+    "new": "        if False",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "lease: 创建租约不加 O_EXCL",
+    "file": "scripts/depth_sweep.py",
+    "old": "        fd = os.open(lease_path(gpu), os.O_CREAT | os.O_EXCL | os.O_WRONLY)",
+    "new": "        fd = os.open(lease_path(gpu), os.O_CREAT | os.O_WRONLY)",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "lease: 过期判定反向",
+    "file": "scripts/depth_sweep.py",
+    "old": "    return bool(d) and float(d.get(\"expires\", 0)) > now",
+    "new": "    return bool(d) and float(d.get(\"expires\", 0)) < now",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "lease: 不等直接放弃",
+    "file": "scripts/depth_sweep.py",
+    "old": "    deadline = time.time() + max(0.0, wait)",
+    "new": "    deadline = time.time()",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "sweep: 模板未知占位符放行",
+    "file": "scripts/depth_sweep.py",
+    "old": "    if \"{\" in s:",
+    "new": "    if False:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "sweep: 闭合门放行（closed != scenes 也晋级）",
+    "file": "scripts/depth_sweep.py",
+    "old": "        if m.get(\"closed\") != m.get(\"scenes\"):",
+    "new": "        if False:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "sweep: 下限门判反",
+    "file": "scripts/depth_sweep.py",
+    "old": "    if \"min\" in rule and rel < rule[\"min\"]:",
+    "new": "    if \"min\" in rule and rel > rule[\"min\"]:",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "aggregate: 不按去掉聚合键分组（每组 n=1）",
+    "file": "scripts/depth_sweep.py",
+    "old": "        rep = cfg.pop(key, None)",
+    "new": "        rep = None",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "aggregate: 极差算成和",
+    "file": "scripts/depth_sweep.py",
+    "old": "                \"range\": max(vals) - min(vals),",
+    "new": "                \"range\": max(vals) + min(vals),",
+    "pkg": "scripts/depth_sweep.py",
+    "filter": "",
+    "runner": "python"
+  }
+]

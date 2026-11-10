@@ -1,0 +1,178 @@
+[
+ {
+  "name": "count: true 组合的基字面量写反（match 而非 ¬match）",
+  "file": "crates/trit-count/src/cnf.rs",
+  "old": "                    Ternary::True => {\n                        base.push(-node.t);\n                        base.push(node.x);\n                    }",
+  "new": "                    Ternary::True => {\n                        base.push(node.t);\n                        base.push(node.x);\n                    }",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "count: binary 变量不约束 x 轨",
+  "file": "crates/trit-count/src/cnf.rs",
+  "old": "        if self.binary.contains(name) {\n            self.clause(&[-x]);\n        }",
+  "new": "        if self.binary.contains(name) {\n            self.clause(&[x]);\n        }",
+  "pkg": "trit-count",
+  "filter": "binary_variables_use_two_valued_domain"
+ },
+ {
+  "name": "count: 常量 true 的 x 轨写成 true",
+  "file": "crates/trit-count/src/cnf.rs",
+  "old": "            Ternary::True => Rails {\n                t: -self.false_var,\n                x: self.false_var,\n            },",
+  "new": "            Ternary::True => Rails {\n                t: -self.false_var,\n                x: -self.false_var,\n            },",
+  "pkg": "trit-count",
+  "filter": "constant_expression_counts_whole_domain"
+ },
+ {
+  "name": "count: 自由变量不乘 2^free",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "        let free_factor = 1u128\n            .checked_shl(free as u32)\n            .expect(\"free variable count exceeds u128 capacity\");",
+  "new": "        let free_factor = 1u128;",
+  "pkg": "trit-count",
+  "filter": "unused_variables_still_count"
+ },
+ {
+  "name": "count: 分支只数正支",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "        let total = positive + negative;",
+  "new": "        let total = positive;",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "count: 组件乘积被最后一块覆盖",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "            for (part_vars, part_clauses) in parts {\n                let local = renumber(&part_clauses, &part_vars);\n                product *= self.count_core(&local, part_vars.len());\n            }",
+  "new": "            for (part_vars, part_clauses) in parts {\n                let local = renumber(&part_clauses, &part_vars);\n                product = self.count_core(&local, part_vars.len());\n            }",
+  "pkg": "trit-count",
+  "filter": "component_product_multiplies_independent_parts"
+ },
+ {
+  "name": "count: 约束不置 True",
+  "file": "crates/trit-count/src/cnf.rs",
+  "old": "        for constraint in constraint_roots {\n            self.clause(&[constraint.t]);\n            self.clause(&[-constraint.x]);\n        }",
+  "new": "        for constraint in constraint_roots {\n            self.clause(&[-constraint.t]);\n            self.clause(&[-constraint.x]);\n        }",
+  "pkg": "trit-count",
+  "filter": "constraints_restrict_domain"
+ },
+ {
+  "name": "count: 忽略约束",
+  "file": "crates/trit-count/src/lib.rs",
+  "old": "    let cnf =\n        cnf::Encoder::new(alg, vars, binary).encode_with_constraints(expr, constraints, target);",
+  "new": "    let _ = constraints;\n    let cnf = cnf::Encoder::new(alg, vars, binary).encode(expr, target);",
+  "pkg": "trit-count",
+  "filter": "constrained_counts_match_exhaustive"
+ },
+ {
+  "name": "policy: 定义不展开",
+  "file": "crates/trit-count/src/policy.rs",
+  "old": "        Expr::Var(name) => {\n            if !definitions.contains_key(name) {\n                return Ok(Expr::Var(name.clone()));\n            }",
+  "new": "        Expr::Var(name) => {\n            if true {\n                return Ok(Expr::Var(name.clone()));\n            }",
+  "pkg": "trit-count",
+  "filter": "example_policy_expands_and_counts"
+ },
+ {
+  "name": "policy: 空断言集不判红",
+  "file": "crates/trit-count/src/policy.rs",
+  "old": "        if raw.assertions.is_empty() {\n            return Err(PolicyError::NoAssertions);\n        }",
+  "new": "        if false {\n            return Err(PolicyError::NoAssertions);\n        }",
+  "pkg": "trit-count",
+  "filter": "empty_assertion_set_is_rejected"
+ },
+ {
+  "name": "policy: binary 与定义同名不判红",
+  "file": "crates/trit-count/src/policy.rs",
+  "old": "            if expanded.contains_key(name) {\n                return Err(PolicyError::BinaryIsDefinition(name.clone()));\n            }",
+  "new": "            if false {\n                return Err(PolicyError::BinaryIsDefinition(name.clone()));\n            }",
+  "pkg": "trit-count",
+  "filter": "binary_named_after_a_definition_is_rejected"
+ },
+ {
+  "name": "policy: 未使用的 binary 变量不并入域",
+  "file": "crates/trit-count/src/policy.rs",
+  "old": "        vars.extend(raw.binary.iter().cloned());",
+  "new": "        let _ = &raw.binary;",
+  "pkg": "trit-count",
+  "filter": "unused_binary_variable_extends_the_domain"
+ },
+ {
+  "name": "policy: 默认代数不是 kleene",
+  "file": "crates/trit-count/src/policy.rs",
+  "old": "fn default_algebra() -> String {\n    \"kleene\".to_string()\n}",
+  "new": "fn default_algebra() -> String {\n    \"lukasiewicz\".to_string()\n}",
+  "pkg": "trit-count",
+  "filter": "default_algebra_is_kleene"
+ },
+ {
+  "name": "crosscheck: BDD 被拒也算三方一致",
+  "file": "crates/trit-count/src/lib.rs",
+  "old": "    let three_way = bdd_count.is_some_and(agrees);",
+  "new": "    let three_way = true;",
+  "pkg": "trit-count",
+  "filter": "bdd_budget_refusal_is_not_a_mismatch"
+ },
+ {
+  "name": "crosscheck: BDD 拒绝原因被丢弃",
+  "file": "crates/trit-count/src/lib.rs",
+  "old": "        Err(error) => (None, Some(error.to_string())),",
+  "new": "        Err(error) => (None, { let _ = &error; None }),",
+  "pkg": "trit-count",
+  "filter": "bdd_budget_refusal_is_not_a_mismatch"
+ },
+ {
+  "name": "crosscheck: BDD 一路忽略约束",
+  "file": "crates/trit-count/src/lib.rs",
+  "old": "    let bdd = count_models_bdd(expr, constraints, vars, binary, alg, target, bdd_limits);",
+  "new": "    let bdd = count_models_bdd(expr, &[], vars, binary, alg, target, bdd_limits);",
+  "pkg": "trit-count",
+  "filter": "constrained_counts_match_exhaustive"
+ },
+ {
+  "name": "dpll: 已满足的子句照旧扣计数（假冲突）",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "            if satisfied[clause as usize] {\n                continue;\n            }",
+  "new": "            if false {\n                continue;\n            }",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "dpll: 正负出现表互换（满足当饿死）",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "        let (fill_from, fill_to, starve_from, starve_to) = if value == 1 {",
+  "new": "        let (fill_from, fill_to, starve_from, starve_to) = if value == -1 {",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "dpll: 单位判定阈值写成 2（强行任意赋值）",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "            if *slot == 1 {",
+  "new": "            if *slot == 2 {",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "dpll: 已赋值计数不累加（自由变量算多）",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "        assigned += 1;",
+  "new": "        assigned += 0;",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "dpll: 分支回收漏摘单位子句（表格被污染）",
+  "file": "crates/trit-count/src/dpll.rs",
+  "old": "        numbered.remove(at);\n        let at = insert_unit(&mut numbered, -(branch as i32));",
+  "new": "        let at = insert_unit(&mut numbered, -(branch as i32));",
+  "pkg": "trit-count",
+  "filter": "fixed_expressions_match_exhaustive"
+ },
+ {
+  "name": "oracle: CNF 穷举把负文字当正文字",
+  "file": "crates/trit-count/src/oracle.rs",
+  "old": "        if lit > 0 { value } else { !value }",
+  "new": "        value",
+  "pkg": "trit-count",
+  "filter": "library_ruler_agrees_with_the_independent_enumeration"
+ }
+]

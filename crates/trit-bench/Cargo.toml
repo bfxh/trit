@@ -1,0 +1,10 @@
+[package]
+name = "trit-bench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三值基准测量底件：确定性生成、交错轮次、min/median/max 与单位换算"
+
+[dependencies]

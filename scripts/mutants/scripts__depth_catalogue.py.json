@@ -1,0 +1,83 @@
+[
+  {
+    "name": "catalogue: 晋级标记反向",
+    "file": "scripts/depth_catalogue.py",
+    "old": "    return \"✓\" if pathlib.Path(model_path).resolve() in promoted else \"—\"",
+    "new": "    return \"✓\" if pathlib.Path(model_path).resolve() not in promoted else \"—\"",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "catalogue: 配置列退化成全打印",
+    "file": "scripts/depth_catalogue.py",
+    "old": "        if v not in (None, 0, 1) or k == \"lr\":",
+    "new": "        if True:",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "family: live/registered 判反",
+    "file": "scripts/depth_catalogue.py",
+    "old": "    if st == \"live\":",
+    "new": "    if st != \"live\":",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "parts: 配置列丢掉标签子目录",
+    "file": "scripts/depth_catalogue.py",
+    "old": "    if cfg.get(\"seg_sub\") and cfg[\"seg_sub\"] != \"seg\":",
+    "new": "    if False:",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "parts: 复核不要求锚在清单上",
+    "file": "scripts/depth_catalogue.py",
+    "old": "            and bool((v.get(\"manifest\") or {}).get(\"sha256\"))",
+    "new": "            and True",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "parts: 复核记录取错产物",
+    "file": "scripts/depth_catalogue.py",
+    "old": "    art = m.get(\"deploy\") or m.get(\"model\") or {}",
+    "new": "    art = m.get(\"model\") or m.get(\"deploy\") or {}",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "extract: 复核只认模型不认清单",
+    "file": "scripts/depth_catalogue.py",
+    "old": "            and (v.get(\"manifest\") or {}).get(\"sha256\") == sha",
+    "new": "            and True",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "extract: 最低 IoU 取成最高",
+    "file": "scripts/depth_catalogue.py",
+    "old": "        lowest = min((r.get(\"iou\", 1.0) for r in rows_m), default=None)",
+    "new": "        lowest = max((r.get(\"iou\", 1.0) for r in rows_m), default=None)",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "extract: 自监督配置不显示",
+    "file": "scripts/depth_catalogue.py",
+    "old": "        if cfg.get(\"selfsup\"):",
+    "new": "        if False:",
+    "pkg": "scripts/depth_catalogue.py",
+    "filter": "",
+    "runner": "python"
+  }
+]

@@ -10,6 +10,7 @@ pub mod attack;
 pub mod calibrate;
 pub mod dataset;
 pub mod decision;
+pub mod drift;
 pub mod features;
 pub mod flow;
 pub mod packet;

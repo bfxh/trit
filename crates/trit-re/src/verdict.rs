@@ -108,11 +108,21 @@ pub fn default_hypotheses() -> Vec<Hypothesis> {
     // Windows 程序里几乎必然出现（notepad.exe 实测两者都有），带上反调试会全量误报。
     let staged_loader = and(var("imports.loader"), var("imports.network"));
     let credential_theft = and(var("imports.credential"), var("imports.network"));
-    let needs_review = any4(
-        var("packed"),
-        var("injection"),
-        var("staged_loader"),
-        var("credential_theft"),
+    // 动态解析链（N1 首批读数记录的漏报边界的闭合面）：解析器在表 +
+    // ≥3 个敏感 API 名以字符串藏于数据段且不在导入表。单靠 GetProcAddress
+    // 在表会全量误报（notepad 实测两者皆有），必须与隐藏串证据取合取。
+    let dynamic_resolution = and(
+        var("dynres.resolver_imported"),
+        var("dynres.hidden_api_strings"),
+    );
+    let needs_review = or(
+        any4(
+            var("packed"),
+            var("injection"),
+            var("staged_loader"),
+            var("credential_theft"),
+        ),
+        var("dynamic_resolution"),
     );
 
     vec![
@@ -162,6 +172,12 @@ pub fn default_hypotheses() -> Vec<Hypothesis> {
             id: "xref_gaps",
             title: "存在没有静态调用点的导入（可能动态解析或死导入）",
             expr: var("xref.has_unreferenced"),
+            benign: None,
+        },
+        Hypothesis {
+            id: "dynamic_resolution",
+            title: "动态解析链：解析器在表，敏感 API 名以字符串藏于数据段且不在导入表",
+            expr: dynamic_resolution,
             benign: None,
         },
         Hypothesis {

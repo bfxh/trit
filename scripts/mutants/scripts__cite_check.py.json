@@ -1,0 +1,47 @@
+[
+ {
+  "name": "cite: 标了“实读”却没链接也放行",
+  "file": "scripts/cite_check.py",
+  "old": "        if row[\"status\"] in (\"verified\", \"abstract\") and not URL.match(row[\"where\"]):",
+  "new": "        if False:",
+  "pkg": "scripts/cite_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "cite: 经典文献不写出处也放行",
+  "file": "scripts/cite_check.py",
+  "old": "        if row[\"status\"] == \"classic\" and not row[\"where\"]:",
+  "new": "        if False:",
+  "pkg": "scripts/cite_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "cite: 正文引用表里没有的编号也放行",
+  "file": "scripts/cite_check.py",
+  "old": "        if rid not in seen:\n            red.append(f\"正文引用了 {rid}，但引用表里没有\")",
+  "new": "        if False:\n            red.append(f\"正文引用了 {rid}，但引用表里没有\")",
+  "pkg": "scripts/cite_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "cite: 登记了却没用也不管（挂引用不加分）",
+  "file": "scripts/cite_check.py",
+  "old": "        if rid not in used:\n            red.append(f\"{rid} 登记了却从没在正文里用过（挂引用不加分）\")",
+  "new": "        if False:\n            red.append(f\"{rid} 登记了却从没在正文里用过（挂引用不加分）\")",
+  "pkg": "scripts/cite_check.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "cite: id 重复不判红（同一编号两条来源）",
+  "file": "scripts/cite_check.py",
+  "old": "        if rid in seen:\n            red.append(f\"{rid} 重复登记\")",
+  "new": "        if False:\n            red.append(f\"{rid} 重复登记\")",
+  "pkg": "scripts/cite_check.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

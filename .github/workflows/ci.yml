@@ -31,27 +31,120 @@ jobs:
         os: ["ubuntu-latest", "windows-latest", "macos-latest"]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect docs-only (PR only)
+        id: scope
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [ -z "${BASE_SHA:-}" ]; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$BASE_SHA"...HEAD || true)
+          if [ -z "$files" ]; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if printf '%s\n' "$files" | grep -Ev '^(docs/|.*\.md$|README|LICENSE|CHANGELOG)' | grep -q .; then
+            echo "only_docs=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "only_docs=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "changed files:"; printf '%s\n' "$files" | head -50
 
       - name: Install Rust
+        if: steps.scope.outputs.only_docs != 'true'
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt, clippy
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        if: steps.scope.outputs.only_docs != 'true'
+
+      # 收窄判据本身要有人盯：它坏了不能悄悄把整条测试面关掉。
+      - name: Scope self-test (ci_scope)
+        if: steps.scope.outputs.only_docs != 'true'
+        run: python3 scripts/ci_scope.py --self-test
+
+      # 编译/测试面按「直改 crate + 反向依赖闭包」收窄（scripts/ci_scope.py）。
+      # 拿不到依赖图就退回全量：full 永远是安全方向。
+      - name: Scope crates (PR only)
+        id: crates
+        if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          fallback() {
+            {
+              echo "args="
+              echo "needs_png=true"
+              echo "needs_gpu=true"
+              echo "reason=$1"
+            } >> "$GITHUB_OUTPUT"
+            echo "收窄不可用，走全量：$1"
+          }
+          if [ "$EVENT" != "pull_request" ] || [ -z "${BASE_SHA:-}" ]; then
+            fallback "非 PR 或拿不到 base"
+            exit 0
+          fi
+          if ! python3 scripts/ci_scope.py --base "$BASE_SHA" --github-output >> "$GITHUB_OUTPUT"; then
+            fallback "ci_scope 运行失败"
+          fi
+
+      # `--verify-hdl` 的 tests/hdl.rs 没有 iverilog 会静默跳过；Linux 装上让真仿真进 CI。
+      - name: Install iverilog (Linux)
+        if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq iverilog
 
       - name: Check formatting
+        if: steps.scope.outputs.only_docs != 'true'
         run: cargo fmt --all -- --check
 
+      # args 为空 = 全量：非 PR、改到 workspace 级文件、闭包吃掉大半仓，都走这条路。
       - name: Clippy
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo clippy $SCOPE_ARGS --all-targets --locked -- -D warnings
+          else
+            cargo clippy --workspace --all-targets --locked -- -D warnings
+          fi
 
       - name: Test
-        run: cargo test --workspace --locked
+        if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo test $SCOPE_ARGS --locked
+          else
+            cargo test --workspace --locked
+          fi
 
       # png feature（默认关）：单独测 + clippy，否则 CI 永远碰不到这些代码。
+      # 收窄后只在闭包真含 trit-texture 时才跑，否则这条 step 白等一趟编译。
       - name: Test (trit-texture png feature)
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_png == 'true'
         run: cargo test -p trit-texture --features png --locked
       - name: Clippy (trit-texture png feature)
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_png == 'true'
         run: cargo clippy -p trit-texture --features png --all-targets --locked -- -D warnings
 
       # gpu feature（默认关）：同上。#149 的事故就是这块代码从没被门编译过
@@ -61,9 +154,20 @@ jobs:
       # （512×4096×512）要十几分钟；而 1×1×1 同样会创建全部 shader module，
       # f16 扩展缺失这类错照样能抓到。完整形状在开发者本机跑。
       - name: Test (trit-gpu gpu feature, shader smoke)
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
         run: cargo test -p trit-gpu --features gpu --locked --test matmul gpu_reg_matmul_tiny_case
       - name: Clippy (trit-gpu gpu feature)
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
         run: cargo clippy -p trit-gpu --features gpu --all-targets --locked -- -D warnings
+
+      # trit-build 的 gpu feature 同样默认关：至少让 WGSL 过 naga 解析/校验；
+      # 有 adapter 时 gpu::tests 会再跑真机对拍，没有就跳过（naga 那条仍必跑）。
+      - name: Test (trit-build gpu feature, naga shader smoke)
+        if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux' && steps.crates.outputs.needs_build_gpu == 'true'
+        run: "cargo test -p trit-build --features gpu --bin trit-build gpu:: --locked"
+      - name: Clippy (trit-build gpu feature)
+        if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux' && steps.crates.outputs.needs_build_gpu == 'true'
+        run: cargo clippy -p trit-build --features gpu --all-targets --locked -- -D warnings
 
   module-budget:
     name: module budget (god objects)
@@ -82,6 +186,15 @@ jobs:
       - name: Disk guard (build/test scratch off spinning disks)
         run: python3 scripts/disk_guard.py --json
         continue-on-error: true
+
+  release-preflight:
+    name: release preflight (self-test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Release preflight self-test
+        run: python3 scripts/release_preflight.py --self-test
 
   hazard:
     name: hazard gate (concurrency/memory)

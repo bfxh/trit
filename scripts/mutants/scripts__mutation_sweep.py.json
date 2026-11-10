@@ -1,0 +1,47 @@
+[
+ {
+  "name": "mutation-sweep: 重名检查失效（同名条目不再判红）",
+  "file": "scripts/mutation_sweep.py",
+  "old": "    return sorted(set(twice))",
+  "new": "    return []",
+  "pkg": "scripts/mutation_sweep.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-sweep: 不查锚点（全表 sweep 退化成只数条数）",
+  "file": "scripts/mutation_sweep.py",
+  "old": "    problems = preflight(entries, root=root)",
+  "new": "    problems = []",
+  "pkg": "scripts/mutation_sweep.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-sweep: 有问题也报绿（腐烂不影响退出码）",
+  "file": "scripts/mutation_sweep.py",
+  "old": "    if problems:",
+  "new": "    if False:",
+  "pkg": "scripts/mutation_sweep.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-sweep: 空表当全绿（0 条不再是死闸）",
+  "file": "scripts/mutation_sweep.py",
+  "old": "    if count == 0:",
+  "new": "    if False:",
+  "pkg": "scripts/mutation_sweep.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "mutation-sweep: 未知旗标不再拒绝（当成一次正常运行）",
+  "file": "scripts/mutation_sweep.py",
+  "old": "        if token.startswith(\"--\") and token not in (\"--self-test\",):",
+  "new": "        if False:",
+  "pkg": "scripts/mutation_sweep.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

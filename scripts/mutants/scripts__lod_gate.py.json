@@ -1,0 +1,29 @@
+[
+  {
+    "name": "N3: 最粗一级 IoU 门判反",
+    "file": "scripts/lod_gate.py",
+    "old": "    if coarse.get(\"iou\") is not None and coarse[\"iou\"] < min_iou:",
+    "new": "    if coarse.get(\"iou\") is not None and coarse[\"iou\"] > min_iou:",
+    "pkg": "scripts/lod_gate.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "N3: 体积比门判反",
+    "file": "scripts/lod_gate.py",
+    "old": "        if coarse[\"tris\"] * ratio > fine[\"tris\"]:",
+    "new": "        if coarse[\"tris\"] * ratio < fine[\"tris\"]:",
+    "pkg": "scripts/lod_gate.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "lod_gate: 不按 cell 聚合（每行一级）",
+    "file": "scripts/lod_gate.py",
+    "old": "        g = groups.setdefault(\n            cell, {\"cell\": cell, \"ious\": [], \"tris\": [], \"status\": [], \"why\": None}\n        )",
+    "new": "        g = groups.setdefault(\n            id(r), {\"cell\": cell, \"ious\": [], \"tris\": [], \"status\": [], \"why\": None}\n        )",
+    "pkg": "scripts/lod_gate.py",
+    "filter": "",
+    "runner": "python"
+  }
+]

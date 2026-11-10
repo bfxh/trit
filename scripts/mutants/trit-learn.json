@@ -1,7 +1,7 @@
 [
  {
   "name": "learn: STE 饱和门失效",
-  "file": "crates/trit-learn/src/quant.rs",
+  "file": "crates/trit-core/src/quant.rs",
   "old": "                if ratio.abs() <= limit {",
   "new": "                if true {",
   "pkg": "trit-learn",

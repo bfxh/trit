@@ -1,0 +1,10 @@
+[package]
+name = "trit-interop-runner"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+serde_json = "1"

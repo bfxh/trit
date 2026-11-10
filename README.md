@@ -1,10 +1,10 @@
-# trit —— Rust 三进制工具箱（balanced ternary / 三值逻辑 / 三值内核）
+# trit —— Rust 三进制底座（balanced ternary / 三值逻辑 / 算子 · 算法 · 学习）
 
 [![CI](https://github.com/bfxh/trit/actions/workflows/ci.yml/badge.svg)](https://github.com/bfxh/trit/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/sansheng.svg)](https://crates.io/crates/sansheng)
 [![docs.rs](https://docs.rs/sansheng/badge.svg)](https://docs.rs/sansheng)
 
-**是什么**：在二进制机器上，把三进制真正能落地的那一层做成可复用 Rust crate——
+**是什么**：三值/多值计算的**底座仓**——所有算子、算法、学习机制在这里实现一次，生产链项目按 git pin 取用。在二进制机器上，把三进制真正能落地的那一层做成可复用 Rust crate——
 三值逻辑（Kleene K3 / Łukasiewicz Ł3 / Bochvar B3）、真值表与穷举等价、双导轨打包、
 CPU 掩码与 tryte 查表内核、GPU 三值内核、位平面 ALU、三值训练（STE/QAT）、
 TT3/TTX 资产容器、`.tri` 语言服务器、WASM Playground 与 `trit` CLI。
@@ -52,6 +52,14 @@ GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值
 
 定位与边界：[docs/DESIGN.md](docs/DESIGN.md)。
 
+本库**收什么、不收什么**（含数据与二进制政策、跨仓分工）：[docs/SCOPE.md](docs/SCOPE.md)。
+
+每条能力到底是什么状态（已跑通 / 已实现未测 / 组件 / 已否证）：[docs/STATUS.md](docs/STATUS.md)。
+
+新代码归位（算子 / 算法 / 学习 / 生产链）判据与门：[docs/LAYERS.md](docs/LAYERS.md)、`python scripts/layers.py`。
+
+该搬进 / 该新开 / 该搬出与排序：[docs/ROADMAP.md](docs/ROADMAP.md)。
+
 网安/逆向技术调研（PYAS、KSword 与静态二进制分析的对照、证据等级与路线图）：
 [docs/SECURITY-RE.md](docs/SECURITY-RE.md)。
 
@@ -81,7 +89,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-circuit` | 组合网表 X 传播、stuck-at/桥接可测性、ATPG、STA-lite、技术映射、结构化 Verilog |
 | `trit-belnap` | Belnap 四值（T/F/B/N）的 opt-in 语义 |
 | `trit-wasm` | WASM 绑定：给 `playground/` 的求值、真值表、等价 |
-| `trit-bdd` | BDD（canonical）等价判定、三值量化 |
+| `trit-bdd` | BDD（canonical）等价判定、三值量化、精确模型计数（`count_models_bdd`） |
 | `trit-policy` | 三值决策表的构建期验证 |
 | `trit-schedule` | 三值依赖的静态 DAG 调度（True/False/Unknown） |
 | `trit-learn` | 三值训练原语与神经组件：量化、STE 三变体、scale 梯度；批量 QAT 全连接层、损失/激活/优化器（实验层共用） |
@@ -97,8 +105,11 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-codec` | 5 trits/byte、平衡三进制、GF(3) `[4,2,3]` 纠错、按分布选编码、零拷贝视图 | `trit-codec pack\|plan\|...` |
 | `trit-float` | 平衡三进制浮点：舍入模式、同比特范围/精度交换、Takum 式锥形精度原型（同比特精度仍是二进制的 3 倍误差） | `trit-float stats\|range\|rounding` |
 | `trit-attn` | 注意力 = 快权重 FFN 的双视角、三值整数关联记忆、可训练三值注意力块（注意力+残差+FFN，QAT + 全链 STE） | `trit-attn demo\|train` |
+| `trit-bench` | 基准测量底件：确定性三值生成、交错轮次（每轮轮换起始位序）、计时段内重复、min/median/max 与单位换算 | 由各 crate 的 bench 使用 |
+| `trit-fuzz` | 测试语料底件：确定性三值向量 / 表达式 / CNF 子句集 / 单值取样（`trit`、`ternary_value`、`bipolar`），RNG 复用 `trit-bench` 的 `SeedRng`（同 13/7/17 序列） | `trit-count --fuzz-cnf`、`trit-count/tests/cnf_fuzz.rs`、`trit-dot`/`trit-codec` 的 stress |
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |
+| `trit-count` | 三值表达式精确模型计数：dual-rail CNF + DPLL + 组件缓存；约束计数（`--constraint` 可重复）；策略文件计数（`--policy` 展开 definitions、assumptions 当约束）；DPLL / 穷举 / BDD 三方对拍（≤12 变量穷举，`--big` 在 n>12 只做 DPLL vs BDD）；`--fuzz-cnf` 跳过编码器直接喂随机子句集对 `2^n` 穷举（实测 nvars 到 20：20 例全对，最慢一次 191µs） | `trit-count --expr "a & b" --constraint a` / `trit-count --policy examples/policy.json` / `trit-count --big 24` / `trit-count --fuzz-cnf --nvars 20` / `cargo run -p trit-count --example matching_family` |
 | `trit-ops` | 三值推理算子（双导轨掩码 / tryte 查表 / 自动选核）：流式 15.8× f32、0.2 B/参数 | `bench`（`crates/trit-ops`） |
 | `trit-texture` | TT3/TTX 三值纹理容器：8×8 块 2.125 bpp、GF(3) CRC-16、CPU/GPU 解码；TTX3 万级档案（瓦片化/层级混搭/流式解码，10240² 基面） | `trit-texture` |
 | `trit-unsafe` | 用 K3 审 unsafe：Safe / Unknown / Risky 按 crate 合成；17 类高危形态 + extern 声明块 | `trit-unsafe` |
@@ -108,6 +119,27 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-lsp` | `.tri` 语言服务器：诊断 / 悬停真值表 / 补全 / 文档符号 / 定义-引用-高亮-重命名 / 矛盾律-排中律-语义分歧深层诊断 | `trit-lsp` |
 | `trit-train` | 三值训练 M0：STE 三变体 + 每行 scale + 位平面 ALU | `train-bench` |
 | `trit-graph` | 三态结构基础：稠密/CSR 三态图、超图、树分解容器、议会、1-WL、图核、PageRank、TriMPNN、端到端三态分类 | 库（无二进制） |
+| `trit-wspace` | 三值权重空间编程：可 diff 的 WSP1 权重 IR、事务式补丁与逐位回滚、原子序列/条件分支脚本、无梯度最小修补（小网络完备 BFS、大网络束搜索）、单点/两编辑/三组合提议（实测失配变化排序）、单样本解释、行级消融探针（大网读取，pilot 消融校准选行）、行内 trit 定位（按位置活跃度选点）、三值任务向量（多任务投票合并）、候选直用、哈希链审计日志（权重链 + 行为链，验链 + 重放，分片 header + oracle 表，流式校验/重放，检查点续放）、隐藏单元置换对齐合并、三值任务向量投票合并（可选消隐藏置换）；CLI + MCP 十六工具 | `trit-wspace read/verify/task-merge/script/patch/repair/propose/explain/probe/localize/audit/shard/audit-shards/replay` / `trit-wspace mcp` |
+
+### 拆出去的仓
+
+| 仓 | 内容 | 拆法 |
+|---|---|---|
+| [`bfxh/trit-vcs`](https://github.com/bfxh/trit-vcs) | 内容寻址的协作版本库：BLAKE3 + CDC 分块 + 哈希链审计 + 写前认领门 + MCP 工具面 | `git subtree split` 带 12 笔历史迁出；`trit-core`/`trit-orch` 按 `rev` pin 回本仓，**不复制**（正本仍在这里） |
+
+本仓不再保留 `crates/trit-vcs`，也不保留它的变异登记表与夜间 Git 镜像脚本（`scripts/nightly_mirror.sh` 随仓走）。
+
+## 其他语言参考实现（非默认）
+
+`other-languages/` 存放跨语言**参考实现**，只用于借鉴语义与边界；**不进入 Cargo 工作区、不参与默认 CI/发布、不作为本仓默认实现**。
+
+| 语言 | 路径 | 范围 | 状态 |
+|---|---|---|---|
+| Go | `other-languages/go/` | 平衡三进制整数 + K3 + 5 trits/byte + 准入表 | 参考实现，`go test` 通过 |
+
+新增语言前先读 [other-languages/README.md](other-languages/README.md)：只有存在明确消费方或生态桥接时才加，避免把维护面摊大。
+
+跨语言互操作规范与 golden vectors 见 [interop/](interop/README.md)。
 
 ## 三态与三值拓扑
 
@@ -322,7 +354,8 @@ cargo run --release -p trit-cli -- verify examples/policy.json
   `Limit`／`BudgetExceeded` 错误；策略展开在分配大子树之前扣节点预算。
 - CLI 在默认值上收紧：`table` / REPL 与 WASM 只允许 10 个变量，网表分析最多 10 个主输入。
 
-**可复算的质量数据**：`scripts/mutation_check.py` 对 **312** 条关键规则做单点文本变异并跑回归；
+**可复算的质量数据**：`scripts/mutation_check.py` 的登记表（`scripts/mutants/*.json`）现有 **958**
+条关键规则的单点文本变异，逐条跑对应回归（复算：`python -c "import json,glob;print(sum(len(json.load(open(f,encoding='utf-8'))) for f in glob.glob('scripts/mutants/*.json')))"`）；
 fuzz 目标 8 个（netlist / verilog / atpg / blif / aiger / expr / policy / netlist_json）；
 测试矩阵覆盖 Linux / Windows / macOS 三平台 + MSRV 1.88 + wasm32。贡献流程见
 [CONTRIBUTING.md](CONTRIBUTING.md)。
@@ -496,7 +529,7 @@ BDD 节点预算默认 100 万（`BddLimits::default()`）。这是**软限额**
 高于上限。需要硬内存/CPU 上界时，把求解放进有资源限制的进程或 worker。
 量化结果的 `try_is_valid` / `try_counterexample` 会把查询产生的中间 BDD 也纳入检查。
 库调用可用 `equivalent_bdd_with_limits` 收紧，或 `BddLimits::UNLIMITED` 关闭。
-CLI 的 `equiv` / `quantify` / `verify --engine bdd` 都支持 `--bdd-max-nodes N`（0 表示不设上限）。
+CLI 的 `equiv` / `quantify` / `verify --engine bdd` / `count --crosscheck` 都支持 `--bdd-max-nodes N`（0 表示不设上限）。
 
 ## 量化（`trit quantify`）
 
@@ -525,6 +558,33 @@ $ trit quantify "a | !a" --vars a --kind forall --binary a
 性质成立退出 `0`，不成立退出 `2`；`--json` 输出 `satisfiable` / `valid` / `free` /
 `witness` / `counterexample` / `nodes`。被量化变量已被消去，见证与反例只含自由变量。
 省略 `--vars` 即量化全部变量，结果退化为一个布尔判定。
+
+## 模型计数（`trit count models`）
+
+把表达式编成双导轨 CNF，用带单元传播 / 分量分解 / 规范形缓存的 DPLL **精确计数**使
+`expr` 取目标值的赋值个数（目标是 `true` / `false` / `unknown` 三选一）。`--crosscheck`
+再跑两条**独立**路径复算：穷举（`3^n`，只适合小域）与双导轨 BDD（节点预算拦下时报"拒"，
+不算不一致）。
+
+```bash
+$ trit count models "a & b"
+模型数 a & b = 1  [kleene / cnf-dpll，节点 9、分支 4、分解 0]
+
+$ trit count models "a | b" --binary a
+模型数 a | b = 4  [kleene / cnf-dpll，节点 5、分支 2、分解 0]
+
+$ trit count models "a & b" --target unknown --crosscheck
+模型数 a & b = 3  [kleene / cnf-dpll，节点 9、分支 4、分解 0]
+对拍：穷举 3 ｜ BDD 3 ｜ 三路一致 是
+
+$ trit count models "a | b" --bdd-max-nodes 1 --crosscheck
+模型数 a | b = 5  [kleene / cnf-dpll，节点 9、分支 4、分解 0]
+对拍：穷举 5 ｜ BDD 拒（BDD 节点数超过上限 1）｜ 三路一致 否（预算拦下 BDD 时也是正常）
+```
+
+`--binary a` 把 a 的域从 `{F,U,T}` 收到 `{F,T}`，所以 `a | b` 从 5 降到 4；
+`--constraints "!a"` 要求约束先取 `True`，此时 `a & b` 数到 `0`（三路一致）。
+这些数都由穷举独立复算，见 `crates/trit-cli/tests/count_cmd.rs`。
 
 ## 四值（Belnap，opt-in）
 
@@ -734,10 +794,11 @@ OK     free slot must not reject on unknown hopelessness
 
 - 三进制红利 / 模拟税 / 生态路径依赖 / 基数无关复杂度是四类不同问题，讨论前先归类：
   [docs/TERNARY-BOUNDARIES.md](docs/TERNARY-BOUNDARIES.md)。
-- 三进制构建工具（M0–M3）：`.tri`/Verilog 子集 → 化简 + e-graph 重写（规则逐条自证）
-  → 位并行真值表 → `TRB2` blob/CSV/`lookup.c`，
-  `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog]`；为什么只做这一层、
-  哪部分仍靠 LLVM/Rust 见 [docs/TERNARY-TOOLCHAIN.md](docs/TERNARY-TOOLCHAIN.md)。
+- 三进制构建工具（M0–M3 + 2026-11-08 补齐）：`.tri`/Verilog 子集 → 化简 + e-graph **饱和重写**
+  （规则逐条自证，`--cost nodes|gates` 代价模型）→ **多线程**位并行真值表 →
+  `TRB2` v3（含变量名）/CSV/`lookup.c`/双导轨 Verilog/WGSL 查表内核；
+  `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog] [--verify-hdl] [--emit-gpu] [--threads N]`；
+  为什么只做这一层、哪部分仍靠 LLVM/Rust 见 [docs/TERNARY-TOOLCHAIN.md](docs/TERNARY-TOOLCHAIN.md)。
 - 三进制训练实验（`trit-train`）：三值 STE（Identity/Clipped/Soft）+ 每行 scale、
   位平面 ALU（Kleene/Łukasiewicz/Bochvar）+ 并发/预取剖析。边界与读数见
   [crates/trit-train/README.md](crates/trit-train/README.md)。
@@ -745,7 +806,7 @@ OK     free slot must not reject on unknown hopelessness
   语义直接复用 `trit-core` / `trit-eval`，不另写解析器。见
   [crates/trit-lsp/README.md](crates/trit-lsp/README.md)。
 - 只做**真值函数**三值逻辑；硬件四态 `0/1/X/Z` 与 X-optimism 不在范围内。
-- 不做时序模型检验、通用 SMT、完整硬件仿真。
+- 不做时序模型检验、通用 SMT、通用硬件仿真；导出的组合子集用 iverilog 自检（`--verify-hdl`）。
 - 穷举参考是逐赋值的，18 变量约 12.6 s，仅用于小规模对拍。
 
 ## 开发

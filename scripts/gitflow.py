@@ -10,7 +10,7 @@
   python scripts/gitflow.py worktree add|list|remove
   python scripts/gitflow.py pr triage|sync <n> [--dry-run]
   python scripts/gitflow.py stack [--repair [--apply]] | diagnose --pr <n> | flaky | dco | queue
-  python scripts/gitflow.py merge <分支或 PR 号> [--wait-minutes N]
+  python scripts/gitflow.py merge <分支或 PR 号> [--wait-minutes N] [--auto-sync]
   python scripts/gitflow.py --self-test
 
 为什么不是"git add -A"：
@@ -1362,6 +1362,19 @@ def checks_not_yet(output: str) -> bool:
     return "no checks reported" in lowered or "no checks" in lowered
 
 
+def pr_number_for_branch(repo: str, branch: str) -> str:
+    """分支 → 它那一个 open PR 的编号。
+
+    查不到、读不到、或有多个 ⇒ 返回空串：自动同步只认唯一解，
+    **猜一个编号去同步 = 可能动到别人的 PR**。
+    """
+    prs = open_pr_list(repo)
+    if prs is None:
+        return ""
+    hits = [str(pr.get("number")) for pr in prs
+            if isinstance(pr, dict) and pr.get("headRefName") == branch]
+    return hits[0] if len(hits) == 1 else ""
+
 def wait_for_checks(repo: str, branch: str, attempts: int = 40, pause: int = 15) -> int:
     """等检查**注册**（不是等它们绿）：pending 时 gh 返回非零(8)，那也算已注册。
 
@@ -1450,13 +1463,15 @@ def merge_gate(rows: list[dict], state: str) -> tuple[str, list[str]]:
     return "merge", []
 
 
-def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30) -> int:
+def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30,
+                    auto_sync: bool = False) -> int:
     """等检查**真正**落定再合。
 
     只靠 `gh pr checks --watch` 不够：push 之后新的 run 还没注册时，它会拿着上一轮的
     结果返回——然后 merge 被"requirements have not been met"拒掉（实跑踩过）。
     所以这里再轮询到没有 pending，并且失败时重试合并。
     """
+    syncs_left = 2
     if wait_for_checks(repo, branch, attempts=attempts, pause=pause) != 0:
         return 1
     checks = gh(["pr", "checks", "--repo", repo, branch, "--watch"])
@@ -1487,9 +1502,22 @@ def watch_and_merge(branch: str, repo: str, attempts: int = 60, pause: int = 30)
             return 0
         reason = " ".join((merge.stdout or "").split())[:220]
         if any(mark in reason for mark in MERGE_BLOCKED_FOREVER):
-            print("合并判红（重试没用，这种要先并主干）：" + reason)
-            print("  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply")
-            return 1
+            if not auto_sync:
+                print("合并判红（重试没用，这种要先并主干）：" + reason)
+                print("  提示：python scripts/gitflow.py pr sync <n> --dry-run，无冲突再加 --apply")
+                return 1
+            if syncs_left <= 0:
+                print("FAIL 判红：自动同步的 2 次额度用完还合不上（主干一直在动）⇒ 停手，人工对齐后再跑")
+                return 1
+            number = pr_number_for_branch(repo, branch)
+            if not number:
+                print("FAIL 判红：" + branch + " 对应不上唯一的 open PR ⇒ 不猜编号去同步别人的 PR")
+                return 1
+            syncs_left -= 1
+            print(f"自动同步（剩 {syncs_left} 次额度）：把主干合进 #{number}（不 force-push、不改写历史）")
+            if pr_sync(repo, number, dry_run=False) != 0:
+                return 1
+            continue
         if index == 0:
             print("合并暂时失败（继续重试）：" + reason)
         if index == attempts - 1:
@@ -1636,12 +1664,13 @@ def main(argv: list[str]) -> int:
         positional = positional_args(argv[1:], VALUE_FLAGS + ("--branch",))
         raw = argv[argv.index("--branch") + 1] if "--branch" in argv else (positional[0] if positional else "")
         if not raw:
-            return usage("用法：gitflow.py merge <分支或 PR 号> [--wait-minutes N]（也接受 --branch <分支>）")
+            return usage("用法：gitflow.py merge <分支或 PR 号> [--wait-minutes N] [--auto-sync]（也接受 --branch <分支>）")
         target = resolve_merge_target(repo, raw)
         if not target:
             return usage(f"判红：拿不到 {raw} 的分支名（不猜分支名去合并）")
         wait = int(argv[argv.index("--wait-minutes") + 1]) if "--wait-minutes" in argv else 30
-        return watch_and_merge(target, repo, attempts=max(1, wait * 2), pause=30)
+        return watch_and_merge(target, repo, attempts=max(1, wait * 2), pause=30,
+                               auto_sync="--auto-sync" in argv)
     if command == "diagnose":
         pr = argv[argv.index("--pr") + 1] if "--pr" in argv else ""
         if not pr:
@@ -2034,9 +2063,12 @@ def self_test() -> int:
         merge_real = globals()["watch_and_merge"]
         gh_real_merge = globals()["gh"]
         seen_branch: list[str] = []
+        seen_auto: list[bool] = []
 
-        def fake_watch(branch: str, repo: str, attempts: int = 60, pause: int = 30) -> int:
+        def fake_watch(branch: str, repo: str, attempts: int = 60, pause: int = 30,
+                       auto_sync: bool = False) -> int:
             seen_branch.append(branch)
+            seen_auto.append(auto_sync)
             return 0
 
         try:
@@ -2053,6 +2085,11 @@ def self_test() -> int:
             check("--branch 仍旧能用（不破坏老写法）",
                   main(["merge", "--repo", "o/r", "--branch", "feat/y", "--wait-minutes", "1"]), 0)
             check("--branch 的值被取到", seen_branch[-1], "feat/y")
+            check("默认不开自动同步（没人要求就不许动远端）", seen_auto[-1], False)
+            check("--auto-sync 才转下去",
+                  (main(["merge", "--repo", "o/r", "--remote", "origin", "--base", "main",
+                         "feat/z", "--auto-sync"]), seen_auto[-1], seen_branch[-1]),
+                  (0, True, "feat/z"))
             globals()["gh"] = lambda args: _CP(args, 1, "", "")
             buf = _mio.StringIO()
             with _mcl.redirect_stdout(buf):
@@ -2112,6 +2149,59 @@ def self_test() -> int:
                 globals()["gh"] = gh_real_merge
             globals()["watch_and_merge"] = merge_real
             globals()["gh"] = gh_real_merge
+
+        sync_state = {"calls": [], "synced": False}
+        BEHIND = ("X Pull request o/r#9 is not mergeable: the head branch is not up to date "
+                  "with the base branch.")
+
+        def pr_sync_ok(repo, number, dry_run=False):
+            sync_state["calls"].append((repo, number, dry_run))
+            sync_state["synced"] = True
+            return 0
+
+        def gh_auto(args):
+            if args[:2] == ["pr", "checks"]:
+                return _CP(args, 0, json.dumps([{"name": "CI", "bucket": "pass"}]), "")
+            if args[:2] == ["pr", "merge"] and sync_state["synced"]:
+                return _CP(args, 0, "", "")
+            return _CP(args, 1, BEHIND, "")
+
+        keep_rows = globals()["check_rows"]
+        keep_gh = globals()["gh"]
+        keep_time = globals()["time"]
+        keep_sync = globals()["pr_sync"]
+        keep_list = globals()["open_pr_list"]
+        auto_clock = _Clock()
+        try:
+            globals()["check_rows"] = lambda repo, branch: ([{"name": "CI", "bucket": "pass"}], "")
+            globals()["time"] = auto_clock
+            globals()["pr_sync"] = pr_sync_ok
+            globals()["open_pr_list"] = lambda repo: [{"number": 233, "headRefName": "feat/x"}]
+            globals()["gh"] = gh_auto
+            rc_auto = watch_and_merge("feat/x", "o/r", attempts=4, pause=6, auto_sync=True)
+            check("--auto-sync：自动把主干合进那一个 open PR 再试（不空睡）",
+                  (rc_auto, sync_state["calls"], auto_clock.slept),
+                  (0, [("o/r", "233", False)], []))
+            sync_state["calls"] = []
+            sync_state["synced"] = False
+            globals()["gh"] = lambda args: (
+                _CP(args, 0, json.dumps([{"name": "CI", "bucket": "pass"}]), "")
+                if args[:2] == ["pr", "checks"] else _CP(args, 1, BEHIND, ""))
+            rc_cap = watch_and_merge("feat/x", "o/r", attempts=9, pause=3, auto_sync=True)
+            check("--auto-sync 只有 2 次额度（主干一直动就停手，不许刷 merge commit）",
+                  (rc_cap, len(sync_state["calls"])), (1, 2))
+            sync_state["calls"] = []
+            globals()["open_pr_list"] = lambda repo: [
+                {"number": 7, "headRefName": "feat/x"}, {"number": 8, "headRefName": "feat/x"}]
+            rc_two = watch_and_merge("feat/x", "o/r", attempts=4, pause=3, auto_sync=True)
+            check("对应不上唯一 open PR ⇒ 判红且一次同步都不发（不猜编号去动别人的 PR）",
+                  (rc_two, sync_state["calls"]), (1, []))
+        finally:
+            globals()["check_rows"] = keep_rows
+            globals()["gh"] = keep_gh
+            globals()["time"] = keep_time
+            globals()["pr_sync"] = keep_sync
+            globals()["open_pr_list"] = keep_list
 
         real_gh = globals()["gh"]
         import subprocess as _sp

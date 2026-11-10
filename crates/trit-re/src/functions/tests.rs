@@ -21,6 +21,7 @@ fn cooccurrence_case() -> FunctionReport {
         ruling_clip: 0,
         ruling_miss: 0,
         ruling_nonexec: 0,
+        ruling_thunk_gap: 0,
         notes: vec![],
     }
 }
@@ -320,6 +321,63 @@ fn unattributed_sites_are_split_by_kind() {
 }
 
 #[test]
+fn e9_to_jmp_thunk_in_gap_is_ruled_thunk_gap() {
+    // 实测形态（trit-re.exe 全部 8 个残余）：`E9 rel32 → FF 25`（两级跳板
+    // 链）落在函数间隙——增量链接死跳板。裁定如实单列，不再伪装成边界漏检。
+    use super::attribute;
+    use crate::xref::{CallSite, ImportXref, SiteKind as Kind, XrefReport};
+    let mut code = vec![0xCCu8; 64];
+    // 0x110: E9 +0 → 0x115；0x115: FF 25（jmp rip-rel 跳板）
+    code[0x10..0x15].copy_from_slice(&[0xE9, 0x00, 0x00, 0x00, 0x00]);
+    code[0x15..0x17].copy_from_slice(&[0xFF, 0x25]);
+    let xref = XrefReport {
+        arch: "test".into(),
+        scanned_bytes: 0,
+        complete: true,
+        imports: vec![ImportXref {
+            import: "a!LoadLibraryW".into(),
+            slot: 1,
+            sites: vec![CallSite {
+                addr: 0x110,
+                file_offset: 0,
+                kind: Kind::Jump,
+            }],
+            status: Ternary::True,
+            note: String::new(),
+        }],
+        notes: vec![],
+    };
+    // 无精确函数区间：站点在 exec 内但归不到函数
+    let report = attribute(&xref, &[], &[(0x100, &code)], true, vec![]);
+    assert_eq!(report.ruling_thunk_gap, 1);
+    assert_eq!(report.ruling_miss, 0, "跳板链不再伪装成边界漏检");
+    assert_eq!(report.ruled_sites[0].ruling.as_str(), "thunk-gap");
+    // E9 指向普通代码（非 FF 25 跳板）→ 不是间隙跳板，按距离裁定
+    let mut code2 = vec![0xCCu8; 64];
+    code2[0x10..0x15].copy_from_slice(&[0xE9, 0x10, 0x00, 0x00, 0x00]); // → 0x125（普通地址）
+    let xref2 = XrefReport {
+        arch: "test".into(),
+        scanned_bytes: 0,
+        complete: true,
+        imports: vec![ImportXref {
+            import: "a!LoadLibraryW".into(),
+            slot: 1,
+            sites: vec![CallSite {
+                addr: 0x110,
+                file_offset: 0,
+                kind: Kind::Jump,
+            }],
+            status: Ternary::True,
+            note: String::new(),
+        }],
+        notes: vec![],
+    };
+    let report = attribute(&xref2, &[], &[(0x100, &code2)], true, vec![]);
+    assert_eq!(report.ruling_thunk_gap, 0);
+    assert_eq!(report.ruling_miss, 1, "非跳板链保持原裁定");
+}
+
+#[test]
 fn locate_respects_half_open_ranges() {
     let ranges = vec![function(0x1000, 0x1100), function(0x1100, 0x1200)];
     assert_eq!(locate(&ranges, 0x1000), Some(0));
@@ -344,6 +402,7 @@ fn cooccurrence_requires_exact_and_fully_attributed() {
         ruling_clip: 0,
         ruling_miss: 0,
         ruling_nonexec: 0,
+        ruling_thunk_gap: 0,
         notes: vec![],
     };
     assert_eq!(report.cooccurrence(&["a", "b"], true), Ternary::False);
@@ -489,4 +548,62 @@ fn ruling_detail_is_capped_but_counts_are_complete() {
     assert_eq!(report.unattributed_sites, 100);
     assert_eq!(report.ruled_sites.len(), MAX_RULED_SITES);
     assert_eq!(report.ruling_nonexec, 100);
+}
+
+/// v4：数据节指针表收割的过滤规则——连续 ≥2 的可执行域指针全收，
+/// 孤立指针仅 16 对齐收，NULL/非可执行域值归零连击。
+#[test]
+fn pointer_table_harvest_filters() {
+    use crate::pe::{PeInfo, Section};
+    let plus = true;
+    let image_base = 0x140000000u64;
+    // 数据节原始内容：VA 串 = [叶子A, 叶子B, 叶子C, 0(空槽), 整数巧合(指向 exec 的孤立非对齐)]
+    let mut table = Vec::new();
+    for rva in [0x1010u64, 0x1030u64, 0x1050u64, 0u64] {
+        table.extend((image_base + rva).to_le_bytes());
+    }
+    table.extend((image_base + 0x1099u64).to_le_bytes()); // 孤立、非 16 对齐
+    let mut data_bytes = table;
+    data_bytes.resize(0x100, 0); // 后续全 0（NULL 槽位，不收）
+    let info = PeInfo {
+        plus,
+        machine: 0x8664,
+        timestamp: 0,
+        subsystem: 3,
+        entry_rva: 0x1000,
+        image_base,
+        sections: vec![Section {
+            name: ".rdata".into(),
+            virtual_size: data_bytes.len() as u32,
+            virtual_address: 0x2000,
+            raw_size: data_bytes.len() as u32,
+            raw_ptr: 0,
+            characteristics: 0x4000_0040, // initialized data，不可执行
+            entropy: None,
+        }],
+        imports: None,
+        exports: Vec::new(),
+        debug_pdb: None,
+        has_security_dir: false,
+        has_signed_data: false,
+        rich_header: false,
+        runtime_functions: None,
+        coff_functions: None,
+        clr_dir_present: false,
+        clr: None,
+        tls_dir_present: false,
+        tls_callbacks: None,
+        overlay: None,
+        headers_size: 0x400,
+    };
+    let exec_bounds = [(0x1000u64, 0x1100u64)];
+    let seeds = super::pe_pointer_seeds(&data_bytes, &info, &exec_bounds);
+    for want in [0x1010u64, 0x1030u64, 0x1050u64] {
+        assert!(seeds.contains(&want), "连击表里的函数指针全收：{seeds:?}");
+    }
+    assert!(
+        !seeds.contains(&0x1099),
+        "孤立非对齐指针 = 整数巧合，丢（宁可丢也不给假起点）"
+    );
+    assert!(!seeds.contains(&0), "NULL 槽位不收");
 }

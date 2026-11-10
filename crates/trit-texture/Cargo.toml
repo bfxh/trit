@@ -32,6 +32,16 @@ required-features = ["png"]
 name = "gguf-to-mod"
 path = "src/bin/gguf-to-mod.rs"
 
+[[bin]]
+name = "ttx-pack"
+path = "src/bin/ttx-pack.rs"
+required-features = ["png"]
+
+[[bin]]
+name = "ttx-verify"
+path = "src/bin/ttx-verify.rs"
+required-features = ["png"]
+
 [[bench]]
 name = "texture"
 harness = false
@@ -43,3 +53,6 @@ required-features = ["png"]
 [[bench]]
 name = "sample"
 harness = false
+
+[dev-dependencies]
+trit-fuzz.workspace = true

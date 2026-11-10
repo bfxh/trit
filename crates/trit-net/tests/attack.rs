@@ -243,10 +243,13 @@ fn registration_discipline_is_enforced() {
         graph.add_edge(a, 99, Evidence::Confirmed, "x"),
         Err(AttackError::UnknownNode(99))
     );
-    // 同 label 复用同一节点（幂等）。
+    // 同 label 复用同一节点（幂等），且证据与备注被 LWW 更新。
     let again = graph.add_node("a", Evidence::Unverified, "第二次登记");
     assert_eq!(a, again);
     assert_eq!(graph.len(), 1);
+    let node = graph.node(a).unwrap();
+    assert_eq!(node.evidence, Evidence::Unverified);
+    assert_eq!(node.note, "第二次登记");
     // 同一对端点重复登记是 LWW：后写覆盖，并报告被覆盖的旧证据。
     let b = graph.add_node("b", Evidence::Confirmed, "");
     assert_eq!(

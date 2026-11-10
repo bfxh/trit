@@ -1,0 +1,58 @@
+{
+  "schema": "trit.openai-math-audit/v1",
+  "repo": "https://github.com/openai/math",
+  "commit": "4eaee87548250b2682affda7d05d947c05554bae",
+  "pin_commit": "4eaee87548250b2682affda7d05d947c05554bae",
+  "pin_observed_at": "2026-11-08",
+  "toolchain": {
+    "corpus": "leanprover/lean4:v4.34.1",
+    "this_repo": "leanprover/lean4:v4.35.0",
+    "matches": false
+  },
+  "catalogue": {
+    "version": "v0.4",
+    "sources": 176,
+    "main_results": 208,
+    "complete_entries": 208,
+    "unique_comparator_configs": 192,
+    "max_results_per_config": 6,
+    "challenge_json": 419,
+    "challenge_lean": 678,
+    "unreferenced_configs": 227
+  },
+  "requires": {
+    "total": 30,
+    "pinned": 30,
+    "unpinned": [],
+    "mathlib_sha": "d13f23b723b8a846827a245b89c10fc7d3f11612"
+  },
+  "checks": {
+    "ok": true,
+    "missing_files": [],
+    "missing_configs": [],
+    "unreadable_configs": [],
+    "declaration_not_in_theorem_names": [],
+    "missing_solution_modules": [],
+    "missing_challenge_modules": []
+  },
+  "distribution": {
+    "permitted_axioms": {
+      "Classical.choice+Quot.sound+propext": 208
+    },
+    "nanoda": {
+      "absent": 6,
+      "false": 199,
+      "true": 3
+    }
+  },
+  "evidence": {
+    "catalogue_counts": "A (parsed from pinned commit)",
+    "dynamic_comparator": "not_run",
+    "readme_coverage_claim": "B (README headline; not derived from formalization.yaml)"
+  },
+  "readme_coverage_claim": "300 / 719 top-line results (~42%), README 2026-10-26 (B, not re-derived)",
+  "warnings": [
+    "toolchains differ (openai/math leanprover/lean4:v4.34.1, this repo leanprover/lean4:v4.35.0); do not mix Lake projects"
+  ],
+  "errors": []
+}

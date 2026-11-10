@@ -1,0 +1,8 @@
+{
+  "repo": "https://github.com/openai/math",
+  "commit": "4eaee87548250b2682affda7d05d947c05554bae",
+  "lean_toolchain": "leanprover/lean4:v4.34.1",
+  "catalogue_version": "v0.4",
+  "observed_at": "2026-11-08",
+  "readme_coverage_claim": "300 / 719 top-line results (~42%), README 2026-10-26 (B, not re-derived)"
+}

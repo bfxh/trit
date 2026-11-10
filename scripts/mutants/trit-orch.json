@@ -1,0 +1,488 @@
+[
+ {
+  "name": "orch: unknown requirement must not admit",
+  "file": "crates/trit-orch/src/admission.rs",
+  "old": "        Ternary::Unknown => Ternary::Unknown,",
+  "new": "        Ternary::Unknown => Ternary::True,",
+  "pkg": "trit-orch",
+  "filter": "dependency_truth_table_does_not_infer_unknown_requirement",
+  "diagnostic": "ORCH_DEPENDENCY_TABLE"
+ },
+ {
+  "name": "orch: authorization remains a hard gate",
+  "file": "crates/trit-orch/src/admission.rs",
+  "old": "    dependencies & authorization & resources & freshness",
+  "new": "    dependencies & resources & freshness",
+  "pkg": "trit-orch",
+  "filter": "revocation_and_freshness_are_rechecked_each_selection",
+  "diagnostic": "ORCH_AUTHORIZATION_RECHECK"
+ },
+ {
+  "name": "orch: zero checks cannot verify a result",
+  "file": "crates/trit-orch/src/model.rs",
+  "old": "        if self.checks == 0 || self.epoch != expected_epoch {",
+  "new": "        if self.epoch != expected_epoch {",
+  "pkg": "trit-orch",
+  "filter": "evidence_requires_current_revision_and_nonzero_checks",
+  "diagnostic": "ORCH_ZERO_CHECKS"
+ },
+ {
+  "name": "orch: stale snapshot cannot select",
+  "file": "crates/trit-orch/src/selection.rs",
+  "old": "    if snapshot.revision != revision {",
+  "new": "    if false {",
+  "pkg": "trit-orch",
+  "filter": "snapshot_requires_matching_revision_and_exact_task_set",
+  "diagnostic": "ORCH_STALE_SNAPSHOT"
+ },
+ {
+  "name": "orch: pending predecessor is not complete",
+  "file": "crates/trit-orch/src/selection.rs",
+  "old": "        let verdict = if observation.phase == Phase::Settled",
+  "new": "        let verdict = if true",
+  "pkg": "trit-orch",
+  "filter": "selected_predecessor_is_not_imagined_complete",
+  "diagnostic": "ORCH_NO_FORECAST_COMPLETION"
+ },
+ {
+  "name": "orch: stale predecessor evidence is not trusted",
+  "file": "crates/trit-orch/src/selection.rs",
+  "old": "            && observation.freshness == Ternary::True",
+  "new": "            && true",
+  "pkg": "trit-orch",
+  "filter": "stale_or_missing_predecessor_evidence_is_never_refuted",
+  "diagnostic": "ORCH_PREDECESSOR_FRESHNESS"
+ },
+ {
+  "name": "orch: inflight work retains capacity",
+  "file": "crates/trit-orch/src/budget.rs",
+  "old": "            if observation.phase == Phase::InFlight {",
+  "new": "            if false {",
+  "pkg": "trit-orch",
+  "filter": "inflight_work_keeps_worker_and_resource_reservations",
+  "diagnostic": "ORCH_INFLIGHT_CAPACITY"
+ },
+ {
+  "name": "orch: new batch must respect remaining tokens",
+  "file": "crates/trit-orch/src/budget.rs",
+  "old": "        } else if remaining > tokens {",
+  "new": "        } else if false {",
+  "pkg": "trit-orch",
+  "filter": "pending_task_with_prior_usage_reserves_only_the_remaining_budget",
+  "diagnostic": "ORCH_TOKEN_REMAINING"
+ },
+ {
+  "name": "orch: crash or timeout is not a pass",
+  "file": "crates/trit-orch/src/evidence.rs",
+  "old": "                _ => CheckResult::Inconclusive,",
+  "new": "                _ => CheckResult::Passed,",
+  "pkg": "trit-orch",
+  "filter": "crashes_timeouts_and_spawn_failures_are_inconclusive_not_refuted",
+  "diagnostic": "ORCH_RECEIPT_ABNORMAL_EXIT"
+ },
+ {
+  "name": "orch: assertions below minimum coverage cannot pass",
+  "file": "crates/trit-orch/src/evidence.rs",
+  "old": "                Exit::Completed { code: 0 } if self.assertions_passed >= spec.min_assertions => {",
+  "new": "                Exit::Completed { code: 0 } => {",
+  "pkg": "trit-orch",
+  "filter": "insufficient_assertions_never_pass",
+  "diagnostic": "ORCH_RECEIPT_COVERAGE"
+ },
+ {
+  "name": "orch: failed assertion must refute before exit kind",
+  "file": "crates/trit-orch/src/evidence.rs",
+  "old": "        let result = if self.assertions_failed > 0 {",
+  "new": "        let result = if false {",
+  "pkg": "trit-orch",
+  "filter": "failed_assertion_refutes_even_after_timeout",
+  "diagnostic": "ORCH_RECEIPT_NEGATIVE_FIRST"
+ },
+ {
+  "name": "orch: held tasks are not denied",
+  "file": "crates/trit-orch/src/status.rs",
+  "old": "                    Ternary::Unknown => counts.held += 1,",
+  "new": "                    Ternary::Unknown => counts.denied += 1,",
+  "pkg": "trit-orch",
+  "filter": "status_counts_keep_inflight_and_settled_out_of_held",
+  "diagnostic": "ORCH_STATUS_HELD_COUNTS"
+ },
+ {
+  "name": "orch: patch must match the current base revision",
+  "file": "crates/trit-orch/src/plan.rs",
+  "old": "        if patch.base_revision != self.revision {",
+  "new": "        if false {",
+  "pkg": "trit-orch",
+  "filter": "patch_requires_current_base_revision",
+  "diagnostic": "ORCH_PATCH_BASE_REVISION"
+ },
+ {
+  "name": "orch: inflight task cannot be removed",
+  "file": "crates/trit-orch/src/plan.rs",
+  "old": "            if is_in_flight(snapshot, id) {",
+  "new": "            if false {",
+  "pkg": "trit-orch",
+  "filter": "inflight_tasks_are_protected_from_removal_and_redefinition",
+  "diagnostic": "ORCH_PATCH_PROTECT_INFLIGHT"
+ },
+ {
+  "name": "orch: replacing a definition bumps its epoch",
+  "file": "crates/trit-orch/src/plan.rs",
+  "old": "                .checked_add(1)",
+  "new": "                .checked_add(0)",
+  "pkg": "trit-orch",
+  "filter": "replaced_definition_bumps_epoch_and_runs_again",
+  "diagnostic": "ORCH_PATCH_EPOCH_BUMP"
+ },
+ {
+  "name": "orch: in-doubt effect must not be retried blindly",
+  "file": "crates/trit-orch/src/effects.rs",
+  "old": "        matches!(self.state(operation), None | Some(Effect::Refuted))",
+  "new": "        matches!(self.state(operation), None | Some(Effect::Refuted) | Some(Effect::Unknown))",
+  "pkg": "trit-orch",
+  "filter": "in_doubt_effect_cannot_be_re_prepared",
+  "diagnostic": "ORCH_EFFECT_NO_BLIND_RETRY"
+ },
+ {
+  "name": "orch: stale fence cannot send or prepare",
+  "file": "crates/trit-orch/src/effects.rs",
+  "old": "fn fence_guard(operation: &str, record: &Record, fence: u64) -> Result<(), Error> {\n    if fence < record.attempt.fence {",
+  "new": "fn fence_guard(operation: &str, record: &Record, fence: u64) -> Result<(), Error> {\n    if false {",
+  "pkg": "trit-orch",
+  "filter": "stale_fence_cannot_send_or_prepare_over_newer_owner",
+  "diagnostic": "ORCH_EFFECT_FENCE"
+ },
+ {
+  "name": "orch: reconcile present confirms the effect",
+  "file": "crates/trit-orch/src/effects.rs",
+  "old": "                record.state = Effect::Confirmed;",
+  "new": "                record.state = Effect::Refuted;",
+  "pkg": "trit-orch",
+  "filter": "reconcile_present_confirms_and_blocks_further_attempts",
+  "diagnostic": "ORCH_EFFECT_RECONCILE"
+ },
+ {
+  "name": "orch: confirmed effect is terminal",
+  "file": "crates/trit-orch/src/effects.rs",
+  "old": "                    Effect::Confirmed => Err(Error::EffectAlreadyApplied {",
+  "new": "                    Effect::Confirmed => Err(Error::EffectInDoubt {",
+  "pkg": "trit-orch",
+  "filter": "reconcile_present_confirms_and_blocks_further_attempts",
+  "diagnostic": "ORCH_EFFECT_TERMINAL"
+ },
+ {
+  "name": "orch: pending tasks block completion",
+  "file": "crates/trit-orch/src/progress.rs",
+  "old": "                Phase::Pending => pending += 1,",
+  "new": "                Phase::Pending => {}",
+  "pkg": "trit-orch",
+  "filter": "finish_requires_every_task_to_be_decided",
+  "diagnostic": "ORCH_FINISH_PENDING"
+ },
+ {
+  "name": "orch: stale evidence blocks completion",
+  "file": "crates/trit-orch/src/progress.rs",
+  "old": "    if observation.epoch != spec.epoch || observation.freshness != Ternary::True {",
+  "new": "    if false {",
+  "pkg": "trit-orch",
+  "filter": "stale_definition_or_freshness_cannot_be_reported_complete",
+  "diagnostic": "ORCH_FINISH_STALE"
+ },
+ {
+  "name": "orch: inconclusive results are not completion",
+  "file": "crates/trit-orch/src/progress.rs",
+  "old": "                    _ => inconclusive += 1,",
+  "new": "                    _ => confirmed += 1,",
+  "pkg": "trit-orch",
+  "filter": "settled_without_evidence_cannot_be_reported_complete",
+  "diagnostic": "ORCH_FINISH_INCONCLUSIVE"
+ },
+ {
+  "name": "orch: dispatch requires Prepared state",
+  "file": "crates/trit-orch/src/effects.rs",
+  "old": "        match ledger.state(id) {",
+  "new": "        match Some(Effect::Prepared) {",
+  "pkg": "trit-orch",
+  "filter": "sent_or_confirmed_intents_are_not_dispatchable_again",
+  "diagnostic": "ORCH_DISPATCH_STATE"
+ },
+ {
+  "name": "orch: dispatch checks the prepared epoch",
+  "file": "crates/trit-orch/src/effects.rs",
+  "old": "        if attempt.epoch != spec.epoch {",
+  "new": "        if false {",
+  "pkg": "trit-orch",
+  "filter": "dispatch_rejects_intents_prepared_for_an_old_definition_epoch",
+  "diagnostic": "ORCH_DISPATCH_EPOCH"
+ },
+ {
+  "name": "orch: corrupt ledger must be reported",
+  "file": "crates/trit-orch/src/effects.rs",
+  "old": "            Ok(text) => Ledger::from_json(&text),",
+  "new": "            Ok(text) => Ok(Ledger::from_json(&text).unwrap_or_default()),",
+  "pkg": "trit-orch",
+  "filter": "corrupt_ledger_is_reported_not_guessed",
+  "diagnostic": "ORCH_LEDGER_PARSE"
+ },
+ {
+  "name": "orch: recovery treats a durable sending mark as in-doubt",
+  "file": "crates/trit-orch/src/effects.rs",
+  "old": "                Effect::Prepared => recovery.ready.push(operation.clone()),\n                Effect::Sending | Effect::Sent | Effect::Unknown => {",
+  "new": "                Effect::Prepared | Effect::Sending => recovery.ready.push(operation.clone()),\n                Effect::Sent | Effect::Unknown => {",
+  "pkg": "trit-orch",
+  "filter": "durable_sending_mark_is_in_doubt_even_if_the_call_never_ran",
+  "diagnostic": "ORCH_CRASH_SENDING_IN_DOUBT"
+ },
+ {
+  "name": "orch: cli exit code reflects failure",
+  "file": "crates/trit-orch/src/bin/trit-orch.rs",
+  "old": "    std::process::exit(1);",
+  "new": "    std::process::exit(0);",
+  "pkg": "trit-orch",
+  "filter": "plan_accepts_valid_graph_and_rejects_cycles",
+  "diagnostic": "ORCH_CLI_EXIT_ON_ERROR"
+ },
+ {
+  "name": "orch: shadow flags unsafe resend proposals",
+  "file": "crates/trit-orch/src/shadow.rs",
+  "old": "        if matches!(",
+  "new": "        if false && matches!(",
+  "pkg": "trit-orch",
+  "filter": "proposing_to_resend_an_in_doubt_effect_is_flagged_unsafe",
+  "diagnostic": "ORCH_SHADOW_UNSAFE"
+ },
+ {
+  "name": "orch: shadow counts order mismatches",
+  "file": "crates/trit-orch/src/shadow.rs",
+  "old": "            report.order_mismatches += 1;",
+  "new": "            report.order_mismatches += 0;",
+  "pkg": "trit-orch",
+  "filter": "order_only_proposals_do_not_change_the_dispatched_set",
+  "diagnostic": "ORCH_SHADOW_ORDER"
+ },
+ {
+  "name": "orch: critical path ignores unknown edges but keeps optional",
+  "file": "crates/trit-orch/src/policy.rs",
+  "old": "            if dependency.required == crate::Ternary::Unknown {",
+  "new": "            if dependency.required != crate::Ternary::Unknown {",
+  "pkg": "trit-orch",
+  "filter": "critical_path_counts_optional_edges_but_not_unknown_ones",
+  "diagnostic": "ORCH_SHADOW_CP_EDGES"
+ },
+ {
+  "name": "orch: critical path orders by bottom level",
+  "file": "crates/trit-orch/src/policy.rs",
+  "old": "        let mut order: Vec<(u64, &str)> = context\n            .selection\n            .selected\n            .iter()\n            .map(|id| (levels.get(id).copied().unwrap_or(0), id.as_str()))",
+  "new": "        let mut order: Vec<(u64, &str)> = context\n            .selection\n            .selected\n            .iter()\n            .map(|id| (0u64, id.as_str()))",
+  "pkg": "trit-orch",
+  "filter": "critical_path_prioritises_the_deeper_chain",
+  "diagnostic": "ORCH_SHADOW_CP_ORDER"
+ },
+ {
+  "name": "orch: malformed trace reports its line number",
+  "file": "crates/trit-orch/src/shadow.rs",
+  "old": "                line: index + 1,",
+  "new": "                line: 0,",
+  "pkg": "trit-orch",
+  "filter": "malformed_line_reports_its_line_number",
+  "diagnostic": "ORCH_TRACE_PARSE"
+ },
+ {
+  "name": "orch: select capture appends one line per call",
+  "file": "crates/trit-orch/src/bin/trit-orch.rs",
+  "old": "            if let Some(path) = &capture {",
+  "new": "            if let Some(path) = &capture.filter(|_| false) {",
+  "pkg": "trit-orch",
+  "filter": "select_can_record_traces_and_shadow_replays_them",
+  "diagnostic": "ORCH_CLI_CAPTURE"
+ },
+ {
+  "name": "orch: whitespace lines are skipped",
+  "file": "crates/trit-orch/src/shadow.rs",
+  "old": "            let line = line.trim();",
+  "new": "            let line = line;",
+  "pkg": "trit-orch",
+  "filter": "whitespace_only_lines_are_skipped",
+  "diagnostic": "ORCH_TRACE_WHITESPACE"
+ },
+ {
+  "name": "orch: non-utf8 trace is an io error",
+  "file": "crates/trit-orch/src/shadow.rs",
+  "old": "        let text = match std::fs::read_to_string(&self.path) {",
+  "new": "        let text = match Ok::<String, std::io::Error>(String::from_utf8_lossy(&std::fs::read(&self.path).unwrap_or_default()).into_owned()) {",
+  "pkg": "trit-orch",
+  "filter": "non_utf8_bytes_report_io_not_a_silent_empty_trace",
+  "diagnostic": "ORCH_TRACE_NON_UTF8"
+ },
+ {
+  "name": "orch: unproven recall must not escalate to the lossy tier",
+  "file": "crates/trit-orch/src/context.rs",
+  "old": "    match facts.recall_reachable {",
+  "new": "    match Ternary::True {",
+  "pkg": "trit-orch",
+  "filter": "unknown_recall_does_not_escalate_to_lossy_tier",
+  "diagnostic": "ORCH_CTX_NO_ESCALATE_ON_UNKNOWN_RECALL"
+ },
+ {
+  "name": "orch: zero prunable bytes are not relief",
+  "file": "crates/trit-orch/src/context.rs",
+  "old": "    let prune_relieves = facts.prunable_tokens > 0 && facts.prunable_tokens >= excess;",
+  "new": "    let prune_relieves = facts.prunable_tokens >= excess;",
+  "pkg": "trit-orch",
+  "filter": "zero_prunable_never_counts_as_relief",
+  "diagnostic": "ORCH_CTX_ZERO_PRUNABLE"
+ },
+ {
+  "name": "orch: unflushed facts gate the lossy tier",
+  "file": "crates/trit-orch/src/context.rs",
+  "old": "        (facts.durable_flushed, CompactionBlock::FactsNotFlushed),",
+  "new": "        (Ternary::True, CompactionBlock::FactsNotFlushed),",
+  "pkg": "trit-orch",
+  "filter": "unflushed_facts_block_lossy_summary",
+  "diagnostic": "ORCH_CTX_FLUSH_GATE"
+ },
+ {
+  "name": "orch: unpinned constraints gate the lossy tier",
+  "file": "crates/trit-orch/src/context.rs",
+  "old": "            facts.constraints_pinned,",
+  "new": "            Ternary::True,",
+  "pkg": "trit-orch",
+  "filter": "unpinned_constraints_refuses_and_names_the_fix",
+  "diagnostic": "ORCH_CTX_PIN_GATE"
+ },
+ {
+  "name": "orch: lossy tier needs durable progress since last compaction",
+  "file": "crates/trit-orch/src/context.rs",
+  "old": "            facts.progress_since_compaction,",
+  "new": "            Ternary::True,",
+  "pkg": "trit-orch",
+  "filter": "compaction_without_new_durable_progress_is_refused",
+  "diagnostic": "ORCH_CTX_RHYTHM_GATE"
+ },
+ {
+  "name": "orch: overflow report below half window is a provider error",
+  "file": "crates/trit-orch/src/context.rs",
+  "old": "    tokens.saturating_mul(2) < context_window",
+  "new": "    false",
+  "pkg": "trit-orch",
+  "filter": "overflow_report_below_half_window_is_treated_as_provider_error",
+  "diagnostic": "ORCH_CTX_FALSE_OVERFLOW"
+ },
+ {
+  "name": "orch: unmeasured pressure stays unknown",
+  "file": "crates/trit-orch/src/context.rs",
+  "old": "            blocks.push(CompactionBlock::UnmeasuredPressure);",
+  "new": "            blocks.push(CompactionBlock::BelowThreshold);",
+  "pkg": "trit-orch",
+  "filter": "unmeasured_pressure_is_unknown_not_absent",
+  "diagnostic": "ORCH_CTX_UNMEASURED"
+ },
+ {
+  "name": "orch: threshold ratio bounds are enforced",
+  "file": "crates/trit-orch/src/context.rs",
+  "old": "    if facts.threshold_bp < MIN_THRESHOLD_BP || facts.threshold_bp > MAX_THRESHOLD_BP {",
+  "new": "    if false {",
+  "pkg": "trit-orch",
+  "filter": "threshold_out_of_bounds_is_config_error_with_stable_kind",
+  "diagnostic": "ORCH_CTX_BP_BOUNDS"
+ },
+ {
+  "name": "orch: default safety gates are unknown not refuted",
+  "file": "crates/trit-orch/src/context.rs",
+  "old": "            durable_flushed: Ternary::Unknown,",
+  "new": "            durable_flushed: Ternary::False,",
+  "pkg": "trit-orch",
+  "filter": "default_facts_leave_every_safety_gate_unknown",
+  "diagnostic": "ORCH_CTX_DEFAULT_UNKNOWN"
+ },
+ {
+  "name": "orch: ledger save needs a per-save temp name",
+  "file": "crates/trit-orch/src/effects.rs",
+  "old": "        let temporary = self.temporary_path();",
+  "new": "        let temporary = self.path.with_extension(\"tmp\");",
+  "pkg": "trit-orch",
+  "filter": "save_does_not_consume_a_foreign_tmp_named_file",
+  "diagnostic": "ORCH_LEDGER_TMP_OWNED"
+ },
+ {
+  "name": "orch: expired claim must not renew",
+  "file": "crates/trit-orch/src/claim.rs",
+  "old": "            if claim.expires_at <= now {\n                return Err(Error::ClaimExpired { id: id.to_owned() });\n            }",
+  "new": "            if false {\n                return Err(Error::ClaimExpired { id: id.to_owned() });\n            }",
+  "pkg": "trit-orch",
+  "filter": "expired_claim_requires_reclaim_and_blocks_gate",
+  "diagnostic": "ORCH_CLAIM_EXPIRED"
+ },
+ {
+  "name": "orch: stale fence cannot renew",
+  "file": "crates/trit-orch/src/claim.rs",
+  "old": "            if claim.fencing != fencing {\n                return Err(Error::StaleFence {",
+  "new": "            if false {\n                return Err(Error::StaleFence {",
+  "pkg": "trit-orch",
+  "filter": "stale_fence_cannot_renew_or_release",
+  "diagnostic": "ORCH_CLAIM_FENCE"
+ },
+ {
+  "name": "orch: path prefix must conflict",
+  "file": "crates/trit-orch/src/claim.rs",
+  "old": "                    && claim.paths.iter().any(|scope| paths_overlap(scope, path))",
+  "new": "                    && claim.paths.iter().any(|scope| scope == path)",
+  "pkg": "trit-orch",
+  "filter": "claim_path_prefix_conflict_is_detected",
+  "diagnostic": "ORCH_CLAIM_PREFIX"
+ },
+ {
+  "name": "orch: uncovered claim path is unknown",
+  "file": "crates/trit-orch/src/claim.rs",
+  "old": "            if !covered {\n                return Ok(Ternary::Unknown);\n            }",
+  "new": "            if !covered {\n                return Ok(Ternary::True);\n            }",
+  "pkg": "trit-orch",
+  "filter": "claim_gate_requires_full_coverage",
+  "diagnostic": "ORCH_CLAIM_COVERAGE"
+ },
+ {
+  "name": "orch: receipt cannot skip a state",
+  "file": "crates/trit-orch/src/receipt.rs",
+  "old": "        if self.state.next() != Some(next) {",
+  "new": "        if false {",
+  "pkg": "trit-orch",
+  "filter": "receipt_four_states_are_strict_and_idempotent",
+  "diagnostic": "ORCH_RECEIPT_SKIP"
+ },
+ {
+  "name": "orch: acted receipt cannot reject",
+  "file": "crates/trit-orch/src/receipt.rs",
+  "old": "    pub fn reject(&mut self, reason: &str) -> Result<(), Error> {\n        if self.state == ReceiptState::Acted {",
+  "new": "    pub fn reject(&mut self, reason: &str) -> Result<(), Error> {\n        if false {",
+  "pkg": "trit-orch",
+  "filter": "receipt_four_states_are_strict_and_idempotent",
+  "diagnostic": "ORCH_RECEIPT_TERMINAL"
+ },
+ {
+  "name": "orch: acted receipt cannot expire",
+  "file": "crates/trit-orch/src/receipt.rs",
+  "old": "    pub fn expire(&mut self) -> Result<(), Error> {\n        if self.state == ReceiptState::Acted {",
+  "new": "    pub fn expire(&mut self) -> Result<(), Error> {\n        if false {",
+  "pkg": "trit-orch",
+  "filter": "receipt_four_states_are_strict_and_idempotent",
+  "diagnostic": "ORCH_RECEIPT_TERMINAL"
+ },
+ {
+  "name": "orch: handoff state hash mismatch holds",
+  "file": "crates/trit-orch/src/receipt.rs",
+  "old": "        Ok(()) => Ternary::Unknown,",
+  "new": "        Ok(()) => Ternary::True,",
+  "pkg": "trit-orch",
+  "filter": "handoff_gate_uses_state_hash_and_expiry",
+  "diagnostic": "ORCH_HANDOFF_STATE"
+ },
+ {
+  "name": "orch: handoff expiry holds",
+  "file": "crates/trit-orch/src/receipt.rs",
+  "old": "        Err(Error::HandoffExpired { .. }) => Ternary::Unknown,",
+  "new": "        Err(Error::HandoffExpired { .. }) => Ternary::True,",
+  "pkg": "trit-orch",
+  "filter": "handoff_gate_uses_state_hash_and_expiry",
+  "diagnostic": "ORCH_HANDOFF_EXPIRED"
+ }
+]

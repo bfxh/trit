@@ -13,26 +13,17 @@
 use std::hint::black_box;
 use std::time::Instant;
 
+// RNG 改吃 trit-fuzz 的 SeedRng（同一条 xorshift 13/7/17 ⇒ 序列不变）。
+use trit_fuzz::SeedRng;
 use trit_texture::convert::{rgba_to_ttx2_mips, ttx2_to_rgba};
 use trit_texture::mip::MipSampler;
 use trit_texture::sample::{Sampler, Wrap, sample_aniso, sample_bilinear, texel};
 use trit_texture::ttx2::from_ttx2;
 use trit_texture::{BLOCK_HEIGHT, BLOCK_WIDTH, TRIT_BLOCK_BYTES, TritTexture};
 
-struct Rng(u64);
-
-impl Rng {
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 << 13;
-        self.0 ^= self.0 >> 7;
-        self.0 ^= self.0 << 17;
-        self.0
-    }
-}
-
 fn synthetic(width: usize, height: usize) -> Vec<u8> {
     let mut pixels = vec![0u8; width * height * 4];
-    let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+    let mut rng = SeedRng::new(0x9E37_79B9_7F4A_7C15);
     for y in 0..height {
         for x in 0..width {
             let offset = (y * width + x) * 4;
@@ -40,8 +31,8 @@ fn synthetic(width: usize, height: usize) -> Vec<u8> {
             pixels[offset + 1] = (y * 255 / height) as u8;
             pixels[offset + 2] = ((x + y) % 64 * 4) as u8;
             pixels[offset + 3] = 255;
-            if rng.next().is_multiple_of(64) {
-                let salt = (rng.next() % 256) as u8;
+            if rng.next_u64().is_multiple_of(64) {
+                let salt = (rng.next_u64() % 256) as u8;
                 pixels[offset] = salt;
                 pixels[offset + 1] = salt;
                 pixels[offset + 2] = salt;

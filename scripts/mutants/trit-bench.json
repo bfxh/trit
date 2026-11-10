@@ -1,0 +1,42 @@
+[
+ {
+  "name": "bench: 轮内不轮换起始位序",
+  "file": "crates/trit-bench/src/lib.rs",
+  "old": "                let index = (round + step) % count;",
+  "new": "                let index = step;",
+  "pkg": "trit-bench",
+  "filter": "rounds_interleave_and_rotate_the_starting_order"
+ },
+ {
+  "name": "bench: reps 被吞成 1",
+  "file": "crates/trit-bench/src/lib.rs",
+  "old": "        self.reps = reps.max(1);",
+  "new": "        self.reps = 1;",
+  "pkg": "trit-bench",
+  "filter": "reps_multiply_the_work_and_average_the_reading"
+ },
+ {
+  "name": "bench: 中位数取成最小值",
+  "file": "crates/trit-bench/src/lib.rs",
+  "old": "            median_ns: sorted[sorted.len() / 2],",
+  "new": "            median_ns: sorted[0],",
+  "pkg": "trit-bench",
+  "filter": "spread_reports_min_median_max"
+ },
+ {
+  "name": "bench: 三值生成退化成两值",
+  "file": "crates/trit-bench/src/lib.rs",
+  "old": "            .map(|_| (self.next_u64() % 3) as i8 as i32 - 1)",
+  "new": "            .map(|_| (self.next_u64() % 2) as i8 as i32 - 1)",
+  "pkg": "trit-bench",
+  "filter": "trits_cover_the_three_values_and_stay_balanced"
+ },
+ {
+  "name": "bench: 种子 0 的不动点不防",
+  "file": "crates/trit-bench/src/lib.rs",
+  "old": "        Self(if seed == 0 {",
+  "new": "        Self(if false {",
+  "pkg": "trit-bench",
+  "filter": "seed_zero_does_not_degenerate"
+ }
+]
