@@ -153,6 +153,8 @@ def proc_gone(pid: int) -> bool:
             ["ps", "-o", "stat=", "-p", str(pid)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=10,
         ).stdout.strip()
         if not state or state.startswith("Z"):
