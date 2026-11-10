@@ -49,6 +49,8 @@ def trit_hits(cli: Path, rules_path: Path, sample: Path):
         [str(cli), "sigscan", str(sample), "--rules", str(rules_path)],
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
     )
     if proc.returncode != 0:
         print(f"  trit-re 失败 {sample.name}: {proc.stderr.strip()}", file=sys.stderr)
