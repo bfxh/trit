@@ -34,7 +34,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect docs-only (PR only)
+      # 输出键名沿用 `only_docs`（14 处 if 条件不用改），语义已扩为「改动集不含 Rust 面」：
+      # 文档之外，scripts/、.github/、sweeps/、tests/（仅夹具）不参与 Rust 编译；
+      # other-languages/、benchmarks/ 不在主 workspace；t3/ 是独立 workspace（t3.yml 自跑）。
+      # 证据：只改脚本的 PR（如 #238）Windows job 12m（Test 240s + GPU 冒烟编译 372s）全花在
+      # 重编未变的 Rust 代码上；门族 job 不在此 job，照常全跑。
+      - name: Detect no-Rust change set (PR only)
         id: scope
         shell: bash
         env:
@@ -55,7 +60,7 @@ jobs:
             echo "only_docs=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if printf '%s\n' "$files" | grep -Ev '^(docs/|.*\.md$|README|LICENSE|CHANGELOG)' | grep -q .; then
+          if printf '%s\n' "$files" | grep -Ev '^(docs/|scripts/|\.github/|sweeps/|tests/|other-languages/|benchmarks/|t3/|.*\.md$|README|LICENSE|CHANGELOG)' | grep -q .; then
             echo "only_docs=false" >> "$GITHUB_OUTPUT"
           else
             echo "only_docs=true" >> "$GITHUB_OUTPUT"
