@@ -129,6 +129,18 @@ GitHub Releases（`v0.3.1` 起）提供：
 
 本仓不再保留 `crates/trit-vcs`，也不保留它的变异登记表与夜间 Git 镜像脚本（`scripts/nightly_mirror.sh` 随仓走）。
 
+## 其他语言参考实现（非默认）
+
+`other-languages/` 存放跨语言**参考实现**，只用于借鉴语义与边界；**不进入 Cargo 工作区、不参与默认 CI/发布、不作为本仓默认实现**。
+
+| 语言 | 路径 | 范围 | 状态 |
+|---|---|---|---|
+| Go | `other-languages/go/` | 平衡三进制整数 + K3 + 5 trits/byte + 准入表 | 参考实现，`go test` 通过 |
+
+新增语言前先读 [other-languages/README.md](other-languages/README.md)：只有存在明确消费方或生态桥接时才加，避免把维护面摊大。
+
+跨语言互操作规范与 golden vectors 见 [interop/](interop/README.md)。
+
 ## 三态与三值拓扑
 
 `TriState` 表示 0 / 1 / Z（高阻），与逻辑未知 `X` 区分：`Z` 不驱动总线，可被其他驱动覆盖。
@@ -782,10 +794,11 @@ OK     free slot must not reject on unknown hopelessness
 
 - 三进制红利 / 模拟税 / 生态路径依赖 / 基数无关复杂度是四类不同问题，讨论前先归类：
   [docs/TERNARY-BOUNDARIES.md](docs/TERNARY-BOUNDARIES.md)。
-- 三进制构建工具（M0–M3）：`.tri`/Verilog 子集 → 化简 + e-graph 重写（规则逐条自证）
-  → 位并行真值表 → `TRB2` blob/CSV/`lookup.c`，
-  `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog]`；为什么只做这一层、
-  哪部分仍靠 LLVM/Rust 见 [docs/TERNARY-TOOLCHAIN.md](docs/TERNARY-TOOLCHAIN.md)。
+- 三进制构建工具（M0–M3 + 2026-11-08 补齐）：`.tri`/Verilog 子集 → 化简 + e-graph **饱和重写**
+  （规则逐条自证，`--cost nodes|gates` 代价模型）→ **多线程**位并行真值表 →
+  `TRB2` v3（含变量名）/CSV/`lookup.c`/双导轨 Verilog/WGSL 查表内核；
+  `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog] [--verify-hdl] [--emit-gpu] [--threads N]`；
+  为什么只做这一层、哪部分仍靠 LLVM/Rust 见 [docs/TERNARY-TOOLCHAIN.md](docs/TERNARY-TOOLCHAIN.md)。
 - 三进制训练实验（`trit-train`）：三值 STE（Identity/Clipped/Soft）+ 每行 scale、
   位平面 ALU（Kleene/Łukasiewicz/Bochvar）+ 并发/预取剖析。边界与读数见
   [crates/trit-train/README.md](crates/trit-train/README.md)。
@@ -793,7 +806,7 @@ OK     free slot must not reject on unknown hopelessness
   语义直接复用 `trit-core` / `trit-eval`，不另写解析器。见
   [crates/trit-lsp/README.md](crates/trit-lsp/README.md)。
 - 只做**真值函数**三值逻辑；硬件四态 `0/1/X/Z` 与 X-optimism 不在范围内。
-- 不做时序模型检验、通用 SMT、完整硬件仿真。
+- 不做时序模型检验、通用 SMT、通用硬件仿真；导出的组合子集用 iverilog 自检（`--verify-hdl`）。
 - 穷举参考是逐赋值的，18 变量约 12.6 s，仅用于小规模对拍。
 
 ## 开发

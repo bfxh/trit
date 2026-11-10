@@ -1,0 +1,319 @@
+{
+  "spec_version": "0.1.0",
+  "profile": "belnap4",
+  "encoding": "semantic",
+  "vectors": [
+    {
+      "id": "belnap4.not.n",
+      "op": "not",
+      "input": "N",
+      "expected": "N"
+    },
+    {
+      "id": "belnap4.not.t",
+      "op": "not",
+      "input": "T",
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.not.f",
+      "op": "not",
+      "input": "F",
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.not.b",
+      "op": "not",
+      "input": "B",
+      "expected": "B"
+    },
+    {
+      "id": "belnap4.and.n.n",
+      "op": "and",
+      "input": [
+        "N",
+        "N"
+      ],
+      "expected": "N"
+    },
+    {
+      "id": "belnap4.or.n.n",
+      "op": "or",
+      "input": [
+        "N",
+        "N"
+      ],
+      "expected": "N"
+    },
+    {
+      "id": "belnap4.and.n.t",
+      "op": "and",
+      "input": [
+        "N",
+        "T"
+      ],
+      "expected": "N"
+    },
+    {
+      "id": "belnap4.or.n.t",
+      "op": "or",
+      "input": [
+        "N",
+        "T"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.and.n.f",
+      "op": "and",
+      "input": [
+        "N",
+        "F"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.or.n.f",
+      "op": "or",
+      "input": [
+        "N",
+        "F"
+      ],
+      "expected": "N"
+    },
+    {
+      "id": "belnap4.and.n.b",
+      "op": "and",
+      "input": [
+        "N",
+        "B"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.or.n.b",
+      "op": "or",
+      "input": [
+        "N",
+        "B"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.and.t.n",
+      "op": "and",
+      "input": [
+        "T",
+        "N"
+      ],
+      "expected": "N"
+    },
+    {
+      "id": "belnap4.or.t.n",
+      "op": "or",
+      "input": [
+        "T",
+        "N"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.and.t.t",
+      "op": "and",
+      "input": [
+        "T",
+        "T"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.or.t.t",
+      "op": "or",
+      "input": [
+        "T",
+        "T"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.and.t.f",
+      "op": "and",
+      "input": [
+        "T",
+        "F"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.or.t.f",
+      "op": "or",
+      "input": [
+        "T",
+        "F"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.and.t.b",
+      "op": "and",
+      "input": [
+        "T",
+        "B"
+      ],
+      "expected": "B"
+    },
+    {
+      "id": "belnap4.or.t.b",
+      "op": "or",
+      "input": [
+        "T",
+        "B"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.and.f.n",
+      "op": "and",
+      "input": [
+        "F",
+        "N"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.or.f.n",
+      "op": "or",
+      "input": [
+        "F",
+        "N"
+      ],
+      "expected": "N"
+    },
+    {
+      "id": "belnap4.and.f.t",
+      "op": "and",
+      "input": [
+        "F",
+        "T"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.or.f.t",
+      "op": "or",
+      "input": [
+        "F",
+        "T"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.and.f.f",
+      "op": "and",
+      "input": [
+        "F",
+        "F"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.or.f.f",
+      "op": "or",
+      "input": [
+        "F",
+        "F"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.and.f.b",
+      "op": "and",
+      "input": [
+        "F",
+        "B"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.or.f.b",
+      "op": "or",
+      "input": [
+        "F",
+        "B"
+      ],
+      "expected": "B"
+    },
+    {
+      "id": "belnap4.and.b.n",
+      "op": "and",
+      "input": [
+        "B",
+        "N"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.or.b.n",
+      "op": "or",
+      "input": [
+        "B",
+        "N"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.and.b.t",
+      "op": "and",
+      "input": [
+        "B",
+        "T"
+      ],
+      "expected": "B"
+    },
+    {
+      "id": "belnap4.or.b.t",
+      "op": "or",
+      "input": [
+        "B",
+        "T"
+      ],
+      "expected": "T"
+    },
+    {
+      "id": "belnap4.and.b.f",
+      "op": "and",
+      "input": [
+        "B",
+        "F"
+      ],
+      "expected": "F"
+    },
+    {
+      "id": "belnap4.or.b.f",
+      "op": "or",
+      "input": [
+        "B",
+        "F"
+      ],
+      "expected": "B"
+    },
+    {
+      "id": "belnap4.and.b.b",
+      "op": "and",
+      "input": [
+        "B",
+        "B"
+      ],
+      "expected": "B"
+    },
+    {
+      "id": "belnap4.or.b.b",
+      "op": "or",
+      "input": [
+        "B",
+        "B"
+      ],
+      "expected": "B"
+    }
+  ]
+}

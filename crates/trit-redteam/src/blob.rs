@@ -1,7 +1,7 @@
-//! TRB2 blob 的第三方解析 + 非规范编码枚举。
+//! TRB2 blob 的第三方解析 + 非规范编码枚举（支持 v2 与 v3）。
 //!
-//! 这是攻方视角：**不复用 `trit-build` 的代码**，独立实现一遍解包与 CRC-3。
-//! 两份实现只要有一边理解错格式，逐 trit 对拍就会红。
+//! 这是攻方视角：**不复用 `trit-build` 的代码**，独立实现一遍解包与 CRC-3
+//! （v3 另算 names_hash）。两份实现只要有一边理解错格式，逐 trit 对拍就会红。
 //!
 //! 已确认的攻击面（`cargo test` 里有判据）：TRB2 的载荷按 5 trit/字节打包，
 //! 末字节里没用完的 trit 槽位**不影响解码、也不在 CRC 覆盖范围内**，于是同一张真值表
@@ -11,15 +11,26 @@
 use anyhow::{Result, bail};
 
 pub const HEADER: usize = 11;
+const HEADER_V3: usize = 19;
 
 /// 解出来的表（`values` 用 -1/0/1，与 `truth.csv` 的判定列一致）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Blob {
+    pub version: u8,
     pub algebra: u8,
     pub nvars: u8,
     pub values: Vec<i8>,
     pub payload_len: usize,
     pub bytes: Vec<u8>,
+}
+
+fn fnv64(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325u64;
+    for byte in bytes {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
 }
 
 fn digit(value: i8) -> u32 {
@@ -52,15 +63,16 @@ pub fn crc3(data: &[i8]) -> [i8; 3] {
 }
 
 /// 头字段与长度校验（**不含**规范形检查，供攻击视角的枚举使用）。
-fn header(bytes: &[u8]) -> Result<(u8, u8, usize, usize, usize)> {
+fn header(bytes: &[u8]) -> Result<(u8, u8, u8, usize, usize, usize, usize)> {
     if bytes.len() < HEADER + 1 {
         bail!("太短（{} 字节）", bytes.len());
     }
     if &bytes[..4] != b"TRB2" {
         bail!("魔数不是 TRB2");
     }
-    if bytes[4] != 2 {
-        bail!("不支持的版本 {}", bytes[4]);
+    let version = bytes[4];
+    if version != 2 && version != 3 {
+        bail!("不支持的版本 {}", version);
     }
     if bytes[5] > 2 {
         bail!("未知语义字节 {}", bytes[5]);
@@ -72,27 +84,64 @@ fn header(bytes: &[u8]) -> Result<(u8, u8, usize, usize, usize)> {
     if 3usize.checked_pow(nvars as u32) != Some(len) {
         bail!("表长 {len} 与 nvars={nvars} 不符（应为 3^{nvars}）");
     }
+    // v3：11 字节固定头之后是 names_hash u64 + nvars 段名字。
+    let offset = if version == 3 {
+        if bytes.len() < HEADER_V3 {
+            bail!("v3 头被截断（{} 字节）", bytes.len());
+        }
+        let stored = u64::from_le_bytes([
+            bytes[11], bytes[12], bytes[13], bytes[14], bytes[15], bytes[16], bytes[17], bytes[18],
+        ]);
+        let mut offset = HEADER_V3;
+        for _ in 0..nvars {
+            let Some(&name_len) = bytes.get(offset) else {
+                bail!("名字段被截断");
+            };
+            if name_len == 0 {
+                bail!("名字段含空名字");
+            }
+            offset += 1;
+            if offset + usize::from(name_len) > bytes.len() {
+                bail!("名字段被截断");
+            }
+            offset += usize::from(name_len);
+        }
+        if fnv64(&bytes[HEADER_V3..offset]) != stored {
+            bail!("names_hash 不符");
+        }
+        offset
+    } else {
+        HEADER
+    };
     let payload = len + 3;
     let payload_bytes = payload.div_ceil(5);
-    if bytes.len() != HEADER + payload_bytes {
+    if bytes.len() != offset + payload_bytes {
         bail!(
             "长度不符：头声明 {len} trit（应 {} 字节），实际 {}",
-            HEADER + payload_bytes,
+            offset + payload_bytes,
             bytes.len()
         );
     }
-    Ok((bytes[5], nvars, len, payload, payload_bytes))
+    Ok((
+        version,
+        bytes[5],
+        nvars,
+        len,
+        payload,
+        payload_bytes,
+        offset,
+    ))
 }
 
 pub fn parse(bytes: &[u8]) -> Result<Blob> {
-    let (algebra, nvars, len, payload, payload_bytes) = header(bytes)?;
+    let (version, algebra, nvars, len, payload, payload_bytes, offset) = header(bytes)?;
     // 规范形：末字节里没用到的 trit 槽必须为 0。否则同一张表有多个字节串，
     // 「内容哈希 = 身份」不成立（red-team 的 encode 检查实测出 27 种写法）。
     if !canonical_tail(bytes, payload, payload_bytes) {
         bail!("非规范编码：末字节闲置的 trit 槽非零");
     }
     let mut digits: Vec<i8> = Vec::with_capacity(payload);
-    'outer: for byte in &bytes[HEADER..] {
+    'outer: for byte in &bytes[offset..] {
         if *byte >= 243 {
             bail!("非法字节 {byte}：5 trit 只能表示 0..=242");
         }
@@ -113,6 +162,7 @@ pub fn parse(bytes: &[u8]) -> Result<Blob> {
         bail!("CRC-3 不符");
     }
     Ok(Blob {
+        version,
         algebra,
         nvars,
         values,
@@ -129,13 +179,13 @@ fn canonical_tail(bytes: &[u8], payload: usize, payload_bytes: usize) -> bool {
 
 /// 末字节里没用完的 trit 槽位数（0 表示载荷正好占满）。
 pub fn unused_trits(bytes: &[u8]) -> Result<usize> {
-    let (_, _, _, payload, payload_bytes) = header(bytes)?;
+    let (_, _, _, _, payload, payload_bytes, _) = header(bytes)?;
     Ok(payload_bytes * 5 - payload)
 }
 
 /// 末字节里「已用」的低位槽数（载荷正好占满时为 5）。
 fn used_in_last_byte(bytes: &[u8]) -> Result<u32> {
-    let (_, _, _, payload, payload_bytes) = header(bytes)?;
+    let (_, _, _, _, payload, payload_bytes, _) = header(bytes)?;
     Ok((payload - 5 * (payload_bytes - 1)) as u32)
 }
 
@@ -191,6 +241,7 @@ mod tests {
     #[test]
     fn parses_a_real_artifact() {
         let blob = parse(&fixture()).unwrap();
+        assert_eq!(blob.version, 2);
         assert_eq!(blob.nvars, 2);
         assert_eq!(blob.algebra, 0);
         assert_eq!(blob.values.len(), 9);
@@ -201,6 +252,29 @@ mod tests {
             vec![-1, -1, -1, -1, 0, 0, -1, 0, 1],
             "真值表顺序必须与 truth.csv 一致"
         );
+    }
+
+    /// v3：`a & b`（2 变量）的真实产物，含 names_hash 与名字段。
+    const FIXTURE_V3: &str = "5452423203000209000000407b7de9775d00cb01610162514004";
+
+    fn fixture_v3() -> Vec<u8> {
+        (0..FIXTURE_V3.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&FIXTURE_V3[i..i + 2], 16).unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn parses_v3_names_and_rejects_name_tamper() {
+        let blob = parse(&fixture_v3()).unwrap();
+        assert_eq!(blob.version, 3);
+        assert_eq!(blob.nvars, 2);
+        assert_eq!(blob.values, vec![-1, -1, -1, -1, 0, 0, -1, 0, 1]);
+
+        // 改名字（长度不变）必须被 names_hash 拦下，哪怕 trit 载荷没动。
+        let mut renamed = fixture_v3();
+        renamed[19 + 1] = b'z';
+        assert!(parse(&renamed).is_err(), "改名必须红");
     }
 
     #[test]

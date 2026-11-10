@@ -183,8 +183,10 @@ fn trb2_is_smaller_and_decodes_back() {
     let (stdout, stderr, code) = run(&[source.to_str().unwrap(), "--out", out.to_str().unwrap()]);
     assert_eq!(code, 0, "{stderr}");
     let manifest: serde_json::Value = serde_json::from_str(&stdout).unwrap();
-    // 27 + 3 trit = 30 / 5 per byte = 6 字节 + 11 字节头 = 17；TRB1 双导轨是 35。
-    assert_eq!(manifest["outputs"]["truth.tritbin"]["bytes"], 17);
+    // 27 + 3 trit = 30 / 5 per byte = 6 字节；v3 固定头 19 + 名字段 a/b/c 6 字节。
+    assert_eq!(manifest["outputs"]["truth.tritbin"]["bytes"], 31);
+    let blob = fs::read(out.join("truth.tritbin")).unwrap();
+    assert_eq!(blob[4], 3, "v3 必须写进 blob");
 
     let decoded = dir.join("decoded");
     let (stdout2, stderr2, code2) = run(&[
@@ -197,8 +199,18 @@ fn trb2_is_smaller_and_decodes_back() {
     assert!(stdout2.contains("\"crc3\":true"), "{stdout2}");
     let decoded_manifest: serde_json::Value = serde_json::from_str(&stdout2).unwrap();
     assert_eq!(decoded_manifest["options"]["algebra"], "kleene");
+    assert_eq!(
+        decoded_manifest["options"]["variables"],
+        serde_json::json!(["a", "b", "c"]),
+        "解码必须恢复原变量名"
+    );
     let original = fs::read_to_string(out.join("truth.csv")).unwrap();
     let round = fs::read_to_string(decoded.join("truth.csv")).unwrap();
+    assert_eq!(
+        original.lines().next(),
+        round.lines().next(),
+        "解码后的 CSV 表头必须与原表一致（变量名已存进 blob）"
+    );
     assert_eq!(
         verdicts(&original),
         verdicts(&round),
@@ -270,6 +282,10 @@ fn decode_rejects_tampered_blob() {
 
 /// 导出 `design.v` 后用测试内位级解释器求值，与 `truth.csv` 逐行比对。
 fn two_rail_matches_truth_table(source_text: &str, vars: &[&str]) {
+    two_rail_matches_truth_table_alg(source_text, vars, "kleene");
+}
+
+fn two_rail_matches_truth_table_alg(source_text: &str, vars: &[&str], algebra: &str) {
     let dir = scratch("rail");
     let source = dir.join("e.tri");
     fs::write(
@@ -286,15 +302,20 @@ fn two_rail_matches_truth_table(source_text: &str, vars: &[&str]) {
         "--out",
         out.to_str().unwrap(),
         "--emit-verilog",
+        "--algebra",
+        algebra,
     ]);
     assert_eq!(
         code, 0,
-        "stdout={stdout}
+        "algebra={algebra} stdout={stdout}
 stderr={stderr}"
     );
     assert!(out.join("design.v").exists());
-
     let design = fs::read_to_string(out.join("design.v")).unwrap();
+    assert!(
+        design.contains(&format!("two-rail, {algebra}")),
+        "design.v 头必须标注语义：{design}"
+    );
     let (inputs, assigns) = parse_design(&design);
     assert_eq!(inputs.len(), vars.len() * 2, "每个三值输入 → 两根位线");
     let csv = fs::read_to_string(out.join("truth.csv")).unwrap();
@@ -380,19 +401,36 @@ fn emit_verilog_handles_bare_variable() {
 }
 
 #[test]
-fn emit_verilog_rejects_non_kleene() {
+fn emitted_two_rail_matches_truth_table_for_all_algebras() {
+    for algebra in ["kleene", "lukasiewicz", "bochvar"] {
+        two_rail_matches_truth_table_alg("(a & b) | !c", &["a", "b", "c"], algebra);
+        two_rail_matches_truth_table_alg("a => b", &["a", "b"], algebra);
+        two_rail_matches_truth_table_alg("a <=> b", &["a", "b"], algebra);
+        two_rail_matches_truth_table_alg("a ^ b", &["a", "b"], algebra);
+        two_rail_matches_truth_table_alg("!((a | b) & (c => a))", &["a", "b", "c"], algebra);
+    }
+}
+
+#[test]
+fn emit_verilog_writes_algebra_specific_designs() {
     let dir = scratch("alg");
     let source = dir.join("e.tri");
-    fs::write(&source, "a & b\n").expect("写源文件");
-    let (_, stderr, code) = run(&[
-        source.to_str().unwrap(),
-        "--out",
-        dir.join("out").to_str().unwrap(),
-        "--emit-verilog",
-        "--algebra",
-        "lukasiewicz",
-    ]);
-    assert_ne!(code, 0);
-    assert!(stderr.contains("kleene"), "{stderr}");
+    fs::write(&source, "a => b\n").expect("写源文件");
+    let mut designs = Vec::new();
+    for algebra in ["kleene", "lukasiewicz", "bochvar"] {
+        let out = dir.join(algebra);
+        let (_, stderr, code) = run(&[
+            source.to_str().unwrap(),
+            "--out",
+            out.to_str().unwrap(),
+            "--emit-verilog",
+            "--algebra",
+            algebra,
+        ]);
+        assert_eq!(code, 0, "{algebra}: {stderr}");
+        designs.push(fs::read_to_string(out.join("design.v")).unwrap());
+    }
+    assert_ne!(designs[0], designs[1], "Ł3 的蕴含不能导出成 K3");
+    assert_ne!(designs[0], designs[2], "B3 的毒值传播不能导出成 K3");
     let _ = fs::remove_dir_all(&dir);
 }

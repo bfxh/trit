@@ -2,7 +2,7 @@
 
 用法（Blender 4.2，自带 numpy）：
   blender -b --factory-startup -P blender_gt.py -- \
-      --out D:/KF/.yanagent/drift-data/scene01 --frames 16 --res 512 --samples 16 --device GPU
+      --out D:/KF/trit-data/drift-data/scene01 --frames 16 --res 512 --samples 16 --device GPU
 
 设计约束（与报告 §6 第 1 步对齐）：
 - 场景与相机轨迹**确定性**：无随机几何、固定 Cycles seed、固定帧步进；

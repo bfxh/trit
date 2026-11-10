@@ -54,13 +54,13 @@ fn initialize_reports_protocol_and_server_name() {
 }
 
 #[test]
-fn lists_exactly_nineteen_tools() {
+fn lists_exactly_twenty_one_tools() {
     let mut server = Mcp::new();
     let response = server
         .dispatch(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))
         .expect("response");
     let listed = response["result"]["tools"].as_array().expect("tools");
-    assert_eq!(listed.len(), 19);
+    assert_eq!(listed.len(), 21);
     let names: Vec<&str> = listed
         .iter()
         .map(|tool| tool["name"].as_str().expect("name"))
@@ -85,10 +85,12 @@ fn lists_exactly_nineteen_tools() {
         "wsp_rebase",
         "wsp_transplant",
         "wsp_dare_drop",
+        "wsp_task_scale",
+        "wsp_task_combine",
     ] {
         assert!(names.contains(&expected), "缺少工具 {expected}");
     }
-    assert_eq!(tools().len(), 19);
+    assert_eq!(tools().len(), 21);
 }
 
 #[test]
