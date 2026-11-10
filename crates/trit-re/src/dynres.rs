@@ -81,7 +81,7 @@ pub fn set_facts(
     };
     facts.set(
         "dynres.stack_strings",
-        bool3(stack.len() >= 1),
+        bool3(!stack.is_empty()),
         format!(
             "可执行节立即数流命中 {} 个敏感名：{stack_note}（栈串形态高信号，≥1 = True）",
             stack.len()
