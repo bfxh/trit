@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Changed（CI：非 Rust 改动不再跑 cargo 矩阵 —— 脚本类 PR 的 Windows job 12min → 约 1min）
+
+- `.github/workflows/ci.yml` 的改动集检测从「纯文档」扩为「**不含 Rust 面**」：`scripts/`、`.github/`、
+  `sweeps/`、`tests/`（仅夹具）、`other-languages/`、`benchmarks/`、`t3/` 全部命中时，跳过
+  fmt / clippy / test 及其 png、gpu 两个 feature 变体；门族 job（module budget / mutation /
+  test surface / hazard / secret 等）不在该 job 内，照常全跑。
+- 依据（可复算）：PR #238（只改脚本 + 变异登记表）的 Windows job 12m07s，拆到 step 是
+  Test 240s、GPU 冒烟编译 372s、Clippy 41s、rust-cache 恢复 19s——约 10 分钟花在没变的 Rust 代码上；
+  同一提交 ubuntu 3m40s、macOS 4m15s。
+- 安全性依据：主 workspace 只有 `crates/*`；`other-languages/`、`benchmarks/` 不是成员；
+  `t3/` 是独立 workspace（`t3.yml` 自跑）；Rust 测试不读取 `scripts/` 下文件
+  （`trit-orch` 的对拍测试读的是仓内 JSON 夹具）。
+- 新增 `docs/BUILD-PERF.md`：本机与 CI 的构建性能实测（冷检查 10.9s / 边际检查 3.1s / sccache
+  同路径 -29% 且跨 target 目录 0 命中）、未采纳项与原因（debug=0 实测无差异、nightly flags /
+  cranelift 需 nightly、mold 已由默认 rust-lld 覆盖、nextest 列为下一步）。
+- 新增 `docs/README.md`：文档索引（定位 / 规划 / 结果 / 工程四层）。
+
 ### Changed（trit-count：残基子句表扁平化 —— 每节点分配不再随子句数增长，40 对 1.92×）
 
 - `crates/trit-count/src/dpll.rs` 引入内部 `Table`（一段 `lits` + 一张 `starts`，第 0 段永远是占位空段），
