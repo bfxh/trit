@@ -2434,9 +2434,41 @@
 {
  "name": "safetensors: 写出的字节数只记一半",
  "file": "crates/trit-wspace/src/safetensors.rs",
- "old": "let bytes_len = values.len() * 4;",
- "new": "let bytes_len = values.len() * 2;",
+ "old": "data.extend_from_slice(&value.to_le_bytes());",
+ "new": "data.extend_from_slice(&value.to_le_bytes()[..2]);",
  "pkg": "trit-wspace",
  "filter": "write_read_round_trip_preserves_trits_and_scales"
+},
+{
+ "name": "safetensors-multi: 第二个张量的 offsets 从 0 开始",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "let start = data.len();",
+ "new": "let start = 0;",
+ "pkg": "trit-wspace",
+ "filter": "cli_multi_tensor_round_trip"
+},
+{
+ "name": "safetensors-multi: 导入顺序反转",
+ "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
+ "old": "for name in &names {",
+ "new": "for name in names.iter().rev() {",
+ "pkg": "trit-wspace",
+ "filter": "cli_multi_tensor_round_trip"
+},
+{
+ "name": "safetensors-dir: 导入文件名不按序号唯一",
+ "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
+ "old": "let file = format!(\"{index:04}-{}.wsp\", safe_name(&info.name));",
+ "new": "let file = format!(\"0000-{}.wsp\", safe_name(&info.name));",
+ "pkg": "trit-wspace",
+ "filter": "cli_dir_round_trip"
+},
+{
+ "name": "safetensors-dir: 导出重名不检查",
+ "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
+ "old": "if unique.len() != names.len() {",
+ "new": "if false {",
+ "pkg": "trit-wspace",
+ "filter": "cli_dir_rejects_duplicate_names"
 }
 ]

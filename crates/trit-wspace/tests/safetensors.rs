@@ -6,7 +6,7 @@ use std::process::{Command, Output};
 
 use serde_json::Value;
 use trit_wspace::safetensors::{list, read_tensor, write_tensor};
-use trit_wspace::{Layer, from_wsp};
+use trit_wspace::{Layer, Net, from_wsp};
 
 fn temp_dir(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("trit-safetensors-{tag}-{}", std::process::id()));
@@ -292,4 +292,265 @@ fn cli_list_import_export_round_trip() {
     ]));
     let again = from_wsp(again["wsp1"].as_str().expect("wsp1")).expect("parse again");
     assert_eq!(again.layers()[0].trits(), net.layers()[0].trits());
+}
+
+#[test]
+fn imports_multiple_tensors_into_a_net() {
+    let dir = temp_dir("multi");
+    let path = dir.join("two.safetensors");
+    fixture(
+        &path,
+        &[
+            (
+                "w0",
+                "F32",
+                [2, 3],
+                f32_bytes(&[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]),
+            ),
+            ("w1", "F32", [1, 2], f32_bytes(&[0.5, -0.5])),
+        ],
+    );
+    let a = read_tensor(path.to_str().unwrap(), "w0")
+        .expect("w0")
+        .to_layer()
+        .expect("layer0");
+    let b = read_tensor(path.to_str().unwrap(), "w1")
+        .expect("w1")
+        .to_layer()
+        .expect("layer1");
+    let net = Net::new(vec![a, b]).expect("二层网络");
+    assert_eq!(net.layers().len(), 2);
+    for (index, layer) in net.layers().iter().enumerate() {
+        assert_eq!(
+            layer.trits().len(),
+            layer.rows() * layer.cols(),
+            "layer{index}"
+        );
+    }
+}
+
+#[test]
+fn rejects_incompatible_layer_shapes() {
+    let dir = temp_dir("multi-bad");
+    let path = dir.join("two.safetensors");
+    fixture(
+        &path,
+        &[
+            (
+                "w0",
+                "F32",
+                [2, 3],
+                f32_bytes(&[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]),
+            ),
+            ("w1", "F32", [1, 4], f32_bytes(&[0.5, -0.5, 0.5, -0.5])),
+        ],
+    );
+    let a = read_tensor(path.to_str().unwrap(), "w0")
+        .expect("w0")
+        .to_layer()
+        .expect("layer0");
+    let b = read_tensor(path.to_str().unwrap(), "w1")
+        .expect("w1")
+        .to_layer()
+        .expect("layer1");
+    assert!(Net::new(vec![a, b]).is_err());
+}
+
+#[test]
+fn cli_multi_tensor_round_trip() {
+    let dir = temp_dir("cli-multi");
+    let path = dir.join("two.safetensors");
+    fixture(
+        &path,
+        &[
+            (
+                "w0",
+                "F32",
+                [2, 3],
+                f32_bytes(&[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]),
+            ),
+            ("w1", "F32", [1, 2], f32_bytes(&[0.5, -0.5])),
+        ],
+    );
+    let downloaded = dir.join("net.wsp");
+    let imported = stdout_json(&run(&[
+        "import-safetensors",
+        path.to_str().unwrap(),
+        "--tensor",
+        "w0,w1",
+        "--out",
+        downloaded.to_str().unwrap(),
+    ]));
+    assert_eq!(imported["tensors"].as_array().expect("tensors").len(), 2);
+    let net = from_wsp(&fs::read_to_string(&downloaded).expect("wsp")).expect("parse wsp");
+    assert_eq!(net.layers().len(), 2);
+
+    let exported = dir.join("back.safetensors");
+    let out = stdout_json(&run(&[
+        "export-safetensors",
+        downloaded.to_str().unwrap(),
+        "--out",
+        exported.to_str().unwrap(),
+        "--tensor",
+        "a,b",
+    ]));
+    assert_eq!(out["tensors"], serde_json::json!(["a", "b"]));
+    let listed = list(exported.to_str().unwrap()).expect("list");
+    assert_eq!(
+        listed
+            .iter()
+            .map(|tensor| tensor.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["a", "b"]
+    );
+
+    let again = stdout_json(&run(&[
+        "import-safetensors",
+        exported.to_str().unwrap(),
+        "--tensor",
+        "a,b",
+    ]));
+    let again = from_wsp(again["wsp1"].as_str().expect("wsp1")).expect("parse again");
+    for (before, after) in net.layers().iter().zip(again.layers()) {
+        assert_eq!(after.trits(), before.trits());
+    }
+}
+
+#[test]
+fn cli_rejects_tensor_name_count_mismatch() {
+    let dir = temp_dir("cli-names");
+    let net = Net::new(vec![
+        Layer::new(2, 3, &[1, 0, -1, 0, 1, -1], &[0, 0]).expect("l0"),
+        Layer::new(1, 2, &[1, -1], &[0]).expect("l1"),
+    ])
+    .expect("net");
+    let artifact = dir.join("net.wsp");
+    fs::write(&artifact, trit_wspace::to_wsp(&net)).expect("write wsp");
+    let exported = dir.join("back.safetensors");
+    let output = run(&[
+        "export-safetensors",
+        artifact.to_str().unwrap(),
+        "--out",
+        exported.to_str().unwrap(),
+        "--tensor",
+        "only-one",
+    ]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("给了 1 个名字"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn cli_dir_round_trip() {
+    let dir = temp_dir("cli-dir");
+    let path = dir.join("two.safetensors");
+    fixture(
+        &path,
+        &[
+            (
+                "w0",
+                "F32",
+                [2, 3],
+                f32_bytes(&[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]),
+            ),
+            ("w1", "F32", [1, 2], f32_bytes(&[0.5, -0.5])),
+        ],
+    );
+    let downloaded = dir.join("tensors");
+    let imported = stdout_json(&run(&[
+        "import-safetensors-dir",
+        path.to_str().unwrap(),
+        "--out",
+        downloaded.to_str().unwrap(),
+    ]));
+    assert_eq!(imported["tensors"].as_array().expect("tensors").len(), 2);
+    assert!(downloaded.join("manifest.json").is_file());
+    let files: Vec<String> = fs::read_dir(&downloaded)
+        .expect("dir")
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.ends_with(".wsp"))
+        .collect();
+    assert!(
+        files.iter().any(|name| name.starts_with("0000-")),
+        "{files:?}"
+    );
+    assert!(
+        files.iter().any(|name| name.starts_with("0001-")),
+        "{files:?}"
+    );
+
+    let exported = dir.join("joined.safetensors");
+    let out = stdout_json(&run(&[
+        "export-safetensors-dir",
+        downloaded.to_str().unwrap(),
+        "--out",
+        exported.to_str().unwrap(),
+    ]));
+    assert_eq!(out["tensors"], serde_json::json!(["w0", "w1"]));
+    let listed = list(exported.to_str().unwrap()).expect("list");
+    assert_eq!(
+        listed
+            .iter()
+            .map(|tensor| tensor.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["w0", "w1"]
+    );
+    let a = read_tensor(exported.to_str().unwrap(), "w0").expect("w0");
+    assert_eq!((a.rows, a.cols), (2, 3));
+}
+
+#[test]
+fn cli_dir_rejects_bad_manifest() {
+    let dir = temp_dir("cli-dir-bad");
+    let tensors = dir.join("tensors");
+    fs::create_dir_all(&tensors).expect("dir");
+    fs::write(
+        tensors.join("manifest.json"),
+        r#"{"tensors":[{"name":"w","file":"missing.wsp"}]}"#,
+    )
+    .expect("manifest");
+    let exported = dir.join("joined.safetensors");
+    let output = run(&[
+        "export-safetensors-dir",
+        tensors.to_str().unwrap(),
+        "--out",
+        exported.to_str().unwrap(),
+    ]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("missing.wsp"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn cli_dir_rejects_duplicate_names() {
+    let dir = temp_dir("cli-dir-dup");
+    let tensors = dir.join("tensors");
+    fs::create_dir_all(&tensors).expect("dir");
+    let net = Net::new(vec![
+        Layer::new(2, 3, &[1, 0, -1, 0, 1, -1], &[0, 0]).expect("l0"),
+    ])
+    .expect("net");
+    fs::write(tensors.join("a.wsp"), trit_wspace::to_wsp(&net)).expect("a");
+    fs::write(tensors.join("b.wsp"), trit_wspace::to_wsp(&net)).expect("b");
+    fs::write(
+        tensors.join("manifest.json"),
+        r#"{"tensors":[{"name":"same","file":"a.wsp"},{"name":"same","file":"b.wsp"}]}"#,
+    )
+    .expect("manifest");
+    let exported = dir.join("joined.safetensors");
+    let output = run(&[
+        "export-safetensors-dir",
+        tensors.to_str().unwrap(),
+        "--out",
+        exported.to_str().unwrap(),
+    ]);
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stderr).contains("重复张量名"));
 }

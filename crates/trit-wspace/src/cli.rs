@@ -48,6 +48,8 @@ trit-wspace <command>
   list-safetensors <file>
   import-safetensors <file> --tensor <name> [--out <path>]
   export-safetensors <artifact|-> --out <path> [--tensor <name>]
+  import-safetensors-dir <file> --out <dir>
+  export-safetensors-dir <dir> --out <file>
   mcp";
 
 /// 进程入口：返回退出码（0 成功，1 失败）。
@@ -94,6 +96,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "list-safetensors" => cli_safetensors::list(&args[1..]),
         "import-safetensors" => cli_safetensors::import(&args[1..]),
         "export-safetensors" => cli_safetensors::export(&args[1..]),
+        "import-safetensors-dir" => cli_safetensors::import_dir(&args[1..]),
+        "export-safetensors-dir" => cli_safetensors::export_dir(&args[1..]),
         "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
             .map_err(|error| error.to_string()),
         "--help" | "-h" | "help" => {
