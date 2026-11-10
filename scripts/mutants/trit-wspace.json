@@ -2398,5 +2398,45 @@
  "new": "        if false {\n            return Err(format!(\"{part} 不能把 * 与数字混用\"));\n        }",
  "pkg": "trit-wspace",
  "filter": "row_patterns_reject_mixed_star"
+},
+{
+ "name": "safetensors: F16 次正规数指数错",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "f32::from(fraction) * 2f32.powi(-24)",
+ "new": "f32::from(fraction) * 2f32.powi(-23)",
+ "pkg": "trit-wspace",
+ "filter": "f16_denormal_decodes"
+},
+{
+ "name": "safetensors: BF16 只移 8 位",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "u32::from(u16::from_le_bytes(*chunk)) << 16",
+ "new": "u32::from(u16::from_le_bytes(*chunk)) << 8",
+ "pkg": "trit-wspace",
+ "filter": "bf16_values_decode"
+},
+{
+ "name": "safetensors: data_offsets 越界不检查",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "if start > end || end > data_len {",
+ "new": "if start > end {",
+ "pkg": "trit-wspace",
+ "filter": "rejects_out_of_bounds_offsets"
+},
+{
+ "name": "safetensors: 形状与字节数不匹配不检查",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "if end - start != want {",
+ "new": "if false {",
+ "pkg": "trit-wspace",
+ "filter": "rejects_shape_byte_mismatch"
+},
+{
+ "name": "safetensors: 写出的字节数只记一半",
+ "file": "crates/trit-wspace/src/safetensors.rs",
+ "old": "let bytes_len = values.len() * 4;",
+ "new": "let bytes_len = values.len() * 2;",
+ "pkg": "trit-wspace",
+ "filter": "write_read_round_trip_preserves_trits_and_scales"
 }
 ]

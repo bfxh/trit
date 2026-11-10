@@ -120,6 +120,7 @@ pub mod probe;
 pub mod program;
 pub mod rebase;
 pub mod repair;
+pub mod safetensors;
 pub mod scale;
 pub mod shard;
 pub mod task;
@@ -150,6 +151,7 @@ pub use probe::{
 };
 pub use program::{Program, Report, Script, ScriptReport};
 pub use repair::{Repair, RepairOptions, repair};
+pub use safetensors::{Dtype, TensorInfo, Weights};
 pub use scale::{
     ScaleUnit, UnitPart, UnitPattern, combine_tasks, scale_task, scale_task_blocks,
     scale_task_blocks_map, scale_task_blocks_patterns, scale_task_layers, scale_task_rows,
