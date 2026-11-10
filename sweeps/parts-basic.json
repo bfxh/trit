@@ -1,0 +1,53 @@
+{
+  "family": "parts",
+  "out_dir": "runs/parts/sweep-lr2k",
+  "data_globs": [
+    "E:/trit-data/s1/mat60/renders/scene000*",
+    "E:/trit-data/s1/mat60/renders/scene001*",
+    "E:/trit-data/s1/mat60/renders/scene002*",
+    "E:/trit-data/s1/mat60/renders/scene003*",
+    "E:/trit-data/s1/mat60/renders/scene004*"
+  ],
+  "base": {
+    "steps": 2000,
+    "lr": 0.001,
+    "accum": 1,
+    "res": 384,
+    "k": 5,
+    "seg_sub": "pbnd",
+    "bnd_label": 2,
+    "bnd_weight": 4
+  },
+  "grid": {"lr": [0.0005, 0.001, 0.002]},
+  "producer": {
+    "bin": "parts-train",
+    "argv": [
+      "--data", "{data}",
+      "--seg-sub", "{seg_sub}",
+      "--bnd-label", "{bnd_label}",
+      "--bnd-weight", "{bnd_weight}",
+      "--res", "{res}",
+      "--k", "{k}",
+      "--steps", "{steps}",
+      "--lr", "{lr}",
+      "--accum", "{accum}",
+      "--save", "{out}/{tag}.bin",
+      "--export-tpm", "{model}",
+      "--save-every", "0"
+    ]
+  },
+  "verifier": {
+    "bin": "parts-verify",
+    "argv": [
+      "--model", "{model}",
+      "--data", "{data}",
+      "--seg-sub", "{seg_sub}",
+      "--renders", "E:/runs/pb300/holdout/renders",
+      "--scenes", "E:/runs/pb300/holdout/scenes"
+    ]
+  },
+  "model": "{out}/{tag}.tpm",
+  "jobs": 1,
+  "promote": {"metric": "miou", "min": 0.25},
+  "catalogue": true
+}

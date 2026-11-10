@@ -1,0 +1,38 @@
+[
+ {
+  "name": "parity: 分类器永远返回“都不命中”（全算中性）",
+  "file": "scripts/parity_scan.py",
+  "old": "    return bool(TERNARY.search(line)), bool(BINARY.search(line))",
+  "new": "    return False, False",
+  "pkg": "scripts/parity_scan.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "parity: 三值行不计（三值占比永远 0）",
+  "file": "scripts/parity_scan.py",
+  "old": "        if hit_t:\n            ternary_lines += 1\n            ternary_bytes += size",
+  "new": "        if False:\n            ternary_lines += 1\n            ternary_bytes += size",
+  "pkg": "scripts/parity_scan.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "parity: 二值行不计（二值占比永远 0）",
+  "file": "scripts/parity_scan.py",
+  "old": "        if hit_b:\n            binary_lines += 1\n            binary_bytes += size",
+  "new": "        if False:\n            binary_lines += 1\n            binary_bytes += size",
+  "pkg": "scripts/parity_scan.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "parity: 中性行不计（占比加起来对不上总量）",
+  "file": "scripts/parity_scan.py",
+  "old": "        if not hit_t and not hit_b:\n            neutral_bytes += size",
+  "new": "        if False:\n            neutral_bytes += size",
+  "pkg": "scripts/parity_scan.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

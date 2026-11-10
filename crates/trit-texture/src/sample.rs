@@ -6,7 +6,7 @@
 //!
 //! 只在 3 级调色板上取值 ⇒ 双线性必须解 4 个纹素（可能跨 2×2 个块），
 //! 但不需要把整张图展开成 RGBA：一次采样最多碰 4 个块。块形状**不写死**，
-//! 统一取 `BLOCK_WIDTH` / `BLOCK_HEIGHT`（当前 4×10，见 lib.rs）。
+//! 统一取 `BLOCK_WIDTH` / `BLOCK_HEIGHT`（当前 8×8，见 lib.rs）。
 //!
 //! ## 实测（本机，`cargo bench -p trit-texture --bench sample`，光栅顺序，5 轮中位数）
 //!
@@ -144,7 +144,7 @@ pub fn sample_bilinear_with(texture: &TritTexture, u: f32, v: f32, wrap: Wrap) -
 
 /// 有状态的采样器：带一块**块调色板缓存**。
 ///
-/// 光栅扫描下同一块会被连采 `BLOCK_PIXELS` 次（4×10 = 40 次），每次重解端点+调色板
+/// 光栅扫描下同一块会被连采 `BLOCK_PIXELS` 次（8×8 = 64 次），每次重解端点+调色板
 /// 是纯浪费；直接映射 4 槽缓存把「每样点 4 次解码」压到「每块一次」。
 pub struct Sampler<'a> {
     texture: &'a TritTexture,
@@ -467,7 +467,7 @@ mod tests {
     use crate::convert::rgba_to_ttx2_mips;
     use crate::ttx2::from_ttx2;
 
-    /// 造一张 16×20（4×10 块对齐）、每块颜色不同的图（块边界两侧差异大，能抓错块）。
+    /// 造一张宽高按块对齐、每块颜色不同的图（块边界两侧差异大，能抓错块）。
     fn checker(width: usize, height: usize) -> Vec<u8> {
         let mut px = vec![0u8; width * height * 4];
         for y in 0..height {

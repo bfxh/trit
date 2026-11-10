@@ -13,12 +13,16 @@ use crate::model::Model;
 /// 训练超参。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TrainOptions {
-    /// 全批梯度下降轮数。
+    /// 梯度下降轮数。
     pub epochs: usize,
     /// 学习率。
     pub learning_rate: f32,
     /// 影子权重初始扰动的种子（确定性）。
     pub seed: u64,
+    /// mini-batch 大小：`0` 或 `1` = 全批（每轮一次更新，旧行为）；
+    /// `k > 1` = 每轮先按种子确定性洗牌，再每 `k` 条样本累积一次梯度更新。
+    /// 十万级样本上全批 STE 收敛很弱（M1 读数），mini-batch 是主药方。
+    pub batch_size: usize,
 }
 
 impl Default for TrainOptions {
@@ -27,6 +31,7 @@ impl Default for TrainOptions {
             epochs: 200,
             learning_rate: 0.2,
             seed: 7,
+            batch_size: 0,
         }
     }
 }
@@ -85,6 +90,20 @@ fn quantize(value: f32) -> f32 {
 
 fn tanh(value: f32) -> f32 {
     value.tanh()
+}
+
+/// 确定性洗牌（Fisher–Yates，xorshift64 驱动）：同种子同顺序，重跑可复现。
+fn shuffled_indices(len: usize, seed: u64) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..len).collect();
+    let mut state = seed | 1;
+    for i in (1..len).rev() {
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        let j = (state % (i as u64 + 1)) as usize;
+        order.swap(i, j);
+    }
+    order
 }
 
 struct Shadow {
@@ -209,52 +228,78 @@ pub fn train(
     let mut initial_loss = 0.0f32;
     let mut final_loss = 0.0f32;
     let count = inputs.len() as f32;
+    // mini-batch：`0/1` = 全批（每轮一个 batch），`k>1` = 每 k 条一个 batch。
+    // 每轮的访问顺序由 `seed ^ epoch` 确定性洗牌——同参数重跑结果一致。
+    let batch_size = match options.batch_size {
+        0 | 1 => inputs.len(),
+        k => k.min(inputs.len()),
+    };
     for epoch in 0..options.epochs {
-        let mut grad_w1 = vec![0.0f32; shadow.w1.len()];
-        let mut grad_b1 = vec![0.0f32; shadow.b1.len()];
-        let mut grad_w2 = vec![0.0f32; shadow.w2.len()];
-        let mut grad_b2 = 0.0f32;
-        let mut loss = 0.0f32;
-        for (sample, target) in inputs.iter().zip(labels.iter()) {
-            let (hidden, output, pre) = shadow.forward(sample);
-            let error = output - target;
-            loss += error * error / 2.0;
-            let d_output = error * (1.0 - output * output);
-            grad_b2 += d_output;
-            for (unit, value) in hidden.iter().enumerate() {
-                grad_w2[unit] += d_output * value;
-            }
-            for unit in 0..pre.len() {
-                // tanh 的导数：1 - h^2（h 就是 tanh(pre)）。
-                let d_hidden =
-                    d_output * quantize(shadow.w2[unit]) * (1.0 - hidden[unit] * hidden[unit]);
-                grad_b1[unit] += d_hidden;
-                for (input, value) in sample.iter().enumerate() {
-                    grad_w1[unit * shadow.inputs + input] += d_hidden * value;
+        let order = if options.batch_size > 1 {
+            shuffled_indices(
+                inputs.len(),
+                options.seed ^ (epoch as u64).wrapping_mul(0x9e37_79b9),
+            )
+        } else {
+            (0..inputs.len()).collect()
+        };
+        let mut epoch_loss = 0.0f32;
+        for batch in order.chunks(batch_size) {
+            let mut grad_w1 = vec![0.0f32; shadow.w1.len()];
+            let mut grad_b1 = vec![0.0f32; shadow.b1.len()];
+            let mut grad_w2 = vec![0.0f32; shadow.w2.len()];
+            let mut grad_b2 = 0.0f32;
+            let mut loss = 0.0f32;
+            for &index in batch {
+                let sample = &inputs[index];
+                let target = labels[index];
+                let (hidden, output, pre) = shadow.forward(sample);
+                let error = output - target;
+                loss += error * error / 2.0;
+                let d_output = error * (1.0 - output * output);
+                grad_b2 += d_output;
+                for (unit, value) in hidden.iter().enumerate() {
+                    grad_w2[unit] += d_output * value;
+                }
+                for unit in 0..pre.len() {
+                    // tanh 的导数：1 - h^2（h 就是 tanh(pre)）。
+                    let d_hidden =
+                        d_output * quantize(shadow.w2[unit]) * (1.0 - hidden[unit] * hidden[unit]);
+                    grad_b1[unit] += d_hidden;
+                    for (input, value) in sample.iter().enumerate() {
+                        grad_w1[unit * shadow.inputs + input] += d_hidden * value;
+                    }
                 }
             }
+            let batch_len = batch.len() as f32;
+            if !loss.is_finite() {
+                return Err(TrainError::Data(format!(
+                    "第 {epoch} 轮损失不是有限值（训练发散）"
+                )));
+            }
+            epoch_loss += loss;
+            let scale = options.learning_rate / batch_len;
+            for (weight, gradient) in shadow.w1.iter_mut().zip(grad_w1.iter()) {
+                *weight -= scale * gradient;
+            }
+            for (bias, gradient) in shadow.b1.iter_mut().zip(grad_b1.iter()) {
+                *bias -= scale * gradient;
+            }
+            for (weight, gradient) in shadow.w2.iter_mut().zip(grad_w2.iter()) {
+                *weight -= scale * gradient;
+            }
+            shadow.b2 -= scale * grad_b2;
         }
         // M09：一旦出现非有限值立刻停，避免把 NaN/Inf 写回模型。
-        if !loss.is_finite() {
+        if !epoch_loss.is_finite() {
             return Err(TrainError::Data(format!(
                 "第 {epoch} 轮损失不是有限值（训练发散）"
             )));
         }
         if epoch == 0 {
-            initial_loss = loss / count;
+            initial_loss = epoch_loss / count;
         }
-        final_loss = loss / count;
-        let scale = options.learning_rate / count;
-        for (weight, gradient) in shadow.w1.iter_mut().zip(grad_w1.iter()) {
-            *weight -= scale * gradient;
-        }
-        for (bias, gradient) in shadow.b1.iter_mut().zip(grad_b1.iter()) {
-            *bias -= scale * gradient;
-        }
-        for (weight, gradient) in shadow.w2.iter_mut().zip(grad_w2.iter()) {
-            *weight -= scale * gradient;
-        }
-        shadow.b2 -= scale * grad_b2;
+        final_loss = epoch_loss / count;
     }
 
     let shadow_accuracy = accuracy(&shadow, inputs, labels);
@@ -377,6 +422,7 @@ mod tests {
                 epochs: 300,
                 learning_rate: 0.3,
                 seed: 11,
+                ..TrainOptions::default()
             },
         )
         .unwrap();
@@ -386,6 +432,72 @@ mod tests {
             "三值网络精度只有 {}",
             report.ternary_accuracy
         );
+    }
+
+    #[test]
+    fn mini_batch_learns_majority_and_is_deterministic() {
+        let (inputs, labels) = majority_dataset(5);
+        // mini-batch：更少轮数也应学到同等精度（更多次更新步）。
+        let mut first = untrained(6, 5);
+        let report = train(
+            &mut first,
+            &inputs,
+            &labels,
+            TrainOptions {
+                epochs: 60,
+                learning_rate: 0.3,
+                seed: 11,
+                batch_size: 8,
+            },
+        )
+        .unwrap();
+        assert!(report.final_loss < report.initial_loss, "损失没有下降");
+        assert!(
+            report.ternary_accuracy >= 0.75,
+            "mini-batch 三值精度只有 {}",
+            report.ternary_accuracy
+        );
+        // 同种子重跑逐位一致（洗牌确定性 ⇒ 报告相等）。
+        let mut second = untrained(6, 5);
+        let again = train(
+            &mut second,
+            &inputs,
+            &labels,
+            TrainOptions {
+                epochs: 60,
+                learning_rate: 0.3,
+                seed: 11,
+                batch_size: 8,
+            },
+        )
+        .unwrap();
+        assert_eq!(report, again, "同参数重跑必须可复现");
+        assert_eq!(first, second, "权重也必须一致");
+        // 洗牌真的在洗：不同种子给出不同排列，且不是恒等序。
+        assert_ne!(
+            shuffled_indices(64, 1),
+            shuffled_indices(64, 2),
+            "不同种子必须产生不同排列"
+        );
+        assert_ne!(
+            shuffled_indices(64, 1),
+            (0..64).collect::<Vec<_>>(),
+            "洗牌不允许退化成恒等序"
+        );
+        // batch 大于样本数：钳到样本数（等效全批但走洗牌路径），不 panic。
+        let mut third = untrained(6, 5);
+        train(
+            &mut third,
+            &inputs,
+            &labels,
+            TrainOptions {
+                epochs: 5,
+                learning_rate: 0.3,
+                seed: 11,
+                batch_size: 10_000,
+            },
+        )
+        .expect("超大 batch 应钳制而不是崩");
     }
 
     #[test]

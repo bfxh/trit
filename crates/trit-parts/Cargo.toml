@@ -1,0 +1,132 @@
+[package]
+name = "trit-parts"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "部件平面头（k 位三进制 + valid）的 Rust 三进制 GPU 实现（不属于稳定 API）"
+publish = false
+
+[features]
+default = []
+gpu = ["dep:wgpu", "dep:pollster", "dep:bytemuck"]
+
+[dependencies]
+wgpu = { version = "30", optional = true }
+pollster = { version = "0.4", optional = true }
+bytemuck = { version = "1", features = ["derive"], optional = true }
+# STE / 量化口径的唯一来源：trit-learn 的 quant 模块（trit-train 只是它的再导出）。
+trit-learn.workspace = true
+# 结果指纹（SHA-256）的正本在 trit-core，纹理族的复核器共用同一份。
+trit-core.workspace = true
+# 观感/风格测量的正本（pin 到具体 rev，保证可复现）；本 crate publish=false
+trit-look = { version = "0.1", git = "https://github.com/bfxh/trit-look", rev = "f32001b446778d0e568b083c320ac5316384ff42" }
+# 训练数据是 PNG（384² RGB）；纯 Rust 解码，不借 Python。
+png = "0.17"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
+
+[dev-dependencies]
+# 交叉对拍：本 crate 的 STE 与 trit-train 线性层逐元素一致（只测不跑）。
+trit-train = { path = "../trit-train" }
+
+[[bin]]
+name = "parts-parity"
+path = "src/bin/parts_parity.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "parts-gradcheck"
+path = "src/bin/parts_gradcheck.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "parts-train"
+path = "src/bin/parts_train.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "parts-bench"
+path = "src/bin/parts_bench.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "parts-cli"
+path = "src/bin/parts_cli.rs"
+
+[[bin]]
+name = "parts-3d"
+path = "src/bin/parts_3d.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "parts-depth"
+path = "src/bin/parts_depth.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "parts-depth-unet"
+path = "src/bin/parts_depth_unet.rs"
+
+[[bin]]
+name = "parts-depth-verify"
+path = "src/bin/parts_depth_verify.rs"
+
+[[bin]]
+name = "parts-extract-verify"
+path = "src/bin/parts_extract_verify.rs"
+
+[[bin]]
+name = "parts-asset-verify"
+path = "src/bin/parts_asset_verify.rs"
+
+[[bin]]
+name = "parts-splat-verify"
+path = "src/bin/parts_splat_verify.rs"
+
+[[bin]]
+name = "parts-scene-verify"
+path = "src/bin/parts_scene_verify.rs"
+
+[[bin]]
+name = "parts-objects-verify"
+path = "src/bin/parts_objects_verify.rs"
+
+[[bin]]
+name = "parts-compose-verify"
+path = "src/bin/parts_compose_verify.rs"
+
+[[bin]]
+name = "parts-preview-verify"
+path = "src/bin/parts_preview_verify.rs"
+
+[[bin]]
+name = "parts-glb-verify"
+path = "src/bin/parts_glb_verify.rs"
+
+[[bin]]
+name = "parts-objectmesh-verify"
+path = "src/bin/parts_objectmesh_verify.rs"
+
+[[bin]]
+name = "parts-depth-gpu"
+path = "src/bin/parts_depth_gpu.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "parts-guard"
+path = "src/bin/parts_guard.rs"
+
+[[bin]]
+name = "parts-ood"
+path = "src/bin/parts_ood.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "parts-inst"
+path = "src/bin/parts_inst.rs"
+required-features = ["gpu"]
+
+[[bin]]
+name = "parts-verify"
+path = "src/bin/parts_verify.rs"

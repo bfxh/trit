@@ -1,0 +1,47 @@
+[
+ {
+  "name": "release_preflight: 放行非 canonical worktree",
+  "file": "scripts/release_preflight.py",
+  "old": "    if not canonical and not allow_noncanonical:",
+  "new": "    if False:",
+  "pkg": "scripts/release_preflight.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "release_preflight: 放行脏工作区",
+  "file": "scripts/release_preflight.py",
+  "old": "    if dirty_lines:",
+  "new": "    if False:",
+  "pkg": "scripts/release_preflight.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "release_preflight: 放行错误分支",
+  "file": "scripts/release_preflight.py",
+  "old": "    elif not any(fnmatch.fnmatchcase(branch, pattern) for pattern in allowed_branches):",
+  "new": "    elif False:",
+  "pkg": "scripts/release_preflight.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "release_preflight: 放行错误 origin",
+  "file": "scripts/release_preflight.py",
+  "old": "    if normalize_remote(origin) != expected_repo:",
+  "new": "    if False:",
+  "pkg": "scripts/release_preflight.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "release_preflight: artifact 用 sha1",
+  "file": "scripts/release_preflight.py",
+  "old": "        digest = hashlib.sha256()",
+  "new": "        digest = hashlib.sha1()",
+  "pkg": "scripts/release_preflight.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

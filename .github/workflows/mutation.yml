@@ -37,16 +37,25 @@ jobs:
           pkgs=$(printf '%s\n' "$files" | awk -F/ 'NF > 1 && $1 == "crates" { print $2 }' | sort -u)
           # 门脚本（python 语言面）也算一个可选目标：脚本路径本身就是 `--pkg` 的值
           scripts=$(git diff --name-only "$BASE_SHA"...HEAD -- 'scripts/**' \
-            | grep -E '^scripts/[A-Za-z0-9_.-]+\.py$' || true)
+            | grep -E '^scripts/[A-Za-z0-9_.-]+\.py$' \
+            | while read -r f; do grep -q -- '--self-test' "$f" 2>/dev/null && echo "$f"; done || true)
           # bash 语言面同理（冒烟脚本带 --self-test 才能登记变异）
           # 字符类要带 `-`/`.`：crate 目录名形如 trit-immune，漏了连字符就一条也收不到
           bsh=$(git diff --name-only "$BASE_SHA"...HEAD -- 'scripts/*.sh' 'crates/*/scripts/*.sh' \
-            | grep -E '^(scripts|crates/[A-Za-z0-9_.-]+/scripts)/[A-Za-z0-9_.-]+\.sh$' || true)
+            | grep -E '^(scripts|crates/[A-Za-z0-9_.-]+/scripts)/[A-Za-z0-9_.-]+\.sh$' \
+            | while read -r f; do grep -q -- '--self-test' "$f" 2>/dev/null && echo "$f"; done || true)
           # 登记表按目标拆成 scripts/mutants/<目标>.json 之后，改 json 就是改那个目标的登记，
           # 要把文件名映射回目标本身（`__` → `/`），否则这个目标的变异一条都不会被重跑。
           jsons=$(git diff --name-only "$BASE_SHA"...HEAD -- 'scripts/mutants/*.json' \
             | sed -E 's#^scripts/mutants/(.*)\.json$#\1#; s#__#/#g' || true)
           pkgs=$(printf '%s\n%s\n%s\n%s\n' "$pkgs" "$scripts" "$bsh" "$jsons" | sed '/^$/d' | sort -u)
+          # 靶子消失了就不算「这个目标 0 条变异」：删除型 PR（整仓迁走）里，crate 目录与被删的
+          # 登记表路径都还会被 diff 选中，而门对「选中了但 0 条」是 fail-closed 判红 —— 那是一条
+          # 根本没东西可跑的靶子，不是漏登记。剔除口径只认 HEAD 上还在的东西：目录/文件任一存在即保留。
+          # 反过来，新加的 crate（目录在、登记 0 条）仍会走到门的判红分支，fail-closed 不放松。
+          pkgs=$(for p in $pkgs; do
+                   if [ -e "$p" ] || [ -e "crates/$p" ]; then printf '%s\n' "$p"; fi
+                 done | sort -u)
           args=""
           for pkg in $pkgs; do args="$args --pkg $pkg"; done
           echo "args=$args" >> "$GITHUB_OUTPUT"

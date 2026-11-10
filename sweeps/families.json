@@ -1,0 +1,44 @@
+{
+  "families": [
+    {
+      "id": "depth",
+      "title": "单目深度头",
+      "status": "live",
+      "dir": "runs/depth",
+      "manifest_kind": "depth-cnn-train",
+      "verifier": "parts-depth-verify",
+      "detail": "docs/DEPTH-RESULTS.md",
+      "protocol": "parts-depth-gpu 写清单 → parts-depth-verify 独立复核（内容级数据指纹）→ 目录自动生成"
+    },
+    {
+      "id": "parts",
+      "title": "部件平面头 / 分割与实例",
+      "status": "live",
+      "dir": "runs/parts",
+      "manifest_kind": "parts-train",
+      "verifier": "parts-verify",
+      "detail": "docs/PARTS-RESULTS.md",
+      "protocol": "parts-train 写清单（内容级训练集指纹 + 模型 SHA）→ parts-verify 重算指纹并子进程重跑 parts-inst eval → 目录自动生成"
+    },
+    {
+      "id": "texture",
+      "title": "纹理（TTX2 资产包）",
+      "status": "live",
+      "dir": "runs/texture",
+      "manifest_kind": "texture-ttx-pack",
+      "verifier": "ttx-verify",
+      "detail": "docs/TEXTURE-RESULTS.md",
+      "protocol": "ttx-pack 固定参数编码（无逐图调参）→ ttx-verify 重算语料/索引/逐图指纹、重编码逐字节比对、采样一致性 → 目录自动生成"
+    },
+    {
+      "id": "extract",
+      "title": "S1 提取（N2 占据补全）",
+      "status": "live",
+      "dir": "runs/extract",
+      "manifest_kind": "extract-occupancy",
+      "verifier": "parts-extract-verify",
+      "detail": "docs/EXTRACT-RESULTS.md",
+      "protocol": "parts-3d occ 写清单（场景语料指纹 + 模型 SHA + 体积 IoU/闭合）→ parts-extract-verify 用 --load-model 在新进程重跑同一评测 → 目录自动生成；N1/N3–N7 仍只有文档读数"
+    }
+  ]
+}

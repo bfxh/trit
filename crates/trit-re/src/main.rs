@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use clap::{Parser, Subcommand};
 
-use trit_re::{Triage, analyze, ledger};
+use trit_re::{Triage, analyze, ledger, yaraparse};
 
 #[derive(Parser)]
 #[command(
@@ -48,6 +48,16 @@ enum Command {
         #[arg(long)]
         summary_only: bool,
     },
+    /// YARA 子集签名扫描（N4）：吃 .yar 规则文件 + 样本，输出命中集合
+    /// （对拍口径：HIT 行即命中规则名，与官方 yara 逐规则对照）
+    Sigscan {
+        /// 待扫描样本
+        #[arg(required = true, value_name = "PATH")]
+        path: PathBuf,
+        /// YARA 规则文件（.yar 文本）
+        #[arg(long, required = true, value_name = "FILE")]
+        rules: PathBuf,
+    },
 }
 
 fn main() -> ExitCode {
@@ -64,6 +74,7 @@ fn main() -> ExitCode {
             events,
             summary_only,
         } => run_collect(events.as_deref(), summary_only),
+        Command::Sigscan { path, rules } => run_sigscan(&path, &rules),
     }
 }
 
@@ -287,4 +298,94 @@ fn run_collect(events: Option<&Path>, summary_only: bool) -> ExitCode {
     } else {
         ExitCode::SUCCESS
     }
+}
+
+/// `trit-re sigscan <样本> --rules <规则.yar>`：YARA 子集扫描（N4）。
+///
+/// 输出逐规则一行（对拍口径，HIT 行即命中集合）：
+/// `HIT\t<name>` / `MISS\t<name>` / `UNKNOWN\t<name>`；解析不了的规则
+/// 另出 `UNSUPPORTED\t<name>\t<原因>`——扫描时按 Unknown 裁决，绝不静默。
+fn run_sigscan(sample: &Path, rules_path: &Path) -> ExitCode {
+    let rules_text = match std::fs::read_to_string(rules_path) {
+        Ok(text) => text,
+        Err(error) => {
+            eprintln!("读取规则 {} 失败: {error}", rules_path.display());
+            return ExitCode::from(1);
+        }
+    };
+    let parsed = match yaraparse::parse_rules(&rules_text) {
+        Ok(parsed) => parsed,
+        Err(error) => {
+            eprintln!("规则解析失败：{error}");
+            return ExitCode::from(1);
+        }
+    };
+    let bytes = match std::fs::read(sample) {
+        Ok(bytes) => bytes,
+        Err(error) => {
+            eprintln!("读取样本 {} 失败: {error}", sample.display());
+            return ExitCode::from(1);
+        }
+    };
+    let mut rules = Vec::new();
+    for outcome in &parsed.rules {
+        match outcome {
+            yaraparse::RuleOutcome::Parsed(rule) => rules.push(rule.clone()),
+            yaraparse::RuleOutcome::Unsupported { name, reason } => {
+                println!("UNSUPPORTED\t{name}\t{reason}");
+            }
+        }
+    }
+    // 入口点上下文：头解析出入口后换算**文件偏移**（官方 YARA 的
+    // entrypoint 语义，实测对拍判定——PE：RVA≠offset 的样本官方只认
+    // offset；ELF：3 个 ET_EXEC 判别样本 vaddr 全不匹配、offset 全匹配，
+    // e_entry 过 PT_LOAD 映射）。非 PE/ELF 或解析失败 = None →
+    // entrypoint 操作数弃权（Unknown）。
+    let entrypoint = trit_re::pe::parse(&bytes)
+        .ok()
+        .and_then(|info| {
+            info.rva_to_offset(info.entry_rva)
+                .map(|offset| offset as u64)
+        })
+        .or_else(|| {
+            trit_re::elf::parse(&bytes)
+                .ok()
+                .and_then(|info| info.entry_file_offset())
+        });
+    let report =
+        trit_re::sigscan::SigScan::new(&rules).scan_with_entrypoint(&bytes, false, entrypoint);
+    let stdout = io::stdout();
+    let mut out = io::BufWriter::new(stdout.lock());
+    for verdict in &report.rules {
+        let tag = match verdict.value {
+            trit_core::value::Ternary::True => "HIT",
+            trit_core::value::Ternary::False => "MISS",
+            trit_core::value::Ternary::Unknown => "UNKNOWN",
+        };
+        if writeln!(out, "{tag}\t{}", verdict.rule).is_err() {
+            return ExitCode::SUCCESS; // 管道提前关闭不算错
+        }
+    }
+    if let Err(error) = out.flush() {
+        eprintln!("写 stdout 失败: {error}");
+        return ExitCode::from(1);
+    }
+    let hits = report
+        .rules
+        .iter()
+        .filter(|r| r.value == trit_core::value::Ternary::True)
+        .count();
+    let entry_note = match entrypoint {
+        Some(offset) => format!("，入口点 {offset:#x}"),
+        None => String::new(),
+    };
+    eprintln!(
+        "sigscan：规则 {}（可评估 {}，不支持 {}），命中 {}；样本 {} 字节{entry_note}",
+        report.rules.len(),
+        rules.len(),
+        parsed.rules.len() - rules.len(),
+        hits,
+        bytes.len()
+    );
+    ExitCode::SUCCESS
 }

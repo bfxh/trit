@@ -136,12 +136,21 @@ pub fn analyze(bytes: &[u8]) -> Triage {
         triage.facts.set(
             "xref.has_unreferenced",
             if report.complete {
-                Ternary::from(report.unreferenced() > 0)
+                // N1 首批读数（2026-11-07）驱动的语义降权：良性批 19/19 全部
+                // 触发 true——动态解析导入在合法二进制上是常态，「有无未引用
+                // 导入」事实为真但**无侵入权重**。有未引用导入 → Unknown
+                // （0 权重注记：事实与计数留在本注记里，门禁不被它收紧）；
+                // 全部有调用点 → False。人工复核可推翻（review_worksheet）。
+                if report.unreferenced() > 0 {
+                    Ternary::Unknown
+                } else {
+                    Ternary::False
+                }
             } else {
                 Ternary::Unknown
             },
             format!(
-                "有调用点 {} / 无调用点 {} / 未知 {}",
+                "有调用点 {} / 无调用点 {} / 未知 {}（未引用导入 = 动态解析/死导入的常态注记，不构成侵入证据）",
                 report.referenced(),
                 report.unreferenced(),
                 report.unknown()
@@ -375,6 +384,54 @@ fn fill_pe(bytes: &[u8], info: &pe::PeInfo, triage: &mut Triage) {
     if !info.exports.is_empty() {
         notes.push(format!("导出 {} 个名字", info.exports.len()));
     }
+
+    // 动态解析链证据（N1 首批读数记录的漏报边界的闭合面：指针-only /
+    // GetProcAddress·dlsym 形态绕过导入共现）。三值：≥3 个隐藏敏感名 =
+    // True；1-2 = Unknown（可疑不定）；0 = False。
+    let imported_apis: std::collections::BTreeSet<String> = flattened
+        .as_deref()
+        .unwrap_or(&[])
+        .iter()
+        .map(|i| imports::api_name(i).to_string())
+        .collect();
+    let nonexec: Vec<&[u8]> = info
+        .sections
+        .iter()
+        .filter(|section| !section.executable())
+        .filter_map(|section| {
+            let start = section.raw_ptr as usize;
+            bytes.get(start..start.checked_add(section.raw_size as usize)?)
+        })
+        .collect();
+    let hidden = imports::hidden_api_strings(
+        &nonexec,
+        &imported_apis,
+        &imports::windows_sensitive_vocab(),
+    );
+    let resolver =
+        imports::resolver_imported(flattened.as_deref().unwrap_or(&[]), &["GetProcAddress"]);
+    facts.set(
+        "dynres.resolver_imported",
+        Ternary::from(resolver),
+        "GetProcAddress 在导入表（动态解析链前半段）",
+    );
+    let hidden_note = if hidden.is_empty() {
+        "（无）".to_string()
+    } else {
+        hidden.join(", ")
+    };
+    facts.set(
+        "dynres.hidden_api_strings",
+        match hidden.len() {
+            0 => Ternary::False,
+            1..=2 => Ternary::Unknown,
+            _ => Ternary::True,
+        },
+        format!(
+            "非可执行节里发现 {} 个不在导入表的敏感 API 名：{hidden_note}（阈值 ≥3 = True）",
+            hidden.len()
+        ),
+    );
 }
 
 fn fill_elf(bytes: &[u8], info: &elf::ElfInfo, triage: &mut Triage) {
@@ -447,6 +504,50 @@ fn fill_elf(bytes: &[u8], info: &elf::ElfInfo, triage: &mut Triage) {
     if !info.has_section_headers {
         notes.push("无节表（可能是删节表加壳）".to_string());
     }
+
+    // ELF 侧动态解析链证据：解析器 = dlsym（api_name 已剥版本后缀）；
+    // 敏感名串藏于非可执行节。ELF 的导入是动态符号表——不在表里的敏感
+    // 名同样构成"藏"的证据。
+    let imported_apis: std::collections::BTreeSet<String> = info
+        .imports
+        .iter()
+        .flatten()
+        .map(|i| imports::api_name(i).to_string())
+        .collect();
+    let nonexec: Vec<&[u8]> = info
+        .sections
+        .iter()
+        .filter(|section| section.flags & 0x4 == 0)
+        .filter_map(|section| {
+            let start = section.offset as usize;
+            bytes.get(start..start.checked_add(section.size as usize)?)
+        })
+        .collect();
+    let hidden =
+        imports::hidden_api_strings(&nonexec, &imported_apis, imports::LINUX_SENSITIVE_APIS);
+    let resolver = imports::resolver_imported(info.imports.as_deref().unwrap_or(&[]), &["dlsym"]);
+    facts.set(
+        "dynres.resolver_imported",
+        Ternary::from(resolver),
+        "dlsym 在动态符号表（动态解析链前半段）",
+    );
+    let hidden_note = if hidden.is_empty() {
+        "（无）".to_string()
+    } else {
+        hidden.join(", ")
+    };
+    facts.set(
+        "dynres.hidden_api_strings",
+        match hidden.len() {
+            0 => Ternary::False,
+            1..=2 => Ternary::Unknown,
+            _ => Ternary::True,
+        },
+        format!(
+            "非可执行节里发现 {} 个不在动态符号表的敏感 API 名：{hidden_note}（阈值 ≥3 = True）",
+            hidden.len()
+        ),
+    );
 }
 
 fn set_section_entropy_fact<'a>(

@@ -22,6 +22,13 @@
 //! 三侧各自与 CPU 位并行镜像 [`matmul_words`] 逐元素一致（真机）。注意：tiled/reg
 //! 内核在 `gpu` feature 后，默认构建的变异门测不到——正确性由真机对拍测试钉住。
 //!
+//! 位宽口径（A357 实测，`cargo run --release -p trit-dot --example dot_variants`，
+//! 同机同输入交错 9 轮，打包不计入计时）：本 crate 的 CPU 镜像 [`dot_words`] 走 **u32**，
+//! 因为它是 WGSL 内核的逐字镜像（一个线程一个字），**位宽被 GPU 侧锁死**，不是 CPU 侧的
+//! 优化目标。同输入下 `trit-dot` 的 u64 实现是 **7.6–12.5 ps/trit**，本镜像 **48.1–50.7 ps/trit**
+//! （慢 3.9–5.7×，三个规模档 8K/128K/2M 单调如此，无交叉），i32 标量 **168–183 ps/trit**。
+//! ⇒ 两件事分开记：**要 CPU 吞吐用 `trit-dot`，本镜像只作 GPU 内核的逐位对拍基准**。
+//!
 //! TT3 块纹理解码内核（`texture.rs`）与 trit-texture 的 CPU 解码逐字节对拍——
 //! WGSL 里的基 3 取位与块网格行主序映射均已真机验证。
 
@@ -178,6 +185,10 @@ pub mod gpu;
 pub mod matmul;
 #[cfg(feature = "gpu")]
 mod matmul_f32;
+#[cfg(feature = "gpu")]
+pub mod matmul_wf32;
+#[cfg(feature = "gpu")]
+pub mod matmul_wf32_plan;
 #[cfg(feature = "gpu")]
 mod popc;
 #[cfg(feature = "gpu")]

@@ -18,11 +18,35 @@ pub(crate) fn calibrate_cmd(args: &[String]) -> Result<(), String> {
     let mut bands = vec![0.0, 0.1, 0.2, 0.3, 0.4];
     let mut fraction = 0.75f64;
     let mut json = false;
+    let mut batch_size = 0usize;
+    let mut benign_tail: Option<f64> = None;
+    let mut emit_rules_path: Option<String> = None;
     let mut index = 0;
     while index < args.len() {
         let flag = args[index].clone();
         match flag.as_str() {
             "--no-select" => select_features = false,
+            "--batch" => {
+                index += 1;
+                let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
+                batch_size = raw.parse().map_err(|_| "--batch 不是整数".to_string())?;
+            }
+            "--benign-tail" => {
+                index += 1;
+                let raw = args.get(index).ok_or_else(|| format!("{flag} 缺少参数"))?;
+                benign_tail = Some(
+                    raw.parse()
+                        .map_err(|_| "--benign-tail 不是数字".to_string())?,
+                );
+            }
+            "--emit-rules" => {
+                index += 1;
+                emit_rules_path = Some(
+                    args.get(index)
+                        .ok_or_else(|| format!("{flag} 缺少参数"))?
+                        .clone(),
+                );
+            }
             "--rows" | "--epochs" | "--hidden" | "--train-fraction" | "--bands" | "--lr"
             | "--features" | "--test" => {
                 index += 1;
@@ -87,8 +111,10 @@ pub(crate) fn calibrate_cmd(args: &[String]) -> Result<(), String> {
         learning_rate,
         features,
         select_features,
+        batch_size,
+        benign_tail,
     };
-    let (reports, selected) = match test_path.as_deref() {
+    let out = match test_path.as_deref() {
         Some(test_path) => {
             let text = std::fs::read_to_string(test_path)
                 .map_err(|error| format!("读取 {test_path} 失败：{error}"))?;
@@ -102,6 +128,7 @@ pub(crate) fn calibrate_cmd(args: &[String]) -> Result<(), String> {
         }
         None => netsec::calibrate::run(&dataset.samples, &config)?,
     };
+    let (reports, selected, band_rules) = (out.reports, out.selected, out.band_rules);
     let picks: Vec<String> = selected
         .iter()
         .map(|picked| format!("{}({:+.3})", picked.name(), picked.correlation))
@@ -155,6 +182,7 @@ pub(crate) fn calibrate_cmd(args: &[String]) -> Result<(), String> {
             "bands": bands,
         });
         println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
+        emit_rules(&band_rules, emit_rules_path.as_deref())?;
         return Ok(());
     }
     println!(
@@ -205,5 +233,22 @@ pub(crate) fn calibrate_cmd(args: &[String]) -> Result<(), String> {
             last.band, last.tp, last.fp, last.tn, last.fn_, last.attack
         );
     }
+    emit_rules(&band_rules, emit_rules_path.as_deref())?;
+    Ok(())
+}
+
+/// 校准规则落盘：`{"bands": [{"band": b, "rules": [...]}]}`——`flow --rules`
+/// 的消费格式。只落盘不改账本（校准是检测面的前置，不是裁决）。
+fn emit_rules(
+    band_rules: &[netsec::calibrate::BandRules],
+    path: Option<&str>,
+) -> Result<(), String> {
+    let Some(path) = path else {
+        return Ok(());
+    };
+    let text = serde_json::to_string_pretty(band_rules)
+        .map_err(|error| format!("规则序列化失败：{error}"))?;
+    std::fs::write(path, text).map_err(|error| format!("写 {path} 失败：{error}"))?;
+    println!("校准规则已写 {}", path);
     Ok(())
 }

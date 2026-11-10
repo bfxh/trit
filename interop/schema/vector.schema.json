@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/bfxh/trit/interop/schema/vector.schema.json",
+  "title": "trit interop golden vectors",
+  "type": "object",
+  "required": ["spec_version", "profile", "encoding", "vectors"],
+  "additionalProperties": false,
+  "properties": {
+    "spec_version": {
+      "const": "0.1.0"
+    },
+    "profile": {
+      "enum": ["k3", "kgate", "pack5", "belnap4"]
+    },
+    "encoding": {
+      "enum": ["semantic", "bitplane", "pack5"]
+    },
+    "vectors": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["id", "op", "input"],
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9_.-]+$"
+          },
+          "op": {
+            "type": "string",
+            "minLength": 1
+          },
+          "input": true,
+          "expected": true,
+          "trit_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "expect_error": {
+            "enum": [
+              "invalid_bitplane",
+              "invalid_byte",
+              "short_input",
+              "invalid_trit"
+            ]
+          },
+          "notes": {
+            "type": "string"
+          }
+        },
+        "oneOf": [
+          { "required": ["expected"] },
+          { "required": ["expect_error"] }
+        ]
+      }
+    }
+  }
+}

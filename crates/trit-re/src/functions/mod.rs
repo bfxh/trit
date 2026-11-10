@@ -6,10 +6,17 @@
 //! 边界来源分三档：
 //! - PE x86-64 的 `.pdata`（`RUNTIME_FUNCTION`）——精确；
 //! - ELF 的 `STT_FUNC` 符号（要求 `st_size > 0`）——精确；
-//! - 启发式（入口 + 直接调用目标）——**只用于展示，绝不用于下 `False` 结论**。
+//! - 最小 CFG（入口 + 直接控制流目标，N2 第一层）——**补隙合并**：有精确源时
+//!   只填充精确区间未覆盖的可执行隙（绝不切分精确区间）；无精确源时覆盖全部
+//!   可执行节。`Cfg` 边界的 `exact` 恒为 false，共现判定照旧要求精确源——
+//!   绝不用于下 `False` 结论。
 //!
 //! 共现判定的三值规则：边界不精确、交叉引用不完整、或有调用点归不到函数时，
 //! 一律 `Unknown`——因为"没看到"不能区分"真的没有"和"没看见"。
+
+mod arm64walk;
+mod cfg;
+mod x86len;
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -19,6 +26,7 @@ use crate::elf;
 use crate::imports;
 use crate::pe;
 use crate::xref::XrefReport;
+use cfg::cfg_ranges;
 
 /// 函数边界来源。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -33,8 +41,9 @@ pub enum FuncSource {
     EhFrame,
     /// ELF `.debug_frame`（DWARF CFI 区间）。
     DebugFrame,
-    /// 启发式（入口 + 直接调用目标）。
-    Heuristic,
+    /// 最小 CFG 补隙（入口 + 直接控制流目标；N2 第一层，字节模式级——
+    /// 不是指令级遍历，证据等级与旧启发式相同：不参与 `False` 结论）。
+    Cfg,
 }
 
 impl FuncSource {
@@ -46,7 +55,7 @@ impl FuncSource {
             Self::Symtab => "symtab",
             Self::EhFrame => "eh_frame",
             Self::DebugFrame => "debug_frame",
-            Self::Heuristic => "heuristic",
+            Self::Cfg => "cfg",
         }
     }
 }
@@ -91,6 +100,10 @@ pub enum SiteRuling {
     BoundaryMiss,
     /// **不在可执行节**：字节模式匹配的误报候选（数据段里恰好长得像指令）。
     NonExec,
+    /// **间隙跳板**：站点是 `E9 rel32` 且目标是 `FF 25`（rip 相对 jmp 跳板）
+    /// ——两级跳板链落在函数间隙里（增量链接的独立跳板）。既可能是无引用
+    /// 的死机器，也可能是未建界叶函数的尾跳：如实携带形态，不强行归因。
+    ThunkGap,
 }
 
 impl SiteRuling {
@@ -100,6 +113,7 @@ impl SiteRuling {
             Self::BoundaryClip => "boundary-clip",
             Self::BoundaryMiss => "boundary-miss",
             Self::NonExec => "non-exec",
+            Self::ThunkGap => "thunk-gap",
         }
     }
 }
@@ -141,12 +155,14 @@ pub struct FunctionReport {
     pub unattributed_buckets: Vec<&'static str>,
     /// 未归属调用点的**逐条裁定**（超过 [`MAX_RULED_SITES`] 条截断，计数仍完整）。
     pub ruled_sites: Vec<RuledSite>,
-    /// 三类裁定的总数（与截断无关）。
+    /// 各类裁定的总数（与截断无关）。
     pub ruling_clip: usize,
     /// 疑边界漏检数。
     pub ruling_miss: usize,
     /// 非执行节误报候选数。
     pub ruling_nonexec: usize,
+    /// 间隙跳板数（`E9 → FF 25` 两级跳板链落在函数间隙）。
+    pub ruling_thunk_gap: usize,
     /// 说明。
     pub notes: Vec<String>,
 }
@@ -217,16 +233,48 @@ pub fn build_pe(bytes: &[u8], info: &pe::PeInfo, xref: &XrefReport) -> FunctionR
             }
             _ => {
                 notes.push(
-                    "没有 .pdata 也没有可用的 COFF 符号表：函数边界退化为启发式，只用于展示"
+                    "没有 .pdata 也没有可用的 COFF 符号表：函数边界来自最小 CFG（字节模式级，不参与 False 结论）"
                         .to_string(),
                 );
                 (
-                    heuristic_ranges(&exec, info.entry_rva as u64, arch_of_pe(info.machine)),
+                    cfg_ranges(
+                        &exec,
+                        &[],
+                        info.entry_rva as u64,
+                        arch_of_pe(info.machine),
+                        &[],
+                    ),
                     false,
                 )
             }
         },
     };
+    normalize(&mut ranges);
+    // N2 补隙：精确边界源未覆盖的可执行隙由 CFG 填充（候选起点 = 入口 +
+    // 直接控制流目标；绝不切分精确区间——切分是 fn_* 回归的头号来源）。
+    // v4：数据节指针表收割的候选起点一并进入（回调/虚表方法的间接入口）。
+    if exact {
+        let exec_bounds: Vec<(u64, u64)> = exec
+            .iter()
+            .map(|(base, data)| (*base, base.saturating_add(data.len() as u64)))
+            .collect();
+        let pointer_seeds = pe_pointer_seeds(bytes, info, &exec_bounds);
+        let gap_ranges = cfg_ranges(
+            &exec,
+            &ranges,
+            info.entry_rva as u64,
+            arch_of_pe(info.machine),
+            &pointer_seeds,
+        );
+        if !gap_ranges.is_empty() {
+            notes.push(format!(
+                "CFG 补隙：{} 个区间（.pdata/符号表未覆盖的可执行隙；指针表种子 {}）",
+                gap_ranges.len(),
+                pointer_seeds.len()
+            ));
+            ranges.extend(gap_ranges);
+        }
+    }
     normalize(&mut ranges);
     attribute(xref, &ranges, &exec, exact, notes)
 }
@@ -298,18 +346,33 @@ pub fn build_elf(bytes: &[u8], info: &elf::ElfInfo, xref: &XrefReport) -> Functi
         )
     } else {
         if symbols.is_empty() {
-            notes.push("没有带大小的 STT_FUNC：函数边界退化为启发式，只用于展示".to_string());
+            notes.push(
+                "没有带大小的 STT_FUNC：函数边界来自最小 CFG（字节模式级，不参与 False 结论）"
+                    .to_string(),
+            );
         } else {
             notes.push(format!(
-                "STT_FUNC 只覆盖可执行字节的 {}%：边界退化为启发式，只用于展示",
+                "STT_FUNC 只覆盖可执行字节的 {}%：边界来自最小 CFG 补隙（字节模式级，不参与 False 结论）",
                 covered.saturating_mul(100) / exec_bytes.max(1)
             ));
         }
         (
-            heuristic_ranges(&exec, info.entry, arch_of_elf(info.machine)),
+            cfg_ranges(&exec, &[], info.entry, arch_of_elf(info.machine), &[]),
             false,
         )
     };
+    normalize(&mut ranges);
+    // N2 补隙（ELF）：符号表/CFI 未覆盖的可执行隙由 CFG 填充（不切分精确区间）。
+    if exact {
+        let gap_ranges = cfg_ranges(&exec, &ranges, info.entry, arch_of_elf(info.machine), &[]);
+        if !gap_ranges.is_empty() {
+            notes.push(format!(
+                "CFG 补隙：{} 个区间（符号表/CFI 未覆盖的可执行隙）",
+                gap_ranges.len()
+            ));
+            ranges.extend(gap_ranges);
+        }
+    }
     normalize(&mut ranges);
     attribute(xref, &ranges, &exec, exact, notes)
 }
@@ -421,6 +484,65 @@ fn pe_exec_sections<'a>(bytes: &'a [u8], info: &pe::PeInfo) -> Vec<(u64, &'a [u8
         .collect()
 }
 
+/// v4：**数据节指针表收割**——非可执行节里指向可执行域的指针串。
+///
+/// 间接调用的函数（回调/虚表方法）在数据节里被引用：vtable 是一串连续
+/// 的函数指针。收割规则（全机械）：
+/// - PE32+ 按 u64、PE32 按 u32 读（对齐步进）；
+/// - 值 − `image_base` 必须落在可执行域内（NULL 槽位跳过、非可执行域归零连击）；
+/// - **连续 ≥2 个**可执行域指针（表的形状）全收，孤立指针仅在 16 字节
+///   对齐时收（x64 MSVC 函数 16 对齐；不对齐的孤立值多半是整数巧合）。
+///
+/// 返回候选起点 RVA——只当起点、不进块遍历（收割侧已过滤，零覆盖污染）。
+/// ELF 不在此列：PIE 下数据节指针要先过重定位，诚实留白。
+pub(crate) fn pe_pointer_seeds(
+    bytes: &[u8],
+    info: &pe::PeInfo,
+    exec_bounds: &[(u64, u64)],
+) -> Vec<u64> {
+    let stride = if info.plus { 8usize } else { 4usize };
+    let mut seeds = Vec::new();
+    for section in &info.sections {
+        if section.executable() {
+            continue;
+        }
+        let start = section.raw_ptr as usize;
+        let Some(end) = start.checked_add(section.raw_size as usize) else {
+            continue;
+        };
+        let Some(data) = bytes.get(start..end) else {
+            continue;
+        };
+        let mut run = 0usize;
+        for off in (0..data.len()).step_by(stride) {
+            let Some(chunk) = data.get(off..off + stride) else {
+                break;
+            };
+            let value = if info.plus {
+                u64::from_le_bytes(chunk.try_into().expect("步进与宽度一致"))
+            } else {
+                u32::from_le_bytes(chunk.try_into().expect("步进与宽度一致")) as u64
+            };
+            let Some(rva) = value.checked_sub(info.image_base) else {
+                run = 0;
+                continue;
+            };
+            if !exec_bounds
+                .iter()
+                .any(|(low, high)| rva >= *low && rva < *high)
+            {
+                run = 0;
+                continue;
+            }
+            run += 1;
+            if run >= 2 || rva % 16 == 0 {
+                seeds.push(rva);
+            }
+        }
+    }
+    seeds
+}
+
 fn elf_exec_sections<'a>(bytes: &'a [u8], info: &elf::ElfInfo) -> Vec<(u64, &'a [u8])> {
     info.sections
         .iter()
@@ -454,94 +576,6 @@ fn arch_of_elf(machine: u16) -> Arch {
     } else {
         Arch::X86
     }
-}
-
-fn heuristic_ranges(exec: &[(u64, &[u8])], entry: u64, arch: Arch) -> Vec<Function> {
-    let bounds: Vec<(u64, u64)> = exec
-        .iter()
-        .map(|(base, data)| (*base, base.saturating_add(data.len() as u64)))
-        .collect();
-    let mut starts = BTreeSet::new();
-    if entry != 0 && in_exec(entry, &bounds) {
-        starts.insert(entry);
-    }
-    for (base, data) in exec {
-        match arch {
-            Arch::X86 => {
-                let mut index = 0usize;
-                while index + 5 <= data.len() {
-                    if data[index] == 0xE8 || data[index] == 0xE9 {
-                        let rel = i32::from_le_bytes([
-                            data[index + 1],
-                            data[index + 2],
-                            data[index + 3],
-                            data[index + 4],
-                        ]);
-                        let target = base
-                            .wrapping_add(index as u64 + 5)
-                            .wrapping_add(rel as i64 as u64);
-                        if in_exec(target, &bounds) {
-                            starts.insert(target);
-                        }
-                    }
-                    index += 1;
-                }
-            }
-            Arch::Arm64 => {
-                let mut index = 0usize;
-                while index + 4 <= data.len() {
-                    let word = u32::from_le_bytes([
-                        data[index],
-                        data[index + 1],
-                        data[index + 2],
-                        data[index + 3],
-                    ]);
-                    let opcode = word & 0xFC00_0000;
-                    if opcode == 0x9400_0000 || opcode == 0x1400_0000 {
-                        let imm = sign_extend_28(((word & 0x03FF_FFFF) as i64) << 2);
-                        let pc = base + index as u64;
-                        let target = pc.wrapping_add(imm as u64);
-                        if in_exec(target, &bounds) {
-                            starts.insert(target);
-                        }
-                    }
-                    index += 4;
-                }
-            }
-        }
-    }
-    let mut ranges = Vec::new();
-    for start in starts {
-        let Some(&(_, end)) = bounds
-            .iter()
-            .find(|(low, high)| start >= *low && start < *high)
-        else {
-            continue;
-        };
-        ranges.push(Function {
-            start,
-            end,
-            name: None,
-            source: FuncSource::Heuristic,
-        });
-    }
-    for index in 0..ranges.len().saturating_sub(1) {
-        let next = ranges[index + 1].start;
-        if next < ranges[index].end {
-            ranges[index].end = next;
-        }
-    }
-    ranges
-}
-
-fn sign_extend_28(value: i64) -> i64 {
-    (value << 36) >> 36
-}
-
-fn in_exec(addr: u64, bounds: &[(u64, u64)]) -> bool {
-    bounds
-        .iter()
-        .any(|(low, high)| addr >= *low && addr < *high)
 }
 
 fn normalize(ranges: &mut Vec<Function>) {
@@ -580,6 +614,7 @@ fn attribute(
     let mut ruling_clip = 0usize;
     let mut ruling_miss = 0usize;
     let mut ruling_nonexec = 0usize;
+    let mut ruling_thunk_gap = 0usize;
     for row in &xref.imports {
         for site in &row.sites {
             match locate(ranges, site.addr) {
@@ -614,6 +649,8 @@ fn attribute(
                     let distance = nearest_boundary_distance(ranges, site.addr);
                     let (ruling, counter) = if !in_exec {
                         (SiteRuling::NonExec, &mut ruling_nonexec)
+                    } else if is_thunk_gap(exec, site.addr) {
+                        (SiteRuling::ThunkGap, &mut ruling_thunk_gap)
                     } else if distance <= BOUNDARY_CLIP_BYTES {
                         (SiteRuling::BoundaryClip, &mut ruling_clip)
                     } else {
@@ -656,7 +693,7 @@ fn attribute(
             samples.join(", ")
         ));
         notes.push(format!(
-            "逐条裁定：疑边界裁剪（≤{BOUNDARY_CLIP_BYTES}B）{ruling_clip}、疑边界漏检（exec 内远距）{ruling_miss}、非执行节（误报候选）{ruling_nonexec}；明细见 ruled_sites（≤{MAX_RULED_SITES} 条）"
+            "逐条裁定：疑边界裁剪（≤{BOUNDARY_CLIP_BYTES}B）{ruling_clip}、疑边界漏检（exec 内远距）{ruling_miss}、非执行节（误报候选）{ruling_nonexec}、间隙跳板（E9→跳板链，孤立或未建界叶尾跳）{ruling_thunk_gap}；明细见 ruled_sites（≤{MAX_RULED_SITES} 条）"
         ));
     }
 
@@ -673,6 +710,7 @@ fn attribute(
         ruling_clip,
         ruling_miss,
         ruling_nonexec,
+        ruling_thunk_gap,
         notes,
     }
 }
@@ -692,6 +730,28 @@ fn nearest_boundary_distance(ranges: &[Function], addr: u64) -> u64 {
         })
         .min()
         .unwrap_or(u64::MAX)
+}
+
+/// 间隙跳板判定：站点指令是 `E9 rel32` 且目标是 `FF 25`（rip 相对 jmp
+/// 跳板）。实测形态（trit-re.exe 全部残余站点）：增量链接在函数间隙留
+/// 下「E9 → ILT 跳板」两级链——无 E8/E9 调用方、多数无任何引用（死机器），
+/// 少数被数据引用。既不该算"边界漏检"也不该强行归因——如实单列。
+fn is_thunk_gap(exec: &[(u64, &[u8])], addr: u64) -> bool {
+    let read = |at: u64, n: usize| -> Option<Vec<u8>> {
+        exec.iter().find_map(|(start, data)| {
+            let offset = at.checked_sub(*start)? as usize;
+            data.get(offset..offset + n).map(<[u8]>::to_vec)
+        })
+    };
+    let Some(insn) = read(addr, 5) else {
+        return false;
+    };
+    if insn[0] != 0xE9 {
+        return false;
+    }
+    let rel = i32::from_le_bytes([insn[1], insn[2], insn[3], insn[4]]);
+    let target = addr.wrapping_add(5).wrapping_add(rel as i64 as u64);
+    read(target, 2).is_some_and(|t| t == [0xFF, 0x25])
 }
 
 fn locate(ranges: &[Function], addr: u64) -> Option<usize> {
