@@ -1,10 +1,14 @@
 //! CLI `list-safetensors` / `import-safetensors` / `export-safetensors`：
 //! 真实权重张量 ↔ 三值 WSP1（从 `cli.rs` 拆出，控制单文件行数）。
 
+use std::collections::BTreeSet;
+use std::fs;
+use std::path::Path;
+
 use serde_json::{Value, json};
 
 use crate::safetensors;
-use crate::to_wsp;
+use crate::{from_wsp, to_wsp};
 
 use super::{emit, err, load_net, one, parse, value, write_out};
 
@@ -123,5 +127,133 @@ pub(super) fn export(args: &[String]) -> Result<(), String> {
         "layers": layers.len(),
         "bytes": bytes,
         "out": out,
+    }))
+}
+
+fn safe_name(name: &str) -> String {
+    let mapped: String = name
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = mapped.trim_matches('.').trim_matches('_');
+    if trimmed.is_empty() {
+        "tensor".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    let source = one(&parsed, "import-safetensors-dir <file> --out <dir>")?;
+    let out = value(&parsed, "out")?;
+    let tensors = safetensors::list(source).map_err(err)?;
+    if tensors.is_empty() {
+        return Err(format!("{source} 里没有 2D 张量"));
+    }
+    fs::create_dir_all(out).map_err(|error| format!("{out}: {error}"))?;
+    let mut manifest = Vec::with_capacity(tensors.len());
+    for (index, info) in tensors.iter().enumerate() {
+        let weights = safetensors::read_tensor(source, &info.name).map_err(err)?;
+        let layer = weights.to_layer().map_err(err)?;
+        let net = crate::Net::new(vec![layer]).map_err(err)?;
+        let file = format!("{index:04}-{}.wsp", safe_name(&info.name));
+        let path = Path::new(out).join(&file);
+        fs::write(&path, to_wsp(&net)).map_err(|error| format!("{}: {error}", path.display()))?;
+        manifest.push(json!({
+            "name": info.name,
+            "file": file,
+            "rows": weights.rows,
+            "cols": weights.cols,
+        }));
+    }
+    let manifest = json!({ "source": source, "tensors": manifest });
+    let text = serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;
+    let path = Path::new(out).join("manifest.json");
+    fs::write(&path, text).map_err(|error| format!("{}: {error}", path.display()))?;
+    emit(&json!({
+        "out": out,
+        "manifest": path.display().to_string(),
+        "tensors": manifest["tensors"],
+    }))
+}
+
+pub(super) fn export_dir(args: &[String]) -> Result<(), String> {
+    let parsed = parse(args, &[])?;
+    let dir = one(&parsed, "export-safetensors-dir <dir> --out <file>")?;
+    let out = value(&parsed, "out")?;
+    let manifest_path = Path::new(dir).join("manifest.json");
+    let text = fs::read_to_string(&manifest_path)
+        .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
+    let manifest: Value =
+        serde_json::from_str(&text).map_err(|error| format!("manifest JSON 非法：{error}"))?;
+    let entries = manifest
+        .get("tensors")
+        .and_then(Value::as_array)
+        .ok_or_else(|| "manifest 缺 tensors 数组".to_string())?;
+    if entries.is_empty() {
+        return Err("manifest 里没有张量".into());
+    }
+    let mut names: Vec<String> = Vec::with_capacity(entries.len());
+    let mut buffered: Vec<(usize, usize, Vec<f32>)> = Vec::with_capacity(entries.len());
+    for entry in entries {
+        let name = entry
+            .get("name")
+            .and_then(Value::as_str)
+            .ok_or_else(|| "manifest 条目缺 name".to_string())?;
+        let file = entry
+            .get("file")
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("{name} 缺 file"))?;
+        let path = Path::new(dir).join(file);
+        let text =
+            fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
+        let net = from_wsp(&text).map_err(err)?;
+        if net.layers().len() != 1 {
+            return Err(format!(
+                "{file} 是 {} 层，不是单层 WSP1",
+                net.layers().len()
+            ));
+        }
+        let layer = &net.layers()[0];
+        let (rows, cols) = (layer.rows(), layer.cols());
+        let mut values = Vec::with_capacity(rows * cols);
+        for row in 0..rows {
+            let scale = layer.scale(row).expect("行在范围内");
+            for col in 0..cols {
+                let trit = layer.trit(row, col).expect("列在范围内");
+                values.push(f32::from(trit.to_i8()) * scale);
+            }
+        }
+        names.push(name.to_string());
+        buffered.push((rows, cols, values));
+    }
+    let unique: BTreeSet<&String> = names.iter().collect();
+    if unique.len() != names.len() {
+        return Err("manifest 里有重复张量名".into());
+    }
+    let tensors: Vec<safetensors::TensorOut> = names
+        .iter()
+        .zip(&buffered)
+        .map(|(name, (rows, cols, values))| safetensors::TensorOut {
+            name,
+            rows: *rows,
+            cols: *cols,
+            values,
+        })
+        .collect();
+    safetensors::write_tensors(out, &tensors).map_err(err)?;
+    let bytes: usize = buffered.iter().map(|(_, _, values)| values.len() * 4).sum();
+    emit(&json!({
+        "dir": dir,
+        "out": out,
+        "tensors": names,
+        "bytes": bytes,
     }))
 }

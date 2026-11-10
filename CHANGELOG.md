@@ -12,9 +12,12 @@
   `export-safetensors <artifact|-> --out <path> [--tensor <name>[,<name>...]]`。`--tensor` 给多个
   名字时按顺序组装成多层 Net（相邻 `rows == cols` 由 `Net::new` 校验），导入走 absmean 三值化
   （`Layer::from_f32`），导出按行 `trit × scale` 反量化成 f32 并写多张量文件。
-- 测试 323 → 339（新增 `tests/safetensors.rs` 16 条：F32/F16 次正规/BF16 解码、三值化
+- 目录形态：`import-safetensors-dir <file> --out <dir>` 把每个 2D 张量写成独立单层 WSP1
+  （`0000-<name>.wsp` 等）并生成 `manifest.json`；`export-safetensors-dir <dir> --out <file>`
+  按 manifest 合并回一个多张量 safetensors，缺文件/重复名/非单层都报错。
+- 测试 323 → 342（新增 `tests/safetensors.rs` 19 条：F32/F16 次正规/BF16 解码、三值化
   与 `from_f32` 一致、写读往返、越界/字节数/非 2D/非有限值坏输入、CLI 端到端）。
-- 变异 `trit-wspace` 300 → 307（新增 5 条单张量 + 2 条多张量目标，逐条 `--only` 验证）。
+- 变异 `trit-wspace` 300 → 309（新增 5 条单张量 + 2 条多张量 + 2 条目录目标，逐条 `--only` 验证）。
 - 未证栏：只做单张量读写；整模型多张量分片/压缩（L0）与 GPU（L7）仍未做。
 
 ### Changed（CI：非 Rust 改动不再跑 cargo 矩阵 —— 脚本类 PR 的 Windows job 12min → 约 1min）

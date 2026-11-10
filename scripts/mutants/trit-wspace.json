@@ -2454,5 +2454,21 @@
  "new": "for name in names.iter().rev() {",
  "pkg": "trit-wspace",
  "filter": "cli_multi_tensor_round_trip"
+},
+{
+ "name": "safetensors-dir: 导入文件名不按序号唯一",
+ "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
+ "old": "let file = format!(\"{index:04}-{}.wsp\", safe_name(&info.name));",
+ "new": "let file = format!(\"0000-{}.wsp\", safe_name(&info.name));",
+ "pkg": "trit-wspace",
+ "filter": "cli_dir_round_trip"
+},
+{
+ "name": "safetensors-dir: 导出重名不检查",
+ "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
+ "old": "if unique.len() != names.len() {",
+ "new": "if false {",
+ "pkg": "trit-wspace",
+ "filter": "cli_dir_rejects_duplicate_names"
 }
 ]
