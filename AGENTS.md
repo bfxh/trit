@@ -35,6 +35,9 @@
   - `pre-push`：拒绝直推 main + 高置信度密钥扫描。
   点对点放行用 `TRIT_ALLOW_SHARED_COMMIT=1` / `TRIT_ALLOW_MAIN_COMMIT=1` /
   `TRIT_ALLOW_SHARED_SWITCH=1`；共享树清单可用 `TRIT_SHARED_WORKTREES` 覆盖（`os.pathsep` 分隔）。
+  `install` 会把 `hooks.py` 与合并驱动复制成 hooks 目录里的**稳定副本**（`trit-hooks.py` /
+  `trit-json-union.py`），钩子不依赖当前分支的脚本版本（老分支缺新子命令时不会 rc=2 误伤）；
+  升级 `hooks.py` 后重跑一次 `install` 刷新副本。
 - **棘轮台账并发改不冲突**：`CHANGELOG.md` 走 `merge=union`；三本基线
   （`scripts/test_surface_baseline.json`、`scripts/module_budget_baseline.json`、
   `scripts/docs_hygiene_baseline.json`）走 `merge=json-union` 驱动

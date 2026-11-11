@@ -101,17 +101,44 @@
  {
   "name": "hooks: 合并驱动不注册",
   "file": "scripts/hooks.py",
-  "old": "        (f\"merge.{DRIVER_NAME}.driver\", driver_command()),",
+  "old": "        (f\"merge.{DRIVER_NAME}.driver\", command),",
   "new": "        # 驱动条目被变异移除",
   "pkg": "scripts/hooks.py",
   "filter": "",
   "runner": "python"
  },
  {
-  "name": "hooks: 驱动命令不指向脚本",
+  "name": "hooks: 驱动命令不指向稳定副本",
   "file": "scripts/hooks.py",
-  "old": "    return f'\"{exe}\" \"{DRIVER_SCRIPT}\" %O %A %B'",
+  "old": "    return f'\"{exe}\" \"{script}\" %O %A %B'",
   "new": "    return f'\"{exe}\" %O %A %B'",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 稳定副本少装一个",
+  "file": "scripts/hooks.py",
+  "old": "    sources = ((here, STABLE_HOOK_SCRIPT), (here.parent / \"merge_json_union.py\", STABLE_DRIVER_SCRIPT))",
+  "new": "    sources = ((here, STABLE_HOOK_SCRIPT),)",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 卸载不清稳定副本",
+  "file": "scripts/hooks.py",
+  "old": "        if stable.exists():",
+  "new": "        if False:",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 执行分支内脚本而不是稳定副本",
+  "file": "scripts/hooks.py",
+  "old": "\"$PY\" \"$HOOKS/trit-hooks.py\" hook-pre-commit",
+  "new": "\"$PY\" \"$(git rev-parse --show-toplevel)/scripts/hooks.py\" hook-pre-commit",
   "pkg": "scripts/hooks.py",
   "filter": "",
   "runner": "python"

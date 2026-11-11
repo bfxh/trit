@@ -19,6 +19,10 @@
 为什么必须是本地钩子（2026-11-12 事故）：多个会话共用 D:/KF/trit-wspace-wt，一个会话在里面
 反复切分支，另一个会话的读数和未提交改动全乱；main 被直接提交再 reset，分支爆炸。CI 只能拦
 “推上去之后”，事故发生在提交和切分支的那一刻。钩子带标记，`uninstall` 只删自己装的。
+
+安装会把本脚本与合并驱动复制到 hooks 目录作**稳定副本**（`trit-hooks.py` / `trit-json-union.py`），
+钩子调副本而不是当前分支的 `scripts/hooks.py`：老分支缺新子命令时按分支路径调用会打印帮助并
+rc=2，把所有老分支的提交误伤掉（2026-11-12 实测）。升级 hooks.py 后重跑一次 `install` 刷新副本。
 """
 
 from __future__ import annotations
@@ -39,6 +43,8 @@ MAIN_BRANCHES = ("main", "master")
 DEFAULT_SHARED = "D:/KF/trit-wspace-wt"
 DRIVER_NAME = "json-union"
 DRIVER_SCRIPT = "scripts/merge_json_union.py"
+STABLE_HOOK_SCRIPT = "trit-hooks.py"
+STABLE_DRIVER_SCRIPT = "trit-json-union.py"
 # 自动切回时带上的标记：嵌套的 post-checkout 看到它就立即退出，避免钩子自我递归
 RECOVERY_ENV = "TRIT_SHARED_RECOVERY"
 
@@ -74,23 +80,33 @@ PRE_COMMIT_BODY = """#!/bin/sh
 {marker}
 # 共享工作树非 main / 任意 main 上的提交都在这里被拒
 # （TRIT_ALLOW_SHARED_COMMIT=1 / TRIT_ALLOW_MAIN_COMMIT=1 点对点绕过）
+# 逻辑跑 hooks 目录里的稳定副本，不依赖当前分支的 scripts/hooks.py（老分支会缺新子命令）。
 set -u
-ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
-[ -f "$ROOT/scripts/hooks.py" ] || exit 0
+HOOKS=$(git rev-parse --git-path hooks 2>/dev/null) || exit 0
+case "$HOOKS" in
+  /*|[A-Za-z]:*) ;;
+  *) HOOKS="$(git rev-parse --show-toplevel)/$HOOKS" ;;
+esac
+[ -f "$HOOKS/trit-hooks.py" ] || exit 0
 if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
-"$PY" "$ROOT/scripts/hooks.py" hook-pre-commit
+"$PY" "$HOOKS/trit-hooks.py" hook-pre-commit
 exit $?
 """
 
 POST_CHECKOUT_BODY = """#!/bin/sh
 {marker}
 # 共享工作树被切到非 main 分支 ⇒ 自动切回 main（TRIT_ALLOW_SHARED_SWITCH=1 绕过）
+# 逻辑跑 hooks 目录里的稳定副本，不依赖当前分支的 scripts/hooks.py。
 set -u
 [ "${{3:-0}}" = "1" ] || exit 0
-ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
-[ -f "$ROOT/scripts/hooks.py" ] || exit 0
+HOOKS=$(git rev-parse --git-path hooks 2>/dev/null) || exit 0
+case "$HOOKS" in
+  /*|[A-Za-z]:*) ;;
+  *) HOOKS="$(git rev-parse --show-toplevel)/$HOOKS" ;;
+esac
+[ -f "$HOOKS/trit-hooks.py" ] || exit 0
 if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
-"$PY" "$ROOT/scripts/hooks.py" hook-post-checkout
+"$PY" "$HOOKS/trit-hooks.py" hook-post-checkout
 exit 0
 """
 
@@ -234,22 +250,40 @@ def hook_post_checkout(env: dict | None = None) -> int:
     return 0
 
 
-def driver_command() -> str:
+def driver_command(hooks: pathlib.Path) -> str:
     exe = (sys.executable or "python").replace("\\", "/")
-    return f'"{exe}" "{DRIVER_SCRIPT}" %O %A %B'
+    script = str(hooks / STABLE_DRIVER_SCRIPT).replace("\\", "/")
+    return f'"{exe}" "{script}" %O %A %B'
 
 
 def install_merge_driver(root: pathlib.Path) -> int:
+    command = driver_command(hooks_dir(root))
     pairs = (
         (f"merge.{DRIVER_NAME}.name", "deterministic union for ratchet ledgers"),
-        (f"merge.{DRIVER_NAME}.driver", driver_command()),
+        (f"merge.{DRIVER_NAME}.driver", command),
     )
     for key, value in pairs:
         rc, out = git(root, "config", key, value)
         if rc != 0:
             print(f"拒绝：写 git config {key} 失败：{out.strip()}")
             return 2
-    print(f"已配置合并驱动 merge.{DRIVER_NAME} = {driver_command()}")
+    print(f"已配置合并驱动 merge.{DRIVER_NAME} = {command}")
+    return 0
+
+
+def install_stable_copies(root: pathlib.Path) -> int:
+    hooks = hooks_dir(root)
+    hooks.mkdir(parents=True, exist_ok=True)
+    here = pathlib.Path(__file__).resolve()
+    sources = ((here, STABLE_HOOK_SCRIPT), (here.parent / "merge_json_union.py", STABLE_DRIVER_SCRIPT))
+    for source, name in sources:
+        try:
+            shutil.copyfile(source, hooks / name)
+        except OSError as exc:
+            print(f"拒绝：复制钩子稳定副本 {name} 失败：{exc}")
+            return 2
+        (hooks / name).chmod(0o755)
+    print(f"已更新钩子稳定副本：{STABLE_HOOK_SCRIPT}、{STABLE_DRIVER_SCRIPT}")
     return 0
 
 
@@ -275,6 +309,9 @@ def install(root: pathlib.Path, force: bool) -> int:
     if not (root / ".git").exists():
         print(f"拒绝：{root} 不是 git 仓库")
         return 2
+    rc = install_stable_copies(root)
+    if rc != 0:
+        return rc
     for name in HOOKS:
         rc = install_one(root, name, force)
         if rc != 0:
@@ -303,6 +340,12 @@ def uninstall(root: pathlib.Path) -> int:
         if rc == 0:
             removed += 1
     uninstall_merge_driver(root)
+    hooks = hooks_dir(root)
+    for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT):
+        stable = hooks / name
+        if stable.exists():
+            stable.unlink()
+            print(f"已移除钩子稳定副本 {stable}")
     if not removed:
         print("没有安装钩子")
     return 0
@@ -319,6 +362,13 @@ def status(root: pathlib.Path) -> int:
             print(f"{name}：已安装（本工具）")
         else:
             print(f"{name}：已安装（**不是本工具装的**）")
+            ok = False
+    hooks = hooks_dir(root)
+    for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT):
+        if (hooks / name).is_file():
+            print(f"钩子稳定副本 {name}：已安装")
+        else:
+            print(f"钩子稳定副本 {name}：未安装")
             ok = False
     rc, value = git(root, "config", "--get", f"merge.{DRIVER_NAME}.driver")
     if rc == 0 and value.strip():
@@ -392,9 +442,12 @@ def self_test() -> int:
         for name in HOOKS:
             expect(f"钩子文件存在 {name}", hook_path(root, name).is_file(), True)
             expect(f"带标记 {name}", is_ours(hook_path(root, name)), True)
+        hooks_path = hooks_dir(root)
+        for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT):
+            expect(f"稳定副本存在 {name}", (hooks_path / name).is_file(), True)
         rc, driver = run_git("config", "--get", f"merge.{DRIVER_NAME}.driver")
         expect("合并驱动已配置", rc, 0)
-        expect("驱动命令指向脚本", DRIVER_SCRIPT in driver, True)
+        expect("驱动命令指向稳定副本", STABLE_DRIVER_SCRIPT in driver, True)
         expect("重复安装幂等", install(root, force=False), 0)
         expect("安装后 status 为绿", status(root), 0)
 
@@ -422,6 +475,11 @@ def self_test() -> int:
             env={**shared, "TRIT_ALLOW_SHARED_COMMIT": "1"},
         )
         expect("TRIT_ALLOW_SHARED_COMMIT 放行", rc, 0)
+
+        (scripts / "hooks.py").unlink()
+        rc, out = run_git("commit", "--allow-empty", "-m", "stale", env=shared)
+        expect("分支缺 hooks.py 仍被拦", rc != 0, True)
+        expect("稳定副本执法原因可见", "共享工作树" in out, True)
 
         rc, _ = run_git("switch", default_branch)
         expect("切回主干", rc, 0)
@@ -490,6 +548,8 @@ def self_test() -> int:
         expect("--force 覆盖后卸载成功", uninstall(root), 0)
         for name in HOOKS:
             expect(f"卸载后钩子没了 {name}", hook_path(root, name).exists(), False)
+        for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT):
+            expect(f"卸载后稳定副本没了 {name}", (hooks_dir(root) / name).exists(), False)
         rc, _ = run_git("config", "--get", f"merge.{DRIVER_NAME}.driver")
         expect("卸载移除合并驱动", rc != 0, True)
 

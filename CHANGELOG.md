@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed（钩子稳定副本：老分支不再被 rc=2 误伤）
+
+- 事故（2026-11-12 安装后实测）：`pre-commit` 调的是**当前分支**的 `scripts/hooks.py`；老分支没有
+  `hook-pre-commit` 子命令 ⇒ 打印帮助并 rc=2，把老分支（含共享工作树）的所有提交误伤掉。
+- `hooks.py install` 现在把自身与 `scripts/merge_json_union.py` 复制为 hooks 目录里的稳定副本
+  （`trit-hooks.py` / `trit-json-union.py`，绝对路径写入驱动配置）；钩子与合并驱动都指向副本，
+  分支内容老旧或缺失也照常执法；`uninstall` 一并清理；`status` 会点名副本是否缺失。
+- 回归断言：安装后删掉分支里的 `scripts/hooks.py`，共享工作树上的提交仍被策略拦住
+  （rc≠0 且消息可读，而不是落到 python 的 “can't open file”）。变异 +4（少装副本、卸载不清、
+  驱动不指向副本、执行分支内脚本），全抓。
+
 ### Added（多会话事故的落点执法：提交/切分支钩子 + 棘轮台账合并驱动）
 
 - `scripts/hooks.py` 从只装 `pre-push` 扩到装三道钩子：`pre-commit`（共享工作树停在非 main 或 detached
