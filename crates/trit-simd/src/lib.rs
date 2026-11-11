@@ -61,25 +61,43 @@ pub fn selected_backend() -> Backend {
 }
 
 #[allow(unreachable_code)]
-fn detect() -> Backend {
+/// 派发决定（纯函数）：CPU 能力 → 后端；顺序是硬口径
+/// （AVX512 有且已编译 > POPCNT > NEON（aarch64 必选）> 标量）。
+#[allow(unused_variables)]
+fn decide(avx512: bool, popcnt: bool) -> Backend {
     #[cfg(all(target_arch = "x86_64", has_avx512))]
-    {
-        if std::arch::is_x86_feature_detected!("avx512vpopcntdq") {
-            return Backend::Avx512;
-        }
+    if avx512 {
+        return Backend::Avx512;
     }
     #[cfg(target_arch = "x86_64")]
-    {
-        if std::arch::is_x86_feature_detected!("popcnt") {
-            return Backend::Popcnt;
-        }
+    if popcnt {
+        return Backend::Popcnt;
     }
     #[cfg(target_arch = "aarch64")]
     {
-        // NEON 是 aarch64 的必选扩展。
         return Backend::Neon;
     }
     Backend::Scalar
+}
+
+#[allow(unreachable_code)]
+fn detect() -> Backend {
+    #[cfg(all(target_arch = "x86_64", has_avx512))]
+    {
+        return decide(
+            std::arch::is_x86_feature_detected!("avx512vpopcntdq"),
+            std::arch::is_x86_feature_detected!("popcnt"),
+        );
+    }
+    #[cfg(all(target_arch = "x86_64", not(has_avx512)))]
+    {
+        return decide(false, std::arch::is_x86_feature_detected!("popcnt"));
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        return decide(false, false);
+    }
+    decide(false, false)
 }
 
 /// 数 `words` 里所有 1 的个数。
@@ -392,6 +410,15 @@ mod tests {
             matches!(err, SimdError::LengthMismatch { left: 2, right: 1 }),
             "{err}"
         );
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn decide_pins_dispatch_order() {
+        #[cfg(has_avx512)]
+        assert_eq!(decide(true, false), Backend::Avx512);
+        assert_eq!(decide(false, true), Backend::Popcnt);
+        assert_eq!(decide(false, false), Backend::Scalar);
     }
 
     #[test]

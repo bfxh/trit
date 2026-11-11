@@ -20,10 +20,10 @@
   {
     "name": "simd: 派发永不选 POPCNT",
     "file": "crates/trit-simd/src/lib.rs",
-    "old": "    #[cfg(target_arch = \"x86_64\")]\n    {\n        if std::arch::is_x86_feature_detected!(\"popcnt\") {\n            return Backend::Popcnt;\n        }\n    }",
-    "new": "    #[cfg(target_arch = \"x86_64\")]\n    {\n        if false {\n            return Backend::Popcnt;\n        }\n    }",
+    "old": "    #[cfg(target_arch = \"x86_64\")]\n    if popcnt {\n        return Backend::Popcnt;\n    }",
+    "new": "    #[cfg(target_arch = \"x86_64\")]\n    if false {\n        return Backend::Popcnt;\n    }",
     "pkg": "trit-simd",
-    "filter": "dispatch_uses_hardware_popcount_on_x86",
+    "filter": "decide_pins_dispatch_order",
     "runner": "cargo"
   },
   {
