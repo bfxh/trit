@@ -41,6 +41,7 @@ rustc 给的是内存安全的地板；clippy 给风格与常见错误。在这�
 | `crates/trit-ops/src/bench.rs` | raw-memory | 内核对照基准：必须复用与内核相同的内存布局，否则测的不是同一条路径 |
 | `crates/trit-dot/src/lib.rs` | raw-memory / target-feature | POPCNT 位并行点积；调用方运行时探测 |
 | `crates/trit-ops/src/pool.rs` | unsafe-send-sync / relaxed-ordering | `Ptr<T>`：按行切分、无重叠写、join 屏障；Relaxed 用于线程数配置与完成计数（单变量、无同步依赖） |
+| `crates/trit-count/examples/matching_alloc_probe.rs` | relaxed-ordering | 分配口径探针（example，不在产品路径）：三个 `AtomicU64` 只做 alloc/free 的次数与字节累加，读数只依赖 `fetch_add` 自身的原子性与 `main` 的单线程顺序，不用于任何跨线程同步或可见性屏障 |
 
 **新增高危用法的流程**：先回答上面三个问题；确属放行档 → 在
 `hazard_gate.py` 的 ALLOW 表登记（文件 + 设计理由），CI 才会绿；

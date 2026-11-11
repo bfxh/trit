@@ -13,6 +13,8 @@ members = [
     "crates/trit-eval",
     "crates/trit-sat",
     "crates/trit-count",
+    "crates/trit-mv",
+    "crates/trit-clean",
     "crates/trit-circuit",
     "crates/trit-cli",
     "crates/trit-build",

@@ -20,7 +20,10 @@ use crate::oracle::{Behavior, Oracle};
 use crate::repair::RepairOptions;
 use crate::wire;
 
+mod cli_artifact_shard;
+mod cli_safetensors;
 mod cli_task;
+mod cli_wsp2;
 
 const USAGE: &str = "\
 trit-wspace <command>
@@ -44,6 +47,15 @@ trit-wspace <command>
   replay <log|-> --artifact <initial|-> [--out <path>]
   diff <a|-> <b|->
   merge <a|-> <b|-> [--aligned] [--out <path>]
+  list-safetensors <file>
+  import-safetensors <file> --tensor <name> [--out <path>]
+  export-safetensors <artifact|-> --out <path> [--tensor <name>]
+  import-safetensors-dir <file> --out <dir>
+  export-safetensors-dir <dir> --out <file>
+  split-artifact <artifact|-> --rows N --out <dir>
+  join-artifact <dir> --out <path>
+  pack-artifact <artifact|-> --out <bin>
+  unpack-artifact <bin> --out <path>
   mcp";
 
 /// 进程入口：返回退出码（0 成功，1 失败）。
@@ -87,6 +99,15 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "replay" => crate::cli_audit::cmd_replay(&args[1..]),
         "diff" => cmd_diff(&args[1..]),
         "merge" => cmd_merge(&args[1..]),
+        "list-safetensors" => cli_safetensors::list(&args[1..]),
+        "import-safetensors" => cli_safetensors::import(&args[1..]),
+        "export-safetensors" => cli_safetensors::export(&args[1..]),
+        "import-safetensors-dir" => cli_safetensors::import_dir(&args[1..]),
+        "export-safetensors-dir" => cli_safetensors::export_dir(&args[1..]),
+        "split-artifact" => cli_artifact_shard::split(&args[1..]),
+        "join-artifact" => cli_artifact_shard::join(&args[1..]),
+        "pack-artifact" => cli_wsp2::pack(&args[1..]),
+        "unpack-artifact" => cli_wsp2::unpack(&args[1..]),
         "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
             .map_err(|error| error.to_string()),
         "--help" | "-h" | "help" => {

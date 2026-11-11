@@ -25,14 +25,14 @@
 
 | 层 | 需要什么 | 本 crate | 缺口 |
 |---|---|---|---|
-| L0 表示 | 规范文本、逐 trit 可读、校验和、可 diff | `codec`（WSP1） | 大模型分片/压缩 |
+| L0 表示 | 规范文本、逐 trit 可读、校验和、可 diff | `codec`（WSP1，含可选 `biasf` f32 偏置行）+ `artifact_shard`（单层按行分片/合并）+ `wsp2`（2-bit 压缩容器） | 更大模型的块索引 |
 | L1 原语 | 改 trit/偏置/scale、换行、取反 | `edit`（`Edit`）+ `transplant`（单元级跨层搬运） | 任意块/子张量编辑 |
 | L2 事务 | 整体校验、失败零改动、逐位回滚 | `Patch` + `Journal` + `rebase`（三方重放） | 并发写锁 |
 | L3 程序语义 | 前置/后置行为条件、失败原样回滚 | `program` | 程序组合、条件跳转 |
 | L4 读取 | 行为穷举、指纹、f32 裕量读数 | `oracle` + `readout` | 大模型探针/解释器 |
 | L5 搜索 | 无梯度精确修补、最小编辑数 | `repair`（小网络完备 BFS；大网络半径 1/2 + 束搜索） | 大规模目标、学习式提议器 |
 | L6 代数 | 消置换对称性、合并 | `merge`（贪心对齐 + 符号投票）+ `task`（任务向量投票）+ `dare`（DARE 丢弃） | 大规模合并 |
-| L7 规模 | GPU、外部 LLM 读写协议、模型库 | — | 全部 |
+| L7 规模 | GPU、外部 LLM 读写协议、模型库 | `safetensors`（`list` 任意维度、`import`/`export` 2D + 1D（bias 配对 / vector 工件），单/多张量多层，F32/F16/BF16；目录导入导出） | GPU、模型库 |
 
 ## 三值的两条规范自由度（本库钉死）
 
@@ -86,6 +86,19 @@ trit-wspace audit-shards shards/ --resume cps/checkpoint-016.json --out final.ws
 trit-wspace replay audit.jsonl --artifact start.wsp --out final.wsp
 trit-wspace diff   a.wsp b.wsp
 trit-wspace merge  a.wsp b.wsp --aligned --out merged.wsp
+trit-wspace list-safetensors model.safetensors
+trit-wspace import-safetensors model.safetensors --tensor model.layers.0.mlp.up_proj.weight --out up.wsp
+trit-wspace import-safetensors model.safetensors --tensor dense.weight --bias dense.bias --out dense.wsp
+trit-wspace import-safetensors model.safetensors --tensor up_proj.weight,down_proj.weight --out mlp.wsp
+trit-wspace import-safetensors-dir model.safetensors --out tensors/
+trit-wspace export-safetensors-dir tensors/ --out model.safetensors
+trit-wspace split-artifact word.wsp --rows 4096 --out parts/
+trit-wspace join-artifact parts/ --out word.wsp
+trit-wspace pack-artifact word.wsp --out word.wsp2
+trit-wspace unpack-artifact word.wsp2 --out word.wsp
+trit-wspace export-safetensors up.wsp --out up.safetensors --tensor up_proj.weight
+trit-wspace export-safetensors norm.wsp --out norm.safetensors --tensor LayerNorm.weight --vector
+trit-wspace export-safetensors dense.wsp --out dense.safetensors --tensor dense.weight --bias
 trit-wspace mcp
 ```
 

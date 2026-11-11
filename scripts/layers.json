@@ -20,6 +20,8 @@
     "trit-sat": "algo",
     "trit-bdd": "algo",
     "trit-count": "algo",
+    "trit-mv": "algo",
+    "trit-clean": "algo",
     "trit-circuit": "algo",
     "trit-policy": "algo",
     "trit-schedule": "algo",
