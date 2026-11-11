@@ -121,24 +121,8 @@ pub fn stack_string_hits(slices: &[&[u8]], vocab: &[&'static str]) -> Vec<&'stat
 /// 仍按地址序，编译器顺序构建时正确）；不处理 lsl #48+（hw≥3 需 64 位
 /// 寄存器，串构建罕见）；不认 NUL 终止（搜索按名长度滑窗）。
 pub fn stack_string_hits_arm64(slices: &[&[u8]], vocab: &[&'static str]) -> Vec<&'static str> {
-    let mut halves: Vec<u8> = Vec::new();
-    for slice in slices {
-        let words: Vec<u32> = slice
-            .chunks_exact(4)
-            .map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]]))
-            .collect();
-        for word in words {
-            let v = (word >> 23) & 0x1FF;
-            let is_movz = v == 0b0_10_100101;
-            let is_movk = v == 0b0_11_100101 || v == 0b1_11_100101;
-            let is_movz64 = v == 0b1_10_100101;
-            if is_movz || is_movk || is_movz64 {
-                let imm16 = ((word >> 5) & 0xFFFF) as u16;
-                halves.extend_from_slice(&imm16.to_le_bytes());
-            }
-        }
-    }
-    search_stream(&halves, vocab)
+    let stream = arm64_immediate_stream(slices);
+    search_stream(&stream, vocab)
 }
 
 /// 敏感名子串搜索（流 + 词汇表 → 去重命中）。
@@ -156,16 +140,19 @@ fn search_stream(stream: &[u8], vocab: &[&'static str]) -> Vec<&'static str> {
 }
 
 /// AArch64 线性扫（字对齐）：MOVZ/MOVK 的 imm16 半字按小端拼流。
-/// 每条指令定宽 4 字节——ARM64 无变长指令，切片按 4 字节分块解码。
+/// 每条指令定宽 4 字节——ARM64 无变长指令，切片按 4 字节分块解码
+///（尾部不足一指令字的余数忽略，无指令语义）。
 fn arm64_immediate_stream(slices: &[&[u8]]) -> Vec<u8> {
     let mut halves: Vec<u8> = Vec::new();
     for slice in slices {
-        for chunk in slice.chunks_exact(4) {
-            let word = u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        let (words, _rest) = slice.as_chunks::<4>();
+        for chunk in words {
+            let word = u32::from_le_bytes(*chunk);
+            // MOV 宽立即数：bits[31] sf、bits[30:29] opc、bits[28:23] = 100101
             let v = (word >> 23) & 0x1FF;
-            // MOVZ 32/64（0xA5/0x2A5）与 MOVK 32/64（0xE5/0x3E5）
-            let is_movz = v == 0b0_10_100101 || v == 0b1_10_100101;
-            let is_movk = v == 0b0_11_100101 || v == 0b1_11_100101;
+            // MOVZ W32/X64（0xA5/0x1A5）与 MOVK W32/X64（0xE5/0x1E5）
+            let is_movz = v == 0xA5 || v == 0x1A5;
+            let is_movk = v == 0xE5 || v == 0x1E5;
             if is_movz || is_movk {
                 let imm16 = ((word >> 5) & 0xFFFF) as u16;
                 halves.extend_from_slice(&imm16.to_le_bytes());
@@ -234,7 +221,7 @@ mod tests {
         let found = stack_string_hits_arm64(&[&bytes], &["ptrace"]);
         assert_eq!(found, vec!["ptrace"], "三半字拼接命中");
         // 非 MOVZ/MOVK 流（普通 NOP 字）不产出
-        let nops = vec![0xD503_201Fu32.to_le_bytes().to_vec()].concat();
+        let nops = 0xD503_201Fu32.to_le_bytes().to_vec();
         assert!(stack_string_hits_arm64(&[&nops], &["ptrace"]).is_empty());
     }
 }
