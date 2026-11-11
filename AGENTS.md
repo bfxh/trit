@@ -22,3 +22,15 @@
 - `docs/GAME-SCAN.md`（本仓游戏环境扫描、故障注入与恢复设计）。
 
 引用规则：只引用“观测/规则分离、无根/重标记等变、Borel 因子 ≠ finitary 局部算法”这三个设计原则；必须说明论文对象是 FUSF，不是本仓扫描器或生成树，不得写成“论文证明了本实现”。
+
+## 多会话 / 多智能体规则（2026-11-12 事故后）
+
+- **共享工作树只读**：`D:/KF/trit-wspace-wt` 是共享主工作树，**禁止在里面 `git switch`/提交**。
+  每个任务用 `python scripts/gitflow.py worktree add <分支>` 新开工作树；实测多会话在里面反复切分支，
+  会让另一个会话/服务一读就"失灵"。
+- **main 必须且只能在一个工作树检出**；合并后立刻回收：`python scripts/worktree_guard.py --apply`
+  （只回收「PR 已合 + 干净 + 本地 tip == PR head」的工作树与分支，脏的一律保留）。
+- 开工先 `python scripts/agent_claims.py check`，再 `claim`；收工 `release`。
+- `CHANGELOG.md` 走 `merge=union`：只在 `## [Unreleased]` 后追加条目，不要重排/改写相邻条目。
+- 长 CI（mutation 可达 1 小时）不要连环 rebase：先让基础门绿；同步用 `git merge origin/main`，
+  不要 force-push 别人的分支。

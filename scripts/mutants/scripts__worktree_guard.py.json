@@ -1,0 +1,65 @@
+[
+  {
+    "name": "guard: main 检出数检查失效",
+    "file": "scripts/worktree_guard.py",
+    "old": "    if len(main_hosts) != 1:",
+    "new": "    if False:",
+    "pkg": "scripts/worktree_guard.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "guard: 共享主工作树允许切分支",
+    "file": "scripts/worktree_guard.py",
+    "old": "            if host[\"branch\"] != \"main\":",
+    "new": "            if False:",
+    "pkg": "scripts/worktree_guard.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "guard: 共享主工作树允许脏",
+    "file": "scripts/worktree_guard.py",
+    "old": "            if dirty.get(host[\"path\"], 0):\n                red.append(f\"共享主工作树 {workspace} 有",
+    "new": "            if False:\n                red.append(f\"共享主工作树 {workspace} 有",
+    "pkg": "scripts/worktree_guard.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "guard: worktree 预算失效",
+    "file": "scripts/worktree_guard.py",
+    "old": "    if len(worktrees) > max_worktrees:",
+    "new": "    if False:",
+    "pkg": "scripts/worktree_guard.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "guard: 分支预算失效",
+    "file": "scripts/worktree_guard.py",
+    "old": "    if len(feature) > max_branches:",
+    "new": "    if False:",
+    "pkg": "scripts/worktree_guard.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "guard: 回收不看工作树脏不脏",
+    "file": "scripts/worktree_guard.py",
+    "old": "        if dirty.get(wt[\"path\"], 0):\n            skipped.append(f\"{branch}：工作树有未提交改动，保留 {wt['path']}\")",
+    "new": "        if False:\n            skipped.append(f\"{branch}：工作树有未提交改动，保留 {wt['path']}\")",
+    "pkg": "scripts/worktree_guard.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "guard: 回收不看 tip 一致",
+    "file": "scripts/worktree_guard.py",
+    "old": "        if wt[\"head\"] != merged[branch]:",
+    "new": "        if False:",
+    "pkg": "scripts/worktree_guard.py",
+    "filter": "",
+    "runner": "python"
+  }
+]
