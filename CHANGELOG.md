@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Changed（门：模块预算改默认全量棘轮 + 一次性重录基线；新增磁盘介质门）
+
+- `scripts/module_budget.py`：扫描面从 `crates/*` 扩到全仓 `.rs`（跳过 target/.git 等），每个文件一条上限、只减不增；
+  `GREW`/`UNCAPPED`/`OVER` 判红，`STALE`/`ORPHAN` 只提醒；`--update` 只登记与收紧、**永不抬高**。
+- **采纳时一次性重录基线**（2026-11-12）：旧台账停在 2026-11-01，主线此后新增 303 个文件、33 个变胖；
+  按“采纳新棘轮时在合入时刻记录一次”的口径重录（810 文件、over-budget 债务 0），此后只减不增。
+- 为满足 OVER 硬线（未登记且 >800 行先拆），把 `other-languages/asm/src/main.rs`（950 行）拆成
+  `main.rs` + `checks.rs`（665 + 295 行）；`cargo run -- --conformance` 实测 k3 21 / belnap 36 / pack5 644 全过。
+- 修模块预算自测一个真漏洞：`expect(ok=True, needle=...)` 原先短路、不检查 needle，STALE/ORPHAN 断言形同虚设；
+  修后自测 16/16，且 8 条变异（OVER/GREW/STALE/ORPHAN/refuse-raise/新超预算/cap 读取/格式识别）全部抓住。
+- 新增磁盘介质门 `scripts/disk_guard.py`（构建/测试必须落固态，三路介质证据合成 + ALLOWED 逃生口），
+  CI 增加 `disk guard` job（timeout + 自测 + `--json`）；其 12 条变异登记保留。
+
 ### Added（运行时底层：`trit-mmap` + `trit-simd`）
 
 - 新 crate `crates/trit-mmap`（ops）：只读文件映射（Unix `mmap` / Windows `CreateFileMappingW` + `MapViewOfFile`）；

@@ -176,7 +176,9 @@ def self_test() -> int:
 
         def expect(name: str, result: subprocess.CompletedProcess[str], ok: bool, needle: str = "") -> None:
             seen[0] += 1
-            good = (result.returncode == 0) == ok and (ok or needle in result.stdout)
+            # 提醒类用例（ok=True + needle）也必须真的出现 needle：
+            # 旧写法 `ok or needle in stdout` 在 ok=True 时直接短路，STALE/ORPHAN 断言形同虚设。
+            good = (result.returncode == 0) == ok and (needle in result.stdout if needle else True)
             print(("PASS " if good else "FAIL ") + name)
             if not good:
                 print(result.stdout[-800:])
