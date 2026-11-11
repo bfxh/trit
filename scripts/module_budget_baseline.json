@@ -2292,7 +2292,7 @@
     },
     {
       "file": "crates/trit-re/src/dynres.rs",
-      "lines": 100
+      "lines": 107
     },
     {
       "file": "crates/trit-re/src/elf/debug_frame.rs",
@@ -2332,7 +2332,7 @@
     },
     {
       "file": "crates/trit-re/src/functions/stackstrings.rs",
-      "lines": 157
+      "lines": 227
     },
     {
       "file": "crates/trit-re/src/functions/tests.rs",
@@ -2396,7 +2396,7 @@
     },
     {
       "file": "crates/trit-re/src/triage.rs",
-      "lines": 765
+      "lines": 767
     },
     {
       "file": "crates/trit-re/src/verdict.rs",
