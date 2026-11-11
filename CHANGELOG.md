@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Added（数据清洗 × 三进制立项：九条方向 + 主线 trit-clean + 底层缺口清单）
+
+- 新增 `docs/DATA-CLEANING-PLAN.md`：三进制在数据清洗的九条方向（三值约束检查、精确修复计数/清洁度分数、三支决策动作门、Belnap 四值多源合并、三值指纹去重、缺失插补、三值规则挖掘、数据契约编译器、文本清洗），主线选“A+B+C”（规则→三值求值→#SAT/BDD 计数→accept/reject/defer），差异化=确定性/可解释/可复算；
+  底层缺口按必要性排序（WMC、CDCL/MaxSAT、trit-mv、trit-belnap 算子面、trit-ir、trit-num、mmap/SIMD 抽象、观测与语料），并给出验收口径；含论文参考（清洗综述 2025、CQA/repair、provenance semirings、AAAI'24 计数、3WD/TAO、Belnap 四值）。
+- ROADMAP §2 增加 `trit-clean`（algo，**后期、不排期**）；docs/README 索引同步。
+- PRIVACY-PLAN 增补“格式转换与批量转存（软件内置存储）”与对应里程碑 P2b。
+
 ### Added（隐私存储立项：后期任务，计划与硬边界先落纸）
 
 - 新增 `docs/PRIVACY-PLAN.md`：照片/视频/文本的静态隐私目标（盘上随机噪声、元数据全加密、经自有挂载器正常打开）、四级威胁模型（T1 文件扫描 / T2 内核与屏幕采集 / T3 云端审核 / T4 SSD 痕迹）、五层技术路线（容器格式、可否认、WinFsp/FUSE 适配器、运行时保护、内容形态）与不可达边界；含论文与开源参考（DEFY/NDSS'15、可否认加密理论、VeraCrypt hidden OS 攻击、隐写分析综述、WinFsp、Recall）。

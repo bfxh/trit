@@ -22,7 +22,8 @@
 | [ROADMAP.md](ROADMAP.md) | 阶段目标与当前进度 |
 | [GENERAL-PLAN.md](GENERAL-PLAN.md) | 通用提取路线（全自建 Rust 三值） |
 | [VISUAL-PLAN.md](VISUAL-PLAN.md) | 光影 / 风格 / 视频提取 / 画质 / UI 的扩展计划 |
-| [PRIVACY-PLAN.md](PRIVACY-PLAN.md) | 隐私存储（后期）：威胁模型、容器与挂载器路线、硬边界 |
+| [PRIVACY-PLAN.md](PRIVACY-PLAN.md) | 隐私存储（后期）：威胁模型、容器与挂载器路线、批量转存、硬边界 |
+| [DATA-CLEANING-PLAN.md](DATA-CLEANING-PLAN.md) | 数据清洗 × 三进制：九条方向、主线 trit-clean、底层缺口 |
 | [MULTI-CHIP.md](MULTI-CHIP.md) | 多芯片后端（x86 / ARM / 移动 SoC）设计 |
 
 ## 结果与读数（自动生成目录 + 手写结论）
