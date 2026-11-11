@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use serde_json::Value;
-use trit_wspace::safetensors::{list, read_tensor};
+use trit_wspace::safetensors::{Weights, list, read_tensor};
 use trit_wspace::{Layer, Net, from_wsp, to_wsp};
 
 fn temp_dir(tag: &str) -> PathBuf {
@@ -94,11 +94,7 @@ fn to_layer_with_bias_uses_sign_and_checks_len() {
     assert!(format!("{error}").contains("bias"), "{error}");
 }
 
-fn read_tensor_from_values(
-    rows: usize,
-    cols: usize,
-    values: &[f32],
-) -> trit_wspace::safetensors::Weights {
+fn read_tensor_from_values(rows: usize, cols: usize, values: &[f32]) -> Weights {
     static INLINE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let index = INLINE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("trit-bias-inline-{}-{index}", std::process::id()));
