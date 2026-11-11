@@ -56,5 +56,27 @@ int main(void) {
     FARPROC q3 = GetProcAddress(k32, "CreateRemoteThread");
     g_sink[8] = (void *)((uintptr_t)q1 ^ (uintptr_t)q2 ^ (uintptr_t)q3);
 #endif
+#if SIM_LEVEL == 6
+    /* 栈串形态（栈串链的验证目标）：敏感 API 名逐字节写栈——数据段
+     * 扫描全盲（字面串不在 .rdata），导入表无该 API，无任何解析器导入。
+     * volatile 逐字节存储使编译器保留独立的 imm8 立即数指令。 */
+    volatile char buf[16];
+    buf[0] = 'V';
+    buf[1] = 'i';
+    buf[2] = 'r';
+    buf[3] = 't';
+    buf[4] = 'u';
+    buf[5] = 'a';
+    buf[6] = 'l';
+    buf[7] = 'A';
+    buf[8] = 'l';
+    buf[9] = 'l';
+    buf[10] = 'o';
+    buf[11] = 'c';
+    buf[12] = 'E';
+    buf[13] = 'x';
+    buf[14] = 0;
+    buf[15] = 0;
+#endif
     return (int)(g_sink[0] != 0);
 }
