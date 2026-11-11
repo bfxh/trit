@@ -2513,7 +2513,7 @@
 },
 {
  "name": "wsp2: 打包每字节只放 2 个 trit",
- "file": "crates/trit-wspace/src/wsp2.rs",
+ "file": "crates/trit-wspace/src/wsp2/bytes.rs",
  "old": "out[index / 4] |= code << ((index % 4) * 2);",
  "new": "out[index / 2] |= code << ((index % 2) * 2);",
  "pkg": "trit-wspace",
@@ -2521,7 +2521,7 @@
 },
 {
  "name": "wsp2: 解包位移错",
- "file": "crates/trit-wspace/src/wsp2.rs",
+ "file": "crates/trit-wspace/src/wsp2/bytes.rs",
  "old": "let code = (bytes[index / 4] >> ((index % 4) * 2)) & 0b11;",
  "new": "let code = (bytes[index / 4] >> (index % 4)) & 0b11;",
  "pkg": "trit-wspace",
@@ -2537,7 +2537,7 @@
 },
 {
  "name": "wsp2: 非法 2-bit 值当 -1",
- "file": "crates/trit-wspace/src/wsp2.rs",
+ "file": "crates/trit-wspace/src/wsp2/bytes.rs",
  "old": "            _ => return Err(Error::InvalidTrit(3)),",
  "new": "            _ => -1,",
  "pkg": "trit-wspace",
@@ -2608,11 +2608,19 @@
  "filter": "export_with_bias_writes_f32_values"
 },
 {
- "name": "biasf: WSP2 不拒绝 f32 bias",
+ "name": "wsp2: 不写 biasf flags",
  "file": "crates/trit-wspace/src/wsp2.rs",
- "old": "        if !layer.bias_f32().is_empty() {",
- "new": "        if false {",
+ "old": "out.push(u8::from(has_bias_f32));",
+ "new": "out.push(0);",
  "pkg": "trit-wspace",
- "filter": "wsp2_rejects_biasf"
+ "filter": "round_trip_preserves_bias_f32"
+},
+{
+ "name": "wsp2: 不读 biasf",
+ "file": "crates/trit-wspace/src/wsp2.rs",
+ "old": "if flags & 1 != 0 {",
+ "new": "if false {",
+ "pkg": "trit-wspace",
+ "filter": "round_trip_preserves_bias_f32"
 }
 ]

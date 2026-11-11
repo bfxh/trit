@@ -92,8 +92,8 @@ fn rejects_checksum_tamper() {
 fn rejects_illegal_2bit_code() {
     let net = sample_net();
     let mut bytes = to_wsp2(&net).expect("encode");
-    // header 5 + nlayers 2 + rows/cols 8 + scales 2×4 = 23
-    let start = 5 + 2 + 4 + 4 + 2 * 4;
+    // header 5 + nlayers 2 + rows/cols 8 + flags 1 + scales 2×4 = 24
+    let start = 5 + 2 + 4 + 4 + 1 + 2 * 4;
     bytes[start] = 0xff;
     reseal(&mut bytes);
     let error = from_wsp2(&bytes).expect_err("2-bit 值 3 必须报错");

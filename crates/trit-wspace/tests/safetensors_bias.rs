@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use serde_json::Value;
-use trit_wspace::safetensors::{list, read_tensor};
+use trit_wspace::safetensors::{Weights, list, read_tensor};
 use trit_wspace::{Layer, Net, from_wsp, to_wsp};
 
 fn temp_dir(tag: &str) -> PathBuf {
@@ -94,11 +94,7 @@ fn to_layer_with_bias_uses_sign_and_checks_len() {
     assert!(format!("{error}").contains("bias"), "{error}");
 }
 
-fn read_tensor_from_values(
-    rows: usize,
-    cols: usize,
-    values: &[f32],
-) -> trit_wspace::safetensors::Weights {
+fn read_tensor_from_values(rows: usize, cols: usize, values: &[f32]) -> Weights {
     static INLINE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
     let index = INLINE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("trit-bias-inline-{}-{index}", std::process::id()));
@@ -387,7 +383,7 @@ fn export_dir_writes_bias_back() {
 }
 
 #[test]
-fn wsp2_rejects_biasf() {
+fn wsp2_round_trip_preserves_biasf() {
     let dir = temp_dir("wsp2-bias");
     let weights = read_tensor_from_values(2, 3, &[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]);
     let layer = weights
@@ -396,16 +392,20 @@ fn wsp2_rejects_biasf() {
     let wsp = dir.join("w.wsp");
     fs::write(&wsp, to_wsp(&Net::new(vec![layer]).expect("net"))).expect("wsp");
     let binary = dir.join("w.wsp2");
-    let output = run(&[
+    let packed = stdout_json(&run(&[
         "pack-artifact",
         wsp.to_str().unwrap(),
         "--out",
         binary.to_str().unwrap(),
-    ]);
-    assert!(!output.status.success());
-    assert!(
-        String::from_utf8_lossy(&output.stderr).contains("f32 bias"),
-        "{}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    ]));
+    assert!(packed["bytes"].as_u64().expect("bytes") > 0);
+    let back = dir.join("back.wsp");
+    let _ = stdout_json(&run(&[
+        "unpack-artifact",
+        binary.to_str().unwrap(),
+        "--out",
+        back.to_str().unwrap(),
+    ]));
+    let net = from_wsp(&fs::read_to_string(&back).expect("read back")).expect("parse");
+    assert_eq!(net.layers()[0].bias_f32(), &[0.25, -0.75]);
 }

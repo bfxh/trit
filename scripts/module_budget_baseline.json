@@ -2932,7 +2932,11 @@
     },
     {
       "file": "crates/trit-wspace/src/wsp2.rs",
-      "lines": 171
+      "lines": 139
+    },
+    {
+      "file": "crates/trit-wspace/src/wsp2/bytes.rs",
+      "lines": 77
     },
     {
       "file": "crates/trit-wspace/tests/analyze.rs",
@@ -3065,6 +3069,10 @@
     {
       "file": "crates/trit-wspace/tests/wsp2.rs",
       "lines": 175
+    },
+    {
+      "file": "crates/trit-wspace/tests/wsp2_extra.rs",
+      "lines": 46
     },
     {
       "file": "fuzz/fuzz_targets/aiger.rs",

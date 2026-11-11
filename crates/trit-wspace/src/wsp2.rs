@@ -8,7 +8,8 @@
 //! 布局（小端）：
 //! ```text
 //! magic "WSP2" | version u8=1 | nlayers u16
-//! per layer: rows u32 | cols u32 | scales rows×f32 | trits 2bit | bias 2bit
+//! per layer: rows u32 | cols u32 | flags u8 | scales rows×f32 [| bias_f32 rows×f32]
+//!            | trits 2bit | bias 2bit（v2；v1 没有 flags/bias_f32）
 //! checksum u64（对前面所有字节做 FNV-1a）
 //! ```
 
@@ -16,7 +17,7 @@ use crate::error::{Error, Result};
 use crate::net::{Layer, Net};
 
 const MAGIC: &[u8; 4] = b"WSP2";
-const VERSION: u8 = 1;
+const VERSION: u8 = 2;
 const MAX_LAYERS: usize = 4096;
 
 /// 把网络编码成 WSP2 二进制。
@@ -28,17 +29,26 @@ pub fn to_wsp2(net: &Net) -> Result<Vec<u8>> {
     out.push(VERSION);
     out.extend_from_slice(&nlayers.to_le_bytes());
     for layer in net.layers() {
-        if !layer.bias_f32().is_empty() {
-            return Err(Error::Wire(
-                "WSP2 暂不支持 f32 bias（biasf 行）；请保留 WSP1 或先去掉 biasf".into(),
-            ));
-        }
         let rows = u32::try_from(layer.rows()).map_err(|_| Error::Wire("行数超过 u32".into()))?;
         let cols = u32::try_from(layer.cols()).map_err(|_| Error::Wire("列数超过 u32".into()))?;
+        let has_bias_f32 = !layer.bias_f32().is_empty();
+        if has_bias_f32 && layer.bias_f32().len() != layer.rows() {
+            return Err(Error::Shape {
+                what: "bias_f32",
+                expected: layer.rows(),
+                got: layer.bias_f32().len(),
+            });
+        }
         out.extend_from_slice(&rows.to_le_bytes());
         out.extend_from_slice(&cols.to_le_bytes());
+        out.push(u8::from(has_bias_f32));
         for scale in layer.scales() {
             out.extend_from_slice(&scale.to_le_bytes());
+        }
+        if has_bias_f32 {
+            for value in layer.bias_f32() {
+                out.extend_from_slice(&value.to_le_bytes());
+            }
         }
         let trits: Vec<i8> = layer.trits().iter().map(|trit| trit.to_i8()).collect();
         out.extend_from_slice(&pack_trits(&trits));
@@ -50,43 +60,6 @@ pub fn to_wsp2(net: &Net) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-fn pack_trits(values: &[i8]) -> Vec<u8> {
-    let mut out = vec![0u8; values.len().div_ceil(4)];
-    for (index, &value) in values.iter().enumerate() {
-        let code = match value {
-            -1 => 0u8,
-            0 => 1,
-            1 => 2,
-            _ => 3,
-        };
-        out[index / 4] |= code << ((index % 4) * 2);
-    }
-    out
-}
-
-fn unpack_trits(bytes: &[u8], count: usize) -> Result<Vec<i8>> {
-    let mut out = Vec::with_capacity(count);
-    for index in 0..count {
-        let code = (bytes[index / 4] >> ((index % 4) * 2)) & 0b11;
-        out.push(match code {
-            0 => -1,
-            1 => 0,
-            2 => 1,
-            _ => return Err(Error::InvalidTrit(3)),
-        });
-    }
-    Ok(out)
-}
-
-fn fnv(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for &byte in bytes {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
-}
-
 /// 从 WSP2 二进制解码网络；magic/版本/校验和/2-bit 非法值都会报错。
 pub fn from_wsp2(bytes: &[u8]) -> Result<Net> {
     if bytes.len() < 4 + 1 + 2 + 8 {
@@ -95,8 +68,9 @@ pub fn from_wsp2(bytes: &[u8]) -> Result<Net> {
     if &bytes[..4] != MAGIC {
         return Err(Error::Wire("WSP2 magic 不符".into()));
     }
-    if bytes[4] != VERSION {
-        return Err(Error::Wire(format!("WSP2 版本 {} 不受支持", bytes[4])));
+    let version = bytes[4];
+    if version != 1 && version != VERSION {
+        return Err(Error::Wire(format!("WSP2 版本 {version} 不受支持")));
     }
     let payload_end = bytes.len() - 8;
     let expected = u64::from_le_bytes(bytes[payload_end..].try_into().expect("8 字节校验和"));
@@ -118,6 +92,14 @@ pub fn from_wsp2(bytes: &[u8]) -> Result<Net> {
         if rows == 0 || cols == 0 {
             return Err(Error::EmptyLayer { rows, cols });
         }
+        let flags = if version == 2 {
+            take(bytes, &mut pos, 1)?[0]
+        } else {
+            0
+        };
+        if flags & !1 != 0 {
+            return Err(Error::Wire(format!("WSP2 flags {flags:#04x} 含未知位")));
+        }
         let elements = rows
             .checked_mul(cols)
             .ok_or_else(|| Error::Wire("WSP2 元素数溢出".into()))?;
@@ -125,11 +107,23 @@ pub fn from_wsp2(bytes: &[u8]) -> Result<Net> {
         for _ in 0..rows {
             scales.push(read_f32(bytes, &mut pos)?);
         }
+        let mut bias_f32 = Vec::new();
+        if flags & 1 != 0 {
+            for _ in 0..rows {
+                bias_f32.push(read_f32(bytes, &mut pos)?);
+            }
+        }
         let trit_slice = take(bytes, &mut pos, elements.div_ceil(4))?;
         let trits = unpack_trits(trit_slice, elements)?;
         let bias_slice = take(bytes, &mut pos, rows.div_ceil(4))?;
         let bias = unpack_trits(bias_slice, rows)?;
-        layers.push(Layer::with_scales(rows, cols, &trits, &bias, scales)?);
+        let layer = Layer::with_scales(rows, cols, &trits, &bias, scales)?;
+        let layer = if bias_f32.is_empty() {
+            layer
+        } else {
+            layer.with_bias_f32(bias_f32)?
+        };
+        layers.push(layer);
     }
     if pos != payload_end {
         return Err(Error::Wire(format!(
@@ -140,32 +134,6 @@ pub fn from_wsp2(bytes: &[u8]) -> Result<Net> {
     Net::new(layers)
 }
 
-fn take<'a>(bytes: &'a [u8], pos: &mut usize, len: usize) -> Result<&'a [u8]> {
-    let end = pos
-        .checked_add(len)
-        .ok_or_else(|| Error::Wire("WSP2 偏移溢出".into()))?;
-    if end > bytes.len() {
-        return Err(Error::Wire(format!(
-            "WSP2 截断：需要到 {end}，只有 {}",
-            bytes.len()
-        )));
-    }
-    let slice = &bytes[*pos..end];
-    *pos = end;
-    Ok(slice)
-}
+mod bytes;
 
-fn read_u16(bytes: &[u8], pos: &mut usize) -> Result<u16> {
-    let slice = take(bytes, pos, 2)?;
-    Ok(u16::from_le_bytes([slice[0], slice[1]]))
-}
-
-fn read_u32(bytes: &[u8], pos: &mut usize) -> Result<u32> {
-    let slice = take(bytes, pos, 4)?;
-    Ok(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
-}
-
-fn read_f32(bytes: &[u8], pos: &mut usize) -> Result<f32> {
-    let slice = take(bytes, pos, 4)?;
-    Ok(f32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
-}
+use bytes::*;
