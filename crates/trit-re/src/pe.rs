@@ -10,9 +10,11 @@ use crate::entropy;
 
 mod coff;
 mod overlay;
+mod rva;
 
 pub use coff::CoffFunction;
 use coff::parse_coff_functions;
+use rva::{rva_in_section, rva_to_offset};
 
 use overlay::parse_overlay;
 
@@ -318,29 +320,6 @@ impl PeInfo {
     pub fn format(&self) -> &'static str {
         if self.plus { "pe32+" } else { "pe32" }
     }
-}
-
-fn rva_in_section(rva: u32, section: &Section) -> bool {
-    rva >= section.virtual_address
-        && rva
-            < section
-                .virtual_address
-                .saturating_add(section.mapped_size())
-}
-
-fn rva_to_offset(rva: u32, sections: &[Section], headers_size: u32) -> Option<usize> {
-    if rva < headers_size {
-        return Some(rva as usize);
-    }
-    for section in sections {
-        if rva_in_section(rva, section) && section.raw_ptr != 0 {
-            let delta = rva - section.virtual_address;
-            if delta < section.raw_size {
-                return Some(section.raw_ptr as usize + delta as usize);
-            }
-        }
-    }
-    None
 }
 
 fn raw_slice(bytes: &[u8], raw_ptr: u32, raw_size: u32) -> Option<&[u8]> {

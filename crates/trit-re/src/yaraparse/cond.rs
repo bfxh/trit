@@ -6,11 +6,11 @@ use super::Tok;
 use crate::sigscan::{CmpOp, Condition, ForBound, Operand, Pattern};
 
 pub(super) struct CondParser<'a> {
-    toks: &'a [Tok],
-    pos: usize,
-    strings: &'a [(String, Pattern)],
+    pub(super) toks: &'a [Tok],
+    pub(super) pos: usize,
+    pub(super) strings: &'a [(String, Pattern)],
     /// for-of 嵌套深度：`$`/`#$`/`@$` 只在体内合法（>0），体外如实报错。
-    for_depth: usize,
+    pub(super) for_depth: usize,
 }
 
 impl<'a> CondParser<'a> {
@@ -35,11 +35,11 @@ impl<'a> CondParser<'a> {
         Ok(cond)
     }
 
-    fn peek(&self) -> Option<&Tok> {
+    pub(super) fn peek(&self) -> Option<&Tok> {
         self.toks.get(self.pos)
     }
 
-    fn next(&mut self) -> Option<Tok> {
+    pub(super) fn next(&mut self) -> Option<Tok> {
         let t = self.toks.get(self.pos).cloned();
         if t.is_some() {
             self.pos += 1;
@@ -47,7 +47,7 @@ impl<'a> CondParser<'a> {
         t
     }
 
-    fn eat_sym(&mut self, c: char) -> bool {
+    pub(super) fn eat_sym(&mut self, c: char) -> bool {
         if self.peek() == Some(&Tok::Sym(c)) {
             self.pos += 1;
             true
@@ -69,7 +69,7 @@ impl<'a> CondParser<'a> {
         self.peek() == Some(&Tok::Word(w.to_string()))
     }
 
-    fn bail<T>(&self, why: &str) -> Result<T, String> {
+    pub(super) fn bail<T>(&self, why: &str) -> Result<T, String> {
         Err(format!("条件不支持：{why}（token {:?}）", self.peek()))
     }
 
@@ -402,44 +402,6 @@ impl<'a> CondParser<'a> {
         self.bail("无法识别的数值起点")
     }
 
-    /// `#` 后的串名：`#a`（计数）/ `#$` / 裸 `#`（for-of 体内当前串）。
-    fn count_operand(&mut self, rest: &str) -> Result<Operand, String> {
-        if rest.is_empty() || rest == "$" {
-            if self.for_depth == 0 {
-                return self.bail("'#' 只能在 for-of 体内使用");
-            }
-            return Ok(Operand::CurrentCount);
-        }
-        let index = self.string_index(rest)?;
-        Ok(Operand::Count(index))
-    }
-
-    /// `@` 后的串名与可选 `[N]`：`@a` / `@a[2]` / `@$` / 裸 `@$[2]`。
-    /// **下标 1 起**（官方 YARA 语义，yara-python 实测判定：`@a[1]` =
-    /// 首次、`@a[0]` 无效）——解析成 0 起的内部下标。
-    fn offset_operand(&mut self, rest: &str) -> Result<Operand, String> {
-        let current = rest.is_empty() || rest == "$";
-        let mut nth = 0usize;
-        if self.eat_sym('[') {
-            let n = self.parse_int()? as usize;
-            if n == 0 {
-                return self.bail("@ 下标从 1 起（官方 YARA 语义）");
-            }
-            nth = n - 1;
-            if !self.eat_sym(']') {
-                return self.bail("@ 偏移下标未闭合");
-            }
-        }
-        if current {
-            if self.for_depth == 0 {
-                return self.bail("'@' 只能在 for-of 体内使用");
-            }
-            return Ok(Operand::CurrentOffset { nth });
-        }
-        let index = self.string_index(rest)?;
-        Ok(Operand::Offset { index, nth })
-    }
-
     /// for-of 体内 `$ in (a..b)`（调用方已消费 `in`）。
     fn parse_in_tail_current(&mut self) -> Result<Condition, String> {
         if !self.eat_sym('(') {
@@ -465,7 +427,7 @@ impl<'a> CondParser<'a> {
         Ok(Condition::CurrentIn { lo, hi })
     }
 
-    fn string_index(&self, id: &str) -> Result<usize, String> {
+    pub(super) fn string_index(&self, id: &str) -> Result<usize, String> {
         self.strings
             .iter()
             .position(|(sid, _)| sid == id)
@@ -530,7 +492,7 @@ impl<'a> CondParser<'a> {
 
     /// 整数字面量（十进制 / 0x 十六进制 / KB·MB 后缀）。
     /// 算术表达式不支持（fail-closed）。
-    fn parse_int(&mut self) -> Result<u64, String> {
+    pub(super) fn parse_int(&mut self) -> Result<u64, String> {
         let Some(Tok::Word(w)) = self.next() else {
             return self.bail("缺整数");
         };

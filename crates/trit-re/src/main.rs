@@ -336,24 +336,18 @@ fn run_sigscan(sample: &Path, rules_path: &Path) -> ExitCode {
             }
         }
     }
-    // 入口点上下文：头解析出入口后换算**文件偏移**（官方 YARA 的
-    // entrypoint 语义，实测对拍判定——PE：RVA≠offset 的样本官方只认
-    // offset；ELF：3 个 ET_EXEC 判别样本 vaddr 全不匹配、offset 全匹配，
-    // e_entry 过 PT_LOAD 映射）。非 PE/ELF 或解析失败 = None →
-    // entrypoint 操作数弃权（Unknown）。
-    let entrypoint = trit_re::pe::parse(&bytes)
-        .ok()
-        .and_then(|info| {
-            info.rva_to_offset(info.entry_rva)
-                .map(|offset| offset as u64)
-        })
+    // 入口点（**文件偏移**——官方实测对拍判定：PE 只认 offset / ELF 过
+    // PT_LOAD 映射）与 pe.* 模块上下文共用一次 PE 头解析；解析失败 =
+    // None → 两类操作数如实弃权（Unknown）。
+    let pe_info = trit_re::pe::parse(&bytes).ok();
+    let entrypoint = pe_info
+        .as_ref()
+        .and_then(|i| i.rva_to_offset(i.entry_rva).map(|o| o as u64))
         .or_else(|| {
             trit_re::elf::parse(&bytes)
                 .ok()
                 .and_then(|info| info.entry_file_offset())
         });
-    // pe.* 模块上下文：PE 才有；非 PE / 解析失败 = None → pe.* 弃权
-    let pe_info = trit_re::pe::parse(&bytes).ok();
     let report = trit_re::sigscan::SigScan::new(&rules).scan_with_context(
         &bytes,
         false,

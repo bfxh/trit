@@ -1,8 +1,9 @@
 //! 三值条件求值（从 sigscan.rs 拆出，控制单文件行数预算）：
-//! Kleene AND/OR/NOT + 操作数解析三态 + for-of 全集迭代。
+//! Kleene AND/OR/NOT + for-of 全集迭代（操作数解析在 [`super::resolve`]）。
 //! 弃权纪律：`Unknown` 是"证据缺失"，绝不折叠成假。
 
-use super::{Condition, ForBound, Operand};
+use super::resolve::{Resolved, resolve};
+use super::{Condition, ForBound};
 use trit_core::value::Ternary;
 
 /// 求值上下文：扫描数据（filesize / uintN 的来源）+ 截断标志 +
@@ -60,91 +61,9 @@ fn bool3(b: bool) -> Ternary {
     if b { Ternary::True } else { Ternary::False }
 }
 
-/// 操作数解析结果的三态（差分测试实测判定，第四个语义分歧的修正）：
-/// - `Val`：有确定值；
-/// - `DefiniteFalse`：**确定的未定义**——零命中串的 `@a[N]`（串客观上没有
-///   第 N 次命中，证据完整）、非截断输入的越界 `uintN` 读（字节客观上不
-///   存在）。官方 YARA 语义：与未定义值的比较一律为假——这是**确定的
-///   判定**，不是证据缺失；
-/// - `Unknown`：**证据缺失**——截断输入的 filesize/uintN、缺上下文的
-///   entrypoint、模块/未知函数。弃权，不猜。
-enum Resolved {
-    Val(u64),
-    DefiniteFalse,
-    Unknown,
-}
-
-fn resolve(op: &Operand, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx) -> Resolved {
-    match op {
-        Operand::Lit(v) => Resolved::Val(*v),
-        Operand::Filesize => {
-            if ctx.truncated {
-                Resolved::Unknown // 截断输入的大小不完整——filesize 上的比较不可信
-            } else {
-                Resolved::Val(ctx.data.len() as u64)
-            }
-        }
-        Operand::Count(index) => occurrences
-            .get(*index)
-            .map_or(Resolved::Unknown, |(_, offs)| {
-                Resolved::Val(offs.len() as u64)
-            }),
-        Operand::Offset { index, nth } => {
-            occurrences
-                .get(*index)
-                .map_or(Resolved::Unknown, |(_, offs)| match offs.get(*nth) {
-                    Some(v) => Resolved::Val(*v),
-                    // 零命中 = 确定的未定义（官方：比较为假）；有命中但下标越界
-                    //（命中表可能被 MAX_HITS 截断）= 证据不完整 → 弃权
-                    None if offs.is_empty() => Resolved::DefiniteFalse,
-                    None => Resolved::Unknown,
-                })
-        }
-        Operand::UintRead { size, offset } => {
-            if ctx.truncated {
-                return Resolved::Unknown;
-            }
-            let start = *offset as usize;
-            match start.checked_add(*size as usize) {
-                Some(end) if end <= ctx.data.len() => {
-                    let mut padded = [0u8; 8];
-                    padded[..*size as usize].copy_from_slice(&ctx.data[start..end]);
-                    Resolved::Val(u64::from_le_bytes(padded))
-                }
-                _ => Resolved::DefiniteFalse, // 非截断的越界读：字节客观不存在
-            }
-        }
-        Operand::Entrypoint => match ctx.entrypoint {
-            Some(v) => Resolved::Val(v), // 调用方传入
-            None => Resolved::Unknown,   // 缺上下文 = 弃权
-        },
-        Operand::Opaque(path) => {
-            // pe.* 子集：已知标量属性从 PE 上下文求值；子集外路径 /
-            // 缺上下文 = 记名弃权（Unknown），绝不猜。
-            match super::resolve_pe_prop(path, ctx.pe, Some(ctx.data.len() as u64)) {
-                Some(v) => Resolved::Val(v),
-                None => Resolved::Unknown,
-            }
-        }
-        Operand::CurrentCount => ctx
-            .binding
-            .and_then(|i| occurrences.get(i))
-            .map_or(Resolved::Unknown, |(_, offs)| {
-                Resolved::Val(offs.len() as u64)
-            }),
-        Operand::CurrentOffset { nth } => {
-            ctx.binding
-                .and_then(|i| occurrences.get(i))
-                .map_or(Resolved::Unknown, |(_, offs)| match offs.get(*nth) {
-                    Some(v) => Resolved::Val(*v),
-                    None if offs.is_empty() => Resolved::DefiniteFalse,
-                    None => Resolved::Unknown,
-                })
-        }
-    }
-}
-
-/// 条件求值（三值 Kleene；基于每模式的命中偏移表）。
+/// 条件求值（三值 Kleene；基于每模式的命中偏移表；操作数解析三态
+/// `Resolved`/`resolve` 在 [`super::resolve`]——**确定的未定义 ≠ 证据
+/// 缺失**，弃权绝不折叠成假）。
 /// `True` = 判真；`False` = 完整证据下的判假；`Unknown` = 证据不足
 ///（不可求值的操作数 / 循环体弃权）——绝不把弃权折叠成假。
 pub(super) fn eval(

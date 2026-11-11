@@ -1,5 +1,4 @@
 //! `functions` 的单元测试（从 mod.rs 拆出，控制单文件行数预算）。
-
 use super::{FuncSource, Function, FunctionCalls, FunctionReport, locate};
 use trit_core::value::Ternary;
 
