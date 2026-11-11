@@ -16,6 +16,29 @@
 - 跨平台验证：`cargo check --target aarch64-unknown-linux-gnu -p trit-simd` 通过（NEON 分支编译）；
   MSRV 1.88 `check --all-targets` 通过。
 
+### Added（`trit-num`：数值原语——补偿求和 / Welford / 最小二乘 / 插补）
+
+- 新 crate `crates/trit-num`（ops 层）：`sum_neumaier`（补偿求和）、`Welford`（流式均值/方差，可合并）、
+  `ols_f64` / `ols_f32`（正规方程 + Cholesky；**截距不参与正则化**；奇异 ⇒ 结构化错误）、
+  `median` / `mad`、`impute_mean` / `impute_median` / `impute_linear`。
+- 判据：`cargo test -p trit-num` = 16 单测 + 2 集成；精确直线恢复 <1e-12、岭回归解共线、
+  奇异/维度/非有限输入全部结构化报错；f64 vs f32 同题（固定种子 128×3）系数相对偏差 <1e-4，
+  且 f64 对真值的误差小于 f32；Neumaier 在 `1e16+1−1e16` 上得 1（朴素累加得 0，作为对照断言）。
+- 变异门 7/7 抓住（过程中修掉两个“测试自身不严”的坑：锚点是更长标识符的前缀、共线夹具其实可逆）。
+
+### Added（`trit-ir`：DAG IR + pass 框架 + 双 oracle 等价验证）
+
+- 新 crate `crates/trit-ir`（algo 层）：有序 arena **DAG IR**（子节点下标小于父节点，求值一趟线性扫描；
+  `to_expr` 可展开回树）；`eval` 语义与 `trit-eval` 逐点一致（含 `Xor = strong_add`）。
+- pass 框架：`ConstantFold`（常量子树折叠，折叠后剪掉不可达节点）、`Simplify`（复用 `trit-eval` 的代数感知化简器）、
+  `Cse`（结构哈希合并重复子表达式，DAG 共享）；`Pipeline::run_verified` 在每一步后用
+  **`trit-sat` 符号判定 + `trit-bdd`** 双 oracle 证明「新 IR ≡ 旧 IR」，判不等价或 oracle 算不出来都直接判红。
+- 读数：`cargo test -p trit-ir` = 12 单测 + 4 集成；批量表达式 × 三语义在全部赋值上逐点一致；
+  默认管道对 `(a&b)|(a&b)` 节点 7 → 4（CSE 合回）；变异 8/8 抓住。
+- CI 韧性：`Install iverilog (Linux)` 先快试默认源，失败切 `azure.archive.ubuntu.com` 兜底并重试 3 次（应对 GitHub runner 的 `security.ubuntu.com` DNS 成片失败）；全部失败仍判红（不许静默跳过）。
+- 口径记录：`Simplify` 会把 DAG 展开成树，因此必须排在 `Cse` 之前；重跑管道时最终 IR 收敛但中间计数会波动
+  （测试按“收敛点”判定，不按“第二遍零改写”）。
+
 ### Added（底层代数补齐：`trit-mv` + `trit-belnap` 双格）
 
 - 新 crate `crates/trit-mv`（base 层）：有限 Łukasiewicz 链 `Ł_{n+1}`，取值 `0..=n` 整数精确；

@@ -75,8 +75,8 @@ SQL 的 `NULL`、缺失值、多源冲突、待人工复核——清洗的每一
 | 计数/推理 | CDCL 与预处理（BVE/BCE）、MaxSAT | DPLL 计数在中等规模会慢；MaxSAT 是“最少改几处”的直接求解器 | 标准集上与 DPLL 计数一致、超时率下降 |
 | 代数 | ~~`trit-mv`~~ **已建（2026-11-11）**：Łukasiewicz 链 + 4 种 t-norm + residuum | G 的前置已解除；D 的格论口径已具备 | 链上公理穷举 + `trit-core` Kleene 对拍 |
 | 代数 | ~~`trit-belnap` 的算子面~~ **已建（2026-11-11）**：双格 + 共识/轻信/共轭/合并 | 多源合并（D）的算子已具备；剩“合并策略接入 trit-clean” | 双格公理穷举 + 已知序关系 |
-| IR | `trit-ir` pass 框架（常量折叠/等价重写/CSE） | 数据契约编译器（H）的前置 | 每个 pass 以 `trit-sat`/`trit-bdd`/`trit-count` 为 oracle |
-| 数值 | `trit-num`（最小二乘等） | 插补（F）与部分清洗统计需要 | 与 f32 参考实现同比特精度对拍 |
+| IR | ~~`trit-ir` pass 框架~~ **已建（2026-11-11）**：DAG + 常量折叠/化简/CSE + 双 oracle 验证 | 数据契约编译器（H）的前置已解除；剩“规则→IR”的编译前端 | 每个 pass 以 `trit-sat`+`trit-bdd` 验证（`trit-count` 可作第三 oracle） |
+| 数值 | ~~`trit-num`~~ **已建（2026-11-12）**：补偿求和 / Welford / OLS+岭回归 / 中位数 / 均值·中位数·线性插补 | F 的关键件已具备（F 的“三支聚类/粗糙集”仍是后续） | 精确直线恢复 + f64 vs f32 同题对拍 + 变异 7/7 |
 | 存储 | `trit-export`（量化容器）；`trit-vault`（隐私，已立项） | 清洗结果的归档/导出 | 与 `trit-codec` 打包逐位一致 |
 | 运行时 | ~~mmap 与 SIMD 抽象~~ **已建（2026-11-12）**：`trit-mmap` 只读映射 + `trit-simd` popcount/Hamming 运行时派发（AVX512/POPCNT/NEON/标量）；**async 仍缺** | 大文件吞吐与指纹去重（E）的底座已具备 | 逐字节对拍 + 全长度标量参考对拍 + 变异 6/6 |
 | 观测 | 无 tracing/metrics/错误分类 crate | 清洗任务要能解释“慢在哪/为什么 defer” | 每条 defer 带结构化原因码 |

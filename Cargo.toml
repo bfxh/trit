@@ -16,6 +16,8 @@ members = [
     "crates/trit-mv",
     "crates/trit-mmap",
     "crates/trit-simd",
+    "crates/trit-num",
+    "crates/trit-ir",
     "crates/trit-clean",
     "crates/trit-circuit",
     "crates/trit-cli",

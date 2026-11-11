@@ -127,9 +127,45 @@ jobs:
           fi
 
       # `--verify-hdl` 的 tests/hdl.rs 没有 iverilog 会静默跳过；Linux 装上让真仿真进 CI。
+      # 2026-11-11 实测：GitHub runner 的 security.ubuntu.com DNS 会成片失败（exit 100），
+      # 一次抖动就红掉所有 PR 的 ubuntu job ⇒ 这里就地重试；4 次都失败仍然判红（不许静默跳过）。
       - name: Install iverilog (Linux)
         if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq iverilog
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 2026-11-11 实测：GitHub runner 的 security.ubuntu.com DNS 会成片失败（exit 100），
+          # 一次抖动红掉所有 PR。这里给每次 apt 加硬超时（DNS 卡住时快速失败），失败后
+          # 把 runner 的镜像清单（apt-mirrors.txt）与 sources 一起切到 azure 官方镜像再试。
+          # 全部失败仍判红：iverilog 缺失时 HDL 仿真会静默跳过，按测试面缩水处理，不降级。
+          # 镜像里若已预装，直接复用（runner 断网时这是唯一不依赖外网的路径）。
+          if command -v iverilog >/dev/null 2>&1; then
+            echo "iverilog 已预装：$(command -v iverilog)"
+            exit 0
+          fi
+          install() {
+            timeout 120 sudo apt-get update -qq -o Acquire::Retries=1 -o Acquire::http::Timeout=15               && timeout 180 sudo apt-get install -y -qq -o Acquire::Retries=1 -o Acquire::http::Timeout=15 iverilog
+          }
+          if install; then
+            echo "iverilog 安装成功（默认源）"
+            exit 0
+          fi
+          echo "默认源失败，切换 azure 镜像兜底"
+          for f in /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            if [ -f "$f" ]; then
+              sudo sed -i -E 's|https?://[a-z0-9.]*ubuntu\.com|http://azure.archive.ubuntu.com|g' "$f" || true
+            fi
+          done
+          for attempt in 1 2 3; do
+            if install; then
+              echo "iverilog 安装成功（换源第 ${attempt} 次）"
+              exit 0
+            fi
+            echo "换源第 ${attempt} 次仍失败，15s 后重试"
+            sleep 15
+          done
+          echo "::error::iverilog 安装失败：Linux 的 HDL 仿真测试会静默跳过，按测试面缩水处理（不降级）"
+          exit 1
 
       - name: Check formatting
         if: steps.scope.outputs.only_docs != 'true'
