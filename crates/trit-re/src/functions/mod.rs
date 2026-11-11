@@ -16,11 +16,11 @@
 
 mod arm64walk;
 mod cfg;
+mod cooccurrence;
+pub(crate) mod stackstrings;
 mod x86len;
 
 use std::collections::{BTreeMap, BTreeSet};
-
-use trit_core::value::Ternary;
 
 use crate::elf;
 use crate::imports;
@@ -82,6 +82,9 @@ pub struct FunctionCalls {
     pub imports: Vec<String>,
     /// 对应的能力桶 id（去重、升序）。
     pub buckets: Vec<&'static str>,
+    /// 有序共现的数据面：本函数内**按地址升序**的调用点及其桶集
+    ///（同址多导入合并）。`cooccurrence_ordered` 的输入。
+    pub site_buckets: Vec<(u64, Vec<&'static str>)>,
 }
 
 /// 未归属调用点的**逐条裁定**。
@@ -170,40 +173,7 @@ pub struct FunctionReport {
 /// 逐条裁定的保留上限（报告体积护栏；计数不受影响）。
 pub const MAX_RULED_SITES: usize = 64;
 
-impl FunctionReport {
-    /// 是否存在"同一函数内同时出现全部 `required` 能力桶"。
-    ///
-    /// 三值规则：
-    /// - 找到 → `True`（正证据不会被别处的不确定性抹掉）；
-    /// - 没找到，但边界不精确/交叉引用不完整/有调用点归不到函数 → `Unknown`
-    ///   （"没看见"不等于"没有"）；
-    /// - 没找到且证据完整 → `False`。
-    pub fn cooccurrence(&self, required: &[&str], xref_complete: bool) -> Ternary {
-        if !xref_complete || !self.exact {
-            return Ternary::Unknown;
-        }
-        let found = self.functions.iter().any(|function| {
-            required
-                .iter()
-                .all(|need| function.buckets.iter().any(|bucket| bucket == need))
-        });
-        if found {
-            return Ternary::True;
-        }
-        // 未归属的调用点只在本组相关能力上才构成"可能漏看"。
-        if required.iter().any(|need| {
-            self.unattributed_buckets
-                .iter()
-                .any(|bucket| bucket == need)
-        }) {
-            Ternary::Unknown
-        } else {
-            Ternary::False
-        }
-    }
-}
-
-/// PE 的函数级报告。
+// PE 的函数级报告。
 pub fn build_pe(bytes: &[u8], info: &pe::PeInfo, xref: &XrefReport) -> FunctionReport {
     let exec = pe_exec_sections(bytes, info);
     let mut notes = Vec::new();
@@ -589,6 +559,14 @@ fn normalize(ranges: &mut Vec<Function>) {
     }
 }
 
+/// 归属过程的每函数累计：调用到的导入、能力桶、以及有序共现的数据面
+///（调用点地址 → 桶集，同址合并）。
+type PerFunction = (
+    BTreeSet<String>,
+    BTreeSet<&'static str>,
+    BTreeMap<u64, BTreeSet<&'static str>>,
+);
+
 fn attribute(
     xref: &XrefReport,
     ranges: &[Function],
@@ -602,8 +580,7 @@ fn attribute(
         buckets_of.insert(row.import.clone(), hits.keys().copied().collect());
     }
 
-    let mut per_function: Vec<(BTreeSet<String>, BTreeSet<&'static str>)> =
-        vec![(BTreeSet::new(), BTreeSet::new()); ranges.len()];
+    let mut per_function: Vec<PerFunction> = vec![PerFunction::default(); ranges.len()];
     let mut attributed = 0usize;
     let mut unattributed = 0usize;
     let mut unattributed_calls = 0usize;
@@ -625,6 +602,12 @@ fn attribute(
                         for bucket in buckets {
                             per_function[index].1.insert(*bucket);
                         }
+                        // 有序共现的数据面：调用点地址 → 桶集（同址合并）
+                        per_function[index]
+                            .2
+                            .entry(site.addr)
+                            .or_default()
+                            .extend(buckets.iter().copied());
                     }
                 }
                 None => {
@@ -674,11 +657,15 @@ fn attribute(
         .iter()
         .cloned()
         .zip(per_function)
-        .filter(|(_, (called, _))| !called.is_empty())
-        .map(|(function, (called, buckets))| FunctionCalls {
+        .filter(|(_, (called, _, _))| !called.is_empty())
+        .map(|(function, (called, buckets, ordered))| FunctionCalls {
             function,
             imports: called.into_iter().collect(),
             buckets: buckets.into_iter().collect(),
+            site_buckets: ordered
+                .into_iter()
+                .map(|(addr, buckets)| (addr, buckets.into_iter().collect()))
+                .collect(),
         })
         .collect();
 

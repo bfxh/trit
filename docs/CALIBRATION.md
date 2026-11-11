@@ -64,6 +64,7 @@ ARM64 各一批；记录每个样本的 sha256；人工复核 xref 误报/漏报
 | 2026-11-07（语义降权重跑，同批） | 39（同批） | 351 判定：false 281 / unknown 65 / **true 5**；账本 110 节点（**-5**）、门禁 Block | 同上（N4 对拍不受影响） | **人工面收窄：21 → 2**（剩余 = benign-elf64 的 staged_loader 1 + needs_review 1；true 明细 = attack-sim 的 injection/fn_injection/needs_review 3 + benign 2）——`xref_gaps` 降为 Unknown 注记后门禁由真实注入检出驱动 |
 | 2026-11-07（**ARM64-ELF 象限解锁**） | **51**（+12 = Ubuntu ports arm64 系统工具包，良性；首次真 ARM64 样本） | 全表 459 判定：false 383 / unknown 67 / true 9；ARM64 子批 12×~9 判定、-4（staged_loader+needs_review 各 2 = loader+network 家族，与 bash 同款） | ARM64 真实对拍：12 样本 × 11 规则——首跑 **DIFF 1**（`fullword` 词字符语义，见下），修复后 **MATCH 12 / DIFF 0**；真实样本对拍累计 **47 全 MATCH** | 人工面 +4（arm64 的 loader+network 同款家族，复核辅助同口径） |
 | 2026-11-07（**dynres 检测链 + L5 逃逸变体**） | **52**（+1 = sim_lvl5 纯动态解析形态） | 全表 520 判定：false 440 / unknown 69 / **true 11**；`dynamic_resolution` = True 仅在 sim_lvl5（**良性批 0 误报**，阈值 ≥3 个隐藏敏感名有效） | 同上 | **检测能力净增（响应"弱鸡"批评）**：L5 形态（导入表只有 GetProcAddress，敏感 API 名以字符串藏于数据段，不调用）在旧链全盲（`fn_injection` False）→ **`dynamic_resolution` True**——N1 记录的逃逸边界闭合；误报面 0 增量 |
+| 2026-11-07（**栈串链 + L6 逃逸变体**） | **53**（+1 = sim_lvl6 栈串形态） | 全表 583 判定：false 498 / unknown 71 / **true 14**；`stack_strings` = True 仅在 sim_lvl6（**良性批 51 样本 0 误报**——可执行节立即数流的错位噪声没拼出任何敏感名） | 同上 | **第二个能力净增**：L6 形态（敏感 API 名逐字节写栈，字面串不在 .rdata、不在导入表、无解析器）——数据段扫描与 dynres 双全盲 → 栈串链（可执行节立即数流 + x86len 线性扫拼接）True。Linux 侧 dynres 词汇表（ptrace/memfd/keyctl 系）同步落地（ELF 良性 11 样本 0 误报） |
 
 ### dynres 检测链（2026-11-07，响应"检测器弱鸡"批评）
 
