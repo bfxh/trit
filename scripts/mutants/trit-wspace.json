@@ -2582,5 +2582,37 @@
  "new": "        if info.shape.len() > 1 {",
  "pkg": "trit-wspace",
  "filter": "cli_dir_imports_vectors_and_skips_non_float"
+},
+{
+ "name": "biasf: WSP1 不写出 f32 bias",
+ "file": "crates/trit-wspace/src/codec.rs",
+ "old": "        if !layer.bias_f32().is_empty() {",
+ "new": "        if false {",
+ "pkg": "trit-wspace",
+ "filter": "wsp1_round_trip_preserves_bias_f32"
+},
+{
+ "name": "biasf: WSP1 不解析 f32 bias",
+ "file": "crates/trit-wspace/src/codec.rs",
+ "old": "        if row_line.split_whitespace().next() == Some(\"biasf\") {",
+ "new": "        if false {",
+ "pkg": "trit-wspace",
+ "filter": "wsp1_round_trip_preserves_bias_f32"
+},
+{
+ "name": "biasf: 导出 --bias 用三值",
+ "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
+ "old": "        bias_values = if layer.bias_f32().len() == layer.rows() {",
+ "new": "        bias_values = if false {",
+ "pkg": "trit-wspace",
+ "filter": "export_with_bias_writes_f32_values"
+},
+{
+ "name": "biasf: WSP2 不拒绝 f32 bias",
+ "file": "crates/trit-wspace/src/wsp2.rs",
+ "old": "        if !layer.bias_f32().is_empty() {",
+ "new": "        if false {",
+ "pkg": "trit-wspace",
+ "filter": "wsp2_rejects_biasf"
 }
 ]

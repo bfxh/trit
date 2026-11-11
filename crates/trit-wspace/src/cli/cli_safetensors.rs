@@ -85,12 +85,13 @@ pub(super) fn import(args: &[String]) -> Result<(), String> {
 }
 
 pub(super) fn export(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["vector"])?;
+    let parsed = parse(args, &["vector", "bias"])?;
     let path = one(
         &parsed,
-        "export-safetensors <artifact|-> --out <path> [--tensor <name>[,<name>...]] [--vector]",
+        "export-safetensors <artifact|-> --out <path> [--tensor <name>[,<name>...]] [--vector] [--bias]",
     )?;
     let vector = parsed.switches.contains("vector");
+    let with_bias = parsed.switches.contains("bias");
     let out = value(&parsed, "out")?;
     let net = load_net(path)?;
     let layers = net.layers();
@@ -112,6 +113,12 @@ pub(super) fn export(args: &[String]) -> Result<(), String> {
             layers.len()
         ));
     }
+    if vector && (layers.len() != 1 || layers[0].rows() != 1) {
+        return Err("--vector 只支持单层且行数为 1 的工件".into());
+    }
+    if with_bias && layers.len() != 1 {
+        return Err("--bias 只支持单层导出".into());
+    }
     let mut buffered: Vec<(usize, usize, Vec<f32>)> = Vec::with_capacity(layers.len());
     for layer in layers {
         let (rows, cols) = (layer.rows(), layer.cols());
@@ -125,7 +132,29 @@ pub(super) fn export(args: &[String]) -> Result<(), String> {
         }
         buffered.push((rows, cols, values));
     }
-    let tensors: Vec<safetensors::TensorOut> = names
+    let bias_name = if with_bias {
+        let name = &names[0];
+        Some(
+            name.strip_suffix(".weight")
+                .map_or_else(|| format!("{name}.bias"), |stem| format!("{stem}.bias")),
+        )
+    } else {
+        None
+    };
+    let mut bias_values: Vec<f32> = Vec::new();
+    if with_bias {
+        let layer = &layers[0];
+        bias_values = if layer.bias_f32().len() == layer.rows() {
+            layer.bias_f32().to_vec()
+        } else {
+            layer
+                .bias()
+                .iter()
+                .map(|trit| f32::from(trit.to_i8()))
+                .collect()
+        };
+    }
+    let mut tensors: Vec<safetensors::TensorOut> = names
         .iter()
         .zip(&buffered)
         .map(|(name, (rows, cols, values))| safetensors::TensorOut {
@@ -136,10 +165,24 @@ pub(super) fn export(args: &[String]) -> Result<(), String> {
             values,
         })
         .collect();
+    if let Some(name) = &bias_name {
+        tensors.push(safetensors::TensorOut {
+            name,
+            rows: 1,
+            cols: layers[0].rows(),
+            vector: true,
+            values: &bias_values,
+        });
+    }
     safetensors::write_tensors(out, &tensors).map_err(err)?;
-    let bytes: usize = buffered.iter().map(|(_, _, values)| values.len() * 4).sum();
+    let bytes: usize = buffered
+        .iter()
+        .map(|(_, _, values)| values.len() * 4)
+        .sum::<usize>()
+        + bias_values.len() * 4;
     emit(&json!({
         "tensors": names,
+        "bias": bias_name,
         "layers": layers.len(),
         "bytes": bytes,
         "out": out,
@@ -237,6 +280,15 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
     }))
 }
 
+struct BufferedLayer {
+    rows: usize,
+    cols: usize,
+    vector: bool,
+    values: Vec<f32>,
+    bias_name: Option<String>,
+    bias_values: Vec<f32>,
+}
+
 pub(super) fn export_dir(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
     let dir = one(&parsed, "export-safetensors-dir <dir> --out <file>")?;
@@ -254,7 +306,7 @@ pub(super) fn export_dir(args: &[String]) -> Result<(), String> {
         return Err("manifest 里没有张量".into());
     }
     let mut names: Vec<String> = Vec::with_capacity(entries.len());
-    let mut buffered: Vec<(usize, usize, bool, Vec<f32>)> = Vec::with_capacity(entries.len());
+    let mut buffered: Vec<BufferedLayer> = Vec::with_capacity(entries.len());
     for entry in entries {
         let name = entry
             .get("name")
@@ -268,6 +320,10 @@ pub(super) fn export_dir(args: &[String]) -> Result<(), String> {
             .get("vector")
             .and_then(Value::as_bool)
             .unwrap_or(false);
+        let bias_name = entry
+            .get("bias")
+            .and_then(Value::as_str)
+            .map(str::to_string);
         let path = Path::new(dir).join(file);
         let text =
             fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
@@ -288,30 +344,56 @@ pub(super) fn export_dir(args: &[String]) -> Result<(), String> {
                 values.push(f32::from(trit.to_i8()) * scale);
             }
         }
+        let bias_values = if bias_name.is_some() {
+            if layer.bias_f32().len() == rows {
+                layer.bias_f32().to_vec()
+            } else {
+                layer
+                    .bias()
+                    .iter()
+                    .map(|trit| f32::from(trit.to_i8()))
+                    .collect()
+            }
+        } else {
+            Vec::new()
+        };
         names.push(name.to_string());
-        buffered.push((rows, cols, vector, values));
+        buffered.push(BufferedLayer {
+            rows,
+            cols,
+            vector,
+            values,
+            bias_name,
+            bias_values,
+        });
     }
     let unique: BTreeSet<&String> = names.iter().collect();
     if unique.len() != names.len() {
         return Err("manifest 里有重复张量名".into());
     }
-    let tensors: Vec<safetensors::TensorOut> = names
-        .iter()
-        .zip(&buffered)
-        .map(
-            |(name, (rows, cols, vector, values))| safetensors::TensorOut {
-                name,
-                rows: *rows,
-                cols: *cols,
-                vector: *vector,
-                values,
-            },
-        )
-        .collect();
+    let mut tensors: Vec<safetensors::TensorOut> = Vec::new();
+    for (name, layer) in names.iter().zip(&buffered) {
+        tensors.push(safetensors::TensorOut {
+            name,
+            rows: layer.rows,
+            cols: layer.cols,
+            vector: layer.vector,
+            values: &layer.values,
+        });
+        if let Some(bias) = &layer.bias_name {
+            tensors.push(safetensors::TensorOut {
+                name: bias,
+                rows: 1,
+                cols: layer.rows,
+                vector: true,
+                values: &layer.bias_values,
+            });
+        }
+    }
     safetensors::write_tensors(out, &tensors).map_err(err)?;
     let bytes: usize = buffered
         .iter()
-        .map(|(_, _, _, values)| values.len() * 4)
+        .map(|layer| layer.values.len() * 4 + layer.bias_values.len() * 4)
         .sum();
     emit(&json!({
         "dir": dir,

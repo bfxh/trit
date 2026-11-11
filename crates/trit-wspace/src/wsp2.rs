@@ -28,6 +28,11 @@ pub fn to_wsp2(net: &Net) -> Result<Vec<u8>> {
     out.push(VERSION);
     out.extend_from_slice(&nlayers.to_le_bytes());
     for layer in net.layers() {
+        if !layer.bias_f32().is_empty() {
+            return Err(Error::Wire(
+                "WSP2 暂不支持 f32 bias（biasf 行）；请保留 WSP1 或先去掉 biasf".into(),
+            ));
+        }
         let rows = u32::try_from(layer.rows()).map_err(|_| Error::Wire("行数超过 u32".into()))?;
         let cols = u32::try_from(layer.cols()).map_err(|_| Error::Wire("列数超过 u32".into()))?;
         out.extend_from_slice(&rows.to_le_bytes());

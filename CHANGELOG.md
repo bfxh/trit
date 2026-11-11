@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：f32 bias 保留（`biasf` 行））
+
+- `Layer.bias_f32`（可选）：保存原始 f32 偏置；三值 `bias` 仍是行为判据，`with_bias_f32` 校验长度与有限值。
+- WSP1 新增可选 `biasf` 行（`bias` 后、`row` 前）；`from_wsp` / `to_wsp` 往返保留；`from_f32`
+  在 bias 全零时不写（训练产物不变）。
+- safetensors 导入填 `bias_f32`；`export-safetensors --bias` 写回 `<name>.bias`（f32 优先，
+  没有时退回三值符号）；目录导出按 manifest 的 `bias` 名字写回。
+- 真实 MiniLM：**36** 个 WSP1 含 `biasf`；导出 `encoder.layer.0.attention.output.dense.bias`
+  与原模型 **max_abs_err = 0.0**、shape `[384]` 保持。
+- `WSP2` 遇到 `biasf` **明确报错**（不静默丢）；`--vector` / 目录导出仍按 manifest 恢复 1D。
+- 测试 365 → 370（`safetensors_bias` 11 条，新增 5 条：WSP1 往返、零 bias 不写、`--bias`
+  导出、目录导出、WSP2 拒绝）；变异 `trit-wspace` 323 → 327（+4，逐条验证）。
+- 未证栏：任务合并（`merge`）不保留 f32 bias（以三值投票为准）；WSP2 不支持 f32 bias。
+
 ### Added（trit-wspace：1D 向量工件 + bias 端到端误差读数）
 
 - `safetensors::read_weights`：2D → `(rows, cols)`，1D → `(1, cols)`；`import-safetensors`
