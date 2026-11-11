@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（运行时底层：`trit-mmap` + `trit-simd`）
+
+- 新 crate `crates/trit-mmap`（ops）：只读文件映射（Unix `mmap` / Windows `CreateFileMappingW` + `MapViewOfFile`）；
+  空文件返回空切片；`Drop` 释放；错误结构化（IO / 过大 / 映射失败）。**安全边界**写在 crate 文档：
+  映射后文件被外部改写属未定义行为。
+- 新 crate `crates/trit-simd`（ops）：`popcount_words` / `hamming_words` 运行时派发 ——
+  x86_64: AVX512(VPOPCNTDQ) → POPCNT → 标量；aarch64: NEON → 标量。
+  **AVX512 在 MSRV 1.88 上是 nightly 特性**：`build.rs` 读 `rustc --version` 发 `has_avx512` cfg，
+  1.88 构建自动走 POPCNT/标量（1.99 实测 AVX512 代码可编译；本机 CPU 无 AVX512，运行期由探测降级）。
+- 读数：`cargo test -p trit-mmap -p trit-simd` = 4 + 6 条；全长度（0..=33 + 4096）与标量参考逐一对拍；
+  强制 POPCNT 路径对拍；Hamming 对称性与长度错误；映射内容逐字节对拍；变异 6/6 抓住。
+- 跨平台验证：`cargo check --target aarch64-unknown-linux-gnu -p trit-simd` 通过（NEON 分支编译）；
+  MSRV 1.88 `check --all-targets` 通过。
+
 ### Added（`trit-num`：数值原语——补偿求和 / Welford / 最小二乘 / 插补）
 
 - 新 crate `crates/trit-num`（ops 层）：`sum_neumaier`（补偿求和）、`Welford`（流式均值/方差，可合并）、

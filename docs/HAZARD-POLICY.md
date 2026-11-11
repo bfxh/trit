@@ -40,6 +40,8 @@ rustc 给的是内存安全的地板；clippy 给风格与常见错误。在这�
 | `crates/trit-ops/src/simd.rs` | raw-memory / target-feature | AVX 行点积内核；调用方 `is_x86_feature_detected` 运行时探测 |
 | `crates/trit-ops/src/bench.rs` | raw-memory | 内核对照基准：必须复用与内核相同的内存布局，否则测的不是同一条路径 |
 | `crates/trit-dot/src/lib.rs` | raw-memory / target-feature | POPCNT 位并行点积；调用方运行时探测 |
+| `crates/trit-mmap/src/lib.rs` | raw-memory / unsafe-send-sync | 只读映射：`from_raw_parts` 的指针来自成功的 `mmap`/`CreateFileMappingW`、长度与映射一致、`Drop` 恰好释放一次；只读视图无内部可变性，多线程共享等价于共享 `&[u8]`。映射后文件被外部改写属未定义行为（crate 文档写死） |
+| `crates/trit-simd/src/lib.rs` | target-feature | popcount / XOR-popcount 运行时派发：每个 `target_feature` 函数只在 `is_x86_feature_detected!`（aarch64 为必选 NEON）之后调用；AVX512 模块由 `build.rs` 按 rustc ≥1.89 才编译 |
 | `crates/trit-ops/src/pool.rs` | unsafe-send-sync / relaxed-ordering | `Ptr<T>`：按行切分、无重叠写、join 屏障；Relaxed 用于线程数配置与完成计数（单变量、无同步依赖） |
 | `crates/trit-count/examples/matching_alloc_probe.rs` | relaxed-ordering | 分配口径探针（example，不在产品路径）：三个 `AtomicU64` 只做 alloc/free 的次数与字节累加，读数只依赖 `fetch_add` 自身的原子性与 `main` 的单线程顺序，不用于任何跨线程同步或可见性屏障 |
 

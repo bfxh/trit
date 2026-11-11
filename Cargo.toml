@@ -15,6 +15,8 @@ members = [
     "crates/trit-sat",
     "crates/trit-count",
     "crates/trit-mv",
+    "crates/trit-mmap",
+    "crates/trit-simd",
     "crates/trit-num",
     "crates/trit-ir",
     "crates/trit-clean",
