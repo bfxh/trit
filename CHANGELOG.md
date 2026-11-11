@@ -15,6 +15,8 @@
 - 修 `disk_guard.py` 自测失败行格式：`FAIL（得到 …） 名称` 的全角括号紧跟 `FAIL`（没有空格），
   `mutation_check` 点名探针只认 `FAIL ` ⇒ 5 条变异被判“未点名”（#238 之后直接判红）；
   改成 `FAIL <名称>（得到 …）`，现在 12/12 点名抓住。
+- `disk_guard.py` 自测的“真实探针”在 hosted runner 上显式 SKIP 并打印读数（Azure 虚拟盘常把 /dev/sda
+  报 rotational=1，用户改不了）；开发者本机仍严格判红。CI 的检查步保持观测轮（continue-on-error）。
 - 新增磁盘介质门 `scripts/disk_guard.py`（构建/测试必须落固态，三路介质证据合成 + ALLOWED 逃生口），
   CI 增加 `disk guard` job（timeout + 自测 + `--json`）；其 12 条变异登记保留。
 
