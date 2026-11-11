@@ -495,6 +495,25 @@
   机制在构造的 one-hot 冲突夹具上可把 hamming 8→4，但真实任务收益很小。
 - 测试 240 → 244 + 1 doctest（`tests/task_tune.rs` 6 → 10）；变异 223 → 228（新增 5 条目标）。
 
+### Added（trit-re：栈串提取链 + dynres Linux 词汇表——第二/第三层逃逸闭合）
+
+- **栈串提取**（`functions/stackstrings.rs`）：loader 把敏感 API 名逐字节
+  写栈（`mov byte ptr [rsp+X], imm8` 序列）——数据段扫描全盲。可执行节
+  线性扫（x86len 步长）收集 C6/C7（mov imm 进内存）与 REX.W B8+r（imm64）
+  的立即数字节，按地址序拼流找敏感名子串。判定 `stack_strings`：
+  ≥1 个敏感名 = True（栈串高信号——错位噪声几乎不可能拼出完整名）。
+- **dynres Linux 词汇表**：`hidden_api_strings` 词汇表参数化——ELF 用
+  `LINUX_SENSITIVE_APIS`（ptrace/process_vm_*/memfd_create/pidfd_getfd/
+  keyctl/init_module/finit_module；**排除 mmap/socket 万能调用**防全量
+  误报）。解析器 = dlsym。
+- **端到端**：sim_lvl6（纯栈串形态，无导入无 .rdata 串）→ `stack_strings`
+  True；合成 ELF（dlsym + .comment 藏 ptrace/keyctl/process_vm_readv）→
+  `dynamic_resolution` True；**良性批 51+12 样本 → 0 误报**（两链阈值都
+  站住）。全表 583 判定。
+- 已知边界：线性扫错位（嵌数据）由阈值兜底；ARM64 movz/movk 半字形态
+  待扩；纯 vDSO/直接 syscall 不受覆盖。
+
+### Added（trit-re：dynres 动态解析检测链——响应"检测器弱鸡"的能力净增）
 ### Experiments（trit-wspace：CIFAR-10 真实训练集上的合并/调权读数）
 
 - 新增可复现实验 `crates/trit-wspace/examples/cifar_tasks.rs`：CIFAR-10 降采样成 8×8 灰度夹具
