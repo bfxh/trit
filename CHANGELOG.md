@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed（CI：测试换 cargo-nextest + 编译加 sccache GHA 缓存）
+
+- `check` job 的测试从 `cargo test --workspace` 换成 `cargo nextest run --workspace`（跨二进制并行调度）；
+  doctest 单列一段 `cargo test --workspace --doc`（nextest 不跑 doctest，少这条就是测试面缩水）。
+- 编译再叠一层 sccache（GHA 缓存后端，sccache 钉 v0.19.0、action 钉 SHA），与 `rust-cache` 互补：
+  后者恢复 target 目录，前者在 target 缓存被淘汰 / 换 feature 组合时兜底。
+- 读数：本机热态 2502 条测试 `cargo test` 63.7s → `nextest` 58.4s（24 核，执行 50.0s）；
+  CI 首轮（sccache 冷缓存）Windows 727s → 700s、macOS 255s → 217s、Ubuntu 220s → 200s；
+  稳态（同一提交重跑、sccache 命中）Windows job **727s → 493s（-32%）**：GPU 冒烟 372s → 219s、
+  Test 240s → 167s；macOS 255s → 222s、Ubuntu 220s → 200s。复算见 `docs/BUILD-PERF.md` §8。
+
 ### Added（trit-wspace：f32 bias 保留（`biasf` 行））
 
 - `Layer.bias_f32`（可选）：保存原始 f32 偏置；三值 `bias` 仍是行为判据，`with_bias_f32` 校验长度与有限值。
