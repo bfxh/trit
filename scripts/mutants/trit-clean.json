@@ -106,5 +106,41 @@
     "pkg": "trit-clean",
     "filter": "auto_scope_repairs_unique_conflict",
     "runner": "cargo"
+  },
+  {
+    "name": "clean: 三支门平局默认 accept（该转人工的线索被放行）",
+    "file": "crates/trit-clean/src/gate.rs",
+    "old": "                let mut best = Action::Defer;",
+    "new": "                let mut best = Action::Accept;",
+    "pkg": "trit-clean",
+    "filter": "loss_policy_three_regions",
+    "runner": "cargo"
+  },
+  {
+    "name": "clean: 接受阈值边界错位（p == accept_at 被降级）",
+    "file": "crates/trit-clean/src/gate.rs",
+    "old": "                let action = if posterior >= *accept_at {",
+    "new": "                let action = if posterior > *accept_at {",
+    "pkg": "trit-clean",
+    "filter": "threshold_policy_boundaries",
+    "runner": "cargo"
+  },
+  {
+    "name": "clean: 有 False 却按“干净”给证据",
+    "file": "crates/trit-clean/src/gate.rs",
+    "old": "    if !violated.is_empty() {",
+    "new": "    if false {",
+    "pkg": "trit-clean",
+    "filter": "gate_derives_reasons_per_row",
+    "runner": "cargo"
+  },
+  {
+    "name": "clean: 阈值扫描边界错位（p == c 被降级）",
+    "file": "crates/trit-clean/src/gate.rs",
+    "old": "            let action = if posterior >= confidence {",
+    "new": "            let action = if posterior > confidence {",
+    "pkg": "trit-clean",
+    "filter": "scan_confidence_reports_three_way_counts",
+    "runner": "cargo"
   }
 ]
