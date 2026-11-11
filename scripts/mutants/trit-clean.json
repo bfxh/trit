@@ -1,0 +1,74 @@
+[
+ {
+  "name": "clean: NOT NULL 把 NULL 判成成立",
+  "file": "crates/trit-clean/src/eval.rs",
+  "old": "            Value::Null => Ternary::False,",
+  "new": "            Value::Null => Ternary::True,",
+  "pkg": "trit-clean",
+  "filter": "not_null_is_false_on_null",
+  "runner": "cargo"
+ },
+ {
+  "name": "clean: CHECK 的 NULL 不再判 UNKNOWN",
+  "file": "crates/trit-clean/src/eval.rs",
+  "old": "            None => Ternary::Unknown,",
+  "new": "            None => Ternary::True,",
+  "pkg": "trit-clean",
+  "filter": "check_null_is_unknown",
+  "runner": "cargo"
+ },
+ {
+  "name": "clean: >= 退化成 >（边界判错）",
+  "file": "crates/trit-clean/src/dsl.rs",
+  "old": "            Self::Ge => ord != Ordering::Less,",
+  "new": "            Self::Ge => ord == Ordering::Greater,",
+  "pkg": "trit-clean",
+  "filter": "check_three_valued_matches_sqlite_for_every_operator",
+  "runner": "cargo"
+ },
+ {
+  "name": "clean: UNIQUE 把多个 NULL 当重复",
+  "file": "crates/trit-clean/src/eval.rs",
+  "old": "        if value.is_null() {\n            continue;\n        }",
+  "new": "        if false {\n            continue;\n        }",
+  "pkg": "trit-clean",
+  "filter": "unique_null_distinctness_matches_sqlite",
+  "runner": "cargo"
+ },
+ {
+  "name": "clean: 一热编码丢掉“至少一个”（空格子凭空计数）",
+  "file": "crates/trit-clean/src/repair.rs",
+  "old": "            plan.cnf.clauses.push(vars.clone());",
+  "new": "            let _ = &vars;",
+  "pkg": "trit-clean",
+  "filter": "completion_ratio_matches_manual_count",
+  "runner": "cargo"
+ },
+ {
+  "name": "clean: 最小修复在第一层就收工（无解也报一层）",
+  "file": "crates/trit-clean/src/repair.rs",
+  "old": "        if total > 0 {",
+  "new": "        if total >= 0 {",
+  "pkg": "trit-clean",
+  "filter": "impossible_repair_matches_brute_force",
+  "runner": "cargo"
+ },
+ {
+  "name": "clean: 三值分数把 UNKNOWN 当满分",
+  "file": "crates/trit-clean/src/eval.rs",
+  "old": "        let weighted = counts.yes as f64 + 0.5 * counts.unknown as f64;",
+  "new": "        let weighted = counts.yes as f64 + counts.unknown as f64;",
+  "pkg": "trit-clean",
+  "filter": "score_counts_unknown_as_half",
+  "runner": "cargo"
+ },
+ {
+  "name": "clean: DOMAIN 的 NULL 判成违反",
+  "file": "crates/trit-clean/src/eval.rs",
+  "old": "        Rule::Domain { col, values } => match &row[*col] {\n            Value::Null => Ternary::Unknown,",
+  "new": "        Rule::Domain { col, values } => match &row[*col] {\n            Value::Null => Ternary::False,",
+  "pkg": "trit-clean",
+  "filter": "domain_null_is_unknown_and_membership_is_true",
+  "runner": "cargo"
+ }
+]

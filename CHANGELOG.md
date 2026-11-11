@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-clean M0：三值约束检查 + 精确修复计数）
+
+- 新 crate `crates/trit-clean`（algo 层）：规则 DSL（`NOT NULL` / `CHECK` / `DOMAIN` / `UNIQUE`）→ 三值求值
+  （`bool3`，NULL 传播与 SQL 一致）→ 精确计数（复用 `trit-count` 的原始 CNF + DPLL）：完成比例、最小修复条数。
+- 判据（可复算）：`cargo test -p trit-clean` 共 34 条（22 单测 + 6 SQLite 对拍 + 5 暴力对拍 + 1 doctest）；
+  SQLite 对拍覆盖 6 个比较符 × 5 个取值、TEXT 二进制序、NOT NULL、CHECK 的 UNKNOWN 放行、UNIQUE 的 NULL 互不冲突；
+  计数侧与暴力枚举逐例一致（含“无解”“两处改动”“三行唯一冲突”）。
+- 边界写死并结构化报错：变量 > 120、候选格 > 10、“域太小无修复”、“编码不自洽”都是显式错误，不许静默降级。
+- 变异门 8/8 抓住（`python scripts/mutation_check.py --pkg trit-clean`）。
+- `rusqlite` 钉 `=0.39.0`（0.40 起用了 rustc 1.89 的 cfg_select!，未声明 MSRV；本仓 1.88 上已用 `cargo +1.88.0 check` 实测）；`Cargo.lock` 同步。
+- 修 `scripts/layers.py` 在中文 Windows 控制台打印 `⇒` 的 UnicodeEncodeError（输出统一降级）。
+
 ### Added（数据清洗 × 三进制立项：九条方向 + 主线 trit-clean + 底层缺口清单）
 
 - 新增 `docs/DATA-CLEANING-PLAN.md`：三进制在数据清洗的九条方向（三值约束检查、精确修复计数/清洁度分数、三支决策动作门、Belnap 四值多源合并、三值指纹去重、缺失插补、三值规则挖掘、数据契约编译器、文本清洗），主线选“A+B+C”（规则→三值求值→#SAT/BDD 计数→accept/reject/defer），差异化=确定性/可解释/可复算；
