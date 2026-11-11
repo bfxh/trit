@@ -28,6 +28,8 @@
 | `trit-export` | ops | 三值权重容器（量化 GGUF）还没有落点，属 codec/learn 边界 | 与 `trit-codec` 打包逐位一致 |
 | ~~`trit-belnap` 的算子面~~ **已建**（2026-11-11） | ops | 真序/知识序双格（共识 `⊗`、轻信 `⊕`、共轭 `¬ₖ`）+ 多源合并（真序 join / 知识序 consensus）；**接入 trit-clean 的合并策略仍是后续** | 双格公理穷举（分配/吸收/结合）+ 已知序关系 + De Morgan（真序 `¬`、知识序 `¬ₖ`） |
 | `trit-clean`（**后期，不排期**） | algo | 三值约束检查 + 精确修复计数 + 三支决策（收/拒/转人工）；方向评估与底层缺口见 [DATA-CLEANING-PLAN.md](DATA-CLEANING-PLAN.md) | 与 SQL 三值语义、小规模穷举计数对拍；BDD×DPLL 交叉校验 |
+| ~~`trit-mmap`~~ **已建（第一批）**（2026-11-12） | ops | 大文件只读映射：Unix `mmap` / Windows `CreateFileMapping`；空文件返回空切片；错误结构化 | 内容逐字节对拍 + 空/缺失/重复映射用例 + 变异 2/2 |
+| ~~`trit-simd`~~ **已建（第一批）**（2026-11-12） | ops | popcount / XOR-popcount 运行时派发：AVX512(VPOPCNTDQ，rustc ≥1.89 才编译) → POPCNT → NEON → 标量；MSRV 1.88 自动降级 | 全长度对拍标量参考 + 强制硬件路径 + 派发/长度错误变异 4/4 |
 | `trit-vault`（**后期，不排期**） | ops | 照片/视频/文本的静态隐私：盘上只有随机噪声、元数据全加密，经自有挂载器（WinFsp/FUSE）正常打开；威胁模型与硬边界见 [PRIVACY-PLAN.md](PRIVACY-PLAN.md) | 容器/清单口径与 `trit-codec` 对拍；挂载器验收按计划 P2/P3 判据 |
 
 **挡住别人的一条**：`trit-mv` 不做，"用四值/n 值移植算法"就没有落点，只能各项目自己搓。
