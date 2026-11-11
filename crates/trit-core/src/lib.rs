@@ -27,3 +27,5 @@ pub use tristate::{
     resolve_drivers,
 };
 pub use value::Ternary;
+
+// CI probe: nextest + sccache 验证（临时哨兵，不并入 main）

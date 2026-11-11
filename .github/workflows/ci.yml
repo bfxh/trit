@@ -73,6 +73,23 @@ jobs:
         with:
           components: rustfmt, clippy
 
+      # 编译缓存：GHA 后端，跨 run 复用编译产物（与 rust-cache 互补：
+      # 后者恢复 target 目录，前者在 target 缓存被淘汰/换 feature 组合时仍能命中）。
+      # CARGO_INCREMENTAL=0 已在 job env，sccache 需要它才能缓存。
+      - name: sccache（GHA 后端）
+        if: steps.scope.outputs.only_docs != 'true'
+        uses: mozilla-actions/sccache-action@d651010b8da762cde178750d8eda7b5febfe147a # v0.0.9
+        with:
+          version: "v0.19.0"
+
+      # 测试执行并行：cargo test 是一个测试二进制一个二进制串行跑，nextest 跨二进制调度。
+      # 版本钉死，避免 CI 随上游漂移。
+      - name: Install cargo-nextest
+        if: steps.scope.outputs.only_docs != 'true'
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: nextest@0.9.148
+
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         if: steps.scope.outputs.only_docs != 'true'
 
@@ -131,16 +148,29 @@ jobs:
             cargo clippy --workspace --all-targets --locked -- -D warnings
           fi
 
-      - name: Test
+      - name: Test (nextest)
         if: steps.scope.outputs.only_docs != 'true'
         shell: bash
         env:
           SCOPE_ARGS: ${{ steps.crates.outputs.args }}
         run: |
           if [ -n "${SCOPE_ARGS:-}" ]; then
-            cargo test $SCOPE_ARGS --locked
+            cargo nextest run $SCOPE_ARGS --locked
           else
-            cargo test --workspace --locked
+            cargo nextest run --workspace --locked
+          fi
+
+      # nextest 不跑 doctest（文档示例也算测试面，不能悄悄丢）。
+      - name: Test (doctests)
+        if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo test $SCOPE_ARGS --locked --doc
+          else
+            cargo test --workspace --locked --doc
           fi
 
       # png feature（默认关）：单独测 + clippy，否则 CI 永远碰不到这些代码。
