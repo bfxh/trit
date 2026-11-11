@@ -78,7 +78,7 @@ SQL 的 `NULL`、缺失值、多源冲突、待人工复核——清洗的每一
 | IR | `trit-ir` pass 框架（常量折叠/等价重写/CSE） | 数据契约编译器（H）的前置 | 每个 pass 以 `trit-sat`/`trit-bdd`/`trit-count` 为 oracle |
 | 数值 | `trit-num`（最小二乘等） | 插补（F）与部分清洗统计需要 | 与 f32 参考实现同比特精度对拍 |
 | 存储 | `trit-export`（量化容器）；`trit-vault`（隐私，已立项） | 清洗结果的归档/导出 | 与 `trit-codec` 打包逐位一致 |
-| 运行时 | 无 mmap、无 async、无 SIMD 抽象（AVX512 只存在于 `other-languages/asm`） | 大文件清洗的吞吐；签名去重（E）的吞吐 | 与现有内核读数同档（GB/s 级） |
+| 运行时 | ~~mmap 与 SIMD 抽象~~ **已建（2026-11-12）**：`trit-mmap` 只读映射 + `trit-simd` popcount/Hamming 运行时派发（AVX512/POPCNT/NEON/标量）；**async 仍缺** | 大文件吞吐与指纹去重（E）的底座已具备 | 逐字节对拍 + 全长度标量参考对拍 + 变异 6/6 |
 | 观测 | 无 tracing/metrics/错误分类 crate | 清洗任务要能解释“慢在哪/为什么 defer” | 每条 defer 带结构化原因码 |
 | 工具链 | 无批量格式转换/内置存储管线（隐私任务要）；无清洗 CLI | 落地形态 | 见 PRIVACY-PLAN §3.6 的判据 |
 | 语料 | 无“数据清洗对拍语料”（生成器 + 小规模穷举集） | 判据需要标准输入 | 生成器可复现（固定种子），小规模可穷举 |

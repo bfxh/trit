@@ -1,0 +1,38 @@
+[
+  {
+    "name": "simd: 标量 popcount 数 0",
+    "file": "crates/trit-simd/src/lib.rs",
+    "old": "fn scalar_popcount(words: &[u64]) -> u64 {\n    words.iter().map(|word| u64::from(word.count_ones())).sum()\n}",
+    "new": "fn scalar_popcount(words: &[u64]) -> u64 {\n    words.iter().map(|word| u64::from(word.count_zeros())).sum()\n}",
+    "pkg": "trit-simd",
+    "filter": "all_lengths_match_scalar_reference",
+    "runner": "cargo"
+  },
+  {
+    "name": "simd: 标量 hamming 用与代替异或",
+    "file": "crates/trit-simd/src/lib.rs",
+    "old": "fn scalar_hamming(left: &[u64], right: &[u64]) -> u64 {\n    left.iter()\n        .zip(right)\n        .map(|(a, b)| u64::from((a ^ b).count_ones()))",
+    "new": "fn scalar_hamming(left: &[u64], right: &[u64]) -> u64 {\n    left.iter()\n        .zip(right)\n        .map(|(a, b)| u64::from((a & b).count_ones()))",
+    "pkg": "trit-simd",
+    "filter": "hamming_matches_reference_and_is_symmetric",
+    "runner": "cargo"
+  },
+  {
+    "name": "simd: 派发永不选 POPCNT",
+    "file": "crates/trit-simd/src/lib.rs",
+    "old": "    #[cfg(target_arch = \"x86_64\")]\n    {\n        if std::arch::is_x86_feature_detected!(\"popcnt\") {\n            return Backend::Popcnt;\n        }\n    }",
+    "new": "    #[cfg(target_arch = \"x86_64\")]\n    {\n        if false {\n            return Backend::Popcnt;\n        }\n    }",
+    "pkg": "trit-simd",
+    "filter": "dispatch_uses_hardware_popcount_on_x86",
+    "runner": "cargo"
+  },
+  {
+    "name": "simd: hamming 长度检查关闭",
+    "file": "crates/trit-simd/src/lib.rs",
+    "old": "    if left.len() != right.len() {",
+    "new": "    if false {",
+    "pkg": "trit-simd",
+    "filter": "length_mismatch_is_an_error",
+    "runner": "cargo"
+  }
+]
