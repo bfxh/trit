@@ -21,6 +21,7 @@
     "trit-bdd": "algo",
     "trit-count": "algo",
     "trit-mv": "algo",
+    "trit-num": "ops",
     "trit-ir": "algo",
     "trit-clean": "algo",
     "trit-circuit": "algo",

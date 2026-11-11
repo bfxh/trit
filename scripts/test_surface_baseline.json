@@ -25,6 +25,7 @@
  "crate/trit-machines": 27,
  "crate/trit-mv": 9,
  "crate/trit-net": 93,
+ "crate/trit-num": 18,
  "crate/trit-ops": 35,
  "crate/trit-orch": 160,
  "crate/trit-parts": 221,
