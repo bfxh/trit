@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（`trit-ir`：DAG IR + pass 框架 + 双 oracle 等价验证）
+
+- 新 crate `crates/trit-ir`（algo 层）：有序 arena **DAG IR**（子节点下标小于父节点，求值一趟线性扫描；
+  `to_expr` 可展开回树）；`eval` 语义与 `trit-eval` 逐点一致（含 `Xor = strong_add`）。
+- pass 框架：`ConstantFold`（常量子树折叠，折叠后剪掉不可达节点）、`Simplify`（复用 `trit-eval` 的代数感知化简器）、
+  `Cse`（结构哈希合并重复子表达式，DAG 共享）；`Pipeline::run_verified` 在每一步后用
+  **`trit-sat` 符号判定 + `trit-bdd`** 双 oracle 证明「新 IR ≡ 旧 IR」，判不等价或 oracle 算不出来都直接判红。
+- 读数：`cargo test -p trit-ir` = 12 单测 + 4 集成；批量表达式 × 三语义在全部赋值上逐点一致；
+  默认管道对 `(a&b)|(a&b)` 节点 7 → 4（CSE 合回）；变异 8/8 抓住。
+- 口径记录：`Simplify` 会把 DAG 展开成树，因此必须排在 `Cse` 之前；重跑管道时最终 IR 收敛但中间计数会波动
+  （测试按“收敛点”判定，不按“第二遍零改写”）。
+
 ### Added（底层代数补齐：`trit-mv` + `trit-belnap` 双格）
 
 - 新 crate `crates/trit-mv`（base 层）：有限 Łukasiewicz 链 `Ł_{n+1}`，取值 `0..=n` 整数精确；
