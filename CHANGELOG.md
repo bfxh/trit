@@ -19,6 +19,7 @@
 - `PenetrationOracle`：sphere/capsule/box 两两 collider 穿透检测（OBB 15 轴 SAT、capsule-box slab + 三元搜索最近点）；trigger/层过滤；非均匀缩放 sphere/capsule 返回 `Unknown`。
 - 受控污染事务：checkpoint → 注入 → 扫描 → 默认回滚 → 验证；checkpoint 失败降级 pristine，再失败 quarantine；apply 中途失败也回滚；恢复本身有 restore/verify/apply 三类混沌测试。
 - 读数（可复算）：`cargo test -p trit-gamescan` = 2 单测 + 9 penetration 集成 + 15 Phase 0 集成（共 26 条）；`cargo clippy -p trit-gamescan --all-targets -- -D warnings` 通过；单文件均在 800 行预算内。
+- 门禁登记：`scripts/test_surface_baseline.json` 登记 `crate/trit-gamescan: 26`；`scripts/mutants/trit-gamescan.json` 8 条变异，本地 `mutation_check.py --pkg trit-gamescan` 8/8 抓住。
 - 说明文档：`docs/GAME-SCAN.md`；OpenAI FUSF 论文只作为“观测/规则分离、无根等变、Borel 因子≠finitary 局部算法”的设计参考，不声称其证明本 crate。
 
 ### Added（`trit-ir`：DAG IR + pass 框架 + 双 oracle 等价验证）
