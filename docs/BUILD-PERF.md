@@ -8,7 +8,8 @@
 本机的边际编译已经是"根代码级"（改一个 crate → `cargo check` **3.1s**、测试二进制 **5.4s**；
 从零 `cargo check --workspace` **10.9s**，24 核 / NVMe）。真正的浪费不在本机，而在 CI：
 **只改脚本的 PR 也在全量重编 Rust 代码**（Windows job 12 分钟里 10 分钟花在没变的 Rust 上）。
-本次落地的是把这类改动从 cargo 矩阵里摘出去；本机加了 sccache，但它的收益有明确边界（见 §3）。
+本次落地的是把这类改动从 cargo 矩阵里摘出去；本机加了 sccache，但它的收益有明确边界（见 §3）；
+测试执行换 cargo-nextest（跨二进制并行），CI 每轮编译再叠一层 sccache GHA 缓存（见 §4）。
 
 ## 1. 本机读数（24 核 Intel Ultra 7 270K Plus，NVMe SSD，rustc 1.99.0）
 
@@ -32,7 +33,7 @@
    **本次补上的缺口**：改动集完全不含 Rust 面时，连闭包都不用算——直接跳过 cargo 矩阵（§4）。
 3. **编得快**（并行/链接）：24 核 + dev 默认 `codegen-units=256` 已把前端并行拉满；
    Linux 自 Rust 1.90 起默认 `rust-lld`，链接这一层无需额外配置。
-4. **测得快**（执行）：测试执行是下一步候选（cargo-nextest，见 §5）。
+4. **测得快**（执行）：cargo-nextest 跨二进制并行（见 §8）。
 
 ## 3. sccache：能力边界比开关重要
 
@@ -81,8 +82,8 @@ PR 没碰任何 Rust 文件。落地改动（`.github/workflows/ci.yml`）：
 | nightly `-Zthreads` / `-Zshare-generics` | 观望 | 外部实测约 22.7%（[Depot](https://depot.dev/blog/guide-to-faster-rust-builds-in-ci)，未复现）；要求 nightly，与本仓 stable/MSRV 口径冲突 |
 | Cranelift 后端（dev 构建） | 未采纳 | 仍需 nightly 组件；外部报告在低层依赖上直接失败（同上来源） |
 | mold（Linux 链接器） | 不需要 | Linux 自 Rust 1.90 起默认 `rust-lld`（[Rust 官方博客](https://blog.rust-lang.org/2025/09/01/rust-lld-on-1.90.0-stable/)），再换收益边际 |
-| cargo-nextest（测试执行） | 下一步候选 | 并行跑跨二进制测试，外部实测 warm sccache 下总时长 -35%（同 Depot 来源）；需拆分 doctest 与安装步骤，单独 PR 验证 |
-| CI 上的 sccache（GHA 后端） | 下一步候选 | 路径固定 ⇒ 可命中；但 `rust-cache` 已覆盖 target 复用，需先测量缓存淘汰场景再决定 |
+| cargo-nextest（测试执行） | **已落地** | 跨二进制并行；本机热态 63.7s → 58.4s（2502 条测试，24 核），CI 见 §8 |
+| CI 上的 sccache（GHA 后端） | **已落地** | 路径固定 ⇒ 可命中；与 `rust-cache` 互补（target 缓存淘汰/换 feature 组合时兜底），CI 见 §8 |
 | 多 worktree 共享 target 目录 | 不推荐 | 锁竞争 + 指纹互相失效；实测跨目录 sccache 0 命中，共享目录也难两全 |
 
 ## 6. 复算命令
@@ -107,3 +108,16 @@ gh api repos/bfxh/trit/actions/runs/<run-id>/jobs --jq '.jobs[] | {name, started
 
 - CI 作用域改动只影响 `if:` 条件，回滚 = 恢复那一行正则。
 - 本机 sccache：删用户级 cargo 配置的 `[build]` 两行即可；缓存目录可直接删除（可重建）。
+
+## 8. 测试执行：cargo-nextest + sccache（2026-11-11 落地）
+
+- **本地（24 核，热态，2502 条测试 / 1 skipped）**：`cargo test --workspace --locked` **63.7s**，
+  `cargo nextest run --workspace --locked` **58.4s**（其中执行 50.0s）——本机核心多，收益只有 ~8%；
+  CI 的 4 核 runner 上跨二进制调度收益更大（见下）。
+- **CI 首轮（sccache 冷缓存）**：Windows job 727s → 700s、macOS 255s → 217s、Ubuntu 220s → 200s；
+  其中 `Test` step 240s → 218s（另有独立 doctest step 7s，nextest 不跑 doctest，必须单列）。
+- **CI 稳态（sccache 命中，同一提交重跑）**：Windows job **727s → 493s（-32%）**，其中 GPU 冒烟 372s → 219s、Test 240s → 167s；macOS 255s → 222s、Ubuntu 220s → 200s。
+  说明：sccache 的增益在第二轮才体现（首轮全 miss），rust-cache 与它互补。
+- 成本：sccache 安装 2s、nextest 安装 3s（`taiki-e/install-action`，版本钉死）。
+- 口径：`cargo nextest run $SCOPE_ARGS --locked` 与 `cargo test $SCOPE_ARGS --locked --doc` 成对出现，
+  少任何一条都算测试面缩水。
