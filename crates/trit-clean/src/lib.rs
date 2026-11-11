@@ -15,22 +15,28 @@
 //! assert!(report.score() < 0.5);
 //! ```
 //!
-//! 精确计数（[`completions`] / [`minimal_repairs`]）的边界：变量数、候选格数有硬上限，
-//! 超限返回结构化错误而不是静默降级。
+//! 精确计数（[`completions`] / [`minimal_repairs`]）的边界：变量数、候选格数有硬上限；
+//! 变量超限时可显式改用 [`completions_or_sample`]（抽样结果带标记与置信区间），
+//! 其余超限仍是结构化错误。两条独立计数链（DPLL / BDD）可用 [`crosscheck`] 对拍。
 //!
 //! 口径与 SQL 三值逻辑对齐：`NULL` 参与比较得到 UNKNOWN；`CHECK` 只在 False 时违反；
 //! `UNIQUE` 里 `NULL` 互不冲突。对拍见 `tests/sqlite_parity.rs`（真 SQLite）。
 
 #![forbid(unsafe_code)]
 
+pub mod bdd;
 pub mod dsl;
 pub mod eval;
 pub mod repair;
+pub mod sample;
 pub mod value;
 
+pub use bdd::{BDD_MAX_NODES, Crosscheck, crosscheck};
 pub use dsl::{CmpOp, Rule, RuleError, parse_rules};
 pub use eval::{Counts, NodeState, Report, TableState, eval_row_rule, eval_unique, evaluate};
 pub use repair::{
     Completion, Fill, MAX_CELLS, MAX_VARS, RepairCount, RepairError, completions, minimal_repairs,
+    minimal_repairs_auto,
 };
+pub use sample::{CompletionOutcome, SampleBudget, Sampled, completions_or_sample};
 pub use value::{Column, Table, TableError, Ty, Value};

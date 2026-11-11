@@ -161,19 +161,40 @@ pub enum RepairError {
         /// 域大小乘积。
         total: u128,
     },
+    /// 两条独立计数链结论不一致（DPLL vs BDD）：这是 bug，必须响亮失败。
+    #[error("交叉校验不一致：DPLL={dpll}，BDD={bdd}（两条编码链必须一致，请报告）")]
+    CrosscheckMismatch {
+        /// DPLL 计数。
+        dpll: u128,
+        /// BDD 计数。
+        bdd: u128,
+    },
+    /// 抽样预算为 0。
+    #[error("抽样预算必须 > 0")]
+    InvalidBudget,
 }
 
-/// 数一致完成。
+/// 编码并返回 (CNF, 全部完成数)；DPLL 与 BDD 两条计数链共用同一份编码。
+pub(crate) fn encode_plan(
+    table: &Table,
+    rules: &[Rule],
+    fills: &[Fill],
+) -> Result<(Cnf, u128), RepairError> {
+    validate_fills(table, fills)?;
+    let mut plan = Plan::build(table, fills)?;
+    let total = plan.total()?;
+    plan.encode(rules);
+    Ok((plan.cnf, total))
+}
+
+/// 数一致完成（DPLL 链）。
 pub fn completions(
     table: &Table,
     rules: &[Rule],
     fills: &[Fill],
 ) -> Result<Completion, RepairError> {
-    validate_fills(table, fills)?;
-    let mut plan = Plan::build(table, fills)?;
-    let total = plan.total()?;
-    plan.encode(rules);
-    let count = trit_count::dpll::count_cnf(&plan.cnf).count;
+    let (cnf, total) = encode_plan(table, rules, fills)?;
+    let count = trit_count::dpll::count_cnf(&cnf).count;
     if count > total {
         return Err(RepairError::EncodingBroken {
             counted: count,
@@ -273,6 +294,23 @@ pub fn minimal_repairs(
         count: 0,
         subsets_tried,
     })
+}
+
+/// 把“有域的列”在所有行上的格子都当候选 —— `UNIQUE` 这类跨行冲突不需要调用方逐格列举。
+///
+/// 候选总数仍受 [`MAX_CELLS`] 限制：超了返回结构化错误，不静默缩小范围。
+pub fn minimal_repairs_auto(
+    table: &Table,
+    rules: &[Rule],
+    domains: &[(usize, Vec<Value>)],
+) -> Result<RepairCount, RepairError> {
+    let mut candidates = Vec::new();
+    for row in 0..table.rows.len() {
+        for (col, _) in domains {
+            candidates.push((row, *col));
+        }
+    }
+    minimal_repairs(table, rules, &candidates, domains)
 }
 
 fn validate_fills(table: &Table, fills: &[Fill]) -> Result<(), RepairError> {
@@ -640,6 +678,21 @@ mod tests {
         assert!(!got.consistent);
         assert_eq!(got.depth, 0);
         assert_eq!(got.count, 0);
+    }
+
+    #[test]
+    fn auto_scope_repairs_unique_conflict() {
+        // [1, 1, 2]：改任一行的 1 为 3 都能解开冲突 ⇒ 最小修复深度 1、条数 2。
+        let t = table(vec![
+            vec![Value::Int(1), Value::Text("a".into())],
+            vec![Value::Int(1), Value::Text("b".into())],
+            vec![Value::Int(2), Value::Text("c".into())],
+        ]);
+        let rules = vec![Rule::Unique { col: 0 }];
+        let domains = [(0usize, vec![Value::Int(1), Value::Int(2), Value::Int(3)])];
+        let got = minimal_repairs_auto(&t, &rules, &domains).unwrap();
+        assert!(!got.consistent);
+        assert_eq!((got.depth, got.count), (1, 2), "got={got:?}");
     }
 
     #[test]

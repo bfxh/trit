@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-clean C2b：BDD×DPLL 交叉校验 + 超限抽样 + UNIQUE 自动范围）
+
+- `crosscheck`：同一份 CNF 用 `biodivine-lib-bdd` 独立计数，与 DPLL 对拍；不一致 ⇒ `CrosscheckMismatch`
+  结构化错误（响亮失败）；BDD 节点超 200k 跳过校验并在报告里标 `None`（“没校验到”≠“通过”）。
+- `completions_or_sample`：精确计数变量超 120 时按显式预算抽样（固定种子 SplitMix64 可复算），
+  结果带 `Sampled` 标记与 Wilson 95% 区间；预算为 0 直接报错。绝不静默降级。
+- `minimal_repairs_auto`：有域的列在所有行上的格子自动成为候选（`UNIQUE` 跨行冲突不用手工列举），
+  仍受候选格上限约束。
+- 判据：`cargo test -p trit-clean --locked` 共 45 条（30 单测 + 3 BDD 交叉 + 6 SQLite + 5 暴力 + 1 doctest）；
+  变异门 12/12 抓住（新增 4 条：BDD 跳子句 / BDD 计数 +1 / 抽样取反 / 自动候选清空）。
+
 ### Added（trit-clean M0：三值约束检查 + 精确修复计数）
 
 - 新 crate `crates/trit-clean`（algo 层）：规则 DSL（`NOT NULL` / `CHECK` / `DOMAIN` / `UNIQUE`）→ 三值求值

@@ -10,6 +10,7 @@ description = "三值约束检查 + 精确修复计数（数据清洗 M0）"
 [dependencies]
 trit-core.workspace = true
 trit-count.workspace = true
+biodivine-lib-bdd = "0.6.3"
 thiserror = "2.0.21"
 
 [dev-dependencies]
