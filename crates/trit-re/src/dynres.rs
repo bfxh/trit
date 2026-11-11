@@ -9,7 +9,7 @@
 //! 三值纪律：证据不完整的维度如实 `Unknown`/`False`，绝不参与 False
 //! 结论（误对齐不等于"没有"）。
 
-use crate::functions::stackstrings::stack_string_hits;
+use crate::functions::stackstrings::{stack_string_hits, stack_string_hits_arm64};
 use crate::imports::{self, LINUX_SENSITIVE_APIS, windows_sensitive_vocab};
 use crate::witness::Facts;
 use std::collections::BTreeSet;
@@ -25,6 +25,7 @@ fn vocab(linux: bool) -> Vec<&'static str> {
 }
 
 /// 写入 dynres 三事实（解析器 / 隐藏串 / 栈串）+ 注记带命中名单。
+/// `arm64` = AArch64 栈串形态（MOVZ/MOVK 半字流）；x86-64 = C6/C7/B8+r。
 #[allow(clippy::too_many_arguments)]
 pub fn set_facts(
     facts: &mut Facts,
@@ -35,6 +36,7 @@ pub fn set_facts(
     nonexec_slices: &[&[u8]],
     exec_slices: &[&[u8]],
     linux: bool,
+    arm64: bool,
 ) {
     let table = if linux {
         "动态符号表"
@@ -73,7 +75,12 @@ pub fn set_facts(
         ),
     );
 
-    let stack = stack_string_hits(exec_slices, &v);
+    // 栈串提取按机器派发：AArch64 = MOVZ/MOVK 半字流；x86-64 = C6/C7/B8+r。
+    let stack = if arm64 {
+        stack_string_hits_arm64(exec_slices, &v)
+    } else {
+        stack_string_hits(exec_slices, &v)
+    };
     let stack_note = if stack.is_empty() {
         "（无）".to_string()
     } else {
