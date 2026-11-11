@@ -433,6 +433,7 @@ fn fill_pe(bytes: &[u8], info: &pe::PeInfo, triage: &mut Triage) {
         &nonexec,
         &exec,
         false,
+        false,
     );
 }
 
@@ -542,6 +543,7 @@ fn fill_elf(bytes: &[u8], info: &elf::ElfInfo, triage: &mut Triage) {
         &nonexec,
         &exec,
         true,
+        info.machine == 0xB7,
     );
 }
 
