@@ -1859,6 +1859,7 @@ dependencies = [
 name = "trit-clean"
 version = "0.12.0"
 dependencies = [
+ "biodivine-lib-bdd",
  "rusqlite",
  "thiserror 2.0.21",
  "trit-core",
