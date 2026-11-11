@@ -2017,6 +2017,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-mv"
+version = "0.12.0"
+dependencies = [
+ "thiserror 2.0.21",
+ "trit-core",
+]
+
+[[package]]
 name = "trit-net"
 version = "0.12.0"
 dependencies = [

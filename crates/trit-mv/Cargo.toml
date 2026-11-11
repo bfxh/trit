@@ -1,0 +1,12 @@
+[package]
+name = "trit-mv"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "有限 MV-代数（Łukasiewicz 链）与 t-norm 族"
+
+[dependencies]
+trit-core.workspace = true
+thiserror = "2.0.21"
