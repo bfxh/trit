@@ -385,7 +385,9 @@ def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
         return "inconclusive", "无输出：进程没跑完就被杀或没跑起来"
     # 只认工具链自己打的诊断：断言行的例名里可能出现 "SyntaxError" 这类字样，
     # 把断言文本当成编译失败就会把"真抓住"误判成假杀（门自测第一版就这么翻车）。
-    diag = "\n".join(line for line in out.splitlines() if not line.startswith("FAIL "))
+    # lstrip 不是装饰：`ci_budget / secret_wiring / oops` 印的是缩进的 `  FAIL <例名>`，
+    # 不认缩进 ⇒ 这 50 条既进不了 diag 剔除、也点不出名，全落 unnamed（2026-11-03 全表普查实测）。
+    diag = "\n".join(line for line in out.splitlines() if not line.lstrip().startswith("FAIL "))
     if "could not compile" in diag or any(tok in diag for tok in syntax.split("|")):
         # 变异让代码编不过 ⇒ 测试根本没跑，这条"红"不证明任何断言。
         return "false_kill", ""
@@ -396,7 +398,7 @@ def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
         #   `SELF-TEST FAIL: <规则>`（hazard_gate）、
         #   裸 `assert` 抛出的 `AssertionError: <话>`（pr_hygiene）—— 那也是断言。
         for probe in (
-            lambda: next((l for l in out.splitlines() if l.startswith("FAIL ")), None),
+            lambda: next((l for l in out.splitlines() if l.lstrip().startswith("FAIL ")), None),
             lambda: next((l for l in out.splitlines() if "SELF-TEST FAIL" in l), None),
             lambda: next(
                 (
@@ -506,6 +508,23 @@ def main(pkgs: list[str], only: str = "") -> int:
         release_lock()
 
 
+def tally(
+    total: int, survived: int, false_kills: int, crash_kills: int,
+    timed_out: int, hang_kills: int, no_output: int, unnamed: int,
+) -> tuple[int, bool]:
+    """抓住多少条，以及门该不该判红。
+
+    `unnamed` = 进程 rc≠0 但既没有断言点名也没有崩溃签名：磁盘写满导致链接失败、
+    cargo 不在 PATH、harness 自己报错都落这一格。它不证明任何断言钉住了什么 ⇒
+    既不能计成抓住，也不能静默算过（原先就是把它计进 killed，于是环境一坏门反而"全绿"）。
+    `crash` / `hang` 单列但维持不判红：崩溃至少证明把守卫去掉会炸，只是没有断言兜着；
+    hang 是登记表声明的死循环，无断言可钉。
+    """
+    killed = (total - survived - false_kills - crash_kills
+              - timed_out - hang_kills - no_output - unnamed)
+    return killed, bool(survived or false_kills or timed_out or no_output or unnamed)
+
+
 def _run(mutants: list[dict]) -> int:
     problems = preflight(mutants)
     if problems:
@@ -585,16 +604,18 @@ def _run(mutants: list[dict]) -> int:
             continue
         if kind == "unnamed":
             unnamed.append(mutant["name"])
-            print(f"caught    {mutant['name']}  [(未点名测试)]")
+            print(f"UNNAMED   {mutant['name']}  [既无断言也无崩溃签名，多半是环境/工具链坏了]")
             continue
         print(f"caught    {mutant['name']}  [{detail}]")
 
-    killed = (len(mutants) - survived - len(false_kills) - len(crash_kills)
-              - len(timed_out) - len(hang_kills) - len(no_output))
+    killed, red = tally(
+        len(mutants), survived, len(false_kills), len(crash_kills),
+        len(timed_out), len(hang_kills), len(no_output), len(unnamed),
+    )
     print(
         f"\n断言抓住 {killed}，死循环抓住 {len(hang_kills)}，崩溃抓住 {len(crash_kills)}，"
         f"编译红假杀 {len(false_kills)}，存活 {survived}，超时 {len(timed_out)}，"
-        f"无输出 {len(no_output)}（共 {len(mutants)}）"
+        f"无输出 {len(no_output)}，未点名 {len(unnamed)}（共 {len(mutants)}）"
     )
     for name in timed_out:
         print(f"  TIMEOUT {name}")
@@ -612,9 +633,10 @@ def _run(mutants: list[dict]) -> int:
             print(f"    - {name}")
     if unnamed:
         print(f"  未点名（既无断言也无崩溃签名）: {', '.join(unnamed)}")
-    if survived or false_kills or timed_out or no_output:
+    if red:
         print("⇒ 门判红：假杀的条目要么改成语义变异（编得过、只改行为），要么删除；"
               "超时/无输出的条目要么等锁空闲重跑，要么抬 MUTANT_TIMEOUT_SECS 并写理由；"
+              "未点名的条目要先把它跑红的原因查清（盘满 / cargo 缺失 / harness 自身报错）；"
               "确实只会死循环的条目在登记表里写 hang_secs 声明，别让它冒充抓住。")
         return 1
     return 0
@@ -687,6 +709,27 @@ def self_test() -> int:
         "bash FAIL 点名→caught",
         classify("FAIL 自测：run 失败后没有中止脚本", 1, "bash"),
         ("caught", "FAIL 自测：run 失败后没有中止脚本"),
+    )
+
+    # 一b、计数口径：unnamed 不计算住且判红（环境坏了把整门"绿化"是踩过的假绿）
+    check("全抓住→不判红", tally(3, 0, 0, 0, 0, 0, 0, 0), (3, False))
+    check("未点名不算抓住且判红", tally(3, 0, 0, 0, 0, 0, 0, 1), (2, True))
+    check("崩溃单列但不判红", tally(3, 0, 0, 1, 0, 0, 0, 0), (2, False))
+    check("死循环单列但不判红", tally(3, 0, 0, 0, 0, 1, 0, 0), (2, False))
+    check(
+        "超时/无输出任一即判红",
+        [tally(3, 0, 0, 0, 1, 0, 0, 0)[1], tally(3, 0, 0, 0, 0, 0, 1, 0)[1]],
+        [True, True],
+    )
+    check(
+        "缩进两格的 FAIL 也算点名（ci_budget/secret_wiring/oops 的印法）",
+        classify("  FAIL red: stale baseline\nself-test: 9/10 passed", 1, "python"),
+        ("caught", "FAIL red: stale baseline ｜ self-test: 9/10 passed"),
+    )
+    check(
+        "缩进 FAIL 行里的 SyntaxError 同样不算编译红",
+        classify("  FAIL x: 文案里有 SyntaxError 字样\nself-test: 2/3 passed", 1, "python")[0],
+        "caught",
     )
 
     # 二、runner 推断：脚本绝不能落到 cargo 去跑
