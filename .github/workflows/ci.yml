@@ -138,6 +138,11 @@ jobs:
           # 一次抖动红掉所有 PR。这里给每次 apt 加硬超时（DNS 卡住时快速失败），失败后
           # 把 runner 的镜像清单（apt-mirrors.txt）与 sources 一起切到 azure 官方镜像再试。
           # 全部失败仍判红：iverilog 缺失时 HDL 仿真会静默跳过，按测试面缩水处理，不降级。
+          # 镜像里若已预装，直接复用（runner 断网时这是唯一不依赖外网的路径）。
+          if command -v iverilog >/dev/null 2>&1; then
+            echo "iverilog 已预装：$(command -v iverilog)"
+            exit 0
+          fi
           install() {
             timeout 120 sudo apt-get update -qq -o Acquire::Retries=1 -o Acquire::http::Timeout=15               && timeout 180 sudo apt-get install -y -qq -o Acquire::Retries=1 -o Acquire::http::Timeout=15 iverilog
           }
