@@ -2608,11 +2608,19 @@
  "filter": "export_with_bias_writes_f32_values"
 },
 {
- "name": "biasf: WSP2 不拒绝 f32 bias",
+ "name": "wsp2: 不写 biasf flags",
  "file": "crates/trit-wspace/src/wsp2.rs",
- "old": "        if !layer.bias_f32().is_empty() {",
- "new": "        if false {",
+ "old": "out.push(u8::from(has_bias_f32));",
+ "new": "out.push(0);",
  "pkg": "trit-wspace",
- "filter": "wsp2_rejects_biasf"
+ "filter": "round_trip_preserves_bias_f32"
+},
+{
+ "name": "wsp2: 不读 biasf",
+ "file": "crates/trit-wspace/src/wsp2.rs",
+ "old": "if flags & 1 != 0 {",
+ "new": "if false {",
+ "pkg": "trit-wspace",
+ "filter": "round_trip_preserves_bias_f32"
 }
 ]
