@@ -19,6 +19,7 @@
  "crate/trit-gpu": 53,
  "crate/trit-graph": 59,
  "crate/trit-immune": 253,
+ "crate/trit-ir": 16,
  "crate/trit-learn": 23,
  "crate/trit-lsp": 46,
  "crate/trit-machines": 27,
