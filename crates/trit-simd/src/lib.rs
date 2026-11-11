@@ -362,6 +362,15 @@ mod tests {
                 assert_eq!(popcount_words_with(Backend::Avx512, &words), expected);
             }
         }
+        #[cfg(target_arch = "aarch64")]
+        {
+            // macOS CI 就是 aarch64：这条会真正跑 NEON 内核。
+            assert_eq!(popcount_words_with(Backend::Neon, &words), expected);
+        }
+        #[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64")))]
+        {
+            let _ = expected;
+        }
     }
 
     #[test]
