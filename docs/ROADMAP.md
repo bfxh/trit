@@ -27,6 +27,7 @@
 | `trit-num` | ops | 最小二乘现在在 `trit-texture` 里就地写；`parts-depth` 用 f32 四累加器 | 与 f32 参考实现同比特精度对拍 |
 | `trit-export` | ops | 三值权重容器（量化 GGUF）还没有落点，属 codec/learn 边界 | 与 `trit-codec` 打包逐位一致 |
 | `trit-belnap` 的算子面 | ops | 四值现在**只有语义**（8 条测试、0 入边），接不了四值移植 | `trit-belnap` 语义穷举 |
+| `trit-clean`（**后期，不排期**） | algo | 三值约束检查 + 精确修复计数 + 三支决策（收/拒/转人工）；方向评估与底层缺口见 [DATA-CLEANING-PLAN.md](DATA-CLEANING-PLAN.md) | 与 SQL 三值语义、小规模穷举计数对拍；BDD×DPLL 交叉校验 |
 | `trit-vault`（**后期，不排期**） | ops | 照片/视频/文本的静态隐私：盘上只有随机噪声、元数据全加密，经自有挂载器（WinFsp/FUSE）正常打开；威胁模型与硬边界见 [PRIVACY-PLAN.md](PRIVACY-PLAN.md) | 容器/清单口径与 `trit-codec` 对拍；挂载器验收按计划 P2/P3 判据 |
 
 **挡住别人的一条**：`trit-mv` 不做，"用四值/n 值移植算法"就没有落点，只能各项目自己搓。
