@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added（隐私存储立项：后期任务，计划与硬边界先落纸）
+
+- 新增 `docs/PRIVACY-PLAN.md`：照片/视频/文本的静态隐私目标（盘上随机噪声、元数据全加密、经自有挂载器正常打开）、四级威胁模型（T1 文件扫描 / T2 内核与屏幕采集 / T3 云端审核 / T4 SSD 痕迹）、五层技术路线（容器格式、可否认、WinFsp/FUSE 适配器、运行时保护、内容形态）与不可达边界；含论文与开源参考（DEFY/NDSS'15、可否认加密理论、VeraCrypt hidden OS 攻击、隐写分析综述、WinFsp、Recall）。
+- ROADMAP §2 增加 `trit-vault`（ops 层，**后期、不排期**）；文档索引同步。
+- 定位写死：保护自己的数据不被商业扫描/上传；不做内核驱动、不针对执法取证。
+
 ### Changed（CI：测试换 cargo-nextest + 编译加 sccache GHA 缓存）
 
 - `check` job 的测试从 `cargo test --workspace` 换成 `cargo nextest run --workspace`（跨二进制并行调度）；
