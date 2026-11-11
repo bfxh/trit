@@ -1,0 +1,56 @@
+[
+ {
+  "name": "merge-json: 测试面棘轮取 min",
+  "file": "scripts/merge_json_union.py",
+  "old": "        merged[key] = max(int(left.get(key, 0)), int(right.get(key, 0)))",
+  "new": "        merged[key] = min(int(left.get(key, 0)), int(right.get(key, 0)))",
+  "pkg": "scripts/merge_json_union.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-json: 模块预算取 max",
+  "file": "scripts/merge_json_union.py",
+  "old": "        merged[name] = min(merged.get(name, lines), lines)",
+  "new": "        merged[name] = max(merged.get(name, lines), lines)",
+  "pkg": "scripts/merge_json_union.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-json: 文档卫生 changelog 取 max",
+  "file": "scripts/merge_json_union.py",
+  "old": "        merged[\"changelog\"] = min(int(left.get(\"changelog\", 0)), int(right.get(\"changelog\", 0)))",
+  "new": "        merged[\"changelog\"] = max(int(left.get(\"changelog\", 0)), int(right.get(\"changelog\", 0)))",
+  "pkg": "scripts/merge_json_union.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-json: 不认识形状静默清空",
+  "file": "scripts/merge_json_union.py",
+  "old": "    raise ValueError(\"不认识的 JSON 形状\")",
+  "new": "    return {}, 0",
+  "pkg": "scripts/merge_json_union.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-json: 结果写到 base 而不是 ours",
+  "file": "scripts/merge_json_union.py",
+  "old": "    Path(ours_path).write_text(",
+  "new": "    Path(base_path).write_text(",
+  "pkg": "scripts/merge_json_union.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "merge-json: 合并失败仍报成功",
+  "file": "scripts/merge_json_union.py",
+  "old": "        print(f\"json-union: 无法安全合并（{exc}）——留给 git 报冲突\", file=sys.stderr)\n        return 1",
+  "new": "        print(f\"json-union: 无法安全合并（{exc}）——留给 git 报冲突\", file=sys.stderr)\n        return 0",
+  "pkg": "scripts/merge_json_union.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
