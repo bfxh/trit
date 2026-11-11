@@ -28,9 +28,21 @@
 - **共享工作树只读**：`D:/KF/trit-wspace-wt` 是共享主工作树，**禁止在里面 `git switch`/提交**。
   每个任务用 `python scripts/gitflow.py worktree add <分支>` 新开工作树；实测多会话在里面反复切分支，
   会让另一个会话/服务一读就"失灵"。
+- **闸门装在本机（不是只写在文档里）**：每台机器/每个 clone 先跑一次
+  `python scripts/hooks.py install`，装三道钩子：
+  - `pre-commit`：共享工作树停在非 main（含 detached）时拒绝提交；main 上的提交一律拒绝；
+  - `post-checkout`：共享工作树被切到非 main 时自动切回 main，切不回大声报；
+  - `pre-push`：拒绝直推 main + 高置信度密钥扫描。
+  点对点放行用 `TRIT_ALLOW_SHARED_COMMIT=1` / `TRIT_ALLOW_MAIN_COMMIT=1` /
+  `TRIT_ALLOW_SHARED_SWITCH=1`；共享树清单可用 `TRIT_SHARED_WORKTREES` 覆盖（`os.pathsep` 分隔）。
+- **棘轮台账并发改不冲突**：`CHANGELOG.md` 走 `merge=union`；三本基线
+  （`scripts/test_surface_baseline.json`、`scripts/module_budget_baseline.json`、
+  `scripts/docs_hygiene_baseline.json`）走 `merge=json-union` 驱动
+  （`scripts/merge_json_union.py`，由 `hooks.py install` 注册）：
+  测试面取 max、模块预算取 min、文档卫生取 min，不认识形状一律留给 git 报冲突。
 - **main 必须且只能在一个工作树检出**；合并后立刻回收：`python scripts/worktree_guard.py --apply`
   （只回收「PR 已合 + 干净 + 本地 tip == PR head」的工作树与分支，脏的一律保留）。
 - 开工先 `python scripts/agent_claims.py check`，再 `claim`；收工 `release`。
-- `CHANGELOG.md` 走 `merge=union`：只在 `## [Unreleased]` 后追加条目，不要重排/改写相邻条目。
+- `CHANGELOG.md` 只在 `## [Unreleased]` 后追加条目，不要重排/改写相邻条目。
 - 长 CI（mutation 可达 1 小时）不要连环 rebase：先让基础门绿；同步用 `git merge origin/main`，
   不要 force-push 别人的分支。

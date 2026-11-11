@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（多会话事故的落点执法：提交/切分支钩子 + 棘轮台账合并驱动）
+
+- `scripts/hooks.py` 从只装 `pre-push` 扩到装三道钩子：`pre-commit`（共享工作树停在非 main 或 detached
+  时拒绝提交；main 上的提交一律拒绝；`TRIT_ALLOW_SHARED_COMMIT=1` / `TRIT_ALLOW_MAIN_COMMIT=1` 点对点放行）、
+  `post-checkout`（共享工作树被切到非 main 时自动切回 main，切不回大声报；`TRIT_ALLOW_SHARED_SWITCH=1` 放行）、
+  `pre-push`（原有：直推 main + 高置信度密钥扫描）。共享树清单默认 `trit-wspace-wt`，可用
+  `TRIT_SHARED_WORKTREES`（`os.pathsep` 分隔）覆盖；钩子经 `git rev-parse --git-path hooks` 定位，worktree 里也能装。
+- 新增 `scripts/merge_json_union.py`：`merge=json-union` 驱动，按台账形状做确定性 union
+  （测试面取 max、模块预算取 min、文档卫生 `changelog`/`drive_paths` 取 min），不认识形状 fail-closed 留给 git 报冲突；
+  `.gitattributes` 为三本基线登记；`hooks.py install` 同时写 `merge.json-union.driver`，`uninstall` 一并移除。
+- 自测都接真 git：`hooks.py --self-test` 48 条（真实 `git commit` 被拦、`git switch -c` 被弹回、
+  detached 弹回、非共享树不动、重入保护、驱动配置写入/移除）；`merge_json_union.py --self-test` 12 条
+  （临时仓里让 git 真调驱动：并集合并出 `{"a":3,"b":2}`、坏形状落到冲突）。
+- 变异登记：hooks 13 条 + merge 驱动 6 条，逐条抓住；其中「合并失败仍报成功」只有接线断言能抓，
+  纯函数自测抓不到——这也是把 `git merge` 场景写进自测的原因。
+
 ### Changed（门：模块预算改默认全量棘轮 + 一次性重录基线；新增磁盘介质门）
 
 - `scripts/module_budget.py`：扫描面从 `crates/*` 扩到全仓 `.rs`（跳过 target/.git 等），每个文件一条上限、只减不增；
