@@ -248,8 +248,15 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Gate self-test (positive + counterexamples)
         run: python3 scripts/module_budget.py --self-test
-      - name: Every file within budget or shrinking-only debt
+      - name: Every file within budget (default ratchet, whole repo)
         run: python3 scripts/module_budget.py
+      - name: Disk guard self-test (signal merge + size classes)
+        run: python3 scripts/disk_guard.py --self-test
+      # 观测轮：虚拟化层会把固态报成机械盘（WSL2 的 /dev/sdd 实测 rotational=1），
+      # runner 上报什么还没有证据 ⇒ 先只打印读数，拿到一轮真实结果再改成阻塞。
+      - name: Disk guard (build/test scratch off spinning disks)
+        run: python3 scripts/disk_guard.py --json
+        continue-on-error: true
 
   release-preflight:
     name: release preflight (self-test)
