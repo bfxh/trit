@@ -105,6 +105,7 @@
  "script/trit_train_tasks_smoke.py": 0,
  "script/vendor.py": 1,
  "script/verify_materials.py": 0,
+ "script/worktree_guard.py": 1,
  "script/yara_diff.py": 0,
  "script/yara_scale.py": 0
 }
