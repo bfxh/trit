@@ -570,6 +570,7 @@ fn pointer_table_harvest_filters() {
         plus,
         machine: 0x8664,
         timestamp: 0,
+        characteristics: 0x0102,
         subsystem: 3,
         entry_rva: 0x1000,
         image_base,

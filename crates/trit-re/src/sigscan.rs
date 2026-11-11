@@ -443,6 +443,19 @@ impl<'a> SigScan<'a> {
         truncated: bool,
         entrypoint: Option<u64>,
     ) -> SigReport {
+        self.scan_with_context(data, truncated, entrypoint, None)
+    }
+
+    /// 带 PE 模块上下文的扫描：`pe` = 调用方从 PE 头解析出的信息——
+    /// `pe.*` 子集属性据此求值；`None` = 非 PE / 解析失败 → `pe.*`
+    /// 如实弃权（Unknown），绝不猜。
+    pub fn scan_with_context(
+        &self,
+        data: &[u8],
+        truncated: bool,
+        entrypoint: Option<u64>,
+        pe: Option<&crate::pe::PeInfo>,
+    ) -> SigReport {
         let mut rules = Vec::new();
         for rule in self.rules {
             // 每个模式的命中偏移（首个起，最多 MAX_HITS 个）+ 扫描完成度
@@ -468,6 +481,7 @@ impl<'a> SigScan<'a> {
                 truncated,
                 binding: None,
                 entrypoint,
+                pe,
             };
             let met = eval(&rule.condition, &occurrences, &ctx);
             let hits: Vec<(String, u64)> = occurrences
@@ -509,6 +523,12 @@ impl<'a> SigScan<'a> {
 mod eval;
 
 use eval::{EvalCtx, eval};
+
+// ── pe.* 模块属性子集（YARA 完整子集方向）────────────────────────────
+
+mod peprops;
+
+use peprops::resolve as resolve_pe_prop;
 
 // ── 字节级匹配引擎（拆出守 800 行预算）──────────────────────────────────
 

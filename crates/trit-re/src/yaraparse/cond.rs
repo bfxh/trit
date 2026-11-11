@@ -243,13 +243,26 @@ impl<'a> CondParser<'a> {
     }
 
     /// 数值叶子之后的比较尾巴：`<cmpop> <数值叶子>`。裸数值不是布尔
-    ///（`filesize` 单独出现 = 条件不支持，如实报错）。
+    ///（`filesize` 单独出现 = 条件不支持，如实报错）——例外：官方
+    /// 允许裸布尔函数（`condition: pe.is_dll()`；探针实测 is_dll /
+    /// is_32bit 都是**函数**要 `()`，裸属性 `pe.is_dll` 官方编译报错），
+    /// 已知布尔函数按真值语义收窄为 `!= 0`；其余裸路径仍如实报错。
     fn cmp_tail(&mut self, lhs: Operand) -> Result<Condition, String> {
-        let Some(op) = self.parse_cmp_op() else {
-            return self.bail("数值后缺比较算子（裸数值不是布尔条件）");
-        };
-        let rhs = self.parse_num_leaf()?;
-        Ok(Condition::Cmp { lhs, op, rhs })
+        if let Some(op) = self.parse_cmp_op() {
+            let rhs = self.parse_num_leaf()?;
+            return Ok(Condition::Cmp { lhs, op, rhs });
+        }
+        if matches!(
+            &lhs,
+            Operand::Opaque(p) if p == "pe.is_dll(…)" || p == "pe.is_32bit(…)"
+        ) {
+            return Ok(Condition::Cmp {
+                lhs,
+                op: CmpOp::Ne,
+                rhs: Operand::Lit(0),
+            });
+        }
+        self.bail("数值后缺比较算子（裸数值不是布尔条件）")
     }
 
     /// 比较算子：`== != < <= > >=`（不匹配时不消费任何 token）。
@@ -340,24 +353,49 @@ impl<'a> CondParser<'a> {
             self.pos += 1;
             return self.offset_operand(rest);
         }
-        // 模块路径 `pe.xxx` 与未实现函数 `math.entropy(…)`：记名弃权。
-        // 裸未知词（不带点不带调用）如实报错——不装作能评估。
+        // 模块路径 `pe.xxx`（含数组式下标 `pe.sections[0].characteristics`）
+        // 与未实现函数 `math.entropy(…)`：记名弃权。裸未知词（不带点不带
+        // 下标不带调用）如实报错——不装作能评估。
         let next_is = |t: &Tok| self.toks.get(self.pos + 1) == Some(t);
-        if next_is(&Tok::Sym('.')) || next_is(&Tok::Sym('(')) {
+        if next_is(&Tok::Sym('.')) || next_is(&Tok::Sym('(')) || next_is(&Tok::Sym('[')) {
             self.pos += 1; // 吃掉词本身
             let mut path = w;
-            while self.eat_sym('.') {
-                match self.next() {
-                    Some(Tok::Word(seg)) => {
-                        path.push('.');
-                        path.push_str(&seg);
+            loop {
+                if self.eat_sym('.') {
+                    match self.next() {
+                        Some(Tok::Word(seg)) => {
+                            path.push('.');
+                            path.push_str(&seg);
+                        }
+                        other => return self.bail(&format!("模块路径缺段：{other:?}")),
                     }
-                    other => return self.bail(&format!("模块路径缺段：{other:?}")),
+                } else if self.eat_sym('[') {
+                    // 数组式下标：吞平衡的 [ ] 进路径（求值层对子集外
+                    // 路径如实 Unknown），后续段继续跟（[0].characteristics）
+                    let mut depth = 1i32;
+                    while let Some(t) = self.next() {
+                        match t {
+                            Tok::Sym('[') => depth += 1,
+                            Tok::Sym(']') => {
+                                depth -= 1;
+                                if depth == 0 {
+                                    break;
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    if depth != 0 {
+                        return self.bail("模块路径下标未闭合");
+                    }
+                    path.push_str("[…]");
+                } else if self.eat_sym('(') {
+                    self.skip_balanced()?;
+                    path.push_str("(…)");
+                    break;
+                } else {
+                    break;
                 }
-            }
-            if self.eat_sym('(') {
-                self.skip_balanced()?;
-                path.push_str("(…)");
             }
             return Ok(Operand::Opaque(path));
         }

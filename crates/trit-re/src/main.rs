@@ -352,8 +352,14 @@ fn run_sigscan(sample: &Path, rules_path: &Path) -> ExitCode {
                 .ok()
                 .and_then(|info| info.entry_file_offset())
         });
-    let report =
-        trit_re::sigscan::SigScan::new(&rules).scan_with_entrypoint(&bytes, false, entrypoint);
+    // pe.* 模块上下文：PE 才有；非 PE / 解析失败 = None → pe.* 弃权
+    let pe_info = trit_re::pe::parse(&bytes).ok();
+    let report = trit_re::sigscan::SigScan::new(&rules).scan_with_context(
+        &bytes,
+        false,
+        entrypoint,
+        pe_info.as_ref(),
+    );
     let stdout = io::stdout();
     let mut out = io::BufWriter::new(stdout.lock());
     for verdict in &report.rules {

@@ -7,21 +7,24 @@ use trit_core::value::Ternary;
 
 /// 求值上下文：扫描数据（filesize / uintN 的来源）+ 截断标志 +
 /// for-of 循环的当前串绑定（occurrences 的下标）+ 入口点文件偏移
-///（调用方从可执行头解析传入；`None` = 上下文缺失，entrypoint 弃权）。
-pub(super) struct EvalCtx<'d> {
+///（调用方从可执行头解析传入；`None` = 上下文缺失，entrypoint 弃权）+
+/// PE 模块信息（`pe.*` 子集属性求值；`None` = 非 PE / 缺上下文，弃权）。
+pub(super) struct EvalCtx<'d, 'p> {
     pub(super) data: &'d [u8],
     pub(super) truncated: bool,
     pub(super) binding: Option<usize>,
     pub(super) entrypoint: Option<u64>,
+    pub(super) pe: Option<&'p crate::pe::PeInfo>,
 }
 
-impl EvalCtx<'_> {
-    pub(super) fn with_binding(&self, index: usize) -> EvalCtx<'_> {
+impl EvalCtx<'_, '_> {
+    pub(super) fn with_binding(&self, index: usize) -> EvalCtx<'_, '_> {
         EvalCtx {
             data: self.data,
             truncated: self.truncated,
             binding: Some(index),
             entrypoint: self.entrypoint,
+            pe: self.pe,
         }
     }
 }
@@ -115,7 +118,14 @@ fn resolve(op: &Operand, occurrences: &[(String, Vec<u64>)], ctx: &EvalCtx) -> R
             Some(v) => Resolved::Val(v), // 调用方传入
             None => Resolved::Unknown,   // 缺上下文 = 弃权
         },
-        Operand::Opaque(_) => Resolved::Unknown,
+        Operand::Opaque(path) => {
+            // pe.* 子集：已知标量属性从 PE 上下文求值；子集外路径 /
+            // 缺上下文 = 记名弃权（Unknown），绝不猜。
+            match super::resolve_pe_prop(path, ctx.pe, Some(ctx.data.len() as u64)) {
+                Some(v) => Resolved::Val(v),
+                None => Resolved::Unknown,
+            }
+        }
         Operand::CurrentCount => ctx
             .binding
             .and_then(|i| occurrences.get(i))
