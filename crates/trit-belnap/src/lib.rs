@@ -91,6 +91,42 @@ impl B4 {
         self.equiv(other).not()
     }
 
+    /// 知识序合取（共识）：两轨各自 AND。
+    ///
+    /// 信息口径的“共识”：`T ⊗ B = T`、`T ⊗ F = N`、`B ⊗ B = B`。
+    pub const fn consensus(self, other: Self) -> Self {
+        let (t1, f1) = self.to_rails();
+        let (t2, f2) = other.to_rails();
+        Self::from_rails(t1 && t2, f1 && f2)
+    }
+
+    /// 知识序析取（轻信）：两轨各自 OR。
+    ///
+    /// `T ⊕ F = B`、`N ⊕ x = x`。
+    pub const fn gullibility(self, other: Self) -> Self {
+        let (t1, f1) = self.to_rails();
+        let (t2, f2) = other.to_rails();
+        Self::from_rails(t1 || t2, f1 || f2)
+    }
+
+    /// 共轭（conflation）`¬ₖ`：交换知识序的两端（`N↔B`，`T`/`F` 不动）。
+    ///
+    /// Belnap 否定只对**真序**是 De Morgan 否定；知识序的 De Morgan 要用它。
+    pub const fn conflation(self) -> Self {
+        let (t, f) = self.to_rails();
+        Self::from_rails(!f, !t)
+    }
+
+    /// 真序 `≤_t`：`a ≤_t b ⇔ a ∧ b = a`。
+    pub fn leq_truth(self, other: Self) -> bool {
+        self.and(other) == self
+    }
+
+    /// 知识序 `≤_k`：`a ≤_k b ⇔ a ⊗ b = a`。
+    pub fn leq_knowledge(self, other: Self) -> bool {
+        self.consensus(other) == self
+    }
+
     /// 是否为“确定为真”的值（`T` 或 `B`）。
     pub const fn is_designated(self) -> bool {
         matches!(self, Self::T | Self::B)
@@ -115,6 +151,24 @@ impl B4 {
             '*' | 'b' | 'B' => Some(Self::B),
             _ => None,
         }
+    }
+}
+
+/// 按**真序**合并多个来源（`∨_t` 折叠；空集合 ⇒ `N`）。
+pub fn merge_truth<I: IntoIterator<Item = B4>>(sources: I) -> B4 {
+    let mut sources = sources.into_iter();
+    match sources.next() {
+        None => B4::N,
+        Some(first) => sources.fold(first, B4::or),
+    }
+}
+
+/// 按**知识序**合并多个来源（共识 `⊗` 折叠；空集合 ⇒ `N`）。
+pub fn merge_knowledge<I: IntoIterator<Item = B4>>(sources: I) -> B4 {
+    let mut sources = sources.into_iter();
+    match sources.next() {
+        None => B4::N,
+        Some(first) => sources.fold(first, B4::consensus),
     }
 }
 
@@ -280,6 +334,9 @@ pub fn equivalent_within(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 四值全集（表的顺序：N/F/T/B）。
+    const B4_VALUES: [B4; 4] = [B4::N, B4::F, B4::T, B4::B];
     use trit_core::parser::Parser;
 
     fn p(src: &str) -> Expr {
@@ -369,6 +426,136 @@ mod tests {
             eval(&p("a | b"), &asg(&[("a", B4::N), ("b", B4::B)])),
             B4::T
         );
+    }
+
+    #[test]
+    fn truth_lattice_axioms_hold() {
+        for a in B4_VALUES {
+            for b in B4_VALUES {
+                assert_eq!(a.and(b), b.and(a), "交换律 a={a} b={b}");
+                assert_eq!(a.or(b), b.or(a), "交换律 a={a} b={b}");
+                assert_eq!(a.and(a), a);
+                assert_eq!(a.or(a), a);
+                // 吸收律
+                assert_eq!(a.and(a.or(b)), a, "吸收律 a={a} b={b}");
+                assert_eq!(a.or(a.and(b)), a, "吸收律 a={a} b={b}");
+                for c in B4_VALUES {
+                    assert_eq!(a.and(b).and(c), a.and(b.and(c)), "结合律");
+                    assert_eq!(a.or(b).or(c), a.or(b.or(c)), "结合律");
+                    // 分配律
+                    assert_eq!(
+                        a.and(b.or(c)),
+                        a.and(b).or(a.and(c)),
+                        "真序分配律 a={a} b={b} c={c}"
+                    );
+                    assert_eq!(
+                        a.or(b.and(c)),
+                        a.or(b).and(a.or(c)),
+                        "真序分配律 a={a} b={b} c={c}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn knowledge_lattice_axioms_hold() {
+        for a in B4_VALUES {
+            for b in B4_VALUES {
+                assert_eq!(a.consensus(b), b.consensus(a), "交换律 a={a} b={b}");
+                assert_eq!(a.gullibility(b), b.gullibility(a), "交换律 a={a} b={b}");
+                assert_eq!(a.consensus(a), a);
+                assert_eq!(a.gullibility(a), a);
+                assert_eq!(a.consensus(a.gullibility(b)), a, "吸收律 a={a} b={b}");
+                assert_eq!(a.gullibility(a.consensus(b)), a, "吸收律 a={a} b={b}");
+                for c in B4_VALUES {
+                    assert_eq!(
+                        a.consensus(b).consensus(c),
+                        a.consensus(b.consensus(c)),
+                        "结合律"
+                    );
+                    assert_eq!(
+                        a.gullibility(b).gullibility(c),
+                        a.gullibility(b.gullibility(c)),
+                        "结合律"
+                    );
+                    assert_eq!(
+                        a.consensus(b.gullibility(c)),
+                        a.consensus(b).gullibility(a.consensus(c)),
+                        "知识序分配律 a={a} b={b} c={c}"
+                    );
+                    assert_eq!(
+                        a.gullibility(b.consensus(c)),
+                        a.gullibility(b).consensus(a.gullibility(c)),
+                        "知识序分配律 a={a} b={b} c={c}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn orders_match_known_relations() {
+        assert!(B4::F.leq_truth(B4::N));
+        assert!(B4::N.leq_truth(B4::T));
+        assert!(B4::B.leq_truth(B4::T));
+        assert!(B4::F.leq_truth(B4::B));
+        assert!(!B4::N.leq_truth(B4::B));
+        assert!(!B4::B.leq_truth(B4::N));
+
+        assert!(B4::N.leq_knowledge(B4::F));
+        assert!(B4::N.leq_knowledge(B4::T));
+        assert!(B4::T.leq_knowledge(B4::B));
+        assert!(B4::F.leq_knowledge(B4::B));
+        assert!(!B4::B.leq_knowledge(B4::T));
+        assert!(!B4::F.leq_knowledge(B4::T));
+    }
+
+    #[test]
+    fn conflation_table_is_pinned() {
+        // 知识序的两端互换，T/F 不动：这正是“只看信息量、不看真假方向”的共轭。
+        assert_eq!(B4::T.conflation(), B4::T);
+        assert_eq!(B4::F.conflation(), B4::F);
+        assert_eq!(B4::B.conflation(), B4::N);
+        assert_eq!(B4::N.conflation(), B4::B);
+        for a in B4_VALUES {
+            assert_eq!(a.conflation().conflation(), a, "二次共轭还原 a={a}");
+        }
+    }
+
+    #[test]
+    fn negation_is_de_morgan_for_both_orders() {
+        for a in B4_VALUES {
+            assert_eq!(a.not().not(), a, "双重否定 a={a}");
+            for b in B4_VALUES {
+                assert_eq!(a.and(b).not(), a.not().or(b.not()));
+                assert_eq!(a.or(b).not(), a.not().and(b.not()));
+                // 知识序的 De Morgan 用 conflation（Belnap 否定对知识序不成立）。
+                assert_eq!(
+                    a.consensus(b).conflation(),
+                    a.conflation().gullibility(b.conflation())
+                );
+                assert_eq!(
+                    a.gullibility(b).conflation(),
+                    a.conflation().consensus(b.conflation())
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn merge_folds_sources_in_both_orders() {
+        // 真序 join：任一来源说真就是真；T 与 F 冲突时仍是 T（B 属于知识序的“矛盾”）。
+        assert_eq!(merge_truth([B4::T, B4::F]), B4::T);
+        assert_eq!(merge_truth([B4::T, B4::N]), B4::T);
+        assert_eq!(merge_truth([B4::F, B4::N]), B4::N);
+        assert_eq!(merge_truth([]), B4::N);
+        // 知识序 meet：只有一致的信息才留下；冲突退化成 N。
+        assert_eq!(merge_knowledge([B4::T, B4::F]), B4::N);
+        assert_eq!(merge_knowledge([B4::T, B4::N]), B4::N);
+        assert_eq!(merge_knowledge([B4::T, B4::B]), B4::T);
+        assert_eq!(merge_knowledge([B4::F, B4::B]), B4::F);
+        assert_eq!(merge_knowledge([]), B4::N);
     }
 
     #[test]

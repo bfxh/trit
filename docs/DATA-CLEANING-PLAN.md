@@ -27,10 +27,10 @@ SQL 的 `NULL`、缺失值、多源冲突、待人工复核——清洗的每一
 | A | **三值约束检查**（CHECK/FK/UNIQUE/NULL 传播） | `bool3` 位平面批量求值；UNKNOWN 是一等公民，不是补 0 | `trit-core` 的 bool3；位平面 ALU | 与 SQLite/Postgres 三值语义逐条对拍（NULL 传播一致） | **P0** |
 | B | **精确修复计数 / 清洁度分数** | 同一行“有 0/1/n 种最小修复”是计数问题，不是概率猜测 | `trit-count`：#SAT、BDD 计数、`crosscheck`；`trit-sat` 反例 | 小规模与穷举对拍；大规模 BDD×DPLL 交叉校验 | **P0** |
 | C | **三支决策动作门**（收/拒/转人工） | 三值输出天然对应三种动作；阈值可由代价矩阵算出 | 无（需新写）；论文成熟（3WD/TAO） | 阈值扫描的人工工作量–准确率曲线，对照二值基线 | **P0** |
-| D | **Belnap 四值多源合并**（真/假/矛盾/未知） | 四值比三值多一档“矛盾”，正是多源冲突的形态 | `trit-belnap` 只有语义（eval/table/equivalence），**缺算子面** | 与一致性查询（CQA）语义对拍 | P1 |
+| D | **Belnap 四值多源合并**（真/假/矛盾/未知） | 四值比三值多一档“矛盾”，正是多源冲突的形态 | `trit-belnap` 双格算子已建（2026-11-11：共识/轻信/共轭/合并） | 与一致性查询（CQA）语义对拍 | P1 |
 | E | **三值指纹去重**（近重复照片/文本） | `{-1,0,+1}` 签名 + popcount 内核；SimHash 的三值推广 | `trit-dot`（掩码/tryte 内核）、`trit-ops` | precision/recall 对拍 MinHash/SimHash | P1 |
 | F | **缺失值插补**（缺失=unknown，不补均值） | 粗糙集正域/边界域/负域 ↔ 三支聚类/属性约简 | 无；`trit-learn` 有回归底座 | 插补误差对拍 MICE/KNN（同一留出集） | P2 |
-| G | **三值规则挖掘**（不完美数据上的关联规则） | Łukasiewicz t-norm 做置信度；缺列不丢整条 | 无；前置是 `trit-mv`（t-norm 族） | 完备数据上与 Apriori 一致；不完备数据召回提升 | P2 |
+| G | **三值规则挖掘**（不完美数据上的关联规则） | Łukasiewicz t-norm 做置信度；缺列不丢整条 | `trit-mv` 已建（2026-11-11：Łukasiewicz 链 + 4 种 t-norm + residuum） | 完备数据上与 Apriori 一致；不完备数据召回提升 | P2 |
 | H | **数据契约编译器**（规则→三值 IR→电路） | 把业务规则编译成可计数电路；与 A/B 联动 | 无；前置是 `trit-ir` pass 框架 | 编译前后语义等价（真值表穷举） | P2 |
 | I | **文本/日志清洗**（三值模式匹配） | `trit-re` 的 YARA 子集 + 三值匹配 | `trit-re` | 与正则/YARA 对拍 | P3 |
 
@@ -73,8 +73,8 @@ SQL 的 `NULL`、缺失值、多源冲突、待人工复核——清洗的每一
 |---|---|---|---|
 | 计数/推理 | **加权模型计数（WMC）**：现在只有 #SAT（计数），没有按权重求和 | 清洁度的“概率版”（按来源可信度/修复代价加权）需要 WMC | 小规模与穷举加权和一致；与 #SAT 在权重=1 时逐位一致 |
 | 计数/推理 | CDCL 与预处理（BVE/BCE）、MaxSAT | DPLL 计数在中等规模会慢；MaxSAT 是“最少改几处”的直接求解器 | 标准集上与 DPLL 计数一致、超时率下降 |
-| 代数 | `trit-mv`（MV-algebra、t-norm 族、De Morgan 格、bilattice） | G 的前置；D 的四值算子面也需要格论口径 | 真值表穷举 + `trit-belnap` 对拍 |
-| 代数 | `trit-belnap` 的算子面（现在只有语义） | 多源合并（D）没有可用的复合/蕴含算子 | 与 CQA 语义对拍 |
+| 代数 | ~~`trit-mv`~~ **已建（2026-11-11）**：Łukasiewicz 链 + 4 种 t-norm + residuum | G 的前置已解除；D 的格论口径已具备 | 链上公理穷举 + `trit-core` Kleene 对拍 |
+| 代数 | ~~`trit-belnap` 的算子面~~ **已建（2026-11-11）**：双格 + 共识/轻信/共轭/合并 | 多源合并（D）的算子已具备；剩“合并策略接入 trit-clean” | 双格公理穷举 + 已知序关系 |
 | IR | `trit-ir` pass 框架（常量折叠/等价重写/CSE） | 数据契约编译器（H）的前置 | 每个 pass 以 `trit-sat`/`trit-bdd`/`trit-count` 为 oracle |
 | 数值 | `trit-num`（最小二乘等） | 插补（F）与部分清洗统计需要 | 与 f32 参考实现同比特精度对拍 |
 | 存储 | `trit-export`（量化容器）；`trit-vault`（隐私，已立项） | 清洗结果的归档/导出 | 与 `trit-codec` 打包逐位一致 |

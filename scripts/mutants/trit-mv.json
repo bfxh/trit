@@ -1,0 +1,65 @@
+[
+  {
+    "name": "mv: Łukasiewicz 只加一个操作数（单位元失效）",
+    "file": "crates/trit-mv/src/lib.rs",
+    "old": "            TNorm::Lukasiewicz => u32::try_from((xb + yb).saturating_sub(levels)).unwrap_or(0),",
+    "new": "            TNorm::Lukasiewicz => u32::try_from(xb.saturating_sub(levels)).unwrap_or(0),",
+    "pkg": "trit-mv",
+    "filter": "tnorm_axioms_hold_on_small_chains",
+    "runner": "cargo"
+  },
+  {
+    "name": "mv: residuum 把 x/y 写反（伴随律失效）",
+    "file": "crates/trit-mv/src/lib.rs",
+    "old": "                u32::try_from(u64::from(self.levels) + u64::from(y) - u64::from(x)).unwrap_or(0)",
+    "new": "                u32::try_from(u64::from(self.levels) + u64::from(x) - u64::from(y)).unwrap_or(0)",
+    "pkg": "trit-mv",
+    "filter": "residuum_adjunction_holds_for_left_continuous_norms",
+    "runner": "cargo"
+  },
+  {
+    "name": "mv: Drastic 丢掉 top 单位元",
+    "file": "crates/trit-mv/src/lib.rs",
+    "old": "                if y == self.levels {",
+    "new": "                if false {",
+    "pkg": "trit-mv",
+    "filter": "tnorm_axioms_hold_on_small_chains",
+    "runner": "cargo"
+  },
+  {
+    "name": "mv: 层数上限守卫关掉（可溢出）",
+    "file": "crates/trit-mv/src/lib.rs",
+    "old": "        if levels > MAX_LEVELS {",
+    "new": "        if false {",
+    "pkg": "trit-mv",
+    "filter": "guards_and_bounds_are_structured",
+    "runner": "cargo"
+  },
+  {
+    "name": "mv: 幂零最小的 top 分支取 max（单位元失效）",
+    "file": "crates/trit-mv/src/lib.rs",
+    "old": "                    x.min(y)\n                } else {\n                    0",
+    "new": "                    x.max(y)\n                } else {\n                    0",
+    "pkg": "trit-mv",
+    "filter": "tnorm_axioms_hold_on_small_chains",
+    "runner": "cargo"
+  },
+  {
+    "name": "mv: 弱与退化成 max",
+    "file": "crates/trit-mv/src/lib.rs",
+    "old": "        Ok(x.min(y))",
+    "new": "        Ok(x.max(y))",
+    "pkg": "trit-mv",
+    "filter": "weak_ops_match_kleene",
+    "runner": "cargo"
+  },
+  {
+    "name": "mv: 否定恒等（不是 n-x）",
+    "file": "crates/trit-mv/src/lib.rs",
+    "old": "        Ok(self.levels - x)",
+    "new": "        Ok(x)",
+    "pkg": "trit-mv",
+    "filter": "weak_ops_match_kleene",
+    "runner": "cargo"
+  }
+]

@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（底层代数补齐：`trit-mv` + `trit-belnap` 双格）
+
+- 新 crate `crates/trit-mv`（base 层）：有限 Łukasiewicz 链 `Ł_{n+1}`，取值 `0..=n` 整数精确；
+  4 种 t-norm（Minimum / Łukasiewicz / Drastic / 幂零最小）+ 对偶 t-conorm + residuum
+  （Drastic 非左连续，返回结构化 `NoResiduum`）。**Product 明确不收**：离散化后不满足结合律。
+- 判据：链上公理穷举（交换/结合/单位/单调，`levels=1..=5` × 4 族）、伴随律（左连续三种，`levels=1..=5`）、
+  `levels=2` 与 `trit-core` Kleene 弱运算逐点对拍（9 组）、Ł3 已知表（`U⊗U=F`、`U→U=T`）；变异 7/7。
+- `trit-belnap` 补齐双格面：共识 `⊗`、轻信 `⊕`、共轭 `¬ₖ`、真序/知识序比较、
+  `merge_truth` / `merge_knowledge`（多源合并，空集 ⇒ N）。
+- 过程中更正一个真实误解：**知识序的 De Morgan 不成立**（Belnap 否定只对真序是 De Morgan 否定），
+  需要 conflation `¬ₖ`；已写进测试与文档，并给 conflation 钉死真值表（防“换一种反自同构也满足律”的等价变异）。
+- 读数：`cargo test -p trit-mv -p trit-belnap` = trit-mv 7 单测 + 2 集成 + trit-belnap 14 单测（共 23 条）；变异 16/16（mv 7 + belnap 9）；
+  `docs/ROADMAP.md` §2 两行标记已建；`docs/DATA-CLEANING-PLAN.md` 的 D/G 前置已解除。
+
 ### Added（trit-clean C3：三支决策门 accept / reject / defer）
 
 - `gate`：每行输出一个动作与结构化原因码（Clean / Violating / UnknownOnly / TableViolation /
