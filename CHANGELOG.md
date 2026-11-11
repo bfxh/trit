@@ -16,6 +16,10 @@
 - 跨平台验证：`cargo check --target aarch64-unknown-linux-gnu -p trit-simd` 通过（NEON 分支编译）；
   MSRV 1.88 `check --all-targets` 通过。
 
+### Changed（docs：N1 批次规则集 v2 全量复扫读数入册）
+
+- `docs/CALIBRATION.md` 产线读数表追加 2026-11-12 行：53 样本规则集 v2 全量复扫——636 判定（false 537 / unknown 84 / true 15，良性无新误报）；`fn.injection_ordered`（CFG 地址序注入三件套）sim_lvl4 True、良性 47 条全 false/unknown（PE32 象限 xref 不完整如实 unknown）；ARM64 `stack_strings` 解码链 FPR 0/12——四象限词汇表统一，L6 逃逸形态平台盲区清零。
+
 ### Added（`trit-num`：数值原语——补偿求和 / Welford / 最小二乘 / 插补）
 
 - 新 crate `crates/trit-num`（ops 层）：`sum_neumaier`（补偿求和）、`Welford`（流式均值/方差，可合并）、
