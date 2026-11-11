@@ -1,0 +1,74 @@
+[
+  {
+    "name": "gamescan: sphere-sphere 深度丢掉对方半径",
+    "file": "crates/trit-gamescan/src/penetration.rs",
+    "old": "fn detect_sphere_sphere(a: &Sphere, b: &Sphere) -> PairResult {\n    let delta = sub(b.center, a.center);\n    let distance = length(delta);\n    let depth = a.radius + b.radius - distance;",
+    "new": "fn detect_sphere_sphere(a: &Sphere, b: &Sphere) -> PairResult {\n    let delta = sub(b.center, a.center);\n    let distance = length(delta);\n    let depth = a.radius - distance;",
+    "pkg": "trit-gamescan",
+    "filter": "spheres_overlap_and_separate",
+    "runner": "cargo"
+  },
+  {
+    "name": "gamescan: OBB SAT 重叠量算错",
+    "file": "crates/trit-gamescan/src/penetration.rs",
+    "old": "        let overlap = radius_a + radius_b - distance;",
+    "new": "        let overlap = radius_a - radius_b - distance;",
+    "pkg": "trit-gamescan",
+    "filter": "box_box_overlap_is_detected",
+    "runner": "cargo"
+  },
+  {
+    "name": "gamescan: capsule-box 非相交分支深度归零",
+    "file": "crates/trit-gamescan/src/penetration.rs",
+    "old": "    let depth = capsule.radius - distance;",
+    "new": "    let depth = 0.0;",
+    "pkg": "trit-gamescan",
+    "filter": "capsule_box_overlap_is_detected",
+    "runner": "cargo"
+  },
+  {
+    "name": "gamescan: trigger 过滤条件反转",
+    "file": "crates/trit-gamescan/src/penetration.rs",
+    "old": "    if collider.is_trigger && !include_triggers {",
+    "new": "    if collider.is_trigger && include_triggers {",
+    "pkg": "trit-gamescan",
+    "filter": "trigger_colliders_are_ignored_by_default",
+    "runner": "cargo"
+  },
+  {
+    "name": "gamescan: 零 scale 规则漏判",
+    "file": "crates/trit-gamescan/src/rules.rs",
+    "old": "                if !value.is_finite() || value.abs() <= f64::EPSILON {",
+    "new": "                if !value.is_finite() {",
+    "pkg": "trit-gamescan",
+    "filter": "zero_scale_is_detected",
+    "runner": "cargo"
+  },
+  {
+    "name": "gamescan: 重复 ID 规则不再报",
+    "file": "crates/trit-gamescan/src/rules.rs",
+    "old": "            if !seen.insert(entity.id) {",
+    "new": "            if !seen.insert(entity.id) && false {",
+    "pkg": "trit-gamescan",
+    "filter": "duplicate_ids_fail_and_cycle_rule_is_unknown",
+    "runner": "cargo"
+  },
+  {
+    "name": "gamescan: pristine 回退被关闭",
+    "file": "crates/trit-gamescan/src/recovery.rs",
+    "old": "        self.pristine = Some(id);",
+    "new": "        self.pristine = None;",
+    "pkg": "trit-gamescan",
+    "filter": "checkpoint_restore_failure_falls_back_to_pristine",
+    "runner": "cargo"
+  },
+  {
+    "name": "gamescan: 三值聚合把合取换成析取",
+    "file": "crates/trit-gamescan/src/findings.rs",
+    "old": "            .fold(Ternary::True, |acc, outcome| acc & outcome.trit)",
+    "new": "            .fold(Ternary::True, |acc, outcome| acc | outcome.trit)",
+    "pkg": "trit-gamescan",
+    "filter": "nan_position_is_detected_and_recovered",
+    "runner": "cargo"
+  }
+]

@@ -1,0 +1,11 @@
+[package]
+name = "trit-num"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "数值原语：补偿求和、Welford、最小二乘/岭回归、中位数与缺失插补"
+
+[dependencies]
+thiserror = "2.0.21"
