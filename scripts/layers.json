@@ -45,6 +45,7 @@
     "trit-immune": "prod",
     "trit-redteam": "prod",
     "trit-procscan": "prod",
+    "trit-gamescan": "prod",
     "trit-unsafe": "prod",
     "sansheng": "prod",
     "trit-bench": "base",

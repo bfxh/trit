@@ -115,6 +115,7 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-unsafe` | 用 K3 审 unsafe：Safe / Unknown / Risky 按 crate 合成；17 类高危形态 + extern 声明块 | `trit-unsafe` |
 | `trit-redteam` | 产物红队：硬化/泄密/双导轨/fuzz/侧信道 + 前端/后端产物识别（wasm/html = 前端，PE/ELF = 后端） | `trit-redteam` |
 | `trit-procscan` | 进程行为扫描 + 网络面检查（地址分类/外联/监听面/扇出/SYN_SENT/前后端角色） + 动态追溯/追踪（ppid 链回溯 + 后代子树 + 证据绑定） + MCP 配置优化（非管理员可用的证据面） | `trit-procscan` |
+| `trit-gamescan` | 游戏环境扫描 Phase 0：Ternary 三值判定、结构/物理 oracle、sphere/capsule/box 穿模、受控污染、checkpoint 回滚与恢复混沌测试 | 库（无引擎/MCP 依赖） |
 | `trit-re` | PE/ELF 逆向台账：节熵 / 导入能力面 / 叠加段 / PDB 与编译器指纹 / build-id；导入函数交叉引用（x86/x86-64/ARM64 的 IAT 与 ELF PLT/GOT，三值）、函数边界（`.pdata` / 符号表 / `.eh_frame` / `.debug_frame`）、函数级归属与同函数能力共现 → 三值判定 + 四值冲突，JSONL 输出 | `trit-re triage <PATH> [--jsonl] [--xref] [--functions]` |
 | `trit-lsp` | `.tri` 语言服务器：诊断 / 悬停真值表 / 补全 / 文档符号 / 定义-引用-高亮-重命名 / 矛盾律-排中律-语义分歧深层诊断 | `trit-lsp` |
 | `trit-train` | 三值训练 M0：STE 三变体 + 每行 scale + 位平面 ALU | `train-bench` |
