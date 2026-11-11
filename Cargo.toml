@@ -8,6 +8,7 @@ members = [
     "crates/trit-core",
     "crates/trit-learn",
     "crates/trit-graph",
+    "crates/trit-gamescan",
     "crates/trit-train",
     "crates/trit-lsp",
     "crates/trit-eval",
@@ -74,3 +75,4 @@ sansheng = { path = "crates/sansheng", version = "0.12.0" }
 trit-schedule = { path = "crates/trit-schedule", version = "0.12.0" }
 trit-orch = { path = "crates/trit-orch", version = "0.12.0" }
 trit-wspace = { path = "crates/trit-wspace", version = "0.12.0" }
+trit-gamescan = { path = "crates/trit-gamescan", version = "0.12.0" }

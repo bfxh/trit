@@ -25,6 +25,16 @@
   奇异/维度/非有限输入全部结构化报错；f64 vs f32 同题（固定种子 128×3）系数相对偏差 <1e-4，
   且 f64 对真值的误差小于 f32；Neumaier 在 `1e16+1−1e16` 上得 1（朴素累加得 0，作为对照断言）。
 - 变异门 7/7 抓住（过程中修掉两个“测试自身不严”的坑：锚点是更长标识符的前缀、共线夹具其实可逆）。
+### Added（`trit-gamescan`：游戏环境扫描 / 故障注入 / 恢复 Phase 0）
+
+- 新 crate `crates/trit-gamescan`（实验层，`publish = false`）：只依赖 `trit-core`，不依赖引擎或 MCP SDK；引擎/协议依赖留给 adapter crate。
+- 三值判定直接复用 `trit_core::Ternary`（Kleene）：`True` 通过、`False` 失败、`Unknown` 证据不足；聚合用 `&`，不把 `Unknown` 当 `Pass`。
+- 规范化 `WorldSnapshot`（实体/资源/collider + 稳定哈希）：结构规则覆盖重复 ID、悬空 parent、层级环、非有限 Transform、零 scale、非归一化 quaternion、重复资源键。
+- `PenetrationOracle`：sphere/capsule/box 两两 collider 穿透检测（OBB 15 轴 SAT、capsule-box slab + 三元搜索最近点）；trigger/层过滤；非均匀缩放 sphere/capsule 返回 `Unknown`。
+- 受控污染事务：checkpoint → 注入 → 扫描 → 默认回滚 → 验证；checkpoint 失败降级 pristine，再失败 quarantine；apply 中途失败也回滚；恢复本身有 restore/verify/apply 三类混沌测试。
+- 读数（可复算）：`cargo test -p trit-gamescan` = 2 单测 + 9 penetration 集成 + 15 Phase 0 集成（共 26 条）；`cargo clippy -p trit-gamescan --all-targets -- -D warnings` 通过；单文件均在 800 行预算内。
+- 门禁登记：`scripts/test_surface_baseline.json` 登记 `crate/trit-gamescan: 26`；`scripts/mutants/trit-gamescan.json` 8 条变异，本地 `mutation_check.py --pkg trit-gamescan` 8/8 抓住。
+- 说明文档：`docs/GAME-SCAN.md`；OpenAI FUSF 论文只作为“观测/规则分离、无根等变、Borel 因子≠finitary 局部算法”的设计参考，不声称其证明本 crate。
 
 ### Added（`trit-ir`：DAG IR + pass 框架 + 双 oracle 等价验证）
 

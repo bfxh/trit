@@ -1955,6 +1955,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-gamescan"
+version = "0.12.0"
+dependencies = [
+ "trit-core",
+]
+
+[[package]]
 name = "trit-gpu"
 version = "0.12.0"
 dependencies = [
