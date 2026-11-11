@@ -1,0 +1,65 @@
+[
+  {
+    "name": "num: Neumaier 补偿被丢掉",
+    "file": "crates/trit-num/src/sums.rs",
+    "old": "    sum + compensation",
+    "new": "    sum",
+    "pkg": "trit-num",
+    "filter": "neumaier_sum_survives_cancellation",
+    "runner": "cargo"
+  },
+  {
+    "name": "num: Welford 的 m2 用 delta²（方差算错）",
+    "file": "crates/trit-num/src/sums.rs",
+    "old": "        self.m2 += delta * (value - self.mean);",
+    "new": "        self.m2 += delta * delta;",
+    "pkg": "trit-num",
+    "filter": "welford_matches_naive_moments",
+    "runner": "cargo"
+  },
+  {
+    "name": "num: Welford 合并丢掉交叉项",
+    "file": "crates/trit-num/src/sums.rs",
+    "old": "        self.m2 += other.m2 + delta * delta * n1 * n2 / n;",
+    "new": "        self.m2 += other.m2;",
+    "pkg": "trit-num",
+    "filter": "welford_merge_matches_one_pass",
+    "runner": "cargo"
+  },
+  {
+    "name": "num: Cholesky 奇异判定关闭",
+    "file": "crates/trit-num/src/ols.rs",
+    "old": "                if !sum.is_finite() || sum <= 1e-12 {",
+    "new": "                if false {",
+    "pkg": "trit-num",
+    "filter": "singular_matrix_is_an_error",
+    "runner": "cargo"
+  },
+  {
+    "name": "num: 岭回归不向对角加 λ",
+    "file": "crates/trit-num/src/ols.rs",
+    "old": "        row[j] += lambda;",
+    "new": "        row[j] += 0.0;",
+    "pkg": "trit-num",
+    "filter": "ridge_handles_collinear_columns",
+    "runner": "cargo"
+  },
+  {
+    "name": "num: 偶数中位数只取左中位",
+    "file": "crates/trit-num/src/stats.rs",
+    "old": "        Ok(sum_neumaier(&[sorted[n / 2 - 1], sorted[n / 2]]) / 2.0)",
+    "new": "        Ok(sorted[n / 2 - 1])",
+    "pkg": "trit-num",
+    "filter": "median_matches_sorted_reference",
+    "runner": "cargo"
+  },
+  {
+    "name": "num: 线性插补忽略斜率",
+    "file": "crates/trit-num/src/impute.rs",
+    "old": "        .map(|(value, label)| label.unwrap_or_else(|| predict(&fit, &[*value])))",
+    "new": "        .map(|(value, label)| label.unwrap_or(fit.intercept))",
+    "pkg": "trit-num",
+    "filter": "linear_impute_recovers_exact_line",
+    "runner": "cargo"
+  }
+]

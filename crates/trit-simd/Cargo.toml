@@ -1,0 +1,12 @@
+[package]
+name = "trit-simd"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "位运算 SIMD 抽象：popcount / XOR-popcount 运行时派发（AVX512/POPCNT/NEON/标量）"
+build = "build.rs"
+
+[dependencies]
+thiserror = "2.0.21"

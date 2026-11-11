@@ -100,6 +100,7 @@
 #![forbid(unsafe_code)]
 
 pub mod analyze;
+pub mod artifact_shard;
 pub mod audit;
 pub mod cli;
 mod cli_audit;
@@ -120,6 +121,7 @@ pub mod probe;
 pub mod program;
 pub mod rebase;
 pub mod repair;
+pub mod safetensors;
 pub mod scale;
 pub mod shard;
 pub mod task;
@@ -127,6 +129,7 @@ pub mod transplant;
 pub mod trit;
 pub mod tune;
 pub mod wire;
+pub mod wsp2;
 
 pub use analyze::{
     Analysis, EditImpact, PairAnalysis, PairImpact, TripleAnalysis, TripleImpact, analyze,
@@ -150,6 +153,7 @@ pub use probe::{
 };
 pub use program::{Program, Report, Script, ScriptReport};
 pub use repair::{Repair, RepairOptions, repair};
+pub use safetensors::{Dtype, TensorInfo, Weights};
 pub use scale::{
     ScaleUnit, UnitPart, UnitPattern, combine_tasks, scale_task, scale_task_blocks,
     scale_task_blocks_map, scale_task_blocks_patterns, scale_task_layers, scale_task_rows,
@@ -168,3 +172,4 @@ pub use tune::{
     tune_task_weights_argmax, tune_task_weights_hamming, tune_task_weights_metric,
     tune_task_weights_readout, tune_task_weights_with,
 };
+pub use wsp2::{from_wsp2, to_wsp2};

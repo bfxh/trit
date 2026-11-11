@@ -141,6 +141,8 @@ pub enum Error {
         /// 非法的块大小。
         block: usize,
     },
+    /// 外部权重文件（safetensors）解析/写入错误。
+    External(String),
 }
 
 /// 库内统一 `Result`。
@@ -214,6 +216,7 @@ impl fmt::Display for Error {
             Self::InvalidBlock { block } => {
                 write!(f, "DARE 块大小 {block} 必须大于 0")
             }
+            Self::External(msg) => write!(f, "外部权重错误：{msg}"),
         }
     }
 }

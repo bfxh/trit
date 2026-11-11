@@ -1,0 +1,74 @@
+[
+  {
+    "name": "ir: 常量折叠把 Not 丢了",
+    "file": "crates/trit-ir/src/passes.rs",
+    "old": "                        Node::Const(ctx.alg.not(*value))",
+    "new": "                        Node::Const(*value)",
+    "pkg": "trit-ir",
+    "filter": "constant_fold_folds_not",
+    "runner": "cargo"
+  },
+  {
+    "name": "ir: 常量折叠把二元运算折成左操作数",
+    "file": "crates/trit-ir/src/passes.rs",
+    "old": "                        Node::Const(eval_op(ctx.alg, *op, *left, *right)?)",
+    "new": "                        Node::Const(*left)",
+    "pkg": "trit-ir",
+    "filter": "constant_fold_collapses_constant_subtrees",
+    "runner": "cargo"
+  },
+  {
+    "name": "ir: CSE 不查哈希表（重复子表达式不合）",
+    "file": "crates/trit-ir/src/passes.rs",
+    "old": "            let id = match interned.get(&mapped) {",
+    "new": "            let id = match None::<&NodeId> {",
+    "pkg": "trit-ir",
+    "filter": "cse_shares_repeated_subexpressions",
+    "runner": "cargo"
+  },
+  {
+    "name": "ir: CSE 根下标不重映射",
+    "file": "crates/trit-ir/src/passes.rs",
+    "old": "        let root = remap[ir.root()];",
+    "new": "        let root = ir.root();",
+    "pkg": "trit-ir",
+    "filter": "cse_shares_repeated_subexpressions",
+    "runner": "cargo"
+  },
+  {
+    "name": "ir: 等价验证开关失效（坏 pass 直接放行）",
+    "file": "crates/trit-ir/src/passes.rs",
+    "old": "            if verified {",
+    "new": "            if false {",
+    "pkg": "trit-ir",
+    "filter": "verified_pipeline_rejects_a_broken_pass",
+    "runner": "cargo"
+  },
+  {
+    "name": "ir: 求值丢掉否定",
+    "file": "crates/trit-ir/src/lib.rs",
+    "old": "                Node::Unary(Op::Not, a) => alg.not(values[*a]),",
+    "new": "                Node::Unary(Op::Not, a) => values[*a],",
+    "pkg": "trit-ir",
+    "filter": "eval_applies_negation",
+    "runner": "cargo"
+  },
+  {
+    "name": "ir: 求值把强加法当合取",
+    "file": "crates/trit-ir/src/lib.rs",
+    "old": "                        Op::Xor => alg.strong_add(left, right),",
+    "new": "                        Op::Xor => alg.and(left, right),",
+    "pkg": "trit-ir",
+    "filter": "xor_uses_strong_add",
+    "runner": "cargo"
+  },
+  {
+    "name": "ir: Simplify pass 空转",
+    "file": "crates/trit-ir/src/passes.rs",
+    "old": "        let simplified =\n            trit_eval::simplify_with(&expr, ctx.alg, trit_eval::SimplifyOptions::default());",
+    "new": "        let simplified = expr;",
+    "pkg": "trit-ir",
+    "filter": "simplify_reduces_and_is_verified",
+    "runner": "cargo"
+  }
+]

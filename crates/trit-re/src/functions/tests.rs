@@ -9,6 +9,7 @@ fn cooccurrence_case() -> FunctionReport {
             function: function(0x1000, 0x1100),
             imports: vec!["a!x".into(), "a!y".into()],
             buckets: vec!["a", "b"],
+            site_buckets: vec![(0x1010, vec!["a"]), (0x1040, vec!["b"])],
         }],
         total_functions: 1,
         exact: true,
@@ -606,4 +607,79 @@ fn pointer_table_harvest_filters() {
         "孤立非对齐指针 = 整数巧合，丢（宁可丢也不给假起点）"
     );
     assert!(!seeds.contains(&0), "NULL 槽位不收");
+}
+
+#[test]
+fn cooccurrence_ordered_discriminates_address_order() {
+    use super::{FuncSource, Function, FunctionCalls, FunctionReport};
+    use trit_core::value::Ternary;
+
+    fn report_of(sites: &[(u64, &[&'static str])]) -> FunctionReport {
+        FunctionReport {
+            functions: vec![FunctionCalls {
+                function: Function {
+                    start: 0x1000,
+                    end: 0x1100,
+                    name: None,
+                    source: FuncSource::Pdata,
+                },
+                imports: vec!["k!A".into(), "k!W".into(), "k!E".into()],
+                buckets: vec!["alloc", "write", "exec"],
+                site_buckets: sites.iter().map(|(addr, b)| (*addr, b.to_vec())).collect(),
+            }],
+            total_functions: 1,
+            exact: true,
+            attributed_sites: sites.len(),
+            unattributed_sites: 0,
+            unattributed_calls: 0,
+            unattributed_jumps: 0,
+            unattributed_buckets: vec![],
+            ruled_sites: vec![],
+            ruling_clip: 0,
+            ruling_miss: 0,
+            ruling_nonexec: 0,
+            ruling_thunk_gap: 0,
+            notes: vec![],
+        }
+    }
+    let trio = &["alloc", "write", "exec"];
+
+    // 正序：alloc(0x1010) → write(0x1040) → exec(0x1080) → 有序 True
+    let ok = report_of(&[
+        (0x1010, &["alloc"]),
+        (0x1040, &["write"]),
+        (0x1080, &["exec"]),
+    ]);
+    assert_eq!(ok.cooccurrence_ordered(trio, true), Ternary::True);
+    assert_eq!(ok.cooccurrence(trio, true), Ternary::True, "无序也真");
+
+    // **判别案**：地址序反着（exec → write → alloc）——无序 True、有序 False
+    let reversed = report_of(&[
+        (0x1010, &["exec"]),
+        (0x1040, &["write"]),
+        (0x1080, &["alloc"]),
+    ]);
+    assert_eq!(
+        reversed.cooccurrence(trio, true),
+        Ternary::True,
+        "无序桶挡不住"
+    );
+    assert_eq!(
+        reversed.cooccurrence_ordered(trio, true),
+        Ternary::False,
+        "地址序反着 = 有序检出拒绝"
+    );
+
+    // 交错（无关调用插中间）= 子序列语义，仍 True
+    let interleaved = report_of(&[
+        (0x1010, &["alloc"]),
+        (0x1020, &["other"]),
+        (0x1040, &["write"]),
+        (0x1060, &["other"]),
+        (0x1080, &["exec"]),
+    ]);
+    assert_eq!(interleaved.cooccurrence_ordered(trio, true), Ternary::True);
+
+    // 边界不精确 → Unknown（与无序同口径）
+    assert_eq!(ok.cooccurrence_ordered(trio, false), Ternary::Unknown);
 }

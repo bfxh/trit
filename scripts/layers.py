@@ -121,6 +121,10 @@ def check_capabilities(table: dict, known_crates: set[str]) -> list[str]:
 
 
 def main(argv: list[str]) -> int:
+    # 中文 Windows 控制台默认 gbk，打印 '⇒' 会 UnicodeEncodeError；输出必须能降级。
+    for _stream in (sys.stdout, sys.stderr):
+        if hasattr(_stream, "reconfigure"):
+            _stream.reconfigure(encoding="utf-8", errors="replace")
     if "--self-test" in argv:
         return self_test()
     members = workspace_members()

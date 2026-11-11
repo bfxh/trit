@@ -13,3 +13,12 @@
 - 收工一条命令：`cargo test --workspace` + `python scripts/module_budget.py`。
 - 训练层在 `crates/trit-train`（STE + 位平面 ALU）；新模型优先复用同一套量化/STE 口径。
 - 三进制结论按 `docs/TERNARY-BOUNDARIES.md` 归 A/B/C/D，且必须带二进制基线。
+
+## 默认阅读（三进制 / 无限图 / 游戏环境）
+
+涉及三进制智能体、无限图/无限世界、游戏环境扫描或故障注入时，先读：
+
+- OpenAI, *The free uniform spanning forest is a factor of IID*, 2026-09-25：Abstract、Theorem 1.1、Section 1.3，以及明确说明 “without a finitary coding radius or a finite input alphabet” 的段落。
+- `docs/GAME-SCAN.md`（本仓游戏环境扫描、故障注入与恢复设计）。
+
+引用规则：只引用“观测/规则分离、无根/重标记等变、Borel 因子 ≠ finitary 局部算法”这三个设计原则；必须说明论文对象是 FUSF，不是本仓扫描器或生成树，不得写成“论文证明了本实现”。
