@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-clean C3：三支决策门 accept / reject / defer）
+
+- `gate`：每行输出一个动作与结构化原因码（Clean / Violating / UnknownOnly / TableViolation /
+  Completion / SampledCompletion）。两种策略：`Policy::Loss`（代价矩阵最小化期望损失，平局默认 defer，
+  1e-12 容差）与 `Policy::Thresholds`（`p >= accept_at` 收、`p <= reject_at` 拒、其余转人工）。
+- 证据口径：有填充集的行用 `completions_or_sample` 的一致比例（精确或抽样，原因码写明样本数）；
+  无证据时按规则状态推导（干净 1.0 / 只 Unknown 0.5 / 有 False 0.0 / 表级 UNIQUE 冲突 0.5 转人工）。
+- `scan_confidence`：对称置信阈值扫描，输出每个阈值下的 accept/reject/defer 计数与期望总代价（单调性有测试）。
+- 判据：`cargo test -p trit-clean --locked` 共 55 条（40 单测 + 3 BDD 交叉 + 6 SQLite + 5 暴力 + 1 doctest）；
+  变异门 16/16 抓住（新增 4 条：平局默认 accept / 接受阈值错位 / 有 False 按干净 / 扫描阈值错位）。
+
 ### Added（trit-clean C2b：BDD×DPLL 交叉校验 + 超限抽样 + UNIQUE 自动范围）
 
 - `crosscheck`：同一份 CNF 用 `biodivine-lib-bdd` 独立计数，与 DPLL 对拍；不一致 ⇒ `CrosscheckMismatch`
