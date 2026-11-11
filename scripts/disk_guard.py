@@ -316,7 +316,7 @@ def self_test() -> int:
         seen[0] += 1
         got, _ = read_evidence(*args)
         good = got == want
-        print(("PASS " if good else f"FAIL（得到 {got}） ") + name)
+        print(("PASS " if good else "FAIL ") + name + ("" if good else f"（得到 {got}）"))
         if not good:
             failures.append(name)
 

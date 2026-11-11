@@ -12,6 +12,9 @@
   `main.rs` + `checks.rs`（665 + 295 行）；`cargo run -- --conformance` 实测 k3 21 / belnap 36 / pack5 644 全过。
 - 修模块预算自测一个真漏洞：`expect(ok=True, needle=...)` 原先短路、不检查 needle，STALE/ORPHAN 断言形同虚设；
   修后自测 16/16，且 8 条变异（OVER/GREW/STALE/ORPHAN/refuse-raise/新超预算/cap 读取/格式识别）全部抓住。
+- 修 `disk_guard.py` 自测失败行格式：`FAIL（得到 …） 名称` 的全角括号紧跟 `FAIL`（没有空格），
+  `mutation_check` 点名探针只认 `FAIL ` ⇒ 5 条变异被判“未点名”（#238 之后直接判红）；
+  改成 `FAIL <名称>（得到 …）`，现在 12/12 点名抓住。
 - 新增磁盘介质门 `scripts/disk_guard.py`（构建/测试必须落固态，三路介质证据合成 + ALLOWED 逃生口），
   CI 增加 `disk guard` job（timeout + 自测 + `--json`）；其 12 条变异登记保留。
 
