@@ -25,7 +25,7 @@
 
 | 层 | 需要什么 | 本 crate | 缺口 |
 |---|---|---|---|
-| L0 表示 | 规范文本、逐 trit 可读、校验和、可 diff | `codec`（WSP1）+ `artifact_shard`（单层按行分片/合并）+ `wsp2`（2-bit 压缩容器） | 更大模型的块索引 |
+| L0 表示 | 规范文本、逐 trit 可读、校验和、可 diff | `codec`（WSP1，含可选 `biasf` f32 偏置行）+ `artifact_shard`（单层按行分片/合并）+ `wsp2`（2-bit 压缩容器） | 更大模型的块索引 |
 | L1 原语 | 改 trit/偏置/scale、换行、取反 | `edit`（`Edit`）+ `transplant`（单元级跨层搬运） | 任意块/子张量编辑 |
 | L2 事务 | 整体校验、失败零改动、逐位回滚 | `Patch` + `Journal` + `rebase`（三方重放） | 并发写锁 |
 | L3 程序语义 | 前置/后置行为条件、失败原样回滚 | `program` | 程序组合、条件跳转 |
@@ -98,6 +98,7 @@ trit-wspace pack-artifact word.wsp --out word.wsp2
 trit-wspace unpack-artifact word.wsp2 --out word.wsp
 trit-wspace export-safetensors up.wsp --out up.safetensors --tensor up_proj.weight
 trit-wspace export-safetensors norm.wsp --out norm.safetensors --tensor LayerNorm.weight --vector
+trit-wspace export-safetensors dense.wsp --out dense.safetensors --tensor dense.weight --bias
 trit-wspace mcp
 ```
 

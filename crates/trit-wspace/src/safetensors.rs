@@ -120,7 +120,13 @@ impl Weights {
                 .collect(),
             None => vec![0; self.rows],
         };
-        Layer::with_scales(self.rows, self.cols, &trits, &bias_trits, scales)
+        let layer = Layer::with_scales(self.rows, self.cols, &trits, &bias_trits, scales)?;
+        match bias {
+            Some(values) if values.iter().any(|value| *value != 0.0) => {
+                layer.with_bias_f32(values.to_vec())
+            }
+            _ => Ok(layer),
+        }
     }
 }
 

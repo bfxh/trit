@@ -118,6 +118,11 @@ pub fn split(net: &Net, shard_rows: usize) -> Result<(WeightManifest, Vec<String
         }
         let scales = layer.scales()[start..start + take].to_vec();
         let shard = Layer::with_scales(take, cols, &trits, &bias, scales)?;
+        let shard = if layer.bias_f32().is_empty() {
+            shard
+        } else {
+            shard.with_bias_f32(layer.bias_f32()[start..start + take].to_vec())?
+        };
         texts.push(to_wsp(&Net::new(vec![shard])?));
         manifest.shards.push(WeightShard {
             file: format!("part-{index:03}.wsp"),
@@ -140,6 +145,7 @@ pub fn join(manifest: &WeightManifest, texts: &[String]) -> Result<Net> {
     let mut trits = Vec::new();
     let mut bias = Vec::new();
     let mut scales = Vec::new();
+    let mut bias_f32: Option<Vec<f32>> = None;
     let mut next = 0usize;
     for (shard, text) in manifest.shards.iter().zip(texts) {
         if shard.start != next {
@@ -166,6 +172,19 @@ pub fn join(manifest: &WeightManifest, texts: &[String]) -> Result<Net> {
         trits.extend(layer.trits().iter().map(|trit| trit.to_i8()));
         bias.extend(layer.bias().iter().map(|trit| trit.to_i8()));
         scales.extend_from_slice(layer.scales());
+        match (bias_f32.as_mut(), layer.bias_f32()) {
+            (None, []) => {}
+            (None, values) => bias_f32 = Some(values.to_vec()),
+            (Some(acc), values) => {
+                if values.is_empty() {
+                    return Err(Error::Wire(format!(
+                        "分片 {} 缺少 biasf，其它分片有",
+                        shard.file
+                    )));
+                }
+                acc.extend_from_slice(values);
+            }
+        }
         next += shard.rows;
     }
     if next != manifest.rows {
@@ -175,5 +194,9 @@ pub fn join(manifest: &WeightManifest, texts: &[String]) -> Result<Net> {
         )));
     }
     let layer = Layer::with_scales(manifest.rows, manifest.cols, &trits, &bias, scales)?;
+    let layer = match bias_f32 {
+        Some(values) => layer.with_bias_f32(values)?,
+        None => layer,
+    };
     Net::new(vec![layer])
 }

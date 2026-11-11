@@ -5,8 +5,8 @@ use std::path::PathBuf;
 use std::process::{Command, Output};
 
 use serde_json::Value;
-use trit_wspace::from_wsp;
 use trit_wspace::safetensors::{list, read_tensor};
+use trit_wspace::{Layer, Net, from_wsp, to_wsp};
 
 fn temp_dir(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("trit-bias-{tag}-{}", std::process::id()));
@@ -99,7 +99,11 @@ fn read_tensor_from_values(
     cols: usize,
     values: &[f32],
 ) -> trit_wspace::safetensors::Weights {
-    let dir = temp_dir("inline");
+    static INLINE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let index = INLINE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let dir = std::env::temp_dir().join(format!("trit-bias-inline-{}-{index}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).expect("temp dir");
     let path = dir.join("w.safetensors");
     fixture(&path, &[("w", "F32", [rows, cols], f32_bytes(values))]);
     read_tensor(path.to_str().unwrap(), "w").expect("read")
@@ -284,4 +288,124 @@ fn cli_import_vector_and_export_vector_shape() {
     let vector =
         trit_wspace::safetensors::read_vector(exported.to_str().unwrap(), "v").expect("vector");
     assert_eq!(vector.len(), 3);
+}
+
+#[test]
+fn wsp1_round_trip_preserves_bias_f32() {
+    let weights = read_tensor_from_values(2, 3, &[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]);
+    let layer = weights
+        .to_layer_with_bias(Some(&[0.25, -0.75]))
+        .expect("layer");
+    assert_eq!(layer.bias_f32(), &[0.25, -0.75]);
+    let net = Net::new(vec![layer]).expect("net");
+    let text = to_wsp(&net);
+    assert!(text.contains("biasf"), "{text}");
+    let back = from_wsp(&text).expect("parse");
+    assert_eq!(back.layers()[0].bias_f32(), &[0.25, -0.75]);
+    assert_eq!(back.layers()[0].bias(), net.layers()[0].bias());
+}
+
+#[test]
+fn zero_bias_has_no_biasf() {
+    let layer = Layer::from_f32(1, 2, &[0.5, -0.5], &[0.0]).expect("layer");
+    assert!(layer.bias_f32().is_empty());
+    let text = to_wsp(&Net::new(vec![layer]).expect("net"));
+    assert!(!text.contains("biasf"), "{text}");
+}
+
+#[test]
+fn export_with_bias_writes_f32_values() {
+    let dir = temp_dir("export-bias");
+    let path = dir.join("one.safetensors");
+    let mut data = f32_bytes(&[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]);
+    data.extend_from_slice(&f32_bytes(&[0.25, -0.75]));
+    raw_file(
+        &path,
+        r#"{"w":{"dtype":"F32","shape":[2,3],"data_offsets":[0,24]},"b":{"dtype":"F32","shape":[2],"data_offsets":[24,32]}}"#,
+        &data,
+    );
+    let wsp = dir.join("w.wsp");
+    let _ = stdout_json(&run(&[
+        "import-safetensors",
+        path.to_str().unwrap(),
+        "--tensor",
+        "w",
+        "--bias",
+        "b",
+        "--out",
+        wsp.to_str().unwrap(),
+    ]));
+    let exported = dir.join("back.safetensors");
+    let report = stdout_json(&run(&[
+        "export-safetensors",
+        wsp.to_str().unwrap(),
+        "--out",
+        exported.to_str().unwrap(),
+        "--tensor",
+        "w",
+        "--bias",
+    ]));
+    assert_eq!(report["bias"], "w.bias");
+    let vector = trit_wspace::safetensors::read_vector(exported.to_str().unwrap(), "w.bias")
+        .expect("bias vector");
+    assert!((vector[0] - 0.25).abs() < 1e-6, "{vector:?}");
+    assert!((vector[1] + 0.75).abs() < 1e-6, "{vector:?}");
+}
+
+#[test]
+fn export_dir_writes_bias_back() {
+    let dir = temp_dir("dir-bias");
+    let path = dir.join("paired.safetensors");
+    let mut data = f32_bytes(&[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]);
+    data.extend_from_slice(&f32_bytes(&[0.25, -0.75]));
+    raw_file(
+        &path,
+        r#"{"x.weight":{"dtype":"F32","shape":[2,3],"data_offsets":[0,24]},"x.bias":{"dtype":"F32","shape":[2],"data_offsets":[24,32]}}"#,
+        &data,
+    );
+    let tensors = dir.join("tensors");
+    let _ = stdout_json(&run(&[
+        "import-safetensors-dir",
+        path.to_str().unwrap(),
+        "--out",
+        tensors.to_str().unwrap(),
+    ]));
+    let exported = dir.join("back.safetensors");
+    let _ = stdout_json(&run(&[
+        "export-safetensors-dir",
+        tensors.to_str().unwrap(),
+        "--out",
+        exported.to_str().unwrap(),
+    ]));
+    let listed = list(exported.to_str().unwrap()).expect("list");
+    let names: Vec<&str> = listed.iter().map(|tensor| tensor.name.as_str()).collect();
+    assert!(names.contains(&"x.bias"), "{names:?}");
+    let vector = trit_wspace::safetensors::read_vector(exported.to_str().unwrap(), "x.bias")
+        .expect("bias vector");
+    assert!((vector[0] - 0.25).abs() < 1e-6, "{vector:?}");
+    assert!((vector[1] + 0.75).abs() < 1e-6, "{vector:?}");
+}
+
+#[test]
+fn wsp2_rejects_biasf() {
+    let dir = temp_dir("wsp2-bias");
+    let weights = read_tensor_from_values(2, 3, &[0.5, -0.5, 0.5, 0.5, 0.5, -0.5]);
+    let layer = weights
+        .to_layer_with_bias(Some(&[0.25, -0.75]))
+        .expect("layer");
+    let wsp = dir.join("w.wsp");
+    fs::write(&wsp, to_wsp(&Net::new(vec![layer]).expect("net"))).expect("wsp");
+    let binary = dir.join("w.wsp2");
+    let output = run(&[
+        "pack-artifact",
+        wsp.to_str().unwrap(),
+        "--out",
+        binary.to_str().unwrap(),
+    ]);
+    assert!(!output.status.success());
+    assert!(
+        String::from_utf8_lossy(&output.stderr).contains("f32 bias"),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }

@@ -120,9 +120,35 @@ pub fn from_wsp(text: &str) -> Result<Net> {
         }
         let bias = parse_trits(&bias_tokens[1..], rows, line, "bias")?;
 
+        let (mut line, mut row_line) = next(&lines, &mut pos, "row")?;
+        let mut bias_f32 = Vec::new();
+        if row_line.split_whitespace().next() == Some("biasf") {
+            let tokens: Vec<&str> = row_line.split_whitespace().collect();
+            if tokens.len() != rows + 1 {
+                return Err(Error::Parse {
+                    line,
+                    msg: format!("biasf 行需要 {rows} 个值"),
+                });
+            }
+            for token in &tokens[1..] {
+                let value = token.parse::<f32>().map_err(|_| Error::Parse {
+                    line,
+                    msg: format!("biasf `{token}` 不是 f32"),
+                })?;
+                bias_f32.push(value);
+            }
+            let (next_line, next_row) = next(&lines, &mut pos, "row")?;
+            line = next_line;
+            row_line = next_row;
+        }
+
         let mut trits = Vec::with_capacity(rows * cols);
-        for _ in 0..rows {
-            let (line, row_line) = next(&lines, &mut pos, "row")?;
+        for index in 0..rows {
+            if index > 0 {
+                let (next_line, next_row) = next(&lines, &mut pos, "row")?;
+                line = next_line;
+                row_line = next_row;
+            }
             let row_tokens: Vec<&str> = row_line.split_whitespace().collect();
             if row_tokens.first() != Some(&"row") {
                 return Err(Error::Parse {
@@ -132,7 +158,8 @@ pub fn from_wsp(text: &str) -> Result<Net> {
             }
             trits.extend(parse_trits(&row_tokens[1..], cols, line, "row")?);
         }
-        layers.push(Layer::with_scales(rows, cols, &trits, &bias, scales)?);
+        let layer = Layer::with_scales(rows, cols, &trits, &bias, scales)?;
+        layers.push(layer.with_bias_f32(bias_f32)?);
     }
 
     let (line, end) = next(&lines, &mut pos, "end")?;
@@ -193,6 +220,14 @@ fn body(net: &Net) -> String {
             out.push(bias.to_char());
         }
         out.push('\n');
+        if !layer.bias_f32().is_empty() {
+            out.push_str("biasf");
+            for &value in layer.bias_f32() {
+                out.push(' ');
+                out.push_str(&value.to_string());
+            }
+            out.push('\n');
+        }
         for row in 0..layer.rows() {
             out.push_str("row");
             if let Some(weights) = layer.row(row) {
