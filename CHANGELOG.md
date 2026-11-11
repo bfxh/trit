@@ -11,6 +11,7 @@
   **`trit-sat` 符号判定 + `trit-bdd`** 双 oracle 证明「新 IR ≡ 旧 IR」，判不等价或 oracle 算不出来都直接判红。
 - 读数：`cargo test -p trit-ir` = 12 单测 + 4 集成；批量表达式 × 三语义在全部赋值上逐点一致；
   默认管道对 `(a&b)|(a&b)` 节点 7 → 4（CSE 合回）；变异 8/8 抓住。
+- CI 韧性：`Install iverilog (Linux)` 改成 4 次就地重试（`Acquire::Retries=5`），应对 GitHub runner 的 `security.ubuntu.com` DNS 成片失败；4 次都失败仍判红（不许静默跳过）。
 - 口径记录：`Simplify` 会把 DAG 展开成树，因此必须排在 `Cse` 之前；重跑管道时最终 IR 收敛但中间计数会波动
   （测试按“收敛点”判定，不按“第二遍零改写”）。
 

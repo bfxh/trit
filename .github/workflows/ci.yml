@@ -127,9 +127,24 @@ jobs:
           fi
 
       # `--verify-hdl` 的 tests/hdl.rs 没有 iverilog 会静默跳过；Linux 装上让真仿真进 CI。
+      # 2026-11-11 实测：GitHub runner 的 security.ubuntu.com DNS 会成片失败（exit 100），
+      # 一次抖动就红掉所有 PR 的 ubuntu job ⇒ 这里就地重试；4 次都失败仍然判红（不许静默跳过）。
       - name: Install iverilog (Linux)
         if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq iverilog
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4; do
+            if sudo apt-get update -qq -o Acquire::Retries=5 \
+              && sudo apt-get install -y -qq -o Acquire::Retries=5 iverilog; then
+              echo "iverilog 安装成功（第 ${attempt} 次尝试）"
+              exit 0
+            fi
+            echo "第 ${attempt} 次 apt 失败（多半是 runner DNS 抖动），20s 后重试"
+            sleep 20
+          done
+          echo "::error::iverilog 安装失败：Linux 的 HDL 仿真测试会静默跳过，按测试面缩水处理（不降级）"
+          exit 1
 
       - name: Check formatting
         if: steps.scope.outputs.only_docs != 'true'
