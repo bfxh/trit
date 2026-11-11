@@ -268,6 +268,34 @@ pub fn read_tensor(path: &str, name: &str) -> Result<Weights> {
     })
 }
 
+/// 读取 2D 权重或 1D 向量：1D 按 `1 × len` 返回，`bool` 表示是否来自 1D。
+pub fn read_weights(path: &str, name: &str) -> Result<(Weights, bool)> {
+    let (info, values) = read_values(path, name)?;
+    match info.shape.len() {
+        2 => Ok((
+            Weights {
+                rows: info.shape[0],
+                cols: info.shape[1],
+                values,
+            },
+            false,
+        )),
+        1 => Ok((
+            Weights {
+                rows: 1,
+                cols: info.shape[0],
+                values,
+            },
+            true,
+        )),
+        _ => Err(fail(&format!(
+            "张量 `{name}` 是 {} 维（shape {:?}），不是 1D/2D",
+            info.shape.len(),
+            info.shape
+        ))),
+    }
+}
+
 /// 读取一个 1D 张量（真实模型的 bias / LayerNorm 参数）。
 pub fn read_vector(path: &str, name: &str) -> Result<Vec<f32>> {
     let (info, values) = read_values(path, name)?;
@@ -358,6 +386,8 @@ pub struct TensorOut<'a> {
     pub rows: usize,
     /// 列数。
     pub cols: usize,
+    /// 是否写成 1D（`[cols]`，`rows` 必须为 1）。
+    pub vector: bool,
     /// 行主序权重。
     pub values: &'a [f32],
 }
@@ -374,6 +404,13 @@ pub fn write_tensors(path: &str, tensors: &[TensorOut<'_>]) -> Result<()> {
             return Err(Error::EmptyLayer {
                 rows: tensor.rows,
                 cols: tensor.cols,
+            });
+        }
+        if tensor.vector && tensor.rows != 1 {
+            return Err(Error::Shape {
+                what: "safetensors vector rows",
+                expected: 1,
+                got: tensor.rows,
             });
         }
         if tensor.values.len() != tensor.rows * tensor.cols {
@@ -398,11 +435,16 @@ pub fn write_tensors(path: &str, tensors: &[TensorOut<'_>]) -> Result<()> {
         for value in tensor.values {
             data.extend_from_slice(&value.to_le_bytes());
         }
+        let shape = if tensor.vector {
+            json!([tensor.cols])
+        } else {
+            json!([tensor.rows, tensor.cols])
+        };
         header.insert(
             tensor.name.to_string(),
             json!({
                 "dtype": Dtype::F32.name(),
-                "shape": [tensor.rows, tensor.cols],
+                "shape": shape,
                 "data_offsets": [start, data.len()],
             }),
         );
@@ -441,6 +483,7 @@ pub fn write_tensor(
             name,
             rows,
             cols,
+            vector: false,
             values,
         }],
     )
