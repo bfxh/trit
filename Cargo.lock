@@ -2036,6 +2036,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-num"
+version = "0.12.0"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "trit-ops"
 version = "0.12.0"
 dependencies = [
