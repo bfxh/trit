@@ -1,6 +1,5 @@
 //! 命令行入口：`read / verify / patch / repair / diff / merge / mcp`。
 //!
-//! 所有报告输出 JSON；`--out` 以“临时文件 + 改名”落盘 WSP1 工件，避免半写。
 //! 输入 `-` 表示 stdin（一次只允许一个输入用 stdin）。
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -27,6 +26,7 @@ mod cli_safetensors;
 mod cli_task;
 mod cli_wsp2;
 mod fsutil;
+mod lock;
 mod usage;
 pub(crate) use fsutil::atomic_write;
 use usage::USAGE;
@@ -44,8 +44,8 @@ pub fn entry() -> i32 {
     }
 }
 
-/// 执行命令（便于测试）。
-pub fn run(args: &[String]) -> Result<(), String> {
+pub(crate) fn run(args: &[String]) -> Result<(), String> {
+    let _locks = lock::acquire_cli(args)?;
     let Some(command) = args.first().map(String::as_str) else {
         return Err(USAGE.to_string());
     };

@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：CLI 并发写锁）
+
+- `cli/lock.rs`：对 `--out` / `--log` 路径加 `<path>.lock` advisory 锁；
+  `create_new` 原子创建，内容记录 pid/unix_ms；默认等待 2 s（`TRIT_LOCK_WAIT_MS`
+  可调），stale 10 分钟后回收，`Drop` 只删自己创建的锁。
+- `cli::run` 在命令分发前按路径字典序获取锁，覆盖整个读-改-写周期；
+  `atomic_write` 防半写，锁防并发覆盖（lost update）。
+- 真实读数：5 个并发 `patch` 写同一 `--out` 全部成功（串行化）、锁无残留；
+  人为持锁时 `TRIT_LOCK_WAIT_MS=100` 的 `patch` 在 100 ms 内失败、不写输出。
+- 4 条测试（out 锁 / log 锁 / 成功清理 / stale 回收）；文档
+  `docs/WSP-WRITE-LOCK.md`。
+- 未证栏：advisory；MCP 未接；跨主机/NFS 不保证；>10 分钟长命令可能被误回收。
+
 ### Added（trit-wspace：任意矩形 tile 的事务编辑与审计）
 
 - `Edit::SetTile` / `Edit::FillTile`：矩形块按行主序设置或常量填充；越界、零行列、
