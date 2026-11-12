@@ -1,7 +1,10 @@
 # trit-wspace — 三值权重空间编程
 
-把权重当**源码**：读出行为、写出补丁、验证后提交。不做梯度，不改 f32 latent，
+把权重当**源码**：读出行为、写出补丁、验证后提交。不做权重梯度、不改 f32 latent，
 只编辑 `{-1,0,+1}` 的权重本身。
+
+> 学习式提议器（`train-proposer`）会用梯度训练一个**打分器**，但它只排序候选，
+> 不把梯度写回权重；权重编辑仍是离散、可审计的。
 
 > 外部背景（**未复现**）：2026-11-02 MIT CSAIL 报道 GPT-6 Astra 直接读写
 > Qwen3.5-0.8B 的原始权重，改约 **0.016%** 的权重把 MATH-500 从 **7.9% 提到 48.1%**，
@@ -25,14 +28,14 @@
 
 | 层 | 需要什么 | 本 crate | 缺口 |
 |---|---|---|---|
-| L0 表示 | 规范文本、逐 trit 可读、校验和、可 diff | `codec`（WSP1，含可选 `biasf` f32 偏置行）+ `artifact_shard`（单层按行分片/合并）+ `wsp2`（2-bit 压缩容器 v2，含可选 `biasf`） | 更大模型的块索引 |
-| L1 原语 | 改 trit/偏置/scale、换行、取反 | `edit`（`Edit`）+ `transplant`（单元级跨层搬运） | 任意块/子张量编辑 |
-| L2 事务 | 整体校验、失败零改动、逐位回滚 | `Patch` + `Journal` + `rebase`（三方重放） | 并发写锁 |
-| L3 程序语义 | 前置/后置行为条件、失败原样回滚 | `program` | 程序组合、条件跳转 |
+| L0 表示 | 规范文本、逐 trit 可读、校验和、可 diff | `codec`（WSP1，含可选 `biasf`）+ `artifact_shard` + `wsp2`（2-bit v2）+ `wsp2::BlockIndex`（层/行块索引，内存与 `Read+Seek` 随机读） | 单层 >1GB 未复测；未接 mmap |
+| L1 原语 | 改 trit/偏置/scale、换行、取反、矩形块 | `edit`（`Edit`，含 `SetTile`/`FillTile`）+ `transplant`（单元级跨层搬运） | 非矩形 mask、跨层 copy/swap |
+| L2 事务 | 整体校验、失败零改动、逐位回滚、并发写保护 | `Patch` + `Journal` + `rebase` + `cli/lock`（`--out`/`--log` advisory 锁） | MCP 未接锁；跨主机/NFS 未证 |
+| L3 程序语义 | 前置/后置行为条件、失败原样回滚、组合/分支 | `program`（`Script::Sequence` / `When`，可原子回滚） | 跨进程调度、并行脚本 |
 | L4 读取 | 行为穷举、指纹、f32 裕量读数 | `oracle` + `readout` | 大模型探针/解释器 |
-| L5 搜索 | 无梯度精确修补、最小编辑数 | `repair`（小网络完备 BFS；大网络半径 1/2 + 束搜索） | 大规模目标、学习式提议器 |
+| L5 搜索 | 无梯度精确修补、最小编辑数、学习式提议 | `repair`（小网络完备 BFS；大网络半径 1/2 + 束搜索）+ `learned`（16 特征线性打分器，`train-proposer`/`propose-learned`） | 端到端可微/梯度提议器；跨任务泛化 |
 | L6 代数 | 消置换对称性、合并 | `merge`（贪心对齐 + 符号投票）+ `task`（任务向量投票）+ `dare`（DARE 丢弃） | 大规模合并 |
-| L7 规模 | GPU、外部 LLM 读写协议、模型库 | `safetensors`（`list` 任意维度、`import`/`export` 2D + 1D（bias 配对 / vector 工件），单/多张量多层，F32/F16/BF16；目录导入导出） | GPU、模型库 |
+| L7 规模 | GPU、外部容器/协议、模型库 | `safetensors`（`list` 任意维度、`import`/`export` 2D + 1D（bias 配对 / vector 工件），单/多张量多层，F32/F16/BF16；目录导入导出）+ `trit-export`（三值 GGUF v3 子集，CLI `import-gguf`/`export-gguf`） | GPU、模型库、llama.cpp 互操作 |
 
 ## 三值的两条规范自由度（本库钉死）
 
@@ -75,6 +78,12 @@ trit-wspace repair broken.wsp --oracle xor.json --max-edits 2 --out fixed.wsp
 trit-wspace propose broken.wsp --oracle xor.json --limit 8
 trit-wspace propose broken.wsp --oracle xor.json --pairs --limit 8
 trit-wspace propose broken.wsp --oracle xor.json --depth 3 --limit 8
+trit-wspace train-proposer broken.wsp --oracle xor.json --out proposer.json
+trit-wspace propose-learned broken.wsp --oracle xor.json --model proposer.json --limit 8 --verify
+trit-wspace index-artifact word.wsp2 --out word.idx
+trit-wspace read-block word.wsp2 --index word.idx --layer 0 --row-start 0 --rows 64 --out part.wsp
+trit-wspace export-gguf tensors/ --out model.gguf
+trit-wspace import-gguf model.gguf --out tensors/
 trit-wspace explain broken.wsp --oracle xor.json --sample 0 --top 8
 trit-wspace probe   xor.wsp --oracle probe.json --budget 64 --top 16 --adaptive
 trit-wspace localize broken.wsp --oracle xor.json --rows 3 --row-budget 64 --max-trits 64 --top-trits 8

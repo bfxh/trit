@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Docs（trit-wspace：债务 9-11）
+
+- `crates/trit-wspace/README.md` 技术树按现状更新：L0 块索引、L1 tile、L2 写锁、
+  L3 `Script::Sequence`/`When`、L5 学习式提议、L7 GGUF 都已落地；命令表补新子命令。
+- 明确「不做权重梯度」与 `train-proposer` 的区别：梯度只训练打分器，不写回权重。
+- 新增 `docs/WSP-LIMITS.md` 汇总所有未证栏（真实任务、容器互操作、tile/锁、发布边界）。
+- 新增 `docs/WSP-GRADIENT-PROPOSER.md`：手工特征 → 梯度/反向传播/STE 的三条路线。
+- `docs/GGUF-TRIT.md` §3 记录两份 5-trit 打包的发布边界（可发布 crate 不能依赖实验层）。
+
 ### Added（trit-wspace：学习式单点编辑提议器）
 
 - `learned`：16 维静态/行为特征 + f32 线性打分器（SGD + L2）；标签来自 `analyze`
