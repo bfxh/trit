@@ -11,6 +11,9 @@
   python scripts/agent_claims.py gate --who <会话名> --paths <a b> [--json]
       # 三态判定（与库里的 ClaimStore::gate 同一张表）：True=我登记过且全覆盖，
       # False=别人在效期里撞我，Unknown=没登记过（能动，但没人知道）
+  python scripts/agent_claims.py compare --paths <a b> [--repo <o/r>]   # 重叠时并排比方案
+  python scripts/agent_claims.py plan --id <编号> --plan <文本>          # 给已有声明补方案
+  python scripts/agent_claims.py repair [--apply]                       # 修历史并发留下的重复 id
   python scripts/agent_claims.py --self-test
 
 为什么要有这个（2026-11-03 实测的形状）：
@@ -25,13 +28,19 @@
   - 两个**在效期内**的声明路径相交（或同一个 repo+分支）⇒ 判红，双方会话名都印出来；
   - 名单文件读不出/时间戳坏掉 ⇒ 判红（"不知道有没有人"不等于"没人"）；
   - 过期未收的声明单列为警告（可能那个会话已经死了，也可能它还在跑只是忘了续）。
+  - 重叠不是先到先得：claim 带 --plan（或 --plan-file）写方案；重叠时先 compare 并排比
+    「问题解释 / 兼容 / 牵连 / 回滚 / 验证」，败方 release 或收窄路径。没有方案的声明没资格比较。
+  - claim/release/renew 走文件锁（名单是 read-modify-write）；repair 修历史并发留下的重复 id。
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
+import os
 import pathlib
 import re
+import subprocess
 import sys
 import time
 
@@ -63,6 +72,60 @@ def _say(text: str) -> None:
 
 def now() -> int:
     return int(time.time())
+
+
+@contextlib.contextmanager
+def _locked(path: pathlib.Path):
+    """声明文件是 read-modify-write：两个会话同时 claim 会拿到同一个 id（实测 c3 撞过）。
+
+    锁文件与名单同目录、同名 `.lock`；Windows 用 msvcrt，POSIX 用 flock。
+    """
+    lock = path.parent / (path.name + ".lock")
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(lock, "a+b")
+    try:
+        handle.seek(0, os.SEEK_END)
+        if handle.tell() == 0:
+            handle.write(b"x")
+            handle.flush()
+        if os.name == "nt":
+            import msvcrt
+            while True:
+                try:
+                    handle.seek(0)
+                    msvcrt.locking(handle.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:
+                    time.sleep(0.05)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            if os.name == "nt":
+                import msvcrt
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        except OSError:
+            pass
+        handle.close()
+
+
+def plans_dir(path: pathlib.Path) -> pathlib.Path:
+    """方案与名单分开存：名单是 8 列定宽表格，塞长文本会把解析写坏。"""
+    return path.parent / (path.stem + ".plans")
+
+
+def read_plan(path: pathlib.Path, claim_id: str) -> str | None:
+    plan = plans_dir(path) / f"{claim_id}.md"
+    try:
+        return plan.read_text(encoding="utf-8")
+    except OSError:
+        return None
 
 
 def slug(text: str) -> str:
@@ -356,6 +419,13 @@ def check(path: pathlib.Path) -> dict:
             warn.append(f"{claim['id']} 的 ttl={claim['ttl']} 分钟超过上限 {TTL_CAP_MIN}；"
                         "长任务请用 renew 续期，别一次性占到底")
     red += [f"名单里有解析不了的行（不知道是谁在动什么 ⇒ 判红）：{line}" for line in broken]
+    if red:
+        missing = [claim["id"] for claim in claims
+                   if live(claim, now()) and read_plan(path, claim["id"]) is None]
+        if missing:
+            warn.append(f"{len(missing)} 条在效声明没有 --plan（{', '.join(missing[:5])}）："
+                        "重叠时只能先到先得——不符合「按方案质量裁决」的规则"
+                        "（先 compare，再让败方 release 或收窄）")
     return {"tool": "agent-claims", "claims": claims, "red": red, "warn": warn,
             "broken": broken, "green": not red}
 
@@ -431,15 +501,30 @@ def cmd_claim(path: pathlib.Path, argv: list[str]) -> int:
         _say(f"FAIL ttl={ttl} 超过上限 {TTL_CAP_MIN} 分钟：长任务用 `renew` 续期，"
              "一次占到底会让过期声明长期占位（实测有一本账里 3/4 条过期未收）")
         return 1
+    plan = value("--plan")
+    if "--plan-file" in argv:
+        plan_path = pathlib.Path(value("--plan-file"))
+        try:
+            plan = plan_path.read_text(encoding="utf-8")
+        except OSError as exc:
+            _say(f"FAIL 读不到方案文件 {plan_path}：{exc}")
+            return 1
     taken = {c["id"] for c in claims}
     serial = 1
     while f"c{serial}" in taken:
         serial += 1
-    claims.append({"id": f"c{serial}", "who": who, "repo": repo, "paths": paths,
+    new_id = f"c{serial}"
+    claims.append({"id": new_id, "who": who, "repo": repo, "paths": paths,
                    "ts": now(), "ttl": ttl, "note": value("--note")})
     write_claims(path, claims)
+    if plan.strip():
+        plans = plans_dir(path)
+        plans.mkdir(parents=True, exist_ok=True)
+        (plans / f"{new_id}.md").write_text(plan.strip() + "\n", encoding="utf-8")
     _say(f"已登记：{who} @ {repo} {paths or '(整个仓)'}（{ttl} 分钟；上限 {TTL_CAP_MIN}，"
          "超时请 renew）")
+    if not plan.strip():
+        _say("提示：未提供 --plan。与别人重叠时无法按方案质量裁决（规则：质量优先，不是先到先得）。")
     result = check(path)
     mine = [line for line in result["red"] if who in line]
     if mine:
@@ -503,6 +588,150 @@ def cmd_release(path: pathlib.Path, argv: list[str]) -> int:
         return 1
     write_claims(path, keep)
     _say(f"已释放 {len(claims) - len(keep)} 条")
+    return 0
+
+
+def cmd_compare(path: pathlib.Path, argv: list[str]) -> int:
+    """重叠裁决的输入端：并排给出各家的方案，按质量选，不按先后。
+
+    裁决不是工具替人做（"前瞻性"没法自动打分），工具能做的是：**没有方案就没有资格**
+    参与比较；比完由败方 release/收窄，重叠自然消失。
+    """
+    def values(flag: str) -> list[str]:
+        if flag not in argv:
+            return []
+        out, index = [], argv.index(flag) + 1
+        while index < len(argv) and not argv[index].startswith("--"):
+            out += [argv[index]]
+            index += 1
+        return out
+
+    repo = argv[argv.index("--repo") + 1] if "--repo" in argv else ""
+    paths = values("--paths")
+    if not paths:
+        _say("compare 需要 --paths <...>（要比对哪块）")
+        return 1
+    claims = read_claims(path)
+    at = now()
+    active = [c for c in claims if live(c, at)
+              and (not repo or c["repo"].rstrip("/").split("/")[-1] == repo.rstrip("/").split("/")[-1])]
+    pairs = [c for c in active if overlaps(c["paths"], paths)]
+    if not pairs:
+        _say("compare：没有在效期内的声明覆盖这些路径")
+        return 0
+    missing = 0
+    for claim in pairs:
+        plan = read_plan(path, claim["id"])
+        _say(f"== {claim['id']}｜{claim['who']} @ {claim['repo'] or '-'}")
+        _say(f"   路径：{claim['paths'] or '(整个仓)'}｜备注：{claim['note'] or '-'}")
+        if plan is None:
+            missing += 1
+            _say("   方案：**缺失**（没有方案 = 没有资格按质量比较；请先补 --plan）")
+            continue
+        body = plan.strip().splitlines()
+        for line in body[:12]:
+            _say(f"   {line}")
+        if len(body) > 12:
+            _say(f"   …（共 {len(body)} 行）")
+    _say("裁决只看方案质量（问题解释 / 兼容 / 牵连 / 回滚 / 验证），不看谁先到；"
+         "败方 release 或收窄路径。")
+    return 1 if len(pairs) > 1 and missing else 0
+
+
+def cmd_plan(path: pathlib.Path, argv: list[str]) -> int:
+    """给已有声明补/改方案（裁决前才写也来得及）。"""
+    ident = argv[argv.index("--id") + 1] if "--id" in argv else ""
+    text = argv[argv.index("--plan") + 1] if "--plan" in argv else ""
+    if "--plan-file" in argv:
+        try:
+            text = pathlib.Path(argv[argv.index("--plan-file") + 1]).read_text(encoding="utf-8")
+        except OSError as exc:
+            _say(f"FAIL 读不到方案文件：{exc}")
+            return 1
+    claims = read_claims(path)
+    if not ident or not any(claim["id"] == ident for claim in claims):
+        _say(f"plan：找不到声明 id={ident or '-'}")
+        return 1
+    if not text.strip():
+        _say("plan 需要 --plan <文本> 或 --plan-file <文件>")
+        return 1
+    plans = plans_dir(path)
+    plans.mkdir(parents=True, exist_ok=True)
+    (plans / f"{ident}.md").write_text(text.strip() + "\n", encoding="utf-8")
+    _say(f"plan：已写入 {ident} 的方案")
+    return 0
+
+
+def cmd_repair(path: pathlib.Path, argv: list[str]) -> int:
+    """修复历史并发留下的重复 id（两个会话同时 claim 各拿一个 cN）。
+
+    默认只打印计划；`--apply` 才写回。方案文件跟着改名，避免孤儿。
+    """
+    claims = read_claims(path)
+    if not claims:
+        _say("repair：名单是空的")
+        return 1
+    seen: set[str] = set()
+    taken = {c["id"] for c in claims}
+    serial = 1
+    renames: list[tuple[str, str, str]] = []
+    for claim in claims:
+        if claim["id"] not in seen:
+            seen.add(claim["id"])
+            continue
+        while f"c{serial}" in taken:
+            serial += 1
+        new_id = f"c{serial}"
+        taken.add(new_id)
+        renames.append((claim["id"], new_id, claim["who"]))
+        claim["id"] = new_id
+    if not renames:
+        _say("repair：没有重复 id")
+        return 0
+    for old_id, new_id, who in renames:
+        _say(f"repair: {old_id} -> {new_id}（{who}）")
+    if "--apply" not in argv:
+        _say("repair：dry-run（加 --apply 写回）")
+        return 0
+    write_claims(path, claims)
+    plans = plans_dir(path)
+    for old_id, new_id, _who in renames:
+        old_plan, new_plan = plans / f"{old_id}.md", plans / f"{new_id}.md"
+        if old_plan.is_file() and not new_plan.exists():
+            old_plan.replace(new_plan)
+    _say(f"repair：已写回，重编 {len(renames)} 条")
+    return 0
+
+
+def dispatch(path: pathlib.Path, command: str, argv: list[str]) -> int:
+    handlers = {
+        "claim": cmd_claim,
+        "release": cmd_release,
+        "renew": cmd_renew,
+        "repair": cmd_repair,
+        "plan": cmd_plan,
+    }
+    if command in handlers:
+        # 名单是 read-modify-write：两个会话同时 claim 会拿同一个 id（实测 c3 撞过）
+        with _locked(path):
+            return handlers[command](path, argv)
+    if command == "compare":
+        return cmd_compare(path, argv)
+    if command == "hold-lock":
+        seconds = float(argv[0]) if argv else 1.0
+        with _locked(path):
+            marker = path.parent / "hold-lock.ready"
+            marker.write_text("ready", encoding="utf-8")
+            time.sleep(seconds)
+            marker.unlink(missing_ok=True)
+        return 0
+    if command == "gate":
+        return cmd_gate(path, argv)
+    if command in ("list", "check", ""):
+        result = check(path)
+        render(result)
+        return 0 if result["green"] else 1
+    _say(__doc__)
     return 0
 
 
@@ -713,6 +942,78 @@ def self_test() -> int:
         absent = check(path.parent / "没有这个文件.md")
         check_at("没有声明文件时不判红但要说",
                  (absent["green"], len(absent["warn"]) >= 1), (True, True))
+        # —— 方案优先（不是先到先得）+ 并发锁 + 重复 id 修复 ——
+        policy = pathlib.Path(tmp) / "POLICY.md"
+        check_at("claim 带方案可登记",
+                 cmd_claim(policy, ["claim", "--who", "qoder:plan-a", "--repo", "o/p",
+                                    "--paths", "src/core",
+                                    "--plan", "问题：X；兼容：无 API 变；牵连：Y；回滚：revert"]), 0)
+        first = [c for c in read_claims(policy) if canonical_who(c["who"]) == "qoder:plan-a"][0]
+        check_at("方案落盘", (read_plan(policy, first["id"]) or "").startswith("问题：X"), True)
+        check_at("第二家无方案也能登记（但重叠判红）",
+                 cmd_claim(policy, ["claim", "--who", "zcode:plan-b", "--repo", "o/p",
+                                    "--paths", "src/core"]), 1)
+        check_at("check 点名缺方案",
+                 any("--plan" in line for line in check(policy)["warn"]), True)
+        buffer = io.StringIO()
+        saved_out = sys.stdout
+        sys.stdout = buffer
+        try:
+            rc_compare = cmd_compare(policy, ["--paths", "src/core"])
+        finally:
+            sys.stdout = saved_out
+        check_at("compare 缺方案时判红", rc_compare, 1)
+        check_at("compare 点出缺失", "缺失" in buffer.getvalue(), True)
+        second = [c for c in read_claims(policy) if canonical_who(c["who"]) == "zcode:plan-b"][0]
+        check_at("给第二家补方案",
+                 cmd_plan(policy, ["--id", second["id"], "--plan", "方案 B：先复现"]), 0)
+        buffer = io.StringIO()
+        sys.stdout = buffer
+        try:
+            rc_compare = cmd_compare(policy, ["--paths", "src/core"])
+        finally:
+            sys.stdout = saved_out
+        check_at("两家都有方案后 compare 不再判红", rc_compare, 0)
+        check_at("compare 并排给出两家",
+                 ("plan-a" in buffer.getvalue(), "plan-b" in buffer.getvalue()), (True, True))
+
+        repair_ledger = pathlib.Path(tmp) / "REPAIR.md"
+        repair_ledger.write_text(chr(10).join([
+            HEADER.rstrip(), "", SEP, "| --- | --- | --- | --- | --- | --- | --- |",
+            "| c1 | qoder:a | o/r | src/x | 1000000000 | 90 | one | 0 |",
+            "| c1 | zcode:b | o/r | src/y | 1000000000 | 90 | two | 0 |",
+        ]) + chr(10), encoding="utf-8")
+        check_at("repair 默认只 dry-run（不写）",
+                 (cmd_repair(repair_ledger, []),
+                  len({c["id"] for c in read_claims(repair_ledger)})), (0, 1))
+        check_at("repair --apply 后 id 唯一",
+                 (cmd_repair(repair_ledger, ["--apply"]),
+                  len({c["id"] for c in read_claims(repair_ledger)}) == 2), (0, True))
+        check_at("repair 后不再判同名 id 红",
+                 any("同名声明" in line for line in check(repair_ledger)["red"]), False)
+
+        lock_ledger = pathlib.Path(tmp) / "LOCK.md"
+        holder = subprocess.Popen(
+            [sys.executable, str(pathlib.Path(__file__)), "hold-lock", "1.2",
+             "--claims", str(lock_ledger)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        marker = lock_ledger.parent / "hold-lock.ready"
+        waited = 0.0
+        while not marker.exists() and waited < 5.0:
+            time.sleep(0.05)
+            waited += 0.05
+        started = time.monotonic()
+        claim_proc = subprocess.run(
+            [sys.executable, str(pathlib.Path(__file__)), "claim", "--who", "qoder:lk",
+             "--repo", "o/lk", "--paths", "lk", "--claims", str(lock_ledger)],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        elapsed = time.monotonic() - started
+        holder.wait(timeout=30)
+        check_at("并发 claim 能登记", claim_proc.returncode, 0)
+        check_at("并发 claim 会等锁（>=0.6s）", elapsed >= 0.6, True)
+
         # 反证 8：cp936 控制台下不许把闸门自己崩掉。
         # 注意打印的判决里**必须真有一个 GBK 放不下的字符**，否则这条夹具是空转的
         # （第一版拿一份干净名单去打印，变异把降级去掉也不崩 ⇒ 门报 SURVIVED）。
@@ -758,20 +1059,7 @@ def main(argv: list[str]) -> int:
     if "--claims" in argv:
         path = pathlib.Path(argv[argv.index("--claims") + 1])
     command = argv[0] if argv else ""
-    if command == "claim":
-        return cmd_claim(path, argv[1:])
-    if command == "release":
-        return cmd_release(path, argv[1:])
-    if command == "renew":
-        return cmd_renew(path, argv[1:])
-    if command == "gate":
-        return cmd_gate(path, argv[1:])
-    if command in ("list", "check", ""):
-        result = check(path)
-        render(result)
-        return 0 if result["green"] else 1
-    _say(__doc__)
-    return 0
+    return dispatch(path, command, argv[1:])
 
 
 if __name__ == "__main__":

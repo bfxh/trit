@@ -45,15 +45,24 @@ DRIVER_NAME = "json-union"
 DRIVER_SCRIPT = "scripts/merge_json_union.py"
 STABLE_HOOK_SCRIPT = "trit-hooks.py"
 STABLE_DRIVER_SCRIPT = "trit-json-union.py"
+STABLE_UPDATE_SCRIPT = "trit-update-guard.py"
 # 自动切回时带上的标记：嵌套的 post-checkout 看到它就立即退出，避免钩子自我递归
 RECOVERY_ENV = "TRIT_SHARED_RECOVERY"
 
 PRE_PUSH_BODY = """#!/bin/sh
 {marker}
 # 1) 拒绝直推主干（确需时 ALLOW_MAIN_PUSH=1 绕过）
-# 2) 跑仓库自带的高置信度密钥扫描（有 scripts/secret_scan.py 才跑）
+# 2) 负更新守卫：非快进丢提交 / 棘轮回退（ALLOW_NON_FF_PUSH=1 / ALLOW_RATCHET_PUSH=1 绕过）
+# 3) 跑仓库自带的高置信度密钥扫描（有 scripts/secret_scan.py 才跑）
 set -u
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+HOOKS=$(git rev-parse --git-path hooks 2>/dev/null) || HOOKS="$ROOT/.git/hooks"
+case "$HOOKS" in
+  /*|[A-Za-z]:*) ;;
+  *) HOOKS="$ROOT/$HOOKS" ;;
+esac
+if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
+PUSH_INPUT=$(cat)
 blocked=0
 while read -r local_ref local_sha remote_ref remote_sha; do
   case "$remote_ref" in
@@ -64,10 +73,14 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       fi
       ;;
   esac
-done
+done <<EOF
+$PUSH_INPUT
+EOF
 [ "$blocked" = "1" ] && exit 1
+if [ -f "$HOOKS/trit-update-guard.py" ]; then
+  printf '%s' "$PUSH_INPUT" | "$PY" "$HOOKS/trit-update-guard.py" prepush || exit 1
+fi
 if [ -f "$ROOT/scripts/secret_scan.py" ]; then
-  if command -v python >/dev/null 2>&1; then PY=python; else PY=python3; fi
   if ! "$PY" "$ROOT/scripts/secret_scan.py" --root "$ROOT" >/dev/null 2>&1; then
     echo "pre-push: 密钥扫描未通过（跑 python scripts/secret_scan.py 看明细）" >&2
     exit 1
@@ -275,7 +288,11 @@ def install_stable_copies(root: pathlib.Path) -> int:
     hooks = hooks_dir(root)
     hooks.mkdir(parents=True, exist_ok=True)
     here = pathlib.Path(__file__).resolve()
-    sources = ((here, STABLE_HOOK_SCRIPT), (here.parent / "merge_json_union.py", STABLE_DRIVER_SCRIPT))
+    sources = (
+        (here, STABLE_HOOK_SCRIPT),
+        (here.parent / "merge_json_union.py", STABLE_DRIVER_SCRIPT),
+        (here.parent / "branch_update.py", STABLE_UPDATE_SCRIPT),
+    )
     for source, name in sources:
         try:
             shutil.copyfile(source, hooks / name)
@@ -283,7 +300,7 @@ def install_stable_copies(root: pathlib.Path) -> int:
             print(f"拒绝：复制钩子稳定副本 {name} 失败：{exc}")
             return 2
         (hooks / name).chmod(0o755)
-    print(f"已更新钩子稳定副本：{STABLE_HOOK_SCRIPT}、{STABLE_DRIVER_SCRIPT}")
+    print(f"已更新钩子稳定副本：{STABLE_HOOK_SCRIPT}、{STABLE_DRIVER_SCRIPT}、{STABLE_UPDATE_SCRIPT}")
     return 0
 
 
@@ -341,7 +358,7 @@ def uninstall(root: pathlib.Path) -> int:
             removed += 1
     uninstall_merge_driver(root)
     hooks = hooks_dir(root)
-    for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT):
+    for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT, STABLE_UPDATE_SCRIPT):
         stable = hooks / name
         if stable.exists():
             stable.unlink()
@@ -364,7 +381,7 @@ def status(root: pathlib.Path) -> int:
             print(f"{name}：已安装（**不是本工具装的**）")
             ok = False
     hooks = hooks_dir(root)
-    for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT):
+    for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT, STABLE_UPDATE_SCRIPT):
         if (hooks / name).is_file():
             print(f"钩子稳定副本 {name}：已安装")
         else:
@@ -443,7 +460,7 @@ def self_test() -> int:
             expect(f"钩子文件存在 {name}", hook_path(root, name).is_file(), True)
             expect(f"带标记 {name}", is_ours(hook_path(root, name)), True)
         hooks_path = hooks_dir(root)
-        for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT):
+        for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT, STABLE_UPDATE_SCRIPT):
             expect(f"稳定副本存在 {name}", (hooks_path / name).is_file(), True)
         rc, driver = run_git("config", "--get", f"merge.{DRIVER_NAME}.driver")
         expect("合并驱动已配置", rc, 0)
@@ -520,15 +537,17 @@ def self_test() -> int:
             run_git("switch", default_branch)
 
             pre = hook_path(root, "pre-push")
+            head_sha = run_git("rev-parse", "HEAD")[1].strip()
+            zeros = "0" * 40
             expect("推主干被拦",
                    call([sh, str(pre)], cwd=root,
-                        stdin_text="refs/heads/x abc refs/heads/main def\n")[0], 1)
+                        stdin_text=f"refs/heads/x {head_sha} refs/heads/main {zeros}")[0], 1)
             expect("推特性分支放行",
                    call([sh, str(pre)], cwd=root,
                         stdin_text="refs/heads/x abc refs/heads/feat/x 0000\n")[0], 0)
             expect("ALLOW_MAIN_PUSH=1 可绕过",
                    call([sh, str(pre)], cwd=root,
-                        stdin_text="refs/heads/x abc refs/heads/main def\n",
+                        stdin_text="refs/heads/x 0000000000000000000000000000000000000000 refs/heads/main 0000000000000000000000000000000000000000",
                         env={"ALLOW_MAIN_PUSH": "1"})[0], 0)
             (scripts / "secret_scan.py").write_text("import sys\nsys.exit(1)\n", encoding="utf-8")
             expect("有密钥扫描且失败时拦",
@@ -539,6 +558,25 @@ def self_test() -> int:
                    call([sh, str(pre)], cwd=root,
                         stdin_text="refs/heads/x abc refs/heads/feat/x 0000\n")[0], 0)
 
+            run_git("switch", "-q", "-c", "side",
+                    env={**shared, "TRIT_ALLOW_SHARED_SWITCH": "1"})
+            (root / "side.txt").write_text("s\n", encoding="utf-8")
+            run_git("add", "side.txt")
+            run_git("commit", "-q", "-m", "side",
+                    env={**shared, "TRIT_ALLOW_SHARED_COMMIT": "1"})
+            side_sha = run_git("rev-parse", "HEAD")[1].strip()
+            run_git("switch", "-q", default_branch)
+            expect("负更新守卫：快进放行",
+                   call([sh, str(pre)], cwd=root, env=shared,
+                        stdin_text=f"refs/heads/x {side_sha} refs/heads/x {head_sha}\n")[0], 0)
+            drop_line = f"refs/heads/x {head_sha} refs/heads/x {side_sha}\n"
+            expect("负更新守卫：丢提交拦截",
+                   call([sh, str(pre)], cwd=root, env=shared, stdin_text=drop_line)[0], 1)
+            expect("ALLOW_NON_FF_PUSH 放行",
+                   call([sh, str(pre)], cwd=root,
+                        env={**shared, "ALLOW_NON_FF_PUSH": "1"},
+                        stdin_text=drop_line)[0], 0)
+
         foreign = hooks_dir(root) / "pre-push"
         foreign.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
         expect("外来钩子不被覆盖", install(root, force=False), 2)
@@ -548,7 +586,7 @@ def self_test() -> int:
         expect("--force 覆盖后卸载成功", uninstall(root), 0)
         for name in HOOKS:
             expect(f"卸载后钩子没了 {name}", hook_path(root, name).exists(), False)
-        for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT):
+        for name in (STABLE_HOOK_SCRIPT, STABLE_DRIVER_SCRIPT, STABLE_UPDATE_SCRIPT):
             expect(f"卸载后稳定副本没了 {name}", (hooks_dir(root) / name).exists(), False)
         rc, _ = run_git("config", "--get", f"merge.{DRIVER_NAME}.driver")
         expect("卸载移除合并驱动", rc != 0, True)

@@ -119,8 +119,8 @@
  {
   "name": "hooks: 稳定副本少装一个",
   "file": "scripts/hooks.py",
-  "old": "    sources = ((here, STABLE_HOOK_SCRIPT), (here.parent / \"merge_json_union.py\", STABLE_DRIVER_SCRIPT))",
-  "new": "    sources = ((here, STABLE_HOOK_SCRIPT),)",
+  "old": "        (here.parent / \"merge_json_union.py\", STABLE_DRIVER_SCRIPT),",
+  "new": "        # 副本被变异移除",
   "pkg": "scripts/hooks.py",
   "filter": "",
   "runner": "python"
@@ -139,6 +139,15 @@
   "file": "scripts/hooks.py",
   "old": "\"$PY\" \"$HOOKS/trit-hooks.py\" hook-pre-commit",
   "new": "\"$PY\" \"$(git rev-parse --show-toplevel)/scripts/hooks.py\" hook-pre-commit",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: pre-push 不跑负更新守卫",
+  "file": "scripts/hooks.py",
+  "old": "  printf '%s' \"$PUSH_INPUT\" | \"$PY\" \"$HOOKS/trit-update-guard.py\" prepush || exit 1",
+  "new": "  :",
   "pkg": "scripts/hooks.py",
   "filter": "",
   "runner": "python"

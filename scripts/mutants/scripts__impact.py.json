@@ -1,0 +1,47 @@
+[
+ {
+  "name": "impact: 闭包只算种子",
+  "file": "scripts/impact.py",
+  "old": "    closure = reverse_closure(seeds, dependents) if seeds else set()",
+  "new": "    closure = set(seeds)",
+  "pkg": "scripts/impact.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "impact: 清单文件不判全量",
+  "file": "scripts/impact.py",
+  "old": "    full = bool(others)",
+  "new": "    full = False",
+  "pkg": "scripts/impact.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "impact: 未认领恒空",
+  "file": "scripts/impact.py",
+  "old": "    unclaimed = sorted(closure - claimed) if claims is not None else []",
+  "new": "    unclaimed = []",
+  "pkg": "scripts/impact.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "impact: 文档不给卫生门",
+  "file": "scripts/impact.py",
+  "old": "    if docs:\n        gates.extend([\"python scripts/docs_hygiene.py\", \"python scripts/doc_pointers.py\"])",
+  "new": "    if False:\n        gates.extend([\"python scripts/docs_hygiene.py\", \"python scripts/doc_pointers.py\"])",
+  "pkg": "scripts/impact.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "impact: 高风险比例失效",
+  "file": "scripts/impact.py",
+  "old": "    elif ratio >= HIGH_RATIO:",
+  "new": "    elif False:",
+  "pkg": "scripts/impact.py",
+  "filter": "",
+  "runner": "python"
+ }
+]
