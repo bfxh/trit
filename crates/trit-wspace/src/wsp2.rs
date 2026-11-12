@@ -1,17 +1,10 @@
 //! WSP2：WSP1 的 2-bit 压缩容器（二进制）。
+//! 真实模型的大张量用 WSP1 文本会膨胀到数十 MB；WSP2 把 trit 压到 2 bit
+//! (`-1/0/+1 → 0/1/2`，3 非法)、bias 同样打包、scale 保持 f32，末尾带 FNV-1a。
+//! 它是缓存/传输格式，解包后回到 WSP1。
 //!
-//! WSP1 是“可读、可 diff、可校验”的规范文本；真实模型的大张量用文本会膨胀到数十 MB。
-//! WSP2 把每个 trit 压到 2 bit（`-1/0/+1 → 0/1/2`，3 保留为非法），bias 同样打包，
-//! scale 保持 f32，末尾带 FNV-1a 校验和。它是**缓存/传输格式**，不是规范形式：
-//! 解包后仍然回到 WSP1 的可读工件。
-//!
-//! 布局（小端）：
-//! ```text
-//! magic "WSP2" | version u8=1 | nlayers u16
-//! per layer: rows u32 | cols u32 | flags u8 | scales rows×f32 [| bias_f32 rows×f32]
-//!            | trits 2bit | bias 2bit（v2；v1 没有 flags/bias_f32）
-//! checksum u64（对前面所有字节做 FNV-1a）
-//! ```
+//! 布局（小端）：`magic "WSP2" | version u8 | nlayers u16`；每层
+//! `rows/cols u32 | flags u8 | scales | [bias_f32] | trits 2bit | bias 2bit`；末尾 `checksum u64`。
 
 use crate::error::{Error, Result};
 use crate::net::{Layer, Net};
@@ -137,3 +130,7 @@ pub fn from_wsp2(bytes: &[u8]) -> Result<Net> {
 pub(crate) mod bytes;
 
 use bytes::*;
+
+mod index;
+mod index_io;
+pub use index::{BlockIndex, DEFAULT_BLOCK_ROWS, LayerIndex, RowBlock};

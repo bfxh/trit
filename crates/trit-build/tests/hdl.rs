@@ -8,12 +8,7 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn bin() -> PathBuf {
-    let mut dir = std::env::current_exe().expect("current exe");
-    dir.pop();
-    if dir.ends_with("deps") {
-        dir.pop();
-    }
-    dir.join(format!("trit-build{}", std::env::consts::EXE_SUFFIX))
+    PathBuf::from(env!("CARGO_BIN_EXE_trit-build"))
 }
 
 fn scratch(name: &str) -> PathBuf {

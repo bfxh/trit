@@ -188,9 +188,9 @@ pub struct TrainSample {
 pub fn scaled_camera(scene: &Path, frame: usize, scale: f64) -> crate::geo::Camera {
     let p = scene.join("meta").join(format!("{frame:06}.json"));
     let mut c = crate::geo::Camera::load(&p).unwrap_or_else(|e| panic!("{e}"));
-    for row in 0..2 {
-        for k in 0..3 {
-            c.k[row][k] *= scale;
+    for row in c.k.iter_mut().take(2) {
+        for value in row.iter_mut().take(3) {
+            *value *= scale;
         }
     }
     c

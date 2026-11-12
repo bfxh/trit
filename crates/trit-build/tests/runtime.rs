@@ -66,12 +66,7 @@ fn scratch(name: &str) -> PathBuf {
 }
 
 fn bin() -> PathBuf {
-    let mut dir = std::env::current_exe().expect("current exe");
-    dir.pop();
-    if dir.ends_with("deps") {
-        dir.pop();
-    }
-    dir.join(format!("trit-build{}", std::env::consts::EXE_SUFFIX))
+    PathBuf::from(env!("CARGO_BIN_EXE_trit-build"))
 }
 
 /// 找一个能用的 C 编译器；没有就返回 None（CI 的 ubuntu 一定有 cc）。

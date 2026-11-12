@@ -208,8 +208,8 @@ mod tests {
         for i in 0..ps.len() {
             for j in i + 1..ps.len() {
                 assert_eq!(overlap_volume(&ps[i], &ps[j]), 0.0, "零穿插是硬门");
-                for k in 0..3 {
-                    assert!(ps[i].bbox_min[k] >= -1e-9, "物体不能落到地面以下/负坐标");
+                for value in ps[i].bbox_min.iter().take(3) {
+                    assert!(*value >= -1e-9, "物体不能落到地面以下/负坐标");
                 }
             }
         }

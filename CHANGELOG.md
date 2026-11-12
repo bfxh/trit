@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：WSP2 块索引与随机访问）
+
+- `wsp2::BlockIndex`：扫描 WSP2 生成层/行块索引（JSON），`read_layer` / `read_rows`
+  支持内存切片与 `Read + Seek` 流式读取；行块默认 64 行，跨块自动拼接。
+- CLI `index-artifact <wsp2> --out <idx>` 与 `read-block <wsp2> --index <idx> --layer N
+  [--row-start R --rows K] [--verify] [--out <path>]`；非 verify 路径只 seek/read
+  目标块，不把整文件读进内存。
+- 真实 all-MiniLM-L6-v2 103 个张量：WSP2 5,985,699 B，索引 165,978 B（2.77%）；
+  word_embeddings（30522×384）477 块，首块 64 行 6,416 B（整层 3,059,840 B 的 0.21%）；
+  单块读取 36 ms vs 整层解码 202 ms（本机 20 次均值）。
+- 8 条测试（整层/行块/跨块/IO 一致/坏索引/坏源/CLI/WSP4 拒绝）。
+- 文档 `docs/WSP-BLOCK-INDEX.md`。
+- 未证栏：WSP3/WSP4 是压缩流，不能按块随机读；未接 mmap；块大小固定 64 行；
+  索引与源文件的一致性默认只查长度 + 尾部校验和，`--verify` 才全量 FNV。
+
 ### Added（trit-wspace：GGUF ↔ WSP1 的 CLI 闭环）
 
 - 新增 `export-gguf <dir> --out <file>` 与 `import-gguf <file> --out <dir>`：复用
