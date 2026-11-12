@@ -56,8 +56,12 @@ jobs:
           pkgs=$(for p in $pkgs; do
                    if [ -e "$p" ] || [ -e "crates/$p" ]; then printf '%s\n' "$p"; fi
                  done | sort -u)
+          # 变异只跑**改动文件**里的条目：大 crate（trit-wspace 328 条）全包跑要 60+ 分钟，
+          # 而只有被改过的文件里的变异才可能被这次改动影响；未改文件的变异已由 main 的 CI 验证。
+          rust_files=$(git diff --name-only "$BASE_SHA"...HEAD -- 'crates/**' | grep -E '\.rs$' | paste -sd, - || true)
           args=""
           for pkg in $pkgs; do args="$args --pkg $pkg"; done
+          if [ -n "$rust_files" ]; then args="$args --files $rust_files"; fi
           echo "args=$args" >> "$GITHUB_OUTPUT"
           echo "changed crates: ${pkgs:-none}"
       - name: Mutation gate (changed crates only)
