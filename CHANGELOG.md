@@ -12,6 +12,8 @@
 - CI `mutation.yml`：full 改 4 片矩阵（`full-shard`，fail-fast: false，各片上传日志）+
   聚合 job 保持原名 `mutation (full)`（非 required；`always()` 保证某片红了聚合仍逐条点名，不静默 skipped）。
   required 的两个名字（`mutation gate (self-test)` / `mutation (changed crates)`）不动。
+  每片 timeout 30 分钟（ci_budget 单 job 预算内）；`.github/ci-budget.txt` 同步：
+  旧 `mutation#120` 豁免换成 `full-shard#30` + `full#10`（首跑后回填中位数）。
 - 自测 121 条（+35）：划分性质/确定性/越界 rc2/真空集/preflight 只查所选（真走 main）/
   判决行解析（缩进汇总不重计）/聚合红绿往返（漏片、重复、缺判决、unknown、非杀死、无日志、空表）。
 - 变异 32 条（+11）全断言抓住：shard 不选择 / 哈希按对象身份 / 越界不拒 / preflight 查全量 /
