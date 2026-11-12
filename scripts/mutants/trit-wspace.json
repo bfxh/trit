@@ -138,8 +138,8 @@
  {
   "name": "wspace-cli: propose 子命令被改坏",
   "file": "crates/trit-wspace/src/cli.rs",
-  "old": "\"propose\" => cmd_propose(&args[1..]),",
-  "new": "\"proposeX\" => cmd_propose(&args[1..]),",
+  "old": "\"propose\" => cli_learned::propose(&args[1..]),",
+  "new": "\"proposeX\" => cli_learned::propose(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
  },
