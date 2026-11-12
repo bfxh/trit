@@ -61,7 +61,12 @@ jobs:
           rust_files=$(git diff --name-only "$BASE_SHA"...HEAD -- 'crates/**' | grep -E '\.rs$' | paste -sd, - || true)
           args=""
           for pkg in $pkgs; do args="$args --pkg $pkg"; done
-          if [ -n "$rust_files" ]; then args="$args --files $rust_files"; fi
+          if [ -n "$rust_files" ]; then
+            args="$args --files $rust_files"
+          else
+            # 纯文档改动（README/CHANGELOG）不触发全 crate 变异。
+            args=""
+          fi
           echo "args=$args" >> "$GITHUB_OUTPUT"
           echo "changed crates: ${pkgs:-none}"
       - name: Mutation gate (changed crates only)
