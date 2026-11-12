@@ -2226,6 +2226,8 @@ name = "trit-wspace"
 version = "0.12.0"
 dependencies = [
  "serde_json",
+ "trit-core",
+ "trit-export",
  "trit-learn",
  "trit-train",
 ]

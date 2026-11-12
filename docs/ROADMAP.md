@@ -57,7 +57,7 @@
 
 ## 5. publish 面（可发布性口径）
 
-- 现状：**19 个 crate 仍 `publish = false`**（实验层），16 个可发布。可发布面是承诺：签名进 semver，
+- 现状：**18 个 crate 仍 `publish = false`**（实验层），17 个可发布。可发布面是承诺：签名进 semver，
   动它要走「先 `deprecated` 一个 tag，下个 tag 才删」。
 - 本仓的硬约束（`publish_graph.py` 判红）：可发布 crate **不得**依赖 `publish = false` 的 crate。
   这条就是 `trit-cli count` 之前的堵点。

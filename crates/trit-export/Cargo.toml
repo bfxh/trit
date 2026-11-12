@@ -6,7 +6,6 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "三值权重 GGUF 容器：GGUF v3 最小子集 + trit-codec 5 trits/byte"
-publish = false
 
 [dependencies]
 trit-core.workspace = true
