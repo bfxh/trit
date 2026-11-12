@@ -25,7 +25,7 @@ use crate::CodecError;
 use trit_core::value::Ternary;
 
 /// 积项数硬上限：容斥要枚举 `2^m` 个非空子集，bitmask 用 `u64`，m ≥ 64 必溢出。
-const MAX_TERMS: usize = 63;
+const MAX_TERMS: usize = 20;
 
 /// 位数硬上限：返回类型是 `u64`，而并集大小 ≤ `3^n`；`3^40 < u64::MAX < 3^41`。
 const MAX_N: usize = 40;
@@ -274,7 +274,7 @@ mod tests {
         let terms: Vec<Vec<Ternary>> = (0..64).map(|_| t("0")).collect();
         assert!(matches!(
             count(&terms),
-            Err(CodecError::TermSetTooLarge { found: 64, max: 63 })
+            Err(CodecError::TermSetTooLarge { found: 64, max: 20 })
         ));
     }
 }

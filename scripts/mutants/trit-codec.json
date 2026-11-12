@@ -134,5 +134,29 @@
   "new": "        return Ok(());",
   "pkg": "trit-codec",
   "filter": "decode_len_cap_is_checked_before_allocation"
+ },
+ {
+  "name": "codec-gray: n as u32 截断绕过 3^n 检查（巨量分配 OOM）",
+  "file": "crates/trit-codec/src/gray.rs",
+  "old": "    let size = u32::try_from(n)\n        .ok()\n        .and_then(|n32| 3usize.checked_pow(n32))\n        .ok_or(CodecError::GrayIndexOutOfRange { index, n })?;",
+  "new": "    let size = 3usize\n        .checked_pow(n as u32)\n        .ok_or(CodecError::GrayIndexOutOfRange { index, n })?;",
+  "pkg": "trit-codec",
+  "filter": "huge_n_is_rejected_not_truncated_into_giant_alloc"
+ },
+ {
+  "name": "codec-count: MAX_TERMS 放回 63（2^m 指数枚举≈无上限）",
+  "file": "crates/trit-codec/src/count.rs",
+  "old": "const MAX_TERMS: usize = 20;",
+  "new": "const MAX_TERMS: usize = 63;",
+  "pkg": "trit-codec",
+  "filter": "too_many_terms_errors_instead_of_shift_panic"
+ },
+ {
+  "name": "codec-sop: 变量数上限失效（3^n 枚举指数爆）",
+  "file": "crates/trit-codec/src/sop.rs",
+  "old": "    if n > MAX_SOP_VARS {",
+  "new": "    if n > usize::MAX {",
+  "pkg": "trit-codec",
+  "filter": "too_many_vars_is_rejected_before_exponential_enumeration"
  }
 ]

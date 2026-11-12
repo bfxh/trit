@@ -1,7 +1,6 @@
 #![cfg(feature = "full")]
 //! MD → 任务栏：调度器有界 drain 消费任务栏 + 服务器端点。
 
-use std::net::SocketAddr;
 use trit_immune::scheduler::{drain_plan, JournalHandler, Scheduler};
 use trit_immune::*;
 
@@ -9,12 +8,8 @@ fn temp(name: &str) -> std::path::PathBuf {
     std::env::temp_dir().join(format!("trit-immune-{name}-{}.journal", std::process::id()))
 }
 
-fn bind_server(journal: Journal) -> SocketAddr {
-    let server = Server::new(journal);
-    server
-        .serve("127.0.0.1:0".parse().unwrap())
-        .expect("起服务器")
-}
+mod common;
+use common::{bind_server, post};
 
 #[test]
 fn scheduler_drains_taskbar_bounded() {
@@ -68,7 +63,7 @@ fn server_taskmd_and_taskbar_endpoints() {
     let addr = bind_server(Journal::open_as(&pa, 0).unwrap());
 
     let md = "- [ ] 修登录模块 #p0\n- [x] 写日报\n";
-    let (s, b) = server::client::post(addr, "/v1/taskmd?parent=1&source=daily.md", md).unwrap();
+    let (s, b) = post(addr, "/v1/taskmd?parent=1&source=daily.md", md).unwrap();
     assert_eq!(s, 200);
     assert!(b.contains("created=2"), "{b}");
     assert!(b.contains("zero_state_only=true"), "{b}");
@@ -79,12 +74,12 @@ fn server_taskmd_and_taskbar_endpoints() {
     assert!(b.contains("写日报"), "{b}");
 
     // 幂等：重复导入只跳过
-    let (s, b) = server::client::post(addr, "/v1/taskmd?parent=1&source=daily.md", md).unwrap();
+    let (s, b) = post(addr, "/v1/taskmd?parent=1&source=daily.md", md).unwrap();
     assert_eq!(s, 200);
     assert!(b.contains("created=0 skipped=2"), "{b}");
 
     // 隔离导入：外部 MD 自动隔离
-    let (s, b) = server::client::post(
+    let (s, b) = post(
         addr,
         "/v1/taskmd?parent=1&source=外部.md&quarantine=1",
         "- [ ] 外部投喂的任务\n",

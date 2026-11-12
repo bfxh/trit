@@ -134,7 +134,7 @@ pub fn ternary_weights(rows: usize, cols: usize, seed: u64) -> Vec<Vec<Trit>> {
                     state ^= state >> 7;
                     state ^= state << 17;
                     // 近似三值高斯：三档等概率
-                    Trit::from_i8_unchecked((state % 3) as i8 - 1)
+                    unsafe { Trit::from_i8_unchecked((state % 3) as i8 - 1) }
                 })
                 .collect()
         })

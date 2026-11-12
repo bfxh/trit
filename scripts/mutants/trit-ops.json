@@ -38,5 +38,21 @@
   "new": "Trit::from_i8_unchecked(q as i8)",
   "pkg": "trit-ops",
   "filter": "quantize_respects_sign_and_clamps"
+ },
+ {
+  "name": "ops-pool: 主线程 panic 不 catch 直接传播（不等 worker ⇒ UAF + run_lock 中毒）",
+  "file": "crates/trit-ops/src/pool.rs",
+  "old": "            let main = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| job(0)));\n            while self.pending.load(Ordering::Acquire) != 0 {\n                std::hint::spin_loop();\n            }\n            *self.job.lock().unwrap() = None;\n            (main, self.panicked.load(Ordering::Acquire))",
+  "new": "            job(0);\n            while self.pending.load(Ordering::Acquire) != 0 {\n                std::hint::spin_loop();\n            }\n            *self.job.lock().unwrap() = None;\n            (Ok::<(), Box<dyn std::any::Any + Send>>(()), self.panicked.load(Ordering::Acquire))",
+  "pkg": "trit-ops",
+  "filter": "main_thread_panic_propagates_but_waits_for_workers_and_pool_survives"
+ },
+ {
+  "name": "ops-pool: worker panic 不 catch（跳过 pending 递减 ⇒ 主线程永久自旋）",
+  "file": "crates/trit-ops/src/pool.rs",
+  "old": "                        if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| f(k))).is_err()\n                        {\n                            me.panicked.store(true, Ordering::Release);\n                        }",
+  "new": "                        f(k);",
+  "pkg": "trit-ops",
+  "filter": "worker_panic_does_not_hang_and_pool_survives"
  }
 ]

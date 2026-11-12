@@ -246,5 +246,13 @@
   "new": "    exec_bytes > 0 && covered.saturating_mul(10) > exec_bytes.saturating_mul(9)",
   "pkg": "trit-re",
   "filter": "exact_coverage_needs_ninety_percent"
+ },
+ {
+  "name": "trit-re: YARA 词法器只认 4 个 ASCII 空白（非 ASCII 空白死循环）",
+  "file": "crates/trit-re/src/yaraparse.rs",
+  "old": "            _ if c.is_whitespace() => {\n                chars.next();\n            }",
+  "new": "            ' ' | '\\t' | '\\r' | '\\n' => {\n                chars.next();\n            }",
+  "pkg": "trit-re",
+  "filter": "lexer_terminates_on_every_unicode_whitespace"
  }
 ]

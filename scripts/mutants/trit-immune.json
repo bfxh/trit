@@ -86,5 +86,77 @@
   "new": "    if false && !frame_len_ok(len) {",
   "pkg": "trit-immune",
   "filter": "oversized_content_length_is_rejected_before_allocation"
+ },
+ {
+  "name": "immune: translate 越界 globals[i]（引用先于 spawn ⇒ 锁内 panic 永久 DoS）",
+  "file": "crates/trit-immune/src/sync.rs",
+  "old": "        Ok(i) => globals\n            .get(i)\n            .copied()\n            .ok_or_else(|| format!(\"写者 #{w} 引用了尚未重放的本地节点 #{x:02}\")),",
+  "new": "        Ok(i) => Ok(globals[i]),",
+  "pkg": "trit-immune",
+  "filter": "record_referencing_a_not_yet_replayed_node_is_deferred_not_panicking"
+ },
+ {
+  "name": "immune: attack_chains 不夹 max_depth（爆栈 + 深链枚举）",
+  "file": "crates/trit-immune/src/attack.rs",
+  "old": "    let max_depth = max_depth.min(MAX_ATTACK_DEPTH);",
+  "new": "    let _ = MAX_ATTACK_DEPTH; // clamp 移除",
+  "pkg": "trit-immune",
+  "filter": "attack_chain_depth_cap_bounds_huge_max_depth"
+ },
+ {
+  "name": "immune: attack walk 不查访问预算（满图 n! 枚举 DoS）",
+  "file": "crates/trit-immune/src/attack/walk.rs",
+  "old": "    // 全局访问预算：耗尽即如实截断，杜绝满图 + 大深度下的 n! 枚举（H6）。\n    if *budget == 0 {\n        out.truncated = true;\n        return;\n    }\n    *budget -= 1;",
+  "new": "    let _ = budget; // 预算移除",
+  "pkg": "trit-immune",
+  "filter": "attack_chain_visit_budget_bounds_dense_graph"
+ },
+ {
+  "name": "immune: 写端点认证恒放行（H1/H5 认证失效）",
+  "file": "crates/trit-immune/src/server/auth.rs",
+  "old": "    if !is_write(method, path) {\n        return Ok(());\n    }",
+  "new": "    if true {\n        return Ok(());\n    }",
+  "pkg": "trit-immune",
+  "filter": "write_endpoints_require_psk"
+ },
+ {
+  "name": "immune: 未配 PSK 的写端点也放行（默认禁用失效）",
+  "file": "crates/trit-immune/src/server/auth.rs",
+  "old": "    let Some(psk) = psk else {\n        return Err((403, \"写端点未配置 PSK（默认禁用写操作）\\n\".into()));\n    };",
+  "new": "    let Some(psk) = psk else {\n        return Ok(());\n    };",
+  "pkg": "trit-immune",
+  "filter": "write_endpoints_require_psk"
+ },
+ {
+  "name": "immune: diag 空诊断守卫移除（空 POST 把节点洗成 +1）",
+  "file": "crates/trit-immune/src/server/route.rs",
+  "old": "            let diags = diag::parse_rustc_stream(body);\n            if diags.is_empty() && !body.contains(\"\\\"success\\\":true\") {",
+  "new": "            let diags = diag::parse_rustc_stream(body);\n            if false {",
+  "pkg": "trit-immune",
+  "filter": "write_endpoints_require_psk"
+ },
+ {
+  "name": "hlc: observe 不夹远端物理位（u64::MAX 冻死时钟、本地写入被去重丢光）",
+  "file": "crates/trit-immune/src/hlc.rs",
+  "old": "        let remote_phys = remote.physical_ms.min(pt.saturating_add(MAX_SKEW_MS));",
+  "new": "        let remote_phys = remote.physical_ms;",
+  "pkg": "trit-immune",
+  "filter": "hostile_far_future_stamp_does_not_freeze_the_clock"
+ },
+ {
+  "name": "hlc: 计数溢出饱和成同一戳（tick 不再前进）",
+  "file": "crates/trit-immune/src/hlc.rs",
+  "old": "            None => Hlc {\n                physical_ms: physical_ms.saturating_add(1),\n                counter: 0,\n                writer,\n            },",
+  "new": "            None => Hlc {\n                physical_ms,\n                counter: u32::MAX,\n                writer,\n            },",
+  "pkg": "trit-immune",
+  "filter": "counter_overflow_carries_into_physical"
+ },
+ {
+  "name": "conn: 并发连接上限失效（连接耗尽 DoS）",
+  "file": "crates/trit-immune/src/server/conn.rs",
+  "old": "    if live.fetch_add(1, Ordering::SeqCst) >= max {",
+  "new": "    if live.fetch_add(1, Ordering::SeqCst) >= usize::MAX {",
+  "pkg": "trit-immune",
+  "filter": "admit_caps_concurrent_connections"
  }
 ]

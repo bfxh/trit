@@ -142,5 +142,13 @@
   "new": "        if false {\n",
   "pkg": "trit-core",
   "filter": "bus_resolves_lane_by_lane_and_checks_widths"
+ },
+ {
+  "name": "core: to_infix 给 Not 多套括号（深 unary 渲染后不可再解析）",
+  "file": "crates/trit-core/src/ast.rs",
+  "old": "            Self::Not(a) => format!(\"¬{}\", a.to_infix()),",
+  "new": "            Self::Not(a) => format!(\"¬({})\", a.to_infix()),",
+  "pkg": "trit-core",
+  "filter": "infix_rendering"
  }
 ]

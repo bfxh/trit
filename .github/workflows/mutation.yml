@@ -66,7 +66,11 @@ jobs:
           echo "changed crates: ${pkgs:-none}"
       - name: Mutation gate (changed crates only)
         if: steps.crates.outputs.args != ''
-        run: python3 scripts/mutation_check.py ${{ steps.crates.outputs.args }}
+        # 经 env 传入：`${{ }}` 直接拼进 run: 时，PR 里改名的 crate 目录（如 `crates/$(…)`）
+        # 会被 bash 当命令执行；env 值只做词切分、不被再求值（M11）。
+        env:
+          ARGS: ${{ steps.crates.outputs.args }}
+        run: python3 scripts/mutation_check.py $ARGS
 
   # full 拆 4 片并行（crc32(file\0name) 稳定分片）：每片一个独立检出（同树有单实例锁与共享文件）。
   # 聚合 job 保持原名 "mutation (full)"：它不在 required-checks.txt 里（只有 dispatch/schedule 跑），

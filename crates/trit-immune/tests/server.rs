@@ -1,7 +1,6 @@
 #![cfg(feature = "full")]
 //! 本地 HTTP 服务器：端点、扫描入账、双服务器 HTTP 同步收敛、并发读写。
 
-use std::net::SocketAddr;
 use trit_immune::*;
 
 fn temp(name: &str) -> std::path::PathBuf {
@@ -12,12 +11,8 @@ fn read_log(path: &std::path::Path) -> Vec<Stamped> {
     sync::parse_log_file(path).unwrap()
 }
 
-fn bind_server(journal: Journal) -> SocketAddr {
-    let server = Server::new(journal);
-    server
-        .serve("127.0.0.1:0".parse().unwrap())
-        .expect("起服务器")
-}
+mod common;
+use common::{bind_server, post};
 
 #[test]
 fn endpoints_basic_and_scan_ingest() {
@@ -55,7 +50,7 @@ fn endpoints_basic_and_scan_ingest() {
 
     // 扫描入账：硬编码凭据（Dispositive）→ -1 → 门禁 BLOCK
     let body = "SNIP\t1\tdb.password = \"hunter2\";";
-    let (s, b) = server::client::post(addr, "/v1/scan", body).unwrap();
+    let (s, b) = post(addr, "/v1/scan", body).unwrap();
     assert_eq!(s, 200);
     assert!(b.contains("applied=1"), "{b}");
     assert!(b.contains("scanner_never_plus1=true"));
@@ -64,8 +59,7 @@ fn endpoints_basic_and_scan_ingest() {
     assert!(b.contains("gate=BLOCK"), "扫描证伪后应 BLOCK：{b}");
 
     // 启发式 → 0 → 进待办队列
-    let (s, _) =
-        server::client::post(addr, "/v1/scan", "SNIP\t1\tel.innerHTML = userInput;").unwrap();
+    let (s, _) = post(addr, "/v1/scan", "SNIP\t1\tel.innerHTML = userInput;").unwrap();
     assert_eq!(s, 200);
     let (s, b) = server::client::get(addr, "/v1/suspects").unwrap();
     assert_eq!(s, 200);
@@ -99,14 +93,14 @@ fn http_sync_converges_two_servers() {
 
     // A 的帧 POST 给 B：B 合并采纳
     let frame_a = sync::encode_frame(0, &read_log(&pa));
-    let (s, b) = server::client::post(addr_b, "/v1/deltas", &frame_a).unwrap();
+    let (s, b) = post(addr_b, "/v1/deltas", &frame_a).unwrap();
     assert_eq!(s, 200);
     assert!(b.contains("canonical=6"), "去重后 union 应为 6 条：{b}");
     assert!(b.contains("deferred=0"));
 
     // B 的帧 POST 给 A：A 合并采纳 → 双方收敛
     let frame_b = sync::encode_frame(1, &read_log(&pb));
-    let (s, b) = server::client::post(addr_a, "/v1/deltas", &frame_b).unwrap();
+    let (s, b) = post(addr_a, "/v1/deltas", &frame_b).unwrap();
     assert_eq!(s, 200);
     assert!(b.contains("canonical=6"));
 
@@ -131,9 +125,9 @@ fn diag_endpoint_two_states_and_garbage_guard() {
     let addr = bind_server(Journal::open_as(&pa, 0).unwrap());
 
     // 垃圾输入 → 400（不能让空 POST 把节点洗成 +1）
-    let (s, _) = server::client::post(addr, "/v1/diag?node=1", "").unwrap();
+    let (s, _) = post(addr, "/v1/diag?node=1", "").unwrap();
     assert_eq!(s, 400, "空体应拒绝");
-    let (s, _) = server::client::post(addr, "/v1/diag?node=1", "纯文本垃圾").unwrap();
+    let (s, _) = post(addr, "/v1/diag?node=1", "纯文本垃圾").unwrap();
     assert_eq!(s, 400, "无 JSON 应拒绝");
 
     // 错误流：error 诊断 → 层 -1 → 门禁 BLOCK
@@ -143,7 +137,7 @@ fn diag_endpoint_two_states_and_garbage_guard() {
         r#"{"reason":"build-finished","success":false}"#,
         "\n"
     );
-    let (s, b) = server::client::post(addr, "/v1/diag?node=1", err_stream).unwrap();
+    let (s, b) = post(addr, "/v1/diag?node=1", err_stream).unwrap();
     assert_eq!(s, 200);
     assert!(b.contains("errors=1"), "{b}");
     assert!(b.contains("layer=-1"), "{b}");
@@ -152,7 +146,7 @@ fn diag_endpoint_two_states_and_garbage_guard() {
 
     // 干净构建（有 build-finished，0 诊断）→ 检查类 +1 → 门禁放行
     let clean_stream = r#"{"reason":"build-finished","success":true}"#;
-    let (_, b) = server::client::post(addr, "/v1/diag?node=1", clean_stream).unwrap();
+    let (_, b) = post(addr, "/v1/diag?node=1", clean_stream).unwrap();
     assert!(b.contains("layer=+1"), "{b}");
     let (_, b) = server::client::get(addr, "/v1/gate?tip=1").unwrap();
     assert!(b.contains("gate=ALLOW"), "干净构建应放行：{b}");
@@ -176,7 +170,7 @@ fn lsp_endpoint_two_states() {
         r#"{"jsonrpc":"2.0","method":"textDocument/publishDiagnostics","params":{"uri":"file:///src/main.rs","diagnostics":[{"range":{"start":{"line":2}},"severity":1,"code":"E0308","source":"rust-analyzer","message":"mismatched types"}]}}"#,
         "\n"
     );
-    let (s, b) = server::client::post(addr, "/v1/lsp?node=1", err_stream).unwrap();
+    let (s, b) = post(addr, "/v1/lsp?node=1", err_stream).unwrap();
     assert_eq!(s, 200);
     assert!(b.contains("errors=1"), "{b}");
     assert!(b.contains("layer=-1"), "{b}");
@@ -190,7 +184,7 @@ fn lsp_endpoint_two_states() {
         r#"{"reason":"build-finished","success":true}"#,
         "\n"
     );
-    let (s, b) = server::client::post(addr, "/v1/lsp?node=1", clean_stream).unwrap();
+    let (s, b) = post(addr, "/v1/lsp?node=1", clean_stream).unwrap();
     assert_eq!(s, 200);
     assert!(b.contains("layer=+1"), "{b}");
     let (_, b) = server::client::get(addr, "/v1/gate?tip=1").unwrap();
@@ -229,13 +223,12 @@ fn server_handles_concurrent_readers_and_writers() {
     }
 
     // 写者：两次扫描入账（一次确证 / 一次启发式）+ 一次自帧合并（幂等）
-    let (s, _) = server::client::post(addr, "/v1/scan", "SNIP\t1\tsecret = \"k\";").unwrap();
+    let (s, _) = post(addr, "/v1/scan", "SNIP\t1\tsecret = \"k\";").unwrap();
     assert_eq!(s, 200);
-    let (s, _) =
-        server::client::post(addr, "/v1/scan", "SNIP\t2\tSELECT * FROM t\" + user;").unwrap();
+    let (s, _) = post(addr, "/v1/scan", "SNIP\t2\tSELECT * FROM t\" + user;").unwrap();
     assert_eq!(s, 200);
     let frame = sync::encode_frame(0, &sync::parse_log_file(&pa).unwrap());
-    let (s, _) = server::client::post(addr, "/v1/deltas", &frame).unwrap();
+    let (s, _) = post(addr, "/v1/deltas", &frame).unwrap();
     assert_eq!(s, 200, "自帧合并应幂等成功");
 
     for r in readers {

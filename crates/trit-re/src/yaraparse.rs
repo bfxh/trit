@@ -103,7 +103,7 @@ fn lex(text: &str) -> Result<Vec<Tok>, String> {
     let mut chars = text.chars().peekable();
     while let Some(&c) = chars.peek() {
         match c {
-            ' ' | '\t' | '\r' | '\n' => {
+            _ if c.is_whitespace() => {
                 chars.next();
             }
             '/' => {
