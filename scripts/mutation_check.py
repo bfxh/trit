@@ -221,7 +221,6 @@ EXEMPT: dict[str, str] = {
     # 这两个是薄壳（5 / 19 行），没有可钉的判定；一旦有人给它们补 self_test()，豁免自动过期。
     "scripts/bench.sh": "基准薄壳（5 行）：只是把参数转给 cargo bench，无可变异判定",
     "scripts/publish.sh": "发布薄壳（19 行）：版本校验后转给 cargo publish，无可变异判定",
-    "crates/trit-immune/scripts/sync-upstream.sh": "上游同步脚本：一键同步本就不成立（补丁表达不了删除），无 --self-test 面",
 }
 
 FN_OR_IMPL = re.compile(
