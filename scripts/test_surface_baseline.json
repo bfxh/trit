@@ -14,6 +14,7 @@
  "crate/trit-count": 34,
  "crate/trit-dot": 18,
  "crate/trit-eval": 28,
+ "crate/trit-export": 5,
  "crate/trit-float": 26,
  "crate/trit-fuzz": 11,
  "crate/trit-gamescan": 26,
