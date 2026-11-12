@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-re：诱饵指纹检测——对抗性投毒下的能力证据降权）
+
+- 新模块 `crates/trit-re/src/decoy.rs`：反逆向盾（BLA 形，见
+  `trit-immune/docs/BLA-ADVERSARIAL-STUDY.md`）会**故意投放**触发检测规则的
+  诱饵（canary 假敏感 API 名、假 SGX/TPM 清单）。v1 识别文档化指纹
+  （PE `.enclave` 诱饵节），命中即把注入/动态解析族能力事实 **True →
+  Unknown** 并注记 `decoy.markers`——投毒对抗下"扫描器永不 +1"的对称
+  延伸：**诱饵面上的 True 也不许当真**。
+- 诚实边界：只覆盖指纹可判别的公开盾；无指纹 ≠ 无投毒（事实照旧不新增
+  弃权）；ELF 侧盾形态待真实样本（如实留白）。
+- 判据：`cargo test -p trit-re` = 187 全绿（+3 诱饵单测：命中降权 /
+  无指纹零漂移 / 原弃权不劣化）；N1 ARM64-PE 批重扫**判定零漂移**
+  （无指纹批不受影响）。
+
 ### Added（trit-wspace：WSP2 块索引与随机访问）
 
 - `wsp2::BlockIndex`：扫描 WSP2 生成层/行块索引（JSON），`read_layer` / `read_rows`
