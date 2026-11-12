@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added（更新 / 认领 / 牵连三项判据：负更新守卫、方案优先裁决、改动牵连面）
+
+- 新增 `scripts/branch_update.py`：更新分类为 new-branch / fast-forward / clean-rewrite /
+  **negative-update**（old 上有提交在新历史里没有等价补丁）/ unknown-old，并检查三本棘轮台账回退
+  （测试面变小、模块预算上限放松或消失、CHANGELOG 变小、盘符路径变多）⇒ 拦。
+  已接进 `pre-push`（稳定副本 `trit-update-guard.py`）：推任何 `refs/heads/*` 先过一遍；
+  `ALLOW_NON_FF_PUSH=1` 与 `ALLOW_RATCHET_PUSH=1` 分开授权。
+- `scripts/agent_claims.py`：名单读改写加**文件锁**（并发 claim 曾撞出同名 id `c3`）；
+  `claim --plan/--plan-file` 把方案存 `CLAIMS.plans/`；新增 `compare`（重叠时并排比较方案，
+  缺方案判红）、`plan`（补方案）、`repair [--apply]`（修历史重复 id）。
+  规则入 `AGENTS.md`：重叠裁决看方案质量（问题解释 / 兼容 / 牵连 / 回滚 / 验证），不是先到先得。
+- 新增 `scripts/impact.py`：改动文件 → crate → 反向依赖闭包，给风险档与建议门，并用 `--claims`
+  列出「会被牵连但没人认领」的 crate（防止“我只认领了 core，下游 12 个 crate 不知道”）。
+  实测：改 `trit-core` 一个文件牵连 **37/44** 个 crate（84%）。
+- 新增 `docs/DEEP-RISK-MAP.md`：本轮判据、仍未修的 12 项深层问题（trit-vcs 无 CAS、服务端不认
+  merge driver、测试选择、feature 矩阵、API 兼容、语义冲突等）与技术/论文对照。
+- 自测：branch_update 23 条、impact 18 条、hooks 59 条、agent_claims 99 条；
+  变异 6 + 5 + 17 + 44 条全部逐条跑（读数见 PR）。
+
 ### Fixed（钩子稳定副本：老分支不再被 rc=2 误伤）
 
 - 事故（2026-11-12 安装后实测）：`pre-commit` 调的是**当前分支**的 `scripts/hooks.py`；老分支没有

@@ -349,5 +349,50 @@
   "pkg": "scripts/agent_claims.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "claims: 并发 claim 不加锁",
+  "file": "scripts/agent_claims.py",
+  "old": "    if command in handlers:\n        # 名单是 read-modify-write：两个会话同时 claim 会拿同一个 id（实测 c3 撞过）\n        with _locked(path):",
+  "new": "    if command in handlers:\n        # 名单是 read-modify-write：两个会话同时 claim 会拿同一个 id（实测 c3 撞过）\n        if True:",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: repair 不改重复 id",
+  "file": "scripts/agent_claims.py",
+  "old": "        claim[\"id\"] = new_id",
+  "new": "        claim[\"id\"] = claim[\"id\"]",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: compare 忽略缺方案",
+  "file": "scripts/agent_claims.py",
+  "old": "            missing += 1",
+  "new": "            pass",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: plan 不落盘",
+  "file": "scripts/agent_claims.py",
+  "old": "    (plans / f\"{ident}.md\").write_text(text.strip() + \"\\n\", encoding=\"utf-8\")",
+  "new": "    pass",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "claims: check 不点名缺方案",
+  "file": "scripts/agent_claims.py",
+  "old": "    if red:\n        missing = [claim[\"id\"] for claim in claims",
+  "new": "    if False:\n        missing = [claim[\"id\"] for claim in claims",
+  "pkg": "scripts/agent_claims.py",
+  "filter": "",
+  "runner": "python"
  }
 ]
