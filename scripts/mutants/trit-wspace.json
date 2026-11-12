@@ -2697,7 +2697,7 @@
 },
 {
  "name": "wsp3: RLE 重复段长度少 1",
- "file": "crates/trit-wspace/src/wsp3.rs",
+ "file": "crates/trit-wspace/src/wsp3/rle.rs",
  "old": "            let len = usize::from(header & 0x7F) + 3;",
  "new": "            let len = usize::from(header & 0x7F) + 2;",
  "pkg": "trit-wspace",
@@ -2705,7 +2705,7 @@
 },
 {
  "name": "wsp3: 不校验解压长度",
- "file": "crates/trit-wspace/src/wsp3.rs",
+ "file": "crates/trit-wspace/src/wsp3/rle.rs",
  "old": "    if out.len() != expected {",
  "new": "    if false {",
  "pkg": "trit-wspace",
@@ -2718,5 +2718,29 @@
  "new": "    if false {",
  "pkg": "trit-wspace",
  "filter": "wsp3_rejects_corruption"
+},
+{
+ "name": "wsp4: 位流少写一位",
+ "file": "crates/trit-wspace/src/wsp4.rs",
+ "old": "        for index in (0..len).rev() {",
+ "new": "        for index in (1..len).rev() {",
+ "pkg": "trit-wspace",
+ "filter": "huffman_round_trips"
+},
+{
+ "name": "wsp4: 解码少读一个符号",
+ "file": "crates/trit-wspace/src/wsp4.rs",
+ "old": "    while out.len() < raw_len {",
+ "new": "    while out.len() + 1 < raw_len {",
+ "pkg": "trit-wspace",
+ "filter": "huffman_round_trips"
+},
+{
+ "name": "wsp4: 不校验版本",
+ "file": "crates/trit-wspace/src/wsp4.rs",
+ "old": "    if bytes[4] != VERSION {",
+ "new": "    if false {",
+ "pkg": "trit-wspace",
+ "filter": "wsp4_rejects_corruption"
 }
 ]
