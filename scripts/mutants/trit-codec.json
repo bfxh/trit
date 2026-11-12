@@ -158,5 +158,13 @@
   "new": "    if n > usize::MAX {",
   "pkg": "trit-codec",
   "filter": "too_many_vars_is_rejected_before_exponential_enumeration"
+ },
+ {
+  "name": "codec-count: cube_size 退回 n as u32 截断（超大位数绕过 CubeTooLarge）",
+  "file": "crates/trit-codec/src/count.rs",
+  "old": "    let exp = u32::try_from(n).ok()?;",
+  "new": "    let exp = n as u32;",
+  "pkg": "trit-codec",
+  "filter": "cube_size_bounds_and_huge_n_does_not_wrap"
  }
 ]

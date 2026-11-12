@@ -560,7 +560,11 @@
     },
     {
       "file": "crates/trit-codec/src/count.rs",
-      "lines": 280
+      "lines": 132
+    },
+    {
+      "file": "crates/trit-codec/src/count/tests.rs",
+      "lines": 168
     },
     {
       "file": "crates/trit-codec/src/delta.rs",
