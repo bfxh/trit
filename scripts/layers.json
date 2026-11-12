@@ -24,6 +24,7 @@
     "trit-count": "algo",
     "trit-mv": "algo",
     "trit-num": "ops",
+    "trit-export": "ops",
     "trit-ir": "algo",
     "trit-clean": "algo",
     "trit-circuit": "algo",

@@ -783,6 +783,22 @@
       "lines": 149
     },
     {
+      "file": "crates/trit-export/src/error.rs",
+      "lines": 48
+    },
+    {
+      "file": "crates/trit-export/src/lib.rs",
+      "lines": 322
+    },
+    {
+      "file": "crates/trit-export/src/pack.rs",
+      "lines": 48
+    },
+    {
+      "file": "crates/trit-export/tests/gguf.rs",
+      "lines": 148
+    },
+    {
       "file": "crates/trit-float/src/format.rs",
       "lines": 182
     },
