@@ -8,10 +8,13 @@
 use std::collections::HashSet;
 
 use crate::edit::Edit;
+
+mod keys;
 use crate::error::Result;
 use crate::net::Net;
 use crate::oracle::Oracle;
 use crate::repair;
+pub(crate) use keys::edit_key;
 
 /// 单条编辑的实测影响。
 #[derive(Clone, Debug, PartialEq)]
@@ -359,19 +362,4 @@ fn mismatches(outputs: &[Vec<crate::trit::Trit>], oracle: &Oracle) -> Vec<usize>
         .enumerate()
         .filter_map(|(index, (got, want))| (got != want).then_some(index))
         .collect()
-}
-
-pub(crate) fn edit_key(edit: &Edit) -> (u8, usize, usize, usize, i64) {
-    match *edit {
-        Edit::SetTrit {
-            layer,
-            row,
-            col,
-            to,
-        } => (0, layer, row, col, i64::from(to.to_i8())),
-        Edit::SetBias { layer, row, to } => (1, layer, row, 0, i64::from(to.to_i8())),
-        Edit::SetScale { layer, row, to } => (2, layer, row, 0, i64::from(to.to_bits())),
-        Edit::SwapRows { layer, a, b } => (3, layer, a, b, 0),
-        Edit::NegateRow { layer, row } => (4, layer, row, 0, 0),
-    }
 }

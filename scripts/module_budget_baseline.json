@@ -152,35 +152,35 @@
     },
     {
       "file": "crates/trit-build/tests/build.rs",
-      "lines": 150
+      "lines": 145
     },
     {
       "file": "crates/trit-build/tests/gpu_export.rs",
-      "lines": 134
+      "lines": 129
     },
     {
       "file": "crates/trit-build/tests/hdl.rs",
-      "lines": 159
-    },
-    {
-      "file": "crates/trit-build/tests/m1.rs",
       "lines": 154
     },
     {
+      "file": "crates/trit-build/tests/m1.rs",
+      "lines": 149
+    },
+    {
       "file": "crates/trit-build/tests/m2.rs",
-      "lines": 436
+      "lines": 431
     },
     {
       "file": "crates/trit-build/tests/m3.rs",
-      "lines": 181
+      "lines": 176
     },
     {
       "file": "crates/trit-build/tests/plan.rs",
-      "lines": 158
+      "lines": 153
     },
     {
       "file": "crates/trit-build/tests/runtime.rs",
-      "lines": 273
+      "lines": 268
     },
     {
       "file": "crates/trit-capacity/src/lib.rs",
@@ -1520,7 +1520,7 @@
     },
     {
       "file": "crates/trit-machines/src/graded.rs",
-      "lines": 548
+      "lines": 547
     },
     {
       "file": "crates/trit-machines/src/lib.rs",
@@ -2932,7 +2932,11 @@
     },
     {
       "file": "crates/trit-wspace/src/analyze.rs",
-      "lines": 377
+      "lines": 365
+    },
+    {
+      "file": "crates/trit-wspace/src/analyze/keys.rs",
+      "lines": 31
     },
     {
       "file": "crates/trit-wspace/src/artifact_shard.rs",
@@ -2992,7 +2996,11 @@
     },
     {
       "file": "crates/trit-wspace/src/edit.rs",
-      "lines": 415
+      "lines": 341
+    },
+    {
+      "file": "crates/trit-wspace/src/edit/ops.rs",
+      "lines": 273
     },
     {
       "file": "crates/trit-wspace/src/error.rs",
@@ -3068,7 +3076,11 @@
     },
     {
       "file": "crates/trit-wspace/src/rebase.rs",
-      "lines": 237
+      "lines": 83
+    },
+    {
+      "file": "crates/trit-wspace/src/rebase/classify.rs",
+      "lines": 260
     },
     {
       "file": "crates/trit-wspace/src/repair.rs",
@@ -3120,7 +3132,11 @@
     },
     {
       "file": "crates/trit-wspace/src/wire/mod.rs",
-      "lines": 697
+      "lines": 693
+    },
+    {
+      "file": "crates/trit-wspace/src/wire/tile.rs",
+      "lines": 90
     },
     {
       "file": "crates/trit-wspace/src/wsp2.rs",
@@ -3285,6 +3301,10 @@
     {
       "file": "crates/trit-wspace/tests/task_weight.rs",
       "lines": 371
+    },
+    {
+      "file": "crates/trit-wspace/tests/tile_edit.rs",
+      "lines": 236
     },
     {
       "file": "crates/trit-wspace/tests/transplant.rs",
