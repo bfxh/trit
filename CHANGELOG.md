@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Changed（trit-wspace：rANS 原型——不优于 WSP4 Huffman（负结果））
+
+- 静态 rANS（字节级，M=2^12）原型对 all-MiniLM-L6-v2 的 103 个 WSP2：**4,991,451** 字节（83.39%），
+  比 WSP4 Huffman **4,953,834**（82.76%）更大；大文件 +0.38%、160KB 文件 −0.5%。
+- 原因：频率归一化量化误差 + 512B 表头；Huffman 的整数码长损失反而更小。
+- 不做 rANS/算术编码；WSP4 保持 Huffman + method=0 回退。复算见 `docs/WSP3-RESULTS.md` §5。
+
 ### Fixed（中期安全审计 U-1/U-2/U-3：资源耗尽与「上限不执法」）
 
 来源：`trit-audit-report.md`（bc46a8c 中期只读审计）三条未证资源耗尽发现，逐条复核成立并修复。
