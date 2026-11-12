@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added（trit-re：YARA `pe.sections[N]` 数组式访问）
+
+- 新模块 `crates/trit-re/src/sigscan/sections.rs`：`pe.sections[N].<field>`
+  从 PE 节表求值（characteristics / virtual_size / virtual_address /
+  raw_size / raw_ptr）；`pe.sections[N].name` 是字符串字段（条件等值
+  基建未建）→ 记名弃权。
+- **三态纪律推广**（第五号语义分歧的数组化）：越界索引 = **确定的未定义**
+  → 比较判假（同零命中串的 `@a[N]`）；缺 PE 上下文 = 弃权（Unknown），
+  绝不折叠成假；非数值下标（如按名查找）继续记名弃权。
+- 解析器 `yaraparse/cond_leaf.rs`：纯数值下标捕获进路径
+  （`pe.sections[0].characteristics`），其余下标仍吞成 `[…]`。
+- 预算：`cond.rs` 的数值叶子解析拆到 `cond_leaf.rs`、pe 测试拆到
+  `yara_pe_sections.rs` + 共用夹具（`tests/support/yara_pe_support.rs`，
+  拆文件不抬台账）。
+- 判据：`cargo test -p trit-re` = 191 全绿（+2 sections 用例）；
+  clippy/fmt/module_budget/hazard/secret/docs_hygiene 全过。
+- 未证栏：本机无 yara-python，未新增官方差分探针批；数组语义按官方
+  undefined 比较纪律 + 既有 `@a[N]` 差分结论推广，待真实样本批次补证。
+
 ### Added（trit-wspace：CLI 并发写锁）
 
 - `cli/lock.rs`：对 `--out` / `--log` 路径加 `<path>.lock` advisory 锁；

@@ -2540,11 +2540,15 @@
     },
     {
       "file": "crates/trit-re/src/sigscan/resolve.rs",
-      "lines": 82
+      "lines": 71
     },
     {
       "file": "crates/trit-re/src/sigscan/scan.rs",
       "lines": 104
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/sections.rs",
+      "lines": 148
     },
     {
       "file": "crates/trit-re/src/sigscan/tests.rs",
@@ -2584,7 +2588,11 @@
     },
     {
       "file": "crates/trit-re/src/yaraparse/cond.rs",
-      "lines": 519
+      "lines": 406
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/cond_leaf.rs",
+      "lines": 139
     },
     {
       "file": "crates/trit-re/src/yaraparse/cond_tail.rs",
@@ -2631,6 +2639,10 @@
       "lines": 111
     },
     {
+      "file": "crates/trit-re/tests/support/yara_pe_support.rs",
+      "lines": 51
+    },
+    {
       "file": "crates/trit-re/tests/yara.rs",
       "lines": 491
     },
@@ -2644,7 +2656,11 @@
     },
     {
       "file": "crates/trit-re/tests/yara_pe.rs",
-      "lines": 139
+      "lines": 71
+    },
+    {
+      "file": "crates/trit-re/tests/yara_pe_sections.rs",
+      "lines": 83
     },
     {
       "file": "crates/trit-re/tests/yara_regex.rs",

@@ -18,7 +18,7 @@ use crate::pe::PeInfo;
 
 /// 解析 `pe.*` 标量路径；`None` = 路径不在子集内或上下文缺失（弃权）。
 /// `file_len` = 扫描数据长度（官方 overlay 口径需要；`None` = overlay
-/// 路径弃权）。
+/// 路径弃权）。数组式 `pe.sections[N].*` 见 [`super::sections`]。
 pub(super) fn resolve(path: &str, pe: Option<&PeInfo>, file_len: Option<u64>) -> Option<u64> {
     let pe = pe?;
     // 官方口径：节区（及头部）之后到文件尾都算 overlay——含证书。
