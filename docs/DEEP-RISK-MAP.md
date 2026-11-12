@@ -99,8 +99,11 @@ $ python scripts/impact.py --files crates/trit-core/src/lib.rs
    验收：脏树 rc=1 且 `git status --porcelain` 前后逐字节一致。
    实测读数：自测 22/22、变异 6/6；分叉打印旧/新 SHA 与分叉点；门按存在性挑（fmt --check + 六个
    python 门），空集明说；`--apply` 未实现 ⇒ rc2，不替用户做落地决定。
-3. **mutation 分片**：`--shard i/n` + 按文件哈希分片；验收：4 片并行总时长 < 20 分钟，
-   合并后 caught 集合与全量一致。
+3. **mutation 分片**（**已做**）：`--shard i/n`（crc32(file\0name) 稳定分片，越界 rc2，空片真空集明说）
+   + `--partition n [--logs]` 聚合门（干净划分 + 逐条判决对账，缺/重/非杀死/读不到全判红）；
+   CI full 改 4 片矩阵 + 聚合保持原名 `mutation (full)`（非 required）。
+   实测读数：自测 121/121、变异 32/32 全断言抓住；全表 1498 条 4 片 = [380, 367, 393, 358]。
+   验收：4 片并行总时长 < 20 分钟、合并后 caught 集合与全量一致 —— 待合入后 dispatch 实测补读数。
 4. **feature 矩阵门**：先覆盖 `trit-texture png`、`trit-gpu gpu`、`trit-build gpu` 的
    “单独开 / 全开 / 全关”三态；验收：每个组合一条命令 + 失败点名到组合。
 5. **trit-vcs CAS**：在独立仓加 `ref update --old` 与并发测试；主库侧把 `docs/VCS-BRANCH-ISSUES.md`

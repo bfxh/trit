@@ -187,5 +187,104 @@
     "filter": "",
     "pkg": "scripts/mutation_check.py",
     "runner": "python"
+  },
+  {
+    "name": "gate: shard 不选择（整片当全量跑）",
+    "file": "scripts/mutation_check.py",
+    "old": "        picked = select_shard(mutants, i, n)",
+    "new": "        picked = mutants",
+    "filter": "",
+    "pkg": "scripts/mutation_check.py",
+    "runner": "python"
+  },
+  {
+    "name": "gate: 分片哈希不稳（按对象身份落片）",
+    "file": "scripts/mutation_check.py",
+    "old": "    return zlib.crc32((mutant[\"file\"] + \"\\0\" + mutant[\"name\"]).encode(\"utf-8\"))",
+    "new": "    return id(mutant)",
+    "filter": "",
+    "pkg": "scripts/mutation_check.py",
+    "runner": "python"
+  },
+  {
+    "name": "gate: shard 越界不拒",
+    "file": "scripts/mutation_check.py",
+    "old": "    if n < 1 or not 1 <= i <= n:",
+    "new": "    if False:",
+    "filter": "",
+    "pkg": "scripts/mutation_check.py",
+    "runner": "python"
+  },
+  {
+    "name": "gate: preflight 仍查全量（未选条目误判红）",
+    "file": "scripts/mutation_check.py",
+    "old": "    problems = preflight(mutants)",
+    "new": "    problems = preflight(MUTANTS)",
+    "filter": "",
+    "pkg": "scripts/mutation_check.py",
+    "runner": "python"
+  },
+  {
+    "name": "gate: 真空片不放行",
+    "file": "scripts/mutation_check.py",
+    "old": "            print(f\"SHARD {i}/{n}: 0 条（真空集：登记条目都落在别的片）⇒ 本片放行\")\n            return 0",
+    "new": "            print(f\"SHARD {i}/{n}: 0 条（真空集：登记条目都落在别的片）⇒ 本片放行\")\n            return 1",
+    "filter": "",
+    "pkg": "scripts/mutation_check.py",
+    "runner": "python"
+  },
+  {
+    "name": "gate: shard 不声明部分跑",
+    "file": "scripts/mutation_check.py",
+    "old": "        print(f\"SHARD {i}/{n}: {len(picked)}/{len(mutants)} 条 —— 这不是全量复跑；各片必须在**不同检出**里跑（同树有单实例锁与共享文件）\")",
+    "new": "        pass",
+    "filter": "",
+    "pkg": "scripts/mutation_check.py",
+    "runner": "python"
+  },
+  {
+    "name": "gate: 聚合漏片不判红",
+    "file": "scripts/mutation_check.py",
+    "old": "    if not report[\"covers_all\"]:",
+    "new": "    if False:",
+    "filter": "",
+    "pkg": "scripts/mutation_check.py",
+    "runner": "python"
+  },
+  {
+    "name": "gate: 聚合重复落片不判红",
+    "file": "scripts/mutation_check.py",
+    "old": "    if not report[\"disjoint\"]:",
+    "new": "    if False:",
+    "filter": "",
+    "pkg": "scripts/mutation_check.py",
+    "runner": "python"
+  },
+  {
+    "name": "gate: 聚合覆盖缺口不判红",
+    "file": "scripts/mutation_check.py",
+    "old": "            red = True\n    return 1 if red else 0",
+    "new": "            red = True\n    return 0",
+    "filter": "",
+    "pkg": "scripts/mutation_check.py",
+    "runner": "python"
+  },
+  {
+    "name": "gate: 判决解析漏掉 caught（真抓住被当缺判决）",
+    "file": "scripts/mutation_check.py",
+    "old": "    r\"^(caught|CRASH-KILL|HANG-KILL|TIMEOUT|SURVIVED|NO-OUTPUT|FALSE-KILL|UNNAMED)\\s+(.+?)(?:\\s\\s\\[.*)?$\",",
+    "new": "    r\"^(CRASH-KILL|HANG-KILL|TIMEOUT|SURVIVED|NO-OUTPUT|FALSE-KILL|UNNAMED)\\s+(.+?)(?:\\s\\s\\[.*)?$\",",
+    "filter": "",
+    "pkg": "scripts/mutation_check.py",
+    "runner": "python"
+  },
+  {
+    "name": "gate: 聚合空登记表也放行",
+    "file": "scripts/mutation_check.py",
+    "old": "        print(\"NO MUTANTS REGISTERED：聚合模式全表为空 ⇒ 判红。\")\n        return 1",
+    "new": "        print(\"NO MUTANTS REGISTERED：聚合模式全表为空 ⇒ 判红。\")\n        return 0",
+    "filter": "",
+    "pkg": "scripts/mutation_check.py",
+    "runner": "python"
   }
 ]

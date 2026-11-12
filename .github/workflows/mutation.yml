@@ -64,14 +64,45 @@ jobs:
         if: steps.crates.outputs.args != ''
         run: python3 scripts/mutation_check.py ${{ steps.crates.outputs.args }}
 
-  mutation:
-    name: mutation (full)
+  # full 拆 4 片并行（crc32(file\0name) 稳定分片）：每片一个独立检出（同树有单实例锁与共享文件）。
+  # 聚合 job 保持原名 "mutation (full)"：它不在 required-checks.txt 里（只有 dispatch/schedule 跑），
+  # 但名字不变，历史读数与任何外部引用仍对得上。required 的两个名字（self-test / changed crates）不动。
+  full-shard:
+    name: mutation (full shard ${{ matrix.shard }}/4)
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-      - name: mutation gate
-        run: python3 scripts/mutation_check.py
+      - name: mutation gate (shard ${{ matrix.shard }}/4)
+        run: python3 scripts/mutation_check.py --shard ${{ matrix.shard }}/4 2>&1 | tee "shard-${{ matrix.shard }}.log"
+      - name: upload shard log
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutation-shard-${{ matrix.shard }}
+          path: shard-${{ matrix.shard }}.log
+
+  full:
+    name: mutation (full)
+    # always()：某片红了也要跑聚合——日志里的 SURVIVED/缺条目会被逐条点名，
+    # 而不是让聚合 job 静默 skipped（"没跑"不等于"过了"）。
+    if: always() && github.event_name != 'pull_request'
+    needs: full-shard
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: mutation-shard-*
+          path: shard-logs
+          merge-multiple: true
+      - name: aggregate (partition + per-mutant coverage)
+        run: python3 scripts/mutation_check.py --partition 4 --logs shard-logs
