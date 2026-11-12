@@ -50,12 +50,12 @@
 //! assert!(matches!(out.rules[0], trit_re::yaraparse::RuleOutcome::Parsed(_)));
 //! ```
 
-use crate::sigscan::{Pattern, Rule, Unscannable};
+use crate::sigscan::{Pattern, Rule};
 
 // 条件表达式解析（拆出守 800 行预算）；`#`/`@` 叶子在 cond_tail。
 mod cond;
 mod cond_tail;
-use self::cond::{CondParser, parse_size};
+use self::cond::CondParser;
 
 /// 单条规则的解析结局：可评估，或不可评估（带原因）。
 #[derive(Debug, Clone)]
@@ -88,22 +88,24 @@ pub fn parse_rules(text: &str) -> Result<ParsedFile, String> {
 // ── 词法（lex.rs）──────────────────────────────────────────────────────
 
 mod lex;
+// 串值解析与修饰符消费（从本文件拆出守预算）。
+mod valuemod;
 
 use lex::{Tok, lex};
 
 // ── 解析 ────────────────────────────────────────────────────────────────
 
 struct Parser {
-    toks: Vec<Tok>,
-    pos: usize,
+    pub(super) toks: Vec<Tok>,
+    pub(super) pos: usize,
 }
 
 impl Parser {
-    fn peek(&self) -> Option<&Tok> {
+    pub(super) fn peek(&self) -> Option<&Tok> {
         self.toks.get(self.pos)
     }
 
-    fn next(&mut self) -> Option<Tok> {
+    pub(super) fn next(&mut self) -> Option<Tok> {
         let t = self.toks.get(self.pos).cloned();
         if t.is_some() {
             self.pos += 1;
@@ -259,158 +261,6 @@ impl Parser {
             self.peek(),
             Some(Tok::Word(w)) if w == "strings" || w == "condition"
         )
-    }
-
-    /// strings 里的一个值：文本 / hex 块 / 正则。正则与 `base64`/`private`
-    /// 修饰**可解析不可扫描**——串记 [`Pattern::Unscannable`]（带原因），
-    /// 整条规则扫描时判 Unknown；`nocase`/`wide`/`ascii`/`fullword`/`xor`
-    /// 可评估。返回 `Ok(None)` 已不用——所有形态都有归宿。
-    fn parse_string_value(
-        &mut self,
-        unsupported: &mut Option<String>,
-        rule_name: &str,
-    ) -> Result<Option<Pattern>, String> {
-        enum Value {
-            Text(String),
-            Hex(Pattern),
-            Regex(String),
-        }
-        let value = match self.next() {
-            Some(Tok::Str(s)) => Value::Text(s),
-            Some(Tok::Regex(b)) => Value::Regex(b),
-            Some(Tok::Sym('{')) => {
-                // hex 块：吃到 '}'，token 拼回空格分隔的 hex spec
-                let mut spec = String::new();
-                loop {
-                    match self.next() {
-                        Some(Tok::Sym('}')) => break,
-                        Some(Tok::Word(w)) => {
-                            if !spec.is_empty() {
-                                spec.push(' ');
-                            }
-                            spec.push_str(&w);
-                        }
-                        Some(Tok::Sym(c)) => {
-                            if !spec.is_empty() {
-                                spec.push(' ');
-                            }
-                            spec.push(c);
-                        }
-                        other => {
-                            return Err(format!("规则 {rule_name} 的 hex 串未闭合：{other:?}"));
-                        }
-                    }
-                }
-                match Pattern::hex(&spec) {
-                    Ok(p) => Value::Hex(p),
-                    Err(e) => return Err(format!("规则 {rule_name} hex 串不合法：{e}")),
-                }
-            }
-            other => {
-                return Err(format!("规则 {rule_name}：字符串值不合法 {other:?}"));
-            }
-        };
-        // 修饰符
-        let mut nocase = false;
-        let mut wide = false;
-        let mut ascii_too = false;
-        let mut fullword = false;
-        let mut xor: Option<(u8, u8)> = None;
-        let mut unscannable: Option<String> = None;
-        while let Some(Tok::Word(w)) = self.peek() {
-            match w.as_str() {
-                "nocase" => {
-                    nocase = true;
-                    self.pos += 1;
-                }
-                "wide" => {
-                    wide = true;
-                    self.pos += 1;
-                }
-                "ascii" => {
-                    ascii_too = true;
-                    self.pos += 1;
-                }
-                "fullword" => {
-                    fullword = true;
-                    self.pos += 1;
-                }
-                "xor" => {
-                    self.pos += 1;
-                    xor = Some(if self.eat_sym('(') {
-                        let lo = parse_size(&match self.next() {
-                            Some(Tok::Word(w)) => w,
-                            other => return Err(format!("规则 {rule_name}：xor 缺密钥 {other:?}")),
-                        })
-                        .ok_or_else(|| format!("规则 {rule_name}：xor 密钥不合法"))?;
-                        if lo > 0xFF {
-                            return Err(format!("规则 {rule_name}：xor 密钥越界（≤0xFF）"));
-                        }
-                        let keys = if self.eat_sym('-') {
-                            let hi = parse_size(&match self.next() {
-                                Some(Tok::Word(w)) => w,
-                                other => {
-                                    return Err(format!("规则 {rule_name}：xor 缺上界 {other:?}"));
-                                }
-                            })
-                            .ok_or_else(|| format!("规则 {rule_name}：xor 上界不合法"))?;
-                            if hi > 0xFF || hi < lo {
-                                return Err(format!(
-                                    "规则 {rule_name}：xor 区间不合法（{lo}-{hi}）"
-                                ));
-                            }
-                            (lo as u8, hi as u8)
-                        } else {
-                            (lo as u8, lo as u8)
-                        };
-                        if !self.eat_sym(')') {
-                            return Err(format!("规则 {rule_name}：xor 未闭合"));
-                        }
-                        keys
-                    } else {
-                        (0x00, 0xFF) // 裸 xor：全键
-                    });
-                }
-                "base64" | "base64wide" => {
-                    unscannable = Some(format!("{w} 修饰串不支持（编码展开未实现）"));
-                    self.pos += 1;
-                }
-                "private" => {
-                    unscannable = Some("private 串不支持（条件引用语义未实现）".into());
-                    self.pos += 1;
-                }
-                _ => break,
-            }
-        }
-        if let Some(reason) = unscannable {
-            return Ok(Some(Pattern::Unscannable(Unscannable { reason })));
-        }
-        if xor.is_some() && nocase {
-            // 官方 YARA 编译器拒绝 xor nocase（"invalid modifier combination"，
-            // 差分探针实测）——对齐拒绝，不给超集扩展留静默面。
-            return Err(format!("规则 {rule_name}：xor 与 nocase 组合官方不合法"));
-        }
-        if let Value::Regex(body) = &value {
-            // 正则串：Pike VM（sigscan::regex）；修饰语义在 Pattern::regex 内守
-            return Ok(Some(Pattern::regex(
-                body,
-                nocase,
-                wide,
-                xor.is_some(),
-                fullword,
-            )));
-        }
-        let pattern = match value {
-            Value::Text(s) => Pattern::text_ext(&s, nocase, wide, ascii_too, xor, fullword),
-            Value::Hex(p) => {
-                if xor.is_some() || fullword {
-                    let _ = unsupported.insert("hex 串上的 xor/fullword 修饰不支持".into());
-                }
-                p
-            }
-            Value::Regex(_) => unreachable!("上面已处理"),
-        };
-        Ok(Some(pattern))
     }
 
     fn assemble_rule(

@@ -2507,6 +2507,10 @@
       "lines": 343
     },
     {
+      "file": "crates/trit-re/src/sigscan/b64.rs",
+      "lines": 226
+    },
+    {
       "file": "crates/trit-re/src/sigscan/eval.rs",
       "lines": 238
     },
@@ -2568,7 +2572,7 @@
     },
     {
       "file": "crates/trit-re/src/yaraparse.rs",
-      "lines": 448
+      "lines": 298
     },
     {
       "file": "crates/trit-re/src/yaraparse/cond.rs",
@@ -2581,6 +2585,10 @@
     {
       "file": "crates/trit-re/src/yaraparse/lex.rs",
       "lines": 145
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/valuemod.rs",
+      "lines": 196
     },
     {
       "file": "crates/trit-re/tests/arm64.rs",
@@ -2616,7 +2624,11 @@
     },
     {
       "file": "crates/trit-re/tests/yara.rs",
-      "lines": 514
+      "lines": 491
+    },
+    {
+      "file": "crates/trit-re/tests/yara_b64.rs",
+      "lines": 52
     },
     {
       "file": "crates/trit-re/tests/yara_lexer.rs",

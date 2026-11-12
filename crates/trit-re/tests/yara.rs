@@ -1,7 +1,7 @@
 //! yaraparse 的集成测试（从 src/yaraparse.rs 拆出，控制单文件行数预算）。
 
 use trit_core::value::Ternary;
-use trit_re::sigscan::{Condition, Pattern, SigScan};
+use trit_re::sigscan::{Condition, SigScan};
 use trit_re::yaraparse::{RuleOutcome, parse_rules};
 
 #[test]
@@ -470,29 +470,6 @@ rule ww {
     pref.extend_from_slice(&widestr);
     assert_eq!(scan_one(wide, &widestr), Ternary::True);
     assert_eq!(scan_one(wide, &pref), Ternary::False, "宽字符邻接不算");
-}
-
-#[test]
-fn base64_and_private_are_unscannable() {
-    for modifier in ["base64", "private"] {
-        let src = format!(
-            r#"
-rule u {{
-  strings:
-    $a = "foo" {modifier}
-  condition:
-    $a
-}}
-"#
-        );
-        let out = parse_rules(&src).unwrap();
-        let RuleOutcome::Parsed(rule) = &out.rules[0] else {
-            panic!("{modifier} 修饰应可解析为 Unscannable");
-        };
-        assert!(matches!(rule.patterns()[0].1, Pattern::Unscannable(_)));
-        let report = SigScan::new(std::slice::from_ref(rule)).scan(b"foo", false);
-        assert_eq!(report.rules[0].value, Ternary::Unknown);
-    }
 }
 
 #[test]

@@ -116,11 +116,13 @@ pub enum Pattern {
     /// 正则串（Pike VM 编译产物，见 [`crate::sigscan::regex`]）；不支持
     /// 的语法不走此形态（→ Unscannable 记名弃权）。
     Regex(crate::sigscan::regex::RegexPat),
+    /// base64 串（相位变体集，见 [`crate::sigscan::b64`]，扫描并集计数）。
+    Base64(Vec<TextPattern>),
     /// 可解析不可扫描（正则 / base64 / private）：整条规则判 `Unknown`。
     Unscannable(Unscannable),
 }
 
-// Pattern 构造器（hex / 文本串）在 sigscan/pattern.rs——拆出守模块预算。
+// Pattern 构造器（hex / 文本 / base64）在 pattern.rs 与 b64.rs——守预算。
 
 /// 数值比较算子。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -310,30 +312,28 @@ pub struct SigScan<'a> {
 
 // 扫描循环（`impl SigScan`）在 [`sigscan::scan`]——从本文件拆出守预算。
 
-// ── 三值条件求值（拆出守 800 行预算）──────────────────────────────────
-
+// 三值条件求值（拆出守预算）。
 mod eval;
 
 use eval::{EvalCtx, eval};
 
-// 正则引擎（Pike VM，官方语义探针定案）。
+// 正则引擎（Pike VM，探针定案）。
 pub mod regex;
+// base64 相位变体展开（探针定案）。
+pub mod b64;
 // Pattern 构造器（hex / 文本串，从本文件拆出守预算）。
 mod pattern;
 // 操作数解析三态（从 eval.rs 拆出守预算）。
 mod resolve;
-
 // 扫描循环（impl SigScan，从本文件拆出守预算）。
 mod scan;
 
-// ── pe.* 模块属性子集（YARA 完整子集方向）────────────────────────────
-
+// pe.* 模块属性子集（YARA 完整子集方向）。
 mod peprops;
 
 use peprops::resolve as resolve_pe_prop;
 
-// ── 字节级匹配引擎（拆出守 800 行预算）──────────────────────────────────
-
+// 字节级匹配引擎（拆出守预算）。
 mod matchers;
 
 pub use matchers::SCAN_BUDGET;

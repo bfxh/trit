@@ -1,6 +1,5 @@
-//! 扫描循环（`impl SigScan`，从 sigscan.rs 拆出守预算）。三条纪律：
-//! 命中封顶截断 = 不完整（False 折 Unknown）；Unscannable 串整条
-//! Unknown；整体 Kleene OR。
+//! 扫描循环（`impl SigScan`，从 sigscan.rs 拆出守预算）。纪律：命中封顶
+//! 截断 = 不完整（False 折 Unknown）；Unscannable 串整条 Unknown。
 
 use super::{EvalCtx, Pattern, Rule, RuleVerdict, SigReport, SigScan};
 use super::{SCAN_BUDGET, eval, find_hex, find_text};
@@ -52,6 +51,7 @@ impl<'a> SigScan<'a> {
                     Pattern::Hex(hp) => find_hex(data, hp),
                     Pattern::Text(tp) => find_text(data, tp),
                     Pattern::Regex(rp) => super::regex::find_all(data, rp, SCAN_BUDGET),
+                    Pattern::Base64(tps) => super::b64::find_union(data, tps),
                     Pattern::Unscannable(_) => {
                         // 评估不了的串不能报"没命中"：整条规则按 Unknown 落账
                         has_unscannable = true;
