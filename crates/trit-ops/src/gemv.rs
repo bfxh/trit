@@ -596,9 +596,7 @@ mod tests {
         (0..rows)
             .map(|r| {
                 (0..cols)
-                    .map(|c| unsafe {
-                        Trit::from_i8_unchecked(((r * 31 + c * 17 + 5) % 3) as i8 - 1)
-                    })
+                    .map(|c| Trit::new(((r * 31 + c * 17 + 5) % 3) as i8 - 1).unwrap())
                     .collect()
             })
             .collect()

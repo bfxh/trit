@@ -105,7 +105,7 @@
  },
  {
   "name": "immune: attack walk 不查访问预算（满图 n! 枚举 DoS）",
-  "file": "crates/trit-immune/src/attack.rs",
+  "file": "crates/trit-immune/src/attack/walk.rs",
   "old": "    // 全局访问预算：耗尽即如实截断，杜绝满图 + 大深度下的 n! 枚举（H6）。\n    if *budget == 0 {\n        out.truncated = true;\n        return;\n    }\n    *budget -= 1;",
   "new": "    let _ = budget; // 预算移除",
   "pkg": "trit-immune",

@@ -1064,7 +1064,11 @@
     },
     {
       "file": "crates/trit-immune/src/attack.rs",
-      "lines": 232
+      "lines": 106
+    },
+    {
+      "file": "crates/trit-immune/src/attack/walk.rs",
+      "lines": 157
     },
     {
       "file": "crates/trit-immune/src/attest.rs",
@@ -1236,7 +1240,11 @@
     },
     {
       "file": "crates/trit-immune/src/sync.rs",
-      "lines": 647
+      "lines": 466
+    },
+    {
+      "file": "crates/trit-immune/src/sync/tests.rs",
+      "lines": 232
     },
     {
       "file": "crates/trit-immune/src/taskmd.rs",
@@ -1273,6 +1281,10 @@
     {
       "file": "crates/trit-immune/tests/adoption.rs",
       "lines": 213
+    },
+    {
+      "file": "crates/trit-immune/tests/attack_limits.rs",
+      "lines": 77
     },
     {
       "file": "crates/trit-immune/tests/coords.rs",
@@ -1648,7 +1660,11 @@
     },
     {
       "file": "crates/trit-ops/src/pool.rs",
-      "lines": 191
+      "lines": 182
+    },
+    {
+      "file": "crates/trit-ops/src/pool/tests.rs",
+      "lines": 95
     },
     {
       "file": "crates/trit-ops/src/quant.rs",
@@ -2501,6 +2517,10 @@
     {
       "file": "crates/trit-re/tests/yara.rs",
       "lines": 540
+    },
+    {
+      "file": "crates/trit-re/tests/yara_lexer.rs",
+      "lines": 37
     },
     {
       "file": "crates/trit-redteam/src/attrib.rs",
