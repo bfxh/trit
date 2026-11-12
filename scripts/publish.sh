@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.." || exit 1
 dry=0
 [ "${1:-}" = "--dry-run" ] && dry=1
 
-crates=(trit-core trit-eval trit-sat trit-circuit trit-bdd trit-belnap trit-policy trit-cli trit-wasm sansheng)
+crates=(trit-core trit-export trit-eval trit-sat trit-circuit trit-bdd trit-belnap trit-policy trit-cli trit-wasm sansheng)
 for c in "${crates[@]}"; do
   echo "== $c =="
   if [ "$dry" -eq 1 ]; then

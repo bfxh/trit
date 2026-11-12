@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：GGUF ↔ WSP1 的 CLI 闭环）
+
+- 新增 `export-gguf <dir> --out <file>` 与 `import-gguf <file> --out <dir>`：复用
+  `import-safetensors-dir` 的 `manifest.json` + `NNNN-<name>.wsp` 目录约定；GGUF 侧
+  只接受 `TYPE_TRIT` 2D 张量，元数据只写 `trit.wsp1=1`。
+- 真实 all-MiniLM-L6-v2 103 个张量：WSP1 46,632,748 字节 ↔ GGUF 4,772,288 字节；
+  往返 67/103 逐字节一致，36 个带 `biasf` 的张量只差 f32 偏置幅度与 checksum。
+- 6 条 CLI 测试（往返、坏 magic、多层、缺 manifest、空列表、f32 bias 丢失）。
+- 文档 `docs/GGUF-TRIT.md` §4。
+- 未证栏：与 llama.cpp 互操作未证；GGUF 不保留 f32 bias 幅度、`vector` 标记与元数据值。
+
+### Changed（trit-export：转为可发布 crate）
+
+- 去掉 `publish = false`，加入 `[workspace.dependencies]` 与 `scripts/publish.sh`；
+  GGUF 容器进入 crates.io 公开面（版本随 workspace 0.12.0）。
+- 原因：trit-wspace 的 GGUF ↔ WSP1 CLI 闭环需要依赖它，而 `docs/DESIGN.md` 禁止实验层
+  彼此依赖（`scripts/publish_graph.py` 判红）。
 ### Changed（docs：ARM64-PE 象限解锁——N1 四象限最后一块）
 
 - `docs/CALIBRATION.md`：产线读数表追加 2026-11-13 行（18 样本 = msys2 clangarm64 15 + PowerShell 7.7.0 win-arm64 官方 3；216 判定 false 199 / unknown 7 / true 10——loader+network 家族 curl.exe/libcrypto/libcurl + packed 落 libcrypto 高熵段；**pe.* 官方对拍 76 规则 MATCH 18 / DIFF 0**，entry_point=文件偏移第三架构实证）；新增 §八 ARM64-PE 抓取口径（归档解包不需 ARM64 运行环境；bsdtar libzstd 直解 .pkg.tar.zst）。**N1 规格四象限首次全有真样本**，新人工面 +10 行。
