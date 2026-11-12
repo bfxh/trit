@@ -128,30 +128,29 @@ pub(super) fn task_merge(args: &Value) -> Result<Value, String> {
                 .map_err(err)?;
         (net, Some(report))
     } else {
-        let net = match (dare_rate, dare_per_task) {
-            (Some(_), Some(_)) => {
-                return Err("dare_rate 与 dare_per_task 只能给一个".into());
-            }
+        let (net, report) = match (dare_rate, dare_per_task) {
+            (Some(_), Some(_)) => return Err("dare_rate 与 dare_per_task 只能给一个".into()),
             (Some(rate), None) => match weights.as_deref() {
-                Some(weights) => {
-                    task_merge::merge_tasks_weighted_dare(&base, &tasks, weights, rate, dare_seed)
-                        .map_err(err)?
-                }
-                None => {
-                    task_merge::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?
-                }
-            },
-            (None, Some(rate)) => match weights.as_deref() {
-                Some(weights) => task_merge::merge_tasks_weighted_per_task_dare(
+                Some(weights) => task_merge::merge_tasks_weighted_dare_report(
                     &base, &tasks, weights, rate, dare_seed,
                 )
                 .map_err(err)?,
-                None => task_merge::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed)
+                None => task_merge::merge_tasks_dare_report(&base, &tasks, rate, dare_seed)
                     .map_err(err)?,
+            },
+            (None, Some(rate)) => match weights.as_deref() {
+                Some(weights) => task_merge::merge_tasks_weighted_per_task_dare_report(
+                    &base, &tasks, weights, rate, dare_seed,
+                )
+                .map_err(err)?,
+                None => {
+                    task_merge::merge_tasks_per_task_dare_report(&base, &tasks, rate, dare_seed)
+                        .map_err(err)?
+                }
             },
             (None, None) => unreachable!(),
         };
-        (net, None)
+        (net, Some(report))
     };
     let verify = if let Some(oracle) = oracle.as_ref() {
         Some(json!({

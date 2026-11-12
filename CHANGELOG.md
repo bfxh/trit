@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：DARE 路径返回投票报告）
+
+- `merge_tasks_{weighted_,}dare_report` / `merge_tasks_{weighted_,}per_task_dare_report`：
+  先投票再稀疏化（或先稀疏化再投票），同时返回**投票阶段**的 `MergeReport`。
+- CLI `task-merge --dare-rate/--dare-per-task` 与 MCP `wsp_task_merge` 的 `merge_report`
+  不再为 `null`；报告字段与同一权重下的普通合并一致。
+- 等权版本委托给加权版本（`[1.0; n]`），逐位一致由测试钉住。
+- 测试 369 → 373（新增 `tests/task_dare_report.rs` 4 条）；变异 +3。
+- 未证栏：报告只覆盖投票阶段，没有「DARE 实际丢弃了多少坐标」的计数
+  （`dare_drop` 的 outcome 未进报告）。
+
 ### Added（branch prune 认 squash 合并证据：预算红可收口）
 
 - `scripts/gitflow.py branch prune`：原来只认 `git branch --merged <base>` 的祖先关系，

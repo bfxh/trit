@@ -2800,7 +2800,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_task.rs",
-      "lines": 712
+      "lines": 711
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_wsp2.rs",
@@ -2856,7 +2856,7 @@
     },
     {
       "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
-      "lines": 647
+      "lines": 646
     },
     {
       "file": "crates/trit-wspace/src/mcp_tools.rs",
@@ -2916,7 +2916,11 @@
     },
     {
       "file": "crates/trit-wspace/src/task_merge.rs",
-      "lines": 633
+      "lines": 449
+    },
+    {
+      "file": "crates/trit-wspace/src/task_merge/dare.rs",
+      "lines": 177
     },
     {
       "file": "crates/trit-wspace/src/transplant.rs",
@@ -3047,8 +3051,12 @@
       "lines": 156
     },
     {
+      "file": "crates/trit-wspace/tests/task_dare_report.rs",
+      "lines": 110
+    },
+    {
       "file": "crates/trit-wspace/tests/task_merge_report.rs",
-      "lines": 420
+      "lines": 419
     },
     {
       "file": "crates/trit-wspace/tests/task_scale.rs",
