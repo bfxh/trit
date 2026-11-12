@@ -36,6 +36,11 @@ trits 与 bias 直接调用 `trit_codec::pack::pack`，解码用 `unpack_canonic
 非法字节（243..=255）与非规范 padding 都会被拒绝。测试用
 `pack::pack` 的字节串在 GGUF 输出里逐位查找，钉住「逐位一致」。
 
+> 为什么保留两份：`trit-export` 是可发布 crate，`trit-codec` 是实验层
+> （`publish = false`），`scripts/publish_graph.py` 禁止可发布 crate 依赖实验层。
+> 两份实现用 `tests/gguf.rs` 的固定字节串对拍，保证线格式一致；要统一到上游，
+> 需要先把打包下沉到可发布 crate。
+
 ## 4. WSP1 目录闭环（CLI）
 
 `trit-wspace` 提供两个子命令，目录约定与 `import-safetensors-dir` / `export-safetensors-dir`
