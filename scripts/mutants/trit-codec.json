@@ -142,5 +142,13 @@
   "new": "    let size = 3usize\n        .checked_pow(n as u32)\n        .ok_or(CodecError::GrayIndexOutOfRange { index, n })?;",
   "pkg": "trit-codec",
   "filter": "huge_n_is_rejected_not_truncated_into_giant_alloc"
+ },
+ {
+  "name": "codec-count: MAX_TERMS 放回 63（2^m 指数枚举≈无上限）",
+  "file": "crates/trit-codec/src/count.rs",
+  "old": "const MAX_TERMS: usize = 20;",
+  "new": "const MAX_TERMS: usize = 63;",
+  "pkg": "trit-codec",
+  "filter": "too_many_terms_errors_instead_of_shift_panic"
  }
 ]
