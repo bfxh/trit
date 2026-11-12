@@ -2911,6 +2911,10 @@
       "lines": 212
     },
     {
+      "file": "crates/trit-wspace/examples/bias_e2e.rs",
+      "lines": 417
+    },
+    {
       "file": "crates/trit-wspace/examples/bias_error.rs",
       "lines": 112
     },
