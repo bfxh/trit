@@ -22,5 +22,69 @@
   "new": "    if false {",
   "pkg": "trit-lsp",
   "filter": "rename_rejects_invalid_and_constant_names"
+ },
+ {
+  "name": "lsp: 帧头行不封顶（无界头行撑内存）",
+  "file": "crates/trit-lsp/src/framing/header.rs",
+  "old": "    if buf.len() > MAX_HEADER_LINE_BYTES {",
+  "new": "    if false && buf.len() > MAX_HEADER_LINE_BYTES {",
+  "pkg": "trit-lsp",
+  "filter": "oversized_header_line_is_rejected"
+ },
+ {
+  "name": "lsp: 帧体尺寸门边界写成严格小于",
+  "file": "crates/trit-lsp/src/framing/header.rs",
+  "old": "    len <= MAX_FRAME_BYTES",
+  "new": "    len < MAX_FRAME_BYTES",
+  "pkg": "trit-lsp",
+  "filter": "frame_len_cap_boundary"
+ },
+ {
+  "name": "lsp: Content-Length 超硬顶不在分配前拒绝",
+  "file": "crates/trit-lsp/src/framing.rs",
+  "old": "    if !frame_len_ok(len) {",
+  "new": "    if false && !frame_len_ok(len) {",
+  "pkg": "trit-lsp",
+  "filter": "oversized_content_length_is_rejected_before_allocation"
+ },
+ {
+  "name": "lsp: 文档尺寸守卫失效（超大文档照保留）",
+  "file": "crates/trit-lsp/src/server.rs",
+  "old": "    if text_len > MAX_DOC_BYTES {",
+  "new": "    if false && text_len > MAX_DOC_BYTES {",
+  "pkg": "trit-lsp",
+  "filter": "retention_problem_boundaries"
+ },
+ {
+  "name": "lsp: 文档数量边界写成严格大于",
+  "file": "crates/trit-lsp/src/server.rs",
+  "old": "    if !uri_exists && open_count >= MAX_OPEN_DOCS {",
+  "new": "    if !uri_exists && open_count > MAX_OPEN_DOCS {",
+  "pkg": "trit-lsp",
+  "filter": "retention_problem_boundaries"
+ },
+ {
+  "name": "lsp: 到顶后已存在文档也被数量守卫挡死",
+  "file": "crates/trit-lsp/src/server.rs",
+  "old": "    if !uri_exists && open_count >= MAX_OPEN_DOCS {",
+  "new": "    if true && open_count >= MAX_OPEN_DOCS {",
+  "pkg": "trit-lsp",
+  "filter": "retention_problem_boundaries"
+ },
+ {
+  "name": "lsp: didOpen 不接保留守卫（接线断）",
+  "file": "crates/trit-lsp/src/server.rs",
+  "old": "                if retention_problem(self.texts.len(), self.texts.contains_key(uri), text.len())\n                    .is_some()\n                {\n                    return Vec::new();\n                }\n",
+  "new": "",
+  "pkg": "trit-lsp",
+  "filter": "did_open_rejects_oversized_text"
+ },
+ {
+  "name": "lsp: didChange 不接保留守卫（接线断）",
+  "file": "crates/trit-lsp/src/server.rs",
+  "old": "                    .and_then(Value::as_str)\n                    && retention_problem(self.texts.len(), self.texts.contains_key(uri), text.len())\n                        .is_none()\n                {",
+  "new": "                    .and_then(Value::as_str)\n                {",
+  "pkg": "trit-lsp",
+  "filter": "did_change_rejects_over_count_for_new_uri"
  }
 ]

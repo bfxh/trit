@@ -1,0 +1,7 @@
+[
+ {
+  "file": "crates/trit-cli/src/commands/repl.rs",
+  "kind": "无界读",
+  "reason": "交互式 REPL 读本地 stdin（用户在终端逐行输入），非网络对端；read_line 由人类输入限界，不是审计 U-2 的远程帧攻击面。已人工复核（2026-11-12）。"
+ }
+]

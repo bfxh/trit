@@ -22,6 +22,23 @@ pub struct RpcError {
     pub message: String,
 }
 
+/// 同时打开的文档数硬顶：恶意/失控客户端不许用海量 didOpen 撑爆内存。
+pub const MAX_OPEN_DOCS: usize = 256;
+/// 单个文档文本字节硬顶：超大文档在保留前拒绝。
+pub const MAX_DOC_BYTES: usize = 4 * 1024 * 1024;
+
+/// 文档保留守卫（纯函数，不分配）：超尺寸/超数量返回拒绝理由，否则 `None`。
+/// 更新已存在的文档不受数量上限限制（否则到顶后连改都改不了）。
+fn retention_problem(open_count: usize, uri_exists: bool, text_len: usize) -> Option<&'static str> {
+    if text_len > MAX_DOC_BYTES {
+        return Some("文档超过尺寸上限");
+    }
+    if !uri_exists && open_count >= MAX_OPEN_DOCS {
+        return Some("打开的文档数超过上限");
+    }
+    None
+}
+
 /// 服务器状态：打开的文本文档 + 当前三值语义。
 pub struct Server {
     texts: HashMap<String, String>,
@@ -108,6 +125,11 @@ impl Server {
                 ) else {
                     return Vec::new();
                 };
+                if retention_problem(self.texts.len(), self.texts.contains_key(uri), text.len())
+                    .is_some()
+                {
+                    return Vec::new();
+                }
                 self.texts.insert(uri.to_string(), text.to_string());
                 vec![self.publish(uri)]
             }
@@ -122,6 +144,8 @@ impl Server {
                     .and_then(|changes| changes.last())
                     .and_then(|change| change.get("text"))
                     .and_then(Value::as_str)
+                    && retention_problem(self.texts.len(), self.texts.contains_key(uri), text.len())
+                        .is_none()
                 {
                     self.texts.insert(uri.to_string(), text.to_string());
                 }
@@ -299,85 +323,4 @@ fn uri_of(params: &Value) -> Option<&str> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn open(server: &mut Server, text: &str) -> Value {
-        let notifications = server.notification(
-            "textDocument/didOpen",
-            &json!({"textDocument": {"uri": "file:///a.tri", "text": text}}),
-        );
-        assert_eq!(notifications.len(), 1);
-        notifications[0].clone()
-    }
-
-    #[test]
-    fn initialize_reports_capabilities() {
-        let mut server = Server::new();
-        let result = server
-            .request(
-                "initialize",
-                &json!({"initializationOptions": {"algebra": "b3"}}),
-            )
-            .expect("初始化");
-        assert_eq!(result["capabilities"]["hoverProvider"], true);
-        assert_eq!(result["capabilities"]["textDocumentSync"], 1);
-        assert_eq!(server.algebra, Algebra::Bochvar);
-    }
-
-    #[test]
-    fn did_open_publishes_diagnostics() {
-        let mut server = Server::new();
-        let notification = open(&mut server, "a & )");
-        let diagnostics = &notification["params"]["diagnostics"];
-        assert_eq!(diagnostics.as_array().expect("数组").len(), 1);
-    }
-
-    #[test]
-    fn hover_and_completion() {
-        let mut server = Server::new();
-        open(&mut server, "a & b");
-        let hover = server
-            .request(
-                "textDocument/hover",
-                &json!({
-                    "textDocument": {"uri": "file:///a.tri"},
-                    "position": {"line": 0, "character": 2},
-                }),
-            )
-            .expect("悬停");
-        assert!(
-            hover["contents"]["value"]
-                .as_str()
-                .expect("md")
-                .contains("与")
-        );
-        let completion = server
-            .request(
-                "textDocument/completion",
-                &json!({"textDocument": {"uri": "file:///a.tri"}, "position": {"line": 0, "character": 0}}),
-            )
-            .expect("补全");
-        assert!(!completion["items"].as_array().expect("数组").is_empty());
-    }
-
-    #[test]
-    fn unknown_request_is_method_not_found() {
-        let mut server = Server::new();
-        let error = server
-            .request("textDocument/formatting", &json!({}))
-            .expect_err("应报错");
-        assert_eq!(error.code, -32601);
-    }
-
-    #[test]
-    fn did_close_clears_diagnostics() {
-        let mut server = Server::new();
-        open(&mut server, "a & )");
-        let notifications = server.notification(
-            "textDocument/didClose",
-            &json!({"textDocument": {"uri": "file:///a.tri"}}),
-        );
-        assert_eq!(notifications[0]["params"]["diagnostics"], json!([]));
-    }
-}
+mod tests;

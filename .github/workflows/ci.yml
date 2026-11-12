@@ -364,6 +364,19 @@ jobs:
       - name: Green audit self-test (execution evidence)
         run: python3 scripts/green_audit.py --self-test
 
+  alloc-guard:
+    name: alloc guard (limits enforcement)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 每条规则都要有真的会红的反证：死帽 / 无界读 / 无界分配 / 豁免要理由 / 读不到判红
+      - name: Self-test (dead-cap / unbounded-read / fallible-alloc)
+        run: python3 scripts/alloc_guard.py --self-test
+      # 审计 U-1/U-2/U-3 那类「上限不执法」的静态门：定义了没人用的帽、不带 take 的流式读
+      - name: Repo alloc guard
+        run: python3 scripts/alloc_guard.py
+
   flake:
     name: flake ledger (self-test)
     runs-on: ubuntu-latest

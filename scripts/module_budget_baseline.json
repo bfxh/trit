@@ -563,6 +563,10 @@
       "lines": 199
     },
     {
+      "file": "crates/trit-codec/src/error.rs",
+      "lines": 131
+    },
+    {
       "file": "crates/trit-codec/src/gray.rs",
       "lines": 222
     },
@@ -576,7 +580,7 @@
     },
     {
       "file": "crates/trit-codec/src/lib.rs",
-      "lines": 152
+      "lines": 39
     },
     {
       "file": "crates/trit-codec/src/main.rs",
@@ -604,7 +608,11 @@
     },
     {
       "file": "crates/trit-codec/src/sparse.rs",
-      "lines": 150
+      "lines": 83
+    },
+    {
+      "file": "crates/trit-codec/src/sparse/tests.rs",
+      "lines": 128
     },
     {
       "file": "crates/trit-codec/tests/cli.rs",
@@ -1096,7 +1104,11 @@
     },
     {
       "file": "crates/trit-immune/src/daemon.rs",
-      "lines": 296
+      "lines": 222
+    },
+    {
+      "file": "crates/trit-immune/src/daemon/tests.rs",
+      "lines": 133
     },
     {
       "file": "crates/trit-immune/src/dag.rs",
@@ -1380,7 +1392,15 @@
     },
     {
       "file": "crates/trit-lsp/src/framing.rs",
-      "lines": 92
+      "lines": 76
+    },
+    {
+      "file": "crates/trit-lsp/src/framing/header.rs",
+      "lines": 33
+    },
+    {
+      "file": "crates/trit-lsp/src/framing/tests.rs",
+      "lines": 57
     },
     {
       "file": "crates/trit-lsp/src/lex.rs",
@@ -1404,7 +1424,11 @@
     },
     {
       "file": "crates/trit-lsp/src/server.rs",
-      "lines": 383
+      "lines": 326
+    },
+    {
+      "file": "crates/trit-lsp/src/server/tests.rs",
+      "lines": 158
     },
     {
       "file": "crates/trit-lsp/src/text.rs",
@@ -1528,7 +1552,15 @@
     },
     {
       "file": "crates/trit-net/src/netsec/probe.rs",
-      "lines": 443
+      "lines": 373
+    },
+    {
+      "file": "crates/trit-net/src/netsec/probe/attach.rs",
+      "lines": 90
+    },
+    {
+      "file": "crates/trit-net/src/netsec/probe/budget.rs",
+      "lines": 81
     },
     {
       "file": "crates/trit-net/src/netsec_cli.rs",
@@ -1557,6 +1589,10 @@
     {
       "file": "crates/trit-net/tests/probe.rs",
       "lines": 400
+    },
+    {
+      "file": "crates/trit-net/tests/probe_limits.rs",
+      "lines": 75
     },
     {
       "file": "crates/trit-net/tests/train_format.rs",

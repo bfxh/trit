@@ -2,6 +2,58 @@
 
 ## [Unreleased]
 
+### Fixed（中期安全审计 U-1/U-2/U-3：资源耗尽与「上限不执法」）
+
+来源：`trit-audit-report.md`（bc46a8c 中期只读审计）三条未证资源耗尽发现，逐条复核成立并修复。
+
+- **U-1 `trit-codec` sparse 解码**：原来拿调用方 `--len` 直接 `vec![0u8; len]`，`usize::MAX` 即 OOM。
+  现在分配前先过 `check_len(len)` 硬顶 `MAX_SPARSE_DECODE_LEN = 1<<28`，再 `try_reserve_exact` fallible 兜底；
+  超限 `SparseLenTooLarge{len,max}`、分配失败 `SparseAllocFailed{len}` 两个结构化错误（纯谓词 `check_len` 可独立钉边界）。
+- **U-2 `trit-lsp` 帧与文档**：`framing.rs` 头行用 `Read::take(8KiB+1)` 限位、`Content-Length ≤ 16MiB`
+  （`frame_len_ok`）、body `try_reserve_exact`；`server.rs` 文档 `≤ 4MiB`、打开数 `≤ 256`
+  （纯谓词 `retention_problem`，`didOpen`/`didChange` 两处接线，删调用即被变异杀）。原来 `read_line` 无界 + `vec![0; len]` 无顶。
+- **U-2 同类牵连 `trit-immune` daemon**：`read_frame`（对端可为子进程 stdio / TCP 流 / 内存流）同样无界
+  `read_line` + `vec![0u8; len]`——**alloc_guard 门扫出来的牵连面**，同口径修复（头行 8KiB、帧 16MiB、`try_reserve_exact`）。
+- **U-3 `trit-net` probe**：`HARD_MAX_TOTAL_PROBES = 512` 原来是**死常量**（定义了没人用，64×32=2048 照样放行）。
+  `from_json` 去重后 `total += ports.len()` 累加，`total_probes_ok(total)` 执法，超顶 `ConfigTooHot`（拒绝不缩放）；
+  `run` 探测后的 `sleep` 改用 `sleep_budget(delay, elapsed, deadline)` 夹到剩余预算，不再把 deadline overshoot 一个 delay。
+  两个谓词（`total_probes_ok`/`sleep_budget`）拆进 `probe/budget.rs` 成纯函数，配确定性边界单测（见下「假信心变异修复」）。
+- 读数（`cargo test -q -p <crate> --locked`）：`trit-codec` 121 lib、`trit-lsp` 51 lib、
+  `trit-net` probe 22（`tests/probe.rs` 15 + `tests/probe_limits.rs` 2 + `probe/budget.rs` 5 纯谓词单测：+`allowlist_enforces_aggregate_probe_cap`、+`delay_sleep_is_clamped_to_deadline`、+`total_probes_ok_boundary`、+`sleep_budget` 四档）、
+  `trit-immune` `daemon::tests` 9（+3 帧帽边界）全过。
+- 变异（`mutation_check.py --pkg <crate>`）：codec 17 / lsp 11 / net 31 / immune 11 **全断言抓住，0 存活 0 假杀**。
+  修正一处假杀：把 `MAX_SPARSE_DECODE_LEN` 设 `usize::MAX` 会让测试里 `MAX+1` 常量溢出编译红（E0080，非行为杀），
+  改成定义处 `return Err(SparseLenTooLarge{..})` → `return Ok(())` 的语义变异（帽不动、校验恒放行 ⇒ 被边界测试杀）。
+- **U-3 后续：假信心变异修复（CI 实测暴露）**。`saturating_sub`→裸减这条变异原先**只被计时依赖的集成测试**
+  `delay_sleep_is_clamped_to_deadline` 杀：本机 Windows 慢（单次探测耗时 >deadline ⇒ `deadline - elapsed` 下溢 panic ⇒ 抓住），
+  CI ubuntu 快（探测耗时 <deadline ⇒ 不下溢、sleep 补偿到正好 deadline ⇒ `probed==1` 仍成立 ⇒ **存活**）。
+  只被「慢机器才触发的边界」杀掉的变异 = 假信心。修法：`total_probes_ok`/`sleep_budget` 拆进 `probe/budget.rs` 成纯函数 + 5 条确定性边界单测
+  （`sleep_budget_clamps_to_zero_when_elapsed_exceeds_deadline` 直接喂 elapsed=300ms>deadline=200ms，裸减变异**任何平台**都确定性 panic）；
+  3 条变异锚点改指 `budget.rs`、filter 换成纯谓词单测。**CI 变异门跑在快平台正是暴露这类假信心的地方——本地绿≠门绿。**
+  顺带修一处 rustdoc：`run` 的 pub 文档原链接私有 `sleep_budget`（`-D warnings` 下 `private_intra_doc_links` 红），改成普通 code span（非 `#[allow]`）。
+- 行棘轮合规：安全修复让 7 个生产/测试文件越过 `module_budget` 上限，按仓纪律「要腾地方就拆，别抬台账」**纯搬家**拆出 9 个新文件——
+  `sparse`/`server`/`daemon`/`framing` 的 `#[cfg(test)]` 测试模块 → 同级 `tests.rs`，`framing` 帧头 → `header.rs`，
+  `probe` 登记桥 → `probe/attach.rs`、预算谓词 → `probe/budget.rs`，`CodecError` → `error.rs`，probe 上限测试 → `tests/probe_limits.rs`；
+  `pub use` 保住公开 API，5 条变异锚点随代码改指新文件（didChange 守卫顺手收掉 clippy `collapsible_if`，改成 edition-2024 let-chain）。
+  **测试一条没少**：test_surface crate 计数只增不减（codec 137→140、lsp 46→53、immune 253→256、net 93→100，增量全是本次新增安全测试）。
+
+### Added（alloc_guard 静态门：把「上限不执法」变成会红的 CI 检查）
+
+审计三条的共同形状是「定义了上限却不执法 / 读与分配不设界」。新增 `scripts/alloc_guard.py` 把这类问题变成可复算静态门：
+
+- 三类规则：**死帽**（帽名常量含 `MAX` 或以 `_LIMIT/_CAP/_BOUND` 结尾，全工作区只出现一次=声明本身 ⇒ 拦）、
+  **无界读**（`read_line`/`read_until` 三行窗口内无 `take(n)` ⇒ 拦；`read_to_string`/`read_to_end` ⇒ 警）、
+  **可能无界分配**（裸长度 `vec![x; len]`/`with_capacity(len)`/`resize(len,..)` 且所在 fn 无 `try_reserve` ⇒ 警）。
+- 判红分两档（拦=证据不成立，警=要人看一眼）；豁免走 `scripts/alloc_guard_allow.json`，每条带 `file/kind/reason`（reviewed 例外，非静默忽略）；
+  fail-closed（`crates/*/src` 扫不到 `.rs` ⇒ 判红，「查不到≠没问题」）；`blank_rust` 涂白注释/字符串/raw 串，扫描器不扫自己的文档。
+- 自测 **16/16**（每规则一个真会红的反证 + 绿例真跑 + 接线走 `main()`/`scan()`）；
+  门**自身变异 8 条全抓住**（帽名丢 MAX / 死帽阈值放宽到 0 / take 守卫失效 / 无界读降警告 / 行注释不涂白 / 豁免不要理由 / try_reserve 识别失效 / 扫不到也判绿）。
+- 实测全仓（`python scripts/alloc_guard.py`）：**拦 0、警 381**（内部有界分配等需人看一眼）。
+  扫出两处无界读：`trit-cli/commands/repl.rs` 交互 stdin（人类输入限界，非远程帧攻击面 ⇒ 带理由豁免）、
+  `trit-immune/daemon.rs` `read_frame`（真同类 bug ⇒ 已修，见上）。
+- CI 接线：`ci.yml` 加 `alloc-guard` job（`name: alloc guard (limits enforcement)`，self-test + repo scan），
+  `.github/required-checks.txt` 登记同名；`ci_integrity.py` 本地 **21 项**必需检查都对得上、`ci_budget.py --offline` 绿（job 40→41）。
+  远端分支保护同步待合入后 `gitflow branch protect --apply`（先 dry-run），再 `ci_integrity.py --remote` 对账。
 ### Changed（trit-wspace：WSP4 无损验证——103/103 逐字节一致）
 
 - all-MiniLM-L6-v2 的 103 个张量：`.wsp4` 全部 `unpack-artifact` 回 WSP1，与原始 `.wsp`

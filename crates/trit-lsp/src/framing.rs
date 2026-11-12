@@ -4,15 +4,18 @@ use std::io::{self, BufRead, Write};
 
 use serde_json::Value;
 
+mod header;
+pub use header::{MAX_FRAME_BYTES, MAX_HEADER_LINE_BYTES};
+use header::{frame_len_ok, read_header_line};
+
 /// 读一帧；对端 EOF 返回 `Ok(None)`。
 ///
 /// 只认 `Content-Length`（LSP 必带）；其余头（`Content-Type` 等）跳过。
+/// 帧头行与帧体都有硬顶，超限在分配前拒绝（结构化错误，不撑内存）。
 pub fn read_message<R: BufRead>(reader: &mut R) -> io::Result<Option<Value>> {
     let mut len: Option<usize> = None;
     loop {
-        let mut line = String::new();
-        let n = reader.read_line(&mut line)?;
-        if n == 0 {
+        let Some(line) = read_header_line(reader)? else {
             return if len.is_none() {
                 Ok(None)
             } else {
@@ -21,7 +24,7 @@ pub fn read_message<R: BufRead>(reader: &mut R) -> io::Result<Option<Value>> {
                     "帧头之后遇到 EOF",
                 ))
             };
-        }
+        };
         let trimmed = line.trim_end_matches(['\r', '\n']);
         if trimmed.is_empty() {
             break;
@@ -38,7 +41,20 @@ pub fn read_message<R: BufRead>(reader: &mut R) -> io::Result<Option<Value>> {
     }
     let len =
         len.ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "帧头缺少 Content-Length"))?;
-    let mut buf = vec![0u8; len];
+    if !frame_len_ok(len) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Content-Length 超过上限（{MAX_FRAME_BYTES} 字节）：{len}"),
+        ));
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    buf.try_reserve_exact(len).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("帧体分配失败（{len} 字节）"),
+        )
+    })?;
+    buf.resize(len, 0u8);
     reader.read_exact(&mut buf)?;
     let text = String::from_utf8(buf)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, format!("帧体不是 UTF-8：{e}")))?;
@@ -57,36 +73,4 @@ pub fn write_message<W: Write>(writer: &mut W, value: &Value) -> io::Result<()> 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::io::Cursor;
-
-    #[test]
-    fn round_trip() {
-        let mut buf = Vec::new();
-        let msg = serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize"});
-        write_message(&mut buf, &msg).expect("写");
-        let mut cur = Cursor::new(buf);
-        let got = read_message(&mut cur).expect("读").expect("有帧");
-        assert_eq!(got, msg);
-        assert!(read_message(&mut cur).expect("EOF 正常").is_none());
-    }
-
-    #[test]
-    fn eof_without_frame_is_none() {
-        let mut cur = Cursor::new(Vec::new());
-        assert!(read_message(&mut cur).expect("EOF").is_none());
-    }
-
-    #[test]
-    fn missing_length_is_error() {
-        let mut cur = Cursor::new(b"Content-Type: application/json\r\n\r\n{}".to_vec());
-        assert!(read_message(&mut cur).is_err());
-    }
-
-    #[test]
-    fn truncated_body_is_error() {
-        let mut cur = Cursor::new(b"Content-Length: 10\r\n\r\n{}".to_vec());
-        assert!(read_message(&mut cur).is_err());
-    }
-}
+mod tests;
