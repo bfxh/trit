@@ -55,7 +55,7 @@ pub fn parse_git_log(text: &str) -> Vec<CommitRecord> {
         out.push(CommitRecord {
             hash: hash.to_string(),
             author: author.to_string(),
-            timestamp_ms: secs * 1000,
+            timestamp_ms: secs.saturating_mul(1000),
             subject: subject.to_string(),
         });
     }
