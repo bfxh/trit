@@ -2836,11 +2836,11 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_task.rs",
-      "lines": 713
+      "lines": 704
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_wsp2.rs",
-      "lines": 39
+      "lines": 38
     },
     {
       "file": "crates/trit-wspace/src/cli_audit.rs",
@@ -2868,7 +2868,7 @@
     },
     {
       "file": "crates/trit-wspace/src/lib.rs",
-      "lines": 175
+      "lines": 173
     },
     {
       "file": "crates/trit-wspace/src/localize.rs",
@@ -2892,7 +2892,7 @@
     },
     {
       "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
-      "lines": 647
+      "lines": 639
     },
     {
       "file": "crates/trit-wspace/src/mcp_tools.rs",
@@ -2940,7 +2940,7 @@
     },
     {
       "file": "crates/trit-wspace/src/scale.rs",
-      "lines": 555
+      "lines": 533
     },
     {
       "file": "crates/trit-wspace/src/shard.rs",
@@ -2948,7 +2948,19 @@
     },
     {
       "file": "crates/trit-wspace/src/task.rs",
-      "lines": 600
+      "lines": 147
+    },
+    {
+      "file": "crates/trit-wspace/src/task_merge.rs",
+      "lines": 420
+    },
+    {
+      "file": "crates/trit-wspace/src/task_merge/dare.rs",
+      "lines": 164
+    },
+    {
+      "file": "crates/trit-wspace/src/task_merge/report.rs",
+      "lines": 78
     },
     {
       "file": "crates/trit-wspace/src/transplant.rs",
@@ -2977,6 +2989,10 @@
     {
       "file": "crates/trit-wspace/src/wsp2/bytes.rs",
       "lines": 77
+    },
+    {
+      "file": "crates/trit-wspace/src/wsp3.rs",
+      "lines": 148
     },
     {
       "file": "crates/trit-wspace/tests/analyze.rs",
@@ -3035,6 +3051,10 @@
       "lines": 82
     },
     {
+      "file": "crates/trit-wspace/tests/merge_bias_f32.rs",
+      "lines": 163
+    },
+    {
       "file": "crates/trit-wspace/tests/probe.rs",
       "lines": 320
     },
@@ -3075,8 +3095,12 @@
       "lines": 156
     },
     {
+      "file": "crates/trit-wspace/tests/task_dare_report.rs",
+      "lines": 110
+    },
+    {
       "file": "crates/trit-wspace/tests/task_merge_report.rs",
-      "lines": 420
+      "lines": 419
     },
     {
       "file": "crates/trit-wspace/tests/task_scale.rs",
@@ -3117,6 +3141,10 @@
     {
       "file": "crates/trit-wspace/tests/wsp2_extra.rs",
       "lines": 46
+    },
+    {
+      "file": "crates/trit-wspace/tests/wsp3.rs",
+      "lines": 156
     },
     {
       "file": "fuzz/fuzz_targets/aiger.rs",

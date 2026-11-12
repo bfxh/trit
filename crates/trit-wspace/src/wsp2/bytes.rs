@@ -33,7 +33,7 @@ pub(super) fn unpack_trits(bytes: &[u8], count: usize) -> Result<Vec<i8>> {
 }
 
 /// FNV-1a 校验和。
-pub(super) fn fnv(bytes: &[u8]) -> u64 {
+pub(crate) fn fnv(bytes: &[u8]) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
     for &byte in bytes {
         hash ^= u64::from(byte);

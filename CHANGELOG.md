@@ -54,6 +54,48 @@
 - CI 接线：`ci.yml` 加 `alloc-guard` job（`name: alloc guard (limits enforcement)`，self-test + repo scan），
   `.github/required-checks.txt` 登记同名；`ci_integrity.py` 本地 **21 项**必需检查都对得上、`ci_budget.py --offline` 绿（job 40→41）。
   远端分支保护同步待合入后 `gitflow branch protect --apply`（先 dry-run），再 `ci_integrity.py --remote` 对账。
+### Added（governance：self_update --apply——一键更新落地）
+
+- `scripts/self_update.py --apply`：预检（干净/非 detached/fetch/快进/分叉）→ `git merge --ff-only`
+  → `cargo fetch --locked`（存在 `Cargo.lock` 时）→ 只读门 → 报告旧/新 SHA 与 `git reset --hard` 回滚命令。
+  不提交、不推送、不合并；台账默认只读，依赖升级仍要人审。
+- 脏树 / 分叉 / detached 拒绝且零改动；`--offline` 不 fetch、不跑 `cargo fetch`。
+- 自测 22 → 28（新增 apply 快进真落地、已最新、脏树、分叉）；`docs/AUTO-UPDATE.md` 状态与验收判据同步。
+- 未证栏：`cargo fetch` 失败只报告回滚命令，不自动执行；没有与 `trit-vcs` 的 ref 更新对接。
+
+### Changed（trit-wspace：WSP3 实测——真实 MiniLM 上 RLE 无收益）
+
+- 读数：all-MiniLM-L6-v2 的 103 个张量 WSP1 **46,608,788** → WSP2 **5,985,699**（12.8%）→
+  WSP3 **6,025,083**（100.7% of WSP2，反而更大）。复算见 `docs/WSP3-RESULTS.md`。
+- 原因：trit 平均游程 **1.500**、游程 ≥3 仅 **11.1%**、熵 **1.584 bit/trit**（固定 2-bit；
+  熵编码理论下限 79.2% of WSP2）。字节级与三值级 RLE 都拿不到收益。
+- WSP3 的模块文档与 `docs/WSP3-RESULTS.md` 标注边界：只用于低熵/全同工件，真实权重用 WSP2。
+- 未证栏：其他模型的熵可能更低；没有在更大模型/GPU 上复测；没有实现 Huffman/算术编码。
+
+### Added（trit-wspace：WSP3——WSP2 的 RLE 二级压缩）
+
+- `wsp3::rle_encode` / `rle_decode`：PackBits（literal 1–128 字节 / 重复 3–130 字节），无外部依赖。
+- `to_wsp3` / `from_wsp3`：`magic "WSP3" | version u8=1 | raw_len u64 | PackBits 流 | checksum u64`；
+  解包先还原 WSP2 再回 WSP1。CLI `pack-artifact --rle` 输出 WSP3，`unpack-artifact` 按 magic 自动识别。
+- 读数：全同 trit 的 8×32 单层网络（256 trit）WSP2 → WSP3 体积缩小（`tests/wsp3.rs` 断言
+  `wsp3.len() < wsp2.len()`；RLE 全模式往返 6 组，含 300 字节长 run）。
+- 测试 373 → 378（`tests/wsp3.rs` 5 条）；变异 +3（重复段长度、解压长度、版本校验）。
+- 未证栏：只有字节级 RLE，没有 zstd/字典压缩；真实 MiniLM 的 WSP2→WSP3 压缩率未测；
+  WSP3 不是规范形式，仍以 WSP1 为准。
+
+### Added（trit-wspace：DARE 路径返回投票报告）
+
+- `merge_tasks_{weighted_,}dare_report` / `merge_tasks_{weighted_,}per_task_dare_report`：
+  先投票再稀疏化（或先稀疏化再投票），同时返回**投票阶段**的 `MergeReport`。
+- CLI `task-merge --dare-rate/--dare-per-task` 与 MCP `wsp_task_merge` 的 `merge_report`
+  不再为 `null`；报告字段与同一权重下的普通合并一致。
+- 报告新增 `dropped`（DARE 实际丢弃的差分坐标数，普通合并与 `rate=0` 为 0）：
+  「先投票再稀疏化」取 `dare_drop` 的读数；per-task 路径取各任务被丢编辑的累计。
+- 等权版本委托给加权版本（`[1.0; n]`），逐位一致由测试钉住。
+- 测试 369 → 373（新增 `tests/task_dare_report.rs` 4 条）；变异 +5
+  （报告等权、rate=0 返回基准、CLI 报告恒 null、丢弃计数恒 0、per-task 计数不累加）。
+- 未证栏：per-task 的 `dropped` 是各任务被丢编辑的累计，不是去重后的坐标数；
+  `dare_drop_rows` / `dare_drop_layers` 的块级重标度细节仍未进报告。
 
 ### Added（branch prune 认 squash 合并证据：预算红可收口）
 
@@ -187,6 +229,17 @@
   （临时仓里让 git 真调驱动：并集合并出 `{"a":3,"b":2}`、坏形状落到冲突）。
 - 变异登记：hooks 13 条 + merge 驱动 6 条，逐条抓住；其中「合并失败仍报成功」只有接线断言能抓，
   纯函数自测抓不到——这也是把 `git merge` 场景写进自测的原因。
+### Added（trit-wspace：合并保留 f32 偏置）
+
+- `merge_vote` / `merge_aligned`：两网同层都有 `bias_f32` 时逐行取平均；任一方缺失则保持无幅度。
+- `TaskVector` 记录逐行 f32 偏置差分（`(layer, row, Option<f32>)`）；`merge_tasks` 等权平均、
+  `merge_tasks_weighted` 按权重加权（权重 0 不参与），任一参与任务缺该行 ⇒ 该层清空。
+  `merge_tasks_dare` / `merge_tasks_weighted_dare` 在稀疏化后重新贴回合并幅度；
+  per-task DARE 继承原任务幅度。
+- 缩放规则：`λ > 0` 原样保留；`λ <= 0`（全局/层/行/块，含模式与映射）丢弃该任务的全部
+  f32 偏置——幅度无法与取反/丢弃后的三值语义一一对应，宁可退回三值符号。
+- 读数：`cargo test -p trit-wspace --locked` ⇒ **367 passed**（新增 `merge_bias_f32` 9 条）；
+  变异 `trit-wspace` 328 → **332**（+4：投票不平均、加权忽略权重、缺失不清空、DARE 丢掉幅度，逐条抓住）。
 
 ### Changed（门：模块预算改默认全量棘轮 + 一次性重录基线；新增磁盘介质门）
 

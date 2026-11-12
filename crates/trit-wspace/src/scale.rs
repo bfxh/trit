@@ -1,13 +1,17 @@
 //! 任务向量缩放（从 `task.rs` 拆出，控制单文件行数）。
 //!
 //! 三值任务算术：全局 λ、按层、按行、按列块；`0` 丢弃、`<0` 取反、`>0` 原样。
+//!
+//! f32 偏置只在所有 λ 都 `> 0` 时原样保留；任一 `<= 0` 就丢弃该任务的 f32 偏置
+//! （幅度无法与取反/丢弃后的三值语义一一对应，宁可退回三值符号）。
 
 use std::collections::BTreeMap;
 
 use crate::edit::Edit;
 use crate::error::{Error, Result};
 use crate::net::Net;
-use crate::task::{TaskVector, merge_tasks_weighted};
+use crate::task::TaskVector;
+use crate::task_merge::merge_tasks_weighted;
 use crate::trit::Trit;
 
 /// 三值任务算术：`lambda > 0` 原样、`lambda == 0` 丢弃、`lambda < 0` 取反。
@@ -19,11 +23,7 @@ pub fn scale_task(vector: &TaskVector, lambda: f32) -> Result<TaskVector> {
         return Err(Error::InvalidLambda { lambda });
     }
     if lambda == 0.0 {
-        return Ok(TaskVector {
-            base: vector.base,
-            edits: Vec::new(),
-            scales: Vec::new(),
-        });
+        return Ok(TaskVector::empty(vector));
     }
     if lambda > 0.0 {
         return Ok(vector.clone());
@@ -51,11 +51,7 @@ pub fn scale_task(vector: &TaskVector, lambda: f32) -> Result<TaskVector> {
             other => other.clone(),
         })
         .collect();
-    Ok(TaskVector {
-        base: vector.base,
-        edits,
-        scales: Vec::new(),
-    })
+    Ok(TaskVector::rebuild(vector, edits, Vec::new(), false))
 }
 
 /// 缩放单位：层 / 行 / 列块。
@@ -119,6 +115,7 @@ pub fn scale_task_units(
             }
         }
     };
+    let keep_bias = lambdas.iter().all(|lambda| *lambda > 0.0);
     let mut edits = Vec::new();
     for edit in vector.edits() {
         let (layer, row, col) = match edit {
@@ -174,11 +171,7 @@ pub fn scale_task_units(
             scales.push((*layer, *row, *scale));
         }
     }
-    Ok(TaskVector {
-        base: vector.base,
-        edits,
-        scales,
-    })
+    Ok(TaskVector::rebuild(vector, edits, scales, keep_bias))
 }
 
 /// 按行缩放：`lambdas` 按每层行数扁平编号（`dims` 的 `rows` 依次累加）。
@@ -266,6 +259,7 @@ pub fn scale_task_rows_patterns(
     validate_patterns(patterns)?;
     let mut ordered = patterns.to_vec();
     ordered.sort_by_key(|pattern| std::cmp::Reverse(pattern.specificity()));
+    let keep_bias = patterns.iter().all(|pattern| pattern.lambda > 0.0);
     let mut edits = Vec::new();
     for edit in vector.edits() {
         let (layer, row, _) = edit_key(edit);
@@ -281,11 +275,7 @@ pub fn scale_task_rows_patterns(
             scales.push((*layer, *row, *scale));
         }
     }
-    Ok(TaskVector {
-        base: vector.base,
-        edits,
-        scales,
-    })
+    Ok(TaskVector::rebuild(vector, edits, scales, keep_bias))
 }
 
 /// 按块模式缩放：键是 `[layer, row, col/block]`，支持 `*` 与 `a-b` 区间。
@@ -300,6 +290,7 @@ pub fn scale_task_blocks_patterns(
     validate_patterns(patterns)?;
     let mut ordered = patterns.to_vec();
     ordered.sort_by_key(|pattern| std::cmp::Reverse(pattern.specificity()));
+    let keep_bias = patterns.iter().all(|pattern| pattern.lambda > 0.0);
     let mut edits = Vec::new();
     for edit in vector.edits() {
         let (layer, row, col) = edit_key(edit);
@@ -315,11 +306,7 @@ pub fn scale_task_blocks_patterns(
             scales.push((*layer, *row, *scale));
         }
     }
-    Ok(TaskVector {
-        base: vector.base,
-        edits,
-        scales,
-    })
+    Ok(TaskVector::rebuild(vector, edits, scales, keep_bias))
 }
 
 fn validate_patterns(patterns: &[UnitPattern]) -> Result<()> {
@@ -349,6 +336,7 @@ pub fn scale_task_rows_map(
     lambdas: &BTreeMap<(usize, usize), f32>,
 ) -> Result<TaskVector> {
     validate_map(lambdas.values())?;
+    let keep_bias = lambdas.values().all(|lambda| *lambda > 0.0);
     let mut edits = Vec::new();
     for edit in vector.edits() {
         let (layer, row, _) = edit_key(edit);
@@ -364,11 +352,7 @@ pub fn scale_task_rows_map(
             scales.push((*layer, *row, *scale));
         }
     }
-    Ok(TaskVector {
-        base: vector.base,
-        edits,
-        scales,
-    })
+    Ok(TaskVector::rebuild(vector, edits, scales, keep_bias))
 }
 
 /// 按 `(layer, row, block)` 键值对缩放；未给出的块默认保留（λ=1）。
@@ -383,6 +367,7 @@ pub fn scale_task_blocks_map(
         return Err(Error::InvalidBlock { block });
     }
     validate_map(lambdas.values())?;
+    let keep_bias = lambdas.values().all(|lambda| *lambda > 0.0);
     let mut edits = Vec::new();
     for edit in vector.edits() {
         let (layer, row, col) = edit_key(edit);
@@ -399,11 +384,7 @@ pub fn scale_task_blocks_map(
             scales.push((*layer, *row, *scale));
         }
     }
-    Ok(TaskVector {
-        base: vector.base,
-        edits,
-        scales,
-    })
+    Ok(TaskVector::rebuild(vector, edits, scales, keep_bias))
 }
 
 fn validate_map<'a>(values: impl Iterator<Item = &'a f32>) -> Result<()> {
@@ -489,6 +470,7 @@ pub fn scale_task_layers(vector: &TaskVector, lambdas: &[f32]) -> Result<TaskVec
             return Err(Error::InvalidLambda { lambda: *lambda });
         }
     }
+    let keep_bias = lambdas.iter().all(|lambda| *lambda > 0.0);
     let mut edits = Vec::new();
     for edit in vector.edits() {
         let layer = match edit {
@@ -539,11 +521,7 @@ pub fn scale_task_layers(vector: &TaskVector, lambdas: &[f32]) -> Result<TaskVec
             scales.push((*layer, *row, *scale));
         }
     }
-    Ok(TaskVector {
-        base: vector.base,
-        edits,
-        scales,
-    })
+    Ok(TaskVector::rebuild(vector, edits, scales, keep_bias))
 }
 
 fn negate_trit(trit: Trit) -> Trit {

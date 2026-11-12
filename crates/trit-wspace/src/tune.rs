@@ -3,10 +3,10 @@
 use crate::error::{Error, Result};
 use crate::net::Net;
 use crate::oracle::Oracle;
-use crate::task::{
-    TaskVector, merge_tasks_weighted, merge_tasks_weighted_dare, merge_tasks_weighted_per_task_dare,
+use crate::task_merge::{
+    merge_tasks_weighted, merge_tasks_weighted_dare, merge_tasks_weighted_per_task_dare,
 };
-use crate::trit::Trit;
+use crate::{task::TaskVector, trit::Trit};
 
 /// 用验证集选任务权重的结果。
 #[derive(Clone, Debug, PartialEq)]

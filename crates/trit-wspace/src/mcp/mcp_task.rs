@@ -2,7 +2,7 @@
 
 use serde_json::{Value, json};
 
-use crate::{Patch, to_wsp, wire};
+use crate::{Patch, task_merge, to_wsp, wire};
 
 use super::{err, flag, load_key, opt_u64, opt_usize, optional_oracle, parse_or_path};
 
@@ -124,34 +124,33 @@ pub(super) fn task_merge(args: &Value) -> Result<Value, String> {
     let effective_weights = weights.as_deref().unwrap_or(&ones);
     let (merged, merge_report) = if dare_rate.is_none() && dare_per_task.is_none() {
         let (net, report) =
-            crate::task::merge_tasks_weighted_report(&base, &tasks, effective_weights)
+            task_merge::merge_tasks_weighted_report(&base, &tasks, effective_weights)
                 .map_err(err)?;
         (net, Some(report))
     } else {
-        let net = match (dare_rate, dare_per_task) {
-            (Some(_), Some(_)) => {
-                return Err("dare_rate 与 dare_per_task 只能给一个".into());
-            }
+        let (net, report) = match (dare_rate, dare_per_task) {
+            (Some(_), Some(_)) => return Err("dare_rate 与 dare_per_task 只能给一个".into()),
             (Some(rate), None) => match weights.as_deref() {
-                Some(weights) => {
-                    crate::task::merge_tasks_weighted_dare(&base, &tasks, weights, rate, dare_seed)
-                        .map_err(err)?
-                }
-                None => {
-                    crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?
-                }
-            },
-            (None, Some(rate)) => match weights.as_deref() {
-                Some(weights) => crate::task::merge_tasks_weighted_per_task_dare(
+                Some(weights) => task_merge::merge_tasks_weighted_dare_report(
                     &base, &tasks, weights, rate, dare_seed,
                 )
                 .map_err(err)?,
-                None => crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed)
+                None => task_merge::merge_tasks_dare_report(&base, &tasks, rate, dare_seed)
                     .map_err(err)?,
+            },
+            (None, Some(rate)) => match weights.as_deref() {
+                Some(weights) => task_merge::merge_tasks_weighted_per_task_dare_report(
+                    &base, &tasks, weights, rate, dare_seed,
+                )
+                .map_err(err)?,
+                None => {
+                    task_merge::merge_tasks_per_task_dare_report(&base, &tasks, rate, dare_seed)
+                        .map_err(err)?
+                }
             },
             (None, None) => unreachable!(),
         };
-        (net, None)
+        (net, Some(report))
     };
     let verify = if let Some(oracle) = oracle.as_ref() {
         Some(json!({
@@ -168,14 +167,7 @@ pub(super) fn task_merge(args: &Value) -> Result<Value, String> {
         "tasks": tasks.len(),
         "weights": weights,
         "tuning": tuning,
-        "merge_report": merge_report.map(|report| json!({
-            "tasks": report.tasks(),
-            "ignored_tasks": report.ignored_tasks(),
-            "voted": report.voted(),
-            "ties": report.ties(),
-            "changed": report.changed(),
-            "scale_rows": report.scale_rows(),
-        })),
+        "merge_report": merge_report.map(|report| report.to_json()),
         "verify": verify,
         "dare_rate": dare_rate,
         "dare_per_task": dare_per_task,
