@@ -29,7 +29,7 @@
   {
     "name": "self-update: check 不 fetch",
     "file": "scripts/self_update.py",
-    "old": "    if not offline:",
+    "old": "    if not offline:\n        rc_f, fout = git(root, \"fetch\", \"origin\", base)",
     "new": "    if False:",
     "pkg": "scripts/self_update.py",
     "filter": "",
@@ -38,8 +38,8 @@
   {
     "name": "self-update: 门红不判红",
     "file": "scripts/self_update.py",
-    "old": "    if red:",
-    "new": "    if False:",
+    "old": "    lines.append(\"零写入自证：status 前后逐字节一致\")\n    if red:",
+    "new": "    lines.append(\"零写入自证：status 前后逐字节一致\")\n    if False:",
     "pkg": "scripts/self_update.py",
     "filter": "",
     "runner": "python"
@@ -52,5 +52,14 @@
     "pkg": "scripts/self_update.py",
     "filter": "",
     "runner": "python"
-  }
+  },
+{
+ "name": "self-update: apply 不落地",
+ "file": "scripts/self_update.py",
+ "old": "        merge_rc, merge_out = git(root, \"merge\", \"--ff-only\", f\"origin/{base}\")",
+ "new": "        merge_rc, merge_out = 0, \"\"",
+ "pkg": "scripts/self_update.py",
+ "filter": "",
+ "runner": "python"
+}
 ]
