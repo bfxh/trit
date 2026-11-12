@@ -110,5 +110,29 @@
   "new": "if u16::from(*byte) > COMBINATIONS {",
   "pkg": "trit-codec",
   "filter": "invalid_byte_is_rejected"
+ },
+ {
+  "name": "codec: sparse 解码分配前不查长度硬顶",
+  "file": "crates/trit-codec/src/sparse.rs",
+  "old": "    check_len(len)?;",
+  "new": "    let _ = check_len(len);",
+  "pkg": "trit-codec",
+  "filter": "decode_len_cap_is_checked_before_allocation"
+ },
+ {
+  "name": "codec: sparse 长度硬顶边界写成大于等于",
+  "file": "crates/trit-codec/src/sparse.rs",
+  "old": "    if len > MAX_SPARSE_DECODE_LEN {",
+  "new": "    if len >= MAX_SPARSE_DECODE_LEN {",
+  "pkg": "trit-codec",
+  "filter": "check_len_boundary"
+ },
+ {
+  "name": "codec: sparse 长度校验恒放行（定义处不拒绝）",
+  "file": "crates/trit-codec/src/sparse.rs",
+  "old": "        return Err(CodecError::SparseLenTooLarge {\n            len,\n            max: MAX_SPARSE_DECODE_LEN,\n        });",
+  "new": "        return Ok(());",
+  "pkg": "trit-codec",
+  "filter": "decode_len_cap_is_checked_before_allocation"
  }
 ]

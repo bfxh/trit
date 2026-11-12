@@ -153,7 +153,7 @@
  },
  {
   "name": "net: 登记桥主机应答 all/any 写反（refused 不算主机在网）",
-  "file": "crates/trit-net/src/netsec/probe.rs",
+  "file": "crates/trit-net/src/netsec/probe/attach.rs",
   "old": "        let answered = group\n            .iter()\n            .any(|finding| finding.evidence != Evidence::Unverified);",
   "new": "        let answered = group\n            .iter()\n            .all(|finding| finding.evidence != Evidence::Unverified);",
   "pkg": "trit-net",
@@ -161,7 +161,7 @@
  },
  {
   "name": "net: 登记桥把服务节点证据升成 T（探测结果被洗成已证实）",
-  "file": "crates/trit-net/src/netsec/probe.rs",
+  "file": "crates/trit-net/src/netsec/probe/attach.rs",
   "old": "            let service = graph.add_node(&service_label, finding.evidence, &finding.note);",
   "new": "            let service = graph.add_node(&service_label, Evidence::Confirmed, &finding.note);",
   "pkg": "trit-net",
@@ -198,5 +198,53 @@
   "new": "    let red = bands.iter().any(|band| !band.reasons.is_empty());",
   "pkg": "trit-net",
   "filter": "missing_band_fails_closed"
+ },
+ {
+  "name": "net: 总探测数门边界写成严格小于",
+  "file": "crates/trit-net/src/netsec/probe.rs",
+  "old": "    total <= HARD_MAX_TOTAL_PROBES",
+  "new": "    total < HARD_MAX_TOTAL_PROBES",
+  "pkg": "trit-net",
+  "filter": "allowlist_enforces_aggregate_probe_cap"
+ },
+ {
+  "name": "net: 聚合总探测数不查硬顶（死帽复活）",
+  "file": "crates/trit-net/src/netsec/probe.rs",
+  "old": "            if !total_probes_ok(total) {",
+  "new": "            if false && !total_probes_ok(total) {",
+  "pkg": "trit-net",
+  "filter": "allowlist_enforces_aggregate_probe_cap"
+ },
+ {
+  "name": "net: 聚合计数每目标重置（累计失效）",
+  "file": "crates/trit-net/src/netsec/probe.rs",
+  "old": "            total += ports.len();",
+  "new": "            total = ports.len();",
+  "pkg": "trit-net",
+  "filter": "allowlist_enforces_aggregate_probe_cap"
+ },
+ {
+  "name": "net: 总探测数硬顶放到 usize::MAX（等于没设）",
+  "file": "crates/trit-net/src/netsec/probe.rs",
+  "old": "pub const HARD_MAX_TOTAL_PROBES: usize = 512;",
+  "new": "pub const HARD_MAX_TOTAL_PROBES: usize = usize::MAX;",
+  "pkg": "trit-net",
+  "filter": "allowlist_enforces_aggregate_probe_cap"
+ },
+ {
+  "name": "net: 限速睡眠不夹到 deadline 剩余（overshoot）",
+  "file": "crates/trit-net/src/netsec/probe.rs",
+  "old": "    delay.min(remaining)",
+  "new": "    delay",
+  "pkg": "trit-net",
+  "filter": "delay_sleep_is_clamped_to_deadline"
+ },
+ {
+  "name": "net: deadline 剩余用会下溢的减法（探测超时即 panic）",
+  "file": "crates/trit-net/src/netsec/probe.rs",
+  "old": "    let remaining = deadline.saturating_sub(elapsed);",
+  "new": "    let remaining = deadline - elapsed;",
+  "pkg": "trit-net",
+  "filter": "delay_sleep_is_clamped_to_deadline"
  }
 ]

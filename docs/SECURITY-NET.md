@@ -233,6 +233,10 @@ trit-net calibrate Friday-16-02-2018.csv --rows 200000 --epochs 300 --hidden 16 
 4. **硬上限防扫全段**：目标数 ≤64、每目标端口 ≤32、总探测 ≤512，超顶拒绝运行
    （`ConfigTooHot`）而非缩放；**端口必须是显式列表，不支持端口段**——段就是
    扫描的形状。连接超时 ≤5s、探测间隔限速、全局 deadline。
+   🔴→✅ **审计 U-3（2026-11-12）**：总探测 ≤512 这条原先是**死帽**——`HARD_MAX_TOTAL_PROBES`
+   声明了却没人引用，64×32=2048 的聚合量纲照样放行（每目标/每端口帽执法，聚合帽没执法）。
+   现在 `from_json` 去重后 `total += ports.len()` 累加、`total_probes_ok(total)` 真执法；
+   `run` 探测后的 `sleep` 用 `sleep_budget(delay, elapsed, deadline)` 夹到剩余预算，不再把 deadline overshoot 一个 delay。
 5. **串行单线程**：顺序连接，不做并发洪泛。
 
 ### 分类（结果只分类不升格）
@@ -248,14 +252,18 @@ trit-net calibrate Friday-16-02-2018.csv --rows 200000 --epochs 300 --hidden 16 
 
 ### 读数（A）
 
-- `tests/probe.rs` **11 条**：默认拒绝（空表/未列端口）、DNS 名拒绝、公网/CGNAT/
+- probe **17 条**（`tests/probe.rs` 15 + `tests/probe_limits.rs` 2，行棘轮拆分后纯搬家）：默认拒绝（空表/未列端口）、DNS 名拒绝、公网/CGNAT/
   基准段/组播拒绝、实验室范围穷举（v4 环回/三段私网/链路本地，v6 环回/ULA/链路
   本地 vs 全球单播）、硬上限（65 目标/33 端口/空端口列表）、配置超顶拒绝不缩放、
   分类纯函数（成功/拒绝/超时/其他 → T/F/X/X）、**环回真连接**（开端口 banner 捕获
   =`T`、关端口**永不绝不 `Confirmed`** + note 与证据一致、Linux 拒绝 vs Windows
-  超时两种都诚实）、deadline 截断如实上报（planned/probed/truncated）、JSONL 往返。
-- 变异门 +2：把拒绝分类改掉（RST 也敢不下结论）、allowlist 判断 `&&`→`||`
-  （没列的端口也探）——都被测试杀。
+  超时两种都诚实）、deadline 截断如实上报（planned/probed/truncated）、JSONL 往返；
+  **U-3 新增（`tests/probe_limits.rs`）**：聚合上限执法（`allowlist_enforces_aggregate_probe_cap`：16×32=512 放行、
+  513 ⇒ `ConfigTooHot`）、delay 夹到 deadline（`delay_sleep_is_clamped_to_deadline`：
+  开端口不 accept、banner_timeout 300ms、delay 3000ms、deadline 200ms ⇒ 探测耗时 <1500ms 且 truncated）。
+- 变异门 **31 条**（U-3 +6：`total_probes_ok` 边界 `<=`→`<`、聚合执法 `if !total_probes_ok`→恒放行、
+  累加 `total += ports.len()`→`total = ports.len()`、死帽 `HARD_MAX_TOTAL_PROBES`→`usize::MAX`、
+  sleep 夹紧 `delay.min(remaining)`→`delay`、`saturating_sub`→裸减）——全断言抓住，0 存活 0 假杀。
 - 测试全部只打 `127.0.0.1`；CLI 子命令无进程级 e2e（`std::process::Command`
   被 Mimosa 硬拦截，仓纪律：spawn 留给部署层），CLI 覆盖由库级测试承担。
 
@@ -283,6 +291,50 @@ trit-net calibrate Friday-16-02-2018.csv --rows 200000 --epochs 300 --hidden 16 
 - `T`（端口开放）≠ 攻击图里的 `T`（攻击步骤已证实）：桥登记的 `T` 边只说
   「probe 站能到达这个服务」，不说「能利用」。把开放服务升级成攻击步骤仍需要
   人给出出处（这正是"半自动"的半）。
+
+## 上限执法门（alloc_guard，审计后的预防层）
+
+2026-11-12 中期审计（`trit-audit-report.md`）三条发现——U-1 sparse 解码无界分配、
+U-2 LSP 帧/文档无界读与无顶分配、U-3 probe 聚合帽是死常量——**共同形状**是
+「定义了上限却不执法 / 读与分配不设界」。修完三条还不够：同类代码以后还会写出来。
+`scripts/alloc_guard.py` 把这个形状变成**会红的静态门**（与 `test_surface.py` 同口径的棘轮式体检）。
+
+### 三类规则（判红分两档）
+
+| 规则 | 形状 | 档位 | 对应审计 |
+|---|---|---|---|
+| 死帽 | 帽名常量（含 `MAX` 或以 `_LIMIT/_CAP/_BOUND` 结尾）全工作区只出现一次（=声明本身） | 拦 | U-3 `HARD_MAX_TOTAL_PROBES` |
+| 无界读 | `read_line`/`read_until` 三行窗口内无 `take(n)` 限位 | 拦 | U-2 LSP 帧头 |
+| 整体读无界 | `read_to_string`/`read_to_end` 无 `take(n)`（多用于可信文件） | 警 | — |
+| 可能无界分配 | 裸长度 `vec![x; len]`/`with_capacity(len)`/`resize(len,..)` 且所在 fn 无 `try_reserve` | 警 | U-1 sparse 解码 |
+
+- 拦=证据不成立，警=要人看一眼（噪音判成拦截，工具第二天就被绕过）。
+- 豁免走 `scripts/alloc_guard_allow.json`，每条带 `file/kind/reason`——reviewed 例外，不是静默忽略。
+- fail-closed：`crates/*/src` 扫不到 `.rs` ⇒ 判红（「查不到≠没问题」）；`blank_rust` 涂白注释/字符串/raw 串，扫描器不扫自己的文档。
+
+### 它当场抓到的牵连面（「防多牵连」的实证）
+
+门第一次扫全仓就点名两处无界读：
+- `trit-cli/commands/repl.rs`：交互式 REPL 读本地 stdin（人类逐行输入限界，非远程帧攻击面）⇒ 带理由豁免。
+- `trit-immune/daemon.rs` `read_frame`：对端可为子进程 stdio / **TCP 流** / 内存流，与 U-2 的 LSP 帧**同一类无界 `read_line` + `vec![0u8; len]`**——
+  审计只点了 `trit-lsp`，这是它没点到的**同类牵连 bug**。同口径修复（头行 8KiB、帧 16MiB、`try_reserve_exact`），
+  `daemon::tests` 9 条（+3 帧帽边界）、变异 3 条全抓住。**一条规则扫出一整类，而不是逐个等审计点名。**
+
+### 读数（A）
+
+- 自测 **16/16**（`python scripts/alloc_guard.py --self-test`）：每规则一个真会红的反证 + 绿例真跑 + 接线走 `main()`/`scan()`。
+- 门**自身变异 8 条全抓住**（`mutation_check.py --pkg scripts/alloc_guard.py`，python runner=`--self-test`）：
+  帽名丢 MAX / 死帽阈值放宽到 0 / take 守卫失效 / 无界读降警告 / 行注释不涂白 / 豁免不要理由 / try_reserve 识别失效 / 扫不到也判绿。
+- 全仓实测：**拦 0、警 381**（内部有界分配等需人看一眼，不判红）。
+- CI：`ci.yml` `alloc-guard` job（`alloc guard (limits enforcement)`）+ `required-checks.txt` 登记；
+  `ci_integrity.py` 本地 21 项对得上、`ci_budget.py --offline` 绿。
+
+### 诚实的边界（🔴）
+
+- 这是**静态形状门**，不是运行时安全证明：警档（整体读 / 可能无界分配）要人复核输入是否可信、是否另有硬顶；
+  它钉的是「上限有没有被执法」这个可复算形状，不替人判断业务语义。
+- 死帽判定按**名字形状**（含 MAX / `_LIMIT` 等）：名字不像帽的真上限它看不见；命名纪律是它的前提。
+- 豁免名单是 reviewed 例外，会随代码漂移过期——新增豁免必须带理由，且理由要能被复核（与 `flake_ledger` 隔离台账同纪律）。
 
 ## 诚实的边界（🔴）
 
