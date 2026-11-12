@@ -80,6 +80,7 @@ ARM64 各一批；记录每个样本的 sha256；人工复核 xref 误报/漏报
 | 2026-11-07（**dynres 检测链 + L5 逃逸变体**） | **52**（+1 = sim_lvl5 纯动态解析形态） | 全表 520 判定：false 440 / unknown 69 / **true 11**；`dynamic_resolution` = True 仅在 sim_lvl5（**良性批 0 误报**，阈值 ≥3 个隐藏敏感名有效） | 同上 | **检测能力净增（响应"弱鸡"批评）**：L5 形态（导入表只有 GetProcAddress，敏感 API 名以字符串藏于数据段，不调用）在旧链全盲（`fn_injection` False）→ **`dynamic_resolution` True**——N1 记录的逃逸边界闭合；误报面 0 增量 |
 | 2026-11-07（**栈串链 + L6 逃逸变体**） | **53**（+1 = sim_lvl6 栈串形态） | 全表 583 判定：false 498 / unknown 71 / **true 14**；`stack_strings` = True 仅在 sim_lvl6（**良性批 51 样本 0 误报**——可执行节立即数流的错位噪声没拼出任何敏感名） | 同上 | **第二个能力净增**：L6 形态（敏感 API 名逐字节写栈，字面串不在 .rdata、不在导入表、无解析器）——数据段扫描与 dynres 双全盲 → 栈串链（可执行节立即数流 + x86len 线性扫拼接）True。Linux 侧 dynres 词汇表（ptrace/memfd/keyctl 系）同步落地（ELF 良性 11 样本 0 误报） |
 | 2026-11-12（**有序共现 + ARM64 栈串补读数，规则集 v2 全量复扫**） | **53**（同批：x64 12 + PE32 12 + ELF64 11 + ARM64 12 + sim 6） | 全表 636 判定：false 537 / unknown 84 / **true 15**（attack-sim 9 = L1-L6 各形态命中对应规则：injection / fn_injection / fn_injection_ordered / dynamic_resolution / stack_strings；良性 6 = 既有 loader+network 家族 elf64 2 + arm64 4，**无新误报**）；`fn.injection_ordered` 良性 47 条全 false/unknown（PE32 象限 xref 不完整如实 unknown），**sim_lvl4 True**；ARM64 `stack_strings` 解码链良性 12 条全 false（FPR 0/12） | 同前（无新对拍） | **第三个能力净增 + 双缺口清零**：①有序共现（CFG 地址序 alloc→write→exec，强于无序桶）读数落定——sim_lvl4 正序变体 True 且良性批 0 误报；②ARM64 栈串解码（MOVZ/MOVK 半字流）接进 ARM64 象限——Windows x64 / PE32 / ELF64 / ARM64-ELF 四象限词汇表统一（L6 逃逸形态不再分平台盲区） |
+| 2026-11-13（**ARM64-PE 象限解锁——N1 四象限最后一块**） | **18**（+18 = msys2 clangarm64 工具/库 15 + PowerShell 7.7.0 win-arm64 官方 3；来源：msys2 归档包 .pkg.tar.zst + PowerShell GitHub release zip，均无需运行 ARM64 代码即解包） | 全批 216 判定：false 199 / unknown 7 / **true 10**（loader+network 家族 curl.exe / libcrypto-3-arm64.dll / libcurl-4.dll 各 3 行——mingw curl 的 GetProcAddress+socket 组合与 OpenSSL 动态装载；**packed True 落 libcrypto**——高熵段，x64 System32 批同款已知家族）+ unknown 7（packed 2 / xref_gaps 3 / needs_review 2） | **pe.\* 官方对拍（yara-python 4.5.4，76 规则）：MATCH 18 / DIFF 0 / SUBSET-GAP 0 / OFFICIAL-ERR 0**——`pe.machine == 0xAA64` 全中、entry_point 双候选探针第三次实证（本批官方只认文件偏移）、`is_dll()` 精确区分 exe/dll、timestamp/characteristics 精确值全 MATCH | **N1 规格四象限（PE x64 / PE ARM64 / ELF x64 / ELF ARM64）首次全有真样本**；新人工面 +10 行（curl 系 loader+network 9 + libcrypto packed 1——处置同既有家族：机器如实升级、待人工复核）；样本源方法论入册：不依赖 ARM64 运行环境，归档解包即得（见 §八） |
 
 ### dynres 检测链（2026-11-07，响应"检测器弱鸡"批评）
 
@@ -159,6 +160,29 @@ ARM64 各一批；记录每个样本的 sha256；人工复核 xref 误报/漏报
    `usr/bin` 下 ELF64 AArch64（magic `\x7fELF` + class 2 + machine 0xB7），
    **每包只留一个主工具**（coreutils 一包百工具，不裁剪会爆批）；
 5. 裁剪结果：12 样本（每包一主工具），入 `benign-arm64-elf-curated/`。
+
+## 八、ARM64-PE 象限抓取口径（2026-11-13 解锁）
+
+**核心约束**：x64 宿主机不能运行 ARM64 代码——但**解包不需要运行**。
+三个来源（按取舍排序）：
+
+1. **msys2 clangarm64 归档**（本批主源，15 样本）：`repo.msys2.org/mingw/clangarm64/`
+   直接下载 `.pkg.tar.zst`（选每包最新版），`System32\tar.exe --zstd -xf` 解包
+   （bsdtar 3.8+ 自带 libzstd，无需任何 ARM64 组件）——取 `bin/` 下
+   `.exe`/`.dll`，PE 头 machine = 0xAA64。注意包名与软件名有差（sqlite3→
+   sqlite、libxml2 带 tools），curl 抓目录列表 grep 实际存在的名字。
+2. **PowerShell 官方 release**（3 样本）：GitHub release 的
+   `PowerShell-7.7.0-win-arm64.zip`——微软签发的官方 ARM64 二进制
+   （pwsh.exe + System.Management.Automation.dll 等），100MB 直下。
+3. **未用**：uupdump / Windows ARM64 VHDX（~10GB，System32 原味最高但
+   带宽/提取成本不成比例——先例：PE32 象限本就用 mingw 样本，msys2
+   同源可接受）。
+
+裁剪口径：18 样本（工具 exe 9 + 库/托管 dll 9），manifest 带来源列
+（`benign-arm64-pe/samples_manifest.tsv`）。验证：自家 `triage --jsonl`
+逐样本确认 `pe32+ arm64`（18/18）后方入批。
+
+## 六、已知边界
 
 ## 六、已知边界
 

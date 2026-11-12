@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed（docs：ARM64-PE 象限解锁——N1 四象限最后一块）
+
+- `docs/CALIBRATION.md`：产线读数表追加 2026-11-13 行（18 样本 = msys2 clangarm64 15 + PowerShell 7.7.0 win-arm64 官方 3；216 判定 false 199 / unknown 7 / true 10——loader+network 家族 curl.exe/libcrypto/libcurl + packed 落 libcrypto 高熵段；**pe.* 官方对拍 76 规则 MATCH 18 / DIFF 0**，entry_point=文件偏移第三架构实证）；新增 §八 ARM64-PE 抓取口径（归档解包不需 ARM64 运行环境；bsdtar libzstd 直解 .pkg.tar.zst）。**N1 规格四象限首次全有真样本**，新人工面 +10 行。
+
 ### Added（trit-wspace：真实模型端到端 bias 读数）
 
 - 新示例 `examples/bias_e2e.rs`：读 all-MiniLM-L6-v2 第 0 层的
