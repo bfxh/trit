@@ -103,7 +103,10 @@ fn lex(text: &str) -> Result<Vec<Tok>, String> {
     let mut chars = text.chars().peekable();
     while let Some(&c) = chars.peek() {
         match c {
-            ' ' | '\t' | '\r' | '\n' => {
+            // 必须吃掉**所有** Unicode 空白（\x0b、\x0c、NBSP、U+3000…），
+            // 不能只认 4 个 ASCII 空白：否则这类字符落到 `_` 分支，内层
+            // `is_whitespace()` 立刻 break 却不 `next()` ⇒ 原地死循环。
+            _ if c.is_whitespace() => {
                 chars.next();
             }
             '/' => {
