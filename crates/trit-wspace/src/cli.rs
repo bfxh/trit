@@ -1,6 +1,4 @@
 //! 命令行入口：`read / verify / patch / repair / diff / merge / mcp`。
-//!
-//! 输入 `-` 表示 stdin（一次只允许一个输入用 stdin）。
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -22,6 +20,7 @@ use crate::wire;
 mod cli_artifact_shard;
 mod cli_block;
 mod cli_gguf;
+mod cli_gradient;
 mod cli_learned;
 mod cli_safetensors;
 mod cli_task;
@@ -66,6 +65,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "propose" => cli_learned::propose(&args[1..]),
         "train-proposer" => cli_learned::train_proposer(&args[1..]),
         "propose-learned" => cli_learned::propose_learned(&args[1..]),
+        "propose-gradient" => cli_gradient::propose_gradient(&args[1..]),
         "explain" => cmd_explain(&args[1..]),
         "probe" => cmd_probe(&args[1..]),
         "localize" => cmd_localize(&args[1..]),

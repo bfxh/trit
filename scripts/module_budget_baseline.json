@@ -2999,6 +2999,10 @@
       "lines": 161
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_gradient.rs",
+      "lines": 51
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_learned.rs",
       "lines": 166
     },
@@ -3056,7 +3060,15 @@
     },
     {
       "file": "crates/trit-wspace/src/learned.rs",
-      "lines": 527
+      "lines": 375
+    },
+    {
+      "file": "crates/trit-wspace/src/learned/features.rs",
+      "lines": 171
+    },
+    {
+      "file": "crates/trit-wspace/src/learned/gradient.rs",
+      "lines": 117
     },
     {
       "file": "crates/trit-wspace/src/lib.rs",
@@ -3255,12 +3267,16 @@
       "lines": 221
     },
     {
+      "file": "crates/trit-wspace/tests/gradient.rs",
+      "lines": 163
+    },
+    {
       "file": "crates/trit-wspace/tests/invariants.rs",
       "lines": 469
     },
     {
       "file": "crates/trit-wspace/tests/learned.rs",
-      "lines": 204
+      "lines": 202
     },
     {
       "file": "crates/trit-wspace/tests/localize.rs",

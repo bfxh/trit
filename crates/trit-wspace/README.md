@@ -33,7 +33,7 @@
 | L2 事务 | 整体校验、失败零改动、逐位回滚、并发写保护 | `Patch` + `Journal` + `rebase` + `cli/lock`（`--out`/`--log` advisory 锁） | MCP 未接锁；跨主机/NFS 未证 |
 | L3 程序语义 | 前置/后置行为条件、失败原样回滚、组合/分支 | `program`（`Script::Sequence` / `When`，可原子回滚） | 跨进程调度、并行脚本 |
 | L4 读取 | 行为穷举、指纹、f32 裕量读数 | `oracle` + `readout` | 大模型探针/解释器 |
-| L5 搜索 | 无梯度精确修补、最小编辑数、学习式提议 | `repair`（小网络完备 BFS；大网络半径 1/2 + 束搜索）+ `learned`（16 特征线性打分器，`train-proposer`/`propose-learned`） | 端到端可微/梯度提议器；跨任务泛化 |
+| L5 搜索 | 无梯度精确修补、最小编辑数、学习式提议、梯度提议 | `repair`（小网络完备 BFS；大网络半径 1/2 + 束搜索）+ `learned`（16 特征线性打分器，`train-proposer`/`propose-learned`；STE 梯度排序 `propose-gradient`） | 可微 MLP/端到端代理；跨任务泛化 |
 | L6 代数 | 消置换对称性、合并 | `merge`（贪心对齐 + 符号投票）+ `task`（任务向量投票）+ `dare`（DARE 丢弃） | 大规模合并 |
 | L7 规模 | GPU、外部容器/协议、模型库 | `safetensors`（`list` 任意维度、`import`/`export` 2D + 1D（bias 配对 / vector 工件），单/多张量多层，F32/F16/BF16；目录导入导出）+ `trit-export`（三值 GGUF v3 子集，CLI `import-gguf`/`export-gguf`） | GPU、模型库、llama.cpp 互操作 |
 
@@ -80,6 +80,7 @@ trit-wspace propose broken.wsp --oracle xor.json --pairs --limit 8
 trit-wspace propose broken.wsp --oracle xor.json --depth 3 --limit 8
 trit-wspace train-proposer broken.wsp --oracle xor.json --out proposer.json
 trit-wspace propose-learned broken.wsp --oracle xor.json --model proposer.json --limit 8 --verify
+trit-wspace propose-gradient broken.wsp --oracle xor.json --limit 8 --verify
 trit-wspace index-artifact word.wsp2 --out word.idx
 trit-wspace read-block word.wsp2 --index word.idx --layer 0 --row-start 0 --rows 64 --out part.wsp
 trit-wspace export-gguf tensors/ --out model.gguf
