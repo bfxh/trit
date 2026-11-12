@@ -2944,11 +2944,15 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 762
+      "lines": 732
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",
       "lines": 66
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_block.rs",
+      "lines": 92
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_gguf.rs",
@@ -2969,6 +2973,10 @@
     {
       "file": "crates/trit-wspace/src/cli/fsutil.rs",
       "lines": 23
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/usage.rs",
+      "lines": 38
     },
     {
       "file": "crates/trit-wspace/src/cli_audit.rs",
@@ -3116,11 +3124,19 @@
     },
     {
       "file": "crates/trit-wspace/src/wsp2.rs",
-      "lines": 139
+      "lines": 136
     },
     {
       "file": "crates/trit-wspace/src/wsp2/bytes.rs",
       "lines": 77
+    },
+    {
+      "file": "crates/trit-wspace/src/wsp2/index.rs",
+      "lines": 679
+    },
+    {
+      "file": "crates/trit-wspace/src/wsp2/index_io.rs",
+      "lines": 167
     },
     {
       "file": "crates/trit-wspace/src/wsp3.rs",
@@ -3145,6 +3161,10 @@
     {
       "file": "crates/trit-wspace/tests/audit.rs",
       "lines": 350
+    },
+    {
+      "file": "crates/trit-wspace/tests/block_index.rs",
+      "lines": 295
     },
     {
       "file": "crates/trit-wspace/tests/classification.rs",
