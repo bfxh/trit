@@ -52,9 +52,9 @@
 
 use crate::sigscan::{Pattern, Rule, Unscannable};
 
-// 条件表达式解析（拆出守 800 行预算）。
+// 条件表达式解析（拆出守 800 行预算）；`#`/`@` 叶子在 cond_tail。
 mod cond;
-
+mod cond_tail;
 use self::cond::{CondParser, parse_size};
 
 /// 单条规则的解析结局：可评估，或不可评估（带原因）。

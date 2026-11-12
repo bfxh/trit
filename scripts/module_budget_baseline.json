@@ -2488,7 +2488,7 @@
     },
     {
       "file": "crates/trit-re/src/pe.rs",
-      "lines": 786
+      "lines": 769
     },
     {
       "file": "crates/trit-re/src/pe/coff.rs",
@@ -2499,16 +2499,32 @@
       "lines": 65
     },
     {
+      "file": "crates/trit-re/src/pe/rva.rs",
+      "lines": 27
+    },
+    {
       "file": "crates/trit-re/src/sigscan.rs",
-      "lines": 521
+      "lines": 453
     },
     {
       "file": "crates/trit-re/src/sigscan/eval.rs",
-      "lines": 309
+      "lines": 238
     },
     {
       "file": "crates/trit-re/src/sigscan/matchers.rs",
       "lines": 140
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/peprops.rs",
+      "lines": 138
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/resolve.rs",
+      "lines": 82
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/scan.rs",
+      "lines": 106
     },
     {
       "file": "crates/trit-re/src/sigscan/tests.rs",
@@ -2551,6 +2567,10 @@
       "lines": 519
     },
     {
+      "file": "crates/trit-re/src/yaraparse/cond_tail.rs",
+      "lines": 48
+    },
+    {
       "file": "crates/trit-re/tests/arm64.rs",
       "lines": 79
     },
@@ -2589,6 +2609,10 @@
     {
       "file": "crates/trit-re/tests/yara_lexer.rs",
       "lines": 37
+    },
+    {
+      "file": "crates/trit-re/tests/yara_pe.rs",
+      "lines": 139
     },
     {
       "file": "crates/trit-redteam/src/attrib.rs",
