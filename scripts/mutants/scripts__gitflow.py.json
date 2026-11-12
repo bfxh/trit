@@ -943,5 +943,68 @@
   "pkg": "scripts/gitflow.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "gitflow: PR 证据 tip 不一致也删（squash 后本地多提交会被误删）",
+  "file": "scripts/gitflow.py",
+  "old": "        and tips.get(name) == merged_heads[name]",
+  "new": "        and True",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: PR 证据把保护分支也删",
+  "file": "scripts/gitflow.py",
+  "old": "        and name not in bases",
+  "new": "        and True",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: PR 证据把当前分支也删",
+  "file": "scripts/gitflow.py",
+  "old": "        and name != current",
+  "new": "        and True",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: PR 证据把别的 worktree 检出中的分支也删",
+  "file": "scripts/gitflow.py",
+  "old": "        and name not in checked_out",
+  "new": "        and True",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: 读不到已合 PR 清单当没有（查不到≠没有，漏判红）",
+  "file": "scripts/gitflow.py",
+  "old": "    heads = merged_pr_heads(repo)\n    if heads is None:",
+  "new": "    heads = merged_pr_heads(repo) or {}\n    if heads is None:",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: PR 证据也用 -d（squash 分支删不掉，门假绿）",
+  "file": "scripts/gitflow.py",
+  "old": "    for name in evidence:\n        result = git([\"branch\", \"-D\", name])",
+  "new": "    for name in evidence:\n        result = git([\"branch\", \"-d\", name])",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "gitflow: prune dry-run 也真删（没让确认就动本地分支）",
+  "file": "scripts/gitflow.py",
+  "old": "    if not apply_changes:\n        print(f\"dry-run：加 --apply 才会删除这 {len(candidates)} 个本地分支（{len(ancestry)} 已并入 + {len(evidence)} PR 证据）\")\n        return 0",
+  "new": "    if False:\n        print(f\"dry-run：加 --apply 才会删除这 {len(candidates)} 个本地分支（{len(ancestry)} 已并入 + {len(evidence)} PR 证据）\")\n        return 0",
+  "pkg": "scripts/gitflow.py",
+  "filter": "",
+  "runner": "python"
  }
 ]

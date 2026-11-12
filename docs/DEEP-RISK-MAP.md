@@ -70,7 +70,7 @@ $ python scripts/impact.py --files crates/trit-core/src/lib.rs
 | 6 | 语义冲突（两边改动互相抵消）无检测 | `merge_forensics` 只查“整块丢失”；union 驱动只保并集 | 合并结果跑关键语义测试（DSL/eval/不变量），或结构化合并 | 高 |
 | 7 | 棘轮只防放松，不防“误登记过紧” | `test_surface/module_budget --update` 只许收紧 | 台账变更需两条证据（测试输出 + 文件行数），或双人复核记录 | 低 |
 | 8 | 牵连面接入认领（**已修**） | `claim` 登记后自动跑 impact：实测 `crates/trit-core/src` ⇒ 闭包 37/44、未认领 36 点名、dev-only 2；`--strict` 未认领 ⇒ rc1 | 剩余差距：只到 crate 粒度；`check` 不重复算（claim 时已点名） | 低 |
-| 9 | 分支/工作树堆积 | 14 worktrees、229 分支；阈值 180 已超 | 归档命名空间 + 定时 `worktree_guard --apply` + 未合并超期清单 | 低 |
+| 9 | 分支/工作树堆积（**prune 已认 squash 证据**） | 16 worktrees、229 分支；阈值 180 已超。原 `branch prune` 只认 `--merged` 祖先，squash 合并认不出 ⇒ 预算红收不了口 | 现加 MERGED PR 证据（`headRefOid==本地 tip`）：祖先 `-d`、证据 `-D`；tip 不一致/当前/保护/检出中/无记录不删；gh 读不到判红、真空集另算；默认 dry-run。自测 166、变异 112 全抓。实测 dry-run 165 候选（0 祖先+165 证据）⇒ `--apply` 后 229→64<180 | 低 |
 | 10 | 一键更新第一步（**已修**） | `self_update.py --check`：预检 + 快进/分叉分类 + 只读门读数 + 零写入自证；脏/分叉/detached ⇒ rc1；自测 22、变异 6 全抓 | 剩余：`--apply` 未实现；未接 trit-vcs | 中 |
 | 11 | 跨仓副本漂移（trit / trit-immune / trit-vcs） | claims 的 `crate_twin` 只提醒；无文件对账 | 双仓 manifest 哈希对账 + 冲突清单 | 中 |
 | 12 | 平台覆盖：钩子只在 Windows Git Bash 真装过 | 本机 `.git/hooks`；CI 只跑自测 | Linux/macOS 安装脚本实机验证；镜像仓同步测试 | 低 |
