@@ -608,7 +608,11 @@
     },
     {
       "file": "crates/trit-codec/src/sop.rs",
-      "lines": 548
+      "lines": 279
+    },
+    {
+      "file": "crates/trit-codec/src/sop/tests.rs",
+      "lines": 285
     },
     {
       "file": "crates/trit-codec/src/sparse.rs",

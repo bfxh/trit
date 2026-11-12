@@ -150,5 +150,13 @@
   "new": "const MAX_TERMS: usize = 63;",
   "pkg": "trit-codec",
   "filter": "too_many_terms_errors_instead_of_shift_panic"
+ },
+ {
+  "name": "codec-sop: 变量数上限失效（3^n 枚举指数爆）",
+  "file": "crates/trit-codec/src/sop.rs",
+  "old": "    if n > MAX_SOP_VARS {",
+  "new": "    if n > usize::MAX {",
+  "pkg": "trit-codec",
+  "filter": "too_many_vars_is_rejected_before_exponential_enumeration"
  }
 ]
