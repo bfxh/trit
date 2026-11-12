@@ -12,7 +12,7 @@
 //!   接受但语义未对拍（B3/B4 双 MISS）→ 记名弃权；
 //! ④标准字母表（U2 urlsafe MISS）、大小写敏感（无 nocase）。
 
-use super::{Pattern, TextPattern, Unscannable, find_text};
+use super::{Pattern, TextPattern, find_text};
 
 /// 标准 base64 字母表。
 const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -51,13 +51,20 @@ fn wide_expand(bytes: &[u8]) -> Vec<u8> {
     out
 }
 
-/// 相位变体集：`wide_after` = 编码后再 wide（base64wide 修饰）。
-pub(super) fn variants(plaintext: &[u8], wide_after: bool) -> Vec<Vec<u8>> {
+/// 相位变体集：`wide_before` = 明文先 wide（C1：wide base64 =
+/// base64(wide(pt))）；`wide_after` = 编码后再 wide（base64wide）；
+/// 双开 = 两侧都作用（C5：wide(b64(wide(pt)))）。
+pub(super) fn variants(plaintext: &[u8], wide_before: bool, wide_after: bool) -> Vec<Vec<u8>> {
+    let pt: Vec<u8> = if wide_before {
+        wide_expand(plaintext)
+    } else {
+        plaintext.to_vec()
+    };
+    let len = pt.len();
     let mut out = Vec::new();
-    let len = plaintext.len();
     for p in 0u32..3 {
         let mut data = vec![0u8; p as usize];
-        data.extend_from_slice(plaintext);
+        data.extend_from_slice(&pt);
         let mut enc = encode(&data);
         while enc.last() == Some(&b'=') {
             enc.pop(); // 去 padding（探针：变体不含 `=`）
@@ -108,19 +115,21 @@ impl super::TextPattern {
 
 impl Pattern {
     /// base64 串入口：`want_std`（base64）/ `want_wide`（base64wide）两套
-    /// 相位变体并集（官方 B7 探针：双修饰 = 并集计数）。
-    pub fn base64(plaintext: &str, want_std: bool, want_wide: bool) -> Self {
+    /// 相位变体并集（官方 B7 探针：双修饰 = 并集计数）；`wide` = 明文先
+    /// wide 再进相位算法（官方 C1 探针：`wide base64` = base64(wide(pt))；
+    /// C5：`base64wide wide` = wide(b64(wide(pt)))——wide 两侧叠加）。
+    pub fn base64(plaintext: &str, wide: bool, want_std: bool, want_wide: bool) -> Self {
         let mut tps = Vec::new();
         if want_std {
             tps.extend(
-                variants(plaintext.as_bytes(), false)
+                variants(plaintext.as_bytes(), wide, false)
                     .into_iter()
                     .map(TextPattern::literal),
             );
         }
         if want_wide {
             tps.extend(
-                variants(plaintext.as_bytes(), true)
+                variants(plaintext.as_bytes(), wide, true)
                     .into_iter()
                     .map(TextPattern::literal),
             );
@@ -129,9 +138,9 @@ impl Pattern {
     }
 
     /// base64 修饰的组合校验与展开（从 yaraparse.rs 搬入守预算）：
-    /// nocase/xor/fullword = 官方编译拒绝（对齐拒绝）；wide 组合官方
-    /// 接受但语义未对拍 → 记名弃权；正则串 + base64 = 官方语法错。
-    /// `plaintext` = Text 串内容；返回 None = 无 b64 修饰（走常规路径）。
+    /// nocase/xor/fullword = 官方编译拒绝（对齐拒绝）；wide 组合语义已
+    /// 官方定案（C1/C5：wide 两侧叠加）→ 实装；正则串 + base64 = 官方
+    /// 语法错。`plaintext` = Text 串内容；返回 None = 无 b64 修饰。
     #[allow(clippy::too_many_arguments)]
     pub fn base64_plan(
         rule_name: &str,
@@ -157,70 +166,11 @@ impl Pattern {
                 "规则 {rule_name}：正则串不支持 base64 修饰（官方语法错）"
             ));
         }
-        if wide {
-            return Ok(Some(Pattern::Unscannable(Unscannable {
-                reason: "base64 与 wide 组合（语义未对拍）".into(),
-            })));
-        }
         let pt = plaintext.unwrap_or_default();
-        Ok(Some(Pattern::base64(pt, want_std, want_wide)))
+        Ok(Some(Pattern::base64(pt, wide, want_std, want_wide)))
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{find_union, variants};
-
-    /// 探针回放（yara-python 4.5.4 实测读数，2026-11-13）。
-    #[test]
-    fn probe_semantics_replay() {
-        // "foobar"（6 字节，整组）：3 变体 = 标准全量 + 两相位 drop 后缀
-        assert_eq!(
-            variants(b"foobar", false),
-            vec![
-                b"Zm9vYmFy".to_vec(),
-                b"Zvb2Jhc".to_vec(),
-                b"mb29iYX".to_vec()
-            ]
-        );
-        // "foobarX"（7 字节）：phase0 尾 drop（"Zm9vYmFyW"）；phase2 的
-        // 末字符 = 'X' 低 6 位（'Y'）——官方差分 MATCH 11/DIFF 0 实证
-        assert_eq!(
-            variants(b"foobarX", false),
-            vec![
-                b"Zm9vYmFyW".to_vec(),
-                b"Zvb2Jhcl".to_vec(),
-                b"mb29iYXJY".to_vec()
-            ]
-        );
-        // 1 字节：{Q, B}（p2 变体 "B"——官方判别探针 b'B' 命中实证）
-        assert_eq!(variants(b"A", false), vec![b"Q".to_vec(), b"B".to_vec()]);
-        // 2 字节：{QU, FC, BQ}（p2 变体 "BQ"——官方判别探针 b'BQ' 命中实证）
-        assert_eq!(
-            variants(b"AB", false),
-            vec![b"QU".to_vec(), b"FC".to_vec(), b"BQ".to_vec()]
-        );
-        // base64wide：编码后逐字节 \0（\x00 避开八进制转义形）
-        assert_eq!(
-            variants(b"foobar", true),
-            vec![
-                b"Z\x00m\x009\x00v\x00Y\x00m\x00F\x00y\x00".to_vec(),
-                b"Z\x00v\x00b\x002\x00J\x00h\x00c\x00".to_vec(),
-                b"m\x00b\x002\x009\x00i\x00Y\x00X\x00".to_vec()
-            ]
-        );
-    }
-
-    #[test]
-    fn union_counts_across_variants() {
-        // U1 探针：标准 + phase1 编码同文件 → 并集 2 命中
-        let tps: Vec<_> = variants(b"foobar", false)
-            .into_iter()
-            .map(super::TextPattern::literal)
-            .collect();
-        let data = b"Zm9vYmFy|Zvb2Jhc";
-        let (hits, complete) = find_union(data, &tps);
-        assert_eq!(hits, vec![0, 9]);
-        assert!(complete);
-    }
-}
+#[path = "b64_tests.rs"]
+mod tests;
