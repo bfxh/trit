@@ -3,7 +3,9 @@
 
 用法：
   python scripts/agent_claims.py claim --who <会话名> --repo <o/r> --paths <a/src b/src> \
-      [--note "在做什么"] [--ttl 90]
+      [--note "在做什么"] [--ttl 90] [--root <检出路径>] [--strict] [--no-impact]
+      # 登记后自动算牵连面（impact.py）：未认领的下游 crate 直接点名；
+      # --strict 有未认领牵连 ⇒ rc1；--root 缺省按 cwd 检出的 origin 尾段匹配 --repo
   python scripts/agent_claims.py release --who <宿主:会话id> [--id <编号>]
   python scripts/agent_claims.py renew --who <宿主:会话id> [--ttl ≤240]   # 长任务心跳
   python scripts/agent_claims.py list
@@ -31,6 +33,8 @@
   - 重叠不是先到先得：claim 带 --plan（或 --plan-file）写方案；重叠时先 compare 并排比
     「问题解释 / 兼容 / 牵连 / 回滚 / 验证」，败方 release 或收窄路径。没有方案的声明没资格比较。
   - claim/release/renew 走文件锁（名单是 read-modify-write）；repair 修历史并发留下的重复 id。
+  - claim 自动跑 impact：认领 crates/x 会列出反向依赖闭包里没人认领的 crate（补认领或通知）；
+    整仓声明跳过；cargo 取证失败 ⇒ 警（看不见不等于没有牵连）；--no-impact 跳过。
 """
 
 from __future__ import annotations
@@ -460,6 +464,62 @@ def write_claims(path: pathlib.Path, claims: list[dict]) -> None:
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def impact_root(argv: list[str], repo: str) -> pathlib.Path | None:
+    """--root 显式指定；否则按 cwd 检出的 origin 尾段匹配 --repo（不匹配 ⇒ 警并跳过）。"""
+    if "--root" in argv and argv.index("--root") + 1 < len(argv):
+        return pathlib.Path(argv[argv.index("--root") + 1])
+    proc = subprocess.run(["git", "rev-parse", "--show-toplevel"],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        return None
+    root = pathlib.Path(proc.stdout.decode("utf-8", "replace").strip())
+    if not (root / "Cargo.toml").is_file():
+        return None
+    proc = subprocess.run(["git", "-C", str(root), "remote", "get-url", "origin"],
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        return None
+    remote = proc.stdout.decode("utf-8", "replace").strip()
+    tail = remote.rstrip("/")
+    if tail.endswith(".git"):
+        tail = tail[:-4]
+    if tail.replace(":", "/").split("/")[-1].lower() != repo.rstrip("/").split("/")[-1].lower():
+        _say(f"[警] 牵连面未算：本地检出是 {remote}，与声明的 {repo} 不同（--root 可指定）")
+        return None
+    return root
+
+
+def impact_report(path: pathlib.Path, argv: list[str], repo: str, paths: list[str]) -> int:
+    """claim 写入后自动算牵连面，未认领下游点名；--strict 有未认领 ⇒ 附加 rc1。"""
+    if "--no-impact" in argv:
+        return 0
+    if not paths:
+        _say("牵连面：整仓声明覆盖全部 crate（无需窄化）")
+        return 0
+    root = impact_root(argv, repo)
+    if root is None or not (root / "Cargo.toml").is_file():
+        return 0
+    cmd = [sys.executable, str(pathlib.Path(__file__).resolve().parent / "impact.py"),
+           "--repo-root", str(root), "--files", *paths, "--claims", str(path), "--repo", repo]
+    if "--strict" in argv:
+        cmd.append("--strict")
+    try:
+        proc = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    except OSError as exc:
+        _say(f"[警] 牵连面未算：{exc}（看不见不等于没有牵连）")
+        return 0
+    for line in proc.stdout.decode("utf-8", "replace").splitlines():
+        if line.strip():
+            _say("  " + line)
+    if proc.returncode == 2:
+        _say("[警] 牵连面取证失败（impact rc=2）——看不见不等于没有牵连")
+        return 0
+    if proc.returncode == 1:
+        _say("声明已写入；--strict 判红：存在未认领的牵连 crate（补认领或通知对方）")
+        return 1
+    return 0
+
+
 def cmd_claim(path: pathlib.Path, argv: list[str]) -> int:
     def value(flag: str, default: str = "") -> str:
         return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else default
@@ -525,6 +585,7 @@ def cmd_claim(path: pathlib.Path, argv: list[str]) -> int:
          "超时请 renew）")
     if not plan.strip():
         _say("提示：未提供 --plan。与别人重叠时无法按方案质量裁决（规则：质量优先，不是先到先得）。")
+    rc_impact = impact_report(path, argv, repo, paths)
     result = check(path)
     mine = [line for line in result["red"] if who in line]
     if mine:
@@ -532,7 +593,7 @@ def cmd_claim(path: pathlib.Path, argv: list[str]) -> int:
         for line in mine:
             _say(f"  - {line}")
         return 1
-    return 0
+    return rc_impact
 
 
 def cmd_renew(path: pathlib.Path, argv: list[str]) -> int:
@@ -1013,6 +1074,102 @@ def self_test() -> int:
         holder.wait(timeout=30)
         check_at("并发 claim 能登记", claim_proc.returncode, 0)
         check_at("并发 claim 会等锁（>=0.6s）", elapsed >= 0.6, True)
+
+        # —— 牵连面接进认领：合成 cargo workspace，真跑 cargo metadata ——
+        ws = pathlib.Path(tmp) / "ws"
+        for crate in ("a", "b", "c"):
+            (ws / "crates" / crate / "src").mkdir(parents=True)
+            (ws / "crates" / crate / "src" / "lib.rs").write_text("", encoding="utf-8")
+        (ws / "Cargo.toml").write_text(chr(10).join([
+            "[workspace]", 'members = ["crates/a", "crates/b", "crates/c"]',
+            'resolver = "2"', ""]), encoding="utf-8")
+        (ws / "crates" / "a" / "Cargo.toml").write_text(chr(10).join([
+            "[package]", 'name = "a"', 'version = "0.1.0"', 'edition = "2021"', ""]),
+            encoding="utf-8")
+        (ws / "crates" / "b" / "Cargo.toml").write_text(chr(10).join([
+            "[package]", 'name = "b"', 'version = "0.1.0"', 'edition = "2021"',
+            "[dependencies]", 'a = { path = "../a" }', ""]), encoding="utf-8")
+        (ws / "crates" / "c" / "Cargo.toml").write_text(chr(10).join([
+            "[package]", 'name = "c"', 'version = "0.1.0"', 'edition = "2021"',
+            "[dev-dependencies]", 'a = { path = "../a" }', ""]), encoding="utf-8")
+        subprocess.run(["git", "init", "-q"], cwd=ws,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["git", "remote", "add", "origin", "https://github.com/t/x.git"],
+                       cwd=ws, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        def claim_out(ledger, args):
+            buf = io.StringIO()
+            saved_out = sys.stdout
+            sys.stdout = buf
+            try:
+                rc = cmd_claim(ledger, args)
+            finally:
+                sys.stdout = saved_out
+            return rc, buf.getvalue()
+
+        imp = pathlib.Path(tmp) / "IMP.md"
+        rc, out = claim_out(imp, ["claim", "--who", "qoder:imp-a", "--repo", "t/x",
+                                  "--paths", "crates/a/src", "--root", str(ws)])
+        check_at("claim 自动算牵连面（rc0）", rc, 0)
+        check_at("未认领下游被点名（b 运行时 / c 测试面）",
+                 any("未被认领" in line and "b" in line and "c" in line
+                     for line in out.splitlines()), True)
+        check_at("dev 依赖单列测试面",
+                 any("仅测试面牵连" in line and "c" in line for line in out.splitlines()), True)
+        imp2 = pathlib.Path(tmp) / "IMP2.md"
+        rc, out = claim_out(imp2, ["claim", "--who", "qoder:imp-a", "--repo", "t/x",
+                                   "--paths", "crates/a/src", "--root", str(ws), "--strict"])
+        check_at("--strict 未认领牵连判红", rc, 1)
+        check_at("判红但声明已写入", len(read_claims(imp2)), 1)
+        imp3 = pathlib.Path(tmp) / "IMP3.md"
+        claim_out(imp3, ["claim", "--who", "qoder:imp-b", "--repo", "t/x",
+                         "--paths", "crates/b/src", "--root", str(ws), "--no-impact"])
+        claim_out(imp3, ["claim", "--who", "qoder:imp-c", "--repo", "t/x",
+                         "--paths", "crates/c/src", "--root", str(ws), "--no-impact"])
+        rc, out = claim_out(imp3, ["claim", "--who", "qoder:imp-a", "--repo", "t/x",
+                                   "--paths", "crates/a/src", "--root", str(ws), "--strict"])
+        check_at("下游都认领后 --strict 转绿", rc, 0)
+        check_at("全覆盖时明说", "全部有活动声明覆盖" in out, True)
+        imp4 = pathlib.Path(tmp) / "IMP4.md"
+        rc, out = claim_out(imp4, ["claim", "--who", "qoder:imp-a", "--repo", "t/x",
+                                   "--paths", "crates/a/src", "--root", str(ws), "--no-impact"])
+        check_at("--no-impact 跳过", (rc, "牵连" not in out), (0, True))
+        imp5 = pathlib.Path(tmp) / "IMP5.md"
+        rc, out = claim_out(imp5, ["claim", "--who", "qoder:imp-whole", "--repo", "t/x",
+                                   "--root", str(ws)])
+        check_at("整仓声明不算窄化", (rc, "整仓声明" in out), (0, True))
+        imp6 = pathlib.Path(tmp) / "IMP6.md"
+        auto = subprocess.run(
+            [sys.executable, str(pathlib.Path(__file__)), "claim", "--who", "qoder:imp-auto",
+             "--repo", "t/x", "--paths", "crates/a/src", "--claims", str(imp6)],
+            cwd=ws, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        auto_out = auto.stdout.decode("utf-8", "replace")
+        check_at("cwd 检出自动匹配（不用 --root）",
+                 (auto.returncode, "反向依赖闭包" in auto_out), (0, True))
+        imp7 = pathlib.Path(tmp) / "IMP7.md"
+        mismatch = subprocess.run(
+            [sys.executable, str(pathlib.Path(__file__)), "claim", "--who", "qoder:imp-mis",
+             "--repo", "other/y", "--paths", "crates/a/src", "--claims", str(imp7)],
+            cwd=ws, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        mis_out = mismatch.stdout.decode("utf-8", "replace")
+        check_at("检出与声明不同仓 ⇒ 警并不算",
+                 (mismatch.returncode, "本地检出是" in mis_out, "反向依赖闭包" not in mis_out),
+                 (0, True, True))
+        plain = pathlib.Path(tmp) / "plain"
+        plain.mkdir()
+        imp8 = pathlib.Path(tmp) / "IMP8.md"
+        rc, out = claim_out(imp8, ["claim", "--who", "qoder:imp-a", "--repo", "t/x",
+                                   "--paths", "crates/a/src", "--root", str(plain)])
+        check_at("非 Rust 检出静默跳过", (rc, "牵连" not in out), (0, True))
+        badws = pathlib.Path(tmp) / "badws"
+        badws.mkdir()
+        (badws / "Cargo.toml").write_text("[workspace", encoding="utf-8")
+        imp9 = pathlib.Path(tmp) / "IMP9.md"
+        rc, out = claim_out(imp9, ["claim", "--who", "qoder:imp-a", "--repo", "t/x",
+                                   "--paths", "crates/a/src", "--root", str(badws)])
+        check_at("cargo 取证失败 ⇒ 警（不是没有牵连）",
+                 (rc, any(line.startswith("[警]") and "取证失败" in line
+                          for line in out.splitlines())), (0, True))
 
         # 反证 8：cp936 控制台下不许把闸门自己崩掉。
         # 注意打印的判决里**必须真有一个 GBK 放不下的字符**，否则这条夹具是空转的

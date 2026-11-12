@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（claim 自动牵连面：未认领下游点名，--strict 判红）
+
+- `scripts/agent_claims.py`：`claim` 登记后自动跑 `impact.py`（子进程复用，不重造图）：
+  `--root` 显式指定检出；缺省按 cwd 检出的 origin 尾段匹配 `--repo`（不匹配 ⇒ 警并不算）；
+  整仓声明跳过；cargo 取证失败 ⇒ 警（看不见不等于没有牵连）；`--no-impact` 跳过。
+- 未认领的牵连 crate 逐个点名、dev-only 单列；`--strict` 有未认领 ⇒ rc1（声明仍写入），
+  下游补认领后转绿。实测认领 `crates/trit-core/src`：闭包 37/44、未认领 36 点名、
+  dev-only `trit-float`/`trit-gpu`、风险 high、建议 `cargo test --workspace`。
+- 自测 112 条（+13）：合成 cargo workspace 真跑 `cargo metadata`，覆盖自动匹配 / 仓不匹配 /
+  取证失败 / 整仓 / `--no-impact` / `--strict` 红绿往返。
+- 变异 49 条（+5）全抓住：断言 48 + 崩溃 1（崩溃项为旧变异「同仓不相交不出声」，与上轮一致）；
+  新变异「strict 不拦 / 取证失败静默 / 吞输出不点名 / 整仓也窄化 / 不核对检出仓」均被断言钉住。
+
 ### Fixed（三条“未证栏”收口：依赖 kind 分账 / range-diff 取证 / 棘轮删除感知）
 
 - `scripts/impact.py`：反向依赖按 `cargo metadata` 的 `kind` 分账——normal+build 进 `runtime`，

@@ -69,7 +69,7 @@ $ python scripts/impact.py --files crates/trit-core/src/lib.rs
 | 5 | 无 API 兼容门 | 大多数 crate `publish=false`，但内部 API 仍会破 | `cargo-semver-checks` 对核心 crate + 例外登记 | 低 |
 | 6 | 语义冲突（两边改动互相抵消）无检测 | `merge_forensics` 只查“整块丢失”；union 驱动只保并集 | 合并结果跑关键语义测试（DSL/eval/不变量），或结构化合并 | 高 |
 | 7 | 棘轮只防放松，不防“误登记过紧” | `test_surface/module_budget --update` 只许收紧 | 台账变更需两条证据（测试输出 + 文件行数），或双人复核记录 | 低 |
-| 8 | 牵连面未接入认领流程 | `impact.py` 只报告；claims 仍按显式路径 | 认领时自动跑 impact，未认领牵连列在 `check` 输出 | 低（本轮已备工具） |
+| 8 | 牵连面接入认领（**已修**） | `claim` 登记后自动跑 impact：实测 `crates/trit-core/src` ⇒ 闭包 37/44、未认领 36 点名、dev-only 2；`--strict` 未认领 ⇒ rc1 | 剩余差距：只到 crate 粒度；`check` 不重复算（claim 时已点名） | 低 |
 | 9 | 分支/工作树堆积 | 14 worktrees、229 分支；阈值 180 已超 | 归档命名空间 + 定时 `worktree_guard --apply` + 未合并超期清单 | 低 |
 | 10 | 一键更新未实现 | `docs/AUTO-UPDATE.md`（A-415 草案），`self_update.py` 不存在 | 先做 `--check`（干净树 + 快进预检 + 门读数，零写入） | 中 |
 | 11 | 跨仓副本漂移（trit / trit-immune / trit-vcs） | claims 的 `crate_twin` 只提醒；无文件对账 | 双仓 manifest 哈希对账 + 冲突清单 | 中 |
@@ -89,8 +89,12 @@ $ python scripts/impact.py --files crates/trit-core/src/lib.rs
 
 ## 4. 下一批建议（按顺序，带验收判据）
 
-1. **把 impact 接进认领**：`claim` 后自动跑 `impact.py --strict`，未认领牵连直接列在该声明输出里；
+1. **把 impact 接进认领**（**已做**）：`claim` 后自动跑 `impact.py --strict`，未认领牵连直接列在该声明输出里；
    验收：`claim` 改 `crates/trit-core/src` 必须列出 37 个下游 crate 并提示补认领/通知。
+   实测读数：闭包 37/44（含种子）、未认领 36 逐个点名、dev-only `trit-float`/`trit-gpu`、风险 high、
+   建议 `cargo test --workspace`；`--strict` 未认领 ⇒ rc1（声明仍写入），下游补认领后转绿。
+   口径：`--root` 显式指定检出，缺省按 cwd 检出的 origin 尾段匹配 `--repo`（不匹配 ⇒ 警并不算）；
+   整仓声明跳过；cargo 取证失败 ⇒ 警（看不见不等于没有牵连）；`--no-impact` 跳过。
 2. **`self_update.py --check`**（AUTO-UPDATE 第一步）：干净树 + 可快进 + 门读数，零写入；
    验收：脏树 rc=1 且 `git status --porcelain` 前后逐字节一致。
 3. **mutation 分片**：`--shard i/n` + 按文件哈希分片；验收：4 片并行总时长 < 20 分钟，
