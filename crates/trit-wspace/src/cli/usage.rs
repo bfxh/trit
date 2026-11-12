@@ -1,4 +1,3 @@
-
 pub(super) const USAGE: &str = "\
 trit-wspace <command>
   read <artifact|-> [--out <path>]

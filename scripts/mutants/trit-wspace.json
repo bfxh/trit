@@ -265,7 +265,7 @@
  },
  {
   "name": "wspace-cli: --pairs 开关被忽略",
-  "file": "crates/trit-wspace/src/cli.rs",
+  "file": "crates/trit-wspace/src/cli/cli_learned.rs",
   "old": "        None if parsed.switches.contains(\"pairs\") => 2,",
   "new": "        None if false => 2,",
   "pkg": "trit-wspace",
@@ -329,7 +329,7 @@
  },
  {
   "name": "wspace-cli: --depth 3 分支失效",
-  "file": "crates/trit-wspace/src/cli.rs",
+  "file": "crates/trit-wspace/src/cli/cli_learned.rs",
   "old": "        3 => {\n            let max_triples = opt_usize(&parsed, \"max-triples\", 20_000)?;",
   "new": "        4 => {\n            let max_triples = opt_usize(&parsed, \"max-triples\", 20_000)?;",
   "pkg": "trit-wspace",
