@@ -10,13 +10,11 @@ use serde_json::{Value, json};
 
 use crate::analyze;
 use crate::audit::AuditLog;
-use crate::codec::{from_wsp, to_wsp};
+use crate::codec::to_wsp;
 use crate::edit::Patch;
 use crate::manifest::ShardManifest;
 use crate::merge::{merge_aligned, merge_vote};
-use crate::net::Net;
 use crate::ops;
-use crate::oracle::Oracle;
 use crate::repair::RepairOptions;
 use crate::shard::{ShardReplay, ShardedLog};
 use crate::wire;
@@ -655,84 +653,5 @@ fn err_result(message: impl Into<String>) -> Value {
     })
 }
 
-fn read_log(raw: &str) -> Result<String, String> {
-    if raw.trim().is_empty() {
-        return Ok(String::new());
-    }
-    if raw.trim_start().starts_with('{') || raw.contains('\n') {
-        Ok(raw.to_string())
-    } else {
-        std::fs::read_to_string(raw).map_err(|error| format!("{raw}: {error}"))
-    }
-}
-
-fn load_optional(args: &Value) -> Result<Option<Net>, String> {
-    if args.get("artifact").is_some() || args.get("path").is_some() {
-        load(args).map(Some)
-    } else {
-        Ok(None)
-    }
-}
-
-fn load(args: &Value) -> Result<Net, String> {
-    if let Some(raw) = args.get("artifact").and_then(Value::as_str) {
-        return parse_or_path(raw);
-    }
-    if let Some(path) = args.get("path").and_then(Value::as_str) {
-        return read_path(path);
-    }
-    Err("需要 artifact（WSP1 文本）或 path".into())
-}
-
-fn load_key(args: &Value, key: &str) -> Result<Net, String> {
-    let raw = args
-        .get(key)
-        .and_then(Value::as_str)
-        .ok_or_else(|| format!("需要 {key}"))?;
-    parse_or_path(raw)
-}
-
-fn parse_or_path(raw: &str) -> Result<Net, String> {
-    let text = if raw.trim_start().starts_with("wsp1") || raw.contains('\n') {
-        raw.to_string()
-    } else {
-        std::fs::read_to_string(raw).map_err(|error| format!("{raw}: {error}"))?
-    };
-    from_wsp(&text).map_err(err)
-}
-
-fn read_path(path: &str) -> Result<Net, String> {
-    let text = std::fs::read_to_string(path).map_err(|error| format!("{path}: {error}"))?;
-    from_wsp(&text).map_err(err)
-}
-
-fn required_oracle(args: &Value) -> Result<Oracle, String> {
-    let value = args
-        .get("oracle")
-        .ok_or_else(|| "需要 oracle".to_string())?;
-    wire::oracle_from_value(value).map_err(err)
-}
-
-fn optional_oracle(args: &Value) -> Result<Option<Oracle>, String> {
-    args.get("oracle")
-        .map(|value| wire::oracle_from_value(value).map_err(err))
-        .transpose()
-}
-
-fn flag(args: &Value, name: &str) -> bool {
-    args.get(name).and_then(Value::as_bool).unwrap_or(false)
-}
-
-fn opt_usize(args: &Value, name: &str, default: usize) -> usize {
-    args.get(name)
-        .and_then(Value::as_u64)
-        .map_or(default, |value| value as usize)
-}
-
-fn opt_u64(args: &Value, name: &str, default: u64) -> u64 {
-    args.get(name).and_then(Value::as_u64).unwrap_or(default)
-}
-
-fn err(error: crate::error::Error) -> String {
-    error.to_string()
-}
+mod load;
+use load::*;

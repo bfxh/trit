@@ -2742,5 +2742,13 @@
  "new": "    if false {",
  "pkg": "trit-wspace",
  "filter": "wsp4_rejects_corruption"
+},
+{
+ "name": "wspace-mcp: 路径不限工作区根（任意文件读，M19）",
+ "file": "crates/trit-wspace/src/mcp/load.rs",
+ "old": "    if real.starts_with(&root) {",
+ "new": "    if true {",
+ "pkg": "trit-wspace",
+ "filter": "confined_rejects_escapes_and_accepts_inside"
 }
 ]

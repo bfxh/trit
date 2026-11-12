@@ -199,6 +199,29 @@ fn build_cover(
 }
 
 /// 解析 BLIF 组合子集。`.latch` 等时序语句明确拒绝。
+/// 标识符规则（parse 与 to_blif 共用，双侧一致）：非空、不以 `.` 开头、不含空白/控制字符。
+fn valid_name(name: &str) -> bool {
+    !name.is_empty()
+        && !name.starts_with('.')
+        && !name.chars().any(|c| c.is_control() || c.is_whitespace())
+}
+
+/// 所有标识符（model/inputs/outputs/gates）都要过同一套规则——否则会返回「能解析但导不回去」的电路（M8）。
+fn ensure_valid_names(circuit: &Circuit) -> Result<(), BlifError> {
+    for name in std::iter::once(circuit.name.as_str())
+        .chain(circuit.inputs.iter().map(Signal::name))
+        .chain(circuit.outputs.iter().map(Signal::name))
+        .chain(circuit.gates.iter().flat_map(|gate| {
+            std::iter::once(gate.output.name()).chain(gate.inputs.iter().map(Signal::name))
+        }))
+    {
+        if !valid_name(name) {
+            return Err(BlifError::Name(name.to_string()));
+        }
+    }
+    Ok(())
+}
+
 pub fn parse_blif(text: &str) -> Result<Circuit, BlifError> {
     parse_blif_with_limits(text, Limits::DEFAULT)
 }
@@ -376,6 +399,8 @@ pub fn parse_blif_with_limits(text: &str, limits: Limits) -> Result<Circuit, Bli
     }
     // 解析方向同样要过结构校验：否则会返回"能解析但导不回去"的电路（忠实输入非法）。
     crate::circuit::validate(&circuit).map_err(|error| BlifError::Structure(error.to_string()))?;
+    // 标识符用与 to_blif 同一套规则（M8）：不然 parse 接受、to_blif 拒绝，往返不一致。
+    ensure_valid_names(&circuit)?;
     Ok(circuit)
 }
 
@@ -384,20 +409,7 @@ pub fn to_blif(circuit: &Circuit) -> Result<String, BlifError> {
     // 复审 L03：导出前先跑与 Verilog 导出同一套结构校验，再检查标识符——
     // 否则手工构造的非法电路会"成功"导出一个读不回来的文件。
     crate::circuit::validate(circuit).map_err(|error| BlifError::Structure(error.to_string()))?;
-    let gate_names = || {
-        circuit.gates.iter().flat_map(|gate| {
-            std::iter::once(gate.output.name()).chain(gate.inputs.iter().map(Signal::name))
-        })
-    };
-    for name in std::iter::once(circuit.name.as_str())
-        .chain(circuit.inputs.iter().map(Signal::name))
-        .chain(circuit.outputs.iter().map(Signal::name))
-        .chain(gate_names())
-    {
-        if name.is_empty() || name.chars().any(char::is_whitespace) || name.starts_with('.') {
-            return Err(BlifError::Name(name.to_string()));
-        }
-    }
+    ensure_valid_names(circuit)?;
     let mut out = format!(".model {}\n", circuit.name);
     let inputs: Vec<&str> = circuit.inputs.iter().map(Signal::name).collect();
     let outputs: Vec<&str> = circuit.outputs.iter().map(Signal::name).collect();
@@ -434,202 +446,4 @@ pub fn to_blif(circuit: &Circuit) -> Result<String, BlifError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn export_validates_structure_and_identifiers() {
-        // 复审 L03：含空白的信号名曾直接拼进文本，导出不可解析。
-        let mut bad_name = Circuit::new("m");
-        bad_name.add_input(Signal::new("a b"));
-        bad_name.add_output(Signal::new("y"));
-        bad_name.add_gate(Gate::new(
-            GateKind::Buf,
-            vec![Signal::new("a b")],
-            Signal::new("y"),
-        ));
-        let actual = to_blif(&bad_name);
-        assert!(
-            matches!(&actual, Err(BlifError::Name(name)) if name == "a b"),
-            "空白名必须拒绝，实际 {actual:?}"
-        );
-
-        let mut dot_name = Circuit::new("m");
-        dot_name.add_input(Signal::new(".names"));
-        dot_name.add_output(Signal::new("y"));
-        dot_name.add_gate(Gate::new(
-            GateKind::Buf,
-            vec![Signal::new(".names")],
-            Signal::new("y"),
-        ));
-        assert!(matches!(to_blif(&dot_name), Err(BlifError::Name(_))));
-
-        // 元数错误：AND 只给一个输入。
-        let mut wrong_arity = Circuit::new("m");
-        wrong_arity.add_input(Signal::new("a"));
-        wrong_arity.add_output(Signal::new("y"));
-        wrong_arity.add_gate(Gate::new(
-            GateKind::And,
-            vec![Signal::new("a")],
-            Signal::new("y"),
-        ));
-        assert!(
-            matches!(to_blif(&wrong_arity), Err(BlifError::Structure(_))),
-            "非法元数必须拒绝"
-        );
-    }
-
-    #[test]
-    fn parser_rejects_structurally_invalid_blif() {
-        assert!(matches!(
-            parse_blif(
-                ".model m
-.inputs a
-.outputs y
-.end
-"
-            ),
-            Err(BlifError::Structure(_))
-        ));
-    }
-
-    #[test]
-    fn budgets_reject_oversized_blif() {
-        // 复审 M11：cover 行与网络/门数原先无预算。
-        let text = ".model m\n.inputs a b\n.outputs y\n.names a b y\n11 1\n.end\n";
-        assert!(parse_blif(text).is_ok(), "默认预算内必须能解析");
-        let tiny_bytes = Limits {
-            bytes: 8,
-            ..Limits::DEFAULT
-        };
-        assert!(matches!(
-            parse_blif_with_limits(text, tiny_bytes),
-            Err(BlifError::Limit(_))
-        ));
-        let no_covers = Limits {
-            cover_terms: 0,
-            ..Limits::DEFAULT
-        };
-        assert!(matches!(
-            parse_blif_with_limits(text, no_covers),
-            Err(BlifError::Limit(_))
-        ));
-        let one_net = Limits {
-            nets: 1,
-            ..Limits::DEFAULT
-        };
-        assert!(matches!(
-            parse_blif_with_limits(text, one_net),
-            Err(BlifError::Limit(_))
-        ));
-    }
-
-    use crate::circuit::propagate;
-    use trit_core::algebra::Algebra;
-    use trit_core::value::Ternary;
-
-    fn check(circuit: &Circuit) {
-        let text = to_blif(circuit).unwrap();
-        let again = parse_blif(&text).unwrap();
-        assert_eq!(again.inputs.len(), circuit.inputs.len());
-        assert_eq!(again.outputs.len(), circuit.outputs.len());
-        // BLIF 是二值格式：只对 0/1 激励做等价断言。
-        let total = 1u64 << circuit.input_count();
-        for combo in 0..total {
-            let mut assignment = std::collections::BTreeMap::new();
-            for (bit, input) in circuit.inputs.iter().enumerate() {
-                let value = if (combo >> bit) & 1 == 0 {
-                    Ternary::False
-                } else {
-                    Ternary::True
-                };
-                assignment.insert(input.name().to_string(), value);
-            }
-            let left = propagate(circuit, &assignment, Algebra::Kleene).unwrap();
-            let right = propagate(&again, &assignment, Algebra::Kleene).unwrap();
-            for output in &circuit.outputs {
-                assert_eq!(
-                    left.signals.get(output.name()),
-                    right.signals.get(output.name()),
-                    "输出 {} combo {combo}\n{text}",
-                    output.name()
-                );
-            }
-        }
-    }
-
-    fn gate(kind: GateKind, inputs: &[&str], output: &str) -> Circuit {
-        let mut circuit = Circuit::new("m");
-        for name in inputs {
-            circuit.add_input(Signal::new(*name));
-        }
-        circuit.add_gate(Gate::new(
-            kind,
-            inputs.iter().map(|name| Signal::new(*name)).collect(),
-            Signal::new(output),
-        ));
-        circuit.add_output(Signal::new(output));
-        circuit
-    }
-
-    #[test]
-    fn parses_plain_names_cover() {
-        let text = ".model m\n.inputs a b\n.outputs y\n.names a b y\n11 1\n.end\n";
-        let circuit = parse_blif(text).unwrap();
-        let mut assignment = std::collections::BTreeMap::new();
-        assignment.insert("a".to_string(), Ternary::True);
-        assignment.insert("b".to_string(), Ternary::True);
-        let values = propagate(&circuit, &assignment, Algebra::Kleene).unwrap();
-        assert_eq!(values.signals.get("y"), Some(&Ternary::True));
-    }
-
-    #[test]
-    fn round_trip_all_binary_gate_kinds() {
-        check(&gate(GateKind::And, &["a", "b"], "y"));
-        check(&gate(GateKind::Or, &["a", "b"], "y"));
-        check(&gate(GateKind::Nand, &["a", "b"], "y"));
-        check(&gate(GateKind::Nor, &["a", "b"], "y"));
-        check(&gate(GateKind::XorClassic, &["a", "b"], "y"));
-        check(&gate(GateKind::Not, &["a"], "y"));
-        check(&gate(GateKind::Buf, &["a"], "y"));
-    }
-
-    #[test]
-    fn constants_and_dont_care_rows() {
-        let text = ".model m\n.inputs a\n.outputs y z\n\
-                    .names a y\n- 1\n\
-                    .names z\n\
-                    .end\n";
-        let circuit = parse_blif(text).unwrap();
-        let mut assignment = std::collections::BTreeMap::new();
-        assignment.insert("a".to_string(), Ternary::Unknown);
-        let values = propagate(&circuit, &assignment, Algebra::Kleene).unwrap();
-        assert_eq!(values.signals.get("y"), Some(&Ternary::True));
-        assert_eq!(values.signals.get("z"), Some(&Ternary::False));
-    }
-
-    #[test]
-    fn rejects_latch_and_strong_xor() {
-        let text = ".model m\n.inputs a\n.outputs y\n.latch a y\n.end\n";
-        assert!(parse_blif(text).is_err());
-        let circuit = gate(GateKind::Xor, &["a", "b"], "y");
-        assert_eq!(
-            to_blif(&circuit).unwrap_err(),
-            BlifError::Unsupported(GateKind::Xor)
-        );
-    }
-
-    #[test]
-    fn rejects_bad_cover_rows() {
-        let text = ".model m\n.inputs a b\n.outputs y\n.names a b y\n110 1\n.end\n";
-        assert!(matches!(
-            parse_blif(text).unwrap_err(),
-            BlifError::Line { .. }
-        ));
-        let text = ".model m\n.inputs a\n.outputs y\n.names a y\n2 1\n.end\n";
-        assert!(matches!(
-            parse_blif(text).unwrap_err(),
-            BlifError::Line { .. }
-        ));
-    }
-}
+mod tests;
