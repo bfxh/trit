@@ -1,9 +1,7 @@
-//! 命令行入口：`read / verify / patch / repair / diff / merge / mcp`。
+//! 命令行入口：`read / verify / certify / patch / repair / diff / merge / mcp`。
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs;
-use std::io::Read;
-use std::path::Path;
+use std::{fs, io::Read, path::Path};
 
 use serde_json::{Value, json};
 
@@ -19,6 +17,7 @@ use crate::wire;
 
 mod cli_artifact_shard;
 mod cli_block;
+mod cli_certify;
 mod cli_gguf;
 mod cli_gradient;
 mod cli_learned;
@@ -52,6 +51,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
     match command {
         "read" => cmd_read(&args[1..]),
         "verify" => cmd_verify(&args[1..]),
+        "certify" => cli_certify::certify(&args[1..]),
         "task-merge" => cli_task::task_merge(&args[1..]),
         "task-scale" => cli_task::task_scale(&args[1..]),
         "task-combine" => cli_task::task_combine(&args[1..]),

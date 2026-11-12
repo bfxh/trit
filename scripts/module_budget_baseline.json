@@ -2991,6 +2991,10 @@
       "lines": 603
     },
     {
+      "file": "crates/trit-wspace/src/certify.rs",
+      "lines": 472
+    },
+    {
       "file": "crates/trit-wspace/src/cli.rs",
       "lines": 699
     },
@@ -3001,6 +3005,10 @@
     {
       "file": "crates/trit-wspace/src/cli/cli_block.rs",
       "lines": 92
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_certify.rs",
+      "lines": 91
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_gguf.rs",
@@ -3253,6 +3261,10 @@
     {
       "file": "crates/trit-wspace/tests/block_index.rs",
       "lines": 295
+    },
+    {
+      "file": "crates/trit-wspace/tests/certify.rs",
+      "lines": 322
     },
     {
       "file": "crates/trit-wspace/tests/classification.rs",

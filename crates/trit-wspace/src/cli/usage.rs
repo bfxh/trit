@@ -4,6 +4,7 @@ trit-wspace <command>
   verify <artifact|-> --oracle <json|-> [--limit N]
   task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--out <path>]
   script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]
+  certify <artifact|-> (--keep <oracle|-> | --keep-samples N [--seed S]) (--patch <json|-> | --edited <artifact|->) [--edit <oracle|->] [--allow N] [--limit N] [--strict] [--out <path>] [--certificate <path>]
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   rebase <target|-> --base <base|-> --patch <json|-> [--skip-conflicts] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
@@ -33,6 +34,5 @@ trit-wspace <command>
   read-block <artifact.wsp2> --index <idx> --layer N [--row-start R --rows K] [--verify] [--out <path>]
   split-artifact <artifact|-> --rows N --out <dir>
   join-artifact <dir> --out <path>
-  pack-artifact <artifact|-> --out <bin>
-  unpack-artifact <bin> --out <path>
+  pack-artifact <artifact|-> --out <bin> | unpack-artifact <bin> --out <path>
   mcp";

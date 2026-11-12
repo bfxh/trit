@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`certify` 保持集副作用证书）
+
+- `certify` 模块：编辑前后逐样本比对三值输出，判定
+  `preserved/fixed/regressed/drifted/stale`，只有 `regressed`（编辑前对、编辑后错）算违规；
+  另可给编辑集（编辑后必须全部正确），两个条件同时成立才发证书。
+- `certify::behavior_set`：随机三值输入 + 当前输出作保持集，宽输入不受穷举域上限约束。
+- CLI `certify <artifact> (--keep <oracle> | --keep-samples N) (--patch | --edited)`，
+  支持 `--edit`/`--allow`/`--limit`/`--strict`/`--out`/`--certificate`；证书 schema
+  `trit-wspace.certificate.v1`。
+- 补丁事实：`noop`（目标值已等于现值）、`repeated`（同一位置多次写）、`touched`。
+- 真实读数（MiniLM `query` 384×384）：合成 Δ（2,026 trits、trim 0.2）在 64 / 256 样本上
+  分别 64/64、256/256 全 regressed；空操作单点与全 384 行 `set_scale 2.0` 均 64/64
+  preserved（后者 `touched=0`）；真正改一格只命中 2/64。
+- 新增 `docs/WSP-CERTIFY.md`。
+- 未证栏：MiniLM `query` 没有配套任务，保持集是行为快照；真实任务上的编辑集门禁未跑过。
+
 ### Added（trit-wspace：f32 ΔW → 三值补丁桥）
 
 - `delta::diff_weights`：base/tuned f32 各自三值化，逐点生成 `SetTrit`/`SetBias`；
