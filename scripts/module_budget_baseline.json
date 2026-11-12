@@ -216,7 +216,11 @@
     },
     {
       "file": "crates/trit-circuit/src/blif.rs",
-      "lines": 635
+      "lines": 449
+    },
+    {
+      "file": "crates/trit-circuit/src/blif/tests.rs",
+      "lines": 209
     },
     {
       "file": "crates/trit-circuit/src/bridge.rs",
@@ -2396,11 +2400,15 @@
     },
     {
       "file": "crates/trit-re/src/elf/mod.rs",
-      "lines": 638
+      "lines": 613
     },
     {
       "file": "crates/trit-re/src/elf/symbols.rs",
       "lines": 225
+    },
+    {
+      "file": "crates/trit-re/src/elf/tests.rs",
+      "lines": 26
     },
     {
       "file": "crates/trit-re/src/entropy.rs",
@@ -2792,7 +2800,7 @@
     },
     {
       "file": "crates/trit-texture/src/ttx3.rs",
-      "lines": 612
+      "lines": 610
     },
     {
       "file": "crates/trit-texture/tests/aniso_quality.rs",

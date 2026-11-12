@@ -822,5 +822,13 @@
   "new": "            let _ = gate;\n",
   "pkg": "trit-circuit",
   "filter": "support_only_covers_the_backward_cone"
+ },
+ {
+  "name": "circuit: parse 不校验标识符（与 to_blif 不一致，往返崩）",
+  "file": "crates/trit-circuit/src/blif.rs",
+  "old": "    ensure_valid_names(&circuit)?;",
+  "new": "    let _ = &circuit;",
+  "pkg": "trit-circuit",
+  "filter": "parse_rejects_names_that_to_blif_cannot_roundtrip"
  }
 ]

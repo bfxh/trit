@@ -1,7 +1,5 @@
-//! ELF32/ELF64 的最小解析（小端）。
-//!
-//! 只读逆向需要的结构：节表、程序头、动态导入、`.comment` 编译器指纹、
-//! GNU build-id、解释器、叠加段。大端样本直接报"暂不支持"，不装作解析成功。
+//! ELF32/ELF64 的最小解析（小端）：节表、程序头、动态导入、`.comment` 指纹、
+//! GNU build-id、解释器、叠加段；大端样本直接报"暂不支持"，不装作解析成功。
 
 use std::fmt;
 
@@ -244,9 +242,11 @@ pub fn parse(bytes: &[u8]) -> Result<ElfInfo, ParseError> {
         // 扩展节号：真实数量在 0 号节的 sh_size 里。
         let base = shoff as usize;
         if sixty_four {
-            u64_at(bytes, base + 32).ok_or(ParseError("节表截断"))? as usize
+            let at = base.checked_add(32).ok_or(ParseError("节表截断"))?;
+            u64_at(bytes, at).ok_or(ParseError("节表截断"))? as usize
         } else {
-            u32_at(bytes, base + 20).ok_or(ParseError("节表截断"))? as usize
+            let at = base.checked_add(20).ok_or(ParseError("节表截断"))?;
+            u32_at(bytes, at).ok_or(ParseError("节表截断"))? as usize
         }
     } else {
         shnum_raw as usize
@@ -610,29 +610,4 @@ pub(super) fn cstr(bytes: &[u8], off: usize, limit: usize) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{ParseError, parse};
-
-    #[test]
-    fn rejects_non_elf() {
-        assert_eq!(parse(b"not elf").unwrap_err(), ParseError("不是 ELF 魔数"));
-    }
-
-    #[test]
-    fn rejects_big_endian_explicitly() {
-        let mut bytes = vec![0u8; 64];
-        bytes[..4].copy_from_slice(b"\x7fELF");
-        bytes[4] = 2;
-        bytes[5] = 2;
-        assert_eq!(parse(&bytes).unwrap_err(), ParseError("大端 ELF 暂不支持"));
-    }
-
-    #[test]
-    fn truncated_header_is_an_error_not_a_panic() {
-        let mut bytes = vec![0u8; 20];
-        bytes[..4].copy_from_slice(b"\x7fELF");
-        bytes[4] = 2;
-        bytes[5] = 1;
-        assert!(parse(&bytes).is_err());
-    }
-}
+mod tests;

@@ -6,7 +6,7 @@
  "crate/trit-bench": 10,
  "crate/trit-build": 66,
  "crate/trit-capacity": 16,
- "crate/trit-circuit": 209,
+ "crate/trit-circuit": 210,
  "crate/trit-clean": 54,
  "crate/trit-cli": 103,
  "crate/trit-codec": 142,
