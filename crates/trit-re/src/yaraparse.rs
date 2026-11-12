@@ -21,11 +21,11 @@
 //!   `< <= > >= == !=`（KB/MB 后缀字面量同认）；
 //! - **for-of 循环**：`for N|any|all of them/($x*) : ( 体 )`，体内 `$`、
 //!   `#$`、`@$`/`@$[N]` 绑定当前串；
-//! - 不可求值但记名保留（求值恒 `Unknown`，不猜、不折叠成假）：
-//!   模块引用 `pe.number_of_sections`、未知函数 `math.entropy(…)`；
-//!   `entrypoint` = 入口点**文件偏移**（官方 YARA 语义，实测对拍判定）——
-//!   CLI 从 PE 头解析传入 [`crate::sigscan::SigScan::scan_with_entrypoint`]，
-//!   库直调不传上下文时弃权；
+//! - **模块属性**：`pe.*` 标量与 `pe.sections[N].*`（越界 = 确定的未定义）
+//!   从 PE 头求值；子集外路径（`pe.rich_signature.*`、`math.*`）记名保留、
+//!   求值恒 `Unknown`。`entrypoint` = 入口点**文件偏移**（官方 YARA 语义，
+//!   实测对拍判定）——CLI 从 PE 头解析传入
+//!   [`crate::sigscan::SigScan::scan_with_entrypoint`]，库直调不传上下文时弃权；
 //! - 注释：`//` 行注释与 `/* */` 块注释（词法器识别引号内的注释字符——
 //!   字符串里出现 `//` 是合法内容）。
 //!
@@ -54,6 +54,7 @@ use crate::sigscan::{Pattern, Rule};
 
 // 条件表达式解析（拆出守 800 行预算）；`#`/`@` 叶子在 cond_tail。
 mod cond;
+mod cond_leaf;
 mod cond_tail;
 use self::cond::CondParser;
 
@@ -84,7 +85,6 @@ pub fn parse_rules(text: &str) -> Result<ParsedFile, String> {
     let mut parser = Parser { toks, pos: 0 };
     parser.parse_file()
 }
-
 // ── 词法（lex.rs）──────────────────────────────────────────────────────
 
 mod lex;

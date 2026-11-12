@@ -25,7 +25,7 @@
 //!   `entrypoint` = 入口点**文件偏移**（官方语义，PE 与 ELF 双实测对拍判定：
 //!   PE 的 RVA≠offset 判别样本与 ELF 的 ET_EXEC 判别样本都只认 offset），
 //!   由调用方经 [`SigScan::scan_with_entrypoint`] 传入、缺上下文时弃权；
-//!   模块/未知函数（`pe.*`、`math.*`）记名保留、求值恒 `Unknown`。
+//!   `pe.*` 标量/数组式子集从 PE 头求值（`pe.sections[N].*` 越界 = 确定的未定义）；子集外路径/未知函数（`pe.rich_signature.*`、`math.*`）记名保留、求值恒 `Unknown`。
 //! - 每模式命中数上限 [`MAX_HITS`]（65536，**封顶截断 = 扫描不完整**
 //!   ——`at`/`in` 等位置性条件据此弃权，绝不据残表判假），跳跃上限
 //!   [`MAX_JUMP`]，
@@ -321,6 +321,7 @@ use eval::{EvalCtx, eval};
 pub mod regex;
 // base64 相位变体展开（探针定案）。
 pub mod b64;
+mod sections; // pe.sections[N] 数组式访问（pe.* 深水区第一潜）
 // Pattern 构造器（hex / 文本串，从本文件拆出守预算）。
 mod pattern;
 // 操作数解析三态（从 eval.rs 拆出守预算）。
@@ -328,8 +329,7 @@ mod resolve;
 // 扫描循环（impl SigScan，从本文件拆出守预算）。
 mod scan;
 
-// pe.* 模块属性子集（YARA 完整子集方向）。
-mod peprops;
+mod peprops; // pe.* 模块属性子集（YARA 完整子集方向）
 
 use peprops::resolve as resolve_pe_prop;
 
