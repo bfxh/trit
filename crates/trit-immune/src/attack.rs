@@ -51,6 +51,14 @@ pub struct AttackChains {
     pub truncated: bool,
 }
 
+/// 单次枚举的全局访问预算（`walk` 展开次数上限）：无论图多稠、`max_depth` 多深，
+/// DFS 总工作量都被这道帽封住——满图 + 大深度 + 少链时原实现按 n! 爆炸（H6 未认证 DoS）。
+pub const MAX_ATTACK_VISITS: usize = 200_000;
+/// 深度上限：`walk` 是递归，`max_depth` 过大会爆栈又放大枚举；调用方传再大也夹到这里。
+pub const MAX_ATTACK_DEPTH: usize = 64;
+/// 链条数上限（输出规模可控）。
+pub const MAX_ATTACK_CHAINS: usize = 4096;
+
 /// 枚举从任一确认 `-1` 源到 `target` 的污染路径（跨仓 + 仓内因果 +
 /// 锚定攻击分支三形态）。
 pub fn attack_chains(
@@ -60,6 +68,10 @@ pub fn attack_chains(
     max_chains: usize,
     max_depth: usize,
 ) -> AttackChains {
+    // 调用方（HTTP / 库）传入的 max_chains / max_depth 一律夹到硬顶：深度决定递归栈、
+    // 链数决定输出规模——不放任外部指定（H6 未认证 DoS）。
+    let max_chains = max_chains.min(MAX_ATTACK_CHAINS);
+    let max_depth = max_depth.min(MAX_ATTACK_DEPTH);
     let mut out = AttackChains {
         chains: Vec::new(),
         truncated: false,
@@ -73,6 +85,7 @@ pub fn attack_chains(
     let mut nodes: Vec<(String, NodeId)> = vec![(target_repo.to_string(), target)];
     let mut edges: Vec<ChainVia> = vec![ChainVia::Source];
     let mut visited: std::collections::BTreeSet<(String, u32)> = std::collections::BTreeSet::new();
+    let mut budget = MAX_ATTACK_VISITS;
     walk(
         fleet,
         target_repo,
@@ -83,6 +96,7 @@ pub fn attack_chains(
         &mut visited,
         &mut out,
         max_chains,
+        &mut budget,
         max_depth,
     );
     out
@@ -101,8 +115,15 @@ fn walk(
     visited: &mut std::collections::BTreeSet<(String, u32)>,
     out: &mut AttackChains,
     max_chains: usize,
+    budget: &mut usize,
     depth_left: usize,
 ) {
+    // 全局访问预算：耗尽即如实截断，杜绝满图 + 大深度下的 n! 枚举（H6）。
+    if *budget == 0 {
+        out.truncated = true;
+        return;
+    }
+    *budget -= 1;
     if !visited.insert((repo.to_string(), id.0)) {
         out.truncated = true; // 环：如实截断
         return;
@@ -167,6 +188,7 @@ fn walk(
             visited,
             out,
             max_chains,
+            budget,
             depth_left - 1,
         );
         nodes.pop();
@@ -222,6 +244,7 @@ fn walk(
                 visited,
                 out,
                 max_chains,
+                budget,
                 depth_left - 1,
             );
             nodes.pop();

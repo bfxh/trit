@@ -146,7 +146,13 @@ fn translate(
         _ => return Ok(x), // 未见其日志的写者：按共同前缀处理
     };
     match locals.binary_search(&x) {
-        Ok(i) => Ok(globals[i]),
+        // 本地 id 已登记、但还没在全序里重放到（伪造的「引用先于 spawn」乱序戳）：
+        // 按隔离处理，**绝不** `globals[i]` 越界——那会在 journal 写锁内 panic、毒死整个
+        // 服务（H2：单请求永久 DoS）。
+        Ok(i) => globals
+            .get(i)
+            .copied()
+            .ok_or_else(|| format!("写者 #{w} 引用了尚未重放的本地节点 #{x:02}")),
         Err(0) => Ok(x), // 共同前缀
         Err(_) => Err(format!("写者 #{w} 引用了未知本地节点 #{x:02}")),
     }
@@ -643,5 +649,50 @@ mod tests {
         assert!(verify_frame(&unsigned, b"k1").is_err());
         // 已签名的帧不能再签一次
         assert!(sign_frame(&signed, b"k1").is_err());
+    }
+
+    #[test]
+    fn record_referencing_a_not_yet_replayed_node_is_deferred_not_panicking() {
+        // H2：伪造「引用先于 spawn」的乱序戳。RECORD@phys=1 引用本地 #1，但其 SPAWN@phys=5
+        // 在全序里更晚重放 ⇒ translate 时 own_global 还没填到该下标。旧实现 `globals[i]`
+        // 越界 panic（服务端在 journal 写锁内 ⇒ 锁中毒、整个服务永久不可用）；现在按隔离处理。
+        let stream = vec![
+            sd(
+                7,
+                0,
+                0,
+                Delta::Root {
+                    title: "main".into(),
+                },
+            ),
+            sd(
+                7,
+                5,
+                0,
+                Delta::Spawn {
+                    parent: NodeId(0),
+                    kind: crate::NodeKind::Delta,
+                    title: "x".into(),
+                },
+            ),
+            sd(
+                7,
+                1,
+                0,
+                Delta::Record {
+                    id: NodeId(1),
+                    verdict: Trit::Vulnerable,
+                    evidence: None,
+                    note: "y".into(),
+                },
+            ),
+        ];
+        // 核心断言：不 panic（旧代码在此 `globals[0]` 越界）。
+        let m = merge_replicas(vec![(7, stream)]);
+        assert!(
+            m.deferred.iter().any(|d| d.reason.contains("尚未重放")),
+            "引用尚未重放的本地节点应进隔离区而非越界：{:?}",
+            m.deferred
+        );
     }
 }

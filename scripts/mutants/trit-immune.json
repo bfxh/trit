@@ -86,5 +86,29 @@
   "new": "    if false && !frame_len_ok(len) {",
   "pkg": "trit-immune",
   "filter": "oversized_content_length_is_rejected_before_allocation"
+ },
+ {
+  "name": "immune: translate 越界 globals[i]（引用先于 spawn ⇒ 锁内 panic 永久 DoS）",
+  "file": "crates/trit-immune/src/sync.rs",
+  "old": "        Ok(i) => globals\n            .get(i)\n            .copied()\n            .ok_or_else(|| format!(\"写者 #{w} 引用了尚未重放的本地节点 #{x:02}\")),",
+  "new": "        Ok(i) => Ok(globals[i]),",
+  "pkg": "trit-immune",
+  "filter": "record_referencing_a_not_yet_replayed_node_is_deferred_not_panicking"
+ },
+ {
+  "name": "immune: attack_chains 不夹 max_depth（爆栈 + 深链枚举）",
+  "file": "crates/trit-immune/src/attack.rs",
+  "old": "    let max_depth = max_depth.min(MAX_ATTACK_DEPTH);",
+  "new": "    let _ = MAX_ATTACK_DEPTH; // clamp 移除",
+  "pkg": "trit-immune",
+  "filter": "attack_chain_depth_cap_bounds_huge_max_depth"
+ },
+ {
+  "name": "immune: attack walk 不查访问预算（满图 n! 枚举 DoS）",
+  "file": "crates/trit-immune/src/attack.rs",
+  "old": "    // 全局访问预算：耗尽即如实截断，杜绝满图 + 大深度下的 n! 枚举（H6）。\n    if *budget == 0 {\n        out.truncated = true;\n        return;\n    }\n    *budget -= 1;",
+  "new": "    let _ = budget; // 预算移除",
+  "pkg": "trit-immune",
+  "filter": "attack_chain_visit_budget_bounds_dense_graph"
  }
 ]
