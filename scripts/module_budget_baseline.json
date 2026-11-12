@@ -2984,7 +2984,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 732
+      "lines": 699
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",
@@ -2997,6 +2997,10 @@
     {
       "file": "crates/trit-wspace/src/cli/cli_gguf.rs",
       "lines": 161
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_learned.rs",
+      "lines": 166
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
@@ -3049,6 +3053,10 @@
     {
       "file": "crates/trit-wspace/src/explain.rs",
       "lines": 136
+    },
+    {
+      "file": "crates/trit-wspace/src/learned.rs",
+      "lines": 527
     },
     {
       "file": "crates/trit-wspace/src/lib.rs",
@@ -3249,6 +3257,10 @@
     {
       "file": "crates/trit-wspace/tests/invariants.rs",
       "lines": 469
+    },
+    {
+      "file": "crates/trit-wspace/tests/learned.rs",
+      "lines": 204
     },
     {
       "file": "crates/trit-wspace/tests/localize.rs",

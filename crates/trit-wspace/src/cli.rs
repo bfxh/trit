@@ -22,6 +22,7 @@ use crate::wire;
 mod cli_artifact_shard;
 mod cli_block;
 mod cli_gguf;
+mod cli_learned;
 mod cli_safetensors;
 mod cli_task;
 mod cli_wsp2;
@@ -62,7 +63,9 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "transplant" => cmd_transplant(&args[1..]),
         "dare-drop" => cmd_dare_drop(&args[1..]),
         "repair" => cmd_repair(&args[1..]),
-        "propose" => cmd_propose(&args[1..]),
+        "propose" => cli_learned::propose(&args[1..]),
+        "train-proposer" => cli_learned::train_proposer(&args[1..]),
+        "propose-learned" => cli_learned::propose_learned(&args[1..]),
         "explain" => cmd_explain(&args[1..]),
         "probe" => cmd_probe(&args[1..]),
         "localize" => cmd_localize(&args[1..]),
@@ -481,42 +484,6 @@ fn cmd_repair(args: &[String]) -> Result<(), String> {
             "found": false,
             "before_loss": oracle.loss(&net).map_err(err)?,
         })),
-    }
-}
-
-fn cmd_propose(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["pairs"])?;
-    let path = one(&parsed, "propose <artifact|-> --oracle <json|->")?;
-    let oracle_path = value(&parsed, "oracle")?;
-    no_double_stdin(&[path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let limit = opt_usize(&parsed, "limit", 16)?;
-    let depth = match parsed.values.get("depth") {
-        Some(raw) => raw
-            .parse::<usize>()
-            .map_err(|_| format!("--depth 需要 1/2/3，得到 `{raw}`"))?,
-        None if parsed.switches.contains("pairs") => 2,
-        None => 1,
-    };
-    match depth {
-        1 => {
-            let analysis = crate::analyze::analyze(&net, &oracle, limit).map_err(err)?;
-            emit(&wire::analysis_to_value(&analysis))
-        }
-        2 => {
-            let max_pairs = opt_usize(&parsed, "max-pairs", 20_000)?;
-            let analysis =
-                crate::analyze::analyze_pairs(&net, &oracle, limit, max_pairs).map_err(err)?;
-            emit(&wire::pair_analysis_to_value(&analysis))
-        }
-        3 => {
-            let max_triples = opt_usize(&parsed, "max-triples", 20_000)?;
-            let analysis =
-                crate::analyze::analyze_triples(&net, &oracle, limit, max_triples).map_err(err)?;
-            emit(&wire::triple_analysis_to_value(&analysis))
-        }
-        other => Err(format!("--depth 只支持 1/2/3，得到 {other}")),
     }
 }
 

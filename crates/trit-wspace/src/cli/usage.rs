@@ -1,5 +1,3 @@
-//! CLI 帮助文本（从 `cli.rs` 拆出，控制单文件行数）。
-
 pub(super) const USAGE: &str = "\
 trit-wspace <command>
   read <artifact|-> [--out <path>]
@@ -13,6 +11,7 @@ trit-wspace <command>
   dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--by-row] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
+  train-proposer <artifact|-> --oracle <json|-> --out <model.json> [--epochs N] [--lr R] [--holdout R] | propose-learned <artifact|-> --oracle <json|-> --model <model.json> [--limit N] [--verify]
   explain <artifact|-> --oracle <json|-> --sample N [--top K]
   probe <artifact|-> --oracle <json|-> [--budget N] [--top K] [--adaptive]
   localize <artifact|-> --oracle <json|-> [--rows K] [--row-budget N] [--max-trits N] [--top-trits K]

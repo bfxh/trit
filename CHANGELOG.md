@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：学习式单点编辑提议器）
+
+- `learned`：16 维静态/行为特征 + f32 线性打分器（SGD + L2）；标签来自 `analyze`
+  的实测 `gain`，特征不读 `after_loss`，避免标签泄漏。
+- CLI `train-proposer`（训练 + 留出 top-K 报告）与 `propose-learned`（模型打分，
+  `--verify` 再走库内实测复核）。
+- 读数（4→8→1 随机网络，采样 oracle 64，打坏 8 trit，98 候选）：留出 49 条，
+  train MSE 0.00359 / holdout 0.00681；留出正样本 23/49（46.9%），模型 top-16
+  命中 10（62.5%，+15.6 pp）；top-10 实测 8/10 降低 loss。
+- 3 条测试（训练/模型往返/坏模型/CLI 闭环）；文档
+  `docs/WSP-LEARNED-PROPOSER.md`。
+- 未证栏：单工件内留出编辑、非跨任务泛化；手工特征；线性 f32 模型；真实 MiniLM
+  无任务 oracle；MCP/repair 未自动串联。
+
 ### Added（trit-wspace：CLI 并发写锁）
 
 - `cli/lock.rs`：对 `--out` / `--log` 路径加 `<path>.lock` advisory 锁；
