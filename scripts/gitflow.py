@@ -141,6 +141,44 @@ def prune_candidates(names: list[str], merged: set[str], current: str, bases: se
     return sorted(name for name in names if name in merged and name != current and name not in bases)
 
 
+def evidence_candidates(
+    names: list[str],
+    tips: dict[str, str],
+    merged_heads: dict[str, str],
+    current: str,
+    bases: set[str],
+    checked_out: set[str],
+) -> list[str]:
+    """squash 合并把分支压成一个新提交，本地 tip 不是 base 的祖先 ⇒ `branch --merged` 认不出。
+    改靠 MERGED PR 的 headRefOid == 本地 tip 来认：tip 不一致（本地多了提交）、当前分支、
+    受保护分支、别的 worktree 正检出 ⇒ 一律不删。"""
+    return sorted(
+        name for name in names
+        if name in merged_heads
+        and tips.get(name) == merged_heads[name]
+        and name != current
+        and name not in bases
+        and name not in checked_out
+    )
+
+
+def merged_pr_heads(repo: str) -> dict[str, str] | None:
+    """分支名 → 已合 PR 的 headRefOid（同分支多次 PR 取最新）。
+    读不到（gh 失败 / 输出不是 JSON）回 None，调用方判红；真空集回 {}（真的没有已合 PR）。"""
+    result = gh(["pr", "list", "--repo", repo, "--state", "merged", "--limit", "1000",
+                 "--json", "headRefName,headRefOid"])
+    if result.returncode != 0:
+        return None
+    try:
+        rows = json.loads(result.stdout or "[]")
+    except json.JSONDecodeError:
+        return None
+    heads: dict[str, str] = {}
+    for row in rows:
+        heads[row["headRefName"]] = row["headRefOid"]
+    return heads
+
+
 def mark_stale(rows: list[dict], now: int, stale_days: int) -> list[dict]:
     for row in rows:
         row["stale"] = bool(row.get("merged")) and (now - int(row.get("last_commit", now))) > stale_days * 86400
@@ -401,7 +439,7 @@ def branch_sync(base: str, remote: str, dry_run: bool) -> int:
     return 0
 
 
-def branch_prune(base: str, apply_changes: bool) -> int:
+def branch_prune(base: str, apply_changes: bool, repo: str) -> int:
     current = git(["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip()
     names = [line.strip().lstrip("* ").strip() for line in git(["branch", "--format=%(refname:short)"]).stdout.splitlines() if line.strip()]
     merged = {
@@ -409,19 +447,42 @@ def branch_prune(base: str, apply_changes: bool) -> int:
         for line in git(["branch", "--merged", base]).stdout.splitlines()
         if line.strip()
     }
-    candidates = prune_candidates(names, merged, current, PROTECTED | {base})
+    bases = PROTECTED | {base}
+    checked_out = {
+        row["branch"] for row in parse_worktrees(git(["worktree", "list", "--porcelain"]).stdout)
+        if row.get("branch")
+    }
+    ancestry = [n for n in prune_candidates(names, merged, current, bases) if n not in checked_out]
+    heads = merged_pr_heads(repo)
+    if heads is None:
+        print(f"读不到 {repo} 的已合 PR 清单（不许把\"查不到\"当\"没有\"）：不删任何分支")
+        return 1
+    tips: dict[str, str] = {}
+    for line in git(["for-each-ref", "--format=%(refname:short) %(objectname)", "refs/heads"]).stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2:
+            tips[parts[0]] = parts[1]
+    evidence = [n for n in evidence_candidates(names, tips, heads, current, bases, checked_out) if n not in ancestry]
+    candidates = ancestry + evidence
     if not candidates:
         print(f"没有可清理的分支（base={base}，当前={current}）")
         return 0
-    for name in candidates:
-        print(f"  {'删除' if apply_changes else '候选'} {name}")
+    for name in ancestry:
+        print(f"  {'删除' if apply_changes else '候选'} {name}（已并入 {base}）")
+    for name in evidence:
+        print(f"  {'删除' if apply_changes else '候选'} {name}（MERGED PR 证据，tip 一致）")
     if not apply_changes:
-        print(f"dry-run：加 --apply 才会删除这 {len(candidates)} 个已并入 {base} 的本地分支")
+        print(f"dry-run：加 --apply 才会删除这 {len(candidates)} 个本地分支（{len(ancestry)} 已并入 + {len(evidence)} PR 证据）")
         return 0
     failed = 0
-    for name in candidates:
+    for name in ancestry:
         result = git(["branch", "-d", name])
         print(f"$ git branch -d {name} … rc={result.returncode}")
+        if result.returncode != 0:
+            failed += 1
+    for name in evidence:
+        result = git(["branch", "-D", name])
+        print(f"$ git branch -D {name} … rc={result.returncode}")
         if result.returncode != 0:
             failed += 1
     return 1 if failed else 0
@@ -446,7 +507,7 @@ def branch_cmd(repo: str, argv: list[str]) -> int:
     if sub == "prune":
         if "--remote" in argv:
             return branch_prune_remote(repo, base, remote, "--apply" in argv)
-        return branch_prune(base, "--apply" in argv)
+        return branch_prune(base, "--apply" in argv, repo)
     if sub == "protect":
         target = argv[argv.index("--branch") + 1] if "--branch" in argv else base
         return protect(repo, target, "--apply" in argv, "--dry-run" in argv, "--force" in argv)
@@ -1788,6 +1849,80 @@ def self_test() -> int:
             prune_candidates(["a", "b", "main", "cur"], {"a", "main", "cur"}, "cur", {"main"}),
             ["a"],
         )
+        check("PR 证据：tip 一致才认（squash 不是祖先）",
+              evidence_candidates(["sq", "diverged"], {"sq": "a", "diverged": "b"},
+                                  {"sq": "a", "diverged": "X"}, "cur", {"main"}, set()), ["sq"])
+        check("PR 证据：保护分支不删",
+              evidence_candidates(["main", "sq"], {"main": "m", "sq": "a"},
+                                  {"main": "m", "sq": "a"}, "cur", {"main"}, set()), ["sq"])
+        check("PR 证据：当前分支不删",
+              evidence_candidates(["cur", "sq"], {"cur": "c", "sq": "a"},
+                                  {"cur": "c", "sq": "a"}, "cur", {"main"}, set()), ["sq"])
+        check("PR 证据：别的 worktree 检出中不删",
+              evidence_candidates(["wt", "sq"], {"wt": "w", "sq": "a"},
+                                  {"wt": "w", "sq": "a"}, "cur", {"main"}, {"wt"}), ["sq"])
+        check("PR 证据：无 MERGED 记录不删",
+              evidence_candidates(["norec", "sq"], {"norec": "n", "sq": "a"},
+                                  {"sq": "a"}, "cur", {"main"}, set()), ["sq"])
+        check("PR 证据：本地 tip 读不到不删",
+              evidence_candidates(["ghost"], {}, {"ghost": "a"}, "cur", {"main"}, set()), [])
+
+        real_git, real_gh = globals()["git"], globals()["gh"]
+
+        def prune_wiring(gh_rc: int, gh_body: str, sq_tip: str, apply_changes: bool):
+            deleted: list[tuple[str, str]] = []
+
+            def fg(args, cwd=None):
+                class R:
+                    returncode = 0
+                    stdout = ""
+                r = R()
+                if args[:2] == ["rev-parse", "--abbrev-ref"]:
+                    r.stdout = "cur\n"
+                elif args[:1] == ["branch"] and "--merged" in args:
+                    r.stdout = "anc\ncur\nmain\n"
+                elif args[:1] == ["branch"] and "--format=%(refname:short)" in args:
+                    r.stdout = "anc\nsq\ncur\nmain\n"
+                elif args[:1] == ["branch"] and args[1] in ("-d", "-D"):
+                    deleted.append((args[1], args[2]))
+                elif args[:1] == ["worktree"]:
+                    r.stdout = "worktree /w\nHEAD c\nbranch refs/heads/cur\n"
+                elif args[:1] == ["for-each-ref"]:
+                    r.stdout = f"anc {'1' * 40}\nsq {sq_tip}\ncur {'3' * 40}\nmain {'4' * 40}\n"
+                return r
+
+            def fgh(args, cwd=None):
+                class R:
+                    returncode = gh_rc
+                    stdout = gh_body
+                return R()
+
+            globals()["git"], globals()["gh"] = fg, fgh
+            buf = _sio.StringIO()
+            try:
+                with _scl.redirect_stdout(buf):
+                    rc = branch_prune("main", apply_changes, "o/r")
+            finally:
+                globals()["git"], globals()["gh"] = real_git, real_gh
+            return rc, deleted, buf.getvalue()
+
+        sq_head = "2" * 40
+        ok_body = json.dumps([{"headRefName": "sq", "headRefOid": sq_head}])
+        rc, deleted, out = prune_wiring(0, ok_body, sq_head, False)
+        check("prune dry-run 不删且点名两类候选",
+              (rc, deleted, "sq" in out and "anc" in out and "dry-run" in out), (0, [], True))
+        rc, deleted, out = prune_wiring(0, ok_body, sq_head, True)
+        check("prune --apply：祖先用 -d、PR 证据用 -D",
+              (rc, sorted(deleted)), (0, [("-D", "sq"), ("-d", "anc")]))
+        rc, deleted, out = prune_wiring(1, "gh: error", sq_head, True)
+        check("prune gh 读不到判红且不删（查不到≠没有）",
+              (rc, deleted, "读不到" in out), (1, [], True))
+        rc, deleted, out = prune_wiring(0, "[]", sq_head, True)
+        check("prune 真空集（无已合 PR）只删祖先",
+              (rc, sorted(deleted)), (0, [("-d", "anc")]))
+        rc, deleted, out = prune_wiring(0, ok_body, "9" * 40, True)
+        check("prune tip 不一致不删 squash 分支",
+              (rc, sorted(deleted)), (0, [("-d", "anc")]))
         stale = mark_stale(
             [
                 {"name": "old-merged", "merged": True, "last_commit": 0},

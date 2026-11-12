@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（branch prune 认 squash 合并证据：预算红可收口）
+
+- `scripts/gitflow.py branch prune`：原来只认 `git branch --merged <base>` 的祖先关系，
+  squash 合并把分支压成一个新提交、本地 tip 不是 base 祖先 ⇒ 认不出，229>180 的分支预算红无法收口。
+  现在加一路 **MERGED PR 证据**：`gh pr list --state merged --json headRefName,headRefOid`，
+  本地 tip == PR headRefOid 才算可删（`evidence_candidates` 纯函数）。
+- 删除口径分两路：祖先候选用 `git branch -d`，PR 证据候选用 `-D`（squash 分支 `-d` 删不掉）。
+  五道守卫：tip 不一致（本地多了提交）/ 当前分支 / 受保护分支 / 别的 worktree 正检出 / 无 MERGED 记录 ⇒ 一律不删。
+- fail-closed：`gh` 读不到清单（rc≠0 / 输出非 JSON）⇒ rc1「读不到…不删任何分支」，
+  真空集（`[]`，真的没有已合 PR）与取不到分成两个状态；默认 dry-run，`--apply` 才删。
+- 自测 166 条（+12）：7 条纯函数逐守卫反证 + 5 条接线（真走 `branch_prune`，monkeypatch git/gh）：
+  dry-run 不删且点名两类 / 祖先 -d 证据 -D / gh 读不到判红 / 真空集只删祖先 / tip 不一致不删。
+- 变异 112 条（+7）全断言抓住：tip 不一致也删 / 保护分支也删 / 当前分支也删 / 检出中也删 /
+  读不到清单当没有 / 证据也用 -d / dry-run 真删。
+- 实测：本地 229 分支，`branch prune` dry-run 点名 165 个可删（0 祖先 + 165 PR 证据；
+  当前/保护/别的 worktree 检出中/tip 不一致已排除）⇒ `--apply` 后 229→64，低于 180 预算。
+
 ### Added（mutation 分片：--shard i/n + CI full 4 片矩阵与逐条对账聚合）
 
 - `scripts/mutation_check.py --shard i/n`：crc32(file\0name) 稳定分片（不依赖登记顺序/对象身份），
