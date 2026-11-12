@@ -5,7 +5,6 @@
 
 use crate::error::{Error, Result};
 use crate::net::{Layer, Net};
-use crate::trit::Trit;
 
 /// 把 `other` 的隐藏层行置换到与 `reference` 对齐（只动隐藏层，输出层不动）。
 pub fn align(reference: &Net, other: &Net) -> Result<Net> {
@@ -23,41 +22,9 @@ pub fn align(reference: &Net, other: &Net) -> Result<Net> {
     Ok(current)
 }
 
-/// 逐点符号投票：`+1` 记 `+1`、`-1` 记 `-1`、正负抵消记 `0`。
-pub fn merge_vote(left: &Net, right: &Net) -> Result<Net> {
-    if left.arch() != right.arch() {
-        return Err(Error::ArchMismatch);
-    }
-    let mut layers = Vec::with_capacity(left.depth());
-    for (a, b) in left.layers().iter().zip(right.layers()) {
-        let trits: Vec<i8> = a
-            .trits()
-            .iter()
-            .zip(b.trits())
-            .map(|(&x, &y)| Trit::sign_of(i32::from(x.to_i8()) + i32::from(y.to_i8())).to_i8())
-            .collect();
-        let bias: Vec<i8> = a
-            .bias()
-            .iter()
-            .zip(b.bias())
-            .map(|(&x, &y)| Trit::sign_of(i32::from(x.to_i8()) + i32::from(y.to_i8())).to_i8())
-            .collect();
-        let scales: Vec<f32> = a
-            .scales()
-            .iter()
-            .zip(b.scales())
-            .map(|(&x, &y)| (x + y) * 0.5)
-            .collect();
-        layers.push(Layer::with_scales(
-            a.rows(),
-            a.cols(),
-            &trits,
-            &bias,
-            scales,
-        )?);
-    }
-    Net::new(layers)
-}
+mod vote;
+
+pub use vote::merge_vote;
 
 /// 先对齐再投票；对“同一个模型换了隐藏单元编号”的情形应还原出原模型。
 pub fn merge_aligned(left: &Net, right: &Net) -> Result<Net> {
