@@ -13,6 +13,13 @@
 - 文档 `docs/GGUF-TRIT.md` §4。
 - 未证栏：与 llama.cpp 互操作未证；GGUF 不保留 f32 bias 幅度、`vector` 标记与元数据值。
 
+### Changed（trit-export：转为可发布 crate）
+
+- 去掉 `publish = false`，加入 `[workspace.dependencies]` 与 `scripts/publish.sh`；
+  GGUF 容器进入 crates.io 公开面（版本随 workspace 0.12.0）。
+- 原因：trit-wspace 的 GGUF ↔ WSP1 CLI 闭环需要依赖它，而 `docs/DESIGN.md` 禁止实验层
+  彼此依赖（`scripts/publish_graph.py` 判红）。
+
 ### Added（trit-wspace：真实模型端到端 bias 读数）
 
 - 新示例 `examples/bias_e2e.rs`：读 all-MiniLM-L6-v2 第 0 层的
