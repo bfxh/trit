@@ -100,6 +100,7 @@
  "script/s1_gen_scenes.py": 0,
  "script/secret_scan.py": 1,
  "script/secret_wiring.py": 1,
+ "script/self_update.py": 1,
  "script/snapshot.py": 1,
  "script/split.py": 1,
  "script/tech_collide.py": 1,

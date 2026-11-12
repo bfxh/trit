@@ -61,6 +61,9 @@
   `--strict` 有未认领牵连 ⇒ rc1（声明仍写入）；`--no-impact` 跳过；cargo 取证失败 ⇒ 警。
 - **main 必须且只能在一个工作树检出**；合并后立刻回收：`python scripts/worktree_guard.py --apply`
   （只回收「PR 已合 + 干净 + 本地 tip == PR head」的工作树与分支，脏的一律保留）。
+- **更新前先预检**：`python scripts/self_update.py --check`（断网加 `--offline`）只读不写：
+  脏树 / 分叉 / detached / fetch 失败 / 门红 ⇒ rc1 并点名；可快进 + 门全绿 ⇒ rc0；
+  `--apply` 未实现，落地仍走你自己的 merge/PR 流程。
 - 开工先 `python scripts/agent_claims.py check`，再 `claim`；收工 `release`。
 - `CHANGELOG.md` 只在 `## [Unreleased]` 后追加条目，不要重排/改写相邻条目。
 - 长 CI（mutation 可达 1 小时）不要连环 rebase：先让基础门绿；同步用 `git merge origin/main`，
