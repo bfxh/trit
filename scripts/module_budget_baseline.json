@@ -2512,7 +2512,11 @@
     },
     {
       "file": "crates/trit-re/src/sigscan/b64.rs",
-      "lines": 226
+      "lines": 176
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/b64_tests.rs",
+      "lines": 76
     },
     {
       "file": "crates/trit-re/src/sigscan/eval.rs",
