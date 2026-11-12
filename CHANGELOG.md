@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added（governance：self_update --apply——一键更新落地）
+
+- `scripts/self_update.py --apply`：预检（干净/非 detached/fetch/快进/分叉）→ `git merge --ff-only`
+  → `cargo fetch --locked`（存在 `Cargo.lock` 时）→ 只读门 → 报告旧/新 SHA 与 `git reset --hard` 回滚命令。
+  不提交、不推送、不合并；台账默认只读，依赖升级仍要人审。
+- 脏树 / 分叉 / detached 拒绝且零改动；`--offline` 不 fetch、不跑 `cargo fetch`。
+- 自测 22 → 28（新增 apply 快进真落地、已最新、脏树、分叉）；`docs/AUTO-UPDATE.md` 状态与验收判据同步。
+- 未证栏：`cargo fetch` 失败只报告回滚命令，不自动执行；没有与 `trit-vcs` 的 ref 更新对接。
+
 ### Changed（trit-wspace：WSP3 实测——真实 MiniLM 上 RLE 无收益）
 
 - 读数：all-MiniLM-L6-v2 的 103 个张量 WSP1 **46,608,788** → WSP2 **5,985,699**（12.8%）→

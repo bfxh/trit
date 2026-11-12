@@ -52,38 +52,52 @@ def gates_for(root: pathlib.Path) -> list[tuple[str, list[str]]]:
     return gates
 
 
-def check(root: pathlib.Path, offline: bool, base: str) -> tuple[int, list[str]]:
+def precheck(root: pathlib.Path, offline: bool, base: str) -> tuple[int, list[str], dict]:
+    """共享预检：返回 (rc, lines, state)；state 含 branch/old/new/status/relation。"""
+    state = {"branch": "", "old": "", "new": "", "status": "", "relation": ""}
     rc_st, status = git(root, "status", "--porcelain")
     if rc_st != 0:
-        return 1, [f"FAIL 读不了 git status（{status.strip()[:200]}）"]
+        return 1, [f"FAIL 读不了 git status（{status.strip()[:200]}）"], state
+    state["status"] = status
     rc_sym, ref = git(root, "symbolic-ref", "-q", "HEAD")
     if rc_sym != 0:
-        return 1, ["FAIL detached HEAD：更新只认分支（先 switch 回分支）"]
+        return 1, ["FAIL detached HEAD：更新只认分支（先 switch 回分支）"], state
     branch = ref.strip().removeprefix("refs/heads/")
+    state["branch"] = branch
     if status.strip():
         dirty = status.strip().splitlines()
         return 1, [f"FAIL 脏工作区（{len(dirty)} 条）⇒ 拒绝更新，零改动："] + \
-                  ["  " + line for line in dirty[:5]]
+                  ["  " + line for line in dirty[:5]], state
     if not offline:
         rc_f, fout = git(root, "fetch", "origin", base)
         if rc_f != 0:
-            return 1, [f"FAIL fetch origin {base} 失败（看不见不等于没有）：{fout.strip()[-200:]}"]
+            return 1, [f"FAIL fetch origin {base} 失败（看不见不等于没有）：{fout.strip()[-200:]}"], state
     rc_o, old = git(root, "rev-parse", "HEAD")
     rc_n, new = git(root, "rev-parse", f"origin/{base}")
     if rc_o != 0 or rc_n != 0:
-        return 1, [f"FAIL 读不到 HEAD 或 origin/{base}（--offline 且从没 fetch 过？）"]
+        return 1, [f"FAIL 读不到 HEAD 或 origin/{base}（--offline 且从没 fetch 过？）"], state
     old, new = old.strip(), new.strip()
+    state["old"], state["new"] = old, new
     lines = [f"旧 SHA {old[:12]} → 新 SHA {new[:12]}（分支 {branch}）"]
     if old == new:
+        state["relation"] = "latest"
         lines.append("已是最新（无需更新）")
     elif git(root, "merge-base", "--is-ancestor", old, new)[0] == 0:
-        lines.append("可快进（--apply 才落地，本轮未实现）")
+        state["relation"] = "fast-forward"
+        lines.append("可快进")
     elif git(root, "merge-base", "--is-ancestor", new, old)[0] == 0:
+        state["relation"] = "ahead"
         lines.append("本地领先 origin（无需更新；推送走你自己的 PR 流程）")
     else:
         _, mb = git(root, "merge-base", old, new)
+        state["relation"] = "diverged"
         return 1, lines + [f"FAIL 分叉（两边互不为祖先）⇒ 拒绝：分叉点 {mb.strip()[:12]}，"
-                           "先自行 merge/rebase 对齐"]
+                           "先自行 merge/rebase 对齐"], state
+    return 0, lines, state
+
+
+def run_gates(root: pathlib.Path, lines: list[str]) -> list[str]:
+    """跑只读门并把读数追加到 lines；返回红项名字。"""
     gates = gates_for(root)
     if not gates:
         lines.append("门：无（没有 Cargo.toml / 门脚本）——空集，不是绿")
@@ -96,10 +110,50 @@ def check(root: pathlib.Path, offline: bool, base: str) -> tuple[int, list[str]]
         lines.append(f"门 {name}: {verdict}（rc={proc.returncode}）{tail[:120]}")
         if proc.returncode != 0:
             red.append(name)
+    return red
+
+
+def check(root: pathlib.Path, offline: bool, base: str) -> tuple[int, list[str]]:
+    rc, lines, state = precheck(root, offline, base)
+    if rc != 0:
+        return rc, lines
+    red = run_gates(root, lines)
     _, after = git(root, "status", "--porcelain")
-    if after != status:
+    if after != state["status"]:
         return 1, lines + ["FAIL 零写入被破坏：status 前后不一致（本命令不许写任何文件）"]
     lines.append("零写入自证：status 前后逐字节一致")
+    if red:
+        return 1, lines + [f"FAIL 门红：{', '.join(red)}"]
+    return 0, lines
+
+
+def apply(root: pathlib.Path, offline: bool, base: str) -> tuple[int, list[str]]:
+    """落地：只快进 + 依赖 fetch + 门；不提交、不推送、不合并。"""
+    rc, lines, state = precheck(root, offline, base)
+    if rc != 0:
+        return rc, lines
+    if state["relation"] == "fast-forward":
+        merge_rc, merge_out = git(root, "merge", "--ff-only", f"origin/{base}")
+        if merge_rc != 0:
+            return 1, lines + [f"FAIL 快进失败（{merge_out.strip()[-200:]}）；未改动"]
+        lines.append(f"已快进到 {state['new'][:12]}")
+        if not offline and (root / "Cargo.lock").is_file():
+            proc = subprocess.run(["cargo", "fetch", "--locked"], cwd=root,
+                                  stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+            out = proc.stdout.decode("utf-8", "replace").strip()
+            tail = out.splitlines()[-1] if out else ""
+            lines.append(f"cargo fetch --locked: rc={proc.returncode} {tail[:120]}")
+            if proc.returncode != 0:
+                return 1, lines + [f"FAIL 依赖 fetch 失败；回滚：git reset --hard {state['old']}"]
+        dirty = git(root, "status", "--porcelain")[1].strip()
+        if dirty:
+            lines.append(f"工作区出现 {len(dirty.splitlines())} 条改动（依赖/台账/工件）；本命令不自动提交")
+        red = run_gates(root, lines)
+        lines.append(f"回滚：git reset --hard {state['old']}")
+        if red:
+            return 1, lines + [f"FAIL 门红：{', '.join(red)}"]
+        return 0, lines
+    red = run_gates(root, lines)
     if red:
         return 1, lines + [f"FAIL 门红：{', '.join(red)}"]
     return 0, lines
@@ -116,10 +170,11 @@ def main(argv: list[str]) -> int:
         return argv[argv.index(flag) + 1] if flag in argv and argv.index(flag) + 1 < len(argv) else default
 
     if "--apply" in argv:
-        say("--apply 未实现（本轮只交付 --check：预检 + 门读数，零写入）；见 docs/AUTO-UPDATE.md")
-        return 2
-    if "--check" not in argv:
-        say("用法：self_update.py --check [--offline] [--base main] [--repo-root <路径>]（--apply 未实现）")
+        mode = apply
+    elif "--check" in argv:
+        mode = check
+    else:
+        say("用法：self_update.py --check|--apply [--offline] [--base main] [--repo-root <路径>]")
         return 2
     root = pathlib.Path(value("--repo-root")) if "--repo-root" in argv else pathlib.Path.cwd()
     if not (root / ".git").exists():
@@ -128,7 +183,7 @@ def main(argv: list[str]) -> int:
             say(f"FAIL 不在 git 仓库里：{root}")
             return 2
         root = pathlib.Path(out.strip())
-    rc, lines = check(root.resolve(), "--offline" in argv, value("--base", "main"))
+    rc, lines = mode(root.resolve(), "--offline" in argv, value("--base", "main"))
     for line in lines:
         say(line)
     return rc
@@ -226,10 +281,43 @@ def self_test() -> int:
         check_at("detached ⇒ 红", (rc, "detached" in out), (1, True))
         sh(ws, "checkout", "-q", "main")
 
-        rc, out = run_main(["--apply", "--repo-root", str(ws)])
-        check_at("--apply 未实现 ⇒ rc2", (rc, "未实现" in out), (2, True))
         rc, _ = run_main(["--repo-root", str(ws)])
-        check_at("不带 --check 给用法 ⇒ rc2", rc, 2)
+        check_at("不带 --check/--apply 给用法 ⇒ rc2", rc, 2)
+
+        ws5, remote5 = tmp / "ws5", tmp / "remote5.git"
+        mk_repo(ws5)
+        with_remote(ws5, remote5)
+        clone5 = tmp / "clone5"
+        sh(tmp, "clone", "-q", str(remote5), str(clone5))
+        sh(clone5, "checkout", "-q", "-B", "main", "origin/main")
+        sh(clone5, "config", "user.email", "t@t")
+        sh(clone5, "config", "user.name", "t")
+        (clone5 / "next5.txt").write_text("next5\n", encoding="utf-8")
+        sh(clone5, "add", "next5.txt")
+        sh(clone5, "commit", "-q", "-m", "next5")
+        sh(clone5, "push", "-q", "origin", "main")
+        rc, out = run_main(["--apply", "--repo-root", str(ws5)])
+        check_at("apply 可快进 ⇒ rc0", rc, 0)
+        check_at("apply 真落地（HEAD == origin）",
+                 git(ws5, "rev-parse", "HEAD")[1].strip(),
+                 git(ws5, "rev-parse", "origin/main")[1].strip())
+        check_at("apply 后文件到位", (ws5 / "next5.txt").is_file(), True)
+        check_at("apply 报告回滚命令", "git reset --hard" in out, True)
+        rc, out = run_main(["--apply", "--offline", "--repo-root", str(ws5)])
+        check_at("apply 已最新 ⇒ rc0", (rc, "已是最新" in out), (0, True))
+        (ws5 / "dirty5.txt").write_text("x", encoding="utf-8")
+        rc, out = run_main(["--apply", "--offline", "--repo-root", str(ws5)])
+        check_at("apply 脏树 ⇒ rc1", (rc, "脏工作区" in out), (1, True))
+        (ws5 / "dirty5.txt").unlink()
+        (ws5 / "local5.txt").write_text("local5\n", encoding="utf-8")
+        sh(ws5, "add", "local5.txt")
+        sh(ws5, "commit", "-q", "-m", "local5")
+        (clone5 / "remote5.txt").write_text("remote5\n", encoding="utf-8")
+        sh(clone5, "add", "remote5.txt")
+        sh(clone5, "commit", "-q", "-m", "remote5")
+        sh(clone5, "push", "-q", "origin", "main")
+        rc, out = run_main(["--apply", "--repo-root", str(ws5)])
+        check_at("apply 分叉 ⇒ rc1 且不落地", (rc, "分叉" in out), (1, True))
 
         ws2 = tmp / "ws2"
         mk_repo(ws2)
