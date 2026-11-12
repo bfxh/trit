@@ -134,5 +134,21 @@
   "new": "            let diags = diag::parse_rustc_stream(body);\n            if false {",
   "pkg": "trit-immune",
   "filter": "write_endpoints_require_psk"
+ },
+ {
+  "name": "hlc: observe 不夹远端物理位（u64::MAX 冻死时钟、本地写入被去重丢光）",
+  "file": "crates/trit-immune/src/hlc.rs",
+  "old": "        let remote_phys = remote.physical_ms.min(pt.saturating_add(MAX_SKEW_MS));",
+  "new": "        let remote_phys = remote.physical_ms;",
+  "pkg": "trit-immune",
+  "filter": "hostile_far_future_stamp_does_not_freeze_the_clock"
+ },
+ {
+  "name": "hlc: 计数溢出饱和成同一戳（tick 不再前进）",
+  "file": "crates/trit-immune/src/hlc.rs",
+  "old": "            None => Hlc {\n                physical_ms: physical_ms.saturating_add(1),\n                counter: 0,\n                writer,\n            },",
+  "new": "            None => Hlc {\n                physical_ms,\n                counter: u32::MAX,\n                writer,\n            },",
+  "pkg": "trit-immune",
+  "filter": "counter_overflow_carries_into_physical"
  }
 ]

@@ -1152,7 +1152,11 @@
     },
     {
       "file": "crates/trit-immune/src/hlc.rs",
-      "lines": 251
+      "lines": 183
+    },
+    {
+      "file": "crates/trit-immune/src/hlc/tests.rs",
+      "lines": 112
     },
     {
       "file": "crates/trit-immune/src/import.rs",
