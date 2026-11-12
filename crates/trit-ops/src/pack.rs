@@ -233,7 +233,7 @@ impl Trytes {
                 }
                 let digit = c % 3;
                 c /= 3;
-                out.push(Trit::from_i8_unchecked(digit as i8 - 1));
+                out.push(unsafe { Trit::from_i8_unchecked(digit as i8 - 1) });
             }
         }
         out
@@ -257,7 +257,7 @@ mod tests {
 
     fn sample(n: usize) -> Vec<Trit> {
         (0..n)
-            .map(|i| Trit::from_i8_unchecked(((i * 7 + 3) % 3) as i8 - 1))
+            .map(|i| unsafe { Trit::from_i8_unchecked(((i * 7 + 3) % 3) as i8 - 1) })
             .collect()
     }
 

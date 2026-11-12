@@ -30,9 +30,13 @@ impl Trit {
         }
     }
 
-    /// 不做校验的构造（内部用）。调用方保证取值合法。
+    /// 不做校验的构造。调用方**必须**保证 `value ∈ {-1, 0, +1}`——否则得到的
+    /// `Trit` 违反不变量，下游（如 `gemv` 的 5-trit 打包查表）会越界读（健全性漏洞）。
+    ///
+    /// # Safety
+    /// `value` 必须为 `-1`、`0` 或 `+1`。
     #[inline]
-    pub const fn from_i8_unchecked(value: i8) -> Self {
+    pub const unsafe fn from_i8_unchecked(value: i8) -> Self {
         Trit(value)
     }
 

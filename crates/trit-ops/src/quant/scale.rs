@@ -51,7 +51,7 @@ pub fn quantize(values: &[f32], scale: f32) -> Vec<Trit> {
         .iter()
         .map(|v| {
             let q = (v * inv).round();
-            Trit::from_i8_unchecked(q.clamp(-1.0, 1.0) as i8)
+            unsafe { Trit::from_i8_unchecked(q.clamp(-1.0, 1.0) as i8) }
         })
         .collect()
 }
