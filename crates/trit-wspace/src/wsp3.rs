@@ -10,6 +10,7 @@
 //! ```
 //!
 //! 它仍是**缓存/传输格式**：解包先还原 WSP2，再回到 WSP1 可读工件。
+//! **实测边界**（`docs/WSP3-RESULTS.md`）：真实 MiniLM 103 张量上比 WSP2 大 0.7%（平均游程 1.5、熵 1.584 bit/trit），只对低熵/全同工件有效。
 
 use crate::error::{Error, Result};
 use crate::net::Net;
@@ -20,8 +21,7 @@ const MAGIC: &[u8; 4] = b"WSP3";
 const VERSION: u8 = 1;
 const HEADER: usize = 4 + 1 + 8;
 
-/// PackBits 编码：literal 段（header 0..=127 表示 1..=128 字节）与重复段
-/// （header 0x80|(n-3)，后跟 1 字节，表示 3..=130 次重复）。
+/// PackBits 编码：literal 1–128 字节（header 0..=127）与重复 3–130 次（header `0x80|(n-3)` + 1 字节）。
 #[must_use]
 pub fn rle_encode(input: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
