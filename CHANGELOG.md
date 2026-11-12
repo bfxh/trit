@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（mutation 分片：--shard i/n + CI full 4 片矩阵与逐条对账聚合）
+
+- `scripts/mutation_check.py --shard i/n`：crc32(file\0name) 稳定分片（不依赖登记顺序/对象身份），
+  越界/形状错 ⇒ rc2；空片是真空集，明说后放行；大声打 `SHARD i/n` 部分跑声明；
+  preflight 只查所选。各片必须在不同检出里跑（同树有单实例锁与共享文件）。
+- `--partition n [--logs <目录>]` 聚合门（不跑测试）：划分必须是干净划分（漏片/重复落片分开点名）；
+  给了日志再逐条对账——全表每条恰好一个判决且是杀死，缺判决/不认识/重复/非杀死/读不到日志全判红。
+- CI `mutation.yml`：full 改 4 片矩阵（`full-shard`，fail-fast: false，各片上传日志）+
+  聚合 job 保持原名 `mutation (full)`（非 required；`always()` 保证某片红了聚合仍逐条点名，不静默 skipped）。
+  required 的两个名字（`mutation gate (self-test)` / `mutation (changed crates)`）不动。
+  每片 timeout 30 分钟（ci_budget 单 job 预算内）；`.github/ci-budget.txt` 同步：
+  旧 `mutation#120` 豁免换成 `full-shard#30` + `full#10`（首跑后回填中位数）。
+- 自测 121 条（+35）：划分性质/确定性/越界 rc2/真空集/preflight 只查所选（真走 main）/
+  判决行解析（缩进汇总不重计）/聚合红绿往返（漏片、重复、缺判决、unknown、非杀死、无日志、空表）。
+- 变异 32 条（+11）全断言抓住：shard 不选择 / 哈希按对象身份 / 越界不拒 / preflight 查全量 /
+  真空片不放行 / 不声明部分跑 / 聚合漏片·重复·覆盖缺口不判红 / 判决解析漏 caught / 聚合空表放行。
+  实测全表 1498 条 4 片 = [380, 367, 393, 358]；CI 并行时长与 caught 集合对账待合入后 dispatch 实测。
+
 ### Added（一键更新第一步：self_update --check 零写入预检）
 
 - 新增 `scripts/self_update.py --check`：非 detached + 干净树预检；fetch（`--offline` 跳过）；

@@ -68,3 +68,7 @@
 - `CHANGELOG.md` 只在 `## [Unreleased]` 后追加条目，不要重排/改写相邻条目。
 - 长 CI（mutation 可达 1 小时）不要连环 rebase：先让基础门绿；同步用 `git merge origin/main`，
   不要 force-push 别人的分支。
+- mutation 分片：`python scripts/mutation_check.py --shard i/n`（crc32(file\0name) 稳定分片，
+  越界 rc2，空片真空集明说）；各片在**不同检出**里跑。CI full 走 4 片矩阵 + 聚合
+  `--partition 4 --logs <目录>`（逐条判决对账：缺/重/非杀死/读不到日志全判红）；
+  required 的两个检查名不变。
