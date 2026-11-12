@@ -2804,7 +2804,7 @@
     },
     {
       "file": "crates/trit-texture/src/ttx3.rs",
-      "lines": 610
+      "lines": 609
     },
     {
       "file": "crates/trit-texture/tests/aniso_quality.rs",
@@ -2820,7 +2820,11 @@
     },
     {
       "file": "crates/trit-texture/tests/ttx3.rs",
-      "lines": 225
+      "lines": 224
+    },
+    {
+      "file": "crates/trit-texture/tests/ttx3_malformed.rs",
+      "lines": 148
     },
     {
       "file": "crates/trit-train/src/bin/bench.rs",

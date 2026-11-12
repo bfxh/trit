@@ -158,5 +158,37 @@
   "new": "            checked += 0;",
   "pkg": "trit-texture",
   "filter": "pack::tests::encode_is_deterministic_and_metrics_are_sane"
+ },
+ {
+  "name": "ttx3: Strength 瓦片步长漏乘份数",
+  "file": "crates/trit-texture/src/ttx3.rs",
+  "old": "                let tile_stride = TILE_DATA_BYTES as u64 * level.policy.copies() as u64;",
+  "new": "                let tile_stride = TILE_DATA_BYTES as u64;",
+  "pkg": "trit-texture",
+  "filter": "strength_level_with_many_tiles_round_trips_and_keeps_redundancy"
+ },
+ {
+  "name": "ttx3: 瓦片目录终点回绕",
+  "file": "crates/trit-texture/src/ttx3.rs",
+  "old": "            .dir_offset\n            .saturating_add(",
+  "new": "            .dir_offset\n            .wrapping_add(",
+  "pkg": "trit-texture",
+  "filter": "hostile_level_dir_offset_is_truncation_error"
+ },
+ {
+  "name": "ttx3: 瓦片数据终点回绕",
+  "file": "crates/trit-texture/src/ttx3.rs",
+  "old": "        let end = offset.saturating_add(u64::from(len));",
+  "new": "        let end = offset.wrapping_add(u64::from(len));",
+  "pkg": "trit-texture",
+  "filter": "hostile_tile_offset_is_truncation_error"
+ },
+ {
+  "name": "ttx3: 瓦片长度只拒超长",
+  "file": "crates/trit-texture/src/ttx3.rs",
+  "old": "        if len as usize != TILE_DATA_BYTES {",
+  "new": "        if len as usize > TILE_DATA_BYTES {",
+  "pkg": "trit-texture",
+  "filter": "tile_len_other_than_tile_data_bytes_is_rejected"
  }
 ]
