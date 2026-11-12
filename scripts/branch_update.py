@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 
@@ -126,18 +127,36 @@ def parse_json(text: str | None) -> tuple[dict | None, str]:
     return data, ""
 
 
-def compare_test_surface(old: dict, new: dict) -> list[str]:
+def unit_path(key: str) -> str | None:
+    """测试面台账的单位键 -> 仓内路径（`script/x.py` / `crate/名`）。"""
+    if key.startswith("script/"):
+        return "scripts/" + key[len("script/"):]
+    if key.startswith("crate/"):
+        return "crates/" + key[len("crate/"):]
+    return None
+
+
+def new_tree_exists(root: pathlib.Path, new: str, path: str) -> bool:
+    rc, _ = git(root, "cat-file", "-e", f"{new}:{path}")
+    return rc == 0
+
+
+def compare_test_surface(old: dict, new: dict, exists) -> list[str]:
     issues = []
     for key, value in old.items():
         if not isinstance(value, int):
             continue
         current = new.get(key)
-        if not isinstance(current, int) or current < value:
-            issues.append(f"测试面 {key}: {value} -> {current if current is not None else '消失'}")
+        if isinstance(current, int) and current >= value:
+            continue
+        target = unit_path(key)
+        if target and not exists(target):
+            continue  # 单位随文件/crate 一起删除：是删减，不是回退
+        issues.append(f"测试面 {key}: {value} -> {current if current is not None else '消失'}")
     return issues
 
 
-def compare_module_budget(old: dict, new: dict) -> list[str]:
+def compare_module_budget(old: dict, new: dict, exists) -> list[str]:
     def caps(data: dict) -> dict[str, int]:
         out = {}
         for entry in data.get("caps", []) or []:
@@ -149,8 +168,11 @@ def compare_module_budget(old: dict, new: dict) -> list[str]:
     issues = []
     for path, lines in old_caps.items():
         current = new_caps.get(path)
-        if current is None or current > lines:
-            issues.append(f"模块预算 {path}: 上限 {lines} -> {current if current is not None else '消失'}")
+        if current is not None and current <= lines:
+            continue
+        if not exists(path):
+            continue  # 文件已删除：上限一起消失不是放松
+        issues.append(f"模块预算 {path}: 上限 {lines} -> {current if current is not None else '消失'}")
     return issues
 
 
@@ -170,10 +192,10 @@ def compare_docs_hygiene(old: dict, new: dict) -> list[str]:
 
 def ratchet_regressions(root: pathlib.Path, old: str, new: str) -> list[str]:
     issues: list[str] = []
+    exists = lambda path: new_tree_exists(root, new, path)  # noqa: E731
     checks = (
         (TEST_SURFACE, compare_test_surface),
         (MODULE_BUDGET, compare_module_budget),
-        (DOCS_HYGIENE, compare_docs_hygiene),
     )
     for path, compare in checks:
         old_text = blob_text(root, old, path)
@@ -185,8 +207,71 @@ def ratchet_regressions(root: pathlib.Path, old: str, new: str) -> list[str]:
         if old_data is None or new_data is None:
             issues.append(f"{path}: {old_err or new_err}")
             continue
-        issues.extend(compare(old_data, new_data))
+        issues.extend(compare(old_data, new_data, exists))
+    old_text = blob_text(root, old, DOCS_HYGIENE)
+    new_text = blob_text(root, new, DOCS_HYGIENE)
+    if old_text is not None and new_text is not None:
+        old_data, old_err = parse_json(old_text)
+        new_data, new_err = parse_json(new_text)
+        if old_data is None or new_data is None:
+            issues.append(f"{DOCS_HYGIENE}: {old_err or new_err}")
+        else:
+            issues.extend(compare_docs_hygiene(old_data, new_data))
     return issues
+
+
+ENTRY = re.compile(
+    r"^(\d+|-):\s+([0-9a-f-]+)\s+([=!<>])\s+(\d+|-):\s+([0-9a-f-]+)\s*(.*)$"
+)
+
+
+def range_diff_audit(root: pathlib.Path, old: str, new: str) -> dict:
+    """`git cherry` 只看补丁等价；再让 range-diff 把“落点/补丁被改写”点出来。
+
+    只做取证：rebase 到新基线时补丁上下文变化（`!`）是常态，不单独定罪；
+    但“旧提交在新历史里无对应”（`<`）与补丁等价的结论矛盾 ⇒ 调用方 fail-closed。
+    """
+    rc, base = git(root, "merge-base", old, new)
+    if rc != 0 or not base.strip():
+        return {"error": "算不出 merge-base"}
+    rc, out = git(root, "range-diff", "--no-color",
+                  f"{base.strip()}..{old}", f"{base.strip()}..{new}")
+    if rc != 0:
+        return {"error": out.strip()[:200] or "range-diff 失败"}
+    result = {"equal": 0, "changed": [], "old_only": [], "new_only": 0}
+    entry = None
+    section = ""
+    patch_changed = False
+
+    def flush() -> None:
+        if entry is not None and entry["op"] == "!" and patch_changed:
+            result["changed"].append({"old": entry["old"], "subject": entry["subject"]})
+
+    for line in out.splitlines():
+        match = ENTRY.match(line)
+        if match:
+            flush()
+            old_idx, old_sha, op, _new_idx, _new_sha, subject = match.groups()
+            entry = {"op": op, "old": old_sha, "subject": subject.strip()}
+            section, patch_changed = "", False
+            if op == "=":
+                result["equal"] += 1
+            elif op == ">":
+                result["new_only"] += 1
+            elif op == "<" and old_idx != "-":
+                result["old_only"].append({"old": old_sha, "subject": subject.strip()})
+            continue
+        if entry is None:
+            continue
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            section = stripped[3:].strip().strip("#").strip()
+            continue
+        if section and section not in ("Metadata", "Commit message"):
+            if stripped.startswith(("+", "-")) and not stripped.startswith(("+++", "---")):
+                patch_changed = True
+    flush()
+    return result
 
 
 def classify(
@@ -236,6 +321,17 @@ def classify(
                 )
         else:
             result["kind"] = "clean-rewrite"
+            audit = range_diff_audit(root, old, new)
+            result["range_diff"] = audit
+            if audit.get("error"):
+                result["reasons"].append(f"range-diff 取证失败（{audit['error']}）")
+            if audit.get("old_only") and not allow_rewrite:
+                result["ok"] = False
+                result["reasons"].append("range-diff 显示旧提交在新历史里无对应（与补丁等价结论矛盾）")
+            for item in (audit.get("changed") or [])[:5]:
+                result["reasons"].append(
+                    f"补丁落点与旧侧不同（人工确认）：{item['subject'] or item['old'][:10]}"
+                )
             if not allow_rewrite:
                 result["reasons"].append("非快进但补丁全部等价（rebase/amend，警告放行）")
     ratchet = ratchet_regressions(root, old, new)
@@ -380,6 +476,28 @@ def self_test() -> int:
         rewritten = classify(repo, before_amend, after_amend)
         check("amend 判为 clean-rewrite", rewritten["kind"], "clean-rewrite")
         check("clean-rewrite 放行", rewritten["ok"], True)
+        check("amend 只有元数据变化（不误报补丁改写）", rewritten["range_diff"]["changed"], [])
+
+        g(repo, "switch", "-q", "-c", "rd-up", base)
+        body = "".join(f"{n}" + chr(10) for n in range(1, 21))
+        (repo / "ctx.txt").write_text(body, encoding="utf-8")
+        g(repo, "add", "ctx.txt")
+        g(repo, "commit", "-q", "-m", "ctx base")
+        rd_base = g(repo, "rev-parse", "HEAD")
+        (repo / "ctx.txt").write_text(body.replace("1" + chr(10), "one" + chr(10), 1), encoding="utf-8")
+        g(repo, "add", "ctx.txt")
+        g(repo, "commit", "-q", "-m", "up changes line 1")
+        g(repo, "switch", "-q", "-c", "rd-old", rd_base)
+        (repo / "ctx.txt").write_text(body.replace("15" + chr(10), "fifteen" + chr(10), 1), encoding="utf-8")
+        g(repo, "add", "ctx.txt")
+        g(repo, "commit", "-q", "-m", "old changes line 15")
+        rd_old = g(repo, "rev-parse", "HEAD")
+        g(repo, "switch", "-q", "rd-up")
+        g(repo, "cherry-pick", rd_old)
+        rd_new = g(repo, "rev-parse", "HEAD")
+        rd = classify(repo, rd_old, rd_new)
+        check("补丁等价但落点不同：放行", rd["ok"], True)
+        check("range-diff 点名落点变化", any("落点" in r for r in rd["reasons"]), True)
 
         g(repo, "switch", "-q", "-c", "neg", base)
         (repo / "lost.txt").write_text("lost\n", encoding="utf-8")
@@ -400,23 +518,25 @@ def self_test() -> int:
         g(repo, "switch", "-q", "-c", "ratchet", base)
         scripts = repo / "scripts"
         scripts.mkdir(exist_ok=True)
-        (scripts / "test_surface_baseline.json").write_text('{"u": 5}\n', encoding="utf-8")
-        g(repo, "add", "scripts/test_surface_baseline.json")
+        (scripts / "u.py").write_text("print('u')", encoding="utf-8")
+        (scripts / "test_surface_baseline.json").write_text('{"script/u.py": 5}', encoding="utf-8")
+        g(repo, "add", "scripts/u.py", "scripts/test_surface_baseline.json")
         g(repo, "commit", "-q", "-m", "baseline 5")
         ratchet_old = g(repo, "rev-parse", "HEAD")
-        (scripts / "test_surface_baseline.json").write_text('{"u": 4}\n', encoding="utf-8")
+        (scripts / "test_surface_baseline.json").write_text('{"script/u.py": 4}', encoding="utf-8")
         g(repo, "add", "scripts/test_surface_baseline.json")
         g(repo, "commit", "-q", "-m", "baseline 4")
         ratchet_new = g(repo, "rev-parse", "HEAD")
         shrink = classify(repo, ratchet_old, ratchet_new)
         check("测试面变小判红", shrink["ok"], False)
-        check("点名缩小单位", any("u" in issue for issue in shrink["ratchet"]), True)
+        check("点名缩小单位", any("u.py" in issue for issue in shrink["ratchet"]), True)
         check("--allow-ratchet 放行",
               classify(repo, ratchet_old, ratchet_new, allow_ratchet=True)["ok"], True)
 
+        (repo / "x.rs").write_text("fn x() {}", encoding="utf-8")
         (scripts / "module_budget_baseline.json").write_text(
             '{"caps": [{"file": "x.rs", "lines": 10}]}\n', encoding="utf-8")
-        g(repo, "add", "scripts/module_budget_baseline.json")
+        g(repo, "add", "x.rs", "scripts/module_budget_baseline.json")
         g(repo, "commit", "-q", "-m", "cap 10")
         cap_old = g(repo, "rev-parse", "HEAD")
         (scripts / "module_budget_baseline.json").write_text(
@@ -428,6 +548,23 @@ def self_test() -> int:
         check("模块预算放松判红", cap["ok"], False)
         check("点名放松文件", any("x.rs" in issue for issue in cap["ratchet"]), True)
 
+        g(repo, "switch", "-q", "-c", "removed", base)
+        scripts.mkdir(exist_ok=True)
+        (scripts / "gone.py").write_text("print('gone')", encoding="utf-8")
+        (scripts / "test_surface_baseline.json").write_text('{"script/gone.py": 1}', encoding="utf-8")
+        g(repo, "add", "scripts/gone.py", "scripts/test_surface_baseline.json")
+        g(repo, "commit", "-q", "-m", "add gone")
+        rem_old = g(repo, "rev-parse", "HEAD")
+        (scripts / "gone.py").unlink()
+        (scripts / "test_surface_baseline.json").write_text("{}", encoding="utf-8")
+        g(repo, "add", "-A")
+        g(repo, "commit", "-q", "-m", "remove gone")
+        rem_new = g(repo, "rev-parse", "HEAD")
+        rem = classify(repo, rem_old, rem_new)
+        check("单位随文件删除不算回退", rem["ok"], True)
+
+        g(repo, "switch", "-q", "-c", "docs", base)
+        scripts.mkdir(exist_ok=True)
         (scripts / "docs_hygiene_baseline.json").write_text(
             '{"changelog": 100, "drive_paths": {"a.md": 1}}\n', encoding="utf-8")
         g(repo, "add", "scripts/docs_hygiene_baseline.json")
