@@ -301,8 +301,8 @@ fn build_filtered_keeps_only_requested_ids() {
         h,
         cam: cam(),
     };
-    for i in 8..16 {
-        view.ids[i] = 2;
+    for id in view.ids.iter_mut().take(16).skip(8) {
+        *id = 2;
     }
     let rgb: Vec<f32> = (0..16)
         .flat_map(|i| {

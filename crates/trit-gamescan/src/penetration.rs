@@ -468,9 +468,9 @@ fn detect_obb_obb(a: &Obb, b: &Obb) -> PairResult {
     let mut axes = Vec::with_capacity(15);
     axes.extend(a.axes);
     axes.extend(b.axes);
-    for i in 0..3 {
-        for j in 0..3 {
-            let axis = cross(a.axes[i], b.axes[j]);
+    for axis_a in a.axes.iter().take(3) {
+        for axis_b in b.axes.iter().take(3) {
+            let axis = cross(*axis_a, *axis_b);
             if dot(axis, axis) > EPS * EPS {
                 axes.push(axis);
             }
