@@ -54,6 +54,11 @@
 - CI 接线：`ci.yml` 加 `alloc-guard` job（`name: alloc guard (limits enforcement)`，self-test + repo scan），
   `.github/required-checks.txt` 登记同名；`ci_integrity.py` 本地 **21 项**必需检查都对得上、`ci_budget.py --offline` 绿（job 40→41）。
   远端分支保护同步待合入后 `gitflow branch protect --apply`（先 dry-run），再 `ci_integrity.py --remote` 对账。
+### Changed（trit-wspace：WSP4 无损验证——103/103 逐字节一致）
+
+- all-MiniLM-L6-v2 的 103 个张量：`.wsp4` 全部 `unpack-artifact` 回 WSP1，与原始 `.wsp`
+  **逐字节一致**（`cmp -s` 103/103）。复算命令见 `docs/WSP3-RESULTS.md` §4。
+
 ### Added（trit-wspace：WSP4——WSP2 的静态 Huffman 二级压缩）
 
 - `wsp4::huffman_encode` / `huffman_decode`：字节级静态 Huffman（256 码长 + MSB-first 位流），
