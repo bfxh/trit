@@ -2,7 +2,7 @@
  {
   "name": "impact: 闭包只算种子",
   "file": "scripts/impact.py",
-  "old": "    closure = reverse_closure(seeds, dependents) if seeds else set()",
+  "old": "    closure = reverse_closure(seeds, dependents, dev_dependents) if seeds else set()",
   "new": "    closure = set(seeds)",
   "pkg": "scripts/impact.py",
   "filter": "",
@@ -40,6 +40,24 @@
   "file": "scripts/impact.py",
   "old": "    elif ratio >= HIGH_RATIO:",
   "new": "    elif False:",
+  "pkg": "scripts/impact.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "impact: dev 依赖当运行时",
+  "file": "scripts/impact.py",
+  "old": "    runtime = reverse_closure(seeds, dependents) if seeds else set()",
+  "new": "    runtime = reverse_closure(seeds, dependents, dev_dependents) if seeds else set()",
+  "pkg": "scripts/impact.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "impact: 测试闭包漏 dev",
+  "file": "scripts/impact.py",
+  "old": "    closure = reverse_closure(seeds, dependents, dev_dependents) if seeds else set()",
+  "new": "    closure = reverse_closure(seeds, dependents) if seeds else set()",
   "pkg": "scripts/impact.py",
   "filter": "",
   "runner": "python"

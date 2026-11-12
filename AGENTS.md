@@ -44,8 +44,10 @@
   （`scripts/merge_json_union.py`，由 `hooks.py install` 注册）：
   测试面取 max、模块预算取 min、文档卫生取 min，不认识形状一律留给 git 报冲突。
 - **负更新默认拦**：`pre-push` 会跑 `scripts/branch_update.py`：非快进且 old 上有提交在新历史里
-  没有等价补丁（`git cherry` 的 `+`）⇒ 拦；三本基线回退（测试变少 / 上限放松 / CHANGELOG 变小）
-  也拦。重写自己的未合并分支用 `ALLOW_NON_FF_PUSH=1`，确属收紧用 `ALLOW_RATCHET_PUSH=1`；
+  没有等价补丁（`git cherry` 的 `+`）⇒ 拦；再叠 `git range-diff` 取证：旧提交在新历史里无对应
+  （与补丁等价矛盾）⇒ 拦，补丁落点变化 ⇒ 点名人工确认。三本基线回退（测试变少 / 上限放松 /
+  CHANGELOG 变小）也拦；**单位随文件/crate 一起删除算删减、不算回退**。
+  重写自己的未合并分支用 `ALLOW_NON_FF_PUSH=1`，确属收紧用 `ALLOW_RATCHET_PUSH=1`；
   两个开关分开，别当万能钥匙。
 - **认领不是先到先得**：`claim --plan`（或 `--plan-file`）写方案；重叠时
   `compare --paths ... [--repo]` 并排比较「问题解释 / 兼容 / 牵连 / 回滚 / 验证」，
@@ -53,7 +55,8 @@
   历史重复 id 用 `repair --apply` 修复。
 - **先量牵连再动手**：`python scripts/impact.py --base origin/main --claims <CLAIMS.md>
   --repo bfxh/trit` 给出反向依赖闭包与「会被牵连但没人认领」的 crate；实测改 `trit-core`
-  一个文件牵连 37/44 个 crate。认领面要覆盖到下游，否则下游会话不会知道自己在被改。
+  一个文件牵连**运行时 35/44、测试面 37/44**（dev 依赖单列）。认领面要覆盖到下游，
+  否则下游会话不会知道自己在被改。
 - **main 必须且只能在一个工作树检出**；合并后立刻回收：`python scripts/worktree_guard.py --apply`
   （只回收「PR 已合 + 干净 + 本地 tip == PR head」的工作树与分支，脏的一律保留）。
 - 开工先 `python scripts/agent_claims.py check`，再 `claim`；收工 `release`。

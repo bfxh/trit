@@ -12,9 +12,9 @@
 |---|---|---|
 | 新分支（远端 SHA 全 0） | — | 放行 |
 | 快进 | `git merge-base --is-ancestor old new` | 放行 |
-| 干净重写 | 非快进但 `git cherry <new> <old>` 里 old 的提交全是 `-`（补丁等价） | 警告放行（rebase/amend 常态） |
+| 干净重写 | 非快进但 `git cherry <new> <old>` 里 old 的提交全是 `-`（补丁等价），再用 `git range-diff` 取证：旧提交在新历史里无对应 ⇒ 拦；补丁落点变化 ⇒ 列出人工确认 | 警告放行（rebase/amend 常态），矛盾证据 fail-closed |
 | **负更新** | 有 `+` 行：old 上有提交在新历史里没有等价补丁 | **拦**，列丢失提交/删除文件 |
-| **棘轮回退** | 测试面计数变小、模块预算上限变大/消失、CHANGELOG 字节变小、盘符路径计数变大 | **拦** |
+| **棘轮回退** | 测试面计数变小、模块预算上限变大/消失、CHANGELOG 字节变小、盘符路径计数变大。单位随文件/crate 一起删除不算回退（删减 ≠ 回退）；现存单位计数变小仍拦 | **拦** |
 | 取证失败 | 旧提交对象不在本仓 / git 失败 | **拦**（先 fetch；看不见 ≠ 没问题） |
 
 已接进 `pre-push`（稳定副本 `trit-update-guard.py`）：推任何 `refs/heads/*` 都先过一遍；
@@ -43,10 +43,20 @@ $ python scripts/impact.py --files crates/trit-core/src/lib.rs
 牵连面：1 个文件 → crates｜风险 high
   - 反向依赖闭包 37/44（>=66%）
   建议跑：cargo test --workspace
+  仅测试面牵连（dev 依赖）：trit-float, trit-gpu
 ```
 
-也就是说：改 `trit-core` 一个文件，牵连 37 个 crate（84%）——只认领 `crates/trit-core/src`
-在“谁在动什么”的层面没漏，但在“谁会被影响”的层面漏了一大片。`--strict` 把未认领牵连变成 rc=1。
+依赖按 kind 分账：**运行时 35/44**（normal + build），**测试面 37/44**（再加 dev 依赖）；
+`dev_only` 单列。改 `trit-core` 一个文件牵连 35~37 个 crate——只认领 `crates/trit-core/src`
+在“谁在动什么”的层面没漏，在“谁会被影响”的层面漏了一大片。`--strict` 把未认领牵连变成 rc=1。
+
+### 1.4 三条“未证栏”的收口（2026-11-12 第二轮）
+
+| 原缺口 | 现在怎么处理 | 读数/限制 |
+|---|---|---|
+| impact 闭包把 dev/build 混在一起，偏保守 | `load_graph` 按 `kind` 分账：normal+build → `runtime`，dev → `dev_dependents`；输出 `runtime` / `closure` / `dev_only` | 实测 trit-core：运行时 35/44、测试面 37/44、dev-only 2；风险按 runtime 判 |
+| `git cherry` 的补丁等价可能忽略落点差异 | 等价时再跑 `git range-diff`：`<`（旧提交无对应）与等价结论矛盾 ⇒ 拦；`!` 且文件区有 +/- ⇒ 列出“落点不同（人工确认）”，不直接拦（rebase 常态） | 自测覆盖：amend 只改消息不误报；cherry-pick 到新基线会点名；冲突 rebase 照样走 `--allow-rewrite` |
+| 棘轮回退对“故意删 crate/收缩测试”误拦 | 计数变小/上限消失时，先看新树里该单位/文件是否还存在；随文件删除 ⇒ 删减放行；文件还在 ⇒ 仍判回退 | 自测：删 `scripts/gone.py` + 删台账单位 ⇒ 绿；`scripts/u.py` 还在但计数 5→4 ⇒ 红 |
 
 ## 2. 仍未修（按“爆炸半径 × 可判性”排序）
 

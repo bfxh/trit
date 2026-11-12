@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Fixed（三条“未证栏”收口：依赖 kind 分账 / range-diff 取证 / 棘轮删除感知）
+
+- `scripts/impact.py`：反向依赖按 `cargo metadata` 的 `kind` 分账——normal+build 进 `runtime`，
+  dev 只进测试闭包并单列 `dev_only`；风险按运行时闭包判。实测改 `trit-core` 一个文件：
+  **运行时 35/44、测试面 37/44、dev-only 2**（原先把 dev 混进来报 37/44 偏保守）。
+- `scripts/branch_update.py`：补丁等价（`git cherry` 全 `-`）时再跑 `git range-diff` 取证：
+  旧提交在新历史里无对应（`<`）与等价结论矛盾 ⇒ 拦；`!` 且文件区有 +/- ⇒ 点名“落点不同”
+  交人工确认（rebase 到新基线是常态，不直接拦）。amend 只改提交消息不会误报。
+- `scripts/branch_update.py`：棘轮回退改为删除感知——台账单位/上限消失时先查新树里文件或 crate
+  是否还在：随文件删除 ⇒ 删减放行；文件还在而测试变少/上限放松 ⇒ 仍拦。
+- 自测：branch_update 27 条（+4）、impact 21 条（+3）；变异 branch_update 11 条 + impact 7 条，
+  全部抓住（含“删除也当回退”“现存单位丢失不拦”“dev 当运行时”“不做 range-diff 取证”）。
+- 仍未证：`range-diff` 的落点变化只做提示不做定罪；dev-only 牵连的风险档仍是近似；
+  `git cherry` 的补丁等价语义未被替换，只是多了一层矛盾检查。
+
+## [Unreleased]
+
 ### Added（更新 / 认领 / 牵连三项判据：负更新守卫、方案优先裁决、改动牵连面）
 
 - 新增 `scripts/branch_update.py`：更新分类为 new-branch / fast-forward / clean-rewrite /

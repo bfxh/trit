@@ -52,5 +52,50 @@
   "pkg": "scripts/branch_update.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "update-guard: 删除的单位也当回退",
+  "file": "scripts/branch_update.py",
+  "old": "        if target and not exists(target):",
+  "new": "        if False:",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 现存单位丢失不拦",
+  "file": "scripts/branch_update.py",
+  "old": "    exists = lambda path: new_tree_exists(root, new, path)  # noqa: E731",
+  "new": "    exists = lambda path: False  # noqa: E731",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 不做 range-diff 取证",
+  "file": "scripts/branch_update.py",
+  "old": "            audit = range_diff_audit(root, old, new)",
+  "new": "            audit = {\"equal\": 0, \"changed\": [], \"old_only\": [], \"new_only\": 0}",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 元数据变化误报",
+  "file": "scripts/branch_update.py",
+  "old": "        if section and section not in (\"Metadata\", \"Commit message\"):",
+  "new": "        if section and section != \"Metadata\":",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: script 单位路径少 scripts/",
+  "file": "scripts/branch_update.py",
+  "old": "        return \"scripts/\" + key[len(\"script/\"):]",
+  "new": "        return key[len(\"script/\"):]",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
  }
 ]

@@ -77,16 +77,20 @@ def owner_of(path: str, pkg_dirs: dict[str, str]) -> str | None:
     return best
 
 
-def reverse_closure(seeds: set[str], dependents: dict[str, set[str]]) -> set[str]:
-    """依赖种子的人（反向依赖的传递闭包），含种子自身。"""
+def reverse_closure(seeds: set[str], *maps: dict[str, set[str]]) -> set[str]:
+    """依赖种子的人（反向依赖的传递闭包），含种子自身。
+
+    多张图分开传：正常/构建依赖是“运行时会牵连”，dev 依赖只牵连测试面。
+    """
     seen = set(seeds)
     queue = list(seeds)
     while queue:
         current = queue.pop()
-        for dependent in dependents.get(current, ()):
-            if dependent not in seen:
-                seen.add(dependent)
-                queue.append(dependent)
+        for mapping in maps:
+            for dependent in mapping.get(current, ()):
+                if dependent not in seen:
+                    seen.add(dependent)
+                    queue.append(dependent)
     return seen
 
 
@@ -103,6 +107,7 @@ def compute(
     dependents: dict[str, set[str]],
     claims: list[dict] | None = None,
     repo: str = "",
+    dev_dependents: dict[str, set[str]] | None = None,
 ) -> dict:
     normalized = [normalize(path) for path in files if path.strip()]
     seeds: set[str] = set()
@@ -125,9 +130,12 @@ def compute(
     if others:
         reasons.append("归不到 crate 的文件：" + ", ".join(sorted(others)[:5]))
 
-    closure = reverse_closure(seeds, dependents) if seeds else set()
+    dev_dependents = dev_dependents or {}
+    runtime = reverse_closure(seeds, dependents) if seeds else set()
+    closure = reverse_closure(seeds, dependents, dev_dependents) if seeds else set()
+    dev_only = sorted(closure - runtime)
     total = len(pkg_dirs)
-    ratio = (len(closure) / total) if total else 0.0
+    ratio = (len(runtime) / total) if total else 0.0
 
     if not seeds and not others:
         kind = "docs" if docs else ("scripts" if scripts else "none")
@@ -147,7 +155,7 @@ def compute(
         risk = "high"
     elif ratio >= HIGH_RATIO:
         risk = "high"
-    elif len(closure) > len(seeds):
+    elif len(runtime) > len(seeds) or dev_only:
         risk = "medium"
 
     gates: list[str] = []
@@ -181,6 +189,8 @@ def compute(
         "files": normalized,
         "seeds": sorted(seeds),
         "closure": sorted(closure),
+        "runtime": sorted(runtime),
+        "dev_only": dev_only,
         "ratio": round(ratio, 3),
         "kind": kind,
         "full": full,
@@ -204,6 +214,7 @@ def load_graph(root: pathlib.Path) -> tuple[dict[str, str], dict[str, set[str]]]
     meta = json.loads(proc.stdout.decode("utf-8", "replace"))
     pkg_dirs: dict[str, str] = {}
     dependents: dict[str, set[str]] = {}
+    dev_dependents: dict[str, set[str]] = {}
     for package in meta.get("packages", []):
         name = package["name"]
         directory = pathlib.Path(package["manifest_path"]).parent
@@ -214,8 +225,10 @@ def load_graph(root: pathlib.Path) -> tuple[dict[str, str], dict[str, set[str]]]
         pkg_dirs[name] = rel
     for package in meta.get("packages", []):
         for dep in package.get("dependencies", []):
-            dependents.setdefault(dep["name"], set()).add(package["name"])
-    return pkg_dirs, dependents
+            kind = dep.get("kind") or "normal"
+            target = dev_dependents if kind == "dev" else dependents
+            target.setdefault(dep["name"], set()).add(package["name"])
+    return pkg_dirs, dependents, dev_dependents
 
 
 def changed_files(root: pathlib.Path, base: str) -> list[str]:
@@ -252,6 +265,8 @@ def report(result: dict) -> None:
         say("  建议跑：")
         for gate in result["gates"]:
             say(f"    {gate}")
+    if result.get("dev_only"):
+        say(f"  仅测试面牵连（dev 依赖）：{', '.join(result['dev_only'])}")
     if result["unclaimed"]:
         say(f"  未被认领的牵连 crate（{len(result['unclaimed'])}）："
             f"{', '.join(result['unclaimed'])}")
@@ -325,6 +340,16 @@ def self_test() -> int:
     unknown = compute(["crates/trit-core/src/lib.rs"], pkg_dirs, dependents)
     check("默认不计算未认领", unknown["unclaimed"], [])
 
+    dev_dirs = dict(pkg_dirs)
+    dev_dirs["trit-dev"] = "crates/trit-dev"
+    dev = compute(
+        ["crates/trit-core/src/lib.rs"], dev_dirs, dependents,
+        dev_dependents={"trit-core": {"trit-dev"}},
+    )
+    check("dev 依赖不进运行时闭包", dev["runtime"], ["app", "trit-a", "trit-core"])
+    check("测试闭包含 dev 下游", dev["closure"], ["app", "trit-a", "trit-core", "trit-dev"])
+    check("dev_only 点名", dev["dev_only"], ["trit-dev"])
+
     none = compute([], pkg_dirs, dependents)
     check("空改动不慌", none["kind"], "none")
 
@@ -359,14 +384,14 @@ def main(argv: list[str]) -> int:
             if "--base" in argv:
                 base = argv[argv.index("--base") + 1]
             files = changed_files(root, base)
-        pkg_dirs, dependents = load_graph(root)
+        pkg_dirs, dependents, dev_dependents = load_graph(root)
         claims = None
         if "--claims" in argv:
             claims = parse_claims(pathlib.Path(argv[argv.index("--claims") + 1]), repo)
     except (RuntimeError, json.JSONDecodeError, OSError) as exc:
         say(f"FAIL impact: 取证失败（{exc}）——看不见不等于没有牵连")
         return 2
-    result = compute(files, pkg_dirs, dependents, claims, repo)
+    result = compute(files, pkg_dirs, dependents, claims, repo, dev_dependents)
     if "--json" in argv:
         say(json.dumps(result, ensure_ascii=False, indent=2))
     else:
