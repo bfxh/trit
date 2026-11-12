@@ -134,6 +134,17 @@
   （临时仓里让 git 真调驱动：并集合并出 `{"a":3,"b":2}`、坏形状落到冲突）。
 - 变异登记：hooks 13 条 + merge 驱动 6 条，逐条抓住；其中「合并失败仍报成功」只有接线断言能抓，
   纯函数自测抓不到——这也是把 `git merge` 场景写进自测的原因。
+### Added（trit-wspace：合并保留 f32 偏置）
+
+- `merge_vote` / `merge_aligned`：两网同层都有 `bias_f32` 时逐行取平均；任一方缺失则保持无幅度。
+- `TaskVector` 记录逐行 f32 偏置差分（`(layer, row, Option<f32>)`）；`merge_tasks` 等权平均、
+  `merge_tasks_weighted` 按权重加权（权重 0 不参与），任一参与任务缺该行 ⇒ 该层清空。
+  `merge_tasks_dare` / `merge_tasks_weighted_dare` 在稀疏化后重新贴回合并幅度；
+  per-task DARE 继承原任务幅度。
+- 缩放规则：`λ > 0` 原样保留；`λ <= 0`（全局/层/行/块，含模式与映射）丢弃该任务的全部
+  f32 偏置——幅度无法与取反/丢弃后的三值语义一一对应，宁可退回三值符号。
+- 读数：`cargo test -p trit-wspace --locked` ⇒ **367 passed**（新增 `merge_bias_f32` 9 条）；
+  变异 `trit-wspace` 328 → **332**（+4：投票不平均、加权忽略权重、缺失不清空、DARE 丢掉幅度，逐条抓住）。
 
 ### Changed（门：模块预算改默认全量棘轮 + 一次性重录基线；新增磁盘介质门）
 

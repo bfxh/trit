@@ -2800,7 +2800,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_task.rs",
-      "lines": 713
+      "lines": 712
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_wsp2.rs",
@@ -2832,7 +2832,7 @@
     },
     {
       "file": "crates/trit-wspace/src/lib.rs",
-      "lines": 175
+      "lines": 173
     },
     {
       "file": "crates/trit-wspace/src/localize.rs",
@@ -2904,7 +2904,7 @@
     },
     {
       "file": "crates/trit-wspace/src/scale.rs",
-      "lines": 555
+      "lines": 533
     },
     {
       "file": "crates/trit-wspace/src/shard.rs",
@@ -2912,7 +2912,11 @@
     },
     {
       "file": "crates/trit-wspace/src/task.rs",
-      "lines": 600
+      "lines": 147
+    },
+    {
+      "file": "crates/trit-wspace/src/task_merge.rs",
+      "lines": 633
     },
     {
       "file": "crates/trit-wspace/src/transplant.rs",
@@ -2997,6 +3001,10 @@
     {
       "file": "crates/trit-wspace/tests/mcp_task.rs",
       "lines": 82
+    },
+    {
+      "file": "crates/trit-wspace/tests/merge_bias_f32.rs",
+      "lines": 163
     },
     {
       "file": "crates/trit-wspace/tests/probe.rs",

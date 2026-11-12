@@ -3,8 +3,7 @@
 use serde_json::{Value, json};
 
 use crate::edit::Patch;
-use crate::to_wsp;
-use crate::wire;
+use crate::{task_merge, to_wsp, wire};
 
 use super::{
     emit, err, load_net, load_oracle, no_double_stdin, one, opt_u64, opt_usize, parse, req_f32,
@@ -132,7 +131,7 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
     let effective_weights = weights.as_deref().unwrap_or(&ones);
     let (merged, merge_report) = if dare_rate.is_none() && dare_per_task.is_none() {
         let (net, report) =
-            crate::task::merge_tasks_weighted_report(&base, &tasks, effective_weights)
+            task_merge::merge_tasks_weighted_report(&base, &tasks, effective_weights)
                 .map_err(err)?;
         (net, Some(report))
     } else {
@@ -142,19 +141,19 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
             }
             (Some(rate), None) => match weights.as_deref() {
                 Some(weights) => {
-                    crate::task::merge_tasks_weighted_dare(&base, &tasks, weights, rate, dare_seed)
+                    task_merge::merge_tasks_weighted_dare(&base, &tasks, weights, rate, dare_seed)
                         .map_err(err)?
                 }
                 None => {
-                    crate::task::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?
+                    task_merge::merge_tasks_dare(&base, &tasks, rate, dare_seed).map_err(err)?
                 }
             },
             (None, Some(rate)) => match weights.as_deref() {
-                Some(weights) => crate::task::merge_tasks_weighted_per_task_dare(
+                Some(weights) => task_merge::merge_tasks_weighted_per_task_dare(
                     &base, &tasks, weights, rate, dare_seed,
                 )
                 .map_err(err)?,
-                None => crate::task::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed)
+                None => task_merge::merge_tasks_per_task_dare(&base, &tasks, rate, dare_seed)
                     .map_err(err)?,
             },
             (None, None) => unreachable!(),
