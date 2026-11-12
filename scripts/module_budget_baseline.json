@@ -1260,7 +1260,11 @@
     },
     {
       "file": "crates/trit-immune/src/sync.rs",
-      "lines": 466
+      "lines": 375
+    },
+    {
+      "file": "crates/trit-immune/src/sync/tcp.rs",
+      "lines": 95
     },
     {
       "file": "crates/trit-immune/src/sync/tests.rs",
