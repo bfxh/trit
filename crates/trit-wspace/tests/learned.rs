@@ -1,5 +1,3 @@
-//! 学习式提议器：特征/训练/模型往返/提议，以及 CLI 训练→提议闭环。
-
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output};

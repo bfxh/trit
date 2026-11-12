@@ -12,6 +12,7 @@ trit-wspace <command>
   repair <artifact|-> --oracle <json|-> [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
   train-proposer <artifact|-> --oracle <json|-> --out <model.json> [--epochs N] [--lr R] [--holdout R] | propose-learned <artifact|-> --oracle <json|-> --model <model.json> [--limit N] [--verify]
+  propose-gradient <artifact|-> --oracle <json|-> [--limit N] [--verify]
   explain <artifact|-> --oracle <json|-> --sample N [--top K]
   probe <artifact|-> --oracle <json|-> [--budget N] [--top K] [--adaptive]
   localize <artifact|-> --oracle <json|-> [--rows K] [--row-budget N] [--max-trits N] [--top-trits K]

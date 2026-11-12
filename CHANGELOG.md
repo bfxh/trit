@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：梯度知情提议器）
+
+- `learned::gradient_scores`：STE 反向传播算 `∂L/∂w`，按 `-grad*(to-current)` 排序；
+  CLI `propose-gradient ... [--limit N] [--verify]`。
+- 读数（4→8→1 随机网络，98 候选，64 样本，debug）：`analyze` 6.11 ms /
+  `gradient_scores` 0.24 ms（~25×）；top-10 真实命中 7/10（analyze 10/10），
+  两个 top-10 重叠 3/10。
+- 拆分 `learned/features.rs`、`learned/gradient.rs`、`cli/cli_gradient.rs`、
+  `tests/gradient.rs` 守模块预算；`learned.rs` 527→375、`cli.rs` 699。
+- 未证栏：STE 排序与离散收益不完全一致；只测小网络；可微 MLP/端到端代理未做。
+
 ### Docs（trit-wspace：债务 9-11）
 
 - `crates/trit-wspace/README.md` 技术树按现状更新：L0 块索引、L1 tile、L2 写锁、
