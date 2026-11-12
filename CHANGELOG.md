@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed（trit-wspace：WSP3 实测——真实 MiniLM 上 RLE 无收益）
+
+- 读数：all-MiniLM-L6-v2 的 103 个张量 WSP1 **46,608,788** → WSP2 **5,985,699**（12.8%）→
+  WSP3 **6,025,083**（100.7% of WSP2，反而更大）。复算见 `docs/WSP3-RESULTS.md`。
+- 原因：trit 平均游程 **1.500**、游程 ≥3 仅 **11.1%**、熵 **1.584 bit/trit**（固定 2-bit；
+  熵编码理论下限 79.2% of WSP2）。字节级与三值级 RLE 都拿不到收益。
+- WSP3 的模块文档与 `docs/WSP3-RESULTS.md` 标注边界：只用于低熵/全同工件，真实权重用 WSP2。
+- 未证栏：其他模型的熵可能更低；没有在更大模型/GPU 上复测；没有实现 Huffman/算术编码。
+
 ### Added（trit-wspace：WSP3——WSP2 的 RLE 二级压缩）
 
 - `wsp3::rle_encode` / `rle_decode`：PackBits（literal 1–128 字节 / 重复 3–130 字节），无外部依赖。
