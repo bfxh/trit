@@ -30,8 +30,8 @@ impl Net {
         }
         let nbn = self.bns.iter().filter(|b| b.is_some()).count();
         let _ = writeln!(out, "BN {nbn}");
-        for i in 0..self.layers.len() {
-            match &self.bns[i] {
+        for (i, bn) in self.bns.iter().take(self.layers.len()).enumerate() {
+            match bn {
                 Some(b) => {
                     let _ = writeln!(out, "{i} 1");
                     for v in [&b.gamma, &b.beta] {

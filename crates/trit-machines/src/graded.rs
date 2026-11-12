@@ -281,8 +281,7 @@ fn exchange(
                 },
             )?;
             state = segment.state;
-            for neuron in 0..size {
-                let value = segment.polarity[neuron];
+            for &value in segment.polarity.iter().take(size) {
                 if value > 0 {
                     plus[speaker] += i64::from(value);
                 } else if value < 0 {
