@@ -16,6 +16,19 @@
   `docs/WSP-TILE-EDIT.md`。
 - 未证栏：只支持矩形块、只改 trits、无跨层 copy/swap、`diff` 仍逐点、
   `analyze`/`propose` 不生成 tile。
+### Added（trit-re：诱饵指纹检测——对抗性投毒下的能力证据降权）
+
+- 新模块 `crates/trit-re/src/decoy.rs`：反逆向盾（BLA 形，见
+  `trit-immune/docs/BLA-ADVERSARIAL-STUDY.md`）会**故意投放**触发检测规则的
+  诱饵（canary 假敏感 API 名、假 SGX/TPM 清单）。v1 识别文档化指纹
+  （PE `.enclave` 诱饵节），命中即把注入/动态解析族能力事实 **True →
+  Unknown** 并注记 `decoy.markers`——投毒对抗下"扫描器永不 +1"的对称
+  延伸：**诱饵面上的 True 也不许当真**。
+- 诚实边界：只覆盖指纹可判别的公开盾；无指纹 ≠ 无投毒（事实照旧不新增
+  弃权）；ELF 侧盾形态待真实样本（如实留白）。
+- 判据：`cargo test -p trit-re` = 187 全绿（+3 诱饵单测：命中降权 /
+  无指纹零漂移 / 原弃权不劣化）；N1 ARM64-PE 批重扫**判定零漂移**
+  （无指纹批不受影响）。
 
 ### Added（trit-wspace：WSP2 块索引与随机访问）
 
@@ -338,6 +351,32 @@
   f32 偏置——幅度无法与取反/丢弃后的三值语义一一对应，宁可退回三值符号。
 - 读数：`cargo test -p trit-wspace --locked` ⇒ **367 passed**（新增 `merge_bias_f32` 9 条）；
   变异 `trit-wspace` 328 → **332**（+4：投票不平均、加权忽略权重、缺失不清空、DARE 丢掉幅度，逐条抓住）。
+### Added（YARA：正则串 Pike VM，替换记名弃权）
+
+- `crates/trit-re/src/sigscan/regex.rs`：正则串不再进 `Unscannable`——递归下降 AST + NFA 编译 + Pike VM
+  （每起点 rank 回溯，DFS 首完成语义；命中起点升序）。子集：字面量、`.`（不含 `\n`）、字符类/取反类、
+  分组/交替、`*` `+` `?` `{n}` `{n,}` `{n,m}`（贪婪/懒惰）、`^`/`$`、`\d` `\w` `\s`、`\xNN`、`nocase`。
+- fail-closed 边界不变：不支持语法 / 指令超预算（8192）/ `wide`·`xor`·`fullword` 修饰 → 编译 `Err`
+  → 串记名弃权，整条规则 `Unknown`（评估不了的串不能报“没命中”）。
+- **官方对拍（yara-python 4.5.4）：探针 20 用例 MATCH 20 / DIFF 0 / SUBSET-GAP 0；属性模糊批
+  （40 规则 × 20 样本）DIFF 0**。官方怪癖入账：整条正则贪婪/懒惰量词不可混用、`(?:` 官方语法错。
+- 模块预算（拆文件不抬台账）：`impl Pattern` 构造器 → `sigscan/pattern.rs`，词法层 → `yaraparse/lex.rs`，
+  正则集成测试 → `tests/yara_regex.rs`。测试 181 全绿（clippy `-D warnings` / fmt / module_budget /
+  docs_hygiene / hazard / secret 全过）。
+### Added（YARA：base64 相位变体，替换记名弃权——子集收官）
+
+- `crates/trit-re/src/sigscan/b64.rs`：`"…" base64` 从 `Unscannable` 升级为**相位变体实扫**——
+  p∈{0,1,2} 预垫字节 → 标准 b64（手写零依赖）→ 去 padding → **头 drop**（p>0 时 p+1，前缀污染
+  字符）→ **尾 drop**（(p+len)%3≠0 时 1，末组不满的尾字符受后继未知字节影响）→ 空变体丢弃。
+- 多变体**并集计数**（`#a` 跨变体累计）；`base64wide` = 编码后 wide；`base64 base64wide` 双修饰 =
+  两套变体并集（官方 B7 探针）。组合矩阵（官方探针实测）：`ascii` 被忽略；`base64` ×
+  `nocase/xor/fullword` 官方**编译拒绝** → 解析层对齐拒绝；`wide` 组合官方接受但语义未对拍 →
+  记名弃权；正则串 + base64 = 官方语法错 → 对齐拒绝。
+- **官方对拍：探针批 11 用例 MATCH 11 / DIFF 0 / SUBSET-GAP 0**（含 1 字节 {Q,B} / 2 字节
+  {QU,FC,BQ} 判别探针——相位变体逐个实证）。判据：`cargo test -p trit-re` = 184 全绿
+  （+b64 单测/集成）；`parse_string_value` → `yaraparse/valuemod.rs`（守预算拆分）。
+
+### Changed（门：模块预算改默认全量棘轮 + 一次性重录基线；新增磁盘介质门）
 
 ### Changed（门：模块预算改默认全量棘轮 + 一次性重录基线；新增磁盘介质门）
 

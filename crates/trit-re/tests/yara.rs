@@ -1,7 +1,7 @@
 //! yaraparse 的集成测试（从 src/yaraparse.rs 拆出，控制单文件行数预算）。
 
 use trit_core::value::Ternary;
-use trit_re::sigscan::{Condition, Pattern, SigScan};
+use trit_re::sigscan::{Condition, SigScan};
 use trit_re::yaraparse::{RuleOutcome, parse_rules};
 
 #[test]
@@ -30,32 +30,6 @@ rule demo_rule : tag1 tag2 {
     };
     assert_eq!(rule.name, "demo_rule");
     assert_eq!(rule.patterns().len(), 3);
-}
-
-#[test]
-fn regex_string_parses_but_scans_unknown() {
-    // 正则串可解析（Unscannable 形态）但不可扫描：整条规则判 Unknown
-    let src = r#"
-rule re {
-  strings:
-    $a = /mshta\.exe/ nocase
-  condition:
-    $a
-}
-"#;
-    let out = parse_rules(src).unwrap();
-    assert_eq!(out.rules.len(), 1);
-    let RuleOutcome::Parsed(rule) = &out.rules[0] else {
-        panic!("正则串现在可解析（Unscannable 形态）");
-    };
-    assert!(
-        matches!(rule.patterns()[0].1, Pattern::Unscannable(_)),
-        "串应记为 Unscannable"
-    );
-    // 8 字节完整扫描、串无法评估 → Unknown，绝不 False
-    let report = SigScan::new(std::slice::from_ref(rule)).scan(b"mshta.exe", false);
-    assert_eq!(report.rules[0].value, Ternary::Unknown);
-    assert_eq!(report.value, Ternary::Unknown);
 }
 
 #[test]
@@ -109,7 +83,7 @@ rule good {
     let bad_src = r#"
 rule bad {
   strings:
-    $a = /regex/
+    $a = /regex/ wide
   condition:
     $a
 }
@@ -496,29 +470,6 @@ rule ww {
     pref.extend_from_slice(&widestr);
     assert_eq!(scan_one(wide, &widestr), Ternary::True);
     assert_eq!(scan_one(wide, &pref), Ternary::False, "宽字符邻接不算");
-}
-
-#[test]
-fn base64_and_private_are_unscannable() {
-    for modifier in ["base64", "private"] {
-        let src = format!(
-            r#"
-rule u {{
-  strings:
-    $a = "foo" {modifier}
-  condition:
-    $a
-}}
-"#
-        );
-        let out = parse_rules(&src).unwrap();
-        let RuleOutcome::Parsed(rule) = &out.rules[0] else {
-            panic!("{modifier} 修饰应可解析为 Unscannable");
-        };
-        assert!(matches!(rule.patterns()[0].1, Pattern::Unscannable(_)));
-        let report = SigScan::new(std::slice::from_ref(rule)).scan(b"foo", false);
-        assert_eq!(report.rules[0].value, Ternary::Unknown);
-    }
 }
 
 #[test]
