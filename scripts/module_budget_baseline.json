@@ -907,6 +907,10 @@
       "lines": 314
     },
     {
+      "file": "crates/trit-gpu/examples/wspace_gpu.rs",
+      "lines": 124
+    },
+    {
       "file": "crates/trit-gpu/src/bench.rs",
       "lines": 155
     },

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace / trit-gpu：更大模型与 GPU 落点）
+
+- `bias_e2e --layers N [--swap]`：可堆叠 N 层真实 MiniLM 线性段；6 层（18 段）读数：
+  逐层 `rel_l2` 0.49–0.58；级联 zero/trit/f32 `rel_l2` 0.99997/0.99997/0.99989，
+  cosine 0.126/0.130/0.290（第 0 层 3 段时 0.377/0.394/0.442）。
+- `trit-gpu/examples/wspace_gpu.rs`：真实 WSP1 权重的 WF32 GPU vs CPU 对拍/计时；
+  query 384×384×512 **6.60×**、intermediate 1536×384×64 **4.09×**、小批量 0.92×；
+  最大绝对误差 ~2.5e-5。
+- 依赖边界：`trit-wspace` / `trit-gpu` 都是实验层，GPU 示例走 `trit-gpu` dev-deps；
+  正式集成需先转可发布或下沉。
+- 未证栏：6 层仍是线性段（无注意力/LN/GELU/残差）；GPU 只测 WF32、未接 analyze。
+
 ### Added（trit-wspace：梯度知情提议器）
 
 - `learned::gradient_scores`：STE 反向传播算 `∂L/∂w`，按 `-grad*(to-current)` 排序；

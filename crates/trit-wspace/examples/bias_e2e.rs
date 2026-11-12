@@ -1,13 +1,5 @@
 //! 真实模型上的端到端 bias 读数：f32 权重作参照，比较三值权重 + {零 / 三值 / f32} bias。
 //!
-//! 三层线性堆叠（all-MiniLM-L6-v2 第 0 层）：
-//! `query(384→384) → intermediate(1536→384) → output(384→1536)`。
-//! 权重按 absmean 逐行三值化（`s_r` 为行 scale），偏置有三种读法：
-//!
-//! - `zero`：`y_r = s_r · Σ t·x`；
-//! - `trit`：`y_r = s_r · (Σ t·x + sign(b_r))`；
-//! - `f32`：`y_r = s_r · Σ t·x + b_r`（保留原始偏置幅度）。
-//!
 //! 读数分三组：逐层（每层独立，随机输入）、端到端级联（三层全部三值化）、
 //! 单层替换（只把第 i 层三值化，其余层保持 f32）。每组都对比 f32 参照输出，
 //! 报告 MSE / RMSE / 相对 L2 / 全局余弦。
@@ -15,7 +7,7 @@
 //! 用法：
 //! ```bash
 //! cargo run --release -p trit-wspace --example bias_e2e -- \
-//!   --file model.safetensors --layer 0 --inputs 256
+//!   --file model.safetensors --layer 0 --layers 6 --inputs 256
 //! ```
 //! 不带 `--file` 时用合成三层（64→128→64），便于快速复算。
 //!
@@ -33,7 +25,7 @@ const SUFFIXES: [(&str, &str); 3] = [
 
 /// 一个 f32 线性层：`y = W·x + b`。
 struct F32Layer {
-    name: &'static str,
+    name: String,
     rows: usize,
     cols: usize,
     weight: Vec<f32>,
@@ -259,52 +251,48 @@ fn random_inputs(cols: usize, count: usize, seed: u64) -> Vec<Vec<f32>> {
         .collect()
 }
 
-fn synthetic_layers() -> Vec<F32Layer> {
+fn synthetic_layers(layers: usize) -> Vec<F32Layer> {
     let specs = [(64usize, 64usize), (128, 64), (64, 128)];
-    specs
-        .iter()
-        .enumerate()
-        .map(|(index, &(rows, cols))| {
-            let mut rng = Rng::new(0x5eed_2026 ^ (index as u64).wrapping_mul(0x9e37_79b9));
-            let weight = (0..rows * cols).map(|_| rng.next_f32() * 0.1).collect();
-            let bias = (0..rows).map(|_| rng.next_f32() * 0.05).collect();
-            F32Layer {
-                name: SUFFIXES[index].0,
+    let mut out = Vec::with_capacity(layers * specs.len());
+    for layer in 0..layers {
+        for (index, &(rows, cols)) in specs.iter().enumerate() {
+            let seed =
+                0x5eed_2026 ^ ((layer * specs.len() + index) as u64).wrapping_mul(0x9e37_79b9);
+            let mut rng = Rng::new(seed);
+            out.push(F32Layer {
+                name: format!("layer{layer}.{}", SUFFIXES[index].0),
                 rows,
                 cols,
-                weight,
-                bias,
-            }
-        })
-        .collect()
+                weight: (0..rows * cols).map(|_| rng.next_f32() * 0.1).collect(),
+                bias: (0..rows).map(|_| rng.next_f32() * 0.05).collect(),
+            });
+        }
+    }
+    out
 }
 
-fn load_layers(file: &str, layer_index: usize) -> Vec<F32Layer> {
-    SUFFIXES
-        .iter()
-        .map(|&(name, suffix)| {
-            let weight_name = format!("encoder.layer.{layer_index}.{suffix}.weight");
-            let bias_name = format!("encoder.layer.{layer_index}.{suffix}.bias");
+fn load_layers(file: &str, layer_index: usize, layers: usize) -> Vec<F32Layer> {
+    let mut out = Vec::with_capacity(layers * SUFFIXES.len());
+    for offset in 0..layers {
+        let index = layer_index + offset;
+        for &(name, suffix) in &SUFFIXES {
+            let weight_name = format!("encoder.layer.{index}.{suffix}.weight");
+            let bias_name = format!("encoder.layer.{index}.{suffix}.bias");
             let weight = safetensors::read_tensor(file, &weight_name)
                 .unwrap_or_else(|error| panic!("读取 {weight_name} 失败：{error}"));
             let bias = safetensors::read_vector(file, &bias_name)
                 .unwrap_or_else(|error| panic!("读取 {bias_name} 失败：{error}"));
-            assert_eq!(
-                bias.len(),
-                weight.rows,
-                "{bias_name} 长度 {} != {weight_name} 行数 {}",
-                bias.len(),
-                weight.rows
-            );
-            F32Layer {
-                name,
+            assert_eq!(bias.len(), weight.rows);
+            out.push(F32Layer {
+                name: format!("layer{index}.{name}"),
                 rows: weight.rows,
                 cols: weight.cols,
                 weight: weight.values,
                 bias,
-            }
-        })
-        .collect()
+            });
+        }
+    }
+    out
 }
 
 fn layer_info(layer: &F32Layer, quant: &QuantLayer) -> Value {
@@ -313,7 +301,7 @@ fn layer_info(layer: &F32Layer, quant: &QuantLayer) -> Value {
     let bias_abs_mean = layer.bias.iter().map(|&b| f64::from(b.abs())).sum::<f64>()
         / layer.bias.len().max(1) as f64;
     json!({
-        "name": layer.name,
+        "name": &layer.name,
         "rows": layer.rows,
         "cols": layer.cols,
         "trits": quant.trits.len(),
@@ -328,6 +316,8 @@ fn main() {
     let mut file = String::new();
     let mut layer_index = 0usize;
     let mut inputs = 256usize;
+    let mut layer_count = 1usize;
+    let mut swap = false;
     let mut seed = 7u64;
     let mut out_path = None;
     let mut args = std::env::args().skip(1);
@@ -336,19 +326,25 @@ fn main() {
             "--file" => file = args.next().expect("file"),
             "--layer" => layer_index = args.next().expect("layer").parse().expect("num"),
             "--inputs" => inputs = args.next().expect("inputs").parse().expect("num"),
+            "--layers" => layer_count = args.next().expect("layers").parse().expect("num"),
+            "--swap" => swap = true,
             "--seed" => seed = args.next().expect("seed").parse().expect("num"),
             "--out" => out_path = Some(args.next().expect("out")),
             other => panic!("unknown arg {other}"),
         }
     }
     assert!(inputs > 0, "--inputs 必须大于 0");
+    assert!(layer_count > 0, "--layers 必须大于 0");
 
     let (f32_layers, source) = if file.is_empty() {
-        (synthetic_layers(), json!({"kind": "synthetic"}))
+        (
+            synthetic_layers(layer_count),
+            json!({"kind": "synthetic", "layers": layer_count}),
+        )
     } else {
         (
-            load_layers(&file, layer_index),
-            json!({"kind": "safetensors", "path": file, "layer": layer_index}),
+            load_layers(&file, layer_index, layer_count),
+            json!({"kind": "safetensors", "path": file, "layer": layer_index, "layers": layer_count}),
         )
     };
     let quant_layers: Vec<QuantLayer> = f32_layers.iter().map(F32Layer::quantize).collect();
@@ -380,19 +376,23 @@ fn main() {
         let outputs = candidate_outputs(&f32_layers, &quant_layers, &modes, &end_to_end_inputs);
         cascade.insert(mode.key().to_string(), compare(&references, &outputs));
     }
-    let mut swaps = Vec::with_capacity(f32_layers.len());
-    for index in 0..f32_layers.len() {
-        let mut readouts = Map::new();
-        for mode in BiasMode::ALL {
-            let mut modes = vec![None; f32_layers.len()];
-            modes[index] = Some(mode);
-            let outputs = candidate_outputs(&f32_layers, &quant_layers, &modes, &end_to_end_inputs);
-            readouts.insert(mode.key().to_string(), compare(&references, &outputs));
+    let mut swaps = Vec::new();
+    if swap || layer_count == 1 {
+        swaps.reserve(f32_layers.len());
+        for index in 0..f32_layers.len() {
+            let mut readouts = Map::new();
+            for mode in BiasMode::ALL {
+                let mut modes = vec![None; f32_layers.len()];
+                modes[index] = Some(mode);
+                let outputs =
+                    candidate_outputs(&f32_layers, &quant_layers, &modes, &end_to_end_inputs);
+                readouts.insert(mode.key().to_string(), compare(&references, &outputs));
+            }
+            swaps.push(json!({
+                "layer": &f32_layers[index].name,
+                "readouts": Value::Object(readouts),
+            }));
         }
-        swaps.push(json!({
-            "layer": f32_layers[index].name,
-            "readouts": Value::Object(readouts),
-        }));
     }
 
     let report = json!({
