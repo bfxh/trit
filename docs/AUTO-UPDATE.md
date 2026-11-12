@@ -1,6 +1,6 @@
 # 自动更新与一键更新（任务草案）
 
-状态：**未实现**（设计草案；账本登记 A415）。
+状态：**第一步已实现**（`--check`；账本登记 A415）。`--apply` 仍未实现。
 目标：一条命令把主库的工具链、依赖、生成台账与门状态对齐到最新，并给出可回滚的证据。
 
 ## 1. 为什么需要
@@ -42,7 +42,18 @@ python scripts/self_update.py [--check|--apply] [--offline] [--json]
 - 离线：`--offline` 只跑本地门，不访问网络。
 - 同一 SHA 下，`self_update` 的门结果与逐条手工跑一致。
 
+第一步（`--check`）实测读数：
+
+- 自测 22/22：夹具 git 仓真跑 fetch/clone/push，覆盖 干净最新 / 脏树点名 / 落后可快进 /
+  分叉打印分叉点 / detached / offline 无 origin / fetch 失败 / `cargo fmt --check` 红绿 /
+  python 门红绿 / 零写入逐字节自证。
+- 变异 6/6 全抓住：脏树不拦 / 分叉不拦 / detached 不拦 / check 不 fetch / 门红不判红 /
+  fmt 用写模式（零写入自爆）。
+- 门清单按存在性挑：`cargo fmt --all -- --check` + module_budget / test_surface /
+  docs_hygiene / doc_pointers / hazard_gate / layers；空集明说「不是绿」。
+
 ## 5. 未证栏
 
-- 没有实现；没有与 `trit-vcs` 的 ref 更新对接。
+- `--apply` 未实现（只交付 `--check`）；没有与 `trit-vcs` 的 ref 更新对接。
 - `cargo update` 的依赖升级需要人审（semver / 安全），草案默认不做。
+- 零写入自证是防御性断言：工具不写文件时它永远绿，没有独立反证（等价变异不登记）。

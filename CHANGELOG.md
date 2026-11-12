@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（一键更新第一步：self_update --check 零写入预检）
+
+- 新增 `scripts/self_update.py --check`：非 detached + 干净树预检；fetch（`--offline` 跳过）；
+  快进/分叉分类（分叉 ⇒ rc1，打印旧 SHA、新 SHA、分叉点）；只读门读数
+  （`cargo fmt --all -- --check` + 按存在性挑的六个 python 门，空集明说「不是绿」）；
+  零写入自证（`git status --porcelain` 前后逐字节一致，不一致 ⇒ rc1 大声报）。
+- 脏树 / fetch 失败 / offline 无 origin / 门红 ⇒ rc1 点名；`--apply` 未实现 ⇒ rc2。
+- 自测 22 条（夹具 git 仓真跑 fetch/clone/push，含 fmt 红绿与 python 门红绿）；
+  变异 6 条全抓住（脏树不拦 / 分叉不拦 / detached 不拦 / 不 fetch / 门红不判红 / fmt 写模式）。
+- `docs/AUTO-UPDATE.md` 状态改第一步已实现；未证：`--apply`、trit-vcs 对接、
+  零写入自证无独立反证（等价变异不登记）。
+
 ### Added（claim 自动牵连面：未认领下游点名，--strict 判红）
 
 - `scripts/agent_claims.py`：`claim` 登记后自动跑 `impact.py`（子进程复用，不重造图）：

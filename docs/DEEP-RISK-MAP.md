@@ -71,7 +71,7 @@ $ python scripts/impact.py --files crates/trit-core/src/lib.rs
 | 7 | 棘轮只防放松，不防“误登记过紧” | `test_surface/module_budget --update` 只许收紧 | 台账变更需两条证据（测试输出 + 文件行数），或双人复核记录 | 低 |
 | 8 | 牵连面接入认领（**已修**） | `claim` 登记后自动跑 impact：实测 `crates/trit-core/src` ⇒ 闭包 37/44、未认领 36 点名、dev-only 2；`--strict` 未认领 ⇒ rc1 | 剩余差距：只到 crate 粒度；`check` 不重复算（claim 时已点名） | 低 |
 | 9 | 分支/工作树堆积 | 14 worktrees、229 分支；阈值 180 已超 | 归档命名空间 + 定时 `worktree_guard --apply` + 未合并超期清单 | 低 |
-| 10 | 一键更新未实现 | `docs/AUTO-UPDATE.md`（A-415 草案），`self_update.py` 不存在 | 先做 `--check`（干净树 + 快进预检 + 门读数，零写入） | 中 |
+| 10 | 一键更新第一步（**已修**） | `self_update.py --check`：预检 + 快进/分叉分类 + 只读门读数 + 零写入自证；脏/分叉/detached ⇒ rc1；自测 22、变异 6 全抓 | 剩余：`--apply` 未实现；未接 trit-vcs | 中 |
 | 11 | 跨仓副本漂移（trit / trit-immune / trit-vcs） | claims 的 `crate_twin` 只提醒；无文件对账 | 双仓 manifest 哈希对账 + 冲突清单 | 中 |
 | 12 | 平台覆盖：钩子只在 Windows Git Bash 真装过 | 本机 `.git/hooks`；CI 只跑自测 | Linux/macOS 安装脚本实机验证；镜像仓同步测试 | 低 |
 
@@ -95,8 +95,10 @@ $ python scripts/impact.py --files crates/trit-core/src/lib.rs
    建议 `cargo test --workspace`；`--strict` 未认领 ⇒ rc1（声明仍写入），下游补认领后转绿。
    口径：`--root` 显式指定检出，缺省按 cwd 检出的 origin 尾段匹配 `--repo`（不匹配 ⇒ 警并不算）；
    整仓声明跳过；cargo 取证失败 ⇒ 警（看不见不等于没有牵连）；`--no-impact` 跳过。
-2. **`self_update.py --check`**（AUTO-UPDATE 第一步）：干净树 + 可快进 + 门读数，零写入；
+2. **`self_update.py --check`**（**已做**，AUTO-UPDATE 第一步）：干净树 + 可快进 + 门读数，零写入；
    验收：脏树 rc=1 且 `git status --porcelain` 前后逐字节一致。
+   实测读数：自测 22/22、变异 6/6；分叉打印旧/新 SHA 与分叉点；门按存在性挑（fmt --check + 六个
+   python 门），空集明说；`--apply` 未实现 ⇒ rc2，不替用户做落地决定。
 3. **mutation 分片**：`--shard i/n` + 按文件哈希分片；验收：4 片并行总时长 < 20 分钟，
    合并后 caught 集合与全量一致。
 4. **feature 矩阵门**：先覆盖 `trit-texture png`、`trit-gpu gpu`、`trit-build gpu` 的
