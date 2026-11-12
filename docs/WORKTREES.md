@@ -33,13 +33,13 @@
 | `trit-sample` | `feat/ttx-sampler` | bfxh | 1 | no | `1ae6ac0 feat(gpu): 光栅管线——顶点/片元/深度全在 GPU，片元自己从 dpdx 选 LOD` |
 | `trit-sweep` | `feat/registry-sweep` | bfxh | 21 | no | `bf1927c Merge remote-tracking branch 'origin/main' into feat/registry-` |
 
-共 27 个 worktree。2026-11-10 治理：移除已合并且干净的 trit-codec-pad / trit-neuro / trit-ops / trit-netsec / trit-re-cfg 及 E:/tmp 两个 detached 副本；yan/* 分支全部改名或删除（PR 证据见各合并 PR）。
+共 27 个 worktree。2026-11-10 治理：移除已合并且干净的 trit-codec-pad / trit-neuro / trit-ops / trit-netsec / trit-re-cfg 及临时目录下两个 detached 副本；yan/* 分支全部改名或删除（PR 证据见各合并 PR）。
 
 ## 相邻副本（2 个 submodule）
 
 两份 `trit-tml` 的 `third_party/trit` 已统一到 `46e7eb2`（main HEAD），且本地 submodule origin 已指回 `.gitmodules` 的 GitHub URL：
 - `Projects/trit-tml`：本地提交 `06298af`，`cargo check` 通过；
-- `trit-tml`（原 `.yanagent/repos/trit-tml`，YAN 清理时迁出至 `D:/KF/trit-tml`）：本地提交 `6f050d7`，`cargo check` 通过。
+- `trit-tml`（原 `.yanagent/repos/trit-tml`，YAN 清理时迁出至工作目录下的 `trit-tml`）：本地提交 `6f050d7`，`cargo check` 通过。
 两笔 trit-tml 提交尚未 push；如果 trit-tml 的 remote 需要同步，单独走 trit-tml 仓的 PR。
 
 ## 发布 preflight

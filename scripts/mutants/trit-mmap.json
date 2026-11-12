@@ -1,0 +1,20 @@
+[
+  {
+    "name": "mmap: 视图长度少一字节",
+    "file": "crates/trit-mmap/src/lib.rs",
+    "old": "    fn mapped_len(&self) -> usize {\n        self.len",
+    "new": "    fn mapped_len(&self) -> usize {\n        self.len.saturating_sub(1)",
+    "pkg": "trit-mmap",
+    "filter": "maps_known_bytes",
+    "runner": "cargo"
+  },
+  {
+    "name": "mmap: is_empty 判断反了",
+    "file": "crates/trit-mmap/src/lib.rs",
+    "old": "    pub fn is_empty(&self) -> bool {\n        self.len == 0",
+    "new": "    pub fn is_empty(&self) -> bool {\n        self.len != 0",
+    "pkg": "trit-mmap",
+    "filter": "empty_file_maps_to_empty_slice",
+    "runner": "cargo"
+  }
+]

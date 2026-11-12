@@ -106,7 +106,6 @@ fn both_copies_corrupt_is_structured_error() {
     let error = broken.tile_blocks(1, 0, 0).unwrap_err();
     assert!(error.to_string().contains("两份冗余副本都损坏"), "{error}");
 }
-
 #[test]
 fn capacity_corruption_is_detected_not_guessed() {
     let (texture, _) = sample();

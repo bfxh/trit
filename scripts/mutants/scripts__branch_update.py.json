@@ -1,0 +1,101 @@
+[
+ {
+  "name": "update-guard: 快进当重写",
+  "file": "scripts/branch_update.py",
+  "old": "    if is_ancestor(root, old, new):",
+  "new": "    if False:",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 丢失提交放行",
+  "file": "scripts/branch_update.py",
+  "old": "        if lost:",
+  "new": "        if False:",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 棘轮不查",
+  "file": "scripts/branch_update.py",
+  "old": "    ratchet = ratchet_regressions(root, old, new)",
+  "new": "    ratchet = []",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 旧提交缺失不算红",
+  "file": "scripts/branch_update.py",
+  "old": "        result[\"kind\"] = \"unknown-old\"\n        result[\"ok\"] = False",
+  "new": "        result[\"kind\"] = \"unknown-old\"\n        result[\"ok\"] = True",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 删除分支不放行",
+  "file": "scripts/branch_update.py",
+  "old": "        if not remote_ref.startswith(\"refs/heads/\") or is_zero(local_sha):",
+  "new": "        if not remote_ref.startswith(\"refs/heads/\"):",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 允许重写开关失效",
+  "file": "scripts/branch_update.py",
+  "old": "            result[\"deleted\"] = deleted_files(root, old, new)\n            if not allow_rewrite:",
+  "new": "            result[\"deleted\"] = deleted_files(root, old, new)\n            if False:",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 删除的单位也当回退",
+  "file": "scripts/branch_update.py",
+  "old": "        if target and not exists(target):",
+  "new": "        if False:",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 现存单位丢失不拦",
+  "file": "scripts/branch_update.py",
+  "old": "    exists = lambda path: new_tree_exists(root, new, path)  # noqa: E731",
+  "new": "    exists = lambda path: False  # noqa: E731",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 不做 range-diff 取证",
+  "file": "scripts/branch_update.py",
+  "old": "            audit = range_diff_audit(root, old, new)",
+  "new": "            audit = {\"equal\": 0, \"changed\": [], \"old_only\": [], \"new_only\": 0}",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: 元数据变化误报",
+  "file": "scripts/branch_update.py",
+  "old": "        if section and section not in (\"Metadata\", \"Commit message\"):",
+  "new": "        if section and section != \"Metadata\":",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "update-guard: script 单位路径少 scripts/",
+  "file": "scripts/branch_update.py",
+  "old": "        return \"scripts/\" + key[len(\"script/\"):]",
+  "new": "        return key[len(\"script/\"):]",
+  "pkg": "scripts/branch_update.py",
+  "filter": "",
+  "runner": "python"
+ }
+]

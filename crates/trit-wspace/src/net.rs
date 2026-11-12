@@ -20,6 +20,8 @@ pub struct Layer {
     trits: Vec<Trit>,
     bias: Vec<Trit>,
     scales: Vec<f32>,
+    /// 原始 f32 偏置（可选）：只影响读数和导出，行为判据仍是三值 `bias`。
+    bias_f32: Vec<f32>,
 }
 
 impl Layer {
@@ -86,6 +88,7 @@ impl Layer {
             trits: out_trits,
             bias: out_bias,
             scales,
+            bias_f32: Vec::new(),
         })
     }
 
@@ -116,9 +119,48 @@ impl Layer {
         }
         let bias_trits: Vec<i8> = bias
             .iter()
-            .map(|&v| v.round().clamp(-1.0, 1.0) as i8)
+            .map(|&value| {
+                if value > 0.0 {
+                    1
+                } else if value < 0.0 {
+                    -1
+                } else {
+                    0
+                }
+            })
             .collect();
-        Self::with_scales(rows, cols, &trits, &bias_trits, scales)
+        let layer = Self::with_scales(rows, cols, &trits, &bias_trits, scales)?;
+        if bias.iter().all(|value| *value == 0.0) {
+            Ok(layer)
+        } else {
+            layer.with_bias_f32(bias.to_vec())
+        }
+    }
+
+    /// 附加原始 f32 偏置（长度 `rows`、全部有限）；`bias` 仍是行为判据。
+    pub fn with_bias_f32(mut self, values: Vec<f32>) -> Result<Self> {
+        if values.is_empty() {
+            self.bias_f32.clear();
+            return Ok(self);
+        }
+        if values.len() != self.rows {
+            return Err(Error::Shape {
+                what: "bias_f32",
+                expected: self.rows,
+                got: values.len(),
+            });
+        }
+        if let Some((row, value)) = values
+            .iter()
+            .enumerate()
+            .find(|(_, value)| !value.is_finite())
+        {
+            return Err(Error::Wire(format!(
+                "bias_f32 第 {row} 行是 {value}（非有限值）"
+            )));
+        }
+        self.bias_f32 = values;
+        Ok(self)
     }
 
     /// 行数（输出维）。
@@ -143,6 +185,12 @@ impl Layer {
     #[must_use]
     pub fn bias(&self) -> &[Trit] {
         &self.bias
+    }
+
+    /// 原始 f32 偏置；空表示没有保存幅度。
+    #[must_use]
+    pub fn bias_f32(&self) -> &[f32] {
+        &self.bias_f32
     }
 
     /// 每行 scale。
@@ -229,6 +277,8 @@ impl Layer {
 
     pub(crate) fn set_bias(&mut self, row: usize, to: Trit) {
         self.bias[row] = to;
+        // 三值偏置一旦被编辑，旧的 f32 幅度就不再对应。
+        self.bias_f32.clear();
     }
 
     pub(crate) fn set_scale(&mut self, row: usize, to: f32) {
@@ -243,6 +293,9 @@ impl Layer {
             self.trits.swap(a * self.cols + col, b * self.cols + col);
         }
         self.bias.swap(a, b);
+        if !self.bias_f32.is_empty() {
+            self.bias_f32.swap(a, b);
+        }
         self.scales.swap(a, b);
     }
 
@@ -517,12 +570,18 @@ impl Net {
             let source = &self.layers[layer];
             let cols = source.cols();
             let target = &mut layers[layer];
+            if !source.bias_f32.is_empty() {
+                target.bias_f32 = vec![0.0; rows];
+            }
             for (new_row, &old_row) in perm.iter().enumerate() {
                 let src = &source.trits[old_row * cols..(old_row + 1) * cols];
                 let dst = &mut target.trits[new_row * cols..(new_row + 1) * cols];
                 dst.copy_from_slice(src);
                 target.bias[new_row] = source.bias[old_row];
                 target.scales[new_row] = source.scales[old_row];
+                if !source.bias_f32.is_empty() {
+                    target.bias_f32[new_row] = source.bias_f32[old_row];
+                }
             }
         }
         {

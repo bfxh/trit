@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 """变异门：对关键规则做单点文本变异，跑对应回归；测试必须变红。
 
-用法：python scripts/mutation_check.py [--pkg <目标>]... [--only <名字片段>]
+用法：python scripts/mutation_check.py [--pkg <目标>]... [--only <名字片段>] [--shard i/n]
 目标 = crate 名，或带自测面的脚本路径（`scripts/*.py`、`crates/*/scripts/*.sh`）。
 `--only` 只用于本地复跑个别条目，会大声打 `PARTIAL RUN`，且一条都没选中时判红（打错字不等于跑过）。
+`--shard i/n` 只跑第 i 片（crc32(file\0name) 稳定分片，1 ≤ i ≤ n，越界 rc2）；
+各片必须在**不同检出**里跑（同树有单实例锁与共享文件）；空片是真空集，明说后放行。
+`--partition n [--logs <目录>]` 是聚合门（不跑测试）：核对分片是干净划分；给了日志再逐条对账——
+全表每条在日志里恰好一个判决且是杀死。CI 的 full 矩阵各片上传日志，聚合 job 用它收口。
 每个变异都会在 finally 里**按字节、原子替换**恢复原文件；退出码 1 表示有变异存活、假杀、超时或无输出。
 
 四个反脆弱的阀门（都是本机踩出来的，不是设想）：
@@ -39,6 +43,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -321,10 +326,98 @@ def runner_of(mutant: dict) -> str:
     return "cargo"
 
 
-def select(pkgs: list[str]) -> list[dict]:
-    if not pkgs:
-        return MUTANTS
-    return [mutant for mutant in MUTANTS if mutant["pkg"] in pkgs]
+def select(pkgs: list[str], files: list[str] | None = None) -> list[dict]:
+    chosen = MUTANTS if not pkgs else [mutant for mutant in MUTANTS if mutant["pkg"] in pkgs]
+    if files:
+        wanted = {name.replace("\\", "/") for name in files if name}
+        chosen = [mutant for mutant in chosen if mutant["file"] in wanted]
+    return chosen
+
+
+def shard_key(mutant: dict) -> int:
+    """稳定分片键：file+name 的 crc32。不依赖登记表顺序、不依赖进程与对象身份——
+    同一条在任何检出、任何一次运行里都落同一片；新增条目只挪它自己，不重排别人。"""
+    return zlib.crc32((mutant["file"] + "\0" + mutant["name"]).encode("utf-8"))
+
+
+def select_shard(mutants: list[dict], i: int, n: int) -> list[dict]:
+    return [mutant for mutant in mutants if shard_key(mutant) % n == i - 1]
+
+
+def partition_report(mutants: list[dict], n: int) -> dict:
+    """纯计算：n 片是不是全表的干净划分。covers_all 按集合（有没有漏），
+    disjoint 按重数（有没有一条落多片）——两个判据分开，坏法才能各自点名。"""
+    shards = [select_shard(mutants, i, n) for i in range(1, n + 1)]
+    union = [mutant["name"] for shard in shards for mutant in shard]
+    registered = {mutant["name"] for mutant in mutants}
+    return {
+        "counts": [len(shard) for shard in shards],
+        "covers_all": set(union) == registered,
+        "disjoint": len(union) == len(set(union)),
+    }
+
+
+VERDICT_LINE = re.compile(
+    r"^(caught|CRASH-KILL|HANG-KILL|TIMEOUT|SURVIVED|NO-OUTPUT|FALSE-KILL|UNNAMED)\s+(.+?)(?:\s\s\[.*)?$",
+    re.M,
+)
+
+
+def verdicts_from_log(text: str) -> list[tuple[str, str]]:
+    """只认行首的判决行：结尾缩进的 TIMEOUT/HANG-KILL 清单是汇总不是判决，
+    算进去会把同一条计两次。名字里有空格与中文，按 `  [` 分隔截断。"""
+    return [(match.group(2), match.group(1)) for match in VERDICT_LINE.finditer(text)]
+
+
+def coverage_report(mutants: list[dict], logs: list[str]) -> dict:
+    """各片日志合起来是否恰好覆盖全表：缺判决/_unknown/重复/非杀死都单列点名。"""
+    registered = [mutant["name"] for mutant in mutants]
+    seen: dict[str, list[str]] = {}
+    for text in logs:
+        for name, kind in verdicts_from_log(text):
+            seen.setdefault(name, []).append(kind)
+    kills = ("caught", "CRASH-KILL", "HANG-KILL")
+    return {
+        "missing": sorted(set(registered) - set(seen)),
+        "unknown": sorted(set(seen) - set(registered)),
+        "duplicated": sorted(name for name, kinds in seen.items() if len(kinds) > 1),
+        "not_killed": sorted({name for name, kinds in seen.items() if any(kind not in kills for kind in kinds)}),
+        "caught": sum(kinds.count("caught") for kinds in seen.values()),
+        "crash": sum(kinds.count("CRASH-KILL") for kinds in seen.values()),
+        "hang": sum(kinds.count("HANG-KILL") for kinds in seen.values()),
+    }
+
+
+def partition_audit(n: int, logs_dir: pathlib.Path | None) -> int:
+    """聚合门：划分本身必须是干净划分；给了日志再逐条对账。
+    读不到日志、缺条目、重条目、不认识条目、非杀死判决 ⇒ 全判红（读不到不等于跑过了）。"""
+    if not MUTANTS:
+        print("NO MUTANTS REGISTERED：聚合模式全表为空 ⇒ 判红。")
+        return 1
+    report = partition_report(MUTANTS, n)
+    detail = ", ".join(f"片{i}={count}" for i, count in enumerate(report["counts"], 1))
+    print(f"PARTITION {n} 片：{detail}（共 {len(MUTANTS)} 条）")
+    red = False
+    if not report["covers_all"]:
+        print("PARTITION BROKEN：各片并集 ≠ 全表（有漏片）⇒ 判红")
+        red = True
+    if not report["disjoint"]:
+        print("PARTITION BROKEN：同一条落进多片（重复）⇒ 判红")
+        red = True
+    if logs_dir is None:
+        return 1 if red else 0
+    files = sorted(path for path in logs_dir.glob("*.log") if path.is_file())
+    if not files:
+        print(f"NO SHARD LOGS：{logs_dir} 下没有 *.log ⇒ 判红（读不到不等于跑过了）")
+        return 1
+    cov = coverage_report(MUTANTS, [path.read_text(encoding="utf-8", errors="replace") for path in files])
+    print(f"COVERAGE {len(files)} 份日志：caught {cov['caught']} + crash {cov['crash']} + hang {cov['hang']}（全表 {len(MUTANTS)} 条）")
+    for label, names in (("缺判决", cov["missing"]), ("不认识条目", cov["unknown"]),
+                         ("重复判决", cov["duplicated"]), ("非杀死", cov["not_killed"])):
+        if names:
+            print(f"COVERAGE BROKEN：{label} {len(names)} 条 ⇒ 判红：{', '.join(names[:20])}")
+            red = True
+    return 1 if red else 0
 
 
 TEST_MODULE = re.compile(r"#\[cfg\(test\)\]\s*mod\s+\w+")
@@ -384,7 +477,9 @@ def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
         return "inconclusive", "无输出：进程没跑完就被杀或没跑起来"
     # 只认工具链自己打的诊断：断言行的例名里可能出现 "SyntaxError" 这类字样，
     # 把断言文本当成编译失败就会把"真抓住"误判成假杀（门自测第一版就这么翻车）。
-    diag = "\n".join(line for line in out.splitlines() if not line.startswith("FAIL "))
+    # lstrip 不是装饰：`ci_budget / secret_wiring / oops` 印的是缩进的 `  FAIL <例名>`，
+    # 不认缩进 ⇒ 这 50 条既进不了 diag 剔除、也点不出名，全落 unnamed（2026-11-03 全表普查实测）。
+    diag = "\n".join(line for line in out.splitlines() if not line.lstrip().startswith("FAIL "))
     if "could not compile" in diag or any(tok in diag for tok in syntax.split("|")):
         # 变异让代码编不过 ⇒ 测试根本没跑，这条"红"不证明任何断言。
         return "false_kill", ""
@@ -395,7 +490,7 @@ def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
         #   `SELF-TEST FAIL: <规则>`（hazard_gate）、
         #   裸 `assert` 抛出的 `AssertionError: <话>`（pr_hygiene）—— 那也是断言。
         for probe in (
-            lambda: next((l for l in out.splitlines() if l.startswith("FAIL ")), None),
+            lambda: next((l for l in out.splitlines() if l.lstrip().startswith("FAIL ")), None),
             lambda: next((l for l in out.splitlines() if "SELF-TEST FAIL" in l), None),
             lambda: next(
                 (
@@ -456,11 +551,14 @@ def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
     return "caught", named.strip()
 
 
-def main(pkgs: list[str], only: str = "") -> int:
+def main(pkgs: list[str], only: str = "", shard: tuple[int, int] | None = None,
+         partition: int = 0, logs: str = "", files: list[str] | None = None) -> int:
     # Windows 控制台默认可能是 GBK；变异名里有中国字与 Ł，统一按 UTF-8 输出。
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
-    mutants = select(pkgs)
+    if partition:
+        return partition_audit(partition, pathlib.Path(logs) if logs else None)
+    mutants = select(pkgs, files)
     # fail-closed（**逐目标**）：某个目标在登记表里 0 条时，"它绿了"没有任何含义。
     # 多个目标一起选中时更危险——别的目标有变异可杀，这个目标会被静默跳过
     # （2026-11-02 的 trit-immune 就是这样在 CI 报 14s 通过的）。
@@ -493,6 +591,14 @@ def main(pkgs: list[str], only: str = "") -> int:
             return 1
         print(f"PARTIAL RUN --only {only!r}：{len(picked)}/{len(mutants)} 条 —— 这不是全量复跑，CI 仍按包跑全部")
         mutants = picked
+    if shard is not None:
+        i, n = shard
+        picked = select_shard(mutants, i, n)
+        print(f"SHARD {i}/{n}: {len(picked)}/{len(mutants)} 条 —— 这不是全量复跑；各片必须在**不同检出**里跑（同树有单实例锁与共享文件）")
+        if not picked:
+            print(f"SHARD {i}/{n}: 0 条（真空集：登记条目都落在别的片）⇒ 本片放行")
+            return 0
+        mutants = picked
     held, lock_note = acquire_lock()
     if not held:
         print(f"REFUSED：{lock_note}")
@@ -503,6 +609,23 @@ def main(pkgs: list[str], only: str = "") -> int:
         return _run(mutants)
     finally:
         release_lock()
+
+
+def tally(
+    total: int, survived: int, false_kills: int, crash_kills: int,
+    timed_out: int, hang_kills: int, no_output: int, unnamed: int,
+) -> tuple[int, bool]:
+    """抓住多少条，以及门该不该判红。
+
+    `unnamed` = 进程 rc≠0 但既没有断言点名也没有崩溃签名：磁盘写满导致链接失败、
+    cargo 不在 PATH、harness 自己报错都落这一格。它不证明任何断言钉住了什么 ⇒
+    既不能计成抓住，也不能静默算过（原先就是把它计进 killed，于是环境一坏门反而"全绿"）。
+    `crash` / `hang` 单列但维持不判红：崩溃至少证明把守卫去掉会炸，只是没有断言兜着；
+    hang 是登记表声明的死循环，无断言可钉。
+    """
+    killed = (total - survived - false_kills - crash_kills
+              - timed_out - hang_kills - no_output - unnamed)
+    return killed, bool(survived or false_kills or timed_out or no_output or unnamed)
 
 
 def _run(mutants: list[dict]) -> int:
@@ -584,16 +707,18 @@ def _run(mutants: list[dict]) -> int:
             continue
         if kind == "unnamed":
             unnamed.append(mutant["name"])
-            print(f"caught    {mutant['name']}  [(未点名测试)]")
+            print(f"UNNAMED   {mutant['name']}  [既无断言也无崩溃签名，多半是环境/工具链坏了]")
             continue
         print(f"caught    {mutant['name']}  [{detail}]")
 
-    killed = (len(mutants) - survived - len(false_kills) - len(crash_kills)
-              - len(timed_out) - len(hang_kills) - len(no_output))
+    killed, red = tally(
+        len(mutants), survived, len(false_kills), len(crash_kills),
+        len(timed_out), len(hang_kills), len(no_output), len(unnamed),
+    )
     print(
         f"\n断言抓住 {killed}，死循环抓住 {len(hang_kills)}，崩溃抓住 {len(crash_kills)}，"
         f"编译红假杀 {len(false_kills)}，存活 {survived}，超时 {len(timed_out)}，"
-        f"无输出 {len(no_output)}（共 {len(mutants)}）"
+        f"无输出 {len(no_output)}，未点名 {len(unnamed)}（共 {len(mutants)}）"
     )
     for name in timed_out:
         print(f"  TIMEOUT {name}")
@@ -611,17 +736,42 @@ def _run(mutants: list[dict]) -> int:
             print(f"    - {name}")
     if unnamed:
         print(f"  未点名（既无断言也无崩溃签名）: {', '.join(unnamed)}")
-    if survived or false_kills or timed_out or no_output:
+    if red:
         print("⇒ 门判红：假杀的条目要么改成语义变异（编得过、只改行为），要么删除；"
               "超时/无输出的条目要么等锁空闲重跑，要么抬 MUTANT_TIMEOUT_SECS 并写理由；"
+              "未点名的条目要先把它跑红的原因查清（盘满 / cargo 缺失 / harness 自身报错）；"
               "确实只会死循环的条目在登记表里写 hang_secs 声明，别让它冒充抓住。")
         return 1
     return 0
 
 
-def parse_args(argv: list[str]) -> tuple[list[str], str]:
+def parse_shard(text: str) -> tuple[int, int]:
+    match = re.fullmatch(r"(\d+)/(\d+)", text.strip())
+    if not match:
+        print(f"--shard 形状不对: {text!r}（要 i/n，例如 1/4）⇒ 用法错误", file=sys.stderr)
+        raise SystemExit(2)
+    i, n = int(match.group(1)), int(match.group(2))
+    if n < 1 or not 1 <= i <= n:
+        print(f"--shard 越界: {text!r}（要 1 ≤ i ≤ n，n ≥ 1）⇒ 用法错误", file=sys.stderr)
+        raise SystemExit(2)
+    return i, n
+
+
+def parse_partition(text: str) -> int:
+    match = re.fullmatch(r"\d+", text.strip())
+    if not match or int(match.group(0)) < 1:
+        print(f"--partition 形状不对: {text!r}（要正整数，例如 4）⇒ 用法错误", file=sys.stderr)
+        raise SystemExit(2)
+    return int(match.group(0))
+
+
+def parse_args(argv: list[str]) -> tuple[list[str], str, tuple[int, int] | None, int, str, list[str]]:
     pkgs: list[str] = []
     only = ""
+    shard: tuple[int, int] | None = None
+    partition = 0
+    logs = ""
+    files: list[str] = []
     rest = list(argv)
     while rest:
         arg = rest.pop(0)
@@ -633,9 +783,25 @@ def parse_args(argv: list[str]) -> tuple[list[str], str]:
             only = rest.pop(0)
         elif arg.startswith("--only="):
             only = arg.split("=", 1)[1]
+        elif arg == "--shard" and rest:
+            shard = parse_shard(rest.pop(0))
+        elif arg.startswith("--shard="):
+            shard = parse_shard(arg.split("=", 1)[1])
+        elif arg == "--partition" and rest:
+            partition = parse_partition(rest.pop(0))
+        elif arg.startswith("--partition="):
+            partition = parse_partition(arg.split("=", 1)[1])
+        elif arg == "--logs" and rest:
+            logs = rest.pop(0)
+        elif arg.startswith("--logs="):
+            logs = arg.split("=", 1)[1]
+        elif arg == "--files" and rest:
+            files = [part for part in rest.pop(0).split(",") if part]
+        elif arg.startswith("--files="):
+            files = [part for part in arg.split("=", 1)[1].split(",") if part]
         else:
             raise SystemExit(f"未知参数: {arg}")
-    return pkgs, only
+    return pkgs, only, shard, partition, logs, files
 
 
 def self_test() -> int:
@@ -675,6 +841,12 @@ def self_test() -> int:
         ("caught", "FAIL red: stale baseline ｜ self-test: 9/10 passed"),
     )
     check("python 裸 traceback→crash", classify("Traceback (most recent call last):\nKeyError: 1", 1, "python")[0], "crash")
+    check(
+        "files 过滤只留改动文件",
+        [m["file"] for m in select([], ["crates/trit-wspace/src/trit.rs"])],
+        ["crates/trit-wspace/src/trit.rs"],
+    )
+    check("files 过滤命中 0 条", select([], ["crates/trit-wspace/src/nope.rs"]), [])
     check("python AssertionError→caught", classify("AssertionError: 断言失败: x", 1, "python")[0], "caught")
     check(
         "断言文本里的 SyntaxError 不算编译红",
@@ -686,6 +858,27 @@ def self_test() -> int:
         "bash FAIL 点名→caught",
         classify("FAIL 自测：run 失败后没有中止脚本", 1, "bash"),
         ("caught", "FAIL 自测：run 失败后没有中止脚本"),
+    )
+
+    # 一b、计数口径：unnamed 不计算住且判红（环境坏了把整门"绿化"是踩过的假绿）
+    check("全抓住→不判红", tally(3, 0, 0, 0, 0, 0, 0, 0), (3, False))
+    check("未点名不算抓住且判红", tally(3, 0, 0, 0, 0, 0, 0, 1), (2, True))
+    check("崩溃单列但不判红", tally(3, 0, 0, 1, 0, 0, 0, 0), (2, False))
+    check("死循环单列但不判红", tally(3, 0, 0, 0, 0, 1, 0, 0), (2, False))
+    check(
+        "超时/无输出任一即判红",
+        [tally(3, 0, 0, 0, 1, 0, 0, 0)[1], tally(3, 0, 0, 0, 0, 0, 1, 0)[1]],
+        [True, True],
+    )
+    check(
+        "缩进两格的 FAIL 也算点名（ci_budget/secret_wiring/oops 的印法）",
+        classify("  FAIL red: stale baseline\nself-test: 9/10 passed", 1, "python"),
+        ("caught", "FAIL red: stale baseline ｜ self-test: 9/10 passed"),
+    )
+    check(
+        "缩进 FAIL 行里的 SyntaxError 同样不算编译红",
+        classify("  FAIL x: 文案里有 SyntaxError 字样\nself-test: 2/3 passed", 1, "python")[0],
+        "caught",
     )
 
     # 二、runner 推断：脚本绝不能落到 cargo 去跑
@@ -876,6 +1069,173 @@ def self_test() -> int:
         check("自测没碰仓里那把真锁（外层门在跑时也不许接管或释放它）",
               (real_pid_file.read_text(encoding="utf-8") if real_pid_file.exists() else None) == before,
               True)
+
+    # 六、分片与聚合：稳定划分 / 越界拒 / 真空集 / preflight 只查所选 / 逐条对账
+    check("shard 形状解析", parse_shard("1/4"), (1, 4))
+    check("shard 末片", parse_shard("4/4"), (4, 4))
+    for bad in ("0/4", "5/4", "1/0", "abc", "1/4/2", "-1/4", "1.5/4", ""):
+        try:
+            parse_shard(bad)
+            code: object = "没报错"
+        except SystemExit as exc:
+            code = exc.code
+        check(f"shard 越界/形状错必须拒（rc2）: {bad!r}", code, 2)
+    try:
+        parse_partition("0")
+        pcode: object = "没报错"
+    except SystemExit as exc:
+        pcode = exc.code
+    check("partition 0 必须拒（rc2）", pcode, 2)
+    check("partition 形状解析", parse_partition("4"), 4)
+
+    synth = [
+        {"name": f"entry-{k}", "pkg": "p", "file": f"f{k % 7}.rs", "old": "a", "new": "b", "filter": ""}
+        for k in range(40)
+    ]
+    shards = [select_shard(synth, i, 4) for i in range(1, 5)]
+    union = [m["name"] for s in shards for m in s]
+    check("分片并集=全表", sorted(union), sorted(m["name"] for m in synth))
+    check("分片互不重叠", len(union), len(set(union)))
+    check("分片计数和=全表", sum(len(s) for s in shards), len(synth))
+    check("n=1 就是全表", select_shard(synth, 1, 1), synth)
+    check("空表分片还是空", select_shard([], 1, 4), [])
+    rebuilt = [dict(m) for m in reversed(synth)]
+    check("分片不依赖登记顺序与对象身份（重建列表后同片归属不变）",
+          [sorted(m["name"] for m in select_shard(rebuilt, i, 4)) for i in range(1, 5)],
+          [sorted(m["name"] for m in s) for s in shards])
+    check("分片键同时认 file 与 name",
+          shard_key({"file": "a.rs", "name": "x"}) != shard_key({"file": "b.rs", "name": "x"}), True)
+    rep = partition_report(synth, 4)
+    check("划分报告：干净划分", (rep["covers_all"], rep["disjoint"], sum(rep["counts"])), (True, True, 40))
+
+    sample = chr(10).join([
+        "caught    claims: repair 不改重复 id  [t1 断言失败]",
+        "CRASH-KILL 栈溢出  [崩溃红 0xc00000fd]",
+        "HANG-KILL 死循环  [登记表声明]",
+        "SURVIVED  存活者",
+        "TIMEOUT   没结论  [x]",
+        "NO-OUTPUT 空  [x]",
+        "FALSE-KILL 编译红  [x]",
+        "UNNAMED   未点名  [x]",
+        "  TIMEOUT 没结论  [缩进汇总，不是判决]",
+        "    - 死循环",
+        "断言抓住 8，死循环抓住 1，崩溃抓住 1（共 10）",
+    ])
+    verdicts = verdicts_from_log(sample)
+    check("判决行只认行首（缩进汇总不重计）", len(verdicts), 8)
+    check("带空格/中文的名字读全", verdicts[0], ("claims: repair 不改重复 id", "caught"))
+    check("八类判决都认得", sorted({k for _, k in verdicts}),
+          sorted(["caught", "CRASH-KILL", "HANG-KILL", "SURVIVED", "TIMEOUT", "NO-OUTPUT", "FALSE-KILL", "UNNAMED"]))
+
+    def fixture_entry(name: str) -> dict:
+        return {"name": name, "pkg": "sansheng", "file": "no/such/file.rs", "old": "a", "new": "b", "filter": ""}
+
+    entry_a = fixture_entry("shard-fixture-a")
+    shard_a = shard_key(entry_a) % 4 + 1
+    # 键退化成对象身份时 id%4 恒 0（地址对齐）全落片 1：夹具带兜底才构造得出来，让变异死在断言而非 StopIteration。
+    candidates = [fixture_entry(f"shard-fixture-b{k}") for k in range(100)]
+    entry_b = next((c for c in candidates if shard_key(c) % 4 + 1 != shard_a), candidates[0])
+    shard_b = shard_key(entry_b) % 4 + 1
+
+    saved = MUTANTS[:]
+    with tempfile.TemporaryDirectory() as box:
+        root = pathlib.Path(box)
+        os.environ["MUTATION_CHECK_LOCK_DIR"] = str(root / "lock")
+        try:
+            MUTANTS.clear()
+            MUTANTS.extend([entry_a, entry_b])
+
+            def shard_rc(shard: tuple[int, int]) -> tuple[object, str]:
+                buf = io.StringIO()
+                try:
+                    with contextlib.redirect_stdout(buf):
+                        rc: object = main(["sansheng"], shard=shard)
+                except Exception as exc:
+                    rc = f"异常 {type(exc).__name__}"
+                return rc, buf.getvalue()
+
+            other = next(s for s in range(1, 5) if s not in (shard_a, shard_b))
+            rc_empty, out_empty = shard_rc((other, 4))
+            check("真空片放行（rc0）", rc_empty, 0)
+            check("真空片要明说是真空集", "真空集" in out_empty, True)
+            rc_run, out_run = shard_rc((shard_a, 4))
+            check("选中片真的窄化（夹具走到 preflight）", rc_run, 1)
+            check("选中片要大声声明部分跑", f"SHARD {shard_a}/4" in out_run, True)
+            check("preflight 只查所选（1/1 而不是 2/2）", "PREFLIGHT FAILED（1/1 条）" in out_run, True)
+            check("所选条目被点名", "shard-fixture-a" in out_run, True)
+            check("别片条目不被 preflight", "shard-fixture-b" not in out_run, True)
+
+            MUTANTS.clear()
+            MUTANTS.extend(synth)
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                dispatch_rc = main([], partition=4)
+            check("main --partition 直连（干净划分放行）", dispatch_rc, 0)
+            check("partition 模式打出 PARTITION 读数", "PARTITION 4 片" in buf.getvalue(), True)
+
+            original_select = globals()["select_shard"]
+            try:
+                globals()["select_shard"] = lambda ms, i, n: original_select(ms, i, n)[:-1]
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    drop_rc = partition_audit(4, None)
+                check("聚合：漏片必须判红", drop_rc, 1)
+                check("漏片要点名", "有漏片" in buf.getvalue(), True)
+                globals()["select_shard"] = lambda ms, i, n: original_select(ms, i, n) + ([ms[0]] if i == 1 and ms else [])
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    dup_rc = partition_audit(4, None)
+                check("聚合：重复落片必须判红", dup_rc, 1)
+                check("重复落片要点名", "重复" in buf.getvalue(), True)
+            finally:
+                globals()["select_shard"] = original_select
+
+            log_dir = root / "logs"
+            log_dir.mkdir()
+            names = [m["name"] for m in synth]
+            half = len(names) // 2
+            caught_lines = [f"caught    {n}  [t 断言失败]" for n in names]
+
+            def logs_rc(lines1: list[str], lines2: list[str]) -> tuple[object, str]:
+                (log_dir / "shard-1.log").write_text(chr(10).join(lines1) + chr(10), encoding="utf-8")
+                (log_dir / "shard-2.log").write_text(chr(10).join(lines2) + chr(10), encoding="utf-8")
+                buf = io.StringIO()
+                with contextlib.redirect_stdout(buf):
+                    rc: object = partition_audit(4, log_dir)
+                return rc, buf.getvalue()
+
+            rc_full, out_full = logs_rc(caught_lines[:half], caught_lines[half:])
+            check("聚合：全覆盖放行", rc_full, 0)
+            check("聚合要打出 COVERAGE 读数", "COVERAGE 2 份日志" in out_full, True)
+            rc_miss, out_miss = logs_rc(caught_lines[:half], caught_lines[half:-1])
+            check("聚合：缺判决必须判红", rc_miss, 1)
+            check("缺判决要点名到条目", "缺判决" in out_miss and names[-1] in out_miss, True)
+            rc_unk, out_unk = logs_rc(caught_lines[:half], caught_lines[half:] + ["caught    ghost-entry  [x]"])
+            check("聚合：不认识条目必须判红", rc_unk, 1)
+            check("不认识条目要点名", "不认识条目" in out_unk and "ghost-entry" in out_unk, True)
+            rc_dup, out_dup = logs_rc(caught_lines[:half] + [caught_lines[0]], caught_lines[half:])
+            check("聚合：重复判决必须判红", rc_dup, 1)
+            check("重复判决要点名", "重复判决" in out_dup, True)
+            rc_bad, out_bad = logs_rc(caught_lines[:half], caught_lines[half:-1] + [f"SURVIVED  {names[-1]}"])
+            check("聚合：非杀死判决必须判红", rc_bad, 1)
+            check("非杀死要点名", "非杀死" in out_bad and names[-1] in out_bad, True)
+            empty_dir = root / "empty"
+            empty_dir.mkdir()
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc_nolog = partition_audit(4, empty_dir)
+            check("聚合：读不到日志必须判红", rc_nolog, 1)
+            check("无日志要点名 NO SHARD LOGS", "NO SHARD LOGS" in buf.getvalue(), True)
+
+            MUTANTS.clear()
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                rc_empty_reg = partition_audit(4, None)
+            check("聚合：空登记表同样判红", rc_empty_reg, 1)
+        finally:
+            MUTANTS.clear()
+            MUTANTS.extend(saved)
+            os.environ.pop("MUTATION_CHECK_LOCK_DIR", None)
 
     if failures:
         for line in failures:

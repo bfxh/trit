@@ -9,3 +9,15 @@
 *.woff2 binary
 *.wasm binary
 *.pdf binary
+
+# CHANGELOG 是「只在 Unreleased 顶部追加」的追加型文件：多会话并发时用 union 合并
+# （两边新增条目都保留，不再每次 main 前进就冲突、rebase、重跑 1 小时 mutation）。
+# 约束：条目只追加/删除整块，不要改写相邻条目。
+CHANGELOG.md merge=union
+
+# 三本棘轮台账是「只收紧不放松」的机器文件：并发 PR 各自更新时走确定性 union 驱动
+# （scripts/merge_json_union.py，由 python scripts/hooks.py install 注册），
+# 测试面取 max、模块预算取 min、文档卫生取 min，不产生冲突标记。
+scripts/test_surface_baseline.json merge=json-union
+scripts/module_budget_baseline.json merge=json-union
+scripts/docs_hygiene_baseline.json merge=json-union

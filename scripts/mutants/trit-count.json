@@ -42,8 +42,8 @@
  {
   "name": "count: 组件乘积被最后一块覆盖",
   "file": "crates/trit-count/src/dpll.rs",
-  "old": "            for (part_vars, part_clauses) in parts {\n                let local = renumber(&part_clauses, &part_vars);\n                product *= self.count_core(&local, part_vars.len());\n            }",
-  "new": "            for (part_vars, part_clauses) in parts {\n                let local = renumber(&part_clauses, &part_vars);\n                product = self.count_core(&local, part_vars.len());\n            }",
+  "old": "            for (part_vars, part_indices) in parts {\n                let local = renumber(&numbered, &part_indices, &part_vars);\n                product *= self.count_core(&local, part_vars.len());\n            }",
+  "new": "            for (part_vars, part_indices) in parts {\n                let local = renumber(&numbered, &part_indices, &part_vars);\n                product = self.count_core(&local, part_vars.len());\n            }",
   "pkg": "trit-count",
   "filter": "component_product_multiplies_independent_parts"
  },
@@ -162,8 +162,8 @@
  {
   "name": "dpll: 分支回收漏摘单位子句（表格被污染）",
   "file": "crates/trit-count/src/dpll.rs",
-  "old": "        numbered.remove(at);\n        let at = insert_unit(&mut numbered, -(branch as i32));",
-  "new": "        let at = insert_unit(&mut numbered, -(branch as i32));",
+  "old": "        numbered.remove_unit(at);\n        let at = numbered.insert_unit(-(branch as i32));",
+  "new": "        let at = numbered.insert_unit(-(branch as i32));",
   "pkg": "trit-count",
   "filter": "fixed_expressions_match_exhaustive"
  },

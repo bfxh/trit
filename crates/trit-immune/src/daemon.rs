@@ -38,16 +38,38 @@ pub fn encode_frame(body: &str) -> Vec<u8> {
     out
 }
 
+/// 单条帧头行字节上限（与 trit-lsp framing 同口径）：超长头在分配前拒绝。
+pub const MAX_HEADER_LINE_BYTES: usize = 8 * 1024;
+/// 单帧帧体字节上限：`Content-Length` 声明值超过它在分配前拒绝。
+pub const MAX_FRAME_BYTES: usize = 16 * 1024 * 1024;
+
+/// 帧体尺寸门（纯函数，不分配）：声明长度在硬顶内才放行。
+fn frame_len_ok(len: usize) -> bool {
+    len <= MAX_FRAME_BYTES
+}
+
 /// 读取一帧。`None` = 对端 EOF（干净结束）。
 /// 头部逐行收（只认 `Content-Length`，其余忽略），空行结束头，随后读定长 body。
+/// 帧头行与帧体都有硬顶，超限在分配前拒绝（对端可以是 TCP 流，不许用无界头/超长
+/// `Content-Length` 撑爆内存——与 trit-lsp framing 同一纪律，审计 U-2 的同类落点）。
 pub fn read_frame<R: BufRead>(r: &mut R) -> io::Result<Option<String>> {
     let mut content_length: Option<usize> = None;
     loop {
-        let mut line = String::new();
-        let n = r.read_line(&mut line)?;
+        let mut buf = Vec::new();
+        let n =
+            Read::take(&mut *r, (MAX_HEADER_LINE_BYTES + 1) as u64).read_until(b'\n', &mut buf)?;
         if n == 0 {
             return Ok(None); // EOF：干净结束
         }
+        if buf.len() > MAX_HEADER_LINE_BYTES {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "帧头行超过上限（8 KiB）",
+            ));
+        }
+        let line = String::from_utf8(buf).map_err(|e| {
+            io::Error::new(io::ErrorKind::InvalidData, format!("帧头不是 UTF-8：{e}"))
+        })?;
         let line = line.trim_end_matches(['\r', '\n']);
         if line.is_empty() {
             break;
@@ -63,7 +85,20 @@ pub fn read_frame<R: BufRead>(r: &mut R) -> io::Result<Option<String>> {
     }
     let len = content_length
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "帧缺少 Content-Length 头"))?;
-    let mut buf = vec![0u8; len];
+    if !frame_len_ok(len) {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Content-Length 超过上限（{MAX_FRAME_BYTES} 字节）：{len}"),
+        ));
+    }
+    let mut buf: Vec<u8> = Vec::new();
+    buf.try_reserve_exact(len).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("帧体分配失败（{len} 字节）"),
+        )
+    })?;
+    buf.resize(len, 0u8);
     r.read_exact(&mut buf)?;
     Ok(Some(String::from_utf8_lossy(&buf).into_owned()))
 }
@@ -184,113 +219,4 @@ impl<R: Read, W: Write> LspSession<R, W> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::lsp::LspBridge;
-    use crate::{Journal, NodeId, Trit};
-    use std::io::Cursor;
-
-    fn frame(body: &str) -> Vec<u8> {
-        encode_frame(body)
-    }
-
-    #[test]
-    fn frame_roundtrip_and_eof() {
-        let mut wire: Vec<u8> = Vec::new();
-        wire.extend_from_slice(&frame("{\"a\":1}"));
-        wire.extend_from_slice(&frame("second"));
-        let mut r = Cursor::new(wire);
-        assert_eq!(read_frame(&mut r).unwrap(), Some("{\"a\":1}".to_string()));
-        assert_eq!(read_frame(&mut r).unwrap(), Some("second".to_string()));
-        assert_eq!(read_frame(&mut r).unwrap(), None, "EOF 干净结束");
-    }
-
-    #[test]
-    fn bad_content_length_is_rejected() {
-        let mut r = Cursor::new(b"Content-Length: abc\r\n\r\n{}".to_vec());
-        assert!(read_frame(&mut r).is_err());
-        let mut r = Cursor::new(b"Content-Type: x\r\n\r\n{}".to_vec());
-        assert!(read_frame(&mut r).is_err(), "缺 Content-Length 应拒绝");
-    }
-
-    #[test]
-    fn json_escape_covers_specials() {
-        assert_eq!(json_escape("a\"b\\c\nd\te"), "\"a\\\"b\\\\c\\nd\\te\"");
-        assert_eq!(json_escape("\u{1}"), "\"\\u0001\"");
-    }
-
-    /// 假 LSP 服务器：预录 initialize 应答 + 两条诊断通知。
-    fn fake_server_wire() -> Vec<u8> {
-        let mut wire = Vec::new();
-        wire.extend_from_slice(&frame(
-            "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"capabilities\":{\"textDocumentSync\":1}}}",
-        ));
-        wire.extend_from_slice(&frame(
-            "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"file:///w/src/lib.rs\",\"diagnostics\":[{\"range\":{},\"severity\":1,\"message\":\"borrow checker 报错\"}]}}",
-        ));
-        wire.extend_from_slice(&frame(
-            "{\"jsonrpc\":\"2.0\",\"method\":\"textDocument/publishDiagnostics\",\"params\":{\"uri\":\"file:///w/src/other.rs\",\"diagnostics\":[]}}",
-        ));
-        wire
-    }
-
-    #[test]
-    fn session_full_flow_initialize_open_pump_and_ledger() {
-        let wire = fake_server_wire();
-
-        let mut session = LspSession::new(Cursor::new(wire.clone()), Vec::new());
-        let resp = session.initialize(None).unwrap();
-        assert!(resp.contains("capabilities"), "应答应含 capabilities");
-        session
-            .did_open("file:///w/src/lib.rs", "fn main() {}", "rust")
-            .unwrap();
-        let frames = session.pump(10).unwrap();
-        assert_eq!(frames.len(), 2, "两条诊断通知都应泵到");
-        assert!(frames[0].contains("publishDiagnostics"));
-
-        // 全链路落账：pump 帧 → LspBridge → journal
-        let p = std::env::temp_dir().join(format!("trit-daemon-{}.journal", std::process::id()));
-        let _ = std::fs::remove_file(&p);
-        let mut j = Journal::create_as(&p, "daemon", 0).unwrap();
-        let lib = j
-            .spawn(NodeId(0), crate::NodeKind::Delta, "lib.rs")
-            .unwrap();
-        j.record(lib, Trit::Unknown, None, "打开待检").unwrap();
-        {
-            let mut bridge = LspBridge {
-                journal: &mut j,
-                uri_map: Default::default(),
-            };
-            bridge.map_uri("file:///w/src/lib.rs", lib);
-            for f in &frames {
-                bridge.process(f).unwrap();
-            }
-        }
-        assert_eq!(j.dag().node(lib).verdict, Trit::Vulnerable, "E1 → -1");
-        drop(j.into_dag().unwrap());
-        let _ = std::fs::remove_file(&p);
-    }
-
-    #[test]
-    fn request_buffers_intermediate_notifications() {
-        let mut wire = Vec::new();
-        wire.extend_from_slice(&frame(
-            "{\"jsonrpc\":\"2.0\",\"method\":\"window/logMessage\",\"params\":{\"message\":\"hi\"}}",
-        ));
-        wire.extend_from_slice(&frame(
-            "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"ok\":true}}",
-        ));
-        let mut session = LspSession::new(Cursor::new(wire), Vec::new());
-        let resp = session.request("foo/bar", "{}").unwrap();
-        assert!(resp.contains("\"ok\":true"));
-        let drained = session.pump(10).unwrap();
-        assert_eq!(drained.len(), 1, "中途通知应缓存并在 pump 时吐出");
-        assert!(drained[0].contains("logMessage"));
-    }
-
-    #[test]
-    fn eof_during_request_is_broken_pipe() {
-        let mut session = LspSession::new(Cursor::new(Vec::new()), Vec::new());
-        assert!(session.request("foo/bar", "{}").is_err());
-    }
-}
+mod tests;

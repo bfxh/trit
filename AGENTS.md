@@ -13,3 +13,62 @@
 - 收工一条命令：`cargo test --workspace` + `python scripts/module_budget.py`。
 - 训练层在 `crates/trit-train`（STE + 位平面 ALU）；新模型优先复用同一套量化/STE 口径。
 - 三进制结论按 `docs/TERNARY-BOUNDARIES.md` 归 A/B/C/D，且必须带二进制基线。
+
+## 默认阅读（三进制 / 无限图 / 游戏环境）
+
+涉及三进制智能体、无限图/无限世界、游戏环境扫描或故障注入时，先读：
+
+- OpenAI, *The free uniform spanning forest is a factor of IID*, 2026-09-25：Abstract、Theorem 1.1、Section 1.3，以及明确说明 “without a finitary coding radius or a finite input alphabet” 的段落。
+- `docs/GAME-SCAN.md`（本仓游戏环境扫描、故障注入与恢复设计）。
+
+引用规则：只引用“观测/规则分离、无根/重标记等变、Borel 因子 ≠ finitary 局部算法”这三个设计原则；必须说明论文对象是 FUSF，不是本仓扫描器或生成树，不得写成“论文证明了本实现”。
+
+## 多会话 / 多智能体规则（2026-11-12 事故后）
+
+- **共享工作树只读**：`D:/KF/trit-wspace-wt` 是共享主工作树，**禁止在里面 `git switch`/提交**。
+  每个任务用 `python scripts/gitflow.py worktree add <分支>` 新开工作树；实测多会话在里面反复切分支，
+  会让另一个会话/服务一读就"失灵"。
+- **闸门装在本机（不是只写在文档里）**：每台机器/每个 clone 先跑一次
+  `python scripts/hooks.py install`，装三道钩子：
+  - `pre-commit`：共享工作树停在非 main（含 detached）时拒绝提交；main 上的提交一律拒绝；
+  - `post-checkout`：共享工作树被切到非 main 时自动切回 main，切不回大声报；
+  - `pre-push`：拒绝直推 main + 高置信度密钥扫描。
+  点对点放行用 `TRIT_ALLOW_SHARED_COMMIT=1` / `TRIT_ALLOW_MAIN_COMMIT=1` /
+  `TRIT_ALLOW_SHARED_SWITCH=1`；共享树清单可用 `TRIT_SHARED_WORKTREES` 覆盖（`os.pathsep` 分隔）。
+  `install` 会把 `hooks.py` 与合并驱动复制成 hooks 目录里的**稳定副本**（`trit-hooks.py` /
+  `trit-json-union.py`），钩子不依赖当前分支的脚本版本（老分支缺新子命令时不会 rc=2 误伤）；
+  升级 `hooks.py` 后重跑一次 `install` 刷新副本。
+- **棘轮台账并发改不冲突**：`CHANGELOG.md` 走 `merge=union`；三本基线
+  （`scripts/test_surface_baseline.json`、`scripts/module_budget_baseline.json`、
+  `scripts/docs_hygiene_baseline.json`）走 `merge=json-union` 驱动
+  （`scripts/merge_json_union.py`，由 `hooks.py install` 注册）：
+  测试面取 max、模块预算取 min、文档卫生取 min，不认识形状一律留给 git 报冲突。
+- **负更新默认拦**：`pre-push` 会跑 `scripts/branch_update.py`：非快进且 old 上有提交在新历史里
+  没有等价补丁（`git cherry` 的 `+`）⇒ 拦；再叠 `git range-diff` 取证：旧提交在新历史里无对应
+  （与补丁等价矛盾）⇒ 拦，补丁落点变化 ⇒ 点名人工确认。三本基线回退（测试变少 / 上限放松 /
+  CHANGELOG 变小）也拦；**单位随文件/crate 一起删除算删减、不算回退**。
+  重写自己的未合并分支用 `ALLOW_NON_FF_PUSH=1`，确属收紧用 `ALLOW_RATCHET_PUSH=1`；
+  两个开关分开，别当万能钥匙。
+- **认领不是先到先得**：`claim --plan`（或 `--plan-file`）写方案；重叠时
+  `compare --paths ... [--repo]` 并排比较「问题解释 / 兼容 / 牵连 / 回滚 / 验证」，
+  **没有方案 = 没有资格参与比较**；败方 `release` 或收窄路径。并发 claim/release 有文件锁；
+  历史重复 id 用 `repair --apply` 修复。
+- **先量牵连再动手**：`python scripts/impact.py --base origin/main --claims <CLAIMS.md>
+  --repo bfxh/trit` 给出反向依赖闭包与「会被牵连但没人认领」的 crate；实测改 `trit-core`
+  一个文件牵连**运行时 35/44、测试面 37/44**（dev 依赖单列）。认领面要覆盖到下游，
+  否则下游会话不会知道自己在被改。`claim` 登记后**自动**跑同一口径：未认领下游直接点名；
+  `--root` 指定检出（缺省按 cwd 的 origin 尾段匹配 `--repo`，不匹配 ⇒ 警并不算）；
+  `--strict` 有未认领牵连 ⇒ rc1（声明仍写入）；`--no-impact` 跳过；cargo 取证失败 ⇒ 警。
+- **main 必须且只能在一个工作树检出**；合并后立刻回收：`python scripts/worktree_guard.py --apply`
+  （只回收「PR 已合 + 干净 + 本地 tip == PR head」的工作树与分支，脏的一律保留）。
+- **更新前先预检**：`python scripts/self_update.py --check`（断网加 `--offline`）只读不写：
+  脏树 / 分叉 / detached / fetch 失败 / 门红 ⇒ rc1 并点名；可快进 + 门全绿 ⇒ rc0；
+  `--apply` 未实现，落地仍走你自己的 merge/PR 流程。
+- 开工先 `python scripts/agent_claims.py check`，再 `claim`；收工 `release`。
+- `CHANGELOG.md` 只在 `## [Unreleased]` 后追加条目，不要重排/改写相邻条目。
+- 长 CI（mutation 可达 1 小时）不要连环 rebase：先让基础门绿；同步用 `git merge origin/main`，
+  不要 force-push 别人的分支。
+- mutation 分片：`python scripts/mutation_check.py --shard i/n`（crc32(file\0name) 稳定分片，
+  越界 rc2，空片真空集明说）；各片在**不同检出**里跑。CI full 走 4 片矩阵 + 聚合
+  `--partition 4 --logs <目录>`（逐条判决对账：缺/重/非杀死/读不到日志全判红）；
+  required 的两个检查名不变。

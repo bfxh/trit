@@ -34,7 +34,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Detect docs-only (PR only)
+      # 输出键名沿用 `only_docs`（14 处 if 条件不用改），语义已扩为「改动集不含 Rust 面」：
+      # 文档之外，scripts/、.github/、sweeps/、tests/（仅夹具）不参与 Rust 编译；
+      # other-languages/、benchmarks/ 不在主 workspace；t3/ 是独立 workspace（t3.yml 自跑）。
+      # 证据：只改脚本的 PR（如 #238）Windows job 12m（Test 240s + GPU 冒烟编译 372s）全花在
+      # 重编未变的 Rust 代码上；门族 job 不在此 job，照常全跑。
+      - name: Detect no-Rust change set (PR only)
         id: scope
         shell: bash
         env:
@@ -55,7 +60,7 @@ jobs:
             echo "only_docs=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          if printf '%s\n' "$files" | grep -Ev '^(docs/|.*\.md$|README|LICENSE|CHANGELOG)' | grep -q .; then
+          if printf '%s\n' "$files" | grep -Ev '^(docs/|scripts/|\.github/|sweeps/|tests/|other-languages/|benchmarks/|t3/|.*\.md$|README|LICENSE|CHANGELOG)' | grep -q .; then
             echo "only_docs=false" >> "$GITHUB_OUTPUT"
           else
             echo "only_docs=true" >> "$GITHUB_OUTPUT"
@@ -67,6 +72,23 @@ jobs:
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: rustfmt, clippy
+
+      # 编译缓存：GHA 后端，跨 run 复用编译产物（与 rust-cache 互补：
+      # 后者恢复 target 目录，前者在 target 缓存被淘汰/换 feature 组合时仍能命中）。
+      # CARGO_INCREMENTAL=0 已在 job env，sccache 需要它才能缓存。
+      - name: sccache（GHA 后端）
+        if: steps.scope.outputs.only_docs != 'true'
+        uses: mozilla-actions/sccache-action@d651010b8da762cde178750d8eda7b5febfe147a # v0.0.9
+        with:
+          version: "v0.19.0"
+
+      # 测试执行并行：cargo test 是一个测试二进制一个二进制串行跑，nextest 跨二进制调度。
+      # 版本钉死，避免 CI 随上游漂移。
+      - name: Install cargo-nextest
+        if: steps.scope.outputs.only_docs != 'true'
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: nextest@0.9.148
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         if: steps.scope.outputs.only_docs != 'true'
@@ -105,9 +127,45 @@ jobs:
           fi
 
       # `--verify-hdl` 的 tests/hdl.rs 没有 iverilog 会静默跳过；Linux 装上让真仿真进 CI。
+      # 2026-11-11 实测：GitHub runner 的 security.ubuntu.com DNS 会成片失败（exit 100），
+      # 一次抖动就红掉所有 PR 的 ubuntu job ⇒ 这里就地重试；4 次都失败仍然判红（不许静默跳过）。
       - name: Install iverilog (Linux)
         if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux'
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq iverilog
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 2026-11-11 实测：GitHub runner 的 security.ubuntu.com DNS 会成片失败（exit 100），
+          # 一次抖动红掉所有 PR。这里给每次 apt 加硬超时（DNS 卡住时快速失败），失败后
+          # 把 runner 的镜像清单（apt-mirrors.txt）与 sources 一起切到 azure 官方镜像再试。
+          # 全部失败仍判红：iverilog 缺失时 HDL 仿真会静默跳过，按测试面缩水处理，不降级。
+          # 镜像里若已预装，直接复用（runner 断网时这是唯一不依赖外网的路径）。
+          if command -v iverilog >/dev/null 2>&1; then
+            echo "iverilog 已预装：$(command -v iverilog)"
+            exit 0
+          fi
+          install() {
+            timeout 120 sudo apt-get update -qq -o Acquire::Retries=1 -o Acquire::http::Timeout=15               && timeout 180 sudo apt-get install -y -qq -o Acquire::Retries=1 -o Acquire::http::Timeout=15 iverilog
+          }
+          if install; then
+            echo "iverilog 安装成功（默认源）"
+            exit 0
+          fi
+          echo "默认源失败，切换 azure 镜像兜底"
+          for f in /etc/apt/apt-mirrors.txt /etc/apt/sources.list /etc/apt/sources.list.d/ubuntu.sources; do
+            if [ -f "$f" ]; then
+              sudo sed -i -E 's|https?://[a-z0-9.]*ubuntu\.com|http://azure.archive.ubuntu.com|g' "$f" || true
+            fi
+          done
+          for attempt in 1 2 3; do
+            if install; then
+              echo "iverilog 安装成功（换源第 ${attempt} 次）"
+              exit 0
+            fi
+            echo "换源第 ${attempt} 次仍失败，15s 后重试"
+            sleep 15
+          done
+          echo "::error::iverilog 安装失败：Linux 的 HDL 仿真测试会静默跳过，按测试面缩水处理（不降级）"
+          exit 1
 
       - name: Check formatting
         if: steps.scope.outputs.only_docs != 'true'
@@ -126,16 +184,29 @@ jobs:
             cargo clippy --workspace --all-targets --locked -- -D warnings
           fi
 
-      - name: Test
+      - name: Test (nextest)
         if: steps.scope.outputs.only_docs != 'true'
         shell: bash
         env:
           SCOPE_ARGS: ${{ steps.crates.outputs.args }}
         run: |
           if [ -n "${SCOPE_ARGS:-}" ]; then
-            cargo test $SCOPE_ARGS --locked
+            cargo nextest run $SCOPE_ARGS --locked
           else
-            cargo test --workspace --locked
+            cargo nextest run --workspace --locked
+          fi
+
+      # nextest 不跑 doctest（文档示例也算测试面，不能悄悄丢）。
+      - name: Test (doctests)
+        if: steps.scope.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo test $SCOPE_ARGS --locked --doc
+          else
+            cargo test --workspace --locked --doc
           fi
 
       # png feature（默认关）：单独测 + clippy，否则 CI 永远碰不到这些代码。
@@ -177,8 +248,15 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Gate self-test (positive + counterexamples)
         run: python3 scripts/module_budget.py --self-test
-      - name: Every file within budget or shrinking-only debt
+      - name: Every file within budget (default ratchet, whole repo)
         run: python3 scripts/module_budget.py
+      - name: Disk guard self-test (signal merge + size classes)
+        run: python3 scripts/disk_guard.py --self-test
+      # 观测轮：虚拟化层会把固态报成机械盘（WSL2 的 /dev/sdd 实测 rotational=1），
+      # runner 上报什么还没有证据 ⇒ 先只打印读数，拿到一轮真实结果再改成阻塞。
+      - name: Disk guard (build/test scratch off spinning disks)
+        run: python3 scripts/disk_guard.py --json
+        continue-on-error: true
 
   release-preflight:
     name: release preflight (self-test)
@@ -285,6 +363,19 @@ jobs:
       # 绿即合之前的证据审计：必需检查 skipped / 压根没上报 / run 里 0 个 job 都判红
       - name: Green audit self-test (execution evidence)
         run: python3 scripts/green_audit.py --self-test
+
+  alloc-guard:
+    name: alloc guard (limits enforcement)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 每条规则都要有真的会红的反证：死帽 / 无界读 / 无界分配 / 豁免要理由 / 读不到判红
+      - name: Self-test (dead-cap / unbounded-read / fallible-alloc)
+        run: python3 scripts/alloc_guard.py --self-test
+      # 审计 U-1/U-2/U-3 那类「上限不执法」的静态门：定义了没人用的帽、不带 take 的流式读
+      - name: Repo alloc guard
+        run: python3 scripts/alloc_guard.py
 
   flake:
     name: flake ledger (self-test)

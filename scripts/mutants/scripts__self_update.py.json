@@ -1,0 +1,65 @@
+[
+  {
+    "name": "self-update: 脏树不拦",
+    "file": "scripts/self_update.py",
+    "old": "    if status.strip():",
+    "new": "    if False:",
+    "pkg": "scripts/self_update.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "self-update: 分叉不拦",
+    "file": "scripts/self_update.py",
+    "old": "    else:\n        _, mb = git(root, \"merge-base\", old, new)",
+    "new": "    elif False:\n        _, mb = git(root, \"merge-base\", old, new)",
+    "pkg": "scripts/self_update.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "self-update: detached 不拦",
+    "file": "scripts/self_update.py",
+    "old": "    if rc_sym != 0:",
+    "new": "    if False:",
+    "pkg": "scripts/self_update.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "self-update: check 不 fetch",
+    "file": "scripts/self_update.py",
+    "old": "    if not offline:\n        rc_f, fout = git(root, \"fetch\", \"origin\", base)",
+    "new": "    if False:",
+    "pkg": "scripts/self_update.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "self-update: 门红不判红",
+    "file": "scripts/self_update.py",
+    "old": "    lines.append(\"零写入自证：status 前后逐字节一致\")\n    if red:",
+    "new": "    lines.append(\"零写入自证：status 前后逐字节一致\")\n    if False:",
+    "pkg": "scripts/self_update.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "self-update: fmt 用写模式（零写入自爆）",
+    "file": "scripts/self_update.py",
+    "old": "[\"cargo\", \"fmt\", \"--all\", \"--\", \"--check\"]",
+    "new": "[\"cargo\", \"fmt\", \"--all\"]",
+    "pkg": "scripts/self_update.py",
+    "filter": "",
+    "runner": "python"
+  },
+{
+ "name": "self-update: apply 不落地",
+ "file": "scripts/self_update.py",
+ "old": "        merge_rc, merge_out = git(root, \"merge\", \"--ff-only\", f\"origin/{base}\")",
+ "new": "        merge_rc, merge_out = 0, \"\"",
+ "pkg": "scripts/self_update.py",
+ "filter": "",
+ "runner": "python"
+}
+]

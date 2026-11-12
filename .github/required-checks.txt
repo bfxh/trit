@@ -22,3 +22,4 @@ mutation (changed crates)
 t3 fmt + clippy + test
 test surface (ratchet)
 merge forensics (self-test)
+alloc guard (limits enforcement)

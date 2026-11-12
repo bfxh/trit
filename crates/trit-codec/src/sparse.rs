@@ -15,6 +15,11 @@ use trit_core::value::Ternary;
 /// 一条稀疏记录：`(下标, 值)`。
 pub type Entry = (u32, Ternary);
 
+/// 解码长度硬顶：`len` 来自外部（CLI `--len`），下标本身是 `u32`。
+/// 超过这个值在分配**之前**拒绝——不是性能调优，是把「用 `usize::MAX` 撑爆内存」
+/// 从量纲上排除。`Ternary` 是 `repr(u8)`（1 字节），2^28 ≈ 256 MiB。
+pub const MAX_SPARSE_DECODE_LEN: usize = 1 << 28;
+
 /// 编码：只保留非 Unknown 的位置。
 pub fn encode(values: &[Ternary]) -> Vec<Entry> {
     values
@@ -25,11 +30,27 @@ pub fn encode(values: &[Ternary]) -> Vec<Entry> {
         .collect()
 }
 
+/// 长度上限校验（纯函数，不分配）：超过硬顶报 [`CodecError::SparseLenTooLarge`]。
+fn check_len(len: usize) -> Result<(), CodecError> {
+    if len > MAX_SPARSE_DECODE_LEN {
+        return Err(CodecError::SparseLenTooLarge {
+            len,
+            max: MAX_SPARSE_DECODE_LEN,
+        });
+    }
+    Ok(())
+}
+
 /// 解码：按 `len` 长度还原完整序列，未列出位置填 `Unknown`。
 ///
-/// 校验：下标必须严格递增、不越界、不重复；否则返回结构化错误而不是静默错。
+/// 校验：长度先过硬顶（分配前拒绝外部任意长度），再 fallible reservation；
+/// 下标必须严格递增、不越界、不重复；否则返回结构化错误而不是静默错。
 pub fn decode(entries: &[Entry], len: usize) -> Result<Vec<Ternary>, CodecError> {
-    let mut out = vec![Ternary::Unknown; len];
+    check_len(len)?;
+    let mut out: Vec<Ternary> = Vec::new();
+    out.try_reserve_exact(len)
+        .map_err(|_| CodecError::SparseAllocFailed { len })?;
+    out.resize(len, Ternary::Unknown);
     let mut prev: Option<u32> = None;
     for &(index, value) in entries {
         if index as usize >= len {
@@ -59,92 +80,4 @@ pub fn sparsity(entries: &[Entry], len: usize) -> f64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn empty_sequence_encodes_to_empty() {
-        assert!(encode(&[]).is_empty());
-        assert_eq!(decode(&[], 0).unwrap(), Vec::<Ternary>::new());
-    }
-
-    #[test]
-    fn all_unknown_compresses_to_nothing() {
-        let values = vec![Ternary::Unknown; 100];
-        let entries = encode(&values);
-        assert!(entries.is_empty());
-        assert_eq!(decode(&entries, 100).unwrap(), values);
-    }
-
-    #[test]
-    fn dense_keeps_everything() {
-        let values = vec![Ternary::True, Ternary::False, Ternary::True];
-        let entries = encode(&values);
-        assert_eq!(entries.len(), 3);
-        assert_eq!(decode(&entries, 3).unwrap(), values);
-    }
-
-    #[test]
-    fn sparse_middle_entries_are_preserved() {
-        // 位置 1 是 False，位置 3 是 True，其余 Unknown。
-        let values = vec![
-            Ternary::Unknown,
-            Ternary::False,
-            Ternary::Unknown,
-            Ternary::True,
-            Ternary::Unknown,
-        ];
-        let entries = encode(&values);
-        assert_eq!(entries, vec![(1, Ternary::False), (3, Ternary::True)]);
-        assert_eq!(decode(&entries, 5).unwrap(), values);
-    }
-
-    #[test]
-    fn out_of_range_index_is_rejected() {
-        let entries = vec![(5, Ternary::True)];
-        assert!(matches!(
-            decode(&entries, 3),
-            Err(CodecError::SparseIndexOutOfRange { index: 5, len: 3 })
-        ));
-    }
-
-    #[test]
-    fn duplicate_index_is_rejected() {
-        let entries = vec![(1, Ternary::True), (1, Ternary::False)];
-        assert!(matches!(
-            decode(&entries, 5),
-            Err(CodecError::SparseIndexNotIncreasing { .. })
-        ));
-    }
-
-    #[test]
-    fn unsorted_index_is_rejected() {
-        let entries = vec![(3, Ternary::True), (1, Ternary::False)];
-        assert!(matches!(
-            decode(&entries, 5),
-            Err(CodecError::SparseIndexNotIncreasing { prev: 3, found: 1 })
-        ));
-    }
-
-    #[test]
-    fn sparsity_makes_sense() {
-        let entries = vec![(0, Ternary::True), (4, Ternary::False)];
-        // 2/5 非零 → 稀疏率 0.6。
-        assert!((sparsity(&entries, 5) - 0.6).abs() < 1e-9);
-        assert_eq!(sparsity(&entries, 0), 0.0);
-    }
-
-    #[test]
-    fn round_trip_randomish() {
-        let values = vec![
-            Ternary::True,
-            Ternary::Unknown,
-            Ternary::Unknown,
-            Ternary::False,
-            Ternary::Unknown,
-            Ternary::True,
-        ];
-        let entries = encode(&values);
-        assert_eq!(decode(&entries, values.len()).unwrap(), values);
-    }
-}
+mod tests;

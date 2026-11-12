@@ -1,0 +1,15 @@
+[package]
+name = "trit-ir"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "三值表达式的 DAG IR 与 pass 框架（CSE + 双 oracle 等价验证）"
+
+[dependencies]
+trit-core.workspace = true
+trit-eval.workspace = true
+trit-sat.workspace = true
+trit-bdd.workspace = true
+thiserror = "2.0.21"

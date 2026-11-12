@@ -25,5 +25,131 @@
   "pkg": "scripts/hooks.py",
   "filter": "",
   "runner": "python"
+ },
+ {
+  "name": "hooks: 共享工作树提交不拦",
+  "file": "scripts/hooks.py",
+  "old": "    if in_shared(top, branch, env):",
+  "new": "    if False:",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: main 提交不拦",
+  "file": "scripts/hooks.py",
+  "old": "    if branch is not None and branch in MAIN_BRANCHES:\n        if env.get(\"TRIT_ALLOW_MAIN_COMMIT\") == \"1\":",
+  "new": "    if False:\n        if env.get(\"TRIT_ALLOW_MAIN_COMMIT\") == \"1\":",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 放行开关失效（共享树）",
+  "file": "scripts/hooks.py",
+  "old": "        if env.get(\"TRIT_ALLOW_SHARED_COMMIT\") == \"1\":",
+  "new": "        if False:",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 共享树把主干也当成分支",
+  "file": "scripts/hooks.py",
+  "old": "    if branch is not None and branch in MAIN_BRANCHES:\n        return False",
+  "new": "    if False:\n        return False",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 共享树切分支不切回",
+  "file": "scripts/hooks.py",
+  "old": "        rc, out = git(top, \"switch\", target, env={RECOVERY_ENV: \"1\"})",
+  "new": "        rc, out = 0, target",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 切回开关失效",
+  "file": "scripts/hooks.py",
+  "old": "    if env.get(\"TRIT_ALLOW_SHARED_SWITCH\") == \"1\":",
+  "new": "    if False:",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 重入保护失效",
+  "file": "scripts/hooks.py",
+  "old": "    if env.get(RECOVERY_ENV) == \"1\":\n        return 0",
+  "new": "    if False:\n        return 0",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 非共享树也强切分支",
+  "file": "scripts/hooks.py",
+  "old": "    if not in_shared(top, branch, env):\n        return 0",
+  "new": "    if False:\n        return 0",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 合并驱动不注册",
+  "file": "scripts/hooks.py",
+  "old": "        (f\"merge.{DRIVER_NAME}.driver\", command),",
+  "new": "        # 驱动条目被变异移除",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 驱动命令不指向稳定副本",
+  "file": "scripts/hooks.py",
+  "old": "    return f'\"{exe}\" \"{script}\" %O %A %B'",
+  "new": "    return f'\"{exe}\" %O %A %B'",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 稳定副本少装一个",
+  "file": "scripts/hooks.py",
+  "old": "        (here.parent / \"merge_json_union.py\", STABLE_DRIVER_SCRIPT),",
+  "new": "        # 副本被变异移除",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 卸载不清稳定副本",
+  "file": "scripts/hooks.py",
+  "old": "        if stable.exists():",
+  "new": "        if False:",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: 执行分支内脚本而不是稳定副本",
+  "file": "scripts/hooks.py",
+  "old": "\"$PY\" \"$HOOKS/trit-hooks.py\" hook-pre-commit",
+  "new": "\"$PY\" \"$(git rev-parse --show-toplevel)/scripts/hooks.py\" hook-pre-commit",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
+ },
+ {
+  "name": "hooks: pre-push 不跑负更新守卫",
+  "file": "scripts/hooks.py",
+  "old": "  printf '%s' \"$PUSH_INPUT\" | \"$PY\" \"$HOOKS/trit-update-guard.py\" prepush || exit 1",
+  "new": "  :",
+  "pkg": "scripts/hooks.py",
+  "filter": "",
+  "runner": "python"
  }
 ]

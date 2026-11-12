@@ -2,6 +2,569 @@
 
 ## [Unreleased]
 
+### Changed（trit-wspace：rANS 原型——不优于 WSP4 Huffman（负结果））
+
+- 静态 rANS（字节级，M=2^12）原型对 all-MiniLM-L6-v2 的 103 个 WSP2：**4,991,451** 字节（83.39%），
+  比 WSP4 Huffman **4,953,834**（82.76%）更大；大文件 +0.38%、160KB 文件 −0.5%。
+- 原因：频率归一化量化误差 + 512B 表头；Huffman 的整数码长损失反而更小。
+- 不做 rANS/算术编码；WSP4 保持 Huffman + method=0 回退。复算见 `docs/WSP3-RESULTS.md` §5。
+
+### Fixed（中期安全审计 U-1/U-2/U-3：资源耗尽与「上限不执法」）
+
+来源：`trit-audit-report.md`（bc46a8c 中期只读审计）三条未证资源耗尽发现，逐条复核成立并修复。
+
+- **U-1 `trit-codec` sparse 解码**：原来拿调用方 `--len` 直接 `vec![0u8; len]`，`usize::MAX` 即 OOM。
+  现在分配前先过 `check_len(len)` 硬顶 `MAX_SPARSE_DECODE_LEN = 1<<28`，再 `try_reserve_exact` fallible 兜底；
+  超限 `SparseLenTooLarge{len,max}`、分配失败 `SparseAllocFailed{len}` 两个结构化错误（纯谓词 `check_len` 可独立钉边界）。
+- **U-2 `trit-lsp` 帧与文档**：`framing.rs` 头行用 `Read::take(8KiB+1)` 限位、`Content-Length ≤ 16MiB`
+  （`frame_len_ok`）、body `try_reserve_exact`；`server.rs` 文档 `≤ 4MiB`、打开数 `≤ 256`
+  （纯谓词 `retention_problem`，`didOpen`/`didChange` 两处接线，删调用即被变异杀）。原来 `read_line` 无界 + `vec![0; len]` 无顶。
+- **U-2 同类牵连 `trit-immune` daemon**：`read_frame`（对端可为子进程 stdio / TCP 流 / 内存流）同样无界
+  `read_line` + `vec![0u8; len]`——**alloc_guard 门扫出来的牵连面**，同口径修复（头行 8KiB、帧 16MiB、`try_reserve_exact`）。
+- **U-3 `trit-net` probe**：`HARD_MAX_TOTAL_PROBES = 512` 原来是**死常量**（定义了没人用，64×32=2048 照样放行）。
+  `from_json` 去重后 `total += ports.len()` 累加，`total_probes_ok(total)` 执法，超顶 `ConfigTooHot`（拒绝不缩放）；
+  `run` 探测后的 `sleep` 改用 `sleep_budget(delay, elapsed, deadline)` 夹到剩余预算，不再把 deadline overshoot 一个 delay。
+  两个谓词（`total_probes_ok`/`sleep_budget`）拆进 `probe/budget.rs` 成纯函数，配确定性边界单测（见下「假信心变异修复」）。
+- 读数（`cargo test -q -p <crate> --locked`）：`trit-codec` 121 lib、`trit-lsp` 51 lib、
+  `trit-net` probe 22（`tests/probe.rs` 15 + `tests/probe_limits.rs` 2 + `probe/budget.rs` 5 纯谓词单测：+`allowlist_enforces_aggregate_probe_cap`、+`delay_sleep_is_clamped_to_deadline`、+`total_probes_ok_boundary`、+`sleep_budget` 四档）、
+  `trit-immune` `daemon::tests` 9（+3 帧帽边界）全过。
+- 变异（`mutation_check.py --pkg <crate>`）：codec 17 / lsp 11 / net 31 / immune 11 **全断言抓住，0 存活 0 假杀**。
+  修正一处假杀：把 `MAX_SPARSE_DECODE_LEN` 设 `usize::MAX` 会让测试里 `MAX+1` 常量溢出编译红（E0080，非行为杀），
+  改成定义处 `return Err(SparseLenTooLarge{..})` → `return Ok(())` 的语义变异（帽不动、校验恒放行 ⇒ 被边界测试杀）。
+- **U-3 后续：假信心变异修复（CI 实测暴露）**。`saturating_sub`→裸减这条变异原先**只被计时依赖的集成测试**
+  `delay_sleep_is_clamped_to_deadline` 杀：本机 Windows 慢（单次探测耗时 >deadline ⇒ `deadline - elapsed` 下溢 panic ⇒ 抓住），
+  CI ubuntu 快（探测耗时 <deadline ⇒ 不下溢、sleep 补偿到正好 deadline ⇒ `probed==1` 仍成立 ⇒ **存活**）。
+  只被「慢机器才触发的边界」杀掉的变异 = 假信心。修法：`total_probes_ok`/`sleep_budget` 拆进 `probe/budget.rs` 成纯函数 + 5 条确定性边界单测
+  （`sleep_budget_clamps_to_zero_when_elapsed_exceeds_deadline` 直接喂 elapsed=300ms>deadline=200ms，裸减变异**任何平台**都确定性 panic）；
+  3 条变异锚点改指 `budget.rs`、filter 换成纯谓词单测。**CI 变异门跑在快平台正是暴露这类假信心的地方——本地绿≠门绿。**
+  顺带修一处 rustdoc：`run` 的 pub 文档原链接私有 `sleep_budget`（`-D warnings` 下 `private_intra_doc_links` 红），改成普通 code span（非 `#[allow]`）。
+- 行棘轮合规：安全修复让 7 个生产/测试文件越过 `module_budget` 上限，按仓纪律「要腾地方就拆，别抬台账」**纯搬家**拆出 9 个新文件——
+  `sparse`/`server`/`daemon`/`framing` 的 `#[cfg(test)]` 测试模块 → 同级 `tests.rs`，`framing` 帧头 → `header.rs`，
+  `probe` 登记桥 → `probe/attach.rs`、预算谓词 → `probe/budget.rs`，`CodecError` → `error.rs`，probe 上限测试 → `tests/probe_limits.rs`；
+  `pub use` 保住公开 API，5 条变异锚点随代码改指新文件（didChange 守卫顺手收掉 clippy `collapsible_if`，改成 edition-2024 let-chain）。
+  **测试一条没少**：test_surface crate 计数只增不减（codec 137→140、lsp 46→53、immune 253→256、net 93→100，增量全是本次新增安全测试）。
+
+### Added（alloc_guard 静态门：把「上限不执法」变成会红的 CI 检查）
+
+审计三条的共同形状是「定义了上限却不执法 / 读与分配不设界」。新增 `scripts/alloc_guard.py` 把这类问题变成可复算静态门：
+
+- 三类规则：**死帽**（帽名常量含 `MAX` 或以 `_LIMIT/_CAP/_BOUND` 结尾，全工作区只出现一次=声明本身 ⇒ 拦）、
+  **无界读**（`read_line`/`read_until` 三行窗口内无 `take(n)` ⇒ 拦；`read_to_string`/`read_to_end` ⇒ 警）、
+  **可能无界分配**（裸长度 `vec![x; len]`/`with_capacity(len)`/`resize(len,..)` 且所在 fn 无 `try_reserve` ⇒ 警）。
+- 判红分两档（拦=证据不成立，警=要人看一眼）；豁免走 `scripts/alloc_guard_allow.json`，每条带 `file/kind/reason`（reviewed 例外，非静默忽略）；
+  fail-closed（`crates/*/src` 扫不到 `.rs` ⇒ 判红，「查不到≠没问题」）；`blank_rust` 涂白注释/字符串/raw 串，扫描器不扫自己的文档。
+- 自测 **16/16**（每规则一个真会红的反证 + 绿例真跑 + 接线走 `main()`/`scan()`）；
+  门**自身变异 8 条全抓住**（帽名丢 MAX / 死帽阈值放宽到 0 / take 守卫失效 / 无界读降警告 / 行注释不涂白 / 豁免不要理由 / try_reserve 识别失效 / 扫不到也判绿）。
+- 实测全仓（`python scripts/alloc_guard.py`）：**拦 0、警 381**（内部有界分配等需人看一眼）。
+  扫出两处无界读：`trit-cli/commands/repl.rs` 交互 stdin（人类输入限界，非远程帧攻击面 ⇒ 带理由豁免）、
+  `trit-immune/daemon.rs` `read_frame`（真同类 bug ⇒ 已修，见上）。
+- CI 接线：`ci.yml` 加 `alloc-guard` job（`name: alloc guard (limits enforcement)`，self-test + repo scan），
+  `.github/required-checks.txt` 登记同名；`ci_integrity.py` 本地 **21 项**必需检查都对得上、`ci_budget.py --offline` 绿（job 40→41）。
+  远端分支保护同步待合入后 `gitflow branch protect --apply`（先 dry-run），再 `ci_integrity.py --remote` 对账。
+### Changed（trit-wspace：WSP4 无损验证——103/103 逐字节一致）
+
+- all-MiniLM-L6-v2 的 103 个张量：`.wsp4` 全部 `unpack-artifact` 回 WSP1，与原始 `.wsp`
+  **逐字节一致**（`cmp -s` 103/103）。复算命令见 `docs/WSP3-RESULTS.md` §4。
+
+### Added（trit-wspace：WSP4——WSP2 的静态 Huffman 二级压缩）
+
+- `wsp4::huffman_encode` / `huffman_decode`：字节级静态 Huffman（256 码长 + MSB-first 位流），
+  无外部依赖；码长 >32 或压缩不更小时回退 method=0 原样存。
+- `to_wsp4` / `from_wsp4`：`magic "WSP4" | version 1 | method u8 | raw_len u64 | 码长/位流 | checksum`。
+- CLI：`pack-artifact --huffman` 输出 WSP4，`unpack-artifact` 按 magic 自动识别 WSP2/WSP3/WSP4。
+- 真实读数（all-MiniLM-L6-v2，103 张量）：WSP2 5,985,699 → **WSP4 4,953,834（82.7%，省 17.3%）**；
+  字节熵 6.561 bit/byte，理论下限 82.0%。复算见 `docs/WSP3-RESULTS.md` §4。
+- 测试 378 → 383（`tests/wsp4.rs` 5 条）；变异 +3。
+- 未证栏：没有做 rANS/算术编码（Huffman 整数码长损失约 0.7 pp）；没有在更大模型上复测。
+
+### Added（governance：self_update --apply——一键更新落地）
+
+- `scripts/self_update.py --apply`：预检（干净/非 detached/fetch/快进/分叉）→ `git merge --ff-only`
+  → `cargo fetch --locked`（存在 `Cargo.lock` 时）→ 只读门 → 报告旧/新 SHA 与 `git reset --hard` 回滚命令。
+  不提交、不推送、不合并；台账默认只读，依赖升级仍要人审。
+- 脏树 / 分叉 / detached 拒绝且零改动；`--offline` 不 fetch、不跑 `cargo fetch`。
+- 自测 22 → 28（新增 apply 快进真落地、已最新、脏树、分叉）；`docs/AUTO-UPDATE.md` 状态与验收判据同步。
+- 未证栏：`cargo fetch` 失败只报告回滚命令，不自动执行；没有与 `trit-vcs` 的 ref 更新对接。
+
+### Changed（trit-wspace：WSP3 实测——真实 MiniLM 上 RLE 无收益）
+
+- 读数：all-MiniLM-L6-v2 的 103 个张量 WSP1 **46,608,788** → WSP2 **5,985,699**（12.8%）→
+  WSP3 **6,025,083**（100.7% of WSP2，反而更大）。复算见 `docs/WSP3-RESULTS.md`。
+- 原因：trit 平均游程 **1.500**、游程 ≥3 仅 **11.1%**、熵 **1.584 bit/trit**（固定 2-bit；
+  熵编码理论下限 79.2% of WSP2）。字节级与三值级 RLE 都拿不到收益。
+- WSP3 的模块文档与 `docs/WSP3-RESULTS.md` 标注边界：只用于低熵/全同工件，真实权重用 WSP2。
+- 未证栏：其他模型的熵可能更低；没有在更大模型/GPU 上复测；没有实现 Huffman/算术编码。
+
+### Added（trit-wspace：WSP3——WSP2 的 RLE 二级压缩）
+
+- `wsp3::rle_encode` / `rle_decode`：PackBits（literal 1–128 字节 / 重复 3–130 字节），无外部依赖。
+- `to_wsp3` / `from_wsp3`：`magic "WSP3" | version u8=1 | raw_len u64 | PackBits 流 | checksum u64`；
+  解包先还原 WSP2 再回 WSP1。CLI `pack-artifact --rle` 输出 WSP3，`unpack-artifact` 按 magic 自动识别。
+- 读数：全同 trit 的 8×32 单层网络（256 trit）WSP2 → WSP3 体积缩小（`tests/wsp3.rs` 断言
+  `wsp3.len() < wsp2.len()`；RLE 全模式往返 6 组，含 300 字节长 run）。
+- 测试 373 → 378（`tests/wsp3.rs` 5 条）；变异 +3（重复段长度、解压长度、版本校验）。
+- 未证栏：只有字节级 RLE，没有 zstd/字典压缩；真实 MiniLM 的 WSP2→WSP3 压缩率未测；
+  WSP3 不是规范形式，仍以 WSP1 为准。
+
+### Added（trit-wspace：DARE 路径返回投票报告）
+
+- `merge_tasks_{weighted_,}dare_report` / `merge_tasks_{weighted_,}per_task_dare_report`：
+  先投票再稀疏化（或先稀疏化再投票），同时返回**投票阶段**的 `MergeReport`。
+- CLI `task-merge --dare-rate/--dare-per-task` 与 MCP `wsp_task_merge` 的 `merge_report`
+  不再为 `null`；报告字段与同一权重下的普通合并一致。
+- 报告新增 `dropped`（DARE 实际丢弃的差分坐标数，普通合并与 `rate=0` 为 0）：
+  「先投票再稀疏化」取 `dare_drop` 的读数；per-task 路径取各任务被丢编辑的累计。
+- 等权版本委托给加权版本（`[1.0; n]`），逐位一致由测试钉住。
+- 测试 369 → 373（新增 `tests/task_dare_report.rs` 4 条）；变异 +5
+  （报告等权、rate=0 返回基准、CLI 报告恒 null、丢弃计数恒 0、per-task 计数不累加）。
+- 未证栏：per-task 的 `dropped` 是各任务被丢编辑的累计，不是去重后的坐标数；
+  `dare_drop_rows` / `dare_drop_layers` 的块级重标度细节仍未进报告。
+
+### Added（branch prune 认 squash 合并证据：预算红可收口）
+
+- `scripts/gitflow.py branch prune`：原来只认 `git branch --merged <base>` 的祖先关系，
+  squash 合并把分支压成一个新提交、本地 tip 不是 base 祖先 ⇒ 认不出，229>180 的分支预算红无法收口。
+  现在加一路 **MERGED PR 证据**：`gh pr list --state merged --json headRefName,headRefOid`，
+  本地 tip == PR headRefOid 才算可删（`evidence_candidates` 纯函数）。
+- 删除口径分两路：祖先候选用 `git branch -d`，PR 证据候选用 `-D`（squash 分支 `-d` 删不掉）。
+  五道守卫：tip 不一致（本地多了提交）/ 当前分支 / 受保护分支 / 别的 worktree 正检出 / 无 MERGED 记录 ⇒ 一律不删。
+- fail-closed：`gh` 读不到清单（rc≠0 / 输出非 JSON）⇒ rc1「读不到…不删任何分支」，
+  真空集（`[]`，真的没有已合 PR）与取不到分成两个状态；默认 dry-run，`--apply` 才删。
+- 自测 166 条（+12）：7 条纯函数逐守卫反证 + 5 条接线（真走 `branch_prune`，monkeypatch git/gh）：
+  dry-run 不删且点名两类 / 祖先 -d 证据 -D / gh 读不到判红 / 真空集只删祖先 / tip 不一致不删。
+- 变异 112 条（+7）全断言抓住：tip 不一致也删 / 保护分支也删 / 当前分支也删 / 检出中也删 /
+  读不到清单当没有 / 证据也用 -d / dry-run 真删。
+- 实测：本地 229 分支，`branch prune` dry-run 点名 165 个可删（0 祖先 + 165 PR 证据；
+  当前/保护/别的 worktree 检出中/tip 不一致已排除）⇒ `--apply` 后 229→64，低于 180 预算。
+
+### Added（mutation 分片：--shard i/n + CI full 4 片矩阵与逐条对账聚合）
+
+- `scripts/mutation_check.py --shard i/n`：crc32(file\0name) 稳定分片（不依赖登记顺序/对象身份），
+  越界/形状错 ⇒ rc2；空片是真空集，明说后放行；大声打 `SHARD i/n` 部分跑声明；
+  preflight 只查所选。各片必须在不同检出里跑（同树有单实例锁与共享文件）。
+- `--partition n [--logs <目录>]` 聚合门（不跑测试）：划分必须是干净划分（漏片/重复落片分开点名）；
+  给了日志再逐条对账——全表每条恰好一个判决且是杀死，缺判决/不认识/重复/非杀死/读不到日志全判红。
+- CI `mutation.yml`：full 改 4 片矩阵（`full-shard`，fail-fast: false，各片上传日志）+
+  聚合 job 保持原名 `mutation (full)`（非 required；`always()` 保证某片红了聚合仍逐条点名，不静默 skipped）。
+  required 的两个名字（`mutation gate (self-test)` / `mutation (changed crates)`）不动。
+  每片 timeout 30 分钟（ci_budget 单 job 预算内）；`.github/ci-budget.txt` 同步：
+  旧 `mutation#120` 豁免换成 `full-shard#30` + `full#10`（首跑后回填中位数）。
+- 自测 121 条（+35）：划分性质/确定性/越界 rc2/真空集/preflight 只查所选（真走 main）/
+  判决行解析（缩进汇总不重计）/聚合红绿往返（漏片、重复、缺判决、unknown、非杀死、无日志、空表）。
+- 变异 32 条（+11）全断言抓住：shard 不选择 / 哈希按对象身份 / 越界不拒 / preflight 查全量 /
+  真空片不放行 / 不声明部分跑 / 聚合漏片·重复·覆盖缺口不判红 / 判决解析漏 caught / 聚合空表放行。
+  实测全表 1498 条 4 片 = [380, 367, 393, 358]；CI 并行时长与 caught 集合对账待合入后 dispatch 实测。
+
+### Added（一键更新第一步：self_update --check 零写入预检）
+
+- 新增 `scripts/self_update.py --check`：非 detached + 干净树预检；fetch（`--offline` 跳过）；
+  快进/分叉分类（分叉 ⇒ rc1，打印旧 SHA、新 SHA、分叉点）；只读门读数
+  （`cargo fmt --all -- --check` + 按存在性挑的六个 python 门，空集明说「不是绿」）；
+  零写入自证（`git status --porcelain` 前后逐字节一致，不一致 ⇒ rc1 大声报）。
+- 脏树 / fetch 失败 / offline 无 origin / 门红 ⇒ rc1 点名；`--apply` 未实现 ⇒ rc2。
+- 自测 22 条（夹具 git 仓真跑 fetch/clone/push，含 fmt 红绿与 python 门红绿）；
+  变异 6 条全抓住（脏树不拦 / 分叉不拦 / detached 不拦 / 不 fetch / 门红不判红 / fmt 写模式）。
+- `docs/AUTO-UPDATE.md` 状态改第一步已实现；未证：`--apply`、trit-vcs 对接、
+  零写入自证无独立反证（等价变异不登记）。
+
+### Added（claim 自动牵连面：未认领下游点名，--strict 判红）
+
+- `scripts/agent_claims.py`：`claim` 登记后自动跑 `impact.py`（子进程复用，不重造图）：
+  `--root` 显式指定检出；缺省按 cwd 检出的 origin 尾段匹配 `--repo`（不匹配 ⇒ 警并不算）；
+  整仓声明跳过；cargo 取证失败 ⇒ 警（看不见不等于没有牵连）；`--no-impact` 跳过。
+- 未认领的牵连 crate 逐个点名、dev-only 单列；`--strict` 有未认领 ⇒ rc1（声明仍写入），
+  下游补认领后转绿。实测认领 `crates/trit-core/src`：闭包 37/44、未认领 36 点名、
+  dev-only `trit-float`/`trit-gpu`、风险 high、建议 `cargo test --workspace`。
+- 自测 112 条（+13）：合成 cargo workspace 真跑 `cargo metadata`，覆盖自动匹配 / 仓不匹配 /
+  取证失败 / 整仓 / `--no-impact` / `--strict` 红绿往返。
+- 变异 49 条（+5）全抓住：断言 48 + 崩溃 1（崩溃项为旧变异「同仓不相交不出声」，与上轮一致）；
+  新变异「strict 不拦 / 取证失败静默 / 吞输出不点名 / 整仓也窄化 / 不核对检出仓」均被断言钉住。
+
+### Fixed（三条“未证栏”收口：依赖 kind 分账 / range-diff 取证 / 棘轮删除感知）
+
+- `scripts/impact.py`：反向依赖按 `cargo metadata` 的 `kind` 分账——normal+build 进 `runtime`，
+  dev 只进测试闭包并单列 `dev_only`；风险按运行时闭包判。实测改 `trit-core` 一个文件：
+  **运行时 35/44、测试面 37/44、dev-only 2**（原先把 dev 混进来报 37/44 偏保守）。
+- `scripts/branch_update.py`：补丁等价（`git cherry` 全 `-`）时再跑 `git range-diff` 取证：
+  旧提交在新历史里无对应（`<`）与等价结论矛盾 ⇒ 拦；`!` 且文件区有 +/- ⇒ 点名“落点不同”
+  交人工确认（rebase 到新基线是常态，不直接拦）。amend 只改提交消息不会误报。
+- `scripts/branch_update.py`：棘轮回退改为删除感知——台账单位/上限消失时先查新树里文件或 crate
+  是否还在：随文件删除 ⇒ 删减放行；文件还在而测试变少/上限放松 ⇒ 仍拦。
+- 自测：branch_update 27 条（+4）、impact 21 条（+3）；变异 branch_update 11 条 + impact 7 条，
+  全部抓住（含“删除也当回退”“现存单位丢失不拦”“dev 当运行时”“不做 range-diff 取证”）。
+- 仍未证：`range-diff` 的落点变化只做提示不做定罪；dev-only 牵连的风险档仍是近似；
+  `git cherry` 的补丁等价语义未被替换，只是多了一层矛盾检查。
+
+## [Unreleased]
+
+### Added（更新 / 认领 / 牵连三项判据：负更新守卫、方案优先裁决、改动牵连面）
+
+- 新增 `scripts/branch_update.py`：更新分类为 new-branch / fast-forward / clean-rewrite /
+  **negative-update**（old 上有提交在新历史里没有等价补丁）/ unknown-old，并检查三本棘轮台账回退
+  （测试面变小、模块预算上限放松或消失、CHANGELOG 变小、盘符路径变多）⇒ 拦。
+  已接进 `pre-push`（稳定副本 `trit-update-guard.py`）：推任何 `refs/heads/*` 先过一遍；
+  `ALLOW_NON_FF_PUSH=1` 与 `ALLOW_RATCHET_PUSH=1` 分开授权。
+- `scripts/agent_claims.py`：名单读改写加**文件锁**（并发 claim 曾撞出同名 id `c3`）；
+  `claim --plan/--plan-file` 把方案存 `CLAIMS.plans/`；新增 `compare`（重叠时并排比较方案，
+  缺方案判红）、`plan`（补方案）、`repair [--apply]`（修历史重复 id）。
+  规则入 `AGENTS.md`：重叠裁决看方案质量（问题解释 / 兼容 / 牵连 / 回滚 / 验证），不是先到先得。
+- 新增 `scripts/impact.py`：改动文件 → crate → 反向依赖闭包，给风险档与建议门，并用 `--claims`
+  列出「会被牵连但没人认领」的 crate（防止“我只认领了 core，下游 12 个 crate 不知道”）。
+  实测：改 `trit-core` 一个文件牵连 **37/44** 个 crate（84%）。
+- 新增 `docs/DEEP-RISK-MAP.md`：本轮判据、仍未修的 12 项深层问题（trit-vcs 无 CAS、服务端不认
+  merge driver、测试选择、feature 矩阵、API 兼容、语义冲突等）与技术/论文对照。
+- 自测：branch_update 23 条、impact 18 条、hooks 59 条、agent_claims 99 条；
+  变异 6 + 5 + 17 + 44 条全部逐条跑（读数见 PR）。
+### Changed（trit-wspace：WSP2 v2 支持 f32 bias + 自动更新/VCS 文档）
+
+- WSP2 版本 2：每层加 `flags u8`（bit0 = 有 `biasf`），随后 `rows × f32`；v1 仍可解码。
+  `to_wsp2` 不再拒绝带 `biasf` 的层；`from_wsp2` 接受 v1/v2，未知 flags 位报错。
+  真实 MiniLM 带 `biasf` 的 WSP1：**300K → 40K（7.5×）**，解包逐字节一致。
+- 文档：`docs/AUTO-UPDATE.md`（一键更新草案，账本 A415）、`docs/VCS-BRANCH-ISSUES.md`
+  （trit-vcs 分支/更新问题清单，只记录不修）；`docs/ROADMAP.md` 加“自动化与跨仓（待办）”。
+- 模块预算：`wsp2.rs` 202→139（字节助手移到 `wsp2/bytes.rs`）、`tests/wsp2.rs` 209→175
+  （v1/biasf 测试移到 `tests/wsp2_extra.rs`）、`tests/safetensors_bias.rs` 415→411。
+- 测试 370 → 372（`tests/wsp2.rs` 10 条 + `tests/safetensors_bias.rs` 11 条）；变异 326 → 328（+2）。
+
+### Fixed（钩子稳定副本：老分支不再被 rc=2 误伤）
+
+- 事故（2026-11-12 安装后实测）：`pre-commit` 调的是**当前分支**的 `scripts/hooks.py`；老分支没有
+  `hook-pre-commit` 子命令 ⇒ 打印帮助并 rc=2，把老分支（含共享工作树）的所有提交误伤掉。
+- `hooks.py install` 现在把自身与 `scripts/merge_json_union.py` 复制为 hooks 目录里的稳定副本
+  （`trit-hooks.py` / `trit-json-union.py`，绝对路径写入驱动配置）；钩子与合并驱动都指向副本，
+  分支内容老旧或缺失也照常执法；`uninstall` 一并清理；`status` 会点名副本是否缺失。
+- 回归断言：安装后删掉分支里的 `scripts/hooks.py`，共享工作树上的提交仍被策略拦住
+  （rc≠0 且消息可读，而不是落到 python 的 “can't open file”）。变异 +4（少装副本、卸载不清、
+  驱动不指向副本、执行分支内脚本），全抓。
+
+### Added（多会话事故的落点执法：提交/切分支钩子 + 棘轮台账合并驱动）
+
+- `scripts/hooks.py` 从只装 `pre-push` 扩到装三道钩子：`pre-commit`（共享工作树停在非 main 或 detached
+  时拒绝提交；main 上的提交一律拒绝；`TRIT_ALLOW_SHARED_COMMIT=1` / `TRIT_ALLOW_MAIN_COMMIT=1` 点对点放行）、
+  `post-checkout`（共享工作树被切到非 main 时自动切回 main，切不回大声报；`TRIT_ALLOW_SHARED_SWITCH=1` 放行）、
+  `pre-push`（原有：直推 main + 高置信度密钥扫描）。共享树清单默认 `trit-wspace-wt`，可用
+  `TRIT_SHARED_WORKTREES`（`os.pathsep` 分隔）覆盖；钩子经 `git rev-parse --git-path hooks` 定位，worktree 里也能装。
+- 新增 `scripts/merge_json_union.py`：`merge=json-union` 驱动，按台账形状做确定性 union
+  （测试面取 max、模块预算取 min、文档卫生 `changelog`/`drive_paths` 取 min），不认识形状 fail-closed 留给 git 报冲突；
+  `.gitattributes` 为三本基线登记；`hooks.py install` 同时写 `merge.json-union.driver`，`uninstall` 一并移除。
+- 自测都接真 git：`hooks.py --self-test` 48 条（真实 `git commit` 被拦、`git switch -c` 被弹回、
+  detached 弹回、非共享树不动、重入保护、驱动配置写入/移除）；`merge_json_union.py --self-test` 12 条
+  （临时仓里让 git 真调驱动：并集合并出 `{"a":3,"b":2}`、坏形状落到冲突）。
+- 变异登记：hooks 13 条 + merge 驱动 6 条，逐条抓住；其中「合并失败仍报成功」只有接线断言能抓，
+  纯函数自测抓不到——这也是把 `git merge` 场景写进自测的原因。
+### Added（trit-wspace：合并保留 f32 偏置）
+
+- `merge_vote` / `merge_aligned`：两网同层都有 `bias_f32` 时逐行取平均；任一方缺失则保持无幅度。
+- `TaskVector` 记录逐行 f32 偏置差分（`(layer, row, Option<f32>)`）；`merge_tasks` 等权平均、
+  `merge_tasks_weighted` 按权重加权（权重 0 不参与），任一参与任务缺该行 ⇒ 该层清空。
+  `merge_tasks_dare` / `merge_tasks_weighted_dare` 在稀疏化后重新贴回合并幅度；
+  per-task DARE 继承原任务幅度。
+- 缩放规则：`λ > 0` 原样保留；`λ <= 0`（全局/层/行/块，含模式与映射）丢弃该任务的全部
+  f32 偏置——幅度无法与取反/丢弃后的三值语义一一对应，宁可退回三值符号。
+- 读数：`cargo test -p trit-wspace --locked` ⇒ **367 passed**（新增 `merge_bias_f32` 9 条）；
+  变异 `trit-wspace` 328 → **332**（+4：投票不平均、加权忽略权重、缺失不清空、DARE 丢掉幅度，逐条抓住）。
+
+### Changed（门：模块预算改默认全量棘轮 + 一次性重录基线；新增磁盘介质门）
+
+- `scripts/module_budget.py`：扫描面从 `crates/*` 扩到全仓 `.rs`（跳过 target/.git 等），每个文件一条上限、只减不增；
+  `GREW`/`UNCAPPED`/`OVER` 判红，`STALE`/`ORPHAN` 只提醒；`--update` 只登记与收紧、**永不抬高**。
+- **采纳时一次性重录基线**（2026-11-12）：旧台账停在 2026-11-01，主线此后新增 303 个文件、33 个变胖；
+  按“采纳新棘轮时在合入时刻记录一次”的口径重录（810 文件、over-budget 债务 0），此后只减不增。
+- 为满足 OVER 硬线（未登记且 >800 行先拆），把 `other-languages/asm/src/main.rs`（950 行）拆成
+  `main.rs` + `checks.rs`（665 + 295 行）；`cargo run -- --conformance` 实测 k3 21 / belnap 36 / pack5 644 全过。
+- 修模块预算自测一个真漏洞：`expect(ok=True, needle=...)` 原先短路、不检查 needle，STALE/ORPHAN 断言形同虚设；
+  修后自测 16/16，且 8 条变异（OVER/GREW/STALE/ORPHAN/refuse-raise/新超预算/cap 读取/格式识别）全部抓住。
+- 修 `disk_guard.py` 自测失败行格式：`FAIL（得到 …） 名称` 的全角括号紧跟 `FAIL`（没有空格），
+  `mutation_check` 点名探针只认 `FAIL ` ⇒ 5 条变异被判“未点名”（#238 之后直接判红）；
+  改成 `FAIL <名称>（得到 …）`，现在 12/12 点名抓住。
+- `disk_guard.py` 自测的“真实探针”在 hosted runner 上显式 SKIP 并打印读数（Azure 虚拟盘常把 /dev/sda
+  报 rotational=1，用户改不了）；开发者本机仍严格判红。CI 的检查步保持观测轮（continue-on-error）。
+- 新增磁盘介质门 `scripts/disk_guard.py`（构建/测试必须落固态，三路介质证据合成 + ALLOWED 逃生口），
+  CI 增加 `disk guard` job（timeout + 自测 + `--json`）；其 12 条变异登记保留。
+
+### Added（运行时底层：`trit-mmap` + `trit-simd`）
+
+- 新 crate `crates/trit-mmap`（ops）：只读文件映射（Unix `mmap` / Windows `CreateFileMappingW` + `MapViewOfFile`）；
+  空文件返回空切片；`Drop` 释放；错误结构化（IO / 过大 / 映射失败）。**安全边界**写在 crate 文档：
+  映射后文件被外部改写属未定义行为。
+- 新 crate `crates/trit-simd`（ops）：`popcount_words` / `hamming_words` 运行时派发 ——
+  x86_64: AVX512(VPOPCNTDQ) → POPCNT → 标量；aarch64: NEON → 标量。
+  **AVX512 在 MSRV 1.88 上是 nightly 特性**：`build.rs` 读 `rustc --version` 发 `has_avx512` cfg，
+  1.88 构建自动走 POPCNT/标量（1.99 实测 AVX512 代码可编译；本机 CPU 无 AVX512，运行期由探测降级）。
+- 读数：`cargo test -p trit-mmap -p trit-simd` = 4 + 6 条；全长度（0..=33 + 4096）与标量参考逐一对拍；
+  强制 POPCNT 路径对拍；Hamming 对称性与长度错误；映射内容逐字节对拍；变异 6/6 抓住。
+- 跨平台验证：`cargo check --target aarch64-unknown-linux-gnu -p trit-simd` 通过（NEON 分支编译）；
+  MSRV 1.88 `check --all-targets` 通过。
+
+### Changed（docs：N1 批次规则集 v2 全量复扫读数入册）
+
+- `docs/CALIBRATION.md` 产线读数表追加 2026-11-12 行：53 样本规则集 v2 全量复扫——636 判定（false 537 / unknown 84 / true 15，良性无新误报）；`fn.injection_ordered`（CFG 地址序注入三件套）sim_lvl4 True、良性 47 条全 false/unknown（PE32 象限 xref 不完整如实 unknown）；ARM64 `stack_strings` 解码链 FPR 0/12——四象限词汇表统一，L6 逃逸形态平台盲区清零。
+
+### Added（`trit-num`：数值原语——补偿求和 / Welford / 最小二乘 / 插补）
+
+- 新 crate `crates/trit-num`（ops 层）：`sum_neumaier`（补偿求和）、`Welford`（流式均值/方差，可合并）、
+  `ols_f64` / `ols_f32`（正规方程 + Cholesky；**截距不参与正则化**；奇异 ⇒ 结构化错误）、
+  `median` / `mad`、`impute_mean` / `impute_median` / `impute_linear`。
+- 判据：`cargo test -p trit-num` = 16 单测 + 2 集成；精确直线恢复 <1e-12、岭回归解共线、
+  奇异/维度/非有限输入全部结构化报错；f64 vs f32 同题（固定种子 128×3）系数相对偏差 <1e-4，
+  且 f64 对真值的误差小于 f32；Neumaier 在 `1e16+1−1e16` 上得 1（朴素累加得 0，作为对照断言）。
+- 变异门 7/7 抓住（过程中修掉两个“测试自身不严”的坑：锚点是更长标识符的前缀、共线夹具其实可逆）。
+### Added（`trit-gamescan`：游戏环境扫描 / 故障注入 / 恢复 Phase 0）
+
+- 新 crate `crates/trit-gamescan`（实验层，`publish = false`）：只依赖 `trit-core`，不依赖引擎或 MCP SDK；引擎/协议依赖留给 adapter crate。
+- 三值判定直接复用 `trit_core::Ternary`（Kleene）：`True` 通过、`False` 失败、`Unknown` 证据不足；聚合用 `&`，不把 `Unknown` 当 `Pass`。
+- 规范化 `WorldSnapshot`（实体/资源/collider + 稳定哈希）：结构规则覆盖重复 ID、悬空 parent、层级环、非有限 Transform、零 scale、非归一化 quaternion、重复资源键。
+- `PenetrationOracle`：sphere/capsule/box 两两 collider 穿透检测（OBB 15 轴 SAT、capsule-box slab + 三元搜索最近点）；trigger/层过滤；非均匀缩放 sphere/capsule 返回 `Unknown`。
+- 受控污染事务：checkpoint → 注入 → 扫描 → 默认回滚 → 验证；checkpoint 失败降级 pristine，再失败 quarantine；apply 中途失败也回滚；恢复本身有 restore/verify/apply 三类混沌测试。
+- 读数（可复算）：`cargo test -p trit-gamescan` = 2 单测 + 9 penetration 集成 + 15 Phase 0 集成（共 26 条）；`cargo clippy -p trit-gamescan --all-targets -- -D warnings` 通过；单文件均在 800 行预算内。
+- 门禁登记：`scripts/test_surface_baseline.json` 登记 `crate/trit-gamescan: 26`；`scripts/mutants/trit-gamescan.json` 8 条变异，本地 `mutation_check.py --pkg trit-gamescan` 8/8 抓住。
+- 说明文档：`docs/GAME-SCAN.md`；OpenAI FUSF 论文只作为“观测/规则分离、无根等变、Borel 因子≠finitary 局部算法”的设计参考，不声称其证明本 crate。
+
+### Added（`trit-ir`：DAG IR + pass 框架 + 双 oracle 等价验证）
+
+- 新 crate `crates/trit-ir`（algo 层）：有序 arena **DAG IR**（子节点下标小于父节点，求值一趟线性扫描；
+  `to_expr` 可展开回树）；`eval` 语义与 `trit-eval` 逐点一致（含 `Xor = strong_add`）。
+- pass 框架：`ConstantFold`（常量子树折叠，折叠后剪掉不可达节点）、`Simplify`（复用 `trit-eval` 的代数感知化简器）、
+  `Cse`（结构哈希合并重复子表达式，DAG 共享）；`Pipeline::run_verified` 在每一步后用
+  **`trit-sat` 符号判定 + `trit-bdd`** 双 oracle 证明「新 IR ≡ 旧 IR」，判不等价或 oracle 算不出来都直接判红。
+- 读数：`cargo test -p trit-ir` = 12 单测 + 4 集成；批量表达式 × 三语义在全部赋值上逐点一致；
+  默认管道对 `(a&b)|(a&b)` 节点 7 → 4（CSE 合回）；变异 8/8 抓住。
+- CI 韧性：`Install iverilog (Linux)` 先快试默认源，失败切 `azure.archive.ubuntu.com` 兜底并重试 3 次（应对 GitHub runner 的 `security.ubuntu.com` DNS 成片失败）；全部失败仍判红（不许静默跳过）。
+- 口径记录：`Simplify` 会把 DAG 展开成树，因此必须排在 `Cse` 之前；重跑管道时最终 IR 收敛但中间计数会波动
+  （测试按“收敛点”判定，不按“第二遍零改写”）。
+
+### Added（底层代数补齐：`trit-mv` + `trit-belnap` 双格）
+
+- 新 crate `crates/trit-mv`（base 层）：有限 Łukasiewicz 链 `Ł_{n+1}`，取值 `0..=n` 整数精确；
+  4 种 t-norm（Minimum / Łukasiewicz / Drastic / 幂零最小）+ 对偶 t-conorm + residuum
+  （Drastic 非左连续，返回结构化 `NoResiduum`）。**Product 明确不收**：离散化后不满足结合律。
+- 判据：链上公理穷举（交换/结合/单位/单调，`levels=1..=5` × 4 族）、伴随律（左连续三种，`levels=1..=5`）、
+  `levels=2` 与 `trit-core` Kleene 弱运算逐点对拍（9 组）、Ł3 已知表（`U⊗U=F`、`U→U=T`）；变异 7/7。
+- `trit-belnap` 补齐双格面：共识 `⊗`、轻信 `⊕`、共轭 `¬ₖ`、真序/知识序比较、
+  `merge_truth` / `merge_knowledge`（多源合并，空集 ⇒ N）。
+- 过程中更正一个真实误解：**知识序的 De Morgan 不成立**（Belnap 否定只对真序是 De Morgan 否定），
+  需要 conflation `¬ₖ`；已写进测试与文档，并给 conflation 钉死真值表（防“换一种反自同构也满足律”的等价变异）。
+- 读数：`cargo test -p trit-mv -p trit-belnap` = trit-mv 7 单测 + 2 集成 + trit-belnap 14 单测（共 23 条）；变异 16/16（mv 7 + belnap 9）；
+  `docs/ROADMAP.md` §2 两行标记已建；`docs/DATA-CLEANING-PLAN.md` 的 D/G 前置已解除。
+
+### Added（trit-clean C3：三支决策门 accept / reject / defer）
+
+- `gate`：每行输出一个动作与结构化原因码（Clean / Violating / UnknownOnly / TableViolation /
+  Completion / SampledCompletion）。两种策略：`Policy::Loss`（代价矩阵最小化期望损失，平局默认 defer，
+  1e-12 容差）与 `Policy::Thresholds`（`p >= accept_at` 收、`p <= reject_at` 拒、其余转人工）。
+- 证据口径：有填充集的行用 `completions_or_sample` 的一致比例（精确或抽样，原因码写明样本数）；
+  无证据时按规则状态推导（干净 1.0 / 只 Unknown 0.5 / 有 False 0.0 / 表级 UNIQUE 冲突 0.5 转人工）。
+- `scan_confidence`：对称置信阈值扫描，输出每个阈值下的 accept/reject/defer 计数与期望总代价（单调性有测试）。
+- 判据：`cargo test -p trit-clean --locked` 共 55 条（40 单测 + 3 BDD 交叉 + 6 SQLite + 5 暴力 + 1 doctest）；
+  变异门 16/16 抓住（新增 4 条：平局默认 accept / 接受阈值错位 / 有 False 按干净 / 扫描阈值错位）。
+
+### Added（trit-clean C2b：BDD×DPLL 交叉校验 + 超限抽样 + UNIQUE 自动范围）
+
+- `crosscheck`：同一份 CNF 用 `biodivine-lib-bdd` 独立计数，与 DPLL 对拍；不一致 ⇒ `CrosscheckMismatch`
+  结构化错误（响亮失败）；BDD 节点超 200k 跳过校验并在报告里标 `None`（“没校验到”≠“通过”）。
+- `completions_or_sample`：精确计数变量超 120 时按显式预算抽样（固定种子 SplitMix64 可复算），
+  结果带 `Sampled` 标记与 Wilson 95% 区间；预算为 0 直接报错。绝不静默降级。
+- `minimal_repairs_auto`：有域的列在所有行上的格子自动成为候选（`UNIQUE` 跨行冲突不用手工列举），
+  仍受候选格上限约束。
+- 判据：`cargo test -p trit-clean --locked` 共 45 条（30 单测 + 3 BDD 交叉 + 6 SQLite + 5 暴力 + 1 doctest）；
+  变异门 12/12 抓住（新增 4 条：BDD 跳子句 / BDD 计数 +1 / 抽样取反 / 自动候选清空）。
+
+### Added（trit-clean M0：三值约束检查 + 精确修复计数）
+
+- 新 crate `crates/trit-clean`（algo 层）：规则 DSL（`NOT NULL` / `CHECK` / `DOMAIN` / `UNIQUE`）→ 三值求值
+  （`bool3`，NULL 传播与 SQL 一致）→ 精确计数（复用 `trit-count` 的原始 CNF + DPLL）：完成比例、最小修复条数。
+- 判据（可复算）：`cargo test -p trit-clean` 共 34 条（22 单测 + 6 SQLite 对拍 + 5 暴力对拍 + 1 doctest）；
+  SQLite 对拍覆盖 6 个比较符 × 5 个取值、TEXT 二进制序、NOT NULL、CHECK 的 UNKNOWN 放行、UNIQUE 的 NULL 互不冲突；
+  计数侧与暴力枚举逐例一致（含“无解”“两处改动”“三行唯一冲突”）。
+- 边界写死并结构化报错：变量 > 120、候选格 > 10、“域太小无修复”、“编码不自洽”都是显式错误，不许静默降级。
+- 变异门 8/8 抓住（`python scripts/mutation_check.py --pkg trit-clean`）。
+- `rusqlite` 钉 `=0.39.0`（0.40 起用了 rustc 1.89 的 cfg_select!，未声明 MSRV；本仓 1.88 上已用 `cargo +1.88.0 check` 实测）；`Cargo.lock` 同步。
+- 修 `scripts/layers.py` 在中文 Windows 控制台打印 `⇒` 的 UnicodeEncodeError（输出统一降级）。
+
+### Added（数据清洗 × 三进制立项：九条方向 + 主线 trit-clean + 底层缺口清单）
+
+- 新增 `docs/DATA-CLEANING-PLAN.md`：三进制在数据清洗的九条方向（三值约束检查、精确修复计数/清洁度分数、三支决策动作门、Belnap 四值多源合并、三值指纹去重、缺失插补、三值规则挖掘、数据契约编译器、文本清洗），主线选“A+B+C”（规则→三值求值→#SAT/BDD 计数→accept/reject/defer），差异化=确定性/可解释/可复算；
+  底层缺口按必要性排序（WMC、CDCL/MaxSAT、trit-mv、trit-belnap 算子面、trit-ir、trit-num、mmap/SIMD 抽象、观测与语料），并给出验收口径；含论文参考（清洗综述 2025、CQA/repair、provenance semirings、AAAI'24 计数、3WD/TAO、Belnap 四值）。
+- ROADMAP §2 增加 `trit-clean`（algo，**后期、不排期**）；docs/README 索引同步。
+- PRIVACY-PLAN 增补“格式转换与批量转存（软件内置存储）”与对应里程碑 P2b。
+
+### Added（隐私存储立项：后期任务，计划与硬边界先落纸）
+
+- 新增 `docs/PRIVACY-PLAN.md`：照片/视频/文本的静态隐私目标（盘上随机噪声、元数据全加密、经自有挂载器正常打开）、四级威胁模型（T1 文件扫描 / T2 内核与屏幕采集 / T3 云端审核 / T4 SSD 痕迹）、五层技术路线（容器格式、可否认、WinFsp/FUSE 适配器、运行时保护、内容形态）与不可达边界；含论文与开源参考（DEFY/NDSS'15、可否认加密理论、VeraCrypt hidden OS 攻击、隐写分析综述、WinFsp、Recall）。
+- ROADMAP §2 增加 `trit-vault`（ops 层，**后期、不排期**）；文档索引同步。
+- 定位写死：保护自己的数据不被商业扫描/上传；不做内核驱动、不针对执法取证。
+
+### Changed（CI：测试换 cargo-nextest + 编译加 sccache GHA 缓存）
+
+- `check` job 的测试从 `cargo test --workspace` 换成 `cargo nextest run --workspace`（跨二进制并行调度）；
+  doctest 单列一段 `cargo test --workspace --doc`（nextest 不跑 doctest，少这条就是测试面缩水）。
+- 编译再叠一层 sccache（GHA 缓存后端，sccache 钉 v0.19.0、action 钉 SHA），与 `rust-cache` 互补：
+  后者恢复 target 目录，前者在 target 缓存被淘汰 / 换 feature 组合时兜底。
+- 读数：本机热态 2502 条测试 `cargo test` 63.7s → `nextest` 58.4s（24 核，执行 50.0s）；
+  CI 首轮（sccache 冷缓存）Windows 727s → 700s、macOS 255s → 217s、Ubuntu 220s → 200s；
+  稳态（同一提交重跑、sccache 命中）Windows job **727s → 493s（-32%）**：GPU 冒烟 372s → 219s、
+  Test 240s → 167s；macOS 255s → 222s、Ubuntu 220s → 200s。复算见 `docs/BUILD-PERF.md` §8。
+
+### Added（trit-wspace：f32 bias 保留（`biasf` 行））
+
+- `Layer.bias_f32`（可选）：保存原始 f32 偏置；三值 `bias` 仍是行为判据，`with_bias_f32` 校验长度与有限值。
+- WSP1 新增可选 `biasf` 行（`bias` 后、`row` 前）；`from_wsp` / `to_wsp` 往返保留；`from_f32`
+  在 bias 全零时不写（训练产物不变）。
+- safetensors 导入填 `bias_f32`；`export-safetensors --bias` 写回 `<name>.bias`（f32 优先，
+  没有时退回三值符号）；目录导出按 manifest 的 `bias` 名字写回。
+- 真实 MiniLM：**36** 个 WSP1 含 `biasf`；导出 `encoder.layer.0.attention.output.dense.bias`
+  与原模型 **max_abs_err = 0.0**、shape `[384]` 保持。
+- `WSP2` 遇到 `biasf` **明确报错**（不静默丢）；`--vector` / 目录导出仍按 manifest 恢复 1D。
+- 测试 365 → 370（`safetensors_bias` 11 条，新增 5 条：WSP1 往返、零 bias 不写、`--bias`
+  导出、目录导出、WSP2 拒绝）；变异 `trit-wspace` 323 → 327（+4，逐条验证）。
+- 未证栏：任务合并（`merge`）不保留 f32 bias（以三值投票为准）；WSP2 不支持 f32 bias。
+
+### Added（trit-wspace：1D 向量工件 + bias 端到端误差读数）
+
+- `safetensors::read_weights`：2D → `(rows, cols)`，1D → `(1, cols)`；`import-safetensors`
+  支持 1D 张量（报告 `vector: true`），生成 `1 × N` 单层工件。
+- `export-safetensors --vector`：单层且 `rows == 1` 时写回 1D shape；`TensorOut` 增加 `vector`。
+- 目录导入：1D 张量不再跳过（生成 `1 × N` 层，manifest 记 `vector`）；`export-safetensors-dir`
+  按 manifest 恢复 1D shape。真实 MiniLM：导入 **103** 张量（63×1D + 40×2D）、跳过 1（`I64`）、
+  **1.009s**、目录 **45MB**；导出 103 张量、**90.9MB**、**1.195s**，1D/2D shape 保持。
+- 新增 `examples/bias_error.rs`：f32 权重+bias 作参照，比较三值权重 + `{0, sign(b)}` bias 的 MSE。
+  合成张量（bias_scale 0.05/0.5/2.0）：`sign/zero = 0.975 / 0.759 / 0.929`；真实 MiniLM
+  `attention.output.dense` 层：**0.9585**（mean|bias| **0.063**）⇒ 符号化 bias 是净收益，但幅度仍丢。
+- 测试 364 → 365（`tests/safetensors.rs` 26 条，新增 vector 往返）；变异 `trit-wspace`
+  320 → 323（+3，逐条验证）。
+- 未证栏：bias 幅度仍只保留符号；vector 工件是 `1 × N` 层，语义上不是原算子（只是参数容器）；
+  没有真实 transformer 的端到端精度。
+
+### Added（trit-wspace：1D bias 接进 Layer）
+
+- `Weights::to_layer_with_bias`：bias 逐元素取符号（正/负/零 → `+1/-1/0`），长度必须等于行数；
+  `read_vector` 读 1D F32/F16/BF16 张量。
+- CLI `import-safetensors --tensor <name> --bias <name>`（`--bias` 只支持单个张量）；
+  `import-safetensors-dir` 自动把 `<stem>.bias` 配到 `<stem>.weight`，长度不符或不可读则不配对
+  （manifest 的 `bias` 记 `null`）。
+- 真实 MiniLM 整模型：40 个 2D 张量中 **37** 个配上 `.bias`（3 个 embedding 无 bias），
+  导入 **1.011s**。
+- 测试 359 → 364（新增 5 条：符号/长度校验、CLI `--bias`、多张量拒绝、目录配对、长度不符不配对）。
+- 变异 `trit-wspace` 318 → 320（+2；「bias 长度不校验」与 `Layer::with_scales` 的长度校验等价，
+  已验证并删除公示）。
+- 未证栏：bias 只保留符号，f32 幅度丢失；LayerNorm 的 1D `weight/bias` 仍跳过（没有 2D 主张量可配）。
+
+### Added（trit-wspace：WSP2 2-bit 压缩容器）
+
+- `trit-wspace::wsp2`：`to_wsp2` / `from_wsp2`，把每个 trit 压到 2 bit（`-1/0/+1 → 0/1/2`，
+  3 判非法），bias 同样打包，scale 保持 f32，末尾带 FNV-1a 校验和；magic/版本/层数/截断/
+  校验和/非法 2-bit 全部报错。WSP2 是**缓存/传输格式**，解包后回到 WSP1 规范文本。
+- CLI：`pack-artifact <artifact|-> --out <bin>`、`unpack-artifact <bin> --out <path>`。
+- 体积（小网络 2 层 2×3）：WSP1 128 B → WSP2 **48 B**（header/scales 占比高）；
+  真实 30522×384 张量：WSP1 **23 MB** → WSP2 **3.0 MB**（7.6×），pack 0.828s、unpack 0.252s，
+  解包后与原始 WSP1 **逐字节一致**。
+- 测试 351 → 359（新增 `tests/wsp2.rs` 8 条：往返、体积、坏 magic/版本/截断/校验和/
+  非法 2-bit/零层、CLI 往返与坏文件）。
+- 变异 `trit-wspace` 314 → 318（+4，逐条验证）。
+- 未证栏：不是规范形式（不能替代 WSP1 的 diff/审计）；没有 zstd/RLE 二级压缩。
+
+### Added（trit-wspace：WSP1 按行分片/合并）
+
+- `trit-wspace::artifact_shard`：`split(net, shard_rows)` 把单层网络按行切成多个**合法 WSP1**
+  （每块可单独 `read`/`patch`/校验）+ `manifest.json`（总行数/cols/块顺序与行范围）；
+  `join(manifest, texts)` 校验块顺序、cols、总行数与块形状后合并。
+- CLI：`split-artifact <artifact|-> --rows N --out <dir>`、`join-artifact <dir> --out <path>`。
+- 目录导入兼容真实模型：`import-safetensors-dir` 跳过 1D/4D 与非浮点张量，报告 `skipped`
+  （含原因），`manifest.json` 同步记录；没有可导入张量时才报错。
+- 真实整模型读数（`all-MiniLM-L6-v2/model.safetensors`）：导入 **40** 个 2D 浮点张量、
+  跳过 **64** 个（63 个 1D + 1 个 `I64`），**0.99s**、目录 **45MB**。
+- 测试 342 → 351（`tests/artifact_shard.rs` 8 条 + 目录跳过 1 条）。
+- 变异 `trit-wspace` 311 → 314（+3；「合并不校验总行数」经验证与 `Layer` 形状校验等价，已删除并公示）。
+- 未证栏：只支持单层网络；只做拆分，没有压缩。
+
+### Fixed（trit-wspace：真实 safetensors 的 1D/4D 与非浮点 dtype 兼容）
+
+- `list-safetensors` 现在列出任意维度张量，`dtype` 原样保留（`I64` / `BOOL` 不再让整个文件失败）；
+  `read_tensor` 仍只收 2D 浮点（F32/F16/BF16），非 2D / 非浮点给出明确错误。
+- 真实往返（`all-MiniLM-L6-v2/model.safetensors` 的 `embeddings.word_embeddings.weight`，
+  30522×384 F32）：导入 **0.485s → WSP1 23MB**；导出 **0.573s → 45MB f32**；再导入 **0.463s**——
+  trits 逐位一致，`scale` 按 absmean 重算（最大相对差 **44%**，三值前向行为不变）。
+- 测试 342（`tests/safetensors.rs` 19 条；新增覆盖 1D/4D list 与 I64 拒绝）；变异 `trit-wspace`
+  309 → **311**（+2，逐条验证）。
+
+### Added（trit-wspace：safetensors 外部权重读写）
+
+- `trit-wspace::safetensors`：`list` / `read_tensor` / `write_tensor`，只处理 2D 张量
+  （`F32` / `F16` / `BF16`）。读取只 seek 目标张量、不把整个权重文件读进内存；
+  header 长度、`data_offsets` 越界、形状×字节数不符、非 2D、未知 dtype、非有限值全部报
+  结构化错误（`Error::External`）。
+- CLI：`list-safetensors <file>`、`import-safetensors <file> --tensor <name>[,<name>...] [--out <path>]`、
+  `export-safetensors <artifact|-> --out <path> [--tensor <name>[,<name>...]]`。`--tensor` 给多个
+  名字时按顺序组装成多层 Net（相邻 `rows == cols` 由 `Net::new` 校验），导入走 absmean 三值化
+  （`Layer::from_f32`），导出按行 `trit × scale` 反量化成 f32 并写多张量文件。
+- 目录形态：`import-safetensors-dir <file> --out <dir>` 把每个 2D 张量写成独立单层 WSP1
+  （`0000-<name>.wsp` 等）并生成 `manifest.json`；`export-safetensors-dir <dir> --out <file>`
+  按 manifest 合并回一个多张量 safetensors，缺文件/重复名/非单层都报错。
+- 测试 323 → 342（新增 `tests/safetensors.rs` 19 条：F32/F16 次正规/BF16 解码、三值化
+  与 `from_f32` 一致、写读往返、越界/字节数/非 2D/非有限值坏输入、CLI 端到端）。
+- 变异 `trit-wspace` 300 → 309（新增 5 条单张量 + 2 条多张量 + 2 条目录目标，逐条 `--only` 验证）。
+- 未证栏：只做单张量读写；整模型多张量分片/压缩（L0）与 GPU（L7）仍未做。
+
+### Changed（CI：非 Rust 改动不再跑 cargo 矩阵 —— 脚本类 PR 的 Windows job 12min → 约 1min）
+
+- `.github/workflows/ci.yml` 的改动集检测从「纯文档」扩为「**不含 Rust 面**」：`scripts/`、`.github/`、
+  `sweeps/`、`tests/`（仅夹具）、`other-languages/`、`benchmarks/`、`t3/` 全部命中时，跳过
+  fmt / clippy / test 及其 png、gpu 两个 feature 变体；门族 job（module budget / mutation /
+  test surface / hazard / secret 等）不在该 job 内，照常全跑。
+- 依据（可复算）：PR #238（只改脚本 + 变异登记表）的 Windows job 12m07s，拆到 step 是
+  Test 240s、GPU 冒烟编译 372s、Clippy 41s、rust-cache 恢复 19s——约 10 分钟花在没变的 Rust 代码上；
+  同一提交 ubuntu 3m40s、macOS 4m15s。
+- 安全性依据：主 workspace 只有 `crates/*`；`other-languages/`、`benchmarks/` 不是成员；
+  `t3/` 是独立 workspace（`t3.yml` 自跑）；Rust 测试不读取 `scripts/` 下文件
+  （`trit-orch` 的对拍测试读的是仓内 JSON 夹具）。
+- 新增 `docs/BUILD-PERF.md`：本机与 CI 的构建性能实测（冷检查 10.9s / 边际检查 3.1s / sccache
+  同路径 -29% 且跨 target 目录 0 命中）、未采纳项与原因（debug=0 实测无差异、nightly flags /
+  cranelift 需 nightly、mold 已由默认 rust-lld 覆盖、nextest 列为下一步）。
+- 新增 `docs/README.md`：文档索引（定位 / 规划 / 结果 / 工程四层）。
+
+### Changed（trit-count：残基子句表扁平化 —— 每节点分配不再随子句数增长，40 对 1.92×）
+
+- `crates/trit-count/src/dpll.rs` 引入内部 `Table`（一段 `lits` + 一张 `starts`，第 0 段永远是占位空段），
+  `residue` / `renumber` / `decompose` / `choose_var` / `cache_key` / `insert_unit` 全部改用它：
+  每节点**不再为每条子句分配一个 `Vec`**，分解只传段下标而不是克隆子句。公开面 `count_cnf` / `CountStats` 不变。
+- 行为逐位不变（判据不是"看起来一样"）：匹配族八档的**节点 / 分支 / 组件 / 缓存命中-查找四列全部与改前相同**
+  （8 对 203/45/56/90-135 … 40 对 1163/237/344/570-807）；`cargo test -p trit-count` 全绿，
+  含 432 条随机 CNF 的穷举对拍与 CLI 对拍。
+- 分配读数（同一把尺 `examples/matching_alloc_probe.rs`，`allocs/节点`）：
+  **164.1 → 37.3（8 对）**、**925.5 → 41.3（40 对）**；关键是曲线由随规模线性上升（164→925，5.6×）变平（37.3→41.3，1.1×）。
+- 耗时读数（交错 4 轮，同一台机器同一个 release 构建来回切）：µs/节点
+  8 对 **9.9 → 6.6（1.51×，中位数口径，下同）**、20 对 **23.4 → 13.6（1.73×）**、40 对 **48.1 → 25.1（1.92×）**；
+  总耗时 40 对 **55.6 → 30.1 ms**。八档上升线从 4.9× 压到 3.8× ⇒ 分配这一项已经基本吃掉，
+  剩下的随规模增长来自子问题本身（与前面"分解主导搜索"的消融结论一致，不冲突）。
+- **过程里出错并修好的地方照实写**：扁平化第一版把 `Table::sort` 重建段表时少写一个占位 0，
+  于是第一条真实子句被当成占位丢掉，症状是计数**偏大**——`cnf_fuzz` 的 432 条里 **88 条**与穷举不一致。
+  修法之外补了四条不变量测试（`dpll::tests`：占位段为空、段起点单调、末位哨兵=文字总数、表有序，
+  以及 `insert_unit`/`remove_unit` 逐位还原 + 落点邻居），并用"少写那个 0"的变异反证：
+  变异后 2 条测试立刻红（`residue：第 0 段必须是占位空段，实际是 [1, -2]`），还原后 4 条全绿 ⇒ 这不是装饰性测试。
+- 复算尺：`cargo test -p trit-count --locked`；
+  `cargo run --release -p trit-count --example matching_family`；`cargo run --release -p trit-count --example matching_alloc_probe`。
+### Measured（DPLL 分配口径探针：µs/节点上升线归因到分配，靶子从 watched literals 换成残基子句表扁平化）
+
+- 新 example `crates/trit-count/examples/matching_alloc_probe.rs`：在这个 example 里装一个记数的 `#[global_allocator]`
+  （只累加 `alloc` 次数与 `layout.size()` 字节；计数自身有开销，所以**不看壁钟**、只读次数与字节），
+  构造与求解逐字复用 `matching_family`（同一族、同一 `cnf::Encoder`、同一 `dpll::count_cnf`），节点数取 `CountStats`。
+- 自标定：同一次运行里量 **64 B 的一次 alloc+free = 35.4 ns**（含两次原子计数的开销 ⇒ 这是分配单价的**上界**口径）。
+- 读数（release；节点数与 `matching_family` 逐位一致：203 / 323 / 443 / 563 / 683 / 803 / 923 / 1163）：
+
+  | 对数 | 子句 | allocs/节点 | bytes/节点 | 分配折算 µs/节点 | 实测 µs/节点（5 次中位数） |
+  |---|---|---|---|---|---|
+  | 8 | 320 | 164.1 | 17,857 | 5.8 | 10.8 |
+  | 20 | 824 | 449.0 | 58,866 | 15.9 | 25.7 |
+  | 40 | 1664 | 925.5 | 128,148 | 32.7 | 52.8 |
+
+- 结论（把上一轮定的靶子改了，不是加一条待办）：allocs/节点 从 164.1 涨到 925.5（**5.6×**）与 µs/节点从 10.8 涨到 52.8
+  （**5.0×**）同步线性上升；用 35.4 ns 的上界单价折算，分配解释 **≤64%** 的上升（(32.7−5.8)/(52.8−10.8) = 0.64）。
+  这跟 `dpll.rs` 头部那句"瓶颈是每节点 2(k+1) 次小分配"是同一件事的后半段：CSR 出现表已经扁平化，
+  **残基子句表却还是每条子句一个 `Vec`**（`residue()` 返回 `Vec<Vec<i32>>`）。
+  ⇒ 下一刀 = 把残基表也扁平化 / 跨节点复用缓冲；**watched literals 不是这一刀**（监视器省的是扫描次数，不是分配次数）。
+  ROADMAP §4 那句"watched literals（µs/节点 10.7→47.9）"已按本轮读数改写，旧靶子用删除线留在原处。
+- 复算尺：`cargo run --release -p trit-count --example matching_alloc_probe`、
+  `cargo run --release -p trit-count --example matching_family`（两条都要在机器空转时跑，µs/节点那列取 5 次中位数）。
 ### Added（trit-wspace：真实 trit-train 产物接入）
 
 - 新增 `examples/trit_train_tasks.rs`：用 `trit-train::layer::TernaryLinear` 训练 → 导出 WSP1 →
@@ -230,6 +793,25 @@
   机制在构造的 one-hot 冲突夹具上可把 hamming 8→4，但真实任务收益很小。
 - 测试 240 → 244 + 1 doctest（`tests/task_tune.rs` 6 → 10）；变异 223 → 228（新增 5 条目标）。
 
+### Added（trit-re：栈串提取链 + dynres Linux 词汇表——第二/第三层逃逸闭合）
+
+- **栈串提取**（`functions/stackstrings.rs`）：loader 把敏感 API 名逐字节
+  写栈（`mov byte ptr [rsp+X], imm8` 序列）——数据段扫描全盲。可执行节
+  线性扫（x86len 步长）收集 C6/C7（mov imm 进内存）与 REX.W B8+r（imm64）
+  的立即数字节，按地址序拼流找敏感名子串。判定 `stack_strings`：
+  ≥1 个敏感名 = True（栈串高信号——错位噪声几乎不可能拼出完整名）。
+- **dynres Linux 词汇表**：`hidden_api_strings` 词汇表参数化——ELF 用
+  `LINUX_SENSITIVE_APIS`（ptrace/process_vm_*/memfd_create/pidfd_getfd/
+  keyctl/init_module/finit_module；**排除 mmap/socket 万能调用**防全量
+  误报）。解析器 = dlsym。
+- **端到端**：sim_lvl6（纯栈串形态，无导入无 .rdata 串）→ `stack_strings`
+  True；合成 ELF（dlsym + .comment 藏 ptrace/keyctl/process_vm_readv）→
+  `dynamic_resolution` True；**良性批 51+12 样本 → 0 误报**（两链阈值都
+  站住）。全表 583 判定。
+- 已知边界：线性扫错位（嵌数据）由阈值兜底；ARM64 movz/movk 半字形态
+  待扩；纯 vDSO/直接 syscall 不受覆盖。
+
+### Added（trit-re：dynres 动态解析检测链——响应"检测器弱鸡"的能力净增）
 ### Experiments（trit-wspace：CIFAR-10 真实训练集上的合并/调权读数）
 
 - 新增可复现实验 `crates/trit-wspace/examples/cifar_tasks.rs`：CIFAR-10 降采样成 8×8 灰度夹具

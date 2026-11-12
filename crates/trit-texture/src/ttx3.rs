@@ -1,18 +1,13 @@
 //! **TTX3**——万级大纹理档案：瓦片化 + 层级混搭 + 流式瓦片解码。
 //!
 //! 目标（与 TTX2 的差异）：
-//! - **万级分辨率**：基面 10240×10240 = 1.05 亿纹素（[`MAX_LEVEL_PIXELS`]
-//!   允许到 2^30）；TTX2 的 [`crate::MAX_TEXTURE_PIXELS`] 上限是它的 1/25；
-//! - **瓦片化**：纹理切成 [`TILE_WIDTH`]×[`TILE_HEIGHT`] 的瓦片
-//!   （256×320 纹素 = 64×32 个 4×10 块，与块形状严丝合缝），
-//!   瓦片是编码 / 校验 / 解码 / 显存上传的**统一单元**；
-//! - **层级混搭**：每级一个 [`LevelPolicy`]——细层 `Capacity`（2.4 bpp 纯容量），
-//!   粗层 `Strength`（瓦片**双写冗余**：粗层字节数小、单副本损坏自动恢复，
-//!   强度收益/代价比最高）；
-//! - **流式**：[`Ttx3Archive::decode_tile`] 只物化一个瓦片（320 KB RGBA），
-//!   全档不必驻留内存；瓦片是显存上传单元；
-//! - **兼容**：逐瓦片 GF(3) CRC-16（沿用 TTX2「按内容自己的基数算」的哲学）；
-//!   u64 偏移；未知 flags / 未知政策字节显式拒绝（不猜）。
+//! - **万级分辨率**：基面 10240×10240（[`MAX_LEVEL_PIXELS`] 上限 2^30），TTX2 上限是它的 1/25；
+//! - **瓦片化**：切成 [`TILE_WIDTH`]×[`TILE_HEIGHT`]（256×320=64×32 个 4×10 块），
+//!   瓦片是编码/校验/解码/显存上传的**统一单元**；
+//! - **层级混搭**：每级一个 [`LevelPolicy`]——细层 `Capacity`（2.4 bpp），
+//!   粗层 `Strength`（瓦片双写冗余，单副本损坏自动恢复）；
+//! - **流式**：[`Ttx3Archive::decode_tile`] 只物化一个瓦片（320 KB RGBA），全档不必驻留；
+//! - **兼容**：逐瓦片 GF(3) CRC-16（按内容自己的基数算）；u64 偏移；未知 flags/政策显式拒绝。
 //!
 //! 边界（M0）：级尺寸必须是瓦片尺寸的整数倍（[`suggest_chain`] 负责把标准
 //! 减半链吸附到合法尺寸）；不做部分瓦片；不自动生成 mip（级是显式给的）。
@@ -150,35 +145,22 @@ pub fn suggest_chain(base_width: usize, base_height: usize) -> Vec<(usize, usize
 }
 
 fn validate_dims(width: usize, height: usize) -> Result<(), TextureError> {
-    if width == 0 || height == 0 {
-        return Err(TextureError::Ttx3Dims {
-            width,
-            height,
-            reason: "宽高必须非零".into(),
-        });
-    }
-    if width > MAX_SIDE || height > MAX_SIDE {
-        return Err(TextureError::Ttx3Dims {
-            width,
-            height,
-            reason: format!("边长超过上限 {MAX_SIDE}"),
-        });
-    }
-    if !width.is_multiple_of(TILE_WIDTH) || !height.is_multiple_of(TILE_HEIGHT) {
-        return Err(TextureError::Ttx3Dims {
-            width,
-            height,
-            reason: format!("宽必须是 {TILE_WIDTH} 的倍数、高必须是 {TILE_HEIGHT} 的倍数"),
-        });
-    }
-    if width * height > MAX_LEVEL_PIXELS {
-        return Err(TextureError::Ttx3Dims {
-            width,
-            height,
-            reason: format!("纹素超过单级上限 {MAX_LEVEL_PIXELS}"),
-        });
-    }
-    Ok(())
+    let reason = if width == 0 || height == 0 {
+        "宽高必须非零".to_string()
+    } else if width > MAX_SIDE || height > MAX_SIDE {
+        format!("边长超过上限 {MAX_SIDE}")
+    } else if !width.is_multiple_of(TILE_WIDTH) || !height.is_multiple_of(TILE_HEIGHT) {
+        format!("宽必须是 {TILE_WIDTH} 的倍数、高必须是 {TILE_HEIGHT} 的倍数")
+    } else if width * height > MAX_LEVEL_PIXELS {
+        format!("纹素超过单级上限 {MAX_LEVEL_PIXELS}")
+    } else {
+        return Ok(());
+    };
+    Err(TextureError::Ttx3Dims {
+        width,
+        height,
+        reason,
+    })
 }
 
 fn tile_grid(width: usize, height: usize) -> (usize, usize) {
@@ -363,7 +345,8 @@ impl LargeTexture {
                 }
                 let crc = tile_crc(&tile_bytes);
                 let data_start = dir_start + tiles * TILE_ENTRY_BYTES;
-                let off1 = data_start as u64 + tile_index as u64 * TILE_DATA_BYTES as u64;
+                let tile_stride = TILE_DATA_BYTES as u64 * level.policy.copies() as u64;
+                let off1 = data_start as u64 + tile_index as u64 * tile_stride;
                 let off2 = if level.policy == LevelPolicy::Strength {
                     off1 + TILE_DATA_BYTES as u64
                 } else {
@@ -449,10 +432,12 @@ impl<'a> Ttx3Archive<'a> {
         }
         let levels_dir_offset = u64::from_le_bytes(bytes[12..20].try_into().unwrap()) as usize;
         if levels_dir_offset != HEADER_BYTES
-            || bytes.len() < levels_dir_offset + level_count * LEVEL_ENTRY_BYTES
+            || bytes.len()
+                < levels_dir_offset.saturating_add(level_count.saturating_mul(LEVEL_ENTRY_BYTES))
         {
             return Err(TextureError::Ttx3Truncated {
-                needed: levels_dir_offset as u64 + (level_count * LEVEL_ENTRY_BYTES) as u64,
+                needed: (levels_dir_offset as u64)
+                    .saturating_add(level_count.saturating_mul(LEVEL_ENTRY_BYTES) as u64),
                 got: bytes.len() as u64,
             });
         }
@@ -510,13 +495,17 @@ impl<'a> Ttx3Archive<'a> {
                 message: format!("瓦片坐标越界（网格 {tiles_x}×{tiles_y}）"),
             });
         }
-        let at = entry.dir_offset as usize + (ty * tiles_x + tx) * TILE_ENTRY_BYTES;
-        if self.bytes.len() < at + TILE_ENTRY_BYTES {
+        let index = ty as u64 * tiles_x as u64 + tx as u64;
+        let needed = entry
+            .dir_offset
+            .saturating_add((index + 1).saturating_mul(TILE_ENTRY_BYTES as u64));
+        if needed > self.bytes.len() as u64 {
             return Err(TextureError::Ttx3Truncated {
-                needed: (at + TILE_ENTRY_BYTES) as u64,
+                needed,
                 got: self.bytes.len() as u64,
             });
         }
+        let at = needed as usize - TILE_ENTRY_BYTES;
         let off1 = u64::from_le_bytes(self.bytes[at..at + 8].try_into().unwrap());
         let off2 = u64::from_le_bytes(self.bytes[at + 8..at + 16].try_into().unwrap());
         let len = u32::from_le_bytes(self.bytes[at + 16..at + 20].try_into().unwrap());
@@ -525,15 +514,14 @@ impl<'a> Ttx3Archive<'a> {
     }
 
     fn slice_at(&self, offset: u64, len: u32) -> Result<&'a [u8], TextureError> {
-        let start = offset as usize;
-        let end = start + len as usize;
-        if self.bytes.len() < end {
+        let end = offset.saturating_add(u64::from(len));
+        if end > self.bytes.len() as u64 {
             return Err(TextureError::Ttx3Truncated {
-                needed: end as u64,
+                needed: end,
                 got: self.bytes.len() as u64,
             });
         }
-        Ok(&self.bytes[start..end])
+        Ok(&self.bytes[offset as usize..end as usize])
     }
 
     /// 取一个瓦片的块数据（12 KB× 冗余的原始形态）：校验 GF(3) CRC-16，
@@ -545,6 +533,15 @@ impl<'a> Ttx3Archive<'a> {
         ty: usize,
     ) -> Result<Vec<TritBlock>, TextureError> {
         let (off1, off2, len, crc) = self.tile_entry(level, tx, ty)?;
+        // CRC 按整块输入计算，长度必须精确等于 TILE_DATA_BYTES。
+        if len as usize != TILE_DATA_BYTES {
+            return Err(TextureError::Ttx3Tile {
+                level,
+                tx,
+                ty,
+                message: format!("瓦片长度 {len} 字节，应为 {TILE_DATA_BYTES}"),
+            });
+        }
         let mut blocks = Vec::with_capacity(TILE_BLOCKS);
         let mut recovered = false;
         for (attempt, offset) in [off1, off2].into_iter().filter(|o| *o != 0).enumerate() {

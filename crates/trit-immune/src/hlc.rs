@@ -13,6 +13,10 @@ use std::fmt;
 use std::str::FromStr;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+/// 远端物理位允许领先本地的时间容差：超出即视为异常戳（时钟跑飞/伪造），夹到
+/// `本地 + 容差`——避免一个 `u64::MAX` 戳把本地时钟永久冻住、之后本地写入被去重丢光（H3）。
+const MAX_SKEW_MS: u64 = 3_600_000;
+
 /// 一个 HLC 时间戳。字典序 = 因果全序（同写者内严格递增）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Hlc {
@@ -33,6 +37,23 @@ impl Hlc {
             physical_ms,
             counter,
             writer,
+        }
+    }
+
+    /// 下一个戳：计数 +1；溢出则物理位 +1ms、计数归零——保证**严格递增**，
+    /// 不因 `u32::MAX` 饱和而冻结（H3 丢数据的根因）。
+    fn succeed(physical_ms: u64, counter: u32, writer: u32) -> Hlc {
+        match counter.checked_add(1) {
+            Some(c) => Hlc {
+                physical_ms,
+                counter: c,
+                writer,
+            },
+            None => Hlc {
+                physical_ms: physical_ms.saturating_add(1),
+                counter: 0,
+                writer,
+            },
         }
     }
 
@@ -120,12 +141,8 @@ impl Clock {
                 writer: self.writer,
             }
         } else {
-            // 物理钟停走/回拨：保持物理位，只推计数
-            Hlc {
-                physical_ms: self.last.physical_ms,
-                counter: self.last.counter.saturating_add(1),
-                writer: self.writer,
-            }
+            // 物理钟停走/回拨：保持物理位，推计数（溢出进位到物理位，绝不冻死）
+            Hlc::succeed(self.last.physical_ms, self.last.counter, self.writer)
         };
         self.last
     }
@@ -134,20 +151,22 @@ impl Clock {
     pub fn observe(&mut self, remote: &Hlc) {
         let pt = (self.now_fn)();
         let own = self.last;
-        let l = own.physical_ms.max(remote.physical_ms).max(pt);
-        let c = if l == own.physical_ms && l == remote.physical_ms {
-            own.counter.max(remote.counter).saturating_add(1)
+        // 远端物理位超出本地+容差 ⇒ 异常戳：夹住（否则 u64::MAX 会冻死时钟，H3）。
+        let remote_phys = remote.physical_ms.min(pt.saturating_add(MAX_SKEW_MS));
+        let l = own.physical_ms.max(remote_phys).max(pt);
+        self.last = if l == own.physical_ms && l == remote_phys {
+            Hlc::succeed(l, own.counter.max(remote.counter), self.writer)
         } else if l == own.physical_ms {
-            own.counter.saturating_add(1)
-        } else if l == remote.physical_ms {
-            remote.counter.saturating_add(1)
+            Hlc::succeed(l, own.counter, self.writer)
+        } else if l == remote_phys {
+            Hlc::succeed(l, remote.counter, self.writer)
         } else {
-            0 // 物理钟跳到未来，重新起算
-        };
-        self.last = Hlc {
-            physical_ms: l,
-            counter: c,
-            writer: self.writer,
+            // 物理钟跳到未来，重新起算
+            Hlc {
+                physical_ms: l,
+                counter: 0,
+                writer: self.writer,
+            }
         };
     }
 
@@ -161,91 +180,4 @@ impl Clock {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn fixed(ms: u64) -> Box<dyn Fn() -> u64 + Send + Sync> {
-        Box::new(move || ms)
-    }
-
-    #[test]
-    fn ticks_are_strictly_increasing() {
-        let mut c = Clock::with_now(1, fixed(1000));
-        let mut prev = None;
-        for i in 0..5u32 {
-            let t = c.tick();
-            assert_eq!(t.physical_ms, 1000);
-            assert_eq!(t.counter, i);
-            assert_eq!(t.writer, 1);
-            if let Some(p) = prev {
-                assert!(t > p);
-            }
-            prev = Some(t);
-        }
-    }
-
-    #[test]
-    fn physical_jump_forward_resets_counter() {
-        let ms = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1000));
-        let ms2 = std::sync::Arc::clone(&ms);
-        let mut c = Clock::with_now(
-            1,
-            Box::new(move || ms2.load(std::sync::atomic::Ordering::Relaxed)),
-        );
-        let t1 = c.tick();
-        ms.store(2000, std::sync::atomic::Ordering::Relaxed);
-        let t2 = c.tick();
-        assert_eq!(t2.physical_ms, 2000);
-        assert_eq!(t2.counter, 0);
-        assert!(t2 > t1);
-    }
-
-    #[test]
-    fn physical_backwards_keeps_causality() {
-        let ms = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(1000));
-        let ms2 = std::sync::Arc::clone(&ms);
-        let mut c = Clock::with_now(
-            1,
-            Box::new(move || ms2.load(std::sync::atomic::Ordering::Relaxed)),
-        );
-        let t1 = c.tick();
-        ms.store(500, std::sync::atomic::Ordering::Relaxed);
-        let t2 = c.tick();
-        assert_eq!(t2.physical_ms, 1000, "回拨不回退物理位");
-        assert!(t2 > t1);
-    }
-
-    #[test]
-    fn observe_makes_future_ticks_causally_later() {
-        let mut a = Clock::with_now(1, fixed(1000));
-        let mut b = Clock::with_now(2, fixed(1000));
-        let ta = a.tick();
-        b.observe(&ta);
-        let tb = b.tick();
-        assert!(tb > ta, "观察到远端戳后，新戳必须因果更晚");
-        assert_eq!(tb.physical_ms, 1000);
-        // 反向同样成立
-        a.observe(&tb);
-        let ta2 = a.tick();
-        assert!(ta2 > tb);
-    }
-
-    #[test]
-    fn concurrent_stamps_break_ties_by_writer() {
-        let mut a = Clock::with_now(1, fixed(1000));
-        let mut b = Clock::with_now(2, fixed(1000));
-        let ta = a.tick(); // (1000, 0, 1)
-        let tb = b.tick(); // (1000, 0, 2)
-        assert_ne!(ta, tb);
-        assert!(tb > ta, "并发戳按写者 id 破平");
-    }
-
-    #[test]
-    fn display_parse_roundtrip() {
-        for t in [Hlc::ZERO, Hlc::new(123, 4, 5)] {
-            assert_eq!(t.to_string().parse::<Hlc>(), Ok(t));
-        }
-        assert!("x:0:0".parse::<Hlc>().is_err());
-        assert!("1:2".parse::<Hlc>().is_err());
-    }
-}
+mod tests;

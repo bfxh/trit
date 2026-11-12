@@ -1,0 +1,66 @@
+[
+ {
+  "name": "alloc-guard: 帽名识别丢掉 MAX 前缀",
+  "file": "scripts/alloc_guard.py",
+  "old": "    return \"MAX\" in name or name.endswith((\"_LIMIT\", \"_CAP\", \"_BOUND\"))",
+  "new": "    return name.endswith((\"_LIMIT\", \"_CAP\", \"_BOUND\"))",
+  "pkg": "scripts/alloc_guard.py",
+  "filter": "self_test"
+ },
+ {
+  "name": "alloc-guard: 死帽阈值放宽到 0 次（只出现一次也放行）",
+  "file": "scripts/alloc_guard.py",
+  "old": "        if total <= 1:",
+  "new": "        if total <= 0:",
+  "pkg": "scripts/alloc_guard.py",
+  "filter": "self_test"
+ },
+ {
+  "name": "alloc-guard: 读限位 take 守卫失效（带 take 也判无界）",
+  "file": "scripts/alloc_guard.py",
+  "old": "            if TAKE_GUARD.search(window):\n                continue",
+  "new": "            if False:\n                continue",
+  "pkg": "scripts/alloc_guard.py",
+  "filter": "self_test"
+ },
+ {
+  "name": "alloc-guard: 无界流式读降成警告（不再判红）",
+  "file": "scripts/alloc_guard.py",
+  "old": "(READ_STREAM, \"无界读\", True,",
+  "new": "(READ_STREAM, \"无界读\", False,",
+  "pkg": "scripts/alloc_guard.py",
+  "filter": "self_test"
+ },
+ {
+  "name": "alloc-guard: 行注释不涂白（扫到自己的 doc 示例）",
+  "file": "scripts/alloc_guard.py",
+  "old": "        if c == \"/\" and i + 1 < n and text[i + 1] == \"/\":",
+  "new": "        if False and c == \"/\" and i + 1 < n and text[i + 1] == \"/\":",
+  "pkg": "scripts/alloc_guard.py",
+  "filter": "self_test"
+ },
+ {
+  "name": "alloc-guard: 豁免不要求理由（静默忽略）",
+  "file": "scripts/alloc_guard.py",
+  "old": "a.get(\"kind\") == finding[\"kind\"] and a.get(\"reason\") for a in allow",
+  "new": "a.get(\"kind\") == finding[\"kind\"] and True for a in allow",
+  "pkg": "scripts/alloc_guard.py",
+  "filter": "self_test"
+ },
+ {
+  "name": "alloc-guard: try_reserve 兜底识别失效",
+  "file": "scripts/alloc_guard.py",
+  "old": "TRY_RESERVE = re.compile(r\"\\btry_reserve(?:_exact)?\\s*\\(\")",
+  "new": "TRY_RESERVE = re.compile(r\"\\bzzz_never_zzz\\s*\\(\")",
+  "pkg": "scripts/alloc_guard.py",
+  "filter": "self_test"
+ },
+ {
+  "name": "alloc-guard: 扫不到源码也判绿（读不到当没问题）",
+  "file": "scripts/alloc_guard.py",
+  "old": "    if not files:",
+  "new": "    if False:",
+  "pkg": "scripts/alloc_guard.py",
+  "filter": "self_test"
+ }
+]

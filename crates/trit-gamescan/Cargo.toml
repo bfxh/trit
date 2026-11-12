@@ -1,0 +1,12 @@
+[package]
+name = "trit-gamescan"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "游戏环境扫描与恢复核心（Phase 0）：三值判定、collider 穿模 oracle、checkpoint 回滚与恢复混沌测试"
+publish = false
+
+[dependencies]
+trit-core.workspace = true

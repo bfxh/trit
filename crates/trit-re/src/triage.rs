@@ -220,6 +220,19 @@ pub fn analyze(bytes: &[u8]) -> Triage {
             };
             triage.facts.set(id, value, detail);
         }
+        // 有序共现（强于无序桶）：注入三件套的地址序 alloc → write → exec
+        let ordered = report.cooccurrence_ordered(
+            &["imports.inj.alloc", "imports.inj.write", "imports.inj.exec"],
+            xref_complete,
+        );
+        let ordered_detail = match ordered {
+            Ternary::True => "同一函数内按地址序出现注入三件套（申请→写→执行）".to_string(),
+            Ternary::False => "精确边界下未见地址序成立的注入三件套（无序共现也未见）".to_string(),
+            Ternary::Unknown => "无法排除有序注入共现（边界或交叉引用不完整）".to_string(),
+        };
+        triage
+            .facts
+            .set("fn.injection_ordered", ordered, ordered_detail);
         triage.notes.push(format!(
             "函数归属：{} 个函数，归属 {} 个调用点，{} 个未归属",
             report.total_functions, report.attributed_sites, report.unattributed_sites
@@ -385,9 +398,8 @@ fn fill_pe(bytes: &[u8], info: &pe::PeInfo, triage: &mut Triage) {
         notes.push(format!("导出 {} 个名字", info.exports.len()));
     }
 
-    // 动态解析链证据（N1 首批读数记录的漏报边界的闭合面：指针-only /
-    // GetProcAddress·dlsym 形态绕过导入共现）。三值：≥3 个隐藏敏感名 =
-    // True；1-2 = Unknown（可疑不定）；0 = False。
+    // 动态解析链 + 栈串证据（dynres.rs 接线层；闭合 N1 首批读数记录的
+    // 漏报边界：指针-only / GetProcAddress·dlsym / 栈串形态）。
     let imported_apis: std::collections::BTreeSet<String> = flattened
         .as_deref()
         .unwrap_or(&[])
@@ -403,34 +415,25 @@ fn fill_pe(bytes: &[u8], info: &pe::PeInfo, triage: &mut Triage) {
             bytes.get(start..start.checked_add(section.raw_size as usize)?)
         })
         .collect();
-    let hidden = imports::hidden_api_strings(
-        &nonexec,
+    let exec: Vec<&[u8]> = info
+        .sections
+        .iter()
+        .filter(|section| section.executable())
+        .filter_map(|section| {
+            let start = section.raw_ptr as usize;
+            bytes.get(start..start.checked_add(section.raw_size as usize)?)
+        })
+        .collect();
+    crate::dynres::set_facts(
+        facts,
+        notes,
+        flattened.as_deref().unwrap_or(&[]),
         &imported_apis,
-        &imports::windows_sensitive_vocab(),
-    );
-    let resolver =
-        imports::resolver_imported(flattened.as_deref().unwrap_or(&[]), &["GetProcAddress"]);
-    facts.set(
-        "dynres.resolver_imported",
-        Ternary::from(resolver),
-        "GetProcAddress 在导入表（动态解析链前半段）",
-    );
-    let hidden_note = if hidden.is_empty() {
-        "（无）".to_string()
-    } else {
-        hidden.join(", ")
-    };
-    facts.set(
-        "dynres.hidden_api_strings",
-        match hidden.len() {
-            0 => Ternary::False,
-            1..=2 => Ternary::Unknown,
-            _ => Ternary::True,
-        },
-        format!(
-            "非可执行节里发现 {} 个不在导入表的敏感 API 名：{hidden_note}（阈值 ≥3 = True）",
-            hidden.len()
-        ),
+        &["GetProcAddress"],
+        &nonexec,
+        &exec,
+        false,
+        false,
     );
 }
 
@@ -505,9 +508,8 @@ fn fill_elf(bytes: &[u8], info: &elf::ElfInfo, triage: &mut Triage) {
         notes.push("无节表（可能是删节表加壳）".to_string());
     }
 
-    // ELF 侧动态解析链证据：解析器 = dlsym（api_name 已剥版本后缀）；
-    // 敏感名串藏于非可执行节。ELF 的导入是动态符号表——不在表里的敏感
-    // 名同样构成"藏"的证据。
+    // ELF 侧动态解析链 + 栈串证据（dynres.rs 接线层；解析器 = dlsym，
+    // 词汇表 = Linux 敏感族）。
     let imported_apis: std::collections::BTreeSet<String> = info
         .imports
         .iter()
@@ -523,30 +525,25 @@ fn fill_elf(bytes: &[u8], info: &elf::ElfInfo, triage: &mut Triage) {
             bytes.get(start..start.checked_add(section.size as usize)?)
         })
         .collect();
-    let hidden =
-        imports::hidden_api_strings(&nonexec, &imported_apis, imports::LINUX_SENSITIVE_APIS);
-    let resolver = imports::resolver_imported(info.imports.as_deref().unwrap_or(&[]), &["dlsym"]);
-    facts.set(
-        "dynres.resolver_imported",
-        Ternary::from(resolver),
-        "dlsym 在动态符号表（动态解析链前半段）",
-    );
-    let hidden_note = if hidden.is_empty() {
-        "（无）".to_string()
-    } else {
-        hidden.join(", ")
-    };
-    facts.set(
-        "dynres.hidden_api_strings",
-        match hidden.len() {
-            0 => Ternary::False,
-            1..=2 => Ternary::Unknown,
-            _ => Ternary::True,
-        },
-        format!(
-            "非可执行节里发现 {} 个不在动态符号表的敏感 API 名：{hidden_note}（阈值 ≥3 = True）",
-            hidden.len()
-        ),
+    let exec: Vec<&[u8]> = info
+        .sections
+        .iter()
+        .filter(|section| section.flags & 0x4 != 0)
+        .filter_map(|section| {
+            let start = section.offset as usize;
+            bytes.get(start..start.checked_add(section.size as usize)?)
+        })
+        .collect();
+    crate::dynres::set_facts(
+        facts,
+        notes,
+        info.imports.as_deref().unwrap_or(&[]),
+        &imported_apis,
+        &["dlsym"],
+        &nonexec,
+        &exec,
+        true,
+        info.machine == 0xB7,
     );
 }
 

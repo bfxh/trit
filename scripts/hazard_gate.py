@@ -51,9 +51,18 @@ ALLOW_RAW_MEMORY: dict[str, str] = {
     "crates/trit-dot/src/lib.rs": (
         "POPCNT 位并行点积：target_feature 函数 + 调用方运行时探测"
     ),
+    "crates/trit-mmap/src/lib.rs": (
+        "只读文件映射：from_raw_parts 的指针来自成功的 mmap/CreateFileMapping，"
+        "长度与映射一致；结构体 Drop 恰好释放一次；映射建立后文件被外部改写属未定义行为"
+        "（crate 文档写死这一安全边界）"
+    ),
 }
 
 ALLOW_SEND_SYNC: dict[str, str] = {
+    "crates/trit-mmap/src/lib.rs": (
+        "只读映射视图：没有内部可变性，多线程共享等价于共享 &[u8]；"
+        "文件与映射句柄仅由本结构体持有并在 Drop 释放一次"
+    ),
     "crates/trit-ops/src/pool.rs": (
         "Ptr<T> 裸指针包装：只在 par_rows_mut 内按行切分使用，无重叠写，"
         "Pool::run 返回前全部 worker join（完整屏障）——并行 GEMV 的上限来源"
@@ -61,6 +70,10 @@ ALLOW_SEND_SYNC: dict[str, str] = {
 }
 
 ALLOW_TARGET_FEATURE: dict[str, str] = {
+    "crates/trit-simd/src/lib.rs": (
+        "popcount/Hamming 派发：每个 target_feature 函数只在 is_x86_feature_detected!"
+        "（或 aarch64 必选 NEON）之后调用；AVX512 模块由 build.rs 按 rustc ≥1.89 才编译"
+    ),
     "crates/trit-ops/src/simd.rs": "AVX 内核（见 raw-memory 条目）",
     "crates/trit-ops/src/gemv.rs": "AVX/FMA 内核（见 raw-memory 条目）",
     "crates/trit-dot/src/lib.rs": "POPCNT 内核（见 raw-memory 条目）",
@@ -72,6 +85,11 @@ ALLOW_RELAXED: dict[str, str] = {
     ),
     "crates/trit-orch/src/effects.rs": (
         "SAVE_SEQ 只为台账原子写生成唯一临时名；Relaxed 只用于计数，不承担同步"
+    ),
+    "crates/trit-count/examples/matching_alloc_probe.rs": (
+        "分配口径探针（example，不在产品路径）：三个 AtomicU64 只做 alloc/free 的次数与"
+        "字节累加，读数只依赖 fetch_add 自身的原子性与 main 的单线程顺序，"
+        "不用于任何跨线程同步或可见性屏障"
     ),
 }
 
