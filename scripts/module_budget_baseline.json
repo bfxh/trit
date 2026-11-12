@@ -2896,7 +2896,11 @@
     },
     {
       "file": "crates/trit-wspace/src/merge.rs",
-      "lines": 101
+      "lines": 68
+    },
+    {
+      "file": "crates/trit-wspace/src/merge/vote.rs",
+      "lines": 50
     },
     {
       "file": "crates/trit-wspace/src/net.rs",
@@ -3057,6 +3061,10 @@
     {
       "file": "crates/trit-wspace/tests/task.rs",
       "lines": 694
+    },
+    {
+      "file": "crates/trit-wspace/tests/task_bias.rs",
+      "lines": 40
     },
     {
       "file": "crates/trit-wspace/tests/task_combine.rs",

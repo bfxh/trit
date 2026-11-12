@@ -2622,5 +2622,13 @@
  "new": "if false {",
  "pkg": "trit-wspace",
  "filter": "round_trip_preserves_bias_f32"
+},
+{
+ "name": "merge: merge_vote 不合并 f32 bias",
+ "file": "crates/trit-wspace/src/merge/vote.rs",
+ "old": "if !a.bias_f32().is_empty() && !b.bias_f32().is_empty() {",
+ "new": "if false {",
+ "pkg": "trit-wspace",
+ "filter": "merge_vote_averages_bias_f32"
 }
 ]

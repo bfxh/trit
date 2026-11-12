@@ -327,10 +327,12 @@ def runner_of(mutant: dict) -> str:
     return "cargo"
 
 
-def select(pkgs: list[str]) -> list[dict]:
-    if not pkgs:
-        return MUTANTS
-    return [mutant for mutant in MUTANTS if mutant["pkg"] in pkgs]
+def select(pkgs: list[str], files: list[str] | None = None) -> list[dict]:
+    chosen = MUTANTS if not pkgs else [mutant for mutant in MUTANTS if mutant["pkg"] in pkgs]
+    if files:
+        wanted = {name.replace("\\", "/") for name in files if name}
+        chosen = [mutant for mutant in chosen if mutant["file"] in wanted]
+    return chosen
 
 
 def shard_key(mutant: dict) -> int:
@@ -551,13 +553,13 @@ def classify(out: str, rc: int, runner: str) -> tuple[str, str]:
 
 
 def main(pkgs: list[str], only: str = "", shard: tuple[int, int] | None = None,
-         partition: int = 0, logs: str = "") -> int:
+         partition: int = 0, logs: str = "", files: list[str] | None = None) -> int:
     # Windows 控制台默认可能是 GBK；变异名里有中国字与 Ł，统一按 UTF-8 输出。
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     if partition:
         return partition_audit(partition, pathlib.Path(logs) if logs else None)
-    mutants = select(pkgs)
+    mutants = select(pkgs, files)
     # fail-closed（**逐目标**）：某个目标在登记表里 0 条时，"它绿了"没有任何含义。
     # 多个目标一起选中时更危险——别的目标有变异可杀，这个目标会被静默跳过
     # （2026-11-02 的 trit-immune 就是这样在 CI 报 14s 通过的）。
@@ -764,12 +766,13 @@ def parse_partition(text: str) -> int:
     return int(match.group(0))
 
 
-def parse_args(argv: list[str]) -> tuple[list[str], str, tuple[int, int] | None, int, str]:
+def parse_args(argv: list[str]) -> tuple[list[str], str, tuple[int, int] | None, int, str, list[str]]:
     pkgs: list[str] = []
     only = ""
     shard: tuple[int, int] | None = None
     partition = 0
     logs = ""
+    files: list[str] = []
     rest = list(argv)
     while rest:
         arg = rest.pop(0)
@@ -793,9 +796,13 @@ def parse_args(argv: list[str]) -> tuple[list[str], str, tuple[int, int] | None,
             logs = rest.pop(0)
         elif arg.startswith("--logs="):
             logs = arg.split("=", 1)[1]
+        elif arg == "--files" and rest:
+            files = [part for part in rest.pop(0).split(",") if part]
+        elif arg.startswith("--files="):
+            files = [part for part in arg.split("=", 1)[1].split(",") if part]
         else:
             raise SystemExit(f"未知参数: {arg}")
-    return pkgs, only, shard, partition, logs
+    return pkgs, only, shard, partition, logs, files
 
 
 def self_test() -> int:
@@ -835,6 +842,12 @@ def self_test() -> int:
         ("caught", "FAIL red: stale baseline ｜ self-test: 9/10 passed"),
     )
     check("python 裸 traceback→crash", classify("Traceback (most recent call last):\nKeyError: 1", 1, "python")[0], "crash")
+    check(
+        "files 过滤只留改动文件",
+        [m["file"] for m in select([], ["crates/trit-wspace/src/trit.rs"])],
+        ["crates/trit-wspace/src/trit.rs"],
+    )
+    check("files 过滤命中 0 条", select([], ["crates/trit-wspace/src/nope.rs"]), [])
     check("python AssertionError→caught", classify("AssertionError: 断言失败: x", 1, "python")[0], "caught")
     check(
         "断言文本里的 SyntaxError 不算编译红",
