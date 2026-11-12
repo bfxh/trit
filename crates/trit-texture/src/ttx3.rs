@@ -145,35 +145,22 @@ pub fn suggest_chain(base_width: usize, base_height: usize) -> Vec<(usize, usize
 }
 
 fn validate_dims(width: usize, height: usize) -> Result<(), TextureError> {
-    if width == 0 || height == 0 {
-        return Err(TextureError::Ttx3Dims {
-            width,
-            height,
-            reason: "宽高必须非零".into(),
-        });
-    }
-    if width > MAX_SIDE || height > MAX_SIDE {
-        return Err(TextureError::Ttx3Dims {
-            width,
-            height,
-            reason: format!("边长超过上限 {MAX_SIDE}"),
-        });
-    }
-    if !width.is_multiple_of(TILE_WIDTH) || !height.is_multiple_of(TILE_HEIGHT) {
-        return Err(TextureError::Ttx3Dims {
-            width,
-            height,
-            reason: format!("宽必须是 {TILE_WIDTH} 的倍数、高必须是 {TILE_HEIGHT} 的倍数"),
-        });
-    }
-    if width * height > MAX_LEVEL_PIXELS {
-        return Err(TextureError::Ttx3Dims {
-            width,
-            height,
-            reason: format!("纹素超过单级上限 {MAX_LEVEL_PIXELS}"),
-        });
-    }
-    Ok(())
+    let reason = if width == 0 || height == 0 {
+        "宽高必须非零".to_string()
+    } else if width > MAX_SIDE || height > MAX_SIDE {
+        format!("边长超过上限 {MAX_SIDE}")
+    } else if !width.is_multiple_of(TILE_WIDTH) || !height.is_multiple_of(TILE_HEIGHT) {
+        format!("宽必须是 {TILE_WIDTH} 的倍数、高必须是 {TILE_HEIGHT} 的倍数")
+    } else if width * height > MAX_LEVEL_PIXELS {
+        format!("纹素超过单级上限 {MAX_LEVEL_PIXELS}")
+    } else {
+        return Ok(());
+    };
+    Err(TextureError::Ttx3Dims {
+        width,
+        height,
+        reason,
+    })
 }
 
 fn tile_grid(width: usize, height: usize) -> (usize, usize) {
@@ -358,7 +345,6 @@ impl LargeTexture {
                 }
                 let crc = tile_crc(&tile_bytes);
                 let data_start = dir_start + tiles * TILE_ENTRY_BYTES;
-                // 数据区按瓦片连续存放，每片占 `copies` 份 TILE_DATA_BYTES。
                 let tile_stride = TILE_DATA_BYTES as u64 * level.policy.copies() as u64;
                 let off1 = data_start as u64 + tile_index as u64 * tile_stride;
                 let off2 = if level.policy == LevelPolicy::Strength {
@@ -509,7 +495,6 @@ impl<'a> Ttx3Archive<'a> {
                 message: format!("瓦片坐标越界（网格 {tiles_x}×{tiles_y}）"),
             });
         }
-        // 偏移来自文件，可能是任意 u64：在 u64 里饱和计算终点，越界即截断错误。
         let index = ty as u64 * tiles_x as u64 + tx as u64;
         let needed = entry
             .dir_offset
@@ -548,7 +533,7 @@ impl<'a> Ttx3Archive<'a> {
         ty: usize,
     ) -> Result<Vec<TritBlock>, TextureError> {
         let (off1, off2, len, crc) = self.tile_entry(level, tx, ty)?;
-        // 下面按 TILE_BLOCKS 个整块切分，CRC 也假定整块输入，所以长度必须精确。
+        // CRC 按整块输入计算，长度必须精确等于 TILE_DATA_BYTES。
         if len as usize != TILE_DATA_BYTES {
             return Err(TextureError::Ttx3Tile {
                 level,
