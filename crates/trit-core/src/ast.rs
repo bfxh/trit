@@ -216,7 +216,7 @@ impl Expr {
         match self {
             Self::Const(v) => v.to_string(),
             Self::Var(name) => name.clone(),
-            Self::Not(a) => format!("¬({})", a.to_infix()),
+            Self::Not(a) => format!("¬{}", a.to_infix()),
             Self::And(a, b) => format!("({} ∧ {})", a.to_infix(), b.to_infix()),
             Self::Or(a, b) => format!("({} ∨ {})", a.to_infix(), b.to_infix()),
             Self::Xor(a, b) => format!("({} ⊕ {})", a.to_infix(), b.to_infix()),
@@ -233,70 +233,4 @@ impl std::fmt::Display for Expr {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::value::Ternary;
-
-    #[test]
-    fn collects_variables_in_order() {
-        let e = Expr::and(
-            Expr::Var("a".into()),
-            Expr::or(Expr::Var("b".into()), Expr::Var("a".into())),
-        );
-        assert_eq!(e.variables(), vec!["a".to_string(), "b".to_string()]);
-    }
-
-    #[test]
-    fn node_count_and_depth() {
-        let e = Expr::and(Expr::Var("a".into()), Expr::Var("b".into()));
-        assert_eq!(e.node_count(), 3);
-        assert_eq!(e.depth(), 2);
-    }
-
-    #[test]
-    fn infix_rendering() {
-        let e = Expr::logical_not(Expr::Var("a".into()));
-        assert_eq!(e.to_infix(), "¬(a)");
-        let e2 = Expr::equiv(Expr::Const(Ternary::True), Expr::Var("x".into()));
-        assert_eq!(e2.to_infix(), "(1 ≡ x)");
-    }
-
-    #[test]
-    fn try_var_rejects_reserved_and_malformed_names() {
-        assert_eq!(Expr::try_var("a_1").unwrap(), Expr::Var("a_1".into()));
-        assert!(matches!(
-            Expr::try_var("X").unwrap_err(),
-            VarNameError::Reserved(_)
-        ));
-        assert!(matches!(
-            Expr::try_var("a b").unwrap_err(),
-            VarNameError::Invalid(_)
-        ));
-        assert!(matches!(
-            Expr::try_var("").unwrap_err(),
-            VarNameError::Empty
-        ));
-    }
-
-    #[test]
-    fn display_does_not_round_trip_arbitrary_vars() {
-        // 直接构造的 Var("X") 渲染成 X，重新解析会变成常量。
-        let e = Expr::Var("X".into());
-        assert_eq!(e.to_string(), "X");
-        assert!(matches!(
-            crate::parser::Parser::parse(&e.to_string()).unwrap(),
-            Expr::Const(Ternary::Unknown)
-        ));
-    }
-
-    #[test]
-    fn iterative_metrics_match_hand_computed_values() {
-        let e = Expr::and(
-            Expr::Var("a".into()),
-            Expr::implies(Expr::Var("b".into()), Expr::Var("c".into())),
-        );
-        assert_eq!(e.node_count(), 5);
-        assert_eq!(e.depth(), 3);
-        assert_eq!(e.variables(), vec!["a", "b", "c"]);
-    }
-}
+mod tests;

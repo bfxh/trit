@@ -640,7 +640,11 @@
     },
     {
       "file": "crates/trit-core/src/ast.rs",
-      "lines": 302
+      "lines": 236
+    },
+    {
+      "file": "crates/trit-core/src/ast/tests.rs",
+      "lines": 72
     },
     {
       "file": "crates/trit-core/src/bits.rs",
