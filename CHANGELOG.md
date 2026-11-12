@@ -43,6 +43,17 @@
   `docs/WSP-TILE-EDIT.md`。
 - 未证栏：只支持矩形块、只改 trits、无跨层 copy/swap、`diff` 仍逐点、
   `analyze`/`propose` 不生成 tile。
+### Changed（trit-re：base64 × wide 组合语义实装——记名弃权再收一项）
+
+- `sigscan/b64.rs`：`wide base64` = **base64(wide(plaintext))**（官方探针
+  C1）、`base64wide wide` = **wide(b64(wide(plaintext)))**（C5——wide 两侧
+  叠加）、`base64wide` = wide(b64(pt))（B6）——wide 修饰组合矩阵全部
+  官方差分定案并实装（此前 `wide` × base64 组合记名弃权）。
+- `variants` 加 `wide_before` 相位参数；顺带修掉 `len` 重复声明遮蔽
+  （相位尾部 drop 用错明文长度的隐患）。
+- 判据：官方差分 wide 组合批 MATCH 4 / DIFF 0 + 原 b64 批 MATCH 11 /
+  DIFF 0（无回归）；`cargo test -p trit-re` = 187 全绿（+wide 组合回放）。
+
 ### Added（trit-re：诱饵指纹检测——对抗性投毒下的能力证据降权）
 
 - 新模块 `crates/trit-re/src/decoy.rs`：反逆向盾（BLA 形，见
