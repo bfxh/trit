@@ -11,6 +11,9 @@ use crate::net::Net;
 use crate::task::TaskVector;
 use crate::trit::Trit;
 
+pub mod dare;
+pub use dare::*;
+
 /// 按差分写回逐行 f32 偏置：`None` 表示该行没有；层内任一行缺失 ⇒ 整层清空。
 pub(crate) fn apply_bias_f32(net: &mut Net, records: &[(usize, usize, Option<f32>)]) -> Result<()> {
     if records.is_empty() {
@@ -48,22 +51,6 @@ pub(crate) fn apply_bias_f32(net: &mut Net, records: &[(usize, usize, Option<f32
             values.clear();
         }
         *net.layer_mut(layer) = current.with_bias_f32(values)?;
-    }
-    Ok(())
-}
-
-/// 把 f32 偏置整层复制到另一个同架构网络（DARE 只改三值差分，幅度另行保留）。
-fn copy_bias_f32(from: &Net, to: &mut Net) -> Result<()> {
-    for (index, source) in from.layers().iter().enumerate() {
-        let target = to
-            .layer(index)
-            .ok_or(Error::OutOfBounds {
-                layer: index,
-                row: 0,
-                col: 0,
-            })?
-            .clone();
-        *to.layer_mut(index) = target.with_bias_f32(source.bias_f32().to_vec())?;
     }
     Ok(())
 }
@@ -280,7 +267,7 @@ pub fn merge_tasks_weighted_report(
     merge_weighted(base, tasks, weights)
 }
 
-fn validate_weights(task_count: usize, weights: &[f32]) -> Result<()> {
+pub(crate) fn validate_weights(task_count: usize, weights: &[f32]) -> Result<()> {
     if weights.len() != task_count {
         return Err(Error::Shape {
             what: "weights",
@@ -438,177 +425,6 @@ fn weighted_median(mut items: Vec<(f32, f64)>) -> Option<f32> {
         cumulative = next;
     }
     items.last().map(|(value, _)| *value)
-}
-
-/// 先按加权投票合并，再对 `base → merged` 的差分做一次坐标级 DARE。
-///
-/// `rate=0` 与 [`merge_tasks_weighted`] 完全一致；权重校验同前者。
-pub fn merge_tasks_weighted_dare(
-    base: &Net,
-    tasks: &[TaskVector],
-    weights: &[f32],
-    rate: f32,
-    seed: u64,
-) -> Result<Net> {
-    let combined = merge_tasks_weighted(base, tasks, weights)?;
-    if rate == 0.0 {
-        return Ok(combined);
-    }
-    let outcome = crate::dare::dare_drop(base, &combined, rate, seed)?;
-    let mut result = base.clone();
-    outcome.patch.apply(&mut result)?;
-    copy_bias_f32(&combined, &mut result)?;
-    Ok(result)
-}
-
-/// 每个任务先做坐标级 DARE，再按权重投票合并。
-///
-/// 丢弃发生在投票之前：被丢的票不参与加权投票。合并后对有差异的行统一乘一次
-/// `1/(1-rate)`（与 [`merge_tasks_per_task_dare`] 相同的近似重标度）。
-pub fn merge_tasks_weighted_per_task_dare(
-    base: &Net,
-    tasks: &[TaskVector],
-    weights: &[f32],
-    rate: f32,
-    seed: u64,
-) -> Result<Net> {
-    validate_weights(tasks.len(), weights)?;
-    if !rate.is_finite() || !(0.0..1.0).contains(&rate) {
-        return Err(Error::InvalidRate { rate });
-    }
-    if rate == 0.0 {
-        return merge_tasks_weighted(base, tasks, weights);
-    }
-    let scale_factor = 1.0 / (1.0 - rate);
-    let mut sparse = Vec::with_capacity(tasks.len());
-    for (index, task) in tasks.iter().enumerate() {
-        let child_seed = seed ^ (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        let edits: Vec<Edit> = task
-            .edits()
-            .iter()
-            .filter(|edit| match edit {
-                Edit::SetTrit {
-                    layer, row, col, ..
-                } => crate::dare::keep(child_seed, *layer, *row, *col, rate),
-                Edit::SetBias { layer, row, .. } => {
-                    crate::dare::keep(child_seed, *layer, *row, usize::MAX, rate)
-                }
-                _ => true,
-            })
-            .cloned()
-            .collect();
-        sparse.push(TaskVector {
-            base: task.base,
-            edits,
-            scales: task.scales().to_owned(),
-            bias_f32: task.bias_f32().to_vec(),
-        });
-    }
-    let mut net = merge_tasks_weighted(base, &sparse, weights)?;
-    let mut rescale = Vec::new();
-    for (layer, (src, dst)) in base.layers().iter().zip(net.layers()).enumerate() {
-        for row in 0..src.rows() {
-            let changed = (0..src.cols()).any(|col| src.trit(row, col) != dst.trit(row, col))
-                || src.bias_trit(row) != dst.bias_trit(row);
-            if !changed {
-                continue;
-            }
-            let scale = dst.scale(row).expect("row in range");
-            let scaled = scale * scale_factor;
-            if scaled.to_bits() != scale.to_bits() {
-                rescale.push(Edit::SetScale {
-                    layer,
-                    row,
-                    to: scaled,
-                });
-            }
-        }
-    }
-    Patch::new(rescale).apply(&mut net)?;
-    Ok(net)
-}
-
-/// 先按投票合并，再对 `base → merged` 的差分做一次**坐标级** DARE 稀疏化。
-///
-/// 这是“合并结果稀疏化”，不是“每个任务先稀疏化再投票”：投票阶段仍使用完整任务向量，
-/// 避免丢弃改变投票结果；`rate=0` 与 [`merge_tasks`] 完全一致。`seed` 只影响 DARE 选点。
-pub fn merge_tasks_dare(base: &Net, tasks: &[TaskVector], rate: f32, seed: u64) -> Result<Net> {
-    let merged = merge_tasks(base, tasks)?;
-    if rate == 0.0 {
-        return Ok(merged);
-    }
-    let outcome = crate::dare::dare_drop(base, &merged, rate, seed)?;
-    let mut net = base.clone();
-    outcome.patch.apply(&mut net)?;
-    copy_bias_f32(&merged, &mut net)?;
-    Ok(net)
-}
-
-/// 每个任务**先**做坐标级 DARE 再投票（与 [`merge_tasks_dare`] 的“先合并再稀疏化”相对）。
-///
-/// 丢弃发生在投票之前：被丢的坐标不参与投票，可能改变投票结果。每个任务用
-/// `seed ^ index * 常数` 派生子种子，保证多任务之间选择集独立；合并后对有差异的行
-/// 统一乘一次 `1/(1-rate)`（近似 DARE 重标度，不是每任务各乘一次）。`rate=0` 与
-/// [`merge_tasks`] 完全一致。
-pub fn merge_tasks_per_task_dare(
-    base: &Net,
-    tasks: &[TaskVector],
-    rate: f32,
-    seed: u64,
-) -> Result<Net> {
-    if !rate.is_finite() || !(0.0..1.0).contains(&rate) {
-        return Err(Error::InvalidRate { rate });
-    }
-    if rate == 0.0 {
-        return merge_tasks(base, tasks);
-    }
-    let factor = 1.0 / (1.0 - rate);
-    let mut sparse = Vec::with_capacity(tasks.len());
-    for (index, task) in tasks.iter().enumerate() {
-        let task_seed = seed ^ (index as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15);
-        let edits: Vec<Edit> = task
-            .edits()
-            .iter()
-            .filter(|edit| match edit {
-                Edit::SetTrit {
-                    layer, row, col, ..
-                } => crate::dare::keep(task_seed, *layer, *row, *col, rate),
-                Edit::SetBias { layer, row, .. } => {
-                    crate::dare::keep(task_seed, *layer, *row, usize::MAX, rate)
-                }
-                _ => true,
-            })
-            .cloned()
-            .collect();
-        sparse.push(TaskVector {
-            base: task.base,
-            edits,
-            scales: task.scales().to_vec(),
-            bias_f32: task.bias_f32().to_vec(),
-        });
-    }
-    let mut net = merge_tasks(base, &sparse)?;
-    let mut rescale = Vec::new();
-    for (layer, (src, dst)) in base.layers().iter().zip(net.layers()).enumerate() {
-        for row in 0..src.rows() {
-            let changed = (0..src.cols()).any(|col| src.trit(row, col) != dst.trit(row, col))
-                || src.bias_trit(row) != dst.bias_trit(row);
-            if !changed {
-                continue;
-            }
-            let scale = dst.scale(row).expect("row in range");
-            let rescaled = scale * factor;
-            if rescaled.to_bits() != scale.to_bits() {
-                rescale.push(Edit::SetScale {
-                    layer,
-                    row,
-                    to: rescaled,
-                });
-            }
-        }
-    }
-    Patch::new(rescale).apply(&mut net)?;
-    Ok(net)
 }
 
 fn current_value(base: &Net, layer: usize, row: usize, col: usize) -> Result<Trit> {

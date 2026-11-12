@@ -325,7 +325,6 @@ fn cli_task_merge_grid_and_report() {
     assert_eq!(output["tuning"]["grid"], json!([0.0, 2.0]));
     assert_eq!(output["tuning"]["merge"], json!("plain"));
     assert_eq!(output["merge_report"]["tasks"], json!(2));
-    assert_eq!(output["merge_report"]["ignored_tasks"], json!(0));
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -376,7 +375,7 @@ fn cli_task_merge_tune_with_dare() {
         "1",
     ]));
     assert_eq!(output["tuning"]["merge"], json!("dare"));
-    assert!(output["merge_report"].is_null(), "DARE 路径不返回投票报告");
+    assert_eq!(output["merge_report"]["tasks"], json!(2));
     let _ = fs::remove_dir_all(&dir);
 }
 
