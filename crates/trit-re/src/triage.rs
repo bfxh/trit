@@ -1,7 +1,5 @@
-//! 台账：把一个文件压成"事实 + 判定"。
-//!
-//! 判定层不知道格式细节，只消费事实表；这样换解析器、加新证据面都不会
-//! 改动判定表达式。
+//! 台账：把一个文件压成"事实 + 判定"。判定层不知道格式细节，只消费
+//! 事实表；换解析器、加新证据面都不会改动判定表达式。
 
 use trit_core::value::Ternary;
 
@@ -435,6 +433,8 @@ fn fill_pe(bytes: &[u8], info: &pe::PeInfo, triage: &mut Triage) {
         false,
         false,
     );
+    // 对抗性投毒的诱饵指纹（BLA 形盾）：命中即降权能力事实（见 decoy.rs）
+    crate::decoy::scan(info, facts, notes);
 }
 
 fn fill_elf(bytes: &[u8], info: &elf::ElfInfo, triage: &mut Triage) {

@@ -1,10 +1,9 @@
 //! 二进制逆向台账：把 PE/ELF 的结构观测变成**三值事实**，再把假设求成
 //! 三值结论；证据两边都有时用 Belnap 四值的 `B` 明确表示冲突。
 //!
-//! 设计边界：
-//! - **不做反汇编**，不下"恶意"结论；只回答结构性问题（加壳迹象、注入能力、装载能力）。
-//! - 解析拿不到的数据一律 `Unknown`，不默认成 `False`。
-//! - 导出是 append-only 的 JSONL 台账（见 [`ledger`]），采样哈希是主键。
+//! 设计边界：**不做反汇编**，不下"恶意"结论；只回答结构性问题（加壳迹象、
+//! 注入能力、装载能力）。解析拿不到的数据一律 `Unknown`，不默认成 `False`。
+//! 导出是 append-only 的 JSONL 台账（见 [`ledger`]），采样哈希是主键。
 //!
 //! ```no_run
 //! let bytes = std::fs::read("sample.exe").unwrap();
@@ -17,6 +16,7 @@
 #![forbid(unsafe_code)]
 
 pub mod collect;
+pub mod decoy;
 pub mod dynres;
 pub mod elf;
 pub mod entropy;
