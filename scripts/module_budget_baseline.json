@@ -3011,6 +3011,10 @@
       "lines": 23
     },
     {
+      "file": "crates/trit-wspace/src/cli/lock.rs",
+      "lines": 127
+    },
+    {
       "file": "crates/trit-wspace/src/cli/usage.rs",
       "lines": 38
     },
@@ -3245,6 +3249,10 @@
     {
       "file": "crates/trit-wspace/tests/localize.rs",
       "lines": 252
+    },
+    {
+      "file": "crates/trit-wspace/tests/lock.rs",
+      "lines": 158
     },
     {
       "file": "crates/trit-wspace/tests/mcp.rs",
