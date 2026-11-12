@@ -2840,7 +2840,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_wsp2.rs",
-      "lines": 38
+      "lines": 36
     },
     {
       "file": "crates/trit-wspace/src/cli_audit.rs",
@@ -2992,7 +2992,15 @@
     },
     {
       "file": "crates/trit-wspace/src/wsp3.rs",
-      "lines": 148
+      "lines": 79
+    },
+    {
+      "file": "crates/trit-wspace/src/wsp3/rle.rs",
+      "lines": 73
+    },
+    {
+      "file": "crates/trit-wspace/src/wsp4.rs",
+      "lines": 306
     },
     {
       "file": "crates/trit-wspace/tests/analyze.rs",
@@ -3136,7 +3144,7 @@
     },
     {
       "file": "crates/trit-wspace/tests/wsp2.rs",
-      "lines": 175
+      "lines": 173
     },
     {
       "file": "crates/trit-wspace/tests/wsp2_extra.rs",
@@ -3144,7 +3152,11 @@
     },
     {
       "file": "crates/trit-wspace/tests/wsp3.rs",
-      "lines": 156
+      "lines": 155
+    },
+    {
+      "file": "crates/trit-wspace/tests/wsp4.rs",
+      "lines": 178
     },
     {
       "file": "fuzz/fuzz_targets/aiger.rs",
