@@ -1033,7 +1033,7 @@
  },
  {
   "name": "wspace-rebase: 用 base 当 target 比较（冲突全漏）",
-  "file": "crates/trit-wspace/src/rebase.rs",
+  "file": "crates/trit-wspace/src/rebase/classify.rs",
   "old": "            let now = trit_at(target, layer, row, col)?;",
   "new": "            let now = trit_at(base, layer, row, col)?;",
   "pkg": "trit-wspace",
@@ -1049,7 +1049,7 @@
  },
  {
   "name": "wspace-rebase: 行交换已应用检测失效",
-  "file": "crates/trit-wspace/src/rebase.rs",
+  "file": "crates/trit-wspace/src/rebase/classify.rs",
   "old": "            } else if row_eq(before, a, now, b) && row_eq(before, b, now, a) {",
   "new": "            } else if false {",
   "pkg": "trit-wspace",
@@ -1057,7 +1057,7 @@
  },
  {
   "name": "wspace-rebase: 行取反已应用检测失效",
-  "file": "crates/trit-wspace/src/rebase.rs",
+  "file": "crates/trit-wspace/src/rebase/classify.rs",
   "old": "            } else if row_eq_negated(before, row, now, row) {",
   "new": "            } else if false {",
   "pkg": "trit-wspace",
@@ -1065,7 +1065,7 @@
  },
  {
   "name": "wspace-rebase: scale 冲突漏判",
-  "file": "crates/trit-wspace/src/rebase.rs",
+  "file": "crates/trit-wspace/src/rebase/classify.rs",
   "old": "            if before.to_bits() == now.to_bits() {",
   "new": "            if true {",
   "pkg": "trit-wspace",
