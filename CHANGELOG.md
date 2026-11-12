@@ -286,6 +286,20 @@
 - 模块预算（拆文件不抬台账）：`impl Pattern` 构造器 → `sigscan/pattern.rs`，词法层 → `yaraparse/lex.rs`，
   正则集成测试 → `tests/yara_regex.rs`。测试 181 全绿（clippy `-D warnings` / fmt / module_budget /
   docs_hygiene / hazard / secret 全过）。
+### Added（YARA：base64 相位变体，替换记名弃权——子集收官）
+
+- `crates/trit-re/src/sigscan/b64.rs`：`"…" base64` 从 `Unscannable` 升级为**相位变体实扫**——
+  p∈{0,1,2} 预垫字节 → 标准 b64（手写零依赖）→ 去 padding → **头 drop**（p>0 时 p+1，前缀污染
+  字符）→ **尾 drop**（(p+len)%3≠0 时 1，末组不满的尾字符受后继未知字节影响）→ 空变体丢弃。
+- 多变体**并集计数**（`#a` 跨变体累计）；`base64wide` = 编码后 wide；`base64 base64wide` 双修饰 =
+  两套变体并集（官方 B7 探针）。组合矩阵（官方探针实测）：`ascii` 被忽略；`base64` ×
+  `nocase/xor/fullword` 官方**编译拒绝** → 解析层对齐拒绝；`wide` 组合官方接受但语义未对拍 →
+  记名弃权；正则串 + base64 = 官方语法错 → 对齐拒绝。
+- **官方对拍：探针批 11 用例 MATCH 11 / DIFF 0 / SUBSET-GAP 0**（含 1 字节 {Q,B} / 2 字节
+  {QU,FC,BQ} 判别探针——相位变体逐个实证）。判据：`cargo test -p trit-re` = 184 全绿
+  （+b64 单测/集成）；`parse_string_value` → `yaraparse/valuemod.rs`（守预算拆分）。
+
+### Changed（门：模块预算改默认全量棘轮 + 一次性重录基线；新增磁盘介质门）
 
 ### Changed（门：模块预算改默认全量棘轮 + 一次性重录基线；新增磁盘介质门）
 
