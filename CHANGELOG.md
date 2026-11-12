@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：GGUF ↔ WSP1 的 CLI 闭环）
+
+- 新增 `export-gguf <dir> --out <file>` 与 `import-gguf <file> --out <dir>`：复用
+  `import-safetensors-dir` 的 `manifest.json` + `NNNN-<name>.wsp` 目录约定；GGUF 侧
+  只接受 `TYPE_TRIT` 2D 张量，元数据只写 `trit.wsp1=1`。
+- 真实 all-MiniLM-L6-v2 103 个张量：WSP1 46,632,748 字节 ↔ GGUF 4,772,288 字节；
+  往返 67/103 逐字节一致，36 个带 `biasf` 的张量只差 f32 偏置幅度与 checksum。
+- 6 条 CLI 测试（往返、坏 magic、多层、缺 manifest、空列表、f32 bias 丢失）。
+- 文档 `docs/GGUF-TRIT.md` §4。
+- 未证栏：与 llama.cpp 互操作未证；GGUF 不保留 f32 bias 幅度、`vector` 标记与元数据值。
+
 ### Added（trit-wspace：真实模型端到端 bias 读数）
 
 - 新示例 `examples/bias_e2e.rs`：读 all-MiniLM-L6-v2 第 0 层的

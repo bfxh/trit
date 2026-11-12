@@ -189,7 +189,7 @@ pub(super) fn export(args: &[String]) -> Result<(), String> {
     }))
 }
 
-fn safe_name(name: &str) -> String {
+pub(super) fn safe_name(name: &str) -> String {
     let mapped: String = name
         .chars()
         .map(|c| {

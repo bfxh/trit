@@ -21,9 +21,12 @@ use crate::repair::RepairOptions;
 use crate::wire;
 
 mod cli_artifact_shard;
+mod cli_gguf;
 mod cli_safetensors;
 mod cli_task;
 mod cli_wsp2;
+mod fsutil;
+pub(crate) use fsutil::atomic_write;
 
 const USAGE: &str = "\
 trit-wspace <command>
@@ -52,6 +55,8 @@ trit-wspace <command>
   export-safetensors <artifact|-> --out <path> [--tensor <name>]
   import-safetensors-dir <file> --out <dir>
   export-safetensors-dir <dir> --out <file>
+  import-gguf <file> --out <dir>
+  export-gguf <dir> --out <file>
   split-artifact <artifact|-> --rows N --out <dir>
   join-artifact <dir> --out <path>
   pack-artifact <artifact|-> --out <bin>
@@ -104,6 +109,8 @@ pub fn run(args: &[String]) -> Result<(), String> {
         "export-safetensors" => cli_safetensors::export(&args[1..]),
         "import-safetensors-dir" => cli_safetensors::import_dir(&args[1..]),
         "export-safetensors-dir" => cli_safetensors::export_dir(&args[1..]),
+        "import-gguf" => cli_gguf::import(&args[1..]),
+        "export-gguf" => cli_gguf::export(&args[1..]),
         "split-artifact" => cli_artifact_shard::split(&args[1..]),
         "join-artifact" => cli_artifact_shard::join(&args[1..]),
         "pack-artifact" => cli_wsp2::pack(&args[1..]),
@@ -741,22 +748,6 @@ pub(crate) fn write_out(parsed: &Parsed, net: &Net) -> Result<(), String> {
         atomic_write(path, &to_wsp(net))?;
     }
     Ok(())
-}
-
-pub(crate) fn atomic_write(path: &str, text: &str) -> Result<(), String> {
-    let temp = format!("{path}.tmp-{}", std::process::id());
-    fs::write(&temp, text).map_err(|error| format!("{temp}: {error}"))?;
-    match fs::rename(&temp, path) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            // Windows 上 rename 覆盖已存在文件会失败；先删目标再改名。
-            let _ = fs::remove_file(path);
-            fs::rename(&temp, path).map_err(|error| {
-                let _ = fs::remove_file(&temp);
-                format!("{path}: {error}")
-            })
-        }
-    }
 }
 
 pub(crate) fn emit(value: &Value) -> Result<(), String> {
