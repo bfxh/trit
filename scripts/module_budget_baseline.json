@@ -2952,7 +2952,11 @@
     },
     {
       "file": "crates/trit-wspace/src/mcp.rs",
-      "lines": 738
+      "lines": 657
+    },
+    {
+      "file": "crates/trit-wspace/src/mcp/load.rs",
+      "lines": 149
     },
     {
       "file": "crates/trit-wspace/src/mcp/mcp_dare.rs",
