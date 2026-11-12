@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：WSP3——WSP2 的 RLE 二级压缩）
+
+- `wsp3::rle_encode` / `rle_decode`：PackBits（literal 1–128 字节 / 重复 3–130 字节），无外部依赖。
+- `to_wsp3` / `from_wsp3`：`magic "WSP3" | version u8=1 | raw_len u64 | PackBits 流 | checksum u64`；
+  解包先还原 WSP2 再回 WSP1。CLI `pack-artifact --rle` 输出 WSP3，`unpack-artifact` 按 magic 自动识别。
+- 读数：全同 trit 的 8×32 单层网络（256 trit）WSP2 → WSP3 体积缩小（`tests/wsp3.rs` 断言
+  `wsp3.len() < wsp2.len()`；RLE 全模式往返 6 组，含 300 字节长 run）。
+- 测试 373 → 378（`tests/wsp3.rs` 5 条）；变异 +3（重复段长度、解压长度、版本校验）。
+- 未证栏：只有字节级 RLE，没有 zstd/字典压缩；真实 MiniLM 的 WSP2→WSP3 压缩率未测；
+  WSP3 不是规范形式，仍以 WSP1 为准。
+
 ### Added（trit-wspace：DARE 路径返回投票报告）
 
 - `merge_tasks_{weighted_,}dare_report` / `merge_tasks_{weighted_,}per_task_dare_report`：

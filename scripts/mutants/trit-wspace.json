@@ -2694,5 +2694,29 @@
  "new": "        dropped += 0;",
  "pkg": "trit-wspace",
  "filter": "per_task_report_is_not_empty"
+},
+{
+ "name": "wsp3: RLE 重复段长度少 1",
+ "file": "crates/trit-wspace/src/wsp3.rs",
+ "old": "            let len = usize::from(header & 0x7F) + 3;",
+ "new": "            let len = usize::from(header & 0x7F) + 2;",
+ "pkg": "trit-wspace",
+ "filter": "rle_round_trips_every_pattern"
+},
+{
+ "name": "wsp3: 不校验解压长度",
+ "file": "crates/trit-wspace/src/wsp3.rs",
+ "old": "    if out.len() != expected {",
+ "new": "    if false {",
+ "pkg": "trit-wspace",
+ "filter": "rle_decode_rejects_bad_streams"
+},
+{
+ "name": "wsp3: 不校验版本",
+ "file": "crates/trit-wspace/src/wsp3.rs",
+ "old": "    if bytes[4] != VERSION {",
+ "new": "    if false {",
+ "pkg": "trit-wspace",
+ "filter": "wsp3_rejects_corruption"
 }
 ]

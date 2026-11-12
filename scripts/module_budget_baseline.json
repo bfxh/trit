@@ -2804,7 +2804,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_wsp2.rs",
-      "lines": 39
+      "lines": 38
     },
     {
       "file": "crates/trit-wspace/src/cli_audit.rs",
@@ -2955,6 +2955,10 @@
       "lines": 77
     },
     {
+      "file": "crates/trit-wspace/src/wsp3.rs",
+      "lines": 148
+    },
+    {
       "file": "crates/trit-wspace/tests/analyze.rs",
       "lines": 381
     },
@@ -3101,6 +3105,10 @@
     {
       "file": "crates/trit-wspace/tests/wsp2_extra.rs",
       "lines": 46
+    },
+    {
+      "file": "crates/trit-wspace/tests/wsp3.rs",
+      "lines": 156
     },
     {
       "file": "fuzz/fuzz_targets/aiger.rs",
