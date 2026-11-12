@@ -36,7 +36,7 @@
 //!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`mod@explain`] 解释单个样本
 //!   为什么错、哪些单点编辑能让它翻转/变对；[`mod@probe`] 做行级消融测行为漂移（大网读取）；
 //!   [`mod@localize`] 在承重行内做 trit 级定位（行 → 权重两级读取）；
-//!   [`merge`] 负责消掉隐藏单元置换对称性后再合并；[`mod@task`] 做三值任务向量投票合并；
+//!   [`merge`] 负责消掉隐藏单元置换对称性后再合并；[`mod@task`] 做三值任务向量投票合并（两者都保留可选 f32 偏置）；
 //!   [`mod@dare`] 做 DARE 的三值对应物：按种子确定性丢弃差分 trit，重标度吸收进 scale。
 //!
 //! 规范自由度（不变量）：
@@ -125,6 +125,7 @@ pub mod safetensors;
 pub mod scale;
 pub mod shard;
 pub mod task;
+pub mod task_merge;
 pub mod transplant;
 pub mod trit;
 pub mod tune;
@@ -160,11 +161,8 @@ pub use scale::{
     scale_task_rows_map, scale_task_rows_patterns, scale_task_units,
 };
 pub use shard::{Checkpoint, Shard, ShardCursor, ShardHeader, ShardReplay, ShardedLog};
-pub use task::{
-    MergeReport, TaskVector, merge_tasks, merge_tasks_dare, merge_tasks_per_task_dare,
-    merge_tasks_weighted, merge_tasks_weighted_dare, merge_tasks_weighted_per_task_dare,
-    merge_tasks_weighted_report,
-};
+pub use task::TaskVector;
+pub use task_merge::*;
 pub use transplant::transplant_units;
 pub use trit::Trit;
 pub use tune::{
