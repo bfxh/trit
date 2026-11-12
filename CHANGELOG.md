@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed（trit-wspace：WSP2 v2 支持 f32 bias + 自动更新/VCS 文档）
+
+- WSP2 版本 2：每层加 `flags u8`（bit0 = 有 `biasf`），随后 `rows × f32`；v1 仍可解码。
+  `to_wsp2` 不再拒绝带 `biasf` 的层；`from_wsp2` 接受 v1/v2，未知 flags 位报错。
+  真实 MiniLM 带 `biasf` 的 WSP1：**300K → 40K（7.5×）**，解包逐字节一致。
+- 文档：`docs/AUTO-UPDATE.md`（一键更新草案，账本 A415）、`docs/VCS-BRANCH-ISSUES.md`
+  （trit-vcs 分支/更新问题清单，只记录不修）；`docs/ROADMAP.md` 加“自动化与跨仓（待办）”。
+- 模块预算：`wsp2.rs` 202→139（字节助手移到 `wsp2/bytes.rs`）、`tests/wsp2.rs` 209→175
+  （v1/biasf 测试移到 `tests/wsp2_extra.rs`）、`tests/safetensors_bias.rs` 415→411。
+- 测试 370 → 372（`tests/wsp2.rs` 10 条 + `tests/safetensors_bias.rs` 11 条）；变异 326 → 328（+2）。
+
 ### Fixed（钩子稳定副本：老分支不再被 rc=2 误伤）
 
 - 事故（2026-11-12 安装后实测）：`pre-commit` 调的是**当前分支**的 `scripts/hooks.py`；老分支没有
