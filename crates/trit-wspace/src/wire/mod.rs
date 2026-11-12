@@ -1,16 +1,7 @@
 //! 线格式：补丁、验证集、报告的 JSON 表示（CLI 与 MCP 共用）。
 //!
-//! 补丁格式（稳定，version=1）：
-//!
-//! ```json
-//! {"version": 1, "edits": [
-//!   {"op": "set_trit", "layer": 0, "row": 0, "col": 0, "to": "+"},
-//!   {"op": "set_bias", "layer": 0, "row": 1, "to": "-"},
-//!   {"op": "set_scale", "layer": 0, "row": 1, "to": 2.0},
-//!   {"op": "swap_rows", "layer": 0, "a": 0, "b": 1},
-//!   {"op": "negate_row", "layer": 0, "row": 1}
-//! ]}
-//! ```
+//! 补丁格式（稳定，version=1）：`{"version":1,"edits":[{"op":"set_trit",...}, ...]}`；
+//! tile 编辑见 `set_tile` / `fill_tile`（`wire/tile.rs`）。
 //!
 //! 验证集两种写法：
 //!
@@ -19,6 +10,8 @@
 //!   或 `{"domain":"ternary","vars":2,"table":"-0+..."}`（字典序，`-0+`）。
 
 use serde_json::{Value, json};
+
+mod tile;
 
 use crate::analyze::{
     Analysis, EditImpact, PairAnalysis, PairImpact, TripleAnalysis, TripleImpact,
@@ -100,6 +93,7 @@ pub fn edit_to_value(edit: &Edit) -> Value {
         Edit::NegateRow { layer, row } => json!({
             "op": "negate_row", "layer": layer, "row": row,
         }),
+        Edit::SetTile { .. } | Edit::FillTile { .. } => tile::to_value(edit),
     }
 }
 
@@ -138,6 +132,7 @@ pub fn cost_to_value(cost: &Cost) -> Value {
         "biases": cost.biases,
         "scales": cost.scales,
         "row_ops": cost.row_ops,
+        "tile_ops": cost.tile_ops,
         "touched": cost.touched,
     })
 }
@@ -607,6 +602,7 @@ pub fn edit_from_value(value: &Value) -> Result<Edit> {
             layer: field_usize(value, "layer")?,
             row: field_usize(value, "row")?,
         }),
+        "set_tile" | "fill_tile" => tile::from_value(op, value),
         other => Err(wire(format!("未知 edit.op `{other}`"))),
     }
 }
@@ -618,7 +614,7 @@ pub(crate) fn parse_rows(value: &Value) -> Result<Vec<Vec<Trit>>> {
     items.iter().map(row_trits).collect()
 }
 
-fn row_trits(value: &Value) -> Result<Vec<Trit>> {
+pub(super) fn row_trits(value: &Value) -> Result<Vec<Trit>> {
     match value {
         Value::String(text) => text.chars().map(parse_trit_char).collect(),
         Value::Array(items) => items
@@ -665,7 +661,7 @@ fn field<'a>(value: &'a Value, name: &str) -> Result<&'a Value> {
         .ok_or_else(|| wire(format!("缺少字段 `{name}`")))
 }
 
-fn field_usize(value: &Value, name: &str) -> Result<usize> {
+pub(super) fn field_usize(value: &Value, name: &str) -> Result<usize> {
     let raw = field(value, name)?;
     let number = raw
         .as_u64()
@@ -684,7 +680,7 @@ fn field_f32(value: &Value, name: &str) -> Result<f32> {
     Ok(number)
 }
 
-fn field_trit(value: &Value, name: &str) -> Result<Trit> {
+pub(super) fn field_trit(value: &Value, name: &str) -> Result<Trit> {
     parse_trit(
         field(value, name)?
             .as_str()

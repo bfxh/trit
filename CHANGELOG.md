@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：任意矩形 tile 的事务编辑与审计）
+
+- `Edit::SetTile` / `Edit::FillTile`：矩形块按行主序设置或常量填充；越界、零行列、
+  `values` 长度不符都整体拒绝，网络保持原样。
+- `Journal` 新增 `Undo::Tile`，保存整块旧值（不是重算），回滚后 `Net` 逐位相等；
+  `Cost` 新增 `tile_ops`，`touched` 计入 `rows*cols`。
+- JSON `set_tile` / `fill_tile`（CLI `patch` / `apply-candidate` 自动支持）；
+  审计 `replay` 可重放。
+- 真实 MiniLM query（384×384）4×4 fill：`touched=16`，checksum
+  `7f30c57cda546db8` → `80d1b189cb7cf44b`，审计 1 条 383 B，replay 逐字节一致。
+- 6 条测试（块写入 / 多编辑回滚 / 越界 / JSON / 审计重放 / cost）；文档
+  `docs/WSP-TILE-EDIT.md`。
+- 未证栏：只支持矩形块、只改 trits、无跨层 copy/swap、`diff` 仍逐点、
+  `analyze`/`propose` 不生成 tile。
 ### Added（trit-re：诱饵指纹检测——对抗性投毒下的能力证据降权）
 
 - 新模块 `crates/trit-re/src/decoy.rs`：反逆向盾（BLA 形，见

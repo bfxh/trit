@@ -8,6 +8,9 @@ use crate::error::{Error, Result};
 use crate::net::Net;
 use crate::trit::Trit;
 
+mod ops;
+use ops::Undo;
+
 /// 原子编辑。
 #[derive(Clone, Debug, PartialEq)]
 pub enum Edit {
@@ -56,6 +59,36 @@ pub enum Edit {
         /// 行号。
         row: usize,
     },
+    /// 把矩形块设为给定 trits（行主序）。
+    SetTile {
+        /// 层号。
+        layer: usize,
+        /// 起始行。
+        row_start: usize,
+        /// 行数。
+        rows: usize,
+        /// 起始列。
+        col_start: usize,
+        /// 列数。
+        cols: usize,
+        /// `rows × cols` 个目标值（行主序）。
+        values: Vec<Trit>,
+    },
+    /// 用同一个 trit 填充矩形块。
+    FillTile {
+        /// 层号。
+        layer: usize,
+        /// 起始行。
+        row_start: usize,
+        /// 行数。
+        rows: usize,
+        /// 起始列。
+        col_start: usize,
+        /// 列数。
+        cols: usize,
+        /// 目标值。
+        to: Trit,
+    },
 }
 
 /// 一组按顺序应用的编辑。
@@ -68,35 +101,6 @@ pub struct Patch {
 #[derive(Clone, Debug)]
 pub struct Journal {
     entries: Vec<Undo>,
-}
-
-#[derive(Clone, Debug)]
-enum Undo {
-    Trit {
-        layer: usize,
-        row: usize,
-        col: usize,
-        old: Trit,
-    },
-    Bias {
-        layer: usize,
-        row: usize,
-        old: Trit,
-    },
-    Scale {
-        layer: usize,
-        row: usize,
-        old: f32,
-    },
-    SwapRows {
-        layer: usize,
-        a: usize,
-        b: usize,
-    },
-    NegateRow {
-        layer: usize,
-        row: usize,
-    },
 }
 
 /// 改动量：`touched` 是“碰到的三值位置数”（含偏置），作为最小编辑的主指标。
@@ -112,6 +116,8 @@ pub struct Cost {
     pub scales: usize,
     /// 行级操作条数（`SwapRows` / `NegateRow`）。
     pub row_ops: usize,
+    /// tile 级操作条数（`SetTile` / `FillTile`）。
+    pub tile_ops: usize,
     /// 碰到的三值位置数（scale 不计入）。
     pub touched: usize,
 }
@@ -131,6 +137,25 @@ impl Journal {
                 Undo::Scale { layer, row, old } => net.layer_mut(layer).set_scale(row, old),
                 Undo::SwapRows { layer, a, b } => net.layer_mut(layer).swap_rows(a, b),
                 Undo::NegateRow { layer, row } => net.layer_mut(layer).negate_row(row),
+                Undo::Tile {
+                    layer,
+                    row_start,
+                    rows,
+                    col_start,
+                    cols,
+                    old,
+                } => {
+                    let target = net.layer_mut(layer);
+                    for row in 0..rows {
+                        for col in 0..cols {
+                            target.set_trit(
+                                row_start + row,
+                                col_start + col,
+                                old[row * cols + col],
+                            );
+                        }
+                    }
+                }
             }
         }
     }
@@ -169,7 +194,7 @@ impl Patch {
     /// 整体校验：任何一条非法就报错，不做任何修改。
     pub fn validate(&self, net: &Net) -> Result<()> {
         for edit in &self.edits {
-            validate_one(net, edit)?;
+            ops::validate_one(net, edit)?;
         }
         Ok(())
     }
@@ -179,7 +204,7 @@ impl Patch {
         self.validate(net)?;
         let mut entries = Vec::with_capacity(self.edits.len());
         for edit in &self.edits {
-            entries.push(apply_one(net, edit));
+            entries.push(ops::apply_one(net, edit));
         }
         Ok(Journal { entries })
     }
@@ -211,6 +236,10 @@ impl Patch {
                     cost.row_ops += 1;
                     let cols = net.layer(layer).map_or(0, |l| l.cols());
                     cost.touched += cols + 1;
+                }
+                Edit::SetTile { rows, cols, .. } | Edit::FillTile { rows, cols, .. } => {
+                    cost.tile_ops += 1;
+                    cost.touched += rows.saturating_mul(cols);
                 }
             }
         }
@@ -269,8 +298,8 @@ impl Patch {
 impl Edit {
     /// 单条应用（内部搜索用）；失败时网络不变。
     pub(crate) fn apply_to(&self, net: &mut Net) -> Result<()> {
-        validate_one(net, self)?;
-        apply_one(net, self);
+        ops::validate_one(net, self)?;
+        ops::apply_one(net, self);
         Ok(())
     }
 
@@ -307,109 +336,6 @@ impl Edit {
                 },
             ) => l1 == l2 && r1 == r2,
             _ => false,
-        }
-    }
-}
-
-fn layer_or_err(net: &Net, layer: usize) -> Result<&crate::net::Layer> {
-    net.layer(layer).ok_or(Error::OutOfBounds {
-        layer,
-        row: 0,
-        col: 0,
-    })
-}
-
-fn validate_one(net: &Net, edit: &Edit) -> Result<()> {
-    match *edit {
-        Edit::SetTrit {
-            layer,
-            row,
-            col,
-            to: _,
-        } => {
-            let target = layer_or_err(net, layer)?;
-            if row >= target.rows() || col >= target.cols() {
-                return Err(Error::OutOfBounds { layer, row, col });
-            }
-        }
-        Edit::SetBias { layer, row, to: _ } => {
-            let target = layer_or_err(net, layer)?;
-            if row >= target.rows() {
-                return Err(Error::OutOfBounds { layer, row, col: 0 });
-            }
-        }
-        Edit::SetScale { layer, row, to } => {
-            let target = layer_or_err(net, layer)?;
-            if row >= target.rows() {
-                return Err(Error::OutOfBounds { layer, row, col: 0 });
-            }
-            if !to.is_finite() || to <= 0.0 {
-                return Err(Error::InvalidScale { row, value: to });
-            }
-        }
-        Edit::SwapRows { layer, a, b } => {
-            let target = layer_or_err(net, layer)?;
-            if a >= target.rows() || b >= target.rows() {
-                return Err(Error::OutOfBounds {
-                    layer,
-                    row: a.max(b),
-                    col: 0,
-                });
-            }
-        }
-        Edit::NegateRow { layer, row } => {
-            let target = layer_or_err(net, layer)?;
-            if row >= target.rows() {
-                return Err(Error::OutOfBounds { layer, row, col: 0 });
-            }
-        }
-    }
-    Ok(())
-}
-
-fn apply_one(net: &mut Net, edit: &Edit) -> Undo {
-    match *edit {
-        Edit::SetTrit {
-            layer,
-            row,
-            col,
-            to,
-        } => {
-            let old = net
-                .layer(layer)
-                .and_then(|l| l.trit(row, col))
-                .expect("validated");
-            net.layer_mut(layer).set_trit(row, col, to);
-            Undo::Trit {
-                layer,
-                row,
-                col,
-                old,
-            }
-        }
-        Edit::SetBias { layer, row, to } => {
-            let old = net
-                .layer(layer)
-                .and_then(|l| l.bias_trit(row))
-                .expect("validated");
-            net.layer_mut(layer).set_bias(row, to);
-            Undo::Bias { layer, row, old }
-        }
-        Edit::SetScale { layer, row, to } => {
-            let old = net
-                .layer(layer)
-                .and_then(|l| l.scale(row))
-                .expect("validated");
-            net.layer_mut(layer).set_scale(row, to);
-            Undo::Scale { layer, row, old }
-        }
-        Edit::SwapRows { layer, a, b } => {
-            net.layer_mut(layer).swap_rows(a, b);
-            Undo::SwapRows { layer, a, b }
-        }
-        Edit::NegateRow { layer, row } => {
-            net.layer_mut(layer).negate_row(row);
-            Undo::NegateRow { layer, row }
         }
     }
 }

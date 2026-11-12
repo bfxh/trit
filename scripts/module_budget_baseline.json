@@ -2964,7 +2964,11 @@
     },
     {
       "file": "crates/trit-wspace/src/analyze.rs",
-      "lines": 377
+      "lines": 365
+    },
+    {
+      "file": "crates/trit-wspace/src/analyze/keys.rs",
+      "lines": 31
     },
     {
       "file": "crates/trit-wspace/src/artifact_shard.rs",
@@ -3024,7 +3028,11 @@
     },
     {
       "file": "crates/trit-wspace/src/edit.rs",
-      "lines": 415
+      "lines": 341
+    },
+    {
+      "file": "crates/trit-wspace/src/edit/ops.rs",
+      "lines": 273
     },
     {
       "file": "crates/trit-wspace/src/error.rs",
@@ -3100,7 +3108,11 @@
     },
     {
       "file": "crates/trit-wspace/src/rebase.rs",
-      "lines": 237
+      "lines": 83
+    },
+    {
+      "file": "crates/trit-wspace/src/rebase/classify.rs",
+      "lines": 260
     },
     {
       "file": "crates/trit-wspace/src/repair.rs",
@@ -3152,7 +3164,11 @@
     },
     {
       "file": "crates/trit-wspace/src/wire/mod.rs",
-      "lines": 697
+      "lines": 693
+    },
+    {
+      "file": "crates/trit-wspace/src/wire/tile.rs",
+      "lines": 90
     },
     {
       "file": "crates/trit-wspace/src/wsp2.rs",
@@ -3317,6 +3333,10 @@
     {
       "file": "crates/trit-wspace/tests/task_weight.rs",
       "lines": 371
+    },
+    {
+      "file": "crates/trit-wspace/tests/tile_edit.rs",
+      "lines": 236
     },
     {
       "file": "crates/trit-wspace/tests/transplant.rs",
