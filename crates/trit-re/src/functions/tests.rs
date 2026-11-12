@@ -1,5 +1,4 @@
 //! `functions` 的单元测试（从 mod.rs 拆出，控制单文件行数预算）。
-
 use super::{FuncSource, Function, FunctionCalls, FunctionReport, locate};
 use trit_core::value::Ternary;
 
@@ -570,6 +569,7 @@ fn pointer_table_harvest_filters() {
         plus,
         machine: 0x8664,
         timestamp: 0,
+        characteristics: 0x0102,
         subsystem: 3,
         entry_rva: 0x1000,
         image_base,

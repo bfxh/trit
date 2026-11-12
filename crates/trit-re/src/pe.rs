@@ -10,9 +10,11 @@ use crate::entropy;
 
 mod coff;
 mod overlay;
+mod rva;
 
 pub use coff::CoffFunction;
 use coff::parse_coff_functions;
+use rva::{rva_in_section, rva_to_offset};
 
 use overlay::parse_overlay;
 
@@ -119,6 +121,8 @@ pub struct PeInfo {
     pub machine: u16,
     /// COFF 时间戳。
     pub timestamp: u32,
+    /// COFF 文件头 Characteristics（`pe.is_dll` 等的判定位）。
+    pub characteristics: u16,
     /// 子系统。
     pub subsystem: u16,
     /// 入口 RVA。
@@ -182,6 +186,7 @@ pub fn parse(bytes: &[u8]) -> Result<PeInfo, ParseError> {
     let machine = u16_at(bytes, coff).ok_or(ParseError("COFF 头截断"))?;
     let num_sections = u16_at(bytes, coff + 2).ok_or(ParseError("COFF 头截断"))? as usize;
     let timestamp = u32_at(bytes, coff + 4).ok_or(ParseError("COFF 头截断"))?;
+    let characteristics = u16_at(bytes, coff + 18).ok_or(ParseError("COFF 头截断"))?;
     let opt_size = u16_at(bytes, coff + 16).ok_or(ParseError("COFF 头截断"))? as usize;
     let opt = coff + 20;
     let magic = u16_at(bytes, opt).ok_or(ParseError("可选头截断"))?;
@@ -265,6 +270,7 @@ pub fn parse(bytes: &[u8]) -> Result<PeInfo, ParseError> {
         plus,
         machine,
         timestamp,
+        characteristics,
         subsystem,
         entry_rva,
         image_base,
@@ -314,29 +320,6 @@ impl PeInfo {
     pub fn format(&self) -> &'static str {
         if self.plus { "pe32+" } else { "pe32" }
     }
-}
-
-fn rva_in_section(rva: u32, section: &Section) -> bool {
-    rva >= section.virtual_address
-        && rva
-            < section
-                .virtual_address
-                .saturating_add(section.mapped_size())
-}
-
-fn rva_to_offset(rva: u32, sections: &[Section], headers_size: u32) -> Option<usize> {
-    if rva < headers_size {
-        return Some(rva as usize);
-    }
-    for section in sections {
-        if rva_in_section(rva, section) && section.raw_ptr != 0 {
-            let delta = rva - section.virtual_address;
-            if delta < section.raw_size {
-                return Some(section.raw_ptr as usize + delta as usize);
-            }
-        }
-    }
-    None
 }
 
 fn raw_slice(bytes: &[u8], raw_ptr: u32, raw_size: u32) -> Option<&[u8]> {

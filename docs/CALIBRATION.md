@@ -41,6 +41,20 @@ python scripts/yara_diff.py --trit <trit-re.exe> --rules <规则.yar> \
 （trit-re 未评估的子集边界，不算失败）/ `OFFICIAL-ERR`（官方引擎侧错误）。
 真 DIFF 退出码 1。已验证：合成批次 MATCH 6 / DIFF 0。
 
+**pe.* 模块子集对拍（2026-11-12）**：N1 两 PE 象限 24 真样本 × 93 规则
+（`pe_rules.yar`：子集标量每属性一条全局规则 + 每样本 entry_point/timestamp/
+characteristics 精确值探针——entry_point 用 **RVA/offset 双候选**设计，
+官方命中哪个语义就锁死哪个）。首跑抓出三个真发现，修复后
+**MATCH 24 / DIFF 0 / SUBSET-GAP 0 / OFFICIAL-ERR 0**：
+①`pe.is_dll`/`pe.is_32bit` 都是函数（裸属性官方报 wrong usage——注意官方
+首错只报一行，别据单行错误推「不对称」结论，两个都是函数）；
+②`pe.entry_point` = 文件偏移而非文档写的 RVA（第六号语义分歧）；
+③`pe.overlay.*` 官方含 Authenticode 证书，与 packed 判定的证书排除纪律
+语义分歧——裁定 yara 兼容层跟官方（文件长度直算），packed 层保持自有
+语义，两层分歧记录在 SECURITY-RE N4 行与 `sigscan/peprops.rs` 模块文档。
+复算：`python -I scripts/yara_diff.py --trit <exe> --rules E:/tmp/n1/pe_rules.yar
+--samples E:/tmp/n1/benign-x64`（及 benign-pe32）。
+
 ## 四、N1 判据对照
 
 SECURITY-RE 路线图 N1：「真实语料校准：PE x64 / PE ARM64 / ELF x64 / ELF

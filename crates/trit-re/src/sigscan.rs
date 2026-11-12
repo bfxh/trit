@@ -419,96 +419,28 @@ pub struct SigReport {
 
 /// 扫描器（规则集不可变，可反复扫描）。
 pub struct SigScan<'a> {
-    rules: &'a [Rule],
+    pub(crate) rules: &'a [Rule],
 }
 
-impl<'a> SigScan<'a> {
-    pub fn new(rules: &'a [Rule]) -> Self {
-        Self { rules }
-    }
-
-    /// 扫描一段字节。`truncated` = 调用方声明输入不完整（读取中断/分片）。
-    pub fn scan(&self, data: &[u8], truncated: bool) -> SigReport {
-        self.scan_with_entrypoint(data, truncated, None)
-    }
-
-    /// 带入口点上下文的扫描。`entrypoint` = 入口点的**文件偏移**——与官方
-    /// YARA 语义一致（已实测对拍：RVA≠文件偏移的样本上，官方命中 offset
-    /// 不命中 RVA）；由调用方从 PE/ELF 头解析传入（PE：`pe::parse` 的
-    /// `entry_rva` 过 `rva_to_offset`）。`None` = 非可执行文件/解析失败 →
-    /// `entrypoint` 操作数如实弃权（Unknown），绝不猜。
-    pub fn scan_with_entrypoint(
-        &self,
-        data: &[u8],
-        truncated: bool,
-        entrypoint: Option<u64>,
-    ) -> SigReport {
-        let mut rules = Vec::new();
-        for rule in self.rules {
-            // 每个模式的命中偏移（首个起，最多 MAX_HITS 个）+ 扫描完成度
-            //（hex/文本预算耗尽 = 不完整——"未命中只在完整扫描后给出"）
-            let mut occurrences: Vec<(String, Vec<u64>)> = Vec::new();
-            let mut complete = true;
-            let mut has_unscannable = false;
-            for (id, pattern) in &rule.patterns {
-                let (hits, pattern_complete) = match pattern {
-                    Pattern::Hex(hp) => find_hex(data, hp),
-                    Pattern::Text(tp) => find_text(data, tp),
-                    Pattern::Unscannable(_) => {
-                        // 评估不了的串不能报"没命中"：整条规则按 Unknown 落账
-                        has_unscannable = true;
-                        (Vec::new(), true)
-                    }
-                };
-                complete &= pattern_complete;
-                occurrences.push((id.clone(), hits));
-            }
-            let ctx = EvalCtx {
-                data,
-                truncated,
-                binding: None,
-                entrypoint,
-            };
-            let met = eval(&rule.condition, &occurrences, &ctx);
-            let hits: Vec<(String, u64)> = occurrences
-                .iter()
-                .flat_map(|(id, offs)| offs.iter().map(move |o| (id.clone(), *o)))
-                .collect();
-            let value = if has_unscannable {
-                Ternary::Unknown
-            } else {
-                match met {
-                    Ternary::True => Ternary::True,
-                    Ternary::Unknown => Ternary::Unknown,
-                    Ternary::False if truncated || !complete => Ternary::Unknown,
-                    Ternary::False => Ternary::False,
-                }
-            };
-            rules.push(RuleVerdict {
-                rule: rule.name.clone(),
-                value,
-                hits,
-            });
-        }
-        // 整体 = Kleene OR：任一 True → True；否则有 Unknown → Unknown；
-        // 全 False → False（报警语义：截断的沉默不是清白）。
-        let mut value = Ternary::False;
-        for r in &rules {
-            value = match (value, r.value) {
-                (Ternary::True, _) | (_, Ternary::True) => Ternary::True,
-                (Ternary::Unknown, _) | (_, Ternary::Unknown) => Ternary::Unknown,
-                _ => Ternary::False,
-            };
-        }
-        SigReport { rules, value }
-    }
-}
+// 扫描循环（`impl SigScan`）在 [`sigscan::scan`]——从本文件拆出守预算。
 
 // ── 三值条件求值（拆出守 800 行预算）──────────────────────────────────
 
 mod eval;
 
 use eval::{EvalCtx, eval};
+
+// 操作数解析三态（从 eval.rs 拆出守预算）。
+mod resolve;
+
+// 扫描循环（impl SigScan，从本文件拆出守预算）。
+mod scan;
+
+// ── pe.* 模块属性子集（YARA 完整子集方向）────────────────────────────
+
+mod peprops;
+
+use peprops::resolve as resolve_pe_prop;
 
 // ── 字节级匹配引擎（拆出守 800 行预算）──────────────────────────────────
 

@@ -311,6 +311,20 @@
 
 - `docs/CALIBRATION.md` 产线读数表追加 2026-11-12 行：53 样本规则集 v2 全量复扫——636 判定（false 537 / unknown 84 / true 15，良性无新误报）；`fn.injection_ordered`（CFG 地址序注入三件套）sim_lvl4 True、良性 47 条全 false/unknown（PE32 象限 xref 不完整如实 unknown）；ARM64 `stack_strings` 解码链 FPR 0/12——四象限词汇表统一，L6 逃逸形态平台盲区清零。
 
+### Added（trit-re：YARA `pe.*` 模块标量子集——差分对拍三战果）
+
+- `sigscan/peprops.rs`：官方语义标量属性从 PE 头求值（machine / number_of_sections / timestamp /
+  characteristics / entry_point / overlay.offset·size / is_dll() / is_32bit()）；子集外路径
+  （数组式 `pe.sections[0]…`、`pe.rich_signature.*`、`math.*`）维持记名弃权，绝不猜。
+- 解析器补数组式下标吞（`pe.sections[0].characteristics` 整体 Opaque，不再整条 Unsupported）；
+  CLI `sigscan` 传 PE 上下文（`scan_with_context`），非 PE / 解析失败如实弃权。
+- **官方对拍（yara-python 4.5.4，N1 两象限 24 真样本 × 93 规则）终态 MATCH 24 / DIFF 0**，
+  三个真发现：①`pe.is_dll`/`pe.is_32bit` 都是**函数**（裸属性官方报 wrong usage）；②
+  `pe.entry_point` = 入口点**文件偏移**而非文档写的 RVA（第六号语义分歧，双候选探针锁定）；
+  ③`pe.overlay.*` 官方含 Authenticode 证书——与本仓 packed 判定的证书排除纪律语义分歧如实
+  裁定：兼容层跟官方（文件长度直算），packed 层保持自有语义，两层分歧记录在案。
+- 判据：`cargo test -p trit-re` = 178 全绿（+4 pe.* 用例，tiny_pe 合成最小 PE32+）。
+
 ### Added（`trit-num`：数值原语——补偿求和 / Welford / 最小二乘 / 插补）
 
 - 新 crate `crates/trit-num`（ops 层）：`sum_neumaier`（补偿求和）、`Welford`（流式均值/方差，可合并）、
