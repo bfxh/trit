@@ -29,7 +29,7 @@ where
     let live = Arc::new(AtomicUsize::new(0));
     std::thread::spawn(move || {
         for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
+            let Ok(stream) = stream else { continue };
             if !admit(&live, MAX_CONN) {
                 continue; // 超上限：drop 即关闭，不占线程
             }
