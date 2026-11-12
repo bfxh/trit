@@ -8,365 +8,61 @@
 //! - 安全边界：服务默认绑 127.0.0.1（监听 ≠ 出网请求）；本服务自身不发起
 //!   URL 请求；任何未来出网一律走 [`crate::net::check_url`]。
 
-use crate::design::{self, DesignArea, PrIntake};
-use crate::diag::{self, Severity};
 #[cfg(test)]
 use crate::fleet::Fleet;
 use crate::journal::Journal;
-use crate::lsp;
-use crate::scan;
-use crate::sync::{self, LogFrame};
-use crate::taskmd;
 use std::io::{self, Read, Write};
-use std::net::{SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpStream};
 use std::sync::{Arc, RwLock};
 
 const MAX_HEAD: usize = 64 * 1024;
 const MAX_BODY: usize = 16 * 1024 * 1024;
 
-/// 共享的免疫网络服务。
+/// 共享的免疫网络服务。写端点需 `.with_psk(k)` 配置共享密钥（否则写端点默认禁用）；
+/// 读端点公开。
 #[derive(Debug, Clone)]
 pub struct Server {
     pub journal: Arc<RwLock<Journal>>,
+    psk: Option<Arc<[u8]>>,
 }
 
 impl Server {
     pub fn new(journal: Journal) -> Self {
         Self {
             journal: Arc::new(RwLock::new(journal)),
+            psk: None,
         }
     }
 
     pub fn from_shared(journal: Arc<RwLock<Journal>>) -> Self {
-        Self { journal }
+        Self { journal, psk: None }
     }
 
-    /// 阻塞服务循环（每连接一线程，读多写少）。返回实际绑定地址。
+    /// 配置写端点 PSK：写请求必须带 `Authorization: Bearer <hex(psk)>`（审计 H1）。
+    pub fn with_psk(mut self, key: impl Into<Vec<u8>>) -> Self {
+        self.psk = Some(Arc::from(key.into()));
+        self
+    }
+
+    /// 阻塞服务循环（每连接一线程，读多写少 + 写端点认证）。返回实际绑定地址。
     pub fn serve(&self, addr: SocketAddr) -> io::Result<SocketAddr> {
-        let listener = TcpListener::bind(addr)?;
-        let bound = listener.local_addr()?;
-        let shared = Arc::clone(&self.journal);
-        std::thread::spawn(move || {
-            for stream in listener.incoming() {
-                let Ok(mut stream) = stream else { continue };
-                let shared = Arc::clone(&shared);
-                std::thread::spawn(move || {
-                    let _ = handle_conn(&mut stream, &shared);
-                });
-            }
-        });
-        Ok(bound)
+        http::serve(addr, self.psk.clone(), Arc::clone(&self.journal), route)
     }
 }
 
-fn handle_conn(stream: &mut TcpStream, journal: &RwLock<Journal>) -> io::Result<()> {
-    let (method, path, query, body) = read_request(stream)?;
-    let (status, text) = route(journal, &method, &path, &query, &body);
-    let resp = format_response(status, &text);
-    stream.write_all(resp.as_bytes())
-}
+mod auth;
+pub(crate) mod http;
+mod route;
+use route::route;
 
-fn route(
-    journal: &RwLock<Journal>,
-    method: &str,
-    path: &str,
-    query: &[(String, String)],
-    body: &str,
-) -> (u16, String) {
-    match (method, path) {
-        ("GET", "/v1/health") => (200, "ok\n".into()),
-        ("GET", "/v1/render") => (200, journal.read().expect("锁中毒").dag().render()),
-        ("GET", "/v1/suspects") => {
-            let j = journal.read().expect("锁中毒");
-            let list: Vec<String> = j
-                .dag()
-                .suspects()
-                .iter()
-                .map(|id| format!("#{:02} {}", id.0, j.dag().node(*id).title))
-                .collect();
-            (200, format!("{}\n", list.join("\n")))
-        }
-        ("GET", "/v1/taskbar") => {
-            let Some((_, v)) = query.iter().find(|(k, _)| k == "parent") else {
-                return (400, "缺 parent 参数\n".into());
-            };
-            let Ok(parent) = v.parse::<u32>() else {
-                return (400, format!("parent 非数字：{v}\n"));
-            };
-            let j = journal.read().expect("锁中毒");
-            if parent >= j.dag().nodes().len() as u32 {
-                return (404, format!("节点 #{parent:02} 不存在\n"));
-            }
-            let list: Vec<String> = taskmd::taskbar(&j, crate::NodeId(parent))
-                .into_iter()
-                .map(|(id, title)| format!("#{:02} {}", id.0, title))
-                .collect();
-            (200, format!("{}\n", list.join("\n")))
-        }
-        ("POST", "/v1/taskmd") => {
-            // MD → 任务栏：body = Markdown 文本
-            let mut parent: Option<u32> = None;
-            let mut quarantine = false;
-            let mut source = "HTTP".to_string();
-            for (k, v) in query {
-                match k.as_str() {
-                    "parent" => parent = v.parse::<u32>().ok(),
-                    "quarantine" => quarantine = v == "1" || v == "true",
-                    "source" => source = v.clone(),
-                    _ => {}
-                }
-            }
-            let Some(parent) = parent else {
-                return (400, "缺 parent 参数\n".into());
-            };
-            let r = {
-                let mut j = journal.write().expect("锁中毒");
-                taskmd::ingest(&mut j, crate::NodeId(parent), &source, body, quarantine)
-            };
-            match r {
-                Ok(o) => (
-                    200,
-                    format!(
-                        "created={} skipped={} quarantined={} zero_state_only=true\n",
-                        o.created, o.skipped, o.quarantined
-                    ),
-                ),
-                Err(e) => (400, format!("入账失败：{e}\n")),
-            }
-        }
-        ("GET", "/v1/gate") => {
-            let Some((_, v)) = query.iter().find(|(k, _)| k == "tip") else {
-                return (400, "缺 tip 参数\n".into());
-            };
-            let Ok(tip) = v.parse::<u32>() else {
-                return (400, format!("tip 非数字：{v}\n"));
-            };
-            let j = journal.read().expect("锁中毒");
-            let len = j.dag().nodes().len() as u32;
-            if tip >= len {
-                return (404, format!("节点 #{tip:02} 不存在\n"));
-            }
-            let verdict = j.dag().node(crate::NodeId(tip)).verdict;
-            let gate = j.dag().merge_gate(crate::NodeId(tip));
-            (
-                200,
-                format!("node=#{tip:02} verdict={verdict} gate={gate}\n"),
-            )
-        }
-        ("POST", "/v1/deltas") => match parse_frame_str(body) {
-            Ok(frame) => {
-                let out = {
-                    let mut j = journal.write().expect("锁中毒");
-                    sync::merge_into(&mut j, frame.writer, frame.stamped)
-                };
-                match out {
-                    Ok(o) => {
-                        let suspects = journal.read().expect("锁中毒").dag().suspects().len();
-                        (
-                            200,
-                            format!(
-                                "canonical={} deferred={} suspects={}\n",
-                                o.canonical.len(),
-                                o.deferred.len(),
-                                suspects
-                            ),
-                        )
-                    }
-                    Err(e) => (500, format!("合并采纳失败：{e}\n")),
-                }
-            }
-            Err(e) => (400, format!("帧解析失败：{e}\n")),
-        },
-        ("POST", "/v1/diag") => {
-            // 编译器管线桥：body = rustc --message-format=json 流
-            let Some((_, v)) = query.iter().find(|(k, _)| k == "node") else {
-                return (400, "缺 node 参数\n".into());
-            };
-            let Ok(node) = v.parse::<u32>() else {
-                return (400, format!("node 非数字：{v}\n"));
-            };
-            // 守卫：垃圾输入拒绝（避免空 POST 把节点"洗"成 +1）
-            if body.trim().is_empty() || !diag::has_json(body) {
-                return (
-                    400,
-                    "无诊断数据（应为 rustc --message-format=json 流）\n".into(),
-                );
-            }
-            let diags = diag::parse_rustc_stream(body);
-            let verdict = diag::layer_verdict(&diags);
-            let errors = diags
-                .iter()
-                .filter(|d| d.severity == Severity::Error)
-                .count();
-            let warnings = diags
-                .iter()
-                .filter(|d| d.severity == Severity::Warning)
-                .count();
-            let len = journal.read().expect("锁中毒").dag().nodes().len() as u32;
-            if node >= len {
-                return (404, format!("节点 #{node:02} 不存在\n"));
-            }
-            let applied = {
-                let mut j = journal.write().expect("锁中毒");
-                j.append_delta(&crate::Delta::Record {
-                    id: crate::NodeId(node),
-                    verdict,
-                    evidence: None,
-                    note: format!("编译层：errors={errors} warnings={warnings}（检查类，可为 +1）"),
-                })
-            };
-            match applied {
-                Ok(()) => (
-                    200,
-                    format!(
-                        "diagnostics={} errors={} warnings={} layer={verdict} check_may_plus1=true\n",
-                        diags.len(),
-                        errors,
-                        warnings
-                    ),
-                ),
-                Err(e) => (500, format!("写入失败：{e}\n")),
-            }
-        }
-        ("POST", "/v1/scan") => match parse_scan_body(body) {
-            Ok(snippets) => {
-                let refs: Vec<(crate::NodeId, &str)> =
-                    snippets.iter().map(|(n, c)| (*n, c.as_str())).collect();
-                let report = scan::run_scan(&refs, scan::RULES, &[]);
-                let deltas = report.to_deltas("HTTP");
-                let applied = (|| -> io::Result<usize> {
-                    let mut j = journal.write().expect("锁中毒");
-                    let mut n = 0usize;
-                    for d in &deltas {
-                        j.append_delta(d)
-                            .map_err(|e| io::Error::other(e.to_string()))?;
-                        n += 1;
-                    }
-                    Ok(n)
-                })();
-                match applied {
-                    Ok(n) => (
-                        200,
-                        format!(
-                            "scanned={} findings={} applied={} scanner_never_plus1=true\n",
-                            report.scanned,
-                            report.findings.len(),
-                            n
-                        ),
-                    ),
-                    Err(e) => (500, format!("写入失败：{e}\n")),
-                }
-            }
-            Err(e) => (400, format!("{e}\n")),
-        },
-        ("POST", "/v1/lsp") => {
-            // LSP 桥：body = publishDiagnostics 通知流（rust-analyzer 等）
-            let Some((_, v)) = query.iter().find(|(k, _)| k == "node") else {
-                return (400, "缺 node 参数\n".into());
-            };
-            let Ok(node) = v.parse::<u32>() else {
-                return (400, format!("node 非数字：{v}\n"));
-            };
-            if body.trim().is_empty() || !diag::has_json(body) {
-                return (400, "无诊断数据（应为 LSP 通知流）\n".into());
-            }
-            let diags = lsp::parse_lsp_stream(body)
-                .into_iter()
-                .map(|d| d.into_diag())
-                .collect::<Vec<_>>();
-            let verdict = diag::layer_verdict(&diags);
-            let errors = diags
-                .iter()
-                .filter(|d| d.severity == Severity::Error)
-                .count();
-            let warnings = diags
-                .iter()
-                .filter(|d| d.severity == Severity::Warning)
-                .count();
-            let len = journal.read().expect("锁中毒").dag().nodes().len() as u32;
-            if node >= len {
-                return (404, format!("节点 #{node:02} 不存在\n"));
-            }
-            let applied = {
-                let mut j = journal.write().expect("锁中毒");
-                j.append_delta(&crate::Delta::Record {
-                    id: crate::NodeId(node),
-                    verdict,
-                    evidence: None,
-                    note: format!("LSP 层：errors={errors} warnings={warnings}（检查类，可为 +1）"),
-                })
-            };
-            match applied {
-                Ok(()) => (
-                    200,
-                    format!(
-                        "diagnostics={} errors={} warnings={} layer={verdict} check_may_plus1=true\n",
-                        diags.len(),
-                        errors,
-                        warnings
-                    ),
-                ),
-                Err(e) => (500, format!("写入失败：{e}\n")),
-            }
-        }
-        ("POST", "/v1/intake") => {
-            // 设计决策生产线入口：分类（新决策/执行既有/退回设计队列）
-            let mut title = "untitled".to_string();
-            let mut touches: Vec<DesignArea> = Vec::new();
-            let mut is_new = false;
-            let mut adr: Option<String> = None;
-            for (k, v) in query {
-                match k.as_str() {
-                    "title" => title = v.clone(),
-                    "areas" => {
-                        touches = v.split(',').filter_map(DesignArea::parse).collect();
-                    }
-                    "new" => is_new = v == "1" || v == "true",
-                    "adr" => adr = Some(v.clone()),
-                    _ => {}
-                }
-            }
-            let intake = PrIntake {
-                title,
-                touches,
-                is_new_decision: is_new,
-                linked_adr: adr,
-                impact_summary: None,
-                rollback: None,
-            };
-            let routing = design::classify(&intake);
-            (200, format!("routing={routing:?}\n"))
-        }
-        ("GET", _) | ("POST", _) => (404, "未知路径\n".into()),
-        _ => (405, "方法不允许\n".into()),
-    }
-}
-
-fn parse_frame_str(body: &str) -> Result<LogFrame, String> {
-    sync::parse_frame(body)
-}
-
-/// 扫描入账请求行格式：`SNIP\t<node>\t<转义代码>`（esc 转义，与日志同风格）。
-fn parse_scan_body(body: &str) -> Result<Vec<(crate::NodeId, String)>, String> {
-    let mut snippets = Vec::new();
-    for line in body.lines().filter(|l| !l.trim().is_empty()) {
-        let mut f = line.split('\t');
-        match (f.next(), f.next(), f.next(), f.next()) {
-            (Some("SNIP"), Some(node), Some(code), None) => {
-                let n = node
-                    .parse::<u32>()
-                    .map_err(|_| format!("非法节点号：{node:?}"))?;
-                let c = crate::delta::unesc(code)?;
-                snippets.push((crate::NodeId(n), c));
-            }
-            _ => return Err("行格式应为 SNIP\\t<node>\\t<code>".into()),
-        }
-    }
-    Ok(snippets)
-}
-
-/// 一次 HTTP 请求解析结果：方法 / 路径 / 查询对 / 请求体。
-type ParsedRequest = (String, String, Vec<(String, String)>, String);
+/// 一次 HTTP 请求解析结果：方法 / 路径 / 查询对 / 请求头 / 请求体。
+type ParsedRequest = (
+    String,
+    String,
+    Vec<(String, String)>,
+    Vec<(String, String)>,
+    String,
+);
 
 pub(crate) fn read_request(stream: &mut TcpStream) -> io::Result<ParsedRequest> {
     let mut buf = Vec::new();
@@ -391,11 +87,14 @@ pub(crate) fn read_request(stream: &mut TcpStream) -> io::Result<ParsedRequest> 
     let method = parts.next().unwrap_or("").to_string();
     let target = parts.next().unwrap_or("").to_string();
     let mut content_length = 0usize;
+    let mut headers: Vec<(String, String)> = Vec::new();
     for h in lines {
         if let Some((k, v)) = h.split_once(':') {
-            if k.trim().eq_ignore_ascii_case("content-length") {
-                content_length = v.trim().parse().unwrap_or(0);
+            let (k, v) = (k.trim().to_string(), v.trim().to_string());
+            if k.eq_ignore_ascii_case("content-length") {
+                content_length = v.parse().unwrap_or(0);
             }
+            headers.push((k, v));
         }
     }
     if content_length > MAX_BODY {
@@ -420,7 +119,7 @@ pub(crate) fn read_request(stream: &mut TcpStream) -> io::Result<ParsedRequest> 
                 .map(|(k, v)| (k.to_string(), v.to_string()))
         })
         .collect();
-    Ok((method, path.to_string(), query, body))
+    Ok((method, path.to_string(), query, headers, body))
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -431,6 +130,8 @@ pub(crate) fn format_response(status: u16, body: &str) -> String {
     let reason = match status {
         200 => "OK",
         400 => "Bad Request",
+        401 => "Unauthorized",
+        403 => "Forbidden",
         404 => "Not Found",
         405 => "Method Not Allowed",
         500 => "Internal Server Error",
@@ -452,11 +153,21 @@ pub mod client {
     use super::*;
 
     pub fn get(addr: SocketAddr, path: &str) -> io::Result<(u16, String)> {
-        request(addr, "GET", path, "")
+        request_auth(addr, "GET", path, "", None)
     }
 
     pub fn post(addr: SocketAddr, path: &str, body: &str) -> io::Result<(u16, String)> {
-        request(addr, "POST", path, body)
+        request_auth(addr, "POST", path, body, None)
+    }
+
+    /// 带写端点 PSK 的 POST：写端点须 `Authorization: Bearer <hex(psk)>`。
+    pub fn post_auth(
+        addr: SocketAddr,
+        path: &str,
+        psk: &[u8],
+        body: &str,
+    ) -> io::Result<(u16, String)> {
+        request_auth(addr, "POST", path, body, Some(psk))
     }
 
     pub fn request(
@@ -465,9 +176,22 @@ pub mod client {
         path: &str,
         body: &str,
     ) -> io::Result<(u16, String)> {
+        request_auth(addr, method, path, body, None)
+    }
+
+    fn request_auth(
+        addr: SocketAddr,
+        method: &str,
+        path: &str,
+        body: &str,
+        psk: Option<&[u8]>,
+    ) -> io::Result<(u16, String)> {
         let mut s = TcpStream::connect(addr)?;
+        let auth = psk
+            .map(|k| format!("Authorization: Bearer {}\r\n", super::auth::to_hex(k)))
+            .unwrap_or_default();
         let req = format!(
-            "{method} {path} HTTP/1.1\r\nHost: server\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            "{method} {path} HTTP/1.1\r\nHost: server\r\n{auth}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
             body.len()
         );
         s.write_all(req.as_bytes())?;
@@ -658,17 +382,49 @@ mod tests {
     fn fleet_server_tcp_smoke() {
         use crate::server::client;
         let f = temp_fleet();
-        let srv = FleetServer::new(f);
+        let psk = b"fleet-psk";
+        let srv = FleetServer::new(f).with_psk(psk);
         let addr = srv
             .serve(std::net::SocketAddr::from(([127, 0, 0, 1], 0)))
             .unwrap();
+        // 读端点无需认证
         let (s, body) = client::get(addr, "/v1/fleet/health").unwrap();
         assert_eq!((s, body.trim()), (200, "ok"));
-        let (s, _) = client::post(addr, "/v1/fleet/links", "up\t1\tdown\t1\t-1\t穿透\n").unwrap();
+        // 写端点须带 PSK
+        let (s, _) =
+            client::post_auth(addr, "/v1/fleet/links", psk, "up\t1\tdown\t1\t-1\t穿透\n").unwrap();
         assert_eq!(s, 200);
-        let (s, body) = client::post(addr, "/v1/fleet/sync", "tcp 反熵").unwrap();
+        let (s, body) = client::post_auth(addr, "/v1/fleet/sync", psk, "tcp 反熵").unwrap();
         assert_eq!(s, 200);
         assert!(body.starts_with("landed=1"), "{body}");
+    }
+
+    #[test]
+    fn write_endpoints_require_psk() {
+        use crate::server::client;
+        let lo = std::net::SocketAddr::from(([127, 0, 0, 1], 0));
+
+        // H5：FleetServer 未配 PSK ⇒ 写端点 403（默认禁用）；读端点仍 200
+        let srv = FleetServer::new(temp_fleet());
+        let addr = srv.serve(lo).unwrap();
+        let (s, _) = client::post(addr, "/v1/fleet/links", "up\t1\tdown\t1\t-1\tx\n").unwrap();
+        assert_eq!(s, 403, "未配 PSK 的写端点默认禁用");
+        let (s, _) = client::get(addr, "/v1/fleet/health").unwrap();
+        assert_eq!(s, 200, "读端点不受影响");
+
+        // H1：Server 配了 PSK ⇒ 错 Bearer 401；对的通过；空诊断 400（不能把节点洗成 +1）
+        let p = std::env::temp_dir().join(format!("trit-auth-{}.journal", std::process::id()));
+        let _ = std::fs::remove_file(&p);
+        let j = Journal::create_as(&p, "t", 0).unwrap();
+        let srv = Server::new(j).with_psk(b"k1");
+        let addr = srv.serve(lo).unwrap();
+        let (s, _) = client::get(addr, "/v1/render").unwrap();
+        assert_eq!(s, 200, "读端点公开");
+        let (s, _) = client::post_auth(addr, "/v1/diag?node=0", b"wrong", "{}").unwrap();
+        assert_eq!(s, 401, "错误 Bearer");
+        let (s, body) = client::post_auth(addr, "/v1/diag?node=0", b"k1", "{}").unwrap();
+        assert_eq!(s, 400, "空诊断须拒绝而非 +1：{body}");
+        let _ = std::fs::remove_file(&p);
     }
 
     #[test]

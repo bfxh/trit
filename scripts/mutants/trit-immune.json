@@ -110,5 +110,29 @@
   "new": "    let _ = budget; // 预算移除",
   "pkg": "trit-immune",
   "filter": "attack_chain_visit_budget_bounds_dense_graph"
+ },
+ {
+  "name": "immune: 写端点认证恒放行（H1/H5 认证失效）",
+  "file": "crates/trit-immune/src/server/auth.rs",
+  "old": "    if !is_write(method, path) {\n        return Ok(());\n    }",
+  "new": "    if true {\n        return Ok(());\n    }",
+  "pkg": "trit-immune",
+  "filter": "write_endpoints_require_psk"
+ },
+ {
+  "name": "immune: 未配 PSK 的写端点也放行（默认禁用失效）",
+  "file": "crates/trit-immune/src/server/auth.rs",
+  "old": "    let Some(psk) = psk else {\n        return Err((403, \"写端点未配置 PSK（默认禁用写操作）\\n\".into()));\n    };",
+  "new": "    let Some(psk) = psk else {\n        return Ok(());\n    };",
+  "pkg": "trit-immune",
+  "filter": "write_endpoints_require_psk"
+ },
+ {
+  "name": "immune: diag 空诊断守卫移除（空 POST 把节点洗成 +1）",
+  "file": "crates/trit-immune/src/server/route.rs",
+  "old": "            let diags = diag::parse_rustc_stream(body);\n            if diags.is_empty() && !body.contains(\"\\\"success\\\":true\") {",
+  "new": "            let diags = diag::parse_rustc_stream(body);\n            if false {",
+  "pkg": "trit-immune",
+  "filter": "write_endpoints_require_psk"
  }
 ]
