@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：真实模型端到端 bias 读数）
+
+- 新示例 `examples/bias_e2e.rs`：读 all-MiniLM-L6-v2 第 0 层的
+  `query(384→384) → intermediate(1536→384) → output(384→1536)`，以 f32 权重为参照，
+  比较三值权重 + {零 / 三值 sign / f32} bias 的逐层、三层级联与单层替换读数
+  （MSE / RMSE / 相对 L2 / 全局余弦，256 组随机输入）。
+- 读数（seed 7）：逐层相对 L2 从 zero 的 0.5505–0.5799 降到 f32 bias 的 0.4943–0.5755；
+  级联 `cosine` 0.3768 → 0.4419、`rel_l2` 0.9458 → 0.9225。f32 bias 的收益随该层
+  `bias_abs_mean` 增大；三值 bias 只补回部分收益，output 段接近无区分度。
+- 复算见 `docs/WSP-E2E-RESULTS.md`。
+- 未证栏：输入是随机 `uniform(-1,1)` 而非真实激活；只测线性三段，没有注意力/
+  LayerNorm/GELU/残差；没有真实任务指标。
+
 ### Added（trit-export：三值权重 GGUF 容器（GGUF v3 最小子集））
 
 - 新 crate `crates/trit-export`（ops）：`Model` / `Tensor` / `MetaValue` + `write` / `read`。
