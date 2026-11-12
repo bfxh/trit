@@ -1,9 +1,7 @@
-//! 操作数解析三态（从 eval.rs 拆出——模块预算棘轮纪律）：
-//! 每个 Operand 有确定值 / 确定的未定义 / 证据缺失三种归宿。
-//!
-//! 差分测试实测判定的纪律（第四个语义分歧的修正）：**确定的未定义 ≠
-//! 证据缺失**——零命中串的 `@a[N]`（串客观上没有第 N 次命中）比较为假；
-//! 截断/缺上下文 = 弃权（Unknown），绝不折叠成假。
+//! 操作数解析三态（从 eval.rs 拆出——模块预算棘轮纪律）：每个 Operand
+//! 有确定值 / 确定的未定义 / 证据缺失三种归宿。差分实测纪律（第四个
+//! 语义分歧的修正）：**确定的未定义 ≠ 证据缺失**——零命中串的 `@a[N]`
+//! 比较为假；截断/缺上下文 = 弃权（Unknown），绝不折叠成假。
 
 use super::Operand;
 use super::eval::EvalCtx;
@@ -53,18 +51,9 @@ pub(super) fn resolve(op: &Operand, occurrences: &[(String, Vec<u64>)], ctx: &Ev
                 _ => DefiniteFalse, // 非截断的越界读：字节客观不存在
             }
         }
-        Operand::Entrypoint => match ctx.entrypoint {
-            Some(v) => Val(v), // 调用方传入
-            None => Unknown,   // 缺上下文 = 弃权
-        },
-        // pe.* 子集：已知标量属性从 PE 上下文求值；子集外路径 /
-        // 缺上下文 = 记名弃权（Unknown），绝不猜。
-        Operand::Opaque(path) => {
-            match super::resolve_pe_prop(path, ctx.pe, Some(ctx.data.len() as u64)) {
-                Some(v) => Val(v),
-                None => Unknown,
-            }
-        }
+        Operand::Entrypoint => ctx.entrypoint.map_or(Unknown, Val),
+        // pe.*：pe.sections[N] 三态 + 标量子集，子集外/缺上下文 = 弃权。
+        Operand::Opaque(path) => super::sections::resolve_opaque(path, ctx),
         Operand::CurrentCount => ctx
             .binding
             .and_then(|i| occurrences.get(i))

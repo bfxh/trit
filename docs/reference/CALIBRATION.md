@@ -55,6 +55,13 @@ characteristics 精确值探针——entry_point 用 **RVA/offset 双候选**设
 复算：`python -I scripts/yara_diff.py --trit <exe> --rules <N1>/pe_rules.yar
 --samples <N1>/benign-x64`（及 benign-pe32）。
 
+**pe.sections 数组式（2026-11-13，待官方探针补证）**：本机无
+`yara-python`，本轮未新增官方差分探针批。语义依据=官方 undefined 比较
+纪律（越界数组项参与比较为假）与既有 `@a[N]` 差分结论（确定的未定义 ≠
+证据缺失）的推广：`pe.sections[9].characteristics == 1` 在 2 节样本上
+判假；缺 PE 上下文判 `Unknown`。建议下一批校准补一条规则（对每样本
+生成「越界索引 + 真实字段值」两行探针）把这条推广钉成官方读数。
+
 ## 四、N1 判据对照
 
 SECURITY-RE 路线图 N1：「真实语料校准：PE x64 / PE ARM64 / ELF x64 / ELF
