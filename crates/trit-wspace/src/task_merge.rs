@@ -202,54 +202,8 @@ pub fn merge_tasks(base: &Net, tasks: &[TaskVector]) -> Result<Net> {
 /// （它的 trit/偏置票不进投票，scale 也不进统计）。权重全为 1 时与
 /// [`merge_tasks`] 逐位一致。scale 用**加权中位数**：排序后取累计权重达到总权重
 /// 一半处的值，恰好落在两个值之间时取平均（等权时退化为普通中位数）。
-/// 合并报告：投票/平票/忽略/改动/scale 行数。
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MergeReport {
-    tasks: usize,
-    ignored_tasks: usize,
-    voted: usize,
-    ties: usize,
-    changed: usize,
-    scale_rows: usize,
-}
-
-impl MergeReport {
-    /// 参与合并的任务数。
-    #[must_use]
-    pub fn tasks(&self) -> usize {
-        self.tasks
-    }
-
-    /// 权重为 0、完全不参与的任务数。
-    #[must_use]
-    pub fn ignored_tasks(&self) -> usize {
-        self.ignored_tasks
-    }
-
-    /// 至少收到一票的坐标数。
-    #[must_use]
-    pub fn voted(&self) -> usize {
-        self.voted
-    }
-
-    /// 平票（票和为零且票值不全相同）而保留基准的坐标数。
-    #[must_use]
-    pub fn ties(&self) -> usize {
-        self.ties
-    }
-
-    /// 实际写出的 trit/偏置编辑数。
-    #[must_use]
-    pub fn changed(&self) -> usize {
-        self.changed
-    }
-
-    /// 实际写出的 scale 行数。
-    #[must_use]
-    pub fn scale_rows(&self) -> usize {
-        self.scale_rows
-    }
-}
+mod report;
+pub use report::MergeReport;
 
 /// 多任务加权合并：返回网络（不带报告）。
 pub fn merge_tasks_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<Net> {
@@ -265,6 +219,22 @@ pub fn merge_tasks_weighted_report(
 ) -> Result<(Net, MergeReport)> {
     validate_weights(tasks.len(), weights)?;
     merge_weighted(base, tasks, weights)
+}
+
+/// 把 f32 偏置整层复制到另一个同架构网络（DARE 只改三值差分，幅度另行保留）。
+fn copy_bias_f32(from: &Net, to: &mut Net) -> Result<()> {
+    for (index, source) in from.layers().iter().enumerate() {
+        let target = to
+            .layer(index)
+            .ok_or(Error::OutOfBounds {
+                layer: index,
+                row: 0,
+                col: 0,
+            })?
+            .clone();
+        *to.layer_mut(index) = target.with_bias_f32(source.bias_f32().to_vec())?;
+    }
+    Ok(())
 }
 
 pub(crate) fn validate_weights(task_count: usize, weights: &[f32]) -> Result<()> {
@@ -398,6 +368,7 @@ fn merge_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<(
             ties,
             changed,
             scale_rows,
+            dropped: 0,
         },
     ))
 }

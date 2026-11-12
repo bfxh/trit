@@ -1666,8 +1666,8 @@
 {
  "name": "wspace-weight: weighted-dare 忽略权重",
  "file": "crates/trit-wspace/src/task_merge/dare.rs",
- "old": "    let (combined, report) = merge_tasks_weighted_report(base, tasks, weights)?;\n    let net = sparse_after_vote(base, &combined, rate, seed)?;",
- "new": "    let (combined, report) = merge_tasks_weighted_report(base, tasks, &vec![1.0; tasks.len()])?;\n    let net = sparse_after_vote(base, &combined, rate, seed)?;",
+ "old": "    let (combined, report) = merge_tasks_weighted_report(base, tasks, weights)?;\n    let (net, dropped) = sparse_after_vote(base, &combined, rate, seed)?;",
+ "new": "    let (combined, report) = merge_tasks_weighted_report(base, tasks, &vec![1.0; tasks.len()])?;\n    let (net, dropped) = sparse_after_vote(base, &combined, rate, seed)?;",
  "pkg": "trit-wspace",
  "filter": "merge_weighted_dare_zero_matches_weighted"
 },
@@ -2658,16 +2658,16 @@
 {
  "name": "dare: 报告用等权投票",
  "file": "crates/trit-wspace/src/task_merge/dare.rs",
- "old": "    let (combined, report) = merge_tasks_weighted_report(base, tasks, weights)?;\n    let net = sparse_after_vote(base, &combined, rate, seed)?;\n    Ok((net, report))",
- "new": "    let (combined, _) = merge_tasks_weighted_report(base, tasks, weights)?;\n    let net = sparse_after_vote(base, &combined, rate, seed)?;\n    Ok((net, merge_tasks_weighted_report(base, tasks, &vec![1.0; tasks.len()])?.1))",
+ "old": "    let (combined, report) = merge_tasks_weighted_report(base, tasks, weights)?;\n    let (net, dropped) = sparse_after_vote(base, &combined, rate, seed)?;\n    Ok((net, report.with_dropped(dropped)))",
+ "new": "    let (combined, _) = merge_tasks_weighted_report(base, tasks, weights)?;\n    let (net, dropped) = sparse_after_vote(base, &combined, rate, seed)?;\n    Ok((net, merge_tasks_weighted_report(base, tasks, &vec![1.0; tasks.len()])?.1.with_dropped(dropped)))",
  "pkg": "trit-wspace",
  "filter": "report_comes_from_the_vote_stage"
 },
 {
  "name": "dare: rate=0 返回基准网络",
  "file": "crates/trit-wspace/src/task_merge/dare.rs",
- "old": "    if rate == 0.0 {\n        return Ok(combined.clone());\n    }",
- "new": "    if rate == 0.0 {\n        return Ok(base.clone());\n    }",
+ "old": "    if rate == 0.0 {\n        return Ok((combined.clone(), 0));\n    }",
+ "new": "    if rate == 0.0 {\n        return Ok((base.clone(), 0));\n    }",
  "pkg": "trit-wspace",
  "filter": "rate_zero_matches_plain_report_and_net"
 },
@@ -2678,5 +2678,21 @@
  "new": "        (net, None)\n    };\n    write_out(&parsed, &merged)?;",
  "pkg": "trit-wspace",
  "filter": "cli_task_merge_tune_with_dare"
+},
+{
+ "name": "dare: 丢弃计数恒 0",
+ "file": "crates/trit-wspace/src/task_merge/dare.rs",
+ "old": "    let (net, dropped) = sparse_after_vote(base, &combined, rate, seed)?;\n    Ok((net, report.with_dropped(dropped)))",
+ "new": "    let (net, _) = sparse_after_vote(base, &combined, rate, seed)?;\n    Ok((net, report.with_dropped(0)))",
+ "pkg": "trit-wspace",
+ "filter": "report_comes_from_the_vote_stage"
+},
+{
+ "name": "dare: per-task 丢弃计数不累加",
+ "file": "crates/trit-wspace/src/task_merge/dare.rs",
+ "old": "        dropped += task.edits().len() - edits.len();",
+ "new": "        dropped += 0;",
+ "pkg": "trit-wspace",
+ "filter": "per_task_report_is_not_empty"
 }
 ]
