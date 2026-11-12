@@ -134,6 +134,6 @@ pub fn from_wsp2(bytes: &[u8]) -> Result<Net> {
     Net::new(layers)
 }
 
-mod bytes;
+pub(crate) mod bytes;
 
 use bytes::*;
