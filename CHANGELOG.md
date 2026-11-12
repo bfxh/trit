@@ -17,17 +17,25 @@
 - **U-3 `trit-net` probe**：`HARD_MAX_TOTAL_PROBES = 512` 原来是**死常量**（定义了没人用，64×32=2048 照样放行）。
   `from_json` 去重后 `total += ports.len()` 累加，`total_probes_ok(total)` 执法，超顶 `ConfigTooHot`（拒绝不缩放）；
   `run` 探测后的 `sleep` 改用 `sleep_budget(delay, elapsed, deadline)` 夹到剩余预算，不再把 deadline overshoot 一个 delay。
+  两个谓词（`total_probes_ok`/`sleep_budget`）拆进 `probe/budget.rs` 成纯函数，配确定性边界单测（见下「假信心变异修复」）。
 - 读数（`cargo test -q -p <crate> --locked`）：`trit-codec` 121 lib、`trit-lsp` 51 lib、
-  `trit-net` probe 17（`tests/probe.rs` 15 + `tests/probe_limits.rs` 2：+`allowlist_enforces_aggregate_probe_cap`、+`delay_sleep_is_clamped_to_deadline`）、
+  `trit-net` probe 22（`tests/probe.rs` 15 + `tests/probe_limits.rs` 2 + `probe/budget.rs` 5 纯谓词单测：+`allowlist_enforces_aggregate_probe_cap`、+`delay_sleep_is_clamped_to_deadline`、+`total_probes_ok_boundary`、+`sleep_budget` 四档）、
   `trit-immune` `daemon::tests` 9（+3 帧帽边界）全过。
 - 变异（`mutation_check.py --pkg <crate>`）：codec 17 / lsp 11 / net 31 / immune 11 **全断言抓住，0 存活 0 假杀**。
   修正一处假杀：把 `MAX_SPARSE_DECODE_LEN` 设 `usize::MAX` 会让测试里 `MAX+1` 常量溢出编译红（E0080，非行为杀），
   改成定义处 `return Err(SparseLenTooLarge{..})` → `return Ok(())` 的语义变异（帽不动、校验恒放行 ⇒ 被边界测试杀）。
-- 行棘轮合规：安全修复让 7 个生产/测试文件越过 `module_budget` 上限，按仓纪律「要腾地方就拆，别抬台账」**纯搬家**拆出 8 个新文件——
+- **U-3 后续：假信心变异修复（CI 实测暴露）**。`saturating_sub`→裸减这条变异原先**只被计时依赖的集成测试**
+  `delay_sleep_is_clamped_to_deadline` 杀：本机 Windows 慢（单次探测耗时 >deadline ⇒ `deadline - elapsed` 下溢 panic ⇒ 抓住），
+  CI ubuntu 快（探测耗时 <deadline ⇒ 不下溢、sleep 补偿到正好 deadline ⇒ `probed==1` 仍成立 ⇒ **存活**）。
+  只被「慢机器才触发的边界」杀掉的变异 = 假信心。修法：`total_probes_ok`/`sleep_budget` 拆进 `probe/budget.rs` 成纯函数 + 5 条确定性边界单测
+  （`sleep_budget_clamps_to_zero_when_elapsed_exceeds_deadline` 直接喂 elapsed=300ms>deadline=200ms，裸减变异**任何平台**都确定性 panic）；
+  3 条变异锚点改指 `budget.rs`、filter 换成纯谓词单测。**CI 变异门跑在快平台正是暴露这类假信心的地方——本地绿≠门绿。**
+  顺带修一处 rustdoc：`run` 的 pub 文档原链接私有 `sleep_budget`（`-D warnings` 下 `private_intra_doc_links` 红），改成普通 code span（非 `#[allow]`）。
+- 行棘轮合规：安全修复让 7 个生产/测试文件越过 `module_budget` 上限，按仓纪律「要腾地方就拆，别抬台账」**纯搬家**拆出 9 个新文件——
   `sparse`/`server`/`daemon`/`framing` 的 `#[cfg(test)]` 测试模块 → 同级 `tests.rs`，`framing` 帧头 → `header.rs`，
-  `probe` 登记桥 → `probe/attach.rs`，`CodecError` → `error.rs`，probe 上限测试 → `tests/probe_limits.rs`；
+  `probe` 登记桥 → `probe/attach.rs`、预算谓词 → `probe/budget.rs`，`CodecError` → `error.rs`，probe 上限测试 → `tests/probe_limits.rs`；
   `pub use` 保住公开 API，5 条变异锚点随代码改指新文件（didChange 守卫顺手收掉 clippy `collapsible_if`，改成 edition-2024 let-chain）。
-  **测试一条没少**：test_surface crate 计数只增不减（codec 137→140、lsp 46→53、immune 253→256、net 93→95，增量全是本次新增安全测试）。
+  **测试一条没少**：test_surface crate 计数只增不减（codec 137→140、lsp 46→53、immune 253→256、net 93→100，增量全是本次新增安全测试）。
 
 ### Added（alloc_guard 静态门：把「上限不执法」变成会红的 CI 检查）
 

@@ -252,7 +252,7 @@ trit-net calibrate Friday-16-02-2018.csv --rows 200000 --epochs 300 --hidden 16 
 
 ### 读数（A）
 
-- probe **17 条**（`tests/probe.rs` 15 + `tests/probe_limits.rs` 2，行棘轮拆分后纯搬家）：默认拒绝（空表/未列端口）、DNS 名拒绝、公网/CGNAT/
+- probe **22 条**（`tests/probe.rs` 15 + `tests/probe_limits.rs` 2 + `src/netsec/probe/budget.rs` 5 纯谓词单测，行棘轮拆分后纯搬家）：默认拒绝（空表/未列端口）、DNS 名拒绝、公网/CGNAT/
   基准段/组播拒绝、实验室范围穷举（v4 环回/三段私网/链路本地，v6 环回/ULA/链路
   本地 vs 全球单播）、硬上限（65 目标/33 端口/空端口列表）、配置超顶拒绝不缩放、
   分类纯函数（成功/拒绝/超时/其他 → T/F/X/X）、**环回真连接**（开端口 banner 捕获
@@ -261,9 +261,21 @@ trit-net calibrate Friday-16-02-2018.csv --rows 200000 --epochs 300 --hidden 16 
   **U-3 新增（`tests/probe_limits.rs`）**：聚合上限执法（`allowlist_enforces_aggregate_probe_cap`：16×32=512 放行、
   513 ⇒ `ConfigTooHot`）、delay 夹到 deadline（`delay_sleep_is_clamped_to_deadline`：
   开端口不 accept、banner_timeout 300ms、delay 3000ms、deadline 200ms ⇒ 探测耗时 <1500ms 且 truncated）。
+  **U-3 纯谓词单测（`src/netsec/probe/budget.rs` 5 条）**：`total_probes_ok` 与 `sleep_budget` 从 `probe.rs`
+  拆成纯函数，边界直接喂值——`total_probes_ok_boundary`（0/512/513）、`sleep_budget` 四档
+  （elapsed>deadline ⇒ 0、elapsed==deadline ⇒ 0、剩余<delay ⇒ 夹剩余、剩余充裕 ⇒ 睡满 delay），不碰网络与计时。
+- 🔴→✅ **假信心变异（2026-11-12，CI 实测暴露）**：`saturating_sub`→裸减这条变异原先**只被计时依赖的集成测试**
+  `delay_sleep_is_clamped_to_deadline` 杀——本机 Windows 慢（单次探测耗时 >deadline ⇒ `deadline - elapsed` 下溢 panic ⇒ 抓住），
+  但 CI ubuntu 快（探测耗时 <deadline ⇒ 不下溢，sleep 补偿到正好 deadline ⇒ `probed==1` 仍成立 ⇒ **存活**）。
+  只被「慢机器才触发的边界」杀掉的变异 = 假信心。修法：把谓词拆进 `budget.rs` 配确定性单测，
+  `sleep_budget_clamps_to_zero_when_elapsed_exceeds_deadline` 直接把 elapsed=300ms>deadline=200ms 喂进去，
+  裸减变异在**任何平台**都确定性 panic；3 条变异锚点随代码改指 `budget.rs`、filter 改成纯谓词单测。
+  **CI 变异门跑在快平台正是暴露这类假信心的地方**——本地绿不等于门绿。
 - 变异门 **31 条**（U-3 +6：`total_probes_ok` 边界 `<=`→`<`、聚合执法 `if !total_probes_ok`→恒放行、
   累加 `total += ports.len()`→`total = ports.len()`、死帽 `HARD_MAX_TOTAL_PROBES`→`usize::MAX`、
   sleep 夹紧 `delay.min(remaining)`→`delay`、`saturating_sub`→裸减）——全断言抓住，0 存活 0 假杀。
+  其中边界/夹紧/裸减 3 条锚在 `budget.rs`、由确定性纯谓词单测杀（不靠计时，见上「假信心变异」）；
+  聚合执法/累加/死帽 3 条锚在 `probe.rs`、由 `allowlist_enforces_aggregate_probe_cap` 杀。
 - 测试全部只打 `127.0.0.1`；CLI 子命令无进程级 e2e（`std::process::Command`
   被 Mimosa 硬拦截，仓纪律：spawn 留给部署层），CLI 覆盖由库级测试承担。
 

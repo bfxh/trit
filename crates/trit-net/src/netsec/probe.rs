@@ -35,7 +35,9 @@ use serde::{Deserialize, Serialize};
 use super::attack::{AttackError, Evidence};
 
 mod attach;
+mod budget;
 pub use attach::{AttachSummary, attach_probe, findings_from_jsonl};
+use budget::{sleep_budget, total_probes_ok};
 
 /// 允许的连接超时上限（毫秒）。
 pub const MAX_CONNECT_TIMEOUT_MS: u64 = 5_000;
@@ -133,12 +135,6 @@ pub struct Target {
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Allowlist {
     targets: Vec<(IpAddr, Vec<u16>)>,
-}
-
-/// 总探测数门（纯函数，不分配）：去重后的端口总数在硬顶内才放行。
-/// 目标数与每目标端口数各自合规，聚合仍可能是扫描（64×32=2048）——这道门补上聚合量纲。
-fn total_probes_ok(total: usize) -> bool {
-    total <= HARD_MAX_TOTAL_PROBES
 }
 
 impl Allowlist {
@@ -326,18 +322,11 @@ impl ProbeReport {
     }
 }
 
-/// 限速睡眠预算（纯函数）：只睡「间隔」与「deadline 剩余」的较小者，绝不睡过 deadline。
-/// 旧实现在每次探测后无条件 `sleep(delay)`，delay 顶到 60s 时能把全局 deadline 大幅 overshoot。
-fn sleep_budget(delay: Duration, elapsed: Duration, deadline: Duration) -> Duration {
-    let remaining = deadline.saturating_sub(elapsed);
-    delay.min(remaining)
-}
-
 /// 执行受控探测：顺序遍历 allowlist，逐 (ip, port) 连接并分类。
 ///
 /// 目标顺序按 allowlist 声明序；端口按升序（加载时已排序）。
 /// 每次探测之间 `delay` 限速；全局 `deadline` 到点即收工并置 `truncated`。
-/// 限速睡眠只睡到 deadline 为止（[`sleep_budget`]），不被 `delay` 拖过全局 deadline。
+/// 限速睡眠只睡到 deadline 为止（`sleep_budget`），不被 `delay` 拖过全局 deadline。
 pub fn run(allowlist: &Allowlist, config: &ProbeConfig) -> Result<ProbeReport, ProbeError> {
     config.validate()?;
     let started = Instant::now();

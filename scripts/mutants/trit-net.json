@@ -201,11 +201,11 @@
  },
  {
   "name": "net: 总探测数门边界写成严格小于",
-  "file": "crates/trit-net/src/netsec/probe.rs",
+  "file": "crates/trit-net/src/netsec/probe/budget.rs",
   "old": "    total <= HARD_MAX_TOTAL_PROBES",
   "new": "    total < HARD_MAX_TOTAL_PROBES",
   "pkg": "trit-net",
-  "filter": "allowlist_enforces_aggregate_probe_cap"
+  "filter": "total_probes_ok_boundary"
  },
  {
   "name": "net: 聚合总探测数不查硬顶（死帽复活）",
@@ -233,18 +233,18 @@
  },
  {
   "name": "net: 限速睡眠不夹到 deadline 剩余（overshoot）",
-  "file": "crates/trit-net/src/netsec/probe.rs",
+  "file": "crates/trit-net/src/netsec/probe/budget.rs",
   "old": "    delay.min(remaining)",
   "new": "    delay",
   "pkg": "trit-net",
-  "filter": "delay_sleep_is_clamped_to_deadline"
+  "filter": "sleep_budget"
  },
  {
   "name": "net: deadline 剩余用会下溢的减法（探测超时即 panic）",
-  "file": "crates/trit-net/src/netsec/probe.rs",
+  "file": "crates/trit-net/src/netsec/probe/budget.rs",
   "old": "    let remaining = deadline.saturating_sub(elapsed);",
   "new": "    let remaining = deadline - elapsed;",
   "pkg": "trit-net",
-  "filter": "delay_sleep_is_clamped_to_deadline"
+  "filter": "sleep_budget"
  }
 ]

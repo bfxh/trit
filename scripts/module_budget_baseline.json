@@ -1552,11 +1552,15 @@
     },
     {
       "file": "crates/trit-net/src/netsec/probe.rs",
-      "lines": 384
+      "lines": 373
     },
     {
       "file": "crates/trit-net/src/netsec/probe/attach.rs",
       "lines": 90
+    },
+    {
+      "file": "crates/trit-net/src/netsec/probe/budget.rs",
+      "lines": 81
     },
     {
       "file": "crates/trit-net/src/netsec_cli.rs",
