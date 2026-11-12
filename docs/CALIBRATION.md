@@ -52,8 +52,8 @@ characteristics 精确值探针——entry_point 用 **RVA/offset 双候选**设
 ③`pe.overlay.*` 官方含 Authenticode 证书，与 packed 判定的证书排除纪律
 语义分歧——裁定 yara 兼容层跟官方（文件长度直算），packed 层保持自有
 语义，两层分歧记录在 SECURITY-RE N4 行与 `sigscan/peprops.rs` 模块文档。
-复算：`python -I scripts/yara_diff.py --trit <exe> --rules E:/tmp/n1/pe_rules.yar
---samples E:/tmp/n1/benign-x64`（及 benign-pe32）。
+复算：`python -I scripts/yara_diff.py --trit <exe> --rules <N1>/pe_rules.yar
+--samples <N1>/benign-x64`（及 benign-pe32）。
 
 ## 四、N1 判据对照
 

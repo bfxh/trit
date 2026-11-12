@@ -274,6 +274,18 @@
   f32 偏置——幅度无法与取反/丢弃后的三值语义一一对应，宁可退回三值符号。
 - 读数：`cargo test -p trit-wspace --locked` ⇒ **367 passed**（新增 `merge_bias_f32` 9 条）；
   变异 `trit-wspace` 328 → **332**（+4：投票不平均、加权忽略权重、缺失不清空、DARE 丢掉幅度，逐条抓住）。
+### Added（YARA：正则串 Pike VM，替换记名弃权）
+
+- `crates/trit-re/src/sigscan/regex.rs`：正则串不再进 `Unscannable`——递归下降 AST + NFA 编译 + Pike VM
+  （每起点 rank 回溯，DFS 首完成语义；命中起点升序）。子集：字面量、`.`（不含 `\n`）、字符类/取反类、
+  分组/交替、`*` `+` `?` `{n}` `{n,}` `{n,m}`（贪婪/懒惰）、`^`/`$`、`\d` `\w` `\s`、`\xNN`、`nocase`。
+- fail-closed 边界不变：不支持语法 / 指令超预算（8192）/ `wide`·`xor`·`fullword` 修饰 → 编译 `Err`
+  → 串记名弃权，整条规则 `Unknown`（评估不了的串不能报“没命中”）。
+- **官方对拍（yara-python 4.5.4）：探针 20 用例 MATCH 20 / DIFF 0 / SUBSET-GAP 0；属性模糊批
+  （40 规则 × 20 样本）DIFF 0**。官方怪癖入账：整条正则贪婪/懒惰量词不可混用、`(?:` 官方语法错。
+- 模块预算（拆文件不抬台账）：`impl Pattern` 构造器 → `sigscan/pattern.rs`，词法层 → `yaraparse/lex.rs`，
+  正则集成测试 → `tests/yara_regex.rs`。测试 181 全绿（clippy `-D warnings` / fmt / module_budget /
+  docs_hygiene / hazard / secret 全过）。
 
 ### Changed（门：模块预算改默认全量棘轮 + 一次性重录基线；新增磁盘介质门）
 

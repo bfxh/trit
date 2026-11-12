@@ -85,151 +85,11 @@ pub fn parse_rules(text: &str) -> Result<ParsedFile, String> {
     parser.parse_file()
 }
 
-// ── 词法 ────────────────────────────────────────────────────────────────
+// ── 词法（lex.rs）──────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum Tok {
-    /// 标识符/关键字/数字（含 `$a` 引用、`0x10` 十六进制）。
-    Word(String),
-    /// 双引号字符串（已去引号，转义已还原）。
-    Str(String),
-    /// 正则串 `/…/`——词法层认出，语义层判 Unsupported。
-    Regex(String),
-    Sym(char),
-}
+mod lex;
 
-fn lex(text: &str) -> Result<Vec<Tok>, String> {
-    let mut out = Vec::new();
-    let mut chars = text.chars().peekable();
-    while let Some(&c) = chars.peek() {
-        match c {
-            _ if c.is_whitespace() => {
-                chars.next();
-            }
-            '/' => {
-                chars.next();
-                match chars.peek() {
-                    Some('/') => {
-                        chars.next();
-                        while let Some(&n) = chars.peek() {
-                            chars.next();
-                            if n == '\n' {
-                                break;
-                            }
-                        }
-                    }
-                    Some('*') => {
-                        chars.next();
-                        let mut closed = false;
-                        while let Some(&n) = chars.peek() {
-                            chars.next();
-                            if n == '*' && chars.peek() == Some(&'/') {
-                                chars.next();
-                                closed = true;
-                                break;
-                            }
-                        }
-                        if !closed {
-                            return Err("块注释未闭合".into());
-                        }
-                    }
-                    _ => {
-                        // 正则串：到未转义的 '/' 为止
-                        let mut body = String::new();
-                        let mut closed = false;
-                        while let Some(&n) = chars.peek() {
-                            chars.next();
-                            if n == '\\' {
-                                if let Some(&e) = chars.peek() {
-                                    chars.next();
-                                    body.push('\\');
-                                    body.push(e);
-                                }
-                                continue;
-                            }
-                            if n == '/' {
-                                closed = true;
-                                break;
-                            }
-                            body.push(n);
-                        }
-                        if !closed {
-                            return Err("正则串未闭合".into());
-                        }
-                        out.push(Tok::Regex(body));
-                    }
-                }
-            }
-            '"' => {
-                chars.next();
-                let mut body = String::new();
-                let mut closed = false;
-                while let Some(&n) = chars.peek() {
-                    chars.next();
-                    match n {
-                        '\\' => {
-                            if let Some(&e) = chars.peek() {
-                                chars.next();
-                                body.push(match e {
-                                    'n' => '\n',
-                                    't' => '\t',
-                                    '\\' => '\\',
-                                    '"' => '"',
-                                    other => other,
-                                });
-                            }
-                        }
-                        '"' => {
-                            closed = true;
-                            break;
-                        }
-                        other => body.push(other),
-                    }
-                }
-                if !closed {
-                    return Err("字符串未闭合".into());
-                }
-                out.push(Tok::Str(body));
-            }
-            '{' | '}' | '(' | ')' | ':' | '=' | '[' | ']' | '*' | '.' | ',' | '<' | '>' | '!'
-            | '-' => {
-                chars.next();
-                out.push(Tok::Sym(c));
-            }
-            _ => {
-                let mut word = String::new();
-                while let Some(&n) = chars.peek() {
-                    if n.is_whitespace()
-                        || matches!(
-                            n,
-                            '{' | '}'
-                                | '('
-                                | ')'
-                                | ':'
-                                | '='
-                                | '"'
-                                | '.'
-                                | '<'
-                                | '>'
-                                | '!'
-                                | '-'
-                                | '['
-                                | ']'
-                        )
-                    {
-                        break;
-                    }
-                    chars.next();
-                    word.push(n);
-                }
-                if !word.is_empty() {
-                    out.push(Tok::Word(word));
-                }
-            }
-        }
-    }
-    Ok(out)
-}
+use lex::{Tok, lex};
 
 // ── 解析 ────────────────────────────────────────────────────────────────
 
@@ -531,11 +391,14 @@ impl Parser {
             return Err(format!("规则 {rule_name}：xor 与 nocase 组合官方不合法"));
         }
         if let Value::Regex(body) = &value {
-            // 可解析不可扫描：正则引擎不实现——串记原文形态，规则仍解析
-            //（其他串照常扫描），整体在扫描时判 Unknown。
-            return Ok(Some(Pattern::Unscannable(Unscannable {
-                reason: format!("正则串：/{body}/"),
-            })));
+            // 正则串：Pike VM（sigscan::regex）；修饰语义在 Pattern::regex 内守
+            return Ok(Some(Pattern::regex(
+                body,
+                nocase,
+                wide,
+                xor.is_some(),
+                fullword,
+            )));
         }
         let pattern = match value {
             Value::Text(s) => Pattern::text_ext(&s, nocase, wide, ascii_too, xor, fullword),

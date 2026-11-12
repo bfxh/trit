@@ -1,12 +1,9 @@
-//! 扫描循环（`impl SigScan`，从 sigscan.rs 拆出——模块预算棘轮纪律：
-//! 拆文件不抬台账）。
-//!
-//! 三条纪律在循环里落地：①命中表封顶截断 = 扫描不完整（`False` 折
-//! `Unknown`——"截断的沉默不是清白"）；②评估不了的串（Unscannable）
-//! 整条规则 `Unknown`，不能报"没命中"；③整体 = Kleene OR。
+//! 扫描循环（`impl SigScan`，从 sigscan.rs 拆出守预算）。三条纪律：
+//! 命中封顶截断 = 不完整（False 折 Unknown）；Unscannable 串整条
+//! Unknown；整体 Kleene OR。
 
 use super::{EvalCtx, Pattern, Rule, RuleVerdict, SigReport, SigScan};
-use super::{eval, find_hex, find_text};
+use super::{SCAN_BUDGET, eval, find_hex, find_text};
 use trit_core::value::Ternary;
 
 impl<'a> SigScan<'a> {
@@ -54,6 +51,7 @@ impl<'a> SigScan<'a> {
                 let (hits, pattern_complete) = match pattern {
                     Pattern::Hex(hp) => find_hex(data, hp),
                     Pattern::Text(tp) => find_text(data, tp),
+                    Pattern::Regex(rp) => super::regex::find_all(data, rp, SCAN_BUDGET),
                     Pattern::Unscannable(_) => {
                         // 评估不了的串不能报"没命中"：整条规则按 Unknown 落账
                         has_unscannable = true;

@@ -796,7 +796,7 @@
     },
     {
       "file": "crates/trit-export/tests/gguf.rs",
-      "lines": 148
+      "lines": 140
     },
     {
       "file": "crates/trit-float/src/format.rs",
@@ -2504,7 +2504,7 @@
     },
     {
       "file": "crates/trit-re/src/sigscan.rs",
-      "lines": 453
+      "lines": 343
     },
     {
       "file": "crates/trit-re/src/sigscan/eval.rs",
@@ -2515,8 +2515,16 @@
       "lines": 140
     },
     {
+      "file": "crates/trit-re/src/sigscan/pattern.rs",
+      "lines": 122
+    },
+    {
       "file": "crates/trit-re/src/sigscan/peprops.rs",
       "lines": 138
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/regex.rs",
+      "lines": 767
     },
     {
       "file": "crates/trit-re/src/sigscan/resolve.rs",
@@ -2524,7 +2532,7 @@
     },
     {
       "file": "crates/trit-re/src/sigscan/scan.rs",
-      "lines": 106
+      "lines": 104
     },
     {
       "file": "crates/trit-re/src/sigscan/tests.rs",
@@ -2560,7 +2568,7 @@
     },
     {
       "file": "crates/trit-re/src/yaraparse.rs",
-      "lines": 585
+      "lines": 448
     },
     {
       "file": "crates/trit-re/src/yaraparse/cond.rs",
@@ -2569,6 +2577,10 @@
     {
       "file": "crates/trit-re/src/yaraparse/cond_tail.rs",
       "lines": 48
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/lex.rs",
+      "lines": 145
     },
     {
       "file": "crates/trit-re/tests/arm64.rs",
@@ -2604,7 +2616,7 @@
     },
     {
       "file": "crates/trit-re/tests/yara.rs",
-      "lines": 540
+      "lines": 514
     },
     {
       "file": "crates/trit-re/tests/yara_lexer.rs",
@@ -2613,6 +2625,10 @@
     {
       "file": "crates/trit-re/tests/yara_pe.rs",
       "lines": 139
+    },
+    {
+      "file": "crates/trit-re/tests/yara_regex.rs",
+      "lines": 35
     },
     {
       "file": "crates/trit-redteam/src/attrib.rs",

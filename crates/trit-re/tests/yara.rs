@@ -33,32 +33,6 @@ rule demo_rule : tag1 tag2 {
 }
 
 #[test]
-fn regex_string_parses_but_scans_unknown() {
-    // 正则串可解析（Unscannable 形态）但不可扫描：整条规则判 Unknown
-    let src = r#"
-rule re {
-  strings:
-    $a = /mshta\.exe/ nocase
-  condition:
-    $a
-}
-"#;
-    let out = parse_rules(src).unwrap();
-    assert_eq!(out.rules.len(), 1);
-    let RuleOutcome::Parsed(rule) = &out.rules[0] else {
-        panic!("正则串现在可解析（Unscannable 形态）");
-    };
-    assert!(
-        matches!(rule.patterns()[0].1, Pattern::Unscannable(_)),
-        "串应记为 Unscannable"
-    );
-    // 8 字节完整扫描、串无法评估 → Unknown，绝不 False
-    let report = SigScan::new(std::slice::from_ref(rule)).scan(b"mshta.exe", false);
-    assert_eq!(report.rules[0].value, Ternary::Unknown);
-    assert_eq!(report.value, Ternary::Unknown);
-}
-
-#[test]
 fn filesize_condition_evaluates() {
     let src = r#"
 rule fs {
@@ -109,7 +83,7 @@ rule good {
     let bad_src = r#"
 rule bad {
   strings:
-    $a = /regex/
+    $a = /regex/ wide
   condition:
     $a
 }
