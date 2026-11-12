@@ -2967,6 +2967,10 @@
       "lines": 88
     },
     {
+      "file": "crates/trit-wspace/examples/quantize_delta.rs",
+      "lines": 119
+    },
+    {
       "file": "crates/trit-wspace/examples/trit_train_tasks.rs",
       "lines": 727
     },
@@ -3045,6 +3049,10 @@
     {
       "file": "crates/trit-wspace/src/dare.rs",
       "lines": 302
+    },
+    {
+      "file": "crates/trit-wspace/src/delta.rs",
+      "lines": 138
     },
     {
       "file": "crates/trit-wspace/src/edit.rs",
@@ -3261,6 +3269,10 @@
     {
       "file": "crates/trit-wspace/tests/dare_layer.rs",
       "lines": 206
+    },
+    {
+      "file": "crates/trit-wspace/tests/delta.rs",
+      "lines": 75
     },
     {
       "file": "crates/trit-wspace/tests/explain.rs",

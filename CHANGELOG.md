@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：f32 ΔW → 三值补丁桥）
+
+- `delta::diff_weights`：base/tuned f32 各自三值化，逐点生成 `SetTrit`/`SetBias`；
+  `--trim` 按 `|ΔW|` 保留 top 比例，scale 保留 base。
+- `examples/quantize_delta.rs`：输出 patch JSON / apply 后的 WSP1，可选 `--oracle`
+  对比 before/full/trim loss。
+- 真实 MiniLM `query` 384×384（合成 Δ，每 10 元素取反）：三值变化 10,128，
+  trim 0.2 保留 2,026；patch 215,381 B，edited WSP1 301,616 B。
+- 新增 `docs/WSP-RESEARCH-ROADMAP.md`：三值 LLM / 模型编辑 / 合并 / 水印 / 因果
+  的论文地图与 24 项 P0–P2 任务清单。
+- 未证栏：合成 Δ 不是真实 HF 微调；scale 不迁移；没有匹配任务的 oracle 读数。
+
 ### Added（trit-wspace / trit-gpu：更大模型与 GPU 落点）
 
 - `bias_e2e --layers N [--swap]`：可堆叠 N 层真实 MiniLM 线性段；6 层（18 段）读数：

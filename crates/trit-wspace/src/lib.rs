@@ -4,7 +4,6 @@
 //! MIT CSAIL 报告的工作（GPT-6 Astra 直接读写 Qwen3.5-0.8B 的原始权重，改约 0.016%
 //! 的权重把 MATH-500 从 7.9% 提到 48.1%，不走梯度）把这条路线推到台前；该结果来自
 //! 外部报道，本仓**未复现**，这里只借用它的接口形态：读 / 写 / 验证。
-//!
 //! ## 三值为什么适合权重空间编程
 //!
 //! | 性质 | 三值权重 | f32 权重 |
@@ -101,6 +100,7 @@ pub mod cli;
 mod cli_audit;
 pub mod codec;
 pub mod dare;
+pub mod delta;
 pub mod edit;
 pub mod error;
 pub mod explain;
