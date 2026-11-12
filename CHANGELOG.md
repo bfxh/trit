@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-export：三值权重 GGUF 容器（GGUF v3 最小子集））
+
+- 新 crate `crates/trit-export`（ops）：`Model` / `Tensor` / `MetaValue` + `write` / `read`。
+- GGUF v3 最小子集：magic/版本/计数、u32/f32/string 元数据、2D 张量信息（`dims=[cols,rows]`）、
+  32 字节对齐数据区；未知元数据类型/非 2D/非三值张量显式报错。
+- 自定义 `TYPE_TRIT = 100`：trits 与 bias 用 5 trits/byte（canonical，低位在前），每行 scale f32；
+  本 crate 自带打包实现（不引入实验层间的运行时/开发依赖），测试用 trit-codec 0.12 生成的
+  期望字节 pin 住「逐位一致」。
+- 测试 5 条（往返、与 codec 逐位一致、对齐、坏输入、未知类型）；变异 +3。
+- 未证栏：没有字符串数组/bool/u64 元数据、量化元数据、多文件分片、与 llama.cpp 的实测互操作。
+
 ### Changed（trit-wspace：rANS 原型——不优于 WSP4 Huffman（负结果））
 
 - 静态 rANS（字节级，M=2^12）原型对 all-MiniLM-L6-v2 的 103 个 WSP2：**4,991,451** 字节（83.39%），
