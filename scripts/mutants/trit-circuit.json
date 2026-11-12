@@ -66,8 +66,8 @@
  {
   "name": "blif: 导出不查标识符",
   "file": "crates/trit-circuit/src/blif.rs",
-  "old": "        if name.is_empty() || name.chars().any(char::is_whitespace) || name.starts_with('.') {",
-  "new": "        if false {",
+  "old": "    ensure_valid_names(circuit)?;",
+  "new": "    let _ = circuit;",
   "pkg": "trit-circuit",
   "filter": "export_validates_structure_and_identifiers"
  },
