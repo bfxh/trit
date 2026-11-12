@@ -568,7 +568,11 @@
     },
     {
       "file": "crates/trit-codec/src/gray.rs",
-      "lines": 222
+      "lines": 91
+    },
+    {
+      "file": "crates/trit-codec/src/gray/tests.rs",
+      "lines": 141
     },
     {
       "file": "crates/trit-codec/src/hamming.rs",

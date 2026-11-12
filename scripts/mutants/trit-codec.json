@@ -134,5 +134,13 @@
   "new": "        return Ok(());",
   "pkg": "trit-codec",
   "filter": "decode_len_cap_is_checked_before_allocation"
+ },
+ {
+  "name": "codec-gray: n as u32 截断绕过 3^n 检查（巨量分配 OOM）",
+  "file": "crates/trit-codec/src/gray.rs",
+  "old": "    let size = u32::try_from(n)\n        .ok()\n        .and_then(|n32| 3usize.checked_pow(n32))\n        .ok_or(CodecError::GrayIndexOutOfRange { index, n })?;",
+  "new": "    let size = 3usize\n        .checked_pow(n as u32)\n        .ok_or(CodecError::GrayIndexOutOfRange { index, n })?;",
+  "pkg": "trit-codec",
+  "filter": "huge_n_is_rejected_not_truncated_into_giant_alloc"
  }
 ]
