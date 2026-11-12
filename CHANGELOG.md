@@ -8,10 +8,13 @@
   先投票再稀疏化（或先稀疏化再投票），同时返回**投票阶段**的 `MergeReport`。
 - CLI `task-merge --dare-rate/--dare-per-task` 与 MCP `wsp_task_merge` 的 `merge_report`
   不再为 `null`；报告字段与同一权重下的普通合并一致。
+- 报告新增 `dropped`（DARE 实际丢弃的差分坐标数，普通合并与 `rate=0` 为 0）：
+  「先投票再稀疏化」取 `dare_drop` 的读数；per-task 路径取各任务被丢编辑的累计。
 - 等权版本委托给加权版本（`[1.0; n]`），逐位一致由测试钉住。
-- 测试 369 → 373（新增 `tests/task_dare_report.rs` 4 条）；变异 +3。
-- 未证栏：报告只覆盖投票阶段，没有「DARE 实际丢弃了多少坐标」的计数
-  （`dare_drop` 的 outcome 未进报告）。
+- 测试 369 → 373（新增 `tests/task_dare_report.rs` 4 条）；变异 +5
+  （报告等权、rate=0 返回基准、CLI 报告恒 null、丢弃计数恒 0、per-task 计数不累加）。
+- 未证栏：per-task 的 `dropped` 是各任务被丢编辑的累计，不是去重后的坐标数；
+  `dare_drop_rows` / `dare_drop_layers` 的块级重标度细节仍未进报告。
 
 ### Added（branch prune 认 squash 合并证据：预算红可收口）
 
