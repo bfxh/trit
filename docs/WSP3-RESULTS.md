@@ -45,3 +45,19 @@ stat -c %s model/*.wsp2 | awk '{s+=$1} END {print s}'
 
 - WSP3 保留给低熵/全同工件；真实权重不要用 `--rle`，WSP2 已到 12.8% of WSP1。
 - 未证：其他模型（不同稀疏度）的熵可能更低；没有在更大模型/GPU 上复测。
+
+## 4. WSP4：静态 Huffman（已实现，82.7% of WSP2）
+
+`WSP4` = `magic "WSP4" | version 1 | method u8 | raw_len u64 | 256 码长 + 位流 | checksum`；
+method=0 原样存（压缩不更小时回退）。
+
+| 容器 | 总字节 | 相对 WSP2 |
+|---|---:|---:|
+| WSP2 | 5,985,699 | 100% |
+| WSP3（RLE） | 6,025,083 | 100.7% |
+| **WSP4（Huffman）** | **4,953,834** | **82.7%** |
+
+同一批 103 个 WSP1，`pack-artifact --huffman` 生成 `.wsp4` 后求和；82.7% 与字节熵下限 82.0%
+相差 0.7 pp（码表头 + 位流填充）。
+
+结论：熵编码是这块的正解；RLE 只适合低熵/全同工件。

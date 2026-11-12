@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：WSP4——WSP2 的静态 Huffman 二级压缩）
+
+- `wsp4::huffman_encode` / `huffman_decode`：字节级静态 Huffman（256 码长 + MSB-first 位流），
+  无外部依赖；码长 >32 或压缩不更小时回退 method=0 原样存。
+- `to_wsp4` / `from_wsp4`：`magic "WSP4" | version 1 | method u8 | raw_len u64 | 码长/位流 | checksum`。
+- CLI：`pack-artifact --huffman` 输出 WSP4，`unpack-artifact` 按 magic 自动识别 WSP2/WSP3/WSP4。
+- 真实读数（all-MiniLM-L6-v2，103 张量）：WSP2 5,985,699 → **WSP4 4,953,834（82.7%，省 17.3%）**；
+  字节熵 6.561 bit/byte，理论下限 82.0%。复算见 `docs/WSP3-RESULTS.md` §4。
+- 测试 378 → 383（`tests/wsp4.rs` 5 条）；变异 +3。
+- 未证栏：没有做 rANS/算术编码（Huffman 整数码长损失约 0.7 pp）；没有在更大模型上复测。
+
 ### Added（governance：self_update --apply——一键更新落地）
 
 - `scripts/self_update.py --apply`：预检（干净/非 detached/fetch/快进/分叉）→ `git merge --ff-only`
