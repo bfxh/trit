@@ -150,5 +150,13 @@
   "new": "            None => Hlc {\n                physical_ms,\n                counter: u32::MAX,\n                writer,\n            },",
   "pkg": "trit-immune",
   "filter": "counter_overflow_carries_into_physical"
+ },
+ {
+  "name": "conn: 并发连接上限失效（连接耗尽 DoS）",
+  "file": "crates/trit-immune/src/server/conn.rs",
+  "old": "    if live.fetch_add(1, Ordering::SeqCst) >= max {",
+  "new": "    if live.fetch_add(1, Ordering::SeqCst) >= usize::MAX {",
+  "pkg": "trit-immune",
+  "filter": "admit_caps_concurrent_connections"
  }
 ]

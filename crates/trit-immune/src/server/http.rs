@@ -6,6 +6,7 @@ use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, RwLock};
 
 use super::auth::authorize_write;
+use super::conn;
 use super::{format_response, read_request};
 
 /// 起监听循环（每连接一线程）。`route` 是纯函数路由表（单仓的 `route` 或 fleet 的
@@ -21,20 +22,13 @@ where
     F: Fn(&RwLock<S>, &str, &str, &[(String, String)], &str) -> (u16, String)
         + Clone
         + Send
+        + Sync
         + 'static,
 {
     let listener = TcpListener::bind(addr)?;
     let bound = listener.local_addr()?;
-    std::thread::spawn(move || {
-        for stream in listener.incoming() {
-            let Ok(mut stream) = stream else { continue };
-            let state = Arc::clone(&state);
-            let psk = psk.clone();
-            let route = route.clone();
-            std::thread::spawn(move || {
-                let _ = handle(&mut stream, &state, psk.as_deref(), &route);
-            });
-        }
+    conn::serve(listener, move |mut stream: TcpStream| {
+        let _ = handle(&mut stream, &state, psk.as_deref(), &route);
     });
     Ok(bound)
 }

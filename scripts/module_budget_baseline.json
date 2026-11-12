@@ -1235,8 +1235,12 @@
       "lines": 126
     },
     {
+      "file": "crates/trit-immune/src/server/conn.rs",
+      "lines": 63
+    },
+    {
       "file": "crates/trit-immune/src/server/http.rs",
-      "lines": 57
+      "lines": 51
     },
     {
       "file": "crates/trit-immune/src/server/route.rs",

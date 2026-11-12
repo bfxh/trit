@@ -18,8 +18,7 @@ use std::sync::{Arc, RwLock};
 const MAX_HEAD: usize = 64 * 1024;
 const MAX_BODY: usize = 16 * 1024 * 1024;
 
-/// 共享的免疫网络服务。写端点需 `.with_psk(k)` 配置共享密钥（否则写端点默认禁用）；
-/// 读端点公开。
+/// 共享的免疫网络服务。写端点需 `.with_psk(k)`（否则默认禁用），读端点公开。
 #[derive(Debug, Clone)]
 pub struct Server {
     pub journal: Arc<RwLock<Journal>>,
@@ -51,6 +50,7 @@ impl Server {
 }
 
 mod auth;
+mod conn;
 pub(crate) mod http;
 mod route;
 use route::route;
