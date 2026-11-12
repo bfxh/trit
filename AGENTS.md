@@ -56,7 +56,9 @@
 - **先量牵连再动手**：`python scripts/impact.py --base origin/main --claims <CLAIMS.md>
   --repo bfxh/trit` 给出反向依赖闭包与「会被牵连但没人认领」的 crate；实测改 `trit-core`
   一个文件牵连**运行时 35/44、测试面 37/44**（dev 依赖单列）。认领面要覆盖到下游，
-  否则下游会话不会知道自己在被改。
+  否则下游会话不会知道自己在被改。`claim` 登记后**自动**跑同一口径：未认领下游直接点名；
+  `--root` 指定检出（缺省按 cwd 的 origin 尾段匹配 `--repo`，不匹配 ⇒ 警并不算）；
+  `--strict` 有未认领牵连 ⇒ rc1（声明仍写入）；`--no-impact` 跳过；cargo 取证失败 ⇒ 警。
 - **main 必须且只能在一个工作树检出**；合并后立刻回收：`python scripts/worktree_guard.py --apply`
   （只回收「PR 已合 + 干净 + 本地 tip == PR head」的工作树与分支，脏的一律保留）。
 - 开工先 `python scripts/agent_claims.py check`，再 `claim`；收工 `release`。
