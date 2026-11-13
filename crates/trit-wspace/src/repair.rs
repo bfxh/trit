@@ -18,8 +18,11 @@ use crate::net::Net;
 use crate::oracle::Oracle;
 use crate::trit::Trit;
 
+mod energy;
+use energy::energy;
+
 /// 修补预算。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct RepairOptions {
     /// 最多允许碰多少个三值位置。
     pub max_edits: usize,
@@ -29,6 +32,8 @@ pub struct RepairOptions {
     pub exhaustive_pairs: usize,
     /// 状态空间预算：`3^权重数` 不超过它就改用完备 BFS（能给出最小编辑数）。
     pub exhaustive_states: u64,
+    /// 候选编辑作用域；`None` 表示全权重穷举。给定时束搜索只在其中挑选。
+    pub scope: Option<Vec<Edit>>,
 }
 
 impl Default for RepairOptions {
@@ -38,6 +43,7 @@ impl Default for RepairOptions {
             beam_width: 64,
             exhaustive_pairs: 20_000,
             exhaustive_states: 200_000,
+            scope: None,
         }
     }
 }
@@ -84,7 +90,7 @@ pub fn repair(net: &Net, oracle: &Oracle, options: &RepairOptions) -> Result<Opt
         return bfs(net, oracle, options, before_loss);
     }
 
-    let candidates = candidates(net);
+    let candidates = scoped_candidates(net, options);
     let mut evaluated = 0usize;
 
     // 半径 1：按定义最小。
@@ -197,7 +203,7 @@ fn bfs(
     options: &RepairOptions,
     before_loss: usize,
 ) -> Result<Option<Repair>> {
-    let candidates = candidates(net);
+    let candidates = scoped_candidates(net, options);
     let mut evaluated = 0usize;
     let mut visited: HashSet<u64> = HashSet::new();
     visited.insert(net.state_hash());
@@ -244,6 +250,14 @@ fn rank(left: &State, right: &State) -> std::cmp::Ordering {
         .then_with(|| left.key.cmp(&right.key))
 }
 
+/// 候选编辑：有 scope 用 scope，否则全权重穷举。
+pub(crate) fn scoped_candidates(net: &Net, options: &RepairOptions) -> Vec<Edit> {
+    match &options.scope {
+        Some(scope) => scope.clone(),
+        None => candidates(net),
+    }
+}
+
 /// 所有点编辑候选（每个三值位置的另外两个取值）。
 pub(crate) fn candidates(net: &Net) -> Vec<Edit> {
     let mut out = Vec::new();
@@ -271,29 +285,4 @@ pub(crate) fn candidates(net: &Net) -> Vec<Edit> {
         }
     }
     out
-}
-
-/// 裕量能量：即使符号还错，也奖励“更接近正确一侧”的状态。
-fn energy(net: &Net, oracle: &Oracle) -> Result<f32> {
-    let mut total = 0.0f32;
-    for (input, want) in oracle.inputs().iter().zip(oracle.outputs()) {
-        let as_f32: Vec<f32> = input.iter().map(|&v| f32::from(v.to_i8())).collect();
-        let raw = net.readout(&as_f32)?;
-        for (&value, &target) in raw.iter().zip(want) {
-            total += match target {
-                Trit::Pos => softplus(-value),
-                Trit::Neg => softplus(value),
-                Trit::Zero => softplus(value.abs()),
-            };
-        }
-    }
-    Ok(total)
-}
-
-fn softplus(value: f32) -> f32 {
-    if value > 20.0 {
-        value
-    } else {
-        value.exp().ln_1p()
-    }
 }

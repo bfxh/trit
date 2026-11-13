@@ -12,7 +12,6 @@ use crate::merge::{merge_aligned, merge_vote};
 use crate::net::Net;
 use crate::ops;
 use crate::oracle::{Behavior, Oracle};
-use crate::repair::RepairOptions;
 use crate::wire;
 
 mod cli_artifact_shard;
@@ -21,6 +20,7 @@ mod cli_certify;
 mod cli_gguf;
 mod cli_gradient;
 mod cli_learned;
+mod cli_repair;
 mod cli_safetensors;
 mod cli_task;
 mod cli_wsp2;
@@ -61,7 +61,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "rebase" => cmd_rebase(&args[1..]),
         "transplant" => cmd_transplant(&args[1..]),
         "dare-drop" => cmd_dare_drop(&args[1..]),
-        "repair" => cmd_repair(&args[1..]),
+        "repair" => cli_repair::repair(&args[1..]),
         "propose" => cli_learned::propose(&args[1..]),
         "train-proposer" => cli_learned::train_proposer(&args[1..]),
         "propose-learned" => cli_learned::propose_learned(&args[1..]),
@@ -451,40 +451,6 @@ fn perform_patch(
         });
     }
     emit(&output)
-}
-
-fn cmd_repair(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(&parsed, "repair <artifact|-> --oracle <json|->")?;
-    let oracle_path = value(&parsed, "oracle")?;
-    no_double_stdin(&[path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let options = RepairOptions {
-        max_edits: opt_usize(&parsed, "max-edits", 8)?,
-        beam_width: opt_usize(&parsed, "beam-width", 64)?,
-        exhaustive_pairs: 20_000,
-        exhaustive_states: opt_u64(&parsed, "exhaustive-states", 200_000)?,
-    };
-    match ops::repair_net(&net, &oracle, &options).map_err(err)? {
-        Some((found, work)) => {
-            write_out(&parsed, &work)?;
-            emit(&json!({
-                "found": true,
-                "repair": wire::repair_to_value(&found),
-                "summary": wire::net_summary(&work),
-                "artifact": to_wsp(&work),
-                "verify": {
-                    "exact": oracle.exact(&work).map_err(err)?,
-                    "loss": oracle.loss(&work).map_err(err)?,
-                },
-            }))
-        }
-        None => emit(&json!({
-            "found": false,
-            "before_loss": oracle.loss(&net).map_err(err)?,
-        })),
-    }
 }
 
 fn cmd_explain(args: &[String]) -> Result<(), String> {

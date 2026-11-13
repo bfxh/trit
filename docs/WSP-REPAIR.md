@@ -49,9 +49,38 @@ repair(&student, &edit, &RepairOptions { max_edits: 1, beam_width: 1, .. })
    - `repair` 的候选限制接口（只搜承重行/指定 trit），或
    - 换一种编辑原语（如整行/整块替换）。
 
+## 候选限制接口（scope）
+
+`RepairOptions` 新增 `scope: Option<Vec<Edit>>`：
+
+- `None`：全权重穷举（原行为）；
+- `Some(候选)`：束搜索只在给定候选里挑，半径 1 / 半径 2 / BFS 三条路径都走 `scoped_candidates`。
+
+CLI：
+
+```bash
+# 只允许改 layer 0 的第 0 行（该行所有 trit + bias，各 2 个目标值）
+trit-wspace repair broken.wsp --oracle keep.json --rows 0:0 --max-edits 1
+
+# 只允许改指定的单个 trit（layer:row:col:to）
+trit-wspace repair broken.wsp --oracle keep.json --trits 0:0:0:-
+```
+
+`--rows` 与 `--trits` 互斥；scope 内无解时返回 `found: false`（不越界改）。
+
+端到端验证（XOR 2-2-1，破坏一格）：
+
+| 命令 | 结果 |
+|---|---|
+| `--rows 0:0 --max-edits 1` | `found: true`，1 条编辑，只改 `layer 0 row 0 col 0` |
+| `--trits 0:0:0:-` | `found: true`，1 条编辑 |
+| `--trits 1:0:0:+`（无解） | `found: false` |
+
+测试：`tests/repair_scope.rs` 3 条（scoped 只改允许坐标、scope 无解返回 None、unscoped 仍能修）。
+
 ## 未证栏
 
-- 没有实现 `repair` 的候选限制接口，`localize` 候选是唯一可行路径；
+- 候选限制接口已实现（scope + `--rows`/`--trits`），但还没在 384×384 上用 `localize` 选行跑完整读数；
 - 单点/双点之外（3+ 点）没有搜索；
 - 候选空间由 8 行 × 32 trit 限定，不代表全局不可达；
 - 任务仍是 `word_embeddings` 输入 + f32 教师，不是 STS pair。

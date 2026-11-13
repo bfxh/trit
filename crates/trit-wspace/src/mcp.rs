@@ -193,8 +193,8 @@ impl Mcp {
                 let options = RepairOptions {
                     max_edits: opt_usize(args, "max_edits", 8),
                     beam_width: opt_usize(args, "beam_width", 64),
-                    exhaustive_pairs: 20_000,
                     exhaustive_states: opt_u64(args, "exhaustive_states", 200_000),
+                    ..RepairOptions::default()
                 };
                 match ops::repair_net(&net, &oracle, &options).map_err(err)? {
                     Some((found, work)) => Ok(json!({

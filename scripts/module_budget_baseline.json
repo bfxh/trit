@@ -3024,7 +3024,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 699
+      "lines": 665
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",
@@ -3049,6 +3049,10 @@
     {
       "file": "crates/trit-wspace/src/cli/cli_learned.rs",
       "lines": 166
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_repair.rs",
+      "lines": 142
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
@@ -3200,7 +3204,11 @@
     },
     {
       "file": "crates/trit-wspace/src/repair.rs",
-      "lines": 299
+      "lines": 288
+    },
+    {
+      "file": "crates/trit-wspace/src/repair/energy.rs",
+      "lines": 31
     },
     {
       "file": "crates/trit-wspace/src/safetensors.rs",
@@ -3393,6 +3401,10 @@
     {
       "file": "crates/trit-wspace/tests/rebase.rs",
       "lines": 496
+    },
+    {
+      "file": "crates/trit-wspace/tests/repair_scope.rs",
+      "lines": 117
     },
     {
       "file": "crates/trit-wspace/tests/safetensors.rs",

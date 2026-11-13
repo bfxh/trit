@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`repair` 的候选限制接口）
+
+- `RepairOptions` 新增 `scope: Option<Vec<Edit>>`：`None` 全权重穷举，`Some(候选)` 时
+  半径 1 / 半径 2 / BFS 三条路径都只在给定候选里挑（`scoped_candidates`）。
+- CLI `repair` 新增 `--rows L:R,L:R`（该行所有 trit + bias）与 `--trits L:R:C:T,...`
+  （显式单点候选），两者互斥；scope 内无解时返回 `found: false`，不越界改。
+- 端到端验证（XOR 2-2-1）：`--rows 0:0` 与 `--trits 0:0:0:-` 都 `found: true` 且只改
+  `layer 0 row 0 col 0`；无解 scope 返回 `found: false`。
+- 新增 `tests/repair_scope.rs` 3 条（scoped 只改允许坐标、无解返回 None、unscoped 仍能修）。
+- 未证栏：还没在 384×384 上用 `localize` 选行跑完整读数；MCP 的 repair 工具未暴露 scope。
+
 ### Docs（trit-wspace：`repair` 路线尝试的负结果）
 
 - 尝试把编辑目标从“把权重往 tuned 推”换成“修复已知错误样本”：用 `repair` 在 edit 集上
