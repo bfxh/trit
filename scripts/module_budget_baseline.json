@@ -3011,6 +3011,10 @@
       "lines": 743
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_real.rs",
+      "lines": 216
+    },
+    {
       "file": "crates/trit-wspace/examples/dimsweep/basis.rs",
       "lines": 325
     },
@@ -3599,8 +3603,16 @@
       "lines": 161
     },
     {
+      "file": "crates/trit-wspace/src/transformer_f32_cls.rs",
+      "lines": 236
+    },
+    {
       "file": "crates/trit-wspace/src/transformer_f32_full.rs",
-      "lines": 297
+      "lines": 263
+    },
+    {
+      "file": "crates/trit-wspace/src/transformer_f32_full/step.rs",
+      "lines": 100
     },
     {
       "file": "crates/trit-wspace/src/transformer_f32_train.rs",
@@ -3925,6 +3937,10 @@
     {
       "file": "crates/trit-wspace/tests/transformer_f32.rs",
       "lines": 47
+    },
+    {
+      "file": "crates/trit-wspace/tests/transformer_f32_cls.rs",
+      "lines": 132
     },
     {
       "file": "crates/trit-wspace/tests/transformer_f32_full.rs",

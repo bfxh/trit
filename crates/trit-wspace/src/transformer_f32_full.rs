@@ -5,7 +5,6 @@
 use crate::attention_f32::F32Attention;
 use crate::error::Result;
 use crate::transformer_f32::{LayerNorm, TransformerBlock};
-use crate::transformer_f32_train::dense_backward;
 
 /// 训练选项。
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -145,6 +144,10 @@ pub fn attention_backward(
     }
 }
 
+pub(crate) mod step;
+
+use step::{backward_token, forward_all};
+
 /// 全参数训练：一轮 forward/backward，更新所有参数。
 pub fn train_full(
     block: &mut TransformerBlock,
@@ -154,57 +157,20 @@ pub fn train_full(
 ) -> Result<TrainReport> {
     let mut losses = Vec::with_capacity(options.rounds);
     for _ in 0..options.rounds {
+        let caches = forward_all(block, tokens)?;
         let mut total = 0.0f32;
         let mut grads = Grads::default();
-        for (token, target) in tokens.iter().zip(targets) {
-            let attention = block.attention.forward(token, tokens, tokens)?.output;
-            let x1_raw: Vec<f32> = token
-                .iter()
-                .zip(&attention)
-                .map(|(left, right)| left + right)
-                .collect();
-            let x1 = block.ln1.forward(&x1_raw);
-            let hidden = block.ff1.forward(&x1, true);
-            let ffn = block.ff2.forward(&hidden, false);
-            let x2_raw: Vec<f32> = x1
-                .iter()
-                .zip(&ffn)
-                .map(|(left, right)| left + right)
-                .collect();
-            let x2 = block.ln2.forward(&x2_raw);
-            let count = x2.len() as f32;
-            let diff: Vec<f32> = x2
+        for ((cache, target), token) in caches.iter().zip(targets).zip(tokens) {
+            let output = cache.output();
+            let count = output.len() as f32;
+            let diff: Vec<f32> = output
                 .iter()
                 .zip(target)
                 .map(|(out, want)| out - want)
                 .collect();
             total += diff.iter().map(|value| value * value).sum::<f32>() / count;
             let grad_x2: Vec<f32> = diff.iter().map(|value| 2.0 * value / count).collect();
-            let (grad_x2_raw, gw_ln2, gb_ln2) =
-                layernorm_backward_full(&block.ln2, &x2_raw, &grad_x2);
-            let (grad_hidden, gw_ff2, gb_ff2) =
-                dense_backward(&block.ff2, &hidden, &grad_x2_raw, false);
-            let (grad_x1_ff, gw_ff1, gb_ff1) = dense_backward(&block.ff1, &x1, &grad_hidden, true);
-            let grad_x1: Vec<f32> = grad_x2_raw
-                .iter()
-                .zip(&grad_x1_ff)
-                .map(|(left, right)| left + right)
-                .collect();
-            let (grad_x1_raw, gw_ln1, gb_ln1) =
-                layernorm_backward_full(&block.ln1, &x1_raw, &grad_x1);
-            let attention_grad =
-                attention_backward(&block.attention, token, tokens, tokens, &grad_x1_raw);
-            grads.add(
-                &attention_grad,
-                &gw_ln1,
-                &gb_ln1,
-                &gw_ln2,
-                &gb_ln2,
-                &gw_ff1,
-                &gb_ff1,
-                &gw_ff2,
-                &gb_ff2,
-            );
+            backward_token(block, token, tokens, cache, &grad_x2, &mut grads);
         }
         grads.apply(block, options.lr, tokens.len().max(1) as f32);
         losses.push(total / tokens.len().max(1) as f32);
@@ -213,7 +179,7 @@ pub fn train_full(
 }
 
 #[derive(Default)]
-struct Grads {
+pub(crate) struct Grads {
     query: Vec<f32>,
     key: Vec<f32>,
     value: Vec<f32>,
@@ -229,7 +195,7 @@ struct Grads {
 
 #[allow(clippy::too_many_arguments)]
 impl Grads {
-    fn add(
+    pub(crate) fn add(
         &mut self,
         attention: &AttentionGrad,
         gw_ln1: &[f32],
@@ -254,7 +220,7 @@ impl Grads {
         accumulate(&mut self.ff2_bias, gb_ff2);
     }
 
-    fn apply(&self, block: &mut TransformerBlock, lr: f32, count: f32) {
+    pub(crate) fn apply(&self, block: &mut TransformerBlock, lr: f32, count: f32) {
         apply(&mut block.attention.query, &self.query, lr, count);
         apply(&mut block.attention.key, &self.key, lr, count);
         apply(&mut block.attention.value, &self.value, lr, count);

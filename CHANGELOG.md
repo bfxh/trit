@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：分类头 + softmax 交叉熵，`transformer_f32_cls`）
+
+- 新模块 `transformer_f32_cls.rs`：线性分类头（`logits = weight·x + bias`）+ 批平均交叉熵，
+  梯度同时进入分类头与 block 全部参数。复用 `transformer_f32_full` 的 forward/backward
+  （为此把单 token 的 forward/反向抽成 `forward_token` / `forward_all` / `backward_token`
+  + `TokenCache`，MSE 与交叉熵共用一套反向，没有复制训练循环）。
+- 与 MSE 的差别写进模块文档：交叉熵对尺度不敏感，所以准确率上升才是"学到方向"的证据。
+- `tests/transformer_f32_cls.rs`：准确率 0.5 → ≥0.75、交叉熵下降、**梯度回到 block 参数**
+  （`ff2` 权重确实被更新）、越界标签被拒。
+- 真实示例 `examples/classifier_real.rs`：MiniLM 词向量 32 个样本、4 类，标签由固定随机投影
+  教师在**输入词向量**上取 argmax（受控合成，非真实标注语料）。
+  200 轮 / lr_block=1e-4 / lr_head=1e-1：准确率 **0.25 → 1.000**（机会 0.25、多数类 0.50），
+  交叉熵 1.3682 → 0.1077，轨迹 0.250/0.250/0.344/1.000/1.000（轮 1/41/81/121/161）。
+- **对照暴露了边界**：`lr_block=0`（只训头）同样 0.25 → 1.000、loss 1.3682 → 0.1165；
+  训练 block 时 block 参数改动量只有 query 3e-08 / ff2 5.99e-06，而头动了 0.0875。
+  即：教师是输入的**线性**函数、本就可线性解码，这个任务证明的是「交叉熵 + 准确率」管线可用、
+  头能解码，**不构成 transformer 块学到的证据**。
+- 边界：单层、32 token、合成标签。要让 block 非学不可，教师必须非线性（下一步）。
+
 ### Changed（trit-wspace：`examples/transformer_f32_task_real`——预测任务暴露 MSE 只降尺度）
 
 - 新示例 `examples/transformer_f32_task_real`：全参数反向，任务从自编码换成**预测**

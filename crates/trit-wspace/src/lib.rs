@@ -1,6 +1,5 @@
 //! # trit-wspace — 三值权重空间编程
-//! 传统流程是“写代码 → 训练 → 得到权重”。权重空间编程（weight-space programming）反过来把**权重本身当作源码**：读出行为、写出补丁、验证后再提交。2026-11-02
-//! MIT CSAIL 报告的工作（GPT-6 Astra 直接读写 Qwen3.5-0.8B 的原始权重，改约 0.016% 的权重把 MATH-500 外部报道，本仓**未复现**，这里只借用它的接口形态：读 / 写 / 验证。
+//! 传统流程是“写代码 → 训练 → 得到权重”。权重空间编程（weight-space programming）反过来把**权重本身当作源码**：读出行为、写出补丁、验证后再提交。2026-11-02MIT CSAIL 报告的工作（GPT-6 Astra 直接读写 Qwen3.5-0.8B 的原始权重，改约 0.016% 的权重把 MATH-500 外部报道，本仓**未复现**，这里只借用它的接口形态：读 / 写 / 验证。
 //! ## 三值为什么适合权重空间编程
 //! | 性质 | 三值权重 | f32 权重 |
 //! |---|---|---|
@@ -117,6 +116,7 @@ pub mod task_merge;
 pub mod trace;
 pub mod training;
 pub mod transformer_f32;
+pub mod transformer_f32_cls;
 pub mod transformer_f32_full;
 pub mod transformer_f32_train;
 pub mod transplant;
