@@ -446,4 +446,7 @@ let compressed = layer.project(&basis)?;   // rows × k
 
 `tests/project.rs` 钉了四条不变量：恒等基不动、维度按 k 缩减、列数不匹配报错、bias 保留。
 
-仍未做：CLI `project` 子命令、basis 工件格式。
+CLI 已接：`project <artifact|-> --basis <artifact> --out <path> [--layer N]`。
+基不需要新格式——它本身就是一层三值权重，按普通 WSP 存即可。
+
+仍未做：从数据导出 basis 工件的命令（现在基只在 example 里构造）。

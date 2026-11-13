@@ -11,8 +11,11 @@
   （线性判据 k=1 全过；STS 排序 k=64 保住全维 88.7%）。现在基本身是一层三值权重，可以被
   `patch` / `repair` / `certify` 直接处理——这才是「权重空间编程」而不是「实验脚本」。
 - `tests/project.rs` 4 条：恒等基不动、输入维度按 k 缩减、列数不匹配报错、bias 保留。
-- 未证栏：还没接 CLI `project` 子命令；基的构造仍留在 example（`--basis supervised`），没做成
-  独立的 basis 工件格式。
+- CLI 已接：`project <artifact|-> --basis <artifact> --out <path> [--layer N]`——基就是普通 WSP
+  工件（一层三值权重），所以不需要新格式；`cmd_diff` 一并从 `cli.rs` 搬进 `cli_project.rs`
+  以守住 `cli.rs` 的台账上限。
+- `tests/project_cli.rs` 2 条端到端：压第一层且后续层不受影响、多层基被拒。
+- 未证栏：基的构造仍留在 example（`--basis supervised`），没有「从数据导出 basis 工件」的命令。
 ### Added（trit-wspace：`examples/stssweep` 换任务判据——STS 排序保真）
 
 - 新示例 `examples/stssweep.rs`：判据从「复现某个网络」换成「在真实任务上正确」。任务沿用

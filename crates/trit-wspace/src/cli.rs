@@ -1,5 +1,4 @@
-//! 命令行入口：`read / verify / certify / patch / repair / diff / merge / mcp`。
-
+//! 命令行入口。
 use std::collections::{BTreeMap, BTreeSet};
 use std::{fs, io::Read, path::Path};
 
@@ -20,6 +19,7 @@ mod cli_certify;
 mod cli_gguf;
 mod cli_gradient;
 mod cli_learned;
+mod cli_project;
 mod cli_repair;
 mod cli_safetensors;
 mod cli_task;
@@ -30,8 +30,8 @@ mod usage;
 pub(crate) use fsutil::atomic_write;
 use usage::USAGE;
 
-/// 进程入口：返回退出码（0 成功，1 失败）。
 #[must_use]
+/// 进程入口：返回退出码（0 成功，1 失败）。
 pub fn entry() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
@@ -62,6 +62,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "transplant" => cmd_transplant(&args[1..]),
         "dare-drop" => cmd_dare_drop(&args[1..]),
         "repair" => cli_repair::repair(&args[1..]),
+        "project" => cli_project::project(&args[1..]),
         "propose" => cli_learned::propose(&args[1..]),
         "train-proposer" => cli_learned::train_proposer(&args[1..]),
         "propose-learned" => cli_learned::propose_learned(&args[1..]),
@@ -73,7 +74,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "shard" => crate::cli_audit::cmd_shard(&args[1..]),
         "audit-shards" => crate::cli_audit::cmd_audit_shards(&args[1..]),
         "replay" => crate::cli_audit::cmd_replay(&args[1..]),
-        "diff" => cmd_diff(&args[1..]),
+        "diff" => cli_project::cmd_diff(&args[1..]),
         "merge" => cmd_merge(&args[1..]),
         "list-safetensors" => cli_safetensors::list(&args[1..]),
         "import-safetensors" => cli_safetensors::import(&args[1..]),
@@ -508,19 +509,6 @@ fn cmd_localize(args: &[String]) -> Result<(), String> {
     emit(&wire::localize_report_to_value(&report))
 }
 
-fn cmd_diff(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let (left, right) = two(&parsed, "diff <a|-> <b|->")?;
-    no_double_stdin(&[left, right])?;
-    let a = load_net(left)?;
-    let b = load_net(right)?;
-    let patch = Patch::diff(&a, &b).map_err(err)?;
-    emit(&json!({
-        "patch": wire::patch_to_value(&patch),
-        "cost": wire::cost_to_value(&patch.cost(&a)),
-    }))
-}
-
 fn cmd_merge(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &["aligned"])?;
     let (left, right) = two(&parsed, "merge <a|-> <b|-> [--aligned]")?;
@@ -582,7 +570,7 @@ pub(crate) fn one<'a>(parsed: &'a Parsed, usage: &str) -> Result<&'a str, String
     Ok(&parsed.positional[0])
 }
 
-fn two<'a>(parsed: &'a Parsed, usage: &str) -> Result<(&'a str, &'a str), String> {
+pub(crate) fn two<'a>(parsed: &'a Parsed, usage: &str) -> Result<(&'a str, &'a str), String> {
     if parsed.positional.len() != 2 {
         return Err(format!("用法：trit-wspace {usage}"));
     }

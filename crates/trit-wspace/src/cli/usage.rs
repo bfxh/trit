@@ -8,7 +8,7 @@ trit-wspace <command>
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]
   rebase <target|-> --base <base|-> --patch <json|-> [--skip-conflicts] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
-  transplant <dest|-> --from <source|-> --layer N --rows i,j [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
+  transplant <dest|-> --from <source|-> --layer N --rows i,j [--oracle <json|->] [--require-before] [--require-after] [--out <path>] | project <artifact|-> --basis <artifact> --out <path> [--layer N] | diff <a|-> <b|->
   dare-drop <base|-> --tuned <tuned|-> --rate R [--seed N] [--by-row] [--oracle <json|->] [--require-before] [--require-after] [--out <path>]
   repair <artifact|-> --oracle <json|-> [--rows L:R,L:R | --trits L:R:C:T,...] [--row-ops] [--keep <oracle|->] [--max-edits N] [--beam-width N] [--exhaustive-states N] [--out <path>]
   propose <artifact|-> --oracle <json|-> [--limit N] [--depth 1|2|3] [--pairs] [--max-pairs N] [--max-triples N]
@@ -21,7 +21,6 @@ trit-wspace <command>
   shard <log|-> --size N --out <dir>
   audit-shards <dir> [--artifact <initial|->] [--out <path>] [--manifest <path>] [--resume <checkpoint>] [--checkpoint-every N --checkpoint-dir D]
   replay <log|-> --artifact <initial|-> [--out <path>]
-  diff <a|-> <b|->
   merge <a|-> <b|-> [--aligned] [--out <path>]
   list-safetensors <file>
   import-safetensors <file> --tensor <name> [--out <path>]
