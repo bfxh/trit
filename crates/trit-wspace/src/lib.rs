@@ -11,7 +11,6 @@
 //! | 规范形式 | `WSP1` 可 diff、可校验和 | 二进制 blob 不可读 |
 //! 代价同样明确：没有现成的 f32 预训练生态；表达力受三值限制；大规模网络的穷举不可行（本库的 M0 边界就是小网络 + 有界域）。
 //! ## 三层结构
-//!
 //! - **表示层**：[`Net`] / [`Layer`] 是不可变的权重工件；[`codec`] 把它写成 WSP1 文本，
 //!   [`Trit`] 是唯一的权重单位。
 //! - **编辑层**：[`Edit`] / [`Patch`] 是事务式补丁；[`Journal`] 支持逐位回滚；
@@ -75,6 +74,7 @@ pub mod agree;
 pub mod analyze;
 pub mod artifact_shard;
 pub mod attention;
+pub mod attention_learn;
 pub mod attention_multi;
 pub mod attention_position;
 pub mod attribution;

@@ -228,6 +228,14 @@
   更彻底。`tests/attention_position.rs` 两条：逐元素三值相加、位置编码改变 dominant。
   边界：编码复用 MiniLM 训练好的位置嵌入，不是从头学习。
 
+- 从头学习三值位置编码：新模块 `attention_learn.rs`（`learn_positions`）——每头独立
+  位置表、初始全零，贪心翻转单 trit 让 dominant 匹配目标。真实 MiniLM 12 头、32 key、
+  目标 [0..11]，4 轮 × 8 位置 × 8 维预算：query 0/1 匹配 0，query 2 匹配 2/12，
+  query 3 匹配 3/12，均未收敛。**负结果**：单 trit 对 32 维 key 的分数影响 ≤1，
+  而三值 Q/K 的分数幅度可达几十，1–2 个 trit 的位置编码不足以任意改写 dominant。
+  `tests/attention_learn.rs` 的小网络（2 头、2 key）可收敛，说明算法本身有效，
+  瓶颈是**三值位置编码的表达力**。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，
