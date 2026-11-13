@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：多 seed + held-out，编辑集门禁产出标准证书）
+
+- `train_query_layer.py` 支持 `--seeds 7,13,29 --valid-ratio 0.2`：STSb train 切成
+  2,699 / 674，三个 seed 的 valid 准确率 0.8798–0.8961（base 0.7626–0.7819）。
+- 多 seed 门禁读数（400 对 benchmark）：0.3 阈值 `edit_fixed` 11.0（9–13，sd 1.63）、
+  `keep_broken` 0；0.5 阈值 `keep_broken` 17.3（15–20，sd 2.06）、`edit_fixed` 0；
+  0.8 阈值两个量都接近 0。
+- `certify::KeepReport::from_verdicts`：把逐对判定组装成标准 `KeepReport`（pair 判定不是单输出）。
+- `editset_sts` 输出 `certificate`（schema `trit-wspace.certificate.v1`），`--strict` 在证书
+  不成立时非零退出，可作 CI 门禁。
+- 新增 1 条 `tests/certify.rs`（`from_verdicts` 分类与截断）。
+- 未证栏：3 seed 只覆盖训练随机性；held-out 是 train 的 20% 子集；证书 `input` 为空。
+
 ### Added（trit-wspace：真实 tuned 权重上的编辑集门禁）
 
 - `scripts/train_query_layer.py`：在 STSb **train** split（3,373 对）上对 `query` 层

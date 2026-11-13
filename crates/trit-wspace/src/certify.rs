@@ -20,12 +20,12 @@
 //! | [`Verdict::Stale`] | 错 | 错（逐位相同） | 否 |
 //!
 //! 证书里还记补丁自身的事实：条数、成本，以及**空操作**（目标值已等于当前值）与
-//! **重复目标**（同一位置被写多次）的条数——它们不改变行为，但会让“编辑了几位”
-//! 的读数虚高。
+//! **重复目标**（同一位置被写多次）——它们不改变行为，但会让“编辑了几位”的读数虚高。
 //!
-//! [`Patch::apply`]: crate::edit::Patch::apply
 
 use std::collections::BTreeMap;
+
+mod verdicts;
 
 use serde_json::{Value, json};
 
@@ -90,8 +90,7 @@ impl Verdict {
     pub const fn is_violation(self) -> bool {
         matches!(self, Self::Regressed)
     }
-
-    const fn classify(before_ok: bool, after_ok: bool, same: bool) -> Self {
+    pub(crate) const fn classify(before_ok: bool, after_ok: bool, same: bool) -> Self {
         match (before_ok, after_ok) {
             (true, true) => Self::Preserved,
             (false, true) => Self::Fixed,
