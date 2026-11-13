@@ -2,7 +2,6 @@
 
 use serde_json::json;
 
-use crate::edit::Edit;
 mod cli_repair_scope;
 use crate::ops;
 use crate::repair::RepairOptions;

@@ -3056,7 +3056,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_repair.rs",
-      "lines": 65
+      "lines": 64
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_repair/cli_repair_scope.rs",
