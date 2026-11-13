@@ -2956,11 +2956,15 @@
     },
     {
       "file": "crates/trit-wspace/examples/agree_real/f32ref.rs",
-      "lines": 132
+      "lines": 119
     },
     {
       "file": "crates/trit-wspace/examples/agree_real/main.rs",
-      "lines": 145
+      "lines": 141
+    },
+    {
+      "file": "crates/trit-wspace/examples/agree_real/quad.rs",
+      "lines": 90
     },
     {
       "file": "crates/trit-wspace/examples/bias_e2e.rs",

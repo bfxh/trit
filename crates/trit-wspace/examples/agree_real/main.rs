@@ -2,6 +2,7 @@ use serde_json::json;
 use trit_wspace::safetensors::{self, Weights};
 mod basis;
 mod f32ref;
+mod quad;
 use basis::*;
 use trit_wspace::{Layer, Net, Trit};
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
@@ -114,22 +115,17 @@ fn main() {
         ])
         .expect("projected");
 
-        let mut same = 0usize;
-        let mut tern_out = Vec::with_capacity(inputs.len());
-        for input in &inputs {
-            let got = net.forward(&f32ref::reduce(input, sub)).expect("f");
-            if student.forward(input).expect("f") == got {
-                same += 1;
-            }
-            tern_out.push(got);
-        }
         let projected = f32ref::Projected::new(&query, &readout, sub);
-        let (f32_rate, trit_vs_f32) = f32ref::compare(&f32_base, &raw, &tern_out, &projected);
+        let (rate, tern_out) = quad::agree(&student, &net, &inputs, sub);
+        let q = quad::compare(&f32_base, &raw, &inputs, &tern_out, &projected);
         curves.push(json!({
             "k": k,
-            "rate": same as f64 / inputs.len() as f64,
-            "f32": f32_rate,
-            "trit_vs_f32": trit_vs_f32
+            "rate": rate,
+            "f32": q[0],
+            "w_trit": q[1],
+            "x_trit": q[2],
+            "trit_both": q[3],
+            "trit_vs_f32": q[4]
         }));
     }
 
