@@ -3107,6 +3107,10 @@
       "lines": 603
     },
     {
+      "file": "crates/trit-wspace/src/capability.rs",
+      "lines": 92
+    },
+    {
       "file": "crates/trit-wspace/src/certify.rs",
       "lines": 471
     },
@@ -3116,7 +3120,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 585
+      "lines": 569
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_agree_stats.rs",
@@ -3133,6 +3137,10 @@
     {
       "file": "crates/trit-wspace/src/cli/cli_block.rs",
       "lines": 92
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_capability.rs",
+      "lines": 81
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_certify.rs",
@@ -3217,6 +3225,10 @@
     {
       "file": "crates/trit-wspace/src/cli/cli_task/cli_task_trim.rs",
       "lines": 71
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_verify.rs",
+      "lines": 27
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_wsp2.rs",
@@ -3501,6 +3513,10 @@
     {
       "file": "crates/trit-wspace/tests/block_index.rs",
       "lines": 295
+    },
+    {
+      "file": "crates/trit-wspace/tests/capability.rs",
+      "lines": 63
     },
     {
       "file": "crates/trit-wspace/tests/certify.rs",

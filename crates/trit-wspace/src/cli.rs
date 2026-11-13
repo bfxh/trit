@@ -9,13 +9,14 @@ use crate::codec::{from_wsp, to_wsp};
 use crate::edit::Patch;
 use crate::net::Net;
 use crate::ops;
-use crate::oracle::{Behavior, Oracle};
+use crate::oracle::Oracle;
 use crate::wire;
 
 mod cli_agree_stats;
 mod cli_artifact_shard;
 mod cli_attribute;
 mod cli_block;
+mod cli_capability;
 mod cli_certify;
 mod cli_diagnose;
 mod cli_diff;
@@ -34,6 +35,7 @@ mod cli_read;
 mod cli_repair;
 mod cli_safetensors;
 mod cli_task;
+mod cli_verify;
 mod cli_wsp2;
 mod fsutil;
 mod lock;
@@ -61,7 +63,8 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
     };
     match command {
         "read" => cli_read::read(&args[1..]),
-        "verify" => cmd_verify(&args[1..]),
+        "verify" => cli_verify::verify_cmd(&args[1..]),
+        "capability" => cli_capability::capability_cmd(&args[1..]),
         "certify" => cli_certify::certify(&args[1..]),
         "task-merge" => cli_task::task_merge(&args[1..]),
         "task-scale" => cli_task::task_scale(&args[1..]),
@@ -113,25 +116,6 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         }
         other => Err(format!("未知子命令 `{other}`\n{USAGE}")),
     }
-}
-
-fn cmd_verify(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(&parsed, "verify <artifact|-> --oracle <json|->")?;
-    let oracle_path = value(&parsed, "oracle")?;
-    no_double_stdin(&[path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let limit = opt_usize(&parsed, "limit", 32)?;
-    emit(&json!({
-        "exact": oracle.exact(&net).map_err(err)?,
-        "loss": oracle.loss(&net).map_err(err)?,
-        "accuracy": oracle.accuracy(&net).map_err(err)?,
-        "signature": format!("{:016x}", Behavior::of(&net, &oracle).map_err(err)?.signature()),
-        "summary": wire::net_summary(&net),
-        "mismatches": wire::mismatches_value(&net, &oracle, limit).map_err(err)?,
-        "classification": wire::classification_value(&net, &oracle).map_err(err)?,
-    }))
 }
 
 fn cmd_script(args: &[String]) -> Result<(), String> {

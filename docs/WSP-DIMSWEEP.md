@@ -549,6 +549,17 @@ col1 被标为专才、col0 是其能力的唯一支撑）。
 给出「存在/不存在 ≤N 步解」的确定性结论。**边界**：只对给定验证集成立，不是全部输入的证明；
 `--max-pairs` 超出时直接报错，不做静默截断。
 
+### 能力命名
+
+`capability <artifact|-> --oracle <json|-> [--labels <json|->] [--max-params N] [--top K]
+[--mode flip|zero] [--layer N] [--row N]` 把 `attribute` 的每种能力命名：
+
+- 有 `--labels`（每样本一个字符串）时取 `lost` 集合的**众数标签**，名字形如 `label:pos`；
+- 否则找 `lost` 样本在输入上的**共同坐标值**，形如 `pattern:x0=+1,x1=-1`；
+- 都没有时退化为 `samples:N`。
+
+这样「这个参数改掉会失去什么」从样本索引变成了人能读的能力名。
+
 ### 库化：`agree`
 
 上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，

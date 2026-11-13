@@ -161,6 +161,12 @@
   - `tests/impact.rs` 四条：整行/整层组编辑数量、联合 gain + 单点 + synergy 恒等式、
     单点穷举可修、`max_edits=0` 报现状。
 
+- 能力命名：新模块 `capability` + CLI `capability`。给 `attribute` 的每种能力一个
+  可读名字：有 `--labels <json>` 时用 `lost` 集合的众数标签（`label:...`）；否则找
+  `lost` 样本在输入上的共同坐标值（`pattern:x0=+1,x1=-1`）；都没有时退化为
+  `samples:N`。`tests/capability.rs` 两条：无标签时的 pattern/samples 命名、
+  外部标签优先。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，
