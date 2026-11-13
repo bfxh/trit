@@ -173,6 +173,16 @@
   等价（`tests/scan.rs` 钉住）。成本从「参数数 × 样本数」降到
   「参数数 × 粗筛样本 + 候选数 × 全量样本」。
 
+- 时序、分布与输入敏感度：
+  - `trace`：逐层逐行的 pre-activation（`acc`）与输出 trit，`acc` 接近 0 的行就是裕量
+    最小的行；`trace <artifact|-> --oracle <json|-> --sample N`。
+  - `distribution`：训练数据分布——每个输入坐标的 `neg/zero/pos` 次数、输出类别分布、
+    唯一输入/输出模式数；`distribution --oracle <json|->`。
+  - `perturb`：样本突变——逐样本逐输入位翻转/置零，输出 `flipped/lost/gained` 与
+    逐位、逐样本敏感度；`perturb <artifact|-> --oracle <json|-> [--mode flip|zero]`。
+    三值网络不可微，这里用**逐位翻转的有限差分**替代梯度（输入侧）。
+  - `tests/analysis.rs` 三条：trace 与 `Net::forward` 一致、分布计数、扰动敏感度。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，

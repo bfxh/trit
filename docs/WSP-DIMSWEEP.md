@@ -578,6 +578,17 @@ col1 被标为专才、col0 是其能力的唯一支撑）。
 `--refine K` 进一步限制复核数；`sample_budget = 0` 退化为全量，结果与 `attribute` 等价
 （`tests/scan.rs` 钉住）。输出同时带 `capability` 的命名能力。
 
+### 时序、分布与输入敏感度
+
+- `trace <artifact|-> --oracle <json|-> --sample N`：逐层逐行给出 `acc`
+  （整数 pre-activation）与输出 trit。`acc` 接近 0 的行裕量最小，是「信号在哪衰减」的直接读数。
+- `distribution --oracle <json|->`：训练数据分布——每个输入坐标的 `neg/zero/pos` 次数、
+  输出类别分布、唯一输入/输出模式数。
+- `perturb <artifact|-> --oracle <json|-> [--mode flip|zero]`：样本突变——逐样本逐输入位
+  翻转或置零，输出 `flipped/lost/gained` 与逐位、逐样本敏感度。三值网络不可微，
+  这里用**逐位翻转的有限差分**替代梯度：`per_position` 是输入侧「梯度」，`per_sample` 是
+  样本脆弱度。
+
 ### 库化：`agree`
 
 上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，

@@ -3120,7 +3120,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 550
+      "lines": 536
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_agree_stats.rs",
@@ -3191,6 +3191,14 @@
       "lines": 27
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_patch.rs",
+      "lines": 26
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_perturb.rs",
+      "lines": 49
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_probe.rs",
       "lines": 25
     },
@@ -3235,6 +3243,10 @@
       "lines": 71
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_trace.rs",
+      "lines": 62
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_verify.rs",
       "lines": 27
     },
@@ -3273,6 +3285,10 @@
     {
       "file": "crates/trit-wspace/src/diagnose.rs",
       "lines": 145
+    },
+    {
+      "file": "crates/trit-wspace/src/distribution.rs",
+      "lines": 102
     },
     {
       "file": "crates/trit-wspace/src/edit.rs",
@@ -3375,6 +3391,10 @@
       "lines": 318
     },
     {
+      "file": "crates/trit-wspace/src/perturb.rs",
+      "lines": 151
+    },
+    {
       "file": "crates/trit-wspace/src/probe.rs",
       "lines": 477
     },
@@ -3455,6 +3475,10 @@
       "lines": 100
     },
     {
+      "file": "crates/trit-wspace/src/trace.rs",
+      "lines": 79
+    },
+    {
       "file": "crates/trit-wspace/src/transplant.rs",
       "lines": 102
     },
@@ -3509,6 +3533,10 @@
     {
       "file": "crates/trit-wspace/tests/agree.rs",
       "lines": 98
+    },
+    {
+      "file": "crates/trit-wspace/tests/analysis.rs",
+      "lines": 64
     },
     {
       "file": "crates/trit-wspace/tests/analyze.rs",

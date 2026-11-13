@@ -29,6 +29,8 @@ mod cli_inventory;
 mod cli_learned;
 mod cli_localize;
 mod cli_merge;
+mod cli_patch;
+mod cli_perturb;
 mod cli_probe;
 mod cli_project;
 mod cli_read;
@@ -37,6 +39,7 @@ mod cli_safetensors;
 mod cli_scan;
 mod cli_script;
 mod cli_task;
+mod cli_trace;
 mod cli_verify;
 mod cli_wsp2;
 mod fsutil;
@@ -73,7 +76,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "task-scale" => cli_task::task_scale(&args[1..]),
         "task-combine" => cli_task::task_combine(&args[1..]),
         "script" => cli_script::script_cmd(&args[1..]),
-        "patch" => cmd_patch(&args[1..]),
+        "patch" => cli_patch::patch_cmd(&args[1..]),
         "apply-candidate" => cmd_apply_candidate(&args[1..]),
         "rebase" => cmd_rebase(&args[1..]),
         "transplant" => cmd_transplant(&args[1..]),
@@ -90,6 +93,9 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "repair-exhaustive" => cli_exhaustive::exhaustive_cmd(&args[1..]),
         "attribute" => cli_attribute::attribute_cmd(&args[1..]),
         "probe" => cli_probe::probe_cmd(&args[1..]),
+        "trace" => cli_trace::trace_cmd(&args[1..]),
+        "distribution" => cli_trace::distribution_cmd(&args[1..]),
+        "perturb" => cli_perturb::perturb_cmd(&args[1..]),
         "diagnose" => cli_diagnose::diagnose_cmd(&args[1..]),
         "localize" => cli_localize::localize_cmd(&args[1..]),
         "audit" => crate::cli_audit::cmd_audit(&args[1..]),
@@ -119,26 +125,6 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         }
         other => Err(format!("未知子命令 `{other}`\n{USAGE}")),
     }
-}
-
-fn cmd_patch(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["require-before", "require-after"])?;
-    let path = one(
-        &parsed,
-        "patch <artifact|-> --patch <json|-> [--oracle <json|->] [--log <path>]",
-    )?;
-    let patch_path = value(&parsed, "patch")?;
-    let oracle_path = parsed.values.get("oracle").map(String::as_str);
-    let mut sources = vec![path, patch_path];
-    if let Some(oracle) = oracle_path {
-        sources.push(oracle);
-    }
-    no_double_stdin(&sources)?;
-
-    let net = load_net(path)?;
-    let patch = wire::patch_from_value(&load_json(patch_path)?).map_err(err)?;
-    let oracle = oracle_path.map(load_oracle).transpose()?;
-    perform_patch(&parsed, &net, patch, oracle, "cli-patch")
 }
 
 fn cmd_apply_candidate(args: &[String]) -> Result<(), String> {
@@ -368,7 +354,7 @@ fn parse_rows(raw: &str) -> Result<Vec<usize>, String> {
         .collect()
 }
 
-fn perform_patch(
+pub(crate) fn perform_patch(
     parsed: &Parsed,
     net: &Net,
     patch: Patch,
