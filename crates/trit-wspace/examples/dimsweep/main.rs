@@ -20,11 +20,13 @@
 
 use serde_json::{Value, json};
 use trit_wspace::repair::{RepairOptions, repair};
-use trit_wspace::safetensors::{self, Weights};
+use trit_wspace::safetensors;
 
 mod basis;
+mod evaluate;
 
 use basis::*;
+use evaluate::*;
 
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
 const EMBEDDINGS: &str = "embeddings.word_embeddings.weight";
@@ -211,6 +213,12 @@ fn main() {
                 f32_accuracy(&keep_samples, &basis, &query, readout, dim),
             )
         };
+        // 全量样本上的一致性：区分「压缩了原学生」与「换成了教师」。
+        let agree_full = if k >= dim {
+            1.0
+        } else {
+            agreement_with_full(&net, &samples, &basis, &student)
+        };
         width.push(json!({
             "k": k,
             "edit_loss": edit_loss,
@@ -219,6 +227,7 @@ fn main() {
             "keep_acc": keep.accuracy(&net).expect("acc"),
             "f32_edit_acc": f32_edit_acc,
             "f32_keep_acc": f32_keep_acc,
+            "agree_full": agree_full,
             "trits": net.trit_count(),
             "reduction": net.trit_count() as f64 / student.trit_count() as f64,
         }));
@@ -289,60 +298,6 @@ fn main() {
         necessity_ranking(&query, readout, dim, &comps, &edit_samples, &keep_samples);
 
     emit(&args, &report);
-}
-
-/// 逐维剔除：去掉第 `i` 个主方向后 edit+keep 的总违规增量。
-fn necessity_ranking(
-    query: &Weights,
-    readout: &[f32],
-    dim: usize,
-    comps: &[Vec<f64>],
-    edit_samples: &[Sample],
-    keep_samples: &[Sample],
-) -> Value {
-    if comps.len() < 2 {
-        return json!([]);
-    }
-    let full_net = reduced_net(query, readout, dim, comps);
-    let (full_edit_loss, full_keep_loss) = losses(
-        &full_net,
-        &oracle_of(edit_samples, comps),
-        &oracle_of(keep_samples, comps),
-    );
-    let baseline = full_edit_loss + full_keep_loss;
-    let mut rows: Vec<(usize, usize, usize, isize)> = Vec::with_capacity(comps.len());
-    for i in 0..comps.len() {
-        let sub: Vec<Vec<f64>> = comps
-            .iter()
-            .enumerate()
-            .filter(|(j, _)| *j != i)
-            .map(|(_, v)| v.clone())
-            .collect();
-        let net = reduced_net(query, readout, dim, &sub);
-        let (edit_loss, keep_loss) = losses(
-            &net,
-            &oracle_of(edit_samples, &sub),
-            &oracle_of(keep_samples, &sub),
-        );
-        rows.push((
-            i,
-            edit_loss,
-            keep_loss,
-            (edit_loss + keep_loss) as isize - baseline as isize,
-        ));
-    }
-    let mut sorted = rows.clone();
-    sorted.sort_by_key(|a| std::cmp::Reverse(a.3));
-    let pick = |(i, e, k, d): &(usize, usize, usize, isize)| json!({"component": i, "edit_loss": e, "keep_loss": k, "delta": d});
-    let most: Vec<Value> = sorted.iter().take(5).map(pick).collect();
-    let least: Vec<Value> = sorted.iter().rev().take(5).map(pick).collect();
-    json!({
-        "k": comps.len(),
-        "baseline_loss": baseline,
-        "most_necessary": most,
-        "least_necessary": least,
-        "all": rows.iter().map(pick).collect::<Vec<_>>(),
-    })
 }
 
 fn emit(args: &Args, report: &Value) {

@@ -320,63 +320,6 @@ pub fn oracle_of(samples: &[Sample], comps: &[Vec<f64>]) -> Oracle {
     Oracle::new(inputs, outputs).expect("oracle")
 }
 
-/// 纯 f32 投影标签：只保留「投影」损失，不吃「三值化」损失。
-///
-/// 同一个子空间上，三值路径与 f32 路径的差就是量化代价。
-pub fn projected_label(
-    x: &[f32],
-    comps: &[Vec<f64>],
-    query: &Weights,
-    readout: &[f32],
-    dim: usize,
-) -> Trit {
-    let xk = project(x, comps);
-    let mut out = 0.0f64;
-    for (row, r) in readout.iter().enumerate() {
-        let w = &query.values[row * dim..(row + 1) * dim];
-        let hidden: f64 = comps
-            .iter()
-            .zip(&xk)
-            .map(|(u, xv)| {
-                let wk: f64 = u.iter().zip(w).map(|(a, b)| a * f64::from(*b)).sum();
-                wk * f64::from(*xv)
-            })
-            .sum();
-        out += f64::from(*r) * hidden;
-    }
-    if out > 0.0 {
-        Trit::Pos
-    } else if out < 0.0 {
-        Trit::Neg
-    } else {
-        Trit::Zero
-    }
-}
-
-pub fn f32_accuracy(
-    samples: &[Sample],
-    comps: &[Vec<f64>],
-    query: &Weights,
-    readout: &[f32],
-    dim: usize,
-) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let hit = samples
-        .iter()
-        .filter(|s| projected_label(&s.x, comps, query, readout, dim) == s.teacher)
-        .count();
-    hit as f32 / samples.len() as f32
-}
-
-pub fn losses(net: &Net, edit: &Oracle, keep: &Oracle) -> (usize, usize) {
-    (
-        edit.loss(net).expect("edit loss"),
-        keep.loss(net).expect("keep loss"),
-    )
-}
-
 /// 恒等基（`k == dim` 时就是原全维学生，用原输入）。
 pub fn identity(dim: usize) -> Vec<Vec<f64>> {
     (0..dim)

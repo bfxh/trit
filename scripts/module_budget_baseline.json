@@ -2964,11 +2964,15 @@
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/basis.rs",
-      "lines": 389
+      "lines": 332
+    },
+    {
+      "file": "crates/trit-wspace/examples/dimsweep/evaluate.rs",
+      "lines": 147
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/main.rs",
-      "lines": 354
+      "lines": 305
     },
     {
       "file": "crates/trit-wspace/examples/editset_aligned.rs",
