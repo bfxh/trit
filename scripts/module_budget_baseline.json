@@ -3071,6 +3071,10 @@
       "lines": 119
     },
     {
+      "file": "crates/trit-wspace/examples/real_analysis.rs",
+      "lines": 123
+    },
+    {
       "file": "crates/trit-wspace/examples/stssweep/main.rs",
       "lines": 243
     },

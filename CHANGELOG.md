@@ -192,6 +192,13 @@
   - 边界：`Net` 不含 attention/残差（M 边界），「注意力」只能用 `perturb` 的
     per-position 输入主导位近似；审计日志没有墙钟时间，只有 `seq` 顺序。
 
+- 真实模型案例（`examples/real_analysis`）：MiniLM 的 query 层 + readout，32 个真实
+  词向量行，教师 = f32 `sign(readout · (query·x))`。读数：cost 总 4,590,336 次乘法
+  （均值 143,448，最大 145,152）；逐层 L0 4,578,048 / L1 12,288；perturb 12,288 次突变，
+  2,208 次翻转、lost 1,072、gained 912；最敏感输入位 0/4/1/2；scan（readout 层）385 参数
+  粗筛 64、复核 64，7 种能力、0 个专才。**边界**：32 样本的展示性读数，不是统计结论；
+  MiniLM 原始网络不是三值，这里是 query 层三值化代理。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，
