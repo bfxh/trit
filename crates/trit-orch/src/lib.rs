@@ -7,6 +7,7 @@ mod context;
 mod effects;
 mod error;
 mod evidence;
+mod lanes;
 mod model;
 mod obligation;
 mod plan;
@@ -30,6 +31,7 @@ pub use context::{
 pub use effects::{Attempt, Effect, Ledger, LedgerStore, Reconcile, Recovery, dispatch_ready};
 pub use error::Error;
 pub use evidence::{EvidenceSpec, Exit, Receipt};
+pub use lanes::{LaneDispute, LaneDriver, LaneReport, LaneState, resolve_lanes};
 pub use model::{
     BlockReason, CheckReport, CheckResult, Decision, EvidenceVerdict, Limits, Observation, Phase,
     PlanPatch, Selection, Snapshot, TaskSpec, TokenUsage,
@@ -60,6 +62,7 @@ pub use trace::{
 pub use trace_invariants::{TraceInvariantReport, TraceInvariantViolation};
 pub use trace_merge::merge_logs;
 pub use trace_store::{TraceEventStore, events_from_step};
+pub use trit_core::tristate::TriState;
 pub use trit_core::value::Ternary;
 pub use trit_schedule::{Dependency, MAX_TASKS, Resources, Task};
 
