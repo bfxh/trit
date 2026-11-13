@@ -17,6 +17,8 @@ mod selection;
 mod shadow;
 mod status;
 mod trace;
+mod trace_invariants;
+mod trace_merge;
 mod trace_store;
 
 pub use admission::{admit, admit_with_claim, dependency_gate};
@@ -49,9 +51,14 @@ pub use receipt::{
 pub use shadow::{ShadowReport, TraceStep, TraceStore, replay};
 pub use status::Counts;
 pub use trace::{
-    Actor, AppendOutcome, EventId, LogicalTime, SpanId, TraceEvent, TraceEventKind, TraceFold,
-    TraceId, TraceLog, TracePayload,
+    Actor, AppendOutcome, CausalChain, ClaimAction, ClaimRecord, CoordinationFold, EffectRecord,
+    EventId, FinishCounts, HandoffRecord, Hlc, LogicalTime, ObligationOutcome, ObligationRecord,
+    ReceiptAction, ReceiptRecord, RedactionPolicy, ReplayDivergence, ReplayDivergenceKind,
+    ReplayReport, SpanId, TraceEvent, TraceEventKind, TraceFold, TraceId, TraceLog, TraceMetrics,
+    TracePayload, TraceRecorder,
 };
+pub use trace_invariants::{TraceInvariantReport, TraceInvariantViolation};
+pub use trace_merge::merge_logs;
 pub use trace_store::{TraceEventStore, events_from_step};
 pub use trit_core::value::Ternary;
 pub use trit_schedule::{Dependency, MAX_TASKS, Resources, Task};

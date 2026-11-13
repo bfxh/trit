@@ -123,8 +123,14 @@ pub enum Error {
     TraceMismatch { expected: String, found: String },
     #[error("trace seq {seq} already has a different event")]
     TraceSeqConflict { seq: u64 },
+    #[error("trace event {id:?} has conflicting contents")]
+    TraceEventConflict { id: String },
     #[error("trace is missing required input: {missing}")]
     TraceIncomplete { missing: String },
+    #[error("trace event {id:?} not found")]
+    TraceEventMissing { id: String },
+    #[error("trace causality cycle at {id:?}")]
+    TraceCausalityCycle { id: String },
     #[error("bad input json: {message}")]
     InputParse { message: String },
     #[error("bad context-compaction config: {message}")]
@@ -243,7 +249,10 @@ impl Error {
             Error::TraceSchema { .. } => "trace_schema",
             Error::TraceMismatch { .. } => "trace_mismatch",
             Error::TraceSeqConflict { .. } => "trace_seq_conflict",
+            Error::TraceEventConflict { .. } => "trace_event_conflict",
             Error::TraceIncomplete { .. } => "trace_incomplete",
+            Error::TraceEventMissing { .. } => "trace_event_missing",
+            Error::TraceCausalityCycle { .. } => "trace_causality_cycle",
             Error::InputParse { .. } => "input_parse",
             Error::ContextConfig { .. } => "context_config",
             Error::ClaimBlankOwner => "claim_blank_owner",

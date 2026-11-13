@@ -3,8 +3,9 @@
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 
-use crate::trace::{TraceEvent, TraceEventKind, TraceLog, TracePayload};
+use crate::trace::{RedactionPolicy, TraceEvent, TraceEventKind, TraceLog, TracePayload};
 use crate::{Error, TraceStep};
 
 /// 一行一个 `TraceEvent` 的追加式存储。
@@ -103,6 +104,78 @@ impl TraceEventStore {
             self.append(&event)?;
         }
         Ok(())
+    }
+
+    /// 对 `observed_at < cutoff` 且仍有载荷的事件应用脱敏策略；事件本身全部保留。
+    pub fn redact_before(&self, cutoff: u64, policy: &RedactionPolicy) -> Result<usize, Error> {
+        self.rewrite(|event| {
+            (event.observed_at < cutoff && event.payload.is_some())
+                .then(|| event.redacted_with(policy))
+        })
+    }
+
+    /// 丢弃 `observed_at < cutoff` 的旧载荷，保留事件骨架与 payload 哈希。
+    pub fn compact_before(&self, cutoff: u64) -> Result<usize, Error> {
+        self.rewrite(|event| {
+            (event.observed_at < cutoff && event.payload.is_some()).then(|| event.redacted())
+        })
+    }
+
+    fn rewrite(
+        &self,
+        transform: impl Fn(&TraceEvent) -> Option<TraceEvent>,
+    ) -> Result<usize, Error> {
+        let events = self.load()?;
+        let mut rewritten = Vec::with_capacity(events.len());
+        let mut changed = 0;
+        for event in events {
+            match transform(&event) {
+                Some(next) => {
+                    changed += 1;
+                    rewritten.push(next);
+                }
+                None => rewritten.push(event),
+            }
+        }
+        if changed > 0 {
+            self.write_all(&rewritten)?;
+        }
+        Ok(changed)
+    }
+
+    fn write_all(&self, events: &[TraceEvent]) -> Result<(), Error> {
+        static SAVE_SEQ: AtomicU64 = AtomicU64::new(0);
+        let seq = SAVE_SEQ.fetch_add(1, Ordering::Relaxed);
+        let temporary = self
+            .path
+            .with_extension(format!("tmp-{}-{seq}", std::process::id()));
+        if let Some(parent) = self.path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            fs::create_dir_all(parent).map_err(|error| self.io(error))?;
+        }
+        {
+            let mut file = fs::File::create(&temporary).map_err(|error| self.io(error))?;
+            for event in events {
+                let line = serde_json::to_string(event).map_err(|error| Error::TraceParse {
+                    path: self.path.display().to_string(),
+                    line: 0,
+                    message: error.to_string(),
+                })?;
+                writeln!(file, "{line}").map_err(|error| self.io(error))?;
+            }
+            file.sync_data().map_err(|error| self.io(error))?;
+        }
+        match fs::rename(&temporary, &self.path) {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                let _ = fs::remove_file(&self.path);
+                fs::rename(&temporary, &self.path).map_err(|error| {
+                    let _ = fs::remove_file(&temporary);
+                    self.io(error)
+                })
+            }
+        }
     }
 
     fn io(&self, error: std::io::Error) -> Error {
