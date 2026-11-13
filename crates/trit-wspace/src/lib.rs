@@ -30,7 +30,6 @@
 //! - 因此行为判等必须用 [`Oracle`] 穷举，而不是比较权重。
 //! ## 快速开始
 //! 一个已经学会 XOR 的小网络被打坏一格；修补应只改一个三值：
-//!
 //! ```
 //! use trit_wspace::{Edit, Layer, Net, Oracle, Patch, RepairOptions, Trit, repair};
 //!
@@ -72,6 +71,7 @@ pub mod analyze;
 pub mod artifact_shard;
 pub mod attention;
 pub mod attention_f32;
+pub mod attention_f32_joint;
 pub mod attention_f32_train;
 pub mod attention_learn;
 pub mod attention_multi;

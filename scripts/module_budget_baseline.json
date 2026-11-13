@@ -2967,6 +2967,10 @@
       "lines": 120
     },
     {
+      "file": "crates/trit-wspace/examples/attention_f32_joint_real.rs",
+      "lines": 105
+    },
+    {
       "file": "crates/trit-wspace/examples/attention_f32_real.rs",
       "lines": 92
     },
@@ -3141,6 +3145,10 @@
     {
       "file": "crates/trit-wspace/src/attention_f32.rs",
       "lines": 129
+    },
+    {
+      "file": "crates/trit-wspace/src/attention_f32_joint.rs",
+      "lines": 123
     },
     {
       "file": "crates/trit-wspace/src/attention_f32_train.rs",
@@ -3636,6 +3644,10 @@
     },
     {
       "file": "crates/trit-wspace/tests/attention_f32.rs",
+      "lines": 39
+    },
+    {
+      "file": "crates/trit-wspace/tests/attention_f32_joint.rs",
       "lines": 39
     },
     {
