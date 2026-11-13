@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Ternary};
+use crate::{AdmissionObligation, Error, ObligationKind, Ternary};
 
 /// 回执的正常四态。顺序固定，不能跳级。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -281,4 +281,53 @@ pub fn handoff_gate(packet: &HandoffPacket, receiver_state_hash: &str, now: u64)
         Err(Error::HandoffExpired { .. }) => Ternary::Unknown,
         Err(_) => Ternary::False,
     }
+}
+
+/// 交接门未通过时的可执行动作。
+///
+/// `Unknown`（过期/哈希不一致）先对账；`False`（结构不合法）重新生成交接包。
+/// 两种情况都不能靠“再发一次同样的包”解决。
+pub fn handoff_obligation(
+    packet: &HandoffPacket,
+    receiver_state_hash: &str,
+    now: u64,
+) -> Option<AdmissionObligation> {
+    match handoff_gate(packet, receiver_state_hash, now) {
+        Ternary::True => None,
+        Ternary::Unknown => Some(AdmissionObligation::new(
+            ObligationKind::Handoff,
+            &packet.id,
+            &packet.id,
+            "交接包过期或状态哈希不一致，先对账",
+        )),
+        Ternary::False => Some(AdmissionObligation::new(
+            ObligationKind::Handoff,
+            &packet.id,
+            &packet.id,
+            "交接包结构不合法，重新生成后再交接",
+        )),
+    }
+}
+
+/// 通讯回执未到 `Acted` 时，发送方还不能把“交接”当完成。
+pub fn receipt_obligation(receipt: &DeliveryReceipt) -> Option<AdmissionObligation> {
+    if receipt.is_acted() {
+        return None;
+    }
+    let detail = match receipt.failure {
+        Some(ReceiptFailure::Rejected) => "对方明确拒绝，重新交接或升级",
+        Some(ReceiptFailure::Expired) => "回执过期，重新交接或对账",
+        None => match receipt.state {
+            ReceiptState::Sent => "已发出但未送达，继续跟踪投递",
+            ReceiptState::Delivered => "已送达但未读，继续跟踪",
+            ReceiptState::Read => "已读但未行动，等待或升级",
+            ReceiptState::Acted => return None,
+        },
+    };
+    Some(AdmissionObligation::new(
+        ObligationKind::Handoff,
+        &receipt.id,
+        &receipt.idempotency_key,
+        detail,
+    ))
 }

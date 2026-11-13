@@ -89,12 +89,13 @@ pub enum Error {
     #[error("unknown effect operation {operation}")]
     UnknownOperation { operation: String },
     #[error(
-        "cannot report completion: pending {pending}, in flight {in_flight}, inconclusive {inconclusive}"
+        "cannot report completion: pending {pending}, in flight {in_flight}, inconclusive {inconclusive}, conflicts {conflicts}"
     )]
     Incomplete {
         pending: usize,
         in_flight: usize,
         inconclusive: usize,
+        conflicts: usize,
     },
     #[error("ledger io at {path}: {message}")]
     LedgerIo { path: String, message: String },
@@ -116,6 +117,14 @@ pub enum Error {
         line: usize,
         message: String,
     },
+    #[error("unsupported trace schema {found} (expected {expected})")]
+    TraceSchema { found: u32, expected: u32 },
+    #[error("trace id mismatch: expected {expected:?}, found {found:?}")]
+    TraceMismatch { expected: String, found: String },
+    #[error("trace seq {seq} already has a different event")]
+    TraceSeqConflict { seq: u64 },
+    #[error("trace is missing required input: {missing}")]
+    TraceIncomplete { missing: String },
     #[error("bad input json: {message}")]
     InputParse { message: String },
     #[error("bad context-compaction config: {message}")]
@@ -231,6 +240,10 @@ impl Error {
             Error::PreparedEpochMismatch { .. } => "prepared_epoch_mismatch",
             Error::TraceIo { .. } => "trace_io",
             Error::TraceParse { .. } => "trace_parse",
+            Error::TraceSchema { .. } => "trace_schema",
+            Error::TraceMismatch { .. } => "trace_mismatch",
+            Error::TraceSeqConflict { .. } => "trace_seq_conflict",
+            Error::TraceIncomplete { .. } => "trace_incomplete",
             Error::InputParse { .. } => "input_parse",
             Error::ContextConfig { .. } => "context_config",
             Error::ClaimBlankOwner => "claim_blank_owner",

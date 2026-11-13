@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::error::add_tokens;
-use crate::{Error, Resources, Task, Ternary};
+use crate::{AdmissionObligation, Effect, Error, Resources, Task, Ternary};
 
 /// 一个任务的完整定义。`epoch` 是该定义自己的版本号：补丁替换定义时递增，
 /// 旧 epoch 的执行与验收结果因此自动失效，与全局计划 revision 解耦。
@@ -36,6 +36,34 @@ pub enum CheckResult {
     Passed,
     Refuted,
     Inconclusive,
+    /// 多个来源对同一命题给出相反结论；这是冲突，不是“证据不足”。
+    Conflicted,
+}
+
+/// 单条证据折算出的四值判定（Belnap 形状）。
+///
+/// `Neither` 对应“没有可用证据”，`Conflicted` 对应“支持和反对都有”。
+/// 两者都不能解锁下游，但出口不同：前者补证，后者裁决。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EvidenceVerdict {
+    Neither,
+    Proved,
+    Refuted,
+    Conflicted,
+}
+
+impl EvidenceVerdict {
+    pub const fn value(self) -> Ternary {
+        match self {
+            Self::Proved => Ternary::True,
+            Self::Refuted => Ternary::False,
+            Self::Neither | Self::Conflicted => Ternary::Unknown,
+        }
+    }
+
+    pub const fn is_conflicted(self) -> bool {
+        matches!(self, Self::Conflicted)
+    }
 }
 
 /// 验收报告。`epoch` 是验收针对的任务定义版本。
@@ -47,16 +75,23 @@ pub struct CheckReport {
 }
 
 impl CheckReport {
-    /// 只有「报告针对当前 epoch、至少跑过一条断言、结果确定」才算数。
-    pub fn verdict(&self, expected_epoch: u64) -> Ternary {
+    /// 把报告折算成四值判定；冲突必须保持为 `Conflicted`，不能压成 `Neither`。
+    pub fn judgment(&self, expected_epoch: u64) -> EvidenceVerdict {
         if self.checks == 0 || self.epoch != expected_epoch {
-            return Ternary::Unknown;
+            return EvidenceVerdict::Neither;
         }
         match self.result {
-            CheckResult::Passed => Ternary::True,
-            CheckResult::Refuted => Ternary::False,
-            CheckResult::Inconclusive => Ternary::Unknown,
+            CheckResult::Passed => EvidenceVerdict::Proved,
+            CheckResult::Refuted => EvidenceVerdict::Refuted,
+            CheckResult::Inconclusive => EvidenceVerdict::Neither,
+            CheckResult::Conflicted => EvidenceVerdict::Conflicted,
         }
+    }
+
+    /// 只有「报告针对当前 epoch、至少跑过一条断言、结果确定」才算数。
+    /// 冲突按 `Unknown` 返回，保留给需要三值口径的旧调用。
+    pub fn verdict(&self, expected_epoch: u64) -> Ternary {
+        self.judgment(expected_epoch).value()
     }
 }
 
@@ -145,6 +180,14 @@ pub enum BlockReason {
     Freshness {
         verdict: Ternary,
     },
+    /// 效果台账里这个任务的操作可能已发生，或已经发生。
+    Effect {
+        state: Effect,
+    },
+    /// 依赖的证据同时包含支持与反对，需要裁决。
+    Conflict {
+        task: String,
+    },
     ResourceCapacity {
         requirements: Resources,
         capacity: Resources,
@@ -179,6 +222,9 @@ pub struct Decision {
     pub task: String,
     pub admission: Ternary,
     pub reasons: Vec<BlockReason>,
+    /// `Unknown` 准入的最小补证动作；`False`/`True` 与状态类决定为空。
+    #[serde(default)]
+    pub obligations: Vec<AdmissionObligation>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

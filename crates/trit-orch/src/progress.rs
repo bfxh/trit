@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{Error, Observation, Phase, Selection, Snapshot, TaskSpec, Ternary};
+use crate::{Error, EvidenceVerdict, Observation, Phase, Selection, Snapshot, TaskSpec, Ternary};
 
 /// 一轮调度的结构化记录：这一轮选中/挂起/拒绝/在途/已结算各多少。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -100,6 +100,7 @@ impl Progress {
         let mut pending = 0usize;
         let mut in_flight = 0usize;
         let mut inconclusive = 0usize;
+        let mut conflicts = 0usize;
         for spec in tasks {
             let Some(observation) = snapshot.observations.get(&spec.task.id) else {
                 pending += 1;
@@ -109,17 +110,19 @@ impl Progress {
                 Phase::Pending => pending += 1,
                 Phase::InFlight => in_flight += 1,
                 Phase::Settled => match decisive(observation, spec) {
-                    Some(Ternary::True) => confirmed += 1,
-                    Some(Ternary::False) => refuted += 1,
+                    Some(EvidenceVerdict::Proved) => confirmed += 1,
+                    Some(EvidenceVerdict::Refuted) => refuted += 1,
+                    Some(EvidenceVerdict::Conflicted) => conflicts += 1,
                     _ => inconclusive += 1,
                 },
             }
         }
-        if pending + in_flight + inconclusive > 0 {
+        if pending + in_flight + inconclusive + conflicts > 0 {
             return Err(Error::Incomplete {
                 pending,
                 in_flight,
                 inconclusive,
+                conflicts,
             });
         }
         Ok(Summary {
@@ -130,13 +133,13 @@ impl Progress {
     }
 }
 
-fn decisive(observation: &Observation, spec: &TaskSpec) -> Option<Ternary> {
+fn decisive(observation: &Observation, spec: &TaskSpec) -> Option<EvidenceVerdict> {
     if observation.epoch != spec.epoch || observation.freshness != Ternary::True {
         return None;
     }
     observation
         .evidence
         .as_ref()
-        .map(|report| report.verdict(spec.epoch))
-        .filter(|verdict| *verdict != Ternary::Unknown)
+        .map(|report| report.judgment(spec.epoch))
+        .filter(|verdict| *verdict != EvidenceVerdict::Neither)
 }

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::{
-    Error, Limits, MAX_TASKS, Observation, Phase, PlanPatch, Selection, Snapshot, TaskSpec,
+    Error, Ledger, Limits, MAX_TASKS, Observation, Phase, PlanPatch, Selection, Snapshot, TaskSpec,
     selection,
 };
 
@@ -155,6 +155,18 @@ impl Plan {
     }
 
     pub fn select(&self, snapshot: &Snapshot, limits: &Limits) -> Result<Selection, Error> {
+        self.select_with_effects(snapshot, limits, &Ledger::new())
+    }
+
+    /// 带效果台账选批：在途/未知效果不会进入批次，而是产生对账义务。
+    ///
+    /// 操作 ID 约定与 [`crate::dispatch_ready`] 一致：单效果任务用任务 ID。
+    pub fn select_with_effects(
+        &self,
+        snapshot: &Snapshot,
+        limits: &Limits,
+        ledger: &Ledger,
+    ) -> Result<Selection, Error> {
         selection::select(
             self.revision,
             &self.tasks,
@@ -162,6 +174,7 @@ impl Plan {
             &self.order,
             snapshot,
             limits,
+            ledger,
         )
     }
 }
