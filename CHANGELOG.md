@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`editset_gate` 真实输入上的编辑集门禁）
+
+- `examples/editset_gate.rs`：不依赖 transformers，用 MiniLM `word_embeddings` 的真实 384 维行
+  做输入、f32 `query` 层做教师，构造 edit（必须改对）/keep（必须保持）双 Oracle；
+  `--tuned` 时走 `delta::diff_weights` 生成三值补丁，再用 `certify_nets` 同时判两侧。
+- 真实读数（readout-row 0/1/5，合成 Δ 10,128 trits）：编辑达成 3–5 / 8，保持集破坏 20–24 / 64，
+  `certified=false`；零编辑对照 `edit 8→8`、`keep 0→0`、仍 `false`。
+- 新增 `docs/WSP-EDITSET.md`。
+- 未证栏：读出是 `query` 层的一行而非 STS/检索头；输入是单 token 词向量；`--tuned` 是合成 Δ；
+  未跑 `repair` 的精确最小补丁上界。
+
 ### Added（trit-wspace：`task-merge --trim`，TIES 的裁剪步骤）
 
 - `TrimTop::{Count, Fraction}` + `TrimOptions{top, margin}`：投票前逐坐标按 |Δ| 降序裁剪，
