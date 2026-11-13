@@ -3,7 +3,7 @@
 //! 从 `curve.rs` 拆出：module_budget 台账只收紧、不抬高单文件行数。
 
 use crate::basis::{oracle_of, reduced_net};
-use crate::curve::CurveCtx;
+use crate::ctx::CurveCtx;
 use crate::evaluate::losses;
 use serde_json::{Value, json};
 use trit_wspace::repair::{RepairOptions, repair};

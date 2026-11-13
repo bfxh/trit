@@ -8,10 +8,7 @@
 //!
 //! 输出 JSON：三条曲线 + `minimum`（使 edit_loss=0 且 keep_loss=0 的最小 (k, max_edits, beam_width)）。
 //!
-//! ```bash
-//! cargo run --release -p trit-wspace --example dimsweep -- \
-//!   --safetensors model.safetensors --samples 512 --edit-limit 8 --keep-limit 64
-//! ```
+//! 跑法：`cargo run --release --example dimsweep -- --safetensors model.safetensors`
 //!
 //! 与 `editset_gate` 的区别：那边问「补丁能不能同时过 edit/keep」，这边问
 //! **「把思考降到多低还够用」**——宽度、步数、维度必要性一起量。
@@ -20,10 +17,12 @@ use serde_json::{Value, json};
 use trit_wspace::safetensors;
 
 mod basis;
+mod ctx;
 mod curve;
 mod evaluate;
 mod judge;
 mod options;
+mod prune;
 mod steps;
 mod tau;
 
@@ -128,7 +127,7 @@ fn main() {
         "top_values": values.iter().take(8).copied().collect::<Vec<_>>(),
     });
 
-    let cx = CurveCtx {
+    let cx = crate::ctx::CurveCtx {
         args: &args,
         query: &query,
         readout,
@@ -146,6 +145,7 @@ fn main() {
     report["width"] = json!(width);
     report["min_k_zero_loss"] = json!(min_k);
     report["fidelity"] = json!({"best": best_agree, "tau": tau_curve});
+    report["prune"] = json!(crate::prune::prune_curve(&cx));
     let (steps, minimum) = steps_curve(&cx, min_k);
     report["steps"] = json!(steps);
     report["minimum"] = minimum;

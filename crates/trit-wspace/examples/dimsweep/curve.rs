@@ -1,28 +1,10 @@
 //! dimsweep 的宽度扫描（从 `main.rs` 拆出）。
 
-use crate::basis::{Sample, oracle_of, reduced_net};
+use crate::basis::{oracle_of, reduced_net};
+use crate::ctx::CurveCtx;
 use crate::evaluate::{agreement_with_full, identity, losses};
-use crate::judge::{Teacher, f32_reduced_accuracy};
-use crate::options::Args;
+use crate::judge::f32_reduced_accuracy;
 use serde_json::{Value, json};
-use trit_wspace::Net;
-use trit_wspace::safetensors::Weights;
-
-pub struct CurveCtx<'a> {
-    pub args: &'a Args,
-    pub query: &'a Weights,
-    pub readout: &'a [f32],
-    pub second: Option<&'a [f32]>,
-    pub kind: Teacher,
-    pub dim: usize,
-    pub comps: &'a [Vec<f64>],
-    pub student: &'a Net,
-    pub samples: &'a [Sample],
-    pub edit: &'a [Sample],
-    pub keep: &'a [Sample],
-    /// 判据是否改成「与全维学生一致」（`--criterion full`）。
-    pub criterion_full: bool,
-}
 
 pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>, (usize, f32), Vec<Value>) {
     let args = cx.args;
@@ -81,7 +63,6 @@ pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>, (usize, f32), V
                 ),
             )
         };
-        // 全量样本上的一致性：区分「压缩了原学生」与「换成了教师」。
         let agree_full = if k >= dim {
             1.0
         } else {
@@ -91,7 +72,6 @@ pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>, (usize, f32), V
         if agree_full > best_agree.1 {
             best_agree = (k, agree_full);
         }
-        // `--criterion full` 把「过判据」定义成「与全维学生完全一致」。
         let passed = if cx.criterion_full {
             agree_full >= 1.0
         } else {
@@ -113,5 +93,10 @@ pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>, (usize, f32), V
             "reduction": net.trit_count() as f64 / student.trit_count() as f64,
         }));
     }
-    (width, min_k, best_agree, crate::tau::tau_curve(&agree_pairs))
+    (
+        width,
+        min_k,
+        best_agree,
+        crate::tau::tau_curve(&agree_pairs),
+    )
 }
