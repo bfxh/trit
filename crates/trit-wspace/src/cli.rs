@@ -12,7 +12,7 @@ use crate::ops;
 use crate::oracle::{Behavior, Oracle};
 use crate::wire;
 
-mod cli_agree;
+mod cli_agree_sampled;
 mod cli_artifact_shard;
 mod cli_block;
 mod cli_certify;
