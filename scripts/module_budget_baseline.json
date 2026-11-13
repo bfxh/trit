@@ -2603,6 +2603,10 @@
       "lines": 196
     },
     {
+      "file": "crates/trit-re/src/yaraparse/y2.rs",
+      "lines": 11
+    },
+    {
       "file": "crates/trit-re/tests/arm64.rs",
       "lines": 79
     },
@@ -2641,6 +2645,10 @@
     {
       "file": "crates/trit-re/tests/yara_b64.rs",
       "lines": 52
+    },
+    {
+      "file": "crates/trit-re/tests/yara_expr_vectors.rs",
+      "lines": 175
     },
     {
       "file": "crates/trit-re/tests/yara_lexer.rs",

@@ -1,0 +1,80 @@
+id	fixture	strings	cond	official
+A001	text	-	filesize + 1 > 0	HIT
+A002	text	-	filesize - 1 == 60	HIT
+A003	text	-	-5 \ 2 == -2	HIT
+A004	text	-	5 % 3 == 2	HIT
+A005	text	-	-5 % 3 == -2	HIT
+A006	text	-	1 << 63 < 0	HIT
+A007	text	-	1 << 64 == 0	HIT
+A008	text	-	~0 == -1	HIT
+A009	text	-	1 \ 0 == 0	ERR
+A010	text	-	filesize / 2 > 1	ERR
+A011	text	-	9223372036854775807 + 1 < 0	ERR
+A012	text	-	0x10 == 16	HIT
+A013	text	-	1 | 2 == 3	HIT
+A014	text	-	1 ^ 1 == 0	HIT
+A015	text	-	6 & 3 == 2	HIT
+B001	text	-	filesize	HIT
+B002	text	-	0	MISS
+B003	text	-	-1	HIT
+B004	text	-	1.5	HIT
+B005	text	-	0.0	MISS
+B006	text	-	-0.0	HIT
+B007	text	-	"abc"	HIT
+B008	text	-	""	MISS
+B009	text	-	/a/	HIT
+U001	text	-	uint8(filesize) == 0	MISS
+U002	text	-	not (uint8(filesize) == 0)	MISS
+U003	text	-	defined uint8(filesize)	MISS
+U004	text	-	not defined uint8(filesize)	HIT
+U005	text	-	uint8(filesize) * 0 == 0	MISS
+U006	text	-	uint8(filesize) == uint8(filesize)	MISS
+L001	text	-	for any i in (0..2) : (i == 0)	HIT
+L002	text	-	for all i in (0..2) : (i >= 0)	HIT
+L003	text	-	for 2 i in (0..0) : (5)	HIT
+L004	text	-	for all i in (0..0) : (true)	HIT
+L005	text	-	for any i in (0..0) : (true)	HIT
+L006	text	-	for none i in (0..0) : (true)	MISS
+L007	text	-	for any i in (2..1) : (true)	ERR
+L008	text	-	for 3 i in (1..2) : (i)	HIT
+L009	text	-	for any i in (0..1) : (for any j in (0..1) : (i == j))	HIT
+S001	text	-	"abc" contains "b"	HIT
+S002	text	-	"abc" contains ""	MISS
+S003	text	-	"" contains ""	MISS
+S004	text	-	"abc" startswith "ab"	HIT
+S005	text	-	"abc" endswith "bc"	HIT
+S006	text	-	"\xff" < "a"	HIT
+S007	text	-	"\x00" > "\xff"	HIT
+S008	text	-	"a\x00" > "a"	HIT
+S009	text	-	"abc" == "abc\x00"	MISS
+S010	text	-	"abc" matches /b/	HIT
+S011	text	-	"abc" matches /^b/	MISS
+S012	text	-	"[" iequals "{"	MISS
+S013	text	-	"abc" icontains "B"	HIT
+N001	text	-	uint8(0) == 0x74	HIT
+N002	text	-	int8(0) == 0x74	HIT
+N003	text	-	uint16(0) == 0x6874	HIT
+N004	text	-	uint16be(0) == 0x7468	HIT
+N005	bytes256	-	int8(255) == -1	HIT
+N006	text	-	uint8(1000) == 0	MISS
+F001	text	-	0.1 + 0.2 == 0.3	HIT
+F002	text	-	0.1 + 0.2 > 0.3	HIT
+F003	text	-	1.0 \ 0 > 1	HIT
+F004	text	-	0.0 \ 0 == 0.0	MISS
+F005	text	-	1.5 == 1.5	HIT
+F006	text	-	1.5 % 1.0 == 0.5	ERR
+F007	text	-	1. > 0.0	ERR
+M001	text	$a = "the"	$a	HIT
+M002	text	$a = "the"	$a at 0	HIT
+M003	text	$a = "the"	$a in (0..10)	HIT
+M004	text	$a = "the"	#a >= 1	HIT
+M005	text	$a = "the"	@a == 0	HIT
+M006	text	$a = "the"	!a == 3	HIT
+M007	text	$a = "the"	@a[0] == 0	MISS
+M008	text	$a = "the"  $b = "zzz"	any of them	HIT
+M009	text	$a = "the"	2 of ($a, $a)	HIT
+M010	text	$b = "zzz"	$b	MISS
+M011	text	$b = "zzz"	@b == 0	MISS
+E001	text	$a = ""	$a	ERR
+E002	text	$a = "a" nocase nocase	$a	ERR
+E003	text	$a = "a" xor nocase	$a	ERR

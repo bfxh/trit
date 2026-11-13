@@ -24,16 +24,16 @@
 ### T01 向量集、fixtures 与回放 harness
 
 - **当量**：1 天（若向量需现生成，另加 0.5 天 + `yara-python 4.5.4` 环境）
-- **前置**：`tests/data/yara_expr/{expr_core,pe_fields,rule_level}.tsv`、
-  `fixtures/*.hex`、`tools/check_vectors.py`、`tools/cite.py`、
-  `tools/gen_value_probes.py`。
+- **前置**：外部提供 2732 条向量与 `pe_fields.tsv`；最小集已入库
+  （`tools/gen_vectors.py` 生成 79 + 4 条）。
 - **做什么**：
   1. 把 2732 条向量与 fixtures 入库（禁止手改）。
   2. `tests/yara_expr_vectors.rs`：按 `04-CODE-MAP.md` §5 的三态判法
      回放；`GAP_CEILING = 2363`；支持 `YARA_EXPR_SHOW` 分组。
   3. `tools/check_vectors.py` 对官方引擎复核；`tools/cite.py find '<条件>'`
      可按条件检索同类向量。
-- **验收**：回放 369 / 2363 / 0；`YARA_EXPR_SHOW=A` 能列出 A 组弃权。
+- **验收**：最小集回放 **9 / 74 / 0**；`YARA_EXPR_SHOW=A` 能列出 A 组弃权。
+  全集向量接入后，`GAP_CEILING` 重设为全集非 ERR 条数。
 - **禁区**：向量与 fixtures 只读；错判不是 0 就不许提交。
 - **依赖**：T00。
 

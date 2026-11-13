@@ -51,12 +51,12 @@
 //! ```
 
 use crate::sigscan::{Pattern, Rule};
-
 // 条件表达式解析（拆出守 800 行预算）；`#`/`@` 叶子在 cond_tail。
 mod cond;
 mod cond_tail;
+mod y2;
 use self::cond::CondParser;
-
+pub use y2::parse_rules_v2;
 /// 单条规则的解析结局：可评估，或不可评估（带原因）。
 #[derive(Debug, Clone)]
 pub enum RuleOutcome {

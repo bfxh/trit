@@ -1,6 +1,6 @@
 # YARA 完整语义实现包（规范 + 任务卡）
 
-> 状态：**规范已入库，基建未入库**（2026-11-14 核对）。本目录的 00–04 是
+> 状态：**规范 + P0 最小向量/harness 已入库；接缝补丁仍缺**（2026-11-14）。本目录的 00–04 是
 > 外部提供的规范原文；`05-TASKS.md` 是按 `docs/AGENT-TASK-STANDARD.md`
 > 整理出的可派发任务卡。**在 P0 基建补齐之前，不要派发实现卡。**
 
@@ -34,15 +34,33 @@ YARA 4.5.4 语义的完整前端 + pe 对象模型**：
 
 | 规范里引用的东西 | 仓库现状 |
 |---|---|
-| `ref/0001-seam.patch`（接缝补丁） | **缺失** |
-| `tests/data/yara_expr/*.tsv` + `fixtures/`（2732 条向量） | **缺失** |
-| `tests/yara_expr_vectors.rs`（回放 harness） | **缺失** |
-| `tools/check_vectors.py` / `cite.py` / `gen_value_probes.py` | **缺失** |
-| `tasks/`（任务卡原文） | **缺失** |
-| `crates/trit-re/src/yaraparse/y2.rs`、`sigscan/pe2.rs`、`xscan.rs`、`xeval.rs` 等 | **缺失** |
+| `ref/0001-seam.patch`（接缝补丁） | **缺失**（仍阻塞） |
+| `tests/data/yara_expr/*.tsv` + `fixtures/` | **部分入库**：83 条可复现最小集（`tools/gen_vectors.py` 生成；非 2732 条全集） |
+| `tests/yara_expr_vectors.rs`（回放 harness） | **已入库**（最小集回放） |
+| `tools/gen_vectors.py` | **已入库**；`check_vectors.py` / `cite.py` / `gen_value_probes.py` 仍缺 |
+| `tasks/`（任务卡原文） | **缺失**（本目录 `05-TASKS.md` 是整理版） |
+| `crates/trit-re/src/yaraparse/y2.rs` | **占位已入库**（`Err`） |
+| `sigscan/pe2.rs`、`xscan.rs`、`xeval.rs` 等接缝模块 | **缺失** |
 
 ⇒ **红线 3（错判必须 0）现在无法执行**：没有向量就没有验收。按
 `00-RULES.md` 的红线 1，也不能靠「读规范猜语义」硬写。
+
+### P0 已交付（2026-11-14）
+
+- `tools/gen_vectors.py`：用官方 `yara-python 4.5.4` 生成向量（规则源写在
+  脚本里，可复现）；当前 **79 条 expr + 4 条 rule_level**，fixtures =
+  `text` / `bytes256` / `empty`。
+- `crates/trit-re/tests/data/yara_expr/`：TSV + `.hex` fixtures。
+- `crates/trit-re/tests/yara_expr_vectors.rs`：回放 harness，
+  `GAP_CEILING = 74`；当前基线 = **一致 9 / 弃权 74 / 错判 0**
+  （`parse_rules_v2` 占位 `Err`）。
+- `crates/trit-re/src/yaraparse/y2.rs`：解析入口占位。
+- **已知与外部规范的差异**（以向量为准）：官方 4.5.4 实测
+  `"abc" contains ""` 与 `"" contains ""` 都是 MISS（外部规范 §6.2 写
+  「空针恒命中」）；`for any i in (2..1)` 是编译错误（常量区间端点检查）。
+  这些已冻结在 TSV 里。
+- 仍缺：`ref/0001-seam.patch`（`xscan`/`xeval`/`xval` 等接缝模块）与
+  2732 条全集向量；**P0 补丁完成前不能派发实现卡**。
 
 ## 3. 执行顺序
 
