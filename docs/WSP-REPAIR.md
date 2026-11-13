@@ -113,6 +113,26 @@ trit-wspace repair broken.wsp --oracle keep.json --trits 0:0:0:-
 2. 但 keep 集 **64/64 全被破坏**——修复 edit 的代价是整体行为崩塌；
 3. 这正是 `certify_nets` 要抓的：`certified=false`（keep regressed 64）。
 
+## keep 约束（`--keep`）
+
+`RepairOptions.keep: Option<Oracle>`：给定时只接受“edit 全对**且** keep 全对”的补丁；
+`energy` 里加 10 × keep 失配数作为软惩罚，引导搜索远离破坏 keep 的方向。
+CLI `repair --keep <oracle|->`。
+
+读数（8 条 edit / 64 条 keep、8 个承重行、`--max-edits 2`）：
+
+| 配置 | found | edit after_loss | keep regressed | 耗时 |
+|---|---|---|---|---|
+| 无 row-ops（#479） | false | — | — | 22.7s |
+| `--row-ops`（#481） | true | 0 | 64 | 7.8s |
+| `--row-ops --keep`（本轮） | **false** | — | — | 1m37s |
+
+读法：
+
+1. 无 keep 约束时，`repair` 找到“修好 edit”的解，但 keep 全毁；
+2. 加上 keep 约束后，同一个候选空间里**找不到“修好且不破坏 keep”的解**；
+3. 说明在这 8 个承重行、2 点内，修复与保持存在根本冲突，不是搜索预算问题。
+
 ## 未证栏
 
 - 候选限制接口已实现（scope + `--rows`/`--trits`），但还没在 384×384 上用 `localize` 选行跑完整读数；

@@ -2984,7 +2984,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/editset_repair_readout.rs",
-      "lines": 326
+      "lines": 324
     },
     {
       "file": "crates/trit-wspace/examples/editset_sts.rs",
@@ -3056,7 +3056,11 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_repair.rs",
-      "lines": 142
+      "lines": 64
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_repair/cli_repair_scope.rs",
+      "lines": 88
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
@@ -3212,15 +3216,23 @@
     },
     {
       "file": "crates/trit-wspace/src/repair.rs",
-      "lines": 257
+      "lines": 242
     },
     {
       "file": "crates/trit-wspace/src/repair/energy.rs",
-      "lines": 31
+      "lines": 28
+    },
+    {
+      "file": "crates/trit-wspace/src/repair/options.rs",
+      "lines": 36
     },
     {
       "file": "crates/trit-wspace/src/repair/scope.rs",
       "lines": 79
+    },
+    {
+      "file": "crates/trit-wspace/src/repair/softplus.rs",
+      "lines": 9
     },
     {
       "file": "crates/trit-wspace/src/safetensors.rs",
@@ -3413,6 +3425,10 @@
     {
       "file": "crates/trit-wspace/tests/rebase.rs",
       "lines": 496
+    },
+    {
+      "file": "crates/trit-wspace/tests/repair_keep.rs",
+      "lines": 59
     },
     {
       "file": "crates/trit-wspace/tests/repair_row_ops.rs",

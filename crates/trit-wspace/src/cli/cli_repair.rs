@@ -2,100 +2,16 @@
 
 use serde_json::json;
 
-use crate::edit::Edit;
-use crate::net::Net;
+mod cli_repair_scope;
 use crate::ops;
 use crate::repair::RepairOptions;
-use crate::trit::Trit;
 use crate::{to_wsp, wire};
+use cli_repair_scope::{parse_scope_rows, parse_scope_trits, row_scope};
 
 use super::{
     emit, err, load_net, load_oracle, no_double_stdin, one, opt_u64, opt_usize, parse, value,
     write_out,
 };
-
-/// `--rows L:R,L:R` → (layer, row) 列表。
-fn parse_scope_rows(raw: &str) -> Result<Vec<(usize, usize)>, String> {
-    raw.split(',')
-        .map(|part| {
-            let (layer, row) = part
-                .split_once(':')
-                .ok_or_else(|| format!("--rows 需要 L:R，得到 `{part}`"))?;
-            Ok((
-                layer
-                    .parse::<usize>()
-                    .map_err(|_| format!("--rows 的层号不是整数：`{part}`"))?,
-                row.parse::<usize>()
-                    .map_err(|_| format!("--rows 的行号不是整数：`{part}`"))?,
-            ))
-        })
-        .collect()
-}
-/// `--trits L:R:C:T,...`（T 为 `-`/`0`/`+`）→ 显式候选。
-fn parse_scope_trits(raw: &str) -> Result<Vec<Edit>, String> {
-    raw.split(',')
-        .map(|part| {
-            let fields: Vec<&str> = part.split(':').collect();
-            if fields.len() != 4 {
-                return Err(format!("--trits 需要 L:R:C:T，得到 `{part}`"));
-            }
-            let layer = fields[0]
-                .parse::<usize>()
-                .map_err(|_| format!("层号非法：`{part}`"))?;
-            let row = fields[1]
-                .parse::<usize>()
-                .map_err(|_| format!("行号非法：`{part}`"))?;
-            let col = fields[2]
-                .parse::<usize>()
-                .map_err(|_| format!("列号非法：`{part}`"))?;
-            let to = match fields[3] {
-                "-" => Trit::Neg,
-                "0" => Trit::Zero,
-                "+" => Trit::Pos,
-                other => return Err(format!("目标三值非法：`{other}`")),
-            };
-            Ok(Edit::SetTrit {
-                layer,
-                row,
-                col,
-                to,
-            })
-        })
-        .collect()
-}
-
-/// 把 (layer, row) 展开成该行所有 trit（另两个取值）与 bias 的候选。
-fn row_scope(net: &Net, rows: &[(usize, usize)]) -> Vec<Edit> {
-    let mut out = Vec::new();
-    for &(layer, row) in rows {
-        let Some(target) = net.layer(layer) else {
-            continue;
-        };
-        if row >= target.rows() {
-            continue;
-        }
-        for col in 0..target.cols() {
-            let current = target.trit(row, col).expect("row/col in range");
-            for &to in &Trit::ALL {
-                if to != current {
-                    out.push(Edit::SetTrit {
-                        layer,
-                        row,
-                        col,
-                        to,
-                    });
-                }
-            }
-        }
-        let current = target.bias_trit(row).expect("row in range");
-        for &to in &Trit::ALL {
-            if to != current {
-                out.push(Edit::SetBias { layer, row, to });
-            }
-        }
-    }
-    out
-}
 
 pub(super) fn repair(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &["row-ops"])?;
@@ -112,12 +28,18 @@ pub(super) fn repair(args: &[String]) -> Result<(), String> {
         (None, Some(raw)) => Some(parse_scope_trits(raw)?),
         (None, None) => None,
     };
+    let keep = parsed
+        .values
+        .get("keep")
+        .map(|source| load_oracle(source))
+        .transpose()?;
     let options = RepairOptions {
         max_edits: opt_usize(&parsed, "max-edits", 8)?,
         beam_width: opt_usize(&parsed, "beam-width", 64)?,
         exhaustive_states: opt_u64(&parsed, "exhaustive-states", 200_000)?,
         scope,
         row_ops: parsed.switches.contains("row-ops"),
+        keep,
         ..RepairOptions::default()
     };
     match ops::repair_net(&net, &oracle, &options).map_err(err)? {

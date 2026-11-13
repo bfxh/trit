@@ -5,8 +5,10 @@ use crate::net::Net;
 use crate::oracle::Oracle;
 use crate::trit::Trit;
 
+use super::softplus::softplus;
+
 /// 裕量能量：即使符号还错，也奖励“更接近正确一侧”的状态。
-pub(super) fn energy(net: &Net, oracle: &Oracle) -> Result<f32> {
+pub(super) fn energy(net: &Net, oracle: &Oracle, keep: Option<&Oracle>) -> Result<f32> {
     let mut total = 0.0f32;
     for (input, want) in oracle.inputs().iter().zip(oracle.outputs()) {
         let as_f32: Vec<f32> = input.iter().map(|&v| f32::from(v.to_i8())).collect();
@@ -19,13 +21,8 @@ pub(super) fn energy(net: &Net, oracle: &Oracle) -> Result<f32> {
             };
         }
     }
-    Ok(total)
-}
-
-fn softplus(value: f32) -> f32 {
-    if value > 20.0 {
-        value
-    } else {
-        value.exp().ln_1p()
+    if let Some(keep) = keep {
+        total += 10.0 * keep.loss(net)? as f32;
     }
+    Ok(total)
 }

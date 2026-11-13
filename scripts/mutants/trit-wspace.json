@@ -26,7 +26,7 @@
  {
   "name": "wspace: BFS 不检查精确解",
   "file": "crates/trit-wspace/src/repair.rs",
-  "old": "let mut found = patch.clone();\n                found.push(candidate.clone());\n                if oracle.exact(&trial)? {",
+  "old": "let mut found = patch.clone();\n                found.push(candidate.clone());\n                if oracle.exact(&trial)? && keep_ok(options.keep.as_ref(), &trial)? {",
   "new": "let mut found = patch.clone();\n                found.push(candidate.clone());\n                if false {",
   "pkg": "trit-wspace",
   "filter": "single_trit_corruption_is_repairable_by_one_edit"
