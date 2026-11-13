@@ -2968,7 +2968,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/curve.rs",
-      "lines": 118
+      "lines": 117
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/evaluate.rs",
@@ -2989,6 +2989,10 @@
     {
       "file": "crates/trit-wspace/examples/dimsweep/steps.rs",
       "lines": 75
+    },
+    {
+      "file": "crates/trit-wspace/examples/dimsweep/tau.rs",
+      "lines": 22
     },
     {
       "file": "crates/trit-wspace/examples/editset_aligned.rs",

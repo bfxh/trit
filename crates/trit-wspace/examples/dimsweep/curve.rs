@@ -1,6 +1,4 @@
-//! dimsweep 的两条曲线：宽度扫描与步数扫描。
-//!
-//! 从 `main.rs` 拆出：module_budget 台账只收紧、不抬高单文件行数。
+//! dimsweep 的宽度扫描（从 `main.rs` 拆出）。
 
 use crate::basis::{Sample, oracle_of, reduced_net};
 use crate::evaluate::{agreement_with_full, identity, losses};
@@ -10,7 +8,6 @@ use serde_json::{Value, json};
 use trit_wspace::Net;
 use trit_wspace::safetensors::Weights;
 
-/// 一次扫描需要的全部上下文。
 pub struct CurveCtx<'a> {
     pub args: &'a Args,
     pub query: &'a Weights,
@@ -27,7 +24,7 @@ pub struct CurveCtx<'a> {
     pub criterion_full: bool,
 }
 
-pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>, (usize, f32)) {
+pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>, (usize, f32), Vec<Value>) {
     let args = cx.args;
     let query = cx.query;
     let readout = cx.readout;
@@ -42,6 +39,7 @@ pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>, (usize, f32)) {
     let mut width = Vec::new();
     let mut min_k: Option<usize> = None;
     let mut best_agree = (0usize, 0.0f32);
+    let mut agree_pairs: Vec<(usize, f32)> = Vec::new();
     for &k in &args.dims {
         let basis = if k >= dim {
             identity(dim)
@@ -89,6 +87,7 @@ pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>, (usize, f32)) {
         } else {
             agreement_with_full(&net, samples, &basis, student)
         };
+        agree_pairs.push((k, agree_full));
         if agree_full > best_agree.1 {
             best_agree = (k, agree_full);
         }
@@ -114,5 +113,5 @@ pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>, (usize, f32)) {
             "reduction": net.trit_count() as f64 / student.trit_count() as f64,
         }));
     }
-    (width, min_k, best_agree)
+    (width, min_k, best_agree, crate::tau::tau_curve(&agree_pairs))
 }

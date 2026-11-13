@@ -1,6 +1,5 @@
 //! 降维运行扫描（dimsweep）：一段「思考」要多少维度、多少步才够。
 //! 三条曲线，同一个协议（真实 `word_embeddings` 行 + f32 教师 + edit/keep 双集合）：
-//!
 //! 1. **宽度**：把 384 维输入投影到前 `k` 个主方向（真实词向量的二阶矩），降维学生是
 //!    `Layer::new(rows, k)` + 原读出层，报 edit/keep 两个集合的 loss 随 `k` 怎么变。
 //! 2. **步数**：在 `k` 维学生上跑 `repair`（带 `keep` 约束），报预算
@@ -26,6 +25,7 @@ mod evaluate;
 mod judge;
 mod options;
 mod steps;
+mod tau;
 
 use basis::*;
 use curve::*;
@@ -142,10 +142,10 @@ fn main() {
         keep: &keep_samples,
         criterion_full: args.criterion == "full",
     };
-    let (width, min_k, best_agree) = width_curve(&cx);
+    let (width, min_k, best_agree, tau_curve) = width_curve(&cx);
     report["width"] = json!(width);
     report["min_k_zero_loss"] = json!(min_k);
-    report["best_agree"] = json!({"k": best_agree.0, "agree_full": best_agree.1});
+    report["fidelity"] = json!({"best": best_agree, "tau": tau_curve});
     let (steps, minimum) = steps_curve(&cx, min_k);
     report["steps"] = json!(steps);
     report["minimum"] = minimum;
