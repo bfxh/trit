@@ -530,6 +530,25 @@ trit-wspace diagnose <artifact|-> --oracle <json|-> [--budget N] [--top K]
 `tests/inventory.rs` 钉住 XOR 上的计数与单参数归属（col0 lost=6、col1 lost=4、3 个能力、
 col1 被标为专才、col0 是其能力的唯一支撑）。
 
+### 多参数改动与形式化不可修性
+
+`impact <artifact|-> --oracle <json|-> (--edits <json|-> | --group row|layer --layer N
+[--row N] [--mode flip|zero])` 算一组编辑的**联合**收益：
+
+| 字段 | 含义 |
+|---|---|
+| `gain` | 联合编辑的失配减少 |
+| `lost/gained/changed` | 联合编辑后的样本集 |
+| `individual[].gain` | 每条编辑单独施加的增益 |
+| `synergy` | 联合 `gain - Σ 单点 gain`（正 = 协同，负 = 抵消） |
+
+`--group row|layer` 自动生成整行/整层的翻转或置零编辑，不局限于单一 trit。
+
+`repair-exhaustive <artifact|-> --oracle <json|-> [--max-edits 1|2] [--max-pairs N]`
+用全枚举替代束搜索：`analyze` 枚举全部单点、`analyze_pairs` 枚举全部点对，
+给出「存在/不存在 ≤N 步解」的确定性结论。**边界**：只对给定验证集成立，不是全部输入的证明；
+`--max-pairs` 超出时直接报错，不做静默截断。
+
 ### 库化：`agree`
 
 上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，

@@ -151,6 +151,16 @@
   - `tests/inventory.rs` 三条测试：层/神经元/trit 计数、死行与非零偏置、
     单参数能力归属（col0 lost=6、col1 lost=4、3 个能力、专才与唯一支撑）。
 
+- 多参数改动与形式化不可修性：
+  - `impact`：给一组编辑（用户 patch 或 `--group row|layer` 自动生成整行/整层），
+    一次算出联合 `gain`、`lost/gained/changed`、每个单点的 `gain`，以及
+    `synergy = 联合 gain - Σ 单点 gain`（正 = 协同，负 = 抵消）。
+  - `repair-exhaustive`：对给定验证集穷举 ≤1/≤2 编辑（复用 `analyze` / `analyze_pairs`
+    的全枚举），给出「存在/不存在 ≤N 步解」的确定性结论——比束搜索的「预算内启发式」强，
+    但仍只对给定验证集成立。
+  - `tests/impact.rs` 四条：整行/整层组编辑数量、联合 gain + 单点 + synergy 恒等式、
+    单点穷举可修、`max_edits=0` 报现状。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，

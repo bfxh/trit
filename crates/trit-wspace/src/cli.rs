@@ -19,11 +19,14 @@ mod cli_block;
 mod cli_certify;
 mod cli_diagnose;
 mod cli_diff;
+mod cli_exhaustive;
 mod cli_explain;
 mod cli_gguf;
 mod cli_gradient;
+mod cli_impact;
 mod cli_inventory;
 mod cli_learned;
+mod cli_localize;
 mod cli_merge;
 mod cli_probe;
 mod cli_project;
@@ -76,11 +79,13 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "propose-learned" => cli_learned::propose_learned(&args[1..]),
         "propose-gradient" => cli_gradient::propose_gradient(&args[1..]),
         "explain" => cli_explain::explain_cmd(&args[1..]),
+        "impact" => cli_impact::impact_cmd(&args[1..]),
         "inventory" => cli_inventory::inventory_cmd(&args[1..]),
+        "repair-exhaustive" => cli_exhaustive::exhaustive_cmd(&args[1..]),
         "attribute" => cli_attribute::attribute_cmd(&args[1..]),
         "probe" => cli_probe::probe_cmd(&args[1..]),
         "diagnose" => cli_diagnose::diagnose_cmd(&args[1..]),
-        "localize" => cmd_localize(&args[1..]),
+        "localize" => cli_localize::localize_cmd(&args[1..]),
         "audit" => crate::cli_audit::cmd_audit(&args[1..]),
         "shard" => crate::cli_audit::cmd_shard(&args[1..]),
         "audit-shards" => crate::cli_audit::cmd_audit_shards(&args[1..]),
@@ -452,22 +457,6 @@ fn perform_patch(
         });
     }
     emit(&output)
-}
-
-fn cmd_localize(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(&parsed, "localize <artifact|-> --oracle <json|->")?;
-    let oracle_path = value(&parsed, "oracle")?;
-    no_double_stdin(&[path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let rows = opt_usize(&parsed, "rows", 3)?;
-    let row_budget = opt_usize(&parsed, "row-budget", 0)?;
-    let max_trits = opt_usize(&parsed, "max-trits", 64)?;
-    let top_trits = opt_usize(&parsed, "top-trits", 8)?;
-    let report = crate::localize::localize(&net, &oracle, row_budget, rows, max_trits, top_trits)
-        .map_err(err)?;
-    emit(&wire::localize_report_to_value(&report))
 }
 
 #[derive(Default)]

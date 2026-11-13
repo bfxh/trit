@@ -3116,7 +3116,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 596
+      "lines": 585
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_agree_stats.rs",
@@ -3147,6 +3147,10 @@
       "lines": 21
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_exhaustive.rs",
+      "lines": 40
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_explain.rs",
       "lines": 24
     },
@@ -3159,12 +3163,20 @@
       "lines": 51
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_impact.rs",
+      "lines": 66
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_inventory.rs",
       "lines": 29
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_learned.rs",
       "lines": 166
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_localize.rs",
+      "lines": 21
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_merge.rs",
@@ -3259,8 +3271,16 @@
       "lines": 224
     },
     {
+      "file": "crates/trit-wspace/src/exhaustive.rs",
+      "lines": 70
+    },
+    {
       "file": "crates/trit-wspace/src/explain.rs",
       "lines": 136
+    },
+    {
+      "file": "crates/trit-wspace/src/impact.rs",
+      "lines": 198
     },
     {
       "file": "crates/trit-wspace/src/inventory.rs",
@@ -3525,6 +3545,10 @@
     {
       "file": "crates/trit-wspace/tests/gradient.rs",
       "lines": 163
+    },
+    {
+      "file": "crates/trit-wspace/tests/impact.rs",
+      "lines": 91
     },
     {
       "file": "crates/trit-wspace/tests/invariants.rs",
