@@ -77,7 +77,7 @@ fn wsp2_row_bound_survives_extreme_cols() {
 fn wsp3_huge_declared_len_rejected_by_expansion_bound() {
     let mut bytes = b"WSP3".to_vec();
     bytes.push(1);
-    bytes.extend_from_slice(&0x1_0000_0000_0u64.to_le_bytes()); // raw_len = 2^40
+    bytes.extend_from_slice(&0x100_0000_0000u64.to_le_bytes()); // raw_len = 2^40
     append_checksum(&mut bytes);
     let error = trit_wspace::wsp3::from_wsp3(&bytes).unwrap_err();
     assert!(
@@ -93,7 +93,7 @@ fn wsp4_huge_symbol_count_rejected_by_bitstream_bound() {
     let mut bytes = b"WSP4".to_vec();
     bytes.push(1); // version
     bytes.push(1); // method = huffman
-    bytes.extend_from_slice(&0x1_0000_0000_0u64.to_le_bytes()); // raw_len
+    bytes.extend_from_slice(&0x100_0000_0000u64.to_le_bytes()); // raw_len
     let mut lens = vec![0u8; 256];
     lens[0] = 1; // symbol 0 用 1-bit 码（合法码表）
     bytes.extend_from_slice(&lens);
@@ -224,7 +224,7 @@ fn cli_manifest_plain_relative_still_works() {
 fn wspm_blob_with_malicious_wsp3_is_rejected_gracefully() {
     let mut wsp3 = b"WSP3".to_vec();
     wsp3.push(1);
-    wsp3.extend_from_slice(&0x1_0000_0000_0u64.to_le_bytes());
+    wsp3.extend_from_slice(&0x100_0000_0000u64.to_le_bytes());
     append_checksum(&mut wsp3);
     // 直接用 wspm::unpack 检查 decode_auto 对恶意 blob 的行为：手工构造容器
     // 代价高，这里退而验证 decode_auto 路径本身优雅（pack-model 经同一路径）。
