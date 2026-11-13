@@ -2964,7 +2964,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/agree_real/main.rs",
-      "lines": 141
+      "lines": 135
     },
     {
       "file": "crates/trit-wspace/examples/agree_real/quad.rs",
@@ -2973,6 +2973,10 @@
     {
       "file": "crates/trit-wspace/examples/agree_real/readout.rs",
       "lines": 32
+    },
+    {
+      "file": "crates/trit-wspace/examples/agree_real/size.rs",
+      "lines": 34
     },
     {
       "file": "crates/trit-wspace/examples/agree_real_selftest.rs",

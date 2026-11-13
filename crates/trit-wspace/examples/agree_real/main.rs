@@ -5,6 +5,7 @@ mod f32ref;
 mod forward;
 mod quad;
 mod readout;
+mod size;
 use basis::*;
 use trit_wspace::{Layer, Net, Trit};
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
@@ -119,14 +120,7 @@ fn main() {
         let q = quad::compare(
             &f32_base, &raw, &inputs, &tern_out, &readout, sub, &projected,
         );
-        curves.push(json!({
-            "k": k, "rate": rate,
-            "f32": q[0],
-            "w_trit": q[1],
-            "x_trit": q[2],
-            "trit_both": q[3], "trit_scale": q[4], "trit_readout": q[5],
-            "trit_stage": q[6], "trit_vs_f32": q[7]
-        }));
+        curves.push(size::curve(k, rate, &q, &student, &net));
     }
 
     println!(
