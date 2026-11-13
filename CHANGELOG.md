@@ -15,7 +15,13 @@
   工件（一层三值权重），所以不需要新格式；`cmd_diff` 一并从 `cli.rs` 搬进 `cli_project.rs`
   以守住 `cli.rs` 的台账上限。
 - `tests/project_cli.rs` 2 条端到端：压第一层且后续层不受影响、多层基被拒。
-- 未证栏：基的构造仍留在 example（`--basis supervised`），没有「从数据导出 basis 工件」的命令。
+- `dimsweep --out-basis <wsp>`：把当前基（`pca` 或 `supervised`）逐行 absmean 三值化成一层
+  WSP 工件，于是「导出基 → `project` 压模型 → `certify` 验证」闭环。实测导出物
+  `arch [384, 32]`、`depth 1`、`trits 12320`，可直接作为 `project --basis` 的输入。
+- 为守住台账把 `examples/dimsweep/options.rs` 拆成「结构体 + `parse_args.rs`」，并新增
+  `basis_out.rs` 承载导出逻辑。
+- 未证栏：导出的是「当前 `--dims`/`--basis` 算出来的那一版基」，没有单独的「选哪个 k」参数；
+  `--max-k` 同时决定导出维度。
 ### Added（trit-wspace：`examples/stssweep` 换任务判据——STS 排序保真）
 
 - 新示例 `examples/stssweep.rs`：判据从「复现某个网络」换成「在真实任务上正确」。任务沿用

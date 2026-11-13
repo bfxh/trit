@@ -449,4 +449,13 @@ let compressed = layer.project(&basis)?;   // rows × k
 CLI 已接：`project <artifact|-> --basis <artifact> --out <path> [--layer N]`。
 基不需要新格式——它本身就是一层三值权重，按普通 WSP 存即可。
 
-仍未做：从数据导出 basis 工件的命令（现在基只在 example 里构造）。
+导出基：`dimsweep --out-basis basis.wsp`——当前基（`pca` 或 `supervised`）逐行三值化后写成
+一层 WSP，实测 `arch [384, 32]`、`trits 12320`。于是整条链路闭环：
+
+```text
+dimsweep --basis supervised --max-k 32 --out-basis basis.wsp
+trit-wspace project net.wsp --basis basis.wsp --out small.wsp
+trit-wspace certify small.wsp --keep ...
+```
+
+注意：导出维度由 `--max-k` 决定，没有单独的「导出多少个基向量」参数。

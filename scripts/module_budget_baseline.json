@@ -2967,6 +2967,10 @@
       "lines": 325
     },
     {
+      "file": "crates/trit-wspace/examples/dimsweep/basis_out.rs",
+      "lines": 23
+    },
+    {
       "file": "crates/trit-wspace/examples/dimsweep/ctx.rs",
       "lines": 24
     },
@@ -2988,15 +2992,19 @@
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/main.rs",
-      "lines": 165
+      "lines": 164
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/options.rs",
-      "lines": 76
+      "lines": 24
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/order.rs",
       "lines": 120
+    },
+    {
+      "file": "crates/trit-wspace/examples/dimsweep/parse_args.rs",
+      "lines": 61
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/prune.rs",

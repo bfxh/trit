@@ -1,12 +1,5 @@
 //! 降维运行扫描（dimsweep）：一段「思考」要多少维度、多少步才够。
 //! 三条曲线，同一个协议（真实 `word_embeddings` 行 + f32 教师 + edit/keep 双集合）：
-//! 1. **宽度**：把 384 维输入投影到前 `k` 个主方向（真实词向量的二阶矩），降维学生是
-//!    `Layer::new(rows, k)` + 原读出层，报 edit/keep 两个集合的 loss 随 `k` 怎么变。
-//! 2. **步数**：在 `k` 维学生上跑 `repair`（带 `keep` 约束），报预算
-//!    `(max_edits, beam_width)` 与 `evaluated`，找「再走也没用」的饱和点。
-//! 3. **必要性**：在最大子空间上逐维剔除，报每一维的边际违规增量，排序出哪几维承载判据。
-//!
-//! 输出 JSON：三条曲线 + `minimum`（使 edit_loss=0 且 keep_loss=0 的最小 (k, max_edits, beam_width)）。
 //!
 //!
 //! 与 `editset_gate` 的区别：问的是「把思考降到多低还够用」。
@@ -15,6 +8,7 @@ use serde_json::{Value, json};
 use trit_wspace::safetensors;
 
 mod basis;
+mod basis_out;
 mod ctx;
 mod curve;
 mod evaluate;
@@ -22,6 +16,7 @@ mod f32path;
 mod judge;
 mod options;
 mod order;
+mod parse_args;
 mod prune;
 mod steps;
 mod tau;
@@ -31,6 +26,7 @@ use curve::*;
 use evaluate::*;
 use judge::*;
 use options::*;
+use parse_args::*;
 use steps::*;
 
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
@@ -117,6 +113,9 @@ fn main() {
         "kind": args.basis,
         "criterion_cos_pca1": criterion_cos,
     });
+    if let Some(path) = &args.out_basis {
+        basis_out::export(&comps, dim, path).expect("export basis");
+    }
     let trace: f64 = (0..dim).map(|i| moment[i * dim + i]).sum();
     let total_explained: f64 = values.iter().sum();
     report["pca"] = json!({
