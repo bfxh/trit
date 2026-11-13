@@ -2975,6 +2975,10 @@
       "lines": 32
     },
     {
+      "file": "crates/trit-wspace/examples/agree_real_selftest.rs",
+      "lines": 120
+    },
+    {
       "file": "crates/trit-wspace/examples/bias_e2e.rs",
       "lines": 417
     },
