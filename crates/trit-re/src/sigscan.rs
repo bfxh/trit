@@ -235,6 +235,8 @@ pub enum Condition {
     OfAll { prefix: Option<String> },
     /// `n of them/($x*)`：前缀集合里至少 n 条命中。
     OfCount { n: usize, prefix: Option<String> },
+    /// 表达式语言（算术 / 循环变量 / 字符串函数 / pe 对象模型），见 [`expr`]。
+    Expr(Box<expr::Expr>),
 }
 
 mod rule;
@@ -244,8 +246,6 @@ pub use rule::{Rule, RuleVerdict, SigReport};
 pub struct SigScan<'a> {
     pub(crate) rules: &'a [Rule],
 }
-
-// 扫描循环（`impl SigScan`）在 [`sigscan::scan`]——从本文件拆出守预算。
 
 // 三值条件求值（拆出守预算）。
 mod eval;
@@ -266,9 +266,9 @@ mod pattern;
 // 操作数解析三态（从 eval.rs 拆出守预算）。
 mod resolve;
 // 扫描循环（impl SigScan，从本文件拆出守预算）。
-mod scan;
-
-mod peprops; // pe.* 模块属性子集（YARA 完整子集方向）
+pub mod expr; // 表达式语言（N4 深水区，见 docs/YARA-EXPR.md）
+mod peprops;
+mod scan; // pe.* 模块属性子集（YARA 完整子集方向）
 
 // 字节级匹配引擎（拆出守预算）。
 mod matchers;

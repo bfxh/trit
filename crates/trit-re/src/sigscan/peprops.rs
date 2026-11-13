@@ -45,7 +45,7 @@ pub(super) fn resolve(path: &str, pe: Option<&PeInfo>, file_len: Option<u64>) ->
         "pe.entry_point" => pe.rva_to_offset(pe.entry_rva)? as u64,
         // 官方探针实测：is_dll / is_32bit 都是**函数**（裸属性形态官方
         // 编译报错 wrong usage）——布尔用法必须带 `()`，路径带 "(…)" 后缀
-        "pe.is_dll(…)" => u64::from(pe.characteristics & 0x2000 != 0),
+        "pe.is_dll(…)" => u64::from(pe.characteristics & 0x2000),
         "pe.is_32bit(…)" => u64::from(!pe.plus),
         _ => return None,
     })
@@ -109,7 +109,7 @@ mod tests {
             Some(0x400)
         );
         pe.characteristics |= 0x2000;
-        assert_eq!(resolve("pe.is_dll(…)", Some(&pe), Some(0x400)), Some(1));
+        assert_eq!(resolve("pe.is_dll(…)", Some(&pe), Some(0x400)), Some(8192));
         // 官方 overlay 口径（含证书）：end = max(头部 0x400, 节末 0x600)
         // = 0x600；文件 0x700 → size 0x100 / offset 0x600；无余量 → 0
         assert_eq!(

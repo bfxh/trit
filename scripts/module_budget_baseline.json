@@ -2520,7 +2520,71 @@
     },
     {
       "file": "crates/trit-re/src/sigscan/eval.rs",
-      "lines": 213
+      "lines": 211
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr.rs",
+      "lines": 274
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/call.rs",
+      "lines": 290
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/eval.rs",
+      "lines": 352
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/loops.rs",
+      "lines": 289
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/node.rs",
+      "lines": 161
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/num.rs",
+      "lines": 116
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/ordnames.rs",
+      "lines": 581
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/peconst.rs",
+      "lines": 178
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/schema.rs",
+      "lines": 304
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/strfunc.rs",
+      "lines": 162
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/tests.rs",
+      "lines": 206
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/yrdbg.rs",
+      "lines": 72
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/yrexp.rs",
+      "lines": 108
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/yrimp.rs",
+      "lines": 139
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/yrpe.rs",
+      "lines": 348
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/expr/yrres.rs",
+      "lines": 265
     },
     {
       "file": "crates/trit-re/src/sigscan/kleene.rs",
@@ -2544,7 +2608,15 @@
     },
     {
       "file": "crates/trit-re/src/sigscan/regex.rs",
-      "lines": 767
+      "lines": 762
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/regex/depth.rs",
+      "lines": 63
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/regex/nocase.rs",
+      "lines": 22
     },
     {
       "file": "crates/trit-re/src/sigscan/resolve.rs",
@@ -2561,6 +2633,10 @@
     {
       "file": "crates/trit-re/src/sigscan/scan.rs",
       "lines": 101
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/scan/lossy.rs",
+      "lines": 255
     },
     {
       "file": "crates/trit-re/src/sigscan/sections.rs",
@@ -2604,7 +2680,7 @@
     },
     {
       "file": "crates/trit-re/src/yaraparse.rs",
-      "lines": 286
+      "lines": 139
     },
     {
       "file": "crates/trit-re/src/yaraparse/cond.rs",
@@ -2623,8 +2699,16 @@
       "lines": 48
     },
     {
+      "file": "crates/trit-re/src/yaraparse/file_loop.rs",
+      "lines": 37
+    },
+    {
       "file": "crates/trit-re/src/yaraparse/lex.rs",
       "lines": 145
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/rule_body.rs",
+      "lines": 149
     },
     {
       "file": "crates/trit-re/src/yaraparse/rulebuild.rs",
@@ -2633,6 +2717,42 @@
     {
       "file": "crates/trit-re/src/yaraparse/valuemod.rs",
       "lines": 181
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/xparse.rs",
+      "lines": 226
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/xparse/boolean.rs",
+      "lines": 408
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/xparse/fold.rs",
+      "lines": 128
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/xparse/legacy.rs",
+      "lines": 215
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/xparse/lex.rs",
+      "lines": 323
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/xparse/path.rs",
+      "lines": 167
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/xparse/primary.rs",
+      "lines": 232
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/xparse/sets.rs",
+      "lines": 378
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/xparse/tests.rs",
+      "lines": 114
     },
     {
       "file": "crates/trit-re/tests/arm64.rs",
@@ -2667,20 +2787,60 @@
       "lines": 111
     },
     {
+      "file": "crates/trit-re/tests/support/yara_expr_support.rs",
+      "lines": 321
+    },
+    {
       "file": "crates/trit-re/tests/support/yara_pe_support.rs",
       "lines": 51
     },
     {
       "file": "crates/trit-re/tests/yara.rs",
-      "lines": 491
+      "lines": 489
     },
     {
       "file": "crates/trit-re/tests/yara_b64.rs",
       "lines": 27
     },
     {
+      "file": "crates/trit-re/tests/yara_expr.rs",
+      "lines": 427
+    },
+    {
+      "file": "crates/trit-re/tests/yara_expr_depth.rs",
+      "lines": 195
+    },
+    {
+      "file": "crates/trit-re/tests/yara_expr_loops.rs",
+      "lines": 250
+    },
+    {
+      "file": "crates/trit-re/tests/yara_expr_offset.rs",
+      "lines": 20
+    },
+    {
+      "file": "crates/trit-re/tests/yara_expr_pe.rs",
+      "lines": 427
+    },
+    {
+      "file": "crates/trit-re/tests/yara_expr_route.rs",
+      "lines": 278
+    },
+    {
+      "file": "crates/trit-re/tests/yara_expr_strings.rs",
+      "lines": 226
+    },
+    {
+      "file": "crates/trit-re/tests/yara_expr_variants.rs",
+      "lines": 266
+    },
+    {
       "file": "crates/trit-re/tests/yara_lexer.rs",
       "lines": 37
+    },
+    {
+      "file": "crates/trit-re/tests/yara_parse_isolation.rs",
+      "lines": 39
     },
     {
       "file": "crates/trit-re/tests/yara_pe.rs",
@@ -2701,6 +2861,10 @@
     {
       "file": "crates/trit-re/tests/yara_regex.rs",
       "lines": 35
+    },
+    {
+      "file": "crates/trit-re/tests/yara_regex_nocase.rs",
+      "lines": 41
     },
     {
       "file": "crates/trit-redteam/src/attrib.rs",
