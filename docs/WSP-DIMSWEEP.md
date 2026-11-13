@@ -791,6 +791,22 @@ MiniLM 12 头、32 key、目标 [0..11]，100 轮 / lr=0.5：
 - 结构完整（attention + 残差 + LN + FFN）；**反向传播未接**（forward-only）。
 - attention 是单头（384×384），FFN 隐藏层 1536 维，与 MiniLM 一层一致。
 
+### transformer 层的反向传播训练（只训练 FFN 第二层）
+
+真实 MiniLM 一层、4 个 token 自编码，50 轮 / lr=0.01：
+
+| 指标 | 读数 |
+|---|---|
+| loss_before | 0.3107 |
+| loss_after | 0.2998 |
+| 输出范数 | 11.44 / 10.78 / 10.88 / 10.99 |
+| 有限值 | true |
+
+- 损失经 `LN2 → 残差 → FFN2` 反向传播，FFN2 权重/bias 被更新；loss 下降约 3.5%。
+- 实现：LayerNorm 的解析梯度 + Dense 反向。
+- **2 维 LayerNorm 的 Jacobian 退化**（输入梯度恒 0）；测试用 3 维，真实 384 维无此问题。
+- 边界：只训练 FFN 第二层，注意力/LN/FFN1 固定；不是全参数端到端。
+
 ### 库化：`agree`
 
 上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，

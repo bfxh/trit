@@ -272,6 +272,12 @@
   输出 4×384、范数 11.48/11.04/11.12/11.22，全部有限。结构完整；反向传播未接（forward-only）。
   `tests/transformer_f32.rs` 三条：LayerNorm 归一化、Dense + ReLU、块前向形状。
 
+- transformer 层的反向传播训练：新模块 `transformer_f32_train.rs`——LayerNorm 的
+  解析梯度 + Dense 反向；固定注意力/LN/FFN1，只训练 FFN 第二层。真实 MiniLM 一层、
+  4 个 token 自编码、50 轮 / lr=0.01：loss 0.3107 → 0.2998（约 -3.5%），
+  输出范数 11.44/10.78/10.88/10.99，全部有限。
+  注意：2 维 LayerNorm 的 Jacobian 退化（梯度恒 0），测试用 3 维；真实 384 维无此问题。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，

@@ -43,7 +43,6 @@
 //!     .apply(&mut broken)
 //!     .unwrap();
 //! assert!(!want.exact(&broken).unwrap());
-//!
 //! let found = repair(&broken, &want, &RepairOptions::default()).unwrap().unwrap();
 //! assert_eq!(found.patch.len(), 1);
 //! let mut fixed = broken.clone();
@@ -119,6 +118,7 @@ pub mod task_merge;
 pub mod trace;
 pub mod training;
 pub mod transformer_f32;
+pub mod transformer_f32_train;
 pub mod transplant;
 pub mod trit;
 pub mod tune;
