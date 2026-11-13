@@ -776,6 +776,21 @@ MiniLM 12 头、32 key、目标 [0..11]，100 轮 / lr=0.5：
 - 代价是位置表从 1 份变成 12 份（32 × 12 = 384 个 f32 参数）。
 - 结论：**多头目标冲突是共享位置的上限，不是梯度方法的问题**；独立位置 + 解析梯度可完全拟合。
 
+### 完整 f32 transformer 层（LayerNorm/残差/FFN）
+
+真实 MiniLM 一层的权重（Q/K/V、两个 LayerNorm、intermediate/output dense），4 个词向量 token：
+
+| 指标 | 读数 |
+|---|---|
+| 输入范数 | 0.767 / 0.433 / 0.460 / 0.472 |
+| 输出范数 | 11.48 / 11.04 / 11.12 / 11.22 |
+| 输出形状 | 4 × 384 |
+| 有限值 | true |
+
+- `x = LN(x + attn(x))`、`x = LN(x + FFN(x))` 在真实权重上可运行；输出范数被 LayerNorm 拉到 ~11。
+- 结构完整（attention + 残差 + LN + FFN）；**反向传播未接**（forward-only）。
+- attention 是单头（384×384），FFN 隐藏层 1536 维，与 MiniLM 一层一致。
+
 ### 库化：`agree`
 
 上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，

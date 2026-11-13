@@ -38,7 +38,6 @@
 //! ]).unwrap();
 //! let want = Oracle::boolean(2, |b| b[0] != b[1]).unwrap();
 //! assert!(want.exact(&net).unwrap());
-//!
 //! let mut broken = net.clone();
 //! Patch::new(vec![Edit::SetTrit { layer: 0, row: 0, col: 0, to: Trit::Zero }])
 //!     .apply(&mut broken)
@@ -119,6 +118,7 @@ pub mod task;
 pub mod task_merge;
 pub mod trace;
 pub mod training;
+pub mod transformer_f32;
 pub mod transplant;
 pub mod trit;
 pub mod tune;

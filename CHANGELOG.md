@@ -267,6 +267,11 @@
   **matched 12/12**、loss 3.464–3.466 → ≈0.022。共享位置版本最多 11/12——
   多头目标冲突是共享位置的上限，不是梯度方法的问题；代价是位置表从 1 份变成 12 份。
 
+- 完整 f32 transformer 层：新模块 `transformer_f32.rs`（LayerNorm + 残差 + FFN +
+  注意力）。真实 MiniLM 一层的权重、4 个词向量 token：输入范数 0.767/0.433/0.460/0.472，
+  输出 4×384、范数 11.48/11.04/11.12/11.22，全部有限。结构完整；反向传播未接（forward-only）。
+  `tests/transformer_f32.rs` 三条：LayerNorm 归一化、Dense + ReLU、块前向形状。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，
