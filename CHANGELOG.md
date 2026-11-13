@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：阈值对齐后的单层 / 两层对照）
+
+- `examples/editset_aligned.rs`：`--arch single|ffn`，按索引切 valid/test，在 valid 上扫
+  0.01–0.95 选 baseline 准确率最高的阈值，再在 test 上报告 `edit_fixed` / `keep_broken`。
+- 真实读数（872 对，seed 7）：单层 valid 阈值 0.35（95.8%），test 修 22 / 破坏 0；
+  两层 valid 阈值 0.27（92.7%），test 修 0 / 破坏 57。
+- **结论反转**：固定阈值 0.5 时两层修 127 / 破坏 0，对齐后单层反而更好——“两层更好”是
+  阈值选择偏差，网络规模对比必须先对齐阈值。
+- 新增 `docs/WSP-ALIGNED.md`。
+- 未证栏：阈值网格 0.01、valid 262 对；valid/test 按索引切分；只跑 seed 7。
+
 ### Added（trit-wspace：两层 FFN 上的编辑集门禁）
 
 - `examples/editset_ffn.rs`：学生从单层 `query` 换成 MiniLM 的真实两层 FFN
