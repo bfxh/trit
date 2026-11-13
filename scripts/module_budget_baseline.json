@@ -3047,8 +3047,12 @@
       "lines": 119
     },
     {
-      "file": "crates/trit-wspace/examples/stssweep.rs",
-      "lines": 351
+      "file": "crates/trit-wspace/examples/stssweep/main.rs",
+      "lines": 249
+    },
+    {
+      "file": "crates/trit-wspace/examples/stssweep/proj.rs",
+      "lines": 127
     },
     {
       "file": "crates/trit-wspace/examples/trit_train_tasks.rs",

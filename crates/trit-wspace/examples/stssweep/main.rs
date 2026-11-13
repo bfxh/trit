@@ -1,17 +1,15 @@
-//! STS 代理任务上的降维扫描：判据是「判定正确」，不是「复现某个网络」。
+//! STS 代理任务上的降维扫描：判据是「任务排序正确」，不是「复现某个网络」。
 //!
-//! 与 `dimsweep` 的区别：那边问「压到多低还像原来的学生」，这边问「压到多低还能把任务做对」。
-//! 任务沿用 `editset_sts` 的判定式：`cos(forward(a), forward(b)) >= threshold`，教师由
-//! `cos(a, b) >= threshold` 给出（`editset_sts` 的 label 缺省分支）。
-//!
-//! ```bash
-//! cargo run --release -p trit-wspace --example stssweep -- \
-//!   --safetensors model.safetensors --samples 2048 --dims 1,2,4,8,16,32,64,128,384
-//! ```
+//! 任务沿用 `editset_sts` 的余弦判定；指标是**Spearman 秩相关**（对并列鲁棒）。
+//! 跑法：`cargo run --release --example stssweep -- --safetensors model.safetensors`
 
 use serde_json::json;
 use trit_wspace::safetensors::{self, Weights};
 use trit_wspace::{Layer, Net, Trit};
+
+mod proj;
+
+use proj::*;
 
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
 const EMBEDDINGS: &str = "embeddings.word_embeddings.weight";
@@ -73,22 +71,6 @@ fn parse_args() -> Args {
     args
 }
 
-struct Rng(u64);
-
-impl Rng {
-    fn new(seed: u64) -> Self {
-        let state = seed ^ 0x9E37_79B9_7F4A_7C15;
-        Self(if state == 0 { 1 } else { state })
-    }
-
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 >> 12;
-        self.0 ^= self.0 << 25;
-        self.0 ^= self.0 >> 27;
-        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
-    }
-}
-
 fn trit_row(values: &[f32]) -> Vec<Trit> {
     let weights = Weights {
         rows: 1,
@@ -114,109 +96,46 @@ fn cos_trit(left: &[Trit], right: &[Trit]) -> f32 {
     cos_f32(&a, &b)
 }
 
-fn second_moment(embeddings: &Weights, dim: usize, samples: usize, seed: u64) -> Vec<f64> {
-    let mut rng = Rng::new(seed ^ 0x5DEE_CE66);
-    let mut mom = vec![0.0f64; dim * dim];
-    for _ in 0..samples {
-        let row = (rng.next() % embeddings.rows as u64) as usize;
-        let x = &embeddings.values[row * dim..(row + 1) * dim];
-        for (i, &xi) in x.iter().enumerate() {
-            let xi = f64::from(xi);
-            for (j, &xj) in x.iter().enumerate() {
-                mom[i * dim + j] += xi * f64::from(xj);
-            }
+/// 平均秩（并列取平均），供 Spearman 用。
+fn ranks(values: &[f32]) -> Vec<f64> {
+    let mut idx: Vec<usize> = (0..values.len()).collect();
+    idx.sort_by(|a, b| {
+        values[*a]
+            .partial_cmp(&values[*b])
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    let mut out = vec![0.0f64; values.len()];
+    let mut i = 0;
+    while i < idx.len() {
+        let mut j = i;
+        while j + 1 < idx.len() && (values[idx[j + 1]] - values[idx[i]]).abs() < 1e-12 {
+            j += 1;
         }
+        let avg = (i + j) as f64 / 2.0 + 1.0;
+        for t in i..=j {
+            out[idx[t]] = avg;
+        }
+        i = j + 1;
     }
-    let scale = 1.0 / samples as f64;
-    for value in &mut mom {
-        *value *= scale;
-    }
-    mom
+    out
 }
 
-fn identity(dim: usize) -> Vec<Vec<f64>> {
-    (0..dim)
-        .map(|i| {
-            let mut v = vec![0.0f64; dim];
-            v[i] = 1.0;
-            v
-        })
-        .collect()
-}
-
-fn jacobi_eigen(matrix: &[f64], n: usize, sweeps: usize) -> (Vec<f64>, Vec<Vec<f64>>) {
-    let mut m = matrix.to_vec();
-    let mut v = vec![0.0f64; n * n];
-    for i in 0..n {
-        v[i * n + i] = 1.0;
+/// Spearman 秩相关（对并列鲁棒）。
+fn spearman(left: &[f32], right: &[f32]) -> f64 {
+    let (ra, rb) = (ranks(left), ranks(right));
+    let n = ra.len() as f64;
+    let m = (n + 1.0) / 2.0;
+    let (mut num, mut da, mut db) = (0.0, 0.0, 0.0);
+    for (x, y) in ra.iter().zip(&rb) {
+        num += (x - m) * (y - m);
+        da += (x - m) * (x - m);
+        db += (y - m) * (y - m);
     }
-    for _ in 0..sweeps {
-        let mut off = 0.0;
-        for i in 0..n {
-            for j in (i + 1)..n {
-                off += m[i * n + j] * m[i * n + j];
-            }
-        }
-        if off < 1e-22 {
-            break;
-        }
-        for p in 0..n {
-            for q in (p + 1)..n {
-                let apq = m[p * n + q];
-                if apq.abs() < 1e-18 {
-                    continue;
-                }
-                let theta = (m[q * n + q] - m[p * n + p]) / (2.0 * apq);
-                let t = if theta >= 0.0 {
-                    1.0 / (theta + (theta * theta + 1.0).sqrt())
-                } else {
-                    -1.0 / (-theta + (theta * theta + 1.0).sqrt())
-                };
-                let c = 1.0 / (t * t + 1.0).sqrt();
-                let s = t * c;
-                for k in 0..n {
-                    let mkp = m[k * n + p];
-                    let mkq = m[k * n + q];
-                    m[k * n + p] = c * mkp - s * mkq;
-                    m[k * n + q] = s * mkp + c * mkq;
-                }
-                for k in 0..n {
-                    let mpk = m[p * n + k];
-                    let mqk = m[q * n + k];
-                    m[p * n + k] = c * mpk - s * mqk;
-                    m[q * n + k] = s * mpk + c * mqk;
-                }
-                for k in 0..n {
-                    let vkp = v[k * n + p];
-                    let vkq = v[k * n + q];
-                    v[k * n + p] = c * vkp - s * vkq;
-                    v[k * n + q] = s * vkp + c * vkq;
-                }
-            }
-        }
+    if da == 0.0 || db == 0.0 {
+        0.0
+    } else {
+        num / (da * db).sqrt()
     }
-    let mut pairs: Vec<(f64, Vec<f64>)> = (0..n)
-        .map(|j| {
-            (
-                m[j * n + j],
-                (0..n).map(|i| v[i * n + j]).collect::<Vec<f64>>(),
-            )
-        })
-        .collect();
-    pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    pairs.into_iter().unzip()
-}
-
-fn top_components(matrix: &[f64], dim: usize, k: usize, sweeps: usize) -> Vec<Vec<f64>> {
-    let (_, vectors) = jacobi_eigen(matrix, dim, sweeps);
-    vectors.into_iter().take(k.min(dim)).collect()
-}
-
-fn project(x: &[f32], comps: &[Vec<f64>]) -> Vec<f32> {
-    comps
-        .iter()
-        .map(|u| u.iter().zip(x).map(|(a, b)| a * f64::from(*b)).sum::<f64>() as f32)
-        .collect()
 }
 
 /// 单层降维学生：`Layer(rows, k)`，输出仍是 `rows` 维（STS 需要句向量而不是单个标签）。
@@ -303,31 +222,22 @@ fn main() {
             continue;
         };
         let net = reduced_single(&query, dim, &basis);
-        // 三值 cos 的分布与 f32 不同，沿用 f32 的阈值会得到「全判负」的假象。
-        // 改成比较**排序**：取三值 cos 的 top quarter，与教师的 top quarter 比重叠率
-        // （随机期望 0.25）。教师正例排在 pairs 的前 quarter（采样时先 push 正例）。
-        let mut scored: Vec<(usize, f32)> = pairs
-            .iter()
-            .enumerate()
-            .map(|(idx, (a, b, _))| {
-                let ga = net
-                    .forward(&trit_row(&project(a, &basis)))
-                    .expect("forward a");
-                let gb = net
-                    .forward(&trit_row(&project(b, &basis)))
-                    .expect("forward b");
-                (idx, cos_trit(&ga, &gb))
-            })
-            .collect();
-        scored.sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap_or(std::cmp::Ordering::Equal));
-        let quarter_rank = scored.len() / 4;
-        let overlap = scored[..quarter_rank]
-            .iter()
-            .filter(|(idx, _)| *idx < positives)
-            .count();
+        // 三值 cos 与教师 cos 的秩相关：并列天然被平均秩吸收（overlap 在低 k 会被并列伪影污染）。
+        let mut trit_scores: Vec<f32> = Vec::with_capacity(pairs.len());
+        let mut teacher_scores: Vec<f32> = Vec::with_capacity(pairs.len());
+        for (a, b, _) in &pairs {
+            let ga = net
+                .forward(&trit_row(&project(a, &basis)))
+                .expect("forward a");
+            let gb = net
+                .forward(&trit_row(&project(b, &basis)))
+                .expect("forward b");
+            trit_scores.push(cos_trit(&ga, &gb));
+            teacher_scores.push(cos_f32(a, b));
+        }
         results.push(json!({
             "k": k,
-            "top_quarter_overlap": overlap as f64 / quarter_rank.max(1) as f64,
+            "spearman": spearman(&trit_scores, &teacher_scores),
             "trits": net.trit_count(),
         }));
     }
