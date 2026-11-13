@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`examples/agree_real` 真实输入下的压缩保真度）
+
+- 新示例 `examples/agree_real.rs`：不经过 CLI，直接在**真实词向量输入**上量压缩保真度。
+  学生 = `query` 三值层 + readout（第 0 行）；基 = 判据方向 `w_eff = queryᵀ readout` 三值化；
+  输入 = `word_embeddings` 的前 1000 个真实行（三值化，**不是随机三值**）。
+- 读数：
+
+| k | rate | 说明 |
+|---:|---:|---|
+| 1 | **0.596** | 只保留判据方向 |
+| 384 | 1.000 | 恒等（不压缩） |
+
+- 与 `dimsweep` 的 `agree_full`（k=1 时 0.652，edit/keep 子集）量级一致，互相印证：
+  **压到一维在真实词表上保住约六成**，剩下四成是丢掉的非线性。
+- 这补上了 `--agree-from` 缺的「真实输入」一环：随机三值输入只是粗筛，真实词向量给出的是
+  可引用的数字。
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，
