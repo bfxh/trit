@@ -10,15 +10,12 @@
 //! bias    : rows，trit-codec 5 trits/byte
 //! ```
 //!
-//! 与 `trit-codec` 的 `pack::pack` / `unpack_canonical` **逐位一致**；字节序、padding
-//! 规则都沿用该 crate 的线格式契约。本 crate 不是上游 GGUF 的完整实现：未知元数据类型、
+//! 打包与 `trit-codec` **共用** `trit_core::pack` 的同一实现（线格式契约唯一），字节序、padding 规则都沿用该 crate 的线格式契约。本 crate 不是上游 GGUF 的完整实现：未知元数据类型、
 //! 非三值张量、非 2D 张量一律显式报错，不猜。
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use trit_core::Ternary;
-
-mod pack;
 
 const MAGIC: &[u8; 4] = b"GGUF";
 const VERSION: u32 = 3;
@@ -111,11 +108,11 @@ fn tensor_body(tensor: &Tensor) -> Result<Vec<u8>, Error> {
         return Err(Error::Field(tensor.name.clone()));
     }
     let mut out = Vec::with_capacity(tensor_size(tensor.rows, tensor.cols));
-    out.extend_from_slice(&pack::pack(&tensor.trits));
+    out.extend_from_slice(&trit_core::pack::pack(&tensor.trits));
     for scale in &tensor.scales {
         put_f32(&mut out, *scale);
     }
-    out.extend_from_slice(&pack::pack(&tensor.bias));
+    out.extend_from_slice(&trit_core::pack::pack(&tensor.bias));
     Ok(out)
 }
 
@@ -300,7 +297,8 @@ pub fn read(bytes: &[u8]) -> Result<Model, Error> {
         if end > bytes.len() {
             return Err(Error::Tensor(info.name));
         }
-        let trits = pack::unpack_canonical(&bytes[start..start + packed], trit_len)?;
+        let trits = trit_core::pack::unpack_canonical(&bytes[start..start + packed], trit_len)
+            .map_err(|error| Error::Tensor(format!("{}: {error}", info.name)))?;
         let scale_start = start + packed;
         let scales = (0..info.rows)
             .map(|row| {
@@ -308,7 +306,9 @@ pub fn read(bytes: &[u8]) -> Result<Model, Error> {
                 f32::from_le_bytes(bytes[begin..begin + 4].try_into().expect("4 字节"))
             })
             .collect();
-        let bias = pack::unpack_canonical(&bytes[scale_start + info.rows * 4..end], info.rows)?;
+        let bias =
+            trit_core::pack::unpack_canonical(&bytes[scale_start + info.rows * 4..end], info.rows)
+                .map_err(|error| Error::Tensor(format!("{}: {error}", info.name)))?;
         tensors.push(Tensor {
             name: info.name,
             rows: info.rows,

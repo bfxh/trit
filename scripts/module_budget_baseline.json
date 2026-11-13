@@ -600,7 +600,7 @@
     },
     {
       "file": "crates/trit-codec/src/pack.rs",
-      "lines": 423
+      "lines": 92
     },
     {
       "file": "crates/trit-codec/src/plan.rs",
@@ -677,6 +677,10 @@
     {
       "file": "crates/trit-core/src/limits.rs",
       "lines": 172
+    },
+    {
+      "file": "crates/trit-core/src/pack.rs",
+      "lines": 449
     },
     {
       "file": "crates/trit-core/src/parallel.rs",
@@ -791,8 +795,8 @@
       "lines": 322
     },
     {
-      "file": "crates/trit-export/src/pack.rs",
-      "lines": 48
+      "file": "crates/trit-export/src/packmap.rs",
+      "lines": 22
     },
     {
       "file": "crates/trit-export/tests/gguf.rs",
