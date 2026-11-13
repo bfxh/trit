@@ -2983,6 +2983,10 @@
       "lines": 382
     },
     {
+      "file": "crates/trit-wspace/examples/editset_repair_readout.rs",
+      "lines": 326
+    },
+    {
       "file": "crates/trit-wspace/examples/editset_sts.rs",
       "lines": 189
     },
