@@ -1617,9 +1617,9 @@
 },
 {
  "name": "wspace-weight: 忽略权重（等权求和）",
- "file": "crates/trit-wspace/src/task_merge.rs",
- "old": "            .map(|(target, weight)| f64::from(target.to_i8()) * weight)",
- "new": "            .map(|(target, _weight)| f64::from(target.to_i8()))",
+ "file": "crates/trit-wspace/src/task_merge/trim.rs",
+ "old": "        .map(|(target, weight)| f64::from(target.to_i8()) * weight)",
+ "new": "        .map(|(target, _weight)| f64::from(target.to_i8()))",
  "pkg": "trit-wspace",
  "filter": "merge_weight_flips_tie"
 },
@@ -2625,7 +2625,7 @@
 },
 {
  "name": "merge: 加权合并忽略 f32 权重",
- "file": "crates/trit-wspace/src/task_merge.rs",
+ "file": "crates/trit-wspace/src/task_merge/bias.rs",
  "old": "                        weighted += f64::from(value) * f64::from(*weight);",
  "new": "                        weighted += f64::from(value);",
  "pkg": "trit-wspace",
@@ -2633,7 +2633,7 @@
 },
 {
  "name": "merge: 缺失 f32 bias 不清空",
- "file": "crates/trit-wspace/src/task_merge.rs",
+ "file": "crates/trit-wspace/src/task_merge/bias.rs",
  "old": "            let next = if missing {\n                None\n            } else {",
  "new": "            let next = if false {\n                None\n            } else {",
  "pkg": "trit-wspace",

@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`task-merge --trim`，TIES 的裁剪步骤）
+
+- `TrimTop::{Count, Fraction}` + `TrimOptions{top, margin}`：投票前逐坐标按 |Δ| 降序裁剪，
+  `margin` 门槛 `|Σ wᵢ·Δᵢ| < margin` 时整条丢弃并计入 `MergeReport.dropped`；
+  `TrimOptions::default()` 与原 `merge_tasks_weighted_report` 逐位一致。
+- 新入口 `merge_tasks_weighted_trim` / `merge_tasks_weighted_trim_report`。
+- CLI `task-merge --trim K|ratio [--trim-margin M]`，与 `--dare-*` 互斥；输出 `trim{top,margin}`。
+- 模块拆分（模块预算驱动）：`task_merge/{bias,trim}.rs`、
+  `cli/cli_task/{cli_task_trim,cli_task_combine}.rs`。
+- 真实读数（MiniLM `query` 384×384、24,000 坐标）：无 trim `ties=2543/changed=21457`；
+  `--trim 1` `ties=0/changed=24000`；`--trim-margin 1.5` `changed=13429/dropped=10571`；
+  两者叠加 `changed=0/dropped=24000`。XOR + oracle：`--trim-margin 2` 让 `after_loss` 从 3
+  回到 0（`exact=true`）。
+- 新增 `docs/WSP-TIES.md`。
+- 未证栏：合成任务不是真实多任务微调；三值 |Δ| 只有 0/1/2 三档，trim 粒度远粗于 f32 的 top-k%。
+
 ### Added（trit-wspace：`certify` 保持集副作用证书）
 
 - `certify` 模块：编辑前后逐样本比对三值输出，判定
