@@ -16,7 +16,10 @@ use crate::edit::{Edit, Patch};
 use crate::error::Result;
 use crate::net::Net;
 use crate::oracle::Oracle;
-use crate::trit::Trit;
+
+mod scope;
+pub(crate) use scope::candidates;
+use scope::scoped_candidates;
 
 mod energy;
 use energy::energy;
@@ -34,6 +37,8 @@ pub struct RepairOptions {
     pub exhaustive_states: u64,
     /// 候选编辑作用域；`None` 表示全权重穷举。给定时束搜索只在其中挑选。
     pub scope: Option<Vec<Edit>>,
+    /// 是否把行级原语（整行取反、相邻行交换）也放进候选。
+    pub row_ops: bool,
 }
 
 impl Default for RepairOptions {
@@ -44,6 +49,7 @@ impl Default for RepairOptions {
             exhaustive_pairs: 20_000,
             exhaustive_states: 200_000,
             scope: None,
+            row_ops: false,
         }
     }
 }
@@ -248,41 +254,4 @@ fn rank(left: &State, right: &State) -> std::cmp::Ordering {
         .cmp(&right.loss)
         .then_with(|| left.energy.total_cmp(&right.energy))
         .then_with(|| left.key.cmp(&right.key))
-}
-
-/// 候选编辑：有 scope 用 scope，否则全权重穷举。
-pub(crate) fn scoped_candidates(net: &Net, options: &RepairOptions) -> Vec<Edit> {
-    match &options.scope {
-        Some(scope) => scope.clone(),
-        None => candidates(net),
-    }
-}
-
-/// 所有点编辑候选（每个三值位置的另外两个取值）。
-pub(crate) fn candidates(net: &Net) -> Vec<Edit> {
-    let mut out = Vec::new();
-    for (layer, weights) in net.layers().iter().enumerate() {
-        for row in 0..weights.rows() {
-            for col in 0..weights.cols() {
-                let current = weights.trit(row, col).expect("row/col in range");
-                for &to in &Trit::ALL {
-                    if to != current {
-                        out.push(Edit::SetTrit {
-                            layer,
-                            row,
-                            col,
-                            to,
-                        });
-                    }
-                }
-            }
-            let current = weights.bias_trit(row).expect("row in range");
-            for &to in &Trit::ALL {
-                if to != current {
-                    out.push(Edit::SetBias { layer, row, to });
-                }
-            }
-        }
-    }
-    out
 }

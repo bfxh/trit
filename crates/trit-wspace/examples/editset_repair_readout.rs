@@ -3,15 +3,12 @@
 //! 任务与 `editset_gate` 相同（`word_embeddings` 行做输入、f32 `query` 层做教师、
 //! 三值 `query` + 三值读出层做学生），流程：
 //!
-//! 1. `localize` 在 edit 集上选承重行（两级定位）；
-//! 2. 把承重行展开成候选（行内所有 trit 的另两个取值 + bias）；
-//! 3. `repair` 带 `scope` 做束搜索，只在承重行内找最小补丁；
-//! 4. `certify_nets` 同时检查 edit 达成与 keep 保持。
+//! 1. `localize` 选承重行 → 展开成候选（行内所有 trit 的另两个取值 + bias）；
+//! 2. `repair` 带 `scope` 做束搜索 → `certify_nets` 检查 edit 达成与 keep 保持。
 //!
 //! ```bash
 //! cargo run --release -p trit-wspace --example editset_repair_readout -- \
-//!   --safetensors model.safetensors --edit-limit 8 --keep-limit 64 \
-//!   --top-rows 8 --max-edits 2 --beam-width 16
+//!   --safetensors model.safetensors --edit-limit 8 --keep-limit 64 --top-rows 8 --max-edits 2 --beam-width 16
 //! ```
 
 use serde_json::json;
@@ -39,6 +36,7 @@ struct Args {
     top_trits: usize,
     max_edits: usize,
     beam_width: usize,
+    row_ops: bool,
     out: Option<String>,
 }
 
@@ -58,6 +56,7 @@ fn parse_args() -> Args {
         top_trits: 32,
         max_edits: 2,
         beam_width: 16,
+        row_ops: false,
         out: None,
     };
     let mut it = std::env::args().skip(1);
@@ -77,6 +76,7 @@ fn parse_args() -> Args {
             "--max-trits" => args.max_trits = next().parse().expect("max-trits"),
             "--top-trits" => args.top_trits = next().parse().expect("top-trits"),
             "--max-edits" => args.max_edits = next().parse().expect("max-edits"),
+            "--row-ops" => args.row_ops = true,
             "--beam-width" => args.beam_width = next().parse().expect("beam-width"),
             "--out" => args.out = Some(next()),
             other => panic!("未知参数 {other}"),
@@ -273,9 +273,9 @@ fn main() {
     let options = RepairOptions {
         max_edits: args.max_edits,
         beam_width: args.beam_width,
-        exhaustive_pairs: 2_000,
-        exhaustive_states: 200_000,
         scope: Some(scope),
+        row_ops: args.row_ops,
+        ..RepairOptions::default()
     };
     let Some(found) = repair(&student, &edit, &options).expect("repair") else {
         report["repair"] = json!({"found": false, "budget_exhausted": true});

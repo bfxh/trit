@@ -95,6 +95,24 @@ trit-wspace repair broken.wsp --oracle keep.json --trits 0:0:0:-
 2. 与 #465 的候选上界一致（单点最多修 1/8、双点无改善）；
 3. 所以“修复已知错误样本”在 8 个承重行 × 2 点内**不可行，不是预算问题**。
 
+## 行级原语（`--row-ops`）
+
+`RepairOptions.row_ops: bool`：候选里加入 `NegateRow`（整行取反）与相邻 `SwapRows`；
+有 `scope` 时只对 scope 覆盖到的行加（不把全网络 384 行都塞进来）。
+
+读数（`editset_repair_readout`，8 条 edit / 64 条 keep，8 个承重行）：
+
+| 配置 | candidates | found | edits | edit after_loss | keep regressed | 耗时 |
+|---|---|---|---|---|---|---|
+| 无 row-ops（#479） | 6,160 | false | — | — | — | 22.7s |
+| `--row-ops` | 6,160 + 16 | **true** | 2 | 0 | **64** | 7.8s |
+
+读法：
+
+1. 行级原语让 2 点内**可达**：7.8 秒找到 2 条编辑，edit 集全部修好；
+2. 但 keep 集 **64/64 全被破坏**——修复 edit 的代价是整体行为崩塌；
+3. 这正是 `certify_nets` 要抓的：`certified=false`（keep regressed 64）。
+
 ## 未证栏
 
 - 候选限制接口已实现（scope + `--rows`/`--trits`），但还没在 384×384 上用 `localize` 选行跑完整读数；

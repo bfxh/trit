@@ -31,7 +31,6 @@ fn parse_scope_rows(raw: &str) -> Result<Vec<(usize, usize)>, String> {
         })
         .collect()
 }
-
 /// `--trits L:R:C:T,...`（T 为 `-`/`0`/`+`）→ 显式候选。
 fn parse_scope_trits(raw: &str) -> Result<Vec<Edit>, String> {
     raw.split(',')
@@ -99,7 +98,7 @@ fn row_scope(net: &Net, rows: &[(usize, usize)]) -> Vec<Edit> {
 }
 
 pub(super) fn repair(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
+    let parsed = parse(args, &["row-ops"])?;
     let path = one(&parsed, "repair <artifact|-> --oracle <json|->")?;
     let oracle_path = value(&parsed, "oracle")?;
     no_double_stdin(&[path, oracle_path])?;
@@ -116,9 +115,10 @@ pub(super) fn repair(args: &[String]) -> Result<(), String> {
     let options = RepairOptions {
         max_edits: opt_usize(&parsed, "max-edits", 8)?,
         beam_width: opt_usize(&parsed, "beam-width", 64)?,
-        exhaustive_pairs: 20_000,
         exhaustive_states: opt_u64(&parsed, "exhaustive-states", 200_000)?,
         scope,
+        row_ops: parsed.switches.contains("row-ops"),
+        ..RepairOptions::default()
     };
     match ops::repair_net(&net, &oracle, &options).map_err(err)? {
         Some((found, work)) => {
