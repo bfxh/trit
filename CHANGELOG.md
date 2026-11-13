@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（构建基建：worktree 产物落 E: 盘的自动传播）
+
+- `scripts/wt_target.py`（`--all`/`--status`/`--self-test`）：为每个 worktree 幂等生成
+  `.cargo/config.toml`（`target-dir = E:/cargo-target/<worktree>`），修掉"主 worktree
+  手工放覆盖文件、其余 worktree 构建写满 D 盘"的缺口；`.gitignore` 收 `.cargo/config.toml`，
+  `AGENTS.md` 加指引。策略根不存在（CI/其它机器）自动跳过。
+- 本机 `.git/hooks/trit-hooks.py`（不入库）的 post-checkout 同步接入同一逻辑：
+  `git worktree add` 即自动生成。
+- 未证栏：sccache 对不同 target 目录的命中情况未重新实测（`SCCACHE_BASEDIRS` 含
+  `E:/cargo-target`，预期部分命中）；Linux/CI 无策略根，不受影响。
+
 ### Added（trit-wspace：`repair` 的 keep 约束）
 
 - `RepairOptions.keep: Option<Oracle>`：给定时只接受“edit 全对且 keep 全对”的补丁；
