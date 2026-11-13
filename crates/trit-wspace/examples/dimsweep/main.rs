@@ -9,8 +9,7 @@
 //! 输出 JSON：三条曲线 + `minimum`（使 edit_loss=0 且 keep_loss=0 的最小 (k, max_edits, beam_width)）。
 //!
 //!
-//! 与 `editset_gate` 的区别：那边问「补丁能不能同时过 edit/keep」，这边问
-//! **「把思考降到多低还够用」**——宽度、步数、维度必要性一起量。
+//! 与 `editset_gate` 的区别：问的是「把思考降到多低还够用」。
 
 use serde_json::{Value, json};
 use trit_wspace::safetensors;
@@ -19,6 +18,7 @@ mod basis;
 mod ctx;
 mod curve;
 mod evaluate;
+mod f32path;
 mod judge;
 mod options;
 mod order;

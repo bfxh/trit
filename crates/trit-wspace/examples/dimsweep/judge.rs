@@ -2,7 +2,7 @@
 //!
 //! 从 `basis.rs` 拆出：module_budget 台账只收紧、不抬高单文件行数。
 
-use crate::basis::{Sample, dot, project, sign_of, teacher_forward};
+use crate::basis::{dot, teacher_forward};
 use trit_wspace::safetensors::Weights;
 
 /// 判据的形状。
@@ -14,6 +14,8 @@ pub enum Teacher {
     Tanh,
     /// `sign((r1·v)(r2·v))`：两条线性判据相乘（二次型），`w_eff` 不存在。
     TwoTap,
+    /// `sign(readout · sign(query·x))`：判据本身带中间 `sign`，`w_eff` 不再是精确方向。
+    DeepSign,
 }
 
 pub fn parse_teacher(name: &str) -> Teacher {
@@ -21,7 +23,19 @@ pub fn parse_teacher(name: &str) -> Teacher {
         "linear" => Teacher::Linear,
         "tanh" => Teacher::Tanh,
         "two-tap" => Teacher::TwoTap,
+        "deep-sign" => Teacher::DeepSign,
         other => panic!("未知 --teacher {other}（linear | tanh | two-tap）"),
+    }
+}
+
+/// 逐元素三值符号（f32 版，用于把中间层压成 `sign`）。
+pub fn sign_f32(value: f32) -> f32 {
+    if value > 0.0 {
+        1.0
+    } else if value < 0.0 {
+        -1.0
+    } else {
+        0.0
     }
 }
 
@@ -45,60 +59,9 @@ pub fn teacher_score(
             let b = dot(second.expect("two-tap 需要第二读出向量"), &v);
             a * b
         }
-    }
-}
-
-/// 降维 **f32** 网络（权重与输入都不三值化）在给定教师下的准确率。
-///
-/// 三值路径的对照：两者之差就是「三值化 + sign 判决」的代价。对非线性教师也成立，
-/// 所以不能再用 `w_eff` 的线性公式。
-pub fn f32_reduced_accuracy(
-    samples: &[Sample],
-    comps: &[Vec<f64>],
-    query: &Weights,
-    readout: &[f32],
-    second: Option<&[f32]>,
-    dim: usize,
-    kind: Teacher,
-) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let k = comps.len();
-    let mut wk = vec![0.0f64; query.rows * k];
-    for row in 0..query.rows {
-        let w = &query.values[row * dim..(row + 1) * dim];
-        for (i, u) in comps.iter().enumerate() {
-            wk[row * k + i] = u.iter().zip(w).map(|(a, b)| a * f64::from(*b)).sum();
+        Teacher::DeepSign => {
+            let s: Vec<f32> = v.iter().map(|a| sign_f32(*a)).collect();
+            dot(readout, &s)
         }
     }
-    let hit = samples
-        .iter()
-        .filter(|s| {
-            let xk = project(&s.x, comps);
-            let v: Vec<f32> = (0..query.rows)
-                .map(|row| {
-                    let w = &wk[row * k..(row + 1) * k];
-                    w.iter()
-                        .zip(&xk)
-                        .map(|(a, b)| a * f64::from(*b))
-                        .sum::<f64>() as f32
-                })
-                .collect();
-            let score = match kind {
-                Teacher::Linear => dot(readout, &v),
-                Teacher::Tanh => {
-                    let t: Vec<f32> = v.iter().map(|a| a.tanh()).collect();
-                    dot(readout, &t)
-                }
-                Teacher::TwoTap => {
-                    let a = dot(readout, &v);
-                    let b = dot(second.expect("two-tap 需要第二读出向量"), &v);
-                    a * b
-                }
-            };
-            sign_of(score) == s.teacher
-        })
-        .count();
-    hit as f32 / samples.len() as f32
 }

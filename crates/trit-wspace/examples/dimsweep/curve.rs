@@ -1,9 +1,8 @@
 //! dimsweep 的宽度扫描（从 `main.rs` 拆出）。
 
 use crate::basis::{oracle_of, reduced_net};
-use crate::ctx::CurveCtx;
 use crate::evaluate::{agreement_with_full, identity, losses};
-use crate::judge::f32_reduced_accuracy;
+use crate::{ctx::CurveCtx, f32path::f32_reduced_accuracy};
 use serde_json::{Value, json};
 
 pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>, (usize, f32), Vec<Value>) {

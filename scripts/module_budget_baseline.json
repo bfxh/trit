@@ -2972,15 +2972,19 @@
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/curve.rs",
-      "lines": 102
+      "lines": 101
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/evaluate.rs",
       "lines": 107
     },
     {
+      "file": "crates/trit-wspace/examples/dimsweep/f32path.rs",
+      "lines": 66
+    },
+    {
       "file": "crates/trit-wspace/examples/dimsweep/judge.rs",
-      "lines": 104
+      "lines": 67
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/main.rs",
