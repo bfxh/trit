@@ -3011,6 +3011,10 @@
       "lines": 743
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_probe.rs",
+      "lines": 229
+    },
+    {
       "file": "crates/trit-wspace/examples/classifier_real.rs",
       "lines": 187
     },
