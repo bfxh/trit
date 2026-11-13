@@ -21,7 +21,10 @@
 use serde_json::{Value, json};
 use trit_wspace::repair::{RepairOptions, repair};
 use trit_wspace::safetensors::{self, Weights};
-use trit_wspace::{Layer, Net, Oracle, Trit};
+
+mod basis;
+
+use basis::*;
 
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
 const EMBEDDINGS: &str = "embeddings.word_embeddings.weight";
@@ -38,6 +41,7 @@ struct Args {
     pca_samples: usize,
     max_k: usize,
     iterations: usize,
+    basis: String,
     dims: Vec<usize>,
     steps_dims: Vec<usize>,
     max_edits: Vec<usize>,
@@ -65,6 +69,7 @@ fn parse_args() -> Args {
         pca_samples: 2048,
         max_k: 128,
         iterations: 12,
+        basis: "pca".to_string(),
         dims: vec![384, 128, 64, 32, 16],
         steps_dims: vec![32, 16],
         max_edits: vec![1, 2],
@@ -86,6 +91,7 @@ fn parse_args() -> Args {
             "--pca-samples" => args.pca_samples = next().parse().expect("pca-samples"),
             "--max-k" => args.max_k = next().parse().expect("max-k"),
             "--iterations" => args.iterations = next().parse().expect("iterations"),
+            "--basis" => args.basis = next(),
             "--dims" => args.dims = parse_list(&next()),
             "--steps-dims" => args.steps_dims = parse_list(&next()),
             "--max-edits" => args.max_edits = parse_list(&next()),
@@ -97,325 +103,6 @@ fn parse_args() -> Args {
     assert!(!args.safetensors.is_empty(), "需要 --safetensors");
     assert!(args.max_k > 0, "--max-k 必须 > 0");
     args
-}
-
-/// 确定性 xorshift64*。
-struct Rng(u64);
-
-impl Rng {
-    fn new(seed: u64) -> Self {
-        let state = seed ^ 0x9E37_79B9_7F4A_7C15;
-        Self(if state == 0 { 1 } else { state })
-    }
-
-    fn next(&mut self) -> u64 {
-        self.0 ^= self.0 >> 12;
-        self.0 ^= self.0 << 25;
-        self.0 ^= self.0 >> 27;
-        self.0.wrapping_mul(0x2545_F491_4F6C_DD1D)
-    }
-}
-
-fn sign_of(score: f32) -> Trit {
-    if score > 0.0 {
-        Trit::Pos
-    } else if score < 0.0 {
-        Trit::Neg
-    } else {
-        Trit::Zero
-    }
-}
-
-/// 一行 f32 按 absmean 三值化（与 `Weights::to_layer` 同一实现）。
-fn trit_row(values: &[f32]) -> Vec<Trit> {
-    let weights = Weights {
-        rows: 1,
-        cols: values.len(),
-        values: values.to_vec(),
-    };
-    let layer = weights.to_layer().expect("ternarize row");
-    (0..values.len())
-        .map(|col| layer.trit(0, col).expect("trit"))
-        .collect()
-}
-
-fn trit_row_i8(values: &[f32]) -> Vec<i8> {
-    trit_row(values).iter().map(|t| t.to_i8()).collect()
-}
-
-/// 读出层：1×dim 的三值线性层。
-fn readout_layer(readout: &[f32]) -> Layer {
-    Layer::new(1, readout.len(), &trit_row_i8(readout), &[0]).expect("readout layer")
-}
-
-/// f32 教师前向：`query × x`。
-fn teacher_forward(query: &Weights, x: &[f32]) -> Vec<f32> {
-    let mut out = vec![0.0f32; query.rows];
-    for (row, slot) in out.iter_mut().enumerate() {
-        let weights = &query.values[row * query.cols..(row + 1) * query.cols];
-        *slot = weights
-            .iter()
-            .zip(x)
-            .map(|(weight, value)| weight * value)
-            .sum();
-    }
-    out
-}
-
-fn dot(readout: &[f32], values: &[f32]) -> f32 {
-    readout.iter().zip(values).map(|(r, v)| r * v).sum()
-}
-
-/// 一个样本：原始 384 维输入 + 全维 f32 教师的标签。
-#[derive(Clone)]
-struct Sample {
-    x: Vec<f32>,
-    teacher: Trit,
-}
-
-fn full_student(query: &Weights, readout: &[f32]) -> Net {
-    Net::new(vec![
-        query.to_layer().expect("ternary query"),
-        readout_layer(readout),
-    ])
-    .expect("student net")
-}
-
-fn sample_dataset(
-    query: &Weights,
-    embeddings: &Weights,
-    readout: &[f32],
-    args: &Args,
-) -> Vec<Sample> {
-    let dim = query.cols;
-    let mut rng = Rng::new(args.seed);
-    let budget = args.samples.max(args.edit_limit + args.keep_limit);
-    let mut out = Vec::with_capacity(budget);
-    while out.len() < budget {
-        let row = (rng.next() % embeddings.rows as u64) as usize;
-        let x = embeddings.values[row * dim..(row + 1) * dim].to_vec();
-        let teacher = sign_of(dot(readout, &teacher_forward(query, &x)));
-        if teacher == Trit::Zero {
-            continue;
-        }
-        out.push(Sample { x, teacher });
-    }
-    out
-}
-
-/// 真实词向量行的二阶矩 `M = E[x x^T]`（dim×dim，行主序 f64）。
-///
-/// 不去均值：`absmean` 三值化本来就不中心化，且这样降维层不需要常数偏置项
-/// （`w·x ≈ (U^T w)·(U^T x)`），三值偏置不会吃掉一个 f32 常数。
-fn second_moment(embeddings: &Weights, dim: usize, samples: usize, seed: u64) -> Vec<f64> {
-    let mut rng = Rng::new(seed ^ 0x5DEE_CE66);
-    let mut mom = vec![0.0f64; dim * dim];
-    for _ in 0..samples {
-        let row = (rng.next() % embeddings.rows as u64) as usize;
-        let x = &embeddings.values[row * dim..(row + 1) * dim];
-        for (i, &xi) in x.iter().enumerate() {
-            let xi = f64::from(xi);
-            for (j, &xj) in x.iter().enumerate() {
-                mom[i * dim + j] += xi * f64::from(xj);
-            }
-        }
-    }
-    let scale = 1.0 / samples as f64;
-    for value in &mut mom {
-        *value *= scale;
-    }
-    mom
-}
-
-/// Jacobi 特征分解（对称矩阵）：返回按特征值降序的 (特征值, 方向)。
-///
-/// 384x384 的完整分解在这个规模上很快，且基严格正交：不会出现「k 增大反而更差」
-/// 这种非单调伪影（幂迭代 + 一次 Gram-Schmidt 在谱比接近 1 时做不到）。
-fn jacobi_eigen(matrix: &[f64], n: usize, sweeps: usize) -> (Vec<f64>, Vec<Vec<f64>>) {
-    let mut m = matrix.to_vec();
-    let mut v = vec![0.0f64; n * n];
-    for i in 0..n {
-        v[i * n + i] = 1.0;
-    }
-    for _ in 0..sweeps {
-        let mut off = 0.0;
-        for i in 0..n {
-            for j in (i + 1)..n {
-                off += m[i * n + j] * m[i * n + j];
-            }
-        }
-        if off < 1e-22 {
-            break;
-        }
-        for p in 0..n {
-            for q in (p + 1)..n {
-                let apq = m[p * n + q];
-                if apq.abs() < 1e-18 {
-                    continue;
-                }
-                let theta = (m[q * n + q] - m[p * n + p]) / (2.0 * apq);
-                let t = if theta >= 0.0 {
-                    1.0 / (theta + (theta * theta + 1.0).sqrt())
-                } else {
-                    -1.0 / (-theta + (theta * theta + 1.0).sqrt())
-                };
-                let c = 1.0 / (t * t + 1.0).sqrt();
-                let s = t * c;
-                for k in 0..n {
-                    let mkp = m[k * n + p];
-                    let mkq = m[k * n + q];
-                    m[k * n + p] = c * mkp - s * mkq;
-                    m[k * n + q] = s * mkp + c * mkq;
-                }
-                for k in 0..n {
-                    let mpk = m[p * n + k];
-                    let mqk = m[q * n + k];
-                    m[p * n + k] = c * mpk - s * mqk;
-                    m[q * n + k] = s * mpk + c * mqk;
-                }
-                for k in 0..n {
-                    let vkp = v[k * n + p];
-                    let vkq = v[k * n + q];
-                    v[k * n + p] = c * vkp - s * vkq;
-                    v[k * n + q] = s * vkp + c * vkq;
-                }
-            }
-        }
-    }
-    let mut pairs: Vec<(f64, Vec<f64>)> = (0..n)
-        .map(|j| {
-            (
-                m[j * n + j],
-                (0..n).map(|i| v[i * n + j]).collect::<Vec<f64>>(),
-            )
-        })
-        .collect();
-    pairs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
-    pairs.into_iter().unzip()
-}
-
-/// 前 `k` 个主方向（特征值降序）。
-fn top_components(
-    matrix: &[f64],
-    dim: usize,
-    k: usize,
-    sweeps: usize,
-) -> (Vec<Vec<f64>>, Vec<f64>) {
-    let (values, vectors) = jacobi_eigen(matrix, dim, sweeps);
-    let k = k.min(dim);
-    (
-        vectors.into_iter().take(k).collect(),
-        values.into_iter().take(k).collect(),
-    )
-}
-
-/// `x_k = U^T x`（`U` 的每一行是一个主方向）。
-fn project(x: &[f32], comps: &[Vec<f64>]) -> Vec<f32> {
-    comps
-        .iter()
-        .map(|u| u.iter().zip(x).map(|(a, b)| a * f64::from(*b)).sum::<f64>() as f32)
-        .collect()
-}
-
-/// 降维学生：第一层 `rows × k`（`w_k[r][i] = sum_j U[i][j] w[r][j]`），读出层不变。
-fn reduced_net(query: &Weights, readout: &[f32], dim: usize, comps: &[Vec<f64>]) -> Net {
-    let k = comps.len();
-    let base = query.to_layer().expect("ternary query");
-    let bias: Vec<i8> = base.bias().iter().map(|t| t.to_i8()).collect();
-    let mut trits = vec![0i8; query.rows * k];
-    for row in 0..query.rows {
-        let w = &query.values[row * dim..(row + 1) * dim];
-        for (i, u) in comps.iter().enumerate() {
-            let acc: f64 = u.iter().zip(w).map(|(a, b)| a * f64::from(*b)).sum();
-            trits[row * k + i] = if acc > 0.0 {
-                1
-            } else if acc < 0.0 {
-                -1
-            } else {
-                0
-            };
-        }
-    }
-    let first = Layer::new(query.rows, k, &trits, &bias).expect("reduced layer");
-    Net::new(vec![first, readout_layer(readout)]).expect("reduced net")
-}
-
-/// 在给定子空间上构造 oracle（输入投影 + 三值化，标签沿用全维教师）。
-fn oracle_of(samples: &[Sample], comps: &[Vec<f64>]) -> Oracle {
-    let inputs: Vec<Vec<Trit>> = samples
-        .iter()
-        .map(|s| trit_row(&project(&s.x, comps)))
-        .collect();
-    let outputs: Vec<Vec<Trit>> = samples.iter().map(|s| vec![s.teacher]).collect();
-    Oracle::new(inputs, outputs).expect("oracle")
-}
-
-/// 纯 f32 投影标签：只保留「投影」损失，不吃「三值化」损失。
-///
-/// 同一个子空间上，三值路径与 f32 路径的差就是量化代价。
-fn projected_label(
-    x: &[f32],
-    comps: &[Vec<f64>],
-    query: &Weights,
-    readout: &[f32],
-    dim: usize,
-) -> Trit {
-    let xk = project(x, comps);
-    let mut out = 0.0f64;
-    for (row, r) in readout.iter().enumerate() {
-        let w = &query.values[row * dim..(row + 1) * dim];
-        let hidden: f64 = comps
-            .iter()
-            .zip(&xk)
-            .map(|(u, xv)| {
-                let wk: f64 = u.iter().zip(w).map(|(a, b)| a * f64::from(*b)).sum();
-                wk * f64::from(*xv)
-            })
-            .sum();
-        out += f64::from(*r) * hidden;
-    }
-    if out > 0.0 {
-        Trit::Pos
-    } else if out < 0.0 {
-        Trit::Neg
-    } else {
-        Trit::Zero
-    }
-}
-
-fn f32_accuracy(
-    samples: &[Sample],
-    comps: &[Vec<f64>],
-    query: &Weights,
-    readout: &[f32],
-    dim: usize,
-) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let hit = samples
-        .iter()
-        .filter(|s| projected_label(&s.x, comps, query, readout, dim) == s.teacher)
-        .count();
-    hit as f32 / samples.len() as f32
-}
-
-fn losses(net: &Net, edit: &Oracle, keep: &Oracle) -> (usize, usize) {
-    (
-        edit.loss(net).expect("edit loss"),
-        keep.loss(net).expect("keep loss"),
-    )
-}
-
-/// 恒等基（`k == dim` 时就是原全维学生，用原输入）。
-fn identity(dim: usize) -> Vec<Vec<f64>> {
-    (0..dim)
-        .map(|i| {
-            let mut v = vec![0.0f64; dim];
-            v[i] = 1.0;
-            v
-        })
-        .collect()
 }
 
 fn main() {
@@ -430,7 +117,13 @@ fn main() {
     let student = full_student(&query, readout);
 
     // 1) 采样并划分：全维三值学生判错的进 edit，判对的进 keep。
-    let samples = sample_dataset(&query, &embeddings, readout, &args);
+    let samples = sample_dataset(
+        &query,
+        &embeddings,
+        readout,
+        args.samples.max(args.edit_limit + args.keep_limit),
+        args.seed,
+    );
     let mut edit_samples = Vec::new();
     let mut keep_samples = Vec::new();
     let mut disagreement = 0usize;
@@ -468,11 +161,20 @@ fn main() {
 
     // 2) 主方向。
     let moment = second_moment(&embeddings, dim, args.pca_samples, args.seed);
-    let (comps, values) = top_components(&moment, dim, args.max_k.min(dim), args.iterations);
+    let (pca_comps, values) = top_components(&moment, dim, args.max_k.min(dim), args.iterations);
+    let (comps, criterion_cos) = if args.basis == "supervised" {
+        supervised_basis(&query, readout, dim, &pca_comps, args.max_k.min(dim))
+    } else {
+        (pca_comps.clone(), 0.0)
+    };
+    report["basis"] = json!({
+        "kind": args.basis,
+        "criterion_cos_pca1": criterion_cos,
+    });
     let trace: f64 = (0..dim).map(|i| moment[i * dim + i]).sum();
     let total_explained: f64 = values.iter().sum();
     report["pca"] = json!({
-        "components": comps.len(),
+        "components": pca_comps.len(),
         "samples": args.pca_samples,
         "trace": trace,
         "explained_ratio": if trace > 0.0 { total_explained / trace } else { 0.0 },
@@ -526,7 +228,7 @@ fn main() {
 
     // 4) 步数曲线：在降维学生上用带 keep 约束的 repair 修 edit 集。
     let mut steps = Vec::new();
-    let mut minimum: Option<(usize, usize, usize)> = None;
+    let mut minimum: Option<(usize, usize, usize)> = min_k.map(|k| (k, 0, 0));
     for &k in &args.steps_dims {
         if k >= dim || k > comps.len() {
             continue;

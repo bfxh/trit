@@ -2963,8 +2963,12 @@
       "lines": 743
     },
     {
-      "file": "crates/trit-wspace/examples/dimsweep.rs",
-      "lines": 652
+      "file": "crates/trit-wspace/examples/dimsweep/basis.rs",
+      "lines": 389
+    },
+    {
+      "file": "crates/trit-wspace/examples/dimsweep/main.rs",
+      "lines": 354
     },
     {
       "file": "crates/trit-wspace/examples/editset_aligned.rs",
