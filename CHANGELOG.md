@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`Layer::project` 三值基投影）
+
+- 新模块 `src/project.rs`：`Layer::project(&self, basis: &Layer) -> Result<Layer>` —— 用三值基
+  把一层从 `cols` 维压到 `basis.rows()` 维：`out[r][i] = sign(Σ_j basis[i][j] · self[r][j])`，
+  `bias` 逐行保留（它作用在输出行上，与输入维度无关）。
+- 这是 `examples/dimsweep` 实验线的**库化**：那条线证明「投影到判据方向」是唯一有效的压缩方式
+  （线性判据 k=1 全过；STS 排序 k=64 保住全维 88.7%）。现在基本身是一层三值权重，可以被
+  `patch` / `repair` / `certify` 直接处理——这才是「权重空间编程」而不是「实验脚本」。
+- `tests/project.rs` 4 条：恒等基不动、输入维度按 k 缩减、列数不匹配报错、bias 保留。
+- 未证栏：还没接 CLI `project` 子命令；基的构造仍留在 example（`--basis supervised`），没做成
+  独立的 basis 工件格式。
 ### Added（trit-wspace：`examples/stssweep` 换任务判据——STS 排序保真）
 
 - 新示例 `examples/stssweep.rs`：判据从「复现某个网络」换成「在真实任务上正确」。任务沿用

@@ -1,7 +1,4 @@
-//! STS 代理任务上的降维扫描：判据是「任务排序正确」，不是「复现某个网络」。
-//!
-//! 任务沿用 `editset_sts` 的余弦判定；指标是**Spearman 秩相关**（对并列鲁棒）。
-//! 跑法：`cargo run --release --example stssweep -- --safetensors model.safetensors`
+//! STS 代理任务：判据是任务排序正确（Spearman），不是复现某个网络。
 
 use serde_json::json;
 use trit_wspace::safetensors::{self, Weights};
@@ -96,7 +93,6 @@ fn cos_trit(left: &[Trit], right: &[Trit]) -> f32 {
     cos_f32(&a, &b)
 }
 
-/// 平均秩（并列取平均），供 Spearman 用。
 fn ranks(values: &[f32]) -> Vec<f64> {
     let mut idx: Vec<usize> = (0..values.len()).collect();
     idx.sort_by(|a, b| {
@@ -120,7 +116,6 @@ fn ranks(values: &[f32]) -> Vec<f64> {
     out
 }
 
-/// Spearman 秩相关（对并列鲁棒）。
 fn spearman(left: &[f32], right: &[f32]) -> f64 {
     let (ra, rb) = (ranks(left), ranks(right));
     let n = ra.len() as f64;
@@ -138,7 +133,6 @@ fn spearman(left: &[f32], right: &[f32]) -> f64 {
     }
 }
 
-/// 单层降维学生：`Layer(rows, k)`，输出仍是 `rows` 维（STS 需要句向量而不是单个标签）。
 fn reduced_single(query: &Weights, dim: usize, basis: &[Vec<f64>]) -> Net {
     let k = basis.len();
     let base = query.to_layer().expect("ternary query");
@@ -148,13 +142,7 @@ fn reduced_single(query: &Weights, dim: usize, basis: &[Vec<f64>]) -> Net {
         let w = &query.values[row * dim..(row + 1) * dim];
         for (i, u) in basis.iter().enumerate() {
             let acc: f64 = u.iter().zip(w).map(|(a, b)| a * f64::from(*b)).sum();
-            trits[row * k + i] = if acc > 0.0 {
-                1
-            } else if acc < 0.0 {
-                -1
-            } else {
-                0
-            };
+            trits[row * k + i] = (acc > 0.0) as i8 - (acc < 0.0) as i8;
         }
     }
     Net::new(vec![
@@ -171,8 +159,6 @@ fn main() {
     assert_eq!(query.cols, embeddings.cols, "query 列数必须等于词向量维度");
     let dim = query.cols;
 
-    // 1) 采样候选词对，按余弦分位数取平衡的正/负例。
-    //    随机词对的 cos 极少 >= threshold（实测 0.5%），直接按阈值切会得到「全判负」的假高分。
     let mut rng = Rng::new(args.seed);
     let mut cands: Vec<(Vec<f32>, Vec<f32>, f32)> = Vec::with_capacity(args.samples * 2);
     while cands.len() < args.samples * 2 {
@@ -198,7 +184,6 @@ fn main() {
     for c in &cands[..quarter] {
         pairs.push((c.0.clone(), c.1.clone(), false));
     }
-    // 打乱：稳定排序下并列值会偏向「正例在前」，低 k 的取值高度并列，会造出假的 1.0。
     for i in (1..pairs.len()).rev() {
         let j = (rng.next() % (i as u64 + 1)) as usize;
         pairs.swap(i, j);
@@ -207,11 +192,9 @@ fn main() {
     let pos_cut = cands[cands.len() - quarter].2;
     let neg_cut = cands[quarter - 1].2;
 
-    // 2) 主方向。
     let moment = second_moment(&embeddings, dim, args.pca_samples, args.seed);
     let comps = top_components(&moment, dim, args.max_k.min(dim), args.iterations);
 
-    // 3) 每个 k 的任务准确率。
     let mut results = Vec::new();
     for &k in &args.dims {
         let basis = if k >= dim {
@@ -222,7 +205,6 @@ fn main() {
             continue;
         };
         let net = reduced_single(&query, dim, &basis);
-        // 三值 cos 与教师 cos 的秩相关：并列天然被平均秩吸收（overlap 在低 k 会被并列伪影污染）。
         let mut trit_scores: Vec<f32> = Vec::with_capacity(pairs.len());
         let mut teacher_scores: Vec<f32> = Vec::with_capacity(pairs.len());
         for (a, b, _) in &pairs {

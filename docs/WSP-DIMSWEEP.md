@@ -430,3 +430,20 @@ pip install sentence-transformers  # 导出 384 维句向量
 - 降维后的 `trits` 没对齐 WSP 编码体积（这里只报 trit 数）。
 - 必要性排序的跨 seed 稳定性未测。
 - 小样本（edit 8）下的早期读数全在噪声内，已废弃不引用。
+
+## 库化：`Layer::project`
+
+上面十节的结论已经落成库能力：`crates/trit-wspace/src/project.rs` 的 `Layer::project(&basis)`。
+
+```rust
+// 用三值基把一层从 cols 维压到 k 维
+let compressed = layer.project(&basis)?;   // rows × k
+```
+
+语义与 `dimsweep` 里的降维学生一致：`out[r][i] = sign(Σ_j basis[i][j] · self[r][j])`。
+不同之处是**基不再是实验内部的 `Vec<f64>`，而是一层三值权重**——所以它能被 `patch` 编辑、
+被 `repair` 修补、被 `certify` 验证，也就能存成工件、跨模型复用。
+
+`tests/project.rs` 钉了四条不变量：恒等基不动、维度按 k 缩减、列数不匹配报错、bias 保留。
+
+仍未做：CLI `project` 子命令、basis 工件格式。

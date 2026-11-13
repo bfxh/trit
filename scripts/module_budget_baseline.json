@@ -3048,11 +3048,11 @@
     },
     {
       "file": "crates/trit-wspace/examples/stssweep/main.rs",
-      "lines": 249
+      "lines": 243
     },
     {
       "file": "crates/trit-wspace/examples/stssweep/proj.rs",
-      "lines": 127
+      "lines": 126
     },
     {
       "file": "crates/trit-wspace/examples/trit_train_tasks.rs",
@@ -3200,7 +3200,7 @@
     },
     {
       "file": "crates/trit-wspace/src/lib.rs",
-      "lines": 173
+      "lines": 172
     },
     {
       "file": "crates/trit-wspace/src/localize.rs",
@@ -3261,6 +3261,10 @@
     {
       "file": "crates/trit-wspace/src/program.rs",
       "lines": 331
+    },
+    {
+      "file": "crates/trit-wspace/src/project.rs",
+      "lines": 41
     },
     {
       "file": "crates/trit-wspace/src/rebase.rs",
@@ -3477,6 +3481,10 @@
     {
       "file": "crates/trit-wspace/tests/programming.rs",
       "lines": 293
+    },
+    {
+      "file": "crates/trit-wspace/tests/project.rs",
+      "lines": 48
     },
     {
       "file": "crates/trit-wspace/tests/rebase.rs",
