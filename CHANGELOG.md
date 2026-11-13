@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Docs（trit-wspace：`repair` 路线尝试的负结果）
+
+- 尝试把编辑目标从“把权重往 tuned 推”换成“修复已知错误样本”：用 `repair` 在 edit 集上
+  求精确最小补丁，再 `certify_nets` 检查 keep 集。
+- 结果：`repair` 的束搜索在 384×384 上不可行——`edit-limit 4` 超 2 分钟未完成，
+  `edit-limit 1 --beam-width 1` 报 `memory allocation of 147456 bytes failed`（147456 = 384×384）。
+- 替代读数：`localize` 候选上界（#465）——132 个候选内单点最多修 1/8、双点 276 对无改善、
+  keep 破坏 0、候选空间内 `reachable=false`。
+- 新增 `docs/WSP-REPAIR.md`；`editset_repair.rs` 未合并（跑不起来，不留在仓库里）。
+- 未证栏：没有 `repair` 的候选限制接口；3+ 点未搜索；候选空间由 8 行 × 32 trit 限定。
+
 ### Added（trit-wspace：5 单层 seed × 5 随机划分的可信区间）
 
 - 用 5 个单层 tuned seed × 5 个随机划分（共 25 次）复核 `editset_random_split`：
