@@ -1,5 +1,0 @@
-id	fixture	source	official
-R001	text	rule a { condition: true } rule b { condition: a }	HITS:a,b
-R002	text	private rule a { condition: true } rule b { condition: a }	HITS:b
-R003	text	global rule g { condition: false } rule a { condition: true }	HITS:
-R004	text	rule a { condition: true } rule b { condition: false }	HITS:a

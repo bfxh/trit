@@ -2512,7 +2512,7 @@
     },
     {
       "file": "crates/trit-re/src/sigscan.rs",
-      "lines": 309
+      "lines": 343
     },
     {
       "file": "crates/trit-re/src/sigscan/b64.rs",
@@ -2527,24 +2527,12 @@
       "lines": 238
     },
     {
-      "file": "crates/trit-re/src/sigscan/expr.rs",
-      "lines": 189
-    },
-    {
       "file": "crates/trit-re/src/sigscan/matchers.rs",
       "lines": 140
     },
     {
-      "file": "crates/trit-re/src/sigscan/modreg.rs",
-      "lines": 145
-    },
-    {
       "file": "crates/trit-re/src/sigscan/pattern.rs",
       "lines": 122
-    },
-    {
-      "file": "crates/trit-re/src/sigscan/pe2.rs",
-      "lines": 17
     },
     {
       "file": "crates/trit-re/src/sigscan/peprops.rs",
@@ -2559,40 +2547,12 @@
       "lines": 82
     },
     {
-      "file": "crates/trit-re/src/sigscan/rule.rs",
-      "lines": 91
-    },
-    {
       "file": "crates/trit-re/src/sigscan/scan.rs",
-      "lines": 42
+      "lines": 104
     },
     {
       "file": "crates/trit-re/src/sigscan/tests.rs",
       "lines": 280
-    },
-    {
-      "file": "crates/trit-re/src/sigscan/xeval.rs",
-      "lines": 554
-    },
-    {
-      "file": "crates/trit-re/src/sigscan/xfacts.rs",
-      "lines": 155
-    },
-    {
-      "file": "crates/trit-re/src/sigscan/xloop.rs",
-      "lines": 122
-    },
-    {
-      "file": "crates/trit-re/src/sigscan/xscan.rs",
-      "lines": 128
-    },
-    {
-      "file": "crates/trit-re/src/sigscan/xstr.rs",
-      "lines": 66
-    },
-    {
-      "file": "crates/trit-re/src/sigscan/xval.rs",
-      "lines": 239
     },
     {
       "file": "crates/trit-re/src/triage.rs",
@@ -2643,10 +2603,6 @@
       "lines": 196
     },
     {
-      "file": "crates/trit-re/src/yaraparse/y2.rs",
-      "lines": 11
-    },
-    {
       "file": "crates/trit-re/tests/arm64.rs",
       "lines": 79
     },
@@ -2685,10 +2641,6 @@
     {
       "file": "crates/trit-re/tests/yara_b64.rs",
       "lines": 52
-    },
-    {
-      "file": "crates/trit-re/tests/yara_expr_vectors.rs",
-      "lines": 173
     },
     {
       "file": "crates/trit-re/tests/yara_lexer.rs",

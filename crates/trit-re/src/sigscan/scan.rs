@@ -1,7 +1,9 @@
 //! 扫描循环（`impl SigScan`，从 sigscan.rs 拆出守预算）。纪律：命中封顶
 //! 截断 = 不完整（False 折 Unknown）；Unscannable 串整条 Unknown。
 
-use super::{Rule, SigReport, SigScan};
+use super::{EvalCtx, Pattern, Rule, RuleVerdict, SigReport, SigScan};
+use super::{SCAN_BUDGET, eval, find_hex, find_text};
+use trit_core::value::Ternary;
 
 impl<'a> SigScan<'a> {
     pub fn new(rules: &'a [Rule]) -> Self {
@@ -37,6 +39,66 @@ impl<'a> SigScan<'a> {
         entrypoint: Option<u64>,
         pe: Option<&crate::pe::PeInfo>,
     ) -> SigReport {
-        super::xscan::scan_rules(self.rules, data, truncated, entrypoint, pe)
+        let mut rules = Vec::new();
+        for rule in self.rules {
+            // 每个模式的命中偏移（首个起，最多 MAX_HITS 个）+ 扫描完成度
+            //（hex/文本预算耗尽 = 不完整——"未命中只在完整扫描后给出"）
+            let mut occurrences: Vec<(String, Vec<u64>)> = Vec::new();
+            let mut complete = true;
+            let mut has_unscannable = false;
+            for (id, pattern) in &rule.patterns {
+                let (hits, pattern_complete) = match pattern {
+                    Pattern::Hex(hp) => find_hex(data, hp),
+                    Pattern::Text(tp) => find_text(data, tp),
+                    Pattern::Regex(rp) => super::regex::find_all(data, rp, SCAN_BUDGET),
+                    Pattern::Base64(tps) => super::b64::find_union(data, tps),
+                    Pattern::Unscannable(_) => {
+                        // 评估不了的串不能报"没命中"：整条规则按 Unknown 落账
+                        has_unscannable = true;
+                        (Vec::new(), true)
+                    }
+                };
+                complete &= pattern_complete;
+                occurrences.push((id.clone(), hits));
+            }
+            let ctx = EvalCtx {
+                data,
+                truncated,
+                binding: None,
+                entrypoint,
+                pe,
+            };
+            let met = eval(&rule.condition, &occurrences, &ctx);
+            let hits: Vec<(String, u64)> = occurrences
+                .iter()
+                .flat_map(|(id, offs)| offs.iter().map(move |o| (id.clone(), *o)))
+                .collect();
+            let value = if has_unscannable {
+                Ternary::Unknown
+            } else {
+                match met {
+                    Ternary::True => Ternary::True,
+                    Ternary::Unknown => Ternary::Unknown,
+                    Ternary::False if truncated || !complete => Ternary::Unknown,
+                    Ternary::False => Ternary::False,
+                }
+            };
+            rules.push(RuleVerdict {
+                rule: rule.name.clone(),
+                value,
+                hits,
+            });
+        }
+        // 整体 = Kleene OR：任一 True → True；否则有 Unknown → Unknown；
+        // 全 False → False（报警语义：截断的沉默不是清白）。
+        let mut value = Ternary::False;
+        for r in &rules {
+            value = match (value, r.value) {
+                (Ternary::True, _) | (_, Ternary::True) => Ternary::True,
+                (Ternary::Unknown, _) | (_, Ternary::Unknown) => Ternary::Unknown,
+                _ => Ternary::False,
+            };
+        }
+        SigReport { rules, value }
     }
 }

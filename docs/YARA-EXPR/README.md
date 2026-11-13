@@ -1,6 +1,6 @@
 # YARA 完整语义实现包（规范 + 任务卡）
 
-> 状态：**规范 + P0 向量/harness + 接缝实现已入库；pe2 仍占位**（2026-11-14）。本目录的 00–04 是
+> 状态：**规范 + 任务卡；完整实现见 `feat/yara-expr`（PR #484）**（2026-11-14）。本目录的 00–04 是
 > 外部提供的规范原文；`05-TASKS.md` 是按 `docs/AGENT-TASK-STANDARD.md`
 > 整理出的可派发任务卡。**在 P0 基建补齐之前，不要派发实现卡。**
 
@@ -45,28 +45,16 @@ YARA 4.5.4 语义的完整前端 + pe 对象模型**：
 ⇒ **红线 3（错判必须 0）现在无法执行**：没有向量就没有验收。按
 `00-RULES.md` 的红线 1，也不能靠「读规范猜语义」硬写。
 
-### P0 已交付（2026-11-14）
+### 完整实现（交付包，2026-11-14）
 
-- `tools/gen_vectors.py`：用官方 `yara-python 4.5.4` 生成向量（规则源写在
-  脚本里，可复现）；当前 **79 条 expr + 4 条 rule_level**，fixtures =
-  `text` / `bytes256` / `empty`。
-- `crates/trit-re/tests/data/yara_expr/`：TSV + `.hex` fixtures。
-- `crates/trit-re/tests/yara_expr_vectors.rs`：回放 harness，
-  `GAP_CEILING = 74`；当前基线 = **一致 9 / 弃权 74 / 错判 0**
-  （`parse_rules_v2` 占位 `Err`）。
-- `crates/trit-re/src/yaraparse/y2.rs`：解析入口占位。
-- **已知与外部规范的差异**（以向量为准）：官方 4.5.4 实测
-  `"abc" contains ""` 与 `"" contains ""` 都是 MISS（外部规范 §6.2 写
-  「空针恒命中」）；`for any i in (2..1)` 是编译错误（常量区间端点检查）。
-  这些已冻结在 TSV 里。
-- **接缝从零实现**（外部补丁不存在，按 02/03/04 的接口重写）：
-  `expr.rs`（AST）、`xval.rs`（值/哨兵/算术/比较）、`xstr.rs`（字符串算子）、
-  `xfacts.rs`（串事实）、`xloop.rs`（循环/of）、`xeval.rs`（求值）、
-  `xscan.rs`（扫描核心）、`modreg.rs`（模块树）、`rule.rs`（规则类型）、
-  `pe2.rs`（占位）。`scan.rs` 改为调用 `xscan`；`Condition::Expr` 已接入。
-  5 条 `xeval` 单测（算术/三态/字符串/循环/of/截断）全绿；全仓 193 测试通过。
-- 仍缺：**2732 条全集向量**（当前 83 条可复现最小集）与 `pe2` 的 T20–T25 实现；
-  P1 前端（`y2`）仍占位，所以回放基线保持 9/74/0。
+- 分支 **`feat/yara-expr`**（PR **#484**）：52 文件 / 10384 行 / **277 测试**；
+  规格见仓库 `docs/YARA-EXPR.md`，测试见 `crates/trit-re/tests/yara_expr*.rs`
+  与 `tests/fixtures/yara_expr_rules.yar`。
+- 交付包读数：`yara_diff.py` 178 规则 × 92 个真实 PE = **DIFF 0**；
+  `yara_expr_probe.py` **631 条**期望不一致 0；`yara_pe_walk.py`
+  OK 53803 / ABSTAIN 689 / DIFF 0（92 个样本未打包，复算命令见
+  `docs/YARA-EXPR.md` 第六节）。
+- 本目录只保留规范与任务卡；此前的最小集/接缝重写**已撤销**（不采用）。
 
 ## 3. 执行顺序
 

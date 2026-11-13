@@ -1,9 +1,11 @@
-//! 三值条件求值（从 sigscan.rs 拆出，控制单文件行数预算）：Kleene AND/OR/NOT
-//! + for-of 全集迭代；`Unknown` 是证据缺失，绝不折叠成假。
+//! 三值条件求值（从 sigscan.rs 拆出，控制单文件行数预算）：
+//! Kleene AND/OR/NOT + for-of 全集迭代（操作数解析在 [`super::resolve`]）。
+//! 弃权纪律：`Unknown` 是"证据缺失"，绝不折叠成假。
 
 use super::resolve::{Resolved, resolve};
 use super::{Condition, ForBound};
 use trit_core::value::Ternary;
+
 /// 求值上下文：扫描数据（filesize / uintN 的来源）+ 截断标志 +
 /// for-of 循环的当前串绑定（occurrences 的下标）+ 入口点文件偏移
 ///（调用方从可执行头解析传入；`None` = 上下文缺失，entrypoint 弃权）+
@@ -170,8 +172,6 @@ pub(super) fn eval(
                 .count()
                 >= *n,
         ),
-        // 完整表达式树由 xeval 求值；旧求值器只如实弃权。
-        Condition::Expr(_) => Ternary::Unknown,
     }
 }
 
