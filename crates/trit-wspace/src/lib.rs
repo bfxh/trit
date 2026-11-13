@@ -32,7 +32,6 @@
 //! 一个已经学会 XOR 的小网络被打坏一格；修补应只改一个三值：
 //! ```
 //! use trit_wspace::{Edit, Layer, Net, Oracle, Patch, RepairOptions, Trit, repair};
-//!
 //! let net = Net::new(vec![
 //!     Layer::new(2, 2, &[-1, -1, -1, -1], &[-1, 1]).unwrap(),
 //!     Layer::new(1, 2, &[-1, 1], &[-1]).unwrap(),
@@ -71,6 +70,7 @@ pub mod analyze;
 pub mod artifact_shard;
 pub mod attention;
 pub mod attention_f32;
+pub mod attention_f32_independent;
 pub mod attention_f32_joint;
 pub mod attention_f32_train;
 pub mod attention_learn;
