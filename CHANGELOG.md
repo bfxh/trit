@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`editset_bound`，候选空间内的 repair 上界）
+
+- `examples/editset_bound.rs`：复用 `editset_gate` 的真实输入协议（`word_embeddings` 行 +
+  f32 `query` 教师），先用 `localize` 两级定位缩到承重行与 top 单点，再对单点/双点
+  用 edit ⊕ keep 双集合验证，给出「最少改几格能达成 edit 集」的上界。
+- 真实读数（MiniLM 384×384，8 条 edit / 64 条 keep）：localize 8 行、512 个探测位置、
+  132 个去重候选；单点最优 `row 262 col 3 → 0` 把 edit_loss 8→7（keep 破坏 0）；
+  276 对双点全部不优于单点；候选空间内 `reachable=false`。
+- 对照 `editset_gate`：10,128 trits 的合成 Δ 修 3/8、破坏 24/64 —— 改动量与副作用同向增长。
+- 新增 `docs/WSP-BOUND.md`。
+- 未证栏：候选空间由 `top-rows × top-trits` 限定，不代表全局不可达；未跑真实束搜索 `repair`。
+
 ### Added（trit-wspace：`editset_gate` 真实输入上的编辑集门禁）
 
 - `examples/editset_gate.rs`：不依赖 transformers，用 MiniLM `word_embeddings` 的真实 384 维行
