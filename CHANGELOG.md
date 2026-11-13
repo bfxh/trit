@@ -2,6 +2,41 @@
 
 ## [Unreleased]
 
+### Added（trit-re：YARA 表达式语言 + pe 对象模型）
+
+- 条件语言从比较子集升级为表达式语言：算术 / 位运算
+  `+ - * \ % & | ^ << >> ~`、一元 `-`、括号、官方优先级；
+  `for <量词> i in (a..b)` 及遍历枚举 / 数组 / 字典，作用域与嵌套；
+  动态下标 `pe.sections[i].name`；字符串算子 `contains` `icontains`
+  `startswith` `istartswith` `endswith` `iendswith` `iequals` `matches`。
+- pe 对象模型：导入 / 导出 / 资源 / 版本信息 / 数据目录 / Rich 头 /
+  `pdb_path`，照官方解析顺序镜像；按序号导入的函数名（winsock、oleaut32
+  的内置序号表）；`pe.imports` / `pe.exports` / `pe.import_rva` 等函数。
+  延迟导入与签名未建模，按名字弃权。
+- 三态纪律：官方编译错误（除零、常量溢出、非法移位、类型不匹配、
+  `for … of` 自嵌套等）= 整条规则 `Unsupported` 并给理由；缺 PE 上下文、
+  模型外字段、扫描未完、求值燃料耗尽 = 弃权，不折成假。
+- 既有子集：旧解析器真能求值的规则仍由它求值。**判据有变的地方**都是
+  与官方实测不一致的修正：`pe.is_dll()` 返回 `characteristics & 0x2000`；
+  `not` 罩未定义比较不再命中；`"\x41"` 字面量按官方转义读；字符串扫描
+  没扫完时 `not $a` / `#a == 0` 从命中改为弃权；`for … of` 套
+  `for … of` 从命中改为 `Unsupported`；下标超出 C `int` 时照官方截断。
+- 递归深度设闸（括号 64、表达式树 256、循环 4、正则分组 64），顶到上限
+  的形状在 1 MiB 栈上跑完；基线在深括号 / 长 `not` 链上会栈溢出。
+- 新脚本 `scripts/yara_expr_probe.py`（测试期望逐条问官方）、
+  `scripts/yara_pe_walk.py`（从官方对象树反推规则对拍）；新文档
+  `docs/YARA-EXPR.md`。新代码全部进新文件，module_budget 不抬台账。
+- 判据：`cargo test -p trit-re` = 277 全绿（194 → 277）；官方 yara-python
+  4.5.4 对拍——178 规则 × 92 样本 MATCH 92 / DIFF 0 / SUBSET-GAP 12；
+  631 条测试期望不一致 0；对象树遍历 OK 53803 / 弃权 689 / DIFF 0；
+  clippy / fmt / module_budget / hazard / secret / docs_hygiene 全过。
+- 未证栏：DIFF 0 只对上述对拍集成立。已知未修的不一致——旧字符串扫描
+  `nocase` 对正则串只折叠数据一侧（官方命中、这里不命中）；四种写法会让
+  整份规则文件解析失败；旧路径上若干官方拒绝的写法这里宽松处理。
+  SUBSET-GAP 的 96 个弃权全部是串落在扫描预算外（1 MB 以上样本）。
+  `pdb_path` 的长度上限取 Linux 版官方的值，Windows 版未测。private 串
+  的报告侧隐藏未对官方命令行工具核过。全部登记在 YARA-EXPR.md 第七节。
+
 ### Added（trit-re：YARA `private` 串 / `.name` 字符串比较 / `pe.rich_signature.*`）
 
 - `private` 串从"记名弃权"升级为官方语义：匹配与条件引用照常

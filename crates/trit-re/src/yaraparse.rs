@@ -29,10 +29,10 @@
 //! - 注释：`//` 行注释与 `/* */` 块注释（词法器识别引号内的注释字符——
 //!   字符串里出现 `//` 是合法内容）。
 //!
-//! ## 如实不支持（规则 → Unsupported，不猜）
+//! ## 表达式语言（[`xparse`]，见 `docs/YARA-EXPR.md`）
 //!
-//! 算术表达式（`filesize + 1`）、字符串运算符（`contains` 等）、
-//! `import` 的模块语义、hex 串上的 `xor`/`fullword` 修饰。
+//! 上面的旧条件解析器接不住的规则（算术 / 位运算、`for … in`、字符串函数、
+//! pe 对象路径）转交表达式引擎；两边都拒绝才是 `Unsupported`（带原因）。
 //!
 //! ```
 //! use trit_re::yaraparse::parse_rules;
@@ -52,12 +52,12 @@
 
 use crate::sigscan::{Pattern, Rule};
 
-// 条件表达式解析（拆出守 800 行预算）；`#`/`@` 叶子在 cond_tail。
-mod cond;
+mod cond; // 条件表达式解析（拆出守预算）；`#`/`@` 叶子在 cond_tail
 mod cond_cmp;
 mod cond_leaf;
 mod cond_tail;
 mod rulebuild;
+mod xparse; // 表达式语言：旧解析器接不住的条件由它接
 
 /// 单条规则的解析结局：可评估，或不可评估（带原因）。
 #[derive(Debug, Clone)]
@@ -82,15 +82,11 @@ pub struct ParsedFile {
 /// 解析 YARA 规则文件文本。结构级错误（花括号不平衡等）返回 `Err`；
 /// 单条规则内的问题走 `Unsupported` 不拖累其他规则。
 pub fn parse_rules(text: &str) -> Result<ParsedFile, String> {
-    let toks = lex(text)?;
-    let mut parser = Parser { toks, pos: 0 };
-    parser.parse_file()
+    Parser::with_conditions(lex(text)?, text).parse_file()
 }
-// ── 词法（lex.rs）──────────────────────────────────────────────────────
 
 mod lex;
-// 串值解析与修饰符消费（从本文件拆出守预算）。
-mod valuemod;
+mod valuemod; // 串值解析与修饰符消费（从本文件拆出守预算）
 
 use lex::{Tok, lex};
 
@@ -99,6 +95,8 @@ use lex::{Tok, lex};
 struct Parser {
     pub(super) toks: Vec<Tok>,
     pub(super) pos: usize,
+    /// 表达式引擎用的条件视图（按规则名取）。
+    pub(super) xconds: xparse::Conditions,
 }
 
 impl Parser {

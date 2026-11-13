@@ -81,7 +81,7 @@ pub(crate) enum Instr {
 }
 
 // ── 解析器（递归下降）：alt → concat → repeat → atom ─────────────────
-
+mod depth; // 分组嵌套闸（递归下降的爆栈面）
 /// NFA 指令数上限（{n,m} 展开与嵌套量词的爆炸闸）。
 const MAX_PROG: usize = 8192;
 
@@ -413,7 +413,7 @@ fn merge_escape_class(e: u8, set: &mut [bool; 256]) {
 
 /// 编译正则体为 VM 程序；不支持 / 超预算如实 `Err`（→ 串记名弃权）。
 pub(super) fn compile(body: &str, nocase: bool) -> Result<RegexPat, String> {
-    let ast = parse(body)?;
+    let ast = depth::check(body).and_then(|()| parse(body))?;
     let mut prog = Vec::new();
     emit(&ast, &mut prog)?;
     prog.push(Instr::Match);
@@ -567,7 +567,7 @@ pub(super) fn find_all(data: &[u8], re: &RegexPat, budget: u64) -> (Vec<u64>, bo
     (hits, true)
 }
 
-enum Run {
+pub(super) enum Run {
     Hit,
     Miss,
     Exhausted,
@@ -575,7 +575,7 @@ enum Run {
 
 /// 单起点运行：线程表按优先序逐字节推进。
 /// 终止 = 获胜 rank 归零（不可能再被超越）或线程全灭。
-fn run_at(
+pub(super) fn run_at(
     data: &[u8],
     re: &RegexPat,
     p: usize,

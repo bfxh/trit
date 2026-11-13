@@ -6,37 +6,34 @@ use super::resolve::{Resolved, resolve};
 use super::{Condition, ForBound};
 use trit_core::value::Ternary;
 
-/// 求值上下文：扫描数据（filesize / uintN 的来源）+ 截断标志 +
-/// for-of 循环的当前串绑定（occurrences 的下标）+ 入口点文件偏移
-///（调用方从可执行头解析传入；`None` = 上下文缺失，entrypoint 弃权）+
-/// PE 模块信息（`pe.*` 子集属性求值；`None` = 非 PE / 缺上下文，弃权）。
+/// 求值上下文：扫描数据、截断标志、for-of 当前串绑定（occurrences 下标）、
+/// 入口点文件偏移（`None` = 上下文缺失，弃权）、PE 模块信息（`None` =
+/// 非 PE / 缺上下文，弃权）、表达式引擎的 pe 对象树（整次扫描共用）、
+/// 每条串的扫描是否半途而止（预算耗尽 / 命中封顶；表达式引擎据此弃权）。
 pub(super) struct EvalCtx<'d, 'p> {
     pub(super) data: &'d [u8],
     pub(super) truncated: bool,
     pub(super) binding: Option<usize>,
     pub(super) entrypoint: Option<u64>,
     pub(super) pe: Option<&'p crate::pe::PeInfo>,
+    pub(super) tree: &'p super::expr::PeLazy<'d>,
+    pub(super) partial: &'p [bool],
 }
 
-impl EvalCtx<'_, '_> {
-    pub(super) fn with_binding(&self, index: usize) -> EvalCtx<'_, '_> {
+impl<'d, 'p> EvalCtx<'d, 'p> {
+    pub(super) fn with_binding(&self, index: usize) -> EvalCtx<'d, 'p> {
         EvalCtx {
-            data: self.data,
-            truncated: self.truncated,
             binding: Some(index),
-            entrypoint: self.entrypoint,
-            pe: self.pe,
+            ..*self
         }
     }
 }
 
 use super::kleene::{bool3, kleene_and, kleene_not, kleene_or};
 
-/// 条件求值（三值 Kleene；基于每模式的命中偏移表；操作数解析三态
-/// `Resolved`/`resolve` 在 [`super::resolve`]——**确定的未定义 ≠ 证据
-/// 缺失**，弃权绝不折叠成假）。
-/// `True` = 判真；`False` = 完整证据下的判假；`Unknown` = 证据不足
-///（不可求值的操作数 / 循环体弃权）——绝不把弃权折叠成假。
+/// 条件求值（三值 Kleene；基于每模式的命中偏移表；操作数解析三态在
+/// [`super::resolve`]——**确定的未定义 ≠ 证据缺失**，弃权绝不折叠成假）。
+/// `True` = 判真；`False` = 完整证据下的判假；`Unknown` = 证据不足（绝不折叠成假）。
 pub(super) fn eval(
     condition: &Condition,
     occurrences: &[(String, Vec<u64>)],
@@ -133,6 +130,7 @@ pub(super) fn eval(
             .map(|c| eval(c, occurrences, ctx))
             .fold(Ternary::False, kleene_or),
         Condition::Not(inner) => kleene_not(eval(inner, occurrences, ctx)),
+        Condition::Expr(expr) => super::expr::run(expr, occurrences, ctx),
         Condition::OfAny { prefix } => {
             bool3(set(prefix).iter().any(|i| !occurrences[*i].1.is_empty()))
         }
