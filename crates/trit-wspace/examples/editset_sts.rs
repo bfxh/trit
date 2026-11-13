@@ -1,18 +1,13 @@
 //! 真句向量上的编辑集门禁：用本地 MiniLM 编码的真实句向量做 pair 判定。
 //!
-//! 与 `editset_gate` 的区别：输入不再是 `word_embeddings` 的行，而是
-//! `transformers` 编码出的 384 维**句向量**（由 `encode_sts.py` 生成 pairs JSON）；
-//! 判定不再是单向量读出，而是两个句向量在 `query` 层输出空间里的余弦。
-//!
-//! - **教师**：全精度句向量 `cos(a, b) >= threshold`；
-//! - **学生**：句向量三值化 → 三值 `query` 层 → 两个 384 维输出取余弦；
-//! - **edit 集** = 学生当前判错的对（编辑必须改对）；
-//! - **keep 集** = 学生当前判对的对（编辑必须保持不变）。
+//! 与 `editset_gate` 的区别：输入是 `transformers` 编码出的 384 维**句向量**
+//! （由 `encode_sts_pairs.py` 生成 pairs JSON），判定是两个句向量在 `query` 层
+//! 输出空间里的余弦：教师用全精度 `cos(a, b) >= threshold`，学生用三值化句向量；
+//! edit 集 = 学生当前判错的对（必须改对），keep 集 = 判对的对（必须保持不变）。
 //!
 //! ```bash
-//! cargo run --release -p trit-wspace --example editset_sts -- \
-//!   --pairs sts-pairs.json --safetensors model.safetensors \
-//!   --tuned tuned.safetensors --threshold 0.5
+//! cargo run --release -p trit-wspace --example editset_sts -- --pairs sts-pairs.json \
+//!   --safetensors model.safetensors --tuned tuned.safetensors --threshold 0.5
 //! ```
 
 use serde_json::{Value, json};
@@ -142,7 +137,11 @@ fn main() {
         let a = vec(item, "a");
         let b = vec(item, "b");
         assert_eq!(a.len(), query.cols, "句向量维度与 query 列数不一致");
-        let teacher = cos_f32(&a, &b) >= args.threshold;
+        let teacher = match item.get("label").and_then(Value::as_str) {
+            Some("positive") => true,
+            Some("negative") => false,
+            _ => cos_f32(&a, &b) >= args.threshold,
+        };
         if teacher {
             teacher_positive += 1;
         }

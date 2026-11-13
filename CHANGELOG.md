@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：更难的对，`encode_sts_pairs.py` 与 85 对读数）
+
+- `scripts/encode_sts_pairs.py`：134 句、85 对人工标签（25 正 / 60 负），覆盖细粒度差异
+  （垫子 vs 沙发、踢 vs 接）、否定（is vs is not）、长句改写与跨主题；`editset_sts` 优先用
+  pairs 里的 `label`，没有时回退余弦阈值。
+- 真实读数（MiniLM 85 对，合成 Δ 10,128 trits）：阈值 0.3/0.5/0.8 下基线 40/45、47/38、59/26
+  正确；edit 集 45 / 38 / 26，补丁后 edit_fixed 1 / 6 / 1、keep_broken 0。
+- 对照同义改写集（120 对，edit 集 0–5）：难度上来后 edit 集从 0–5 涨到 26–45，
+  合成 Δ 在 0.5 阈值下修好 6 / 38，代价仍为 0。
+- 未证栏：句子仍是手写模板，不是 STS benchmark；三值学生只对 55%，缺的是真实标注数据。
+
 ### Added（trit-wspace：`editset_sts`，真句向量上的编辑集门禁）
 
 - `examples/editset_sts.rs`：读 `transformers` 编码出的 384 维句向量 pairs JSON，
