@@ -2991,8 +2991,12 @@
       "lines": 76
     },
     {
+      "file": "crates/trit-wspace/examples/dimsweep/order.rs",
+      "lines": 120
+    },
+    {
       "file": "crates/trit-wspace/examples/dimsweep/prune.rs",
-      "lines": 88
+      "lines": 74
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/steps.rs",

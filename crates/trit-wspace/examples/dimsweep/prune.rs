@@ -1,12 +1,13 @@
-//! dimsweep 的稀疏化曲线：只保留 `|w_eff|` 最大的 top-m 列，其余列置零。
+//! dimsweep 的稀疏化曲线：只保留 top-m 列，其余列置零。
 //!
 //! 与 `curve.rs` 的投影降维对照：投影让所有列都参与（只是被压扁），稀疏化只让少数列参与。
-//! 同一个 m 上两者的差距，就是「是压缩方式错了，还是信息本来就不够」的判据。
+//! 四种排序（`order.rs`）共用同一张 m 曲线，用来判断「`w_eff` 是不是最优排序」。
 
 use crate::basis::{oracle_of, readout_layer};
 use crate::ctx::CurveCtx;
 use crate::evaluate::{agreement_with_full, identity, losses};
-use serde_json::{Value, json};
+use crate::order::{ORDERS, order};
+use serde_json::{Map, Value, json};
 use trit_wspace::safetensors::Weights;
 use trit_wspace::{Layer, Net, Trit};
 
@@ -33,25 +34,6 @@ pub fn pruned_net(query: &Weights, readout: &[f32], dim: usize, keep: &[usize]) 
     Net::new(vec![first, readout_layer(readout)]).expect("pruned net")
 }
 
-/// 按 `|w_eff|` 降序返回列索引。
-pub fn column_order(query: &Weights, readout: &[f32], dim: usize) -> Vec<usize> {
-    let mut score = vec![0.0f64; dim];
-    for (row, r) in readout.iter().enumerate() {
-        let w = &query.values[row * dim..(row + 1) * dim];
-        for (j, value) in w.iter().enumerate() {
-            score[j] += f64::from(*r) * f64::from(*value);
-        }
-    }
-    let mut order: Vec<usize> = (0..dim).collect();
-    order.sort_by(|a, b| {
-        score[*b]
-            .abs()
-            .partial_cmp(&score[*a].abs())
-            .unwrap_or(std::cmp::Ordering::Equal)
-    });
-    order
-}
-
 /// 实际参与前向的非零 trit 数（置零列不算）。
 pub fn nonzero_trits(net: &Net) -> usize {
     net.layers()
@@ -60,29 +42,33 @@ pub fn nonzero_trits(net: &Net) -> usize {
         .sum()
 }
 
-/// 稀疏化曲线：每个 m 报 edit/keep 与对全维学生的保真度。
-pub fn prune_curve(cx: &CurveCtx) -> Vec<Value> {
+/// 稀疏化曲线：每种排序一张 m 表。
+pub fn prune_curve(cx: &CurveCtx) -> Value {
     let dim = cx.dim;
-    let order = column_order(cx.query, cx.readout, dim);
     let basis = identity(dim);
     let edit = oracle_of(cx.edit, &basis);
     let keep = oracle_of(cx.keep, &basis);
-    PRUNES
-        .iter()
-        .filter(|m| **m <= dim)
-        .map(|&m| {
-            let net = pruned_net(cx.query, cx.readout, dim, &order[..m]);
-            let (edit_loss, keep_loss) = losses(&net, &edit, &keep);
-            json!({
-                "m": m,
-                "edit_loss": edit_loss,
-                "keep_loss": keep_loss,
-                "edit_acc": edit.accuracy(&net).expect("acc"),
-                "keep_acc": keep.accuracy(&net).expect("acc"),
-                "agree_full": agreement_with_full(&net, cx.samples, &basis, cx.student),
-                "keep_cols": m,
-                "nonzero_trits": nonzero_trits(&net),
+    let mut out = Map::new();
+    for kind in ORDERS {
+        let order = order(kind, cx.samples, cx.query, cx.readout, dim);
+        let rows: Vec<Value> = PRUNES
+            .iter()
+            .filter(|m| **m <= dim)
+            .map(|&m| {
+                let net = pruned_net(cx.query, cx.readout, dim, &order[..m]);
+                let (edit_loss, keep_loss) = losses(&net, &edit, &keep);
+                json!({
+                    "m": m,
+                    "nonzero_trits": nonzero_trits(&net),
+                    "edit_loss": edit_loss,
+                    "keep_loss": keep_loss,
+                    "edit_acc": edit.accuracy(&net).expect("acc"),
+                    "keep_acc": keep.accuracy(&net).expect("acc"),
+                    "agree_full": agreement_with_full(&net, cx.samples, &basis, cx.student),
+                })
             })
-        })
-        .collect()
+            .collect();
+        out.insert(kind.label().to_string(), json!(rows));
+    }
+    Value::Object(out)
 }
