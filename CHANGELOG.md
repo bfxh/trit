@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：两层 FFN 上的编辑集门禁）
+
+- `examples/editset_ffn.rs`：学生从单层 `query` 换成 MiniLM 的真实两层 FFN
+  （`intermediate.dense` 1536×384 + `output.dense` 384×1536），`--tuned` 分别 diff 两层后合并成
+  layer 0/1 的补丁；输出与 `editset_sts` 相同的 `certificate`。
+- `scripts/train_ffn.py`：协议级微调两层 FFN（STE 三值化），3 seed valid 0.8576 / 0.8739 / 0.8680
+  （base 0.7107 / 0.7240 / 0.7463）。
+- 真实读数（872 对，3 seed）：0.3 阈值 `keep_broken` 41.0（29–47，sd 8.49）、`edit_fixed` 0；
+  0.5 阈值 `edit_fixed` **127.0（117–133，sd 7.12）**、`keep_broken` 0；0.8 阈值 `edit_fixed` 4.33。
+- **阈值迁移**：两层把有利区间从 0.3 推到 0.5（单层 0.5 阈值修 0/破坏 31，两层修 127/破坏 0）——
+  表达力更强 ≠ 全阈值更好。
+- 新增 `docs/WSP-FFN.md`。
+- 未证栏：WSP1 无 GELU/LayerNorm/残差；训练是协议级；只用了 layer 0 的两层 FFN。
+
 ### Added（trit-wspace：全量 STS benchmark + 5 seed 置信区间）
 
 - `encode_sts_bench.py --limit 0`：benchmark test 全量 1,379 行 → **872 对**（338 正 / 534 负，
