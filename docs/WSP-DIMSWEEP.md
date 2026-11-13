@@ -363,6 +363,47 @@ deep-sign）都是 `min_k = null`。所以「k=1 零违规」是**线性判据�
 所以「三值化本身不行」要改成「三值化有损失但可量化，且降维到 32–64 维的代价可接受」。
 **这是整条线唯一一个正面的可行域结论**：不是「能不能降维」，而是「降到 1/6 时能保住近九成」。
 
+## 读十二：真实 STS 数据为何没跑成（负结果）
+
+`stssweep` 用的是 MiniLM **词向量随机配对**，不是真实句对。这一节记录把它换成真实 STS 的
+尝试与失败原因，避免以后有人把代理数字当基准。
+
+### 查到了什么
+
+本机 HF 缓存里确实有真实数据：
+
+```text
+~/.cache/huggingface/datasets/mteb___stsbenchmark-sts/default/0.0.0/<sha>/
+  stsbenchmark-sts-train.arrow
+  stsbenchmark-sts-validation.arrow
+  stsbenchmark-sts-test.arrow
+```
+
+### 两道坎
+
+| # | 阻碍 | 证据 |
+|---|---|---|
+| 1 | 读不了 arrow | `python -c "import pyarrow"` → `ModuleNotFoundError: No module named pyarrow` |
+| 2 | 编不出句向量 | 本地无 `transformers` / `torch`；`stssweep` 吃的是 384 维向量，不是文本 |
+
+第 2 条是根本性的：即便解出 `sentence1/sentence2` 文本，没有编码器就变不出一对 384 维向量。
+**这两道坎决定了：当前环境里「真实 STS」不可达，词对代理不是偷懒，是唯一能跑通的选择。**
+
+### 所以那些数字怎么读
+
+- Spearman 0.631（全维）、k=64 的 88.7% 相对保真——**只在「词对余弦」这个代理任务上成立**。
+- 真实 STS 句对的语义结构更复杂，这个数大概率会降；降多少正好是「三值化在真实任务上的代价」，
+  目前无从得知。
+
+### 解锁路径（任一项即可）
+
+```text
+pip install pyarrow            # 解出 sentence1/sentence2/score
+pip install sentence-transformers  # 导出 384 维句向量
+→ 生成 pairs JSON（格式同 editset_sts：{"pairs":[{"a":[...],"b":[...],"label":"positive"}]}）
+→ 给 stssweep 加 --pairs 即可跑，判据与指标都不用改
+```
+
 ## 结论
 
 

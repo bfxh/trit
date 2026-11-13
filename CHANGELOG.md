@@ -54,6 +54,17 @@
 - 所以「三值化不行」要改成「三值化有损失但可量化，且降维到 32–64 维的代价可接受」。
 - 未证栏更新：k=1 的 Spearman 0.366 仍受并列压缩（三值 cos 取值少），只能说「低 k 的排序
   信息确实少」，不能当精确值；数据仍是词对代理。
+- **尝试换真实 STS 数据：不可达（负结果）**。本机 HF 缓存里确实有 `mteb___stsbenchmark-sts`
+  （`stsbenchmark-sts-{train,validation,test}.arrow`），但两道坎都过不去：
+  1. `python` 无 `pyarrow`（`ModuleNotFoundError: No module named pyarrow`），读不了 arrow；
+  2. 即使解出句子文本，本地无 `transformers` / `torch`，**无法把句子编码成 384 维句向量**
+     （`stssweep` 吃的是句向量，不是文本）。
+  ⇒ 当前环境里「真实 STS」做不成，词对代理是能跑通的最优替代；这两个数**不能**当作真实
+  STS 基准读数引用。
+- 后续路径（拿到任一项即可解锁）：装 `pyarrow` 解出 sentence1/sentence2/score → 用
+  `sentence-transformers` 导出 384 维句向量 JSON → 给 `stssweep` 加 `--pairs`（格式同
+  `editset_sts`）即可直接跑；不需要改判据或指标。
+  信息确实少」，不能当精确值；数据仍是词对代理。
   AUC 类指标）；只测了 `readout_row = 0` 对应的 `query` 层。
 ### Added（trit-wspace：`examples/dimsweep` 降维运行扫描）
 
