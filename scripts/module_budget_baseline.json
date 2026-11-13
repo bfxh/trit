@@ -2972,7 +2972,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/editset_sts.rs",
-      "lines": 190
+      "lines": 189
     },
     {
       "file": "crates/trit-wspace/examples/program_xor.rs",
