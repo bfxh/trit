@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（三值 QAT：真实数据集全链——训练 + 工件 + 红队）
+
+- `examples/spam_redteam.rs`：UCI SMS Spam（5,574 条真实短信）→ 字符 n-gram
+  三值特征（自造）→ QAT 三值 MLP `4096→128→1`（`TernaryDense`+`Ste::Clipped`，
+  hinge，Adam×2；行 absmean 初始 scale 是收敛关键）→ 分层评测（acc/P/R/F1，
+  自造）→ 导出 WSP 工件（与 QAT 推理逐位一致）→ 比特翻转红队。
+- 读数：QAT 测试 acc 0.940 / F1 0.750；**0.19% trit 翻转把 F1 打掉 73%**
+  （判别式分类器对工件篡改远比生成式 MLP 链脆弱，k 大后退化为常量预测器）
+  ⇒ 三值安全分类工件必须配完整性保护与加载拒绝。文档 `docs/WSP-SPAM-QAT.md`。
+- 全程纯 Rust（训练禁 Python 硬门一致）；数据集下载直链登记 `docs/DATASETS.md` A0。
+
+
 ### Added（安全：模型侧红队——比特翻转攻击读数）
 
 - `examples/redteam_flip.rs`：真实开源模型（EleutherAI/pythia-70m，F16

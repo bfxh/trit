@@ -3007,6 +3007,10 @@
       "lines": 287
     },
     {
+      "file": "crates/trit-wspace/examples/spam_redteam.rs",
+      "lines": 391
+    },
+    {
       "file": "crates/trit-wspace/examples/trit_train_tasks.rs",
       "lines": 727
     },
@@ -3104,7 +3108,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/safe_path.rs",
-      "lines": 56
+      "lines": 55
     },
     {
       "file": "crates/trit-wspace/src/cli/usage.rs",
