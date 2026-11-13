@@ -4,6 +4,12 @@
 > 本机磁盘：`D:` 23.7 GB 空闲、`E:` 4.4 GB（99% 满）、`C:` 15.2 GB。
 > ⚠️ **E: 已接近满，数据集一律落 `D:/KF/trit-data/`**；大批量前先看 `scripts/fetch_textures.py` 的磁盘预检（<5 GB 停）。
 
+## A0. 文本 / 安全分类（三值 QAT 直接用）
+
+| 数据集 | 规模 | 许可 | 访问方式（已验） | 备注 |
+|---|---|---|---|---|
+| **UCI SMS Spam Collection** | 5,574 条短信（747 spam） | CC BY-SA 3.0 | `curl -o smsspam.zip https://archive.ics.uci.edu/static/public/228/sms+spam+collection.zip` → 解压得 `SMSSpamCollection`（`ham/spam<TAB>text`） | ✅ 已实测下载 + 训练读数见 `docs/WSP-SPAM-QAT.md`；落数据盘 `trit-data/sms-spam/` |
+
 ## A. 材质 / 纹理（N5 直接用）
 
 | 站点 | 内容量 | 许可 | 访问方式（已验） | 备注 |
