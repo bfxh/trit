@@ -13,9 +13,9 @@ pub fn now_ms() -> u64 {
 }
 
 /// 给一条记录 JSON 加 `ts`。
-pub fn attach(value: &mut Value) {
-    if let Some(map) = value.as_object_mut() {
-        map.insert("ts".to_string(), serde_json::json!(now_ms()));
+pub fn attach(value: &mut Value, timestamp: Option<u64>) {
+    if let (Some(timestamp), Some(map)) = (timestamp, value.as_object_mut()) {
+        map.insert("ts".to_string(), serde_json::json!(timestamp));
     }
 }
 

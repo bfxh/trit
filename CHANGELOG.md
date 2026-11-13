@@ -209,6 +209,12 @@
   `tests/attention.rs` 两条：权重和为 1 + dominant、等分时均匀。边界：单头、无位置编码；
   Q/K/V 是三值化代理，不是原始 f32 attention。
 
+- 真实规模统计（`examples/real_stats`）：128 个真实词向量行，1000 次 bootstrap。
+  accuracy 0.547 [0.469, 0.633]；cost 143,406 [143,199, 143,598]；
+  flip_rate 0.200 [0.159, 0.244]；lost_rate 0.082 [0.055, 0.112]。
+  cost 的 CI 很窄（样本间计算量几乎恒定），accuracy / flip_rate 的 CI 仍宽
+  （约 16 / 8 个点）——128 样本不足以收窄，需要更大样本。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，

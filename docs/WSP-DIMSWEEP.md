@@ -639,6 +639,22 @@ MiniLM 的 query 层 + readout，32 个真实词向量行，教师 = f32 `sign(r
 - 边界：单头、无位置编码、无多头拼接；Q/K/V 来自 MiniLM 的 query/key/value 层三值化，
   不是原始 f32 attention。
 
+### 真实规模统计（`real_stats`）
+
+128 个真实词向量行，1000 次 bootstrap（有放回重采样，LCG，无外部依赖）：
+
+| 指标 | 均值 | 95% CI |
+|---|---|---|
+| accuracy | 0.547 | [0.469, 0.633] |
+| cost（乘法/样本） | 143,406 | [143,199, 143,598] |
+| flip_rate（逐位扰动翻转比例） | 0.200 | [0.159, 0.244] |
+| lost_rate（由对变错比例） | 0.082 | [0.055, 0.112] |
+
+- cost 的 CI 极窄（±200）：这批样本的计算量几乎恒定，延迟由结构决定。
+- accuracy / flip_rate 的 CI 仍宽（约 16 / 8 个点）——128 样本不足以收窄，
+  要引用更精确的结论需要更大样本。
+- 与 32 样本的展示性读数一致（accuracy ~0.55、cost ~143k、flip_rate ~0.20）。
+
 ### 库化：`agree`
 
 上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，

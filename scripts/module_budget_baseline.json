@@ -2968,7 +2968,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/attention_real.rs",
-      "lines": 73
+      "lines": 67
     },
     {
       "file": "crates/trit-wspace/examples/bias_e2e.rs",
@@ -3077,6 +3077,10 @@
     {
       "file": "crates/trit-wspace/examples/real_analysis.rs",
       "lines": 123
+    },
+    {
+      "file": "crates/trit-wspace/examples/real_stats.rs",
+      "lines": 138
     },
     {
       "file": "crates/trit-wspace/examples/stssweep/main.rs",
