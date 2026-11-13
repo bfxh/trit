@@ -2971,6 +2971,10 @@
       "lines": 279
     },
     {
+      "file": "crates/trit-wspace/examples/editset_sts.rs",
+      "lines": 190
+    },
+    {
       "file": "crates/trit-wspace/examples/program_xor.rs",
       "lines": 88
     },
