@@ -2815,6 +2815,10 @@
       "lines": 250
     },
     {
+      "file": "crates/trit-re/tests/yara_expr_offset.rs",
+      "lines": 20
+    },
+    {
       "file": "crates/trit-re/tests/yara_expr_pe.rs",
       "lines": 427
     },

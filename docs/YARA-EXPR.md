@@ -310,7 +310,7 @@ DIFF（两边都下结论而结论相反）在上述对拍集上是 0。下面�
 
 **拒绝（官方能编译，trit `Unsupported`）**
 
-- 浮点数；`!a` 匹配长度；`@a["x"]`；`matches /…/s` 里依赖 `.` 匹配换行
+- 浮点数；`!a` 匹配长度；`matches /…/s` 里依赖 `.` 匹配换行
   的写法；`\B`；超过第四节上限的嵌套。
 
 **宽松（官方编译错误，trit 求值或弃权）**——都在旧引擎路径上，本轮没有
@@ -344,6 +344,7 @@ DIFF（两边都下结论而结论相反）在上述对拍集上是 0。下面�
 | `"hello" matches /HELLO/i` | 不支持 | HIT |
 | `$r = /HELLO/ nocase` 对 `hello` | MISS | HIT（模式与数据两侧都折叠） |
 | 单条规则里的 `/…/i`、hex `|`、多余 `)` | 整份文件 Err | 该条 Unsupported |
+| `@a["x"] == 0` | Unsupported | 可编译；下标非整数 → undefined（比较为假） |
 | 串在扫描预算外时的 `not $a`、`#a == 0` | HIT | 官方 MISS；现在 UNKNOWN |
 | `for … of` 套 `for … of` | HIT | 编译错误 / `Unsupported` |
 | `pe.sections[4294967296].name == ".text"` | MISS | HIT |

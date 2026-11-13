@@ -2,12 +2,10 @@
 //! 命中表的可信度口径与既有 `resolve.rs` 一致：截断输入 / 命中封顶
 //! （[`MAX_HITS`]）时"没找到"与"数量"都不可信 → 弃权；"找到了"是单调
 //! 正证据，照常判真。
-
 use super::node::PeLazy;
 use super::{Expr, Rel, Sid, num, strfunc};
 use crate::sigscan::MAX_HITS;
 use crate::sigscan::eval::EvalCtx;
-
 /// 运行期值。`Undef` = 官方的 undefined（确定的）；`Unknown` = 弃权。
 #[derive(Debug, Clone)]
 pub(super) enum V<'a> {
@@ -18,7 +16,6 @@ pub(super) enum V<'a> {
     Undef,
     Unknown,
 }
-
 /// 布尔上下文转换：整数非零、字符串非空；未定义与弃权原样透传。
 pub(super) fn truth(value: V) -> V {
     match value {
@@ -28,7 +25,6 @@ pub(super) fn truth(value: V) -> V {
         other => other,
     }
 }
-
 /// 严格算子的失败归宿：任一侧确定未定义 → 未定义（另一侧是什么都救不
 /// 回来，所以压过弃权）；否则弃权。
 pub(super) fn strict_fail<'a>(a: &V, b: &V) -> V<'a> {
@@ -38,7 +34,6 @@ pub(super) fn strict_fail<'a>(a: &V, b: &V) -> V<'a> {
         V::Unknown
     }
 }
-
 /// 单条规则一次求值的总预算（单位 ≈ 一个表达式节点；函数调用与正则
 /// 另按工作量加收）。耗尽 = 弃权——官方会真的跑完，这里不陪跑。
 /// 2000 万大约对应"逐字节循环扫 4 MB"。
@@ -281,7 +276,12 @@ impl<'a> Env<'a> {
                 }
             }
             Expr::Offset { sid, nth } => {
-                let nth = self.int(nth)?;
+                let nth = match self.eval(nth) {
+                    V::Int(n) => n,
+                    V::Bool(b) => i64::from(b),
+                    V::Unknown => return Ok(V::Unknown),
+                    _ => return Ok(V::Undef),
+                };
                 let hits = self.hits(*sid)?;
                 let slot = usize::try_from(nth).ok().and_then(|n| n.checked_sub(1));
                 match slot.map(|n| hits.get(n)) {

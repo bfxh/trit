@@ -205,7 +205,7 @@ impl Parser<'_> {
         }
         let nth = self.boolean()?;
         self.expect_p("]")?;
-        self.want_int(&nth, "`@a[…]` 的下标")?;
+        // 官方不查下标类型：@a["x"] / @a[1.5] 能编译，求值给 undefined。
         let kids = [nth.depth];
         let nth = nth.expr;
         self.node(Expr::Offset { sid, nth }, Ty::Int, true, &kids)
