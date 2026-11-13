@@ -508,6 +508,28 @@ trit-wspace diagnose <artifact|-> --oracle <json|-> [--budget N] [--top K]
 `tests/diagnose.rs` 四条测试钉住三态与 CLI 端到端（完整 XOR → `ok`、打坏一格 →
 `repairable`、`max_edits=0` → `not-repairable`、命令输出 `verdict=ok`）。
 
+### 组件清单与能力归属
+
+`inventory <artifact|->` 静态数结构：每层 `rows/cols/trits`、非零偏置、死行（全零权重），
+以及神经元 / trit / bias 总数。
+
+`attribute <artifact|-> --oracle <json|-> [--mode flip|zero] [--layer N] [--row N]
+[--max-params N] [--top K]` 逐参数算「改它失去什么」：
+
+| 字段 | 含义 |
+|---|---|
+| `lost` | 改前对、改后错的样本（失去的能力） |
+| `gained` | 改前错、改后对 |
+| `changed` | 输出变化的样本（含错→错） |
+| `specificity` | `lost / changed`；`1.0` 表示只影响它该影响的样本 |
+| `sole` | 该参数是某能力的唯一支撑 |
+| `specialists` | `specificity = 1.0` 且 `lost ≤ 4` 的参数（专才） |
+
+「能力」由相同的 `lost` 样本集合定义，不需要语义标签；`capabilities` 列出每种能力及其
+支撑参数。成本是 `参数数 × 样本数` 次前向，用 `--max-params` / `--layer` / `--row` 限流。
+`tests/inventory.rs` 钉住 XOR 上的计数与单参数归属（col0 lost=6、col1 lost=4、3 个能力、
+col1 被标为专才、col0 是其能力的唯一支撑）。
+
 ### 库化：`agree`
 
 上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，

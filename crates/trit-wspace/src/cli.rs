@@ -14,12 +14,15 @@ use crate::wire;
 
 mod cli_agree_stats;
 mod cli_artifact_shard;
+mod cli_attribute;
 mod cli_block;
 mod cli_certify;
 mod cli_diagnose;
 mod cli_diff;
+mod cli_explain;
 mod cli_gguf;
 mod cli_gradient;
+mod cli_inventory;
 mod cli_learned;
 mod cli_merge;
 mod cli_probe;
@@ -72,7 +75,9 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "train-proposer" => cli_learned::train_proposer(&args[1..]),
         "propose-learned" => cli_learned::propose_learned(&args[1..]),
         "propose-gradient" => cli_gradient::propose_gradient(&args[1..]),
-        "explain" => cmd_explain(&args[1..]),
+        "explain" => cli_explain::explain_cmd(&args[1..]),
+        "inventory" => cli_inventory::inventory_cmd(&args[1..]),
+        "attribute" => cli_attribute::attribute_cmd(&args[1..]),
         "probe" => cli_probe::probe_cmd(&args[1..]),
         "diagnose" => cli_diagnose::diagnose_cmd(&args[1..]),
         "localize" => cmd_localize(&args[1..]),
@@ -447,25 +452,6 @@ fn perform_patch(
         });
     }
     emit(&output)
-}
-
-fn cmd_explain(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(
-        &parsed,
-        "explain <artifact|-> --oracle <json|-> --sample N [--top K]",
-    )?;
-    let oracle_path = value(&parsed, "oracle")?;
-    let sample_raw = value(&parsed, "sample")?;
-    let sample = sample_raw
-        .parse::<usize>()
-        .map_err(|_| format!("--sample 需要非负整数，得到 `{sample_raw}`"))?;
-    let top = opt_usize(&parsed, "top", 16)?;
-    no_double_stdin(&[path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let explanation = crate::explain::explain_sample(&net, &oracle, sample, top).map_err(err)?;
-    emit(&wire::sample_explanation_to_value(&explanation))
 }
 
 fn cmd_localize(args: &[String]) -> Result<(), String> {

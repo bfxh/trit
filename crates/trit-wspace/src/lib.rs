@@ -26,9 +26,7 @@
 //!   [`mod@rebase`] 把针对旧工件写的补丁三方重放到已经前进的工件上（冲突逐条报告）；
 //!   [`mod@transplant`] 把一个隐藏单元（入边 + 偏置 + scale + 出边）整体搬到另一个网络。
 //! - 搜索层：[`mod@repair`] 不走梯度，在离散空间里找精确最小补丁；[`mod@analyze`] 对每个单点
-//!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`mod@explain`] 解释单个样本
-//!   为什么错、哪些单点编辑能让它翻转/变对；[`mod@probe`] 做行级消融测行为漂移（大网读取）；
-//!   [`mod@localize`] 在承重行内做 trit 级定位（行 → 权重两级读取）；
+//!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`mod@explain`] 解释单个样本为什么错、哪些单点编辑能让它翻转/变对；[`mod@probe`] 做行级消融测行为漂移（大网读取）；[`mod@localize`] 在承重行内做 trit 级定位（行 → 权重两级读取）；
 //!   [`merge`] 负责消掉隐藏单元置换对称性后再合并；[`mod@task`] 做三值任务向量投票合并（两者都保留可选 f32 偏置）；
 //!   [`mod@dare`] 做 DARE 的三值对应物：按种子确定性丢弃差分 trit，重标度吸收进 scale。
 //!
@@ -89,6 +87,7 @@
 pub mod agree;
 pub mod analyze;
 pub mod artifact_shard;
+pub mod attribution;
 pub mod audit;
 pub mod certify;
 pub mod cli;
@@ -100,6 +99,7 @@ pub mod diagnose;
 pub mod edit;
 pub mod error;
 pub mod explain;
+pub mod inventory;
 pub mod learned;
 pub mod localize;
 pub mod manifest;

@@ -139,6 +139,18 @@
   `max_edits=0` → `not-repairable`、CLI 端到端输出 `verdict=ok`。
 - 为守住 `cli.rs` 台账把 `probe` 命令拆到 `cli/cli_probe.rs`。
 
+- 组件清单与能力归属：
+  - `inventory`：静态数每层 `rows/cols/trits`、非零偏置、死行（全零权重），
+    以及神经元 / trit / bias 总数。
+  - `attribute`：逐参数（权重 + 偏置）翻转或置零，重算整个验证集，记录
+    `lost`（改前对、改后错的样本）、`gained`、`changed`；按 `lost` 集合分组为「能力」，
+    给出 `specificity = lost/changed` 与 `sole`（唯一支撑该能力）；`specialists`
+    列出 `specificity = 1.0` 且只影响 ≤4 个样本的参数。
+  - CLI：`inventory <artifact|->`、`attribute <artifact|-> --oracle <json|->
+    [--mode flip|zero] [--layer N] [--row N] [--max-params N] [--top K]`。
+  - `tests/inventory.rs` 三条测试：层/神经元/trit 计数、死行与非零偏置、
+    单参数能力归属（col0 lost=6、col1 lost=4、3 个能力、专才与唯一支撑）。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，

@@ -3099,6 +3099,10 @@
       "lines": 202
     },
     {
+      "file": "crates/trit-wspace/src/attribution.rs",
+      "lines": 273
+    },
+    {
       "file": "crates/trit-wspace/src/audit.rs",
       "lines": 603
     },
@@ -3112,7 +3116,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 610
+      "lines": 596
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_agree_stats.rs",
@@ -3121,6 +3125,10 @@
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",
       "lines": 66
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_attribute.rs",
+      "lines": 69
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_block.rs",
@@ -3139,12 +3147,20 @@
       "lines": 21
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_explain.rs",
+      "lines": 24
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_gguf.rs",
       "lines": 161
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_gradient.rs",
       "lines": 51
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_inventory.rs",
+      "lines": 29
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_learned.rs",
@@ -3245,6 +3261,10 @@
     {
       "file": "crates/trit-wspace/src/explain.rs",
       "lines": 136
+    },
+    {
+      "file": "crates/trit-wspace/src/inventory.rs",
+      "lines": 82
     },
     {
       "file": "crates/trit-wspace/src/learned.rs",
@@ -3509,6 +3529,10 @@
     {
       "file": "crates/trit-wspace/tests/invariants.rs",
       "lines": 469
+    },
+    {
+      "file": "crates/trit-wspace/tests/inventory.rs",
+      "lines": 88
     },
     {
       "file": "crates/trit-wspace/tests/learned.rs",
