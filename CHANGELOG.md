@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`repair` 的行级原语 `--row-ops`）
+
+- `RepairOptions.row_ops: bool`：候选加入 `NegateRow`（整行取反）与相邻 `SwapRows`；
+  有 `scope` 时只对 scope 覆盖到的行加（`same_coord` 也补了行级分支）。
+- CLI `repair --row-ops`；`tests/repair_scope.rs` 新增“行级原语能撤销一次整行取反”。
+- 真实读数（8 条 edit / 64 条 keep、8 个承重行）：无 row-ops → `found:false`（22.7s）；
+  `--row-ops` → **`found:true`、2 条编辑、edit after_loss 0、keep regressed 64**（7.8s）。
+- 结论：行级原语让 2 点内**可达**，但 keep 全毁——修复 edit 的代价是整体行为崩塌，
+  `certified=false`；需要“keep 约束下的 repair”才可用。
+- `docs/WSP-REPAIR.md` 增加行级原语节。
+- 未证栏：没有整块替换；keep 全毁说明这个解不可接受。
+
 ### Added（trit-wspace：`localize` 选行 + scoped repair 的真实读数）
 
 - `examples/editset_repair_readout.rs`：`editset_gate` 任务 + `localize` 选 8 个承重行 +

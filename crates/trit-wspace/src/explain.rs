@@ -69,7 +69,7 @@ pub fn explain_sample(
     let want = oracle.outputs()[index].clone();
     let got = net.forward(&input)?;
     let before_loss = oracle.loss(net)?;
-    let candidates = repair::candidates(net);
+    let candidates = repair::candidates(net, false);
     let evaluated = candidates.len();
 
     let mut preliminary = Vec::with_capacity(evaluated);
