@@ -3028,7 +3028,15 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_task.rs",
-      "lines": 704
+      "lines": 674
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_task/cli_task_combine.rs",
+      "lines": 50
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_task/cli_task_trim.rs",
+      "lines": 71
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_wsp2.rs",
@@ -3184,7 +3192,11 @@
     },
     {
       "file": "crates/trit-wspace/src/task_merge.rs",
-      "lines": 420
+      "lines": 339
+    },
+    {
+      "file": "crates/trit-wspace/src/task_merge/bias.rs",
+      "lines": 100
     },
     {
       "file": "crates/trit-wspace/src/task_merge/dare.rs",
@@ -3193,6 +3205,10 @@
     {
       "file": "crates/trit-wspace/src/task_merge/report.rs",
       "lines": 78
+    },
+    {
+      "file": "crates/trit-wspace/src/task_merge/trim.rs",
+      "lines": 100
     },
     {
       "file": "crates/trit-wspace/src/transplant.rs",
@@ -3401,6 +3417,10 @@
     {
       "file": "crates/trit-wspace/tests/task_weight.rs",
       "lines": 371
+    },
+    {
+      "file": "crates/trit-wspace/tests/ties.rs",
+      "lines": 318
     },
     {
       "file": "crates/trit-wspace/tests/tile_edit.rs",

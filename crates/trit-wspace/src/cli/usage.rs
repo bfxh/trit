@@ -2,7 +2,7 @@ pub(super) const USAGE: &str = "\
 trit-wspace <command>
   read <artifact|-> [--out <path>]
   verify <artifact|-> --oracle <json|-> [--limit N]
-  task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--out <path>]
+  task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--trim K|--trim-margin M] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--out <path>]
   script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]
   certify <artifact|-> (--keep <oracle|-> | --keep-samples N [--seed S]) (--patch <json|-> | --edited <artifact|->) [--edit <oracle|->] [--allow N] [--limit N] [--strict] [--out <path>] [--certificate <path>]
   patch <artifact|-> --patch <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>] [--out <path>]

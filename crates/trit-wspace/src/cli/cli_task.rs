@@ -5,9 +5,13 @@ use serde_json::{Value, json};
 use crate::edit::Patch;
 use crate::{task_merge, to_wsp, wire};
 
+mod cli_task_combine;
+mod cli_task_trim;
+pub(crate) use cli_task_combine::task_combine;
+
 use super::{
-    emit, err, load_net, load_oracle, no_double_stdin, one, opt_u64, opt_usize, parse, req_f32,
-    req_usize, value, write_out,
+    emit, err, load_net, load_oracle, no_double_stdin, opt_u64, opt_usize, parse, req_f32,
+    req_usize, write_out,
 };
 
 pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
@@ -48,6 +52,8 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
         .transpose()
         .map_err(|_| "--dare-per-task 需要数字".to_string())?;
     let dare_seed = opt_u64(&parsed, "dare-seed", 0)?;
+    let trim =
+        cli_task_trim::TrimChoice::parse(&parsed, dare_rate.is_some() || dare_per_task.is_some())?;
     let mut weights = parsed
         .values
         .get("weight")
@@ -130,9 +136,13 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
     let ones = vec![1.0_f32; tasks.len()];
     let effective_weights = weights.as_deref().unwrap_or(&ones);
     let (merged, merge_report) = if dare_rate.is_none() && dare_per_task.is_none() {
-        let (net, report) =
-            task_merge::merge_tasks_weighted_report(&base, &tasks, effective_weights)
-                .map_err(err)?;
+        let (net, report) = task_merge::merge_tasks_weighted_trim_report(
+            &base,
+            &tasks,
+            effective_weights,
+            &trim.options,
+        )
+        .map_err(err)?;
         (net, Some(report))
     } else {
         let (net, report) = match (dare_rate, dare_per_task) {
@@ -181,6 +191,7 @@ pub(super) fn task_merge(args: &[String]) -> Result<(), String> {
         "dare_rate": dare_rate,
         "dare_per_task": dare_per_task,
         "dare_seed": dare_seed,
+        "trim": trim.to_json(),
         "summary": wire::net_summary(&merged),
         "patch": wire::patch_to_value(&patch),
         "cost": wire::cost_to_value(&patch.cost(&base)),
@@ -501,7 +512,7 @@ pub(super) fn task_scale(args: &[String]) -> Result<(), String> {
     }
 }
 
-fn parse_lambdas(raw: &str) -> Result<Vec<f32>, String> {
+pub(super) fn parse_lambdas(raw: &str) -> Result<Vec<f32>, String> {
     if raw.is_empty() {
         return Err("--lambdas 不能为空".into());
     }
@@ -512,47 +523,6 @@ fn parse_lambdas(raw: &str) -> Result<Vec<f32>, String> {
                 .map_err(|_| format!("--lambdas 需要逗号分隔的数字，得到 `{part}`"))
         })
         .collect()
-}
-
-pub(super) fn task_combine(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(
-        &parsed,
-        "task-combine <base|-> --tasks a,b,... --lambdas L,L... [--out <path>]",
-    )?;
-    let task_paths = parse_paths(value(&parsed, "tasks")?)?;
-    let lambdas = parse_lambdas(value(&parsed, "lambdas")?)?;
-    let mut sources = vec![path];
-    sources.extend(task_paths.iter().map(String::as_str));
-    no_double_stdin(&sources)?;
-    let base = load_net(path)?;
-    let mut tasks = Vec::with_capacity(task_paths.len());
-    for task_path in &task_paths {
-        let net = load_net(task_path)?;
-        tasks.push(crate::task::TaskVector::between(&base, &net).map_err(err)?);
-    }
-    let merged = crate::scale::combine_tasks(&base, &tasks, &lambdas).map_err(err)?;
-    write_out(&parsed, &merged)?;
-    let patch = Patch::diff(&base, &merged).map_err(err)?;
-    emit(&json!({
-        "lambdas": lambdas,
-        "summary": wire::net_summary(&merged),
-        "patch": wire::patch_to_value(&patch),
-        "cost": wire::cost_to_value(&patch.cost(&base)),
-        "artifact": to_wsp(&merged),
-    }))
-}
-
-fn parse_paths(raw: &str) -> Result<Vec<String>, String> {
-    let paths: Vec<String> = raw
-        .split(',')
-        .map(|part| part.trim().to_string())
-        .filter(|part| !part.is_empty())
-        .collect();
-    if paths.is_empty() {
-        return Err("--tasks 不能为空".into());
-    }
-    Ok(paths)
 }
 
 fn read_json(path: &str) -> Result<String, String> {

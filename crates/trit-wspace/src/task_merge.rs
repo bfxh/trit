@@ -13,99 +13,9 @@ use crate::trit::Trit;
 
 pub mod dare;
 pub use dare::*;
-
-/// 按差分写回逐行 f32 偏置：`None` 表示该行没有；层内任一行缺失 ⇒ 整层清空。
-pub(crate) fn apply_bias_f32(net: &mut Net, records: &[(usize, usize, Option<f32>)]) -> Result<()> {
-    if records.is_empty() {
-        return Ok(());
-    }
-    let mut by_layer: BTreeMap<usize, BTreeMap<usize, Option<f32>>> = BTreeMap::new();
-    for (layer, row, value) in records {
-        by_layer.entry(*layer).or_default().insert(*row, *value);
-    }
-    for (layer, rows) in by_layer {
-        let current = net
-            .layer(layer)
-            .ok_or(Error::OutOfBounds {
-                layer,
-                row: 0,
-                col: 0,
-            })?
-            .clone();
-        let mut values = Vec::with_capacity(current.rows());
-        let mut complete = true;
-        for row in 0..current.rows() {
-            let value = match rows.get(&row) {
-                Some(value) => *value,
-                None => current.bias_f32().get(row).copied(),
-            };
-            match value {
-                Some(value) => values.push(value),
-                None => {
-                    complete = false;
-                    break;
-                }
-            }
-        }
-        if !complete {
-            values.clear();
-        }
-        *net.layer_mut(layer) = current.with_bias_f32(values)?;
-    }
-    Ok(())
-}
-
-/// 多任务 f32 偏置：权重大于 0 的任务全部有幅度才取加权平均，任一缺失 ⇒ 该行清空。
-fn merge_bias_f32(
-    base: &Net,
-    tasks: &[TaskVector],
-    weights: &[f32],
-) -> Result<Vec<(usize, usize, Option<f32>)>> {
-    let mut merged = Vec::new();
-    for (layer, target) in base.layers().iter().enumerate() {
-        for row in 0..target.rows() {
-            let mut seen = false;
-            let mut missing = false;
-            let mut weighted = 0.0f64;
-            let mut total = 0.0f64;
-            for (task, weight) in tasks.iter().zip(weights) {
-                if *weight == 0.0 {
-                    continue;
-                }
-                seen = true;
-                let state = task
-                    .bias_f32
-                    .iter()
-                    .find(|(l, r, _)| *l == layer && *r == row)
-                    .map(|(_, _, value)| *value)
-                    .unwrap_or_else(|| target.bias_f32().get(row).copied());
-                match state {
-                    Some(value) => {
-                        weighted += f64::from(value) * f64::from(*weight);
-                        total += f64::from(*weight);
-                    }
-                    None => {
-                        missing = true;
-                        break;
-                    }
-                }
-            }
-            if !seen {
-                continue;
-            }
-            let current = target.bias_f32().get(row).copied();
-            let next = if missing {
-                None
-            } else {
-                Some((weighted / total) as f32)
-            };
-            if current.map(f32::to_bits) != next.map(f32::to_bits) {
-                merged.push((layer, row, next));
-            }
-        }
-    }
-    Ok(merged)
-}
+mod bias;
+pub(crate) use bias::apply_bias_f32;
+use bias::merge_bias_f32;
 
 /// 多任务合并：按坐标对目标 trit 投票（只算改过该坐标的任务）。
 pub fn merge_tasks(base: &Net, tasks: &[TaskVector]) -> Result<Net> {
@@ -204,11 +114,13 @@ pub fn merge_tasks(base: &Net, tasks: &[TaskVector]) -> Result<Net> {
 /// 一半处的值，恰好落在两个值之间时取平均（等权时退化为普通中位数）。
 mod report;
 pub use report::MergeReport;
+mod trim;
+pub use trim::*;
 
 /// 多任务加权合并：返回网络（不带报告）。
 pub fn merge_tasks_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<Net> {
     validate_weights(tasks.len(), weights)?;
-    merge_weighted(base, tasks, weights).map(|(net, _)| net)
+    merge_weighted(base, tasks, weights, &TrimOptions::default()).map(|(net, _)| net)
 }
 
 /// 多任务加权合并：同时返回投票/平票/忽略等统计。
@@ -218,7 +130,7 @@ pub fn merge_tasks_weighted_report(
     weights: &[f32],
 ) -> Result<(Net, MergeReport)> {
     validate_weights(tasks.len(), weights)?;
-    merge_weighted(base, tasks, weights)
+    merge_weighted(base, tasks, weights, &TrimOptions::default())
 }
 
 /// 把 f32 偏置整层复制到另一个同架构网络（DARE 只改三值差分，幅度另行保留）。
@@ -256,7 +168,12 @@ pub(crate) fn validate_weights(task_count: usize, weights: &[f32]) -> Result<()>
     Ok(())
 }
 
-fn merge_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<(Net, MergeReport)> {
+pub(super) fn merge_weighted(
+    base: &Net,
+    tasks: &[TaskVector],
+    weights: &[f32],
+    trim: &TrimOptions,
+) -> Result<(Net, MergeReport)> {
     let base_checksum = checksum(base);
     if tasks.iter().any(|task| task.base != base_checksum) {
         return Err(Error::Audit("任务向量的基准工件不一致".into()));
@@ -289,13 +206,15 @@ fn merge_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<(
     }
     let voted = votes.len();
     let mut ties = 0usize;
+    let mut dropped = 0usize;
     let mut weighted_edits = Vec::new();
-    for ((layer, row, col), targets) in votes {
+    for ((layer, row, col), mut targets) in votes {
         let current = current_value(base, layer, row, col)?;
-        let sum: f64 = targets
-            .iter()
-            .map(|(target, weight)| f64::from(target.to_i8()) * weight)
-            .sum();
+        let sum = trim::trim_and_sum(&mut targets, current, trim);
+        if trim.margin > 0.0 && sum.abs() < trim.margin {
+            dropped += 1;
+            continue;
+        }
         let merged = if sum > 0.0 {
             Trit::Pos
         } else if sum < 0.0 {
@@ -368,7 +287,7 @@ fn merge_weighted(base: &Net, tasks: &[TaskVector], weights: &[f32]) -> Result<(
             ties,
             changed,
             scale_rows,
-            dropped: 0,
+            dropped,
         },
     ))
 }
