@@ -124,8 +124,8 @@ fn main() {
             "f32": q[0],
             "w_trit": q[1],
             "x_trit": q[2],
-            "trit_both": q[3],
-            "trit_vs_f32": q[4]
+            "trit_both": q[3], "trit_scale": q[4],
+            "trit_vs_f32": q[5]
         }));
     }
 
