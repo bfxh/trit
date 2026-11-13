@@ -8,12 +8,12 @@ use trit_wspace::Net;
 use trit_wspace::Trit;
 
 use crate::f32ref::{Projected, sign};
+use crate::readout::judge as judge_readout;
 
 /// 把投影权重逐行 absmean 三值化：`(丢 scale, 保留 scale)`。
 pub fn trit_weights(projected: &Projected) -> (Vec<f64>, Vec<f64>) {
     let (_, k) = projected.dims();
-    let mut signed = Vec::new();
-    let mut scaled = Vec::new();
+    let (mut signed, mut scaled) = (Vec::new(), Vec::new());
     for row in projected.weights().chunks(k) {
         let scale = row.iter().map(|v| v.abs()).sum::<f64>() / row.len().max(1) as f64;
         for v in row {
@@ -25,15 +25,16 @@ pub fn trit_weights(projected: &Projected) -> (Vec<f64>, Vec<f64>) {
     (signed, scaled)
 }
 
-/// 六列一致率：
-/// `[f32/f32, w三值, x三值, 两半都三值, 两半保留scale, 真实三值网络]`。
+/// 七列一致率：
+/// `[f32/f32, w三值, x三值, 两半都三值, 两半保留scale, readout也三值, 真实三值网络]`。
 pub fn compare(
     base: &[Trit],
     raw: &[&[f32]],
     inputs: &[Vec<Trit>],
     tern_out: &[Vec<Trit>],
+    readout: &[f32],
     projected: &Projected,
-) -> [f64; 6] {
+) -> [f64; 7] {
     let (w_trit, w_scaled) = trit_weights(projected);
     let w = projected.weights();
     let n = base
@@ -41,7 +42,7 @@ pub fn compare(
         .min(raw.len())
         .min(inputs.len())
         .min(tern_out.len());
-    let mut hits = [0usize; 6];
+    let mut hits = [0usize; 7];
     for i in 0..n {
         let xk = projected.project_f32(raw[i]);
         let xt = projected.project_trit(&inputs[i]);
@@ -50,10 +51,10 @@ pub fn compare(
         hits[2] += usize::from(projected.judge(w, &xt) == base[i]);
         hits[3] += usize::from(projected.judge(&w_trit, &xt) == base[i]);
         hits[4] += usize::from(projected.judge(&w_scaled, &xt) == base[i]);
-        hits[5] += usize::from(tern_out[i].as_slice() == [base[i]]);
+        hits[5] += usize::from(judge_readout(projected, &w_trit, &xt, readout) == base[i]);
+        hits[6] += usize::from(tern_out[i].as_slice() == [base[i]]);
     }
-    let n = n.max(1) as f64;
-    hits.map(|h| h as f64 / n)
+    hits.map(|h| h as f64 / n.max(1) as f64)
 }
 
 /// 三值投影网络的输出，以及它与三值学生的一致率。
@@ -63,8 +64,7 @@ pub fn agree(
     inputs: &[Vec<Trit>],
     sub: &[Vec<f64>],
 ) -> (f64, Vec<Vec<Trit>>) {
-    let mut same = 0usize;
-    let mut out = Vec::with_capacity(inputs.len());
+    let (mut same, mut out) = (0usize, Vec::with_capacity(inputs.len()));
     for input in inputs {
         let got = net.forward(&reduce(input, sub)).expect("f");
         if student.forward(input).expect("f") == got {
@@ -79,12 +79,12 @@ pub fn agree(
 fn reduce(input: &[Trit], sub: &[Vec<f64>]) -> Vec<Trit> {
     sub.iter()
         .map(|u| {
-            let acc: f64 = u
-                .iter()
-                .zip(input)
-                .map(|(a, t)| a * f64::from(t.to_i8()))
-                .sum();
-            sign(acc)
+            sign(
+                u.iter()
+                    .zip(input)
+                    .map(|(a, t)| a * f64::from(t.to_i8()))
+                    .sum(),
+            )
         })
         .collect()
 }

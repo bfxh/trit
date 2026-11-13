@@ -3,6 +3,7 @@ use trit_wspace::safetensors::{self, Weights};
 mod basis;
 mod f32ref;
 mod quad;
+mod readout;
 use basis::*;
 use trit_wspace::{Layer, Net, Trit};
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
@@ -117,15 +118,14 @@ fn main() {
 
         let projected = f32ref::Projected::new(&query, &readout, sub);
         let (rate, tern_out) = quad::agree(&student, &net, &inputs, sub);
-        let q = quad::compare(&f32_base, &raw, &inputs, &tern_out, &projected);
+        let q = quad::compare(&f32_base, &raw, &inputs, &tern_out, &readout, &projected);
         curves.push(json!({
-            "k": k,
-            "rate": rate,
+            "k": k, "rate": rate,
             "f32": q[0],
             "w_trit": q[1],
             "x_trit": q[2],
-            "trit_both": q[3], "trit_scale": q[4],
-            "trit_vs_f32": q[5]
+            "trit_both": q[3], "trit_scale": q[4], "trit_readout": q[5],
+            "trit_vs_f32": q[6]
         }));
     }
 

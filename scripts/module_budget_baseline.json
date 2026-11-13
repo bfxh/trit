@@ -2967,6 +2967,10 @@
       "lines": 90
     },
     {
+      "file": "crates/trit-wspace/examples/agree_real/readout.rs",
+      "lines": 32
+    },
+    {
       "file": "crates/trit-wspace/examples/bias_e2e.rs",
       "lines": 417
     },
