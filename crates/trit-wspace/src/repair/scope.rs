@@ -21,14 +21,13 @@ pub(crate) fn scoped_candidates(net: &Net, options: &RepairOptions) -> Vec<Edit>
                 }
                 for &(layer, row) in &rows {
                     out.push(Edit::NegateRow { layer, row });
-                    if let Some(weights) = net.layer(layer) {
-                        if row + 1 < weights.rows() {
-                            out.push(Edit::SwapRows {
-                                layer,
-                                a: row,
-                                b: row + 1,
-                            });
-                        }
+                    let row_count = net.layer(layer).map_or(0, |weights| weights.rows());
+                    if row + 1 < row_count {
+                        out.push(Edit::SwapRows {
+                            layer,
+                            a: row,
+                            b: row + 1,
+                        });
                     }
                 }
             }

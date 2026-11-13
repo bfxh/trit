@@ -3220,7 +3220,7 @@
     },
     {
       "file": "crates/trit-wspace/src/repair/scope.rs",
-      "lines": 80
+      "lines": 79
     },
     {
       "file": "crates/trit-wspace/src/safetensors.rs",

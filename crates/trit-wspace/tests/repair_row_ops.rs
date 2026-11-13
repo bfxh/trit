@@ -1,7 +1,7 @@
 //! `repair` 的行级原语：整行取反能撤销一次取反。
 
 use trit_wspace::repair::{RepairOptions, repair};
-use trit_wspace::{Edit, Layer, Net, Oracle, Patch, Trit};
+use trit_wspace::{Edit, Layer, Net, Oracle, Patch};
 
 fn xor_net() -> Net {
     Net::new(vec![
