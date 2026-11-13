@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（三值 QAT：DGA 域名检测与家族归因 + 多类评测部件）
+
+- `trit_learn::metrics::Confusion`（新部件，可发布层）：多类混淆矩阵 / acc /
+  per-class P-R-F1 / macro-F1（3 条单元测试）。
+- `examples/dga_redteam/`：DGA 检测（二分类）与家族归因（26 类）双任务；
+  数据集 `chrmor/DGA_domains_dataset`（67.5 万域名，25 家族 + Alexa，登记
+  `docs/DATASETS.md` A0）。
+- 读数：二分类 test acc 0.778（QAT 与 WSP 工件一致）；比特翻转 k=1 000
+  （0.76% trits）acc -14pp、k=10 000 → 0.444——与 #492 汇总成型：**判别式
+  三值工件的脆弱性 >> 生成式链**，工件越小越需要完整性保护。26 类归因
+  首轮欠拟合（acc 0.29，未证栏）。文档 `docs/WSP-DGA-QAT.md`。
+
+
 ### Added（三值 QAT：真实数据集全链——训练 + 工件 + 红队）
 
 - `examples/spam_redteam.rs`：UCI SMS Spam（5,574 条真实短信）→ 字符 n-gram

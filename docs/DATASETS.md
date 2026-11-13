@@ -9,6 +9,7 @@
 | 数据集 | 规模 | 许可 | 访问方式（已验） | 备注 |
 |---|---|---|---|---|
 | **UCI SMS Spam Collection** | 5,574 条短信（747 spam） | CC BY-SA 3.0 | `curl -o smsspam.zip https://archive.ics.uci.edu/static/public/228/sms+spam+collection.zip` → 解压得 `SMSSpamCollection`（`ham/spam<TAB>text`） | ✅ 已实测下载 + 训练读数见 `docs/WSP-SPAM-QAT.md`；落数据盘 `trit-data/sms-spam/` |
+| **DGA_domains_dataset**（Netlab 360 + Alexa） | 674,898 域名（25 DGA 家族 ×13,500 + benign） | 研究用途（引用 Cucchiarelli et al. 2021） | `curl -o dga_domains_full.csv https://raw.githubusercontent.com/chrmor/DGA_domains_dataset/master/dga_domains_full.csv`（`label,family,domain`） | ✅ 已实测下载 + 训练读数见 `docs/WSP-DGA-QAT.md`；落数据盘 `trit-data/dga/` |
 
 ## A. 材质 / 纹理（N5 直接用）
 

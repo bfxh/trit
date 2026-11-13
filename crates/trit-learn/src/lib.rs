@@ -1,6 +1,4 @@
-//! 三值训练原语与神经组件（可发布）。
-//!
-//! - [`quant`]：absmean 三值量化、STE 三变体（Identity / Clipped / Soft）、scale 梯度；
+//! 三值训练原语与神经组件（可发布）。- [`quant`]：absmean 三值量化、STE 三变体（Identity / Clipped / Soft）、scale 梯度；
 //! - [`dense`]：批量三值 QAT 全连接层（STE 反向 + 外部优化器接口）；
 //! - [`activation`]：激活函数（tanh / ReLU / sigmoid）及其导数；
 //! - [`loss`]：MSE / hinge / softmax 交叉熵与解析梯度；
@@ -16,11 +14,13 @@
 pub mod activation;
 pub mod dense;
 pub mod loss;
+pub mod metrics;
 pub mod opt;
 pub mod quant;
 
 pub use activation::Activation;
 pub use dense::TernaryDense;
 pub use loss::{cross_entropy, mse, softmax, softmax_backward};
+pub use metrics::Confusion;
 pub use opt::{Adam, Optimizer, Sgd, clip_global_norm};
 pub use quant::{Quantized, Ste, quantize_with_scale, scale_grad, ternarize};
