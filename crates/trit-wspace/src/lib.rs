@@ -10,8 +10,7 @@
 //! | 规范形式 | `WSP1` 可 diff、可校验和 | 二进制 blob 不可读 |
 //! 代价同样明确：没有现成的 f32 预训练生态；表达力受三值限制；大规模网络的穷举不可行（本库的 M0 边界就是小网络 + 有界域）。
 //! ## 三层结构
-//! - **表示层**：[`Net`] / [`Layer`] 是不可变的权重工件；[`codec`] 把它写成 WSP1 文本，
-//!   [`Trit`] 是唯一的权重单位。
+//! - **表示层**：[`Net`] / [`Layer`] 是不可变的权重工件；[`codec`] 把它写成 WSP1 文本，[`Trit`] 是唯一的权重单位。
 //! - **编辑层**：[`Edit`] / [`Patch`] 是事务式补丁；[`Journal`] 支持逐位回滚；
 //!   [`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
 //!   [`Script`] 把多个 [`Program`] 组合成原子序列或按行为分支的脚本；
@@ -113,6 +112,7 @@ pub mod scan;
 pub mod shard;
 pub mod task;
 pub mod task_merge;
+pub mod teacher_f32;
 pub mod trace;
 pub mod training;
 pub mod transformer_f32;

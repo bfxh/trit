@@ -1,14 +1,19 @@
-//! 真实词向量上的分类：MiniLM 词向量 + 教师投影定义的 4 类标签。
+//! 真实词向量上的分类：MiniLM 词向量 + 教师定义的 4 类标签。
 //!
-//! 每个 token 是一个样本，标签由固定的随机投影 `R`（教师）在**输入词向量**上取 argmax 给出；
-//! 学生 = MiniLM 一层（attention + 2×LN + 2×FFN，全参数反向）+ 线性分类头，交叉熵训练。
+//! 每个 token 是一个样本；标签由教师（[`trit_wspace::teacher_f32`]）给出，学生 =
+//! MiniLM 一层（attention + 2×LN + 2×FFN，全参数反向）+ 线性分类头，交叉熵训练。
 //!
-//! 这不是真实标注语料——教师是受控合成，用来检验「交叉熵 + 准确率」能否驱动真正的收敛
-//! （MSE 那条路已被证只降尺度）。
+//! 两种教师：
+//! - `linear`（默认）：单个随机投影取 argmax。块输出本就可线性解码，头单独就能学会。
+//! - `quad`：二次型得分按分位切 4 档（每类样本数相同），非线性、线性头做不到。
+//!
+//! 这是受控合成标签，不是真实标注语料。**重要边界**：32 个样本、384 维特征、头 1536 个
+//! 参数 ⇒ 线性头能记住任意标注，所以"准确率 1.0"不能当作收敛/泛化的证据（见 docs）。
 
 use serde_json::json;
 use trit_wspace::attention_f32::F32Attention;
 use trit_wspace::safetensors;
+use trit_wspace::teacher_f32::{Lcg, linear_labels, quad_labels};
 use trit_wspace::transformer_f32::{Dense, LayerNorm, TransformerBlock};
 use trit_wspace::transformer_f32_cls::{ClassifierHead, ClassifyOptions, train_classify};
 
@@ -30,30 +35,6 @@ const DEFAULT_ROUNDS: usize = 200;
 const DEFAULT_LR_BLOCK: f32 = 1e-4;
 const DEFAULT_LR_HEAD: f32 = 1e-1;
 const SEED: u64 = 20261112;
-
-/// 确定性 LCG，保证教师与初始化可复现。
-struct Lcg(u64);
-
-impl Lcg {
-    fn next_f32(&mut self) -> f32 {
-        self.0 = self
-            .0
-            .wrapping_mul(6_364_136_223_846_793_005)
-            .wrapping_add(1_442_695_040_888_963_407);
-        let unit = ((self.0 >> 40) as f32) / ((1u32 << 24) as f32);
-        unit * 2.0 - 1.0
-    }
-}
-
-fn argmax(values: &[f32]) -> usize {
-    let mut best = 0;
-    for (index, value) in values.iter().enumerate() {
-        if *value > values[best] {
-            best = index;
-        }
-    }
-    best
-}
 
 fn mean_abs_delta(now: &[f32], before: &[f32]) -> f32 {
     if now.len() != before.len() {
@@ -83,9 +64,9 @@ fn accuracy(
 
 fn main() {
     let mut args = std::env::args().skip(1);
-    let path = args
-        .next()
-        .expect("用法: classifier_real <model.safetensors> [rounds] [lr_block] [lr_head]");
+    let path = args.next().expect(
+        "用法: classifier_real <model.safetensors> [rounds] [lr_block] [lr_head] [linear|quad]",
+    );
     let rounds: usize = args
         .next()
         .map(|value| value.parse().expect("rounds"))
@@ -98,6 +79,7 @@ fn main() {
         .next()
         .map(|value| value.parse().expect("lr_head"))
         .unwrap_or(DEFAULT_LR_HEAD);
+    let teacher_mode = args.next().unwrap_or_else(|| "linear".to_string());
 
     let query = safetensors::read_tensor(&path, QUERY).expect("query");
     let key = safetensors::read_tensor(&path, KEY).expect("key");
@@ -125,24 +107,13 @@ fn main() {
         .map(|row| embeddings.values[row * dim..(row + 1) * dim].to_vec())
         .collect();
 
-    // 教师：固定随机投影 R（CLASSES × dim），标签 = argmax(R · 输入词向量)。
-    let mut rng = Lcg(SEED);
-    let teacher: Vec<f32> = (0..CLASSES * dim).map(|_| rng.next_f32() * 0.1).collect();
-    let labels: Vec<usize> = tokens
-        .iter()
-        .map(|token| {
-            let logits: Vec<f32> = (0..CLASSES)
-                .map(|class| {
-                    let line = &teacher[class * dim..(class + 1) * dim];
-                    line.iter()
-                        .zip(token)
-                        .map(|(weight, value)| weight * value)
-                        .sum()
-                })
-                .collect();
-            argmax(&logits)
-        })
-        .collect();
+    // 教师与分类头共用一条随机流，保证读数可复现（抽取顺序是契约）。
+    let mut rng = Lcg::new(SEED);
+    let labels: Vec<usize> = match teacher_mode.as_str() {
+        "linear" => linear_labels(&mut rng, &tokens, CLASSES),
+        "quad" => quad_labels(&mut rng, &tokens, CLASSES),
+        other => panic!("未知教师: {other}（linear | quad）"),
+    };
     let mut histogram = vec![0usize; CLASSES];
     for label in &labels {
         histogram[*label] += 1;
@@ -191,7 +162,7 @@ fn main() {
             "rounds": rounds,
             "lr_block": lr_block,
             "lr_head": lr_head,
-            "task": "teacher projection argmax (controlled synthetic labels)",
+            "teacher": teacher_mode,
             "label_histogram": histogram,
             "majority_baseline": majority,
             "chance": 1.0 / CLASSES as f32,

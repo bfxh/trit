@@ -3012,7 +3012,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/classifier_real.rs",
-      "lines": 216
+      "lines": 187
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/basis.rs",
@@ -3589,6 +3589,10 @@
     {
       "file": "crates/trit-wspace/src/task_merge/trim.rs",
       "lines": 100
+    },
+    {
+      "file": "crates/trit-wspace/src/teacher_f32.rs",
+      "lines": 120
     },
     {
       "file": "crates/trit-wspace/src/trace.rs",
