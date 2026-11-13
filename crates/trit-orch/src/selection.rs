@@ -1,9 +1,10 @@
 use crate::budget::Budget;
 use crate::{
-    BlockReason, Decision, Effect, Error, EvidenceVerdict, Ledger, Limits, Observation, Phase,
-    Selection, Snapshot, TaskSpec, Ternary, admit, dependency_gate,
+    BlockReason, ClaimSet, Decision, Effect, Error, EvidenceVerdict, Ledger, Limits, Observation,
+    Phase, Selection, Snapshot, TaskSpec, Ternary, admit, dependency_gate,
 };
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn select(
     revision: u64,
     tasks: &[TaskSpec],
@@ -12,6 +13,7 @@ pub(crate) fn select(
     snapshot: &Snapshot,
     limits: &Limits,
     ledger: &Ledger,
+    claims: Option<&ClaimSet<'_>>,
 ) -> Result<Selection, Error> {
     validate_snapshot(revision, tasks, snapshot)?;
     if limits.workers == 0 {
@@ -27,6 +29,7 @@ pub(crate) fn select(
             admission: Ternary::Unknown,
             reasons: Vec::new(),
             obligations: Vec::new(),
+            granted_tokens: 0,
         })
         .collect();
     for &position in order {
@@ -51,6 +54,7 @@ pub(crate) fn select(
                     &mut budget,
                     limits,
                     ledger,
+                    claims,
                     decision,
                     &mut selected,
                 )?;
@@ -70,6 +74,7 @@ pub(crate) fn select(
                 &mut budget,
                 limits,
                 ledger,
+                claims,
                 decision,
                 &mut selected,
             )?,
@@ -97,6 +102,7 @@ fn admit_pending(
     budget: &mut Budget,
     limits: &Limits,
     ledger: &Ledger,
+    claims: Option<&ClaimSet<'_>>,
     decision: &mut Decision,
     selected: &mut Vec<String>,
 ) -> Result<(), Error> {
@@ -126,17 +132,20 @@ fn admit_pending(
     let remaining = budget.remaining(position);
     let resources = budget.gate(spec, remaining, limits, &mut decision.reasons)?;
     let effects = effect_gate(&spec.task.id, ledger, &mut decision.reasons);
+    let claim = claim_admission(spec, claims, &mut decision.reasons)?;
     decision.admission = admit(
         dependencies,
         observation.authorization,
         resources,
         freshness_gate,
-    ) & effects;
+    ) & effects
+        & claim;
     if decision.admission == Ternary::Unknown {
         decision.obligations = crate::obligations_for(&spec.task.id, &decision.reasons);
     }
     if decision.admission == Ternary::True {
         budget.reserve(spec, remaining)?;
+        decision.granted_tokens = remaining;
         selected.push(spec.task.id.clone());
     }
     Ok(())
@@ -161,6 +170,30 @@ fn effect_gate(task: &str, ledger: &Ledger, reasons: &mut Vec<BlockReason>) -> T
         }
         _ => Ternary::True,
     }
+}
+
+fn claim_admission(
+    spec: &TaskSpec,
+    claims: Option<&ClaimSet<'_>>,
+    reasons: &mut Vec<BlockReason>,
+) -> Result<Ternary, Error> {
+    let Some(claims) = claims else {
+        return Ok(Ternary::True);
+    };
+    let Some(paths) = claims.paths_for(&spec.task.id) else {
+        reasons.push(BlockReason::Claim {
+            verdict: Ternary::Unknown,
+        });
+        return Ok(Ternary::Unknown);
+    };
+    if paths.is_empty() {
+        return Ok(Ternary::True);
+    }
+    let verdict = claims.store.gate(paths, &claims.owner, claims.now)?;
+    if verdict != Ternary::True {
+        reasons.push(BlockReason::Claim { verdict });
+    }
+    Ok(verdict)
 }
 
 pub(crate) fn validate_snapshot(

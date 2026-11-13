@@ -180,6 +180,10 @@ pub enum BlockReason {
     Freshness {
         verdict: Ternary,
     },
+    /// 路径认领门的结果。
+    Claim {
+        verdict: Ternary,
+    },
     /// 效果台账里这个任务的操作可能已发生，或已经发生。
     Effect {
         state: Effect,
@@ -225,6 +229,9 @@ pub struct Decision {
     /// `Unknown` 准入的最小补证动作；`False`/`True` 与状态类决定为空。
     #[serde(default)]
     pub obligations: Vec<AdmissionObligation>,
+    /// 这次选批为该任务预留的执行 token；未选中为 0。
+    #[serde(default)]
+    pub granted_tokens: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

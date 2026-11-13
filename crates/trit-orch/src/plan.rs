@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::{
-    Error, Ledger, Limits, MAX_TASKS, Observation, Phase, PlanPatch, Selection, Snapshot, TaskSpec,
-    selection,
+    ClaimSet, Error, Ledger, Limits, MAX_TASKS, Observation, Phase, PlanPatch, Selection, Snapshot,
+    TaskSpec, selection,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -155,7 +155,7 @@ impl Plan {
     }
 
     pub fn select(&self, snapshot: &Snapshot, limits: &Limits) -> Result<Selection, Error> {
-        self.select_with_effects(snapshot, limits, &Ledger::new())
+        self.select_internal(snapshot, limits, &Ledger::new(), None)
     }
 
     /// 带效果台账选批：在途/未知效果不会进入批次，而是产生对账义务。
@@ -167,6 +167,37 @@ impl Plan {
         limits: &Limits,
         ledger: &Ledger,
     ) -> Result<Selection, Error> {
+        self.select_internal(snapshot, limits, ledger, None)
+    }
+
+    /// 带 claim 门选批：任务必须由当前 owner 完整覆盖其声明路径。
+    pub fn select_with_claims(
+        &self,
+        snapshot: &Snapshot,
+        limits: &Limits,
+        claims: &ClaimSet<'_>,
+    ) -> Result<Selection, Error> {
+        self.select_internal(snapshot, limits, &Ledger::new(), Some(claims))
+    }
+
+    /// 同时带效果台账与 claim 门选批。
+    pub fn select_with_effects_and_claims(
+        &self,
+        snapshot: &Snapshot,
+        limits: &Limits,
+        ledger: &Ledger,
+        claims: &ClaimSet<'_>,
+    ) -> Result<Selection, Error> {
+        self.select_internal(snapshot, limits, ledger, Some(claims))
+    }
+
+    fn select_internal(
+        &self,
+        snapshot: &Snapshot,
+        limits: &Limits,
+        ledger: &Ledger,
+        claims: Option<&ClaimSet<'_>>,
+    ) -> Result<Selection, Error> {
         selection::select(
             self.revision,
             &self.tasks,
@@ -175,6 +206,7 @@ impl Plan {
             snapshot,
             limits,
             ledger,
+            claims,
         )
     }
 }

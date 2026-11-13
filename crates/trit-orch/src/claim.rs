@@ -48,6 +48,41 @@ pub enum ClaimOutcome {
     },
 }
 
+/// 选批时的认领上下文：谁在什么时间执行，每个任务要覆盖哪些路径。
+///
+/// 任务未在 `paths` 中出现时按“未声明/未认领”处理为 `Unknown`，而不是默认放行。
+#[derive(Debug)]
+pub struct ClaimSet<'a> {
+    pub store: &'a ClaimStore,
+    pub owner: String,
+    pub now: u64,
+    pub paths: BTreeMap<String, Vec<String>>,
+}
+
+impl<'a> ClaimSet<'a> {
+    pub fn new(store: &'a ClaimStore, owner: impl Into<String>, now: u64) -> Self {
+        Self {
+            store,
+            owner: owner.into(),
+            now,
+            paths: BTreeMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, task: impl Into<String>, paths: Vec<String>) {
+        self.paths.insert(task.into(), paths);
+    }
+
+    pub fn with_task(mut self, task: impl Into<String>, paths: Vec<String>) -> Self {
+        self.insert(task, paths);
+        self
+    }
+
+    pub fn paths_for(&self, task: &str) -> Option<&[String]> {
+        self.paths.get(task).map(Vec::as_slice)
+    }
+}
+
 /// 内存认领表。宿主可序列化持久化；恢复用 [`ClaimStore::from_claims`]。
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ClaimStore {

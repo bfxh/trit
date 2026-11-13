@@ -8,6 +8,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
+use crate::flip_rates::{FlipRates, ScorePolicy, order_obligations_by_score};
 use crate::{BlockReason, Effect, Selection, Ternary};
 
 /// 义务的资源估算。默认值来自 [`ObligationKind::default_cost`]，宿主可覆盖。
@@ -22,13 +23,15 @@ pub struct ObligationCost {
 }
 
 /// 把 `Unknown` 变成可判定结论的最小动作类型。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ObligationKind {
     /// 缺测量或证据覆盖不足。
     Measure,
     /// 副作用状态不明，先对账。
     Reconcile,
+    /// 路径未认领 / 已过期 / 被他人占用，先拿 claim。
+    Claim,
     /// 证据互相冲突，需要裁决。
     Adjudicate,
     /// 输入过期或 epoch 变化，换基重新取证。
@@ -47,6 +50,7 @@ impl ObligationKind {
         match self {
             Self::Measure => "measure",
             Self::Reconcile => "reconcile",
+            Self::Claim => "claim",
             Self::Adjudicate => "adjudicate",
             Self::Rebasis => "rebasis",
             Self::Handoff => "handoff",
@@ -68,6 +72,12 @@ impl ObligationKind {
                 tokens: 200,
                 wall: 1,
                 risk: 20,
+                human: false,
+            },
+            Self::Claim => ObligationCost {
+                tokens: 0,
+                wall: 1,
+                risk: 0,
                 human: false,
             },
             Self::Adjudicate => ObligationCost {
@@ -103,10 +113,20 @@ impl ObligationKind {
         }
     }
 
+    /// 默认最大尝试次数；超过后应升级而不是继续重试。
+    pub const fn default_max_attempts(self) -> u32 {
+        match self {
+            Self::Reconcile => 2,
+            Self::Escalate | Self::Handoff | Self::Defer => 1,
+            _ => 3,
+        }
+    }
+
     /// 同截止期下的默认优先级；越大越先。
     pub const fn default_priority(self) -> u32 {
         match self {
             Self::Escalate => 100,
+            Self::Claim => 95,
             Self::Reconcile => 90,
             Self::Adjudicate => 80,
             Self::Measure => 60,
@@ -120,6 +140,7 @@ impl ObligationKind {
     pub const fn default_owner(self) -> Option<&'static str> {
         match self {
             Self::Reconcile => Some("effect-owner"),
+            Self::Claim => None,
             Self::Adjudicate => Some("adjudicator"),
             Self::Escalate => Some("human"),
             _ => None,
@@ -149,6 +170,13 @@ pub struct AdmissionObligation {
     pub deadline: Option<u64>,
     #[serde(default)]
     pub priority: u32,
+    /// 同一义务允许尝试的次数；由 `ObligationGuard` 计数。
+    #[serde(default = "default_max_attempts")]
+    pub max_attempts: u32,
+}
+
+fn default_max_attempts() -> u32 {
+    3
 }
 
 impl AdmissionObligation {
@@ -165,6 +193,7 @@ impl AdmissionObligation {
             owner: kind.default_owner().map(str::to_owned),
             deadline: None,
             priority: kind.default_priority(),
+            max_attempts: kind.default_max_attempts(),
         }
     }
 
@@ -188,7 +217,12 @@ impl AdmissionObligation {
         self
     }
 
-    fn ensure_id(&mut self) {
+    pub fn with_max_attempts(mut self, max_attempts: u32) -> Self {
+        self.max_attempts = max_attempts;
+        self
+    }
+
+    pub(crate) fn ensure_id(&mut self) {
         if self.id.trim().is_empty() {
             self.id = canonical_id(self.kind, &self.task, &self.subject);
         }
@@ -254,8 +288,15 @@ pub struct ObligationBudget {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ObligationSkipReason {
     Duplicate,
-    OverBudget { required: u64, available: u64 },
+    OverBudget {
+        required: u64,
+        available: u64,
+    },
     NoHuman,
+    /// 同一义务重复尝试超过上限，应升级为 Handoff/Escalate。
+    Thrashed {
+        attempts: u32,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -284,11 +325,33 @@ pub fn schedule_obligations(
     now: u64,
     budget: &ObligationBudget,
 ) -> ObligationBatch {
+    schedule_obligations_with_order(obligations, now, budget, order_obligations)
+}
+
+/// 按 `P(flip) × 优先级 / 成本` 排序；截止期只做同分 tie-break。
+pub fn schedule_obligations_by_score(
+    obligations: impl IntoIterator<Item = AdmissionObligation>,
+    now: u64,
+    budget: &ObligationBudget,
+    rates: &FlipRates,
+    policy: &ScorePolicy,
+) -> ObligationBatch {
+    schedule_obligations_with_order(obligations, now, budget, |left, right| {
+        order_obligations_by_score(left, right, rates, policy)
+    })
+}
+
+fn schedule_obligations_with_order(
+    obligations: impl IntoIterator<Item = AdmissionObligation>,
+    now: u64,
+    budget: &ObligationBudget,
+    order: impl Fn(&AdmissionObligation, &AdmissionObligation) -> Ordering,
+) -> ObligationBatch {
     let mut obligations: Vec<AdmissionObligation> = obligations.into_iter().collect();
     for obligation in &mut obligations {
         obligation.ensure_id();
     }
-    obligations.sort_by(order_obligations);
+    obligations.sort_by(order);
 
     let mut batch = ObligationBatch::default();
     let mut seen = BTreeSet::new();
@@ -341,7 +404,10 @@ fn skip(obligation: &AdmissionObligation, reason: ObligationSkipReason) -> Oblig
     }
 }
 
-fn order_obligations(left: &AdmissionObligation, right: &AdmissionObligation) -> Ordering {
+pub(crate) fn order_obligations(
+    left: &AdmissionObligation,
+    right: &AdmissionObligation,
+) -> Ordering {
     match (left.deadline, right.deadline) {
         (Some(left_deadline), Some(right_deadline)) => left_deadline
             .cmp(&right_deadline)
@@ -424,6 +490,15 @@ pub fn obligations_for(task: &str, reasons: &[BlockReason]) -> Vec<AdmissionObli
                 task,
                 "authorization",
                 "授权无法由执行侧判定",
+            ),
+            BlockReason::Claim { verdict } => AdmissionObligation::new(
+                ObligationKind::Claim,
+                task,
+                "claim",
+                match *verdict {
+                    Ternary::False => "路径被其他 owner 认领，等待或协商",
+                    _ => "路径未认领或认领已过期，先 claim",
+                },
             ),
             BlockReason::Conflict { task: dependency } => AdmissionObligation::new(
                 ObligationKind::Adjudicate,
