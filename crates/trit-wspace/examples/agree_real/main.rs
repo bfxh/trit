@@ -1,6 +1,7 @@
 use serde_json::json;
 use trit_wspace::safetensors::{self, Weights};
 mod basis;
+mod f32ref;
 use basis::*;
 use trit_wspace::{Layer, Net, Trit};
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
@@ -67,6 +68,9 @@ fn main() {
         .map(|row| trit_row(&embeddings.values[row * dim..(row + 1) * dim]))
         .collect();
 
+    let raw = f32ref::rows(&embeddings, dim, samples);
+    let f32_base = f32ref::baseline(&query, &readout, &raw);
+
     let mut curves = Vec::new();
     for &k in &DIMS {
         if k > dim {
@@ -111,32 +115,28 @@ fn main() {
         .expect("projected");
 
         let mut same = 0usize;
+        let mut tern_out = Vec::with_capacity(inputs.len());
         for input in &inputs {
-            let reduced: Vec<Trit> = sub
-                .iter()
-                .map(|u| {
-                    let mut acc = 0.0f64;
-                    for (a, value) in u.iter().zip(input) {
-                        acc += a * f64::from(value.to_i8());
-                    }
-                    match acc.partial_cmp(&0.0) {
-                        Some(std::cmp::Ordering::Greater) => Trit::Pos,
-                        Some(std::cmp::Ordering::Less) => Trit::Neg,
-                        _ => Trit::Zero,
-                    }
-                })
-                .collect();
-            if student.forward(input).expect("f") == net.forward(&reduced).expect("f") {
+            let got = net.forward(&f32ref::reduce(input, sub)).expect("f");
+            if student.forward(input).expect("f") == got {
                 same += 1;
             }
+            tern_out.push(got);
         }
-        curves.push(json!({ "k": k, "rate": same as f64 / inputs.len() as f64 }));
+        let projected = f32ref::Projected::new(&query, &readout, sub);
+        let (f32_rate, trit_vs_f32) = f32ref::compare(&f32_base, &raw, &tern_out, &projected);
+        curves.push(json!({
+            "k": k,
+            "rate": same as f64 / inputs.len() as f64,
+            "f32": f32_rate,
+            "trit_vs_f32": trit_vs_f32
+        }));
     }
 
     println!(
         "{}",
         serde_json::to_string_pretty(&json!({
-            "input": "word_embeddings rows (real, ternarized)",
+            "input": "word_embeddings rows (real); f32 base = raw f32 weights+inputs",
             "basis": "supervised (w_eff + orthogonal PCA)",
             "curves": curves,
         }))
