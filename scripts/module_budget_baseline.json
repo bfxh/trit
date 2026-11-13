@@ -3028,7 +3028,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 665
+      "lines": 663
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",
@@ -3083,6 +3083,10 @@
       "lines": 36
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_wspm.rs",
+      "lines": 142
+    },
+    {
       "file": "crates/trit-wspace/src/cli/fsutil.rs",
       "lines": 23
     },
@@ -3092,7 +3096,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/usage.rs",
-      "lines": 38
+      "lines": 37
     },
     {
       "file": "crates/trit-wspace/src/cli_audit.rs",
@@ -3323,6 +3327,10 @@
       "lines": 306
     },
     {
+      "file": "crates/trit-wspace/src/wspm.rs",
+      "lines": 329
+    },
+    {
       "file": "crates/trit-wspace/tests/analyze.rs",
       "lines": 381
     },
@@ -3529,6 +3537,10 @@
     {
       "file": "crates/trit-wspace/tests/wsp4.rs",
       "lines": 178
+    },
+    {
+      "file": "crates/trit-wspace/tests/wspm.rs",
+      "lines": 345
     },
     {
       "file": "fuzz/fuzz_targets/aiger.rs",
