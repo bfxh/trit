@@ -2680,7 +2680,7 @@
     },
     {
       "file": "crates/trit-re/src/yaraparse.rs",
-      "lines": 284
+      "lines": 139
     },
     {
       "file": "crates/trit-re/src/yaraparse/cond.rs",
@@ -2699,8 +2699,16 @@
       "lines": 48
     },
     {
+      "file": "crates/trit-re/src/yaraparse/file_loop.rs",
+      "lines": 37
+    },
+    {
       "file": "crates/trit-re/src/yaraparse/lex.rs",
       "lines": 145
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/rule_body.rs",
+      "lines": 149
     },
     {
       "file": "crates/trit-re/src/yaraparse/rulebuild.rs",
@@ -2825,6 +2833,10 @@
     {
       "file": "crates/trit-re/tests/yara_lexer.rs",
       "lines": 37
+    },
+    {
+      "file": "crates/trit-re/tests/yara_parse_isolation.rs",
+      "lines": 39
     },
     {
       "file": "crates/trit-re/tests/yara_pe.rs",

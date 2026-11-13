@@ -1,19 +1,16 @@
-//! 表达式语言 A 项：算术 / 位运算 / 一元负号 / 括号 / 官方优先级，以及
-//! 未定义值与三值纪律。每张表里的期望值都是官方 yara-python 4.5.4 在同一段
-//! 13 字节样本上给的结论（`docs/YARA-EXPR.md`「对拍」一节记了复算办法）。
+//! 表达式语言 A 项：算术/位运算/一元负号/括号/优先级，以及未定义值与三值纪律。
+//! 期望值来自官方 yara-python 4.5.4（复算见 `docs/YARA-EXPR.md`）。
 
 #[path = "support/yara_expr_support.rs"]
 mod yara_expr_support;
 
 use trit_core::value::Ternary;
 use yara_expr_support::{SAMPLE, cond, eval, parse, rejected};
-
 fn assert_all(table: &[&str], expected: Ternary) {
     for condition in table {
         assert_eq!(cond(condition), expected, "{condition}");
     }
 }
-
 const ARITH_HIT: &[&str] = &[
     "1 + 2 == 3",
     "filesize + 1 == 14",
@@ -47,7 +44,6 @@ const ARITH_HIT: &[&str] = &[
     "int8(filesize - 1) == -1",
     "uint8(uint8(12) - 255) == uint8(0)",
 ];
-
 const ARITH_MISS: &[&str] = &[
     "1 + 2 == 4",
     "filesize + 1 == 13",
@@ -198,7 +194,11 @@ fn compile_time_errors_reject_the_whole_rule_with_a_reason() {
     );
     // 多出来的 `)`：规则切分层就拒绝了（整份文件 Err），同样不会静默通过
     let unbalanced = yara_expr_support::rule("", "1 + 2 == 3)");
-    assert!(trit_re::yaraparse::parse_rules(&unbalanced).is_err());
+    let out = trit_re::yaraparse::parse_rules(&unbalanced).expect("整份文件应可解析");
+    assert!(matches!(
+        out.rules.first(),
+        Some(trit_re::yaraparse::RuleOutcome::Unsupported { .. })
+    ));
 }
 
 #[test]
