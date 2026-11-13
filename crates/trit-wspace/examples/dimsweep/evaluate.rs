@@ -5,57 +5,7 @@
 use crate::basis::{Sample, oracle_of, project, reduced_net, trit_row};
 use serde_json::{Value, json};
 use trit_wspace::safetensors::Weights;
-use trit_wspace::{Net, Oracle, Trit};
-
-/// 纯 f32 投影标签：只保留「投影」损失，不吃「三值化」损失。
-///
-/// 同一个子空间上，三值路径与 f32 路径的差就是量化代价。
-pub fn projected_label(
-    x: &[f32],
-    comps: &[Vec<f64>],
-    query: &Weights,
-    readout: &[f32],
-    dim: usize,
-) -> Trit {
-    let xk = project(x, comps);
-    let mut out = 0.0f64;
-    for (row, r) in readout.iter().enumerate() {
-        let w = &query.values[row * dim..(row + 1) * dim];
-        let hidden: f64 = comps
-            .iter()
-            .zip(&xk)
-            .map(|(u, xv)| {
-                let wk: f64 = u.iter().zip(w).map(|(a, b)| a * f64::from(*b)).sum();
-                wk * f64::from(*xv)
-            })
-            .sum();
-        out += f64::from(*r) * hidden;
-    }
-    if out > 0.0 {
-        Trit::Pos
-    } else if out < 0.0 {
-        Trit::Neg
-    } else {
-        Trit::Zero
-    }
-}
-
-pub fn f32_accuracy(
-    samples: &[Sample],
-    comps: &[Vec<f64>],
-    query: &Weights,
-    readout: &[f32],
-    dim: usize,
-) -> f32 {
-    if samples.is_empty() {
-        return 0.0;
-    }
-    let hit = samples
-        .iter()
-        .filter(|s| projected_label(&s.x, comps, query, readout, dim) == s.teacher)
-        .count();
-    hit as f32 / samples.len() as f32
-}
+use trit_wspace::{Net, Oracle};
 
 /// 降维学生与全维三值学生在同一批样本上的一致率。
 ///
@@ -143,4 +93,15 @@ pub fn necessity_ranking(
         "least_necessary": least,
         "all": rows.iter().map(pick).collect::<Vec<_>>(),
     })
+}
+
+/// 恒等基（`k == dim` 时就是原全维学生，用原输入）。
+pub fn identity(dim: usize) -> Vec<Vec<f64>> {
+    (0..dim)
+        .map(|i| {
+            let mut v = vec![0.0f64; dim];
+            v[i] = 1.0;
+            v
+        })
+        .collect()
 }

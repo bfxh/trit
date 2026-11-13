@@ -2,7 +2,7 @@
 //!
 //! 从 `main.rs` 拆出：module_budget 台账只收紧、不抬高单文件行数。
 
-use crate::{EMBEDDINGS, QUERY};
+use crate::{EMBEDDINGS, QUERY, parse_list};
 
 pub struct Args {
     pub safetensors: String,
@@ -17,18 +17,12 @@ pub struct Args {
     pub max_k: usize,
     pub iterations: usize,
     pub basis: String,
+    pub teacher: String,
     pub dims: Vec<usize>,
     pub steps_dims: Vec<usize>,
     pub max_edits: Vec<usize>,
     pub beam_widths: Vec<usize>,
     pub out: Option<String>,
-}
-
-fn parse_list(value: &str) -> Vec<usize> {
-    value
-        .split(',')
-        .map(|part| part.trim().parse().expect("列表项"))
-        .collect()
 }
 
 pub fn parse_args() -> Args {
@@ -45,6 +39,7 @@ pub fn parse_args() -> Args {
         max_k: 128,
         iterations: 12,
         basis: "pca".to_string(),
+        teacher: "linear".to_string(),
         dims: vec![384, 128, 64, 32, 16],
         steps_dims: vec![32, 16],
         max_edits: vec![1, 2],
@@ -67,6 +62,7 @@ pub fn parse_args() -> Args {
             "--max-k" => args.max_k = next().parse().expect("max-k"),
             "--iterations" => args.iterations = next().parse().expect("iterations"),
             "--basis" => args.basis = next(),
+            "--teacher" => args.teacher = next(),
             "--dims" => args.dims = parse_list(&next()),
             "--steps-dims" => args.steps_dims = parse_list(&next()),
             "--max-edits" => args.max_edits = parse_list(&next()),

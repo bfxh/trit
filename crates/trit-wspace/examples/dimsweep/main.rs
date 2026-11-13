@@ -19,19 +19,29 @@
 //! **「把思考降到多低还够用」**——宽度、步数、维度必要性一起量。
 
 use serde_json::{Value, json};
-use trit_wspace::repair::{RepairOptions, repair};
 use trit_wspace::safetensors;
 
 mod basis;
+mod curve;
 mod evaluate;
+mod judge;
 mod options;
 
 use basis::*;
+use curve::*;
 use evaluate::*;
+use judge::*;
 use options::*;
 
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
 const EMBEDDINGS: &str = "embeddings.word_embeddings.weight";
+
+pub fn parse_list(value: &str) -> Vec<usize> {
+    value
+        .split(',')
+        .map(|part| part.trim().parse().expect("列表项"))
+        .collect()
+}
 
 fn main() {
     let args = parse_args();
@@ -45,10 +55,19 @@ fn main() {
     let student = full_student(&query, readout);
 
     // 1) 采样并划分：全维三值学生判错的进 edit，判对的进 keep。
+    let teacher_kind = parse_teacher(&args.teacher);
+    let second: Option<Vec<f32>> = if teacher_kind == Teacher::TwoTap {
+        let row = (args.readout_row + 1) % query.rows;
+        Some(query.values[row * dim..(row + 1) * dim].to_vec())
+    } else {
+        None
+    };
     let samples = sample_dataset(
         &query,
         &embeddings,
         readout,
+        second.as_deref(),
+        teacher_kind,
         args.samples.max(args.edit_limit + args.keep_limit),
         args.seed,
     );
@@ -79,6 +98,7 @@ fn main() {
         "disagreement": disagreement,
         "edit_set": edit_samples.len(),
         "keep_set": keep_samples.len(),
+        "teacher": args.teacher,
         "full_trits": student.trit_count(),
     });
     if edit_samples.is_empty() || keep_samples.is_empty() {
@@ -109,115 +129,26 @@ fn main() {
         "top_values": values.iter().take(8).copied().collect::<Vec<_>>(),
     });
 
-    // 3) 宽度曲线（三值路径 + f32 对照）。
-    let mut width = Vec::new();
-    let mut min_k: Option<usize> = None;
-    for &k in &args.dims {
-        let basis = if k >= dim {
-            identity(dim)
-        } else if k <= comps.len() {
-            comps[..k].to_vec()
-        } else {
-            continue;
-        };
-        let net = if k >= dim {
-            student.clone()
-        } else {
-            reduced_net(&query, readout, dim, &basis)
-        };
-        let edit = oracle_of(&edit_samples, &basis);
-        let keep = oracle_of(&keep_samples, &basis);
-        let (edit_loss, keep_loss) = losses(&net, &edit, &keep);
-        if edit_loss == 0 && keep_loss == 0 && min_k.is_none_or(|best| k < best) {
-            min_k = Some(k);
-        }
-        let (f32_edit_acc, f32_keep_acc) = if k >= dim {
-            (1.0f32, 1.0f32)
-        } else {
-            (
-                f32_accuracy(&edit_samples, &basis, &query, readout, dim),
-                f32_accuracy(&keep_samples, &basis, &query, readout, dim),
-            )
-        };
-        // 全量样本上的一致性：区分「压缩了原学生」与「换成了教师」。
-        let agree_full = if k >= dim {
-            1.0
-        } else {
-            agreement_with_full(&net, &samples, &basis, &student)
-        };
-        width.push(json!({
-            "k": k,
-            "edit_loss": edit_loss,
-            "keep_loss": keep_loss,
-            "edit_acc": edit.accuracy(&net).expect("acc"),
-            "keep_acc": keep.accuracy(&net).expect("acc"),
-            "f32_edit_acc": f32_edit_acc,
-            "f32_keep_acc": f32_keep_acc,
-            "agree_full": agree_full,
-            "trits": net.trit_count(),
-            "reduction": net.trit_count() as f64 / student.trit_count() as f64,
-        }));
-    }
+    // 3) 宽度曲线 + 4) 步数曲线。
+    let cx = CurveCtx {
+        args: &args,
+        query: &query,
+        readout,
+        second: second.as_deref(),
+        kind: teacher_kind,
+        dim,
+        comps: &comps,
+        student: &student,
+        samples: &samples,
+        edit: &edit_samples,
+        keep: &keep_samples,
+    };
+    let (width, min_k) = width_curve(&cx);
     report["width"] = json!(width);
     report["min_k_zero_loss"] = json!(min_k);
-
-    // 4) 步数曲线：在降维学生上用带 keep 约束的 repair 修 edit 集。
-    let mut steps = Vec::new();
-    let mut minimum: Option<(usize, usize, usize)> = min_k.map(|k| (k, 0, 0));
-    for &k in &args.steps_dims {
-        if k >= dim || k > comps.len() {
-            continue;
-        }
-        let sub = &comps[..k];
-        let net = reduced_net(&query, readout, dim, sub);
-        let edit = oracle_of(&edit_samples, sub);
-        let keep = oracle_of(&keep_samples, sub);
-        for &max_edits in &args.max_edits {
-            for &beam in &args.beam_widths {
-                let options = RepairOptions {
-                    max_edits,
-                    beam_width: beam,
-                    exhaustive_pairs: 256,
-                    exhaustive_states: 0,
-                    keep: Some(keep.clone()),
-                    ..RepairOptions::default()
-                };
-                let found = repair(&net, &edit, &options).expect("repair");
-                let (edit_loss, keep_loss) = match &found {
-                    Some(result) => {
-                        let mut edited = net.clone();
-                        result.patch.apply(&mut edited).expect("apply patch");
-                        losses(&edited, &edit, &keep)
-                    }
-                    None => losses(&net, &edit, &keep),
-                };
-                if found.is_some() && edit_loss == 0 && keep_loss == 0 {
-                    let key = (k, max_edits, beam);
-                    if minimum.is_none_or(|best| key < best) {
-                        minimum = Some(key);
-                    }
-                }
-                steps.push(json!({
-                    "k": k,
-                    "max_edits": max_edits,
-                    "beam_width": beam,
-                    "found": found.is_some(),
-                    "evaluated": found.as_ref().map(|r| r.evaluated),
-                    "edit_loss": edit_loss,
-                    "keep_loss": keep_loss,
-                }));
-            }
-        }
-    }
+    let (steps, minimum) = steps_curve(&cx, min_k);
     report["steps"] = json!(steps);
-    report["minimum"] = match minimum {
-        Some((k, max_edits, beam)) => json!({
-            "k": k,
-            "max_edits": max_edits,
-            "beam_width": beam,
-        }),
-        None => Value::Null,
-    };
+    report["minimum"] = minimum;
 
     // 5) 必要性：在最大子空间上逐维剔除，delta 越大越必要。
     report["necessity"] =

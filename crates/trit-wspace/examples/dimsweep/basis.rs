@@ -5,6 +5,8 @@
 use trit_wspace::safetensors::Weights;
 use trit_wspace::{Layer, Net, Oracle, Trit};
 
+use crate::judge::{Teacher, teacher_score};
+
 /// 确定性 xorshift64*。
 pub struct Rng(u64);
 
@@ -91,6 +93,8 @@ pub fn sample_dataset(
     query: &Weights,
     embeddings: &Weights,
     readout: &[f32],
+    second: Option<&[f32]>,
+    kind: Teacher,
     budget: usize,
     seed: u64,
 ) -> Vec<Sample> {
@@ -100,7 +104,7 @@ pub fn sample_dataset(
     while out.len() < budget {
         let row = (rng.next() % embeddings.rows as u64) as usize;
         let x = embeddings.values[row * dim..(row + 1) * dim].to_vec();
-        let teacher = sign_of(dot(readout, &teacher_forward(query, &x)));
+        let teacher = sign_of(teacher_score(query, readout, second, &x, kind));
         if teacher == Trit::Zero {
             continue;
         }
@@ -318,15 +322,4 @@ pub fn oracle_of(samples: &[Sample], comps: &[Vec<f64>]) -> Oracle {
         .collect();
     let outputs: Vec<Vec<Trit>> = samples.iter().map(|s| vec![s.teacher]).collect();
     Oracle::new(inputs, outputs).expect("oracle")
-}
-
-/// 恒等基（`k == dim` 时就是原全维学生，用原输入）。
-pub fn identity(dim: usize) -> Vec<Vec<f64>> {
-    (0..dim)
-        .map(|i| {
-            let mut v = vec![0.0f64; dim];
-            v[i] = 1.0;
-            v
-        })
-        .collect()
 }

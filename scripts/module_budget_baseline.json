@@ -2964,19 +2964,27 @@
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/basis.rs",
-      "lines": 332
+      "lines": 325
+    },
+    {
+      "file": "crates/trit-wspace/examples/dimsweep/curve.rs",
+      "lines": 172
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/evaluate.rs",
-      "lines": 146
+      "lines": 107
+    },
+    {
+      "file": "crates/trit-wspace/examples/dimsweep/judge.rs",
+      "lines": 104
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/main.rs",
-      "lines": 235
+      "lines": 166
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/options.rs",
-      "lines": 81
+      "lines": 77
     },
     {
       "file": "crates/trit-wspace/examples/editset_aligned.rs",
