@@ -527,7 +527,10 @@ absmean 边界、体积计数与编码大小关系）。
   k=1 是否仍零违规未测。
 - `max_edits > 1`、更大的 `beam_width` 与样本量未试。
 - 降维后的 `trits` 没对齐 WSP 编码体积（这里只报 trit 数）。
-- 必要性排序的跨 seed 稳定性未测。
+- ~~必要性排序的跨 seed 稳定性未测~~：已测（seed 7/11/23，supervised 基）。
+  **除 `w_eff` 外不稳定**：delta 排序两两 Spearman 0.023 / -0.080 / -0.082，
+  top-5 只共享 component 0（1/5），bottom-5 重叠 0/5，top-10 重叠 1–3/10。
+  component 0 的 delta 稳定为正（9/14/12），其余方向的 necessity 不可跨 seed 引用。
 - 小样本（edit 8）下的早期读数全在噪声内，已废弃不引用。
 
 ## 库化：`Layer::project`

@@ -118,6 +118,11 @@
 - `tests/agree.rs` 四条性质测试：单位基下 f32 投影 == f32 基准；完整前向 == `Net::forward`；
   absmean 对全零/半整数/±0 的行为；`measure` 的 trit 计数与编码大小关系。
 
+- 必要性排序的跨 seed 稳定性（seed 7/11/23，supervised 基）：**不稳健**。
+  delta 排序两两 Spearman 0.023 / -0.080 / -0.082，top-5 只共享 component 0（1/5），
+  bottom-5 重叠 0/5，top-10 重叠 1–3/10。只有 `w_eff`（component 0）稳定为正
+  （delta 9/14/12）；其余方向的 necessity 不可跨 seed 引用。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，
