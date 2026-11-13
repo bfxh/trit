@@ -236,6 +236,18 @@
   `tests/attention_learn.rs` 的小网络（2 头、2 key）可收敛，说明算法本身有效，
   瓶颈是**三值位置编码的表达力**。
 
+- 原始 f32 注意力对照：新模块 `attention_f32.rs`（`F32Attention`）——Q/K/V 全 f32、
+  softmax f32。同 12 头 × 32 维、128 key：f32 下 top 权重 ≈ 0.0079（1/128 ≈ 0.0078），
+  几乎均匀；dominant 只是 0.0079 的微小领先。相比之下三值版权重 >0.999（one-hot）——
+  **one-hot 是量化造成的**：整数分数幅度几十，softmax 饱和。
+  `tests/attention_f32.rs` 两条：权重和为 1 + dominant、等分时均匀。
+
+- 训练过程/梯度历史：新模块 `training.rs`（`training::run`）——每轮 `repair` 后记录
+  loss 与输入侧逐位敏感度（有限差分「梯度」代理）。真实 MiniLM query 的 4×4 子矩阵 +
+  词向量前 4 维、32 样本：第一轮用 2 个 trit 补丁修复 14 个失配，之后无补丁可找；
+  flip_rate / lost_rate = 0.328、最敏感位影响 26/32 个样本。
+  `tests/training.rs` 一条：XOR 打坏一格后第一轮 after_loss=0、patch_len>0。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，

@@ -2967,6 +2967,10 @@
       "lines": 120
     },
     {
+      "file": "crates/trit-wspace/examples/attention_f32_real.rs",
+      "lines": 92
+    },
+    {
       "file": "crates/trit-wspace/examples/attention_learn_real.rs",
       "lines": 117
     },
@@ -3103,6 +3107,10 @@
       "lines": 126
     },
     {
+      "file": "crates/trit-wspace/examples/training_real.rs",
+      "lines": 105
+    },
+    {
       "file": "crates/trit-wspace/examples/trit_train_tasks.rs",
       "lines": 727
     },
@@ -3125,6 +3133,10 @@
     {
       "file": "crates/trit-wspace/src/attention.rs",
       "lines": 136
+    },
+    {
+      "file": "crates/trit-wspace/src/attention_f32.rs",
+      "lines": 129
     },
     {
       "file": "crates/trit-wspace/src/attention_learn.rs",
@@ -3539,6 +3551,10 @@
       "lines": 79
     },
     {
+      "file": "crates/trit-wspace/src/training.rs",
+      "lines": 87
+    },
+    {
       "file": "crates/trit-wspace/src/transplant.rs",
       "lines": 102
     },
@@ -3609,6 +3625,10 @@
     {
       "file": "crates/trit-wspace/tests/attention.rs",
       "lines": 40
+    },
+    {
+      "file": "crates/trit-wspace/tests/attention_f32.rs",
+      "lines": 39
     },
     {
       "file": "crates/trit-wspace/tests/attention_learn.rs",
@@ -3833,6 +3853,10 @@
     {
       "file": "crates/trit-wspace/tests/tile_edit.rs",
       "lines": 236
+    },
+    {
+      "file": "crates/trit-wspace/tests/training.rs",
+      "lines": 39
     },
     {
       "file": "crates/trit-wspace/tests/transplant.rs",
