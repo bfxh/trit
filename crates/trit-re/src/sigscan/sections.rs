@@ -2,17 +2,17 @@
 //!
 //! 官方语义：越界索引的字段 = **确定的未定义**（比较一律为假）——与
 //! 零命中串的 `@a[N]` 同款纪律（第五号语义分歧的推广）；非数值下标
-//! （解析层已吞成 `[…]`）维持记名弃权。字段集 = Section 的数值成员；
-//! `.name` 是字符串（条件等值比较基建未建）→ 弃权。
+//! （解析层已吞成 `[…]`）维持记名弃权。字段集 = Section 的数值成员 +
+//! `.name`（字符串，经 `strval` 做等值比较；非字符串上下文按弃权处理）。
 
-use super::eval::EvalCtx;
-use super::resolve::Resolved;
 use crate::pe::PeInfo;
 
 /// 数组式解析结局。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) enum Sec {
     Val(u64),
+    /// 字符串字段（`.name`）——条件等值比较用（`super::strval`）。
+    Name(Vec<u8>),
     /// 确定的未定义（越界索引）——比较为假。
     Undefined,
     /// 路径不在子集内（记名弃权）。
@@ -42,26 +42,10 @@ pub(super) fn resolve(path: &str, pe: &PeInfo) -> Sec {
         "virtual_address" => u64::from(sec.virtual_address),
         "raw_size" => u64::from(sec.raw_size),
         "raw_ptr" => u64::from(sec.raw_ptr),
-        _ => return Sec::Abstain, // name（字符串）等未实装
+        "name" => return Sec::Name(sec.name.clone().into_bytes()),
+        _ => return Sec::Abstain,
     };
     Sec::Val(v)
-}
-
-/// `Operand::Opaque` 统一分派：`pe.sections[N].*` 三态优先，其余路径
-/// 回落标量子集（子集外 / 缺上下文 = 记名弃权）。
-pub(super) fn resolve_opaque(path: &str, ctx: &EvalCtx) -> Resolved {
-    if path.starts_with("pe.sections[") {
-        return match ctx.pe {
-            Some(pe) => match resolve(path, pe) {
-                Sec::Val(v) => Resolved::Val(v),
-                Sec::Undefined => Resolved::DefiniteFalse,
-                Sec::Abstain => Resolved::Unknown,
-            },
-            None => Resolved::Unknown,
-        };
-    }
-    super::resolve_pe_prop(path, ctx.pe, Some(ctx.data.len() as u64))
-        .map_or(Resolved::Unknown, Resolved::Val)
 }
 
 #[cfg(test)]
@@ -140,8 +124,11 @@ mod tests {
     #[test]
     fn non_members_abstain() {
         let pe = pe2();
-        // name（字符串等值基建未建）与非成员路径维持弃权
-        assert_eq!(resolve("pe.sections[0].name", &pe), super::Sec::Abstain);
+        // name 是字符串字段（经 strval 比较）；非成员/非数值下标维持弃权
+        assert_eq!(
+            resolve("pe.sections[0].name", &pe),
+            super::Sec::Name(b".text".to_vec())
+        );
         assert_eq!(resolve("pe.machine", &pe), super::Sec::Abstain);
         assert_eq!(resolve("pe.sections[x]", &pe), super::Sec::Abstain);
     }

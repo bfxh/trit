@@ -9,11 +9,10 @@
 //! - `rule <name> [: tags] { meta: … strings: … condition: … }`（多规则
 //!   文件；无 strings 的纯数值规则合法）；
 //! - 字符串：`$id = "text"`（修饰符 `nocase` `wide` `ascii` `fullword`
-//!   `xor`/`xor(k)`/`xor(a-b)`）、`$id = { hex 串 }`（通配/跳跃同
-//!   [`crate::sigscan::Pattern::hex`]）；正则串与 `base64`/`base64wide`/
-//!   `private` 修饰——**可解析不可扫描**：串记为
-//!   [`crate::sigscan::Pattern::Unscannable`]（带原因），整条规则扫描时
-//!   判 `Unknown`，不再拖累成整条 Unsupported；
+//!   `xor`/`xor(k)`/`xor(a-b)` / `private`）、`$id = { hex 串 }`（通配/跳跃同
+//!   [`crate::sigscan::Pattern::hex`]）；正则串与 `base64`/`base64wide` 修饰
+//!   **可解析不可扫描**：串记为 [`crate::sigscan::Pattern::Unscannable`]，
+//!   整条规则扫描时判 `Unknown`；
 //! - 条件表达式：`and/or/not`、括号、`$id`、`$id at N`、`$id in (a..b)`、
 //!   `any/all/N of them`、`any/all/N of ($x*)`、`true`/`false`；
 //! - **数值比较**：`filesize`、`uint8/16/32(lit)`、`#a`（计数）、`@a[N]`
@@ -21,9 +20,10 @@
 //!   `< <= > >= == !=`（KB/MB 后缀字面量同认）；
 //! - **for-of 循环**：`for N|any|all of them/($x*) : ( 体 )`，体内 `$`、
 //!   `#$`、`@$`/`@$[N]` 绑定当前串；
-//! - **模块属性**：`pe.*` 标量与 `pe.sections[N].*`（越界 = 确定的未定义）
-//!   从 PE 头求值；子集外路径（`pe.rich_signature.*`、`math.*`）记名保留、
-//!   求值恒 `Unknown`。`entrypoint` = 入口点**文件偏移**（官方 YARA 语义，
+//! - **模块属性**：`pe.*` 标量、`pe.sections[N].*`、`pe.rich_signature.*`
+//!   （越界/无 Rich = 确定的未定义）与 `.name`/rich 字符串 `==`/`!=` 求值；
+//!   `math.*` 等子集外路径记名保留、求值恒 `Unknown`。`private` 串匹配
+//!   照常、仅报告隐藏。`entrypoint` = 入口点**文件偏移**（官方 YARA 语义，
 //!   实测对拍判定）——CLI 从 PE 头解析传入
 //!   [`crate::sigscan::SigScan::scan_with_entrypoint`]，库直调不传上下文时弃权；
 //! - 注释：`//` 行注释与 `/* */` 块注释（词法器识别引号内的注释字符——
@@ -54,9 +54,10 @@ use crate::sigscan::{Pattern, Rule};
 
 // 条件表达式解析（拆出守 800 行预算）；`#`/`@` 叶子在 cond_tail。
 mod cond;
+mod cond_cmp;
 mod cond_leaf;
 mod cond_tail;
-use self::cond::CondParser;
+mod rulebuild;
 
 /// 单条规则的解析结局：可评估，或不可评估（带原因）。
 #[derive(Debug, Clone)]
@@ -168,6 +169,7 @@ impl Parser {
         }
         let mut meta_keys = 0usize;
         let mut strings: Vec<(String, Pattern)> = Vec::new();
+        let mut private_ids: Vec<usize> = Vec::new();
         let mut unsupported: Option<String> = None;
         let mut condition_toks: Vec<Tok> = Vec::new();
 
@@ -177,7 +179,7 @@ impl Parser {
                 if let Some(reason) = unsupported {
                     return Ok(RuleOutcome::Unsupported { name, reason });
                 }
-                return self.assemble_rule(name, strings, &condition_toks, meta_keys);
+                return self.assemble_rule(name, strings, &condition_toks, meta_keys, private_ids);
             }
             match tok {
                 Tok::Word(w) if w == "meta" => {
@@ -211,7 +213,12 @@ impl Parser {
                         if !self.eat_sym('=') {
                             return Err(format!("规则 {name}：{id} 后缺 '='"));
                         }
-                        if let Some(pattern) = self.parse_string_value(&mut unsupported, &name)? {
+                        if let Some((pattern, private)) =
+                            self.parse_string_value(&mut unsupported, &name)?
+                        {
+                            if private {
+                                private_ids.push(strings.len());
+                            }
                             strings.push((id.trim_start_matches('$').to_string(), pattern));
                         }
                     }
@@ -261,25 +268,6 @@ impl Parser {
             self.peek(),
             Some(Tok::Word(w)) if w == "strings" || w == "condition"
         )
-    }
-
-    fn assemble_rule(
-        &self,
-        name: String,
-        strings: Vec<(String, Pattern)>,
-        condition_toks: &[Tok],
-        meta_keys: usize,
-    ) -> Result<RuleOutcome, String> {
-        let _ = meta_keys;
-        // 无 strings 的纯数值规则合法（filesize/uintN 等）；条件里引用
-        // 未声明串的会在 CondParser 里得到明确的 Unsupported 原因。
-        let cond = match CondParser::new(condition_toks, &strings).parse_full() {
-            Ok(c) => c,
-            Err(reason) => {
-                return Ok(RuleOutcome::Unsupported { name, reason });
-            }
-        };
-        Ok(RuleOutcome::Parsed(Rule::from_parts(name, strings, cond)))
     }
 }
 

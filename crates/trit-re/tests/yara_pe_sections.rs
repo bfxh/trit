@@ -65,15 +65,15 @@ fn pe_sections_abstain_without_context_or_member() {
         ),
         Ternary::Unknown
     );
-    // 未实装路径（rich）维持弃权
+    // 无 Rich header = 确定的未定义 → 比较为假（不是证据缺失）
     assert_eq!(
         scan_pe(
             "rule u { condition: pe.rich_signature.version == 1 }",
             &data,
             Some(&info)
         ),
-        Ternary::Unknown,
-        "rich 等未实装路径维持弃权"
+        Ternary::False,
+        "无 Rich header：确定的未定义"
     );
     assert_eq!(
         scan_pe("rule u { condition: pe.machine == 0x8664 }", &data, None),

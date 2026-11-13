@@ -6,9 +6,9 @@
 //!
 //! ## 三值纪律（与验收判据逐字对应）
 //!
-//! **"未命中"只在完整扫描后给出**：命中 → [`Ternary::True`]（命中不依赖
-//! 完整性——看到就是看到）；完整扫描且未命中 → [`Ternary::False`]；
-//! **输入截断**（调用方声明，例如文件读取中断）→ [`Ternary::Unknown`]——
+//! **"未命中"只在完整扫描后给出**：命中 → [`trit_core::value::Ternary::True`]（命中不依赖
+//! 完整性——看到就是看到）；完整扫描且未命中 → [`trit_core::value::Ternary::False`]；
+//! **输入截断**（调用方声明，例如文件读取中断）→ [`trit_core::value::Ternary::Unknown`]——
 //! 截断的没看见不能区分"真的没有"和"没看见"，与 [`crate::functions`]
 //! 共现判定同一条 fail-closed 纪律。整体裁决 = 各规则的 Kleene OR
 //! （报警语义：任一命中即报警；`False ∨ Unknown = Unknown`）。
@@ -25,7 +25,7 @@
 //!   `entrypoint` = 入口点**文件偏移**（官方语义，PE 与 ELF 双实测对拍判定：
 //!   PE 的 RVA≠offset 判别样本与 ELF 的 ET_EXEC 判别样本都只认 offset），
 //!   由调用方经 [`SigScan::scan_with_entrypoint`] 传入、缺上下文时弃权；
-//!   `pe.*` 标量/数组式子集从 PE 头求值（`pe.sections[N].*` 越界 = 确定的未定义）；子集外路径/未知函数（`pe.rich_signature.*`、`math.*`）记名保留、求值恒 `Unknown`。
+//!   `pe.*` 标量/数组式/rich 子集从 PE 头求值（越界/无 Rich = 确定的未定义；`sections[N].name` / rich 的 `clear_data`/`raw_data` 支持字符串等值）；`math.*` 等子集外路径记名保留、求值恒 `Unknown`。
 //! - 每模式命中数上限 [`MAX_HITS`]（65536，**封顶截断 = 扫描不完整**
 //!   ——`at`/`in` 等位置性条件据此弃权，绝不据残表判假），跳跃上限
 //!   [`MAX_JUMP`]，
@@ -36,7 +36,6 @@
 //! ```
 //! use trit_re::sigscan::{self, Condition, Pattern, Rule, SigScan};
 //! use trit_core::value::Ternary;
-//!
 //! let rules = vec![
 //!     Rule::new("mz_peek")
 //!         .push("hdr", Pattern::hex("4D 5A ?? 00").unwrap())
@@ -49,8 +48,6 @@
 //! let report = SigScan::new(&rules).scan(&[0x4D], true);
 //! assert_eq!(report.value, Ternary::Unknown);
 //! ```
-
-use trit_core::value::Ternary;
 
 /// 每个模式保留的命中数上限（病态输入护栏）。**封顶截断 = 命中表不完整
 /// = 扫描不完整**——`at`/`in`/`@a[N]` 等位置性条件在记录集不能证明时
@@ -154,6 +151,8 @@ impl CmpOp {
 pub enum Operand {
     /// 整数字面量（十进制 / `0x` 十六进制 / `KB`·`MB` 后缀）。
     Lit(u64),
+    /// 字符串字面量（`pe.sections[N].name == ".text"` 的右侧）。
+    LitStr(String),
     /// `filesize`（截断输入上大小本身不完整 → 不可求值）。
     Filesize,
     /// `#a`：串的命中次数（按扫描报告，受 [`MAX_HITS`] 封顶——如实截断）。
@@ -238,72 +237,8 @@ pub enum Condition {
     OfCount { n: usize, prefix: Option<String> },
 }
 
-/// 一条签名规则：名字 + 字符串表 + 条件。
-#[derive(Debug, Clone)]
-pub struct Rule {
-    pub name: String,
-    patterns: Vec<(String, Pattern)>,
-    condition: Condition,
-}
-
-impl Rule {
-    pub fn new(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            patterns: Vec::new(),
-            condition: Condition::All,
-        }
-    }
-
-    pub fn push(mut self, id: &str, pattern: Pattern) -> Self {
-        self.patterns.push((id.to_string(), pattern));
-        self
-    }
-
-    pub fn condition(mut self, condition: Condition) -> Self {
-        self.condition = condition;
-        self
-    }
-
-    /// 供同 crate 的解析器装配（字段保持私有，外部仍走 new/push/condition）。
-    pub(crate) fn from_parts(
-        name: String,
-        patterns: Vec<(String, Pattern)>,
-        condition: Condition,
-    ) -> Self {
-        Self {
-            name,
-            patterns,
-            condition,
-        }
-    }
-
-    /// 串表（`$id` 去掉 `$` 后的 id + 模式）——解析器据此把 `$id` 引用
-    /// 解析成下标。
-    pub fn patterns(&self) -> &[(String, Pattern)] {
-        &self.patterns
-    }
-
-    pub fn condition_ref(&self) -> &Condition {
-        &self.condition
-    }
-}
-
-/// 一条规则的裁决。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RuleVerdict {
-    pub rule: String,
-    pub value: Ternary,
-    /// 命中的模式（`模式id, 命中偏移` 列表；每模式最多 [`MAX_HITS`] 个）。
-    pub hits: Vec<(String, u64)>,
-}
-
-/// 一次扫描的报告：逐规则裁决 + 整体（Kleene OR 报警语义）。
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SigReport {
-    pub rules: Vec<RuleVerdict>,
-    pub value: Ternary,
-}
+mod rule;
+pub use rule::{Rule, RuleVerdict, SigReport};
 
 /// 扫描器（规则集不可变，可反复扫描）。
 pub struct SigScan<'a> {
@@ -321,7 +256,11 @@ use eval::{EvalCtx, eval};
 pub mod regex;
 // base64 相位变体展开（探针定案）。
 pub mod b64;
+mod kleene; // Kleene 三值逻辑原语（从 eval.rs 拆出）
+mod pepaths;
+mod rich; // pe.rich_signature.*（Rich header 解析）
 mod sections; // pe.sections[N] 数组式访问（pe.* 深水区第一潜）
+mod strval; // 字符串操作数求值（.name / clear_data / raw_data） // pe.* Opaque 路径分派（rich → sections → 标量）
 // Pattern 构造器（hex / 文本串，从本文件拆出守预算）。
 mod pattern;
 // 操作数解析三态（从 eval.rs 拆出守预算）。
@@ -330,8 +269,6 @@ mod resolve;
 mod scan;
 
 mod peprops; // pe.* 模块属性子集（YARA 完整子集方向）
-
-use peprops::resolve as resolve_pe_prop;
 
 // 字节级匹配引擎（拆出守预算）。
 mod matchers;
