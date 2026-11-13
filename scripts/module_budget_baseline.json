@@ -3095,8 +3095,8 @@
       "lines": 627
     },
     {
-      "file": "crates/trit-wspace/src/cli/cli_agree_sampled.rs",
-      "lines": 62
+      "file": "crates/trit-wspace/src/cli/cli_agree_stats.rs",
+      "lines": 92
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",

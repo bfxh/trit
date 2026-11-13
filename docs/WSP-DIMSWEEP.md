@@ -472,7 +472,11 @@ trit-wspace certify small.wsp --keep ...
 这是「压完值不值」的第一道读数：rate 太低就该换更大的 k 或换基，不必再手动串 probe / certify。
 注意随机输入不含真实分布信息，真实数据上的 agree 可能更高。
 
-**已知缺口（附补的前提）**：`--samples` 参数化与「不一致样本列表」实现过但回退了——
-`cli.rs` / `cli_project.rs` / `cli_agree.rs` 在模块台账里都没有余量，每次改动都要搬函数。
-要补需先腾出 `cli.rs` ≥ +7、`cli_project` ≥ +3、`cli_agree` ≥ +4；建议先把 `cmd_transplant`
-（49 行）搬进独立文件，再一次做完。
+**三条已补齐**：
+
+- `--samples N`：采样数可调（默认 64）。
+- `--agree-from <oracle.json>`：用 oracle 工件里的真实输入采样，`source` 会标 `oracle`；
+  这是把 `rate` 从「随机粗筛」变成「真实分布保真度」的开关。
+- `mismatches`：前 3 个不一致样本（输入 + 两侧输出）。
+
+为腾出模块台账空间，顺带把 `cmd_read` / `cmd_diff` 拆成了独立文件（`cli.rs` 653 → 627）。

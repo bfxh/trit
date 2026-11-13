@@ -3,7 +3,7 @@ use serde_json::json;
 use crate::net::Net;
 use crate::to_wsp;
 
-use super::{atomic_write, cli_agree_sampled, emit, err, load_net, one, parse, value};
+use super::{atomic_write, cli_agree_stats, emit, err, load_net, one, parse, value};
 pub(super) fn project(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
     let path = one(
@@ -53,7 +53,7 @@ pub(super) fn project(args: &[String]) -> Result<(), String> {
         "layer": layer_index,
         "before": { "rows": target.rows(), "cols": target.cols() },
         "after": { "rows": projected.rows(), "cols": projected.cols() },
-        "agree": cli_agree_sampled::agree(&net, &projected_net, basis, 64),
+        "agree": cli_agree_stats::agree(&net, &projected_net, basis, &parsed, 3)?,
         "trits": projected_net.trit_count(),
         "out": out,
     }))
