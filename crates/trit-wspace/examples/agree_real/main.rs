@@ -31,8 +31,12 @@ fn main() {
     let query = safetensors::read_tensor(&path, QUERY).expect("query");
     let embeddings = safetensors::read_tensor(&path, EMBEDDINGS).expect("embeddings");
     let dim = query.cols;
+    let row: usize = std::env::args()
+        .nth(2)
+        .map(|s| s.parse().expect("readout_row"))
+        .unwrap_or(0);
 
-    let readout: Vec<f32> = query.values[..dim].to_vec();
+    let readout: Vec<f32> = query.values[row * dim..(row + 1) * dim].to_vec();
     let student = Net::new(vec![
         query.to_layer().expect("ternary query"),
         Layer::new(1, dim, &trit_row_i8(&readout), &[0]).expect("readout"),
@@ -80,13 +84,8 @@ fn main() {
             continue;
         }
         let sub = &basis[..k];
-        let bias: Vec<i8> = query
-            .to_layer()
-            .expect("q")
-            .bias()
-            .iter()
-            .map(|t| t.to_i8())
-            .collect();
+        let qlayer = query.to_layer().expect("q");
+        let bias: Vec<i8> = qlayer.bias().iter().map(|t| t.to_i8()).collect();
         let layer = Layer::new(
             dim,
             k,
@@ -126,7 +125,7 @@ fn main() {
         "{}",
         serde_json::to_string_pretty(&json!({
             "input": "word_embeddings rows (real); f32 base = raw f32 weights+inputs",
-            "basis": "supervised (w_eff + orthogonal PCA)",
+            "basis": "supervised (w_eff + orthogonal PCA)", "readout_row": row,
             "curves": curves,
         }))
         .expect("json")
