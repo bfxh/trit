@@ -152,9 +152,7 @@ fn cli_manifest_file_traversal_is_rejected() {
     let model = dir.join("model");
     fs::create_dir_all(&model).expect("model dir");
     // 合法形式但 file 越界（../ 兄弟路径）。
-    let manifest = format!(
-        "{{\"tensors\":[{{\"name\":\"x\",\"file\":\"../outside.wsp\",\"rows\":1,\"cols\":2}}]}}"
-    );
+    let manifest = r#"{"tensors":[{"name":"x","file":"../outside.wsp","rows":1,"cols":2}]}"#;
     fs::write(model.join("manifest.json"), manifest).expect("write manifest");
     let out = run(&[
         "pack-model",
