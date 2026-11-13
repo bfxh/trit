@@ -2967,6 +2967,10 @@
       "lines": 120
     },
     {
+      "file": "crates/trit-wspace/examples/attention_real.rs",
+      "lines": 73
+    },
+    {
       "file": "crates/trit-wspace/examples/bias_e2e.rs",
       "lines": 417
     },
@@ -3101,6 +3105,10 @@
     {
       "file": "crates/trit-wspace/src/artifact_shard.rs",
       "lines": 202
+    },
+    {
+      "file": "crates/trit-wspace/src/attention.rs",
+      "lines": 136
     },
     {
       "file": "crates/trit-wspace/src/attribution.rs",
@@ -3569,6 +3577,10 @@
     {
       "file": "crates/trit-wspace/tests/artifact_shard.rs",
       "lines": 221
+    },
+    {
+      "file": "crates/trit-wspace/tests/attention.rs",
+      "lines": 40
     },
     {
       "file": "crates/trit-wspace/tests/audit.rs",

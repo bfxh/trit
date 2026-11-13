@@ -622,6 +622,23 @@ MiniLM 的 query 层 + readout，32 个真实词向量行，教师 = f32 `sign(r
 - scan 在 readout 层找到 7 种能力、0 个专才：readout 参数的影响集合都较大，没有只影响 ≤4 样本的参数。
 - **边界**：32 样本的展示性读数，不是统计结论；MiniLM 原始网络不是三值，这里是 query 层三值化代理。
 
+### 三值注意力（`AttentionHead`）
+
+`AttentionHead` 是 `Net` 之外的新运行时：Q/K/V 权重三值，分数整数点积，softmax 用 f32。
+真实 MiniLM 的 Q/K/V 层三值化，4 个 query × 32 个词表 key：
+
+| query | dominant key | 最大权重 | score 范围 |
+|---|---|---|---|
+| 0 | 1 | 0.999624 | -2..48 |
+| 1 | 30 | 0.999997 | -54..2 |
+| 2 | 0 | 1.000000 | -43..17 |
+| 3 | 0 | 0.999063 | -52..9 |
+
+- 三值整数分数幅度很大（−54..48），softmax 几乎 one-hot——**注意力被单个 key 吸走**，
+  不是逐渐分散；这是「注意力为什么被吸走」的直接读数。
+- 边界：单头、无位置编码、无多头拼接；Q/K/V 来自 MiniLM 的 query/key/value 层三值化，
+  不是原始 f32 attention。
+
 ### 库化：`agree`
 
 上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，

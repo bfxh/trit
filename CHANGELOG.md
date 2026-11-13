@@ -202,6 +202,13 @@
 - 审计时间戳：`to_jsonl` 给每条记录写入 `ts`（Unix 毫秒），不参与哈希链——
   旧日志无 `ts` 仍可验链；`history` 输出 `first_ts`/`last_ts`。
 
+- 三值注意力运行时：新模块 `attention.rs`（`AttentionHead`）——Q/K/V 三值权重、
+  分数整数点积、softmax 用 f32。真实 MiniLM 的 Q/K/V 层三值化，4 query × 32 key：
+  dominant key 1/30/0/0，最大权重 0.9996/0.999997/1.0/0.9991，score 范围 -54..48。
+  **三值整数分数把 softmax 拉成近乎 one-hot**——注意力被单个 key 吸走，不是逐渐分散。
+  `tests/attention.rs` 两条：权重和为 1 + dominant、等分时均匀。边界：单头、无位置编码；
+  Q/K/V 是三值化代理，不是原始 f32 attention。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，
