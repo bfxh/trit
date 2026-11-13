@@ -1,13 +1,4 @@
-//! manifest 里 `file` 字段的路径护栏：目录清单是攻击者可控输入。
-//!
-//! `Path::join` 的语义是「绝对路径直接覆盖前缀」，所以清单里写
-//! `"C:/Users/x/secrets"` 或 `"../../secrets.wsp"` 会让打包命令读到清单
-//! 指向的**任意文件**并打进容器。这里统一拒绝：绝对路径、`..` 分量、
-//! 空串、盘符前缀；只允许落在清单同目录下的普通相对路径。
-//!
-//! 校验是**字符串级、平台无关**的：路径组件语义（反斜杠、盘符）在
-//! Windows/Linux 上不同，用平台 `Path` 组件判断会漏掉另一侧的攻击
-//! （CI 上实测抓到过）。
+//! manifest 里 `file` 字段的路径护栏：`Path::join` 遇绝对路径直接覆盖前缀，攻击者可控的清单能让打包命令读**任意文件**。校验是字符串级、平台无关的（组件语义在 Windows/Linux 不同，平台 `Path` 判断会漏掉另一侧的攻击，CI 实测抓到过）。
 
 use std::path::{Path, PathBuf};
 
@@ -22,10 +13,7 @@ pub fn resolve(dir: &str, file: &str) -> Result<PathBuf> {
         return Err(Error::Wire(format!("manifest 的 file `{file}` 是绝对路径")));
     }
     if file.contains(':') {
-        // 盘符（Windows）或数据流分隔符——合法清单文件名不需要冒号。
-        return Err(Error::Wire(format!(
-            "manifest 的 file `{file}` 含盘符/冒号分量"
-        )));
+        return Err(Error::Wire(format!("manifest 的 file `{file}` 含冒号分量")));
     }
     for part in file.split(['/', '\\']) {
         if matches!(part, "" | "." | "..") {
@@ -45,20 +33,23 @@ mod tests {
     fn accepts_plain_relative_names() {
         let path = resolve("D:/model", "0001-enc.weight.wsp").expect("ok");
         assert_eq!(path, Path::new("D:/model").join("0001-enc.weight.wsp"));
-        let nested = resolve("D:/model", "shards/0002-a.wsp").expect("ok");
-        assert!(nested.starts_with("D:/model"));
+        assert!(resolve("D:/model", "shards/0002-a.wsp").is_ok());
     }
 
     #[test]
     fn rejects_traversal_absolute_and_empty() {
-        assert!(resolve("D:/model", "../secrets.wsp").is_err());
-        assert!(resolve("D:/model", "..\\secrets.wsp").is_err());
-        assert!(resolve("D:/model", "C:/Users/x/secrets.wsp").is_err());
-        assert!(resolve("D:/model", "/etc/passwd").is_err());
-        assert!(resolve("D:/model", "\\Windows\\system32").is_err());
-        assert!(resolve("D:/model", "").is_err());
-        assert!(resolve("D:/model", ".").is_err());
-        assert!(resolve("D:/model", "a/./b").is_err());
-        assert!(resolve("D:/model", "a//b").is_err());
+        for file in [
+            "../secrets.wsp",
+            "..\\secrets.wsp",
+            "C:/Users/x/secrets.wsp",
+            "/etc/passwd",
+            "\\Windows\\system32",
+            "",
+            ".",
+            "a/./b",
+            "a:b",
+        ] {
+            assert!(resolve("D:/model", file).is_err(), "{file:?} 必须被拒");
+        }
     }
 }
