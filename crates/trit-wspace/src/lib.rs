@@ -50,7 +50,6 @@
 //! assert!(want.exact(&fixed).unwrap());
 //! ```
 //! ## 边界（没做的部分）
-//!
 //! - 只支持符号激活的前馈网络；不带注意力、残差、卷积；验证是**有界穷举**，不是形式化证明；
 //! - 修补搜索是启发式（半径 1/2 穷举 + 束搜索），不保证全局最小，只保证返回的解在验证集上完全正确；没有“从自然语言生成补丁”的模型；本库提供的是可被外部程序/模型调用的编辑原语与验证闭环。技术树与尚缺的层见 `crates/trit-wspace/README.md`。
 //! ## 模型/脚本接口
@@ -118,6 +117,7 @@ pub mod task_merge;
 pub mod trace;
 pub mod training;
 pub mod transformer_f32;
+pub mod transformer_f32_full;
 pub mod transformer_f32_train;
 pub mod transplant;
 pub mod trit;

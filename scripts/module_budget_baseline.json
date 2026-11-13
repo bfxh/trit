@@ -3123,6 +3123,10 @@
       "lines": 105
     },
     {
+      "file": "crates/trit-wspace/examples/transformer_f32_full_real.rs",
+      "lines": 83
+    },
+    {
       "file": "crates/trit-wspace/examples/transformer_f32_real.rs",
       "lines": 76
     },
@@ -3591,6 +3595,10 @@
       "lines": 161
     },
     {
+      "file": "crates/trit-wspace/src/transformer_f32_full.rs",
+      "lines": 297
+    },
+    {
       "file": "crates/trit-wspace/src/transformer_f32_train.rs",
       "lines": 137
     },
@@ -3913,6 +3921,10 @@
     {
       "file": "crates/trit-wspace/tests/transformer_f32.rs",
       "lines": 47
+    },
+    {
+      "file": "crates/trit-wspace/tests/transformer_f32_full.rs",
+      "lines": 46
     },
     {
       "file": "crates/trit-wspace/tests/transformer_f32_train.rs",
