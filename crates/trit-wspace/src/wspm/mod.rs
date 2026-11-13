@@ -16,41 +16,23 @@
 //! `offset` 是绝对文件偏移；`method`：0=WSP2、1=WSP3、2=WSP4；
 //! `bias_ref` 指向同容器里的另一个 entry（清单 `bias` 字段的语义），`u32::MAX` 表示无。
 
+mod entry;
+
 use crate::error::{Error, Result};
 use crate::net::Net;
 use crate::wsp2::bytes::fnv;
 use crate::wsp4::{decode_auto, encode};
 
+pub use entry::ModelEntry;
+use entry::read_entry;
+
 const MAGIC: &[u8; 4] = b"WSPM";
 const VERSION: u8 = 1;
 const HEADER: usize = 10;
-const NO_BIAS: u32 = u32::MAX;
-/// 每个定长 entry 字段的字节数（method 到 len，不含 name）。
-const ENTRY_FIXED: usize = 1 + 1 + 4 + 8 + 8 + 8 + 8;
+use entry::{ENTRY_FIXED, NO_BIAS};
 
 /// 打包格式：`auto` 逐张量选最小的；其余固定。
 pub const FORMATS: [&str; 4] = ["auto", "wsp2", "wsp3", "wsp4"];
-
-/// 容器里的一个张量条目（元数据 + blob 位置）。
-#[derive(Clone, Debug, PartialEq)]
-pub struct ModelEntry {
-    /// 张量名（清单里的 `name`，容器内唯一）。
-    pub name: String,
-    /// blob 的压缩格式（0=WSP2、1=WSP3、2=WSP4）。
-    pub method: u8,
-    /// 单层网络的行数 / 列数（清单语义，解码时复核）。
-    pub rows: usize,
-    /// 单层网络的列数。
-    pub cols: usize,
-    /// 清单里的 `vector` 标记（1×cols 向量张量）。
-    pub vector: bool,
-    /// `bias` 指向的 entry 序号；`None` 表示无。
-    pub bias: Option<usize>,
-    /// blob 在文件里的绝对偏移与字节数。
-    pub offset: u64,
-    /// blob 的字节数。
-    pub len: u64,
-}
 
 /// 打包输入：一个名字 + 元数据 + 单层网络。
 pub struct ModelItem<'a> {
@@ -254,76 +236,29 @@ pub fn unpack(bytes: &[u8]) -> Result<ModelPack> {
     }
     let mut nets = Vec::with_capacity(entries.len());
     for entry in &entries {
-        let start = entry.offset as usize;
-        let end = start + entry.len as usize;
-        if end > payload_end {
-            return Err(Error::Wire(format!(
-                "`{}` blob 越界（offset {} len {}）",
-                entry.name, entry.offset, entry.len
-            )));
-        }
-        let net = decode_auto(&bytes[start..end])
-            .map_err(|error| Error::Wire(format!("`{}` blob 解码失败：{error}", entry.name)))?;
+        let end = match entry.offset.checked_add(entry.len) {
+            Some(end) if end <= payload_end as u64 => end,
+            _ => {
+                return Err(Error::Wire(format!(
+                    "`{}` blob 越界（offset {} len {}）",
+                    entry.name, entry.offset, entry.len
+                )));
+            }
+        };
+        let net = decode_auto(&bytes[entry.offset as usize..end as usize])
+            .map_err(|error| Error::Wire(format!("`{}` 解码失败：{error}", entry.name)))?;
         let layer = net.layers().first().ok_or(Error::EmptySizes)?;
         if layer.rows() != entry.rows || layer.cols() != entry.cols {
-            return Err(Error::Shape {
-                what: "entry",
-                expected: entry.rows * entry.cols,
-                got: layer.rows() * layer.cols(),
-            });
+            return Err(Error::Wire(format!(
+                "`{}` 形状不符：声明 {}×{}，实际 {}×{}",
+                entry.name,
+                entry.rows,
+                entry.cols,
+                layer.rows(),
+                layer.cols()
+            )));
         }
         nets.push(net);
     }
     Ok(ModelPack { entries, nets })
-}
-
-fn read_entry(bytes: &[u8], pos: &mut usize) -> Result<ModelEntry> {
-    if *pos + 2 > bytes.len() {
-        return Err(Error::Wire("WSPM entry 名长度截断".into()));
-    }
-    let name_len =
-        u16::from_le_bytes(bytes[*pos..*pos + 2].try_into().expect("2 字节名长")) as usize;
-    *pos += 2;
-    if *pos + name_len + ENTRY_FIXED > bytes.len() {
-        return Err(Error::Wire("WSPM entry 截断".into()));
-    }
-    let name = std::str::from_utf8(&bytes[*pos..*pos + name_len])
-        .map_err(|_| Error::Wire("WSPM 张量名不是 UTF-8".into()))?
-        .to_string();
-    *pos += name_len;
-    let fixed = &bytes[*pos..*pos + ENTRY_FIXED];
-    *pos += ENTRY_FIXED;
-    let method = fixed[0];
-    if method > 2 {
-        return Err(Error::Wire(format!("`{name}` 的 method {method} 不受支持")));
-    }
-    let vector = fixed[1] != 0;
-    let bias_raw = u32::from_le_bytes(fixed[2..6].try_into().expect("4 字节 bias_ref"));
-    let read_u64 =
-        |start: usize| u64::from_le_bytes(fixed[start..start + 8].try_into().expect("8 字节字段"));
-    let (rows, cols) = (read_u64(6) as usize, read_u64(14) as usize);
-    let (offset, len) = (read_u64(22), read_u64(30));
-    if len == 0 {
-        return Err(Error::Wire(format!("`{name}` 的 blob 为空")));
-    }
-    let bias = match bias_raw {
-        NO_BIAS => None,
-        index => Some(index as usize),
-    };
-    Ok(ModelEntry {
-        name,
-        method,
-        rows,
-        cols,
-        vector,
-        bias,
-        offset,
-        len,
-    })
-}
-
-/// 条目的可读格式名（CLI 报表用）。
-#[must_use]
-pub fn format_of(entry: &ModelEntry) -> &'static str {
-    method_name(entry.method)
 }

@@ -61,7 +61,7 @@ pub(super) fn pack(args: &[String]) -> Result<(), String> {
             .get("file")
             .and_then(Value::as_str)
             .ok_or_else(|| "manifest 条目缺 file".to_string())?;
-        let path = Path::new(dir).join(file);
+        let path = super::safe_path::resolve(dir, file).map_err(err)?;
         let text =
             fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
         source_bytes += text.len() as u64;

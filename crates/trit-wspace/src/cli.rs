@@ -27,6 +27,7 @@ mod cli_wsp2;
 mod cli_wspm;
 mod fsutil;
 mod lock;
+mod safe_path;
 mod usage;
 pub(crate) use fsutil::{atomic_write, atomic_write_bytes};
 use usage::USAGE;
@@ -610,10 +611,7 @@ fn sources_with_oracle<'a>(sources: Vec<&'a str>, oracle: Option<&'a str>) -> Ve
 }
 
 pub(crate) fn no_double_stdin<S: AsRef<str>>(sources: &[S]) -> Result<(), String> {
-    let count = sources
-        .iter()
-        .filter(|source| source.as_ref() == "-")
-        .count();
+    let count = sources.iter().filter(|s| s.as_ref() == "-").count();
     if count > 1 {
         return Err("一次只允许一个输入来自 stdin（-）".into());
     }
