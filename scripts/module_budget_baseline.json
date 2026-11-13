@@ -3019,6 +3019,14 @@
       "lines": 287
     },
     {
+      "file": "crates/trit-wspace/examples/redteam_probe/main.rs",
+      "lines": 300
+    },
+    {
+      "file": "crates/trit-wspace/examples/redteam_probe/metrics.rs",
+      "lines": 170
+    },
+    {
       "file": "crates/trit-wspace/examples/spam_redteam/main.rs",
       "lines": 241
     },

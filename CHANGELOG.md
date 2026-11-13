@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（红队第三弹：实测定位攻击——攻击者经济学定量）
+
+- `examples/redteam_probe/`：probe 口径的实测行级消融（129 行，置零 Patch，
+  无需梯度）+ 四档攻击对比。
+- 决定性读数：SMS spam 工件存在**单点支配行**（probe top-1 delta=1.0000，
+  其余 128 行全 0）——对该行**整行置零仅 103 个编辑**就把 F1 0.750 → 0.000
+  （随机攻击需 ~1 000 flips）。#489「瓶颈在定位」的猜想定量成立：定位成本
+  秒级、收益攻击成本降 10×。防御侧对策（集成/冗余正则）列为后续。
+- 文档 `docs/WSP-REDTEAM-PROBE.md`。
+
+
 ### Added（三值 QAT：DGA 域名检测与家族归因 + 多类评测部件）
 
 - `trit_learn::metrics::Confusion`（新部件，可发布层）：多类混淆矩阵 / acc /
