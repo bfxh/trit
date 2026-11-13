@@ -3092,7 +3092,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 636
+      "lines": 627
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_agree.rs",
@@ -3109,6 +3109,10 @@
     {
       "file": "crates/trit-wspace/src/cli/cli_certify.rs",
       "lines": 91
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_diff.rs",
+      "lines": 21
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_gguf.rs",
@@ -3128,7 +3132,11 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_project.rs",
-      "lines": 77
+      "lines": 60
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_read.rs",
+      "lines": 19
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_repair.rs",

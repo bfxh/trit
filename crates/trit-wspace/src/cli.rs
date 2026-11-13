@@ -16,11 +16,13 @@ mod cli_agree;
 mod cli_artifact_shard;
 mod cli_block;
 mod cli_certify;
+mod cli_diff;
 mod cli_gguf;
 mod cli_gradient;
 mod cli_learned;
 mod cli_merge;
 mod cli_project;
+mod cli_read;
 mod cli_repair;
 mod cli_safetensors;
 mod cli_task;
@@ -50,7 +52,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         return Err(USAGE.to_string());
     };
     match command {
-        "read" => cmd_read(&args[1..]),
+        "read" => cli_read::read(&args[1..]),
         "verify" => cmd_verify(&args[1..]),
         "certify" => cli_certify::certify(&args[1..]),
         "task-merge" => cli_task::task_merge(&args[1..]),
@@ -75,7 +77,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "shard" => crate::cli_audit::cmd_shard(&args[1..]),
         "audit-shards" => crate::cli_audit::cmd_audit_shards(&args[1..]),
         "replay" => crate::cli_audit::cmd_replay(&args[1..]),
-        "diff" => cli_project::cmd_diff(&args[1..]),
+        "diff" => cli_diff::diff(&args[1..]),
         "merge" => cli_merge::merge(&args[1..]),
         "list-safetensors" => cli_safetensors::list(&args[1..]),
         "import-safetensors" => cli_safetensors::import(&args[1..]),
@@ -98,17 +100,6 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         }
         other => Err(format!("未知子命令 `{other}`\n{USAGE}")),
     }
-}
-
-fn cmd_read(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(&parsed, "read <artifact|-> [--out <path>]")?;
-    let net = load_net(path)?;
-    write_out(&parsed, &net)?;
-    emit(&json!({
-        "summary": wire::net_summary(&net),
-        "wsp1": to_wsp(&net),
-    }))
 }
 
 fn cmd_verify(args: &[String]) -> Result<(), String> {

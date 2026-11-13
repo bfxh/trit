@@ -1,13 +1,9 @@
 use serde_json::json;
 
-use crate::edit::Patch;
 use crate::net::Net;
 use crate::to_wsp;
-use crate::wire;
 
-use super::{
-    atomic_write, cli_agree, emit, err, load_net, no_double_stdin, one, parse, two, value,
-};
+use super::{atomic_write, cli_agree, emit, err, load_net, one, parse, value};
 pub(super) fn project(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
     let path = one(
@@ -60,18 +56,5 @@ pub(super) fn project(args: &[String]) -> Result<(), String> {
         "agree": cli_agree::agree(&net, &projected_net, basis, 64),
         "trits": projected_net.trit_count(),
         "out": out,
-    }))
-}
-
-pub(super) fn cmd_diff(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let (left, right) = two(&parsed, "diff <a|-> <b|->")?;
-    no_double_stdin(&[left, right])?;
-    let a = load_net(left)?;
-    let b = load_net(right)?;
-    let patch = Patch::diff(&a, &b).map_err(err)?;
-    emit(&json!({
-        "patch": wire::patch_to_value(&patch),
-        "cost": wire::cost_to_value(&patch.cost(&a)),
     }))
 }
