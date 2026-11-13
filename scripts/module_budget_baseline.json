@@ -2955,28 +2955,12 @@
       "lines": 84
     },
     {
-      "file": "crates/trit-wspace/examples/agree_real/f32ref.rs",
-      "lines": 119
-    },
-    {
-      "file": "crates/trit-wspace/examples/agree_real/forward.rs",
-      "lines": 50
-    },
-    {
       "file": "crates/trit-wspace/examples/agree_real/main.rs",
-      "lines": 135
+      "lines": 134
     },
     {
-      "file": "crates/trit-wspace/examples/agree_real/quad.rs",
-      "lines": 90
-    },
-    {
-      "file": "crates/trit-wspace/examples/agree_real/readout.rs",
-      "lines": 32
-    },
-    {
-      "file": "crates/trit-wspace/examples/agree_real/size.rs",
-      "lines": 34
+      "file": "crates/trit-wspace/examples/agree_real/report.rs",
+      "lines": 19
     },
     {
       "file": "crates/trit-wspace/examples/agree_real_selftest.rs",
@@ -3097,6 +3081,10 @@
     {
       "file": "crates/trit-wspace/examples/trit_train_tasks.rs",
       "lines": 727
+    },
+    {
+      "file": "crates/trit-wspace/src/agree.rs",
+      "lines": 313
     },
     {
       "file": "crates/trit-wspace/src/analyze.rs",
@@ -3441,6 +3429,10 @@
     {
       "file": "crates/trit-wspace/src/wsp4.rs",
       "lines": 306
+    },
+    {
+      "file": "crates/trit-wspace/tests/agree.rs",
+      "lines": 98
     },
     {
       "file": "crates/trit-wspace/tests/analyze.rs",

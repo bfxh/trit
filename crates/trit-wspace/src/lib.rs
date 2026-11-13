@@ -71,10 +71,8 @@
 //!
 //! - 只支持符号激活的前馈网络；不带注意力、残差、卷积；
 //! - 验证是**有界穷举**，不是形式化证明；超出域的输入没有保证；
-//! - 修补搜索是启发式（半径 1/2 穷举 + 束搜索），不保证全局最小，只保证返回的解
-//!   在验证集上完全正确；
-//! - 没有“从自然语言生成补丁”的模型；本库提供的是可被外部程序/模型调用的
-//!   编辑原语与验证闭环。
+//! - 修补搜索是启发式（半径 1/2 穷举 + 束搜索），不保证全局最小，只保证返回的解在验证集上完全正确；
+//! - 没有“从自然语言生成补丁”的模型；本库提供的是可被外部程序/模型调用的编辑原语与验证闭环。
 //!
 //! 技术树与尚缺的层见 `crates/trit-wspace/README.md`。
 //!
@@ -90,6 +88,7 @@
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 
+pub mod agree;
 pub mod analyze;
 pub mod artifact_shard;
 pub mod audit;
@@ -129,6 +128,7 @@ pub mod wsp2;
 pub mod wsp3;
 pub mod wsp4;
 
+pub use agree::{Diagnosis, Projected, Size, measure};
 pub use analyze::{
     Analysis, EditImpact, PairAnalysis, PairImpact, TripleAnalysis, TripleImpact, analyze,
     analyze_pairs, analyze_triples,

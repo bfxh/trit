@@ -1,12 +1,9 @@
 use serde_json::json;
 use trit_wspace::safetensors::{self, Weights};
 mod basis;
-mod f32ref;
-mod forward;
-mod quad;
-mod readout;
-mod size;
+mod report;
 use basis::*;
+use trit_wspace::agree;
 use trit_wspace::{Layer, Net, Trit};
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
 const EMBEDDINGS: &str = "embeddings.word_embeddings.weight";
@@ -69,8 +66,13 @@ fn main() {
         .map(|row| trit_row(&embeddings.values[row * dim..(row + 1) * dim]))
         .collect();
 
-    let raw = f32ref::rows(&embeddings, dim, samples);
-    let f32_base = f32ref::baseline(&query, &readout, &raw);
+    let raw: Vec<&[f32]> = (0..samples)
+        .map(|row| &embeddings.values[row * dim..(row + 1) * dim])
+        .collect();
+    let f32_base: Vec<Trit> = raw
+        .iter()
+        .map(|x| agree::reference(&query, &readout, x))
+        .collect();
 
     let mut curves = Vec::new();
     for &k in &DIMS {
@@ -78,7 +80,6 @@ fn main() {
             continue;
         }
         let sub = &basis[..k];
-        // bias 用 query 层的三值 bias
         let bias: Vec<i8> = query
             .to_layer()
             .expect("q")
@@ -115,12 +116,10 @@ fn main() {
         ])
         .expect("projected");
 
-        let projected = f32ref::Projected::new(&query, &readout, sub);
-        let (rate, tern_out) = quad::agree(&student, &net, &inputs, sub);
-        let q = quad::compare(
-            &f32_base, &raw, &inputs, &tern_out, &readout, sub, &projected,
-        );
-        curves.push(size::curve(k, rate, &q, &student, &net));
+        let diag = agree::Diagnosis::new(&query, &readout, sub);
+        let (rate, tern_out) = diag.agree(&student, &net, &inputs);
+        let q = diag.compare(&f32_base, &raw, &inputs, &tern_out);
+        curves.push(report::curve(k, rate, &q, &student, &net));
     }
 
     println!(

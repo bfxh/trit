@@ -92,6 +92,15 @@
   k≥32 体积收益递减（8.0× → 4.9× → 2.7×），保真同时下降（0.727 → 0.692 → 0.647）。
 - WSP1 是文本格式（每 trit 一字符），只作 diff/审阅参考；WSP2 才是体积口径。
 
+- 诊断库化：新模块 `src/agree.rs`（`Diagnosis` / `Projected` / `reference` /
+  `trit_weights` / `absmean_row` / `Size` / `measure`），统一提供八列一致率、
+  完整三值前向（与 `Net::forward` 同口径）与 WSP 体积；`lib.rs` 导出
+  `Diagnosis` / `Projected` / `Size` / `measure`。
+- `examples/agree_real` 改为调用库 API，删掉 f32ref/quad/readout/forward/size 五个重复模块；
+  输出字段与读数逐位不变。
+- `tests/agree.rs` 四条性质测试：单位基下 f32 投影 == f32 基准；完整前向 == `Net::forward`；
+  absmean 对全零/半整数/±0 的行为；`measure` 的 trit 计数与编码大小关系。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，

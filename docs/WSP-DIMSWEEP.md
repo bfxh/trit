@@ -467,6 +467,15 @@ pip install sentence-transformers  # 导出 384 维句向量
 - **k≤8 是甜点**：k=1 20.7×、k=8 15.2×，保真都停在 0.740；k≥32 体积收益递减且保真下降。
 - WSP1 是文本格式（每 trit 一字符），只作 diff/审阅参考；WSP2（2-bit 定长）才是体积口径。
 
+### 库化：`agree`
+
+上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，
+一次给出八列一致率、完整三值前向与与三值学生的一致率；`measure` 返回 WSP 体积；
+`Projected` / `reference` / `trit_weights` / `absmean_row` 可单独使用。
+`examples/agree_real` 现在只负责取模型与组织输出，读数与库化前逐位相同；
+`tests/agree.rs` 钉住四条性质（单位基投影 == 基准、完整前向 == `Net::forward`、
+absmean 边界、体积计数与编码大小关系）。
+
 ### 舍入边界（自检）
 
 `examples/agree_real_selftest`（2123 例，不依赖模型）：库的 f32 absmean 与诊断的 f64 口径
