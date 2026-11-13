@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：阈值对齐的多 seed 复核）
+
+- 用已有 tuned 权重（单层 5 seed、两层 3 seed）各跑一次 `editset_aligned`：
+  单层 threshold 全部 0.35、edit_fixed **20.6（18–22，sd 1.50）**、keep_broken 全 0；
+  两层 threshold 全部 0.27、edit_fixed 全 0、keep_broken **43.33（29–57，sd 11.44）**。
+- 阈值在 seed 间完全一致（0.35 / 0.27），valid 选阈值不随 seed 波动；
+  “单层更好”不是 seed 7 的偶然。
+- `docs/WSP-ALIGNED.md` 增加多 seed 复核节。
+- 未证栏：两层 `keep_broken` 的 sd 11.44 仍偏大；valid/test 仍按索引切分。
+
 ### Added（trit-wspace：阈值对齐后的单层 / 两层对照）
 
 - `examples/editset_aligned.rs`：`--arch single|ffn`，按索引切 valid/test，在 valid 上扫
