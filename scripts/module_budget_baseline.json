@@ -3007,8 +3007,12 @@
       "lines": 287
     },
     {
-      "file": "crates/trit-wspace/examples/spam_redteam.rs",
-      "lines": 391
+      "file": "crates/trit-wspace/examples/spam_redteam/main.rs",
+      "lines": 244
+    },
+    {
+      "file": "crates/trit-wspace/examples/spam_redteam/metrics.rs",
+      "lines": 171
     },
     {
       "file": "crates/trit-wspace/examples/trit_train_tasks.rs",

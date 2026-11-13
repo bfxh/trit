@@ -1,185 +1,35 @@
 //! 三值 QAT 训练 + 工件红队：UCI SMS Spam（真实数据集，白客防御任务）全链。
+//! 全部 Rust（训练禁 Python 硬门一致）。管线六步：
+//! 1. 数据：SMS Spam 5,574 条（`docs/DATASETS.md` A0）；2. 特征（自造）：字符
+//! 3/4-gram FNV 哈希 4096 维，出现=+1 ⇒ 输入本身三值，无预训练 embedding；
+//! 3. 模型：QAT `TernaryDense` 4096→128→1（`Ste::Clipped`，Tanh/Tanh，hinge）；
+//! 4. 评测（自造）：分层 70/15/15，acc/P/R/F1 + 混淆矩阵；5. 导出：量化权重
+//! → `trit-wspace` Layer → WSP2 工件；6. 红队（接 #489）：真实任务指标下的
+//! 比特翻转攻击——翻转 k 个 trit 后 spam 检出率/F1 掉多少。读数与坑见
+//! `docs/WSP-SPAM-QAT.md`。
 //!
-//! 管线（全部 Rust，无 Python——训练禁 Python 硬门一致）：
-//! 1. **数据**：UCI SMS Spam Collection（5,574 条，`ham/spam<TAB>text`）；
-//! 2. **特征**（自造部件）：字符 3-gram/4-gram FNV 哈希到 4096 维，出现=+1
-//!    ⇒ **输入本身三值**（存在性特征），无预训练 embedding；
-//! 3. **模型**：QAT 三值 MLP `4096→128→1`（`TernaryDense` + `Ste::Clipped`，
-//!    Tanh 隐层 / Tanh 输出，hinge 损失，Adam(latent)+Adam(scale)）；
-//! 4. **评测**（自造部件）：分层 70/15/15，acc / precision / recall / F1
-//!    （spam=正类）+ 混淆矩阵；
-//! 5. **导出**：量化权重 → `trit-wspace` `Layer`（scale 语义不变，bias=0）
-//!    → WSP2 工件；
-//! 6. **红队**（接 #489 的比特翻转线）：在**有真实任务指标**的工件上做
-//!    比特翻转攻击——翻转 k 个 trit 后 spam 检出率/F1 掉多少。
-//!
-//! 用法：
 //! ```bash
 //! cargo run --release -p trit-wspace --example spam_redteam -- \
-//!   --file D:/KF/trit-data/sms-spam/SMSSpamCollection
+//!   --file <数据盘>/trit-data/sms-spam/SMSSpamCollection
 //! ```
+
+mod metrics;
 
 use std::fs;
 
+use metrics::{Metrics, Rng, evaluate, featurize, load_dataset, qat_out, stratified_split};
 use serde_json::{Value, json};
 use trit_learn::Activation;
 use trit_learn::Ste;
 use trit_learn::dense::TernaryDense;
 use trit_learn::loss::hinge;
 use trit_learn::opt::Adam;
-use trit_learn::opt::Optimizer;
 use trit_wspace::edit::{Edit, Patch};
 use trit_wspace::trit::Trit;
 use trit_wspace::{Layer, Net};
 
 const FEAT_DIM: usize = 4096;
 const HIDDEN: usize = 128;
-
-/// xorshift64*（同 seed 同划分/同攻击）。
-struct Rng(u64);
-
-impl Rng {
-    fn new(seed: u64) -> Self {
-        Self(seed | 1)
-    }
-    fn next_u64(&mut self) -> u64 {
-        let mut x = self.0;
-        x ^= x << 13;
-        x ^= x >> 7;
-        x ^= x << 17;
-        self.0 = x;
-        x
-    }
-    fn next_f32(&mut self) -> f32 {
-        (self.next_u64() % 2001) as f32 / 1000.0 - 1.0
-    }
-}
-
-fn fnv(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for &byte in bytes {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
-    }
-    hash
-}
-
-/// 加载 `label<TAB>text`；ham=0、spam=1。
-fn load_dataset(path: &str) -> Vec<(usize, String)> {
-    let text = fs::read_to_string(path).unwrap_or_else(|error| panic!("读 {path}: {error}"));
-    text.lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(|line| {
-            let (label, body) = line
-                .split_once('\t')
-                .unwrap_or_else(|| panic!("行不是 label<TAB>text：{line:.40}"));
-            let label = match label.trim() {
-                "ham" => 0,
-                "spam" => 1,
-                other => panic!("未知标签 {other}"),
-            };
-            (label, body.to_string())
-        })
-        .collect()
-}
-
-/// 字符 3-gram/4-gram 哈希特征：出现=+1（三值输入的存在性编码）。
-fn featurize(text: &str) -> Vec<f32> {
-    let lower: Vec<char> = text.to_lowercase().chars().collect();
-    let mut feats = vec![0.0f32; FEAT_DIM];
-    for width in [3usize, 4] {
-        if lower.len() < width {
-            continue;
-        }
-        for start in 0..=(lower.len() - width) {
-            let mut bytes = Vec::with_capacity(width * 2);
-            for ch in &lower[start..start + width] {
-                let mut buf = [0u8; 4];
-                bytes.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
-            }
-            let slot = (fnv(&bytes) % FEAT_DIM as u64) as usize;
-            feats[slot] = 1.0;
-        }
-    }
-    feats
-}
-
-/// 分层划分：每个类别内 shuffle 后按 70/15/15 切。
-fn stratified_split(labels: &[usize], rng: &mut Rng) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
-    let mut by_class: [Vec<usize>; 2] = [Vec::new(), Vec::new()];
-    for (index, &label) in labels.iter().enumerate() {
-        by_class[label].push(index);
-    }
-    let mut train = Vec::new();
-    let mut val = Vec::new();
-    let mut test = Vec::new();
-    for group in &mut by_class {
-        let n = group.len();
-        for i in (1..n).rev() {
-            let j = (rng.next_u64() % (i as u64 + 1)) as usize;
-            group.swap(i, j);
-        }
-        let train_end = n * 7 / 10;
-        let val_end = n * 85 / 100;
-        train.extend(&group[..train_end]);
-        val.extend(&group[train_end..val_end]);
-        test.extend(&group[val_end..]);
-    }
-    (train, val, test)
-}
-
-struct Metrics {
-    tp: usize,
-    fp: usize,
-    fn_: usize,
-    tn: usize,
-}
-
-fn evaluate(net_outs: &[f32], labels: &[usize]) -> Metrics {
-    let mut m = Metrics {
-        tp: 0,
-        fp: 0,
-        fn_: 0,
-        tn: 0,
-    };
-    for (out, &label) in net_outs.iter().zip(labels) {
-        let pred = usize::from(*out > 0.0);
-        match (pred, label) {
-            (1, 1) => m.tp += 1,
-            (1, 0) => m.fp += 1,
-            (0, 1) => m.fn_ += 1,
-            _ => m.tn += 1,
-        }
-    }
-    m
-}
-
-impl Metrics {
-    fn accuracy(&self) -> f32 {
-        let total = self.tp + self.fp + self.fn_ + self.tn;
-        (self.tp + self.tn) as f32 / total as f32
-    }
-    fn precision(&self) -> f32 {
-        self.tp as f32 / (self.tp + self.fp).max(1) as f32
-    }
-    fn recall(&self) -> f32 {
-        self.tp as f32 / (self.tp + self.fn_).max(1) as f32
-    }
-    fn f1(&self) -> f32 {
-        let p = self.precision();
-        let r = self.recall();
-        2.0 * p * r / (p + r).max(1e-12)
-    }
-    fn to_value(&self) -> Value {
-        json!({
-            "accuracy": self.accuracy(),
-            "precision": self.precision(),
-            "recall": self.recall(),
-            "f1": self.f1(),
-            "confusion": {"tp": self.tp, "fp": self.fp, "fn": self.fn_, "tn": self.tn},
-        })
-    }
-}
 
 fn main() {
     let mut file = String::from("D:/KF/trit-data/sms-spam/SMSSpamCollection");
@@ -268,11 +118,7 @@ fn main() {
         if epoch % 5 == 4 || epoch + 1 == epochs {
             let val_outs: Vec<f32> = val
                 .iter()
-                .map(|&i| {
-                    let h = hidden.forward(&features[i]);
-                    let h_act: Vec<f32> = h.iter().map(|&x| Activation::Tanh.forward(x)).collect();
-                    Activation::Tanh.forward(out_layer.forward(&h_act)[0])
-                })
+                .map(|&i| qat_out(&mut hidden, &mut out_layer, &features, i))
                 .collect();
             let metrics = evaluate(
                 &val_outs,
@@ -288,11 +134,7 @@ fn main() {
     // 4) 测试集读数（QAT 模型）。
     let test_outs: Vec<f32> = test
         .iter()
-        .map(|&i| {
-            let h = hidden.forward(&features[i]);
-            let h_act: Vec<f32> = h.iter().map(|&x| Activation::Tanh.forward(x)).collect();
-            Activation::Tanh.forward(out_layer.forward(&h_act)[0])
-        })
+        .map(|&i| qat_out(&mut hidden, &mut out_layer, &features, i))
         .collect();
     let test_labels: Vec<usize> = test.iter().map(|&i| labels[i]).collect();
     let clean_metrics = evaluate(&test_outs, &test_labels);
@@ -303,17 +145,12 @@ fn main() {
 
     // 5) 导出为 trit-wspace 工件（量化权重 + scale，bias=0）。
     let build_layer = |dense: &TernaryDense| -> Layer {
-        let rows = dense.rows();
-        let cols = dense.cols();
-        let mut trits = Vec::with_capacity(rows * cols);
-        for row in dense.quantized() {
-            trits.extend(row);
-        }
+        let trits: Vec<i8> = dense.quantized().into_iter().flatten().collect();
         Layer::with_scales(
-            rows,
-            cols,
+            dense.rows(),
+            dense.cols(),
             &trits,
-            &vec![0i8; rows],
+            &vec![0i8; dense.rows()],
             dense.scales().to_vec(),
         )
         .expect("trained weights are valid")
