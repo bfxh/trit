@@ -10,6 +10,7 @@ mod error;
 mod evidence;
 mod flip_rates;
 mod lanes;
+mod mass;
 mod model;
 mod obligation;
 mod obligation_guard;
@@ -44,6 +45,7 @@ pub use error::Error;
 pub use evidence::{EvidenceSpec, Exit, Receipt};
 pub use flip_rates::{FlipRates, ScorePolicy};
 pub use lanes::{LaneDispute, LaneDriver, LaneReport, LaneState, resolve_lanes};
+pub use mass::{UndecidedMass, undecided_mass};
 pub use model::{
     BlockReason, CheckReport, CheckResult, Decision, EvidenceVerdict, Limits, Observation, Phase,
     PlanPatch, Selection, Snapshot, TaskSpec, TokenUsage,
