@@ -1,8 +1,8 @@
 //! 字符串函数（探针定案）：按**字节**比较（不看 UTF-8）；`i*` 只折叠 ASCII
 //! 大小写（`"\xC4" iequals "\xE4"` 为假）；空针 `contains`/`startswith`/
 //! `endswith` 为真；针比串长为假。`matches` 复用现有 Pike VM：非锚定搜索，
-//! 起点只试 `0..len`（所以 `"abc" matches /$/` 为假、`/c$/` 为真），空串
-//! 在位置 0 试一次（`"" matches /^$/`、`/a*/` 为真）。
+//! 起点只试 `0..len`；空串在位置 0 试一次。
+#![allow(clippy::missing_const_for_thread_local)] // clippy 1.99 误报 const block
 
 use super::eval::V;
 use super::{Matcher, StrFn};
