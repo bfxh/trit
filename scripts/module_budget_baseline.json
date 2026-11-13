@@ -3131,6 +3131,10 @@
       "lines": 76
     },
     {
+      "file": "crates/trit-wspace/examples/transformer_f32_task_real.rs",
+      "lines": 119
+    },
+    {
       "file": "crates/trit-wspace/examples/transformer_f32_train_real.rs",
       "lines": 83
     },
