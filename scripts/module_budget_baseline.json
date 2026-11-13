@@ -3028,7 +3028,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 665
+      "lines": 663
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",
