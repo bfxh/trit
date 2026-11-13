@@ -43,7 +43,7 @@
  "crate/trit-train": 14,
  "crate/trit-unsafe": 15,
  "crate/trit-wasm": 5,
- "crate/trit-wspace": 436,
+ "crate/trit-wspace": 442,
  "script/agent_claims.py": 1,
  "script/alloc_guard.py": 1,
  "script/autoflow.py": 1,
@@ -116,6 +116,7 @@
  "script/vendor.py": 1,
  "script/verify_materials.py": 0,
  "script/worktree_guard.py": 1,
+ "script/wt_target.py": 1,
  "script/yara_diff.py": 0,
  "script/yara_scale.py": 0
 }
