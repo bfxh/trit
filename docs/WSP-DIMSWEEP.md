@@ -531,6 +531,9 @@ absmean 边界、体积计数与编码大小关系）。
   **除 `w_eff` 外不稳定**：delta 排序两两 Spearman 0.023 / -0.080 / -0.082，
   top-5 只共享 component 0（1/5），bottom-5 重叠 0/5，top-10 重叠 1–3/10。
   component 0 的 delta 稳定为正（9/14/12），其余方向的 necessity 不可跨 seed 引用。
+  大池对照（samples 2048 / edit 32 / keep 256，放大 4 倍）没有改善：
+  Spearman 0.115 / -0.034 / -0.045，top-5 仍只共享 component 0——**不稳是结构性的，
+  不是采样噪声**。
 - 小样本（edit 8）下的早期读数全在噪声内，已废弃不引用。
 
 ## 库化：`Layer::project`

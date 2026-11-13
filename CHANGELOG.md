@@ -122,6 +122,9 @@
   delta 排序两两 Spearman 0.023 / -0.080 / -0.082，top-5 只共享 component 0（1/5），
   bottom-5 重叠 0/5，top-10 重叠 1–3/10。只有 `w_eff`（component 0）稳定为正
   （delta 9/14/12）；其余方向的 necessity 不可跨 seed 引用。
+- 大池对照（samples 2048 / edit 32 / keep 256）：Spearman 0.115 / -0.034 / -0.045，
+  top-5 仍只共享 component 0——把样本与 edit/keep 放大 4 倍没有改善，说明不稳是
+  结构性的（不同 seed 的 PCA 方向不同），不是采样噪声。
 
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
