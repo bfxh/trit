@@ -3003,6 +3003,10 @@
       "lines": 119
     },
     {
+      "file": "crates/trit-wspace/examples/redteam_flip.rs",
+      "lines": 287
+    },
+    {
       "file": "crates/trit-wspace/examples/trit_train_tasks.rs",
       "lines": 727
     },
@@ -3456,7 +3460,7 @@
     },
     {
       "file": "crates/trit-wspace/tests/redteam.rs",
-      "lines": 234
+      "lines": 232
     },
     {
       "file": "crates/trit-wspace/tests/repair_keep.rs",

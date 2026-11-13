@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（安全：模型侧红队——比特翻转攻击读数）
+
+- `examples/redteam_flip.rs`：真实开源模型（EleutherAI/pythia-70m，F16
+  safetensors）三值化工件的红队读数——6 层 MLP 链 12,582,912 trit，攻击走库
+  自己的 `Edit::SetTrit`/`Patch` 原语；随机攻击 vs 行方差攻击（白盒代理）。
+- 读数：稀疏比特翻转对三值网络几乎无效（k=10⁴，0.08% trits，输出余弦仍
+  0.9999）；行方差攻击在小 k 时比随机强 2.6-5.7×，k 大后反超；防篡改面
+  （FNV 校验和 1 bit 检出 + 审计哈希链）覆盖远大于攻击有效面。
+- 文档 `docs/WSP-REDTEAM-MODEL.md`（含攻击者模型与未证栏）。
+
 ### Fixed（安全：容器栈红队发现与修复）
 
 - 结构化恶意容器（校验和合法）可触发 OOM abort：WSP2 `rows=u32::MAX`（15 B）、
