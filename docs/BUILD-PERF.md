@@ -121,3 +121,22 @@ gh api repos/bfxh/trit/actions/runs/<run-id>/jobs --jq '.jobs[] | {name, started
 - 成本：sccache 安装 2s、nextest 安装 3s（`taiki-e/install-action`，版本钉死）。
 - 口径：`cargo nextest run $SCOPE_ARGS --locked` 与 `cargo test $SCOPE_ARGS --locked --doc` 成对出现，
   少任何一条都算测试面缩水。
+
+
+## 9. worktree 的产物落盘：E: 策略自动传播（2026-11-14 落地）
+
+§3 的遗留缺口：`target-dir = E:/cargo-target/...` 的本机覆盖文件只在主 worktree 手工放过
+（`.git/info/exclude` 不入库），`git worktree add` 出来的每个 worktree 都没有它——构建产物
+写回 D 盘直到写满（2026-11-14 实际发生：D 盘 100%，链接报 `No space left on device`）。
+
+本次落地两层：
+
+- **本机自动层**：`.git/hooks/trit-hooks.py`（post-checkout，不入库的本机资产）在
+  checkout/worktree add 时幂等生成 `.cargo/config.toml`；条件：策略根 `E:/cargo-target`
+  存在 + 顶层有 `Cargo.toml` + 配置尚不存在。生成失败静默，钩子永不阻塞 checkout。
+- **入库层**：`scripts/wt_target.py`（`--all` / `--status` / `--self-test`）把同样的
+  逻辑做成可复制、可审计的批量工具；`.gitignore` 收 `.cargo/config.toml`；
+  `AGENTS.md` 工程口径加一行指引。新 clone 没有本机钩子时用它补齐。
+
+仍然每 worktree 独立 target 目录，不共享（§3：共享 = cargo 锁竞争 + 指纹互相失效）；
+`SCCACHE_BASEDIRS` 已含 `E:/cargo-target`，跨目录重建有 sccache 兜底。

@@ -19,6 +19,9 @@ __pycache__/
 /vendor/
 .cargo/config.toml.tritbak
 
+# 本机构建产物落盘策略（scripts/wt_target.py 生成；docs/BUILD-PERF.md §5）
+.cargo/config.toml
+
 # 本地评测产物（scripts/regress_holdout.sh 等）
 /runs/
 

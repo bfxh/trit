@@ -1,0 +1,29 @@
+[
+  {
+    "name": "wt-target: 幂等——已存在的覆盖文件不被改写",
+    "file": "scripts/wt_target.py",
+    "old": "    if cfg.exists():\n        return \"exists\"",
+    "new": "    if cfg.exists():\n        return \"written\"",
+    "pkg": "scripts/wt_target.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "wt-target: 无 Cargo.toml 的目录不生成",
+    "file": "scripts/wt_target.py",
+    "old": "    if not (top / \"Cargo.toml\").is_file():\n        return \"skip:no-cargo-toml\"",
+    "new": "    if not (top / \"Cargo.toml\").is_file():\n        return \"written\"",
+    "pkg": "scripts/wt_target.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "wt-target: 策略根不存在时静默跳过",
+    "file": "scripts/wt_target.py",
+    "old": "    if not root.is_dir():\n        return \"skip:no-target-root\"",
+    "new": "    if not root.is_dir():\n        return \"written\"",
+    "pkg": "scripts/wt_target.py",
+    "filter": "",
+    "runner": "python"
+  }
+]
