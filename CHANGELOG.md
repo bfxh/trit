@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：真实 STS benchmark 上的编辑集门禁）
+
+- `scripts/encode_sts_bench.py`：从 `mteb/stsbenchmark-sts` 生成 pairs JSON，按官方 score
+  二值化（≥4 正、≤2 负、=3 丢弃），取 test split 前 400 对（132 正 / 268 负）。
+- 真实读数（400 对，合成 Δ 10,128 trits）：阈值 0.3/0.5/0.8 下基线 369/31、372/28、270/130
+  正确；`edit_fixed` 0 / 0 / 3，`keep_broken` 0 / **4** / 0。
+- **首次在真实 benchmark 上观察到 keep 被破坏**（0.5 阈值 4 个），此前手写句集全为 0。
+- 新增 `docs/WSP-STS-BENCH.md`。
+- 未证栏：只取前 400 对；二值化丢弃 507 个中性对；`--tuned` 仍是合成 Δ；学生仍是单层三值 `query`。
+
 ### Added（trit-wspace：更难的对，`encode_sts_pairs.py` 与 85 对读数）
 
 - `scripts/encode_sts_pairs.py`：134 句、85 对人工标签（25 正 / 60 负），覆盖细粒度差异
