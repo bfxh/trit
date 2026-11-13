@@ -8,8 +8,13 @@
   写进输出的 `agree` 字段（`samples` / `same` / `rate`）。
 - 于是「这次压缩能不能接受」一条命令就能回答，不必再手动串 `probe` / `certify`。
 - 实现放 `cli/cli_agree.rs`；为守住 `cli.rs` 台账把 `cmd_merge` 搬进 `cli_merge.rs`。
-- 未证栏：只报一致率，不报「哪些输入不一致」；采样数固定 64，没有参数；随机输入不含真实分布
-  的信息（真实数据的 agree 可能更高或更低）。
+- **未证栏（试过但回退，附前提）**：`--samples` 参数化与「不一致样本列表」都实现过，但
+  `cli.rs`（653）/ `cli_project.rs`（77）/ `cli_agree.rs`（62）三个文件在台账里都没有余量，
+  每次改动都要搬走一个函数，反复拉锯后回退到只报 rate 的版本。要补需先腾出：
+  `cli.rs` ≥ +7、`cli_project` ≥ +3、`cli_agree` ≥ +4；**建议先把 `cmd_transplant`（49 行）
+  搬进独立文件**，再一次性做完，避免逐行搬。
+- 随机输入不含真实分布信息——这个数只能当「有没有压坏」的粗筛，不能当任务指标；真实数据上的
+  agree 可能明显更高或更低。
 ### Added（trit-wspace：`Layer::project` 三值基投影）
 
 - 新模块 `src/project.rs`：`Layer::project(&self, basis: &Layer) -> Result<Layer>` —— 用三值基
