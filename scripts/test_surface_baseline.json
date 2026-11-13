@@ -109,6 +109,7 @@
  "script/split.py": 1,
  "script/tech_collide.py": 1,
  "script/test_surface.py": 1,
+ "script/train_ffn.py": 0,
  "script/train_guarded.sh": 0,
  "script/train_query_layer.py": 0,
  "script/trit_train_tasks_smoke.py": 0,

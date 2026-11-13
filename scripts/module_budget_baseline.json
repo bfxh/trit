@@ -2967,6 +2967,10 @@
       "lines": 317
     },
     {
+      "file": "crates/trit-wspace/examples/editset_ffn.rs",
+      "lines": 246
+    },
+    {
       "file": "crates/trit-wspace/examples/editset_gate.rs",
       "lines": 279
     },
