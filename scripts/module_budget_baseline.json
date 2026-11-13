@@ -635,6 +635,10 @@
       "lines": 224
     },
     {
+      "file": "crates/trit-codec/tests/pack.rs",
+      "lines": 167
+    },
+    {
       "file": "crates/trit-codec/tests/stress.rs",
       "lines": 85
     },
@@ -788,15 +792,11 @@
     },
     {
       "file": "crates/trit-export/src/error.rs",
-      "lines": 48
+      "lines": 39
     },
     {
       "file": "crates/trit-export/src/lib.rs",
       "lines": 322
-    },
-    {
-      "file": "crates/trit-export/src/packmap.rs",
-      "lines": 22
     },
     {
       "file": "crates/trit-export/tests/gguf.rs",
