@@ -11,7 +11,7 @@ use trit_wspace::{Layer, Net, Oracle, Trit};
 
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
 const EMBEDDINGS: &str = "embeddings.word_embeddings.weight";
-const SAMPLES: usize = 512;
+const SAMPLES: usize = 2048;
 const BOOTSTRAP: usize = 1000;
 
 fn trit_row(values: &[f32]) -> Vec<Trit> {

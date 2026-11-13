@@ -2971,6 +2971,10 @@
       "lines": 115
     },
     {
+      "file": "crates/trit-wspace/examples/attention_position_real.rs",
+      "lines": 132
+    },
+    {
       "file": "crates/trit-wspace/examples/attention_real.rs",
       "lines": 67
     },
@@ -3121,6 +3125,10 @@
     {
       "file": "crates/trit-wspace/src/attention_multi.rs",
       "lines": 101
+    },
+    {
+      "file": "crates/trit-wspace/src/attention_position.rs",
+      "lines": 80
     },
     {
       "file": "crates/trit-wspace/src/attribution.rs",
@@ -3597,6 +3605,10 @@
     {
       "file": "crates/trit-wspace/tests/attention_multi.rs",
       "lines": 39
+    },
+    {
+      "file": "crates/trit-wspace/tests/attention_position.rs",
+      "lines": 45
     },
     {
       "file": "crates/trit-wspace/tests/audit.rs",

@@ -209,11 +209,11 @@
   `tests/attention.rs` 两条：权重和为 1 + dominant、等分时均匀。边界：单头、无位置编码；
   Q/K/V 是三值化代理，不是原始 f32 attention。
 
-- 真实规模统计（`examples/real_stats`）：512 个真实词向量行，1000 次 bootstrap。
-  accuracy 0.613 [0.570, 0.656]；cost 143,416 [143,299, 143,525]；
-  flip_rate 0.176 [0.157, 0.196]；lost_rate 0.080 [0.068, 0.094]。
-  相比 128 样本，CI 收窄约一半（accuracy 16 → 8.6 点、flip_rate 8 → 3.8 点）；
-  accuracy 从 0.547 升到 0.613，说明 128 样本的展示性读数不能直接引用。
+- 真实规模统计（`examples/real_stats`）：2048 个真实词向量行，1000 次 bootstrap。
+  accuracy 0.597 [0.575, 0.619]；cost 143,406 [143,348, 143,458]；
+  flip_rate 0.161 [0.151, 0.171]；lost_rate 0.067 [0.061, 0.072]。
+  相比 512 样本，CI 继续收窄（accuracy 8.6 → 4.35 点、flip_rate 3.8 → 2.0 点）；
+  accuracy 从 0.613 回到 0.597，说明 512 样本的展示性读数仍有约 1.6 点偏差。
 
 - 多头 + 位置偏置的三值注意力：新模块 `attention_multi.rs`（`MultiHeadAttention`）。
   真实 MiniLM 切 12 头 × 32 维、128 个 key：
@@ -221,6 +221,12 @@
   - 位置偏置 `-(index)/4` 显著改变落点：query 2/3 出现多个头指向 key 0；
   - `tests/attention_multi.rs` 两条：每头一个 trace、位置偏置改变 dominant。
   边界：位置偏置是整数分数上的线性项，不是可学习位置编码；Q/K/V 仍是三值化代理。
+
+- 三值位置编码：新模块 `attention_position.rs`（`PositionEncoding`）——每个位置一个
+  trit 向量，逐元素加到 key 上。真实 MiniLM 的 `position_embeddings` 切 12 头 × 32 维、
+  128 key：三值编码几乎让每个头落到不同 key（12 头 12 个落点），比线性偏置 `-(i)/4`
+  更彻底。`tests/attention_position.rs` 两条：逐元素三值相加、位置编码改变 dominant。
+  边界：编码复用 MiniLM 训练好的位置嵌入，不是从头学习。
 
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
