@@ -25,7 +25,6 @@
 //!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`mod@explain`] 解释单个样本为什么错、哪些单点编辑能让它翻转/变对；[`mod@probe`] 做行级消融测行为漂移（大网读取）；[`mod@localize`] 在承重行内做 trit 级定位（行 → 权重两级读取）；
 //!   [`merge`] 负责消掉隐藏单元置换对称性后再合并；[`mod@task`] 做三值任务向量投票合并（两者都保留可选 f32 偏置）；
 //!   [`mod@dare`] 做 DARE 的三值对应物：按种子确定性丢弃差分 trit，重标度吸收进 scale。
-//!
 //! ## 规范自由度（不变量）
 //! - 正 scale 不改行为，只改 f32 读数；隐藏层行置换 + 下一层列置换不改行为；
 //! - 因此行为判等必须用 [`Oracle`] 穷举，而不是比较权重。
@@ -73,6 +72,7 @@ pub mod analyze;
 pub mod artifact_shard;
 pub mod attention;
 pub mod attention_f32;
+pub mod attention_f32_train;
 pub mod attention_learn;
 pub mod attention_multi;
 pub mod attention_position;

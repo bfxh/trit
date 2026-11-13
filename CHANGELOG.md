@@ -248,6 +248,14 @@
   flip_rate / lost_rate = 0.328、最敏感位影响 26/32 个样本。
   `tests/training.rs` 一条：XOR 打坏一格后第一轮 after_loss=0、patch_len>0。
 
+- f32 位置编码的反向传播训练：新模块 `attention_f32_train.rs`
+  （`train_positions`）——Q/K/V 固定，只对位置偏置做解析梯度（交叉熵）。
+  MiniLM 12 头、32 key、20 轮、lr=0.5：每头 loss 从 ≈3.46 降到 ≈0.175，
+  grad_norm_first ≈0.984，positions 范围 [-0.162, +5.007]。
+  与三值贪心学习（0–3/12 匹配）对比：**f32 位置编码 + 真实梯度**才学得动，
+  三值位置编码的表达力不足是量化限制，不是搜索问题。
+  边界：只训练位置偏置，Q/K/V 固定，不是完整注意力端到端训练。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，
