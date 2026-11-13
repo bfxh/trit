@@ -22,7 +22,7 @@
 ```bash
 curl -o smsspam.zip https://archive.ics.uci.edu/static/public/228/sms+spam+collection.zip
 cargo run --release -p trit-wspace --example spam_redteam -- \
-  --file D:/KF/trit-data/sms-spam/SMSSpamCollection
+  --file <数据盘>/trit-data/sms-spam/SMSSpamCollection
 ```
 
 ## 2. 读数（seed=7/11，30 epochs，单线程 release）
