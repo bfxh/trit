@@ -3200,7 +3200,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_metrics.rs",
-      "lines": 60
+      "lines": 59
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_patch.rs",
@@ -3333,6 +3333,10 @@
     {
       "file": "crates/trit-wspace/src/history.rs",
       "lines": 85
+    },
+    {
+      "file": "crates/trit-wspace/src/history_time.rs",
+      "lines": 33
     },
     {
       "file": "crates/trit-wspace/src/impact.rs",

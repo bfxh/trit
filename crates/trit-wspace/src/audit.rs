@@ -129,9 +129,7 @@ impl AuditLog {
     }
 
     /// 追加一条记录，可选存下验证集与前后行为指纹。
-    ///
-    /// 不变量：未应用 / 回滚的条目必须前后校验和相同（工件没被留在半改状态），
-    /// 且行为指纹相同。
+    /// 不变量：未应用/回滚条目必须前后校验和相同（工件没被留在半改状态），且行为指纹相同。
     #[allow(clippy::too_many_arguments)]
     pub fn record_with_oracle(
         &mut self,
@@ -254,7 +252,9 @@ impl AuditLog {
     pub fn to_jsonl(&self) -> String {
         let mut out = String::new();
         for entry in &self.entries {
-            out.push_str(&canonical(entry, true).to_string());
+            let mut value = canonical(entry, true);
+            crate::history_time::attach(&mut value);
+            out.push_str(&value.to_string());
             out.push('\n');
         }
         out

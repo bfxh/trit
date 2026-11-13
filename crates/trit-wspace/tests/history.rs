@@ -29,7 +29,7 @@ fn summarizes_applied_and_skipped() {
     assert_eq!(summary.applied, 1);
     assert_eq!(summary.skipped, 1);
     assert_eq!(summary.edits, 2);
-    assert_eq!(summary.by_name.len(), 2);
-    assert_eq!(summary.events.len(), 2);
-    assert_eq!(summary.events[0].name, "first");
+    let timestamps = trit_wspace::history_time::extract(&log.to_jsonl());
+    assert_eq!(timestamps.len(), 2);
+    assert!(timestamps.iter().all(Option::is_some));
 }

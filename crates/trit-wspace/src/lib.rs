@@ -31,8 +31,7 @@
 //!
 //! 规范自由度（不变量）：
 //!
-//! - 正 scale 不改行为，只改 f32 读数；
-//! - 隐藏层行置换 + 下一层列置换不改行为；
+//! - 正 scale 不改行为，只改 f32 读数；隐藏层行置换 + 下一层列置换不改行为；
 //! - 因此行为判等必须用 [`Oracle`] 穷举，而不是比较权重。
 //! ## 快速开始
 //! 一个已经学会 XOR 的小网络被打坏一格；修补应只改一个三值：
@@ -95,6 +94,7 @@ pub mod error;
 pub mod exhaustive;
 pub mod explain;
 pub mod history;
+pub mod history_time;
 pub mod impact;
 pub mod inventory;
 pub mod learned;

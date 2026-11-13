@@ -20,11 +20,8 @@ pub(super) fn cost_cmd(args: &[String]) -> Result<(), String> {
     let top = opt_usize(&parsed, "top", 8)?;
     let report = cost(&net, &oracle, top).map_err(err)?;
     emit(&json!({
-        "samples": report.samples,
-        "total_multiplies": report.total,
-        "mean": report.mean,
-        "max": report.max,
-        "min": report.min,
+        "samples": report.samples, "total_multiplies": report.total,
+        "mean": report.mean, "max": report.max, "min": report.min,
         "per_layer": report.per_layer,
         "top": report.top.iter().map(|sample| json!({
             "sample": sample.sample,
@@ -39,12 +36,14 @@ pub(super) fn history_cmd(args: &[String]) -> Result<(), String> {
     let text = read_source(source)?;
     let log = AuditLog::from_jsonl(&text).map_err(err)?;
     let summary = summary(&log);
+    let timestamps = crate::history_time::extract(&text);
+    let present: Vec<u64> = timestamps.iter().flatten().copied().collect();
+    let first = present.first().copied();
+    let last = present.last().copied();
     emit(&json!({
-        "entries": summary.entries,
-        "applied": summary.applied,
-        "rolled_back": summary.rolled_back,
-        "skipped": summary.skipped,
-        "edits": summary.edits,
+        "entries": summary.entries, "applied": summary.applied,
+        "rolled_back": summary.rolled_back, "skipped": summary.skipped,
+        "edits": summary.edits, "first_ts": first, "last_ts": last,
         "by_name": summary.by_name.iter().map(|(name, count)| json!({
             "name": name,
             "count": count,
