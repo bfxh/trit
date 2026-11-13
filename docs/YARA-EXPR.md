@@ -326,8 +326,6 @@ DIFF（两边都下结论而结论相反）在上述对拍集上是 0。下面�
 
 **既有的不一致，本轮没修**
 
-- 旧字符串扫描的 `nocase` 只折叠数据一侧：`$r = /HELLO/ nocase` 对
-  `hello` 不命中，官方命中。**这是一个真 DIFF**，不在本轮规则集里。
 - 整份规则文件解析失败（不是单条 `Unsupported`）：正则串带行内标志
   `/…/i`、十六进制串里的 `( 41 | 42 )`、条件里多出的 `)`、空正则 `//`。
 - 条件里有 `{`、或串的值本身不被支持时，规则在到达表达式引擎之前就是
@@ -343,6 +341,7 @@ DIFF（两边都下结论而结论相反）在上述对拍集上是 0。下面�
 | `not (uint8(越界) == 1)` | HIT | MISS |
 | `"\x41" == "A"` | MISS | HIT |
 | `"hello" matches /HELLO/i` | 不支持 | HIT |
+| `$r = /HELLO/ nocase` 对 `hello` | MISS | HIT（模式与数据两侧都折叠） |
 | 串在扫描预算外时的 `not $a`、`#a == 0` | HIT | 官方 MISS；现在 UNKNOWN |
 | `for … of` 套 `for … of` | HIT | 编译错误 / `Unsupported` |
 | `pe.sections[4294967296].name == ".text"` | MISS | HIT |

@@ -2608,11 +2608,15 @@
     },
     {
       "file": "crates/trit-re/src/sigscan/regex.rs",
-      "lines": 767
+      "lines": 762
     },
     {
       "file": "crates/trit-re/src/sigscan/regex/depth.rs",
       "lines": 63
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/regex/nocase.rs",
+      "lines": 22
     },
     {
       "file": "crates/trit-re/src/sigscan/resolve.rs",
@@ -2841,6 +2845,10 @@
     {
       "file": "crates/trit-re/tests/yara_regex.rs",
       "lines": 35
+    },
+    {
+      "file": "crates/trit-re/tests/yara_regex_nocase.rs",
+      "lines": 41
     },
     {
       "file": "crates/trit-redteam/src/attrib.rs",

@@ -82,6 +82,7 @@ pub(crate) enum Instr {
 
 // ── 解析器（递归下降）：alt → concat → repeat → atom ─────────────────
 mod depth; // 分组嵌套闸（递归下降的爆栈面）
+mod nocase; // nocase 模式折叠（拆出守预算）
 /// NFA 指令数上限（{n,m} 展开与嵌套量词的爆炸闸）。
 const MAX_PROG: usize = 8192;
 
@@ -413,7 +414,10 @@ fn merge_escape_class(e: u8, set: &mut [bool; 256]) {
 
 /// 编译正则体为 VM 程序；不支持 / 超预算如实 `Err`（→ 串记名弃权）。
 pub(super) fn compile(body: &str, nocase: bool) -> Result<RegexPat, String> {
-    let ast = depth::check(body).and_then(|()| parse(body))?;
+    let mut ast = depth::check(body).and_then(|()| parse(body))?;
+    if nocase {
+        nocase::fold(&mut ast);
+    }
     let mut prog = Vec::new();
     emit(&ast, &mut prog)?;
     prog.push(Instr::Match);
@@ -754,14 +758,5 @@ mod tests {
         assert_eq!(hits("a.c", b"a\nc"), Vec::<u64>::new()); // . 不含 \n
         assert_eq!(hits("a.c", b"axc"), vec![0]);
         assert_eq!(hits("aa", b"aaaa"), vec![0, 1, 2]); // 重叠全报
-    }
-
-    #[test]
-    fn nocase_folds_bytes() {
-        let re = compile("abc", true).expect("编译");
-        assert_eq!(super::find_all(b"ABC", &re, 1_000_000).0, vec![0]);
-        // 否定类 + nocase：折叠后 [^a] 排除 a/A 两者
-        let re = compile("[^a]+", true).expect("编译");
-        assert_eq!(super::find_all(b"aA", &re, 1_000_000).0, Vec::<u64>::new());
     }
 }
