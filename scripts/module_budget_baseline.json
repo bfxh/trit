@@ -2951,8 +2951,12 @@
       "lines": 212
     },
     {
-      "file": "crates/trit-wspace/examples/agree_real.rs",
-      "lines": 106
+      "file": "crates/trit-wspace/examples/agree_real/basis.rs",
+      "lines": 85
+    },
+    {
+      "file": "crates/trit-wspace/examples/agree_real/main.rs",
+      "lines": 146
     },
     {
       "file": "crates/trit-wspace/examples/bias_e2e.rs",
