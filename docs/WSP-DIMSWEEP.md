@@ -486,6 +486,28 @@ pip install sentence-transformers  # 导出 384 维句向量
 - 体积与 row 无关（同一网络结构）：k=1 20.7×、k=8 15.2×、k=384 1.0×；
   k≤8 对每一行都是甜点。
 
+### 一读诊断：`diagnose`
+
+```text
+trit-wspace diagnose <artifact|-> --oracle <json|-> [--budget N] [--top K]
+                      [--max-edits N] [--beam-width N]
+```
+
+把四件事聚合成一个结论：
+
+| 结论 | 判定 | 输出里的关键字段 |
+|---|---|---|
+| `ok` | `loss == 0` | `rows`：清零/取反后漂移最大的行（一碰就坏） |
+| `repairable` | `loss > 0` 且预算内找到补丁 | `repair.patch_len`、`edits[0]`（单步最优收益） |
+| `not-repairable` | `loss > 0` 且预算内无解 | `edits[0].gain`（最高收益也救不回来） |
+
+全部字段都是实测：`loss` 来自穷举判据，`rows` 来自行级消融，`edits` 来自单点编辑前后重算，
+`repair` 来自带 `keep` 约束的最小补丁搜索。**边界**：`repairable` 只保证「预算内找到解」，
+不是形式化可修性；`ok` 下的脆弱行也不等于任务保证。
+
+`tests/diagnose.rs` 四条测试钉住三态与 CLI 端到端（完整 XOR → `ok`、打坏一格 →
+`repairable`、`max_edits=0` → `not-repairable`、命令输出 `verdict=ok`）。
+
 ### 库化：`agree`
 
 上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，

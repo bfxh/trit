@@ -130,6 +130,15 @@
   `beam_width` 8/16/32 **全部 `found=false`**，edit/keep loss 恒为 4/19。
   加大搜索宽度与编辑预算不改变结果——k=16 的瓶颈是降维网络本身不可修补，不是搜索预算。
 
+- 一读诊断：新库模块 `src/diagnose.rs` + CLI `diagnose`。给工件 + 判据，一次回答
+  「行不行、哪里不行、改哪里有好处」：`ok`（已满足，附一碰就坏的行）、
+  `repairable`（预算内找到补丁，附步数与单步最优收益）、`not-repairable`（预算内无解）。
+  `loss` 来自穷举判据，`rows` 来自行级消融，`edits` 来自单点编辑前后重算，
+  `repair` 来自带 `keep` 约束的最小补丁搜索——全部实测，不是打分估计。
+- `tests/diagnose.rs` 四条测试：完整 XOR → `ok`、打坏一格 → `repairable`（1 步补丁）、
+  `max_edits=0` → `not-repairable`、CLI 端到端输出 `verdict=ok`。
+- 为守住 `cli.rs` 台账把 `probe` 命令拆到 `cli/cli_probe.rs`。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，

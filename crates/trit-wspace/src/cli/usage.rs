@@ -15,7 +15,7 @@ trit-wspace <command>
   train-proposer <artifact|-> --oracle <json|-> --out <model.json> [--epochs N] [--lr R] [--holdout R] | propose-learned <artifact|-> --oracle <json|-> --model <model.json> [--limit N] [--verify]
   propose-gradient <artifact|-> --oracle <json|-> [--limit N] [--verify]
   explain <artifact|-> --oracle <json|-> --sample N [--top K]
-  probe <artifact|-> --oracle <json|-> [--budget N] [--top K] [--adaptive]
+  probe <artifact|-> --oracle <json|-> [--budget N] [--top K] [--adaptive]  diagnose <artifact|-> --oracle <json|-> [--budget N] [--top K] [--max-edits N] [--beam-width N]
   localize <artifact|-> --oracle <json|-> [--rows K] [--row-budget N] [--max-trits N] [--top-trits K]
   audit <log|-> [--artifact <initial|->]
   shard <log|-> --size N --out <dir>

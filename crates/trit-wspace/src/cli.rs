@@ -16,11 +16,13 @@ mod cli_agree_stats;
 mod cli_artifact_shard;
 mod cli_block;
 mod cli_certify;
+mod cli_diagnose;
 mod cli_diff;
 mod cli_gguf;
 mod cli_gradient;
 mod cli_learned;
 mod cli_merge;
+mod cli_probe;
 mod cli_project;
 mod cli_read;
 mod cli_repair;
@@ -71,7 +73,8 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "propose-learned" => cli_learned::propose_learned(&args[1..]),
         "propose-gradient" => cli_gradient::propose_gradient(&args[1..]),
         "explain" => cmd_explain(&args[1..]),
-        "probe" => cmd_probe(&args[1..]),
+        "probe" => cli_probe::probe_cmd(&args[1..]),
+        "diagnose" => cli_diagnose::diagnose_cmd(&args[1..]),
         "localize" => cmd_localize(&args[1..]),
         "audit" => crate::cli_audit::cmd_audit(&args[1..]),
         "shard" => crate::cli_audit::cmd_shard(&args[1..]),
@@ -463,26 +466,6 @@ fn cmd_explain(args: &[String]) -> Result<(), String> {
     let oracle = load_oracle(oracle_path)?;
     let explanation = crate::explain::explain_sample(&net, &oracle, sample, top).map_err(err)?;
     emit(&wire::sample_explanation_to_value(&explanation))
-}
-
-fn cmd_probe(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["adaptive"])?;
-    let path = one(
-        &parsed,
-        "probe <artifact|-> --oracle <json|-> [--budget N] [--top K] [--adaptive]",
-    )?;
-    let oracle_path = value(&parsed, "oracle")?;
-    let budget = opt_usize(&parsed, "budget", 0)?;
-    let top = opt_usize(&parsed, "top", 16)?;
-    no_double_stdin(&[path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let report = if parsed.switches.contains("adaptive") {
-        crate::probe::probe_rows_adaptive(&net, &oracle, budget, top).map_err(err)?
-    } else {
-        crate::probe::probe_rows(&net, &oracle, budget, top).map_err(err)?
-    };
-    emit(&wire::probe_report_to_value(&report))
 }
 
 fn cmd_localize(args: &[String]) -> Result<(), String> {
