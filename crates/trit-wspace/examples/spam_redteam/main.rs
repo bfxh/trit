@@ -1,12 +1,11 @@
 //! 三值 QAT 训练 + 工件红队：UCI SMS Spam（真实数据集，白客防御任务）全链。
-//! 全部 Rust（训练禁 Python 硬门一致）。管线六步：
-//! 1. 数据：SMS Spam 5,574 条（`docs/DATASETS.md` A0）；2. 特征（自造）：字符
-//! 3/4-gram FNV 哈希 4096 维，出现=+1 ⇒ 输入本身三值，无预训练 embedding；
-//! 3. 模型：QAT `TernaryDense` 4096→128→1（`Ste::Clipped`，Tanh/Tanh，hinge）；
-//! 4. 评测（自造）：分层 70/15/15，acc/P/R/F1 + 混淆矩阵；5. 导出：量化权重
-//! → `trit-wspace` Layer → WSP2 工件；6. 红队（接 #489）：真实任务指标下的
-//! 比特翻转攻击——翻转 k 个 trit 后 spam 检出率/F1 掉多少。读数与坑见
-//! `docs/WSP-SPAM-QAT.md`。
+//! 全部 Rust（训练禁 Python 硬门一致）。管线六步：数据（SMS Spam 5,574 条，
+//! `docs/DATASETS.md` A0）→ 特征（自造：字符 3/4-gram FNV 哈希 4096 维，
+//! 出现=+1，输入本身三值，无预训练 embedding）→ 模型（QAT `TernaryDense`
+//! 4096→128→1，`Ste::Clipped`，Tanh/Tanh，hinge）→ 评测（自造：分层
+//! 70/15/15，acc/P/R/F1 + 混淆矩阵）→ 导出（量化权重 → `trit-wspace` Layer
+//! → WSP2 工件）→ 红队（接 #489：真实任务指标下的比特翻转攻击）。读数与坑
+//! 见 `docs/WSP-SPAM-QAT.md`。
 //!
 //! ```bash
 //! cargo run --release -p trit-wspace --example spam_redteam -- \
@@ -15,9 +14,7 @@
 
 mod metrics;
 
-use std::fs;
-
-use metrics::{Metrics, Rng, evaluate, featurize, load_dataset, qat_out, stratified_split};
+use metrics::{Rng, evaluate, featurize, load_dataset, qat_out, stratified_split};
 use serde_json::{Value, json};
 use trit_learn::Activation;
 use trit_learn::Ste;
