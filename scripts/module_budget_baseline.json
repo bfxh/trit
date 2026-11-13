@@ -2979,6 +2979,10 @@
       "lines": 279
     },
     {
+      "file": "crates/trit-wspace/examples/editset_random_split.rs",
+      "lines": 382
+    },
+    {
       "file": "crates/trit-wspace/examples/editset_sts.rs",
       "lines": 189
     },

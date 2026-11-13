@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：句级随机划分复核阈值对齐结论）
+
+- `examples/editset_random_split.rs`：按句向量 hash 聚组（并查集），组随机分到 valid/test，
+  重复 5 次；同一句不会跨两侧。
+- 真实读数（872 对，split-seed 1..5）：单层 `edit_fixed` 8/0/7/0/4（mean **3.8**，sd 3.37）、
+  `keep_broken` 0/10/0/1/0（mean **2.2**，sd 3.92）；两层 `edit_fixed` 全 0、
+  `keep_broken` 29/46/50/37/47（mean **41.8**，sd 7.73）。
+- **结论弱化**：按索引切分时单层修 20.6/破坏 0，随机划分后降到修 3.8/破坏 2.2——
+  之前的收益被主题/分布泄漏放大；两层的负向结论不变。
+- `docs/WSP-ALIGNED.md` 增加随机化划分节。
+- 未证栏：单层在随机划分下优势不稳定（0–8）；只跑了 seed 7 的 tuned 权重。
+
 ### Added（trit-wspace：阈值对齐的多 seed 复核）
 
 - 用已有 tuned 权重（单层 5 seed、两层 3 seed）各跑一次 `editset_aligned`：
