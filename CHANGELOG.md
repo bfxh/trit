@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：5 单层 seed × 5 随机划分的可信区间）
+
+- 用 5 个单层 tuned seed × 5 个随机划分（共 25 次）复核 `editset_random_split`：
+  `edit_fixed` mean **2.48**（0–12，sd 3.68）、`keep_broken` mean **3.44**（0–15，sd 4.52），
+  threshold 0.38–0.43，valid 准确率 0.884–0.929。
+- 按 seed 拆开：seed 7 / 13 / 29 / 43 / 61 的 edit_fixed 均值为 3.8 / 6.0 / 0.2 / 0.2 / 2.2，
+  keep_broken 均值为 2.2 / 3.2 / 4.2 / 5.2 / 2.4——seed 间差异比划分差异大。
+- **结论再弱化**：单层编辑收益在随机划分 + 多 seed 下净值接近 0（甚至为负），
+  不能算“正向”；上一轮 seed 7 的 3.8 / 2.2 偏乐观。
+- `docs/WSP-ALIGNED.md` 增加 5 seed × 5 划分节。
+- 未证栏：`keep_broken` 区间仍宽（0–15）；训练仍是协议级。
+
 ### Added（trit-wspace：句级随机划分复核阈值对齐结论）
 
 - `examples/editset_random_split.rs`：按句向量 hash 聚组（并查集），组随机分到 valid/test，
