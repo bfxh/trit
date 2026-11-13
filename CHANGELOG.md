@@ -209,11 +209,18 @@
   `tests/attention.rs` 两条：权重和为 1 + dominant、等分时均匀。边界：单头、无位置编码；
   Q/K/V 是三值化代理，不是原始 f32 attention。
 
-- 真实规模统计（`examples/real_stats`）：128 个真实词向量行，1000 次 bootstrap。
-  accuracy 0.547 [0.469, 0.633]；cost 143,406 [143,199, 143,598]；
-  flip_rate 0.200 [0.159, 0.244]；lost_rate 0.082 [0.055, 0.112]。
-  cost 的 CI 很窄（样本间计算量几乎恒定），accuracy / flip_rate 的 CI 仍宽
-  （约 16 / 8 个点）——128 样本不足以收窄，需要更大样本。
+- 真实规模统计（`examples/real_stats`）：512 个真实词向量行，1000 次 bootstrap。
+  accuracy 0.613 [0.570, 0.656]；cost 143,416 [143,299, 143,525]；
+  flip_rate 0.176 [0.157, 0.196]；lost_rate 0.080 [0.068, 0.094]。
+  相比 128 样本，CI 收窄约一半（accuracy 16 → 8.6 点、flip_rate 8 → 3.8 点）；
+  accuracy 从 0.547 升到 0.613，说明 128 样本的展示性读数不能直接引用。
+
+- 多头 + 位置偏置的三值注意力：新模块 `attention_multi.rs`（`MultiHeadAttention`）。
+  真实 MiniLM 切 12 头 × 32 维、128 个 key：
+  - 多头 dominant 高度分散（12 头指向 7–10 个不同 key），不是全部吸到同一个位置；
+  - 位置偏置 `-(index)/4` 显著改变落点：query 2/3 出现多个头指向 key 0；
+  - `tests/attention_multi.rs` 两条：每头一个 trace、位置偏置改变 dominant。
+  边界：位置偏置是整数分数上的线性项，不是可学习位置编码；Q/K/V 仍是三值化代理。
 
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
