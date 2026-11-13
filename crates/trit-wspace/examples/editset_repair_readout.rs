@@ -1,15 +1,9 @@
 //! `localize` 选承重行 + `repair` 的 scoped 束搜索：把 #477 的“不可行”补成真实读数。
 //!
-//! 任务与 `editset_gate` 相同（`word_embeddings` 行做输入、f32 `query` 层做教师、
-//! 三值 `query` + 三值读出层做学生），流程：
+//! 任务与 `editset_gate` 相同（`word_embeddings` 行做输入、f32 `query` 层做教师、三值读出层做学生）；
+//! 流程：`localize` 选承重行 → 展开候选 → `repair` 带 `scope` 束搜索 → `certify_nets` 双集合检查。
 //!
-//! 1. `localize` 选承重行 → 展开成候选（行内所有 trit 的另两个取值 + bias）；
-//! 2. `repair` 带 `scope` 做束搜索 → `certify_nets` 检查 edit 达成与 keep 保持。
-//!
-//! ```bash
-//! cargo run --release -p trit-wspace --example editset_repair_readout -- \
-//!   --safetensors model.safetensors --edit-limit 8 --keep-limit 64 --top-rows 8 --max-edits 2 --beam-width 16
-//! ```
+//! `cargo run --release -p trit-wspace --example editset_repair_readout -- --safetensors model.safetensors --edit-limit 8 --keep-limit 64 --top-rows 8 --max-edits 2 --beam-width 16`
 
 use serde_json::json;
 use trit_wspace::certify::{CertifyOptions, certify_nets};
@@ -37,6 +31,7 @@ struct Args {
     max_edits: usize,
     beam_width: usize,
     row_ops: bool,
+    keep_guard: bool,
     out: Option<String>,
 }
 
@@ -57,6 +52,7 @@ fn parse_args() -> Args {
         max_edits: 2,
         beam_width: 16,
         row_ops: false,
+        keep_guard: false,
         out: None,
     };
     let mut it = std::env::args().skip(1);
@@ -77,6 +73,7 @@ fn parse_args() -> Args {
             "--top-trits" => args.top_trits = next().parse().expect("top-trits"),
             "--max-edits" => args.max_edits = next().parse().expect("max-edits"),
             "--row-ops" => args.row_ops = true,
+            "--keep" => args.keep_guard = true,
             "--beam-width" => args.beam_width = next().parse().expect("beam-width"),
             "--out" => args.out = Some(next()),
             other => panic!("未知参数 {other}"),
@@ -258,16 +255,12 @@ fn main() {
         .map(|row| (row.layer, row.row))
         .collect();
     let scope = row_scope(&student, &rows);
-    report["localize"] = json!({
-        "rows": rows.len(),
-        "row_list": rows,
+    report["localize"] = json!({"rows": rows.len(), "row_list": rows,
         "candidates": scope.len(),
-        "probed": located.rows.iter().map(|row| row.probed).sum::<usize>(),
-    });
+        "probed": located.rows.iter().map(|row| row.probed).sum::<usize>()});
     if scope.is_empty() {
         report["note"] = json!("localize 没有选出候选行");
-        emit(&args, &report);
-        return;
+        return emit(&args, &report);
     }
 
     let options = RepairOptions {
@@ -275,6 +268,11 @@ fn main() {
         beam_width: args.beam_width,
         scope: Some(scope),
         row_ops: args.row_ops,
+        keep: if args.keep_guard {
+            Some(keep.clone())
+        } else {
+            None
+        },
         ..RepairOptions::default()
     };
     let Some(found) = repair(&student, &edit, &options).expect("repair") else {

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`repair` 的 keep 约束）
+
+- `RepairOptions.keep: Option<Oracle>`：给定时只接受“edit 全对且 keep 全对”的补丁；
+  半径 1 / 半径 2 / BFS / 束搜索四条接受路径都加 `keep_ok`；`energy` 加 10 × keep 失配数作软惩罚。
+- CLI `repair --keep <oracle|->`；`tests/repair_keep.rs` 2 条（拒绝破坏 keep 的解、允许不破坏的解）。
+- 真实读数（8 条 edit / 64 条 keep、8 个承重行、`--max-edits 2`）：无 row-ops `found:false`；
+  `--row-ops` `found:true`、edit after_loss 0、**keep regressed 64**；`--row-ops --keep` **`found:false`**。
+- 结论：keep 约束把“全毁的解”排除后，同一候选空间里**没有“修好且不破坏 keep”的解**——
+  修复与保持在这 8 行 / 2 点内存在根本冲突，不是预算问题。
+- `docs/WSP-REPAIR.md` 增加 keep 约束节。
+- 未证栏：keep 软惩罚 10× 未调权；更多承重行 / `max_edits > 2` 未试。
+
 ### Added（trit-wspace：`repair` 的行级原语 `--row-ops`）
 
 - `RepairOptions.row_ops: bool`：候选加入 `NegateRow`（整行取反）与相邻 `SwapRows`；
