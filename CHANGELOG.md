@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：全量 STS benchmark + 5 seed 置信区间）
+
+- `encode_sts_bench.py --limit 0`：benchmark test 全量 1,379 行 → **872 对**（338 正 / 534 负，
+  丢弃 507 中性）；`train_query_layer.py --seeds 7,13,29,43,61` 训练 5 个 seed（valid 0.8798–0.8961）。
+- 门禁读数（872 对，5 seed × 3 阈值）：0.3 阈值 `edit_fixed` **51.0（44–55，sd 4.05）**、
+  `keep_broken` 0；0.5 阈值 `keep_broken` **30.8（27–38，sd 4.45）**；0.8 阈值两个量都接近 0。
+- 与 400 对子集对照：0.3 阈值 edit_fixed 11 → 51（相对波动 15% → 8%），0.5 阈值 keep_broken
+  17 → 31（相对波动 12% → 14%）——“中等阈值下有害”是稳定结论，不是小样本噪声。
+- `docs/WSP-STS-TUNED.md` 增加全量对照表。
+- 未证栏：5 个 seed 只覆盖训练随机性；held-out 仍是 STSb train 20% 子集。
+
 ### Added（trit-wspace：多 seed + held-out，编辑集门禁产出标准证书）
 
 - `train_query_layer.py` 支持 `--seeds 7,13,29 --valid-ratio 0.2`：STSb train 切成
