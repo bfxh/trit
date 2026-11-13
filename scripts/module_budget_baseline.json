@@ -2952,11 +2952,11 @@
     },
     {
       "file": "crates/trit-wspace/examples/agree_real/basis.rs",
-      "lines": 85
+      "lines": 84
     },
     {
       "file": "crates/trit-wspace/examples/agree_real/main.rs",
-      "lines": 146
+      "lines": 145
     },
     {
       "file": "crates/trit-wspace/examples/bias_e2e.rs",

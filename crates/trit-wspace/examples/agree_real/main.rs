@@ -1,19 +1,11 @@
-//! 真实词向量输入上的压缩保真度曲线（supervised 基：判据方向 + PCA 正交补齐）。
-//!
-//! 输入是 `word_embeddings` 的真实行（三值化），不是随机三值。k 从 1 到 384。
-
 use serde_json::json;
 use trit_wspace::safetensors::{self, Weights};
-
 mod basis;
-
 use basis::*;
 use trit_wspace::{Layer, Net, Trit};
-
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
 const EMBEDDINGS: &str = "embeddings.word_embeddings.weight";
 const DIMS: [usize; 6] = [1, 8, 32, 64, 128, 384];
-
 fn trit_row(values: &[f32]) -> Vec<Trit> {
     let weights = Weights {
         rows: 1,

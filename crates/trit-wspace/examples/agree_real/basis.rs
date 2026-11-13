@@ -1,9 +1,4 @@
-//! agree_real 的数学部分：二阶矩、Jacobi 特征分解、Gram-Schmidt 正交化。
-//!
-//! 从 `main.rs` 拆出：module_budget 台账只收紧、不抬高单文件行数。
-
 use trit_wspace::safetensors::Weights;
-
 pub fn second_moment(embeddings: &Weights, dim: usize, samples: usize) -> Vec<f64> {
     let mut mom = vec![0.0f64; dim * dim];
     for row in 0..samples.min(embeddings.rows) {
