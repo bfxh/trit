@@ -10,7 +10,7 @@
 //!   求值预算耗尽。**绝不折叠成假**；只有当另一侧让结果与它无关时才消失
 //!   （Kleene：`假 and ?` = 假，`真 or ?` = 真；严格算子里 `Undef` 压过它）。
 //!
-//! 本模块只定义 AST 与入口；求值在 [`eval`]，对象模型在 [`node`]/[`yrpe`]。
+//! 本模块只定义 AST 与入口；求值在 `eval`，对象模型在 `node`/`yrpe`。
 
 use super::eval::EvalCtx;
 use super::regex::{ByteSet, Instr, RegexPat};
