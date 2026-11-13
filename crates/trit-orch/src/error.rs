@@ -68,6 +68,8 @@ pub enum Error {
     ProtectedInFlight { id: String },
     #[error("task {id} epoch overflows u64")]
     EpochOverflow { id: String },
+    #[error("task {task} declares effect operation {operation} more than once")]
+    DuplicateEffectOperation { task: String, operation: String },
     #[error("plan revision overflows u64")]
     RevisionOverflow,
     #[error("effect {operation} is in doubt; reconcile before retrying")]
@@ -197,6 +199,26 @@ pub enum Error {
         from: String,
         to: String,
     },
+    #[error("unknown shadow policy {name}")]
+    UnknownShadowPolicy { name: String },
+    #[error("shadow policy {name} appears more than once in one observation")]
+    DuplicateShadowPolicy { name: String },
+    #[error("shadow policy set changed: expected {expected:?}, got {actual:?}")]
+    LearnPolicySetChanged {
+        expected: Vec<String>,
+        actual: Vec<String>,
+    },
+    #[error("shadow learner window must be positive")]
+    LearnWindowZero,
+    #[error("shadow learner window mismatch: expected {expected:?}, got {actual:?}")]
+    LearnWindowMismatch {
+        expected: Option<usize>,
+        actual: Option<usize>,
+    },
+    #[error("flip-rate window must be positive")]
+    FlipWindowZero,
+    #[error("task brief for {task} is incomplete: {reason}")]
+    BriefIncomplete { task: String, reason: String },
 }
 
 pub(crate) fn add_tokens(left: u64, right: u64, task: Option<&str>) -> Result<u64, Error> {
@@ -233,6 +255,7 @@ impl Error {
             Error::PatchTargetMissing { .. } => "patch_target_missing",
             Error::ProtectedInFlight { .. } => "protected_in_flight",
             Error::EpochOverflow { .. } => "epoch_overflow",
+            Error::DuplicateEffectOperation { .. } => "duplicate_effect_operation",
             Error::RevisionOverflow => "revision_overflow",
             Error::EffectInDoubt { .. } => "effect_in_doubt",
             Error::EffectAlreadyApplied { .. } => "effect_already_applied",
@@ -282,6 +305,13 @@ impl Error {
             Error::HandoffFieldBlank { .. } => "handoff_field_blank",
             Error::HandoffExpired { .. } => "handoff_expired",
             Error::InvalidTransition { .. } => "invalid_transition",
+            Error::UnknownShadowPolicy { .. } => "unknown_shadow_policy",
+            Error::DuplicateShadowPolicy { .. } => "duplicate_shadow_policy",
+            Error::LearnPolicySetChanged { .. } => "learn_policy_set_changed",
+            Error::LearnWindowZero => "learn_window_zero",
+            Error::LearnWindowMismatch { .. } => "learn_window_mismatch",
+            Error::FlipWindowZero => "flip_window_zero",
+            Error::BriefIncomplete { .. } => "brief_incomplete",
         }
     }
 }

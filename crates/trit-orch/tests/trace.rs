@@ -36,6 +36,7 @@ fn step(id: &str, revision: u64) -> TraceStep {
         requirements: Resources::new(1, 1),
         max_tokens: 100,
         epoch: 0,
+        ..TaskSpec::default()
     };
     TraceStep {
         revision,

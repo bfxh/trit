@@ -11,6 +11,7 @@ fn spec(id: &str) -> TaskSpec {
         requirements: Resources::new(1, 1),
         max_tokens: 10,
         epoch: 0,
+        ..TaskSpec::default()
     }
 }
 

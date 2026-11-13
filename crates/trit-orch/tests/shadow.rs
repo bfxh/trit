@@ -16,6 +16,7 @@ fn task(id: &str, duration: u32) -> TaskSpec {
         requirements: Resources::new(1, 1),
         max_tokens: 100,
         epoch: 0,
+        ..TaskSpec::default()
     }
 }
 
@@ -149,6 +150,7 @@ fn task_with(id: &str, duration: u32, deps: Vec<(&str, Ternary)>) -> TaskSpec {
         requirements: Resources::new(1, 1),
         max_tokens: 100,
         epoch: 0,
+        ..TaskSpec::default()
     }
 }
 

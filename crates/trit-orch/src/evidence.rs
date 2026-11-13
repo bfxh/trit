@@ -21,7 +21,7 @@ pub struct Receipt {
 }
 
 /// 验收规格：至少要通过多少条断言才算覆盖命题。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EvidenceSpec {
     pub min_assertions: u32,
 }

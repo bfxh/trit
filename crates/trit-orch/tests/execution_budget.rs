@@ -15,6 +15,7 @@ fn task(id: &str, max_tokens: u64) -> TaskSpec {
         requirements: Resources::new(1, 1),
         max_tokens,
         epoch: 0,
+        ..TaskSpec::default()
     }
 }
 

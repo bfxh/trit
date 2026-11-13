@@ -123,6 +123,7 @@ fn replay_inputs() -> (Vec<TaskSpec>, Snapshot, Limits) {
         requirements: Resources::new(1, 1),
         max_tokens: 100,
         epoch: 0,
+        ..TaskSpec::default()
     }];
     let snapshot = Snapshot {
         revision: 7,

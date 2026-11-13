@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use trit_orch::{
-    BlockReason, CheckReport, CheckResult, Dependency, Error, Limits, Observation, Phase, Plan,
-    PlanPatch, Resources, Snapshot, Task, TaskSpec, Ternary,
+    BlockReason, CheckReport, CheckResult, Dependency, EffectSpec, Error, EvidenceSpec, Limits,
+    Observation, Phase, Plan, PlanPatch, Resources, Snapshot, Task, TaskSpec, Ternary,
 };
 
 fn task(id: &str, deps: Vec<Dependency>) -> TaskSpec {
@@ -16,6 +16,7 @@ fn task(id: &str, deps: Vec<Dependency>) -> TaskSpec {
         requirements: Resources::new(1, 1),
         max_tokens: 100,
         epoch: 0,
+        ..TaskSpec::default()
     }
 }
 
@@ -292,7 +293,9 @@ fn epoch_and_revision_overflow_fail_closed() {
     let tasks = vec![maximum];
     let plan = Plan::new(7, tasks.clone()).unwrap();
     let mut change = patch(7);
-    change.replace.push(task("a", vec![]));
+    let mut revised = task("a", vec![]);
+    revised.max_tokens = 50;
+    change.replace.push(revised);
     assert_eq!(
         plan.patch(&change, &ready(&tasks)),
         Err(Error::EpochOverflow { id: "a".into() }),
@@ -314,5 +317,69 @@ fn epoch_and_revision_overflow_fail_closed() {
     assert_eq!(
         edge_plan.patch(&patch(u64::MAX), &state),
         Err(Error::RevisionOverflow)
+    );
+}
+
+#[test]
+fn inflight_protection_covers_native_bindings() {
+    let tasks = vec![task("a", vec![])];
+    let plan = Plan::new(7, tasks.clone()).unwrap();
+    let mut state = ready(&tasks);
+    state.observations.get_mut("a").unwrap().phase = Phase::InFlight;
+
+    let mut same = patch(7);
+    same.replace.push(task("a", vec![]));
+    assert!(
+        plan.patch(&same, &state).is_ok(),
+        "identical spec is allowed"
+    );
+
+    let variants = [
+        TaskSpec {
+            resolves: vec!["a".into()],
+            ..task("a", vec![])
+        },
+        TaskSpec {
+            produces: EvidenceSpec { min_assertions: 2 },
+            ..task("a", vec![])
+        },
+        TaskSpec {
+            effects: vec![EffectSpec::new("pay")],
+            ..task("a", vec![])
+        },
+    ];
+    for replacement in variants {
+        let mut change = patch(7);
+        change.replace.push(replacement);
+        assert_eq!(
+            plan.patch(&change, &state),
+            Err(Error::ProtectedInFlight { id: "a".into() }),
+            "ORCH_PATCH_PROTECT_NATIVE"
+        );
+    }
+}
+
+#[test]
+fn identical_replacement_does_not_bump_epoch() {
+    let tasks = vec![task("a", vec![])];
+    let plan = Plan::new(7, tasks.clone()).unwrap();
+    let mut state = ready(&tasks);
+    settled("a", &mut state);
+
+    let mut change = patch(7);
+    change.replace.push(task("a", vec![]));
+    let next = plan.patch(&change, &state).unwrap();
+    assert_eq!(next.revision(), 8);
+    assert_eq!(
+        next.task("a").unwrap().epoch,
+        0,
+        "ORCH_PATCH_NOOP_EPOCH: 相同定义不该 bump epoch"
+    );
+
+    let mut after = state.clone();
+    after.revision = 8;
+    assert!(
+        next.select(&after, &limits()).unwrap().selected.is_empty(),
+        "ORCH_PATCH_NOOP_EVIDENCE: 相同定义替换不能作废证据"
     );
 }

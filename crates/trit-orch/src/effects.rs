@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -19,6 +19,42 @@ pub enum Effect {
     Refuted,
     /// 已发送或可能已发送，但没有可靠结果。
     Unknown,
+}
+
+/// 一个任务会产生的副作用声明。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EffectSpec {
+    /// 台账操作 ID；空表示沿用任务 ID。
+    #[serde(default)]
+    pub operation: String,
+}
+
+impl EffectSpec {
+    pub fn new(operation: impl Into<String>) -> Self {
+        Self {
+            operation: operation.into(),
+        }
+    }
+
+    pub fn operation_for<'a>(&'a self, task: &'a str) -> &'a str {
+        if self.operation.is_empty() {
+            task
+        } else {
+            &self.operation
+        }
+    }
+}
+
+/// 任务声明的台账操作；未声明时回退到任务 ID（单效果默认）。
+pub fn effect_operations(task: &TaskSpec) -> Vec<&str> {
+    if task.effects.is_empty() {
+        vec![task.task.id.as_str()]
+    } else {
+        task.effects
+            .iter()
+            .map(|effect| effect.operation_for(task.task.id.as_str()))
+            .collect()
+    }
 }
 
 /// 一次尝试的身份：谁在什么 epoch、用什么 fence 发起了哪个操作。
@@ -379,15 +415,63 @@ impl Ledger {
     }
 }
 
-/// 派发闸门：每个被选中的任务都必须已有**同 epoch、Prepared** 的意图。
+/// 为一个任务的每个声明操作原子地落 `Prepared` 意图。
 ///
-/// 约定：一个任务的单个外部效果用任务 ID 作为 operation ID；多效果任务由宿主自行加后缀。
+/// 先用同一个 fence 预检全部操作；任一操作不可重试、fence 过期或操作重复，
+/// 都不写入任何意图，避免留下“半个任务已准备”的状态。
+pub fn prepare_effects(
+    ledger: &mut Ledger,
+    spec: &TaskSpec,
+    fence: u64,
+) -> Result<Vec<Attempt>, Error> {
+    let operations = effect_operations(spec);
+    let mut seen = BTreeSet::new();
+    for operation in &operations {
+        if !seen.insert(*operation) {
+            return Err(Error::DuplicateEffectOperation {
+                task: spec.task.id.clone(),
+                operation: (*operation).to_owned(),
+            });
+        }
+        match ledger.state(operation) {
+            None | Some(Effect::Refuted) => {}
+            Some(Effect::Confirmed) => {
+                return Err(Error::EffectAlreadyApplied {
+                    operation: (*operation).to_owned(),
+                });
+            }
+            Some(_) => {
+                return Err(Error::EffectInDoubt {
+                    operation: (*operation).to_owned(),
+                });
+            }
+        }
+        if let Some(attempt) = ledger.attempt(operation)
+            && fence < attempt.fence
+        {
+            return Err(Error::StaleFence {
+                operation: (*operation).to_owned(),
+                given: fence,
+                current: attempt.fence,
+            });
+        }
+    }
+    let mut attempts = Vec::with_capacity(operations.len());
+    for operation in operations {
+        attempts.push(ledger.prepare(&spec.task.id, spec.epoch, operation, fence)?);
+    }
+    Ok(attempts)
+}
+
+/// 派发闸门：每个被选中的任务，其声明的每个操作都必须已有**同 epoch、Prepared** 的意图。
+///
+/// 约定：未声明 `effects` 的任务沿用任务 ID 作为唯一 operation ID。
 pub fn dispatch_ready(
     selection: &Selection,
     tasks: &[TaskSpec],
     ledger: &Ledger,
 ) -> Result<Vec<Attempt>, Error> {
-    let mut ready = Vec::with_capacity(selection.selected.len());
+    let mut ready = Vec::new();
     for id in &selection.selected {
         let spec = tasks
             .binary_search_by(|spec| spec.task.id.as_str().cmp(id))
@@ -397,27 +481,31 @@ pub fn dispatch_ready(
                 operation: id.clone(),
                 reason: "任务不在计划里".into(),
             })?;
-        let attempt = ledger.attempt(id).ok_or_else(|| Error::NotPrepared {
-            operation: id.clone(),
-            reason: "没有 prepare 记录".into(),
-        })?;
-        match ledger.state(id) {
-            Some(Effect::Prepared) => {}
-            other => {
-                return Err(Error::NotPrepared {
-                    operation: id.clone(),
-                    reason: format!("状态是 {other:?}，不是 Prepared"),
+        for operation in effect_operations(spec) {
+            let attempt = ledger
+                .attempt(operation)
+                .ok_or_else(|| Error::NotPrepared {
+                    operation: operation.to_owned(),
+                    reason: "没有 prepare 记录".into(),
+                })?;
+            match ledger.state(operation) {
+                Some(Effect::Prepared) => {}
+                other => {
+                    return Err(Error::NotPrepared {
+                        operation: operation.to_owned(),
+                        reason: format!("状态是 {other:?}，不是 Prepared"),
+                    });
+                }
+            }
+            if attempt.epoch != spec.epoch {
+                return Err(Error::PreparedEpochMismatch {
+                    operation: operation.to_owned(),
+                    prepared: attempt.epoch,
+                    expected: spec.epoch,
                 });
             }
+            ready.push(attempt.clone());
         }
-        if attempt.epoch != spec.epoch {
-            return Err(Error::PreparedEpochMismatch {
-                operation: id.clone(),
-                prepared: attempt.epoch,
-                expected: spec.epoch,
-            });
-        }
-        ready.push(attempt.clone());
     }
     Ok(ready)
 }

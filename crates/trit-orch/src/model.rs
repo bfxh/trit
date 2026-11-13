@@ -3,17 +3,66 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::error::add_tokens;
-use crate::{AdmissionObligation, Effect, Error, Resources, Task, Ternary};
+use crate::{
+    AdmissionObligation, Effect, EffectSpec, Error, EvidenceRails, EvidenceSpec, Resources, Task,
+    Ternary,
+};
 
 /// 一个任务的完整定义。`epoch` 是该定义自己的版本号：补丁替换定义时递增，
 /// 旧 epoch 的执行与验收结果因此自动失效，与全局计划 revision 解耦。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TaskSpec {
     pub task: Task,
+    /// 这个任务为哪些判定生产证据；当前按目标任务 ID 引用。
+    #[serde(default)]
+    pub resolves: Vec<String>,
+    /// 生成的任务至少要交付的断言数；默认 0 表示未声明规格。
+    #[serde(default)]
+    pub produces: EvidenceSpec,
+    /// 这个任务会产生的副作用；空表示沿用任务 ID 作为唯一操作。
+    #[serde(default)]
+    pub effects: Vec<EffectSpec>,
+    /// 面向执行智能体的引导；不参与准入判定。
+    #[serde(default)]
+    pub guidance: TaskGuidance,
     pub requirements: Resources,
     pub max_tokens: u64,
     #[serde(default)]
     pub epoch: u64,
+}
+
+/// 任务引导契约：给执行智能体的目标、硬约束与停止条件。
+///
+/// 只描述意图与边界，不是新的准入条件；准入仍由依赖、授权、资源、新鲜度、
+/// claim、效果门决定。空字段表示由宿主自行解释。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TaskGuidance {
+    #[serde(default)]
+    pub objective: String,
+    #[serde(default)]
+    pub constraints: Vec<String>,
+    #[serde(default)]
+    pub stop_when: Vec<String>,
+}
+
+impl Default for TaskSpec {
+    fn default() -> Self {
+        Self {
+            task: Task {
+                id: String::new(),
+                duration: 0,
+                priority: 0,
+                deps: Vec::new(),
+            },
+            resolves: Vec::new(),
+            produces: EvidenceSpec::default(),
+            effects: Vec::new(),
+            guidance: TaskGuidance::default(),
+            requirements: Resources::default(),
+            max_tokens: 0,
+            epoch: 0,
+        }
+    }
 }
 
 /// 一次有限资源的准入上限。
@@ -133,6 +182,9 @@ pub struct Observation {
     pub authorization: Ternary,
     pub freshness: Ternary,
     pub evidence: Option<CheckReport>,
+    /// 多源双轨证据；非空时优先于单条 `evidence`。
+    #[serde(default)]
+    pub evidence_rails: EvidenceRails,
     pub usage: TokenUsage,
 }
 
@@ -144,8 +196,23 @@ impl Default for Observation {
             authorization: Ternary::Unknown,
             freshness: Ternary::Unknown,
             evidence: None,
+            evidence_rails: EvidenceRails::default(),
             usage: TokenUsage::default(),
         }
+    }
+}
+
+impl Observation {
+    /// 多源双轨优先；没有 rails 时回退到单条 `evidence`。
+    pub fn judgment(&self, expected_epoch: u64) -> EvidenceVerdict {
+        if !self.evidence_rails.is_empty() {
+            return self.evidence_rails.judgment(expected_epoch);
+        }
+        self.evidence
+            .as_ref()
+            .map_or(EvidenceVerdict::Neither, |report| {
+                report.judgment(expected_epoch)
+            })
     }
 }
 

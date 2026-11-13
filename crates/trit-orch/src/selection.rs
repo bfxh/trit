@@ -131,7 +131,7 @@ fn admit_pending(
     };
     let remaining = budget.remaining(position);
     let resources = budget.gate(spec, remaining, limits, &mut decision.reasons)?;
-    let effects = effect_gate(&spec.task.id, ledger, &mut decision.reasons);
+    let effects = effect_gate(spec, ledger, &mut decision.reasons);
     let claim = claim_admission(spec, claims, &mut decision.reasons)?;
     decision.admission = admit(
         dependencies,
@@ -153,23 +153,30 @@ fn admit_pending(
 
 /// 效果门：在途效果只能对账，不能靠再次派发绕过。
 ///
-/// 操作 ID 约定与 [`crate::dispatch_ready`] 一致：单效果任务用任务 ID。
+/// 逐个检查任务声明的操作；未声明 `effects` 时沿用任务 ID。
 /// `Confirmed` 是终态，不允许重发；`Prepared`/`Refuted`/无记录仍交给
 /// `dispatch_ready` 做最终意图校验。
-fn effect_gate(task: &str, ledger: &Ledger, reasons: &mut Vec<BlockReason>) -> Ternary {
-    match ledger.state(task) {
-        Some(state @ (Effect::Sending | Effect::Sent | Effect::Unknown)) => {
-            reasons.push(BlockReason::Effect { state });
-            Ternary::Unknown
+fn effect_gate(spec: &TaskSpec, ledger: &Ledger, reasons: &mut Vec<BlockReason>) -> Ternary {
+    let mut verdict = Ternary::True;
+    for operation in crate::effect_operations(spec) {
+        match ledger.state(operation) {
+            Some(state @ (Effect::Sending | Effect::Sent | Effect::Unknown)) => {
+                if verdict == Ternary::True {
+                    reasons.push(BlockReason::Effect { state });
+                    verdict = Ternary::Unknown;
+                }
+            }
+            Some(Effect::Confirmed) => {
+                reasons.push(BlockReason::Effect {
+                    state: Effect::Confirmed,
+                });
+                verdict = Ternary::False;
+                break;
+            }
+            _ => {}
         }
-        Some(Effect::Confirmed) => {
-            reasons.push(BlockReason::Effect {
-                state: Effect::Confirmed,
-            });
-            Ternary::False
-        }
-        _ => Ternary::True,
     }
+    verdict
 }
 
 fn claim_admission(
@@ -248,11 +255,7 @@ fn dependency_admission(
             && observation.epoch == predecessor_epoch
             && observation.freshness == Ternary::True
         {
-            observation
-                .evidence
-                .as_ref()
-                .map(|report| report.judgment(predecessor_epoch))
-                .unwrap_or(EvidenceVerdict::Neither)
+            observation.judgment(predecessor_epoch)
         } else {
             EvidenceVerdict::Neither
         };

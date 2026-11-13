@@ -28,6 +28,7 @@ impl Plan {
                 .sort_unstable_by(|left, right| left.task.cmp(&right.task));
         }
         let predecessors = validate_graph(&tasks)?;
+        validate_effects(&tasks)?;
         let mut order: Vec<usize> = (0..tasks.len()).collect();
         order.sort_unstable_by(|&left, &right| {
             let left = &tasks[left].task;
@@ -61,6 +62,14 @@ impl Plan {
             .binary_search_by(|spec| spec.task.id.as_str().cmp(id))
             .ok()
             .map(|position| &self.tasks[position])
+    }
+
+    /// 找出声明为 `task` 生产证据的全部任务（原生 `resolves` 绑定）。
+    pub fn resolvers_of(&self, task: &str) -> Vec<&TaskSpec> {
+        self.tasks
+            .iter()
+            .filter(|spec| spec.resolves.iter().any(|resolved| resolved == task))
+            .collect()
     }
 
     /// 以 `patch.base_revision` 为基线打补丁，生成 revision+1 的新计划。
@@ -104,21 +113,21 @@ impl Plan {
         let mut replacements: BTreeMap<&str, u64> = BTreeMap::new();
         for spec in &patch.replace {
             let current = self.lookup(&spec.task.id)?;
-            if is_in_flight(snapshot, &spec.task.id)
-                && (!same_definition(&current.task, &spec.task)
-                    || current.requirements != spec.requirements
-                    || current.max_tokens != spec.max_tokens)
-            {
+            if is_in_flight(snapshot, &spec.task.id) && !same_spec(current, spec) {
                 return Err(Error::ProtectedInFlight {
                     id: spec.task.id.clone(),
                 });
             }
-            let next = current
-                .epoch
-                .checked_add(1)
-                .ok_or_else(|| Error::EpochOverflow {
-                    id: spec.task.id.clone(),
-                })?;
+            let next = if same_spec(current, spec) {
+                current.epoch
+            } else {
+                current
+                    .epoch
+                    .checked_add(1)
+                    .ok_or_else(|| Error::EpochOverflow {
+                        id: spec.task.id.clone(),
+                    })?
+            };
             replacements.insert(current.task.id.as_str(), next);
         }
 
@@ -221,6 +230,16 @@ fn is_in_flight(snapshot: &Snapshot, id: &str) -> bool {
     )
 }
 
+/// 除 epoch 外的完整定义；epoch 由补丁自动递增，不参与“是否改定义”的判断。
+fn same_spec(current: &TaskSpec, replacement: &TaskSpec) -> bool {
+    same_definition(&current.task, &replacement.task)
+        && current.requirements == replacement.requirements
+        && current.max_tokens == replacement.max_tokens
+        && current.resolves == replacement.resolves
+        && current.produces == replacement.produces
+        && current.effects == replacement.effects
+}
+
 fn same_definition(current: &crate::Task, proposed: &crate::Task) -> bool {
     current.id == proposed.id
         && current.duration == proposed.duration
@@ -240,6 +259,21 @@ fn task_index(tasks: &[TaskSpec]) -> Result<BTreeMap<&str, usize>, Error> {
         }
     }
     Ok(index)
+}
+
+fn validate_effects(tasks: &[TaskSpec]) -> Result<(), Error> {
+    for spec in tasks {
+        let mut seen = BTreeSet::new();
+        for operation in crate::effect_operations(spec) {
+            if !seen.insert(operation) {
+                return Err(Error::DuplicateEffectOperation {
+                    task: spec.task.id.clone(),
+                    operation: operation.to_owned(),
+                });
+            }
+        }
+    }
+    Ok(())
 }
 
 fn validate_graph(tasks: &[TaskSpec]) -> Result<Vec<Vec<usize>>, Error> {

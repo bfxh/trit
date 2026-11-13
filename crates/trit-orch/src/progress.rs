@@ -137,9 +137,10 @@ fn decisive(observation: &Observation, spec: &TaskSpec) -> Option<EvidenceVerdic
     if observation.epoch != spec.epoch || observation.freshness != Ternary::True {
         return None;
     }
-    observation
-        .evidence
-        .as_ref()
-        .map(|report| report.judgment(spec.epoch))
-        .filter(|verdict| *verdict != EvidenceVerdict::Neither)
+    let verdict = observation.judgment(spec.epoch);
+    if verdict == EvidenceVerdict::Neither {
+        None
+    } else {
+        Some(verdict)
+    }
 }
