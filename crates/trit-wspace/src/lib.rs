@@ -61,10 +61,8 @@
 //! ```
 //! ## 边界（没做的部分）
 //!
-//! - 只支持符号激活的前馈网络；不带注意力、残差、卷积；
-//! - 验证是**有界穷举**，不是形式化证明；超出域的输入没有保证；
-//! - 修补搜索是启发式（半径 1/2 穷举 + 束搜索），不保证全局最小，只保证返回的解在验证集上完全正确；
-//! - 没有“从自然语言生成补丁”的模型；本库提供的是可被外部程序/模型调用的编辑原语与验证闭环。
+//! - 只支持符号激活的前馈网络；不带注意力、残差、卷积；验证是**有界穷举**，不是形式化证明；超出域的输入没有保证；
+//! - 修补搜索是启发式（半径 1/2 穷举 + 束搜索），不保证全局最小，只保证返回的解在验证集上完全正确；没有“从自然语言生成补丁”的模型；本库提供的是可被外部程序/模型调用的编辑原语与验证闭环。
 //!   技术树与尚缺的层见 `crates/trit-wspace/README.md`。
 //! ## 模型/脚本接口
 //! 二进制 `trit-wspace` 提供两套入口，共用同一条判决路径（[`ops`]）：
@@ -87,6 +85,7 @@ pub mod certify;
 pub mod cli;
 mod cli_audit;
 pub mod codec;
+pub mod cost;
 pub mod dare;
 pub mod delta;
 pub mod diagnose;
@@ -95,6 +94,7 @@ pub mod edit;
 pub mod error;
 pub mod exhaustive;
 pub mod explain;
+pub mod history;
 pub mod impact;
 pub mod inventory;
 pub mod learned;

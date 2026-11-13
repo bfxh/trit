@@ -3120,11 +3120,15 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 536
+      "lines": 519
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_agree_stats.rs",
       "lines": 92
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_apply.rs",
+      "lines": 27
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",
@@ -3189,6 +3193,10 @@
     {
       "file": "crates/trit-wspace/src/cli/cli_merge.rs",
       "lines": 27
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_metrics.rs",
+      "lines": 60
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_patch.rs",
@@ -3275,6 +3283,10 @@
       "lines": 320
     },
     {
+      "file": "crates/trit-wspace/src/cost.rs",
+      "lines": 124
+    },
+    {
       "file": "crates/trit-wspace/src/dare.rs",
       "lines": 302
     },
@@ -3313,6 +3325,10 @@
     {
       "file": "crates/trit-wspace/src/explain.rs",
       "lines": 136
+    },
+    {
+      "file": "crates/trit-wspace/src/history.rs",
+      "lines": 85
     },
     {
       "file": "crates/trit-wspace/src/impact.rs",
@@ -3575,6 +3591,10 @@
       "lines": 678
     },
     {
+      "file": "crates/trit-wspace/tests/cost.rs",
+      "lines": 28
+    },
+    {
       "file": "crates/trit-wspace/tests/dare.rs",
       "lines": 710
     },
@@ -3601,6 +3621,10 @@
     {
       "file": "crates/trit-wspace/tests/gradient.rs",
       "lines": 163
+    },
+    {
+      "file": "crates/trit-wspace/tests/history.rs",
+      "lines": 35
     },
     {
       "file": "crates/trit-wspace/tests/impact.rs",

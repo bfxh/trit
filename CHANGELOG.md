@@ -183,6 +183,15 @@
     三值网络不可微，这里用**逐位翻转的有限差分**替代梯度（输入侧）。
   - `tests/analysis.rs` 三条：trace 与 `Net::forward` 一致、分布计数、扰动敏感度。
 
+- 延迟雷与改良历史：
+  - `cost`：逐样本统计乘法次数（非零输出行 × cols），给出 total/mean/max/min、
+    逐层热点与最贵的样本（延迟雷）；`cost <artifact|-> --oracle <json|-> [--top K]`。
+  - `history`：从审计 JSONL 汇总改良历史——entries/applied/rolled_back/skipped/edits、
+    按记录名分组、按 `seq` 排列的事件；`history --log <jsonl>`。
+  - `tests/cost.rs` / `tests/history.rs` 各一条。
+  - 边界：`Net` 不含 attention/残差（M 边界），「注意力」只能用 `perturb` 的
+    per-position 输入主导位近似；审计日志没有墙钟时间，只有 `seq` 顺序。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，

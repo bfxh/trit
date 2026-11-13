@@ -589,6 +589,17 @@ col1 被标为专才、col0 是其能力的唯一支撑）。
   这里用**逐位翻转的有限差分**替代梯度：`per_position` 是输入侧「梯度」，`per_sample` 是
   样本脆弱度。
 
+### 延迟雷与改良历史
+
+- `cost <artifact|-> --oracle <json|-> [--top K]`：逐样本统计乘法次数
+  （非零输出行 × `cols`），给出总量/均值/最大/最小、逐层热点与最贵的样本——
+  乘法最多的样本就是「延迟雷」。
+- `history --log <jsonl>`：从审计日志汇总改良历史——应用/回滚/跳过/编辑数、
+  按记录名分组、按 `seq` 排列的事件。审计日志没有墙钟时间，只有严格的 `seq` 顺序。
+
+**边界**：`Net` 不含 attention/残差（M 边界），「注意力被吸走」只能用 `perturb` 的
+`per_position`（输入主导位）近似，不是真正的 attention 权重。
+
 ### 库化：`agree`
 
 上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，

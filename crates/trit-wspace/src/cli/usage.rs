@@ -1,7 +1,7 @@
 pub(super) const USAGE: &str = "\
 trit-wspace <command>
   read <artifact|-> [--out <path>]
-  verify <artifact|-> --oracle <json|->  capability <artifact|-> --oracle <json|-> [--labels <json|->] [--max-params N] [--top K] [--mode flip|zero] [--layer N] [--row N]  scan <artifact|-> --oracle <json|-> [--labels <json|->] [--max-params N] [--sample-budget N] [--refine K] [--top K] [--mode flip|zero] [--layer N] [--row N]  trace <artifact|-> --oracle <json|-> --sample N  distribution --oracle <json|->  perturb <artifact|-> --oracle <json|-> [--mode flip|zero] [--top K] [--limit N]
+  verify <artifact|-> --oracle <json|->  capability <artifact|-> --oracle <json|-> [--labels <json|->] [--max-params N] [--top K] [--mode flip|zero] [--layer N] [--row N]  scan <artifact|-> --oracle <json|-> [--labels <json|->] [--max-params N] [--sample-budget N] [--refine K] [--top K] [--mode flip|zero] [--layer N] [--row N]  trace <artifact|-> --oracle <json|-> --sample N  distribution --oracle <json|->  perturb <artifact|-> --oracle <json|-> [--mode flip|zero] [--top K]  cost <artifact|-> --oracle <json|-> [--top K]  history --log <jsonl> [--limit N]
   task-merge <base|-> <tuned|->... [--aligned] [--weight W[,W...]] [--trim K|--trim-margin M] [--dare-rate R|--dare-per-task R] [--dare-seed N] [--out <path>]
   script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]
   certify <artifact|-> (--keep <oracle|-> | --keep-samples N [--seed S]) (--patch <json|-> | --edited <artifact|->) [--edit <oracle|->] [--allow N] [--limit N] [--strict] [--out <path>] [--certificate <path>]

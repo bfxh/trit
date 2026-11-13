@@ -13,6 +13,7 @@ use crate::oracle::Oracle;
 use crate::wire;
 
 mod cli_agree_stats;
+mod cli_apply;
 mod cli_artifact_shard;
 mod cli_attribute;
 mod cli_block;
@@ -29,6 +30,7 @@ mod cli_inventory;
 mod cli_learned;
 mod cli_localize;
 mod cli_merge;
+mod cli_metrics;
 mod cli_patch;
 mod cli_perturb;
 mod cli_probe;
@@ -77,7 +79,9 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "task-combine" => cli_task::task_combine(&args[1..]),
         "script" => cli_script::script_cmd(&args[1..]),
         "patch" => cli_patch::patch_cmd(&args[1..]),
-        "apply-candidate" => cmd_apply_candidate(&args[1..]),
+        "apply-candidate" => cli_apply::apply_candidate_cmd(&args[1..]),
+        "cost" => cli_metrics::cost_cmd(&args[1..]),
+        "history" => cli_metrics::history_cmd(&args[1..]),
         "rebase" => cmd_rebase(&args[1..]),
         "transplant" => cmd_transplant(&args[1..]),
         "dare-drop" => cmd_dare_drop(&args[1..]),
@@ -125,27 +129,6 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         }
         other => Err(format!("未知子命令 `{other}`\n{USAGE}")),
     }
-}
-
-fn cmd_apply_candidate(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["require-before", "require-after"])?;
-    let path = one(
-        &parsed,
-        "apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>]",
-    )?;
-    let candidate_path = value(&parsed, "candidate")?;
-    let oracle_path = parsed.values.get("oracle").map(String::as_str);
-    let mut sources = vec![path, candidate_path];
-    if let Some(oracle) = oracle_path {
-        sources.push(oracle);
-    }
-    no_double_stdin(&sources)?;
-
-    let net = load_net(path)?;
-    let candidate = load_json(candidate_path)?;
-    let patch = wire::patch_from_candidate(&candidate).map_err(err)?;
-    let oracle = oracle_path.map(load_oracle).transpose()?;
-    perform_patch(&parsed, &net, patch, oracle, "cli-apply-candidate")
 }
 
 fn cmd_rebase(args: &[String]) -> Result<(), String> {
