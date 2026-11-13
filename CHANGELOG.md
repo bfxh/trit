@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：真实 tuned 权重上的编辑集门禁）
+
+- `scripts/train_query_layer.py`：在 STSb **train** split（3,373 对）上对 `query` 层
+  （384×384，f32）做 Adam 微调，目标为 `BCE(cos(W·a, W·b) × 4, label)`；准确率
+  0.7735 → 0.9457，产物张量名与 base 一致，可直接作 `editset_sts --tuned` 输入。
+- 真实读数（400 对 benchmark，delta 34,225 trits）：阈值 0.3 下 **修 9 / 破坏 0**
+  （总正确 369→378）；0.5 下修 0 / **破坏 16**（372→356）；0.8 下修 0 / 破坏 1。
+- 与合成 Δ 对照：真实 tuned 首次给出正向收益，但同一份权重在 0.5 阈值下破坏最多——
+  效果强依赖判定阈值。
+- 新增 `docs/WSP-STS-TUNED.md`。
+- 未证栏：训练是协议级（非 HF 端到端）；只训 `query` 层；CPU 12 epoch、单 seed、未划分验证集。
+
 ### Added（trit-wspace：真实 STS benchmark 上的编辑集门禁）
 
 - `scripts/encode_sts_bench.py`：从 `mteb/stsbenchmark-sts` 生成 pairs JSON，按官方 score

@@ -110,6 +110,7 @@
  "script/tech_collide.py": 1,
  "script/test_surface.py": 1,
  "script/train_guarded.sh": 0,
+ "script/train_query_layer.py": 0,
  "script/trit_train_tasks_smoke.py": 0,
  "script/vendor.py": 1,
  "script/verify_materials.py": 0,
