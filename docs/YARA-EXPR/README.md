@@ -1,6 +1,6 @@
 # YARA 完整语义实现包（规范 + 任务卡）
 
-> 状态：**规范 + P0 最小向量/harness 已入库；接缝补丁仍缺**（2026-11-14）。本目录的 00–04 是
+> 状态：**规范 + P0 向量/harness + 接缝实现已入库；pe2 仍占位**（2026-11-14）。本目录的 00–04 是
 > 外部提供的规范原文；`05-TASKS.md` 是按 `docs/AGENT-TASK-STANDARD.md`
 > 整理出的可派发任务卡。**在 P0 基建补齐之前，不要派发实现卡。**
 
@@ -34,13 +34,13 @@ YARA 4.5.4 语义的完整前端 + pe 对象模型**：
 
 | 规范里引用的东西 | 仓库现状 |
 |---|---|
-| `ref/0001-seam.patch`（接缝补丁） | **缺失**（仍阻塞） |
+| `ref/0001-seam.patch`（接缝补丁） | **未提供**；已按 `02/03/04` 从零实现接缝（见下） |
 | `tests/data/yara_expr/*.tsv` + `fixtures/` | **部分入库**：83 条可复现最小集（`tools/gen_vectors.py` 生成；非 2732 条全集） |
 | `tests/yara_expr_vectors.rs`（回放 harness） | **已入库**（最小集回放） |
 | `tools/gen_vectors.py` | **已入库**；`check_vectors.py` / `cite.py` / `gen_value_probes.py` 仍缺 |
 | `tasks/`（任务卡原文） | **缺失**（本目录 `05-TASKS.md` 是整理版） |
 | `crates/trit-re/src/yaraparse/y2.rs` | **占位已入库**（`Err`） |
-| `sigscan/pe2.rs`、`xscan.rs`、`xeval.rs` 等接缝模块 | **缺失** |
+| `sigscan/pe2.rs`、`xscan.rs`、`xeval.rs` 等接缝模块 | **已从零实现**；`pe2::build/call` 仍是占位 |
 
 ⇒ **红线 3（错判必须 0）现在无法执行**：没有向量就没有验收。按
 `00-RULES.md` 的红线 1，也不能靠「读规范猜语义」硬写。
@@ -59,8 +59,14 @@ YARA 4.5.4 语义的完整前端 + pe 对象模型**：
   `"abc" contains ""` 与 `"" contains ""` 都是 MISS（外部规范 §6.2 写
   「空针恒命中」）；`for any i in (2..1)` 是编译错误（常量区间端点检查）。
   这些已冻结在 TSV 里。
-- 仍缺：`ref/0001-seam.patch`（`xscan`/`xeval`/`xval` 等接缝模块）与
-  2732 条全集向量；**P0 补丁完成前不能派发实现卡**。
+- **接缝从零实现**（外部补丁不存在，按 02/03/04 的接口重写）：
+  `expr.rs`（AST）、`xval.rs`（值/哨兵/算术/比较）、`xstr.rs`（字符串算子）、
+  `xfacts.rs`（串事实）、`xloop.rs`（循环/of）、`xeval.rs`（求值）、
+  `xscan.rs`（扫描核心）、`modreg.rs`（模块树）、`rule.rs`（规则类型）、
+  `pe2.rs`（占位）。`scan.rs` 改为调用 `xscan`；`Condition::Expr` 已接入。
+  5 条 `xeval` 单测（算术/三态/字符串/循环/of/截断）全绿；全仓 193 测试通过。
+- 仍缺：**2732 条全集向量**（当前 83 条可复现最小集）与 `pe2` 的 T20–T25 实现；
+  P1 前端（`y2`）仍占位，所以回放基线保持 9/74/0。
 
 ## 3. 执行顺序
 

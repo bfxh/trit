@@ -10,9 +10,9 @@
 ### T00 接缝补丁与基线核对
 
 - **当量**：0.5 天
-- **前置**：仓库内提供 `ref/0001-seam.patch`（外部补丁）。
+- **前置**：无（外部补丁未提供；接缝已按 02/03/04 从零实现，本卡改为核对）。
 - **做什么**：
-  1. `git checkout e0f37d8` 建分支，应用补丁，提交为「接缝」提交。
+  1. 在 `e0f37d8` 上核对已入库的接缝模块（`expr/xval/xstr/xfacts/xloop/xeval/xscan/modreg/rule/pe2`）。
   2. 核对 `04-CODE-MAP.md` §2 的「已验证」文件全部存在，`y2.rs` /
      `pe2.rs` 仍是占位（`Err` / `Unknown`）。
   3. 跑 `cargo test -p trit-re`，确认新增的 `yara_expr_vectors` 回放

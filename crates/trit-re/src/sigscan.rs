@@ -236,58 +236,14 @@ pub enum Condition {
     OfAll { prefix: Option<String> },
     /// `n of them/($x*)`：前缀集合里至少 n 条命中。
     OfCount { n: usize, prefix: Option<String> },
+    /// 完整表达式树（y2 前端）；旧求值器不评估，交 [`xeval`]。
+    Expr(Box<expr::Expr>),
 }
 
-/// 一条签名规则：名字 + 字符串表 + 条件。
-#[derive(Debug, Clone)]
-pub struct Rule {
-    pub name: String,
-    patterns: Vec<(String, Pattern)>,
-    condition: Condition,
-}
+pub use expr::Expr;
 
-impl Rule {
-    pub fn new(name: &str) -> Self {
-        Self {
-            name: name.to_string(),
-            patterns: Vec::new(),
-            condition: Condition::All,
-        }
-    }
-
-    pub fn push(mut self, id: &str, pattern: Pattern) -> Self {
-        self.patterns.push((id.to_string(), pattern));
-        self
-    }
-
-    pub fn condition(mut self, condition: Condition) -> Self {
-        self.condition = condition;
-        self
-    }
-
-    /// 供同 crate 的解析器装配（字段保持私有，外部仍走 new/push/condition）。
-    pub(crate) fn from_parts(
-        name: String,
-        patterns: Vec<(String, Pattern)>,
-        condition: Condition,
-    ) -> Self {
-        Self {
-            name,
-            patterns,
-            condition,
-        }
-    }
-
-    /// 串表（`$id` 去掉 `$` 后的 id + 模式）——解析器据此把 `$id` 引用
-    /// 解析成下标。
-    pub fn patterns(&self) -> &[(String, Pattern)] {
-        &self.patterns
-    }
-
-    pub fn condition_ref(&self) -> &Condition {
-        &self.condition
-    }
-}
+mod rule;
+pub use rule::Rule;
 
 /// 一条规则的裁决。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -314,8 +270,18 @@ pub struct SigScan<'a> {
 
 // 三值条件求值（拆出守预算）。
 mod eval;
+// YARA 完整语义接缝（docs/YARA-EXPR）：AST、求值、串事实、循环、模块树。
+mod expr;
+mod modreg;
+mod pe2;
+mod xeval;
+mod xfacts;
+mod xloop;
+mod xscan;
+mod xstr;
+mod xval;
 
-use eval::{EvalCtx, eval};
+use eval::eval;
 
 // 正则引擎（Pike VM，探针定案）。
 pub mod regex;
