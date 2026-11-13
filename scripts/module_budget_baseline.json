@@ -3515,6 +3515,10 @@
       "lines": 48
     },
     {
+      "file": "crates/trit-wspace/tests/project_agree_close_loop.rs",
+      "lines": 165
+    },
+    {
       "file": "crates/trit-wspace/tests/project_cli.rs",
       "lines": 98
     },
