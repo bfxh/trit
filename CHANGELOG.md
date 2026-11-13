@@ -2,16 +2,35 @@
 
 ## [Unreleased]
 
+### Changed（清单 10：5-trit 打包统一到 trit-core）
+
+- 实现下沉到 `trit-core::pack`（可发布底层）：线格式契约文档、`pack`/`unpack`/
+  `unpack_canonical`/`Packed5`/`Packed5Vec` 与 `PackError` 单一来源；
+  `trit-codec` 变薄壳（API 与 `CodecError` 不变，错误一一映射）；`trit-export`
+  删掉自带副本，直接用 `trit_core::pack`，其 `Error::InvalidByte/Padding/PackedLen`
+  三个变体移除（无消费者锁定；错误信息并入 `Error::Tensor`，带张量名与具体原因）。
+- GGUF 的 trit-codec pin 对拍测试原样保留并通过；trit-core 变异锚点 2 条随迁，
+  `mutation_check --pkg trit-core` 21/21 抓住。
+- 这清掉 `docs/WSP-LIMITS.md` §4 里"两份 5-trit 打包"一项（清单第 10 项）。
+
+### Docs（清单 9-11 文档债务收口）
+
+- README 技术树 L7 行补 `wspm`（#485）与 GPU 读数落点（#460），缺口收敛为
+  llama.cpp 互操作 / GPU 进 `analyze`/`repair` / 流式容器。
+- `docs/WSP-LIMITS.md` 同步 #460 与 #485 的未证栏（容器无流式、GPU 未接
+  `analyze`/`repair`），维持"每个结果文档的未证栏必须同步到汇总"的自身规则。
+- 顺带把上笔引入的盘符绝对路径改写为产物盘表述（docs_hygiene 棘轮只减不增）。
+
 ### Added（构建基建：worktree 产物落 E: 盘的自动传播）
 
 - `scripts/wt_target.py`（`--all`/`--status`/`--self-test`）：为每个 worktree 幂等生成
-  `.cargo/config.toml`（`target-dir = E:/cargo-target/<worktree>`），修掉"主 worktree
+  `.cargo/config.toml`（`target-dir` 指向产物盘的 `cargo-target/<worktree>`），修掉"主 worktree
   手工放覆盖文件、其余 worktree 构建写满 D 盘"的缺口；`.gitignore` 收 `.cargo/config.toml`，
   `AGENTS.md` 加指引。策略根不存在（CI/其它机器）自动跳过。
 - 本机 `.git/hooks/trit-hooks.py`（不入库）的 post-checkout 同步接入同一逻辑：
   `git worktree add` 即自动生成。
 - 未证栏：sccache 对不同 target 目录的命中情况未重新实测（`SCCACHE_BASEDIRS` 含
-  `E:/cargo-target`，预期部分命中）；Linux/CI 无策略根，不受影响。
+  产物盘策略根，预期部分命中）；Linux/CI 无策略根，不受影响。
 
 ### Added（trit-wspace：`repair` 的 keep 约束）
 

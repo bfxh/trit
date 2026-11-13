@@ -600,7 +600,7 @@
     },
     {
       "file": "crates/trit-codec/src/pack.rs",
-      "lines": 423
+      "lines": 92
     },
     {
       "file": "crates/trit-codec/src/plan.rs",
@@ -633,6 +633,10 @@
     {
       "file": "crates/trit-codec/tests/cli.rs",
       "lines": 224
+    },
+    {
+      "file": "crates/trit-codec/tests/pack.rs",
+      "lines": 167
     },
     {
       "file": "crates/trit-codec/tests/stress.rs",
@@ -677,6 +681,10 @@
     {
       "file": "crates/trit-core/src/limits.rs",
       "lines": 172
+    },
+    {
+      "file": "crates/trit-core/src/pack.rs",
+      "lines": 449
     },
     {
       "file": "crates/trit-core/src/parallel.rs",
@@ -784,15 +792,11 @@
     },
     {
       "file": "crates/trit-export/src/error.rs",
-      "lines": 48
+      "lines": 39
     },
     {
       "file": "crates/trit-export/src/lib.rs",
       "lines": 322
-    },
-    {
-      "file": "crates/trit-export/src/pack.rs",
-      "lines": 48
     },
     {
       "file": "crates/trit-export/tests/gguf.rs",

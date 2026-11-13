@@ -1,170 +1,154 @@
 [
- {
-  "name": "balanced: range 饱和值写成 0",
-  "file": "crates/trit-codec/src/balanced.rs",
-  "old": "        .map_or(i128::MAX, |power| (power - 1) / 2)",
-  "new": "        .map_or(0, |power| (power - 1) / 2)",
-  "pkg": "trit-codec",
-  "filter": "range_is_exact_up_to_eighty_then_saturates"
- },
- {
-  "name": "balanced: 位数上限把 41 位也拒",
-  "file": "crates/trit-codec/src/balanced.rs",
-  "old": "    if trimmed.chars().count() > 41 {",
-  "new": "    if trimmed.chars().count() >= 41 {",
-  "pkg": "trit-codec",
-  "filter": "decode_accepts_redundant_zeros_but_bounds_the_work"
- },
- {
-  "name": "codec: sparse 视图不查符号区填充位",
-  "file": "crates/trit-codec/src/plan.rs",
-  "old": "                if used_bits != 0 && bytes[needed - 1] >> used_bits != 0 {",
-  "new": "                if false && used_bits != 0 && bytes[needed - 1] >> used_bits != 0 {",
-  "pkg": "trit-codec",
-  "filter": "sparse_view_rejects_out_of_range_unsorted_and_dirty_padding"
- },
- {
-  "name": "codec: sparse 视图放行越界下标",
-  "file": "crates/trit-codec/src/plan.rs",
-  "old": "                    if index as usize >= len {\n                        return Err(CodecError::SparseIndexOutOfRange { index, len });\n                    }",
-  "new": "                    if index as usize > len {\n                        return Err(CodecError::SparseIndexOutOfRange { index, len });\n                    }",
-  "pkg": "trit-codec",
-  "filter": "sparse_view_rejects_out_of_range_unsorted_and_dirty_padding"
- },
- {
-  "name": "codec: verify 对截断码字放行",
-  "file": "crates/trit-codec/src/checksum.rs",
-  "old": "    if codeword.len() < CHECKSUM_LEN {\n        return false;\n    }",
-  "new": "    if codeword.len() < CHECKSUM_LEN {\n        return true;\n    }",
-  "pkg": "trit-codec",
-  "filter": "truncated_codeword_is_rejected"
- },
- {
-  "name": "codec: 交织行列读反",
-  "file": "crates/trit-codec/src/interleave.rs",
-  "old": "            let idx = r * cols + c;\n            if idx < n {",
-  "new": "            let idx = c * cols + r;\n            if idx < n {",
-  "pkg": "trit-codec",
-  "filter": "hand_known_example"
- },
- {
-  "name": "codec: 平衡三进制负号解成 +1",
-  "file": "crates/trit-codec/src/balanced.rs",
-  "old": "            '-' => -1,",
-  "new": "            '-' => 1,",
-  "pkg": "trit-codec",
-  "filter": "small_values"
- },
- {
-  "name": "codec: 打包丢掉位权",
-  "file": "crates/trit-codec/src/pack.rs",
-  "old": "byte += digit(*value) * power;",
-  "new": "byte += digit(*value);",
-  "pkg": "trit-codec",
-  "filter": "five_trits_fit_in_one_byte"
- },
- {
-  "name": "codec: 稀疏下标允许重复",
-  "file": "crates/trit-codec/src/sparse.rs",
-  "old": "            && index <= p",
-  "new": "            && index < p",
-  "pkg": "trit-codec",
-  "filter": "duplicate_index_is_rejected"
- },
- {
-  "name": "codec: 稀疏批量拷贝不先填 X",
-  "file": "crates/trit-codec/src/plan.rs",
-  "old": "                out.fill(Ternary::Unknown);",
-  "new": "                out.fill(Ternary::False);",
-  "pkg": "trit-codec",
-  "filter": "bulk_copy_matches_decode"
- },
- {
-  "name": "codec: 第 4 列误差幅度取错",
-  "file": "crates/trit-codec/src/hamming.rs",
-  "old": "    } else {\n        (3, s1 as u8)\n    }",
-  "new": "    } else {\n        (3, s2 as u8)\n    }",
-  "pkg": "trit-codec",
-  "filter": "every_single_symbol_error_is_corrected"
- },
- {
-  "name": "codec: 量化 scale 用最小值",
-  "file": "crates/trit-codec/src/quantize.rs",
-  "old": "    let scale = values.iter().map(|w| w.abs()).fold(0.0f32, f32::max);",
-  "new": "    let scale = values.iter().map(|w| w.abs()).fold(0.0f32, f32::min);",
-  "pkg": "trit-codec",
-  "filter": "symmetric_distribution_maps_to_three_buckets"
- },
- {
-  "name": "codec: 量化阈值边界改含等号",
-  "file": "crates/trit-codec/src/quantize.rs",
-  "old": "                if *w > threshold {",
-  "new": "                if *w >= threshold {",
-  "pkg": "trit-codec",
-  "filter": "boundary_value_equal_to_threshold_is_unknown"
- },
- {
-  "name": "codec: 非法字节边界写成大于",
-  "file": "crates/trit-codec/src/pack.rs",
-  "old": "if u16::from(*byte) >= COMBINATIONS {",
-  "new": "if u16::from(*byte) > COMBINATIONS {",
-  "pkg": "trit-codec",
-  "filter": "invalid_byte_is_rejected"
- },
- {
-  "name": "codec: sparse 解码分配前不查长度硬顶",
-  "file": "crates/trit-codec/src/sparse.rs",
-  "old": "    check_len(len)?;",
-  "new": "    let _ = check_len(len);",
-  "pkg": "trit-codec",
-  "filter": "decode_len_cap_is_checked_before_allocation"
- },
- {
-  "name": "codec: sparse 长度硬顶边界写成大于等于",
-  "file": "crates/trit-codec/src/sparse.rs",
-  "old": "    if len > MAX_SPARSE_DECODE_LEN {",
-  "new": "    if len >= MAX_SPARSE_DECODE_LEN {",
-  "pkg": "trit-codec",
-  "filter": "check_len_boundary"
- },
- {
-  "name": "codec: sparse 长度校验恒放行（定义处不拒绝）",
-  "file": "crates/trit-codec/src/sparse.rs",
-  "old": "        return Err(CodecError::SparseLenTooLarge {\n            len,\n            max: MAX_SPARSE_DECODE_LEN,\n        });",
-  "new": "        return Ok(());",
-  "pkg": "trit-codec",
-  "filter": "decode_len_cap_is_checked_before_allocation"
- },
- {
-  "name": "codec-gray: n as u32 截断绕过 3^n 检查（巨量分配 OOM）",
-  "file": "crates/trit-codec/src/gray.rs",
-  "old": "    let size = u32::try_from(n)\n        .ok()\n        .and_then(|n32| 3usize.checked_pow(n32))\n        .ok_or(CodecError::GrayIndexOutOfRange { index, n })?;",
-  "new": "    let size = 3usize\n        .checked_pow(n as u32)\n        .ok_or(CodecError::GrayIndexOutOfRange { index, n })?;",
-  "pkg": "trit-codec",
-  "filter": "huge_n_is_rejected_not_truncated_into_giant_alloc"
- },
- {
-  "name": "codec-count: MAX_TERMS 放回 63（2^m 指数枚举≈无上限）",
-  "file": "crates/trit-codec/src/count.rs",
-  "old": "const MAX_TERMS: usize = 20;",
-  "new": "const MAX_TERMS: usize = 63;",
-  "pkg": "trit-codec",
-  "filter": "too_many_terms_errors_instead_of_shift_panic"
- },
- {
-  "name": "codec-sop: 变量数上限失效（3^n 枚举指数爆）",
-  "file": "crates/trit-codec/src/sop.rs",
-  "old": "    if n > MAX_SOP_VARS {",
-  "new": "    if n > usize::MAX {",
-  "pkg": "trit-codec",
-  "filter": "too_many_vars_is_rejected_before_exponential_enumeration"
- },
- {
-  "name": "codec-count: cube_size 退回 n as u32 截断（超大位数绕过 CubeTooLarge）",
-  "file": "crates/trit-codec/src/count.rs",
-  "old": "    let exp = u32::try_from(n).ok()?;",
-  "new": "    let exp = n as u32;",
-  "pkg": "trit-codec",
-  "filter": "cube_size_bounds_and_huge_n_does_not_wrap"
- }
+  {
+    "name": "balanced: range 饱和值写成 0",
+    "file": "crates/trit-codec/src/balanced.rs",
+    "old": "        .map_or(i128::MAX, |power| (power - 1) / 2)",
+    "new": "        .map_or(0, |power| (power - 1) / 2)",
+    "pkg": "trit-codec",
+    "filter": "range_is_exact_up_to_eighty_then_saturates"
+  },
+  {
+    "name": "balanced: 位数上限把 41 位也拒",
+    "file": "crates/trit-codec/src/balanced.rs",
+    "old": "    if trimmed.chars().count() > 41 {",
+    "new": "    if trimmed.chars().count() >= 41 {",
+    "pkg": "trit-codec",
+    "filter": "decode_accepts_redundant_zeros_but_bounds_the_work"
+  },
+  {
+    "name": "codec: sparse 视图不查符号区填充位",
+    "file": "crates/trit-codec/src/plan.rs",
+    "old": "                if used_bits != 0 && bytes[needed - 1] >> used_bits != 0 {",
+    "new": "                if false && used_bits != 0 && bytes[needed - 1] >> used_bits != 0 {",
+    "pkg": "trit-codec",
+    "filter": "sparse_view_rejects_out_of_range_unsorted_and_dirty_padding"
+  },
+  {
+    "name": "codec: sparse 视图放行越界下标",
+    "file": "crates/trit-codec/src/plan.rs",
+    "old": "                    if index as usize >= len {\n                        return Err(CodecError::SparseIndexOutOfRange { index, len });\n                    }",
+    "new": "                    if index as usize > len {\n                        return Err(CodecError::SparseIndexOutOfRange { index, len });\n                    }",
+    "pkg": "trit-codec",
+    "filter": "sparse_view_rejects_out_of_range_unsorted_and_dirty_padding"
+  },
+  {
+    "name": "codec: verify 对截断码字放行",
+    "file": "crates/trit-codec/src/checksum.rs",
+    "old": "    if codeword.len() < CHECKSUM_LEN {\n        return false;\n    }",
+    "new": "    if codeword.len() < CHECKSUM_LEN {\n        return true;\n    }",
+    "pkg": "trit-codec",
+    "filter": "truncated_codeword_is_rejected"
+  },
+  {
+    "name": "codec: 交织行列读反",
+    "file": "crates/trit-codec/src/interleave.rs",
+    "old": "            let idx = r * cols + c;\n            if idx < n {",
+    "new": "            let idx = c * cols + r;\n            if idx < n {",
+    "pkg": "trit-codec",
+    "filter": "hand_known_example"
+  },
+  {
+    "name": "codec: 平衡三进制负号解成 +1",
+    "file": "crates/trit-codec/src/balanced.rs",
+    "old": "            '-' => -1,",
+    "new": "            '-' => 1,",
+    "pkg": "trit-codec",
+    "filter": "small_values"
+  },
+  {
+    "name": "codec: 稀疏下标允许重复",
+    "file": "crates/trit-codec/src/sparse.rs",
+    "old": "            && index <= p",
+    "new": "            && index < p",
+    "pkg": "trit-codec",
+    "filter": "duplicate_index_is_rejected"
+  },
+  {
+    "name": "codec: 稀疏批量拷贝不先填 X",
+    "file": "crates/trit-codec/src/plan.rs",
+    "old": "                out.fill(Ternary::Unknown);",
+    "new": "                out.fill(Ternary::False);",
+    "pkg": "trit-codec",
+    "filter": "bulk_copy_matches_decode"
+  },
+  {
+    "name": "codec: 第 4 列误差幅度取错",
+    "file": "crates/trit-codec/src/hamming.rs",
+    "old": "    } else {\n        (3, s1 as u8)\n    }",
+    "new": "    } else {\n        (3, s2 as u8)\n    }",
+    "pkg": "trit-codec",
+    "filter": "every_single_symbol_error_is_corrected"
+  },
+  {
+    "name": "codec: 量化 scale 用最小值",
+    "file": "crates/trit-codec/src/quantize.rs",
+    "old": "    let scale = values.iter().map(|w| w.abs()).fold(0.0f32, f32::max);",
+    "new": "    let scale = values.iter().map(|w| w.abs()).fold(0.0f32, f32::min);",
+    "pkg": "trit-codec",
+    "filter": "symmetric_distribution_maps_to_three_buckets"
+  },
+  {
+    "name": "codec: 量化阈值边界改含等号",
+    "file": "crates/trit-codec/src/quantize.rs",
+    "old": "                if *w > threshold {",
+    "new": "                if *w >= threshold {",
+    "pkg": "trit-codec",
+    "filter": "boundary_value_equal_to_threshold_is_unknown"
+  },
+  {
+    "name": "codec: sparse 解码分配前不查长度硬顶",
+    "file": "crates/trit-codec/src/sparse.rs",
+    "old": "    check_len(len)?;",
+    "new": "    let _ = check_len(len);",
+    "pkg": "trit-codec",
+    "filter": "decode_len_cap_is_checked_before_allocation"
+  },
+  {
+    "name": "codec: sparse 长度硬顶边界写成大于等于",
+    "file": "crates/trit-codec/src/sparse.rs",
+    "old": "    if len > MAX_SPARSE_DECODE_LEN {",
+    "new": "    if len >= MAX_SPARSE_DECODE_LEN {",
+    "pkg": "trit-codec",
+    "filter": "check_len_boundary"
+  },
+  {
+    "name": "codec: sparse 长度校验恒放行（定义处不拒绝）",
+    "file": "crates/trit-codec/src/sparse.rs",
+    "old": "        return Err(CodecError::SparseLenTooLarge {\n            len,\n            max: MAX_SPARSE_DECODE_LEN,\n        });",
+    "new": "        return Ok(());",
+    "pkg": "trit-codec",
+    "filter": "decode_len_cap_is_checked_before_allocation"
+  },
+  {
+    "name": "codec-gray: n as u32 截断绕过 3^n 检查（巨量分配 OOM）",
+    "file": "crates/trit-codec/src/gray.rs",
+    "old": "    let size = u32::try_from(n)\n        .ok()\n        .and_then(|n32| 3usize.checked_pow(n32))\n        .ok_or(CodecError::GrayIndexOutOfRange { index, n })?;",
+    "new": "    let size = 3usize\n        .checked_pow(n as u32)\n        .ok_or(CodecError::GrayIndexOutOfRange { index, n })?;",
+    "pkg": "trit-codec",
+    "filter": "huge_n_is_rejected_not_truncated_into_giant_alloc"
+  },
+  {
+    "name": "codec-count: MAX_TERMS 放回 63（2^m 指数枚举≈无上限）",
+    "file": "crates/trit-codec/src/count.rs",
+    "old": "const MAX_TERMS: usize = 20;",
+    "new": "const MAX_TERMS: usize = 63;",
+    "pkg": "trit-codec",
+    "filter": "too_many_terms_errors_instead_of_shift_panic"
+  },
+  {
+    "name": "codec-sop: 变量数上限失效（3^n 枚举指数爆）",
+    "file": "crates/trit-codec/src/sop.rs",
+    "old": "    if n > MAX_SOP_VARS {",
+    "new": "    if n > usize::MAX {",
+    "pkg": "trit-codec",
+    "filter": "too_many_vars_is_rejected_before_exponential_enumeration"
+  },
+  {
+    "name": "codec-count: cube_size 退回 n as u32 截断（超大位数绕过 CubeTooLarge）",
+    "file": "crates/trit-codec/src/count.rs",
+    "old": "    let exp = u32::try_from(n).ok()?;",
+    "new": "    let exp = n as u32;",
+    "pkg": "trit-codec",
+    "filter": "cube_size_bounds_and_huge_n_does_not_wrap"
+  }
 ]

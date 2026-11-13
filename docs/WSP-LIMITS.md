@@ -20,6 +20,8 @@
 | GGUF 不保留 f32 bias 幅度 | 103 张量往返 67/103 逐字节一致；36 个带 `biasf` 的 `.weight` 只差 biasf/checksum | 扩展 TYPE_TRIT 数据段或旁车文件 |
 | WSP3/WSP4 随机访问 | 两者是整段压缩流，不能按块随机读 | 分块压缩（每块独立码表），接受压缩率损失 |
 | WSP2 索引 | 固定 64 行块；未接 mmap；默认只查长度 + 尾部校验和 | 自适应块；mmap；读时全量校验 |
+| WSPM 整模型容器 | blob 全量读入内存，无流式/mmap 与按张量随机读；清单的 `skipped`/原始 `source` 不进容器（重建 manifest 的 `source` 指向容器自身）；MCP 未接 | 流式打包；与 `read-block` 串联做按张量读；MCP 工具 |
+| GPU 读数 | `trit-gpu` 的 `wspace_gpu` 示例只测 WF32 matmul（512 批量 6.6×、intermediate 4.1×） | GPU 接进 `analyze`/`repair` 的候选批量评估（需要批量 API + 依赖边界设计） |
 
 ## 3. 编辑 / 事务 / 并发
 
@@ -33,7 +35,6 @@
 
 | 项 | 现状 | 补证 |
 |---|---|---|
-| 两份 5-trit 打包 | `trit-export`（可发布）自带一份，`trit-codec`（实验层）一份；pin 对拍 | 下沉到可发布 crate 后统一 |
 | `trit-codec` 实验层 | `publish = false`；`publish_graph` 禁止可发布依赖实验层 | 转正或拆出可发布子 crate |
 | MCP 工具面 | 21 个工具；tile/index/lock/learned/gguf 未全部进 MCP | 补 MCP 工具与 schema |
 
