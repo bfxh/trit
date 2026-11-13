@@ -3,8 +3,7 @@
 //! 语义分歧的修正）：**确定的未定义 ≠ 证据缺失**——零命中串的 `@a[N]`
 //! 比较为假；截断/缺上下文 = 弃权（Unknown），绝不折叠成假。
 
-use super::Operand;
-use super::eval::EvalCtx;
+use super::{Operand, eval::EvalCtx};
 
 pub(super) enum Resolved {
     Val(u64),
@@ -53,7 +52,8 @@ pub(super) fn resolve(op: &Operand, occurrences: &[(String, Vec<u64>)], ctx: &Ev
         }
         Operand::Entrypoint => ctx.entrypoint.map_or(Unknown, Val),
         // pe.*：pe.sections[N] 三态 + 标量子集，子集外/缺上下文 = 弃权。
-        Operand::Opaque(path) => super::sections::resolve_opaque(path, ctx),
+        Operand::Opaque(path) => super::pepaths::resolve_opaque(path, ctx),
+        Operand::LitStr(_) => Unknown,
         Operand::CurrentCount => ctx
             .binding
             .and_then(|i| occurrences.get(i))

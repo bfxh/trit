@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added（trit-re：YARA `private` 串 / `.name` 字符串比较 / `pe.rich_signature.*`）
+
+- `private` 串从"记名弃权"升级为官方语义：匹配与条件引用照常
+  （`$p` / `#p` / `@p`），仅**不出现在命中报告**；`Pattern::Unscannable`
+  不再承载 private。
+- 字符串等值比较：`pe.sections[N].name == ".text"` / `!=`——三态与数值侧
+  同纪律（越界 = 确定的未定义 → 假；缺 PE 上下文 = 弃权）；非字符串
+  属性与字符串比较在解析层 `Unsupported`，不静默弃权。
+- `pe.rich_signature.*`：Rich header 解析（DanS/Rich/key 解密）——
+  `version`（首条 entry 的 comp_id 高 16 位）/ `key` / `offset` / `length`
+  数值属性，`clear_data` / `raw_data` 字符串属性；无 Rich = 确定的未定义
+  （比较为假），缺 PE 上下文 = 弃权。
+- 预算：拆 `rule.rs`（规则/报告类型）、`kleene.rs`（三值原语）、`rich.rs`、
+  `strval.rs`、`pepaths.rs`、`cond_cmp.rs`、`rulebuild.rs`，module_budget
+  全仓棘轮不抬台账。
+- 判据：`cargo test -p trit-re` = 194 全绿（+3）；clippy/fmt/
+  module_budget/hazard/secret/docs_hygiene 全过。
+- 未证栏：本机无 yara-python，private/字符串/rich 三组语义未新增官方
+  差分探针；语义按官方文档 + 既有三态纪律推广，待真实样本批次补证
+  （CALIBRATION 已记）。
+
 ### Added（trit-re：YARA `pe.sections[N]` 数组式访问）
 
 - 新模块 `crates/trit-re/src/sigscan/sections.rs`：`pe.sections[N].<field>`

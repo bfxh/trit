@@ -69,10 +69,7 @@ impl<'a> SigScan<'a> {
                 pe,
             };
             let met = eval(&rule.condition, &occurrences, &ctx);
-            let hits: Vec<(String, u64)> = occurrences
-                .iter()
-                .flat_map(|(id, offs)| offs.iter().map(move |o| (id.clone(), *o)))
-                .collect();
+            let hits = rule.report_hits(&occurrences);
             let value = if has_unscannable {
                 Ternary::Unknown
             } else {

@@ -5,18 +5,18 @@
 
 use super::cond::parse_size;
 use super::{Parser, Tok};
-use crate::sigscan::{Pattern, Unscannable};
+use crate::sigscan::Pattern;
 
 impl Parser {
-    /// strings 里的一个值：文本 / hex 块 / 正则。正则与 `base64`/`private`
-    /// 修饰**可解析不可扫描**——串记 [`Pattern::Unscannable`]（带原因），
-    /// 整条规则扫描时判 Unknown；`nocase`/`wide`/`ascii`/`fullword`/`xor`
-    /// 可评估。返回 `Ok(None)` 已不用——所有形态都有归宿。
+    /// strings 里的一个值：文本 / hex 块 / 正则。正则与 `base64` 修饰
+    /// **可解析不可扫描**——串记 [`Pattern::Unscannable`]（带原因），整条
+    /// 规则扫描时判 Unknown；`private` 只控制**报告隐藏**（匹配与条件引用
+    /// 照常，官方语义），由调用方记录下标。
     pub(super) fn parse_string_value(
         &mut self,
         unsupported: &mut Option<String>,
         rule_name: &str,
-    ) -> Result<Option<Pattern>, String> {
+    ) -> Result<Option<(Pattern, bool)>, String> {
         enum Value {
             Text(String),
             Hex(Pattern),
@@ -65,7 +65,7 @@ impl Parser {
         let mut xor: Option<(u8, u8)> = None;
         let mut b64_std = false;
         let mut b64_wide = false;
-        let mut unscannable: Option<String> = None;
+        let mut private = false;
         while let Some(Tok::Word(w)) = self.peek() {
             match w.as_str() {
                 "nocase" => {
@@ -129,14 +129,11 @@ impl Parser {
                     self.pos += 1;
                 }
                 "private" => {
-                    unscannable = Some("private 串不支持（条件引用语义未实现）".into());
+                    private = true;
                     self.pos += 1;
                 }
                 _ => break,
             }
-        }
-        if let Some(reason) = unscannable {
-            return Ok(Some(Pattern::Unscannable(Unscannable { reason })));
         }
         if xor.is_some() && nocase {
             // 官方 YARA 编译器拒绝 xor nocase（"invalid modifier combination"，
@@ -159,26 +156,14 @@ impl Parser {
                 fullword,
                 b64_std,
                 b64_wide,
-            );
+            )
+            .map(|p| p.map(|p| (p, private)));
         }
         if let Value::Regex(body) = &value {
             // 正则串：Pike VM（sigscan::regex）；修饰语义在 Pattern::regex 内守
-            return Ok(Some(Pattern::regex(
-                body,
-                nocase,
-                wide,
-                xor.is_some(),
-                fullword,
-            )));
-        }
-        if let Value::Regex(body) = &value {
-            // 正则串：Pike VM（sigscan::regex）；修饰语义在 Pattern::regex 内守
-            return Ok(Some(Pattern::regex(
-                body,
-                nocase,
-                wide,
-                xor.is_some(),
-                fullword,
+            return Ok(Some((
+                Pattern::regex(body, nocase, wide, xor.is_some(), fullword),
+                private,
             )));
         }
         let pattern = match value {
@@ -191,6 +176,6 @@ impl Parser {
             }
             Value::Regex(_) => unreachable!("上面已处理"),
         };
-        Ok(Some(pattern))
+        Ok(Some((pattern, private)))
     }
 }

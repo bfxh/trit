@@ -2508,7 +2508,7 @@
     },
     {
       "file": "crates/trit-re/src/sigscan.rs",
-      "lines": 343
+      "lines": 280
     },
     {
       "file": "crates/trit-re/src/sigscan/b64.rs",
@@ -2520,7 +2520,11 @@
     },
     {
       "file": "crates/trit-re/src/sigscan/eval.rs",
-      "lines": 238
+      "lines": 213
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/kleene.rs",
+      "lines": 34
     },
     {
       "file": "crates/trit-re/src/sigscan/matchers.rs",
@@ -2529,6 +2533,10 @@
     {
       "file": "crates/trit-re/src/sigscan/pattern.rs",
       "lines": 122
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/pepaths.rs",
+      "lines": 34
     },
     {
       "file": "crates/trit-re/src/sigscan/peprops.rs",
@@ -2543,12 +2551,24 @@
       "lines": 71
     },
     {
+      "file": "crates/trit-re/src/sigscan/rich.rs",
+      "lines": 94
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/rule.rs",
+      "lines": 89
+    },
+    {
       "file": "crates/trit-re/src/sigscan/scan.rs",
-      "lines": 104
+      "lines": 101
     },
     {
       "file": "crates/trit-re/src/sigscan/sections.rs",
-      "lines": 148
+      "lines": 135
+    },
+    {
+      "file": "crates/trit-re/src/sigscan/strval.rs",
+      "lines": 76
     },
     {
       "file": "crates/trit-re/src/sigscan/tests.rs",
@@ -2584,11 +2604,15 @@
     },
     {
       "file": "crates/trit-re/src/yaraparse.rs",
-      "lines": 298
+      "lines": 286
     },
     {
       "file": "crates/trit-re/src/yaraparse/cond.rs",
-      "lines": 406
+      "lines": 347
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/cond_cmp.rs",
+      "lines": 103
     },
     {
       "file": "crates/trit-re/src/yaraparse/cond_leaf.rs",
@@ -2603,8 +2627,12 @@
       "lines": 145
     },
     {
+      "file": "crates/trit-re/src/yaraparse/rulebuild.rs",
+      "lines": 33
+    },
+    {
       "file": "crates/trit-re/src/yaraparse/valuemod.rs",
-      "lines": 196
+      "lines": 181
     },
     {
       "file": "crates/trit-re/tests/arm64.rs",
@@ -2648,7 +2676,7 @@
     },
     {
       "file": "crates/trit-re/tests/yara_b64.rs",
-      "lines": 52
+      "lines": 27
     },
     {
       "file": "crates/trit-re/tests/yara_lexer.rs",
@@ -2661,6 +2689,14 @@
     {
       "file": "crates/trit-re/tests/yara_pe_sections.rs",
       "lines": 83
+    },
+    {
+      "file": "crates/trit-re/tests/yara_pe_str.rs",
+      "lines": 125
+    },
+    {
+      "file": "crates/trit-re/tests/yara_private.rs",
+      "lines": 64
     },
     {
       "file": "crates/trit-re/tests/yara_regex.rs",

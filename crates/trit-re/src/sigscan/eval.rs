@@ -30,36 +30,7 @@ impl EvalCtx<'_, '_> {
     }
 }
 
-/// Kleene 合取：F 吞一切；T∧T=T；其余 U。
-fn kleene_and(a: Ternary, b: Ternary) -> Ternary {
-    match (a, b) {
-        (Ternary::False, _) | (_, Ternary::False) => Ternary::False,
-        (Ternary::True, Ternary::True) => Ternary::True,
-        _ => Ternary::Unknown,
-    }
-}
-
-/// Kleene 析取：T 吞一切；F∨F=F；其余 U。
-fn kleene_or(a: Ternary, b: Ternary) -> Ternary {
-    match (a, b) {
-        (Ternary::True, _) | (_, Ternary::True) => Ternary::True,
-        (Ternary::False, Ternary::False) => Ternary::False,
-        _ => Ternary::Unknown,
-    }
-}
-
-/// Kleene 取反：U 不塌缩。
-fn kleene_not(v: Ternary) -> Ternary {
-    match v {
-        Ternary::True => Ternary::False,
-        Ternary::False => Ternary::True,
-        Ternary::Unknown => Ternary::Unknown,
-    }
-}
-
-fn bool3(b: bool) -> Ternary {
-    if b { Ternary::True } else { Ternary::False }
-}
+use super::kleene::{bool3, kleene_and, kleene_not, kleene_or};
 
 /// 条件求值（三值 Kleene；基于每模式的命中偏移表；操作数解析三态
 /// `Resolved`/`resolve` 在 [`super::resolve`]——**确定的未定义 ≠ 证据
@@ -110,6 +81,10 @@ pub(super) fn eval(
                 .is_some_and(|(_, offs)| !offs.is_empty()),
         ),
         Condition::Cmp { lhs, op, rhs } => {
+            // 字符串比较（pe.sections[N].name == ".text" 等）优先接管
+            if let Some(v) = super::strval::eval_cmp(lhs, *op, rhs, ctx) {
+                return v;
+            }
             match (
                 resolve(lhs, occurrences, ctx),
                 resolve(rhs, occurrences, ctx),

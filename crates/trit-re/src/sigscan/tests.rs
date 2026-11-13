@@ -1,10 +1,10 @@
 //! `sigscan` 的单元测试（从 sigscan.rs 拆出，控制单文件行数预算）。
 
 use super::*;
+use trit_core::value::Ternary;
 
-fn rule(name: &str, id: &str, pattern: Pattern) -> Rule {
-    Rule::new(name).push(id, pattern)
-}
+#[rustfmt::skip]
+fn rule(name: &str, id: &str, pattern: Pattern) -> Rule { Rule::new(name).push(id, pattern) }
 
 #[test]
 fn hex_literal_and_wildcard() {
