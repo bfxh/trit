@@ -1463,6 +1463,10 @@
       "lines": 228
     },
     {
+      "file": "crates/trit-learn/src/metrics.rs",
+      "lines": 126
+    },
+    {
       "file": "crates/trit-learn/src/opt.rs",
       "lines": 205
     },
@@ -2967,6 +2971,14 @@
       "lines": 743
     },
     {
+      "file": "crates/trit-wspace/examples/dga_redteam/features.rs",
+      "lines": 34
+    },
+    {
+      "file": "crates/trit-wspace/examples/dga_redteam/main.rs",
+      "lines": 367
+    },
+    {
       "file": "crates/trit-wspace/examples/editset_aligned.rs",
       "lines": 293
     },
@@ -3008,11 +3020,11 @@
     },
     {
       "file": "crates/trit-wspace/examples/spam_redteam/main.rs",
-      "lines": 244
+      "lines": 241
     },
     {
       "file": "crates/trit-wspace/examples/spam_redteam/metrics.rs",
-      "lines": 171
+      "lines": 170
     },
     {
       "file": "crates/trit-wspace/examples/trit_train_tasks.rs",
