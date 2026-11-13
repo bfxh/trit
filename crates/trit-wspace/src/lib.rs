@@ -129,6 +129,7 @@ pub mod wire;
 pub mod wsp2;
 pub mod wsp3;
 pub mod wsp4;
+pub mod wspm;
 
 pub use analyze::{
     Analysis, EditImpact, PairAnalysis, PairImpact, TripleAnalysis, TripleImpact, analyze,

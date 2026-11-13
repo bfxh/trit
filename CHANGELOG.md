@@ -282,6 +282,19 @@
 - 新增 `docs/WSP-LIMITS.md` 汇总所有未证栏（真实任务、容器互操作、tile/锁、发布边界）。
 - 新增 `docs/WSP-GRADIENT-PROPOSER.md`：手工特征 → 梯度/反向传播/STE 的三条路线。
 - `docs/GGUF-TRIT.md` §3 记录两份 5-trit 打包的发布边界（可发布 crate 不能依赖实验层）。
+### Added（trit-wspace：整模型批量容器 WSPM）
+
+- `wspm`：WSP1 模型目录（`manifest.json` + `NNNN-<name>.wsp`）↔ 单个二进制容器；
+  每张量存 WSP2/3/4 blob，`--format auto` 逐张量选最小；`vector` / `bias` 清单语义
+  与 `biasf`（f32 偏置幅度）原样保留，往返文本级无损（GGUF 容器只 67/103 一致）。
+- CLI `pack-model` / `unpack-model`（含写锁与 `atomic_write`）。
+- 真实读数（all-MiniLM-L6-v2，103 张量）：容器 4,959,752 B（10.6% of WSP1、
+  82.9% of 单文件 WSP2 总和，比整流 WSP4 基线 4,953,834 只多 0.12%）；
+  往返 `.wsp` 逐字节一致 103/103；pack ~1.06 s / unpack ~0.72 s。
+- 6 条测试（往返/格式选择/坏容器/CLI 闭环/确定性重打包/重导入）；文档
+  `docs/WSP-MODEL-PACK.md`。
+- 未证栏：`skipped`/原始 `source` 不进容器；无流式/mmap 与按张量随机读；
+  MCP 未接。
 
 ### Added（trit-wspace：学习式单点编辑提议器）
 

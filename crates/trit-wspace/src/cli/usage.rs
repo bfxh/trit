@@ -35,4 +35,5 @@ trit-wspace <command>
   split-artifact <artifact|-> --rows N --out <dir>
   join-artifact <dir> --out <path>
   pack-artifact <artifact|-> --out <bin> | unpack-artifact <bin> --out <path>
+  pack-model <dir> --out <file> [--format auto|wsp2|wsp3|wsp4] | unpack-model <file> --out <dir>
   mcp";

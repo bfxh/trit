@@ -24,10 +24,11 @@ mod cli_repair;
 mod cli_safetensors;
 mod cli_task;
 mod cli_wsp2;
+mod cli_wspm;
 mod fsutil;
 mod lock;
 mod usage;
-pub(crate) use fsutil::atomic_write;
+pub(crate) use fsutil::{atomic_write, atomic_write_bytes};
 use usage::USAGE;
 
 /// 进程入口：返回退出码（0 成功，1 失败）。
@@ -88,6 +89,8 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "join-artifact" => cli_artifact_shard::join(&args[1..]),
         "pack-artifact" => cli_wsp2::pack(&args[1..]),
         "unpack-artifact" => cli_wsp2::unpack(&args[1..]),
+        "pack-model" => cli_wspm::pack(&args[1..]),
+        "unpack-model" => cli_wspm::unpack(&args[1..]),
         "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
             .map_err(|error| error.to_string()),
         "--help" | "-h" | "help" => {
@@ -158,11 +161,7 @@ fn cmd_patch(args: &[String]) -> Result<(), String> {
     )?;
     let patch_path = value(&parsed, "patch")?;
     let oracle_path = parsed.values.get("oracle").map(String::as_str);
-    let mut sources = vec![path, patch_path];
-    if let Some(oracle) = oracle_path {
-        sources.push(oracle);
-    }
-    no_double_stdin(&sources)?;
+    no_double_stdin(&sources_with_oracle(vec![path, patch_path], oracle_path))?;
 
     let net = load_net(path)?;
     let patch = wire::patch_from_value(&load_json(patch_path)?).map_err(err)?;
@@ -178,11 +177,10 @@ fn cmd_apply_candidate(args: &[String]) -> Result<(), String> {
     )?;
     let candidate_path = value(&parsed, "candidate")?;
     let oracle_path = parsed.values.get("oracle").map(String::as_str);
-    let mut sources = vec![path, candidate_path];
-    if let Some(oracle) = oracle_path {
-        sources.push(oracle);
-    }
-    no_double_stdin(&sources)?;
+    no_double_stdin(&sources_with_oracle(
+        vec![path, candidate_path],
+        oracle_path,
+    ))?;
 
     let net = load_net(path)?;
     let candidate = load_json(candidate_path)?;
@@ -200,11 +198,10 @@ fn cmd_rebase(args: &[String]) -> Result<(), String> {
     let base_path = value(&parsed, "base")?;
     let patch_path = value(&parsed, "patch")?;
     let oracle_path = parsed.values.get("oracle").map(String::as_str);
-    let mut sources = vec![path, base_path, patch_path];
-    if let Some(oracle) = oracle_path {
-        sources.push(oracle);
-    }
-    no_double_stdin(&sources)?;
+    no_double_stdin(&sources_with_oracle(
+        vec![path, base_path, patch_path],
+        oracle_path,
+    ))?;
 
     let target = load_net(path)?;
     let base = load_net(base_path)?;
@@ -251,11 +248,7 @@ fn cmd_transplant(args: &[String]) -> Result<(), String> {
     let layer = req_usize(&parsed, "layer")?;
     let rows = parse_rows(value(&parsed, "rows")?)?;
     let oracle_path = parsed.values.get("oracle").map(String::as_str);
-    let mut sources = vec![path, from];
-    if let Some(oracle) = oracle_path {
-        sources.push(oracle);
-    }
-    no_double_stdin(&sources)?;
+    no_double_stdin(&sources_with_oracle(vec![path, from], oracle_path))?;
 
     let dest = load_net(path)?;
     let source = load_net(from)?;
@@ -303,11 +296,7 @@ fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
     let rate = req_f32(&parsed, "rate")?;
     let seed = opt_u64(&parsed, "seed", 0)?;
     let oracle_path = parsed.values.get("oracle").map(String::as_str);
-    let mut sources = vec![path, tuned_path];
-    if let Some(oracle) = oracle_path {
-        sources.push(oracle);
-    }
-    no_double_stdin(&sources)?;
+    no_double_stdin(&sources_with_oracle(vec![path, tuned_path], oracle_path))?;
 
     let base = load_net(path)?;
     let tuned = load_net(tuned_path)?;
@@ -609,6 +598,15 @@ pub(super) fn opt_u64(parsed: &Parsed, name: &str, default: u64) -> Result<u64, 
         raw.parse::<u64>()
             .map_err(|_| format!("--{name} 需要非负整数，得到 `{raw}`"))
     })
+}
+
+/// 输入源 + 可选 `--oracle` 源，合成 `no_double_stdin` 的检查列表。
+fn sources_with_oracle<'a>(sources: Vec<&'a str>, oracle: Option<&'a str>) -> Vec<&'a str> {
+    let mut sources = sources;
+    if let Some(oracle) = oracle {
+        sources.push(oracle);
+    }
+    sources
 }
 
 pub(crate) fn no_double_stdin<S: AsRef<str>>(sources: &[S]) -> Result<(), String> {
