@@ -560,6 +560,24 @@ col1 被标为专才、col0 是其能力的唯一支撑）。
 
 这样「这个参数改掉会失去什么」从样本索引变成了人能读的能力名。
 
+### 两阶段扫描（`scan`）
+
+`scan <artifact|-> --oracle <json|-> [--labels <json|->] [--max-params N]
+[--sample-budget N] [--refine K] [--top K] [--mode flip|zero] [--layer N] [--row N]`
+
+`attribute` 的成本是「参数数 × 样本数」；`scan` 先用 `--sample-budget` 个样本粗筛，
+只对「在子集上有影响」的参数做全量复核：
+
+| 字段 | 含义 |
+|---|---|
+| `stats.total_params` | 作用域内参数总数 |
+| `stats.screened` | 粗筛后保留数 |
+| `stats.refined` | 实际全量复核数 |
+| `stats.sampled` | 是否用了两阶段 |
+
+`--refine K` 进一步限制复核数；`sample_budget = 0` 退化为全量，结果与 `attribute` 等价
+（`tests/scan.rs` 钉住）。输出同时带 `capability` 的命名能力。
+
 ### 库化：`agree`
 
 上面十三节的诊断已提升为库模块 `src/agree.rs`：`Diagnosis` 固定 query/readout/基，

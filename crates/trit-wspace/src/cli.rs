@@ -34,6 +34,8 @@ mod cli_project;
 mod cli_read;
 mod cli_repair;
 mod cli_safetensors;
+mod cli_scan;
+mod cli_script;
 mod cli_task;
 mod cli_verify;
 mod cli_wsp2;
@@ -65,11 +67,12 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "read" => cli_read::read(&args[1..]),
         "verify" => cli_verify::verify_cmd(&args[1..]),
         "capability" => cli_capability::capability_cmd(&args[1..]),
+        "scan" => cli_scan::scan_cmd(&args[1..]),
         "certify" => cli_certify::certify(&args[1..]),
         "task-merge" => cli_task::task_merge(&args[1..]),
         "task-scale" => cli_task::task_scale(&args[1..]),
         "task-combine" => cli_task::task_combine(&args[1..]),
-        "script" => cmd_script(&args[1..]),
+        "script" => cli_script::script_cmd(&args[1..]),
         "patch" => cmd_patch(&args[1..]),
         "apply-candidate" => cmd_apply_candidate(&args[1..]),
         "rebase" => cmd_rebase(&args[1..]),
@@ -116,28 +119,6 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         }
         other => Err(format!("未知子命令 `{other}`\n{USAGE}")),
     }
-}
-
-fn cmd_script(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(
-        &parsed,
-        "script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]",
-    )?;
-    let script_path = value(&parsed, "script")?;
-    let oracle_path = value(&parsed, "oracle")?;
-    no_double_stdin(&[path, script_path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let script = wire::script_from_value(&load_json(script_path)?).map_err(err)?;
-    let mut work = net.clone();
-    let report = script.run(&mut work, &oracle).map_err(err)?;
-    write_out(&parsed, &work)?;
-    emit(&json!({
-        "report": wire::script_report_to_value(&report),
-        "summary": wire::net_summary(&work),
-        "artifact": to_wsp(&work),
-    }))
 }
 
 fn cmd_patch(args: &[String]) -> Result<(), String> {

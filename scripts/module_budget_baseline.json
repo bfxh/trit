@@ -3120,7 +3120,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 569
+      "lines": 550
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_agree_stats.rs",
@@ -3213,6 +3213,14 @@
     {
       "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
       "lines": 404
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_scan.rs",
+      "lines": 88
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_script.rs",
+      "lines": 32
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_task.rs",
@@ -3413,6 +3421,10 @@
     {
       "file": "crates/trit-wspace/src/scale.rs",
       "lines": 533
+    },
+    {
+      "file": "crates/trit-wspace/src/scan.rs",
+      "lines": 295
     },
     {
       "file": "crates/trit-wspace/src/shard.rs",
@@ -3649,6 +3661,10 @@
     {
       "file": "crates/trit-wspace/tests/safetensors_bias.rs",
       "lines": 411
+    },
+    {
+      "file": "crates/trit-wspace/tests/scan.rs",
+      "lines": 83
     },
     {
       "file": "crates/trit-wspace/tests/script.rs",

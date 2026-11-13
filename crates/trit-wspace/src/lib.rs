@@ -10,8 +10,7 @@
 //! | 行为验证 | 有界域可**穷举**，给出完全等价 | 只能抽样/留出 |
 //! | 规范形式 | `WSP1` 可 diff、可校验和 | 二进制 blob 不可读 |
 //!
-//! 代价同样明确：没有现成的 f32 预训练生态；表达力受三值限制；大规模网络的穷举
-//! 不可行（本库的 M0 边界就是小网络 + 有界域）。
+//! 代价同样明确：没有现成的 f32 预训练生态；表达力受三值限制；大规模网络的穷举不可行（本库的 M0 边界就是小网络 + 有界域）。
 //!
 //! ## 三层结构
 //!
@@ -116,6 +115,7 @@ pub mod rebase;
 pub mod repair;
 pub mod safetensors;
 pub mod scale;
+pub mod scan;
 pub mod shard;
 pub mod task;
 pub mod task_merge;

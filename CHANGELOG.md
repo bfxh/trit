@@ -167,6 +167,12 @@
   `samples:N`。`tests/capability.rs` 两条：无标签时的 pattern/samples 命名、
   外部标签优先。
 
+- 两阶段扫描：新模块 `scan` + CLI `scan`。先用 `--sample-budget N` 个样本粗筛，
+  只对「在子集上有影响」的参数做全量复核；`stats.screened/refined/total_params` 明确标出
+  剪枝比例，`--refine K` 限制复核数。`sample_budget = 0` 退化为全量，与 `attribute`
+  等价（`tests/scan.rs` 钉住）。成本从「参数数 × 样本数」降到
+  「参数数 × 粗筛样本 + 候选数 × 全量样本」。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，
