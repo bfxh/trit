@@ -1,5 +1,4 @@
 //! 降维运行扫描（dimsweep）：一段「思考」要多少维度、多少步才够。
-//!
 //! 三条曲线，同一个协议（真实 `word_embeddings` 行 + f32 教师 + edit/keep 双集合）：
 //!
 //! 1. **宽度**：把 384 维输入投影到前 `k` 个主方向（真实词向量的二阶矩），降维学生是
@@ -26,12 +25,14 @@ mod curve;
 mod evaluate;
 mod judge;
 mod options;
+mod steps;
 
 use basis::*;
 use curve::*;
 use evaluate::*;
 use judge::*;
 use options::*;
+use steps::*;
 
 const QUERY: &str = "encoder.layer.0.attention.self.query.weight";
 const EMBEDDINGS: &str = "embeddings.word_embeddings.weight";
@@ -54,7 +55,6 @@ fn main() {
     let readout = &query.values[args.readout_row * dim..(args.readout_row + 1) * dim];
     let student = full_student(&query, readout);
 
-    // 1) 采样并划分：全维三值学生判错的进 edit，判对的进 keep。
     let teacher_kind = parse_teacher(&args.teacher);
     let second: Option<Vec<f32>> = if teacher_kind == Teacher::TwoTap {
         let row = (args.readout_row + 1) % query.rows;
@@ -107,7 +107,6 @@ fn main() {
         return;
     }
 
-    // 2) 主方向。
     let moment = second_moment(&embeddings, dim, args.pca_samples, args.seed);
     let (pca_comps, values) = top_components(&moment, dim, args.max_k.min(dim), args.iterations);
     let (comps, criterion_cos) = if args.basis == "supervised" {
@@ -129,7 +128,6 @@ fn main() {
         "top_values": values.iter().take(8).copied().collect::<Vec<_>>(),
     });
 
-    // 3) 宽度曲线 + 4) 步数曲线。
     let cx = CurveCtx {
         args: &args,
         query: &query,
@@ -142,15 +140,16 @@ fn main() {
         samples: &samples,
         edit: &edit_samples,
         keep: &keep_samples,
+        criterion_full: args.criterion == "full",
     };
-    let (width, min_k) = width_curve(&cx);
+    let (width, min_k, best_agree) = width_curve(&cx);
     report["width"] = json!(width);
     report["min_k_zero_loss"] = json!(min_k);
+    report["best_agree"] = json!({"k": best_agree.0, "agree_full": best_agree.1});
     let (steps, minimum) = steps_curve(&cx, min_k);
     report["steps"] = json!(steps);
     report["minimum"] = minimum;
 
-    // 5) 必要性：在最大子空间上逐维剔除，delta 越大越必要。
     report["necessity"] =
         necessity_ranking(&query, readout, dim, &comps, &edit_samples, &keep_samples);
 

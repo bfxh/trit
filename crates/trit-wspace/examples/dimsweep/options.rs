@@ -1,9 +1,5 @@
-//! dimsweep 的命令行参数。
-//!
-//! 从 `main.rs` 拆出：module_budget 台账只收紧、不抬高单文件行数。
-
+//! dimsweep 的命令行参数（从 `main.rs` 拆出）。
 use crate::{EMBEDDINGS, QUERY, parse_list};
-
 pub struct Args {
     pub safetensors: String,
     pub query: String,
@@ -18,6 +14,7 @@ pub struct Args {
     pub iterations: usize,
     pub basis: String,
     pub teacher: String,
+    pub criterion: String,
     pub dims: Vec<usize>,
     pub steps_dims: Vec<usize>,
     pub max_edits: Vec<usize>,
@@ -40,6 +37,7 @@ pub fn parse_args() -> Args {
         iterations: 12,
         basis: "pca".to_string(),
         teacher: "linear".to_string(),
+        criterion: "teacher".to_string(),
         dims: vec![384, 128, 64, 32, 16],
         steps_dims: vec![32, 16],
         max_edits: vec![1, 2],
@@ -63,6 +61,7 @@ pub fn parse_args() -> Args {
             "--iterations" => args.iterations = next().parse().expect("iterations"),
             "--basis" => args.basis = next(),
             "--teacher" => args.teacher = next(),
+            "--criterion" => args.criterion = next(),
             "--dims" => args.dims = parse_list(&next()),
             "--steps-dims" => args.steps_dims = parse_list(&next()),
             "--max-edits" => args.max_edits = parse_list(&next()),

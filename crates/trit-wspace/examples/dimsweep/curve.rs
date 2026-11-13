@@ -8,7 +8,6 @@ use crate::judge::{Teacher, f32_reduced_accuracy};
 use crate::options::Args;
 use serde_json::{Value, json};
 use trit_wspace::Net;
-use trit_wspace::repair::{RepairOptions, repair};
 use trit_wspace::safetensors::Weights;
 
 /// 一次扫描需要的全部上下文。
@@ -24,9 +23,11 @@ pub struct CurveCtx<'a> {
     pub samples: &'a [Sample],
     pub edit: &'a [Sample],
     pub keep: &'a [Sample],
+    /// 判据是否改成「与全维学生一致」（`--criterion full`）。
+    pub criterion_full: bool,
 }
 
-pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>) {
+pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>, (usize, f32)) {
     let args = cx.args;
     let query = cx.query;
     let readout = cx.readout;
@@ -40,6 +41,7 @@ pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>) {
     let keep_samples = cx.keep;
     let mut width = Vec::new();
     let mut min_k: Option<usize> = None;
+    let mut best_agree = (0usize, 0.0f32);
     for &k in &args.dims {
         let basis = if k >= dim {
             identity(dim)
@@ -56,9 +58,7 @@ pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>) {
         let edit = oracle_of(edit_samples, &basis);
         let keep = oracle_of(keep_samples, &basis);
         let (edit_loss, keep_loss) = losses(&net, &edit, &keep);
-        if edit_loss == 0 && keep_loss == 0 && min_k.is_none_or(|best| k < best) {
-            min_k = Some(k);
-        }
+
         let (f32_edit_acc, f32_keep_acc) = if k >= dim {
             (1.0f32, 1.0f32)
         } else {
@@ -89,6 +89,18 @@ pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>) {
         } else {
             agreement_with_full(&net, samples, &basis, student)
         };
+        if agree_full > best_agree.1 {
+            best_agree = (k, agree_full);
+        }
+        // `--criterion full` 把「过判据」定义成「与全维学生完全一致」。
+        let passed = if cx.criterion_full {
+            agree_full >= 1.0
+        } else {
+            edit_loss == 0 && keep_loss == 0
+        };
+        if passed && min_k.is_none_or(|best| k < best) {
+            min_k = Some(k);
+        }
         width.push(json!({
             "k": k,
             "edit_loss": edit_loss,
@@ -102,71 +114,5 @@ pub fn width_curve(cx: &CurveCtx) -> (Vec<Value>, Option<usize>) {
             "reduction": net.trit_count() as f64 / student.trit_count() as f64,
         }));
     }
-    (width, min_k)
-}
-
-pub fn steps_curve(cx: &CurveCtx, min_k: Option<usize>) -> (Vec<Value>, Value) {
-    let args = cx.args;
-    let query = cx.query;
-    let readout = cx.readout;
-    let dim = cx.dim;
-    let comps = cx.comps;
-    let edit_samples = cx.edit;
-    let keep_samples = cx.keep;
-    let mut steps = Vec::new();
-    let mut minimum: Option<(usize, usize, usize)> = min_k.map(|k| (k, 0, 0));
-    for &k in &args.steps_dims {
-        if k >= dim || k > comps.len() {
-            continue;
-        }
-        let sub = &comps[..k];
-        let net = reduced_net(query, readout, dim, sub);
-        let edit = oracle_of(edit_samples, sub);
-        let keep = oracle_of(keep_samples, sub);
-        for &max_edits in &args.max_edits {
-            for &beam in &args.beam_widths {
-                let options = RepairOptions {
-                    max_edits,
-                    beam_width: beam,
-                    exhaustive_pairs: 256,
-                    exhaustive_states: 0,
-                    keep: Some(keep.clone()),
-                    ..RepairOptions::default()
-                };
-                let found = repair(&net, &edit, &options).expect("repair");
-                let (edit_loss, keep_loss) = match &found {
-                    Some(result) => {
-                        let mut edited = net.clone();
-                        result.patch.apply(&mut edited).expect("apply patch");
-                        losses(&edited, &edit, &keep)
-                    }
-                    None => losses(&net, &edit, &keep),
-                };
-                if found.is_some() && edit_loss == 0 && keep_loss == 0 {
-                    let key = (k, max_edits, beam);
-                    if minimum.is_none_or(|best| key < best) {
-                        minimum = Some(key);
-                    }
-                }
-                steps.push(json!({
-                    "k": k,
-                    "max_edits": max_edits,
-                    "beam_width": beam,
-                    "found": found.is_some(),
-                    "evaluated": found.as_ref().map(|r| r.evaluated),
-                    "edit_loss": edit_loss,
-                    "keep_loss": keep_loss,
-                }));
-            }
-        }
-    }
-    let minimum_json = match minimum {
-        Some((k, max_edits, beam)) => json!({
-            "k": k,
-            "max_edits": max_edits,
-            "beam_width": beam,
-        }),
-        None => Value::Null,
-    };
-    (steps, minimum_json)
+    (width, min_k, best_agree)
 }
