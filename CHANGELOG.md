@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`localize` 选行 + scoped repair 的真实读数）
+
+- `examples/editset_repair_readout.rs`：`editset_gate` 任务 + `localize` 选 8 个承重行 +
+  展开成 6,160 个候选 + `repair` 带 `scope` 做束搜索 + `certify_nets` 检查 edit/keep。
+- 读数（872 对任务、8 条 edit / 64 条 keep、8 个承重行）：`edit=8/max_edits=2` → `found:false`
+  （1m49s）；`edit=2` → `found:false`（22.7s）；`edit=1` → `found:false`（18.6s）。
+- 结论：**承重行内 2 点内不可达，不是预算问题**；与 #465 的候选上界一致（单点最多修 1/8、双点无改善）。
+- `docs/WSP-REPAIR.md` 增加 localize + scoped repair 读数节。
+- 未证栏：没试 `max_edits > 2` 或更多承重行；候选里真正有增益的极少；任务仍是 word_embeddings 输入。
+
 ### Added（trit-wspace：`repair` 的候选限制接口）
 
 - `RepairOptions` 新增 `scope: Option<Vec<Edit>>`：`None` 全权重穷举，`Some(候选)` 时

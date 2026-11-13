@@ -78,6 +78,23 @@ trit-wspace repair broken.wsp --oracle keep.json --trits 0:0:0:-
 
 测试：`tests/repair_scope.rs` 3 条（scoped 只改允许坐标、scope 无解返回 None、unscoped 仍能修）。
 
+## `localize` 选行 + scoped repair 的读数
+
+`editset_repair_readout`（新 example）：`localize` 在 edit 集上选承重行 → 展开成候选 →
+`repair` 带 `scope` 做束搜索 → `certify_nets` 检查 edit/keep。
+
+| edit 集 | max_edits | beam_width | candidates | found | 耗时 |
+|---|---|---|---|---|---|
+| 8 | 2 | 16 | 6,160 | **false** | 1m49s |
+| 2 | 2 | 8 | 6,160 | **false** | 22.7s |
+| 1 | 2 | 8 | 6,160 | **false** | 18.6s |
+
+读法：
+
+1. 即使 edit 集缩到**单条样本**，承重行内 2 点内仍不可达；
+2. 与 #465 的候选上界一致（单点最多修 1/8、双点无改善）；
+3. 所以“修复已知错误样本”在 8 个承重行 × 2 点内**不可行，不是预算问题**。
+
 ## 未证栏
 
 - 候选限制接口已实现（scope + `--rows`/`--trits`），但还没在 384×384 上用 `localize` 选行跑完整读数；
