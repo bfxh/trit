@@ -126,6 +126,10 @@
   top-5 仍只共享 component 0——把样本与 edit/keep 放大 4 倍没有改善，说明不稳是
   结构性的（不同 seed 的 PCA 方向不同），不是采样噪声。
 
+- 步数曲线的搜索预算（k=16，seed 7，supervised 基）：`max_edits` 1/2/3 ×
+  `beam_width` 8/16/32 **全部 `found=false`**，edit/keep loss 恒为 4/19。
+  加大搜索宽度与编辑预算不改变结果——k=16 的瓶颈是降维网络本身不可修补，不是搜索预算。
+
 ### Added（trit-wspace：`project` 的默认健康检查 `agree`）
 
 - `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，

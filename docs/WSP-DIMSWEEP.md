@@ -525,7 +525,10 @@ absmean 边界、体积计数与编码大小关系）。
 
 - 只验了一个判据（`readout_row = 0`）与一个教师（f32 `query×x`）；多判据下 `w_eff` 会变，
   k=1 是否仍零违规未测。
-- `max_edits > 1`、更大的 `beam_width` 与样本量未试。
+- ~~`max_edits > 1`、更大的 `beam_width` 与样本量未试~~：已试。
+  k=16 下 `max_edits` 1/2/3 × `beam_width` 8/16/32 **全部 `found=false`**，
+  edit/keep loss 恒为 **4/19**（搜索更宽不改变结果）；样本量已由 2048/32/256 的大池对照补过。
+  说明 k=16 的瓶颈是降维网络本身不可修补，不是搜索预算。
 - 降维后的 `trits` 没对齐 WSP 编码体积（这里只报 trit 数）。
 - ~~必要性排序的跨 seed 稳定性未测~~：已测（seed 7/11/23，supervised 基）。
   **除 `w_eff` 外不稳定**：delta 排序两两 Spearman 0.023 / -0.080 / -0.082，
