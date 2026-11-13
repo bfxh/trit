@@ -63,6 +63,7 @@
  "script/disk_guard.py": 1,
  "script/doc_pointers.py": 1,
  "script/docs_hygiene.py": 1,
+ "script/encode_sts_bench.py": 0,
  "script/encode_sts_pairs.py": 0,
  "script/eval_boundary.sh": 0,
  "script/eval_s63.py": 0,
