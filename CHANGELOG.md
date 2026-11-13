@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`editset_sts`，真句向量上的编辑集门禁）
+
+- `examples/editset_sts.rs`：读 `transformers` 编码出的 384 维句向量 pairs JSON，
+  教师用全精度余弦阈值、学生用三值化句向量 + 三值 `query` 层余弦，统计 edit_fixed / keep_broken。
+- 真实读数（MiniLM 16 句 / 120 对，合成 Δ 10,128 trits）：阈值 0.3/0.5/0.8 下基线
+  120/0、118/2、115/5 正确；补丁后三档都 `edit_fixed=0`、`keep_broken=0`。
+- 新增 `docs/WSP-STS.md`。
+- 未证栏：句集是 16 个手写句子、非 STS benchmark；学生仍是单层三值 `query`；`--tuned` 是合成 Δ；
+  三值学生接近饱和导致 edit 集过小。
+
 ### Added（trit-wspace：`editset_bound`，候选空间内的 repair 上界）
 
 - `examples/editset_bound.rs`：复用 `editset_gate` 的真实输入协议（`word_embeddings` 行 +
