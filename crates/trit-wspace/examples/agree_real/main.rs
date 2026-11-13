@@ -2,6 +2,7 @@ use serde_json::json;
 use trit_wspace::safetensors::{self, Weights};
 mod basis;
 mod f32ref;
+mod forward;
 mod quad;
 mod readout;
 use basis::*;
@@ -40,7 +41,6 @@ fn main() {
     ])
     .expect("student");
 
-    // 判据方向 w_eff = queryᵀ readout，归一化后作为基的第 0 维
     let mut w = vec![0.0f64; dim];
     for (row, r) in readout.iter().enumerate() {
         let line = &query.values[row * dim..(row + 1) * dim];
@@ -52,7 +52,6 @@ fn main() {
     orthonormalize(&mut w, &basis);
     basis.push(w);
 
-    // 其余用与 w_eff 正交的 PCA 方向补齐
     let moment = second_moment(&embeddings, dim, 2048);
     for comp in jacobi_eigen(&moment, dim, 10) {
         if basis.len() >= dim {
@@ -64,7 +63,6 @@ fn main() {
         }
     }
 
-    // 真实输入：词表前 1000 行
     let samples = 1000usize.min(embeddings.rows);
     let inputs: Vec<Vec<Trit>> = (0..samples)
         .map(|row| trit_row(&embeddings.values[row * dim..(row + 1) * dim]))
@@ -118,14 +116,16 @@ fn main() {
 
         let projected = f32ref::Projected::new(&query, &readout, sub);
         let (rate, tern_out) = quad::agree(&student, &net, &inputs, sub);
-        let q = quad::compare(&f32_base, &raw, &inputs, &tern_out, &readout, &projected);
+        let q = quad::compare(
+            &f32_base, &raw, &inputs, &tern_out, &readout, sub, &projected,
+        );
         curves.push(json!({
             "k": k, "rate": rate,
             "f32": q[0],
             "w_trit": q[1],
             "x_trit": q[2],
             "trit_both": q[3], "trit_scale": q[4], "trit_readout": q[5],
-            "trit_vs_f32": q[6]
+            "trit_stage": q[6], "trit_vs_f32": q[7]
         }));
     }
 

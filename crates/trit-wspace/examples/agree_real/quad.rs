@@ -8,6 +8,7 @@ use trit_wspace::Net;
 use trit_wspace::Trit;
 
 use crate::f32ref::{Projected, sign};
+use crate::forward;
 use crate::readout::judge as judge_readout;
 
 /// 把投影权重逐行 absmean 三值化：`(丢 scale, 保留 scale)`。
@@ -25,24 +26,21 @@ pub fn trit_weights(projected: &Projected) -> (Vec<f64>, Vec<f64>) {
     (signed, scaled)
 }
 
-/// 七列一致率：
-/// `[f32/f32, w三值, x三值, 两半都三值, 两半保留scale, readout也三值, 真实三值网络]`。
+/// 八列一致率：
+/// `[f32/f32, w三值, x三值, 两半都三值, 两半保留scale, readout三值, k维输入三值, 真实网络]`。
 pub fn compare(
     base: &[Trit],
     raw: &[&[f32]],
     inputs: &[Vec<Trit>],
     tern_out: &[Vec<Trit>],
     readout: &[f32],
+    sub: &[Vec<f64>],
     projected: &Projected,
-) -> [f64; 7] {
+) -> [f64; 8] {
     let (w_trit, w_scaled) = trit_weights(projected);
     let w = projected.weights();
-    let n = base
-        .len()
-        .min(raw.len())
-        .min(inputs.len())
-        .min(tern_out.len());
-    let mut hits = [0usize; 7];
+    let n = base.len().min(raw.len()).min(inputs.len());
+    let mut hits = [0usize; 8];
     for i in 0..n {
         let xk = projected.project_f32(raw[i]);
         let xt = projected.project_trit(&inputs[i]);
@@ -52,7 +50,9 @@ pub fn compare(
         hits[3] += usize::from(projected.judge(&w_trit, &xt) == base[i]);
         hits[4] += usize::from(projected.judge(&w_scaled, &xt) == base[i]);
         hits[5] += usize::from(judge_readout(projected, &w_trit, &xt, readout) == base[i]);
-        hits[6] += usize::from(tern_out[i].as_slice() == [base[i]]);
+        hits[6] +=
+            usize::from(forward::judge(projected, &w_trit, &inputs[i], sub, readout) == base[i]);
+        hits[7] += usize::from(tern_out[i].as_slice() == [base[i]]);
     }
     hits.map(|h| h as f64 / n.max(1) as f64)
 }

@@ -2959,6 +2959,10 @@
       "lines": 119
     },
     {
+      "file": "crates/trit-wspace/examples/agree_real/forward.rs",
+      "lines": 50
+    },
+    {
       "file": "crates/trit-wspace/examples/agree_real/main.rs",
       "lines": 141
     },
