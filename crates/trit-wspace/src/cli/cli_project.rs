@@ -1,5 +1,3 @@
-//! CLI `project`：用三值基工件投影网络的某一层（输入维度压缩）。
-
 use serde_json::json;
 
 use crate::edit::Patch;
@@ -7,7 +5,9 @@ use crate::net::Net;
 use crate::to_wsp;
 use crate::wire;
 
-use super::{atomic_write, emit, err, load_net, no_double_stdin, one, parse, two, value};
+use super::{
+    atomic_write, cli_agree, emit, err, load_net, no_double_stdin, one, parse, two, value,
+};
 pub(super) fn project(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
     let path = one(
@@ -37,8 +37,6 @@ pub(super) fn project(args: &[String]) -> Result<(), String> {
         .ok_or_else(|| format!("--layer {layer_index} 越界（depth={}）", net.depth()))?;
 
     let projected = target.project(basis).map_err(err)?;
-    let before = (target.rows(), target.cols());
-    let after = (projected.rows(), projected.cols());
 
     let layers: Vec<_> = net
         .layers()
@@ -57,8 +55,9 @@ pub(super) fn project(args: &[String]) -> Result<(), String> {
     atomic_write(out, &to_wsp(&projected_net))?;
     emit(&json!({
         "layer": layer_index,
-        "before": { "rows": before.0, "cols": before.1 },
-        "after": { "rows": after.0, "cols": after.1 },
+        "before": { "rows": target.rows(), "cols": target.cols() },
+        "after": { "rows": projected.rows(), "cols": projected.cols() },
+        "agree": cli_agree::agree(&net, &projected_net, basis, 64),
         "trits": projected_net.trit_count(),
         "out": out,
     }))

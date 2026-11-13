@@ -3092,7 +3092,11 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 653
+      "lines": 636
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_agree.rs",
+      "lines": 62
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",
@@ -3119,8 +3123,12 @@
       "lines": 166
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_merge.rs",
+      "lines": 27
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_project.rs",
-      "lines": 78
+      "lines": 77
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_repair.rs",

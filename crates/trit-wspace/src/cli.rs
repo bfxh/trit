@@ -7,18 +7,19 @@ use serde_json::{Value, json};
 use crate::audit::AuditLog;
 use crate::codec::{from_wsp, to_wsp};
 use crate::edit::Patch;
-use crate::merge::{merge_aligned, merge_vote};
 use crate::net::Net;
 use crate::ops;
 use crate::oracle::{Behavior, Oracle};
 use crate::wire;
 
+mod cli_agree;
 mod cli_artifact_shard;
 mod cli_block;
 mod cli_certify;
 mod cli_gguf;
 mod cli_gradient;
 mod cli_learned;
+mod cli_merge;
 mod cli_project;
 mod cli_repair;
 mod cli_safetensors;
@@ -75,7 +76,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "audit-shards" => crate::cli_audit::cmd_audit_shards(&args[1..]),
         "replay" => crate::cli_audit::cmd_replay(&args[1..]),
         "diff" => cli_project::cmd_diff(&args[1..]),
-        "merge" => cmd_merge(&args[1..]),
+        "merge" => cli_merge::merge(&args[1..]),
         "list-safetensors" => cli_safetensors::list(&args[1..]),
         "import-safetensors" => cli_safetensors::import(&args[1..]),
         "export-safetensors" => cli_safetensors::export(&args[1..]),
@@ -507,24 +508,6 @@ fn cmd_localize(args: &[String]) -> Result<(), String> {
     let report = crate::localize::localize(&net, &oracle, row_budget, rows, max_trits, top_trits)
         .map_err(err)?;
     emit(&wire::localize_report_to_value(&report))
-}
-
-fn cmd_merge(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["aligned"])?;
-    let (left, right) = two(&parsed, "merge <a|-> <b|-> [--aligned]")?;
-    no_double_stdin(&[left, right])?;
-    let a = load_net(left)?;
-    let b = load_net(right)?;
-    let merged = if parsed.switches.contains("aligned") {
-        merge_aligned(&a, &b).map_err(err)?
-    } else {
-        merge_vote(&a, &b).map_err(err)?
-    };
-    write_out(&parsed, &merged)?;
-    emit(&json!({
-        "summary": wire::net_summary(&merged),
-        "artifact": to_wsp(&merged),
-    }))
 }
 
 #[derive(Default)]

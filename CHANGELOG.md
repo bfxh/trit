@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`project` 的默认健康检查 `agree`）
+
+- `project` 除了写投影工件，还会在 **64 个随机三值输入**上比较「原网络 vs 投影网络」的一致率，
+  写进输出的 `agree` 字段（`samples` / `same` / `rate`）。
+- 于是「这次压缩能不能接受」一条命令就能回答，不必再手动串 `probe` / `certify`。
+- 实现放 `cli/cli_agree.rs`；为守住 `cli.rs` 台账把 `cmd_merge` 搬进 `cli_merge.rs`。
+- 未证栏：只报一致率，不报「哪些输入不一致」；采样数固定 64，没有参数；随机输入不含真实分布
+  的信息（真实数据的 agree 可能更高或更低）。
 ### Added（trit-wspace：`Layer::project` 三值基投影）
 
 - 新模块 `src/project.rs`：`Layer::project(&self, basis: &Layer) -> Result<Layer>` —— 用三值基
