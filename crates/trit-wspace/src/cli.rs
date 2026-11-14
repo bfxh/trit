@@ -43,6 +43,7 @@ mod cli_repair;
 mod cli_safetensors;
 mod cli_scan;
 mod cli_script;
+mod cli_sequence;
 mod cli_task;
 mod cli_trace;
 mod cli_verify;
@@ -82,6 +83,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "task-scale" => cli_task::task_scale(&args[1..]),
         "task-combine" => cli_task::task_combine(&args[1..]),
         "script" => cli_script::script_cmd(&args[1..]),
+        "sequence" => cli_sequence::sequence(&args[1..]),
         "patch" => cli_patch::patch_cmd(&args[1..]),
         "apply-candidate" => cli_apply::apply_candidate_cmd(&args[1..]),
         "cost" => cli_metrics::cost_cmd(&args[1..]),
@@ -336,7 +338,6 @@ fn parse_rows(raw: &str) -> Result<Vec<usize>, String> {
         })
         .collect()
 }
-
 pub(crate) fn perform_patch(
     parsed: &Parsed,
     net: &Net,
@@ -392,7 +393,6 @@ pub(crate) fn perform_patch(
     }
     emit(&output)
 }
-
 #[derive(Default)]
 pub(crate) struct Parsed {
     pub(crate) positional: Vec<String>,

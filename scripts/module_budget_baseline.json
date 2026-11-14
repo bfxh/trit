@@ -3479,6 +3479,10 @@
       "lines": 32
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_sequence.rs",
+      "lines": 70
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_task.rs",
       "lines": 674
     },
@@ -3769,6 +3773,10 @@
     {
       "file": "crates/trit-wspace/src/scan.rs",
       "lines": 295
+    },
+    {
+      "file": "crates/trit-wspace/src/sequence.rs",
+      "lines": 128
     },
     {
       "file": "crates/trit-wspace/src/shard.rs",
@@ -4181,6 +4189,10 @@
     {
       "file": "crates/trit-wspace/tests/script.rs",
       "lines": 206
+    },
+    {
+      "file": "crates/trit-wspace/tests/sequence.rs",
+      "lines": 133
     },
     {
       "file": "crates/trit-wspace/tests/shard.rs",

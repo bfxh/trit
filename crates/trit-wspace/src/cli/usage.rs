@@ -29,8 +29,8 @@ trit-wspace <command>
   causal-trace <artifact|-> --oracle <json|-> --sample N
   import-gguf <file> --out <dir> | export-gguf <dir> --out <file>
   forgetting <base|-> --steps <json|-> --history <json|->
-  index-artifact <artifact.wsp2> --out <idx>
-  read-block <artifact.wsp2> --index <idx> --layer N [--row-start R --rows K] [--verify] [--out <path>]
+  index-artifact <artifact.wsp2> --out <idx> | read-block <artifact.wsp2> --index <idx> --layer N [--row-start R --rows K] [--verify] [--out <path>]
+  sequence <base|-> --steps <json|-> [--allow N] [--out <path>]
   split-artifact <artifact|-> --rows N --out <dir> | join-artifact <dir> --out <path>
   interference <artifact|-> --oracle <json|-> --edits <json|->
   pack-artifact <artifact|-> --out <bin> | unpack-artifact <bin> --out <path> | formats
