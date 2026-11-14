@@ -44,7 +44,6 @@
 //! 二进制 `trit-wspace` 提供两套入口，共用同一条判决路径（[`ops`]）：
 //! - CLI：`read / verify / patch / repair / diff / merge`，输入 `-` 读 stdin，报告一律 JSON；MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop` 十九个工具，参数与返回见 [`wire`]。
 //!   补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
-
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
 pub mod agree;
@@ -87,6 +86,7 @@ pub mod grouped_repair;
 pub mod history;
 pub mod history_time;
 pub mod impact;
+pub mod interference;
 pub mod inventory;
 pub mod learned;
 pub mod localize;

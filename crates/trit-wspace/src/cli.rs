@@ -9,7 +9,6 @@ use crate::wire;
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use std::{fs, io::Read, path::Path};
-
 mod cli_agree_stats;
 mod cli_apply;
 mod cli_artifact_shard;
@@ -25,6 +24,7 @@ mod cli_formats;
 mod cli_gguf;
 mod cli_gradient;
 mod cli_impact;
+mod cli_interference;
 mod cli_inventory;
 mod cli_learned;
 mod cli_localize;
@@ -48,7 +48,6 @@ mod lock;
 mod usage;
 pub(crate) use fsutil::atomic_write;
 use usage::USAGE;
-
 #[must_use]
 /// 进程入口：返回退出码（0 成功，1 失败）。
 pub fn entry() -> i32 {
@@ -92,6 +91,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "propose-gradient" => cli_gradient::propose_gradient(&args[1..]),
         "explain" => cli_explain::explain_cmd(&args[1..]),
         "impact" => cli_impact::impact_cmd(&args[1..]),
+        "interference" => cli_interference::interference(&args[1..]),
         "inventory" => cli_inventory::inventory_cmd(&args[1..]),
         "repair-exhaustive" => cli_exhaustive::exhaustive_cmd(&args[1..]),
         "attribute" => cli_attribute::attribute_cmd(&args[1..]),

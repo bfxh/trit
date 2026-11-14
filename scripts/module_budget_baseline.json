@@ -3395,6 +3395,10 @@
       "lines": 66
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_interference.rs",
+      "lines": 21
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_inventory.rs",
       "lines": 29
     },
@@ -3585,6 +3589,10 @@
     {
       "file": "crates/trit-wspace/src/impact.rs",
       "lines": 198
+    },
+    {
+      "file": "crates/trit-wspace/src/interference.rs",
+      "lines": 141
     },
     {
       "file": "crates/trit-wspace/src/inventory.rs",
@@ -4013,6 +4021,10 @@
     {
       "file": "crates/trit-wspace/tests/impact.rs",
       "lines": 91
+    },
+    {
+      "file": "crates/trit-wspace/tests/interference.rs",
+      "lines": 109
     },
     {
       "file": "crates/trit-wspace/tests/invariants.rs",

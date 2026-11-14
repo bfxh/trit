@@ -31,7 +31,7 @@ trit-wspace <command>
   export-gguf <dir> --out <file>
   index-artifact <artifact.wsp2> --out <idx>
   read-block <artifact.wsp2> --index <idx> --layer N [--row-start R --rows K] [--verify] [--out <path>]
-  split-artifact <artifact|-> --rows N --out <dir>
-  join-artifact <dir> --out <path>
+  split-artifact <artifact|-> --rows N --out <dir> | join-artifact <dir> --out <path>
+  interference <artifact|-> --oracle <json|-> --edits <json|->
   pack-artifact <artifact|-> --out <bin> | unpack-artifact <bin> --out <path> | formats
   mcp";
