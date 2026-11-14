@@ -15,6 +15,7 @@ mod cli_artifact_shard;
 mod cli_attribute;
 mod cli_block;
 mod cli_capability;
+mod cli_causal_trace;
 mod cli_certify;
 mod cli_diagnose;
 mod cli_diff;
@@ -71,6 +72,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "verify" => cli_verify::verify_cmd(&args[1..]),
         "capability" => cli_capability::capability_cmd(&args[1..]),
         "scan" => cli_scan::scan_cmd(&args[1..]),
+        "causal-trace" => cli_causal_trace::causal_trace(&args[1..]),
         "certify" => cli_certify::certify(&args[1..]),
         "task-merge" => cli_task::task_merge(&args[1..]),
         "task-scale" => cli_task::task_scale(&args[1..]),
@@ -145,7 +147,6 @@ fn cmd_rebase(args: &[String]) -> Result<(), String> {
         sources.push(oracle);
     }
     no_double_stdin(&sources)?;
-
     let target = load_net(path)?;
     let base = load_net(base_path)?;
     let patch = wire::patch_from_value(&load_json(patch_path)?).map_err(err)?;
@@ -180,7 +181,6 @@ fn cmd_rebase(args: &[String]) -> Result<(), String> {
     }
     emit(&output)
 }
-
 fn cmd_transplant(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &["require-before", "require-after"])?;
     let path = one(

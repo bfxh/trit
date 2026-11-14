@@ -25,8 +25,8 @@ trit-wspace <command>
   list-safetensors <file>
   import-safetensors <file> --tensor <name> [--out <path>]
   export-safetensors <artifact|-> --out <path> [--tensor <name>]
-  import-safetensors-dir <file> --out <dir>
-  export-safetensors-dir <dir> --out <file>
+  import-safetensors-dir <file> --out <dir> | export-safetensors-dir <dir> --out <file>
+  causal-trace <artifact|-> --oracle <json|-> --sample N
   import-gguf <file> --out <dir> | export-gguf <dir> --out <file>
   forgetting <base|-> --steps <json|-> --history <json|->
   index-artifact <artifact.wsp2> --out <idx>

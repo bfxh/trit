@@ -3315,6 +3315,10 @@
       "lines": 92
     },
     {
+      "file": "crates/trit-wspace/src/causal_trace.rs",
+      "lines": 177
+    },
+    {
       "file": "crates/trit-wspace/src/certify.rs",
       "lines": 471
     },
@@ -3357,6 +3361,10 @@
     {
       "file": "crates/trit-wspace/src/cli/cli_capability.rs",
       "lines": 81
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_causal_trace.rs",
+      "lines": 19
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_certify.rs",
@@ -3929,6 +3937,10 @@
     {
       "file": "crates/trit-wspace/tests/capability.rs",
       "lines": 63
+    },
+    {
+      "file": "crates/trit-wspace/tests/causal_trace.rs",
+      "lines": 92
     },
     {
       "file": "crates/trit-wspace/tests/certify.rs",
