@@ -3015,6 +3015,10 @@
       "lines": 216
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_context.rs",
+      "lines": 215
+    },
+    {
       "file": "crates/trit-wspace/examples/classifier_holdout.rs",
       "lines": 214
     },
