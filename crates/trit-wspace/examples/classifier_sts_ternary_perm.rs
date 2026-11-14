@@ -79,11 +79,17 @@ fn ternary_per_tensor(weight: &mut [f32]) {
     ternary_span(weight, &indices);
 }
 
-/// 每行一个 scale（`cols` 是行宽）。
+/// 每行一个 scale，**行内按幅度排序后再三值化**（对应仓库 `Layer` 的 per-row `scales`）。
 fn ternary_per_row(weight: &mut [f32], cols: usize) {
     for start in (0..weight.len()).step_by(cols.max(1)) {
         let end = (start + cols).min(weight.len());
-        let indices: Vec<usize> = (start..end).collect();
+        let mut indices: Vec<usize> = (start..end).collect();
+        indices.sort_by(|a, b| {
+            weight[*a]
+                .abs()
+                .partial_cmp(&weight[*b].abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         ternary_span(weight, &indices);
     }
 }
@@ -182,7 +188,7 @@ fn main() {
     let configs: Vec<LayerConfig> = vec![
         ("f32 (baseline)", noop),
         ("ternary per-tensor", ternary_tensor_layer),
-        ("ternary per-row", ternary_row_layer),
+        ("ternary per-row sorted", ternary_row_layer),
         ("ternary group32", ternary_group_layer),
         ("ternary group32 sorted", ternary_sorted_layer),
     ];
