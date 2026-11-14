@@ -496,10 +496,50 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      # 与 check job 同一把尺子（scripts/ci_scope.py）：PR 只编/测直改 crate 的反向依赖闭包，
+      # 只改文档/脚本的 PR 不编；push main、拿不到 base、ci_scope 出错一律全量。
+      - name: Scope crates (PR only)
+        id: crates
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" = "pull_request" ] && [ -n "${BASE_SHA:-}" ] \
+            && python3 scripts/ci_scope.py --base "$BASE_SHA" --github-output >> "$GITHUB_OUTPUT"; then
+            exit 0
+          fi
+          { echo "args="; echo "only_docs=false"; } >> "$GITHUB_OUTPUT"
+          echo "收窄不可用，走全量"
       - uses: dtolnay/rust-toolchain@360a4e93673de6630fac2478bc9e35244b01a759 # 1.88
+        if: steps.crates.outputs.only_docs != 'true'
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-      - run: cargo build --workspace --locked
-      - run: cargo test --workspace --locked
+        if: steps.crates.outputs.only_docs != 'true'
+      - name: Build
+        if: steps.crates.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo build $SCOPE_ARGS --locked
+          else
+            cargo build --workspace --locked
+          fi
+      - name: Test
+        if: steps.crates.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo test $SCOPE_ARGS --locked
+          else
+            cargo test --workspace --locked
+          fi
 
   package:
     name: package (publishable)

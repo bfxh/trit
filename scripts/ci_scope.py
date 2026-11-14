@@ -13,12 +13,17 @@
 什么时候**不收窄**（`full=true`，宁可全跑）：
   - 拿不到 base（push main / workflow_dispatch / 浅克隆）；
   - 改到不属于任何 crate 的文件（`Cargo.toml`、`Cargo.lock`、`rust-toolchain*`、`.cargo/**`、
-    `.github/**`、`scripts/**` 都从这里出去：归不到 crate 就不窄化）；
+    `.github/**` 都从这里出去：归不到 crate 就不窄化）；
   - 反向依赖闭包 >= 全仓 2/3：窄化没收益，只剩风险；
   - crate 名字不符合 `[A-Za-z0-9_.-]+`：这些名字会被拼进 shell，必须挡住。
 
+`scripts/**` 是例外（`NEUTRAL_DIRS`）：不参与 Rust 编译，与 ci.yml「Detect no-Rust change set」
+同口径，归不到 crate 时直接略过。2026-11-15 抽样 40 个已合并 PR：36 个全量里 32 个只因顺手改了
+`scripts/` 下的台账（基线 / 登记表）。前提由代码守：crate 源码或清单里一旦出现对 `scripts/` 的
+引用（注释除外，见 `rust_reads`），`main()` 就把它踢出中性集，退回全量。
+
 `only_docs` 沿用 #247 的口径（`docs/**`、`*.md`、README/LICENSE/CHANGELOG），
-让既有 `if:` 条件不用改。
+让既有 `if:` 条件不用改；改动只落在文档与中性目录时同样为真。
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
@@ -47,6 +53,49 @@ FEATURE_GATES = {
 }
 # 闭包占全仓的比例阈值：超过就全量。
 CLOSURE_RATIO = 2.0 / 3.0
+# 不参与 Rust 编译的仓库级目录（posix 前缀）：归不到 crate 的改动落在这里不触发全量。
+NEUTRAL_DIRS: tuple[str, ...] = ("scripts/",)
+
+
+def is_neutral(path: str, neutral: tuple[str, ...] = NEUTRAL_DIRS) -> bool:
+    p = path.replace("\\", "/")
+    return any(p.startswith(prefix) for prefix in neutral)
+
+
+def neutral_refs(text: str, suffix: str, prefix: str) -> list[int]:
+    """`text` 里引用 `prefix` 目录的行号（1 起），注释行不算。
+
+    `.rs` 跳过 `//` 开头的行（含 `///`、`//!`），清单跳过 `#`。目录名前面不许是标识符字符：
+    `transcripts/` 不算 `scripts/`。
+    """
+    name = re.escape(prefix.rstrip("/"))
+    pattern = re.compile(rf'(?<![\w-]){name}(?:[/\\]|")')
+    comment = "//" if suffix == ".rs" else "#"
+    return [
+        number
+        for number, line in enumerate(text.splitlines(), 1)
+        if not line.lstrip().startswith(comment) and pattern.search(line)
+    ]
+
+
+def rust_reads(
+    root: pathlib.Path, member_dirs, neutral: tuple[str, ...] = NEUTRAL_DIRS
+) -> dict[str, list[str]]:
+    """crate 源码（含 build.rs）与清单里对中性目录的引用：{前缀: ["相对路径:行号", ...]}。"""
+    hits: dict[str, list[str]] = {}
+    for directory in member_dirs:
+        base = root / directory
+        for path in sorted(base.rglob("*")):
+            if path.suffix != ".rs" and path.name != "Cargo.toml":
+                continue
+            if "target" in path.relative_to(base).parts or not path.is_file():
+                continue
+            text = path.read_text(encoding="utf-8", errors="replace")
+            suffix = ".rs" if path.suffix == ".rs" else ".toml"
+            for prefix in neutral:
+                for number in neutral_refs(text, suffix, prefix):
+                    hits.setdefault(prefix, []).append(f"{path.relative_to(root).as_posix()}:{number}")
+    return hits
 
 
 def is_docs(path: str) -> bool:
@@ -105,7 +154,12 @@ def blank_decision(reason: str) -> dict:
     return out
 
 
-def decide(files: list[str], pkg_dirs: dict[str, str], dependents: dict[str, set[str]]) -> dict:
+def decide(
+    files: list[str],
+    pkg_dirs: dict[str, str],
+    dependents: dict[str, set[str]],
+    neutral: tuple[str, ...] = NEUTRAL_DIRS,
+) -> dict:
     """纯决策：输入变更文件 + 依赖图，输出要不要窄化、窄化成什么。"""
     names = set(pkg_dirs)
     out = blank_decision("")
@@ -123,14 +177,24 @@ def decide(files: list[str], pkg_dirs: dict[str, str], dependents: dict[str, set
         return out
 
     seeds: set[str] = set()
+    skipped: list[str] = []
     for f in code:
         owner = owner_of(f, pkg_dirs)
         if owner is None:
-            # 根级/workspace 级文件（Cargo.toml、Cargo.lock、.github、scripts、toolchain）
+            if is_neutral(f, neutral):
+                skipped.append(f)
+                continue
+            # 根级/workspace 级文件（Cargo.toml、Cargo.lock、.github、toolchain）
             # 都从这条路出去：归不到 crate 就不窄化。
             out["reason"] = f"{f} 不属于任何 crate => 全量"
             return out
         seeds.add(owner)
+
+    if not seeds:
+        out["full"] = False
+        out["only_docs"] = True
+        out["reason"] = f"只改文档/脚本（{len(skipped)} 个不参与 Rust 编译的文件）=> 跳过 Rust 矩阵"
+        return out
 
     closure = reverse_closure(seeds, dependents) & names
     if not all(NAME_OK.match(n) for n in closure):
@@ -149,7 +213,8 @@ def decide(files: list[str], pkg_dirs: dict[str, str], dependents: dict[str, set
         crates=" ".join(ordered),
         args=" ".join(f"-p {n}" for n in ordered),
         changed=" ".join(sorted(seeds)),
-        reason=f"直改 {len(seeds)} 个 crate，闭包 {len(ordered)} 个 => 窄化",
+        reason=f"直改 {len(seeds)} 个 crate，闭包 {len(ordered)} 个 => 窄化"
+        + (f"（略过 {len(skipped)} 个不参与 Rust 编译的文件）" if skipped else ""),
     )
     for key, (_feature, gate_crate) in FEATURE_GATES.items():
         out[key] = gate_crate in closure
@@ -281,8 +346,38 @@ def self_test() -> int:
     check("Cargo.lock => 全量", d["full"])
     d = decide([".github/workflows/ci.yml"], pkg_dirs, dependents)
     check(".github => 全量", d["full"])
+    # scripts/ 不参与 Rust 编译：归不到 crate 时略过，不拖全量。
     d = decide(["scripts/mutation_check.py"], pkg_dirs, dependents)
-    check("scripts => 全量", d["full"])
+    check("只改 scripts => 跳过 Rust", (not d["full"]) and d["only_docs"])
+    d = decide(
+        ["scripts/test_surface_baseline.json", "crates/trit-texture/src/ttx.rs"], pkg_dirs, dependents
+    )
+    check("scripts + crate => 按 crate 窄化", (not d["full"]) and d["crates"] == "trit-texture")
+    d = decide(["scripts/x.py", "crates/trit-texture/src/ttx.rs"], pkg_dirs, dependents, neutral=())
+    check("中性集被撤（crate 引用了 scripts/）=> 全量", d["full"])
+    d = decide(["scriptsx/a.py", "crates/trit-texture/src/ttx.rs"], pkg_dirs, dependents)
+    check("前缀整段匹配（scriptsx/ 不算中性）", d["full"])
+
+    # 守卫：crate 代码真引用 scripts/ 才算；注释、`transcripts/` 不算。
+    check("注释行不算", neutral_refs("// scripts/a.py\n/// scripts/b\n//! scripts/c", ".rs", "scripts/") == [])
+    check("transcripts/ 不算", neutral_refs('let s = "transcripts/x";', ".rs", "scripts/") == [])
+    check(
+        "concat 路径算",
+        neutral_refs('x\nconcat!(env!("CARGO_MANIFEST_DIR"), "/../../scripts/a.json")', ".rs", "scripts/")
+        == [2],
+    )
+    check('join("scripts") 算', neutral_refs('p.join("..").join("scripts")', ".rs", "scripts/") == [1])
+    check(
+        "清单引用算、# 注释不算",
+        neutral_refs('# scripts/x\nbuild = "../../scripts/b.rs"', ".toml", "scripts/") == [2],
+    )
+    with tempfile.TemporaryDirectory() as tmp:
+        box = pathlib.Path(tmp)
+        (box / "crates" / "a" / "src").mkdir(parents=True)
+        (box / "crates" / "a" / "src" / "lib.rs").write_text("// scripts/ok\nfn f() {}\n", encoding="utf-8")
+        check("干净的 crate 无引用", rust_reads(box, ["crates/a"]) == {})
+        (box / "crates" / "a" / "build.rs").write_text('const P: &str = "../../scripts/g.json";\n', encoding="utf-8")
+        check("build.rs 引用被点名", rust_reads(box, ["crates/a"]) == {"scripts/": ["crates/a/build.rs:1"]})
 
     d = decide(["crates/trit-core/src/lib.rs", "docs/08.md"], pkg_dirs, dependents)
     check("文档 + 代码 => 仍按代码窄化", (not d["full"]) and (not d["only_docs"]) and d["crates"])
@@ -345,7 +440,14 @@ def main(argv: list[str]) -> int:
         emit(decision, mode, sys.stdout)
         return 0
     files = changed_files(root, args.base) if args.base else []
-    decision = decide(files, pkg_dirs, dependents)
+    try:
+        reads = rust_reads(root, pkg_dirs.values())
+    except OSError as exc:
+        reads = {prefix: [f"扫描失败（{type(exc).__name__}）"] for prefix in NEUTRAL_DIRS}
+    for prefix, where in sorted(reads.items()):
+        print(f"ci_scope: crate 引用了 {prefix}（{', '.join(where[:3])}）=> 改它不再略过", file=sys.stderr)
+    neutral = tuple(prefix for prefix in NEUTRAL_DIRS if prefix not in reads)
+    decision = decide(files, pkg_dirs, dependents, neutral)
     decision["closure_total"] = len(pkg_dirs)
     emit(decision, mode, sys.stdout)
     return 0
