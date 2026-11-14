@@ -456,3 +456,38 @@ python scripts/evaluate_tuned_edit_gate.py --model <快照> \
 ```
 
 **边界**：单 seed、CPU、1 epoch、lr 未扫；tuned 权重未三值化；没有 keep 集的逐条明细。
+
+---
+
+## 14. 推理式编辑 vs 梯度微调：**1 个 trit 抵 1505 个 trit**
+
+在 STS test 的 200 对子集（57 正 / 143 负，threshold 0.5）上，学生 = 单层三值 `query`
+（384→384），输入是 MiniLM 句向量逐行三值化后的 trit。两条路线在同一批 pair 上对比：
+
+- **推理式编辑**（`examples/editset_sts_repair.rs`）：行级探针选承重行 → 行内逐列试
+  `-1/0/+1`，按「edit 修复数 − keep 破坏数」贪心，最多 8 步；
+- **梯度微调**：`scripts/train_all_layers.py` 训出的 layer0 `query` 差分。
+
+| 路线 | 改动 trits | right/200 | edit_fixed | keep_broken |
+|---|---|---|---|---|
+| baseline | 0 | 184 | — | — |
+| **推理式编辑** | **1** | **185** | 1 | 0 |
+| **梯度微调** | **1505** | **185** | 1 | 0 |
+
+**结论（双面）**：
+
+- **正面**：推理式编辑用 **1/1505 的改动量**拿到与梯度微调**相同**的任务收益——
+  「不改梯度、只改离散 trit」这条路在真实任务上**有效**；
+- **负面**：两条路线都只修好 1 条（16 错 → 15 错），**单层三值 384×384 的表达力是瓶颈**；
+  第 2 步起没有净收益 > 0 的候选，搜索到达局部最优。证书不通过
+  （`edit` 集仍有 15 条未达成）。
+
+**复算**：
+
+```bash
+cargo run --release -p trit-wspace --example editset_sts_repair -- \
+  --pairs sts-pairs-200.json --safetensors model.safetensors \
+  --max-edits 8 --rows 8 --tuned tuned-all.safetensors
+```
+
+**边界**：单层学生网络、200 对子集、threshold 0.5；没有多步/多行预算扫描；没有 6 层三值网络上的推理式编辑。

@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（推理式编辑的真实任务验证：1 个 trit 抵 1505 个 trit）
+
+- 新示例 `examples/editset_sts_repair.rs`：行级探针选承重行 → 行内逐列试 `-1/0/+1`，
+  按「edit 修复数 − keep 破坏数」贪心，输出补丁/每步读数/证书。
+- STS test 200 对（57 正 / 143 负）上的读数：
+  - baseline：184/200
+  - **推理式编辑：1 个 trit → 185/200（edit_fixed 1、keep_broken 0）**
+  - 梯度微调：1505 个 trit → 185/200（edit_fixed 1、keep_broken 0）
+- 结论（双面）：推理式编辑用 1/1505 的改动量拿到相同任务收益；但两者都只修好 1 条，
+  单层三值 384×384 的表达力是瓶颈。
+- 配套脚本：`scripts/export_sts_pairs.py`（导出 STS 句向量 pairs，供两个门禁复用）。
+
 ### Added（6 层全量真实 tuned：训练 +7.7 点，STS test −18.0 点 / keep −14.2 点）
 
 - 新脚本 `scripts/train_all_layers.py`：端到端微调 MiniLM 的 36 个线性权重
