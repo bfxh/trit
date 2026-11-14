@@ -3047,6 +3047,10 @@
       "lines": 229
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_sts_contrastive.rs",
+      "lines": 228
+    },
+    {
       "file": "crates/trit-wspace/examples/classifier_sts_probe.rs",
       "lines": 493
     },
@@ -3161,6 +3165,10 @@
     {
       "file": "crates/trit-wspace/examples/sts/common.rs",
       "lines": 231
+    },
+    {
+      "file": "crates/trit-wspace/examples/sts/contrastive.rs",
+      "lines": 170
     },
     {
       "file": "crates/trit-wspace/examples/stssweep/main.rs",

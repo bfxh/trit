@@ -32,7 +32,7 @@ pub fn layernorm_from(path: &str, name: &str) -> LayerNorm {
 
 /// 一层 BERT 的完整前向中间量（反向要用）。
 pub struct Activation {
-    input: Sentence,
+    pub input: Sentence,
     q: Vec<Vec<f32>>,
     k: Vec<Vec<f32>>,
     v: Vec<Vec<f32>>,

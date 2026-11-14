@@ -2,6 +2,29 @@
 
 ## [Unreleased]
 
+### Added（对比学习目标：test Spearman 仍不动 + 两个实验缺陷）
+
+- 新示例 `classifier_sts_contrastive`：换 MiniLM 同源的**对比学习**目标
+  `L = -log softmax_j(cos(u_i, v_j)/τ)[i]`（batch 16 in-batch negatives、τ=0.05），
+  其余与 `classifier_sts_train` 可比（冻结 layer 0–4、只训 layer 5、SGD）。
+  梯度实现放在 `examples/sts/contrastive.rs`。
+- 读数（800 训练对 / 1379 test 对 / 100 步）：
+
+  | lr | test Spearman 训练前 → 后 |
+  |---|---|
+  | 1e-5 | 0.820376 → 0.820379（+3e-6） |
+  | 1e-6 | 0.820376 → 0.820381（+5e-6） |
+
+- 结论：**换成对比学习目标也没有提升**，与余弦-MSE（+2e-5）一致。
+- **两个实验缺陷（诚实记录）**：
+  1. `loss_first`/`loss_last` 取自**不同批次**（`start = step*batch % len`），批次难度不同
+     因此不可比。"loss 0.486 → 1.80" 是假象——lr 缩小 10 倍后上升幅度几乎不变（1.797 vs
+     1.801），正是这个证据。
+  2. 对比损失的**方向导数校验只有 10.8%**（余弦-MSE 是 0.37%）：梯度值只有 0.008，
+     f32 差分噪声占比更大，还不够干净到能断言实现无误。
+- 因此"对比学习能否提升"**仍未定论**：需要固定验证批次的 loss 曲线 + 更稳的梯度校验
+  + 更大预算才算测清楚。
+
 ### Added（`classifier_sts_train`：训练最后一层——loss 降 4.8%，test Spearman 不变）
 
 - 完整训练管线：冻结 layer 0–4（预计算缓存）、只训 layer 5、目标 `(cos(u,v) - score/5)²`、
