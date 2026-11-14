@@ -22,8 +22,8 @@ trit-wspace <command>
   audit-shards <dir> [--artifact <initial|->] [--out <path>] [--manifest <path>] [--resume <checkpoint>] [--checkpoint-every N --checkpoint-dir D]
   replay <log|-> --artifact <initial|-> [--out <path>] | merge <a|-> <b|-> [--aligned] [--out <path>]
   fingerprint emit <artifact|-> --oracle <json|-> [--out <path>] | fingerprint check <artifact|-> --oracle <json|-> --fingerprint <json|->
-  list-safetensors <file>
-  import-safetensors <file> --tensor <name> [--out <path>]
+  list-safetensors <file> | import-safetensors <file> --tensor <name> [--out <path>]
+  perm-attack <base|-> --oracle <json|-> [--seed N | --permuted <artifact|->]
   export-safetensors <artifact|-> --out <path> [--tensor <name>]
   import-safetensors-dir <file> --out <dir> | export-safetensors-dir <dir> --out <file>
   causal-trace <artifact|-> --oracle <json|-> --sample N

@@ -3439,6 +3439,10 @@
       "lines": 26
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_perm_attack.rs",
+      "lines": 26
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_perturb.rs",
       "lines": 49
     },
@@ -3701,6 +3705,10 @@
     {
       "file": "crates/trit-wspace/src/oracle.rs",
       "lines": 318
+    },
+    {
+      "file": "crates/trit-wspace/src/perm_key.rs",
+      "lines": 157
     },
     {
       "file": "crates/trit-wspace/src/perturb.rs",
@@ -4113,6 +4121,10 @@
     {
       "file": "crates/trit-wspace/tests/merge_bias_f32.rs",
       "lines": 163
+    },
+    {
+      "file": "crates/trit-wspace/tests/perm_key.rs",
+      "lines": 90
     },
     {
       "file": "crates/trit-wspace/tests/probe.rs",

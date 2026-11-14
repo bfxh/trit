@@ -34,6 +34,7 @@ mod cli_localize;
 mod cli_merge;
 mod cli_metrics;
 mod cli_patch;
+mod cli_perm_attack;
 mod cli_perturb;
 mod cli_probe;
 mod cli_project;
@@ -103,6 +104,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "probe" => cli_probe::probe_cmd(&args[1..]),
         "trace" => cli_trace::trace_cmd(&args[1..]),
         "distribution" => cli_trace::distribution_cmd(&args[1..]),
+        "perm-attack" => cli_perm_attack::perm_attack(&args[1..]),
         "perturb" => cli_perturb::perturb_cmd(&args[1..]),
         "diagnose" => cli_diagnose::diagnose_cmd(&args[1..]),
         "localize" => cli_localize::localize_cmd(&args[1..]),
@@ -314,7 +316,6 @@ fn req_usize(parsed: &Parsed, name: &str) -> Result<usize, String> {
     raw.parse::<usize>()
         .map_err(|_| format!("--{name} 需要非负整数，得到 `{raw}`"))
 }
-
 fn req_f32(parsed: &Parsed, name: &str) -> Result<f32, String> {
     let raw = parsed
         .values
@@ -323,7 +324,6 @@ fn req_f32(parsed: &Parsed, name: &str) -> Result<f32, String> {
     raw.parse::<f32>()
         .map_err(|_| format!("--{name} 需要数字，得到 `{raw}`"))
 }
-
 fn parse_rows(raw: &str) -> Result<Vec<usize>, String> {
     if raw.is_empty() {
         return Err("--rows 不能为空".into());
