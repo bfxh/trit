@@ -4,6 +4,29 @@
 
 ### Changed（文档治理：docs 按用途归位、索引重写、口径统一、文档门接进 CI）
 
+- 文档门接进 CI：`docs-gates` job 现在跑 **5 道**——`docs_hygiene` / `doc_pointers` /
+  `model_status` / `claims_evidence` / `layers`（各带自测，共 11 步）。`tech_collide` **没接**：
+  它拦的 9 条编号复用全部来自仓外共享账本 `LEDGER.md`，本仓改不了那份账本（见下「未证栏」）。
+- `claims_evidence` 从「拦 21 篇、无据句 109 / 基线 76」收到 **0 拦、56 句 / 基线 56**（`--update`
+  已收紧）。两条口径修正 + 30 句逐条改：`docs/review/` 退出能力面（评审快照与 `CHANGELOG.md` 同理，
+  是历史叙述不是当下能力声明，-9 句）；新增 `<!-- claims-ok -->` 显式豁免标记给**规则定义段**
+  （`STATUS.md` §1、`SCOPE.md` §7.1 必须写出「已跑通 / 组件」这些词才能定义它们，-8 句）；
+  其余 30 句一律「补真实指针」或「按 `STATUS.md` 口径降级措辞」，没有编造读数。
+- `layers` 从 FAIL 1 条转 **绿**：`scripts/layers.json` 的 `allows` 登记唯一一条跨层例外
+  `trit-gpu`(ops) → `trit-wspace`(learn)，原因是仅 `[dev-dependencies]`（GPU 测试与示例读 WSP 工件
+  做 CPU 参考对拍，不进发布闭包）。`docs/positioning/LAYERS.md` 同步写明「dev-dependencies 与
+  dependencies 一样计入回边」，例外必须逐条登记。
+- `ci_integrity` 新增 action pin 自洽检查：① 形似 commit SHA 的 ref 必须 40 位 ② 同一 action 的
+  同一注释标签（`# v5` / `# stable` / `# 1.88`）必须指向同一个 ref ③ 没写 `@版本` 判红。
+  这条是防本 PR 早先那次事故：`actions/checkout` 的 pin 抄成 39 位，本机 YAML 能过、旧判据全查不出，
+  只有 runner 在 `Set up job` 报 `Unable to resolve action`。按「注释标签」比而不是按 action 比，
+  是因为 `dtolnay/rust-toolchain` 的 ref 本就是工具链版本 commit（`# stable` / `# 1.88` / `@nightly`
+  各不相同是设计）。自测 19/19（1 正例 + 4 反证）。
+- 安全/理念文档不再把沙盘与隐喻写成能力：`WSP-SHIELD.md` §2 在读数表前加状态块（状态=**组件**、
+  合成流量、不构成「能抗真实 DDoS」的主张）；`crates/trit-immune/README.md` 首段补「是什么 /
+  不是什么」（是带三值裁决的**版本账本内核**，「免疫系统」是设计隐喻，不表示能自动防护/拦截/恢复）。
+  `WSP-REDTEAM-MODEL` / `PROBE` / `STACK` 核实后**不改**：三篇都已有具体未证栏与复算入口。
+
 - `docs/` 从 67 篇平铺改为按用途 8 组：`positioning/`(6) `reference/`(8) `results/`(11)
   `research/`(22) `security/`(10) `engineering/`(4) `plans/`(5) `specs/`(新)，根目录只留
   `docs/README.md` 索引；`review/` 作为按日期的评审快照保留、不改写。
@@ -31,9 +54,10 @@
 - 读数：全仓 md 死链 0（迁移前 0 → 迁移后 0，逐条解析链接目标）；`docs_hygiene` /
   `doc_pointers`（78 篇、24 条行号指针）/ `model_status` 三道绿且自测绿；`ci_integrity` 21 项
   对得上、`ci_budget` 拦 0；`claims_evidence` 109 句（main 基线 108，本轮新增文档没有净增无据句）。
-- 未证栏：`claims_evidence`（109 句 / 基线 76）、`layers`（`crates/trit-gpu` 依赖
-  `trit-wspace` 一条回边）、`tech_collide`（A9/A134/A153/A155/A157/A267 号各出现两次）三道仍是红的，
-  本轮**没接进 CI**、也没修——接门的前提是先修到绿，那是一件独立的事。
+- 未证栏：`tech_collide`（九组编号复用：A9/A129/A130/A131/A134/A153/A155/A157/A267）仍是红的，
+  且**没接进 CI**——它读的是仓外共享账本 `LEDGER.md`（多个智能体共用），本轮不动那份账本：
+  重号要由账本的主人拍板，改错了会让别的会话的引用失效。
+  另：`docs/review/` 与 `CHANGELOG.md` 的历史路径与措辞不批量改写，允许过期以换可追溯。
 
 ### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）
 

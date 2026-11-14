@@ -260,6 +260,14 @@ jobs:
         run: python3 scripts/model_status.py --self-test
       - name: Model status (completion table matches code)
         run: python3 scripts/model_status.py
+      - name: Claims evidence self-test (ratchet + counterexamples)
+        run: python3 scripts/claims_evidence.py --self-test
+      - name: Claims evidence (capability sentences carry proof)
+        run: python3 scripts/claims_evidence.py
+      - name: Layers self-test (positive + counterexamples)
+        run: python3 scripts/layers.py --self-test
+      - name: Layers (every crate placed, dependencies point down)
+        run: python3 scripts/layers.py
 
   module-budget:
     name: module budget (god objects)
