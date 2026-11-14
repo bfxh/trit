@@ -3052,7 +3052,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/classifier_sts_train.rs",
-      "lines": 673
+      "lines": 559
     },
     {
       "file": "crates/trit-wspace/examples/dimsweep/basis.rs",
@@ -3153,6 +3153,10 @@
     {
       "file": "crates/trit-wspace/examples/real_stats.rs",
       "lines": 138
+    },
+    {
+      "file": "crates/trit-wspace/examples/sts/bert.rs",
+      "lines": 391
     },
     {
       "file": "crates/trit-wspace/examples/sts/common.rs",

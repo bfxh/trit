@@ -21,7 +21,7 @@
 
 use serde_json::json;
 use trit_wspace::safetensors;
-use trit_wspace::transformer_f32::{Dense, LayerNorm};
+use trit_wspace::transformer_f32::LayerNorm;
 use trit_wspace::transformer_f32_full::layernorm_backward_full;
 
 const EMBEDDINGS: &str = "embeddings.word_embeddings.weight";
@@ -29,359 +29,17 @@ const POSITIONS: &str = "embeddings.position_embeddings.weight";
 const TOKEN_TYPE: &str = "embeddings.token_type_embeddings.weight";
 const EMB_LN_W: &str = "embeddings.LayerNorm.weight";
 const EMB_LN_B: &str = "embeddings.LayerNorm.bias";
-const CLS_ID: usize = 101;
-const SEP_ID: usize = 102;
-const HEADS: usize = 12;
 
+#[path = "sts/bert.rs"]
+#[allow(dead_code)]
+mod bert;
 #[path = "sts/common.rs"]
 #[allow(dead_code)]
 mod common;
 
-use common::{Sentence, cosine, encode, gelu, load_vocab, mean, read_pairs, spearman};
+use bert::{BertLayer, Grads, accumulate, bert_sequence};
 
-fn layer_key(layer: usize, suffix: &str) -> String {
-    format!("encoder.layer.{layer}.{suffix}")
-}
-
-fn dense(path: &str, name: &str) -> Dense {
-    let weight = safetensors::read_tensor(path, name).expect("dense weight");
-    let bias = safetensors::read_vector(path, &name.replace(".weight", ".bias")).expect("bias");
-    Dense::new(weight.values, bias, weight.rows, weight.cols).expect("dense")
-}
-
-fn layernorm_from(path: &str, name: &str) -> LayerNorm {
-    let weight = safetensors::read_vector(path, &name.replace(".bias", ".weight")).expect("ln w");
-    let bias = safetensors::read_vector(path, name).expect("ln b");
-    LayerNorm::new(weight, bias).expect("ln")
-}
-
-/// 一层 BERT 的完整前向中间量（反向要用）。
-struct Activation {
-    input: Sentence,
-    q: Vec<Vec<f32>>,
-    k: Vec<Vec<f32>>,
-    v: Vec<Vec<f32>>,
-    probs: Vec<Vec<Vec<f32>>>,
-    pooled: Vec<Vec<f32>>,
-    residual: Sentence,
-    hidden: Sentence,
-    pre: Vec<Vec<f32>>,
-    mid: Sentence,
-    ffn: Sentence,
-    residual2: Sentence,
-}
-
-/// 一层 BERT 的全部参数梯度。
-#[derive(Default, Clone)]
-struct Grads {
-    wq: Vec<f32>,
-    bq: Vec<f32>,
-    wk: Vec<f32>,
-    bk: Vec<f32>,
-    wv: Vec<f32>,
-    bv: Vec<f32>,
-    wo: Vec<f32>,
-    bo: Vec<f32>,
-    ln1_w: Vec<f32>,
-    ln1_b: Vec<f32>,
-    ff1_w: Vec<f32>,
-    ff1_b: Vec<f32>,
-    ff2_w: Vec<f32>,
-    ff2_b: Vec<f32>,
-    ln2_w: Vec<f32>,
-    ln2_b: Vec<f32>,
-}
-
-struct BertLayer {
-    wq: Dense,
-    wk: Dense,
-    wv: Dense,
-    wo: Dense,
-    ln1: LayerNorm,
-    ff1: Dense,
-    ff2: Dense,
-    ln2: LayerNorm,
-}
-
-fn dense_backward(layer: &Dense, input: &[f32], grad: &[f32]) -> (Vec<f32>, Vec<f32>, Vec<f32>) {
-    let mut d_w = vec![0.0f32; layer.weight.len()];
-    for (row, g) in grad.iter().enumerate() {
-        for (col, value) in input.iter().enumerate() {
-            d_w[row * layer.cols + col] += g * value;
-        }
-    }
-    let mut d_x = vec![0.0f32; input.len()];
-    for (row, g) in grad.iter().enumerate() {
-        for (col, weight) in layer.weight[row * layer.cols..(row + 1) * layer.cols]
-            .iter()
-            .enumerate()
-        {
-            d_x[col] += g * weight;
-        }
-    }
-    (d_w, grad.to_vec(), d_x)
-}
-
-fn gelu_grad(value: f32) -> f32 {
-    let scale = (2.0f32 / std::f32::consts::PI).sqrt();
-    let inner = value + 0.044_715 * value * value * value;
-    let tanh = (scale * inner).tanh();
-    let derivative = scale * (1.0 + 3.0 * 0.044_715 * value * value);
-    0.5 * (1.0 + tanh) + 0.5 * value * (1.0 - tanh * tanh) * derivative
-}
-
-impl BertLayer {
-    fn load(path: &str, layer: usize) -> Self {
-        Self {
-            wq: dense(path, &layer_key(layer, "attention.self.query.weight")),
-            wk: dense(path, &layer_key(layer, "attention.self.key.weight")),
-            wv: dense(path, &layer_key(layer, "attention.self.value.weight")),
-            wo: dense(path, &layer_key(layer, "attention.output.dense.weight")),
-            ln1: layernorm_from(path, &layer_key(layer, "attention.output.LayerNorm.bias")),
-            ff1: dense(path, &layer_key(layer, "intermediate.dense.weight")),
-            ff2: dense(path, &layer_key(layer, "output.dense.weight")),
-            ln2: layernorm_from(path, &layer_key(layer, "output.LayerNorm.bias")),
-        }
-    }
-
-    fn forward_cached(&self, sequence: &Sentence) -> (Sentence, Activation) {
-        let dim = sequence[0].len();
-        let head_dim = dim / HEADS;
-        let scale = 1.0 / (head_dim as f32).sqrt();
-        let q: Vec<Vec<f32>> = sequence
-            .iter()
-            .map(|token| self.wq.forward(token, false))
-            .collect();
-        let k: Vec<Vec<f32>> = sequence
-            .iter()
-            .map(|token| self.wk.forward(token, false))
-            .collect();
-        let v: Vec<Vec<f32>> = sequence
-            .iter()
-            .map(|token| self.wv.forward(token, false))
-            .collect();
-        let mut probs = Vec::with_capacity(sequence.len());
-        let mut pooled = Vec::with_capacity(sequence.len());
-        for query in &q {
-            let mut per_head = Vec::with_capacity(HEADS);
-            let mut attention = vec![0.0f32; dim];
-            for head in 0..HEADS {
-                let offset = head * head_dim;
-                let span = offset..offset + head_dim;
-                let scores: Vec<f32> = k
-                    .iter()
-                    .map(|key| {
-                        query[span.clone()]
-                            .iter()
-                            .zip(&key[span.clone()])
-                            .map(|(a, b)| a * b)
-                            .sum::<f32>()
-                            * scale
-                    })
-                    .collect();
-                let max = scores.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-                let exps: Vec<f32> = scores.iter().map(|score| (score - max).exp()).collect();
-                let total: f32 = exps.iter().sum();
-                let weights: Vec<f32> = exps.iter().map(|value| value / total).collect();
-                for (weight, value) in weights.iter().zip(&v) {
-                    for index in span.clone() {
-                        attention[index] += weight * value[index];
-                    }
-                }
-                per_head.push(weights);
-            }
-            probs.push(per_head);
-            pooled.push(attention);
-        }
-        let mut residual = Vec::with_capacity(sequence.len());
-        let mut hidden = Vec::with_capacity(sequence.len());
-        let mut pre = Vec::with_capacity(sequence.len());
-        let mut mid = Vec::with_capacity(sequence.len());
-        let mut ffn = Vec::with_capacity(sequence.len());
-        let mut residual2 = Vec::with_capacity(sequence.len());
-        let mut out = Vec::with_capacity(sequence.len());
-        for index in 0..sequence.len() {
-            let projected = self.wo.forward(&pooled[index], false);
-            let residual_row: Vec<f32> = sequence[index]
-                .iter()
-                .zip(&projected)
-                .map(|(a, b)| a + b)
-                .collect();
-            let hidden_row = self.ln1.forward(&residual_row);
-            let pre_row = self.ff1.forward(&hidden_row, false);
-            let mid_row: Vec<f32> = pre_row.iter().map(|value| gelu(*value)).collect();
-            let ffn_row = self.ff2.forward(&mid_row, false);
-            let residual2_row: Vec<f32> = hidden_row
-                .iter()
-                .zip(&ffn_row)
-                .map(|(a, b)| a + b)
-                .collect();
-            let out_row = self.ln2.forward(&residual2_row);
-            residual.push(residual_row);
-            hidden.push(hidden_row);
-            pre.push(pre_row);
-            mid.push(mid_row);
-            ffn.push(ffn_row);
-            residual2.push(residual2_row);
-            out.push(out_row);
-        }
-        let activation = Activation {
-            input: sequence.clone(),
-            q,
-            k,
-            v,
-            probs,
-            pooled,
-            residual,
-            hidden,
-            pre,
-            mid,
-            ffn,
-            residual2,
-        };
-        (out, activation)
-    }
-
-    /// 反传：返回（参数梯度, 对输入的梯度）。
-    fn backward(&self, act: &Activation, grad_out: &Sentence) -> (Grads, Sentence) {
-        let dim = act.input[0].len();
-        let head_dim = dim / HEADS;
-        let scale = 1.0 / (head_dim as f32).sqrt();
-        let mut grads = Grads::default();
-
-        // LN2
-        let mut d_residual2 = Vec::with_capacity(act.input.len());
-        for (index, grad) in grad_out.iter().enumerate() {
-            let (d_x, d_w, d_b) = layernorm_backward_full(&self.ln2, &act.residual2[index], grad);
-            accumulate(&mut grads.ln2_w, &d_w);
-            accumulate(&mut grads.ln2_b, &d_b);
-            d_residual2.push(d_x);
-        }
-
-        // FFN2 / GELU / FFN1
-        let mut d_hidden = vec![vec![0.0f32; dim]; act.input.len()];
-        for index in 0..act.input.len() {
-            let (d_w, d_b, d_mid) = dense_backward(&self.ff2, &act.mid[index], &d_residual2[index]);
-            accumulate(&mut grads.ff2_w, &d_w);
-            accumulate(&mut grads.ff2_b, &d_b);
-            let d_pre: Vec<f32> = d_mid
-                .iter()
-                .zip(&act.pre[index])
-                .map(|(g, value)| g * gelu_grad(*value))
-                .collect();
-            let (d_w1, d_b1, d_h) = dense_backward(&self.ff1, &act.hidden[index], &d_pre);
-            accumulate(&mut grads.ff1_w, &d_w1);
-            accumulate(&mut grads.ff1_b, &d_b1);
-            for (slot, value) in d_hidden[index].iter_mut().zip(&d_h) {
-                *slot += value;
-            }
-            // 残差：hidden 也直接连到 residual2
-            for (slot, value) in d_hidden[index].iter_mut().zip(&d_residual2[index]) {
-                *slot += value;
-            }
-        }
-
-        // LN1
-        let mut d_residual = Vec::with_capacity(act.input.len());
-        for (residual, grad) in act.residual.iter().zip(&d_hidden) {
-            let (d_x, d_w, d_b) = layernorm_backward_full(&self.ln1, residual, grad);
-            accumulate(&mut grads.ln1_w, &d_w);
-            accumulate(&mut grads.ln1_b, &d_b);
-            d_residual.push(d_x);
-        }
-
-        // Wo（attention 输出投影）
-        let mut d_pooled = Vec::with_capacity(act.input.len());
-        for (pooled, grad) in act.pooled.iter().zip(&d_residual) {
-            let (d_w, d_b, d_p) = dense_backward(&self.wo, pooled, grad);
-            accumulate(&mut grads.wo, &d_w);
-            accumulate(&mut grads.bo, &d_b);
-            d_pooled.push(d_p);
-        }
-
-        // 多头 attention
-        let mut d_q = vec![vec![0.0f32; dim]; act.input.len()];
-        let mut d_k = vec![vec![0.0f32; dim]; act.input.len()];
-        let mut d_v = vec![vec![0.0f32; dim]; act.input.len()];
-        for index in 0..act.input.len() {
-            for head in 0..HEADS {
-                let offset = head * head_dim;
-                let span = offset..offset + head_dim;
-                let weights = &act.probs[index][head];
-                // d_v[j] += w[ij] * d_attn_head
-                for (j, weight) in weights.iter().enumerate() {
-                    for i in span.clone() {
-                        d_v[j][i] += weight * d_pooled[index][i];
-                    }
-                }
-                // d_w[ij] = v[j]·d_attn_head
-                let d_w: Vec<f32> = act
-                    .v
-                    .iter()
-                    .map(|value| {
-                        value[span.clone()]
-                            .iter()
-                            .zip(&d_pooled[index][span.clone()])
-                            .map(|(a, b)| a * b)
-                            .sum::<f32>()
-                    })
-                    .collect();
-                // softmax backward
-                let total: f32 = weights.iter().zip(&d_w).map(|(w, g)| w * g).sum();
-                let d_scores: Vec<f32> = weights
-                    .iter()
-                    .zip(&d_w)
-                    .map(|(w, g)| w * (g - total))
-                    .collect();
-                for (j, d_score) in d_scores.iter().enumerate() {
-                    let scaled = d_score * scale;
-                    for i in span.clone() {
-                        d_q[index][i] += scaled * act.k[j][i];
-                        d_k[j][i] += scaled * act.q[index][i];
-                    }
-                }
-            }
-        }
-
-        // Q/K/V 投影
-        let mut d_input = vec![vec![0.0f32; dim]; act.input.len()];
-        for index in 0..act.input.len() {
-            let (d_w, d_b, d_x) = dense_backward(&self.wq, &act.input[index], &d_q[index]);
-            accumulate(&mut grads.wq, &d_w);
-            accumulate(&mut grads.bq, &d_b);
-            for (slot, value) in d_input[index].iter_mut().zip(&d_x) {
-                *slot += value;
-            }
-            let (d_w, d_b, d_x) = dense_backward(&self.wk, &act.input[index], &d_k[index]);
-            accumulate(&mut grads.wk, &d_w);
-            accumulate(&mut grads.bk, &d_b);
-            for (slot, value) in d_input[index].iter_mut().zip(&d_x) {
-                *slot += value;
-            }
-            let (d_w, d_b, d_x) = dense_backward(&self.wv, &act.input[index], &d_v[index]);
-            accumulate(&mut grads.wv, &d_w);
-            accumulate(&mut grads.bv, &d_b);
-            for (slot, value) in d_input[index].iter_mut().zip(&d_x) {
-                *slot += value;
-            }
-            // 残差直连
-            for (slot, value) in d_input[index].iter_mut().zip(&d_residual[index]) {
-                *slot += value;
-            }
-        }
-
-        (grads, d_input)
-    }
-}
-
-fn accumulate(target: &mut Vec<f32>, source: &[f32]) {
-    if target.len() != source.len() {
-        *target = vec![0.0; source.len()];
-    }
-    for (slot, value) in target.iter_mut().zip(source) {
-        *slot += value;
-    }
-}
+use common::{Sentence, cosine, encode, load_vocab, mean, read_pairs, spearman};
 
 /// 用给定参数层的输出与 `grad_out` 做内积（供有限差分用）。
 fn scalar_loss(layer: &BertLayer, sequence: &Sentence, grad_out: &Sentence) -> f32 {
@@ -658,16 +316,244 @@ fn gradcheck(path: &str) {
     );
 }
 
+/// 余弦与其对两侧向量的梯度：`cos = u·v / (|u||v|)`。
+fn cosine_with_grad(u: &[f32], v: &[f32]) -> (f32, Vec<f32>, Vec<f32>) {
+    let dot: f32 = u.iter().zip(v).map(|(a, b)| a * b).sum();
+    let un: f32 = u.iter().map(|a| a * a).sum::<f32>().sqrt();
+    let vn: f32 = v.iter().map(|b| b * b).sum::<f32>().sqrt();
+    let denominator = (un * vn).max(1e-12);
+    let cos = dot / denominator;
+    let d_u: Vec<f32> = u
+        .iter()
+        .zip(v)
+        .map(|(a, b)| b / denominator - cos * a / (un * un).max(1e-12))
+        .collect();
+    let d_v: Vec<f32> = u
+        .iter()
+        .zip(v)
+        .map(|(a, b)| a / denominator - cos * b / (vn * vn).max(1e-12))
+        .collect();
+    (cos, d_u, d_v)
+}
+
+/// SGD 更新（只更新最后一层）。
+fn apply_sgd(layer: &mut BertLayer, grads: &Grads, lr: f32) {
+    let step = |param: &mut [f32], gradient: &[f32]| {
+        for (slot, value) in param.iter_mut().zip(gradient) {
+            *slot -= lr * value;
+        }
+    };
+    step(&mut layer.wq.weight, &grads.wq);
+    step(&mut layer.wq.bias, &grads.bq);
+    step(&mut layer.wk.weight, &grads.wk);
+    step(&mut layer.wk.bias, &grads.bk);
+    step(&mut layer.wv.weight, &grads.wv);
+    step(&mut layer.wv.bias, &grads.bv);
+    step(&mut layer.wo.weight, &grads.wo);
+    step(&mut layer.wo.bias, &grads.bo);
+    step(&mut layer.ln1.weight, &grads.ln1_w);
+    step(&mut layer.ln1.bias, &grads.ln1_b);
+    step(&mut layer.ff1.weight, &grads.ff1_w);
+    step(&mut layer.ff1.bias, &grads.ff1_b);
+    step(&mut layer.ff2.weight, &grads.ff2_w);
+    step(&mut layer.ff2.bias, &grads.ff2_b);
+    step(&mut layer.ln2.weight, &grads.ln2_w);
+    step(&mut layer.ln2.bias, &grads.ln2_b);
+}
+
+/// 对一批句对做一步：`loss = mean (cos(u,v) - score/5)²`，只反传到最后一层。
+fn train_step(layer: &mut BertLayer, pairs: &[(Sentence, Sentence, f32)], lr: f32) -> f32 {
+    let mut grads = Grads::default();
+    let mut total = 0.0f32;
+    for (left, right, target) in pairs {
+        let (out_left, act_left) = layer.forward_cached(left);
+        let (out_right, act_right) = layer.forward_cached(right);
+        let dim = left[0].len();
+        let pooled_left = mean(&out_left, dim);
+        let pooled_right = mean(&out_right, dim);
+        let (cos, d_left, d_right) = cosine_with_grad(&pooled_left, &pooled_right);
+        let error = cos - target;
+        total += error * error;
+        // d loss / d pooled = 2·error · d cos / d pooled
+        let scale = 2.0 * error;
+        let count_left = left.len() as f32;
+        let count_right = right.len() as f32;
+        // mean pooling 的梯度：每个 token 都拿到 d_pooled / T（不是每个维度一个 token）。
+        let pooled_grad_left: Vec<f32> = d_left
+            .iter()
+            .map(|value| scale * value / count_left)
+            .collect();
+        let pooled_grad_right: Vec<f32> = d_right
+            .iter()
+            .map(|value| scale * value / count_right)
+            .collect();
+        let grad_left: Sentence = (0..left.len()).map(|_| pooled_grad_left.clone()).collect();
+        let grad_right: Sentence = (0..right.len())
+            .map(|_| pooled_grad_right.clone())
+            .collect();
+        let (left_grads, _) = layer.backward(&act_left, &grad_left);
+        let (right_grads, _) = layer.backward(&act_right, &grad_right);
+        accumulate_grads(&mut grads, &left_grads);
+        accumulate_grads(&mut grads, &right_grads);
+    }
+    let count = pairs.len() as f32;
+    scale_grads(&mut grads, 1.0 / count);
+    apply_sgd(layer, &grads, lr);
+    total / count
+}
+
+fn accumulate_grads(target: &mut Grads, source: &Grads) {
+    accumulate(&mut target.wq, &source.wq);
+    accumulate(&mut target.bq, &source.bq);
+    accumulate(&mut target.wk, &source.wk);
+    accumulate(&mut target.bk, &source.bk);
+    accumulate(&mut target.wv, &source.wv);
+    accumulate(&mut target.bv, &source.bv);
+    accumulate(&mut target.wo, &source.wo);
+    accumulate(&mut target.bo, &source.bo);
+    accumulate(&mut target.ln1_w, &source.ln1_w);
+    accumulate(&mut target.ln1_b, &source.ln1_b);
+    accumulate(&mut target.ff1_w, &source.ff1_w);
+    accumulate(&mut target.ff1_b, &source.ff1_b);
+    accumulate(&mut target.ff2_w, &source.ff2_w);
+    accumulate(&mut target.ff2_b, &source.ff2_b);
+    accumulate(&mut target.ln2_w, &source.ln2_w);
+    accumulate(&mut target.ln2_b, &source.ln2_b);
+}
+
+fn scale_grads(grads: &mut Grads, factor: f32) {
+    for slot in [
+        &mut grads.wq,
+        &mut grads.bq,
+        &mut grads.wk,
+        &mut grads.bk,
+        &mut grads.wv,
+        &mut grads.bv,
+        &mut grads.wo,
+        &mut grads.bo,
+        &mut grads.ln1_w,
+        &mut grads.ln1_b,
+        &mut grads.ff1_w,
+        &mut grads.ff1_b,
+        &mut grads.ff2_w,
+        &mut grads.ff2_b,
+        &mut grads.ln2_w,
+        &mut grads.ln2_b,
+    ] {
+        for value in slot.iter_mut() {
+            *value *= factor;
+        }
+    }
+}
+
+/// 冻结前 5 层、只训最后一层；目标 `(cos(u,v) - score/5)²`。
+fn train(model: &str, vocab_path: &str, train_tsv: &str, test_tsv: &str, steps: usize, lr: f32) {
+    let vocab = load_vocab(vocab_path);
+    let embeddings = safetensors::read_tensor(model, EMBEDDINGS).expect("embeddings");
+    let position = safetensors::read_tensor(model, POSITIONS).expect("positions");
+    let token_type = safetensors::read_tensor(model, TOKEN_TYPE).expect("token type");
+    let emb_ln = LayerNorm::new(
+        safetensors::read_vector(model, EMB_LN_W).expect("emb ln w"),
+        safetensors::read_vector(model, EMB_LN_B).expect("emb ln b"),
+    )
+    .expect("emb ln");
+    let dim = embeddings.cols;
+    let frozen: Vec<BertLayer> = (0..5).map(|layer| BertLayer::load(model, layer)).collect();
+    let mut layer5 = BertLayer::load(model, 5);
+
+    let encode_sentence = |text: &str| -> Sentence {
+        let ids = encode(text, &vocab);
+        bert_sequence(&ids, &embeddings, &position, &token_type, &emb_ln, dim)
+    };
+    let freeze = |sequence: Sentence| -> Sentence {
+        let mut current = sequence;
+        for layer in &frozen {
+            current = layer.forward_cached(&current).0;
+        }
+        current
+    };
+
+    let train_pairs = read_pairs(train_tsv, 800);
+    let test_pairs = read_pairs(test_tsv, 1379);
+    let mut train_data: Vec<(Sentence, Sentence, f32)> = Vec::with_capacity(train_pairs.len());
+    for (left, right, score) in &train_pairs {
+        train_data.push((
+            freeze(encode_sentence(left)),
+            freeze(encode_sentence(right)),
+            (*score as f32) / 5.0,
+        ));
+    }
+    let mut test_data: Vec<(Sentence, Sentence)> = Vec::with_capacity(test_pairs.len());
+    let gold: Vec<f64> = test_pairs.iter().map(|(_, _, score)| *score).collect();
+    for (left, right, _) in &test_pairs {
+        test_data.push((
+            freeze(encode_sentence(left)),
+            freeze(encode_sentence(right)),
+        ));
+    }
+
+    let evaluate = |layer: &BertLayer, data: &[(Sentence, Sentence)], gold: &[f64]| -> f64 {
+        let cosines: Vec<f64> = data
+            .iter()
+            .map(|(left, right)| {
+                let u = mean(&layer.forward_cached(left).0, dim);
+                let v = mean(&layer.forward_cached(right).0, dim);
+                cosine(&u, &v)
+            })
+            .collect();
+        spearman(&cosines, gold)
+    };
+
+    let before = evaluate(&layer5, &test_data, &gold);
+    let batch = 16usize;
+    let mut losses = Vec::with_capacity(steps);
+    for step in 0..steps {
+        let start = (step * batch) % train_data.len();
+        let slice: Vec<(Sentence, Sentence, f32)> = (0..batch)
+            .map(|offset| train_data[(start + offset) % train_data.len()].clone())
+            .collect();
+        losses.push(train_step(&mut layer5, &slice, lr));
+    }
+    let after = evaluate(&layer5, &test_data, &gold);
+
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json!({
+            "mode": "train",
+            "train_pairs": train_data.len(),
+            "test_pairs": test_data.len(),
+            "steps": steps,
+            "batch": batch,
+            "lr": lr,
+            "loss_first": losses.first().copied().unwrap_or(0.0),
+            "loss_last": losses.last().copied().unwrap_or(0.0),
+            "spearman_before": before,
+            "spearman_after": after,
+        }))
+        .expect("json")
+    );
+}
+
 fn main() {
     let mut args = std::env::args().skip(1);
     let mode = args.next().expect("用法: classifier_sts_train gradcheck <model> | train <model> <vocab> <train.tsv> <test.tsv> [步数] [lr]");
     let model = args.next().expect("model");
     match mode.as_str() {
         "gradcheck" => gradcheck(&model),
-        other => {
-            let _ = other;
-            let _ = (load_vocab, encode, mean, read_pairs, spearman, cosine);
-            println!("{}", json!({ "error": "train 模式尚未实现" }));
+        "train" => {
+            let vocab_path = args.next().expect("vocab.txt");
+            let train_tsv = args.next().expect("train.tsv");
+            let test_tsv = args.next().expect("test.tsv");
+            let steps: usize = args
+                .next()
+                .map(|value| value.parse().expect("steps"))
+                .unwrap_or(100);
+            let lr: f32 = args
+                .next()
+                .map(|value| value.parse().expect("lr"))
+                .unwrap_or(1e-4);
+            train(&model, &vocab_path, &train_tsv, &test_tsv, steps, lr);
         }
+        other => println!("{}", json!({ "error": format!("未知模式 {other}") })),
     }
 }

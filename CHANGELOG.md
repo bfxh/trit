@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added（`classifier_sts_train`：训练最后一层——loss 降 4.8%，test Spearman 不变）
+
+- 完整训练管线：冻结 layer 0–4（预计算缓存）、只训 layer 5、目标 `(cos(u,v) - score/5)²`、
+  小批量 SGD（16 对/步），余弦梯度经解析反传（反传正确性已由方向导数校验 0.37% 保证）。
+- 读数（800 训练对、1379 test 对、100 步、lr=1e-4）：
+
+  | 指标 | 训练前 | 训练后 |
+  |---|---|---|
+  | 训练 loss | 0.02019 | **0.01922**（−4.8%） |
+  | **test Spearman** | 0.820376 | **0.820399**（+0.00002） |
+
+- 结论：**训练最后一层没有提升 test 上的排序能力**——loss 确实降了（参数在动、梯度有效），
+  但指标不动。这是整条线的最终答案：冻结 6 层已达到官方水平（0.8204），再训最后一层无增益。
+- 修复的 bug：mean pooling 的梯度曾写成"每个维度一个 token 梯度"（维度 384 vs token 数十几），
+  直接 index 越界崩溃；正确做法是对每个 token 广播 `d_pooled / T`。
+- 工程：完整 BERT 层（前向缓存 + 反向 + Grads）抽到 `examples/sts/bert.rs` 共享，
+  `classifier_sts_train.rs` 933 → 559 行；重构后方向导数校验仍 0.37%。
+- 边界：100 步 / lr=1e-4 / 800 对 / 只训最后一层 / 余弦-MSE 目标。MiniLM 本身已用对比学习
+  在 STS 上微调过，最后一层的边际空间本来就小；更大预算或对比学习目标未测。
+
 ### Added（`classifier_sts_train`：完整 BERT 层反向传播，梯度经方向导数校验）
 
 - 新示例 `examples/classifier_sts_train.rs`：在示例内实现完整 BERT 层的**反向传播**——
