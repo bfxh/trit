@@ -33,8 +33,12 @@
 
 - **是**：三值**逻辑**（K3 / Ł3 / B3），opt-in Belnap 四值；逻辑等价、SAT/BDD、量化、网表、
   ATPG、时序、映射。
-- **不是**：平衡三进制**整数**库。没有 ±1、符号位、进位 / 借位、整数乘加或十进制整数转换 API；
-  不能把 `X` 当 `-1`。
+- **不是**：平衡三进制**整数**库。稳定 API 面没有平衡三进制整数类型（没有 ±1 值类型作公共类型、
+  没有符号位、进位 / 借位、整数乘加 API）；不能把 `X` 当 `-1`。
+  注意：**实验层**确实有平衡三进制的编码与浮点——`crates/trit-codec/src/balanced.rs` 的
+  `encode` / `decode` / `range`（i64 全域 41 位）与 `crates/trit-float` 的 `TritFloat`
+  （`value = mantissa · 3^exponent`），二者 `publish = false`、不进稳定 API。
+  三层（三值逻辑 / 三值权重 / 平衡三进制）的用词见 [../specs/TERMINOLOGY.md](../specs/TERMINOLOGY.md)。
 - **不做**：原生三值器件仿真（A 类的硬件部分）。它只作为外部前提，不能拿来证明本库性能。
 
 ## 已归类的例子

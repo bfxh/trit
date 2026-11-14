@@ -106,8 +106,9 @@
 
 ## 实验层（`publish = false`）
 
-有八个 crate 是**实验层**：`trit-net`、`trit-machines`、`trit-codec`、`trit-float`、`trit-attn`、
-`trit-dot`、`trit-gpu`、`trit-texture`。规则：
+实验层是 `publish = false` 的 crate，**以清单为准**，当前 20 个：
+`grep -l "publish = false" crates/*/Cargo.toml | wc -l`。名单不在这里逐个抄——曾经写过「八个」，
+实测已是 20 个（2026-11-15 核对），手工抄的名单只会被代码甩下。规则：
 
 - **不属于稳定 API**：可以随时改签名、删模块，不进 crates.io，不发版；
 - **彼此不许互相依赖**：`cargo package --workspace` 会连实验层一起打包，而指向未发布 crate 的

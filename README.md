@@ -1,13 +1,26 @@
-# trit —— Rust 三进制底座（balanced ternary / 三值逻辑 / 算子 · 算法 · 学习）
+# trit —— Rust 三值推理底座（三值逻辑 · 三值权重 · 平衡三进制实验层）
 
 [![CI](https://github.com/bfxh/trit/actions/workflows/ci.yml/badge.svg)](https://github.com/bfxh/trit/actions/workflows/ci.yml)
 [![crates.io](https://img.shields.io/crates/v/sansheng.svg)](https://crates.io/crates/sansheng)
 [![docs.rs](https://docs.rs/sansheng/badge.svg)](https://docs.rs/sansheng)
 
-**是什么**：三值/多值计算的**底座仓**——所有算子、算法、学习机制在这里实现一次，生产链项目按 git pin 取用。在二进制机器上，把三进制真正能落地的那一层做成可复用 Rust crate——
-三值逻辑（Kleene K3 / Łukasiewicz Ł3 / Bochvar B3）、真值表与穷举等价、双导轨打包、
-CPU 掩码与 tryte 查表内核、GPU 三值内核、位平面 ALU、三值训练（STE/QAT）、
-TT3/TTX 资产容器、`.tri` 语言服务器、WASM Playground 与 `trit` CLI。
+**是什么**：可嵌入、可判红的三值**推理底座**——三值逻辑在这里实现一次，生产链项目按 git pin 取用。
+在二进制机器上，把 `{-1,0,+1}` 真正能落地的那一层做成可复用 Rust crate：三值逻辑（Kleene K3 /
+Łukasiewicz Ł3 / Bochvar B3）、真值表与穷举等价、双导轨打包、CPU 掩码与 tryte 查表内核、
+GPU 三值内核、位平面 ALU、三值权重训练（STE/QAT）、TT3/TTX 资产容器、`.tri` 语言服务器、
+WASM Playground 与 `trit` CLI。
+
+**不是什么**：不做 EDA 全流程，不做通用模型检验器，不做硬件四态 `0/1/X/Z` 仿真；
+稳定 API 面**没有**平衡三进制整数类型——平衡三进制只作为**实验层**的编码（`trit-codec::balanced`）
+与浮点表示（`trit-float`）存在。定位正本 [docs/positioning/DESIGN.md](docs/positioning/DESIGN.md)，
+三层用词表 [docs/specs/TERMINOLOGY.md](docs/specs/TERMINOLOGY.md)。
+
+**搜索关键词**：Rust ternary · balanced ternary · trit · three-valued logic · Kleene K3 ·
+Łukasiewicz · Bochvar · BitNet · ternary weights · ternary GPU kernel · 5 trits per byte ·
+GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值逻辑。
+
+> 一句话：不是"把 float 换成三值"，而是把 `{-1,0,+1}` 能**省带宽**、能**去掉乘法**、
+> 能**表达"未知"**这三件事，分别做成有实测、可复算的 crate。
 
 **搜索关键词**：Rust ternary · balanced ternary · trit · three-valued logic · Kleene K3 ·
 Łukasiewicz · Bochvar · BitNet · ternary weights · ternary GPU kernel · 5 trits per byte ·
@@ -83,20 +96,38 @@ GitHub Releases（`v0.3.1` 起）提供：
 
 | crate | 内容 |
 |---|---|
-| `trit-core` | `Ternary`、`TriState`（0/1/Z）、三值拓扑、K3/Ł3/B3、AST、解析器、位并行 `TriBit`、位切片 `TriVec` |
-| `trit-eval` | 求值、真值表、穷举等价、化简 |
-| `trit-sat` | dual-rail + SAT 等价判定与反例 |
-| `trit-circuit` | 组合网表 X 传播、stuck-at/桥接可测性、ATPG、STA-lite、技术映射、结构化 Verilog |
-| `trit-belnap` | Belnap 四值（T/F/B/N）的 opt-in 语义 |
-| `trit-wasm` | WASM 绑定：给 `playground/` 的求值、真值表、等价 |
-| `trit-bdd` | BDD（canonical）等价判定、三值量化、精确模型计数（`count_models_bdd`） |
-| `trit-policy` | 三值决策表的构建期验证 |
-| `trit-schedule` | 三值依赖的静态 DAG 调度（True/False/Unknown） |
-| `trit-learn` | 三值训练原语与神经组件：量化、STE 三变体、scale 梯度；批量 QAT 全连接层、损失/激活/优化器（实验层共用） |
-| `sansheng` | 三生：统一入口伞包（re-export 以上能力） |
-| `trit-cli` | `trit` 命令行 |
+稳定 API（可发布到 crates.io，**25 个**）：
 
-**实验层**（`publish = false`，不属于稳定 API；彼此**不许互相依赖**，否则 `cargo package` 会断）：
+| crate | 内容 |
+|---|---|
+| `sansheng` | 三生：统一入口伞包（re-export 稳定 API） |
+| `trit-bdd` | BDD（canonical）等价判定、三值量化、精确模型计数（`count_models_bdd`） |
+| `trit-belnap` | Belnap 四值（T/F/B/N）的 opt-in 语义 |
+| `trit-bench` | 基准测量底件：确定性三值生成、交错轮次、计时段内重复、min/median/max 与单位换算 |
+| `trit-capacity` | 容量观测与准入判决：执行前回答「会不会把显存/RAM 打爆」 |
+| `trit-circuit` | 组合网表 X 传播、stuck-at/桥接可测性、ATPG、STA-lite、技术映射、结构化 Verilog |
+| `trit-clean` | 三值约束检查 + 精确修复计数（数据清洗 M0） |
+| `trit-cli` | `trit` 命令行 |
+| `trit-core` | `Ternary`、`TriState`（0/1/Z）、三值拓扑、K3/Ł3/B3、AST、解析器、位并行 `TriBit`、位切片 `TriVec` |
+| `trit-count` | 三值表达式精确模型计数：dual-rail CNF + DPLL + 组件缓存；约束计数（`--constraint`）；策略文件计数（`--policy`）；DPLL / 穷举 / BDD 三方对拍；`--fuzz-cnf` 直喂随机子句集 |
+| `trit-eval` | 求值、真值表、穷举等价、化简 |
+| `trit-export` | 三值权重 GGUF 容器：GGUF v3 最小子集 + `trit-codec` 5 trits/byte |
+| `trit-fuzz` | 测试语料底件：确定性三值向量 / 表达式 / CNF 子句集（只喂测试与 fuzz，不进产品路径） |
+| `trit-immune` | 免疫系统核心：`{-1,0,+1}` 裁决 + DeltaDB 式因果 DAG（K3） |
+| `trit-ir` | 三值表达式的 DAG IR 与 pass 框架（CSE + 双 oracle 等价验证） |
+| `trit-learn` | 三值训练原语与神经组件：量化、STE 三变体、scale 梯度；批量 QAT 全连接层、损失/激活/优化器（实验层共用） |
+| `trit-mmap` | 只读文件映射：Unix `mmap` / Windows `CreateFileMapping` |
+| `trit-mv` | 有限 MV-代数（Łukasiewicz 链）与 t-norm 族 |
+| `trit-num` | 数值原语：补偿求和、Welford、最小二乘/岭回归、中位数与缺失插补 |
+| `trit-orch` | 三值准入与当前快照的可派发批次选择 |
+| `trit-policy` | 三值决策表的构建期验证 |
+| `trit-sat` | dual-rail + SAT 等价判定与反例 |
+| `trit-schedule` | 三值依赖的静态 DAG 调度（True/False/Unknown） |
+| `trit-simd` | 位运算 SIMD 抽象：popcount / XOR-popcount 运行时派发（AVX512 / POPCNT / NEON / 标量） |
+| `trit-wasm` | WASM 绑定：给 `playground/` 的求值、真值表、等价 |
+
+**实验层**（`publish = false`，不属于稳定 API；彼此**不许互相依赖**，否则 `cargo package` 会断）。
+共 **20 个**，判定以清单为准：`grep -l "publish = false" crates/*/Cargo.toml | wc -l`：
 
 | crate | 内容 | 入口 |
 |---|---|---|
@@ -105,21 +136,20 @@ GitHub Releases（`v0.3.1` 起）提供：
 | `trit-codec` | 5 trits/byte、平衡三进制、GF(3) `[4,2,3]` 纠错、按分布选编码、零拷贝视图 | `trit-codec pack\|plan\|...` |
 | `trit-float` | 平衡三进制浮点：舍入模式、同比特范围/精度交换、Takum 式锥形精度原型（同比特精度仍是二进制的 3 倍误差） | `trit-float stats\|range\|rounding` |
 | `trit-attn` | 注意力 = 快权重 FFN 的双视角、三值整数关联记忆、可训练三值注意力块（注意力+残差+FFN，QAT + 全链 STE） | `trit-attn demo\|train` |
-| `trit-bench` | 基准测量底件：确定性三值生成、交错轮次（每轮轮换起始位序）、计时段内重复、min/median/max 与单位换算 | 由各 crate 的 bench 使用 |
-| `trit-fuzz` | 测试语料底件：确定性三值向量 / 表达式 / CNF 子句集 / 单值取样（`trit`、`ternary_value`、`bipolar`），RNG 复用 `trit-bench` 的 `SeedRng`（同 13/7/17 序列） | `trit-count --fuzz-cnf`、`trit-count/tests/cnf_fuzz.rs`、`trit-dot`/`trit-codec` 的 stress |
+| `trit-build` | 三进制构建工具（M0–M3）：`.tri` / Verilog 子集 → 化简 + e-graph 饱和重写 → TRB2 / CSV / C / 双导轨 / WGSL | `trit-build <src> [--out DIR]` |
 | `trit-dot` | 位并行三值/二值点积（XNOR+POPC 的适用边界）、块级稀疏、硬件 `popcnt` 运行时派发 | `trit-dot bench` |
 | `trit-gpu` | WGSL `countOneBits` 内核（`--features gpu` 构建） | `trit-gpu bench --trits N` |
-| `trit-count` | 三值表达式精确模型计数：dual-rail CNF + DPLL + 组件缓存；约束计数（`--constraint` 可重复）；策略文件计数（`--policy` 展开 definitions、assumptions 当约束）；DPLL / 穷举 / BDD 三方对拍（≤12 变量穷举，`--big` 在 n>12 只做 DPLL vs BDD）；`--fuzz-cnf` 跳过编码器直接喂随机子句集对 `2^n` 穷举（实测 nvars 到 20：20 例全对，最慢一次 191µs） | `trit-count --expr "a & b" --constraint a` / `trit-count --policy examples/policy.json` / `trit-count --big 24` / `trit-count --fuzz-cnf --nvars 20` / `cargo run -p trit-count --example matching_family` |
+| `trit-graph` | 三态结构基础：稠密/CSR 三态图、超图、树分解容器、议会、1-WL、图核、PageRank、TriMPNN、端到端三态分类 | 库（无二进制） |
 | `trit-ops` | 三值推理算子（双导轨掩码 / tryte 查表 / 自动选核）：流式 15.8× f32、0.2 B/参数 | `bench`（`crates/trit-ops`） |
+| `trit-parts` | 部件平面头（k 位三进制 + valid）的 GPU 实现：训练、验证与深度/提取族读数 | `parts-verify` / `parts-depth-verify` |
 | `trit-texture` | TT3/TTX 三值纹理容器：8×8 块 2.125 bpp、GF(3) CRC-16、CPU/GPU 解码；TTX3 万级档案（瓦片化/层级混搭/流式解码，10240² 基面） | `trit-texture` |
 | `trit-unsafe` | 用 K3 审 unsafe：Safe / Unknown / Risky 按 crate 合成；17 类高危形态 + extern 声明块 | `trit-unsafe` |
 | `trit-redteam` | 产物红队：硬化/泄密/双导轨/fuzz/侧信道 + 前端/后端产物识别（wasm/html = 前端，PE/ELF = 后端） | `trit-redteam` |
 | `trit-procscan` | 进程行为扫描 + 网络面检查（地址分类/外联/监听面/扇出/SYN_SENT/前后端角色） + 动态追溯/追踪（ppid 链回溯 + 后代子树 + 证据绑定） + MCP 配置优化（非管理员可用的证据面） | `trit-procscan` |
 | `trit-gamescan` | 游戏环境扫描 Phase 0：Ternary 三值判定、结构/物理 oracle、sphere/capsule/box 穿模、受控污染、checkpoint 回滚与恢复混沌测试 | 库（无引擎/MCP 依赖） |
 | `trit-re` | PE/ELF 逆向台账：节熵 / 导入能力面 / 叠加段 / PDB 与编译器指纹 / build-id；导入函数交叉引用（x86/x86-64/ARM64 的 IAT 与 ELF PLT/GOT，三值）、函数边界（`.pdata` / 符号表 / `.eh_frame` / `.debug_frame`）、函数级归属与同函数能力共现 → 三值判定 + 四值冲突，JSONL 输出 | `trit-re triage <PATH> [--jsonl] [--xref] [--functions]` |
-| `trit-lsp` | `.tri` 语言服务器：诊断 / 悬停真值表 / 补全 / 文档符号 / 定义-引用-高亮-重命名 / 矛盾律-排中律-语义分歧深层诊断 | `trit-lsp` |
 | `trit-train` | 三值训练 M0：STE 三变体 + 每行 scale + 位平面 ALU | `train-bench` |
-| `trit-graph` | 三态结构基础：稠密/CSR 三态图、超图、树分解容器、议会、1-WL、图核、PageRank、TriMPNN、端到端三态分类 | 库（无二进制） |
+| `trit-lsp` | `.tri` 语言服务器：诊断 / 悬停真值表 / 补全 / 文档符号 / 定义-引用-高亮-重命名 / 矛盾律-排中律-语义分歧深层诊断 | `trit-lsp` |
 | `trit-wspace` | 三值权重空间编程：可 diff 的 WSP1 权重 IR、事务式补丁与逐位回滚、原子序列/条件分支脚本、无梯度最小修补（小网络完备 BFS、大网络束搜索）、单点/两编辑/三组合提议（实测失配变化排序）、单样本解释、行级消融探针（大网读取，pilot 消融校准选行）、行内 trit 定位（按位置活跃度选点）、三值任务向量（多任务投票合并）、候选直用、哈希链审计日志（权重链 + 行为链，验链 + 重放，分片 header + oracle 表，流式校验/重放，检查点续放）、隐藏单元置换对齐合并、三值任务向量投票合并（可选消隐藏置换）；CLI + MCP 十六工具 | `trit-wspace read/verify/task-merge/script/patch/repair/propose/explain/probe/localize/audit/shard/audit-shards/replay` / `trit-wspace mcp` |
 
 ### 拆出去的仓
