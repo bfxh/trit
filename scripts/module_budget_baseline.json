@@ -3183,6 +3183,10 @@
       "lines": 189
     },
     {
+      "file": "crates/trit-wspace/examples/grouped_binary_gain.rs",
+      "lines": 122
+    },
+    {
       "file": "crates/trit-wspace/examples/program_xor.rs",
       "lines": 88
     },
@@ -3803,6 +3807,10 @@
       "lines": 77
     },
     {
+      "file": "crates/trit-wspace/src/wsp2/grouped.rs",
+      "lines": 359
+    },
+    {
       "file": "crates/trit-wspace/src/wsp2/index.rs",
       "lines": 679
     },
@@ -4165,6 +4173,10 @@
     {
       "file": "crates/trit-wspace/tests/wsp2_extra.rs",
       "lines": 46
+    },
+    {
+      "file": "crates/trit-wspace/tests/wsp2_grouped.rs",
+      "lines": 260
     },
     {
       "file": "crates/trit-wspace/tests/wsp3.rs",

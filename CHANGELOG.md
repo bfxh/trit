@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Added（WSP2G 分组三值二进制容器——把 0.75× 修成 **2.37×**）
+
+- 新模块 `crates/trit-wspace/src/wsp2/grouped.rs`：WSP2 `version=3` 的分组段
+  （`to_wsp2_grouped` / `from_wsp2_grouped`）。每层
+  `rows/cols/flags/group_size/group_count/gbits + scales(组数) + bias_f32(行)
+  + trits 2bit + bias 2bit + groups`，**组号按 `ceil(log2 组数)` 位定长打包**。
+- `src/wsp2/bytes.rs`：`bits_for` / `pack_ids` / `unpack_ids`（定长位宽，含 0 位与 32 位边界）。
+- 解码侧校验：`gbits` 必须等于 `bits_for(组数-1)`（防「声明 4 位、实际塞 32 位」的假压缩）、
+  组号必须 `0..组数`、每组元素数 ≤ `group_size`、bias 的 2-bit 符号必须与 f32 同号。
+- CLI `pack-artifact` / `unpack-artifact` 自动识别 `wsp1g` ↔ WSP2G；`unpack` 拒绝多层容器
+  （`wsp1g` 只表示单层），`--rle/--huffman` 对分组工件判错（那是 WSP3/4 的整段压缩）。
+- **实测**（真实 MiniLM-L6-v2，6 层 × 6 线性权重，36 张量、10,616,832 元素）：
+
+  | G | bit/权重 | WSP1G 文本 | WSP2G 二进制 | 文本→二进制 |
+  |---|---|---|---|---|
+  | 64 | 15.90 | 0.67× | 2.01× | 3.01× |
+  | 256 | **13.53** | **0.75×** | **2.37×** | **3.17×** |
+
+  f32 42,467,328 B；G=256：WSP1G 56,925,133 B（与 `docs/WSP-SUMMARY.md` §6.2 逐字节一致）、
+  WSP2G 17,949,399 B；**四个 G 的往返全部逐位一致**。
+- 新示例 `examples/grouped_binary_gain.rs`（复算命令即上方读数）。
+- `tests/wsp2_grouped.rs`（9 条）：往返逐位、bias 前向一致、位宽按**文件字节**核算、
+  文本 vs 二进制、篡改校验和、截断、越界组号、CLI 端到端、多层容器拒绝。
+- **未做**：WSP2G 的行块随机读（`BlockIndex` 目前只认 v1/v2）。
+
 ### Added（`rank_one`：ROME 式秩一编辑——**三值化后仍保留 98.8%–99.9% 方向**）
 
 - 新模块 `crates/trit-wspace/src/rank_one.rs`：`rank_one_update`（最小范数秩一更新，

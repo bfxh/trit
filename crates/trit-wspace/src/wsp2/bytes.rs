@@ -3,7 +3,7 @@
 use crate::error::{Error, Result};
 
 /// 把 trit 序列按 2 bit 打包（`-1/0/+1 → 0/1/2`）。
-pub(super) fn pack_trits(values: &[i8]) -> Vec<u8> {
+pub(crate) fn pack_trits(values: &[i8]) -> Vec<u8> {
     let mut out = vec![0u8; values.len().div_ceil(4)];
     for (index, &value) in values.iter().enumerate() {
         let code = match value {
@@ -18,7 +18,7 @@ pub(super) fn pack_trits(values: &[i8]) -> Vec<u8> {
 }
 
 /// 解包 `count` 个 trit；2-bit 值 3 判非法。
-pub(super) fn unpack_trits(bytes: &[u8], count: usize) -> Result<Vec<i8>> {
+pub(crate) fn unpack_trits(bytes: &[u8], count: usize) -> Result<Vec<i8>> {
     let mut out = Vec::with_capacity(count);
     for index in 0..count {
         let code = (bytes[index / 4] >> ((index % 4) * 2)) & 0b11;
@@ -43,7 +43,7 @@ pub(crate) fn fnv(bytes: &[u8]) -> u64 {
 }
 
 /// 从 `pos` 取 `len` 字节并前进；越界报截断。
-pub(super) fn take<'a>(bytes: &'a [u8], pos: &mut usize, len: usize) -> Result<&'a [u8]> {
+pub(crate) fn take<'a>(bytes: &'a [u8], pos: &mut usize, len: usize) -> Result<&'a [u8]> {
     let end = pos
         .checked_add(len)
         .ok_or_else(|| Error::Wire("WSP2 偏移溢出".into()))?;
@@ -59,19 +59,19 @@ pub(super) fn take<'a>(bytes: &'a [u8], pos: &mut usize, len: usize) -> Result<&
 }
 
 /// 读小端 u16。
-pub(super) fn read_u16(bytes: &[u8], pos: &mut usize) -> Result<u16> {
+pub(crate) fn read_u16(bytes: &[u8], pos: &mut usize) -> Result<u16> {
     let slice = take(bytes, pos, 2)?;
     Ok(u16::from_le_bytes([slice[0], slice[1]]))
 }
 
 /// 读小端 u32。
-pub(super) fn read_u32(bytes: &[u8], pos: &mut usize) -> Result<u32> {
+pub(crate) fn read_u32(bytes: &[u8], pos: &mut usize) -> Result<u32> {
     let slice = take(bytes, pos, 4)?;
     Ok(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
 }
 
 /// 读小端 f32。
-pub(super) fn read_f32(bytes: &[u8], pos: &mut usize) -> Result<f32> {
+pub(crate) fn read_f32(bytes: &[u8], pos: &mut usize) -> Result<f32> {
     let slice = take(bytes, pos, 4)?;
     Ok(f32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
 }

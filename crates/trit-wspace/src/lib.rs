@@ -167,6 +167,6 @@ pub use tune::{
     tune_task_weights_argmax, tune_task_weights_hamming, tune_task_weights_metric,
     tune_task_weights_readout, tune_task_weights_with,
 };
-pub use wsp2::{from_wsp2, to_wsp2};
+pub use wsp2::{from_wsp2, from_wsp2_grouped, is_grouped_wsp2, to_wsp2, to_wsp2_grouped};
 pub use wsp3::{from_wsp3, rle_decode, rle_encode, to_wsp3};
 pub use wsp4::{from_wsp4, huffman_decode, huffman_encode, to_wsp4};

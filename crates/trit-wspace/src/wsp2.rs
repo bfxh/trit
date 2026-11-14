@@ -1,7 +1,5 @@
-//! WSP2：WSP1 的 2-bit 压缩容器（二进制）。
-//! 真实模型的大张量用 WSP1 文本会膨胀到数十 MB；WSP2 把 trit 压到 2 bit
-//! (`-1/0/+1 → 0/1/2`，3 非法)、bias 同样打包、scale 保持 f32，末尾带 FNV-1a。
-//! 它是缓存/传输格式，解包后回到 WSP1。
+//! WSP2：WSP1 的 2-bit 压缩容器（二进制）——trit/bias 各 2 bit、scale 保持 f32、末尾 FNV-1a。
+//! 版本 3 是**分组容器 WSP2G**（见 `crate::wsp2::grouped`），布局与入口都不同。
 //!
 //! 布局（小端）：`magic "WSP2" | version u8 | nlayers u16`；每层
 //! `rows/cols u32 | flags u8 | scales | [bias_f32] | trits 2bit | bias 2bit`；末尾 `checksum u64`。
@@ -131,6 +129,8 @@ pub(crate) mod bytes;
 
 use bytes::*;
 
+pub(crate) mod grouped;
 mod index;
 mod index_io;
+pub use grouped::{from_wsp2_grouped, is_grouped_wsp2, to_wsp2_grouped};
 pub use index::{BlockIndex, DEFAULT_BLOCK_ROWS, LayerIndex, RowBlock};
