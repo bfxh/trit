@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added（genre 分类头多 seed + 预算扫描：正结果可复现，幅度落在噪声内）
+
+- `classifier_genre_repair` 加 `--seed`（示例内分层重划分，`split.rs` 子模块），一次导出可跑多 seed。
+- 3 seed（max-edits 8）：train **+38.3 ± 9.3**、test **+4.0 ± 2.2**（3/3 为正）。
+- 预算扫描（seed 7）：4/8/14 步 → train +33/+51/+64；**14 步后无正收益候选**（局部最优）。
+- **结论**：正结果可复现，但 test +4/844 ≈ +0.47 点落在 §10 的 1.7 点 CI 半宽内，
+  还不足以说统计显著。
+
 ### Added（genre 三分类头上的推理式编辑：train +38，test +7——第一个正结果）
 
 - 新脚本 `scripts/export_genre_samples.py`：从 STS test 导出 `genre` 三分类样本

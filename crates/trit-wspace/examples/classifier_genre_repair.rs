@@ -1,17 +1,12 @@
-//! genre 三分类头上的推理式编辑：类质心初始化 + 行级探针 + 行内贪心。
-//!
-//! 任务比 STS pair 判定简单（3 类、1152 个 trit），用来回答「推理式编辑的上限」：
-//! - 学生 = 单层 `GroupedLayer`（3×384，每类一行），输入是 f32 句向量，**argmax 判定**；
-//! - 初始化 = 每类训练句向量的类质心，三值化 + 组 scale（无梯度）；
-//! - 编辑 = 训练集上贪心搜「改一个 trit 能多对几条」，同时记录测试集准确率（看是否过拟合）。
-//!
-//! ```bash
-//! cargo run --release -p trit-wspace --example classifier_genre_repair -- \
-//!   --samples genre-samples.json --group 384 --max-edits 8
-//! ```
+//! genre 三分类头上的推理式编辑：类质心初始化 + 训练集贪心（同时记录测试集）。
+//! 学生 = 单层 `GroupedLayer`（3×384，argmax），输入 f32 句向量；初始化 = 类质心三值化。
+//! 用法：`--samples genre-samples.json --group 384 --max-edits 8`（读数见 WSP-SUMMARY §17–18）。
 
 use serde_json::{Value, json};
 use trit_wspace::grouped::GroupedLayer;
+
+#[path = "classifier_genre_repair/split.rs"]
+mod split;
 
 const CLASSES: usize = 3;
 
@@ -19,6 +14,7 @@ struct Args {
     samples: String,
     group: usize,
     max_edits: usize,
+    seed: u64,
     out: Option<String>,
 }
 
@@ -27,6 +23,7 @@ fn parse_args() -> Args {
         samples: String::new(),
         group: 384,
         max_edits: 8,
+        seed: 7,
         out: None,
     };
     let mut it = std::env::args().skip(1);
@@ -36,6 +33,7 @@ fn parse_args() -> Args {
             "--samples" => args.samples = next(),
             "--group" => args.group = next().parse().expect("group"),
             "--max-edits" => args.max_edits = next().parse().expect("max-edits"),
+            "--seed" => args.seed = next().parse().expect("seed"),
             "--out" => args.out = Some(next()),
             other => panic!("未知参数 {other}"),
         }
@@ -44,6 +42,7 @@ fn parse_args() -> Args {
     args
 }
 
+#[derive(Clone)]
 struct Sample {
     vector: Vec<f32>,
     label: usize,
@@ -156,8 +155,9 @@ fn main() {
         serde_json::from_str(&std::fs::read_to_string(&args.samples).expect("samples"))
             .expect("json");
     let cols = payload.get("cols").and_then(Value::as_u64).expect("cols") as usize;
-    let train = parse_samples(payload.get("train").expect("train"));
-    let test = parse_samples(payload.get("test").expect("test"));
+    let mut all = parse_samples(payload.get("train").expect("train"));
+    all.extend(parse_samples(payload.get("test").expect("test")));
+    let (train, test) = split::split(&all, args.seed);
     let centroids = centroids(&train, cols);
     let layer = GroupedLayer::quantize(CLASSES, cols, &centroids, &[0.0; CLASSES], args.group)
         .expect("quantize");
@@ -171,7 +171,6 @@ fn main() {
 
     for _ in 0..args.max_edits {
         let mut best: Option<(usize, usize, i8, usize, usize)> = None;
-        // 行级探针 + 行内贪心合并成「逐行逐列试 trit」；行级消融只用于排序。
         let mut row_gain = [0isize; CLASSES];
         for (row, gain) in row_gain.iter_mut().enumerate() {
             let saved: Vec<i8> = (0..cols)
@@ -226,6 +225,7 @@ fn main() {
         "samples": {"train": train.len(), "test": test.len()},
         "classes": CLASSES,
         "group": args.group,
+        "seed": args.seed,
         "baseline": {
             "train_correct": base_train,
             "train_accuracy": base_train as f64 / train.len() as f64,
