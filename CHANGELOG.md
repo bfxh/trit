@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（真实激活校准：`real_activations` + `bias_e2e --activations`）
+
+- 新示例 `examples/real_activations.rs`：从 `vocab.txt` 的真实词走 MiniLM embedding 前向，
+  导出第 0 层 query 段的真实激活（256×384，JSON）。
+- `examples/bias_e2e.rs` 新增 `--activations <json>`：列数匹配的段用真实激活，其余段仍随机。
+- 第 0 层 query 段读数：真实激活下 `zero`/`trit` 的 rel_l2 比随机输入**更高**
+  （0.6531 vs 0.5771、0.6044 vs 0.5527），`f32` bias 反而**更低**（0.4526 vs 0.4943）——
+  推翻了「随机输入单调低估」的假设。
+- 真实激活 std **0.2342** vs `uniform(-1,1)` 的 0.5774（尺度只有 41%）。
+- 边界：只覆盖第 0 层 query 段；本机缺 STS 语料，激活来自真实词表；6 层级联未做。
+
 ### Added（格式注册清单：`formats` 命令 + `formats::registry`）
 
 - 新模块 `crates/trit-wspace/src/formats.rs`：10 种格式的统一清单

@@ -3003,6 +3003,10 @@
       "lines": 417
     },
     {
+      "file": "crates/trit-wspace/examples/bias_e2e_real.rs",
+      "lines": 468
+    },
+    {
       "file": "crates/trit-wspace/examples/bias_error.rs",
       "lines": 112
     },
@@ -3197,6 +3201,10 @@
     {
       "file": "crates/trit-wspace/examples/rank_one_ternary.rs",
       "lines": 117
+    },
+    {
+      "file": "crates/trit-wspace/examples/real_activations.rs",
+      "lines": 116
     },
     {
       "file": "crates/trit-wspace/examples/real_analysis.rs",
