@@ -2963,6 +2963,18 @@
       "lines": 212
     },
     {
+      "file": "crates/trit-wspace/examples/adversarial_train/attacker.rs",
+      "lines": 114
+    },
+    {
+      "file": "crates/trit-wspace/examples/adversarial_train/main.rs",
+      "lines": 440
+    },
+    {
+      "file": "crates/trit-wspace/examples/adversarial_train/metrics.rs",
+      "lines": 104
+    },
+    {
       "file": "crates/trit-wspace/examples/artifact_guard/main.rs",
       "lines": 261
     },
