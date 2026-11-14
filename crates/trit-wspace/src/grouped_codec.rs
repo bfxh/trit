@@ -168,7 +168,10 @@ pub fn from_wspg(text: &str) -> Result<GroupedLayer> {
             continue;
         }
     }
-    let layer = GroupedLayer::from_trits(rows, cols, &trits, &groups, &scales, &bias)?;
+    // `from_trits` 只能从组数反推 `group_size`（组数 ≠ 组大小），这里用文本里记录的
+    // 准确值覆盖——否则 `body` 与写盘时不一致，校验和会误报。
+    let mut layer = GroupedLayer::from_trits(rows, cols, &trits, &groups, &scales, &bias)?;
+    layer.group_size = group_size;
     if let Some(want) = expected_checksum {
         let got = checksum(&layer);
         if got != want {

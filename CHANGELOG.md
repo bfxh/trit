@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Added（闭环验证：存→读→行为不变成立，但 WSP1G 实测 **0.75× 负压缩**）
+
+- 新示例 `examples/classifier_sts_wspg.rs`：把 MiniLM 6 层的 36 个线性权重量化成
+  `GroupedLayer`、**真正写盘成 WSP1G**、读回、装回 BERT、再跑 STS——把这一路所有结论
+  串成一条可执行链路。
+- 读数（300 对、group=256）：
+
+  | 指标 | 值 |
+  |---|---|
+  | baseline Spearman | 0.933742 |
+  | quantized | 0.934604 |
+  | **roundtrip** | **0.934604** |
+  | `roundtrip − quantized` | **+0.000000** |
+  | `roundtrip_bit_identical` | **true** |
+
+- **"存→读→行为不变"成立**：读回后与量化层逐位一致，STS 分数完全相同。量化本身 +0.000862
+  （噪声内），与之前 group256 几乎无损的结论一致。
+- **但文件是 0.75×（负压缩）**：f32 42,467,328 B vs WSP1G **56,925,133 B**。原因：trit 占
+  1 字节/元素、组号占 2–4 字符/元素，两者相加**超过 f32 的 4 字节**。
+- 这彻底坐实 `wsp1` 的定位：**它是"可 diff / 可复算 / 可校验"的源码格式，不是存储格式**。
+  三值的压缩优势只在二进制实现里存在（2.4×），落到可读文本是负的。
+- **顺带修掉一个真 bug**：`from_trits` 用 `scales.len()`（**组数**）当 `group_size`
+  （**组大小**），导致写盘的 `group 256` 读回变成 `group 576`，`body` 不一致 ⇒ **校验和
+  误报**。`from_wspg` 改用文本里记录的准确值覆盖。这个 bug 是**校验和机制自己抓到的**——
+  上一轮修好"十进制解析十六进制"之后，它才第一次真正生效。
+
 ### Added（`grouped_repair`：分组尺度下的精确补丁——**编辑效果依赖分组**）
 
 - 新模块 `crates/trit-wspace/src/grouped_repair.rs`：给 `GroupedLayer` 提供单编辑补丁搜索
