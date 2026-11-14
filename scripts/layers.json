@@ -32,6 +32,7 @@
     "trit-schedule": "algo",
     "trit-graph": "algo",
     "trit-capacity": "algo",
+    "trit-flow": "algo",
     "trit-learn": "learn",
     "trit-wspace": "learn",
     "trit-train": "learn",

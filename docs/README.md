@@ -24,6 +24,7 @@
 | [VISUAL-PLAN.md](VISUAL-PLAN.md) | 光影 / 风格 / 视频提取 / 画质 / UI 的扩展计划 |
 | [PRIVACY-PLAN.md](PRIVACY-PLAN.md) | 隐私存储（后期）：威胁模型、容器与挂载器路线、批量转存、硬边界 |
 | [DATA-CLEANING-PLAN.md](DATA-CLEANING-PLAN.md) | 数据清洗 × 三进制：九条方向、主线 trit-clean、底层缺口 |
+| [FLOW.md](FLOW.md) | 扩散/漂移共用采样骨架：`Field` 接口、积分器、批量执行器与读数 |
 | [MULTI-CHIP.md](MULTI-CHIP.md) | 多芯片后端（x86 / ARM / 移动 SoC）设计 |
 
 ## 结果与读数（自动生成目录 + 手写结论）

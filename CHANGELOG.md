@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（trit-flow：扩散与漂移共用一套采样骨架 + 批量执行器）
+
+- 新 crate `trit-flow`（algo 层，`publish = false`）：把「生成模型的一步」抽成
+  `Field::eval(x, t | cond) → v`，扩散（DDIM η=0）与流匹配（rectified flow）因此共用
+  同一条采样路径；`X0ToVelocity` 桥做 `v = (√ᾱ·x − x̂₀)/√(1−ᾱ)` 的换算（与定义式逐位对拍）。
+- 积分器：`Euler` / `Midpoint` / `Heun`；`t` 与 `Δt` **按样本给**，不同步数的请求同批推进。
+- 执行器：常驻 `Pool`（`std::thread` + `mpsc`，不拉外部运行时）+ 按方案分组 + 按批切块；
+  在线与离线走同一路径（离线 = 全部 0 ms 到达）；读数含 p50/p90/p99、req/s、样本·步/秒。
+- 对拍：18 个测试全绿——批 = 单请求、并行 = 串行、混合步数同批、在线 = 离线逐位一致；
+  Euler 一阶（误差比 1.7–2.3）、Midpoint/Heun 二阶（3.4–4.6）；桥与定义式互逆。
+- 图 → 3D 读数（8³ 体素 = 512 维，MLP 512→64→512，64 请求 × 32 步）：串行 p50 42.4 ms /
+  1510 req/s；8 线程 8.3 ms / 7686 req/s（5.1×）；批单独几乎无收益（场是逐样本循环）。
+  理想漂移场 64 步终点 L2 = 1.175e-6。
+- 缺口：扩散侧 `t→0` 端 stiff（均匀 t 的一阶 Euler 512 步 L2 仍 0.636，需末步取 x̂₀ 或隐式积分器）；
+  无服务面（HTTP / 超时 / 鉴权）；GPU 后端未接（一次 `eval` 对应一次 kernel 启动才是批收益来源）。
+  口径与缺口表见 [FLOW.md](docs/FLOW.md)。
+
 ### Added（三 trit 组合：边际收益递减，仍有 41% 不可修）
 
 - 新示例 `examples/genre_editability_triple.rs`：对单/双都不可修的错样本枚举**三 trit 组合**；

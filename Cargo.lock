@@ -1955,6 +1955,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "trit-flow"
+version = "0.12.0"
+dependencies = [
+ "trit-bench",
+ "trit-fuzz",
+]
+
+[[package]]
 name = "trit-fuzz"
 version = "0.12.0"
 dependencies = [

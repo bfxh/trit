@@ -1,0 +1,13 @@
+[package]
+name = "trit-flow"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "统一生成模型步进接口（扩散 / 流匹配 / 任意速度场）与批量采样执行器（trit 0.12）"
+publish = false
+
+[dependencies]
+trit-fuzz.workspace = true
+trit-bench.workspace = true
