@@ -3051,6 +3051,10 @@
       "lines": 228
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_sts_curve.rs",
+      "lines": 180
+    },
+    {
       "file": "crates/trit-wspace/examples/classifier_sts_probe.rs",
       "lines": 493
     },
