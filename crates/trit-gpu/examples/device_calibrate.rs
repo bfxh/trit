@@ -22,12 +22,22 @@
 //!   --seed 7 --out D:/KF/_scratch/device-profile.json
 //! ```
 
+#[path = "device_adapt/cpu_measure.rs"]
+mod cpu_measure;
 #[path = "device_adapt/device.rs"]
 mod device;
+#[path = "device_adapt/fit.rs"]
+mod fit;
+#[path = "device_adapt/measured.rs"]
+mod measured;
+#[path = "device_adapt/npu_sim.rs"]
+mod npu_sim;
 #[path = "device_adapt/plan.rs"]
 mod plan;
 #[path = "device_adapt/policy.rs"]
 mod policy;
+#[path = "device_adapt/report.rs"]
+mod report;
 
 use std::collections::BTreeMap;
 use std::hint::black_box;
@@ -40,6 +50,7 @@ use trit_gpu::matmul::{self, MatmulReport};
 use device::{Device, DeviceClass};
 use plan::{PLAN_COUNT, Plan, PlanKind, Shape};
 use policy::{Chooser, Fixed, Heuristic, Learned, RandomChooser};
+use report::{MeasuredOracle, evaluate_measured, print_eval, print_shape_choice};
 
 const CAL_SHAPE: Shape = Shape::new(512, 4096, 512);
 const VALID_SHAPES: [Shape; 3] = [
@@ -283,19 +294,6 @@ fn measured_latencies(shape: Shape, report: &MatmulReport) -> [Option<f64>; PLAN
     out
 }
 
-fn best_of(latencies: &[Option<f64>; PLAN_COUNT]) -> (usize, f64) {
-    let mut best = (usize::MAX, f64::INFINITY);
-    for (index, latency) in latencies.iter().enumerate() {
-        if let Some(value) = latency
-            && *value < best.1
-        {
-            best = (index, *value);
-        }
-    }
-    assert!(best.0 != usize::MAX, "至少一个计划有实测延迟");
-    best
-}
-
 struct GpuCalibration {
     device: Device,
     plans: Vec<Plan>,
@@ -353,7 +351,7 @@ fn calibrate_gpu() -> Option<GpuCalibration> {
     let (bandwidth, bandwidth_source) =
         measure_gpu_bandwidth().unwrap_or((288e9, "assumed(RTX 4060 Ti spec)".into()));
     let (units, sm_source) = sm_count(&calibration.adapter);
-    let device = Device {
+    let mut device = Device {
         name: format!("{} / {}", calibration.adapter, calibration.backend),
         class: DeviceClass::Gpu,
         ternary_ops: 1e9 / best_ternary_ns,
@@ -389,6 +387,24 @@ fn calibrate_gpu() -> Option<GpuCalibration> {
         .find(|plan| plan.kind == PlanKind::GpuF32Tiled)
     {
         target.efficiency = 1.0;
+    }
+    let measured: Vec<(Shape, [Option<f64>; PLAN_COUNT])> = reports
+        .iter()
+        .map(|(shape, report)| (*shape, measured_latencies(*shape, report)))
+        .collect();
+    if let Some(fit) = fit::fit_launch_occupancy(&mut device, &calibrated, &measured) {
+        println!(
+            "{}",
+            json!({
+                "stage": "fit",
+                "launch_us": fit.launch_us,
+                "occupancy": fit.occupancy,
+                "fit_error": (fit.fit_error * 1000.0).round() / 1000.0,
+                "holdout_before": (fit.holdout_before * 1000.0).round() / 1000.0,
+                "holdout_after": (fit.holdout_after * 1000.0).round() / 1000.0,
+                "holdout_shape": fit.holdout_shape.label(),
+            })
+        );
     }
     Some(GpuCalibration {
         device,
@@ -439,108 +455,6 @@ fn print_fidelity(stage: &str, plans: &[Plan], device: &Device, reports: &[(Shap
     }
 }
 
-struct Metrics {
-    mean: f64,
-    median: f64,
-    p90: f64,
-    exact: f64,
-    within10: f64,
-}
-
-fn evaluate_measured(
-    chooser: &mut dyn policy::Chooser,
-    device: &Device,
-    plans: &[Plan],
-    measured: &[(Shape, [Option<f64>; PLAN_COUNT])],
-) -> Metrics {
-    let mut ratios = Vec::with_capacity(measured.len());
-    let mut exact = 0usize;
-    let mut within10 = 0usize;
-    for (shape, latencies) in measured {
-        let (_, best) = best_of(latencies);
-        let chosen = chooser.choose(device, *shape, plans);
-        let chosen_latency = latencies[chosen].unwrap_or(f64::INFINITY);
-        let ratio = chosen_latency / best;
-        ratios.push(ratio);
-        if ratio <= 1.0 + 1e-9 {
-            exact += 1;
-        }
-        if ratio <= 1.10 {
-            within10 += 1;
-        }
-    }
-    let total = ratios.len().max(1) as f64;
-    let mean = ratios.iter().sum::<f64>() / total;
-    let mut sorted = ratios;
-    sorted.sort_by(|a, b| a.partial_cmp(b).expect("有限比值"));
-    let median = sorted[sorted.len() / 2];
-    let p90 = sorted[(sorted.len() * 9 / 10).min(sorted.len() - 1)];
-    Metrics {
-        mean,
-        median,
-        p90,
-        exact: exact as f64 / total,
-        within10: within10 as f64 / total,
-    }
-}
-
-fn print_eval(policy_name: &str, metrics: &Metrics) {
-    println!(
-        "{}",
-        json!({
-            "stage": "real_eval",
-            "policy": policy_name,
-            "mean_ratio": (metrics.mean * 1000.0).round() / 1000.0,
-            "median_ratio": (metrics.median * 1000.0).round() / 1000.0,
-            "p90_ratio": (metrics.p90 * 1000.0).round() / 1000.0,
-            "exact": (metrics.exact * 1000.0).round() / 1000.0,
-            "within_10": (metrics.within10 * 1000.0).round() / 1000.0,
-        })
-    );
-}
-
-fn print_shape_choice(
-    policy_name: &str,
-    plans: &[Plan],
-    measured: &[(Shape, [Option<f64>; PLAN_COUNT])],
-    mut choose: impl FnMut(Shape) -> usize,
-) {
-    for (shape, latencies) in measured {
-        let (best_index, best_latency) = best_of(latencies);
-        let chosen = choose(*shape);
-        let chosen_latency = latencies[chosen].unwrap_or(f64::INFINITY);
-        println!(
-            "{}",
-            json!({
-                "stage": "real_shape",
-                "policy": policy_name,
-                "shape": shape.label(),
-                "chosen": plans[chosen].kind.name(),
-                "chosen_ms": (chosen_latency * 1e3 * 1000.0).round() / 1000.0,
-                "best": plans[best_index].kind.name(),
-                "best_ms": (best_latency * 1e3 * 1000.0).round() / 1000.0,
-                "ratio": ((chosen_latency / best_latency) * 1000.0).round() / 1000.0,
-            })
-        );
-    }
-}
-
-struct MeasuredOracle<'a> {
-    measured: &'a [(Shape, [Option<f64>; PLAN_COUNT])],
-}
-
-impl policy::Chooser for MeasuredOracle<'_> {
-    fn choose(&mut self, _device: &Device, shape: Shape, _plans: &[Plan]) -> usize {
-        let latencies = &self
-            .measured
-            .iter()
-            .find(|(candidate, _)| *candidate == shape)
-            .expect("oracle 查找已测形状")
-            .1;
-        best_of(latencies).0
-    }
-}
-
 fn vram() -> serde_json::Value {
     match trit_capacity::probe_gpu() {
         trit_capacity::Probe::Known(memory) => json!({
@@ -571,6 +485,11 @@ fn main() {
             "assumed": {"cache": 32e6, "launch_us": 0.5, "occupancy": 0.9},
         })
     );
+
+    let mut all_shapes = vec![CAL_SHAPE];
+    all_shapes.extend(VALID_SHAPES);
+    cpu_measure::run(&cpu.device, cpu.cores, &all_shapes);
+    npu_sim::run(&all_shapes);
 
     let Some(gpu) = calibrate_gpu() else {
         println!(
@@ -644,6 +563,7 @@ fn main() {
     let mut chooser = RandomChooser::new(args.seed ^ 0x5151);
     print_eval(
         "random",
+        "measured",
         &evaluate_measured(&mut chooser, &gpu.device, &default_plans, &measured),
     );
     let mut chooser = MeasuredOracle {
@@ -651,16 +571,19 @@ fn main() {
     };
     print_eval(
         "oracle_measured",
+        "measured",
         &evaluate_measured(&mut chooser, &gpu.device, &default_plans, &measured),
     );
     let mut chooser = policy::Oracle;
     print_eval(
         "model_oracle_default",
+        "measured",
         &evaluate_measured(&mut chooser, &gpu.device, &default_plans, &measured),
     );
     let mut chooser = Heuristic;
     print_eval(
         "heuristic",
+        "measured",
         &evaluate_measured(&mut chooser, &gpu.device, &default_plans, &measured),
     );
     let mut chooser = Fixed {
@@ -668,6 +591,7 @@ fn main() {
     };
     print_eval(
         "class_fixed",
+        "measured",
         &evaluate_measured(&mut chooser, &gpu.device, &default_plans, &measured),
     );
     {
@@ -676,6 +600,7 @@ fn main() {
         };
         print_eval(
             "learned_clean",
+            "measured",
             &evaluate_measured(&mut chooser, &gpu.device, &default_plans, &measured),
         );
     }
@@ -688,8 +613,27 @@ fn main() {
     });
 
     if let Some(path) = args.out {
-        let text = serde_json::to_string_pretty(&gpu.device).expect("档案序列化");
-        std::fs::write(&path, text).expect("写设备档案");
+        let mut shapes = BTreeMap::new();
+        for (shape, report) in &gpu.reports {
+            let latencies = measured_latencies(*shape, report);
+            let mut entries = BTreeMap::new();
+            for (index, latency) in latencies.iter().enumerate() {
+                if let Some(seconds) = latency {
+                    entries.insert(gpu.plans[index].kind.name().to_string(), *seconds);
+                }
+            }
+            shapes.insert(shape.label(), entries);
+        }
+        let mut sources = BTreeMap::new();
+        sources.insert("bandwidth".to_string(), gpu.bandwidth_source.clone());
+        sources.insert("sm".to_string(), gpu.sm_source.to_string());
+        sources.insert("calibration_shape".to_string(), CAL_SHAPE.label());
+        let profile = measured::MeasuredProfile {
+            device: gpu.device.clone(),
+            shapes,
+            sources,
+        };
+        profile.save(&path);
         println!("{}", json!({"stage": "profile_written", "path": path}));
     }
     println!(

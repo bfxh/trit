@@ -125,9 +125,50 @@
     19.5%。另一次同 seed 运行 heuristic 1.013 < learned 1.020，**排序会被
     测量噪声翻转**；两者互有胜负，不能宣称学习策略全面胜出。
 - **关键发现**：合成训练里 split-K 在留出集 0 次获胜（被 tiled/reg 支配），
-  但真机瘦长形状上 split-K 最优——这正是需要真实校准的原因。下一步应把
-  校准档案加入训练，或给 split-K 建形状相关特征；本轮未做（避免用一台
-  机器的 4 个形状反向拟合策略）。
+  但真机瘦长形状上 split-K 最优——这正是需要真实校准的原因。校准档案现已
+  能被 `device_adapt --profile` 消费并重训（§5.2）；注意那是**同一台机器
+  4 个形状的 in-sample 拟合**，不是泛化证据。
+
+## 5.2 实测档案重训 / 小形状拟合 / CPU+NPU 完整延迟（第二轮）
+
+- **档案格式**：`device_calibrate --out` 写
+  `{device, shapes:{shape:{plan:秒}}, sources}`；`device_adapt --profile <json>`
+  直接消费，旧纯 `Device` JSON 仍兼容。
+- **重训**：合成 1152 样本 + 实测档案 4 形状 × repeats。默认 **repeats=256**
+  （16/64 时策略仍选 reg，256 才学会 split-K）。真机 4 形状 **in-sample**：
+  `learned_profile` **1.000 / exact 1.0**；`learned_clean` 1.012 / exact 0.5；
+  `heuristic` 1.041 / exact 0.75。合成留出设备：clean 1.006（exact 0.958）→
+  profile **1.020**（exact 0.927）——用 1024 条重复真机样本换来真机 split-K
+  修正，合成留出有小幅代价。**真机评估是 in-sample，不是泛化证据。**
+- **小形状拟合**：GPU 设备级 launch/occupancy 网格搜索（拟合 3 形状、留出
+  瘦长形状）：launch **12µs**、occupancy 1.0；留出误差 **0.326→0.265**；
+  320³ model/measured 从 0.44→**0.91**，但校准形状 1.06→1.13、768³
+  1.23→1.32（用小形状换中/大形状的折中）。CPU 侧拟合 launch 24µs，留出
+  0.416→0.415（几乎无效）。
+- **CPU 完整计划延迟**（24 线程真实 matmul，只计内核循环，不含打包）：
+
+  | 形状 | cpu_u64 | cpu_simd |
+  |---|---:|---:|
+  | 512×4096×512 | 6.858 ms | 15.319 ms |
+  | 768³ | 3.204 ms | 5.483 ms |
+  | 320³ | 0.753 ms | 1.305 ms |
+  | 64×2048×2048 | 2.108 ms | 2.277 ms |
+
+  校准后效率 cpu_u64=1.0、cpu_simd=**0.448**——当前实现里 SIMD 反而更慢
+  （每个 dot 4 次 popcount 调用 + 临时缓冲；backend 是 **popcnt** 不是
+  AVX512）。CPU 模型保真 1.06 / 1.11 / 0.37 / 1.36；小形状仍低估。
+- **NPU**：本机/本仓没有 NPU 后端，只能给模型值（`measured=false`）：
+  edge 锚点 512×4096×512 0.233ms、768³ 0.105、320³ 0.021、瘦长 0.067；
+  datacenter 锚点 0.047 / 0.025 / 0.009 / 0.018。**不是实测，不能当 NPU
+  性能结论。**
+- **复现**：
+
+  ```bash
+  cargo run --release -p trit-gpu --features gpu --example device_calibrate -- \
+    --seed 7 --out device-profile.json
+  cargo run --release -p trit-gpu --example device_adapt -- \
+    --seed 7 --profile device-profile.json --profile-repeats 256
+  ```
 
 ## 6. 过程修正（对后续有用）
 
@@ -147,7 +188,8 @@
 
 - **仿真不是真机**：主体设备参数是合成的；§5.1 只校准了本机 RTX 4060 Ti
   + CPU 一次，CPU/NPU 的完整计划延迟、多 GPU、多机迁移均未验证。
-  校准档案写盘（`--out`）了，但 `device_adapt` 尚未接 `--profile` 消费它。
+  校准档案写盘（`--out`）后可由 `device_adapt --profile` 消费；CPU 完整计划
+  延迟已测，NPU 仍只有模型值（§5.2）。
 - 只做**单算子 matmul**；DAG 融合、流水线、多设备异构调度、功耗/热约束未做。
 - 计划集固定 8 个，未做 tile/精度/线程数的细粒度 autotuning。
 - 校准只有 1 个 GPU 形状点（512×4096×512），CPU/NPU 没有实测锚点。
