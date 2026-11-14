@@ -23,6 +23,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import hashlib
 import json
 import pathlib
@@ -42,13 +43,21 @@ SECRET = re.compile(
     r"|sk-[A-Za-z0-9]{10,}|AKIA[0-9A-Z]{12,}|Bearer\s+[A-Za-z0-9._\-]{10,})"
 )
 
-HEADER = (
-    "# 交接账本快照（脱敏，只读）\n\n"
-    "> **这是生成物，别手改。** 正本在仓外（多会话共用的 `_handoff/LEDGER.md`），\n"
-    "> 由 `python scripts/sync_handoff_snapshot.py` 生成。只保留 `tech_collide` 判定需要的字段：\n"
-    "> 编号、开/关、标题、负责会话。正文叙述与本机绝对路径已丢弃/替换。\n"
-    "> 快照过期时 `python scripts/sync_handoff_snapshot.py --check` 会报。\n\n"
+HEADER_TAIL = (
+    "> **这是生成物，别手改。** 由 `python scripts/sync_handoff_snapshot.py` 从仓外正本生成，\n"
+    "> 只保留 `tech_collide` 判定需要的字段：编号、开/关、标题、负责会话。\n"
+    "> 正文叙述与本机绝对路径已丢弃/替换。\n"
+    "> 快照超过 30 天时 `tech_collide.py` 只告警不判红；判「与正本是否一致」跑 `--check`。\n\n"
 )
+STAMP_LINE = re.compile(r"^> 生成时间：.*$", re.MULTILINE)
+
+
+def header(stamp: str) -> str:
+    return (
+        "# 交接账本快照（脱敏，只读）\n\n"
+        f"> 生成时间：{stamp}（UTC）。正本在仓外（多会话共用的 `_handoff/LEDGER.md`）。\n"
+        + HEADER_TAIL
+    )
 
 
 def sanitize(text: str) -> str:
@@ -84,8 +93,9 @@ def build(src: pathlib.Path) -> dict[str, str]:
     if not entry_lines:
         raise ValueError("LEDGER 里一条条目行都没抓到 —— 格式变了还是路径错了？失明不等于没重复")
     payload = json.loads(techmap.read_text(encoding="utf-8", errors="replace"))
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d")
     return {
-        "LEDGER.md": HEADER + "\n".join(entry_lines) + "\n",
+        "LEDGER.md": header(stamp) + "\n".join(entry_lines) + "\n",
         "CLAIMS.md": sanitize(claims.read_text(encoding="utf-8", errors="replace")),
         "TECHMAP.json": json.dumps(sanitize_deep(payload), ensure_ascii=False, indent=1) + "\n",
     }
@@ -99,10 +109,12 @@ def write(files: dict[str, str]) -> None:
 
 
 def digest(files: dict[str, str]) -> str:
+    """内容哈希。**剔除「生成时间」行**：否则跨天重跑会让 `--check` 永远报过期，
+    而它要判的是「快照与正本内容是否一致」，不是「哪天生成的」。"""
     h = hashlib.sha256()
     for name in sorted(files):
         h.update(name.encode())
-        h.update(files[name].encode())
+        h.update(STAMP_LINE.sub("", files[name]).encode())
     return h.hexdigest()[:16]
 
 

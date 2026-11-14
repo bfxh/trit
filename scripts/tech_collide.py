@@ -27,6 +27,7 @@
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import pathlib
 import re
@@ -44,6 +45,24 @@ STOPWORDS = {"ledger", "done", "note", "that", "with", "from", "see", "详见", 
 
 ENTRY_RE = re.compile(r"^- \[[ xX]\] \*\*(A[0-9]+)([^*]*)\*\*")
 OWNER_RE = re.compile(r"负责[：:]\s*([^｜|）)]+)")
+SNAPSHOT_STAMP = re.compile(r"生成时间：(\d{4}-\d{2}-\d{2})")
+STALE_DAYS = 30
+
+
+def snapshot_age(ledger_path: pathlib.Path) -> int | None:
+    """快照头部记的「生成于几天前」。不是快照（没有头部）时返回 None，不当成过期。"""
+    try:
+        head = ledger_path.read_text(encoding="utf-8", errors="replace")[:800]
+    except OSError:
+        return None
+    match = SNAPSHOT_STAMP.search(head)
+    if not match:
+        return None
+    try:
+        stamp = datetime.date.fromisoformat(match.group(1))
+    except ValueError:
+        return None
+    return (datetime.datetime.now(datetime.timezone.utc).date() - stamp).days
 
 
 def parse_entries(text: str) -> list[dict]:
@@ -268,6 +287,15 @@ def main(argv: list[str]) -> int:
             print(f"FAIL 读不到交接账本：{ledger_path} —— 不知道有没有重复登记不等于没重复")
             return 1
         findings = judge_ledger(parse_entries(ledger_path.read_text(encoding="utf-8", errors="replace"))) + findings
+        age = snapshot_age(ledger_path)
+        if age is not None:
+            if age > STALE_DAYS:
+                print(
+                    f"  警：交接账本快照已 {age} 天未同步（阈值 {STALE_DAYS} 天）"
+                    f"—— 跑 python scripts/sync_handoff_snapshot.py；本轮只告警不判红"
+                )
+            else:
+                print(f"快照生成于 {age} 天前（{STALE_DAYS} 天内不告警）")
     blocked = [message for kind, message in findings if kind == "拦"]
     print(f"同技术撞车：拦 {len(blocked)} 条｜警 {len(findings) - len(blocked)} 条")
     for kind, message in findings:

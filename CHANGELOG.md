@@ -5,11 +5,14 @@
 ### Changed（文档治理：docs 按用途归位、索引重写、口径统一、文档门接进 CI）
 
 - 文档门接进 CI：`docs-gates` job 现在跑 **6 道**——`docs_hygiene` / `doc_pointers` /
-  `model_status` / `claims_evidence` / `layers` / `tech_collide`（各带自测，共 15 步）。
+  `model_status` / `claims_evidence` / `layers` / `tech_collide`（各带自测，13 步 + checkout）。
   `tech_collide` 原先读仓外交接账本、CI 上没法跑；本轮新增**仓内脱敏快照**
-  `scripts/ledger-snapshot/`（由 `scripts/sync_handoff_snapshot.py` 生成，只保留判定需要的
-  编号/状态/标题/负责/路径/标签，本机绝对路径与 token 一律替换），门默认读快照 ⇒ CI 上真的
-  会跑；快照缺失或过期都判红（`--check` 比哈希），不做「账本在才跑」那种永远 skip 的假覆盖。
+  `scripts/ledger-snapshot/`（由 `scripts/sync_handoff_snapshot.py` 从 `_handoff/` 正本生成，
+  幂等可重跑；只保留判定需要的编号/状态/标题/负责/路径/标签，本机绝对路径 → `<local>/<末段>`、
+  用户目录 → `<local>/users`、token → `<redacted>`），门默认读快照 ⇒ CI 上真的会跑。
+  过期策略分两档：快照**缺失**判红；快照**超过 30 天未同步**只告警不判红（`tech_collide.py`
+  会打印「快照生成于 N 天前」）。要判「快照与正本内容是否一致」跑
+  `sync_handoff_snapshot.py --check`（sha256，剔除生成时间行，跨天重跑不会误报）。
 - `claims_evidence` 从「拦 21 篇、无据句 109 / 基线 76」收到 **0 拦、56 句 / 基线 56**（`--update`
   已收紧）。两条口径修正 + 30 句逐条改：`docs/review/` 退出能力面（评审快照与 `CHANGELOG.md` 同理，
   是历史叙述不是当下能力声明，-9 句）；新增 `<!-- claims-ok -->` 显式豁免标记给**规则定义段**

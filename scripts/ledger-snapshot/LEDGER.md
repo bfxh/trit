@@ -1,9 +1,10 @@
 # 交接账本快照（脱敏，只读）
 
-> **这是生成物，别手改。** 正本在仓外（多会话共用的 `_handoff/LEDGER.md`），
-> 由 `python scripts/sync_handoff_snapshot.py` 生成。只保留 `tech_collide` 判定需要的字段：
-> 编号、开/关、标题、负责会话。正文叙述与本机绝对路径已丢弃/替换。
-> 快照过期时 `python scripts/sync_handoff_snapshot.py --check` 会报。
+> 生成时间：2026-11-14（UTC）。正本在仓外（多会话共用的 `_handoff/LEDGER.md`）。
+> **这是生成物，别手改。** 由 `python scripts/sync_handoff_snapshot.py` 从仓外正本生成，
+> 只保留 `tech_collide` 判定需要的字段：编号、开/关、标题、负责会话。
+> 正文叙述与本机绝对路径已丢弃/替换。
+> 快照超过 30 天时 `tech_collide.py` 只告警不判红；判「与正本是否一致」跑 `--check`。
 
 - [ ] **A419 · 构建瘦身 + 分支膨胀治理**（2026-11-15 代码完成｜负责：本工作区助手 G4wN8sT2）
 - [x] **A418 · CI mutation 只跑改动文件的变异**（2026-11-12 完成｜负责：Reasonix 会话 20261107-141732）
