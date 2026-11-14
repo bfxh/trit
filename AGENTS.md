@@ -12,7 +12,10 @@
 ## 工程口径
 
 - 实验层 `publish = false`；单文件 ≤800 行（`python scripts/module_budget.py`，台账只减不增）。
-- 收工一条命令：`cargo test --workspace` + `python scripts/module_budget.py`。
+- 收工一条命令：`cargo test --workspace` + `python scripts/module_budget.py`
+  + `python scripts/sync_handoff_snapshot.py --check`。第三条只校验**交接账本快照的新鲜度**
+  （CI 里的 `tech_collide` 只判快照自洽，判不了正本被别人改过）；本机没有
+  `_handoff/` 正本时会打印 `SKIP` 并 rc0，不算失败。
 - 新 worktree 的构建产物默认落 E: 盘：post-checkout 钩子自动生成 `.cargo/config.toml`；没有钩子的环境跑 `python scripts/wt_target.py --all`（见 `docs/engineering/BUILD-PERF.md` §5）。
 - 训练层在 `crates/trit-train`（STE + 位平面 ALU）；新模型优先复用同一套量化/STE 口径。
 - 三进制结论按 `docs/positioning/TERNARY-BOUNDARIES.md` 归 A/B/C/D，且必须带二进制基线。
@@ -35,7 +38,8 @@
   `python scripts/hooks.py install`，装三道钩子：
   - `pre-commit`：共享工作树停在非 main（含 detached）时拒绝提交；main 上的提交一律拒绝；
   - `post-checkout`：共享工作树被切到非 main 时自动切回 main，切不回大声报；
-  - `pre-push`：拒绝直推 main + 高置信度密钥扫描。
+  - `pre-push`：拒绝直推 main + 高置信度密钥扫描 + 交接账本快照新鲜度
+    （本机没有 `_handoff/` 正本时自动跳过；确需跳过设 `TRIT_ALLOW_STALE_LEDGER=1`）。
   点对点放行用 `TRIT_ALLOW_SHARED_COMMIT=1` / `TRIT_ALLOW_MAIN_COMMIT=1` /
   `TRIT_ALLOW_SHARED_SWITCH=1`；共享树清单可用 `TRIT_SHARED_WORKTREES` 覆盖（`os.pathsep` 分隔）。
   `install` 会把 `hooks.py` 与合并驱动复制成 hooks 目录里的**稳定副本**（`trit-hooks.py` /
