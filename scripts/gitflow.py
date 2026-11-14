@@ -24,6 +24,7 @@
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import re
 import subprocess
@@ -529,6 +530,18 @@ def worktree_list() -> int:
     return 0
 
 
+def reclaim_command(env=None) -> list[str] | None:
+    """新开 worktree 前先回收已合 PR 的旧树（worktree_guard 四条件；脏的/有本地提交的一律留）。
+
+    2026-11-15 实测：规则写进 AGENTS.md 后仍攒下 33 个已合 PR 的工作树——挂在「新建」这一步
+    才会真执行。`TRIT_NO_AUTO_RECLAIM=1` 关闭。
+    """
+    env = os.environ if env is None else env
+    if env.get("TRIT_NO_AUTO_RECLAIM"):
+        return None
+    return [sys.executable, str(pathlib.Path(__file__).resolve().parent / "worktree_guard.py"), "--apply"]
+
+
 def worktree_add(branch: str, base: str, remote: str, path: str, dry_run: bool) -> int:
     problems = branch_problems(branch)
     if problems:
@@ -548,11 +561,20 @@ def worktree_add(branch: str, base: str, remote: str, path: str, dry_run: bool) 
         commands.append(["git", "worktree", "add", str(target), branch])
     else:
         commands.append(["git", "worktree", "add", "-b", branch, str(target), f"{remote}/{base}"])
+    reclaim = reclaim_command()
     if dry_run:
         print("dry-run：将执行")
+        if reclaim:
+            print("  " + " ".join(reclaim) + "   # 尽力而为，失败不拦新建")
         for command in commands:
             print("  " + " ".join(command))
         return 0
+    if reclaim:
+        swept = subprocess.run(reclaim, cwd=str(ROOT), capture_output=True, text=True,
+                               encoding="utf-8", errors="replace")
+        print(f"$ worktree_guard.py --apply（新建前回收已合 PR 的旧树）… rc={swept.returncode}")
+        for line in [line for line in (swept.stdout or "").splitlines() if line.strip()][-3:]:
+            print("  " + line)
     for command in commands:
         result = git(command[1:])
         print(f"$ {' '.join(command[:3])} … rc={result.returncode}")
@@ -1937,6 +1959,10 @@ def self_test() -> int:
         check("分支名转目录名", sanitize("feat/x-y"), "feat-x-y")
         wt = worktree_path_for(pathlib.Path("/repo/trit"), "feat/x")
         check("worktree 放在仓外", wt.name == "trit-feat-x" and wt.parent.name == "repo", True)
+        guard = str(pathlib.Path(__file__).resolve().parent / "worktree_guard.py")
+        check("新建 worktree 前自动回收：跑的是 worktree_guard --apply", (reclaim_command({}) or [])[-2:],
+              [guard, "--apply"])
+        check("TRIT_NO_AUTO_RECLAIM=1 关掉自动回收", reclaim_command({"TRIT_NO_AUTO_RECLAIM": "1"}), None)
         sample = "worktree /a/b\nHEAD abc\nbranch refs/heads/feat/x\n\nworktree /a/c\nHEAD def\ndetached\n"
         rows = parse_worktrees(sample)
         check("worktree 解析条数", len(rows), 2)

@@ -63,7 +63,9 @@
   `--root` 指定检出（缺省按 cwd 的 origin 尾段匹配 `--repo`，不匹配 ⇒ 警并不算）；
   `--strict` 有未认领牵连 ⇒ rc1（声明仍写入）；`--no-impact` 跳过；cargo 取证失败 ⇒ 警。
 - **main 必须且只能在一个工作树检出**；合并后立刻回收：`python scripts/worktree_guard.py --apply`
-  （只回收「PR 已合 + 干净 + 本地 tip == PR head」的工作树与分支，脏的一律保留）。
+  （只回收「PR 已合 + 干净 + 本地 tip == PR head」的工作树与分支，脏的一律保留；
+  连带删掉该树同名、没人共用的外置 target）。`gitflow.py worktree add` 新建前会自动跑一次
+  （`TRIT_NO_AUTO_RECLAIM=1` 关闭）；仓库已开「合并后自动删远端分支」。
 - **更新前先预检**：`python scripts/self_update.py --check`（断网加 `--offline`）只读不写：
   脏树 / 分叉 / detached / fetch 失败 / 门红 ⇒ rc1 并点名；可快进 + 门全绿 ⇒ rc0；
   `--apply` 未实现，落地仍走你自己的 merge/PR 流程。

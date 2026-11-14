@@ -90,8 +90,14 @@ jobs:
         with:
           tool: nextest@0.9.148
 
+      # rust-cache 的键只哈希依赖（Cargo.lock 与各 Cargo.toml 的依赖段），不含 [profile]：改了 profile，
+      # 旧 target 里的产物全部作废，却仍会 full match 恢复、且因「键已存在」不再保存，之后每次都
+      # 整仓重编。把根 Cargo.toml 的哈希并进键，profile 一改缓存就换代。本文件与 mutation.yml 里的
+      # rust-cache 都带这一行。
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         if: steps.scope.outputs.only_docs != 'true'
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
 
       # 收窄判据本身要有人盯：它坏了不能悄悄把整条测试面关掉。
       - name: Scope self-test (ci_scope)
@@ -114,6 +120,7 @@ jobs:
               echo "args="
               echo "needs_png=true"
               echo "needs_gpu=true"
+              echo "needs_build_gpu=true"
               echo "reason=$1"
             } >> "$GITHUB_OUTPUT"
             echo "收窄不可用，走全量：$1"
@@ -184,6 +191,39 @@ jobs:
             cargo clippy --workspace --all-targets --locked -- -D warnings
           fi
 
+      # gpu feature（默认关）不单独跑，CI 就永远碰不到：#149 的事故就是这块代码从没被门编译过
+      # （matmul.rs 在内核 feature 后，PR 绿、main 的 macOS 红）。
+      #
+      # 只跑 1×1×1 冒烟用例：CI 的软件后端（Windows WARP 等）跑完整 matmul
+      # （512×4096×512）要十几分钟；而 1×1×1 同样会创建全部 shader module，
+      # f16 扩展缺失这类错照样能抓到。完整形状在开发者本机跑。
+      #
+      # 冒烟在软件后端上是纯运行时间（Windows 实测 263s），与后面的 nextest/doctest/clippy
+      # 互不依赖 ⇒ 这里当场编好（编译错误当场判红），用例放到后台跑，job 末尾的「— wait」
+      # 收结果、打印日志、按退出码判红。放在 Clippy 之后：fmt/clippy 的快速失败不被 GPU 编译拖慢。
+      - name: Test (trit-gpu gpu feature, shader smoke) — start
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p trit-gpu --features gpu --locked --test matmul --no-run
+          d=target/gpu-smoke
+          rm -rf "$d"
+          mkdir -p "$d"
+          (
+            set +e
+            cargo test -p trit-gpu --features gpu --locked --test matmul gpu_reg_matmul_tiny_case
+            echo $? > "$d/rc.tmp"
+            mv "$d/rc.tmp" "$d/rc"
+          ) </dev/null >"$d/log" 2>&1 &
+          # 等它过了 cargo 的构建锁、真正开始跑用例再放行：后面的 cargo 命令才不会和它抢锁。
+          for _ in {1..300}; do
+            if [ -f "$d/rc" ] || grep -qs "Running" "$d/log"; then
+              break
+            fi
+            sleep 1
+          done
+
       - name: Test (nextest)
         if: steps.scope.outputs.only_docs != 'true'
         shell: bash
@@ -218,15 +258,7 @@ jobs:
         if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_png == 'true'
         run: cargo clippy -p trit-texture --features png --all-targets --locked -- -D warnings
 
-      # gpu feature（默认关）：同上。#149 的事故就是这块代码从没被门编译过
-      # （matmul.rs 在内核 feature 后，PR 绿、main 的 macOS 红）。
-      #
-      # 只跑 1×1×1 冒烟用例：CI 的软件后端（Windows WARP 等）跑完整 matmul
-      # （512×4096×512）要十几分钟；而 1×1×1 同样会创建全部 shader module，
-      # f16 扩展缺失这类错照样能抓到。完整形状在开发者本机跑。
-      - name: Test (trit-gpu gpu feature, shader smoke)
-        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
-        run: cargo test -p trit-gpu --features gpu --locked --test matmul gpu_reg_matmul_tiny_case
+      # gpu feature 的 clippy。冒烟用例已在 Clippy 后的「— start」放到后台，结果由 job 末尾的「— wait」收。
       - name: Clippy (trit-gpu gpu feature)
         if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
         run: cargo clippy -p trit-gpu --features gpu --all-targets --locked -- -D warnings
@@ -240,6 +272,21 @@ jobs:
         if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux' && steps.crates.outputs.needs_build_gpu == 'true'
         run: cargo clippy -p trit-build --features gpu --all-targets --locked -- -D warnings
 
+      # 收「— start」放到后台的冒烟结果：日志整段打印，退出码原样判红。后台进程消失、迟迟不写 rc
+      # 时靠 timeout-minutes 判红，不会悄悄放过。
+      - name: Test (trit-gpu gpu feature, shader smoke) — wait
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
+        shell: bash
+        timeout-minutes: 20
+        run: |
+          set -uo pipefail
+          d=target/gpu-smoke
+          while [ ! -f "$d/rc" ]; do
+            sleep 5
+          done
+          cat "$d/log"
+          exit "$(cat "$d/rc")"
+
   docs-gates:
     name: docs gates (hygiene / pointers / status)
     runs-on: ubuntu-latest
@@ -247,7 +294,7 @@ jobs:
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # 文档门原先只活在本机命令行里：漏一个索引、断一条链接、行号漂一格，都要等人去跑。
-      # 这三道早已全绿（2026-11-15 实测），接进 CI 只是把「知道自己跑了」变成「不跑就红」。
+      # 这些门早已全绿（2026-11-15 实测），接进 CI 只是把「知道自己跑了」变成「不跑就红」。
       - name: Docs hygiene self-test (shape + drive-path counterexamples)
         run: python3 scripts/docs_hygiene.py --self-test
       - name: Docs hygiene (CHANGELOG shape, no new machine paths)
@@ -469,6 +516,9 @@ jobs:
       # 找回链路全在临时仓里跑：reflog/fsck/stash 三路取证 + "先快照再建分支、不动 HEAD"
       - name: oops self-test
         run: python3 scripts/oops.py --self-test
+      # 回收判据（PR 已合 + 干净 + tip 对得上）与外置 target 的删除边界：只删同名、未共用、在树外的绝对路径
+      - name: Worktree guard self-test (reclaim rules / external target)
+        run: python3 scripts/worktree_guard.py --self-test
 
   forensics:
     name: merge forensics (self-test)
@@ -488,6 +538,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Extreme vectors, word boundaries, large random payloads
         run: cargo test --release --locked -p trit-dot -p trit-codec -p trit-float -p trit-gpu --tests
 
@@ -510,6 +562,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Rustdoc
         env:
           RUSTDOCFLAGS: -D warnings
@@ -533,10 +587,52 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      # 与 check job 同一把尺子（scripts/ci_scope.py）：PR 只编/测直改 crate 的反向依赖闭包，
+      # 只改文档/脚本的 PR 不编；push main、拿不到 base、ci_scope 出错一律全量。
+      - name: Scope crates (PR only)
+        id: crates
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -uo pipefail
+          if [ "$EVENT" = "pull_request" ] && [ -n "${BASE_SHA:-}" ] \
+            && python3 scripts/ci_scope.py --base "$BASE_SHA" --github-output >> "$GITHUB_OUTPUT"; then
+            exit 0
+          fi
+          { echo "args="; echo "only_docs=false"; } >> "$GITHUB_OUTPUT"
+          echo "收窄不可用，走全量"
       - uses: dtolnay/rust-toolchain@360a4e93673de6630fac2478bc9e35244b01a759 # 1.88
+        if: steps.crates.outputs.only_docs != 'true'
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-      - run: cargo build --workspace --locked
-      - run: cargo test --workspace --locked
+        if: steps.crates.outputs.only_docs != 'true'
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
+      - name: Build
+        if: steps.crates.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo build $SCOPE_ARGS --locked
+          else
+            cargo build --workspace --locked
+          fi
+      - name: Test
+        if: steps.crates.outputs.only_docs != 'true'
+        shell: bash
+        env:
+          SCOPE_ARGS: ${{ steps.crates.outputs.args }}
+        run: |
+          if [ -n "${SCOPE_ARGS:-}" ]; then
+            cargo test $SCOPE_ARGS --locked
+          else
+            cargo test --workspace --locked
+          fi
 
   package:
     name: package (publishable)
@@ -546,6 +642,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Package every crate (no build)
         run: cargo package --workspace --no-verify --locked
 
@@ -559,4 +657,6 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - run: cargo build -p trit-wasm --target wasm32-unknown-unknown --locked
