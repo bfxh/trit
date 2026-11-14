@@ -424,3 +424,35 @@ cargo run --release -p trit-wspace --example classifier_sts_curve -- $MODEL $VOC
 
 **边界**：只覆盖第 0 层 query 段；本机没有 STS 语料，激活来自真实词表而不是真实句子；
 连续 6 层的级联激活还没做。
+
+---
+
+## 13. 6 层全量真实 tuned：训练集 +7.7 点，STS test 反而 −18 点
+
+`scripts/train_all_layers.py` 端到端微调 MiniLM 的 **36 个线性权重**（6 层 × 6 个），
+embedding/LayerNorm/bias 冻结；训练集为 STSb train（5749 对，丢弃 score=3 后 2699 对），
+lr 1e-4、batch 16、1 epoch（169 步）。`scripts/evaluate_tuned_edit_gate.py` 在 STS test 上
+按 score 划分 edit 集（≥4，338 对）与 keep 集（≤2，534 对）。
+
+| 集合 | base 命中率 | tuned 命中率 | 变化 |
+|---|---|---|---|
+| 训练集 valid（674 对，随机 20%） | 0.7849 | **0.8620** | **+7.7 点** |
+| STS test edit（338 对） | 0.9734 | **0.7929** | **−18.0 点** |
+| STS test keep（534 对） | 0.2790 | **0.1367** | **−14.2 点** |
+
+`regressions 119 / fixes 2`。
+
+**结论（负结果）**：训练集上的提升**没有泛化**到 test，反而大面积破坏预训练表示。
+这与 §3「训练 block 有害、lr→0 最优」一致：MiniLM 的表示已经饱和，梯度微调在
+小数据上只会过拟合。
+
+**复算**：
+
+```bash
+python scripts/train_all_layers.py --model <快照> --data <train.jsonl.gz> \
+  --out tuned.safetensors --epochs 1 --lr 1e-4 --batch 16
+python scripts/evaluate_tuned_edit_gate.py --model <快照> \
+  --base <model.safetensors> --tuned tuned.safetensors --data <test.jsonl.gz>
+```
+
+**边界**：单 seed、CPU、1 epoch、lr 未扫；tuned 权重未三值化；没有 keep 集的逐条明细。

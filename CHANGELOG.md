@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（6 层全量真实 tuned：训练 +7.7 点，STS test −18.0 点 / keep −14.2 点）
+
+- 新脚本 `scripts/train_all_layers.py`：端到端微调 MiniLM 的 36 个线性权重
+  （6 层 × 6 个），embedding/LayerNorm/bias 冻结；STSb train 2699 对，lr 1e-4、batch 16、169 步。
+- 新脚本 `scripts/evaluate_tuned_edit_gate.py`：在 STS test 上按 score 划 edit（≥4）/
+  keep（≤2）集，统计 base vs tuned 的命中率与 regression/fix。
+- **读数**：训练集 valid 0.7849 → **0.8620（+7.7 点）**；STS test edit 0.9734 → **0.7929
+  （−18.0 点）**、keep 0.2790 → **0.1367（−14.2 点）**；regressions 119 / fixes 2。
+- **结论（负结果）**：训练集提升不泛化，与「训练 block 有害、lr→0 最优」一致。
+- STS 全量 baseline 复现：mean pooling **0.8204**；分组三值 group256 **0.8200**（15.06×）。
+- 数据源：`mteb/stsbenchmark-sts` 的 `test.jsonl.gz` / `train.jsonl.gz`（1379 / 5749 对）。
+
 ### Added（真实激活校准：`real_activations` + `bias_e2e --activations`）
 
 - 新示例 `examples/real_activations.rs`：从 `vocab.txt` 的真实词走 MiniLM embedding 前向，
