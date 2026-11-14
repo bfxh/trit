@@ -5,8 +5,10 @@
 ### Changed（文档治理：docs 按用途归位、索引重写、口径统一、文档门接进 CI）
 
 - 文档门接进 CI：`docs-gates` job 现在跑 **5 道**——`docs_hygiene` / `doc_pointers` /
-  `model_status` / `claims_evidence` / `layers`（各带自测，共 11 步）。`tech_collide` **没接**：
-  它拦的 9 条编号复用全部来自仓外共享账本 `LEDGER.md`，本仓改不了那份账本（见下「未证栏」）。
+  `model_status` / `claims_evidence` / `layers`（各带自测，共 11 步）。第六道 `tech_collide`
+  已修到绿（见下）但**不进 CI**：它读仓外交接账本 `_handoff/LEDGER.md`，CI runner 上没有那份
+  账本。宁可标成「本机门」（`docs/specs/DOC-INDEX.md` §5 记了原因），也不加一个永远 skip 的
+  步骤假装覆盖。
 - `claims_evidence` 从「拦 21 篇、无据句 109 / 基线 76」收到 **0 拦、56 句 / 基线 56**（`--update`
   已收紧）。两条口径修正 + 30 句逐条改：`docs/review/` 退出能力面（评审快照与 `CHANGELOG.md` 同理，
   是历史叙述不是当下能力声明，-9 句）；新增 `<!-- claims-ok -->` 显式豁免标记给**规则定义段**
@@ -54,10 +56,15 @@
 - 读数：全仓 md 死链 0（迁移前 0 → 迁移后 0，逐条解析链接目标）；`docs_hygiene` /
   `doc_pointers`（78 篇、24 条行号指针）/ `model_status` 三道绿且自测绿；`ci_integrity` 21 项
   对得上、`ci_budget` 拦 0；`claims_evidence` 109 句（main 基线 108，本轮新增文档没有净增无据句）。
-- 未证栏：`tech_collide`（九组编号复用：A9/A129/A130/A131/A134/A153/A155/A157/A267）仍是红的，
-  且**没接进 CI**——它读的是仓外共享账本 `LEDGER.md`（多个智能体共用），本轮不动那份账本：
-  重号要由账本的主人拍板，改错了会让别的会话的引用失效。
-  另：`docs/review/` 与 `CHANGELOG.md` 的历史路径与措辞不批量改写，允许过期以换可追溯。
+- `tech_collide` 九组编号复用已按用户授权重号：A9→**A420**、A129→**A421**、A130→**A422**、
+  A131→**A423**、A134→**A424**、A153→**A425**、A155→**A426**、A157→**A427**、A267→**A428**
+  （每组保留较早的一条原号，只给较晚的那条重号；行尾注「（原 AXXX，2026-11-15 重号）」，
+  条目内容一字未删）。改前先备份 `_handoff/` 的四个账本（`*.bak-20261115-renumber`）；
+  `CHANGES.md` 里指向较晚那条的 4 处引用同步改号（历史叙述里的编号清单不动）。门从
+  「拦 9」转「拦 0 警 1」。
+- 未证栏：`tech_collide` **不在 CI 里跑**（它读的账本不在仓内），是「本机门」；复算要本机
+  有 `_handoff/LEDGER.md`。另：`docs/review/` 与 `CHANGELOG.md` 的历史路径与措辞不批量改写，
+  允许过期以换可追溯。
 
 ### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）
 

@@ -66,6 +66,10 @@ python scripts/model_status.py     # STATUS.md 的表与代码对得上
 | 行号指针、链接可达、索引覆盖 | `门` `scripts/doc_pointers.py` |
 | CHANGELOG 形状、盘符路径 | `门` `scripts/docs_hygiene.py` |
 | 能力句带读数 | `门` `scripts/claims_evidence.py`（棘轮：新文档按 0 计） |
+| 分层与依赖方向 | `门` `scripts/layers.py`（跨层例外登记在 `scripts/layers.json` 的 `allows`） |
+| 交接账本编号唯一 | `门`（**本机门**）`scripts/tech_collide.py`——它读仓外交接账本
+  `_handoff/LEDGER.md`，CI runner 上没有那份账本，所以**不在 CI 里跑**；本地判定命令给在
+  上一行。宁可写「本机门」，也不加一个在 CI 上永远 skip 的步骤假装覆盖 |
 | 分组判据、入链、命名 | `人` 评审——没有门，也没打算为风格造检查器 |
 
 ## 6. 未证栏
