@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added（`grouped_equal`：scale 无关判等的三层机制）
+
+- 新模块 `crates/trit-wspace/src/grouped_equal.rs`。先明确边界：**完全 scale 无关不可能**
+  ——不同组的 scale 分配会真实改变符号输出（`tests/grouped_oracle.rs` 已有反例）。所以
+  设计的是三层：
+  1. **`behavior(vars)`**：穷举 `3^vars` 个 trit 输入，取每行输出符号作为**行为签名**；
+     判等直接比签名，与 scale 怎么表达无关。`vars ≤ MAX_VARS = 8`（`3^8 = 6561`），
+     超限返回 `DomainTooLarge`。
+  2. **`canonical()`**：全部 scale 除以 `scales[0]`，消除**唯一**的冗余自由度（全体 scale
+     同乘一个正数不改变行为）。归一化后 `trits + groups + scales` 唯一确定一个等价类，
+     可作"快速判等"的规范形式。
+  3. **`is_row_grouped()`**：判断是否"每行自成一组"。**只有**这种情况才退化成
+     `crate::net::Layer` 的语义（正 scale 缩放整行不改变符号，scale 可完全不参与比较）。
+- `tests/grouped_equal.rs`（7 个测试）：整体缩放不改变行为、**对调组 scale 会改变行为**、
+  规范化后首 scale=1 且比例保持、整体缩放的两份 canonical 形式逐项相等、per-row 与跨行
+  分组的判定、`vars` 超限报错、形状不同直接判不等。
+- 实用判据：要**严格**判等 → 比 `behavior` 签名；要**快速**判等且结构相同 → 比
+  `canonical` 形式；只有 `is_row_grouped()` 为真时才可像 `Layer` 那样忽略 scale。
+
 ### Added（验证：分组 scale **破坏**了仓库判等所依赖的不变性）
 
 - `GroupedLayer` 拆成 `grouped.rs`（结构 + `quantize` / `from_trits` + getter）与

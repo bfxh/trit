@@ -141,15 +141,10 @@ impl GroupedLayer {
                 other => return Err(Error::InvalidTrit(*other)),
             });
         }
-        if groups.iter().any(|group| *group as usize >= scales.len()) {
-            let offender = groups
-                .iter()
-                .find(|group| **group as usize >= scales.len())
-                .copied()
-                .unwrap_or(0);
+        if let Some(group) = groups.iter().find(|g| **g as usize >= scales.len()) {
             return Err(Error::OutOfBounds {
                 layer: 0,
-                row: offender as usize,
+                row: *group as usize,
                 col: scales.len(),
             });
         }
@@ -211,5 +206,16 @@ impl GroupedLayer {
     #[must_use]
     pub fn scale(&self, group: usize) -> Option<f32> {
         self.scales.get(group).copied()
+    }
+
+    /// 全部组的 scale。
+    #[must_use]
+    pub fn scales(&self) -> &[f32] {
+        &self.scales
+    }
+
+    /// 可写 scale（规范化用）。
+    pub(crate) fn scales_mut(&mut self) -> &mut [f32] {
+        &mut self.scales
     }
 }
