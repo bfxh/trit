@@ -16,11 +16,12 @@
 - `scripts/worktree_guard.py --apply` 连带删除同名、未共用、在树外的外置 target，按 git 顶层与
   主工作树保护；`scripts/gitflow.py worktree add` 新建前自动回收（`TRIT_NO_AUTO_RECLAIM=1` 关闭）；
   自测接进 CI 的 recovery job。
-- CI 实测（本 PR 首轮）：Windows job 528s（main 合并后全量常态约 600s）；冒烟在关键路径上只剩
-  start 46s + wait 51s = 97s（原串行 272–375s）。
-- 未证栏：调试信息读数只测了 trit-wspace 一个 crate 的测试构建；同一轮 ubuntu / macOS / MSRV
-  比 main 慢（274 / 350 / 266s，main 177–222 / 185–310 / 164–251s），其中 ubuntu 含补上的 trit-build
-  GPU 两步 34s；其余差额或为编译参数变更后缓存重建，日志无 sccache 统计可证，待后续运行。
+- CI 实测（本 PR 两轮；main 合并后全量常态约 600s）：Windows job 528s → 436s（第二轮缓存已按
+  新参数建过）；冒烟在关键路径上只剩 start + wait = 97s → 50s（原串行 272–375s）。第二轮
+  ubuntu 214s、MSRV 157s 回到 main 区间内。
+- 未证栏：调试信息读数只测了 trit-wspace 一个 crate 的测试构建；macOS 341s 仍高于 main
+  （185–310s），差额在 Clippy（59s vs 20–30s，疑为缓存键仍对应旧 profile，合并后待看）和
+  「— start」35s（main 上串行冒烟 10–15s，macOS 上后台化不划算）；macOS 不在关键路径上。
 
 
 ### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）

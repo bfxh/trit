@@ -158,7 +158,11 @@ Clippy 之后当场 `--no-run` 编好（编译错误当场判红），用例放�
 日志、按退出码判红（后台进程失踪靠 20 分钟超时判红）。fmt/clippy 的快速失败不受影响。
 引入它的 PR（#502）首轮 CI 实测：Windows job 528s（main 最近 6 次合并后全量 583–751s，常态约 600s）；
 冒烟在关键路径上只剩「— start」46s + 「— wait」51s = 97s（原来串行 272–375s），后台期间
-nextest 217s（main 188–242s），没有被明显拖慢。
+nextest 217s（main 188–242s），没有被明显拖慢。第二轮（缓存已按新编译参数建过）：Windows job
+436s，冒烟在关键路径上 40s + 10s = 50s；ubuntu 214s、MSRV 157s 回到 main 的区间内（177–222s /
+164–251s）。macOS 341s 仍高于 main（185–310s），差额在 Clippy（59s，main 20–30s）和「— start」
+（35s，main 上串行冒烟只要 10–15s——macOS 上冒烟本来就快，后台化不划算）；macOS 不在关键
+路径上，整轮 CI 的墙钟由 Windows 决定。
 顺手修复：全量兜底分支漏设 `needs_build_gpu`（#376 引入），push main 时 trit-build 的
 GPU 测试与 clippy 一直被跳过；现在补上（只会多跑）。
 
