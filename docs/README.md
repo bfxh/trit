@@ -7,8 +7,8 @@
 ## 先读两篇
 
 - [positioning/DESIGN.md](positioning/DESIGN.md)：主库存什么、系统分层、「三进制」在这里指什么。
-- [positioning/STATUS.md](positioning/STATUS.md)：状态词只有四个（已跑通 / 已实现未测 / 组件 /
-  已否证），「完成」必须带复算命令与读数（判定脚本 `scripts/claims_evidence.py`）。
+- [positioning/STATUS.md](positioning/STATUS.md)：四个状态词（跑通 / 实现未测 / 组件 / 否证）的含义与
+  举证要求，判定脚本 `scripts/claims_evidence.py`。
 
 ## 目录分组
 

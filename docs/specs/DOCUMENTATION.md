@@ -17,9 +17,7 @@
 
 ## 2. 硬规则（每条都写明靠什么落地）
 
-1. **能力句必须带读数或复算指针。**
-   「支持 / 已实现 / 完成 / 达标」这类词出现时，同一句要有**读数（带单位与规模档）**或
-   **可直接执行的命令 / 文件行号**（判定脚本 `scripts/claims_evidence.py`）。
+1. **能力句必须带读数或复算指针。** 「支持 / 已实现 / 完成 / 达标」这类词出现时，同一句要有**读数（带单位与规模档）**或**可直接执行的命令 / 文件行号**（判定脚本 `scripts/claims_evidence.py`）。
    落地：`门` `python scripts/claims_evidence.py`（口径正本 [STATUS.md](../positioning/STATUS.md) §1）。
 2. **状态词只有四个**：已跑通 / 已实现未测 / 组件 / 已否证（正本 `docs/positioning/STATUS.md`）。
    落地：`门` `python scripts/model_status.py` 核对 [STATUS.md](../positioning/STATUS.md) §2 的表。
