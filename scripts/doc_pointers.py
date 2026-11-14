@@ -13,6 +13,16 @@
 
 读不到清单/扫不到任何指针 ⇒ 判红（失明不等于对上了）。
 
+同一趟扫描还判两件事，理由相同——它们坏掉时句子照样通顺：
+
+4. **markdown 链接可达**：相对链接与 `docs/` 路径必须解析到真实文件。搬迁/改名后最容易漏，
+   读者点进去是 404，而作者不知道自己漏了。
+5. **每篇文档都在索引里**：`docs/` 下的 `.md`（`review/` 历史快照除外）必须出现在
+   `docs/README.md` 的表里。漏了不会有人发现——这就是 25 篇文档长期无人引用的原因。
+
+`CHANGELOG.md` 里的链接照常判可达（它是可点击的），但正文叙述里的旧路径不改写：
+历史条目按当时路径记录，见 `docs/specs/DOC-INDEX.md` §3。
+
 用法：
   python scripts/doc_pointers.py            # 对账
   python scripts/doc_pointers.py --show     # 打印解析结果（哪条指到哪个文件的哪一行）
@@ -129,6 +139,43 @@ def violations(text: str, root: pathlib.Path, by_name: dict[str, list[pathlib.Pa
     return problems
 
 
+MD_LINK = re.compile(r"\]\(\s*([^)\s]+?)(?:\s+\"[^\"]*\")?\s*\)")
+LINK_SKIP = ("http://", "https://", "mailto:", "#", "<")
+
+
+def link_violations(text: str, root: pathlib.Path, doc: pathlib.Path) -> list[str]:
+    """markdown 链接目标必须存在（相对路径按文档所在目录解析）。"""
+    problems: list[str] = []
+    for m in MD_LINK.finditer(text):
+        target = m.group(1)
+        if not target or target.startswith(LINK_SKIP):
+            continue
+        bare = target.split("#")[0]
+        if not bare or " " in bare:
+            continue
+        if not (doc.parent / bare).resolve().exists():
+            problems.append(
+                f"断链：{doc.name} 的 `{target}` —— 目标文件不存在（改名/搬迁后没跟着改）"
+            )
+    return problems
+
+
+def unindexed(root: pathlib.Path) -> list[str]:
+    """`docs/` 下每篇文档都要在 `docs/README.md` 里出现（`review/` 历史快照除外）。"""
+    index = root / "docs" / "README.md"
+    if not index.exists():
+        return ["未索引：缺 `docs/README.md` 索引文件，无法判断谁没进索引"]
+    text = index.read_text(encoding="utf-8", errors="replace")
+    problems: list[str] = []
+    for path in sorted((root / "docs").rglob("*.md")):
+        rel = path.relative_to(root).as_posix()
+        if rel == "docs/README.md" or "/review/" in rel:
+            continue
+        if path.name not in text:
+            problems.append(f"未索引：`{rel}` 不在 `docs/README.md` 的表里 —— 加了文档没人找得到")
+    return problems
+
+
 def show(text: str, root: pathlib.Path, by_name: dict[str, list[pathlib.Path]], doc: pathlib.Path) -> list[str]:
     out: list[str] = []
     for m in POINTER.finditer(text):
@@ -177,6 +224,7 @@ def main(argv: list[str]) -> int:
         return 1
     by_name = index_names(ROOT)
     found: list[str] = []
+    broken_links: list[str] = []
     total = 0
     for doc in files:
         text = doc.read_text(encoding="utf-8", errors="replace")
@@ -186,8 +234,10 @@ def main(argv: list[str]) -> int:
                 print(line)
             continue
         found += violations(text, ROOT, by_name, doc)
+        broken_links += link_violations(text, ROOT, doc)
     if args.show:
         return 0
+    sticker = unindexed(ROOT)
     baseline = (
         json.loads(BASELINE.read_text(encoding="utf-8")) if BASELINE.exists() else {}
     )
@@ -207,12 +257,17 @@ def main(argv: list[str]) -> int:
     if not total:
         print("FAIL 一条指针都没抓到 ⇒ 扫描口径漂了（不是「文档变干净了」）")
         return 1
-    hard = found + compare(found, baseline) if baseline else found
-    for item in found:
+    other = broken_links + sticker
+    hard = (found + compare(found, baseline) if baseline else found) + other
+    for item in found + other:
         print("  拦：" + item)
     if args.json:
         print(json.dumps({"pointers": total, "problems": hard}, ensure_ascii=False))
-    print(("FAIL 拦 %d 条" % len(hard)) if hard else "OK 每条行号指针都指得到、指得对")
+    print(
+        ("FAIL 拦 %d 条" % len(hard))
+        if hard
+        else f"OK 行号指针都指得对、链接可达、docs/ 下 {len(files)} 篇文档全在索引里"
+    )
     return 1 if hard else 0
 
 
@@ -281,6 +336,21 @@ def self_test() -> int:
         compare(["指歪：docs/D.md 的 `a.rs:1` x"], {"docs/D.md": 2}),
         None,
     )
+
+    dead_link = "见 [缺失](missing.md) 与 [正常](D.md)。\n"
+    doc.write_text(dead_link, encoding="utf-8")
+    expect("反证 8：markdown 断链", link_violations(dead_link, root, doc), "断链")
+
+    (root / "docs" / "README.md").write_text(
+        "# 索引\n\n| 文档 | 一行 |\n|---|---|\n| [D.md](D.md) | x |\n", encoding="utf-8"
+    )
+    (root / "docs" / "stray.md").write_text("# 没人引用\n", encoding="utf-8")
+    expect("反证 9：docs/ 下有文档没进索引", unindexed(root), "未索引")
+
+    (root / "docs" / "stray.md").unlink()
+    (root / "docs" / "review").mkdir()
+    (root / "docs" / "review" / "old.md").write_text("# 历史快照\n", encoding="utf-8")
+    expect("反证 9b：review/ 历史快照不要求进索引", unindexed(root), None)
 
     print("自测结论：" + ("绿" if ok else "红"))
     return 0 if ok else 1

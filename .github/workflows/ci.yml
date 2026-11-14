@@ -240,6 +240,27 @@ jobs:
         if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux' && steps.crates.outputs.needs_build_gpu == 'true'
         run: cargo clippy -p trit-build --features gpu --all-targets --locked -- -D warnings
 
+  docs-gates:
+    name: docs gates (hygiene / pointers / status)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b7965a048ff273f7fcc4a7b6c09 # v5
+      # 文档门原先只活在本机命令行里：漏一个索引、断一条链接、行号漂一格，都要等人去跑。
+      # 这三道早已全绿（2026-11-15 实测），接进 CI 只是把「知道自己跑了」变成「不跑就红」。
+      - name: Docs hygiene self-test (shape + drive-path counterexamples)
+        run: python3 scripts/docs_hygiene.py --self-test
+      - name: Docs hygiene (CHANGELOG shape, no new machine paths)
+        run: python3 scripts/docs_hygiene.py
+      - name: Doc pointers self-test (dead links / unindexed docs counterexamples)
+        run: python3 scripts/doc_pointers.py --self-test
+      - name: Doc pointers (line refs + link targets + index coverage)
+        run: python3 scripts/doc_pointers.py
+      - name: Model status self-test
+        run: python3 scripts/model_status.py --self-test
+      - name: Model status (completion table matches code)
+        run: python3 scripts/model_status.py
+
   module-budget:
     name: module budget (god objects)
     runs-on: ubuntu-latest

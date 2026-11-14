@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Changed（文档治理：docs 按用途归位、索引重写、口径统一、文档门接进 CI）
+
+- `docs/` 从 67 篇平铺改为按用途 8 组：`positioning/`(6) `reference/`(8) `results/`(11)
+  `research/`(22) `security/`(10) `engineering/`(4) `plans/`(5) `specs/`(新)，根目录只留
+  `docs/README.md` 索引；`review/` 作为按日期的评审快照保留、不改写。
+- 索引重写：原先 35 篇不在索引、25 篇除 `CHANGELOG.md` 外没有任何文档指向；现在 71 篇逐条
+  一句话全覆盖（`comm` 对账为空）。搬迁同时改写全仓引用 161 处（md 链接 118 + 路径 43），
+  含目录深度变化（`../` → `../../`）。
+- 新增四篇规范：`docs/specs/DOCUMENTATION.md`（四段骨架 + 10 条硬规则，每条标「门/人」）、
+  `TERMINOLOGY.md`（三值逻辑 / 三值权重 / 平衡三进制三层与用词表）、`README-SPEC.md`
+  （首屏只放三件事、定位句单一真源、能力必须标层）、`DOC-INDEX.md`（新增三步 / 搬迁四步 /
+  判红命令）。
+- 口径统一到「三值推理底座」：README 标题与首屏改写并新增「不是什么」段；GitHub 仓库简介从
+  「Rust 三进制工具箱」（与 `docs/positioning/LAYERS.md` 的「本仓是底座，不是工具箱」正面冲突）
+  改为「Rust 三值推理底座」；README 工作区表补齐到 45 个 crate 并按真实发布状态分表
+  （稳定 API 25 + 实验层 20，判定给 `grep -l "publish = false" crates/*/Cargo.toml | wc -l`）——
+  原先两张表只列 33 个，且把 5 个可发布 crate 列进实验层、漏了 `trit-build` / `trit-parts`。
+- `docs/positioning/DESIGN.md`：实验层从手工抄的「八个」改为以清单为准（实测 20 个）；
+  `TERNARY-BOUNDARIES.md` 把「不是平衡三进制整数库」限定到稳定 API 面，并补上实验层事实
+  （`trit-codec::balanced` 的 `encode`/`decode`/`range`、`trit-float` 的 `TritFloat`，均
+  `publish = false`），否则与 `crates/trit-codec/src/balanced.rs` 的实现冲突。
+- 文档门接进 CI：新增 `docs-gates` job，跑 `docs_hygiene` / `doc_pointers` / `model_status`
+  三道（各含自测）。`doc_pointers.py` 从「只查行号指针」扩展为「行号指针 + markdown 链接可达 +
+  `docs/` 索引覆盖」，并补 3 条反证；迁移配套修了它 `glob` → `rglob`（否则子目录全漏）、
+  `model_status.py` 的 STATUS 路径、两份基线键与 `depth_catalogue` / `depth_sweep` 的输出默认值。
+- 删掉提交遗物 `crates/trit-immune/PR.md`（PR 描述留在仓里，全仓无引用）。
+- 读数：全仓 md 死链 0（迁移前 0 → 迁移后 0，逐条解析链接目标）；`docs_hygiene` /
+  `doc_pointers`（78 篇、24 条行号指针）/ `model_status` 三道绿且自测绿；`ci_integrity` 21 项
+  对得上、`ci_budget` 拦 0；`claims_evidence` 109 句（main 基线 108，本轮新增文档没有净增无据句）。
+- 未证栏：`claims_evidence`（109 句 / 基线 76）、`layers`（`crates/trit-gpu` 依赖
+  `trit-wspace` 一条回边）、`tech_collide`（A9/A134/A153/A155/A157/A267 号各出现两次）三道仍是红的，
+  本轮**没接进 CI**、也没修——接门的前提是先修到绿，那是一件独立的事。
+
 ### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）
 
 - `examples/adversarial_train/`：AB 循环——红方进化攻击（行基因组整行置零）
