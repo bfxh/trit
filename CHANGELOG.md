@@ -2,6 +2,30 @@
 
 ## [Unreleased]
 
+### Added（量化范围拆分：int8 下 attention 更抗压，三值下 attention 是瓶颈，叠加超线性）
+
+- 新示例 `examples/classifier_sts_quant_scope.rs`：把量化**拆到子模块**，
+  同一批 300 对子集（可比；绝对值不与全量 0.8204 直接比）：
+
+  | 配置 | Spearman | 相对基线 |
+  |---|---|---|
+  | full (f32) | 0.9337 | — |
+  | int8-attn only | 0.9333 | **−0.05 点** |
+  | int8-ffn only | 0.9299 | −0.38 点 |
+  | int8-all | 0.9303 | −0.35 点 |
+  | ternary-ffn only | 0.8916 | −4.21 点 |
+  | ternary-attn only | 0.8461 | **−8.76 点** |
+  | ternary-all | 0.6847 | **−24.91 点** |
+  | skip layer 2/3/4 | 0.8473 | −8.64 点 |
+
+- **两种精度下敏感模块的排序相反**：int8 时 attention 更抗压（−0.05 vs FFN −0.38），
+  三值 时 attention 反而成了瓶颈（−8.76 vs FFN −4.21）。
+- **同时三值化是超线性的**：−24.91 远大于两者之和（−12.97），两个模块的误差互相放大。
+- 三值化 attention（−8.76）≈ 砍掉一半层数（−8.64）：在 300 对子集上，把 attention 压到三值
+  和删掉 3 层的代价几乎一样。
+- 对仓库主题：三值化的代价取决于**哪些权重**而非单纯"多少权重"，且模块间有放大效应——
+  这对"哪些模块适合三值化"的设计有直接指导。
+
 ### Added（`classifier_sts_prune`：剪枝/量化的 STS 代价——int8 几乎无损，三值断崖）
 
 - 新示例 `examples/classifier_sts_prune.rs`：在**同一批 300 对 test 子集**上（保证可比；

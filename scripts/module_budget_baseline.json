@@ -3063,6 +3063,10 @@
       "lines": 183
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_sts_quant_scope.rs",
+      "lines": 197
+    },
+    {
       "file": "crates/trit-wspace/examples/classifier_sts_train.rs",
       "lines": 559
     },
