@@ -160,7 +160,6 @@ fn measured(latencies: &[Latency], plans: &[Plan]) -> Vec<(Shape, [Option<f64>; 
         })
         .collect()
 }
-
 fn print_fidelity(
     device: &Device,
     plans: &[Plan],
@@ -210,6 +209,7 @@ pub fn run(device: &Device, threads: usize, shapes: &[Shape]) {
     let best = u64_ops.max(simd_ops);
     let mut cpu = device.clone();
     cpu.ternary_ops = best;
+    cpu.units = threads as f64;
     let mut plans = crate::plan::plans();
     for plan in &mut plans {
         match plan.kind {

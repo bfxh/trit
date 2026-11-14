@@ -943,6 +943,10 @@
       "lines": 654
     },
     {
+      "file": "crates/trit-gpu/examples/device_env_check.rs",
+      "lines": 79
+    },
+    {
       "file": "crates/trit-gpu/examples/render_scene_gpu.rs",
       "lines": 197
     },

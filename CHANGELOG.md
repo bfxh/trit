@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（trit-gpu：多环境/多容器验证矩阵）
+
+- `crates/trit-gpu/examples/device_env_check.rs` + `scripts/device_matrix.py`：
+  同一 seed 在原生 Windows、WSL、以及 2/8 CPU 两个真实容器里跑
+  `device_adapt`（64 行 JSON）与 `device_env_check`，按 PASS/DRIFT/FAIL 判。
+- 结果：4 个环境结构一致（前 13 行 anchor/calibration/plan_wins 逐位一致，
+  plan_wins 计数相同）；WSL/容器相对 native **DRIFT**（最大指标差 0.794，
+  训练准确率 0.963 vs 0.931），两个容器之间 `device_adapt` **逐字节一致**。
+- 容器检测：cpuset 2/8 被正确识别为 2/8 核；512×4096×512 CPU 计划延迟
+  cpu_u64 34.2/10.0ms、cpu_simd 56.6/17.7ms；native/WSL 为 6.7/6.2ms（u64）。
+- Docker Hub 直连/镜像站拉取不可用 ⇒ 用 WSL Linux 二进制 + glibc 构建
+  本地 scratch 镜像（4.9MB）；官方 `rust:*` 镜像模式保留，网络可达时可用。
+  构建说明 `containers/device-env/README.md`，读数 `docs/DEVICE-ENV-MATRIX.md`。
+- 结论：仿真前置阶段跨环境可复现；策略训练跨编译器/OS 不 bit 复现，需固定点
+  训练或明确 DRIFT 容差。未证：GPU 容器、ARM64、跨物理机。
+
 ### Added（trit-gpu：实测档案重训 + 小形状拟合 + CPU/NPU 完整计划延迟）
 
 - `device_calibrate --out` 现在写 `{device, shapes, sources}` 实测档案；
