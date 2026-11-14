@@ -1,7 +1,7 @@
 //! "scale 无关"判等的三个机制：行为签名、规范化、per-row 判定。
 
 use trit_wspace::grouped::GroupedLayer;
-use trit_wspace::grouped_equal::MAX_VARS;
+use trit_wspace::grouped_certify::MAX_VARS;
 
 fn layer(trits: &[i8], groups: &[u32], scales: &[f32]) -> GroupedLayer {
     GroupedLayer::from_trits(2, 2, trits, groups, scales, &[0.0, 0.0]).expect("layer")

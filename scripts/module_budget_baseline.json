@@ -3543,16 +3543,12 @@
       "lines": 214
     },
     {
+      "file": "crates/trit-wspace/src/grouped_certify.rs",
+      "lines": 406
+    },
+    {
       "file": "crates/trit-wspace/src/grouped_codec.rs",
       "lines": 183
-    },
-    {
-      "file": "crates/trit-wspace/src/grouped_equal.rs",
-      "lines": 136
-    },
-    {
-      "file": "crates/trit-wspace/src/grouped_invariant.rs",
-      "lines": 83
     },
     {
       "file": "crates/trit-wspace/src/grouped_ops.rs",
@@ -3596,7 +3592,7 @@
     },
     {
       "file": "crates/trit-wspace/src/lib.rs",
-      "lines": 172
+      "lines": 171
     },
     {
       "file": "crates/trit-wspace/src/localize.rs",
@@ -3949,6 +3945,10 @@
     {
       "file": "crates/trit-wspace/tests/grouped.rs",
       "lines": 115
+    },
+    {
+      "file": "crates/trit-wspace/tests/grouped_certify.rs",
+      "lines": 227
     },
     {
       "file": "crates/trit-wspace/tests/grouped_codec.rs",

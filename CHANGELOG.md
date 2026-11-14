@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（分组判等证书：L0–L4 分级 + 可复核证据）
+
+- 新模块 `crates/trit-wspace/src/grouped_certify.rs`：合并原 `grouped_equal`（行为签名 /
+  规范化 / 行分组判定）与 `grouped_invariant`（逐行正比例），并新增 `certify_equivalence`。
+- 判据分级：**L0** 逐位相同 → **L1** canonical（全体正缩放）→ **L2** 逐行正比例 →
+  **L3** 有界 trit 域穷举 → **L4** `inconclusive`；形状不同单列 `shape_mismatch`。
+- **L4 是 `inconclusive`，不是 `different`**：穷举有域上限，没证出来不等于否证。
+- 证书 JSON：`schema=trit-wspace.grouped-certificate.v1`、`scope=structural`、`witness`、
+  `implies`（`all_inputs` / `bounded_trit_domain` / `none`）、`tolerance`、`scale_ratio`、
+  `row_ratios`、`behavior.{vars,samples,rows,signature_fnv}`。
+- 与 `certify` 的口径分开：`certify` 是**样本集**（`Preserved/Fixed/Regressed/...`），
+  本证书是**结构判据**；L0–L2 覆盖任意实数输入，L3 只覆盖 `vars ≤ 8` 的 trit 域。
+- `tests/grouped_certify.rs`（10 条）：L0–L4 正例、反例落在 `inconclusive`、`shape_mismatch`、
+  超域报错、**充分性自检**（100 对随机层里 L2 成立 ⇒ 行为必须相同）、384×384/vars=4 的
+  5 s 成本上限、JSON 字段。
+- 设计稿 `docs/WSP-GROUPED-CERTIFY.md`。
+- 模块归并后 `lib.rs` 净减一行（两个 `pub mod` 换一个），不触碰任何台账上限。
+
 ### Added（WSP2G 分组三值二进制容器——把 0.75× 修成 **2.37×**）
 
 - 新模块 `crates/trit-wspace/src/wsp2/grouped.rs`：WSP2 `version=3` 的分组段
