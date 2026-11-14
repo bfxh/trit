@@ -114,6 +114,7 @@ jobs:
               echo "args="
               echo "needs_png=true"
               echo "needs_gpu=true"
+              echo "needs_build_gpu=true"
               echo "reason=$1"
             } >> "$GITHUB_OUTPUT"
             echo "收窄不可用，走全量：$1"
@@ -184,6 +185,39 @@ jobs:
             cargo clippy --workspace --all-targets --locked -- -D warnings
           fi
 
+      # gpu feature（默认关）不单独跑，CI 就永远碰不到：#149 的事故就是这块代码从没被门编译过
+      # （matmul.rs 在内核 feature 后，PR 绿、main 的 macOS 红）。
+      #
+      # 只跑 1×1×1 冒烟用例：CI 的软件后端（Windows WARP 等）跑完整 matmul
+      # （512×4096×512）要十几分钟；而 1×1×1 同样会创建全部 shader module，
+      # f16 扩展缺失这类错照样能抓到。完整形状在开发者本机跑。
+      #
+      # 冒烟在软件后端上是纯运行时间（Windows 实测 263s），与后面的 nextest/doctest/clippy
+      # 互不依赖 ⇒ 这里当场编好（编译错误当场判红），用例放到后台跑，job 末尾的「— wait」
+      # 收结果、打印日志、按退出码判红。放在 Clippy 之后：fmt/clippy 的快速失败不被 GPU 编译拖慢。
+      - name: Test (trit-gpu gpu feature, shader smoke) — start
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo test -p trit-gpu --features gpu --locked --test matmul --no-run
+          d=target/gpu-smoke
+          rm -rf "$d"
+          mkdir -p "$d"
+          (
+            set +e
+            cargo test -p trit-gpu --features gpu --locked --test matmul gpu_reg_matmul_tiny_case
+            echo $? > "$d/rc.tmp"
+            mv "$d/rc.tmp" "$d/rc"
+          ) </dev/null >"$d/log" 2>&1 &
+          # 等它过了 cargo 的构建锁、真正开始跑用例再放行：后面的 cargo 命令才不会和它抢锁。
+          for _ in {1..300}; do
+            if [ -f "$d/rc" ] || grep -qs "Running" "$d/log"; then
+              break
+            fi
+            sleep 1
+          done
+
       - name: Test (nextest)
         if: steps.scope.outputs.only_docs != 'true'
         shell: bash
@@ -218,15 +252,7 @@ jobs:
         if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_png == 'true'
         run: cargo clippy -p trit-texture --features png --all-targets --locked -- -D warnings
 
-      # gpu feature（默认关）：同上。#149 的事故就是这块代码从没被门编译过
-      # （matmul.rs 在内核 feature 后，PR 绿、main 的 macOS 红）。
-      #
-      # 只跑 1×1×1 冒烟用例：CI 的软件后端（Windows WARP 等）跑完整 matmul
-      # （512×4096×512）要十几分钟；而 1×1×1 同样会创建全部 shader module，
-      # f16 扩展缺失这类错照样能抓到。完整形状在开发者本机跑。
-      - name: Test (trit-gpu gpu feature, shader smoke)
-        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
-        run: cargo test -p trit-gpu --features gpu --locked --test matmul gpu_reg_matmul_tiny_case
+      # gpu feature 的 clippy。冒烟用例已在 Clippy 后的「— start」放到后台，结果由 job 末尾的「— wait」收。
       - name: Clippy (trit-gpu gpu feature)
         if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
         run: cargo clippy -p trit-gpu --features gpu --all-targets --locked -- -D warnings
@@ -239,6 +265,21 @@ jobs:
       - name: Clippy (trit-build gpu feature)
         if: steps.scope.outputs.only_docs != 'true' && runner.os == 'Linux' && steps.crates.outputs.needs_build_gpu == 'true'
         run: cargo clippy -p trit-build --features gpu --all-targets --locked -- -D warnings
+
+      # 收「— start」放到后台的冒烟结果：日志整段打印，退出码原样判红。后台进程消失、迟迟不写 rc
+      # 时靠 timeout-minutes 判红，不会悄悄放过。
+      - name: Test (trit-gpu gpu feature, shader smoke) — wait
+        if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
+        shell: bash
+        timeout-minutes: 20
+        run: |
+          set -uo pipefail
+          d=target/gpu-smoke
+          while [ ! -f "$d/rc" ]; do
+            sleep 5
+          done
+          cat "$d/log"
+          exit "$(cat "$d/rc")"
 
   module-budget:
     name: module budget (god objects)
