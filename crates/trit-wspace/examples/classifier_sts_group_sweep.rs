@@ -32,7 +32,7 @@ const POSITIONS: &str = "embeddings.position_embeddings.weight";
 const TOKEN_TYPE: &str = "embeddings.token_type_embeddings.weight";
 const EMB_LN_W: &str = "embeddings.LayerNorm.weight";
 const EMB_LN_B: &str = "embeddings.LayerNorm.bias";
-const GROUPS: [usize; 7] = [4, 8, 16, 32, 64, 128, 256];
+const GROUPS: [usize; 2] = [128, 256];
 
 /// 按幅度排序后每 `group` 个共享一个 `E|w|` 做三值化。
 fn ternary_sorted(weight: &mut [f32], group: usize) {
