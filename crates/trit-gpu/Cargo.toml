@@ -35,6 +35,10 @@ required-features = ["gpu"]
 name = "wf32_bench"
 required-features = ["gpu"]
 
+[[example]]
+name = "device_calibrate"
+required-features = ["gpu"]
+
 [[bench]]
 name = "sample"
 harness = false
@@ -48,3 +52,7 @@ trit-texture = { path = "../trit-texture", features = ["png"] }
 # 设备适配沙盘：确定性随机源 + 仓内 QAT 策略。
 trit-bench.workspace = true
 trit-learn.workspace = true
+# 真实设备校准：显存探针 + CPU SIMD 吞吐 + 档案序列化。
+trit-capacity.workspace = true
+trit-simd = { path = "../trit-simd" }
+serde = { version = "1.0.229", features = ["derive"] }

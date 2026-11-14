@@ -21,7 +21,7 @@ pub enum Precision {
 }
 
 /// 设备大类。
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DeviceClass {
     Cpu,
     Gpu,
@@ -51,7 +51,7 @@ impl DeviceClass {
 }
 
 /// 一份设备档案。
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Device {
     pub name: String,
     pub class: DeviceClass,
