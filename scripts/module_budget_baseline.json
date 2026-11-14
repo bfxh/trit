@@ -3336,7 +3336,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 519
+      "lines": 448
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_agree_stats.rs",
@@ -3519,8 +3519,16 @@
       "lines": 127
     },
     {
-      "file": "crates/trit-wspace/src/cli/usage.rs",
-      "lines": 37
+      "file": "crates/trit-wspace/src/cli/routes.rs",
+      "lines": 87
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/usage/commands.rs",
+      "lines": 40
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/usage/mod.rs",
+      "lines": 15
     },
     {
       "file": "crates/trit-wspace/src/cli_audit.rs",
