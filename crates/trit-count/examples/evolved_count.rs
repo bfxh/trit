@@ -62,7 +62,6 @@ enum Family {
     /// 直接构造的随机 3-SAT（相变比 4.26 附近）；无闭式，正确性靠置换不变性。
     Random3Sat,
 }
-
 impl Family {
     fn parse(text: &str) -> Self {
         match text {
@@ -79,7 +78,6 @@ impl Family {
         }
     }
 }
-
 impl Mode {
     fn parse(text: &str) -> Self {
         match text {
@@ -357,6 +355,8 @@ fn train_classifier(
     let mut adam_os = Adam::new(1e-2);
     for _ in 0..80 {
         for (feats, label) in training {
+            guard.zero_grad();
+            out.zero_grad();
             let hidden = guard.forward(feats);
             let activated: Vec<f32> = hidden
                 .iter()
