@@ -3191,6 +3191,10 @@
       "lines": 119
     },
     {
+      "file": "crates/trit-wspace/examples/rank_one_ternary.rs",
+      "lines": 117
+    },
+    {
       "file": "crates/trit-wspace/examples/real_analysis.rs",
       "lines": 123
     },
@@ -3659,6 +3663,10 @@
       "lines": 41
     },
     {
+      "file": "crates/trit-wspace/src/rank_one.rs",
+      "lines": 155
+    },
+    {
       "file": "crates/trit-wspace/src/rebase.rs",
       "lines": 83
     },
@@ -4025,6 +4033,10 @@
     {
       "file": "crates/trit-wspace/tests/project_cli.rs",
       "lines": 98
+    },
+    {
+      "file": "crates/trit-wspace/tests/rank_one.rs",
+      "lines": 115
     },
     {
       "file": "crates/trit-wspace/tests/rebase.rs",
