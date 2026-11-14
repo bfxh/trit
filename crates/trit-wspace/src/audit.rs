@@ -1,10 +1,7 @@
-//! 可重放的编辑审计日志：JSONL + 哈希链。
-//! 每一行是一条编辑记录：前/后工件校验和、补丁、改动量、应用/回滚标志，
-//! 以及 `prev` / `chain` 两个哈希链字段。`verify_chain` 抓篡改与乱序；
-//! `replay` 从初始工件逐条重放，校验每一步的 `before` / `after` 校验和。
-//! 记录时如果给了验证集，还会存下验证集规范 + 前/后**行为指纹**；重放会同时
-//! 核对“权重链”和“行为链”。回滚条目必须前后同校验和、同行为指纹；
-//! 未应用条目（前置不成立）同理。三条不变量让日志本身自洽。
+//! 可重放的编辑审计日志：JSONL + 哈希链。每行一条：前后校验和、补丁、改动量、应用/回滚标志、
+//! `prev` / `chain`。`verify_chain` 抓篡改与乱序，`replay` 逐条重放并核对前后校验和；给了验证集
+//! 就存规范 + 前后行为指纹，重放同时核对权重链与行为链。回滚/未应用条目必须前后同校验和、同指纹。
+//! 同一条编辑重复记录只留一条（幂等键见 `dedupe`）。
 
 use serde_json::{Value, json};
 
@@ -14,13 +11,13 @@ use crate::error::{Error, Result};
 use crate::net::Net;
 use crate::oracle::{Behavior, Oracle};
 use crate::wire;
+mod dedupe;
 
 /// 日志线格式版本。
 pub const LOG_VERSION: u64 = 1;
 
 /// 创世链值。
 pub const GENESIS: u64 = 0;
-
 /// 单条记录最多存多大的验证集（超过就报错，避免日志爆掉）。
 pub const MAX_LOGGED_ORACLE: usize = 4096;
 
@@ -126,8 +123,7 @@ impl AuditLog {
         self.record_with_oracle(name, before, after, patch, applied, rolled_back, None)
     }
 
-    /// 追加一条记录，可选存下验证集与前后行为指纹。
-    /// 不变量：未应用/回滚条目必须前后校验和相同（工件没被留在半改状态），且行为指纹相同。
+    /// 追加一条记录（可选存验证集与前后行为指纹）；与最后一条完全相同时直接跳过。
     #[allow(clippy::too_many_arguments)]
     pub fn record_with_oracle(
         &mut self,
@@ -139,11 +135,15 @@ impl AuditLog {
         rolled_back: bool,
         oracle: Option<&Oracle>,
     ) -> Result<()> {
+        let name = name.into();
         if before.arch() != after.arch() {
             return Err(Error::ArchMismatch);
         }
         let before_sum = checksum(before);
         let after_sum = checksum(after);
+        if self.is_duplicate(&name, before_sum, after_sum, &patch, applied, rolled_back) {
+            return Ok(());
+        }
         if !applied && before_sum != after_sum {
             return Err(Error::Audit("未应用补丁但前后工件校验和不同".into()));
         }
@@ -177,7 +177,7 @@ impl AuditLog {
         let cost = wire::cost_to_value(&patch.cost(before));
         let mut entry = LogEntry {
             seq,
-            name: name.into(),
+            name,
             before: before_sum,
             after: after_sum,
             applied,

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Fixed（审计日志幂等：重复应用不再产生重复条）
+
+- 新子模块 `crates/trit-wspace/src/audit/dedupe.rs`：幂等键 =
+  `name + before + after + applied + rolled_back + patch`，只与**最后一条**比较——
+  中间插入过别的编辑就说明工件状态已前进，此时再记一条是合法历史。
+- `AuditLog::record` / `record_with_oracle` 命中幂等键时直接返回 `Ok(())`：不追加、
+  不动哈希链、`len()` 不变。
+- `tests/audit_idempotent.rs`（5 条）：同一条重复跳过、名字不同仍追加、带验证集同样跳过、
+  `applied` 不同不跳过、中间有别的编辑时保留。
+- README 审计段补幂等键说明。
+
 ### Added（分组判等证书：L0–L4 分级 + 可复核证据）
 
 - 新模块 `crates/trit-wspace/src/grouped_certify.rs`：合并原 `grouped_equal`（行为签名 /

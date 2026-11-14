@@ -3307,6 +3307,10 @@
       "lines": 603
     },
     {
+      "file": "crates/trit-wspace/src/audit/dedupe.rs",
+      "lines": 31
+    },
+    {
       "file": "crates/trit-wspace/src/capability.rs",
       "lines": 92
     },
@@ -3885,6 +3889,10 @@
     {
       "file": "crates/trit-wspace/tests/audit.rs",
       "lines": 350
+    },
+    {
+      "file": "crates/trit-wspace/tests/audit_idempotent.rs",
+      "lines": 120
     },
     {
       "file": "crates/trit-wspace/tests/block_index.rs",

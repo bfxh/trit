@@ -287,6 +287,8 @@ CLI 的 `audit-shards` 是**流式**的：`ShardCursor` / `ShardReplay` 读一�
 `patch --log audit.jsonl` 每次追加一条；每行含 `before` / `after` 校验和、补丁、改动量、
 `applied` / `rolled_back`、`prev` / `chain`。`audit` 验链（抓篡改/乱序），`replay` 从初始
 工件逐条重放并核对每一步校验和。回滚/未应用条目必须前后同校验和，日志本身自洽。
+**同一条编辑重复记录只留一条**：幂等键是 `name + before + after + applied + rolled_back +
+patch`，只与最后一条比较——中间插入过别的编辑就说明工件状态已前进，此时再记一条是合法历史。
 
 记录时若给了 `--oracle`，还会存下验证集规范与前后**行为指纹**；`audit` / `replay`
 会同时核对权重链与行为链（`behavior_checked` 是实际核对条数）。同一验证集只在第一条
