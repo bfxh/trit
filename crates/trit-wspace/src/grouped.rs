@@ -1,12 +1,8 @@
 //! 分组三值层：**跨行**按幅度分层后分组共享 scale。
 //!
-//! 实测（见 `docs/WSP-DIMSWEEP.md`）：单 scale 三值化在 STS 上掉 24.91 点——不是"三值精度
-//! 不够"，而是同组里混着幅度差上百倍的权重；**按幅度排序后每 G 个共享一个 scale**，
-//! 代价降到 0.0004 点（全量 1379 对）。
-//!
-//! 但这需要记录"每个元素属于哪一组"（排序划分是额外信息）：每组 256、59 万权重 ⇒ 2304 组
-//! ⇒ 约 11.2 bit/元素。定位：**在"权重必须是三值"的硬约束下**（可穷举验证、可逐位 diff），
-//! 用 `2 + 32/G + log2(组数)` bit/权重 换取几乎无损——**不是**通用压缩方案。
+//! 单 scale 三值化在 STS 上掉 24.91 点——不是精度不够，而是同组混着幅度差上百倍的权重；
+//! 按幅度排序后每 G 个共享一个 scale，代价降到 0.0004 点。代价是必须记录"每个元素属于哪一组"
+//! （约 11.2 bit/元素），所以定位是**"权重必须是三值"约束下的方案**，不是通用压缩方案。
 //!
 //! 与 [`crate::net::Layer`] 的关键差别：`Layer.scales` 是**每行一个**，故有"正 scale 不改
 //! 行为"的不变性；本结构按**跨行**分组，同一行内不同列可落到不同 scale ⇒ 该不变性**失效**
@@ -33,12 +29,10 @@ pub struct GroupedLayer {
 }
 
 pub(crate) fn trit_of(value: f32) -> Trit {
-    if value > 0.0 {
-        Trit::Pos
-    } else if value < 0.0 {
-        Trit::Neg
-    } else {
-        Trit::Zero
+    match value.partial_cmp(&0.0) {
+        Some(std::cmp::Ordering::Greater) => Trit::Pos,
+        Some(std::cmp::Ordering::Less) => Trit::Neg,
+        _ => Trit::Zero,
     }
 }
 
@@ -208,13 +202,12 @@ impl GroupedLayer {
         self.scales.get(group).copied()
     }
 
-    /// 全部组的 scale。
+    /// 全部组的 scale；`scales_mut` 供规范化改写。
     #[must_use]
     pub fn scales(&self) -> &[f32] {
         &self.scales
     }
 
-    /// 可写 scale（规范化用）。
     pub(crate) fn scales_mut(&mut self) -> &mut [f32] {
         &mut self.scales
     }

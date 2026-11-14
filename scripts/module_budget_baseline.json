@@ -3520,7 +3520,11 @@
     },
     {
       "file": "crates/trit-wspace/src/grouped.rs",
-      "lines": 215
+      "lines": 214
+    },
+    {
+      "file": "crates/trit-wspace/src/grouped_equal.rs",
+      "lines": 136
     },
     {
       "file": "crates/trit-wspace/src/grouped_ops.rs",
@@ -3897,6 +3901,10 @@
     {
       "file": "crates/trit-wspace/tests/grouped.rs",
       "lines": 115
+    },
+    {
+      "file": "crates/trit-wspace/tests/grouped_equal.rs",
+      "lines": 76
     },
     {
       "file": "crates/trit-wspace/tests/grouped_oracle.rs",
