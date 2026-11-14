@@ -43,7 +43,7 @@ STOPWORDS = {"ledger", "done", "note", "that", "with", "from", "see", "详见", 
 
 
 
-ENTRY_RE = re.compile(r"^- \[[ xX]\] \*\*(A[0-9]+)([^*]*)\*\*")
+ENTRY_RE = re.compile(r"^- \[[ xX]\] \*\*(A[0-9]+[A-Za-z]*)(?![A-Za-z0-9])([^*]*)\*\*")
 OWNER_RE = re.compile(r"负责[：:]\s*([^｜|）)]+)")
 SNAPSHOT_STAMP = re.compile(r"生成时间：(\d{4}-\d{2}-\d{2})")
 STALE_DAYS = 30
@@ -416,6 +416,19 @@ def self_test() -> int:
         "- [x] **A7 · 同一件事**（完成｜负责：B 会话）\n"
     )
     expect("反证 7：同一编号重复登记同一件事", judge_ledger(same), ("拦", "重复登记"))
+
+    # 反证 8：编号边界——`A9xx` 不是 `A9`（否则「A9xx 三值 3D」会被判成与真 A9 撞车；
+    # 2026-11-15 真的踩过：LEDGER L93 的 `A9xx` 被旧正则截成 `A9`，报了假复用）
+    boundary = parse_entries(
+        "- [x] **A9xx · 三值 3D 资产闭环**（完成 2026-11-09｜负责：甲）\n"
+        "- [x] **A9 · BSHSQ 分片重切**（完成 2026-10-21｜负责：乙）\n"
+    )
+    if [entry["id"] for entry in boundary] != ["A9xx", "A9"]:
+        failures += 1
+        print(f"  FAIL 反证 8：解析出的编号是 {[e['id'] for e in boundary]}，应为 ['A9xx', 'A9']")
+    else:
+        print("  ok   反证 8：A9xx 解析为独立编号，不截成 A9")
+    expect("反证 8b：A9xx 与 A9 不判为重复", judge_ledger(boundary), None)
 
     print("自测结论：%s" % ("绿" if failures == 0 else f"红 {failures} 条"))
     return 1 if failures else 0
