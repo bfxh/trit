@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（三值红蓝共同进化：想法进化的多智能体机制落到三进制安全对抗）
+
+- `examples/evolution/`：PROTEUS 式五角色进化（PROMETHEUS 变异 / MOMUS 实测
+  批判 / ANANKE 选择 / HARMONIA 三值投票交叉 / 化石记录 = 哈希→历史 fitness）
+  + 自我假设（层偏置聚焦，命中 = best fitness 上升）+ AB 双模型交替（红方
+  基因组进化 vs 蓝方 3 seed 集成）。攻击策略 = 长度 129 的三值优先级向量，
+  变异 = trit 翻转，攻击走 `Edit::SetTrit` 原语。
+- 读数（SMS spam 集成防御，6 代）：**gen 0 即进化发现 kill-switch**
+  （best fitness 0.7353，化石记忆后 gen 0-5 全程稳定）；最强攻击把单成员
+  **F1 0.7500 → 0.0000**，而三成员集成投票**完全扛住（F1 0.7353 无损）**
+  ——#495 防御对策的定量验证。
+- 过程修正 4 条（搜索空间含致命行 / 随机采样替代固定排序 / 化石记成绩不拒
+  再见 / 评估噪声取 min-of-2），对后续进化实验直接可用。
+- 文档 `docs/WSP-EVOLUTION.md`。
+
+
 ### Added（AI 安全线：语义红队 5/5 守住 + 完整性审计模型负结果与方向修正）
 
 - `tests/redteam_semantics.rs`：语义层不变量攻击（patch 原子性/回滚逐位/
