@@ -11,8 +11,7 @@
 //! 代价同样明确：没有现成的 f32 预训练生态；表达力受三值限制；大规模网络的穷举不可行（本库的 M0 边界就是小网络 + 有界域）。
 //! ## 三层结构
 //! - **表示层**：[`Net`] / [`Layer`] 是不可变的权重工件；[`codec`] 把它写成 WSP1 文本，[`Trit`] 是唯一的权重单位。
-//! - **编辑层**：[`Edit`] / [`Patch`] 是事务式补丁；[`Journal`] 支持逐位回滚；
-//!   [`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
+//! - **编辑层**：[`Edit`] / [`Patch`] 是事务式补丁；[`Journal`] 支持逐位回滚；[`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；
 //!   [`Script`] 把多个 [`Program`] 组合成原子序列或按行为分支的脚本；
 //!   [`AuditLog`] 把每次编辑记成带哈希链的 JSONL，可验链、可从初始工件重放；
 //!   [`mod@shard`] 把长日志切成带 header 与分片内 oracle 表的多文件，跨片仍是同一条链；
@@ -75,6 +74,7 @@ pub mod attribution;
 pub mod audit;
 pub mod capability;
 pub mod certify;
+pub mod classifier_head;
 pub mod cli;
 mod cli_audit;
 pub mod codec;
