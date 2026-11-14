@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）
+
+- `examples/adversarial_train/`：AB 循环——红方进化攻击（行基因组整行置零）
+  → 蓝方对抗再训练（红方点名行的 RowDropout 轮换注入，epoch 内置零训练末恢复）
+  → 同源攻击再打，对照普通再训练。
+- 读数（3 轮）：round 3 出现鲁棒信号——同源攻击下对抗再训练 F1 0.9167 >
+  干净 0.8804 > 普通对照 0.8370；单轮 8 epochs 不足（决策边界分散需多轮累积）。
+- 过程坑两条：全零工件反推的 QAT 再训练是对称死区（F1 恒 0，初始化教训姊妹篇）；
+  输出层行注入要跳过（置零 = 熄火非冗余）。文档 `docs/WSP-ADV-TRAIN.md`。
+
+
 ### Added（防御面：预测组件 + DDoS 盾沙盘 + 模型身份锁定）
 
 - `trit_learn::forecast`（新部件，可发布层）：SMA / EWMA / Holt（O(1) 流式）

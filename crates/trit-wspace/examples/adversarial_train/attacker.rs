@@ -1,0 +1,114 @@
+//! 红方：进化攻击（行基因组，#497 同款）——找出对当前蓝方最强攻击的行组合。
+
+use trit_wspace::Net;
+use trit_wspace::edit::{Edit, Patch};
+use trit_wspace::trit::Trit;
+
+use super::evaluate;
+use super::metrics::{Rng, fnv};
+
+/// 红方进化：找对 `net` 最强攻击的行组合（整行置零，top-k 行）。
+pub(super) fn evolve_attack(
+    net: &Net,
+    k: usize,
+    features: &[Vec<f32>],
+    labels: &[usize],
+    test: &[usize],
+    rng: &mut Rng,
+    generations: usize,
+) -> Vec<(usize, usize)> {
+    let (_base_acc, base_f1) = evaluate(net, features, labels, test);
+    let mut population: Vec<Vec<i8>> = (0..12)
+        .map(|_| {
+            (0..net.layers()[0].rows() + 1)
+                .map(|_| match rng.next_u64() % 5 {
+                    0 => 1,
+                    1 => -1,
+                    _ => 0,
+                })
+                .collect()
+        })
+        .collect();
+    let mut fossils: std::collections::HashMap<u64, f32> = std::collections::HashMap::new();
+    let mut best_rows: Vec<(usize, usize)> = Vec::new();
+    let mut best_fit = f32::MIN;
+    for _ in 0..generations {
+        let mut scored: Vec<(f32, usize)> = Vec::new();
+        for (pi, genome) in population.iter().enumerate() {
+            let key = fnv(&genome
+                .iter()
+                .flat_map(|&t| (t as i64).to_le_bytes())
+                .collect::<Vec<u8>>());
+            if let Some(&past) = fossils.get(&key) {
+                scored.push((past, pi));
+                continue;
+            }
+            let mut candidates: Vec<(usize, usize)> = genome
+                .iter()
+                .enumerate()
+                .filter(|&(_, &prio)| prio == 1)
+                .map(|(row, _)| {
+                    if row < net.layers()[0].rows() {
+                        (0usize, row)
+                    } else {
+                        (1usize, 0usize)
+                    }
+                })
+                .collect();
+            for i in (1..candidates.len()).rev() {
+                let j = (rng.next_u64() % (i as u64 + 1)) as usize;
+                candidates.swap(i, j);
+            }
+            candidates.truncate(k);
+            let mut attacked = net.clone();
+            let mut edits = Vec::new();
+            for &(li, row) in &candidates {
+                let cols = attacked.layers()[li].cols();
+                for c in 0..cols {
+                    if attacked.layers()[li].trits()[row * cols + c].to_i8() != 0 {
+                        edits.push(Edit::SetTrit {
+                            layer: li,
+                            row,
+                            col: c,
+                            to: Trit::Zero,
+                        });
+                    }
+                }
+            }
+            Patch::new(edits).apply(&mut attacked).expect("in-bounds");
+            let (_acc, f1) = evaluate(&attacked, features, labels, test);
+            let fitness = base_f1 - f1;
+            fossils.insert(key, fitness);
+            scored.push((fitness, pi));
+            if fitness > best_fit {
+                best_fit = fitness;
+                best_rows = candidates;
+            }
+        }
+        scored.sort_by(|a, b| b.0.partial_cmp(&a.0).expect("finite"));
+        let mut next_pop: Vec<Vec<i8>> = scored
+            .iter()
+            .take(4)
+            .map(|&(_, pi)| population[pi].clone())
+            .collect();
+        while next_pop.len() < 12 {
+            let a = &population[scored[rng.next_index(scored.len())].1];
+            let b = &population[scored[rng.next_index(scored.len())].1];
+            let child: Vec<i8> = a
+                .iter()
+                .zip(b)
+                .map(|(&x, &y)| if x == y || rng.next_f32() < 0.5 { x } else { y })
+                .collect();
+            next_pop.push(child);
+        }
+        population = next_pop;
+    }
+    let _ = best_fit;
+    if best_rows.is_empty() {
+        for _ in 0..k {
+            let row = rng.next_index(net.layers()[0].rows());
+            best_rows.push((0, row));
+        }
+    }
+    best_rows
+}
