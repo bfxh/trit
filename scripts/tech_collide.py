@@ -375,6 +375,20 @@ def self_test() -> int:
             failures += 1
             print(f"  FAIL 反证 5：读不到索引却返回 rc={blocked}，等于放行")
 
+    # 反证 6：快照里放重复编号必须判红（这是本门存在的理由；2026-11-15 九组重号前的实况）
+    duplicated = parse_entries(
+        "- [x] **A129 · 化学仓 M0**（完成｜负责：Qoder 本会话）\n"
+        "- [x] **A129 · 三值卷积栈 vs MLP**（完成｜负责：Qoder 本会话）\n"
+    )
+    expect("反证 6：快照里同一编号被两件事复用", judge_ledger(duplicated), ("拦", "编号被两件事复用"))
+
+    # 反证 7：同号但同一件事（真重复登记）也要拦，不能因为标题相同就放过
+    same = parse_entries(
+        "- [x] **A7 · 同一件事**（完成｜负责：A 会话）\n"
+        "- [x] **A7 · 同一件事**（完成｜负责：B 会话）\n"
+    )
+    expect("反证 7：同一编号重复登记同一件事", judge_ledger(same), ("拦", "重复登记"))
+
     print("自测结论：%s" % ("绿" if failures == 0 else f"红 {failures} 条"))
     return 1 if failures else 0
 
