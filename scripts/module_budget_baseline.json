@@ -3087,6 +3087,10 @@
       "lines": 559
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_sts_wspg.rs",
+      "lines": 243
+    },
+    {
       "file": "crates/trit-wspace/examples/dimsweep/basis.rs",
       "lines": 325
     },

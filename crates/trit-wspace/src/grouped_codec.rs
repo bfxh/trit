@@ -28,8 +28,7 @@
 //! | `wsp1g` 分组三值 | 1 + 组号文本（约 1.5–2） | **约 1.3–1.6×** |
 //!
 //! 也就是说：**文本格式下三值只有 4×，与 int8 持平**；分组三值因为要落盘组号，实测比
-//! per-tensor 三值更**大**。这正是"排序信息不是免费的"在文件层面的证据——
-//! 比抽象位宽（2.4×）更能说明问题。
+//! per-tensor 三值更**大**——"排序信息不是免费的"在文件层面的证据。
 
 use crate::error::{Error, Result};
 use crate::grouped::GroupedLayer;
@@ -168,8 +167,7 @@ pub fn from_wspg(text: &str) -> Result<GroupedLayer> {
             continue;
         }
     }
-    // `from_trits` 只能从组数反推 `group_size`（组数 ≠ 组大小），这里用文本里记录的
-    // 准确值覆盖——否则 `body` 与写盘时不一致，校验和会误报。
+    // 组数 ≠ 组大小：用文本里的准确 group_size 覆盖，否则 body 不一致会让校验和误报。
     let mut layer = GroupedLayer::from_trits(rows, cols, &trits, &groups, &scales, &bias)?;
     layer.group_size = group_size;
     if let Some(want) = expected_checksum {
@@ -181,6 +179,5 @@ pub fn from_wspg(text: &str) -> Result<GroupedLayer> {
             });
         }
     }
-    let _ = group_size;
     Ok(layer)
 }
