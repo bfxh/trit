@@ -28,7 +28,12 @@
 - 落地：`门` `scripts/layers.py` 读 `scripts/layers.json` + 各 `Cargo.toml` 的内部依赖边，出现回边判红。
 - 文档也归位（谁写在哪）见 [ROADMAP.md](ROADMAP.md) §5：主库只写底座的事，项目口径留项目仓，
   主库最多留一行指针——不复制正文。
-  当前 **0 条跨层例外**——原先唯一一条 `trit-graph → trit-learn`（mpnn 要 `Ste`）
+  当前 **1 条跨层例外**：`trit-gpu`(ops) → `trit-wspace`(learn)，仅 `[dev-dependencies]`
+  （`crates/trit-gpu/Cargo.toml`）：GPU 测试与示例读 WSP 工件做 CPU 参考对拍。
+  **dev-dependencies 与 dependencies 一样计入回边**——`cargo package` 会剥离 path dev-deps，
+  发布闭包不受影响，但「下层为了测试去读上层」仍然是反向依赖，所以必须在 `allows` 里逐条
+  登记原因，不许默认放行。
+  原先还有一条 `trit-graph → trit-learn`（mpnn 要 `Ste`）
   已用「把 `Ste` 连同三值量化下沉到 `trit-core::quant`」消掉，`trit_learn::quant` 保留同名再导出，
   既有导入路径与外部 git pin 不受影响。
 

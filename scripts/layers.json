@@ -54,7 +54,13 @@
     "trit-bench": "base",
     "trit-fuzz": "base"
   },
-  "allows": [],
+  "allows": [
+    {
+      "from": "trit-gpu",
+      "to": "trit-wspace",
+      "reason": "仅 dev-dependencies：GPU 侧测试与示例读 WSP 工件做 CPU 参考对拍，不进发布闭包（cargo package 剥离 path dev-deps），故登记为例外而不是拆依赖"
+    }
+  ],
   "known_debts": [
     "trit-dot / trit-ops / trit-gpu 三者描述里都写「点积」：dot=位并行 CPU、ops=双导轨与 trit×f32 矩阵向量、gpu=WGSL 内核。同能力三处实现，按 LAYERS §4 必须各带同机实测差，否则合并。",
     "sansheng 是伞包且 0 测试：它只做 re-export，不参与判定；若哪天出现逻辑就必须先补对拍。",
