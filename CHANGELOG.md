@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（trit-gpu：行为级 CPU/GPU/NPU 仿真 + QAT 设备适配策略）
+
+- `crates/trit-gpu/examples/device_adapt/`：行为级延迟模型（有效峰值/带宽/
+  缓存/启动开销/占用率/分块）覆盖 8 个计划；GPU 锚点用 trit-gpu 真机读数
+  （ternary reg2x2 0.129 ps/MAC、f32 tiled 2.641）校准，模型/实测比为
+  1.007 / 1.005 / 0.996 / 1.000。
+- 策略：21 维设备+形状特征 → QAT 三值 MLP（32 hidden）选计划；对照 oracle /
+  按类静态 / 手写启发式 / 随机；测试设备与训练形状不重叠，OOD 锚点单列。
+- 读数（48 设备/类 × 8 形状，3 seeds）：同分布 mean **1.010–1.011**（p90 1.00），
+  优于 class_fixed 1.034 与 heuristic 1.130；OOD 锚点 learned_clean 1.069
+  ≈ heuristic 1.077（种子相关），p90 1.021 < 1.331。训练规模 24→48/类：
+  同分布 1.031→1.011、锚点 1.112→1.069。
+- 负结果：±10% 噪声增强不稳定（n=48 在锚点反而更差）；弱 popcount GPU 锚点
+  仍选错 ternary reg（2.2–2.8×）；split-K / naive / cpu_u64 在留出集被支配。
+- 边界：仿真 + 合成设备（GPU 锚点除外），无真机迁移结论；单算子 matmul。
+  文档 `docs/DEVICE-ADAPT.md`。
+
 ### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）
 
 - `examples/adversarial_train/`：AB 循环——红方进化攻击（行基因组整行置零）

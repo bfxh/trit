@@ -899,6 +899,22 @@
       "lines": 188
     },
     {
+      "file": "crates/trit-gpu/examples/device_adapt/device.rs",
+      "lines": 275
+    },
+    {
+      "file": "crates/trit-gpu/examples/device_adapt/main.rs",
+      "lines": 494
+    },
+    {
+      "file": "crates/trit-gpu/examples/device_adapt/plan.rs",
+      "lines": 364
+    },
+    {
+      "file": "crates/trit-gpu/examples/device_adapt/policy.rs",
+      "lines": 343
+    },
+    {
       "file": "crates/trit-gpu/examples/render_scene_gpu.rs",
       "lines": 197
     },
@@ -2968,7 +2984,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/adversarial_train/main.rs",
-      "lines": 440
+      "lines": 432
     },
     {
       "file": "crates/trit-wspace/examples/adversarial_train/metrics.rs",

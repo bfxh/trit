@@ -1977,6 +1977,8 @@ dependencies = [
  "half",
  "pollster",
  "serde_json",
+ "trit-bench",
+ "trit-learn",
  "trit-texture",
  "trit-wspace",
  "wgpu",
