@@ -4,11 +4,12 @@
 
 ### Changed（文档治理：docs 按用途归位、索引重写、口径统一、文档门接进 CI）
 
-- 文档门接进 CI：`docs-gates` job 现在跑 **5 道**——`docs_hygiene` / `doc_pointers` /
-  `model_status` / `claims_evidence` / `layers`（各带自测，共 11 步）。第六道 `tech_collide`
-  已修到绿（见下）但**不进 CI**：它读仓外交接账本 `_handoff/LEDGER.md`，CI runner 上没有那份
-  账本。宁可标成「本机门」（`docs/specs/DOC-INDEX.md` §5 记了原因），也不加一个永远 skip 的
-  步骤假装覆盖。
+- 文档门接进 CI：`docs-gates` job 现在跑 **6 道**——`docs_hygiene` / `doc_pointers` /
+  `model_status` / `claims_evidence` / `layers` / `tech_collide`（各带自测，共 15 步）。
+  `tech_collide` 原先读仓外交接账本、CI 上没法跑；本轮新增**仓内脱敏快照**
+  `scripts/ledger-snapshot/`（由 `scripts/sync_handoff_snapshot.py` 生成，只保留判定需要的
+  编号/状态/标题/负责/路径/标签，本机绝对路径与 token 一律替换），门默认读快照 ⇒ CI 上真的
+  会跑；快照缺失或过期都判红（`--check` 比哈希），不做「账本在才跑」那种永远 skip 的假覆盖。
 - `claims_evidence` 从「拦 21 篇、无据句 109 / 基线 76」收到 **0 拦、56 句 / 基线 56**（`--update`
   已收紧）。两条口径修正 + 30 句逐条改：`docs/review/` 退出能力面（评审快照与 `CHANGELOG.md` 同理，
   是历史叙述不是当下能力声明，-9 句）；新增 `<!-- claims-ok -->` 显式豁免标记给**规则定义段**
@@ -62,9 +63,9 @@
   条目内容一字未删）。改前先备份 `_handoff/` 的四个账本（`*.bak-20261115-renumber`）；
   `CHANGES.md` 里指向较晚那条的 4 处引用同步改号（历史叙述里的编号清单不动）。门从
   「拦 9」转「拦 0 警 1」。
-- 未证栏：`tech_collide` **不在 CI 里跑**（它读的账本不在仓内），是「本机门」；复算要本机
-  有 `_handoff/LEDGER.md`。另：`docs/review/` 与 `CHANGELOG.md` 的历史路径与措辞不批量改写，
-  允许过期以换可追溯。
+- 未证栏：快照是**生成物**，CI 只能判「仓内快照与它自己一致」，判不了「账本正本有没有被
+  别人改过」——同步仍要本机跑 `sync_handoff_snapshot.py`（`--check` 可进收工清单）。
+  另：`docs/review/` 与 `CHANGELOG.md` 的历史路径与措辞不批量改写，允许过期以换可追溯。
 
 ### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）
 

@@ -6,6 +6,11 @@
   python scripts/tech_collide.py --claims <md> --techmap <json> --now <epoch>
   python scripts/tech_collide.py --self-test          # 正例 + 四类反证
 
+读哪里：默认读**仓内脱敏快照** `scripts/ledger-snapshot/`（由
+`python scripts/sync_handoff_snapshot.py` 从仓外正本生成），所以这道门在 CI 上真的会跑；
+`--ledger/--claims/--techmap` 仍可指向别处。快照缺失 ⇒ **判红**（不知道有没有重复登记，
+不等于没重复）。
+
 为什么要有这个（2026-11-05 用户口径）：
   认领门只比**路径**是否相交，所以两个人在**不同文件里造同一个轮子**永远不会撞车；
   反过来，同一个技术在两个不同领域各自实现又常常是**合理的**
@@ -15,8 +20,8 @@
     条目摘要、理由与实测读数，PR 里要写清适用域差异；
   · 警：声明命中不到任何条目 ⇒ 新技术先 `techmap.py add` 再开工（这才是防造轮子的正向面）。
 
-索引正本不在本仓：`_handoff/TECHMAP.json` 与 repo-tools 的 `techmap.py`
-（技术标签索引那次建起来），本门只读不写，避免两处真相。
+索引正本在仓外（`_handoff/TECHMAP.json` 与 repo-tools 的 `techmap.py`），本门只读不写。
+仓内那份是**脱敏快照**，只保留判定需要的字段；过期时 `sync_handoff_snapshot.py --check` 会报。
 """
 
 from __future__ import annotations
@@ -28,10 +33,11 @@ import re
 import sys
 import time
 
-DEFAULT_CLAIMS = pathlib.Path("D:/KF/_handoff/CLAIMS.md")
-DEFAULT_TECHMAP = pathlib.Path("D:/KF/_handoff/TECHMAP.json")
+SNAPSHOT_DIR = pathlib.Path(__file__).resolve().parent / "ledger-snapshot"
+DEFAULT_CLAIMS = SNAPSHOT_DIR / "CLAIMS.md"
+DEFAULT_TECHMAP = SNAPSHOT_DIR / "TECHMAP.json"
 SHARED_TAGS_TO_WARN = 2
-DEFAULT_LEDGER = pathlib.Path("D:/KF/_handoff/LEDGER.md")
+DEFAULT_LEDGER = SNAPSHOT_DIR / "LEDGER.md"
 STOPWORDS = {"ledger", "done", "note", "that", "with", "from", "see", "详见", "完成", "开工", "负责", "会话", "提出"}
 
 

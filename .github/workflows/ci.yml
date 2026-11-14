@@ -268,6 +268,14 @@ jobs:
         run: python3 scripts/layers.py --self-test
       - name: Layers (every crate placed, dependencies point down)
         run: python3 scripts/layers.py
+      - name: Handoff snapshot self-test (sanitizer + missing-file counterexamples)
+        run: python3 scripts/sync_handoff_snapshot.py --self-test
+      - name: Tech collide self-test (positive + counterexamples)
+        run: python3 scripts/tech_collide.py --self-test
+      # 读的是仓内脱敏快照 scripts/ledger-snapshot/（正本在仓外，CI 上没有）。
+      # 快照缺失 ⇒ 判红，不跳过：不知道有没有重复登记不等于没重复。
+      - name: Tech collide (ledger ids unique)
+        run: python3 scripts/tech_collide.py
 
   module-budget:
     name: module budget (god objects)
