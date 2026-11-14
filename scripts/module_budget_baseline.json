@@ -3211,6 +3211,10 @@
       "lines": 220
     },
     {
+      "file": "crates/trit-wspace/examples/genre_editability_pair.rs",
+      "lines": 266
+    },
+    {
       "file": "crates/trit-wspace/examples/grouped_binary_gain.rs",
       "lines": 122
     },
