@@ -2959,6 +2959,14 @@
       "lines": 212
     },
     {
+      "file": "crates/trit-wspace/examples/artifact_guard/main.rs",
+      "lines": 268
+    },
+    {
+      "file": "crates/trit-wspace/examples/artifact_guard/metrics.rs",
+      "lines": 51
+    },
+    {
       "file": "crates/trit-wspace/examples/bias_e2e.rs",
       "lines": 417
     },
@@ -3020,7 +3028,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/redteam_probe/main.rs",
-      "lines": 300
+      "lines": 275
     },
     {
       "file": "crates/trit-wspace/examples/redteam_probe/metrics.rs",
@@ -3489,6 +3497,10 @@
     {
       "file": "crates/trit-wspace/tests/redteam.rs",
       "lines": 232
+    },
+    {
+      "file": "crates/trit-wspace/tests/redteam_semantics.rs",
+      "lines": 226
     },
     {
       "file": "crates/trit-wspace/tests/repair_keep.rs",
