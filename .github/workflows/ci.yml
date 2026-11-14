@@ -245,7 +245,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@fbc6f3992d24b7965a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       # 文档门原先只活在本机命令行里：漏一个索引、断一条链接、行号漂一格，都要等人去跑。
       # 这三道早已全绿（2026-11-15 实测），接进 CI 只是把「知道自己跑了」变成「不跑就红」。
       - name: Docs hygiene self-test (shape + drive-path counterexamples)
