@@ -491,3 +491,36 @@ cargo run --release -p trit-wspace --example editset_sts_repair -- \
 ```
 
 **边界**：单层学生网络、200 对子集、threshold 0.5；没有多步/多行预算扫描；没有 6 层三值网络上的推理式编辑。
+
+---
+
+## 15. 6 层三值堆叠上的推理式编辑：深度反而更差，搜索 0 步
+
+把学生从单层 384→384 换成 **6 层同构三值堆叠**（每层权重取 MiniLM 对应层的
+`attention.self.query`；没有 attention/LN/残差，**这不是完整 BERT**），输入仍是句向量
+逐行三值化。搜索预算集中在最后一层（前 5 层输出缓存，改最后一层只重算该行）。
+
+| 配置 | baseline right/200 | repair 步数 | edit_fixed | keep_broken |
+|---|---|---|---|---|
+| 单层 384→384（§14） | 184 | 1 | 1 | 0 |
+| **6 层堆叠** | **143** | **0** | **0** | **0** |
+
+- **baseline 从 184 掉到 143**：每层 trit 化都丢信息，堆 6 层把语义破坏得更彻底
+  （与 §3「堆层救不了」一致）；
+- **推理式编辑 0 步**：所有 384 行的行级探针净收益都是 0——在这个退化表示上，
+  没有任何单行/单 trit 改动能改善 200 对里的任何一条；
+- 证书不通过（57 条错，无法修）。
+
+**结论**：问题不是「深度不够」，而是 **trit 化 + 线性堆叠本身破坏表示**。
+要提升编辑容量，方向应该是「保留 f32 激活 + 只把权重三值化」（本仓的 `grouped`
+路线），而不是继续叠三值线性层。
+
+**复算**：
+
+```bash
+cargo run --release -p trit-wspace --example editset_sts_repair6 -- \
+  --pairs sts-pairs-200.json --safetensors model.safetensors \
+  --max-edits 8 --rows 8
+```
+
+**边界**：不是完整 BERT（无 attention/LN/残差）；搜索只在最后一层；200 对子集。
