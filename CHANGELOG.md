@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added（图 + 深度 → 3DGS splat 的占位真实场）
+
+- `crates/trit-parts/examples/img23d_splat.rs`：图 + 深度 → 256 高斯（2048 维）→ **标准 3DGS PLY**，
+  中间走 `trit-flow` 的 `Field` / `Executor`；条件 = 8×8 深度均值 + 亮度（128 维）。
+- 正确性：终点 vs 目标模板最大 L2 **1.103e-6**；PLY 往返逐项偏差 **7.451e-9**（写 → 读回对账）。
+- 读数（12 请求 × 32 步）：串行 p50 1.42 ms / 8438 req/s；批 + 并行 8 线程 1.33 ms / 9048 req/s。
+- 诚实边界：占位场是检索式（未训练），计算量小 ⇒ 并发收益也小；证明的是**管线与表示**，
+  不是算力上限。换真权重只换 `SplatField::eval` 的内部，接口与执行器不动。
+
 ### Fixed（扩散侧 t→0 stiff：末步直接读 x̂₀）
 
 - `Field::terminal_snap`（默认 `false`）+ `Cfg::snap`（默认 `true`）：积分最后一步之后，

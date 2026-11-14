@@ -64,6 +64,22 @@ dx/dt = v(x, t),  t: 1（噪声）→ 0（数据）
 末步 snap 打开后，32 步就精确（理想去噪器下 L2 = 0）；关掉它，512 步仍欠积分。
 **同样精度，32 步（6.05 ms）比 512 步（94.06 ms）快 15×**——这就是 `t→0` stiff 修法的实际价值。
 
+### 3.4 图 + 深度 → 3DGS splat（占位真实场，`trit-parts` 的 example）
+
+`crates/trit-parts/examples/img23d_splat.rs`：输入是**图 + 深度**，输出是**标准 3DGS PLY**，
+中间全部走本 crate 的 `Field` / `Executor`。
+
+| 项 | 读数 |
+|---|---|
+| 表示 | 256 高斯 × 8 参数（pos3 + scale + color3 + alpha）= 2048 维；条件 = 8×8 深度均值 + 亮度 = 128 维 |
+| 正确性 | 终点 vs 目标模板最大 L2 = **1.103e-6** |
+| PLY 往返 | 256 个高斯，最大逐项偏差 **7.451e-9**（写 → 读回逐项对账） |
+| 读数（12 请求 × 32 步） | 串行 p50 1.42 ms / 8438 req/s；批 12 → 1.53 ms；批 + 并行 8 线程 1.33 ms / 9048 req/s |
+
+**诚实话**：这是占位场——`v = k·(x − x₁)`，`x₁` 是条件最近的模板（检索式，未训练），
+计算量极小，所以并发收益也小（1.42 → 1.33 ms）。**它证明的是管线与表示，不是算力上限**；
+换成真权重（MLP / UNet）后才有真实读数——那部分的量级见 §3.2 的 MLP 场（串行 42.6 ms）。
+
 ## 4. 诚实缺口
 
 1. ~~**扩散侧末端 stiff**~~ **已修（2026-11-15）**：`Field::terminal_snap`（默认 `false`）
@@ -82,5 +98,6 @@ dx/dt = v(x, t),  t: 1（噪声）→ 0（数据）
 
 ```bash
 cargo run --release -p trit-flow --example img23d_flow
+cargo run --release -p trit-parts --example img23d_splat
 cargo test -p trit-flow
 ```

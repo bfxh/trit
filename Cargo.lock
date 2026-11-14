@@ -2113,6 +2113,7 @@ dependencies = [
  "png",
  "pollster",
  "trit-core",
+ "trit-flow",
  "trit-learn",
  "trit-look",
  "trit-train",
