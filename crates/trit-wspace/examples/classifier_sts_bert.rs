@@ -11,23 +11,24 @@
 //!
 //! 用法：`classifier_sts_bert <model> <vocab.txt> <test.tsv> [对数]`
 
-use std::collections::HashMap;
-
 use serde_json::json;
 use trit_wspace::safetensors;
+#[path = "sts/common.rs"]
+#[allow(dead_code)]
+mod common;
+
+use common::{Sentence, cosine, encode, gelu, load_vocab, mean, read_pairs, spearman};
 use trit_wspace::transformer_f32::{Dense, LayerNorm};
 
 const EMBEDDINGS: &str = "embeddings.word_embeddings.weight";
 const POSITIONS: &str = "embeddings.position_embeddings.weight";
+const TOKEN_TYPE: &str = "embeddings.token_type_embeddings.weight";
 const EMB_LN_W: &str = "embeddings.LayerNorm.weight";
 const EMB_LN_B: &str = "embeddings.LayerNorm.bias";
 const CLS_ID: usize = 101;
 const SEP_ID: usize = 102;
-const UNK: &str = "[UNK]";
 const DEFAULT_PAIRS: usize = 1379;
 const HEADS: usize = 12;
-
-type Sentence = Vec<Vec<f32>>;
 
 fn layer_key(layer: usize, suffix: &str) -> String {
     format!("encoder.layer.{layer}.{suffix}")
@@ -128,85 +129,12 @@ impl BertLayer {
     }
 }
 
-fn load_vocab(path: &str) -> HashMap<String, usize> {
-    std::fs::read_to_string(path)
-        .expect("vocab.txt")
-        .lines()
-        .enumerate()
-        .map(|(index, line)| (line.trim_end().to_string(), index))
-        .collect()
-}
-
-fn basic_tokens(text: &str) -> Vec<String> {
-    let mut tokens = Vec::new();
-    let mut current = String::new();
-    for ch in text.chars() {
-        let lower = ch.to_lowercase().next().unwrap_or(ch);
-        if lower.is_alphanumeric() {
-            current.push(lower);
-        } else if !current.is_empty() {
-            tokens.push(std::mem::take(&mut current));
-        }
-    }
-    if !current.is_empty() {
-        tokens.push(current);
-    }
-    tokens
-}
-
-fn wordpiece(word: &str, vocab: &HashMap<String, usize>, out: &mut Vec<usize>) {
-    if let Some(id) = vocab.get(word) {
-        out.push(*id);
-        return;
-    }
-    let chars: Vec<char> = word.chars().collect();
-    let mut start = 0usize;
-    let mut pieces = Vec::new();
-    while start < chars.len() {
-        let mut end = chars.len();
-        let mut found: Option<(usize, usize)> = None;
-        while start < end {
-            let mut candidate: String = chars[start..end].iter().collect();
-            if start > 0 {
-                candidate.insert_str(0, "##");
-            }
-            if let Some(id) = vocab.get(&candidate) {
-                found = Some((*id, end));
-                break;
-            }
-            end -= 1;
-        }
-        match found {
-            Some((id, next)) => {
-                pieces.push(id);
-                start = next;
-            }
-            None => {
-                pieces.clear();
-                break;
-            }
-        }
-    }
-    if pieces.is_empty() {
-        out.push(*vocab.get(UNK).unwrap_or(&100));
-    } else {
-        out.extend(pieces);
-    }
-}
-
-fn encode(text: &str, vocab: &HashMap<String, usize>) -> Vec<usize> {
-    let mut ids = Vec::new();
-    for word in basic_tokens(text) {
-        wordpiece(&word, vocab, &mut ids);
-    }
-    ids
-}
-
-/// `[CLS] + tokens + [SEP]`，词向量 + 位置嵌入，再过 embeddings LayerNorm。
+/// `[CLS] + tokens + [SEP]`，词向量 + position + token_type，再过 embeddings LayerNorm。
 fn bert_sequence(
     ids: &[usize],
     embeddings: &safetensors::Weights,
     position: &safetensors::Weights,
+    token_type: &safetensors::Weights,
     emb_ln: &LayerNorm,
     dim: usize,
 ) -> Sentence {
@@ -218,6 +146,11 @@ fn bert_sequence(
         .enumerate()
         .map(|(slot, id)| {
             let mut vector = embeddings.values[id * dim..(id + 1) * dim].to_vec();
+            // token_type 段号恒为 0，但该段的嵌入向量本身非零，必须加上。
+            let segment = &token_type.values[..dim];
+            for (index, value) in vector.iter_mut().enumerate() {
+                *value += segment[index];
+            }
             if slot < position.rows {
                 let offset = slot * dim;
                 for (index, value) in vector.iter_mut().enumerate() {
@@ -225,109 +158,6 @@ fn bert_sequence(
                 }
             }
             emb_ln.forward(&vector)
-        })
-        .collect()
-}
-
-/// BERT 的 GELU（tanh 近似）。
-fn gelu(value: f32) -> f32 {
-    let scale = (2.0f32 / std::f32::consts::PI).sqrt();
-    0.5 * value * (1.0 + (scale * (value + 0.044_715 * value * value * value)).tanh())
-}
-
-fn mean(vectors: &[Vec<f32>], dim: usize) -> Vec<f32> {
-    let mut pooled = vec![0.0f32; dim];
-    if vectors.is_empty() {
-        return pooled;
-    }
-    for vector in vectors {
-        for (slot, value) in pooled.iter_mut().zip(vector) {
-            *slot += value;
-        }
-    }
-    let count = vectors.len() as f32;
-    for slot in pooled.iter_mut() {
-        *slot /= count;
-    }
-    pooled
-}
-
-fn cosine(left: &[f32], right: &[f32]) -> f64 {
-    let dot: f64 = left
-        .iter()
-        .zip(right)
-        .map(|(a, b)| f64::from(*a) * f64::from(*b))
-        .sum();
-    let ln: f64 = left
-        .iter()
-        .map(|v| f64::from(*v) * f64::from(*v))
-        .sum::<f64>()
-        .sqrt();
-    let rn: f64 = right
-        .iter()
-        .map(|v| f64::from(*v) * f64::from(*v))
-        .sum::<f64>()
-        .sqrt();
-    if ln == 0.0 || rn == 0.0 {
-        0.0
-    } else {
-        dot / (ln * rn)
-    }
-}
-
-fn ranks(values: &[f64]) -> Vec<f64> {
-    let mut order: Vec<usize> = (0..values.len()).collect();
-    order.sort_by(|left, right| values[*left].partial_cmp(&values[*right]).unwrap());
-    let mut result = vec![0.0f64; values.len()];
-    let mut index = 0usize;
-    while index < order.len() {
-        let mut end = index + 1;
-        while end < order.len() && (values[order[end]] - values[order[index]]).abs() < 1e-12 {
-            end += 1;
-        }
-        let average = (index + end - 1) as f64 / 2.0 + 1.0;
-        for slot in index..end {
-            result[order[slot]] = average;
-        }
-        index = end;
-    }
-    result
-}
-
-fn spearman(left: &[f64], right: &[f64]) -> f64 {
-    let lr = ranks(left);
-    let rr = ranks(right);
-    let n = lr.len() as f64;
-    let mean_l: f64 = lr.iter().sum::<f64>() / n;
-    let mean_r: f64 = rr.iter().sum::<f64>() / n;
-    let mut cov = 0.0;
-    let mut var_l = 0.0;
-    let mut var_r = 0.0;
-    for (a, b) in lr.iter().zip(&rr) {
-        let da = a - mean_l;
-        let db = b - mean_r;
-        cov += da * db;
-        var_l += da * da;
-        var_r += db * db;
-    }
-    if var_l == 0.0 || var_r == 0.0 {
-        0.0
-    } else {
-        cov / (var_l.sqrt() * var_r.sqrt())
-    }
-}
-
-fn read_pairs(path: &str, limit: usize) -> Vec<(String, String, f64)> {
-    std::fs::read_to_string(path)
-        .expect("tsv")
-        .lines()
-        .take(limit)
-        .filter_map(|line| {
-            let mut parts = line.split('\t');
-            let a = parts.next()?.to_string();
-            let b = parts.next()?.to_string();
-            let score: f64 = parts.next()?.trim().parse().ok()?;
-            Some((a, b, score))
         })
         .collect()
 }
@@ -349,6 +179,7 @@ fn main() {
     let vocab = load_vocab(&vocab_path);
     let embeddings = safetensors::read_tensor(&model, EMBEDDINGS).expect("embeddings");
     let position = safetensors::read_tensor(&model, POSITIONS).expect("positions");
+    let token_type = safetensors::read_tensor(&model, TOKEN_TYPE).expect("token type");
     let emb_ln = LayerNorm::new(
         safetensors::read_vector(&model, EMB_LN_W).expect("emb ln w"),
         safetensors::read_vector(&model, EMB_LN_B).expect("emb ln b"),
@@ -365,7 +196,8 @@ fn main() {
         let mut pooled = Vec::with_capacity(2);
         for sentence in [left, right] {
             let ids = encode(sentence, &vocab);
-            let mut sequence = bert_sequence(&ids, &embeddings, &position, &emb_ln, dim);
+            let mut sequence =
+                bert_sequence(&ids, &embeddings, &position, &token_type, &emb_ln, dim);
             for layer in &layers {
                 sequence = layer.forward(&sequence);
             }

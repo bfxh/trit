@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Changed（补 token_type + 标准分词器：STS 全量 0.7311 → **0.8204**，与官方持平）
+
+两处此前漏掉的东西，补上后完全合上差距：
+
+1. **`token_type_embeddings[0]` 是非零向量**，BERT 会把它加到每个 token 上——之前完全没加；
+2. **标准 BasicTokenizer**：标点要切成**独立 token 并保留**——之前的实现把标点直接丢弃
+   （`can't` 会变成 `can`+`t`，而不是 `can`+`'`+`t`）。
+
+STS test 全量 1379 对、指标 Spearman：
+
+| 实现 | Spearman |
+|---|---|
+| raw 词向量平均 | 0.5621 |
+| 简化单层（ReLU/单头/无输出投影） | 0.6157 |
+| 完整 BERT（缺 token_type、标点丢弃） | 0.7311 |
+| **完整 BERT + token_type + BasicTokenizer** | **0.8204** |
+| 官方 all-MiniLM-L6-v2 报告值 | 约 0.82 |
+
+- 200 对上：0.8614 → **0.9309**（+7 点）；全量：0.7311 → **0.8204**（+8.9 点）。
+- 至此这条流水线（真实权重 + 完整结构 + 标准分词）与官方报告水平**一致**，
+  可以当作"这一层有多少表征能力"的可信判据。
+- 工程上把分词与统计抽到 `examples/sts/common.rs`（Cargo 不把子目录当独立示例），
+  `classifier_sts_bert.rs` 440 → 228 行，消掉与 `classifier_sts` 约 150 行重复；
+  重构后 200 对读数**逐位复现**（CLS 0.9046898116305924 / mean 0.9308638941328307）。
+
 ### Added（trit-wspace：`classifier_sts_bert` 完整 BERT 层——STS 全量 Spearman 0.7311）
 
 - 新示例 `classifier_sts_bert`：在示例内实现**完整的一层 BERT**（不动库），
