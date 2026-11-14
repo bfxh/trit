@@ -1,5 +1,4 @@
-//! 命令行入口：`read / verify / certify / patch / repair / diff / merge / mcp`。
-
+//! 命令行入口。
 use std::collections::{BTreeMap, BTreeSet};
 use std::{fs, io::Read, path::Path};
 
@@ -8,21 +7,42 @@ use serde_json::{Value, json};
 use crate::audit::AuditLog;
 use crate::codec::{from_wsp, to_wsp};
 use crate::edit::Patch;
-use crate::merge::{merge_aligned, merge_vote};
 use crate::net::Net;
 use crate::ops;
-use crate::oracle::{Behavior, Oracle};
+use crate::oracle::Oracle;
 use crate::wire;
 
+mod cli_agree_stats;
+mod cli_apply;
 mod cli_artifact_shard;
+mod cli_attribute;
 mod cli_block;
+mod cli_capability;
 mod cli_certify;
+mod cli_diagnose;
+mod cli_diff;
+mod cli_exhaustive;
+mod cli_explain;
 mod cli_gguf;
 mod cli_gradient;
+mod cli_impact;
+mod cli_inventory;
 mod cli_learned;
+mod cli_localize;
+mod cli_merge;
+mod cli_metrics;
+mod cli_patch;
+mod cli_perturb;
+mod cli_probe;
+mod cli_project;
+mod cli_read;
 mod cli_repair;
 mod cli_safetensors;
+mod cli_scan;
+mod cli_script;
 mod cli_task;
+mod cli_trace;
+mod cli_verify;
 mod cli_wsp2;
 mod fsutil;
 mod lock;
@@ -30,8 +50,8 @@ mod usage;
 pub(crate) use fsutil::atomic_write;
 use usage::USAGE;
 
-/// 进程入口：返回退出码（0 成功，1 失败）。
 #[must_use]
+/// 进程入口：返回退出码（0 成功，1 失败）。
 pub fn entry() -> i32 {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
@@ -49,32 +69,45 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         return Err(USAGE.to_string());
     };
     match command {
-        "read" => cmd_read(&args[1..]),
-        "verify" => cmd_verify(&args[1..]),
+        "read" => cli_read::read(&args[1..]),
+        "verify" => cli_verify::verify_cmd(&args[1..]),
+        "capability" => cli_capability::capability_cmd(&args[1..]),
+        "scan" => cli_scan::scan_cmd(&args[1..]),
         "certify" => cli_certify::certify(&args[1..]),
         "task-merge" => cli_task::task_merge(&args[1..]),
         "task-scale" => cli_task::task_scale(&args[1..]),
         "task-combine" => cli_task::task_combine(&args[1..]),
-        "script" => cmd_script(&args[1..]),
-        "patch" => cmd_patch(&args[1..]),
-        "apply-candidate" => cmd_apply_candidate(&args[1..]),
+        "script" => cli_script::script_cmd(&args[1..]),
+        "patch" => cli_patch::patch_cmd(&args[1..]),
+        "apply-candidate" => cli_apply::apply_candidate_cmd(&args[1..]),
+        "cost" => cli_metrics::cost_cmd(&args[1..]),
+        "history" => cli_metrics::history_cmd(&args[1..]),
         "rebase" => cmd_rebase(&args[1..]),
         "transplant" => cmd_transplant(&args[1..]),
         "dare-drop" => cmd_dare_drop(&args[1..]),
         "repair" => cli_repair::repair(&args[1..]),
+        "project" => cli_project::project(&args[1..]),
         "propose" => cli_learned::propose(&args[1..]),
         "train-proposer" => cli_learned::train_proposer(&args[1..]),
         "propose-learned" => cli_learned::propose_learned(&args[1..]),
         "propose-gradient" => cli_gradient::propose_gradient(&args[1..]),
-        "explain" => cmd_explain(&args[1..]),
-        "probe" => cmd_probe(&args[1..]),
-        "localize" => cmd_localize(&args[1..]),
+        "explain" => cli_explain::explain_cmd(&args[1..]),
+        "impact" => cli_impact::impact_cmd(&args[1..]),
+        "inventory" => cli_inventory::inventory_cmd(&args[1..]),
+        "repair-exhaustive" => cli_exhaustive::exhaustive_cmd(&args[1..]),
+        "attribute" => cli_attribute::attribute_cmd(&args[1..]),
+        "probe" => cli_probe::probe_cmd(&args[1..]),
+        "trace" => cli_trace::trace_cmd(&args[1..]),
+        "distribution" => cli_trace::distribution_cmd(&args[1..]),
+        "perturb" => cli_perturb::perturb_cmd(&args[1..]),
+        "diagnose" => cli_diagnose::diagnose_cmd(&args[1..]),
+        "localize" => cli_localize::localize_cmd(&args[1..]),
         "audit" => crate::cli_audit::cmd_audit(&args[1..]),
         "shard" => crate::cli_audit::cmd_shard(&args[1..]),
         "audit-shards" => crate::cli_audit::cmd_audit_shards(&args[1..]),
         "replay" => crate::cli_audit::cmd_replay(&args[1..]),
-        "diff" => cmd_diff(&args[1..]),
-        "merge" => cmd_merge(&args[1..]),
+        "diff" => cli_diff::diff(&args[1..]),
+        "merge" => cli_merge::merge(&args[1..]),
         "list-safetensors" => cli_safetensors::list(&args[1..]),
         "import-safetensors" => cli_safetensors::import(&args[1..]),
         "export-safetensors" => cli_safetensors::export(&args[1..]),
@@ -96,99 +129,6 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         }
         other => Err(format!("未知子命令 `{other}`\n{USAGE}")),
     }
-}
-
-fn cmd_read(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(&parsed, "read <artifact|-> [--out <path>]")?;
-    let net = load_net(path)?;
-    write_out(&parsed, &net)?;
-    emit(&json!({
-        "summary": wire::net_summary(&net),
-        "wsp1": to_wsp(&net),
-    }))
-}
-
-fn cmd_verify(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(&parsed, "verify <artifact|-> --oracle <json|->")?;
-    let oracle_path = value(&parsed, "oracle")?;
-    no_double_stdin(&[path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let limit = opt_usize(&parsed, "limit", 32)?;
-    emit(&json!({
-        "exact": oracle.exact(&net).map_err(err)?,
-        "loss": oracle.loss(&net).map_err(err)?,
-        "accuracy": oracle.accuracy(&net).map_err(err)?,
-        "signature": format!("{:016x}", Behavior::of(&net, &oracle).map_err(err)?.signature()),
-        "summary": wire::net_summary(&net),
-        "mismatches": wire::mismatches_value(&net, &oracle, limit).map_err(err)?,
-        "classification": wire::classification_value(&net, &oracle).map_err(err)?,
-    }))
-}
-
-fn cmd_script(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(
-        &parsed,
-        "script <artifact|-> --script <json|-> --oracle <json|-> [--out <path>]",
-    )?;
-    let script_path = value(&parsed, "script")?;
-    let oracle_path = value(&parsed, "oracle")?;
-    no_double_stdin(&[path, script_path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let script = wire::script_from_value(&load_json(script_path)?).map_err(err)?;
-    let mut work = net.clone();
-    let report = script.run(&mut work, &oracle).map_err(err)?;
-    write_out(&parsed, &work)?;
-    emit(&json!({
-        "report": wire::script_report_to_value(&report),
-        "summary": wire::net_summary(&work),
-        "artifact": to_wsp(&work),
-    }))
-}
-
-fn cmd_patch(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["require-before", "require-after"])?;
-    let path = one(
-        &parsed,
-        "patch <artifact|-> --patch <json|-> [--oracle <json|->] [--log <path>]",
-    )?;
-    let patch_path = value(&parsed, "patch")?;
-    let oracle_path = parsed.values.get("oracle").map(String::as_str);
-    let mut sources = vec![path, patch_path];
-    if let Some(oracle) = oracle_path {
-        sources.push(oracle);
-    }
-    no_double_stdin(&sources)?;
-
-    let net = load_net(path)?;
-    let patch = wire::patch_from_value(&load_json(patch_path)?).map_err(err)?;
-    let oracle = oracle_path.map(load_oracle).transpose()?;
-    perform_patch(&parsed, &net, patch, oracle, "cli-patch")
-}
-
-fn cmd_apply_candidate(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["require-before", "require-after"])?;
-    let path = one(
-        &parsed,
-        "apply-candidate <artifact|-> --candidate <json|-> [--oracle <json|->] [--require-before] [--require-after] [--log <path>]",
-    )?;
-    let candidate_path = value(&parsed, "candidate")?;
-    let oracle_path = parsed.values.get("oracle").map(String::as_str);
-    let mut sources = vec![path, candidate_path];
-    if let Some(oracle) = oracle_path {
-        sources.push(oracle);
-    }
-    no_double_stdin(&sources)?;
-
-    let net = load_net(path)?;
-    let candidate = load_json(candidate_path)?;
-    let patch = wire::patch_from_candidate(&candidate).map_err(err)?;
-    let oracle = oracle_path.map(load_oracle).transpose()?;
-    perform_patch(&parsed, &net, patch, oracle, "cli-apply-candidate")
 }
 
 fn cmd_rebase(args: &[String]) -> Result<(), String> {
@@ -397,7 +337,7 @@ fn parse_rows(raw: &str) -> Result<Vec<usize>, String> {
         .collect()
 }
 
-fn perform_patch(
+pub(crate) fn perform_patch(
     parsed: &Parsed,
     net: &Net,
     patch: Patch,
@@ -453,92 +393,6 @@ fn perform_patch(
     emit(&output)
 }
 
-fn cmd_explain(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(
-        &parsed,
-        "explain <artifact|-> --oracle <json|-> --sample N [--top K]",
-    )?;
-    let oracle_path = value(&parsed, "oracle")?;
-    let sample_raw = value(&parsed, "sample")?;
-    let sample = sample_raw
-        .parse::<usize>()
-        .map_err(|_| format!("--sample 需要非负整数，得到 `{sample_raw}`"))?;
-    let top = opt_usize(&parsed, "top", 16)?;
-    no_double_stdin(&[path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let explanation = crate::explain::explain_sample(&net, &oracle, sample, top).map_err(err)?;
-    emit(&wire::sample_explanation_to_value(&explanation))
-}
-
-fn cmd_probe(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["adaptive"])?;
-    let path = one(
-        &parsed,
-        "probe <artifact|-> --oracle <json|-> [--budget N] [--top K] [--adaptive]",
-    )?;
-    let oracle_path = value(&parsed, "oracle")?;
-    let budget = opt_usize(&parsed, "budget", 0)?;
-    let top = opt_usize(&parsed, "top", 16)?;
-    no_double_stdin(&[path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let report = if parsed.switches.contains("adaptive") {
-        crate::probe::probe_rows_adaptive(&net, &oracle, budget, top).map_err(err)?
-    } else {
-        crate::probe::probe_rows(&net, &oracle, budget, top).map_err(err)?
-    };
-    emit(&wire::probe_report_to_value(&report))
-}
-
-fn cmd_localize(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(&parsed, "localize <artifact|-> --oracle <json|->")?;
-    let oracle_path = value(&parsed, "oracle")?;
-    no_double_stdin(&[path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let rows = opt_usize(&parsed, "rows", 3)?;
-    let row_budget = opt_usize(&parsed, "row-budget", 0)?;
-    let max_trits = opt_usize(&parsed, "max-trits", 64)?;
-    let top_trits = opt_usize(&parsed, "top-trits", 8)?;
-    let report = crate::localize::localize(&net, &oracle, row_budget, rows, max_trits, top_trits)
-        .map_err(err)?;
-    emit(&wire::localize_report_to_value(&report))
-}
-
-fn cmd_diff(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let (left, right) = two(&parsed, "diff <a|-> <b|->")?;
-    no_double_stdin(&[left, right])?;
-    let a = load_net(left)?;
-    let b = load_net(right)?;
-    let patch = Patch::diff(&a, &b).map_err(err)?;
-    emit(&json!({
-        "patch": wire::patch_to_value(&patch),
-        "cost": wire::cost_to_value(&patch.cost(&a)),
-    }))
-}
-
-fn cmd_merge(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["aligned"])?;
-    let (left, right) = two(&parsed, "merge <a|-> <b|-> [--aligned]")?;
-    no_double_stdin(&[left, right])?;
-    let a = load_net(left)?;
-    let b = load_net(right)?;
-    let merged = if parsed.switches.contains("aligned") {
-        merge_aligned(&a, &b).map_err(err)?
-    } else {
-        merge_vote(&a, &b).map_err(err)?
-    };
-    write_out(&parsed, &merged)?;
-    emit(&json!({
-        "summary": wire::net_summary(&merged),
-        "artifact": to_wsp(&merged),
-    }))
-}
-
 #[derive(Default)]
 pub(crate) struct Parsed {
     pub(crate) positional: Vec<String>,
@@ -582,7 +436,7 @@ pub(crate) fn one<'a>(parsed: &'a Parsed, usage: &str) -> Result<&'a str, String
     Ok(&parsed.positional[0])
 }
 
-fn two<'a>(parsed: &'a Parsed, usage: &str) -> Result<(&'a str, &'a str), String> {
+pub(crate) fn two<'a>(parsed: &'a Parsed, usage: &str) -> Result<(&'a str, &'a str), String> {
     if parsed.positional.len() != 2 {
         return Err(format!("用法：trit-wspace {usage}"));
     }

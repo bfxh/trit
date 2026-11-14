@@ -1,9 +1,7 @@
 //! 可重放的编辑审计日志：JSONL + 哈希链。
-//!
 //! 每一行是一条编辑记录：前/后工件校验和、补丁、改动量、应用/回滚标志，
 //! 以及 `prev` / `chain` 两个哈希链字段。`verify_chain` 抓篡改与乱序；
 //! `replay` 从初始工件逐条重放，校验每一步的 `before` / `after` 校验和。
-//!
 //! 记录时如果给了验证集，还会存下验证集规范 + 前/后**行为指纹**；重放会同时
 //! 核对“权重链”和“行为链”。回滚条目必须前后同校验和、同行为指纹；
 //! 未应用条目（前置不成立）同理。三条不变量让日志本身自洽。
@@ -45,9 +43,7 @@ pub struct LogEntry {
     pub cost: Value,
     /// 实际补丁。
     pub patch: Patch,
-    /// 记录时使用的验证集（可选；紧凑 `inputs` / `outputs` JSON）。
-    ///
-    /// 即使本条只写了 `oracle_ref`，解析时也会解析成完整值放在这里，供重放核对。
+    /// 记录时使用的验证集（可选；紧凑 JSON；`oracle_ref` 也会解析成完整值）。
     pub oracle: Option<Value>,
     /// 同一验证集首次出现的那条记录的序号；`None` 表示本条自己内嵌了验证集。
     pub oracle_ref: Option<usize>,
@@ -57,6 +53,8 @@ pub struct LogEntry {
     pub behavior_after: Option<u64>,
     /// 上一条的 `chain`；第一条是 [`GENESIS`]。
     pub prev: u64,
+    /// 记录时间（Unix 毫秒；旧日志为 `None`）。
+    pub timestamp: Option<u64>,
     /// 本条哈希链值。
     pub chain: u64,
 }
@@ -129,9 +127,7 @@ impl AuditLog {
     }
 
     /// 追加一条记录，可选存下验证集与前后行为指纹。
-    ///
-    /// 不变量：未应用 / 回滚的条目必须前后校验和相同（工件没被留在半改状态），
-    /// 且行为指纹相同。
+    /// 不变量：未应用/回滚条目必须前后校验和相同（工件没被留在半改状态），且行为指纹相同。
     #[allow(clippy::too_many_arguments)]
     pub fn record_with_oracle(
         &mut self,
@@ -193,6 +189,7 @@ impl AuditLog {
             behavior_before,
             behavior_after,
             prev,
+            timestamp: Some(crate::history_time::now_ms()),
             chain: 0,
         };
         entry.chain = chain_of(&entry);
@@ -254,7 +251,9 @@ impl AuditLog {
     pub fn to_jsonl(&self) -> String {
         let mut out = String::new();
         for entry in &self.entries {
-            out.push_str(&canonical(entry, true).to_string());
+            let mut value = canonical(entry, true);
+            crate::history_time::attach(&mut value, entry.timestamp);
+            out.push_str(&value.to_string());
             out.push('\n');
         }
         out
@@ -358,6 +357,7 @@ pub(crate) fn parse_entry(value: &Value, line: usize) -> Result<EntryParts> {
         behavior_before: optional_hex_field(value, "behavior_before")?,
         behavior_after: optional_hex_field(value, "behavior_after")?,
         prev: hex_field(value, "prev")?,
+        timestamp: value.get("ts").and_then(Value::as_u64),
         chain: hex_field(value, "chain")?,
     };
     Ok(EntryParts {

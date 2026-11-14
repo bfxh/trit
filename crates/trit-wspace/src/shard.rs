@@ -17,7 +17,6 @@ use crate::audit::{
 use crate::error::{Error, Result};
 use crate::net::Net;
 use crate::wire;
-
 /// 分片 header 的版本。
 pub const SHARD_VERSION: u64 = 2;
 
@@ -530,6 +529,7 @@ fn shard_text(log: &ShardedLog, index: usize, shard: &Shard) -> String {
     out.push('\n');
     for entry in &shard.entries {
         let mut value = canonical(entry, true);
+        crate::history_time::attach(&mut value, entry.timestamp);
         if let Some(oracle) = &entry.oracle {
             let index = header
                 .oracles
