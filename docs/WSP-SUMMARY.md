@@ -552,3 +552,37 @@ cargo run --release -p trit-wspace --example editset_sts_grouped_repair -- \
 ```
 
 **边界**：单层学生、200 对子集、threshold 0.5；group 未扫；没有 6 层 grouped 学生。
+
+---
+
+## 17. genre 三分类头上的推理式编辑：train +38，test +7（泛化）
+
+前面的 STS pair 判定（§14–§16）都只修 1 条，怀疑错样本是难例/噪声。换一个更清晰的
+任务：STS 数据自带 `genre`（3 类：captions / forums / news），单句向量 → 类别。
+
+- 学生 = 单层 `GroupedLayer`（3×384，每类一行，group=384），输入 f32 句向量，argmax 判定；
+- 初始化 = 每类训练句向量的**类质心**三值化（无梯度）；
+- 编辑 = 训练集上贪心搜「改一个 trit 能多对几条」，每步同时记录测试集。
+
+| 集合 | baseline | 8 步编辑后 | 变化 |
+|---|---|---|---|
+| 训练（1708） | 1562（91.45%） | **1600（93.68%）** | **+38** |
+| 测试（844） | 768（90.99%） | **775（91.82%）** | **+7** |
+
+8 步全部落在 row 0/1（captions/news 两类），每次改 1 个 trit；**测试集同步提升**，
+说明不是纯过拟合。
+
+**结论（第一个正结果）**：推理式编辑在分类头上**有效且泛化**——8 个 trit 换 +38 训练 /
++7 测试。这与 §14–§16 的「STS pair 判定只修 1 条」形成对照：**瓶颈在任务，不在方法**。
+pair 判定的错样本需要更复杂的决策边界，单层三值网络改一格救不回来；分类头的错样本
+大多是「边界附近的点」，改一个 trit 就能推动。
+
+**复算**：
+
+```bash
+python scripts/export_genre_samples.py --model <快照> --data <test.jsonl.gz> --out genre-samples.json
+cargo run --release -p trit-wspace --example classifier_genre_repair -- \
+  --samples genre-samples.json --group 384 --max-edits 8
+```
+
+**边界**：单层线性分类头、类质心初始化（无梯度）、3 类、单次 2:1 划分；没有多 seed / λ 扫描。

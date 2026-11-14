@@ -3023,6 +3023,10 @@
       "lines": 215
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_genre_repair.rs",
+      "lines": 251
+    },
+    {
       "file": "crates/trit-wspace/examples/classifier_holdout.rs",
       "lines": 214
     },

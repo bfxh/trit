@@ -2,6 +2,18 @@
 
 ## [Unreleased]
 
+### Added（genre 三分类头上的推理式编辑：train +38，test +7——第一个正结果）
+
+- 新脚本 `scripts/export_genre_samples.py`：从 STS test 导出 `genre` 三分类样本
+  （句向量 + 标签，按类 2:1 分训练/测试）。
+- 新示例 `examples/classifier_genre_repair.rs`：类质心初始化单层 `GroupedLayer`（3×384），
+  训练集上贪心改 trit，同时记录测试集。
+- 读数（train 1708 / test 844）：
+  - baseline：train 1562（91.45%）、test 768（90.99%）
+  - **8 步编辑后：train 1600（93.68%，+38）、test 775（91.82%，+7）**
+- **结论（正结果）**：推理式编辑在分类头上有效且**泛化**；与 §14–§16 的 STS pair 判定
+  （只修 1 条）对照，瓶颈在任务难度，不在方法。
+
 ### Added（grouped 表示上的推理式编辑：baseline 180，仍只修 1 条）
 
 - 新示例 `examples/editset_sts_grouped_repair.rs`：学生是单层 `GroupedLayer`
