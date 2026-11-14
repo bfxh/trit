@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`classifier_sts_bert` 完整 BERT 层——STS 全量 Spearman 0.7311）
+
+- 新示例 `classifier_sts_bert`：在示例内实现**完整的一层 BERT**（不动库），
+  12 头 × 32 维多头注意力 + Q/K/V/输出投影的 bias + `attention.output.dense` +
+  `embeddings.LayerNorm` + GELU + post-LN，6 层真实权重堆叠，按模型配置做 **mean pooling**
+  （`1_Pooling/config.json`：`pooling_mode_mean_tokens=true`、`cls_token=false`）。
+- STS test **全量 1379 对**：`stack6 + mean pooling` **Spearman 0.7311**；
+  `CLS pooling` 0.5993（模型不采用，仅作对照）。
+- 同一语料下的对照：raw 词向量平均 0.5621、简化单层（ReLU/单头/无 output projection）
+  token 平均 0.6157 ⇒ 完整实现比简化实现高 **11.5 点**，比 raw 高 **16.9 点**。
+- **三个实现缺陷逐个被读数抓出来**（每修一个读数跳一档）：
+  1. 缺 `attention.output.dense` ⇒ CLS 池化 Spearman **0.0277**；
+  2. `Dense::forward(x, true)` 其实是 **ReLU**（BERT 用 GELU）⇒ 6 层堆叠退化到 0.4505，
+     比单层 0.6157 还差；
+  3. 注意力按**单头 384 维**打分（真实是 **12 头 × 32 维**）⇒ 0.5017；改成多头后
+     200 对上直接到 0.8614。
+- 方法学教训：STS test **子集有严重偏差**（前 200 对 mean 0.8614、前 500 对 raw 0.6726，
+  全量 raw 只有 0.5621），所有读数必须用全量。
+- 与官方 all-MiniLM-L6-v2（STS 约 0.82）的剩余差距归因：分词器是简化版（basic tokenize +
+  WordPiece，未完全复刻 BasicTokenizer 的标点/撇号规则）、`LayerNorm` eps 用库默认值
+  而非 1e-12、未做 token_type（全 0）。
+
 ### Changed（STS 六层全开：U 形趋势，不是逐层累积）
 
 `classifier_sts` 从只跑 layer 0 / 5 扩到 0–5 全跑（test 全量 1379 对、同一流水线）：

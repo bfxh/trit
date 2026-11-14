@@ -1118,6 +1118,29 @@ test 全量 1379 对、同一流水线（token 平均、余弦、Spearman）：
 - 与 BERT 表征常见形态一致（浅层词形/句法、深层语义）；"深层更好"不是两端采样造成的假象。
 - 最高 0.6157 仍低于官方 MiniLM 的约 0.82，原因见下一条（缺 [CLS]/position、单层非堆叠、未微调）。
 
+### 完整 BERT 层：STS 全量 Spearman 0.7311（`classifier_sts_bert`）
+
+在示例内实现完整的一层 BERT（12 头 × 32 维、Q/K/V/输出投影 bias、`attention.output.dense`、
+`embeddings.LayerNorm`、GELU、post-LN），6 层真实权重堆叠，按模型配置做 mean pooling。
+
+STS test 全量 1379 对：
+
+| 读出 | Spearman |
+|---|---|
+| `stack6 + mean pooling`（模型配置） | **0.7311** |
+| `stack6 + CLS pooling`（对照，模型不采用） | 0.5993 |
+| 简化单层（ReLU/单头/无输出投影）token 平均 | 0.6157 |
+| raw 词向量平均 | 0.5621 |
+
+**三个缺陷逐个被读数抓出来**：
+
+1. 缺 `attention.output.dense` ⇒ CLS 池化崩到 **0.0277**；
+2. `Dense::forward(x, true)` 是 **ReLU**（BERT 是 GELU）⇒ 6 层堆叠退化到 0.4505；
+3. 注意力按**单头 384 维**打分（真实 **12 头 × 32 维**）⇒ 0.5017；改多头后 200 对到 0.8614。
+
+方法学教训：STS test 子集偏差极大（前 200 对 0.8614 / 前 500 对 raw 0.6726，全量 raw 0.5621），
+**必须全量**。与官方 0.82 的差距归因于简化分词器、eps 默认值、未做 token_type。
+
 ## 结论
 
 - k≥4 全部落在 **0.45–0.49**，不随 k 单调改善；**全维（k=384）也只有 0.4766**。
