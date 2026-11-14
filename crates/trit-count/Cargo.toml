@@ -18,6 +18,7 @@ serde_json = "1.0.154"
 [dev-dependencies]
 trit-bench.workspace = true
 trit-sat.workspace = true
+trit-learn.workspace = true
 
 [[bin]]
 name = "trit-count"
