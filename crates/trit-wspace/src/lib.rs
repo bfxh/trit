@@ -6,7 +6,6 @@
 //! | 判等 | 逐位相等 | 需要容差 |
 //! | 回滚 | 存旧值即可逐位还原 | 需要快照 |
 //! | 行为验证 | 有界域可**穷举**，给出完全等价 | 只能抽样/留出 |
-//! | 规范形式 | `WSP1` 可 diff、可校验和 | 二进制 blob 不可读 |
 //! 代价同样明确：没有现成的 f32 预训练生态；表达力受三值限制；大规模网络的穷举不可行（本库的 M0 边界就是小网络 + 有界域）。
 //! - **表示层**：[`Net`] / [`Layer`] 是不可变的权重工件；[`codec`] 把它写成 WSP1 文本，[`Trit`] 是唯一的权重单位。
 //! - **编辑层**：[`Edit`] / [`Patch`] 是事务式补丁；[`Journal`] 支持逐位回滚；[`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；[`Script`] 把多个 [`Program`] 组合成原子序列或按行为分支的脚本；[`AuditLog`] 把每次编辑记成带哈希链的 JSONL，可验链、可从初始工件重放；[`mod@shard`] 把长日志切成带 header 与分片内 oracle 表的多文件，跨片仍是同一条链；[`Checkpoint`] 可在分片边界保存工件与链头，从检查点续放；[`mod@rebase`] 把针对旧工件写的补丁三方重放到已经前进的工件上（冲突逐条报告）；[`mod@transplant`] 把一个隐藏单元（入边 + 偏置 + scale + 出边）整体搬到另一个网络。
@@ -35,9 +34,9 @@
 //! found.patch.apply(&mut fixed).unwrap();
 //! assert!(want.exact(&fixed).unwrap());
 //! ```
-//! ## 边界（没做的部分）
 //! - 只支持符号激活的前馈网络；不带注意力、残差、卷积；验证是**有界穷举**，不是形式化证明；
 //! - 修补搜索是启发式（半径 1/2 穷举 + 束搜索），不保证全局最小，只保证返回的解在验证集上完全正确；没有“从自然语言生成补丁”的模型；本库提供的是可被外部程序/模型调用的编辑原语与验证闭环。技术树与尚缺的层见 `crates/trit-wspace/README.md`。
+//!
 //! 二进制 `trit-wspace` 提供两套入口，共用同一条判决路径（[`ops`]）：
 //! - CLI：`read / verify / patch / repair / diff / merge`，输入 `-` 读 stdin，报告一律 JSON；MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop` 十九个工具，参数与返回见 [`wire`]。
 //!   补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
@@ -73,6 +72,7 @@ pub mod edit;
 pub mod error;
 pub mod exhaustive;
 pub mod explain;
+pub mod fingerprint;
 pub mod forgetting;
 pub mod formats;
 pub mod grads;

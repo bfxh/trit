@@ -20,8 +20,8 @@ trit-wspace <command>
   audit <log|-> [--artifact <initial|->] | shard <log|-> --size N --out <dir>
   watermark embed <artifact|-> --oracle <json|-> --message <hex> | watermark extract <artifact|-> --positions <json|->
   audit-shards <dir> [--artifact <initial|->] [--out <path>] [--manifest <path>] [--resume <checkpoint>] [--checkpoint-every N --checkpoint-dir D]
-  replay <log|-> --artifact <initial|-> [--out <path>]
-  merge <a|-> <b|-> [--aligned] [--out <path>]
+  replay <log|-> --artifact <initial|-> [--out <path>] | merge <a|-> <b|-> [--aligned] [--out <path>]
+  fingerprint emit <artifact|-> --oracle <json|-> [--out <path>] | fingerprint check <artifact|-> --oracle <json|-> --fingerprint <json|->
   list-safetensors <file>
   import-safetensors <file> --tensor <name> [--out <path>]
   export-safetensors <artifact|-> --out <path> [--tensor <name>]

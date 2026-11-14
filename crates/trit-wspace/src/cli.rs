@@ -21,6 +21,7 @@ mod cli_diagnose;
 mod cli_diff;
 mod cli_exhaustive;
 mod cli_explain;
+mod cli_fingerprint;
 mod cli_forgetting;
 mod cli_formats;
 mod cli_gguf;
@@ -124,6 +125,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "join-artifact" => cli_artifact_shard::join(&args[1..]),
         "pack-artifact" => cli_wsp2::pack(&args[1..]),
         "unpack-artifact" => cli_wsp2::unpack(&args[1..]),
+        "fingerprint" => cli_fingerprint::fingerprint(&args[1..]),
         "formats" => cli_formats::formats(&args[1..]),
         "forgetting" => cli_forgetting::forgetting(&args[1..]),
         "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
@@ -248,7 +250,6 @@ fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
         sources.push(oracle);
     }
     no_double_stdin(&sources)?;
-
     let base = load_net(path)?;
     let tuned = load_net(tuned_path)?;
     let by_row = parsed.switches.contains("by-row");
@@ -305,7 +306,6 @@ fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
     }
     emit(&output)
 }
-
 fn req_usize(parsed: &Parsed, name: &str) -> Result<usize, String> {
     let raw = parsed
         .values
