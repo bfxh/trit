@@ -8,7 +8,8 @@
   python scripts/hooks.py --self-test
 
 四件事：
-  - pre-push：拒绝直推 main（ALLOW_MAIN_PUSH=1 绕过）+ 高置信度密钥扫描；
+  - pre-push：拒绝直推 main（ALLOW_MAIN_PUSH=1 绕过）+ 高置信度密钥扫描 +
+    交接账本快照新鲜度（本机有 `_handoff/` 正本时才校验；TRIT_ALLOW_STALE_LEDGER=1 绕过）；
   - pre-commit：共享工作树（默认 D:/KF/trit-wspace-wt）停在非 main 分支时拒绝提交
     （TRIT_ALLOW_SHARED_COMMIT=1 绕过）；main 上的提交一律拒绝（TRIT_ALLOW_MAIN_COMMIT=1 绕过）；
   - post-checkout：共享工作树被切到非 main 分支（含 detached）时自动切回 main，
@@ -54,6 +55,7 @@ PRE_PUSH_BODY = """#!/bin/sh
 # 1) 拒绝直推主干（确需时 ALLOW_MAIN_PUSH=1 绕过）
 # 2) 负更新守卫：非快进丢提交 / 棘轮回退（ALLOW_NON_FF_PUSH=1 / ALLOW_RATCHET_PUSH=1 绕过）
 # 3) 跑仓库自带的高置信度密钥扫描（有 scripts/secret_scan.py 才跑）
+# 4) 交接账本快照新鲜度：本机有 _handoff/ 正本时才校验（TRIT_ALLOW_STALE_LEDGER=1 绕过）
 set -u
 ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 HOOKS=$(git rev-parse --git-path hooks 2>/dev/null) || HOOKS="$ROOT/.git/hooks"
@@ -83,6 +85,14 @@ fi
 if [ -f "$ROOT/scripts/secret_scan.py" ]; then
   if ! "$PY" "$ROOT/scripts/secret_scan.py" --root "$ROOT" >/dev/null 2>&1; then
     echo "pre-push: 密钥扫描未通过（跑 python scripts/secret_scan.py 看明细）" >&2
+    exit 1
+  fi
+fi
+# 账本快照比正本旧 ⇒ 推上去的 tech_collide 就在用过期数据判「编号有没有被复用」。
+# 本机没有 _handoff/ 正本时 sync_handoff_snapshot.py --check 自己会 SKIP（rc0），不会误伤。
+if [ -f "$ROOT/scripts/sync_handoff_snapshot.py" ] && [ "${{TRIT_ALLOW_STALE_LEDGER:-}}" != "1" ]; then
+  if ! "$PY" "$ROOT/scripts/sync_handoff_snapshot.py" --check >/dev/null 2>&1; then
+    echo "pre-push: 交接账本快照与正本不一致 —— 跑 python scripts/sync_handoff_snapshot.py 同步后重推；确需跳过设 TRIT_ALLOW_STALE_LEDGER=1" >&2
     exit 1
   fi
 fi
@@ -405,6 +415,11 @@ def self_test() -> int:
         if actual != expected:
             failures.append(name)
             print(f"FAIL {name}：期望 {expected!r}，实际 {actual!r}")
+
+    # 静态断言：pre-push 的四块检查都在，且账本那块留了点对点放行开关。
+    # （shell 片段没法在本进程里直接跑，但被整段删掉/改名时必须有人喊）
+    expect("pre-push 含交接账本快照检查", "sync_handoff_snapshot.py" in PRE_PUSH_BODY, True)
+    expect("账本检查可点对点放行", "TRIT_ALLOW_STALE_LEDGER" in PRE_PUSH_BODY, True)
 
     with tempfile.TemporaryDirectory() as tmp:
         root = pathlib.Path(tmp).resolve()

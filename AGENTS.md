@@ -38,7 +38,8 @@
   `python scripts/hooks.py install`，装三道钩子：
   - `pre-commit`：共享工作树停在非 main（含 detached）时拒绝提交；main 上的提交一律拒绝；
   - `post-checkout`：共享工作树被切到非 main 时自动切回 main，切不回大声报；
-  - `pre-push`：拒绝直推 main + 高置信度密钥扫描。
+  - `pre-push`：拒绝直推 main + 高置信度密钥扫描 + 交接账本快照新鲜度
+    （本机没有 `_handoff/` 正本时自动跳过；确需跳过设 `TRIT_ALLOW_STALE_LEDGER=1`）。
   点对点放行用 `TRIT_ALLOW_SHARED_COMMIT=1` / `TRIT_ALLOW_MAIN_COMMIT=1` /
   `TRIT_ALLOW_SHARED_SWITCH=1`；共享树清单可用 `TRIT_SHARED_WORKTREES` 覆盖（`os.pathsep` 分隔）。
   `install` 会把 `hooks.py` 与合并驱动复制成 hooks 目录里的**稳定副本**（`trit-hooks.py` /
