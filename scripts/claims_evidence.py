@@ -8,7 +8,7 @@
 
 为什么（2026-11-05 用户口径）：「有些地方我以为你完成了但没完成——那些小模型其实是组件；
 好多地方有迷惑性，我最反感」。迷惑性最主要的载体就是**没有证据的能力句**。
-口径正本在 `docs/STATUS.md` §1：状态词只有 已跑通 / 已实现未测 / 组件 / 已否证，
+口径正本在 `docs/positioning/STATUS.md` §1：状态词只有 已跑通 / 已实现未测 / 组件 / 已否证，
 写不出「命令」也写不出「读数」的句子就不许用完成类动词。
 
 棘轮：存量无据能力句按文件计数进基线，**只许变少不许变多**——不逼别人一次性改历史，
@@ -83,7 +83,7 @@ def compare(found: dict[str, int], baseline: dict[str, int]) -> list[str]:
         if count > allowed:
             problems.append(
                 f"{path} 有 {count} 句无据能力句，基线允许 {allowed} ——"
-                " 完成类动词必须带读数或复算指针（docs/STATUS.md §1）"
+                " 完成类动词必须带读数或复算指针（docs/positioning/STATUS.md §1）"
             )
     return problems
 

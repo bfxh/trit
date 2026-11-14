@@ -9,7 +9,7 @@
 
 | 部件 | 实现 | 来源 |
 |---|---|---|
-| 数据 | UCI SMS Spam Collection（5,574 条 / 747 spam，`ham/spam<TAB>text`） | 下载直链，见 `docs/DATASETS.md` A0 |
+| 数据 | UCI SMS Spam Collection（5,574 条 / 747 spam，`ham/spam<TAB>text`） | 下载直链，见 `docs/reference/DATASETS.md` A0 |
 | 特征化（自造） | 字符 3-gram/4-gram FNV 哈希到 4096 维，出现=+1 ⇒ **输入本身三值**（存在性编码），无预训练 embedding | 本 PR |
 | 模型 | QAT 三值 MLP `4096→128→1`：`TernaryDense` + `Ste::Clipped{1.0}`，Tanh/Tanh，hinge | `trit-learn` 已有 |
 | 训练循环 | 单样本 SGD、逐 epoch 确定性洗牌、Adam(latent)+Adam(scale)、**行 absmean 初始 scale** | 本 PR（scale 初始化是关键，见 §3） |
@@ -56,7 +56,7 @@ cargo run --release -p trit-wspace --example spam_redteam -- \
 | 100 000 | 0.249 | 2.7% |
 | 500 000（95%） | 0.238 | ~0（全判 spam） |
 
-与 `docs/WSP-REDTEAM-MODEL.md`（Pythia-70M 生成式 MLP 链，k=10⁴ 余弦仍
+与 `docs/security/WSP-REDTEAM-MODEL.md`（Pythia-70M 生成式 MLP 链，k=10⁴ 余弦仍
 0.9999）**方向相反**：
 
 - **判别式安全分类器对比特翻转极度脆弱**：0.19% 的 trit 翻转把 F1 打掉 73%。

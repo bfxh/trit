@@ -113,7 +113,7 @@
 - **彼此不许互相依赖**：`cargo package --workspace` 会连实验层一起打包，而指向未发布 crate 的
   路径依赖没有版本可填 ⇒ 打包失败。共享代码只能下沉到可发布 crate。这条由 `scripts/publish_graph.py` 强制；
 - **入口是独立二进制**（`trit-net`、`trit-machines`、…），不并进 `trit` CLI，避免实验面污染稳定命令行；
-- **结论要带回边界标签**：实验层里关于「三值红利」的结论必须按 `docs/TERNARY-BOUNDARIES.md` 归类，
+- **结论要带回边界标签**：实验层里关于「三值红利」的结论必须按 `docs/positioning/TERNARY-BOUNDARIES.md` 归类，
   并同时给二进制基线（§6）与高压测试（§7）；
 - **彼此不许互相依赖**的例外是 dev-dependencies（不进发布链，`cargo package` 剥离 path dev-deps，
   2026-10-24 实证并由 `scripts/publish_graph.py` 放行）。

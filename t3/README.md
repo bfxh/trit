@@ -197,4 +197,4 @@ t3 与主仓共用一套门：`scripts/module_budget.py` 会扫 `t3/crates`（�
 2. **它的假设表达式含 `Not`/`Xor`/`Implies`/`Equiv`**，因此无法做可靠的区间语义，只能给单点结论；这里禁止否定以获得**精确且可穷举验证**的包围。
 3. **它没有三值签名引擎。** 这里是 `required / forbidden / indifferent` 三态逐字节 + 截断传播，这是整个工具链里最独特的部分。
 
-它自己的 `docs/TERNARY-BOUNDARIES.md` 定了硬规矩：*任何对比都必须同时给二进制基线，没有基线不算结论*。本项目的所有性能数字都遵守这条。
+它自己的 `docs/positioning/TERNARY-BOUNDARIES.md` 定了硬规矩：*任何对比都必须同时给二进制基线，没有基线不算结论*。本项目的所有性能数字都遵守这条。

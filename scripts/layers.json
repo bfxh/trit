@@ -1,5 +1,5 @@
 {
-  "_comment": "crate → 层 归位表（判据见 docs/LAYERS.md）。层序 base < ops < algo < learn < prod，依赖只能向下；跨层回边必须在 allows 里逐条点名并给原因。",
+  "_comment": "crate → 层 归位表（判据见 docs/positioning/LAYERS.md）。层序 base < ops < algo < learn < prod，依赖只能向下；跨层回边必须在 allows 里逐条点名并给原因。",
   "layers": {
     "base": "语义与表示：值域/代数/AST/编码，以及不需要理解上层语义的公共底件（测量与夹具）",
     "ops": "算子库：单点计算件，正确性说法是「同输入更快/更省」，可对拍逐位一致",

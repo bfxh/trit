@@ -22,12 +22,12 @@
 
 | 名字 | 定义处 | 内联 `#[test]` | 被 bin 用 | 被仓内其他模块用 | `tests/` 提及（代码行） | 读数在哪 | 按 §1 判 |
 |---|---|---|---|---|---|---|---|
-| `DepthNet` | `crates/trit-parts/src/depthnet.rs:25` | 7 | 4 | 2 | **11** | 本文件 §2.3 + `docs/PARTS-RESULTS.md`（清单 + 独立复核） | **已跑通** |
+| `DepthNet` | `crates/trit-parts/src/depthnet.rs:25` | 7 | 4 | 2 | **11** | 本文件 §2.3 + `docs/results/PARTS-RESULTS.md`（清单 + 独立复核） | **已跑通** |
 | `TpmModel` | `crates/trit-parts/src/tpm.rs:36` | 1 | 5 | 3 | **2** | 部分（同上文件，按族） | 已跑通（覆盖面窄） |
 | `DepthUNet` | `crates/trit-parts/src/depthunet.rs:113` | 3 | 1 | 0 | **7** | 本文件 §2.1 | **已跑通**（CPU 参考实现这一层） |
 | `DepthHead` | `crates/trit-parts/src/depth.rs:14` | 3 | 1 | 0 | **0** | — | **组件**（名字已经是对的） |
 | `MatNet` | `crates/trit-parts/src/matnet.rs:41` | 3 | 1 | 0 | **0** | — | **组件**（名字像整机，§4 第 4 条已把改名提案否证） |
-| `TriModel` | `crates/trit-parts/src/model.rs:47` | 1 | 1 | 1 | **0** | 本文件 §2.2（覆盖经由 `to_tri()`/`RefCpu`，不是类型名） | **已跑通**（加载→推理→金样指纹；跨后端对拍另见 `docs/PARTS-RESULTS.md`） |
+| `TriModel` | `crates/trit-parts/src/model.rs:47` | 1 | 1 | 1 | **0** | 本文件 §2.2（覆盖经由 `to_tri()`/`RefCpu`，不是类型名） | **已跑通**（加载→推理→金样指纹；跨后端对拍另见 `docs/results/PARTS-RESULTS.md`） |
 
 **第四列口径（本门自己量的，不是手填）**：`python scripts/model_status.py` 逐行数**代码行**里的类型名提及，
 注释与文档行不算。所以两处要知道它的边界：

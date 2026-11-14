@@ -27,10 +27,10 @@
 | ~~`trit-num`~~ **已建（第一批）**（2026-11-12） | ops | Neumaier 补偿求和、Welford 流式统计（可合并）、最小二乘/岭回归（正规方程 + Cholesky，截距不惩罚）、中位数/MAD、均值/中位数/线性插补；附 **f32 参考实现**对拍 | 精确直线恢复（<1e-12）、f64 vs f32 同题偏差（<1e-4）、奇异/共线/非有限输入结构化报错 |
 | `trit-export` | ops | 三值权重容器（量化 GGUF）还没有落点，属 codec/learn 边界 | 与 `trit-codec` 打包逐位一致 |
 | ~~`trit-belnap` 的算子面~~ **已建**（2026-11-11） | ops | 真序/知识序双格（共识 `⊗`、轻信 `⊕`、共轭 `¬ₖ`）+ 多源合并（真序 join / 知识序 consensus）；**接入 trit-clean 的合并策略仍是后续** | 双格公理穷举（分配/吸收/结合）+ 已知序关系 + De Morgan（真序 `¬`、知识序 `¬ₖ`） |
-| `trit-clean`（**后期，不排期**） | algo | 三值约束检查 + 精确修复计数 + 三支决策（收/拒/转人工）；方向评估与底层缺口见 [DATA-CLEANING-PLAN.md](DATA-CLEANING-PLAN.md) | 与 SQL 三值语义、小规模穷举计数对拍；BDD×DPLL 交叉校验 |
+| `trit-clean`（**后期，不排期**） | algo | 三值约束检查 + 精确修复计数 + 三支决策（收/拒/转人工）；方向评估与底层缺口见 [DATA-CLEANING-PLAN.md](../plans/DATA-CLEANING-PLAN.md) | 与 SQL 三值语义、小规模穷举计数对拍；BDD×DPLL 交叉校验 |
 | ~~`trit-mmap`~~ **已建（第一批）**（2026-11-12） | ops | 大文件只读映射：Unix `mmap` / Windows `CreateFileMapping`；空文件返回空切片；错误结构化 | 内容逐字节对拍 + 空/缺失/重复映射用例 + 变异 2/2 |
 | ~~`trit-simd`~~ **已建（第一批）**（2026-11-12） | ops | popcount / XOR-popcount 运行时派发：AVX512(VPOPCNTDQ，rustc ≥1.89 才编译) → POPCNT → NEON → 标量；MSRV 1.88 自动降级 | 全长度对拍标量参考 + 强制硬件路径 + 派发/长度错误变异 4/4 |
-| `trit-vault`（**后期，不排期**） | ops | 照片/视频/文本的静态隐私：盘上只有随机噪声、元数据全加密，经自有挂载器（WinFsp/FUSE）正常打开；威胁模型与硬边界见 [PRIVACY-PLAN.md](PRIVACY-PLAN.md) | 容器/清单口径与 `trit-codec` 对拍；挂载器验收按计划 P2/P3 判据 |
+| `trit-vault`（**后期，不排期**） | ops | 照片/视频/文本的静态隐私：盘上只有随机噪声、元数据全加密，经自有挂载器（WinFsp/FUSE）正常打开；威胁模型与硬边界见 [PRIVACY-PLAN.md](../plans/PRIVACY-PLAN.md) | 容器/清单口径与 `trit-codec` 对拍；挂载器验收按计划 P2/P3 判据 |
 
 **挡住别人的一条**：`trit-mv` 不做，"用四值/n 值移植算法"就没有落点，只能各项目自己搓。
 
@@ -79,7 +79,7 @@
 ## 7. 自动化与跨仓（待办）
 
 - **一键更新（未实现）**：`scripts/self_update.py`（预检 → 快进 → 依赖 → 台账 → 门 → 报告），
-  设计见 [AUTO-UPDATE.md](AUTO-UPDATE.md)；账本 **A415**。默认不自动提交/推送/合并，
+  设计见 [AUTO-UPDATE.md](../engineering/AUTO-UPDATE.md)；账本 **A415**。默认不自动提交/推送/合并，
   脏工作区一律拒绝。
-- **`trit-vcs` 分支问题**：主库侧观察清单见 [VCS-BRANCH-ISSUES.md](VCS-BRANCH-ISSUES.md)
+- **`trit-vcs` 分支问题**：主库侧观察清单见 [VCS-BRANCH-ISSUES.md](../engineering/VCS-BRANCH-ISSUES.md)
   （只记录不修；`pull` 不动 HEAD、中央仓无 CAS、squash 合并后分支判定、worktree 独占等）。

@@ -3,7 +3,7 @@
 > 自有格式，先回答「它相对业界格式有多强、弱在哪、凭什么存在」，再给字节级规范。
 > 数字全部可复算：纹理侧 `cargo run -p trit-texture` / `cargo bench -p trit-texture`，
 > 模型侧 `cargo test -p trit-texture ttx2`。结论分四类记账（A 红利 / B 税 /
-> C 生态 / D 无关），见 [TERNARY-BOUNDARIES.md](TERNARY-BOUNDARIES.md)。
+> C 生态 / D 无关），见 [TERNARY-BOUNDARIES.md](../positioning/TERNARY-BOUNDARIES.md)。
 
 ## 0. 一句话
 

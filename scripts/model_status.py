@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""完成度表对账门：`docs/STATUS.md` §2 那张表的数字必须是**刚量出来的**。
+"""完成度表对账门：`docs/positioning/STATUS.md` §2 那张表的数字必须是**刚量出来的**。
 
 动机（反"我以为做完了"）：那张表是人工数出来的（内联 `#[test]`、被 bin 用、`tests/` 提及、判定词）。
 代码在动，表不动 —— 于是"已跑通/组件"的判定会悄悄变成假话，而这正是用户最反感的迷惑性来源
@@ -23,9 +23,9 @@ import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
-DOC = ROOT / "docs" / "STATUS.md"
+DOC = ROOT / "docs" / "positioning" / "STATUS.md"
 
-# §1 的判定词表（新增档位要同步改 docs/STATUS.md，否则本门不认识它）。
+# §1 的判定词表（新增档位要同步改 docs/positioning/STATUS.md，否则本门不认识它）。
 VERDICTS = ("已跑通", "已实现未测", "组件", "已否证")
 
 ROW = re.compile(r"^\| `?([A-Za-z0-9_]+)`? \|")
@@ -322,7 +322,7 @@ def self_test() -> int:
         "verdict": "**已跑通**",
     }
     expect("反证 2：实测 tests 提及 0 又没指到读数 ⇒ 撑不起已跑通", check([gadget], lone), "读数在哪")
-    gadget_ok = dict(gadget, reading="`docs/PARTS-RESULTS.md`")
+    gadget_ok = dict(gadget, reading="`docs/results/PARTS-RESULTS.md`")
     expect("反证 2b：tests 为 0 但读数指到文件 ⇒ 只放行这一种", check([gadget_ok], lone), None)
 
     drift = dict(good_row, verdict="**基本能用**")

@@ -9,4 +9,4 @@ sansheng = "0.3"
 ```
 
 CLI 是 `trit`（`cargo install trit-cli`）。API 文档：<https://docs.rs/sansheng>。
-详见仓库 README 与 `docs/DESIGN.md`。
+详见仓库 README 与 `docs/positioning/DESIGN.md`。

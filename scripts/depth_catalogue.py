@@ -2,7 +2,7 @@
 """把 `runs/depth/` 里的清单与复核记录生成结果目录（A3）。
 
 用法:
-    python scripts/depth_catalogue.py --dir runs/depth --out docs/DEPTH-RESULTS.md
+    python scripts/depth_catalogue.py --dir runs/depth --out docs/results/DEPTH-RESULTS.md
 
 目录只收录带**机器可读清单**的运行；「复核」列来自 `parts-depth-verify` 写的
 `<model>.verify.json`（PASS 才会落这个文件）。没有复核记录的记作「未复核」。
@@ -501,18 +501,18 @@ def self_test():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dir", default="runs/depth")
-    ap.add_argument("--out", default="docs/DEPTH-RESULTS.md")
+    ap.add_argument("--out", default="docs/results/DEPTH-RESULTS.md")
     ap.add_argument("--families", default="sweeps/families.json")
-    ap.add_argument("--umbrella", default="docs/RESULTS.md", help="总表输出（空串 = 不写）")
+    ap.add_argument("--umbrella", default="docs/results/RESULTS.md", help="总表输出（空串 = 不写）")
     ap.add_argument("--parts-dir", default="runs/parts")
-    ap.add_argument("--parts-out", default="docs/PARTS-RESULTS.md", help="部件族表（空串 = 不写）")
+    ap.add_argument("--parts-out", default="docs/results/PARTS-RESULTS.md", help="部件族表（空串 = 不写）")
     ap.add_argument("--texture-dir", default="runs/texture")
     ap.add_argument(
-        "--texture-out", default="docs/TEXTURE-RESULTS.md", help="纹理族表（空串 = 不写）"
+        "--texture-out", default="docs/results/TEXTURE-RESULTS.md", help="纹理族表（空串 = 不写）"
     )
     ap.add_argument("--extract-dir", default="runs/extract")
     ap.add_argument(
-        "--extract-out", default="docs/EXTRACT-RESULTS.md", help="提取族表（空串 = 不写）"
+        "--extract-out", default="docs/results/EXTRACT-RESULTS.md", help="提取族表（空串 = 不写）"
     )
     ap.add_argument("--self-test", action="store_true")
     args = ap.parse_args()

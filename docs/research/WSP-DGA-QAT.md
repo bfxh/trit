@@ -1,6 +1,6 @@
 # 三值 QAT：DGA 域名检测与家族归因（真实安全数据集，2026-11-14）
 
-接 `docs/WSP-SPAM-QAT.md` 的全链，换**更大的安全数据集**：DGA（算法生成域名）
+接 `docs/security/WSP-SPAM-QAT.md` 的全链，换**更大的安全数据集**：DGA（算法生成域名）
 检测 + **家族归因**。白客口径：检测回答「是不是恶意」，归因回答「哪个家族」——
 后者是应急响应（who/what to block）的输入，也是多分类评测部件的用武之地。
 
@@ -9,7 +9,7 @@
 `chrmor/DGA_domains_dataset`（GitHub 直链，研究许可，引用
 Cucchiarelli et al. 2021）：Netlab 360 的 **25 个 DGA 家族**（每家族 13,500）+
 Alexa benign（337,398），共 674,898 条，CSV `label,family,domain`。
-下载与登记见 `docs/DATASETS.md` A0；落数据盘 `trit-data/dga/`。
+下载与登记见 `docs/reference/DATASETS.md` A0；落数据盘 `trit-data/dga/`。
 
 ## 2. 管线（`examples/dga_redteam/`，features + main 两个文件）
 

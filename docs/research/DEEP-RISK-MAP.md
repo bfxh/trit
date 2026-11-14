@@ -62,7 +62,7 @@ $ python scripts/impact.py --files crates/trit-core/src/lib.rs
 
 | # | 问题 | 现状证据 | 建议判据（可复算） | 代价 |
 |---|---|---|---|---|
-| 1 | `trit-vcs` 中央仓 ref 更新无 CAS / 无鉴权 | `docs/VCS-BRANCH-ISSUES.md` §1.2、§2；主库侧只能在本机 pre-push 拦 | `ref update --old <sha>`：旧值不匹配 ⇒ 拒绝（结构化原因码）；并发两写只有一条成功 | 中（独立仓，需在那边加测试） |
+| 1 | `trit-vcs` 中央仓 ref 更新无 CAS / 无鉴权 | `docs/engineering/VCS-BRANCH-ISSUES.md` §1.2、§2；主库侧只能在本机 pre-push 拦 | `ref update --old <sha>`：旧值不匹配 ⇒ 拒绝（结构化原因码）；并发两写只有一条成功 | 中（独立仓，需在那边加测试） |
 | 2 | GitHub 服务端不执行仓库里的自定义 merge driver | 本地 `git merge` 实测生效；服务端仍按文本合并 | 合并队列 / 服务端可识别的 `.gitattributes` 策略；或接受冲突并在 CI 重跑 | 低-中（需 admin） |
 | 3 | CI 只按 crate 闭包选测试；mutation 全量约 1 小时 | `scripts/ci_scope.py`；mutation.yml 90/120 分钟 | 改动→测试映射（历史失败 + 文件级），先 crate 内选择、保守回退全量 | 中 |
 | 4 | feature 组合只在手工 step 覆盖 png/gpu；MSRV 只跑默认特性 | ci.yml 的 feature steps；MSRV job | 声明式 feature 矩阵（`cargo-hack --feature-powerset` 限定组），MSRV × 关键 feature | 低-中 |
@@ -106,5 +106,5 @@ $ python scripts/impact.py --files crates/trit-core/src/lib.rs
    验收：4 片并行总时长 < 20 分钟、合并后 caught 集合与全量一致 —— 待合入后 dispatch 实测补读数。
 4. **feature 矩阵门**：先覆盖 `trit-texture png`、`trit-gpu gpu`、`trit-build gpu` 的
    “单独开 / 全开 / 全关”三态；验收：每个组合一条命令 + 失败点名到组合。
-5. **trit-vcs CAS**：在独立仓加 `ref update --old` 与并发测试；主库侧把 `docs/VCS-BRANCH-ISSUES.md`
+5. **trit-vcs CAS**：在独立仓加 `ref update --old` 与并发测试；主库侧把 `docs/engineering/VCS-BRANCH-ISSUES.md`
    的 §2 待查改成实测结论。

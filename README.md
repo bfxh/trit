@@ -48,25 +48,25 @@ GF(3) · ternary codec · ternary inference · QAT · STE · 三进制 · 三值
 - **STE 变体在小任务上同分**：选型需要更大/带噪任务。
 - **打包算术不划算**：三进制进位串行，本仓只做逻辑 + 位并行点积。
 
-完整清单与复算命令：[docs/LESSONS.md](docs/LESSONS.md)（经验与负结果）。
+完整清单与复算命令：[docs/results/LESSONS.md](docs/results/LESSONS.md)（经验与负结果）。
 
-定位与边界：[docs/DESIGN.md](docs/DESIGN.md)。
+定位与边界：[docs/positioning/DESIGN.md](docs/positioning/DESIGN.md)。
 
-本库**收什么、不收什么**（含数据与二进制政策、跨仓分工）：[docs/SCOPE.md](docs/SCOPE.md)。
+本库**收什么、不收什么**（含数据与二进制政策、跨仓分工）：[docs/positioning/SCOPE.md](docs/positioning/SCOPE.md)。
 
-每条能力到底是什么状态（已跑通 / 已实现未测 / 组件 / 已否证）：[docs/STATUS.md](docs/STATUS.md)。
+每条能力到底是什么状态（已跑通 / 已实现未测 / 组件 / 已否证）：[docs/positioning/STATUS.md](docs/positioning/STATUS.md)。
 
-新代码归位（算子 / 算法 / 学习 / 生产链）判据与门：[docs/LAYERS.md](docs/LAYERS.md)、`python scripts/layers.py`。
+新代码归位（算子 / 算法 / 学习 / 生产链）判据与门：[docs/positioning/LAYERS.md](docs/positioning/LAYERS.md)、`python scripts/layers.py`。
 
-该搬进 / 该新开 / 该搬出与排序：[docs/ROADMAP.md](docs/ROADMAP.md)。
+该搬进 / 该新开 / 该搬出与排序：[docs/positioning/ROADMAP.md](docs/positioning/ROADMAP.md)。
 
 网安/逆向技术调研（PYAS、KSword 与静态二进制分析的对照、证据等级与路线图）：
-[docs/SECURITY-RE.md](docs/SECURITY-RE.md)。
+[docs/security/SECURITY-RE.md](docs/security/SECURITY-RE.md)。
 
 网络安全面 M0（pcap → 双向流 → 三值弃权判决，含授权边界与未校准声明）：
-[docs/SECURITY-NET.md](docs/SECURITY-NET.md)。
+[docs/security/SECURITY-NET.md](docs/security/SECURITY-NET.md)。
 
-ARM64 真实样本校准（语料哈希、修复前后读数、独立复算）：[docs/N1-ARM64-CALIBRATION.md](docs/N1-ARM64-CALIBRATION.md)。
+ARM64 真实样本校准（语料哈希、修复前后读数、独立复算）：[docs/reference/N1-ARM64-CALIBRATION.md](docs/reference/N1-ARM64-CALIBRATION.md)。
 
 ## 预编译产物
 
@@ -361,9 +361,9 @@ fuzz 目标 8 个（netlist / verilog / atpg / blif / aiger / expr / policy / ne
 测试矩阵覆盖 Linux / Windows / macOS 三平台 + MSRV 1.88 + wasm32。贡献流程见
 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
-**对比与测量的规则**见 [`docs/TERNARY-BOUNDARIES.md`](docs/TERNARY-BOUNDARIES.md) §6/§7：
+**对比与测量的规则**见 [`docs/positioning/TERNARY-BOUNDARIES.md`](docs/positioning/TERNARY-BOUNDARIES.md) §6/§7：
 任何对比必须同时给二进制基线（同机 f32/f64 或 1-bit 二值），并写明省的是带宽还是指令数；
-负结果统一记在 [`docs/LESSONS.md`](docs/LESSONS.md)。
+负结果统一记在 [`docs/results/LESSONS.md`](docs/results/LESSONS.md)。
 
 ## fuzz 与基准
 
@@ -794,12 +794,12 @@ OK     free slot must not reject on unknown hopelessness
 ## 范围
 
 - 三进制红利 / 模拟税 / 生态路径依赖 / 基数无关复杂度是四类不同问题，讨论前先归类：
-  [docs/TERNARY-BOUNDARIES.md](docs/TERNARY-BOUNDARIES.md)。
+  [docs/positioning/TERNARY-BOUNDARIES.md](docs/positioning/TERNARY-BOUNDARIES.md)。
 - 三进制构建工具（M0–M3 + 2026-11-08 补齐）：`.tri`/Verilog 子集 → 化简 + e-graph **饱和重写**
   （规则逐条自证，`--cost nodes|gates` 代价模型）→ **多线程**位并行真值表 →
   `TRB2` v3（含变量名）/CSV/`lookup.c`/双导轨 Verilog/WGSL 查表内核；
   `trit-build <src> [--out DIR] [--check] [--decode BLOB] [--emit-verilog] [--verify-hdl] [--emit-gpu] [--threads N]`；
-  为什么只做这一层、哪部分仍靠 LLVM/Rust 见 [docs/TERNARY-TOOLCHAIN.md](docs/TERNARY-TOOLCHAIN.md)。
+  为什么只做这一层、哪部分仍靠 LLVM/Rust 见 [docs/reference/TERNARY-TOOLCHAIN.md](docs/reference/TERNARY-TOOLCHAIN.md)。
 - 三进制训练实验（`trit-train`）：三值 STE（Identity/Clipped/Soft）+ 每行 scale、
   位平面 ALU（Kleene/Łukasiewicz/Bochvar）+ 并发/预取剖析。边界与读数见
   [crates/trit-train/README.md](crates/trit-train/README.md)。

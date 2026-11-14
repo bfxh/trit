@@ -276,7 +276,7 @@ assert_eq!(m.deferred.len(), 0);
   显式把根节点记为 `0`，或让门禁校验从某个已验收节点开始——这是使用口径，不是内核默认。
   `scripts/cli_smoke.sh` 把这两条都断言住了（根 `+1` → Allow；新节点 `0` → Freeze）。
 - 文中测试计数：本副本（工作区 `cargo test -p trit-immune --locked`）2026-11-02 实测 **251 绿 / 23 个测试套**，
-  内核形态（`--no-default-features`）同样全绿；`docs/ROADMAP.md` 里更早的行保留的是当时测得的历史数字，
+  内核形态（`--no-default-features`）同样全绿；`docs/positioning/ROADMAP.md` 里更早的行保留的是当时测得的历史数字，
   不是有一边在编。
 
 ## 测试

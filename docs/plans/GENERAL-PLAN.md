@@ -692,7 +692,7 @@ lr 0.003、120k 步，两个种子。
 
 ## 7. 视觉能力扩展（光影 / 风格 / 视频 / 画质 / UI）
 
-见 **`docs/VISUAL-PLAN.md`**（2026-11-01）：把「光影、风格叠加、视频提取与去遮挡、类 DLSS 画质、UI 正类化」
+见 **`docs/plans/VISUAL-PLAN.md`**（2026-11-01）：把「光影、风格叠加、视频提取与去遮挡、类 DLSS 画质、UI 正类化」
 拆成 S1–S8 八步，每步带判据/成本/许可与诚实边界。要点：
 - 光与材质是**逆渲染**问题，单图有本质歧义 ⇒ 只承诺「最可能的解释」，且**光照/风格/画质一律 f32 头**；
 - 风格先拆成可测因子（笔触尺度、色阶数、边缘强度、对比、色温）再谈叠加，不训「万能风格模型」；
@@ -2868,7 +2868,7 @@ K 个样本拼进一次 dispatch；每块 17 次 dispatch（3 前向 + 14 反向
 - **A2 独立复核**：`parts-depth-verify --dcn X.dcn --data <同一份列表> --holdout ... --size ...`
   在**新进程**重读数据、重算模型/数据指纹、在留出集重跑评测；指纹与清单一致才写
   `X.dcn.verify.json`（PASS），否则写 `.verify.reject.json` 并以 **rc=1** 退出。
-- **A3 目录**：`python scripts/depth_catalogue.py --dir runs/depth --out docs/DEPTH-RESULTS.md`
+- **A3 目录**：`python scripts/depth_catalogue.py --dir runs/depth --out docs/results/DEPTH-RESULTS.md`
   生成表格（配置 / 数据规模 / 训练 MSE / 复核读数 / 模型指纹 / 来源 commit / 时间）。
 
 **零依赖**：SHA-256 自己实现（`src/fingerprint.rs`，带 ""/"abc"/1000×'a' 三条标准向量，
@@ -2889,7 +2889,7 @@ K 个样本拼进一次 dispatch；每块 17 次 dispatch（3 前向 + 14 反向
 - **确定性**：并行实现与串行实现的哈希逐位相同（同一批清单不重训直接复核仍 PASS）。
 - **算法标记**：清单与复核记录都写 `"algo": "sha256-content-v1"`；验证器只认这个标记，
   旧清单（名+大小算法）会被判「不可比」，必须重训或重写清单。
-- `runs/` 是本地产物目录（`.gitignore` 里已忽略），目录快照 `docs/DEPTH-RESULTS.md` 随仓库走，
+- `runs/` 是本地产物目录（`.gitignore` 里已忽略），目录快照 `docs/results/DEPTH-RESULTS.md` 随仓库走，
   换机器重训后用同一条命令重建。
 
 **A4 扫描器（2026-11-04 补）**：`python scripts/depth_sweep.py --spec sweeps/depth-basic.json`
@@ -2986,7 +2986,7 @@ Intel 核显）⇒ 实测仍是 **jobs=2 / 槽 [0,0] / 134 s**；多卡分配逻
 
 ### 6.105 结果族扩到四条线（族注册表 + 总表，2026-11-04）
 
-新增族注册表 `sweeps/families.json`，`depth_catalogue.py` 额外生成 **`docs/RESULTS.md` 总表**：
+新增族注册表 `sweeps/families.json`，`depth_catalogue.py` 额外生成 **`docs/results/RESULTS.md` 总表**：
 
 - **live**：单目深度头（清单 + 独立复核 + 内容级指纹；本次扫描 9 条运行、9 条通过复核）；
 - **registered（产物未接）**：部件平面头/分割与实例、纹理、S1 提取——每族写清「缺什么」和文档证据位置，
@@ -3024,7 +3024,7 @@ Intel 核显）⇒ 实测仍是 **jobs=2 / 槽 [0,0] / 134 s**；多卡分配逻
 `复核 FAIL（模型=true 训练集=false）` + 退出码 1。
 
 **本轮读数**（50 训练场景 / 6,000 步 / 留出 mat60 scene0050–0059 × 8 帧 = 80 帧；
-`docs/PARTS-RESULTS.md` 由目录器自动生成）：
+`docs/results/PARTS-RESULTS.md` 由目录器自动生成）：
 
 | 配方 | 2D 部件 mIoU | 前景 IoU | 边界 F1 | pred/gt | 复核 |
 |---|---|---|---|---|---|

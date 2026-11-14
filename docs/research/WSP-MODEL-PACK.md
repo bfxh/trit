@@ -23,7 +23,7 @@ blob 区：各 entry 的压缩工件
   外层再有一道整文件 FNV。
 - **`biasf`（f32 偏置幅度）保留**：blob 是 WSP2，而 WSP2 v2 存 `biasf`；因此 WSPM
   往返是文本级无损的。这一点与 GGUF 容器不同（`TYPE_TRIT` 只存三值 bias，见
-  `docs/GGUF-TRIT.md` §4：103 个张量只有 67 个逐字节一致）。
+  `docs/research/GGUF-TRIT.md` §4：103 个张量只有 67 个逐字节一致）。
 
 ## 2. CLI
 
@@ -54,7 +54,7 @@ trit-wspace unpack-model <file.wspm> --out <dir>
 
 容器比「单文件 WSP4 逐个存放」只多 5,918 B（0.12%），换来：单一文件、
 逐张量格式自适应、清单语义（vector/bias）与 `biasf` 的无损往返、整文件校验和。
-注意 WSP3 单文件总和多于 WSP2（RLE 对真实权重无收益，见 `docs/WSP3-RESULTS.md`），
+注意 WSP3 单文件总和多于 WSP2（RLE 对真实权重无收益，见 `docs/results/WSP3-RESULTS.md`），
 auto 选择把它排除在大多数张量之外。
 
 ## 4. 边界（未证栏）
@@ -64,5 +64,5 @@ auto 选择把它排除在大多数张量之外。
 - blob 全量读入内存，没有流式/mmap；容器不支持按张量随机读（与 `read-block` 的
   WSP2 索引正交，未串联）。
 - `count` 上限 u32、张量名上限 u16 字节；名字唯一性在 pack/unpack 两端都校验。
-- 与 GGUF 的互操作未证（同 `docs/GGUF-TRIT.md`）；MCP 工具未接。
-- 锁是 advisory，约束范围同 `docs/WSP-WRITE-LOCK.md`。
+- 与 GGUF 的互操作未证（同 `docs/research/GGUF-TRIT.md`）；MCP 工具未接。
+- 锁是 advisory，约束范围同 `docs/research/WSP-WRITE-LOCK.md`。

@@ -1,7 +1,7 @@
 # 三进制构建工具链（TTIR → TRB2）——定位、论文依据与边界
 
 > 状态：**M0–M3 + 2026-11-08 补齐的 6 项遗留全部落地**（`trit-build`），有测试/实测钉住。
-> 规则来源：`docs/TERNARY-BOUNDARIES.md` 的 A/B/C/D 记账；任何"更快/更省"必须给二进制基线。
+> 规则来源：`docs/positioning/TERNARY-BOUNDARIES.md` 的 A/B/C/D 记账；任何"更快/更省"必须给二进制基线。
 > 本文里的论文都经过 OpenAlex 核验（DOI 可查），未核验的一律标"未证"。
 
 ## 0. 一句话
@@ -102,7 +102,7 @@ trit build demo.tri --out out --check  # 校验产物哈希
 **编辑器支持（M0）**：`trit-lsp` 是 `.tri` 的语言服务器——诊断（与上面的前端同规则）、
 运算符悬停（按当前三值语义现算 3×3 真值表）、补全、文档符号。它不复制语法/语义：
 解析用 `trit_core::Parser`，真值表用 `trit_eval::eval`。用法见
-[crates/trit-lsp/README.md](../crates/trit-lsp/README.md)。
+[crates/trit-lsp/README.md](../../crates/trit-lsp/README.md)。
 
 ## 5. 继续靠 LLVM / Rust 的部分（刻意不自己写）
 

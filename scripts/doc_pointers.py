@@ -41,7 +41,7 @@ SKIP_DIRS = {"target", ".git", "node_modules", "dist", "build"}
 
 def scanned(root: pathlib.Path) -> list[pathlib.Path]:
     files = [root / "README.md", root / "CHANGELOG.md"]
-    files += sorted((root / "docs").glob("*.md"))
+    files += sorted((root / "docs").rglob("*.md"))
     return [f for f in files if f.exists()]
 
 

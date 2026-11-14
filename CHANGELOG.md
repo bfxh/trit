@@ -3300,7 +3300,7 @@
 
 - 顶部改为"是什么 + 搜索关键词 + 一眼看强弱"：三张 SVG 对比图（CPU 流式、每参数字节、GPU），
   数据全部来自仓库内实测；`scripts/gen_docs_charts.py` 可重跑生成。
-- 新增 [`docs/LESSONS.md`](docs/LESSONS.md)：三进制代价清单、已证负结果、测量经验、工程经验。
+- 新增 [`docs/results/LESSONS.md`](docs/results/LESSONS.md)：三进制代价清单、已证负结果、测量经验、工程经验。
 - 面向使用者的 README 不再叙述内部检查流程（完整检查矩阵移到 `CONTRIBUTING.md`）。
 - 工作区表补齐 `trit-ops` / `trit-texture` / `trit-unsafe` / `trit-procscan` / `trit-lsp` / `trit-train`。
 - 更正 `trit-train` 的 STE 来源表述：`trit-net` 已有最小 STE，本层是 per-row scale + 三变体 + 位平面 ALU。
@@ -4565,7 +4565,7 @@ trit-gpu 新增两个三进制 GPU 内核（`gpu` feature 后），全部与 CPU
 
 ### Docs
 
-- **三进制四类边界**：新增 [docs/TERNARY-BOUNDARIES.md](docs/TERNARY-BOUNDARIES.md)，
+- **三进制四类边界**：新增 [docs/positioning/TERNARY-BOUNDARIES.md](docs/positioning/TERNARY-BOUNDARIES.md)，
   把原生三进制红利（A）/ 二进制模拟税（B）/ 生态路径依赖（C）/ 基数无关复杂度（D）
   分开；README「范围」与 DESIGN「非目标」已引用。后续结论、评审与路线图必须先归类。
 

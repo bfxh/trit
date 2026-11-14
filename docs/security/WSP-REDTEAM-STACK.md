@@ -41,6 +41,6 @@ cargo test -p trit-wspace --test redteam
 
 ## 给后续红队的入口
 
-- 模型侧（比特翻转攻击三值工件）见 `docs/WSP-REDTEAM-MODEL.md`；
+- 模型侧（比特翻转攻击三值工件）见 `docs/security/WSP-REDTEAM-MODEL.md`；
 - 审计日志的篡改/重放已有哈希链与重放测试覆盖，未在本轮展开；
-- 写锁是 advisory（`docs/WSP-WRITE-LOCK.md`），本地多用户场景不在威胁模型内。
+- 写锁是 advisory（`docs/research/WSP-WRITE-LOCK.md`），本地多用户场景不在威胁模型内。

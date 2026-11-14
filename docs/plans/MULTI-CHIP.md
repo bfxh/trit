@@ -2,7 +2,7 @@
 
 > 状态：**设计稿（2026-10-29）**，尚未实现。本文是后续开发的依据；所有"预计"都标了判据，
 > 凡是没实测的数字一律写"未证"。
-> 关联：`crates/trit-parts/README.md`（现状与读数）、`docs/TERNARY-BOUNDARIES.md`（A/B/C/D 归类规则）。
+> 关联：`crates/trit-parts/README.md`（现状与读数）、`docs/positioning/TERNARY-BOUNDARIES.md`（A/B/C/D 归类规则）。
 
 ---
 

@@ -42,7 +42,7 @@
 - 三问里 1 是且 2「可再生」⇒ 仓里存**生成脚本 + 种子**，不存产物。
 - 1 是且 2 否（真机样本、外部下载）⇒ 存**内容级 SHA-256 清单 + 取数脚本 + 最小可判红切片**；
   全量素材留在本地数据目录，清单里写清指纹与规模。清单格式与指纹算法走
-  `docs/DATASETS.md` 与 `trit-learn` 的 `fingerprint` 面（内容级，不只看文件名与大小）。
+  `docs/reference/DATASETS.md` 与 `trit-learn` 的 `fingerprint` 面（内容级，不只看文件名与大小）。
 - 3 超限一律走上一条，不许"先塞进来再说"。
 - 权重、缓存、`target/`、虚拟环境、模型 checkpoint ⇒ **永不进仓**（`.gitignore` + 门）。
 
@@ -116,9 +116,9 @@
 - `scripts/layers.py` 与 `docs_hygiene.py` 还没挂进 CI（`.github` 目录正被别的会话认领），
   现阶段只在本地与变异面生效——这是本文件所有"门"字目前最大的水分，写在这是为了不被当成已完成。
 - 2026-11-06 在 `feat/trit-bench` 合 `origin/main` 后逐字复跑的存量债（都不是这片引入的，逐号与复算尺记在交接账本 **A399** / **A367**）：
-  `claims_evidence` **拦 2** —— `docs/SECURITY-NET.md` 无据能力句 **5** 句 / 基线 4；新建的 `docs/CALIBRATION.md` **2** 句 / 基线 0（新文件没有豁免）。
+  `claims_evidence` **拦 2** —— `docs/security/SECURITY-NET.md` 无据能力句 **5** 句 / 基线 4；新建的 `docs/reference/CALIBRATION.md` **2** 句 / 基线 0（新文件没有豁免）。
   `tech_collide` **拦 8** —— 交接账本 `LEDGER.md` 编号复用 A129/A130/A131/A134/A153/A155/A157/A267。
-  `docs_hygiene` 同一天内从 **拦 1 → 绿**：`docs/GENERAL-PLAN.md` 的盘符绝对路径 25 → 27 → **24**（= 基线），
+  `docs_hygiene` 同一天内从 **拦 1 → 绿**：`docs/plans/GENERAL-PLAN.md` 的盘符绝对路径 25 → 27 → **24**（= 基线），
   由 `#293` 那次提交清掉 —— 记在这里是因为它是"存量红会被别人顺手清掉、而读数不会自己跟上"的现场样本，
   引用旧读数前必须重跑 `python scripts/docs_hygiene.py`。这几条的改法都是改文档而不是改基线；
   §6 第 6 条规定了存量红清零之前不许把这三道门并进 CI。
