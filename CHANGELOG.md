@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Fixed（扩散侧 t→0 stiff：末步直接读 x̂₀）
+
+- `Field::terminal_snap`（默认 `false`）+ `Cfg::snap`（默认 `true`）：积分最后一步之后，
+  场可以给出数据侧估计替换结果；扩散桥 `X0ToVelocity` 实现为「直接取 `x̂₀`」（DDIM 惯例）。
+- 读数（图→3D demo，32 步）：L2 从 **1.140 → 0.000e0**；串行 p50 6.05 ms、8 线程 2.79 ms /
+  22 958 req/s，比「无 snap + 512 步」（94.06 ms，L2 仍 0.636）**快 15×**。
+- 纯速度场（流匹配 / 自定义场）不受影响：`terminal_snap` 默认 `false`，开关前后逐位一致。
+- 判据：`tests/terminal.rs` 4 个测试（端点精确、纯速度场不受影响、条件参与、批+并行逐位一致）；
+  全套 22 个测试全绿。
+
 ### Added（trit-flow：扩散与漂移共用一套采样骨架 + 批量执行器）
 
 - 新 crate `trit-flow`（algo 层，`publish = false`）：把「生成模型的一步」抽成

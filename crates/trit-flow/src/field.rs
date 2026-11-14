@@ -35,6 +35,17 @@ pub trait Field {
     }
     /// 批量求速度，写进 `out`。
     fn eval(&self, x: &[f32], t: &[f32], cond: &[f32], out: &mut [f32]);
+
+    /// 末端 snap（可选）：积分**最后一步之后**用它替换结果。
+    ///
+    /// 扩散侧为什么要它：`v = (√ᾱ·x − x̂₀)/√(1−ᾱ)` 在 `t→0` 被 `1/√(1−ᾱ)` 放大，
+    /// 继续积分只会放大误差；DDIM 的惯例是末步直接读去噪器（`x ← x̂₀`）。
+    ///
+    /// 返回 `true` 表示 `out`（长度同 `x`）已写入数据侧估计；默认 `false` = 不替换，
+    /// 纯速度场（流匹配、任意自定义场）什么都不用做。
+    fn terminal_snap(&self, _x: &[f32], _t: &[f32], _cond: &[f32], _out: &mut [f32]) -> bool {
+        false
+    }
 }
 
 /// 批形状不合法。
@@ -232,6 +243,12 @@ impl<P: X0Predictor> X0ToVelocity<P> {
 }
 
 impl<P: X0Predictor> Field for X0ToVelocity<P> {
+    /// 末步直接取 `x̂₀`（DDIM 惯例）：这是扩散侧 `t→0` stiff 的修法。
+    fn terminal_snap(&self, x: &[f32], t: &[f32], cond: &[f32], out: &mut [f32]) -> bool {
+        self.pred.predict_x0(x, t, cond, out);
+        true
+    }
+
     fn dim(&self) -> usize {
         self.pred.dim()
     }

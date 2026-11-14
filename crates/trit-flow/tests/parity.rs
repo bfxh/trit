@@ -38,6 +38,7 @@ fn alone(f: &Arc<dyn Field + Send + Sync>, r: &Request) -> Vec<f32> {
         Cfg {
             threads: 0,
             max_batch: 1,
+            ..Cfg::default()
         },
     );
     let (out, _) = ex.run(std::slice::from_ref(r)).expect("单请求");
@@ -53,6 +54,7 @@ fn batch_equals_single() {
         Cfg {
             threads: 3,
             max_batch: 8,
+            ..Cfg::default()
         },
     );
     let (batched, _) = ex.run(&rs).expect("批跑");
@@ -70,6 +72,7 @@ fn parallel_equals_serial() {
         Cfg {
             threads: 4,
             max_batch: 9,
+            ..Cfg::default()
         },
     );
     let ser = Executor::new(
@@ -77,6 +80,7 @@ fn parallel_equals_serial() {
         Cfg {
             threads: 0,
             max_batch: 9,
+            ..Cfg::default()
         },
     );
     let (a, ra) = par.run(&rs).expect("并行");
@@ -100,6 +104,7 @@ fn mixed_steps_in_one_batch() {
         Cfg {
             threads: 2,
             max_batch: 6,
+            ..Cfg::default()
         },
     );
     let (out, rep) = ex.run(&rs).expect("混批");
@@ -118,6 +123,7 @@ fn online_equals_offline() {
         Cfg {
             threads: 2,
             max_batch: 4,
+            ..Cfg::default()
         },
     );
     let (off, _) = ex.run(&rs).expect("离线");
@@ -140,6 +146,7 @@ fn noiseless_field_is_deterministic_across_runs() {
         Cfg {
             threads: 2,
             max_batch: 3,
+            ..Cfg::default()
         },
     );
     let (a, _) = ex.run(&rs).expect("第一次");

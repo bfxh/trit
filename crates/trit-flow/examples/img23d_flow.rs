@@ -162,6 +162,7 @@ fn main() {
             Cfg {
                 threads: 4,
                 max_batch: 16,
+                ..Cfg::default()
             },
         );
         let rs = requests(&cs, 64);
@@ -194,6 +195,7 @@ fn main() {
             Cfg {
                 threads: 0,
                 max_batch: 1,
+                ..Cfg::default()
             },
         ),
         (
@@ -201,6 +203,7 @@ fn main() {
             Cfg {
                 threads: 0,
                 max_batch: 32,
+                ..Cfg::default()
             },
         ),
         (
@@ -208,6 +211,7 @@ fn main() {
             Cfg {
                 threads: 8,
                 max_batch: 32,
+                ..Cfg::default()
             },
         ),
         (
@@ -215,6 +219,7 @@ fn main() {
             Cfg {
                 threads: 16,
                 max_batch: 64,
+                ..Cfg::default()
             },
         ),
     ];
@@ -226,10 +231,18 @@ fn main() {
     println!();
 
     // 3) 扩散侧：同一个执行器，换一个场（x̂₀ 预测 + ᾱ 桥）
-    println!("扩散侧（x̂₀ 预测器 + ᾱ 桥，同一执行器；Euler 一阶，看步数收敛）");
+    println!("扩散侧（x̂₀ 预测器 + ᾱ 桥，同一执行器；末步 snap = DDIM 惯例直接读 x̂₀）");
     println!(
-        "{:<22} {:>8} {:>8} {:>8} {:>9} {:>12} {:>7} {:>9}",
-        "配置", "p50/ms", "p90/ms", "p99/ms", "req/s", "样本·步/秒", "平均批", "L2 误差"
+        "{:<22} {:>8} {:>8} {:>8} {:>9} {:>12} {:>7} {:>11} {:>11}",
+        "配置",
+        "p50/ms",
+        "p90/ms",
+        "p99/ms",
+        "req/s",
+        "样本·步/秒",
+        "平均批",
+        "L2(snap)",
+        "L2(无snap)"
     );
     for steps_d in [32usize, 128, 512] {
         let abar = abar_table(steps_d);
@@ -241,6 +254,7 @@ fn main() {
                 Cfg {
                     threads: 0,
                     max_batch: 1,
+                    ..Cfg::default()
                 },
             ),
             (
@@ -248,6 +262,7 @@ fn main() {
                 Cfg {
                     threads: 8,
                     max_batch: 32,
+                    ..Cfg::default()
                 },
             ),
         ] {
@@ -258,8 +273,16 @@ fn main() {
                 .enumerate()
                 .map(|(i, o)| l2(&o.x, &target(&cs[i])))
                 .fold(0.0f32, f32::max);
+            // 对照：关掉末步 snap 的同一条轨迹
+            let ex_ns = Executor::new(Arc::clone(&diff), Cfg { snap: false, ..cfg });
+            let (out_ns, _) = ex_ns.run(&rs_d).expect("扩散场（无 snap）");
+            let worst_ns = out_ns
+                .iter()
+                .enumerate()
+                .map(|(i, o)| l2(&o.x, &target(&cs[i])))
+                .fold(0.0f32, f32::max);
             println!(
-                "{:<22} {:>8.2} {:>8.2} {:>8.2} {:>9.1} {:>12.0} {:>7.1} {:>9.3e}",
+                "{:<22} {:>8.2} {:>8.2} {:>8.2} {:>9.1} {:>12.0} {:>7.1} {:>11.3e} {:>11.3e}",
                 format!("{} / {} 步", name, steps_d),
                 rep.latency.p50,
                 rep.latency.p90,
@@ -267,7 +290,8 @@ fn main() {
                 rep.rps,
                 rep.sample_steps_per_s,
                 rep.mean_batch,
-                worst
+                worst,
+                worst_ns
             );
         }
     }

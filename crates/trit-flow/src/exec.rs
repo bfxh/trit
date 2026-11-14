@@ -24,6 +24,10 @@ pub struct Cfg {
     pub threads: usize,
     /// 单批样本上限（一次 `Pool::advance` 最多几个样本）。
     pub max_batch: usize,
+    /// 末步是否调用 [`Field::terminal_snap`]（扩散侧按 DDIM 惯例直接读 `x̂₀`）。
+    ///
+    /// 纯速度场对该开关不敏感（trait 默认返回 `false`），所以默认开是安全的。
+    pub snap: bool,
 }
 
 impl Default for Cfg {
@@ -34,6 +38,7 @@ impl Default for Cfg {
         Self {
             threads,
             max_batch: 32,
+            snap: true,
         }
     }
 }
@@ -251,6 +256,12 @@ impl Executor {
         let mut bt = vec![0.0f32; cap];
         let mut bdt = vec![0.0f32; cap];
         let mut bcond = vec![0.0f32; cap * cd];
+        // 末步 snap 的临时缓冲（复用，不每轮分配）
+        let mut snap_buf = vec![0.0f32; cap * dim];
+        let mut snap_out = vec![0.0f32; cap * dim];
+        let mut snap_cond = vec![0.0f32; cap * cd];
+        let mut snap_t = vec![0.0f32; cap];
+        let mut snap_rows: Vec<usize> = Vec::with_capacity(cap);
 
         let start = Instant::now();
         let mut rounds = 0u64;
@@ -310,6 +321,37 @@ impl Executor {
                     for (j, &i) in chunk.iter().enumerate() {
                         x[i * dim..(i + 1) * dim].copy_from_slice(&buf[j * dim..(j + 1) * dim]);
                         cur[i] += 1;
+                    }
+                    // 末步 snap：扩散侧 `t→0` 被 1/√(1−ᾱ) 放大，继续积分只是放大误差，
+                    // 按 DDIM 惯例直接读 x̂₀。纯速度场的 `terminal_snap` 返回 false ⇒ 无动作。
+                    if self.cfg.snap {
+                        snap_rows.clear();
+                        for &i in chunk {
+                            if cur[i] == reqs[i].steps {
+                                let k = snap_rows.len();
+                                snap_buf[k * dim..(k + 1) * dim]
+                                    .copy_from_slice(&x[i * dim..(i + 1) * dim]);
+                                if cd > 0 {
+                                    snap_cond[k * cd..(k + 1) * cd].copy_from_slice(&reqs[i].cond);
+                                }
+                                snap_t[k] = 0.0;
+                                snap_rows.push(i);
+                            }
+                        }
+                        let k = snap_rows.len();
+                        if k > 0
+                            && self.field.terminal_snap(
+                                &snap_buf[..k * dim],
+                                &snap_t[..k],
+                                &snap_cond[..k * cd],
+                                &mut snap_out[..k * dim],
+                            )
+                        {
+                            for (kk, &i) in snap_rows.iter().enumerate() {
+                                x[i * dim..(i + 1) * dim]
+                                    .copy_from_slice(&snap_out[kk * dim..(kk + 1) * dim]);
+                            }
+                        }
                     }
                     batch_samples += m as u64;
                     batches += 1;
