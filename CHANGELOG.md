@@ -22,8 +22,16 @@
 - CI 实测（本 PR 前三轮都是上面说的冷编译）：冒烟在关键路径上只剩 start + wait = 97 / 50 / 137s
   （原串行 272–375s）；Windows job 528 / 436 / 689s（main 合并后全量 583–751s），三轮之间差 250s，
   整 job 快慢在冷编译下判不了。
-- 未证栏：调试信息读数只测了 trit-wspace 一个 crate 的测试构建；暖缓存下的 CI 读数待补；CI 里的
-  sccache 一直没生效（`Compile requests 0`，workflow 没设 `RUSTC_WRAPPER`），本 PR 没动。
+- 文档更正（`docs/BUILD-PERF.md`）：§8 原把 #404 的 CI 收益记在 sccache 头上，实为 `rust-cache`
+  命中 + nextest。CI 的 sccache 从未生效——`git log -S` 查 `RUSTC_WRAPPER` / `SCCACHE_GHA_ENABLED`
+  在 ci.yml 历史里都是空，`sccache-action` 只在 #404 引入过一次，main 与 #502 的 job 日志都是
+  `Compile requests 0`、缓存位置本地盘。§0 / §3 / §5 / §8 / §10 同步改口径，§8 加「归因更正」。
+- 暖缓存读数（run 43632123371，同一提交、四个 job 的 `rust-cache` 全 `full match: true` 的第四轮）：
+  Windows 446s、ubuntu 157s、macOS 190s、MSRV 171s（main 暖缓存基线 583–751 / 177–222 /
+  185–310 / 164–251s）；Windows 上冒烟「— start」14s、「— wait」109s。
+- 未证栏：调试信息读数只测了 trit-wspace 一个 crate 的测试构建；#404 的 727s → 493s 那对数字
+  无法再从 CI 复算（分支已随合并删除，只剩一次改动集只有 `.github/` 的 run），按「当时读数、
+  机制可推」处理，可复算的替代读数就是上面第四轮。
 
 
 ### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）
