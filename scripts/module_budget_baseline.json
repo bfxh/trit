@@ -3379,6 +3379,10 @@
       "lines": 24
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_forgetting.rs",
+      "lines": 56
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_formats.rs",
       "lines": 7
     },
@@ -3545,6 +3549,10 @@
     {
       "file": "crates/trit-wspace/src/explain.rs",
       "lines": 136
+    },
+    {
+      "file": "crates/trit-wspace/src/forgetting.rs",
+      "lines": 133
     },
     {
       "file": "crates/trit-wspace/src/formats.rs",
@@ -3969,6 +3977,10 @@
     {
       "file": "crates/trit-wspace/tests/explain.rs",
       "lines": 105
+    },
+    {
+      "file": "crates/trit-wspace/tests/forgetting.rs",
+      "lines": 124
     },
     {
       "file": "crates/trit-wspace/tests/formats.rs",

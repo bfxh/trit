@@ -20,6 +20,7 @@ mod cli_diagnose;
 mod cli_diff;
 mod cli_exhaustive;
 mod cli_explain;
+mod cli_forgetting;
 mod cli_formats;
 mod cli_gguf;
 mod cli_gradient;
@@ -60,7 +61,6 @@ pub fn entry() -> i32 {
         }
     }
 }
-
 pub(crate) fn run(args: &[String]) -> Result<(), String> {
     let _locks = lock::acquire_cli(args)?;
     let Some(command) = args.first().map(String::as_str) else {
@@ -121,6 +121,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "pack-artifact" => cli_wsp2::pack(&args[1..]),
         "unpack-artifact" => cli_wsp2::unpack(&args[1..]),
         "formats" => cli_formats::formats(&args[1..]),
+        "forgetting" => cli_forgetting::forgetting(&args[1..]),
         "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
             .map_err(|error| error.to_string()),
         "--help" | "-h" | "help" => {
@@ -130,7 +131,6 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         other => Err(format!("未知子命令 `{other}`\n{USAGE}")),
     }
 }
-
 fn cmd_rebase(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &["skip-conflicts", "require-before", "require-after"])?;
     let path = one(
