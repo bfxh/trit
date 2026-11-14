@@ -1183,6 +1183,25 @@ STS test 全量 1379 对（Spearman）：
   这解释了"合成任务用线性探针合理、STS 不行"的差别。
 - 所以"训练 block 有没有增益"不能用线性头代理，需给完整 BERT 层补反向传播（前置工程）。
 
+### 完整 BERT 层的反向传播 + 梯度校验方法（`classifier_sts_train`）
+
+实现：12 头 attention backward（softmax、Q/K/V/out）、GELU backward、Dense backward；
+LayerNorm 复用 `layernorm_backward_full`。
+
+**校验方法的坑**：单参数有限差分在 f32 下根本不可用——`loss` 量级数千、舍入 1e-4，
+除以 `2eps` 后绝对误差 ≈0.05，而 `wo` 梯度仅 0.146 ⇒ 相对误差 7% 起、最差 51%；
+把 eps 收小到 1e-4 反而更差（舍入主导）。
+
+改用**方向导数**（`Σg·v` vs 中心差分，各项同号叠加）：
+
+| 检查 | 相对误差 |
+|---|---|
+| `direction_wq`（随机方向） | **0.37%** |
+| `ln_check_dx`（库 LN backward d_x） | 0.21% |
+| `ln_check_dw`（库 LN backward d_w） | 0.26% |
+
+0.37% 与 f32 差分噪声水平一致 ⇒ 反传实现正确。训练循环待接。
+
 ## 结论
 
 - k≥4 全部落在 **0.45–0.49**，不随 k 单调改善；**全维（k=384）也只有 0.4766**。

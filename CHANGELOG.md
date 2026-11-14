@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+### Added（`classifier_sts_train`：完整 BERT 层反向传播，梯度经方向导数校验）
+
+- 新示例 `examples/classifier_sts_train.rs`：在示例内实现完整 BERT 层的**反向传播**——
+  12 头 attention（softmax、Q/K/V/out 四个投影）、GELU backward、Dense backward；
+  LayerNorm 复用库的 `layernorm_backward_full`。
+- 梯度校验踩到一个方法学坑：**单参数有限差分在 f32 下不可用**。`loss = Σ out·grad_out`
+  量级数千、f32 舍入约 1e-4，除以 `2eps=2e-3` 后绝对误差 ≈0.05，而 `wo` 的梯度只有
+  0.146 ⇒ 相对误差 7% 起、最差 51%；把 eps 收到 1e-4 反而更差（舍入主导）。
+- 改用**方向导数**校验（沿随机方向比较 `Σg·v` 与中心差分，各项同号叠加）：
+  `direction_wq` 相对误差 **0.37%**，与 f32 差分噪声水平（0.2–0.4%）一致 ⇒ 反传正确。
+- 另外单独校验库的 `layernorm_backward_full`：`dx` 0.21%、`dw` 0.26%，无误。
+- 这是「训练 block 有没有增益」的前置工程；训练循环（余弦目标 + 冻结前 5 层）待接。
+
 ### Added（`classifier_sts_probe`：线性头在 STS 上学不到——轮不到训练 block）
 
 - 新示例 `examples/classifier_sts_probe.rs`：冻结 6 层 + 闭式岭回归 + 5 折交叉验证，
