@@ -16,20 +16,28 @@ mutation），就是"分支爆炸"的完整链路。
   1. 分支的 PR 已合入（`gh pr list --state merged` 证据，含 headRefOid）；
   2. 工作树干净（`git status --porcelain` 为空）；
   3. 本地分支 tip == 该 PR 的 headRefOid（有额外本地提交 ⇒ 不删）；
-  4. 不是主工作树、不是当前目录所在工作树。
+  4. 不是主工作树、不是当前目录所在工作树（按 `git rev-parse --show-toplevel` 认，子目录里跑也算）。
+
+回收时连带删除该工作树的外置 target（`scripts/wt_target.py` 生成的 `策略根/<树名>`）：
+只删绝对路径、在树外、与工作树同名、没有别的工作树指向的那一份；树内 target 随
+`git worktree remove` 一起走。2026-11-15 实测：规则写进 AGENTS.md 后仍攒下 33 个已合 PR 的
+工作树——没人跑它，它也不删外置 target，所以 `gitflow.py worktree add` 新建前会自动跑一次 `--apply`。
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
-def norm(path: str | Path) -> str:
-    import os
 
+def norm(path: str | Path) -> str:
     return os.path.normcase(os.path.normpath(str(path)))
 
 
@@ -88,6 +96,40 @@ def load_merged(repo: str) -> dict[str, str]:
 def dirty_of(path: str) -> int:
     result = git("-C", path, "status", "--porcelain")
     return len([line for line in result.stdout.splitlines() if line.strip()])
+
+
+TARGET_DIR_RE = re.compile(r'^\s*(?:build\.)?target-dir\s*=\s*["\']([^"\']+)["\']', re.MULTILINE)
+
+
+def configured_target(tree: Path) -> Path | None:
+    """`<tree>/.cargo/config.toml` 里的 target-dir；没有文件或没写就 None。
+
+    这份文件被忽略、会随 `git worktree remove` 消失，必须在删树之前读。
+    """
+    try:
+        text = (tree / ".cargo" / "config.toml").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    match = TARGET_DIR_RE.search(text)
+    return Path(match.group(1)) if match else None
+
+
+def external_target(tree: Path, target: Path | None, others: set[str]) -> Path | None:
+    """回收 `tree` 时可以连带删掉的外置 target，不满足任一条件就 None。
+
+    绝对路径、在树外、目录名与工作树同名（策略根自己的名字对不上，永远不会被删）、
+    不在 `others`（保留下来的工作树指向的 target）里。
+    """
+    if target is None or not target.is_absolute():
+        return None
+    t, w = norm(target), norm(tree)
+    if t == w or t.startswith(w.rstrip("\\/") + os.sep):
+        return None
+    if os.path.normcase(target.name) != os.path.normcase(tree.name):
+        return None
+    if t in others:
+        return None
+    return target
 
 
 def evaluate(
@@ -172,7 +214,7 @@ def plan_reclaim(
     return plan, skipped
 
 
-def apply_plan(plan: list[dict]) -> int:
+def apply_plan(plan: list[dict], targets: dict[str, Path | None] | None = None) -> int:
     failures = 0
     for item in plan:
         remove = git("worktree", "remove", item["path"])
@@ -181,6 +223,11 @@ def apply_plan(plan: list[dict]) -> int:
             print(remove.stderr.strip()[-400:])
             failures += 1
             continue
+        extra = (targets or {}).get(item["path"])
+        if extra is not None and extra.exists():
+            shutil.rmtree(extra, ignore_errors=True)
+            state = "有残留（可能有进程占着文件）" if extra.exists() else "已删"
+            print(f"$ rmtree {extra}  {state}")
         delete = git("branch", "-D", item["branch"])
         print(f"$ git branch -D {item['branch']}  rc={delete.returncode}")
         if delete.returncode != 0:
@@ -253,6 +300,25 @@ def self_test() -> int:
     plan, _ = plan_reclaim(worktrees, merged, dirty2, {norm("/r/done")})
     check("keep current dir", plan, [])
 
+    # 5. 外置 target：只删「策略根/<树名>」且没人共用的那份
+    base = Path(tempfile.gettempdir()) / "worktree-guard-selftest"
+    tree = base / "wt" / "trit-wt-a"
+    same = base / "cargo-target" / "trit-wt-a"
+    check("same-name external target deleted", external_target(tree, same, set()), same)
+    check("policy root never deleted", external_target(tree, base / "cargo-target", set()), None)
+    check("shared target kept", external_target(tree, same, {norm(same)}), None)
+    check("target inside tree left to git", external_target(tree, tree / "trit-wt-a", set()), None)
+    check("relative target ignored", external_target(tree, Path("../trit-wt-a"), set()), None)
+    check("no target => nothing", external_target(tree, None, set()), None)
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        check("no config => None", configured_target(root), None)
+        (root / ".cargo").mkdir()
+        (root / ".cargo" / "config.toml").write_text(
+            f'# generated\n[build]\ntarget-dir = "{same.as_posix()}"\n', encoding="utf-8"
+        )
+        check("target-dir parsed", configured_target(root), same)
+
     print(("PASS " if not failures else "FAIL ") + f"self-test: {total[0]} checks")
     for failure in failures:
         print(failure)
@@ -302,11 +368,29 @@ def main(argv: list[str]) -> int:
 
     if args.apply:
         keep = {norm(Path.cwd())}
+        top = git("rev-parse", "--show-toplevel")
+        if top.returncode == 0 and top.stdout.strip():
+            keep.add(norm(top.stdout.strip()))
+        if worktrees:  # `git worktree list` 第一项永远是主工作树
+            keep.add(norm(worktrees[0]["path"]))
         plan, skipped = plan_reclaim(worktrees, merged, dirty, keep)
         for line in skipped:
             print("  [保留] " + line)
-        print(f"回收计划：{len(plan)} 个工作树")
-        failures = apply_plan(plan)
+        planned = {norm(item["path"]) for item in plan}
+        others: set[str] = set()
+        for entry in worktrees:
+            target = configured_target(Path(entry["path"]))
+            if target is not None and norm(entry["path"]) not in planned:
+                others.add(norm(target))
+        targets = {
+            item["path"]: external_target(Path(item["path"]), configured_target(Path(item["path"])), others)
+            for item in plan
+        }
+        print(
+            f"回收计划：{len(plan)} 个工作树"
+            f"（连带外置 target {sum(t is not None for t in targets.values())} 个）"
+        )
+        failures = apply_plan(plan, targets)
         if failures:
             print(f"回收失败 {failures} 项")
             return 1
