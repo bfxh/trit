@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Added（grouped 表示上的推理式编辑：baseline 180，仍只修 1 条）
+
+- 新示例 `examples/editset_sts_grouped_repair.rs`：学生是单层 `GroupedLayer`
+  （384→384，group=256，**输入保留 f32 句向量**），搜索与 §14 相同。
+- 读数（STS test 200 对）：baseline **180/200**（纯 trit 单层是 184），repair 1 步 →
+  181/200（edit_fixed 1、keep_broken 0）。
+- 结论：grouped 没有在单层小张量上带来精度提升；推理式编辑「1 个 trit 换 1 条」的效率
+  结论不变；瓶颈是单层表达力与 200 对子集，不是三值/分组格式本身。
+
 ### Added（6 层三值堆叠上的推理式编辑：深度反而更差，搜索 0 步）
 
 - 新示例 `examples/editset_sts_repair6.rs`：6 层 384→384 三值堆叠（权重取 MiniLM 每层

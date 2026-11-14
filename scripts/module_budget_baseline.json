@@ -3187,6 +3187,10 @@
       "lines": 189
     },
     {
+      "file": "crates/trit-wspace/examples/editset_sts_grouped_repair.rs",
+      "lines": 335
+    },
+    {
       "file": "crates/trit-wspace/examples/editset_sts_repair.rs",
       "lines": 388
     },

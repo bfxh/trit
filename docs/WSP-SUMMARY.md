@@ -524,3 +524,31 @@ cargo run --release -p trit-wspace --example editset_sts_repair6 -- \
 ```
 
 **边界**：不是完整 BERT（无 attention/LN/残差）；搜索只在最后一层；200 对子集。
+
+---
+
+## 16. grouped 表示上的推理式编辑：baseline 180，仍只修 1 条
+
+学生 = 单层 `GroupedLayer`（384→384，group=256，**输入保留原始 f32 句向量**，不像 §14/§15
+那样先三值化），判定用 cosine。搜索与 §14 相同：行级探针 + 行内逐列试 `-1/0/+1`。
+
+| 配置 | baseline right/200 | repair 步数 | edit_fixed | keep_broken |
+|---|---|---|---|---|
+| 单层纯 trit（§14） | 184 | 1 | 1 | 0 |
+| **单层 grouped（group=256）** | **180** | **1** | **1** | **0** |
+| 6 层 trit 堆叠（§15） | 143 | 0 | 0 | 0 |
+
+- grouped 的 baseline 比纯 trit **低 4 条**（180 vs 184）：单层 384×384 上 group=256 的组太粗
+  （576 组，每组 256 个元素共享 scale），没有带来 §5 那种「6 层 × 6 权重」上的精度优势；
+- 推理式编辑同样只修 1 条（row 70, col 244），**效率结论不变**（1 个 trit 换 1 条）；
+- 三组读数合起来：**瓶颈是单层表达力与 200 对子集，不是三值/分组格式本身**。
+
+**复算**：
+
+```bash
+cargo run --release -p trit-wspace --example editset_sts_grouped_repair -- \
+  --pairs sts-pairs-200.json --safetensors model.safetensors \
+  --group 256 --max-edits 8 --rows 8
+```
+
+**边界**：单层学生、200 对子集、threshold 0.5；group 未扫；没有 6 层 grouped 学生。
