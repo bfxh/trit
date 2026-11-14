@@ -1455,6 +1455,10 @@
       "lines": 414
     },
     {
+      "file": "crates/trit-learn/src/forecast.rs",
+      "lines": 222
+    },
+    {
       "file": "crates/trit-learn/src/lib.rs",
       "lines": 26
     },
@@ -2979,6 +2983,10 @@
       "lines": 743
     },
     {
+      "file": "crates/trit-wspace/examples/ddos_shield/main.rs",
+      "lines": 342
+    },
+    {
       "file": "crates/trit-wspace/examples/dga_redteam/features.rs",
       "lines": 34
     },
@@ -3020,11 +3028,15 @@
     },
     {
       "file": "crates/trit-wspace/examples/evolution/main.rs",
-      "lines": 366
+      "lines": 364
     },
     {
       "file": "crates/trit-wspace/examples/evolution/metrics.rs",
       "lines": 149
+    },
+    {
+      "file": "crates/trit-wspace/examples/identity_lock/main.rs",
+      "lines": 285
     },
     {
       "file": "crates/trit-wspace/examples/program_xor.rs",
