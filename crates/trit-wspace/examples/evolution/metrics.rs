@@ -2,10 +2,6 @@
 
 use std::fs;
 
-use serde_json::{Value, json};
-use trit_learn::Activation;
-use trit_learn::dense::TernaryDense;
-
 /// xorshift64*（同 seed 同划分/同攻击）。
 pub(super) struct Rng(pub(super) u64);
 
@@ -59,6 +55,7 @@ pub(super) fn load_dataset(path: &str) -> Vec<(usize, String)> {
 
 /// 字符 3-gram/4-gram 哈希特征：出现=+1（三值输入的存在性编码）。
 pub(super) const FEAT_DIM: usize = 4096;
+pub(super) const HIDDEN: usize = 128;
 
 pub(super) fn featurize(text: &str) -> Vec<f32> {
     let lower: Vec<char> = text.to_lowercase().chars().collect();
@@ -149,25 +146,4 @@ impl Metrics {
         let r = self.recall();
         2.0 * p * r / (p + r).max(1e-12)
     }
-    pub(super) fn to_value(&self) -> Value {
-        json!({
-            "accuracy": self.accuracy(),
-            "precision": self.precision(),
-            "recall": self.recall(),
-            "f1": self.f1(),
-            "confusion": {"tp": self.tp, "fp": self.fp, "fn": self.fn_, "tn": self.tn},
-        })
-    }
-}
-
-/// QAT 推理：隐层 Tanh → 输出层 → Tanh（训练口径）。
-pub(super) fn qat_out(
-    hidden: &mut TernaryDense,
-    out_layer: &mut TernaryDense,
-    features: &[Vec<f32>],
-    i: usize,
-) -> f32 {
-    let h = hidden.forward(&features[i]);
-    let h_act: Vec<f32> = h.iter().map(|&x| Activation::Tanh.forward(x)).collect();
-    Activation::Tanh.forward(out_layer.forward(&h_act)[0])
 }

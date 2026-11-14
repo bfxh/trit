@@ -3015,12 +3015,16 @@
       "lines": 189
     },
     {
+      "file": "crates/trit-wspace/examples/evolution/defender.rs",
+      "lines": 130
+    },
+    {
       "file": "crates/trit-wspace/examples/evolution/main.rs",
-      "lines": 470
+      "lines": 366
     },
     {
       "file": "crates/trit-wspace/examples/evolution/metrics.rs",
-      "lines": 173
+      "lines": 149
     },
     {
       "file": "crates/trit-wspace/examples/program_xor.rs",
