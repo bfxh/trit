@@ -141,6 +141,15 @@ def main(argv: list[str]) -> int:
         return self_test()
 
     src = pathlib.Path(args.src)
+    # 「这台机器没有账本正本」不是错误（别人的 clone、CI runner 都没有），但必须明说跳过了什么：
+    # 静默通过会让人以为新鲜度被验证过。有正本却对不上，仍然判红。
+    if not src.is_dir():
+        if args.check:
+            print(f"SKIP 本机没有账本正本（{src}）—— 无法校验快照新鲜度；")
+            print("     CI 里的 tech_collide 仍读仓内快照（快照自洽性不受影响）")
+            return 0
+        print(f"FAIL 账本目录不存在：{src} —— 没有正本就生成不了快照（--src 指到有账本的机器）")
+        return 1
     try:
         files = build(src)
     except (FileNotFoundError, ValueError, json.JSONDecodeError) as error:
@@ -200,6 +209,13 @@ def self_test() -> int:
             check("缺文件必须抛错", False, True)
         except FileNotFoundError:
             check("缺文件必须抛错", True, True)
+
+    # 收工清单里那条 `--check` 必须能在「本机没有账本正本」的机器上跑通（否则人人收工都红）。
+    # 但它只能 SKIP，不能假装校验过——所以生成模式（不带 --check）仍然判红。
+    with tempfile.TemporaryDirectory() as tmp:
+        missing = str(pathlib.Path(tmp) / "no-ledger-here")
+        check("缺正本时 --check 只 SKIP 不判红", main(["--check", "--src", missing]), 0)
+        check("缺正本时生成模式仍判红", main(["--src", missing]), 1)
 
     print("自测结论：" + ("绿" if ok else "红"))
     return 0 if ok else 1

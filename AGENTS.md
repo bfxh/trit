@@ -12,7 +12,10 @@
 ## 工程口径
 
 - 实验层 `publish = false`；单文件 ≤800 行（`python scripts/module_budget.py`，台账只减不增）。
-- 收工一条命令：`cargo test --workspace` + `python scripts/module_budget.py`。
+- 收工一条命令：`cargo test --workspace` + `python scripts/module_budget.py`
+  + `python scripts/sync_handoff_snapshot.py --check`。第三条只校验**交接账本快照的新鲜度**
+  （CI 里的 `tech_collide` 只判快照自洽，判不了正本被别人改过）；本机没有
+  `_handoff/` 正本时会打印 `SKIP` 并 rc0，不算失败。
 - 新 worktree 的构建产物默认落 E: 盘：post-checkout 钩子自动生成 `.cargo/config.toml`；没有钩子的环境跑 `python scripts/wt_target.py --all`（见 `docs/engineering/BUILD-PERF.md` §5）。
 - 训练层在 `crates/trit-train`（STE + 位平面 ALU）；新模型优先复用同一套量化/STE 口径。
 - 三进制结论按 `docs/positioning/TERNARY-BOUNDARIES.md` 归 A/B/C/D，且必须带二进制基线。
