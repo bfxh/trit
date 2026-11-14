@@ -3539,6 +3539,10 @@
       "lines": 79
     },
     {
+      "file": "crates/trit-wspace/src/grouped_repair.rs",
+      "lines": 102
+    },
+    {
       "file": "crates/trit-wspace/src/history.rs",
       "lines": 85
     },
@@ -3925,6 +3929,10 @@
     {
       "file": "crates/trit-wspace/tests/grouped_oracle_sample.rs",
       "lines": 87
+    },
+    {
+      "file": "crates/trit-wspace/tests/grouped_repair.rs",
+      "lines": 130
     },
     {
       "file": "crates/trit-wspace/tests/history.rs",

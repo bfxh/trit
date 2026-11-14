@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Added（`grouped_repair`：分组尺度下的精确补丁——**编辑效果依赖分组**）
+
+- 新模块 `crates/trit-wspace/src/grouped_repair.rs`：给 `GroupedLayer` 提供单编辑补丁搜索
+  （`repair_single` / `loss` / `apply`）。必须独立实现，因为仓库的 `repair` 只接受 `&Net`。
+- **核心差异**：`repair` 的前提是"单点编辑的效果只取决于 trit 自身"（`Layer` 的 scale 是
+  每行一个正数、判等可忽略）。`GroupedLayer` **没有**这个性质——同一个 trit 编辑的效果
+  取决于它属于哪一组。
+- `tests/grouped_repair.rs`（5 个测试）：
+  1. `matching_layer_has_zero_loss`：完全匹配时 loss=0、不需要补丁；
+  2. `repairs_single_trit_corruption`：打坏一个 trit 后能在**正确位置**找到补丁并完全修复，
+     且 `apply` 不改原层；
+  3. **`edit_effect_depends_on_grouping`**：同 trits、不同分组 ⇒ 有效权重不同 ⇒ 同一编辑
+     的损失不同——这是与 `Layer` 的本质差别；
+  4. `returns_none_when_no_single_edit_helps`：若返回补丁就必须真修好（语义自洽）；
+  5. `loss_counts_mismatches_by_sign`：失配比例落在 (0,1]。
+- 含义：分组尺度下"补丁"不再只是"改一个 trit"——**还要看它落在哪一组**。这既让搜索语义
+  变复杂（同一处编辑在不同分组下效果不同），也带来额外自由度（改组号可以改变编辑的效果）。
+
 ### Added（`grouped_codec`：WSP1G 文本格式——**实测压缩率只有 1.13×**）
 
 - 新模块 `crates/trit-wspace/src/grouped_codec.rs`：`to_wspg` / `from_wspg` / `checksum`，
