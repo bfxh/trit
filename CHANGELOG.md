@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：Adam 优化器 `classifier_train`，并修掉两个实现缺陷）
+
+- 新模块 `grads`：`Grads` 从 `transformer_f32_full` 搬出来（该文件 263 → 192 行），
+  并加入 `TensorAdam` / `BlockAdam` / `AdamCfg`——逐参数一阶 + 二阶矩、偏置校正。
+- 新模块 `classifier_train`：`AdamOptions` / `AdamState` / `train_classify_adam_with` /
+  `train_classify_adam_with_state`。接口是**新增**的，不动已提交的 SGD 版本。
+  动机：plain SGD 在 384 维 LayerNorm 输出上条件数太差，200 步训练集只到 0.40
+  （同特征闭式解 0.89），Adam 对特征尺度不敏感，是这条病根的对症解法。
+- **修两个自己引入、被读数抓出来的缺陷**：
+  1. `Grads::add` 最初写成 `&mut self.query.clone()`——累加落到临时副本、梯度全丢
+     （语法能过，语义全错）；
+  2. Adam 状态原本在每次 `train_classify_adam_with` 内部新建 ⇒ 小批量循环下**动量与
+     偏置校正每步归零**，退化成近似 sign-SGD，loss 反而上升（1.3863 → 1.45~1.89）。
+     改为显式 `AdamState` 跨步复用；并把批归一挪进更新循环，消掉每步 11 个张量的
+     临时分配（一次 200 步 × 四路并行的实验因此跑了 39 分钟还没结束，只能杀掉重来）。
+- `tests/classifier_adam.rs`：80 步内学到 ≥0.75、同预算下不劣于 SGD、梯度确实改到块参数。
+- 30 步小规模读数（1024 样本 / 64 上下文 / 768 训练 + 256 留出 / 冻结基线 0.3438）：
+
+  | lr_block | lr_head | loss | 训练集 | 留出集 | ff2 改动 |
+  |---|---|---|---|---|---|
+  | 1e-3 | 1e-2 | 1.3863 → 1.4159 | 0.2747 | 0.2695 | 3.7e-3 |
+  | 1e-2 | 1e-2 | 1.3863 → 1.3865 | 0.2617 | 0.2227 | 3.2e-2 |
+
+- 状态跨步后块**真的在动**了（改动量从 1e-5 升到 1e-2 量级），但 30 步远不够，
+  loss 仍在上坡、留出集仍 ≈ 机会线。200 步长跑的读数随后补记。
+
 ### Changed（trit-wspace：`classifier_holdout` 学习率网格——留出集全部停在机会线）
 
 200 步（每步 128 样本）、lr_block=0.005、冻结基线留出 0.3438、机会 0.25：

@@ -4,6 +4,7 @@
 
 use crate::attention_f32::F32Attention;
 use crate::error::Result;
+use crate::grads::Grads;
 use crate::transformer_f32::{LayerNorm, TransformerBlock};
 
 /// 训练选项。
@@ -176,78 +177,6 @@ pub fn train_full(
         losses.push(total / tokens.len().max(1) as f32);
     }
     Ok(TrainReport { losses })
-}
-
-#[derive(Default)]
-pub(crate) struct Grads {
-    query: Vec<f32>,
-    key: Vec<f32>,
-    value: Vec<f32>,
-    ln1_weight: Vec<f32>,
-    ln1_bias: Vec<f32>,
-    ln2_weight: Vec<f32>,
-    ln2_bias: Vec<f32>,
-    ff1_weight: Vec<f32>,
-    ff1_bias: Vec<f32>,
-    ff2_weight: Vec<f32>,
-    ff2_bias: Vec<f32>,
-}
-
-#[allow(clippy::too_many_arguments)]
-impl Grads {
-    pub(crate) fn add(
-        &mut self,
-        attention: &AttentionGrad,
-        gw_ln1: &[f32],
-        gb_ln1: &[f32],
-        gw_ln2: &[f32],
-        gb_ln2: &[f32],
-        gw_ff1: &[f32],
-        gb_ff1: &[f32],
-        gw_ff2: &[f32],
-        gb_ff2: &[f32],
-    ) {
-        accumulate(&mut self.query, &attention.query);
-        accumulate(&mut self.key, &attention.key);
-        accumulate(&mut self.value, &attention.value);
-        accumulate(&mut self.ln1_weight, gw_ln1);
-        accumulate(&mut self.ln1_bias, gb_ln1);
-        accumulate(&mut self.ln2_weight, gw_ln2);
-        accumulate(&mut self.ln2_bias, gb_ln2);
-        accumulate(&mut self.ff1_weight, gw_ff1);
-        accumulate(&mut self.ff1_bias, gb_ff1);
-        accumulate(&mut self.ff2_weight, gw_ff2);
-        accumulate(&mut self.ff2_bias, gb_ff2);
-    }
-
-    pub(crate) fn apply(&self, block: &mut TransformerBlock, lr: f32, count: f32) {
-        apply(&mut block.attention.query, &self.query, lr, count);
-        apply(&mut block.attention.key, &self.key, lr, count);
-        apply(&mut block.attention.value, &self.value, lr, count);
-        apply(&mut block.ln1.weight, &self.ln1_weight, lr, count);
-        apply(&mut block.ln1.bias, &self.ln1_bias, lr, count);
-        apply(&mut block.ln2.weight, &self.ln2_weight, lr, count);
-        apply(&mut block.ln2.bias, &self.ln2_bias, lr, count);
-        apply(&mut block.ff1.weight, &self.ff1_weight, lr, count);
-        apply(&mut block.ff1.bias, &self.ff1_bias, lr, count);
-        apply(&mut block.ff2.weight, &self.ff2_weight, lr, count);
-        apply(&mut block.ff2.bias, &self.ff2_bias, lr, count);
-    }
-}
-
-fn accumulate(target: &mut Vec<f32>, source: &[f32]) {
-    if target.len() != source.len() {
-        *target = vec![0.0; source.len()];
-    }
-    for (slot, value) in target.iter_mut().zip(source) {
-        *slot += value;
-    }
-}
-
-fn apply(target: &mut [f32], gradient: &[f32], lr: f32, count: f32) {
-    for (slot, value) in target.iter_mut().zip(gradient) {
-        *slot -= lr * value / count;
-    }
 }
 
 fn project(weights: &[f32], input: &[f32], rows: usize, cols: usize) -> Vec<f32> {

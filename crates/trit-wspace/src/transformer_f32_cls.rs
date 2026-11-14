@@ -12,8 +12,8 @@
 
 pub use crate::classifier_head::ClassifierHead;
 use crate::error::{Error, Result};
+use crate::grads::Grads;
 use crate::transformer_f32::TransformerBlock;
-use crate::transformer_f32_full::Grads;
 use crate::transformer_f32_full::step::{TokenCache, backward_token, forward_token};
 
 /// 分类训练选项。

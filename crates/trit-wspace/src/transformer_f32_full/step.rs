@@ -2,10 +2,10 @@
 //!
 //! 抽出来是为了让两条损失走**同一份**反向实现，而不是各复制一套训练循环。
 
-use super::{Grads, attention_backward, layernorm_backward_full};
-use crate::error::Result;
+use super::{attention_backward, layernorm_backward_full};
 use crate::transformer_f32::TransformerBlock;
 use crate::transformer_f32_train::dense_backward;
+use crate::{error::Result, grads::Grads};
 
 /// 单个 token 的 forward 中间量，供反向复用。
 #[derive(Clone, Debug)]

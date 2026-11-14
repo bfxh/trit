@@ -3011,6 +3011,10 @@
       "lines": 743
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_adam.rs",
+      "lines": 216
+    },
+    {
       "file": "crates/trit-wspace/examples/classifier_holdout.rs",
       "lines": 214
     },
@@ -3227,6 +3231,10 @@
       "lines": 258
     },
     {
+      "file": "crates/trit-wspace/src/classifier_train.rs",
+      "lines": 229
+    },
+    {
       "file": "crates/trit-wspace/src/cli.rs",
       "lines": 519
     },
@@ -3435,6 +3443,10 @@
       "lines": 136
     },
     {
+      "file": "crates/trit-wspace/src/grads.rs",
+      "lines": 224
+    },
+    {
       "file": "crates/trit-wspace/src/history.rs",
       "lines": 85
     },
@@ -3624,7 +3636,7 @@
     },
     {
       "file": "crates/trit-wspace/src/transformer_f32_full.rs",
-      "lines": 263
+      "lines": 192
     },
     {
       "file": "crates/trit-wspace/src/transformer_f32_full/step.rs",
@@ -3757,6 +3769,10 @@
     {
       "file": "crates/trit-wspace/tests/classification.rs",
       "lines": 144
+    },
+    {
+      "file": "crates/trit-wspace/tests/classifier_adam.rs",
+      "lines": 147
     },
     {
       "file": "crates/trit-wspace/tests/classifier_head.rs",
