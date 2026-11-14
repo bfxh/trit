@@ -33,5 +33,5 @@ trit-wspace <command>
   read-block <artifact.wsp2> --index <idx> --layer N [--row-start R --rows K] [--verify] [--out <path>]
   split-artifact <artifact|-> --rows N --out <dir>
   join-artifact <dir> --out <path>
-  pack-artifact <artifact|-> --out <bin> | unpack-artifact <bin> --out <path>
+  pack-artifact <artifact|-> --out <bin> | unpack-artifact <bin> --out <path> | formats
   mcp";

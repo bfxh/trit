@@ -3379,6 +3379,10 @@
       "lines": 24
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_formats.rs",
+      "lines": 7
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_gguf.rs",
       "lines": 161
     },
@@ -3537,6 +3541,10 @@
     {
       "file": "crates/trit-wspace/src/explain.rs",
       "lines": 136
+    },
+    {
+      "file": "crates/trit-wspace/src/formats.rs",
+      "lines": 122
     },
     {
       "file": "crates/trit-wspace/src/grads.rs",
@@ -3949,6 +3957,10 @@
     {
       "file": "crates/trit-wspace/tests/explain.rs",
       "lines": 105
+    },
+    {
+      "file": "crates/trit-wspace/tests/formats.rs",
+      "lines": 77
     },
     {
       "file": "crates/trit-wspace/tests/gguf_cli.rs",

@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（格式注册清单：`formats` 命令 + `formats::registry`）
+
+- 新模块 `crates/trit-wspace/src/formats.rs`：10 种格式的统一清单
+  （`FormatInfo`：`name` / `extensions` / `read` / `write` / `note`）。
+  8 种可读写（`wsp1`、`wsp1g`、`wsp2`、`wsp2g`、`wsp3`、`wsp4`、`safetensors`、`gguf`）；
+  2 种明确未实现（`pytorch-state-dict`、llama.cpp 侧的 `TYPE_TRIT`）。
+- CLI `formats` 输出 `schema=trit-wspace.formats.v1` 的 JSON 清单。
+- `tests/formats.rs`（5 条）：名字/扩展名唯一、可读写清单与实现一致、未实现项如实列出、
+  JSON 形状稳定。
+- **`read` / `write` 为 false 的项就是明确没做的部分**——清单即承诺，测试守着这条。
+
 ### Fixed（审计日志幂等：重复应用不再产生重复条）
 
 - 新子模块 `crates/trit-wspace/src/audit/dedupe.rs`：幂等键 =

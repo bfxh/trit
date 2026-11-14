@@ -282,6 +282,13 @@ CLI 的 `audit-shards` 是**流式**的：`ShardCursor` / `ShardReplay` 读一�
 > 注册后需要**重启/重载 Qoder App**，工具目录才会出现；当前会话的 `mcp_list` 不会热更新。
 > 本地已注册的服务 key 是 `trit-wspace`，命令为 `trit-wspace mcp`。
 
+### 格式注册（`formats`）
+
+`trit-wspace formats` 输出统一清单（`schema=trit-wspace.formats.v1`）：每种格式的名字、
+扩展名、`read` / `write` 与一句话边界。清单是**承诺**：`read` / `write` 为 `false` 的项
+就是明确没做的部分（PyTorch `state_dict`、llama.cpp 侧的 `TYPE_TRIT`），`tests/formats.rs`
+守着这条。库层入口是 `trit_wspace::formats::{registry, registry_json}`。
+
 ### 审计日志（JSONL + 哈希链）
 
 `patch --log audit.jsonl` 每次追加一条；每行含 `before` / `after` 校验和、补丁、改动量、

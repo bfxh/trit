@@ -77,6 +77,7 @@ pub mod edit;
 pub mod error;
 pub mod exhaustive;
 pub mod explain;
+pub mod formats;
 pub mod grads;
 pub mod grouped;
 pub mod grouped_certify;
@@ -125,7 +126,6 @@ pub mod wire;
 pub mod wsp2;
 pub mod wsp3;
 pub mod wsp4;
-
 pub use agree::{Projected, Size, measure};
 pub use analyze::{
     Analysis, EditImpact, PairAnalysis, PairImpact, TripleAnalysis, TripleImpact, analyze,

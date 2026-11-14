@@ -1,9 +1,4 @@
 //! 命令行入口。
-use std::collections::{BTreeMap, BTreeSet};
-use std::{fs, io::Read, path::Path};
-
-use serde_json::{Value, json};
-
 use crate::audit::AuditLog;
 use crate::codec::{from_wsp, to_wsp};
 use crate::edit::Patch;
@@ -11,6 +6,9 @@ use crate::net::Net;
 use crate::ops;
 use crate::oracle::Oracle;
 use crate::wire;
+use serde_json::{Value, json};
+use std::collections::{BTreeMap, BTreeSet};
+use std::{fs, io::Read, path::Path};
 
 mod cli_agree_stats;
 mod cli_apply;
@@ -23,6 +21,7 @@ mod cli_diagnose;
 mod cli_diff;
 mod cli_exhaustive;
 mod cli_explain;
+mod cli_formats;
 mod cli_gguf;
 mod cli_gradient;
 mod cli_impact;
@@ -121,6 +120,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "join-artifact" => cli_artifact_shard::join(&args[1..]),
         "pack-artifact" => cli_wsp2::pack(&args[1..]),
         "unpack-artifact" => cli_wsp2::unpack(&args[1..]),
+        "formats" => cli_formats::formats(&args[1..]),
         "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
             .map_err(|error| error.to_string()),
         "--help" | "-h" | "help" => {
