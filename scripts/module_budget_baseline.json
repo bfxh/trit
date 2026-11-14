@@ -3835,6 +3835,10 @@
       "lines": 167
     },
     {
+      "file": "crates/trit-wspace/src/wsp2_map.rs",
+      "lines": 67
+    },
+    {
       "file": "crates/trit-wspace/src/wsp3.rs",
       "lines": 79
     },
@@ -4209,6 +4213,10 @@
     {
       "file": "crates/trit-wspace/tests/wsp2_grouped.rs",
       "lines": 260
+    },
+    {
+      "file": "crates/trit-wspace/tests/wsp2_mmap.rs",
+      "lines": 78
     },
     {
       "file": "crates/trit-wspace/tests/wsp3.rs",

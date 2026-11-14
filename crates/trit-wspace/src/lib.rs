@@ -47,7 +47,6 @@
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
-
 pub mod agree;
 pub mod analyze;
 pub mod artifact_shard;
@@ -124,6 +123,7 @@ pub mod trit;
 pub mod tune;
 pub mod wire;
 pub mod wsp2;
+pub mod wsp2_map;
 pub mod wsp3;
 pub mod wsp4;
 pub use agree::{Projected, Size, measure};

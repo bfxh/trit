@@ -41,7 +41,7 @@ pub(super) fn read_block(args: &[String]) -> Result<(), String> {
     let layer_index = value(&parsed, "layer")?
         .parse::<usize>()
         .map_err(|_| "--layer 需要非负整数".to_string())?;
-    let mut file = fs::File::open(path).map_err(|error| format!("{path}: {error}"))?;
+    let map = crate::wsp2_map::MappedArtifact::open(path).map_err(err)?;
     let text = fs::read_to_string(index_path).map_err(|error| format!("{index_path}: {error}"))?;
     let value: Value =
         serde_json::from_str(&text).map_err(|error| format!("{index_path} JSON 非法：{error}"))?;
@@ -76,7 +76,7 @@ pub(super) fn read_block(args: &[String]) -> Result<(), String> {
         let bytes = fs::read(path).map_err(|error| format!("{path}: {error}"))?;
         index.read_rows(&bytes, layer_index, row_start, rows)
     } else {
-        index.read_rows_io(&mut file, layer_index, row_start, rows)
+        map.read_rows(&index, layer_index, row_start, rows)
     }
     .map_err(err)?;
     let net = Net::new(vec![layer]).map_err(err)?;

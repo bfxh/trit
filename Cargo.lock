@@ -2230,6 +2230,7 @@ dependencies = [
  "trit-core",
  "trit-export",
  "trit-learn",
+ "trit-mmap",
  "trit-train",
 ]
 
