@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（`grouped`：分组三值层——严格三值约束下的 2.4× 压缩）
+
+- 新模块 `crates/trit-wspace/src/grouped.rs`：`GroupedLayer`，**跨行**按幅度排序后
+  每 `group_size` 个共享一个 `E|w|` scale 的三值层。
+- 与 `Layer` 的差别：`Layer.scales` 是**每行一个**；本结构是**每 G 个元素一个**，
+  且分组来自跨行幅度排序，所以额外需要 `groups: Vec<u32>`（每个元素属于哪一组）。
+- API：`quantize` / `forward` / `trit` / `group_of` / `scale` / `effective` /
+  `bits_per_weight` / `to_f32`。
+- `tests/grouped.rs`（7 个测试）：forward 与等效 f32 权重一致、量化误差不超过 1.5·E|w|、
+  组号与 scale 全覆盖、**位宽必须计入组号**、形状校验、零输入返回偏置、trit 落在三值集合内。
+- **定位（诚实）**：`bits/weight = 2 + 32/G + log2(组数)`。G=256 + 59 万权重 ⇒ ≈13.3 bit
+  ⇒ **2.4× 压缩**；G=4096 ⇒ ≈9.2 bit ⇒ 3.5×。所以它**不是通用压缩方案**（int8 是 8 bit /
+  4× 且无需额外信息），价值在于：**在"权重必须是三值"的硬约束下**（可穷举验证、可逐位 diff
+  的工程前提），把 STS 代价从 per-tensor 三值的 −24.91 点降到 −0.0004 点。
+- 未做：把它接进 `Net`/`Oracle` 做穷举校验（需要 scale 可枚举的约定），仍是独立模块。
+
 ### Fixed（更正两处压缩率算错：排序信息必须存，int8 才是 Pareto 最优）
 
 **错误一：int8 的压缩率**。8 bit/weight 对应 **4×** 压缩，此前多处写成 8×（把
