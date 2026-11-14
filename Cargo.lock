@@ -1916,6 +1916,7 @@ dependencies = [
  "trit-core",
  "trit-eval",
  "trit-fuzz",
+ "trit-learn",
  "trit-sat",
 ]
 

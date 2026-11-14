@@ -715,6 +715,10 @@
       "lines": 84
     },
     {
+      "file": "crates/trit-count/examples/evolved_count.rs",
+      "lines": 716
+    },
+    {
       "file": "crates/trit-count/examples/matching_alloc_probe.rs",
       "lines": 115
     },
@@ -2968,7 +2972,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/adversarial_train/main.rs",
-      "lines": 440
+      "lines": 432
     },
     {
       "file": "crates/trit-wspace/examples/adversarial_train/metrics.rs",
