@@ -3079,6 +3079,10 @@
       "lines": 197
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_sts_significance.rs",
+      "lines": 192
+    },
+    {
       "file": "crates/trit-wspace/examples/classifier_sts_ternary_perm.rs",
       "lines": 217
     },
@@ -3695,6 +3699,10 @@
       "lines": 744
     },
     {
+      "file": "crates/trit-wspace/src/stats.rs",
+      "lines": 217
+    },
+    {
       "file": "crates/trit-wspace/src/task.rs",
       "lines": 147
     },
@@ -4049,6 +4057,10 @@
     {
       "file": "crates/trit-wspace/tests/shard.rs",
       "lines": 382
+    },
+    {
+      "file": "crates/trit-wspace/tests/stats.rs",
+      "lines": 113
     },
     {
       "file": "crates/trit-wspace/tests/task.rs",

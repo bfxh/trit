@@ -297,7 +297,61 @@
 
 ---
 
-## 10. 复现方式
+## 10. 统计显著性：单点读数的置信区间
+
+以上所有读数此前都是**单点估计**。用 bootstrap 给它们配上区间后，结论的表述需要修正。
+
+### 10.1 三值分组的差异**不显著**
+
+300 对、group=256、2000 次重采样：
+
+| 配置 | Spearman | 95% CI |
+|---|---|---|
+| baseline | 0.933742 | [0.9131, 0.9468] |
+| quantized | 0.934604 | [0.9139, 0.9475] |
+| delta | **+0.000862** | |
+| **paired p 值** | **0.2815** | **不显著** |
+
+- 两个置信区间**高度重叠**，成对 bootstrap p = 0.28。
+- 所以正确表述是「**无可检测的差异**」，而不是「掉了 0.0004」或「提升了 0.0009」——
+  这些单点差异的方向本身就在噪声里。
+- **CI 半宽约 1.7 个点**：任何小于这个尺度的差异都不该被解释。这也说明
+  §5.3 里 headlines 的 −0.0049 在 250 个样本上同样无法判定。
+
+### 10.2 分层采样能让小样本代表全量
+
+按人工分数分 5 层、抽 40%（119 个样本）：
+
+| 指标 | 全量 300 对 | 分层 40%（119） |
+|---|---|---|
+| baseline | 0.9337 | **0.9309** |
+| quantized | 0.9346 | **0.9318** |
+
+差 < 0.003。**按层抽样后，小样本子集可以代表全量**——这是「采样麻烦」的正解，
+而不是随意取「前 N 对」（那样会像 §0 提到的 0.8614 vs 0.7311 一样偏 13 个点）。
+
+### 10.3 方法学
+
+- **percentile bootstrap 不保证区间包含点估计**：估计量有偏时重采样分布会偏斜
+  （Spearman 逼近 1 时正是如此）。需要「必然包含」时应用 basic bootstrap。
+- **比较必须成对**（Dietterich 1998）：同一批样本上重采样，样本难度被消掉，
+  只剩配置差异；否则容易把「这批样本特别难」误判成「配置更差」。
+
+### 10.4 工具
+
+```rust
+use trit_wspace::stats::{bootstrap_spearman_ci, paired_bootstrap_p, stratified_indices};
+
+let ci = bootstrap_spearman_ci(&predicted, &gold, 2000, 0.95, seed);
+let p  = paired_bootstrap_p(&baseline, &quantized, &gold, 2000, seed);
+let subset = stratified_indices(&strata, 0.4, seed);
+```
+
+示例：`cargo run --release -p trit-wspace --example classifier_sts_significance -- $MODEL $VOCAB $STS 300 256 2000`
+
+---
+
+## 11. 复现方式
 
 ```bash
 cd trit-wt-dimsweep

@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Added（`stats` + `classifier_sts_significance`：单点读数配上置信区间——**差异不显著**）
+
+- 新模块 `stats`：`spearman` / `bootstrap_spearman_ci`（percentile bootstrap）/
+  `paired_bootstrap_p`（成对重采样）/ `stratified_indices`（按层抽样）。全部确定性（LCG）。
+- 新示例 `classifier_sts_significance.rs`：给"三值分组 vs baseline"配 CI 与成对检验。
+- 读数（300 对、group=256、2000 次重采样）：
+
+  | 配置 | Spearman | 95% CI |
+  |---|---|---|
+  | baseline | 0.933742 | [0.9131, 0.9468] |
+  | quantized | 0.934604 | [0.9139, 0.9475] |
+  | delta | +0.000862 | |
+  | **paired p 值** | **0.2815** | **不显著** |
+
+- **结论修正**：三值分组的差异**统计上不显著**（两个 CI 高度重叠、p=0.28）。正确表述是
+  「**无可检测的差异**」，而不是「掉了 0.0004」或「提升了 0.0009」——单点差异的方向本身
+  就在噪声里。
+- **CI 半宽约 1.7 个点**：任何小于这个尺度的差异都不该被解释；这也说明 250 个样本上
+  headlines 的 −0.0049 同样无法判定。
+- **分层采样有效**：按人工分数分 5 层、抽 40%（119 个样本），读数 0.9309 / 0.9318 与全量
+  （0.9337 / 0.9346）差 < 0.003——**小样本子集只要分层就能代表全量**，这是「采样麻烦」的正解
+  （而不是随意取「前 N 对」，那样会像 0.8614 vs 0.7311 一样偏 13 个点）。
+- 方法学（写进模块文档）：percentile bootstrap **不保证**区间包含点估计（估计量有偏时
+  分布偏斜）；比较必须**成对**（Dietterich 1998），否则样本难度会淹没配置差异。
+- `tests/stats.rs`（9 个测试）：Spearman 已知值、CI 合理性与确定性、小样本拒绝、成对检验
+  检出明显差异、相同配置 p≈1、分层抽样保持比例、小层兜底。
+- `docs/WSP-SUMMARY.md` 新增 §10 记录这些读数与修正。
+
 ### Added（`grouped_invariant`：更粗粒度的判等不变量——**逐行正比例**）
 
 - 新模块 `crates/trit-wspace/src/grouped_invariant.rs`：`row_proportional` /

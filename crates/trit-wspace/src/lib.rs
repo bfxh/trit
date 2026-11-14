@@ -42,8 +42,7 @@
 //! - 修补搜索是启发式（半径 1/2 穷举 + 束搜索），不保证全局最小，只保证返回的解在验证集上完全正确；没有“从自然语言生成补丁”的模型；本库提供的是可被外部程序/模型调用的编辑原语与验证闭环。技术树与尚缺的层见 `crates/trit-wspace/README.md`。
 //! ## 模型/脚本接口
 //! 二进制 `trit-wspace` 提供两套入口，共用同一条判决路径（[`ops`]）：
-//! - CLI：`read / verify / patch / repair / diff / merge`，输入 `-` 读 stdin，报告一律 JSON；MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、
-//!   `wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、
+//! - CLI：`read / verify / patch / repair / diff / merge`，输入 `-` 读 stdin，报告一律 JSON；MCP：`trit-wspace mcp` 走 stdio JSON-RPC，暴露 `wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、
 //!   `wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop` 十九个工具，参数与返回见 [`wire`]。
 //!   补丁是稳定的 JSON 线格式（`version=1`），模型可以直接生成、人工可以逐条审。
 
@@ -110,6 +109,7 @@ pub mod safetensors;
 pub mod scale;
 pub mod scan;
 pub mod shard;
+pub mod stats;
 pub mod task;
 pub mod task_merge;
 pub mod teacher_f32;
