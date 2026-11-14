@@ -78,7 +78,7 @@ PR 没碰任何 Rust 文件。落地改动（`.github/workflows/ci.yml`）：
 
 | 技术 | 结论 | 原因 |
 |---|---|---|
-| `CARGO_PROFILE_DEV_DEBUG=0` | 未采纳 | 本机对照实测 **27.2s vs 27.5s**，无差异——该步骤瓶颈是 wgpu 编译，不是 PDB |
+| 精简 dev 调试信息（本仓 `line-tables-only`，依赖 `false`） | **已落地**（§10） | 11-11 只测了 GPU 冒烟那一步：`CARGO_PROFILE_DEV_DEBUG=0` **27.2s vs 27.5s**，那一步瓶颈是 wgpu 编译；11-15 按整个测试构建重测：测试二进制 75% 的字节是调试信息，体积减半、构建快约 35% |
 | nightly `-Zthreads` / `-Zshare-generics` | 观望 | 外部实测约 22.7%（[Depot](https://depot.dev/blog/guide-to-faster-rust-builds-in-ci)，未复现）；要求 nightly，与本仓 stable/MSRV 口径冲突 |
 | Cranelift 后端（dev 构建） | 未采纳 | 仍需 nightly 组件；外部报告在低层依赖上直接失败（同上来源） |
 | mold（Linux 链接器） | 不需要 | Linux 自 Rust 1.90 起默认 `rust-lld`（[Rust 官方博客](https://blog.rust-lang.org/2025/09/01/rust-lld-on-1.90.0-stable/)），再换收益边际 |
@@ -140,3 +140,49 @@ gh api repos/bfxh/trit/actions/runs/<run-id>/jobs --jq '.jobs[] | {name, started
 
 仍然每 worktree 独立 target 目录，不共享（§3：共享 = cargo 锁竞争 + 指纹互相失效）；
 `SCCACHE_BASEDIRS` 已含产物盘的策略根，跨目录重建有 sccache 兜底。
+
+## 10. 构建瘦身：收窄补缺口、GPU 冒烟并行、调试信息减重（2026-11-15 落地）
+
+**收窄补缺口（`scripts/ci_scope.py`）**：`scripts/**` 原先在「归不到 crate ⇒ 全量」名单里，
+可它不参与 Rust 编译（§4 已据此把纯脚本 PR 整个跳过）。抽样 40 个已合并 PR：36 个走了全量，
+其中 32 个只是因为顺手改了 `scripts/` 下的台账（基线 / 登记表）。改为 `NEUTRAL_DIRS` 略过后，
+同一样本全量 36 → **4**，按 crate 收窄 30 个，整段跳过 Rust 矩阵 6 个；剩下 4 个
+（`Cargo.lock`、`.gitignore`、workflow、闭包 38/45）都该全量。前提由代码守：`rust_reads`
+扫每个成员的 `*.rs` 与 `Cargo.toml`，一旦出现对 `scripts/` 的引用（注释除外），这次运行就把它
+踢出中性集、退回全量，并在日志里点名文件:行号。MSRV job 用同一把尺子收窄（之前每个 PR
+都全量 build + test）。
+
+**GPU 冒烟后台化（`.github/workflows/ci.yml`）**：1×1×1 冒烟在 Windows WARP 上是纯运行时间
+（抽样 PR 263s，是该 job 516s 里最长的一段），和 nextest/doctest/clippy 互不依赖。改成两步：
+Clippy 之后当场 `--no-run` 编好（编译错误当场判红），用例放后台跑；job 末尾「— wait」打印完整
+日志、按退出码判红（后台进程失踪靠 20 分钟超时判红）。fmt/clippy 的快速失败不受影响。
+预估 Windows job 约 516s → 390–400s，以本次 PR 自己的 CI 读数为准。
+顺手修复：全量兜底分支漏设 `needs_build_gpu`（#376 引入），push main 时 trit-build 的
+GPU 测试与 clippy 一直被跳过；现在补上（只会多跑）。
+
+**调试信息减重（根 `Cargo.toml`）**：`[profile.dev] debug = "line-tables-only"`，
+`[profile.dev.package."*"] debug = false`，test profile 继承 dev。panic 回溯仍有本仓文件:行号；
+debug-assertions / overflow-checks / opt-level 不变——测什么、怎么判都没变，只是不再生成没人读的
+完整调试信息。本机实测（x86_64-pc-windows-gnu，调试信息是嵌在二进制里的 DWARF，与 Linux 同形态；
+`cargo test -p trit-wspace --no-run --locked`，空 target 目录，不经 sccache，调换顺序复测一轮）：
+
+| 指标 | 改前 | 改后 |
+|---|---|---|
+| target 目录 | 4362 MB | 2184 MB（−50%） |
+| 测试二进制（58 个）合计 | 2227 MB | 1094 MB（−51%） |
+| 其中调试信息段 | 1675 MB（75%） | 579 MB（−65%） |
+| 墙钟（两轮） | 40.3s / 38.2s | 25.9s / 25.5s（约 −35%） |
+
+§5 那次 27.2s vs 27.5s 测的是 GPU 冒烟那一步（瓶颈在 wgpu 编译）；测试构建要链接几十个
+测试二进制，调试信息的生成、搬运和写盘才是大头。CI 上链接同样变轻，`rust-cache` 要存取的
+依赖产物也变小。要单步调试时本地临时把 `debug` 调回 `true`（不要提交）。
+
+**防复发（`scripts/worktree_guard.py` + `scripts/gitflow.py`）**：回收规则早在 AGENTS.md 里，
+仍攒下 33 个已合 PR 的工作树——没人跑，也不删外置 target。现在 `--apply` 连带删除该树
+`策略根/<树名>` 的外置 target（只删绝对路径、树外、同名、没有别的工作树指向的那份；策略根
+本身名字对不上，永远不删）；当前工作树按 `git rev-parse --show-toplevel` 保护，主工作树显式保护；
+`gitflow.py worktree add` 新建前自动跑一次（尽力而为，`TRIT_NO_AUTO_RECLAIM=1` 关闭）；自测接进
+CI 的 recovery job。仓库设置已开「合并后自动删除远端分支」。
+
+**回滚**：每一项都是独立的一处——`NEUTRAL_DIRS` 置空、ci.yml 两步并回一步、删掉 `Cargo.toml`
+末尾两段 profile、设 `TRIT_NO_AUTO_RECLAIM=1`。
