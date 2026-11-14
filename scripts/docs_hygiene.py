@@ -8,7 +8,7 @@
 
 为什么要有这个（2026-11-05 的真实事故）：一次脚本化追加 CHANGELOG 时，同一个名字先当路径
 再当内容用，于是整个 173 KB 的文件被写成一行人机绝对路径 —— 它还跟着 PR 合进了 main。
-`docs/SCOPE.md` §4 说「仓内文档记读数与口径，不记机器状态」，没有门就只是句客气话。
+`docs/positioning/SCOPE.md` §4 说「仓内文档记读数与口径，不记机器状态」，没有门就只是句客气话。
 
 口径：
   · CHANGELOG.md 首行必须 `# Changelog`、必须含 `## [Unreleased]`、字节数不得低于棘轮基线
@@ -82,7 +82,7 @@ def check_drive_paths(found: dict[str, int], baseline: dict[str, int]) -> list[s
         if count > allowed:
             problems.append(
                 f"{path} 有 {count} 处盘符绝对路径，基线允许 {allowed} ——"
-                " 仓内文档记读数与口径，不记机器路径（docs/SCOPE.md §4）"
+                " 仓内文档记读数与口径，不记机器路径（docs/positioning/SCOPE.md §4）"
             )
     for path, allowed in sorted(baseline.items()):
         if path not in found and allowed > 0:

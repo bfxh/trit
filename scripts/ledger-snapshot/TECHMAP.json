@@ -1,0 +1,1178 @@
+{
+ "version": 1,
+ "note": "每个功能/技术/门/事故一条，带标签与可核验引用。工具：repo-tools/scripts/techmap.py。",
+ "roots": {
+  "bfxh/trit": {
+   "path": "<local>/trit",
+   "ref": "origin/main"
+  },
+  "bfxh/repo-tools": {
+   "path": "<local>/repo-tools",
+   "ref": "origin/main"
+  },
+  "bfxh/agent-wiki": {
+   "path": "<local>/agent-wiki",
+   "ref": "HEAD"
+  },
+  "bfxh/trit-vcs": {
+   "path": "<local>/trit-vcs",
+   "ref": "origin/main"
+  }
+ },
+ "entries": [
+  {
+   "id": "wf32-tiled-kernel",
+   "title": "WF32 16×16 共享内存 tile 内核（含 bank 填充）",
+   "tags": [
+    "gpu",
+    "wgsl",
+    "wf32",
+    "tiling",
+    "bank-conflict",
+    "perf"
+   ],
+   "summary": "B 进 workgroup 共享内存被 16 行复用；行距从 8 个 vec4 改成 9 个填充后才吃到收益。",
+   "why": "生成器一步推理的 conv 是「三值权重 × f32 激活」，A 位平面复用 + B 的列方向复用是关键。",
+   "paths": [
+    "crates/trit-gpu/src/matmul_wf32_tiled.wgsl",
+    "crates/trit-gpu/src/matmul_wf32.rs"
+   ],
+   "tests": [
+    "crates/trit-gpu/tests/wf32_plan.rs::plan_matches_cpu_on_all_kernels",
+    "crates/trit-gpu/src/matmul_wf32.rs::gpu_wf32_reg4_matches_cpu_and_scalar"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#246"
+    },
+    {
+     "type": "measurement",
+     "value": "conv1 端到端 1.72x（RTX 4060 Ti）"
+    },
+    {
+     "type": "measurement",
+     "value": "bank 填充前只有 1.23x"
+    }
+   ],
+   "related": [
+    "wf32-persistent-plan",
+    "wgpu-device-limits"
+   ],
+   "repo": "bfxh/trit",
+   "kind": "technique",
+   "status": "landed"
+  },
+  {
+   "id": "wf32-persistent-plan",
+   "title": "WF32 持久缓冲计划：形状只分配一次 + 分段计时",
+   "tags": [
+    "gpu",
+    "wf32",
+    "wgpu",
+    "buffer-reuse",
+    "benchmark",
+    "perf"
+   ],
+   "summary": "Wf32Plan 常驻 A/B/out/staging，run 单 submit；run_timed 拆内核段与回读段。",
+   "why": "端到端里内核只占 1/3，其余是建缓冲、上传、回读——不拆开就看不见。",
+   "paths": [
+    "crates/trit-gpu/src/matmul_wf32_plan.rs",
+    "crates/trit-gpu/examples/wf32_bench.rs"
+   ],
+   "tests": [
+    "crates/trit-gpu/tests/wf32_plan.rs::reuse_plan_after_new_activations",
+    "crates/trit-gpu/tests/wf32_plan.rs::timed_phases_agree_with_plain_run"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#255"
+    },
+    {
+     "type": "measurement",
+     "value": "fc 端到端 2.67x"
+    },
+    {
+     "type": "measurement",
+     "value": "四层合批 1.50x"
+    },
+    {
+     "type": "measurement",
+     "value": "conv 内核段 2.2-4.9 ps/MAC"
+    }
+   ],
+   "related": [
+    "wf32-layer-chain",
+    "wgpu-staging-unmap"
+   ],
+   "repo": "bfxh/trit",
+   "kind": "technique",
+   "status": "landed"
+  },
+  {
+   "id": "wf32-layer-chain",
+   "title": "WF32 层间链式：上一层 out 在显存里重排成下一层 b",
+   "tags": [
+    "gpu",
+    "wf32",
+    "batching",
+    "transpose",
+    "perf",
+    "wgsl"
+   ],
+   "summary": "run_chain 把整条前向压进一个 submit，只首层上传、只末层回读；相容条件是编码期断言。",
+   "why": "逐层跑时每层都要付 2.36 MB 上传 + 一次回读；中间结果没有理由过 host。",
+   "paths": [
+    "crates/trit-gpu/src/matmul_wf32_transpose.wgsl",
+    "crates/trit-gpu/src/matmul_wf32_plan.rs"
+   ],
+   "tests": [
+    "crates/trit-gpu/tests/wf32_plan.rs::chain_consumes_previous_layer_output_on_device",
+    "crates/trit-gpu/tests/wf32_plan.rs::chain_rejects_shape_that_does_not_connect"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#259"
+    },
+    {
+     "type": "measurement",
+     "value": "三层 1x1 栈 2.206 ms → 0.420 ms（5.25x）"
+    },
+    {
+     "type": "measurement",
+     "value": "逐元素最大偏差 0.0e0"
+    }
+   ],
+   "related": [
+    "wf32-persistent-plan"
+   ],
+   "repo": "bfxh/trit",
+   "kind": "technique",
+   "status": "landed"
+  },
+  {
+   "id": "ci-changed-crate-scope",
+   "title": "CI 收窄：PR 只编「直改 crate + 反向依赖闭包」",
+   "tags": [
+    "ci",
+    "gate",
+    "cargo-metadata",
+    "reverse-deps",
+    "perf"
+   ],
+   "summary": "ci_scope.py 建被依赖表算闭包给 -p 列表；拿不到 base、改到非 crate 文件、闭包≥2/3、名字不合法 ⇒ 全量。",
+   "why": "Windows 全量 check 是墙钟主项，而多数 PR 只动一两个 crate。",
+   "paths": [
+    "scripts/ci_scope.py",
+    "crates/trit-gpu/src/lib.rs"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#257"
+    },
+    {
+     "type": "measurement",
+     "value": "ubuntu 2m03s → 44s"
+    },
+    {
+     "type": "measurement",
+     "value": "macOS 2m30s → 32s"
+    },
+    {
+     "type": "measurement",
+     "value": "Windows 10m05s → 4m55s"
+    },
+    {
+     "type": "measurement",
+     "value": "变异 10 条 0 存活"
+    }
+   ],
+   "related": [
+    "ci-docs-only-path",
+    "trit-core-fanout"
+   ],
+   "repo": "bfxh/trit",
+   "kind": "technique",
+   "status": "landed"
+  },
+  {
+   "id": "ci-docs-only-path",
+   "title": "CI docs-only 快路径（保留必需检查名）",
+   "tags": [
+    "ci",
+    "gate",
+    "docs"
+   ],
+   "summary": "只改 .md/docs 的 PR 跳过 Rust 矩阵，但 job 名与必需检查名一个都不动。",
+   "paths": [
+    "crates/trit-gpu/src/lib.rs"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#247"
+    }
+   ],
+   "related": [
+    "ci-changed-crate-scope"
+   ],
+   "repo": "bfxh/trit",
+   "kind": "technique",
+   "status": "landed"
+  },
+  {
+   "id": "trit-core-fanout",
+   "title": "trit-core 的 25 个下游让窄化自动失效",
+   "tags": [
+    "ci",
+    "decision",
+    "measurement",
+    "reverse-deps"
+   ],
+   "summary": "真图 34 个成员里 trit-core 被 25 个依赖 ⇒ 闭包 26/34=76% ≥ 2/3 ⇒ 回落全量。",
+   "kind": "decision",
+   "evidence": [
+    {
+     "type": "measurement",
+     "value": "被 25 个 crate 依赖（闭包 26/34）"
+    },
+    {
+     "type": "pr",
+     "value": "#257"
+    }
+   ],
+   "related": [
+    "ci-changed-crate-scope"
+   ],
+   "paths": [
+    "scripts/ci_scope.py"
+   ],
+   "repo": "bfxh/trit",
+   "status": "landed"
+  },
+  {
+   "id": "wgpu-staging-unmap",
+   "title": "wgpu 30 复用 staging 必须显式 unmap",
+   "tags": [
+    "wgpu",
+    "gpu",
+    "incident",
+    "buffer-reuse"
+   ],
+   "kind": "incident",
+   "summary": "BufferView 的 Drop 只清 host 侧映射记录，显存侧仍算 mapped；不 unmap 下次 submit 判 still mapped。",
+   "why": "一次性 buffer 的写法掩盖了这条，改成持久 buffer 才暴露。",
+   "paths": [
+    "crates/trit-gpu/src/matmul_wf32_plan.rs"
+   ],
+   "tests": [
+    "crates/trit-gpu/tests/wf32_plan.rs::reuse_plan_after_new_activations"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#255"
+    },
+    {
+     "type": "doc",
+     "value": "docs/LESSONS.md"
+    }
+   ],
+   "related": [
+    "wf32-persistent-plan"
+   ],
+   "repo": "bfxh/trit",
+   "status": "landed"
+  },
+  {
+   "id": "wgpu-device-limits",
+   "title": "本机 wgpu 设备上限与 init 成本",
+   "tags": [
+    "wgpu",
+    "gpu",
+    "measurement",
+    "memory",
+    "decision"
+   ],
+   "kind": "decision",
+   "summary": "4060 Ti/8GB：绑定 2047、缓冲 4095 MiB、init 约 0.44s；compute-only 进程测不到 GPU 利用率。",
+   "paths": [
+    "crates/trit-gpu/src/lib.rs"
+   ],
+   "evidence": [
+    {
+     "type": "measurement",
+     "value": "绑定上限 2047 个"
+    },
+    {
+     "type": "measurement",
+     "value": "init 0.44 s"
+    },
+    {
+     "type": "measurement",
+     "value": "缓冲 4095 MiB"
+    }
+   ],
+   "related": [
+    "wf32-persistent-plan"
+   ],
+   "repo": "bfxh/trit",
+   "status": "landed"
+  },
+  {
+   "id": "claim-gate-parity-table",
+   "title": "认领闸门三态判定的共享表（库与 CLI 同一张）",
+   "tags": [
+    "coordination",
+    "claims",
+    "ternary",
+    "parity",
+    "gate"
+   ],
+   "repo": "bfxh/trit",
+   "summary": "14 条用例写进一张 JSON 表，Rust 的 gate 与 agent_claims.py 的 gate() 都读它；表读不到判红而不是跳过。",
+   "why": "两侧各测各的时，同一个形状能给两种答案；到期边界这种细节最先分叉。",
+   "paths": [
+    "crates/trit-orch/tests/claim_gate_parity.rs",
+    "crates/trit-orch/tests/fixtures/claim_gate_cases.json",
+    "scripts/agent_claims.py"
+   ],
+   "tests": [
+    "crates/trit-orch/tests/claim_gate_parity.rs::claim_gate_matches_shared_table",
+    "crates/trit-orch/tests/claim_gate_parity.rs::shared_table_covers_all_three_verdicts"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#261"
+    },
+    {
+     "type": "measurement",
+     "value": "自测 69 条"
+    },
+    {
+     "type": "measurement",
+     "value": "变异 31 条 0 存活"
+    },
+    {
+     "type": "measurement",
+     "value": "共享表 14 条用例"
+    }
+   ],
+   "related": [
+    "mirror-drift-gate"
+   ],
+   "kind": "technique",
+   "status": "landed"
+  },
+  {
+   "id": "mirror-drift-gate",
+   "title": "镜像文件 sha 对账门（多副本脚本不再各说各话）",
+   "tags": [
+    "gate",
+    "drift-guard",
+    "vendored",
+    "ci"
+   ],
+   "summary": "vendored.json 记同步点的 sha256，CI 比对本地副本；缺账/缺 sha/文件没了/漂了都判红。",
+   "why": "同一个门脚本在两个仓各一份时，两边自测各自全绿而规则相反——没人能发现。",
+   "paths": [
+    "scripts/check_vendored.py",
+    "scripts/vendored.json"
+   ],
+   "tests": [
+    "tests/test_techmap.py::test_unverified_root_only_warns"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#3"
+    },
+    {
+     "type": "measurement",
+     "value": "5 条变异 0 存活"
+    },
+    {
+     "type": "measurement",
+     "value": "6 条负例自测"
+    }
+   ],
+   "related": [
+    "claims-duplicate-copy-incident",
+    "claim-gate-parity-table"
+   ],
+   "kind": "technique",
+   "status": "landed",
+   "repo": "bfxh/repo-tools"
+  },
+  {
+   "id": "claims-duplicate-copy-incident",
+   "title": "两份 agent_claims.py 判定相反而各自 CI 绿",
+   "kind": "incident",
+   "status": "landed",
+   "tags": [
+    "coordination",
+    "claims",
+    "incident",
+    "drift-guard"
+   ],
+   "summary": "上游「同仓且路径相交才拦」，副本「同仓就拦」；两边 --self-test 都绿。根因是脚本从没进 CI 矩阵。",
+   "why": "这是「你写你的、它写它的」在工具层的形状，不是设想：diff 122 行、规则互斥。",
+   "paths": [
+    "scripts/agent_claims.py",
+    "scripts/check_vendored.py"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#3"
+    },
+    {
+     "type": "measurement",
+     "value": "两份副本分叉 122 行"
+    }
+   ],
+   "related": [
+    "mirror-drift-gate"
+   ],
+   "repo": "bfxh/repo-tools"
+  },
+  {
+   "id": "profiles-default-governance",
+   "title": "按项目默认值治理（默认 legacy，逐项目 opt-in）",
+   "tags": [
+    "defaults",
+    "profiles",
+    "gpu",
+    "governance"
+   ],
+   "summary": "CLI>env>repo 三级覆盖，没有配置=legacy=上游构建+NVIDIA+旧文档；绝不写全局默认。",
+   "paths": [
+    "scripts/profiles.py",
+    "docs/PROFILES.md"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#1"
+    },
+    {
+     "type": "measurement",
+     "value": "17 条自测"
+    }
+   ],
+   "related": [
+    "profiles-vcs-explicit"
+   ],
+   "kind": "technique",
+   "status": "landed",
+   "repo": "bfxh/repo-tools",
+   "tests": [
+    "tests/test_profiles.py::test_default_is_legacy_and_writes_nothing"
+   ]
+  },
+  {
+   "id": "profiles-vcs-explicit",
+   "title": "vcs/hosting 进默认表：不假装替代 git",
+   "tags": [
+    "defaults",
+    "profiles",
+    "vcs",
+    "git",
+    "governance"
+   ],
+   "summary": "三个 profile 全默认 backend=git/hosting=github；启用三进制时警告传输面仍是 git，设成 trit 判红。",
+   "why": "「默认还是 git」原本没被建模，隐性假设容易被当成已完成替代。",
+   "paths": [
+    "scripts/profiles.py",
+    "docs/PROFILES.md"
+   ],
+   "tests": [
+    "tests/test_profiles.py::test_vcs_defaults_to_git_and_says_so"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#4"
+    },
+    {
+     "type": "measurement",
+     "value": "5 条变异 0 存活"
+    }
+   ],
+   "related": [
+    "profiles-default-governance",
+    "techmap-query-index"
+   ],
+   "kind": "technique",
+   "status": "landed",
+   "repo": "bfxh/repo-tools"
+  },
+  {
+   "id": "mathref-openai-reference",
+   "title": "openai/math 只作参考索引，不作依赖",
+   "tags": [
+    "defaults",
+    "openai-math",
+    "index",
+    "reference"
+   ],
+   "summary": "sync/status/search/show 解析 CONTENTS.md；每条带 verified=false，标成 dependency 却没验证就报警。",
+   "paths": [
+    "scripts/mathref.py"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#2"
+    },
+    {
+     "type": "measurement",
+     "value": "373 个 family / 721 篇手稿 / 53982 个文件"
+    },
+    {
+     "type": "measurement",
+     "value": "verified=false 共 373 条"
+    }
+   ],
+   "related": [
+    "profiles-default-governance"
+   ],
+   "kind": "technique",
+   "status": "landed",
+   "repo": "bfxh/repo-tools"
+  },
+  {
+   "id": "techmap-query-index",
+   "title": "技术标签索引与反查（不用重新找）",
+   "kind": "feature",
+   "status": "experimental",
+   "repo": "bfxh/repo-tools",
+   "tags": [
+    "index",
+    "tags",
+    "query",
+    "docs",
+    "auto-tag"
+   ],
+   "summary": "每条技术/门/事故一条记录，带标签、路径、符号、测试、证据；支持 search/query/where/tests/check/suggest/add。",
+   "why": "人和 AI 都要能「按标签查到东西在哪、归谁、有没有测试」；引用必须可核验，否则三周后就是一堆假话。",
+   "paths": [
+    "scripts/techmap.py",
+    "tests/test_techmap.py"
+   ],
+   "evidence": [
+    {
+     "type": "measurement",
+     "value": "自测 56 条 / 场景测试 21 条"
+    },
+    {
+     "type": "measurement",
+     "value": "变异 14 条 0 存活"
+    },
+    {
+     "type": "doc",
+     "value": "README.md"
+    }
+   ],
+   "related": [
+    "profiles-vcs-explicit",
+    "mirror-drift-gate"
+   ],
+   "tests": [
+    "tests/test_techmap.py::test_ref_verification_survives_a_different_checked_out_branch"
+   ]
+  },
+  {
+   "id": "windows-console-encoding-incident",
+   "title": "中文 Windows / Windows runner 的控制台编码",
+   "kind": "incident",
+   "status": "landed",
+   "repo": "bfxh/trit",
+   "tags": [
+    "windows",
+    "encoding",
+    "gate",
+    "ci",
+    "incident"
+   ],
+   "summary": "门脚本打中文/箭头在 cp936 或 cp1252 下 UnicodeEncodeError，红的是工具自己；统一 reconfigure 成 UTF-8。",
+   "why": "同一个 bug 一天犯三次，而且 CI 的 Windows job 只报「Process completed with exit code 1」。",
+   "paths": [
+    "scripts/ci_scope.py",
+    "scripts/mutation_sweep.py",
+    "scripts/agent_claims.py"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#257"
+    },
+    {
+     "type": "measurement",
+     "value": "Windows job 54 s 判红（红的是工具自己）"
+    }
+   ],
+   "related": [
+    "ci-changed-crate-scope"
+   ]
+  },
+  {
+   "id": "mutation-anchor-preflight",
+   "title": "变异登记表要跑 preflight：锚点唯一且存在",
+   "kind": "gate",
+   "status": "landed",
+   "repo": "bfxh/trit",
+   "tags": [
+    "mutation-gate",
+    "gate",
+    "registry"
+   ],
+   "summary": "锚点出现 0 次或多次都直接 FAIL；同一段文本被复制到第二处就会让旧条目失去意义。",
+   "why": "门脚本自己造假红/假绿比代码 bug 更贵：它会让所有人绕过它。",
+   "paths": [
+    "scripts/mutation_check.py",
+    "scripts/mutation_sweep.py"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#257"
+    },
+    {
+     "type": "measurement",
+     "value": "全表 837 条 / 62 目标 0 问题"
+    }
+   ],
+   "related": [
+    "windows-console-encoding-incident"
+   ]
+  },
+  {
+   "id": "agent-wiki-manifest-site",
+   "title": "agent-wiki：manifest 驱动的静态文档站",
+   "kind": "feature",
+   "status": "landed",
+   "repo": "bfxh/agent-wiki",
+   "tags": [
+    "docs",
+    "index",
+    "wiki",
+    "search"
+   ],
+   "summary": "wiki.json 单表管导航/搜索索引/传输层 UI；check_wiki 的 W1-W12 带负例自测。",
+   "why": "三进制概念太多、看不懂时先要概念地图和可查的索引——和这份技术标签索引是同一诉求的两个面。",
+   "paths": [
+    "wiki.json",
+    "scripts/build_site.py"
+   ],
+   "evidence": [
+    {
+     "type": "measurement",
+     "value": "22 个页面"
+    },
+    {
+     "type": "measurement",
+     "value": "11 条负例自测"
+    }
+   ],
+   "related": [
+    "techmap-query-index"
+   ]
+  },
+  {
+   "id": "claims-ledger-hardening",
+   "title": "认领账本硬化：who 归一 / TTL 上限 / id 唯一 / renew 心跳 / 脏 worktree 对账",
+   "tags": [
+    "coordination",
+    "claims",
+    "gate",
+    "drift-guard",
+    "worktree"
+   ],
+   "kind": "gate",
+   "status": "landed",
+   "repo": "bfxh/trit",
+   "summary": "写入强制 宿主:会话id、TTL 上限 240、同名 id 判红、renew 计数；claims_audit 把「脏 worktree 却没人认领」判红。",
+   "why": "现网账本实测：4 条声明 3 条过期未收、两行同名 id、owner 三种写法；release --who 精确匹配收不掉自己的声明。",
+   "paths": [
+    "scripts/agent_claims.py",
+    "scripts/claims_audit.py"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#266"
+    },
+    {
+     "type": "measurement",
+     "value": "自测 85 条 + 对账 11 条"
+    },
+    {
+     "type": "measurement",
+     "value": "变异 43 条 0 存活"
+    },
+    {
+     "type": "measurement",
+     "value": "现网首跑：拦 1 / 警 7；脏 worktree 7 警 0 拦"
+    }
+   ],
+   "related": [
+    "claims-duplicate-copy-incident",
+    "mirror-drift-gate"
+   ]
+  },
+  {
+   "id": "vcs-witness-v0",
+   "title": "trit-vcs witness v0：in-toto 形状的测试见证 + 合并准入",
+   "tags": [
+    "vcs",
+    "evidence",
+    "in-toto",
+    "gate",
+    "admit"
+   ],
+   "kind": "feature",
+   "status": "landed",
+   "repo": "bfxh/trit-vcs",
+   "summary": "提交可携带绑树的测试见证（BLAKE3）；admit 复核文件摘要、树绑定与 exit==0，改一个字节就拒。",
+   "why": "Git 的 CI 结论在外部、可重跑改写；把证明绑进提交，合并准入才有离线可复核的判据。",
+   "paths": [
+    "src/witness.rs",
+    "src/repo.rs"
+   ],
+   "tests": [
+    "src/witness.rs::binding_to_the_wrong_tree_is_rejected",
+    "src/repo/tests.rs::admission_rejects_a_tampered_witness_or_another_tree",
+    "tests/witness_cli.rs::witness_commit_admit_roundtrip_and_tamper_refusal"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#273"
+    },
+    {
+     "type": "commit",
+     "value": "cbf1fad"
+    },
+    {
+     "type": "measurement",
+     "value": "变异 23 条 0 存活"
+    },
+    {
+     "type": "measurement",
+     "value": "改 1 字节准入被拒"
+    }
+   ]
+  },
+  {
+   "id": "vcs-status-stat-cache",
+   "title": "trit-vcs status stat 缓存：size+mtime 命中复用内容 id（10k 热 0.7–0.9× git）",
+   "tags": [
+    "vcs",
+    "status",
+    "stat-cache",
+    "perf",
+    "worktree"
+   ],
+   "kind": "feature",
+   "status": "landed",
+   "repo": "bfxh/trit-vcs",
+   "summary": "按 (size, mtime_ns) 复用上次算出的内容 id，不读文件；TVSC 二进制缓存原子写、坏文件自愈；认领范围折叠修掉 >256 文件提交永远 Unclaimed。",
+   "why": "release 10k 文件热 status 从全读降到 24–32 ms（git 34–35 ms，地板 6–12 ms）；旧 700 ms/345 ms 是 debug 读数已撤回。",
+   "paths": [
+    "src/status_cache.rs",
+    "src/worktree.rs",
+    "examples/vcs_bench.rs"
+   ],
+   "tests": [
+    "src/worktree.rs::status_reuses_stat_cache_for_unchanged_files",
+    "src/worktree.rs::same_size_rewrite_is_detected",
+    "src/worktree.rs::corrupt_cache_is_ignored_and_rewritten"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#275"
+    },
+    {
+     "type": "commit",
+     "value": "59e04da"
+    },
+    {
+     "type": "measurement",
+     "value": "10k 热 24–32 ms vs git 34–35 ms"
+    },
+    {
+     "type": "measurement",
+     "value": "冷 476–491 ms"
+    },
+    {
+     "type": "measurement",
+     "value": "地板 6–12 ms"
+    }
+   ],
+   "related": [
+    "vcs-witness-v0",
+    "vcs-intent-base-binding"
+   ]
+  },
+  {
+   "id": "vcs-intent-base-binding",
+   "title": "trit-vcs Intent：goal/accept/base 绑父树（错配即拒）",
+   "tags": [
+    "vcs",
+    "intent",
+    "commit",
+    "admission",
+    "base"
+   ],
+   "kind": "feature",
+   "status": "landed",
+   "repo": "bfxh/trit-vcs",
+   "summary": "Commit.intent={goal,accept[],base}；base 留空自动填父树、声明错配拒；require_intent 默认关，逐项目 opt-in。",
+   "why": "把“这次要达成什么、怎么算达成、基于哪棵树”变成机读字段，避免拿旧基线做出的改动被当成新世界。",
+   "paths": [
+    "src/model.rs",
+    "src/repo.rs",
+    "src/repo/tests.rs"
+   ],
+   "tests": [
+    "src/repo/tests.rs::intent_base_must_match_parent_tree",
+    "src/repo/tests.rs::policy_can_require_an_intent",
+    "src/model.rs::commit_roundtrip_keeps_intent_and_base"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#275"
+    },
+    {
+     "type": "commit",
+     "value": "59e04da"
+    },
+    {
+     "type": "measurement",
+     "value": "变异 33 条 0 存活"
+    }
+   ],
+   "related": [
+    "vcs-witness-v0",
+    "vcs-status-stat-cache"
+   ]
+  },
+  {
+   "id": "vcs-block-bundle",
+   "title": "trit-vcs M3 传输：TVBD 块级包 + 目录级部分拉取 + 断点续传",
+   "tags": [
+    "vcs",
+    "transport",
+    "bundle",
+    "partial-pull",
+    "resume"
+   ],
+   "kind": "feature",
+   "status": "landed",
+   "repo": "bfxh/trit-vcs",
+   "summary": "树闭包去重导出；prefix 只发一个目录（4.9% 全量）；dest 跳过已有对象；收端逐块校验、已有块跳过即续传。",
+   "why": "判据是单目录 <10% 且中断重跑逐位一致；本地/离线包，网络协议未做、不宣称。",
+   "paths": [
+    "src/bundle.rs",
+    "src/store.rs",
+    "tests/transport_cli.rs"
+   ],
+   "tests": [
+    "src/bundle.rs::partial_pull_sends_well_under_a_tenth",
+    "src/bundle.rs::truncated_bundle_resumes_and_ends_byte_identical",
+    "tests/transport_cli.rs::export_partial_import_and_resume"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#277"
+    },
+    {
+     "type": "commit",
+     "value": "ed2b95b"
+    },
+    {
+     "type": "measurement",
+     "value": "单目录包 4.9% 全量"
+    },
+    {
+     "type": "measurement",
+     "value": "增量实传 0 个对象"
+    }
+   ],
+   "related": [
+    "vcs-witness-v0",
+    "vcs-status-stat-cache",
+    "vcs-intent-base-binding"
+   ]
+  },
+  {
+   "id": "vcs-three-way-merge",
+   "title": "trit-vcs M4 合并：行级三路 + 结构化争用对象",
+   "tags": [
+    "vcs",
+    "merge",
+    "conflict",
+    "structured",
+    "hunks"
+   ],
+   "kind": "feature",
+   "status": "landed",
+   "repo": "bfxh/trit-vcs",
+   "summary": "自动找第一父链公共祖先；LCS 行级三路；冲突产出 hunks/对象 id/raw_bytes，不写冲突标记；行尾空白伪冲突归并。",
+   "why": "判据：伪冲突为 0；冲突对象 381 B vs 两侧全文 7,780 B（4.90%）；不承诺自动解冲突、无 AST 级。",
+   "paths": [
+    "src/merge.rs",
+    "src/repo.rs"
+   ],
+   "tests": [
+    "src/merge/tests.rs::overlapping_edits_become_one_structured_conflict",
+    "src/merge/tests.rs::formatting_only_difference_is_not_a_conflict",
+    "tests/merge_cli.rs::structured_conflict_has_no_markers_and_clean_merge_reports_tree"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#280"
+    },
+    {
+     "type": "commit",
+     "value": "439d361"
+    },
+    {
+     "type": "measurement",
+     "value": "冲突对象 4.90% 全文"
+    },
+    {
+     "type": "measurement",
+     "value": "伪冲突 0 个"
+    }
+   ],
+   "related": [
+    "vcs-witness-v0",
+    "vcs-intent-base-binding"
+   ]
+  },
+  {
+   "id": "vcs-techmap-query",
+   "title": "trit-vcs M5 查询：提交标签反查 techmap + 测试命令",
+   "tags": [
+    "vcs",
+    "query",
+    "techmap",
+    "explain",
+    "tests"
+   ],
+   "kind": "feature",
+   "status": "landed",
+   "repo": "bfxh/trit-vcs",
+   "summary": "log 按 tag/evidence/session/grep 过滤；where/tests/explain 只读 techmap，测试名翻成 cargo 命令。",
+   "why": "判据：一条历史提交能直接吐出所属技术与该跑的测试；实测 6 条技术 / 16 条测试命令。",
+   "paths": [
+    "src/techmap.rs",
+    "src/bin/trit-vcs/query.rs",
+    "src/repo.rs"
+   ],
+   "tests": [
+    "src/techmap.rs::where_matches_paths_tests_and_tags",
+    "src/repo/tests.rs::query_filters_by_tag_evidence_session_and_message",
+    "tests/query_cli.rs::where_tags_map_commit_to_tech_entries"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#282"
+    },
+    {
+     "type": "commit",
+     "value": "47aa9ad"
+    },
+    {
+     "type": "measurement",
+     "value": "explain 6 条技术"
+    },
+    {
+     "type": "measurement",
+     "value": "where 命中 1 条"
+    }
+   ],
+   "related": [
+    "vcs-three-way-merge",
+    "techmap-query-index"
+   ]
+  },
+  {
+   "id": "vcs-git-bridge",
+   "title": "trit-vcs M6 Git 双向桥：导出到真 Git 仓 / 从 Git 导入",
+   "tags": [
+    "vcs",
+    "git",
+    "bridge",
+    "export",
+    "import",
+    "mirror"
+   ],
+   "kind": "feature",
+   "status": "landed",
+   "repo": "bfxh/trit-vcs",
+   "summary": "第一父链旧→新写 Git（同步删除、路径防护、Trit-* 尾注）；导入按 --reverse --first-parent 重建并剥尾注。",
+   "why": "判据：trit→Git→trit 内容与顺序一致；2 提交往返逐字节相同。夜间镜像脚本默认不推。",
+   "paths": [
+    "src/git_bridge.rs",
+    "src/bin/trit-vcs/bridge.rs",
+    "scripts/nightly_mirror.sh"
+   ],
+   "tests": [
+    "src/git_bridge.rs::export_then_import_roundtrip_keeps_content_and_order",
+    "src/git_bridge.rs::import_reads_a_plain_git_repo",
+    "src/git_bridge.rs::export_paths_cannot_escape_the_git_worktree",
+    "tests/git_bridge_cli.rs::export_and_import_through_the_cli"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#284"
+    },
+    {
+     "type": "commit",
+     "value": "fde725a"
+    },
+    {
+     "type": "measurement",
+     "value": "往返 2 条提交内容一致"
+    },
+    {
+     "type": "measurement",
+     "value": "变异 56 条 0 存活"
+    }
+   ],
+   "related": [
+    "vcs-block-bundle",
+    "vcs-techmap-query"
+   ]
+  },
+  {
+   "id": "vcs-mcp-tools",
+   "title": "trit-vcs MCP 工具面：13 个工具 + token 估算",
+   "tags": [
+    "vcs",
+    "mcp",
+    "agent",
+    "tools",
+    "token-cost"
+   ],
+   "kind": "feature",
+   "status": "landed",
+   "repo": "bfxh/trit-vcs",
+   "summary": "stdio JSON-RPC；13 个工具覆盖状态/提交/冲突/准入/传输/反查/体检；响应带 _meta.usage（bytes/tokens_est）。",
+   "why": "判据：工具数 ≤13、通知不回包、未知方法 -32601、commit 默认拒绝未认领；schema 803 tokens、单次调用 24–72 tokens。",
+   "paths": [
+    "src/mcp.rs",
+    "src/bin/trit-vcs/mcp_serve.rs"
+   ],
+   "tests": [
+    "src/mcp/tests.rs::tools_list_has_thirteen_tools_and_usage",
+    "src/mcp/tests.rs::commit_without_allowance_is_a_tool_error",
+    "tests/mcp_cli.rs::serve_loop_answers_initialize"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#286"
+    },
+    {
+     "type": "commit",
+     "value": "4d87857"
+    },
+    {
+     "type": "measurement",
+     "value": "schema 3,026 字节 / 803 元（#286）→ A 片后重测 4,146 字节 / 1,111 元，上界已进门"
+    },
+    {
+     "type": "measurement",
+     "value": "单次调用 24–72 tokens"
+    }
+   ],
+   "related": [
+    "vcs-techmap-query",
+    "vcs-witness-v0"
+   ]
+  },
+  {
+   "id": "vcs-central-materialize",
+   "title": "trit-vcs 中心化 + 按需物化：命名 ref 只准往前推，单目录 pull = 5.05% 全量",
+   "tags": [
+    "vcs",
+    "central",
+    "sparse",
+    "materialize",
+    "ref",
+    "transport"
+   ],
+   "kind": "feature",
+   "status": "landed",
+   "repo": "bfxh/trit-vcs",
+   "summary": "central::publish 把提交闭包 + 父链搬到中央仓并写命名 ref（.tritvcs/refs/<name>，每次写进哈希链）；central::pull 只发过滤后的树清单 + 该目录的对象闭包，再 worktree::materialize 稀疏物化；ref 只允许往前推，非后代/分叉判红，--force 才改写。",
+   "why": "多智能体共用一个中央仓时，最贵的不是丢文件而是甩掉别人的历史；而按需物化一旦整棵原树照发，『只拉一个目录』就毫无意义（第一版实测糊到 49% 全量）。",
+   "paths": [
+    "src/central.rs",
+    "src/bundle.rs",
+    "src/repo.rs",
+    "src/worktree.rs",
+    "src/bin/trit-vcs/central_sync.rs",
+    "tests/central_cli.rs",
+    "examples/vcs_bench.rs"
+   ],
+   "tests": [
+    "src/central.rs::publish_then_pull_prefix_sends_only_that_closure",
+    "src/central.rs::publish_only_moves_a_ref_forwards",
+    "src/central.rs::pull_refuses_to_overwrite_local_changes",
+    "src/central.rs::refs_are_named_and_listed",
+    "src/central.rs::bad_names_and_missing_refs_are_loud",
+    "tests/central_cli.rs::publish_then_sparse_pull"
+   ],
+   "evidence": [
+    {
+     "type": "pr",
+     "value": "#292"
+    },
+    {
+     "type": "commit",
+     "value": "3c10549"
+    },
+    {
+     "type": "measurement",
+     "value": "单目录 pull 8,226 字节 = 5.05% 全量（判据 <10%）"
+    },
+    {
+     "type": "measurement",
+     "value": "全量 publish 162,854 字节 / 402 个对象"
+    },
+    {
+     "type": "measurement",
+     "value": "重复 pull 实传 0 字节（22 个对象全跳过）"
+    },
+    {
+     "type": "measurement",
+     "value": "第一版整树照发 = 49% 全量，已撤"
+    },
+    {
+     "type": "measurement",
+     "value": "变异门 trit-vcs 82 条全抓、存活 0"
+    }
+   ],
+   "related": [
+    "vcs-block-bundle",
+    "vcs-status-stat-cache",
+    "vcs-witness-v0"
+   ]
+  }
+ ]
+}

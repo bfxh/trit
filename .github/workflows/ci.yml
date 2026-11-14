@@ -287,6 +287,43 @@ jobs:
           cat "$d/log"
           exit "$(cat "$d/rc")"
 
+  docs-gates:
+    name: docs gates (hygiene / pointers / status)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      # 文档门原先只活在本机命令行里：漏一个索引、断一条链接、行号漂一格，都要等人去跑。
+      # 这些门早已全绿（2026-11-15 实测），接进 CI 只是把「知道自己跑了」变成「不跑就红」。
+      - name: Docs hygiene self-test (shape + drive-path counterexamples)
+        run: python3 scripts/docs_hygiene.py --self-test
+      - name: Docs hygiene (CHANGELOG shape, no new machine paths)
+        run: python3 scripts/docs_hygiene.py
+      - name: Doc pointers self-test (dead links / unindexed docs counterexamples)
+        run: python3 scripts/doc_pointers.py --self-test
+      - name: Doc pointers (line refs + link targets + index coverage)
+        run: python3 scripts/doc_pointers.py
+      - name: Model status self-test
+        run: python3 scripts/model_status.py --self-test
+      - name: Model status (completion table matches code)
+        run: python3 scripts/model_status.py
+      - name: Claims evidence self-test (ratchet + counterexamples)
+        run: python3 scripts/claims_evidence.py --self-test
+      - name: Claims evidence (capability sentences carry proof)
+        run: python3 scripts/claims_evidence.py
+      - name: Layers self-test (positive + counterexamples)
+        run: python3 scripts/layers.py --self-test
+      - name: Layers (every crate placed, dependencies point down)
+        run: python3 scripts/layers.py
+      - name: Handoff snapshot self-test (sanitizer + missing-file counterexamples)
+        run: python3 scripts/sync_handoff_snapshot.py --self-test
+      - name: Tech collide self-test (positive + counterexamples)
+        run: python3 scripts/tech_collide.py --self-test
+      # 读的是仓内脱敏快照 scripts/ledger-snapshot/（正本在仓外，CI 上没有）。
+      # 快照缺失 ⇒ 判红，不跳过：不知道有没有重复登记不等于没重复。
+      - name: Tech collide (ledger ids unique)
+        run: python3 scripts/tech_collide.py
+
   module-budget:
     name: module budget (god objects)
     runs-on: ubuntu-latest

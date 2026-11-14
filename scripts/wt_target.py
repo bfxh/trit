@@ -7,7 +7,7 @@
   python scripts/wt_target.py --status        # 只报告，不写
   python scripts/wt_target.py --self-test
 
-背景（docs/BUILD-PERF.md §3）：
+背景（docs/engineering/BUILD-PERF.md §3）：
   主 worktree 手工放了一份 `.cargo/config.toml`（`target-dir = E:/cargo-target/trit`），
   但它列在 `.git/info/exclude` 不入库 —— `git worktree add` 出来的 worktree 全都
   没有它，构建产物写回 D 盘直到写满。本工具把这份覆盖文件补到每个 worktree，

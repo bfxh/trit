@@ -4,6 +4,11 @@
 每条攻击向量落 `-1 / 0 / +1` 之一，合并门禁按三态动作（`BLOCK / FREEZE / ALLOW`），
 账本（journal）即数据库：日志只增不减、重放即恢复、跨副本 δ-CRDT 无冲突合并。
 
+**是什么 / 不是什么**：本 crate 是**带三值裁决的版本账本内核**（因果 DAG + 合并门禁 + 只增
+日志 + 审计链），「免疫系统」是它的设计隐喻——把红蓝对抗史沉淀成可裁决的结构，**不表示它能
+自动防护、拦截或恢复真实攻击**。`Sandbox` 是确定性替身（真实隔离执行环境要换），红蓝 Agent
+是外部组件（本仓只定义它们写入 DAG 的协议），见下文「工程纪律 · 诚实边界」。
+
 **这里是 `bfxh/trit` 工作区里的 `crates/trit-immune`**，`trit-core` 走工作区 `path` 依赖。
 同一个 crate 另有一份**独立发布形态**（[`bfxh/trit-immune`](https://github.com/bfxh/trit-immune)：
 `trit-core` 以 git 源引入、`Cargo.lock` 锁到具体提交、CI 独立跑、可独立发版）。
@@ -276,7 +281,7 @@ assert_eq!(m.deferred.len(), 0);
   显式把根节点记为 `0`，或让门禁校验从某个已验收节点开始——这是使用口径，不是内核默认。
   `scripts/cli_smoke.sh` 把这两条都断言住了（根 `+1` → Allow；新节点 `0` → Freeze）。
 - 文中测试计数：本副本（工作区 `cargo test -p trit-immune --locked`）2026-11-02 实测 **251 绿 / 23 个测试套**，
-  内核形态（`--no-default-features`）同样全绿；`docs/ROADMAP.md` 里更早的行保留的是当时测得的历史数字，
+  内核形态（`--no-default-features`）同样全绿；`docs/positioning/ROADMAP.md` 里更早的行保留的是当时测得的历史数字，
   不是有一边在编。
 
 ## 测试

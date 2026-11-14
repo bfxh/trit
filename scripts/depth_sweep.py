@@ -18,7 +18,7 @@
   "jobs": 2,
   "verify": true,
   "promote": {"max": 8.0, "beat_baseline_pp": 0.5},
-  "catalogue": "docs/DEPTH-RESULTS.md"
+  "catalogue": "docs/results/DEPTH-RESULTS.md"
 }
 
 模板模式（部件/纹理/提取族，`family` ≠ depth）：不给 `data/holdout` 也行，但必须给

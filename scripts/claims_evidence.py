@@ -8,11 +8,15 @@
 
 为什么（2026-11-05 用户口径）：「有些地方我以为你完成了但没完成——那些小模型其实是组件；
 好多地方有迷惑性，我最反感」。迷惑性最主要的载体就是**没有证据的能力句**。
-口径正本在 `docs/STATUS.md` §1：状态词只有 已跑通 / 已实现未测 / 组件 / 已否证，
+口径正本在 `docs/positioning/STATUS.md` §1：状态词只有 已跑通 / 已实现未测 / 组件 / 已否证，
 写不出「命令」也写不出「读数」的句子就不许用完成类动词。
 
 棘轮：存量无据能力句按文件计数进基线，**只许变少不许变多**——不逼别人一次性改历史，
 但不许再加新的。基线读不出 ⇒ 判红。
+
+扫描面 = `README.md` + `docs/` 下全部 markdown，但 **`docs/review/` 除外**：那是按日期的
+评审快照（与 `CHANGELOG.md` 同理），里头的「已修」「当时支持」是历史叙述，不是当下的能力声明。
+把它们算进能力面只会逼人去改历史，反而模糊了「现在能做什么」。
 """
 
 from __future__ import annotations
@@ -38,22 +42,40 @@ POINTER = re.compile(r"`[^`]*(?:--|\.(?:rs|py|md|json|wgsl)|cargo |python |bash 
 
 def scanned(root: pathlib.Path) -> list[pathlib.Path]:
     files: list[pathlib.Path] = []
-    # CHANGELOG 是叙述记录（「已修 X」是历史而非能力声明），不进能力面；能力面 = README + docs/。
+    # CHANGELOG 与 docs/review/ 是叙述记录（「已修 X」「当时支持 Y」是历史而非能力声明），
+    # 不进能力面；能力面 = README + docs/（评审快照除外）。
     for name in ("README.md",):
         path = root / name
         if path.is_file():
             files.append(path)
     docs = root / "docs"
     if docs.is_dir():
-        files += sorted(docs.rglob("*.md"))
+        for path in sorted(docs.rglob("*.md")):
+            if "review" in path.relative_to(docs).parts:
+                continue
+            files.append(path)
     return files
 
 
 def violations(text: str) -> list[str]:
-    """逐行找「有完成类动词、但既无读数也无复算指针」的句子。"""
+    """逐行找「有完成类动词、但既无读数也无复算指针」的句子。
+
+    `<!-- claims-ok -->` … `<!-- claims-end -->` 之间的段落豁免：那里是**规则本身**
+    （例如 STATUS.md 要定义「已跑通 / 组件」，就必须把这些词写出来），不是能力声明。
+    豁免必须显式写在被扫文件里、能被 diff 看到——不按文件名放过，否则等于给整篇文档开后门。
+    """
     found: list[str] = []
+    exempt = False
     for line in text.splitlines():
         stripped = line.strip()
+        if "<!-- claims-ok" in stripped:
+            exempt = True
+            continue
+        if "<!-- claims-end" in stripped:
+            exempt = False
+            continue
+        if exempt:
+            continue
         if not stripped or stripped.startswith("```"):
             continue
         for sentence in re.split(r"[。;；]\s*", stripped):
@@ -83,7 +105,7 @@ def compare(found: dict[str, int], baseline: dict[str, int]) -> list[str]:
         if count > allowed:
             problems.append(
                 f"{path} 有 {count} 句无据能力句，基线允许 {allowed} ——"
-                " 完成类动词必须带读数或复算指针（docs/STATUS.md §1）"
+                " 完成类动词必须带读数或复算指针（docs/positioning/STATUS.md §1）"
             )
     return problems
 

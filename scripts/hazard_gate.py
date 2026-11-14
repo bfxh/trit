@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """高危门：并发 / 内存面的编译期静态门禁，比 rustc + clippy 更狠、且按设计分级。
 
-设计原则（三档，见 docs/HAZARD-POLICY.md）：
+设计原则（三档，见 docs/security/HAZARD-POLICY.md）：
 - **放行**：提高能力上限、且有成文防护的高危原语（如 SIMD GEMV 的裸指针、
   `unsafe impl Send/Sync` 的池指针）——登记在 ALLOW 表里，每条带设计理由；
 - **有条件**：允许使用，但必须伴随成文不变量（`# Safety` / SAFETY 注释）；
@@ -324,7 +324,7 @@ def scan(root: Path, allow_overrides: dict[str, dict[str, str]] | None = None) -
                 findings.append(entry)
     return {
         "tool": "hazard-gate",
-        "policy": "docs/HAZARD-POLICY.md",
+        "policy": "docs/security/HAZARD-POLICY.md",
         "files_scanned": len(files),
         "findings": findings,
         "allow_hits": allow_hits,

@@ -2,6 +2,78 @@
 
 ## [Unreleased]
 
+### Changed（文档治理：docs 按用途归位、索引重写、口径统一、文档门接进 CI）
+
+- 文档门接进 CI：`docs-gates` job 现在跑 **6 道**——`docs_hygiene` / `doc_pointers` /
+  `model_status` / `claims_evidence` / `layers` / `tech_collide`（各带自测，13 步 + checkout）。
+  `tech_collide` 原先读仓外交接账本、CI 上没法跑；本轮新增**仓内脱敏快照**
+  `scripts/ledger-snapshot/`（由 `scripts/sync_handoff_snapshot.py` 从 `_handoff/` 正本生成，
+  幂等可重跑；只保留判定需要的编号/状态/标题/负责/路径/标签，本机绝对路径 → `<local>/<末段>`、
+  用户目录 → `<local>/users`、token → `<redacted>`），门默认读快照 ⇒ CI 上真的会跑。
+  过期策略分两档：快照**缺失**判红；快照**超过 30 天未同步**只告警不判红（`tech_collide.py`
+  会打印「快照生成于 N 天前」）。要判「快照与正本内容是否一致」跑
+  `sync_handoff_snapshot.py --check`（sha256，剔除生成时间行，跨天重跑不会误报）。
+- `claims_evidence` 从「拦 21 篇、无据句 109 / 基线 76」收到 **0 拦、56 句 / 基线 56**（`--update`
+  已收紧）。两条口径修正 + 30 句逐条改：`docs/review/` 退出能力面（评审快照与 `CHANGELOG.md` 同理，
+  是历史叙述不是当下能力声明，-9 句）；新增 `<!-- claims-ok -->` 显式豁免标记给**规则定义段**
+  （`STATUS.md` §1、`SCOPE.md` §7.1 必须写出「已跑通 / 组件」这些词才能定义它们，-8 句）；
+  其余 30 句一律「补真实指针」或「按 `STATUS.md` 口径降级措辞」，没有编造读数。
+- `layers` 从 FAIL 1 条转 **绿**：`scripts/layers.json` 的 `allows` 登记唯一一条跨层例外
+  `trit-gpu`(ops) → `trit-wspace`(learn)，原因是仅 `[dev-dependencies]`（GPU 测试与示例读 WSP 工件
+  做 CPU 参考对拍，不进发布闭包）。`docs/positioning/LAYERS.md` 同步写明「dev-dependencies 与
+  dependencies 一样计入回边」，例外必须逐条登记。
+- `ci_integrity` 新增 action pin 自洽检查：① 形似 commit SHA 的 ref 必须 40 位 ② 同一 action 的
+  同一注释标签（`# v5` / `# stable` / `# 1.88`）必须指向同一个 ref ③ 没写 `@版本` 判红。
+  这条是防本 PR 早先那次事故：`actions/checkout` 的 pin 抄成 39 位，本机 YAML 能过、旧判据全查不出，
+  只有 runner 在 `Set up job` 报 `Unable to resolve action`。按「注释标签」比而不是按 action 比，
+  是因为 `dtolnay/rust-toolchain` 的 ref 本就是工具链版本 commit（`# stable` / `# 1.88` / `@nightly`
+  各不相同是设计）。自测 19/19（1 正例 + 4 反证）。
+- 安全/理念文档不再把沙盘与隐喻写成能力：`WSP-SHIELD.md` §2 在读数表前加状态块（状态=**组件**、
+  合成流量、不构成「能抗真实 DDoS」的主张）；`crates/trit-immune/README.md` 首段补「是什么 /
+  不是什么」（是带三值裁决的**版本账本内核**，「免疫系统」是设计隐喻，不表示能自动防护/拦截/恢复）。
+  `WSP-REDTEAM-MODEL` / `PROBE` / `STACK` 核实后**不改**：三篇都已有具体未证栏与复算入口。
+
+- `docs/` 从 67 篇平铺改为按用途 8 组：`positioning/`(6) `reference/`(8) `results/`(11)
+  `research/`(22) `security/`(10) `engineering/`(4) `plans/`(5) `specs/`(新)，根目录只留
+  `docs/README.md` 索引；`review/` 作为按日期的评审快照保留、不改写。
+- 索引重写：原先 35 篇不在索引、25 篇除 `CHANGELOG.md` 外没有任何文档指向；现在 71 篇逐条
+  一句话全覆盖（`comm` 对账为空）。搬迁同时改写全仓引用 161 处（md 链接 118 + 路径 43），
+  含目录深度变化（`../` → `../../`）。
+- 新增四篇规范：`docs/specs/DOCUMENTATION.md`（四段骨架 + 10 条硬规则，每条标「门/人」）、
+  `TERMINOLOGY.md`（三值逻辑 / 三值权重 / 平衡三进制三层与用词表）、`README-SPEC.md`
+  （首屏只放三件事、定位句单一真源、能力必须标层）、`DOC-INDEX.md`（新增三步 / 搬迁四步 /
+  判红命令）。
+- 口径统一到「三值推理底座」：README 标题与首屏改写并新增「不是什么」段；GitHub 仓库简介从
+  「Rust 三进制工具箱」（与 `docs/positioning/LAYERS.md` 的「本仓是底座，不是工具箱」正面冲突）
+  改为「Rust 三值推理底座」；README 工作区表补齐到 45 个 crate 并按真实发布状态分表
+  （稳定 API 25 + 实验层 20，判定给 `grep -l "publish = false" crates/*/Cargo.toml | wc -l`）——
+  原先两张表只列 33 个，且把 5 个可发布 crate 列进实验层、漏了 `trit-build` / `trit-parts`。
+- `docs/positioning/DESIGN.md`：实验层从手工抄的「八个」改为以清单为准（实测 20 个）；
+  `TERNARY-BOUNDARIES.md` 把「不是平衡三进制整数库」限定到稳定 API 面，并补上实验层事实
+  （`trit-codec::balanced` 的 `encode`/`decode`/`range`、`trit-float` 的 `TritFloat`，均
+  `publish = false`），否则与 `crates/trit-codec/src/balanced.rs` 的实现冲突。
+- 文档门接进 CI：新增 `docs-gates` job，跑 `docs_hygiene` / `doc_pointers` / `model_status`
+  三道（各含自测）。`doc_pointers.py` 从「只查行号指针」扩展为「行号指针 + markdown 链接可达 +
+  `docs/` 索引覆盖」，并补 3 条反证；迁移配套修了它 `glob` → `rglob`（否则子目录全漏）、
+  `model_status.py` 的 STATUS 路径、两份基线键与 `depth_catalogue` / `depth_sweep` 的输出默认值。
+- 删掉提交遗物 `crates/trit-immune/PR.md`（PR 描述留在仓里，全仓无引用）。
+- 读数：全仓 md 死链 0（迁移前 0 → 迁移后 0，逐条解析链接目标）；`docs_hygiene` /
+  `doc_pointers`（78 篇、24 条行号指针）/ `model_status` 三道绿且自测绿；`ci_integrity` 21 项
+  对得上、`ci_budget` 拦 0；`claims_evidence` 109 句（main 基线 108，本轮新增文档没有净增无据句）。
+- `tech_collide` 真正重复的**八组**已按用户授权重号：A129→**A421**、A130→**A422**、
+  A131→**A423**、A134→**A424**、A153→**A425**、A155→**A426**、A157→**A427**、A267→**A428**
+  （每组保留较早的一条原号，只给较晚的那条重号；行尾注「（原 AXXX，2026-11-15 重号）」，
+  条目内容一字未删）。改前先备份 `_handoff/` 的四个账本（`*.bak-20261115-renumber`）；
+  `CHANGES.md` 里指向较晚那条的 4 处引用同步改号（历史叙述里的编号清单不动）。门从
+  「拦 9」转「拦 0 警 1」。
+- 第九组 `A9` 是**脚本误判、不是编号复用**：`ENTRY_RE` 没有编号边界，把账本里的 `A9xx`
+  （2026-11-09 那条）截成 `A9`，与真 `A9`（BSHSQ 分片重切，2026-10-21）撞在一起。
+  修法：正则改成 `(A[0-9]+[A-Za-z]*)(?![A-Za-z0-9])`，`A9xx` 解析为独立编号；补两条反证
+  （`A9xx` 不被截成 `A9`、两者不判重复）；账本 L355 已从 `A420` **回退成 `A9`**、去掉重号注记，
+  因此新号只用到 **A421–A428**（`A420` 空着）。那 4 处 `A9` 引用本就指真 `A9`，回退后自洽。
+- 未证栏：快照是**生成物**，CI 只能判「仓内快照与它自己一致」，判不了「账本正本有没有被
+  别人改过」——同步仍要本机跑 `sync_handoff_snapshot.py`（`--check` 可进收工清单）。
+  另：`docs/review/` 与 `CHANGELOG.md` 的历史路径与措辞不批量改写，允许过期以换可追溯。
 ### Changed（构建瘦身：收窄补缺口、GPU 冒烟并行、调试信息减重、回收连外置 target）
 
 - `scripts/ci_scope.py`：`scripts/**` 不参与 Rust 编译，归不到 crate 时略过、不再拖全量；抽样 40 个
@@ -3332,7 +3404,7 @@
 
 - 顶部改为"是什么 + 搜索关键词 + 一眼看强弱"：三张 SVG 对比图（CPU 流式、每参数字节、GPU），
   数据全部来自仓库内实测；`scripts/gen_docs_charts.py` 可重跑生成。
-- 新增 [`docs/LESSONS.md`](docs/LESSONS.md)：三进制代价清单、已证负结果、测量经验、工程经验。
+- 新增 [`docs/results/LESSONS.md`](docs/results/LESSONS.md)：三进制代价清单、已证负结果、测量经验、工程经验。
 - 面向使用者的 README 不再叙述内部检查流程（完整检查矩阵移到 `CONTRIBUTING.md`）。
 - 工作区表补齐 `trit-ops` / `trit-texture` / `trit-unsafe` / `trit-procscan` / `trit-lsp` / `trit-train`。
 - 更正 `trit-train` 的 STE 来源表述：`trit-net` 已有最小 STE，本层是 per-row scale + 三变体 + 位平面 ALU。
@@ -4597,7 +4669,7 @@ trit-gpu 新增两个三进制 GPU 内核（`gpu` feature 后），全部与 CPU
 
 ### Docs
 
-- **三进制四类边界**：新增 [docs/TERNARY-BOUNDARIES.md](docs/TERNARY-BOUNDARIES.md)，
+- **三进制四类边界**：新增 [docs/positioning/TERNARY-BOUNDARIES.md](docs/positioning/TERNARY-BOUNDARIES.md)，
   把原生三进制红利（A）/ 二进制模拟税（B）/ 生态路径依赖（C）/ 基数无关复杂度（D）
   分开；README「范围」与 DESIGN「非目标」已引用。后续结论、评审与路线图必须先归类。
 

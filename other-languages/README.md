@@ -8,7 +8,7 @@
 2. **非稳定 API**：参考实现的 API 没有兼容性承诺，可以随时改写或删除。
 3. **统一互操作**：稳定语义与字节格式必须遵守 [interop 契约](../interop/spec/v0.md)；前沿想法只能进实验 profile，不得污染稳定核心。
 4. **零外部依赖**：参考实现只依赖标准库；不引入模型、训练框架或二进制现成件。
-5. **结论仍按 A/B/C/D**：性能/精度结论必须带二进制基线，并按 [`docs/TERNARY-BOUNDARIES.md`](../docs/TERNARY-BOUNDARIES.md) 归类。
+5. **结论仍按 A/B/C/D**：性能/精度结论必须带二进制基线，并按 [`docs/positioning/TERNARY-BOUNDARIES.md`](../docs/positioning/TERNARY-BOUNDARIES.md) 归类。
 6. **保持最小**：每个实现只覆盖“能读懂语义”的最小切片；完整能力以 Rust 工作区为准。
 
 ## 语言优先级（2026-11-08 定稿）
@@ -96,7 +96,7 @@ Lean 4 形式化入口：[`interop/lean/`](../interop/lean/)（K3/KGate/Belnap4/
 - 一个最小测试集：K3 真值表、平衡三进制往返、5 trits/byte、边界与溢出。
 - 必须通过互操作 golden vectors；不得自创语义或字节顺序。
 - 不引入外部依赖；不复制 Rust 的内部实现细节。
-- 在 [`docs/TERNARY-BOUNDARIES.md`](../docs/TERNARY-BOUNDARIES.md) 的 A/B/C/D 框架下写结论；没有二进制基线不算性能结论。
+- 在 [`docs/positioning/TERNARY-BOUNDARIES.md`](../docs/positioning/TERNARY-BOUNDARIES.md) 的 A/B/C/D 框架下写结论；没有二进制基线不算性能结论。
 
 ## 一句话排序
 

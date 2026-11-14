@@ -6,6 +6,11 @@
   python scripts/tech_collide.py --claims <md> --techmap <json> --now <epoch>
   python scripts/tech_collide.py --self-test          # 正例 + 四类反证
 
+读哪里：默认读**仓内脱敏快照** `scripts/ledger-snapshot/`（由
+`python scripts/sync_handoff_snapshot.py` 从仓外正本生成），所以这道门在 CI 上真的会跑；
+`--ledger/--claims/--techmap` 仍可指向别处。快照缺失 ⇒ **判红**（不知道有没有重复登记，
+不等于没重复）。
+
 为什么要有这个（2026-11-05 用户口径）：
   认领门只比**路径**是否相交，所以两个人在**不同文件里造同一个轮子**永远不会撞车；
   反过来，同一个技术在两个不同领域各自实现又常常是**合理的**
@@ -15,29 +20,49 @@
     条目摘要、理由与实测读数，PR 里要写清适用域差异；
   · 警：声明命中不到任何条目 ⇒ 新技术先 `techmap.py add` 再开工（这才是防造轮子的正向面）。
 
-索引正本不在本仓：`_handoff/TECHMAP.json` 与 repo-tools 的 `techmap.py`
-（技术标签索引那次建起来），本门只读不写，避免两处真相。
+索引正本在仓外（`_handoff/TECHMAP.json` 与 repo-tools 的 `techmap.py`），本门只读不写。
+仓内那份是**脱敏快照**，只保留判定需要的字段；过期时 `sync_handoff_snapshot.py --check` 会报。
 """
 
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import pathlib
 import re
 import sys
 import time
 
-DEFAULT_CLAIMS = pathlib.Path("D:/KF/_handoff/CLAIMS.md")
-DEFAULT_TECHMAP = pathlib.Path("D:/KF/_handoff/TECHMAP.json")
+SNAPSHOT_DIR = pathlib.Path(__file__).resolve().parent / "ledger-snapshot"
+DEFAULT_CLAIMS = SNAPSHOT_DIR / "CLAIMS.md"
+DEFAULT_TECHMAP = SNAPSHOT_DIR / "TECHMAP.json"
 SHARED_TAGS_TO_WARN = 2
-DEFAULT_LEDGER = pathlib.Path("D:/KF/_handoff/LEDGER.md")
+DEFAULT_LEDGER = SNAPSHOT_DIR / "LEDGER.md"
 STOPWORDS = {"ledger", "done", "note", "that", "with", "from", "see", "详见", "完成", "开工", "负责", "会话", "提出"}
 
 
 
-ENTRY_RE = re.compile(r"^- \[[ xX]\] \*\*(A[0-9]+)([^*]*)\*\*")
+ENTRY_RE = re.compile(r"^- \[[ xX]\] \*\*(A[0-9]+[A-Za-z]*)(?![A-Za-z0-9])([^*]*)\*\*")
 OWNER_RE = re.compile(r"负责[：:]\s*([^｜|）)]+)")
+SNAPSHOT_STAMP = re.compile(r"生成时间：(\d{4}-\d{2}-\d{2})")
+STALE_DAYS = 30
+
+
+def snapshot_age(ledger_path: pathlib.Path) -> int | None:
+    """快照头部记的「生成于几天前」。不是快照（没有头部）时返回 None，不当成过期。"""
+    try:
+        head = ledger_path.read_text(encoding="utf-8", errors="replace")[:800]
+    except OSError:
+        return None
+    match = SNAPSHOT_STAMP.search(head)
+    if not match:
+        return None
+    try:
+        stamp = datetime.date.fromisoformat(match.group(1))
+    except ValueError:
+        return None
+    return (datetime.datetime.now(datetime.timezone.utc).date() - stamp).days
 
 
 def parse_entries(text: str) -> list[dict]:
@@ -262,6 +287,15 @@ def main(argv: list[str]) -> int:
             print(f"FAIL 读不到交接账本：{ledger_path} —— 不知道有没有重复登记不等于没重复")
             return 1
         findings = judge_ledger(parse_entries(ledger_path.read_text(encoding="utf-8", errors="replace"))) + findings
+        age = snapshot_age(ledger_path)
+        if age is not None:
+            if age > STALE_DAYS:
+                print(
+                    f"  警：交接账本快照已 {age} 天未同步（阈值 {STALE_DAYS} 天）"
+                    f"—— 跑 python scripts/sync_handoff_snapshot.py；本轮只告警不判红"
+                )
+            else:
+                print(f"快照生成于 {age} 天前（{STALE_DAYS} 天内不告警）")
     blocked = [message for kind, message in findings if kind == "拦"]
     print(f"同技术撞车：拦 {len(blocked)} 条｜警 {len(findings) - len(blocked)} 条")
     for kind, message in findings:
@@ -368,6 +402,33 @@ def self_test() -> int:
         else:
             failures += 1
             print(f"  FAIL 反证 5：读不到索引却返回 rc={blocked}，等于放行")
+
+    # 反证 6：快照里放重复编号必须判红（这是本门存在的理由；2026-11-15 九组重号前的实况）
+    duplicated = parse_entries(
+        "- [x] **A129 · 化学仓 M0**（完成｜负责：Qoder 本会话）\n"
+        "- [x] **A129 · 三值卷积栈 vs MLP**（完成｜负责：Qoder 本会话）\n"
+    )
+    expect("反证 6：快照里同一编号被两件事复用", judge_ledger(duplicated), ("拦", "编号被两件事复用"))
+
+    # 反证 7：同号但同一件事（真重复登记）也要拦，不能因为标题相同就放过
+    same = parse_entries(
+        "- [x] **A7 · 同一件事**（完成｜负责：A 会话）\n"
+        "- [x] **A7 · 同一件事**（完成｜负责：B 会话）\n"
+    )
+    expect("反证 7：同一编号重复登记同一件事", judge_ledger(same), ("拦", "重复登记"))
+
+    # 反证 8：编号边界——`A9xx` 不是 `A9`（否则「A9xx 三值 3D」会被判成与真 A9 撞车；
+    # 2026-11-15 真的踩过：LEDGER L93 的 `A9xx` 被旧正则截成 `A9`，报了假复用）
+    boundary = parse_entries(
+        "- [x] **A9xx · 三值 3D 资产闭环**（完成 2026-11-09｜负责：甲）\n"
+        "- [x] **A9 · BSHSQ 分片重切**（完成 2026-10-21｜负责：乙）\n"
+    )
+    if [entry["id"] for entry in boundary] != ["A9xx", "A9"]:
+        failures += 1
+        print(f"  FAIL 反证 8：解析出的编号是 {[e['id'] for e in boundary]}，应为 ['A9xx', 'A9']")
+    else:
+        print("  ok   反证 8：A9xx 解析为独立编号，不截成 A9")
+    expect("反证 8b：A9xx 与 A9 不判为重复", judge_ledger(boundary), None)
 
     print("自测结论：%s" % ("绿" if failures == 0 else f"红 {failures} 条"))
     return 1 if failures else 0
