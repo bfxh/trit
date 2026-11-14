@@ -2,6 +2,76 @@
 
 ## [Unreleased]
 
+### Added（trit-gpu：多环境/多容器验证矩阵）
+
+- `crates/trit-gpu/examples/device_env_check.rs` + `scripts/device_matrix.py`：
+  同一 seed 在原生 Windows、WSL、以及 2/8 CPU 两个真实容器里跑
+  `device_adapt`（64 行 JSON）与 `device_env_check`，按 PASS/DRIFT/FAIL 判。
+- 结果：4 个环境结构一致（前 13 行 anchor/calibration/plan_wins 逐位一致，
+  plan_wins 计数相同）；WSL/容器相对 native **DRIFT**（最大指标差 0.794，
+  训练准确率 0.963 vs 0.931），两个容器之间 `device_adapt` **逐字节一致**。
+- 容器检测：cpuset 2/8 被正确识别为 2/8 核；512×4096×512 CPU 计划延迟
+  cpu_u64 34.2/10.0ms、cpu_simd 56.6/17.7ms；native/WSL 为 6.7/6.2ms（u64）。
+- Docker Hub 直连/镜像站拉取不可用 ⇒ 用 WSL Linux 二进制 + glibc 构建
+  本地 scratch 镜像（4.9MB）；官方 `rust:*` 镜像模式保留，网络可达时可用。
+  构建说明 `containers/device-env/README.md`，读数 `docs/DEVICE-ENV-MATRIX.md`。
+- 结论：仿真前置阶段跨环境可复现；策略训练跨编译器/OS 不 bit 复现，需固定点
+  训练或明确 DRIFT 容差。未证：GPU 容器、ARM64、跨物理机。
+
+### Added（trit-gpu：实测档案重训 + 小形状拟合 + CPU/NPU 完整计划延迟）
+
+- `device_calibrate --out` 现在写 `{device, shapes, sources}` 实测档案；
+  `device_adapt --profile <json>` 消费它并用实测标签重训（`--profile-repeats`，
+  默认 256）。repeats 16/64 时策略仍选 reg，256 才学会真机 split-K：
+  真机 4 形状 **in-sample** learned_profile **1.000 / exact 1.0**；
+  合成留出 clean 1.006 → profile 1.020（exact 0.958→0.927，小幅代价）。
+- 小形状拟合：GPU launch/occupancy 网格搜索（拟合 3 形状、留出瘦长形状）
+  launch **12µs**、occupancy 1.0，留出误差 **0.326→0.265**；320³ 保真
+  0.44→0.91，校准/768³ 略变差（1.06→1.13 / 1.23→1.32）。
+- CPU 完整计划延迟（24 线程真实 matmul）：512×4096×512 上 cpu_u64
+  **6.858ms** / cpu_simd 15.319ms；效率 u64=1.0、simd=0.448——当前 SIMD
+  实现反而更慢（popcnt backend + 每 dot 4 次调用）；CPU 小形状仍低估。
+- NPU：本机/本仓无 NPU 后端，只输出明确 `measured=false` 的模型值，
+  不当性能结论。
+- 边界：真机重训是单机 4 形状 in-sample；CPU/NPU 未做真机 NPU、多机迁移。
+
+### Added（trit-gpu：真实设备校准——本机 RTX 4060 Ti + CPU 实测档案）
+
+- `crates/trit-gpu/examples/device_calibrate.rs`（`--features gpu`）：CPU 侧测
+  SIMD/位并行/f32/拷贝带宽；GPU 侧跑 trit-gpu 的 naive/tiled/reg2x2/split-K/
+  f32 内核、trit-capacity 显存、wgpu 拷贝带宽；校准形状反推计划效率，留出
+  形状做模型保真，并用**实测计划延迟**评估合成设备训练的策略。
+- 本机档案：24 核 popcnt，SIMD **38.5e9 trit/s**（单线程）；RTX 4060 Ti /
+  Vulkan：ternary **8.2–8.8e12**、f32 **1.21–1.22e12**、带宽 **232–249GB/s**、
+  8.59GB 显存（nvidia-smi）。
+- 模型保真（model/measured）：校准形状 **1.056–1.068**（合成锚点 1.87–1.94）、
+  768³ **1.05–1.23**（合成 2.00–2.21）；320³ 仍低估 0.44–0.51；瘦长形状
+  best 恒 miss split-K。
+- 真机策略零 shot（3 seeds）：learned mean **1.024–1.032** vs heuristic
+  1.056–1.065；瘦长 64×2048×2048 上 learned 固定选 reg，损失 0.7–12.9%
+  （真机 best 是 split-K）——合成训练里 split-K 被支配，真机不是。
+  另一次同 seed 运行 heuristic 1.013 < learned 1.020，排序被测量噪声翻转：
+  **互有胜负，不能宣称学习策略全面胜出。**
+- 边界：单机 4 个形状；CPU/NPU 的完整计划延迟未测；profile JSON 已写盘，
+  `device_adapt` 尚未接 `--profile` 消费。文档 `docs/DEVICE-ADAPT.md` §5.1。
+
+### Added（trit-gpu：行为级 CPU/GPU/NPU 仿真 + QAT 设备适配策略）
+
+- `crates/trit-gpu/examples/device_adapt/`：行为级延迟模型（有效峰值/带宽/
+  缓存/启动开销/占用率/分块）覆盖 8 个计划；GPU 锚点用 trit-gpu 真机读数
+  （ternary reg2x2 0.129 ps/MAC、f32 tiled 2.641）校准，模型/实测比为
+  1.007 / 1.005 / 0.996 / 1.000。
+- 策略：21 维设备+形状特征 → QAT 三值 MLP（32 hidden）选计划；对照 oracle /
+  按类静态 / 手写启发式 / 随机；测试设备与训练形状不重叠，OOD 锚点单列。
+- 读数（48 设备/类 × 8 形状，3 seeds）：同分布 mean **1.010–1.011**（p90 1.00），
+  优于 class_fixed 1.034 与 heuristic 1.130；OOD 锚点 learned_clean 1.069
+  ≈ heuristic 1.077（种子相关），p90 1.021 < 1.331。训练规模 24→48/类：
+  同分布 1.031→1.011、锚点 1.112→1.069。
+- 负结果：±10% 噪声增强不稳定（n=48 在锚点反而更差）；弱 popcount GPU 锚点
+  仍选错 ternary reg（2.2–2.8×）；split-K / naive / cpu_u64 在留出集被支配。
+- 边界：仿真 + 合成设备（GPU 锚点除外），无真机迁移结论；单算子 matmul。
+  文档 `docs/DEVICE-ADAPT.md`。
+
 ### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）
 
 - `examples/adversarial_train/`：AB 循环——红方进化攻击（行基因组整行置零）
