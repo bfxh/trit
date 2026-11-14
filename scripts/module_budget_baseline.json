@@ -3075,6 +3075,10 @@
       "lines": 197
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_sts_ternary_perm.rs",
+      "lines": 224
+    },
+    {
       "file": "crates/trit-wspace/examples/classifier_sts_train.rs",
       "lines": 559
     },
