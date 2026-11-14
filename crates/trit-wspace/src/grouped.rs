@@ -1,18 +1,18 @@
 //! 分组三值层：**跨行**按幅度分层后分组共享 scale。
 //!
-//! 背景（实测，见 `docs/WSP-DIMSWEEP.md`）：
-//! - 单 scale 三值化（per-tensor）在 STS 上掉 **24.91 点**——不是"三值精度不够"，而是
-//!   同一组里混着幅度差上百倍的权重，统一的 `E|w|` 两头不讨好；
-//! - **按幅度排序后每 G 个共享一个 scale**，代价降到 **0.0004 点**（全量 1379 对）；
-//! - 但这一步需要记录"每个元素属于哪一组"（排序划分本身是额外信息）：
-//!   每组 256、约 59 万权重 ⇒ 2304 组 ⇒ 约 11.2 bit/元素。
+//! 实测（见 `docs/WSP-DIMSWEEP.md`）：单 scale 三值化在 STS 上掉 24.91 点——不是"三值精度
+//! 不够"，而是同组里混着幅度差上百倍的权重；**按幅度排序后每 G 个共享一个 scale**，
+//! 代价降到 0.0004 点（全量 1379 对）。
 //!
-//! 因此本结构的真实定位是：**在"权重必须是三值"的硬约束下**（可穷举验证、可逐位 diff），
-//! 用 `2 + 32/G + log2(组数)` bit/权重 换取几乎无损——**不是**通用压缩方案
-//! （int8 是 8 bit 且无需额外信息，压缩率更高）。
+//! 但这需要记录"每个元素属于哪一组"（排序划分是额外信息）：每组 256、59 万权重 ⇒ 2304 组
+//! ⇒ 约 11.2 bit/元素。定位：**在"权重必须是三值"的硬约束下**（可穷举验证、可逐位 diff），
+//! 用 `2 + 32/G + log2(组数)` bit/权重 换取几乎无损——**不是**通用压缩方案。
 //!
-//! 与 [`crate::net::Layer`] 的区别：`Layer` 的 `scales` 是**每行一个**；本结构的 `scales`
-//! 是**每 `group_size` 个元素一个**，且分组来自跨行幅度排序，故额外需要 `groups`。
+//! 与 [`crate::net::Layer`] 的关键差别：`Layer.scales` 是**每行一个**，故有"正 scale 不改
+//! 行为"的不变性；本结构按**跨行**分组，同一行内不同列可落到不同 scale ⇒ 该不变性**失效**
+//! （见 `tests/grouped_oracle.rs`），判等必须连 scale 一起固定。
+//!
+//! 运算（`effective` / `bits_per_weight` / `to_f32` / `forward`）在 [`crate::grouped_ops`]。
 
 use crate::error::{Error, Result};
 use crate::trit::Trit;
@@ -20,22 +20,30 @@ use crate::trit::Trit;
 /// 分组三值层。
 #[derive(Clone, Debug, PartialEq)]
 pub struct GroupedLayer {
-    rows: usize,
-    cols: usize,
-    group_size: usize,
-    trits: Vec<Trit>,
+    pub(crate) rows: usize,
+    pub(crate) cols: usize,
+    pub(crate) group_size: usize,
+    pub(crate) trits: Vec<Trit>,
     /// 每个元素所属的组号（解码必需）。
-    groups: Vec<u32>,
+    pub(crate) groups: Vec<u32>,
     /// 每组的 scale。
-    scales: Vec<f32>,
-    bias: Vec<Trit>,
-    bias_f32: Vec<f32>,
+    pub(crate) scales: Vec<f32>,
+    pub(crate) bias: Vec<Trit>,
+    pub(crate) bias_f32: Vec<f32>,
+}
+
+pub(crate) fn trit_of(value: f32) -> Trit {
+    if value > 0.0 {
+        Trit::Pos
+    } else if value < 0.0 {
+        Trit::Neg
+    } else {
+        Trit::Zero
+    }
 }
 
 impl GroupedLayer {
     /// 由 f32 权重构造：按幅度排序后每 `group_size` 个共享一个 `E|w|`。
-    ///
-    /// 三值取 `sign(w)`，阈值 `0.7·E|w|`（组内均值绝对值），组内不超阈值的置 0。
     pub fn quantize(
         rows: usize,
         cols: usize,
@@ -46,10 +54,11 @@ impl GroupedLayer {
         if rows == 0 || cols == 0 {
             return Err(Error::EmptyLayer { rows, cols });
         }
-        if weights.len() != rows * cols {
+        let count = rows * cols;
+        if weights.len() != count {
             return Err(Error::Shape {
                 what: "grouped weights",
-                expected: rows * cols,
+                expected: count,
                 got: weights.len(),
             });
         }
@@ -61,18 +70,9 @@ impl GroupedLayer {
             });
         }
         let group_size = group_size.max(1);
-        let count = weights.len();
-
-        // 1) 按幅度升序得到划分顺序（这就是"排序"）
+        // 按幅度升序划分（"排序"就是这一步）
         let mut order: Vec<usize> = (0..count).collect();
-        order.sort_by(|left, right| {
-            weights[*left]
-                .abs()
-                .partial_cmp(&weights[*right].abs())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-
-        // 2) 每组一个 E|w| 作为 scale，并按阈值决定 trit
+        order.sort_unstable_by(|a, b| weights[*a].abs().total_cmp(&weights[*b].abs()));
         let mut trits = vec![Trit::Zero; count];
         let mut groups = vec![0u32; count];
         let mut scales = Vec::with_capacity(count.div_ceil(group_size));
@@ -93,20 +93,6 @@ impl GroupedLayer {
                 };
             }
         }
-
-        let bias_trits = bias
-            .iter()
-            .map(|value| {
-                if *value > 0.0 {
-                    Trit::Pos
-                } else if *value < 0.0 {
-                    Trit::Neg
-                } else {
-                    Trit::Zero
-                }
-            })
-            .collect();
-
         Ok(Self {
             rows,
             cols,
@@ -114,7 +100,67 @@ impl GroupedLayer {
             trits,
             groups,
             scales,
-            bias: bias_trits,
+            bias: bias.iter().map(|value| trit_of(*value)).collect(),
+            bias_f32: bias.to_vec(),
+        })
+    }
+
+    /// 直接由 trits / 组号 / scales 构造（解码入口，也用于精确构造测试实例）。
+    pub fn from_trits(
+        rows: usize,
+        cols: usize,
+        trits: &[i8],
+        groups: &[u32],
+        scales: &[f32],
+        bias: &[f32],
+    ) -> Result<Self> {
+        if rows == 0 || cols == 0 {
+            return Err(Error::EmptyLayer { rows, cols });
+        }
+        let count = rows * cols;
+        if trits.len() != count || groups.len() != count {
+            return Err(Error::Shape {
+                what: "grouped trits/groups",
+                expected: count,
+                got: trits.len().min(groups.len()),
+            });
+        }
+        if bias.len() != rows {
+            return Err(Error::Shape {
+                what: "grouped bias",
+                expected: rows,
+                got: bias.len(),
+            });
+        }
+        let mut parsed = Vec::with_capacity(count);
+        for value in trits {
+            parsed.push(match value {
+                -1 => Trit::Neg,
+                0 => Trit::Zero,
+                1 => Trit::Pos,
+                other => return Err(Error::InvalidTrit(*other)),
+            });
+        }
+        if groups.iter().any(|group| *group as usize >= scales.len()) {
+            let offender = groups
+                .iter()
+                .find(|group| **group as usize >= scales.len())
+                .copied()
+                .unwrap_or(0);
+            return Err(Error::OutOfBounds {
+                layer: 0,
+                row: offender as usize,
+                col: scales.len(),
+            });
+        }
+        Ok(Self {
+            rows,
+            cols,
+            group_size: scales.len().max(1),
+            trits: parsed,
+            groups: groups.to_vec(),
+            scales: scales.to_vec(),
+            bias: bias.iter().map(|value| trit_of(*value)).collect(),
             bias_f32: bias.to_vec(),
         })
     }
@@ -165,59 +211,5 @@ impl GroupedLayer {
     #[must_use]
     pub fn scale(&self, group: usize) -> Option<f32> {
         self.scales.get(group).copied()
-    }
-
-    /// `(row, col)` 处的等效 f32 权重：`trit × scale[group]`。
-    #[must_use]
-    pub fn effective(&self, row: usize, col: usize) -> Option<f32> {
-        let trit = self.trit(row, col)?;
-        let group = *self.groups.get(row * self.cols + col)? as usize;
-        let scale = self.scale(group)?;
-        Some(trit.to_i8() as f32 * scale)
-    }
-
-    /// 每权重的实际位宽：`2`（trit）+ `32/G`（scale）+ `log2(组数)`（组号）。
-    #[must_use]
-    pub fn bits_per_weight(&self) -> f32 {
-        let group_bits = if self.scales.len() <= 1 {
-            0.0
-        } else {
-            (self.scales.len() as f32).log2()
-        };
-        2.0 + 32.0 / self.group_size as f32 + group_bits
-    }
-
-    /// 等效 f32 权重矩阵（行主序）——用于与 [`crate::net::Layer`] 对照。
-    #[must_use]
-    pub fn to_f32(&self) -> Vec<f32> {
-        (0..self.rows * self.cols)
-            .map(|index| {
-                let row = index / self.cols;
-                let col = index % self.cols;
-                self.effective(row, col).unwrap_or(0.0)
-            })
-            .collect()
-    }
-
-    /// 一位前向：`y[r] = Σ_c trit×scale · x[c] + bias_f32[r]`。
-    pub fn forward(&self, input: &[f32]) -> Result<Vec<f32>> {
-        if input.len() != self.cols {
-            return Err(Error::Shape {
-                what: "grouped input",
-                expected: self.cols,
-                got: input.len(),
-            });
-        }
-        let mut output = self.bias_f32.clone();
-        for (row, slot) in output.iter_mut().enumerate() {
-            let mut sum = 0.0f32;
-            for (col, value) in input.iter().enumerate() {
-                let index = row * self.cols + col;
-                let scale = self.scales[self.groups[index] as usize];
-                sum += self.trits[index].to_i8() as f32 * scale * value;
-            }
-            *slot += sum;
-        }
-        Ok(output)
     }
 }

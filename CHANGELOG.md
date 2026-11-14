@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added（验证：分组 scale **破坏**了仓库判等所依赖的不变性）
+
+- `GroupedLayer` 拆成 `grouped.rs`（结构 + `quantize` / `from_trits` + getter）与
+  `grouped_ops.rs`（`effective` / `bits_per_weight` / `to_f32` / `forward`），
+  两文件都在台账上限内（215 / 68 行）。新增解码入口 `from_trits`，也是精确构造测试实例的
+  手段（用 `quantize` 从 f32 反推无法保证 trits 相同）。
+- **`tests/grouped_oracle.rs`（3 个测试）回答了"分组 scale 之后还能不能穷举判等"**：
+  1. `cross_row_grouping_changes_sign_output`：**跨行分组会改变符号输出**——相同 trits、
+     只调换组号分配（`[0,0,1,1]` → `[0,1,0,1]`），在 `[1,1]` 输入下第 1 行从 `0`
+     变成负数，9 个枚举输入中存在差异；
+  2. `per_row_grouping_keeps_row_scale_invariance`：**每行一个正 scale 时缩放不改变符号**
+     ——仓库 `Layer` 的判等前提在 per-row 下成立；
+  3. `behavior_is_enumerable_once_scale_is_fixed`：trits / groups / scales 全固定时，
+     `3^2` 个输入可完全枚举且结果确定。
+- **核心结论**：仓库的穷举判等（`Oracle`）建立在"正 scale 不改行为"上。`GroupedLayer` 的
+  **跨行分组破坏了这个不变性**——同一行内不同列落到不同 scale 会改变符号输出。所以对
+  `GroupedLayer` 判等必须**连 scale 一起固定**，不能像 `Layer` 那样把 scale 当无关量。
+- 这解释了为什么"分组三值"不能直接替代 `Layer`：它换来了精度，代价是**判等语义变弱**
+  （scale 从"无语义的正缩放"变成"必须固定参与比较的参数"）。
+
 ### Added（`grouped`：分组三值层——严格三值约束下的 2.4× 压缩）
 
 - 新模块 `crates/trit-wspace/src/grouped.rs`：`GroupedLayer`，**跨行**按幅度排序后
