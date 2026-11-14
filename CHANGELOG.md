@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+### Added（trit-gpu：真实设备校准——本机 RTX 4060 Ti + CPU 实测档案）
+
+- `crates/trit-gpu/examples/device_calibrate.rs`（`--features gpu`）：CPU 侧测
+  SIMD/位并行/f32/拷贝带宽；GPU 侧跑 trit-gpu 的 naive/tiled/reg2x2/split-K/
+  f32 内核、trit-capacity 显存、wgpu 拷贝带宽；校准形状反推计划效率，留出
+  形状做模型保真，并用**实测计划延迟**评估合成设备训练的策略。
+- 本机档案：24 核 popcnt，SIMD **38.5e9 trit/s**（单线程）；RTX 4060 Ti /
+  Vulkan：ternary **8.2–8.8e12**、f32 **1.21–1.22e12**、带宽 **232–249GB/s**、
+  8.59GB 显存（nvidia-smi）。
+- 模型保真（model/measured）：校准形状 **1.056–1.068**（合成锚点 1.87–1.94）、
+  768³ **1.05–1.23**（合成 2.00–2.21）；320³ 仍低估 0.44–0.51；瘦长形状
+  best 恒 miss split-K。
+- 真机策略零 shot（3 seeds）：learned mean **1.024–1.032** vs heuristic
+  1.056–1.065；瘦长 64×2048×2048 上 learned 固定选 reg，损失 0.7–12.9%
+  （真机 best 是 split-K）——合成训练里 split-K 被支配，真机不是。
+  另一次同 seed 运行 heuristic 1.013 < learned 1.020，排序被测量噪声翻转：
+  **互有胜负，不能宣称学习策略全面胜出。**
+- 边界：单机 4 个形状；CPU/NPU 的完整计划延迟未测；profile JSON 已写盘，
+  `device_adapt` 尚未接 `--profile` 消费。文档 `docs/DEVICE-ADAPT.md` §5.1。
+
 ### Added（trit-gpu：行为级 CPU/GPU/NPU 仿真 + QAT 设备适配策略）
 
 - `crates/trit-gpu/examples/device_adapt/`：行为级延迟模型（有效峰值/带宽/

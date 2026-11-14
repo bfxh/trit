@@ -1,7 +1,8 @@
 # 行为级硬件仿真 × 设备适配策略：CPU / GPU / NPU 计划选择（2026-11-14）
 
-> 状态：**M0 仿真 + 学习策略机制验证**。所有读数来自行为级模拟器与合成设备
-> 档案（GPU 锚点除外）；**没有任何真机迁移结论**。
+> 状态：**M0 仿真 + 学习策略机制验证 + 本机 GPU 实测校准**。主体读数来自
+> 行为级模拟器与合成设备档案；§5.1 补上本机 RTX 4060 Ti + CPU 的真实采集，
+> 但仍是**单机、少量形状**，不构成多机迁移结论。
 
 ## 1. 一句话
 
@@ -89,6 +90,45 @@
   f32）；另有 1 个 4096³ 低带宽 GPU 单例 oracle 是 naive、策略选 reg（3.4×）。
   p90 1.02 说明这类是尾部而非普遍现象。
 
+## 5.1 真实设备校准（本机，2026-11-14）
+
+`crates/trit-gpu/examples/device_calibrate.rs`（需 `--features gpu`）：
+
+- CPU：`popcount_words`（SIMD 后端 **popcnt**，24 逻辑核）单线程 **38.5e9
+  trit/s**、`dot_words` 19.9e9、f32 点积 2.69e9；128MB 单线程拷贝
+  **22.2 GB/s**（共享带宽的下界）。档案：ternary 924e9、f32 64.6e9、
+  bandwidth 22.2GB/s；cache=32MB、launch=0.5µs、occupancy=0.9 为假设。
+- GPU：**NVIDIA RTX 4060 Ti / Vulkan**；`nvidia-smi` 8.586GB 总显存 /
+  1.148GB 已用；wgpu copy 带宽 **232–249 GB/s**（多次运行）；34 SM 为查表。
+  校准形状（512×4096×512）三值最优 **reg2x2 0.113–0.122 ps/MAC**，
+  split-K 0.148–0.155、tiled 0.146–0.157、naive 0.851–0.854；f32 tiled
+  **0.817–0.828 ps/MAC**。档案：ternary_ops **8.2–8.8e12**、f32_ops
+  **1.21–1.22e12**、occupancy=1（峰值即实测有效吞吐）。
+- 模型保真（model/measured，越接近 1 越好；含多次运行）：
+  - 校准形状：**1.056–1.068**（合成锚点 1.87–1.94）；
+  - 768³：**1.05–1.23**（合成 2.00–2.21）；
+  - 320³：**0.44–0.51**（合成 0.80–0.88）——小形状仍被显著低估，
+    启动/占用项需要下一轮校准；
+  - 64×2048×2048：0.70–0.76（合成 1.33–1.39），且模型 best 恒为 reg，
+    真机 best 是 **split-K**。
+- 真机计划延迟（seed 7 一次运行）：512×4096×512 reg **0.121ms**；
+  768³ reg **0.066ms**；320³ reg **0.025ms**；64×2048×2048 split-K
+  **0.050ms** vs reg 0.056ms。注意 320³ 附近计划差距 <10%，运行间噪声
+  会让 best 在 reg/tiled 之间翻转。
+- 策略真机零 shot（合成设备训练，实测延迟评估；3 个策略种子）：
+  - `learned_clean` 均值 **1.027 / 1.032 / 1.024**，exact 0.75 / 0.75 / 0.50；
+  - `heuristic` 均值 **1.056 / 1.065 / 1.057**，exact 0.50 / 0.50 / 0.50；
+  - `class_fixed` / 默认模型 oracle 与 learned 相同（本机都选 reg）。
+  - learned 在 512×4096×512、768³、320³ 上多数命中；在瘦长
+    64×2048×2048 上固定选 reg，损失 **0.7%–12.9%**（真机 best 是 split-K）。
+    heuristic 会选 split-K，但会在 768³/320³ 上选 tiled，单次损失可达
+    19.5%。另一次同 seed 运行 heuristic 1.013 < learned 1.020，**排序会被
+    测量噪声翻转**；两者互有胜负，不能宣称学习策略全面胜出。
+- **关键发现**：合成训练里 split-K 在留出集 0 次获胜（被 tiled/reg 支配），
+  但真机瘦长形状上 split-K 最优——这正是需要真实校准的原因。下一步应把
+  校准档案加入训练，或给 split-K 建形状相关特征；本轮未做（避免用一台
+  机器的 4 个形状反向拟合策略）。
+
 ## 6. 过程修正（对后续有用）
 
 1. **第一版特征没有比值**：策略在弱 popcount GPU 上把 ternary reg 选成 5–7×
@@ -105,9 +145,9 @@
 
 ## 7. 未证栏与边界
 
-- **仿真不是真机**：除 4060 Ti 锚点外设备参数是合成的；学习策略在模拟器里
-  逼近它的 oracle，不代表能在真机达到同样计划选择。真机迁移需要
-  `trit-capacity`/`trit-gpu` 采集设备档案 + 少量实测校准，本轮未做。
+- **仿真不是真机**：主体设备参数是合成的；§5.1 只校准了本机 RTX 4060 Ti
+  + CPU 一次，CPU/NPU 的完整计划延迟、多 GPU、多机迁移均未验证。
+  校准档案写盘（`--out`）了，但 `device_adapt` 尚未接 `--profile` 消费它。
 - 只做**单算子 matmul**；DAG 融合、流水线、多设备异构调度、功耗/热约束未做。
 - 计划集固定 8 个，未做 tile/精度/线程数的细粒度 autotuning。
 - 校准只有 1 个 GPU 形状点（512×4096×512），CPU/NPU 没有实测锚点。
@@ -123,6 +163,10 @@ cargo run --release -p trit-gpu --example device_adapt -- \
 # 训练规模消融：24 设备/类（同一测试集）
 cargo run --release -p trit-gpu --example device_adapt -- \
   --seed 7 --train-per-class 24 --epochs 120 --hidden 32 --noise 0.10
+
+# 真实设备校准（需要 GPU；会跑本机 4 个形状的全部内核）
+cargo run --release -p trit-gpu --features gpu --example device_calibrate -- \
+  --seed 7 --out device-profile.json
 ```
 
 每行一个 JSON：`anchor` / `calibration` / `plan_wins` / `train` / `eval` /
