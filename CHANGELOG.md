@@ -16,12 +16,14 @@
 - `scripts/worktree_guard.py --apply` 连带删除同名、未共用、在树外的外置 target，按 git 顶层与
   主工作树保护；`scripts/gitflow.py worktree add` 新建前自动回收（`TRIT_NO_AUTO_RECLAIM=1` 关闭）；
   自测接进 CI 的 recovery job。
-- CI 实测（本 PR 两轮；main 合并后全量常态约 600s）：Windows job 528s → 436s（第二轮缓存已按
-  新参数建过）；冒烟在关键路径上只剩 start + wait = 97s → 50s（原串行 272–375s）。第二轮
-  ubuntu 214s、MSRV 157s 回到 main 区间内。
-- 未证栏：调试信息读数只测了 trit-wspace 一个 crate 的测试构建；macOS 341s 仍高于 main
-  （185–310s），差额在 Clippy（59s vs 20–30s，疑为缓存键仍对应旧 profile，合并后待看）和
-  「— start」35s（main 上串行冒烟 10–15s，macOS 上后台化不划算）；macOS 不在关键路径上。
+- CI 缓存：`rust-cache` 的键只哈希依赖、不含 `[profile]`，改完 profile 会一直 full match 恢复作废的
+  旧缓存、整仓重编且不再保存；ci.yml / mutation.yml 的 `rust-cache` 加
+  `key: ${{ hashFiles('Cargo.toml') }}`，根清单一改就换代。
+- CI 实测（本 PR 前三轮都是上面说的冷编译）：冒烟在关键路径上只剩 start + wait = 97 / 50 / 137s
+  （原串行 272–375s）；Windows job 528 / 436 / 689s（main 合并后全量 583–751s），三轮之间差 250s，
+  整 job 快慢在冷编译下判不了。
+- 未证栏：调试信息读数只测了 trit-wspace 一个 crate 的测试构建；暖缓存下的 CI 读数待补；CI 里的
+  sccache 一直没生效（`Compile requests 0`，workflow 没设 `RUSTC_WRAPPER`），本 PR 没动。
 
 
 ### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）

@@ -156,13 +156,12 @@ gh api repos/bfxh/trit/actions/runs/<run-id>/jobs --jq '.jobs[] | {name, started
 （抽样 PR 263s，是该 job 516s 里最长的一段），和 nextest/doctest/clippy 互不依赖。改成两步：
 Clippy 之后当场 `--no-run` 编好（编译错误当场判红），用例放后台跑；job 末尾「— wait」打印完整
 日志、按退出码判红（后台进程失踪靠 20 分钟超时判红）。fmt/clippy 的快速失败不受影响。
-引入它的 PR（#502）首轮 CI 实测：Windows job 528s（main 最近 6 次合并后全量 583–751s，常态约 600s）；
-冒烟在关键路径上只剩「— start」46s + 「— wait」51s = 97s（原来串行 272–375s），后台期间
-nextest 217s（main 188–242s），没有被明显拖慢。第二轮（缓存已按新编译参数建过）：Windows job
-436s，冒烟在关键路径上 40s + 10s = 50s；ubuntu 214s、MSRV 157s 回到 main 的区间内（177–222s /
-164–251s）。macOS 341s 仍高于 main（185–310s），差额在 Clippy（59s，main 20–30s）和「— start」
-（35s，main 上串行冒烟只要 10–15s——macOS 上冒烟本来就快，后台化不划算）；macOS 不在关键
-路径上，整轮 CI 的墙钟由 Windows 决定。
+引入它的 PR（#502）在 CI 上跑了三轮，三轮都是整仓冷编译（`rust-cache` 换代前恢复的是作废的
+旧缓存，见下文「调试信息减重」）。冒烟在关键路径上只剩「— start」+「— wait」：97s / 50s / 137s
+（原来串行 272–375s）。Windows job 528s / 436s / 689s，main 最近 6 次合并后全量 583–751s（常态
+约 600s）；同一 job 三轮之间差 250s，冷编译下整 job 的快慢判不了。ubuntu / MSRV / macOS 同理
+（274/214/306s、266/157/248s、350/341/329s，main 为 177–222s、164–251s、185–310s）。
+暖缓存读数待补。
 顺手修复：全量兜底分支漏设 `needs_build_gpu`（#376 引入），push main 时 trit-build 的
 GPU 测试与 clippy 一直被跳过；现在补上（只会多跑）。
 
@@ -182,6 +181,14 @@ debug-assertions / overflow-checks / opt-level 不变——测什么、怎么判
 §5 那次 27.2s vs 27.5s 测的是 GPU 冒烟那一步（瓶颈在 wgpu 编译）；测试构建要链接几十个
 测试二进制，调试信息的生成、搬运和写盘才是大头。CI 上链接同样变轻，`rust-cache` 要存取的
 依赖产物也变小。要单步调试时本地临时把 `debug` 调回 `true`（不要提交）。
+
+改 profile 必须让 CI 缓存换代：`rust-cache` 的键只哈希依赖（`Cargo.lock` 与各清单的依赖段），
+不含 `[profile]`。#502 的前三轮 CI 都 full match 恢复了 main 的旧缓存（main 最近一次 push 也是
+同一把键），产物在新 profile 下全部作废、整仓重编，随后又因「键已存在」不保存——合并后 main
+也会一直这样。现在 ci.yml / mutation.yml 的 `rust-cache` 都带 `key: ${{ hashFiles('Cargo.toml') }}`，
+根清单一改就换代（改依赖时 `Cargo.lock` 本来就会换键）。另：CI 里的 sccache 一直没生效——
+各 job 日志 `Compile requests 0`、缓存位置是本地盘：`sccache-action` 只装二进制，workflow 没设
+`RUSTC_WRAPPER` / `SCCACHE_GHA_ENABLED`。接上它是另一件事，本 PR 没动。
 
 **防复发（`scripts/worktree_guard.py` + `scripts/gitflow.py`）**：回收规则早在 AGENTS.md 里，
 仍攒下 33 个已合 PR 的工作树——没人跑，也不删外置 target。现在 `--apply` 连带删除该树
