@@ -32,7 +32,7 @@ fn rank_one_only_changes_the_edited_direction() {
     let x = vec![1.0f32, 0.0];
     let y = vec![0.0f32, 1.0];
     let before = apply(&weight, rows, cols, &y);
-    rank_one_update(&mut weight, rows, cols, &x, &vec![2.0, 3.0, 4.0]).expect("update");
+    rank_one_update(&mut weight, rows, cols, &x, &[2.0, 3.0, 4.0]).expect("update");
     let after = apply(&weight, rows, cols, &y);
     for (a, b) in before.iter().zip(&after) {
         assert!(

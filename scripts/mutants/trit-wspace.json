@@ -362,8 +362,8 @@
  {
   "name": "wspace-cli: apply-candidate 子命令被改坏",
   "file": "crates/trit-wspace/src/cli.rs",
-  "old": "\"apply-candidate\" => cmd_apply_candidate(&args[1..]),",
-  "new": "\"apply-candidateX\" => cmd_apply_candidate(&args[1..]),",
+  "old": "\"apply-candidate\" => cli_apply::apply_candidate_cmd(&args[1..]),",
+  "new": "\"apply-candidateX\" => cli_apply::apply_candidate_cmd(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
  },
@@ -402,8 +402,8 @@
  {
   "name": "wspace-cli: explain 子命令被改坏",
   "file": "crates/trit-wspace/src/cli.rs",
-  "old": "\"explain\" => cmd_explain(&args[1..]),",
-  "new": "\"explainX\" => cmd_explain(&args[1..]),",
+  "old": "\"explain\" => cli_explain::explain_cmd(&args[1..]),",
+  "new": "\"explainX\" => cli_explain::explain_cmd(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
  },
@@ -442,8 +442,8 @@
  {
   "name": "wspace-cli: probe 子命令被改坏",
   "file": "crates/trit-wspace/src/cli.rs",
-  "old": "\"probe\" => cmd_probe(&args[1..]),",
-  "new": "\"probeX\" => cmd_probe(&args[1..]),",
+  "old": "\"probe\" => cli_probe::probe_cmd(&args[1..]),",
+  "new": "\"probeX\" => cli_probe::probe_cmd(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
  },
@@ -481,7 +481,7 @@
  },
  {
   "name": "wspace-cli: --adaptive 开关被忽略",
-  "file": "crates/trit-wspace/src/cli.rs",
+  "file": "crates/trit-wspace/src/cli/cli_probe.rs",
   "old": "if parsed.switches.contains(\"adaptive\") {",
   "new": "if false {",
   "pkg": "trit-wspace",
@@ -562,8 +562,8 @@
  {
   "name": "wspace-cli: localize 子命令被改坏",
   "file": "crates/trit-wspace/src/cli.rs",
-  "old": "\"localize\" => cmd_localize(&args[1..]),",
-  "new": "\"localizeX\" => cmd_localize(&args[1..]),",
+  "old": "\"localize\" => cli_localize::localize_cmd(&args[1..]),",
+  "new": "\"localizeX\" => cli_localize::localize_cmd(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "cli_read_verify_patch_repair_round_trip"
  },
@@ -794,8 +794,8 @@
  {
   "name": "wspace-cli: script 子命令被改坏",
   "file": "crates/trit-wspace/src/cli.rs",
-  "old": "        \"script\" => cmd_script(&args[1..]),",
-  "new": "        \"scriptX\" => cmd_script(&args[1..]),",
+  "old": "        \"script\" => cli_script::script_cmd(&args[1..]),",
+  "new": "        \"scriptX\" => cli_script::script_cmd(&args[1..]),",
   "pkg": "trit-wspace",
   "filter": "script_runs_atomic_sequence_and_writes_artifact"
  },
@@ -2065,7 +2065,7 @@
 },
 {
  "name": "wspace-class: CLI verify 未接线",
- "file": "crates/trit-wspace/src/cli.rs",
+ "file": "crates/trit-wspace/src/cli/cli_verify.rs",
  "old": "        \"classification\": wire::classification_value(&net, &oracle).map_err(err)?,",
  "new": "        \"classification\": serde_json::Value::Null,",
  "pkg": "trit-wspace",

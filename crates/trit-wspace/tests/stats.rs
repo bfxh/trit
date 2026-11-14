@@ -84,10 +84,9 @@ fn paired_bootstrap_rejects_bad_shapes() {
 #[test]
 fn stratified_keeps_layer_proportions() {
     // 三层，各 40 / 30 / 30
-    let mut strata = Vec::new();
-    strata.extend(std::iter::repeat(0).take(40));
-    strata.extend(std::iter::repeat(1).take(30));
-    strata.extend(std::iter::repeat(2).take(30));
+    let mut strata = vec![0; 40];
+    strata.extend(std::iter::repeat_n(1, 30));
+    strata.extend(std::iter::repeat_n(2, 30));
     let chosen = stratified_indices(&strata, 0.25, 3);
     let mut counts = [0usize; 3];
     for index in &chosen {

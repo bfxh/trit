@@ -24,7 +24,7 @@
 //! `trits + groups + scales`）。要**严格**判等仍然得比 [`GroupedLayer::behavior`]；
 //! 逐行比例的价值在于**便宜**（`O(rows×cols)`）且**可解释**（直接指出哪几行差了几倍）。
 //!
-//! [`GroupedLayer::behavior`]: crate::grouped_equal::GroupedLayer::behavior
+//! [`GroupedLayer::behavior`]: crate::grouped::GroupedLayer::behavior
 
 use crate::grouped::GroupedLayer;
 
