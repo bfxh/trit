@@ -2,6 +2,38 @@
 
 ## [Unreleased]
 
+### Changed（构建瘦身：收窄补缺口、GPU 冒烟并行、调试信息减重、回收连外置 target）
+
+- `scripts/ci_scope.py`：`scripts/**` 不参与 Rust 编译，归不到 crate 时略过、不再拖全量；抽样 40 个
+  已合并 PR，全量 36 → 4（按 crate 收窄 30、整段跳过 Rust 6）。守卫 `rust_reads`：crate 源码或清单
+  一旦引用 `scripts/`（注释除外），该次运行退回全量并点名文件:行号。MSRV job 用同一把尺子收窄。
+- CI：trit-gpu 的 1×1×1 shader 冒烟在 Clippy 后当场编好、后台运行，job 末尾「— wait」收结果
+  （编译错误当场判红，后台进程失踪 20 分钟超时判红）；补上全量兜底漏设的 `needs_build_gpu`
+  （#376 起 push main 一直跳过 trit-build 的 GPU 测试与 clippy）。
+- 根 `Cargo.toml`：`[profile.dev] debug = "line-tables-only"`、依赖 `debug = false`；断言/溢出检查/
+  优化等级不变。本机 `cargo test -p trit-wspace --no-run`：target 4362 → 2184 MB，测试二进制
+  2227 → 1094 MB，墙钟约 39s → 26s；读数见 `docs/BUILD-PERF.md` §10。
+- `scripts/worktree_guard.py --apply` 连带删除同名、未共用、在树外的外置 target，按 git 顶层与
+  主工作树保护；`scripts/gitflow.py worktree add` 新建前自动回收（`TRIT_NO_AUTO_RECLAIM=1` 关闭）；
+  自测接进 CI 的 recovery job。
+- CI 缓存：`rust-cache` 的键只哈希依赖、不含 `[profile]`，改完 profile 会一直 full match 恢复作废的
+  旧缓存、整仓重编且不再保存；ci.yml / mutation.yml 的 `rust-cache` 加
+  `key: ${{ hashFiles('Cargo.toml') }}`，根清单一改就换代。
+- CI 实测（本 PR 前三轮都是上面说的冷编译）：冒烟在关键路径上只剩 start + wait = 97 / 50 / 137s
+  （原串行 272–375s）；Windows job 528 / 436 / 689s（main 合并后全量 583–751s），三轮之间差 250s，
+  整 job 快慢在冷编译下判不了。
+- 文档更正（`docs/BUILD-PERF.md`）：§8 原把 #404 的 CI 收益记在 sccache 头上，实为 `rust-cache`
+  命中 + nextest。CI 的 sccache 从未生效——`git log -S` 查 `RUSTC_WRAPPER` / `SCCACHE_GHA_ENABLED`
+  在 ci.yml 历史里都是空，`sccache-action` 只在 #404 引入过一次，main 与 #502 的 job 日志都是
+  `Compile requests 0`、缓存位置本地盘。§0 / §3 / §5 / §8 / §10 同步改口径，§8 加「归因更正」。
+- 暖缓存读数（run 43632123371，同一提交、四个 job 的 `rust-cache` 全 `full match: true` 的第四轮）：
+  Windows 446s、ubuntu 157s、macOS 190s、MSRV 171s（main 暖缓存基线 583–751 / 177–222 /
+  185–310 / 164–251s）；Windows 上冒烟「— start」14s、「— wait」109s。
+- 未证栏：调试信息读数只测了 trit-wspace 一个 crate 的测试构建；#404 的 727s → 493s 那对数字
+  无法再从 CI 复算（分支已随合并删除，只剩一次改动集只有 `.github/` 的 run），按「当时读数、
+  机制可推」处理，可复算的替代读数就是上面第四轮。
+
+
 ### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）
 
 - `examples/adversarial_train/`：AB 循环——红方进化攻击（行基因组整行置零）
