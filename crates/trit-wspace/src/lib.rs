@@ -11,8 +11,7 @@
 //! 代价同样明确：没有现成的 f32 预训练生态；表达力受三值限制；大规模网络的穷举不可行（本库的 M0 边界就是小网络 + 有界域）。
 //! ## 三层结构
 //! - **表示层**：[`Net`] / [`Layer`] 是不可变的权重工件；[`codec`] 把它写成 WSP1 文本，[`Trit`] 是唯一的权重单位。
-//! - **编辑层**：[`Edit`] / [`Patch`] 是事务式补丁；[`Journal`] 支持逐位回滚；[`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；[`Script`] 把多个 [`Program`] 组合成原子序列或按行为分支的脚本；[`AuditLog`] 把每次编辑记成带哈希链的 JSONL，可验链、可从初始工件重放；[`mod@shard`] 把长日志切成带 header 与分片内 oracle 表的多文件，跨片仍是同一条链；[`Checkpoint`] 可在分片边界保存工件与链头，从检查点续放；[`mod@rebase`] 把针对旧工件写的补丁三方重放到已经前进的工件上（冲突逐条报告）；
-//!   [`mod@transplant`] 把一个隐藏单元（入边 + 偏置 + scale + 出边）整体搬到另一个网络。
+//! - **编辑层**：[`Edit`] / [`Patch`] 是事务式补丁；[`Journal`] 支持逐位回滚；[`Program`] 把“前置行为 → 补丁 → 后置行为”打包成一次要么成功要么原样回滚的执行；[`Script`] 把多个 [`Program`] 组合成原子序列或按行为分支的脚本；[`AuditLog`] 把每次编辑记成带哈希链的 JSONL，可验链、可从初始工件重放；[`mod@shard`] 把长日志切成带 header 与分片内 oracle 表的多文件，跨片仍是同一条链；[`Checkpoint`] 可在分片边界保存工件与链头，从检查点续放；[`mod@rebase`] 把针对旧工件写的补丁三方重放到已经前进的工件上（冲突逐条报告）；[`mod@transplant`] 把一个隐藏单元（入边 + 偏置 + scale + 出边）整体搬到另一个网络。
 //! - 搜索层：[`mod@repair`] 不走梯度，在离散空间里找精确最小补丁；[`mod@analyze`] 对每个单点
 //!   编辑**实测**失配变化并按收益排序（模型提议、库复核）；[`mod@explain`] 解释单个样本为什么错、哪些单点编辑能让它翻转/变对；[`mod@probe`] 做行级消融测行为漂移（大网读取）；[`mod@localize`] 在承重行内做 trit 级定位（行 → 权重两级读取）；
 //!   [`merge`] 负责消掉隐藏单元置换对称性后再合并；[`mod@task`] 做三值任务向量投票合并（两者都保留可选 f32 偏置）；
@@ -87,6 +86,7 @@ pub mod grads;
 pub mod grouped;
 pub mod grouped_equal;
 pub mod grouped_ops;
+pub mod grouped_oracle;
 pub mod history;
 pub mod history_time;
 pub mod impact;

@@ -1501,6 +1501,17 @@ MiniLM 本身就是对比学习训出来的，所以专门换了同源目标：
 - **对调组 scale 会改变行为**（`[0.1,10]` 与 `[10,0.1]` 不等价）——这正是"完全 scale
   无关"不可行的证据。
 
+### 库化：`GroupedLayer` 接进 Oracle 采样（`grouped_oracle`）
+
+`sampled_oracle(vars, samples, seed) -> Oracle`：确定性采样 `vars` 维 trit 输入，
+取前向符号作期望输出，生成可直接参与现有验证流程的 `Oracle`。
+
+- 需要单独通道的原因：`GroupedLayer` 的 scale 跨行分组，**无法无损退化成 `Layer`**，
+  不能喂给 `Oracle::sampled_behavior(&Net, ..)`。
+- `vars ∈ 1..=cols`、`samples ∈ 1..=65536`，越界分别返回 `Shape` / `DomainTooLarge`。
+- 5 个测试：规模与维度、确定性、**采样输出与直接 forward 符号一致**、参数校验、
+  200 样本覆盖三值字母表。
+
 ## 结论
 
 - k≥4 全部落在 **0.45–0.49**，不随 k 单调改善；**全维（k=384）也只有 0.4766**。

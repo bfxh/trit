@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（`grouped_oracle`：把 GroupedLayer 接进 Oracle 的采样路径）
+
+- 新模块 `crates/trit-wspace/src/grouped_oracle.rs`：给 `GroupedLayer` 加
+  `sampled_oracle(vars, samples, seed) -> Oracle`，于是它能直接参与本仓现有的验证流程
+  （`Oracle::outputs()` / `check_arch` / `agree` 等）。
+- **为什么需要单独通道**：`GroupedLayer` 的 scale 是跨行分组的，**无法无损退化成
+  `Layer` 的 per-row scale**，所以不能直接喂给 `Oracle::sampled_behavior(&Net, ..)`。
+  本模块补的就是这条侧门。
+- 采样**确定性**（LCG）：同一 `seed` 必得同一批输入，便于复现与对照。
+  `vars ∈ 1..=cols`、`samples ∈ 1..=MAX_SAMPLES(65536)`，越界分别返回 `Shape` /
+  `DomainTooLarge`。
+- 期望输出取该层前向的**符号**，与仓库"行为判等只看符号"的约定一致。
+- `tests/grouped_oracle_sample.rs`（5 个测试）：样本数与维度、**确定性**（同 seed 相同、
+  换 seed 不同）、**采样输出与直接 forward 的符号一致**、越界参数报错、200 个样本覆盖
+  `-1/0/+1` 三值字母表。
+
 ### Added（`grouped_equal`：scale 无关判等的三层机制）
 
 - 新模块 `crates/trit-wspace/src/grouped_equal.rs`。先明确边界：**完全 scale 无关不可能**

@@ -3531,6 +3531,10 @@
       "lines": 67
     },
     {
+      "file": "crates/trit-wspace/src/grouped_oracle.rs",
+      "lines": 79
+    },
+    {
       "file": "crates/trit-wspace/src/history.rs",
       "lines": 85
     },
@@ -3909,6 +3913,10 @@
     {
       "file": "crates/trit-wspace/tests/grouped_oracle.rs",
       "lines": 124
+    },
+    {
+      "file": "crates/trit-wspace/tests/grouped_oracle_sample.rs",
+      "lines": 87
     },
     {
       "file": "crates/trit-wspace/tests/history.rs",
