@@ -133,21 +133,6 @@ fn ternary_row_layer(layer: &mut BertLayer) {
     each_weight(layer, |weight| ternary_per_row(weight, cols));
 }
 
-/// 每层整张量三值化。
-fn ternary_tensor_layer(layer: &mut BertLayer) {
-    each_weight(layer, ternary_per_tensor);
-}
-
-/// 每层 group32（原始顺序）。
-fn ternary_group_layer(layer: &mut BertLayer) {
-    each_weight(layer, ternary_group);
-}
-
-/// 每层 group32（按幅度排序后分组 = 置换）。
-fn ternary_sorted_layer(layer: &mut BertLayer) {
-    each_weight(layer, ternary_group_sorted);
-}
-
 fn main() {
     let mut args = std::env::args().skip(1);
     let model = args
@@ -187,10 +172,12 @@ fn main() {
     // (名字, 每层应用什么)
     let configs: Vec<LayerConfig> = vec![
         ("f32 (baseline)", noop),
-        ("ternary per-tensor", ternary_tensor_layer),
+        ("ternary per-tensor", |l| each_weight(l, ternary_per_tensor)),
         ("ternary per-row sorted", ternary_row_layer),
-        ("ternary group32", ternary_group_layer),
-        ("ternary group32 sorted", ternary_sorted_layer),
+        ("ternary group32", |l| each_weight(l, ternary_group)),
+        ("ternary group32 sorted", |l| {
+            each_weight(l, ternary_group_sorted)
+        }),
     ];
 
     let mut readings = Vec::new();

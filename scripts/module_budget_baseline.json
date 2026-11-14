@@ -3080,7 +3080,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/classifier_sts_ternary_perm.rs",
-      "lines": 224
+      "lines": 217
     },
     {
       "file": "crates/trit-wspace/examples/classifier_sts_train.rs",
@@ -3519,6 +3519,10 @@
       "lines": 224
     },
     {
+      "file": "crates/trit-wspace/src/grouped.rs",
+      "lines": 223
+    },
+    {
       "file": "crates/trit-wspace/src/history.rs",
       "lines": 85
     },
@@ -3885,6 +3889,10 @@
     {
       "file": "crates/trit-wspace/tests/gradient.rs",
       "lines": 163
+    },
+    {
+      "file": "crates/trit-wspace/tests/grouped.rs",
+      "lines": 115
     },
     {
       "file": "crates/trit-wspace/tests/history.rs",
