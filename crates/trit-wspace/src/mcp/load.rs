@@ -90,7 +90,7 @@ pub(super) fn err(error: crate::error::Error) -> String {
 }
 
 /// 工作区根 = 进程 cwd（MCP server 通常在工作区根启动）。
-fn workspace_root() -> Result<PathBuf, String> {
+pub(super) fn workspace_root() -> Result<PathBuf, String> {
     std::env::current_dir().map_err(|_| "无法确定工作区根".to_string())
 }
 
@@ -116,7 +116,7 @@ fn confined_in(root: &Path, path: &str) -> Result<PathBuf, String> {
 }
 
 /// 只允许读工作区根内的文件；错误不回显路径/内容（M19）。
-fn confined(path: &str) -> Result<PathBuf, String> {
+pub(super) fn confined(path: &str) -> Result<PathBuf, String> {
     confined_in(&workspace_root()?, path)
 }
 

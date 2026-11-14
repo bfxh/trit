@@ -60,7 +60,7 @@ fn lists_exactly_twenty_one_tools() {
         .dispatch(&json!({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}))
         .expect("response");
     let listed = response["result"]["tools"].as_array().expect("tools");
-    assert_eq!(listed.len(), 21);
+    assert_eq!(listed.len(), 33);
     let names: Vec<&str> = listed
         .iter()
         .map(|tool| tool["name"].as_str().expect("name"))
@@ -90,7 +90,7 @@ fn lists_exactly_twenty_one_tools() {
     ] {
         assert!(names.contains(&expected), "缺少工具 {expected}");
     }
-    assert_eq!(tools().len(), 21);
+    assert_eq!(tools().len(), 33);
 }
 
 #[test]

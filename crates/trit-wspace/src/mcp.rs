@@ -4,9 +4,8 @@
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
 //! 不依赖服务端保存状态。
 
-use std::io::{self, BufRead, Write as IoWrite};
-
 use serde_json::{Value, json};
+use std::io::{self, BufRead, Write as IoWrite};
 
 use crate::analyze;
 use crate::audit::AuditLog;
@@ -20,6 +19,7 @@ use crate::shard::{ShardReplay, ShardedLog};
 use crate::wire;
 
 mod mcp_dare;
+mod mcp_extra;
 mod mcp_task;
 
 /// MCP 协议版本。
@@ -598,7 +598,7 @@ impl Mcp {
                     "artifact": to_wsp(&merged),
                 }))
             }
-            other => Err(format!("未知工具：{other}")),
+            other => mcp_extra::call(other, args),
         }
     }
 }

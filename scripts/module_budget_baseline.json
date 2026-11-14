@@ -3619,12 +3619,20 @@
       "lines": 68
     },
     {
+      "file": "crates/trit-wspace/src/mcp/mcp_extra.rs",
+      "lines": 782
+    },
+    {
       "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
       "lines": 639
     },
     {
       "file": "crates/trit-wspace/src/mcp_tools.rs",
-      "lines": 273
+      "lines": 5
+    },
+    {
+      "file": "crates/trit-wspace/src/mcp_tools/all.rs",
+      "lines": 417
     },
     {
       "file": "crates/trit-wspace/src/merge.rs",
@@ -4005,6 +4013,10 @@
     {
       "file": "crates/trit-wspace/tests/mcp.rs",
       "lines": 719
+    },
+    {
+      "file": "crates/trit-wspace/tests/mcp_extra.rs",
+      "lines": 386
     },
     {
       "file": "crates/trit-wspace/tests/mcp_script.rs",

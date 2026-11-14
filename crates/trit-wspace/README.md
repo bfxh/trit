@@ -146,7 +146,10 @@ trit-wspace mcp
 }
 ```
 
-二十一个工具：`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`、`wsp_task_scale`、`wsp_task_combine`。
+三十三个工具：原有 21 个（`wsp_read`、`wsp_verify`、`wsp_patch`、`wsp_apply_candidate`、`wsp_rebase`、`wsp_transplant`、`wsp_dare_drop`、`wsp_repair`、`wsp_propose`、`wsp_explain`、`wsp_probe`、`wsp_localize`、`wsp_audit`、`wsp_diff`、`wsp_merge`、`wsp_shard`、`wsp_audit_shards`、`wsp_run_script`、`wsp_task_merge`、`wsp_task_scale`、`wsp_task_combine`）
+＋12 个扩展：`wsp_tile`、`wsp_index_artifact`、`wsp_read_block`、`wsp_lock`、`wsp_train_proposer`、
+`wsp_propose_learned`、`wsp_propose_gradient`、`wsp_export_gguf`、`wsp_import_gguf`、
+`wsp_quantize_delta`、`wsp_certify`、`wsp_task_trim`。
 每次调用都从 WSP1 文本开始，服务端不存状态；失败返回 `isError=true`，不会返回“差不多对”的工件。
 
 `wsp_propose` 是“模型提议、库复核”的入口：对单点（`depth=1`）、两编辑（`depth=2`）或
