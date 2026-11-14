@@ -26,7 +26,10 @@ jobs:
         with:
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+      # 键并入根 Cargo.toml 的哈希：改 [profile] 不会改 rust-cache 自己的键（详见 ci.yml check job）。
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Collect changed crates
         id: crates
         env:
@@ -93,6 +96,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: mutation gate (shard ${{ matrix.shard }}/4)
         run: python3 scripts/mutation_check.py --shard ${{ matrix.shard }}/4 2>&1 | tee "shard-${{ matrix.shard }}.log"
       - name: upload shard log

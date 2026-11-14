@@ -90,8 +90,14 @@ jobs:
         with:
           tool: nextest@0.9.148
 
+      # rust-cache 的键只哈希依赖（Cargo.lock 与各 Cargo.toml 的依赖段），不含 [profile]：改了 profile，
+      # 旧 target 里的产物全部作废，却仍会 full match 恢复、且因「键已存在」不再保存，之后每次都
+      # 整仓重编。把根 Cargo.toml 的哈希并进键，profile 一改缓存就换代。本文件与 mutation.yml 里的
+      # rust-cache 都带这一行。
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         if: steps.scope.outputs.only_docs != 'true'
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
 
       # 收窄判据本身要有人盯：它坏了不能悄悄把整条测试面关掉。
       - name: Scope self-test (ci_scope)
@@ -495,6 +501,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Extreme vectors, word boundaries, large random payloads
         run: cargo test --release --locked -p trit-dot -p trit-codec -p trit-float -p trit-gpu --tests
 
@@ -517,6 +525,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Rustdoc
         env:
           RUSTDOCFLAGS: -D warnings
@@ -562,6 +572,8 @@ jobs:
         if: steps.crates.outputs.only_docs != 'true'
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         if: steps.crates.outputs.only_docs != 'true'
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Build
         if: steps.crates.outputs.only_docs != 'true'
         shell: bash
@@ -593,6 +605,8 @@ jobs:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - name: Package every crate (no build)
         run: cargo package --workspace --no-verify --locked
 
@@ -606,4 +620,6 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - run: cargo build -p trit-wasm --target wasm32-unknown-unknown --locked
