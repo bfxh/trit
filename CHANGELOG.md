@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（防御面：预测组件 + DDoS 盾沙盘 + 模型身份锁定）
+
+- `trit_learn::forecast`（新部件，可发布层）：SMA / EWMA / Holt（O(1) 流式）
+  预测与 mae/rmse/mape 指标（4 条单元测试）。
+- `examples/ddos_shield/`：三组件消融沙盘（合成流量，零网络 I/O）——静态
+  预算 / +Holt 预测自适应 / +QAT 学习分类器；campaign 归因聚类（源指纹
+  单链）。消融读数：静态对已知模式最优（零误杀），预测防阈值探测，学习
+  组件 v1 弱（如实入册）。
+- `examples/identity_lock/`：行为指纹锁定——50 探针符号向量 vs 发布基线，
+  EWMA 漂移监控超阈锁定：**真后门（输出层 30% 反转，字节合法+校验和重算）
+  与幻觉副本全部锁定，忠实副本零误杀，回滚逐位一致**——#495 行为级指纹
+  方向的实证。
+- 边界：campaign 归因是防御遥测标签（不做对真人定位/去匿名化）；无攻击
+  反制；P=NP 澄清见 `docs/WSP-SHIELD.md`。文档 `docs/WSP-SHIELD.md`。
+
+
 ### Added（三值红蓝共同进化：想法进化的多智能体机制落到三进制安全对抗）
 
 - `examples/evolution/`：PROTEUS 式五角色进化（PROMETHEUS 变异 / MOMUS 实测
