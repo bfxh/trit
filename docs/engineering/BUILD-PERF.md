@@ -82,8 +82,8 @@ PR 没碰任何 Rust 文件。落地改动（`.github/workflows/ci.yml`）：
 | nightly `-Zthreads` / `-Zshare-generics` | 观望 | 外部实测约 22.7%（[Depot](https://depot.dev/blog/guide-to-faster-rust-builds-in-ci)，未复现）；要求 nightly，与本仓 stable/MSRV 口径冲突 |
 | Cranelift 后端（dev 构建） | 未采纳 | 仍需 nightly 组件；外部报告在低层依赖上直接失败（同上来源） |
 | mold（Linux 链接器） | 不需要 | Linux 自 Rust 1.90 起默认 `rust-lld`（[Rust 官方博客](https://blog.rust-lang.org/2025/09/01/rust-lld-on-1.90.0-stable/)），再换收益边际 |
-| cargo-nextest（测试执行） | **已落地** | 跨二进制并行；本机热态 63.7s → 58.4s（2502 条测试，24 核），CI 见 §8 |
-| CI 上的 sccache（GHA 后端） | **已落地** | 路径固定 ⇒ 可命中；与 `rust-cache` 互补（target 缓存淘汰/换 feature 组合时兜底），CI 见 §8 |
+| cargo-nextest（测试执行） | **已落地**（读数见 §8） | 跨二进制并行；本机热态 63.7s → 58.4s（2502 条测试，24 核） |
+| CI 上的 sccache（GHA 后端） | **未生效**（只装了二进制，见 §8） | workflow 没设 `RUSTC_WRAPPER` / `SCCACHE_GHA_ENABLED`，日志 `Compile requests 0` |
 | 多 worktree 共享 target 目录 | 不推荐 | 锁竞争 + 指纹互相失效；实测跨目录 sccache 0 命中，共享目录也难两全 |
 
 ## 6. 复算命令

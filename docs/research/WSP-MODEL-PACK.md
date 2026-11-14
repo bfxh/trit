@@ -1,6 +1,6 @@
 # 整模型批量容器 WSPM
 
-状态：**已实现**（`wspm` 模块 + CLI `pack-model` / `unpack-model`）。
+状态：**已实现**（`crates/trit-wspace/src/wspm/mod.rs` + CLI `pack-model` / `unpack-model`）。
 把一个 WSP1 模型目录（`manifest.json` + `NNNN-<name>.wsp`，与
 `import-safetensors-dir` / `import-gguf` 的目录约定一致）打包成单个二进制文件，
 `unpack` 逐字节还原。此前整模型压缩只有单工件 `pack-artifact`，103 个张量要手工循环。
@@ -61,7 +61,7 @@ auto 选择把它排除在大多数张量之外。
 
 - `skipped`（导入报告）与原始 `source` 不进容器；重建 manifest 的 `source` 指向
   容器自身。WSPM 归档的是**权重空间**，不是导入报告。
-- blob 全量读入内存，没有流式/mmap；容器不支持按张量随机读（与 `read-block` 的
+- blob 全量读入内存，没有流式/mmap；容器不含按张量随机读（与 `read-block` 的
   WSP2 索引正交，未串联）。
 - `count` 上限 u32、张量名上限 u16 字节；名字唯一性在 pack/unpack 两端都校验。
 - 与 GGUF 的互操作未证（同 `docs/research/GGUF-TRIT.md`）；MCP 工具未接。

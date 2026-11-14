@@ -1,6 +1,6 @@
 # 学习式单点编辑提议器
 
-状态：**已实现**（`learned` 模块 + CLI `train-proposer` / `propose-learned`）。
+状态：**已实现**（`crates/trit-wspace/src/learned.rs` + CLI `train-proposer` / `propose-learned`）。
 这是“模型提议、库复核”里的模型一侧：**不调用外部模型**，只用工件本身与 oracle 输入
 统计训练一个 f32 线性打分器；调用方再用 `analyze` / `repair` 实测复核。
 

@@ -8,7 +8,7 @@
 |---|---|---|
 | f32 bias 的端到端收益 | `bias_e2e` 只用随机 `uniform(-1,1)` 输入，测 MiniLM 第 0 层线性三段；级联 cosine ~0.44 | tokenizer + 真实激活跑完整 6 层；在检索/分类任务上测 |
 | WSP4 的更大模型 | 只在 all-MiniLM-L6-v2（103 张量，5,985,699 B）上测；82.7% of WSP2 | 更大模型/GPU；不同稀疏度 |
-| DARE 块级重标度 | `dare` 已实现坐标/行/层/块丢弃与报告；块级重标度细节未证 | 在真实任务向量上对拍 |
+| DARE 块级重标度 | `dare` 覆盖坐标/行/层/块丢弃与报告（`crates/trit-wspace/src/dare.rs`）；块级重标度细节未证 | 在真实任务向量上对拍 |
 | 学习式提议器 | 4→8→1 随机网络 + 采样 oracle；单工件内留出编辑 | 跨任务/跨工件留出；真实任务 oracle |
 | 真实任务精度 | 本 crate 没有 MATH-500/检索等任务读数 | 接真实 f32 模型 → 三值权重 → 任务指标 |
 
@@ -27,7 +27,7 @@
 
 | 项 | 现状 | 补证 |
 |---|---|---|
-| tile 编辑 | 只支持矩形块、只改 trits；无跨层 copy/swap | 非矩形 mask；跨层搬运；tile 级 diff |
+| tile 编辑 | 只覆盖矩形块、只改 trits；无跨层 copy/swap | 非矩形 mask；跨层搬运；tile 级 diff |
 | 并发写锁 | advisory；只约束 CLI `run`；MCP 未接；跨主机/NFS 未证；stale 10 分钟 | MCP 接入；NFS 锁语义；长命令锁续期 |
 | 审计日志 | `patch --log` 追加模式；重复应用会产生重复条 | 幂等键/去重；并发追加锁已覆盖 CLI |
 

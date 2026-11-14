@@ -1,9 +1,9 @@
 # 从手工特征到梯度提议器
 
-状态：**路线 A 已实现**（`learned::gradient_scores` + CLI `propose-gradient`）；
+状态：**路线 A 已实现**（`crates/trit-wspace/src/learned.rs` 的 `gradient_scores` + CLI `propose-gradient`）；
 路线 B/C 仍为设计。
 
-## 1. 路线 A：梯度知情排序（已实现）
+## 1. 路线 A：梯度知情排序（已实现，`crates/trit-wspace/src/learned.rs`）
 
 对每个 oracle 样本做一次前向，再用 STE 反向传播：
 

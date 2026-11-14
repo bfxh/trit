@@ -25,7 +25,7 @@ repair(&student, &edit, &RepairOptions { max_edits: 1, beam_width: 1, .. })
 `147456 = 384×384`：`repair` 的束搜索会为候选克隆整个网络（147k trit），在
 384×384（或两层 1536×384 + 384×1536）上内存与时间都不可行。
 
-## 替代读数：`localize` 候选上界（已合并 #465）
+## 替代读数：`localize` 候选上界（已合并 PR #465）
 
 `editset_bound` 用 `localize` 两级定位把候选压到 8 行 × 32 trit = 132 个，再单点/双点验证
 （带 keep 检查）。真实读数：

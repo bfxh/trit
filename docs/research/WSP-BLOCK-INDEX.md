@@ -1,6 +1,6 @@
 # WSP2 块索引与随机访问
 
-状态：**已实现**（`wsp2::BlockIndex` + CLI `index-artifact` / `read-block`）。
+状态：**已实现**（`crates/trit-wspace/src/wsp2.rs` 的 `BlockIndex` + CLI `index-artifact` / `read-block`）。
 索引只记录层/行块偏移，不复制权重；WSP3/WSP4 是 WSP2 的外层压缩流，不能按块
 随机读，索引器会显式拒绝。
 

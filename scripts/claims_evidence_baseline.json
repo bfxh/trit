@@ -1,20 +1,15 @@
 {
  "README.md": 9,
+ "docs/plans/GENERAL-PLAN.md": 11,
+ "docs/plans/MULTI-CHIP.md": 10,
+ "docs/plans/VISUAL-PLAN.md": 2,
+ "docs/positioning/DESIGN.md": 2,
+ "docs/positioning/SCOPE.md": 1,
+ "docs/positioning/STATUS.md": 3,
  "docs/reference/CAPACITY.md": 1,
  "docs/reference/DATASETS.md": 1,
- "docs/positioning/DESIGN.md": 2,
- "docs/plans/GENERAL-PLAN.md": 11,
- "docs/results/LESSONS.md": 2,
  "docs/reference/MODEL-CARD.md": 3,
- "docs/plans/MULTI-CHIP.md": 10,
- "docs/positioning/SCOPE.md": 4,
- "docs/security/SECURITY-NET.md": 4,
- "docs/positioning/STATUS.md": 7,
  "docs/reference/TERNARY-TOOLCHAIN.md": 6,
  "docs/reference/TTX.md": 5,
- "docs/plans/VISUAL-PLAN.md": 2,
- "docs/review/gpu-unlock-2026-10-26.md": 4,
- "docs/review/self-audit-2026-10-28.md": 1,
- "docs/review/tensor-core-path-audit-2026-10-26.md": 1,
- "docs/review/trit-audit-2026-10-25.md": 3
+ "docs/results/LESSONS.md": 2
 }

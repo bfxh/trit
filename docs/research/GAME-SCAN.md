@@ -30,7 +30,7 @@
 
 - `True` = 通过；
 - `False` = 失败；
-- `Unknown` = 证据不足/能力缺失/几何不支持。
+- `Unknown` = 证据不足 / 缺能力 / 几何不覆盖。
 
 聚合使用 `&`（Kleene 合取）：任一 `False` 即失败；否则任一 `Unknown` 即未知；全部 `True` 才通过。
 这个映射避免把“没测到”当成“没问题”，也是后续 MCP/agent 输出必须保留的语义。
@@ -44,7 +44,7 @@
 - capsule-capsule；
 - sphere-box（OBB）；
 - capsule-box（slab 求交 + 三元搜索最近点）；
-- box-box（15 轴 OBB SAT，支持旋转）；
+- box-box（15 轴 OBB SAT，含旋转）；
 - trigger 默认跳过，layer/mask 双向匹配，disabled 跳过；
 - 输出 depth/normal/contact points，按深度分 Medium/High/Critical；
 - 非法 collider 或非均匀缩放 sphere/capsule 返回 `Unknown`，不伪造结果。

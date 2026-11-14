@@ -53,9 +53,9 @@
 | Uchida et al., arXiv:1701.03077 / DeepMarks, arXiv:1901.07744 | 权值水印 + z-test；三值可升级为 bit 精确校验。 |
 | IPGuard, USENIX Sec'19 / Conferrable Adv. Examples, arXiv:1912.01805 | 行为指纹/挑战集；本仓 audit 行为链已有底座。 |
 
-## 2. 对照本仓：已实现与缺口
+## 2. 对照本仓：实做与缺口
 
-已实现（技术树 L0–L7）：WSP1/2/3/4、块索引、tile、Patch/Journal/rebase/audit、Oracle、
+实做（技术树 L0–L7）：WSP1/2/3/4、块索引、tile、Patch/Journal/rebase/audit、Oracle、
 repair/propose/analyze/explain/probe/localize、merge/task/DARE、safetensors、GGUF、
 CLI/MCP、learned、gradient、写锁、GPU WF32、6 层读数。
 

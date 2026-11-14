@@ -33,7 +33,7 @@
 | `trit-sample` | `feat/ttx-sampler` | bfxh | 1 | no | `1ae6ac0 feat(gpu): 光栅管线——顶点/片元/深度全在 GPU，片元自己从 dpdx 选 LOD` |
 | `trit-sweep` | `feat/registry-sweep` | bfxh | 21 | no | `bf1927c Merge remote-tracking branch 'origin/main' into feat/registry-` |
 
-共 27 个 worktree。2026-11-10 治理：移除已合并且干净的 trit-codec-pad / trit-neuro / trit-ops / trit-netsec / trit-re-cfg 及临时目录下两个 detached 副本；yan/* 分支全部改名或删除（PR 证据见各合并 PR）。
+共 27 个 worktree。2026-11-10 治理：移除合并且干净的 trit-codec-pad / trit-neuro / trit-ops / trit-netsec / trit-re-cfg 及临时目录下两个 detached 副本；yan/* 分支全部改名或删除（PR 证据见各合并 PR）。
 
 ## 相邻副本（2 个 submodule）
 
@@ -54,7 +54,7 @@ python scripts/release_preflight.py --out target/release-manifest.json --artifac
 
 ## 清理候选（clean + 已并入 main）
 
-（2026-11-10 已清：trit-netsec / trit-re-cfg / trit-codec-pad / trit-neuro / trit-ops；当前无 clean 已合候选。）
+（2026-11-10 已清：trit-netsec / trit-re-cfg / trit-codec-pad / trit-neuro / trit-ops；当前无干净可回收候选。）
 
 ## 脏工作区（先由负责人处理）
 

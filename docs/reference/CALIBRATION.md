@@ -39,7 +39,7 @@ python scripts/yara_diff.py --trit <trit-re.exe> --rules <规则.yar> \
 
 四态输出：`MATCH`（一致）/ `DIFF`（**真差异——要修**）/ `SUBSET-GAP`
 （trit-re 未评估的子集边界，不算失败）/ `OFFICIAL-ERR`（官方引擎侧错误）。
-真 DIFF 退出码 1。已验证：合成批次 MATCH 6 / DIFF 0。
+真 DIFF 退出码 1。实测：合成批次 MATCH 6 / DIFF 0。
 
 **pe.* 模块子集对拍（2026-11-12）**：N1 两 PE 象限 24 真样本 × 93 规则
 （`pe_rules.yar`：子集标量每属性一条全局规则 + 每样本 entry_point/timestamp/
@@ -65,7 +65,7 @@ ARM64 各一批；记录每个样本的 sha256；人工复核 xref 误报/漏报
 | 记录 sha256 | `samples_manifest.tsv`（triage JSONL 的 file 行） | — |
 | 人工复核误报/漏报 | `review_worksheet.tsv`（每 judgment 一行，值/证据带出） | 填 `human_verdict`/`reason` 两列 |
 | 给出比例 | 工作表回填后可复算（误报行/总行） | — |
-| ARM64 非合成批次 | triage 支持（N1-ARM64-CALIBRATION.md） | 样本批次里混入 ARM64 样本即可 |
+| ARM64 非合成批次 | triage 覆盖 ARM64（`docs/reference/N1-ARM64-CALIBRATION.md`） | 样本批次里混入 ARM64 样本即可 |
 
 ## 五、产线读数（跑完批次后记录在这里）
 

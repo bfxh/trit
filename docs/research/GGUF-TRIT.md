@@ -1,6 +1,6 @@
 # 三值权重 GGUF 容器（`trit-export`）
 
-状态：**已实现**（ops 层）。只覆盖读写三值 2D 张量所需的最小 GGUF v3 子集，
+状态：**已实现**（`crates/trit-export/src/lib.rs`，ops 层）。只覆盖读写三值 2D 张量所需的最小 GGUF v3 子集，
 不是上游 GGUF 的完整实现；未知类型/非 2D/非三值张量一律显式报错。
 
 ## 1. 文件布局（小端）
@@ -14,8 +14,8 @@ data: 每个张量按 offset（相对 data 起点）写入，张量之间按 32 
 ```
 
 - `string` = `u64` 长度 + UTF-8 字节（与 GGUF 规范一致）。
-- 元数据只支持 `u32`(4) / `f32`(6) / `string`(8)；其他类型报 `MetaType`。
-- 张量只支持 2D，`dims = [cols, rows]`（`ne[0] = cols`，与 GGML 的连续维口径一致）。
+- 元数据只认 `u32`(4) / `f32`(6) / `string`(8)；其他类型报 `MetaType`。
+- 张量只处理 2D，`dims = [cols, rows]`（`ne[0] = cols`，与 GGML 的连续维口径一致）。
 
 ## 2. 三值张量类型 `TYPE_TRIT = 100`
 
