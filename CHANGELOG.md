@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+### Changed（构建瘦身：收窄补缺口、GPU 冒烟并行、调试信息减重、回收连外置 target）
+
+- `scripts/ci_scope.py`：`scripts/**` 不参与 Rust 编译，归不到 crate 时略过、不再拖全量；抽样 40 个
+  已合并 PR，全量 36 → 4（按 crate 收窄 30、整段跳过 Rust 6）。守卫 `rust_reads`：crate 源码或清单
+  一旦引用 `scripts/`（注释除外），该次运行退回全量并点名文件:行号。MSRV job 用同一把尺子收窄。
+- CI：trit-gpu 的 1×1×1 shader 冒烟在 Clippy 后当场编好、后台运行，job 末尾「— wait」收结果
+  （编译错误当场判红，后台进程失踪 20 分钟超时判红）；补上全量兜底漏设的 `needs_build_gpu`
+  （#376 起 push main 一直跳过 trit-build 的 GPU 测试与 clippy）。
+- 根 `Cargo.toml`：`[profile.dev] debug = "line-tables-only"`、依赖 `debug = false`；断言/溢出检查/
+  优化等级不变。本机 `cargo test -p trit-wspace --no-run`：target 4362 → 2184 MB，测试二进制
+  2227 → 1094 MB，墙钟约 39s → 26s；读数见 `docs/BUILD-PERF.md` §10。
+- `scripts/worktree_guard.py --apply` 连带删除同名、未共用、在树外的外置 target，按 git 顶层与
+  主工作树保护；`scripts/gitflow.py worktree add` 新建前自动回收（`TRIT_NO_AUTO_RECLAIM=1` 关闭）；
+  自测接进 CI 的 recovery job。
+- 未证栏：GPU 后台化的 CI 收益是预估（约 516s → 390–400s），以本 PR 的 CI 读数为准；
+  调试信息读数只测了 trit-wspace 一个 crate 的测试构建。
+
+
 ### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）
 
 - `examples/adversarial_train/`：AB 循环——红方进化攻击（行基因组整行置零）
