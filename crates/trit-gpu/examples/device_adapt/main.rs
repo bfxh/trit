@@ -16,17 +16,24 @@
 //! ```
 //!
 //! 每行一个 JSON：`anchor` / `calibration` / `plan_wins` / `train` / `eval` / `final`。
+//!
+//! `--profile <json>`：消费 `device_calibrate` 的实测档案；用实测标签重训策略
+//! （真机评估为 in-sample，合成留出另列）。
 
 mod device;
+mod measured;
 mod plan;
 mod policy;
+mod profile_run;
+mod report;
 
 use serde_json::json;
 use trit_bench::SeedRng;
 
-use device::{Device, DeviceClass, anchors, perturb, sample_device};
-use plan::{PLAN_COUNT, Plan, PlanKind, Shape, index_of, oracle, plans};
+use device::{Device, DeviceClass, anchors, sample_device};
+use plan::{PLAN_COUNT, Plan, PlanKind, Shape, index_of, plans};
 use policy::{Fixed, Heuristic, Learned, Oracle, RandomChooser};
+use report::{evaluate, perturb_devices, plan_wins, print_eval, print_worst, round3};
 
 const TRAIN_SHAPES: [Shape; 8] = [
     Shape::new(64, 64, 64),
@@ -57,6 +64,8 @@ struct Args {
     epochs: usize,
     hidden: usize,
     noise: f64,
+    profile: Option<String>,
+    profile_repeats: usize,
 }
 
 fn parse_args() -> Args {
@@ -67,6 +76,8 @@ fn parse_args() -> Args {
         epochs: 120,
         hidden: 32,
         noise: 0.10,
+        profile: None,
+        profile_repeats: 256,
     };
     let mut argv = std::env::args().skip(1);
     while let Some(arg) = argv.next() {
@@ -95,6 +106,14 @@ fn parse_args() -> Args {
             "--noise" => {
                 args.noise = argv.next().expect("noise").parse().expect("noise");
             }
+            "--profile" => args.profile = Some(argv.next().expect("profile")),
+            "--profile-repeats" => {
+                args.profile_repeats = argv
+                    .next()
+                    .expect("profile-repeats")
+                    .parse()
+                    .expect("profile-repeats");
+            }
             other => panic!("未知参数 {other}"),
         }
     }
@@ -102,154 +121,6 @@ fn parse_args() -> Args {
     assert!(args.epochs > 0 && args.hidden > 0);
     assert!((0.0..1.0).contains(&args.noise));
     args
-}
-
-fn round3(value: f64) -> f64 {
-    (value * 1000.0).round() / 1000.0
-}
-
-fn perturb_devices(devices: &[Device], seed: u64, noise: f64) -> Vec<Device> {
-    let mut rng = SeedRng::new(seed);
-    devices
-        .iter()
-        .map(|device| perturb(device, &mut rng, noise))
-        .collect()
-}
-
-fn plan_wins(devices: &[Device], shapes: &[Shape], plans: &[Plan]) -> [usize; PLAN_COUNT] {
-    let mut counts = [0usize; PLAN_COUNT];
-    for device in devices {
-        for &shape in shapes {
-            counts[oracle(plans, device, shape).0] += 1;
-        }
-    }
-    counts
-}
-
-struct Metrics {
-    mean: f64,
-    median: f64,
-    p90: f64,
-    exact: f64,
-    within10: f64,
-    by_class: [f64; 3],
-}
-
-fn evaluate(
-    chooser: &mut dyn policy::Chooser,
-    devices: &[Device],
-    shapes: &[Shape],
-    plans: &[Plan],
-) -> Metrics {
-    let mut ratios = Vec::with_capacity(devices.len() * shapes.len());
-    let mut exact = 0usize;
-    let mut within10 = 0usize;
-    let mut class_sum = [0.0f64; 3];
-    let mut class_count = [0usize; 3];
-    for device in devices {
-        for &shape in shapes {
-            let (_, oracle_latency) = oracle(plans, device, shape);
-            let chosen = chooser.choose(device, shape, plans);
-            let chosen_latency = plans[chosen]
-                .latency(device, shape)
-                .unwrap_or(f64::INFINITY);
-            let ratio = chosen_latency / oracle_latency;
-            ratios.push(ratio);
-            if ratio <= 1.0 + 1e-9 {
-                exact += 1;
-            }
-            if ratio <= 1.10 {
-                within10 += 1;
-            }
-            let class = device.class.index();
-            class_sum[class] += ratio;
-            class_count[class] += 1;
-        }
-    }
-    let total = ratios.len().max(1) as f64;
-    let mean = ratios.iter().sum::<f64>() / total;
-    let mut sorted = ratios;
-    sorted.sort_by(|a, b| a.partial_cmp(b).expect("有限比值"));
-    let median = sorted[sorted.len() / 2];
-    let p90 = sorted[(sorted.len() * 9 / 10).min(sorted.len() - 1)];
-    Metrics {
-        mean,
-        median,
-        p90,
-        exact: exact as f64 / total,
-        within10: within10 as f64 / total,
-        by_class: [
-            class_sum[0] / class_count[0].max(1) as f64,
-            class_sum[1] / class_count[1].max(1) as f64,
-            class_sum[2] / class_count[2].max(1) as f64,
-        ],
-    }
-}
-
-fn print_eval(policy_name: &str, condition: &str, metrics: &Metrics) {
-    println!(
-        "{}",
-        json!({
-            "stage": "eval",
-            "policy": policy_name,
-            "condition": condition,
-            "mean_ratio": round3(metrics.mean),
-            "median_ratio": round3(metrics.median),
-            "p90_ratio": round3(metrics.p90),
-            "exact": round3(metrics.exact),
-            "within_10": round3(metrics.within10),
-            "by_class": {
-                "cpu": round3(metrics.by_class[0]),
-                "gpu": round3(metrics.by_class[1]),
-                "npu": round3(metrics.by_class[2]),
-            },
-        })
-    );
-}
-
-/// 最差样本：给「均值被少数 GPU 选错计划拉高」这类读数一个可解释的出口。
-fn print_worst(
-    policy_name: &str,
-    condition: &str,
-    chooser: &mut dyn policy::Chooser,
-    devices: &[Device],
-    shapes: &[Shape],
-    plans: &[Plan],
-    limit: usize,
-) {
-    let mut rows = Vec::new();
-    for device in devices {
-        for &shape in shapes {
-            let (oracle_index, oracle_latency) = oracle(plans, device, shape);
-            let chosen = chooser.choose(device, shape, plans);
-            let chosen_latency = plans[chosen]
-                .latency(device, shape)
-                .unwrap_or(f64::INFINITY);
-            rows.push((
-                chosen_latency / oracle_latency,
-                device.name.clone(),
-                shape.label(),
-                plans[chosen].kind.name().to_string(),
-                plans[oracle_index].kind.name().to_string(),
-            ));
-        }
-    }
-    rows.sort_by(|a, b| b.0.partial_cmp(&a.0).expect("有限比值"));
-    for (ratio, device, shape, chosen, best) in rows.into_iter().take(limit) {
-        println!(
-            "{}",
-            json!({
-                "stage": "worst",
-                "policy": policy_name,
-                "condition": condition,
-                "ratio": round3(ratio),
-                "device": device,
-                "shape": shape,
-                "chosen": chosen,
-                "oracle": best,
-            })
-        );
-    }
 }
 
 fn print_anchors() {
@@ -318,7 +189,20 @@ fn main() {
             train_devices.push(sample_device(class, &mut train_rng, serial));
         }
     }
-    let anchor_devices = anchors();
+    let measured_profile = args.profile.as_deref().map(measured::MeasuredProfile::load);
+    let mut anchor_devices = anchors();
+    if let Some(profile) = &measured_profile {
+        println!(
+            "{}",
+            json!({
+                "stage": "external_profile",
+                "device": profile.device.name,
+                "measured_shapes": profile.shapes.len(),
+                "sources": profile.sources,
+            })
+        );
+        anchor_devices.push(profile.device.clone());
+    }
     let mut sampled_test_devices = Vec::new();
     for class in DeviceClass::all() {
         for serial in 0..args.test_per_class {
@@ -469,6 +353,22 @@ fn main() {
                 3,
             );
         }
+    }
+
+    if let Some(profile) = &measured_profile {
+        profile_run::run(profile_run::Inputs {
+            profile,
+            plans: &plans,
+            fixed_plans,
+            train_shapes: &TRAIN_SHAPES,
+            test_devices: &sampled_test_devices,
+            clean_samples: &clean_samples,
+            clean_policy: &mut clean_policy,
+            seed: args.seed,
+            epochs: args.epochs,
+            hidden: args.hidden,
+            repeats: args.profile_repeats,
+        });
     }
 
     println!(

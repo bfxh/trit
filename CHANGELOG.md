@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+### Added（trit-gpu：实测档案重训 + 小形状拟合 + CPU/NPU 完整计划延迟）
+
+- `device_calibrate --out` 现在写 `{device, shapes, sources}` 实测档案；
+  `device_adapt --profile <json>` 消费它并用实测标签重训（`--profile-repeats`，
+  默认 256）。repeats 16/64 时策略仍选 reg，256 才学会真机 split-K：
+  真机 4 形状 **in-sample** learned_profile **1.000 / exact 1.0**；
+  合成留出 clean 1.006 → profile 1.020（exact 0.958→0.927，小幅代价）。
+- 小形状拟合：GPU launch/occupancy 网格搜索（拟合 3 形状、留出瘦长形状）
+  launch **12µs**、occupancy 1.0，留出误差 **0.326→0.265**；320³ 保真
+  0.44→0.91，校准/768³ 略变差（1.06→1.13 / 1.23→1.32）。
+- CPU 完整计划延迟（24 线程真实 matmul）：512×4096×512 上 cpu_u64
+  **6.858ms** / cpu_simd 15.319ms；效率 u64=1.0、simd=0.448——当前 SIMD
+  实现反而更慢（popcnt backend + 每 dot 4 次调用）；CPU 小形状仍低估。
+- NPU：本机/本仓无 NPU 后端，只输出明确 `measured=false` 的模型值，
+  不当性能结论。
+- 边界：真机重训是单机 4 形状 in-sample；CPU/NPU 未做真机 NPU、多机迁移。
+
 ### Added（trit-gpu：真实设备校准——本机 RTX 4060 Ti + CPU 实测档案）
 
 - `crates/trit-gpu/examples/device_calibrate.rs`（`--features gpu`）：CPU 侧测

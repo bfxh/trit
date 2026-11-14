@@ -899,12 +899,28 @@
       "lines": 188
     },
     {
+      "file": "crates/trit-gpu/examples/device_adapt/cpu_measure.rs",
+      "lines": 259
+    },
+    {
       "file": "crates/trit-gpu/examples/device_adapt/device.rs",
       "lines": 275
     },
     {
+      "file": "crates/trit-gpu/examples/device_adapt/fit.rs",
+      "lines": 81
+    },
+    {
       "file": "crates/trit-gpu/examples/device_adapt/main.rs",
-      "lines": 494
+      "lines": 394
+    },
+    {
+      "file": "crates/trit-gpu/examples/device_adapt/measured.rs",
+      "lines": 78
+    },
+    {
+      "file": "crates/trit-gpu/examples/device_adapt/npu_sim.rs",
+      "lines": 42
     },
     {
       "file": "crates/trit-gpu/examples/device_adapt/plan.rs",
@@ -915,8 +931,16 @@
       "lines": 343
     },
     {
+      "file": "crates/trit-gpu/examples/device_adapt/profile_run.rs",
+      "lines": 176
+    },
+    {
+      "file": "crates/trit-gpu/examples/device_adapt/report.rs",
+      "lines": 253
+    },
+    {
       "file": "crates/trit-gpu/examples/device_calibrate.rs",
-      "lines": 710
+      "lines": 654
     },
     {
       "file": "crates/trit-gpu/examples/render_scene_gpu.rs",
