@@ -3023,6 +3023,10 @@
       "lines": 214
     },
     {
+      "file": "crates/trit-wspace/examples/classifier_layers.rs",
+      "lines": 206
+    },
+    {
       "file": "crates/trit-wspace/examples/classifier_probe.rs",
       "lines": 132
     },
