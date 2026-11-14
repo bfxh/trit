@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added（`grouped_invariant`：更粗粒度的判等不变量——**逐行正比例**）
+
+- 新模块 `crates/trit-wspace/src/grouped_invariant.rs`：`row_proportional` /
+  `globally_proportional`。
+- 核心命题：**若存在 `k_r > 0` 使 `W_B[r,:] = k_r · W_A[r,:]`（逐行正比例），则两层的
+  符号行为完全相同**。代价是 `O(rows×cols)`——比 `behavior` 的 `3^vars` 便宜得多，
+  也比 `canonical()` 更粗（后者要求 trits+groups 全等）。
+- **它统一解释了两种结构的差异**：
+
+  | 结构 | 改动 | 是否逐行比例 | 结论 |
+  |---|---|---|---|
+  | `Layer`（每行一个 scale） | 改某行 scale | **是** | scale 可忽略 |
+  | `GroupedLayer`（跨行分组） | 改某组 scale | **一般不是** | scale 必须固定 |
+
+- 所以"分组破坏判等不变性"不是分组的怪癖，而是：**分组让可用的 scale 自由度不再对齐到行**。
+- `tests/grouped_invariant.rs`（7 个测试）：整体缩放逐行同比例、per-row 缩放比例逐行不同、
+  **跨行分组对调 scale 后不成比例**、**比例存在 ⇒ `behavior` 相同**（性质测试，9 组 `k`
+  组合逐一验证）、零不能按比例变非零、负比例被拒、形状不同返回 None。
+- 边界：这是**充分条件不是充要条件**——两层行为相同也可能既不成比例、又不共享
+  `trits+groups+scales`；严格判等仍用 `behavior`。
+
 ### Added（闭环验证：存→读→行为不变成立，但 WSP1G 实测 **0.75× 负压缩**）
 
 - 新示例 `examples/classifier_sts_wspg.rs`：把 MiniLM 6 层的 36 个线性权重量化成
