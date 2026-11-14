@@ -156,7 +156,9 @@ gh api repos/bfxh/trit/actions/runs/<run-id>/jobs --jq '.jobs[] | {name, started
 （抽样 PR 263s，是该 job 516s 里最长的一段），和 nextest/doctest/clippy 互不依赖。改成两步：
 Clippy 之后当场 `--no-run` 编好（编译错误当场判红），用例放后台跑；job 末尾「— wait」打印完整
 日志、按退出码判红（后台进程失踪靠 20 分钟超时判红）。fmt/clippy 的快速失败不受影响。
-预估 Windows job 约 516s → 390–400s，以本次 PR 自己的 CI 读数为准。
+引入它的 PR（#502）首轮 CI 实测：Windows job 528s（main 最近 6 次合并后全量 583–751s，常态约 600s）；
+冒烟在关键路径上只剩「— start」46s + 「— wait」51s = 97s（原来串行 272–375s），后台期间
+nextest 217s（main 188–242s），没有被明显拖慢。
 顺手修复：全量兜底分支漏设 `needs_build_gpu`（#376 引入），push main 时 trit-build 的
 GPU 测试与 clippy 一直被跳过；现在补上（只会多跑）。
 
