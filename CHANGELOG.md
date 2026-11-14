@@ -2,6 +2,34 @@
 
 ## [Unreleased]
 
+### Added（`classifier_sts_sweep`：配置驱动 + 特征缓存 + 参数网格——改参数从"重跑 20 分钟"到秒级）
+
+- 新示例 `examples/classifier_sts_sweep.rs`：缓存 **layer 0–4 的 token 级输出**（约 51 MB），
+  网格只作用于最后一层。配置支持 `key=value` 文件（`--config`）+ 命令行覆盖，不引入新依赖
+  （仓库只有 `serde_json`）。
+- **先说清缓存边界**：只在**冻结层不变**时有效——训练最后一层、只量化最后一层、采样率变化
+  都能复用；**全 6 层量化与剪头每层权重都变，不能缓存**。
+- **实测**（300 对）：
+
+  | 运行 | `cache_hit` | 耗时 |
+  |---|---|---|
+  | 首次（提取特征） | false | 25.6 s |
+  | 第二次（命中 + group 网格） | **true** | **17.0 s** |
+
+- **网格读数**（只量化 layer 5，2000/1000 次重采样）：
+
+  | 配置 | Spearman | 相对 baseline |
+  |---|---|---|
+  | baseline (f32) | 0.933742（CI95 0.9144–0.9462） | — |
+  | layer5 ternary group64 | 0.933643 | −0.0001 |
+  | layer5 ternary group128 | 0.933581 | −0.0002 |
+  | layer5 ternary group256 | 0.933509 | −0.0002 |
+
+- 只量化最后一层的影响（−0.0002）比全 6 层（−0.0009）更小；且这些差异**远小于 CI 半宽
+  （约 1.6 个点）**，统计上不显著。
+- 修掉一个解析 bug：`--grid group=64,128,256` 原先被当成 `key="grid"` 静默忽略（网格一行
+  都没跑），现在正确剥出内层 `group=...`。
+
 ### Added（`stats` + `classifier_sts_significance`：单点读数配上置信区间——**差异不显著**）
 
 - 新模块 `stats`：`spearman` / `bootstrap_spearman_ci`（percentile bootstrap）/
