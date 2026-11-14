@@ -2960,7 +2960,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/artifact_guard/main.rs",
-      "lines": 268
+      "lines": 261
     },
     {
       "file": "crates/trit-wspace/examples/artifact_guard/metrics.rs",
@@ -3013,6 +3013,14 @@
     {
       "file": "crates/trit-wspace/examples/editset_sts.rs",
       "lines": 189
+    },
+    {
+      "file": "crates/trit-wspace/examples/evolution/main.rs",
+      "lines": 470
+    },
+    {
+      "file": "crates/trit-wspace/examples/evolution/metrics.rs",
+      "lines": 173
     },
     {
       "file": "crates/trit-wspace/examples/program_xor.rs",
@@ -3500,7 +3508,7 @@
     },
     {
       "file": "crates/trit-wspace/tests/redteam_semantics.rs",
-      "lines": 226
+      "lines": 222
     },
     {
       "file": "crates/trit-wspace/tests/repair_keep.rs",
