@@ -3523,6 +3523,10 @@
       "lines": 214
     },
     {
+      "file": "crates/trit-wspace/src/grouped_codec.rs",
+      "lines": 183
+    },
+    {
       "file": "crates/trit-wspace/src/grouped_equal.rs",
       "lines": 136
     },
@@ -3905,6 +3909,10 @@
     {
       "file": "crates/trit-wspace/tests/grouped.rs",
       "lines": 115
+    },
+    {
+      "file": "crates/trit-wspace/tests/grouped_codec.rs",
+      "lines": 136
     },
     {
       "file": "crates/trit-wspace/tests/grouped_equal.rs",

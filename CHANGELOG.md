@@ -2,6 +2,28 @@
 
 ## [Unreleased]
 
+### Added（`grouped_codec`：WSP1G 文本格式——**实测压缩率只有 1.13×**）
+
+- 新模块 `crates/trit-wspace/src/grouped_codec.rs`：`to_wspg` / `from_wspg` / `checksum`，
+  是 `wsp1` 的扩展，额外落盘**每元素组号**与**每组一个 scale**。
+- **实测字节数**（64×64、group=256）：
+
+  | 表示 | 字节 | 相对 f32 |
+  |---|---|---|
+  | f32（二进制） | 16384 | 1× |
+  | `wsp1g`（分组三值，文本） | **14544** | **1.13×** |
+
+  其中 trit 本体只占 4096 B，**其余全是组号**（每元素 2–3 个字符）与头部。
+- 更小的张量（8×8）下更是 **0.76×**——比 f32 还大，头部开销完全主导。
+- **结论**：`wsp1` 的定位是"可 diff、可复算、可校验，**不是紧凑**"（模块 doc 第一行原话）。
+  三值的"16×（理论位宽）/ 2.4×（二进制 + 组号）"落到**可读文本**后只有 **1.13×**，小张量
+  甚至负压缩。**"三值省存储"在文本格式下不成立**，它省的是"可验证性"的代价，不是字节。
+- **修掉一个真 bug**：`from_wspg` 原来用 `parse::<u64>()` 解析 `{:016x}` 的校验和——
+  含字母必失败，且被 `.ok()` 静默吞掉 ⇒ **校验功能整个失效**（篡改检不出）。改用
+  `u64::from_str_radix(.., 16)`，由 `checksum_detects_single_trit_change` 锁住。
+- `tests/grouped_codec.rs`（8 个测试）：往返逐位一致、**校验和检出单 trit 篡改**、校验和稳定、
+  **实测压缩率**、三值文本上限、魔数/非法字符拒绝、解码后仍是三值。
+
 ### Added（`grouped_oracle`：把 GroupedLayer 接进 Oracle 的采样路径）
 
 - 新模块 `crates/trit-wspace/src/grouped_oracle.rs`：给 `GroupedLayer` 加
