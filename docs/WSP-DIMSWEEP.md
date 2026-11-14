@@ -1076,6 +1076,30 @@ MiniLM-L6 六层真实权重依次堆叠，每层输出做闭式岭回归（768/
   `F32Attention` 忽略 attention bias；无 position embedding；任务是合成"线性投影 + 分位"。
   这些简化都会削弱深层相对浅层的优势，所以"深层更差"不能直接推广到真实 BERT 推理。
 
+### 真实 STS 语料：深层终于有增益（`classifier_sts`）
+
+**语料获取**（此前"读十二"失败的真因）：本地 `datasets--mteb--stsbenchmark-sts` 的 blob
+是 **0 字节空占位**；HF 直连 **429 限速**（要 token）；爱丁堡官方源 DNS 不通；
+`hf-mirror.com` 镜像可用 → 拿到 train 5749 / dev 1500 / test 1379 对真实 STS 数据。
+
+**方法**：basic tokenizer + 标准 WordPiece（vocab 30522、unk_rate 0.0002、平均 10.62 token），
+句向量 = token 平均；指标 = Spearman(cosine, 人类 0–5 分)。
+
+test 全量 1379 对：
+
+| 读出 | Spearman |
+|---|---|
+| `raw`（词向量平均） | 0.5621 |
+| `layer 0` | 0.5509 |
+| **`layer 5`** | **0.6157** |
+
+- **深层比 raw 高 5.4 个点**，与合成任务上"随深度下降"完全相反。
+- 于是前面七轮负结果的解读要修正：问题在**合成任务与预训练表示不匹配**，
+  不在这一层有没有表征能力。
+- 边界：无 [CLS]/[SEP]、无 position embedding、单层、token 平均、未微调 ⇒ 绝对值 0.62
+  远低于官方 MiniLM（约 0.82）；但同一流水线内三方对比有效。
+- 数据不入库：示例要 <model.safetensors> <vocab.txt> <test.tsv> 三个外部输入。
+
 ## 结论
 
 - k≥4 全部落在 **0.45–0.49**，不随 k 单调改善；**全维（k=384）也只有 0.4766**。

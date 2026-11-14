@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：`classifier_sts` 真实 STS 语料——深层终于有增益）
+
+- 找到并跑通**真实标注语料**：STS Benchmark（train 5749 / dev 1500 / test 1379 对，人类
+  0–5 相似度）。此前"读十二"没跑成的真因查明：本地 HF 缓存里
+  `datasets--mteb--stsbenchmark-sts` 的 blob 是 **0 字节空占位**；HF 直连返回 **429 限速**
+  （要 token），爱丁堡官方源 DNS 不通，最终从 `hf-mirror.com` 镜像拿到数据。
+- 新示例 `examples/classifier_sts.rs`：basic tokenizer + 标准 greedy longest-match
+  WordPiece（vocab 30522、`unk_rate` 0.0002、平均 10.62 token/句），句向量取 token 平均，
+  指标用 STS 标准的 **Spearman(cosine, gold score)**。
+- test 全量 1379 对读数：
+
+  | 读出 | Spearman |
+  |---|---|
+  | `raw`（词向量平均） | 0.5621 |
+  | `layer 0` | 0.5509 |
+  | **`layer 5`** | **0.6157** |
+
+- **真实任务上深层有 +5.4 个点增益**（0.6157 vs 0.5621），与合成任务的"随深度下降"相反。
+  因此此前七轮负结果应归因于**合成任务（线性投影 + 分位）与预训练表示不匹配**，
+  而不是"这一层没有表征能力"。这条修正了前几轮的解读边界。
+- 边界：没有 [CLS]/[SEP]、没有 position embedding、单层（不是 6 层堆叠）、token 平均
+  而非 CLS 池化、未做对比学习微调 ⇒ 绝对水平 0.62 远低于官方 MiniLM 的 STS 表现（约 0.82），
+  但**同一条流水线内的对比（raw / layer0 / layer5）是有效的**。
+- 数据不在仓库内：示例需要 <model.safetensors> <vocab.txt> <test.tsv> 三个外部输入。
+
 ### Changed（逐层线性探针：可解码性随深度**下降**，堆层救不了）
 
 - 新示例 `classifier_layers`：把 MiniLM-L6 的 6 层**真实权重**依次堆叠，对每层输出做
