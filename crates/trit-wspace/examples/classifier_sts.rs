@@ -301,7 +301,7 @@ fn main() {
     }
 
     // 逐层：句内 self-attention 后取平均。
-    for layer in [0usize, 5] {
+    for layer in 0..6 {
         let block = load_layer(&model, layer, dim);
         let predicted: Vec<f64> = encoded
             .iter()
