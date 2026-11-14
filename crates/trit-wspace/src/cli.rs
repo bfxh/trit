@@ -44,6 +44,7 @@ mod cli_script;
 mod cli_task;
 mod cli_trace;
 mod cli_verify;
+mod cli_watermark;
 mod cli_wsp2;
 mod fsutil;
 mod lock;
@@ -70,6 +71,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
     match command {
         "read" => cli_read::read(&args[1..]),
         "verify" => cli_verify::verify_cmd(&args[1..]),
+        "watermark" => cli_watermark::watermark(&args[1..]),
         "capability" => cli_capability::capability_cmd(&args[1..]),
         "scan" => cli_scan::scan_cmd(&args[1..]),
         "causal-trace" => cli_causal_trace::causal_trace(&args[1..]),
@@ -196,7 +198,6 @@ fn cmd_transplant(args: &[String]) -> Result<(), String> {
         sources.push(oracle);
     }
     no_double_stdin(&sources)?;
-
     let dest = load_net(path)?;
     let source = load_net(from)?;
     let patch = crate::transplant::transplant_units(&source, &dest, layer, &rows).map_err(err)?;
@@ -229,7 +230,6 @@ fn cmd_transplant(args: &[String]) -> Result<(), String> {
     }
     emit(&output)
 }
-
 fn cmd_dare_drop(args: &[String]) -> Result<(), String> {
     let parsed = parse(
         args,

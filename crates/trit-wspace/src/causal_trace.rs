@@ -108,9 +108,9 @@ fn rebuild(net: &Net, keep: impl Fn(usize, usize, usize) -> bool) -> Result<Net>
             }
         }
         let mut bias = vec![0i8; rows];
-        for row in 0..rows {
+        for (row, slot) in bias.iter_mut().enumerate() {
             if keep(index, row, usize::MAX) {
-                bias[row] = layer.bias().get(row).map_or(0, |trit| trit.to_i8());
+                *slot = layer.bias().get(row).map_or(0, |trit| trit.to_i8());
             }
         }
         layers.push(Layer::with_scales(

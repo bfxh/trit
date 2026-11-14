@@ -3491,6 +3491,10 @@
       "lines": 27
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_watermark.rs",
+      "lines": 90
+    },
+    {
       "file": "crates/trit-wspace/src/cli/cli_wsp2.rs",
       "lines": 36
     },
@@ -3825,6 +3829,10 @@
     {
       "file": "crates/trit-wspace/src/tune.rs",
       "lines": 362
+    },
+    {
+      "file": "crates/trit-wspace/src/watermark.rs",
+      "lines": 197
     },
     {
       "file": "crates/trit-wspace/src/wire/compose.rs",
@@ -4233,6 +4241,10 @@
     {
       "file": "crates/trit-wspace/tests/trit_train_artifacts.rs",
       "lines": 36
+    },
+    {
+      "file": "crates/trit-wspace/tests/watermark.rs",
+      "lines": 84
     },
     {
       "file": "crates/trit-wspace/tests/wire.rs",

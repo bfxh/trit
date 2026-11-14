@@ -17,8 +17,8 @@ trit-wspace <command>
   explain <artifact|-> --oracle <json|-> --sample N [--top K]  inventory <artifact|->  attribute <artifact|-> --oracle <json|-> [--mode flip|zero] [--layer N] [--row N] [--max-params N] [--top K]  impact <artifact|-> --oracle <json|-> (--edits <json|-> | --group row|layer --layer N [--row N] [--mode flip|zero])  repair-exhaustive <artifact|-> --oracle <json|-> [--max-edits 1|2] [--max-pairs N]
   probe <artifact|-> --oracle <json|-> [--budget N] [--top K] [--adaptive]  diagnose <artifact|-> --oracle <json|-> [--budget N] [--top K] [--max-edits N] [--beam-width N]
   localize <artifact|-> --oracle <json|-> [--rows K] [--row-budget N] [--max-trits N] [--top-trits K]
-  audit <log|-> [--artifact <initial|->]
-  shard <log|-> --size N --out <dir>
+  audit <log|-> [--artifact <initial|->] | shard <log|-> --size N --out <dir>
+  watermark embed <artifact|-> --oracle <json|-> --message <hex> | watermark extract <artifact|-> --positions <json|->
   audit-shards <dir> [--artifact <initial|->] [--out <path>] [--manifest <path>] [--resume <checkpoint>] [--checkpoint-every N --checkpoint-dir D]
   replay <log|-> --artifact <initial|-> [--out <path>]
   merge <a|-> <b|-> [--aligned] [--out <path>]
