@@ -64,6 +64,50 @@
 | 各项目仓（生产链） | 把底座接到该产品：数据、评测协议的产品侧口径、上线与回滚 | 重复实现底座算子/算法 |
 | 本地 `_handoff/`、笔记 | 会话之间的状态与排期 | 不作为对外文档，不进任何公开仓 |
 
+## 5.1 WSP 拆分判据（2026-11-15）
+
+`trit-wspace`（权重空间编程）已拆出到**独立仓**（与本仓同级的目录，同名 `trit-wspace`）。
+本节写清「哪些跟着走、哪些留在主库」，避免下次拆的时候靠感觉。
+
+### 判据（一句话）
+
+**「换掉权重空间编程这个项目，它还有没有意义」**——有，就留在主库（共享底座）；
+没有（只服务于 WSP 这个具体方法），就跟着 WSP 走。与 §1 的 R1 同源。
+
+### 跟着走的（WSP 专属）
+
+| 项 | 理由 |
+|---|---|
+| `crates/trit-wspace`（src 103 / examples 67 / tests 101） | WSP 的全部实现与验证 |
+| `scripts/mutants/trit-wspace.json` | 只对 WSP 生效的变异基线 |
+
+### 留在主库的（共享底座）
+
+| 项 | 被谁用 | 判据 |
+|---|---|---|
+| `trit-core` | 33 个 crate | base 层，一切的基础 |
+| `trit-learn` | `trit-attn` / `trit-parts` / `trit-train` | learn 层，多个模型共用 |
+| `trit-train` | `trit-parts` | 训练工具，不是 WSP 专属 |
+| `trit-export` | 当前仅 WSP | **通用**：GGUF 三值权重容器，任何三值模型都能用 |
+| `trit-mmap` | 当前仅 WSP | **通用**：只读文件映射，任何大文件读取都能用 |
+
+### 反向判据（什么**不能**跟着走）
+
+**如果某个底座「还能搞其他的东西」，就不能跟着 WSP 走。**
+`trit-export` / `trit-mmap` 当前只有 WSP 在用，但它们是通用工具——按这条留在主库，
+WSP 仓通过 path 依赖它们。同理 `trit-learn` 被 `trit-attn` / `trit-parts` / `trit-train`
+共用，更不能走。
+
+### 拆分后的依赖方向
+
+```text
+trit-wspace（独立仓） ──path──> 主库的 trit-core / trit-export / trit-learn / trit-mmap
+trit-gpu（主库）      ──path──> 独立仓 trit-wspace
+```
+
+`trit-gpu` 对 `trit-wspace` 的依赖从「workspace 内 ops→learn 回边」变成「跨仓 path」，
+`scripts/layers.py` 不再判它（分层门：45 个 crate，跨层例外 0 条）。
+
 ## 6. 进门流程（新东西来了走哪几步）
 
 1. 先在 §1 四问 + §2 六类里定性质：**收 / 拒 / 搬（从别处搬进来）/ 拆（搬出去）**。
