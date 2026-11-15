@@ -832,4 +832,4 @@ Release 前会校验 tag 与 `trit-cli` 版本一致。
 
 ## 许可
 
-MIT（见 [LICENSE](LICENSE)；署名与来源条款见 [NOTICE.md](NOTICE.md)）。
+双许可：[MIT](LICENSE) 或 [Apache-2.0](LICENSE-APACHE)；署名与来源条款见 [NOTICE.md](NOTICE.md)。

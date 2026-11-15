@@ -321,4 +321,4 @@ cargo run --bin trit-immune -- commit -m "回归通过" -v +1 -f ./my-repo/repo.
 
 ## 许可
 
-MIT（与上游 `trit` 一致；署名与来源条款见 [NOTICE.md](../NOTICE.md)）。
+MIT OR Apache-2.0（与上游 `trit` 一致；署名与来源条款见 [NOTICE.md](../NOTICE.md)）。

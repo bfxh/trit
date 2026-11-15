@@ -72,4 +72,4 @@ Lean 4 落地前，规范与 Rust 不一致时以规范为准，修 Rust 并补�
 
 ## 许可
 
-与仓库一致：MIT（见仓根 [LICENSE](LICENSE) 与 [NOTICE.md](NOTICE.md)）。
+与仓库一致：MIT 或 Apache-2.0（见仓根 [LICENSE](LICENSE)、[LICENSE-APACHE](LICENSE-APACHE) 与 [NOTICE.md](NOTICE.md)）。
