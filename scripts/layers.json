@@ -34,7 +34,6 @@
     "trit-capacity": "algo",
     "trit-flow": "algo",
     "trit-learn": "learn",
-    "trit-wspace": "learn",
     "trit-train": "learn",
     "trit-parts": "learn",
     "trit-attn": "learn",

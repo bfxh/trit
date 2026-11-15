@@ -843,8 +843,8 @@ def self_test() -> int:
     check("python 裸 traceback→crash", classify("Traceback (most recent call last):\nKeyError: 1", 1, "python")[0], "crash")
     check(
         "files 过滤只留改动文件",
-        [m["file"] for m in select([], ["crates/trit-wspace/src/trit.rs"])],
-        ["crates/trit-wspace/src/trit.rs"],
+        [m["file"] for m in select([], ["crates/trit-core/src/lib.rs"])],
+        ["crates/trit-core/src/lib.rs"],
     )
     check("files 过滤命中 0 条", select([], ["crates/trit-wspace/src/nope.rs"]), [])
     check("python AssertionError→caught", classify("AssertionError: 断言失败: x", 1, "python")[0], "caught")

@@ -2240,7 +2240,6 @@ dependencies = [
  "trit-export",
  "trit-learn",
  "trit-mmap",
- "trit-train",
 ]
 
 [[package]]

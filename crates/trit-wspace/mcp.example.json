@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "trit-wspace": {
-      "command": "C:/path/to/trit-wspace.exe",
-      "args": ["mcp"]
-    }
-  }
-}
