@@ -71,4 +71,4 @@ DAG 上传播。trit-immune 就是那个域层。它是 trit-core `Ternary` 的�
 
 ## 许可
 
-MIT OR Apache-2.0（与工作区一致）
+MIT（与工作区一致，署名与来源条款见 NOTICE.md）
