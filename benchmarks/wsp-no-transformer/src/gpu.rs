@@ -1,14 +1,11 @@
 //! GPU 读取器（wgpu）：与 CPU 版同输入、同输出。
-use std::time::Instant;
-
-use bytemuck::{Pod, Zeroable};
-use wgpu::util::DeviceExt;
-
 use crate::gpu_prep;
 use crate::model::{O_LEN, Q_LEN};
 use crate::rows::{pack_row_ids, pack_rows};
 use crate::weights::Weights;
-
+use bytemuck::{Pod, Zeroable};
+use std::time::Instant;
+use wgpu::util::DeviceExt;
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
 struct Params {
@@ -21,7 +18,6 @@ struct Params {
     h: u32,
     _pad: u32,
 }
-
 fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
     wgpu::BindGroupLayoutEntry {
         binding,
@@ -34,7 +30,6 @@ fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
         count: None,
     }
 }
-
 struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -154,9 +149,14 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         &w.idf,
     );
 
+    let source = if std::env::var("WSP_SERIAL").is_ok_and(|v| v == "1") {
+        include_str!("serial.wgsl")
+    } else {
+        include_str!("reader.wgsl")
+    };
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("wsp-reader"),
-        source: wgpu::ShaderSource::Wgsl(include_str!("reader.wgsl").into()),
+        source: wgpu::ShaderSource::Wgsl(source.into()),
     });
     let mut entries: Vec<wgpu::BindGroupLayoutEntry> =
         (0..11).map(|b| storage_entry(b, true)).collect();
