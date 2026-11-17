@@ -88,6 +88,7 @@
 | [WSP-ADV-TRAIN.md](research/WSP-ADV-TRAIN.md) | 对抗训练：蓝方吃进化攻击样本（RowDropout 行级注入） |
 | [WSP-DGA-QAT.md](research/WSP-DGA-QAT.md) | 三值 QAT：DGA 域名检测与家族归因（真实安全数据集） |
 | [GGUF-TRIT.md](research/GGUF-TRIT.md) | 三值权重 GGUF 容器（`trit-export`）的最小 v3 子集 |
+| [FORK-FLUSH.md](FORK-FLUSH.md) | Fork-and-Flush：多智能体任务分叉 + 清空 + 按验收分数选优 |
 | [GAME-SCAN.md](research/GAME-SCAN.md) | 游戏环境扫描、故障注入与恢复（Phase 0） |
 | [DEEP-RISK-MAP.md](research/DEEP-RISK-MAP.md) | 深层风险地图：更新 / 认领 / 牵连 |
 
