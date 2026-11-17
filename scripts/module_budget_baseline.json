@@ -3,6 +3,10 @@
   "note": "默认全量棘轮：每个 .rs 一条上限。--update 只登记新文件与收紧，**永不抬高**；抬高 = 把变胖写成合法，判红。",
   "caps": [
     {
+      "file": "benchmarks/cram-drift-2d/src/main.rs",
+      "lines": 245
+    },
+    {
       "file": "benchmarks/cuda-oxide-compare/src/main.rs",
       "lines": 425
     },

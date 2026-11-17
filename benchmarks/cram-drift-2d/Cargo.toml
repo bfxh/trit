@@ -1,0 +1,9 @@
+[package]
+name = "cram-drift-2d"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# 独立 workspace：CRAM + 3D 漂移的 M0a（2D 轨迹数据集 + BFS oracle）。
+# 不进主 workspace、不进 CI；设计见 docs/research/CRAM-3D-DRIFT.md。
+[workspace]
