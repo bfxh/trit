@@ -17,7 +17,7 @@ struct Params {
 };
 
 @group(0) @binding(0) var<storage, read> a: array<f32>;
-@group(0) @binding(1) var<storage, read> row_ids: array<i32>;
+@group(0) @binding(1) var<storage, read> row_ids: array<u32>;
 @group(0) @binding(2) var<storage, read> row_w: array<f32>;
 @group(0) @binding(3) var<storage, read> pair_rows: array<u32>;
 @group(0) @binding(4) var<storage, read> top_idx: array<u32>;
@@ -74,17 +74,19 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
                 let neg = row_neg[row];
                 let scale = row_scale[row] * SCALE;
                 for (var k = 0u; k < p.r; k = k + 1u) {
-                    let c = row_ids[base + k];
-                    if (c >= 0) {
+                    let idx = base + k;
+                    let raw = (row_ids[idx / 2u] >> ((idx % 2u) * 16u)) & 65535u;
+                    if (raw != 65535u) {
                         let v = f32((pos >> k) & 1u) - f32((neg >> k) & 1u);
-                        atomicAdd(&read_i[c], i32(strength * v * scale));
+                        atomicAdd(&read_i[i32(raw)], i32(strength * v * scale));
                     }
                 }
             } else {
                 for (var k = 0u; k < p.r; k = k + 1u) {
-                    let c = row_ids[base + k];
-                    if (c >= 0) {
-                        atomicAdd(&read_i[c], i32(strength * row_w[base + k] * SCALE));
+                    let idx = base + k;
+                    let raw = (row_ids[idx / 2u] >> ((idx % 2u) * 16u)) & 65535u;
+                    if (raw != 65535u) {
+                        atomicAdd(&read_i[i32(raw)], i32(strength * row_w[base + k] * SCALE));
                     }
                 }
             }

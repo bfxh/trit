@@ -1,6 +1,5 @@
-//! 复现《Weight-Space Programming Doesn't Need Transformers》的二阶联想记忆读取器
-//! （`models/<writer>/mem_assoc2*/arch.py` 的 `forward`）。权重由 Python 的 `export_baseline.py`
-//! 导出；本程序做 forward + ARC test 评测。运行：`cargo run --release -- <weights.npz> <arc_test.npz> [--gpu]`。
+//! 复现《WSP Doesn't Need Transformers》的二阶联想记忆读取器（`models/<writer>/mem_assoc2*/arch.py` 的 `forward`）。
+//! 权重由 Python 的 `export_baseline.py` 导出；运行：`cargo run --release -- <weights.npz> <arc_test.npz> [--gpu]`。
 
 use std::path::Path;
 
@@ -12,6 +11,7 @@ mod model;
 mod prepare;
 mod quant;
 mod quantize;
+mod rows;
 mod weights;
 
 use model::{O_LEN, Q_LEN, argmax, forward};

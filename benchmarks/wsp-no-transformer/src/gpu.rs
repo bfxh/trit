@@ -1,7 +1,5 @@
 //! GPU 读取器（wgpu）：与 CPU 版同输入、同输出，只换执行位置。
-//!
-//! CPU 先算好 top-16、pair 行号、qb 位图、选项概念表（这些与读取器无关），
-//! GPU 内核只做二阶/一阶读取与打分。这样对照的是「读取器」本身。
+//! CPU 先算好 top-16、pair 行号、qb 位图、选项概念表，GPU 内核只做读取与打分。
 
 use std::time::Instant;
 
@@ -10,6 +8,7 @@ use wgpu::util::DeviceExt;
 
 use crate::model::{O_LEN, Q_LEN};
 use crate::prepare::prepare;
+use crate::rows::{pack_row_ids, pack_rows};
 use crate::weights::Weights;
 
 #[repr(C)]
@@ -64,39 +63,6 @@ impl Gpu {
     }
 }
 
-fn pack_rows(w: &Weights) -> (Vec<u32>, Vec<u32>, Vec<f32>, bool) {
-    let packed = std::env::var("WSP_QUANT_ROW")
-        .map(|v| v == "sign" || v == "sign_row")
-        .unwrap_or(false);
-    if !packed {
-        return (vec![0], vec![0], vec![0.0], false);
-    }
-    assert!(w.r <= 32, "三值打包只支持 R ≤ 32");
-    let mut pos = vec![0u32; w.h];
-    let mut neg = vec![0u32; w.h];
-    let mut scale = vec![0f32; w.h];
-    for row in 0..w.h {
-        let base = row * w.r;
-        let mut s = 0f32;
-        for k in 0..w.r {
-            s = s.max(w.row_w[base + k].abs());
-        }
-        if s == 0.0 {
-            continue;
-        }
-        for k in 0..w.r {
-            let v = w.row_w[base + k];
-            if v > 0.0 {
-                pos[row] |= 1u32 << k;
-            } else if v < 0.0 {
-                neg[row] |= 1u32 << k;
-            }
-        }
-        scale[row] = s;
-    }
-    (pos, neg, scale, true)
-}
-
 /// 跑 GPU 读取器；返回每题的四个 logits 与 GPU 推理毫秒（中位）。
 pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64)> {
     let t0 = Instant::now();
@@ -119,7 +85,7 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         packed: packed as u32,
         _pad: [0; 2],
     };
-    let row_ids32: Vec<i32> = w.row_ids.iter().map(|&v| v as i32).collect();
+    let row_ids_packed = pack_row_ids(&w.row_ids);
     let buffers = [
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
@@ -128,7 +94,7 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         }),
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
-            contents: bytemuck::cast_slice(&row_ids32),
+            contents: bytemuck::cast_slice(&row_ids_packed),
             usage: wgpu::BufferUsages::STORAGE,
         }),
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
