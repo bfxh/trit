@@ -2,7 +2,7 @@
 
 use crate::{pack_columns, pack_rows};
 
-pub(crate) struct Inputs {
+pub struct Inputs {
     pub m: usize,
     pub n: usize,
     pub k: usize,
