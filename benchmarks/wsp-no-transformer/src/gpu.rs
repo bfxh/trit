@@ -1,6 +1,4 @@
-//! GPU 读取器（wgpu）：与 CPU 版同输入、同输出，只换执行位置。
-//! CPU 先算好 top-16、pair 行号、qb 位图、选项概念表，GPU 内核只做读取与打分。
-
+//! GPU 读取器（wgpu）：与 CPU 版同输入、同输出。
 use std::time::Instant;
 
 use bytemuck::{Pod, Zeroable};
@@ -20,7 +18,8 @@ struct Params {
     o_len: u32,
     mix: f32,
     packed: u32,
-    _pad: [u32; 2],
+    h: u32,
+    _pad: u32,
 }
 
 fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
@@ -77,7 +76,8 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         o_len: O_LEN as u32,
         mix: w.mix,
         packed: packed as u32,
-        _pad: [0; 2],
+        h: w.h as u32,
+        _pad: 0,
     };
     let row_ids_packed = pack_row_ids(&w.row_ids);
     // 中间表由 GPU 预处理 kernel 写。

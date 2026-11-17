@@ -1,9 +1,7 @@
-//! 行数据的打包：三值 `row_w`（pos/neg/scale）与 u16 `row_ids`。
+//! 行数据的打包。
 
 use crate::weights::Weights;
 
-/// 三值 `row_w`：每行 16 个 trit 打进 pos/neg 两个 u32，外加一个行 scale。
-/// 返回 `(pos, neg, scale, 是否启用)`；未启用时返回占位数组。
 pub fn pack_rows(w: &Weights) -> (Vec<u32>, Vec<u32>, Vec<f32>, bool) {
     let packed = std::env::var("WSP_QUANT_ROW")
         .map(|v| v == "sign" || v == "sign_row")
@@ -11,7 +9,9 @@ pub fn pack_rows(w: &Weights) -> (Vec<u32>, Vec<u32>, Vec<f32>, bool) {
     if !packed {
         return (vec![0], vec![0], vec![0.0], false);
     }
-    assert!(w.r <= 32, "三值打包只支持 R ≤ 32");
+    if w.r > 32 {
+        return (vec![0], vec![0], vec![0.0], false);
+    }
     let mut pos = vec![0u32; w.h];
     let mut neg = vec![0u32; w.h];
     let mut scale = vec![0f32; w.h];

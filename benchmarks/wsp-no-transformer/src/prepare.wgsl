@@ -10,7 +10,8 @@ struct Params {
     o_len: u32,
     mix: f32,
     packed: u32,
-    _pad: vec2<u32>,
+    h: u32,
+    _pad: u32,
 };
 
 @group(0) @binding(0) var<storage, read> q: array<i32>;
@@ -32,19 +33,17 @@ var<workgroup> qb: array<f32, 4324>;
 const J: u32 = 16u;
 const PAIRS: u32 = 256u;
 const NONE: u32 = 4294967295u;
-const H: u32 = 4194304u;
-const HM: u32 = 4194303u;
 
 // (a*b) mod 2^22，用 32 步移位加避免 u32 溢出（b=1000003 需要 20 位）。
-fn mulmod(a: u32, b: u32) -> u32 {
+fn mulmod(a: u32, b: u32, m: u32) -> u32 {
     var r = 0u;
-    var x = a & HM;
+    var x = a % m;
     var y = b;
     for (var i = 0u; i < 20u; i = i + 1u) {
         if ((y & 1u) == 1u) {
-            r = (r + x) & HM;
+            r = (r + x) % m;
         }
-        x = (x << 1u) & HM;
+        x = (x << 1u) % m;
         y = y >> 1u;
     }
     return r;
@@ -111,7 +110,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
                 let y = bi[b];
                 let lo = min(x, y);
                 let hi = max(x, y);
-                pair_rows[n * PAIRS + a * J + b] = (mulmod(lo, 1000003u) + hi) & HM;
+                pair_rows[n * PAIRS + a * J + b] = (mulmod(lo, 1000003u, p.h) + hi) % p.h;
             }
         }
         // 一阶读取要用的非零概念列表（按 id 顺序），尾部写 NONE 终止。
