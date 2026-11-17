@@ -39,7 +39,7 @@ var<workgroup> acc_buf: array<f32, 4324>;
 const J: u32 = 16u;
 const PAIRS: u32 = 256u;
 const NONE: u32 = 4294967295u;
-const SCALE: f32 = 65536.0;
+const SCALE: f32 = 262144.0;
 
 @compute @workgroup_size(128)
 fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
