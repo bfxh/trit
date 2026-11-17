@@ -7,100 +7,15 @@ use std::path::Path;
 
 use npyz::npz::NpzArchive;
 
+mod model;
 mod quant;
 mod quantize;
 mod weights;
 
+use model::{O_LEN, Q_LEN, argmax, forward};
 use quant::Quant;
 use quantize::quantize_matrix;
-use weights::{Weights, load_weights, read_i64};
-
-const J: usize = 16;
-const PRIME: i64 = 1_000_003;
-const Q_LEN: usize = 128;
-const O_LEN: usize = 48;
-
-/// 一题的 forward：返回四个选项的分数。
-fn forward(w: &Weights, q: &[i64], o: &[i64]) -> [f32; 4] {
-    // 问题概念袋：一个概念出现一次即为 idf（scatter_ 置 1，不累加）。
-    let mut qb = vec![0f32; w.c];
-    for &id in q {
-        let c = w.concept[id as usize];
-        if c > 0 {
-            qb[c as usize] = w.idf[c as usize];
-        }
-    }
-
-    // top-J：值降序，值相等按概念 id 升序（与 torch.topk 的常见实现一致）。
-    let mut top: Vec<usize> = (1..w.c).collect();
-    top.sort_by(|&x, &y| qb[y].partial_cmp(&qb[x]).expect("有限值").then(x.cmp(&y)));
-    top.truncate(J);
-
-    // 二阶读取：120 个概念对各自读一行。
-    let mut read = vec![0f32; w.c];
-    for i in 0..top.len() {
-        for j in (i + 1)..top.len() {
-            let (x, y) = (top[i], top[j]);
-            let strength = qb[x] * qb[y];
-            if strength == 0.0 {
-                continue;
-            }
-            let (lo, hi) = if x < y { (x, y) } else { (y, x) };
-            let row = ((lo as i64 * PRIME + hi as i64) % w.h as i64) as usize;
-            let base = row * w.r;
-            for k in 0..w.r {
-                let c = w.row_ids[base + k];
-                if c >= 0 {
-                    read[c as usize] += strength * w.row_w[base + k];
-                }
-            }
-        }
-    }
-
-    // 一阶读取：只对 qb 非零的概念求和（等价于 qb @ A）。
-    let mut acc = vec![0f32; w.c];
-    for (d, &v) in qb.iter().enumerate().skip(1) {
-        if v == 0.0 {
-            continue;
-        }
-        let row = &w.a[d * w.c..(d + 1) * w.c];
-        for c in 0..w.c {
-            acc[c] += v * row[c];
-        }
-    }
-    for c in 0..w.c {
-        let masked = if qb[c] == 0.0 {
-            read[c] + w.mix * acc[c]
-        } else {
-            0.0
-        };
-        read[c] = masked;
-    }
-
-    // 选项得分：read 覆盖了选项里多少概念（选项只保留问题没有的概念）。
-    let mut logits = [0f32; 4];
-    for (k, logit) in logits.iter_mut().enumerate() {
-        let mut ob = vec![0f32; w.c];
-        for &id in &o[k * O_LEN..(k + 1) * O_LEN] {
-            let c = w.concept[id as usize];
-            if c > 0 && qb[c as usize] == 0.0 {
-                ob[c as usize] = w.idf[c as usize];
-            }
-        }
-        *logit = read.iter().zip(ob.iter()).map(|(x, y)| x * y).sum::<f32>();
-    }
-    logits
-}
-
-fn argmax(scores: &[f32]) -> usize {
-    let mut best = 0;
-    for (i, v) in scores.iter().enumerate() {
-        if *v > scores[best] {
-            best = i;
-        }
-    }
-    best
-}
+use weights::{load_weights, read_i64};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -144,6 +59,7 @@ fn main() {
     let mut right = 0usize;
     let mut answered = 0usize;
     let mut all = Vec::with_capacity(n * 4);
+    let started = std::time::Instant::now();
     for i in 0..n {
         let logits = forward(
             &w,
@@ -167,7 +83,8 @@ fn main() {
     let nf = n as f64;
     let accuracy = right as f64 / nf + (n - answered) as f64 / nf / 4.0;
     println!(
-        "accuracy {accuracy:.16}｜answered {:.16}｜a n={n}",
-        answered as f64 / nf
+        "accuracy {accuracy:.16}｜answered {:.16}｜n={n}｜{:.2} ms",
+        answered as f64 / nf,
+        started.elapsed().as_secs_f64() * 1000.0
     );
 }

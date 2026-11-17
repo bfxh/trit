@@ -16,7 +16,11 @@
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/main.rs",
-      "lines": 173
+      "lines": 90
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/model.rs",
+      "lines": 96
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/quant.rs",

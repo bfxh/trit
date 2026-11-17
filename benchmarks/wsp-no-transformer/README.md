@@ -116,6 +116,18 @@ python <本工程>/python/eval_det_topk.py models/opus/mem_assoc2_g5-arc_blind_K
 **未证**：τ 只扫了 6 个点；scale 用每行均值、没有学；`A` 置 0 后的实际稀疏度与显存占用未统计；
 没有把这套三值表接到 `trit-gpu` 的双导轨内核上做真实 GPU 读取器对照。
 
+## 计时（CPU）
+
+Rust release，3530 题（不含读 npz 与构建）：
+
+| 版本 | 时间 | 说明 |
+|---|---:|---|
+| 初版（全排序 topk） | 151.75 ms | `sort_by` 选出 top-16 |
+| `select_nth_unstable_by` | **136.70 ms** | top-16 只做选择，不全排序 |
+
+论文的 18 ms 是 RTX 3090 上的 GPU 读取器（3530 题）；本工程的 GPU 读取器尚未实现。
+CPU 版比论文 GPU 慢约 7.6×，且是单线程；GPU 对照是下一步。
+
 ## 工程边界
 
 - **Rust 只实现 forward + 评测**；`kb/*.txt` → 权重的编译仍在 Python 的 `build.py` 里。
