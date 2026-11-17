@@ -15,6 +15,54 @@
       "lines": 115
     },
     {
+      "file": "benchmarks/wsp-no-transformer/src/apply.rs",
+      "lines": 22
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/gpu.rs",
+      "lines": 331
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/gpu_prep.rs",
+      "lines": 147
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/main.rs",
+      "lines": 76
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/model.rs",
+      "lines": 87
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/model_fixed.rs",
+      "lines": 95
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/prepare.rs",
+      "lines": 105
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/quant.rs",
+      "lines": 24
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/quantize.rs",
+      "lines": 45
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/rows.rs",
+      "lines": 48
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/topk.rs",
+      "lines": 25
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/weights.rs",
+      "lines": 76
+    },
+    {
       "file": "crates/sansheng/src/lib.rs",
       "lines": 57
     },
@@ -2968,7 +3016,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/adversarial_train/main.rs",
-      "lines": 440
+      "lines": 432
     },
     {
       "file": "crates/trit-wspace/examples/adversarial_train/metrics.rs",
