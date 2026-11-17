@@ -91,7 +91,7 @@ python <本工程>/python/eval_det_topk.py models/opus/mem_assoc2_g5-arc_blind_K
   这是刻意的：`build.py` 是论文的对齐基线（词形还原、idf、一阶/二阶表、否定规则约 1,000 行），
   先钉住读取器的逐题一致，再决定是否把编译也搬进 Rust。
 - 只复现了 `mem_assoc2`（给定架构的一支），没有复现 `free*` 三个 writer 的自设计架构；
-  论文的 54.4% 来自 `free5`，本工程能读它的权重但未默认跑。
+  论文的 54.4% 来自 `free5`，它的 `arch.py` 是另一套 forward，需要单独移植，本工程未做。
 - 没有复现论文的 **17× GPU 推理速度**：那需要与同尺寸 Transformer 的同口径对照，
   论文里 Transformer 侧用的是随机权重计时；本工程没有接这部分。
 - 没有做三值化。论文的稀疏表是 f32/文本概念；把它变成 trit 的双导轨三值表示
