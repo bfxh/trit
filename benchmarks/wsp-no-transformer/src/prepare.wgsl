@@ -160,5 +160,21 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
                 used = used + 1u;
             }
         }
+        // 按概念 id 升序排序，与 CPU 的 id 顺序累加一致。
+        for (var i = 1u; i < used; i = i + 1u) {
+            let v = ob_ids[base + i];
+            let wv = ob_w[base + i];
+            var j = i;
+            loop {
+                if (j == 0u || ob_ids[base + j - 1u] <= v) {
+                    break;
+                }
+                ob_ids[base + j] = ob_ids[base + j - 1u];
+                ob_w[base + j] = ob_w[base + j - 1u];
+                j = j - 1u;
+            }
+            ob_ids[base + j] = v;
+            ob_w[base + j] = wv;
+        }
     }
 }

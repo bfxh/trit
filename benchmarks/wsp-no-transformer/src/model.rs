@@ -22,12 +22,12 @@ pub fn forward(w: &Weights, q: &[i64], o: &[i64]) -> [f32; 4] {
         }
     }
 
-    // top-J：值降序，值相等按概念 id 升序。只做选择而不全排序：pair 的遍历顺序不影响结果。
     let mut top: Vec<usize> = (1..w.c).collect();
     if w.c > J {
         top.select_nth_unstable_by(J - 1, |&x, &y| cmp(x, y, &qb));
         top.truncate(J);
     }
+    top.sort_by(|&x, &y| qb[y].partial_cmp(&qb[x]).expect("有限值").then(x.cmp(&y)));
 
     // 二阶读取：120 个概念对各自读一行。
     let mut read = vec![0f32; w.c];
