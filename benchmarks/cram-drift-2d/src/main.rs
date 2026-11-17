@@ -40,6 +40,7 @@ fn main() {
     let mut seed = 0x9E37_79B9_7F4A_7C15u64;
     let mut out_path: Option<String> = None;
     let mut images_path: Option<String> = None;
+    let mut goals_path: Option<String> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
@@ -59,6 +60,10 @@ fn main() {
                 images_path = args.get(i + 1).cloned();
                 i += 2;
             }
+            "--goals" => {
+                goals_path = args.get(i + 1).cloned();
+                i += 2;
+            }
             other => {
                 eprintln!("未知参数：{other}");
                 std::process::exit(2);
@@ -71,6 +76,7 @@ fn main() {
     };
     let mut out = writer;
     let mut images = images_path.map(|p| BufWriter::new(File::create(p).expect("创建图像文件")));
+    let mut goals = goals_path.map(|p| BufWriter::new(File::create(p).expect("创建 goal 文件")));
     let mut state = seed;
     for id in 0..tasks {
         let task = gen_task(id, &mut state);
@@ -80,9 +86,15 @@ fn main() {
             render_3ch(&task, &mut buf);
             img_out.write_all(&buf).expect("写图像");
         }
+        if let Some(g_out) = goals.as_mut() {
+            g_out.write_all(&[task.goal as u8]).expect("写 goal");
+        }
     }
     out.flush().expect("flush");
     if let Some(img_out) = images.as_mut() {
         img_out.flush().expect("flush images");
+    }
+    if let Some(g_out) = goals.as_mut() {
+        g_out.flush().expect("flush goals");
     }
 }
