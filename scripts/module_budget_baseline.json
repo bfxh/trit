@@ -16,7 +16,15 @@
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/main.rs",
-      "lines": 228
+      "lines": 174
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/quant.rs",
+      "lines": 52
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/weights.rs",
+      "lines": 76
     },
     {
       "file": "crates/sansheng/src/lib.rs",
