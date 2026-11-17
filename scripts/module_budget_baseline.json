@@ -20,7 +20,7 @@
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/gpu.rs",
-      "lines": 333
+      "lines": 331
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/gpu_prep.rs",
@@ -33,6 +33,10 @@
     {
       "file": "benchmarks/wsp-no-transformer/src/model.rs",
       "lines": 87
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/model_fixed.rs",
+      "lines": 95
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/prepare.rs",
@@ -52,7 +56,7 @@
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/topk.rs",
-      "lines": 26
+      "lines": 25
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/weights.rs",

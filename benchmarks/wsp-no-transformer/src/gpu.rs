@@ -35,7 +35,6 @@ struct Gpu {
     queue: wgpu::Queue,
     info: wgpu::AdapterInfo,
 }
-
 impl Gpu {
     fn open() -> Option<Self> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -56,14 +55,12 @@ impl Gpu {
         })
     }
 }
-
 /// 跑 GPU 读取器；返回每题的四个 logits 与 GPU 推理毫秒（中位）。
 pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64)> {
     let (row_pos, row_neg, row_scale, packed) = pack_rows(w);
     let gpu = Gpu::open()?;
     let device = &gpu.device;
     let queue = &gpu.queue;
-
     let params = Params {
         c: w.c as u32,
         r: w.r as u32,
@@ -135,7 +132,6 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         contents: bytemuck::cast_slice(&row_scale),
         usage: wgpu::BufferUsages::STORAGE,
     });
-
     let q32: Vec<i32> = q.iter().map(|&v| v as i32).collect();
     let o32: Vec<i32> = o.iter().map(|&v| v as i32).collect();
     let concept32: Vec<i32> = w.concept.iter().map(|&v| v as i32).collect();
@@ -148,11 +144,13 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         &concept32,
         &w.idf,
     );
-
-    let source = if std::env::var("WSP_SERIAL").is_ok_and(|v| v == "1") {
-        include_str!("serial.wgsl")
-    } else {
-        include_str!("reader.wgsl")
+    let source = match (
+        std::env::var("WSP_FIXED").is_ok(),
+        std::env::var("WSP_SERIAL").is_ok(),
+    ) {
+        (true, _) => include_str!("serial_fixed.wgsl"),
+        (_, true) => include_str!("serial.wgsl"),
+        _ => include_str!("reader.wgsl"),
     };
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("wsp-reader"),
@@ -296,7 +294,7 @@ pub fn report(w: &Weights, q: &[i64], o: &[i64], y: &[i64], n: usize) {
     let mut gpu_right = 0usize;
     let mut answered = 0usize;
     for i in 0..n {
-        let cpu = crate::model::forward(
+        let cpu = crate::model_fixed::cpu_forward(
             w,
             &q[i * Q_LEN..(i + 1) * Q_LEN],
             &o[i * 4 * O_LEN..(i + 1) * 4 * O_LEN],

@@ -1,13 +1,13 @@
-//! 复现《WSP Doesn't Need Transformers》的二阶联想记忆读取器；`--gpu` 走全 GPU 流程。
+//! 复现《WSP Doesn't Need Transformers》的二阶联想记忆读取器。
 
 use std::path::Path;
 
 use npyz::npz::NpzArchive;
-
 mod apply;
 mod gpu;
 mod gpu_prep;
 mod model;
+mod model_fixed;
 mod quant;
 mod quantize;
 mod rows;
