@@ -3,7 +3,8 @@
 // 输入全是 CPU 预计算好的稀疏表示（top-16、pair 行号、qb 位图、选项概念表），
 // 内核只做读取与累加；这样对照的是「读取器」本身，不是 topk/编码。
 //
-// 固定 C = 4324（论文 Opus gen5 mem_assoc2 的概念数）；换模型需改这两个数组长度。
+// 二阶读取用 120 个线程并行（每线程一对），累加用定点 i32 原子（2^16 缩放），
+// 避免 f32 共享内存并发写。固定 C = 4324（论文 Opus gen5 mem_assoc2 的概念数）。
 
 struct Params {
     c: u32,
@@ -32,44 +33,58 @@ struct Params {
 @group(0) @binding(14) var<storage, read> row_neg: array<u32>;
 @group(0) @binding(15) var<storage, read> row_scale: array<f32>;
 
-var<workgroup> read_buf: array<f32, 4324>;
+var<workgroup> read_i: array<atomic<i32>, 4324>;
 var<workgroup> acc_buf: array<f32, 4324>;
 
 const J: u32 = 16u;
 const PAIRS: u32 = 256u;
 const NONE: u32 = 4294967295u;
+const SCALE: f32 = 65536.0;
 
 @compute @workgroup_size(128)
 fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid: vec3<u32>) {
     let n = wid.x;
     let t = lid.x;
 
-    // 二阶读取：线程 0 串行处理 120 对（每对读 R 个概念），写共享 read_buf。
-    if (t == 0u) {
-        for (var i = 0u; i < J; i = i + 1u) {
-            for (var j = i + 1u; j < J; j = j + 1u) {
-                let strength = top_val[n * J + i] * top_val[n * J + j];
-                if (strength != 0.0) {
-                    let row = pair_rows[n * PAIRS + i * J + j];
-                    let base = row * p.r;
-                    if (p.packed == 1u) {
-                        let pos = row_pos[row];
-                        let neg = row_neg[row];
-                        let scale = row_scale[row];
-                        for (var k = 0u; k < p.r; k = k + 1u) {
-                            let c = row_ids[base + k];
-                            if (c >= 0) {
-                                let v = f32((pos >> k) & 1u) - f32((neg >> k) & 1u);
-                                read_buf[c] += strength * v * scale;
-                            }
-                        }
-                    } else {
-                        for (var k = 0u; k < p.r; k = k + 1u) {
-                            let c = row_ids[base + k];
-                            if (c >= 0) {
-                                read_buf[c] += strength * row_w[base + k];
-                            }
-                        }
+    for (var c = t; c < p.c; c = c + 128u) {
+        atomicStore(&read_i[c], 0);
+    }
+    workgroupBarrier();
+
+    // 二阶读取：120 个线程各处理一对，定点原子累加。
+    if (t < 120u) {
+        var i = 0u;
+        var j = 0u;
+        var rem = t;
+        for (var a = 0u; a < J; a = a + 1u) {
+            let cnt = J - a - 1u;
+            if (rem < cnt) {
+                i = a;
+                j = a + 1u + rem;
+                break;
+            }
+            rem = rem - cnt;
+        }
+        let strength = top_val[n * J + i] * top_val[n * J + j];
+        if (strength != 0.0) {
+            let row = pair_rows[n * PAIRS + i * J + j];
+            let base = row * p.r;
+            if (p.packed == 1u) {
+                let pos = row_pos[row];
+                let neg = row_neg[row];
+                let scale = row_scale[row] * SCALE;
+                for (var k = 0u; k < p.r; k = k + 1u) {
+                    let c = row_ids[base + k];
+                    if (c >= 0) {
+                        let v = f32((pos >> k) & 1u) - f32((neg >> k) & 1u);
+                        atomicAdd(&read_i[c], i32(strength * v * scale));
+                    }
+                }
+            } else {
+                for (var k = 0u; k < p.r; k = k + 1u) {
+                    let c = row_ids[base + k];
+                    if (c >= 0) {
+                        atomicAdd(&read_i[c], i32(strength * row_w[base + k] * SCALE));
                     }
                 }
             }
@@ -91,11 +106,12 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
     }
     workgroupBarrier();
 
-    // mask：问题概念袋里已有的概念不参与选项打分。
+    // mask：问题概念袋里已有的概念不参与选项打分；顺带加 mix 一阶项。
     let words = (p.c + 31u) / 32u;
     for (var c = t; c < p.c; c = c + 128u) {
         let bit = (qb_mask[n * words + c / 32u] >> (c % 32u)) & 1u;
-        read_buf[c] = select(read_buf[c] + p.mix * acc_buf[c], 0.0, bit == 1u);
+        let val = f32(atomicLoad(&read_i[c])) / SCALE + p.mix * acc_buf[c];
+        atomicStore(&read_i[c], select(i32(val * SCALE), 0, bit == 1u));
     }
     workgroupBarrier();
 
@@ -107,7 +123,7 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
             if (c == NONE) {
                 break;
             }
-            score += read_buf[c] * ob_w[(n * 4u + t) * p.o_len + i];
+            score += f32(atomicLoad(&read_i[c])) / SCALE * ob_w[(n * 4u + t) * p.o_len + i];
         }
         out[n * 4u + t] = score;
     }
