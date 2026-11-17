@@ -71,6 +71,7 @@
  "script/fetch_objaverse.py": 0,
  "script/fetch_textures.py": 0,
  "script/flake_ledger.py": 1,
+ "script/fork_flush.py": 1,
  "script/gen_docs_charts.py": 0,
  "script/ghost_sim.py": 0,
  "script/gitflow.py": 1,
