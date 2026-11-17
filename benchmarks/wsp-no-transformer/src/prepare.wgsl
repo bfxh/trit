@@ -28,7 +28,7 @@ struct Params {
 @group(0) @binding(11) var<storage, read_write> qb_ids: array<u32>;
 @group(0) @binding(12) var<storage, read_write> qb_vals: array<f32>;
 
-var<workgroup> qb: array<f32, 4324>;
+var<workgroup> qb: array<f32, 5120>;
 
 const J: u32 = 16u;
 const PAIRS: u32 = 256u;

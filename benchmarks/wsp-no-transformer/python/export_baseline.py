@@ -27,6 +27,7 @@ def load_module(name: str, path: Path):
 def main() -> None:
     folder = Path(sys.argv[1]).resolve()
     out = Path(sys.argv[2]).resolve()
+    sys.path.insert(0, str(folder))
     out.mkdir(parents=True, exist_ok=True)
 
     build = load_module("model_build", folder / "build.py")

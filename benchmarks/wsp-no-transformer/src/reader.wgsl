@@ -4,7 +4,7 @@
 // 内核只做读取与累加；这样对照的是「读取器」本身，不是 topk/编码。
 //
 // 二阶读取用 120 个线程并行（每线程一对），累加用定点 i32 原子（2^16 缩放），
-// 避免 f32 共享内存并发写。固定 C = 4324（论文 Opus gen5 mem_assoc2 的概念数）。
+// 避免 f32 共享内存并发写。共享数组上限 5120（覆盖 opus 4324、sol 4293、astra 4962）。
 
 struct Params {
     c: u32,
@@ -33,8 +33,8 @@ struct Params {
 @group(0) @binding(14) var<storage, read> row_neg: array<u32>;
 @group(0) @binding(15) var<storage, read> row_scale: array<f32>;
 
-var<workgroup> read_i: array<atomic<i32>, 4324>;
-var<workgroup> acc_buf: array<f32, 4324>;
+var<workgroup> read_i: array<atomic<i32>, 5120>;
+var<workgroup> acc_buf: array<f32, 5120>;
 
 const J: u32 = 16u;
 const PAIRS: u32 = 256u;
