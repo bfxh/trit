@@ -25,5 +25,7 @@ python python/bfs_ref.py --check dataset.jsonl
 
 ## 边界
 
-- 只有 2D 网格，没有 3D、没有漂移模型、没有 CRAM 能量。
-- 数据集只用于 M0b/M0c 的输入；不代表任何物理可行性结论。
+- 本包只有 2D 数据与 BFS oracle；1-NFE 生成器与训练循环在 `/d/KF/driftnet`
+  （`crates/driftnet` 推理、`crates/qat` 训练，三值权重，复用 `trit@fe93a76`）。
+- 没有 3D、没有 CRAM 能量；M0b/M0c 是在 driftnet 上加能量项/事后筛选，
+  **不从零写生成器**。
