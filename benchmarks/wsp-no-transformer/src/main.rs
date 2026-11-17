@@ -7,8 +7,8 @@ use npyz::npz::NpzArchive;
 
 mod apply;
 mod gpu;
+mod gpu_prep;
 mod model;
-mod prepare;
 mod quant;
 mod quantize;
 mod rows;

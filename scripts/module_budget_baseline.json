@@ -20,7 +20,11 @@
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/gpu.rs",
-      "lines": 343
+      "lines": 333
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/gpu_prep.rs",
+      "lines": 147
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/main.rs",

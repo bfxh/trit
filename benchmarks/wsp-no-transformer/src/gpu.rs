@@ -6,8 +6,8 @@ use std::time::Instant;
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
+use crate::gpu_prep;
 use crate::model::{O_LEN, Q_LEN};
-use crate::prepare::prepare;
 use crate::rows::{pack_row_ids, pack_rows};
 use crate::weights::Weights;
 
@@ -65,12 +65,6 @@ impl Gpu {
 
 /// 跑 GPU 读取器；返回每题的四个 logits 与 GPU 推理毫秒（中位）。
 pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64)> {
-    let t0 = Instant::now();
-    let prep = prepare(w, q, o, n);
-    println!(
-        "CPU 预处理（top-16 / 位图 / 选项表）：{:.2} ms",
-        t0.elapsed().as_secs_f64() * 1000.0
-    );
     let (row_pos, row_neg, row_scale, packed) = pack_rows(w);
     let gpu = Gpu::open()?;
     let device = &gpu.device;
@@ -86,6 +80,15 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         _pad: [0; 2],
     };
     let row_ids_packed = pack_row_ids(&w.row_ids);
+    // 中间表由 GPU 预处理 kernel 写。
+    let empty = |count: usize| {
+        device.create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size: (count * 4) as u64,
+            usage: wgpu::BufferUsages::STORAGE,
+            mapped_at_creation: false,
+        })
+    };
     let buffers = [
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: None,
@@ -102,46 +105,14 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
             contents: bytemuck::cast_slice(&w.row_w),
             usage: wgpu::BufferUsages::STORAGE,
         }),
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&prep.pair_rows),
-            usage: wgpu::BufferUsages::STORAGE,
-        }),
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&prep.top_idx),
-            usage: wgpu::BufferUsages::STORAGE,
-        }),
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&prep.top_val),
-            usage: wgpu::BufferUsages::STORAGE,
-        }),
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&prep.qb_ids),
-            usage: wgpu::BufferUsages::STORAGE,
-        }),
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&prep.qb_vals),
-            usage: wgpu::BufferUsages::STORAGE,
-        }),
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&prep.qb_mask),
-            usage: wgpu::BufferUsages::STORAGE,
-        }),
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&prep.ob_ids),
-            usage: wgpu::BufferUsages::STORAGE,
-        }),
-        device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&prep.ob_w),
-            usage: wgpu::BufferUsages::STORAGE,
-        }),
+        empty(n * 256),
+        empty(n * 16),
+        empty(n * 16),
+        empty(n * Q_LEN),
+        empty(n * Q_LEN),
+        empty(n * w.c.div_ceil(32)),
+        empty(n * 4 * O_LEN),
+        empty(n * 4 * O_LEN),
     ];
     let out_buf = device.create_buffer(&wgpu::BufferDescriptor {
         label: None,
@@ -169,6 +140,19 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         contents: bytemuck::cast_slice(&row_scale),
         usage: wgpu::BufferUsages::STORAGE,
     });
+
+    let q32: Vec<i32> = q.iter().map(|&v| v as i32).collect();
+    let o32: Vec<i32> = o.iter().map(|&v| v as i32).collect();
+    let concept32: Vec<i32> = w.concept.iter().map(|&v| v as i32).collect();
+    let prep = gpu_prep::make(
+        device,
+        &buffers,
+        &params_buf,
+        &q32,
+        &o32,
+        &concept32,
+        &w.idf,
+    );
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("wsp-reader"),
@@ -244,6 +228,12 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
     let dispatch = || {
         let mut encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        {
+            let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
+            pass.set_pipeline(&prep.pipeline);
+            pass.set_bind_group(0, &prep.bind, &[]);
+            pass.dispatch_workgroups(n as u32, 1, 1);
+        }
         {
             let mut pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
             pass.set_pipeline(&pipeline);
