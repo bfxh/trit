@@ -116,17 +116,26 @@ python <本工程>/python/eval_det_topk.py models/opus/mem_assoc2_g5-arc_blind_K
 **未证**：τ 只扫了 6 个点；scale 用每行均值、没有学；`A` 置 0 后的实际稀疏度与显存占用未统计；
 没有把这套三值表接到 `trit-gpu` 的双导轨内核上做真实 GPU 读取器对照。
 
-## 计时（CPU）
+## 计时（CPU / GPU）
 
 Rust release，3530 题（不含读 npz 与构建）：
 
 | 版本 | 时间 | 说明 |
 |---|---:|---|
-| 初版（全排序 topk） | 151.75 ms | `sort_by` 选出 top-16 |
-| `select_nth_unstable_by` | **136.70 ms** | top-16 只做选择，不全排序 |
+| CPU 初版（全排序 topk） | 151.75 ms | `sort_by` 选出 top-16 |
+| CPU（`select_nth_unstable_by`） | **136.70 ms** | top-16 只做选择，不全排序 |
+| GPU 预处理（top-16 / 位图 / 选项表） | 30.41 ms | CPU 侧，`--gpu` 时计时 |
+| **GPU 内核（wgpu，3530 题）** | **6.85 ms** | 5 次中位，不含预处理与上传 |
+| GPU 端到端（预处理 + 内核） | 37.26 ms | |
 
-论文的 18 ms 是 RTX 3090 上的 GPU 读取器（3530 题）；本工程的 GPU 读取器尚未实现。
-CPU 版比论文 GPU 慢约 7.6×，且是单线程；GPU 对照是下一步。
+`--gpu` 用 wgpu compute 跑读取器：CPU 先算好 top-16、pair 行号、qb 位图、选项概念表，
+GPU 内核只做二阶/一阶读取与打分。数据上传（约 500 MB）不计入时间。
+
+- **GPU 内核 6.85 ms，比论文的 18 ms（RTX 3090）快 2.6×**；但论文口径未拆 topk，
+  我们的 6.85 ms 也不含 CPU 预处理，不能直接当成同一件事。
+- CPU↔GPU 最大绝对误差 **3.1e-5**（浮点累加顺序），16/3530 题预测翻转；
+  GPU accuracy **52.3725%** vs CPU 52.4008%（差 0.03 点）。
+- 端到端 37.26 ms 比 CPU 单线程 136.70 ms 快 3.7×。
 
 ## 工程边界
 

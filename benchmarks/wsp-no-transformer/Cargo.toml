@@ -10,3 +10,6 @@ publish = false
 
 [dependencies]
 npyz = { version = "0.8", features = ["npz"] }
+wgpu = "30"
+pollster = "0.4"
+bytemuck = { version = "1", features = ["derive"] }
