@@ -16,6 +16,13 @@ python python/bfs_ref.py --check dataset.jsonl
 # 行数 1000｜DIFF 0
 ```
 
+## 给 driftnet 的图像格式
+
+`--images images.bin` 把每条轨迹渲染成 **32×32 三通道 NHWC uint8**（8×8 每格放大 4×，
+轨迹像素 255），与 driftnet `crates/qat/src/data.rs` 的读取格式一致：
+1000 条 = **3,072,000 字节**。可直接作为 `qat train --data images.bin` 的输入；
+生成器输出头仍是 3×32×32，能量侧取 R 通道二值化。
+
 ## 验收
 
 - `cargo test`：4 条性质测试（路径连续/不踩障碍、长度等于 BFS 距离、不可达返回 None、
