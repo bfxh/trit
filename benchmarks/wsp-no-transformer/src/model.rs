@@ -7,10 +7,6 @@ const PRIME: i64 = 1_000_003;
 pub const Q_LEN: usize = 128;
 pub const O_LEN: usize = 48;
 
-fn cmp(x: usize, y: usize, qb: &[f32]) -> std::cmp::Ordering {
-    qb[y].partial_cmp(&qb[x]).expect("有限值").then(x.cmp(&y))
-}
-
 /// 一题的 forward：返回四个选项的分数。
 pub fn forward(w: &Weights, q: &[i64], o: &[i64]) -> [f32; 4] {
     // 问题概念袋：一个概念出现一次即为 idf（scatter_ 置 1，不累加）。
@@ -22,18 +18,13 @@ pub fn forward(w: &Weights, q: &[i64], o: &[i64]) -> [f32; 4] {
         }
     }
 
-    let mut top: Vec<usize> = (1..w.c).collect();
-    if w.c > J {
-        top.select_nth_unstable_by(J - 1, |&x, &y| cmp(x, y, &qb));
-        top.truncate(J);
-    }
-    top.sort_by(|&x, &y| qb[y].partial_cmp(&qb[x]).expect("有限值").then(x.cmp(&y)));
+    let top = crate::topk::top16(&qb, w.c);
 
     // 二阶读取：120 个概念对各自读一行。
     let mut read = vec![0f32; w.c];
-    for i in 0..top.len() {
-        for j in (i + 1)..top.len() {
-            let (x, y) = (top[i], top[j]);
+    for i in 0..J {
+        for j in (i + 1)..J {
+            let (x, y) = (top[i].0, top[j].0);
             let strength = qb[x] * qb[y];
             if strength == 0.0 {
                 continue;

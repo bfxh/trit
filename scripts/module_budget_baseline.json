@@ -32,7 +32,7 @@
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/model.rs",
-      "lines": 96
+      "lines": 87
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/prepare.rs",
@@ -49,6 +49,10 @@
     {
       "file": "benchmarks/wsp-no-transformer/src/rows.rs",
       "lines": 48
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/topk.rs",
+      "lines": 26
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/weights.rs",

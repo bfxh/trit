@@ -1,5 +1,4 @@
-//! 复现《WSP Doesn't Need Transformers》的二阶联想记忆读取器（`models/<writer>/mem_assoc2*/arch.py` 的 `forward`）。
-//! 权重由 Python 的 `export_baseline.py` 导出；运行：`cargo run --release -- <weights.npz> <arc_test.npz> [--gpu]`。
+//! 复现《WSP Doesn't Need Transformers》的二阶联想记忆读取器；`--gpu` 走全 GPU 流程。
 
 use std::path::Path;
 
@@ -12,6 +11,7 @@ mod model;
 mod quant;
 mod quantize;
 mod rows;
+mod topk;
 mod weights;
 
 use model::{O_LEN, Q_LEN, argmax, forward};
