@@ -11,6 +11,8 @@ struct Params {
     q_len: u32,
     o_len: u32,
     mix: f32,
+    packed: u32,
+    _pad: vec2<u32>,
 };
 
 @group(0) @binding(0) var<storage, read> a: array<f32>;
@@ -26,6 +28,9 @@ struct Params {
 @group(0) @binding(10) var<storage, read> ob_w: array<f32>;
 @group(0) @binding(11) var<storage, read_write> out: array<f32>;
 @group(0) @binding(12) var<uniform> p: Params;
+@group(0) @binding(13) var<storage, read> row_pos: array<u32>;
+@group(0) @binding(14) var<storage, read> row_neg: array<u32>;
+@group(0) @binding(15) var<storage, read> row_scale: array<f32>;
 
 var<workgroup> read_buf: array<f32, 4324>;
 var<workgroup> acc_buf: array<f32, 4324>;
@@ -47,10 +52,23 @@ fn main(@builtin(workgroup_id) wid: vec3<u32>, @builtin(local_invocation_id) lid
                 if (strength != 0.0) {
                     let row = pair_rows[n * PAIRS + i * J + j];
                     let base = row * p.r;
-                    for (var k = 0u; k < p.r; k = k + 1u) {
-                        let c = row_ids[base + k];
-                        if (c >= 0) {
-                            read_buf[c] += strength * row_w[base + k];
+                    if (p.packed == 1u) {
+                        let pos = row_pos[row];
+                        let neg = row_neg[row];
+                        let scale = row_scale[row];
+                        for (var k = 0u; k < p.r; k = k + 1u) {
+                            let c = row_ids[base + k];
+                            if (c >= 0) {
+                                let v = f32((pos >> k) & 1u) - f32((neg >> k) & 1u);
+                                read_buf[c] += strength * v * scale;
+                            }
+                        }
+                    } else {
+                        for (var k = 0u; k < p.r; k = k + 1u) {
+                            let c = row_ids[base + k];
+                            if (c >= 0) {
+                                read_buf[c] += strength * row_w[base + k];
+                            }
                         }
                     }
                 }

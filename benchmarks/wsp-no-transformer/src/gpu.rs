@@ -8,12 +8,9 @@ use std::time::Instant;
 use bytemuck::{Pod, Zeroable};
 use wgpu::util::DeviceExt;
 
-use crate::model::{J, O_LEN, Q_LEN};
+use crate::model::{O_LEN, Q_LEN};
+use crate::prepare::prepare;
 use crate::weights::Weights;
-
-const PAIRS: usize = 256;
-const NONE: u32 = u32::MAX;
-const PRIME: i64 = 1_000_003;
 
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
@@ -23,104 +20,8 @@ struct Params {
     q_len: u32,
     o_len: u32,
     mix: f32,
-    _pad: [u32; 3],
-}
-
-struct Prepared {
-    pair_rows: Vec<u32>,
-    top_idx: Vec<u32>,
-    top_val: Vec<f32>,
-    qb_ids: Vec<u32>,
-    qb_vals: Vec<f32>,
-    qb_mask: Vec<u32>,
-    ob_ids: Vec<u32>,
-    ob_w: Vec<f32>,
-}
-
-fn top16(qb: &[f32], c: usize) -> [(usize, f32); J] {
-    let mut order: Vec<usize> = (1..c).collect();
-    if c > J {
-        order.select_nth_unstable_by(J - 1, |&x, &y| {
-            qb[y].partial_cmp(&qb[x]).expect("有限值").then(x.cmp(&y))
-        });
-        order.truncate(J);
-    }
-    let mut out = [(0usize, 0f32); J];
-    for (i, &c) in order.iter().enumerate() {
-        out[i] = (c, qb[c]);
-    }
-    out
-}
-
-fn prepare(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Prepared {
-    let words = w.c.div_ceil(32);
-    let mut pair_rows = vec![0u32; n * PAIRS];
-    let mut top_idx = vec![0u32; n * J];
-    let mut top_val = vec![0f32; n * J];
-    let mut qb_mask = vec![0u32; n * words];
-    let mut qb_ids = vec![NONE; n * Q_LEN];
-    let mut qb_vals = vec![0f32; n * Q_LEN];
-    let mut ob_ids = vec![NONE; n * 4 * O_LEN];
-    let mut ob_w = vec![0f32; n * 4 * O_LEN];
-    for i in 0..n {
-        let mut qb = vec![0f32; w.c];
-        for &id in &q[i * Q_LEN..(i + 1) * Q_LEN] {
-            let c = w.concept[id as usize];
-            if c > 0 {
-                let c = c as usize;
-                qb[c] = w.idf[c];
-                qb_mask[i * words + c / 32] |= 1u32 << (c % 32);
-            }
-        }
-        let mut used = 0usize;
-        for (c, &v) in qb.iter().enumerate().skip(1) {
-            if v != 0.0 {
-                qb_ids[i * Q_LEN + used] = c as u32;
-                qb_vals[i * Q_LEN + used] = v;
-                used += 1;
-            }
-        }
-        let top = top16(&qb, w.c);
-        for d in 0..J {
-            top_idx[i * J + d] = top[d].0 as u32;
-            top_val[i * J + d] = top[d].1;
-        }
-        for a in 0..J {
-            for b in (a + 1)..J {
-                let (x, y) = (top[a].0, top[b].0);
-                let (lo, hi) = if x < y { (x, y) } else { (y, x) };
-                let row = ((lo as i64 * PRIME + hi as i64) % w.h as i64) as u32;
-                pair_rows[i * PAIRS + a * J + b] = row;
-            }
-        }
-        for k in 0..4 {
-            let mut seen: Vec<usize> = Vec::new();
-            for idx in 0..O_LEN {
-                let c = w.concept[o[(i * 4 + k) * O_LEN + idx] as usize];
-                if c > 0 {
-                    let c = c as usize;
-                    let in_q = (qb_mask[i * words + c / 32] >> (c % 32)) & 1 == 1;
-                    if !in_q && !seen.contains(&c) {
-                        seen.push(c);
-                    }
-                }
-            }
-            for (j, &c) in seen.iter().enumerate() {
-                ob_ids[(i * 4 + k) * O_LEN + j] = c as u32;
-                ob_w[(i * 4 + k) * O_LEN + j] = w.idf[c];
-            }
-        }
-    }
-    Prepared {
-        pair_rows,
-        top_idx,
-        top_val,
-        qb_ids,
-        qb_vals,
-        qb_mask,
-        ob_ids,
-        ob_w,
-    }
+    packed: u32,
+    _pad: [u32; 2],
 }
 
 fn storage_entry(binding: u32, read_only: bool) -> wgpu::BindGroupLayoutEntry {
@@ -163,6 +64,39 @@ impl Gpu {
     }
 }
 
+fn pack_rows(w: &Weights) -> (Vec<u32>, Vec<u32>, Vec<f32>, bool) {
+    let packed = std::env::var("WSP_QUANT_ROW")
+        .map(|v| v == "sign" || v == "sign_row")
+        .unwrap_or(false);
+    if !packed {
+        return (vec![0], vec![0], vec![0.0], false);
+    }
+    assert!(w.r <= 32, "三值打包只支持 R ≤ 32");
+    let mut pos = vec![0u32; w.h];
+    let mut neg = vec![0u32; w.h];
+    let mut scale = vec![0f32; w.h];
+    for row in 0..w.h {
+        let base = row * w.r;
+        let mut s = 0f32;
+        for k in 0..w.r {
+            s = s.max(w.row_w[base + k].abs());
+        }
+        if s == 0.0 {
+            continue;
+        }
+        for k in 0..w.r {
+            let v = w.row_w[base + k];
+            if v > 0.0 {
+                pos[row] |= 1u32 << k;
+            } else if v < 0.0 {
+                neg[row] |= 1u32 << k;
+            }
+        }
+        scale[row] = s;
+    }
+    (pos, neg, scale, true)
+}
+
 /// 跑 GPU 读取器；返回每题的四个 logits 与 GPU 推理毫秒（中位）。
 pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64)> {
     let t0 = Instant::now();
@@ -171,6 +105,7 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         "CPU 预处理（top-16 / 位图 / 选项表）：{:.2} ms",
         t0.elapsed().as_secs_f64() * 1000.0
     );
+    let (row_pos, row_neg, row_scale, packed) = pack_rows(w);
     let gpu = Gpu::open()?;
     let device = &gpu.device;
     let queue = &gpu.queue;
@@ -181,7 +116,8 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         q_len: Q_LEN as u32,
         o_len: O_LEN as u32,
         mix: w.mix,
-        _pad: [0; 3],
+        packed: packed as u32,
+        _pad: [0; 2],
     };
     let row_ids32: Vec<i32> = w.row_ids.iter().map(|&v| v as i32).collect();
     let buffers = [
@@ -252,6 +188,21 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         contents: bytemuck::bytes_of(&params),
         usage: wgpu::BufferUsages::UNIFORM,
     });
+    let row_pos_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: bytemuck::cast_slice(&row_pos),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+    let row_neg_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: bytemuck::cast_slice(&row_neg),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
+    let row_scale_buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: bytemuck::cast_slice(&row_scale),
+        usage: wgpu::BufferUsages::STORAGE,
+    });
 
     let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("wsp-reader"),
@@ -270,6 +221,9 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
         },
         count: None,
     });
+    for binding in 13..=15 {
+        entries.push(storage_entry(binding, true));
+    }
     let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
         label: None,
         entries: &entries,
@@ -302,6 +256,18 @@ pub fn run(w: &Weights, q: &[i64], o: &[i64], n: usize) -> Option<(Vec<f32>, f64
     bind_entries.push(wgpu::BindGroupEntry {
         binding: 12,
         resource: params_buf.as_entire_binding(),
+    });
+    bind_entries.push(wgpu::BindGroupEntry {
+        binding: 13,
+        resource: row_pos_buf.as_entire_binding(),
+    });
+    bind_entries.push(wgpu::BindGroupEntry {
+        binding: 14,
+        resource: row_neg_buf.as_entire_binding(),
+    });
+    bind_entries.push(wgpu::BindGroupEntry {
+        binding: 15,
+        resource: row_scale_buf.as_entire_binding(),
     });
     let bind = device.create_bind_group(&wgpu::BindGroupDescriptor {
         label: None,

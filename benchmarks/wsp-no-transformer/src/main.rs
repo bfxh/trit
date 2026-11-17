@@ -1,7 +1,6 @@
 //! 复现《Weight-Space Programming Doesn't Need Transformers》的二阶联想记忆读取器
 //! （`models/<writer>/mem_assoc2*/arch.py` 的 `forward`）。权重由 Python 的 `export_baseline.py`
-//! 导出；本程序只做 forward + ARC test 评测，用来验证 Rust 与论文读数逐题一致。
-//! 运行：`cargo run --release -- <weights.npz> <arc_test.npz> [--gpu]`。
+//! 导出；本程序做 forward + ARC test 评测。运行：`cargo run --release -- <weights.npz> <arc_test.npz> [--gpu]`。
 
 use std::path::Path;
 
@@ -10,6 +9,7 @@ use npyz::npz::NpzArchive;
 mod apply;
 mod gpu;
 mod model;
+mod prepare;
 mod quant;
 mod quantize;
 mod weights;

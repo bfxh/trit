@@ -125,7 +125,8 @@ Rust release，3530 题（不含读 npz 与构建）：
 | CPU 初版（全排序 topk） | 151.75 ms | `sort_by` 选出 top-16 |
 | CPU（`select_nth_unstable_by`） | **136.70 ms** | top-16 只做选择，不全排序 |
 | GPU 预处理（top-16 / 位图 / 选项表） | 30.41 ms | CPU 侧，`--gpu` 时计时 |
-| **GPU 内核（wgpu，3530 题）** | **6.85 ms** | 5 次中位，不含预处理与上传 |
+| **GPU 内核（wgpu，3530 题）** | **6.85–7.34 ms** | 5 次中位，不含预处理与上传 |
+| **GPU 内核 + 三值 `row_w`** | **6.22 ms** | `row_w` 268 MB → 48 MB（pos/neg/scale） |
 | GPU 端到端（预处理 + 内核） | 37.26 ms | |
 
 `--gpu` 用 wgpu compute 跑读取器：CPU 先算好 top-16、pair 行号、qb 位图、选项概念表，
@@ -136,6 +137,10 @@ GPU 内核只做二阶/一阶读取与打分。数据上传（约 500 MB）不�
 - CPU↔GPU 最大绝对误差 **3.1e-5**（浮点累加顺序），16/3530 题预测翻转；
   GPU accuracy **52.3725%** vs CPU 52.4008%（差 0.03 点）。
 - 端到端 37.26 ms 比 CPU 单线程 136.70 ms 快 3.7×。
+- **三值 `row_w` 接到 GPU 内核**（`WSP_QUANT_ROW=sign_row`）：每行 16 个 trit 打成
+  `pos/neg` 两个 u32 + 一个行 scale，`row_w` 从 268 MB 降到 48 MB（5.6×）。
+  GPU 内核 7.34 → **6.22 ms**（快 15%），accuracy **52.0042%**（与 CPU 三值参考一致）。
+  时间只降 15%，说明瓶颈不在这块表带宽，而在行数与共享内存调度。
 
 ## 工程边界
 
