@@ -1,22 +1,18 @@
-//! 复现《Weight-Space Programming Doesn't Need Transformers》里的二阶联想记忆读取器
-//! （`models/<writer>/mem_assoc2*/arch.py` 的 `forward`）。
-//!
-//! 权重由 Python 侧的 `python/export_baseline.py` 从论文仓库的 `build.py` 导出为 npz；
-//! 本程序只做 forward + ARC test 评测，用来验证 Rust 实现与论文读数逐题一致。
-//!
-//! 运行：
-//! ```text
-//! cargo run --release -- <weights.npz> <arc_test.npz>
-//! ```
+//! 复现《Weight-Space Programming Doesn't Need Transformers》的二阶联想记忆读取器
+//! （`models/<writer>/mem_assoc2*/arch.py` 的 `forward`）。权重由 Python 的 `export_baseline.py`
+//! 导出；本程序只做 forward + ARC test 评测，用来验证 Rust 与论文读数逐题一致。
+//! 运行：`cargo run --release -- <weights.npz> <arc_test.npz>`。
 
 use std::path::Path;
 
 use npyz::npz::NpzArchive;
 
 mod quant;
+mod quantize;
 mod weights;
 
-use quant::{Quant, quantize_matrix};
+use quant::Quant;
+use quantize::quantize_matrix;
 use weights::{Weights, load_weights, read_i64};
 
 const J: usize = 16;
@@ -113,18 +109,21 @@ fn main() {
         std::process::exit(2);
     }
     let mut w = load_weights(Path::new(&args[1]));
-    let quant = Quant::from_env();
+    let quant = Quant::from_env_var("WSP_QUANT");
+    let quant_row =
+        std::env::var("WSP_QUANT_ROW").map_or(quant, |_| Quant::from_env_var("WSP_QUANT_ROW"));
     let target = std::env::var("WSP_QUANT_TARGET").unwrap_or_else(|_| "both".to_string());
     if target == "a" || target == "both" {
         quantize_matrix(&mut w.a, w.c, w.c, quant);
     }
     if target == "row" || target == "both" {
-        quantize_matrix(&mut w.row_w, w.h, w.r, quant);
+        quantize_matrix(&mut w.row_w, w.h, w.r, quant_row);
     }
     println!(
-        "量化 {:?}｜目标 {}｜A {}×{}｜二阶表 {}×{}",
-        quant, target, w.c, w.c, w.h, w.r
+        "量化 A={quant:?} row={quant_row:?}｜目标 {target}｜A {}×{}｜二阶表 {}×{}",
+        w.c, w.c, w.h, w.r
     );
+
     let mut npz =
         NpzArchive::open(&args[2]).unwrap_or_else(|e| panic!("打开 {} 失败：{e}", args[2]));
     let q = read_i64(&mut npz, "q");

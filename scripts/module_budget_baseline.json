@@ -16,11 +16,15 @@
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/main.rs",
-      "lines": 174
+      "lines": 173
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/quant.rs",
-      "lines": 52
+      "lines": 24
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/quantize.rs",
+      "lines": 45
     },
     {
       "file": "benchmarks/wsp-no-transformer/src/weights.rs",
