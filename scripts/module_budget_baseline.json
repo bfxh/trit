@@ -15,6 +15,10 @@
       "lines": 115
     },
     {
+      "file": "benchmarks/wsp-no-transformer/src/main.rs",
+      "lines": 228
+    },
+    {
       "file": "crates/sansheng/src/lib.rs",
       "lines": 57
     },
@@ -2968,7 +2972,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/adversarial_train/main.rs",
-      "lines": 440
+      "lines": 432
     },
     {
       "file": "crates/trit-wspace/examples/adversarial_train/metrics.rs",

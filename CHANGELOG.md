@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（benchmarks：复现《WSP Doesn't Need Transformers》的读取器）
+
+- 新增 `benchmarks/wsp-no-transformer`（独立 workspace，不进 CI）：Rust 复现论文仓库
+  `models/opus/mem_assoc2_g5` 的二阶联想记忆读取器，ARC test 3,530 题 accuracy
+  **0.5240084985835695**、answered 0.9798866855524079；第一代（R=40）用 `WSP_R=40` 跑同一程序。
+- 论文 `result.json` 是 0.5237252124645893；差 3 题（47/64/946），全部来自 `torch.topk`
+  对并列 idf=0.8 概念的未定义顺序——换成确定性 tie-breaking 后 Python 参考与 Rust 逐位一致。
+  即论文读数不是逐位可复现的，确定性规则下是 0.5240。
+- Python 只作对齐基线（导出权重、原始 topk 读数、确定性参考）；Rust 交付 forward + 评测。
+- 未证栏：`kb/`→权重的编译仍在 Python；只复现 `mem_assoc2` 一支；17× GPU 速度与三值化未做。
+
 ### Changed（文档治理：docs 按用途归位、索引重写、口径统一、文档门接进 CI）
 
 - 文档门接进 CI：`docs-gates` job 现在跑 **6 道**——`docs_hygiene` / `doc_pointers` /

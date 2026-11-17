@@ -1,0 +1,12 @@
+[package]
+name = "wsp-no-transformer"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# 独立 workspace：复现 alphaXiv《Weight-Space Programming Doesn't Need Transformers》
+# 的稀疏事实表读取器（mem_assoc2），不进主 workspace、不进 CI。
+[workspace]
+
+[dependencies]
+npyz = { version = "0.8", features = ["npz"] }
