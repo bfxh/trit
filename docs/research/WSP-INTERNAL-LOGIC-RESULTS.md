@@ -107,6 +107,11 @@ trace: hidden_classes=8 hidden_to_out_conflicts=0 hidden_to_state_conflicts=4 ma
 
 ## 9. M0e：穷尽干预（承重矩阵）
 
+`sweep` 的签名是 `(net, max_len, layer_idx, units, encode)`：手写两层网络用
+`(0, 全部单元, word::encode)`，编译网络用 `(0, 状态位数, compile::encode3)`。
+内部改成「改一个单元 → 用**尾部网络**（`layer_idx+1` 之后）重算输出」，
+所以对任意层数成立，不再假设固定两层。
+
 `--intervene` 对层 1 的 9 个单元逐个做「清零 / 取反」，域内 15 个串全部穷尽，不抽样：
 
 ```text
@@ -173,12 +178,16 @@ parity / mod3 / paren / four_sources / ends_with_1 / contains_01
 
 ### 10.2 未证
 
-- 已测六个程序：`parity`、`mod3`、`paren`、`four_sources`（4 源）、`ends_with_1`、
-  `contains_01`（3 源），在变长域（长度 ≤ 3）上都是「状态数 / 转移表 / 接受集」逐项相等。
+- 已测七个程序：`parity`、`mod3`、`paren`、`four_sources`（4 源）、`ends_with_1`、
+  `contains_01`（3 源）、`mod5`（5 状态），在变长域（长度 ≤ 3）上都是
+  「状态数 / 转移表 / 接受集」逐项相等。
 - End 冻结已实现（3 符号 + 自环），不再是缺口；原先「三项 OR 阈值门」的障碍
   由 §10.3 的常量单元方案消掉了。
 - 编译器仍要求 DFA 状态数 ≥ 1、`max_len ≥ 1`；空 DFA 未测。
-- 只测了小 DFA（≤3 状态、≤4 源）；状态数更多的程序未测。
+- 只测了小 DFA（≤5 状态、≤4 源）；更大的程序未测。
+- **编译网络的中间层干预未验证**：层 0 输出的是**初始状态**（每串相同），
+  真正的状态更新在后续层里；「哪一层的哪些单元算状态位」还没有明确口径，
+  所以 §9 的承重矩阵目前只对手写网络成立。
 
 
 
@@ -217,6 +226,10 @@ max_len words states_ref states_net same
 4 31 9 9 true
 5 63 11 11 true
 6 127 13 13 true
+7 255 15 15 true
+8 511 17 17 true
+9 1023 19 19 true
+10 2047 21 21 true
 ```
 
 两条读数：

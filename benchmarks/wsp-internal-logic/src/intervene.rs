@@ -1,14 +1,16 @@
-//! 穷尽干预（M0e）：对层 1 的每个单元做「清零 / 取反」，统计输出翻转。
+//! 穷尽干预（M0e）：对**任意层**的指定单元做「清零 / 取反」，统计输出翻转。
 //!
-//! 这是设计文档 L-D 的第二半：光有「层 1 决定输出」（信息瓶颈）不够，还要知道
+//! 这是设计文档 L-D 的第二半：光有「某层决定输出」（信息瓶颈）不够，还要知道
 //! **每一步是否承重**——不承重的单元是装饰，不该算进「思考链」。
 //!
-//! 做法是穷尽的：域内每个串 × 每个单元 × 两种替代值（`Zero`、取反），
-//! 不抽样。翻转率即该单元的承重读数。
+//! 做法是穷尽的：域内每个串 × 每个单元 × 两种替代值（`Zero`、取反），不抽样。
+//! 翻转率即该单元的承重读数。
+//!
+//! 通用化后的签名允许指定 `layer_idx` 与 `units`：
+//! 手写两层网络用 `(0, 全部单元)`；编译出来的多层网络用 `(0, 状态位数)`。
 
-use trit_wspace::{Layer, Net, Trit};
+use trit_wspace::{Net, Trit};
 
-use crate::trace;
 use crate::word;
 
 /// 一个单元的干预读数。
@@ -39,25 +41,24 @@ impl Matrix {
     }
 }
 
-/// 用层 2 权重把（干预后的）层 1 激活算成输出。
-fn out_of(layer: &Layer, h: &[Trit]) -> Trit {
-    let mut acc = 0i32;
-    for r in 0..layer.rows() {
-        let mut sum = i32::from(layer.bias()[r].to_i8());
-        let row = layer.row(r).expect("行号在范围内");
-        for (c, &w) in row.iter().enumerate() {
-            sum += i32::from(w.to_i8()) * i32::from(h[c].to_i8());
-        }
-        acc = sum;
-    }
-    Trit::sign_of(acc)
-}
-
-/// 在声明域上做穷尽干预。
+/// 在声明域上对第 `layer_idx` 层输出的前 `units` 个单元做穷尽干预。
+///
+/// 做法：取该层激活，改一个单元，再用**尾部网络**（`layer_idx + 1` 之后）重算输出。
+/// 这样对两层网络与多层编译网络是同一个口径。
 #[must_use]
-pub fn sweep(net: &Net, max_len: usize) -> Matrix {
-    let layer2 = net.layer(1).expect("本案例是两层网络");
-    let units = net.layer(0).expect("有层 1").rows();
+pub fn sweep(
+    net: &Net,
+    max_len: usize,
+    layer_idx: usize,
+    units: usize,
+    encode: fn(&[Trit], usize) -> Vec<Trit>,
+) -> Matrix {
+    let layers = net.layers();
+    assert!(
+        layer_idx + 1 < layers.len(),
+        "layer_idx 之后必须还有层（否则没有可观测的输出）"
+    );
+    let tail = Net::new(layers[layer_idx + 1..].to_vec()).expect("尾部网络维度连续");
     let words = word::all_words(max_len);
     let mut out = vec![
         UnitImpact {
@@ -68,16 +69,18 @@ pub fn sweep(net: &Net, max_len: usize) -> Matrix {
         units
     ];
     for w in &words {
-        let t = trace::trace(net, w, max_len);
-        let base = out_of(layer2, &t.hidden);
+        let input = encode(w, max_len);
+        let pre = net.pre_activations(&input).expect("编码后维度一致");
+        let hidden: Vec<Trit> = pre[layer_idx].iter().map(|v| Trit::sign_of(*v)).collect();
+        let base = tail.forward(&hidden).expect("尾部输入维度一致")[0];
         for (unit, impact) in out.iter_mut().enumerate() {
-            let mut h = t.hidden.clone();
+            let mut h = hidden.clone();
             h[unit] = Trit::Zero;
-            if out_of(layer2, &h) != base {
+            if tail.forward(&h).expect("同宽度")[0] != base {
                 impact.flips_zero += 1;
             }
-            h[unit] = t.hidden[unit].neg();
-            if out_of(layer2, &h) != base {
+            h[unit] = hidden[unit].neg();
+            if tail.forward(&h).expect("同宽度")[0] != base {
                 impact.flips_neg += 1;
             }
         }

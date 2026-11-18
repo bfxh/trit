@@ -134,7 +134,7 @@ fn parity_program() -> dfa::Dfa {
 fn budget() {
     let program = parity_program();
     println!("max_len words states_ref states_net same");
-    for max_len in 1..=6 {
+    for max_len in 1..=10 {
         let net = compile::compile(&program, max_len).expect("编译 parity");
         let extracted =
             dfa::from_accepts(max_len, |w| compile::run(&net, w, max_len)).minimize();
@@ -183,7 +183,8 @@ fn main() {
             r.hidden_classes, r.hidden_to_out_conflicts, r.hidden_to_state_conflicts, r.max_variants
         );
         if dump_int {
-            let m = intervene::sweep(&case.net, case.max_len);
+            let units = case.net.layer(0).expect("有层 1").rows();
+            let m = intervene::sweep(&case.net, case.max_len, 0, units, word::encode);
             println!(
                 "  intervene: units={} live={} words={}",
                 m.units.len(),
@@ -269,7 +270,8 @@ mod tests {
     #[test]
     fn intervene_has_live_units() {
         for case in cases::all() {
-            let m = intervene::sweep(&case.net, case.max_len);
+            let units = case.net.layer(0).expect("有层 1").rows();
+            let m = intervene::sweep(&case.net, case.max_len, 0, units, word::encode);
             assert!(m.live_units() > 0, "案例 {}：没有任何单元承重", case.name);
         }
     }
@@ -330,6 +332,16 @@ mod tests {
                     start: 0,
                     accept: vec![false, false, true],
                     delta: vec![[1, 0], [1, 2], [2, 2]],
+                },
+            ),
+            (
+                // 5 状态：模 5 计数，接受 q0。
+                "mod5",
+                dfa::Dfa {
+                    states: 5,
+                    start: 0,
+                    accept: vec![true, false, false, false, false],
+                    delta: vec![[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]],
                 },
             ),
         ]
@@ -398,5 +410,6 @@ mod tests {
             }
         }
     }
+
 
 }
