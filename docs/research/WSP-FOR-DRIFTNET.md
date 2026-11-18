@@ -280,6 +280,22 @@ before=artifacts/ch1024_20k/weights.bin after=.../weights_flip01.bin n=64 seed=0
 **改权重 → 一条命令 → 声明域内「逐位等价 / 不等价 + 反例规模」的判定**。
 `changed == 0` 是证明（声明域内全部跑过），不是抽样估计。
 
+
+### 8.1 中间层也逐位相同
+
+`--check-layers` 对两个模型跑 `probe_channels`，逐层比较 ReLU 后激活：
+
+```text
+layer1 samples=64 changed=0 byte_identical=true
+layer2 samples=64 changed=0 byte_identical=true
+layer3 samples=64 changed=0 byte_identical=true
+```
+
+（原版 vs 翻 180,592 个 conv 零码符号。）
+
+所以之前列的未证项「`verify` 只比输出、未检查中间层」已经补上：
+**输入、每层激活、输出全部逐位一致**。
+
 ## 4. 未证栏
 
 - 没有在 driftnet 上实际跑过任何一条审计；本文只有方法映射，没有读数。
@@ -289,8 +305,8 @@ before=artifacts/ch1024_20k/weights.bin after=.../weights_flip01.bin n=64 seed=0
   §7.4 证明**翻符号保持 `|w|`** 在零码元素上逐位等价（`byte_identical=True`）。
 - §7.5 把 §7.4 推到 109,763 个元素（`|w|/scale < 0.1`），逐位等价；但 `[0.1, 0.5)` 区间
   因 Python/Rust 浮点差异**未验证**（全部零码翻转会失败，原因已在 §7.5 记录）。
-- §8 的 `qat verify` 只比较**输出**；它不检查中间层是否也逐位相同（理论上应该相同，
-  因为输入与权重都逐位一致，但未验证）。
+- §8.1 用 `--check-layers` 验证了三层激活也逐位相同；但只测了 conv 零码翻转这一个改动，
+  其他改动面（如 fc 翻转）未逐层检查。
 - §7.6 已把 conv 三层也测了（180,592 个，逐位等价）；`[0.1, 0.5)` 区间仍未验证。
 - §7 的 `tol` 是事后定的（`1e-5`），不是预先声明；更严谨的做法是在声明域里同时记录
   「逐位」与「容差」两档结果。
