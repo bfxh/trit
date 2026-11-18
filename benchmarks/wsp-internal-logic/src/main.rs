@@ -412,4 +412,22 @@ mod tests {
     }
 
 
+    #[test]
+    fn intervene_compiled_or_layer_states() {
+        // 编译网络层结构：0 = 初始化；2 + 2*step = 第 step 步的 OR 层（状态位在前 k 个）；
+        // 最后一层是输出。只对 OR 层的状态位做干预——层 0 是初始状态，每串相同，干预它没有意义。
+        for (name, program) in programs() {
+            let max_len = 3;
+            let net = compile::compile(&program, max_len).expect("编译");
+            for step in 0..max_len {
+                let idx = 2 + 2 * step;
+                let m = intervene::sweep(&net, max_len, idx, program.states, compile::encode3);
+                assert!(
+                    m.live_units() > 0,
+                    "{name}: step {step}（层 {idx}）的状态位全不承重"
+                );
+            }
+        }
+    }
+
 }
