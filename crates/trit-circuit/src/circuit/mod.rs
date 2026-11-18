@@ -5,6 +5,7 @@
 //! `xpessimism`（用 SAT 区分真 X 与悲观 X）。
 
 mod analyze;
+pub mod equiv;
 mod graph;
 mod sim;
 mod types;
@@ -17,8 +18,7 @@ pub use types::*;
 pub use xpessimism::{XOutcome, XPessimismReport, analyze_x_pessimism};
 
 pub(crate) use graph::{fanout_counts, topological_order};
-pub(crate) use sim::Simulator;
-pub(crate) use validate::validate;
+pub(crate) use {sim::Simulator, validate::validate};
 
 #[cfg(test)]
 pub(crate) use test_support::simulate_assignment;
