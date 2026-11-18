@@ -12,6 +12,7 @@
 mod audit;
 mod cases;
 mod compile;
+mod declared;
 mod dfa;
 mod intervene;
 mod recurrent;
@@ -355,6 +356,41 @@ fn audit_demo() {
     );
 }
 
+/// `--declared`：演示「声明域上完全验证」——权重空间编程的强判据载体。
+fn declared_demo() {
+    let domain = declared::Domain::new("整数 0..8", (0..8).collect::<Vec<i32>>());
+    let before = |x: &i32| *x * 2;
+    // 模拟「改了一处权重」：只在下标 5 上行为变了。
+    let after = |x: &i32| if *x == 5 { 99 } else { x * 2 };
+
+    let v = declared::verify(before, after, &domain);
+    println!(
+        "declared: domain={} checked={} changed={} first_diff={:?} exact={}",
+        v.domain,
+        v.checked,
+        v.changed,
+        v.first_diff,
+        v.is_exact()
+    );
+    let fa = declared::fingerprint(before, &domain);
+    let fb = declared::fingerprint(after, &domain);
+    println!(
+        "declared: fingerprint before={fa} after={fb} same={}",
+        fa == fb
+    );
+
+    // 第二个域：不含被改的下标 → 结论是 exact。
+    let domain2 = declared::Domain::new("整数 0..5（不含 5）", (0..5).collect::<Vec<i32>>());
+    let v2 = declared::verify(before, after, &domain2);
+    println!(
+        "declared: domain={} checked={} changed={} exact={}",
+        v2.domain,
+        v2.checked,
+        v2.changed,
+        v2.is_exact()
+    );
+}
+
 fn main() {
     if std::env::args().any(|a| a == "--budget") {
         budget();
@@ -366,6 +402,10 @@ fn main() {
     }
     if std::env::args().any(|a| a == "--audit") {
         audit_demo();
+        return;
+    }
+    if std::env::args().any(|a| a == "--declared") {
+        declared_demo();
         return;
     }
 
