@@ -19,11 +19,17 @@ impl Dfa {
     /// 走一遍串，返回是否接受。
     #[must_use]
     pub fn run(&self, input: &[bool]) -> bool {
+        self.accept[self.state_of(input)]
+    }
+
+    /// 走一遍串，返回最终状态。
+    #[must_use]
+    pub fn state_of(&self, input: &[bool]) -> usize {
         let mut s = self.start;
         for &b in input {
             s = self.delta[s][usize::from(b)];
         }
-        self.accept[s]
+        s
     }
 
     /// Moore 划分细化，得到最小 DFA（再剔除不可达状态、从 `start` 重编号）。
