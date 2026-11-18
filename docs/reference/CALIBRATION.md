@@ -55,6 +55,21 @@ characteristics 精确值探针——entry_point 用 **RVA/offset 双候选**设
 复算：`python -I scripts/yara_diff.py --trit <exe> --rules <N1>/pe_rules.yar
 --samples <N1>/benign-x64`（及 benign-pe32）。
 
+**pe.sections 数组式（2026-11-13，待官方探针补证）**：本机无
+`yara-python`，本轮未新增官方差分探针批。语义依据=官方 undefined 比较
+纪律（越界数组项参与比较为假）与既有 `@a[N]` 差分结论（确定的未定义 ≠
+证据缺失）的推广：`pe.sections[9].characteristics == 1` 在 2 节样本上
+判假；缺 PE 上下文判 `Unknown`。建议下一批校准补一条规则（对每样本
+生成「越界索引 + 真实字段值」两行探针）把这条推广钉成官方读数。
+
+**private / 字符串比较 / rich_signature（2026-11-13，待官方探针补证）**：
+本机仍无 `yara-python`，三组语义未新增官方差分。语义依据：①`private`
+＝匹配与条件引用照常、仅报告隐藏（官方文档）；②字符串属性（`.name` /
+`clear_data` / `raw_data`）只认 `==`/`!=`，非字符串属性比较由解析层
+拒绝；③Rich header = `DanS`+3×0+entries+`Rich`+key，`version` = 首条
+entry 的 `comp_id >> 16`、`offset` = clear_data 文件偏移。建议下一批
+校准用真实 VS 工具链样本（notepad.exe 等）生成 rich 探针。
+
 ## 四、N1 判据对照
 
 SECURITY-RE 路线图 N1：「真实语料校准：PE x64 / PE ARM64 / ELF x64 / ELF

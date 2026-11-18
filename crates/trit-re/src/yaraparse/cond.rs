@@ -3,7 +3,7 @@
 //! 解析不了的语法如实 `Err`（→ 整条规则 `Unsupported`），绝不静默吞。
 
 use super::Tok;
-use crate::sigscan::{CmpOp, Condition, ForBound, Operand, Pattern};
+use crate::sigscan::{Condition, ForBound, Operand, Pattern};
 
 pub(super) struct CondParser<'a> {
     pub(super) toks: &'a [Tok],
@@ -106,6 +106,7 @@ impl<'a> CondParser<'a> {
         Ok(left)
     }
 
+    // 数值叶子（parse_num_leaf / skip_balanced）在 cond_leaf.rs。
     fn parse_unit(&mut self) -> Result<Condition, String> {
         if self.word_is("not") {
             self.pos += 1;
@@ -139,6 +140,11 @@ impl<'a> CondParser<'a> {
                 return self.bail("括号未闭合");
             }
             return Ok(inner);
+        }
+        // 字符串字面量起点（`"a" == "a"`）
+        if let Some(Tok::Str(s)) = self.peek().cloned() {
+            self.pos += 1;
+            return self.cmp_tail(Operand::LitStr(s));
         }
         // N of … / $ref … / 数值叶子 + 比较
         if let Some(Tok::Word(w)) = self.peek().cloned() {
@@ -242,166 +248,6 @@ impl<'a> CondParser<'a> {
         })
     }
 
-    /// 数值叶子之后的比较尾巴：`<cmpop> <数值叶子>`。裸数值不是布尔
-    ///（`filesize` 单独出现 = 条件不支持，如实报错）——例外：官方
-    /// 允许裸布尔函数（`condition: pe.is_dll()`；探针实测 is_dll /
-    /// is_32bit 都是**函数**要 `()`，裸属性 `pe.is_dll` 官方编译报错），
-    /// 已知布尔函数按真值语义收窄为 `!= 0`；其余裸路径仍如实报错。
-    fn cmp_tail(&mut self, lhs: Operand) -> Result<Condition, String> {
-        if let Some(op) = self.parse_cmp_op() {
-            let rhs = self.parse_num_leaf()?;
-            return Ok(Condition::Cmp { lhs, op, rhs });
-        }
-        if matches!(
-            &lhs,
-            Operand::Opaque(p) if p == "pe.is_dll(…)" || p == "pe.is_32bit(…)"
-        ) {
-            return Ok(Condition::Cmp {
-                lhs,
-                op: CmpOp::Ne,
-                rhs: Operand::Lit(0),
-            });
-        }
-        self.bail("数值后缺比较算子（裸数值不是布尔条件）")
-    }
-
-    /// 比较算子：`== != < <= > >=`（不匹配时不消费任何 token）。
-    fn parse_cmp_op(&mut self) -> Option<CmpOp> {
-        match self.peek() {
-            Some(Tok::Sym('=')) => {
-                self.pos += 1;
-                if self.eat_sym('=') {
-                    Some(CmpOp::Eq)
-                } else {
-                    self.pos -= 1;
-                    None
-                }
-            }
-            Some(Tok::Sym('!')) => {
-                self.pos += 1;
-                if self.eat_sym('=') {
-                    Some(CmpOp::Ne)
-                } else {
-                    self.pos -= 1;
-                    None
-                }
-            }
-            Some(Tok::Sym('<')) => {
-                self.pos += 1;
-                if self.eat_sym('=') {
-                    Some(CmpOp::Le)
-                } else {
-                    Some(CmpOp::Lt)
-                }
-            }
-            Some(Tok::Sym('>')) => {
-                self.pos += 1;
-                if self.eat_sym('=') {
-                    Some(CmpOp::Ge)
-                } else {
-                    Some(CmpOp::Gt)
-                }
-            }
-            _ => None,
-        }
-    }
-
-    /// 数值叶子：字面量（十进制/`0x`/`KB`·`MB`）、`filesize`、`entrypoint`、
-    /// `uintN(lit)`、`#串`/`#$` 计数、`@串[N]`/`@$[N]` 偏移、模块引用与
-    /// 未知函数（记名 → 求值恒 Unknown）。其余词首如实报错——编译错误的
-    /// YARA 不该被装作能评估。
-    fn parse_num_leaf(&mut self) -> Result<Operand, String> {
-        let Some(Tok::Word(w)) = self.peek().cloned() else {
-            return self.bail("缺数值");
-        };
-        if let Some(v) = parse_size(&w) {
-            self.pos += 1;
-            return Ok(Operand::Lit(v));
-        }
-        match w.as_str() {
-            "filesize" => {
-                self.pos += 1;
-                return Ok(Operand::Filesize);
-            }
-            "entrypoint" => {
-                self.pos += 1;
-                return Ok(Operand::Entrypoint);
-            }
-            "uint8" | "uint16" | "uint32" => {
-                let size = match w.as_str() {
-                    "uint8" => 1u8,
-                    "uint16" => 2,
-                    _ => 4,
-                };
-                self.pos += 1;
-                if !self.eat_sym('(') {
-                    return self.bail("uintN 后缺 (");
-                }
-                let offset = self.parse_int()?;
-                if !self.eat_sym(')') {
-                    return self.bail("uintN 未闭合");
-                }
-                return Ok(Operand::UintRead { size, offset });
-            }
-            _ => {}
-        }
-        if let Some(rest) = w.strip_prefix('#') {
-            self.pos += 1;
-            return self.count_operand(rest);
-        }
-        if let Some(rest) = w.strip_prefix('@') {
-            self.pos += 1;
-            return self.offset_operand(rest);
-        }
-        // 模块路径 `pe.xxx`（含数组式下标 `pe.sections[0].characteristics`）
-        // 与未实现函数 `math.entropy(…)`：记名弃权。裸未知词（不带点不带
-        // 下标不带调用）如实报错——不装作能评估。
-        let next_is = |t: &Tok| self.toks.get(self.pos + 1) == Some(t);
-        if next_is(&Tok::Sym('.')) || next_is(&Tok::Sym('(')) || next_is(&Tok::Sym('[')) {
-            self.pos += 1; // 吃掉词本身
-            let mut path = w;
-            loop {
-                if self.eat_sym('.') {
-                    match self.next() {
-                        Some(Tok::Word(seg)) => {
-                            path.push('.');
-                            path.push_str(&seg);
-                        }
-                        other => return self.bail(&format!("模块路径缺段：{other:?}")),
-                    }
-                } else if self.eat_sym('[') {
-                    // 数组式下标：吞平衡的 [ ] 进路径（求值层对子集外
-                    // 路径如实 Unknown），后续段继续跟（[0].characteristics）
-                    let mut depth = 1i32;
-                    while let Some(t) = self.next() {
-                        match t {
-                            Tok::Sym('[') => depth += 1,
-                            Tok::Sym(']') => {
-                                depth -= 1;
-                                if depth == 0 {
-                                    break;
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    if depth != 0 {
-                        return self.bail("模块路径下标未闭合");
-                    }
-                    path.push_str("[…]");
-                } else if self.eat_sym('(') {
-                    self.skip_balanced()?;
-                    path.push_str("(…)");
-                    break;
-                } else {
-                    break;
-                }
-            }
-            return Ok(Operand::Opaque(path));
-        }
-        self.bail("无法识别的数值起点")
-    }
-
     /// for-of 体内 `$ in (a..b)`（调用方已消费 `in`）。
     fn parse_in_tail_current(&mut self) -> Result<Condition, String> {
         if !self.eat_sym('(') {
@@ -432,24 +278,6 @@ impl<'a> CondParser<'a> {
             .iter()
             .position(|(sid, _)| sid == id)
             .ok_or_else(|| format!("条件不支持：引用了未声明的串 ${id}"))
-    }
-
-    /// 吃掉一段平衡的括号（调用方已吃 `(`）——未实现函数的参数原样跳过。
-    fn skip_balanced(&mut self) -> Result<(), String> {
-        let mut depth = 1i32;
-        while let Some(t) = self.next() {
-            match t {
-                Tok::Sym('(') => depth += 1,
-                Tok::Sym(')') => {
-                    depth -= 1;
-                    if depth == 0 {
-                        return Ok(());
-                    }
-                }
-                _ => {}
-            }
-        }
-        Err("条件不支持：括号未闭合".into())
     }
 
     /// `$id` 尾巴：裸引用 / `at <数值叶子>` / `in (a .. b)`。
