@@ -323,6 +323,12 @@ jobs:
       # 快照缺失 ⇒ 判红，不跳过：不知道有没有重复登记不等于没重复。
       - name: Tech collide (ledger ids unique)
         run: python3 scripts/tech_collide.py
+      # 用户口径（2026-11-19）：所有仓库禁止 AI 厂商账号/身份进入——只拦归属与来源
+      # （URL / 邮箱 / trailer / remote），不拦「一般性提到 AI」。
+      - name: AI vendor self-test (URL / email / trailer / remote counterexamples)
+        run: python3 scripts/ai_vendor_scan.py --self-test
+      - name: AI vendor scan (no vendor URLs / trailers / identities)
+        run: python3 scripts/ai_vendor_scan.py
 
   module-budget:
     name: module budget (god objects)

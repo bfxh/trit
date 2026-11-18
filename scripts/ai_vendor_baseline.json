@@ -1,0 +1,6 @@
+{
+  "note": "已知历史违规，只许变少不许变多。main 上 20b500eb（#486 的 squash 合并提交）带指向 AI 厂商的 Co-authored-by trailer；改写 main 历史需要 force push（分支保护禁止）或管理员凭据。用管理员凭据改写后，请把对应条目从这里删掉——门禁会在基线里的提交不再命中时提示收紧。",
+  "allowed_commits": {
+    "20b500eb": ["vendor-email", "vendor-trailer"]
+  }
+}

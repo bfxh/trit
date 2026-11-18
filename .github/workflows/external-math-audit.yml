@@ -1,0 +1,36 @@
+name: external-math-audit
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: external-math-audit-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # 外部语料地址不入库：仓库设置里配 `EXTERNAL_MATH_SOURCE` 变量（Settings → Variables）。
+  SOURCE_URL: ${{ vars.EXTERNAL_MATH_SOURCE }}
+
+jobs:
+  audit:
+    name: external-math catalogue audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Sparse-fetch pinned corpus
+        run: interop/lean/openai_math/fetch_sparse.sh "$RUNNER_TEMP/ext-math"
+      - name: Audit catalogue
+        run: >-
+          python3 interop/lean/openai_math/audit.py
+          --repo "$RUNNER_TEMP/ext-math"
+          --json "$RUNNER_TEMP/ext-math-audit.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: external-math-audit
+          path: ${{ runner.temp }}/ext-math-audit.json
+      - name: Show report
+        run: cat "$RUNNER_TEMP/ext-math-audit.json"
