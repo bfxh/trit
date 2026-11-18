@@ -8,7 +8,11 @@
     },
     {
       "file": "benchmarks/cram-drift-2d/src/main.rs",
-      "lines": 88
+      "lines": 84
+    },
+    {
+      "file": "benchmarks/cram-drift-2d/src/output.rs",
+      "lines": 24
     },
     {
       "file": "benchmarks/cuda-oxide-compare/src/main.rs",

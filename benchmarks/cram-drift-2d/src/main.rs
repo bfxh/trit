@@ -9,30 +9,14 @@
 //! ```
 
 mod dataset;
+mod output;
 
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
-use dataset::{Task, gen_task, render_3ch};
+use dataset::{gen_task, render_3ch};
+use output::write_task;
 
-fn write_task(out: &mut impl Write, task: &Task) -> std::io::Result<()> {
-    let grid: String = task
-        .grid
-        .iter()
-        .map(|&v| if v == 0 { '.' } else { '#' })
-        .collect();
-    let path: Vec<String> = task.path.iter().map(|p| p.to_string()).collect();
-    writeln!(
-        out,
-        "{{\"id\":{},\"grid\":\"{}\",\"start\":{},\"goal\":{},\"len\":{},\"path\":[{}]}}",
-        task.id,
-        grid,
-        task.start,
-        task.goal,
-        task.path.len(),
-        path.join(",")
-    )
-}
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
