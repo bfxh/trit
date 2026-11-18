@@ -299,9 +299,34 @@ fn programs() -> Vec<(&'static str, dfa::Dfa)> {
     ]
 }
 
+
+/// 打印循环执行的轨迹（`--trace-cell`）：每步之后的状态向量。
+fn trace_cell() {
+    for (name, program) in programs().iter().take(3) {
+        let cell = compile::compile_cell(program).expect("cell");
+        for w in word::all_words(2) {
+            let r = recurrent::run(&cell, program, &w, 2);
+            let trace: Vec<Vec<i8>> = r
+                .trace
+                .iter()
+                .map(|s| s.iter().map(|t| t.to_i8()).collect())
+                .collect();
+            println!(
+                "{name} {:?}: trace={trace:?} accept={}",
+                word::bits(&w),
+                r.accept
+            );
+        }
+    }
+}
+
 fn main() {
     if std::env::args().any(|a| a == "--budget") {
         budget();
+        return;
+    }
+    if std::env::args().any(|a| a == "--trace-cell") {
+        trace_cell();
         return;
     }
 
