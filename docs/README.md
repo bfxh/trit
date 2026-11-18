@@ -69,6 +69,7 @@
 | 文档 | 一句话 |
 |---|---|
 | [WSP-RESEARCH-ROADMAP.md](research/WSP-RESEARCH-ROADMAP.md) | 权重空间编程的论文地图、技术树（L0–L7）与任务清单 |
+| [WSP-FOR-DRIFTNET.md](research/WSP-FOR-DRIFTNET.md) | WSP 读取方法的适用边界，以及能给 driftnet 的三件审计 |
 | [WSP-LIMITS.md](research/WSP-LIMITS.md) | `trit-wspace` 未证栏汇总（每条给来源与补证所需） |
 | [WSP-BLOCK-INDEX.md](research/WSP-BLOCK-INDEX.md) | WSP2 块索引与随机访问 |
 | [WSP-WRITE-LOCK.md](research/WSP-WRITE-LOCK.md) | CLI 并发写锁（`--out` / `--log` 分发前加锁） |
