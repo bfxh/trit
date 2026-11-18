@@ -89,6 +89,10 @@
 | [WSP-DGA-QAT.md](research/WSP-DGA-QAT.md) | 三值 QAT：DGA 域名检测与家族归因（真实安全数据集） |
 | [GGUF-TRIT.md](research/GGUF-TRIT.md) | 三值权重 GGUF 容器（`trit-export`）的最小 v3 子集 |
 | [FORK-FLUSH.md](FORK-FLUSH.md) | Fork-and-Flush：多智能体任务分叉 + 清空 + 按验收分数选优 |
+| [CRAM-3D-DRIFT.md](research/CRAM-3D-DRIFT.md) | CRAM + 3D 漂移：S 级任务包与 2D 最小切片（设计，未开工） |
+| [CRAM-3D-DRIFT-RESULTS.md](research/CRAM-3D-DRIFT-RESULTS.md) | M0 负结果：轨迹生成器 0% 可行（约束不在 loss） |
+| [CRAM-3D-DRIFT-COND.md](research/CRAM-3D-DRIFT-COND.md) | 真条件生成：goal 独立通路（已实现，两轮负结果：条件能被用起来、路径仍画不出） |
+| [CRAM-3D-DRIFT-CREATIVE.md](research/CRAM-3D-DRIFT-CREATIVE.md) | 把创造力接进漂移模型：过程/产品解耦（primer 分层 + 掩码解码 + 极小适配器，设计未开工） |
 | [GAME-SCAN.md](research/GAME-SCAN.md) | 游戏环境扫描、故障注入与恢复（Phase 0） |
 | [DEEP-RISK-MAP.md](research/DEEP-RISK-MAP.md) | 深层风险地图：更新 / 认领 / 牵连 |
 
