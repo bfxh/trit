@@ -71,6 +71,7 @@
 | 文档 | 一句话 |
 |---|---|
 | [WSP-RESEARCH-ROADMAP.md](research/WSP-RESEARCH-ROADMAP.md) | 权重空间编程的论文地图、技术树（L0–L7）与任务清单 |
+| [WSP-INTERNAL-LOGIC.md](research/WSP-INTERNAL-LOGIC.md) | 从「读特征」升级到「读程序」：最小自动机提取、轨迹承重、Tracr 反向闭环的判据与 M0 |
 | [WSP-LIMITS.md](research/WSP-LIMITS.md) | `trit-wspace` 未证栏汇总（每条给来源与补证所需） |
 | [WSP-BLOCK-INDEX.md](research/WSP-BLOCK-INDEX.md) | WSP2 块索引与随机访问 |
 | [WSP-WRITE-LOCK.md](research/WSP-WRITE-LOCK.md) | CLI 并发写锁（`--out` / `--log` 分发前加锁） |
