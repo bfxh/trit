@@ -7,15 +7,16 @@
 //! OR  层：new_state_j = OR_{δ(q,a)=j} 该项
 //! ```
 //!
+//! **OR 的任意扇入**：`OR(x1..xn) = sign(Σxi + (n−1))`，而 `n−1` 由 `n−1` 个恒为
+//! `Pos` 的常量单元供给（权重只能是 ±1，偏置只能 ±1/0，但常量单元不受限）。
+//! 因此每步仍是 2 层，不需要树形归约。
+//!
 //! `a=1` 时接 `+sym`、`a=0` 时接 `−sym`；状态 one-hot 取 `{Neg, Pos}`。
 //! 输入每位置 2 维 `(sym, is_end)`：`0 → (Neg, Neg)`、`1 → (Pos, Neg)`、填充 → `(Zero, Pos)`。
 //! 注意这里**不用** `word::encode`——那一版把 0 编成 `Zero`（为线性阈值忽略填充），
 //! 而阈值门需要 `{±1}`，两个编码不能混用。
 //!
-//! 支持范围（超出即报错，不静默降级）：
-//! - 每个目标状态最多 2 个转移源；
-//! - 接受状态最多 2 个；
-//! - **只处理定长串**：不实现 End 冻结（未证栏）。
+//! 未实现：End 冻结（`End` 会被当符号继续执行转移）。闭环测试因此只在定长域上比较。
 
 use trit_wspace::{Layer, Net, Trit};
 
@@ -48,99 +49,105 @@ pub fn encode_sym(w: &[Trit], max_len: usize) -> Vec<Trit> {
 pub fn compile(dfa: &Dfa, max_len: usize) -> Result<Net, String> {
     let k = dfa.states;
     let dim_in = max_len * 2;
-    let dim = k + dim_in;
 
-    for j in 0..k {
-        let sources = (0..k)
-            .flat_map(|q| (0..2).map(move |a| (q, a)))
-            .filter(|(q, a)| dfa.delta[*q][*a] == j)
-            .count();
-        if sources > 2 {
-            return Err(format!("状态 {j} 有 {sources} 个转移源，超过编译器支持的 2 个"));
-        }
-    }
+    // 每个目标状态的转移源（用 `q*2 + a` 编码）。
+    let sources: Vec<Vec<usize>> = (0..k)
+        .map(|j| {
+            (0..k)
+                .flat_map(|q| (0..2).map(move |a| (q, a)))
+                .filter(|(q, a)| dfa.delta[*q][*a] == j)
+                .map(|(q, a)| q * 2 + a)
+                .collect()
+        })
+        .collect();
     let accepting: Vec<usize> = (0..k).filter(|j| dfa.accept[*j]).collect();
-    if accepting.len() > 2 {
-        return Err(format!(
-            "接受状态有 {} 个，超过编译器支持的 2 个",
-            accepting.len()
-        ));
-    }
+
+    // 需要多少个常量单元：`max(源数, 接受数) − 1`。
+    let max_src = sources.iter().map(Vec::len).max().unwrap_or(0);
+    let c = max_src.max(accepting.len()).saturating_sub(1);
+
+    let or_w = k + dim_in + c;
+    let and_w = 2 * k + dim_in + c;
 
     let mut layers: Vec<Layer> = Vec::new();
 
-    // 层 0：初始化状态（bias 给出 one-hot）+ 传递输入。
-    let mut trits = vec![0i8; dim * dim_in];
-    let mut bias = vec![0i8; dim];
+    // 层 0：初始化状态（bias 给出 one-hot）+ 传递输入 + 常量。
+    let mut trits = vec![0i8; or_w * dim_in];
+    let mut bias = vec![0i8; or_w];
     for i in 0..k {
         bias[i] = if i == dfa.start { 1 } else { -1 };
     }
     for i in 0..dim_in {
         trits[(k + i) * dim_in + i] = 1;
     }
-    layers.push(Layer::new(dim, dim_in, &trits, &bias).map_err(|e| e.to_string())?);
+    for j in 0..c {
+        bias[k + dim_in + j] = 1;
+    }
+    layers.push(Layer::new(or_w, dim_in, &trits, &bias).map_err(|e| e.to_string())?);
 
     for step in 0..max_len {
-        // AND 层：k*2 个 AND 项 + dim_in 个输入传递。
-        let and_rows = k * 2 + dim_in;
-        let mut trits = vec![0i8; and_rows * dim];
-        let mut bias = vec![0i8; and_rows];
+        // AND 层：2k 个 AND 项 + dim_in 个输入传递 + c 个常量。
+        let mut trits = vec![0i8; and_w * or_w];
+        let mut bias = vec![0i8; and_w];
         for q in 0..k {
             for a in 0..2 {
                 let r = q * 2 + a;
-                trits[r * dim + q] = 1; // state_q
+                trits[r * or_w + q] = 1; // state_q
                 // a=1 接 +sym，a=0 接 −sym。
-                trits[r * dim + k + 2 * step] = if a == 1 { 1 } else { -1 };
+                trits[r * or_w + k + 2 * step] = if a == 1 { 1 } else { -1 };
                 bias[r] = -1;
             }
         }
         for i in 0..dim_in {
-            trits[(k * 2 + i) * dim + k + i] = 1;
+            trits[(2 * k + i) * or_w + k + i] = 1;
         }
-        layers.push(Layer::new(and_rows, dim, &trits, &bias).map_err(|e| e.to_string())?);
+        for j in 0..c {
+            bias[2 * k + dim_in + j] = 1;
+        }
+        layers.push(Layer::new(and_w, or_w, &trits, &bias).map_err(|e| e.to_string())?);
 
-        // OR 层：k 个新状态 + dim_in 个输入传递。
-        let or_rows = k + dim_in;
-        let mut trits = vec![0i8; or_rows * and_rows];
-        let mut bias = vec![0i8; or_rows];
-        for j in 0..k {
-            let sources: Vec<usize> = (0..k)
-                .flat_map(|q| (0..2).map(move |a| (q, a)))
-                .filter(|(q, a)| dfa.delta[*q][*a] == j)
-                .map(|(q, a)| q * 2 + a)
-                .collect();
-            match sources.len() {
+        // OR 层：k 个新状态 + dim_in 个输入传递 + c 个常量。
+        let mut trits = vec![0i8; or_w * and_w];
+        let mut bias = vec![0i8; or_w];
+        let const_base = 2 * k + dim_in;
+        for (j, src) in sources.iter().enumerate() {
+            match src.len() {
                 0 => bias[j] = -1,
-                1 => trits[j * and_rows + sources[0]] = 1,
                 _ => {
-                    for s in sources {
-                        trits[j * and_rows + s] = 1;
+                    for &s in src {
+                        trits[j * and_w + s] = 1;
                     }
-                    bias[j] = 1;
+                    // n−1 个常量，把阈值推到「任意一个 +1 即接受」。
+                    for t in 0..src.len() - 1 {
+                        trits[j * and_w + const_base + t] = 1;
+                    }
                 }
             }
         }
         for i in 0..dim_in {
-            trits[(k + i) * and_rows + k * 2 + i] = 1;
+            trits[(k + i) * and_w + 2 * k + i] = 1;
         }
-        layers.push(Layer::new(or_rows, and_rows, &trits, &bias).map_err(|e| e.to_string())?);
+        for j in 0..c {
+            bias[k + dim_in + j] = 1;
+        }
+        layers.push(Layer::new(or_w, and_w, &trits, &bias).map_err(|e| e.to_string())?);
     }
 
-    // 输出层：接受状态的 OR。
-    let last = k + dim_in;
-    let mut trits = vec![0i8; last];
+    // 输出层：接受状态的 OR（同样用常量补阈值）。
+    let mut trits = vec![0i8; or_w];
     let mut bias = vec![0i8; 1];
     match accepting.len() {
         0 => bias[0] = -1,
-        1 => trits[accepting[0]] = 1,
         _ => {
-            for j in accepting {
+            for &j in &accepting {
                 trits[j] = 1;
             }
-            bias[0] = 1;
+            for t in 0..accepting.len() - 1 {
+                trits[k + dim_in + t] = 1;
+            }
         }
     }
-    layers.push(Layer::new(1, last, &trits, &bias).map_err(|e| e.to_string())?);
+    layers.push(Layer::new(1, or_w, &trits, &bias).map_err(|e| e.to_string())?);
 
     Net::new(layers).map_err(|e| e.to_string())
 }

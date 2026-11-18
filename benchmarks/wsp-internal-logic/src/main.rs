@@ -313,6 +313,16 @@ mod tests {
                     delta: vec![[0, 1], [0, 2], [1, 2]],
                 },
             ),
+            (
+                // 目标状态 0 有 4 个转移源，专门用来验证 OR 扇入 > 2。
+                "four_sources",
+                dfa::Dfa {
+                    states: 3,
+                    start: 0,
+                    accept: vec![true, false, false],
+                    delta: vec![[0, 0], [0, 1], [2, 2]],
+                },
+            ),
         ]
     }
 
