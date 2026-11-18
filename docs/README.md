@@ -147,6 +147,7 @@
 | 文档 | 一句话 |
 |---|---|
 | [S-YARA-FULL.md](AGENT-TASKS/S-YARA-FULL.md) | S 级任务：YARA 完整语义（官方引擎差分 + 三值性质测试 + 性能预算三条同时成立） |
+| [HANDOFF-YARA-EXPR.md](HANDOFF-YARA-EXPR.md) | 交接包：YARA 完整表达式语言 + 模块对象模型（起点 `feat/pe-sections`，验收 = 官方 4.5.4 DIFF 0） |
 
 ## YARA-EXPR/ — YARA 完整语义规范与任务卡
 
