@@ -5,6 +5,7 @@
 //! `xpessimism`（用 SAT 区分真 X 与悲观 X）。
 
 mod analyze;
+mod equiv;
 mod graph;
 mod sim;
 mod types;
@@ -12,6 +13,7 @@ mod validate;
 mod xpessimism;
 
 pub use analyze::{analyze, analyze_faults};
+pub use equiv::{Equiv, EquivError, MAX_EXHAUSTIVE_INPUTS, equivalent};
 pub use sim::{DEFAULT_EXACT_BUDGET, propagate, propagate_exact, propagate_exact_with_jobs};
 pub use types::*;
 pub use xpessimism::{XOutcome, XPessimismReport, analyze_x_pessimism};
