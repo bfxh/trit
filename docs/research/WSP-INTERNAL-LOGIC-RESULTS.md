@@ -140,12 +140,48 @@ intervene: units=9 live=9 words=15
 判据：`live_units() > 0` 已进测试（`intervene_has_live_units`）。本案例实际 9/9，
 若将来某个案例出现 `live < units`，那说明存在装饰单元，需要解释而不是忽略。
 
-## 10. 复算（含轨迹与干预）
+
+## 10. M0f：Tracr 反向闭环（定长域）
+
+`src/compile.rs` 把 DFA 编译成展开式三值前馈网：每个时间步 2 层（AND 项 + OR 状态），
+状态 one-hot 取 `{Neg, Pos}`，输入每位置 2 维。
+
+测试 `compile_then_decompile` 走完整闭环：
+
+```text
+程序（parity，2 状态）
+  → compile（展开 3 步）
+  → 提取器（前缀树 + Moore 最小化）
+  → 状态数 / 转移表 / 接受集 逐项相等
+```
+
+三项全等才算恢复；`cargo test --release` 7 passed。
+
+### 10.1 过程中修掉的两个真 bug
+
+1. **编码不兼容**：`word::encode` 把 0 编成 `Zero`（为了让线性阈值忽略填充），
+   而阈值门 `sign(x + y − 1)` 需要 `{±1}`——`Zero` 会让 AND 门输出 `Zero` 而不是 `Neg`。
+   编译器因此改用独立编码 `encode_sym`（`0 → Neg`）。
+2. **AND 项的符号位接错**：`a = 0` 的项要接 `−sym`，第一版接成了 `+sym`，
+   导致「读 0」和「读 1」用同一个门。
+
+这两个都是「提取器和参考程序一起犯错也看不出来」的反例——正因为有独立编译器，
+才暴露出来。这是 M0f 存在的理由。
+
+### 10.2 未证
+
+- **变长串未支持**：编译器不实现 End 冻结，`End` 会被当符号继续执行转移；
+  闭环测试因此限定在定长 3 位（短串两侧统一判 false）。
+- 编译器只支持「每目标状态 ≤ 2 转移源、接受状态 ≤ 2」；更大的 DFA 报错而不降级。
+- 只测了 parity 一个程序；多转移源 / 多接受状态的程序未测。
+
+## 11. 复算（含轨迹、干预与闭环）
 
 ```bash
 cd benchmarks/wsp-internal-logic
 cargo run --release -- --trace
 cargo run --release -- --intervene
+cargo test --release   # 含 compile_then_decompile（Tracr 闭环）
 ```
 
 ## 7. 未证栏

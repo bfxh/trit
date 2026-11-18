@@ -10,6 +10,7 @@
 //! 所以域内状态数会大于该语言在全域上的经典最小 DFA（本例域内 7、全域 3）。
 
 mod cases;
+mod compile;
 mod dfa;
 mod intervene;
 mod trace;
@@ -231,5 +232,39 @@ mod tests {
             let m = intervene::sweep(&case.net, case.max_len);
             assert!(m.live_units() > 0, "案例 {}：没有任何单元承重", case.name);
         }
+    }
+
+    #[test]
+    fn compile_then_decompile() {
+        // 程序：偶数个 1（parity），2 状态。
+        let program = dfa::Dfa {
+            states: 2,
+            start: 0,
+            accept: vec![true, false],
+            delta: vec![[0, 1], [1, 0]],
+        };
+        let net = compile::compile(&program, 3).expect("编译程序");
+        // 当前编译器不处理「串结束」（End 会被当成符号继续执行转移），
+        // 所以闭环只在定长域上比较：短串统一判 false，两侧同一口径。
+        let extracted = dfa::from_accepts(3, |w| {
+            if w.len() == 3 {
+                compile::run(&net, w, 3)
+            } else {
+                false
+            }
+        })
+        .minimize();
+        let reference = dfa::from_accepts(3, |w| {
+            if w.len() == 3 {
+                let bits: Vec<bool> = w.iter().map(|t| *t == Trit::Pos).collect();
+                program.run(&bits)
+            } else {
+                false
+            }
+        })
+        .minimize();
+        assert_eq!(extracted.states, reference.states, "状态数不一致");
+        assert_eq!(extracted.delta, reference.delta, "转移表不一致");
+        assert_eq!(extracted.accept, reference.accept, "接受集不一致");
     }
 }
