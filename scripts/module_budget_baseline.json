@@ -39,6 +39,46 @@
       "lines": 28
     },
     {
+      "file": "benchmarks/wsp-internal-logic/src/audit.rs",
+      "lines": 186
+    },
+    {
+      "file": "benchmarks/wsp-internal-logic/src/cases.rs",
+      "lines": 59
+    },
+    {
+      "file": "benchmarks/wsp-internal-logic/src/compile.rs",
+      "lines": 238
+    },
+    {
+      "file": "benchmarks/wsp-internal-logic/src/declared.rs",
+      "lines": 183
+    },
+    {
+      "file": "benchmarks/wsp-internal-logic/src/dfa.rs",
+      "lines": 154
+    },
+    {
+      "file": "benchmarks/wsp-internal-logic/src/intervene.rs",
+      "lines": 95
+    },
+    {
+      "file": "benchmarks/wsp-internal-logic/src/main.rs",
+      "lines": 652
+    },
+    {
+      "file": "benchmarks/wsp-internal-logic/src/recurrent.rs",
+      "lines": 34
+    },
+    {
+      "file": "benchmarks/wsp-internal-logic/src/trace.rs",
+      "lines": 80
+    },
+    {
+      "file": "benchmarks/wsp-internal-logic/src/word.rs",
+      "lines": 67
+    },
+    {
       "file": "benchmarks/wsp-no-transformer/src/apply.rs",
       "lines": 22
     },
