@@ -29,7 +29,7 @@
 - **做什么**：
   1. 把 2732 条向量与 fixtures 入库（禁止手改）。
   2. `tests/yara_expr_vectors.rs`：按 `04-CODE-MAP.md` §5 的三态判法
-     回放；`GAP_CEILING = 2363`；支持 `YARA_EXPR_SHOW` 分组。
+     回放；`GAP_CEILING = 2363`；可选 `YARA_EXPR_SHOW` 分组。
   3. `tools/check_vectors.py` 对官方引擎复核；`tools/cite.py find '<条件>'`
      可按条件检索同类向量。
 - **验收**：最小集回放 **9 / 74 / 0**；`YARA_EXPR_SHOW=A` 能列出 A 组弃权。
