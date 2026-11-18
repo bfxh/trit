@@ -197,9 +197,9 @@ parity / mod3 / paren / four_sources / ends_with_1 / contains_01
 
 ### 10.2 未证
 
-- 已测七个程序：`parity`、`mod3`、`paren`、`four_sources`（4 源）、`ends_with_1`、
-  `contains_01`（3 源）、`mod5`（5 状态），在变长域（长度 ≤ 3）上都是
-  「状态数 / 转移表 / 接受集」逐项相等。
+- 已测九个程序：`parity`、`mod3`、`paren`、`four_sources`（4 源）、`ends_with_1`、
+  `contains_01`（3 源）、`mod5`（5 状态）、`star8`（8 状态、9 源）、`mod10`（10 状态），
+  在变长域（长度 ≤ 3）上都是「状态数 / 转移表 / 接受集」逐项相等。
 - End 冻结已实现（3 符号 + 自环），不再是缺口；原先「三项 OR 阈值门」的障碍
   由 §10.3 的常量单元方案消掉了。
 - 编译器仍要求 DFA 状态数 ≥ 1、`max_len ≥ 1`；空 DFA 未测。
@@ -231,6 +231,23 @@ parity / mod3 / paren / four_sources / ends_with_1 / contains_01
   直接性质；冻结逻辑一旦写坏，这条会最先红。
 
 `cargo test --release` = 9 passed。
+
+
+### 10.5 规模上限
+
+| 程序 | 状态数 | 最大转移源 |
+|---|---|---|
+| `parity` / `mod3` / `paren` / `ends_with_1` | 2–3 | 2 |
+| `four_sources` | 3 | 4 |
+| `contains_01` | 3 | 3 |
+| `mod5` | 5 | 2 |
+| `star8` | 8 | **9** |
+| `mod10` | 10 | 2 |
+
+九个程序全部闭环通过。规模到 **10 状态、9 源**都没有撞到结构上限；成本主要落在
+线性宽度（`and_w = 3k + dim_in + c`、`or_w = k + dim_in + c`）与层数（`2·max_len + 2`）。
+
+`star8` 是最重的一档：9 源需要 8 个常量单元，`max_len = 3` 时 `and_w = 41`。
 
 ## 11. 状态爆炸预算
 

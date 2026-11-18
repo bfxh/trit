@@ -344,6 +344,47 @@ mod tests {
                     delta: vec![[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]],
                 },
             ),
+            (
+                // 8 状态，目标状态 0 有 9 个转移源（8 个 q 的 0 边 + q7 的 1 边），
+                // 专门压 OR 扇入与常量单元数量。
+                "star8",
+                dfa::Dfa {
+                    states: 8,
+                    start: 0,
+                    accept: vec![true, false, false, false, false, false, false, false],
+                    delta: vec![
+                        [0, 1],
+                        [0, 2],
+                        [0, 3],
+                        [0, 4],
+                        [0, 5],
+                        [0, 6],
+                        [0, 7],
+                        [0, 0],
+                    ],
+                },
+            ),
+            (
+                // 10 状态：模 10 计数，压状态数上限。
+                "mod10",
+                dfa::Dfa {
+                    states: 10,
+                    start: 0,
+                    accept: vec![true, false, false, false, false, false, false, false, false, false],
+                    delta: vec![
+                        [0, 1],
+                        [1, 2],
+                        [2, 3],
+                        [3, 4],
+                        [4, 5],
+                        [5, 6],
+                        [6, 7],
+                        [7, 8],
+                        [8, 9],
+                        [9, 0],
+                    ],
+                },
+            ),
         ]
     }
 
