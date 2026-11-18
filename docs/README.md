@@ -65,6 +65,7 @@
 | [WSP-STS-BENCH.md](results/WSP-STS-BENCH.md) | 真实 STS benchmark（1,379 行）上的编辑集门禁 |
 | [WSP-STS-TUNED.md](results/WSP-STS-TUNED.md) | 真实 tuned 权重（非合成 Δ）上的编辑集门禁 |
 | [LESSONS.md](results/LESSONS.md) | 经验与负结果（先读这篇再谈优化） |
+| [COUNT-EVOLUTION.md](COUNT-EVOLUTION.md) | 变量序进化 × 随机 3-SAT 计数的同预算消融（负结果：1.17× 读数属噪声） |
 
 ## research/ — 研究线（WSP 权重空间编程 + 扫描线）
 
