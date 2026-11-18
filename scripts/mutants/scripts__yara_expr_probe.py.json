@@ -1,0 +1,10 @@
+[
+ {
+  "name": "yara-expr-probe: 十六进制转义识别失效（x2e 不再按十六进制解）",
+  "file": "scripts/yara_expr_probe.py",
+  "old": "        if nxt == \"x\":",
+  "new": "        if nxt == \"y\":",
+  "pkg": "scripts/yara_expr_probe.py",
+  "filter": "self_test"
+ }
+]

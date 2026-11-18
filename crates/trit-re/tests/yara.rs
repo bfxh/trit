@@ -369,12 +369,11 @@ rule off {
     // @a[2] 若错成 0 起下标会解成 5 ≠ 2 → False（钉死回归）
     let bad = src.replace("@a[2] == 2", "@a[2] == 5");
     assert_eq!(scan_one(&bad, &data), Ternary::False);
-    // @a[0] 官方无效：如实 Unsupported（不猜）
+    // @a[0]：官方照常编译、取值未定义（4.5.4 探针）——比较为确定的假
     let zero = src.replace("@a[1] == 0", "@a[0] == 0");
-    assert!(matches!(
-        parse_rules(&zero).unwrap().rules[0],
-        RuleOutcome::Unsupported { .. }
-    ));
+    assert_eq!(scan_one(&zero, &data), Ternary::False);
+    let undefined = src.replace("@a[1] == 0", "not defined @a[0]");
+    assert_eq!(scan_one(&undefined, &data), Ternary::True);
 }
 
 #[test]
@@ -473,8 +472,8 @@ rule ww {
 }
 
 #[test]
-fn arithmetic_bails_whole_rule() {
-    // 算术表达式：如实 Unsupported（fail-closed 的另一半——不装作能评估）
+fn arithmetic_is_evaluated_and_bad_arithmetic_bails_whole_rule() {
+    // 算术由表达式引擎求值（docs/YARA-EXPR.md）；常量除零仍整条 Unsupported
     let src = r#"
 rule arith {
   strings:
@@ -483,9 +482,8 @@ rule arith {
     filesize + 1 < 100 and $a
 }
 "#;
-    let out = parse_rules(src).unwrap();
-    assert!(
-        matches!(out.rules[0], RuleOutcome::Unsupported { .. }),
-        "算术应使规则 Unsupported"
-    );
+    assert_eq!(scan_one(src, b"..x.."), Ternary::True);
+    assert_eq!(scan_one(src, &[b'x'; 99]), Ternary::False);
+    let out = parse_rules(&src.replace("+ 1", "\\ 0")).unwrap();
+    assert!(matches!(out.rules[0], RuleOutcome::Unsupported { .. }));
 }

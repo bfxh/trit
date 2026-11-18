@@ -70,6 +70,29 @@ characteristics 精确值探针——entry_point 用 **RVA/offset 双候选**设
 entry 的 `comp_id >> 16`、`offset` = clear_data 文件偏移。建议下一批
 校准用真实 VS 工具链样本（notepad.exe 等）生成 rich 探针。
 
+**上两段的官方补证（2026-11-13，yara-python 4.5.4）**：样本 = CPython
+3.12.7 Windows 嵌入式发行包的 92 个带签名 PE（x64 / x86 / arm64，全部带
+Rich 头，89 个带 PDB 路径）。办法与全部读数见 `docs/YARA-EXPR.md` 第六节；
+这里只记对上面两段推广的裁定：
+
+- **越界下标判假——成立**。官方对象树遍历对每个数组各生成三条越界下标
+  的 `not defined` 规则，92 样本 DIFF 0；`pe.sections[3].name == ".text"`
+  与 `!= ".text"` 在 3 节样本上官方都不命中。**一处推广错了**：下标
+  ≥ 2^31 时官方先截成 C `int` 再用，`pe.sections[4294967296]` 是第 0 节
+  而不是越界——原实现判假，官方命中，已改。
+- **`not` 罩越界比较——原推广不成立**。`not (pe.sections[9].x == 1)`
+  官方不命中（`not 未定义` 仍未定义），原实现命中，已改。
+- **private——条件侧成立**：带 `private` 的串照常匹配，`#q` / `@q` 可用，
+  规则命中。报告侧**没有补证**：yara-python 的 `match.strings` 仍列出
+  private 串，"隐藏"是官方命令行工具的输出行为，本轮没有拿命令行工具核。
+- **字符串属性只支持 `==` / `!=`——官方更宽**：官方对 `.name` 接受全部
+  字符串算子与字典序比较；现由表达式引擎补齐。字符串对整数比较官方是
+  编译错误；不带表达式标志时本实现仍是弃权（宽松，已登记）。
+- **Rich 头——`offset` / `length` / `key` / `raw_data` / `clear_data`
+  成立**（92 样本逐字段相等）。不带括号的 `pe.rich_signature.version`
+  官方没有这个字段（`version(…)` 是函数，编译错误）；它是本实现自己的
+  别名，没有官方读数可对。
+
 ## 四、N1 判据对照
 
 SECURITY-RE 路线图 N1：「真实语料校准：PE x64 / PE ARM64 / ELF x64 / ELF

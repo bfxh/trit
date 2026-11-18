@@ -1,0 +1,10 @@
+[
+ {
+  "name": "yara-pe-walk: 小数组全取少一项",
+  "file": "scripts/yara_pe_walk.py",
+  "old": "    if length <= cap:\n        return list(range(length))",
+  "new": "    if length <= cap:\n        return list(range(length - 1))",
+  "pkg": "scripts/yara_pe_walk.py",
+  "filter": "self_test"
+ }
+]

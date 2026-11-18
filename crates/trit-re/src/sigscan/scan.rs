@@ -1,9 +1,12 @@
 //! 扫描循环（`impl SigScan`，从 sigscan.rs 拆出守预算）。纪律：命中封顶
-//! 截断 = 不完整（False 折 Unknown）；Unscannable 串整条 Unknown。
+//! 截断 = 不完整（补全后可能翻掉的结论折 Unknown，见 `lossy`）；Unscannable
+//! 串整条 Unknown。
 
 use super::{EvalCtx, Pattern, Rule, RuleVerdict, SigReport, SigScan};
 use super::{SCAN_BUDGET, eval, find_hex, find_text};
 use trit_core::value::Ternary;
+
+mod lossy;
 
 impl<'a> SigScan<'a> {
     pub fn new(rules: &'a [Rule]) -> Self {
@@ -40,11 +43,11 @@ impl<'a> SigScan<'a> {
         pe: Option<&crate::pe::PeInfo>,
     ) -> SigReport {
         let mut rules = Vec::new();
+        let tree = super::expr::PeLazy::new(data, truncated, pe.is_some());
         for rule in self.rules {
-            // 每个模式的命中偏移（首个起，最多 MAX_HITS 个）+ 扫描完成度
-            //（hex/文本预算耗尽 = 不完整——"未命中只在完整扫描后给出"）
+            // 每模式命中偏移（至多 MAX_HITS 个）+ 扫描完成度（预算耗尽 = 不完整）
             let mut occurrences: Vec<(String, Vec<u64>)> = Vec::new();
-            let mut complete = true;
+            let mut partial = Vec::new();
             let mut has_unscannable = false;
             for (id, pattern) in &rule.patterns {
                 let (hits, pattern_complete) = match pattern {
@@ -58,7 +61,7 @@ impl<'a> SigScan<'a> {
                         (Vec::new(), true)
                     }
                 };
-                complete &= pattern_complete;
+                partial.push(!pattern_complete);
                 occurrences.push((id.clone(), hits));
             }
             let ctx = EvalCtx {
@@ -67,18 +70,15 @@ impl<'a> SigScan<'a> {
                 binding: None,
                 entrypoint,
                 pe,
+                tree: &tree,
+                partial: &partial,
             };
             let met = eval(&rule.condition, &occurrences, &ctx);
             let hits = rule.report_hits(&occurrences);
             let value = if has_unscannable {
                 Ternary::Unknown
             } else {
-                match met {
-                    Ternary::True => Ternary::True,
-                    Ternary::Unknown => Ternary::Unknown,
-                    Ternary::False if truncated || !complete => Ternary::Unknown,
-                    Ternary::False => Ternary::False,
-                }
+                lossy::settle(&rule.condition, met, truncated, partial.contains(&true))
             };
             rules.push(RuleVerdict {
                 rule: rule.name.clone(),
