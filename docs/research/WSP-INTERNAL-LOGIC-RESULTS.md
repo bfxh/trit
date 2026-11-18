@@ -165,6 +165,19 @@ intervene: units=9 live=9 words=15
 注意层 0 的「状态」是**初始状态**，每个串都相同，干预它不承重是正常的——
 上一版测试正是把这个当成 bug 写错了。
 
+
+### 9.3 逐单元读数（编译 parity，`max_len = 3`）
+
+```text
+step 0: live=2/2   state 0 flips=9   state 1 flips=6
+step 1: live=2/2   state 0 flips=11  state 1 flips=4
+step 2: live=1/2   state 0 flips=15  state 1 flips=0
+```
+
+最后一步的 `state 1` **完全不承重**（0 次翻转）：它算出来了，但判决只看 `state 0`
+（parity 的接受状态）。这不是装饰单元——它在该步的计算里是必要的中间量，
+只是没被最终判决消费。这正是「逐单元读数」与「live > 0」两种口径的差别。
+
 ## 10. M0f：Tracr 反向闭环（变长域）
 
 `src/compile.rs` 把 DFA 编译成展开式三值前馈网：每个时间步 2 层（AND 项 + OR 状态），
@@ -197,9 +210,10 @@ parity / mod3 / paren / four_sources / ends_with_1 / contains_01
 
 ### 10.2 未证
 
-- 已测九个程序：`parity`、`mod3`、`paren`、`four_sources`（4 源）、`ends_with_1`、
-  `contains_01`（3 源）、`mod5`（5 状态）、`star8`（8 状态、9 源）、`mod10`（10 状态），
-  在变长域（长度 ≤ 3）上都是「状态数 / 转移表 / 接受集」逐项相等。
+- 已测十个程序：`parity`、`mod3`、`paren`、`four_sources`（4 源）、`ends_with_1`、
+  `contains_01`（3 源）、`mod5`（5 状态）、`star8`（8 状态、9 源）、`mod10`（10 状态）、
+  `mod20`（20 状态），在变长域（长度 ≤ 3）上都是
+  「状态数 / 转移表 / 接受集」逐项相等。
 - End 冻结已实现（3 符号 + 自环），不再是缺口；原先「三项 OR 阈值门」的障碍
   由 §10.3 的常量单元方案消掉了。
 - 编译器仍要求 DFA 状态数 ≥ 1、`max_len ≥ 1`；空 DFA 未测。
@@ -243,8 +257,9 @@ parity / mod3 / paren / four_sources / ends_with_1 / contains_01
 | `mod5` | 5 | 2 |
 | `star8` | 8 | **9** |
 | `mod10` | 10 | 2 |
+| `mod20` | **20** | 2 |
 
-九个程序全部闭环通过。规模到 **10 状态、9 源**都没有撞到结构上限；成本主要落在
+十个程序全部闭环通过。规模到 **20 状态、9 源**都没有撞到结构上限；成本主要落在
 线性宽度（`and_w = 3k + dim_in + c`、`or_w = k + dim_in + c`）与层数（`2·max_len + 2`）。
 
 `star8` 是最重的一档：9 源需要 8 个常量单元，`max_len = 3` 时 `and_w = 41`。
@@ -265,6 +280,10 @@ max_len words states_ref states_net same
 8 511 17 17 true
 9 1023 19 19 true
 10 2047 21 21 true
+11 4095 23 23 true
+12 8191 25 25 true
+13 16383 27 27 true
+14 32767 29 29 true
 ```
 
 两条读数：

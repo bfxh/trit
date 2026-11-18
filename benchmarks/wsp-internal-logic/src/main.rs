@@ -134,7 +134,7 @@ fn parity_program() -> dfa::Dfa {
 fn budget() {
     let program = parity_program();
     println!("max_len words states_ref states_net same");
-    for max_len in 1..=10 {
+    for max_len in 1..=14 {
         let net = compile::compile(&program, max_len).expect("编译 parity");
         let extracted =
             dfa::from_accepts(max_len, |w| compile::run(&net, w, max_len)).minimize();
@@ -153,6 +153,149 @@ fn budget() {
             extracted.states == reference.states
         );
     }
+}
+
+fn programs() -> Vec<(&'static str, dfa::Dfa)> {
+    vec![
+        (
+            "parity",
+            dfa::Dfa {
+                states: 2,
+                start: 0,
+                accept: vec![true, false],
+                delta: vec![[0, 1], [1, 0]],
+            },
+        ),
+        (
+            "mod3",
+            dfa::Dfa {
+                states: 3,
+                start: 0,
+                accept: vec![true, false, false],
+                delta: vec![[0, 1], [1, 2], [2, 0]],
+            },
+        ),
+        (
+            "paren",
+            dfa::Dfa {
+                states: 3,
+                start: 0,
+                accept: vec![true, false, false],
+                delta: vec![[0, 1], [0, 2], [1, 2]],
+            },
+        ),
+        (
+            // 目标状态 0 有 4 个转移源，专门用来验证 OR 扇入 > 2。
+            "four_sources",
+            dfa::Dfa {
+                states: 3,
+                start: 0,
+                accept: vec![true, false, false],
+                delta: vec![[0, 0], [0, 1], [2, 2]],
+            },
+        ),
+        (
+            "ends_with_1",
+            dfa::Dfa {
+                states: 2,
+                start: 0,
+                accept: vec![false, true],
+                delta: vec![[0, 1], [0, 1]],
+            },
+        ),
+        (
+            // 目标状态 2 有 3 个转移源。
+            "contains_01",
+            dfa::Dfa {
+                states: 3,
+                start: 0,
+                accept: vec![false, false, true],
+                delta: vec![[1, 0], [1, 2], [2, 2]],
+            },
+        ),
+        (
+            // 5 状态：模 5 计数，接受 q0。
+            "mod5",
+            dfa::Dfa {
+                states: 5,
+                start: 0,
+                accept: vec![true, false, false, false, false],
+                delta: vec![[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]],
+            },
+        ),
+        (
+            // 8 状态，目标状态 0 有 9 个转移源（8 个 q 的 0 边 + q7 的 1 边），
+            // 专门压 OR 扇入与常量单元数量。
+            "star8",
+            dfa::Dfa {
+                states: 8,
+                start: 0,
+                accept: vec![true, false, false, false, false, false, false, false],
+                delta: vec![
+                    [0, 1],
+                    [0, 2],
+                    [0, 3],
+                    [0, 4],
+                    [0, 5],
+                    [0, 6],
+                    [0, 7],
+                    [0, 0],
+                ],
+            },
+        ),
+        (
+            // 20 状态：模 20 计数，压状态数上限（远超 M0 之前的 10 状态）。
+            "mod20",
+            dfa::Dfa {
+                states: 20,
+                start: 0,
+                accept: vec![true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+                delta: vec![
+                    [0, 1],
+                    [1, 2],
+                    [2, 3],
+                    [3, 4],
+                    [4, 5],
+                    [5, 6],
+                    [6, 7],
+                    [7, 8],
+                    [8, 9],
+                    [9, 10],
+                    [10, 11],
+                    [11, 12],
+                    [12, 13],
+                    [13, 14],
+                    [14, 15],
+                    [15, 16],
+                    [16, 17],
+                    [17, 18],
+                    [18, 19],
+                    [19, 0],
+                ],
+            },
+        ),
+        (
+            // 10 状态：模 10 计数，压状态数上限。
+            "mod10",
+            dfa::Dfa {
+                states: 10,
+                start: 0,
+                accept: vec![true, false, false, false, false, false, false, false, false, false],
+                delta: vec![
+                    [0, 1],
+                    [1, 2],
+                    [2, 3],
+                    [3, 4],
+                    [4, 5],
+                    [5, 6],
+                    [6, 7],
+                    [7, 8],
+                    [8, 9],
+                    [9, 0],
+                ],
+            },
+        ),
+    ]
 }
 
 fn main() {
@@ -185,6 +328,25 @@ fn main() {
         if dump_int {
             let units = case.net.layer(0).expect("有层 1").rows();
             let m = intervene::sweep(&case.net, case.max_len, 0, units, word::encode);
+            // 编译网络的 OR 层逐单元读数（第一档程序）。
+            for (pname, program) in programs().iter().take(1) {
+                let net = compile::compile(program, case.max_len).expect("编译");
+                for step in 0..case.max_len {
+                    let idx = 2 + 2 * step;
+                    let cm = intervene::sweep(&net, case.max_len, idx, program.states, compile::encode3);
+                    println!(
+                        "    compiled {pname} step {step}: live={}/{}",
+                        cm.live_units(),
+                        cm.units.len()
+                    );
+                    for u in &cm.units {
+                        println!(
+                            "      state {} flips_zero={} flips_neg={}",
+                            u.unit, u.flips_zero, u.flips_neg
+                        );
+                    }
+                }
+            }
             println!(
                 "  intervene: units={} live={} words={}",
                 m.units.len(),
@@ -276,117 +438,6 @@ mod tests {
         }
     }
 
-    fn programs() -> Vec<(&'static str, dfa::Dfa)> {
-        vec![
-            (
-                "parity",
-                dfa::Dfa {
-                    states: 2,
-                    start: 0,
-                    accept: vec![true, false],
-                    delta: vec![[0, 1], [1, 0]],
-                },
-            ),
-            (
-                "mod3",
-                dfa::Dfa {
-                    states: 3,
-                    start: 0,
-                    accept: vec![true, false, false],
-                    delta: vec![[0, 1], [1, 2], [2, 0]],
-                },
-            ),
-            (
-                "paren",
-                dfa::Dfa {
-                    states: 3,
-                    start: 0,
-                    accept: vec![true, false, false],
-                    delta: vec![[0, 1], [0, 2], [1, 2]],
-                },
-            ),
-            (
-                // 目标状态 0 有 4 个转移源，专门用来验证 OR 扇入 > 2。
-                "four_sources",
-                dfa::Dfa {
-                    states: 3,
-                    start: 0,
-                    accept: vec![true, false, false],
-                    delta: vec![[0, 0], [0, 1], [2, 2]],
-                },
-            ),
-            (
-                "ends_with_1",
-                dfa::Dfa {
-                    states: 2,
-                    start: 0,
-                    accept: vec![false, true],
-                    delta: vec![[0, 1], [0, 1]],
-                },
-            ),
-            (
-                // 目标状态 2 有 3 个转移源。
-                "contains_01",
-                dfa::Dfa {
-                    states: 3,
-                    start: 0,
-                    accept: vec![false, false, true],
-                    delta: vec![[1, 0], [1, 2], [2, 2]],
-                },
-            ),
-            (
-                // 5 状态：模 5 计数，接受 q0。
-                "mod5",
-                dfa::Dfa {
-                    states: 5,
-                    start: 0,
-                    accept: vec![true, false, false, false, false],
-                    delta: vec![[0, 1], [1, 2], [2, 3], [3, 4], [4, 0]],
-                },
-            ),
-            (
-                // 8 状态，目标状态 0 有 9 个转移源（8 个 q 的 0 边 + q7 的 1 边），
-                // 专门压 OR 扇入与常量单元数量。
-                "star8",
-                dfa::Dfa {
-                    states: 8,
-                    start: 0,
-                    accept: vec![true, false, false, false, false, false, false, false],
-                    delta: vec![
-                        [0, 1],
-                        [0, 2],
-                        [0, 3],
-                        [0, 4],
-                        [0, 5],
-                        [0, 6],
-                        [0, 7],
-                        [0, 0],
-                    ],
-                },
-            ),
-            (
-                // 10 状态：模 10 计数，压状态数上限。
-                "mod10",
-                dfa::Dfa {
-                    states: 10,
-                    start: 0,
-                    accept: vec![true, false, false, false, false, false, false, false, false, false],
-                    delta: vec![
-                        [0, 1],
-                        [1, 2],
-                        [2, 3],
-                        [3, 4],
-                        [4, 5],
-                        [5, 6],
-                        [6, 7],
-                        [7, 8],
-                        [8, 9],
-                        [9, 0],
-                    ],
-                },
-            ),
-        ]
-    }
 
     #[test]
     fn compile_then_decompile() {
