@@ -82,9 +82,34 @@ driftnet 的 artifacts 里有 `A_f32_dense`（浮点参考）与 `B_trit_dense` 
 （burn + running stats）的读数不能直接比——第十条已实测同一份策略在两种口径下
 是 9.4%/11.7% vs 0%。不先统一，任何「变好了」都可能只是口径差。
 
+
+## 5. 真实接入 driftnet 的三道障碍（2026-11-18 查明）
+
+想直接跑「改权重 → 声明域验证」，卡在三处，都已确认到代码级：
+
+| 障碍 | 事实 | 出处 |
+|---|---|---|
+| artifacts 格式不匹配 | `artifacts/*/ckpt.pt` 是 PyTorch checkpoint；`Gen::from_packed` 要 `DPK1` | `format.rs::read_packed` |
+| f32 模型加载不了 | `conv_bn()` 强制 `tern_mat`，`ConvBn.w: TernMat`；`A_f32_dense` 的 conv 是 f32 | `model.rs::from_packed` |
+| 无 `lib.rs` | `crates/driftnet` 只有 bin，写不了 `examples/` | `crates/driftnet/` |
+
+结果：**最多只能接 `B_trit_dense`**（三值 conv），`A_f32_dense` 作为浮点参考走不进 `Gen`。
+
+### 转换脚本的最小设计（`tools/fixtures/pt_to_dpk1.py`）
+
+1. `torch.load("ckpt.pt")` 取 state_dict（torch 2.15 已装）；
+2. 键名对齐 `from_packed`：`fc.weight/bias`、`net.{0,1,2}.{1,2}.*`、`net.3.weight/bias`；
+3. conv/fc 的三值权重按 2-bit 编码（`Trit::POS=1, NEG=2, ZERO=0`），`scale` 取每行
+   absmean（与 `trit-learn::quant` 同口径）；
+4. 按 `DPK1` 写出——`format.rs::read_packed` 是格式的权威来源（`magic + ch + zdim +
+   ternary_fc + n + [name, kind, ndim, dims, ...]`）。
+
+估计 100 行，与 `tools/fixtures/prepare_cifar.py` 同位置、同性质（一次性夹具，不参与训练）。
+
 ## 4. 未证栏
 
 - 没有在 driftnet 上实际跑过任何一条审计；本文只有方法映射，没有读数。
+- §5 的三道障碍已确认到代码级，但 `.pt → DPK1` 转换脚本**未写**；写完之前「真实读数」不成立。
 - 「量化差异集中在某类样本」是假设，未验证。
 - `intervene` 用在卷积层需要先决定「单元」是通道还是空间位置，本文没有定。
 - E1 的可行率保证是 CRAM 文档的推断，本文未复核其推导。
