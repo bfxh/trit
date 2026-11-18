@@ -9,7 +9,7 @@
 | 训练来源 | 本仓 `parts-train`，12 个距离（2.0–4.2）× 150 帧，384²，Adam，约 88k 样本 |
 | 留出（r3.6 / r3.9，各 60 帧） | id **0.8118 / 0.7653**，部件 IoU **0.6609 / 0.6142** |
 | 3D（GT 深度反投影，10 mm 体素） | 逐部件 IoU **0.6397**，质心误差 30.0 mm |
-| 适用边界 | 只对训练过的装配摆放有效；换装配需重训，且 id 必须沿结构密集编号（见 `docs/MODEL-CARD.md`）|
+| 适用边界 | 只对训练过的装配摆放有效；换装配需重训，且 id 必须沿结构密集编号（见 `docs/reference/MODEL-CARD.md`）|
 | 取景带 | `parts_id8118.framing`（TPF1，两条统计的接受区间）|
 | ⚠️ 域外行为 | 对**任何**图像都会把 96–99% 像素判成部件（域内只有 1.7%），**没有 OOD 拒识**；生产必须外挂「是不是这个物体」的闸门 |
 | ⚠️ 拒识 | **没有**。域外图像会被标成 96–99% 部件（见模型卡 §4c），管线需自己加检测门槛 |
@@ -33,4 +33,4 @@ parts-3d infer --model crates/trit-parts/models/parts_id8118.tpm --scene <dir> -
                --manifest parts.json --out parts.ply
 ```
 
-指标口径与负结果见仓库根 `docs/MODEL-CARD.md`。
+指标口径与负结果见仓库根 `docs/reference/MODEL-CARD.md`。

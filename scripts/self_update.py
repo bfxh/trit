@@ -5,7 +5,7 @@
   python scripts/self_update.py --check [--offline] [--base main] [--repo-root <路径>]
   python scripts/self_update.py --self-test
 
-口径（docs/AUTO-UPDATE.md §2/§4 的第一步）：
+口径（docs/engineering/AUTO-UPDATE.md §2/§4 的第一步）：
   - 预检：非 detached HEAD；工作区干净（脏 ⇒ rc1，点名脏条目）；
   - fetch origin <base>（--offline 跳过）；fetch 失败 ⇒ rc1（看不见不等于没有）；
   - 分类：已最新 / 可快进 / 本地领先 / 分叉（分叉 ⇒ rc1，打印旧 SHA、新 SHA、分叉点）；

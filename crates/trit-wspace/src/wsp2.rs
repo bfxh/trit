@@ -9,49 +9,9 @@
 use crate::error::{Error, Result};
 use crate::net::{Layer, Net};
 
-const MAGIC: &[u8; 4] = b"WSP2";
-const VERSION: u8 = 2;
+pub(super) const MAGIC: &[u8; 4] = b"WSP2";
+pub(super) const VERSION: u8 = 2;
 const MAX_LAYERS: usize = 4096;
-
-/// 把网络编码成 WSP2 二进制。
-pub fn to_wsp2(net: &Net) -> Result<Vec<u8>> {
-    let nlayers =
-        u16::try_from(net.layers().len()).map_err(|_| Error::Wire("层数超过 u16".into()))?;
-    let mut out = Vec::new();
-    out.extend_from_slice(MAGIC);
-    out.push(VERSION);
-    out.extend_from_slice(&nlayers.to_le_bytes());
-    for layer in net.layers() {
-        let rows = u32::try_from(layer.rows()).map_err(|_| Error::Wire("行数超过 u32".into()))?;
-        let cols = u32::try_from(layer.cols()).map_err(|_| Error::Wire("列数超过 u32".into()))?;
-        let has_bias_f32 = !layer.bias_f32().is_empty();
-        if has_bias_f32 && layer.bias_f32().len() != layer.rows() {
-            return Err(Error::Shape {
-                what: "bias_f32",
-                expected: layer.rows(),
-                got: layer.bias_f32().len(),
-            });
-        }
-        out.extend_from_slice(&rows.to_le_bytes());
-        out.extend_from_slice(&cols.to_le_bytes());
-        out.push(u8::from(has_bias_f32));
-        for scale in layer.scales() {
-            out.extend_from_slice(&scale.to_le_bytes());
-        }
-        if has_bias_f32 {
-            for value in layer.bias_f32() {
-                out.extend_from_slice(&value.to_le_bytes());
-            }
-        }
-        let trits: Vec<i8> = layer.trits().iter().map(|trit| trit.to_i8()).collect();
-        out.extend_from_slice(&pack_trits(&trits));
-        let bias: Vec<i8> = layer.bias().iter().map(|trit| trit.to_i8()).collect();
-        out.extend_from_slice(&pack_trits(&bias));
-    }
-    let checksum = fnv(&out);
-    out.extend_from_slice(&checksum.to_le_bytes());
-    Ok(out)
-}
 
 /// 从 WSP2 二进制解码网络；magic/版本/校验和/2-bit 非法值都会报错。
 pub fn from_wsp2(bytes: &[u8]) -> Result<Net> {
@@ -84,6 +44,14 @@ pub fn from_wsp2(bytes: &[u8]) -> Result<Net> {
             .map_err(|_| Error::Wire("WSP2 列数超出 usize".into()))?;
         if rows == 0 || cols == 0 {
             return Err(Error::EmptyLayer { rows, cols });
+        }
+        // 分配护栏：每行至少要 4 字节 scale（biasf/2-bit trits 由 take 兜底）。
+        // 攻击者可用 rows=u32::MAX 的 15 字节文件让 with_capacity 试图分配 16GB。
+        if rows.saturating_mul(4) > bytes.len() - pos {
+            return Err(Error::Wire(format!(
+                "WSP2 行数 {rows} 与剩余 {} 字节不符",
+                bytes.len() - pos
+            )));
         }
         let flags = if version == 2 {
             take(bytes, &mut pos, 1)?[0]
@@ -128,8 +96,10 @@ pub fn from_wsp2(bytes: &[u8]) -> Result<Net> {
 }
 
 pub(crate) mod bytes;
+mod write;
 
 use bytes::*;
+pub use write::to_wsp2;
 
 mod index;
 mod index_io;

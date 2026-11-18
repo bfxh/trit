@@ -1,26 +1,26 @@
 [
- {
-  "name": "trit-export: 不校验 magic",
-  "file": "crates/trit-export/src/lib.rs",
-  "old": "    if take(bytes, &mut pos, 4)? != MAGIC {\n        return Err(Error::Magic);\n    }",
-  "new": "    if false {\n        return Err(Error::Magic);\n    }",
-  "pkg": "trit-export",
-  "filter": "rejects_bad_inputs"
- },
- {
-  "name": "trit-export: 不校验张量类型",
-  "file": "crates/trit-export/src/lib.rs",
-  "old": "        if kind != TYPE_TRIT {\n            return Err(Error::TensorType(kind));\n        }",
-  "new": "        if false {\n            return Err(Error::TensorType(kind));\n        }",
-  "pkg": "trit-export",
-  "filter": "rejects_unsupported_types_and_dims"
- },
- {
-  "name": "trit-export: trits 少打包一个",
-  "file": "crates/trit-export/src/lib.rs",
-  "old": "    out.extend_from_slice(&pack::pack(&tensor.trits));",
-  "new": "    out.extend_from_slice(&pack::pack(&tensor.trits[..tensor.trits.len() - 1]));",
-  "pkg": "trit-export",
-  "filter": "round_trip_preserves_every_field"
- }
+  {
+    "name": "trit-export: 不校验 magic",
+    "file": "crates/trit-export/src/lib.rs",
+    "old": "    if take(bytes, &mut pos, 4)? != MAGIC {\n        return Err(Error::Magic);\n    }",
+    "new": "    if false {\n        return Err(Error::Magic);\n    }",
+    "pkg": "trit-export",
+    "filter": "rejects_bad_inputs"
+  },
+  {
+    "name": "trit-export: 不校验张量类型",
+    "file": "crates/trit-export/src/lib.rs",
+    "old": "        if kind != TYPE_TRIT {\n            return Err(Error::TensorType(kind));\n        }",
+    "new": "        if false {\n            return Err(Error::TensorType(kind));\n        }",
+    "pkg": "trit-export",
+    "filter": "rejects_unsupported_types_and_dims"
+  },
+  {
+    "name": "trit-export: trits 少打包一个",
+    "file": "crates/trit-export/src/lib.rs",
+    "old": "    out.extend_from_slice(&trit_core::pack::pack(&tensor.trits));",
+    "new": "    out.extend_from_slice(&trit_core::pack::pack(&tensor.trits[..tensor.trits.len() - 1]));",
+    "pkg": "trit-export",
+    "filter": "round_trip_preserves_every_field"
+  }
 ]

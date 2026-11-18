@@ -8,6 +8,7 @@ use crate::error::{Error, Result};
 use crate::net::Net;
 use crate::trit::Trit;
 
+mod coord;
 mod ops;
 use ops::Undo;
 
@@ -301,41 +302,5 @@ impl Edit {
         ops::validate_one(net, self)?;
         ops::apply_one(net, self);
         Ok(())
-    }
-
-    pub(crate) fn same_coord(&self, other: &Self) -> bool {
-        match (self, other) {
-            (
-                Self::SetTrit {
-                    layer: l1,
-                    row: r1,
-                    col: c1,
-                    ..
-                },
-                Self::SetTrit {
-                    layer: l2,
-                    row: r2,
-                    col: c2,
-                    ..
-                },
-            ) => l1 == l2 && r1 == r2 && c1 == c2,
-            (
-                Self::SetBias {
-                    layer: l1, row: r1, ..
-                },
-                Self::SetBias {
-                    layer: l2, row: r2, ..
-                },
-            ) => l1 == l2 && r1 == r2,
-            (
-                Self::SetScale {
-                    layer: l1, row: r1, ..
-                },
-                Self::SetScale {
-                    layer: l2, row: r2, ..
-                },
-            ) => l1 == l2 && r1 == r2,
-            _ => false,
-        }
     }
 }

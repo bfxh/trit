@@ -127,7 +127,7 @@ pub fn analyze_triples(
     let before_set: HashSet<usize> = before_mismatches.iter().copied().collect();
     let before_loss = before_mismatches.len();
 
-    let candidates = repair::candidates(net);
+    let candidates = repair::candidates(net, false);
     let count = candidates.len();
     let total = count
         .saturating_mul(count.saturating_sub(1))
@@ -222,7 +222,7 @@ pub fn analyze_pairs(
     let before_set: HashSet<usize> = before_mismatches.iter().copied().collect();
     let before_loss = before_mismatches.len();
 
-    let candidates = repair::candidates(net);
+    let candidates = repair::candidates(net, false);
     let total_pairs = candidates
         .len()
         .saturating_mul(candidates.len().saturating_sub(1))
@@ -303,7 +303,7 @@ pub fn analyze(net: &Net, oracle: &Oracle, limit: usize) -> Result<Analysis> {
     let before_set: HashSet<usize> = before_mismatches.iter().copied().collect();
     let before_loss = before_mismatches.len();
 
-    let candidates = repair::candidates(net);
+    let candidates = repair::candidates(net, false);
     let evaluated = candidates.len();
     let mut impacts = Vec::with_capacity(evaluated);
     for edit in candidates {

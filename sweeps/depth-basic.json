@@ -36,7 +36,7 @@
     ]
   },
   "verify": true,
-  "catalogue": "docs/DEPTH-RESULTS.md",
+  "catalogue": "docs/results/DEPTH-RESULTS.md",
   "jobs": 2,
   "promote": {
     "max": 8.6

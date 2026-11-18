@@ -13,7 +13,11 @@
 //! checksum u64
 //! ```
 
+mod bitwriter;
+
 use std::cmp::Reverse;
+
+use bitwriter::BitWriter;
 use std::collections::{BinaryHeap, HashMap};
 
 use crate::error::{Error, Result};
@@ -53,6 +57,14 @@ pub fn huffman_encode(input: &[u8]) -> Option<Vec<u8>> {
 pub fn huffman_decode(data: &[u8], raw_len: usize) -> Result<Vec<u8>> {
     if data.len() < 256 {
         return Err(Error::Wire("WSP4 码长表截断".into()));
+    }
+    // 分配护栏：每个符号至少 1 bit，声明符号数不得超过位流容量。
+    // 否则声明 raw_len=2^40 的 266 字节文件就能让 with_capacity 试图分配 TB 级内存。
+    if raw_len > (data.len() - 256).saturating_mul(8) {
+        return Err(Error::Wire(format!(
+            "WSP4 声明长度 {raw_len} 超出位流 {} 字节的符号上界",
+            data.len() - 256
+        )));
     }
     let lens: [u8; 256] = data[..256].try_into().expect("256 字节码长");
     let used = lens.iter().filter(|&&len| len > 0).count();
@@ -247,42 +259,6 @@ fn decode_table(lens: &[u8; 256]) -> Result<HashMap<(u8, u32), u8>> {
         }
     }
     Ok(table)
-}
-
-struct BitWriter {
-    out: Vec<u8>,
-    current: u8,
-    bits: u8,
-}
-
-impl BitWriter {
-    fn new() -> Self {
-        Self {
-            out: Vec::new(),
-            current: 0,
-            bits: 0,
-        }
-    }
-
-    fn write(&mut self, value: u32, len: u8) {
-        for index in (0..len).rev() {
-            let bit = (value >> index) & 1;
-            self.current |= u8::try_from(bit).expect("bit") << (7 - self.bits);
-            self.bits += 1;
-            if self.bits == 8 {
-                self.out.push(self.current);
-                self.current = 0;
-                self.bits = 0;
-            }
-        }
-    }
-
-    fn finish(mut self, out: &mut Vec<u8>) {
-        if self.bits > 0 {
-            self.out.push(self.current);
-        }
-        out.extend_from_slice(&self.out);
-    }
 }
 
 /// 按 format 选择 WSP2 / WSP3 / WSP4 编码（CLI `--rle` / `--huffman` 的入口）。

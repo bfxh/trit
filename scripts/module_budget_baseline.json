@@ -15,6 +15,54 @@
       "lines": 115
     },
     {
+      "file": "benchmarks/wsp-no-transformer/src/apply.rs",
+      "lines": 22
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/gpu.rs",
+      "lines": 331
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/gpu_prep.rs",
+      "lines": 147
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/main.rs",
+      "lines": 76
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/model.rs",
+      "lines": 87
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/model_fixed.rs",
+      "lines": 95
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/prepare.rs",
+      "lines": 105
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/quant.rs",
+      "lines": 24
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/quantize.rs",
+      "lines": 45
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/rows.rs",
+      "lines": 48
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/topk.rs",
+      "lines": 25
+    },
+    {
+      "file": "benchmarks/wsp-no-transformer/src/weights.rs",
+      "lines": 76
+    },
+    {
       "file": "crates/sansheng/src/lib.rs",
       "lines": 57
     },
@@ -600,7 +648,7 @@
     },
     {
       "file": "crates/trit-codec/src/pack.rs",
-      "lines": 423
+      "lines": 92
     },
     {
       "file": "crates/trit-codec/src/plan.rs",
@@ -633,6 +681,10 @@
     {
       "file": "crates/trit-codec/tests/cli.rs",
       "lines": 224
+    },
+    {
+      "file": "crates/trit-codec/tests/pack.rs",
+      "lines": 167
     },
     {
       "file": "crates/trit-codec/tests/stress.rs",
@@ -677,6 +729,10 @@
     {
       "file": "crates/trit-core/src/limits.rs",
       "lines": 172
+    },
+    {
+      "file": "crates/trit-core/src/pack.rs",
+      "lines": 449
     },
     {
       "file": "crates/trit-core/src/parallel.rs",
@@ -784,15 +840,11 @@
     },
     {
       "file": "crates/trit-export/src/error.rs",
-      "lines": 48
+      "lines": 39
     },
     {
       "file": "crates/trit-export/src/lib.rs",
       "lines": 322
-    },
-    {
-      "file": "crates/trit-export/src/pack.rs",
-      "lines": 48
     },
     {
       "file": "crates/trit-export/tests/gguf.rs",
@@ -1451,12 +1503,20 @@
       "lines": 414
     },
     {
+      "file": "crates/trit-learn/src/forecast.rs",
+      "lines": 222
+    },
+    {
       "file": "crates/trit-learn/src/lib.rs",
       "lines": 26
     },
     {
       "file": "crates/trit-learn/src/loss.rs",
       "lines": 228
+    },
+    {
+      "file": "crates/trit-learn/src/metrics.rs",
+      "lines": 126
     },
     {
       "file": "crates/trit-learn/src/opt.rs",
@@ -2951,6 +3011,26 @@
       "lines": 212
     },
     {
+      "file": "crates/trit-wspace/examples/adversarial_train/attacker.rs",
+      "lines": 114
+    },
+    {
+      "file": "crates/trit-wspace/examples/adversarial_train/main.rs",
+      "lines": 432
+    },
+    {
+      "file": "crates/trit-wspace/examples/adversarial_train/metrics.rs",
+      "lines": 104
+    },
+    {
+      "file": "crates/trit-wspace/examples/artifact_guard/main.rs",
+      "lines": 261
+    },
+    {
+      "file": "crates/trit-wspace/examples/artifact_guard/metrics.rs",
+      "lines": 51
+    },
+    {
       "file": "crates/trit-wspace/examples/bias_e2e.rs",
       "lines": 417
     },
@@ -2961,6 +3041,18 @@
     {
       "file": "crates/trit-wspace/examples/cifar_tasks.rs",
       "lines": 743
+    },
+    {
+      "file": "crates/trit-wspace/examples/ddos_shield/main.rs",
+      "lines": 342
+    },
+    {
+      "file": "crates/trit-wspace/examples/dga_redteam/features.rs",
+      "lines": 34
+    },
+    {
+      "file": "crates/trit-wspace/examples/dga_redteam/main.rs",
+      "lines": 367
     },
     {
       "file": "crates/trit-wspace/examples/editset_aligned.rs",
@@ -2983,8 +3075,28 @@
       "lines": 382
     },
     {
+      "file": "crates/trit-wspace/examples/editset_repair_readout.rs",
+      "lines": 324
+    },
+    {
       "file": "crates/trit-wspace/examples/editset_sts.rs",
       "lines": 189
+    },
+    {
+      "file": "crates/trit-wspace/examples/evolution/defender.rs",
+      "lines": 130
+    },
+    {
+      "file": "crates/trit-wspace/examples/evolution/main.rs",
+      "lines": 364
+    },
+    {
+      "file": "crates/trit-wspace/examples/evolution/metrics.rs",
+      "lines": 149
+    },
+    {
+      "file": "crates/trit-wspace/examples/identity_lock/main.rs",
+      "lines": 285
     },
     {
       "file": "crates/trit-wspace/examples/program_xor.rs",
@@ -2993,6 +3105,26 @@
     {
       "file": "crates/trit-wspace/examples/quantize_delta.rs",
       "lines": 119
+    },
+    {
+      "file": "crates/trit-wspace/examples/redteam_flip.rs",
+      "lines": 287
+    },
+    {
+      "file": "crates/trit-wspace/examples/redteam_probe/main.rs",
+      "lines": 275
+    },
+    {
+      "file": "crates/trit-wspace/examples/redteam_probe/metrics.rs",
+      "lines": 170
+    },
+    {
+      "file": "crates/trit-wspace/examples/spam_redteam/main.rs",
+      "lines": 241
+    },
+    {
+      "file": "crates/trit-wspace/examples/spam_redteam/metrics.rs",
+      "lines": 170
     },
     {
       "file": "crates/trit-wspace/examples/trit_train_tasks.rs",
@@ -3024,7 +3156,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 665
+      "lines": 661
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",
@@ -3052,7 +3184,11 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_repair.rs",
-      "lines": 142
+      "lines": 64
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_repair/cli_repair_scope.rs",
+      "lines": 88
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_safetensors.rs",
@@ -3075,6 +3211,10 @@
       "lines": 36
     },
     {
+      "file": "crates/trit-wspace/src/cli/cli_wspm.rs",
+      "lines": 142
+    },
+    {
       "file": "crates/trit-wspace/src/cli/fsutil.rs",
       "lines": 23
     },
@@ -3083,8 +3223,12 @@
       "lines": 127
     },
     {
+      "file": "crates/trit-wspace/src/cli/safe_path.rs",
+      "lines": 55
+    },
+    {
       "file": "crates/trit-wspace/src/cli/usage.rs",
-      "lines": 38
+      "lines": 37
     },
     {
       "file": "crates/trit-wspace/src/cli_audit.rs",
@@ -3104,7 +3248,11 @@
     },
     {
       "file": "crates/trit-wspace/src/edit.rs",
-      "lines": 341
+      "lines": 306
+    },
+    {
+      "file": "crates/trit-wspace/src/edit/coord.rs",
+      "lines": 56
     },
     {
       "file": "crates/trit-wspace/src/edit/ops.rs",
@@ -3204,11 +3352,23 @@
     },
     {
       "file": "crates/trit-wspace/src/repair.rs",
-      "lines": 288
+      "lines": 242
     },
     {
       "file": "crates/trit-wspace/src/repair/energy.rs",
-      "lines": 31
+      "lines": 28
+    },
+    {
+      "file": "crates/trit-wspace/src/repair/options.rs",
+      "lines": 36
+    },
+    {
+      "file": "crates/trit-wspace/src/repair/scope.rs",
+      "lines": 79
+    },
+    {
+      "file": "crates/trit-wspace/src/repair/softplus.rs",
+      "lines": 9
     },
     {
       "file": "crates/trit-wspace/src/safetensors.rs",
@@ -3272,7 +3432,7 @@
     },
     {
       "file": "crates/trit-wspace/src/wsp2.rs",
-      "lines": 136
+      "lines": 106
     },
     {
       "file": "crates/trit-wspace/src/wsp2/bytes.rs",
@@ -3287,6 +3447,10 @@
       "lines": 167
     },
     {
+      "file": "crates/trit-wspace/src/wsp2/write.rs",
+      "lines": 47
+    },
+    {
       "file": "crates/trit-wspace/src/wsp3.rs",
       "lines": 79
     },
@@ -3296,7 +3460,19 @@
     },
     {
       "file": "crates/trit-wspace/src/wsp4.rs",
-      "lines": 306
+      "lines": 282
+    },
+    {
+      "file": "crates/trit-wspace/src/wsp4/bitwriter.rs",
+      "lines": 38
+    },
+    {
+      "file": "crates/trit-wspace/src/wspm/entry.rs",
+      "lines": 76
+    },
+    {
+      "file": "crates/trit-wspace/src/wspm/mod.rs",
+      "lines": 264
     },
     {
       "file": "crates/trit-wspace/tests/analyze.rs",
@@ -3403,6 +3579,22 @@
       "lines": 496
     },
     {
+      "file": "crates/trit-wspace/tests/redteam.rs",
+      "lines": 232
+    },
+    {
+      "file": "crates/trit-wspace/tests/redteam_semantics.rs",
+      "lines": 222
+    },
+    {
+      "file": "crates/trit-wspace/tests/repair_keep.rs",
+      "lines": 59
+    },
+    {
+      "file": "crates/trit-wspace/tests/repair_row_ops.rs",
+      "lines": 38
+    },
+    {
       "file": "crates/trit-wspace/tests/repair_scope.rs",
       "lines": 117
     },
@@ -3497,6 +3689,10 @@
     {
       "file": "crates/trit-wspace/tests/wsp4.rs",
       "lines": 178
+    },
+    {
+      "file": "crates/trit-wspace/tests/wspm.rs",
+      "lines": 345
     },
     {
       "file": "fuzz/fuzz_targets/aiger.rs",

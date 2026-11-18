@@ -78,3 +78,12 @@ trit-schedule = { path = "crates/trit-schedule", version = "0.12.0" }
 trit-orch = { path = "crates/trit-orch", version = "0.12.0" }
 trit-wspace = { path = "crates/trit-wspace", version = "0.12.0" }
 trit-gamescan = { path = "crates/trit-gamescan", version = "0.12.0" }
+
+# 测试/开发构建只保留本仓代码的行号表，依赖不带调试信息：测试二进制里 75% 的字节是调试信息
+# （链接、磁盘、CI 缓存都在搬它，见 docs/BUILD-PERF.md §10）。debug-assertions / overflow-checks /
+# opt-level 不变，panic 回溯仍有本仓文件:行号；要单步调试时本地临时调回 `debug = true`。
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false

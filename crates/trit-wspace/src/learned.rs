@@ -313,7 +313,7 @@ pub fn propose(
     limit: usize,
 ) -> Result<Vec<ScoredEdit>> {
     let table = FeatureTable::new(net, oracle)?;
-    let mut scored: Vec<ScoredEdit> = repair::candidates(net)
+    let mut scored: Vec<ScoredEdit> = repair::candidates(net, false)
         .into_iter()
         .map(|edit| ScoredEdit {
             score: scorer.score(&table.extract(&edit)),

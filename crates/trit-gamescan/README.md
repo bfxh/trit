@@ -29,4 +29,4 @@ python scripts/module_budget.py
 - 穿模是 collider 级解析检测；mesh/visual bounds、CCD/swept、通用凸体 GJK/EPA 未实现。
 - 非均匀缩放的 sphere/capsule 返回 `Unknown`，不伪造 `Pass`。
 
-设计说明见 [`docs/GAME-SCAN.md`](../../docs/GAME-SCAN.md)。
+设计说明见 [`docs/research/GAME-SCAN.md`](../../docs/research/GAME-SCAN.md)。

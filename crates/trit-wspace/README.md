@@ -35,7 +35,7 @@
 | L4 读取 | 行为穷举、指纹、f32 裕量读数 | `oracle` + `readout` | 大模型探针/解释器 |
 | L5 搜索 | 无梯度精确修补、最小编辑数、学习式提议、梯度提议 | `repair`（小网络完备 BFS；大网络半径 1/2 + 束搜索）+ `learned`（16 特征线性打分器，`train-proposer`/`propose-learned`；STE 梯度排序 `propose-gradient`） | 可微 MLP/端到端代理；跨任务泛化 |
 | L6 代数 | 消置换对称性、合并 | `merge`（贪心对齐 + 符号投票）+ `task`（任务向量投票）+ `dare`（DARE 丢弃） | 大规模合并 |
-| L7 规模 | GPU、外部容器/协议、模型库 | `safetensors`（`list` 任意维度、`import`/`export` 2D + 1D（bias 配对 / vector 工件），单/多张量多层，F32/F16/BF16；目录导入导出）+ `trit-export`（三值 GGUF v3 子集，CLI `import-gguf`/`export-gguf`） | GPU、模型库、llama.cpp 互操作 |
+| L7 规模 | GPU、外部容器/协议、模型库 | `safetensors`（`list` 任意维度、`import`/`export` 2D + 1D（bias 配对 / vector 工件），单/多张量多层，F32/F16/BF16；目录导入导出）+ `trit-export`（三值 GGUF v3 子集，CLI `import-gguf`/`export-gguf`）+ `wspm`（整模型批量容器，CLI `pack-model`/`unpack-model`，`biasf` 无损往返）；GPU 读数落点在 `trit-gpu` 的 `wspace_gpu` 示例（WF32 GPU vs CPU） | llama.cpp 互操作；GPU 进 `analyze`/`repair`；流式/mmap 容器 |
 
 ## 三值的两条规范自由度（本库钉死）
 

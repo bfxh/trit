@@ -117,7 +117,7 @@ pub(super) fn export(args: &[String]) -> Result<(), String> {
             .get("file")
             .and_then(Value::as_str)
             .ok_or_else(|| format!("{name} 缺 file"))?;
-        let path = Path::new(dir).join(file);
+        let path = super::safe_path::resolve(dir, file).map_err(err)?;
         let text =
             fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
         let net = from_wsp(&text).map_err(err)?;

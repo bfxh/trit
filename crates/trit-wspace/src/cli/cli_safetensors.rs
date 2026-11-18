@@ -324,7 +324,7 @@ pub(super) fn export_dir(args: &[String]) -> Result<(), String> {
             .get("bias")
             .and_then(Value::as_str)
             .map(str::to_string);
-        let path = Path::new(dir).join(file);
+        let path = super::safe_path::resolve(dir, file).map_err(err)?;
         let text =
             fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?;
         let net = from_wsp(&text).map_err(err)?;

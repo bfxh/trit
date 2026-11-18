@@ -1,7 +1,6 @@
 //! WSP3：WSP2 的 RLE 二级压缩容器（PackBits，无外部依赖）。
 //!
-//! WSP2 是 2-bit 定长容器，trit 全同的长段（大量 `0` / 同一符号）仍然逐字节占位；
-//! WSP3 在 WSP2 外面加一层字节级 RLE：`raw_len u64` 记录解压后的长度，压缩流用
+//! WSP2 是 2-bit 定长容器，trit 全同的长段（大量 `0` / 同一符号）仍然逐字节占位；WSP3 在 WSP2 外面加一层字节级 RLE：`raw_len u64` 记录解压后的长度，压缩流用
 //! PackBits（literal 1–128 字节 / 重复 3–130 字节），末尾带 FNV-1a 校验和。
 //!
 //! 布局（小端）：
@@ -9,8 +8,7 @@
 //! magic "WSP3" | version u8=1 | raw_len u64 | PackBits 流 | checksum u64
 //! ```
 //!
-//! 它仍是**缓存/传输格式**：解包先还原 WSP2，再回到 WSP1 可读工件。
-//! **实测边界**（`docs/WSP3-RESULTS.md`）：真实 MiniLM 103 张量上比 WSP2 大 0.7%（平均游程 1.5、熵 1.584 bit/trit），只对低熵/全同工件有效。
+//! 它仍是**缓存/传输格式**：解包先还原 WSP2，再回到 WSP1 可读工件。**实测边界**（`docs/WSP3-RESULTS.md`）：真实 MiniLM 103 张量上比 WSP2 大 0.7%（平均游程 1.5、熵 1.584 bit/trit），只对低熵/全同工件有效。
 
 use crate::error::{Error, Result};
 use crate::net::Net;
@@ -31,11 +29,8 @@ pub fn to_wsp3(net: &Net) -> Result<Vec<u8>> {
     let mut out = Vec::with_capacity(HEADER + packed.len() + 8);
     out.extend_from_slice(MAGIC);
     out.push(VERSION);
-    out.extend_from_slice(
-        &u64::try_from(raw.len())
-            .expect("usize <= u64")
-            .to_le_bytes(),
-    );
+    let raw_len = u64::try_from(raw.len()).expect("usize <= u64");
+    out.extend_from_slice(&raw_len.to_le_bytes());
     out.extend_from_slice(&packed);
     let checksum = fnv(&out);
     out.extend_from_slice(&checksum.to_le_bytes());
@@ -62,6 +57,13 @@ pub fn from_wsp3(bytes: &[u8]) -> Result<Net> {
     let raw_len = u64::from_le_bytes(bytes[5..HEADER].try_into().expect("8 字节长度"));
     let raw_len =
         usize::try_from(raw_len).map_err(|_| Error::Wire("WSP3 原始长度超出 usize".into()))?;
+    // 分配护栏：RLE 每输入字节至多展开 130 倍，超出即恶意声明（13 B 文件可触发 TB 级分配）。
+    if raw_len > (payload_end - HEADER).saturating_mul(130) {
+        return Err(Error::Wire(format!(
+            "WSP3 声明长度 {raw_len} 超出压缩数据 {} 字节的解压上界",
+            payload_end - HEADER
+        )));
+    }
     let raw = rle_decode(&bytes[HEADER..payload_end], raw_len)?;
     from_wsp2(&raw)
 }
@@ -69,11 +71,9 @@ pub fn from_wsp3(bytes: &[u8]) -> Result<Net> {
 /// CLI 的容器名：`huffman` 优先于 `rle`，都没有时 WSP2。
 #[must_use]
 pub fn pack_format(huffman: bool, rle: bool) -> &'static str {
-    if huffman {
-        "wsp4"
-    } else if rle {
-        "wsp3"
-    } else {
-        "wsp2"
+    match (huffman, rle) {
+        (true, _) => "wsp4",
+        (_, true) => "wsp3",
+        _ => "wsp2",
     }
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""分层与归位门：crate 必须登记在层里，依赖只能向下（规范正本 docs/LAYERS.md）。
+"""分层与归位门：crate 必须登记在层里，依赖只能向下（规范正本 docs/positioning/LAYERS.md）。
 
 用法：
   python scripts/layers.py            # 全仓判定；违规判红，退出码 1

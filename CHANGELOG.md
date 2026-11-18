@@ -2,6 +2,336 @@
 
 ## [Unreleased]
 
+### Added（benchmarks：复现《WSP Doesn't Need Transformers》的读取器）
+
+- 新增 `benchmarks/wsp-no-transformer`（独立 workspace，不进 CI）：Rust 复现论文仓库
+  `models/opus/mem_assoc2_g5` 的二阶联想记忆读取器，ARC test 3,530 题 accuracy
+  **0.5240084985835695**、answered 0.9798866855524079；第一代（R=40）用 `WSP_R=40` 跑同一程序。
+- 论文 `result.json` 是 0.5237252124645893；差 3 题（47/64/946），全部来自 `torch.topk`
+  对并列 idf=0.8 概念的未定义顺序——换成确定性 tie-breaking 后 Python 参考与 Rust 逐位一致。
+  即论文读数不是逐位可复现的，确定性规则下是 0.5240。
+- Python 只作对齐基线（导出权重、原始 topk 读数、确定性参考）；Rust 交付 forward + 评测。
+- 三值化实验（`WSP_QUANT` / `WSP_QUANT_ROW` / `WSP_QUANT_TARGET` / `WSP_QUANT_TAU`）：
+  整表符号三值化 `A` 掉 5.3–5.7 点；阈值三值化（τ=0.2·max|row|）只掉 **0.14 点**
+  （52.2592%）；二阶表每行符号化只掉 **0.40 点**（52.0042%）；两者组合 51.8697%（−0.53 点）。
+  二阶表是权重的大头（≈268 MB），可三值化；`A` 的幅度承重，先置 0 弱关联再符号化可收回损失。
+- 未证栏：`kb/`→权重的编译仍在 Python；只复现 `mem_assoc2` 一支；17× GPU 速度未复现；
+  τ 只扫 6 个点、scale 未学、`A` 稀疏度未统计、未接 GPU 内核。
+- CPU 计时：3530 题 151.75 ms → **136.70 ms**（top-16 用 `select_nth_unstable_by`，不全排序）。
+- GPU 读取器（`--gpu`，wgpu）：**6.85 ms**（3530 题，5 次中位，不含 CPU 预处理与上传），
+  比论文 18 ms（RTX 3090）快 2.6×；CPU 预处理 30.41 ms，端到端 37.26 ms。
+  CPU↔GPU 最大误差 3.1e-5，16/3530 题预测翻转，GPU accuracy 52.3725% vs CPU 52.4008%。
+- 三值 `row_w` 接进 GPU 内核：每行 16 个 trit 打成 pos/neg u32 + 行 scale，
+  `row_w` 268 MB → 48 MB（5.6×）；GPU 内核 7.34 → **6.22 ms**（−15%），
+  accuracy **52.0042%**（与 CPU 三值参考一致）。瓶颈不在该表带宽，在行数与共享内存调度。
+- 二阶读取并行化：120 个线程各处理一对，`atomic<i32>` 定点累加（×2^18）；
+  GPU 内核 7.34 → **3.34 ms**（f32）、6.22 → **3.09 ms**（三值），比论文 18 ms 快 **5.4×**。
+  定点精度：最大误差 1.7e-4，11–12 题翻转；准确率 52.4292% / 52.1176%（与 CPU ±0.1 点）。
+- `row_ids` 压 u16（两个 id 打进一个 u32）：268 → 134 MB。f32 路径持平（3.33 ms），
+  三值路径慢 22%（3.09 → 3.77 ms）——解包位运算成本超过省下的带宽；负结果，
+  省内存可以，不提速。
+- topk/编码搬上 GPU：`prepare.wgsl` 从 q/o 生成 top-16 / pair 行号 / 位图 / 选项表；
+  端到端 **14.53 ms**（全 GPU），比 CPU 预处理 30 ms + GPU 3.3 ms 快 2.3×。
+  prepare 的 top-16 仍是单线程线性扫描，是剩余时间大头。
+- 并行 top-16 是负结果：128 线程局部 top-16 + 线程 0 归约 2048 候选，
+  端到端 14.53 → **16.37 ms**（慢 13%）；共享内存 17 → 33 KB 让 occupancy 下降，
+  tie 顺序变化使最大误差涨到 11.6（准确率仍 52.4008%）。已回退。
+- 两阶段归约是负结果：stage 写 120×16 条/问题（54 MB）+ 分段归约，
+  端到端 14.53 → **24.87 ms**（慢 71%）；54 MB 中间读写 + 866M 次比较远贵于
+  `atomic<i32>`（精度 6.1e-5 vs 1.7e-4）。已回退。
+- 跨模型验证（sol `mem_assoc2_g5`，C=4293、R=64、H=1,414,217，`WSP_R=64`）：
+  CPU 45.6516%（论文 45.5949%，差 0.057 点 tie）、GPU 45.5666%（16.41 ms，5 题翻转）。
+  H/R 从权重读、pair 行号用运行时 h 取模，读取器不再硬编码 opus 形状。
+- 跨模型验证（astra `mem_assoc2_g8`，C=4962、R=57、H=1,572,869，`WSP_R=57`）：
+  CPU 47.4363%（论文 47.4079%）、GPU 47.4646%（19.22 ms，6 题翻转）。
+  共享数组上限提到 5120，覆盖三个 writer 的 4293–4962 概念数。
+- 确定性串行二阶（`WSP_SERIAL=1`）：误差 1.7e-4 → **3.1e-5**（5×），
+  全流程 14.53 → 19.23 ms（+32%）。剩余误差来自 top/选项顺序与 f32 语义，不是原子；
+  完全逐位需要统一顺序 + 定点化。
+- 统一 top-16（CPU 改线性扫描，与 GPU 一致）与选项顺序后：预测差异 14 → **0**，
+  accuracy 完全一致（52.4008%）；logits 误差仍 3.1e-5。排除 FMA（CPU `mul_add`
+  后误差 6.1e-5、慢 3×），剩余是 GPU f32 中间精度；logits 逐位需定点化，未做。
+
+### Changed（文档治理：docs 按用途归位、索引重写、口径统一、文档门接进 CI）
+
+- 文档门接进 CI：`docs-gates` job 现在跑 **6 道**——`docs_hygiene` / `doc_pointers` /
+  `model_status` / `claims_evidence` / `layers` / `tech_collide`（各带自测，13 步 + checkout）。
+  `tech_collide` 原先读仓外交接账本、CI 上没法跑；本轮新增**仓内脱敏快照**
+  `scripts/ledger-snapshot/`（由 `scripts/sync_handoff_snapshot.py` 从 `_handoff/` 正本生成，
+  幂等可重跑；只保留判定需要的编号/状态/标题/负责/路径/标签，本机绝对路径 → `<local>/<末段>`、
+  用户目录 → `<local>/users`、token → `<redacted>`），门默认读快照 ⇒ CI 上真的会跑。
+  过期策略分两档：快照**缺失**判红；快照**超过 30 天未同步**只告警不判红（`tech_collide.py`
+  会打印「快照生成于 N 天前」）。要判「快照与正本内容是否一致」跑
+  `sync_handoff_snapshot.py --check`（sha256，剔除生成时间行，跨天重跑不会误报）。
+- `claims_evidence` 从「拦 21 篇、无据句 109 / 基线 76」收到 **0 拦、56 句 / 基线 56**（`--update`
+  已收紧）。两条口径修正 + 30 句逐条改：`docs/review/` 退出能力面（评审快照与 `CHANGELOG.md` 同理，
+  是历史叙述不是当下能力声明，-9 句）；新增 `<!-- claims-ok -->` 显式豁免标记给**规则定义段**
+  （`STATUS.md` §1、`SCOPE.md` §7.1 必须写出「已跑通 / 组件」这些词才能定义它们，-8 句）；
+  其余 30 句一律「补真实指针」或「按 `STATUS.md` 口径降级措辞」，没有编造读数。
+- `layers` 从 FAIL 1 条转 **绿**：`scripts/layers.json` 的 `allows` 登记唯一一条跨层例外
+  `trit-gpu`(ops) → `trit-wspace`(learn)，原因是仅 `[dev-dependencies]`（GPU 测试与示例读 WSP 工件
+  做 CPU 参考对拍，不进发布闭包）。`docs/positioning/LAYERS.md` 同步写明「dev-dependencies 与
+  dependencies 一样计入回边」，例外必须逐条登记。
+- `ci_integrity` 新增 action pin 自洽检查：① 形似 commit SHA 的 ref 必须 40 位 ② 同一 action 的
+  同一注释标签（`# v5` / `# stable` / `# 1.88`）必须指向同一个 ref ③ 没写 `@版本` 判红。
+  这条是防本 PR 早先那次事故：`actions/checkout` 的 pin 抄成 39 位，本机 YAML 能过、旧判据全查不出，
+  只有 runner 在 `Set up job` 报 `Unable to resolve action`。按「注释标签」比而不是按 action 比，
+  是因为 `dtolnay/rust-toolchain` 的 ref 本就是工具链版本 commit（`# stable` / `# 1.88` / `@nightly`
+  各不相同是设计）。自测 19/19（1 正例 + 4 反证）。
+- 安全/理念文档不再把沙盘与隐喻写成能力：`WSP-SHIELD.md` §2 在读数表前加状态块（状态=**组件**、
+  合成流量、不构成「能抗真实 DDoS」的主张）；`crates/trit-immune/README.md` 首段补「是什么 /
+  不是什么」（是带三值裁决的**版本账本内核**，「免疫系统」是设计隐喻，不表示能自动防护/拦截/恢复）。
+  `WSP-REDTEAM-MODEL` / `PROBE` / `STACK` 核实后**不改**：三篇都已有具体未证栏与复算入口。
+
+- `docs/` 从 67 篇平铺改为按用途 8 组：`positioning/`(6) `reference/`(8) `results/`(11)
+  `research/`(22) `security/`(10) `engineering/`(4) `plans/`(5) `specs/`(新)，根目录只留
+  `docs/README.md` 索引；`review/` 作为按日期的评审快照保留、不改写。
+- 索引重写：原先 35 篇不在索引、25 篇除 `CHANGELOG.md` 外没有任何文档指向；现在 71 篇逐条
+  一句话全覆盖（`comm` 对账为空）。搬迁同时改写全仓引用 161 处（md 链接 118 + 路径 43），
+  含目录深度变化（`../` → `../../`）。
+- 新增四篇规范：`docs/specs/DOCUMENTATION.md`（四段骨架 + 10 条硬规则，每条标「门/人」）、
+  `TERMINOLOGY.md`（三值逻辑 / 三值权重 / 平衡三进制三层与用词表）、`README-SPEC.md`
+  （首屏只放三件事、定位句单一真源、能力必须标层）、`DOC-INDEX.md`（新增三步 / 搬迁四步 /
+  判红命令）。
+- 口径统一到「三值推理底座」：README 标题与首屏改写并新增「不是什么」段；GitHub 仓库简介从
+  「Rust 三进制工具箱」（与 `docs/positioning/LAYERS.md` 的「本仓是底座，不是工具箱」正面冲突）
+  改为「Rust 三值推理底座」；README 工作区表补齐到 45 个 crate 并按真实发布状态分表
+  （稳定 API 25 + 实验层 20，判定给 `grep -l "publish = false" crates/*/Cargo.toml | wc -l`）——
+  原先两张表只列 33 个，且把 5 个可发布 crate 列进实验层、漏了 `trit-build` / `trit-parts`。
+- `docs/positioning/DESIGN.md`：实验层从手工抄的「八个」改为以清单为准（实测 20 个）；
+  `TERNARY-BOUNDARIES.md` 把「不是平衡三进制整数库」限定到稳定 API 面，并补上实验层事实
+  （`trit-codec::balanced` 的 `encode`/`decode`/`range`、`trit-float` 的 `TritFloat`，均
+  `publish = false`），否则与 `crates/trit-codec/src/balanced.rs` 的实现冲突。
+- 文档门接进 CI：新增 `docs-gates` job，跑 `docs_hygiene` / `doc_pointers` / `model_status`
+  三道（各含自测）。`doc_pointers.py` 从「只查行号指针」扩展为「行号指针 + markdown 链接可达 +
+  `docs/` 索引覆盖」，并补 3 条反证；迁移配套修了它 `glob` → `rglob`（否则子目录全漏）、
+  `model_status.py` 的 STATUS 路径、两份基线键与 `depth_catalogue` / `depth_sweep` 的输出默认值。
+- 删掉提交遗物 `crates/trit-immune/PR.md`（PR 描述留在仓里，全仓无引用）。
+- 读数：全仓 md 死链 0（迁移前 0 → 迁移后 0，逐条解析链接目标）；`docs_hygiene` /
+  `doc_pointers`（78 篇、24 条行号指针）/ `model_status` 三道绿且自测绿；`ci_integrity` 21 项
+  对得上、`ci_budget` 拦 0；`claims_evidence` 109 句（main 基线 108，本轮新增文档没有净增无据句）。
+- `tech_collide` 真正重复的**八组**已按用户授权重号：A129→**A421**、A130→**A422**、
+  A131→**A423**、A134→**A424**、A153→**A425**、A155→**A426**、A157→**A427**、A267→**A428**
+  （每组保留较早的一条原号，只给较晚的那条重号；行尾注「（原 AXXX，2026-11-15 重号）」，
+  条目内容一字未删）。改前先备份 `_handoff/` 的四个账本（`*.bak-20261115-renumber`）；
+  `CHANGES.md` 里指向较晚那条的 4 处引用同步改号（历史叙述里的编号清单不动）。门从
+  「拦 9」转「拦 0 警 1」。
+- 第九组 `A9` 是**脚本误判、不是编号复用**：`ENTRY_RE` 没有编号边界，把账本里的 `A9xx`
+  （2026-11-09 那条）截成 `A9`，与真 `A9`（BSHSQ 分片重切，2026-10-21）撞在一起。
+  修法：正则改成 `(A[0-9]+[A-Za-z]*)(?![A-Za-z0-9])`，`A9xx` 解析为独立编号；补两条反证
+  （`A9xx` 不被截成 `A9`、两者不判重复）；账本 L355 已从 `A420` **回退成 `A9`**、去掉重号注记，
+  因此新号只用到 **A421–A428**（`A420` 空着）。那 4 处 `A9` 引用本就指真 `A9`，回退后自洽。
+- 未证栏：快照是**生成物**，CI 只能判「仓内快照与它自己一致」，判不了「账本正本有没有被
+  别人改过」——同步仍要本机跑 `sync_handoff_snapshot.py`（`--check` 可进收工清单）。
+  另：`docs/review/` 与 `CHANGELOG.md` 的历史路径与措辞不批量改写，允许过期以换可追溯。
+### Changed（构建瘦身：收窄补缺口、GPU 冒烟并行、调试信息减重、回收连外置 target）
+
+- `scripts/ci_scope.py`：`scripts/**` 不参与 Rust 编译，归不到 crate 时略过、不再拖全量；抽样 40 个
+  已合并 PR，全量 36 → 4（按 crate 收窄 30、整段跳过 Rust 6）。守卫 `rust_reads`：crate 源码或清单
+  一旦引用 `scripts/`（注释除外），该次运行退回全量并点名文件:行号。MSRV job 用同一把尺子收窄。
+- CI：trit-gpu 的 1×1×1 shader 冒烟在 Clippy 后当场编好、后台运行，job 末尾「— wait」收结果
+  （编译错误当场判红，后台进程失踪 20 分钟超时判红）；补上全量兜底漏设的 `needs_build_gpu`
+  （#376 起 push main 一直跳过 trit-build 的 GPU 测试与 clippy）。
+- 根 `Cargo.toml`：`[profile.dev] debug = "line-tables-only"`、依赖 `debug = false`；断言/溢出检查/
+  优化等级不变。本机 `cargo test -p trit-wspace --no-run`：target 4362 → 2184 MB，测试二进制
+  2227 → 1094 MB，墙钟约 39s → 26s；读数见 `docs/BUILD-PERF.md` §10。
+- `scripts/worktree_guard.py --apply` 连带删除同名、未共用、在树外的外置 target，按 git 顶层与
+  主工作树保护；`scripts/gitflow.py worktree add` 新建前自动回收（`TRIT_NO_AUTO_RECLAIM=1` 关闭）；
+  自测接进 CI 的 recovery job。
+- CI 缓存：`rust-cache` 的键只哈希依赖、不含 `[profile]`，改完 profile 会一直 full match 恢复作废的
+  旧缓存、整仓重编且不再保存；ci.yml / mutation.yml 的 `rust-cache` 加
+  `key: ${{ hashFiles('Cargo.toml') }}`，根清单一改就换代。
+- CI 实测（本 PR 前三轮都是上面说的冷编译）：冒烟在关键路径上只剩 start + wait = 97 / 50 / 137s
+  （原串行 272–375s）；Windows job 528 / 436 / 689s（main 合并后全量 583–751s），三轮之间差 250s，
+  整 job 快慢在冷编译下判不了。
+- 文档更正（`docs/BUILD-PERF.md`）：§8 原把 #404 的 CI 收益记在 sccache 头上，实为 `rust-cache`
+  命中 + nextest。CI 的 sccache 从未生效——`git log -S` 查 `RUSTC_WRAPPER` / `SCCACHE_GHA_ENABLED`
+  在 ci.yml 历史里都是空，`sccache-action` 只在 #404 引入过一次，main 与 #502 的 job 日志都是
+  `Compile requests 0`、缓存位置本地盘。§0 / §3 / §5 / §8 / §10 同步改口径，§8 加「归因更正」。
+- 暖缓存读数（run 43632123371，同一提交、四个 job 的 `rust-cache` 全 `full match: true` 的第四轮）：
+  Windows 446s、ubuntu 157s、macOS 190s、MSRV 171s（main 暖缓存基线 583–751 / 177–222 /
+  185–310 / 164–251s）；Windows 上冒烟「— start」14s、「— wait」109s。
+- 未证栏：调试信息读数只测了 trit-wspace 一个 crate 的测试构建；#404 的 727s → 493s 那对数字
+  无法再从 CI 复算（分支已随合并删除，只剩一次改动集只有 `.github/` 的 run），按「当时读数、
+  机制可推」处理，可复算的替代读数就是上面第四轮。
+
+
+### Added（对抗训练：蓝方吃进化攻击样本——RowDropout 行级注入）
+
+- `examples/adversarial_train/`：AB 循环——红方进化攻击（行基因组整行置零）
+  → 蓝方对抗再训练（红方点名行的 RowDropout 轮换注入，epoch 内置零训练末恢复）
+  → 同源攻击再打，对照普通再训练。
+- 读数（3 轮）：round 3 出现鲁棒信号——同源攻击下对抗再训练 F1 0.9167 >
+  干净 0.8804 > 普通对照 0.8370；单轮 8 epochs 不足（决策边界分散需多轮累积）。
+- 过程坑两条：全零工件反推的 QAT 再训练是对称死区（F1 恒 0，初始化教训姊妹篇）；
+  输出层行注入要跳过（置零 = 熄火非冗余）。文档 `docs/WSP-ADV-TRAIN.md`。
+
+
+### Added（防御面：预测组件 + DDoS 盾沙盘 + 模型身份锁定）
+
+- `trit_learn::forecast`（新部件，可发布层）：SMA / EWMA / Holt（O(1) 流式）
+  预测与 mae/rmse/mape 指标（4 条单元测试）。
+- `examples/ddos_shield/`：三组件消融沙盘（合成流量，零网络 I/O）——静态
+  预算 / +Holt 预测自适应 / +QAT 学习分类器；campaign 归因聚类（源指纹
+  单链）。消融读数：静态对已知模式最优（零误杀），预测防阈值探测，学习
+  组件 v1 弱（如实入册）。
+- `examples/identity_lock/`：行为指纹锁定——50 探针符号向量 vs 发布基线，
+  EWMA 漂移监控超阈锁定：**真后门（输出层 30% 反转，字节合法+校验和重算）
+  与幻觉副本全部锁定，忠实副本零误杀，回滚逐位一致**——#495 行为级指纹
+  方向的实证。
+- 边界：campaign 归因是防御遥测标签（不做对真人定位/去匿名化）；无攻击
+  反制；P=NP 澄清见 `docs/WSP-SHIELD.md`。文档 `docs/WSP-SHIELD.md`。
+
+
+### Added（三值红蓝共同进化：想法进化的多智能体机制落到三进制安全对抗）
+
+- `examples/evolution/`：PROTEUS 式五角色进化（PROMETHEUS 变异 / MOMUS 实测
+  批判 / ANANKE 选择 / HARMONIA 三值投票交叉 / 化石记录 = 哈希→历史 fitness）
+  + 自我假设（层偏置聚焦，命中 = best fitness 上升）+ AB 双模型交替（红方
+  基因组进化 vs 蓝方 3 seed 集成）。攻击策略 = 长度 129 的三值优先级向量，
+  变异 = trit 翻转，攻击走 `Edit::SetTrit` 原语。
+- 读数（SMS spam 集成防御，6 代）：**gen 0 即进化发现 kill-switch**
+  （best fitness 0.7353，化石记忆后 gen 0-5 全程稳定）；最强攻击把单成员
+  **F1 0.7500 → 0.0000**，而三成员集成投票**完全扛住（F1 0.7353 无损）**
+  ——#495 防御对策的定量验证。
+- 过程修正 4 条（搜索空间含致命行 / 随机采样替代固定排序 / 化石记成绩不拒
+  再见 / 评估噪声取 min-of-2），对后续进化实验直接可用。
+- 文档 `docs/WSP-EVOLUTION.md`。
+
+
+### Added（AI 安全线：语义红队 5/5 守住 + 完整性审计模型负结果与方向修正）
+
+- `tests/redteam_semantics.rs`：语义层不变量攻击（patch 原子性/回滚逐位/
+  审计链伪造检测/程序原子性/重放确定性）——**5/5 守住**；审计链篡改检测
+  实证工作正常（伪造 `"to":"0"`→`"-"` 即断链）。
+- `examples/artifact_guard/`：攻击样本自动生成器（8 种模式 × 重算校验和，
+  标注免费）+ 三值完整性审计模型——**负结果**：字节级特征对检测工件篡改
+  无增量价值（FNV 校验和已 100%+零误报覆盖；实测多类 acc 0.11、二值误报
+  0.83）。**方向修正**：模型防御的正确战场是行为级指纹（检出"重算校验和
+  的内容偷换"）——模型身份识别/后门触发检测列为后续。
+- 文档 `docs/WSP-SEC-LOOP.md`（含设计边界：审计链无签名锚点，写权限攻击者
+  可 recompute 洗白——供应链威胁需外部锚定）。
+
+
+### Added（红队第三弹：实测定位攻击——攻击者经济学定量）
+
+- `examples/redteam_probe/`：probe 口径的实测行级消融（129 行，置零 Patch，
+  无需梯度）+ 四档攻击对比。
+- 决定性读数：SMS spam 工件存在**单点支配行**（probe top-1 delta=1.0000，
+  其余 128 行全 0）——对该行**整行置零仅 103 个编辑**就把 F1 0.750 → 0.000
+  （随机攻击需 ~1 000 flips）。#489「瓶颈在定位」的猜想定量成立：定位成本
+  秒级、收益攻击成本降 10×。防御侧对策（集成/冗余正则）列为后续。
+- 文档 `docs/WSP-REDTEAM-PROBE.md`。
+
+
+### Added（三值 QAT：DGA 域名检测与家族归因 + 多类评测部件）
+
+- `trit_learn::metrics::Confusion`（新部件，可发布层）：多类混淆矩阵 / acc /
+  per-class P-R-F1 / macro-F1（3 条单元测试）。
+- `examples/dga_redteam/`：DGA 检测（二分类）与家族归因（26 类）双任务；
+  数据集 `chrmor/DGA_domains_dataset`（67.5 万域名，25 家族 + Alexa，登记
+  `docs/DATASETS.md` A0）。
+- 读数：二分类 test acc 0.778（QAT 与 WSP 工件一致）；比特翻转 k=1 000
+  （0.76% trits）acc -14pp、k=10 000 → 0.444——与 #492 汇总成型：**判别式
+  三值工件的脆弱性 >> 生成式链**，工件越小越需要完整性保护。26 类归因
+  首轮欠拟合（acc 0.29，未证栏）。文档 `docs/WSP-DGA-QAT.md`。
+
+
+### Added（三值 QAT：真实数据集全链——训练 + 工件 + 红队）
+
+- `examples/spam_redteam.rs`：UCI SMS Spam（5,574 条真实短信）→ 字符 n-gram
+  三值特征（自造）→ QAT 三值 MLP `4096→128→1`（`TernaryDense`+`Ste::Clipped`，
+  hinge，Adam×2；行 absmean 初始 scale 是收敛关键）→ 分层评测（acc/P/R/F1，
+  自造）→ 导出 WSP 工件（与 QAT 推理逐位一致）→ 比特翻转红队。
+- 读数：QAT 测试 acc 0.940 / F1 0.750；**0.19% trit 翻转把 F1 打掉 73%**
+  （判别式分类器对工件篡改远比生成式 MLP 链脆弱，k 大后退化为常量预测器）
+  ⇒ 三值安全分类工件必须配完整性保护与加载拒绝。文档 `docs/WSP-SPAM-QAT.md`。
+- 全程纯 Rust（训练禁 Python 硬门一致）；数据集下载直链登记 `docs/DATASETS.md` A0。
+
+
+### Added（安全：模型侧红队——比特翻转攻击读数）
+
+- `examples/redteam_flip.rs`：真实开源模型（EleutherAI/pythia-70m，F16
+  safetensors）三值化工件的红队读数——6 层 MLP 链 12,582,912 trit，攻击走库
+  自己的 `Edit::SetTrit`/`Patch` 原语；随机攻击 vs 行方差攻击（白盒代理）。
+- 读数：稀疏比特翻转对三值网络几乎无效（k=10⁴，0.08% trits，输出余弦仍
+  0.9999）；行方差攻击在小 k 时比随机强 2.6-5.7×，k 大后反超；防篡改面
+  （FNV 校验和 1 bit 检出 + 审计哈希链）覆盖远大于攻击有效面。
+- 文档 `docs/WSP-REDTEAM-MODEL.md`（含攻击者模型与未证栏）。
+
+### Fixed（安全：容器栈红队发现与修复）
+
+- 结构化恶意容器（校验和合法）可触发 OOM abort：WSP2 `rows=u32::MAX`（15 B）、
+  WSP3 `raw_len=2^40`（13 B）、WSP4 符号数（266 B）——分配护栏（剩余字节/
+  展开率 130×/位流容量）三处补齐；WSPM blob 偏移改 `checked_add`（debug 溢出
+  panic）；manifest `file` 字段路径穿越读任意文件——新增 `cli/safe_path.rs`
+  接入三个打包命令。9 条红队用例入 `tests/redteam.rs`；读数见
+  `docs/WSP-REDTEAM-STACK.md`。
+
+### Changed（清单 10：5-trit 打包统一到 trit-core）
+
+- 实现下沉到 `trit-core::pack`（可发布底层）：线格式契约文档、`pack`/`unpack`/
+  `unpack_canonical`/`Packed5`/`Packed5Vec` 与 `PackError` 单一来源；
+  `trit-codec` 变薄壳（API 与 `CodecError` 不变，错误一一映射）；`trit-export`
+  删掉自带副本，直接用 `trit_core::pack`，其 `Error::InvalidByte/Padding/PackedLen`
+  三个变体移除（无消费者锁定；错误信息并入 `Error::Tensor`，带张量名与具体原因）。
+- GGUF 的 trit-codec pin 对拍测试原样保留并通过；trit-core 变异锚点 2 条随迁，
+  `mutation_check --pkg trit-core` 21/21 抓住。
+- 这清掉 `docs/WSP-LIMITS.md` §4 里"两份 5-trit 打包"一项（清单第 10 项）。
+
+### Docs（清单 9-11 文档债务收口）
+
+- README 技术树 L7 行补 `wspm`（#485）与 GPU 读数落点（#460），缺口收敛为
+  llama.cpp 互操作 / GPU 进 `analyze`/`repair` / 流式容器。
+- `docs/WSP-LIMITS.md` 同步 #460 与 #485 的未证栏（容器无流式、GPU 未接
+  `analyze`/`repair`），维持"每个结果文档的未证栏必须同步到汇总"的自身规则。
+- 顺带把上笔引入的盘符绝对路径改写为产物盘表述（docs_hygiene 棘轮只减不增）。
+
+### Added（构建基建：worktree 产物落 E: 盘的自动传播）
+
+- `scripts/wt_target.py`（`--all`/`--status`/`--self-test`）：为每个 worktree 幂等生成
+  `.cargo/config.toml`（`target-dir` 指向产物盘的 `cargo-target/<worktree>`），修掉"主 worktree
+  手工放覆盖文件、其余 worktree 构建写满 D 盘"的缺口；`.gitignore` 收 `.cargo/config.toml`，
+  `AGENTS.md` 加指引。策略根不存在（CI/其它机器）自动跳过。
+- 本机 `.git/hooks/trit-hooks.py`（不入库）的 post-checkout 同步接入同一逻辑：
+  `git worktree add` 即自动生成。
+- 未证栏：sccache 对不同 target 目录的命中情况未重新实测（`SCCACHE_BASEDIRS` 含
+  产物盘策略根，预期部分命中）；Linux/CI 无策略根，不受影响。
+
+### Added（trit-wspace：`repair` 的 keep 约束）
+
+- `RepairOptions.keep: Option<Oracle>`：给定时只接受“edit 全对且 keep 全对”的补丁；
+  半径 1 / 半径 2 / BFS / 束搜索四条接受路径都加 `keep_ok`；`energy` 加 10 × keep 失配数作软惩罚。
+- CLI `repair --keep <oracle|->`；`tests/repair_keep.rs` 2 条（拒绝破坏 keep 的解、允许不破坏的解）。
+- 真实读数（8 条 edit / 64 条 keep、8 个承重行、`--max-edits 2`）：无 row-ops `found:false`；
+  `--row-ops` `found:true`、edit after_loss 0、**keep regressed 64**；`--row-ops --keep` **`found:false`**。
+- 结论：keep 约束把“全毁的解”排除后，同一候选空间里**没有“修好且不破坏 keep”的解**——
+  修复与保持在这 8 行 / 2 点内存在根本冲突，不是预算问题。
+- `docs/WSP-REPAIR.md` 增加 keep 约束节。
+- 未证栏：keep 软惩罚 10× 未调权；更多承重行 / `max_edits > 2` 未试。
+
+### Added（trit-wspace：`repair` 的行级原语 `--row-ops`）
+
+- `RepairOptions.row_ops: bool`：候选加入 `NegateRow`（整行取反）与相邻 `SwapRows`；
+  有 `scope` 时只对 scope 覆盖到的行加（`same_coord` 也补了行级分支）。
+- CLI `repair --row-ops`；`tests/repair_scope.rs` 新增“行级原语能撤销一次整行取反”。
+- 真实读数（8 条 edit / 64 条 keep、8 个承重行）：无 row-ops → `found:false`（22.7s）；
+  `--row-ops` → **`found:true`、2 条编辑、edit after_loss 0、keep regressed 64**（7.8s）。
+- 结论：行级原语让 2 点内**可达**，但 keep 全毁——修复 edit 的代价是整体行为崩塌，
+  `certified=false`；需要“keep 约束下的 repair”才可用。
+- `docs/WSP-REPAIR.md` 增加行级原语节。
+- 未证栏：没有整块替换；keep 全毁说明这个解不可接受。
+
+### Added（trit-wspace：`localize` 选行 + scoped repair 的真实读数）
+
+- `examples/editset_repair_readout.rs`：`editset_gate` 任务 + `localize` 选 8 个承重行 +
+  展开成 6,160 个候选 + `repair` 带 `scope` 做束搜索 + `certify_nets` 检查 edit/keep。
+- 读数（872 对任务、8 条 edit / 64 条 keep、8 个承重行）：`edit=8/max_edits=2` → `found:false`
+  （1m49s）；`edit=2` → `found:false`（22.7s）；`edit=1` → `found:false`（18.6s）。
+- 结论：**承重行内 2 点内不可达，不是预算问题**；与 #465 的候选上界一致（单点最多修 1/8、双点无改善）。
+- `docs/WSP-REPAIR.md` 增加 localize + scoped repair 读数节。
+- 未证栏：没试 `max_edits > 2` 或更多承重行；候选里真正有增益的极少；任务仍是 word_embeddings 输入。
+
 ### Added（trit-wspace：`repair` 的候选限制接口）
 
 - `RepairOptions` 新增 `scope: Option<Vec<Edit>>`：`None` 全权重穷举，`Some(候选)` 时
@@ -248,6 +578,19 @@
 - 新增 `docs/WSP-LIMITS.md` 汇总所有未证栏（真实任务、容器互操作、tile/锁、发布边界）。
 - 新增 `docs/WSP-GRADIENT-PROPOSER.md`：手工特征 → 梯度/反向传播/STE 的三条路线。
 - `docs/GGUF-TRIT.md` §3 记录两份 5-trit 打包的发布边界（可发布 crate 不能依赖实验层）。
+### Added（trit-wspace：整模型批量容器 WSPM）
+
+- `wspm`：WSP1 模型目录（`manifest.json` + `NNNN-<name>.wsp`）↔ 单个二进制容器；
+  每张量存 WSP2/3/4 blob，`--format auto` 逐张量选最小；`vector` / `bias` 清单语义
+  与 `biasf`（f32 偏置幅度）原样保留，往返文本级无损（GGUF 容器只 67/103 一致）。
+- CLI `pack-model` / `unpack-model`（含写锁与 `atomic_write`）。
+- 真实读数（all-MiniLM-L6-v2，103 张量）：容器 4,959,752 B（10.6% of WSP1、
+  82.9% of 单文件 WSP2 总和，比整流 WSP4 基线 4,953,834 只多 0.12%）；
+  往返 `.wsp` 逐字节一致 103/103；pack ~1.06 s / unpack ~0.72 s。
+- 6 条测试（往返/格式选择/坏容器/CLI 闭环/确定性重打包/重导入）；文档
+  `docs/WSP-MODEL-PACK.md`。
+- 未证栏：`skipped`/原始 `source` 不进容器；无流式/mmap 与按张量随机读；
+  MCP 未接。
 
 ### Added（trit-wspace：学习式单点编辑提议器）
 
@@ -3111,7 +3454,7 @@
 
 - 顶部改为"是什么 + 搜索关键词 + 一眼看强弱"：三张 SVG 对比图（CPU 流式、每参数字节、GPU），
   数据全部来自仓库内实测；`scripts/gen_docs_charts.py` 可重跑生成。
-- 新增 [`docs/LESSONS.md`](docs/LESSONS.md)：三进制代价清单、已证负结果、测量经验、工程经验。
+- 新增 [`docs/results/LESSONS.md`](docs/results/LESSONS.md)：三进制代价清单、已证负结果、测量经验、工程经验。
 - 面向使用者的 README 不再叙述内部检查流程（完整检查矩阵移到 `CONTRIBUTING.md`）。
 - 工作区表补齐 `trit-ops` / `trit-texture` / `trit-unsafe` / `trit-procscan` / `trit-lsp` / `trit-train`。
 - 更正 `trit-train` 的 STE 来源表述：`trit-net` 已有最小 STE，本层是 per-row scale + 三变体 + 位平面 ALU。
@@ -4376,7 +4719,7 @@ trit-gpu 新增两个三进制 GPU 内核（`gpu` feature 后），全部与 CPU
 
 ### Docs
 
-- **三进制四类边界**：新增 [docs/TERNARY-BOUNDARIES.md](docs/TERNARY-BOUNDARIES.md)，
+- **三进制四类边界**：新增 [docs/positioning/TERNARY-BOUNDARIES.md](docs/positioning/TERNARY-BOUNDARIES.md)，
   把原生三进制红利（A）/ 二进制模拟税（B）/ 生态路径依赖（C）/ 基数无关复杂度（D）
   分开；README「范围」与 DESIGN「非目标」已引用。后续结论、评审与路线图必须先归类。
 

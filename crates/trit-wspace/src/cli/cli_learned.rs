@@ -132,7 +132,7 @@ pub(super) fn propose_learned(args: &[String]) -> Result<(), String> {
     let value: Value =
         serde_json::from_str(&text).map_err(|error| format!("{model_path} JSON 非法：{error}"))?;
     let scorer = Scorer::from_json(&value).map_err(err)?;
-    let evaluated = crate::repair::candidates(&net).len();
+    let evaluated = crate::repair::candidates(&net, false).len();
     let scored = learned::propose(&net, &oracle, &scorer, limit).map_err(err)?;
     let before_loss = oracle.loss(&net).map_err(err)?;
     let verify = parsed.switches.contains("verify");

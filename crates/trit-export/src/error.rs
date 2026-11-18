@@ -36,13 +36,4 @@ pub enum Error {
     /// 张量字段长度不符。
     #[error("GGUF 张量 {0} 字段长度不符")]
     Field(String),
-    /// 打包长度与 trit 数不符。
-    #[error("GGUF 打包长度不符：期望 {expected}，实际 {got}")]
-    PackedLen { expected: usize, got: usize },
-    /// 打包字节 >242（3^5 不可达值）。
-    #[error("GGUF 打包字节 {0} 非法（>242）")]
-    InvalidByte(u8),
-    /// 尾部 padding 不是规范 False。
-    #[error("GGUF 打包 padding 非规范")]
-    Padding,
 }

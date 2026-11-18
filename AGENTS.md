@@ -3,6 +3,8 @@
 ## 死命令（2026-10-29 用户口述）
 
 1. **这是用户自己的 Rust 三进制工程**：模型、训练、推理、工具一律在本仓用 Rust 三进制实现。
+   口径（2026-11-15 补注）：三值逻辑与三值权重是稳定 API；平衡三进制数制/浮点只在实验层
+   （`publish = false`）。三层用词表见 `docs/specs/TERMINOLOGY.md`。
 2. **缺实现就自己造**；不许拿 Python 训练、外部模型或二进制现成件顶替。Python 只作对齐基线，不交付。
 3. **模型权重与训练产物属于本仓**：代码进 `crates/`，大件进 `D:\KF\trit-data\`，不许放在 `.yanagent/`。
 4. **没做完必须当场说明缺口**，不得把"文档里写了规矩"当成实现。
@@ -10,16 +12,20 @@
 ## 工程口径
 
 - 实验层 `publish = false`；单文件 ≤800 行（`python scripts/module_budget.py`，台账只减不增）。
-- 收工一条命令：`cargo test --workspace` + `python scripts/module_budget.py`。
+- 收工一条命令：`cargo test --workspace` + `python scripts/module_budget.py`
+  + `python scripts/sync_handoff_snapshot.py --check`。第三条只校验**交接账本快照的新鲜度**
+  （CI 里的 `tech_collide` 只判快照自洽，判不了正本被别人改过）；本机没有
+  `_handoff/` 正本时会打印 `SKIP` 并 rc0，不算失败。
+- 新 worktree 的构建产物默认落 E: 盘：post-checkout 钩子自动生成 `.cargo/config.toml`；没有钩子的环境跑 `python scripts/wt_target.py --all`（见 `docs/engineering/BUILD-PERF.md` §5）。
 - 训练层在 `crates/trit-train`（STE + 位平面 ALU）；新模型优先复用同一套量化/STE 口径。
-- 三进制结论按 `docs/TERNARY-BOUNDARIES.md` 归 A/B/C/D，且必须带二进制基线。
+- 三进制结论按 `docs/positioning/TERNARY-BOUNDARIES.md` 归 A/B/C/D，且必须带二进制基线。
 
 ## 默认阅读（三进制 / 无限图 / 游戏环境）
 
 涉及三进制智能体、无限图/无限世界、游戏环境扫描或故障注入时，先读：
 
 - OpenAI, *The free uniform spanning forest is a factor of IID*, 2026-09-25：Abstract、Theorem 1.1、Section 1.3，以及明确说明 “without a finitary coding radius or a finite input alphabet” 的段落。
-- `docs/GAME-SCAN.md`（本仓游戏环境扫描、故障注入与恢复设计）。
+- `docs/research/GAME-SCAN.md`（本仓游戏环境扫描、故障注入与恢复设计）。
 
 引用规则：只引用“观测/规则分离、无根/重标记等变、Borel 因子 ≠ finitary 局部算法”这三个设计原则；必须说明论文对象是 FUSF，不是本仓扫描器或生成树，不得写成“论文证明了本实现”。
 
@@ -32,7 +38,8 @@
   `python scripts/hooks.py install`，装三道钩子：
   - `pre-commit`：共享工作树停在非 main（含 detached）时拒绝提交；main 上的提交一律拒绝；
   - `post-checkout`：共享工作树被切到非 main 时自动切回 main，切不回大声报；
-  - `pre-push`：拒绝直推 main + 高置信度密钥扫描。
+  - `pre-push`：拒绝直推 main + 高置信度密钥扫描 + 交接账本快照新鲜度
+    （本机没有 `_handoff/` 正本时自动跳过；确需跳过设 `TRIT_ALLOW_STALE_LEDGER=1`）。
   点对点放行用 `TRIT_ALLOW_SHARED_COMMIT=1` / `TRIT_ALLOW_MAIN_COMMIT=1` /
   `TRIT_ALLOW_SHARED_SWITCH=1`；共享树清单可用 `TRIT_SHARED_WORKTREES` 覆盖（`os.pathsep` 分隔）。
   `install` 会把 `hooks.py` 与合并驱动复制成 hooks 目录里的**稳定副本**（`trit-hooks.py` /
@@ -60,7 +67,9 @@
   `--root` 指定检出（缺省按 cwd 的 origin 尾段匹配 `--repo`，不匹配 ⇒ 警并不算）；
   `--strict` 有未认领牵连 ⇒ rc1（声明仍写入）；`--no-impact` 跳过；cargo 取证失败 ⇒ 警。
 - **main 必须且只能在一个工作树检出**；合并后立刻回收：`python scripts/worktree_guard.py --apply`
-  （只回收「PR 已合 + 干净 + 本地 tip == PR head」的工作树与分支，脏的一律保留）。
+  （只回收「PR 已合 + 干净 + 本地 tip == PR head」的工作树与分支，脏的一律保留；
+  连带删掉该树同名、没人共用的外置 target）。`gitflow.py worktree add` 新建前会自动跑一次
+  （`TRIT_NO_AUTO_RECLAIM=1` 关闭）；仓库已开「合并后自动删远端分支」。
 - **更新前先预检**：`python scripts/self_update.py --check`（断网加 `--offline`）只读不写：
   脏树 / 分叉 / detached / fetch 失败 / 门红 ⇒ rc1 并点名；可快进 + 门全绿 ⇒ rc0；
   `--apply` 未实现，落地仍走你自己的 merge/PR 流程。

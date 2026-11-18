@@ -30,6 +30,9 @@ JOB_ID = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 JOB_NAME = re.compile(r"^    name:\s*(.+?)\s*$")
 JOB_IF = re.compile(r"^    if:\s*(.+?)\s*$")
 ON_PULL = re.compile(r"^\s{2,}pull_request(-[a-z_]+)?:\s*$|^\s{2}pull_request:\s*$")
+USES_LINE = re.compile(r"^\s*(?:-\s*)?uses:\s*([^\s#]+)(?:\s*#\s*(.+?))?\s*$", re.MULTILINE)
+HEX_REF = re.compile(r"^[0-9a-fA-F]{7,}$")
+PIN_LEN = 40
 
 
 def parse_workflows(root: pathlib.Path) -> list[dict]:
@@ -118,6 +121,46 @@ def validate(jobs: list[dict], required: list[str], remote: list[str] | None = N
     return problems
 
 
+def pin_violations(root: pathlib.Path) -> list[str]:
+    """`uses:` 的 action pin 要自洽：固定 SHA 必须 40 位，同一 action 的同一版本标签必须同一个 ref。
+
+    为什么加这一层（2026-11-15 真实事故）：新增 docs-gates job 时把 `actions/checkout` 的 pin
+    抄成 39 位（`d5a048` 掉了 `d`），本机 YAML 能解析、本门另外三条判据也查不出，只有 runner 在
+    `Set up job` 里报 "Unable to resolve action" —— 整条门禁一次都没跑。
+
+    为什么按「注释标签」比一致而不是按 action 比：`dtolnay/rust-toolchain` 的 ref 是**工具链版本的
+    commit**（`# stable` / `# 1.88` / `@nightly` 各不相同是设计，不是漂移）；按 action 强行一致会误伤。
+    而 `# v5`、`# v2` 这类标签天然就是「同一版本」的声明，同一标签给两种 pin 一定有一处抄错。
+    """
+    problems: list[str] = []
+    seen: dict[tuple[str, str], tuple[str, str]] = {}
+    for path in sorted((root / WORKFLOWS).glob("*.yml")) + sorted((root / WORKFLOWS).glob("*.yaml")):
+        for m in USES_LINE.finditer(path.read_text(encoding="utf-8")):
+            ref, label = m.group(1), (m.group(2) or "").strip()
+            if ref.startswith(("./", "docker://")):
+                continue
+            action, _, version = ref.partition("@")
+            if not version:
+                problems.append(f"{path.name} 的 `uses: {ref}` 没写 @版本 —— tag 会漂，CI 无声变样")
+                continue
+            if HEX_REF.match(version) and len(version) != PIN_LEN:
+                problems.append(
+                    f"{path.name} 的 `uses: {ref}`：看着像 commit SHA 却只有 {len(version)} 位"
+                    f"（要求 {PIN_LEN} 位；runner 会报 Unable to resolve action）"
+                )
+            if not label:
+                continue
+            previous = seen.get((action, label))
+            if previous is None:
+                seen[(action, label)] = (ref, path.name)
+            elif previous[0] != ref:
+                problems.append(
+                    f"{action} 的 `# {label}` 有两种 pin：{path.name} 用 `{version}`，"
+                    f"{previous[1]} 用 `{previous[0].partition('@')[2]}` —— 同一标签必须同一个 ref"
+                )
+    return problems
+
+
 def read_required(root: pathlib.Path) -> list[str]:
     path = root / REQUIRED_FILE
     if not path.is_file():
@@ -203,6 +246,31 @@ def self_test() -> int:
         check("读必需清单跳过注释", read_required(root), ["fmt + clippy + test"])
         check("端到端无问题", validate(parsed, read_required(root)), [])
 
+    sha = "fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09"
+    with tempfile.TemporaryDirectory() as tmp:
+        pin_root = pathlib.Path(tmp)
+        (pin_root / WORKFLOWS).mkdir(parents=True)
+        pin_file = pin_root / WORKFLOWS / "pin.yml"
+        good_pin = f"jobs:\n  a:\n    steps:\n      - uses: actions/checkout@{sha} # v5\n"
+        pin_file.write_text(good_pin, encoding="utf-8")
+        check("正例：40 位 SHA、同一标签同一个 ref", pin_violations(pin_root), [])
+
+        pin_file.write_text(good_pin.replace(sha, sha[:-1]), encoding="utf-8")
+        check("反证 1：SHA 少一位（39 位）", any("只有 39 位" in p for p in pin_violations(pin_root)), True)
+
+        pin_file.write_text(good_pin + f"      - uses: actions/checkout@{sha[:-1]}d # v5\n", encoding="utf-8")
+        check("反证 2：同一标签两种 pin", any("两种 pin" in p for p in pin_violations(pin_root)), True)
+
+        pin_file.write_text(
+            f"jobs:\n  a:\n    steps:\n      - uses: dtolnay/rust-toolchain@{sha} # stable\n"
+            f"      - uses: dtolnay/rust-toolchain@{sha} # 1.88\n",
+            encoding="utf-8",
+        )
+        check("反证 3：不同标签用不同 ref 不算漂移（工具链版本）", pin_violations(pin_root), [])
+
+        pin_file.write_text("jobs:\n  a:\n    steps:\n      - uses: actions/checkout\n", encoding="utf-8")
+        check("反证 4：没写 @版本", any("没写 @版本" in p for p in pin_violations(pin_root)), True)
+
     if failures:
         print(f"self-test: {total[0] - len(failures)}/{total[0]} passed")
         return 1
@@ -224,12 +292,13 @@ def main(argv: list[str]) -> int:
         print(f"{REQUIRED_FILE} 为空或不存在 ⇒ 判红（否则这层等于没开）")
         return 1
     problems = validate(parse_workflows(root), required, remote_required(repo) if "--remote" in argv else None)
+    problems += pin_violations(root)
     if problems:
         print(f"CI 完整性失败（{len(problems)} 项）：")
         for problem in problems:
             print(f"  - {problem}")
         return 1
-    print(f"CI 完整性通过：{len(required)} 项必需检查都与 workflow 对得上")
+    print(f"CI 完整性通过：{len(required)} 项必需检查都与 workflow 对得上，action pin 自洽")
     return 0
 
 

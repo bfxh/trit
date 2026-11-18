@@ -1,0 +1,170 @@
+//! `spam_redteam` 的共享部件：随机源、哈希特征、划分与评测指标。
+
+use std::fs;
+
+use serde_json::{Value, json};
+use trit_learn::Activation;
+use trit_learn::dense::TernaryDense;
+
+/// xorshift64*（同 seed 同划分/同攻击）。
+pub(super) struct Rng(pub(super) u64);
+
+impl Rng {
+    pub(super) fn new(seed: u64) -> Self {
+        Self(seed | 1)
+    }
+    pub(super) fn next_u64(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.0 = x;
+        x
+    }
+    pub(super) fn next_f32(&mut self) -> f32 {
+        (self.next_u64() % 2001) as f32 / 1000.0 - 1.0
+    }
+}
+
+pub(super) fn fnv(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    for &byte in bytes {
+        hash ^= u64::from(byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    hash
+}
+
+/// 加载 `label<TAB>text`；ham=0、spam=1。
+pub(super) fn load_dataset(path: &str) -> Vec<(usize, String)> {
+    let text = fs::read_to_string(path).unwrap_or_else(|error| panic!("读 {path}: {error}"));
+    text.lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let (label, body) = line
+                .split_once('\t')
+                .unwrap_or_else(|| panic!("行不是 label<TAB>text：{line:.40}"));
+            let label = match label.trim() {
+                "ham" => 0,
+                "spam" => 1,
+                other => panic!("未知标签 {other}"),
+            };
+            (label, body.to_string())
+        })
+        .collect()
+}
+
+/// 字符 3-gram/4-gram 哈希特征：出现=+1（三值输入的存在性编码）。
+pub(super) const FEAT_DIM: usize = 4096;
+
+pub(super) fn featurize(text: &str) -> Vec<f32> {
+    let lower: Vec<char> = text.to_lowercase().chars().collect();
+    let mut feats = vec![0.0f32; FEAT_DIM];
+    for width in [3usize, 4] {
+        if lower.len() < width {
+            continue;
+        }
+        for start in 0..=(lower.len() - width) {
+            let mut bytes = Vec::with_capacity(width * 2);
+            for ch in &lower[start..start + width] {
+                let mut buf = [0u8; 4];
+                bytes.extend_from_slice(ch.encode_utf8(&mut buf).as_bytes());
+            }
+            let slot = (fnv(&bytes) % FEAT_DIM as u64) as usize;
+            feats[slot] = 1.0;
+        }
+    }
+    feats
+}
+
+/// 分层划分：每个类别内 shuffle 后按 70/15/15 切。
+pub(super) fn stratified_split(
+    labels: &[usize],
+    rng: &mut Rng,
+) -> (Vec<usize>, Vec<usize>, Vec<usize>) {
+    let mut by_class: [Vec<usize>; 2] = [Vec::new(), Vec::new()];
+    for (index, &label) in labels.iter().enumerate() {
+        by_class[label].push(index);
+    }
+    let mut train = Vec::new();
+    let mut val = Vec::new();
+    let mut test = Vec::new();
+    for group in &mut by_class {
+        let n = group.len();
+        for i in (1..n).rev() {
+            let j = (rng.next_u64() % (i as u64 + 1)) as usize;
+            group.swap(i, j);
+        }
+        let train_end = n * 7 / 10;
+        let val_end = n * 85 / 100;
+        train.extend(&group[..train_end]);
+        val.extend(&group[train_end..val_end]);
+        test.extend(&group[val_end..]);
+    }
+    (train, val, test)
+}
+
+pub(super) struct Metrics {
+    pub(super) tp: usize,
+    pub(super) fp: usize,
+    pub(super) fn_: usize,
+    pub(super) tn: usize,
+}
+
+pub(super) fn evaluate(net_outs: &[f32], labels: &[usize]) -> Metrics {
+    let mut m = Metrics {
+        tp: 0,
+        fp: 0,
+        fn_: 0,
+        tn: 0,
+    };
+    for (out, &label) in net_outs.iter().zip(labels) {
+        let pred = usize::from(*out > 0.0);
+        match (pred, label) {
+            (1, 1) => m.tp += 1,
+            (1, 0) => m.fp += 1,
+            (0, 1) => m.fn_ += 1,
+            _ => m.tn += 1,
+        }
+    }
+    m
+}
+
+impl Metrics {
+    pub(super) fn accuracy(&self) -> f32 {
+        let total = self.tp + self.fp + self.fn_ + self.tn;
+        (self.tp + self.tn) as f32 / total as f32
+    }
+    pub(super) fn precision(&self) -> f32 {
+        self.tp as f32 / (self.tp + self.fp).max(1) as f32
+    }
+    pub(super) fn recall(&self) -> f32 {
+        self.tp as f32 / (self.tp + self.fn_).max(1) as f32
+    }
+    pub(super) fn f1(&self) -> f32 {
+        let p = self.precision();
+        let r = self.recall();
+        2.0 * p * r / (p + r).max(1e-12)
+    }
+    pub(super) fn to_value(&self) -> Value {
+        json!({
+            "accuracy": self.accuracy(),
+            "precision": self.precision(),
+            "recall": self.recall(),
+            "f1": self.f1(),
+            "confusion": {"tp": self.tp, "fp": self.fp, "fn": self.fn_, "tn": self.tn},
+        })
+    }
+}
+
+/// QAT 推理：隐层 Tanh → 输出层 → Tanh（训练口径）。
+pub(super) fn qat_out(
+    hidden: &mut TernaryDense,
+    out_layer: &mut TernaryDense,
+    features: &[Vec<f32>],
+    i: usize,
+) -> f32 {
+    let h = hidden.forward(&features[i]);
+    let h_act: Vec<f32> = h.iter().map(|&x| Activation::Tanh.forward(x)).collect();
+    Activation::Tanh.forward(out_layer.forward(&h_act)[0])
+}
