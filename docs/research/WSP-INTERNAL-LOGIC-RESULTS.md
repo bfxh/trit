@@ -1,6 +1,6 @@
 # WSP 内部逻辑读取：M0 读数
 
-> 状态：**已跑通**（M0，`benchmarks/wsp-internal-logic`）。设计见 [WSP-INTERNAL-LOGIC.md](WSP-INTERNAL-LOGIC.md)。
+> 状态：**已跑通**（M0，`benchmarks/wsp-internal-logic/README.md`）。设计见 [WSP-INTERNAL-LOGIC.md](WSP-INTERNAL-LOGIC.md)。
 > 域声明：`max_len = 3`、字母表 `{0,1}`、词表 15 条。**域外不主张任何等价性。**
 
 ## 1. 一句话
@@ -214,7 +214,7 @@ parity / mod3 / paren / four_sources / ends_with_1 / contains_01
   `contains_01`（3 源）、`mod5`（5 状态）、`star8`（8 状态、9 源）、`mod10`（10 状态）、
   `mod20`（20 状态），在变长域（长度 ≤ 3）上都是
   「状态数 / 转移表 / 接受集」逐项相等。
-- End 冻结已实现（3 符号 + 自环），不再是缺口；原先「三项 OR 阈值门」的障碍
+- End 冻结已就位（3 符号 + 自环），不再是缺口；原先「三项 OR 阈值门」的障碍
   由 §10.3 的常量单元方案消掉了。
 - 编译器仍要求 DFA 状态数 ≥ 1、`max_len ≥ 1`；空 DFA 未测。
 - 只测了小 DFA（≤5 状态、≤4 源）；更大的程序未测。
@@ -317,11 +317,11 @@ max_len words states_ref states_net same
 |---|---|---|
 | 层数 | `2·max_len + 2`（随步数增长） | 固定 2 层 |
 | 权重复用 | 每步一组新权重 | **同一组权重重复调用** |
-| 支持扇入 | 任意（常量单元补阈值） | 任意（常量放在 **AND 层输出尾部**，OR 层从中取） |
+| 扇入 | 任意（常量单元补阈值） | 任意（常量放在 **AND 层输出尾部**，OR 层从中取） |
 | 轨迹 | 需要单独抽取中间层 | `Run.trace` 天然是每步状态序列 |
 
 「常量单元」放在**AND 层输出尾部**（`and_dim = 3k + c`），OR 层从那里取，所以循环版
-现在也支持任意扇入——`cell_loop_matches_expanded` 已覆盖 4 源与 9 源的程序。
+现在也能吃任意扇入——`cell_loop_matches_expanded` 已覆盖 4 源与 9 源的程序（`benchmarks/wsp-internal-logic/src/compile.rs`）。
 代价是 AND 层宽度多 `c` 列，但层数仍是固定的 2 层。
 
 
