@@ -15,6 +15,18 @@
       "lines": 115
     },
     {
+      "file": "benchmarks/gpulib-vulkan-compare/src/main.rs",
+      "lines": 135
+    },
+    {
+      "file": "benchmarks/gpulib-vulkan-compare/src/runner.rs",
+      "lines": 216
+    },
+    {
+      "file": "benchmarks/gpulib-vulkan-compare/src/spv.rs",
+      "lines": 28
+    },
+    {
       "file": "benchmarks/wsp-no-transformer/src/apply.rs",
       "lines": 22
     },

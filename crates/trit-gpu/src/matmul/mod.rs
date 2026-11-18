@@ -15,11 +15,11 @@
 
 mod baseline;
 mod gpu;
-mod inputs;
+pub mod inputs;
 mod ternary;
 
 use gpu::Gpu;
-use inputs::Inputs;
+pub use inputs::Inputs;
 
 pub(crate) use crate::bench::{storage, storage_with, uniform};
 

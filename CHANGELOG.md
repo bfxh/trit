@@ -51,6 +51,18 @@
 - 统一 top-16（CPU 改线性扫描，与 GPU 一致）与选项顺序后：预测差异 14 → **0**，
   accuracy 完全一致（52.4008%）；logits 误差仍 3.1e-5。排除 FMA（CPU `mul_add`
   后误差 6.1e-5、慢 3×），剩余是 GPU f32 中间精度；logits 逐位需定点化，未做。
+### Added（trit-gpu：gpulib 原生 Vulkan 后端同尺对照）
+
+- 新增 `benchmarks/gpulib-vulkan-compare`（独立 workspace，不进 CI）：同一份
+  `matmul.wgsl` 经 naga 30 编成 SPIR-V，交给 gpulib 的 ash Vulkan 后端，与 wgpu
+  路径同卡/同形状/同输入/同计时对照；六个内核（naive / tiled / 2×2 / 4×4 / 3-popc /
+  split-K）输出与 CPU 位并行镜像逐元素相等。
+- `trit-gpu` 公开 `matmul::Inputs`，供仓外对照复用同一份输入与 CPU 期望值；
+  WGSL 由对照工程直接 `include_str!` 读取，不复制第二份。
+- 读数（RTX 4060 Ti，512×4096×512，两轮换序）：3-popc 0.113–0.121 vs wgpu 0.103
+  ps/MAC（慢约 10%），split-K 0.124–0.125 vs 0.102–0.110（慢 13–23%，另含清零方式差异）。
+  未复现 gpulib 在 f32 `conv_tiled` 上相对 wgpu 的 11.2% 优势；归因未做计数器级，
+  见工程 README 的未证栏。
 
 ### Changed（文档治理：docs 按用途归位、索引重写、口径统一、文档门接进 CI）
 

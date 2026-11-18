@@ -225,3 +225,16 @@ gpu-unlock 解锁的是 FP16/BF16 **张量核** FMA 发射率（FP32 累加）�
 | f32 SIMT | 0.298–0.300（约 30% FP32 峰值） | 否（瓶颈是指令混合） |
 | f16 存储 + f32 累加 | 0.635–0.644 | 否（非张量核） |
 | 张量核 GEMM | 无 | 是，但 trit 还没有这条路径 |
+
+## 原生 Vulkan 后端对照（gpulib，2026-11-17）
+
+[`benchmarks/gpulib-vulkan-compare`](../../benchmarks/gpulib-vulkan-compare/README.md)
+把**同一份 `matmul.wgsl`**（经 naga 30 编成 SPIR-V）交给 gpulib 的 ash Vulkan 后端，
+与本文件的 wgpu 读数同卡、同形状、同输入、同计时口径对照。
+
+六个内核（naive / tiled / 2×2 / 4×4 / 3-popc / split-K）输出与 CPU 位并行镜像
+**逐元素相等**。性能上 gpulib 路径**没有**复现它在 f32 `conv_tiled` 上相对 wgpu 的
+11.2% 优势：3-popc 慢约 **10%**（0.113–0.121 vs 0.103 ps/MAC），split-K 慢约
+**13–23%**（0.124–0.125 vs 0.102–0.110，另含清零方式差异）。两轮换序复测一致；
+差距来源未做计数器级归因，详见该工程 README 的未证栏。
+

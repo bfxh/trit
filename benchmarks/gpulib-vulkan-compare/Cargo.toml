@@ -1,0 +1,18 @@
+[package]
+name = "gpulib-vulkan-compare"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# 独立 workspace：与 benchmarks/cuda-oxide-compare 同模式——依赖本地 gpulib
+# 检出（默认与 trit 检出同级），不进主 workspace、不进 CI。
+[workspace]
+
+[dependencies]
+# 同一份 WGSL、同一份输入生成、同一套 CPU 期望值，都在 trit-gpu 里。
+trit-gpu = { path = "../../crates/trit-gpu", features = ["gpu"] }
+# 本地 gpulib 检出（Vulkan compute 薄后端）。换成自己的路径即可。
+gpulib-core = { path = "D:/KF/gpulib/crates/core" }
+gpulib-vulkan = { path = "D:/KF/gpulib/crates/backend-vulkan" }
+# 只用于把 matmul.wgsl 编成 SPIR-V；运行时不依赖 naga。
+naga = { version = "30", features = ["wgsl-in", "spv-out"] }
