@@ -104,18 +104,55 @@ trace: hidden_classes=8 hidden_to_out_conflicts=0 hidden_to_state_conflicts=4 ma
 「网络在跟踪长度」的结论。但看 `hidden` 就知道：这四个串的层 1 激活**完全相同**，
 网络根本没在数长度——长度信息只存在于我们的域声明里。
 
-## 9. 复算（含轨迹）
+
+## 9. M0e：穷尽干预（承重矩阵）
+
+`--intervene` 对层 1 的 9 个单元逐个做「清零 / 取反」，域内 15 个串全部穷尽，不抽样：
+
+```text
+intervene: units=9 live=9 words=15
+  unit 0: flips_zero=3 flips_neg=3
+  unit 1: flips_zero=3 flips_neg=3
+  unit 2: flips_zero=3 flips_neg=3
+  unit 3: flips_zero=3 flips_neg=3
+  unit 4: flips_zero=2 flips_neg=2
+  unit 5: flips_zero=2 flips_neg=2
+  unit 6: flips_zero=6 flips_neg=6
+  unit 7: flips_zero=6 flips_neg=6
+  unit 8: flips_zero=6 flips_neg=6
+```
+
+| 单元 | 角色 | 翻转数（清零 / 取反） |
+|---|---|---|
+| 0、1 | pos0 的 `is_one`（复制两份） | 3 / 3 |
+| 2、3 | pos1 的 `is_one` | 3 / 3 |
+| 4、5 | pos2 的 `is_one` | 2 / 2 |
+| 6、7、8 | 常量 `Pos`（提供 `−3` 阈值） | 6 / 6 |
+
+三条读数：
+
+1. **9/9 承重**：没有装饰单元，每个层 1 单元至少在一个串上改变输出。
+2. **常量单元承重最高**（6/15）：它们是阈值的来源，改一个就移动判决边界——
+   这也是三值网络里「偏置」不能当免费参数删掉的原因。
+3. **位置不对称**（3 vs 2）：pos0/pos1 的 `is_one` 在更多串上可能取 1，而 pos2 只在长度 3
+   时才可能。承重率反映的是**编码结构**，不是权重大小。
+
+判据：`live_units() > 0` 已进测试（`intervene_has_live_units`）。本案例实际 9/9，
+若将来某个案例出现 `live < units`，那说明存在装饰单元，需要解释而不是忽略。
+
+## 10. 复算（含轨迹与干预）
 
 ```bash
 cd benchmarks/wsp-internal-logic
 cargo run --release -- --trace
+cargo run --release -- --intervene
 ```
 
 ## 7. 未证栏
 
 - 只有**一个案例、一个域**（长度 ≤ 3）。3-bit 加法器、括号匹配、Tomita #3 都未做。
 - 7 个状态里哪些是「语言状态」、哪些是「域截断造成的」，目前只靠人工对照，没有程序化标注。
-- 轨迹层已做（§8），但**状态命名**与**穷尽干预**（M0e）未做；L-D 的「承重」那一半没有读数。
+- 轨迹层（§8）与穷尽干预（§9）都已做；但**状态命名**仍是人工对照，没有程序化判据。
 - Tracr 反向闭环**未做**，「恢复率 100%」未测。
 - 状态爆炸预算未设：域变长会让等价类数快速增长，上界未测。
 - 「最小 DFA 唯一」不等于「人类可读」：状态命名仍是人工步骤，没有判据。

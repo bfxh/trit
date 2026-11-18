@@ -11,6 +11,7 @@
 
 mod cases;
 mod dfa;
+mod intervene;
 mod trace;
 mod word;
 
@@ -120,6 +121,7 @@ fn run(case: &cases::Case, dump: bool) -> Report {
 
 fn main() {
     let dump = std::env::args().any(|a| a == "--trace");
+    let dump_int = std::env::args().any(|a| a == "--intervene");
     let mut failed = false;
     for case in cases::all() {
         let r = run(&case, dump);
@@ -139,6 +141,21 @@ fn main() {
             "  trace: hidden_classes={} hidden_to_out_conflicts={} hidden_to_state_conflicts={} max_variants={}",
             r.hidden_classes, r.hidden_to_out_conflicts, r.hidden_to_state_conflicts, r.max_variants
         );
+        if dump_int {
+            let m = intervene::sweep(&case.net, case.max_len);
+            println!(
+                "  intervene: units={} live={} words={}",
+                m.units.len(),
+                m.live_units(),
+                m.words
+            );
+            for u in &m.units {
+                println!(
+                    "    unit {}: flips_zero={} flips_neg={}",
+                    u.unit, u.flips_zero, u.flips_neg
+                );
+            }
+        }
         println!("  {}", if r.pass() { "PASS" } else { "FAIL" });
         failed |= !r.pass();
     }
@@ -205,6 +222,14 @@ mod tests {
                 "案例 {}：层 1 激活不足以决定输出",
                 case.name
             );
+        }
+    }
+
+    #[test]
+    fn intervene_has_live_units() {
+        for case in cases::all() {
+            let m = intervene::sweep(&case.net, case.max_len);
+            assert!(m.live_units() > 0, "案例 {}：没有任何单元承重", case.name);
         }
     }
 }
