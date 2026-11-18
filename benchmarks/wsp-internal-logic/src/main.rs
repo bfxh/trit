@@ -136,21 +136,11 @@ fn budget() {
     println!("max_len words states_ref states_net same");
     for max_len in 1..=6 {
         let net = compile::compile(&program, max_len).expect("编译 parity");
-        let extracted = dfa::from_accepts(max_len, |w| {
-            if w.len() == max_len {
-                compile::run(&net, w, max_len)
-            } else {
-                false
-            }
-        })
-        .minimize();
+        let extracted =
+            dfa::from_accepts(max_len, |w| compile::run(&net, w, max_len)).minimize();
         let reference = dfa::from_accepts(max_len, |w| {
-            if w.len() == max_len {
-                let bits: Vec<bool> = w.iter().map(|t| *t == Trit::Pos).collect();
-                program.run(&bits)
-            } else {
-                false
-            }
+            let bits: Vec<bool> = w.iter().map(|t| *t == Trit::Pos).collect();
+            program.run(&bits)
         })
         .minimize();
         let words = (1usize << (max_len + 1)) - 1;
@@ -323,6 +313,25 @@ mod tests {
                     delta: vec![[0, 0], [0, 1], [2, 2]],
                 },
             ),
+            (
+                "ends_with_1",
+                dfa::Dfa {
+                    states: 2,
+                    start: 0,
+                    accept: vec![false, true],
+                    delta: vec![[0, 1], [0, 1]],
+                },
+            ),
+            (
+                // 目标状态 2 有 3 个转移源。
+                "contains_01",
+                dfa::Dfa {
+                    states: 3,
+                    start: 0,
+                    accept: vec![false, false, true],
+                    delta: vec![[1, 0], [1, 2], [2, 2]],
+                },
+            ),
         ]
     }
 
@@ -332,21 +341,10 @@ mod tests {
             let net = compile::compile(&program, 3).expect("编译程序");
             // 当前编译器不处理「串结束」（End 会被当成符号继续执行转移），
             // 所以闭环只在定长域上比较：短串统一判 false，两侧同一口径。
-            let extracted = dfa::from_accepts(3, |w| {
-                if w.len() == 3 {
-                    compile::run(&net, w, 3)
-                } else {
-                    false
-                }
-            })
-            .minimize();
+            let extracted = dfa::from_accepts(3, |w| compile::run(&net, w, 3)).minimize();
             let reference = dfa::from_accepts(3, |w| {
-                if w.len() == 3 {
-                    let bits: Vec<bool> = w.iter().map(|t| *t == Trit::Pos).collect();
-                    program.run(&bits)
-                } else {
-                    false
-                }
+                let bits: Vec<bool> = w.iter().map(|t| *t == Trit::Pos).collect();
+                program.run(&bits)
             })
             .minimize();
             assert_eq!(extracted.states, reference.states, "{name}: 状态数不一致");

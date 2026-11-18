@@ -141,16 +141,19 @@ intervene: units=9 live=9 words=15
 若将来某个案例出现 `live < units`，那说明存在装饰单元，需要解释而不是忽略。
 
 
-## 10. M0f：Tracr 反向闭环（定长域）
+## 10. M0f：Tracr 反向闭环（变长域）
 
 `src/compile.rs` 把 DFA 编译成展开式三值前馈网：每个时间步 2 层（AND 项 + OR 状态），
-状态 one-hot 取 `{Neg, Pos}`，输入每位置 2 维。
+状态 one-hot 取 `{Neg, Pos}`，输入每位置 3 维 one-hot（`0 / 1 / End`）。
 
-测试 `compile_then_decompile` 走完整闭环：
+**End 冻结**：字母表扩成 `{0, 1, End}`，`End` 一律自环（`δ(q, End) = q`），
+所以「读完就冻结」不需要 running 标志——这是变长串能进定长前馈网的关键。
+
+测试 `compile_then_decompile` 对 6 个程序走完整闭环（变长域，`max_len = 3`）：
 
 ```text
-程序（parity，2 状态）
-  → compile（展开 3 步）
+parity / mod3 / paren / four_sources / ends_with_1 / contains_01
+  → compile（展开 3 步 + End 自环）
   → 提取器（前缀树 + Moore 最小化）
   → 状态数 / 转移表 / 接受集 逐项相等
 ```
@@ -170,15 +173,12 @@ intervene: units=9 live=9 words=15
 
 ### 10.2 未证
 
-- **End 冻结的硬障碍**：冻结需要三项 OR（`δ项 + hold + …`），而三值阈值门
-  `sign(x + y + z + 1)` 在 n = 3 时对「一个 +1、两个 −1」给 0（`Zero`），判不出来。
-  要支持就得加树形 OR 或多层，成本高于当前收益，暂不做。
-- **变长串未支持**：编译器不实现 End 冻结，`End` 会被当符号继续执行转移；
-  闭环测试因此限定在定长 3 位（短串两侧统一判 false）。
-- 编译器已支持任意扇入（见 §10.3）；`four_sources`（目标状态 0 有 4 个转移源）已验证。
-- 已测四个程序：`parity`（2 状态）、`mod3`（3 状态）、`paren`（3 状态深度计数）、
-  `four_sources`（3 状态、4 源），四者在定长 3 位域上都是
-  「状态数 / 转移表 / 接受集」逐项相等。
+- 已测六个程序：`parity`、`mod3`、`paren`、`four_sources`（4 源）、`ends_with_1`、
+  `contains_01`（3 源），在变长域（长度 ≤ 3）上都是「状态数 / 转移表 / 接受集」逐项相等。
+- End 冻结已实现（3 符号 + 自环），不再是缺口；原先「三项 OR 阈值门」的障碍
+  由 §10.3 的常量单元方案消掉了。
+- 编译器仍要求 DFA 状态数 ≥ 1、`max_len ≥ 1`；空 DFA 未测。
+- 只测了小 DFA（≤3 状态、≤4 源）；状态数更多的程序未测。
 
 
 
