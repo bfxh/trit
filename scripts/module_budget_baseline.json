@@ -279,6 +279,10 @@
       "lines": 197
     },
     {
+      "file": "crates/trit-circuit/src/circuit/equiv.rs",
+      "lines": 184
+    },
+    {
       "file": "crates/trit-circuit/src/circuit/graph.rs",
       "lines": 111
     },
@@ -323,8 +327,12 @@
       "lines": 265
     },
     {
+      "file": "crates/trit-circuit/src/exports.rs",
+      "lines": 36
+    },
+    {
       "file": "crates/trit-circuit/src/lib.rs",
-      "lines": 48
+      "lines": 21
     },
     {
       "file": "crates/trit-circuit/src/map.rs",
@@ -353,6 +361,10 @@
     {
       "file": "crates/trit-circuit/src/sdf/instance_tests.rs",
       "lines": 111
+    },
+    {
+      "file": "crates/trit-circuit/src/sequential.rs",
+      "lines": 612
     },
     {
       "file": "crates/trit-circuit/src/timing.rs",
