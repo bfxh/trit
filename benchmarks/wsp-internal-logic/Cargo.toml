@@ -1,0 +1,13 @@
+[package]
+name = "wsp-internal-logic"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+# 独立 workspace：不并入主 workspace、不进 CI（同 dot_variants / wsp-no-transformer）。
+# 目的：M0 —— 从三值前馈网络提取最小 DFA，并与参考程序对拍。
+# 判据见 docs/research/WSP-INTERNAL-LOGIC.md §6。
+[workspace]
+
+[dependencies]
+trit-wspace = { path = "../../crates/trit-wspace" }
