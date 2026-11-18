@@ -22,6 +22,8 @@
 | `engineering/` | 构建、worktree、更新与运维 | 功能设计 |
 | `plans/` | 尚未落地的计划草案（每条都要写「边界」） | 已经落地的能力（挪进 `results/` 或 crate 文档） |
 | `specs/` | 写作与治理规范本身 | 任何实验结论 |
+| `AGENT-TASKS/` | 可直接派发给外部智能体的任务包（按 `S/A/B/C` 标级） | 需求讨论、过程记录 |
+| `YARA-EXPR/` | YARA 完整语义的规范原文与可派发任务卡 | 实现进度与读数（放 `results/`） |
 | `review/` | 按日期的评审记录（历史，不改写） | 活跃文档 |
 
 ## positioning/ — 定位与边界
@@ -91,7 +93,7 @@
 | [FORK-FLUSH.md](FORK-FLUSH.md) | Fork-and-Flush：多智能体任务分叉 + 清空 + 按验收分数选优 |
 | [CRAM-3D-DRIFT.md](research/CRAM-3D-DRIFT.md) | CRAM + 3D 漂移：S 级任务包与 2D 最小切片（设计，未开工） |
 | [CRAM-3D-DRIFT-RESULTS.md](research/CRAM-3D-DRIFT-RESULTS.md) | M0 负结果：轨迹生成器 0% 可行（约束不在 loss） |
-| [CRAM-3D-DRIFT-COND.md](research/CRAM-3D-DRIFT-COND.md) | 真条件生成：goal 独立通路（已实现，两轮负结果：条件能被用起来、路径仍画不出） |
+| [CRAM-3D-DRIFT-COND.md](research/CRAM-3D-DRIFT-COND.md) | 真条件生成：goal 独立通路（代码就位；两轮负结果：条件能被用起来、路径仍画不出） |
 | [CRAM-3D-DRIFT-CREATIVE.md](research/CRAM-3D-DRIFT-CREATIVE.md) | 把创造力接进漂移模型：过程/产品解耦（primer 分层 + 掩码解码 + 极小适配器，设计未开工） |
 | [GAME-SCAN.md](research/GAME-SCAN.md) | 游戏环境扫描、故障注入与恢复（Phase 0） |
 | [DEEP-RISK-MAP.md](research/DEEP-RISK-MAP.md) | 深层风险地图：更新 / 认领 / 牵连 |
@@ -138,6 +140,25 @@
 | [TERMINOLOGY.md](specs/TERMINOLOGY.md) | 「三进制」的三层含义与唯一用词表 |
 | [README-SPEC.md](specs/README-SPEC.md) | README 规范：首屏只放什么、性能数字怎么给 |
 | [DOC-INDEX.md](specs/DOC-INDEX.md) | 新增 / 搬迁 / 改名文档的流程与判红条件 |
+| [AGENT-TASK-STANDARD.md](AGENT-TASK-STANDARD.md) | 高智商智能体任务标准：自包含起点、机器可判验收、显式禁区、失败回退、S/A/B/C 分级 |
+
+## AGENT-TASKS/ — 可派发的任务包
+
+| 文档 | 一句话 |
+|---|---|
+| [S-YARA-FULL.md](AGENT-TASKS/S-YARA-FULL.md) | S 级任务：YARA 完整语义（官方引擎差分 + 三值性质测试 + 性能预算三条同时成立） |
+
+## YARA-EXPR/ — YARA 完整语义规范与任务卡
+
+| 文档 | 一句话 |
+|---|---|
+| [README.md](YARA-EXPR/README.md) | 实现包总览：规范 00–04 + 任务卡 05，写明「P0 基建补齐前不派发」 |
+| [00-RULES.md](YARA-EXPR/00-RULES.md) | 红线与工作方式：与任务卡冲突时以本文为准并停下来报告 |
+| [01-SEMANTICS.md](YARA-EXPR/01-SEMANTICS.md) | 语义规范：官方 YARA 4.5.4 的算子 / 类型 / 字符串语义（2732 条向量） |
+| [02-FRONTEND.md](YARA-EXPR/02-FRONTEND.md) | 前端规范：词法、规则骨架、条件解析在 `yaraparse/y2/` 里写成什么 |
+| [03-PE-MODEL.md](YARA-EXPR/03-PE-MODEL.md) | `pe` 对象模型：从字节到对象树，`sigscan/pe2/` 的接口与不变量 |
+| [04-CODE-MAP.md](YARA-EXPR/04-CODE-MAP.md) | 代码地图：接缝补丁里的接口清单与待写部分 |
+| [05-TASKS.md](YARA-EXPR/05-TASKS.md) | 任务卡 T00–T32，每张一 PR，验收命令见目录 README §4 |
 
 ## review/ — 评审记录（按日期，不改写）
 

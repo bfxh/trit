@@ -81,7 +81,7 @@ python -I scripts/yara_diff.py --trit <exe> --rules <rules-v3.yar> --samples <N1
 - 不推 `main`；不修改 `module_budget_baseline.json` 的行数上限（只允许
   `--update` 登记新文件/收紧）。
 - 不删除或弱化既有 `Unsupported`/`Unknown` 路径。
-- 不把「官方不支持」的语法扩展成超集。
+- 不把「官方未定义」的语法扩展成超集。
 
 ## 7. 失败模式
 

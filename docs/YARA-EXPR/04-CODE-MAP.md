@@ -1,6 +1,6 @@
 # 04 代码地图：接缝补丁里已经有什么，还剩什么
 
-> 应用 `ref/0001-seam.patch` 之后的状态。标“已验证”的部分不需要你重写，读懂接口就行；标“待写”的是任务卡的内容。
+> 应用 `ref/0001-seam.patch` 之后的状态。标“现成接口”的部分不需要你重写，读懂接口就行；标“待写”的是任务卡的内容。
 > 路径都相对 `crates/trit-re/`。
 
 ---
@@ -14,12 +14,12 @@
 Rule { patterns, condition: Condition::Expr(Box<Expr>), global, private_rule }
   │  SigScan::scan_file / scan_with_context
   ▼
-sigscan/xscan.rs  scan_core                            ← 已验证
+sigscan/xscan.rs  scan_core                            ← 现成接口
   │   每条规则：扫串 → 每条串一个 StrFact{hits, exact, fixed_len}
   │   Condition::Expr → judge() → xeval::eval()
   │   旧的声明式变体 → eval::eval()（旧求值器，行为冻结）
   ▼
-sigscan/xeval.rs  eval(&Expr, &XCtx, &mut Env) -> Val   ← 已验证
+sigscan/xeval.rs  eval(&Expr, &XCtx, &mut Env) -> Val   ← 现成接口
   │   算术/比较 → xval.rs      字符串算子 → xstr.rs
   │   串事实 → xfacts.rs       循环与 of → xloop.rs
   │   模块对象 → modreg.rs → pe2::build / pe2::call     ← 这两个待写（T20–T25）
@@ -31,7 +31,7 @@ Val → 规则裁决 Ternary → global / private 处理 → SigReport
 
 ## 2. 文件清单
 
-### 已验证（不要改，除非任务卡明说）
+### 现成接口（不要改，除非任务卡明说）
 
 | 文件 | 行数 | 内容 | 怎么验证的 |
 |---|---|---|---|

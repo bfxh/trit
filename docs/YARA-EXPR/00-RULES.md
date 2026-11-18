@@ -97,7 +97,7 @@ python -I scripts/test_surface.py
 - 产品代码里不用 `unwrap()`、`expect()`、`panic!`、直接下标 `a[i]`（`i` 来自输入时）。用 `get`、`?`、`let … else`。测试代码里随意。
 - 整数运算：来自输入的数一律用 `checked_*` 或 `wrapping_*`，按规范写的是哪种就用哪种。
 - 注释和文档用中文，写“为什么”，不写“做了什么”。引用官方行为时带上向量 ID。
-- 错误原因（`Err(String)`）写清楚是什么不支持，带上出问题的 token。这些原因会原样出现在 CLI 的 `UNSUPPORTED` 行里。
+- 错误原因（`Err(String)`）写清楚卡在哪条语法，带上出问题的 token。这些原因会原样出现在 CLI 的 `UNSUPPORTED` 行里。
 - `CHANGELOG.md` 只在 `## [Unreleased]` 之后追加，不改动相邻条目。它在最后一张文档卡里统一写，前面的卡不动它。
 
 ## 6. 卡住了怎么办

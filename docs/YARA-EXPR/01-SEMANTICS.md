@@ -126,12 +126,12 @@
 
 实现见 `sigscan/xval.rs::ss_compare` 与 `sigscan/xstr.rs`（已回放 72 条官方读数）。
 
-- 六个比较都支持，按**有符号字节**逐个比，前缀相同则短者小：`"\xff" < "a"` 命中，`"\x00" > "\xff"` 命中，`"a\x00" > "a"` 命中，`"abc" == "abc\x00"` 不命中 [S070–S097]。
+- 六个比较都按**有符号字节**逐个比，前缀相同则短者小：`"\xff" < "a"` 命中，`"\x00" > "\xff"` 命中，`"a\x00" > "a"` 命中，`"abc" == "abc\x00"` 不命中 [S070–S097]。
 - 算子 8 个：`contains icontains startswith istartswith endswith iendswith iequals matches`。
 - 全部带长度、不在 NUL 处截断 [S103–S106]。
 - 空针恒命中：`"abc" contains ""`、`"" contains ""`、`"abc" startswith ""` [S002–S003, S014]。
 - 不区分大小写的版本只折叠 ASCII 的 A–Z：`"\xC4" icontains "\xE4"` 不命中，`"[" iequals "{"` 不命中 [S099–S100, S107–S109]。
-- 操作数必须是字符串，否则编译错误 [S058–S069]。字符串不支持 `+ - * \` [B059–B062]。
+- 操作数必须是字符串，否则编译错误 [S058–S069]。字符串没有 `+ - * \` 这些运算符 [B059–B062]。
 
 ### 6.3 `matches`
 
@@ -139,7 +139,7 @@
 - 是**不锚定的搜索**：`"abc" matches /b/` 命中，`/^b/` 不命中 [S034–S035]。
 - 没有 `s` 标志时 `.` 不匹配换行 [S040–S043]。
 - 空正则 `//` 是错误（其实被当成了注释）[S053]。
-- 正则引擎是现有的 Pike VM（`sigscan/regex.rs`，不改）。引擎不支持的语法：该 `matches` 结点求值为 `Unknown`。
+- 正则引擎是现有的 Pike VM（`sigscan/regex.rs`，不改）。引擎未定义的语法：该 `matches` 结点求值为 `Unknown`。
 
 ---
 
