@@ -38,13 +38,7 @@ impl Dfa {
         let mut block: Vec<usize> = self.accept.iter().map(|a| usize::from(*a)).collect();
         loop {
             let key: Vec<(usize, usize, usize)> = (0..self.states)
-                .map(|s| {
-                    (
-                        block[s],
-                        block[self.delta[s][0]],
-                        block[self.delta[s][1]],
-                    )
-                })
+                .map(|s| (block[s], block[self.delta[s][0]], block[self.delta[s][1]]))
                 .collect();
             let next = renumber(&key);
             if next == block {
@@ -96,12 +90,7 @@ impl Dfa {
         }
         let accept = (0..n).map(|b| self.accept[inv[b]]).collect();
         let delta = (0..n)
-            .map(|b| {
-                [
-                    order[self.delta[inv[b]][0]],
-                    order[self.delta[inv[b]][1]],
-                ]
-            })
+            .map(|b| [order[self.delta[inv[b]][0]], order[self.delta[inv[b]][1]]])
             .collect();
         Self {
             states: n,
@@ -147,10 +136,10 @@ pub fn from_accepts(len: usize, accepts: impl Fn(&[Trit]) -> bool) -> Dfa {
     let mut delta = vec![[dead; 2]; dead + 1];
     for (i, p) in pre.iter().enumerate() {
         if p.len() < len {
-            for a in 0..2 {
+            for (a, slot) in delta[i].iter_mut().enumerate() {
                 let mut q = p.clone();
                 q.push(word::symbol(a == 1));
-                delta[i][a] = index[q.as_slice()];
+                *slot = index[q.as_slice()];
             }
         }
     }

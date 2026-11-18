@@ -79,8 +79,8 @@ pub fn compile(dfa: &Dfa, max_len: usize) -> Result<Net, String> {
     // 层 0：初始化状态（bias 给出 one-hot）+ 传递输入 + 常量。
     let mut trits = vec![0i8; or_w * dim_in];
     let mut bias = vec![0i8; or_w];
-    for i in 0..k {
-        bias[i] = if i == dfa.start { 1 } else { -1 };
+    for (i, b) in bias.iter_mut().enumerate().take(k) {
+        *b = if i == dfa.start { 1 } else { -1 };
     }
     for i in 0..dim_in {
         trits[(k + i) * dim_in + i] = 1;

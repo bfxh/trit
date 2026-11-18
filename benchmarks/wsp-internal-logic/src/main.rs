@@ -9,6 +9,7 @@
 //! **「最小」是相对声明域的最小**：域截断后「剩余可扩展长度」成为状态的一部分，
 //! 所以域内状态数会大于该语言在全域上的经典最小 DFA（本例域内 7、全域 3）。
 
+mod audit;
 mod cases;
 mod compile;
 mod dfa;
@@ -137,8 +138,7 @@ fn budget() {
     println!("max_len words states_ref states_net same");
     for max_len in 1..=14 {
         let net = compile::compile(&program, max_len).expect("编译 parity");
-        let extracted =
-            dfa::from_accepts(max_len, |w| compile::run(&net, w, max_len)).minimize();
+        let extracted = dfa::from_accepts(max_len, |w| compile::run(&net, w, max_len)).minimize();
         let reference = dfa::from_accepts(max_len, |w| {
             let bits: Vec<bool> = w.iter().map(|t| *t == Trit::Pos).collect();
             program.run(&bits)
@@ -250,7 +250,10 @@ fn programs() -> Vec<(&'static str, dfa::Dfa)> {
             dfa::Dfa {
                 states: 20,
                 start: 0,
-                accept: vec![true, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false, false],
+                accept: vec![
+                    true, false, false, false, false, false, false, false, false, false, false,
+                    false, false, false, false, false, false, false, false, false,
+                ],
                 delta: vec![
                     [0, 1],
                     [1, 2],
@@ -281,7 +284,9 @@ fn programs() -> Vec<(&'static str, dfa::Dfa)> {
             dfa::Dfa {
                 states: 10,
                 start: 0,
-                accept: vec![true, false, false, false, false, false, false, false, false, false],
+                accept: vec![
+                    true, false, false, false, false, false, false, false, false, false,
+                ],
                 delta: vec![
                     [0, 1],
                     [1, 2],
@@ -298,7 +303,6 @@ fn programs() -> Vec<(&'static str, dfa::Dfa)> {
         ),
     ]
 }
-
 
 /// 打印循环执行的轨迹（`--trace-cell`）：每步之后的状态向量。
 fn trace_cell() {
@@ -320,6 +324,37 @@ fn trace_cell() {
     }
 }
 
+/// `--audit`：演示抽样审计层的读数（与模型实现无关）。
+fn audit_demo() {
+    struct Identity;
+    impl audit::BlackBox for Identity {
+        fn forward(&self, input: &[f32]) -> Vec<f32> {
+            input.to_vec()
+        }
+    }
+    struct Scaled(f32);
+    impl audit::BlackBox for Scaled {
+        fn forward(&self, input: &[f32]) -> Vec<f32> {
+            input.iter().map(|x| x * self.0).collect()
+        }
+    }
+
+    let samples: Vec<Vec<f32>> = (0..8)
+        .map(|i| vec![i as f32 * 0.25, 1.0 - i as f32 * 0.125])
+        .collect();
+    let c = audit::consistency(&Identity, &Scaled(1.01), &samples, 1e-3).expect("audit");
+    println!(
+        "audit: samples={} changed={} max_abs={:.4} mean_abs={:.6}",
+        c.samples, c.changed, c.max_abs, c.mean_abs
+    );
+    // 扰动效应：把「1% 缩放」换成「2 倍放大」，读数应当放大到约 3.0。
+    let e = audit::perturbation(&Identity, &Scaled(2.0), &samples, 1e-3).expect("audit");
+    println!(
+        "effect: samples={} changed={} max_abs={:.4} mean_abs={:.6}",
+        e.samples, e.changed, e.max_abs, e.mean_abs
+    );
+}
+
 fn main() {
     if std::env::args().any(|a| a == "--budget") {
         budget();
@@ -327,6 +362,10 @@ fn main() {
     }
     if std::env::args().any(|a| a == "--trace-cell") {
         trace_cell();
+        return;
+    }
+    if std::env::args().any(|a| a == "--audit") {
+        audit_demo();
         return;
     }
 
@@ -339,17 +378,17 @@ fn main() {
             "case={} max_len={} words={} accepted={}",
             r.name, r.max_len, r.words, r.accepted
         );
-        println!(
-            "  dfa states: net={} ref={}",
-            r.states_net, r.states_ref
-        );
+        println!("  dfa states: net={} ref={}", r.states_net, r.states_ref);
         println!(
             "  diff: net_vs_dfa={} dfa_vs_ref={}",
             r.diff_net_vs_dfa, r.diff_dfa_vs_ref
         );
         println!(
             "  trace: hidden_classes={} hidden_to_out_conflicts={} hidden_to_state_conflicts={} max_variants={}",
-            r.hidden_classes, r.hidden_to_out_conflicts, r.hidden_to_state_conflicts, r.max_variants
+            r.hidden_classes,
+            r.hidden_to_out_conflicts,
+            r.hidden_to_state_conflicts,
+            r.max_variants
         );
         if dump_int {
             let units = case.net.layer(0).expect("有层 1").rows();
@@ -359,7 +398,8 @@ fn main() {
                 let net = compile::compile(program, case.max_len).expect("编译");
                 for step in 0..case.max_len {
                     let idx = 2 + 2 * step;
-                    let cm = intervene::sweep(&net, case.max_len, idx, program.states, compile::encode3);
+                    let cm =
+                        intervene::sweep(&net, case.max_len, idx, program.states, compile::encode3);
                     println!(
                         "    compiled {pname} step {step}: live={}/{}",
                         cm.live_units(),
@@ -464,7 +504,6 @@ mod tests {
         }
     }
 
-
     #[test]
     fn compile_then_decompile() {
         for (name, program) in programs() {
@@ -521,14 +560,14 @@ mod tests {
                 let a = compile::run(&net4, &w, 4);
                 let b = compile::run(&net5, &w, 5);
                 assert_eq!(
-                    a, b,
+                    a,
+                    b,
                     "{name}: 串 {:?} 在 4/5 位域判决不一致",
                     word::bits(&w)
                 );
             }
         }
     }
-
 
     #[test]
     fn intervene_compiled_or_layer_states() {
@@ -561,7 +600,8 @@ mod tests {
                 let r = recurrent::run(&cell, &program, &w, 3);
                 let expanded = compile::run(&net, &w, 3);
                 assert_eq!(
-                    r.accept, expanded,
+                    r.accept,
+                    expanded,
                     "{name}: 串 {:?} 循环与展开不一致",
                     word::bits(&w)
                 );
@@ -569,5 +609,4 @@ mod tests {
             }
         }
     }
-
 }
