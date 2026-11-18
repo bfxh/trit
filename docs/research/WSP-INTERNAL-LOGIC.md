@@ -2,8 +2,10 @@
 
 > 状态：**M0 已跑通**，代码在 `benchmarks/wsp-internal-logic`，读数见
 > [WSP-INTERNAL-LOGIC-RESULTS.md](WSP-INTERNAL-LOGIC-RESULTS.md)。
-> M3（循环结构上的真串行）已完成最小切片：`compile_cell` + `recurrent`，
-> 与展开式前馈逐串等价。M1（更多算法泛化）已由 10 个程序覆盖；M2（网表级等价）仍未开工。
+> M1（更多算法泛化）已由 10 个程序覆盖；M3（循环结构上的真串行）已完成最小切片
+> （`compile_cell` + `recurrent`，与展开式前馈逐串等价）；M2（网表级等价）**不可直接落地**：
+> `trit-circuit` 的 AIGER 只支持组合逻辑、明确拒绝时序，而 DFA 是时序对象——
+> 这是能力缺口，不是排期问题，详见 RESULTS §13。
 > 本文只写「怎么把读懂内部逻辑变成可判定问题」，不含实现；任何「已实现」的说法都不成立。
 > 论文分两类标注：**已核**＝取过 arXiv abs 页核对标题/摘要/会议；**仅标题**＝只在 arXiv
 > 检索页看到标题与摘要，未取 abs 页。

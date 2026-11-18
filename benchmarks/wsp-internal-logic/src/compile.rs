@@ -193,15 +193,15 @@ pub fn compile_cell(dfa: &Dfa) -> Result<Net, String> {
                 .collect()
         })
         .collect();
-    for (j, src) in sources.iter().enumerate() {
-        if src.len() > 2 {
-            return Err(format!("状态 {j} 有 {} 个转移源，cell 版只支持 ≤ 2", src.len()));
-        }
-    }
 
-    // AND 层：3k 行（每个 (q, a) 一项），cols = in_dim。
-    let mut l1 = vec![0i8; 3 * k * in_dim];
-    let mut b1 = vec![0i8; 3 * k];
+    // 常量单元数：`max(源数) − 1`，放在 AND 层输出的尾部，供 OR 层补阈值。
+    let max_src = sources.iter().map(Vec::len).max().unwrap_or(0);
+    let c = max_src.saturating_sub(1);
+    let and_dim = 3 * k + c;
+
+    // AND 层：3k 个 (q, a) 项 + c 个常量，cols = in_dim。
+    let mut l1 = vec![0i8; and_dim * in_dim];
+    let mut b1 = vec![0i8; and_dim];
     for q in 0..k {
         for a in 0..3 {
             let r = q * 3 + a;
@@ -210,24 +210,29 @@ pub fn compile_cell(dfa: &Dfa) -> Result<Net, String> {
             b1[r] = -1;
         }
     }
-    let layer1 = Layer::new(3 * k, in_dim, &l1, &b1).map_err(|e| e.to_string())?;
+    for t in 0..c {
+        b1[3 * k + t] = 1;
+    }
+    let layer1 = Layer::new(and_dim, in_dim, &l1, &b1).map_err(|e| e.to_string())?;
 
-    // OR 层：k 行，cols = 3k。
-    let mut l2 = vec![0i8; k * 3 * k];
+    // OR 层：k 行，cols = and_dim。n 个源配 n−1 个常量，bias 0。
+    let mut l2 = vec![0i8; k * and_dim];
     let mut b2 = vec![0i8; k];
     for (j, src) in sources.iter().enumerate() {
         match src.len() {
             0 => b2[j] = -1,
-            1 => l2[j * 3 * k + src[0]] = 1,
+            1 => l2[j * and_dim + src[0]] = 1,
             _ => {
                 for &s in src {
-                    l2[j * 3 * k + s] = 1;
+                    l2[j * and_dim + s] = 1;
                 }
-                b2[j] = 1;
+                for t in 0..src.len() - 1 {
+                    l2[j * and_dim + 3 * k + t] = 1;
+                }
             }
         }
     }
-    let layer2 = Layer::new(k, 3 * k, &l2, &b2).map_err(|e| e.to_string())?;
+    let layer2 = Layer::new(k, and_dim, &l2, &b2).map_err(|e| e.to_string())?;
 
     Net::new(vec![layer1, layer2]).map_err(|e| e.to_string())
 }
