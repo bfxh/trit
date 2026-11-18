@@ -69,6 +69,11 @@
       "from": "trit-gpu",
       "to": "trit-capacity",
       "reason": "仅 dev-dependencies：真实设备校准需要 trit-capacity 的显存探针与容量预测做同尺对照，不进发布闭包（cargo package 剥离 path dev-deps）"
+    },
+    {
+      "from": "trit-count",
+      "to": "trit-learn",
+      "reason": "仅 dev-dependencies：变量序进化的同预算随机对照用 trit-learn 的训练原语跑「学习」一侧基线，不进发布闭包（cargo package 剥离 path dev-deps）"
     }
   ],
   "known_debts": [
