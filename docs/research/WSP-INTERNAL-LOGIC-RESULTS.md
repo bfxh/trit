@@ -180,13 +180,45 @@ intervene: units=9 live=9 words=15
   三者在定长 3 位域上都是「状态数 / 转移表 / 接受集」逐项相等；
   多转移源（>2）与多接受状态（>2）的程序仍未测（编译器会直接报错）。
 
-## 11. 复算（含轨迹、干预与闭环）
+
+## 11. 状态爆炸预算
+
+`--budget` 用编译器的 `parity` 程序扫 `max_len = 1..=6`：
+
+```text
+max_len words states_ref states_net same
+1 3 3 3 true
+2 7 5 5 true
+3 15 7 7 true
+4 31 9 9 true
+5 63 11 11 true
+6 127 13 13 true
+```
+
+两条读数：
+
+1. **词表指数、状态线性**：前缀树节点数 = `2^(max_len+1) − 1`（指数），
+   而域内最小状态数 = `2·max_len + 1`（线性，实测 3 / 5 / 7 / 9 / 11 / 13）。
+2. **线性来自「剩余长度」**：parity 在全域只有 2 个状态；域内状态 = 奇偶 2 种 ×
+   剩余长度 `(max_len + 1)` 再合并 1 个，正好 `2·max_len + 1`。
+
+含义：
+
+- **计算成本**（穷举词表）随域指数增长，这才是 M0 只能到 6 位的原因；
+- **读出的程序**（DFA）只随域线性增长，所以「读不动」首先卡在穷举，不是卡在程序大小；
+- 域内状态数里有一半是「长度」这个人为信息，不是语言的真实结构——这和 §8 的负结果同源。
+
+这条预算也给出一个可操作的门槛：若要把域从 6 位推到 10 位，词表从 127 涨到 2047，
+提取器本身仍然是线性的，成本全在穷举次数上。
+
+## 12. 复算（含轨迹、干预、闭环与预算）
 
 ```bash
 cd benchmarks/wsp-internal-logic
 cargo run --release -- --trace
 cargo run --release -- --intervene
 cargo test --release   # 含 compile_then_decompile（Tracr 闭环）
+cargo run --release -- --budget   # 状态爆炸预算（max_len 1..=6）
 ```
 
 ## 7. 未证栏

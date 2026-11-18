@@ -120,7 +120,57 @@ fn run(case: &cases::Case, dump: bool) -> Report {
     report
 }
 
+/// `parity` 程序：偶数个 1。
+fn parity_program() -> dfa::Dfa {
+    dfa::Dfa {
+        states: 2,
+        start: 0,
+        accept: vec![true, false],
+        delta: vec![[0, 1], [1, 0]],
+    }
+}
+
+/// 状态爆炸预算：扫 `max_len`，看域内最小状态数怎么长。
+fn budget() {
+    let program = parity_program();
+    println!("max_len words states_ref states_net same");
+    for max_len in 1..=6 {
+        let net = compile::compile(&program, max_len).expect("编译 parity");
+        let extracted = dfa::from_accepts(max_len, |w| {
+            if w.len() == max_len {
+                compile::run(&net, w, max_len)
+            } else {
+                false
+            }
+        })
+        .minimize();
+        let reference = dfa::from_accepts(max_len, |w| {
+            if w.len() == max_len {
+                let bits: Vec<bool> = w.iter().map(|t| *t == Trit::Pos).collect();
+                program.run(&bits)
+            } else {
+                false
+            }
+        })
+        .minimize();
+        let words = (1usize << (max_len + 1)) - 1;
+        println!(
+            "{} {} {} {} {}",
+            max_len,
+            words,
+            reference.states,
+            extracted.states,
+            extracted.states == reference.states
+        );
+    }
+}
+
 fn main() {
+    if std::env::args().any(|a| a == "--budget") {
+        budget();
+        return;
+    }
+
     let dump = std::env::args().any(|a| a == "--trace");
     let dump_int = std::env::args().any(|a| a == "--intervene");
     let mut failed = false;
