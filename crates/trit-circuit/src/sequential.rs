@@ -7,6 +7,8 @@
 //! 变量编号按 AIGER 标准：`1..=I` 是输入，`I+1..=I+L` 是锁存器，`I+L+1..=M` 是 AND 门；
 //! 字面量 `0` = false、`1` = true、`2v` = 变量 `v`、`2v+1` = `¬v`。
 
+use std::collections::BTreeMap;
+
 use trit_core::value::Ternary;
 
 /// AIGER 字面量。
@@ -322,6 +324,154 @@ impl SequentialCircuit {
             })
             .collect()
     }
+
+    /// 把时序网表展开成 `k` 拍**组合**电路（BMC）。
+    ///
+    /// 命名：第 `t` 拍的主输入 `in{t}_{i}`、状态 `st{t}_{j}`（`t = 0` 由常量门给出）、
+    /// AND 门 `and{t}_{idx}`、输出 `out{t}_{j}`。第 `t` 拍的 `out{t}` 是**该拍开始时**
+    /// 的状态输出，`st{t+1}` 是 next 函数——与 [`Self::step`] 的 `(next, out)` 对齐。
+    ///
+    /// 展开后是纯组合电路，可以直接进 `propagate` / SAT。
+    pub fn unroll(&self, k: usize) -> Result<crate::circuit::Circuit, SequentialError> {
+        use crate::circuit::{Circuit, Gate, GateKind, Signal};
+
+        let mut circuit = Circuit::new("unroll");
+        let mut state: Vec<Vec<Signal>> = Vec::with_capacity(k);
+        let mut and_sigs: Vec<Vec<Signal>> = Vec::with_capacity(k);
+
+        for t in 0..k {
+            let mut ins = Vec::with_capacity(self.inputs);
+            for i in 1..=self.inputs {
+                let name = format!("in{t}_{i}");
+                circuit.add_input(Signal(name.clone()));
+                ins.push(Signal(name));
+            }
+
+            let st = if t == 0 {
+                self.latches
+                    .iter()
+                    .enumerate()
+                    .map(|(j, latch)| {
+                        let name = format!("st0_{j}");
+                        circuit.gates.push(Gate::constant(
+                            if latch.init {
+                                Ternary::True
+                            } else {
+                                Ternary::False
+                            },
+                            Signal(name.clone()),
+                        ));
+                        Signal(name)
+                    })
+                    .collect()
+            } else {
+                state[t - 1].clone()
+            };
+
+            let mut extra = BTreeMap::new();
+            let mut ands = Vec::with_capacity(self.ands.len());
+            for (idx, gate) in self.ands.iter().enumerate() {
+                let name = format!("and{t}_{idx}");
+                let a = self.lit_signal(t, gate.rhs0, &ins, &st, &ands, &mut extra, &mut circuit);
+                let b = self.lit_signal(t, gate.rhs1, &ins, &st, &ands, &mut extra, &mut circuit);
+                circuit
+                    .gates
+                    .push(Gate::new(GateKind::And, vec![a, b], Signal(name.clone())));
+                ands.push(Signal(name));
+            }
+            and_sigs.push(ands);
+
+            for (j, lit) in self.outputs.iter().enumerate() {
+                let sig =
+                    self.lit_signal(t, *lit, &ins, &st, &and_sigs[t], &mut extra, &mut circuit);
+                let name = format!("out{t}_{j}");
+                circuit
+                    .gates
+                    .push(Gate::new(GateKind::Buf, vec![sig], Signal(name.clone())));
+                circuit.add_output(Signal(name));
+            }
+
+            let mut next = Vec::with_capacity(self.latches.len());
+            for (j, latch) in self.latches.iter().enumerate() {
+                let sig = self.lit_signal(
+                    t,
+                    latch.next,
+                    &ins,
+                    &st,
+                    &and_sigs[t],
+                    &mut extra,
+                    &mut circuit,
+                );
+                let name = format!("st{}_next{j}", t + 1);
+                circuit
+                    .gates
+                    .push(Gate::new(GateKind::Buf, vec![sig], Signal(name.clone())));
+                next.push(Signal(name));
+            }
+            state.push(next);
+        }
+
+        Ok(circuit)
+    }
+
+    /// 把字面量解析成展开后的信号；需要时插常量 / NOT 门。
+    ///
+    /// 参数都是展开上下文的一部分（拍号、输入/状态/AND 信号、字面量缓存、目标电路），
+    /// 拆成结构体反而更绕，按仓库既有做法显式豁免参数数检查。
+    #[allow(clippy::too_many_arguments)]
+    fn lit_signal(
+        &self,
+        t: usize,
+        lit: Literal,
+        ins: &[crate::circuit::Signal],
+        st: &[crate::circuit::Signal],
+        ands: &[crate::circuit::Signal],
+        extra: &mut BTreeMap<u32, crate::circuit::Signal>,
+        circuit: &mut crate::circuit::Circuit,
+    ) -> crate::circuit::Signal {
+        use crate::circuit::{Gate, GateKind, Signal};
+
+        if let Some(sig) = extra.get(&lit.0) {
+            return sig.clone();
+        }
+
+        if lit.0 <= 1 {
+            let name = format!("const{t}_{}", lit.0);
+            let value = if lit.0 == 1 {
+                Ternary::True
+            } else {
+                Ternary::False
+            };
+            circuit
+                .gates
+                .push(Gate::constant(value, Signal(name.clone())));
+            let sig = Signal(name);
+            extra.insert(lit.0, sig.clone());
+            return sig;
+        }
+
+        let var = lit.index();
+        let i = self.inputs as u32;
+        let l = self.latches.len() as u32;
+        let base = if var <= i {
+            ins[(var - 1) as usize].clone()
+        } else if var <= i + l {
+            st[(var - i - 1) as usize].clone()
+        } else {
+            ands[(var - i - l - 1) as usize].clone()
+        };
+        if lit.is_negated() {
+            let name = format!("not{t}_{}", lit.0);
+            circuit
+                .gates
+                .push(Gate::new(GateKind::Not, vec![base], Signal(name.clone())));
+            let sig = Signal(name);
+            extra.insert(lit.0, sig.clone());
+            sig
+        } else {
+            base
+        }
+    }
 }
 
 #[cfg(test)]
@@ -428,5 +578,35 @@ mod tests {
         assert_eq!(Literal::var(3).negate().index(), 3);
         assert_eq!(Literal::FALSE.0, 0);
         assert_eq!(Literal::TRUE.0, 1);
+    }
+    #[test]
+    fn unroll_matches_step() {
+        use crate::propagate;
+        use std::collections::BTreeMap;
+        use trit_core::algebra::Algebra;
+
+        let c = counter2();
+        let k = 3;
+        let circuit = c.unroll(k).expect("展开");
+        let prop = propagate(&circuit, &BTreeMap::new(), Algebra::Kleene).expect("传播");
+
+        let mut state = c.initial_state();
+        for t in 0..k {
+            let (next, out) = c.step(&[], &state);
+            assert_eq!(
+                prop.outputs[&format!("out{t}_0")],
+                out[0],
+                "第 {t} 拍的展开输出与 step 不一致"
+            );
+            state = next;
+        }
+    }
+
+    #[test]
+    fn unroll_rejects_nothing_but_counts_outputs() {
+        let c = counter2();
+        let k = 2;
+        let circuit = c.unroll(k).expect("展开");
+        assert_eq!(circuit.outputs.len(), k, "每拍一个输出");
     }
 }
