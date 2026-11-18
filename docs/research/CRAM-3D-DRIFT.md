@@ -82,6 +82,7 @@
 | M0a | 2D 轨迹数据 + BFS oracle | 穷举 `DIFF=0` |
 | M0b | 复用 driftnet 的 Gen/qat，换 2D 轨迹输出 + 能量项 | CIFAR 原读数不退化；2D 轨迹的 BFS oracle DIFF=0 |
 | M0c | CRAM 能量 + 三组对照 | H1/H2/H3 读数 |
+| M0d | 创造力机制：过程/产品解耦（primer 分层 + 掩码解码），见 [`CRAM-3D-DRIFT-CREATIVE.md`](CRAM-3D-DRIFT-CREATIVE.md) | E1 掩码解码可行率 ≥90%；E2 primer 新颖度 +20% |
 | M1 | 小分子 2D 构象 | 同一套指标 |
 | M2 | 3D 扩展（仅当 M0 通过） | 另行设计 |
 
