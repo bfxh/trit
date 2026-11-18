@@ -59,6 +59,16 @@
       "from": "trit-gpu",
       "to": "trit-wspace",
       "reason": "仅 dev-dependencies：GPU 侧测试与示例读 WSP 工件做 CPU 参考对拍，不进发布闭包（cargo package 剥离 path dev-deps），故登记为例外而不是拆依赖"
+    },
+    {
+      "from": "trit-gpu",
+      "to": "trit-learn",
+      "reason": "仅 dev-dependencies：设备适配沙盘用 trit-learn 的三值 QAT 策略层做计划选择，不进发布闭包（cargo package 剥离 path dev-deps）"
+    },
+    {
+      "from": "trit-gpu",
+      "to": "trit-capacity",
+      "reason": "仅 dev-dependencies：真实设备校准需要 trit-capacity 的显存探针与容量预测做同尺对照，不进发布闭包（cargo package 剥离 path dev-deps）"
     }
   ],
   "known_debts": [
