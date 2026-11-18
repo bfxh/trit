@@ -331,6 +331,15 @@ qat select --dump e3tail_adv/weights.bin --n 256 --seed 0 --goal 63 --decode-mas
 `qat select --require-goal N` 在原有能量判据之外额外要求 goal 格点亮，输出的 `feasible`
 才是**完成率**；`goal_hit` 单独报（终点命中与否，与连通判据解耦）。
 
+复算：
+
+```bash
+qat select --dump e3tail/weights.bin --n 256 --seed 0 --goal 63 \
+    --decode-mask 1 --require-goal 63      # 结构完成率 100%、paths 152
+qat select --dump e3tail/weights.bin --n 256 --seed 0 --goal 63 \
+    --require-goal 63                      # 原生到达率 138/256
+```
+
 ### 2. 掩码解码的结构缺陷：它不认终点
 
 `repair_connectivity` 原先只从 `(0,0)` 取主分量，把孤立但正确的 goal 块**擦掉**：
