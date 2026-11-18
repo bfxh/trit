@@ -165,6 +165,46 @@ running stats 的 BN + `ternarize_col`），每个日志点并排记 `feasible`�
 而且 burn 口径的能量一直稳定在 23 附近（trit 口径在 42–57 波动），说明两者的样本分布
 本来就不是一回事。**E2 的「11.7%」是 batch-BN 口径特有的假象，不是能力。**
 
+## E3：条件码位置（头部 vs 尾部）与 patch_swd 下的可行率（第十一条）
+
+> 2026-11-19。对应 [`CRAM-3D-DRIFT-CREATIVE.md`](CRAM-3D-DRIFT-CREATIVE.md) §3 的 E3：
+> 同数据、同超参，只改 goal one-hot 写进 `fc` 输入的哪一端。
+
+```bash
+# 数据：benchmarks/cram-drift-2d，10k 条 32×32×3（NHWC uint8）
+cargo run --release -- --tasks 10000 --images images10k.bin --goals goals10k.bin --out dataset.jsonl
+
+# 训练（driftnet 仓，分支 feat/e3-cond-pos）
+qat train --data images10k.bin --goals goals10k.bin --cond 64 --cond-pos head \
+    --steps 5000 --ch 1024 --ternary --ternary-fc --loss patch_swd --seed 0 --out e3head
+# tail 组同上换 --cond-pos tail；patch_adv 对照再换 --loss patch_adv --out e3tail_adv
+
+# 评估：同 seed 的 z，只换 goal（n=256）
+qat select --dump e3head/weights.bin --n 256 --seed 0 --goal 63
+```
+
+| 组 | 换 goal 输出差 mean\|Δ\|/样本（0–255 尺度） | 相对 | 可行率 goal=63 | 可行率 goal=0 | 训练耗时 |
+|---|---|---:|---:|---:|---:|
+| head（one-hot 在输入头部） | 0.0854 ± 0.0033 | 8.8% | 44.1% | 38.7% | 552 s |
+| tail（尾部，默认） | 0.0674 ± 0.0029 | 7.0% | 43.0% | 40.2% | 553 s |
+| tail + `patch_adv`（loss 对照） | — | — | **0.0%** | **0.0%** | 1920 s |
+
+逐样本 256 点、Welch t = 4.13（df ≈ 501）：头部比尾部高 **26.6%**，显著。但可行率只差
+1.1 pp，且 goal 互换后方向反过来（head 38.7% / tail 40.2%）。**位置只影响「条件被读到的
+程度」，不影响「画得对不对」**——E3 证实 R2 的方向（输入层布局影响条件读取）在自训
+5.88M 三值网上弱复现，但不构成可用收益。E3 判据要求「头部显著更高则复现」，
+所以这条记「方向复现、收益为零」。
+
+### 附带结论：前九条的「可行率恒 0」有一部分是 loss 的坑
+
+同数据、同步数（5k）、同 `cond=64`、同尾部位置，**只换 loss**：`patch_swd` 43.0%，
+`patch_adv` 0.0%（日志 `d_loss 0.00000`、`d_sep 6.37`——判别器完美区分真假，生成器拿不到
+有效梯度；README 的「判别器失衡」一节早就记过 20k 步 loss 卡 0.46）。
+
+所以前九条「六条路径全部 0%」不能全部归给「结构学不会路径」：至少 `patch_adv` 那几组
+是 loss 的坑。**负结果的适用范围收窄为「SWD 目标下」**；`patch_adv` 的组要用 `patch_swd`
+重跑才成立。这也解释了第十条 E2 的读数为什么是 0%——primer 组沿用的仍是 `patch_adv` 口径。
+
 ## 下一步
 
 结构不是瓶颈，**目标函数才是**：七到九条已经证明「条件能传进网络并被使用」
@@ -184,11 +224,13 @@ running stats 的 BN + `ternarize_col`），每个日志点并排记 `feasible`�
   口径统一之后仍值得试的：奖励改组内排序、「到最近可行样本的能量差」、π 调制 z 的
   尺度/稀疏度——但这些都排在 **E1（掩码解码）**之后：E1 不动训练，可行率由解码保证，
   是当前性价比最高的一步。
-- **E1 掩码解码**（仍是最便宜、最可能立刻出正结果的一条，尚未开工）。
+- **E1 掩码解码**（已跑：可行率 0% → 100%，见 driftnet 的 `68a0b38` / `eb04ae5`；
+  多样性从 4 涨到 31，仍远少于 64 个 goal；不重训，纯推理侧）。
 - **教师轨迹回归**：用 `benchmarks/cram-drift-2d` 的 BFS 参考造「(起点, goal) → 路径」
   监督对，条件回归替代分布匹配；这才是真正测「条件能不能学会」，且要离开从零无监督训练。
-- **收尾 M0**：九条负结果作为结论——在 driftnet 现有「SWD + hinge」目标下，可行率恒为 0，
-  与结构/容量/步数无关；能改的只有监督。
+- **收尾 M0**：负结果要按 loss 分开看——`patch_adv` 那几组是判别器失衡（可行率 0%），
+  不能当「结构学不会路径」的证据；`patch_swd` 下同配置已有 43–44%（第十一条），
+  真正的缺口变成「怎么把可行率从 43% 推到 90% 以上」。
 
 ## 未证栏
 
