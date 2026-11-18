@@ -26,7 +26,7 @@
 |---|---|---|
 | 生产链 / 接入层 | diffusion 的训练脚本与数据管道、BSHSQ 物理引擎、memtri 的 MCP 外壳、DSH/桌面宠物类工具 | 各自项目仓，按 **git pin + tag** 依赖主库 |
 | 治理与 CI 工具 | `repo-tools`（认领门、交接同步、技术标签索引）、`gitflow`、`snapshot`、`pr_hygiene` | `bfxh/repo-tools`；主库只**调用**它，不抄实现 |
-| 一次性分析与笔记 | openai/math 的三份分析稿、逆向台账之外的手记、agent-wiki、`_handoff/*` | 本地笔记 / `_handoff`；结论要进主库就写成 `docs/` 的一节，不搬原文 |
+| 一次性分析与笔记 | 外部数学语料的三份分析稿、逆向台账之外的手记、agent-wiki、`_handoff/*` | 本地笔记 / `_handoff`；结论要进主库就写成 `docs/` 的一节，不搬原文 |
 | 大数据与不可再生素材 | 1,299 张 256² 纹理语料、场景渲染帧、风格样本视频、GGUF 权重 | 见 §3 的指纹政策，**不进仓** |
 | 别的语言生态的成品依赖 | torch / triton / numpy / 外部 C++ 库 | 不进仓；主库只留接口与读数，依赖在各自生产链环境里 |
 | 私有环境与凭据 | 本机路径、token、账号、hosts 配置 | `secret scan` 判红；文档里写能力不写机器 |

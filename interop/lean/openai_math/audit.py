@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Structural audit of a pinned openai/math checkout.
+"""Structural audit of a pinned external-corpus checkout.
 
 This checks catalogue/file/module consistency and dependency pins. It does not
 build Lean and does not claim Comparator/kernel validity. Standard library only.
@@ -80,7 +80,7 @@ def module_path(module: str) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", required=True, help="openai/math checkout")
+    parser.add_argument("--repo", required=True, help="external-corpus checkout")
     parser.add_argument("--pin", default=str(DEFAULT_PIN))
     parser.add_argument("--json", help="write the report to this path")
     args = parser.parse_args()
@@ -115,7 +115,7 @@ def main() -> int:
     )
     if local_toolchain and local_toolchain != toolchain:
         warnings.append(
-            f"toolchains differ (openai/math {toolchain}, this repo {local_toolchain}); do not mix Lake projects"
+            f"toolchains differ (external corpus {toolchain}, this repo {local_toolchain}); do not mix Lake projects"
         )
 
     version, sources, entries = parse_catalogue(
@@ -214,7 +214,7 @@ def main() -> int:
     per_config = Counter("lean/" + e["comparator_config"] for e in entries)
 
     report = {
-        "schema": "trit.openai-math-audit/v1",
+        "schema": "trit.external-math-audit/v1",
         "repo": pin["repo"],
         "commit": commit,
         "pin_commit": pin["commit"],
@@ -272,7 +272,7 @@ def main() -> int:
         )
 
     cat = report["catalogue"]
-    print(f"openai/math audit @ {commit[:7]} ({toolchain})")
+    print(f"external corpus audit @ {commit[:7]} ({toolchain})")
     print(
         "sources={sources} main_results={main_results} unique_configs={unique_comparator_configs} "
         "challenge_json={challenge_json} challenge_lean={challenge_lean}".format(**cat)

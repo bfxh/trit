@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run one openai/math Comparator challenge on Linux. This is a manual, trusted-corpus
+# Run one external-corpus Comparator challenge on Linux. This is a manual, trusted-corpus
 # check: it does not sandbox the solution with systemd-run/landrun beyond Comparator.
 set -euo pipefail
 
@@ -41,7 +41,7 @@ if [ "$(uname -s)" != "Linux" ]; then
 fi
 for tool in lake comparator landrun lean4export; do
   if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "missing $tool on PATH (see openai/math lean/ComparatorChallenges/README.md)" >&2
+    echo "missing $tool on PATH (see the upstream corpus lean/ComparatorChallenges/README.md)" >&2
     exit 2
   fi
 done
@@ -91,7 +91,7 @@ DURATION=$(( $(date +%s) - START ))
 import json, pathlib, sys
 out, challenge, commit, toolchain, status, duration, log = sys.argv[1:]
 pathlib.Path(out).write_text(json.dumps({
-    "schema": "trit.openai-math-comparator/v1",
+    "schema": "trit.external-math-comparator/v1",
     "commit": commit,
     "toolchain": toolchain,
     "challenge": challenge,

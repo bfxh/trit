@@ -16,7 +16,7 @@
 | `Trit/Belnap4.lean` | Belnap4 的 NOT/AND/OR、位平面公式、`N∧B=F`、`N∨B=T` 等关键值 |
 | `Trit/Pack5.lean` | 5-trit `pack`/`unpack` 往返、尾部填充、错误语义、`pack < 243` |
 | `Main.lean` | `tritLean` 可执行：输出 738 条 conformance JSONL |
-| `openai_math/` | 外置 `openai/math` 评测：固定提交、稀疏拉取、目录审计与手动 Comparator 入口 |
+| `openai_math/` | 外置外部语料评测：固定提交、稀疏拉取、目录审计与手动 Comparator 入口 |
 | `Trit.lean` | 汇总导入 |
 
 ## 已证明

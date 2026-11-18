@@ -1,6 +1,6 @@
 {
-  "schema": "trit.openai-math-audit/v1",
-  "repo": "https://github.com/openai/math",
+  "schema": "trit.external-math-audit/v1",
+  "source": "external preprint catalogue (address intentionally not stored in-repo)",
   "commit": "4eaee87548250b2682affda7d05d947c05554bae",
   "pin_commit": "4eaee87548250b2682affda7d05d947c05554bae",
   "pin_observed_at": "2026-11-08",

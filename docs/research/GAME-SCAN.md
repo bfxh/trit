@@ -73,8 +73,8 @@ baseline scan
 
 参考：
 
-> OpenAI. *The free uniform spanning forest is a factor of IID.* 2026-09-25.  
-> <https://github.com/openai/math/blob/main/preprints/The-free-uniform-spanning-forest-is-a-factor-of-IID-September-25-2026/The-free-uniform-spanning-forest-is-a-factor-of-IID-September-25-2026.pdf>
+> OpenAI. *The free uniform spanning forest is a factor of IID.* 2026-09-25.（外部预印本；
+> 链接不入库，按标题检索。）
 
 只引用三个设计原则：
 

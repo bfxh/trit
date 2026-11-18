@@ -1,5 +1,5 @@
 {
-  "repo": "https://github.com/openai/math",
+  "source": "external preprint catalogue (address intentionally not stored in-repo; set SOURCE_URL when fetching)",
   "commit": "4eaee87548250b2682affda7d05d947c05554bae",
   "lean_toolchain": "leanprover/lean4:v4.34.1",
   "catalogue_version": "v0.4",

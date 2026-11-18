@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sparse-fetch the pinned openai/math catalogue without downloading Mathlib or OAI blobs.
+# Sparse-fetch the pinned external catalogue without downloading Mathlib or OAI blobs.
 set -euo pipefail
 
 DEST=${1:?usage: fetch_sparse.sh DEST}
@@ -25,10 +25,7 @@ else
   PIN_NATIVE=$PIN
 fi
 
-REPO=$("$PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["repo"])' "$PIN_NATIVE") || {
-  echo "cannot read pin: $PIN" >&2
-  exit 1
-}
+REPO=${SOURCE_URL:?set SOURCE_URL to the external corpus address (not stored in-repo)}
 COMMIT=$("$PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1]))["commit"])' "$PIN_NATIVE") || {
   echo "cannot read pin: $PIN" >&2
   exit 1
@@ -53,4 +50,4 @@ if [ "$ACTUAL" != "$COMMIT" ]; then
   echo "checkout mismatch: $ACTUAL != $COMMIT" >&2
   exit 1
 fi
-echo "openai/math $COMMIT -> $DEST"
+echo "external corpus $COMMIT -> $DEST"
