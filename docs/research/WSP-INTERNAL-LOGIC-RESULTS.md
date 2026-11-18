@@ -195,6 +195,16 @@ parity / mod3 / paren / four_sources / ends_with_1 / contains_01
 
 同样的结构也适用于输出层的「多接受状态」OR。
 
+
+### 10.4 多域闭环与 End 自环性质
+
+- `compile_then_decompile_across_max_len`：6 个程序 × `max_len = 1..=4`，每一档都检查
+  状态数 / 转移表 / 接受集逐项相等（共 24 组）。
+- `end_padding_is_inert`：同一串在 4 位域与 5 位域上的判决必须一致——这是 End 自环的
+  直接性质；冻结逻辑一旦写坏，这条会最先红。
+
+`cargo test --release` = 9 passed。
+
 ## 11. 状态爆炸预算
 
 `--budget` 用编译器的 `parity` 程序扫 `max_len = 1..=6`：

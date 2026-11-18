@@ -353,4 +353,50 @@ mod tests {
         }
     }
 
+    #[test]
+    fn compile_then_decompile_across_max_len() {
+        for (name, program) in programs() {
+            for max_len in 1..=4 {
+                let net = compile::compile(&program, max_len).expect("编译");
+                let extracted =
+                    dfa::from_accepts(max_len, |w| compile::run(&net, w, max_len)).minimize();
+                let reference = dfa::from_accepts(max_len, |w| {
+                    let bits: Vec<bool> = w.iter().map(|t| *t == Trit::Pos).collect();
+                    program.run(&bits)
+                })
+                .minimize();
+                assert_eq!(
+                    extracted.states, reference.states,
+                    "{name}@{max_len}: 状态数不一致"
+                );
+                assert_eq!(
+                    extracted.delta, reference.delta,
+                    "{name}@{max_len}: 转移表不一致"
+                );
+                assert_eq!(
+                    extracted.accept, reference.accept,
+                    "{name}@{max_len}: 接受集不一致"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn end_padding_is_inert() {
+        // End 自环的性质：同一串补不同长度的 End，判决必须一致。
+        for (name, program) in programs() {
+            let net4 = compile::compile(&program, 4).expect("编译 4");
+            let net5 = compile::compile(&program, 5).expect("编译 5");
+            for w in word::all_words(4) {
+                let a = compile::run(&net4, &w, 4);
+                let b = compile::run(&net5, &w, 5);
+                assert_eq!(
+                    a, b,
+                    "{name}: 串 {:?} 在 4/5 位域判决不一致",
+                    word::bits(&w)
+                );
+            }
+        }
+    }
+
 }
