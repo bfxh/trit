@@ -14,10 +14,13 @@
 | `activation` | `tanh` / `ReLU` / `sigmoid` 及其导数；导数由**激活后输出**给出 | `Activation` |
 | `loss` | MSE / hinge / softmax 交叉熵与解析梯度；超越函数在 f64 内部求值再落回 f32，避免各平台 libm 的 1 ulp 差异放大成不同训练轨迹 | `mse`、`hinge`、`softmax`、`cross_entropy`、`softmax_backward` |
 | `opt` | 平面向量优化器（带动量 SGD / Adam）与全局范数裁剪；每个参数张量各配一个实例，无全局状态 | `Optimizer`、`Sgd`、`Adam`、`clip_global_norm` |
+| `forecast` | 时间序列预测：SMA 滚动平均、`Ewma` / `Holt` 双参数平滑的 O(1) 在线更新与多步外推；误差指标只服务评测，不进梯度 | `Ewma`、`Holt`、`sma`、`mae`、`rmse`、`mape` |
+| `metrics` | 多分类混淆矩阵与评测指标（准确率、逐类与 macro P/R/F1）；不依赖 serde，序列化由调用方做 | `Confusion` |
 
 crate 根再导出 `Activation`、`TernaryDense`、`mse`、`softmax`、`cross_entropy`、
 `softmax_backward`、`Optimizer`、`Sgd`、`Adam`、`clip_global_norm`、
-`Quantized`、`Ste`、`ternarize`、`quantize_with_scale`、`scale_grad`
+`Quantized`、`Ste`、`ternarize`、`quantize_with_scale`、`scale_grad`、
+`Ewma`、`Holt`、`sma`、`mae`、`rmse`、`mape`、`Confusion`
 （清单见 `crates/trit-learn/src/lib.rs`）。`hinge` 未提到根，用 `trit_learn::loss::hinge`。
 
 ## 用法
