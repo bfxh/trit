@@ -97,6 +97,8 @@
 | [CRAM-3D-DRIFT-CREATIVE.md](research/CRAM-3D-DRIFT-CREATIVE.md) | 把创造力接进漂移模型：过程/产品解耦（primer 分层 + 掩码解码 + 极小适配器，设计未开工） |
 | [GAME-SCAN.md](research/GAME-SCAN.md) | 游戏环境扫描、故障注入与恢复（Phase 0） |
 | [DEEP-RISK-MAP.md](research/DEEP-RISK-MAP.md) | 深层风险地图：更新 / 认领 / 牵连 |
+| [DEVICE-ADAPT.md](DEVICE-ADAPT.md) | 行为级设备仿真 × 设备适配策略：CPU / GPU / NPU 计划选择与实测校准 |
+| [DEVICE-ENV-MATRIX.md](DEVICE-ENV-MATRIX.md) | 多环境 / 多容器验证矩阵：同一份代码在原生宿主、WSL 与两个容器的读数对照 |
 
 ## security/ — 威胁模型、红队与防御
 
