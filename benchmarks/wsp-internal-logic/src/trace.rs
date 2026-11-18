@@ -64,11 +64,11 @@ pub fn align(net: &Net, max_len: usize, dfa: &Dfa) -> Align {
         let t = trace(net, w, max_len);
         let bits: Vec<bool> = w.iter().map(|x| *x == Trit::Pos).collect();
         let s = dfa.state_of(&bits);
-        hidden_out.entry(t.hidden.clone()).or_default().insert(t.out);
-        hidden_state
+        hidden_out
             .entry(t.hidden.clone())
             .or_default()
-            .insert(s);
+            .insert(t.out);
+        hidden_state.entry(t.hidden.clone()).or_default().insert(s);
         state_hidden.entry(s).or_default().insert(t.hidden);
     }
     Align {

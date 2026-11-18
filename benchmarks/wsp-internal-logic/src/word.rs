@@ -16,11 +16,7 @@ use trit_wspace::Trit;
 /// 二进制符号 → 三值。
 #[must_use]
 pub fn symbol(bit: bool) -> Trit {
-    if bit {
-        Trit::Pos
-    } else {
-        Trit::Neg
-    }
+    if bit { Trit::Pos } else { Trit::Neg }
 }
 
 /// 所有长度 `0..=max_len` 的串，长度升序、同长字典序。
