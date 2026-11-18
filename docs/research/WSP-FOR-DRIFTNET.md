@@ -234,6 +234,28 @@ samples=64  changed=0  max_abs=0.000000000  byte_identical=True
 这条比 §7.4 的单点强得多：它给出了一个**规模化的免费编辑集合**（约 5.2% 的 `fc.weight`），
 并且明确了边界在哪、为什么会在边界附近失效。
 
+
+## 8. 工具化：`qat verify` 一条命令
+
+§6–§7 的验证是用 Python 脚本（改 QDMP + 逐字节比较）做的。现在有了 Rust 侧命令：
+
+```bash
+qat verify --before a.bin --after b.bin [--n 64] [--seed 0] [--goal 63]
+```
+
+它加载两份 QDMP、同一批 z 前向、逐样本比较 3072 维输出，打印：
+
+```text
+before=artifacts/ch1024_20k/weights.bin after=.../weights_flip01.bin n=64 seed=0 goal=63 changed=0 max_abs=0.000000000 byte_identical=true
+```
+
+（原版 vs 翻 109,763 个零码符号的版本，与 Python 侧逐字节比较结论完全一致——
+两条独立路径互相印证。）
+
+这就是「权重空间编程」的工具化落地：
+**改权重 → 一条命令 → 声明域内「逐位等价 / 不等价 + 反例规模」的判定**。
+`changed == 0` 是证明（声明域内全部跑过），不是抽样估计。
+
 ## 4. 未证栏
 
 - 没有在 driftnet 上实际跑过任何一条审计；本文只有方法映射，没有读数。
@@ -243,6 +265,8 @@ samples=64  changed=0  max_abs=0.000000000  byte_identical=True
   §7.4 证明**翻符号保持 `|w|`** 在零码元素上逐位等价（`byte_identical=True`）。
 - §7.5 把 §7.4 推到 109,763 个元素（`|w|/scale < 0.1`），逐位等价；但 `[0.1, 0.5)` 区间
   因 Python/Rust 浮点差异**未验证**（全部零码翻转会失败，原因已在 §7.5 记录）。
+- §8 的 `qat verify` 只比较**输出**；它不检查中间层是否也逐位相同（理论上应该相同，
+  因为输入与权重都逐位一致，但未验证）。
 - 只测了 `fc.weight`；`net.{0,1,2}.1.weight` 的 conv 权重（三值化规则相同）未测。
 - §7 的 `tol` 是事后定的（`1e-5`），不是预先声明；更严谨的做法是在声明域里同时记录
   「逐位」与「容差」两档结果。
