@@ -13,6 +13,7 @@ pub mod netlist;
 mod pattern;
 mod sat_cnf;
 pub mod sdf;
+pub mod sequential;
 pub mod timing;
 pub mod verilog;
 
@@ -39,6 +40,9 @@ pub use netlist::{NetlistError, from_json, parse_netlist, to_json, to_netlist};
 pub use sdf::{
     SdfError, SdfInstance, parse_sdf, parse_sdf_instances, timing_model_from_sdf,
     timing_model_from_sdf_for,
+};
+pub use sequential::{
+    AndGate, Latch, Literal, SequentialCircuit, SequentialError, parse_sequential, to_sequential,
 };
 pub use timing::{
     OutputTiming, TimingConstraints, TimingError, TimingModel, TimingModelError, TimingPath,
