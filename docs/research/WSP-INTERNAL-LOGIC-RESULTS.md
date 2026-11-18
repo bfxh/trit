@@ -302,14 +302,35 @@ max_len words states_ref states_net same
 这条预算也给出一个可操作的门槛：若要把域从 6 位推到 10 位，词表从 127 涨到 2047，
 提取器本身仍然是线性的，成本全在穷举次数上。
 
-## 12. 复算（含轨迹、干预、闭环与预算）
+
+## 12. M3：循环执行（真串行）
+
+`compile_cell` 只编**一步**：输入 `[state(k), sym(3)]`，输出 `new_state(k)`；
+`recurrent::run` 用同一个 cell 跑 `max_len` 步，状态由外部携带——同一组权重重复用。
+
+测试 `cell_loop_matches_expanded`：对每个 ≤2 源的程序，循环结果与展开式前馈逐串等价，
+且 `trace.len() == max_len`。当前 7 个 ≤2 源程序 × 15 个串全部通过。
+
+三点差别：
+
+| 项 | 展开（`compile`） | 循环（`compile_cell` + `recurrent`） |
+|---|---|---|
+| 层数 | `2·max_len + 2`（随步数增长） | 固定 2 层 |
+| 权重复用 | 每步一组新权重 | **同一组权重重复调用** |
+| 支持扇入 | 任意（常量单元补阈值） | ≤2（输出维度就是 `k`，没地方放常量） |
+| 轨迹 | 需要单独抽取中间层 | `Run.trace` 天然是每步状态序列 |
+
+「常量单元」是展开式前馈多出来的自由度：循环里输出宽度就是状态数，塞不进常量，
+所以扇入被卡在 2。这条差异把两种实现的结构成本说清楚了。
+
+## 13. 复算（含轨迹、干预、闭环、预算与循环）
 
 ```bash
 cd benchmarks/wsp-internal-logic
 cargo run --release -- --trace
 cargo run --release -- --intervene
 cargo test --release   # 含 compile_then_decompile（Tracr 闭环）
-cargo run --release -- --budget   # 状态爆炸预算（max_len 1..=6）
+cargo run --release -- --budget   # 状态爆炸预算（max_len 1..=14）
 ```
 
 ## 7. 未证栏

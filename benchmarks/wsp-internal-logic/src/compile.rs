@@ -163,3 +163,71 @@ pub fn run(net: &Net, w: &[Trit], max_len: usize) -> bool {
         .map(|out| out[0] == Trit::Pos)
         .unwrap_or(false)
 }
+
+/// 初始状态 one-hot（`start = 0`）。
+#[must_use]
+pub fn initial_state(k: usize) -> Vec<Trit> {
+    (0..k)
+        .map(|i| if i == 0 { Trit::Pos } else { Trit::Neg })
+        .collect()
+}
+
+/// 把 DFA 编译成**单步 cell**：输入 `[state(k), sym(3)]`，输出 `new_state(k)`。
+///
+/// 与 [`compile`] 的区别：这里只编一步，状态由外部循环携带——同一权重重复用，
+/// 所以轨迹是真正的串行执行序列（M3）。只支持每目标状态 ≤ 2 个转移源：
+/// OR 层没有空间放常量单元（输出维度就是 `k`）。
+pub fn compile_cell(dfa: &Dfa) -> Result<Net, String> {
+    let k = dfa.states;
+    let in_dim = k + 3;
+
+    let delta3: Vec<[usize; 3]> = (0..k)
+        .map(|q| [dfa.delta[q][0], dfa.delta[q][1], q])
+        .collect();
+    let sources: Vec<Vec<usize>> = (0..k)
+        .map(|j| {
+            (0..k)
+                .flat_map(|q| (0..3).map(move |a| (q, a)))
+                .filter(|(q, a)| delta3[*q][*a] == j)
+                .map(|(q, a)| q * 3 + a)
+                .collect()
+        })
+        .collect();
+    for (j, src) in sources.iter().enumerate() {
+        if src.len() > 2 {
+            return Err(format!("状态 {j} 有 {} 个转移源，cell 版只支持 ≤ 2", src.len()));
+        }
+    }
+
+    // AND 层：3k 行（每个 (q, a) 一项），cols = in_dim。
+    let mut l1 = vec![0i8; 3 * k * in_dim];
+    let mut b1 = vec![0i8; 3 * k];
+    for q in 0..k {
+        for a in 0..3 {
+            let r = q * 3 + a;
+            l1[r * in_dim + q] = 1;
+            l1[r * in_dim + k + a] = 1;
+            b1[r] = -1;
+        }
+    }
+    let layer1 = Layer::new(3 * k, in_dim, &l1, &b1).map_err(|e| e.to_string())?;
+
+    // OR 层：k 行，cols = 3k。
+    let mut l2 = vec![0i8; k * 3 * k];
+    let mut b2 = vec![0i8; k];
+    for (j, src) in sources.iter().enumerate() {
+        match src.len() {
+            0 => b2[j] = -1,
+            1 => l2[j * 3 * k + src[0]] = 1,
+            _ => {
+                for &s in src {
+                    l2[j * 3 * k + s] = 1;
+                }
+                b2[j] = 1;
+            }
+        }
+    }
+    let layer2 = Layer::new(k, 3 * k, &l2, &b2).map_err(|e| e.to_string())?;
+
+    Net::new(vec![layer1, layer2]).map_err(|e| e.to_string())
+}

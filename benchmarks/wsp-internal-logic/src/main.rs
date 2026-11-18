@@ -13,6 +13,7 @@ mod cases;
 mod compile;
 mod dfa;
 mod intervene;
+mod recurrent;
 mod trace;
 mod word;
 
@@ -518,6 +519,28 @@ mod tests {
                     m.live_units() > 0,
                     "{name}: step {step}（层 {idx}）的状态位全不承重"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn cell_loop_matches_expanded() {
+        // M3：同一 cell 权重重复用（真串行）与展开式前馈必须逐串等价。
+        // >2 源的程序 cell 版不支持（OR 层没有常量单元的空间），跳过。
+        for (name, program) in programs() {
+            let Ok(cell) = compile::compile_cell(&program) else {
+                continue;
+            };
+            let net = compile::compile(&program, 3).expect("展开");
+            for w in word::all_words(3) {
+                let r = recurrent::run(&cell, &program, &w, 3);
+                let expanded = compile::run(&net, &w, 3);
+                assert_eq!(
+                    r.accept, expanded,
+                    "{name}: 串 {:?} 循环与展开不一致",
+                    word::bits(&w)
+                );
+                assert_eq!(r.trace.len(), 3, "{name}: 轨迹长度不对");
             }
         }
     }

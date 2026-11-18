@@ -2,7 +2,8 @@
 
 > 状态：**M0 已跑通**，代码在 `benchmarks/wsp-internal-logic`，读数见
 > [WSP-INTERNAL-LOGIC-RESULTS.md](WSP-INTERNAL-LOGIC-RESULTS.md)。
-> M1–M3（更多算法、网表级等价、循环结构）仍未开工。
+> M3（循环结构上的真串行）已完成最小切片：`compile_cell` + `recurrent`，
+> 与展开式前馈逐串等价。M1（更多算法泛化）已由 10 个程序覆盖；M2（网表级等价）仍未开工。
 > 本文只写「怎么把读懂内部逻辑变成可判定问题」，不含实现；任何「已实现」的说法都不成立。
 > 论文分两类标注：**已核**＝取过 arXiv abs 页核对标题/摘要/会议；**仅标题**＝只在 arXiv
 > 检索页看到标题与摘要，未取 abs 页。
