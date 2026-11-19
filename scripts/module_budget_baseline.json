@@ -2300,7 +2300,11 @@
     },
     {
       "file": "crates/trit-parts/src/data.rs",
-      "lines": 359
+      "lines": 251
+    },
+    {
+      "file": "crates/trit-parts/src/data/npy.rs",
+      "lines": 7
     },
     {
       "file": "crates/trit-parts/src/depth.rs",
@@ -2348,7 +2352,7 @@
     },
     {
       "file": "crates/trit-parts/src/geo.rs",
-      "lines": 333
+      "lines": 285
     },
     {
       "file": "crates/trit-parts/src/glb/manifest.rs",
@@ -2437,6 +2441,10 @@
     {
       "file": "crates/trit-parts/src/net/model.rs",
       "lines": 470
+    },
+    {
+      "file": "crates/trit-parts/src/npy.rs",
+      "lines": 219
     },
     {
       "file": "crates/trit-parts/src/objlabel.rs",
