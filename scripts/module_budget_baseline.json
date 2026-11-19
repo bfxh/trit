@@ -2355,6 +2355,10 @@
       "lines": 285
     },
     {
+      "file": "crates/trit-parts/src/glb.rs",
+      "lines": 733
+    },
+    {
       "file": "crates/trit-parts/src/glb/manifest.rs",
       "lines": 150
     },
@@ -2505,6 +2509,10 @@
     {
       "file": "crates/trit-parts/src/splat/tests.rs",
       "lines": 341
+    },
+    {
+      "file": "crates/trit-parts/src/state.rs",
+      "lines": 178
     },
     {
       "file": "crates/trit-parts/src/state/mod.rs",
@@ -3265,6 +3273,18 @@
     {
       "file": "crates/trit-wspace/examples/cifar_tasks.rs",
       "lines": 743
+    },
+    {
+      "file": "crates/trit-wspace/examples/creative_priming/main.rs",
+      "lines": 216
+    },
+    {
+      "file": "crates/trit-wspace/examples/creative_priming/metrics.rs",
+      "lines": 105
+    },
+    {
+      "file": "crates/trit-wspace/examples/creative_priming/target.rs",
+      "lines": 231
     },
     {
       "file": "crates/trit-wspace/examples/ddos_shield/main.rs",
