@@ -2463,6 +2463,14 @@
       "lines": 538
     },
     {
+      "file": "crates/trit-parts/src/occ/mlp.rs",
+      "lines": 160
+    },
+    {
+      "file": "crates/trit-parts/src/occ/mod.rs",
+      "lines": 417
+    },
+    {
       "file": "crates/trit-parts/src/ood.rs",
       "lines": 730
     },
