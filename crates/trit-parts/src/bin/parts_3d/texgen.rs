@@ -7,14 +7,25 @@ use super::cli::{arg, fail, usage};
 use super::look::{avg, fit_rgb};
 
 /// `tex --kind wood|marble|rust|grid --size 256 --out <ppm>`：程序化可平铺材质 + 无缝度。
+/// 取一个数值参数，缺省时用 `dflt`；不认的写法按缺省处理（与旧行为一致）。
+fn num_of<T: std::str::FromStr>(argv: &[String], key: &str, dflt: T) -> T {
+    arg(argv, key).and_then(|v| v.parse().ok()).unwrap_or(dflt)
+}
+
+/// `--size` 是所有下游分配的来源（`w * h`、`vec![...; w*h]`），必须挡上限。
+fn size_of(argv: &[String], dflt: usize) -> usize {
+    let n: usize = num_of(argv, "--size", dflt);
+    assert!(
+        (1..=4096).contains(&n),
+        "--size 必须在 1..=4096（收到 {n}）"
+    );
+    n
+}
+
 pub(crate) fn tex_cmd(argv: &[String]) {
     let kind = arg(argv, "--kind").unwrap_or_else(|| "wood".into());
-    let n: usize = arg(argv, "--size")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(256);
-    let seed: u64 = arg(argv, "--seed")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1);
+    let n: usize = size_of(argv, 256);
+    let seed: u64 = num_of(argv, "--seed", 1);
     let out = PathBuf::from(arg(argv, "--out").unwrap_or_else(|| usage()));
     let px = trit_parts::tex::tile(&kind, n, seed);
     let r = trit_parts::tex::seam_ratio(&px, n);
@@ -43,36 +54,22 @@ pub(crate) fn tex_prior_cmd(argv: &[String]) {
     use trit_parts::occ::Mlp;
     use trit_parts::tex::tile;
 
-    let iters: usize = arg(argv, "--iters")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(30000);
-    let sigma: f32 = arg(argv, "--sigma")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.1);
-    let n: usize = arg(argv, "--size")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(64);
-    let seed: u64 = arg(argv, "--seed")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1);
+    let iters: usize = num_of(argv, "--iters", 30000);
+    let sigma: f32 = num_of(argv, "--sigma", 0.1);
+    let n: usize = size_of(argv, 64);
+    let seed: u64 = num_of(argv, "--seed", 1);
     let eval_seed: u64 = arg(argv, "--eval-seed")
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
     let _ = eval_seed; // --data 模式下评测用留出图片，不再需要 seed
-    let lr: f32 = arg(argv, "--lr")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.03);
-    let patch: usize = arg(argv, "--patch")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(3);
+    let lr: f32 = num_of(argv, "--lr", 0.03);
+    let patch: usize = num_of(argv, "--patch", 3);
     let cond = argv.iter().any(|a| a == "--cond");
     let r = (patch / 2) as i32;
     let kinds = ["wood", "marble", "rust", "grid"];
     let data_dir = arg(argv, "--data").map(PathBuf::from);
     let nin = patch * patch + if cond { kinds.len() } else { 0 };
-    let hid: usize = arg(argv, "--hid")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(16);
+    let hid: usize = num_of(argv, "--hid", 16);
 
     let gray = |kind: &str, sd: u64| -> Vec<f32> {
         tile(kind, n, sd)
@@ -293,30 +290,18 @@ pub(crate) fn tex_conv_cmd(argv: &[String]) {
     use trit_parts::tconv::Net;
     use trit_parts::tex::tile;
 
-    let iters: usize = arg(argv, "--iters")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(20000);
-    let sigma: f32 = arg(argv, "--sigma")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.1);
-    let n: usize = arg(argv, "--size")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(64);
-    let seed: u64 = arg(argv, "--seed")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1);
+    let iters: usize = num_of(argv, "--iters", 20000);
+    let sigma: f32 = num_of(argv, "--sigma", 0.1);
+    let n: usize = size_of(argv, 64);
+    let seed: u64 = num_of(argv, "--seed", 1);
     let eval_seed: u64 = arg(argv, "--eval-seed")
         .and_then(|v| v.parse().ok())
         .unwrap_or(2);
-    let lr: f32 = arg(argv, "--lr")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(0.05);
+    let lr: f32 = num_of(argv, "--lr", 0.05);
     let cond = argv.iter().any(|a| a == "--cond");
     let use_bn = argv.iter().any(|a| a == "--bn");
     let adam = argv.iter().any(|a| a == "--adam");
-    let bsz: usize = arg(argv, "--batch")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(1);
+    let bsz: usize = num_of(argv, "--batch", 1);
     let hidden: Vec<usize> = arg(argv, "--hidden")
         .map(|v| v.split(',').filter_map(|s| s.trim().parse().ok()).collect())
         .unwrap_or_else(|| vec![8, 8]);
@@ -482,5 +467,20 @@ impl Den {
             }
             _ => trit_parts::diffuse::ddim_sample_opts(self, sched, cond, w, h, seed, clamp),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    #[should_panic(expected = "--size 必须在 1..=4096")]
+    fn oversized_size_is_rejected() {
+        size_of(&["--size".to_string(), "100000".to_string()], 256);
+    }
+    #[test]
+    fn size_defaults_and_in_range_still_work() {
+        assert_eq!(size_of(&[], 256), 256);
+        assert_eq!(size_of(&["--size".to_string(), "64".to_string()], 256), 64);
     }
 }
