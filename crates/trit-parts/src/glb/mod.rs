@@ -10,7 +10,8 @@ use std::collections::HashMap;
 use crate::mesh::Mesh;
 
 mod manifest;
-use manifest::{field, mesh_entries, number, nums, object_block, read, resolve};
+mod scene;
+pub use scene::{Loaded, load_scene};
 
 /// 每三角形三个角的 UV（与 `mesh.tris` 一一对应）。
 pub type UvTris = Vec<[[f32; 2]; 3]>;
@@ -118,12 +119,14 @@ pub fn build(parts: &[Part], generator: &str) -> Vec<u8> {
 pub fn build_with(parts: &[Part], generator: &str, spin_seconds: Option<f32>) -> Vec<u8> {
     let mut bin = Vec::new();
     let mut views: Vec<(usize, usize, Option<u32>)> = Vec::new();
-    let mut accessors: Vec<String> = Vec::new();
-    let mut meshes: Vec<String> = Vec::new();
-    let mut materials: Vec<String> = Vec::new();
-    let mut textures: Vec<String> = Vec::new();
-    let mut images: Vec<String> = Vec::new();
-    let mut nodes: Vec<String> = Vec::new();
+    let (mut accessors, mut meshes, mut materials, mut textures, mut images, mut nodes) = (
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    );
 
     for p in parts {
         let normals = vertex_normals(&p.mesh);
@@ -253,7 +256,7 @@ pub fn build_with(parts: &[Part], generator: &str, spin_seconds: Option<f32>) ->
     while !jb.len().is_multiple_of(4) {
         jb.push(b' ');
     }
-    let total = 12 + 8 + jb.len() + 8 + bin.len();
+    let total = glb_total(jb.len(), bin.len()) as usize;
     let mut out = Vec::with_capacity(total);
     out.extend_from_slice(b"glTF");
     out.extend_from_slice(&2u32.to_le_bytes());
@@ -265,6 +268,16 @@ pub fn build_with(parts: &[Part], generator: &str, spin_seconds: Option<f32>) ->
     out.extend_from_slice(b"BIN\0");
     out.extend_from_slice(&bin);
     out
+}
+
+/// GLB 头 12 + JSON 块头 8 + BIN 块头 8 = 28。三个长度字段都是 u32：
+/// 总长一旦超过上限，`as u32` 会静默截断，写出的文件自己的 verify 判红。
+fn glb_total(jl: usize, bl: usize) -> u32 {
+    let total = jl
+        .checked_add(bl)
+        .and_then(|n| n.checked_add(28))
+        .expect("GLB 总长超过 usize 上限");
+    u32::try_from(total).expect("GLB 总长超过 u32 上限")
 }
 
 /// 转台动画的 5 个关键帧：时间 0..T 等分，四元数 0/90/180/270/360°（绕 Y）。
@@ -294,104 +307,6 @@ pub fn node_trs(bmin: [f64; 3], bmax: [f64; 3], yaw_deg: u32, t: [f64; 3]) -> ([
     )
 }
 
-/// 从对象网格包读入全部对象与布局，组装成 GLB 的 `Part` 列表。
-pub struct Loaded {
-    pub parts: Vec<Part>,
-    pub mesh_manifest: std::path::PathBuf,
-    pub objects_manifest: std::path::PathBuf,
-    pub layout: std::path::PathBuf,
-    pub verts: usize,
-    pub tris: usize,
-}
-
-pub fn load_scene(
-    objects_mesh_dir: &std::path::Path,
-    layout_override: Option<&std::path::Path>,
-) -> Result<Loaded, String> {
-    let mm = objects_mesh_dir.join("objects-mesh.manifest.json");
-    let txt = read(&mm)?;
-    let inputs = object_block(&txt, "inputs").ok_or("清单缺 inputs")?;
-    let oman = object_block(inputs, "objects_manifest").ok_or("清单缺 objects_manifest")?;
-    let om_path = resolve(
-        objects_mesh_dir,
-        field(oman, "path").ok_or("缺对象清单路径")?,
-    )?;
-    let lp = match layout_override {
-        Some(p) => p.to_path_buf(),
-        None => {
-            let lb = object_block(inputs, "layout").ok_or("清单没有布局输入")?;
-            resolve(objects_mesh_dir, field(lb, "path").ok_or("缺布局路径")?)?
-        }
-    };
-    let om = read(&om_path)?;
-    let mut bbox: HashMap<u32, ([f64; 3], [f64; 3])> = HashMap::new();
-    for seg in om.split("{\"id\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        let id = seg
-            .split(',')
-            .next()
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(0);
-        let (lo, hi) = (nums(seg, "bbox_min"), nums(seg, "bbox_max"));
-        if lo.len() == 3 && hi.len() == 3 {
-            bbox.insert(id, ([lo[0], lo[1], lo[2]], [hi[0], hi[1], hi[2]]));
-        }
-    }
-    let lt = read(&lp)?;
-    let mut places: HashMap<u32, (u32, [f64; 3])> = HashMap::new();
-    for seg in lt.split("{\"id\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        let id = seg
-            .split(',')
-            .next()
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(0);
-        let tr = nums(seg, "translate");
-        if tr.len() == 3 {
-            places.insert(
-                id,
-                (
-                    number(seg, "yaw").unwrap_or(0.0) as u32,
-                    [tr[0], tr[1], tr[2]],
-                ),
-            );
-        }
-    }
-    let entries = mesh_entries(&txt);
-    let mut parts = Vec::new();
-    let (mut verts, mut tris) = (0usize, 0usize);
-    for e in entries {
-        let objtxt = read(&resolve(objects_mesh_dir, e.obj)?)?;
-        let (mesh, uv) = parse_obj(&objtxt)?;
-        let png = std::fs::read(resolve(objects_mesh_dir, e.png)?)
-            .map_err(|x| format!("{}: {x}", e.id))?;
-        let (bmin, bmax) = *bbox.get(&e.id).ok_or(format!("对象 {} 缺 bbox", e.id))?;
-        let (yaw, t) = *places.get(&e.id).ok_or(format!("对象 {} 缺布局", e.id))?;
-        let (translation, rotation) = node_trs(bmin, bmax, yaw, t);
-        verts += mesh.verts.len();
-        tris += mesh.tris.len();
-        parts.push(Part {
-            name: format!("obj-{}", e.id),
-            mesh,
-            uv,
-            png,
-            translation,
-            rotation,
-        });
-    }
-    if parts.is_empty() {
-        return Err("没有可打包的对象".into());
-    }
-    Ok(Loaded {
-        parts,
-        mesh_manifest: mm,
-        objects_manifest: om_path,
-        layout: lp,
-        verts,
-        tris,
-    })
-}
-
 /// 解析本仓 `uv::write_obj` 写出的 OBJ（v / vt / f 三样）。
 mod obj;
 pub use obj::parse_obj;
@@ -399,6 +314,17 @@ pub use obj::parse_obj;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn glb_total_rejects_lengths_beyond_u32() {
+        // u32::MAX 字节的 JSON 加上 28 字节头就装不进 u32 了：必须拒，不许截断。
+        let r = std::panic::catch_unwind(|| glb_total(u32::MAX as usize, 0));
+        assert!(
+            r.is_err(),
+            "总长超 u32 必须拒，静默截断会写出 verify 判红的文件"
+        );
+        assert_eq!(glb_total(0, 0), 28, "空场景正好是三个块头");
+    }
 
     fn tri_mesh() -> Mesh {
         Mesh {

@@ -112,6 +112,8 @@
 
 | L75 | `tconv::Net::input` 把 `img` 直接 `to_vec()` 塞进第一通道，`img` 长度只在更下游的 `Conv::forward` 才被兜住 | `img` 来自 CLI / 训练批次，是外部数据；短一个像素时 `Conv::forward` 的断言消息指向"通道数不符"，把"输入图短了"误报成"网络通道配错"，而且 `forward_x` 那条多通道路径完全不经过 `input`，长度检查形同虚设 | `input` 开头 `assert!(img.len() == w.saturating_mul(h))`，把长度校验前移到唯一入口；`train_step` / `train_batch` / `train_batch_x` / `train_batch_xc` 共 508 行下沉到 `tconv/net/train.rs`（`impl` 拆两块），`net.rs` 723 → 220 行腾出预算；`tests/tconv_input_contract.rs` 钉住"短一个像素必须 panic、正好 w×h 正常出图" | C024 |
 
+| L76 | `glb::build_with` 写 GLB 头时把 `total` / `jb.len()` / `bin.len()` 直接 `as u32`，三处都没有上限断言 | 三个长度字段都是 u32，总长逼近 4GiB 时 `as u32` 静默截断 —— 写出的文件会被同仓 `parts_glb_verify::chunks` 的分块长度检查判红，即"自己写、自己验不过"。#550 只修了读出侧，写入侧是同一类面的孪生 | 抽 `glb_total(jl, bl)`：`checked_add` 求总长后 `u32::try_from(total).expect(...)` 收口，`build_with` 改用它；`load_scene` + `Loaded` 98 行下沉到 `glb/scene.rs` 腾出预算（`glb/mod.rs` 637 → 563）；`glb_total_rejects_lengths_beyond_u32` 钉住"u32::MAX 字节的 JSON 必须拒、空场景正好 28" | C025 |
+
 
 
 
