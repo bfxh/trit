@@ -110,6 +110,8 @@
 
 | L74 | `parts_glb_verify::chunks` 的 `jl` / `bl` 都来自文件头（u32），但边界检查写成 `20 + jl + 8 > b.len()` 与 `bo + 8 + bl != b.len()` —— 全是裸加 | 32 位 usize 上 `jl = u32::MAX` 让 `20 + jl + 8` 溢出绕成小值，直接绕过检查，随后 `&b[20..20 + jl]` 越界；`bl` 同理。64 位安全，但这是公开复核路径，不该给平台留死角 | 两处都换 `checked_add`（`jl.checked_add(28)`、`jl.checked_add(bl).and_then(\|n\| n.checked_add(28))`）；`chunks` / `png_count` 下沉到 `parts_glb_verify/chunks.rs`（bin 子模块必须 `#[path]`）；`chunks_rejects_overflowing_json_length` 钉住"jl 逼近 usize 上限必须拒绝" | C023 |
 
+| L75 | `tconv::Net::input` 把 `img` 直接 `to_vec()` 塞进第一通道，`img` 长度只在更下游的 `Conv::forward` 才被兜住 | `img` 来自 CLI / 训练批次，是外部数据；短一个像素时 `Conv::forward` 的断言消息指向"通道数不符"，把"输入图短了"误报成"网络通道配错"，而且 `forward_x` 那条多通道路径完全不经过 `input`，长度检查形同虚设 | `input` 开头 `assert!(img.len() == w.saturating_mul(h))`，把长度校验前移到唯一入口；`train_step` / `train_batch` / `train_batch_x` / `train_batch_xc` 共 508 行下沉到 `tconv/net/train.rs`（`impl` 拆两块），`net.rs` 723 → 220 行腾出预算；`tests/tconv_input_contract.rs` 钉住"短一个像素必须 panic、正好 w×h 正常出图" | C024 |
+
 
 
 

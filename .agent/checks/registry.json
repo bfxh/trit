@@ -405,6 +405,23 @@
       "pattern": "fn chunks_rejects_overflowing_json_length",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C024",
+      "title": "Net::input 的 img 长度必须等于 w×h",
+      "kind": "require",
+      "covers": [
+        "L75"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tconv/net.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T07:06:42+08:00",
+      "pattern": "img\\.len\\(\\) == w\\.saturating_mul\\(h\\)",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
