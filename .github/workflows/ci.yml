@@ -243,11 +243,15 @@ jobs:
         env:
           SCOPE_ARGS: ${{ steps.crates.outputs.args }}
         run: |
-          if [ -n "${SCOPE_ARGS:-}" ]; then
-            cargo test $SCOPE_ARGS --locked --doc
-          else
-            cargo test --workspace --locked --doc
+          # `cargo test -p X --doc` 对**只有 bin target** 的包会直接报
+          # "no library targets found"（如 trit-redteam），一旦它被 changed-scope
+          # 选中，整条 job 就红。此时退化为全量 doctest：真实的文档测试失败会在
+          # 全量里重现，不会被吞掉，只是多跑一趟。
+          if [ -n "${SCOPE_ARGS:-}" ] && cargo test $SCOPE_ARGS --locked --doc; then
+            exit 0
           fi
+          echo "::warning::scope 内 doctest 不可用或失败，退化为全量 doctest 复核"
+          cargo test --workspace --locked --doc
 
       # png feature（默认关）：单独测 + clippy，否则 CI 永远碰不到这些代码。
       # 收窄后只在闭包真含 trit-texture 时才跑，否则这条 step 白等一趟编译。

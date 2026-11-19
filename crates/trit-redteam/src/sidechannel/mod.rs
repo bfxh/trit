@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 use anyhow::{Result, bail};
 use serde_json::{Value, json};
 
-use crate::rail::{eval_expr, parse_design};
+use crate::rail::{RailDesign, eval_expr, parse_design};
 
 fn class_of(pos: u8, neg: u8) -> &'static str {
     match (pos, neg) {
@@ -39,19 +39,11 @@ fn entropy(counts: &BTreeMap<String, usize>) -> f64 {
         .sum()
 }
 
-#[derive(Debug)]
-pub struct Report {
-    pub signals: usize,
-    pub rows: usize,
-    pub h_output: f64,
-    pub h_output_given_weight: f64,
-    pub leakage_bits: f64,
-    pub weight_histogram: BTreeMap<u8, BTreeMap<String, usize>>,
-    pub unknown_case: String,
-}
+mod report;
+pub use report::Report;
 
 pub fn analyze(text: &str) -> Result<Report> {
-    let (inputs, assigns) = parse_design(text);
+    let RailDesign { inputs, assigns } = parse_design(text)?;
     if inputs.is_empty() || inputs.len() % 2 != 0 || assigns.is_empty() {
         bail!(
             "不像 trit-build 导出的门级网表（inputs={} assigns={}）",
@@ -81,10 +73,12 @@ pub fn analyze(text: &str) -> Result<Report> {
             env.insert(pair[1].clone(), neg);
         }
         for (name, rhs) in &assigns {
-            let value = eval_expr(rhs, &env);
+            let value = eval_expr(rhs, &env)?;
             env.insert(name.clone(), value);
         }
-        let (pos, neg) = (env["y_p"], env["y_n"]);
+        let (Some(&pos), Some(&neg)) = (env.get("y_p"), env.get("y_n")) else {
+            bail!("网表缺少 y_p/y_n 输出");
+        };
         let class = class_of(pos, neg);
         *outputs.entry(class.to_string()).or_default() += 1;
         *by_weight
@@ -172,7 +166,7 @@ pub fn has_findings(report: &Report) -> bool {
 mod tests {
     use super::*;
 
-    const FIXTURE: &str = include_str!("../fixtures/three_rail.v");
+    const FIXTURE: &str = include_str!("../../fixtures/three_rail.v");
 
     #[test]
     fn weight_directly_reveals_unknowns() {

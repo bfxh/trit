@@ -927,10 +927,6 @@
       "lines": 322
     },
     {
-      "file": "crates/trit-export/src/pack.rs",
-      "lines": 48
-    },
-    {
       "file": "crates/trit-export/tests/gguf.rs",
       "lines": 140
     },
@@ -2927,16 +2923,28 @@
       "lines": 279
     },
     {
-      "file": "crates/trit-redteam/src/rail.rs",
-      "lines": 347
+      "file": "crates/trit-redteam/src/rail/analyze.rs",
+      "lines": 121
+    },
+    {
+      "file": "crates/trit-redteam/src/rail/mod.rs",
+      "lines": 322
+    },
+    {
+      "file": "crates/trit-redteam/src/rail/parser.rs",
+      "lines": 121
     },
     {
       "file": "crates/trit-redteam/src/secrets.rs",
       "lines": 123
     },
     {
-      "file": "crates/trit-redteam/src/sidechannel.rs",
-      "lines": 236
+      "file": "crates/trit-redteam/src/sidechannel/mod.rs",
+      "lines": 230
+    },
+    {
+      "file": "crates/trit-redteam/src/sidechannel/report.rs",
+      "lines": 13
     },
     {
       "file": "crates/trit-redteam/tests/cli.rs",
