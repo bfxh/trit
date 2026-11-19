@@ -2,12 +2,12 @@
 //!
 //! 全部用**周期函数**构造（周期 = 贴图边长），所以左右/上下边界天然连续；
 //! `seam_ratio` 是判据：边界相邻差 / 内部相邻差，≈1 表示无缝。
-//! `quilt` 是**非参数**合成：直接从源图搬 patch，统计由构造保证（学出来的合成见 `tconv`）。
+//! `quilt` 是**非参数**合成：直接从源图搬 patch，统计由构造保证（学出来的合成见 `tconv`）；`sm64` 是 splitmix64（`seed | 1` 会丢最低位，2026-11-01 踩过）。
 
-/// splitmix64：给 patch 搜索用（`seed | 1` 会丢最低位，2026-11-01 踩过）。
 mod quilt;
 mod style;
 mod tiles;
+mod util;
 
 pub(crate) use quilt::box_blur_rgb;
 pub use quilt::quilt;
