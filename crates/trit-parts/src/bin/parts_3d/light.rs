@@ -68,21 +68,21 @@ pub(crate) fn light_relight_normals_cmd(argv: &[String]) {
         .unwrap_or_else(|e| fail(&e));
     let (nrm, nshape) = trit_parts::geo::read_npy_f32(&frame_path(&scene, "normal", frame, "npy"))
         .unwrap_or_else(|e| fail(&e));
-    let (seg, _) = trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", frame, "npy"))
+    let (seg, sshape) = trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", frame, "npy"))
         .unwrap_or_else(|e| fail(&e));
-    if nshape.len() != 3 {
-        fail("法线图应为 HxWx3");
+    if !light::normals_inputs_match(&nshape, &sshape, w, h) {
+        fail("尺寸不一致");
     }
-    let mut lum = vec![0.0f32; w * h];
-    for i in 0..w * h {
-        lum[i] = 0.299 * rgb[i * 3] + 0.587 * rgb[i * 3 + 1] + 0.114 * rgb[i * 3 + 2];
-    }
+    let lum: Vec<f32> = (0..w * h)
+        .map(|i| 0.299 * rgb[i * 3] + 0.587 * rgb[i * 3 + 1] + 0.114 * rgb[i * 3 + 2])
+        .collect();
     let mask: Vec<bool> = (0..w * h).map(|i| seg[i] > 0).collect();
     let Some((l, k, a)) = light::fit_from_normals(&lum, &nrm, &mask, w, h) else {
         fail("拟合失败");
     };
     let ln = light::rotate_light(l, deg);
-    let out = light::relight_normals(&rgb, &nrm, w, h, ln, k, a);
+    let out = light::relight_normals(&rgb, &nrm, w, h, ln, k, a)
+        .unwrap_or_else(|| fail("缓冲长度与宽高不匹配"));
     trit_parts::data::write_rgb(std::path::Path::new(&out_p), w, h, &out)
         .unwrap_or_else(|e| fail(&e));
     let after = light::estimate(&out, w, h);

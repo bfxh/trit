@@ -27,7 +27,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 BASELINE = pathlib.Path(__file__).resolve().parent / "docs_hygiene_baseline.json"
 
-DRIVE_PATH = re.compile(r"[A-Za-z]:[/\\][A-Za-z0-9_.~-]")
+DRIVE_PATH = re.compile(r"(?<![A-Za-z0-9])[A-Za-z]:[/\\][A-Za-z0-9_.~-]")
 SCANNED_TOP = ["CHANGELOG.md", "README.md"]
 
 
@@ -142,6 +142,14 @@ def self_test() -> int:
         check_drive_paths({"docs/A.md": 3, "docs/B.md": 1}, good_payload["drive_paths"]),
         "docs/A.md",
     )
+    for sample, want in (("git show HEAD:tools/memory.ps1", 0), ("D:/KF/y", 1)):
+        hits = len(DRIVE_PATH.findall(sample))
+        if hits == want:
+            print(f"  ok   反证 7：{sample[:26]} 命中 {hits}")
+        else:
+            failures += 1
+            print(f"  FAIL 反证 7：{sample[:26]} 命中 {hits}，应为 {want}")
+
     expect(
         "反证 5：基线形状不对（没表不等于没违规）",
         check({"oops": 1}, good_text),

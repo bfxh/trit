@@ -482,13 +482,13 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
             let (nrm, nshape) =
                 trit_parts::geo::read_npy_f32(&frame_path(&scene, "normal", fr, "npy"))
                     .unwrap_or_else(|e| fail(&e));
-            let (seg, _) = trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", fr, "npy"))
-                .unwrap_or_else(|e| fail(&e));
-            if nshape.len() == 3 {
-                let mut lum = vec![0.0f32; rw * rh];
-                for i in 0..rw * rh {
-                    lum[i] = 0.299 * rpx[i * 3] + 0.587 * rpx[i * 3 + 1] + 0.114 * rpx[i * 3 + 2];
-                }
+            let (seg, sshape) =
+                trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", fr, "npy"))
+                    .unwrap_or_else(|e| fail(&e));
+            if light::normals_inputs_match(&nshape, &sshape, rw, rh) {
+                let lum: Vec<f32> = (0..rw * rh)
+                    .map(|i| 0.299 * rpx[i * 3] + 0.587 * rpx[i * 3 + 1] + 0.114 * rpx[i * 3 + 2])
+                    .collect();
                 let mask: Vec<bool> = (0..rw * rh).map(|i| seg[i] > 0).collect();
                 if let Some((l, k, a)) =
                     trit_parts::light::fit_from_normals(&lum, &nrm, &mask, rw, rh)

@@ -163,109 +163,18 @@ pub fn relight(img: &[f32], w: usize, h: usize, dtheta_deg: f32) -> Vec<f32> {
     out
 }
 
-/// 由「法线 + 亮度」线性求解光照：`I ≈ a + b·n`，`b = k·l`。
-/// 返回 `(l 单位向量, k 强度, a 环境项)`；y 方向沿用图像坐标（v 向下）。
-///
-/// 前提：法线图与亮度同一相机坐标系；只用 `mask` 为真的像素。
-pub fn fit_from_normals(
-    lum: &[f32],
-    n: &[f32],
-    mask: &[bool],
-    w: usize,
-    h: usize,
-) -> Option<([f32; 3], f32, f32)> {
-    // 法方程 4×4：未知 [a, bx, by, bz]
-    let mut ata = [[0.0f64; 4]; 4];
-    let mut aty = [0.0f64; 4];
-    let mut cnt = 0usize;
-    for i in 0..w * h {
-        if !mask[i] {
-            continue;
-        }
-        let row = [
-            1.0,
-            n[i * 3] as f64,
-            n[i * 3 + 1] as f64,
-            n[i * 3 + 2] as f64,
-        ];
-        let y = lum[i] as f64;
-        for a in 0..4 {
-            aty[a] += row[a] * y;
-            for b in 0..4 {
-                ata[a][b] += row[a] * row[b];
-            }
-        }
-        cnt += 1;
-    }
-    if cnt < 64 {
-        return None;
-    }
-    let mut m = ata;
-    let mut b = aty;
-    let n4 = 4;
-    for col in 0..n4 {
-        let mut piv = col;
-        for r in col + 1..n4 {
-            if m[r][col].abs() > m[piv][col].abs() {
-                piv = r;
-            }
-        }
-        if m[piv][col].abs() < 1e-12 {
-            return None;
-        }
-        m.swap(col, piv);
-        b.swap(col, piv);
-        let d = m[col][col];
-        for v in m[col].iter_mut().skip(col) {
-            *v /= d;
-        }
-        b[col] /= d;
-        for r in 0..n4 {
-            if r == col {
-                continue;
-            }
-            let f = m[r][col];
-            let src: [f64; 4] = m[col];
-            for (v, s0) in m[r].iter_mut().skip(col).zip(src.iter().skip(col)) {
-                *v -= f * s0;
-            }
-            b[r] -= f * b[col];
-        }
-    }
-    let (a, bx, by, bz) = (b[0], b[1], b[2], b[3]);
-    let k = (bx * bx + by * by + bz * bz).sqrt();
-    if k < 1e-9 {
-        return None;
-    }
-    Some((
-        [(bx / k) as f32, (by / k) as f32, (bz / k) as f32],
-        k as f32,
-        a as f32,
-    ))
-}
+mod fit;
+pub use fit::{fit_from_normals, relight_normals};
 
-/// 基于法线的重打光：`L' = a + k·max(0, n·l')`，按 `I' = I · L'/L` 缩放（保色相）。
-pub fn relight_normals(
-    rgb: &[f32],
-    n: &[f32],
-    w: usize,
-    h: usize,
-    l: [f32; 3],
-    k: f32,
-    a: f32,
-) -> Vec<f32> {
-    let mut out = rgb.to_vec();
-    for i in 0..w * h {
-        let ndl = n[i * 3] * l[0] + n[i * 3 + 1] * l[1] + n[i * 3 + 2] * l[2];
-        let l_new = (a + k * ndl.max(0.0)).clamp(0.02, 2.0);
-        let l_old =
-            (0.299 * rgb[i * 3] + 0.587 * rgb[i * 3 + 1] + 0.114 * rgb[i * 3 + 2]).clamp(0.02, 1.0);
-        let s = (l_new / l_old).clamp(0.1, 6.0);
-        for c in 0..3 {
-            out[i * 3 + c] = (rgb[i * 3 + c] * s).clamp(0.0, 1.0);
-        }
-    }
-    out
+/// `fit_from_normals` / `relight_normals` 的输入尺寸契约：法线 `h*w*3`、分割 `h*w`。
+/// 两个 CLI 调用点都走这一个判定，免得一处只查秩、另一处查全。
+pub fn normals_inputs_match(nshape: &[usize], sshape: &[usize], w: usize, h: usize) -> bool {
+    nshape.len() == 3
+        && nshape[0] == h
+        && nshape[1] == w
+        && sshape.len() == 2
+        && sshape[0] == h
+        && sshape[1] == w
 }
 
 /// 把光方向绕 z 轴旋转 `deg`（世界系，逆时针）。
@@ -381,5 +290,55 @@ mod tests {
         let b = estimate(&img, 32, 32);
         assert_eq!(a.azimuth_deg, b.azimuth_deg);
         assert_eq!(relight(&img, 32, 32, 45.0), relight(&img, 32, 32, 45.0));
+    }
+
+    /// 这两个函数的参数是从文件解出来的缓冲，尺寸与 w/h 不一致时**必须**返回
+    /// None。修复前 `mask[i]` / `n[i*3+2]` / `rgb[i*3+c]` 会直接越界 panic，
+    /// 而 `light-relight-normals` 当时只查了秩、没查分辨率。
+    #[test]
+    fn short_buffers_are_rejected_instead_of_panicking() {
+        let w = 8;
+        let h = 8;
+        let px = w * h;
+        let lum = vec![0.0f32; px];
+        let n = vec![0.0f32; px * 3];
+        let mask = vec![true; px];
+
+        assert!(fit_from_normals(&lum[..px - 1], &n, &mask, w, h).is_none());
+        assert!(fit_from_normals(&lum, &n[..px * 3 - 1], &mask, w, h).is_none());
+        assert!(fit_from_normals(&lum, &n, &mask[..px - 1], w, h).is_none());
+        // w*h 溢出时不能先算出一个偏小的上界再索引
+        assert!(fit_from_normals(&lum, &n, &mask, usize::MAX, 2).is_none());
+        assert!(fit_from_normals(&lum, &n, &mask, 2, usize::MAX).is_none());
+
+        let rgb = vec![0.5f32; px * 3];
+        let light = [0.0, 0.0, 1.0];
+        assert!(relight_normals(&rgb[..px * 3 - 1], &n, w, h, light, 1.0, 0.5).is_none());
+        assert!(relight_normals(&rgb, &n[..px * 3 - 1], w, h, light, 1.0, 0.5).is_none());
+        assert!(relight_normals(&rgb, &n, usize::MAX, 2, light, 1.0, 0.5).is_none());
+
+        // 正常长度仍然要走通，别把好路径一起堵死。
+        // 三个分量都要真变化：`nz` 若是常数就会与常数项共线，法方程奇异，
+        // 那是数据问题不是长度问题。
+        let w = 16;
+        let h = 16;
+        let px = w * h;
+        let mut lum = vec![0.0f32; px];
+        let mut n = vec![0.0f32; px * 3];
+        for i in 0..px {
+            let u = (i * 37 % 101) as f32 / 101.0 - 0.5;
+            let v = (i * 59 % 103) as f32 / 103.0 - 0.5;
+            let z = 0.3 + (i * 71 % 107) as f32 / 107.0;
+            n[i * 3] = u;
+            n[i * 3 + 1] = v;
+            n[i * 3 + 2] = z;
+            lum[i] = 0.5 + 0.2 * u;
+        }
+        let mask = vec![true; px];
+        assert!(fit_from_normals(&lum, &n, &mask, w, h).is_some());
+        // 第一个参数是 rgb（w*h*3），不是 lum
+        let rgb = vec![0.5f32; px * 3];
+        let out = relight_normals(&rgb, &n, w, h, light, 1.0, 0.5).expect("长度对得上");
+        assert_eq!(out.len(), px * 3);
     }
 }

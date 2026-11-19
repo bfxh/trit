@@ -1,0 +1,71 @@
+[
+  {
+    "pattern": "#\\[(test|tokio::test)\\]",
+    "title": "不许删测试用例（要删必须显式允许）",
+    "on": "removed",
+    "id": "no-test-deletion",
+    "message": "删掉一个 #[test] 等于静默缩小覆盖，允许的话用 -Allow no-test-deletion 显式说明",
+    "severity": "block",
+    "scope": [
+      "crates/**/tests/**"
+    ]
+  },
+  {
+    "pattern": "\\bunsafe\\b",
+    "title": "新增 unsafe 必须同时给出 // SAFETY: 说明",
+    "on": "added",
+    "companion": "//\\s*SAFETY:",
+    "severity": "block",
+    "scope": [
+      "crates/**/src/**"
+    ],
+    "message": "unsafe 本身不是错，\"用了 unsafe 却不说为什么安全\"才是",
+    "id": "unsafe-needs-safety-note"
+  },
+  {
+    "pattern": "^\\s*pub\\s+(async\\s+)?(fn|struct|enum|trait|type|const|static)\\b",
+    "title": "改公开 API 签名要单独放行",
+    "on": "removed",
+    "id": "public-api-change",
+    "message": "公开面变化会波及所有调用方与集成测试；确认要改就 -Allow public-api-change",
+    "severity": "block",
+    "scope": [
+      "crates/**/src/**"
+    ]
+  },
+  {
+    "pattern": "\\bForecast\\b",
+    "title": "预测不进判定层：Verdict/Evidence 文件不许出现 Forecast",
+    "on": "added",
+    "id": "forecast-stays-out-of-verdict",
+    "message": "Forecast 只许收紧不许放宽，永不进 derive()；一旦出现在判定层就失去独立性",
+    "severity": "block",
+    "scope": [
+      "crates/**/src/verdict.rs",
+      "crates/**/src/evidence.rs",
+      "crates/**/src/**/derive*.rs"
+    ]
+  },
+  {
+    "pattern": "\\b(dbg!|println!|eprintln!)",
+    "title": "src 里不许留 dbg!/println!",
+    "on": "added",
+    "id": "no-debug-output",
+    "message": "调试输出进库会污染调用方输出，也会拖慢热路径",
+    "severity": "block",
+    "scope": [
+      "crates/**/src/**"
+    ]
+  },
+  {
+    "pattern": "\\.(unwrap|expect)\\(",
+    "title": "新增 unwrap/expect 需要说明（warn 不拦）",
+    "on": "added",
+    "id": "no-new-unwrap",
+    "message": "内核里 panic 会打断判定链，宁可返回 Err；确实不会失败的路径请加注释",
+    "severity": "warn",
+    "scope": [
+      "crates/**/src/**"
+    ]
+  }
+]

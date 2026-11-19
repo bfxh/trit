@@ -126,6 +126,7 @@
 | [WORKTREES.md](engineering/WORKTREES.md) | worktree 负责人表（`git worktree list` 实时生成） |
 | [AUTO-UPDATE.md](engineering/AUTO-UPDATE.md) | 自动更新与一键更新（`--check` / `--apply`） |
 | [VCS-BRANCH-ISSUES.md](engineering/VCS-BRANCH-ISSUES.md) | trit-vcs 分支与更新问题清单（主库侧观察，只记录不修） |
+| [ERRORS.md](ERRORS.md) | 错误台账：每条错误的现场、根因，以及固化成的检查编号（`tools/checks.sh` 判红） |
 
 ## plans/ — 计划草案
 
