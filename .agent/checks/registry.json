@@ -201,6 +201,23 @@
       "run": "cargo test -p trit-parts --lib glb",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C012",
+      "title": "清单路径越界的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L64"
+      ],
+      "scope": [
+        "crates/trit-parts/src/glb/manifest.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T01:57:52+08:00",
+      "pattern": "fn manifest_paths_cannot_escape_the_package_dir",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

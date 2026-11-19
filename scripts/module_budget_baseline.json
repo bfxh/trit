@@ -2351,8 +2351,12 @@
       "lines": 333
     },
     {
+      "file": "crates/trit-parts/src/glb/manifest.rs",
+      "lines": 150
+    },
+    {
       "file": "crates/trit-parts/src/glb/mod.rs",
-      "lines": 709
+      "lines": 637
     },
     {
       "file": "crates/trit-parts/src/glb/obj.rs",
