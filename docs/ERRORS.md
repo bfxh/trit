@@ -35,7 +35,7 @@
 | L15 | 只暂存的新增文件在 reset 后消失 | `git reset --hard` 会删掉仅存在于索引的新文件 | 提交链分段做，或先 `git stash` | — |
 | L16 | `Read` 直接读 20MB 导出文档失败 | 工具对超大文件不可用 | 先用结构/目录定位，再按段落取 | — |
 
-| L44 | 迁移到 bash 后 `agent-verify` 报 `command failed`，可同一命令在 PowerShell 里跑得好好的 | `shutil.which("bash")` 在 Windows 上解析到 **System32\bash.exe = WSL 的 bash**。WSL 看到的是另一套文件系统（`D:\` 是 `/mnt/d`），PATH 里是 `/mnt/c/...`，Windows 的 `pytest.exe` 在那边根本不可执行 | `pick_shell()` 按**路径**优先 Git Bash（`BASH` 环境变量 → 两个 Program Files → 由 `git` 反推 `../bin/bash.exe`），只剩别的才用并打印警告 | T10 |
+| L44 | 迁移到 bash 后 `agent-verify` 报 `command failed`，可同一命令在 PowerShell 里跑得好好的 | `shutil.which("bash")` 在 Windows 上解析到 **System32\bash.exe = WSL 的 bash**。WSL 看到的是另一套文件系统（Windows 盘符挂在 `/mnt/<盘符>` 下），PATH 里是 `/mnt/c/...`，Windows 的 `pytest.exe` 在那边根本不可执行 | `pick_shell()` 按**路径**优先 Git Bash（`BASH` 环境变量 → 两个 Program Files → 由 `git` 反推 `../bin/bash.exe`），只剩别的才用并打印警告 | T10 |
 | L45 | dry-run 的输出里凭空多一行"警告: 生成的 JSON 已截断，因为序列化已超过设置的深度 8"，回执字段跟着缺 | 旧实现用 `ConvertTo-Json -Depth 8`，plan 的嵌套一旦变深就被**静默截断** | 回执改用 python `json.dump`；对比脚本把这条警告当噪声剔除，并断言新实现**不再出现** | T2、cmp_agentverify |
 | L46 | `ledger report` 判红：期望 `wall: 5s`，实得 `wall: 5.0s` | `[math]::Round(5.0,2)` 打印 `5`，python `round(5.0,2)` 打印 `5.0`。**同一个数，两种文字** | 墙钟总时长也走 `fmt_num()`（整数值输出整数形态），与 token 侧一致 | H3 |
 | L47 | 故意写进陷阱行，`constraints` 仍报 `clean` | 它只看 **git diff**；fixture 不是真仓库 → 永远没有 diff → 永远 clean。这是"规则在、日志在、返回 0，但判断对象不是它以为的那个"的典型样本 | 拒绝路径的 fixture 先 `git init` + 提交，再改文件 | T6、I 组 |
@@ -52,7 +52,7 @@
 | L17 | `constraints check` 对任何改动都打印 `pass (0 warning, 0 block)` | glob 转正则时**先 `escape` 再替换 `**`**，`**` 变成 `\*\*` 字面量，所有按路径作用域的规则静默不匹配 | 先占位符、再 escape、最后换回 `.*` / `[^/]*` | P6 |
 | L18 | 同上，但规则表、`-Allow` 都正常，就是拦不住 | `in_scope(path, globs)` 收到**字符串**时 `for g in globs` 逐字符迭代，`crates/**/src/**` 拆成 `c`、`r`、`a`… 永远 False | 函数同时接受单条 glob 与列表；并**直接断言 `in_scope` 本身**，不靠"有违规时被拦"间接体现 | P6 |
 | L19 | workspace-write 下能写到根目录的**兄弟目录** | 根边界用 `startswith(root)`，`pol-outside` 以 `pol` 开头就被判成根内 | 按路径组件比较：相等，或 `root + 分隔符` 前缀 | R5 |
-| L20 | bash 下的 `cp a.txt /e/tmp/x` 在 workspace-write 里直接放行 | 分类器正则只认 `[A-Za-z]:\…` 与 UNC，**POSIX 绝对路径一个都不匹配**，等于不做判定 | 加 POSIX 路径识别 + 盘符映射（`/e/tmp/x` → `E:\tmp\x`）；映射不出来的绝对路径**算根外**（无法判定视为越界） | R5 |
+| L20 | bash 下的 `cp a.txt /e/tmp/x` 在 workspace-write 里直接放行 | 分类器正则只认 `[A-Za-z]:\…` 与 UNC，**POSIX 绝对路径一个都不匹配**，等于不做判定 | 加 POSIX 路径识别 + 盘符映射（`/e/tmp/x` 映射成 Windows 的 `E` 盘 `tmp/x`）；映射不出来的绝对路径**算根外**（无法判定视为越界） | R5 |
 | L21 | 还原后源码对了，构建还是旧的 | 快照/还原保留 mtime（见 L08） | 还原后刷新 mtime | Q5 |
 | L22 | 合并测试二进制的方案，反而更慢 | 4 个二进制 4.45s **慢于** 1 个二进制 2.60s；只有**严格交替测量**才看得出（先测的吃冷缓存） | 单二进制 + 按职责分目录（`tests/kernel/main.rs` + `suite_*/mod.rs`） | 性能基线记录 |
 | L23 | 关掉 debug 信息以为能大幅降链接成本 | 实测 10.9s vs 10.7s，只省磁盘 | 证伪并回滚配置，不要留"看起来合理"的假优化 | 已证伪，写入 BUILD-PERF |
