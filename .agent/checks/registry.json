@@ -371,6 +371,23 @@
       "pattern": "fn short_channel_is_rejected",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C022",
+      "title": "VDen 输入通道数与真实前向一致的契约测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L73"
+      ],
+      "scope": [
+        "crates/trit-parts/tests/tconv_input_dim.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T06:24:31+08:00",
+      "pattern": "fn vden_input_dim_counts_extra_channels",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

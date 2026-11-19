@@ -44,7 +44,7 @@ impl crate::diffuse::Denoiser for VDen {
     }
 
     fn input_dim(&self) -> usize {
-        2 + self.net.cond
+        2 + self.extra.len() + self.net.cond
     }
 }
 
