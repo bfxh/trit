@@ -218,6 +218,23 @@
       "pattern": "fn manifest_paths_cannot_escape_the_package_dir",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C013",
+      "title": ".npy 头越界的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L65"
+      ],
+      "scope": [
+        "crates/trit-parts/src/data/npy.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T02:11:35+08:00",
+      "pattern": "fn npy_header_is_bounds_checked",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

@@ -2300,7 +2300,11 @@
     },
     {
       "file": "crates/trit-parts/src/data.rs",
-      "lines": 359
+      "lines": 251
+    },
+    {
+      "file": "crates/trit-parts/src/data/npy.rs",
+      "lines": 155
     },
     {
       "file": "crates/trit-parts/src/depth.rs",
