@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（三值创造性预激发：悖论假设的实验检验——本配置下不显著）
+
+- `examples/creative_priming/`：Albalak 创造性悖论的映射实验——冻结执行器
+  （Edit::SetTrit 原语 + SMS spam 工件）+ 行-动作偏置表 π_CP（v1 查表近似）
+  + G ∈ {8,16,32,64} 组大小 sweep。
+- **负结果**：悖论在本配置不显著且方向相反（多样性随 G 微升 0.568→0.582）；
+  根因：执行动词表 25% 硬探索 jitter 不受奖励驱动——足够探索噪声本身是
+  抗悖论机制（对红方工具设计是好信号：进化类攻击器天然抗悖论）。
+- **预激发奖励的代价曲线**（论文未给）：G=8 时新颖度×质量乘积把 F1 稀释
+  27%，G≥16 恢复——新颖度项权重需随种群规模调节。
+- #495 负结果的悖论解释修正：审计模型 acc 0.11 = 创造性悖论防御侧表现，
+  修正路线确认（冻结检测器 + 训练探针生成器）。文档 `docs/WSP-PRIMING.md`。
+
+
 ### Added（benchmarks：复现《WSP Doesn't Need Transformers》的读取器）
 
 - 新增 `benchmarks/wsp-no-transformer`（独立 workspace，不进 CI）：Rust 复现论文仓库
