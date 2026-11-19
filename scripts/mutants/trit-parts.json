@@ -329,11 +329,11 @@
   },
   {
     "name": "glb-verify: 不查总长与文件长度一致",
-    "file": "crates/trit-parts/src/bin/parts_glb_verify.rs",
+    "file": "crates/trit-parts/src/bin/parts_glb_verify/chunks.rs",
     "old": "    if ver != 2 || total != b.len() {",
     "new": "    if ver != 2 {",
     "pkg": "trit-parts",
-    "filter": "tests::chunks_and_structure_checks"
+    "filter": "chunks::tests::chunks_and_structure_checks"
   },
   {
     "name": "glb: 转台关键帧角度恒 0",
