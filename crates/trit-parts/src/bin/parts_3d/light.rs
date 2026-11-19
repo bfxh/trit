@@ -68,10 +68,10 @@ pub(crate) fn light_relight_normals_cmd(argv: &[String]) {
         .unwrap_or_else(|e| fail(&e));
     let (nrm, nshape) = trit_parts::geo::read_npy_f32(&frame_path(&scene, "normal", frame, "npy"))
         .unwrap_or_else(|e| fail(&e));
-    let (seg, _) = trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", frame, "npy"))
+    let (seg, sshape) = trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", frame, "npy"))
         .unwrap_or_else(|e| fail(&e));
-    if nshape.len() != 3 {
-        fail("法线图应为 HxWx3");
+    if nshape.len() != 3 || nshape[0] != h || nshape[1] != w || sshape[0] != h || sshape[1] != w {
+        fail("rgb/normal/seg 尺寸不一致");
     }
     let mut lum = vec![0.0f32; w * h];
     for i in 0..w * h {
@@ -82,7 +82,9 @@ pub(crate) fn light_relight_normals_cmd(argv: &[String]) {
         fail("拟合失败");
     };
     let ln = light::rotate_light(l, deg);
-    let out = light::relight_normals(&rgb, &nrm, w, h, ln, k, a);
+    let Some(out) = light::relight_normals(&rgb, &nrm, w, h, ln, k, a) else {
+        fail("法线/颜色缓冲长度与宽高不匹配");
+    };
     trit_parts::data::write_rgb(std::path::Path::new(&out_p), w, h, &out)
         .unwrap_or_else(|e| fail(&e));
     let after = light::estimate(&out, w, h);

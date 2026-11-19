@@ -1,0 +1,171 @@
+{
+  "version": 1,
+  "owner_root": "D:\\KF\\trit-inv",
+  "baseline": "2026-11-19",
+  "checks": [
+    {
+      "id": "C001",
+      "title": "rail/sidechannel 不用 panic 处理外部网表",
+      "kind": "forbid",
+      "covers": [
+        "L56"
+      ],
+      "scope": [
+        "crates/trit-redteam/src/rail.rs",
+        "crates/trit-redteam/src/sidechannel.rs"
+      ],
+      "since": "2026-11-19",
+      "tier": "fast",
+      "added": "2026-11-19T22:37:35+08:00",
+      "pattern": "unwrap_or_else\\(\\|\\|\\s*panic!|assert_eq!\\(self\\.peek|expect\\(\"assign 缺 =\"\\)|env\\[\"y_p\"\\]",
+      "cut": "#\\[cfg\\(test\\)\\]",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C002",
+      "title": "parse_design 返回 Result 且用具名 RailDesign",
+      "kind": "require",
+      "covers": [
+        "L56"
+      ],
+      "scope": [
+        "crates/trit-redteam/src/rail.rs"
+      ],
+      "since": "2026-11-19",
+      "tier": "fast",
+      "added": "2026-11-19T22:37:45+08:00",
+      "pattern": "pub fn parse_design\\(text: &str\\) -> Result<RailDesign>",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C003",
+      "title": "版权门禁不得用 rev-list -n 50 判定待推送",
+      "kind": "forbid",
+      "covers": [
+        "L58"
+      ],
+      "scope": [
+        "C:/Users/lbx13/bin/copyright-guard/pre-push"
+      ],
+      "since": "2026-11-19",
+      "tier": "fast",
+      "added": "2026-11-19T22:38:59+08:00",
+      "pattern": "rev-list -n 50",
+      "min": 1,
+      "allow_skip": false,
+      "exclude_line": "^\\s*#"
+    },
+    {
+      "id": "C004",
+      "title": "版权门禁的排除集必须写在 --not 之后",
+      "kind": "require",
+      "covers": [
+        "L58"
+      ],
+      "scope": [
+        "C:/Users/lbx13/bin/copyright-guard/pre-push"
+      ],
+      "since": "2026-11-19",
+      "tier": "fast",
+      "added": "2026-11-19T22:38:59+08:00",
+      "pattern": "rev-list \"$local_sha\" --not --remotes",
+      "min": 1,
+      "allow_skip": false,
+      "literal": true
+    },
+    {
+      "id": "C005",
+      "title": "检查器自身的机制自测（16 条）",
+      "kind": "cmd",
+      "covers": [
+        "L59"
+      ],
+      "scope": [
+        "tools/checks_selftest.py"
+      ],
+      "since": "2026-11-19",
+      "tier": "fast",
+      "added": "2026-11-19T22:41:22+08:00",
+      "run": "tools/checks.sh selftest",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C006",
+      "title": "lexer 边界断言的测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L60"
+      ],
+      "scope": [
+        "crates/trit-lsp/src/lex.rs"
+      ],
+      "since": "2026-11-19",
+      "tier": "fast",
+      "added": "2026-11-19T23:00:02+08:00",
+      "pattern": "fn every_token_lands_on_char_boundaries",
+      "min": 1,
+      "allow_skip": false,
+      "literal": false,
+      "exclude_line": null,
+      "cut": null
+    },
+    {
+      "id": "C007",
+      "title": "lexer 对任意 Unicode 不 panic（重型）",
+      "kind": "cmd",
+      "covers": [
+        "L60"
+      ],
+      "scope": [
+        "crates/trit-lsp/src/lex.rs"
+      ],
+      "since": "2026-11-19",
+      "tier": "heavy",
+      "added": "2026-11-19T23:00:03+08:00",
+      "run": "cargo test -p trit-lsp --lib lex",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C008",
+      "title": "light 短缓冲回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L61"
+      ],
+      "scope": [
+        "crates/trit-parts/src/light.rs"
+      ],
+      "since": "2026-11-19",
+      "tier": "fast",
+      "added": "2026-11-19T23:06:40+08:00",
+      "pattern": "fn short_buffers_are_rejected_instead_of_panicking",
+      "min": 1,
+      "allow_skip": false,
+      "literal": false,
+      "exclude_line": null,
+      "cut": null
+    },
+    {
+      "id": "C009",
+      "title": "light 长度契约与 resolution 校验（重型）",
+      "kind": "cmd",
+      "covers": [
+        "L61"
+      ],
+      "scope": [
+        "crates/trit-parts/src/**/*.rs"
+      ],
+      "since": "2026-11-19",
+      "tier": "heavy",
+      "added": "2026-11-19T23:06:40+08:00",
+      "run": "cargo test -p trit-parts --lib light",
+      "shell": "bash",
+      "expect_exit": 0
+    }
+  ],
+  "ledger_from": "L56"
+}

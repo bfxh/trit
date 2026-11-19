@@ -482,9 +482,17 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
             let (nrm, nshape) =
                 trit_parts::geo::read_npy_f32(&frame_path(&scene, "normal", fr, "npy"))
                     .unwrap_or_else(|e| fail(&e));
-            let (seg, _) = trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", fr, "npy"))
+            let (seg, sshape) = trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", fr, "npy"))
                 .unwrap_or_else(|e| fail(&e));
-            if nshape.len() == 3 {
+            // 只查秩不查分辨率是漏的：`seg[i]` / `nrm[i*3+2]` 都按 rw*rh 走，
+            // 尺寸不一致时第一条越界就在这里。与 `light-fit` 的口径保持一致。
+            if nshape.len() == 3
+                && nshape[0] == rh
+                && nshape[1] == rw
+                && sshape.len() == 2
+                && sshape[0] == rh
+                && sshape[1] == rw
+            {
                 let mut lum = vec![0.0f32; rw * rh];
                 for i in 0..rw * rh {
                     lum[i] = 0.299 * rpx[i * 3] + 0.587 * rpx[i * 3 + 1] + 0.114 * rpx[i * 3 + 2];

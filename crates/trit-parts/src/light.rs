@@ -174,6 +174,15 @@ pub fn fit_from_normals(
     w: usize,
     h: usize,
 ) -> Option<([f32; 3], f32, f32)> {
+    // 长度契约由本函数自己守：`lum`/`mask` 要 w*h，`n` 要 w*h*3。调用者拿到的是
+    // 从文件解出来的缓冲，尺寸与 w/h 不一致时这里必须返回 None，而不是让下面
+    // 的 `mask[i]` / `n[i*3+2]` 直接越界。`px*3` 也走 checked，32 位目标上
+    // 超大 w*h 会先溢出再算出一个偏小的上界。
+    let px = w.checked_mul(h)?;
+    let px3 = px.checked_mul(3)?;
+    if lum.len() < px || mask.len() < px || n.len() < px3 {
+        return None;
+    }
     // 法方程 4×4：未知 [a, bx, by, bz]
     let mut ata = [[0.0f64; 4]; 4];
     let mut aty = [0.0f64; 4];
@@ -245,6 +254,9 @@ pub fn fit_from_normals(
 }
 
 /// 基于法线的重打光：`L' = a + k·max(0, n·l')`，按 `I' = I · L'/L` 缩放（保色相）。
+///
+/// 长度契约同 [`fit_from_normals`]：`rgb` 与 `n` 都必须是 `w*h*3`，不足时返回
+/// `None`。早先这里直接 `rgb.to_vec()` 再裸索引，缓冲短一截就是越界 panic。
 pub fn relight_normals(
     rgb: &[f32],
     n: &[f32],
@@ -253,7 +265,12 @@ pub fn relight_normals(
     l: [f32; 3],
     k: f32,
     a: f32,
-) -> Vec<f32> {
+) -> Option<Vec<f32>> {
+    let px = w.checked_mul(h)?;
+    let px3 = px.checked_mul(3)?;
+    if rgb.len() < px3 || n.len() < px3 {
+        return None;
+    }
     let mut out = rgb.to_vec();
     for i in 0..w * h {
         let ndl = n[i * 3] * l[0] + n[i * 3 + 1] * l[1] + n[i * 3 + 2] * l[2];
@@ -265,7 +282,7 @@ pub fn relight_normals(
             out[i * 3 + c] = (rgb[i * 3 + c] * s).clamp(0.0, 1.0);
         }
     }
-    out
+    Some(out)
 }
 
 /// 把光方向绕 z 轴旋转 `deg`（世界系，逆时针）。
@@ -381,5 +398,55 @@ mod tests {
         let b = estimate(&img, 32, 32);
         assert_eq!(a.azimuth_deg, b.azimuth_deg);
         assert_eq!(relight(&img, 32, 32, 45.0), relight(&img, 32, 32, 45.0));
+    }
+
+    /// 这两个函数的参数是从文件解出来的缓冲，尺寸与 w/h 不一致时**必须**返回
+    /// None。修复前 `mask[i]` / `n[i*3+2]` / `rgb[i*3+c]` 会直接越界 panic，
+    /// 而 `light-relight-normals` 当时只查了秩、没查分辨率。
+    #[test]
+    fn short_buffers_are_rejected_instead_of_panicking() {
+        let w = 8;
+        let h = 8;
+        let px = w * h;
+        let lum = vec![0.0f32; px];
+        let n = vec![0.0f32; px * 3];
+        let mask = vec![true; px];
+
+        assert!(fit_from_normals(&lum[..px - 1], &n, &mask, w, h).is_none());
+        assert!(fit_from_normals(&lum, &n[..px * 3 - 1], &mask, w, h).is_none());
+        assert!(fit_from_normals(&lum, &n, &mask[..px - 1], w, h).is_none());
+        // w*h 溢出时不能先算出一个偏小的上界再索引
+        assert!(fit_from_normals(&lum, &n, &mask, usize::MAX, 2).is_none());
+        assert!(fit_from_normals(&lum, &n, &mask, 2, usize::MAX).is_none());
+
+        let rgb = vec![0.5f32; px * 3];
+        let light = [0.0, 0.0, 1.0];
+        assert!(relight_normals(&rgb[..px * 3 - 1], &n, w, h, light, 1.0, 0.5).is_none());
+        assert!(relight_normals(&rgb, &n[..px * 3 - 1], w, h, light, 1.0, 0.5).is_none());
+        assert!(relight_normals(&rgb, &n, usize::MAX, 2, light, 1.0, 0.5).is_none());
+
+        // 正常长度仍然要走通，别把好路径一起堵死。
+        // 三个分量都要真变化：`nz` 若是常数就会与常数项共线，法方程奇异，
+        // 那是数据问题不是长度问题。
+        let w = 16;
+        let h = 16;
+        let px = w * h;
+        let mut lum = vec![0.0f32; px];
+        let mut n = vec![0.0f32; px * 3];
+        for i in 0..px {
+            let u = (i * 37 % 101) as f32 / 101.0 - 0.5;
+            let v = (i * 59 % 103) as f32 / 103.0 - 0.5;
+            let z = 0.3 + (i * 71 % 107) as f32 / 107.0;
+            n[i * 3] = u;
+            n[i * 3 + 1] = v;
+            n[i * 3 + 2] = z;
+            lum[i] = 0.5 + 0.2 * u;
+        }
+        let mask = vec![true; px];
+        assert!(fit_from_normals(&lum, &n, &mask, w, h).is_some());
+        // 第一个参数是 rgb（w*h*3），不是 lum
+        let rgb = vec![0.5f32; px * 3];
+        let out = relight_normals(&rgb, &n, w, h, light, 1.0, 0.5).expect("长度对得上");
+        assert_eq!(out.len(), px * 3);
     }
 }

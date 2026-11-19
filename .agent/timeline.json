@@ -1,0 +1,100 @@
+{
+  "version": 1,
+  "items": [
+    {
+      "id": "b27761469",
+      "key": "boundary|9d92ce66",
+      "kind": "boundary",
+      "title": "Rust 受影响分析只到包级，改一个模块要跑整包",
+      "detail": "crates 内 21 个模块不区分，obligation.rs 一改就 -p trit-orch 全跑，减集对单包等于没减。",
+      "status": "open",
+      "first_seen": "2026-11-19T17:32:35.1735191+08:00",
+      "last_seen": "2026-11-19T17:32:35.1735191+08:00",
+      "review_at": "2026-12-03T17:32:35.1735191+08:00",
+      "occurrences": [
+        {
+          "at": "2026-11-19T17:32:35.1735191+08:00",
+          "evidence": "agent-verify -Changed crates/trit-orch/src/obligation.rs | cargo test -p trit-orch 10.05s"
+        }
+      ],
+      "resolution": null,
+      "accepted": null
+    },
+    {
+      "id": "b540d8a40",
+      "key": "boundary|f328d05f",
+      "kind": "boundary",
+      "title": "policy 是命令分类器，不是内核沙箱",
+      "detail": "改名 curl.exe、脚本二次拼接、别名都可能绕过；Windows 上没有 Seatbelt/bubblewrap 等价物。",
+      "status": "open",
+      "first_seen": "2026-11-19T17:32:35.486371+08:00",
+      "last_seen": "2026-11-19T17:32:35.486371+08:00",
+      "review_at": "2026-12-19T17:32:35.486371+08:00",
+      "occurrences": [
+        {
+          "at": "2026-11-19T17:32:35.486371+08:00",
+          "evidence": "selftest F1-F9 | 仅验证关键字与路径边界，未验证改名绕过"
+        }
+      ],
+      "resolution": null,
+      "accepted": null
+    },
+    {
+      "id": "l4839d875",
+      "key": "limitation|b01f5eb0",
+      "kind": "limitation",
+      "title": "journal 只覆盖 Root 之下的树",
+      "detail": "工作区外写入不在快照范围内，只能靠 policy 事前拒绝。",
+      "status": "open",
+      "first_seen": "2026-11-19T17:32:35.7995482+08:00",
+      "last_seen": "2026-11-19T17:32:35.7995482+08:00",
+      "review_at": "2026-12-19T17:32:35.7995482+08:00",
+      "occurrences": [
+        {
+          "at": "2026-11-19T17:32:35.7995482+08:00",
+          "evidence": "journal begin -- 1627 files, 0 changed | 范围限于 -Root"
+        }
+      ],
+      "resolution": null,
+      "accepted": null
+    },
+    {
+      "id": "lac1ec29f",
+      "key": "limitation|59bdd5a0",
+      "kind": "limitation",
+      "title": "Node 适配器只在 fixture 上验证过",
+      "detail": "dsh-orch 之前跑不起来是因为依赖了未构建的 Rust CLI 产物，属环境问题；适配器本身未在真项目通过。",
+      "status": "open",
+      "first_seen": "2026-11-19T17:32:36.1153728+08:00",
+      "last_seen": "2026-11-19T17:32:36.1153728+08:00",
+      "review_at": "2026-11-26T17:32:36.1153728+08:00",
+      "occurrences": [
+        {
+          "at": "2026-11-19T17:32:36.1153728+08:00",
+          "evidence": "costprobe -Path node-proj | exit 0 | 仅 fixture"
+        }
+      ],
+      "resolution": null,
+      "accepted": null
+    },
+    {
+      "id": "r4c77dcdf",
+      "key": "risk|c14cdd01",
+      "kind": "risk",
+      "title": "跨语言调用边未建模，只能靠 -AssumeIsolated 声明",
+      "detail": "Rust 调 Python、Node 调 Rust 的边不在图里；多语言仓默认回退全量，但显式声明后就不再保护。",
+      "status": "open",
+      "first_seen": "2026-11-19T17:32:36.4226220+08:00",
+      "last_seen": "2026-11-19T17:32:36.4226220+08:00",
+      "review_at": "2026-12-03T17:32:36.4226220+08:00",
+      "occurrences": [
+        {
+          "at": "2026-11-19T17:32:36.4226220+08:00",
+          "evidence": "selftest A1-A3 | proven=false 时回退全量"
+        }
+      ],
+      "resolution": null,
+      "accepted": null
+    }
+  ]
+}
