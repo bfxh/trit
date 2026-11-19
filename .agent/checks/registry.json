@@ -55,7 +55,8 @@
       "pattern": "rev-list -n 50",
       "min": 1,
       "allow_skip": false,
-      "exclude_line": "^\\s*#"
+      "exclude_line": "^\\s*#",
+      "local_only": true
     },
     {
       "id": "C004",
@@ -73,11 +74,12 @@
       "pattern": "rev-list \"$local_sha\" --not --remotes",
       "min": 1,
       "allow_skip": false,
-      "literal": true
+      "literal": true,
+      "local_only": true
     },
     {
       "id": "C005",
-      "title": "检查器自身的机制自测（16 条）",
+      "title": "检查器自身的机制自测（17 条）",
       "kind": "cmd",
       "covers": [
         "L59"
@@ -163,6 +165,40 @@
       "tier": "heavy",
       "added": "2026-11-19T23:06:40+08:00",
       "run": "cargo test -p trit-parts --lib light",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C010",
+      "title": "OBJ 索引越界的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L62"
+      ],
+      "scope": [
+        "crates/trit-parts/src/glb/mod.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T00:52:52+08:00",
+      "pattern": "fn obj_indices_out_of_range_are_errors_not_panics",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C011",
+      "title": "OBJ 索引越界返回 Err 而不是 panic（重型）",
+      "kind": "cmd",
+      "covers": [
+        "L62"
+      ],
+      "scope": [
+        "crates/trit-parts/src/glb/*.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "heavy",
+      "added": "2026-11-20T00:52:52+08:00",
+      "run": "cargo test -p trit-parts --lib glb",
       "shell": "bash",
       "expect_exit": 0
     }
