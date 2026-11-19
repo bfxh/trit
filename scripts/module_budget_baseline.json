@@ -1671,8 +1671,12 @@
       "lines": 57
     },
     {
-      "file": "crates/trit-lsp/src/lex.rs",
-      "lines": 307
+      "file": "crates/trit-lsp/src/lex/mod.rs",
+      "lines": 233
+    },
+    {
+      "file": "crates/trit-lsp/src/lex/tests.rs",
+      "lines": 138
     },
     {
       "file": "crates/trit-lsp/src/lib.rs",
@@ -2371,8 +2375,12 @@
       "lines": 70
     },
     {
-      "file": "crates/trit-parts/src/light.rs",
-      "lines": 385
+      "file": "crates/trit-parts/src/light/fit.rs",
+      "lines": 121
+    },
+    {
+      "file": "crates/trit-parts/src/light/mod.rs",
+      "lines": 344
     },
     {
       "file": "crates/trit-parts/src/loss.rs",
