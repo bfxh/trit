@@ -9,6 +9,9 @@ use std::collections::HashMap;
 
 use crate::mesh::Mesh;
 
+mod manifest;
+use manifest::{field, mesh_entries, number, nums, object_block, read, resolve};
+
 /// 每三角形三个角的 UV（与 `mesh.tris` 一一对应）。
 pub type UvTris = Vec<[[f32; 2]; 3]>;
 
@@ -291,98 +294,6 @@ pub fn node_trs(bmin: [f64; 3], bmax: [f64; 3], yaw_deg: u32, t: [f64; 3]) -> ([
     )
 }
 
-fn field(txt: &str, key: &str) -> Option<String> {
-    let pat = format!("\"{key}\": \"");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
-}
-
-fn number(txt: &str, key: &str) -> Option<f64> {
-    let pat = format!("\"{key}\": ");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest
-        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == '+'))
-        .unwrap_or(rest.len());
-    rest[..end].parse().ok()
-}
-
-fn nums(txt: &str, key: &str) -> Vec<f64> {
-    let pat = format!("\"{key}\": [");
-    let Some(i) = txt.find(&pat) else {
-        return Vec::new();
-    };
-    let rest = &txt[i + pat.len()..];
-    let end = rest.find(']').unwrap_or(rest.len());
-    rest[..end]
-        .split(',')
-        .filter_map(|s| s.trim().parse().ok())
-        .collect()
-}
-
-fn object_block<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\": {{");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let mut depth = 1usize;
-    let (mut in_str, mut esc) = (false, false);
-    for (j, ch) in rest.char_indices() {
-        if in_str {
-            if esc {
-                esc = false;
-            } else if ch == '\\' {
-                esc = true;
-            } else if ch == '"' {
-                in_str = false;
-            }
-        } else if ch == '"' {
-            in_str = true;
-        } else if ch == '{' {
-            depth += 1;
-        } else if ch == '}' {
-            depth -= 1;
-            if depth == 0 {
-                return Some(&rest[..j]);
-            }
-        }
-    }
-    None
-}
-
-fn resolve(base: &std::path::Path, p: String) -> std::path::PathBuf {
-    let p = std::path::PathBuf::from(p);
-    if p.is_absolute() { p } else { base.join(p) }
-}
-
-fn read(p: &std::path::Path) -> Result<String, String> {
-    std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))
-}
-
-struct MeshEntry {
-    id: u32,
-    obj: String,
-    png: String,
-}
-
-fn mesh_entries(txt: &str) -> Vec<MeshEntry> {
-    let mut out = Vec::new();
-    for seg in txt.split("{\"id\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        out.push(MeshEntry {
-            id: seg
-                .split(',')
-                .next()
-                .and_then(|s| s.trim().parse().ok())
-                .unwrap_or(0),
-            obj: field(seg, "obj").unwrap_or_default(),
-            png: field(seg, "png").unwrap_or_default(),
-        });
-    }
-    out
-}
-
 /// 从对象网格包读入全部对象与布局，组装成 GLB 的 `Part` 列表。
 pub struct Loaded {
     pub parts: Vec<Part>,
@@ -404,12 +315,12 @@ pub fn load_scene(
     let om_path = resolve(
         objects_mesh_dir,
         field(oman, "path").ok_or("缺对象清单路径")?,
-    );
+    )?;
     let lp = match layout_override {
         Some(p) => p.to_path_buf(),
         None => {
             let lb = object_block(inputs, "layout").ok_or("清单没有布局输入")?;
-            resolve(objects_mesh_dir, field(lb, "path").ok_or("缺布局路径")?)
+            resolve(objects_mesh_dir, field(lb, "path").ok_or("缺布局路径")?)?
         }
     };
     let om = read(&om_path)?;
@@ -450,10 +361,10 @@ pub fn load_scene(
     let mut parts = Vec::new();
     let (mut verts, mut tris) = (0usize, 0usize);
     for e in entries {
-        let objtxt = read(&objects_mesh_dir.join(&e.obj))?;
+        let objtxt = read(&resolve(objects_mesh_dir, e.obj)?)?;
         let (mesh, uv) = parse_obj(&objtxt)?;
-        let png =
-            std::fs::read(objects_mesh_dir.join(&e.png)).map_err(|x| format!("{}: {x}", e.png))?;
+        let png = std::fs::read(resolve(objects_mesh_dir, e.png)?)
+            .map_err(|x| format!("{}: {x}", e.id))?;
         let (bmin, bmax) = *bbox.get(&e.id).ok_or(format!("对象 {} 缺 bbox", e.id))?;
         let (yaw, t) = *places.get(&e.id).ok_or(format!("对象 {} 缺布局", e.id))?;
         let (translation, rotation) = node_trs(bmin, bmax, yaw, t);
@@ -705,5 +616,22 @@ f 1/1 2/2 3/3
         assert_eq!(l.parts[0].translation, want.0);
         assert_eq!(l.parts[0].rotation, want.1);
         let _ = std::fs::remove_dir_all(&t);
+    }
+
+    #[test]
+    fn load_scene_rejects_manifest_paths_outside_the_package() {
+        let d = std::env::temp_dir().join(format!("trit-glb-escape-{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        std::fs::write(
+            d.join("objects-mesh.manifest.json"),
+            "{\"inputs\": {\"objects_manifest\": {\"path\": \"../../../etc/passwd\"}}}",
+        )
+        .unwrap();
+        let err = match load_scene(&d, None) {
+            Ok(_) => panic!("越界路径必须被拒"),
+            Err(e) => e,
+        };
+        assert!(err.contains("越出包目录"), "{err}");
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
