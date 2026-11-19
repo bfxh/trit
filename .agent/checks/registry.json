@@ -354,6 +354,23 @@
       "pattern": "fn short_xt_is_rejected",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C021",
+      "title": "tconv 卷积前向输入契约的契约测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L72"
+      ],
+      "scope": [
+        "crates/trit-parts/tests/tconv_contract.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T06:05:55+08:00",
+      "pattern": "fn short_channel_is_rejected",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

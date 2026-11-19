@@ -32,13 +32,10 @@ impl Conv {
 pub type Sample = (Vec<Vec<f32>>, Vec<f32>, Option<usize>);
 
 pub(crate) fn sobel(img: &[f32], w: usize, h: usize) -> (Vec<f32>, Vec<f32>) {
-    let mut gx = vec![0.0f32; w * h];
-    let mut gy = vec![0.0f32; w * h];
+    let (mut gx, mut gy) = (vec![0.0f32; w * h], vec![0.0f32; w * h]);
     for y in 1..h.saturating_sub(1) {
         for x in 1..w.saturating_sub(1) {
-            let at = |dx: isize, dy: isize| {
-                img[((y as isize + dy) as usize) * w + (x as isize + dx) as usize]
-            };
+            let at = |dx, dy| img[(y as isize + dy) as usize * w + (x as isize + dx) as usize];
             // gx = 水平差分（[-1 0 1; -2 0 2; -1 0 1]），gy = 竖直差分
             gx[y * w + x] =
                 -at(-1, -1) - 2.0 * at(0, -1) - at(1, -1) + at(-1, 1) + 2.0 * at(0, 1) + at(1, 1);
@@ -113,7 +110,6 @@ pub(crate) fn coh_loss_grad(
 fn q(v: f32) -> f32 {
     v.round().clamp(-1.0, 1.0)
 }
-
 impl Conv {
     pub fn new(cin: usize, cout: usize, seed: u64) -> Self {
         let mut r = seed | 1;
@@ -147,6 +143,10 @@ impl Conv {
 
     #[allow(clippy::needless_range_loop)] // 三重坐标循环，索引写法更直白
     pub fn forward(&self, x: &[Vec<f32>], w: usize, h: usize) -> Vec<Vec<f32>> {
+        assert!(
+            x.len() == self.cin && x.iter().all(|c| c.len() == w * h),
+            "输入必须 cin 个 w×h 通道"
+        );
         let mut out = vec![vec![0.0f32; w * h]; self.cout];
         let d = self.dil as i32;
         for co in 0..self.cout {
