@@ -15,6 +15,7 @@ RUN   python tools/checks_selftest.py      (stdlib only, milliseconds, no toolch
 """
 
 import os
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -123,6 +124,26 @@ class Ledger(unittest.TestCase):
         ledger = {"L02": {"title": "x", "fix": [], "debt": True, "fix_text": "—"}}
         self.assertEqual(checks.cmd_audit(reg, ledger, {"strict": False}), 0)
         self.assertEqual(checks.cmd_audit(reg, ledger, {"strict": True}), 1)
+
+
+class Repo(unittest.TestCase):
+    """仓库形态约束 —— 专治"只在换一个操作系统时才炸"的问题。
+
+    WHY: Windows 的 git 默认不记 exec bit，.sh 会提交成 100644；clone 到 linux 后
+    直接执行 ./tools/checks.sh 被拒（exit 126 Permission denied），检查器跑到一半
+    就断了。这类必须靠一条不依赖该操作系统的断言守着：git index 里的模式跨平台
+    一致（L63）。
+    """
+
+    def test_tool_scripts_are_executable_in_the_index(self):
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        out = subprocess.run(["git", "ls-files", "-s", "--", "*.sh"],
+                             capture_output=True, text=True, encoding="utf-8", cwd=root)
+        if out.returncode != 0:
+            self.skipTest("not a git checkout")
+        bad = [line.split("	")[-1] for line in out.stdout.splitlines()
+               if line and not line.startswith("100755")]
+        self.assertEqual(bad, [], "这些脚本在 index 里缺可执行位")
 
 
 if __name__ == "__main__":
