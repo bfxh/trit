@@ -11,8 +11,8 @@
         "L56"
       ],
       "scope": [
-        "crates/trit-redteam/src/rail.rs",
-        "crates/trit-redteam/src/sidechannel.rs"
+        "crates/trit-redteam/src/rail/*.rs",
+        "crates/trit-redteam/src/sidechannel/*.rs"
       ],
       "since": "2026-11-19",
       "tier": "fast",
@@ -30,7 +30,7 @@
         "L56"
       ],
       "scope": [
-        "crates/trit-redteam/src/rail.rs"
+        "crates/trit-redteam/src/rail/mod.rs"
       ],
       "since": "2026-11-19",
       "tier": "fast",
