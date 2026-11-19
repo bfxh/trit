@@ -55,7 +55,8 @@
       "pattern": "rev-list -n 50",
       "min": 1,
       "allow_skip": false,
-      "exclude_line": "^\\s*#"
+      "exclude_line": "^\\s*#",
+      "local_only": true
     },
     {
       "id": "C004",
@@ -73,7 +74,8 @@
       "pattern": "rev-list \"$local_sha\" --not --remotes",
       "min": 1,
       "allow_skip": false,
-      "literal": true
+      "literal": true,
+      "local_only": true
     },
     {
       "id": "C005",

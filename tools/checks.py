@@ -298,6 +298,8 @@ def main(argv):
     p.add_argument("-Covers", dest="covers", default="")
     p.add_argument("-Since", dest="since", default="")
     p.add_argument("-Tier", dest="tier", default="fast")
+    # 只在 CI 用：跳过 registry 里标了 local_only 的检查（它们依赖仓库外的本机文件）。
+    p.add_argument("-Ci", dest="ci", action="store_true")
     p.add_argument("-Min", dest="min_count", default="")
     p.add_argument("-ExpectExit", dest="expect_exit", default="")
     p.add_argument("-Only", dest="only", default="")
@@ -430,6 +432,12 @@ def cmd_run(registry, root, a):
     for c in registry.get("checks", []):
         cid = c.get("id", "?")
         if only and cid not in only and not set(only) & set(c.get("covers") or []):
+            continue
+        # 本机专属：scope 指向仓库外的绝对路径（例如版权门禁脚本），CI 上必然
+        # 匹配不到文件。这类检查只在本机有意义 —— CI 里显式跳过，而不是判红。
+        if a.get("ci") and c.get("local_only"):
+            counts["SKIP"] += 1
+            rows.append(("SKIP", cid, c.get("title", ""), "local-only, CI 跳过"))
             continue
         if a["tier"] == "fast" and c.get("tier") == "heavy":
             counts["SKIP"] += 1

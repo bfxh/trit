@@ -363,8 +363,9 @@ jobs:
         run: bash tools/checks.sh selftest
       # C001–C009 的 fast 层。任何 scope 匹配不到文件都判 FAIL，所以文件被拆分或
       # 改名而注册表没跟上时，这里先红 —— 不必等人本地跑一遍才发现（#531 就是这么来的）。
+      # `-Ci` 跳过 local_only 的检查（它们的 scope 指向仓库外的本机文件）。
       - name: Registry checks (fast tier)
-        run: bash tools/checks.sh run
+        run: bash tools/checks.sh run -Ci
       # audit：台账每一条都必须指回已注册的 Cxxx，否则判红。
       - name: Registry audit (prose must point at a registered check)
         run: bash tools/checks.sh audit
