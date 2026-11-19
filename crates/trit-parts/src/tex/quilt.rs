@@ -1,10 +1,4 @@
-pub(crate) fn sm64(state: &mut u64) -> u64 {
-    *state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
-    let mut z = *state;
-    z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
-    z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
-    z ^ (z >> 31)
-}
+use super::util::{fit_plane, luma_of, sm64};
 
 /// 非参数 patch 合成（Efros–Freeman 随机候选 + 重叠 SSD 选优 + 线性羽化）。
 ///
@@ -25,12 +19,21 @@ pub fn quilt(
     relight: bool,
     relight_plane: bool,
 ) -> Vec<f32> {
+    let expect = sw
+        .checked_mul(sh)
+        .and_then(|a| a.checked_mul(3))
+        .expect("源图尺寸溢出");
+    assert!(src.len() == expect, "源图长度与 sw×sh×3 不符");
     assert!(patch >= 2 && patch <= sw.min(sh), "patch 必须 ≤ 源图短边");
     assert!(out_w >= patch && out_h >= patch, "输出不能小于一个 patch");
+    let cells = out_w
+        .checked_mul(out_h)
+        .and_then(|c| c.checked_mul(3))
+        .expect("输出尺寸溢出");
     let ov = overlap.min(patch - 1);
     let step = patch - ov;
-    let mut out = vec![0.0f32; out_w * out_h * 3];
-    let mut placed = vec![false; out_w * out_h];
+    let mut out = vec![0.0f32; cells];
+    let mut placed = vec![false; cells / 3];
     let mut xs = Vec::new();
     let mut x = 0;
     while x + patch < out_w {
@@ -222,70 +225,6 @@ pub fn quilt(
     out
 }
 
-pub(crate) fn luma_of(p: &[f32]) -> f32 {
-    0.299 * p[0] + 0.587 * p[1] + 0.114 * p[2]
-}
-
-/// 逐通道线性平面拟合 `a + bx·u + by·v`（u,v ∈ `[0,1]`），最小二乘闭式解（`--relight-plane` 用）。
-fn fit_plane(src: &[f32], w: usize, h: usize) -> [[f32; 3]; 3] {
-    let n = (w * h) as f64;
-    let (mut su, mut sv, mut suu, mut svv, mut suv) = (0.0f64, 0.0f64, 0.0f64, 0.0f64, 0.0f64);
-    let mut sy = [0.0f64; 3];
-    let mut suy = [0.0f64; 3];
-    let mut svy = [0.0f64; 3];
-    for y in 0..h {
-        let v = y as f64 / h.max(1) as f64;
-        for x in 0..w {
-            let u = x as f64 / w.max(1) as f64;
-            su += u;
-            sv += v;
-            suu += u * u;
-            svv += v * v;
-            suv += u * v;
-            let i = (y * w + x) * 3;
-            for c in 0..3 {
-                let val = src[i + c] as f64;
-                sy[c] += val;
-                suy[c] += val * u;
-                svy[c] += val * v;
-            }
-        }
-    }
-    let inv = inv3([[n, su, sv], [su, suu, suv], [sv, suv, svv]]);
-    let mut out = [[0.0f32; 3]; 3];
-    for c in 0..3 {
-        let b = [sy[c], suy[c], svy[c]];
-        for row in 0..3 {
-            out[c][row] = (inv[row][0] * b[0] + inv[row][1] * b[1] + inv[row][2] * b[2]) as f32;
-        }
-    }
-    out
-}
-
-fn inv3(m: [[f64; 3]; 3]) -> [[f64; 3]; 3] {
-    let det = m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
-        - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
-        + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
-    let d = if det.abs() < 1e-12 { 1e-12 } else { det };
-    [
-        [
-            (m[1][1] * m[2][2] - m[1][2] * m[2][1]) / d,
-            (m[0][2] * m[2][1] - m[0][1] * m[2][2]) / d,
-            (m[0][1] * m[1][2] - m[0][2] * m[1][1]) / d,
-        ],
-        [
-            (m[1][2] * m[2][0] - m[1][0] * m[2][2]) / d,
-            (m[0][0] * m[2][2] - m[0][2] * m[2][0]) / d,
-            (m[0][2] * m[1][0] - m[0][0] * m[1][2]) / d,
-        ],
-        [
-            (m[1][0] * m[2][1] - m[1][1] * m[2][0]) / d,
-            (m[0][1] * m[2][0] - m[0][0] * m[2][1]) / d,
-            (m[0][0] * m[1][1] - m[0][1] * m[1][0]) / d,
-        ],
-    ]
-}
-
 /// 逐通道盒式模糊（去光照用的低频）。
 pub(crate) fn box_blur_rgb(src: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
     if r == 0 {
@@ -319,4 +258,25 @@ pub(crate) fn box_blur_rgb(src: &[f32], w: usize, h: usize, r: usize) -> Vec<f32
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 源图长度与 sw×sh×3 不符时必须在分配前拒绝 —— 否则 `chunks(3)` 末尾短块会越界。
+    #[test]
+    #[should_panic(expected = "源图长度与 sw×sh×3 不符")]
+    fn short_source_is_rejected_before_allocating() {
+        let src = vec![0.0f32; 32 * 32 * 3 - 1];
+        quilt(&src, 32, 32, 64, 64, 8, 4, 1, false, 0, false, false);
+    }
+
+    /// 输出尺寸连乘溢出必须在分配前拒绝，不能让 `out_w * out_h * 3` 绕成小值。
+    #[test]
+    #[should_panic(expected = "输出尺寸溢出")]
+    fn output_size_overflow_is_rejected() {
+        let src = vec![0.0f32; 32 * 32 * 3];
+        quilt(&src, 32, 32, usize::MAX, 8, 8, 4, 1, false, 0, false, false);
+    }
 }

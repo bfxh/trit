@@ -269,6 +269,23 @@
       "pattern": "fn checkpoint_counts_are_rejected_before_allocating",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C016",
+      "title": "patch 合成源图长度契约的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L67"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tex/quilt.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T03:08:21+08:00",
+      "pattern": "fn short_source_is_rejected_before_allocating",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

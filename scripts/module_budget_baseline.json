@@ -2548,7 +2548,7 @@
     },
     {
       "file": "crates/trit-parts/src/tex/quilt.rs",
-      "lines": 322
+      "lines": 282
     },
     {
       "file": "crates/trit-parts/src/tex/style.rs",
@@ -2561,6 +2561,10 @@
     {
       "file": "crates/trit-parts/src/tex/tiles.rs",
       "lines": 94
+    },
+    {
+      "file": "crates/trit-parts/src/tex/util.rs",
+      "lines": 76
     },
     {
       "file": "crates/trit-parts/src/tpm.rs",
