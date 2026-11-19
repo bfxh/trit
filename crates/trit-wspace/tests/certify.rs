@@ -251,6 +251,8 @@ fn cli_certify_gates_and_accepts_edited_artifact() {
         &path_string(&edited),
         "--certificate",
         &path_string(&certificate),
+        // 默认严格；这里要观察“未通过证书也能落盘”，显式走 advisory。
+        "--advisory",
     ]));
     assert_eq!(report["certified"], false);
     assert_eq!(report["schema"], "trit-wspace.certificate.v1");

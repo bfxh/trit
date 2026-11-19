@@ -9,12 +9,12 @@ use super::{
 };
 
 pub(super) fn certify(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["strict"])?;
+    let parsed = parse(args, &["strict", "advisory"])?;
     let path = one(
         &parsed,
         "certify <artifact|-> (--keep <oracle|-> | --keep-samples N [--seed S]) \
          (--patch <json|-> | --edited <artifact|->) [--edit <oracle|->] [--allow N] \
-         [--limit N] [--strict] [--out <path>] [--certificate <path>]",
+         [--limit N] [--strict|--advisory] [--out <path>] [--certificate <path>]",
     )?;
     let keep_path = parsed.values.get("keep").map(String::as_str);
     let keep_samples = parsed.values.get("keep-samples").map(String::as_str);
@@ -54,6 +54,12 @@ pub(super) fn certify(args: &[String]) -> Result<(), String> {
         allow: opt_usize(&parsed, "allow", 0)?,
         rows: opt_usize(&parsed, "limit", certify::DEFAULT_ROWS)?,
     };
+    if options.allow > 0 {
+        eprintln!(
+            "警告：--allow {} 是调用方自报阈值；证书不能单独作为合规证据，需配合独立策略",
+            options.allow
+        );
+    }
 
     let (certificate, edited) = match patch_path {
         Some(patch_source) => {
@@ -78,7 +84,8 @@ pub(super) fn certify(args: &[String]) -> Result<(), String> {
     }
     let passed = certificate.passed();
     emit(&report)?;
-    if !passed && parsed.switches.contains("strict") {
+    // 默认严格：证书不成立就失败；只有显式 --advisory 才允许“出报告但退出 0”。
+    if !passed && !parsed.switches.contains("advisory") {
         let edit_loss = certificate.edit.as_ref().map_or(0, |one| one.after_loss);
         return Err(format!(
             "证书不成立：keep violations={}（允许 {}），edit loss={}",

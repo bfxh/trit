@@ -120,6 +120,8 @@ fn cli_verify_reports_classification() {
         &path_string(&artifact_path),
         "--oracle",
         &path_string(&oracle_path),
+        // 本测试故意让工件与 oracle 不一致，只为检查分类统计；默认严格下需显式 advisory。
+        "--advisory",
     ]));
     assert_eq!(output["classification"]["classes"], json!(2));
     assert_eq!(output["classification"]["per_class"][1]["count"], json!(2));

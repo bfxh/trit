@@ -93,6 +93,8 @@ fn cli_read_verify_patch_repair_round_trip() {
         &path_string(&broken),
         "--oracle",
         &path_string(&oracle),
+        // 这里故意验证“被打坏的工件”，只为读 exact=false 的报告。
+        "--advisory",
     ]));
     assert_eq!(broken_verify["exact"], false);
 

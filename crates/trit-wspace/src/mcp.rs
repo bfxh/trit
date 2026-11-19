@@ -37,6 +37,16 @@ pub fn estimate_tokens(text: &str) -> u64 {
 
 pub use crate::mcp_tools::tools;
 
+/// 设置 MCP 工作区根（`mcp --root <dir>`）。拒绝 `/`、盘符根、用户主目录。
+pub fn set_root(root: &str) -> Result<(), String> {
+    load::set_root(root)
+}
+
+/// 未显式给 `--root` 时，拒绝以 `/`、盘符根或用户主目录作为默认工作区。
+pub fn refuse_wide_default_root() -> Result<(), String> {
+    load::refuse_wide_default_root()
+}
+
 /// MCP 服务（无状态）。
 #[derive(Default)]
 pub struct Mcp;

@@ -92,8 +92,16 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "unpack-artifact" => cli_wsp2::unpack(&args[1..]),
         "pack-model" => cli_wspm::pack(&args[1..]),
         "unpack-model" => cli_wspm::unpack(&args[1..]),
-        "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
-            .map_err(|error| error.to_string()),
+        "mcp" => {
+            let parsed = parse(&args[1..], &[])?;
+            if let Some(root) = parsed.values.get("root") {
+                crate::mcp::set_root(root)?;
+            } else {
+                crate::mcp::refuse_wide_default_root()?;
+            }
+            crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
+                .map_err(|error| error.to_string())
+        }
         "--help" | "-h" | "help" => {
             println!("{USAGE}");
             Ok(())
@@ -114,15 +122,26 @@ fn cmd_read(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_verify(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(&parsed, "verify <artifact|-> --oracle <json|->")?;
+    let parsed = parse(args, &["strict", "advisory"])?;
+    let path = one(
+        &parsed,
+        "verify <artifact|-> --oracle <json|-> [--limit N] [--strict|--advisory]",
+    )?;
     let oracle_path = value(&parsed, "oracle")?;
     no_double_stdin(&[path, oracle_path])?;
     let net = load_net(path)?;
     let oracle = load_oracle(oracle_path)?;
     let limit = opt_usize(&parsed, "limit", 32)?;
+    let exact = oracle.exact(&net).map_err(err)?;
+    // 默认严格：exact=false 即退出非零；只有显式 --advisory 才允许“只出报告”。
+    if !exact && !parsed.switches.contains("advisory") {
+        return Err(format!(
+            "verify 不通过：exact=false（loss {}）",
+            oracle.loss(&net).map_err(err)?
+        ));
+    }
     emit(&json!({
-        "exact": oracle.exact(&net).map_err(err)?,
+        "exact": exact,
         "loss": oracle.loss(&net).map_err(err)?,
         "accuracy": oracle.accuracy(&net).map_err(err)?,
         "signature": format!("{:016x}", Behavior::of(&net, &oracle).map_err(err)?.signature()),
