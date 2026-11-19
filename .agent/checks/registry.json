@@ -100,7 +100,7 @@
         "L60"
       ],
       "scope": [
-        "crates/trit-lsp/src/lex.rs"
+        "crates/trit-lsp/src/lex/*.rs"
       ],
       "since": "2026-11-19",
       "tier": "fast",
@@ -120,7 +120,7 @@
         "L60"
       ],
       "scope": [
-        "crates/trit-lsp/src/lex.rs"
+        "crates/trit-lsp/src/lex/*.rs"
       ],
       "since": "2026-11-19",
       "tier": "heavy",
@@ -137,7 +137,7 @@
         "L61"
       ],
       "scope": [
-        "crates/trit-parts/src/light.rs"
+        "crates/trit-parts/src/light/*.rs"
       ],
       "since": "2026-11-19",
       "tier": "fast",
