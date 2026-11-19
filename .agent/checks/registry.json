@@ -252,6 +252,23 @@
       "pattern": "fn npy_f32_header_is_bounds_checked",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C015",
+      "title": "断点按声明数分配的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L66"
+      ],
+      "scope": [
+        "crates/trit-parts/src/state/mod.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T02:34:43+08:00",
+      "pattern": "fn checkpoint_counts_are_rejected_before_allocating",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

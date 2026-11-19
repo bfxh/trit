@@ -2507,8 +2507,12 @@
       "lines": 341
     },
     {
-      "file": "crates/trit-parts/src/state.rs",
-      "lines": 178
+      "file": "crates/trit-parts/src/state/mod.rs",
+      "lines": 177
+    },
+    {
+      "file": "crates/trit-parts/src/state/tpn.rs",
+      "lines": 37
     },
     {
       "file": "crates/trit-parts/src/tconv/bn.rs",
