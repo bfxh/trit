@@ -22,6 +22,8 @@ pub(crate) fn is_write(method: &str, path: &str) -> bool {
                 | "/v1/fleet/record"
                 | "/v1/fleet/sync"
                 | "/v1/fleet/lock"
+                | "/v1/fleet/coord-declare"
+                | "/v1/fleet/coord-sync"
         )
 }
 
@@ -85,6 +87,19 @@ mod tests {
         );
         assert_eq!(
             authorize_write(None, "POST", "/v1/fleet/record", &[])
+                .unwrap_err()
+                .0,
+            403
+        );
+        // 第四轮：coord-declare / coord-sync 之前漏在白名单外，必须同样默认禁用
+        assert_eq!(
+            authorize_write(None, "POST", "/v1/fleet/coord-declare", &[])
+                .unwrap_err()
+                .0,
+            403
+        );
+        assert_eq!(
+            authorize_write(None, "POST", "/v1/fleet/coord-sync", &[])
                 .unwrap_err()
                 .0,
             403
