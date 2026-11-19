@@ -39,16 +39,8 @@ fn entropy(counts: &BTreeMap<String, usize>) -> f64 {
         .sum()
 }
 
-#[derive(Debug)]
-pub struct Report {
-    pub signals: usize,
-    pub rows: usize,
-    pub h_output: f64,
-    pub h_output_given_weight: f64,
-    pub leakage_bits: f64,
-    pub weight_histogram: BTreeMap<u8, BTreeMap<String, usize>>,
-    pub unknown_case: String,
-}
+mod report;
+pub use report::Report;
 
 pub fn analyze(text: &str) -> Result<Report> {
     let RailDesign { inputs, assigns } = parse_design(text)?;
@@ -174,7 +166,7 @@ pub fn has_findings(report: &Report) -> bool {
 mod tests {
     use super::*;
 
-    const FIXTURE: &str = include_str!("../fixtures/three_rail.v");
+    const FIXTURE: &str = include_str!("../../fixtures/three_rail.v");
 
     #[test]
     fn weight_directly_reveals_unknowns() {
