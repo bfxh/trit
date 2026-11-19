@@ -57,7 +57,7 @@
  },
  {
   "name": "redteam: 侧信道泄漏恒为 0",
-  "file": "crates/trit-redteam/src/sidechannel.rs",
+  "file": "crates/trit-redteam/src/sidechannel/mod.rs",
   "old": "        leakage_bits: (h_output - h_conditional).max(0.0),",
   "new": "        leakage_bits: 0.0,",
   "pkg": "trit-redteam",
@@ -97,7 +97,7 @@
  },
  {
   "name": "redteam: 非法输入不算非法",
-  "file": "crates/trit-redteam/src/rail.rs",
+  "file": "crates/trit-redteam/src/rail/analyze.rs",
   "old": "            illegal |= state == 3;",
   "new": "            illegal |= false;",
   "pkg": "trit-redteam",
