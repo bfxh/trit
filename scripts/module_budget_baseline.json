@@ -2364,11 +2364,15 @@
     },
     {
       "file": "crates/trit-parts/src/glb/mod.rs",
-      "lines": 637
+      "lines": 563
     },
     {
       "file": "crates/trit-parts/src/glb/obj.rs",
       "lines": 91
+    },
+    {
+      "file": "crates/trit-parts/src/glb/scene.rs",
+      "lines": 106
     },
     {
       "file": "crates/trit-parts/src/gpu.rs",

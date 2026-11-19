@@ -422,6 +422,23 @@
       "pattern": "img\\.len\\(\\) == w\\.saturating_mul\\(h\\)",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C025",
+      "title": "GLB 总长超 u32 上限必须拒，不许静默截断",
+      "kind": "require",
+      "covers": [
+        "L76"
+      ],
+      "scope": [
+        "crates/trit-parts/src/glb/mod.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T07:39:52+08:00",
+      "pattern": "u32::try_from\\(total\\)",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
