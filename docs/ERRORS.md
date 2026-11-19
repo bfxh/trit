@@ -102,6 +102,9 @@
 
 | L70 | `parts_3d/texgen.rs` 是 `--size` 的唯一入口，`w * h` / `vec![...; w*h]` / `rem_euclid(w as i32)` 全从它来，却没有任何上限；而 `parts-3d` bin 是 `required-features = ["gpu"]`，CI 的 `--workspace --all-targets` 从不编译它 | `--size 100000` 让输出 40GB、连乘溢出绕成小值后索引越界；`w > 2^31` 让 `w as i32` 为负、`as usize` 巨大。同样因为 `required-features`，`meshtex.rs` 里 `light::normals_inputs_match` 少写 `trit_parts::` 前缀的 E0433 能长期存活——无 gpu 不编、带 gpu 才炸 | `size_of` 把 `--size` 收口到 `1..=4096`，`num_of` 统一 15 处解析；`meshtex.rs` 的 `light::` 补全为 `trit_parts::light::`；CI 补 `cargo check -p trit-parts --bin parts-3d --features gpu` 让这条路径进编译 | C019 |
 
+| L71 | `diffuse::PatchMlp::features` 对 `xt` 没有任何长度校验，`xt[yy * w + xx]` 与 `xt[y * w + x]` 都假设 `xt.len() == w×h`；上游 `add_noise` 用 `x0.iter().zip(eps)` 静默截断，`train_shard` / `ddim_sample_opts` 里 `w * h` 全是裸乘 | `eps` 短于 `x0` 时 `xt` 只剩短的一段，`features` 立刻越界；`w * h` 溢出后 `Vec` 只分配小尺寸，同一个越界面从另一条路到达；`w > 2^31` 还会让 `rem_euclid(w as i32)` 为负、`as usize` 巨大 | `features` 开头 `assert!(xt.len() == w.saturating_mul(h))`；三处 `#[allow(too_many_arguments)]` 收成模块级一条 `#![allow]` 把预算压回 352；契约测试放 `tests/diffuse_contract.rs`（该文件不在 lib 的 190 里） | C020 |
+
+
 ---
 
 ## D. 还没固化的欠账（明确标出，不假装已解决）
