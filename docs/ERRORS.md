@@ -106,6 +106,9 @@
 
 | L72 | `tconv::Conv::forward` 直接 `x[ci][yy * w + xr]`，`x.len()` 与每通道长度都没有校验；上游 `Net::input` 只 `vec![img.to_vec()]`，`VDen::predict_x0` 也只 `vec![xt.to_vec(), vec![t_frac; w * h]]` | `img` / `xt` 短一截或 `maps` 少一个通道，就在卷积核里越界；`out` 的 `vec![vec![0.0; w * h]; cout]` 又是裸乘，`w * h` 溢出后只分配小数组 | `forward` 开头 `assert!(x.len() == self.cin && x.iter().all(\|c\| c.len() == w * h))`；`q` 与 `sobel` 的闭包各压一行把 `conv.rs` 压回 275；契约测试 `tests/tconv_contract.rs` | C021 |
 
+| L73 | `tconv::VDen::input_dim` 返回 `2 + net.cond`，但 `predict_x0` 真正构造的 maps 是 `[x_t, t/T] + extra + cond` —— 少算了 `extra.len()` | `input_dim` 的语义是"输入通道数"，调用方（`texgen.rs` 的 `Den` 转发）按它建网就会比实际少 `extra.len()` 个通道；`texgen2` 的 `--want-mean` / `--want-contrast` 正是 `extra` 非空的路径 | `input_dim` 改成 `2 + self.extra.len() + self.net.cond`，并用 `tests/tconv_input_dim.rs` 钉住"报的通道数 == 真实前向的通道数" | C022 |
+
+
 
 
 ---
