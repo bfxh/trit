@@ -320,6 +320,23 @@
       "pattern": "fn huge_grid_is_rejected_before_allocating",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C019",
+      "title": "CLI --size 上限的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L70"
+      ],
+      "scope": [
+        "crates/trit-parts/src/bin/parts_3d/texgen.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T04:40:57+08:00",
+      "pattern": "fn oversized_size_is_rejected",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

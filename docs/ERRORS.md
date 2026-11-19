@@ -99,6 +99,9 @@
 | L67 | `tex::quilt` 的 `src` 是交错 RGB，契约 `src.len() == sw×sh×3` 只写在文档里；`out` 的 `out_w * out_h * 3` 是裸 usize 乘法，而 `out_w` 来自 CLI `--size` | `src.chunks(3)` 末尾短块让 `p[c]` 越界 panic；`--size 100000` 让 `out_w * out_h * 3` 溢出（release 绕成小值后索引越界）或直接 40GB 分配 abort | 开头 `checked_mul` 验 `sw×sh×3` 与 `src.len()`，输出改分配 `cells`（`checked_mul` 后的值）；`sm64` / `luma_of` / `fit_plane` 服从预算顶格下沉到 `tex/util.rs` | C016 |
 | L68 | `fuse::View` 的 `ids` / `depth` 契约（都该等于 `w×h`）没有任何校验；四个构造点里 `depth` 的 `.npy` 形状被 `_` 丢弃，`w/h` 只取自 `seg` 的 shape | `seg.npy` 与 `depth.npy` 尺寸不一致时，`occ::selfsup_solid` / `occ::features` 里的 `v.depth[i]`（`i < w×h`）直接越界 panic；`occ.rs` 538 行顶格，加一行都触发 module_budget | `occ/mod.rs` 加 `check_views`（`ids.len() == w*h && depth.len() == w*h`），`selfsup_solid` / `features` 开头各调一次；`Mlp` 156 行下沉到 `occ/mlp.rs` 腾预算 | C017 |
 | L69 | `mesh::Grid::from_points` 直接用点云包围盒 × `cell` 算 `dims`，`vec![0u8; dims[0]*dims[1]*dims[2]]` 是裸乘、没有上限；同为栅格构造的 `occ::grid_for` 有 `saturating_mul` + 60M 门，这里什么都没有 | `cell` 最小 1e-4（函数自己 `max(1e-4)`），1 米的包围盒就是 10005³ ≈ 1e15 体素 → 1PB 分配直接 abort；`margin` 还能再乘进去；9 个调用点里 `cell` 多半来自 CLI `--cell` | 与 `grid_for` 对齐：`margin.min(1<<20)`、`total` 走 `saturating_mul`、超过 60M 返 `None`、`occ` 按 `total` 分配；`origin` 改 `[0,1,2].map(..)` 把增加的行压回预算 | C018 |
+
+| L70 | `parts_3d/texgen.rs` 是 `--size` 的唯一入口，`w * h` / `vec![...; w*h]` / `rem_euclid(w as i32)` 全从它来，却没有任何上限；而 `parts-3d` bin 是 `required-features = ["gpu"]`，CI 的 `--workspace --all-targets` 从不编译它 | `--size 100000` 让输出 40GB、连乘溢出绕成小值后索引越界；`w > 2^31` 让 `w as i32` 为负、`as usize` 巨大。同样因为 `required-features`，`meshtex.rs` 里 `light::normals_inputs_match` 少写 `trit_parts::` 前缀的 E0433 能长期存活——无 gpu 不编、带 gpu 才炸 | `size_of` 把 `--size` 收口到 `1..=4096`，`num_of` 统一 15 处解析；`meshtex.rs` 的 `light::` 补全为 `trit_parts::light::`；CI 补 `cargo check -p trit-parts --bin parts-3d --features gpu` 让这条路径进编译 | C019 |
+
 ---
 
 ## D. 还没固化的欠账（明确标出，不假装已解决）
