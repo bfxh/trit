@@ -482,60 +482,8 @@ pub fn load_scene(
 }
 
 /// 解析本仓 `uv::write_obj` 写出的 OBJ（v / vt / f 三样）。
-pub fn parse_obj(text: &str) -> Result<(Mesh, UvTris), String> {
-    let mut verts = Vec::new();
-    let mut uvs = Vec::new();
-    let mut tris = Vec::new();
-    let mut tri_uv = Vec::new();
-    for line in text.lines() {
-        let mut it = line.split_whitespace();
-        match it.next() {
-            Some("v") => {
-                let q: Vec<f32> = it.filter_map(|s| s.parse().ok()).collect();
-                if q.len() < 3 {
-                    return Err("v 少于 3 个分量".into());
-                }
-                verts.push([q[0], q[1], q[2]]);
-            }
-            Some("vt") => {
-                let q: Vec<f32> = it.filter_map(|s| s.parse().ok()).collect();
-                if q.len() < 2 {
-                    return Err("vt 少于 2 个分量".into());
-                }
-                uvs.push([q[0], q[1]]);
-            }
-            Some("f") => {
-                let mut vi = [0u32; 3];
-                let mut ti = [0u32; 3];
-                for k in 0..3 {
-                    let c = it.next().ok_or("f 少于 3 个角")?;
-                    let mut parts = c.split('/');
-                    vi[k] = parts
-                        .next()
-                        .and_then(|s| s.parse::<u32>().ok())
-                        .ok_or("f 顶点号坏")?
-                        - 1;
-                    ti[k] = parts
-                        .next()
-                        .and_then(|s| s.parse::<u32>().ok())
-                        .unwrap_or(vi[k] + 1)
-                        - 1;
-                }
-                tris.push(vi);
-                tri_uv.push([
-                    uvs[ti[0] as usize],
-                    uvs[ti[1] as usize],
-                    uvs[ti[2] as usize],
-                ]);
-            }
-            _ => {}
-        }
-    }
-    if tris.is_empty() || verts.is_empty() {
-        return Err("OBJ 空".into());
-    }
-    Ok((Mesh { verts, tris }, tri_uv))
-}
+mod obj;
+pub use obj::parse_obj;
 
 #[cfg(test)]
 mod tests {
@@ -615,6 +563,34 @@ mod tests {
         assert_eq!((m2.verts.len(), m2.tris.len()), (3, 1));
         assert_eq!(uv[0][1], [1.0, 0.0]);
         assert!(parse_obj("v 0 0 0\n").is_err());
+    }
+
+    /// OBJ 的顶点号/UV 号从 1 开始。`0` 会让 `0 - 1` 在 u32 上溢出，越界号则直接
+    /// 打穿 `uvs[ti]` 的索引 —— 两者都只能返回 Err，不能把进程带走。
+    #[test]
+    fn obj_indices_out_of_range_are_errors_not_panics() {
+        let base = "v 0 0 0\nv 1 0 0\nv 0 1 0\n";
+
+        assert!(parse_obj(&format!("{base}f 0 1 2\n")).is_err(), "0 号顶点");
+
+        assert!(
+            parse_obj(&format!("{base}vt 0 0\nf 1/9 2/9 3/9\n")).is_err(),
+            "UV 号越界"
+        );
+
+        assert!(
+            parse_obj(&format!("{base}vt 0 0\nf 1/1 2/1 9/1\n")).is_err(),
+            "顶点号越界"
+        );
+
+        assert!(
+            parse_obj(&format!("{base}f 1 2 3\n")).is_err(),
+            "没有 vt 时不能静默越界"
+        );
+
+        let ok = format!("{base}vt 0 0\nvt 1 0\nvt 0 1\nf 1/1 2/2 3/3\n");
+        let (m, uv) = parse_obj(&ok).expect("合法 OBJ 应通过");
+        assert_eq!((m.verts.len(), m.tris.len(), uv.len()), (3, 1, 1));
     }
 
     #[test]

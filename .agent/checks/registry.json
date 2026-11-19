@@ -165,6 +165,40 @@
       "run": "cargo test -p trit-parts --lib light",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C010",
+      "title": "OBJ 索引越界的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L62"
+      ],
+      "scope": [
+        "crates/trit-parts/src/glb/mod.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T00:52:52+08:00",
+      "pattern": "fn obj_indices_out_of_range_are_errors_not_panics",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C011",
+      "title": "OBJ 索引越界返回 Err 而不是 panic（重型）",
+      "kind": "cmd",
+      "covers": [
+        "L62"
+      ],
+      "scope": [
+        "crates/trit-parts/src/glb/*.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "heavy",
+      "added": "2026-11-20T00:52:52+08:00",
+      "run": "cargo test -p trit-parts --lib glb",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
