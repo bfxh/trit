@@ -388,6 +388,23 @@
       "pattern": "fn vden_input_dim_counts_extra_channels",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C023",
+      "title": "GLB 分块长度溢出的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L74"
+      ],
+      "scope": [
+        "crates/trit-parts/src/bin/parts_glb_verify/chunks.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T06:38:48+08:00",
+      "pattern": "fn chunks_rejects_overflowing_json_length",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

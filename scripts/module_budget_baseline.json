@@ -2236,7 +2236,11 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_glb_verify.rs",
-      "lines": 313
+      "lines": 264
+    },
+    {
+      "file": "crates/trit-parts/src/bin/parts_glb_verify/chunks.rs",
+      "lines": 71
     },
     {
       "file": "crates/trit-parts/src/bin/parts_gradcheck.rs",

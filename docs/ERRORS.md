@@ -108,6 +108,9 @@
 
 | L73 | `tconv::VDen::input_dim` 返回 `2 + net.cond`，但 `predict_x0` 真正构造的 maps 是 `[x_t, t/T] + extra + cond` —— 少算了 `extra.len()` | `input_dim` 的语义是"输入通道数"，调用方（`texgen.rs` 的 `Den` 转发）按它建网就会比实际少 `extra.len()` 个通道；`texgen2` 的 `--want-mean` / `--want-contrast` 正是 `extra` 非空的路径 | `input_dim` 改成 `2 + self.extra.len() + self.net.cond`，并用 `tests/tconv_input_dim.rs` 钉住"报的通道数 == 真实前向的通道数" | C022 |
 
+| L74 | `parts_glb_verify::chunks` 的 `jl` / `bl` 都来自文件头（u32），但边界检查写成 `20 + jl + 8 > b.len()` 与 `bo + 8 + bl != b.len()` —— 全是裸加 | 32 位 usize 上 `jl = u32::MAX` 让 `20 + jl + 8` 溢出绕成小值，直接绕过检查，随后 `&b[20..20 + jl]` 越界；`bl` 同理。64 位安全，但这是公开复核路径，不该给平台留死角 | 两处都换 `checked_add`（`jl.checked_add(28)`、`jl.checked_add(bl).and_then(\|n\| n.checked_add(28))`）；`chunks` / `png_count` 下沉到 `parts_glb_verify/chunks.rs`（bin 子模块必须 `#[path]`）；`chunks_rejects_overflowing_json_length` 钉住"jl 逼近 usize 上限必须拒绝" | C023 |
+
+
 
 
 
