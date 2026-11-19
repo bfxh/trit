@@ -303,6 +303,23 @@
       "pattern": "fn view_with_short_depth_is_rejected",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C018",
+      "title": "点云建栅格尺寸上限的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L69"
+      ],
+      "scope": [
+        "crates/trit-parts/src/mesh/bounds_test.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T04:07:30+08:00",
+      "pattern": "fn huge_grid_is_rejected_before_allocating",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

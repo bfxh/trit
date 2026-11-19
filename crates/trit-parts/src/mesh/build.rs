@@ -41,15 +41,15 @@ impl Grid {
                 hi[a] = hi[a].max(p[a]);
             }
         }
-        let cell = cell.max(1e-4);
+        let (margin, cell) = (margin.min(1 << 20), cell.max(1e-4));
         let dims = [0, 1, 2].map(|a| ((hi[a] - lo[a]) / cell).ceil() as usize + 1 + 2 * margin);
-        let origin = [
-            lo[0] - margin as f32 * cell,
-            lo[1] - margin as f32 * cell,
-            lo[2] - margin as f32 * cell,
-        ];
+        let total = dims[0].saturating_mul(dims[1]).saturating_mul(dims[2]);
+        if total > 60_000_000 {
+            return None;
+        }
+        let origin = [0, 1, 2].map(|a| lo[a] - margin as f32 * cell);
         let mut g = Grid {
-            occ: vec![0u8; dims[0] * dims[1] * dims[2]],
+            occ: vec![0u8; total],
             nx: dims[0],
             ny: dims[1],
             nz: dims[2],
