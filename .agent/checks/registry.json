@@ -337,6 +337,23 @@
       "pattern": "fn oversized_size_is_rejected",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C020",
+      "title": "diffuse 特征 xt 长度契约的契约测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L71"
+      ],
+      "scope": [
+        "crates/trit-parts/tests/diffuse_contract.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T05:18:59+08:00",
+      "pattern": "fn short_xt_is_rejected",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

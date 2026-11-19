@@ -2591,6 +2591,10 @@
       "lines": 206
     },
     {
+      "file": "crates/trit-parts/tests/diffuse_contract.rs",
+      "lines": 11
+    },
+    {
       "file": "crates/trit-parts/tests/models_e2e.rs",
       "lines": 264
     },
