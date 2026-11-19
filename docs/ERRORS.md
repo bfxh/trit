@@ -114,6 +114,8 @@
 
 | L76 | `glb::build_with` 写 GLB 头时把 `total` / `jb.len()` / `bin.len()` 直接 `as u32`，三处都没有上限断言 | 三个长度字段都是 u32，总长逼近 4GiB 时 `as u32` 静默截断 —— 写出的文件会被同仓 `parts_glb_verify::chunks` 的分块长度检查判红，即"自己写、自己验不过"。#550 只修了读出侧，写入侧是同一类面的孪生 | 抽 `glb_total(jl, bl)`：`checked_add` 求总长后 `u32::try_from(total).expect(...)` 收口，`build_with` 改用它；`load_scene` + `Loaded` 98 行下沉到 `glb/scene.rs` 腾出预算（`glb/mod.rs` 637 → 563）；`glb_total_rejects_lengths_beyond_u32` 钉住"u32::MAX 字节的 JSON 必须拒、空场景正好 28" | C025 |
 
+| L77 | `tconv::Net::load` 把 `.tpc` 里的 `层数` / `cin` / `cout` / `nheads` 直接 `take(...)? as usize` 就去 `Vec::with_capacity(nl)`、`for _ in 0..nl`、`Conv::new(cin, cout, 1)` —— 全是先按外部声明分配、校验根本不存在 | `.tpc` 是外部文本（模型权重文件可以来自任何地方）。`层数 999999999` 让 `Vec::with_capacity` 当场 OOM；`cin 100000` 让 `Conv::new` 里的 `cin*cout*9` 直接打爆；BN/Film 的 `层号` 是外部值直接当索引，越界 panic | 加 `MAX_LAYERS = 1024` / `MAX_CH = 2048` 与 `fn bounded(n, path, what, max)`，`nl` / `cin` / `cout` / `nheads` / head 的 `cin`·`cout` 全部改走它；BN / Film 的 `层号` 加 `idx >= nl` 与 `k > MAX_LAYERS`·`c > MAX_CH` 检查；`save` 82 行下沉到 `tconv/io/save.rs` 腾预算（`io.rs` 262 → 227）；`tests/tconv_tpc_limits.rs` 钉住"层数 999999999 与 cin 100000 在分配前被拒、正常网能存读回" | C026 |
+
 
 
 

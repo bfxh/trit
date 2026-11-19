@@ -2,90 +2,15 @@ use super::bn::Bn;
 use super::conv::Conv;
 use super::net::Net;
 
-impl Net {
-    /// 存盘（文本，`TPC1`）：层维度 + 权重 + bias + scale，再跟 BN 的 γ/β。
-    pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
-        use std::fmt::Write as _;
-        let mut out = String::new();
-        let _ = writeln!(
-            out,
-            "TPC7 {} {} {} {} {} {} {} {}",
-            self.layers.len(),
-            self.cond,
-            self.linear_out as u8,
-            self.circular as u8,
-            self.highpass,
-            self.nk,
-            self.heads.len(),
-            self.layers.first().map(|l| l.dil).unwrap_or(1)
-        );
-        for l in &self.layers {
-            let _ = writeln!(out, "{} {}", l.cin, l.cout);
-            for v in [&l.w, &l.b, &l.scale] {
-                for x in v.iter() {
-                    let _ = write!(out, "{x} ");
-                }
-                let _ = writeln!(out);
-            }
-        }
-        let nbn = self.bns.iter().filter(|b| b.is_some()).count();
-        let _ = writeln!(out, "BN {nbn}");
-        for (i, bn) in self.bns.iter().take(self.layers.len()).enumerate() {
-            match bn {
-                Some(b) => {
-                    let _ = writeln!(out, "{i} 1");
-                    for v in [&b.gamma, &b.beta] {
-                        for x in v.iter() {
-                            let _ = write!(out, "{x} ");
-                        }
-                        let _ = writeln!(out);
-                    }
-                }
-                None => {
-                    let _ = writeln!(out, "{i} 0");
-                }
-            }
-        }
-        // FiLM：层号 + 是否启用 + (nk+1)×c 的 g/b
-        let nfilm = self.films.iter().filter(|f| f.is_some()).count();
-        let _ = writeln!(out, "FILM {nfilm}");
-        for (i, f) in self.films.iter().enumerate() {
-            match f {
-                Some(ff) => {
-                    let _ = writeln!(out, "{i} {} {}", ff.nk, ff.c);
-                    for v in [&ff.g, &ff.b] {
-                        for x in v.iter() {
-                            let _ = write!(out, "{x} ");
-                        }
-                        let _ = writeln!(out);
-                    }
-                }
-                None => {
-                    let _ = writeln!(out, "{i} 0 0");
-                }
-            }
-        }
-        // 输出头：数量 + 每个头（启用=1 + cin/cout + w/b/scale）
-        let _ = writeln!(out, "HEADS {}", self.heads.len());
-        for h in &self.heads {
-            match h {
-                Some(c) => {
-                    let _ = writeln!(out, "1 {} {}", c.cin, c.cout);
-                    for v in [&c.w, &c.b, &c.scale] {
-                        for x in v.iter() {
-                            let _ = write!(out, "{x} ");
-                        }
-                        let _ = writeln!(out);
-                    }
-                }
-                None => {
-                    let _ = writeln!(out, "0 0 0");
-                }
-            }
-        }
-        std::fs::write(path, out).map_err(|e| format!("{}: {e}", path.display()))
-    }
+mod save;
 
+/// 外部文本声明的尺寸上限。`.tpc` 是外部文件：按它写的层数/通道先分配
+/// （`Vec::with_capacity(n)`、`Conv::new(cin, cout, 1)`）能把进程直接打爆，
+/// 所以每个尺寸都是先查再分，不在分配之后才校验。
+const MAX_LAYERS: usize = 1024;
+const MAX_CH: usize = 2048;
+
+impl Net {
     pub fn load(path: &std::path::Path) -> Result<Self, String> {
         let txt = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
         fn take<'a>(
@@ -97,6 +22,21 @@ impl Net {
                 .ok_or_else(|| format!("{}: 缺 {what}", path.display()))?
                 .parse::<f32>()
                 .map_err(|e| format!("{}: {what} 解析失败 {e}", path.display()))
+        }
+        fn bounded(
+            n: usize,
+            path: &std::path::Path,
+            what: &str,
+            max: usize,
+        ) -> Result<usize, String> {
+            if (1..=max).contains(&n) {
+                Ok(n)
+            } else {
+                Err(format!(
+                    "{}: {what} 必须在 1..={max}（收到 {n}）",
+                    path.display()
+                ))
+            }
         }
         let mut it = txt.split_whitespace();
         let head = it.next();
@@ -112,7 +52,12 @@ impl Net {
         ) {
             return Err(format!("{}: 不是 TPC1..TPC7", path.display()));
         }
-        let nl = take(&mut it, path, "层数")? as usize;
+        let nl = bounded(
+            take(&mut it, path, "层数")? as usize,
+            path,
+            "层数",
+            MAX_LAYERS,
+        )?;
         let cond = take(&mut it, path, "cond")? as usize;
         let has_linear = matches!(
             head,
@@ -150,8 +95,8 @@ impl Net {
         };
         let mut layers = Vec::with_capacity(nl);
         for _ in 0..nl {
-            let cin = take(&mut it, path, "cin")? as usize;
-            let cout = take(&mut it, path, "cout")? as usize;
+            let cin = bounded(take(&mut it, path, "cin")? as usize, path, "cin", MAX_CH)?;
+            let cout = bounded(take(&mut it, path, "cout")? as usize, path, "cout", MAX_CH)?;
             let mut l = Conv::new(cin, cout, 1);
             for v in l.w.iter_mut() {
                 *v = take(&mut it, path, "w")?;
@@ -174,6 +119,12 @@ impl Net {
             let on = take(&mut it, path, "BN 开关")? != 0.0;
             if !on {
                 continue;
+            }
+            if idx >= nl {
+                return Err(format!(
+                    "{}: BN 层号 {idx} 越界（层数 {nl}）",
+                    path.display()
+                ));
             }
             let c = layers[idx].cout;
             let mut b = Bn::new(c);
@@ -219,6 +170,12 @@ impl Net {
                 if k == 0 || c == 0 {
                     continue;
                 }
+                if k > MAX_LAYERS || c > MAX_CH || idx >= nl {
+                    return Err(format!(
+                        "{}: Film 条目越界（层号 {idx}/{nl}，nk {k}，c {c}）",
+                        path.display()
+                    ));
+                }
                 if let Some(f) = net.films[idx].as_mut() {
                     for v in f.g.iter_mut() {
                         *v = take(&mut it, path, "Film g")?;
@@ -228,6 +185,12 @@ impl Net {
                     }
                 }
             }
+        }
+        if nheads > MAX_LAYERS {
+            return Err(format!(
+                "{}: nheads 不能超过 {MAX_LAYERS}（收到 {nheads}）",
+                path.display()
+            ));
         }
         if nheads > 0 {
             if it.next() != Some("HEADS") {
@@ -243,6 +206,8 @@ impl Net {
                     net.heads.push(None);
                     continue;
                 }
+                let cin = bounded(cin, path, "head cin", MAX_CH)?;
+                let cout = bounded(cout, path, "head cout", MAX_CH)?;
                 let mut c = Conv::new(cin, cout, 1);
                 for v in c.w.iter_mut() {
                     *v = take(&mut it, path, "head w")?;
