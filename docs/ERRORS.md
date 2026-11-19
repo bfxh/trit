@@ -104,6 +104,9 @@
 
 | L71 | `diffuse::PatchMlp::features` 对 `xt` 没有任何长度校验，`xt[yy * w + xx]` 与 `xt[y * w + x]` 都假设 `xt.len() == w×h`；上游 `add_noise` 用 `x0.iter().zip(eps)` 静默截断，`train_shard` / `ddim_sample_opts` 里 `w * h` 全是裸乘 | `eps` 短于 `x0` 时 `xt` 只剩短的一段，`features` 立刻越界；`w * h` 溢出后 `Vec` 只分配小尺寸，同一个越界面从另一条路到达；`w > 2^31` 还会让 `rem_euclid(w as i32)` 为负、`as usize` 巨大 | `features` 开头 `assert!(xt.len() == w.saturating_mul(h))`；三处 `#[allow(too_many_arguments)]` 收成模块级一条 `#![allow]` 把预算压回 352；契约测试放 `tests/diffuse_contract.rs`（该文件不在 lib 的 190 里） | C020 |
 
+| L72 | `tconv::Conv::forward` 直接 `x[ci][yy * w + xr]`，`x.len()` 与每通道长度都没有校验；上游 `Net::input` 只 `vec![img.to_vec()]`，`VDen::predict_x0` 也只 `vec![xt.to_vec(), vec![t_frac; w * h]]` | `img` / `xt` 短一截或 `maps` 少一个通道，就在卷积核里越界；`out` 的 `vec![vec![0.0; w * h]; cout]` 又是裸乘，`w * h` 溢出后只分配小数组 | `forward` 开头 `assert!(x.len() == self.cin && x.iter().all(\|c\| c.len() == w * h))`；`q` 与 `sobel` 的闭包各压一行把 `conv.rs` 压回 275；契约测试 `tests/tconv_contract.rs` | C021 |
+
+
 
 ---
 

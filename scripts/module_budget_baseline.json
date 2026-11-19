@@ -2599,6 +2599,10 @@
       "lines": 264
     },
     {
+      "file": "crates/trit-parts/tests/tconv_contract.rs",
+      "lines": 18
+    },
+    {
       "file": "crates/trit-policy/src/lib.rs",
       "lines": 658
     },
