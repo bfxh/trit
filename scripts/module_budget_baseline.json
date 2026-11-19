@@ -2548,7 +2548,11 @@
     },
     {
       "file": "crates/trit-parts/src/tconv/net.rs",
-      "lines": 723
+      "lines": 220
+    },
+    {
+      "file": "crates/trit-parts/src/tconv/net/train.rs",
+      "lines": 516
     },
     {
       "file": "crates/trit-parts/src/tconv/tests.rs",
@@ -2605,6 +2609,10 @@
     {
       "file": "crates/trit-parts/tests/tconv_contract.rs",
       "lines": 18
+    },
+    {
+      "file": "crates/trit-parts/tests/tconv_input_contract.rs",
+      "lines": 23
     },
     {
       "file": "crates/trit-parts/tests/tconv_input_dim.rs",
