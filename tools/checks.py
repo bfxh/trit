@@ -36,6 +36,7 @@ import fnmatch
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime
@@ -166,6 +167,9 @@ def pick_bash():
     WSL -- a different filesystem where D:\\ is /mnt/d. A check that runs there fails for
     reasons unrelated to the code being checked (L44 in the ledger).
     """
+    if os.name != "nt":
+        # POSIX：bash 就在 PATH 里，也不存在 WSL 那种「另一个文件系统」的陷阱。
+        return shutil.which("bash")
     candidates = [os.environ.get("BASH", ""),
                   r"C:\Program Files\Git\bin\bash.exe",
                   r"C:\Program Files (x86)\Git\bin\bash.exe"]
