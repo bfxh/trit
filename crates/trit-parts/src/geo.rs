@@ -93,59 +93,11 @@ impl Camera {
     }
 }
 
-/// 读 `.npy`（仅小端 f32，2 维），返回 `(数据, 形状)`。
-pub fn read_npy_f32(path: &Path) -> Result<(Vec<f32>, Vec<usize>), String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    if bytes.len() < 10 || &bytes[0..6] != b"\x93NUMPY" {
-        return Err("不是 .npy 文件".into());
-    }
-    let major = bytes[6];
-    let (hlen, start) = if major == 1 {
-        (u16::from_le_bytes([bytes[8], bytes[9]]) as usize, 10)
-    } else {
-        (
-            u32::from_le_bytes([bytes[8], bytes[9], bytes[10], bytes[11]]) as usize,
-            12,
-        )
-    };
-    let header = std::str::from_utf8(&bytes[start..start + hlen]).map_err(|_| "npy 头非 UTF-8")?;
-    let descr = npy_field(header, "descr").ok_or("npy 缺 descr")?;
-    if descr != "<f4" && descr != "|f4" {
-        return Err(format!("只支持 float32，得到 {descr}"));
-    }
-    let shape: Vec<usize> = npy_field(header, "shape")
-        .ok_or("npy 缺 shape")?
-        .trim_matches(|c| c == '(' || c == ')' || c == ',' || c == ' ')
-        .split(',')
-        .filter_map(|s| s.trim().parse().ok())
-        .collect();
-    let n: usize = shape.iter().product();
-    let body = &bytes[start + hlen..];
-    if body.len() < n * 4 {
-        return Err("npy 数据长度不足".into());
-    }
-    let data = body[..n * 4]
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|c| f32::from_le_bytes(*c))
-        .collect();
-    Ok((data, shape))
-}
-
-fn npy_field<'a>(header: &'a str, key: &str) -> Option<&'a str> {
-    let i = header.find(&format!("'{key}'"))? + key.len() + 2;
-    let rest = header[i..].trim_start().strip_prefix(':')?.trim_start();
-    if let Some(r) = rest.strip_prefix('\'') {
-        let b = r.find('\'')?;
-        Some(&r[..b])
-    } else {
-        let end = rest
-            .find(|c: char| !(c.is_ascii_digit() || c == '(' || c == ')' || c == ',' || c == ' '))
-            .unwrap_or(rest.len());
-        Some(rest[..end].trim_end())
-    }
-}
+/// 读 float32 的 `.npy`，返回 `(数据, 形状)`。
+///
+/// 实现在 `crate::npy`：`data` 的 seg id 与这里的 depth/normal 是同一种格式，
+/// 两边各写一份就会把同一处边界缺失复制两遍（L65）。
+pub use crate::npy::read_f32 as read_npy_f32;
 
 /// 从 JSON 里取一个二维数字矩阵（`[[..],[..]]`）。
 fn matrix(json: &str, key: &str) -> Result<Vec<Vec<f64>>, String> {

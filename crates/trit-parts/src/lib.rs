@@ -19,8 +19,7 @@ pub mod depthdata;
 pub mod depthnet;
 pub mod depthunet;
 pub mod diffuse;
-// 结果指纹的正本在 trit-core（纹理族也要用，避免第二份 SHA-256）；这里保持旧路径可用。
-pub use trit_core::fingerprint;
+pub use trit_core::fingerprint; // 正本在 trit-core（避免第二份 SHA-256），这里保持旧路径
 pub mod fuse;
 pub mod geo;
 pub mod glb;
@@ -33,6 +32,7 @@ pub mod loss;
 pub mod matnet;
 pub mod mesh;
 pub mod model;
+pub mod npy;
 pub mod objlabel;
 pub mod objmesh;
 pub mod occ;
