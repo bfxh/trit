@@ -21,11 +21,11 @@ pub use trit_core::fingerprint; // 正本在 trit-core（避免第二份 SHA-256
 pub mod fuse;
 pub mod geo;
 pub mod glb;
+pub mod hidden;
 pub mod inst;
 pub mod job;
 pub mod light;
-// 观感/风格测量的正本在独立仓 bfxh/trit-look（git 依赖，pin rev）。
-pub use trit_look as look;
+pub use trit_look as look; // 正本在独立仓 bfxh/trit-look（git 依赖，pin rev）
 pub mod loss;
 pub mod matnet;
 pub mod mesh;

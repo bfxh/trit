@@ -6,8 +6,7 @@
 
 use crate::tconv::Conv;
 
-/// 输入边长（正方形裁剪）。
-pub const SIDE: usize = 24;
+pub use crate::hidden::{MAX_HIDDEN, SIDE};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MatClass {
@@ -60,8 +59,9 @@ struct Cache {
 }
 
 impl MatNet {
-    pub fn new(hidden: usize, seed: u64) -> Self {
-        MatNet {
+    pub fn new(hidden: usize, seed: u64) -> Result<Self, String> {
+        crate::hidden::check(hidden)?;
+        Ok(MatNet {
             c1: Conv::new(3, hidden, seed),
             c2: Conv::new(hidden, hidden, seed ^ 0x5DEECE66D),
             head_w: vec![0.0; hidden * 4],
@@ -71,7 +71,7 @@ impl MatNet {
             mb: vec![0.0; 4],
             vb: vec![0.0; 4],
             t: 0,
-        }
+        })
     }
 
     fn hidden(&self) -> usize {
@@ -285,7 +285,7 @@ mod tests {
 
     #[test]
     fn learns_two_trivially_separable_classes() {
-        let mut net = MatNet::new(8, 7);
+        let mut net = MatNet::new(8, 7).unwrap();
         // 红块 vs 蓝块，两分类（用 0/3 两个标签），训练 200 步应几乎全对
         for step in 0..300 {
             let (x, y) = if step % 2 == 0 {
@@ -303,7 +303,7 @@ mod tests {
 
     #[test]
     fn save_load_roundtrip_keeps_predictions() {
-        let mut net = MatNet::new(6, 3);
+        let mut net = MatNet::new(6, 3).unwrap();
         for step in 0..60 {
             let (x, y) = if step % 2 == 0 {
                 (solid([0.8, 0.8, 0.1]), 0)
@@ -324,8 +324,8 @@ mod tests {
 
     #[test]
     fn training_is_deterministic() {
-        let mut a = MatNet::new(4, 11);
-        let mut b = MatNet::new(4, 11);
+        let mut a = MatNet::new(4, 11).unwrap();
+        let mut b = MatNet::new(4, 11).unwrap();
         for _ in 0..20 {
             let x = solid([0.5, 0.3, 0.2]);
             a.train_step(&x, SIDE, SIDE, 1, 0.01);

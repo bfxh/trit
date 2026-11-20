@@ -2399,6 +2399,10 @@
       "lines": 747
     },
     {
+      "file": "crates/trit-parts/src/hidden.rs",
+      "lines": 22
+    },
+    {
       "file": "crates/trit-parts/src/inst.rs",
       "lines": 728
     },
@@ -2661,6 +2665,10 @@
     {
       "file": "crates/trit-parts/tests/diffuse_contract.rs",
       "lines": 11
+    },
+    {
+      "file": "crates/trit-parts/tests/matnet_bounds.rs",
+      "lines": 54
     },
     {
       "file": "crates/trit-parts/tests/models_e2e.rs",
