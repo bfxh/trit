@@ -3599,6 +3599,18 @@
       "lines": 170
     },
     {
+      "file": "crates/trit-wspace/examples/row_guard/main.rs",
+      "lines": 218
+    },
+    {
+      "file": "crates/trit-wspace/examples/row_guard/metrics.rs",
+      "lines": 105
+    },
+    {
+      "file": "crates/trit-wspace/examples/row_guard/target.rs",
+      "lines": 200
+    },
+    {
       "file": "crates/trit-wspace/examples/spam_redteam/main.rs",
       "lines": 241
     },
