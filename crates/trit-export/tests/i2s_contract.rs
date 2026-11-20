@@ -1,10 +1,9 @@
 //! I2_S 契约：映射、块内交错、位序、scale 口径与尾部布局。
-//!
 //! 规格与判据见 `docs/plans/BITNET-FORMAT-INTEROP-PLAN.md`（J1–J3）。
-
 use trit_core::Ternary;
 use trit_export::bitnet::i2s::{
-    BLOCK_VALUES, TAIL_BYTES, decode, encode_f32, encode_ternary, pack, quantize_scale,
+    BLOCK_VALUES, TAIL_BYTES, decode, encode_f32, encode_ternary, first_nonzero_scale, pack,
+    quantize_scale,
 };
 
 fn patterned(len: usize) -> Vec<Ternary> {
@@ -47,9 +46,10 @@ fn j2_block_interleave_and_bit_order() {
 }
 
 #[test]
-fn j3_scale_uses_first_nonzero_abs() {
+fn j3_scale_uses_max_and_first_nonzero() {
     assert_eq!(quantize_scale(&[0.0, 0.5, -0.25]), 0.5);
     assert_eq!(quantize_scale(&[0.0, -0.0]), 1e-5);
+    assert_eq!(first_nonzero_scale(&[0.0, 0.25, -0.5]), 0.25);
 }
 
 #[test]

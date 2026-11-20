@@ -38,5 +38,21 @@
     "new": "out[base + k] = (c1 << 6) | (c0 << 4) | (c2 << 2) | c3;",
     "pkg": "trit-export",
     "filter": "j2_block_interleave_and_bit_order"
+  },
+  {
+    "name": "tl1: nibble 高低位互换",
+    "file": "crates/trit-export/src/bitnet/tl1.rs",
+    "old": "out[i * 16 + j] |= (nib as u8) << (4 * (1 - t));",
+    "new": "out[i * 16 + j] |= (nib as u8) << (4 * t);",
+    "pkg": "trit-export",
+    "filter": "tl1_matches_python_reference_byte_for_byte"
+  },
+  {
+    "name": "tl1: 字节平铺漏 (by/4) 层",
+    "file": "crates/trit-export/src/bitnet/tl1.rs",
+    "old": "let byte = (outer * (bmm / 16) + (mb % bmm) / 16) * (by / 4) + qqy / 2;",
+    "new": "let byte = (outer * (bmm / 16) + (mb % bmm) / 16) + qqy / 2;",
+    "pkg": "trit-export",
+    "filter": "tl1_matches_python_reference_byte_for_byte"
   }
 ]

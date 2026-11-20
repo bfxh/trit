@@ -1,38 +1,28 @@
 //! I2_S：2 bit/trit + per-tensor f32 scale（bitnet.cpp 互操作格式）。
-//!
-//! 规格来源：`microsoft/BitNet` 的 `utils/convert-hf-to-gguf-bitnet.py` 的 `quantize_to_i2_s`。
-//! 映射 `-1 → 0`、`0 → 1`、`+1 → 2`；每 128 值一块，块内 `reshape(4, 32)`，
-//! 第 `j` 组第 `k` 个值放在第 `k` 字节的 `(3-j)` 个 2-bit 槽；尾部 32 字节，
-//! 前 4 字节是 f32 小端。
+//! 规格：`microsoft/BitNet` 的 `utils/convert-hf-to-gguf-bitnet.py` 的 `quantize_to_i2_s`。
+//! 映射 `-1→0/0→1/+1→2`；128 值/32 B，块内 `reshape(4,32)`；尾部 32 B（f32 LE + 补 0）。
 
 use trit_core::Ternary;
 
-/// 每块元素数。
 pub const BLOCK_VALUES: usize = 128;
-/// 每块字节数。
 pub const BLOCK_BYTES: usize = 32;
-/// 尾部的字节数（前 4 字节 f32，其余补 0）。
 pub const TAIL_BYTES: usize = 32;
 
 /// I2_S 编解码错误。
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum I2sError {
-    /// 元素数不是 128 的倍数。
     #[error("I2_S 元素数 {0} 不是 128 的倍数")]
     BlockAlign(usize),
-    /// 缓冲区长度与声明元素数不符。
     #[error("I2_S 长度 {packed} 与 {count} 个元素不符（应为 {expected}）")]
     Length {
         packed: usize,
         count: usize,
         expected: usize,
     },
-    /// scale 不是正有限值。
     #[error("I2_S scale 必须是正有限值（收到 {0}）")]
     Scale(f32),
 }
 
-/// `-1/0/+1` → 2-bit 编码 `0/1/2`。
 fn encode_trit(t: Ternary) -> u8 {
     match t {
         Ternary::False => 0,
@@ -97,8 +87,17 @@ pub fn unpack(packed: &[u8], count: usize) -> Result<Vec<Ternary>, I2sError> {
     Ok(out)
 }
 
-/// scale：第一个非零 `|w|`（阈值 `1e-6`）；全零取 `1e-5`（与 bitnet.cpp 的转换脚本一致）。
+/// C 实现 `quantize_i2_s` 的口径：`scale = max(|w|)`；全零取 `1e-5`。
 pub fn quantize_scale(values: &[f32]) -> f32 {
+    values
+        .iter()
+        .map(|v| v.abs())
+        .fold(0.0f32, f32::max)
+        .max(1e-5)
+}
+
+/// Python 转换器对**已量化权重**（`±scale/0`）的口径：第一个非零 `|w|`；全零取 `1e-5`。
+pub fn first_nonzero_scale(values: &[f32]) -> f32 {
     values
         .iter()
         .map(|v| v.abs())

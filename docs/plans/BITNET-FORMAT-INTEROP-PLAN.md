@@ -62,8 +62,8 @@
     表项 = `b0*q0 + b1*q1`。
 - `lut_scales` 是 per-tensor float32。
 
-> 索引的位序/端序在 kernel 内以寄存器布局为准，文档没有逐位写死；M2 用真实表对拍，
-> 不靠猜。
+> 索引的 byte 布局由 Python 参考实现写死：TL1 见 `preprocess_weights_tl1` / `process_tl1`
+> （M2 逐字节复刻并对拍），TL2 见 `preprocess_weights_tl2`（M2b）。
 
 ## 2. 仓库现状与差距
 
@@ -92,13 +92,19 @@ trit-export::bitnet::i2s
     decode(bytes: &[u8], count: usize) -> Result<(Vec<Ternary>, f32), I2sError>
 
 trit-export::bitnet::tl
-    encode_tl1(trits: &[Ternary]) -> Result<Vec<u8>, Error>      // 1-bit 索引
-    encode_tl2(trits: &[Ternary]) -> Result<Vec<u8>, Error>      // 2-bit 索引
-    decode_tl1(index: &[u8], count: usize) -> Result<Vec<Ternary>, Error>
-    decode_tl2(index: &[u8], count: usize) -> Result<Vec<Ternary>, Error>
-    build_three_table(weights: &[f32], scale: f32) -> Vec<i8>    // 256 字节，对拍用
-    build_two_table(weights: &[f32], scale: f32) -> Vec<i8>      // 256 字节，对拍用
+    three_index(trits: [Ternary; 3]) -> usize                    // 9*a + 3*b + c
+    two_index(bits: [bool; 2]) -> usize                          // 2*a + b
+    build_three_table(weights: [f32; 3], scale: f32) -> [i8; 27]
+    build_two_table(weights: [f32; 2], scale: f32) -> [i8; 4]
+
+trit-export::bitnet::tl1
+    Tile { m, k, bm, bk, bmm }                                   // kernel_config.ini 的一节
+    tl1_encode(trits: &[Ternary], tile: Tile) -> Result<Vec<u8>, TlError>   // M*K/4 字节
+    tl1_decode(bytes: &[u8], tile: Tile) -> Result<Vec<Ternary>, TlError>
 ```
+
+- 表：`build_*_table` 只算“组合 → 线性组合值”，不对 kernel 的寄存器布局负责；
+  索引的 byte 布局由 `tl1` 按 `preprocess_weights_tl1` 的 tile 重排逐字节复刻。
 
 - 输入/输出沿用 `Tensor` 的 `trits`；`scale` 作为**格式级**字段显式传递，
   不写进现有 `Tensor.scales`（那是 per-row）。
@@ -129,23 +135,27 @@ Ternary 张量 ──TL encode───▶ 1/2-bit 索引 ──GGUF──▶ �
 | J5 | TL 二值表 | 穷举 `q0,q1 ∈ {-1,1}`（4 组） | 表项 == `b0 q0 + b1 q1` |
 | J6 | 体积账 | 1M 三值 | I2_S = 0.25 B/权重；TL2 = 0.25 B/权重 + 表；5 trits/byte = 0.2 B/权重 |
 | J7 | 真实 GGUF（可选） | 读 BitNet 2B4T 的 I2_S 张量 | 与 safetensors 同张量逐元素一致 |
+| J8 | TL1 索引布局 | `tl1_encode` 与 Python `preprocess_weights_tl1` 同参数输出比 3 组夹具，再 `tl1_decode` 回三值 | 3 组逐字节全等且往返无损 |
 
-J1–J6 全部只依赖本仓代码，不需要外部运行时；J7 需要下载公开权重（MIT），
+J1–J6、J8 全部只依赖本仓代码，不需要外部运行时；J7 需要下载公开权重（MIT），
 M3 再定是否纳入常规门。
 
 ## 5. 里程碑
 
 - **M0（本轮）**：本文档 + 规格测试向量（文本夹具；不写实现）。
 - **M1**：I2_S 读写 + J1–J3；新增 `tests/i2s_contract.rs`。
-- **M2**：TL1/TL2 索引读写 + `build_*_table` + J4–J5；新增 `tests/tl_contract.rs`。
+- **M2（本轮）**：TL1 索引读写 + `build_*_table` + J4–J5、J8；新增 `tests/tl_contract.rs`、
+  `tests/tl1_contract.rs` 与 `tests/fixtures/tl1_golden.txt`。
+- **M2b**：TL2 索引读写（three/two 双段 + sign 平面 + 特定 `(M,K)` 的 padding）。
 - **M3**：J6–J7；读数与负结果写进 `docs/results/` 与 `LESSONS.md`。
 
 ## 6. 风险与未决问题
 
 1. **scale 语义冲突**：I2_S / TL 是 per-tensor scale，仓库 GGUF 张量是 per-row `scales`。
    M1 必须显式区分，不能把两者相加或替换。
-2. **TL 索引位序**：外部 kernel 以寄存器布局为准，文档没写死；M2 用 `three_lut_ctor`
-   的 27 组结果反推，不从猜测出发。
+2. **TL 索引位序**：TL1 的布局由 Python 参考实现的 `preprocess_weights_tl1` / `process_tl1`
+   写死；M2 用同参数夹具逐字节对拍（J8），不从 kernel 反推。TL2 的 three/two 双段与
+   padding 是对特定 `(M,K)` 的常量，M2b 需参数化后再对拍。
 3. **GGUF type id**：需要查上游 `ggml_type` 枚举；冲突时另起互操作 ID 空间，不复用 `100`。
 4. **"表不入盘"**：TL 的文件体积不含表；J6 的体积账必须把表单独列，不能混进权重。
 5. **许可**：BitNet 代码与权重都是 MIT；M3 若下载权重，只做读取对拍，不再分发。

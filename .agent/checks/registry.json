@@ -1213,6 +1213,23 @@
       "pattern": "\\(c0 << 6\\) \\| \\(c1 << 4\\) \\| \\(c2 << 2\\) \\| c3",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C071",
+      "title": "TL1 索引布局与 Python 参考实现逐字节一致",
+      "kind": "cmd",
+      "covers": [
+        "L119"
+      ],
+      "scope": [
+        "crates/trit-export/src/bitnet/tl1.rs"
+      ],
+      "since": "L119",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-export --test tl1_contract",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

@@ -944,11 +944,19 @@
     },
     {
       "file": "crates/trit-export/src/bitnet/i2s.rs",
-      "lines": 157
+      "lines": 156
     },
     {
       "file": "crates/trit-export/src/bitnet/mod.rs",
       "lines": 5
+    },
+    {
+      "file": "crates/trit-export/src/bitnet/tl.rs",
+      "lines": 48
+    },
+    {
+      "file": "crates/trit-export/src/bitnet/tl1.rs",
+      "lines": 138
     },
     {
       "file": "crates/trit-export/src/error.rs",
@@ -969,6 +977,14 @@
     {
       "file": "crates/trit-export/tests/i2s_contract.rs",
       "lines": 90
+    },
+    {
+      "file": "crates/trit-export/tests/tl1_contract.rs",
+      "lines": 111
+    },
+    {
+      "file": "crates/trit-export/tests/tl_contract.rs",
+      "lines": 54
     },
     {
       "file": "crates/trit-float/src/format.rs",
