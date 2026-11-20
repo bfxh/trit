@@ -1105,6 +1105,62 @@
       "pattern": "MAX_SIDE = 4096|MAX_RES = 4096",
       "min": 2,
       "allow_skip": false
+    },
+    {
+      "id": "C065",
+      "title": "打包器/生成器在分配前限元素数",
+      "kind": "require",
+      "covers": [
+        "L113"
+      ],
+      "scope": [
+        "crates/trit-build/src/trb.rs",
+        "crates/trit-fuzz/src/corpus.rs",
+        "crates/trit-bench/src/lib.rs"
+      ],
+      "since": "L113",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "MAX_GEN|MAX_TRITS|超过字节容量",
+      "min": 3,
+      "allow_skip": false
+    },
+    {
+      "id": "C066",
+      "title": "基准夹具与合成样本的尺寸上限",
+      "kind": "require",
+      "covers": [
+        "L114"
+      ],
+      "scope": [
+        "crates/trit-ops/src/bench.rs",
+        "crates/trit-graph/src/classifier.rs"
+      ],
+      "since": "L114",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "MAX_ELEMS|MAX_SAMPLES",
+      "min": 2,
+      "allow_skip": false
+    },
+    {
+      "id": "C067",
+      "title": "混淆矩阵/预测窗/展开步数上限",
+      "kind": "require",
+      "covers": [
+        "L115"
+      ],
+      "scope": [
+        "crates/trit-learn/src/metrics.rs",
+        "crates/trit-learn/src/forecast.rs",
+        "crates/trit-circuit/src/sequential.rs"
+      ],
+      "since": "L115",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "MAX_CLASSES|MAX_HORIZON|MAX_UNROLL",
+      "min": 3,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

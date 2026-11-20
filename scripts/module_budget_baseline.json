@@ -219,6 +219,10 @@
       "lines": 174
     },
     {
+      "file": "crates/trit-bench/tests/trits_bounds.rs",
+      "lines": 12
+    },
+    {
       "file": "crates/trit-build/src/bitplan.rs",
       "lines": 435
     },
@@ -501,6 +505,10 @@
     {
       "file": "crates/trit-circuit/tests/fuzz_smoke.rs",
       "lines": 210
+    },
+    {
+      "file": "crates/trit-circuit/tests/unroll_bounds.rs",
+      "lines": 25
     },
     {
       "file": "crates/trit-clean/src/bdd.rs",
@@ -976,7 +984,7 @@
     },
     {
       "file": "crates/trit-fuzz/src/corpus.rs",
-      "lines": 156
+      "lines": 153
     },
     {
       "file": "crates/trit-fuzz/src/lib.rs",
@@ -989,6 +997,10 @@
     {
       "file": "crates/trit-fuzz/tests/corpus.rs",
       "lines": 136
+    },
+    {
+      "file": "crates/trit-fuzz/tests/gen_bounds.rs",
+      "lines": 26
     },
     {
       "file": "crates/trit-gamescan/src/chaos.rs",
@@ -1277,6 +1289,10 @@
     {
       "file": "crates/trit-graph/src/wl.rs",
       "lines": 174
+    },
+    {
+      "file": "crates/trit-graph/tests/samples_bounds.rs",
+      "lines": 11
     },
     {
       "file": "crates/trit-immune/examples/scenario.rs",
@@ -1660,7 +1676,7 @@
     },
     {
       "file": "crates/trit-learn/src/forecast.rs",
-      "lines": 222
+      "lines": 219
     },
     {
       "file": "crates/trit-learn/src/lib.rs",
@@ -1681,6 +1697,10 @@
     {
       "file": "crates/trit-learn/src/quant.rs",
       "lines": 6
+    },
+    {
+      "file": "crates/trit-learn/tests/metrics_bounds.rs",
+      "lines": 18
     },
     {
       "file": "crates/trit-lsp/src/analysis.rs",
@@ -1985,6 +2005,10 @@
     {
       "file": "crates/trit-ops/src/trit.rs",
       "lines": 202
+    },
+    {
+      "file": "crates/trit-ops/tests/bench_bounds.rs",
+      "lines": 11
     },
     {
       "file": "crates/trit-orch/examples/dispatch_metrics.rs",

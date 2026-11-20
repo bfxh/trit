@@ -1,28 +1,16 @@
 //! TRB2：基 3 打包（5 trit/字节，1.6 bit/trit）+ GF(3) CRC-3。
-//!
-//! 为什么不再用 M0 的双导轨（2 bit/trit）：TRB2 省 20% 体积，且 CRC-3 只占 3 个 trit。
-//! 为什么不在 trit-build 里直接用 `trit-codec`：它是 `publish = false` 的实验层，
-//! 发布图门禁禁止实验 crate 互相依赖。这里保留**同构**的精简实现，等 codec 稳定后统一。
-//!
-//! v2：`TRB2` | version=2 | algebra u8 | nvars u8 | len u32 LE | packed(ceil((len+3)/5) B)
-//! v3：`TRB2` | version=3 | algebra u8 | nvars u8 | len u32 LE | names_hash u64 LE
-//!     | nvars × (name_len u8 | UTF-8 名字) | packed(ceil((len+3)/5) B)
-//!
-//! 载荷 = 输出 trit 序列 || CRC-3（3 个 trit），再按 5 trit/字节打包。
-//! v3 把变量名存进 blob，`--decode` 才能重建原列名；v2 仍可解码（列名回退 `v0..vN`）。
-//! `names_hash` 是名字段的 FNV-1a 64（CRC-3 只覆盖 trit 载荷，管不到名字）。
-
+//! 不用 M0 双导轨：省 20%；不依赖 `trit-codec`（实验层互依赖被禁），保留同构实现。
+//! v2：`TRB2`|v2|algebra u8|nvars u8|len u32 LE|packed；v3 多 `names_hash u64 LE` + 名字段。
+//! 载荷 = trit 序列 || CRC-3（3 trit），5 trit/字节打包；v3 存变量名，v2 回退 `v0..vN`。
 use anyhow::{Result, bail};
 use trit_core::Algebra;
 use trit_core::value::Ternary;
-
 pub const MAGIC: &[u8; 4] = b"TRB2";
 pub const VERSION: u8 = 3;
 const HEADER_V2: usize = 11;
 const HEADER_V3: usize = 19;
 
-/// 存进 blob 的名字必须能安全写回 CSV 表头与 C 注释：
-/// 字母/数字/`_`/`$`（Verilog 端口允许 `$`），长度 1..=255 字节。
+/// 存进 blob 的名字：字母/数字/`_`/`$`，长度 1..=255 字节。
 pub fn is_safe_name(name: &str) -> bool {
     if name.is_empty() || name.len() > u8::MAX as usize {
         return false;
@@ -74,8 +62,14 @@ pub fn pack(values: &[Ternary]) -> Vec<u8> {
     out
 }
 
-/// 解包；字节 243..=255 不是合法 5-trit 组合，显式报错而不是猜。
 pub fn unpack(bytes: &[u8], len: usize) -> Result<Vec<Ternary>> {
+    let capacity = bytes
+        .len()
+        .checked_mul(5)
+        .ok_or_else(|| anyhow::anyhow!("TRB2 长度溢出"))?;
+    if len > capacity {
+        bail!("声明长度 {len} 超过字节容量 {capacity}");
+    }
     let mut out = Vec::with_capacity(len);
     'outer: for byte in bytes {
         if *byte >= 243 {
@@ -272,6 +266,12 @@ mod tests {
             assert_eq!(unpack(&[byte], 5).unwrap(), expected);
         }
         assert!(unpack(&[243], 5).is_err());
+    }
+
+    #[test]
+    fn declared_len_above_byte_capacity_is_rejected() {
+        let err = unpack(&[0u8; 2], 11).unwrap_err();
+        assert!(err.to_string().contains("超过字节容量"));
     }
 
     #[test]

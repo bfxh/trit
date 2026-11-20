@@ -166,5 +166,13 @@
   "new": "        let rows = width * 64;",
   "pkg": "trit-build",
   "filter": "bitplan::tests::threaded_table_matches_single_thread"
+ },
+ {
+  "name": "build: 解包声明长度不卡",
+  "file": "crates/trit-build/src/trb.rs",
+  "old": "if len > capacity {",
+  "new": "if false {",
+  "pkg": "trit-build",
+  "filter": "declared_len_above_byte_capacity_is_rejected"
  }
 ]

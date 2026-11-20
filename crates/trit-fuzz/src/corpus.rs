@@ -1,26 +1,21 @@
 //! 三值测试语料生成（确定性）。
-//!
-//! 立项判据是一条**精确**的尺，不是"感觉重复"：
-//! `grep -rlE "\^=.*<< 13" --include=*.rs crates/` —— 要求同一行真的有 `^=` 移位赋值，
-//! 免得把散文里提到的模式也算进去（第一版我用的是 `<< 13` 配 `>> 7|>> 17` 的宽松尺，
-//! 结果自己写的这段注释都被数进去了，读数是 64；换成精确尺后是 **67 → 65 → 63**：
-//! 本会话前 67、`trit-fuzz` 第一批（`trit-count` 两份逐字相同的 `random_expr` 合并）后 65、
-//! `trit-dot` / `trit-codec` 的 stress 改吃之后 63，再吃下 `trit-float` / `trit-immune`
-//! 两份测试后 61，再把 `trit-immune/tests/properties.rs` 换掉后 **60**（口径都是 `crates/`；
-//! 把 `benchmarks/` 算进来再多 1）。
-//! RNG 本体复用 [`trit_bench::SeedRng`]（同一组 13/7/17 移位），所以"换包"不改变序列口径。
-//!
+//! 立项判据是精确尺（`grep -rlE "\^=.*<< 13"`），不是"感觉重复"；读数口径只算 `crates/`。
 //! 只做语料，不做求解：这里出现的任何表达式都不该被当成"产品输入"。
+//! RNG 本体复用 [`trit_bench::SeedRng`]（同一组 13/7/17 移位），所以"换包"不改变序列口径。
 
 use trit_bench::SeedRng;
 use trit_core::ast::Expr;
 use trit_core::value::Ternary;
+
+/// 生成器的元素上限：语料只喂求解器，1M 已是上限。
+pub const MAX_GEN: usize = 1 << 20;
 
 /// 长度为 `len` 的三值向量，取值 `{False, True, Unknown}`。
 ///
 /// 口径：每个位置独立取 `rng.below(3)`，与 [`SeedRng::trits`] 的 `-1/0/+1` 同一把尺。
 #[must_use]
 pub fn random_trits(rng: &mut SeedRng, len: usize) -> Vec<Ternary> {
+    assert!(len <= MAX_GEN, "长度 {len} 超过上限 {MAX_GEN}");
     (0..len)
         .map(|_| match rng.below(3) {
             0 => Ternary::False,
@@ -116,6 +111,7 @@ pub fn random_cnf(
 /// `nvars` 个布尔赋值的随机一行（`true` = 变量为真）。
 #[must_use]
 pub fn random_assignment(rng: &mut SeedRng, nvars: usize) -> Vec<bool> {
+    assert!(nvars <= MAX_GEN, "nvars {nvars} 超过上限 {MAX_GEN}");
     (0..nvars).map(|_| rng.below(2) == 1).collect()
 }
 
@@ -144,6 +140,7 @@ pub fn bipolar(rng: &mut SeedRng) -> i32 {
 /// `n` 个变量名（`a`、`b`、`c`…；超过 26 个时接 `a27`…）。
 #[must_use]
 pub fn var_names(n: usize) -> Vec<String> {
+    assert!(n <= MAX_GEN, "变量数 {n} 超过上限 {MAX_GEN}");
     (0..n)
         .map(|i| {
             if i < 26 {
