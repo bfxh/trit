@@ -194,6 +194,7 @@
 
 
 
+| L141 | 2026-11-21 取证：19 个工作树里 **1008 个提交未合并进 main**、**38 个 stash**、`git fsck --lost-found` 捞出 **547 个悬空提交**、39 个未提交文件。多个智能体各自在 worktree 提交 → 从不 push → 会话额度耗尽中断 → 目录被清理 → 分支成孤儿、stash 直接消失 → `gc` 后永久丢失 | 流程缺「退出前必须留下可恢复副本」这一环：全靠自觉，而智能体会中断；`git bundle --all` 也不含 stash，清理目录前没人归档 | `docs/COLLAB.md §10` 三条硬规则（阶段完成即 push / 不留长期 stash / 删 worktree 前归档）；`scripts/archive-worktrees.sh`（bundle + 全部 stash + dirty + 未跟踪）；`scripts/rescue-dangling.sh`（悬空提交引用化并打包）；2026-11-21 已抢救 19 树 185 MB + 547 提交 10.9 MB | C092 |
 
 ---
 

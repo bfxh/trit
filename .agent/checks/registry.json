@@ -1578,6 +1578,25 @@
       "run": "cargo test -p trit-unsafe",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C092",
+      "title": "多智能体防丢失：归档/抢救脚本可用且规程在文档里",
+      "kind": "cmd",
+      "covers": [
+        "L141"
+      ],
+      "scope": [
+        "scripts/archive-worktrees.sh",
+        "scripts/rescue-dangling.sh",
+        "docs/COLLAB.md"
+      ],
+      "since": "L141",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "run": "bash -n scripts/archive-worktrees.sh && bash -n scripts/rescue-dangling.sh && grep -q '## 10. 防丢失' docs/COLLAB.md",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
