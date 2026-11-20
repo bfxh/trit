@@ -1636,6 +1636,25 @@
       "run": "python scripts/repo_admission.py --self-test && grep -q repo_admission scripts/hooks/pre-commit && grep -q '入库准入' docs/ADMISSION.md && python scripts/repo_admission.py --all > /dev/null",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C095",
+      "title": "wsp-no-transformer 只用 zip 9（不再经 npyz 的 npz feature 拉 0.6.x）",
+      "kind": "cmd",
+      "covers": [
+        "L145"
+      ],
+      "scope": [
+        "benchmarks/wsp-no-transformer/Cargo.toml",
+        "benchmarks/wsp-no-transformer/Cargo.lock",
+        "benchmarks/wsp-no-transformer/src/npz.rs"
+      ],
+      "since": "L145",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "run": "grep -A1 'name = \"zip\"' benchmarks/wsp-no-transformer/Cargo.lock | grep -q 'version = \"9' && ! grep -A1 'name = \"zip\"' benchmarks/wsp-no-transformer/Cargo.lock | grep -q 'version = \"0.6' && grep -q 'deflate-flate2-zlib-rs' benchmarks/wsp-no-transformer/Cargo.toml",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

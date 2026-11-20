@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use npyz::npz::NpzArchive;
+use crate::npz::Npz;
 
 pub struct Weights {
     /// 词 id → 概念 id（0 表示无概念）。
@@ -21,7 +21,7 @@ pub struct Weights {
     pub mix: f32,
 }
 
-pub fn read_i64<R: std::io::Read + std::io::Seek>(npz: &mut NpzArchive<R>, name: &str) -> Vec<i64> {
+pub fn read_i64(npz: &mut Npz, name: &str) -> Vec<i64> {
     npz.by_name(name)
         .unwrap_or_else(|e| panic!("读 {name} 失败：{e}"))
         .unwrap_or_else(|| panic!("{name} 不存在"))
@@ -31,7 +31,7 @@ pub fn read_i64<R: std::io::Read + std::io::Seek>(npz: &mut NpzArchive<R>, name:
         .unwrap_or_else(|e| panic!("读 {name} 数据失败：{e}"))
 }
 
-fn read_f32<R: std::io::Read + std::io::Seek>(npz: &mut NpzArchive<R>, name: &str) -> Vec<f32> {
+fn read_f32(npz: &mut Npz, name: &str) -> Vec<f32> {
     npz.by_name(name)
         .unwrap_or_else(|e| panic!("读 {name} 失败：{e}"))
         .unwrap_or_else(|| panic!("{name} 不存在"))
@@ -43,7 +43,7 @@ fn read_f32<R: std::io::Read + std::io::Seek>(npz: &mut NpzArchive<R>, name: &st
 
 pub fn load_weights(path: &Path) -> Weights {
     let mut npz =
-        NpzArchive::open(path).unwrap_or_else(|e| panic!("打开 {} 失败：{e}", path.display()));
+        Npz::open(path).unwrap_or_else(|e| panic!("打开 {} 失败：{e}", path.display()));
     let concept = read_i64(&mut npz, "concept");
     let idf = read_f32(&mut npz, "idf");
     let a = read_f32(&mut npz, "A");
