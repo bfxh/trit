@@ -94,6 +94,7 @@
 | [WSP-ADV-TRAIN.md](research/WSP-ADV-TRAIN.md) | 对抗训练：蓝方吃进化攻击样本（RowDropout 行级注入） |
 | [WSP-PRIMING.md](research/WSP-PRIMING.md) | 三值创造性预激发：悖论假设检验（本配置不显著+代价曲线） |
 | [WSP-ADAPTIVE-DEFENSE.md](research/WSP-ADAPTIVE-DEFENSE.md) | 自适应防御：探针生成器 + 对抗集成（50× 探针效率；初始化轨迹脆弱性 5/6 塌缩） |
+| [WSP-ROW-GUARD.md](research/WSP-ROW-GUARD.md) | 输出行架构冗余：行复制 + 分歧告警（击杀成本 ×K；tanh 饱和反取证发现） |
 | [WSP-DGA-QAT.md](research/WSP-DGA-QAT.md) | 三值 QAT：DGA 域名检测与家族归因（真实安全数据集） |
 | [GGUF-TRIT.md](research/GGUF-TRIT.md) | 三值权重 GGUF 容器（`trit-export`）的最小 v3 子集 |
 | [FORK-FLUSH.md](FORK-FLUSH.md) | Fork-and-Flush：多智能体任务分叉 + 清空 + 按验收分数选优 |
