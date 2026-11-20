@@ -815,6 +815,23 @@
       "added": "2026-11-20",
       "pattern": "cout\\s*\\*\\s*cin\\s*\\*\\s*9",
       "allow_skip": false
+    },
+    {
+      "id": "C048",
+      "title": "形态学半径夹到网格最短边",
+      "kind": "require",
+      "covers": [
+        "L96"
+      ],
+      "scope": [
+        "crates/trit-parts/src/mesh/morph.rs"
+      ],
+      "since": "L96",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "r\\.min\\(nx\\.min\\(ny\\)\\.min\\(nz\\)\\)",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

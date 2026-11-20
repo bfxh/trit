@@ -742,5 +742,13 @@
     "new": "let _ = h;",
     "pkg": "trit-parts",
     "filter": "depth_unet_rejects_hidden_above_the_cap"
+  },
+  {
+    "name": "morph: 半径不夹取",
+    "file": "crates/trit-parts/src/mesh/morph.rs",
+    "old": "r.min(nx.min(ny).min(nz))",
+    "new": "r.min(64)",
+    "pkg": "trit-parts",
+    "filter": "radius_is_clamped_to_the_shortest_edge"
   }
 ]
