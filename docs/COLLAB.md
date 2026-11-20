@@ -122,3 +122,42 @@ git worktree prune                # 目录已删但记录残留时清掉
 git worktree list && du -sh <target 根>/*/ | sort -rh
 ```
 
+
+## 10. 防丢失：多智能体会话会因额度中断（2026-11-21 取证）
+
+实测 19 个工作树：
+
+| 风险项 | 数量 | 说明 |
+|---|---|---|
+| 未合并进 `main` 的提交 | **1008 个** | `trit-parts` 361、`wt-dim-sweep` 139、`wt-dim-sweep-ci` 109、当前 `tconv-cap` 118… |
+| `stash` | **38 个**（每个工作树 2 个） | stash 不属于任何分支 |
+| `git fsck --lost-found` 捞出的悬空提交 | **547 个** | 被删分支/重置后的孤儿提交，gc 后永久消失 |
+| 未提交文件 | 39 个 | `trit-sweep` 21、`trit-claims` 11… |
+
+**根因链**：智能体在独立 worktree 里提交 → 只留本地分支、从不 push → 会话额度耗尽被中断 →
+工作树被清理/删除 → 分支成孤儿、**stash 直接消失**（`git bundle --all` 也不含 stash）→ gc 后彻底没了。
+这不是某一方疏忽，是流程缺了"退出前必须留下可恢复副本"这一环。
+
+**三条硬规则（默认执行，不需要讨论）**：
+
+1. **阶段完成就 push**：`git push -u origin HEAD`（分支不必合并）。只有本地分支 + 未推送 = 随时会丢。
+2. **不要长期留 `stash`**：`git stash pop`，或者立刻 `git stash show -p > 文件.patch`。stash 是仓库里最脆弱的东西。
+3. **删 worktree / 清理目录之前，必须先归档**：
+   ```bash
+   bash scripts/archive-worktrees.sh          # bundle + 全部 stash + dirty + 未跟踪 → D:/trit-archive/<日期>/full/
+   bash scripts/rescue-dangling.sh            # 把 fsck 的悬空提交引用化并打包
+   ```
+
+**2026-11-21 已做的一次完整抢救**：
+
+- 19 个工作树全量归档（185 MB）：每份 `bundle --all` + 每个 stash 的 patch + dirty patch + 未跟踪文件
+- 547 个悬空提交引用化为 `refs/rescue/<hash>` 并打包（10.9 MB）
+- 全部在 `D:/trit-archive/2026-11-21/`；bundle 只含分支与标签，**stash 必须用同目录的 `*-stash<N>.patch` 恢复**
+
+恢复一份：
+
+```bash
+git clone D:/trit-archive/2026-11-21/full/<name>.bundle <dir>
+git -C <dir> apply D:/trit-archive/2026-11-21/full/<name>-dirty.patch     # 未提交改动
+git -C <dir> apply D:/trit-archive/2026-11-21/full/<name>-stash0.patch    # 第 1 个 stash
+```
