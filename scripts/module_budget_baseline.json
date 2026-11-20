@@ -3168,7 +3168,7 @@
     },
     {
       "file": "crates/trit-redteam/src/main.rs",
-      "lines": 279
+      "lines": 275
     },
     {
       "file": "crates/trit-redteam/src/rail/analyze.rs",
@@ -3197,6 +3197,10 @@
     {
       "file": "crates/trit-redteam/tests/cli.rs",
       "lines": 222
+    },
+    {
+      "file": "crates/trit-redteam/tests/crc_bounds.rs",
+      "lines": 20
     },
     {
       "file": "crates/trit-sat/src/lib.rs",

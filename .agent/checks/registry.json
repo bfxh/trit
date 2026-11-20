@@ -1036,6 +1036,23 @@
       "pattern": "n > MAX_TRITS",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C061",
+      "title": "CRC-3 扫描的载荷长度/重量上限",
+      "kind": "require",
+      "covers": [
+        "L109"
+      ],
+      "scope": [
+        "crates/trit-redteam/src/crc.rs"
+      ],
+      "since": "L109",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "length <= MAX_LENGTH",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

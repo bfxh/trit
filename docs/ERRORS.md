@@ -157,6 +157,7 @@
 | L106 | `trit-dot bench --len` 驱动三份 `Vec<i32>` + 打包位面，`--len 1e9` 直接 4 GB/份；`--iters` 只判非 0 | bin 只 `arg().unwrap_or(1<<20)`，没有长度闸；分配在 `(0..len).map(...).collect()` | `main.rs` 加 `MAX_LEN=1<<24`，`bench` 解析后返回 Err；新增 `tests/len_bounds.rs`（16777217 被拒） | C058 |
 | L107 | `trit-gpu bench --trits` 位平面数组与 GPU 缓冲按 trits 分配，`--trits 1e9` 是 GB 级；默认 `1<<20`，无上限 | 解析在 `main`，`run(trits)` 只判 0；`gpu` feature 门后的 `bench` 才是分配者 | `main.rs` 在解析后判 `trits > MAX_TRITS=1<<24`（rc=1）；检查放在 feature 门外，默认构建的桩也能测到；新增 `tests/trits_bounds.rs`（16777217 被拒且错误含 `--trits`） | C059 |
 | L108 | `trit-codec stats/plan --trits` 各自解析并 `vec![Ternary::Unknown; trits]` / `(0..trits).map(...)`：`--trits 1e9` 是 1 GB/份，`plan` 还要再编码一遍 | 两处都只 `map_or(默认)`，没有上限；`parse_trits` 只处理位置参数 | `main.rs` 抽出 `trits_arg(args, default)`（`MAX_TRITS=1<<24`），`stats_cmd`/`plan_cmd` 共用；新增 `tests/trits_bounds.rs`（stats/plan 各一条 16777217 被拒） | C060 |
+| L109 | `trit-redteam crc --trits N --max-weight W` 直接进 `crc::scan`：`vec![0i8; N]` + `walk` 枚举 `C(N,W)·3^W`，`--trits 1e9` 是 1 GB 且组合爆炸；`--max-weight` 也只有默认值 | `scan` 只按 `length`/`max_weight` 分配与枚举，没有上限；CLI 的 clap 默认值 9/5 是唯一约束 | `crc.rs` 加 `MAX_LENGTH=256`/`MAX_WEIGHT=8`，`scan` 入口两行 assert；`run_crc` 先 bail（CLI 友好）；新增 `tests/crc_bounds.rs`（`crc --trits 257` 被拒且错误含 `trits`） | C061 |
 
 
 

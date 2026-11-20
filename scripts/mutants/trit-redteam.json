@@ -110,5 +110,13 @@
   "new": "    Ok(true)",
   "pkg": "trit-redteam",
   "filter": "strict_decoders_accept_only_the_canonical_encoding"
+ },
+ {
+  "name": "crc CLI: 长度上限翻倍",
+  "file": "crates/trit-redteam/src/main.rs",
+  "old": "if trits > crc::MAX_LENGTH || max_weight > crc::MAX_WEIGHT {",
+  "new": "if trits > crc::MAX_LENGTH * 2 || max_weight > crc::MAX_WEIGHT * 2 {",
+  "pkg": "trit-redteam",
+  "filter": "absurd_trits_is_rejected_before_scanning"
  }
 ]

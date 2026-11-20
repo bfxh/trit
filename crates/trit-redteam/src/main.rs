@@ -1,14 +1,9 @@
 //! 三进制产物的红队/加固检查器。
-//!
-//! **边界**：只读本机、本仓自己的产物（TRB2 blob、`--emit-verilog` 导出的网表），
-//! 不发网络请求、不做目标发现、不做规避检测。目的是把"我们的格式有哪些可被利用的性质"
-//! 变成可复算的判据，而不是提供攻击别人的手段。
-//!
+//! **边界**：只读本机、本仓自己的产物（TRB2 blob、`--emit-verilog` 导出的网表），不发网络请求、不做规避检测。
 //! 三个子命令对应三类攻击面：
 //! - `encode`：TRB2 非规范编码（同一张表多个字节串）+ 隐写容量
 //! - `crc`：CRC-3 的检出矩阵与最小不可检重量
 //! - `rail`：双导轨 `(1,1)` 非法态的可达性、粘滞与 fail-open
-
 mod attrib;
 mod binary;
 mod blob;
@@ -18,12 +13,10 @@ mod fuzz;
 mod rail;
 mod secrets;
 mod sidechannel;
-
-use std::fs;
-use std::path::PathBuf;
-
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Parser)]
 #[command(name = "trit-redteam", about = "三进制产物红队检查器（只打自家格式）")]
@@ -158,6 +151,9 @@ fn run_encode(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
 }
 
 fn run_crc(trits: usize, max_weight: usize) -> Result<(serde_json::Value, bool)> {
+    if trits > crc::MAX_LENGTH || max_weight > crc::MAX_WEIGHT {
+        anyhow::bail!("trits≤{} weight≤{}", crc::MAX_LENGTH, crc::MAX_WEIGHT);
+    }
     let scan = crc::scan(trits, max_weight);
     let rows: Vec<serde_json::Value> = scan
         .rows
