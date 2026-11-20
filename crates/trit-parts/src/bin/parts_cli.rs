@@ -289,7 +289,7 @@ fn run(argv: &[String]) {
     });
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
 
-    let hw = (res * res) as usize;
+    let hw = trit_parts::dims::pixels(res as usize, res as usize);
     assert_eq!(out.len() % hw, 0, "输出长度不是 hw 的整数倍");
     let ch = out.len() / hw;
     assert!(ch > pl.k * 3, "输出通道 {ch} 少于 k*3+1");
@@ -575,7 +575,7 @@ fn pipeline(argv: &[String]) {
     let t0 = std::time::Instant::now();
     let (logits, z) = forward_logits_feats(&net, &gpu, &rgb, res as u32);
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
-    let hw = res * res;
+    let hw = trit_parts::dims::pixels(res, res);
 
     if let Some(bp) = &bank_p {
         let bank = Bank::load(bp).unwrap_or_else(|e| {

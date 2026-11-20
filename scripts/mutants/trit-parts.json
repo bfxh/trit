@@ -702,5 +702,13 @@
     "new": "Ok::<usize, String>(out_w.saturating_mul(out_h))",
     "pkg": "trit-parts",
     "filter": "huge_output_canvas_is_rejected_before_allocating"
+  },
+  {
+    "name": "data: 输出边长不判",
+    "file": "crates/trit-parts/src/data.rs",
+    "old": "crate::dims::pixels(res, res) * 3",
+    "new": "res * res * 3",
+    "pkg": "trit-parts",
+    "filter": "resizing_an_image_to_a_huge_square_panics"
   }
 ]

@@ -2488,7 +2488,7 @@
     },
     {
       "file": "crates/trit-parts/src/net/model.rs",
-      "lines": 442
+      "lines": 436
     },
     {
       "file": "crates/trit-parts/src/net/model/random.rs",
@@ -2709,6 +2709,10 @@
     {
       "file": "crates/trit-parts/tests/quilt_bounds.rs",
       "lines": 28
+    },
+    {
+      "file": "crates/trit-parts/tests/res_entry_bounds.rs",
+      "lines": 30
     },
     {
       "file": "crates/trit-parts/tests/side_bounds.rs",

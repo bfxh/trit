@@ -78,9 +78,9 @@ fn brighten(pix: &[f32], k: f32) -> Vec<f32> {
 fn infer_feats(net: &Net, gpu: &Gpu, rgb: &[f32], res: usize, k: usize, v2: bool) -> Vec<f32> {
     let (logits, z) = trit_parts::api::forward_logits_feats(net, gpu, rgb, res as u32);
     if v2 {
-        features_v2(&logits, &z, res * res, k)
+        features_v2(&logits, &z, trit_parts::dims::pixels(res, res), k)
     } else {
-        trit_parts::ood::features_from_logits(&logits, &z, res * res, k)
+        trit_parts::ood::features_from_logits(&logits, &z, trit_parts::dims::pixels(res, res), k)
     }
 }
 

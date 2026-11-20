@@ -82,7 +82,7 @@ fn main() {
 
     let k = args.k;
     let res = args.res;
-    let hw = (res * res) as usize;
+    let hw = trit_parts::dims::pixels(res as usize, res as usize);
 
     let mut resumed_step = 0u64;
     let mut resumed_rng: Option<u64> = None;

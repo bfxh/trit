@@ -42,7 +42,7 @@ pub fn contact_sheet(
     let mut sheet = vec![0.0f32; need];
     let cols = cols.max(1);
     for (fi, f) in frames.iter().enumerate() {
-        if f.len() != res * res * 3 {
+        if f.len() != res.saturating_mul(res).saturating_mul(3) {
             continue;
         }
         let (cx, cy) = (fi % cols, fi / cols);

@@ -57,7 +57,7 @@ fn main() {
     let py = read_f32(&dir.join("logits_py.bin")).expect("logits_py.bin");
     assert_eq!(out.len(), py.len(), "logits 长度不一致");
 
-    let n = (res * res) as usize;
+    let n = trit_parts::dims::pixels(res as usize, res as usize);
     let mut maxd = 0f32;
     let mut where_max = (0usize, 0usize);
     let mut bad = 0usize;
