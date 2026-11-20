@@ -13,12 +13,12 @@ fn num_of<T: std::str::FromStr>(argv: &[String], key: &str, dflt: T) -> T {
 }
 
 /// `--size` 是所有下游分配的来源（`w * h`、`vec![...; w*h]`），必须挡上限。
-fn size_of(argv: &[String], dflt: usize) -> usize {
+/// `tex` 与 `texgen2` 两个入口共用这一道——新增入口不许自己再 `parse` 一遍。
+pub(crate) fn size_of(argv: &[String], dflt: usize) -> usize {
     let n: usize = num_of(argv, "--size", dflt);
-    assert!(
-        (1..=4096).contains(&n),
-        "--size 必须在 1..=4096（收到 {n}）"
-    );
+    if let Err(e) = trit_parts::side::check(n) {
+        panic!("{e}");
+    }
     n
 }
 
@@ -471,16 +471,4 @@ impl Den {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    #[should_panic(expected = "--size 必须在 1..=4096")]
-    fn oversized_size_is_rejected() {
-        size_of(&["--size".to_string(), "100000".to_string()], 256);
-    }
-    #[test]
-    fn size_defaults_and_in_range_still_work() {
-        assert_eq!(size_of(&[], 256), 256);
-        assert_eq!(size_of(&["--size".to_string(), "64".to_string()], 256), 64);
-    }
-}
+mod tests;

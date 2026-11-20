@@ -670,5 +670,13 @@
     "new": "patch == 0 || patch > MAX_PATCH",
     "pkg": "trit-parts",
     "filter": "even_patch_is_rejected"
+  },
+  {
+    "name": "side: 边长上限不判",
+    "file": "crates/trit-parts/src/side.rs",
+    "old": "!(1..=MAX_SIDE).contains(&n)",
+    "new": "false",
+    "pkg": "trit-parts",
+    "filter": "one_above_the_cap_is_rejected"
   }
 ]

@@ -40,7 +40,7 @@ mod scene_export;
 mod splat;
 #[path = "parts_3d/splat_export.rs"]
 mod splat_export;
-#[path = "parts_3d/texgen.rs"]
+#[path = "parts_3d/texgen/mod.rs"]
 mod texgen;
 #[path = "parts_3d/texgen2.rs"]
 mod texgen2;

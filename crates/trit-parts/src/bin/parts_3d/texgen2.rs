@@ -13,9 +13,7 @@ pub(crate) fn tex_gen_cmd(argv: &[String]) {
     let iters: usize = arg(argv, "--iters")
         .and_then(|v| v.parse().ok())
         .unwrap_or(200000);
-    let n: usize = arg(argv, "--size")
-        .and_then(|v| v.parse().ok())
-        .unwrap_or(64);
+    let n: usize = super::texgen::size_of(argv, 64);
     let steps: usize = arg(argv, "--steps-t")
         .and_then(|v| v.parse().ok())
         .unwrap_or(50);
