@@ -558,6 +558,23 @@
       "pattern": "atlas_px > MAX_ATLAS_PX",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C033",
+      "title": "宽度参数在缩放前校验，且不挂 gpu feature",
+      "kind": "require",
+      "covers": [
+        "L84"
+      ],
+      "scope": [
+        "crates/trit-parts/src/width.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T11:13:06+08:00",
+      "pattern": "width > MAX_WIDTH",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

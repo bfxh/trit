@@ -2296,7 +2296,7 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_train.rs",
-      "lines": 558
+      "lines": 554
     },
     {
       "file": "crates/trit-parts/src/bin/parts_train/args.rs",
@@ -2472,7 +2472,11 @@
     },
     {
       "file": "crates/trit-parts/src/net/model.rs",
-      "lines": 470
+      "lines": 442
+    },
+    {
+      "file": "crates/trit-parts/src/net/model/random.rs",
+      "lines": 47
     },
     {
       "file": "crates/trit-parts/src/npy.rs",
@@ -2635,6 +2639,10 @@
       "lines": 186
     },
     {
+      "file": "crates/trit-parts/src/width.rs",
+      "lines": 26
+    },
+    {
       "file": "crates/trit-parts/tests/atlas_bounds.rs",
       "lines": 112
     },
@@ -2677,6 +2685,10 @@
     {
       "file": "crates/trit-parts/tests/weights_bounds.rs",
       "lines": 105
+    },
+    {
+      "file": "crates/trit-parts/tests/width_bounds.rs",
+      "lines": 58
     },
     {
       "file": "crates/trit-policy/src/lib.rs",

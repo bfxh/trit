@@ -14,8 +14,8 @@ use std::path::PathBuf;
 use trit_parts::data::{Sample, load_frame_sub};
 use trit_parts::gpu::Gpu;
 use trit_parts::loss::{depth_loss_grad, loss_and_grad, plane_weights};
-use trit_parts::net::Net;
 use trit_parts::weights::Tensors;
+use trit_parts::{net::Net, width::scaled_channels};
 
 #[path = "parts_train/args.rs"]
 mod args;
@@ -107,35 +107,26 @@ fn main() {
         },
         None => match &args.init {
             Some(dir) => {
-                let t = Tensors::load(dir).unwrap_or_else(|e| {
-                    eprintln!("初始权重读取失败: {e}");
-                    std::process::exit(1)
-                });
-                Net::from_tensors(&t).unwrap_or_else(|e| {
-                    eprintln!("建网失败: {e}");
-                    std::process::exit(1)
-                })
+                let t = Tensors::load(dir).unwrap_or_else(|e| die(format!("读权重失败: {e}")));
+                Net::from_tensors(&t).unwrap_or_else(|e| die(format!("建网失败: {e}")))
             }
             None => {
                 if (args.width - 1.0).abs() > 1e-6 {
-                    println!(
-                        "从零训练，宽度 {:.2}×（通道 {} / {} / {}）",
-                        args.width,
-                        ((32.0 * args.width).round() as u32).div_ceil(4) * 4,
-                        ((64.0 * args.width).round() as u32).div_ceil(4) * 4,
-                        ((128.0 * args.width).round() as u32).div_ceil(4) * 4
-                    );
+                    let s = |c| scaled_channels(c, args.width);
+                    let (a, b, c) = (s(32), s(64), s(128));
+                    println!("宽度 {:.2}×，通道 {a} {b} {c}", args.width);
                 }
                 Net::random_w(args.seed, args.width)
+                    .unwrap_or_else(|e| die(format!("--width 非法: {e}")))
             }
         },
     };
     if let Some(src) = &args.expand_from {
-        let (old, _, _) = trit_parts::state::load(src).unwrap_or_else(|e| {
-            eprintln!("扩展源读取失败: {e}");
-            std::process::exit(1);
-        });
-        net = old.expand_width(args.width);
+        let (old, _, _) =
+            trit_parts::state::load(src).unwrap_or_else(|e| die(format!("读扩展源失败: {e}")));
+        net = old
+            .expand_width(args.width)
+            .unwrap_or_else(|e| die(format!("--width 非法: {e}")));
         resumed_step = 0;
         println!(
             "net2net：从 {} 扩展为宽度 {:.2}×（新通道 E=0，保持原输出）",
@@ -555,4 +546,9 @@ fn write_manifest(
         std::process::exit(1);
     });
     println!("清单 {}", path.display());
+}
+
+fn die(msg: String) -> ! {
+    eprintln!("{msg}");
+    std::process::exit(1)
 }

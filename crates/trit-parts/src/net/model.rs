@@ -6,6 +6,8 @@ use trit_learn::Ste;
 
 use super::layer::*;
 
+mod random;
+
 pub struct Trace {
     /// 每层 affine 之前的卷积输出（convt 层填卷积输出，未用）。
     pub pre: Vec<Option<Buffer>>,
@@ -109,45 +111,15 @@ impl Net {
     }
 
     /// 随机初始化（按宽度倍数缩放通道：1.0 ⇒ 32/64/128；1.5 ⇒ 48/96/192）。
-    pub fn random_w(seed: u64, width: f32) -> Self {
-        let mut s = seed | 1;
-        let q = |c: u32| -> u32 {
-            let v = (c as f32 * width).round() as u32;
-            (v.div_ceil(4) * 4).max(4)
-        };
-        let (c32, c64, c128, out) = (q(32), q(64), q(128), 16u32);
-        let mut mk = |ci, co, kk, relu| Layer::random(ci, co, kk, relu, &mut s);
-        let layers = vec![
-            mk(3, c32, 3, true),
-            mk(c32, c32, 3, true),
-            mk(c32, c64, 3, true),
-            mk(c64, c64, 3, true),
-            mk(c64, c128, 3, true),
-            mk(c128, c128, 3, true),
-            mk(c128, c64, 2, false),
-            mk(c64 + c64, c64, 3, true), // d2a 的输入是 cat(u3|c64, b|c64)
-            mk(c64, c64, 3, true),
-            mk(c64, c32, 2, false),
-            mk(c32 + c32, c32, 3, true), // d1a 的输入是 cat(u2|c32, a|c32)
-            mk(c32, c32, 3, true),
-            mk(c32, out, 1, false),
-        ];
-        let mut layers = layers;
-        layers[U3].convt = true;
-        layers[U2].convt = true;
-        let mut net = Self {
-            layers,
-            head_lr_mult: 1.0,
-            freeze_until: 0,
-            freeze_head: false,
-        };
-        net.mark_convt();
-        net
+    /// 按宽度倍数建网。`width` 来自 `--width`：非法值返回错误而不是把网络
+    /// 静默塌成 4 通道。合法区间见 [`crate::width::MAX_WIDTH`]。
+    pub fn random_w(seed: u64, width: f32) -> Result<Self, String> {
+        random::build(seed, width)
     }
 
     /// 默认宽度（32/64/128）。
     pub fn random(seed: u64) -> Self {
-        Self::random_w(seed, 1.0)
+        Self::random_w(seed, 1.0).expect("宽度 1.0 在合法区间内")
     }
 
     /// 开启/关闭块内残差（只对 `cin == cout` 的卷积层生效：e1b/e2b/e3b/d2b/d1b）。
