@@ -149,6 +149,7 @@
 | L98 | `Network::random(size, seed)` 先按 `size²` 建 `weights`，`MAX_NEURONS=4096` 的检查只在 `validate()` 里，而 `validate()` 要等 `simulate`/`run` 才调用——`--size 100000` 先分配 9.31 GiB 再报错 | 闸在 `validate()`、分配在 `random()`，顺序反了；`weights` 是公开字段，CLI 走 `random()` 时没有任何前置限制 | `snn.rs` 抽出 `check_size(size)`，`random()` 第一行调用（签名改 `Result<Self, NetworkError>`），`validate()` 也复用同一个闸；`trit-machines/src/main.rs` 两处 CLI 调用改 `?`；新增 `tests/snn_bounds.rs`（上限放行、+1 拒绝、`usize::MAX` 拒绝） | C050 |
 | L99 | `TernaryMemory::new(dim)` 直接 `vec![0; dim*dim]`：`--dim 100000` → 单张 i32 矩阵 37.25 GiB；`--pairs` 只判非 0 | `dim` 来自 CLI 与 pub API，`new` 是唯一分配点，但没有任何上限；`encode`/`decode` 的长度校验都在分配之后 | `memory.rs` 加 `MAX_DIM=256`，`new` 第一行 `assert!(dim > 0 && dim <= MAX_DIM)`；CLI `demo` 预检 `dim > MAX_DIM` 返回 Err；新增 `tests/memory_bounds.rs`（上限合法、+1 panic、0 panic） | C051 |
 | L100 | `trit-net train --hidden 1e9`：`train_cmd` 先按 hidden 建 `weights`/`bias`（5 GiB + 1 GiB i8），`Model::validate` 只在 `train()` 里调用——先分配后校验；`calibrate --hidden` 同理 | `Layer::validate` 只查非零与形状，没有宽度上限；两个 CLI 分支都在解析后直接构造 | `model.rs` 加 `MAX_WIDTH=4096`，`Layer::validate` 先判 `inputs/outputs`；`train_cmd` 与 `calibrate --hidden` 在构造前检查；新增 `tests/width_bounds.rs`（越界 JSON 拒绝、正常层通过） | C052 |
+| L101 | `trit-count --big MAX_N` 解析 usize 无上限：DPLL/BDD 对拍按 n 放大，`--big 100000` 可以让进程跑到天荒地老；同文件 `--fuzz-cnf` 的 `--nvars` 已有 40 上限 | `--big` 的 match 只解析不钳制；`run_big` 的 `13..=max_n` 直接吃外部数 | `main.rs` 在解析后加 `max_n > 40` 判红（rc=2，文案对齐 `--fuzz-cnf`）；新增 `tests/big_bounds.rs`（41 拒绝、40 放行，`--cases 0` 快速返回） | C053 |
 
 
 

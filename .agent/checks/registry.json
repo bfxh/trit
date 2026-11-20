@@ -900,6 +900,23 @@
       "pattern": "self.inputs > MAX_WIDTH \\|\\| self.outputs > MAX_WIDTH",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C053",
+      "title": "trit-count --big 的 max_n 上限 40",
+      "kind": "require",
+      "covers": [
+        "L101"
+      ],
+      "scope": [
+        "crates/trit-count/src/main.rs"
+      ],
+      "since": "L101",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "max_n > 40",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

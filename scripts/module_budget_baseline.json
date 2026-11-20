@@ -879,6 +879,10 @@
       "lines": 310
     },
     {
+      "file": "crates/trit-count/tests/big_bounds.rs",
+      "lines": 30
+    },
+    {
       "file": "crates/trit-count/tests/cnf_fuzz.rs",
       "lines": 134
     },
