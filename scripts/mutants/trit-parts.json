@@ -430,5 +430,37 @@
     "new": "    res > 0\n",
     "pkg": "trit-parts",
     "filter": "model::tests::backend_res_must_be_a_positive_multiple_of_four"
+  },
+  {
+    "name": "tpc: cond 不设上限（条件图按它分配）",
+    "file": "crates/trit-parts/src/tconv/io.rs",
+    "old": "        let cond = capped(\n            take(&mut it, path, \"cond\")? as usize,\n            path,\n            \"cond\",\n            MAX_COND,\n        )?;\n",
+    "new": "        let cond = take(&mut it, path, \"cond\")? as usize;\n",
+    "pkg": "trit-parts",
+    "filter": "absurd_cond_is_rejected_before_allocating"
+  },
+  {
+    "name": "tpc: nk 不设上限（Film 的 g/b 按它分配）",
+    "file": "crates/trit-parts/src/tconv/io.rs",
+    "old": "            capped(take(&mut it, path, \"nk\")? as usize, path, \"nk\", MAX_CLASSES)?\n",
+    "new": "            take(&mut it, path, \"nk\")? as usize\n",
+    "pkg": "trit-parts",
+    "filter": "absurd_class_count_is_rejected_before_film_allocates"
+  },
+  {
+    "name": "tpc: dilation 不设上限（Conv 里 as i32）",
+    "file": "crates/trit-parts/src/tconv/io.rs",
+    "old": "            capped(\n                take(&mut it, path, \"dilation\")? as usize,\n                path,\n                \"dilation\",\n                MAX_DIL,\n            )?\n            .max(1)\n",
+    "new": "            (take(&mut it, path, \"dilation\")? as usize).max(1)\n",
+    "pkg": "trit-parts",
+    "filter": "absurd_dilation_is_rejected_before_the_i32_cast"
+  },
+  {
+    "name": "tpc: FILM 声明不与网络比对（读错个数）",
+    "file": "crates/trit-parts/src/tconv/io/sections.rs",
+    "old": "        if k != nk_hdr || c != cout {\n",
+    "new": "        if false {\n",
+    "pkg": "trit-parts",
+    "filter": "film_declaration_must_match_the_network"
   }
 ]

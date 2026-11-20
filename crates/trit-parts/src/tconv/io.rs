@@ -1,14 +1,20 @@
-use super::bn::Bn;
 use super::conv::Conv;
 use super::net::Net;
 
 mod save;
+mod sections;
 
 /// 外部文本声明的尺寸上限。`.tpc` 是外部文件：按它写的层数/通道先分配
 /// （`Vec::with_capacity(n)`、`Conv::new(cin, cout, 1)`）能把进程直接打爆，
 /// 所以每个尺寸都是先查再分，不在分配之后才校验。
 const MAX_LAYERS: usize = 1024;
 const MAX_CH: usize = 2048;
+/// 条件通道数上限（`cond = 0` 表示无条件）。`Net::input` 会为每个 `cond` 追加一张 `w×h` 常数图。
+const MAX_COND: usize = 64;
+/// FiLM 类别数上限（`nk = 0` 表示无 FiLM）。`Film` 的 g/b 各是 `(nk + 1) × cout`。
+const MAX_CLASSES: usize = 1024;
+/// 膨胀率上限。`Conv` 里 `dil` 要 `as i32` 再参与索引，2^31 之上会直接变负。
+const MAX_DIL: usize = 64;
 
 impl Net {
     pub fn load(path: &std::path::Path) -> Result<Self, String> {
@@ -38,6 +44,22 @@ impl Net {
                 ))
             }
         }
+        /// 允许 0（= 关闭）的头部字段：`cond` / `nk` 都是「0 表示不用这个特性」。
+        fn capped(
+            n: usize,
+            path: &std::path::Path,
+            what: &str,
+            max: usize,
+        ) -> Result<usize, String> {
+            if n <= max {
+                Ok(n)
+            } else {
+                Err(format!(
+                    "{}: {what} 不能超过 {max}（收到 {n}）",
+                    path.display()
+                ))
+            }
+        }
         let mut it = txt.split_whitespace();
         let head = it.next();
         if !matches!(
@@ -58,7 +80,12 @@ impl Net {
             "层数",
             MAX_LAYERS,
         )?;
-        let cond = take(&mut it, path, "cond")? as usize;
+        let cond = capped(
+            take(&mut it, path, "cond")? as usize,
+            path,
+            "cond",
+            MAX_COND,
+        )?;
         let has_linear = matches!(
             head,
             Some("TPC2") | Some("TPC3") | Some("TPC4") | Some("TPC5") | Some("TPC6") | Some("TPC7")
@@ -79,7 +106,7 @@ impl Net {
             0.0
         };
         let nk_hdr = if matches!(head, Some("TPC5") | Some("TPC6") | Some("TPC7")) {
-            take(&mut it, path, "nk")? as usize
+            capped(take(&mut it, path, "nk")? as usize, path, "nk", MAX_CLASSES)?
         } else {
             0
         };
@@ -89,7 +116,13 @@ impl Net {
             0
         };
         let dil = if head == Some("TPC7") {
-            (take(&mut it, path, "dilation")? as usize).max(1)
+            capped(
+                take(&mut it, path, "dilation")? as usize,
+                path,
+                "dilation",
+                MAX_DIL,
+            )?
+            .max(1)
         } else {
             1
         };
@@ -109,33 +142,7 @@ impl Net {
             }
             layers.push(l);
         }
-        let mut bns: Vec<Option<Bn>> = (0..nl).map(|_| None).collect();
-        if it.next() != Some("BN") {
-            return Err(format!("{}: 缺 BN 段", path.display()));
-        }
-        let _n = take(&mut it, path, "BN 数量")? as usize;
-        for _ in 0..nl {
-            let idx = take(&mut it, path, "BN 层号")? as usize;
-            let on = take(&mut it, path, "BN 开关")? != 0.0;
-            if !on {
-                continue;
-            }
-            if idx >= nl {
-                return Err(format!(
-                    "{}: BN 层号 {idx} 越界（层数 {nl}）",
-                    path.display()
-                ));
-            }
-            let c = layers[idx].cout;
-            let mut b = Bn::new(c);
-            for v in b.gamma.iter_mut() {
-                *v = take(&mut it, path, "gamma")?;
-            }
-            for v in b.beta.iter_mut() {
-                *v = take(&mut it, path, "beta")?;
-            }
-            bns[idx] = Some(b);
-        }
+        let bns = sections::load_bns(&mut it, path, &layers, nl)?;
         let mut net = Net {
             layers,
             bns,
@@ -162,29 +169,7 @@ impl Net {
             if it.next() != Some("FILM") {
                 return Err(format!("{}: 缺 FILM 段", path.display()));
             }
-            let _n = take(&mut it, path, "FILM 数量")? as usize;
-            for _ in 0..nl {
-                let idx = take(&mut it, path, "Film 层号")? as usize;
-                let k = take(&mut it, path, "Film nk")? as usize;
-                let c = take(&mut it, path, "Film c")? as usize;
-                if k == 0 || c == 0 {
-                    continue;
-                }
-                if k > MAX_LAYERS || c > MAX_CH || idx >= nl {
-                    return Err(format!(
-                        "{}: Film 条目越界（层号 {idx}/{nl}，nk {k}，c {c}）",
-                        path.display()
-                    ));
-                }
-                if let Some(f) = net.films[idx].as_mut() {
-                    for v in f.g.iter_mut() {
-                        *v = take(&mut it, path, "Film g")?;
-                    }
-                    for v in f.b.iter_mut() {
-                        *v = take(&mut it, path, "Film b")?;
-                    }
-                }
-            }
+            sections::load_films(&mut it, path, &mut net, nl, nk_hdr)?;
         }
         if nheads > MAX_LAYERS {
             return Err(format!(
