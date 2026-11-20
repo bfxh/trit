@@ -1336,6 +1336,158 @@ if (-not $bashExe) {
     }
 }
 
+""
+"== AA. signal: 分诊 / 惩罚信号 / 记忆 brief / 研究导出（规则分诊，不是模型判断）=="
+if (-not $bashExe) {
+    "  SKIP  AA0 没有 bash，跳过 signal 检查"
+    $skipped += 35
+} else {
+    $shSig = Join-Path $tools 'signal.sh'
+    $As = Join-Path $Work 'a-signal'
+    New-Item -ItemType Directory $As -Force | Out-Null
+    $asroot = ToPosix $As
+
+    # 分诊：task / emotion / mixed，单行 ASCII JSON，毫秒级（不调任何 API）
+    $c1 = @(& $bashExe $shSig classify --text 'fix the failing test in src/core.py and rerun cargo test' --root $asroot 2>&1)
+    $c1doc = (@($c1)[0] | ConvertFrom-Json)
+    Assert-True ($LASTEXITCODE -eq 0 -and $c1doc.kind -eq 'task' -and $c1doc.emotion_score -eq 0) `
+        'AA1 纯任务文本判 task、score=0' "exit=$LASTEXITCODE out=$((@($c1) -join ' '))"
+    Assert-True ((@($c1doc.signals) -contains 'imperative') -and (@($c1doc.signals) -contains 'tooling')) `
+        'AA2 命中的规则名进 signals' (@($c1doc.signals) -join ',')
+    Assert-True ((@($c1doc.task_hints) -contains 'fix') -and (@($c1doc.task_hints) -contains 'src/core.py') `
+        -and (@($c1doc.task_hints) -contains 'cargo')) 'AA3 祈使动词/文件名/工具名进 task_hints' (@($c1doc.task_hints) -join ',')
+
+    $c2 = @(& $bashExe $shSig classify --text 'this is hopeless, always fails, I want to give up' --root $asroot 2>&1)
+    $c2doc = (@($c2)[0] | ConvertFrom-Json)
+    Assert-True ($LASTEXITCODE -eq 0 -and $c2doc.kind -eq 'emotion' -and $c2doc.emotion_score -eq 2) `
+        'AA4 绝望措辞判 emotion、score 按权重累计' "score=$($c2doc.emotion_score) kind=$($c2doc.kind)"
+
+    $c3 = @(& $bashExe $shSig classify --text 'frustrated -- fix src/core.py now' --root $asroot 2>&1)
+    $c3doc = (@($c3)[0] | ConvertFrom-Json)
+    Assert-True ($c3doc.kind -eq 'mixed' -and $c3doc.emotion_score -ge 1) `
+        'AA5 情绪与任务并存判 mixed' "kind=$($c3doc.kind) score=$($c3doc.emotion_score)"
+
+    $c4 = @(& $bashExe $shSig classify --text '很好的需求，让我 very frustrated，重做' --root $asroot 2>&1)
+    Assert-True ((@($c4) -join ' ') -match '"emotion_score": 1' `
+        -and (@($c4) | Where-Object { $_ -match '[^\x00-\x7F]' }).Count -eq 0) `
+        'AA6 中文输入也输出单行纯 ASCII JSON（ensure_ascii）' (@($c4) -join ' ')
+
+    # 规则表被 --rules 整体覆盖（不是合并）：覆盖后默认规则不再命中
+    $aRules = Join-Path $Work 'a-rules.json'
+    [IO.File]::WriteAllText($aRules, '{"emotion":{"joy":{"weight":3,"any":["great"]}},"task":{"imperative":{"any":["ship"]}}}', $enc)
+    $c5 = @(& $bashExe $shSig classify --text 'great hopeless ship it' --rules (ToPosix $aRules) --root $asroot 2>&1)
+    $c5doc = (@($c5)[0] | ConvertFrom-Json)
+    Assert-True ($c5doc.emotion_score -eq 3 -and $c5doc.kind -eq 'mixed') `
+        'AA7 规则覆盖生效（自定义 weight=3 累计到 score）' "score=$($c5doc.emotion_score) kind=$($c5doc.kind)"
+    Assert-True (@($c5doc.signals) -notcontains 'despair') `
+        'AA8 --rules 是整体替换不是合并（默认 despair 不再命中）' (@($c5doc.signals) -join ',')
+
+    & $bashExe $shSig classify --text 'x' --rules '{"emotion": {}}' --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AA9 缺 task 键的规则表被拒（fail-closed）' "exit=$LASTEXITCODE"
+    & $bashExe $shSig classify --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AA9b 无输入源（--text/--file 都缺）被拒' "exit=$LASTEXITCODE"
+
+    # 分诊入账：classify 自动进台账（含 text，供 --with-text 导出）。
+    # ts 一律在原始行上断言：ConvertFrom-Json 会把 ISO 串转成 [DateTime]（L03 同族），
+    # 解析对象上的 -match 走本机区域格式，永远对不上。
+    $asStore = Join-Path $As '.agent\signals.jsonl'
+    $asLines = @([IO.File]::ReadAllLines($asStore, $enc) | Where-Object { $_.Trim() })
+    $asDocs = @($asLines | ForEach-Object { $_ | ConvertFrom-Json })
+    $asTask = @($asDocs | Where-Object { $_.kind -eq 'task' })[0]
+    Assert-True ($asDocs.Count -eq 5 -and $asTask.text_len -gt 0 -and $asTask.text -ne '' `
+        -and (@($asLines | Where-Object { $_ -match '"ts": "\d{4}-\d\d-\d\dT' }).Count -eq $asDocs.Count)) `
+        'AA10 classify 自动入账（ts/text_len/text 齐全）' "rows=$($asDocs.Count)"
+
+    # 惩罚入账与复读
+    & $bashExe $shSig penalty --score 2 --reason 'argued with user intent' --now '2026-11-21T10:00:00' --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AA12 penalty 入账 exit=0' "exit=$LASTEXITCODE"
+    & $bashExe $shSig penalty --score 4 --reason x --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AA12b score 越界（4）被拒' "exit=$LASTEXITCODE"
+    & $bashExe $shSig penalty --score 0 --reason x --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AA12c score=0 被拒（不带信号的惩罚不是惩罚）' "exit=$LASTEXITCODE"
+    & $bashExe $shSig penalty --score 2 --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AA12d 缺 --reason 被拒（一个数不是信号）' "exit=$LASTEXITCODE"
+
+    & $bashExe $shSig penalty --score 3 --reason '骂了评审' --now '2026-11-21T11:00:00' --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AA13 中文 reason 的 penalty 入账 exit=0' "exit=$LASTEXITCODE"
+    $asRaw = [IO.File]::ReadAllText($asStore, $enc)
+    Assert-True ((($asRaw -replace '[^\x00-\x7F]', '').Length) -eq $asRaw.Length) `
+        'AA11 台账文件纯 ASCII（中文以 \uXXXX 落盘，任何宿主都读不坏）' ''
+    $asLines2 = @([IO.File]::ReadAllLines($asStore, $enc) | Where-Object { $_.Trim() })
+    $asDocs2 = @($asLines2 | ForEach-Object { $_ | ConvertFrom-Json })
+    $pen = @($asDocs2 | Where-Object { $_.kind -eq 'penalty' })
+    $penRaw = @($asLines2 | Where-Object { $_ -match '"kind": "penalty"' })
+    Assert-True ($pen.Count -eq 2 -and $pen[0].score -eq 2 -and $pen[0].reason -eq 'argued with user intent' `
+        -and $penRaw[0] -match [regex]::Escape('"ts": "2026-11-21T10:00:00')) `
+        'AA13b penalty 记录字段完整（ts/kind=penalty/score/reason）' "pen=$($pen.Count)"
+
+    # brief：无事件=neutral；窗口内按峰值定标签、带计数；窗口外不说话
+    $Ab = Join-Path $Work 'a-brief'
+    New-Item -ItemType Directory $Ab -Force | Out-Null
+    $abroot = ToPosix $Ab
+    $b1 = @(& $bashExe $shSig brief --root $abroot 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and (@($b1) -join '') -eq 'mood: neutral') `
+        'AA14 无事件（连台账都没有）时 brief=mood: neutral，不是报错' (@($b1) -join ' ')
+    & $bashExe $shSig penalty --score 1 --reason 'a' --now '2026-11-21T10:00:00' --root $abroot 2>&1 | Out-Null
+    & $bashExe $shSig penalty --score 2 --reason 'b' --now '2026-11-21T10:30:00' --root $abroot 2>&1 | Out-Null
+    & $bashExe $shSig penalty --score 1 --reason 'c' --now '2026-11-21T11:00:00' --root $abroot 2>&1 | Out-Null
+    $b2 = @(& $bashExe $shSig brief --now '2026-11-21T11:30:00' --root $abroot 2>&1)
+    Assert-True ((@($b2) -join '') -match [regex]::Escape('mood: frustrated(score=2, 3 events in last day) -- reflect harder, do not argue user intent')) `
+        'AA15 窗口内三条惩罚的汇总形态：峰值定标签、括号里带计数与窗口' (@($b2) -join ' ')
+    Assert-True ((@($b2).Count -eq 1) -and (@($b2) | Where-Object { $_ -match '[^\x00-\x7F]' }).Count -eq 0) `
+        'AA15b brief 单行纯 ASCII（em-dash 之类的非 ASCII 一律不出现）' ''
+    $b3 = @(& $bashExe $shSig brief --now '2026-11-23T11:31:00' --root $abroot 2>&1)
+    Assert-True ((@($b3) -join '') -eq 'mood: neutral') `
+        'AA16 窗口外（>24h）的事件不再说话' (@($b3) -join ' ')
+
+    # export：默认脱敏的研究语料；--with-text 显式带原文
+    $aExp = Join-Path $Work 'a-export.jsonl'
+    & $bashExe $shSig export --jsonl (ToPosix $aExp) --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AA17 export exit=0' "exit=$LASTEXITCODE"
+    $expLines = @([IO.File]::ReadAllLines($aExp, $enc) | Where-Object { $_.Trim() })
+    $expDocs = @($expLines | ForEach-Object { $_ | ConvertFrom-Json })
+    $penRows = @($expDocs | Where-Object { $_.kind -eq 'penalty' })
+    $clsRows = @($expDocs | Where-Object { $_.kind -ne 'penalty' })
+    Assert-True ($expDocs.Count -eq 7 -and $penRows.Count -eq 2 -and $clsRows.Count -eq 5) `
+        'AA17b 语料行数=台账事件数（classify 与 penalty 都在）' "rows=$($expDocs.Count) pen=$($penRows.Count) cls=$($clsRows.Count)"
+    Assert-True ((@($expDocs | Where-Object { $_.PSObject.Properties.Name -contains 'text' }).Count -eq 0) `
+        -and (@($expDocs | Where-Object { $_.PSObject.Properties.Name -contains 'task_hints' }).Count -eq 0)) `
+        'AA18 默认导出脱敏：无 text、无 task_hints（抽出的原文片段也是原文）' ''
+    Assert-True ($penRows[0].penalty -eq 2 -and $penRows[0].emotion_score -eq 2 `
+        -and $penRows[0].text_len -gt 0 -and @($penRows[0].signals).Count -eq 0) `
+        'AA19 penalty 行：penalty=emotion_score=score，reason 只留 text_len' ''
+    $expJoined = (@($expLines) -join "`n")
+    Assert-True ((($expJoined -replace '[^\x00-\x7F]', '').Length) -eq $expJoined.Length) `
+        'AA19b 语料文件纯 ASCII' ''
+
+    $aExp2 = Join-Path $Work 'a-export-wt.jsonl'
+    & $bashExe $shSig export --jsonl (ToPosix $aExp2) --with-text --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AA20a --with-text export exit=0' "exit=$LASTEXITCODE"
+    $wtDocs = @(([IO.File]::ReadAllLines($aExp2, $enc) | Where-Object { $_.Trim() }) | ForEach-Object { $_ | ConvertFrom-Json })
+    $wtCls = (@($wtDocs | Where-Object { $_.kind -eq 'task' })[0]).text
+    $wtPen = (@($wtDocs | Where-Object { $_.kind -eq 'penalty' })[0]).text
+    Assert-True ($wtCls -eq 'fix the failing test in src/core.py and rerun cargo test' `
+        -and $wtPen -eq 'argued with user intent') `
+        'AA20 --with-text 显式带原文（classify 的 text 与 penalty 的 reason）' ''
+    & $bashExe $shSig export --jsonl (ToPosix (Join-Path $As 'inside.jsonl')) --with-text --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 1) 'AA21 with-text 语料写进 owner root 被拒（防误提交，fail-closed）' "exit=$LASTEXITCODE"
+    & $bashExe $shSig export --jsonl (ToPosix $aExp) --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 1) 'AA21b 覆盖已存在的语料被拒' "exit=$LASTEXITCODE"
+    $Ac = Join-Path $Work 'a-empty'
+    New-Item -ItemType Directory $Ac -Force | Out-Null
+    & $bashExe $shSig export --jsonl (ToPosix (Join-Path $Work 'a-none.jsonl')) --root (ToPosix $Ac) 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 1) 'AA21c 无台账时 export 拒绝（不产出空语料冒充数据）' "exit=$LASTEXITCODE"
+
+    # 台账损坏必须 fail-closed：绝不带着坏账继续出货
+    [IO.File]::AppendAllText($asStore, "garbage`n", $enc)
+    & $bashExe $shSig brief --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 1) 'AA22 台账坏行让 brief 拒绝（不跳过坏行继续）' "exit=$LASTEXITCODE"
+    & $bashExe $shSig export --jsonl (ToPosix (Join-Path $Work 'a-exp3.jsonl')) --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 1) 'AA22b 台账坏行让 export 拒绝' "exit=$LASTEXITCODE"
+    & $bashExe $shSig penalty --score 1 --reason x --root $asroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 1) 'AA22c 台账坏行让 penalty 拒绝（坏账不许再追加）' "exit=$LASTEXITCODE"
+}
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 if ($failed -gt 0) { exit 1 }
 exit 0

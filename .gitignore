@@ -15,6 +15,9 @@ __pycache__/
 # 智能体记忆与任务日志：属本机状态，不进公开树（privacy_scan 的 task-doc 同一口径）
 .agent/memory/
 
+# 交互信号台账（tools/signal.py）：分诊原文留在本机，研究语料走 export 出口
+.agent/signals.jsonl
+
 # 快照底座的本地产物（scripts/snapshot.py）：对象库与清单不进版本库
 .trit/
 
