@@ -317,4 +317,173 @@ mod tests {
         assert!(report.truncated);
         assert!(report.paths <= 2);
     }
+
+    #[test]
+    fn ternary_connectives_cover_all_nine_cells() {
+        // 三值的三个连接词就是三张 9 格表。任何一格错了，"在 X 下仍能确定"
+        // 这条能力就变成了错误的确定性——比直接返回 X 更危险。
+        use Ternary::{False as F, True as T, Unknown as X};
+        let table = [F, X, T];
+        for a in table {
+            for b in table {
+                // 与：F 吸收（含 X&F=F）；T&T 才 T；其余 X。
+                let expect_and = match (a, b) {
+                    (F, _) | (_, F) => F,
+                    (T, T) => T,
+                    _ => X,
+                };
+                // 或：T 吸收；只有 F∨F 才是 F。
+                let expect_or = match (a, b) {
+                    (T, _) | (_, T) => T,
+                    (F, F) => F,
+                    _ => X,
+                };
+                // 异或：X 传染；同号为 F，异号为 T。
+                let expect_xor = match (a, b) {
+                    (X, _) | (_, X) => X,
+                    (T, T) | (F, F) => F,
+                    _ => T,
+                };
+                let program = |op| {
+                    run(&[Op::Push(a), Op::Push(b), op, Op::Halt], Limits::default())
+                        .verdict()
+                        .expect("单路径必须给出结论")
+                };
+                assert_eq!(program(Op::And), expect_and, "AND {a:?},{b:?}");
+                assert_eq!(program(Op::Or), expect_or, "OR {a:?},{b:?}");
+                assert_eq!(program(Op::Xor), expect_xor, "XOR {a:?},{b:?}");
+            }
+        }
+        // 取反：只有 X 保持 X。
+        for value in table {
+            let expect = match value {
+                F => T,
+                T => F,
+                X => X,
+            };
+            assert_eq!(
+                run(&[Op::Push(value), Op::Not, Op::Halt], Limits::default())
+                    .verdict()
+                    .expect("单路径"),
+                expect,
+                "NOT {value:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn stack_underflow_truncates_instead_of_panicking() {
+        // 解释器跑的是外部给的字节码：栈不够只能算"这一趟没跑完"，
+        // 不能崩，否则一份坏程序就能把审计进程带走。
+        for program in [
+            vec![Op::Not, Op::Halt],
+            vec![Op::Push(Ternary::True), Op::And, Op::Halt],
+            vec![Op::Dup, Op::Halt],
+            vec![Op::Jz(0)],
+        ] {
+            let report = run(&program, Limits::default());
+            assert!(report.truncated, "应判为截断：{program:?}");
+            assert!(!report.halted);
+            assert_eq!(report.verdict(), None, "截断时不能给出结论");
+        }
+    }
+
+    #[test]
+    fn halt_with_an_empty_stack_reports_unknown() {
+        // 空栈停机：没有可报告的结论，但那不是崩，而是 X。
+        let report = run(&[Op::Halt], Limits::default());
+        assert_eq!(report.outputs.len(), 1);
+        assert_eq!(report.outputs[&Ternary::Unknown], 1);
+        assert_eq!(report.verdict(), Some(Ternary::Unknown), "X 是确定的结论");
+    }
+
+    #[test]
+    fn falling_off_the_end_of_the_program_is_truncation() {
+        // 没有 Halt 的程序：走到末尾仍然没有结论 ⇒ 截断（而不是"默认返回 X"）。
+        let report = run(&[Op::Push(Ternary::True)], Limits::default());
+        assert!(report.truncated);
+        assert!(report.outputs.is_empty());
+        assert_eq!(report.verdict(), None);
+    }
+
+    #[test]
+    fn a_truncated_run_never_claims_a_verdict_even_with_one_output() {
+        // 关键：截断优先于"只有一个输出"。已经见过的路径全指向 T，
+        // 但没走到的路径可能指向别的——此时说"结论是 T"就是作弊。
+        let program = [
+            Op::Push(Ternary::Unknown),
+            Op::Jz(5),
+            Op::Push(Ternary::True),
+            Op::Halt,
+            Op::Halt,
+            Op::Push(Ternary::True),
+            Op::Halt,
+            Op::Jmp(0),
+        ];
+        let report = run(
+            &program,
+            Limits {
+                max_steps: 5,
+                max_paths: 8,
+            },
+        );
+        assert!(report.truncated, "{report:?}");
+        assert!(
+            !report.outputs.is_empty(),
+            "已经有一条路径停了——这正是最容易误判成结论的情形：{report:?}"
+        );
+        assert_eq!(report.verdict(), None, "截断时即便只有一个输出也不许下结论");
+    }
+
+    #[test]
+    fn jumps_terminate_when_a_halt_is_reachable() {
+        // 回边本身不是问题：预算够、有出口就应当停。
+        let program = [
+            Op::Push(Ternary::True), // 0
+            Op::Jmp(0),              // 1 不可达
+            Op::Halt,                // 2 不可达
+        ];
+        let report = run(
+            &program,
+            Limits {
+                max_steps: 10,
+                max_paths: 4,
+            },
+        );
+        assert!(report.truncated, "这条确实没有出口");
+
+        let program = [
+            Op::Push(Ternary::True), // 0
+            Op::Jz(3),               // 1 T ⇒ 顺序执行（Jz 会弹出条件）
+            Op::Halt,                // 2 在这里停：栈已被 Jz 弹空 ⇒ 输出 X
+            Op::Halt,                // 3 走不到
+        ];
+        let report = run(&program, Limits::default());
+        assert!(!report.truncated, "有出口就该停：{report:?}");
+        assert_eq!(
+            report.verdict(),
+            Some(Ternary::Unknown),
+            "Jz 弹出条件后栈空，Halt 只能报 X：这正是『确定地不知道』"
+        );
+        assert_eq!(report.paths, 1, "已知条件不分叉");
+    }
+
+    #[test]
+    fn dup_and_swap_free_arithmetic_stays_consistent() {
+        // (X & 1) | (X & 0)：左支 X、右支 F ⇒ X。栈机必须算对。
+        let program = [
+            Op::Push(Ternary::Unknown),
+            Op::Dup,
+            Op::Push(Ternary::True),
+            Op::And,
+            Op::Push(Ternary::Unknown),
+            Op::Push(Ternary::False),
+            Op::And,
+            Op::Or,
+            Op::Halt,
+        ];
+        let report = run(&program, Limits::default());
+        assert_eq!(report.verdict(), Some(Ternary::Unknown));
+        assert_eq!(report.paths, 1, "这里没有分叉，只有三值运算");
+    }
 }
