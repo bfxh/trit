@@ -12,7 +12,9 @@ What a rule is: a pattern over the diff, scoped by path glob, with a severity.
   block -> the change is refused (exit 1)
   warn  -> the change is allowed but the finding is printed and must be acknowledged
 Some rules also demand a companion (e.g. "unsafe needs a // SAFETY: note"), because the
-real failure is not "used unsafe", it is "used unsafe and said nothing about why".
+real failure is not "used unsafe", it is "used unsafe and said nothing about why". The
+companion can also be a fact outside the diff: `no-raw-delete` is satisfied by a trash
+manifest entry, not by anything the patch itself could say.
 
 Ported from constraints.ps1; refusal texts and exit codes are kept identical.
 """
@@ -65,6 +67,14 @@ DEFAULT_RULES = [
         "pattern": r"\.(unwrap|expect)\(",
         "message": "内核里 panic 会打断判定链，宁可返回 Err；确实不会失败的路径请加注释",
     },
+    {
+        "id": "no-raw-delete", "title": "删已跟踪文件必须先进回收站（清单里要有对应 entry）",
+        "severity": "block", "scope": ["**"], "on": "file-deleted",
+        "companion": "trash-entry",
+        "pattern": r"",
+        "message": "裸删 = 内容无处可寻；先 python tools/trash.py put <path> --reason <why>，"
+                  "回收站清单里有这条路径的 entry 才放行（命令侧对应 policy 的 DELETION 家族）",
+    },
 ]
 
 
@@ -78,7 +88,8 @@ def parse_args(argv):
             i += 1
             continue
         name = a.lstrip("-")
-        key = {"Mode": "mode", "Root": "root", "Diff": "diff", "Allow": "allow"}.get(name, name.lower())
+        key = {"Mode": "mode", "Root": "root", "Diff": "diff", "Allow": "allow",
+               "Commands": "commands"}.get(name, name.lower())
         val = argv[i + 1] if i + 1 < len(argv) else ""
         if key == "allow":
             out["allow"].extend([x for x in val.replace(",", " ").split() if x])
@@ -128,13 +139,28 @@ def diff_files(root, diff_file):
         raw = p.stdout + p.stderr
     files = {}
     cur = ""
+    pending = ""  # the --- a/<path> of the current header, kept until its +++ line says
+                  # whether the file was modified (b/<path>) or deleted (/dev/null)
     for line in raw.split("\n"):
+        m = re.match(r"^--- a/(.*)$", line)
+        if m:
+            pending = m.group(1).strip()
+            continue
+        if re.match(r"^\+\+\+ /dev/null", line):
+            # whole-file deletion: git prints no `+++ b/` line here, so the old parser
+            # never registered the file at all and every rule scoped to it silently
+            # skipped -- deleting a whole test file would not even trip no-test-deletion
+            if pending:
+                cur = pending
+                files.setdefault(cur, {"added": [], "removed": []})
+                files[cur]["deleted"] = True
+            pending = ""
+            continue
         m = re.match(r"^\+\+\+ b/(.*)$", line)
         if m:
             cur = m.group(1).strip()
             files.setdefault(cur, {"added": [], "removed": []})
-            continue
-        if re.match(r"^--- a/", line):
+            pending = ""
             continue
         if not cur:
             continue
@@ -146,6 +172,37 @@ def diff_files(root, diff_file):
         if m:
             files[cur]["removed"].append(m.group(1))
     return files
+
+
+def trash_entry_exists(root, rel):
+    """Companion for no-raw-delete: does the bin manifest carry an entry for this exact
+    path (any state -- a purged entry still proves the deletion went through the bin)?
+
+    The manifest is read from the DEFAULT store (<root>/.journal/trash), the same store
+    journal.py and trash.py fall back to; a custom -Store site cannot be seen from here
+    and reads as "no entry" -- fail closed, because a false block costs one retry while
+    a false pass loses content.
+    """
+    manifest = os.path.join(root, ".journal", "trash", "manifest.json")
+    try:
+        with open(manifest, "r", encoding="utf-8-sig") as fh:
+            entries = json.load(fh).get("entries", [])
+    except (OSError, ValueError):
+        return False
+    want = rel.replace("\\", "/")
+    return any(e.get("path") == want for e in entries)
+
+
+def command_deletion_segments(text):
+    """Segments that policy's DELETION family would refuse. One family, one home: the
+    classification itself lives in policy.py and is imported, not re-implemented."""
+    import policy  # same tools directory; the DELETION family has exactly one classifier
+    out = []
+    for seg in policy.split_command(text):
+        d = policy.decision(seg)
+        if d and d["kind"] == "deletion":
+            out.append((seg, d["why"]))
+    return out
 
 
 def cmd_init(store, root, rules_file):
@@ -177,18 +234,39 @@ def cmd_check(root, rules_file, a):
         return 2
     rules = json.loads(read_text(rules_file))
     files = diff_files(root, a.get("diff", ""))
+    cmd_segs = command_deletion_segments(a.get("commands", "")) if a.get("commands", "").strip() else []
 
-    if not files:
+    if not files and not cmd_segs:
         print("constraints: clean (no diff against HEAD)")
         return 0
 
     blocks, warns = [], []
     allow = a.get("allow", [])
+    for seg, why in cmd_segs:
+        finding = {"id": "no-raw-delete", "severity": "block", "file": "(command)",
+                   "lines": 1, "sample": seg, "message": "命令侧裸删被拦：" + why}
+        if "no-raw-delete" in allow:
+            print(f"constraints: ALLOWED-BY-FLAG [no-raw-delete] (command) {seg}")
+            continue
+        blocks.append(finding)
     for path in sorted(files.keys()):
         added = files[path]["added"]
         removed = files[path]["removed"]
         for r in rules:
             if not in_scope(path, r.get("scope", [])):
+                continue
+            if r.get("on") == "file-deleted":
+                # whole-file deletion; the companion is not a comment but a trash entry
+                if not files[path].get("deleted"):
+                    continue
+                if r.get("companion") == "trash-entry" and trash_entry_exists(root, path):
+                    continue  # the bin holds the content, rule is satisfied
+                finding = {"id": r["id"], "severity": r["severity"], "file": path,
+                           "lines": 1, "sample": "(file deleted)", "message": r.get("message", "")}
+                if r["id"] in allow:
+                    print(f"constraints: ALLOWED-BY-FLAG [{r['id']}] {path} (file deleted)")
+                    continue
+                (blocks if r["severity"] == "block" else warns).append(finding)
                 continue
             side = {"added": added, "removed": removed}.get(r.get("on"), added + removed)
             hits = [ln for ln in side if re.search(r["pattern"], ln)]

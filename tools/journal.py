@@ -26,6 +26,8 @@ import os
 import shutil
 import sys
 
+import trash  # same tools directory; restore never unlinks outright, it bins (see below)
+
 MODES = {"begin", "end", "restore", "status"}
 
 SKIP = {"node_modules", "target", ".git", ".journal", "__pycache__", ".venv", "dist", "build",
@@ -132,7 +134,7 @@ def cmd_end(root, latest):
     return 1 if total > 0 else 0
 
 
-def cmd_restore(root, latest):
+def cmd_restore(root, latest, store):
     manifest_path = os.path.join(latest, "manifest.json")
     if not os.path.exists(manifest_path):
         print("journal: no snapshot to restore")
@@ -140,11 +142,24 @@ def cmd_restore(root, latest):
     man = load_manifest(manifest_path)
     keep = {e["rel"]: e for e in man["files"]}
 
+    # files that appeared after the snapshot are not unlinked: they move into the recycle
+    # bin (same store as the snapshot), so a restore never destroys content and every
+    # removal carries the reason it happened. A refused move leaves the file in place and
+    # turns the restore red -- an incomplete restore must not look like success.
+    reason = f"journal-restore:{man['at']}"
     removed = 0
+    trashed = []
+    blocked = []
     for rel, full, _ in list(walk_files(root)):
         if rel not in keep:
-            os.remove(full)
+            entries, err = trash.put_paths(root, store, [full], reason)
+            if err:
+                blocked.append(rel)
+                continue
             removed += 1
+            trashed.extend(entries)
+    for rel in blocked:
+        print(f"journal: kept in place (trash refused): {rel}")
 
     back = 0
     for rel, e in keep.items():
@@ -161,7 +176,9 @@ def cmd_restore(root, latest):
             back += 1
 
     print(f"journal: restore -- removed {removed} new file(s), restored {back} file(s)")
-    return 0
+    for e in trashed:
+        print(f"journal: trash {e['id']} {e['path']}")
+    return 1 if blocked else 0
 
 
 def cmd_status(latest):
@@ -192,7 +209,7 @@ def main(argv):
     if mode == "end":
         return cmd_end(root, latest)
     if mode == "restore":
-        return cmd_restore(root, latest)
+        return cmd_restore(root, latest, store)
     return cmd_status(latest)
 
 

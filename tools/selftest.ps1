@@ -572,7 +572,7 @@ if (-not $bashExe) {
     New-Item -ItemType Directory "$Pc\.agent" -Force | Out-Null
     & $bashExe $shCon init -Root (ToPosix $Pc) 2>&1 | Out-Null
     $p1 = @(& $bashExe $shCon list -Root (ToPosix $Pc) 2>&1)
-    Assert-True (@($p1 | Where-Object { $_ -match 'no-test-deletion' }).Count -eq 1 -and @($p1).Count -eq 7) 'P1 六条默认规则 + 表头都在' "rows=$(@($p1).Count)"
+    Assert-True (@($p1 | Where-Object { $_ -match 'no-test-deletion' }).Count -eq 1 -and @($p1).Count -eq 8) 'P1 七条默认规则 + 表头都在' "rows=$(@($p1).Count)"
 
     $pd = Join-Path $Work 'p-diffs'; New-Item -ItemType Directory $pd -Force | Out-Null
     $nl = [char]10
@@ -850,6 +850,236 @@ if (-not $bashExe) {
     New-Item -ItemType Directory $V2 -Force | Out-Null
     & $bashExe $shG preflight -Repo (ToPosix $V2) 2>&1 | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) 'V3 没有 tests 目录时放行（不是所有项目都有）' "exit=$LASTEXITCODE"
+}
+
+""
+"== W. trash: 删除必须先进回收站，清单就是账，恢复逐字节一致 =="
+if (-not $bashExe) {
+    "  SKIP  W0 没有 bash，跳过 trash 入口检查"
+    $skipped += 5
+} else {
+    $shT = Join-Path $tools 'trash.sh'
+    $shP2 = Join-Path $tools 'policy.sh'
+    $Wt = Join-Path $Work 'w-trash'
+    New-Item -ItemType Directory "$Wt\src" -Force | Out-Null
+    New-Item -ItemType Directory "$Wt\dir1" -Force | Out-Null
+    [IO.File]::WriteAllText("$Wt\src\a.txt", "alpha bytes`n", $enc)
+    [IO.File]::WriteAllText("$Wt\keep.txt", "keep`n", $enc)
+    [IO.File]::WriteAllText("$Wt\dir1\d.txt", "in dir`n", $enc)
+    $origA = [IO.File]::ReadAllBytes("$Wt\src\a.txt")
+    $sha256sp = [System.Security.Cryptography.SHA256]::Create()
+    $origSha = [BitConverter]::ToString($sha256sp.ComputeHash($origA)).Replace('-', '')
+
+    # W1: 说不清为什么删，就不许删——--reason 是必填，不是礼貌
+    & $bashExe $shT put (ToPosix "$Wt\src\a.txt") -Root (ToPosix $Wt) 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 1) 'W1 put 缺 --Reason 拒绝（说不清为什么删就不许删）' "exit=$LASTEXITCODE"
+
+    # W2: 不存在的路径明确报错（校验先于任何移动，一个都不动）
+    $w2 = @(& $bashExe $shT put nope.txt -Reason x -Root (ToPosix $Wt) 2>&1)
+    Assert-True ($LASTEXITCODE -ne 0 -and (@($w2) -join ' ') -match 'does not exist') 'W2 不存在的路径明确报错' (@($w2) -join ' / ')
+
+    # W3: put 成功 = 原位清空 + 回收站里有 entry
+    $w3 = @(& $bashExe $shT put (ToPosix "$Wt\src\a.txt") -Reason cleanup -Root (ToPosix $Wt) 2>&1)
+    $w3id = ''
+    foreach ($l in $w3) { if ($l -match 'put (t\d{8}-\d{6}-\d+) ') { $w3id = $Matches[1]; break } }
+    Assert-True ($LASTEXITCODE -eq 0 -and $w3id -ne '' -and -not (Test-Path "$Wt\src\a.txt")) 'W3 put 成功且原位清空' "id=$w3id exit=$LASTEXITCODE"
+
+    # W4: 清单记账：sha256/bytes 与被收走的原件一致（记账不是装饰）
+    $w4raw = (@(& $bashExe $shT list --json -Root (ToPosix $Wt) 2>&1) -join "`n")
+    $w4 = $w4raw | ConvertFrom-Json
+    $w4e = @($w4.entries | Where-Object { $_.id -eq $w3id })[0]
+    Assert-True ($null -ne $w4e -and $w4e.sha256 -eq $origSha -and $w4e.bytes -eq $origA.Length -and
+                 $w4e.path -eq 'src/a.txt' -and $w4e.state -eq 'kept') 'W4 清单 sha/bytes/路径记账与原件一致' "sha=$($w4e.sha256) bytes=$($w4e.bytes)"
+
+    # W5: restore 往返逐字节一致，且恢复时复核 sha
+    $w5 = @(& $bashExe $shT restore $w3id -Root (ToPosix $Wt) 2>&1)
+    $backA = [IO.File]::ReadAllBytes("$Wt\src\a.txt")
+    $backSha = [BitConverter]::ToString($sha256sp.ComputeHash($backA)).Replace('-', '')
+    Assert-True ($LASTEXITCODE -eq 0 -and (@($w5) -join ' ') -match 'sha256=\w+ bytes=\d+ ok') 'W5 restore 报告 sha 复核通过' (@($w5) -join ' / ')
+    Assert-True ((Compare-Object $backA $origA).Count -eq 0 -and $backSha -eq $origSha) 'W6 往返逐字节一致且 sha 记账' "sha=$backSha want=$origSha"
+
+    # W7: 占用冲突拒绝——还原不悄悄改名、更不覆盖
+    $w7 = @(& $bashExe $shT put (ToPosix "$Wt\src\a.txt") -Reason again -Root (ToPosix $Wt) 2>&1)
+    $w7id = ''
+    foreach ($l in $w7) { if ($l -match 'put (t\d{8}-\d{6}-\d+) ') { $w7id = $Matches[1]; break } }
+    [IO.File]::WriteAllText("$Wt\src\a.txt", "occupied`n", $enc)
+    & $bashExe $shT restore $w7id -Root (ToPosix $Wt) 2>&1 | Out-Null
+    $w7code = $LASTEXITCODE
+    Assert-True ($w7code -ne 0 -and ([IO.File]::ReadAllText("$Wt\src\a.txt", $enc)) -eq "occupied`n") 'W7 目标被占用时拒绝且不改名覆盖' "exit=$w7code"
+
+    # W8: -Into 指定目录还原
+    $w8 = @(& $bashExe $shT put (ToPosix "$Wt\keep.txt") -Reason keep-moved -Root (ToPosix $Wt) 2>&1)
+    $w8id = ''
+    foreach ($l in $w8) { if ($l -match 'put (t\d{8}-\d{6}-\d+) ') { $w8id = $Matches[1]; break } }
+    & $bashExe $shT restore $w8id -Into (ToPosix "$Wt\restored") -Root (ToPosix $Wt) 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0 -and ([IO.File]::ReadAllText("$Wt\restored\keep.txt", $enc)) -eq "keep`n") 'W8 -Into 指定目录还原' "exit=$LASTEXITCODE"
+
+    # W9/W10: purge 的显式双重确认，缺一拒绝
+    [IO.File]::WriteAllText("$Wt\purge.txt", "gone soon`n", $enc)
+    $w9 = @(& $bashExe $shT put (ToPosix "$Wt\purge.txt") -Reason purge-test -Root (ToPosix $Wt) 2>&1)
+    $w9id = ''
+    foreach ($l in $w9) { if ($l -match 'put (t\d{8}-\d{6}-\d+) ') { $w9id = $Matches[1]; break } }
+    & $bashExe $shT purge $w9id -Root (ToPosix $Wt) 2>&1 | Out-Null
+    $w9a = $LASTEXITCODE
+    & $bashExe $shT purge $w9id -Confirm wrong-id -Root (ToPosix $Wt) 2>&1 | Out-Null
+    $w9b = $LASTEXITCODE
+    Assert-True ($w9a -eq 1 -and $w9b -eq 1) 'W9 purge 缺 --Confirm / 确认串不匹配都拒绝' "no=$w9a mismatch=$w9b"
+    & $bashExe $shT purge $w9id -Confirm $w9id -Root (ToPosix $Wt) 2>&1 | Out-Null
+    $w10raw = (@(& $bashExe $shT list --json -Root (ToPosix $Wt) 2>&1) -join "`n")
+    $w10e = @(($w10raw | ConvertFrom-Json).entries | Where-Object { $_.id -eq $w9id })[0]
+    Assert-True ($LASTEXITCODE -eq 0 -and $w10e.state -eq 'purged' -and -not (Test-Path "$Wt\purge.txt")) 'W10 双重确认后 purge 成功且记账为 purged' "state=$($w10e.state)"
+
+    # W11/W12: policy 拦裸删、只放行经 trash.py 的调用——放行口只有这一条
+    & $bashExe $shP2 -Profile workspace-write -Root (ToPosix $Wt) -Command 'rm src/keep.txt' 2>&1 | Out-Null
+    $w11 = $LASTEXITCODE
+    & $bashExe $shP2 -Profile workspace-write -Root (ToPosix $Wt) -Command 'trash put src/keep.txt -Reason r' 2>&1 | Out-Null
+    $w12 = $LASTEXITCODE
+    Assert-True ($w11 -eq 1 -and $w12 -eq 0) 'W11/W12 policy 拦 rm、放行 trash put（唯一放行口）' "deny=$w11 allow=$w12"
+
+    # W13: journal restore 不再直接 unlink——快照期间新增的文件进回收站，回执尾部带 entry id
+    $Wj = Join-Path $Work 'w-journal'
+    New-Item -ItemType Directory $Wj -Force | Out-Null
+    [IO.File]::WriteAllText("$Wj\keep.txt", "original`n", $enc)
+    & $bashExe (Join-Path $tools 'journal.sh') begin -Root (ToPosix $Wj) 2>&1 | Out-Null
+    [IO.File]::WriteAllText("$Wj\added.txt", "born after snapshot`n", $enc)
+    $w13 = @(& $bashExe (Join-Path $tools 'journal.sh') restore -Root (ToPosix $Wj) 2>&1)
+    $w13raw = (@($w13) -join "`n")
+    $w13man = "$Wj\.journal\trash\manifest.json"
+    $w13e = $null
+    if (Test-Path $w13man) {
+        $w13e = @(((Get-Content $w13man -Raw | ConvertFrom-Json).entries) |
+            Where-Object { $_.path -eq 'added.txt' })[0]
+    }
+    Assert-True ($LASTEXITCODE -eq 0 -and -not (Test-Path "$Wj\added.txt") -and $w13raw -match 'journal: trash t\d{8}') 'W13 journal restore 把新增文件收进回收站（原位清空 + 回执带 entry id）' (@($w13) -join ' / ')
+    Assert-True ($null -ne $w13e -and $w13e.reason -match '^journal-restore:' -and $w13e.state -eq 'kept') 'W14 回收站记账 reason=journal-restore、状态 kept' "reason=$($w13e.reason)"
+
+    # W15: 目录整进整出逐字节一致（dir 是一个 entry，不是一次逐文件遍历）
+    $w15 = @(& $bashExe $shT put (ToPosix "$Wt\dir1") -Reason whole-dir -Root (ToPosix $Wt) 2>&1)
+    $w15id = ''
+    foreach ($l in $w15) { if ($l -match 'put (t\d{8}-\d{6}-\d+) ') { $w15id = $Matches[1]; break } }
+    & $bashExe $shT restore $w15id -Root (ToPosix $Wt) 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0 -and ([IO.File]::ReadAllText("$Wt\dir1\d.txt", $enc)) -eq "in dir`n") 'W15 目录整进整出、内容逐字节一致' "exit=$LASTEXITCODE"
+
+    # W16: 跨卷分支在单卷机器上也要被跑到——TRASH_FORCE_COPY 强制走 copy+verify
+    [IO.File]::WriteAllText("$Wt\keep.txt", "keep again`n", $enc)
+    $env:TRASH_FORCE_COPY = '1'
+    $w16 = @(& $bashExe $shT put (ToPosix "$Wt\keep.txt") -Reason forcecopy -Root (ToPosix $Wt) 2>&1)
+    Remove-Item Env:TRASH_FORCE_COPY -ErrorAction SilentlyContinue
+    $w16id = ''
+    foreach ($l in $w16) { if ($l -match 'put (t\d{8}-\d{6}-\d+) ') { $w16id = $Matches[1]; break } }
+    & $bashExe $shT restore $w16id -Root (ToPosix $Wt) 2>&1 | Out-Null
+    Assert-True ((@($w16) -join ' ') -match 'via=copy\+verify' -and $LASTEXITCODE -eq 0 -and
+                 ([IO.File]::ReadAllText("$Wt\keep.txt", $enc)) -eq "keep again`n") 'W16 copy+verify 分支往返一致（跨卷路径的替身）' (@($w16) -join ' / ')
+
+    # W17: 站点没被 gitignore 时 put 必须 fail-closed（不脏 git status 是硬约束）
+    $Wg = Join-Path $Work 'w-git'
+    New-Item -ItemType Directory $Wg -Force | Out-Null
+    [IO.File]::WriteAllText("$Wg\g.txt", "g`n", $enc)
+    & git -C $Wg init -q 2>&1 | Out-Null
+    & git -C $Wg add -A 2>&1 | Out-Null
+    & git -C $Wg -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    & $bashExe $shT put (ToPosix "$Wg\g.txt") -Reason x -Root (ToPosix $Wg) 2>&1 | Out-Null
+    $w17a = $LASTEXITCODE
+    [IO.File]::WriteAllText("$Wg\.gitignore", ".journal/`n", $enc)
+    & $bashExe $shT put (ToPosix "$Wg\g.txt") -Reason x -Root (ToPosix $Wg) 2>&1 | Out-Null
+    $w17b = $LASTEXITCODE
+    Assert-True ($w17a -eq 1 -and $w17b -eq 0) 'W17 站点未被 gitignore 拒收；补上 ignore 后放行' "before=$w17a after=$w17b"
+
+    # W18/W19: constraints 的 no-raw-delete 命令侧——拦 rm，放行 trash put
+    $Wc = Join-Path $Work 'w-con'
+    New-Item -ItemType Directory "$Wc\src" -Force | Out-Null
+    [IO.File]::WriteAllText("$Wc\src\x.txt", "x content`n", $enc)
+    [IO.File]::WriteAllText("$Wc\src\y.txt", "y content`n", $enc)
+    [IO.File]::WriteAllText("$Wc\.gitignore", ".journal/`n.agent/`n", $enc)
+    & git -C $Wc init -q 2>&1 | Out-Null
+    & git -C $Wc add -A 2>&1 | Out-Null
+    & git -C $Wc -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    & $bashExe (Join-Path $tools 'constraints.sh') init -Root (ToPosix $Wc) 2>&1 | Out-Null
+    & $bashExe (Join-Path $tools 'constraints.sh') check -Root (ToPosix $Wc) -Commands 'rm src/x.txt' 2>&1 | Out-Null
+    $w18 = $LASTEXITCODE
+    & $bashExe (Join-Path $tools 'constraints.sh') check -Root (ToPosix $Wc) -Commands 'trash put src/x.txt -Reason r' 2>&1 | Out-Null
+    Assert-True ($w18 -eq 1 -and $LASTEXITCODE -eq 0) 'W18/W19 constraints 命令侧：拦 rm、放行 trash put' "deny=$w18 allow=$LASTEXITCODE"
+
+    # W20: 清单里有 entry 的删除放行（companion 不是注释，是回收站的账）
+    & $bashExe $shT put (ToPosix "$Wc\src\y.txt") -Reason con-test -Root (ToPosix $Wc) 2>&1 | Out-Null
+    & $bashExe (Join-Path $tools 'constraints.sh') check -Root (ToPosix $Wc) 2>&1 | Out-Null
+    $w20 = $LASTEXITCODE
+    # W21: 清单里没有 entry 的整文件删除判红——git 对整删打印 `+++ /dev/null`，
+    # 旧解析器只认 `+++ b/`，整删过的文件从来进不了规则视野
+    Remove-Item "$Wc\src\x.txt"
+    $w21 = @(& $bashExe (Join-Path $tools 'constraints.sh') check -Root (ToPosix $Wc) 2>&1)
+    Assert-True ($w20 -eq 0 -and $LASTEXITCODE -eq 1 -and (@($w21) -join ' ') -match 'BLOCK \[no-raw-delete\]') 'W20/W21 有 entry 放行、裸删判红（整文件删除也被看见）' "with-entry=$w20 raw=$LASTEXITCODE"
+}
+
+""
+"== X. git_safe: checkpoint 不动 HEAD/index/工作区，rescue 给出逐字可复制的恢复命令 =="
+if (-not $bashExe) {
+    "  SKIP  X0 没有 bash，跳过 git_safe 入口检查"
+    $skipped += 4
+} else {
+    $shG = Join-Path $tools 'git-safe.sh'
+    $Xg = Join-Path $Work 'x-git'
+    New-Item -ItemType Directory "$Xg\src" -Force | Out-Null
+    [IO.File]::WriteAllText("$Xg\src\a.rs", "fn a() {}`n", $enc)
+    & git -C $Xg init -q 2>&1 | Out-Null
+    & git -C $Xg add -A 2>&1 | Out-Null
+    & git -C $Xg -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    [IO.File]::WriteAllText("$Xg\src\a.rs", "fn a() {} // touched`n", $enc)
+    [IO.File]::WriteAllText("$Xg\new.txt", "untracked`n", $enc)
+    $headBefore = (& git -C $Xg rev-parse HEAD)
+    $stBefore = (@(& git -C $Xg status --porcelain)) -join "`n"
+
+    # X1/X2: 没有仓库、没有任何提交，都要 fail-closed 并说清
+    $Xn = Join-Path $Work 'x-nogit'
+    New-Item -ItemType Directory $Xn -Force | Out-Null
+    & $bashExe $shG checkpoint -Root (ToPosix $Xn) 2>&1 | Out-Null
+    $x1 = $LASTEXITCODE
+    $Xe = Join-Path $Work 'x-nocommit'
+    & git -C $Xe init -q 2>&1 | Out-Null
+    & $bashExe $shG checkpoint -Root (ToPosix $Xe) 2>&1 | Out-Null
+    $x2 = $LASTEXITCODE
+    Assert-True ($x1 -ne 0 -and $x2 -ne 0) 'X1/X2 无仓库 / 无提交时 fail-closed' "nogit=$x1 nocommit=$x2"
+
+    # X3: checkpoint 成功，落到 refs/recycle/checkpoint/<ts>-<label>
+    $x3 = @(& $bashExe $shG checkpoint -Label wip -Root (ToPosix $Xg) 2>&1)
+    $cid = ''
+    foreach ($l in $x3) { if ($l -match 'checkpoint ([0-9a-f]{40})') { $cid = $Matches[1]; break } }
+    Assert-True ($LASTEXITCODE -eq 0 -and $cid -ne '' -and (@($x3) -join ' ') -match 'refs/recycle/checkpoint/') 'X3 checkpoint 落到 refs/recycle/checkpoint 并输出 id' "cid=$cid"
+
+    # X4: HEAD 一步没动
+    $headAfter = (& git -C $Xg rev-parse HEAD)
+    Assert-True ($headAfter -eq $headBefore) 'X4 HEAD 未被 checkpoint 移动' "$headBefore -> $headAfter"
+
+    # X5: index 与工作区一步没动（临时索引只写自己的文件，未跟踪的还是未跟踪）
+    $stAfter = (@(& git -C $Xg status --porcelain)) -join "`n"
+    $staged = @(& git -C $Xg diff --cached --name-only).Count
+    Assert-True ($stAfter -eq $stBefore -and $staged -eq 0) 'X5 index/工作区未被触碰（porcelain 前后一致、staged 为空）' "staged=$staged"
+
+    # X6: checkpoint 真的装下了工作区：未跟踪文件与已改内容都在 ref 的树里
+    $tree = (@(& git -C $Xg ls-tree -r --name-only $cid)) -join ' '
+    $captured = (& git -C $Xg show "${cid}:src/a.rs")
+    Assert-True ($tree -match 'new\.txt' -and $captured -match 'touched') 'X6 ref 树里含未跟踪文件与已改内容' "$tree / $captured"
+
+    # X7: list 列出 checkpoint
+    $x7 = @(& $bashExe $shG list -Root (ToPosix $Xg) 2>&1)
+    Assert-True ((@($x7) -join ' ') -match 'refs/recycle/checkpoint/.*wip') 'X7 list 列出 checkpoint ref' (@($x7) -join ' / ')
+
+    # X8: verify 对可解析的 ref 放行，对不存在的拒绝（fail-closed）
+    & $bashExe $shG verify $cid -Root (ToPosix $Xg) 2>&1 | Out-Null
+    $x8a = $LASTEXITCODE
+    & $bashExe $shG verify ghost -Root (ToPosix $Xg) 2>&1 | Out-Null
+    Assert-True ($x8a -eq 0 -and $LASTEXITCODE -eq 1) 'X8 verify 可解析放行、不存在拒绝' "ok=$x8a ghost=$LASTEXITCODE"
+
+    # X9: rescue 打印 reflog 尾部与逐字可复制的恢复命令
+    $x9 = @(& $bashExe $shG rescue -Root (ToPosix $Xg) 2>&1)
+    $x9raw = (@($x9) -join "`n")
+    Assert-True ($x9raw -match 'restore --source=' -and $x9raw -match [regex]::Escape($cid) -and $x9raw -match '\[1\] reflog') 'X9 rescue 含 reflog 与恢复命令块' ($x9raw.Substring(0, [math]::Min(120, $x9raw.Length)))
+
+    # X10: 第二个 checkpoint 带不同 label，list 里两条都在
+    & $bashExe $shG checkpoint -Label again -Root (ToPosix $Xg) 2>&1 | Out-Null
+    $x10 = @(& $bashExe $shG list -Root (ToPosix $Xg) 2>&1)
+    $refs = @($x10 | Where-Object { $_ -match 'refs/recycle/checkpoint/' })
+    Assert-True ($LASTEXITCODE -eq 0 -and $refs.Count -ge 2 -and ((@($x10) -join ' ') -match 'again')) 'X10 第二个 checkpoint 带 label，list 可见两条' "refs=$($refs.Count)"
 }
 
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
