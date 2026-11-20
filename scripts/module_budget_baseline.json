@@ -2692,7 +2692,11 @@
     },
     {
       "file": "crates/trit-parts/src/splat/core.rs",
-      "lines": 288
+      "lines": 247
+    },
+    {
+      "file": "crates/trit-parts/src/splat/core/filter.rs",
+      "lines": 55
     },
     {
       "file": "crates/trit-parts/src/splat/fit.rs",

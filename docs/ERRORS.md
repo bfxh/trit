@@ -180,6 +180,7 @@
 | L129 | 第 23/27/28/30 轮：快照 `NODE` 的 `hist_len` 直接进 `Vec::with_capacity`（`usize::MAX` → capacity overflow）；快照前缀 `deltas_covered + 1` 加法溢出；`prefix_len` 落在汉字中间时 `&text[covered..]` 切坏 UTF-8；`dag.chain()` 用裸下标取 parent、`status` 用 `len()-1` | 所有值都来自外部文件/外部输入，却按「自己写的」对待：先分配后校验、无 checked 运算、无 UTF-8 边界检查 | `snapshot.rs` 的 `hist_len` 先比剩余行数；`journal.rs` 用 `saturating_add` + `is_char_boundary`；`dag.rs` 用 `nodes.get()`；`bin/trit.rs` 用 `checked_sub`；`tests/parse_bounds.rs` 一条 | C080 |
 | L130 | 第 22 轮：`TpmLayer::effective()` 在 `cout == 0` 时 `wi % slots` 除零；`TpmModel` 的剪枝在空层上 `layers.len() - 1` 下溢 | `cout` 来自模型文件（可为 0），`%` 与 `-` 都默认分母/长度为正 | `effective()` 前判 `slots == 0` 返回全零（拆到 `tpm/layer.rs` 守行数）；剪枝前判 `layers.is_empty()`；`trit-parts --lib` 197 条全过 | C081 |
 | L131 | 第 29 轮：`read_png_rgb` 按 IHDR 声明的 `output_buffer_size()` 直接分配缓冲——`1e6×1e6` RGB8 的 65 字节 PNG 直接要 3 TB，abort 134 | 解码前的尺寸来自文件头，却被当成可信常量；`vec![0u8; size]` 是唯一分配点，没有任何上限 | `read_png_rgb` 拆到 `data/png_read.rs`（顺带把 `data.rs` 从 251 行压到 224），分配改为 `output_buffer_size().min(1 << 28)`；子模块名避开外部 crate `png` 的遮蔽 | C082 |
+| L132 | 第 26/31 轮：`build_filtered` 用 `v.depth[i]` 取深度——同一帧的 ids 与 depth 来自不同文件、长度各自独立，`4×4` seg + `1×1` depth 的 192 B 输入直接越界 panic | 把「同形」当成了不变量：ids 循环到 `w*h`，depth 却可能只有 1 个元素 | `build_filtered` 拆到 `splat/core/filter.rs`（core.rs 288 → 245），深度改用 `v.depth.get(i)` 跳过缺失项；`trit-parts --lib` 197 条全过 | C083 |
 
 
 

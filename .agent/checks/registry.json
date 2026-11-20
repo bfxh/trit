@@ -1423,6 +1423,23 @@
       "run": "cargo test -p trit-parts --lib",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C083",
+      "title": "splat 建图不假设 depth 与 ids 同长",
+      "kind": "cmd",
+      "covers": [
+        "L132"
+      ],
+      "scope": [
+        "crates/trit-parts/src/splat/core/filter.rs"
+      ],
+      "since": "L132",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-parts --lib",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
