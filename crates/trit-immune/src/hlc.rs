@@ -15,7 +15,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 /// 远端物理位允许领先本地的时间容差：超出即视为异常戳（时钟跑飞/伪造），夹到
 /// `本地 + 容差`——避免一个 `u64::MAX` 戳把本地时钟永久冻住、之后本地写入被去重丢光（H3）。
-const MAX_SKEW_MS: u64 = 3_600_000;
+pub(crate) const MAX_SKEW_MS: u64 = 3_600_000;
 
 /// 一个 HLC 时间戳。字典序 = 因果全序（同写者内严格递增）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

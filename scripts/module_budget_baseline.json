@@ -1484,7 +1484,11 @@
     },
     {
       "file": "crates/trit-immune/src/journal.rs",
-      "lines": 510
+      "lines": 505
+    },
+    {
+      "file": "crates/trit-immune/src/journal/adopt.rs",
+      "lines": 32
     },
     {
       "file": "crates/trit-immune/src/json.rs",
@@ -1621,6 +1625,10 @@
     {
       "file": "crates/trit-immune/src/vocab.rs",
       "lines": 394
+    },
+    {
+      "file": "crates/trit-immune/tests/adopt_guard.rs",
+      "lines": 65
     },
     {
       "file": "crates/trit-immune/tests/adoption.rs",

@@ -1336,6 +1336,23 @@
       "run": "cargo test -p trit-wspace --lib seal",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C078",
+      "title": "adopt 先校验后落盘并拒绝未来戳",
+      "kind": "cmd",
+      "covers": [
+        "L127"
+      ],
+      "scope": [
+        "crates/trit-immune/src/journal/adopt.rs"
+      ],
+      "since": "L127",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-immune --test adopt_guard",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
