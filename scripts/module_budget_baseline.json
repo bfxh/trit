@@ -3604,7 +3604,19 @@
     },
     {
       "file": "crates/trit-unsafe/src/lexer.rs",
-      "lines": 208
+      "lines": 9
+    },
+    {
+      "file": "crates/trit-unsafe/src/lexer/raw.rs",
+      "lines": 31
+    },
+    {
+      "file": "crates/trit-unsafe/src/lexer/raw/tests.rs",
+      "lines": 50
+    },
+    {
+      "file": "crates/trit-unsafe/src/lexer/scrub.rs",
+      "lines": 164
     },
     {
       "file": "crates/trit-unsafe/src/main.rs",

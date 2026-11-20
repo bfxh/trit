@@ -1544,6 +1544,23 @@
       "run": "cargo test -p trit-parts --lib",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C090",
+      "title": "字符字面量里的引号不掩盖同一行的 unsafe",
+      "kind": "cmd",
+      "covers": [
+        "L139"
+      ],
+      "scope": [
+        "crates/trit-unsafe/src/lexer/scrub.rs"
+      ],
+      "since": "L139",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-unsafe",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

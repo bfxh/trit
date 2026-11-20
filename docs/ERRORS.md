@@ -187,6 +187,8 @@
 | L136 | 第 37 轮 S2：`trit-re` 正则编译器的递归下降（`parse_atom` → `parse_alt`）与 `emit` 都没有深度计数，8000 层括号在 release 下栈溢出（134） | 递归深度由输入（规则文件）决定，但递归函数自己没有预算；`parse` 只做语法，不做规模 | `parse` 入口先按括号配对预扫，超过 64 层直接 `Err`（AST 深度受限，`emit` 也随之受限）；检查拆到 `regex/depth.rs` 守行数 | C087 |
 | L137 | 第 32 轮 32-1：`trit-parts` 的 `RefCpu::block` 用 `self.model.layers[i]` 直接索引——单层 TPM1 配 `E1B = 1` 时越界 panic（101） | 层下标由模型推理路径算出，却假设「层数一定够」；`layers[i]` 没有任何兜底 | `block` 改用 `layers.get(i)`，缺失返回空结果；`block`/`pool`/`cat` 拆到 `model/forward.rs`（model.rs 339 → 307），`conv`/`affine`/`model` 相应放开为 `pub(super)` | C088 |
 | L138 | 第 34/35/36 轮三处同一模式：`weights.rs` 的 `field_shape` 与 `parts.rs` 的 `PartList::parse` 都先 `find('[')` 再**从串首** `find(']')`，`]` 出现在 `[` 之前就得到 `b < a`，`rest[a..b]` 反向切片 panic（40/39 字节清单，exit 101）；`mcp.rs` 的 `wsp_shard` 用 `(start + limit).min(total)`，`limit = usize::MAX` 在 release 回绕成 0 再反向切片（MCP 进程崩溃） | 手写 JSON 解析把「括号成对」当不变量；下标加法没走 checked/saturating；守卫写在 panic 之后 | 34/35 改为从 `[` 之后找 `]`（`rest[a..].find(']')? + a`）；36 改为 `start.saturating_add(limit).min(total)`；`trit-parts --lib` 197 与 `trit-wspace --lib` 17 条全过 | C089 |
+| L139 | 第 2 轮 U1：`trit-unsafe` 的 `lexer` 在 Code 态见到 `"` 就无条件进字符串态——`let q = '"';` 这类**合法**字符字面量会把同一行的 `unsafe` 抹成空格，高危站点直接消失（`sites: 0`、`--strict` 仍 exit 0） | 词法器没有区分字符字面量与字符串起始；而「抹错」的代价是漏报，恰好与工具目的相反 | Code 态先识别字符字面量（`'x'` / `'"'` / `'
+'`，生命周期不算），整段抹空格但保留同行其余代码；`lexer.rs` 拆成 `lexer/scrub.rs` + `lexer/raw.rs` + `lexer/raw/tests.rs`（不抬台账）；回归测试 `char_literal_quote_does_not_hide_unsafe` | C090 |
 
 
 
