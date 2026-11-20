@@ -192,7 +192,9 @@ $stepNames = @($doc1.steps | ForEach-Object { $_.step })
 Assert-True ($code1 -eq 0) 'I1 全链路通过时 exit=0' "exit=$code1"
 $core = ($stepNames | Where-Object { $_ -ne 'memory-brief' -and $_ -ne 'memory-note' }) -join ','
 Assert-True ($stepNames[0] -eq 'memory-brief') 'I2 第一步永远是读记忆（新会话先知道项目历史）' ($stepNames -join ',')
-Assert-True ($core -eq 'timeline-due,preflight,affected,policy,constraints,journal-begin,run,journal-end') 'I2b 核心步骤按顺序' $core
+# checks 步是无条件 add 的（没初始化也以 skipped 留痕），期望串必须包含它；
+# 这条断言曾因漏掉 checks 而永远红——见 docs/ERRORS.md L98。
+Assert-True ($core -eq 'timeline-due,preflight,checks,affected,policy,constraints,journal-begin,run,journal-end') 'I2b 核心步骤按顺序' $core
 Assert-True ($doc1.plan.proven -eq $true) 'I3 回执记录跑了持证子集' "proven=$($doc1.plan.proven)"
 Assert-True ($doc1.verdict -match 'proven subset') 'I4 verdict 说明是持证子集' $doc1.verdict
 
@@ -850,6 +852,147 @@ if (-not $bashExe) {
     New-Item -ItemType Directory $V2 -Force | Out-Null
     & $bashExe $shG preflight -Repo (ToPosix $V2) 2>&1 | Out-Null
     Assert-True ($LASTEXITCODE -eq 0) 'V3 没有 tests 目录时放行（不是所有项目都有）' "exit=$LASTEXITCODE"
+}
+
+"== Y. resume: 断粮挂起（censored 不是失败）与换会话续跑 =="
+if (-not $bashExe) {
+    "  SKIP  Y0 没有 bash，跳过 resume 检查"
+    $skipped += 21
+} else {
+    $shRes = Join-Path $tools 'resume.sh'
+    $Yr = Join-Path $Work 'y-resume'
+    New-Item -ItemType Directory $Yr -Force | Out-Null
+    $yroot = ToPosix $Yr
+
+    & $bashExe $shRes begin t1 --budget-token 12000 -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Y1 begin exit=0' "exit=$LASTEXITCODE"
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.task -eq 't1' -and $ys.status -eq 'open' -and $ys.budget -eq 12000 `
+        -and $ys.created -and $ys.journal_id -eq $null) 'Y2 会话文件字段完整（task/created/status/budget/steps）' ''
+    Assert-True (@($ys.steps).Count -eq 0) 'Y2b steps 从空开始' ''
+
+    & $bashExe $shRes begin t1 -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'Y3 已存在的会话再 begin 被拒（fail-closed，不许覆盖）' "exit=$LASTEXITCODE"
+
+    & $bashExe $shRes progress t1 s1 --proven --note 'first step' -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Y4 progress exit=0' "exit=$LASTEXITCODE"
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.steps[0].step -eq 's1' -and $ys.steps[0].proven -eq $true `
+        -and $ys.steps[0].note -eq 'first step') 'Y4b 步骤记录完整（step/proven/note）' ''
+
+    # journal 联动：只记快照 id（manifest 内容哈希），不复制内容
+    New-Item -ItemType Directory -Force (Join-Path $Yr '.journal\latest') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $Yr '.journal\latest\manifest.json'), '{"count": 3}', $enc)
+    $wantId = (Get-FileHash (Join-Path $Yr '.journal\latest\manifest.json') -Algorithm SHA256).Hash.ToLower().Substring(0, 12)
+    & $bashExe $shRes suspend t1 --reason budget -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Y5 suspend exit=0' "exit=$LASTEXITCODE"
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.status -eq 'suspended' -and $ys.censor.reason -eq 'budget' -and $ys.censor.at) `
+        'Y5b suspend 记录挂起状态与删失原因' ''
+    Assert-True ($ys.journal_id -eq $wantId) 'Y6 suspend 时探测到 journal 快照 id（只记 id）' "want=$wantId got=$($ys.journal_id)"
+
+    $y7 = @(& $bashExe $shRes status t1 -Root $yroot 2>&1)
+    $y7txt = (@($y7) -join ' ')
+    Assert-True ($y7txt -match 'censored' -and $y7txt -match 'not a failure') `
+        'Y7 挂起态的措辞是 censored（不是 failed）' $y7txt
+
+    $y8 = @(& $bashExe $shRes resume t1 -Root $yroot 2>&1)
+    $y8txt = (@($y8) -join "`n")
+    Assert-True ($y8txt -match 'copy verbatim' -and $y8txt -match 'resume\.py progress t1 ' `
+        -and $y8txt -match 'resume\.py finish t1') 'Y8 resume 输出逐字可复制的续跑命令块' $y8txt
+    Assert-True (@($y8 | Where-Object { $_ -match '[^\x00-\x7F]' }).Count -eq 0) `
+        'Y8b 续跑块与状态输出纯 ASCII（任何宿主都不读坏）' ''
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.status -eq 'suspended') 'Y9 resume 是只读视图（看一眼不改变挂起状态）' ''
+
+    & $bashExe $shRes progress t1 s2 --proven -Root $yroot 2>&1 | Out-Null
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.status -eq 'open' -and ($ys.history | Where-Object { $_.event -eq 'resume' }).Count -ge 1) `
+        'Y10 挂起的会话被 progress 接回 open（历史里记了 resume 事件）' ''
+
+    & $bashExe $shRes finish t1 -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Y11 finish exit=0' "exit=$LASTEXITCODE"
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.status -eq 'finished') 'Y11b 状态 finished' ''
+    & $bashExe $shRes finish t1 -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'Y12 已完结的会话再 finish 被拒' "exit=$LASTEXITCODE"
+
+    # censored 的完整闭环：挂起后直接收尾 = 删失结案，不是失败
+    & $bashExe $shRes begin t2 -Root $yroot 2>&1 | Out-Null
+    & $bashExe $shRes suspend t2 --reason deadline -Root $yroot 2>&1 | Out-Null
+    $y13 = @(& $bashExe $shRes finish t2 -Root $yroot 2>&1)
+    $ys2 = Get-Content (Join-Path $Yr '.agent\resume\t2.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys2.status -eq 'censored') 'Y13 挂起后 finish 判 censored（不是 finished）' ''
+    Assert-True ((@($y13) -join ' ') -match 'censored' -and (@($y13) -join ' ') -match 'not a failure') `
+        'Y13b censored 的措辞明说不是失败' (@($y13) -join ' ')
+
+    $y14 = @(& $bashExe $shRes list -Root $yroot 2>&1)
+    Assert-True ((@($y14 | Where-Object { $_ -match '\bt1\b' }).Count -ge 1 `
+        -and @($y14 | Where-Object { $_ -match '\bt2\b' }).Count -ge 1) `
+        -and (@($y14 | Where-Object { $_ -match 'censored' }).Count -ge 1)) `
+        'Y14 list 列出会话与状态（censored 也在列）' (@($y14) -join ' / ')
+
+    & $bashExe $shRes suspend ghost-task --reason budget -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'Y15 不存在的会话 suspend 被拒（fail-closed）' "exit=$LASTEXITCODE"
+    & $bashExe $shRes begin '../evil' -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'Y16 非法 task-id（路径形态）被拒' "exit=$LASTEXITCODE"
+
+    # 编排层集成：声明额度 0 时 run 之前整体拒绝，verdict 是 suspended 不是 failed
+    $shAVy = Join-Path $tools 'agent-verify.sh'
+    $Yav = Join-Path $Work 'y-av'
+    New-File (Join-Path $Yav 'conftest.py') ''
+    New-File (Join-Path $Yav 'pkg\core.py') "def f(): return 1`n"
+    New-File (Join-Path $Yav 'pkg\__init__.py') "from .core import f`n"
+    New-File (Join-Path $Yav 'tests\test_core.py') "from pkg.core import f`ndef test_f(): assert f() == 1`n"
+    $yrc = Join-Path $Work 'y-gate-rc.json'
+    & $bashExe $shAVy -Root (ToPosix $Yav) -Changed 'pkg/core.py' -Lang python `
+        --budget-token 0 --task-id t-budget -Receipt (ToPosix $yrc) 2>&1 | Out-Null
+    $y17 = $LASTEXITCODE
+    $yDoc = Get-Content $yrc -Raw | ConvertFrom-Json
+    $yNames = @($yDoc.steps | ForEach-Object { $_.step })
+    Assert-True ($y17 -eq 1 -and $yDoc.verdict -eq 'suspended (budget) before run') `
+        'Y17 --budget-token 0 在 run 前整体拒绝，verdict 正确' "exit=$y17 verdict=$($yDoc.verdict)"
+    Assert-True ($yNames -notcontains 'run' -and $yNames -notcontains 'affected') `
+        'Y17b 拒绝发生在 run 之前（连受影响分析都没跑）' ($yNames -join ',')
+    Assert-True ($yDoc.budget.declared -eq 0 -and $yDoc.budget.gate -match 'cannot measure model-side token usage') `
+        'Y18 回执带着声明制闸门的诚实边界说明' ''
+    $yRaw = [IO.File]::ReadAllText($yrc, (New-Object System.Text.UTF8Encoding($false)))
+    Assert-True ((($yRaw -replace '[^\x00-\x7F]', '').Length) -eq $yRaw.Length) 'Y18b 回执纯 ASCII' ''
+    $ySession = Get-Content (Join-Path $Yav '.agent\resume\t-budget.json') -Raw | ConvertFrom-Json
+    Assert-True ($ySession.status -eq 'suspended' -and $ySession.censor.reason -eq 'budget' `
+        -and $ySession.budget -eq 0) 'Y19 闸门自动挂起会话（reason=budget，budget=0）' ''
+
+    # 失败自动挂起：verdict 保持 command failed，只允许追加字段
+    $Yf = Join-Path $Work 'y-avfail'
+    New-File (Join-Path $Yf 'conftest.py') ''
+    New-File (Join-Path $Yf 'pkg\core.py') "def f(): return 1`n"
+    New-File (Join-Path $Yf 'tests\test_core.py') "from pkg.core import f`ndef test_fail(): assert f() == 2`n"
+    $yrc2 = Join-Path $Work 'y-fail-rc.json'
+    & $bashExe $shAVy -Root (ToPosix $Yf) -Changed 'pkg/core.py' -Lang python `
+        --task-id t-fail -Receipt (ToPosix $yrc2) 2>&1 | Out-Null
+    $y20 = $LASTEXITCODE
+    $yDoc2 = Get-Content $yrc2 -Raw | ConvertFrom-Json
+    Assert-True ($y20 -eq 1 -and $yDoc2.verdict -eq 'command failed') `
+        'Y20 失败自动挂起但 verdict 仍是 command failed' "exit=$y20 verdict=$($yDoc2.verdict)"
+    Assert-True ($yDoc2.resume_checkpoint -match 't-fail suspended \(manual\)' `
+        -and $yDoc2.resume.suspend -eq 0 `
+        -and @($yDoc2.steps | ForEach-Object { $_.step }) -contains 'resume-suspend') `
+        'Y20b 回执尾部追加了 resume checkpoint（旧字段一个没动）' ''
+    Assert-True ($yDoc2.run[0].exit -ne 0 `
+        -and (@($yDoc2.steps | ForEach-Object { $_.step }) -contains 'journal-end') `
+        -and $yDoc2.plan.proven -ne $null) 'Y20c run/plan/链路原有字段语义不变' ''
+    $yFailSession = Get-Content (Join-Path $Yf '.agent\resume\t-fail.json') -Raw | ConvertFrom-Json
+    Assert-True ($yFailSession.status -eq 'suspended' -and $yFailSession.censor.reason -eq 'manual' `
+        -and $yFailSession.steps[0].proven -eq $false -and $yFailSession.steps[0].step -eq 'run:1') `
+        'Y20d 失败步骤记为 unproven 并挂起（reason=manual）' ''
+
+    # 声明额度为正时闸门不拦（声明制：>0 就放行去跑）
+    $yrc3 = Join-Path $Work 'y-ok-rc.json'
+    & $bashExe $shAVy -Root (ToPosix $Yav) -Changed 'pkg/core.py' -Lang python `
+        --budget-token 5 -Receipt (ToPosix $yrc3) 2>&1 | Out-Null
+    $yDoc3 = Get-Content $yrc3 -Raw | ConvertFrom-Json
+    Assert-True ($LASTEXITCODE -eq 0 -and $yDoc3.verdict -match '^passed') `
+        'Y21 声明额度为正时正常跑完（闸门只拦 <= 0）' "exit=$LASTEXITCODE verdict=$($yDoc3.verdict)"
 }
 
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
