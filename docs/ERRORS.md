@@ -155,6 +155,7 @@
 | L104 | `pngio::load_png_rgba` 先 `vec![0u8; reader.output_buffer_size()]`（按 IHDR 的 u32 宽高），`MAX_TEXTURE_PIXELS=1<<22` 的检查只挂在容器 `validate` 上——PNG 这条链完全绕过，且 `pngio` 在 `png` feature 后 | 文件 I/O 与容器校验是两条路；`load_png_rgba` 在 `read_info()` 之后直接按尺寸分配 | `convert.rs` 抽出 `pub fn check_pixels(w, h)`（`checked_mul` + `MAX_TEXTURE_PIXELS`），`pngio` 在 `output_buffer_size()` 之前调用；新增 `tests/pixel_bounds.rs`（上限合法、+1 拒绝、溢出拒绝） | C056 |
 | L105 | `train-bench --rows/--cols` 的 `rows×cols` f32 与 `--mtrits` 的百万级 trit 都无上限：`--rows 1000000` 直接几 GB，`--mtrits 100000` 是 10 GB 级 `Vec<i8>` | bin 只 `arg().unwrap_or(默认)`，没有尺寸闸；分配在 `sample_trits`/`vec![0.0; rows]` | `bench.rs` 加 `MAX_MTRITS=64`/`MAX_ROWS=8192`/`MAX_COLS=8192`，解析后判红（rc=2）；新增 `tests/bench_bounds.rs`（9000 行被拒） | C057 |
 | L106 | `trit-dot bench --len` 驱动三份 `Vec<i32>` + 打包位面，`--len 1e9` 直接 4 GB/份；`--iters` 只判非 0 | bin 只 `arg().unwrap_or(1<<20)`，没有长度闸；分配在 `(0..len).map(...).collect()` | `main.rs` 加 `MAX_LEN=1<<24`，`bench` 解析后返回 Err；新增 `tests/len_bounds.rs`（16777217 被拒） | C058 |
+| L107 | `trit-gpu bench --trits` 位平面数组与 GPU 缓冲按 trits 分配，`--trits 1e9` 是 GB 级；默认 `1<<20`，无上限 | 解析在 `main`，`run(trits)` 只判 0；`gpu` feature 门后的 `bench` 才是分配者 | `main.rs` 在解析后判 `trits > MAX_TRITS=1<<24`（rc=1）；检查放在 feature 门外，默认构建的桩也能测到；新增 `tests/trits_bounds.rs`（16777217 被拒且错误含 `--trits`） | C059 |
 
 
 

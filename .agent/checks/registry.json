@@ -1002,6 +1002,23 @@
       "pattern": "len > MAX_LEN",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C059",
+      "title": "trit-gpu --trits 的规模上限",
+      "kind": "require",
+      "covers": [
+        "L107"
+      ],
+      "scope": [
+        "crates/trit-gpu/src/main.rs"
+      ],
+      "since": "L107",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "trits > MAX_TRITS",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

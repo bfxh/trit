@@ -1207,6 +1207,10 @@
       "lines": 466
     },
     {
+      "file": "crates/trit-gpu/tests/trits_bounds.rs",
+      "lines": 20
+    },
+    {
       "file": "crates/trit-gpu/tests/wf32_plan.rs",
       "lines": 271
     },

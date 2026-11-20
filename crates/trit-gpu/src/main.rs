@@ -1,7 +1,5 @@
 //! `trit-gpu bench [--trits N]`：有 GPU 就跑，没有就提示。
-
 use std::process::ExitCode;
-
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().map(String::as_str) != Some("bench") {
@@ -14,6 +12,11 @@ fn main() -> ExitCode {
         .and_then(|index| args.get(index + 1))
         .and_then(|raw| raw.parse::<usize>().ok())
         .unwrap_or(1 << 20);
+    const MAX_TRITS: usize = 1 << 24;
+    if trits > MAX_TRITS {
+        eprintln!("--trits 上限为 {MAX_TRITS}");
+        return ExitCode::FAILURE;
+    }
     match bench(trits) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
@@ -22,7 +25,6 @@ fn main() -> ExitCode {
         }
     }
 }
-
 #[cfg(feature = "gpu")]
 fn bench(trits: usize) -> Result<(), String> {
     let report = trit_gpu::gpu::run(trits).ok_or("没有可用的 GPU adapter")?;
@@ -82,7 +84,6 @@ fn bench(trits: usize) -> Result<(), String> {
     });
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
 
-    // 矩阵乘内核：同结构 naive，唯一变量是数据表示（2 bit/trit vs f32）。
     let Some(matmul) = trit_gpu::matmul::run(512, 4096, 512) else {
         return Ok(());
     };
@@ -155,7 +156,6 @@ fn bench(trits: usize) -> Result<(), String> {
     );
     Ok(())
 }
-
 #[cfg(not(feature = "gpu"))]
 fn bench(_trits: usize) -> Result<(), String> {
     Err(
