@@ -1755,6 +1755,10 @@
       "lines": 68
     },
     {
+      "file": "crates/trit-machines/tests/drive_bounds.rs",
+      "lines": 19
+    },
+    {
       "file": "crates/trit-machines/tests/snn_bounds.rs",
       "lines": 16
     },

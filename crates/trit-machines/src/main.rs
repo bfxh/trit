@@ -1,10 +1,7 @@
 //! `trit-machines`：三个三值小部件的演示 / 测量入口。
-
 use std::process::ExitCode;
-
 use trit_core::value::Ternary;
 use trit_machines::{ca, graded, snn, vm};
-
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
@@ -124,6 +121,9 @@ fn snn_demo(args: &[String]) -> Result<(), String> {
     let seed = number(args, "--seed", 7)? as u64;
     let kick = number(args, "--kick", 3)? as i32;
     let drive = number(args, "--drive", 0)? as i32;
+    if ticks > snn::MAX_TICKS {
+        return Err(format!("--ticks 超过上限 {}", snn::MAX_TICKS));
+    }
     let threshold = number(args, "--threshold", 3)? as i32;
     let mut network = snn::Network::random(size, seed).map_err(|error| error.to_string())?;
     network.threshold = threshold;

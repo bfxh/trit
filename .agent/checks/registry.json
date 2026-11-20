@@ -934,6 +934,23 @@
       "pattern": "width <= MAX_WIDTH",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C055",
+      "title": "snn CLI 在分配驱动序列前限 ticks",
+      "kind": "require",
+      "covers": [
+        "L103"
+      ],
+      "scope": [
+        "crates/trit-machines/src/main.rs"
+      ],
+      "since": "L103",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "ticks > snn::MAX_TICKS",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
