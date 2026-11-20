@@ -524,6 +524,23 @@
       "pattern": "fn capped\\(",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C031",
+      "title": "权重张量先与真实长度对账再分配",
+      "kind": "require",
+      "covers": [
+        "L82"
+      ],
+      "scope": [
+        "crates/trit-parts/src/weights/fold.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T10:11:04+08:00",
+      "pattern": "fn expect_len\\(",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
