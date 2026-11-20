@@ -1561,6 +1561,23 @@
       "run": "cargo test -p trit-unsafe",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C091",
+      "title": "unsafe 证据窗覆盖长块",
+      "kind": "cmd",
+      "covers": [
+        "L140"
+      ],
+      "scope": [
+        "crates/trit-unsafe/src/scan.rs"
+      ],
+      "since": "L140",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-unsafe",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

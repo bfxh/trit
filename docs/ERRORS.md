@@ -189,6 +189,7 @@
 | L138 | 第 34/35/36 轮三处同一模式：`weights.rs` 的 `field_shape` 与 `parts.rs` 的 `PartList::parse` 都先 `find('[')` 再**从串首** `find(']')`，`]` 出现在 `[` 之前就得到 `b < a`，`rest[a..b]` 反向切片 panic（40/39 字节清单，exit 101）；`mcp.rs` 的 `wsp_shard` 用 `(start + limit).min(total)`，`limit = usize::MAX` 在 release 回绕成 0 再反向切片（MCP 进程崩溃） | 手写 JSON 解析把「括号成对」当不变量；下标加法没走 checked/saturating；守卫写在 panic 之后 | 34/35 改为从 `[` 之后找 `]`（`rest[a..].find(']')? + a`）；36 改为 `start.saturating_add(limit).min(total)`；`trit-parts --lib` 197 与 `trit-wspace --lib` 17 条全过 | C089 |
 | L139 | 第 2 轮 U1：`trit-unsafe` 的 `lexer` 在 Code 态见到 `"` 就无条件进字符串态——`let q = '"';` 这类**合法**字符字面量会把同一行的 `unsafe` 抹成空格，高危站点直接消失（`sites: 0`、`--strict` 仍 exit 0） | 词法器没有区分字符字面量与字符串起始；而「抹错」的代价是漏报，恰好与工具目的相反 | Code 态先识别字符字面量（`'x'` / `'"'` / `'
 '`，生命周期不算），整段抹空格但保留同行其余代码；`lexer.rs` 拆成 `lexer/scrub.rs` + `lexer/raw.rs` + `lexer/raw/tests.rs`（不抬台账）；回归测试 `char_literal_quote_does_not_hide_unsafe` | C090 |
+| L140 | 第 2 轮 U4：`trit-unsafe` 的证据窗只有「本行 + 后 3 行」，长 `unsafe` 块里第 5 行才出现的 `ptr::read` 落在窗外 → `apis` 为空 → 直接 `Unknown`（假阴性）；真实块常常前几行只是取指针/算偏移 | 证据窗是写死的常数，按「调用就在附近」的假设取的 | 窗口放宽到 24 行；同批的 U2（否定式 SAFETY 注释）、U3（无关 guard 顶成 Safe）、U6（未文档化签名不参与判定）**未修**：U2 需要 helper、U3 需要作用域分析、U6 会改变 `--strict` 语义，三者都要先拆 `scan.rs`（496 行已贴上限） | C091 |
 
 
 
