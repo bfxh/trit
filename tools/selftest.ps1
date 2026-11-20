@@ -995,6 +995,106 @@ if (-not $bashExe) {
         'Y21 声明额度为正时正常跑完（闸门只拦 <= 0）' "exit=$LASTEXITCODE verdict=$($yDoc3.verdict)"
 }
 
+""
+"== Z. run-caps: 进程资源硬帽（内核帽，不是安全边界）=="
+if (-not $bashExe) {
+    "  SKIP  Z0 没有 bash，跳过 run-caps 检查"
+    $skipped += 12
+} else {
+    $zPy = $null
+    foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
+        if (-not $c) { continue }
+        $src = (Get-Command $c -ErrorAction SilentlyContinue).Source
+        if (-not $src) { continue }
+        if ((& $src -c 'print(1)' 2>$null) -eq '1') { $zPy = $src; break }
+    }
+    if (-not $zPy) {
+        "  SKIP  Z0b 找不到可用的 Python，跳过 run-caps 检查"
+        $skipped += 12
+    } else {
+        $shCaps = Join-Path $tools 'run-caps.sh'
+        $Zd = Join-Path $Work 'z-caps'
+        New-Item -ItemType Directory $Zd -Force | Out-Null
+        $znl = [char]10
+        [IO.File]::WriteAllText("$Zd\ok.py", "print('caps-ok')$znl", $enc)
+        [IO.File]::WriteAllText("$Zd\exit3.py", "import sys; sys.exit(3)$znl", $enc)
+        [IO.File]::WriteAllText("$Zd\sleep10.py", "import time; time.sleep(10)$znl", $enc)
+        [IO.File]::WriteAllText("$Zd\bigalloc.py", "x = [0] * (1 << 28)$znlprint(len(x))$znl", $enc)
+        [IO.File]::WriteAllText("$Zd\spawn3.py", (@(
+                'import subprocess, sys',
+                'procs = []',
+                'try:',
+                '    for _ in range(3):',
+                '        procs.append(subprocess.Popen([sys.executable, "-c", "import time; time.sleep(2)"]))',
+                'except OSError as e:',
+                '    print("spawn denied")',
+                '    sys.exit(9)',
+                'for p in procs:',
+                '    p.wait()',
+                'print("spawned", len(procs))'
+            ) -join $znl) + $znl, $enc)
+
+        $z1 = @(& $bashExe $shCaps --mem-mb 256 --procs 8 --seconds 30 -- $zPy "$Zd\ok.py" 2>&1)
+        Assert-True ($LASTEXITCODE -eq 0 -and (@($z1) -join ' ') -match 'caps-ok') `
+            'Z1 正常命令透传退出码 0 且输出可见' "exit=$LASTEXITCODE out=(@($z1) -join ' ')"
+
+        & $bashExe $shCaps --mem-mb 256 --procs 8 --seconds 30 -- $zPy "$Zd\exit3.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 3) 'Z2 子进程退出码原样透传（3）' "exit=$LASTEXITCODE"
+
+        & $bashExe $shCaps --seconds 2 -- $zPy "$Zd\sleep10.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 124) 'Z3 超时映射为 124（watchdog 杀掉整个 job）' "exit=$LASTEXITCODE"
+
+        & $bashExe $shCaps --mem-mb 256 --seconds 30 -- $zPy "$Zd\bigalloc.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 124) `
+            'Z4 内存帽：超大分配在帽下失败（非 0 退出，不是超时）' "exit=$LASTEXITCODE"
+
+        & $bashExe $shCaps --procs 2 --seconds 60 -- $zPy "$Zd\spawn3.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 9) 'Z5 进程数帽：第 3 个进程创建被内核拒绝（exit 9）' "exit=$LASTEXITCODE"
+
+        $z6 = @(& $bashExe $shCaps --procs 8 --seconds 60 -- $zPy "$Zd\spawn3.py" 2>&1)
+        Assert-True ($LASTEXITCODE -eq 0 -and (@($z6) -join ' ') -match 'spawned 3') `
+            'Z6 帽内进程数正常跑完' "exit=$LASTEXITCODE"
+
+        & $bashExe $shCaps -- $zPy "$Zd\ok.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 2) 'Z7 一个帽都不给就拒绝（不加帽静默跑完等于说谎）' "exit=$LASTEXITCODE"
+        & $bashExe $shCaps --mem-mb 256 "$Zd\ok.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 2) 'Z7b 缺 -- 分隔符拒绝（帽与命令不许含糊）' "exit=$LASTEXITCODE"
+        & $bashExe $shCaps --mem-mb 0 -- $zPy "$Zd\ok.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 2) 'Z7c 非法帽值（0）拒绝' "exit=$LASTEXITCODE"
+
+        & $bashExe $shCaps --mem-mb 256 -- no-such-exe-xyz-probe 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 127) 'Z8 起不来的命令报 127（不是吞掉）' "exit=$LASTEXITCODE"
+
+        # 编排层集成：--caps 时回执 run[] 追加 caps 参数，verdict 与退出码照旧
+        $shAVz = Join-Path $tools 'agent-verify.sh'
+        $Zav = Join-Path $Work 'z-av'
+        New-File (Join-Path $Zav '.git\HEAD') "ref: refs/heads/main`n"
+        New-File (Join-Path $Zav 'conftest.py') ''
+        New-File (Join-Path $Zav 'pkg\core.py') "def f(): return 1`n"
+        New-File (Join-Path $Zav 'pkg\__init__.py') "from .core import f`n"
+        New-File (Join-Path $Zav 'tests\test_core.py') "from pkg.core import f`ndef test_f(): assert f() == 1`n"
+        $zrc = Join-Path $Work 'z-caps-rc.json'
+        & $bashExe $shAVz -Root (ToPosix $Zav) -Changed 'pkg/core.py' -Lang python `
+            --caps --caps-seconds 120 -Receipt (ToPosix $zrc) 2>&1 | Out-Null
+        $z9 = $LASTEXITCODE
+        $zDoc = Get-Content $zrc -Raw | ConvertFrom-Json
+        Assert-True ($z9 -eq 0 -and $zDoc.verdict -match '^passed' `
+            -and $zDoc.run[0].caps.seconds -eq 120 -and $zDoc.run[0].caps.mem_mb -gt 0) `
+            'Z9 --caps 时 run[] 追加 caps 参数且回执 verdict 照旧' "exit=$z9 verdict=$($zDoc.verdict)"
+        Assert-True ($zDoc.caps.note -match 'NOT a security boundary') `
+            'Z9b 回执带着"内核帽不是安全边界"的诚实强度声明' ''
+
+        $zrc2 = Join-Path $Work 'z-plain-rc.json'
+        & $bashExe $shAVz -Root (ToPosix $Zav) -Changed 'pkg/core.py' -Lang python `
+            -Receipt (ToPosix $zrc2) 2>&1 | Out-Null
+        $zDoc2 = Get-Content $zrc2 -Raw | ConvertFrom-Json
+        Assert-True ($LASTEXITCODE -eq 0 `
+            -and ($zDoc2.run[0].PSObject.Properties.Name -notcontains 'caps') `
+            -and $zDoc2.PSObject.Properties.Name -notcontains 'caps') `
+            'Z10 不开 --caps 时回执与现状完全一致（回归保护）' ''
+    }
+}
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 if ($failed -gt 0) { exit 1 }
 exit 0
