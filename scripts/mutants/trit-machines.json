@@ -78,5 +78,13 @@
   "new": "if size > MAX_NEURONS * 2 {",
   "pkg": "trit-machines",
   "filter": "random_above_the_cap_is_rejected_before_allocating"
+ },
+ {
+  "name": "ca: 宽度上限抬高",
+  "file": "crates/trit-machines/src/ca.rs",
+  "old": "assert!(width <= MAX_WIDTH, \"宽度 {width} 超过上限 {MAX_WIDTH}\");",
+  "new": "assert!(width <= MAX_WIDTH * 2, \"宽度 {width} 超过上限 {MAX_WIDTH}\");",
+  "pkg": "trit-machines",
+  "filter": "huge_width_panics_before_allocating"
  }
 ]

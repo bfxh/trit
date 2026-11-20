@@ -88,10 +88,12 @@ fn vm_demo() -> Result<(), String> {
 fn json_pair(key: String, value: usize) -> (String, serde_json::Value) {
     (key, serde_json::Value::from(value))
 }
-
 fn ca_demo(args: &[String]) -> Result<(), String> {
     let width = number(args, "--width", 64)?;
     let steps = number(args, "--steps", 200)?;
+    if width > ca::MAX_WIDTH || steps > ca::MAX_STEPS {
+        return Err(format!("宽度≤{}，步数≤{}", ca::MAX_WIDTH, ca::MAX_STEPS));
+    }
     let survey = ca::survey(width, steps);
     let best = ca::Rule::from_index(survey.max_entropy_rule).expect("合法规则编号");
     let run = ca::run(&best, width, steps);
@@ -148,7 +150,6 @@ fn snn_demo(args: &[String]) -> Result<(), String> {
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
     Ok(())
 }
-
 fn graded_demo(args: &[String]) -> Result<(), String> {
     let size = number(args, "--size", 64)?;
     let seed = number(args, "--seed", 7)? as u64;
@@ -192,7 +193,6 @@ fn graded_demo(args: &[String]) -> Result<(), String> {
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
     Ok(())
 }
-
 fn grade_name(grade: graded::Grade) -> &'static str {
     match grade {
         graded::Grade::Find => "find",

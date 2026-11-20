@@ -917,6 +917,23 @@
       "pattern": "max_n > 40",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C054",
+      "title": "元胞自动机的宽度/步数硬顶",
+      "kind": "require",
+      "covers": [
+        "L102"
+      ],
+      "scope": [
+        "crates/trit-machines/src/ca.rs"
+      ],
+      "since": "L102",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "width <= MAX_WIDTH",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

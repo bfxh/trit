@@ -1747,6 +1747,10 @@
       "lines": 320
     },
     {
+      "file": "crates/trit-machines/tests/ca_bounds.rs",
+      "lines": 28
+    },
+    {
       "file": "crates/trit-machines/tests/cli.rs",
       "lines": 68
     },
