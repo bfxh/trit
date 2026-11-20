@@ -8,7 +8,6 @@
 //! 见 `README.md` 的缺口表。
 
 #![forbid(unsafe_code)]
-
 pub mod api;
 pub mod atlas;
 pub mod augment;
@@ -68,3 +67,4 @@ pub mod gpu_bwd;
 pub mod net;
 #[cfg(feature = "gpu")]
 pub mod state;
+pub mod width;

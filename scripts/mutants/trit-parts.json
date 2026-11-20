@@ -526,5 +526,29 @@
     "new": "            let w = (((hi[0] - lo[0]) * scale).ceil() as usize).max(1);\n            let h = (((hi[1] - lo[1]) * scale).ceil() as usize).max(1);\n",
     "pkg": "trit-parts",
     "filter": "absurd_texel_density_is_rejected_instead_of_index_out_of_range"
+  },
+  {
+    "name": "width: 宽度不校验（NaN/INF 静默塌成 4 通道）",
+    "file": "crates/trit-parts/src/width.rs",
+    "old": "    if !width.is_finite() || width <= 0.0 || width > MAX_WIDTH {\n",
+    "new": "    if false {\n",
+    "pkg": "trit-parts",
+    "filter": "infinite_width_is_rejected_instead_of_collapsing_to_four_channels"
+  },
+  {
+    "name": "width: 上限不比对（4.5 仍按 576 通道分配）",
+    "file": "crates/trit-parts/src/width.rs",
+    "old": "    if !width.is_finite() || width <= 0.0 || width > MAX_WIDTH {\n",
+    "new": "    if !width.is_finite() || width <= 0.0 {\n",
+    "pkg": "trit-parts",
+    "filter": "width_above_the_cap_is_rejected"
+  },
+  {
+    "name": "width: 缩放不取 4 的倍数（k=3 的通道会退化成奇数）",
+    "file": "crates/trit-parts/src/width.rs",
+    "old": "    (v.div_ceil(4) * 4).max(4)\n",
+    "new": "    v.max(4)\n",
+    "pkg": "trit-parts",
+    "filter": "legal_widths_scale_as_documented"
   }
 ]

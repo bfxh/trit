@@ -10,8 +10,8 @@ impl Net {
     /// 只搬重叠的 `[k][ic][oc]` 块，新通道留 0（等价于"先不激活新通道"，后续精调再长出来）。
     /// **cat 层要分段搬**：`d2a` 的输入是 `[u3 | b]`、`d1a` 是 `[u2 | a]`，两端都变宽，
     /// 简单按前 N 个通道搬会把 b 的那一段错位。
-    pub fn expand_width(&self, width: f32) -> Net {
-        let mut new = Net::random_w(1, width);
+    pub fn expand_width(&self, width: f32) -> Result<Net, String> {
+        let mut new = Net::random_w(1, width)?;
         assert_eq!(new.layers.len(), self.layers.len());
         // cat 分段的旧/新边界（先算好，避免闭包借用 new）
         let old_seg = vec![
@@ -98,7 +98,7 @@ impl Net {
             l.q = qv;
             let _ = &old_e;
         }
-        new
+        Ok(new)
     }
 
     /// 从部署包（`TPM1`）建网：`latent = q·scale`，`scale/q` 原样保留（E 逐位不变）。
