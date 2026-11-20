@@ -1350,7 +1350,7 @@ if (-not $bashExe) {
 "== AD. 主库删除审批 / 污染 WARN 族 / pitfalls 痛点语料 =="
 if (-not $bashExe) {
     "  SKIP  AD0 没有 bash，跳过 AD 组检查"
-    $skipped += 12
+    $skipped += 16
 } else {
     $shPolAD = Join-Path $tools 'policy.sh'
     $shConAD = Join-Path $tools 'constraints.sh'
@@ -1451,6 +1451,28 @@ if (-not $bashExe) {
     Assert-True ($ad11put -eq 0 -and -not (Test-Path "$ADc2\src\b.txt") -and $LASTEXITCODE -eq 1 `
         -and ((@($ad11) -join ' ') -match 'BLOCK \[main-tree-raw-delete\]')) `
         'AD11 主库上回收站有账仍 BLOCK（bin 保内容，不抵扣审批）' "put=$ad11put out=$(@($ad11) -join ' ')"
+
+    # AD12-AD15: 污染 WARN 族各触发一次，全部只提醒不拦截（exit 0）——提醒作者你怎么干
+    # 会出什么事情；WARN 本来就不拦，所以没有 -Allow 出口
+    $ad12 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'git commit --no-verify -m x' 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and ((@($ad12) -join ' ') -match 'pollution\[no-verify\]')) `
+        'AD12 WARN commit --no-verify：绕门禁进坏基线的后果提醒且不拦截' (@($ad12) -join ' / ')
+    $ad13 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'git add -A' 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and ((@($ad13) -join ' ') -match 'pollution\[add-all\]')) `
+        'AD13 WARN git add -A：无关改动混一提交的后果提醒且不拦截' (@($ad13) -join ' / ')
+    $ADbig = Join-Path $Work 'ad-bigdiff'
+    New-Item -ItemType Directory "$ADbig\src" -Force | Out-Null
+    & git -C $ADbig init -q 2>&1 | Out-Null
+    for ($i = 0; $i -lt 35; $i++) { [IO.File]::WriteAllText("$ADbig\src\f$i.txt", "v1`n", $enc) }
+    & git -C $ADbig add -A 2>&1 | Out-Null
+    & git -C $ADbig -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    for ($i = 0; $i -lt 35; $i++) { [IO.File]::WriteAllText("$ADbig\src\f$i.txt", "v2 changed`nmore`nhere`n", $enc) }
+    $ad14 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADbig) -Command 'git commit -m bulk' 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and ((@($ad14) -join ' ') -match 'pollution\[wide-diff\]')) `
+        'AD14 WARN 巨型混合 diff（35 文件 > 阈值 30）：review 与二分失效提醒且不拦截' (@($ad14) -join ' / ')
+    $ad15 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'git add .env' 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and ((@($ad15) -join ' ') -match 'pollution\[secret-path\]')) `
+        'AD15 WARN 密钥形态文件（.env）：凭据进公开树的提醒且不拦截' (@($ad15) -join ' / ')
 }
 
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
