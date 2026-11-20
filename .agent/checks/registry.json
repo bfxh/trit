@@ -252,6 +252,261 @@
       "pattern": "fn npy_f32_header_is_bounds_checked",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C015",
+      "title": "断点按声明数分配的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L66"
+      ],
+      "scope": [
+        "crates/trit-parts/src/state/mod.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T02:34:43+08:00",
+      "pattern": "fn checkpoint_counts_are_rejected_before_allocating",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C016",
+      "title": "patch 合成源图长度契约的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L67"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tex/quilt.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T03:08:21+08:00",
+      "pattern": "fn short_source_is_rejected_before_allocating",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C017",
+      "title": "视角 ids/depth 长度契约的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L68"
+      ],
+      "scope": [
+        "crates/trit-parts/src/occ/mod.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T03:51:59+08:00",
+      "pattern": "fn view_with_short_depth_is_rejected",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C018",
+      "title": "点云建栅格尺寸上限的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L69"
+      ],
+      "scope": [
+        "crates/trit-parts/src/mesh/bounds_test.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T04:07:30+08:00",
+      "pattern": "fn huge_grid_is_rejected_before_allocating",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C019",
+      "title": "CLI --size 上限的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L70"
+      ],
+      "scope": [
+        "crates/trit-parts/src/bin/parts_3d/texgen.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T04:40:57+08:00",
+      "pattern": "fn oversized_size_is_rejected",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C020",
+      "title": "diffuse 特征 xt 长度契约的契约测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L71"
+      ],
+      "scope": [
+        "crates/trit-parts/tests/diffuse_contract.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T05:18:59+08:00",
+      "pattern": "fn short_xt_is_rejected",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C021",
+      "title": "tconv 卷积前向输入契约的契约测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L72"
+      ],
+      "scope": [
+        "crates/trit-parts/tests/tconv_contract.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T06:05:55+08:00",
+      "pattern": "fn short_channel_is_rejected",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C022",
+      "title": "VDen 输入通道数与真实前向一致的契约测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L73"
+      ],
+      "scope": [
+        "crates/trit-parts/tests/tconv_input_dim.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T06:24:31+08:00",
+      "pattern": "fn vden_input_dim_counts_extra_channels",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C023",
+      "title": "GLB 分块长度溢出的回归测试不许被删",
+      "kind": "require",
+      "covers": [
+        "L74"
+      ],
+      "scope": [
+        "crates/trit-parts/src/bin/parts_glb_verify/chunks.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T06:38:48+08:00",
+      "pattern": "fn chunks_rejects_overflowing_json_length",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C024",
+      "title": "Net::input 的 img 长度必须等于 w×h",
+      "kind": "require",
+      "covers": [
+        "L75"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tconv/net.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T07:06:42+08:00",
+      "pattern": "img\\.len\\(\\) == w\\.saturating_mul\\(h\\)",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C025",
+      "title": "GLB 总长超 u32 上限必须拒，不许静默截断",
+      "kind": "require",
+      "covers": [
+        "L76"
+      ],
+      "scope": [
+        "crates/trit-parts/src/glb/mod.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T07:39:52+08:00",
+      "pattern": "u32::try_from\\(total\\)",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C026",
+      "title": "tpc 声明的层数/通道必须在分配前有上限",
+      "kind": "require",
+      "covers": [
+        "L77"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tconv/io.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T07:57:22+08:00",
+      "pattern": "fn bounded\\(",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C027",
+      "title": "PLY 顶点数×步长必须 checked_mul",
+      "kind": "require",
+      "covers": [
+        "L78"
+      ],
+      "scope": [
+        "crates/trit-parts/src/splat/io.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T08:26:10+08:00",
+      "pattern": "checked_mul\\(stride\\)",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C028",
+      "title": "depth 采样窗口必须在分配前判越界",
+      "kind": "require",
+      "covers": [
+        "L79"
+      ],
+      "scope": [
+        "crates/trit-parts/src/depthdata.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T08:51:57+08:00",
+      "pattern": "window_is_usable\\(size, w, h\\)",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C029",
+      "title": "后端 res 必须是 4 的整数倍",
+      "kind": "require",
+      "covers": [
+        "L80"
+      ],
+      "scope": [
+        "crates/trit-parts/src/model.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T09:17:48+08:00",
+      "pattern": "is_multiple_of\\(4\\)",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

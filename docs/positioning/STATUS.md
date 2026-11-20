@@ -30,7 +30,7 @@
 | `DepthUNet` | `crates/trit-parts/src/depthunet.rs:113` | 3 | 1 | 0 | **7** | 本文件 §2.1 | **已跑通**（CPU 参考实现这一层） |
 | `DepthHead` | `crates/trit-parts/src/depth.rs:14` | 3 | 1 | 0 | **0** | — | **组件**（名字已经是对的） |
 | `MatNet` | `crates/trit-parts/src/matnet.rs:41` | 3 | 1 | 0 | **0** | — | **组件**（名字像整机，§4 第 4 条已把改名提案否证） |
-| `TriModel` | `crates/trit-parts/src/model.rs:47` | 1 | 1 | 1 | **0** | 本文件 §2.2（覆盖经由 `to_tri()`/`RefCpu`，不是类型名） | **已跑通**（加载→推理→金样指纹；跨后端对拍另见 `docs/results/PARTS-RESULTS.md`） |
+| `TriModel` | `crates/trit-parts/src/model.rs:47` | 0 | 1 | 2 | **0** | 本文件 §2.2（覆盖经由 `to_tri()`/`RefCpu`，不是类型名） | **已跑通**（加载→推理→金样指纹；跨后端对拍另见 `docs/results/PARTS-RESULTS.md`） |
 
 **第四列口径（本门自己量的，不是手填）**：`python scripts/model_status.py` 逐行数**代码行**里的类型名提及，
 注释与文档行不算。所以两处要知道它的边界：
@@ -46,6 +46,10 @@
 - `save` → `load` → 前向**逐位一致**；坏头报 `不是 U1` 而不是 panic。
 
 ### 2.2 `TriModel` 的读数（同上）
+
+> 表格里「内联 `#[test]`」一列已降为 0、被仓内其他模块引用升到 2：`model.rs` 的测试块下沉到了
+> `model/tests.rs`（本门按文件数 `#[test]`），`api.rs` 则新增引用 `res_is_backend_usable`。
+> 下面这 5 条断言仍在，只是文件位置变了。
 
 - 随仓 `models/parts_id8118.tpm`（13 层，3→32→…→32→16）加载 → `to_tri()` → `RefCpu` 跑通：
   res=8 输出 1024 个有限值、非退化；重新加载后**逐位相同**。

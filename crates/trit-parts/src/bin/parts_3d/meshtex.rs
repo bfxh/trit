@@ -485,7 +485,7 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
             let (seg, sshape) =
                 trit_parts::data::read_npy_i32(&frame_path(&scene, "seg", fr, "npy"))
                     .unwrap_or_else(|e| fail(&e));
-            if light::normals_inputs_match(&nshape, &sshape, rw, rh) {
+            if trit_parts::light::normals_inputs_match(&nshape, &sshape, rw, rh) {
                 let lum: Vec<f32> = (0..rw * rh)
                     .map(|i| 0.299 * rpx[i * 3] + 0.587 * rpx[i * 3 + 1] + 0.114 * rpx[i * 3 + 2])
                     .collect();

@@ -129,7 +129,7 @@
   },
   {
     "name": "splat-io: SH 直流项不换算（颜色约定错）",
-    "file": "crates/trit-parts/src/splat/io.rs",
+    "file": "crates/trit-parts/src/splat/io/write.rs",
     "old": "            put((c - 0.5) / SH_C0);",
     "new": "            put(c);",
     "pkg": "trit-parts",
@@ -329,11 +329,11 @@
   },
   {
     "name": "glb-verify: 不查总长与文件长度一致",
-    "file": "crates/trit-parts/src/bin/parts_glb_verify.rs",
+    "file": "crates/trit-parts/src/bin/parts_glb_verify/chunks.rs",
     "old": "    if ver != 2 || total != b.len() {",
     "new": "    if ver != 2 {",
     "pkg": "trit-parts",
-    "filter": "tests::chunks_and_structure_checks"
+    "filter": "chunks::tests::chunks_and_structure_checks"
   },
   {
     "name": "glb: 转台关键帧角度恒 0",
@@ -398,5 +398,37 @@
     "new": "        \"part_cube\" => [s[0], s[1], s[2]],",
     "pkg": "trit-parts",
     "filter": "objlabel::tests::gt_diag_is_rotation_invariant"
+  },
+  {
+    "name": "depth: 采样窗口不判越界（size 比图还大）",
+    "file": "crates/trit-parts/src/depthdata.rs",
+    "old": "    size > 0 && size <= w && size <= h\n",
+    "new": "    true\n",
+    "pkg": "trit-parts",
+    "filter": "depthdata::tests::window_must_fit_inside_the_image"
+  },
+  {
+    "name": "depth: 低通因子不判可用（factor 为 0 或超网格）",
+    "file": "crates/trit-parts/src/depthdata.rs",
+    "old": "    if factor == 0 || size < factor {\n",
+    "new": "    if false {\n",
+    "pkg": "trit-parts",
+    "filter": "depthdata::tests::lowpass_with_unusable_factor_is_noop"
+  },
+  {
+    "name": "api: 解码不判 res=0（取模除零）",
+    "file": "crates/trit-parts/src/api.rs",
+    "old": "    assert!(res > 0, \"分辨率不能为 0（logits 要按 res² 分组）\");\n",
+    "new": "",
+    "pkg": "trit-parts",
+    "filter": "api::tests::decode_rejects_zero_res"
+  },
+  {
+    "name": "backend: res 契约弱化成只判非 0",
+    "file": "crates/trit-parts/src/model.rs",
+    "old": "    res >= 4 && res.is_multiple_of(4)\n",
+    "new": "    res > 0\n",
+    "pkg": "trit-parts",
+    "filter": "model::tests::backend_res_must_be_a_positive_multiple_of_four"
   }
 ]

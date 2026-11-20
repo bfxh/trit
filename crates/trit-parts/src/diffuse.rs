@@ -1,10 +1,10 @@
 //! N5 生成的第一块：可微采样器（DDIM，x0 预测）+ 小型去噪器。
-//!
 //! 训练：`x_t = √ᾱ_t·x₀ + √(1−ᾱ_t)·ε`，网络学 `x̂₀ = f(x_t, t, 条件)`（BCE，输出在 0..1）。
 //! 采样：从纯噪声出发，按 `t = T−1 … 0` 做确定性 DDIM 更新（η=0）：
 //!   `x̂₀ = f(x_t,t)`，`ε̂ = (x_t − √ᾱ_t x̂₀)/√(1−ᾱ_t)`，
 //!   `x_{t−1} = √ᾱ_{t−1} x̂₀ + √(1−ᾱ_{t−1}) ε̂`。
 //! 网络是**小网络**（3×3 MLP 或三值卷积栈），采样器与网络解耦，换网不用改采样。
+#![allow(clippy::too_many_arguments)] // 渲染/训练共用的小工具，参数是它明确的上下文
 
 use crate::occ::Mlp;
 
@@ -75,7 +75,6 @@ impl PatchMlp {
     }
 
     /// 特征：`xt` 的 patch + 条件 one-hot + t/T。
-    #[allow(clippy::too_many_arguments)] // 渲染/训练共用的小工具，参数是它明确的上下文
     pub fn features(
         &self,
         xt: &[f32],
@@ -86,6 +85,10 @@ impl PatchMlp {
         w: usize,
         h: usize,
     ) -> (Vec<f32>, f32) {
+        assert!(
+            xt.len() == w.saturating_mul(h),
+            "xt 长度必须等于 w×h（{w}×{h}）"
+        );
         let r = (self.patch / 2) as i32;
         let mut f = Vec::with_capacity(self.input_dim());
         for dy in -r..=r {
@@ -103,7 +106,6 @@ impl PatchMlp {
     }
 
     /// 一步训练 `k` 个像素（每个像素独立随机 t），返回平均 loss。
-    #[allow(clippy::too_many_arguments)]
     pub fn train_shard(
         &mut self,
         x0: &[f32],
@@ -141,7 +143,6 @@ impl PatchMlp {
     }
 
     /// 单步训练：随机时间步加噪 → 回归 x0。
-    #[allow(clippy::too_many_arguments)]
     pub fn train_step(
         &mut self,
         x0: &[f32],
@@ -200,8 +201,7 @@ impl Denoiser for PatchMlp {
     }
 }
 
-/// 采样起点 `x_T ≈ ε ~ N(0,1)`——必须与训练加噪的分布一致。
-/// 曾写成 `0.5 + 0.5z`（均值 0.5、std 0.5），去噪器把偏暗输入当亮图，采样均值系统性偏高。
+/// 采样起点 `x_T ≈ ε ~ N(0,1)`——必须与训练加噪的分布一致；曾写成 `0.5 + 0.5z`（均值 0.5、std 0.5），去噪器把偏暗输入当亮图，采样均值系统性偏高。
 ///
 /// 种子先过 splitmix64 再进 xorshift：早期直接 `seed | 1` 当状态会把最低位丢掉，
 /// 相邻种子（如按类扫样的 `base+ki`）产出**逐位相同**的样本（2026-11-01 实测）。
