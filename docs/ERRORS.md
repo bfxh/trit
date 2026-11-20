@@ -153,6 +153,7 @@
 | L102 | `ca::run(rule, width, steps)` 的 `--width`/`--steps` 全程无顶：`vec![Ternary; width]` 与每步 clone 的历史表按 `steps×width` 增长，`--width 1e9` 直接 3 GB，`--steps 1e9` 更快 | `run` 与 `survey` 都是 pub API，CLI 的 `--width` 只有默认值；没有任何上限 | `ca.rs` 加 `MAX_WIDTH=4096`/`MAX_STEPS=10_000`，`run` 入口两行 assert；CLI `ca_demo` 预检返回 Err；新增 `tests/ca_bounds.rs`（上限放行、宽度+1 panic、步数+1 panic） | C054 |
 | L103 | `trit-machines snn --ticks 1e9 --drive 1`：CLI 先 `vec![drive; ticks]`（4 GB）再调 `simulate_with_drive`，而 `MAX_TICKS=1e6` 的闸在 `run()` 里——分配先于校验 | `snn_demo` 只解析不钳制；`MAX_TICKS` 只挂在 `snn::run` | `main.rs` 在构造 `external` 前判 `ticks > snn::MAX_TICKS` 返回 Err；新增 `tests/drive_bounds.rs`（1000001 被拒且错误含 `--ticks`） | C055 |
 | L104 | `pngio::load_png_rgba` 先 `vec![0u8; reader.output_buffer_size()]`（按 IHDR 的 u32 宽高），`MAX_TEXTURE_PIXELS=1<<22` 的检查只挂在容器 `validate` 上——PNG 这条链完全绕过，且 `pngio` 在 `png` feature 后 | 文件 I/O 与容器校验是两条路；`load_png_rgba` 在 `read_info()` 之后直接按尺寸分配 | `convert.rs` 抽出 `pub fn check_pixels(w, h)`（`checked_mul` + `MAX_TEXTURE_PIXELS`），`pngio` 在 `output_buffer_size()` 之前调用；新增 `tests/pixel_bounds.rs`（上限合法、+1 拒绝、溢出拒绝） | C056 |
+| L105 | `train-bench --rows/--cols` 的 `rows×cols` f32 与 `--mtrits` 的百万级 trit 都无上限：`--rows 1000000` 直接几 GB，`--mtrits 100000` 是 10 GB 级 `Vec<i8>` | bin 只 `arg().unwrap_or(默认)`，没有尺寸闸；分配在 `sample_trits`/`vec![0.0; rows]` | `bench.rs` 加 `MAX_MTRITS=64`/`MAX_ROWS=8192`/`MAX_COLS=8192`，解析后判红（rc=2）；新增 `tests/bench_bounds.rs`（9000 行被拒） | C057 |
 
 
 

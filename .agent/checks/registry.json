@@ -968,6 +968,23 @@
       "pattern": "pub fn check_pixels\\(width: usize, height: usize\\)",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C057",
+      "title": "train-bench 的 rows/cols/mtrits 尺寸上限",
+      "kind": "require",
+      "covers": [
+        "L105"
+      ],
+      "scope": [
+        "crates/trit-train/src/bin/bench.rs"
+      ],
+      "since": "L105",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "mtrits > MAX_MTRITS \\|\\| rows > MAX_ROWS",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

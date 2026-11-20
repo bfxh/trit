@@ -3423,6 +3423,10 @@
       "lines": 20
     },
     {
+      "file": "crates/trit-train/tests/bench_bounds.rs",
+      "lines": 30
+    },
+    {
       "file": "crates/trit-unsafe/src/lexer.rs",
       "lines": 208
     },
