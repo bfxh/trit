@@ -750,5 +750,21 @@
     "new": "r.min(64)",
     "pkg": "trit-parts",
     "filter": "radius_is_clamped_to_the_shortest_edge"
+  },
+  {
+    "name": "tpm: 层数不卡",
+    "file": "crates/trit-parts/src/tpm.rs",
+    "old": "if n > b.len().saturating_sub(at) / 24 {",
+    "new": "if false {",
+    "pkg": "trit-parts",
+    "filter": "absurd_layer_count_is_rejected_before_allocating"
+  },
+  {
+    "name": "tpm: f32 块不预检",
+    "file": "crates/trit-parts/src/tpm.rs",
+    "old": "if b.len().saturating_sub(*at) < count.saturating_mul(4) {",
+    "new": "if false {",
+    "pkg": "trit-parts",
+    "filter": "absurd_channel_count_is_rejected_before_allocating"
   }
 ]

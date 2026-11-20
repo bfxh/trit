@@ -2755,6 +2755,10 @@
       "lines": 51
     },
     {
+      "file": "crates/trit-parts/tests/tpm_bounds.rs",
+      "lines": 49
+    },
+    {
       "file": "crates/trit-parts/tests/weights_bounds.rs",
       "lines": 105
     },

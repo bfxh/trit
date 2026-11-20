@@ -832,6 +832,23 @@
       "pattern": "r\\.min\\(nx\\.min\\(ny\\)\\.min\\(nz\\)\\)",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C049",
+      "title": "TPM1 加载先按剩余字节卡层数与 f32 块",
+      "kind": "require",
+      "covers": [
+        "L97"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tpm.rs"
+      ],
+      "since": "L97",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "saturating_sub\\(\\*?at\\)",
+      "min": 2,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
