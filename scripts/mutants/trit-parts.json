@@ -622,5 +622,29 @@
     "new": "",
     "pkg": "trit-parts",
     "filter": "hidden_of_usize_max_is_rejected_without_panicking"
+  },
+  {
+    "name": "mlp: 隐藏宽度不判",
+    "file": "crates/trit-parts/src/occ/mlp.rs",
+    "old": "        crate::hidden::check(nhid)?;\n",
+    "new": "",
+    "pkg": "trit-parts",
+    "filter": "hid_above_the_cap_is_rejected"
+  },
+  {
+    "name": "mlp: 权重矩阵不判溢出",
+    "file": "crates/trit-parts/src/occ/mlp.rs",
+    "old": "nin.checked_mul(nhid).ok_or(\"权重矩阵 nin×nhid 溢出\")?",
+    "new": "nin * nhid",
+    "pkg": "trit-parts",
+    "filter": "weight_matrix_overflow_is_rejected"
+  },
+  {
+    "name": "mlp: PatchMlp 不转发 Err",
+    "file": "crates/trit-parts/src/diffuse.rs",
+    "old": "            mlp: Mlp::new(nin, hid, seed)?,",
+    "new": "            mlp: Mlp::new(nin, hid, seed).expect(\"mlp\"),",
+    "pkg": "trit-parts",
+    "filter": "patch_mlp_forwards_the_hid_check"
   }
 ]

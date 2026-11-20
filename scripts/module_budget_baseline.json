@@ -2496,7 +2496,7 @@
     },
     {
       "file": "crates/trit-parts/src/occ/mlp.rs",
-      "lines": 160
+      "lines": 159
     },
     {
       "file": "crates/trit-parts/src/occ/mod.rs",
@@ -2669,6 +2669,10 @@
     {
       "file": "crates/trit-parts/tests/matnet_bounds.rs",
       "lines": 54
+    },
+    {
+      "file": "crates/trit-parts/tests/mlp_bounds.rs",
+      "lines": 53
     },
     {
       "file": "crates/trit-parts/tests/models_e2e.rs",

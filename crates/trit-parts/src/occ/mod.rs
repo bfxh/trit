@@ -259,12 +259,12 @@ mod tests {
     /// 偶数种子与下一个奇数种子不能撞成同一初始化（旧 `seed | 1` 的 bug）。
     #[test]
     fn even_and_odd_seeds_init_differently() {
-        let a = Mlp::new(6, 4, 2);
-        let b = Mlp::new(6, 4, 3);
+        let a = Mlp::new(6, 4, 2).unwrap();
+        let b = Mlp::new(6, 4, 3).unwrap();
         assert_ne!(a.w1, b.w1, "seed 2 与 3 的初始化相同");
-        assert_ne!(Mlp::new(6, 4, 4).w1, Mlp::new(6, 4, 5).w1);
+        assert_ne!(Mlp::new(6, 4, 4).unwrap().w1, Mlp::new(6, 4, 5).unwrap().w1);
         // 奇数种子仍确定性（既有跑法可复现）
-        assert_eq!(Mlp::new(6, 4, 3).w1, b.w1);
+        assert_eq!(Mlp::new(6, 4, 3).unwrap().w1, b.w1);
     }
 
     #[test]
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn mlp_learns_separable_toy() {
         // 两维可分数据：x0 > 0 ⇒ 1
-        let mut m = Mlp::new(2, 8, 7);
+        let mut m = Mlp::new(2, 8, 7).unwrap();
         let data = [
             ([1.0f32, 0.0], 1.0f32),
             ([-1.0, 0.0], 0.0),

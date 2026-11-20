@@ -18,9 +18,9 @@ fn quant(v: f32) -> f32 {
 }
 
 impl Mlp {
-    pub fn new(nin: usize, nhid: usize, seed: u64) -> Self {
-        // xorshift 状态不能为零。旧写法 `seed | 1` 会让**偶数种子与下一个奇数种子撞成同一初始化**
-        // （实测 seed 2 与 3 训出的模型逐字节相同）；奇数种子保持原值，偶数种子先混合一次。
+    pub fn new(nin: usize, nhid: usize, seed: u64) -> Result<Self, String> {
+        crate::hidden::check(nhid)?;
+        // xorshift 状态不能为零；`seed | 1` 会让偶数种子与下一个奇数种子撞成同一初始化（实测 seed 2 与 3 逐字节相同）。
         let mut r = if seed.is_multiple_of(2) {
             seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1
         } else {
@@ -32,16 +32,15 @@ impl Mlp {
             r ^= r << 17;
             ((r % 2001) as f32 - 1000.0) / 2500.0
         };
-        let n1 = nin * nhid;
-        let n2 = nhid;
-        Mlp {
+        let n1 = nin.checked_mul(nhid).ok_or("权重矩阵 nin×nhid 溢出")?;
+        Ok(Mlp {
             nin,
             nhid,
             w1: (0..n1).map(|_| next() * 5.0).collect(),
             b1: vec![0.0; nhid],
-            w2: (0..n2).map(|_| next()).collect(),
+            w2: (0..nhid).map(|_| next()).collect(),
             b2: 0.0,
-        }
+        })
     }
 
     /// 前向：返回 (logit, 隐藏层)。

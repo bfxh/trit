@@ -13,10 +13,10 @@ pub const MAX_HIDDEN: usize = 256;
 /// 隐藏宽度校验。`0` 也拒：池化与线性头会全空，前向时除零。
 pub fn check(h: usize) -> Result<(), String> {
     if h == 0 {
-        return Err("--hidden 不能为 0（池化与线性头会全空）".into());
+        return Err("隐藏层宽度不能为 0".into());
     }
     if h > MAX_HIDDEN {
-        return Err(format!("--hidden {h} 超过上限 {MAX_HIDDEN}"));
+        return Err(format!("隐藏层宽度 {h} 超过上限 {MAX_HIDDEN}"));
     }
     Ok(())
 }
