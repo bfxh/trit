@@ -16,6 +16,24 @@ real failure is not "used unsafe", it is "used unsafe and said nothing about why
 companion can also be a fact outside the diff: `no-raw-delete` is satisfied by a trash
 manifest entry, not by anything the patch itself could say.
 
+Two whole-file-deletion rules are checkout-aware, and the checkout is judged by the same
+machine-independent form test as policy's (one home: `.git` is a DIRECTORY at the main
+checkout's root, a FILE in a linked worktree; imported from policy.py, not re-implemented):
+
+  main checkout  -> `main-tree-raw-delete`: a tracked file may not be deleted at all
+                    without a human. No companion satisfies it -- the bin's entry keeps
+                    content, it does not decide main-line state. `-Allow
+                    main-tree-raw-delete` plus `-ApprovalNote "<who approved what>"` is
+                    the only route; the flag without the note is not an approval.
+  worktree / no repo -> `no-raw-delete` as before (trash entry satisfies it).
+
+LANDMINE: reading a main checkout as a worktree would let a bin entry buy a main-line
+deletion -- the dangerous direction; the reverse only costs one extra approval.
+
+Kernel rules (the DEFAULT_RULES ids) cannot be dropped by editing the table: a check on
+a table missing one restores it for that run, loudly. A rule that silently narrows is a
+rule that silently does not exist.
+
 Ported from constraints.ps1; refusal texts and exit codes are kept identical.
 """
 
@@ -75,6 +93,14 @@ DEFAULT_RULES = [
         "message": "裸删 = 内容无处可寻；先 python tools/trash.py put <path> --reason <why>，"
                   "回收站清单里有这条路径的 entry 才放行（命令侧对应 policy 的 DELETION 家族）",
     },
+    {
+        "id": "main-tree-raw-delete", "title": "主检出（主库）整删已跟踪文件要人批",
+        "severity": "block", "scope": ["**"], "on": "file-deleted",
+        "pattern": r"",
+        "message": "主库整删 = 主线状态被人改走，要人批：-Allow main-tree-raw-delete "
+                   "-ApprovalNote \"<谁批的批什么>\" 是唯一放行口，回收站有账不抵扣"
+                   "（分支 worktree 上这条不响，走 no-raw-delete）",
+    },
 ]
 
 
@@ -89,7 +115,8 @@ def parse_args(argv):
             continue
         name = a.lstrip("-")
         key = {"Mode": "mode", "Root": "root", "Diff": "diff", "Allow": "allow",
-               "Commands": "commands"}.get(name, name.lower())
+               "Commands": "commands", "ApprovalNote": "approval_note",
+               "approval-note": "approval_note"}.get(name, name.replace("-", "_").lower())
         val = argv[i + 1] if i + 1 < len(argv) else ""
         if key == "allow":
             out["allow"].extend([x for x in val.replace(",", " ").split() if x])
@@ -205,6 +232,12 @@ def command_deletion_segments(text):
     return out
 
 
+def checkout_kind(root):
+    """The .git dir/file form test, imported from policy.py -- one home, not two."""
+    import policy  # same tools directory
+    return policy.checkout_kind(root)
+
+
 def cmd_init(store, root, rules_file):
     if os.path.exists(rules_file):
         print(f"constraints: already present at {rules_file}")
@@ -233,6 +266,16 @@ def cmd_check(root, rules_file, a):
         print("constraints: not initialised, run -Mode init")
         return 2
     rules = json.loads(read_text(rules_file))
+    # kernel rules cannot be dropped by editing the table: a table missing one gets it
+    # restored for this run, loudly -- a rule that silently narrows is one that silently
+    # does not exist
+    have = {r.get("id") for r in rules}
+    missing = [r for r in DEFAULT_RULES if r["id"] not in have]
+    if missing:
+        rules = rules + missing
+        print("constraints: kernel rule(s) absent from the table, restored for this run: "
+              + ", ".join(r["id"] for r in missing))
+    kind = checkout_kind(root)
     files = diff_files(root, a.get("diff", ""))
     cmd_segs = command_deletion_segments(a.get("commands", "")) if a.get("commands", "").strip() else []
 
@@ -242,6 +285,7 @@ def cmd_check(root, rules_file, a):
 
     blocks, warns = [], []
     allow = a.get("allow", [])
+    approval_note = a.get("approval_note", "").strip()
     for seg, why in cmd_segs:
         finding = {"id": "no-raw-delete", "severity": "block", "file": "(command)",
                    "lines": 1, "sample": seg, "message": "命令侧裸删被拦：" + why}
@@ -256,16 +300,27 @@ def cmd_check(root, rules_file, a):
             if not in_scope(path, r.get("scope", [])):
                 continue
             if r.get("on") == "file-deleted":
-                # whole-file deletion; the companion is not a comment but a trash entry
+                # whole-file deletion; the companion is not a comment but a trash entry.
+                # Which deletion rule governs is decided by the checkout, not the caller:
+                # main checkout -> approval gate (no companion buys it), worktree or no
+                # repo -> the bin rule as before.
                 if not files[path].get("deleted"):
+                    continue
+                if r["id"] == "no-raw-delete" and kind == "main":
+                    continue
+                if r["id"] == "main-tree-raw-delete" and kind != "main":
                     continue
                 if r.get("companion") == "trash-entry" and trash_entry_exists(root, path):
                     continue  # the bin holds the content, rule is satisfied
                 finding = {"id": r["id"], "severity": r["severity"], "file": path,
                            "lines": 1, "sample": "(file deleted)", "message": r.get("message", "")}
                 if r["id"] in allow:
-                    print(f"constraints: ALLOWED-BY-FLAG [{r['id']}] {path} (file deleted)")
-                    continue
+                    if r["id"] == "main-tree-raw-delete" and not approval_note:
+                        print("constraints: main-tree-raw-delete needs -ApprovalNote "
+                              "<who approved what> -- an approval without a note is not an approval")
+                    else:
+                        print(f"constraints: ALLOWED-BY-FLAG [{r['id']}] {path} (file deleted)")
+                        continue
                 (blocks if r["severity"] == "block" else warns).append(finding)
                 continue
             side = {"added": added, "removed": removed}.get(r.get("on"), added + removed)

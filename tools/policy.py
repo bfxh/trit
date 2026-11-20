@@ -27,6 +27,35 @@ and the reason, an escape hatch would not. Git operations that rewrite or discar
 rebase in main-line context) deny too; their one alternative is a git_safe.py checkpoint
 first, and a human can grant a single invocation with `-Allow git-destructive`.
 
+On the MAIN checkout the bar is higher: a deletion there is a human-approval decision, not
+a tool decision. How "main" is judged, machine-independently (no path is hardcoded): at a
+checkout root git leaves `.git` as a DIRECTORY on the main checkout and as a FILE (a
+gitdir pointer) in a linked worktree; the test walks up from -Root so a subdirectory root
+still finds the checkout it belongs to, and no .git at all means no main rule. LANDMINE:
+misjudging a main checkout as a worktree is the dangerous direction -- the deletion then
+passes on the bin route alone, with nobody having approved it; the reverse direction only
+costs one extra approval. The rare `git init --separate-git-dir` main checkout wears the
+file form too and would be judged a worktree: if you use that layout, main-delete approval
+will not arm -- say so in the approval note. On the main tree the denial text IS the
+approval protocol:
+
+    main tree delete needs human approval -- rerun with
+    -Allow main-delete --approval-note "<who approved, what was approved>"
+
+`-Allow main-delete` without `--approval-note` is refused: an approval nobody can read is
+not an approval. A linked worktree keeps the old bar (bin requirement only) -- branches
+are cheap, main-line state is not.
+
+The WARN family (pollution) is advisory: it never blocks, prints one line of consequence,
+and has no -Allow escape -- a warning you could waive would be a deny in a friendly name.
+It covers `git commit --no-verify` (bypassed gate -> bad baseline in history), tree-wide
+`git add -A` (unrelated changes in one commit -> rollback granularity gone), a commit
+diff over WARN_DIFF_FILES/WARN_DIFF_LINES (giant mixed diff -> review and bisect both
+break), and secret-shaped filenames among the staged paths (.env, keys, credentials ->
+credentials in the public tree, the L93-class accident). Honest about what it can see:
+the wide-diff number is the diff that exists at check time (vs HEAD), not the diff the
+command will produce, and the secret scan reads filename shapes, not file content.
+
 Ported from policy.ps1; decisions, wording and exit codes are kept identical.
 """
 
@@ -73,10 +102,25 @@ DELETION_CALLS = {"rm", "rmdir", "rd", "del", "erase", "remove-item", "ri", "unl
 INTERPRETERS = {"bash", "sh", "cmd", "pwsh", "powershell", "python", "python3", "perl",
                 "node", "ruby"}
 
+# WARN family thresholds: a commit diff wider than this gets the giant-mixed-diff warning.
+# Thresholds, not laws -- the warning names what breaks (review, bisect), it does not block.
+WARN_DIFF_FILES = 30
+WARN_DIFF_LINES = 800
+
+# Secret-shaped basenames for the staging warning. Filename shapes, not content: best
+# effort by design, and it reads only the paths named in the command text.
+SECRET_BASENAME = re.compile(
+    r"^\.env(\.|$)"
+    r"|\.(pem|p12|pfx|key|keystore|kdbx|npmrc|netrc|htpasswd)$"
+    r"|^id_(rsa|dsa|ecdsa|ed25519)(\.|$)"
+    r"|(secret|credential)s?\.(json|ya?ml|txt|env|toml|ini|cfg|conf|list|store)$",
+    re.I,
+)
+
 
 def parse_args(argv):
     out = {"profile": "read-only", "command": "", "root": "", "allow_network": False,
-           "explain": False, "allow": []}
+           "explain": False, "allow": [], "approval_note": ""}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -95,6 +139,10 @@ def parse_args(argv):
         if name == "allow":
             val = argv[i + 1] if i + 1 < len(argv) else ""
             out["allow"].extend([x for x in val.replace(",", " ").split() if x])
+            i += 2
+            continue
+        if name in ("approvalnote", "approval-note"):
+            out["approval_note"] = argv[i + 1] if i + 1 < len(argv) else ""
             i += 2
             continue
         key = {"profile": "profile", "command": "command", "root": "root"}.get(name, name)
@@ -196,6 +244,110 @@ def git_branch(root_path):
     except OSError:
         return ""
     return p.stdout.strip().lower() if p.returncode == 0 else ""
+
+
+def checkout_kind(root_path):
+    """'main', 'worktree' or '' for the enclosing checkout -- no path is hardcoded.
+
+    Machine-independent test: git leaves `.git` as a DIRECTORY at the main checkout's
+    root and as a FILE (a gitdir pointer) in a linked worktree. The walk up from -Root
+    lets a subdirectory root find the checkout it belongs to; no .git anywhere means ''
+    and no main rule.
+
+    LANDMINE: reading a main checkout as a worktree is the dangerous direction -- a
+    main-tree deletion then passes on the bin route with no approval at all. Reading a
+    worktree as main only costs one extra approval, so when the form is undecidable
+    there is nothing to decide: dir=main, file=worktree, absent=''. The rare
+    `git init --separate-git-dir` main checkout shares the file form and is judged a
+    worktree -- known blind spot, documented in the usage text.
+    """
+    if not root_path:
+        return ""
+    p = os.path.normpath(os.path.abspath(root_path))
+    for _ in range(32):
+        entry = os.path.join(p, ".git")
+        if os.path.isdir(entry):
+            return "main"
+        if os.path.isfile(entry):
+            return "worktree"
+        parent = os.path.dirname(p)
+        if parent == p:
+            return ""
+        p = parent
+    return ""
+
+
+def commit_diff_size(root_path):
+    """(files, changed_lines) of the diff that exists at check time, vs HEAD. None when
+    it cannot be measured (no root, no repo, no HEAD) -- a warning that cannot measure
+    stays silent rather than guessing."""
+    if not root_path:
+        return None
+    try:
+        p = subprocess.run(["git", "-C", root_path, "diff", "--numstat", "HEAD"],
+                           capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if p.returncode != 0:
+        return None
+    files = lines = 0
+    for row in p.stdout.splitlines():
+        parts = row.split("\t")
+        if len(parts) < 3:
+            continue
+        files += 1
+        for v in parts[:2]:
+            if v != "-":
+                try:
+                    lines += int(v)
+                except ValueError:
+                    pass
+    return files, lines
+
+
+def pollution_warnings(segment, root_path):
+    """The pollution WARN family: consequences printed before the operation runs, never
+    blocking, no -Allow escape. Returns (tag, what, consequence) tuples."""
+    tokens = [t for t in re.split(r"\s+", segment) if t]
+    if not tokens:
+        return []
+    program = re.sub(r"^.*[\\/]", "", tokens[0])
+    program = re.sub(r"\.(exe|cmd|ps1|bat|py|sh)$", "", program, flags=re.I).lower()
+    sub = tokens[1].lower() if len(tokens) > 1 else ""
+    out = []
+    if program == "git" and sub in ("add", "commit"):
+        rest = tokens[2:]
+        if "--" in rest:
+            paths = rest[rest.index("--") + 1:]
+        elif sub == "add":
+            paths = [t for t in rest if not t.startswith("-")]
+        else:
+            paths = []  # a commit without -- commits the index; no pathspec to read
+        if sub == "add":
+            flags_l = [t.lower() for t in rest]
+            if ("-a" in flags_l or "--all" in flags_l) and \
+                    (not paths or all(p in (".", "./", ":/") for p in paths)):
+                out.append(("add-all", "git add -A stages the whole tree",
+                            "无关改动混进同一个提交，回滚粒度毁掉 -- 按改动分批 add"))
+        for t in paths:
+            base = re.sub(r"^.*[\\/]", "", t.strip().strip('"')).lower()
+            if base and SECRET_BASENAME.search(base):
+                out.append(("secret-path", f"staging secret-shaped file '{base}'",
+                            "凭据进公开树就是 L93 级事故 -- 先移出树或进 .gitignore"))
+                break
+    if program == "git" and sub == "commit":
+        rest_l = [t.lower() for t in tokens[2:]]
+        if "--no-verify" in rest_l:
+            out.append(("no-verify", "git commit --no-verify bypasses the pre-commit gate",
+                        "坏基线进历史，回头清理成本随其上的每个提交指数涨"))
+        size = commit_diff_size(root_path)
+        if size and (size[0] > WARN_DIFF_FILES or size[1] > WARN_DIFF_LINES):
+            out.append(("wide-diff",
+                        f"commit diff spans {size[0]} file(s)/{size[1]} changed line(s) "
+                        f"(thresholds {WARN_DIFF_FILES}/{WARN_DIFF_LINES})",
+                        "巨型混合 diff 让 review 与二分同时失效 -- 拆成小步提交"))
+    return out
 
 
 def decision(segment, current_branch=""):
@@ -320,14 +472,19 @@ def main(argv):
     else:
         root_path = ""
 
-    denials, notes = [], []
+    denials, notes, warns = [], [], []
     current_branch = git_branch(root_path)
+    kind = checkout_kind(root_path)
+    allow = a.get("allow", [])
+    approval_note = a.get("approval_note", "").strip()
     for seg in segments:
         d = decision(seg, current_branch)
         if d is None:
             continue
+        for tag, what, why in pollution_warnings(seg, root_path):
+            warns.append(f"pollution[{tag}]: {what}  ({why})")
         if d["kind"] == "destructive":
-            if "git-destructive" in a.get("allow", []):
+            if "git-destructive" in allow:
                 # one id, one invocation, printed out loud -- shaped like -AllowNetwork,
                 # because a silent escape hatch would just be a hole
                 notes.append(f"allowed by -Allow git-destructive (per-invocation grant): {d['why']}")
@@ -339,6 +496,18 @@ def main(argv):
             denials.append(f"destructive: {d['why']}  ({alt})")
             continue
         if d["kind"] == "deletion":
+            if kind == "main":
+                if "main-delete" in allow and approval_note:
+                    notes.append(f"allowed by -Allow main-delete (per-invocation grant, "
+                                 f"approval note: {approval_note}): {d['why']}")
+                    continue
+                if "main-delete" in allow and not approval_note:
+                    denials.append("deletion: -Allow main-delete without --approval-note is "
+                                   "not an approval -- state 谁批的批什么")
+                    continue
+                denials.append(f"deletion: {d['why']}  (main tree delete needs human approval "
+                               f"— rerun with -Allow main-delete --approval-note \"<谁批的批什么>\")")
+                continue
             denials.append(f"deletion: {d['why']}  (替代路径: python tools/trash.py put <path> "
                            f"--reason <why> -- 工作区不许裸删，这是唯一放行口)")
             continue
@@ -373,6 +542,8 @@ def main(argv):
 
     for n in notes:
         print(f"policy: OK    {n}")
+    for w in warns:
+        print(f"policy: WARN  {w}")
     if denials:
         for dn in denials:
             print(f"policy: DENY  {dn}")

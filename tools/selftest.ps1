@@ -584,7 +584,7 @@ if (-not $bashExe) {
     New-Item -ItemType Directory "$Pc\.agent" -Force | Out-Null
     & $bashExe $shCon init -Root (ToPosix $Pc) 2>&1 | Out-Null
     $p1 = @(& $bashExe $shCon list -Root (ToPosix $Pc) 2>&1)
-    Assert-True (@($p1 | Where-Object { $_ -match 'no-test-deletion' }).Count -eq 1 -and @($p1).Count -eq 8) 'P1 七条默认规则 + 表头都在' "rows=$(@($p1).Count)"
+    Assert-True (@($p1 | Where-Object { $_ -match 'no-test-deletion' }).Count -eq 1 -and @($p1).Count -eq 9) 'P1 八条默认规则 + 表头都在（main-tree-raw-delete 入表）' "rows=$(@($p1).Count)"
 
     $pd = Join-Path $Work 'p-diffs'; New-Item -ItemType Directory $pd -Force | Out-Null
     $nl = [char]10
@@ -998,14 +998,24 @@ if (-not $bashExe) {
     Assert-True ($w17a -eq 1 -and $w17b -eq 0) 'W17 站点未被 gitignore 拒收；补上 ignore 后放行' "before=$w17a after=$w17b"
 
     # W18/W19: constraints 的 no-raw-delete 命令侧——拦 rm，放行 trash put
+    # 夹具必须是 worktree（.git 文件形态）：主检出上的整删现在由 main-tree-raw-delete 管
+    # （审批语义、回收站账不抵扣，见 AD 组）；no-raw-delete 的原语义只在 worktree/无仓库上
+    # 适用——夹具形态是断言的一部分，断言说什么，夹具就得是什么（L108）。
+    $Wcm = Join-Path $Work 'w-con-main'
+    New-Item -ItemType Directory "$Wcm\src" -Force | Out-Null
+    [IO.File]::WriteAllText("$Wcm\src\x.txt", "x content`n", $enc)
+    [IO.File]::WriteAllText("$Wcm\src\y.txt", "y content`n", $enc)
+    [IO.File]::WriteAllText("$Wcm\.gitignore", ".journal/`n.agent/`n", $enc)
+    & git -C $Wcm init -q 2>&1 | Out-Null
+    & git -C $Wcm add -A 2>&1 | Out-Null
+    & git -C $Wcm -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
     $Wc = Join-Path $Work 'w-con'
-    New-Item -ItemType Directory "$Wc\src" -Force | Out-Null
-    [IO.File]::WriteAllText("$Wc\src\x.txt", "x content`n", $enc)
-    [IO.File]::WriteAllText("$Wc\src\y.txt", "y content`n", $enc)
-    [IO.File]::WriteAllText("$Wc\.gitignore", ".journal/`n.agent/`n", $enc)
-    & git -C $Wc init -q 2>&1 | Out-Null
-    & git -C $Wc add -A 2>&1 | Out-Null
-    & git -C $Wc -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    & git -C $Wcm worktree add $Wc -b w-con-wt 2>&1 | Out-Null
+    # 形态断言用 .NET 存在性检查，不用 Get-Item：git 给 worktree 的 .git 文件打了
+    # Windows Hidden 属性，Get-Item 不带 -Force 看不见（Test-Path 却看得见）——
+    # 无 EAP=Stop 时 $null.PSIsContainer 会让这条断言静默假通过（L107）。
+    Assert-True (-not [IO.Directory]::Exists("$Wc\.git") -and [IO.File]::Exists("$Wc\.git")) `
+        'W18f 夹具自证为 worktree（.git 文件形态，主库审批闸不在此点火）' ''
     & $bashExe (Join-Path $tools 'constraints.sh') init -Root (ToPosix $Wc) 2>&1 | Out-Null
     & $bashExe (Join-Path $tools 'constraints.sh') check -Root (ToPosix $Wc) -Commands 'rm src/x.txt' 2>&1 | Out-Null
     $w18 = $LASTEXITCODE
@@ -1913,6 +1923,187 @@ if (-not $bashExe) {
         -Receipt (ToPosix (Join-Path $Work 'ac-av-rc3.json')) 2>&1 | Out-Null
     Assert-True ($LASTEXITCODE -eq 2 -and -not (Test-Path (Join-Path $Work 'ac-av-rc3.json'))) `
         'AC25 agent-id 带盘符路径 exit=2 拒收且不落回执' "exit=$LASTEXITCODE"
+}
+
+""
+"== AD. 主库删除审批 / 污染 WARN 族 / pitfalls 痛点语料 =="
+if (-not $bashExe) {
+    "  SKIP  AD0 没有 bash，跳过 AD 组检查"
+    $skipped += 24
+} else {
+    $shPolAD = Join-Path $tools 'policy.sh'
+    $shConAD = Join-Path $tools 'constraints.sh'
+    $shTrAD = Join-Path $tools 'trash.sh'
+    $shPfAD = Join-Path $tools 'pitfalls.sh'
+
+    # 夹具：主检出与 worktree 两种形态。判定不写死路径——git 在主检出的根留 .git 目录、
+    # 在链接 worktree 的根留 .git 文件。判错方向（把主库当 worktree）会让主库删除绕过审批，
+    # 所以两形态本身先自证（AD0）。
+    $ADm = Join-Path $Work 'ad-main'
+    New-Item -ItemType Directory "$ADm\src" -Force | Out-Null
+    [IO.File]::WriteAllText("$ADm\src\a.txt", "alpha`n", $enc)
+    [IO.File]::WriteAllText("$ADm\.gitignore", ".journal/`n.agent/`n", $enc)
+    & git -C $ADm init -q 2>&1 | Out-Null
+    & git -C $ADm add -A 2>&1 | Out-Null
+    & git -C $ADm -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    $ADw = Join-Path $Work 'ad-wt'
+    & git -C $ADm worktree add $ADw -b ad-wt 2>&1 | Out-Null
+    # 形态判定同样走 .NET 存在性检查（.git 有 Windows Hidden 属性，Get-Item 看不见）
+    Assert-True ([IO.Directory]::Exists("$ADm\.git") -and [IO.File]::Exists("$ADw\.git")) `
+        'AD0 夹具两形态自证：主检出 .git=目录、worktree .git=文件（判错方向的锚）' ''
+
+    # AD1/AD2: 主检出上 DELETION 家族 → DENY，拒绝文案本身就是审批协议
+    & $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'rm src/a.txt' 2>&1 | Out-Null
+    $ad1 = $LASTEXITCODE
+    $ad2 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'rm src/a.txt' 2>&1)
+    Assert-True ($ad1 -eq 1) 'AD1 主检出（.git 目录形态）上裸删 DENY' "exit=$ad1"
+    Assert-True ((@($ad2) -join ' ') -match 'main tree delete needs human approval') `
+        'AD2 主库拒绝文案带审批语义（-Allow main-delete --approval-note）' (@($ad2) -join ' / ')
+
+    # AD3/AD4: 没有说明的审批不算审批；审批+说明逐次放行且大声打印
+    & $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'rm src/a.txt' -Allow main-delete 2>&1 | Out-Null
+    $ad3 = $LASTEXITCODE
+    Assert-True ($ad3 -eq 1) 'AD3 -Allow main-delete 缺 --approval-note 仍拒（没有说明不算审批）' "exit=$ad3"
+    $ad4 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'rm src/a.txt' `
+        -Allow main-delete -ApprovalNote 'human ok: one-off cleanup of a stray file' 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and ((@($ad4) -join ' ') -match 'per-invocation grant') `
+        -and ((@($ad4) -join ' ') -match 'human ok')) `
+        'AD4 审批+说明放行且大声打印（逐次放行，note 原文留痕）' (@($ad4) -join ' / ')
+
+    # AD5/AD6: worktree（.git 文件形态）维持现状——分支不怎么管（回归）
+    $ad5 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADw) -Command 'rm src/a.txt' 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ad5) -join ' ') -notmatch 'main tree delete')) `
+        'AD5 worktree 裸删照旧 DENY、文案不带主库审批语义（分支不受影响回归）' (@($ad5) -join ' / ')
+    & $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADw) -Command 'trash put src/a.txt -Reason r' 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AD6 worktree 上 trash 放行回归（分支只要求回收站）' "exit=$LASTEXITCODE"
+
+    # AD7: diff 侧整删已跟踪文件在主检出 → BLOCK main-tree-raw-delete（要人批）
+    $ADc = Join-Path $Work 'ad-con-main'
+    New-Item -ItemType Directory "$ADc\src" -Force | Out-Null
+    [IO.File]::WriteAllText("$ADc\src\a.txt", "tracked`n", $enc)
+    [IO.File]::WriteAllText("$ADc\.gitignore", ".journal/`n.agent/`n", $enc)
+    & git -C $ADc init -q 2>&1 | Out-Null
+    & git -C $ADc add -A 2>&1 | Out-Null
+    & git -C $ADc -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    & $bashExe $shConAD init -Root (ToPosix $ADc) 2>&1 | Out-Null
+    Remove-Item "$ADc\src\a.txt"
+    $ad7 = @(& $bashExe $shConAD check -Root (ToPosix $ADc) 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ad7) -join ' ') -match 'BLOCK \[main-tree-raw-delete\]')) `
+        'AD7 diff 侧整删已跟踪文件在主检出 BLOCK（main-tree-raw-delete，要人批）' (@($ad7) -join ' / ')
+
+    # AD8: worktree 上同样的整删仍走 no-raw-delete 原规则（回归）
+    $ADcm = Join-Path $Work 'ad-con-wt-main'
+    New-Item -ItemType Directory "$ADcm\src" -Force | Out-Null
+    [IO.File]::WriteAllText("$ADcm\src\a.txt", "tracked`n", $enc)
+    [IO.File]::WriteAllText("$ADcm\.gitignore", ".journal/`n.agent/`n", $enc)
+    & git -C $ADcm init -q 2>&1 | Out-Null
+    & git -C $ADcm add -A 2>&1 | Out-Null
+    & git -C $ADcm -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    $ADwt = Join-Path $Work 'ad-con-wt'
+    & git -C $ADcm worktree add $ADwt -b ad-con-wt 2>&1 | Out-Null
+    & $bashExe $shConAD init -Root (ToPosix $ADwt) 2>&1 | Out-Null
+    Remove-Item "$ADwt\src\a.txt"
+    $ad8 = @(& $bashExe $shConAD check -Root (ToPosix $ADwt) 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ad8) -join ' ') -match 'BLOCK \[no-raw-delete\]') `
+        -and ((@($ad8) -join ' ') -notmatch 'main-tree-raw-delete')) `
+        'AD8 worktree 整删仍走 no-raw-delete 原规则（主库闸不在此点火，回归）' (@($ad8) -join ' / ')
+
+    # AD9/AD10: constraints 侧的审批同样要求说明；flag 缺 note 不算放行
+    & $bashExe $shConAD check -Root (ToPosix $ADc) -Allow main-tree-raw-delete 2>&1 | Out-Null
+    $ad9 = $LASTEXITCODE
+    Assert-True ($ad9 -eq 1) 'AD9 constraints -Allow 缺 -ApprovalNote 仍 BLOCK（没有说明不算审批）' "exit=$ad9"
+    & $bashExe $shConAD check -Root (ToPosix $ADc) -Allow main-tree-raw-delete -ApprovalNote 'human ok: retire dead module' 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AD10 constraints 审批+说明放行（exit 0）' "exit=$LASTEXITCODE"
+
+    # AD11: 主库上回收站有账也不放行——bin 留内容，不代购审批
+    $ADc2 = Join-Path $Work 'ad-con-main2'
+    New-Item -ItemType Directory "$ADc2\src" -Force | Out-Null
+    [IO.File]::WriteAllText("$ADc2\src\b.txt", "beta`n", $enc)
+    [IO.File]::WriteAllText("$ADc2\.gitignore", ".journal/`n.agent/`n", $enc)
+    & git -C $ADc2 init -q 2>&1 | Out-Null
+    & git -C $ADc2 add -A 2>&1 | Out-Null
+    & git -C $ADc2 -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    & $bashExe $shConAD init -Root (ToPosix $ADc2) 2>&1 | Out-Null
+    & $bashExe $shTrAD put (ToPosix "$ADc2\src\b.txt") -Reason ad-test -Root (ToPosix $ADc2) 2>&1 | Out-Null
+    $ad11put = $LASTEXITCODE
+    $ad11 = @(& $bashExe $shConAD check -Root (ToPosix $ADc2) 2>&1)
+    Assert-True ($ad11put -eq 0 -and -not (Test-Path "$ADc2\src\b.txt") -and $LASTEXITCODE -eq 1 `
+        -and ((@($ad11) -join ' ') -match 'BLOCK \[main-tree-raw-delete\]')) `
+        'AD11 主库上回收站有账仍 BLOCK（bin 保内容，不抵扣审批）' "put=$ad11put out=$(@($ad11) -join ' ')"
+
+    # AD12-AD15: 污染 WARN 族各触发一次，全部只提醒不拦截（exit 0）
+    $ad12 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'git commit --no-verify -m x' 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and ((@($ad12) -join ' ') -match 'pollution\[no-verify\]')) `
+        'AD12 WARN commit --no-verify：绕门禁进坏基线的后果提醒且不拦截' (@($ad12) -join ' / ')
+    $ad13 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'git add -A' 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and ((@($ad13) -join ' ') -match 'pollution\[add-all\]')) `
+        'AD13 WARN git add -A：无关改动混一提交的后果提醒且不拦截' (@($ad13) -join ' / ')
+    $ADbig = Join-Path $Work 'ad-bigdiff'
+    New-Item -ItemType Directory "$ADbig\src" -Force | Out-Null
+    & git -C $ADbig init -q 2>&1 | Out-Null
+    for ($i = 0; $i -lt 35; $i++) { [IO.File]::WriteAllText("$ADbig\src\f$i.txt", "v1`n", $enc) }
+    & git -C $ADbig add -A 2>&1 | Out-Null
+    & git -C $ADbig -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    for ($i = 0; $i -lt 35; $i++) { [IO.File]::WriteAllText("$ADbig\src\f$i.txt", "v2 changed`nmore`nhere`n", $enc) }
+    $ad14 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADbig) -Command 'git commit -m bulk' 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and ((@($ad14) -join ' ') -match 'pollution\[wide-diff\]')) `
+        'AD14 WARN 巨型混合 diff（35 文件 > 阈值 30）：review 与二分失效提醒且不拦截' (@($ad14) -join ' / ')
+    $ad15 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'git add .env' 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and ((@($ad15) -join ' ') -match 'pollution\[secret-path\]')) `
+        'AD15 WARN 密钥形态文件（.env）：凭据进公开树的提醒且不拦截' (@($ad15) -join ' / ')
+
+    # AD16-AD20: pitfalls 痛点语料库
+    $ADp = Join-Path $Work 'ad-pit'
+    New-Item -ItemType Directory $ADp -Force | Out-Null
+    $pfRoot = ToPosix $ADp
+    & $bashExe $shPfAD add --cat git --trigger 'staged-only file lost by git reset --hard' `
+        --consequence 'work is gone without a trace' --prevention 'stash or segment the commit chain' `
+        --source 'docs/ERRORS.md L15' -Root $pfRoot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AD16a pitfalls add exit=0' "exit=$LASTEXITCODE"
+    & $bashExe $shPfAD add --cat nosuch --trigger t --consequence c --prevention p -Root $pfRoot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AD16b 未知 cat 拒绝（exit 2）' "exit=$LASTEXITCODE"
+    $pfList = @(& $bashExe $shPfAD list -Root $pfRoot 2>&1)
+    Assert-True ((@($pfList) -join ' ') -match 'staged-only file lost') `
+        'AD16c list 读回 trigger（ASCII 转义渲染，不丢内容）' (@($pfList) -join ' / ')
+
+    & $bashExe $shPfAD seed -Root $pfRoot 2>&1 | Out-Null
+    $ad17a = $LASTEXITCODE
+    & $bashExe $shPfAD seed -Root $pfRoot 2>&1 | Out-Null
+    $ad17b = $LASTEXITCODE
+    $pfCount = (@(& $bashExe $shPfAD count -Root $pfRoot 2>&1) -join ' ')
+    $n17 = if ($pfCount -match 'count=(\d+)') { [int]$Matches[1] } else { -1 }
+    Assert-True ($ad17a -eq 0 -and $ad17b -eq 0 -and $n17 -ge 8) `
+        'AD17 seed 两次幂等且 ≥8 条（种子提炼自真实台账）' "rc=$ad17a/$ad17b count=$n17"
+
+    $pfExp = Join-Path $Work 'ad-pit-export.jsonl'
+    & $bashExe $shPfAD export --jsonl (ToPosix $pfExp) -Root $pfRoot 2>&1 | Out-Null
+    $ad18 = $LASTEXITCODE
+    $expLines = @([IO.File]::ReadAllLines($pfExp, $enc) | Where-Object { $_.Trim() })
+    Assert-True ($ad18 -eq 0 -and $expLines.Count -eq $n17) `
+        'AD18 export --jsonl 行数 == count（ML 训练就绪格式）' "lines=$($expLines.Count) count=$n17"
+    $expRaw = [IO.File]::ReadAllText($pfExp, $enc)
+    $ghN = @([regex]::Matches($expRaw, '"cat":\s*"github"')).Count
+    Assert-True ($ghN -ge 2) 'AD19 种子含 ≥2 条 github 域痛点（不只 git）' "github=$ghN"
+
+    $pfCountBefore = $n17
+    # 伪造的用户路径在运行时拼出来：源码里不出现完整的"盘符+Users+反斜杠"形态，
+    # 免得 privacy_scan 的硬规则打红这条夹具本身（路径是假的，闸是真的）
+    $upFake = ('C:' + '\' + 'Users' + '\' + 'somebody' + '\' + 'box' + '\todo.txt')
+    & $bashExe $shPfAD add --cat git --trigger "see notes at $upFake" `
+        --consequence c --prevention p -Root $pfRoot 2>&1 | Out-Null
+    $ad20 = $LASTEXITCODE
+    $pfCount2 = (@(& $bashExe $shPfAD count -Root $pfRoot 2>&1) -join ' ')
+    Assert-True ($ad20 -eq 1 -and $pfCount2 -match "count=$pfCountBefore") `
+        'AD20 带本机用户路径的条目拒收且不落盘（隐私门，语料要进公开树）' "rc=$ad20 $pfCount2"
+
+    # AD21: 内核规则不许从表里悄悄消失——旧表缺 no-raw-delete 时 check 现场补回并大声说明
+    $ADt = Join-Path $ADwt '.agent\constraints.json'
+    [IO.File]::WriteAllText($ADt, '[{"id":"no-new-unwrap","severity":"warn","scope":["**"],"on":"added","pattern":"unwrap","message":"x"}]' + "`n", $enc)
+    $ad21 = @(& $bashExe $shConAD check -Root (ToPosix $ADwt) 2>&1)
+    $ad21j = (@($ad21) -join ' ')
+    Assert-True ($LASTEXITCODE -eq 1 -and $ad21j -match 'restored for this run' `
+        -and $ad21j -match 'no-raw-delete' -and $ad21j -match 'BLOCK \[no-raw-delete\]') `
+        'AD21 旧表缺内核规则时 check 现场补回并判红（约束不许静默变窄）' (@($ad21) -join ' / ')
 }
 
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
