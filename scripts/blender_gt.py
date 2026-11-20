@@ -37,6 +37,9 @@ from mathutils import Vector
 
 # ---------------------------------------------------------------- 场景常量
 
+# 渲染分辨率上限：depth/normal/seg + Blender 缓冲都按 res² 走。
+MAX_RES = 4096
+
 # 布局 A/B/C：同一套物体类型，不同摆位、相机半径与仰角。
 # 多场景的目的不是比难度，而是看「0.2 m 体素下界」是否随场景几何漂移。
 LAYOUTS = {
@@ -433,6 +436,8 @@ def render_frame(out: Path, frame: int, res: int) -> dict:
 def main() -> None:
     global SCENE_OBJECTS
     args = parse_args()
+    if not 1 <= args.res <= MAX_RES:
+        raise SystemExit(f"--res 必须在 1..={MAX_RES}（收到 {args.res}）")
     layout = LAYOUTS[args.layout]
     if args.objects_json:
         raw = json.loads(Path(args.objects_json).read_text(encoding="utf-8"))

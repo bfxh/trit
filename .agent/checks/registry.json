@@ -1087,6 +1087,24 @@
       "pattern": "take\\(MAX_LINE_BYTES as u64\\)",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C064",
+      "title": "两个评估脚本的渲染尺寸上限",
+      "kind": "require",
+      "covers": [
+        "L112"
+      ],
+      "scope": [
+        "scripts/render_obj.py",
+        "scripts/blender_gt.py"
+      ],
+      "since": "L112",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "MAX_SIDE = 4096|MAX_RES = 4096",
+      "min": 2,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

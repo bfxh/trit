@@ -14,6 +14,9 @@ import sys
 import cv2
 import numpy as np
 
+# 单次渲染的边长上限：img/zbuf/hit 三份按 S² 分配。
+MAX_SIDE = 4096
+
 
 def load_obj(path):
     verts, uvs, faces, fuv = [], [], [], []
@@ -46,6 +49,9 @@ def main():
     ap.add_argument("--tex", default=None, help="贴图 PNG（默认取 obj 同名的 .png）")
     ap.add_argument("--bg", type=float, default=1.0)
     a = ap.parse_args()
+
+    if not 1 <= a.size <= MAX_SIDE:
+        sys.exit(f"--size 必须在 1..={MAX_SIDE}（收到 {a.size}）")
 
     V, VT, F, FT = load_obj(a.obj)
     tex_path = a.tex or a.obj.rsplit(".", 1)[0] + ".png"

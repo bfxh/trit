@@ -160,6 +160,7 @@
 | L109 | `trit-redteam crc --trits N --max-weight W` 直接进 `crc::scan`：`vec![0i8; N]` + `walk` 枚举 `C(N,W)·3^W`，`--trits 1e9` 是 1 GB 且组合爆炸；`--max-weight` 也只有默认值 | `scan` 只按 `length`/`max_weight` 分配与枚举，没有上限；CLI 的 clap 默认值 9/5 是唯一约束 | `crc.rs` 加 `MAX_LENGTH=256`/`MAX_WEIGHT=8`，`scan` 入口两行 assert；`run_crc` 先 bail（CLI 友好）；新增 `tests/crc_bounds.rs`（`crc --trits 257` 被拒且错误含 `trits`） | C061 |
 | L110 | `trit-export::read` 按 GGUF 文件头的 `tensor_count`（u64）直接 `Vec::with_capacity(tensor_count)`：`tensor_count=1e9` 是 56 GB 的预留 | 文件头声明的数量先分配、再逐张量读；`meta_count` 走 BTreeMap 无预留，`tensor_count` 有 | `lib.rs` 在 `with_capacity` 前按剩余字节卡（每张量至少 40 字节），报新增的 `Error::TooMany`；`tests/count_bounds.rs`（1000 个张量、0 字节数据被拒且错误含“张量数”） | C062 |
 | L111 | `mcp::serve` 用 `reader.lines()` 逐行读 JSON-RPC，单行长度无上限：一条 1 GB 的行会先被读进 `String` 再解析；`trit-lsp` 有 16 MiB 帧顶，MCP 面没有 | `lines()` 内部无界 `read_line`；服务循环也没有行长度检查 | `serve` 拆到 `mcp/mcp_serve.rs`，`MAX_LINE_BYTES=16 MiB`，用 `take(MAX).read_until` 在分配前截断；超限行丢弃到换行并回 `-32600`；`tests/mcp_line_bounds.rs`（16 MiB+16 行被拒、后续 ping 仍处理） | C063 |
+| L112 | `scripts/render_obj.py --size` 与 `scripts/blender_gt.py --res` 直接按边长分配：`render_obj` 的 img/zbuf/hit 三份在 S=65536 时是 84 GB，`blender_gt` 的 reshape + Blender 缓冲同量级 | 两个评估脚本都只 `add_argument(type=int)`，没有上限；不在 Rust 闸的覆盖范围（人工回归点） | 两脚本各加 `MAX_SIDE=4096`/`MAX_RES=4096`，解析后 `sys.exit`/`SystemExit`；registry C064 用单行正则钉住两个常量；实测 `--size 65536` 因本机缺 cv2 无法跑，留人工回归点 | C064 |
 
 
 
