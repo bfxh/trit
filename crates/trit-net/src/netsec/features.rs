@@ -10,6 +10,10 @@ use trit_core::value::Ternary;
 
 use super::flow::N;
 
+mod ternarize;
+
+pub use ternarize::ternarize;
+
 /// 规则方向。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Bias {
@@ -118,18 +122,6 @@ pub const DEFAULT_RULES: [Rule; 8] = [
         bias: Bias::High,
     },
 ];
-
-/// 把特征值按规则转成三值输入。
-///
-/// 没有被任何规则覆盖的维度固定为 `False`——这是**显式选择**：
-/// 模型只该看被声明过的证据，没声明的维度不参与判断。
-pub fn ternarize(values: &[f64; N], rules: &[Rule]) -> Vec<Ternary> {
-    let mut inputs = vec![Ternary::False; N];
-    for rule in rules {
-        inputs[rule.feature] = rule.apply(values[rule.feature]);
-    }
-    inputs
-}
 
 /// 三值输入的单字符视图（`T`/`F`/`X`），用于台账可读化。
 pub fn encode(inputs: &[Ternary]) -> String {

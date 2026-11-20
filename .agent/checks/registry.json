@@ -1457,6 +1457,40 @@
       "run": "cargo test -p trit-lsp",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C085",
+      "title": "外部规则里的 feature 下标越界即跳过",
+      "kind": "cmd",
+      "covers": [
+        "L134"
+      ],
+      "scope": [
+        "crates/trit-net/src/netsec/features/ternarize.rs"
+      ],
+      "since": "L134",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-net",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C086",
+      "title": "fuzz 语料的空变量表契约保持 panic",
+      "kind": "cmd",
+      "covers": [
+        "L135"
+      ],
+      "scope": [
+        "crates/trit-fuzz/src/corpus/expr.rs"
+      ],
+      "since": "L135",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-fuzz",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

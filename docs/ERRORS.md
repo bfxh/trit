@@ -182,6 +182,8 @@
 | L131 | 第 29 轮：`read_png_rgb` 按 IHDR 声明的 `output_buffer_size()` 直接分配缓冲——`1e6×1e6` RGB8 的 65 字节 PNG 直接要 3 TB，abort 134 | 解码前的尺寸来自文件头，却被当成可信常量；`vec![0u8; size]` 是唯一分配点，没有任何上限 | `read_png_rgb` 拆到 `data/png_read.rs`（顺带把 `data.rs` 从 251 行压到 224），分配改为 `output_buffer_size().min(1 << 28)`；子模块名避开外部 crate `png` 的遮蔽 | C082 |
 | L132 | 第 26/31 轮：`build_filtered` 用 `v.depth[i]` 取深度——同一帧的 ids 与 depth 来自不同文件、长度各自独立，`4×4` seg + `1×1` depth 的 192 B 输入直接越界 panic | 把「同形」当成了不变量：ids 循环到 `w*h`，depth 却可能只有 1 个元素 | `build_filtered` 拆到 `splat/core/filter.rs`（core.rs 288 → 245），深度改用 `v.depth.get(i)` 跳过缺失项；`trit-parts --lib` 197 条全过 | C083 |
 | L133 | 第 37 轮 S4：`trit-lsp` 语义 lint 解析 `(a)` 时直接取 `tokens[i + 3].end`，括号缺失/输入被截断时越界 panic（exit 101） | 按「括号一定成对」的假设做固定偏移取值，没给编辑器正在输入的半截文本留余地 | `stop` 改为 `tokens.get(i + 3).map_or(token.end, |t| t.end)`，缺失时回退到左括号自身位置 | C084 |
+| L134 | 第 37 轮 S3：`trit-net` 的 `ternarize` 用 `inputs[rule.feature]` 直接索引——`feature` 来自外部规则 JSON，未校验 `< N`，越界即 panic（101） | 外部文件里的下标被当成内部常量使用 | 越界规则直接跳过（已声明维度不受影响，也不静默改结论）；`ternarize` 拆到 `netsec/features/ternarize.rs` 腾行数；`trit-net` 测试全过 | C085 |
+| L135 | 第 37 轮 S10 判定为**契约、不修**：`trit-fuzz::random_expr` 在空变量表时 `assert!` 中止，审计把它列为崩溃 | 仓库既有测试 `empty_var_table_is_refused_not_silently_degenerate` 明确要求「空变量表应当 panic，而不是静默产出常量语料」——静默退化会让 fuzz 语料失真 | 只把 `random_expr` 拆到 `corpus/expr.rs`（行为完全不变），不改成返回 `Const`；本条作为「审计建议与仓库契约冲突」的先例记录 | C086 |
 
 
 

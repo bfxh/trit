@@ -1040,7 +1040,11 @@
     },
     {
       "file": "crates/trit-fuzz/src/corpus.rs",
-      "lines": 153
+      "lines": 128
+    },
+    {
+      "file": "crates/trit-fuzz/src/corpus/expr.rs",
+      "lines": 34
     },
     {
       "file": "crates/trit-fuzz/src/lib.rs",
@@ -1932,7 +1936,11 @@
     },
     {
       "file": "crates/trit-net/src/netsec/features.rs",
-      "lines": 144
+      "lines": 136
+    },
+    {
+      "file": "crates/trit-net/src/netsec/features/ternarize.rs",
+      "lines": 22
     },
     {
       "file": "crates/trit-net/src/netsec/flow.rs",
@@ -2692,7 +2700,7 @@
     },
     {
       "file": "crates/trit-parts/src/splat/core.rs",
-      "lines": 247
+      "lines": 245
     },
     {
       "file": "crates/trit-parts/src/splat/core/filter.rs",
