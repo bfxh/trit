@@ -541,6 +541,23 @@
       "pattern": "fn expect_len\\(",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C032",
+      "title": "图集边长在分配层设上限，像素边长夹到图集内",
+      "kind": "require",
+      "covers": [
+        "L83"
+      ],
+      "scope": [
+        "crates/trit-parts/src/atlas/bake.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T10:38:36+08:00",
+      "pattern": "atlas_px > MAX_ATLAS_PX",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

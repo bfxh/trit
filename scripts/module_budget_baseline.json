@@ -2084,7 +2084,11 @@
     },
     {
       "file": "crates/trit-parts/src/atlas/bake.rs",
-      "lines": 457
+      "lines": 441
+    },
+    {
+      "file": "crates/trit-parts/src/atlas/bake/pack.rs",
+      "lines": 47
     },
     {
       "file": "crates/trit-parts/src/atlas/charts.rs",
@@ -2625,6 +2629,10 @@
     {
       "file": "crates/trit-parts/src/weights/fold.rs",
       "lines": 186
+    },
+    {
+      "file": "crates/trit-parts/tests/atlas_bounds.rs",
+      "lines": 112
     },
     {
       "file": "crates/trit-parts/tests/depthnet_e2e.rs",

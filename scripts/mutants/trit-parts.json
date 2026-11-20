@@ -502,5 +502,29 @@
     "new": "    let n = product(wname, &[4, cin, cout])?;\n    expect_len(wname, w.len(), n)?;\n    let bias_raw = t.v(&wname.replace(\".weight\", \".bias\"))?;\n",
     "pkg": "trit-parts",
     "filter": "convt_bias_must_match_the_channel_count"
+  },
+  {
+    "name": "atlas: 图集边长不设上限（img 按它分配）",
+    "file": "crates/trit-parts/src/atlas/bake.rs",
+    "old": "    // 上限必须落在**真正分配** `atlas_px² × 3` 的地方：`bake_atlas` 与\n    // `bake_atlas_with` 是两条入口，后者直通这里。`--atlas` 在 `asset` 只判\n    // 下限 64、在 `meshtex` / `objects-mesh` 只判非零，一个 65536 就是 51 GB。\n    if atlas_px == 0 || atlas_px > MAX_ATLAS_PX {\n        return Err(format!(\"图集边长 {atlas_px} 超出 1..={MAX_ATLAS_PX}\"));\n    }\n",
+    "new": "",
+    "pkg": "trit-parts",
+    "filter": "absurd_atlas_side_is_rejected_before_the_image_buffer"
+  },
+  {
+    "name": "atlas: 贴图尺寸裸乘（绕回后与空贴图对上）",
+    "file": "crates/trit-parts/src/atlas/bake.rs",
+    "old": "    let need = tw\n        .checked_mul(th)\n        .and_then(|v| v.checked_mul(3))\n        .ok_or_else(|| format!(\"贴图 {tw}x{th}x3 尺寸相乘溢出\"))?;\n",
+    "new": "    let need = tw * th * 3;\n",
+    "pkg": "trit-parts",
+    "filter": "texture_shape_overflow_is_rejected_before_reading_pixels"
+  },
+  {
+    "name": "atlas: 像素边长不夹到图集内（绕回后判断失效）",
+    "file": "crates/trit-parts/src/atlas/bake/pack.rs",
+    "old": "            let w = (((hi[0] - lo[0]) * scale).ceil() as usize).max(1).min(cap);\n            let h = (((hi[1] - lo[1]) * scale).ceil() as usize).max(1).min(cap);\n",
+    "new": "            let w = (((hi[0] - lo[0]) * scale).ceil() as usize).max(1);\n            let h = (((hi[1] - lo[1]) * scale).ceil() as usize).max(1);\n",
+    "pkg": "trit-parts",
+    "filter": "absurd_texel_density_is_rejected_instead_of_index_out_of_range"
   }
 ]
