@@ -3324,7 +3324,7 @@
     },
     {
       "file": "crates/trit-texture/src/pngio.rs",
-      "lines": 161
+      "lines": 158
     },
     {
       "file": "crates/trit-texture/src/preview.rs",
@@ -3381,6 +3381,10 @@
     {
       "file": "crates/trit-texture/tests/mip_sampler.rs",
       "lines": 173
+    },
+    {
+      "file": "crates/trit-texture/tests/pixel_bounds.rs",
+      "lines": 27
     },
     {
       "file": "crates/trit-texture/tests/raster.rs",

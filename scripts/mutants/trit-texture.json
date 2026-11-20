@@ -190,5 +190,13 @@
   "new": "        if len as usize > TILE_DATA_BYTES {",
   "pkg": "trit-texture",
   "filter": "tile_len_other_than_tile_data_bytes_is_rejected"
+ },
+ {
+  "name": "convert: 像素上限抬高",
+  "file": "crates/trit-texture/src/convert.rs",
+  "old": "if pixels > crate::MAX_TEXTURE_PIXELS {",
+  "new": "if pixels > crate::MAX_TEXTURE_PIXELS * 2 {",
+  "pkg": "trit-texture",
+  "filter": "one_pixel_above_the_cap_is_rejected"
  }
 ]

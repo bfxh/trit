@@ -951,6 +951,23 @@
       "pattern": "ticks > snn::MAX_TICKS",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C056",
+      "title": "PNG/容器的像素数在分配前校验",
+      "kind": "require",
+      "covers": [
+        "L104"
+      ],
+      "scope": [
+        "crates/trit-texture/src/convert.rs"
+      ],
+      "since": "L104",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "pub fn check_pixels\\(width: usize, height: usize\\)",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

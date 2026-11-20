@@ -152,6 +152,7 @@
 | L101 | `trit-count --big MAX_N` 解析 usize 无上限：DPLL/BDD 对拍按 n 放大，`--big 100000` 可以让进程跑到天荒地老；同文件 `--fuzz-cnf` 的 `--nvars` 已有 40 上限 | `--big` 的 match 只解析不钳制；`run_big` 的 `13..=max_n` 直接吃外部数 | `main.rs` 在解析后加 `max_n > 40` 判红（rc=2，文案对齐 `--fuzz-cnf`）；新增 `tests/big_bounds.rs`（41 拒绝、40 放行，`--cases 0` 快速返回） | C053 |
 | L102 | `ca::run(rule, width, steps)` 的 `--width`/`--steps` 全程无顶：`vec![Ternary; width]` 与每步 clone 的历史表按 `steps×width` 增长，`--width 1e9` 直接 3 GB，`--steps 1e9` 更快 | `run` 与 `survey` 都是 pub API，CLI 的 `--width` 只有默认值；没有任何上限 | `ca.rs` 加 `MAX_WIDTH=4096`/`MAX_STEPS=10_000`，`run` 入口两行 assert；CLI `ca_demo` 预检返回 Err；新增 `tests/ca_bounds.rs`（上限放行、宽度+1 panic、步数+1 panic） | C054 |
 | L103 | `trit-machines snn --ticks 1e9 --drive 1`：CLI 先 `vec![drive; ticks]`（4 GB）再调 `simulate_with_drive`，而 `MAX_TICKS=1e6` 的闸在 `run()` 里——分配先于校验 | `snn_demo` 只解析不钳制；`MAX_TICKS` 只挂在 `snn::run` | `main.rs` 在构造 `external` 前判 `ticks > snn::MAX_TICKS` 返回 Err；新增 `tests/drive_bounds.rs`（1000001 被拒且错误含 `--ticks`） | C055 |
+| L104 | `pngio::load_png_rgba` 先 `vec![0u8; reader.output_buffer_size()]`（按 IHDR 的 u32 宽高），`MAX_TEXTURE_PIXELS=1<<22` 的检查只挂在容器 `validate` 上——PNG 这条链完全绕过，且 `pngio` 在 `png` feature 后 | 文件 I/O 与容器校验是两条路；`load_png_rgba` 在 `read_info()` 之后直接按尺寸分配 | `convert.rs` 抽出 `pub fn check_pixels(w, h)`（`checked_mul` + `MAX_TEXTURE_PIXELS`），`pngio` 在 `output_buffer_size()` 之前调用；新增 `tests/pixel_bounds.rs`（上限合法、+1 拒绝、溢出拒绝） | C056 |
 
 
 

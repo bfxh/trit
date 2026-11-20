@@ -1,16 +1,12 @@
 //! PNG 文件 I/O（`png` feature，默认关）。
-//!
-//! 只做 RGBA8 ↔ PNG：灰度/RGB 自动补 alpha=255（灰度复制到三通道），16 位与
-//! 调色板图拒绝。像素/容器之间的纯转换在 [`crate::convert`]（默认构建就有）；
-//! 本模块只补文件这一层。
-
+//! 只做 RGBA8 ↔ PNG：灰度/RGB 自动补 alpha=255，16 位与调色板图拒绝；
+//! 像素/容器之间的纯转换在 [`crate::convert`]（默认构建就有）。
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 use std::path::Path;
 
 use crate::convert::RgbaImage;
 
-/// PNG 模块的错误（文件 I/O 层，不走 `TextureError`——那套是格式语义错误）。
 #[derive(Debug, thiserror::Error)]
 pub enum PngError {
     /// PNG 解码/编码失败（透传 `png` crate 的错误文本）。
@@ -36,10 +32,11 @@ impl From<png::EncodingError> for PngError {
     }
 }
 
-/// 读 PNG 文件成 RGBA8。
 pub fn load_png_rgba(path: &Path) -> Result<RgbaImage, PngError> {
     let decoder = png::Decoder::new(BufReader::new(File::open(path)?));
     let mut reader = decoder.read_info()?;
+    let (width, height) = (reader.info().width as usize, reader.info().height as usize);
+    crate::convert::check_pixels(width, height).map_err(|error| PngError::Io(error.to_string()))?;
     let mut buffer = vec![0u8; reader.output_buffer_size()];
     let frame = reader.next_frame(&mut buffer)?;
     let (width, height) = (frame.width as usize, frame.height as usize);
