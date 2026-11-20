@@ -144,7 +144,7 @@
 
 | 文档 | 一句话 |
 |---|---|
-| [DOCUMENTATION.md](specs/DOCUMENTATION.md) | 一篇文档必须有什么：定位段、状态词、读数与复算、未证栏 |
+| [DOCUMENTATION.md](specs/DOCUMENTATION.md) | 一篇文档必须有什么：定位段、状态词、读数与复算、未证栏、对比基线（弱基准会把倍数放大） |
 | [TERMINOLOGY.md](specs/TERMINOLOGY.md) | 「三进制」的三层含义与唯一用词表 |
 | [README-SPEC.md](specs/README-SPEC.md) | README 规范：首屏只放什么、性能数字怎么给 |
 | [DOC-INDEX.md](specs/DOC-INDEX.md) | 新增 / 搬迁 / 改名文档的流程与判红条件 |

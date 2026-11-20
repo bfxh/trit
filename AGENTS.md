@@ -19,6 +19,9 @@
 - 新 worktree 的构建产物默认落 E: 盘：post-checkout 钩子自动生成 `.cargo/config.toml`；没有钩子的环境跑 `python scripts/wt_target.py --all`（见 `docs/engineering/BUILD-PERF.md` §5）。
 - 训练层在 `crates/trit-train`（STE + 位平面 ALU）；新模型优先复用同一套量化/STE 口径。
 - 三进制结论按 `docs/positioning/TERNARY-BOUNDARIES.md` 归 A/B/C/D，且必须带二进制基线。
+- **对比基线取最强可得、负结果必须留档**：弱基线 + 只报正结果会把结论放大一个量级——公开系统综述
+  （Nature Machine Intelligence 2024，DOI `10.1038/s42256-024-00897-5`）量到 79% 的论文用弱基线、
+  94.8% 只报正面结果、多篇「快 N 倍」换强基线后消失。口径见 `docs/specs/DOCUMENTATION.md` §5。
 
 ## 默认阅读（三进制 / 无限图 / 游戏环境）
 
