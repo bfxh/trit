@@ -129,7 +129,7 @@
   },
   {
     "name": "splat-io: SH 直流项不换算（颜色约定错）",
-    "file": "crates/trit-parts/src/splat/io.rs",
+    "file": "crates/trit-parts/src/splat/io/write.rs",
     "old": "            put((c - 0.5) / SH_C0);",
     "new": "            put(c);",
     "pkg": "trit-parts",

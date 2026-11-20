@@ -116,6 +116,8 @@
 
 | L77 | `tconv::Net::load` 把 `.tpc` 里的 `层数` / `cin` / `cout` / `nheads` 直接 `take(...)? as usize` 就去 `Vec::with_capacity(nl)`、`for _ in 0..nl`、`Conv::new(cin, cout, 1)` —— 全是先按外部声明分配、校验根本不存在 | `.tpc` 是外部文本（模型权重文件可以来自任何地方）。`层数 999999999` 让 `Vec::with_capacity` 当场 OOM；`cin 100000` 让 `Conv::new` 里的 `cin*cout*9` 直接打爆；BN/Film 的 `层号` 是外部值直接当索引，越界 panic | 加 `MAX_LAYERS = 1024` / `MAX_CH = 2048` 与 `fn bounded(n, path, what, max)`，`nl` / `cin` / `cout` / `nheads` / head 的 `cin`·`cout` 全部改走它；BN / Film 的 `层号` 加 `idx >= nl` 与 `k > MAX_LAYERS`·`c > MAX_CH` 检查；`save` 82 行下沉到 `tconv/io/save.rs` 腾预算（`io.rs` 262 → 227）；`tests/tconv_tpc_limits.rs` 钉住"层数 999999999 与 cin 100000 在分配前被拒、正常网能存读回" | C026 |
 
+| L78 | `splat::read_ply_3dgs` 的长度检查写成 `body.len() < n * stride` —— `n` 来自 PLY 头的 `element vertex`，`stride = props.len() * 4` 来自头里的 property 条数，两个都是外部文本，裸乘 | `n = usize::MAX / 2` 时 `n * stride` 在 32/64 位都溢出绕成小值，长度校验直接通过，紧接着 `Vec::with_capacity(n)` 就是一次 OOM；`get` 闭包里的 `row * stride + need[k] * 4` 也只有在这层长度检查成立之后才安全 | `n.checked_mul(stride).ok_or_else(...)` 求出 `need_bytes` 再比 `body.len()`；`write_ply_3dgs` 与 `logit` 下沉到 `splat/io/write.rs` 腾预算（`io.rs` 348 → 310）；`tests/splat_ply_limits.rs` 用 `usize::MAX/2` 个顶点钉住"必须在 `with_capacity` 之前因溢出被拒" | C027 |
+
 
 
 

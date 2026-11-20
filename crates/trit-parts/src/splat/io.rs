@@ -7,8 +7,9 @@
 //! 读入是复核器的入口：它必须能从盘上的 PLY 把高斯原样还原并重渲，
 //! 不接受旋转/各向异性（静默近似会把复核变成自我欺骗）。
 
-use std::io::Write;
+mod write;
 use std::path::Path;
+pub use write::write_ply_3dgs;
 
 use super::Splat;
 
@@ -20,53 +21,8 @@ const PROPS: [&str; 17] = [
     "scale_2", "rot_0", "rot_1", "rot_2", "rot_3",
 ];
 
-fn logit(a: f32) -> f32 {
-    let a = a.clamp(1e-4, 1.0 - 1e-4);
-    (a / (1.0 - a)).ln()
-}
-
 fn sigmoid(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
-}
-
-/// 写 PLY。顺序即输入顺序（调用方负责排序，保证可复现）。
-pub fn write_ply_3dgs(path: &Path, splats: &[Splat]) -> Result<(), String> {
-    let mut s = String::new();
-    s.push_str("ply\nformat binary_little_endian 1.0\n");
-    s.push_str(&format!("element vertex {}\n", splats.len()));
-    for p in PROPS {
-        s.push_str(&format!("property float {p}\n"));
-    }
-    s.push_str("end_header\n");
-    let f = std::fs::File::create(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut w = std::io::BufWriter::new(f);
-    w.write_all(s.as_bytes())
-        .map_err(|e| format!("{}: {e}", path.display()))?;
-    for g in splats {
-        let mut row = Vec::with_capacity(17 * 4);
-        let mut put = |v: f32| row.extend_from_slice(&v.to_le_bytes());
-        put(g.pos[0]);
-        put(g.pos[1]);
-        put(g.pos[2]);
-        put(0.0);
-        put(0.0);
-        put(0.0);
-        for c in g.color {
-            put((c - 0.5) / SH_C0);
-        }
-        put(logit(g.alpha));
-        let sc = g.scale.max(1e-6).ln();
-        put(sc);
-        put(sc);
-        put(sc);
-        put(1.0);
-        put(0.0);
-        put(0.0);
-        put(0.0);
-        w.write_all(&row)
-            .map_err(|e| format!("{}: {e}", path.display()))?;
-    }
-    w.flush().map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// 读 PLY（只认 17 个 float 属性齐全的文件）。
@@ -112,7 +68,13 @@ pub fn read_ply_3dgs(path: &Path) -> Result<Vec<Splat>, String> {
     let need: Vec<usize> = PROPS.iter().map(|k| idx(k)).collect::<Result<_, _>>()?;
     let stride = props.len() * 4;
     let body = &bytes[off..];
-    if body.len() < n * stride {
+    // `n` 来自 PLY 头的 `element vertex`，`stride` 来自头里的 property 条数 ——
+    // 两者都是外部文本，`n * stride` 必须 checked：否则 `usize::MAX/2` 这类顶点数
+    // 会让它溢出绕成小值、通过长度校验，紧接着 `Vec::with_capacity(n)` 直接 OOM。
+    let need_bytes = n
+        .checked_mul(stride)
+        .ok_or_else(|| format!("{}: 顶点数 {n} × 步长 {stride} 溢出", path.display()))?;
+    if body.len() < need_bytes {
         return Err(format!(
             "{}: 数据长度 {} < {n}×{stride}",
             path.display(),

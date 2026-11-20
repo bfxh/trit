@@ -456,6 +456,23 @@
       "pattern": "fn bounded\\(",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C027",
+      "title": "PLY 顶点数×步长必须 checked_mul",
+      "kind": "require",
+      "covers": [
+        "L78"
+      ],
+      "scope": [
+        "crates/trit-parts/src/splat/io.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T08:26:10+08:00",
+      "pattern": "checked_mul\\(stride\\)",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
