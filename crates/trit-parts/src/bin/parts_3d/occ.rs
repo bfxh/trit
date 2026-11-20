@@ -159,7 +159,7 @@ pub(crate) fn occ_cmd(argv: &[String]) {
             println!("加载模型 {}", p.display());
             Mlp::load(p).unwrap_or_else(|e| fail(&e))
         }
-        None => Mlp::new(nin, hid, seed),
+        None => Mlp::new(nin, hid, seed).unwrap_or_else(|e| fail(&e)),
     };
     if load_model.is_none() {
         let mut samples: Vec<(Vec<f32>, f32)> = Vec::new();

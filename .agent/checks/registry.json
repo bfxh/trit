@@ -626,6 +626,23 @@
       "pattern": "h > MAX_HIDDEN",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C037",
+      "title": "Mlp 构造走同一隐藏宽度上限并判乘法溢出",
+      "kind": "require",
+      "covers": [
+        "L88"
+      ],
+      "scope": [
+        "crates/trit-parts/src/occ/mlp.rs"
+      ],
+      "since": "L88",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "crate::hidden::check\\(nhid\\)",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

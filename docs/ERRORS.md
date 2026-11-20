@@ -134,6 +134,8 @@
 
 | L87 | `parts_3d/material.rs` 的 `--hidden` 只 `parse::<usize>()`（`unwrap_or(8)`），直接进 `MatNet::new(hidden, seed)` | `--hidden` 是隐藏宽度，`MatNet::new` 里 `Conv::new(hidden, hidden)` 的内部是 `w: (0..cout*cin*9)` + `mw`/`vw: vec![0.0; cout*cin*9]`——**平方级**、三条裸乘。`--hidden 100000` → `9e10` f32 = 360 GB；`--hidden 18446744073709551615`（`usize::MAX`）更糟：`cout*cin*9` 在 usize 里绕回成 0，`vec![0.0; 0]` 通过，随后 `vec![0.0; cout]` 要吃 4e18 字节；`--hidden 0` 则让池化与线性头全空 | 新建 `crates/trit-parts/src/hidden.rs`（`MAX_HIDDEN = 256`、`check`；`256²×9` f32 = 2.3 MB/份，三份 7 MB），`MatNet::new` 改返回 `Result<Self, String>` 并在**第一行** `crate::hidden::check(hidden)?`；`SIDE` 一并搬去 `hidden.rs` 由 `matnet.rs` re-export（`matnet.rs` 从 352 回到 337，守住既有 cap 不抬）。`material.rs:302` 的调用点 `unwrap_or_else(|e| fail(&e))` | C036 |
 
+| L88 | `occ --hid`、`texgen --hid`、`texgen2 --hid`（经 `diffuse::PatchMlp`）三条 CLI 链共用 `occ::Mlp::new(nin, nhid, seed)`，`nhid` 与 `nin*nhid` 都没有校验 | `new` 里 `let n1 = nin * nhid;` 裸乘后 `w1: (0..n1).map(...).collect()`，再加 `b1: vec![0.0; nhid]`。`--hid 1000000000` 让 `nin*1e9` 变成 TB 级；`--hid 18446744073709551615`（`usize::MAX`）让 `nin*nhid` 溢出——debug 直接 panic，release 绕成 `usize::MAX-1` 后 `(0..n1).map().collect()` 一行吃掉全部内存。`--hid 0` 则 `forward` 的 `vec![0.0; 0]` 与 `w2` 全空 | `Mlp::new` 改返回 `Result<Self, String>`：**第一行** `crate::hidden::check(nhid)?`（复用 `--hidden` 的 `MAX_HIDDEN = 256`，一个上限两个用户），`n1` 改成 `nin.checked_mul(nhid).ok_or("权重矩阵 nin×nhid 溢出")?`；`diffuse::PatchMlp::new` 同步返回 `Result` 并 `?` 转发；三个 CLI 调用点 `unwrap_or_else(|e| fail(&e))`，`occ/mod.rs` 7 处测试补 `.unwrap()` | C037 |
+
 
 
 

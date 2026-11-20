@@ -202,7 +202,7 @@ pub(crate) fn tex_prior_cmd(argv: &[String]) {
             }
         }
     }
-    let mut mlp = Mlp::new(nin, hid, seed);
+    let mut mlp = Mlp::new(nin, hid, seed).unwrap_or_else(|e| fail(&e));
     let mut loss = 0.0f64;
     for step in 0..iters {
         let (x, y) = &train[(step * 7919) % train.len()];

@@ -256,7 +256,7 @@ pub(crate) fn tex_gen_cmd(argv: &[String]) {
     };
     let mut loss = 0.0f64;
     let den: Den = if conv_hidden.is_empty() {
-        let mut d = PatchMlp::new(patch, conds, hid, seed);
+        let mut d = PatchMlp::new(patch, conds, hid, seed).unwrap_or_else(|e| fail(&e));
         for step in 0..iters {
             let ki = (step * 7919) % images.len();
             let g = images[ki].clone();

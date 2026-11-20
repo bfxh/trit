@@ -65,13 +65,13 @@ pub struct PatchMlp {
 }
 
 impl PatchMlp {
-    pub fn new(patch: usize, cond: usize, hid: usize, seed: u64) -> Self {
+    pub fn new(patch: usize, cond: usize, hid: usize, seed: u64) -> Result<Self, String> {
         let nin = patch * patch + cond + 1; // +1 = t/T
-        PatchMlp {
-            mlp: Mlp::new(nin, hid, seed),
+        Ok(PatchMlp {
+            mlp: Mlp::new(nin, hid, seed)?,
             patch,
             cond,
-        }
+        })
     }
 
     /// 特征：`xt` 的 patch + 条件 one-hot + t/T。
@@ -340,7 +340,7 @@ mod tests {
         let (w, h) = (8usize, 8usize);
         let x0 = vec![0.7f32; w * h];
         let ab = Schedule::cosine(20).abar();
-        let mut d = PatchMlp::new(3, 0, 16, 5);
+        let mut d = PatchMlp::new(3, 0, 16, 5).unwrap();
         let mut rng = 12345u64;
         for _ in 0..20000 {
             d.train_step(&x0, &ab, None, w, h, 0.05, &mut rng);
