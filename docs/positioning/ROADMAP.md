@@ -26,6 +26,7 @@
 | ~~`trit-mv`~~ **已建（第一批）**（2026-11-11） | base | 有限 Łukasiewicz 链（整数精确）+ 4 种 t-norm（Minimum/Łukasiewicz/Drastic/幂零最小）+ residuum；三值档与 `trit-core` Kleene 逐点对拍 | 链上公理穷举（交换/结合/单位/单调）+ 伴随律（左连续三种）+ Kleene 对拍 |
 | ~~`trit-num`~~ **已建（第一批）**（2026-11-12） | ops | Neumaier 补偿求和、Welford 流式统计（可合并）、最小二乘/岭回归（正规方程 + Cholesky，截距不惩罚）、中位数/MAD、均值/中位数/线性插补；附 **f32 参考实现**对拍 | 精确直线恢复（<1e-12）、f64 vs f32 同题偏差（<1e-4）、奇异/共线/非有限输入结构化报错 |
 | `trit-export` | ops | 三值权重容器（量化 GGUF）还没有落点，属 codec/learn 边界 | 与 `trit-codec` 打包逐位一致 |
+| `trit-export` 的 `bitnet` 互操作（I2_S / TL1 / TL2） | ops | 外部三元生态已有事实格式，仓库只有自用 5 trits/byte；互操作可逐字节对拍，不依赖外部运行时。规格与判据见 [BITNET-FORMAT-INTEROP-PLAN.md](../plans/BITNET-FORMAT-INTEROP-PLAN.md) | 与 `trit-codec` 的体积账 + TL 表 27/4 组合穷举 |
 | ~~`trit-belnap` 的算子面~~ **已建**（2026-11-11） | ops | 真序/知识序双格（共识 `⊗`、轻信 `⊕`、共轭 `¬ₖ`）+ 多源合并（真序 join / 知识序 consensus）；**接入 trit-clean 的合并策略仍是后续** | 双格公理穷举（分配/吸收/结合）+ 已知序关系 + De Morgan（真序 `¬`、知识序 `¬ₖ`） |
 | `trit-clean`（**后期，不排期**） | algo | 三值约束检查 + 精确修复计数 + 三支决策（收/拒/转人工）；方向评估与底层缺口见 [DATA-CLEANING-PLAN.md](../plans/DATA-CLEANING-PLAN.md) | 与 SQL 三值语义、小规模穷举计数对拍；BDD×DPLL 交叉校验 |
 | ~~`trit-mmap`~~ **已建（第一批）**（2026-11-12） | ops | 大文件只读映射：Unix `mmap` / Windows `CreateFileMapping`；空文件返回空切片；错误结构化 | 内容逐字节对拍 + 空/缺失/重复映射用例 + 变异 2/2 |
