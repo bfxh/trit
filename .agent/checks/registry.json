@@ -1406,6 +1406,23 @@
       "run": "cargo test -p trit-parts --lib",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C082",
+      "title": "PNG 解码前按字节上限分配",
+      "kind": "cmd",
+      "covers": [
+        "L131"
+      ],
+      "scope": [
+        "crates/trit-parts/src/data/png_read.rs"
+      ],
+      "since": "L131",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-parts --lib",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

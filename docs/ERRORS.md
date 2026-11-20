@@ -179,6 +179,7 @@
 | L128 | 第 37 轮 S1（本轮唯一 UB 级问题）：`trit-ops` 的 `pack_q4` 按全局 32 元素切块（floor），`gemv_q4` 按每行 `ceil(cols/32)*18` 取块，`quantize_act_q8` 也按 floor 出块——三者口径互不一致，`from_raw_parts` 无长度校验，`bench --rows 1 --cols 1` 在 release/debug 都 SIGSEGV（139） | 打包/解包/量化三处各自定义长度口径，没有单一的「每行块数」；`unsafe` 切片前没有前置断言，错位就直接读堆外 | `pack_q4` 改为按行 `ceil` 出块、末块补零（拆到 `bench/q4.rs`）；`quantize_act_q8` 改 `chunks(32)` 补齐；`gemv_q4` 在 `unsafe` 前断言权重与激活长度；`tests/q4_layout.rs` 两条（cols=1/31/32/33/64 的长度、cols=1/33 的有界执行） | C079 |
 | L129 | 第 23/27/28/30 轮：快照 `NODE` 的 `hist_len` 直接进 `Vec::with_capacity`（`usize::MAX` → capacity overflow）；快照前缀 `deltas_covered + 1` 加法溢出；`prefix_len` 落在汉字中间时 `&text[covered..]` 切坏 UTF-8；`dag.chain()` 用裸下标取 parent、`status` 用 `len()-1` | 所有值都来自外部文件/外部输入，却按「自己写的」对待：先分配后校验、无 checked 运算、无 UTF-8 边界检查 | `snapshot.rs` 的 `hist_len` 先比剩余行数；`journal.rs` 用 `saturating_add` + `is_char_boundary`；`dag.rs` 用 `nodes.get()`；`bin/trit.rs` 用 `checked_sub`；`tests/parse_bounds.rs` 一条 | C080 |
 | L130 | 第 22 轮：`TpmLayer::effective()` 在 `cout == 0` 时 `wi % slots` 除零；`TpmModel` 的剪枝在空层上 `layers.len() - 1` 下溢 | `cout` 来自模型文件（可为 0），`%` 与 `-` 都默认分母/长度为正 | `effective()` 前判 `slots == 0` 返回全零（拆到 `tpm/layer.rs` 守行数）；剪枝前判 `layers.is_empty()`；`trit-parts --lib` 197 条全过 | C081 |
+| L131 | 第 29 轮：`read_png_rgb` 按 IHDR 声明的 `output_buffer_size()` 直接分配缓冲——`1e6×1e6` RGB8 的 65 字节 PNG 直接要 3 TB，abort 134 | 解码前的尺寸来自文件头，却被当成可信常量；`vec![0u8; size]` 是唯一分配点，没有任何上限 | `read_png_rgb` 拆到 `data/png_read.rs`（顺带把 `data.rs` 从 251 行压到 224），分配改为 `output_buffer_size().min(1 << 28)`；子模块名避开外部 crate `png` 的遮蔽 | C082 |
 
 
 
