@@ -31,3 +31,10 @@ __pycache__/
 # 变异门单实例锁（运行时目录，不入库）
 scripts/.mutation-check.lock/
 *.mutant-tmp
+
+# 并行开发/归档：不要入库（见 docs/COLLAB.md §4）
+*.bundle
+/archive/
+/trit-archive/
+*.orig
+*.rej

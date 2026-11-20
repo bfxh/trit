@@ -191,7 +191,7 @@ impl Journal {
         if let Ok(snap_text) = std::fs::read_to_string(snapshot::sidecar_path(path)) {
             if let Ok((snap_dag, meta)) = snapshot::parse(&snap_text) {
                 let plen = meta.prefix_len as usize;
-                if plen <= raw.len() && text.is_char_boundary(plen) { // 第 27/28 轮
+                if plen <= raw.len() && text.is_char_boundary(plen) {
                     let prefix = &raw[..plen];
                     let newlines = prefix.iter().filter(|&&b| b == b'\n').count();
                     if snapshot::fnv1a_bytes(prefix) == meta.prefix_fnv

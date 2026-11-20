@@ -25,6 +25,10 @@ use trit_immune::{coords, delta, parse_stamped_line, supply, Journal, NodeId, No
 
 const DEFAULT_LEDGER: &str = "repo.tritj";
 
+#[path = "trit/status.rs"]
+mod status;
+use status::cmd_status;
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match run(&args) {
@@ -176,26 +180,6 @@ fn cmd_log(args: &[String]) -> Result<(), CliError> {
 }
 
 /// `trit status [-f file]`：收敛度量 + 根门禁 + 节点数。
-fn cmd_status(args: &[String]) -> Result<(), CliError> {
-    let (j, path) = open_ledger(args)?;
-    let dag = j.dag().clone();
-    drop(j.into_dag().map_err(|e| CliError::Runtime(e.to_string()))?);
-    let conv = dag.convergence();
-    let root_gate = dag.nodes().len().checked_sub(1).map(|i| dag.merge_gate(NodeId(i as u32)));
-    println!("账本：{}", path.display());
-    println!(
-        "节点：{}（+{} / 0:{} / -{} / 隔离 {}）",
-        conv.total, conv.hardened, conv.unknown, conv.vulnerable, conv.quarantined
-    );
-    println!("收敛率：{:.3}", conv.ratio);
-    println!("尾门禁：{root_gate:?}");
-    let suspects = dag.suspects();
-    println!("可疑队列：{} 个", suspects.len());
-    Ok(())
-}
-
-/// `trit branch <name> [-f file]`：spawn 分支节点（DAG 天生分叉，无 HEAD 概念——
-/// 每个分支就是一个节点，工作目标用节点号寻址）。
 fn cmd_branch(args: &[String]) -> Result<(), CliError> {
     let (name, ledger_args) = args
         .split_first()

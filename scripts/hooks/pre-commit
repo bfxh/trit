@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# 提交前默认门（默认开着，不是"可选"）。
+#
+# 装一次：bash scripts/install-hooks.sh
+# 想跳过：git commit --no-verify（只应该在明知故犯时用；pre-push 会记录）
+#
+# 只跑"3 秒内能跑完、失败必是硬错"的三项，避免拖慢提交：
+#   1. cargo fmt --check —— 格式统一（多智能体各写各的风格会让 diff 噪音爆炸）
+#   2. module_budget     —— 行数台账只收紧不抬高
+#   3. registry 结构     —— 检查登记表必须是合法 JSON（坏了 CI 才报就太晚）
+set -euo pipefail
+
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+
+fail() { echo "[pre-commit] 失败：$*" >&2; exit 1; }
+
+if command -v cargo >/dev/null 2>&1; then
+  echo "[pre-commit] cargo fmt --check"
+  cargo fmt --all -- --check || fail "格式不符，跑 cargo fmt --all"
+else
+  echo "[pre-commit] 跳过 fmt（没有 cargo）"
+fi
+
+if command -v python >/dev/null 2>&1; then
+  echo "[pre-commit] module_budget"
+  python scripts/module_budget.py || fail "行数台账不通过（超限就拆文件，不要抬台账）"
+
+  echo "[pre-commit] registry 结构"
+  python - <<'PY' || fail ".agent/checks/registry.json 不是合法 JSON"
+import json, sys
+try:
+    data = json.load(open(".agent/checks/registry.json", encoding="utf-8"))
+except Exception as e:
+    print(f"[pre-commit] {e}", file=sys.stderr)
+    sys.exit(1)
+ids = [c.get("id") for c in data.get("checks", [])]
+if len(ids) != len(set(ids)):
+    print("[pre-commit] 检查 id 重复", file=sys.stderr)
+    sys.exit(1)
+PY
+else
+  echo "[pre-commit] 跳过 python 检查（没有 python）"
+fi
+
+echo "[pre-commit] OK"

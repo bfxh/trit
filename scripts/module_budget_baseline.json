@@ -1400,7 +1400,11 @@
     },
     {
       "file": "crates/trit-immune/src/bin/trit.rs",
-      "lines": 525
+      "lines": 509
+    },
+    {
+      "file": "crates/trit-immune/src/bin/trit/status.rs",
+      "lines": 26
     },
     {
       "file": "crates/trit-immune/src/bin/trit/tests.rs",

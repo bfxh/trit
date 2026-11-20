@@ -1,11 +1,8 @@
 //! 快照：全量状态的一次性序列化，作为日志重放的**缓存**。
 //!
-//! - 只增日志永远不会被改写；快照是可有可无的 sidecar（`<journal>.snapshot`），
-//!   损坏或不匹配时 [`Journal::open`](crate::Journal::open) 自动回退全量重放；
-//! - 前缀校验用 FNV-1a（非加密哈希，只防意外损坏，不防恶意篡改——日志本身的
-//!   完整性由追加式写入与 poison 语义保证）；
-//! - 格式与 Delta 编码同风格：一行一记录、制表符分字段、字符串转义；
-//!   `NODE` 行后跟其 `hist_len` 条 `EV` 行（完整审计历史逐条保留）。
+//! - 只增日志永不改写；快照是 sidecar，损坏/不匹配时 `Journal::open` 回退全量重放；
+//! - 前缀校验用 FNV-1a（只防意外损坏，不防篡改——完整性靠追加式写入与 poison）；
+//! - 格式同 Delta：一行一记录、制表符分字段；`NODE` 后跟 `hist_len` 条 `EV` 行。
 
 use crate::dag::{CrossLink, ImmuneDag, Node, NodeId, NodeKind, VerdictEvent};
 use crate::delta;
@@ -183,14 +180,17 @@ pub fn parse(text: &str) -> Result<(ImmuneDag, SnapshotMeta), String> {
                 if f.next().is_some() {
                     return Err(bad());
                 }
-                if hist_len > rest.len() { return Err(bad()); } // 比剩余行多必是伪造（第 23 轮）
+                if hist_len > rest.len() {
+                    return Err(bad());
+                }
                 let mut history = Vec::with_capacity(hist_len);
                 for _ in 0..hist_len {
                     let ev_line = rest.get(i).ok_or("NODE 的历史条目不足")?;
                     i += 1;
                     history.push(parse_ev(i + 3, ev_line)?);
                 }
-                nodes.push(Node { id,
+                nodes.push(Node {
+                    id,
                     parent,
                     kind,
                     title,
