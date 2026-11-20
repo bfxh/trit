@@ -1597,6 +1597,25 @@
       "run": "bash -n scripts/archive-worktrees.sh && bash -n scripts/rescue-dangling.sh && grep -q '## 10. 防丢失' docs/COLLAB.md",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C093",
+      "title": "分支规范可执行：检查器存在且能跑出报告",
+      "kind": "cmd",
+      "covers": [
+        "L142"
+      ],
+      "scope": [
+        "scripts/branch-hygiene.py",
+        "docs/BRANCHING.md",
+        ".github/workflows/branch-hygiene.yml"
+      ],
+      "since": "L142",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "run": "python scripts/branch-hygiene.py --json > /dev/null && grep -q '命名（强制）' docs/BRANCHING.md",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

@@ -195,6 +195,7 @@
 
 
 | L141 | 2026-11-21 取证：19 个工作树里 **1008 个提交未合并进 main**、**38 个 stash**、`git fsck --lost-found` 捞出 **547 个悬空提交**、39 个未提交文件。多个智能体各自在 worktree 提交 → 从不 push → 会话额度耗尽中断 → 目录被清理 → 分支成孤儿、stash 直接消失 → `gc` 后永久丢失 | 流程缺「退出前必须留下可恢复副本」这一环：全靠自觉，而智能体会中断；`git bundle --all` 也不含 stash，清理目录前没人归档 | `docs/COLLAB.md §10` 三条硬规则（阶段完成即 push / 不留长期 stash / 删 worktree 前归档）；`scripts/archive-worktrees.sh`（bundle + 全部 stash + dirty + 未跟踪）；`scripts/rescue-dangling.sh`（悬空提交引用化并打包）；2026-11-21 已抢救 19 树 185 MB + 547 提交 10.9 MB | C092 |
+| L142 | 2026-11-21：166 个本地分支只有 5 个合并进 main；86 个未合并且 3 天以上未动（最老 28 天），命名混着 `pr130`/`pr126`/`pr128`/`pr-116`/`tmp-457`/`cursor`；一次「防丢失」操作把 130 个分支全量推到远端，把混乱固化到了远端 | 仓库**没有分支规范**（命名/生命周期/清理周期），多智能体各自开分支、合并后不删、失败后不归档；「防丢失」被理解成「全推开」，而不是「先分类、再留、其余归档」 | `docs/BRANCHING.md`（命名白名单、生命周期、每周检查、迁移步骤）；`scripts/branch-hygiene.py`（merged/empty/stale/badname/worktree 五类，`--strict` 当 CI 门）；`.github/workflows/branch-hygiene.yml`（每周一跑）；本地实测：merged 4、badname 9、worktree 占用 16 | C093 |
 
 ---
 
