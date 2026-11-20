@@ -78,7 +78,7 @@ parts-3d look D:/KF/trit-data/style-frames --out features.csv
 
 ## 1.6 视频组 A：泰拉瑞亚·灾厄（Douyin 4 段，1080p30，共 11.3 分钟）
 
-素材：`C:/Users/lbx13/Downloads/douyin/*.mp4`（用户指定喜欢的风格：灾厄 mod 的「星流巨械 / 最后的盗贼」系列）。
+素材：`~/Downloads/douyin/*.mp4`（用户指定喜欢的风格：灾厄 mod 的「星流巨械 / 最后的盗贼」系列）。
 抽帧：`scripts/extract_frames.py`（cv2，本机无 ffmpeg），每 4 秒一帧、缩到宽 640，共 **173 帧** →
 `D:/KF/trit-data/style-videos/calamity/`（ASCII 命名 `v{视频}_{序号}.png` + `frames.json`）。
 **素材只在本机做研究与评测，不进公开数据集、不随仓分发。**
@@ -109,7 +109,7 @@ parts-3d look D:/KF/trit-data/style-frames --out features.csv
 所以要单独训一版「游戏画面」去噪器（同架构、同预算）做域对照，见 §6.26。
 
 **视频组 B：雨世界（Rain World）** —— 本机没有素材；把视频/截图放进
-`C:/Users/lbx13/Downloads/` 任意子目录后跑 `scripts/extract_frames.py <目录> D:/KF/trit-data/style-videos/rainworld`
+`~/Downloads/` 任意子目录后跑 `scripts/extract_frames.py <目录> <数据根>/style-videos/rainworld`
 即可得到同口径读数。它的签名预计与灾厄相反（低饱和、高雾感、柔和体积光），正好用来验证
 「look 能不能把两种游戏风格分开」。
 ## 2. 技术地图（按能力分块）
