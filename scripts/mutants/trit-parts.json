@@ -177,7 +177,7 @@
   },
   {
     "name": "splat: 对象过滤失效（所有 id 混在一起）",
-    "file": "crates/trit-parts/src/splat/core.rs",
+    "file": "crates/trit-parts/src/splat/core/filter.rs",
     "old": "            if v.ids[i] == 0 || !keep(v.ids[i]) || !(d.is_finite() && d > 0.0 && d < 50.0) {",
     "new": "            if v.ids[i] == 0 || false || !(d.is_finite() && d > 0.0 && d < 50.0) {",
     "pkg": "trit-parts",

@@ -1,7 +1,7 @@
 [
   {
     "name": "trit-export: 不校验 magic",
-    "file": "crates/trit-export/src/lib.rs",
+    "file": "crates/trit-export/src/gguf_codec.rs",
     "old": "    if take(bytes, &mut pos, 4)? != MAGIC {\n        return Err(Error::Magic);\n    }",
     "new": "    if false {\n        return Err(Error::Magic);\n    }",
     "pkg": "trit-export",
@@ -9,24 +9,24 @@
   },
   {
     "name": "trit-export: 不校验张量类型",
-    "file": "crates/trit-export/src/lib.rs",
-    "old": "        if kind != TYPE_TRIT {\n            return Err(Error::TensorType(kind));\n        }",
+    "file": "crates/trit-export/src/gguf_codec.rs",
+    "old": "        if kind != TYPE_TRIT && kind != TYPE_I2_S {\n            return Err(Error::TensorType(kind));\n        }",
     "new": "        if false {\n            return Err(Error::TensorType(kind));\n        }",
     "pkg": "trit-export",
     "filter": "rejects_unsupported_types_and_dims"
   },
   {
     "name": "trit-export: trits 少打包一个",
-    "file": "crates/trit-export/src/lib.rs",
-    "old": "    out.extend_from_slice(&trit_core::pack::pack(&tensor.trits));",
-    "new": "    out.extend_from_slice(&trit_core::pack::pack(&tensor.trits[..tensor.trits.len() - 1]));",
+    "file": "crates/trit-export/src/gguf_codec.rs",
+    "old": "        out.extend_from_slice(&trit_core::pack::pack(&tensor.trits));",
+    "new": "        out.extend_from_slice(&trit_core::pack::pack(&tensor.trits[..tensor.trits.len() - 1]));",
     "pkg": "trit-export",
     "filter": "round_trip_preserves_every_field"
   },
   {
     "name": "export: 张量数不卡",
-    "file": "crates/trit-export/src/lib.rs",
-    "old": "if tensor_count > bytes.len().saturating_sub(pos) / 40 {",
+    "file": "crates/trit-export/src/gguf_codec.rs",
+    "old": "if tensor_count > MAX_TENSORS || tensor_count > bytes.len().saturating_sub(pos) / 40 {",
     "new": "if false {",
     "pkg": "trit-export",
     "filter": "absurd_tensor_count_is_rejected_before_allocating"
