@@ -14,6 +14,13 @@
 param([string]$Work = (Join-Path $env:TEMP ('costselftest-' + [guid]::NewGuid().ToString('N').Substring(0, 8))))
 
 $ErrorActionPreference = 'Stop'
+# 控制台编码闸：中文 Windows 的 OEM 页是 936(GBK)，管道里的中文断言靠运气——
+# 子进程按 locale 写、PowerShell 按 [Console]::OutputEncoding 读，两边不一致就 mojibake 伪红。
+# 双侧钉死 UTF-8：本进程的读和写，加上 Python 子进程的写（PYTHONUTF8/PYTHONIOENCODING）。
+[Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+$env:PYTHONUTF8 = '1'
+$env:PYTHONIOENCODING = 'utf-8'
 $repo = Split-Path -Parent (Split-Path -Parent $PSCommandPath)
 $tools = Join-Path $repo 'tools'
 New-Item -ItemType Directory -Force -Path $Work | Out-Null
@@ -452,8 +459,12 @@ if (-not $bashExe) {
     # 双向互通：bash 写的台账，PS 转发器读得懂；PS 写的台账，bash 也读得懂。
     $psList = @(& pwsh -NoProfile -File $tl -Mode list -Root $Mr)
     Assert-True (@($psList | Where-Object { $_ -match [regex]::Escape($bid) }).Count -eq 1) 'M8 bash 写的台账 PS 读得到' (@($psList) -join ' / ')
-    $bList = @(& $bashExe $sh -Mode list -Root (ToPosix 'D:\KF\trit-inv'))
-    Assert-True (@($bList).Count -ge 2) 'M9 bash 读得懂 PS 写的内核台账（interop）' "rows=$(@($bList).Count)"
+    # PS 转发器写一笔，bash 再读——互通必须两边都验过才算（曾写死本机仓库根，
+    # 在别的机器上退化成"仓库根恰好有台账就绿"的环境彩票，见 L99）。
+    & pwsh -NoProfile -File $tl -Mode touch -Root $Mr -Id $bid -Evidence 'ps-interop' | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'M9a PS 转发器 touch 成功' "exit=$LASTEXITCODE"
+    $bList = @(& $bashExe $sh -Mode list -Root (ToPosix $Mr))
+    Assert-True ($LASTEXITCODE -eq 0 -and (@($bList) -join ' ') -match [regex]::Escape($bid)) 'M9 PS 写的台账 bash 读得懂（interop）' "rows=$(@($bList).Count)"
 
     # 5.1 必须进不来：不是偏好，是数据完整性。
     if (Get-Command powershell.exe -ErrorAction SilentlyContinue) {
@@ -490,7 +501,7 @@ if (-not $bashExe) {
     [IO.File]::WriteAllText("$Npy\tests\test_other.py", 'def test_x(): assert 1' + $nl, $enc)
     [IO.File]::WriteAllText("$Npy\tests\test_dyn.py", (@('import importlib', 'mod = importlib.import_module("pkg.core")', 'def test_y(): assert mod.VALUE') -join $nl) + $nl, $enc)
 
-    $n1 = @(& $bashExe $shAff -Path (ToPosix 'D:\KF\trit-inv') -Changed 'crates/trit-orch/src/obligation.rs' -Lang rust 2>&1)
+    $n1 = @(& $bashExe $shAff -Path (ToPosix $repo) -Changed 'crates/trit-orch/src/claim.rs' -Lang rust 2>&1)
     Assert-True (@($n1 | Where-Object { $_ -match 'proven=True' }).Count -eq 1) 'N1 rust 减集仍判 proven' (@($n1) -join ' / ')
     Assert-True (@($n1 | Where-Object { $_ -match 'cargo test -p trit-orch --no-fail-fast' }).Count -eq 1) 'N2 落点仍是 trit-orch 单包' (@($n1) -join ' / ')
 
@@ -796,7 +807,7 @@ if (-not $bashExe) {
     # 它看到的是另一套文件系统（D:\ 是 /mnt/d），于是"命令找不到"被当成项目失败。
     # 判据不是"哪个 bash"，而是"这个 shell 能不能看见我正要它跑的那个文件"。
     $shRun = Join-Path $tools '_run.sh'
-    $t10 = @(& $bashExe $shRun -Root (ToPosix 'D:\KF\trit-inv') -Command 'test -f tools/agent_verify.py && echo SAME-FS' 2>&1)
+    $t10 = @(& $bashExe $shRun -Root (ToPosix $repo) -Command 'test -f tools/agent_verify.py && echo SAME-FS' 2>&1)
     Assert-True ($LASTEXITCODE -eq 0 -and (@($t10) -join ' ') -match 'SAME-FS') 'T10 执行面看到的文件系统与工具一致（不是 WSL 那套）' (@($t10) -join ' / ')
 }
 
@@ -1081,6 +1092,9 @@ if (-not $bashExe) {
     $x10 = @(& $bashExe $shG list -Root (ToPosix $Xg) 2>&1)
     $refs = @($x10 | Where-Object { $_ -match 'refs/recycle/checkpoint/' })
     Assert-True ($LASTEXITCODE -eq 0 -and $refs.Count -ge 2 -and ((@($x10) -join ' ') -match 'again')) 'X10 第二个 checkpoint 带 label，list 可见两条' "refs=$($refs.Count)"
+}
+
+""
 "== Y. resume: 断粮挂起（censored 不是失败）与换会话续跑 =="
 if (-not $bashExe) {
     "  SKIP  Y0 没有 bash，跳过 resume 检查"
