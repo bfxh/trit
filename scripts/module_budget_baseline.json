@@ -2568,7 +2568,15 @@
     },
     {
       "file": "crates/trit-parts/src/tex/quilt.rs",
-      "lines": 282
+      "lines": 11
+    },
+    {
+      "file": "crates/trit-parts/src/tex/quilt/seam.rs",
+      "lines": 172
+    },
+    {
+      "file": "crates/trit-parts/src/tex/quilt/synth.rs",
+      "lines": 633
     },
     {
       "file": "crates/trit-parts/src/tex/style.rs",

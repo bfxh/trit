@@ -1,10 +1,10 @@
 use super::cli::{arg, fail};
 
 pub(crate) fn tex_quilt_cmd(argv: &[String]) {
-    use trit_parts::tex::quilt;
+    use trit_parts::tex::{QuiltSpec, quilt_ex};
     let Some(p) = argv.get(1).filter(|a| !a.starts_with("--")) else {
         fail(
-            "用法: parts-3d tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 6] [--seed 1]",
+            "用法: parts-3d tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 6] [--seed 1] [--cut] [--tile]",
         );
     };
     let (sw, sh, rgb) =
@@ -28,25 +28,25 @@ pub(crate) fn tex_quilt_cmd(argv: &[String]) {
         .unwrap_or(0);
     let relight = argv.iter().any(|a| a == "--relight");
     let relight_plane = argv.iter().any(|a| a == "--relight-plane");
-    let out = quilt(
-        &rgb,
-        sw,
-        sh,
-        n,
-        n,
+    let spec = QuiltSpec {
+        out_w: n,
+        out_h: n,
         patch,
-        ov,
+        overlap: ov,
         seed,
-        tone,
+        tone_match: tone,
         detrend,
         relight,
         relight_plane,
-    );
+        cut: argv.iter().any(|a| a == "--cut"),
+        tile: argv.iter().any(|a| a == "--tile"),
+    };
+    let out = quilt_ex(&rgb, sw, sh, &spec);
     let l = trit_parts::look::analyze(&out, n, n);
     println!("源 {sw}x{sh} ⇒ {n}x{n}，patch {patch} 重叠 {ov} seed {seed}");
     println!(
-        "stroke {:.2} coherence {:.3} hf1 {:.3} contrast {:.3}",
-        l.stroke, l.coherence, l.hf1, l.contrast
+        "stroke {:.2} coherence {:.3} hf1 {:.3} contrast {:.3} border {:.3}",
+        l.stroke, l.coherence, l.hf1, l.contrast, l.border
     );
     if let Some(outp) = arg(argv, "--out") {
         let mut bytes = format!("P6\n{n} {n}\n255\n").into_bytes();

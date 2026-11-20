@@ -171,20 +171,20 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
                 .unwrap_or(0);
             let relight = argv.iter().any(|a| a == "--relight");
             let relight_plane = argv.iter().any(|a| a == "--relight-plane");
-            let out = trit_parts::tex::quilt(
-                &src,
-                sw,
-                sh,
-                n,
-                n,
+            let spec = trit_parts::tex::QuiltSpec {
+                out_w: n,
+                out_h: n,
                 patch,
-                ov,
+                overlap: ov,
                 seed,
-                tone,
+                tone_match: tone,
                 detrend,
                 relight,
                 relight_plane,
-            );
+                cut: argv.iter().any(|a| a == "--quilt-cut"),
+                tile: argv.iter().any(|a| a == "--quilt-tile"),
+            };
+            let out = trit_parts::tex::quilt_ex(&src, sw, sh, &spec);
             let l = trit_parts::look::analyze(&out, n, n);
             println!(
                 "quilt：{}×{} 源 → {n}×{n}（patch {patch} 重叠 {ov} seed {seed}）stroke {:.2} coh {:.3}",

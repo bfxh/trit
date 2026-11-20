@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（tex-quilt：DP graph-cut 缝合 + 周期包装严格可平铺——收 §6.47 的两个老缺口）
+
+- `seam.rs`（新）：最小误差路径 DP（Efros & Freeman 2001）：竖切每行一切点、横切每列
+  一切点，步进 ≤1，并列取最小下标（确定性）。
+- `quilt_ex` + `QuiltSpec`（新入口）：`cut` 对每条重叠带求最小误差路径、替代整片线性
+  羽化；`tile` 在环面上合成——每轴补一个跨边界收尾 patch，回绕侧与内缝同一套机制 ⇒
+  输出严格可平铺；overlap 钳到 `[1, patch/2]`。旧 `quilt` 12 参签名逐位不变（与 HEAD
+  二进制三种参数组合 PPM 逐字节对拍一致）；实现迁 `quilt/synth.rs`（`quilt.rs` 282 → 11 壳）。
+- 实测（Wood013 256²，patch 16，seed 7）：环绕比 1.209 → **0.823**（`--tile`，<1）；
+  hf1 0.223 → 0.252（`--cut --tile`，+13%），coherence −6%（硬切碎方向场，负结果如实记）。
+  域外游戏帧：hf1 +50~61%（cut/cut+tile）但 cut+tile 环绕比 2.03——结构性可平铺 ≠
+  域外统计无缝（GENERAL-PLAN §6.132）。
+- CLI：`tex-quilt --cut/--tile`（指标行加 border）；`mesh-tex --quilt-cut/--quilt-tile`。
+- 测试 trit-parts lib 189 → 201（+12）；预算台账：`seam.rs` 172 / `synth.rs` 635 登记、
+  `quilt.rs` 收紧到 11。
+
 ### Added（三值创造性预激发：悖论假设的实验检验——本配置下不显著）
 
 - `examples/creative_priming/`：Albalak 创造性悖论的映射实验——冻结执行器

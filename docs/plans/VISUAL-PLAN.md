@@ -307,7 +307,9 @@ parts-3d look D:/KF/trit-data/style-frames --out features.csv
   quilt 11.99 / **0.826** / 0.061 / 0.061。结构差 1%，羽化代价 hf1/contrast 各降 1/3（GENERAL-PLAN §6.47）。
 - 重叠扫描：**大重叠更糊**（ov=12 时 hf1 0.029、环绕接缝比 2.0）⇒ 默认 `patch/4`，ov=2–4 时 border ≈1.1。
 - 定位：**从现实提取纹理**（本仓当前可交付的能力），不是生成；扩散线继续做条件/风格研究。
-- 缺口：① 输出非严格可平铺（无周期约束/graph-cut 缝合）；② UV 是**投影式**（`uv::box_uvs`，已能用
+- 缺口：① ~~输出非严格可平铺（无周期约束/graph-cut 缝合）~~ **已收（2026-11-20）**：
+  `--cut`（DP graph-cut 缝合）与 `--tile`（周期包装，环面合成）落地，Wood013 环绕比
+  1.209 → **0.823**，读数与剩余缺口见 GENERAL-PLAN §6.132；② UV 是**投影式**（`uv::box_uvs`，已能用
   `mesh-tex --tex --obj` 导出 OBJ+MTL+PNG，端到端实测 148,832 面），但**不是展开**：接缝不连续、不保证无重叠，
   要精确 UV 还得做 atlas 展开/打包。
 

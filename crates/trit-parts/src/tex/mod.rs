@@ -10,7 +10,7 @@ mod tiles;
 mod util;
 
 pub(crate) use quilt::box_blur_rgb;
-pub use quilt::quilt;
+pub use quilt::{quilt, quilt_ex, QuiltSpec};
 pub use style::{PRESETS, Preset, Style, apply_pointwise, stylize};
 pub use tiles::{seam_ratio, tile};
 

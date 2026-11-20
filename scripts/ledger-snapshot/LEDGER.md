@@ -1,6 +1,6 @@
 # 交接账本快照（脱敏，只读）
 
-> 生成时间：2026-11-14（UTC）。正本在仓外（多会话共用的 `_handoff/LEDGER.md`）。
+> 生成时间：2026-11-20（UTC）。正本在仓外（多会话共用的 `_handoff/LEDGER.md`）。
 > **这是生成物，别手改。** 由 `python scripts/sync_handoff_snapshot.py` 从仓外正本生成，
 > 只保留 `tech_collide` 判定需要的字段：编号、开/关、标题、负责会话。
 > 正文叙述与本机绝对路径已丢弃/替换。
