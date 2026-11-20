@@ -678,5 +678,21 @@
     "new": "false",
     "pkg": "trit-parts",
     "filter": "one_above_the_cap_is_rejected"
+  },
+  {
+    "name": "dims: 像素上限不判",
+    "file": "crates/trit-parts/src/dims.rs",
+    "old": "n == 0 || n > MAX_PIXELS",
+    "new": "n == 0",
+    "pkg": "trit-parts",
+    "filter": "one_above_the_cap_is_rejected"
+  },
+  {
+    "name": "dims: 溢出不判",
+    "file": "crates/trit-parts/src/dims.rs",
+    "old": "w.checked_mul(h).ok_or(\"w×h 溢出\")?",
+    "new": "w * h",
+    "pkg": "trit-parts",
+    "filter": "overflow_is_rejected_before_multiplying"
   }
 ]

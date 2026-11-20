@@ -96,7 +96,7 @@ impl PatchMlp {
         let mut sum = 0.0f64;
         for _ in 0..k {
             let t = ((next() * (abar.len() - 1) as f32) as usize).min(abar.len() - 1);
-            let eps: Vec<f32> = (0..w * h)
+            let eps: Vec<f32> = (0..crate::dims::pixels(w, h))
                 .map(|_| {
                     let u1 = next().max(1e-6);
                     let u2 = next();
@@ -130,7 +130,7 @@ impl PatchMlp {
             (*rng >> 11) as f32 / (1u64 << 53) as f32
         };
         let t = ((next() * (abar.len() - 1) as f32) as usize).min(abar.len() - 1);
-        let eps: Vec<f32> = (0..w * h)
+        let eps: Vec<f32> = (0..crate::dims::pixels(w, h))
             .map(|_| {
                 let u1 = next().max(1e-6);
                 let u2 = next();
@@ -155,7 +155,7 @@ impl Denoiser for PatchMlp {
         w: usize,
         h: usize,
     ) -> Vec<f32> {
-        let mut out = vec![0.0f32; w * h];
+        let mut out = vec![0.0f32; crate::dims::pixels(w, h)];
         for y in 0..h {
             for x in 0..w {
                 let (f, _) = self.features(xt, x, y, t_frac, cond, w, h);
