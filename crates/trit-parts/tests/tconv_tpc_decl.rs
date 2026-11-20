@@ -67,7 +67,7 @@ fn absurd_dilation_is_rejected_before_the_i32_cast() {
 fn film_declaration_must_match_the_network() {
     let d = tmp_dir("film");
     let p = d.join("net.tpc");
-    let mut net = Net::new(2, &[4, 3], 7);
+    let mut net = Net::new(2, &[4, 3], 7).unwrap();
     net.set_film(2);
     net.save(&p).unwrap();
     // 只把 FILM 段第一行的 c 从 4 改成 8，g/b 仍是 (2+1)×4 = 12 个数。

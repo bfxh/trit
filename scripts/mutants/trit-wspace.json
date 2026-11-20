@@ -2750,5 +2750,29 @@
     "new": "    if true {",
     "pkg": "trit-wspace",
     "filter": "confined_rejects_escapes_and_accepts_inside"
+  },
+  {
+    "name": "wspace: 帧行上限不判",
+    "file": "crates/trit-wspace/src/mcp/mcp_serve.rs",
+    "old": "if buf.last() != Some(&b'\\n') {",
+    "new": "if false {",
+    "pkg": "trit-wspace",
+    "filter": "oversize_line_is_rejected_without_parsing_it"
+  },
+  {
+    "name": "wspace: 临时文件可被预置复用",
+    "file": "crates/trit-wspace/src/cli/tempfile.rs",
+    "old": ".create_new(true)",
+    "new": ".create(true)",
+    "pkg": "trit-wspace",
+    "filter": "predictable_placeholder_temp_file_is_left_alone"
+  },
+  {
+    "name": "audit: 封印的链头比对不生效",
+    "file": "crates/trit-wspace/src/audit/seal.rs",
+    "old": "if sealed.count != count || sealed.head != head {",
+    "new": "if false {",
+    "pkg": "trit-wspace",
+    "filter": "tampering_with_recompute_breaks_the_seal"
   }
 ]

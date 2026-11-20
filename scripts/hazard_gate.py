@@ -80,6 +80,10 @@ ALLOW_TARGET_FEATURE: dict[str, str] = {
 }
 
 ALLOW_RELAXED: dict[str, str] = {
+    "crates/trit-wspace/src/cli/tempfile.rs": (
+        "临时文件名序列号：只用于生成唯一后缀（pid-nanos-serial），"
+        "不承担任何线程间同步或可见性屏障；Relaxed 只保证单次 fetch_add 的原子性"
+    ),
     "crates/trit-ops/src/pool.rs": (
         "线程数配置与完成计数：单变量、无同步依赖，Relaxed 是教科书正确选择"
     ),

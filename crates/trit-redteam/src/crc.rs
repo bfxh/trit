@@ -1,11 +1,13 @@
 //! CRC-3 的检错边界：逐重量枚举「改几个 trit」的错误，找出第一个检不出的。
-//!
-//! GF(3) 上的 CRC 是**线性**码：错误模式能不能被检出只取决于错误本身，与载荷内容无关，
-//! 所以这里用全零载荷就能得到完整的检出矩阵。冗余 3 个 trit ⇒ Singleton 上界 `d ≤ 4`；
-//! 实测（9 trit 载荷）最小不可检重量是 **3**：1/2 个 trit 的错误全能检出，3 个就未必。
-//! 这个工具把漏检的例子找出来当判据，而不是只说「能检错」。
+//! GF(3) 上的 CRC 是线性码：错误模式能不能被检出只取决于错误本身，用全零载荷就能得到完整检出矩阵。
+//! 冗余 3 个 trit ⇒ Singleton 上界 `d ≤ 4`；实测（9 trit）最小不可检重量是 3。
 
 use crate::blob::crc3;
+
+/// 载荷长度上限：`walk` 的枚举是 `C(n, w)·3^w`，n 一大就组合爆炸。
+pub const MAX_LENGTH: usize = 256;
+/// 枚举重量上限：`3^w·C(n, w)`，8 已经是 6561× 的系数。
+pub const MAX_WEIGHT: usize = 8;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Example {
@@ -18,7 +20,6 @@ impl Example {
         serde_json::json!({ "positions": self.positions, "deltas": self.deltas })
     }
 
-    /// 把错误作用到一份载荷上（`delta` 按 mod 3 加到 trit 上）。
     pub fn apply(&self, data: &mut [i8]) {
         for (position, delta) in self.positions.iter().zip(&self.deltas) {
             data[*position] = add_delta(data[*position], *delta);
@@ -41,12 +42,10 @@ pub struct Scan {
 }
 
 impl Scan {
-    /// 第一个「存在不可检错误」的重量（重量从小到大）。
     pub fn min_undetected(&self) -> Option<&WeightRow> {
         self.rows.iter().find(|row| row.undetected > 0)
     }
 
-    /// ≤ `upto` 重量是否全部可检。
     pub fn detects_all_up_to(&self, upto: usize) -> bool {
         self.rows
             .iter()
@@ -60,8 +59,9 @@ fn add_delta(value: i8, delta: i8) -> i8 {
     digit - 1
 }
 
-/// 枚举重量 1..=max_weight 的全部错误模式，统计检出率并记录第一个漏检的例子。
 pub fn scan(length: usize, max_weight: usize) -> Scan {
+    assert!(length <= MAX_LENGTH, "长度超上限 {MAX_LENGTH}");
+    assert!(max_weight <= MAX_WEIGHT, "重量超上限 {MAX_WEIGHT}");
     let zeros = vec![0i8; length];
     let base = crc3(&zeros);
     let mut rows = Vec::new();

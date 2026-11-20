@@ -7,30 +7,26 @@
 /// 一次召回实验的报告。
 #[derive(Debug, Clone, PartialEq)]
 pub struct RecallReport {
-    /// 条目数（= 快权重的「隐层宽度」）。
     pub pairs: usize,
-    /// 键/值维度。
     pub dim: usize,
-    /// 三值整数记忆的 top-1 召回率。
     pub ternary_accuracy: f32,
     /// f32 快权重记忆的召回率（对照，**未做能量对齐**）。
     ///
     /// 三值键的 `|k|² ≈ 2d/3`，f32 均匀键只有 `d/3`，所以这个数不能直接和三值比高低。
     pub float_accuracy: f32,
-    /// softmax 注意力的召回率（对照，精确到 softmax）。
     pub attention_accuracy: f32,
-    /// 「注意力」与「FFN 视角」在本次查询上的最大逐元素差。
     pub attention_ffn_max_diff: f32,
 }
 
-/// 三值关联记忆（编码器 / 解码器）。
+/// 维数上限：`256²` 个 i32 ≈ 256 KB。
+pub const MAX_DIM: usize = 256;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TernaryMemory {
     dim: usize,
     weights: Vec<i32>,
 }
 
-/// 三值记忆的输入错误。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MemoryError {
     /// 键/值/查询长度与 `dim` 不符。
@@ -67,6 +63,7 @@ impl std::error::Error for MemoryError {}
 impl TernaryMemory {
     /// 建一个 `dim × dim` 的零矩阵。
     pub fn new(dim: usize) -> Self {
+        assert!(dim > 0 && dim <= MAX_DIM, "维数 {dim} 超过上限 {MAX_DIM}");
         Self {
             dim,
             weights: vec![0; dim * dim],

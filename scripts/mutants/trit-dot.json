@@ -62,5 +62,13 @@
   "new": "        if false {",
   "pkg": "trit-dot",
   "filter": "length_mismatch_is_rejected"
+ },
+ {
+  "name": "dot: len 上限翻倍",
+  "file": "crates/trit-dot/src/main.rs",
+  "old": "if len > MAX_LEN {",
+  "new": "if len > MAX_LEN * 2 {",
+  "pkg": "trit-dot",
+  "filter": "absurd_len_is_rejected_before_allocating"
  }
 ]

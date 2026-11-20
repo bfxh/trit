@@ -4,7 +4,7 @@
 //! 求最小补丁、提议单点编辑、审计日志、求差集、合并。每次调用都从 WSP1 文本开始，
 //! 不依赖服务端保存状态。
 
-use std::io::{self, BufRead, Write as IoWrite};
+use std::io::{self, Write as IoWrite};
 
 use serde_json::{Value, json};
 
@@ -20,7 +20,10 @@ use crate::shard::{ShardReplay, ShardedLog};
 use crate::wire;
 
 mod mcp_dare;
+mod mcp_serve;
 mod mcp_task;
+
+pub use mcp_serve::{MAX_LINE_BYTES, serve};
 
 /// MCP 协议版本。
 pub const PROTOCOL_VERSION: &str = "2024-11-05";
@@ -412,7 +415,7 @@ impl Mcp {
                 let end = if limit == 0 {
                     total
                 } else {
-                    (start + limit).min(total)
+                    start.saturating_add(limit).min(total) // 第 36 轮：limit=usize::MAX 会回绕
                 };
                 let manifest = ShardManifest::of(&shards).to_value();
                 Ok(json!({
@@ -601,32 +604,6 @@ impl Mcp {
             other => Err(format!("未知工具：{other}")),
         }
     }
-}
-
-/// stdio 服务循环：一行一条 JSON-RPC，响应用换行分隔。
-pub fn serve<R: BufRead, W: IoWrite>(reader: R, mut writer: W) -> io::Result<()> {
-    let mut server = Mcp::new();
-    for line in reader.lines() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        let request: Value = match serde_json::from_str(&line) {
-            Ok(value) => value,
-            Err(error) => {
-                let response = json!({
-                    "jsonrpc": "2.0", "id": Value::Null,
-                    "error": {"code": -32700, "message": format!("JSON 解析失败：{error}")}
-                });
-                write_response(&mut writer, &response)?;
-                continue;
-            }
-        };
-        if let Some(response) = server.dispatch(&request) {
-            write_response(&mut writer, &response)?;
-        }
-    }
-    Ok(())
 }
 
 fn write_response<W: IoWrite>(writer: &mut W, response: &Value) -> io::Result<()> {

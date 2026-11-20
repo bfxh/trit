@@ -1,13 +1,10 @@
 //! `trit-codec`：三值编解码的最小 CLI 与读数入口。
-
 use std::process::ExitCode;
-
 use trit_codec::{
     balanced, checksum, count, delta, gray, hamming, interleave, pack, plan, quantize, rle, sop,
     sparse,
 };
 use trit_core::value::Ternary;
-
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
@@ -41,6 +38,23 @@ fn main() -> ExitCode {
 fn usage() -> String {
     "用法：trit-codec <pack|unpack|balanced|hamming|stats|plan|quantize|dequantize|sparse|interleave|checksum|rle|delta|gray|sop|count>"
         .to_string()
+}
+
+/// `--trits` 的上限：`stats`/`plan` 都按它建 `Vec<Ternary>`（每项 1 字节）。
+const MAX_TRITS: usize = 1 << 24;
+
+fn trits_arg(args: &[String], default: usize) -> Result<usize, String> {
+    let n = args
+        .iter()
+        .position(|arg| arg == "--trits")
+        .and_then(|index| args.get(index + 1))
+        .map_or(Ok(default), |raw| {
+            raw.parse::<usize>().map_err(|_| "不是整数".to_string())
+        })?;
+    if n > MAX_TRITS {
+        return Err(format!("--trits 上限为 {MAX_TRITS}"));
+    }
+    Ok(n)
 }
 
 fn parse_trits(raw: &str) -> Result<Vec<Ternary>, String> {
@@ -166,13 +180,7 @@ fn hamming_cmd(args: &[String]) -> Result<(), String> {
 }
 
 fn stats_cmd(args: &[String]) -> Result<(), String> {
-    let trits = args
-        .iter()
-        .position(|arg| arg == "--trits")
-        .and_then(|index| args.get(index + 1))
-        .map_or(Ok(1000), |raw| {
-            raw.parse::<usize>().map_err(|_| "不是整数".to_string())
-        })?;
+    let trits = trits_arg(args, 1000)?;
     let values = vec![Ternary::Unknown; trits];
     let packed = pack::pack(&values).len();
     let dual = pack::dual_rail_bytes(trits);
@@ -200,13 +208,7 @@ fn stats_cmd(args: &[String]) -> Result<(), String> {
 }
 
 fn plan_cmd(args: &[String]) -> Result<(), String> {
-    let trits = args
-        .iter()
-        .position(|arg| arg == "--trits")
-        .and_then(|index| args.get(index + 1))
-        .map_or(Ok(4096usize), |raw| {
-            raw.parse().map_err(|_| "不是整数".to_string())
-        })?;
+    let trits = trits_arg(args, 4096)?;
     fn binary(i: usize) -> Ternary {
         if i.is_multiple_of(3) {
             Ternary::True
@@ -255,7 +257,6 @@ fn plan_cmd(args: &[String]) -> Result<(), String> {
         let values: Vec<Ternary> = (0..trits).map(make).collect();
         let chosen = plan::plan(&values);
         let (encoding, bytes) = plan::encode(&values);
-        // 零拷贝的收益在「只取少数元素」：对比「整条解码 + 随机取」与「视图随机取」。
         let samples = 200usize;
         let mut state = 0x9E37_79B9_7F4A_7C15u64;
         let indices: Vec<usize> = (0..samples)
@@ -379,7 +380,6 @@ fn sparse_cmd(args: &[String]) -> Result<(), String> {
         // 位置参数 = 所有不是 "--flag" 也不是 flag 值的参数。
         let positional = filter_positional(args);
         let raw = positional.first().ok_or("--decode 需要 entries JSON")?;
-        // encode 输出的 entries 是 [[u32, "0"/"X"/"1"], ...]，先解 char 再 parse。
         let raw_entries: Vec<(u32, char)> =
             serde_json::from_str(raw).map_err(|e| format!("entries 不是合法 JSON: {e}"))?;
         let entries: Result<Vec<(u32, Ternary)>, String> = raw_entries

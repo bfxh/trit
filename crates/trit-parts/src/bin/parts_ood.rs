@@ -1,6 +1,4 @@
-//! `parts-ood`：域外拒识（阶段 1）的训练与评估。
 //!
-//! - `train --model <tpm> --manifest <json> --pos <dir,...> --neg <dir,...> --out <tpod>`
 //! - `eval --model <tpm> --manifest <json> --bank <tpod> --pos <dir,...> --neg <dir,...>`
 
 use std::path::{Path, PathBuf};
@@ -76,7 +74,8 @@ fn brighten(pix: &[f32], k: f32) -> Vec<f32> {
 }
 
 fn infer_feats(net: &Net, gpu: &Gpu, rgb: &[f32], res: usize, k: usize, v2: bool) -> Vec<f32> {
-    let (logits, z) = trit_parts::api::forward_logits_feats(net, gpu, rgb, res as u32);
+    let (logits, z) =
+        trit_parts::api::forward_logits_feats(net, gpu, rgb, res as u32).expect("前向失败");
     if v2 {
         features_v2(&logits, &z, trit_parts::dims::pixels(res, res), k)
     } else {
@@ -333,8 +332,9 @@ fn dir_stats(
             Err(_) => continue,
         };
         let base = to_res(w, h, &pix, 384);
-        let (logits, _z) = trit_parts::api::forward_logits_feats(net, gpu, &base, 384);
-        let ids = decode_ids(&logits, 384, parts);
+        let (logits, _z) =
+            trit_parts::api::forward_logits_feats(net, gpu, &base, 384).expect("前向失败");
+        let ids = decode_ids(&logits, 384, parts).expect("解码失败");
         out.push(framing_stats(&ids, 384, parts.parts.len()));
     }
     out

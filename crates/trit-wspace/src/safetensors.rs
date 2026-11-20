@@ -7,7 +7,7 @@
 //! 起点。读取只 seek 到目标张量，不把整个权重文件读进内存。
 
 use std::collections::BTreeMap;
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 
 use serde_json::{Value, json};
@@ -464,15 +464,7 @@ pub fn write_tensors(path: &str, tensors: &[TensorOut<'_>]) -> Result<()> {
     out.extend_from_slice(&(header.len() as u64).to_le_bytes());
     out.extend_from_slice(&header);
     out.extend_from_slice(&data);
-    let temp = format!("{path}.tmp-{}", std::process::id());
-    fs::write(&temp, &out).map_err(|error| fail(&format!("{temp}: {error}")))?;
-    match fs::rename(&temp, path) {
-        Ok(()) => Ok(()),
-        Err(_) => {
-            let _ = fs::remove_file(path);
-            fs::rename(&temp, path).map_err(|error| fail(&format!("{path}: {error}")))
-        }
-    }
+    crate::cli::tempfile::atomic_write_bytes(path, &out).map_err(|error| fail(&error))
 }
 
 /// 写一个 2D F32 张量（单张量文件）。

@@ -58,7 +58,7 @@ fn train_step_on_a_huge_canvas_panics() {
 #[test]
 #[should_panic(expected = "w×h")]
 fn eps_sampler_on_a_huge_canvas_panics() {
-    let net = trit_parts::tconv::Net::new(2, &[4], 1);
+    let net = trit_parts::tconv::Net::new(2, &[4], 1).unwrap();
     let ab = Schedule::cosine(4).abar();
     let _ = trit_parts::tconv::ddim_sample_eps(&net, &ab, 1 << 20, 1 << 20, 3, 1.0);
 }

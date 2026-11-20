@@ -54,5 +54,21 @@
   "new": "                        f(k);",
   "pkg": "trit-ops",
   "filter": "worker_panic_does_not_hang_and_pool_survives"
+ },
+ {
+  "name": "ops: 形状上限翻倍",
+  "file": "crates/trit-ops/src/bench.rs",
+  "old": "rows.checked_mul(cols).is_some_and(|n| n <= MAX_ELEMS),",
+  "new": "rows.checked_mul(cols).is_some_and(|n| n <= MAX_ELEMS * 2),",
+  "pkg": "trit-ops",
+  "filter": "absurd_shape_panics_before_allocating"
+ },
+ {
+  "name": "q4: GEMV 前的权重长度断言不生效",
+  "file": "crates/trit-ops/src/bench.rs",
+  "old": "    assert!(w.len() >= rows.saturating_mul(bpr), \"Q4_0 权重字节不足\");",
+  "new": "    assert!(true || w.len() >= rows.saturating_mul(bpr), \"Q4_0 权重字节不足\");",
+  "pkg": "trit-ops",
+  "filter": "gemv_q4_stays_in_bounds_when_cols_is_not_a_multiple_of_32"
  }
 ]

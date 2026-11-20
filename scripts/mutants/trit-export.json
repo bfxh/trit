@@ -1,7 +1,7 @@
 [
   {
     "name": "trit-export: 不校验 magic",
-    "file": "crates/trit-export/src/lib.rs",
+    "file": "crates/trit-export/src/gguf_codec.rs",
     "old": "    if take(bytes, &mut pos, 4)? != MAGIC {\n        return Err(Error::Magic);\n    }",
     "new": "    if false {\n        return Err(Error::Magic);\n    }",
     "pkg": "trit-export",
@@ -9,18 +9,82 @@
   },
   {
     "name": "trit-export: 不校验张量类型",
-    "file": "crates/trit-export/src/lib.rs",
-    "old": "        if kind != TYPE_TRIT {\n            return Err(Error::TensorType(kind));\n        }",
+    "file": "crates/trit-export/src/gguf_codec.rs",
+    "old": "        if kind != TYPE_TRIT && kind != TYPE_I2_S {\n            return Err(Error::TensorType(kind));\n        }",
     "new": "        if false {\n            return Err(Error::TensorType(kind));\n        }",
     "pkg": "trit-export",
     "filter": "rejects_unsupported_types_and_dims"
   },
   {
     "name": "trit-export: trits 少打包一个",
-    "file": "crates/trit-export/src/lib.rs",
-    "old": "    out.extend_from_slice(&trit_core::pack::pack(&tensor.trits));",
-    "new": "    out.extend_from_slice(&trit_core::pack::pack(&tensor.trits[..tensor.trits.len() - 1]));",
+    "file": "crates/trit-export/src/gguf_codec.rs",
+    "old": "        out.extend_from_slice(&trit_core::pack::pack(&tensor.trits));",
+    "new": "        out.extend_from_slice(&trit_core::pack::pack(&tensor.trits[..tensor.trits.len() - 1]));",
     "pkg": "trit-export",
     "filter": "round_trip_preserves_every_field"
+  },
+  {
+    "name": "export: 张量数不卡",
+    "file": "crates/trit-export/src/gguf_codec.rs",
+    "old": "if tensor_count > MAX_TENSORS || tensor_count > bytes.len().saturating_sub(pos) / 40 {",
+    "new": "if false {",
+    "pkg": "trit-export",
+    "filter": "absurd_tensor_count_is_rejected_before_allocating"
+  },
+  {
+    "name": "i2s: 块内位序错位",
+    "file": "crates/trit-export/src/bitnet/i2s.rs",
+    "old": "out[base + k] = (c0 << 6) | (c1 << 4) | (c2 << 2) | c3;",
+    "new": "out[base + k] = (c1 << 6) | (c0 << 4) | (c2 << 2) | c3;",
+    "pkg": "trit-export",
+    "filter": "j2_block_interleave_and_bit_order"
+  },
+  {
+    "name": "tl1: nibble 高低位互换",
+    "file": "crates/trit-export/src/bitnet/tl1.rs",
+    "old": "out[i * 16 + j] |= (nib as u8) << (4 * (1 - t));",
+    "new": "out[i * 16 + j] |= (nib as u8) << (4 * t);",
+    "pkg": "trit-export",
+    "filter": "tl1_matches_python_reference_byte_for_byte"
+  },
+  {
+    "name": "tl1: 字节平铺漏 (by/4) 层",
+    "file": "crates/trit-export/src/bitnet/tl1.rs",
+    "old": "let byte = (outer * (bmm / 16) + (mb % bmm) / 16) * (by / 4) + qqy / 2;",
+    "new": "let byte = (outer * (bmm / 16) + (mb % bmm) / 16) + qqy / 2;",
+    "pkg": "trit-export",
+    "filter": "tl1_matches_python_reference_byte_for_byte"
+  },
+  {
+    "name": "tl2: 幅度 nibble 高低互换",
+    "file": "crates/trit-export/src/bitnet/tl2.rs",
+    "old": "out[byte] |= if t == 0 { mag << 4 } else { mag };",
+    "new": "out[byte] |= if t == 0 { mag } else { mag << 4 };",
+    "pkg": "trit-export",
+    "filter": "tl2_matches_python_reference_byte_for_byte"
+  },
+  {
+    "name": "tl2: 符号平面字节序反了",
+    "file": "crates/trit-export/src/bitnet/tl2.rs",
+    "old": "(base + usize::from(b >= 8), b % 8)",
+    "new": "(base + usize::from(b < 8), b % 8)",
+    "pkg": "trit-export",
+    "filter": "tl2_matches_python_reference_byte_for_byte"
+  },
+  {
+    "name": "i2s: 尾部多写 4 字节",
+    "file": "crates/trit-export/src/gguf_codec.rs",
+    "old": "out.resize(payload + I2S_TAIL, 0);",
+    "new": "out.resize(payload + I2S_TAIL + 4, 0);",
+    "pkg": "trit-export",
+    "filter": "i2s_body_is_quarter_size_plus_tail"
+  },
+  {
+    "name": "gguf: 张量数预算不卡",
+    "file": "crates/trit-export/src/gguf_codec.rs",
+    "old": "if tensor_count > MAX_TENSORS || tensor_count > bytes.len().saturating_sub(pos) / 40 {",
+    "new": "if false {",
+    "pkg": "trit-export",
+    "filter": "rejects_huge_tensor_count_before_allocation"
   }
 ]

@@ -1,9 +1,6 @@
 //! `trit-net calibrate` 子命令：CSV 数据集 → 分档校准 → 三值训练 → 计分与攻击面读数。
-//!
-//! 从 `main.rs` 拆出来：它是这个 CLI 里唯一要跑完整训练回路的一条命令，
-//! 参数面（rows/epochs/hidden/bands/train-fraction）和读数打印都自成一件事。
+//! 从 `main.rs` 拆出来：参数面（rows/epochs/hidden/bands/train-fraction）和读数打印自成一件事。
 //! 子命令仍由 `main.rs` 的分派表调用，行为与公开面不变。
-
 use trit_net::netsec;
 
 pub(crate) fn calibrate_cmd(args: &[String]) -> Result<(), String> {
@@ -57,7 +54,10 @@ pub(crate) fn calibrate_cmd(args: &[String]) -> Result<(), String> {
                         epochs = raw.parse().map_err(|_| "--epochs 不是整数".to_string())?
                     }
                     "--hidden" => {
-                        hidden = raw.parse().map_err(|_| "--hidden 不是整数".to_string())?
+                        hidden = raw.parse().map_err(|_| "--hidden 不是整数".to_string())?;
+                        if hidden == 0 || hidden > trit_net::MAX_WIDTH {
+                            return Err(format!("--hidden 必须在 1..={}", trit_net::MAX_WIDTH));
+                        }
                     }
                     "--lr" => {
                         learning_rate = raw.parse().map_err(|_| "--lr 不是数字".to_string())?

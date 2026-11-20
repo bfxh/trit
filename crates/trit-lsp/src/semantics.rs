@@ -81,7 +81,7 @@ fn read_operand(tokens: &[Token], i: usize) -> Option<Operand> {
                 negated,
                 end,
                 start: token.start,
-                stop: tokens[i + 3].end,
+                stop: tokens.get(i + 3).map_or(token.end, |t| t.end), // S4：可能没有右括号
             })
         }
         _ => None,

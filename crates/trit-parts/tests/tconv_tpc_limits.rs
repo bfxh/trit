@@ -41,7 +41,7 @@ fn absurd_channel_is_rejected_before_allocating() {
 fn in_range_net_roundtrips() {
     let d = tmp_dir("roundtrip");
     let p = d.join("net.tpc");
-    let net = Net::new(2, &[4, 3], 7);
+    let net = Net::new(2, &[4, 3], 7).unwrap();
     net.save(&p).unwrap();
     let back = Net::load(&p).expect("正常尺寸必须读得回来");
     assert_eq!(back.layers.len(), net.layers.len());

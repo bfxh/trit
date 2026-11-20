@@ -573,7 +573,7 @@ fn pipeline(argv: &[String]) {
     let mut net = Net::from_tpm(&tpm);
     net.upload_all(&gpu);
     let t0 = std::time::Instant::now();
-    let (logits, z) = forward_logits_feats(&net, &gpu, &rgb, res as u32);
+    let (logits, z) = forward_logits_feats(&net, &gpu, &rgb, res as u32).expect("前向失败");
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
     let hw = trit_parts::dims::pixels(res, res);
 
@@ -595,7 +595,7 @@ fn pipeline(argv: &[String]) {
         }
     }
 
-    let ids = decode_ids(&logits, res as u32, &pl);
+    let ids = decode_ids(&logits, res as u32, &pl).expect("解码失败");
     std::fs::create_dir_all(&outdir).ok();
     let bin: Vec<u8> = ids.iter().flat_map(|v| v.to_le_bytes()).collect();
     std::fs::write(outdir.join("ids.bin"), bin).ok();

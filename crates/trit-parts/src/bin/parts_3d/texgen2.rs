@@ -240,7 +240,6 @@ pub(crate) fn tex_gen_cmd(argv: &[String]) {
         .unwrap_or(4);
     let save_path = arg(argv, "--save").map(PathBuf::from);
     let load_path = arg(argv, "--load").map(PathBuf::from);
-    // 没有 --conv 时走的是 MLP 分支，那里根本不看 --save/--load：
     // 曾经 `--load` 被静默忽略，采到的是未训练 MLP 的常数图（2026-11-01 实测三份不同 checkpoint 输出逐位相同）。
     if conv_hidden.is_empty() && (load_path.is_some() || save_path.is_some()) {
         fail("--load/--save 只对卷积去噪器生效：请同时给 --conv（隐藏宽度，如 --conv 8,8）");
@@ -268,7 +267,8 @@ pub(crate) fn tex_gen_cmd(argv: &[String]) {
     } else {
         let mut net = match &load_path {
             Some(p) => Net::load(p).unwrap_or_else(|e| fail(&e)),
-            None => Net::new(2 + 2 * usize::from(cond_stats), &conv_hidden, seed),
+            None => Net::new(2 + 2 * usize::from(cond_stats), &conv_hidden, seed)
+                .unwrap_or_else(|e| fail(&e)),
         };
         if let Some(d) = arg(argv, "--dil").and_then(|v| v.parse::<usize>().ok()) {
             let file_dil = net.layers.first().map(|l| l.dil).unwrap_or(1);

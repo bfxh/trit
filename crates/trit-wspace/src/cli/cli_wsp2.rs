@@ -8,7 +8,7 @@ use crate::to_wsp;
 use crate::wsp3::pack_format;
 use crate::wsp4::{decode_auto, encode};
 
-use super::{atomic_write, emit, err, load_net, one, parse, value};
+use super::{atomic_write, atomic_write_bytes, emit, err, load_net, one, parse, value};
 
 pub(super) fn pack(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &["rle", "huffman"])?;
@@ -19,7 +19,7 @@ pub(super) fn pack(args: &[String]) -> Result<(), String> {
     let rle = parsed.switches.contains("rle");
     let format = pack_format(huffman, rle);
     let bytes = encode(&net, format).map_err(err)?;
-    fs::write(out, &bytes).map_err(|error| format!("{out}: {error}"))?;
+    atomic_write_bytes(out, &bytes)?;
     emit(&json!({
         "bytes": bytes.len(),
         "format": format,

@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 use crate::artifact_shard;
 use crate::to_wsp;
 
-use super::{atomic_write, emit, err, load_net, one, parse, req_usize, value};
+use super::{atomic_write, emit, err, load_net, one, parse, req_usize, safe_path, value};
 
 pub(super) fn split(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
@@ -19,14 +19,13 @@ pub(super) fn split(args: &[String]) -> Result<(), String> {
     let (manifest, texts) = artifact_shard::split(&net, rows).map_err(err)?;
     fs::create_dir_all(out).map_err(|error| format!("{out}: {error}"))?;
     for (shard, text) in manifest.shards.iter().zip(texts) {
-        let path = Path::new(out).join(&shard.file);
-        fs::write(&path, text).map_err(|error| format!("{}: {error}", path.display()))?;
+        let path = safe_path::resolve(out, &shard.file).map_err(err)?;
+        atomic_write(&path.display().to_string(), &text)?;
     }
     let manifest_path = Path::new(out).join("manifest.json");
     let text = serde_json::to_string_pretty(&manifest.to_json())
         .map_err(|error| format!("manifest 序列化失败：{error}"))?;
-    fs::write(&manifest_path, text)
-        .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
+    atomic_write(&manifest_path.display().to_string(), &text)?;
     emit(&json!({
         "out": out,
         "manifest": manifest_path.display().to_string(),
@@ -49,7 +48,7 @@ pub(super) fn join(args: &[String]) -> Result<(), String> {
     let manifest = artifact_shard::WeightManifest::from_json(&value).map_err(err)?;
     let mut texts = Vec::with_capacity(manifest.shards.len());
     for shard in &manifest.shards {
-        let path = Path::new(dir).join(&shard.file);
+        let path = safe_path::resolve(dir, &shard.file).map_err(err)?;
         texts.push(
             fs::read_to_string(&path).map_err(|error| format!("{}: {error}", path.display()))?,
         );

@@ -14,10 +14,9 @@
 //! 字节、解出块内前缀后截取目标行。索引本身不验证权重内容（`scan` 做一次全量
 //! FNV），随机读取只比较文件长度与尾部校验和。
 
-use serde_json::{Value, json};
-
 use crate::error::{Error, Result};
 use crate::net::Layer;
+use serde_json::{Value, json};
 
 use super::bytes::{fnv, read_u16, read_u32, unpack_trits};
 
@@ -291,14 +290,15 @@ impl BlockIndex {
             }
             layers.push(info);
         }
-        Ok(Self {
+        let index = Self {
             source_bytes,
             source_checksum,
             block_rows,
             layers,
-        })
+        };
+        super::budget::check(&index)?;
+        Ok(index)
     }
-
     pub(crate) fn layer(&self, index: usize) -> Result<&LayerIndex> {
         self.layers.get(index).ok_or_else(|| {
             Error::Wire(format!(

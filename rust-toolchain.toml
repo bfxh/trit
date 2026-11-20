@@ -1,0 +1,11 @@
+# 工具链钉死：任何机器上 `cargo` 都先过 rustup 解析到这里，本地与 CI 用同一套。
+#
+# 为什么必须有这个文件（2026-11-21 的教训）：仓库 rust-version = "1.88"，
+# 但本机当时是 1.99、另一台是 1.80、CI 是 stable —— "本地绿、CI 红"几乎全部来自这里。
+# 钉住 channel 后，`rustup` 会自动装对应工具链，不需要任何人手动对齐。
+#
+# MSRV（最低支持 1.88）由 CI 的 `msrv` job 单独验证，这里钉的是**日常开发**用的通道。
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]
+profile = "minimal"

@@ -1,13 +1,10 @@
 //! `trit-dot`：位并三点积的实测读数。
-
 use std::process::ExitCode;
 use std::time::Instant;
-
 use trit_dot::{
     BLOCK_BITS, OPS, TernaryBits, bipolar_dot, bipolar_dot_portable, dot_words_unrolled, float_dot,
     float_dot_4acc, pack_bipolar, scalar_dot,
 };
-
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
@@ -22,7 +19,6 @@ fn main() -> ExitCode {
         }
     }
 }
-
 struct Rng(u64);
 
 impl Rng {
@@ -58,17 +54,22 @@ fn time<T>(iters: usize, mut body: impl FnMut() -> T) -> u128 {
     start.elapsed().as_nanos() / iters as u128
 }
 
+/// 单次基准的长度上限：三份 `Vec<i32>` 与打包位面都在它之下。
+const MAX_LEN: usize = 1 << 24;
+
 fn bench(args: &[String]) -> Result<(), String> {
     let len = number(args, "--len", 1 << 20)?;
     let iters = number(args, "--iters", 20)?;
     if len == 0 || iters == 0 {
         return Err("--len/--iters 必须大于 0".to_string());
     }
+    if len > MAX_LEN {
+        return Err(format!("--len 上限为 {MAX_LEN}"));
+    }
 
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     let a: Vec<i32> = (0..len).map(|_| rng.ternary()).collect();
     let b: Vec<i32> = (0..len).map(|_| rng.ternary()).collect();
-    // 90% 为零的稀疏版本。
     let sparse_a: Vec<i32> = a
         .iter()
         .map(|value| {
@@ -90,7 +91,6 @@ fn bench(args: &[String]) -> Result<(), String> {
         })
         .collect();
 
-    // 块级稀疏：整块 64 个元素一起清零（这才是位并行能跳过的东西）。
     let mut block_sparse = a.clone();
     for block in 0..block_sparse.len().div_ceil(BLOCK_BITS) {
         if !rng.next().is_multiple_of(10) {

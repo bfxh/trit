@@ -16,17 +16,16 @@ fn decode_respects_manifest_and_valid() {
     lg[6] = 5.0; // valid
     let p3 = 3 * ch;
     lg[p3 + 6] = -5.0;
-    let ids = decode_ids(&lg, res, &m);
+    let ids = decode_ids(&lg, res, &m).unwrap();
     assert_eq!(ids[0], 4);
     assert_eq!(ids[3], 0);
 }
 
-/// `res` 是外部给的分辨率，而 `decode_ids` 不返回 Result：0 会让取模除零。
+/// `res = 0` 会让取模除零：对外 API 必须返回 Err 而不是 panic。
 #[test]
-#[should_panic(expected = "分辨率不能为 0")]
 fn decode_rejects_zero_res() {
     let m = PartList::parse(r#"{"k":1,"parts":[{"id":1,"digits":[0]}]}"#).unwrap();
-    let _ = decode_ids(&[], 0, &m);
+    assert!(decode_ids(&[], 0, &m).is_err());
 }
 
 /// 非网络的解码入口只要求 res 非 0：1 像素的网格是合法的。
@@ -36,7 +35,7 @@ fn decode_accepts_single_pixel_grid() {
         .unwrap();
     // res=1 ⇒ 1 个像素，ch=4（1+3 位）
     let lg = [0.0f32, 0.0, 0.0, 5.0];
-    let ids = decode_ids(&lg, 1, &m);
+    let ids = decode_ids(&lg, 1, &m).unwrap();
     assert_eq!(ids.len(), 1);
     assert_eq!(ids[0], 1, "plane0 取 0 位 → digit 0 → id 1");
 }

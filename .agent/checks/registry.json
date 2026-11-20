@@ -210,7 +210,7 @@
         "L64"
       ],
       "scope": [
-        "crates/trit-parts/src/glb/manifest.rs"
+        "crates/trit-parts/src/glb/path.rs"
       ],
       "since": "2026-11-20",
       "tier": "fast",
@@ -763,6 +763,933 @@
       "added": "2026-11-20",
       "pattern": "\\bres\\s*\\*\\s*res\\b",
       "allow_skip": false
+    },
+    {
+      "id": "C045",
+      "title": "Conv::new 在分配前校验通道上限与权重元素数",
+      "kind": "require",
+      "covers": [
+        "L95"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tconv/conv.rs"
+      ],
+      "since": "L95",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "let n = super::cap::check_ch\\(cin, cout\\)\\?;",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C046",
+      "title": "depthnet/depthunet 建网前校验隐藏宽度",
+      "kind": "require",
+      "covers": [
+        "L95"
+      ],
+      "scope": [
+        "crates/trit-parts/src/depthnet.rs",
+        "crates/trit-parts/src/depthunet.rs"
+      ],
+      "since": "L95",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "crate::hidden::check\\(",
+      "min": 2,
+      "allow_skip": false
+    },
+    {
+      "id": "C047",
+      "title": "卷积权重元素数禁裸乘 cout×cin×9",
+      "kind": "forbid",
+      "covers": [
+        "L95"
+      ],
+      "scope": [
+        "crates/trit-parts/src/*.rs",
+        "crates/trit-parts/src/**/*.rs"
+      ],
+      "since": "L95",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "cout\\s*\\*\\s*cin\\s*\\*\\s*9",
+      "allow_skip": false
+    },
+    {
+      "id": "C048",
+      "title": "形态学半径夹到网格最短边",
+      "kind": "require",
+      "covers": [
+        "L96"
+      ],
+      "scope": [
+        "crates/trit-parts/src/mesh/morph.rs"
+      ],
+      "since": "L96",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "r\\.min\\(nx\\.min\\(ny\\)\\.min\\(nz\\)\\)",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C049",
+      "title": "TPM1 加载先按剩余字节卡层数与 f32 块",
+      "kind": "require",
+      "covers": [
+        "L97"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tpm.rs"
+      ],
+      "since": "L97",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "saturating_sub\\(\\*?at\\)",
+      "min": 2,
+      "allow_skip": false
+    },
+    {
+      "id": "C050",
+      "title": "SNN 随机网络在分配前限神经元数",
+      "kind": "require",
+      "covers": [
+        "L98"
+      ],
+      "scope": [
+        "crates/trit-machines/src/snn.rs"
+      ],
+      "since": "L98",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "check_size\\(size\\)\\?;",
+      "min": 2,
+      "allow_skip": false
+    },
+    {
+      "id": "C051",
+      "title": "三值记忆的维数硬顶",
+      "kind": "require",
+      "covers": [
+        "L99"
+      ],
+      "scope": [
+        "crates/trit-attn/src/memory.rs"
+      ],
+      "since": "L99",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "dim > 0 && dim <= MAX_DIM",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C052",
+      "title": "trit-net 层宽在构造前限 MAX_WIDTH",
+      "kind": "require",
+      "covers": [
+        "L100"
+      ],
+      "scope": [
+        "crates/trit-net/src/model.rs"
+      ],
+      "since": "L100",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "self.inputs > MAX_WIDTH \\|\\| self.outputs > MAX_WIDTH",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C053",
+      "title": "trit-count --big 的 max_n 上限 40",
+      "kind": "require",
+      "covers": [
+        "L101"
+      ],
+      "scope": [
+        "crates/trit-count/src/main.rs"
+      ],
+      "since": "L101",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "max_n > 40",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C054",
+      "title": "元胞自动机的宽度/步数硬顶",
+      "kind": "require",
+      "covers": [
+        "L102"
+      ],
+      "scope": [
+        "crates/trit-machines/src/ca.rs"
+      ],
+      "since": "L102",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "width <= MAX_WIDTH",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C055",
+      "title": "snn CLI 在分配驱动序列前限 ticks",
+      "kind": "require",
+      "covers": [
+        "L103"
+      ],
+      "scope": [
+        "crates/trit-machines/src/main.rs"
+      ],
+      "since": "L103",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "ticks > snn::MAX_TICKS",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C056",
+      "title": "PNG/容器的像素数在分配前校验",
+      "kind": "require",
+      "covers": [
+        "L104"
+      ],
+      "scope": [
+        "crates/trit-texture/src/convert.rs"
+      ],
+      "since": "L104",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "pub fn check_pixels\\(width: usize, height: usize\\)",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C057",
+      "title": "train-bench 的 rows/cols/mtrits 尺寸上限",
+      "kind": "require",
+      "covers": [
+        "L105"
+      ],
+      "scope": [
+        "crates/trit-train/src/bin/bench.rs"
+      ],
+      "since": "L105",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "mtrits > MAX_MTRITS \\|\\| rows > MAX_ROWS",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C058",
+      "title": "trit-dot --len 的长度上限",
+      "kind": "require",
+      "covers": [
+        "L106"
+      ],
+      "scope": [
+        "crates/trit-dot/src/main.rs"
+      ],
+      "since": "L106",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "len > MAX_LEN",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C059",
+      "title": "trit-gpu --trits 的规模上限",
+      "kind": "require",
+      "covers": [
+        "L107"
+      ],
+      "scope": [
+        "crates/trit-gpu/src/main.rs"
+      ],
+      "since": "L107",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "trits > MAX_TRITS",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C060",
+      "title": "trit-codec --trits 的规模上限",
+      "kind": "require",
+      "covers": [
+        "L108"
+      ],
+      "scope": [
+        "crates/trit-codec/src/main.rs"
+      ],
+      "since": "L108",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "n > MAX_TRITS",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C061",
+      "title": "CRC-3 扫描的载荷长度/重量上限",
+      "kind": "require",
+      "covers": [
+        "L109"
+      ],
+      "scope": [
+        "crates/trit-redteam/src/crc.rs"
+      ],
+      "since": "L109",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "length <= MAX_LENGTH",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C062",
+      "title": "GGUF 张量数先按剩余字节卡住",
+      "kind": "require",
+      "covers": [
+        "L110"
+      ],
+      "scope": [
+        "crates/trit-export/src/gguf_codec.rs"
+      ],
+      "since": "L110",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "tensor_count > bytes\\.len\\(\\)\\.saturating_sub\\(pos\\)",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C063",
+      "title": "MCP stdio 帧行有 16 MiB 字节顶",
+      "kind": "require",
+      "covers": [
+        "L111"
+      ],
+      "scope": [
+        "crates/trit-wspace/src/mcp/mcp_serve.rs"
+      ],
+      "since": "L111",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "take\\(MAX_LINE_BYTES as u64\\)",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C064",
+      "title": "两个评估脚本的渲染尺寸上限",
+      "kind": "require",
+      "covers": [
+        "L112"
+      ],
+      "scope": [
+        "scripts/render_obj.py",
+        "scripts/blender_gt.py"
+      ],
+      "since": "L112",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "MAX_SIDE = 4096|MAX_RES = 4096",
+      "min": 2,
+      "allow_skip": false
+    },
+    {
+      "id": "C065",
+      "title": "打包器/生成器在分配前限元素数",
+      "kind": "require",
+      "covers": [
+        "L113"
+      ],
+      "scope": [
+        "crates/trit-build/src/trb.rs",
+        "crates/trit-fuzz/src/corpus.rs",
+        "crates/trit-bench/src/lib.rs"
+      ],
+      "since": "L113",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "MAX_GEN|MAX_TRITS|超过字节容量",
+      "min": 3,
+      "allow_skip": false
+    },
+    {
+      "id": "C066",
+      "title": "基准夹具与合成样本的尺寸上限",
+      "kind": "require",
+      "covers": [
+        "L114"
+      ],
+      "scope": [
+        "crates/trit-ops/src/bench.rs",
+        "crates/trit-graph/src/classifier.rs"
+      ],
+      "since": "L114",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "MAX_ELEMS|MAX_SAMPLES",
+      "min": 2,
+      "allow_skip": false
+    },
+    {
+      "id": "C067",
+      "title": "混淆矩阵/预测窗/展开步数上限",
+      "kind": "require",
+      "covers": [
+        "L115"
+      ],
+      "scope": [
+        "crates/trit-learn/src/metrics.rs",
+        "crates/trit-learn/src/forecast.rs",
+        "crates/trit-circuit/src/sequential.rs"
+      ],
+      "since": "L115",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "MAX_CLASSES|MAX_HORIZON|MAX_UNROLL",
+      "min": 3,
+      "allow_skip": false
+    },
+    {
+      "id": "C068",
+      "title": "TTX3 解析时校验各级宽高",
+      "kind": "require",
+      "covers": [
+        "L116"
+      ],
+      "scope": [
+        "crates/trit-texture/src/ttx3.rs"
+      ],
+      "since": "L116",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "validate_dims\\(width, height\\)\\?;",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C069",
+      "title": "两个评估脚本的超限参数在 import 前退出",
+      "kind": "cmd",
+      "covers": [
+        "L117"
+      ],
+      "scope": [
+        "scripts/render_obj.py",
+        "scripts/blender_gt.py"
+      ],
+      "since": "L117",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "python scripts/check_script_guards.py",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C070",
+      "title": "I2_S 编码器按块内跨步位序打包",
+      "kind": "require",
+      "covers": [
+        "L118"
+      ],
+      "scope": [
+        "crates/trit-export/src/bitnet/i2s.rs"
+      ],
+      "since": "L118",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "\\(c0 << 6\\) \\| \\(c1 << 4\\) \\| \\(c2 << 2\\) \\| c3",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C071",
+      "title": "TL1 索引布局与 Python 参考实现逐字节一致",
+      "kind": "cmd",
+      "covers": [
+        "L119"
+      ],
+      "scope": [
+        "crates/trit-export/src/bitnet/tl1.rs"
+      ],
+      "since": "L119",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-export --test tl1_contract",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C072",
+      "title": "TL2 three 段索引与 Python 参考实现逐字节一致",
+      "kind": "cmd",
+      "covers": [
+        "L120"
+      ],
+      "scope": [
+        "crates/trit-export/src/bitnet/tl2.rs"
+      ],
+      "since": "L120",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-export --test tl2_contract",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C073",
+      "title": "真实 BitNet 权重的 I2_S 打包与 safetensors 对齐",
+      "kind": "cmd",
+      "covers": [
+        "L121"
+      ],
+      "scope": [
+        "crates/trit-export/tests/i2s_real_weights.rs",
+        "crates/trit-export/tests/volume_account.rs"
+      ],
+      "since": "L121",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-export --test i2s_real_weights --test volume_account",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C074",
+      "title": "GGUF 读写认上游 I2_S 类型且 per-tensor 用 scales 长度表达",
+      "kind": "cmd",
+      "covers": [
+        "L122"
+      ],
+      "scope": [
+        "crates/trit-export/src/gguf_codec.rs"
+      ],
+      "since": "L122",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-export --test gguf_i2s",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C075",
+      "title": "第 13–21 轮审计修复（预算、路径围栏、YARA 语义）",
+      "kind": "cmd",
+      "covers": [
+        "L124"
+      ],
+      "scope": [
+        "crates/trit-export/src/gguf_codec.rs",
+        "crates/trit-re/src/pe.rs",
+        "crates/trit-re/src/yaraparse.rs",
+        "crates/trit-wspace/src/wsp2/index_io.rs"
+      ],
+      "since": "L124",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-export --test gguf_limits --test gguf_i2s",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C076",
+      "title": "写路径原子写不跟随符号链接、join 走路径围栏",
+      "kind": "cmd",
+      "covers": [
+        "L125"
+      ],
+      "scope": [
+        "crates/trit-wspace/src/cli/tempfile.rs"
+      ],
+      "since": "L125",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-wspace --lib cli::tempfile",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C077",
+      "title": "审计链头带密钥封印（HMAC-SHA256），无密钥链只作损坏检测",
+      "kind": "cmd",
+      "covers": [
+        "L126"
+      ],
+      "scope": [
+        "crates/trit-wspace/src/audit/seal.rs"
+      ],
+      "since": "L126",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-wspace --lib seal",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C078",
+      "title": "adopt 先校验后落盘并拒绝未来戳",
+      "kind": "cmd",
+      "covers": [
+        "L127"
+      ],
+      "scope": [
+        "crates/trit-immune/src/journal/adopt.rs"
+      ],
+      "since": "L127",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-immune --test adopt_guard",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C079",
+      "title": "Q4_0 打包/解包/量化的长度口径一致且 unsafe 前有断言",
+      "kind": "cmd",
+      "covers": [
+        "L128"
+      ],
+      "scope": [
+        "crates/trit-ops/src/bench/q4.rs",
+        "crates/trit-ops/src/simd.rs"
+      ],
+      "since": "L128",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-ops --test q4_layout",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C080",
+      "title": "快照/日志解析不吃畸形输入（hist_len、溢出、UTF-8 边界、chain 越界）",
+      "kind": "cmd",
+      "covers": [
+        "L129"
+      ],
+      "scope": [
+        "crates/trit-immune/src/snapshot.rs",
+        "crates/trit-immune/src/journal.rs"
+      ],
+      "since": "L129",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-immune --test parse_bounds",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C081",
+      "title": "TPM effective() 不除零、空层剪枝不下溢",
+      "kind": "cmd",
+      "covers": [
+        "L130"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tpm/layer.rs"
+      ],
+      "since": "L130",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-parts --lib",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C082",
+      "title": "PNG 解码前按字节上限分配",
+      "kind": "cmd",
+      "covers": [
+        "L131"
+      ],
+      "scope": [
+        "crates/trit-parts/src/data/png_read.rs"
+      ],
+      "since": "L131",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-parts --lib",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C083",
+      "title": "splat 建图不假设 depth 与 ids 同长",
+      "kind": "cmd",
+      "covers": [
+        "L132"
+      ],
+      "scope": [
+        "crates/trit-parts/src/splat/core/filter.rs"
+      ],
+      "since": "L132",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-parts --lib",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C084",
+      "title": "LSP 语义 lint 对半截输入不越界",
+      "kind": "cmd",
+      "covers": [
+        "L133"
+      ],
+      "scope": [
+        "crates/trit-lsp/src/semantics.rs"
+      ],
+      "since": "L133",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-lsp",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C085",
+      "title": "外部规则里的 feature 下标越界即跳过",
+      "kind": "cmd",
+      "covers": [
+        "L134"
+      ],
+      "scope": [
+        "crates/trit-net/src/netsec/features/ternarize.rs"
+      ],
+      "since": "L134",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-net",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C086",
+      "title": "fuzz 语料的空变量表契约保持 panic",
+      "kind": "cmd",
+      "covers": [
+        "L135"
+      ],
+      "scope": [
+        "crates/trit-fuzz/src/corpus/expr.rs"
+      ],
+      "since": "L135",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-fuzz",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C087",
+      "title": "正则嵌套深度有上限（不再栈溢出）",
+      "kind": "cmd",
+      "covers": [
+        "L136"
+      ],
+      "scope": [
+        "crates/trit-re/src/sigscan/regex/depth.rs"
+      ],
+      "since": "L136",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-re",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C088",
+      "title": "RefCpu 前向不越界取层",
+      "kind": "cmd",
+      "covers": [
+        "L137"
+      ],
+      "scope": [
+        "crates/trit-parts/src/model/forward.rs"
+      ],
+      "since": "L137",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-parts --lib",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C089",
+      "title": "手写 JSON 解析与分页不反向切片",
+      "kind": "cmd",
+      "covers": [
+        "L138"
+      ],
+      "scope": [
+        "crates/trit-parts/src/weights.rs",
+        "crates/trit-parts/src/parts.rs",
+        "crates/trit-wspace/src/mcp.rs"
+      ],
+      "since": "L138",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-parts --lib",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C090",
+      "title": "字符字面量里的引号不掩盖同一行的 unsafe",
+      "kind": "cmd",
+      "covers": [
+        "L139"
+      ],
+      "scope": [
+        "crates/trit-unsafe/src/lexer/scrub.rs"
+      ],
+      "since": "L139",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-unsafe",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C091",
+      "title": "unsafe 证据窗覆盖长块",
+      "kind": "cmd",
+      "covers": [
+        "L140"
+      ],
+      "scope": [
+        "crates/trit-unsafe/src/scan.rs"
+      ],
+      "since": "L140",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-unsafe",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C092",
+      "title": "多智能体防丢失：归档/抢救脚本可用且规程在文档里",
+      "kind": "cmd",
+      "covers": [
+        "L141"
+      ],
+      "scope": [
+        "scripts/archive-worktrees.sh",
+        "scripts/rescue-dangling.sh",
+        "docs/COLLAB.md"
+      ],
+      "since": "L141",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "run": "bash -n scripts/archive-worktrees.sh && bash -n scripts/rescue-dangling.sh && grep -q '## 10. 防丢失' docs/COLLAB.md",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C093",
+      "title": "分支规范可执行：检查器存在且能跑出报告",
+      "kind": "cmd",
+      "covers": [
+        "L142"
+      ],
+      "scope": [
+        "scripts/branch-hygiene.py",
+        "docs/BRANCHING.md",
+        ".github/workflows/branch-hygiene.yml"
+      ],
+      "since": "L142",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "run": "python scripts/branch-hygiene.py --json > /dev/null && grep -q '命名（强制）' docs/BRANCHING.md",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C094",
+      "title": "入库准入可执行：闸门自测通过、pre-commit 已接入、策略表在文档里",
+      "kind": "cmd",
+      "covers": [
+        "L144"
+      ],
+      "scope": [
+        "scripts/repo_admission.py",
+        "scripts/hooks/pre-commit",
+        "docs/ADMISSION.md",
+        ".agent/admission.json"
+      ],
+      "since": "L144",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "run": "python scripts/repo_admission.py --self-test && grep -q repo_admission scripts/hooks/pre-commit && grep -q '入库准入' docs/ADMISSION.md && python scripts/repo_admission.py --all > /dev/null",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C095",
+      "title": "wsp-no-transformer 只用 zip 9（不再经 npyz 的 npz feature 拉 0.6.x）",
+      "kind": "cmd",
+      "covers": [
+        "L145"
+      ],
+      "scope": [
+        "benchmarks/wsp-no-transformer/Cargo.toml",
+        "benchmarks/wsp-no-transformer/Cargo.lock",
+        "benchmarks/wsp-no-transformer/src/npz.rs"
+      ],
+      "since": "L145",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "run": "grep -A1 'name = \"zip\"' benchmarks/wsp-no-transformer/Cargo.lock | grep -q 'version = \"9' && ! grep -A1 'name = \"zip\"' benchmarks/wsp-no-transformer/Cargo.lock | grep -q 'version = \"0.6' && grep -q 'deflate-flate2-zlib-rs' benchmarks/wsp-no-transformer/Cargo.toml",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C096",
+      "title": "BitNet 互操作对拍脚本同时验 ffn_down 与 attn_k",
+      "kind": "cmd",
+      "covers": [
+        "L123"
+      ],
+      "scope": [
+        "scripts/check_bitnet_i2s_parity.py"
+      ],
+      "since": "L123",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "shell": "bash",
+      "expect_exit": 0,
+      "run": "grep -q 'ffn_down' scripts/check_bitnet_i2s_parity.py && grep -q 'attn_k' scripts/check_bitnet_i2s_parity.py"
+    },
+    {
+      "id": "C097",
+      "title": "动手前查重的前置步骤可执行（认领表 + 文档写清）",
+      "kind": "cmd",
+      "covers": [
+        "L143"
+      ],
+      "scope": [
+        "scripts/agent_claims.py",
+        "docs/COLLAB.md"
+      ],
+      "since": "L143",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "shell": "bash",
+      "expect_exit": 0,
+      "run": "python scripts/agent_claims.py list > /dev/null && grep -q 'agent_claims.py' docs/COLLAB.md"
     }
   ],
   "ledger_from": "L56"

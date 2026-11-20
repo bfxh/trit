@@ -1,12 +1,9 @@
 //! `trit-net`：三值权重网络的最小 CLI（实验层）。
-
 mod cli;
 mod netsec_cli;
 use cli::calibrate_cmd;
-
 use std::path::PathBuf;
 use std::process::ExitCode;
-
 use trit_core::value::Ternary;
 use trit_net::{
     Analysis, DEFAULT_BUDGET, Layer, Model, Outcome, TrainOptions, analyze, format,
@@ -95,6 +92,9 @@ fn train_cmd(args: &[String]) -> Result<(), String> {
         raw.parse::<f32>().map_err(|_| "lr 不是数字".to_string())
     })?;
     let inputs = 5;
+    if hidden == 0 || hidden > trit_net::MAX_WIDTH {
+        return Err(format!("--hidden 必须在 1..={}", trit_net::MAX_WIDTH));
+    }
     let mut model = Model {
         layers: vec![
             Layer {

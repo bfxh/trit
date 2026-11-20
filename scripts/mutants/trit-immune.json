@@ -158,5 +158,13 @@
   "new": "    if live.fetch_add(1, Ordering::SeqCst) >= usize::MAX {",
   "pkg": "trit-immune",
   "filter": "admit_caps_concurrent_connections"
+ },
+ {
+  "name": "adopt: 未来戳不再被拒",
+  "file": "crates/trit-immune/src/journal/adopt.rs",
+  "old": "    if let Some(s) = canonical.iter().find(|s| s.ts.physical_ms > ceiling) {",
+  "new": "    if let Some(s) = canonical.iter().find(|_s| false) {",
+  "pkg": "trit-immune",
+  "filter": "adopt_rejects_future_stamp_without_touching_the_journal"
  }
 ]

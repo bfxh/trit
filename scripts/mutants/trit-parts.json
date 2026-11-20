@@ -81,7 +81,7 @@
   },
   {
     "name": "occ: 偶数种子与下一个奇数撞车（seed|1 回归）",
-    "file": "crates/trit-parts/src/occ.rs",
+    "file": "crates/trit-parts/src/occ/mlp.rs",
     "old": "        let mut r = if seed.is_multiple_of(2) {\n            seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1\n        } else {\n            seed\n        };",
     "new": "        let mut r = seed | 1;",
     "pkg": "trit-parts",
@@ -89,7 +89,7 @@
   },
   {
     "name": "occ: lr 衰减失效（忽略 lr-final）",
-    "file": "crates/trit-parts/src/occ.rs",
+    "file": "crates/trit-parts/src/occ/mod.rs",
     "old": "        Some(end) if steps > 1 => {\n            let frac = step as f32 / (steps - 1) as f32;\n            lr + (end - lr) * frac\n        }",
     "new": "        Some(_end) if steps > 1 => lr,",
     "pkg": "trit-parts",
@@ -177,7 +177,7 @@
   },
   {
     "name": "splat: 对象过滤失效（所有 id 混在一起）",
-    "file": "crates/trit-parts/src/splat/core.rs",
+    "file": "crates/trit-parts/src/splat/core/filter.rs",
     "old": "            if v.ids[i] == 0 || !keep(v.ids[i]) || !(d.is_finite() && d > 0.0 && d < 50.0) {",
     "new": "            if v.ids[i] == 0 || false || !(d.is_finite() && d > 0.0 && d < 50.0) {",
     "pkg": "trit-parts",
@@ -313,7 +313,7 @@
   },
   {
     "name": "glb: 法线不归一化",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "                [(v[0] / l) as f32, (v[1] / l) as f32, (v[2] / l) as f32]",
     "new": "                [v[0] as f32, v[1] as f32, v[2] as f32]",
     "pkg": "trit-parts",
@@ -321,7 +321,7 @@
   },
   {
     "name": "glb: 节点平移漏掉 c−R·c",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "    let rc = [cx * c + cz * s, -cx * s + cz * c];",
     "new": "    let rc = [cx, cz];",
     "pkg": "trit-parts",
@@ -337,7 +337,7 @@
   },
   {
     "name": "glb: 转台关键帧角度恒 0",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "        let th = k as f32 * std::f32::consts::FRAC_PI_2;",
     "new": "        let th = 0.0f32;",
     "pkg": "trit-parts",
@@ -345,7 +345,7 @@
   },
   {
     "name": "glb: 根节点把自己也挂成 child",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "        let children: Vec<String> = (1..=nodes.len()).map(|i| i.to_string()).collect();",
     "new": "        let children: Vec<String> = (0..nodes.len()).map(|i| i.to_string()).collect();",
     "pkg": "trit-parts",
@@ -418,8 +418,8 @@
   {
     "name": "api: 解码不判 res=0（取模除零）",
     "file": "crates/trit-parts/src/api.rs",
-    "old": "    assert!(res > 0, \"分辨率不能为 0（logits 要按 res² 分组）\");\n",
-    "new": "",
+    "old": "    if res == 0 || res > MAX_RES {\n",
+    "new": "    if res > MAX_RES {\n",
     "pkg": "trit-parts",
     "filter": "api::tests::decode_rejects_zero_res"
   },
@@ -710,5 +710,61 @@
     "new": "res * res * 3",
     "pkg": "trit-parts",
     "filter": "resizing_an_image_to_a_huge_square_panics"
+  },
+  {
+    "name": "conv: 尺寸校验不判",
+    "file": "crates/trit-parts/src/tconv/conv.rs",
+    "old": "let n = super::cap::check_ch(cin, cout)?;",
+    "new": "let n = cout * cin * 9;",
+    "pkg": "trit-parts",
+    "filter": "channel_above_the_cap_is_rejected"
+  },
+  {
+    "name": "cap: 通道上限抬高",
+    "file": "crates/trit-parts/src/tconv/cap.rs",
+    "old": "if !(1..=MAX_CH).contains(&cin) || !(1..=MAX_CH).contains(&cout) {",
+    "new": "if !(1..=MAX_CH * 2).contains(&cin) || !(1..=MAX_CH * 2).contains(&cout) {",
+    "pkg": "trit-parts",
+    "filter": "channel_above_the_cap_is_rejected"
+  },
+  {
+    "name": "depthnet: hidden 不判",
+    "file": "crates/trit-parts/src/depthnet.rs",
+    "old": "crate::hidden::check(hidden)?;",
+    "new": "let _ = hidden;",
+    "pkg": "trit-parts",
+    "filter": "depth_net_rejects_hidden_above_the_cap"
+  },
+  {
+    "name": "depthunet: hidden 不判",
+    "file": "crates/trit-parts/src/depthunet.rs",
+    "old": "crate::hidden::check(h)?;",
+    "new": "let _ = h;",
+    "pkg": "trit-parts",
+    "filter": "depth_unet_rejects_hidden_above_the_cap"
+  },
+  {
+    "name": "morph: 半径不夹取",
+    "file": "crates/trit-parts/src/mesh/morph.rs",
+    "old": "r.min(nx.min(ny).min(nz))",
+    "new": "r.min(64)",
+    "pkg": "trit-parts",
+    "filter": "radius_is_clamped_to_the_shortest_edge"
+  },
+  {
+    "name": "tpm: 层数不卡",
+    "file": "crates/trit-parts/src/tpm.rs",
+    "old": "if n > b.len().saturating_sub(at) / 24 {",
+    "new": "if false {",
+    "pkg": "trit-parts",
+    "filter": "absurd_layer_count_is_rejected_before_allocating"
+  },
+  {
+    "name": "tpm: f32 块不预检",
+    "file": "crates/trit-parts/src/tpm.rs",
+    "old": "if b.len().saturating_sub(*at) < count.saturating_mul(4) {",
+    "new": "if false {",
+    "pkg": "trit-parts",
+    "filter": "absurd_channel_count_is_rejected_before_allocating"
   }
 ]

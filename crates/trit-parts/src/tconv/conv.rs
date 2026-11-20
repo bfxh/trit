@@ -10,7 +10,7 @@ pub struct Conv {
     pub b: Vec<f32>,
     /// 每输出通道的可学缩放（三值权重只有 ±1，缺它函数斜率调不了）。
     pub scale: Vec<f32>,
-    /// true = 前向用三值权重（STE 反传）；false = 原生 f32（用于梯度校验）。
+    /// true = 前向用三值权重（STE 反传）；false = 原生 f32。
     pub ternary: bool,
     /// 膨胀率（3×3 核按 `dil` 步长取样）：感受野 = 2·dil·层数 + 1，算力不变。
     pub dil: usize,
@@ -28,7 +28,6 @@ impl Conv {
     }
 }
 
-/// 一条训练样本：(输入通道图, 目标图, 类别)。
 pub type Sample = (Vec<Vec<f32>>, Vec<f32>, Option<usize>);
 
 pub(crate) fn sobel(img: &[f32], w: usize, h: usize) -> (Vec<f32>, Vec<f32>) {
@@ -111,7 +110,8 @@ fn q(v: f32) -> f32 {
     v.round().clamp(-1.0, 1.0)
 }
 impl Conv {
-    pub fn new(cin: usize, cout: usize, seed: u64) -> Self {
+    pub fn new(cin: usize, cout: usize, seed: u64) -> Result<Self, String> {
+        let n = super::cap::check_ch(cin, cout)?;
         let mut r = seed | 1;
         let mut next = || {
             r ^= r << 13;
@@ -119,22 +119,22 @@ impl Conv {
             r ^= r << 17;
             ((r % 2001) as f32 - 1000.0) / 2500.0
         };
-        Conv {
+        Ok(Conv {
             circular: false,
             cin,
             cout,
             // 初始要越过三值死区（|w|<0.5 → 量化成 0），否则整层恒零
-            w: (0..cout * cin * 9).map(|_| next() * 3.0).collect(),
+            w: (0..n).map(|_| next() * 3.0).collect(),
             b: vec![0.0; cout],
             ternary: true,
             scale: vec![0.1; cout],
             dil: 1,
-            mw: vec![0.0; cout * cin * 9],
-            vw: vec![0.0; cout * cin * 9],
+            mw: vec![0.0; n],
+            vw: vec![0.0; n],
             mb: vec![0.0; cout],
             vb: vec![0.0; cout],
             t: 0,
-        }
+        })
     }
 
     fn idx(&self, co: usize, ci: usize, k: usize) -> usize {

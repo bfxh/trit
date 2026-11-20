@@ -174,5 +174,13 @@
   "new": "        value",
   "pkg": "trit-count",
   "filter": "library_ruler_agrees_with_the_independent_enumeration"
+ },
+ {
+  "name": "count: --big 上限抬高",
+  "file": "crates/trit-count/src/main.rs",
+  "old": "if max_n > 40 {",
+  "new": "if max_n > 42 {",
+  "pkg": "trit-count",
+  "filter": "big_above_the_cap_is_rejected"
  }
 ]

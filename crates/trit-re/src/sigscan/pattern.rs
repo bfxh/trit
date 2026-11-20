@@ -62,8 +62,8 @@ impl Pattern {
         Ok(Pattern::Hex(HexPattern { lead, rest }))
     }
 
-    /// 文本串：`nocase`（ASCII 大小写折叠，两形态都生效）；`wide` 对齐
-    /// YARA 语义——`false` = 仅 ASCII 原样，`true` = 仅 UTF-16LE 变体。
+    /// 文本串：`nocase`（ASCII 大小写折叠，两形态都生效）；`wide` = UTF-8
+    /// 字节逐个补零（官方 yara-python 实测，非 UTF-16LE）。
     pub fn text(needle: &str, nocase: bool, wide: bool) -> Self {
         Self::text_ext(needle, nocase, wide, false, None, false)
     }
@@ -84,10 +84,9 @@ impl Pattern {
             wide: false,
         };
         let wided = TextVariant {
-            bytes: needle
-                .encode_utf16()
-                .flat_map(|u| u.to_le_bytes())
-                .collect(),
+            // 官方 YARA 的 wide 不是 UTF-16LE：它把 UTF-8 字节逐个补 0。
+            // 非 ASCII 的差异会直接造成同一规则假阴性/假阳性（见 yara-python 对拍）。
+            bytes: needle.as_bytes().iter().flat_map(|b| [*b, 0x00]).collect(),
             wide: true,
         };
         let variants = match (wide, ascii_too) {

@@ -39,7 +39,6 @@ fn surface_nets_sphere_is_watertight_and_volume_ok() {
 }
 
 fn cube() -> Mesh {
-    // 单位立方体，8 顶点 12 面（外法线不保证，但拓扑闭合且流形）
     let v = vec![
         [0.0, 0.0, 0.0],
         [1.0, 0.0, 0.0],
@@ -68,7 +67,6 @@ fn cube() -> Mesh {
 }
 
 fn slab(nx: usize, ny: usize, nz: usize, lo: usize, hi: usize) -> Vec<u8> {
-    // z ∈ [lo, hi) 的厚板
     let mut o = vec![0u8; nx * ny * nz];
     for z in lo..hi {
         for y in 0..ny {
@@ -101,6 +99,11 @@ fn open_removes_one_voxel_sheet_but_keeps_thick_slabs() {
 }
 
 #[test]
+fn radius_is_clamped_to_the_shortest_edge() {
+    assert_eq!(super::morph::clamp_radius(usize::MAX, 4, 3, 2), 2);
+}
+
+#[test]
 fn opening_is_idempotent() {
     let (nx, ny, nz) = (12usize, 12usize, 12usize);
     let mut occ = slab(nx, ny, nz, 2, 10);
@@ -110,7 +113,6 @@ fn opening_is_idempotent() {
     assert_eq!(a, b, "开运算应幂等");
     assert!(a.iter().any(|&v| v != 0), "不该把厚板删没");
 }
-
 #[test]
 fn clean_is_noop_on_a_clean_mesh() {
     let m = cube();
@@ -140,7 +142,6 @@ fn clean_drops_degenerate_and_duplicate_faces() {
 
 #[test]
 fn clean_splits_a_pinched_edge() {
-    // 三个面共用 ab 边：>=3 面 = 非流形；分裂后该边不再被 3 个面共用
     let m = Mesh {
         verts: vec![
             [0.0, 0.0, 0.0],
@@ -163,7 +164,6 @@ fn clean_splits_a_pinched_edge() {
 
 #[test]
 fn fill_solid_fills_hollow_shell() {
-    // 挖空球壳：只留表面一层；填实后的体积应接近实心球
     let n = 32usize;
     let mut g = solid_sphere(n, 10.0);
     let shell_only = {

@@ -9,6 +9,7 @@
 //! - 写盘失败进入 poison 状态，拒绝继续追加（内存/磁盘不静默分叉），重新 `open` 即恢复一致。
 
 use crate::dag::{ImmuneDag, NodeId, NodeKind};
+mod adopt;
 use crate::delta::{self, ApplyError, Delta, Stamped};
 use crate::hlc::{Clock, Hlc};
 use crate::snapshot::{self, SnapshotMeta};
@@ -190,11 +191,11 @@ impl Journal {
         if let Ok(snap_text) = std::fs::read_to_string(snapshot::sidecar_path(path)) {
             if let Ok((snap_dag, meta)) = snapshot::parse(&snap_text) {
                 let plen = meta.prefix_len as usize;
-                if plen <= raw.len() {
+                if plen <= raw.len() && text.is_char_boundary(plen) {
                     let prefix = &raw[..plen];
                     let newlines = prefix.iter().filter(|&&b| b == b'\n').count();
                     if snapshot::fnv1a_bytes(prefix) == meta.prefix_fnv
-                        && newlines == meta.deltas_covered + 1
+                        && newlines == meta.deltas_covered.saturating_add(1)
                     {
                         dag = snap_dag;
                         applied = meta.deltas_covered;
@@ -312,6 +313,8 @@ impl Journal {
     /// 采纳合并后的规范日志：原子重写日志文件并重建内存状态（跨副本同步用）。
     /// BackupMode::Auto 时自动备份旧日志到 `.backup`。
     pub fn adopt(&mut self, canonical: Vec<Stamped>) -> io::Result<()> {
+        // 先校验、后落盘（第三轮 R1/R2）：未来戳与坏 Delta 都在动日志之前拒绝。
+        let (dag, clock) = adopt::prepare(&canonical, self.clock.writer())?;
         if self.backup_mode == BackupMode::Auto {
             let _ = self.backup();
         }
@@ -325,14 +328,6 @@ impl Journal {
         let tmp = self.path.with_extension("journal.tmp");
         std::fs::write(&tmp, head.as_bytes())?;
         std::fs::rename(&tmp, &self.path)?;
-
-        let mut dag = ImmuneDag::empty();
-        let mut clock = Clock::new(self.clock.writer());
-        for s in &canonical {
-            clock.observe(&s.ts);
-            dag.apply(&s.delta)
-                .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-        }
         self.file = OpenOptions::new().append(true).open(&self.path)?;
         self.dag = dag;
         self.clock = clock;

@@ -410,7 +410,7 @@ impl ImmuneDag {
         let mut cur = Some(tip);
         while let Some(c) = cur {
             out.push(c);
-            cur = self.nodes[c.0 as usize].parent;
+            cur = self.nodes.get(c.0 as usize).and_then(|node| node.parent); // 越界即截断（第 30 轮）
         }
         out.reverse();
         out

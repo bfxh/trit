@@ -125,17 +125,17 @@ pub struct DepthUNet {
 }
 
 impl DepthUNet {
-    /// `cin` 个输入平面（RGB [+ pyr/ppyr]），`h` 支路宽度（2·h 用于降采样支路）。
-    pub fn new(cin: usize, h: usize, seed: u64, ternary: bool) -> Self {
+    pub fn new(cin: usize, h: usize, seed: u64, ternary: bool) -> Result<Self, String> {
+        crate::hidden::check(h)?;
         let mk = |ci: usize, co: usize, s: u64, tern: bool| {
-            let mut c = Conv::new(ci, co, s);
+            let mut c = Conv::new(ci, co, s).expect("入口已校验隐藏宽度");
             c.ternary = tern;
             c
         };
-        let mut c8 = Conv::new(h, 1, seed ^ 0x9E37);
+        let mut c8 = Conv::new(h, 1, seed ^ 0x9E37).expect("入口已校验隐藏宽度");
         c8.ternary = false;
         c8.scale.fill(0.5);
-        Self {
+        Ok(Self {
             c1: mk(cin, h, seed, ternary),
             c2: mk(h, h, seed ^ 0x11, ternary),
             c3: mk(h, 2 * h, seed ^ 0x22, ternary),
@@ -147,7 +147,7 @@ impl DepthUNet {
             out_b: 0.0,
             med: 0.0,
             iqr: 1.0,
-        }
+        })
     }
 
     fn forward_cache(&self, x: &[Vec<f32>], h: usize, w: usize) -> (Vec<f32>, Cache) {
@@ -310,7 +310,7 @@ impl DepthUNet {
         let cin: usize = it.next().and_then(|x| x.parse().ok()).ok_or("缺 cin")?;
         let hidden: usize = it.next().and_then(|x| x.parse().ok()).ok_or("缺 hidden")?;
         let out_b: f32 = it.next().and_then(|x| x.parse().ok()).ok_or("缺 out_b")?;
-        let mut net = Self::new(cin, hidden, 1, true);
+        let mut net = Self::new(cin, hidden, 1, true)?;
         for c in [
             &mut net.c1,
             &mut net.c2,
@@ -323,7 +323,7 @@ impl DepthUNet {
         ] {
             let ci: usize = it.next().ok_or("缺 cin")?.parse().map_err(|_| "cin")?;
             let co: usize = it.next().ok_or("缺 cout")?.parse().map_err(|_| "cout")?;
-            let mut fresh = Conv::new(ci, co, 1);
+            let mut fresh = Conv::new(ci, co, 1)?;
             for v in fresh.w.iter_mut() {
                 *v = it.next().and_then(|x| x.parse().ok()).ok_or("缺 w")?;
             }
@@ -400,7 +400,7 @@ mod tests {
     #[test]
     fn overfits_one_sample() {
         let (h, w) = (8, 8);
-        let mut net = DepthUNet::new(3, 2, 7, true);
+        let mut net = DepthUNet::new(3, 2, 7, true).unwrap();
         let x: Vec<Vec<f32>> = (0..3)
             .map(|c| {
                 (0..h * w)

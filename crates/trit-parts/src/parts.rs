@@ -36,7 +36,7 @@ impl PartList {
                 cursor = at + 5;
             } else if let Some(after) = rest.strip_prefix("\"digits\":") {
                 let open = after.find('[').ok_or("digits 缺 [")?;
-                let close = after.find(']').ok_or("digits 缺 ]")?;
+                let close = after[open + 1..].find(']').ok_or("digits 缺 ]")? + open + 1; // 第 35 轮
                 let digits: Vec<u8> = after[open + 1..close]
                     .split(',')
                     .filter_map(|s| s.trim().parse().ok())

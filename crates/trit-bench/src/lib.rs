@@ -1,20 +1,19 @@
 //! 三值基准测量的**底件**：把散在各 crate 的计时套路收成一份。
-//!
-//! 立项依据是实测（2026-11-05 清点）：仓内同型 `xorshift64` 手写副本 **8 份**，
-//! 五处主要 bench 里 **3 处完全不交错**（热漂移 ±25% 会把 32% 读成 13%）、
-//! **2 处只报单次或总均值**（没有 min/median 概念）。本 crate 只解决这三件事，
-//! 不做调度、不做统计检验、不碰被测代码。
+//! 立项依据：仓内同型 xorshift64 手写副本 8 份、3 处完全不交错（热漂移 ±25%）、2 处只报均值。
+//! 本 crate 只做交错/分位/生成器三件事，不做调度、不做统计检验、不碰被测代码。
 
 #![forbid(unsafe_code)]
 
 use std::hint::black_box;
 use std::time::Instant;
 
+/// 一次生成的三值上限。
+pub const MAX_TRITS: usize = 1 << 24;
+
 /// 确定性三值序列生成器（xorshift64，与仓内既有手写副本同型，便于读数对账）。
 pub struct SeedRng(u64);
 
 impl SeedRng {
-    /// 用给定种子建生成器；种子为 0 会被换成非零（xorshift 的退化点）。
     #[must_use]
     pub fn new(seed: u64) -> Self {
         Self(if seed == 0 {
@@ -37,6 +36,7 @@ impl SeedRng {
     /// 长度为 `len` 的三值向量，取值 `{-1, 0, +1}`。
     #[must_use]
     pub fn trits(&mut self, len: usize) -> Vec<i32> {
+        assert!(len <= MAX_TRITS, "长度 {len} 超过上限 {MAX_TRITS}");
         (0..len)
             .map(|_| (self.next_u64() % 3) as i8 as i32 - 1)
             .collect()

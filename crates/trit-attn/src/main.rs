@@ -46,8 +46,8 @@ fn demo(args: &[String]) -> Result<(), String> {
     let pairs = number(args, "--pairs", 32)?;
     let dim = number(args, "--dim", 16)?;
     let seed = number(args, "--seed", 7)? as u64;
-    if pairs == 0 || dim == 0 {
-        return Err("pairs/dim 必须大于 0".to_string());
+    if pairs == 0 || dim == 0 || dim > trit_attn::MAX_DIM {
+        return Err(format!("必须大于 0，dim≤{}", trit_attn::MAX_DIM));
     }
     let report = trit_attn::recall_experiment(seed, pairs, dim);
     let obj = serde_json::json!({

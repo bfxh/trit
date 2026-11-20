@@ -10,7 +10,7 @@ use serde_json::{Value, json};
 use crate::safetensors;
 use crate::{from_wsp, to_wsp};
 
-use super::{emit, err, load_net, one, parse, value, write_out};
+use super::{atomic_write, emit, err, load_net, one, parse, value, write_out};
 
 pub(super) fn list(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
@@ -252,7 +252,7 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
         let net = crate::Net::new(vec![layer]).map_err(err)?;
         let file = format!("{:04}-{}.wsp", manifest.len(), safe_name(&info.name));
         let path = Path::new(out).join(&file);
-        fs::write(&path, to_wsp(&net)).map_err(|error| format!("{}: {error}", path.display()))?;
+        atomic_write(&path.display().to_string(), &to_wsp(&net))?;
         manifest.push(json!({
             "name": info.name,
             "file": file,
@@ -271,7 +271,7 @@ pub(super) fn import_dir(args: &[String]) -> Result<(), String> {
     let manifest = json!({ "source": source, "tensors": manifest, "skipped": skipped });
     let text = serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;
     let path = Path::new(out).join("manifest.json");
-    fs::write(&path, text).map_err(|error| format!("{}: {error}", path.display()))?;
+    atomic_write(&path.display().to_string(), &text)?;
     emit(&json!({
         "out": out,
         "manifest": path.display().to_string(),

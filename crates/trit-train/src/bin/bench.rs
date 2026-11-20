@@ -1,17 +1,15 @@
 //! `trit-train train-bench`：位平面 ALU 与三值点积的并发 / 预取剖析，附 STE 收敛对照。
-//!
-//! 用法：
-//! ```text
-//! train-bench [--mtrits 16] [--rounds 5] [--rows 4096] [--cols 576]
-//!       [--threads 1,2,4,8] [--ste-steps 3000]
-//! ```
-
+//! 用法：`train-bench [--mtrits 16] [--rounds 5] [--rows 4096] [--cols 576] [--threads 1,2,4,8] [--ste-steps 3000]`
 use std::hint::black_box;
 use std::time::Instant;
-
 use trit_train::layer::{TernaryLinear, dot};
 use trit_train::plane::Planes;
 use trit_train::quant::Ste;
+
+/// 单次实验的尺寸上限：`rows×cols` 个 f32 与 `mtrits` 百万级 trit。
+const MAX_MTRITS: usize = 64;
+const MAX_ROWS: usize = 8192;
+const MAX_COLS: usize = 8192;
 
 #[derive(Clone, Copy, Debug)]
 enum Op {
@@ -20,7 +18,6 @@ enum Op {
     Xor,
 }
 
-/// Kleene 语义的按字运算（与 `plane` 的公式一致；bench 只测这一套）。
 fn apply(op: Op, ap: u64, an: u64, bp: u64, bn: u64) -> (u64, u64) {
     match op {
         Op::And => (ap & bp, an | bn),
@@ -139,7 +136,6 @@ fn bench_dot(
     (rows * cols) as f64 / best / 1e9
 }
 
-/// 三值线性层在固定任务上的收敛（与 `layer` 的单测同一任务）。
 fn ste_round(ste: Ste, steps: usize) -> (f32, Option<usize>, Vec<Vec<i8>>) {
     let (rows, cols) = (2usize, 3usize);
     let mut state = 0x1234_5678_9abc_def1u64;
@@ -194,6 +190,10 @@ fn main() {
     let cols = arg(&args, "--cols").unwrap_or(576);
     let ste_steps = arg(&args, "--ste-steps").unwrap_or(3000);
     let threads = thread_list(&args);
+    if mtrits > MAX_MTRITS || rows > MAX_ROWS || cols > MAX_COLS {
+        eprintln!("--mtrits ≤ {MAX_MTRITS}，--rows/--cols ≤ {MAX_ROWS}");
+        std::process::exit(2);
+    }
 
     let trits = mtrits * 1_000_000; // 每 trit 2 bit（两条导轨各 1 bit）
     let a = Planes::from_trits(&sample_trits(trits, 0x9E37_79B9_7F4A_7C15));

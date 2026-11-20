@@ -5,8 +5,11 @@
 //! `plane[i] = ((id−1) / 3^(k−1−i)) % 3`，valid=0 处平面置 0。
 
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::BufWriter;
 mod npy;
+mod png_read;
+
+use png_read::read_png_rgb;
 
 pub use npy::{read_npy_i32, write_npy_i32};
 
@@ -185,38 +188,6 @@ pub fn write_rgb(path: &Path, w: usize, h: usize, pix: &[f32]) -> Result<(), Str
         .map(|v| (v.clamp(0.0, 1.0) * 255.0) as u8)
         .collect();
     wr.write_image_data(&bytes).map_err(|e| e.to_string())
-}
-
-/// 读 PNG，返回 `(宽, 高, RGB 的 f32 NHWC)`。
-fn read_png_rgb(path: &Path) -> Result<(usize, usize, Vec<f32>), String> {
-    let file = File::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    let mut decoder = png::Decoder::new(BufReader::new(file));
-    decoder.set_transformations(png::Transformations::EXPAND);
-    let mut reader = decoder.read_info().map_err(|e| e.to_string())?;
-    let mut buf = vec![0u8; reader.output_buffer_size()];
-    let info = reader.next_frame(&mut buf).map_err(|e| e.to_string())?;
-    let (w, h) = (info.width as usize, info.height as usize);
-    let channels = match info.color_type {
-        png::ColorType::Rgb => 3,
-        png::ColorType::Rgba => 4,
-        png::ColorType::Grayscale => 1,
-        png::ColorType::GrayscaleAlpha => 2,
-        png::ColorType::Indexed => return Err("索引色 PNG 未展开".into()),
-    };
-    let mut out = Vec::with_capacity(w * h * 3);
-    for p in 0..w * h {
-        let base = p * channels;
-        let (r, g, b) = match channels {
-            1 => (buf[base], buf[base], buf[base]),
-            2 => (buf[base], buf[base], buf[base]),
-            4 => (buf[base], buf[base + 1], buf[base + 2]),
-            _ => (buf[base], buf[base + 1], buf[base + 2]),
-        };
-        out.push(f32::from(r) / 255.0);
-        out.push(f32::from(g) / 255.0);
-        out.push(f32::from(b) / 255.0);
-    }
-    Ok((w, h, out))
 }
 
 #[cfg(test)]

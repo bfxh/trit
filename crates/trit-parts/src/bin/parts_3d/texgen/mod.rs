@@ -332,7 +332,7 @@ pub(crate) fn tex_conv_cmd(argv: &[String]) {
             .collect()
     };
     let cin = 1 + if cond { kinds.len() } else { 0 };
-    let mut net = Net::new(cin, &hidden, seed);
+    let mut net = Net::new(cin, &hidden, seed).unwrap_or_else(|e| fail(&e));
     net.cond = if cond { kinds.len() } else { 0 };
     net.set_bn(use_bn);
     let mut loss = 0.0f64;

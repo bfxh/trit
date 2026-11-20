@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 use crate::wspm::{self, ModelItem};
 
 use super::cli_safetensors::safe_name;
-use super::{atomic_write_bytes, emit, err, one, parse, value};
+use super::{atomic_write, atomic_write_bytes, emit, err, one, parse, value};
 
 pub(super) fn pack(args: &[String]) -> Result<(), String> {
     let parsed = parse(args, &[])?;
@@ -114,8 +114,7 @@ pub(super) fn unpack(args: &[String]) -> Result<(), String> {
     for (index, (entry, net)) in model.entries.iter().zip(&model.nets).enumerate() {
         let file = format!("{index:04}-{}.wsp", safe_name(&entry.name));
         let path = Path::new(out).join(&file);
-        fs::write(&path, crate::to_wsp(net))
-            .map_err(|error| format!("{}: {error}", path.display()))?;
+        atomic_write(&path.display().to_string(), &crate::to_wsp(net))?;
         entries.push(json!({
             "name": entry.name,
             "file": file,
@@ -132,8 +131,7 @@ pub(super) fn unpack(args: &[String]) -> Result<(), String> {
     });
     let text = serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;
     let manifest_path = Path::new(out).join("manifest.json");
-    fs::write(&manifest_path, text)
-        .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
+    atomic_write(&manifest_path.display().to_string(), &text)?;
     emit(&json!({
         "out": out,
         "manifest": manifest_path.display().to_string(),

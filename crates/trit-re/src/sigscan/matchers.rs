@@ -109,7 +109,7 @@ pub(super) fn find_text(data: &[u8], tp: &TextPattern) -> (Vec<u64>, bool) {
                         complete = false; // 命中表封顶截断 = 不完整
                         break 'keys;
                     }
-                    from += needle.len(); // 非重叠推进（对齐官方与既有行为）
+                    from += 1;
                 } else {
                     from += 1;
                 }

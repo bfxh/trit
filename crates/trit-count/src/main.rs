@@ -34,6 +34,10 @@ fn main() -> ExitCode {
                 }
             },
         };
+        if max_n > 40 {
+            eprintln!("--big 的 max_n 上限取 40：DPLL/BDD 按 n 放大，再大只是在等");
+            return ExitCode::from(2);
+        }
         let cases = flag_value(&args, "--cases")
             .and_then(|value| value.parse().ok())
             .unwrap_or(2);
@@ -279,10 +283,7 @@ fn run_policy(path: &str) -> ExitCode {
     }
 }
 
-/// 随机 CNF 语料直接打 DPLL：计数必须等于 `2^nvars` 穷举。
-///
-/// 这条链**跳过编码器**——`--random` 那条三方对拍里，编码器一旦把公式写错会同时骗到两边；
-/// 这里喂的是裸子句集，钉的是求解器本体（规范形整理、单元传播、分量分解、缓存键）。
+/// 随机 CNF 语料直接打 DPLL：计数必须等于 `2^nvars` 穷举（跳过编码器，钉求解器本体）。
 fn run_fuzz_cnf(cases: usize, max_vars: usize, clause_len: usize) -> ExitCode {
     let mut rng = SeedRng::new(0xC0FF_EE00_1234_5678);
     let mut failures = 0usize;
@@ -374,7 +375,6 @@ fn run_random(cases: usize) -> ExitCode {
     }
 }
 
-/// DPLL vs BDD 对拍（不跑穷举），用于 n>12 的第三方校验。
 fn run_big(cases: usize, max_n: usize) -> ExitCode {
     let mut rng = SeedRng::new(0x5EED_1234_ABCD_EF01);
     let mut failures = 0usize;

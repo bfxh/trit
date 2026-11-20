@@ -1,12 +1,8 @@
-//! `TPM1` 部署包：只装推理要用的东西（`q/scale/γ/β/bias`），不含 Adam/latent/RNG。
-//!
-//! 与训练存档 `TPNT3` 的区别：**体积小一个量级**（约 1.1 MB vs 7.5 MB）、只读、跨平台可直接加载。
-//! 布局：`magic(8) | 版本(u32) | 层数(u32) | 每层{cin,cout,kk,relu,convt,n} | q[i8×n] |
-//! scale/gamma/beta/bias[f32×cout]`。
+//! `TPM1` 部署包：只装推理要用的东西（`q/scale/γ/β/bias`），不含 Adam/latent/RNG；只读、跨平台可直接加载。
+//! 布局：`magic(8) | 版本(u32) | 层数(u32) | 每层{cin,cout,kk,relu,convt,n} | q[i8×n] | scale/gamma/beta/bias[f32×cout]`。
 
 use std::path::Path;
 
-/// 一层部署参数。
 #[derive(Clone)]
 pub struct TpmLayer {
     pub q: Vec<i8>,
@@ -21,17 +17,7 @@ pub struct TpmLayer {
     pub convt: bool,
 }
 
-impl TpmLayer {
-    /// 有效权重 `E = q·scale`（布局与原模型一致）。
-    pub fn effective(&self) -> Vec<f32> {
-        let slots = self.cout as usize;
-        self.q
-            .iter()
-            .enumerate()
-            .map(|(wi, &qi)| qi as f32 * self.scale[wi % slots])
-            .collect()
-    }
-}
+mod layer;
 
 pub struct TpmModel {
     pub layers: Vec<TpmLayer>,
@@ -59,9 +45,11 @@ impl TpmModel {
         }
     }
 
-    /// 把最后一层（head）裁到 `cout` 个通道（多出来的空转通道会拖慢推理，也容易踩跨步 bug）。
     pub fn truncate_head(&self, cout: u32) -> TpmModel {
         let mut layers = self.layers.clone();
+        if layers.is_empty() {
+            return TpmModel { layers };
+        } // 22-1b：空层 len()-1 下溢
         let old = layers.len() - 1;
         let l = &layers[old];
         let (cin, kk, old_cout) = (l.cin as usize, l.kk as usize, l.cout as usize);
@@ -132,6 +120,9 @@ impl TpmModel {
             return Err(format!("TPM1 版本 {ver} 未支持"));
         }
         let n = take_u32(&b, &mut at)? as usize;
+        if n > b.len().saturating_sub(at) / 24 {
+            return Err("TPM1 层数超过文件剩余长度".into());
+        }
         let mut layers = Vec::with_capacity(n);
         for _ in 0..n {
             let cin = take_u32(&b, &mut at)?;
@@ -140,10 +131,14 @@ impl TpmModel {
             let relu = take_u32(&b, &mut at)? != 0;
             let convt = take_u32(&b, &mut at)? != 0;
             let nw = take_u32(&b, &mut at)? as usize;
-            let qs = b.get(at..at + nw).ok_or("TPM1 截断（q）")?;
+            let end = at.checked_add(nw).ok_or("TPM1 长度溢出")?;
+            let qs = b.get(at..end).ok_or("TPM1 截断（q）")?;
             let q: Vec<i8> = qs.iter().map(|&v| v as i8).collect();
-            at += nw;
+            at = end;
             let take_f = |count: usize, b: &[u8], at: &mut usize| -> Result<Vec<f32>, String> {
+                if b.len().saturating_sub(*at) < count.saturating_mul(4) {
+                    return Err("TPM1 截断（f32）".into());
+                }
                 let mut v = vec![0.0f32; count];
                 for x in &mut v {
                     *x = f32::from_bits(take_u32(b, at)?);
@@ -172,7 +167,6 @@ impl TpmModel {
     }
 }
 
-/// 从训练态（`Net`）导出。放在这里而不是 `net.rs`，是为了让 `TPM1` 的格式与训练态解耦。
 #[cfg(feature = "gpu")]
 pub fn from_net(net: &crate::net::Net) -> TpmModel {
     TpmModel {

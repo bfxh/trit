@@ -39,25 +39,31 @@ pub struct DepthNet {
 }
 
 impl DepthNet {
-    pub fn new(hidden: usize, seed: u64) -> Self {
+    pub fn new(hidden: usize, seed: u64) -> Result<Self, String> {
         Self::with_ternary(hidden, seed, true)
     }
 
     /// `ternary=false` 时整网 f32（连续几何量允许 f32；三值 STE 在真实数据上会塌，见 §6.86）。
-    pub fn with_ternary(hidden: usize, seed: u64, ternary: bool) -> Self {
+    pub fn with_ternary(hidden: usize, seed: u64, ternary: bool) -> Result<Self, String> {
         Self::with_inputs(3, hidden, seed, ternary)
     }
 
     /// `cin=6/9`：`--pyr` 多尺度输入（RGB + 4× 低通 [+ 8× 低通]）。
-    pub fn with_inputs(cin: usize, hidden: usize, seed: u64, ternary: bool) -> Self {
-        let mut c1 = Conv::new(cin, hidden, seed);
-        let mut c2 = Conv::new(hidden, hidden, seed ^ 0x5DEECE66D);
-        let mut c3 = Conv::new(hidden, 1, seed ^ 0xA5A5);
+    pub fn with_inputs(
+        cin: usize,
+        hidden: usize,
+        seed: u64,
+        ternary: bool,
+    ) -> Result<Self, String> {
+        crate::hidden::check(hidden)?;
+        let mut c1 = Conv::new(cin, hidden, seed)?;
+        let mut c2 = Conv::new(hidden, hidden, seed ^ 0x5DEECE66D)?;
+        let mut c3 = Conv::new(hidden, 1, seed ^ 0xA5A5)?;
         c1.ternary = ternary;
         c2.ternary = ternary;
         c3.ternary = false;
         c3.scale.fill(0.5); // 输出层 scale 初值放大：0.1 时梯度推不动（§6.86）
-        DepthNet {
+        Ok(DepthNet {
             c1,
             c2,
             c3,
@@ -66,7 +72,7 @@ impl DepthNet {
             iqr: 1.0,
             pyr: 0,
             ppyr: 0,
-        }
+        })
     }
 
     /// 全局膨胀率：感受野 = 6·dil + 1（三层 3×3）。单图内景深依赖全局布局，5×5 不够。
@@ -294,7 +300,7 @@ impl DepthNet {
         for _ in 0..3 {
             let cin: usize = it.next().ok_or("缺 cin")?.parse().map_err(|_| "cin")?;
             let cout: usize = it.next().ok_or("缺 cout")?.parse().map_err(|_| "cout")?;
-            let mut c = Conv::new(cin, cout, 1);
+            let mut c = Conv::new(cin, cout, 1)?;
             for v in c.w.iter_mut() {
                 *v = it.next().and_then(|x| x.parse().ok()).ok_or("缺 w")?;
             }
@@ -366,8 +372,7 @@ mod tests {
     fn learns_a_simple_ramp() {
         let (w, h) = (16usize, 16usize);
         let t = ramp_target(w, h);
-        let mut net = DepthNet::new(6, 3);
-        // 输入亮度与目标相关：亮 → 视差大
+        let mut net = DepthNet::new(6, 3).unwrap();
         for _ in 0..1200 {
             net.train_step(&ramp_input(w, h), w, h, &t, &vec![true; w * h], 0.02);
         }
@@ -396,11 +401,10 @@ mod tests {
 
     #[test]
     fn learns_constant_offset() {
-        // 回归：外置偏置必须能学到常数目标。之前 bias 在 scale 乘法之内，
-        // 优化器把 scale 推到 0，输出恒 0（整网塌成常数预测）。
+        // 回归：外置偏置必须能学到常数目标。
         let (w, h) = (8usize, 8usize);
         let t = vec![2.0f32; w * h];
-        let mut net = DepthNet::new(4, 3);
+        let mut net = DepthNet::new(4, 3).unwrap();
         for _ in 0..300 {
             net.train_step(&gray(0.5, w, h), w, h, &t, &vec![true; w * h], 0.02);
         }
@@ -418,7 +422,7 @@ mod tests {
         // 部署走 forward：外置 out_b 必须真的加在输出上（bias 在 Conv 的 scale 乘法之内，
         // 少了这一句 scale 一缩就把 DC 吞掉）。
         let (w, h) = (8usize, 8usize);
-        let mut net = DepthNet::new(4, 3);
+        let mut net = DepthNet::new(4, 3).unwrap();
         let mean_of = |n: &DepthNet| {
             let p = n.forward(&gray(0.5, w, h), w, h);
             p.iter().sum::<f32>() / p.len() as f32
@@ -434,13 +438,11 @@ mod tests {
 
     #[test]
     fn mv_gate_skips_outliers() {
-        // GT 全 0；warp 目标是 10（远超 tau=0.5，属于遮挡/离群）⇒ 截断门必须把它全部跳过，
-        // 否则预测会被拉走。没有门的实现会在这里涨到 O(1) 以上。
         let (w, h) = (8usize, 8usize);
         let zero = vec![0.0f32; w * h];
         let ones = vec![true; w * h];
         let bad = vec![10.0f32; w * h];
-        let mut net = DepthNet::new(4, 3);
+        let mut net = DepthNet::new(4, 3).unwrap();
         for _ in 0..60 {
             net.train_step_mv(
                 &gray(0.5, w, h),
@@ -469,13 +471,11 @@ mod tests {
 
     #[test]
     fn mv_inlier_pulls_prediction() {
-        // GT 全 0、warp 目标 0.8（在 tau 内）⇒ 两项各占一半权重，最优解 ≈ 0.4。
-        // 这条挡住「一致性项根本没接进损失」的实现。
         let (w, h) = (8usize, 8usize);
         let zero = vec![0.0f32; w * h];
         let ones = vec![true; w * h];
         let good = vec![0.8f32; w * h];
-        let mut net = DepthNet::new(4, 3);
+        let mut net = DepthNet::new(4, 3).unwrap();
         for _ in 0..400 {
             net.train_step_mv(
                 &gray(0.5, w, h),
@@ -502,7 +502,7 @@ mod tests {
 
     #[test]
     fn save_load_roundtrip() {
-        let mut net = DepthNet::new(4, 5);
+        let mut net = DepthNet::new(4, 5).unwrap();
         let (w, h) = (8usize, 8usize);
         net.train_step(
             &gray(0.5, w, h),
@@ -538,8 +538,8 @@ mod tests {
     fn deterministic() {
         let (w, h) = (8usize, 8usize);
         let t = vec![0.1f32; w * h];
-        let mut a = DepthNet::new(3, 9);
-        let mut b = DepthNet::new(3, 9);
+        let mut a = DepthNet::new(3, 9).unwrap();
+        let mut b = DepthNet::new(3, 9).unwrap();
         for _ in 0..5 {
             a.train_step(&gray(0.4, w, h), w, h, &t, &vec![true; w * h], 0.01);
             b.train_step(&gray(0.4, w, h), w, h, &t, &vec![true; w * h], 0.01);

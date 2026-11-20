@@ -16,7 +16,7 @@ use crate::trit::Trit;
 use crate::{Layer, Net, from_wsp, to_wsp};
 
 use super::cli_safetensors::safe_name;
-use super::{emit, err, one, parse, value};
+use super::{atomic_write, emit, err, one, parse, value};
 
 /// `Ternary`（逻辑值）→ 权重 `i8`：`False/Unknown/True → -1/0/+1`。
 fn to_i8(value: Ternary) -> i8 {
@@ -61,7 +61,7 @@ pub(super) fn import(args: &[String]) -> Result<(), String> {
         let net = Net::new(vec![layer]).map_err(err)?;
         let file = format!("{:04}-{}.wsp", entries.len(), safe_name(&tensor.name));
         let path = Path::new(out).join(&file);
-        fs::write(&path, to_wsp(&net)).map_err(|error| format!("{}: {error}", path.display()))?;
+        atomic_write(&path.display().to_string(), &to_wsp(&net))?;
         entries.push(json!({
             "name": tensor.name,
             "file": file,
@@ -77,8 +77,7 @@ pub(super) fn import(args: &[String]) -> Result<(), String> {
     });
     let text = serde_json::to_string_pretty(&manifest).map_err(|error| error.to_string())?;
     let manifest_path = Path::new(out).join("manifest.json");
-    fs::write(&manifest_path, text)
-        .map_err(|error| format!("{}: {error}", manifest_path.display()))?;
+    atomic_write(&manifest_path.display().to_string(), &text)?;
     emit(&json!({
         "out": out,
         "manifest": manifest_path.display().to_string(),
@@ -145,7 +144,7 @@ pub(super) fn export(args: &[String]) -> Result<(), String> {
     metadata.insert("trit.wsp1".to_string(), MetaValue::U32(1));
     let model = Model { metadata, tensors };
     let bytes = trit_export::write(&model).map_err(|error| format!("GGUF: {error}"))?;
-    super::fsutil::atomic_write_bytes(out, &bytes)?;
+    super::atomic_write_bytes(out, &bytes)?;
     let trit_bytes: usize = model
         .tensors
         .iter()

@@ -1,0 +1,38 @@
+name: branch-hygiene
+
+# 分支卫生：已合并没删、命名不合规、陈旧的未合并分支。
+# 规则见 docs/BRANCHING.md，检查器是 scripts/branch-hygiene.py。
+#
+# 只跑每周 + 手动，不挂在 PR 上（PR 不该因为"别人有 30 个旧分支"而变红）。
+# --strict 时 merged / empty / badname 非空即失败：这是**提醒清理**，清理完自然转绿。
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * 1"   # 每周一 03:00 UTC
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch-hygiene
+  cancel-in-progress: true
+
+jobs:
+  hygiene:
+    name: 分支卫生检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 0
+      - name: Report
+        run: |
+          {
+            echo "## 分支卫生报告"
+            echo '```'
+            python3 scripts/branch-hygiene.py || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Strict gate (merged / empty / badname 必须为空)
+        run: python3 scripts/branch-hygiene.py --strict

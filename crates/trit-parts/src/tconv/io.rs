@@ -1,3 +1,4 @@
+use super::cap::MAX_CH;
 use super::conv::Conv;
 use super::net::Net;
 
@@ -8,7 +9,6 @@ mod sections;
 /// （`Vec::with_capacity(n)`、`Conv::new(cin, cout, 1)`）能把进程直接打爆，
 /// 所以每个尺寸都是先查再分，不在分配之后才校验。
 const MAX_LAYERS: usize = 1024;
-const MAX_CH: usize = 2048;
 /// 条件通道数上限（`cond = 0` 表示无条件）。`Net::input` 会为每个 `cond` 追加一张 `w×h` 常数图。
 const MAX_COND: usize = 64;
 /// FiLM 类别数上限（`nk = 0` 表示无 FiLM）。`Film` 的 g/b 各是 `(nk + 1) × cout`。
@@ -130,7 +130,7 @@ impl Net {
         for _ in 0..nl {
             let cin = bounded(take(&mut it, path, "cin")? as usize, path, "cin", MAX_CH)?;
             let cout = bounded(take(&mut it, path, "cout")? as usize, path, "cout", MAX_CH)?;
-            let mut l = Conv::new(cin, cout, 1);
+            let mut l = Conv::new(cin, cout, 1)?;
             for v in l.w.iter_mut() {
                 *v = take(&mut it, path, "w")?;
             }
@@ -193,7 +193,7 @@ impl Net {
                 }
                 let cin = bounded(cin, path, "head cin", MAX_CH)?;
                 let cout = bounded(cout, path, "head cout", MAX_CH)?;
-                let mut c = Conv::new(cin, cout, 1);
+                let mut c = Conv::new(cin, cout, 1)?;
                 for v in c.w.iter_mut() {
                     *v = take(&mut it, path, "head w")?;
                 }

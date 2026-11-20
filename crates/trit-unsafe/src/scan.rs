@@ -177,7 +177,7 @@ pub fn scan_source(text: &str, label: &str) -> Vec<Site> {
             continue;
         };
         // 高危形态：本行 + 后 3 行（调用常跨行）
-        let window_end = (index + 4).min(cleaned.len());
+        let window_end = (index + 24).min(cleaned.len()); // 第 2 轮 U4：长块里的调用也要进窗
         let window = cleaned[index..window_end].join("\n");
         let apis: Vec<&'static str> = RISKY_APIS
             .iter()

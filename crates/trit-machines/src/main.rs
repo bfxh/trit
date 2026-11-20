@@ -1,10 +1,7 @@
 //! `trit-machines`：三个三值小部件的演示 / 测量入口。
-
 use std::process::ExitCode;
-
 use trit_core::value::Ternary;
 use trit_machines::{ca, graded, snn, vm};
-
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let result = match args.first().map(String::as_str) {
@@ -88,10 +85,12 @@ fn vm_demo() -> Result<(), String> {
 fn json_pair(key: String, value: usize) -> (String, serde_json::Value) {
     (key, serde_json::Value::from(value))
 }
-
 fn ca_demo(args: &[String]) -> Result<(), String> {
     let width = number(args, "--width", 64)?;
     let steps = number(args, "--steps", 200)?;
+    if width > ca::MAX_WIDTH || steps > ca::MAX_STEPS {
+        return Err(format!("宽度≤{}，步数≤{}", ca::MAX_WIDTH, ca::MAX_STEPS));
+    }
     let survey = ca::survey(width, steps);
     let best = ca::Rule::from_index(survey.max_entropy_rule).expect("合法规则编号");
     let run = ca::run(&best, width, steps);
@@ -116,15 +115,17 @@ fn ca_demo(args: &[String]) -> Result<(), String> {
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
     Ok(())
 }
-
 fn snn_demo(args: &[String]) -> Result<(), String> {
     let size = number(args, "--size", 100)?;
     let ticks = number(args, "--ticks", 200)?;
     let seed = number(args, "--seed", 7)? as u64;
     let kick = number(args, "--kick", 3)? as i32;
     let drive = number(args, "--drive", 0)? as i32;
+    if ticks > snn::MAX_TICKS {
+        return Err(format!("--ticks 超过上限 {}", snn::MAX_TICKS));
+    }
     let threshold = number(args, "--threshold", 3)? as i32;
-    let mut network = snn::Network::random(size, seed);
+    let mut network = snn::Network::random(size, seed).map_err(|error| error.to_string())?;
     network.threshold = threshold;
     let external: Vec<i32> = if drive > 0 {
         vec![drive; ticks]
@@ -149,13 +150,12 @@ fn snn_demo(args: &[String]) -> Result<(), String> {
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
     Ok(())
 }
-
 fn graded_demo(args: &[String]) -> Result<(), String> {
     let size = number(args, "--size", 64)?;
     let seed = number(args, "--seed", 7)? as u64;
     let groups = number(args, "--groups", 2)?;
     let rounds = number(args, "--rounds", 16)?;
-    let network = snn::Network::random(size, seed);
+    let network = snn::Network::random(size, seed).map_err(|error| error.to_string())?;
     let config = graded::GradeConfig {
         groups,
         rounds,
@@ -193,7 +193,6 @@ fn graded_demo(args: &[String]) -> Result<(), String> {
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
     Ok(())
 }
-
 fn grade_name(grade: graded::Grade) -> &'static str {
     match grade {
         graded::Grade::Find => "find",

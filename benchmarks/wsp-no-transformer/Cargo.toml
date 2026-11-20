@@ -9,7 +9,11 @@ publish = false
 [workspace]
 
 [dependencies]
-npyz = { version = "0.8", features = ["npz"] }
+npyz = "0.8"
 wgpu = "30"
 pollster = "0.4"
 bytemuck = { version = "1", features = ["derive"] }
+# npz 本身就是装了 `.npy` 的 zip：这里自己读容器，不用 npyz 的 `npz` feature。
+# 那个 feature 把 zip 钉在 0.6.x，命中 GHSA-m665-v7pm-7grj（critical，修复 9.0.5）
+# 与 GHSA-8hxf-qr8p-62x4（medium，修复 9.0.0）；`.npy` 解析仍交给 npyz。
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }

@@ -90,9 +90,9 @@ fn alarm_rate(net: &Net, probes: &[Vec<f32>]) -> f32 {
     }
     alarmed as f32 / probes.len() as f32
 }
-
 fn main() {
-    let dataset = load_dataset("D:/KF/trit-data/sms-spam/SMSSpamCollection");
+    let p = std::env::var("SMS_SPAM_TSV").unwrap_or("SMSSpamCollection".into());
+    let dataset = load_dataset(&p);
     let labels: Vec<usize> = dataset.iter().map(|(l, _)| *l).collect();
     let features: Vec<Vec<f32>> = dataset.iter().map(|(_, t)| featurize(t)).collect();
     let mut rng = Rng::new(7);

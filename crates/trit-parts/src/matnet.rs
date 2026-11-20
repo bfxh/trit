@@ -62,8 +62,8 @@ impl MatNet {
     pub fn new(hidden: usize, seed: u64) -> Result<Self, String> {
         crate::hidden::check(hidden)?;
         Ok(MatNet {
-            c1: Conv::new(3, hidden, seed),
-            c2: Conv::new(hidden, hidden, seed ^ 0x5DEECE66D),
+            c1: Conv::new(3, hidden, seed)?,
+            c2: Conv::new(hidden, hidden, seed ^ 0x5DEECE66D)?,
             head_w: vec![0.0; hidden * 4],
             head_b: vec![0.0; 4],
             mw: vec![0.0; hidden * 4],
@@ -225,7 +225,7 @@ impl MatNet {
                 .ok_or("缺 cout")?
                 .parse()
                 .map_err(|_| "cout 解析失败")?;
-            let mut c = Conv::new(cin, cout, 1);
+            let mut c = Conv::new(cin, cout, 1)?;
             for v in c.w.iter_mut() {
                 *v = it.next().and_then(|x| x.parse().ok()).ok_or("缺 w")?;
             }

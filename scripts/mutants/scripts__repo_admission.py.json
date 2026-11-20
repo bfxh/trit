@@ -1,0 +1,56 @@
+[
+  {
+    "name": "admission: 体积上限失效（>max_mb 也放行）",
+    "file": "scripts/repo_admission.py",
+    "old": "    if size > cfg[\"max_mb\"] * 1024 * 1024:\n        return \"BLOCK\", f\"超过 {cfg['max_mb']} MiB\"",
+    "new": "    if False:\n        return \"BLOCK\", f\"超过 {cfg['max_mb']} MiB\"",
+    "pkg": "scripts/repo_admission.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "admission: 密钥内容不再拦（只判后缀）",
+    "file": "scripts/repo_admission.py",
+    "old": "        hits = secret_hits(head.decode(\"utf-8\", \"ignore\"))\n        if hits:",
+    "new": "        hits = secret_hits(head.decode(\"utf-8\", \"ignore\"))\n        if False:",
+    "pkg": "scripts/repo_admission.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "admission: 入库理由长度门槛被取消（空理由也过）",
+    "file": "scripts/repo_admission.py",
+    "old": "        if match and len(match.group(1).strip()) >= 10:",
+    "new": "        if match and len(match.group(1).strip()) >= 0:",
+    "pkg": "scripts/repo_admission.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "admission: AI 厂商 trailer 不再判红",
+    "file": "scripts/repo_admission.py",
+    "old": "    return bool(module.TRAILER_RE.search(text))",
+    "new": "    return False",
+    "pkg": "scripts/repo_admission.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "admission: allow 条目不写 reason 也生效（豁免失控）",
+    "file": "scripts/repo_admission.py",
+    "old": "        if not glob or not reason:",
+    "new": "        if not glob:",
+    "pkg": "scripts/repo_admission.py",
+    "filter": "",
+    "runner": "python"
+  },
+  {
+    "name": "admission: 构建产物目录黑名单失效（target/ 里的源码被当成普通源码）",
+    "file": "scripts/repo_admission.py",
+    "old": "    if any(part in BLOCK_DIRS for part in parts[:-1]):\n        return \"BLOCK\", \"构建产物目录\"",
+    "new": "    if False:\n        return \"BLOCK\", \"构建产物目录\"",
+    "pkg": "scripts/repo_admission.py",
+    "filter": "",
+    "runner": "python"
+  }
+]

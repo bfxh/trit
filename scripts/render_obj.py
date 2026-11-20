@@ -11,6 +11,27 @@ from __future__ import annotations
 import argparse
 import sys
 
+# 单次渲染的边长上限：img/zbuf/hit 三份按 S² 分配。
+MAX_SIDE = 4096
+
+
+def _early_size_check(argv):
+    """在 import cv2/numpy 之前拒绝超限 --size（本机缺依赖也能验）。"""
+    if "--size" not in argv:
+        return
+    i = argv.index("--size")
+    if i + 1 >= len(argv):
+        return
+    try:
+        size = int(argv[i + 1])
+    except ValueError:
+        return
+    if not 1 <= size <= MAX_SIDE:
+        sys.exit(f"--size 必须在 1..={MAX_SIDE}（收到 {size}）")
+
+
+_early_size_check(sys.argv[1:])
+
 import cv2
 import numpy as np
 
@@ -46,6 +67,9 @@ def main():
     ap.add_argument("--tex", default=None, help="贴图 PNG（默认取 obj 同名的 .png）")
     ap.add_argument("--bg", type=float, default=1.0)
     a = ap.parse_args()
+
+    if not 1 <= a.size <= MAX_SIDE:
+        sys.exit(f"--size 必须在 1..={MAX_SIDE}（收到 {a.size}）")
 
     V, VT, F, FT = load_obj(a.obj)
     tex_path = a.tex or a.obj.rsplit(".", 1)[0] + ".png"

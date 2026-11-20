@@ -1,9 +1,12 @@
 //! 三值一维元胞自动机（半径 1、总istic 规则）。
-//!
-//! 邻域三个格子的「和」取值 `0..=6`（`F=0, X=1, T=2`），规则就是一张 7 项查表。
-//! 规则空间只有 `3^7 = 2187` 种，可以整片跑一遍看行为分布——dead / periodic / complex。
+//! 邻域三格之和取值 `0..=6`（`F=0, X=1, T=2`），规则是一张 7 项查表；规则空间只有 `3^7 = 2187` 种。
 
 use trit_core::value::Ternary;
+
+/// 宽度上限：`4096` 格 × 3 值 ≈ 12 KB 一行状态。
+pub const MAX_WIDTH: usize = 4096;
+/// 步数上限：每步 clone 一整行，`steps × width` 是历史表。
+pub const MAX_STEPS: usize = 10_000;
 
 /// 一条总istic 三值规则：按邻域和查表。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,18 +35,15 @@ impl Rule {
 /// 一次演化。
 #[derive(Debug, Clone, PartialEq)]
 pub struct Run {
-    /// 结束时的格子。
     pub cells: Vec<Ternary>,
-    /// 检测到的周期；`None` 表示在步数内没回到过任何旧状态。
     pub period: Option<usize>,
-    /// 末态中非 `F` 格子的比例。
     pub density: f64,
-    /// 末态的三符号香农熵（bit）。
     pub entropy: f64,
 }
 
-/// 演化 `steps` 步，宽度 `width`；初始只有中间一格为 `T`。
 pub fn run(rule: &Rule, width: usize, steps: usize) -> Run {
+    assert!(width <= MAX_WIDTH, "宽度 {width} 超过上限 {MAX_WIDTH}");
+    assert!(steps <= MAX_STEPS, "步数 {steps} 超过上限 {MAX_STEPS}");
     let mut cells = vec![Ternary::False; width];
     if width > 0 {
         cells[width / 2] = Ternary::True;

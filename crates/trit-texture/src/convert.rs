@@ -1,7 +1,5 @@
 //! TTX ↔ 像素/容器之间的**转换胶水**（纯函数）。
-//!
-//! 本模块只做「已有编解码 + 已有容器」的串联，不引入任何外部解码依赖；
-//! PNG 等文件格式 I/O 在 `trit-convert` 实验层（docs/TTX.md §7 的分层规矩）。
+//! 只做「已有编解码 + 已有容器」的串联；PNG 等文件 I/O 在 `pngio`（`png` feature 后）。
 
 use crate::ttx::{self as v1};
 use crate::ttx2::{self as v2, TtxDocument};
@@ -10,11 +8,8 @@ use crate::{TextureError, TritTexture};
 /// 一张 RGBA 图（8 位/通道）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RgbaImage {
-    /// 宽（像素）。
     pub width: usize,
-    /// 高（像素）。
     pub height: usize,
-    /// RGBA 字节，`width × height × 4`，行主序。
     pub rgba: Vec<u8>,
 }
 
@@ -26,17 +21,26 @@ fn texture_to_image(texture: &TritTexture) -> Result<RgbaImage, TextureError> {
     })
 }
 
+/// 像素数上限校验：先 `checked_mul`，再比 `MAX_TEXTURE_PIXELS`（PNG 与容器解码共用）。
+pub fn check_pixels(width: usize, height: usize) -> Result<usize, TextureError> {
+    let pixels = width
+        .checked_mul(height)
+        .ok_or(TextureError::TooLarge { pixels: usize::MAX })?;
+    if pixels > crate::MAX_TEXTURE_PIXELS {
+        return Err(TextureError::TooLarge { pixels });
+    }
+    Ok(pixels)
+}
+
 /// RGBA → TTX1 容器（单级纹理）。
 pub fn rgba_to_ttx1(pixels: &[u8], width: usize, height: usize) -> Result<Vec<u8>, TextureError> {
     Ok(v1::to_ttx(&crate::encode_rgba(pixels, width, height)?))
 }
 
-/// TTX1 容器 → RGBA（alpha 恒 255）。
 pub fn ttx1_to_rgba(bytes: &[u8]) -> Result<RgbaImage, TextureError> {
     texture_to_image(&v1::from_ttx(bytes)?)
 }
 
-/// RGBA → TTX2 容器（kind=TEX，单级）。
 pub fn rgba_to_ttx2(pixels: &[u8], width: usize, height: usize) -> Result<Vec<u8>, TextureError> {
     let texture = crate::encode_rgba(pixels, width, height)?;
     v2::to_ttx2(&TtxDocument::Texture {
@@ -44,7 +48,6 @@ pub fn rgba_to_ttx2(pixels: &[u8], width: usize, height: usize) -> Result<Vec<u8
     })
 }
 
-/// TTX2（kind=TEX）→ 最细一级（level 0）的 RGBA；kind=MOD 是结构化错误（模型不是图）。
 pub fn ttx2_to_rgba(bytes: &[u8]) -> Result<RgbaImage, TextureError> {
     let TtxDocument::Texture { levels } = v2::from_ttx2(bytes)? else {
         return Err(TextureError::TtxKind(v2::KIND_MOD));
@@ -54,7 +57,6 @@ pub fn ttx2_to_rgba(bytes: &[u8]) -> Result<RgbaImage, TextureError> {
     texture_to_image(texture)
 }
 
-/// TTX1 → TTX2（升级：块数据原样进单级 TEX，校验尾按 v2 的 CRC-16 规则重算）。
 pub fn ttx1_to_ttx2(bytes: &[u8]) -> Result<Vec<u8>, TextureError> {
     let texture = v1::from_ttx(bytes)?;
     v2::to_ttx2(&TtxDocument::Texture {
@@ -62,7 +64,6 @@ pub fn ttx1_to_ttx2(bytes: &[u8]) -> Result<Vec<u8>, TextureError> {
     })
 }
 
-/// TTX2 → TTX1（降级）：**仅单级 TEX**——mip 链降级会丢级，必须显式拒绝。
 pub fn ttx2_to_ttx1(bytes: &[u8]) -> Result<Vec<u8>, TextureError> {
     let TtxDocument::Texture { levels } = v2::from_ttx2(bytes)? else {
         return Err(TextureError::TtxKind(v2::KIND_MOD));
@@ -73,7 +74,6 @@ pub fn ttx2_to_ttx1(bytes: &[u8]) -> Result<Vec<u8>, TextureError> {
     Ok(v1::to_ttx(&levels[0]))
 }
 
-/// 把下一级尺寸向下取到块对齐（宽 %4、高 %10），不能再严格递减时返回 `None`。
 fn next_level_size(width: usize, height: usize) -> Option<(usize, usize)> {
     let w = (width / 2).div_ceil(crate::BLOCK_WIDTH) * crate::BLOCK_WIDTH;
     let h = (height / 2).div_ceil(crate::BLOCK_HEIGHT) * crate::BLOCK_HEIGHT;

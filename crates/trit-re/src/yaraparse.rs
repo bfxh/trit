@@ -51,11 +51,11 @@
 //! ```
 
 use crate::sigscan::{Pattern, Rule};
-
 // 条件表达式解析（拆出守 800 行预算）；`#`/`@` 叶子在 cond_tail。
 mod cond;
 mod cond_cmp;
 mod cond_leaf;
+mod cond_nest;
 mod cond_tail;
 mod rulebuild;
 

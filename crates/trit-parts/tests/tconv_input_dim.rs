@@ -6,7 +6,7 @@ use trit_parts::tconv::{Net, VDen};
 
 #[test]
 fn vden_input_dim_counts_extra_channels() {
-    let mut net = Net::new(4, &[], 3); // 2 基础 + 2 extra
+    let mut net = Net::new(4, &[], 3).unwrap(); // 2 基础 + 2 extra
     net.linear_out = true;
     let d = VDen {
         net,
