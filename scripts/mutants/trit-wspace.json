@@ -2065,7 +2065,7 @@
   },
   {
     "name": "wspace-class: CLI verify 未接线",
-    "file": "crates/trit-wspace/src/cli.rs",
+    "file": "crates/trit-wspace/src/cli/cli_verify.rs",
     "old": "        \"classification\": wire::classification_value(&net, &oracle).map_err(err)?,",
     "new": "        \"classification\": serde_json::Value::Null,",
     "pkg": "trit-wspace",
@@ -2745,7 +2745,7 @@
   },
   {
     "name": "wspace-mcp: 路径不限工作区根（任意文件读，M19）",
-    "file": "crates/trit-wspace/src/mcp/load.rs",
+    "file": "crates/trit-wspace/src/mcp/load/fsread.rs",
     "old": "    if real.starts_with(&root) {",
     "new": "    if true {",
     "pkg": "trit-wspace",
