@@ -2284,7 +2284,7 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_preview_verify.rs",
-      "lines": 332
+      "lines": 331
     },
     {
       "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
@@ -2548,7 +2548,11 @@
     },
     {
       "file": "crates/trit-parts/src/splat/preview.rs",
-      "lines": 150
+      "lines": 131
+    },
+    {
+      "file": "crates/trit-parts/src/splat/sheet.rs",
+      "lines": 56
     },
     {
       "file": "crates/trit-parts/src/splat/tests.rs",
@@ -2669,6 +2673,10 @@
     {
       "file": "crates/trit-parts/tests/splat_ply_limits.rs",
       "lines": 31
+    },
+    {
+      "file": "crates/trit-parts/tests/splat_sheet_bounds.rs",
+      "lines": 56
     },
     {
       "file": "crates/trit-parts/tests/tconv_contract.rs",

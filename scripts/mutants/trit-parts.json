@@ -249,7 +249,7 @@
   },
   {
     "name": "preview: 拼图行列颠倒",
-    "file": "crates/trit-parts/src/splat/preview.rs",
+    "file": "crates/trit-parts/src/splat/sheet.rs",
     "old": "        let (cx, cy) = (fi % cols, fi / cols);",
     "new": "        let (cx, cy) = (fi / cols, fi % cols);",
     "pkg": "trit-parts",
@@ -574,5 +574,29 @@
     "new": "    3usize.pow(n as u32)\n",
     "pkg": "trit-parts",
     "filter": "levels_saturate_instead_of_panicking_above_the_cap"
+  },
+  {
+    "name": "sheet: 列数不判溢出（usize::MAX 列直接进场宽）",
+    "file": "crates/trit-parts/src/splat/sheet.rs",
+    "old": "    a.checked_mul(b)\n",
+    "new": "    Some(a.wrapping_mul(b))\n",
+    "pkg": "trit-parts",
+    "filter": "cols_that_overflow_the_width_are_rejected"
+  },
+  {
+    "name": "sheet: 像素数不判上限（64M 上限被删）",
+    "file": "crates/trit-parts/src/splat/sheet.rs",
+    "old": "    if px > MAX_SHEET_PIXELS {\n",
+    "new": "    if false {\n",
+    "pkg": "trit-parts",
+    "filter": "cols_above_the_pixel_budget_are_rejected_before_allocating"
+  },
+  {
+    "name": "sheet: res=0 不拒（空表静默通过）",
+    "file": "crates/trit-parts/src/splat/sheet.rs",
+    "old": "    if res == 0 {\n",
+    "new": "    if false {\n",
+    "pkg": "trit-parts",
+    "filter": "zero_res_is_rejected_instead_of_building_an_empty_sheet"
   }
 ]
