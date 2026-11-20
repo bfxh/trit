@@ -1508,6 +1508,23 @@
       "run": "cargo test -p trit-re",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C088",
+      "title": "RefCpu 前向不越界取层",
+      "kind": "cmd",
+      "covers": [
+        "L137"
+      ],
+      "scope": [
+        "crates/trit-parts/src/model/forward.rs"
+      ],
+      "since": "L137",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-parts --lib",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

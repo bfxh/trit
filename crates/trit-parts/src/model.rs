@@ -8,6 +8,8 @@
 
 use crate::weights::{ConvW, Tensors, conv_w, convt_w};
 
+mod forward;
+
 /// 一层推理参数。
 #[derive(Clone)]
 pub struct LayerW {
@@ -118,7 +120,7 @@ pub fn res_is_backend_usable(res: u32) -> bool {
 
 /// 纯标量 f32 参考实现：**没有 GPU 也必须能跑**，是所有其它后端的对拍基准。
 pub struct RefCpu {
-    model: TriModel,
+    pub(super) model: TriModel,
 }
 
 impl RefCpu {
@@ -126,7 +128,7 @@ impl RefCpu {
         Self { model }
     }
 
-    fn conv(&self, x: &[f32], h: u32, w: u32, l: &LayerW) -> Vec<f32> {
+    pub(super) fn conv(&self, x: &[f32], h: u32, w: u32, l: &LayerW) -> Vec<f32> {
         let (cin, cout, kk, pad) = (
             l.cin as usize,
             l.cout as usize,
@@ -186,7 +188,7 @@ impl RefCpu {
         y
     }
 
-    fn affine(&self, v: &[f32], l: &LayerW) -> Vec<f32> {
+    pub(super) fn affine(&self, v: &[f32], l: &LayerW) -> Vec<f32> {
         let cout = l.cout as usize;
         v.iter()
             .enumerate()
@@ -196,40 +198,6 @@ impl RefCpu {
                 if l.relu { t.max(0.0) } else { t }
             })
             .collect()
-    }
-
-    fn block(&self, x: &[f32], h: u32, w: u32, i: usize) -> Vec<f32> {
-        let v = self.conv(x, h, w, &self.model.layers[i]);
-        self.affine(&v, &self.model.layers[i])
-    }
-
-    fn pool(&self, x: &[f32], h: u32, w: u32, c: u32) -> Vec<f32> {
-        let (oh, ow, cc) = ((h / 2) as usize, (w / 2) as usize, c as usize);
-        let mut y = vec![0f32; oh * ow * cc];
-        for oy in 0..oh {
-            for ox in 0..ow {
-                for ch in 0..cc {
-                    let mut m = f32::NEG_INFINITY;
-                    for dy in 0..2usize {
-                        for dx in 0..2usize {
-                            let v = x[((oy * 2 + dy) * w as usize + ox * 2 + dx) * cc + ch];
-                            m = m.max(v);
-                        }
-                    }
-                    y[(oy * ow + ox) * cc + ch] = m;
-                }
-            }
-        }
-        y
-    }
-
-    fn cat(a: &[f32], b: &[f32], hw: usize, ca: usize, cb: usize) -> Vec<f32> {
-        let mut y = vec![0f32; hw * (ca + cb)];
-        for p in 0..hw {
-            y[p * (ca + cb)..p * (ca + cb) + ca].copy_from_slice(&a[p * ca..(p + 1) * ca]);
-            y[p * (ca + cb) + ca..(p + 1) * (ca + cb)].copy_from_slice(&b[p * cb..(p + 1) * cb]);
-        }
-        y
     }
 }
 

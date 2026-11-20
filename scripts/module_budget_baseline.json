@@ -2628,7 +2628,11 @@
     },
     {
       "file": "crates/trit-parts/src/model.rs",
-      "lines": 339
+      "lines": 307
+    },
+    {
+      "file": "crates/trit-parts/src/model/forward.rs",
+      "lines": 42
     },
     {
       "file": "crates/trit-parts/src/model/tests.rs",
