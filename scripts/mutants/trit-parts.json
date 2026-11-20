@@ -598,5 +598,29 @@
     "new": "    if false {\n",
     "pkg": "trit-parts",
     "filter": "zero_res_is_rejected_instead_of_building_an_empty_sheet"
+  },
+  {
+    "name": "hidden: 上限不判",
+    "file": "crates/trit-parts/src/hidden.rs",
+    "old": "    if h > MAX_HIDDEN {",
+    "new": "    if false {",
+    "pkg": "trit-parts",
+    "filter": "hidden_above_the_cap_is_rejected"
+  },
+  {
+    "name": "hidden: 0 不判",
+    "file": "crates/trit-parts/src/hidden.rs",
+    "old": "    if h == 0 {",
+    "new": "    if false {",
+    "pkg": "trit-parts",
+    "filter": "zero_hidden_is_rejected"
+  },
+  {
+    "name": "matnet: new 不调校验",
+    "file": "crates/trit-parts/src/matnet.rs",
+    "old": "        crate::hidden::check(hidden)?;\n",
+    "new": "",
+    "pkg": "trit-parts",
+    "filter": "hidden_of_usize_max_is_rejected_without_panicking"
   }
 ]

@@ -609,6 +609,23 @@
       "pattern": "px > MAX_SHEET_PIXELS",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C036",
+      "title": "MatNet 隐藏宽度先判上限再分配",
+      "kind": "require",
+      "covers": [
+        "L87"
+      ],
+      "scope": [
+        "crates/trit-parts/src/hidden.rs"
+      ],
+      "since": "L87",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "h > MAX_HIDDEN",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

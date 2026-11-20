@@ -299,7 +299,7 @@ pub(crate) fn material_cnn_cmd(argv: &[String]) {
     let seed: u64 = arg(argv, "--seed")
         .and_then(|v| v.parse().ok())
         .unwrap_or(7);
-    let mut net = MatNet::new(hidden, seed);
+    let mut net = MatNet::new(hidden, seed).unwrap_or_else(|e| fail(&e));
     let mut order: Vec<usize> = (0..samples.len()).filter(|&i| !samples[i].0).collect();
     // 确定性打乱（LCG，不用系统随机）
     let mut st = seed | 1;
