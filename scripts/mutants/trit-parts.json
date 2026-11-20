@@ -81,7 +81,7 @@
   },
   {
     "name": "occ: 偶数种子与下一个奇数撞车（seed|1 回归）",
-    "file": "crates/trit-parts/src/occ.rs",
+    "file": "crates/trit-parts/src/occ/mlp.rs",
     "old": "        let mut r = if seed.is_multiple_of(2) {\n            seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1\n        } else {\n            seed\n        };",
     "new": "        let mut r = seed | 1;",
     "pkg": "trit-parts",
@@ -89,7 +89,7 @@
   },
   {
     "name": "occ: lr 衰减失效（忽略 lr-final）",
-    "file": "crates/trit-parts/src/occ.rs",
+    "file": "crates/trit-parts/src/occ/mod.rs",
     "old": "        Some(end) if steps > 1 => {\n            let frac = step as f32 / (steps - 1) as f32;\n            lr + (end - lr) * frac\n        }",
     "new": "        Some(_end) if steps > 1 => lr,",
     "pkg": "trit-parts",
@@ -313,7 +313,7 @@
   },
   {
     "name": "glb: 法线不归一化",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "                [(v[0] / l) as f32, (v[1] / l) as f32, (v[2] / l) as f32]",
     "new": "                [v[0] as f32, v[1] as f32, v[2] as f32]",
     "pkg": "trit-parts",
@@ -321,7 +321,7 @@
   },
   {
     "name": "glb: 节点平移漏掉 c−R·c",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "    let rc = [cx * c + cz * s, -cx * s + cz * c];",
     "new": "    let rc = [cx, cz];",
     "pkg": "trit-parts",
@@ -337,7 +337,7 @@
   },
   {
     "name": "glb: 转台关键帧角度恒 0",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "        let th = k as f32 * std::f32::consts::FRAC_PI_2;",
     "new": "        let th = 0.0f32;",
     "pkg": "trit-parts",
@@ -345,7 +345,7 @@
   },
   {
     "name": "glb: 根节点把自己也挂成 child",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "        let children: Vec<String> = (1..=nodes.len()).map(|i| i.to_string()).collect();",
     "new": "        let children: Vec<String> = (0..nodes.len()).map(|i| i.to_string()).collect();",
     "pkg": "trit-parts",

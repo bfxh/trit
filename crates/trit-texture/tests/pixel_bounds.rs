@@ -14,9 +14,7 @@ fn the_cap_itself_is_legal() {
 
 #[test]
 fn one_pixel_above_the_cap_is_rejected() {
-    let err = check_pixels(MAX_TEXTURE_PIXELS + 1, 1)
-        .err()
-        .expect("越界必须 Err");
+    let err = check_pixels(MAX_TEXTURE_PIXELS + 1, 1).expect_err("越界必须 Err");
     assert!(err.to_string().contains("超过上限"), "实得: {err}");
 }
 

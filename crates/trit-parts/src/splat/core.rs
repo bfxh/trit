@@ -30,8 +30,6 @@ pub fn build(views: &[View], rgbs: &[Vec<f32>], cell: f32, scale_k: f32) -> Vec<
     build_filtered(views, rgbs, cell, scale_k, |_| true)
 }
 
-/// 同 [`build`]，但只保留 `keep(id)` 为真的分割 id（id 0 = 背景，永远丢弃）。
-
 /// 每个高斯在每个像素上的权重（已按近到远合成、含透射率），供渲染与梯度复用。
 pub struct SplatWeights {
     /// (高斯序号, 像素序号, 权重)。

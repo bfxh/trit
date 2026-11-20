@@ -8,8 +8,6 @@
 
 use trit_core::value::Ternary;
 
-use super::flow::N;
-
 mod ternarize;
 
 pub use ternarize::ternarize;

@@ -190,8 +190,6 @@ pub fn write_rgb(path: &Path, w: usize, h: usize, pix: &[f32]) -> Result<(), Str
     wr.write_image_data(&bytes).map_err(|e| e.to_string())
 }
 
-/// 读 PNG，返回 `(宽, 高, RGB 的 f32 NHWC)`。
-
 #[cfg(test)]
 mod tests {
     use super::*;

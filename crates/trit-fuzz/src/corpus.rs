@@ -4,7 +4,6 @@
 //! RNG 本体复用 [`trit_bench::SeedRng`]（同一组 13/7/17 移位），所以"换包"不改变序列口径。
 
 use trit_bench::SeedRng;
-use trit_core::ast::Expr;
 use trit_core::value::Ternary;
 
 /// 生成器的元素上限：语料只喂求解器，1M 已是上限。
@@ -121,7 +120,7 @@ pub fn var_names(n: usize) -> Vec<String> {
             if i < 26 {
                 String::from((b'a' + i as u8) as char)
             } else {
-                format!("v{i}")
+                String::from((b'a' + i as u8) as char)
             }
         })
         .collect()

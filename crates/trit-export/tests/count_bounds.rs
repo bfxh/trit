@@ -11,6 +11,6 @@ fn absurd_tensor_count_is_rejected_before_allocating() {
     b.extend_from_slice(&3u32.to_le_bytes());
     b.extend_from_slice(&1000u64.to_le_bytes()); // tensor_count
     b.extend_from_slice(&0u64.to_le_bytes()); // meta_count
-    let err = read(&b).err().expect("巨大 tensor_count 必须 Err");
+    let err = read(&b).expect_err("巨大 tensor_count 必须 Err");
     assert!(err.to_string().contains("张量数"), "实得: {err}");
 }

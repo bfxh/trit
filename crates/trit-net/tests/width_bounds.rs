@@ -9,7 +9,7 @@ fn layer_width_above_the_cap_is_rejected() {
         r#"{{"layers":[{{"inputs":5,"outputs":{},"weights":[],"bias":[]}}]}}"#,
         MAX_WIDTH + 1
     );
-    let err = Model::from_json(&json).err().expect("越界必须 Err");
+    let err = Model::from_json(&json).expect_err("越界必须 Err");
     assert!(err.to_string().contains("层宽"), "实得: {err}");
 }
 

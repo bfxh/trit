@@ -1,6 +1,5 @@
 //! raw.rs 的测试（拆出守模块行数）。
 
-use super::*;
 use crate::lexer::scrub;
 
 fn joined(source: &str) -> String {

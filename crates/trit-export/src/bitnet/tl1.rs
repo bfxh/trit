@@ -45,13 +45,13 @@ impl Tile {
         let by = self.by();
         let ok = self.m != 0
             && self.k != 0
-            && self.k % 2 == 0
-            && self.m % self.bm == 0
-            && self.k % self.bk == 0
-            && self.bm % self.bmm == 0
-            && self.bmm % 16 == 0
-            && by % 4 == 0
-            && self.bk % by == 0;
+            && self.k.is_multiple_of(2)
+            && self.m.is_multiple_of(self.bm)
+            && self.k.is_multiple_of(self.bk)
+            && self.bm.is_multiple_of(self.bmm)
+            && self.bmm.is_multiple_of(16)
+            && by.is_multiple_of(4)
+            && self.bk.is_multiple_of(by);
         if ok {
             Ok(())
         } else {

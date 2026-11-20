@@ -19,7 +19,7 @@ pub fn pack_q4(w: &[f32], rows: usize, cols: usize) -> Vec<u8> {
             let d = if amax > 0.0 { amax / 7.0 } else { 0.0 };
             out.extend_from_slice(&to_f16(d).to_le_bytes());
             let mut bytes = [0u8; 16];
-            for i in 0..16 {
+            for (i, slot) in bytes.iter_mut().enumerate() {
                 let at = |k: usize| blk.get(k).copied().unwrap_or(0.0);
                 let q0 = if d > 0.0 {
                     (at(i) / d).round().clamp(-8.0, 7.0) as i32 + 8
@@ -31,7 +31,7 @@ pub fn pack_q4(w: &[f32], rows: usize, cols: usize) -> Vec<u8> {
                 } else {
                     8
                 };
-                bytes[i] = ((q0 as u8) & 0x0f) | (((q1 as u8) & 0x0f) << 4);
+                *slot = ((q0 as u8) & 0x0f) | (((q1 as u8) & 0x0f) << 4);
             }
             out.extend_from_slice(&bytes);
         }

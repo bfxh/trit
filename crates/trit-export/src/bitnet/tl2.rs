@@ -40,15 +40,15 @@ fn check(tile: Tile) -> Result<(), Tl2Error> {
     let by = by(tile);
     let ok = tile.m != 0
         && tile.k != 0
-        && tile.k % 3 == 0
-        && tile.m % tile.bm == 0
-        && tile.k % tile.bk == 0
-        && tile.bm % tile.bmm == 0
-        && tile.bmm % 16 == 0
+        && tile.k.is_multiple_of(3)
+        && tile.m.is_multiple_of(tile.bm)
+        && tile.k.is_multiple_of(tile.bk)
+        && tile.bm.is_multiple_of(tile.bmm)
+        && tile.bmm.is_multiple_of(16)
         && 192 % tile.bmm == 0
         && by / 3 == 2
-        && tile.bk % (by * 4) == 0
-        && (tile.bk / 3) % 8 == 0;
+        && tile.bk.is_multiple_of(by * 4)
+        && (tile.bk / 3).is_multiple_of(8);
     if ok { Ok(()) } else { Err(bad) }
 }
 

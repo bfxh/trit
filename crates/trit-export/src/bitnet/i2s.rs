@@ -46,7 +46,7 @@ pub fn pack(trits: &[Ternary]) -> Result<Vec<u8>, I2sError> {
         return Err(I2sError::BlockAlign(trits.len()));
     }
     let mut out = vec![0u8; trits.len() / 4];
-    for (bi, block) in trits.chunks_exact(BLOCK_VALUES).enumerate() {
+    for (bi, block) in trits.as_chunks::<BLOCK_VALUES>().0.iter().enumerate() {
         let base = bi * BLOCK_BYTES;
         for k in 0..32 {
             let c0 = encode_trit(block[k]);
@@ -73,7 +73,7 @@ pub fn unpack(packed: &[u8], count: usize) -> Result<Vec<Ternary>, I2sError> {
         });
     }
     let mut out = Vec::with_capacity(count);
-    for block in packed.chunks_exact(BLOCK_BYTES) {
+    for block in packed.as_chunks::<BLOCK_BYTES>().0 {
         let mut vals = [Ternary::Unknown; BLOCK_VALUES];
         for k in 0..32 {
             let b = block[k];

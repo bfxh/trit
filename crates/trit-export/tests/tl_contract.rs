@@ -15,12 +15,12 @@ fn three_table_matches_linear_combination() {
         1 => Ternary::Unknown,
         _ => Ternary::True,
     };
-    for idx in 0..27 {
+    for (idx, &got) in table.iter().enumerate() {
         let d = [idx / 9, (idx / 3) % 3, idx % 3];
         let q = d.map(|v| v as f32 - 1.0);
         let dot: f32 = weights.iter().zip(q).map(|(w, v)| w * v).sum();
         assert_eq!(three_index(d.map(t)), idx);
-        assert_eq!(table[idx], (scale * dot).round() as i8, "idx={idx}");
+        assert_eq!(got, (scale * dot).round() as i8, "idx={idx}");
     }
 }
 
