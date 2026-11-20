@@ -1019,6 +1019,23 @@
       "pattern": "trits > MAX_TRITS",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C060",
+      "title": "trit-codec --trits 的规模上限",
+      "kind": "require",
+      "covers": [
+        "L108"
+      ],
+      "scope": [
+        "crates/trit-codec/src/main.rs"
+      ],
+      "since": "L108",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "n > MAX_TRITS",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

@@ -771,6 +771,10 @@
       "lines": 85
     },
     {
+      "file": "crates/trit-codec/tests/trits_bounds.rs",
+      "lines": 34
+    },
+    {
       "file": "crates/trit-core/examples/bulk_bench.rs",
       "lines": 67
     },
