@@ -31,8 +31,7 @@ function New-File([string]$path, [string]$content) {
     [IO.File]::WriteAllText($path, $content, (New-Object System.Text.UTF8Encoding($false)))
 }
 
-# =====================================================================================
-"== A. affected: 没有 git 历史时必须回退全量 =="
+# =============================================================================="== A. affected: 没有 git 历史时必须回退全量 =="
 $A = Join-Path $Work 'no-git'
 New-File (Join-Path $A 'Cargo.toml') "`n[package]`nname = 'x'`n"
 New-File (Join-Path $A 'src\lib.rs') "pub fn a() {}`n"
@@ -192,7 +191,9 @@ $stepNames = @($doc1.steps | ForEach-Object { $_.step })
 Assert-True ($code1 -eq 0) 'I1 全链路通过时 exit=0' "exit=$code1"
 $core = ($stepNames | Where-Object { $_ -ne 'memory-brief' -and $_ -ne 'memory-note' }) -join ','
 Assert-True ($stepNames[0] -eq 'memory-brief') 'I2 第一步永远是读记忆（新会话先知道项目历史）' ($stepNames -join ',')
-Assert-True ($core -eq 'timeline-due,preflight,affected,policy,constraints,journal-begin,run,journal-end') 'I2b 核心步骤按顺序' $core
+# checks 步是无条件 add 的（没初始化也以 skipped 留痕），期望串必须包含它；
+# 这条断言曾因漏掉 checks 而永远红——见 docs/ERRORS.md L98。
+Assert-True ($core -eq 'timeline-due,preflight,checks,affected,policy,constraints,journal-begin,run,journal-end') 'I2b 核心步骤按顺序' $core
 Assert-True ($doc1.plan.proven -eq $true) 'I3 回执记录跑了持证子集' "proven=$($doc1.plan.proven)"
 Assert-True ($doc1.verdict -match 'proven subset') 'I4 verdict 说明是持证子集' $doc1.verdict
 
@@ -1080,6 +1081,245 @@ if (-not $bashExe) {
     $x10 = @(& $bashExe $shG list -Root (ToPosix $Xg) 2>&1)
     $refs = @($x10 | Where-Object { $_ -match 'refs/recycle/checkpoint/' })
     Assert-True ($LASTEXITCODE -eq 0 -and $refs.Count -ge 2 -and ((@($x10) -join ' ') -match 'again')) 'X10 第二个 checkpoint 带 label，list 可见两条' "refs=$($refs.Count)"
+"== Y. resume: 断粮挂起（censored 不是失败）与换会话续跑 =="
+if (-not $bashExe) {
+    "  SKIP  Y0 没有 bash，跳过 resume 检查"
+    $skipped += 21
+} else {
+    $shRes = Join-Path $tools 'resume.sh'
+    $Yr = Join-Path $Work 'y-resume'
+    New-Item -ItemType Directory $Yr -Force | Out-Null
+    $yroot = ToPosix $Yr
+
+    & $bashExe $shRes begin t1 --budget-token 12000 -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Y1 begin exit=0' "exit=$LASTEXITCODE"
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.task -eq 't1' -and $ys.status -eq 'open' -and $ys.budget -eq 12000 `
+        -and $ys.created -and $ys.journal_id -eq $null) 'Y2 会话文件字段完整（task/created/status/budget/steps）' ''
+    Assert-True (@($ys.steps).Count -eq 0) 'Y2b steps 从空开始' ''
+
+    & $bashExe $shRes begin t1 -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'Y3 已存在的会话再 begin 被拒（fail-closed，不许覆盖）' "exit=$LASTEXITCODE"
+
+    & $bashExe $shRes progress t1 s1 --proven --note 'first step' -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Y4 progress exit=0' "exit=$LASTEXITCODE"
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.steps[0].step -eq 's1' -and $ys.steps[0].proven -eq $true `
+        -and $ys.steps[0].note -eq 'first step') 'Y4b 步骤记录完整（step/proven/note）' ''
+
+    # journal 联动：只记快照 id（manifest 内容哈希），不复制内容
+    New-Item -ItemType Directory -Force (Join-Path $Yr '.journal\latest') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $Yr '.journal\latest\manifest.json'), '{"count": 3}', $enc)
+    $wantId = (Get-FileHash (Join-Path $Yr '.journal\latest\manifest.json') -Algorithm SHA256).Hash.ToLower().Substring(0, 12)
+    & $bashExe $shRes suspend t1 --reason budget -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Y5 suspend exit=0' "exit=$LASTEXITCODE"
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.status -eq 'suspended' -and $ys.censor.reason -eq 'budget' -and $ys.censor.at) `
+        'Y5b suspend 记录挂起状态与删失原因' ''
+    Assert-True ($ys.journal_id -eq $wantId) 'Y6 suspend 时探测到 journal 快照 id（只记 id）' "want=$wantId got=$($ys.journal_id)"
+
+    $y7 = @(& $bashExe $shRes status t1 -Root $yroot 2>&1)
+    $y7txt = (@($y7) -join ' ')
+    Assert-True ($y7txt -match 'censored' -and $y7txt -match 'not a failure') `
+        'Y7 挂起态的措辞是 censored（不是 failed）' $y7txt
+
+    $y8 = @(& $bashExe $shRes resume t1 -Root $yroot 2>&1)
+    $y8txt = (@($y8) -join "`n")
+    Assert-True ($y8txt -match 'copy verbatim' -and $y8txt -match 'resume\.py progress t1 ' `
+        -and $y8txt -match 'resume\.py finish t1') 'Y8 resume 输出逐字可复制的续跑命令块' $y8txt
+    Assert-True (@($y8 | Where-Object { $_ -match '[^\x00-\x7F]' }).Count -eq 0) `
+        'Y8b 续跑块与状态输出纯 ASCII（任何宿主都不读坏）' ''
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.status -eq 'suspended') 'Y9 resume 是只读视图（看一眼不改变挂起状态）' ''
+
+    & $bashExe $shRes progress t1 s2 --proven -Root $yroot 2>&1 | Out-Null
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.status -eq 'open' -and ($ys.history | Where-Object { $_.event -eq 'resume' }).Count -ge 1) `
+        'Y10 挂起的会话被 progress 接回 open（历史里记了 resume 事件）' ''
+
+    & $bashExe $shRes finish t1 -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'Y11 finish exit=0' "exit=$LASTEXITCODE"
+    $ys = Get-Content (Join-Path $Yr '.agent\resume\t1.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys.status -eq 'finished') 'Y11b 状态 finished' ''
+    & $bashExe $shRes finish t1 -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'Y12 已完结的会话再 finish 被拒' "exit=$LASTEXITCODE"
+
+    # censored 的完整闭环：挂起后直接收尾 = 删失结案，不是失败
+    & $bashExe $shRes begin t2 -Root $yroot 2>&1 | Out-Null
+    & $bashExe $shRes suspend t2 --reason deadline -Root $yroot 2>&1 | Out-Null
+    $y13 = @(& $bashExe $shRes finish t2 -Root $yroot 2>&1)
+    $ys2 = Get-Content (Join-Path $Yr '.agent\resume\t2.json') -Raw | ConvertFrom-Json
+    Assert-True ($ys2.status -eq 'censored') 'Y13 挂起后 finish 判 censored（不是 finished）' ''
+    Assert-True ((@($y13) -join ' ') -match 'censored' -and (@($y13) -join ' ') -match 'not a failure') `
+        'Y13b censored 的措辞明说不是失败' (@($y13) -join ' ')
+
+    $y14 = @(& $bashExe $shRes list -Root $yroot 2>&1)
+    Assert-True ((@($y14 | Where-Object { $_ -match '\bt1\b' }).Count -ge 1 `
+        -and @($y14 | Where-Object { $_ -match '\bt2\b' }).Count -ge 1) `
+        -and (@($y14 | Where-Object { $_ -match 'censored' }).Count -ge 1)) `
+        'Y14 list 列出会话与状态（censored 也在列）' (@($y14) -join ' / ')
+
+    & $bashExe $shRes suspend ghost-task --reason budget -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'Y15 不存在的会话 suspend 被拒（fail-closed）' "exit=$LASTEXITCODE"
+    & $bashExe $shRes begin '../evil' -Root $yroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'Y16 非法 task-id（路径形态）被拒' "exit=$LASTEXITCODE"
+
+    # 编排层集成：声明额度 0 时 run 之前整体拒绝，verdict 是 suspended 不是 failed
+    $shAVy = Join-Path $tools 'agent-verify.sh'
+    $Yav = Join-Path $Work 'y-av'
+    New-File (Join-Path $Yav 'conftest.py') ''
+    New-File (Join-Path $Yav 'pkg\core.py') "def f(): return 1`n"
+    New-File (Join-Path $Yav 'pkg\__init__.py') "from .core import f`n"
+    New-File (Join-Path $Yav 'tests\test_core.py') "from pkg.core import f`ndef test_f(): assert f() == 1`n"
+    $yrc = Join-Path $Work 'y-gate-rc.json'
+    & $bashExe $shAVy -Root (ToPosix $Yav) -Changed 'pkg/core.py' -Lang python `
+        --budget-token 0 --task-id t-budget -Receipt (ToPosix $yrc) 2>&1 | Out-Null
+    $y17 = $LASTEXITCODE
+    $yDoc = Get-Content $yrc -Raw | ConvertFrom-Json
+    $yNames = @($yDoc.steps | ForEach-Object { $_.step })
+    Assert-True ($y17 -eq 1 -and $yDoc.verdict -eq 'suspended (budget) before run') `
+        'Y17 --budget-token 0 在 run 前整体拒绝，verdict 正确' "exit=$y17 verdict=$($yDoc.verdict)"
+    Assert-True ($yNames -notcontains 'run' -and $yNames -notcontains 'affected') `
+        'Y17b 拒绝发生在 run 之前（连受影响分析都没跑）' ($yNames -join ',')
+    Assert-True ($yDoc.budget.declared -eq 0 -and $yDoc.budget.gate -match 'cannot measure model-side token usage') `
+        'Y18 回执带着声明制闸门的诚实边界说明' ''
+    $yRaw = [IO.File]::ReadAllText($yrc, (New-Object System.Text.UTF8Encoding($false)))
+    Assert-True ((($yRaw -replace '[^\x00-\x7F]', '').Length) -eq $yRaw.Length) 'Y18b 回执纯 ASCII' ''
+    $ySession = Get-Content (Join-Path $Yav '.agent\resume\t-budget.json') -Raw | ConvertFrom-Json
+    Assert-True ($ySession.status -eq 'suspended' -and $ySession.censor.reason -eq 'budget' `
+        -and $ySession.budget -eq 0) 'Y19 闸门自动挂起会话（reason=budget，budget=0）' ''
+
+    # 失败自动挂起：verdict 保持 command failed，只允许追加字段
+    $Yf = Join-Path $Work 'y-avfail'
+    New-File (Join-Path $Yf 'conftest.py') ''
+    New-File (Join-Path $Yf 'pkg\core.py') "def f(): return 1`n"
+    New-File (Join-Path $Yf 'tests\test_core.py') "from pkg.core import f`ndef test_fail(): assert f() == 2`n"
+    $yrc2 = Join-Path $Work 'y-fail-rc.json'
+    & $bashExe $shAVy -Root (ToPosix $Yf) -Changed 'pkg/core.py' -Lang python `
+        --task-id t-fail -Receipt (ToPosix $yrc2) 2>&1 | Out-Null
+    $y20 = $LASTEXITCODE
+    $yDoc2 = Get-Content $yrc2 -Raw | ConvertFrom-Json
+    Assert-True ($y20 -eq 1 -and $yDoc2.verdict -eq 'command failed') `
+        'Y20 失败自动挂起但 verdict 仍是 command failed' "exit=$y20 verdict=$($yDoc2.verdict)"
+    Assert-True ($yDoc2.resume_checkpoint -match 't-fail suspended \(manual\)' `
+        -and $yDoc2.resume.suspend -eq 0 `
+        -and @($yDoc2.steps | ForEach-Object { $_.step }) -contains 'resume-suspend') `
+        'Y20b 回执尾部追加了 resume checkpoint（旧字段一个没动）' ''
+    Assert-True ($yDoc2.run[0].exit -ne 0 `
+        -and (@($yDoc2.steps | ForEach-Object { $_.step }) -contains 'journal-end') `
+        -and $yDoc2.plan.proven -ne $null) 'Y20c run/plan/链路原有字段语义不变' ''
+    $yFailSession = Get-Content (Join-Path $Yf '.agent\resume\t-fail.json') -Raw | ConvertFrom-Json
+    Assert-True ($yFailSession.status -eq 'suspended' -and $yFailSession.censor.reason -eq 'manual' `
+        -and $yFailSession.steps[0].proven -eq $false -and $yFailSession.steps[0].step -eq 'run:1') `
+        'Y20d 失败步骤记为 unproven 并挂起（reason=manual）' ''
+
+    # 声明额度为正时闸门不拦（声明制：>0 就放行去跑）
+    $yrc3 = Join-Path $Work 'y-ok-rc.json'
+    & $bashExe $shAVy -Root (ToPosix $Yav) -Changed 'pkg/core.py' -Lang python `
+        --budget-token 5 -Receipt (ToPosix $yrc3) 2>&1 | Out-Null
+    $yDoc3 = Get-Content $yrc3 -Raw | ConvertFrom-Json
+    Assert-True ($LASTEXITCODE -eq 0 -and $yDoc3.verdict -match '^passed') `
+        'Y21 声明额度为正时正常跑完（闸门只拦 <= 0）' "exit=$LASTEXITCODE verdict=$($yDoc3.verdict)"
+}
+
+""
+"== Z. run-caps: 进程资源硬帽（内核帽，不是安全边界）=="
+if (-not $bashExe) {
+    "  SKIP  Z0 没有 bash，跳过 run-caps 检查"
+    $skipped += 12
+} else {
+    $zPy = $null
+    foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
+        if (-not $c) { continue }
+        $src = (Get-Command $c -ErrorAction SilentlyContinue).Source
+        if (-not $src) { continue }
+        if ((& $src -c 'print(1)' 2>$null) -eq '1') { $zPy = $src; break }
+    }
+    if (-not $zPy) {
+        "  SKIP  Z0b 找不到可用的 Python，跳过 run-caps 检查"
+        $skipped += 12
+    } else {
+        $shCaps = Join-Path $tools 'run-caps.sh'
+        $Zd = Join-Path $Work 'z-caps'
+        New-Item -ItemType Directory $Zd -Force | Out-Null
+        $znl = [char]10
+        [IO.File]::WriteAllText("$Zd\ok.py", "print('caps-ok')$znl", $enc)
+        [IO.File]::WriteAllText("$Zd\exit3.py", "import sys; sys.exit(3)$znl", $enc)
+        [IO.File]::WriteAllText("$Zd\sleep10.py", "import time; time.sleep(10)$znl", $enc)
+        [IO.File]::WriteAllText("$Zd\bigalloc.py", "x = [0] * (1 << 28)$znlprint(len(x))$znl", $enc)
+        [IO.File]::WriteAllText("$Zd\spawn3.py", (@(
+                'import subprocess, sys',
+                'procs = []',
+                'try:',
+                '    for _ in range(3):',
+                '        procs.append(subprocess.Popen([sys.executable, "-c", "import time; time.sleep(2)"]))',
+                'except OSError as e:',
+                '    print("spawn denied")',
+                '    sys.exit(9)',
+                'for p in procs:',
+                '    p.wait()',
+                'print("spawned", len(procs))'
+            ) -join $znl) + $znl, $enc)
+
+        $z1 = @(& $bashExe $shCaps --mem-mb 256 --procs 8 --seconds 30 -- $zPy "$Zd\ok.py" 2>&1)
+        Assert-True ($LASTEXITCODE -eq 0 -and (@($z1) -join ' ') -match 'caps-ok') `
+            'Z1 正常命令透传退出码 0 且输出可见' "exit=$LASTEXITCODE out=(@($z1) -join ' ')"
+
+        & $bashExe $shCaps --mem-mb 256 --procs 8 --seconds 30 -- $zPy "$Zd\exit3.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 3) 'Z2 子进程退出码原样透传（3）' "exit=$LASTEXITCODE"
+
+        & $bashExe $shCaps --seconds 2 -- $zPy "$Zd\sleep10.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 124) 'Z3 超时映射为 124（watchdog 杀掉整个 job）' "exit=$LASTEXITCODE"
+
+        & $bashExe $shCaps --mem-mb 256 --seconds 30 -- $zPy "$Zd\bigalloc.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -ne 0 -and $LASTEXITCODE -ne 124) `
+            'Z4 内存帽：超大分配在帽下失败（非 0 退出，不是超时）' "exit=$LASTEXITCODE"
+
+        & $bashExe $shCaps --procs 2 --seconds 60 -- $zPy "$Zd\spawn3.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 9) 'Z5 进程数帽：第 3 个进程创建被内核拒绝（exit 9）' "exit=$LASTEXITCODE"
+
+        $z6 = @(& $bashExe $shCaps --procs 8 --seconds 60 -- $zPy "$Zd\spawn3.py" 2>&1)
+        Assert-True ($LASTEXITCODE -eq 0 -and (@($z6) -join ' ') -match 'spawned 3') `
+            'Z6 帽内进程数正常跑完' "exit=$LASTEXITCODE"
+
+        & $bashExe $shCaps -- $zPy "$Zd\ok.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 2) 'Z7 一个帽都不给就拒绝（不加帽静默跑完等于说谎）' "exit=$LASTEXITCODE"
+        & $bashExe $shCaps --mem-mb 256 "$Zd\ok.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 2) 'Z7b 缺 -- 分隔符拒绝（帽与命令不许含糊）' "exit=$LASTEXITCODE"
+        & $bashExe $shCaps --mem-mb 0 -- $zPy "$Zd\ok.py" 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 2) 'Z7c 非法帽值（0）拒绝' "exit=$LASTEXITCODE"
+
+        & $bashExe $shCaps --mem-mb 256 -- no-such-exe-xyz-probe 2>&1 | Out-Null
+        Assert-True ($LASTEXITCODE -eq 127) 'Z8 起不来的命令报 127（不是吞掉）' "exit=$LASTEXITCODE"
+
+        # 编排层集成：--caps 时回执 run[] 追加 caps 参数，verdict 与退出码照旧
+        $shAVz = Join-Path $tools 'agent-verify.sh'
+        $Zav = Join-Path $Work 'z-av'
+        New-File (Join-Path $Zav '.git\HEAD') "ref: refs/heads/main`n"
+        New-File (Join-Path $Zav 'conftest.py') ''
+        New-File (Join-Path $Zav 'pkg\core.py') "def f(): return 1`n"
+        New-File (Join-Path $Zav 'pkg\__init__.py') "from .core import f`n"
+        New-File (Join-Path $Zav 'tests\test_core.py') "from pkg.core import f`ndef test_f(): assert f() == 1`n"
+        $zrc = Join-Path $Work 'z-caps-rc.json'
+        & $bashExe $shAVz -Root (ToPosix $Zav) -Changed 'pkg/core.py' -Lang python `
+            --caps --caps-seconds 120 -Receipt (ToPosix $zrc) 2>&1 | Out-Null
+        $z9 = $LASTEXITCODE
+        $zDoc = Get-Content $zrc -Raw | ConvertFrom-Json
+        Assert-True ($z9 -eq 0 -and $zDoc.verdict -match '^passed' `
+            -and $zDoc.run[0].caps.seconds -eq 120 -and $zDoc.run[0].caps.mem_mb -gt 0) `
+            'Z9 --caps 时 run[] 追加 caps 参数且回执 verdict 照旧' "exit=$z9 verdict=$($zDoc.verdict)"
+        Assert-True ($zDoc.caps.note -match 'NOT a security boundary') `
+            'Z9b 回执带着"内核帽不是安全边界"的诚实强度声明' ''
+
+        $zrc2 = Join-Path $Work 'z-plain-rc.json'
+        & $bashExe $shAVz -Root (ToPosix $Zav) -Changed 'pkg/core.py' -Lang python `
+            -Receipt (ToPosix $zrc2) 2>&1 | Out-Null
+        $zDoc2 = Get-Content $zrc2 -Raw | ConvertFrom-Json
+        Assert-True ($LASTEXITCODE -eq 0 `
+            -and ($zDoc2.run[0].PSObject.Properties.Name -notcontains 'caps') `
+            -and $zDoc2.PSObject.Properties.Name -notcontains 'caps') `
+            'Z10 不开 --caps 时回执与现状完全一致（回归保护）' ''
+    }
 }
 
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"

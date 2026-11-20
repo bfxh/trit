@@ -10,14 +10,31 @@ the caller has to remember the order. The order IS the safety property --
     memory-brief  (what this project already knows)
     timeline-due  (which temporary problems have come due)
     preflight     (nothing is broken before we start)
+    budget gate   (declared-empty budget suspends BEFORE run -- see below)
     affected      (the subset, only if it carries a proof)
     policy        (we are allowed to run this at all)
     constraints   (this change is allowed at all)
     journal-begin (we can prove and undo what it writes)
-    run           (only now)
+    run           (only now; with --caps each command is wrapped by run_caps.py)
     journal-end   (what it actually wrote)
     memory-note   (a durable, evidenced trace)
     timeline-record (a failure is a problem with a timestamp)
+
+Budget gate (declaration-based, honestly): the tool layer CANNOT measure model-side
+token usage, so --budget-token N is the caller's declared remaining budget. A declared
+value <= 0 suspends the whole run before anything executes (verdict "suspended (budget)
+before run"), records the session as censored in resume.py -- censoring is not failure
+-- and prints the continuation block. The gate fires only when the flag is given.
+
+Caps (--caps): each run command executes under run_caps.py kernel-level resource caps
+(memory / process count on Windows, RLIMIT_AS on POSIX). That is a runaway limiter, NOT
+a security boundary: no filesystem/network isolation, no defense against deliberate
+escape. policy pre-classifies commands to stop misuse; run-caps bounds the damage if a
+permitted command runs away. One gates, the other contains.
+
+A run command that fails with --task-id records itself unproven and suspends the
+session (reason=manual); the verdict stays "command failed" and the receipt only gains
+appended fields.
 
 If a caller skips one, no individual script can tell. So the chain is the deliverable, and
 every step's decision is written into one receipt that can be audited afterwards.
@@ -45,6 +62,37 @@ PROFILES = {"read-only", "workspace-write", "full"}
 
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
+RESUME = os.path.join(TOOLS, "resume.py")
+RUN_CAPS = os.path.join(TOOLS, "run_caps.py")
+
+BUDGET_NOTE = ("declaration-based gate: the tool layer cannot measure model-side token "
+               "usage; --budget-token is the caller's declared remaining budget "
+               "(continuation of the ENTRY-README boundary #3: honest scope statements "
+               "travel with the tool)")
+CAPS_NOTE = ("kernel-level resource caps (memory and process count enforced by the "
+             "Windows job object, RLIMIT_AS on POSIX); NOT a security boundary: no "
+             "filesystem/network isolation, no defense against deliberate escape; "
+             "complements policy -- policy pre-classifies commands to stop misuse, "
+             "run-caps bounds the damage if a permitted command runs away")
+
+HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audited receipt.
+
+  agent-verify.sh -Root <dir> -Changed <files> -Lang rust|python|node|go
+                    [-Profile read-only|workspace-write|full] [-DryRun]
+                    [-Receipt out.json] [-Store <dir>] [-Plan plan.json]
+  budget gate:  --budget-token N --task-id <id>
+  caps:         --caps [--caps-mem-mb N] [--caps-procs N] [--caps-seconds S]
+
+Budget gate (honest scope): the tool layer cannot measure model-side token usage.
+--budget-token N is a DECLARATION by the caller. A declared value <= 0 refuses before
+run, suspends the session (reason=budget, censored -- not a failure) and prints the
+continuation block. No flag, no gate.
+
+Caps (honest scope): {CAPS_NOTE}
+Defaults when --caps is given without parameters: mem 2048 MB, 64 procs, 1800 s.
+
+Exit codes: 0 all good; 1 a guard refused or the command failed; 2 bad invocation.
+"""
 
 
 def parse_args(argv):
@@ -58,8 +106,12 @@ def parse_args(argv):
             i += 1
             continue
         name = a.lstrip("-").lower()
-        if name in ("dryrun", "allownetwork"):
-            out["dry_run" if name == "dryrun" else "allow_network"] = True
+        # Boolean flags must be listed here: a bool flag that falls through to the
+        # value-branch swallows the NEXT argument as its value (--caps -Root ... would
+        # parse -Root as the caps value).
+        if name in ("dryrun", "allownetwork", "caps"):
+            out["dry_run" if name == "dryrun"
+                else "allow_network" if name == "allownetwork" else "caps"] = True
             i += 1
             continue
         val = argv[i + 1] if i + 1 < len(argv) else ""
@@ -87,6 +139,33 @@ def skipped(msg):
     return {"out": [msg], "code": 0, "seconds": 0}
 
 
+def int_or(val, default):
+    """int(val) when a value was actually given; '' must NOT fall into the default."""
+    s = str(val).strip() if val is not None else ""
+    if not s:
+        return default
+    return int(s)
+
+
+def resume_step(argv_tail, root):
+    """One resume.py call; if the session does not exist yet, begin it first.
+
+    resume.py itself is fail-closed and refuses to touch a missing session. The
+    orchestrator owns the task-id lifecycle, so beginning an empty session here is not
+    fabrication: it records exactly the state this run observed (no steps yet), and the
+    next line suspends it. argv_tail[1] is always the task-id (progress/suspend shape).
+    """
+    r = step([RESUME] + argv_tail + ["-Root", root])
+    if r["code"] == 2:
+        b = step([RESUME, "begin", argv_tail[1], "-Root", root])
+        r = step([RESUME] + argv_tail + ["-Root", root]) if b["code"] == 0 else b
+    return r
+
+
+def session_file(root, task_id):
+    return os.path.join(root, ".agent", "resume", f"{task_id}.json")
+
+
 def write_receipt(path, doc):
     # ensure_ascii=True is the point, not a detail: a reader that decodes UTF-8 as ANSI can
     # mangle Chinese and even break the closing quote, turning a valid receipt into garbage.
@@ -96,6 +175,9 @@ def write_receipt(path, doc):
 
 
 def main(argv):
+    if "--help" in argv or "-h" in argv:
+        print(HELP)
+        return 0
     a = parse_args(argv)
     root_in = a["root"].strip()
     if not root_in or not os.path.isdir(root_in):
@@ -114,12 +196,31 @@ def main(argv):
     root = os.path.abspath(root_in)
     lang = a["lang"].lower()
     profile = a["profile"].lower()
+    task_id = str(a.get("task-id", "")).strip()
     store = a["store"].strip() or os.path.join(
         os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "agent-verify",
         root.replace("\\", "_").replace(":", "_"))
 
+    # --- caps: kernel-level resource caps around the run segment ------------------------
+    # Validated up front (bad invocation exits 2 before anything runs) and recorded in
+    # the receipt below, so the honesty statement travels with every audited run.
+    caps = None
+    if a.get("caps"):
+        try:
+            caps = {"mem_mb": int_or(a.get("caps-mem-mb"), 2048),
+                    "procs": int_or(a.get("caps-procs"), 64),
+                    "seconds": int_or(a.get("caps-seconds"), 1800)}
+        except ValueError:
+            print("agent-verify: --caps-mem-mb/--caps-procs/--caps-seconds must be integers")
+            return 2
+        if min(caps["mem_mb"], caps["procs"], caps["seconds"]) <= 0:
+            print("agent-verify: caps values must be positive integers")
+            return 2
+
     doc = {"root": root, "lang": lang, "profile": profile, "changed": a["changed"],
            "at": datetime.now().astimezone().isoformat(timespec="microseconds")}
+    if caps:
+        doc["caps"] = dict(caps, note=CAPS_NOTE)
     steps = []
 
     def add(name, r, verdict):
@@ -161,6 +262,35 @@ def main(argv):
             print(ln)
         print("agent-verify: 拒绝 -- preflight 判红，坏代码不要落到磁盘上")
         return finish("refused by preflight", 1)
+
+    # --- 2.5 budget gate: suspend before run when the declared budget is empty ----------
+    # Honest by construction: no tool can measure the model's remaining tokens, so this
+    # gate acts only on the caller's declaration (BUDGET_NOTE travels in the receipt).
+    # A declared value <= 0 means "do not even start": the session is suspended with
+    # reason=budget -- censoring, which is not failure -- and the continuation block is
+    # printed for whoever picks the task up in a fresh session.
+    if "budget-token" in a:
+        try:
+            budget = int(a["budget-token"])
+        except ValueError:
+            print("agent-verify: --budget-token must be an integer")
+            return 2
+        doc["budget"] = {"declared": budget, "gate": BUDGET_NOTE}
+        if budget <= 0:
+            print(f"agent-verify: budget gate -- declared {budget} <= 0, suspend before run")
+            if task_id:
+                if not os.path.exists(session_file(root, task_id)):
+                    # The session records what this run observed: nothing yet, budget 0.
+                    step([RESUME, "begin", task_id, "--budget-token", str(max(budget, 0)),
+                          "-Root", root])
+                sr = step([RESUME, "suspend", task_id, "--reason", "budget", "-Root", root])
+                rr = step([RESUME, "resume", task_id, "-Root", root])
+                doc["resume"] = {"task": task_id, "reason": "budget",
+                                 "suspend": sr["code"], "output": (sr["out"] + rr["out"])[-12:]}
+                for ln in sr["out"] + rr["out"]:
+                    print(ln)
+            print("agent-verify: suspended (budget) before run -- censored is not a failure")
+            return finish("suspended (budget) before run", 1)
 
     # --- 3. checks: the project's recorded problems still cannot recur ------------------
     # Runs fast tier only: forbid/require are text scans (milliseconds), so _not_ closing
@@ -241,17 +371,53 @@ def main(argv):
     add("journal-begin", jm, "ok" if jm["code"] == 0 else "failed")
 
     # --- 7. run ------------------------------------------------------------------------
+    if caps:
+        print(f"agent-verify: caps on -- mem={caps['mem_mb']}MB procs={caps['procs']} "
+              f"seconds={caps['seconds']} (kernel caps, not a security boundary)")
     run_log, ran_ok = [], True
     for cmd in commands:
-        r = step([os.path.join(TOOLS, "_run.py"), "-Root", root, "-Command", cmd])
-        run_log.append({"command": cmd, "exit": r["code"], "seconds": r["seconds"],
-                        "tail": r["out"][-5:]})
+        if caps:
+            # The caps wrap the runner itself: job membership is inherited, so the shell
+            # and everything it spawns are inside the same job. Shell-picking (the L44
+            # WSL-bash lesson) stays in exactly one place, _run.py.
+            r = step([RUN_CAPS, "--mem-mb", str(caps["mem_mb"]),
+                      "--procs", str(caps["procs"]), "--seconds", str(caps["seconds"]),
+                      "--", PY, os.path.join(TOOLS, "_run.py"), "-Root", root,
+                      "-Command", cmd])
+        else:
+            r = step([os.path.join(TOOLS, "_run.py"), "-Root", root, "-Command", cmd])
+        entry = {"command": cmd, "exit": r["code"], "seconds": r["seconds"],
+                 "tail": r["out"][-5:]}
+        # Appended field only: the caps parameters are evidence, the old shape is untouched.
+        if caps:
+            entry["caps"] = dict(caps)
+        run_log.append(entry)
         if r["code"] != 0:
             ran_ok = False
     doc["run"] = run_log
     total_run = round(sum(x["seconds"] for x in run_log), 2)
     add("run", {"out": [], "code": 0 if ran_ok else 1, "seconds": total_run},
         "ok" if ran_ok else "failed")
+
+    # --- 7.5 failure checkpoint: a failed run suspends the session (reason=manual) ------
+    # The verdict stays "command failed" -- the suspend is a checkpoint for whoever
+    # continues, not a reclassification of the outcome.
+    if not ran_ok and task_id:
+        failed = [x for x in run_log if x["exit"] != 0]
+        pr_rcs = []
+        for idx, l in enumerate(failed, start=1):
+            pr = resume_step(["progress", task_id, f"run:{idx}", "--unproven", "--note",
+                              f"exit {l['exit']}: {l['command']}"[:120]], root)
+            pr_rcs.append(pr["code"])
+        sr = resume_step(["suspend", task_id, "--reason", "manual"], root)
+        pr_ok = all(c == 0 for c in pr_rcs)
+        add("resume-progress", {"out": [], "code": 0 if pr_ok else 1, "seconds": 0},
+            "ok" if pr_ok else "failed")
+        add("resume-suspend", sr, "ok" if sr["code"] == 0 else "failed")
+        doc["resume"] = {"task": task_id, "reason": "manual",
+                         "progress": pr_rcs, "suspend": sr["code"]}
+        doc["resume_checkpoint"] = (f"task {task_id} suspended (manual) -- next session: "
+                                    f"python tools/resume.py resume {task_id}")
 
     # --- 8. journal end: what did it actually write -----------------------------------
     je = step([os.path.join(TOOLS, "journal.py"), "-Mode", "end", "-Root", root, "-Store", store])
@@ -312,6 +478,9 @@ def main(argv):
         print(f"  {l['command']}  -> exit {l['exit']} in {l['seconds']}s")
     for c in changes:
         print(f"  {c}")
+    # Appended tail, appended receipt field only -- the existing output above is unchanged.
+    if "resume_checkpoint" in doc:
+        print(f"  resume checkpoint: {doc['resume_checkpoint']}")
     return finish(verdict, 0 if ran_ok else 1)
 
 

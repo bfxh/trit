@@ -2,6 +2,54 @@
 
 ## [Unreleased]
 
+### Added（资源硬帽：run-caps.py 内核级资源上限 + agent-verify --caps 包裹）
+
+- `tools/run_caps.py`（+`run-caps.sh`/`run-caps.ps1` 转发器，stdlib only，ctypes）：
+  `run-caps --mem-mb N --procs N --seconds S -- <cmd>`。Windows 上子进程以
+  CREATE_SUSPENDED 起进程 → 进 Job Object → 再 resume，消灭"先跑一条指令再入组"
+  的逃逸窗口：PROCESS_MEMORY 每进程内存顶（内核拒绝超帽分配）、ACTIVE_PROCESS
+  进程数顶（第 N+1 个 CreateProcess 直接失败）、KILL_ON_JOB_CLOSE 父死孙亡；
+  --seconds 是父侧 watchdog，超时 TerminateJobObject 整个 job，退出码映射
+  超时=124、其余原样透传、起不来=127。POSIX 回退：RLIMIT_AS（按进程继承）+
+  setsid 进程组收割；RLIMIT_NPROC 是按用户计数会伤及同账号其他进程，**不用**，
+  能封多少如实标注多少（`--procs` 在 POSIX 上明说不生效）。
+- **诚实强度声明（--help 与回执 caps.note）**：这是内核级资源帽（Windows 上内存/
+  进程数由内核强制），但**不是**安全边界——不做文件系统/网络隔离，不防蓄意进程
+  逃逸。与 policy 分工：policy 是事前命令分类器，防误操作（危险命令、越界写入）；
+  run-caps 管运行期，防失控（内存/进程/时长爆掉时兜底）。一个门、一个闸。
+- 校验层 fail-closed：`SetInformationJobObject` 失败即 exit 2，绝不降级成"不加帽
+  继续跑"；一个帽都不给就拒绝。常量钉死过程见 docs/ERRORS.md L97。
+- agent_verify 集成：`--caps`（默认 2048MB/64 进程/1800s）+ `--caps-mem-mb/
+  --caps-procs/--caps-seconds`；run 段每条命令经 run-caps 包裹
+  （`-- python _run.py -Root .. -Command ..`，shell 选择仍只在 _run.py 一处），
+  回执 run[] 追加 `caps` 字段与 `caps.note`，旧字段不动；不开 `--caps` 时行为
+  与现状逐字节一致。
+- selftest 新增 Z 组（13 条）：内存帽杀超大分配、进程数帽拒创建、超时=124、
+  退出码透传、参数 fail-closed、编排层 --caps 回执注记、caps 关闭回归保护。
+
+### Added（断粮续跑：resume.py 会话台账 + agent-verify 声明制额度闸）
+
+- `tools/resume.py`（+`resume.sh`/`resume.ps1` 转发器）：按任务一份会话台账
+  `<Root>/.agent/resume/<task-id>.json`，字段 task/created/status/budget/steps[]/history[]。
+  状态机 open → suspended（删失事件，带 reason）→ finished/censored——**中途断粮挂起
+  是删失（censored），不是失败**：台账里根本没有 failed 这个状态。begin 对已存在会话
+  fail-closed；非法 task-id（路径形态）拒收；会话文件不含任何本机路径。
+- `resume` 子命令输出"已完成/最后一步/下一步建议 + 逐字可复制的 ASCII 续跑命令块"，
+  接续会话的人或模型只看这一段就能接着干；suspend/resume 时探测最近一次 journal
+  快照（`.journal/latest/manifest.json` 的内容哈希前 12 位）只记 id 不复制内容。
+- agent-verify 新增 `--budget-token N --task-id <id>`：**声明制闸门**——工具层测不了
+  模型侧 token，N 是调用者声明的剩余额度；声明 ≤ 0 时 preflight 之后、run 之前整体
+  拒绝，verdict=`suspended (budget) before run`，自动把会话挂起（reason=budget）并
+  打印续跑命令块；声明为正或未声明时闸门不拦。诚实边界写死在 `--help` 与回执
+  `budget.gate` 字段。
+- run 段任一命令失败且带 `--task-id` 时自动 `progress(unproven)` + `suspend
+  --reason manual`：verdict 保持 `command failed` 不变，回执只追加
+  `resume`/`resume_checkpoint` 字段，stdout 尾部追加一行 checkpoint。
+- selftest 新增 Y 组 32 条断言（Y1–Y21，含子断言）：begin/suspend/resume 往返与字段完整性、重复 begin 拒、
+  censored≠failed 措辞、journal 快照 id 探测、额度闸 verdict、失败自动挂起且回执旧
+  字段不变、非法 task-id 拒收等。I2b 修正：checks 步是无条件 add，期望序列补上它
+  （此前该断言永远红，见 docs/ERRORS.md L98）。
+
 ### Added（输出行架构级冗余：行复制 + 分歧告警——#557 未证栏修复落地）
 
 - `examples/row_guard/`（edit-only 无训练）：把输出层复制成 K 个逐位相同副本行
