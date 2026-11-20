@@ -3844,7 +3844,7 @@
     },
     {
       "file": "crates/trit-wspace/src/mcp.rs",
-      "lines": 657
+      "lines": 634
     },
     {
       "file": "crates/trit-wspace/src/mcp/load.rs",
@@ -3857,6 +3857,10 @@
     {
       "file": "crates/trit-wspace/src/mcp/mcp_dare.rs",
       "lines": 68
+    },
+    {
+      "file": "crates/trit-wspace/src/mcp/mcp_serve.rs",
+      "lines": 60
     },
     {
       "file": "crates/trit-wspace/src/mcp/mcp_task.rs",
@@ -4101,6 +4105,10 @@
     {
       "file": "crates/trit-wspace/tests/mcp.rs",
       "lines": 719
+    },
+    {
+      "file": "crates/trit-wspace/tests/mcp_line_bounds.rs",
+      "lines": 19
     },
     {
       "file": "crates/trit-wspace/tests/mcp_script.rs",

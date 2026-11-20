@@ -1070,6 +1070,23 @@
       "pattern": "tensor_count > bytes\\.len\\(\\)\\.saturating_sub\\(pos\\)",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C063",
+      "title": "MCP stdio 帧行有 16 MiB 字节顶",
+      "kind": "require",
+      "covers": [
+        "L111"
+      ],
+      "scope": [
+        "crates/trit-wspace/src/mcp/mcp_serve.rs"
+      ],
+      "since": "L111",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "take\\(MAX_LINE_BYTES as u64\\)",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

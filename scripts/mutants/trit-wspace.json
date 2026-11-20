@@ -2750,5 +2750,13 @@
     "new": "    if true {",
     "pkg": "trit-wspace",
     "filter": "confined_rejects_escapes_and_accepts_inside"
+  },
+  {
+    "name": "wspace: 帧行上限不判",
+    "file": "crates/trit-wspace/src/mcp/mcp_serve.rs",
+    "old": "if buf.last() != Some(&b'\\n') {",
+    "new": "if false {",
+    "pkg": "trit-wspace",
+    "filter": "oversize_line_is_rejected_without_parsing_it"
   }
 ]
