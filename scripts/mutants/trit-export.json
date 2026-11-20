@@ -30,5 +30,13 @@
     "new": "if false {",
     "pkg": "trit-export",
     "filter": "absurd_tensor_count_is_rejected_before_allocating"
+  },
+  {
+    "name": "i2s: 块内位序错位",
+    "file": "crates/trit-export/src/bitnet/i2s.rs",
+    "old": "out[base + k] = (c0 << 6) | (c1 << 4) | (c2 << 2) | c3;",
+    "new": "out[base + k] = (c1 << 6) | (c0 << 4) | (c2 << 2) | c3;",
+    "pkg": "trit-export",
+    "filter": "j2_block_interleave_and_bit_order"
   }
 ]

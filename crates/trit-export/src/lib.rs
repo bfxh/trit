@@ -2,7 +2,6 @@
 //! 只实现读写三值张量所需的最小子集：文件头、少量元数据 KV、2D 张量信息、32 字节对齐数据区。
 //! 张量类型 `GGML_TYPE_TRIT = 100`，布局：`trits` rows×cols（5 trits/byte，低位在前）+
 //! `scales` rows×f32 + `bias` rows（5 trits/byte）；打包与 `trit-codec` 共用 `trit_core::pack`。
-//! 未知元数据类型、非三值/非 2D 张量一律显式报错。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -54,6 +53,7 @@ pub struct Model {
     pub tensors: Vec<Tensor>,
 }
 
+pub mod bitnet;
 mod error;
 pub use error::Error;
 

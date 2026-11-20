@@ -34,13 +34,20 @@
 
 ### 1.2 I2_S 格式
 
-来源：`microsoft/BitNet` 的 `docs/bitnet-embeddings-i2s-guide.md` §3.1「I2_S Ternary Packing」。
+来源：`microsoft/BitNet` 的 `utils/convert-hf-to-gguf-bitnet.py` 的 `quantize_to_i2_s`（2026-11-20 核验）。
 
-- 量化：`scale = 1 / mean(|w|)`，`q = round(w * scale).clamp(-1, 1)`。
-- 分块：**每 128 个值一个 block，打包成 32 字节**。
-- 字节内位序：每字节 4 个值，`byte = (c0 << 6) | (c1 << 4) | (c2 << 2) | c3`
-  —— `c0` 在**高位**，`c3` 在低位。
-- scale：**每张量一个 float32**，追加在 packed data buffer 的末尾。
+- 量化：`q = round(w / scale).clamp(-1, 1)`；**scale 取第一个非零 `|w|`**（阈值 `1e-6`，
+  对应权重已经量化成 `±scale/0` 的情形）；离线量化模型直接用其 `weight_scale` 作为
+  `override_scale`；全零时取 `1e-5`。
+  > 注意口径：论文 BitNet b1.58 的 `1/mean(|w|)` 是**训练期 absmean**，不是 I2_S
+  > 文件格式的 scale 计算；两者不能混。
+- 三值到 2-bit 的映射：`-1 → 0`、`0 → 1`、`+1 → 2`。
+- 分块：**每 128 个值一个 block，打包成 32 字节**（要求元素数是 128 的倍数）。
+- 字节内位序：block 内先 `reshape(4, 32)`，第 `j` 组第 `k` 个值放在第 `k` 字节的
+  `(3-j)` 个 2-bit 槽：`byte = (c0 << 6) | (c1 << 4) | (c2 << 2) | c3`
+  —— `c0..c3` 是**跨步 32** 的四个值（索引 `k`、`32+k`、`64+k`、`96+k`），不是连续 4 个。
+- 尾部：`packed_size = n / 4` 字节之后追加 **32 字节尾部**，前 4 字节是 per-tensor
+  `f32`（小端），其余 28 字节补 0。
 - 非三值权重（norm / embedding 等）保持 float16；I2_S 只用于 linear 投影。
 
 ### 1.3 TL1 / TL2 格式
@@ -76,9 +83,13 @@
 
 ```text
 trit-export::bitnet::i2s
-    BLOCK_VALUES = 128, BLOCK_BYTES = 32
-    encode(trits: &[Ternary]) -> Result<(Vec<u8>, f32), Error>   // packed + per-tensor scale
-    decode(packed: &[u8], scale: f32, count: usize) -> Result<Vec<Ternary>, Error>
+    BLOCK_VALUES = 128, BLOCK_BYTES = 32, TAIL_BYTES = 32
+    pack(trits: &[Ternary]) -> Result<Vec<u8>, I2sError>          // 仅 2-bit 块
+    unpack(packed: &[u8], count: usize) -> Result<Vec<Ternary>, I2sError>
+    quantize_scale(values: &[f32]) -> f32                         // 第一个非零 |w|
+    encode_f32(values: &[f32], override_scale: Option<f32>) -> Result<(Vec<u8>, f32), I2sError>
+    encode_ternary(trits: &[Ternary], scale: f32) -> Result<Vec<u8>, I2sError> // 块 + 32 B 尾
+    decode(bytes: &[u8], count: usize) -> Result<(Vec<Ternary>, f32), I2sError>
 
 trit-export::bitnet::tl
     encode_tl1(trits: &[Ternary]) -> Result<Vec<u8>, Error>      // 1-bit 索引
@@ -111,9 +122,9 @@ Ternary 张量 ──TL encode───▶ 1/2-bit 索引 ──GGUF──▶ �
 
 | # | 判据 | 复算方式 | 通过条件 |
 |---|---|---|---|
-| J1 | I2_S 往返无损 | `encode` → `decode`，128 / 129 / 256 值 | 逐元素相等 |
-| J2 | I2_S 位序 | 手工向量 `c0..c3 = -1/0/+1` 全组合 | 字节 == `(c0<<6)|(c1<<4)|(c2<<2)|c3` |
-| J3 | scale 语义 | 构造已知 `mean(|w|)` | `scale == 1/mean`（相对误差 ≤1e-6） |
+| J1 | I2_S 往返无损 | `encode_ternary` → `decode`，128 / 256 值；129 值必须 `Err` | 逐元素相等；129 报对齐错误 |
+| J2 | I2_S 位序 | 手工向量：块内 `k=0` 的四个跨步值 `-1/0/+1/-1` | 第 0 字节 == `0x18`（`0<<6|1<<4|2<<2|0`） |
+| J3 | scale 口径 | `quantize_scale(&[0.0, 0.5, -0.25])`；全零；override | 分别 == `0.5`、`1e-5`、override 值 |
 | J4 | TL 三值表 | 穷举 `q0,q1,q2 ∈ {-1,0,1}`（27 组） | 表项 == `b0 q0 + b1 q1 + b2 q2` |
 | J5 | TL 二值表 | 穷举 `q0,q1 ∈ {-1,1}`（4 组） | 表项 == `b0 q0 + b1 q1` |
 | J6 | 体积账 | 1M 三值 | I2_S = 0.25 B/权重；TL2 = 0.25 B/权重 + 表；5 trits/byte = 0.2 B/权重 |

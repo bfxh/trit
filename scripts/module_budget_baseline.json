@@ -943,6 +943,14 @@
       "lines": 149
     },
     {
+      "file": "crates/trit-export/src/bitnet/i2s.rs",
+      "lines": 157
+    },
+    {
+      "file": "crates/trit-export/src/bitnet/mod.rs",
+      "lines": 5
+    },
+    {
       "file": "crates/trit-export/src/error.rs",
       "lines": 39
     },
@@ -957,6 +965,10 @@
     {
       "file": "crates/trit-export/tests/gguf.rs",
       "lines": 140
+    },
+    {
+      "file": "crates/trit-export/tests/i2s_contract.rs",
+      "lines": 90
     },
     {
       "file": "crates/trit-float/src/format.rs",

@@ -1196,6 +1196,23 @@
       "run": "python scripts/check_script_guards.py",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C070",
+      "title": "I2_S 编码器按块内跨步位序打包",
+      "kind": "require",
+      "covers": [
+        "L118"
+      ],
+      "scope": [
+        "crates/trit-export/src/bitnet/i2s.rs"
+      ],
+      "since": "L118",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "\\(c0 << 6\\) \\| \\(c1 << 4\\) \\| \\(c2 << 2\\) \\| c3",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
