@@ -2800,7 +2800,11 @@
     },
     {
       "file": "crates/trit-parts/src/tpm.rs",
-      "lines": 234
+      "lines": 228
+    },
+    {
+      "file": "crates/trit-parts/src/tpm/layer.rs",
+      "lines": 17
     },
     {
       "file": "crates/trit-parts/src/uv.rs",

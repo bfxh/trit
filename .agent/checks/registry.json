@@ -1371,6 +1371,41 @@
       "run": "cargo test -p trit-ops --test q4_layout",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C080",
+      "title": "快照/日志解析不吃畸形输入（hist_len、溢出、UTF-8 边界、chain 越界）",
+      "kind": "cmd",
+      "covers": [
+        "L129"
+      ],
+      "scope": [
+        "crates/trit-immune/src/snapshot.rs",
+        "crates/trit-immune/src/journal.rs"
+      ],
+      "since": "L129",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-immune --test parse_bounds",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C081",
+      "title": "TPM effective() 不除零、空层剪枝不下溢",
+      "kind": "cmd",
+      "covers": [
+        "L130"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tpm/layer.rs"
+      ],
+      "since": "L130",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-parts --lib",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

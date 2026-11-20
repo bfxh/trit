@@ -17,16 +17,7 @@ pub struct TpmLayer {
     pub convt: bool,
 }
 
-impl TpmLayer {
-    pub fn effective(&self) -> Vec<f32> {
-        let slots = self.cout as usize;
-        self.q
-            .iter()
-            .enumerate()
-            .map(|(wi, &qi)| qi as f32 * self.scale[wi % slots])
-            .collect()
-    }
-}
+mod layer;
 
 pub struct TpmModel {
     pub layers: Vec<TpmLayer>,
@@ -56,6 +47,9 @@ impl TpmModel {
 
     pub fn truncate_head(&self, cout: u32) -> TpmModel {
         let mut layers = self.layers.clone();
+        if layers.is_empty() {
+            return TpmModel { layers };
+        } // 22-1b：空层 len()-1 下溢
         let old = layers.len() - 1;
         let l = &layers[old];
         let (cin, kk, old_cout) = (l.cin as usize, l.kk as usize, l.cout as usize);
