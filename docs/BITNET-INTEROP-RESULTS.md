@@ -1,6 +1,6 @@
 # BitNet 互操作结果（J6 体积账 / J7 真实权重）
 
-> 计划与判据：`docs/plans/BITNET-FORMAT-INTEROP-PLAN.md`。日期：2026-11-20。
+> 计划与判据：`docs/BITNET-INTEROP-PLAN.md`。日期：2026-11-20。
 > 复跑：`cargo test -p trit-export --test volume_account --test i2s_real_weights`；
 > 全量 J7 对拍：`python scripts/check_bitnet_i2s_parity.py`（联网，约 9 MB 流量）。
 

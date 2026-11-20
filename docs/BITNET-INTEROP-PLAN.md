@@ -1,8 +1,8 @@
 # bitnet.cpp 三元格式互操作：规格、设计与判据（2026-11-20）
 
 > 计划与规格，**不是实现**。本文件只落 M0：外部格式规格、落点设计、可复算判据。
-> 实现后按 [STATUS.md](../positioning/STATUS.md) 的四个状态词改写进度；负结果进
-> [LESSONS.md](../results/LESSONS.md)。
+> 实现后按 [STATUS.md](positioning/STATUS.md) 的四个状态词改写进度；负结果进
+> [LESSONS.md](results/LESSONS.md)。
 >
 > 定位：让 `trit-export` 能**无损**读写 bitnet.cpp 的 I2_S / TL1 / TL2，
 > 与外部三元生态对齐；不跑 llama.cpp，不做推理内核。
@@ -137,7 +137,7 @@ Ternary 张量 ──TL encode───▶ 1/2-bit 索引 ──GGUF──▶ �
 | J4 | TL 三值表 | 穷举 `q0,q1,q2 ∈ {-1,0,1}`（27 组） | 表项 == `b0 q0 + b1 q1 + b2 q2` |
 | J5 | TL 二值表 | 穷举 `q0,q1 ∈ {-1,1}`（4 组） | 表项 == `b0 q0 + b1 q1` |
 | J6 | 体积账 | 1M 三值 | I2_S = 0.25 B/权重；TL1 = 0.25 B/权重；TL2 three 段 = 每 3 值 5 bit ≈ 0.208 B/权重；5 trits/byte = 0.2 B/权重 |
-| J7 | 真实 GGUF | 读 BitNet 2B4T 的 I2_S 张量 | 与 safetensors 同张量逐字节一致（已验两个：`blk.0.ffn_down.weight` 4,423,680 B、`blk.0.attn_k.weight` 409,600 B，均无需头重排；见 `docs/results/BITNET-INTEROP-RESULTS.md`） |
+| J7 | 真实 GGUF | 读 BitNet 2B4T 的 I2_S 张量 | 与 safetensors 同张量逐字节一致（已验两个：`blk.0.ffn_down.weight` 4,423,680 B、`blk.0.attn_k.weight` 409,600 B，均无需头重排；见 `docs/BITNET-INTEROP-RESULTS.md`） |
 | J8 | TL1 索引布局 | `tl1_encode` 与 Python `preprocess_weights_tl1` 同参数输出比 3 组夹具，再 `tl1_decode` 回三值 | 3 组逐字节全等且往返无损 |
 | J9 | TL2 索引布局 | `tl2_encode` 与 Python `preprocess_three_weights_tl2` 同参数输出比 3 组夹具，再 `tl2_decode` 回三值 | 3 组逐字节全等且往返无损 |
 
@@ -153,7 +153,7 @@ J1–J6、J8–J9 全部只依赖本仓代码，不需要外部运行时。J7 �
 - **M2b（本轮）**：TL2 three 段索引（4-bit 幅度 + 1-bit 符号平面）+ J9；新增
   `tests/tl2_contract.rs` 与 `tests/fixtures/tl2_golden.txt`。two 段尾（`k % bk != 0`）
   与特定 `(M,K)` 的 padding 未做。
-- **M3（本轮）**：J6–J7；读数见 `docs/results/BITNET-INTEROP-RESULTS.md`。负结果一并记录：
+- **M3（本轮）**：J6–J7；读数见 `docs/BITNET-INTEROP-RESULTS.md`。负结果一并记录：
   I2_S 尾部 28 字节在真实 GGUF 里非零、TL2 two 段尾未做；`attn_k` 的“头重排”推测已被
   实测推翻（两个张量都逐字节一致）。
 - **M4（本轮）**：GGUF 的 I2_S 读写分支（`TYPE_I2_S = 36`）；`read` / `write` 从 `lib.rs`

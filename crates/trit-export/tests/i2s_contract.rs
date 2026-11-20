@@ -1,5 +1,5 @@
 //! I2_S 契约：映射、块内交错、位序、scale 口径与尾部布局。
-//! 规格与判据见 `docs/plans/BITNET-FORMAT-INTEROP-PLAN.md`（J1–J3）。
+//! 规格与判据见 `docs/BITNET-INTEROP-PLAN.md`（J1–J3）。
 use trit_core::Ternary;
 use trit_export::bitnet::i2s::{
     BLOCK_VALUES, TAIL_BYTES, decode, encode_f32, encode_ternary, first_nonzero_scale, pack,

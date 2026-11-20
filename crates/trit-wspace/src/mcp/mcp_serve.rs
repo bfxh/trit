@@ -27,9 +27,9 @@ pub fn serve<R: BufRead, W: IoWrite>(reader: R, mut writer: W) -> io::Result<()>
             break;
         }
         if buf.last() != Some(&b'\n') {
-            // 超上限：把该行剩余字节丢到换行，回一个错误帧后继续。
             let mut sink = Vec::new();
-            reader.read_until(b'\n', &mut sink)?;
+            let mut capped = reader.by_ref().take(MAX_LINE_BYTES as u64);
+            capped.read_until(b'\n', &mut sink)?;
             let response = json!({
                 "jsonrpc": "2.0", "id": Value::Null,
                 "error": {"code": -32600, "message": format!("帧行超过上限 {MAX_LINE_BYTES} 字节")}

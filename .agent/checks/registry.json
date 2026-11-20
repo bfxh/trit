@@ -210,7 +210,7 @@
         "L64"
       ],
       "scope": [
-        "crates/trit-parts/src/glb/manifest.rs"
+        "crates/trit-parts/src/glb/path.rs"
       ],
       "since": "2026-11-20",
       "tier": "fast",
@@ -1062,7 +1062,7 @@
         "L110"
       ],
       "scope": [
-        "crates/trit-export/src/lib.rs"
+        "crates/trit-export/src/gguf_codec.rs"
       ],
       "since": "L110",
       "tier": "fast",

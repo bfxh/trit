@@ -57,7 +57,7 @@
 | [RESULTS.md](results/RESULTS.md) | 结果总目录（自动生成）：各族读到哪一步 |
 | [DEPTH-RESULTS.md](results/DEPTH-RESULTS.md) | 深度头结果（自动生成） |
 | [PARTS-RESULTS.md](results/PARTS-RESULTS.md) | 部件头结果（自动生成） |
-| [BITNET-INTEROP-RESULTS.md](results/BITNET-INTEROP-RESULTS.md) | BitNet 互操作结果：J6 体积账 / J7 真实权重（含负结果与复跑命令） |
+| [BITNET-INTEROP-RESULTS.md](BITNET-INTEROP-RESULTS.md) | BitNet 互操作结果：J6 体积账 / J7 真实权重（含负结果与复跑命令） |
 | [TEXTURE-RESULTS.md](results/TEXTURE-RESULTS.md) | 纹理容器结果（自动生成） |
 | [EXTRACT-RESULTS.md](results/EXTRACT-RESULTS.md) | 提取结果（自动生成） |
 | [WSP3-RESULTS.md](results/WSP3-RESULTS.md) | WSP3（RLE 二级压缩）在真实 MiniLM 上的实测：无收益 |
@@ -144,7 +144,7 @@
 | [VISUAL-PLAN.md](plans/VISUAL-PLAN.md) | 视觉扩展：光影 / 风格 / 视频提取 / 画质 / UI |
 | [PRIVACY-PLAN.md](plans/PRIVACY-PLAN.md) | 隐私存储：威胁模型、容器与挂载器路线、硬边界 |
 | [DATA-CLEANING-PLAN.md](plans/DATA-CLEANING-PLAN.md) | 数据清洗 × 三进制：九条方向与底层缺口 |
-| [BITNET-FORMAT-INTEROP-PLAN.md](plans/BITNET-FORMAT-INTEROP-PLAN.md) | bitnet.cpp 三元格式互操作：外部格式规格、落点设计与可复算判据（M0，非实现） |
+| [BITNET-FORMAT-INTEROP-PLAN.md](BITNET-INTEROP-PLAN.md) | bitnet.cpp 三元格式互操作：外部格式规格、落点设计与可复算判据（M0，非实现） |
 | [MULTI-CHIP.md](plans/MULTI-CHIP.md) | 多芯片后端（x86 / ARM / 移动 SoC）设计 |
 
 ## specs/ — 写作与治理规范
@@ -162,7 +162,7 @@
 | 文档 | 一句话 |
 |---|---|
 | [S-YARA-FULL.md](AGENT-TASKS/S-YARA-FULL.md) | S 级任务：YARA 完整语义（官方引擎差分 + 三值性质测试 + 性能预算三条同时成立） |
-| [A-REPO-ADMISSION.md](AGENT-TASKS/A-REPO-ADMISSION.md) | A 级任务：入库准入扩到推送期 / CI 预算 / 关闭期审计 / 目录批量门槛 / 历史体检（只报告） |
+| [A-REPO-ADMISSION.md](A-REPO-ADMISSION.md) | A 级任务：入库准入扩到推送期 / CI 预算 / 关闭期审计 / 目录批量门槛 / 历史体检（只报告） |
 | [HANDOFF-YARA-EXPR.md](HANDOFF-YARA-EXPR.md) | 交接包：YARA 完整表达式语言 + 模块对象模型（起点 `feat/pe-sections`，验收 = 官方 4.5.4 DIFF 0） |
 
 ## YARA-EXPR/ — YARA 完整语义规范与任务卡
