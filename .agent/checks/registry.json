@@ -1247,6 +1247,24 @@
       "run": "cargo test -p trit-export --test tl2_contract",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C073",
+      "title": "真实 BitNet 权重的 I2_S 打包与 safetensors 对齐",
+      "kind": "cmd",
+      "covers": [
+        "L121"
+      ],
+      "scope": [
+        "crates/trit-export/tests/i2s_real_weights.rs",
+        "crates/trit-export/tests/volume_account.rs"
+      ],
+      "since": "L121",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-export --test i2s_real_weights --test volume_account",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

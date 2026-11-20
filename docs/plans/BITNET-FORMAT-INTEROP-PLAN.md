@@ -47,7 +47,8 @@
   `(3-j)` 个 2-bit 槽：`byte = (c0 << 6) | (c1 << 4) | (c2 << 2) | c3`
   —— `c0..c3` 是**跨步 32** 的四个值（索引 `k`、`32+k`、`64+k`、`96+k`），不是连续 4 个。
 - 尾部：`packed_size = n / 4` 字节之后追加 **32 字节尾部**，前 4 字节是 per-tensor
-  `f32`（小端），其余 28 字节补 0。
+  `f32`（小端；实测等于 safetensors 里该张量 `weight_scale` 的 bf16 值）。**真实 GGUF 里
+  剩余 28 字节不是零**（`blk.0.ffn_down.weight` 实测非零）：读侧不能依赖补零，只有前 4 字节有意义。
 - 非三值权重（norm / embedding 等）保持 float16；I2_S 只用于 linear 投影。
 
 ### 1.3 TL1 / TL2 格式
@@ -134,12 +135,12 @@ Ternary 张量 ──TL encode───▶ 1/2-bit 索引 ──GGUF──▶ �
 | J4 | TL 三值表 | 穷举 `q0,q1,q2 ∈ {-1,0,1}`（27 组） | 表项 == `b0 q0 + b1 q1 + b2 q2` |
 | J5 | TL 二值表 | 穷举 `q0,q1 ∈ {-1,1}`（4 组） | 表项 == `b0 q0 + b1 q1` |
 | J6 | 体积账 | 1M 三值 | I2_S = 0.25 B/权重；TL1 = 0.25 B/权重；TL2 three 段 = 每 3 值 5 bit ≈ 0.208 B/权重；5 trits/byte = 0.2 B/权重 |
-| J7 | 真实 GGUF（可选） | 读 BitNet 2B4T 的 I2_S 张量 | 与 safetensors 同张量逐元素一致 |
+| J7 | 真实 GGUF | 读 BitNet 2B4T 的 I2_S 张量 | 与 safetensors 同张量逐字节一致（已验：`blk.0.ffn_down.weight` 4,423,680 B，见 `docs/results/BITNET-INTEROP-RESULTS.md`） |
 | J8 | TL1 索引布局 | `tl1_encode` 与 Python `preprocess_weights_tl1` 同参数输出比 3 组夹具，再 `tl1_decode` 回三值 | 3 组逐字节全等且往返无损 |
 | J9 | TL2 索引布局 | `tl2_encode` 与 Python `preprocess_three_weights_tl2` 同参数输出比 3 组夹具，再 `tl2_decode` 回三值 | 3 组逐字节全等且往返无损 |
 
-J1–J6、J8–J9 全部只依赖本仓代码，不需要外部运行时；J7 需要下载公开权重（MIT），
-M3 再定是否纳入常规门。
+J1–J6、J8–J9 全部只依赖本仓代码，不需要外部运行时。J7 用 HTTP Range 只拉一个张量
+（约 9 MB 流量）验过，不进常规门；全量复跑靠 `scripts/check_bitnet_i2s_parity.py`。
 
 ## 5. 里程碑
 
@@ -150,7 +151,8 @@ M3 再定是否纳入常规门。
 - **M2b（本轮）**：TL2 three 段索引（4-bit 幅度 + 1-bit 符号平面）+ J9；新增
   `tests/tl2_contract.rs` 与 `tests/fixtures/tl2_golden.txt`。two 段尾（`k % bk != 0`）
   与特定 `(M,K)` 的 padding 未做。
-- **M3**：J6–J7；读数与负结果写进 `docs/results/` 与 `LESSONS.md`。
+- **M3（本轮）**：J6–J7；读数见 `docs/results/BITNET-INTEROP-RESULTS.md`。负结果一并记录：
+  I2_S 尾部 28 字节在真实 GGUF 里非零、`attn_k` 的头重排未验证、TL2 two 段尾未做。
 
 ## 6. 风险与未决问题
 

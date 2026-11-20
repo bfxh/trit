@@ -983,6 +983,10 @@
       "lines": 90
     },
     {
+      "file": "crates/trit-export/tests/i2s_real_weights.rs",
+      "lines": 40
+    },
+    {
       "file": "crates/trit-export/tests/tl1_contract.rs",
       "lines": 111
     },
@@ -993,6 +997,10 @@
     {
       "file": "crates/trit-export/tests/tl_contract.rs",
       "lines": 54
+    },
+    {
+      "file": "crates/trit-export/tests/volume_account.rs",
+      "lines": 72
     },
     {
       "file": "crates/trit-float/src/format.rs",
