@@ -2544,7 +2544,11 @@
     },
     {
       "file": "crates/trit-parts/src/tconv/io.rs",
-      "lines": 262
+      "lines": 227
+    },
+    {
+      "file": "crates/trit-parts/src/tconv/io/save.rs",
+      "lines": 89
     },
     {
       "file": "crates/trit-parts/src/tconv/mod.rs",
@@ -2621,6 +2625,10 @@
     {
       "file": "crates/trit-parts/tests/tconv_input_dim.rs",
       "lines": 22
+    },
+    {
+      "file": "crates/trit-parts/tests/tconv_tpc_limits.rs",
+      "lines": 51
     },
     {
       "file": "crates/trit-policy/src/lib.rs",

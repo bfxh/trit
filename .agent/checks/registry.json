@@ -439,6 +439,23 @@
       "pattern": "u32::try_from\\(total\\)",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C026",
+      "title": "tpc 声明的层数/通道必须在分配前有上限",
+      "kind": "require",
+      "covers": [
+        "L77"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tconv/io.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T07:57:22+08:00",
+      "pattern": "fn bounded\\(",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
