@@ -164,6 +164,7 @@
 | L113 | `trit-build::unpack(bytes, len)` 先 `Vec::with_capacity(len)` 再逐字节填，`len` 来自文件头 u32（u32::MAX 是 4 GB 预留）；`trit-fuzz` 三个生成器与 `trit-bench::SeedRng::trits` 都按调用方给的 len 直接分配 | 库层只按 len 生成，没有上限；调用方（CLI/测试）是否传大值是另一回事 | `unpack` 先按 `bytes.len()*5` 对账（`checked_mul` + `bail`）；`trit-fuzz` 加 `MAX_GEN=1<<20`、`trit-bench` 加 `MAX_TRITS=1<<24`，入口 assert；`tests/gen_bounds.rs`、`tests/trits_bounds.rs`、`trb.rs` 单测各钉住 | C065 |
 | L114 | `trit-ops::ternary_weights(rows, cols)` 与 `trit-graph::synthetic_samples(count)` 按外部尺寸建 `rows×cols` / `count` 个元素，无上限 | 两个都是基准/合成数据入口，库层没有尺寸闸 | `trit-ops` 加 `MAX_ELEMS=1<<24`（`checked_mul` + assert），`trit-graph` 加 `MAX_SAMPLES=1<<20`；`tests/bench_bounds.rs`、`tests/samples_bounds.rs` | C066 |
 | L115 | `trit-learn::Confusion::new(classes)` 的 `classes²`、`Ewma/Holt::forecast(h)` 的 `h`、`trit-circuit::Sequential::unroll(k)` 的 `k` 都直接进 `vec!`/`with_capacity`，只判非零或完全不判 | 三个库 API 的尺寸参数来自调用方，没有上限 | `MAX_CLASSES=4096`、`MAX_HORIZON=1<<20`（assert）；`MAX_UNROLL=4096` + 新增 `SequentialError::TooManySteps`；`tests/metrics_bounds.rs`、`tests/unroll_bounds.rs` | C067 |
+| L116 | `ttx3::Ttx3Archive::parse` 直接读级目录的 u32 宽高，`decode_level` 的 `vec![0u8; width*height*4]` 与瓦片目录都按它走；`LargeTexture::new` 有 `validate_dims`，`parse` 这条文件入口没有 | 同一份尺寸校验只挂在构造侧，解析侧漏了；`tiles: tx * ty` 也是裸乘 | `parse` 的每级循环里调用 `validate_dims(width, height)?`（MAX_SIDE / MAX_LEVEL_PIXELS / 瓦片对齐一次收口）；`tests/ttx3_dims.rs` 用超边长级目录钉住 | C068 |
 
 
 

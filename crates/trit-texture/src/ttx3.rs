@@ -18,7 +18,6 @@ use crate::{
     TritTexture, decode_rgba_into,
 };
 
-/// 容器魔数。
 pub const MAGIC: [u8; 4] = *b"TTX3";
 /// 头部字节数：magic(4) + flags(u16) + reserved(u16) + level_count(u8) +
 /// reserved\[3\] + levels_dir_offset(u64) = 20。
@@ -446,6 +445,7 @@ impl<'a> Ttx3Archive<'a> {
             let at = levels_dir_offset + index * LEVEL_ENTRY_BYTES;
             let width = u32::from_le_bytes(bytes[at..at + 4].try_into().unwrap()) as usize;
             let height = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().unwrap()) as usize;
+            validate_dims(width, height)?;
             let policy = LevelPolicy::from_byte(bytes[at + 8])?;
             let dir_offset = u64::from_le_bytes(bytes[at + 12..at + 20].try_into().unwrap());
             let (tx, ty) = tile_grid(width, height);

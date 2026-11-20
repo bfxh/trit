@@ -198,5 +198,13 @@
   "new": "if pixels > crate::MAX_TEXTURE_PIXELS * 2 {",
   "pkg": "trit-texture",
   "filter": "one_pixel_above_the_cap_is_rejected"
+ },
+ {
+  "name": "ttx3: 级宽高不校验",
+  "file": "crates/trit-texture/src/ttx3.rs",
+  "old": "validate_dims(width, height)?;",
+  "new": "let _ = validate_dims;",
+  "pkg": "trit-texture",
+  "filter": "parse_rejects_oversize_level_dims"
  }
 ]

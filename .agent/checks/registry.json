@@ -1161,6 +1161,23 @@
       "pattern": "MAX_CLASSES|MAX_HORIZON|MAX_UNROLL",
       "min": 3,
       "allow_skip": false
+    },
+    {
+      "id": "C068",
+      "title": "TTX3 解析时校验各级宽高",
+      "kind": "require",
+      "covers": [
+        "L116"
+      ],
+      "scope": [
+        "crates/trit-texture/src/ttx3.rs"
+      ],
+      "since": "L116",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "validate_dims\\(width, height\\)\\?;",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
