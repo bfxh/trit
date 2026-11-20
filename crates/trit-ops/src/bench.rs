@@ -1,5 +1,4 @@
 //! 基准：同一形状下比较 f32 / f16 / Q4_0 / 三值三条内核。
-//!
 //! 所有实现共用同一个自旋池与同一份激活，避免「换个线程模型就赢」的假结论。
 
 use crate::gemv::{Kernel, TernaryMatrix, TryteMatrix};
@@ -8,16 +7,14 @@ use crate::simd;
 use crate::trit::Trit;
 use std::time::Instant;
 
-/// 一次测量的结果。
+/// 基准夹具的元素上限：三值权重按 rows×cols 展开。
+pub const MAX_ELEMS: usize = 1 << 24;
+
 #[derive(Clone, Debug)]
 pub struct Measurement {
-    /// 内核名。
     pub name: String,
-    /// 每次 gemv 的纳秒数。
     pub ns: f64,
-    /// 每秒多少百万次乘加。
     pub gmac_s: f64,
-    /// 有效带宽（GB/s）。
     pub gbs: f64,
     /// 权重每 trit/元素的字节数。
     pub bytes_per_weight: f64,
@@ -123,8 +120,11 @@ pub fn to_f16(x: f32) -> u16 {
     }
 }
 
-/// 确定性伪随机三值权重。
 pub fn ternary_weights(rows: usize, cols: usize, seed: u64) -> Vec<Vec<Trit>> {
+    assert!(
+        rows.checked_mul(cols).is_some_and(|n| n <= MAX_ELEMS),
+        "rows×cols 超过上限 {MAX_ELEMS}"
+    );
     let mut state = seed | 1;
     (0..rows)
         .map(|_| {

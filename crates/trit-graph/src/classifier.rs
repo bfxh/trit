@@ -1,12 +1,7 @@
 //! 端到端三态节点分类 M0：一层软松弛训练 + 硬三票推理。
-//!
-//! 任务形态：给一张有向图和初始节点三态，预测**目标节点**（固定 0 号）的三态。
-//! 模型只有一层消息传递：
-//! - 软前向（训练）：邻居状态做 one-hot/均匀分布，表项取 `tanh(latent)`，聚合后过三叉头；
-//! - 硬前向（推理）：表项取硬三票，按议会合成——与 [`crate::council`] 同一规则。
-//!
-//! 训练是**解析梯度**（不是有限差分）：`tanh → mean → 线性头 → softmax → CE`。
-//! 图级池化/多层/边特征在后续里程碑。
+//! 任务：给一张有向图和初始节点三态，预测目标节点（固定 0 号）的三态。
+//! 软前向取 `tanh(latent)` 聚合后过三叉头；硬前向取硬三票，按 [`crate::council`] 合成。
+//! 训练是解析梯度（不是有限差分）：`tanh → mean → 线性头 → softmax → CE`。
 
 use trit_core::value::Ternary;
 
@@ -15,8 +10,9 @@ use crate::graph::TritGraph;
 use crate::mpnn::TransitionTable;
 use crate::view::TriGraphView;
 
-/// 目标节点固定为 0 号。
 pub const TARGET: usize = 0;
+/// 合成样本数上限：每个样本建一张 4 节点图，1M 已是上限。
+pub const MAX_SAMPLES: usize = 1 << 20;
 
 /// 一条训练样本。
 #[derive(Clone, Debug)]
@@ -224,6 +220,10 @@ fn softmax(logits: [f32; 3]) -> [f32; 3] {
 /// 生成"一跳到目标节点"的合成任务：真实标签 = 恒等规则下的议会结果。
 #[doc(hidden)]
 pub fn synthetic_samples(count: usize, seed: u64) -> Vec<ClassifierSample> {
+    assert!(
+        count <= MAX_SAMPLES,
+        "样本数 {count} 超过上限 {MAX_SAMPLES}"
+    );
     let mut state = seed | 1;
     let mut next = move || {
         state ^= state << 13;
