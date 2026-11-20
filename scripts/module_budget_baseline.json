@@ -2467,6 +2467,10 @@
       "lines": 253
     },
     {
+      "file": "crates/trit-parts/src/occ.rs",
+      "lines": 538
+    },
+    {
       "file": "crates/trit-parts/src/occ/mlp.rs",
       "lines": 160
     },
@@ -3285,6 +3289,26 @@
     {
       "file": "crates/trit-wasm/src/lib.rs",
       "lines": 212
+    },
+    {
+      "file": "crates/trit-wspace/examples/adaptive_defense/adv_train.rs",
+      "lines": 173
+    },
+    {
+      "file": "crates/trit-wspace/examples/adaptive_defense/ensemble.rs",
+      "lines": 57
+    },
+    {
+      "file": "crates/trit-wspace/examples/adaptive_defense/main.rs",
+      "lines": 562
+    },
+    {
+      "file": "crates/trit-wspace/examples/adaptive_defense/metrics.rs",
+      "lines": 105
+    },
+    {
+      "file": "crates/trit-wspace/examples/adaptive_defense/target.rs",
+      "lines": 131
     },
     {
       "file": "crates/trit-wspace/examples/adversarial_train/attacker.rs",
