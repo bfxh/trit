@@ -102,8 +102,8 @@ fn main() {
     let holdout: Vec<String> = arg(&argv, "--holdout")
         .map(|s| s.split(',').map(|x| x.trim().to_string()).collect())
         .unwrap_or_default();
-
-    let mut net = DepthUNet::new(3 + 3 * pyr + 3 * ppyr, hidden, seed, true);
+    let mut net = DepthUNet::new(3 + 3 * pyr + 3 * ppyr, hidden, seed, true)
+        .unwrap_or_else(|e| panic!("{e}"));
     println!(
         "降采样编码器（CPU）：h {hidden}（降采样支路 2h），输入 {} 通道",
         3 + 3 * pyr + 3 * ppyr

@@ -710,5 +710,37 @@
     "new": "res * res * 3",
     "pkg": "trit-parts",
     "filter": "resizing_an_image_to_a_huge_square_panics"
+  },
+  {
+    "name": "conv: 尺寸校验不判",
+    "file": "crates/trit-parts/src/tconv/conv.rs",
+    "old": "let n = super::cap::check_ch(cin, cout)?;",
+    "new": "let n = cout * cin * 9;",
+    "pkg": "trit-parts",
+    "filter": "channel_above_the_cap_is_rejected"
+  },
+  {
+    "name": "cap: 通道上限抬高",
+    "file": "crates/trit-parts/src/tconv/cap.rs",
+    "old": "if !(1..=MAX_CH).contains(&cin) || !(1..=MAX_CH).contains(&cout) {",
+    "new": "if !(1..=MAX_CH * 2).contains(&cin) || !(1..=MAX_CH * 2).contains(&cout) {",
+    "pkg": "trit-parts",
+    "filter": "channel_above_the_cap_is_rejected"
+  },
+  {
+    "name": "depthnet: hidden 不判",
+    "file": "crates/trit-parts/src/depthnet.rs",
+    "old": "crate::hidden::check(hidden)?;",
+    "new": "let _ = hidden;",
+    "pkg": "trit-parts",
+    "filter": "depth_net_rejects_hidden_above_the_cap"
+  },
+  {
+    "name": "depthunet: hidden 不判",
+    "file": "crates/trit-parts/src/depthunet.rs",
+    "old": "crate::hidden::check(h)?;",
+    "new": "let _ = h;",
+    "pkg": "trit-parts",
+    "filter": "depth_unet_rejects_hidden_above_the_cap"
   }
 ]

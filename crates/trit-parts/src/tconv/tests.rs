@@ -2,7 +2,7 @@ use super::conv::{coh_loss_grad, sobel, sobel_adjoint};
 use super::*;
 #[test]
 fn conv_forward_shape_and_zero_pad() {
-    let c = Conv::new(1, 2, 1);
+    let c = Conv::new(1, 2, 1).unwrap();
     let x = vec![vec![1.0f32; 16]];
     let y = c.forward(&x, 4, 4);
     assert_eq!(y.len(), 2);
@@ -15,7 +15,7 @@ fn learns_constant_target() {
     let (w, h) = (6usize, 6usize);
     let img = vec![0.9f32; w * h];
     let tgt = vec![0.9f32; w * h];
-    let mut net = Net::new(1, &[], 3);
+    let mut net = Net::new(1, &[], 3).unwrap();
     for _ in 0..3000 {
         net.train_step(&img, &tgt, None, w, h, 0.5);
     }
@@ -26,7 +26,7 @@ fn learns_constant_target() {
 
 #[test]
 fn net_save_load_roundtrip() {
-    let mut net = Net::new(2, &[4, 3], 11);
+    let mut net = Net::new(2, &[4, 3], 11).unwrap();
     net.set_bn(true);
     net.set_dilation(2);
     let (w, h) = (5usize, 5usize);
@@ -48,7 +48,7 @@ fn net_save_load_roundtrip() {
 #[test]
 fn dilation_widens_the_tap_spacing() {
     // 单通道、单输出：输入中心放一个脉冲，dil=2 时只有 ±2 的抽头看得到它
-    let mut c = Conv::new(1, 1, 5);
+    let mut c = Conv::new(1, 1, 5).unwrap();
     c.ternary = false;
     c.w.fill(1.0);
     c.b.fill(0.0);
@@ -72,7 +72,7 @@ fn eps_denoiser_maps_noise_to_x0() {
     use crate::diffuse::Denoiser;
     // 网络输出恒 0 的 ε ⇒ x0 应等于 x_t/√ᾱ
     let (w, h) = (4usize, 4usize);
-    let mut net = Net::new(2, &[], 3);
+    let mut net = Net::new(2, &[], 3).unwrap();
     net.linear_out = true;
     for l in net.layers.iter_mut() {
         l.b.fill(0.0);
@@ -107,7 +107,7 @@ fn highpass_term_penalizes_missing_detail() {
     }
     let maps = vec![vec![0.0f32; w * h]];
     let mk = |hp: f32| -> f32 {
-        let mut n = Net::new(1, &[], 3);
+        let mut n = Net::new(1, &[], 3).unwrap();
         n.linear_out = true;
         n.highpass = hp;
         for l in n.layers.iter_mut() {
@@ -127,7 +127,7 @@ fn v_denoiser_maps_v_to_x0() {
     use crate::diffuse::Denoiser;
     // 网络输出恒 0 的 v ⇒ x̂0 = √ᾱ·x_t
     let (w, h) = (4usize, 4usize);
-    let mut net = Net::new(2, &[], 3);
+    let mut net = Net::new(2, &[], 3).unwrap();
     net.linear_out = true;
     for l in net.layers.iter_mut() {
         l.b.fill(0.0);
@@ -152,7 +152,7 @@ fn v_denoiser_maps_v_to_x0() {
 #[test]
 fn film_modulates_by_class() {
     let (w, h) = (6usize, 6usize);
-    let mut net = Net::new(1, &[4], 9);
+    let mut net = Net::new(1, &[4], 9).unwrap();
     net.set_film(2);
     // 手工把两类的 γ 设成不同值
     {
@@ -175,7 +175,7 @@ fn film_modulates_by_class() {
 #[test]
 fn film_learns_class_offsets() {
     let (w, h) = (6usize, 6usize);
-    let mut net = Net::new(1, &[4], 11);
+    let mut net = Net::new(1, &[4], 11).unwrap();
     net.set_film(2);
     net.linear_out = true;
     let maps = vec![vec![0.5f32; w * h]];
@@ -251,7 +251,7 @@ fn sobel_adjoint_is_transpose() {
 fn denoiser_api_feeds_t_channel() {
     use crate::diffuse::Denoiser;
     let (w, h) = (4usize, 4usize);
-    let mut net = Net::new(2, &[4], 5);
+    let mut net = Net::new(2, &[4], 5).unwrap();
     net.set_bn(false);
     let xt = vec![0.3f32; w * h];
     let p = net.predict_x0(&xt, 0.5, None, w, h);
@@ -300,7 +300,7 @@ fn gradient_matches_finite_difference() {
     let h = 4;
     let img: Vec<f32> = (0..16).map(|i| ((i * 37) % 11) as f32 / 11.0).collect();
     let target: Vec<f32> = (0..16).map(|i| ((i * 53) % 13) as f32 / 13.0).collect();
-    let mut net = Net::new(1, &[], 7);
+    let mut net = Net::new(1, &[], 7).unwrap();
     net.layers[0].ternary = false;
     let loss_at = |net: &Net| -> f64 {
         let p = net.forward(&img, None, w, h);
@@ -323,11 +323,11 @@ fn gradient_matches_finite_difference() {
             continue;
         }
         let eps = 1e-2f32;
-        let mut up = Net::new(1, &[], 7);
+        let mut up = Net::new(1, &[], 7).unwrap();
         up.layers[0].ternary = false;
         up.layers[0].w = before.clone();
         up.layers[0].w[k] += eps;
-        let mut dn = Net::new(1, &[], 7);
+        let mut dn = Net::new(1, &[], 7).unwrap();
         dn.layers[0].ternary = false;
         dn.layers[0].w = before.clone();
         dn.layers[0].w[k] -= eps;

@@ -258,14 +258,14 @@ impl DepthGpu {
         self
     }
 
-    /// 导回 CPU 网（存 DCN3 / 走现有 `--eval-only` 评测）。
     pub fn to_depthnet(&self) -> DepthNet {
         let mut net = DepthNet::with_inputs(
             self.c1.cin as usize,
             self.c1.cout as usize,
             1,
             self.c1.ternary,
-        );
+        )
+        .expect("尺寸来自已建好的网络");
         for (dst, src) in [
             (&mut net.c1, &self.c1),
             (&mut net.c2, &self.c2),

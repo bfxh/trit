@@ -24,8 +24,8 @@ fn planes(cin: usize, w: usize, h: usize, f: &dyn Fn(usize, usize, usize) -> f32
 /// f32 档（`ternary=false`）必须改变 —— 这一对同时钉住"标志位真的生效"。
 #[test]
 fn ternary_quantization_cell_leaves_output_bitwise_unchanged() {
-    let mut tri = DepthNet::with_ternary(4, 7, true);
-    let mut f32_ = DepthNet::with_ternary(4, 7, false);
+    let mut tri = DepthNet::with_ternary(4, 7, true).unwrap();
+    let mut f32_ = DepthNet::with_ternary(4, 7, false).unwrap();
     let x = planes(3, W, H, &|c, px, py| {
         ((px * 3 + py * 5 + c) % 9) as f32 / 4.0 - 1.0
     });
@@ -69,9 +69,9 @@ fn ternary_quantization_cell_leaves_output_bitwise_unchanged() {
 /// 判据用"改输入后远处输出动不动"，不用"输出值大概会变"。
 #[test]
 fn dilation_actually_extends_the_receptive_field() {
-    let mut near = DepthNet::new(4, 13);
+    let mut near = DepthNet::new(4, 13).unwrap();
     near.set_dilation(1);
-    let mut far = DepthNet::new(4, 13);
+    let mut far = DepthNet::new(4, 13).unwrap();
     far.set_dilation(3);
 
     let base = planes(3, W, H, &|_, _, _| 0.0);
@@ -132,7 +132,7 @@ fn depth_net_generalises_to_a_held_out_orientation() {
     let (hx, hy) = mk(3);
     let mask = vec![true; W * H];
 
-    let mut net = DepthNet::new(8, 21);
+    let mut net = DepthNet::new(8, 21).unwrap();
     let mse = |net: &DepthNet| -> f32 {
         let p = net.forward(&hx, W, H);
         p.iter()
@@ -157,7 +157,7 @@ fn depth_net_generalises_to_a_held_out_orientation() {
 /// 拿错构成的模型在推理时是**通道数都对不上**的。
 #[test]
 fn deployment_composition_survives_the_archive() {
-    let mut net = DepthNet::with_inputs(6, 4, 5, true);
+    let mut net = DepthNet::with_inputs(6, 4, 5, true).unwrap();
     net.pyr = 1;
     net.ppyr = 0;
     net.set_dilation(2);

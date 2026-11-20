@@ -1,8 +1,8 @@
 //! `matnet`（`material-cnn`）的输入边长与隐藏宽度上限。
 //!
-//! 这个数是 [`crate::matnet::MatNet`] 的通道数，会平方级放大：
-//! `Conv::new(hidden, hidden)` 内部是 `cout*cin*9 = hidden²*9` 个 f32，
-//! `w`/`mw`/`vw` 各一份。校验必须在分配之前，不能留在 `Conv::new` 里。
+//! 这个数是 [`crate::matnet::MatNet`] 的通道数，会平方级放大。
+//! `Conv::new(hidden, hidden)` 内部是 `cout·cin·9 = hidden²·9` 个 f32（`w`/`mw`/`vw` 三份）；
+//! 调用方必须在构造前用这里的 `MAX_HIDDEN` 卡一道，`Conv` 自身另有更宽的 `MAX_CH`。
 
 /// 输入边长（正方形裁剪）。
 pub const SIDE: usize = 24;

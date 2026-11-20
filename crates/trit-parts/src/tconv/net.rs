@@ -45,18 +45,18 @@ pub struct Net {
 }
 
 impl Net {
-    pub fn new(cin: usize, hidden: &[usize], seed: u64) -> Self {
+    pub fn new(cin: usize, hidden: &[usize], seed: u64) -> Result<Self, String> {
         let mut layers = Vec::new();
         let mut c = cin;
         for (i, &h) in hidden.iter().enumerate() {
-            layers.push(Conv::new(c, h, seed + i as u64 * 7919));
+            layers.push(Conv::new(c, h, seed + i as u64 * 7919)?);
             c = h;
         }
-        layers.push(Conv::new(c, 1, seed + hidden.len() as u64 * 7919));
+        layers.push(Conv::new(c, 1, seed + hidden.len() as u64 * 7919)?);
         let n = layers.len();
         // 默认不加 BN；`set_bn(true)` 时只给隐藏层
         let bns = (0..n).map(|_| None).collect();
-        Net {
+        Ok(Net {
             layers,
             bns,
             cond: 0,
@@ -75,7 +75,7 @@ impl Net {
             abar: Vec::new(),
             stm: None,
             coh: None,
-        }
+        })
     }
 
     /// 开「每类一个输出头」：共享主干，只多最后一层卷积（`nk` 个头）。
@@ -85,7 +85,7 @@ impl Net {
         }
         let cin = self.layers[self.layers.len() - 2].cout;
         self.heads = (0..nk)
-            .map(|k| Some(Conv::new(cin, 1, seed + 1000 + k as u64)))
+            .map(|k| Some(Conv::new(cin, 1, seed + 1000 + k as u64).expect("层宽已校验")))
             .collect();
         // 输出头与基础输出层同源初值会打架，这里让基础层退居「空类」
     }

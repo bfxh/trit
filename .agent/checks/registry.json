@@ -763,6 +763,58 @@
       "added": "2026-11-20",
       "pattern": "\\bres\\s*\\*\\s*res\\b",
       "allow_skip": false
+    },
+    {
+      "id": "C045",
+      "title": "Conv::new 在分配前校验通道上限与权重元素数",
+      "kind": "require",
+      "covers": [
+        "L95"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tconv/conv.rs"
+      ],
+      "since": "L95",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "let n = super::cap::check_ch\\(cin, cout\\)\\?;",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C046",
+      "title": "depthnet/depthunet 建网前校验隐藏宽度",
+      "kind": "require",
+      "covers": [
+        "L95"
+      ],
+      "scope": [
+        "crates/trit-parts/src/depthnet.rs",
+        "crates/trit-parts/src/depthunet.rs"
+      ],
+      "since": "L95",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "crate::hidden::check\\(",
+      "min": 2,
+      "allow_skip": false
+    },
+    {
+      "id": "C047",
+      "title": "卷积权重元素数禁裸乘 cout×cin×9",
+      "kind": "forbid",
+      "covers": [
+        "L95"
+      ],
+      "scope": [
+        "crates/trit-parts/src/*.rs",
+        "crates/trit-parts/src/**/*.rs"
+      ],
+      "since": "L95",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "cout\\s*\\*\\s*cin\\s*\\*\\s*9",
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

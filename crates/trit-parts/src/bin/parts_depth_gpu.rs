@@ -127,8 +127,8 @@ fn main() {
         .unwrap_or_default();
     let full = flag(&argv, "--full");
     let ternary = !flag(&argv, "--f32");
-
-    let mut net = DepthNet::with_inputs(3 + 3 * pyr + 3 * ppyr, hidden, seed, ternary);
+    let mut net = DepthNet::with_inputs(3 + 3 * pyr + 3 * ppyr, hidden, seed, ternary)
+        .unwrap_or_else(|e| panic!("{e}"));
     net.pyr = pyr;
     net.ppyr = ppyr;
     net.set_dilation(dil);
@@ -240,8 +240,8 @@ fn main() {
             eprintln!("对拍失败：1 步后参数偏差 > 1e-4");
             std::process::exit(1);
         }
-        // 对拍后回到同一起点继续正式训练
-        let mut fresh = DepthNet::with_inputs(3 + 3 * pyr + 3 * ppyr, hidden, seed, ternary);
+        let mut fresh = DepthNet::with_inputs(3 + 3 * pyr + 3 * ppyr, hidden, seed, ternary)
+            .unwrap_or_else(|e| panic!("{e}"));
         fresh.pyr = pyr;
         fresh.ppyr = ppyr;
         gnet = DepthGpu::from_depthnet(&fresh, size as u32).with_slots(accum);

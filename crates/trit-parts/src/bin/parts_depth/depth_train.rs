@@ -129,7 +129,6 @@ pub(crate) fn cnn_train(argv: &[String]) {
         .unwrap_or(0);
     let ternary = !argv.iter().any(|a| a == "--f32");
     let dil: usize = arg(argv, "--dil").and_then(|v| v.parse().ok()).unwrap_or(1);
-    // 多视角一致性：`--mv-weight` > 0 时启用；`--pair-gap` 选同场景的另一个视角。
     let mv_weight: f32 = arg(argv, "--mv-weight")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.0);
@@ -142,7 +141,8 @@ pub(crate) fn cnn_train(argv: &[String]) {
     let mv_tau: f32 = arg(argv, "--mv-tau")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.5);
-    let mut net = DepthNet::with_inputs(3 + 3 * pyr + 3 * ppyr, hidden, 7, ternary);
+    let mut net = DepthNet::with_inputs(3 + 3 * pyr + 3 * ppyr, hidden, 7, ternary)
+        .unwrap_or_else(|e| panic!("{e}"));
     net.pyr = pyr;
     net.ppyr = ppyr;
     net.set_dilation(dil);

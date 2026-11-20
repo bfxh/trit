@@ -22,7 +22,7 @@ fn synthetic_input(cin: usize, h: usize, w: usize) -> Vec<Vec<f32>> {
 #[test]
 fn depth_unet_learns_a_two_region_target() {
     let (h, w) = (16, 16);
-    let mut net = DepthUNet::new(3, 4, 7, true);
+    let mut net = DepthUNet::new(3, 4, 7, true).unwrap();
     let x = synthetic_input(3, h, w);
     let target: Vec<f32> = (0..h * w)
         .map(|i| if i % w < w / 2 { -0.6 } else { 0.6 })
@@ -60,8 +60,8 @@ fn depth_unet_learns_a_two_region_target() {
 #[test]
 fn depth_unet_train_step_with_no_valid_pixels_is_a_no_op() {
     let (h, w) = (8, 8);
-    let net = DepthUNet::new(3, 2, 11, true);
-    let mut same = DepthUNet::new(3, 2, 11, true);
+    let net = DepthUNet::new(3, 2, 11, true).unwrap();
+    let mut same = DepthUNet::new(3, 2, 11, true).unwrap();
     let x = synthetic_input(3, h, w);
     let target = vec![0.5f32; h * w];
     let mask = vec![false; h * w];
@@ -82,7 +82,7 @@ fn depth_unet_train_step_with_no_valid_pixels_is_a_no_op() {
 #[test]
 fn depth_unet_save_load_roundtrip_is_bitwise() {
     let (h, w) = (8, 8);
-    let mut net = DepthUNet::new(3, 2, 5, true);
+    let mut net = DepthUNet::new(3, 2, 5, true).unwrap();
     let x = synthetic_input(3, h, w);
     let target: Vec<f32> = (0..h * w).map(|i| (i % 5) as f32 * 0.2 - 0.4).collect();
     for _ in 0..30 {

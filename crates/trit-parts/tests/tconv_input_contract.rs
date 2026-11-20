@@ -4,7 +4,7 @@ use trit_parts::tconv::Net;
 
 #[test]
 fn short_img_is_rejected_before_forward() {
-    let net = Net::new(1, &[4], 7);
+    let net = Net::new(1, &[4], 7).unwrap();
     let (w, h) = (4, 3);
     let short = vec![0.0f32; w * h - 1];
     let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -15,7 +15,7 @@ fn short_img_is_rejected_before_forward() {
 
 #[test]
 fn exact_size_img_still_works() {
-    let net = Net::new(1, &[4], 7);
+    let net = Net::new(1, &[4], 7).unwrap();
     let (w, h) = (4, 3);
     let ok = vec![0.0f32; w * h];
     let out = net.forward(&ok, None, w, h);

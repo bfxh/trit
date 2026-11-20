@@ -2591,6 +2591,10 @@
       "lines": 187
     },
     {
+      "file": "crates/trit-parts/src/tconv/cap.rs",
+      "lines": 20
+    },
+    {
       "file": "crates/trit-parts/src/tconv/conv.rs",
       "lines": 275
     },
@@ -2673,6 +2677,10 @@
     {
       "file": "crates/trit-parts/tests/atlas_bounds.rs",
       "lines": 112
+    },
+    {
+      "file": "crates/trit-parts/tests/conv_bounds.rs",
+      "lines": 60
     },
     {
       "file": "crates/trit-parts/tests/depthnet_e2e.rs",
