@@ -678,6 +678,23 @@
       "pattern": "texgen::size_of",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C040",
+      "title": "w×h 像素数上限先判后分配",
+      "kind": "require",
+      "covers": [
+        "L91"
+      ],
+      "scope": [
+        "crates/trit-parts/src/dims.rs"
+      ],
+      "since": "L91",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "n > MAX_PIXELS",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

@@ -59,7 +59,6 @@ mod patch;
 pub use patch::{MAX_PATCH, PatchMlp, check as check_patch};
 
 /// 采样起点 `x_T ≈ ε ~ N(0,1)`——必须与训练加噪的分布一致；曾写成 `0.5 + 0.5z`（均值 0.5、std 0.5），去噪器把偏暗输入当亮图，采样均值系统性偏高。
-///
 /// 种子先过 splitmix64 再进 xorshift：早期直接 `seed | 1` 当状态会把最低位丢掉，
 /// 相邻种子（如按类扫样的 `base+ki`）产出**逐位相同**的样本（2026-11-01 实测）。
 pub fn initial_noise(n: usize, seed: u64) -> Vec<f32> {
@@ -110,12 +109,13 @@ pub fn ddim_sample_opts(
     seed: u64,
     clamp: bool,
 ) -> Vec<f32> {
+    let n = crate::dims::pixels(w, h); // w×h 是所有按像素分配的根，先判
     let abar = sched.abar();
     let t_max = abar.len() - 1;
     if t_max == 0 {
-        return vec![0.0; w * h];
+        return vec![0.0; n];
     }
-    let mut x = initial_noise(w * h, seed);
+    let mut x = initial_noise(n, seed);
     for t in (0..t_max).rev() {
         let at = abar[t + 1];
         let at_prev = abar[t];

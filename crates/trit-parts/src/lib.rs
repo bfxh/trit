@@ -1,7 +1,6 @@
 //! 部件平面头：k 位三进制 + valid 的 Rust 三进制 GPU 实现。
 //!
-//! **`publish = false`，不属于稳定 API。** GPU 部分在 `gpu` feature 后面，
-//! 默认构建不拉 `wgpu`。
+//! **`publish = false`，不属于稳定 API。** GPU 部分在 `gpu` feature 后，默认构建不拉 `wgpu`。
 //!
 //! 本 crate 是「模型归 trit 仓」的落点；当前只完成**前向**，
 //! 反向内核与训练循环见 `README.md` 的缺口表。
@@ -16,6 +15,7 @@ pub mod depthdata;
 pub mod depthnet;
 pub mod depthunet;
 pub mod diffuse;
+pub mod dims;
 pub use trit_core::fingerprint; // 正本在 trit-core（避免第二份 SHA-256），这里保持旧路径
 pub mod fuse;
 pub mod geo;

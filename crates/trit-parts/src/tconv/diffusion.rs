@@ -22,7 +22,7 @@ impl crate::diffuse::Denoiser for VDen {
         w: usize,
         h: usize,
     ) -> Vec<f32> {
-        let mut maps = vec![xt.to_vec(), vec![t_frac; w * h]];
+        let mut maps = vec![xt.to_vec(), vec![t_frac; crate::dims::pixels(w, h)]];
         for e in &self.extra {
             maps.push(vec![*e; w * h]);
         }
@@ -60,7 +60,7 @@ pub fn ddim_sample_eps(
     eps_scale: f32,
 ) -> Vec<f32> {
     let tmax = abar.len().saturating_sub(1).max(1);
-    let mut x = crate::diffuse::initial_noise(w * h, seed);
+    let mut x = crate::diffuse::initial_noise(crate::dims::pixels(w, h), seed);
     for t in (0..tmax).rev() {
         let (at, atp) = (abar[t + 1].max(1e-8), abar[t].max(1e-8));
         let tf = (t + 1) as f32 / tmax as f32;
@@ -113,7 +113,7 @@ impl crate::diffuse::Denoiser for EpsDen {
         w: usize,
         h: usize,
     ) -> Vec<f32> {
-        let mut maps = vec![xt.to_vec(), vec![t_frac; w * h]];
+        let mut maps = vec![xt.to_vec(), vec![t_frac; crate::dims::pixels(w, h)]];
         for k in 0..self.net.cond {
             maps.push(vec![(cond == Some(k)) as u8 as f32; w * h]);
         }
@@ -148,7 +148,7 @@ impl crate::diffuse::Denoiser for Net {
         w: usize,
         h: usize,
     ) -> Vec<f32> {
-        let mut maps = vec![xt.to_vec(), vec![t_frac; w * h]];
+        let mut maps = vec![xt.to_vec(), vec![t_frac; crate::dims::pixels(w, h)]];
         for k in 0..self.cond {
             maps.push(vec![(cond == Some(k)) as u8 as f32; w * h]);
         }

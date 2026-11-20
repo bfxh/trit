@@ -2367,6 +2367,10 @@
       "lines": 172
     },
     {
+      "file": "crates/trit-parts/src/dims.rs",
+      "lines": 26
+    },
+    {
       "file": "crates/trit-parts/src/expand.rs",
       "lines": 156
     },
@@ -2677,6 +2681,10 @@
     {
       "file": "crates/trit-parts/tests/diffuse_contract.rs",
       "lines": 11
+    },
+    {
+      "file": "crates/trit-parts/tests/dims_bounds.rs",
+      "lines": 64
     },
     {
       "file": "crates/trit-parts/tests/matnet_bounds.rs",
