@@ -414,5 +414,21 @@
     "new": "    if false {\n",
     "pkg": "trit-parts",
     "filter": "depthdata::tests::lowpass_with_unusable_factor_is_noop"
+  },
+  {
+    "name": "api: 解码不判 res=0（取模除零）",
+    "file": "crates/trit-parts/src/api.rs",
+    "old": "    assert!(res > 0, \"分辨率不能为 0（logits 要按 res² 分组）\");\n",
+    "new": "",
+    "pkg": "trit-parts",
+    "filter": "api::tests::decode_rejects_zero_res"
+  },
+  {
+    "name": "backend: res 契约弱化成只判非 0",
+    "file": "crates/trit-parts/src/model.rs",
+    "old": "    res >= 4 && res.is_multiple_of(4)\n",
+    "new": "    res > 0\n",
+    "pkg": "trit-parts",
+    "filter": "model::tests::backend_res_must_be_a_positive_multiple_of_four"
   }
 ]

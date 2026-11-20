@@ -4,7 +4,7 @@
 //! 渲染/生成端只要能出 RGB，就能拿到 id 图；调用方只需拿到一个 `Backend`
 //! （`WgpuBackend` 或 `RefCpu`）和一份 `PartList`。
 
-use crate::model::Backend;
+use crate::model::{Backend, res_is_backend_usable};
 use crate::parts::PartList;
 #[cfg(feature = "gpu")]
 use crate::tpm::TpmModel;
@@ -16,13 +16,20 @@ pub fn infer_ids(
     res: u32,
     parts: &PartList,
 ) -> Result<Vec<u32>, String> {
+    assert!(
+        res_is_backend_usable(res),
+        "分辨率必须是 4 的正整数倍（收到 {res}）"
+    );
     let logits = backend.forward(rgb, res)?;
     Ok(decode_ids(&logits, res, parts))
 }
 
 /// 从 `k*3+1` 通道的 NHWC logits 解出 id 图（与 `parts-cli run` 同口径）。
 pub fn decode_ids(logits: &[f32], res: u32, parts: &PartList) -> Vec<u32> {
-    let hw = (res * res) as usize;
+    // `res` 是外部给的分辨率，这里不经过网络，所以只要求非 0：`hw` 要拿去取模，
+    // `res = 0` 会让下一行的 `logits.len() % hw` 直接除零 panic（本函数不返回 Result）。
+    assert!(res > 0, "分辨率不能为 0（logits 要按 res² 分组）");
+    let hw = res as usize * res as usize;
     let k = parts.k;
     let base = k * 3 + 1;
     assert_eq!(logits.len() % hw, 0, "logits 长度应为 hw 的整数倍");
@@ -47,9 +54,13 @@ pub fn forward_logits_feats(
     rgb: &[f32],
     res: u32,
 ) -> (Vec<f32>, Vec<f32>) {
+    assert!(
+        res_is_backend_usable(res),
+        "分辨率必须是 4 的正整数倍（收到 {res}）"
+    );
     let xb = gpu.buf(rgb, "x");
     let tr = net.forward(gpu, xb, res);
-    let hw = (res * res) as usize;
+    let hw = res as usize * res as usize;
     let ch = net.head_cout() as usize;
     let logits = gpu.read(&tr.out, hw * ch);
     let zc = net.layers[crate::net::D1B].cout as usize;
@@ -63,26 +74,4 @@ pub fn wgpu_from_tpm(m: &TpmModel) -> Result<crate::backend_wgpu::WgpuBackend, S
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn decode_respects_manifest_and_valid() {
-        let m = PartList::parse(
-            r#"{"k":2,"parts":[{"id":1,"digits":[0,0]},{"id":2,"digits":[0,1]},{"id":4,"digits":[1,0]}]}"#,
-        )
-        .unwrap();
-        // res=2 ⇒ 4 个像素；只给像素 0 有效（且指向 id 4），像素 3 的 valid 置负
-        let (res, ch) = (2u32, 7usize);
-        let hw = (res * res) as usize;
-        let mut lg = vec![0f32; hw * ch];
-        lg[1] = 5.0; // plane0 → digit 1
-        lg[3] = 5.0; // plane1 → digit 0
-        lg[6] = 5.0; // valid
-        let p3 = 3 * ch;
-        lg[p3 + 6] = -5.0;
-        let ids = decode_ids(&lg, res, &m);
-        assert_eq!(ids[0], 4);
-        assert_eq!(ids[3], 0);
-    }
-}
+mod tests;

@@ -120,6 +120,8 @@
 
 | L79 | `depthdata::load_sample` 的 `size` 直接来自 `--size`：`let (x0, y0) = ((w - size) / 2, (h - size) / 2)`、`if full { let (sx, sy) = (w / size, h / size) }`、三处 `vec![…; size * size]` —— `w`/`h` 是真实图尺寸，`size` 是命令行数字，中间没有一步验证 | `--size 0` 让 `w / size` 除零；`--size 9000` 在一张 384² 的图上让 `w - size` 下溢绕成 `usize::MAX`，`(w - size) / 2` 于是指向一张不存在的巨大图，三处 `size²` 缓冲在 64² 时是 3×16 KB、在 9000² 时是 972 MB —— 顺序是先分配后越界，用户看到的是 OOM 或 panic 而不是「参数错了」；同一个入口还被 `parts-depth` / `parts-depth-gpu` / `parts-depth-verify` 三条线共用 | 抽 `pub fn window_is_usable(size, w, h) -> bool`（`size > 0 && size <= w && size <= h`），`load_sample` 在 `read_rgb` 之后、读 `depth`/`seg` 之前用它判空返回；`size == 0` 连 PNG 都不必读。同时 `add_lowpass` 加 `factor == 0 || size < factor` 守卫 —— 调用方的 `4^lvl` 在 `--pyr ≥ 32` 时回绕成 0（`size / 0` 除零）、在 `--pyr 16` 时是 `2^32 > size`（`s = size / factor` 成为 0、`coarse[...]` 立刻越界）；测试下沉到 `depthdata/tests.rs` 腾预算（`depthdata.rs` 450 → 398） | C028 |
 
+| L80 | `api::decode_ids` 拿外部 `res` 直接算 `let hw = (res * res) as usize`，紧接着 `logits.len() % hw`；`Backend::forward` 同样先 `let h2 = res / 2; let h4 = res / 4;` 就把 `h4` 当真实尺寸喂给 `pool`/`convt`/`cat`；`compare` / `compare_nhwc` 再用 `agree / (5 * n)` | `decode_ids` 是公开 API 且**不返回 `Result`**：`res = 0` 让 `hw = 0`，`logits.len() % 0` 是一次裸除零 panic，调用方拿不到错误码。后端前向里 `res < 4` 时 `h4` 就是 0，`pool`/`convt`/`cat` 在 0×0 图上跑完几百层才在 `res²` 索引处崩，报的错与"分辨率"毫无关系。`compare` 的 `n = 0` 让一致率变成 `0 / 0 = NaN`，对拍会静默"通过" | 抽 `pub fn res_is_backend_usable(res) -> bool`（`res >= 4 && res.is_multiple_of(4)`）—— U 形三层要求 `h2`/`h4` 是整数、且回溯上采样 ×2 两次能回到 `res`；`RefCpu::forward` 拿它返回 `Err`（本来就是 `Result`），`infer_ids` / `forward_logits_feats` 在前向之前 assert；`decode_ids` 与 `compare` / `compare_nhwc` 只要求 `res > 0`（1 像素网格合法）。`hw` / `n` 一律改成 `res as usize * res as usize`，不在 `u32` 里乘 | C029 |
+
 
 
 
