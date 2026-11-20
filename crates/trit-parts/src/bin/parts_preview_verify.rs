@@ -21,8 +21,11 @@ fn arg(argv: &[String], k: &str) -> Option<String> {
 }
 
 fn usage() -> ! {
-    eprintln!("用法: parts-preview-verify --preview <目录> [--splat <ply>] [--json-out <path>]");
-    std::process::exit(2);
+    die("用法: parts-preview-verify --preview <目录>".into(), 2)
+}
+fn die(msg: String, code: i32) -> ! {
+    eprintln!("{msg}");
+    std::process::exit(code)
 }
 
 fn field(txt: &str, key: &str) -> Option<String> {
@@ -134,10 +137,7 @@ fn hash(p: &Path) -> String {
 }
 
 fn read(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_else(|e| {
-        eprintln!("读不了 {}: {e}", p.display());
-        std::process::exit(2);
-    })
+    std::fs::read_to_string(p).unwrap_or_else(|e| die(format!("读不了 {}: {e}", p.display()), 2))
 }
 
 fn main() {
@@ -161,16 +161,16 @@ fn main() {
     let elev = number(cfg, "elev").unwrap_or(20.0) as f32;
     let fov = number(cfg, "fov").unwrap_or(40.0) as f32;
     let cols = number(cfg, "cols").unwrap_or(4.0) as usize;
+    if !(16..=2048).contains(&res) || !(1..=64).contains(&cols) {
+        die(format!("清单 res/cols 越界（实得 {res}/{cols}）"), 1)
+    }
     let bg = number(cfg, "bg").unwrap_or(0.0) as f32;
     let radius = number(cfg, "radius").unwrap_or(0.0) as f32;
 
     let ply = arg(&argv, "--splat")
         .map(PathBuf::from)
         .unwrap_or_else(|| resolve(&base, field(src, "path").unwrap_or_else(|| usage())));
-    let splats = read_ply_3dgs(&ply).unwrap_or_else(|e| {
-        eprintln!("读 PLY 失败: {e}");
-        std::process::exit(2);
-    });
+    let splats = read_ply_3dgs(&ply).unwrap_or_else(|e| die(format!("读 PLY 失败: {e}"), 2));
     let ok_src = field(src, "sha256") == Some(hash(&ply))
         && number(src, "count") == Some(splats.len() as f64);
     let (lo, hi) = bounds(&splats);
@@ -213,7 +213,8 @@ fn main() {
         }
         imgs.push(img);
     }
-    let (sw, wh, sheet) = contact_sheet(&imgs, res, cols);
+    let (sw, wh, sheet) =
+        contact_sheet(&imgs, res, cols).unwrap_or_else(|e| die(format!("拼图尺寸非法: {e}"), 1));
     let got_sheet = read_rgb(&base.join(field(sh, "path").unwrap_or_default()))
         .map(|(_, _, p)| p)
         .unwrap_or_default();
@@ -273,10 +274,8 @@ fn main() {
             "preview.verify.json"
         }));
     }
-    std::fs::write(&vp, body).unwrap_or_else(|e| {
-        eprintln!("写复核记录 {}: {e}", vp.display());
-        std::process::exit(2);
-    });
+    std::fs::write(&vp, body)
+        .unwrap_or_else(|e| die(format!("写复核记录 {}: {e}", vp.display()), 2));
     println!(
         "复核记录 {}（{}）",
         vp.display(),

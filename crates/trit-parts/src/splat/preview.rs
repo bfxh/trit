@@ -76,29 +76,10 @@ pub fn orbit_camera(
     }
 }
 
-/// 把若干张 `res×res×3` 的图拼成 `cols` 列的联系表（行优先）。
-pub fn contact_sheet(frames: &[Vec<f32>], res: usize, cols: usize) -> (usize, usize, Vec<f32>) {
-    let cols = cols.max(1);
-    let rows = frames.len().div_ceil(cols).max(1);
-    let (w, h) = (cols * res, rows * res);
-    let mut sheet = vec![0.0f32; w * h * 3];
-    for (fi, f) in frames.iter().enumerate() {
-        if f.len() != res * res * 3 {
-            continue;
-        }
-        let (cx, cy) = (fi % cols, fi / cols);
-        for y in 0..res {
-            let src = y * res * 3;
-            let dst = ((cy * res + y) * w + cx * res) * 3;
-            sheet[dst..dst + res * 3].copy_from_slice(&f[src..src + res * 3]);
-        }
-    }
-    (w, h, sheet)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::splat::contact_sheet;
 
     fn splats() -> Vec<Splat> {
         vec![
@@ -140,7 +121,7 @@ mod tests {
             .enumerate()
             .map(|(i, _)| if i % 3 == 1 { 1.0 } else { 0.0 })
             .collect::<Vec<_>>();
-        let (w, h, s) = contact_sheet(&[red, green], 4, 2);
+        let (w, h, s) = contact_sheet(&[red, green], 4, 2).unwrap();
         assert_eq!((w, h), (8, 4));
         // 左上红、右上绿
         assert_eq!(&s[0..3], &[1.0, 1.0, 1.0]);

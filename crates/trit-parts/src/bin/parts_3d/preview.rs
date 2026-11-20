@@ -36,8 +36,8 @@ pub(crate) fn preview_scene_cmd(argv: &[String]) {
     let bg: f32 = arg(argv, "--bg")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0.0);
-    if views == 0 || views > 64 || res < 16 || res > 2048 {
-        fail("--views 1..64、--res 16..2048");
+    if views == 0 || views > 64 || res < 16 || res > 2048 || cols == 0 || cols > 64 {
+        fail("--views 1..64、--res 16..2048、--cols 1..64");
     }
     let splats = read_ply_3dgs(&ply).unwrap_or_else(|e| fail(&e));
     if splats.is_empty() {
@@ -67,7 +67,7 @@ pub(crate) fn preview_scene_cmd(argv: &[String]) {
         ));
         frames.push(img);
     }
-    let (sw, sh, sheet) = contact_sheet(&frames, res, cols);
+    let (sw, sh, sheet) = contact_sheet(&frames, res, cols).unwrap_or_else(|e| fail(&e));
     let sp = out.join("preview.png");
     write_rgb(&sp, sw, sh, &sheet).unwrap_or_else(|e| fail(&e));
     let ssha = trit_core::fingerprint::file_sha256(&sp).unwrap_or_default();
