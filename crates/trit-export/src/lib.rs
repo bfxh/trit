@@ -1,17 +1,8 @@
 //! 三值权重 GGUF 容器（GGUF v3 最小子集）。
-//!
-//! GGUF 是 llama.cpp 生态的权重容器；本 crate 只实现**读写三值张量**所需的最小子集：
-//! 文件头、少量元数据 KV、2D 张量信息、32 字节对齐的数据区。张量类型用自定义
-//! `GGML_TYPE_TRIT = 100`（上游未占用，格式见 `docs/GGUF-TRIT.md`），数据布局：
-//!
-//! ```text
-//! trits   : rows×cols，trit-codec 5 trits/byte（canonical padding，低位在前）
-//! scales  : rows × f32（小端）
-//! bias    : rows，trit-codec 5 trits/byte
-//! ```
-//!
-//! 打包与 `trit-codec` **共用** `trit_core::pack` 的同一实现（线格式契约唯一），字节序、padding 规则都沿用该 crate 的线格式契约。本 crate 不是上游 GGUF 的完整实现：未知元数据类型、
-//! 非三值张量、非 2D 张量一律显式报错，不猜。
+//! 只实现读写三值张量所需的最小子集：文件头、少量元数据 KV、2D 张量信息、32 字节对齐数据区。
+//! 张量类型 `GGML_TYPE_TRIT = 100`，布局：`trits` rows×cols（5 trits/byte，低位在前）+
+//! `scales` rows×f32 + `bias` rows（5 trits/byte）；打包与 `trit-codec` 共用 `trit_core::pack`。
+//! 未知元数据类型、非三值/非 2D 张量一律显式报错。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -244,6 +235,11 @@ pub fn read(bytes: &[u8]) -> Result<Model, Error> {
     }
     let tensor_count = usize::try_from(read_u64(bytes, &mut pos)?).map_err(|_| Error::Truncated)?;
     let meta_count = usize::try_from(read_u64(bytes, &mut pos)?).map_err(|_| Error::Truncated)?;
+    if tensor_count > bytes.len().saturating_sub(pos) / 40 {
+        return Err(Error::TooMany {
+            count: tensor_count,
+        });
+    }
     let mut metadata = BTreeMap::new();
     for _ in 0..meta_count {
         let key = read_str(bytes, &mut pos)?;

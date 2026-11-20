@@ -3,13 +3,10 @@
 /// 读写错误。
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
-    /// 文件短于声明的结构。
     #[error("GGUF 太短")]
     Truncated,
-    /// magic 不是 `GGUF`。
     #[error("GGUF magic 不符")]
     Magic,
-    /// 版本不是 3。
     #[error("GGUF 版本 {0} 不受支持")]
     Version(u32),
     /// 元数据类型码不受支持。
@@ -36,4 +33,7 @@ pub enum Error {
     /// 张量字段长度不符。
     #[error("GGUF 张量 {0} 字段长度不符")]
     Field(String),
+    /// 张量数超过文件剩余长度。
+    #[error("张量数 {count} 超过文件剩余长度")]
+    TooMany { count: usize },
 }

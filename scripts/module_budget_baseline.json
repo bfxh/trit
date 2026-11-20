@@ -940,7 +940,11 @@
     },
     {
       "file": "crates/trit-export/src/lib.rs",
-      "lines": 322
+      "lines": 318
+    },
+    {
+      "file": "crates/trit-export/tests/count_bounds.rs",
+      "lines": 16
     },
     {
       "file": "crates/trit-export/tests/gguf.rs",

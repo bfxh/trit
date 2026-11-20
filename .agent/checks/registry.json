@@ -1053,6 +1053,23 @@
       "pattern": "length <= MAX_LENGTH",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C062",
+      "title": "GGUF 张量数先按剩余字节卡住",
+      "kind": "require",
+      "covers": [
+        "L110"
+      ],
+      "scope": [
+        "crates/trit-export/src/lib.rs"
+      ],
+      "since": "L110",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "tensor_count > bytes\\.len\\(\\)\\.saturating_sub\\(pos\\)",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
