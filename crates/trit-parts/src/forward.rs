@@ -19,6 +19,7 @@ pub fn forward(
     mode: u32,
     dump: Option<&Path>,
 ) -> Vec<f32> {
+    let px = crate::dims::pixels(res as usize, res as usize);
     let snap = |name: &str, buf: &wgpu::Buffer, n: usize| {
         if let Some(d) = dump {
             let v = gpu.read(buf, n);
@@ -30,7 +31,6 @@ pub fn forward(
             println!("  转储 mid_{name} ({n} 元素)");
         }
     };
-
     // 前向统一走「有效权重 E」：mode=0 取折叠后的稠密权重，mode=1 取 q·scale。
     // cout 是 4 的倍数时用 vec4 内核（与训练同一条），否则退回标量路径。
     let up = |cw: &crate::weights::ConvW, tag: &str| {
@@ -58,7 +58,7 @@ pub fn forward(
     let w = conv_w(t, "e1.3.weight", Some("e1.4"), true).expect("e1.3");
     let (a1, _b1, _c1, d1) = up(&w, "e1b");
     let a = conv_layer(gpu, &cur, res, res, &w, 1, &a1, &d1);
-    snap("a", &a, (res * res * 32) as usize);
+    snap("a", &a, px * 32);
 
     // e2 @ res/2
     let p = gpu.pool(&a, res, res, 32);
@@ -102,23 +102,23 @@ pub fn forward(
     let w = convt_w(t, "u2.weight").expect("u2");
     let (a1, b1, c1, d1) = up(&w, "u2");
     let u2 = gpu.convt(&y, h2, h2, &w, mode, &a1, &b1, &c1, &d1);
-    snap("u2", &u2, (res * res * 32) as usize);
+    snap("u2", &u2, px * 32);
 
     // d1: cat(u2,a) 64→32, 32→32
-    let cat = gpu.cat(&u2, &a, res * res, 32, 32);
+    let cat = gpu.cat(&u2, &a, px as u32, 32, 32);
     let w = conv_w(t, "d1.0.weight", Some("d1.1"), true).expect("d1.0");
     let (a1, _b1, _c1, d1) = up(&w, "d1a");
     cur = conv_layer(gpu, &cat, res, res, &w, 1, &a1, &d1);
     let w = conv_w(t, "d1.3.weight", Some("d1.4"), true).expect("d1.3");
     let (a1, _b1, _c1, d1) = up(&w, "d1b");
     let z = conv_layer(gpu, &cur, res, res, &w, 1, &a1, &d1);
-    snap("z", &z, (res * res * 32) as usize);
+    snap("z", &z, px * 32);
 
     // head: 1x1 32→16，无 ReLU
     let w = conv_w(t, "head.weight", None, false).expect("head");
     let (a1, _b1, _c1, d1) = up(&w, "head");
     let out = conv_layer(gpu, &z, res, res, &w, 0, &a1, &d1);
-    gpu.read(&out, (res * res * 16) as usize)
+    gpu.read(&out, px * 16)
 }
 
 /// 一层卷积：`cout` 是 4 的倍数走 vec4 内核，否则退回标量（`eff` 已按 mode 折好）。

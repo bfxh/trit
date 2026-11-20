@@ -746,6 +746,23 @@
       "pattern": "privacy_scan.py",
       "min": 2,
       "allow_skip": false
+    },
+    {
+      "id": "C044",
+      "title": "res 的平方必须先加宽再乘（禁 u32 裸乘）",
+      "kind": "forbid",
+      "covers": [
+        "L94"
+      ],
+      "scope": [
+        "crates/trit-parts/src/*.rs",
+        "crates/trit-parts/src/**/*.rs"
+      ],
+      "since": "L94",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "\\bres\\s*\\*\\s*res\\b",
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

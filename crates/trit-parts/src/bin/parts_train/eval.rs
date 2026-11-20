@@ -56,7 +56,7 @@ pub(crate) fn eval_only(gpu: &Gpu, args: &Args) {
     let ch = net.head_cout() as usize;
 
     let res = args.res;
-    let hw = (res * res) as usize;
+    let hw = trit_parts::dims::pixels(res as usize, res as usize);
 
     let mut plane_sum = vec![0f64; k];
     // [无约束, 约束]：帧级累加（id 一致按帧取均值，IoU 按 (帧,部件) 对取均值，清单外按帧取均值）

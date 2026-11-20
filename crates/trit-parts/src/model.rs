@@ -249,8 +249,8 @@ impl Backend for RefCpu {
                 "分辨率必须是 4 的正整数倍（收到 {res}）：h2/h4 是整数除法，convt 上采样 ×2 两次"
             ));
         }
-        let h2 = res / 2;
-        let h4 = res / 4;
+        let (h2, h4) = (res / 2, res / 4);
+        let px = crate::dims::pixels(res as usize, res as usize);
         let a = self.block(x, res, res, E1A);
         let a = self.block(&a, res, res, E1B);
         let p1 = self.pool(&a, res, res, 32);
@@ -264,7 +264,7 @@ impl Backend for RefCpu {
         let d2 = self.block(&cat1, h2, h2, D2A);
         let d2 = self.block(&d2, h2, h2, D2B);
         let u2 = self.convt(&d2, h2, h2, &self.model.layers[U2]);
-        let cat2 = Self::cat(&u2, &a, (res * res) as usize, 32, 32);
+        let cat2 = Self::cat(&u2, &a, px, 32, 32);
         let d1 = self.block(&cat2, res, res, D1A);
         let d1 = self.block(&d1, res, res, D1B);
         Ok(self.block(&d1, res, res, HEAD))

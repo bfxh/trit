@@ -123,7 +123,7 @@ pub fn resize_rgb(w: usize, h: usize, pix: &[f32], res: usize) -> Vec<f32> {
     if w == res && h == res {
         return pix.to_vec();
     }
-    let mut out = vec![0f32; res * res * 3];
+    let mut out = vec![0f32; crate::dims::pixels(res, res) * 3];
     for y in 0..res {
         let fy = (y as f32 + 0.5) * h as f32 / res as f32 - 0.5;
         let y0 = fy.floor().max(0.0) as usize;

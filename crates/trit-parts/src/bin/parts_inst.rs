@@ -301,7 +301,7 @@ fn eval(argv: &[String]) {
                 eprintln!("{e}");
                 std::process::exit(2)
             });
-            let hw = (res * res) as usize;
+            let hw = trit_parts::dims::pixels(res as usize, res as usize);
             let ch = logits.len() / hw;
             if k * 3 >= ch {
                 eprintln!("模型输出 {ch} 通道，不够 k={k}（需 {}）", k * 3 + 1);

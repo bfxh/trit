@@ -9,7 +9,7 @@ fn decode_respects_manifest_and_valid() {
         .unwrap();
     // res=2 ⇒ 4 个像素；只给像素 0 有效（且指向 id 4），像素 3 的 valid 置负
     let (res, ch) = (2u32, 7usize);
-    let hw = (res * res) as usize;
+    let hw = crate::dims::pixels(res as usize, res as usize);
     let mut lg = vec![0f32; hw * ch];
     lg[1] = 5.0; // plane0 → digit 1
     lg[3] = 5.0; // plane1 → digit 0

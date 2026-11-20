@@ -45,7 +45,7 @@ impl Backend for WgpuBackend {
     }
 
     fn forward(&mut self, x: &[f32], res: u32) -> Result<Vec<f32>, String> {
-        let hw = (res * res) as usize;
+        let hw = crate::dims::pixels(res as usize, res as usize);
         let xb = self.gpu.buf(x, "x");
         let tr = self.net.forward(&self.gpu, xb, res);
         let ch = self.net.head_cout() as usize;

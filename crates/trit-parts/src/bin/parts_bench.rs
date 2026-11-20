@@ -44,7 +44,7 @@ fn main() {
     net.upload_all(&gpu);
 
     let res = 384u32;
-    let hw = (res * res) as usize;
+    let hw = trit_parts::dims::pixels(res as usize, res as usize);
     let x = vec![0.5f32; hw * 3];
     let dout_data = vec![0.01f32; hw * 16];
 

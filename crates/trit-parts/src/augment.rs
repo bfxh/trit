@@ -121,9 +121,9 @@ mod tests {
 
     fn sample(res: usize) -> Sample {
         Sample {
-            rgb: vec![0.5f32; res * res * 3],
-            planes: vec![vec![1u8; res * res]; 2],
-            valid: vec![1u8; res * res],
+            rgb: vec![0.5f32; crate::dims::pixels(res, res) * 3],
+            planes: vec![vec![1u8; crate::dims::pixels(res, res)]; 2],
+            valid: vec![1u8; crate::dims::pixels(res, res)],
         }
     }
 

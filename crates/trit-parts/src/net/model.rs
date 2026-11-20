@@ -174,6 +174,7 @@ impl Net {
     pub fn forward(&self, gpu: &Gpu, input: Buffer, res: u32) -> Trace {
         let h2 = res / 2;
         let h4 = res / 4;
+        let px = crate::dims::pixels(res as usize, res as usize);
         let mut pre: Vec<Option<Buffer>> = (0..self.layers.len()).map(|_| None).collect();
         let (v_e1a, act_e1a) = self.conv_affine(gpu, E1A, &input, res, res);
         pre[E1A] = Some(v_e1a);
@@ -205,7 +206,7 @@ impl Net {
         let cat2 = gpu.cat(
             &u2,
             &a,
-            res * res,
+            px as u32,
             self.layers[U2].cout,
             self.layers[E1B].cout,
         );
@@ -260,6 +261,7 @@ impl Net {
         dout_depth: Option<&Buffer>,
         res: u32,
     ) {
+        let px = crate::dims::pixels(res as usize, res as usize);
         let h2 = res / 2;
         let h4 = res / 4;
         let pre = |i: usize| tr.pre[i].as_ref().expect("缺预激活");
@@ -270,11 +272,7 @@ impl Net {
             Some(dd) => {
                 let dv2 = self.affine_bwd(gpu, DEPTH, pre(DEPTH), dd, res, res);
                 let dz2 = self.bwd_conv(gpu, DEPTH, &tr.z, &dv2, res, res);
-                gpu.add(
-                    &dz_main,
-                    &dz2,
-                    (res * res) as usize * self.layers[D1B].cout as usize,
-                )
+                gpu.add(&dz_main, &dz2, px * self.layers[D1B].cout as usize)
             }
             None => dz_main,
         };
@@ -283,7 +281,7 @@ impl Net {
         let dv = self.affine_bwd(gpu, D1A, pre(D1A), &d_act1, res, res);
         let d_cat2 = self.bwd_conv(gpu, D1A, &tr.cat2, &dv, res, res);
         let (d_u2, d_a_cat) = gpu.bwd_cat_dx(
-            res * res,
+            px as u32,
             self.layers[U2].cout,
             self.layers[E1B].cout,
             &d_cat2,
@@ -319,11 +317,7 @@ impl Net {
         let d_p1 = self.bwd_conv(gpu, E2A, &tr.p1, &dv, h2, h2);
         let d_a_pool = gpu.bwd_pool_dx(res, res, self.layers[E1B].cout, &tr.a, &d_p1);
 
-        let d_a = gpu.add(
-            &d_a_cat,
-            &d_a_pool,
-            (res * res * self.layers[E1B].cout) as usize,
-        );
+        let d_a = gpu.add(&d_a_cat, &d_a_pool, px * self.layers[E1B].cout as usize);
         let dv = self.affine_bwd(gpu, E1B, pre(E1B), &d_a, res, res);
         let d_act1e = self.bwd_conv(gpu, E1B, &tr.act_e1a, &dv, res, res);
         let dv = self.affine_bwd(gpu, E1A, pre(E1A), &d_act1e, res, res);

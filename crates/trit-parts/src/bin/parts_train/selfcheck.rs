@@ -24,7 +24,7 @@ pub(crate) fn selfcheck(dir: &std::path::Path) {
     net.upload_all(&gpu);
     let x = read_f32(&dir.join("input.bin"));
     let res = (x.len() / 3).isqrt() as u32;
-    let hw = (res * res) as usize;
+    let hw = trit_parts::dims::pixels(res as usize, res as usize);
     let xb = gpu.buf(&x, "x");
     let tr = net.forward(&gpu, xb, res);
     let out = gpu.read(&tr.out, hw * 16);
