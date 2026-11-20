@@ -84,3 +84,12 @@
   越界 rc2，空片真空集明说）；各片在**不同检出**里跑。CI full 走 4 片矩阵 + 聚合
   `--partition 4 --logs <目录>`（逐条判决对账：缺/重/非杀死/读不到日志全判红）；
   required 的两个检查名不变。
+
+## 智能体护栏工具链（2026-11-21 落地）
+
+- **干活动手前必读 `AGENT-GUARDRAILS.md`**（护栏手册）：怎么安全地干活、没钱了怎么办、
+  怎么删东西、怎么在 Git 上不闯祸。四个协议：删除（裸删默认 DENY，唯一放行口
+  `tools/trash.py put --reason`）、Git（破坏面默认 DENY，先 `tools/git_safe.py checkpoint`）、
+  断粮（`tools/resume.py` 挂起/续跑，censored 不是失败）、资源帽（`--caps`，内核帽不是安全边界）。
+- 单一入口 `tools/agent_verify.py`：编排链任一闸拒绝整体拒绝，回执纯 ASCII；
+  快速命令块与回执读法见护栏手册 §快速命令块、§验收口径（`pwsh tools/selftest.ps1` 237 条全绿）。
