@@ -1452,7 +1452,11 @@
     },
     {
       "file": "crates/trit-immune/src/server/auth.rs",
-      "lines": 126
+      "lines": 70
+    },
+    {
+      "file": "crates/trit-immune/src/server/auth/tests.rs",
+      "lines": 72
     },
     {
       "file": "crates/trit-immune/src/server/conn.rs",
@@ -3428,7 +3432,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli.rs",
-      "lines": 661
+      "lines": 651
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",
@@ -3477,6 +3481,10 @@
     {
       "file": "crates/trit-wspace/src/cli/cli_task/cli_task_trim.rs",
       "lines": 71
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/cli_verify.rs",
+      "lines": 49
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_wsp2.rs",
@@ -3572,7 +3580,11 @@
     },
     {
       "file": "crates/trit-wspace/src/mcp/load.rs",
-      "lines": 149
+      "lines": 94
+    },
+    {
+      "file": "crates/trit-wspace/src/mcp/load/fsread.rs",
+      "lines": 145
     },
     {
       "file": "crates/trit-wspace/src/mcp/mcp_dare.rs",

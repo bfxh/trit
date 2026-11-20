@@ -61,7 +61,6 @@ pub fn from_wsp(text: &str) -> Result<Net> {
 
     let (_, magic) = next(&lines, &mut pos, "wsp1")?;
     if magic != MAGIC {
-        // 不回显首行原文：MCP 会把诊断信息原样交给模型，而首行可能是任意文件的内容。
         return Err(Error::Parse {
             line: 1,
             msg: format!("期望 {MAGIC}，得到 {} 字节的非 wsp1 首行", magic.len()),

@@ -54,13 +54,7 @@ pub(super) fn certify(args: &[String]) -> Result<(), String> {
         allow: opt_usize(&parsed, "allow", 0)?,
         rows: opt_usize(&parsed, "limit", certify::DEFAULT_ROWS)?,
     };
-    if options.allow > 0 {
-        eprintln!(
-            "警告：--allow {} 是调用方自报阈值；证书不能单独作为合规证据，需配合独立策略",
-            options.allow
-        );
-    }
-
+    super::cli_verify::warn_if_allow(options.allow);
     let (certificate, edited) = match patch_path {
         Some(patch_source) => {
             let patch = wire::patch_from_value(&load_json(patch_source)?).map_err(err)?;
@@ -84,7 +78,6 @@ pub(super) fn certify(args: &[String]) -> Result<(), String> {
     }
     let passed = certificate.passed();
     emit(&report)?;
-    // 默认严格：证书不成立就失败；只有显式 --advisory 才允许“出报告但退出 0”。
     if !passed && !parsed.switches.contains("advisory") {
         let edit_loss = certificate.edit.as_ref().map_or(0, |one| one.after_loss);
         return Err(format!(
