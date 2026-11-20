@@ -4,7 +4,7 @@ pub(crate) fn tex_quilt_cmd(argv: &[String]) {
     use trit_parts::tex::{QuiltSpec, quilt_ex};
     let Some(p) = argv.get(1).filter(|a| !a.starts_with("--")) else {
         fail(
-            "用法: parts-3d tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 6] [--seed 1] [--cut] [--tile]",
+            "用法: parts-3d tex-quilt <源.png> [--out out.ppm] [--size 128] [--patch 12] [--overlap 6] [--seed 1] [--cut] [--soft-cut] [--tile]",
         );
     };
     let (sw, sh, rgb) =
@@ -22,7 +22,6 @@ pub(crate) fn tex_quilt_cmd(argv: &[String]) {
     let seed: u64 = arg(argv, "--seed")
         .and_then(|v| v.parse().ok())
         .unwrap_or(1);
-    let tone = argv.iter().any(|a| a == "--tone-match");
     let detrend: usize = arg(argv, "--detrend")
         .and_then(|v| v.parse().ok())
         .unwrap_or(0);
@@ -34,12 +33,13 @@ pub(crate) fn tex_quilt_cmd(argv: &[String]) {
         patch,
         overlap: ov,
         seed,
-        tone_match: tone,
+        tone_match: argv.iter().any(|a| a == "--tone-match"),
         detrend,
         relight,
         relight_plane,
         cut: argv.iter().any(|a| a == "--cut"),
         tile: argv.iter().any(|a| a == "--tile"),
+        soft: argv.iter().any(|a| a == "--soft-cut"),
     };
     let out = quilt_ex(&rgb, sw, sh, &spec);
     let l = trit_parts::look::analyze(&out, n, n);

@@ -27,11 +27,13 @@ pub(crate) const MESH_TEX_JOB_KEYS: &[&str] = &[
     "patch",
     "overlap",
     "quilt-seed",
+    "quilt-soft-cut",
     "tex-world",
     "atlas",
     "texels",
     "atlas-deg",
     "lscm",
+    "normal-anchor",
     "style-by-axis",
     "style-by-material",
     "material-model",
@@ -153,22 +155,15 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
             let n: usize = arg(argv, "--quilt-size")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(512);
-            let patch: usize = arg(argv, "--patch")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(16);
+            let patch: usize = arg(argv, "--patch").map_or(16, |v| v.parse().unwrap_or(16));
             let ov: usize = arg(argv, "--overlap")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(patch / 4);
-            let seed: u64 = arg(argv, "--quilt-seed")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(1);
+            let seed: u64 = arg(argv, "--quilt-seed").map_or(1, |v| v.parse().unwrap_or(1));
             if patch > sw.min(sh) {
                 fail(&format!("--patch {patch} 超过源图短边 {}", sw.min(sh)));
             }
-            let tone = argv.iter().any(|a| a == "--tone-match");
-            let detrend: usize = arg(argv, "--detrend")
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(0);
+            let detrend: usize = arg(argv, "--detrend").map_or(0, |v| v.parse().unwrap_or(0));
             let relight = argv.iter().any(|a| a == "--relight");
             let relight_plane = argv.iter().any(|a| a == "--relight-plane");
             let spec = trit_parts::tex::QuiltSpec {
@@ -177,12 +172,13 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
                 patch,
                 overlap: ov,
                 seed,
-                tone_match: tone,
+                tone_match: argv.iter().any(|a| a == "--tone-match"),
                 detrend,
                 relight,
                 relight_plane,
                 cut: argv.iter().any(|a| a == "--quilt-cut"),
                 tile: argv.iter().any(|a| a == "--quilt-tile"),
+                soft: argv.iter().any(|a| a == "--quilt-soft-cut"),
             };
             let out = trit_parts::tex::quilt_ex(&src, sw, sh, &spec);
             let l = trit_parts::look::analyze(&out, n, n);
@@ -220,9 +216,7 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
         let tex_world: f32 = arg(argv, "--tex-world")
             .and_then(|v| v.parse().ok())
             .unwrap_or(cell * 40.0);
-        let atlas_px: usize = arg(argv, "--atlas")
-            .and_then(|v| v.parse().ok())
-            .unwrap_or(0);
+        let atlas_px: usize = arg(argv, "--atlas").map_or(0, |v| v.parse().unwrap_or(0));
         let obj_path = PathBuf::from(&obj_p);
         // 目标目录不存在时自动建；否则 write_rgb 会以「找不到路径」失败，报错还指不到真正原因
         if let Some(parent) = obj_path.parent() {
@@ -243,6 +237,7 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(45.0);
             let lscm = argv.iter().any(|a| a == "--lscm");
+            let anchor = argv.iter().any(|a| a == "--normal-anchor");
             // 按材质类别（面法线主轴 X/Y/Z）分别上风格：`--style-by-axis "cel:0.6,oil:0.5,-"`
             // `-` = 该类不处理；条目不足 3 个时其余为恒等。
             // 材质映射：manifest 的 pass_index → material；顶点用多视角投影投票定部件号
@@ -424,7 +419,7 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
                     styles: st,
                 });
             let t0 = std::time::Instant::now();
-            let a = trit_parts::atlas::bake_atlas(
+            let a = trit_parts::atlas::bake_atlas_ex(
                 &m,
                 &tpix,
                 tw,
@@ -433,6 +428,7 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
                 texels,
                 ndeg,
                 lscm,
+                anchor,
                 pc.as_ref(),
             )
             .unwrap_or_else(|e| fail(&e));
@@ -456,7 +452,7 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
                 st.median, st.p05, st.p95, st.spread
             );
             println!(
-                "OBJ {}：{} 顶点 / {} 三角形，**图集** {}×{}（{} 个 chart，法线聚类 {:.0}°{}）⇒ {}",
+                "OBJ {}：{} 顶点 / {} 三角形，**图集** {}×{}（{} 个 chart，法线聚类 {:.0}°{}{}）⇒ {}",
                 obj_path.display(),
                 m.verts.len(),
                 m.tris.len(),
@@ -465,6 +461,7 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
                 a.charts.len(),
                 ndeg,
                 if lscm { "，LSCM" } else { "" },
+                if anchor { "（锚定）" } else { "" },
                 png_p.display()
             );
             return;

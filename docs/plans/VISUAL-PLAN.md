@@ -311,7 +311,8 @@ parts-3d look D:/KF/trit-data/style-frames --out features.csv
   `--cut`（DP graph-cut 缝合）与 `--tile`（周期包装，环面合成）落地，Wood013 环绕比
   1.209 → **0.823**，读数与剩余缺口见 GENERAL-PLAN §6.132；② UV 是**投影式**（`uv::box_uvs`，已能用
   `mesh-tex --tex --obj` 导出 OBJ+MTL+PNG，端到端实测 148,832 面），但**不是展开**：接缝不连续、不保证无重叠，
-  要精确 UV 还得做 atlas 展开/打包。
+  要精确 UV 还得做 atlas 展开/打包——**2026-11-20 部分收**：曲率自适应切 chart（锚定法线，§6.133）把
+  曲面 chart 的 spread 从 5–27 压到 1.0–1.35，但仍是逐 chart 投影（无 bijective 展开），缺口余量见 §6.133。
 
 **建议顺序**：S6.1 + S6.4（纯测量，2 天，能直接判红绿）→ S6.5（显式插值，1–2 天，已有先例）
 → S6.3（类别条件，唯一可能改变生成结构的一步）→ 再决定要不要碰 S6.6。

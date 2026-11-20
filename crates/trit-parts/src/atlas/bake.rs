@@ -3,16 +3,10 @@ use std::collections::HashMap;
 use crate::mesh::Mesh;
 
 use super::charts::{
-    Atlas, Chart, PerClass, find, lscm_chart, norm, sample, style_texel, tri_area, tri_normal,
+    Atlas, Chart, PerClass, lscm_chart, norm, sample, style_texel, tri_area, tri_normal,
 };
 
-/// 切 chart + 打包 + 烘焙。
-///
-/// chart 用**法线相似度**聚类（相邻面法线夹角 <= `normal_deg` 才合并）。
-/// `use_lscm=false` 时每 chart 用面积加权平均法线做**正交投影**（快，曲面会拉伸）；
-/// `use_lscm=true` 时每 chart 解 **LSCM**（保角，密度更均匀，代价是慢几十倍）。
-///
-/// `texels_per_unit <= 0` 时按总面积自动定密度（目标填充 60%）；放不下会减半重排。
+/// 9 参兼容入口：等价 [`bake_atlas_ex`] 的 `anchor=false`（旧 union 行为，调用方零改动）。
 #[allow(clippy::too_many_arguments)]
 pub fn bake_atlas(
     m: &Mesh,
@@ -25,16 +19,48 @@ pub fn bake_atlas(
     use_lscm: bool,
     per_class: Option<&PerClass>,
 ) -> Result<Atlas, String> {
+    bake_atlas_ex(
+        m,
+        tex,
+        tw,
+        th,
+        atlas_px,
+        texels_per_unit,
+        normal_deg,
+        use_lscm,
+        false,
+        per_class,
+    )
+}
+
+/// 切 chart + 打包 + 烘焙（全参版）：`anchor=true` 时改用**锚定法线贪心生长**（[`super::group`]）——
+/// 以 chart 已收面元的面积加权均值法线为锚，遏制 union-find 的传递性漂移（A~B~C 链式合并后
+/// A⊥C 也在同一 chart），曲面 UV 密度 spread 更小、chart 更多。chart 用**法线相似度**聚类
+/// （相邻面法线夹角 <= `normal_deg` 才合并）；`use_lscm=false` 时每 chart 用面积加权平均法线做**正交投影**（快，曲面会拉伸），`use_lscm=true` 时解 **LSCM**（保角，慢几十倍）；
+/// `texels_per_unit <= 0` 按总面积自动定密度（目标填充 60%），放不下会减半重排。
+#[allow(clippy::too_many_arguments)]
+pub fn bake_atlas_ex(
+    m: &Mesh,
+    tex: &[f32],
+    tw: usize,
+    th: usize,
+    atlas_px: usize,
+    texels_per_unit: f32,
+    normal_deg: f32,
+    use_lscm: bool,
+    anchor: bool,
+    per_class: Option<&PerClass>,
+) -> Result<Atlas, String> {
     if tex.len() != tw * th * 3 {
         return Err(format!("贴图像素数 {} != {tw}x{th}x3", tex.len()));
     }
+    let cnt = (tex.len() / 3) as f32;
     let mut mean = [0.0f32; 3];
     for p in tex.chunks(3) {
         for c in 0..3 {
             mean[c] += p[c];
         }
     }
-    let cnt = (tex.len() / 3) as f32;
     for mv in mean.iter_mut() {
         *mv /= cnt;
     }
@@ -67,6 +93,7 @@ pub fn bake_atlas(
         texels_per_unit,
         normal_deg,
         use_lscm,
+        anchor,
         mean,
         &mut shade,
     )?;
@@ -74,14 +101,16 @@ pub fn bake_atlas(
     Ok(a)
 }
 
-/// 同 [`bake_atlas`] 的切 chart / 打包 / 光栅化，但纹素颜色由调用方给：
+/// 同 [`bake_atlas_ex`] 的切 chart / 打包 / 光栅化，但纹素颜色由调用方给：
 /// `shade(三角形, 图集内 uv, 世界坐标)`，返回 `None` 表示不写（保留底色 `fill`）。
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn bake_shaded<S>(
     m: &Mesh,
     atlas_px: usize,
     texels_per_unit: f32,
     normal_deg: f32,
     use_lscm: bool,
+    anchor: bool,
     fill: [f32; 3],
     shade: &mut S,
 ) -> Result<Atlas, String>
@@ -102,36 +131,7 @@ where
         })
         .collect();
     let areas: Vec<f32> = m.tris.iter().map(|t| tri_area(m, t)).collect();
-    let mut e2f: HashMap<(u32, u32), Vec<usize>> = HashMap::new();
-    for (fi, t) in m.tris.iter().enumerate() {
-        for (a, b) in [(t[0], t[1]), (t[1], t[2]), (t[2], t[0])] {
-            let e = if a < b { (a, b) } else { (b, a) };
-            e2f.entry(e).or_default().push(fi);
-        }
-    }
-    let cos_thr = normal_deg.to_radians().cos();
-    let mut parent: Vec<usize> = (0..n).collect();
-    for fs in e2f.values() {
-        for i in 0..fs.len() {
-            for j in i + 1..fs.len() {
-                let (a, b) = (fs[i], fs[j]);
-                let d = nrm[a][0] * nrm[b][0] + nrm[a][1] * nrm[b][1] + nrm[a][2] * nrm[b][2];
-                if d >= cos_thr {
-                    let (ra, rb) = (find(&mut parent, a), find(&mut parent, b));
-                    if ra != rb {
-                        parent[ra] = rb;
-                    }
-                }
-            }
-        }
-    }
-    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
-    for fi in 0..n {
-        let r = find(&mut parent, fi);
-        groups.entry(r).or_default().push(fi);
-    }
-    let mut group_list: Vec<Vec<usize>> = groups.into_values().collect();
-    group_list.sort_by_key(|g| g[0]);
+    let group_list = super::group::chart_groups(&m.tris, &nrm, &areas, normal_deg, anchor);
 
     // 每个 chart 的三条角点 2D 坐标（世界尺度）
     let mut coords: Vec<Vec<[[f32; 2]; 3]>> = Vec::with_capacity(group_list.len());

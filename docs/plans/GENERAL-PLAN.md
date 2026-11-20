@@ -3836,3 +3836,93 @@ cut 与羽化输出不同（三条对拍都验过）。
 **缺口（仍开放）**：① UV 展开仍是投影式（VISUAL-PLAN S6.8 ②）；② 域外源的 wrap 缝在
 border 指标上不如羽化（cut+tile 2.03），可做「路径附近硬切、远端羽化」的混合缝合——未做；
 ③ patch 候选仍是随机 64（全搜索未做）。
+
+### 6.133 曲率自适应切 chart：锚定法线贪心生长（`bake_atlas_ex --anchor`）（2026-11-20）
+
+§6.54 的结论「真要继续，应做曲率自适应切 chart」落地。根因定位：`bake.rs` 的 union-find
+按**相邻面**法线夹角合并，有**传递性漂移**——A~B、B~C 链式合并后 A⊥C 也在同一 chart；
+环面在 ndeg≥30° 时整张面被链成 **1 个 chart**（平面投影 spread 27.3）。
+
+**实现**（多子代理并行轮，atlas-core）：
+
+- `atlas/group.rs`（新，275 行）：`build_edge_faces`（e2f 表自 bake.rs 原样迁出）、
+  `union_groups`（旧行为逐位迁移）、`anchored_groups`——种子按面号升序，chart 内 BFS
+  （邻居固定边序、去重），面 `nf` 加入当且仅当 `dot(nrm[nf], mean_hat) ≥ cos(normal_deg)`，
+  锚 = 已收面元的**面积加权均值法线**（增量更新）；被拒面留给后续 chart。全路径确定性。
+- `bake.rs`：分组块换 `chart_groups(...)` 调用；`bake_atlas` 保持 9 参（转发 anchor=false，
+  **默认路径逐位不变**），新增 `bake_atlas_ex`（10 参，anchor 在 use_lscm 与 per_class 之间）。
+- CLI：`mesh-tex --normal-anchor`；作业文件键 `normal-anchor`。
+- **兼容对拍**：cube+torus × 3 参数组合，`bake_atlas`（anchor=false）的图集/UV/charts
+  在集成前后**逐位一致**（scratch 双跑 FNV 对比，仓外 scratch，复现命令见代理报告）。
+
+**实测**（参数化 torus R=1/r=0.35、sphere，32×32 棋盘，atlas 512，自动密度）：
+
+| 曲面 | ndeg | union | anchor |
+|---|---|---|---|
+| torus | 20° | 16 charts，spread 5.05 | 104 charts，**spread 1.04** |
+| torus | 30° | **1 chart，spread 27.29** | 40 charts，**1.11** |
+| torus | 45° | 1 chart，27.29 | 18 charts，1.35 |
+| sphere | 20° | 1 chart，12.74 | 45 charts，**1.05** |
+| sphere | 45° | 1 chart，12.74 | 13 charts，1.35 |
+
+（spread = p95/p05 纹素密度比；`sweep_surface` 单测端到端 1.96 → 1.03。）
+
+**真实重建场景**（asm-near，89,684 面，45°，atlas 512，--texels 1024）：
+
+| 模式 | charts | median | p05 / p95 | spread |
+|---|---|---|---|---|
+| union | 1766 | 35635 | 1108 / 65532 | **59.15** |
+| anchor | 4689 | 15939 | **12665** / 16384 | **1.29** |
+
+**测量基建读数**（measure-infra 轮，union-find 现状基线）：
+
+- **sphere 在全部阈值（12–90°）都塌成 1 个 chart**（逐面步长 7.5–11.25° < 12° 阈值，
+  链式合并无感）——union 的短板在切法，不在阈值；bumpy_plane 全档 1 chart、spread 1.01
+  （近理想，法线都在 ±9° 内）。
+- **LSCM 在真实网格上复现 §6.54**（asm-near，36,657 顶点/72,236 面，--texels 1024）：
+  spread 56.4 → 19.9（45°，弯曲 chart 保角有效），但**median 密度 39293 → 752（−98%）**
+  ——旋转后包围盒变松、打包被迫缩小；`--lscm` 默认关的决策再次成立。合成网格上
+  LSCM 与平面逐位相同（闭合/病态 chart 上 CG 塌缩，逐 chart 择优全部退回平面）。
+- 场景数据盘点：asm-near/assembly2/var-a-e 可直接喂 mesh-tex（无需模型权重）；
+  scene01..04 的深度↔位姿互不自洽 ~0.8×（sphere 像素深度中位 2.49 m vs manifest 中心距
+  3.21 m），疑为导出侧版本差异——跑大场景需修数据导出或加深度缩放旋钮（未做）。
+
+- **锚定成立**：曲线面 spread 从 5–27 压到 1.0–1.35；代价：chart 数 ×3–10（接缝变多）、
+  自动密度下 median 密度下降（5931 → 2779 texel²/单位²，打包垫料变多）——**均匀性换密度**，
+  与 §6.54 的方向一致。真实场景同构：spread 59.15 → 1.29，median −55%，p05 ×11。
+- **参数纪律**：ndeg=90° 时锚也松（torus spread 11.6）——锚定不是免费午餐，**30–45° 是甜点**；
+  ndeg 太小（<15°）chart 碎片化，打包垫料占比失控。
+- 测试 trit-parts lib 201 → 206（+5：union 链式合并、anchor 切分、平面不动、确定性/覆盖、
+  端到端 spread）。预算：group.rs 275 登记；bake.rs 457 守恒；mod.rs 45 守恒；meshtex.rs 净下降。
+- 遗留缺口：① `--normal-anchor` 未进变异登记表；② 曲率自适应**切缝位置**仍是法线聚类的
+  副产物（没有按「缝最短」优化接缝）；③ anchor 的 chart 数 ×2.7（真实场景）——接缝最小化
+  与「曲率自适应 + 缝最短」的组合未做。
+
+### 6.134 quilt 混合缝合：路径居中的 soft-cut（`--soft-cut`）（2026-11-20）
+
+§6.132 的遗留缺口②（域外 cut+tile border 2.03 比羽化 1.73 扎眼）收掉：过渡仍沿 DP
+最小误差路径，但用**路径居中的 ramp**替代 0/1 跳变——路径处 alpha=0.5，±ov/2 处 0/1，
+环面镜像带同式；多带命中取 min；未落/无带像素仍取新（与硬切默认一致）。
+
+- 实现（quilt-soft 子代理）：后处理（盒式模糊 + 两种回贴）迁 `quilt/post.rs`（新，86 行，
+  逐位原样迁移）给 synth.rs 腾预算；`QuiltSpec.soft` 字段；旧 `quilt` 签名转发 `soft:false`
+  **旧行为逐位不变**。CLI：`tex-quilt --soft-cut`、`mesh-tex --quilt-soft-cut`（作业键同）。
+- 实测（256²，patch 16，seed 7，quilt-soft 交付 + 主树复验）：
+
+| 源 | 组合 | border | hf1 | coherence |
+|---|---|---|---|---|
+| Wood013（域内） | cut+tile | 1.015 | 0.252 | 0.778 |
+| | **cut+soft+tile** | **0.845（−16.7%）** | 0.232 | **0.823** |
+| 游戏帧（域外高频） | cut+tile | **2.030** | 0.145 | 0.013 |
+| | **cut+soft+tile** | **1.937（−4.6%）** | 0.110 | 0.017 |
+| 游戏帧（域外高频） | cut | 1.390 | 0.135 | 0.010 |
+| | cut+soft | 1.418 | 0.119 | **0.081** |
+
+  - tile 模式下 soft 两头都赢：域内 border −16.7%、域外 −4.6%，hf1 仍 ≥ 羽化（+22~32%），
+    coherence 收复硬切的塌陷（0.010 → 0.081）。
+  - **诚实注记**：非 tile 模式 soft 的 border 与硬切打平/微高（单样本 ±0.03~0.08，不过度
+    解读）——非 tile 的 border 量的是图像外边缘，那里没有接缝，soft 只改写路径邻域。
+- 测试 lib 206 → 209（+3：确定性、三模式互异、中间值像素 soft > hard；测试源改用相位
+  漂移条纹——纯周期条纹会让每条 DP 带零代价锁死，推导见代码注释）。预算：synth.rs
+  633 → 611（post.rs 迁出）；post.rs 86 登记。
+- 遗留缺口：① patch 候选仍随机 64；② soft 带宽固定 ov/2，未做随内容自适应宽度。

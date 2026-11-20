@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added（atlas 曲率自适应切 chart：锚定法线贪心生长——收 §6.54 的方向）
+
+- `atlas/group.rs`（新）：`anchored_groups`——以 chart 已收面元的**面积加权均值法线**为锚
+  贪心生长，面与锚夹角 ≤ `normal_deg` 才收；遏制 union-find 的**传递性漂移**（环面在
+  ndeg≥30° 时被链成 1 个 chart）。`union_groups` 旧行为逐位迁移；`bake_atlas` 9 参签名
+  不变（默认路径逐位一致，scratch 双跑对拍），新增 `bake_atlas_ex`（`anchor` 形参）。
+- 实测（torus/sphere，atlas 512）：spread 27.3/12.7 → **1.1/1.05**（ndeg 20–45°）；
+  代价 chart 数 ×3–10、median 密度下降——均匀性换密度；90° 锚也松，30–45° 是甜点。
+- CLI：`mesh-tex --normal-anchor`；作业键 `normal-anchor`。trit-parts lib 201 → 206（+5）。
+
+### Added（tex-quilt 混合缝合：路径居中的 soft-cut——收 §6.132 缺口②）
+
+- `QuiltSpec.soft`：过渡仍沿 DP 最小误差路径，但用路径居中 ramp（路径处 0.5，±ov/2 处
+  0/1；环面镜像带同式、多带取 min）替代 0/1 硬切；后处理迁 `quilt/post.rs`（逐位原样
+  迁移）；旧 `quilt` 签名逐位不变。
+- 实测：tile 模式两头都赢——Wood013 border 1.015 → **0.845**（−16.7%）、域外游戏帧
+  2.030 → **1.937**，hf1 仍 ≥ 羽化（+22~32%）、coherence 收复塌陷；非 tile 模式与硬切
+  打平（如实记）。CLI：`tex-quilt --soft-cut`、`mesh-tex --quilt-soft-cut`。lib 206 → 209（+3）。
+
 ### Added（tex-quilt：DP graph-cut 缝合 + 周期包装严格可平铺——收 §6.47 的两个老缺口）
 
 - `seam.rs`（新）：最小误差路径 DP（Efros & Freeman 2001）：竖切每行一切点、横切每列

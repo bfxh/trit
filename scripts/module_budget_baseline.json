@@ -2087,6 +2087,10 @@
       "lines": 299
     },
     {
+      "file": "crates/trit-parts/src/atlas/group.rs",
+      "lines": 275
+    },
+    {
       "file": "crates/trit-parts/src/atlas/mod.rs",
       "lines": 45
     },
@@ -2148,7 +2152,7 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_3d/meshtex.rs",
-      "lines": 574
+      "lines": 571
     },
     {
       "file": "crates/trit-parts/src/bin/parts_3d/objects_export.rs",
@@ -2571,12 +2575,16 @@
       "lines": 11
     },
     {
+      "file": "crates/trit-parts/src/tex/quilt/post.rs",
+      "lines": 86
+    },
+    {
       "file": "crates/trit-parts/src/tex/quilt/seam.rs",
       "lines": 172
     },
     {
       "file": "crates/trit-parts/src/tex/quilt/synth.rs",
-      "lines": 633
+      "lines": 611
     },
     {
       "file": "crates/trit-parts/src/tex/style.rs",

@@ -4,12 +4,13 @@
 //! - `cut`(DP 最小误差切割,`seam.rs`):只沿最小误差路径切,替代整片线性羽化,
 //!   细纹不再被混平(§6.75 实测羽化 hf1 −37%);
 //! - `tile`(周期包装):在**环面**上合成——网格每轴补一个跨边界的收尾 patch,
-//!   回绕侧与内缝走同一套接缝机制 ⇒ 输出**严格可平铺**(边界比 ≈1)。
+//!   回绕侧与内缝走同一套接缝机制 ⇒ 输出**严格可平铺**(边界比 ≈1);
+//! - `soft`(须与 `cut` 同开):过渡沿 DP 路径但用 ramp 而非 0/1 跳变(§6.132)。
 //!
-//! 预算:原 `quilt.rs` 282 行顶格,新旋钮进本文件;`quilt` 保留旧签名
-//! (行为与拆分前逐位一致),新能力走 [`quilt_ex`] + [`QuiltSpec`]。
+//! 预算:原 `quilt.rs` 282 行顶格,新旋钮进本文件;`quilt` 保留旧签名,新能力走 [`quilt_ex`]。
 
-use super::super::util::{fit_plane, luma_of, sm64};
+use super::super::util::{fit_plane, sm64};
+use super::post::box_blur_rgb;
 use super::seam::{horizontal_cut, vertical_cut};
 
 /// `quilt_ex` 的参数面。12 个位置参数之后旋钮还在涨,收成结构体。
@@ -28,6 +29,8 @@ pub struct QuiltSpec {
     pub cut: bool,
     /// 环面合成 ⇒ 输出严格可平铺
     pub tile: bool,
+    /// 路径居中的混合缝合;false = 硬切;cut=false 时忽略
+    pub soft: bool,
 }
 
 /// 旧签名(线性羽化、不可平铺),行为与拆分前逐位一致;新旋钮用 [`quilt_ex`]。
@@ -62,6 +65,7 @@ pub fn quilt(
             relight_plane,
             cut: false,
             tile: false,
+            soft: false,
         },
     )
 }
@@ -83,6 +87,7 @@ pub fn quilt_ex(src: &[f32], sw: usize, sh: usize, spec: &QuiltSpec) -> Vec<f32>
         relight_plane,
         cut,
         tile,
+        soft,
     } = *spec;
     let expect = sw
         .checked_mul(sh)
@@ -309,6 +314,8 @@ pub fn quilt_ex(src: &[f32], sw: usize, sh: usize, spec: &QuiltSpec) -> Vec<f32>
                 (None, None, None, None)
             };
             let ramp = |i: usize| (i + 1) as f32 / (ov + 1) as f32;
+            // soft 混合带:路径处 0.5,±ov/2 处 0/1(浮点计算,ov 转 f32)
+            let band = |d: f32| ((d + ov as f32 / 2.0) / ov as f32).clamp(0.0, 1.0);
             for dy in 0..patch {
                 let gy = if tile { (oy + dy) % out_h } else { oy + dy };
                 for dx in 0..patch {
@@ -317,8 +324,7 @@ pub fn quilt_ex(src: &[f32], sw: usize, sh: usize, spec: &QuiltSpec) -> Vec<f32>
                     let o = (gy * out_w + gx) * 3;
                     let was = placed[gy * out_w + gx];
                     // cut 模式:未落 ⇒ 取新;已落 ⇒ 默认取新,但每条 applicable 带
-                    // 都能把它否回旧内容(AND——角部两带同时命中,保两侧接缝连续)。
-                    // 环面右/下带是镜像:新内容贴着回绕缝(与缝另一侧的收尾 patch 同源连续)。
+                    // 都能把它否回旧内容(AND——角部两带同时命中);右/下环带镜像贴缝。
                     let take = if !cut || !was {
                         true
                     } else {
@@ -361,6 +367,30 @@ pub fn quilt_ex(src: &[f32], sw: usize, sh: usize, spec: &QuiltSpec) -> Vec<f32>
                     if !was {
                         a = 1.0;
                     }
+                    if cut && soft && was {
+                        // soft:各适用带 ramp 取 min;右/下环带镜像,新内容贴回绕缝。
+                        a = 1.0;
+                        if let Some(v) = &vcut
+                            && dx < ov
+                        {
+                            a = a.min(band(dx as f32 - v[dy] as f32));
+                        }
+                        if let Some(h) = &hcut
+                            && dy < ov
+                        {
+                            a = a.min(band(dy as f32 - h[dx] as f32));
+                        }
+                        if let Some(r) = &rcut
+                            && dx >= step
+                        {
+                            a = a.min(band(r[dy] as f32 - (dx - step) as f32));
+                        }
+                        if let Some(b) = &bcut
+                            && dy >= step
+                        {
+                            a = a.min(band(b[dx] as f32 - (dy - step) as f32));
+                        }
+                    }
                     for c in 0..3 {
                         let mut v = src[s + c];
                         if let (Some((pm, ps)), Some(gm)) = (pstat, gmean) {
@@ -369,7 +399,9 @@ pub fn quilt_ex(src: &[f32], sw: usize, sh: usize, spec: &QuiltSpec) -> Vec<f32>
                             v = (v - pm[c]) * k + gm[c];
                         }
                         if cut {
-                            if take {
+                            if soft {
+                                out[o + c] = out[o + c] * (1.0 - a) + v * a;
+                            } else if take {
                                 out[o + c] = v;
                             }
                         } else {
@@ -381,77 +413,7 @@ pub fn quilt_ex(src: &[f32], sw: usize, sh: usize, spec: &QuiltSpec) -> Vec<f32>
             }
         }
     }
-    if relight_plane {
-        // **旧行为**：回贴源图拟合的线性平面。结构保得住，但对比度只回一小部分（§6.80/§6.81）。
-        for y in 0..out_h {
-            let v = y as f32 / out_h.max(1) as f32;
-            for x in 0..out_w {
-                let u = x as f32 / out_w.max(1) as f32;
-                let o = (y * out_w + x) * 3;
-                for c in 0..3 {
-                    let g = plane[c][0] + plane[c][1] * u + plane[c][2] * v;
-                    out[o + c] = (out[o + c] + g).clamp(0.0, 1.0);
-                }
-            }
-        }
-    } else if relight {
-        // **亮度分位匹配（加性）**：把输出亮度分位对到源亮度分布，位移量加到 RGB 上。
-        // 逐通道独立映射也能补回对比度，但会改色相与梯度（实测 coh 0.865→0.470、hf1 +94%）⇒ 用加性保结构。
-        let mut src_luma: Vec<f32> = src_orig.chunks(3).map(luma_of).collect();
-        src_luma.sort_by(f32::total_cmp);
-        let mut out_sorted: Vec<f32> = out.chunks(3).map(luma_of).collect();
-        out_sorted.sort_by(f32::total_cmp);
-        let (ns, no) = (src_luma.len(), out_sorted.len());
-        if ns > 1 && no > 1 {
-            for i in 0..out.len() / 3 {
-                let o = i * 3;
-                let y0 = luma_of(&out[o..o + 3]);
-                let rank = out_sorted.partition_point(|v| *v < y0).min(no - 1);
-                let q = rank as f32 / (no - 1) as f32;
-                let t = (q * (ns - 1) as f32).round() as usize;
-                let delta = src_luma[t.min(ns - 1)] - y0;
-                for c in 0..3 {
-                    out[o + c] = (out[o + c] + delta).clamp(0.0, 1.0);
-                }
-            }
-        }
-    }
-    out
-}
-
-/// 逐通道盒式模糊（去光照用的低频）。
-pub(crate) fn box_blur_rgb(src: &[f32], w: usize, h: usize, r: usize) -> Vec<f32> {
-    if r == 0 {
-        return src.to_vec();
-    }
-    let mut tmp = vec![0.0f32; src.len()];
-    let n = (2 * r + 1) as f32;
-    for y in 0..h {
-        for x in 0..w {
-            for c in 0..3 {
-                let mut sum = 0.0f32;
-                for k in 0..=2 * r {
-                    let xx = (x + k).saturating_sub(r).min(w - 1);
-                    sum += src[(y * w + xx) * 3 + c];
-                }
-                tmp[(y * w + x) * 3 + c] = sum / n;
-            }
-        }
-    }
-    let mut out = vec![0.0f32; src.len()];
-    for y in 0..h {
-        for x in 0..w {
-            for c in 0..3 {
-                let mut sum = 0.0f32;
-                for k in 0..=2 * r {
-                    let yy = (y + k).saturating_sub(r).min(h - 1);
-                    sum += tmp[(yy * w + x) * 3 + c];
-                }
-                out[(y * w + x) * 3 + c] = sum / n;
-            }
-        }
-    }
-    out
+    super::post::apply_post(out, out_w, out_h, src_orig, plane, relight, relight_plane)
 }
 
 #[cfg(test)]
@@ -465,6 +427,46 @@ mod tests {
                 [v; 3]
             })
             .collect()
+    }
+
+    /// 两档(0.1/0.9)竖条纹源,行相位按 4 行块不规则漂移。纯周期条纹下 DP 恒有
+    /// 零代价候选(同相位整块拷贝,cy=oy 即命中)⇒ 整图锁死,soft 与硬切逐位相同;
+    /// 漂移让失配真实发生,才测得出路径 ramp 的中间值。
+    fn drift_stripes(n: usize) -> Vec<f32> {
+        const P: [usize; 12] = [0, 6, 3, 9, 1, 7, 4, 10, 2, 8, 5, 11];
+        (0..n * n)
+            .flat_map(|i| {
+                let (x, y) = (i % n, i / n);
+                let v = 0.1 + 0.8 * (((x + P[y / 4]) / 6).is_multiple_of(2) as u8 as f32);
+                [v; 3]
+            })
+            .collect()
+    }
+
+    /// 测试公共 spec:n×n 输出、patch/ov/seed 与 tile/cut/soft 三旋钮。
+    fn spec(
+        n: usize,
+        patch: usize,
+        ov: usize,
+        seed: u64,
+        tile: bool,
+        cut: bool,
+        soft: bool,
+    ) -> QuiltSpec {
+        QuiltSpec {
+            out_w: n,
+            out_h: n,
+            patch,
+            overlap: ov,
+            seed,
+            tone_match: false,
+            detrend: 0,
+            relight: false,
+            relight_plane: false,
+            cut,
+            soft,
+            tile,
+        }
     }
 
     /// 源图长度与 sw×sh×3 不符时必须在分配前拒绝 —— 否则 `chunks(3)` 末尾短块会越界。
@@ -504,6 +506,7 @@ mod tests {
                 relight_plane: false,
                 cut: false,
                 tile: false,
+                soft: false,
             },
         );
         assert_eq!(a, b);
@@ -513,25 +516,12 @@ mod tests {
     #[test]
     fn cut_mode_is_deterministic_and_differs_from_feathering() {
         let src = stripes(48, 6);
-        let spec = |cut: bool| QuiltSpec {
-            out_w: 64,
-            out_h: 64,
-            patch: 12,
-            overlap: 4,
-            seed: 9,
-            tone_match: false,
-            detrend: 0,
-            relight: false,
-            relight_plane: false,
-            cut,
-            tile: false,
-        };
-        let a = quilt_ex(&src, 48, 48, &spec(true));
-        let b = quilt_ex(&src, 48, 48, &spec(true));
+        let a = quilt_ex(&src, 48, 48, &spec(64, 12, 4, 9, false, true, false));
+        let b = quilt_ex(&src, 48, 48, &spec(64, 12, 4, 9, false, true, false));
         assert_eq!(a, b, "同 seed 逐位一致");
         assert_eq!(a.len(), 64 * 64 * 3);
         assert!(a.iter().all(|v| (0.0..=1.0).contains(v)));
-        let f = quilt_ex(&src, 48, 48, &spec(false));
+        let f = quilt_ex(&src, 48, 48, &spec(64, 12, 4, 9, false, false, false));
         assert_ne!(a, f, "切割缝合应与线性羽化给出不同拼图");
     }
 
@@ -545,21 +535,8 @@ mod tests {
             .iter()
             .flat_map(|p| p.iter().map(|c| *c as f32 / 255.0))
             .collect();
-        let spec = |tile: bool, cut: bool| QuiltSpec {
-            out_w: 96,
-            out_h: 96,
-            patch: 16,
-            overlap: 4,
-            seed: 11,
-            tone_match: false,
-            detrend: 0,
-            relight: false,
-            relight_plane: false,
-            cut,
-            tile,
-        };
-        let feather = quilt_ex(&src, n, n, &spec(false, false));
-        let tiled = quilt_ex(&src, n, n, &spec(true, false));
+        let feather = quilt_ex(&src, n, n, &spec(96, 16, 4, 11, false, false, false));
+        let tiled = quilt_ex(&src, n, n, &spec(96, 16, 4, 11, true, false, false));
         let (bf, bt) = (
             crate::look::analyze(&feather, 96, 96).border,
             crate::look::analyze(&tiled, 96, 96).border,
@@ -583,19 +560,7 @@ mod tests {
             .iter()
             .flat_map(|p| p.iter().map(|c| *c as f32 / 255.0))
             .collect();
-        let spec = QuiltSpec {
-            out_w: 96,
-            out_h: 96,
-            patch: 16,
-            overlap: 4,
-            seed: 13,
-            tone_match: false,
-            detrend: 0,
-            relight: false,
-            relight_plane: false,
-            cut: true,
-            tile: true,
-        };
+        let spec = spec(96, 16, 4, 13, true, true, false);
         let a = quilt_ex(&src, n, n, &spec);
         let b = quilt_ex(&src, n, n, &spec);
         assert_eq!(a, b);
@@ -608,26 +573,39 @@ mod tests {
     fn tile_mode_clamps_overlap_into_legal_range() {
         let src = stripes(32, 8);
         for ov in [0usize, 7, 16] {
-            let out = quilt_ex(
-                &src,
-                32,
-                32,
-                &QuiltSpec {
-                    out_w: 64,
-                    out_h: 64,
-                    patch: 12,
-                    overlap: ov,
-                    seed: 3,
-                    tone_match: false,
-                    detrend: 0,
-                    relight: false,
-                    relight_plane: false,
-                    cut: true,
-                    tile: true,
-                },
-            );
+            let out = quilt_ex(&src, 32, 32, &spec(64, 12, ov, 3, true, true, false));
             assert_eq!(out.len(), 64 * 64 * 3);
             assert!(out.iter().all(|v| (0.0..=1.0).contains(v)));
         }
+    }
+
+    /// soft 模式同样确定性:同 spec 两次运行逐位一致。
+    #[test]
+    fn soft_cut_is_deterministic() {
+        let src = stripes(48, 6);
+        let s = spec(64, 12, 4, 9, false, true, true);
+        assert_eq!(quilt_ex(&src, 48, 48, &s), quilt_ex(&src, 48, 48, &s));
+    }
+
+    /// soft-cut 是第三条路径:与硬切、羽化两两不同,不是其中之一的退化别名。
+    #[test]
+    fn soft_cut_differs_from_hard_and_feather() {
+        let src = drift_stripes(48);
+        let f = quilt_ex(&src, 48, 48, &spec(64, 12, 4, 9, false, false, false));
+        let h = quilt_ex(&src, 48, 48, &spec(64, 12, 4, 9, false, true, false));
+        let s = quilt_ex(&src, 48, 48, &spec(64, 12, 4, 9, false, true, true));
+        assert_ne!(s, h, "soft 应与硬切不同");
+        assert_ne!(s, f, "soft 应与羽化不同");
+    }
+
+    /// 两档条纹源:硬切失配带是 0/1 跳变;soft 沿路径 ramp ⇒ (0.3,0.7) 中间值像素更多。
+    #[test]
+    fn soft_cut_smooths_the_hard_edge() {
+        let src = drift_stripes(48);
+        let h = quilt_ex(&src, 48, 48, &spec(64, 12, 4, 9, false, true, false));
+        let s = quilt_ex(&src, 48, 48, &spec(64, 12, 4, 9, false, true, true));
+        let mid = |o: &[f32]| o.chunks(3).filter(|p| (0.3..0.7).contains(&p[0])).count();
+        let (mh, ms) = (mid(&h), mid(&s));
+        assert!(ms > mh, "soft {ms} ≤ hard {mh}");
     }
 }
