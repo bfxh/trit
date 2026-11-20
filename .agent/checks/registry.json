@@ -1655,6 +1655,41 @@
       "run": "grep -A1 'name = \"zip\"' benchmarks/wsp-no-transformer/Cargo.lock | grep -q 'version = \"9' && ! grep -A1 'name = \"zip\"' benchmarks/wsp-no-transformer/Cargo.lock | grep -q 'version = \"0.6' && grep -q 'deflate-flate2-zlib-rs' benchmarks/wsp-no-transformer/Cargo.toml",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C096",
+      "title": "BitNet 互操作对拍脚本同时验 ffn_down 与 attn_k",
+      "kind": "cmd",
+      "covers": [
+        "L123"
+      ],
+      "scope": [
+        "scripts/check_bitnet_i2s_parity.py"
+      ],
+      "since": "L123",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "shell": "bash",
+      "expect_exit": 0,
+      "run": "grep -q 'ffn_down' scripts/check_bitnet_i2s_parity.py && grep -q 'attn_k' scripts/check_bitnet_i2s_parity.py"
+    },
+    {
+      "id": "C097",
+      "title": "动手前查重的前置步骤可执行（认领表 + 文档写清）",
+      "kind": "cmd",
+      "covers": [
+        "L143"
+      ],
+      "scope": [
+        "scripts/agent_claims.py",
+        "docs/COLLAB.md"
+      ],
+      "since": "L143",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "shell": "bash",
+      "expect_exit": 0,
+      "run": "python scripts/agent_claims.py list > /dev/null && grep -q 'agent_claims.py' docs/COLLAB.md"
     }
   ],
   "ledger_from": "L56"

@@ -357,11 +357,11 @@ mod scalar {
             let dw = f16_to_f32(u16::from_le_bytes([w[base], w[base + 1]]));
             let mut dot = 0i32;
             for i in 0..16 {
-                let byte = w[base + 2 + i] as i32;
+                let byte = w.get(base + 2 + i).copied().unwrap_or(0) as i32;
                 let lo = (byte & 0x0f) - 8;
                 let hi = ((byte >> 4) & 0x0f) - 8;
-                dot += qx[b * 32 + i] as i32 * lo;
-                dot += qx[b * 32 + 16 + i] as i32 * hi;
+                dot += qx.get(b * 32 + i).copied().unwrap_or(0) as i32 * lo;
+                dot += qx.get(b * 32 + 16 + i).copied().unwrap_or(0) as i32 * hi;
             }
             acc += dot as f32 * (dw * d_act);
         }
