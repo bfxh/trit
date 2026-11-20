@@ -6,6 +6,11 @@ use super::charts::{
     Atlas, Chart, PerClass, find, lscm_chart, norm, sample, style_texel, tri_area, tri_normal,
 };
 
+/// 图集边长上限：`img` 是 `atlas_px² × 3` 个 f32，8192 已经是 768 MB。
+pub const MAX_ATLAS_PX: usize = 8192;
+
+mod pack;
+
 /// 切 chart + 打包 + 烘焙。
 ///
 /// chart 用**法线相似度**聚类（相邻面法线夹角 <= `normal_deg` 才合并）。
@@ -25,7 +30,12 @@ pub fn bake_atlas(
     use_lscm: bool,
     per_class: Option<&PerClass>,
 ) -> Result<Atlas, String> {
-    if tex.len() != tw * th * 3 {
+    // 声明数与真实像素数对账时也不能裸乘：`tw * th * 3` 绕回后可以等于任何长度。
+    let need = tw
+        .checked_mul(th)
+        .and_then(|v| v.checked_mul(3))
+        .ok_or_else(|| format!("贴图 {tw}x{th}x3 尺寸相乘溢出"))?;
+    if tex.len() != need {
         return Err(format!("贴图像素数 {} != {tw}x{th}x3", tex.len()));
     }
     let mut mean = [0.0f32; 3];
@@ -88,6 +98,12 @@ pub(crate) fn bake_shaded<S>(
 where
     S: FnMut(usize, [f32; 2], [f32; 3]) -> Option<[f32; 3]>,
 {
+    // 上限必须落在**真正分配** `atlas_px² × 3` 的地方：`bake_atlas` 与
+    // `bake_atlas_with` 是两条入口，后者直通这里。`--atlas` 在 `asset` 只判
+    // 下限 64、在 `meshtex` / `objects-mesh` 只判非零，一个 65536 就是 51 GB。
+    if atlas_px == 0 || atlas_px > MAX_ATLAS_PX {
+        return Err(format!("图集边长 {atlas_px} 超出 1..={MAX_ATLAS_PX}"));
+    }
     if m.tris.is_empty() {
         return Err("空网格".into());
     }
@@ -277,51 +293,19 @@ where
         bounds.push((lo, hi));
     }
 
-    let pad = 2usize;
-    let mut scale = if texels_per_unit > 0.0 {
+    let scale = if texels_per_unit > 0.0 {
         texels_per_unit
     } else {
         let area: f32 = areas.iter().sum();
         (atlas_px as f32 * atlas_px as f32 * 0.6 / area.max(1e-9)).sqrt()
     }
     .max(1e-6);
-    let mut rects: Vec<[usize; 4]> = vec![[0, 0, 0, 0]; group_list.len()];
-    let mut packed = false;
-    for _ in 0..24 {
-        let mut order: Vec<usize> = (0..bounds.len()).collect();
-        order.sort_by(|&a, &b| {
-            let ha = ((bounds[a].1[1] - bounds[a].0[1]) * scale).ceil() as usize;
-            let hb = ((bounds[b].1[1] - bounds[b].0[1]) * scale).ceil() as usize;
-            hb.cmp(&ha)
-        });
-        rects = vec![[0, 0, 0, 0]; group_list.len()];
-        let (mut cx, mut cy, mut shelf_h, mut ok) = (0usize, 0usize, 0usize, true);
-        for &gi in &order {
-            let (lo, hi) = bounds[gi];
-            let w = (((hi[0] - lo[0]) * scale).ceil() as usize).max(1);
-            let h = (((hi[1] - lo[1]) * scale).ceil() as usize).max(1);
-            if cx + w + pad > atlas_px {
-                cx = 0;
-                cy += shelf_h + pad;
-                shelf_h = 0;
-            }
-            if cy + h + pad > atlas_px {
-                ok = false;
-                break;
-            }
-            rects[gi] = [cx, cy, w, h];
-            cx += w + pad;
-            shelf_h = shelf_h.max(h);
+    let (rects, scale) = match pack::pack(&bounds, group_list.len(), scale, atlas_px) {
+        Some(v) => v,
+        None => {
+            return Err("图集打包失败：减小 texels_per_unit 或增大 atlas_px".into());
         }
-        if ok {
-            packed = true;
-            break;
-        }
-        scale *= 0.5;
-    }
-    if !packed {
-        return Err("图集打包失败：减小 texels_per_unit 或增大 atlas_px".into());
-    }
+    };
 
     let mean = fill;
     let mut img = Vec::with_capacity(atlas_px * atlas_px * 3);
