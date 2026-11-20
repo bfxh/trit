@@ -65,6 +65,7 @@
 | [WSP-STS-BENCH.md](results/WSP-STS-BENCH.md) | 真实 STS benchmark（1,379 行）上的编辑集门禁 |
 | [WSP-STS-TUNED.md](results/WSP-STS-TUNED.md) | 真实 tuned 权重（非合成 Δ）上的编辑集门禁 |
 | [LESSONS.md](results/LESSONS.md) | 经验与负结果（先读这篇再谈优化） |
+| [HW-ENERGY.md](results/HW-ENERGY.md) | 28 nm 硬件能效账本：三值×INT8 名义 47.9 TOPS/W，SS 125 °C + 流水 31–33；§10 给 decode 墙的分档解（[B] 类，非硅上实测） |
 | [COUNT-EVOLUTION.md](COUNT-EVOLUTION.md) | 变量序进化 × 随机 3-SAT 计数的同预算消融（负结果：1.17× 读数属噪声） |
 
 ## research/ — 研究线（WSP 权重空间编程 + 扫描线）

@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="430" viewBox="0 0 900 430" font-family="Microsoft YaHei, Segoe UI, sans-serif">
+<rect width="900" height="430" fill="#ffffff"/>
+<text x="20.0" y="30.0" font-size="16" fill="#111111" text-anchor="start" font-weight="normal">图 4  硅上能效：PVT 与流水线折减（三值×INT8，k=8）</text>
+<line x1="250.0" y1="54.0" x2="250.0" y2="341.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="250.0" y="359.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">0</text>
+<line x1="345.0" y1="54.0" x2="345.0" y2="341.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="345.0" y="359.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">10</text>
+<line x1="440.0" y1="54.0" x2="440.0" y2="341.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="440.0" y="359.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">20</text>
+<line x1="535.0" y1="54.0" x2="535.0" y2="341.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="535.0" y="359.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">30</text>
+<line x1="630.0" y1="54.0" x2="630.0" y2="341.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="630.0" y="359.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">40</text>
+<line x1="725.0" y1="54.0" x2="725.0" y2="341.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="725.0" y="359.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">50</text>
+<line x1="820.0" y1="54.0" x2="820.0" y2="341.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="820.0" y="359.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">60</text>
+<text x="535.0" y="381.0" font-size="12" fill="#6b6b6b" text-anchor="middle" font-weight="normal">TOPS/W</text>
+<line x1="574.9" y1="54" x2="574.9" y2="341" stroke="#b04a3f" stroke-width="1" stroke-dasharray="4,3"/>
+<text x="578.9" y="50.0" font-size="10.5" fill="#b04a3f" text-anchor="start" font-weight="normal">T-ACE 34.2</text>
+<text x="238.0" y="80.0" font-size="11.5" fill="#1b1b1b" text-anchor="end" font-weight="normal">TT 0.90 V 25C（名义）</text>
+<rect x="250.0" y="62.0" width="455.1" height="22.0" fill="#2f6f9f" opacity="0.55"/>
+<text x="711.0" y="79.0" font-size="11" fill="#1b1b1b" text-anchor="start" font-weight="bold">47.9</text>
+<text x="238.0" y="119.0" font-size="11.5" fill="#1b1b1b" text-anchor="end" font-weight="normal">TT 0.855 V（-5% IR drop）</text>
+<rect x="250.0" y="101.0" width="503.5" height="22.0" fill="#2f6f9f" opacity="0.55"/>
+<text x="759.5" y="118.0" font-size="11" fill="#1b1b1b" text-anchor="start" font-weight="bold">53.0</text>
+<text x="238.0" y="158.0" font-size="11.5" fill="#1b1b1b" text-anchor="end" font-weight="normal">TT + 两级流水</text>
+<rect x="250.0" y="140.0" width="339.1" height="22.0" fill="#2f6f9f" opacity="0.55"/>
+<text x="595.1" y="157.0" font-size="11" fill="#1b1b1b" text-anchor="start" font-weight="bold">35.7</text>
+<text x="238.0" y="197.0" font-size="11.5" fill="#1b1b1b" text-anchor="end" font-weight="normal">FF 0.90 V -40C（最快角）</text>
+<rect x="250.0" y="179.0" width="487.4" height="22.0" fill="#2f6f9f" opacity="0.55"/>
+<text x="743.4" y="196.0" font-size="11" fill="#1b1b1b" text-anchor="start" font-weight="bold">51.3</text>
+<text x="238.0" y="236.0" font-size="11.5" fill="#1b1b1b" text-anchor="end" font-weight="normal">SS 0.90 V 125C（最慢角）</text>
+<rect x="250.0" y="218.0" width="362.9" height="22.0" fill="#2f6f9f" opacity="0.55"/>
+<text x="618.9" y="235.0" font-size="11" fill="#1b1b1b" text-anchor="start" font-weight="bold">38.2</text>
+<text x="238.0" y="275.0" font-size="11.5" fill="#1b1b1b" text-anchor="end" font-weight="normal">SS 125C + 两级流水</text>
+<rect x="250.0" y="257.0" width="296.4" height="22.0" fill="#b04a3f" opacity="1.0"/>
+<text x="552.4" y="274.0" font-size="11" fill="#1b1b1b" text-anchor="start" font-weight="bold">31.2</text>
+<text x="238.0" y="314.0" font-size="11.5" fill="#1b1b1b" text-anchor="end" font-weight="normal">SS 125C + IR + 流水（降压版）</text>
+<rect x="250.0" y="296.0" width="327.8" height="22.0" fill="#2f6f9f" opacity="0.55"/>
+<text x="583.8" y="313.0" font-size="11" fill="#1b1b1b" text-anchor="start" font-weight="bold">34.5</text>
+</svg>

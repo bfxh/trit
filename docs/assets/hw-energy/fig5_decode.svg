@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="460" viewBox="0 0 900 460" font-family="Microsoft YaHei, Segoe UI, sans-serif">
+<rect width="900" height="460" fill="#ffffff"/>
+<text x="20.0" y="30.0" font-size="16" fill="#111111" text-anchor="start" font-weight="normal">图 5 decode 墙的拆法：片上驻留 vs batch（三值 1.6 bit）</text>
+<line x1="90.0" y1="58.0" x2="90.0" y2="378.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="90.0" y="396.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">1</text>
+<line x1="264.5" y1="58.0" x2="264.5" y2="378.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="264.5" y="396.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">8</text>
+<line x1="439.1" y1="58.0" x2="439.1" y2="378.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="439.1" y="396.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">64</text>
+<line x1="613.6" y1="58.0" x2="613.6" y2="378.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="613.6" y="396.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">512</text>
+<line x1="730.0" y1="58.0" x2="730.0" y2="378.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="730.0" y="396.0" font-size="11" fill="#6b6b6b" text-anchor="middle" font-weight="normal">2048</text>
+<text x="410.0" y="418.0" font-size="12" fill="#6b6b6b" text-anchor="middle" font-weight="normal">batch（权重复用倍数）</text>
+<line x1="90.0" y1="358.7" x2="730.0" y2="358.7" stroke="#d9d9d9" stroke-width="1"/>
+<text x="82.0" y="362.7" font-size="11" fill="#6b6b6b" text-anchor="end" font-weight="normal">0.05</text>
+<line x1="90.0" y1="261.7" x2="730.0" y2="261.7" stroke="#d9d9d9" stroke-width="1"/>
+<text x="82.0" y="265.7" font-size="11" fill="#6b6b6b" text-anchor="end" font-weight="normal">0.5</text>
+<line x1="90.0" y1="164.8" x2="730.0" y2="164.8" stroke="#d9d9d9" stroke-width="1"/>
+<text x="82.0" y="168.8" font-size="11" fill="#6b6b6b" text-anchor="end" font-weight="normal">5</text>
+<line x1="90.0" y1="67.8" x2="730.0" y2="67.8" stroke="#d9d9d9" stroke-width="1"/>
+<text x="82.0" y="71.8" font-size="11" fill="#6b6b6b" text-anchor="end" font-weight="normal">50</text>
+<text x="24.0" y="218.0" font-size="12" fill="#6b6b6b" text-anchor="middle" font-weight="normal">TOPS/W</text>
+<line x1="90" y1="69.6" x2="730" y2="69.6" stroke="#2f6f9f" stroke-width="1" stroke-dasharray="5,3"/>
+<text x="724.0" y="63.6" font-size="10.5" fill="#2f6f9f" text-anchor="end" font-weight="normal">计算侧 47.9</text>
+<line x1="90" y1="83.8" x2="730" y2="83.8" stroke="#b04a3f" stroke-width="1" stroke-dasharray="5,3"/>
+<text x="724.0" y="97.8" font-size="10.5" fill="#b04a3f" text-anchor="end" font-weight="normal">T-ACE 34.2</text>
+<polyline points="90.0,71.5 264.5,69.8 380.9,69.7 497.3,69.6 555.5,69.6 788.2,69.6" fill="none" stroke="#2f6f9f" stroke-width="2"/>
+<circle cx="90.0" cy="71.5" r="3" fill="#2f6f9f"/>
+<circle cx="264.5" cy="69.8" r="3" fill="#2f6f9f"/>
+<circle cx="380.9" cy="69.7" r="3" fill="#2f6f9f"/>
+<circle cx="497.3" cy="69.6" r="3" fill="#2f6f9f"/>
+<circle cx="555.5" cy="69.6" r="3" fill="#2f6f9f"/>
+<circle cx="788.2" cy="69.6" r="3" fill="#2f6f9f"/>
+<polyline points="90.0,349.6 264.5,262.2 380.9,205.1 497.3,151.5 555.5,127.9 788.2,76.8" fill="none" stroke="#6b5b8f" stroke-width="2"/>
+<circle cx="90.0" cy="349.6" r="3" fill="#6b5b8f"/>
+<circle cx="264.5" cy="262.2" r="3" fill="#6b5b8f"/>
+<circle cx="380.9" cy="205.1" r="3" fill="#6b5b8f"/>
+<circle cx="497.3" cy="151.5" r="3" fill="#6b5b8f"/>
+<circle cx="555.5" cy="127.9" r="3" fill="#6b5b8f"/>
+<circle cx="788.2" cy="76.8" r="3" fill="#6b5b8f"/>
+<polyline points="90.0,349.6 264.5,262.2 380.9,205.1 497.3,151.5 555.5,127.9 788.2,76.8" fill="none" stroke="#b04a3f" stroke-width="2"/>
+<circle cx="90.0" cy="349.6" r="3" fill="#b04a3f"/>
+<circle cx="264.5" cy="262.2" r="3" fill="#b04a3f"/>
+<circle cx="380.9" cy="205.1" r="3" fill="#b04a3f"/>
+<circle cx="497.3" cy="151.5" r="3" fill="#b04a3f"/>
+<circle cx="555.5" cy="127.9" r="3" fill="#b04a3f"/>
+<circle cx="788.2" cy="76.8" r="3" fill="#b04a3f"/>
+<polyline points="90.0,291.1 264.5,205.1 380.9,151.5 497.3,108.1 555.5,93.1 788.2,71.5" fill="none" stroke="#6f8f3f" stroke-width="2"/>
+<circle cx="90.0" cy="291.1" r="3" fill="#6f8f3f"/>
+<circle cx="264.5" cy="205.1" r="3" fill="#6f8f3f"/>
+<circle cx="380.9" cy="151.5" r="3" fill="#6f8f3f"/>
+<circle cx="497.3" cy="108.1" r="3" fill="#6f8f3f"/>
+<circle cx="555.5" cy="93.1" r="3" fill="#6f8f3f"/>
+<circle cx="788.2" cy="71.5" r="3" fill="#6f8f3f"/>
+<rect x="90" y="436" width="10" height="10" fill="#2f6f9f"/>
+<text x="106.0" y="446.0" font-size="10.5" fill="#1b1b1b" text-anchor="start" font-weight="normal">22M / 110M（SRAM）</text>
+<rect x="250" y="436" width="10" height="10" fill="#6b5b8f"/>
+<text x="266.0" y="446.0" font-size="10.5" fill="#1b1b1b" text-anchor="start" font-weight="normal">340M / 1.3B（DRAM）</text>
+<rect x="410" y="436" width="10" height="10" fill="#b04a3f"/>
+<text x="426.0" y="446.0" font-size="10.5" fill="#1b1b1b" text-anchor="start" font-weight="normal">7B（DRAM）</text>
+<rect x="570" y="436" width="10" height="10" fill="#6f8f3f"/>
+<text x="586.0" y="446.0" font-size="10.5" fill="#1b1b1b" text-anchor="start" font-weight="normal">7B MoE 25%</text>
+</svg>

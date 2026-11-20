@@ -17,6 +17,7 @@
 | **GPU 2-popcount** | 比 3-popcount 慢 1.9%（少一次 popcount 抵不过额外移位） | `crates/trit-gpu/README.md` |
 | **训练（STE）** | 三个变体在 2×3 无噪任务上同分（都在第 99 步达标），选型需要更大/带噪任务 | `crates/trit-train` |
 | **生态** | 没有原生三值硬件；权重必须靠 QAT 才能保住质量（推理端省字节，训练端付代价） | [docs/positioning/DESIGN.md](../positioning/DESIGN.md) |
+| **28 nm 硬件能效** | 三值×INT8 名义 47.9 TOPS/W；过 SS 125 °C + 两级流水只剩 31–33，掉到 T-ACE 34.2 之下 | [HW-ENERGY.md](HW-ENERGY.md) |
 
 ## 2. 已证负结果（别重复试）
 

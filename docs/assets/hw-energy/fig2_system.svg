@@ -1,0 +1,44 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="420" viewBox="0 0 900 420" font-family="Microsoft YaHei, Segoe UI, sans-serif">
+<rect width="900" height="420" fill="#ffffff"/>
+<text x="20.0" y="30.0" font-size="16" fill="#111111" text-anchor="start" font-weight="normal">图 2  系统能效 vs batch（DRAM 10 pJ/bit，权重按 batch 复用）</text>
+<line x1="110.0" y1="348.0" x2="730.0" y2="348.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="100.0" y="352.0" font-size="11" fill="#6b6b6b" text-anchor="end" font-weight="normal">0.01</text>
+<line x1="110.0" y1="275.0" x2="730.0" y2="275.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="100.0" y="279.0" font-size="11" fill="#6b6b6b" text-anchor="end" font-weight="normal">0.1</text>
+<line x1="110.0" y1="202.0" x2="730.0" y2="202.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="100.0" y="206.0" font-size="11" fill="#6b6b6b" text-anchor="end" font-weight="normal">1</text>
+<line x1="110.0" y1="129.0" x2="730.0" y2="129.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="100.0" y="133.0" font-size="11" fill="#6b6b6b" text-anchor="end" font-weight="normal">10</text>
+<line x1="110.0" y1="56.0" x2="730.0" y2="56.0" stroke="#d9d9d9" stroke-width="1"/>
+<text x="100.0" y="60.0" font-size="11" fill="#6b6b6b" text-anchor="end" font-weight="normal">100</text>
+<text x="24.0" y="202.0" font-size="12" fill="#6b6b6b" text-anchor="middle" font-weight="normal">TOPS/W</text>
+<text x="187.5" y="370.0" font-size="12" fill="#1b1b1b" text-anchor="middle" font-weight="normal">1</text>
+<text x="342.5" y="370.0" font-size="12" fill="#1b1b1b" text-anchor="middle" font-weight="normal">16</text>
+<text x="497.5" y="370.0" font-size="12" fill="#1b1b1b" text-anchor="middle" font-weight="normal">64</text>
+<text x="652.5" y="370.0" font-size="12" fill="#1b1b1b" text-anchor="middle" font-weight="normal">256</text>
+<text x="420.0" y="394.0" font-size="12" fill="#6b6b6b" text-anchor="middle" font-weight="normal">batch（每个权重复用的 token 数）</text>
+<line x1="187.5" y1="297.0" x2="342.5" y2="209.4" stroke="#2f6f9f" stroke-width="2"/>
+<line x1="342.5" y1="209.4" x2="497.5" y2="166.3" stroke="#2f6f9f" stroke-width="2"/>
+<line x1="497.5" y1="166.3" x2="652.5" y2="125.7" stroke="#2f6f9f" stroke-width="2"/>
+<circle cx="187.5" cy="297.0" r="4.5" fill="#2f6f9f"/>
+<circle cx="342.5" cy="209.4" r="4.5" fill="#2f6f9f"/>
+<circle cx="497.5" cy="166.3" r="4.5" fill="#2f6f9f"/>
+<circle cx="652.5" cy="125.7" r="4.5" fill="#2f6f9f"/>
+<text x="662.5" y="129.7" font-size="11" fill="#2f6f9f" text-anchor="start" font-weight="normal">三值 2-bit（门控）</text>
+<line x1="187.5" y1="290.2" x2="342.5" y2="202.4" stroke="#6f8f3f" stroke-width="2"/>
+<line x1="342.5" y1="202.4" x2="497.5" y2="159.6" stroke="#6f8f3f" stroke-width="2"/>
+<line x1="497.5" y1="159.6" x2="652.5" y2="119.9" stroke="#6f8f3f" stroke-width="2"/>
+<circle cx="187.5" cy="290.2" r="4.5" fill="#6f8f3f"/>
+<circle cx="342.5" cy="202.4" r="4.5" fill="#6f8f3f"/>
+<circle cx="497.5" cy="159.6" r="4.5" fill="#6f8f3f"/>
+<circle cx="652.5" cy="119.9" r="4.5" fill="#6f8f3f"/>
+<text x="662.5" y="111.7" font-size="11" fill="#6f8f3f" text-anchor="start" font-weight="normal">三值 1.6-bit（打包）</text>
+<line x1="187.5" y1="342.2" x2="342.5" y2="253.8" stroke="#b04a3f" stroke-width="2"/>
+<line x1="342.5" y1="253.8" x2="497.5" y2="212.3" stroke="#b04a3f" stroke-width="2"/>
+<line x1="497.5" y1="212.3" x2="652.5" y2="176.4" stroke="#b04a3f" stroke-width="2"/>
+<circle cx="187.5" cy="342.2" r="4.5" fill="#b04a3f"/>
+<circle cx="342.5" cy="253.8" r="4.5" fill="#b04a3f"/>
+<circle cx="497.5" cy="212.3" r="4.5" fill="#b04a3f"/>
+<circle cx="652.5" cy="176.4" r="4.5" fill="#b04a3f"/>
+<text x="662.5" y="180.4" font-size="11" fill="#b04a3f" text-anchor="start" font-weight="normal">INT8 8-bit</text>
+</svg>
