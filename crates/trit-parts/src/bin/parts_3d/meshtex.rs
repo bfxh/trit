@@ -1,14 +1,12 @@
-use std::path::PathBuf;
-
-use trit_parts::data::read_npy_i32;
-use trit_parts::geo::{Camera, read_npy_f32};
-
 use super::cli::{arg, fail, frame_path, usage};
 use super::features::part_features_in;
 use super::material::load_material_model;
 use super::occ::close_solid;
 use super::splat::view_points;
 use super::texstyle::{materials_by_pass, style_from_argv};
+use std::path::PathBuf;
+use trit_parts::data::read_npy_i32;
+use trit_parts::geo::{Camera, read_npy_f32};
 
 /// `mesh-tex --scene <dir> --frames ... --out <ply>`：网格 + 顶点颜色烘焙。
 /// 颜色从最近的高斯取（观测面），没有近邻的顶点标灰（不可见/推断面）。
@@ -153,6 +151,7 @@ pub(crate) fn mesh_tex_cmd(argv: &[String]) {
             let n: usize = arg(argv, "--quilt-size")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(512);
+            trit_parts::side::check(n).unwrap_or_else(|e| fail(&e));
             let patch: usize = arg(argv, "--patch")
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(16);

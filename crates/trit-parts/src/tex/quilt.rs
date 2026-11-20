@@ -26,9 +26,8 @@ pub fn quilt(
     assert!(src.len() == expect, "源图长度与 sw×sh×3 不符");
     assert!(patch >= 2 && patch <= sw.min(sh), "patch 必须 ≤ 源图短边");
     assert!(out_w >= patch && out_h >= patch, "输出不能小于一个 patch");
-    let cells = out_w
-        .checked_mul(out_h)
-        .and_then(|c| c.checked_mul(3))
+    let cells = crate::dims::check(out_w, out_h)
+        .and_then(|c| c.checked_mul(3).ok_or("输出尺寸溢出".to_string()))
         .expect("输出尺寸溢出");
     let ov = overlap.min(patch - 1);
     let step = patch - ov;

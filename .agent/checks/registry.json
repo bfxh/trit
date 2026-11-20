@@ -695,6 +695,40 @@
       "pattern": "n > MAX_PIXELS",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "kind": "require",
+      "since": "L92",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "min": 1,
+      "allow_skip": false,
+      "id": "C041",
+      "title": "tex-quilt 的 --size 走 side::check",
+      "covers": [
+        "L92"
+      ],
+      "scope": [
+        "crates/trit-parts/src/bin/parts_3d/texstyle.rs"
+      ],
+      "pattern": "side::check\\(n\\)"
+    },
+    {
+      "kind": "require",
+      "since": "L92",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "min": 1,
+      "allow_skip": false,
+      "id": "C042",
+      "title": "meshtex 的 --quilt-size 走 side::check",
+      "covers": [
+        "L92"
+      ],
+      "scope": [
+        "crates/trit-parts/src/bin/parts_3d/meshtex.rs"
+      ],
+      "pattern": "side::check\\(n\\)"
     }
   ],
   "ledger_from": "L56"

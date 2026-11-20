@@ -694,5 +694,13 @@
     "new": "w * h",
     "pkg": "trit-parts",
     "filter": "overflow_is_rejected_before_multiplying"
+  },
+  {
+    "name": "quilt: 输出像素上限不判",
+    "file": "crates/trit-parts/src/tex/quilt.rs",
+    "old": "crate::dims::check(out_w, out_h)",
+    "new": "Ok::<usize, String>(out_w.saturating_mul(out_h))",
+    "pkg": "trit-parts",
+    "filter": "huge_output_canvas_is_rejected_before_allocating"
   }
 ]

@@ -1,5 +1,4 @@
 use super::cli::{arg, fail};
-
 pub(crate) fn tex_quilt_cmd(argv: &[String]) {
     use trit_parts::tex::quilt;
     let Some(p) = argv.get(1).filter(|a| !a.starts_with("--")) else {
@@ -12,6 +11,7 @@ pub(crate) fn tex_quilt_cmd(argv: &[String]) {
     let n: usize = arg(argv, "--size")
         .and_then(|v| v.parse().ok())
         .unwrap_or(128);
+    trit_parts::side::check(n).unwrap_or_else(|e| fail(&e));
     let patch: usize = arg(argv, "--patch")
         .and_then(|v| v.parse().ok())
         .unwrap_or(12);
