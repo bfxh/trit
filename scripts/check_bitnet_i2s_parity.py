@@ -21,8 +21,10 @@ import numpy as np
 
 GGUF_URL = "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T-gguf/resolve/main/ggml-model-i2_s.gguf"
 ST_URL = "https://huggingface.co/microsoft/bitnet-b1.58-2B-4T/resolve/main/model.safetensors"
-TENSOR = "blk.0.ffn_down.weight"
-ST_TENSOR = "model.layers.0.mlp.down_proj.weight"
+TENSORS = [
+    ("blk.0.ffn_down.weight", "model.layers.0.mlp.down_proj.weight"),
+    ("blk.0.attn_k.weight", "model.layers.0.self_attn.k_proj.weight"),
+]
 SIZES = {0: 1, 1: 1, 2: 2, 3: 2, 4: 4, 5: 4, 6: 4, 7: 1, 10: 8, 11: 8, 12: 8}
 
 
@@ -112,15 +114,14 @@ def pack_i2s(matrix: np.ndarray) -> bytes:
     return packed.reshape(-1).astype(np.uint8).tobytes()
 
 
-def main() -> int:
-    head = fetch(GGUF_URL, 0, 8 << 20)
-    dims, gguf_at = gguf_tensor(head, TENSOR)
+def check(head: bytes, gguf_name: str, st_name: str) -> bool:
+    dims, gguf_at = gguf_tensor(head, gguf_name)
     rows, cols = dims[1], dims[0]  # ne0 最快变化 → 逻辑 (ne1, ne0)
     n = rows * cols
     gguf = fetch(GGUF_URL, gguf_at, n // 4 + 32)
 
     st_head = fetch(ST_URL, 0, 1 << 20)
-    shape, st_at, st_end = st_tensor(st_head, ST_TENSOR)
+    shape, st_at, st_end = st_tensor(st_head, st_name)
     if shape[0] * 4 != rows or shape[1] != cols:
         raise SystemExit(f"形状对不上：safetensors {shape} vs GGUF {(rows, cols)}")
     raw = fetch(ST_URL, st_at, st_end - st_at)
@@ -132,16 +133,23 @@ def main() -> int:
 
     packed = pack_i2s(matrix)
     want = gguf[: n // 4]
-    same = packed == want
-    if not same:
+    if packed != want:
         bad = sum(1 for x, y in zip(packed, want) if x != y)
-        print(f"FAIL {TENSOR}: {bad}/{len(want)} 字节不同")
-        return 1
+        print(f"FAIL {gguf_name}: {bad}/{len(want)} 字节不同")
+        return False
     scale = struct.unpack("<f", gguf[n // 4:n // 4 + 4])[0]
     tail_zero = set(gguf[n // 4 + 4:]) == {0}
-    print(f"PASS {TENSOR}: {len(want)} 字节逐字节一致")
+    print(f"PASS {gguf_name}: {len(want)} 字节逐字节一致（无需头重排）")
     print(f"     scale={scale} 尾 28 字节全零={tail_zero} 体积={n // 4 + 32}B/{n} 权重")
-    return 0
+    return True
+
+
+def main() -> int:
+    head = fetch(GGUF_URL, 0, 8 << 20)
+    ok = True
+    for gguf_name, st_name in TENSORS:
+        ok = check(head, gguf_name, st_name) and ok
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

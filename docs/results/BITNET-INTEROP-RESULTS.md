@@ -47,11 +47,26 @@
 3. **尾部 28 字节在真实 GGUF 里非零**：Python 转换脚本写零，真实文件不是。读侧不能依赖
    「补零」，只有前 4 字节 f32 scale 有意义。
 
+## J7 复跑：两个张量（含 `attn_k`）
+
+`scripts/check_bitnet_i2s_parity.py` 现在同时验 `blk.0.ffn_down.weight` 与
+`blk.0.attn_k.weight`：
+
+| 张量 | 形状（GGUF / safetensors） | 结果 |
+|---|---|---|
+| `blk.0.ffn_down.weight` | `[6912, 2560]` / `U8 [640, 6912]` | 4,423,680 B 全等 |
+| `blk.0.attn_k.weight` | `[2560, 640]` / `U8 [160, 2560]` | 409,600 B 全等 |
+
+**更正**：`attn_k` 一开始“首块一致、其后不一致”，我把它归因为 llama.cpp 对
+`q_proj`/`k_proj` 的 RoPE 头重排。实测**不需要任何重排**——用与 `ffn_down` 相同的
+「4 槽分给相距 `rows/4` 的行块」规则重建后逐字节全等；当初的差异只是因为错用了
+「连续 4 行交错」。头重排假设已证伪（对 `n_head ∈ {5,10,20}` 三种 permute 都不如
+无重排）。
+
 ### 未覆盖
 
-- 只对拍了一个张量（`ffn_down`，不参与 llama.cpp 的 RoPE 头部重排）。`attn_k` 的
-  safetensors `[160, 2560]` 与 GGUF `[2560, 640]` 首个 128 值块一致、其后不一致，
-  与「注意力权重按头重排」相符，未做专门验证。
+- `token_embd.weight` 是 f16、norm 是 f32，这两类张量不在 I2_S 对拍范围（M4 的
+  `read` 也仍以 `TensorType` 拒绝它们）。
 - TL2 的 two 段尾（`k % bk != 0`）与真实模型的 `kernel_config.ini` 尚未对齐。
 
 ## M4：GGUF 的 I2_S 读写分支
