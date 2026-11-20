@@ -927,8 +927,16 @@
       "lines": 322
     },
     {
+      "file": "crates/trit-export/src/limits.rs",
+      "lines": 15
+    },
+    {
       "file": "crates/trit-export/tests/gguf.rs",
       "lines": 140
+    },
+    {
+      "file": "crates/trit-export/tests/gguf_limits.rs",
+      "lines": 13
     },
     {
       "file": "crates/trit-float/src/format.rs",
@@ -2376,7 +2384,7 @@
     },
     {
       "file": "crates/trit-parts/src/glb/manifest.rs",
-      "lines": 150
+      "lines": 98
     },
     {
       "file": "crates/trit-parts/src/glb/mod.rs",
@@ -2385,6 +2393,10 @@
     {
       "file": "crates/trit-parts/src/glb/obj.rs",
       "lines": 91
+    },
+    {
+      "file": "crates/trit-parts/src/glb/path.rs",
+      "lines": 96
     },
     {
       "file": "crates/trit-parts/src/glb/scene.rs",
@@ -2752,7 +2764,7 @@
     },
     {
       "file": "crates/trit-re/src/decoy.rs",
-      "lines": 151
+      "lines": 135
     },
     {
       "file": "crates/trit-re/src/dynres.rs",
@@ -2836,11 +2848,19 @@
     },
     {
       "file": "crates/trit-re/src/pe.rs",
-      "lines": 769
+      "lines": 681
     },
     {
       "file": "crates/trit-re/src/pe/coff.rs",
       "lines": 101
+    },
+    {
+      "file": "crates/trit-re/src/pe/delay.rs",
+      "lines": 98
+    },
+    {
+      "file": "crates/trit-re/src/pe/imports.rs",
+      "lines": 100
     },
     {
       "file": "crates/trit-re/src/pe/overlay.rs",
@@ -2876,7 +2896,7 @@
     },
     {
       "file": "crates/trit-re/src/sigscan/pattern.rs",
-      "lines": 122
+      "lines": 121
     },
     {
       "file": "crates/trit-re/src/sigscan/pepaths.rs",
@@ -2952,7 +2972,7 @@
     },
     {
       "file": "crates/trit-re/src/yaraparse/cond.rs",
-      "lines": 347
+      "lines": 337
     },
     {
       "file": "crates/trit-re/src/yaraparse/cond_cmp.rs",
@@ -2961,6 +2981,10 @@
     {
       "file": "crates/trit-re/src/yaraparse/cond_leaf.rs",
       "lines": 139
+    },
+    {
+      "file": "crates/trit-re/src/yaraparse/cond_nest.rs",
+      "lines": 47
     },
     {
       "file": "crates/trit-re/src/yaraparse/cond_tail.rs",
@@ -3001,6 +3025,10 @@
     {
       "file": "crates/trit-re/tests/pe.rs",
       "lines": 318
+    },
+    {
+      "file": "crates/trit-re/tests/pe_delay.rs",
+      "lines": 48
     },
     {
       "file": "crates/trit-re/tests/support/mod.rs",
@@ -3045,6 +3073,10 @@
     {
       "file": "crates/trit-re/tests/yara_regex.rs",
       "lines": 35
+    },
+    {
+      "file": "crates/trit-re/tests/yara_semantics.rs",
+      "lines": 69
     },
     {
       "file": "crates/trit-redteam/src/attrib.rs",
@@ -3672,7 +3704,11 @@
     },
     {
       "file": "crates/trit-wspace/src/codec.rs",
-      "lines": 320
+      "lines": 303
+    },
+    {
+      "file": "crates/trit-wspace/src/codec/budget.rs",
+      "lines": 54
     },
     {
       "file": "crates/trit-wspace/src/dare.rs",
@@ -3873,6 +3909,10 @@
     {
       "file": "crates/trit-wspace/src/wsp2.rs",
       "lines": 106
+    },
+    {
+      "file": "crates/trit-wspace/src/wsp2/budget.rs",
+      "lines": 71
     },
     {
       "file": "crates/trit-wspace/src/wsp2/bytes.rs",
@@ -4129,6 +4169,10 @@
     {
       "file": "crates/trit-wspace/tests/wsp4.rs",
       "lines": 178
+    },
+    {
+      "file": "crates/trit-wspace/tests/wsp_budgets.rs",
+      "lines": 49
     },
     {
       "file": "crates/trit-wspace/tests/wspm.rs",

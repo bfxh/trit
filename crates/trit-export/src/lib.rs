@@ -10,13 +10,12 @@
 //! bias    : rows，trit-codec 5 trits/byte
 //! ```
 //!
-//! 打包与 `trit-codec` **共用** `trit_core::pack` 的同一实现（线格式契约唯一），字节序、padding 规则都沿用该 crate 的线格式契约。本 crate 不是上游 GGUF 的完整实现：未知元数据类型、
-//! 非三值张量、非 2D 张量一律显式报错，不猜。
-
+//! 打包与 `trit-codec` 共用 `trit_core::pack`；未知元数据类型、非三值/非 2D 张量一律显式报错。
 use std::collections::{BTreeMap, BTreeSet};
 
 use trit_core::Ternary;
 
+mod limits;
 const MAGIC: &[u8; 4] = b"GGUF";
 const VERSION: u32 = 3;
 /// 本仓自定义三值张量类型（上游 GGML type id 0..=30，100 起未占用）。
@@ -243,6 +242,7 @@ pub fn read(bytes: &[u8]) -> Result<Model, Error> {
         return Err(Error::Version(version));
     }
     let tensor_count = usize::try_from(read_u64(bytes, &mut pos)?).map_err(|_| Error::Truncated)?;
+    limits::check(tensor_count)?;
     let meta_count = usize::try_from(read_u64(bytes, &mut pos)?).map_err(|_| Error::Truncated)?;
     let mut metadata = BTreeMap::new();
     for _ in 0..meta_count {

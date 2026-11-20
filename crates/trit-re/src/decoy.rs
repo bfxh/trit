@@ -3,10 +3,13 @@
 //! 背景（2026-11-13，BLA-ADVERSARIAL-STUDY）：反逆向盾会**故意投放**
 //! 触发检测规则的诱饵——canary 里放假的敏感 API 名、假 SGX/TPM 清单、
 //! 高熵蜂蜜表。本模块识别**文档化的公开指纹**（v1 = PE `.enclave` 节，
-//! BLA README 明载的 COFF 诱饵节），命中时把注入/动态解析族的能力事实
-//! **从 True 降权为 Unknown** 并注记——证据可能为投放诱饵，弃权而非
-//! 假 -1（"扫描器永不 +1"在投毒对抗下的对称延伸：**诱饵面上的 True
-//! 也不许当真**）。
+//! BLA README 明载的 COFF 诱饵节），并把它记成观察标记。
+//!
+//! **不降权**：节名完全由攻击者控制，只凭一个 `.enclave` 就把真实的
+//! `imports.inj.*` 从 True 改成 Unknown，等于给攻击者一个一行 patch 的
+//! 规避开关（加一个空节即可）。诱饵判断需要比节名更强的证据；在当前
+//! 证据模型里，真实导入表就是真实能力，不能凭节名抹掉。因此本模块只
+//! 记录 `decoy.markers`，不再改写能力事实。
 //!
 //! 诚实边界：只覆盖指纹可判别的公开盾（v1 一项）；无指纹 ≠ 无投毒
 //! （事实照旧，不新增弃权）；ELF 侧盾形态待真实样本（如实留白）。
@@ -18,18 +21,7 @@ use trit_core::value::Ternary;
 /// 文档化的诱饵节名（BLA 3.x PE 盾：`.enclave` COFF 诱饵节）。
 const DECOY_SECTIONS: &[&str] = &[".enclave"];
 
-/// 命中指纹时降权的能力事实族（诱饵最可能伪造的信号）。
-const DOWNGRADE_IDS: &[&str] = &[
-    "imports.inj.alloc",
-    "imports.inj.write",
-    "imports.inj.exec",
-    "fn.injection_cooccur",
-    "fn.injection_ordered",
-    "dynres.hidden_api_strings",
-    "dynres.stack_strings",
-];
-
-/// 扫描诱饵指纹；命中则降权能力事实。在 `verdict::evaluate` 之前调用。
+/// 扫描诱饵指纹；命中只记录 `decoy.markers`，不改写能力事实。在 `verdict::evaluate` 之前调用。
 pub fn scan(pe: &PeInfo, facts: &mut Facts, notes: &mut Vec<String>) {
     let markers: Vec<&str> = pe
         .sections
@@ -44,21 +36,12 @@ pub fn scan(pe: &PeInfo, facts: &mut Facts, notes: &mut Vec<String>) {
         "decoy.markers",
         Ternary::True,
         format!(
-            "对抗性加固指纹：诱饵节 [{}]——能力证据可能为投放诱饵（BLA 形盾）",
+            "对抗性加固指纹：诱饵节 [{}]——只记录标记，不降权能力事实（节名可被攻击者伪造）",
             markers.join(", ")
         ),
     );
-    for id in DOWNGRADE_IDS {
-        if facts.get(id) == Some(Ternary::True) {
-            facts.set(
-                id,
-                Ternary::Unknown,
-                "诱饵面降权：命中对抗性加固指纹，能力证据可能为投放诱饵——弃权（原 True 见历史注记）",
-            );
-        }
-    }
     notes.push(format!(
-        "decoy：命中对抗性加固指纹（{}），能力事实已降权弃权",
+        "decoy：命中对抗性加固指纹（{}），仅记录标记；能力事实不降权",
         markers.join(", ")
     ));
 }
@@ -117,15 +100,16 @@ mod tests {
     }
 
     #[test]
-    fn enclave_marker_downgrades_capability_facts() {
+    fn enclave_marker_is_recorded_but_does_not_downgrade() {
         let pe = pe_with(vec![sec(".text"), sec(".enclave")]);
         let mut facts = poisoned_facts();
         let mut notes = Vec::new();
         scan(&pe, &mut facts, &mut notes);
         assert_eq!(facts.get("decoy.markers"), Some(Ternary::True));
-        assert_eq!(facts.get("imports.inj.alloc"), Some(Ternary::Unknown));
-        assert_eq!(facts.get("dynres.stack_strings"), Some(Ternary::Unknown));
-        assert!(notes.iter().any(|n| n.contains("decoy")));
+        // 修复回归：攻击者加一个空 `.enclave` 节，不得把真实导入能力降成 Unknown。
+        assert_eq!(facts.get("imports.inj.alloc"), Some(Ternary::True));
+        assert_eq!(facts.get("dynres.stack_strings"), Some(Ternary::True));
+        assert!(notes.iter().any(|n| n.contains("不降权")));
     }
 
     #[test]

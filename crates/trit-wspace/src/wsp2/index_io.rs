@@ -13,13 +13,13 @@ impl BlockIndex {
     pub fn read_layer_io<R: Read + Seek>(&self, reader: &mut R, layer: usize) -> Result<Layer> {
         let info = self.layer(layer)?;
         self.check_source_io(reader)?;
-        let trit_len = info
+        let elems = info
             .rows
             .checked_mul(info.cols)
-            .ok_or_else(|| Error::Wire("WSP2 元素数溢出".into()))?
-            .div_ceil(4);
+            .ok_or_else(|| Error::Wire("WSP2 元素数溢出".into()))?;
+        let trit_len = elems.div_ceil(4);
         let raw = read_at(reader, info.trits_offset, trit_len)?;
-        let trits = unpack_trits(&raw, info.rows * info.cols)?;
+        let trits = unpack_trits(&raw, elems)?;
         let raw = read_at(reader, info.bias_offset, info.rows.div_ceil(4))?;
         let bias = unpack_trits(&raw, info.rows)?;
         let scales = read_f32s_at(reader, info.scales_offset, info.rows)?;

@@ -11,6 +11,8 @@ pub(super) struct CondParser<'a> {
     pub(super) strings: &'a [(String, Pattern)],
     /// for-of 嵌套深度：`$`/`#$`/`@$` 只在体内合法（>0），体外如实报错。
     pub(super) for_depth: usize,
+    /// 条件表达式递归深度（`not`/括号/for-of 体），防止栈溢出。
+    pub(super) depth: usize,
 }
 
 impl<'a> CondParser<'a> {
@@ -20,19 +22,8 @@ impl<'a> CondParser<'a> {
             pos: 0,
             strings,
             for_depth: 0,
+            depth: 0,
         }
-    }
-
-    /// 解析整个条件并检查 token 全部消化（残留 = 语法不支持，如实报错）。
-    pub(super) fn parse_full(&mut self) -> Result<Condition, String> {
-        let cond = self.parse_expr()?;
-        if self.pos != self.toks.len() {
-            return Err(format!(
-                "条件尾部有未消化的 token：{:?}",
-                self.toks.get(self.pos)
-            ));
-        }
-        Ok(cond)
     }
 
     pub(super) fn peek(&self) -> Option<&Tok> {
@@ -73,8 +64,7 @@ impl<'a> CondParser<'a> {
         Err(format!("条件不支持：{why}（token {:?}）", self.peek()))
     }
 
-    /// `or` 优先级最低。
-    fn parse_expr(&mut self) -> Result<Condition, String> {
+    pub(super) fn parse_expr(&mut self) -> Result<Condition, String> {
         let mut left = self.parse_and()?;
         while self.word_is("or") {
             self.pos += 1;
@@ -107,10 +97,10 @@ impl<'a> CondParser<'a> {
     }
 
     // 数值叶子（parse_num_leaf / skip_balanced）在 cond_leaf.rs。
-    fn parse_unit(&mut self) -> Result<Condition, String> {
+    pub(super) fn parse_unit(&mut self) -> Result<Condition, String> {
         if self.word_is("not") {
             self.pos += 1;
-            let inner = self.parse_unit()?;
+            let inner = self.parse_nested_unit()?;
             return Ok(Condition::Not(Box::new(inner)));
         }
         if self.eat_word("any") {
@@ -135,7 +125,7 @@ impl<'a> CondParser<'a> {
             return Ok(Condition::Const(false));
         }
         if self.eat_sym('(') {
-            let inner = self.parse_expr()?;
+            let inner = self.parse_nested_expr()?;
             if !self.eat_sym(')') {
                 return self.bail("括号未闭合");
             }
@@ -203,7 +193,7 @@ impl<'a> CondParser<'a> {
             return self.bail("for-of 体缺 '('");
         }
         self.for_depth += 1;
-        let body = self.parse_expr();
+        let body = self.parse_nested_expr();
         self.for_depth -= 1;
         let body = body?;
         if !self.eat_sym(')') {

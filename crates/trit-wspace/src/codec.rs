@@ -23,6 +23,8 @@
 //! - 校验和按**解析后的规范文本**重算，所以注释/空白改不动它，改一个 trit 一定变。
 
 use crate::error::{Error, Result};
+
+mod budget;
 use crate::net::{Layer, Net};
 use crate::trit::Trit;
 
@@ -75,7 +77,8 @@ pub fn from_wsp(text: &str) -> Result<Net> {
             msg: "arch 行需要 `arch <输入维> <输出维>...`".into(),
         });
     }
-    let sizes = parse_sizes(&tokens[1..], line)?;
+    let sizes = budget::parse_sizes(&tokens[1..], line)?;
+    budget::check(&sizes, line, text.len())?;
 
     let mut layers = Vec::with_capacity(sizes.len() - 1);
     for index in 0..sizes.len() - 1 {
@@ -142,7 +145,11 @@ pub fn from_wsp(text: &str) -> Result<Net> {
             row_line = next_row;
         }
 
-        let mut trits = Vec::with_capacity(rows * cols);
+        let elems = rows.checked_mul(cols).ok_or_else(|| Error::Parse {
+            line,
+            msg: "层元素数溢出 usize".into(),
+        })?;
+        let mut trits = Vec::with_capacity(elems);
         for index in 0..rows {
             if index > 0 {
                 let (next_line, next_row) = next(&lines, &mut pos, "row")?;
@@ -253,30 +260,6 @@ fn next<'a>(
     };
     *pos += 1;
     Ok((line, text))
-}
-
-fn parse_sizes(tokens: &[&str], line: usize) -> Result<Vec<usize>> {
-    let mut sizes = Vec::with_capacity(tokens.len());
-    for token in tokens {
-        let size = token.parse::<usize>().map_err(|_| Error::Parse {
-            line,
-            msg: format!("arch 维度 `{token}` 不是 usize"),
-        })?;
-        if size == 0 {
-            return Err(Error::Parse {
-                line,
-                msg: "arch 维度不能为 0".into(),
-            });
-        }
-        sizes.push(size);
-    }
-    if sizes.len() < 2 {
-        return Err(Error::Parse {
-            line,
-            msg: "arch 至少需要输入维与输出维".into(),
-        });
-    }
-    Ok(sizes)
 }
 
 fn parse_trits(tokens: &[&str], expected: usize, line: usize, what: &str) -> Result<Vec<i8>> {

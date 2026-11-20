@@ -24,10 +24,10 @@ pub enum Error {
     /// 行/列数为 0。
     #[error("GGUF 形状 {0}×{1} 非法")]
     Shape(usize, usize),
-    /// 张量数据越界。
+    #[error("GGUF 张量数 {0} 超过上限")]
+    TooManyTensors(usize),
     #[error("GGUF 张量 {0} 数据越界/截断")]
     Tensor(String),
-    /// 字符串不是 UTF-8。
     #[error("GGUF 字符串不是 UTF-8")]
     Utf8,
     /// 张量名重复。

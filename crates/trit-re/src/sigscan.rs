@@ -80,7 +80,7 @@ pub struct HexPattern {
 }
 
 /// 文本串模式：修饰符在构造时展开成字节变体
-/// （ascii → 原样；wide → UTF-16LE；`ascii wide` → 两个变体都试）。
+/// （ascii → 原样；wide → UTF-8 字节逐个补零；`ascii wide` → 两个变体都试）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TextPattern {
     variants: Vec<TextVariant>,

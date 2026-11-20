@@ -73,7 +73,7 @@ fn text_nocase_and_wide() {
         Ternary::True,
         "nocase = ASCII 折叠"
     );
-    // wide：仅 UTF-16LE 变体（对齐 YARA `wide` 语义：ascii 变体不再命中）
+    // wide：UTF-8 字节逐个补零（ASCII 与 UTF-16LE 重合；非 ASCII 见 integration 测试）
     let wide = Pattern::text("AZ", false, true);
     let wdata: Vec<u8> = "AZ".encode_utf16().flat_map(|u| u.to_le_bytes()).collect();
     assert_eq!(
