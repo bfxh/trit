@@ -3123,6 +3123,10 @@
       "lines": 767
     },
     {
+      "file": "crates/trit-re/src/sigscan/regex/depth.rs",
+      "lines": 20
+    },
+    {
       "file": "crates/trit-re/src/sigscan/resolve.rs",
       "lines": 71
     },

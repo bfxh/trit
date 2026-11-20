@@ -1491,6 +1491,23 @@
       "run": "cargo test -p trit-fuzz",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C087",
+      "title": "正则嵌套深度有上限（不再栈溢出）",
+      "kind": "cmd",
+      "covers": [
+        "L136"
+      ],
+      "scope": [
+        "crates/trit-re/src/sigscan/regex/depth.rs"
+      ],
+      "since": "L136",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-re",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
