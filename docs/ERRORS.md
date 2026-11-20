@@ -186,6 +186,7 @@
 | L135 | 第 37 轮 S10 判定为**契约、不修**：`trit-fuzz::random_expr` 在空变量表时 `assert!` 中止，审计把它列为崩溃 | 仓库既有测试 `empty_var_table_is_refused_not_silently_degenerate` 明确要求「空变量表应当 panic，而不是静默产出常量语料」——静默退化会让 fuzz 语料失真 | 只把 `random_expr` 拆到 `corpus/expr.rs`（行为完全不变），不改成返回 `Const`；本条作为「审计建议与仓库契约冲突」的先例记录 | C086 |
 | L136 | 第 37 轮 S2：`trit-re` 正则编译器的递归下降（`parse_atom` → `parse_alt`）与 `emit` 都没有深度计数，8000 层括号在 release 下栈溢出（134） | 递归深度由输入（规则文件）决定，但递归函数自己没有预算；`parse` 只做语法，不做规模 | `parse` 入口先按括号配对预扫，超过 64 层直接 `Err`（AST 深度受限，`emit` 也随之受限）；检查拆到 `regex/depth.rs` 守行数 | C087 |
 | L137 | 第 32 轮 32-1：`trit-parts` 的 `RefCpu::block` 用 `self.model.layers[i]` 直接索引——单层 TPM1 配 `E1B = 1` 时越界 panic（101） | 层下标由模型推理路径算出，却假设「层数一定够」；`layers[i]` 没有任何兜底 | `block` 改用 `layers.get(i)`，缺失返回空结果；`block`/`pool`/`cat` 拆到 `model/forward.rs`（model.rs 339 → 307），`conv`/`affine`/`model` 相应放开为 `pub(super)` | C088 |
+| L138 | 第 34/35/36 轮三处同一模式：`weights.rs` 的 `field_shape` 与 `parts.rs` 的 `PartList::parse` 都先 `find('[')` 再**从串首** `find(']')`，`]` 出现在 `[` 之前就得到 `b < a`，`rest[a..b]` 反向切片 panic（40/39 字节清单，exit 101）；`mcp.rs` 的 `wsp_shard` 用 `(start + limit).min(total)`，`limit = usize::MAX` 在 release 回绕成 0 再反向切片（MCP 进程崩溃） | 手写 JSON 解析把「括号成对」当不变量；下标加法没走 checked/saturating；守卫写在 panic 之后 | 34/35 改为从 `[` 之后找 `]`（`rest[a..].find(']')? + a`）；36 改为 `start.saturating_add(limit).min(total)`；`trit-parts --lib` 197 与 `trit-wspace --lib` 17 条全过 | C089 |
 
 
 

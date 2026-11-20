@@ -85,7 +85,7 @@ fn field_shape(blk: &str) -> Option<Vec<usize>> {
     let i = blk.find(k)? + k.len();
     let rest = &blk[i..];
     let a = rest.find('[')? + 1;
-    let b = rest.find(']')?;
+    let b = rest[a..].find(']')? + a; // 从 `[` 之后找 `]`（第 34 轮：反序会反向切片）
     Some(
         rest[a..b]
             .split(',')

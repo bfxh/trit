@@ -1525,6 +1525,25 @@
       "run": "cargo test -p trit-parts --lib",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C089",
+      "title": "手写 JSON 解析与分页不反向切片",
+      "kind": "cmd",
+      "covers": [
+        "L138"
+      ],
+      "scope": [
+        "crates/trit-parts/src/weights.rs",
+        "crates/trit-parts/src/parts.rs",
+        "crates/trit-wspace/src/mcp.rs"
+      ],
+      "since": "L138",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-parts --lib",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

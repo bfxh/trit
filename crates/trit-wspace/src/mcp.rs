@@ -415,7 +415,7 @@ impl Mcp {
                 let end = if limit == 0 {
                     total
                 } else {
-                    (start + limit).min(total)
+                    start.saturating_add(limit).min(total) // 第 36 轮：limit=usize::MAX 会回绕
                 };
                 let manifest = ShardManifest::of(&shards).to_value();
                 Ok(json!({
