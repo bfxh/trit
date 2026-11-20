@@ -2195,12 +2195,16 @@
       "lines": 209
     },
     {
-      "file": "crates/trit-parts/src/bin/parts_3d/texgen.rs",
-      "lines": 486
+      "file": "crates/trit-parts/src/bin/parts_3d/texgen/mod.rs",
+      "lines": 474
+    },
+    {
+      "file": "crates/trit-parts/src/bin/parts_3d/texgen/tests.rs",
+      "lines": 23
     },
     {
       "file": "crates/trit-parts/src/bin/parts_3d/texgen2.rs",
-      "lines": 694
+      "lines": 692
     },
     {
       "file": "crates/trit-parts/src/bin/parts_3d/texstyle.rs",
@@ -2531,6 +2535,10 @@
       "lines": 217
     },
     {
+      "file": "crates/trit-parts/src/side.rs",
+      "lines": 15
+    },
+    {
       "file": "crates/trit-parts/src/splat/core.rs",
       "lines": 288
     },
@@ -2689,6 +2697,10 @@
     {
       "file": "crates/trit-parts/tests/planes_bounds.rs",
       "lines": 91
+    },
+    {
+      "file": "crates/trit-parts/tests/side_bounds.rs",
+      "lines": 31
     },
     {
       "file": "crates/trit-parts/tests/splat_ply_limits.rs",

@@ -138,6 +138,8 @@
 
 | L89 | `texgen2 --patch`（`texgen2.rs:37`，默认 3）直通 `diffuse::PatchMlp::new` 的 `let nin = patch * patch + cond + 1`，零校验 | `patch²` 是裸乘，而 `nin` 又立刻进 `Mlp::new` 的 `nin×nhid`（L88 刚加的 `checked_mul` **只挡 usize 绕回**）。`--patch 65536` 给出 4.3e9 个特征——乘法干干净净地过，然后按 550 GB 去分配；`--patch 4294967297` 让 `patch²` 溢出，debug panic / release 绕回。还有一条更安静的：`features` 里 `r = patch / 2`、循环是 `(2r+1)²` 个位置，**偶数** `patch`（如 4）让 `(2r+1)² = 25 ≠ patch² = 16`，多出的 9 个特征被 `Mlp::forward` 的 `take(nin)` 静默丢掉 | `PatchMlp` 从 `diffuse.rs` 拆到 `diffuse/patch.rs`（352 → 209 + 172，不抬 cap），新增 `MAX_PATCH = 15` 与 `check(patch, cond)`：必须奇数、`≤ MAX_PATCH`、`patch²+cond+1` 三段 `checked`；`new` 第一行 `check(patch, cond)?`；`input_dim()` 改成 `self.mlp.nin`（顺手消掉第二处 `patch*patch` 裸乘） | C038 |
 
+| L90 | `texgen2.rs:16` 的 `--size` 只 `parse::<usize>()`（`unwrap_or(64)`），而**同名的** `texgen.rs` `--size` 早已被 `size_of` 挡在 `1..=4096`（L79 修的，注释都写在函数头上） | 同一个参数名两个入口，一个修了一个漏了。`texgen2 --size 100000` → `n = 100000`，随后 `tile(kind, n, sd)` 的 `n*n*3` 像素 = 120 GB、`initial_noise(w*h)` 与 `predict_x0` 的 `vec![0.0f32; w*h]` 各 40 GB；`--size 0` 则 `n*n` 全空、`seam_ratio` 除零 | 上限**下沉到无 feature 的叶子模块** `crates/trit-parts/src/side.rs`（`MAX_SIDE = 4096` + `check`）—— 原来它住在 `bin/parts_3d/` 里，而 `parts-3d` 有 `required-features = ["gpu"]`，mutation 门根本编译不到那个 bin，写进去的校验等于没被执行过；`texgen::size_of` 退化成对齐出口的转发器（`Err` 转 `panic!`，保住既有的 `should_panic` 契约）；`texgen2` 的三行 `arg(...).parse().unwrap_or(64)` 收成一行 `super::texgen::size_of(argv, 64)`。顺手把 `texgen` 的 `mod tests` 拆到 `texgen/tests.rs`（486 顶格 → 474 + 23），`C019` 的 scope 同步到两个新路径 | C039 |
+
 
 
 

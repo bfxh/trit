@@ -329,7 +329,8 @@
         "L70"
       ],
       "scope": [
-        "crates/trit-parts/src/bin/parts_3d/texgen.rs"
+        "crates/trit-parts/src/bin/parts_3d/texgen/mod.rs",
+        "crates/trit-parts/src/bin/parts_3d/texgen/tests.rs"
       ],
       "since": "2026-11-20",
       "tier": "fast",
@@ -658,6 +659,23 @@
       "tier": "fast",
       "added": "2026-11-20",
       "pattern": "patch > MAX_PATCH",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C039",
+      "title": "texgen2 的 --size 复用 texgen 的上限守卫",
+      "kind": "require",
+      "covers": [
+        "L90"
+      ],
+      "scope": [
+        "crates/trit-parts/src/bin/parts_3d/texgen2.rs"
+      ],
+      "since": "L90",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "texgen::size_of",
       "min": 1,
       "allow_skip": false
     }
