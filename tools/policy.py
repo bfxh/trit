@@ -27,6 +27,25 @@ and the reason, an escape hatch would not. Git operations that rewrite or discar
 rebase in main-line context) deny too; their one alternative is a git_safe.py checkpoint
 first, and a human can grant a single invocation with `-Allow git-destructive`.
 
+On the MAIN checkout the bar is higher: a deletion there is a human-approval decision, not
+a tool decision. How "main" is judged, machine-independently (no path is hardcoded): at a
+checkout root git leaves `.git` as a DIRECTORY on the main checkout and as a FILE (a
+gitdir pointer) in a linked worktree; the test walks up from -Root so a subdirectory root
+still finds the checkout it belongs to, and no .git at all means no main rule. LANDMINE:
+misjudging a main checkout as a worktree is the dangerous direction -- the deletion then
+passes on the bin route alone, with nobody having approved it; the reverse direction only
+costs one extra approval. The rare `git init --separate-git-dir` main checkout wears the
+file form too and would be judged a worktree: if you use that layout, main-delete approval
+will not arm -- say so in the approval note. On the main tree the denial text IS the
+approval protocol:
+
+    main tree delete needs human approval -- rerun with
+    -Allow main-delete --approval-note "<who approved, what was approved>"
+
+`-Allow main-delete` without `--approval-note` is refused: an approval nobody can read is
+not an approval. A linked worktree keeps the old bar (bin requirement only) -- branches
+are cheap, main-line state is not.
+
 Ported from policy.ps1; decisions, wording and exit codes are kept identical.
 """
 
@@ -76,7 +95,7 @@ INTERPRETERS = {"bash", "sh", "cmd", "pwsh", "powershell", "python", "python3", 
 
 def parse_args(argv):
     out = {"profile": "read-only", "command": "", "root": "", "allow_network": False,
-           "explain": False, "allow": []}
+           "explain": False, "allow": [], "approval_note": ""}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -95,6 +114,10 @@ def parse_args(argv):
         if name == "allow":
             val = argv[i + 1] if i + 1 < len(argv) else ""
             out["allow"].extend([x for x in val.replace(",", " ").split() if x])
+            i += 2
+            continue
+        if name in ("approvalnote", "approval-note"):
+            out["approval_note"] = argv[i + 1] if i + 1 < len(argv) else ""
             i += 2
             continue
         key = {"profile": "profile", "command": "command", "root": "root"}.get(name, name)
@@ -196,6 +219,37 @@ def git_branch(root_path):
     except OSError:
         return ""
     return p.stdout.strip().lower() if p.returncode == 0 else ""
+
+
+def checkout_kind(root_path):
+    """'main', 'worktree' or '' for the enclosing checkout -- no path is hardcoded.
+
+    Machine-independent test: git leaves `.git` as a DIRECTORY at the main checkout's
+    root and as a FILE (a gitdir pointer) in a linked worktree. The walk up from -Root
+    lets a subdirectory root find the checkout it belongs to; no .git anywhere means ''
+    and no main rule.
+
+    LANDMINE: reading a main checkout as a worktree is the dangerous direction -- a
+    main-tree deletion then passes on the bin route with no approval at all. Reading a
+    worktree as main only costs one extra approval, so when the form is undecidable
+    there is nothing to decide: dir=main, file=worktree, absent=''. The rare
+    `git init --separate-git-dir` main checkout shares the file form and is judged a
+    worktree -- known blind spot, documented in the usage text.
+    """
+    if not root_path:
+        return ""
+    p = os.path.normpath(os.path.abspath(root_path))
+    for _ in range(32):
+        entry = os.path.join(p, ".git")
+        if os.path.isdir(entry):
+            return "main"
+        if os.path.isfile(entry):
+            return "worktree"
+        parent = os.path.dirname(p)
+        if parent == p:
+            return ""
+        p = parent
+    return ""
 
 
 def decision(segment, current_branch=""):
@@ -322,12 +376,15 @@ def main(argv):
 
     denials, notes = [], []
     current_branch = git_branch(root_path)
+    kind = checkout_kind(root_path)
+    allow = a.get("allow", [])
+    approval_note = a.get("approval_note", "").strip()
     for seg in segments:
         d = decision(seg, current_branch)
         if d is None:
             continue
         if d["kind"] == "destructive":
-            if "git-destructive" in a.get("allow", []):
+            if "git-destructive" in allow:
                 # one id, one invocation, printed out loud -- shaped like -AllowNetwork,
                 # because a silent escape hatch would just be a hole
                 notes.append(f"allowed by -Allow git-destructive (per-invocation grant): {d['why']}")
@@ -339,6 +396,18 @@ def main(argv):
             denials.append(f"destructive: {d['why']}  ({alt})")
             continue
         if d["kind"] == "deletion":
+            if kind == "main":
+                if "main-delete" in allow and approval_note:
+                    notes.append(f"allowed by -Allow main-delete (per-invocation grant, "
+                                 f"approval note: {approval_note}): {d['why']}")
+                    continue
+                if "main-delete" in allow and not approval_note:
+                    denials.append("deletion: -Allow main-delete without --approval-note is "
+                                   "not an approval -- state 谁批的批什么")
+                    continue
+                denials.append(f"deletion: {d['why']}  (main tree delete needs human approval "
+                               f"— rerun with -Allow main-delete --approval-note \"<谁批的批什么>\")")
+                continue
             denials.append(f"deletion: {d['why']}  (替代路径: python tools/trash.py put <path> "
                            f"--reason <why> -- 工作区不许裸删，这是唯一放行口)")
             continue

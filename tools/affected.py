@@ -243,7 +243,11 @@ def main(argv):
     # Same rule Turborepo applies to shallow checkouts: when the graph cannot be trusted,
     # consider everything changed. A full run is always sound; a guessed subset is not.
     failsafe = []
-    if not os.path.isdir(os.path.join(root, ".git")):
+    # .git has two forms: a DIRECTORY on the main checkout, a FILE in a linked worktree
+    # (gitdir pointer). Judging history by the directory form alone read every worktree
+    # as "no git history" and silently fell back to the full run.
+    if not (os.path.isdir(os.path.join(root, ".git"))
+            or os.path.isfile(os.path.join(root, ".git"))):
         failsafe.append("no git history at the project root: cannot establish a change set")
     manifests = [m for m in ("Cargo.toml", "package.json", "go.mod", "pyproject.toml")
                  if os.path.exists(os.path.join(root, m))]
