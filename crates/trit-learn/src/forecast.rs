@@ -1,16 +1,11 @@
 //! 时间序列预测组件：SMA / EWMA / Holt 双参数平滑 + 误差指标。
-//!
-//! 服务防御侧的负载预测（`examples/ddos_shield` 的自适应预算）与任何需要
-//! "预测下一个窗口"的实验层。设计口径：
-//!
-//! - **在线**：`Ewma`/`Holt` 是 O(1) 状态的流式更新器（每窗口一次 `update`），
-//!   `forecast(h)` 多步外推（EWMA 平推，Holt 沿趋势线性外推）；
-//! - **离线**：`sma` 对整段序列滚动平均；
-//! - 指标 `mae`/`rmse`/`mape` 与训练侧的损失口径分开（评测用，不进梯度）。
-//!
-//! 边界：无季节项（Holt-Winters 未做）；f32 精度（与训练侧一致，
-//! 跨平台用 f64 内部求值保证可复算的口径见 `activation` 的先例——本组件
-//! 只有四则运算，无超越函数，f32 足够）。
+//! 服务防御侧的负载预测与任何需要"预测下一个窗口"的实验层：
+//! - 在线：`Ewma`/`Holt` 是 O(1) 流式更新器，`forecast(h)` 多步外推（EWMA 平推、Holt 沿趋势）；
+//! - 离线：`sma` 对整段序列滚动平均；指标 `mae`/`rmse`/`mape` 不进梯度。
+//! 边界：无季节项；f32 精度（四则运算，无超越函数，f32 足够）。
+
+/// 预测步数上限：`forecast(h)` 按 h 分配。
+pub const MAX_HORIZON: usize = 1 << 20;
 
 /// 简单滚动平均：第 `i` 点 = 以 `i` 结尾的 `window` 窗口均值（前缀不足时
 /// 用现有点）。`window = 0` 是错误用法，按 1 处理。
@@ -60,6 +55,7 @@ impl Ewma {
     /// 未来 `h` 步预测：无趋势，平推当前平滑值（未初始化返回 0）。
     #[must_use]
     pub fn forecast(&self, h: usize) -> Vec<f32> {
+        assert!(h <= MAX_HORIZON, "步数 {h} 超过上限 {MAX_HORIZON}");
         vec![self.state.unwrap_or(0.0); h]
     }
 }
@@ -114,6 +110,7 @@ impl Holt {
     /// 未来 `h` 步预测：`level + k·trend`。
     #[must_use]
     pub fn forecast(&self, h: usize) -> Vec<f32> {
+        assert!(h <= MAX_HORIZON, "步数 {h} 超过上限 {MAX_HORIZON}");
         match self.level {
             None => vec![0.0; h],
             Some(level) => (1..=h).map(|k| level + k as f32 * self.trend).collect(),

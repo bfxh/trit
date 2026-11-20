@@ -830,5 +830,13 @@
   "new": "    let _ = &circuit;",
   "pkg": "trit-circuit",
   "filter": "parse_rejects_names_that_to_blif_cannot_roundtrip"
+ },
+ {
+  "name": "circuit: 展开步数上限翻倍",
+  "file": "crates/trit-circuit/src/sequential.rs",
+  "old": "if k > MAX_UNROLL {",
+  "new": "if k > MAX_UNROLL * 2 {",
+  "pkg": "trit-circuit",
+  "filter": "absurd_unroll_is_rejected_before_building"
  }
 ]

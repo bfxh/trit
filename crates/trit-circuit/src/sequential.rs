@@ -1,15 +1,14 @@
 //! 时序 AIGER（`L > 0`）的读写与三值步进。
-//!
-//! 与组合网表 [`crate::circuit::Circuit`] **分开**：时序网表有锁存器（初始值 + 下一状态），
-//! 把它塞进组合检查（validate / sim / atpg）会把寄存器当组合门，语义就错了。
-//! 这里用独立的最小类型，只做两件事：AIGER 时序往返、三值步进。
-//!
-//! 变量编号按 AIGER 标准：`1..=I` 是输入，`I+1..=I+L` 是锁存器，`I+L+1..=M` 是 AND 门；
+//! 与组合网表 [`crate::circuit::Circuit`] 分开：时序有锁存器（初始值 + 下一状态），塞进组合检查会把寄存器当门。
+//! 变量编号按 AIGER：`1..=I` 输入、`I+1..=I+L` 锁存器、`I+L+1..=M` AND；
 //! 字面量 `0` = false、`1` = true、`2v` = 变量 `v`、`2v+1` = `¬v`。
 
 use std::collections::BTreeMap;
 
 use trit_core::value::Ternary;
+
+/// 展开步数上限：`unroll(k)` 按 k 复制状态与门。
+pub const MAX_UNROLL: usize = 4096;
 
 /// AIGER 字面量。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -101,12 +100,10 @@ pub enum SequentialError {
     LiteralOutOfRange(u32, u32),
     /// AND 门的 `lhs` 不合法。
     #[error("AND 门的 lhs 必须是变量 {i}..={m} 的偶数倍")]
-    BadLhs {
-        /// 期望的最小变量号。
-        i: u32,
-        /// 最大变量号。
-        m: u32,
-    },
+    BadLhs { i: u32, m: u32 },
+    /// 展开步数超过上限。
+    #[error("展开步数 {0} 超过上限 {1}")]
+    TooManySteps(usize, usize),
 }
 
 fn num(text: &str, line: usize, what: &str) -> Result<usize, SequentialError> {
@@ -333,6 +330,9 @@ impl SequentialCircuit {
     ///
     /// 展开后是纯组合电路，可以直接进 `propagate` / SAT。
     pub fn unroll(&self, k: usize) -> Result<crate::circuit::Circuit, SequentialError> {
+        if k > MAX_UNROLL {
+            return Err(SequentialError::TooManySteps(k, MAX_UNROLL));
+        }
         use crate::circuit::{Circuit, Gate, GateKind, Signal};
 
         let mut circuit = Circuit::new("unroll");

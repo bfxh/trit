@@ -1,11 +1,9 @@
 //! 多分类评测指标（混淆矩阵 / 准确率 / 逐类与 macro P-R-F1）。
-//!
-//! 神经训练的评测部件：与 [`crate::loss::cross_entropy`] 的 `label: usize`
-//! 多类口径配套。二分类场景同样适用（`classes = 2`，正类取 1）。
-//!
-//! 设计约束：不依赖 serde/JSON（库层保持零多余依赖），序列化由调用方做。
+//! 与 [`crate::loss::cross_entropy`] 的 `label: usize` 多类口径配套；二分类取 `classes = 2`。
+//! 不依赖 serde/JSON（库层保持零多余依赖），序列化由调用方做。
 
-/// 多类混淆矩阵：`counts[pred][label]`。
+/// 类数上限：`classes²` 个 usize 的混淆矩阵。
+pub const MAX_CLASSES: usize = 4096;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Confusion {
     classes: usize,
@@ -16,6 +14,10 @@ impl Confusion {
     /// `classes` 类的空混淆矩阵。
     pub fn new(classes: usize) -> Self {
         assert!(classes > 0, "classes 必须非零");
+        assert!(
+            classes <= MAX_CLASSES,
+            "classes {classes} 超过上限 {MAX_CLASSES}"
+        );
         Self {
             classes,
             counts: vec![0; classes * classes],
@@ -28,7 +30,6 @@ impl Confusion {
         self.counts[pred * self.classes + label] += 1;
     }
 
-    /// 类数。
     pub fn classes(&self) -> usize {
         self.classes
     }
@@ -38,7 +39,6 @@ impl Confusion {
         self.counts[pred * self.classes + label]
     }
 
-    /// 总样本数。
     pub fn total(&self) -> usize {
         self.counts.iter().sum()
     }
