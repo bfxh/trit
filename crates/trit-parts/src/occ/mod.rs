@@ -7,6 +7,9 @@
 
 use crate::fuse::View;
 
+mod mlp;
+pub use mlp::Mlp;
+
 /// 场景原语（与渲染器一致：方块 size=1（part_cube 0.055）、球 r=0.7、
 /// 柱 r=0.45/depth=1.2、环 major=0.5/minor=0.18；scale/rot 再作用）。
 #[derive(Clone, Debug)]
@@ -140,10 +143,26 @@ pub fn solid(prims: &[Primitive], g: &crate::mesh::Grid) -> Vec<u8> {
     out
 }
 
+/// `View` 的 `ids` / `depth` 长度契约：两者都必须等于 `w×h`。
+///
+/// 契约本来该由 `.npy` 的 shape 提供，但构造 `View` 时 `depth` 的形状被丢掉了 ——
+/// 两个文件尺寸不一致时，下面的 `v.ids[i]` / `v.depth[i]` 就会越界。
+fn check_views(views: &[View]) {
+    for v in views {
+        assert!(
+            v.ids.len() == v.w * v.h && v.depth.len() == v.w * v.h,
+            "视角 ids/depth 长度必须等于 w×h（{}×{}）",
+            v.w,
+            v.h
+        );
+    }
+}
+
 /// 自监督实心标签（不需要物体定义）：
 /// 任一视角里「投到背景像素」或「在观测表面前方 τ 之外」⇒ 自由空间；
 /// 在所有视角都落在剪影内、且从未被判为自由 ⇒ 实心；从未进入任何视野 ⇒ 空（防远场全实）。
 pub fn selfsup_solid(views: &[View], g: &crate::mesh::Grid, tau: f32) -> Vec<u8> {
+    check_views(views);
     let mut out = vec![0u8; g.occ.len()];
     for z in 0..g.nz {
         for y in 0..g.ny {
@@ -185,6 +204,7 @@ pub const FPER: usize = 3;
 
 /// 一个体素的特征：各视角 [在剪影内, clip((d_vox − d_obs)/0.2, −1, 1), 有效] + 常数 1。
 pub fn features(views: &[View], p: [f32; 3]) -> Vec<f32> {
+    check_views(views);
     let mut f = Vec::with_capacity(views.len() * FPER + 1);
     for v in views {
         match v.cam.project(p) {
@@ -218,165 +238,6 @@ pub fn lr_at(step: usize, steps: usize, lr: f32, lr_final: Option<f32>) -> f32 {
             lr + (end - lr) * frac
         }
         _ => lr,
-    }
-}
-
-/// 两层三值 MLP（隐藏层 ReLU，输出 logit），STE 反向。
-pub struct Mlp {
-    pub nin: usize,
-    pub nhid: usize,
-    /// 实际值（三值 × 每层缩放）；训练时直接更新，量化在 `q()` 里取。
-    w1: Vec<f32>,
-    b1: Vec<f32>,
-    w2: Vec<f32>,
-    b2: f32,
-}
-
-/// 三值化：有效权重 ∈ {−1, 0, +1}（每层缩放交给输出层的 f32 权重吸收，
-/// 否则 0.02 量级的隐藏激活会把 logit 动态范围压死）。
-fn quant(v: f32) -> f32 {
-    v.round().clamp(-1.0, 1.0)
-}
-
-impl Mlp {
-    pub fn new(nin: usize, nhid: usize, seed: u64) -> Self {
-        // xorshift 状态不能为零。旧写法 `seed | 1` 会让**偶数种子与下一个奇数种子撞成同一初始化**
-        // （实测 seed 2 与 3 训出的模型逐字节相同）；奇数种子保持原值，偶数种子先混合一次。
-        let mut r = if seed.is_multiple_of(2) {
-            seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1
-        } else {
-            seed
-        };
-        let mut next = || {
-            r ^= r << 13;
-            r ^= r >> 7;
-            r ^= r << 17;
-            ((r % 2001) as f32 - 1000.0) / 2500.0
-        };
-        let n1 = nin * nhid;
-        let n2 = nhid;
-        Mlp {
-            nin,
-            nhid,
-            w1: (0..n1).map(|_| next() * 5.0).collect(),
-            b1: vec![0.0; nhid],
-            w2: (0..n2).map(|_| next()).collect(),
-            b2: 0.0,
-        }
-    }
-
-    /// 前向：返回 (logit, 隐藏层)。
-    pub fn forward(&self, x: &[f32]) -> (f32, Vec<f32>) {
-        let mut h = vec![0.0f32; self.nhid];
-        for (j, hj) in h.iter_mut().enumerate() {
-            let mut s = self.b1[j];
-            for (i, xi) in x.iter().enumerate().take(self.nin) {
-                s += quant(self.w1[i * self.nhid + j]) * xi;
-            }
-            *hj = s.max(0.0);
-        }
-        let mut z = self.b2;
-        // 输出层保持 f32（低比特网络的通行做法：首/末层不全三值，否则 logit 动态范围被压死）
-        for (j, hj) in h.iter().enumerate() {
-            z += self.w2[j] * hj;
-        }
-        (z, h)
-    }
-
-    /// 单样本 BCE + STE 梯度更新（SGD）。
-    pub fn train_step(&mut self, x: &[f32], y: f32, lr: f32) -> f32 {
-        let (z, h) = self.forward(x);
-        let p = 1.0 / (1.0 + (-z).exp());
-        let eps = 1e-7;
-        let loss = -(y * (p + eps).ln() + (1.0 - y) * (1.0 - p + eps).ln());
-        let dz = p - y;
-        // 输出层
-        for (w, hj) in self.w2.iter_mut().zip(h.iter()) {
-            *w -= lr * dz * *hj;
-        }
-        self.b2 -= lr * dz;
-        // 隐藏层（STE：梯度穿过量化）
-        for (j, hj) in h.iter().enumerate() {
-            if *hj <= 0.0 {
-                continue;
-            }
-            let dh = dz * self.w2[j];
-            for (i, xi) in x.iter().enumerate().take(self.nin) {
-                self.w1[i * self.nhid + j] -= lr * dh * xi;
-            }
-            self.b1[j] -= lr * dh;
-        }
-        loss
-    }
-
-    /// 存盘（文本：首行 dims，随后 w1/b1/w2/b2）。
-    pub fn save(&self, path: &std::path::Path) -> Result<(), String> {
-        let mut out = format!("OCC1 {} {}\n", self.nin, self.nhid);
-        let push = |out: &mut String, v: &[f32]| {
-            for x in v {
-                out.push_str(&format!("{x} "));
-            }
-            out.push('\n');
-        };
-        push(&mut out, &self.w1);
-        push(&mut out, &self.b1);
-        push(&mut out, &self.w2);
-        out.push_str(&format!("{}\n", self.b2));
-        std::fs::write(path, out).map_err(|e| format!("{}: {e}", path.display()))
-    }
-
-    pub fn load(path: &std::path::Path) -> Result<Self, String> {
-        let text = std::fs::read_to_string(path).map_err(|e| format!("{}: {e}", path.display()))?;
-        let mut lines = text.lines();
-        let head = lines.next().ok_or("模型文件为空")?;
-        let mut it = head.split_whitespace();
-        if it.next() != Some("OCC1") {
-            return Err("不是 OCC1 模型".into());
-        }
-        let nin: usize = it
-            .next()
-            .ok_or("缺 nin")?
-            .parse()
-            .map_err(|_| "nin 解析失败")?;
-        let nhid: usize = it
-            .next()
-            .ok_or("缺 nhid")?
-            .parse()
-            .map_err(|_| "nhid 解析失败")?;
-        let mut take = |n: usize, what: &str| -> Result<Vec<f32>, String> {
-            let line = lines.next().ok_or(format!("缺 {what}"))?;
-            let v: Vec<f32> = line
-                .split_whitespace()
-                .filter_map(|x| x.parse().ok())
-                .collect();
-            if v.len() != n {
-                return Err(format!("{what} 长度 {} != {n}", v.len()));
-            }
-            Ok(v)
-        };
-        let w1 = take(nin * nhid, "w1")?;
-        let b1 = take(nhid, "b1")?;
-        let w2 = take(nhid, "w2")?;
-        let b2: f32 = lines
-            .next()
-            .ok_or("缺 b2")?
-            .trim()
-            .parse()
-            .map_err(|_| "b2 解析失败")?;
-        Ok(Mlp {
-            nin,
-            nhid,
-            w1,
-            b1,
-            w2,
-            b2,
-        })
-    }
-
-    /// 权重三值化后的稀疏度（0 的占比），用于报告。
-    pub fn sparsity(&self) -> f32 {
-        let z = self.w1.iter().filter(|v| quant(**v) == 0.0).count();
-        z as f32 / self.w1.len().max(1) as f32
     }
 }
 
@@ -534,5 +395,23 @@ mod tests {
         assert!((inside[0] - 1.0).abs() < 1e-6, "应落在剪影内");
         let outside = features(std::slice::from_ref(&view), [10.0, 0.0, -2.0]);
         assert!((outside[0]).abs() < 1e-6, "画面外应为 0");
+    }
+
+    /// `depth` 与 `seg` 尺寸不一致时必须在索引前拒绝 —— 构造点丢掉了 depth 的 shape。
+    #[test]
+    #[should_panic(expected = "长度必须等于 w×h")]
+    fn view_with_short_depth_is_rejected() {
+        let cam = crate::geo::Camera {
+            k: [[0.0; 3]; 3],
+            t_cw: [[0.0; 4]; 4],
+        };
+        let view = View {
+            ids: vec![1; 4],
+            depth: vec![0.0; 3],
+            w: 2,
+            h: 2,
+            cam,
+        };
+        features(std::slice::from_ref(&view), [0.0; 3]);
     }
 }

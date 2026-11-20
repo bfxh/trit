@@ -267,6 +267,13 @@ jobs:
         if: steps.scope.outputs.only_docs != 'true' && steps.crates.outputs.needs_gpu == 'true'
         run: cargo clippy -p trit-gpu --features gpu --all-targets --locked -- -D warnings
 
+      # parts-3d 是 required-features = ["gpu"]：--workspace --all-targets 会整块跳过它，
+      # meshtex 里 light::… 这类只在 gpu 下编的路径从来没有进过 CI。单独 check 一遍。
+      # gpu 的 dep 是 wgpu/pollster/bytemuck，不在 trit-gpu 闭包里，needs_gpu 抓不到，这里不走门控。
+      - name: Check (trit-parts gpu feature, parts-3d bin)
+        if: steps.scope.outputs.only_docs != 'true'
+        run: cargo check -p trit-parts --bin parts-3d --features gpu --locked
+
       # trit-build 的 gpu feature 同样默认关：至少让 WGSL 过 naga 解析/校验；
       # 有 adapter 时 gpu::tests 会再跑真机对拍，没有就跳过（naga 那条仍必跑）。
       - name: Test (trit-build gpu feature, naga shader smoke)

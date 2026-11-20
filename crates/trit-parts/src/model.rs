@@ -104,6 +104,16 @@ pub trait Backend {
     fn forward(&mut self, x: &[f32], res: u32) -> Result<Vec<f32>, String>;
 }
 
+/// 后端前向对 `res` 的要求。
+///
+/// 网络是 U 形三层：`h2 = res / 2`、`h4 = res / 4` 都是**整数除法**，回溯时 `convt` 上采样
+/// `×2` 两次才回到 `res`。所以 `res` 必须是 4 的整数倍；`res < 4` 时 `h4` 直接是 0，
+/// `pool` / `convt` / `cat` 会拿到 0 尺寸，卷积在空图上跑完再拿 `res²` 去索引 —— 崩在几百层
+/// 之后，报的错与「分辨率传错」毫无关系。
+pub fn res_is_backend_usable(res: u32) -> bool {
+    res >= 4 && res.is_multiple_of(4)
+}
+
 // ---------------------------------------------------------------- CPU 参考后端（f32）
 
 /// 纯标量 f32 参考实现：**没有 GPU 也必须能跑**，是所有其它后端的对拍基准。
@@ -234,6 +244,11 @@ impl Backend for RefCpu {
     }
 
     fn forward(&mut self, x: &[f32], res: u32) -> Result<Vec<f32>, String> {
+        if !res_is_backend_usable(res) {
+            return Err(format!(
+                "分辨率必须是 4 的正整数倍（收到 {res}）：h2/h4 是整数除法，convt 上采样 ×2 两次"
+            ));
+        }
         let h2 = res / 2;
         let h4 = res / 4;
         let a = self.block(x, res, res, E1A);
@@ -261,7 +276,8 @@ impl Backend for RefCpu {
 /// 注意：`compare` 的 `want` 是 Python 的 CHW 布局；两个 Rust 后端之间必须用这个函数，
 /// 否则会拿 NHWC 当 CHW 比（实测会把一致率误判成 0.34）。
 pub fn compare_nhwc(a: &[f32], b: &[f32], res: u32) -> (f64, f32) {
-    let n = (res * res) as usize;
+    assert!(res > 0, "分辨率不能为 0（一致率要除以 5·res²）");
+    let n = res as usize * res as usize;
     assert_eq!(a.len(), n * 16);
     assert_eq!(b.len(), n * 16);
     let (mut agree, mut maxd) = (0usize, 0f32);
@@ -290,7 +306,8 @@ pub fn compare_nhwc(a: &[f32], b: &[f32], res: u32) -> (f64, f32) {
 
 /// 平面 argmax 一致率（与 `parts-parity` 同口径）与最大逐元素差。
 pub fn compare(out: &[f32], want: &[f32], res: u32) -> (f64, f32) {
-    let n = (res * res) as usize;
+    assert!(res > 0, "分辨率不能为 0（一致率要除以 5·res²）");
+    let n = res as usize * res as usize;
     assert_eq!(out.len(), n * 16);
     assert_eq!(want.len(), n * 16);
     let mut agree = 0usize;
@@ -319,30 +336,4 @@ pub fn compare(out: &[f32], want: &[f32], res: u32) -> (f64, f32) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn refcpu_is_deterministic_and_shaped() {
-        // 用随机小模型验证形状与确定性（不依赖权重文件）
-        let layers = vec![LayerW {
-            e: vec![0.5; 3 * 3 * 3 * 4],
-            bias: vec![0.0; 4],
-            gamma: vec![1.0; 4],
-            beta: vec![0.0; 4],
-            cin: 3,
-            cout: 4,
-            kk: 3,
-            relu: true,
-            convt: false,
-        }];
-        let cpu = RefCpu {
-            model: TriModel { layers },
-        };
-        let x = vec![0.1f32; 8 * 8 * 3];
-        let y1 = cpu.conv(&x, 8, 8, &cpu.model.layers[0]);
-        let y2 = cpu.conv(&x, 8, 8, &cpu.model.layers[0]);
-        assert_eq!(y1, y2);
-        assert_eq!(y1.len(), 8 * 8 * 4);
-    }
-}
+mod tests;

@@ -1,4 +1,4 @@
-use super::quilt::{luma_of, sm64};
+use super::util::{luma_of, sm64};
 use super::*;
 #[test]
 fn tiles_are_seamless_and_distinct() {

@@ -3,6 +3,9 @@
 //! 独立成模块是为了守住「单文件 ≤800 行」的门。格式：
 //! `magic(8) | 层数(u32) | step(u64) | rng(u64) | 每层参数…`，**原子写**（先 `.tmp` 再 rename）。
 
+mod tpn;
+use tpn::{need, take_f, take_u32, take_u64};
+
 use std::path::Path;
 
 use crate::net::{Layer, Net};
@@ -67,7 +70,7 @@ pub fn load(path: &Path) -> Result<(Net, u64, Option<u64>), String> {
     } else {
         None
     };
-    let mut layers = Vec::with_capacity(n_layers);
+    let mut layers = Vec::with_capacity(n_layers.min(64));
     for _ in 0..n_layers {
         let cin = take_u32(&b, &mut at)?;
         let cout = take_u32(&b, &mut at)?;
@@ -75,46 +78,30 @@ pub fn load(path: &Path) -> Result<(Net, u64, Option<u64>), String> {
         let relu = take_u32(&b, &mut at)? != 0;
         let n = take_u32(&b, &mut at)? as usize;
         let slots = take_u32(&b, &mut at)? as usize;
-        let mut latent = vec![0.0f32; n];
-        for v in &mut latent {
-            *v = f32::from_bits(take_u32(&b, &mut at)?);
-        }
-        let mut scale = vec![0.0f32; slots];
-        for v in &mut scale {
-            *v = f32::from_bits(take_u32(&b, &mut at)?);
-        }
+        let latent = take_f(&b, &mut at, n)?;
+        let scale = take_f(&b, &mut at, slots)?;
+        need(&b, at, n)?;
         let mut q = vec![0i32; n];
         for v in &mut q {
             *v = take_u32(&b, &mut at)? as i32;
         }
-        let mut bias = vec![0.0f32; slots];
-        for v in &mut bias {
-            *v = f32::from_bits(take_u32(&b, &mut at)?);
-        }
-        let take_f = |count: usize, b: &[u8], at: &mut usize| -> Result<Vec<f32>, String> {
-            let mut v = vec![0.0f32; count];
-            for x in &mut v {
-                *x = f32::from_bits(take_u32(b, at)?);
-            }
-            Ok(v)
-        };
-        let m_w = take_f(n, &b, &mut at)?;
-        let v_w = take_f(n, &b, &mut at)?;
-        let m_s = take_f(slots, &b, &mut at)?;
-        let v_s = take_f(slots, &b, &mut at)?;
-        let m_b = take_f(slots, &b, &mut at)?;
-        let v_b = take_f(slots, &b, &mut at)?;
+        let bias = take_f(&b, &mut at, slots)?;
+        let m_w = take_f(&b, &mut at, n)?;
+        let v_w = take_f(&b, &mut at, n)?;
+        let m_s = take_f(&b, &mut at, slots)?;
+        let v_s = take_f(&b, &mut at, slots)?;
+        let m_b = take_f(&b, &mut at, slots)?;
+        let v_b = take_f(&b, &mut at, slots)?;
         let (mut gamma, mut beta) = (vec![1.0f32; slots], vec![0.0f32; slots]);
         let (mut m_g, mut v_g) = (vec![0.0f32; slots], vec![0.0f32; slots]);
         let (mut m_be, mut v_be) = (vec![0.0f32; slots], vec![0.0f32; slots]);
         if v2 {
-            for arr in [
-                &mut gamma, &mut beta, &mut m_g, &mut v_g, &mut m_be, &mut v_be,
-            ] {
-                for v in arr.iter_mut() {
-                    *v = f32::from_bits(take_u32(&b, &mut at)?);
-                }
-            }
+            gamma = take_f(&b, &mut at, slots)?;
+            beta = take_f(&b, &mut at, slots)?;
+            m_g = take_f(&b, &mut at, slots)?;
+            v_g = take_f(&b, &mut at, slots)?;
+            m_be = take_f(&b, &mut at, slots)?;
+            v_be = take_f(&b, &mut at, slots)?;
         }
         let t = take_u32(&b, &mut at)?;
         layers.push(Layer {
@@ -163,16 +150,28 @@ pub fn load(path: &Path) -> Result<(Net, u64, Option<u64>), String> {
     Ok((net, step, rng))
 }
 
-fn take_u32(b: &[u8], at: &mut usize) -> Result<u32, String> {
-    let s = b.get(*at..*at + 4).ok_or("断点文件截断")?;
-    *at += 4;
-    Ok(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn take_u64(b: &[u8], at: &mut usize) -> Result<u64, String> {
-    let s = b.get(*at..*at + 8).ok_or("断点文件截断")?;
-    *at += 8;
-    let mut a = [0u8; 8];
-    a.copy_from_slice(s);
-    Ok(u64::from_le_bytes(a))
+    /// `n` / `slots` 来自文件，分配前必须能判出剩余字节不够。
+    /// 修复前这里会按 u32::MAX 先分配 16GB 再读第一项 —— 进程直接 abort。
+    #[test]
+    fn checkpoint_counts_are_rejected_before_allocating() {
+        let mut v = b"TPNT1\0\0\0".to_vec();
+        v.extend(1u32.to_le_bytes());
+        v.extend(0u64.to_le_bytes());
+        for _ in 0..4 {
+            v.extend(1u32.to_le_bytes());
+        }
+        v.extend(u32::MAX.to_le_bytes());
+        v.extend(1u32.to_le_bytes());
+        let p = std::env::temp_dir().join("trit-state-count-bound.tpn");
+        std::fs::write(&p, &v).unwrap();
+        match load(&p) {
+            Err(e) => assert!(e.contains("截断"), "{e}"),
+            Ok(_) => panic!("u32::MAX 的 n 应被拒绝"),
+        }
+        let _ = std::fs::remove_file(&p);
+    }
 }
