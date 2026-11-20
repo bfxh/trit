@@ -967,8 +967,12 @@
       "lines": 39
     },
     {
+      "file": "crates/trit-export/src/gguf_codec.rs",
+      "lines": 323
+    },
+    {
       "file": "crates/trit-export/src/lib.rs",
-      "lines": 318
+      "lines": 60
     },
     {
       "file": "crates/trit-export/tests/count_bounds.rs",
@@ -977,6 +981,10 @@
     {
       "file": "crates/trit-export/tests/gguf.rs",
       "lines": 140
+    },
+    {
+      "file": "crates/trit-export/tests/gguf_i2s.rs",
+      "lines": 117
     },
     {
       "file": "crates/trit-export/tests/i2s_contract.rs",

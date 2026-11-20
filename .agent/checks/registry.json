@@ -1265,6 +1265,23 @@
       "run": "cargo test -p trit-export --test i2s_real_weights --test volume_account",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C074",
+      "title": "GGUF 读写认上游 I2_S 类型且 per-tensor 用 scales 长度表达",
+      "kind": "cmd",
+      "covers": [
+        "L122"
+      ],
+      "scope": [
+        "crates/trit-export/src/gguf_codec.rs"
+      ],
+      "since": "L122",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-export --test gguf_i2s",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

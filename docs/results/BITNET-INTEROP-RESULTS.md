@@ -53,3 +53,14 @@
   safetensors `[160, 2560]` 与 GGUF `[2560, 640]` 首个 128 值块一致、其后不一致，
   与「注意力权重按头重排」相符，未做专门验证。
 - TL2 的 two 段尾（`k % bk != 0`）与真实模型的 `kernel_config.ini` 尚未对齐。
+
+## M4：GGUF 的 I2_S 读写分支
+
+| 项 | 内容 |
+|---|---|
+| 类型码 | 本仓 `TYPE_TRIT = 100`；上游 `TYPE_I2_S = 36`（实测 `bitnet-b1.58-2B-4T-gguf`） |
+| per-tensor 语义 | `scales.len() == 1 && rows > 1` → 写 kind 36、体 = `n/4 + 32`；否则 per-row（kind 100） |
+| 读 I2_S | 2-bit → trits；`scales = [尾部 f32]`；`bias` 全 `Unknown` |
+| 负例 | 元素数不是 128 的倍数 → `Error::Tensor`；多行张量的 scale 既非 1 也非 `rows` → `Error::Field` |
+| 测试 | `tests/gguf_i2s.rs` 4 条（往返、混合类型、体积差 32、负例） |
+| 未做 | 真实 GGUF 还有 f32（norm）与 f16（embedding）张量，`read` 仍以 `TensorType` 拒绝整份文件；只支持 2D |

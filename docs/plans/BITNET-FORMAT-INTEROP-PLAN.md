@@ -123,7 +123,9 @@ Ternary 张量 ──TL encode───▶ 1/2-bit 索引 ──GGUF──▶ �
 
 - **不改** `trit-codec` 的主线格式（5 trits/byte 仍是仓库自用格式）。
 - `trit-export` 新增 I2_S / TL1 / TL2 的读写分支；`TYPE_TRIT = 100` 不动。
-- 新增的 GGUF type id 需要先查上游 enum，避免与 `100` 冲突（M2 时定）。
+- GGUF type id 已定：`TYPE_TRIT = 100` 不动；上游 `TYPE_I2_S = 36`（实测
+  `bitnet-b1.58-2B-4T-gguf`）。`read` / `write` 两者都认，per-tensor 语义用
+  `scales.len() == 1` 表达（`rows` 个 = per-row）。
 
 ## 4. 判据（可复算）
 
@@ -153,6 +155,8 @@ J1–J6、J8–J9 全部只依赖本仓代码，不需要外部运行时。J7 �
   与特定 `(M,K)` 的 padding 未做。
 - **M3（本轮）**：J6–J7；读数见 `docs/results/BITNET-INTEROP-RESULTS.md`。负结果一并记录：
   I2_S 尾部 28 字节在真实 GGUF 里非零、`attn_k` 的头重排未验证、TL2 two 段尾未做。
+- **M4（本轮）**：GGUF 的 I2_S 读写分支（`TYPE_I2_S = 36`）；`read` / `write` 从 `lib.rs`
+  拆到 `gguf_codec.rs`，per-tensor 用 `scales.len() == 1` 表达。
 
 ## 6. 风险与未决问题
 

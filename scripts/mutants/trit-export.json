@@ -70,5 +70,13 @@
     "new": "(base + usize::from(b < 8), b % 8)",
     "pkg": "trit-export",
     "filter": "tl2_matches_python_reference_byte_for_byte"
+  },
+  {
+    "name": "i2s: 尾部多写 4 字节",
+    "file": "crates/trit-export/src/gguf_codec.rs",
+    "old": "out.resize(payload + I2S_TAIL, 0);",
+    "new": "out.resize(payload + I2S_TAIL + 4, 0);",
+    "pkg": "trit-export",
+    "filter": "i2s_body_is_quarter_size_plus_tail"
   }
 ]
