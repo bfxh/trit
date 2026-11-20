@@ -1616,6 +1616,26 @@
       "run": "python scripts/branch-hygiene.py --json > /dev/null && grep -q '命名（强制）' docs/BRANCHING.md",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C094",
+      "title": "入库准入可执行：闸门自测通过、pre-commit 已接入、策略表在文档里",
+      "kind": "cmd",
+      "covers": [
+        "L144"
+      ],
+      "scope": [
+        "scripts/repo_admission.py",
+        "scripts/hooks/pre-commit",
+        "docs/ADMISSION.md",
+        ".agent/admission.json"
+      ],
+      "since": "L144",
+      "tier": "fast",
+      "added": "2026-11-21",
+      "run": "python scripts/repo_admission.py --self-test && grep -q repo_admission scripts/hooks/pre-commit && grep -q '入库准入' docs/ADMISSION.md && python scripts/repo_admission.py --all > /dev/null",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

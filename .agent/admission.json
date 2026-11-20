@@ -1,0 +1,17 @@
+{
+  "_note": "入库准入闸门配置（scripts/repo_admission.py）。enabled=false 时不拦，但仍会检查并打印风险与后果；开关只该临时用，长期关闭等于没有门。",
+  "enabled": true,
+  "max_mb": 2.0,
+  "reason_mb": 0.5,
+  "bulk_files": 20,
+  "allow": [
+    {
+      "path": "crates/trit-immune/upstream/patches/*.patch",
+      "reason": "上游 crate 的适配补丁：下游复现与审计需要原文，体积 0-2 KiB"
+    },
+    {
+      "path": "crates/trit-parts/models/*.tpm",
+      "reason": "内置最小模型夹具（467 KiB）：基准测试的固定输入，无法由源码生成"
+    }
+  ]
+}

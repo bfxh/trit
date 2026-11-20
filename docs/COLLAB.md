@@ -51,6 +51,8 @@ python scripts/agent_claims.py release --who <宿主:会话>
 6. **新增 `unsafe` 必须同时写 `// SAFETY:`**（`constraints.json` 的 `unsafe-needs-safety-note` 会拦）
 7. **不要直接改主工作树给别人准备的分支** —— 先 `agent_claims.py check`
 8. **不要把 `.cargo/config.toml` 提交** —— 那是本机落盘策略（`.gitignore` 已覆盖）
+9. **不要把"不知道是什么"的东西放进仓库** —— 提交前必须能回答"这是什么、凭什么入库"；
+   编译产物/权重/归档/日志/密钥是硬拦，二进制与大文件必须写 `入库理由:`（`docs/ADMISSION.md`）
 
 ## 5. 兼容性：一次说清，避免"能跑就行"
 
@@ -69,6 +71,7 @@ python scripts/agent_claims.py release --who <宿主:会话>
 
 | 本地（pre-commit / 手动） | CI |
 |---|---|
+| `python scripts/repo_admission.py`（入库准入，第 0 步） | `secret_scan.py` / `ai_vendor_scan.py` / registry 的 `C094` |
 | `cargo fmt --all -- --check` | `ci.yml` 的 fmt |
 | `python scripts/module_budget.py` | `ci.yml` 的 budget 步 |
 | 相关 crate `cargo test` | `ci.yml` 三 OS 的全量测试 |
@@ -99,11 +102,11 @@ python scripts/agent_claims.py list          # 6. 认领表（空 = 没人占）
 
 ## 9. 本机真实布局与 worktree 生命周期（2026-11-21 实测）
 
-`git worktree list` 的真相：**24 个 worktree，跨 C:/D:/E: 三个盘**。
+`git worktree list` 的真相：**24 个 worktree，跨三个盘**。
 
-- 主仓库：`D:/KF/trit`（detached HEAD）
-- 当前工作树：`wt/tconv-cap`（`.git` 是文件，gitdir 指向 `D:/KF/trit/.git/worktrees/tconv-cap`）
-- D:/KF 下 13 个、E:/KF 下 4 个、C:/Users/lbx13 下 6 个（已删目录的 5 个 + 当前）
+- 主仓库：`<主仓库根>`（detached HEAD）
+- 当前工作树：`wt/tconv-cap`（`.git` 是文件，gitdir 指向 `<主仓库根>/.git/worktrees/tconv-cap`）
+- <主仓库盘> 下 13 个、<编译盘> 下 4 个、<用户目录> 下 6 个（已删目录的 5 个 + 当前）
 - 清理失效条目后：`git worktree prune` 删掉 5 条「目录已删、记录还在」的，剩 19 条
 
 worktree 是并行开发的**推荐做法**，但必须管生命周期：
@@ -114,7 +117,7 @@ git worktree remove <path>        # 任务完成就删（不删就会累积到 2
 git worktree prune                # 目录已删但记录残留时清掉
 ```
 
-**每个 worktree 会在 `CARGO_TARGET_DIR` 下按名字各占一份 `target`** —— 本机的 `D:/cargo-target`、`E:/cargo-target` 就是按 `trit-*` 名字分的。想让 18 个 worktree 只占一份 target，就把它们的 `CARGO_TARGET_DIR` 指向同一个目录（代价：切 worktree 会重编）。**默认策略：按 worktree 分开，任务结束就 `worktree remove` + 清它那份 target**。
+**每个 worktree 会在 `CARGO_TARGET_DIR` 下按名字各占一份 `target`** —— 本机的 `<编译盘>/cargo-target`、`<编译盘 B>/cargo-target` 就是按 `trit-*` 名字分的。想让 18 个 worktree 只占一份 target，就把它们的 `CARGO_TARGET_DIR` 指向同一个目录（代价：切 worktree 会重编）。**默认策略：按 worktree 分开，任务结束就 `worktree remove` + 清它那份 target**。
 
 巡检一眼看占用：
 
@@ -144,7 +147,7 @@ git worktree list && du -sh <target 根>/*/ | sort -rh
 2. **不要长期留 `stash`**：`git stash pop`，或者立刻 `git stash show -p > 文件.patch`。stash 是仓库里最脆弱的东西。
 3. **删 worktree / 清理目录之前，必须先归档**：
    ```bash
-   bash scripts/archive-worktrees.sh          # bundle + 全部 stash + dirty + 未跟踪 → D:/trit-archive/<日期>/full/
+   bash scripts/archive-worktrees.sh          # bundle + 全部 stash + dirty + 未跟踪 → <归档根>/<日期>/full/
    bash scripts/rescue-dangling.sh            # 把 fsck 的悬空提交引用化并打包
    ```
 
@@ -152,12 +155,12 @@ git worktree list && du -sh <target 根>/*/ | sort -rh
 
 - 19 个工作树全量归档（185 MB）：每份 `bundle --all` + 每个 stash 的 patch + dirty patch + 未跟踪文件
 - 547 个悬空提交引用化为 `refs/rescue/<hash>` 并打包（10.9 MB）
-- 全部在 `D:/trit-archive/2026-11-21/`；bundle 只含分支与标签，**stash 必须用同目录的 `*-stash<N>.patch` 恢复**
+- 全部在 `<归档根>/2026-11-21/`；bundle 只含分支与标签，**stash 必须用同目录的 `*-stash<N>.patch` 恢复**
 
 恢复一份：
 
 ```bash
-git clone D:/trit-archive/2026-11-21/full/<name>.bundle <dir>
-git -C <dir> apply D:/trit-archive/2026-11-21/full/<name>-dirty.patch     # 未提交改动
-git -C <dir> apply D:/trit-archive/2026-11-21/full/<name>-stash0.patch    # 第 1 个 stash
+git clone <归档根>/2026-11-21/full/<name>.bundle <dir>
+git -C <dir> apply <归档根>/2026-11-21/full/<name>-dirty.patch     # 未提交改动
+git -C <dir> apply <归档根>/2026-11-21/full/<name>-stash0.patch    # 第 1 个 stash
 ```

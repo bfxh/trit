@@ -29,7 +29,7 @@ git config user.email "你的邮箱"   # 不要用任何 AI 厂商账号，见 A
 ```toml
 # .cargo/config.toml
 [build]
-target-dir = "D:/cargo-target/trit"
+target-dir = "<编译盘>/cargo-target/trit"
 ```
 
 ## 3. 克隆与目录规范（最重要的一条）
@@ -74,7 +74,7 @@ python scripts/mutation_check.py                 # 3. 变异检查（可选，�
 
 - 单份 `target`（debug+release+测试）约 **10–20 GB**；共享 `CARGO_TARGET_DIR` 时所有分支共用同一份（省盘，但切分支会触发重编）。
 - 清理：`cargo clean`（全清）、`cargo sweep -s`（按时间清旧产物）。
-- 本机现状：`D:/cargo-target` 12 GB、`D:/cargo-target-chunk` 1.4 GB，C 盘与 E 盘都已接近满——**新克隆前先看盘**。
+- 本机现状：`<编译盘>/cargo-target` 12 GB、`<编译盘>/cargo-target-chunk` 1.4 GB，C 盘与 E 盘都已接近满——**新克隆前先看盘**。
 
 ## 6. 模块行数台账（`module_budget`）
 
@@ -118,10 +118,10 @@ A: 该文件是本机策略，删掉或改成自己的盘符，不影响仓库�
 一次全盘整理，**只动了本机目录，仓库内容不受影响**：
 
 - 删除 6 份同一仓库的 clone（`trit-cram-work`、`trit-e3-doc`、`trit-e3-doc-docs-eval-baselines`、`trit-e3-doc-docs-hw-energy-paper`、`trit-wt-pr486`、`.cache/trit-pr373`）与 2 个无 git 的导出目录（`driftnet-e3` 2.1 G 纯 target、`.cache/trdiff`），共释放 **3.35 GB**
-- **删除前逐份打包**：`git bundle create --all`（含全部本地分支、2 个 stash）+ `*-dirty.patch` + `*-status.txt`，归档在 `D:/trit-archive/2026-11-21/`（约 50 MB）
-- 恢复某份：`git clone D:/trit-archive/2026-11-21/<name>.bundle <dir>`；未提交改动用同目录 `*-dirty.patch` 打回
-- `D:/cargo-target` 删掉 `dn/`（对应已删的 `driftnet-e3`，1.5 GB）；`tconv-cap/` 的 11.85 GB **全部是 3 天内的活跃产物**，没有冷文件可扫，`cargo-sweep` 按时间清在此无事可做
-- **`E:/cargo-target` 的 38.5 GB 全是死缓存**：7 个子目录（`trit` 18.2 G、`trit-wt-dimsweep-ci` 11.2 G、`driftnet` 6.5 G 等）对应的源码/worktree 都已不存在，整目录清空
+- **删除前逐份打包**：`git bundle create --all`（含全部本地分支、2 个 stash）+ `*-dirty.patch` + `*-status.txt`，归档在 `<归档根>/2026-11-21/`（约 50 MB）
+- 恢复某份：`git clone <归档根>/2026-11-21/<name>.bundle <dir>`；未提交改动用同目录 `*-dirty.patch` 打回
+- `<编译盘>/cargo-target` 删掉 `dn/`（对应已删的 `driftnet-e3`，1.5 GB）；`tconv-cap/` 的 11.85 GB **全部是 3 天内的活跃产物**，没有冷文件可扫，`cargo-sweep` 按时间清在此无事可做
+- **`<编译盘 B>/cargo-target` 的 38.5 GB 全是死缓存**：7 个子目录（`trit` 18.2 G、`trit-wt-dimsweep-ci` 11.2 G、`driftnet` 6.5 G 等）对应的源码/worktree 都已不存在，整目录清空
 - 现在只剩一个主工作树 `wt/tconv-cap`；`trit-agent`、`Projects/trit-tml`、`trit-fabric`、`trit-mc`、`wt/qingjian` 是**独立仓库**，`trit-equiv-work`（1 MB，无 git）保留
 - **本次合计释放约 43.4 GB**（C 盘 3.35 G + D 盘 1.5 G + E 盘 38.5 G），E 盘可用从 4.7 G 回到 36 G
-- 结论：这台机器上"每个项目十几 G"的真相是 **`target` 编译产物**，不是源码（每份 clone 只有 17–18 MB）；**重复 clone × 各自的 target × 每个 worktree 一个 target 子目录**才是放大器。`E:/sccache`（9.2 GB）与 `E:/trit-data`（41.7 GB）是编译加速缓存与数据集，未动
+- 结论：这台机器上"每个项目十几 G"的真相是 **`target` 编译产物**，不是源码（每份 clone 只有 17–18 MB）；**重复 clone × 各自的 target × 每个 worktree 一个 target 子目录**才是放大器。`<编译盘>/sccache`（9.2 GB）与 `<编译盘>/trit-data`（41.7 GB）是编译加速缓存与数据集，未动

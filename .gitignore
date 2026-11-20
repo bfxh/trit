@@ -15,6 +15,9 @@ __pycache__/
 # 智能体记忆与任务日志：属本机状态，不进公开树（privacy_scan 的 task-doc 同一口径）
 .agent/memory/
 
+# 入库准入闸门被关闭期间的风险日志：本机审计痕迹，不进版本库
+.agent/admission.log
+
 # 快照底座的本地产物（scripts/snapshot.py）：对象库与清单不进版本库
 .trit/
 
