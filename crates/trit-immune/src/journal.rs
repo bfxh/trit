@@ -191,11 +191,11 @@ impl Journal {
         if let Ok(snap_text) = std::fs::read_to_string(snapshot::sidecar_path(path)) {
             if let Ok((snap_dag, meta)) = snapshot::parse(&snap_text) {
                 let plen = meta.prefix_len as usize;
-                if plen <= raw.len() {
+                if plen <= raw.len() && text.is_char_boundary(plen) { // 第 27/28 轮
                     let prefix = &raw[..plen];
                     let newlines = prefix.iter().filter(|&&b| b == b'\n').count();
                     if snapshot::fnv1a_bytes(prefix) == meta.prefix_fnv
-                        && newlines == meta.deltas_covered + 1
+                        && newlines == meta.deltas_covered.saturating_add(1)
                     {
                         dag = snap_dag;
                         applied = meta.deltas_covered;

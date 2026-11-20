@@ -1667,6 +1667,10 @@
       "lines": 294
     },
     {
+      "file": "crates/trit-immune/tests/parse_bounds.rs",
+      "lines": 16
+    },
+    {
       "file": "crates/trit-immune/tests/policy.rs",
       "lines": 108
     },

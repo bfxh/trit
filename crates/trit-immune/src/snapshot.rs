@@ -183,14 +183,14 @@ pub fn parse(text: &str) -> Result<(ImmuneDag, SnapshotMeta), String> {
                 if f.next().is_some() {
                     return Err(bad());
                 }
+                if hist_len > rest.len() { return Err(bad()); } // 比剩余行多必是伪造（第 23 轮）
                 let mut history = Vec::with_capacity(hist_len);
                 for _ in 0..hist_len {
                     let ev_line = rest.get(i).ok_or("NODE 的历史条目不足")?;
                     i += 1;
                     history.push(parse_ev(i + 3, ev_line)?);
                 }
-                nodes.push(Node {
-                    id,
+                nodes.push(Node { id,
                     parent,
                     kind,
                     title,
