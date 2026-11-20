@@ -907,6 +907,10 @@
       "lines": 59
     },
     {
+      "file": "crates/trit-dot/tests/len_bounds.rs",
+      "lines": 19
+    },
+    {
       "file": "crates/trit-dot/tests/stress.rs",
       "lines": 132
     },

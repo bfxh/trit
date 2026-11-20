@@ -985,6 +985,23 @@
       "pattern": "mtrits > MAX_MTRITS \\|\\| rows > MAX_ROWS",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C058",
+      "title": "trit-dot --len 的长度上限",
+      "kind": "require",
+      "covers": [
+        "L106"
+      ],
+      "scope": [
+        "crates/trit-dot/src/main.rs"
+      ],
+      "since": "L106",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "len > MAX_LEN",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
