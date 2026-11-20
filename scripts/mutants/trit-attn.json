@@ -38,5 +38,13 @@
   "new": "                    .checked_sub(delta)",
   "pkg": "trit-attn",
   "filter": "orthogonal_keys_recall_exactly"
+ },
+ {
+  "name": "memory: 维数上限不判",
+  "file": "crates/trit-attn/src/memory.rs",
+  "old": "assert!(dim > 0 && dim <= MAX_DIM, \"维数 {dim} 超过上限 {MAX_DIM}\");",
+  "new": "assert!(dim > 0, \"维数 {dim} 超过上限 {MAX_DIM}\");",
+  "pkg": "trit-attn",
+  "filter": "absurd_dim_panics_before_allocating"
  }
 ]

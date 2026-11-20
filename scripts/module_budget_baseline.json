@@ -144,7 +144,7 @@
     },
     {
       "file": "crates/trit-attn/src/memory.rs",
-      "lines": 314
+      "lines": 311
     },
     {
       "file": "crates/trit-attn/src/scores.rs",
@@ -157,6 +157,10 @@
     {
       "file": "crates/trit-attn/tests/cli.rs",
       "lines": 97
+    },
+    {
+      "file": "crates/trit-attn/tests/memory_bounds.rs",
+      "lines": 23
     },
     {
       "file": "crates/trit-bdd/src/count.rs",

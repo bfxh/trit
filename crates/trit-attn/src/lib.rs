@@ -16,7 +16,7 @@ pub mod scores;
 pub mod train;
 
 pub use block::{AttentionBlock, BlockOptimizers};
-pub use memory::{RecallReport, TernaryMemory, recall_experiment};
+pub use memory::{MAX_DIM, RecallReport, TernaryMemory, recall_experiment};
 pub use scores::{attention, ffn_view, quantize, quantize_matrix};
 pub use train::{
     RecallDataset, RecallSample, RecallTrainOptions, RecallTrainReport, evaluate, recall_dataset,

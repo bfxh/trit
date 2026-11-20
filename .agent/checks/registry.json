@@ -866,6 +866,23 @@
       "pattern": "check_size\\(size\\)\\?;",
       "min": 2,
       "allow_skip": false
+    },
+    {
+      "id": "C051",
+      "title": "三值记忆的维数硬顶",
+      "kind": "require",
+      "covers": [
+        "L99"
+      ],
+      "scope": [
+        "crates/trit-attn/src/memory.rs"
+      ],
+      "since": "L99",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "dim > 0 && dim <= MAX_DIM",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
