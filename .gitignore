@@ -31,3 +31,7 @@ __pycache__/
 # 变异门单实例锁（运行时目录，不入库）
 scripts/.mutation-check.lock/
 *.mutant-tmp
+
+# 快照/回收站底座（tools/journal.py、tools/trash.py 的默认 store）：本机状态，
+# 不进公开树；trash.py 的 put 在站点未被 ignore 时会 fail-closed 拒绝
+.journal/
