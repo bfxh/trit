@@ -31,14 +31,32 @@ import sys
 import time
 from pathlib import Path
 
+# 渲染分辨率上限：depth/normal/seg + Blender 缓冲都按 res² 走。
+MAX_RES = 4096
+
+
+def _early_res_check(argv):
+    """在 import bpy 之前拒绝超限 --res（本机没有 Blender 也能验）。"""
+    if "--res" not in argv:
+        return
+    i = argv.index("--res")
+    if i + 1 >= len(argv):
+        return
+    try:
+        res = int(argv[i + 1])
+    except ValueError:
+        return
+    if not 1 <= res <= MAX_RES:
+        raise SystemExit(f"--res 必须在 1..={MAX_RES}（收到 {res}）")
+
+
+_early_res_check(sys.argv[sys.argv.index("--") + 1 :] if "--" in sys.argv else [])
+
 import bpy
 import numpy as np
 from mathutils import Vector
 
 # ---------------------------------------------------------------- 场景常量
-
-# 渲染分辨率上限：depth/normal/seg + Blender 缓冲都按 res² 走。
-MAX_RES = 4096
 
 # 布局 A/B/C：同一套物体类型，不同摆位、相机半径与仰角。
 # 多场景的目的不是比难度，而是看「0.2 m 体素下界」是否随场景几何漂移。

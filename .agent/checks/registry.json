@@ -1178,6 +1178,24 @@
       "pattern": "validate_dims\\(width, height\\)\\?;",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C069",
+      "title": "两个评估脚本的超限参数在 import 前退出",
+      "kind": "cmd",
+      "covers": [
+        "L117"
+      ],
+      "scope": [
+        "scripts/render_obj.py",
+        "scripts/blender_gt.py"
+      ],
+      "since": "L117",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "python scripts/check_script_guards.py",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

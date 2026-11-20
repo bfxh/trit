@@ -11,11 +11,29 @@ from __future__ import annotations
 import argparse
 import sys
 
-import cv2
-import numpy as np
-
 # 单次渲染的边长上限：img/zbuf/hit 三份按 S² 分配。
 MAX_SIDE = 4096
+
+
+def _early_size_check(argv):
+    """在 import cv2/numpy 之前拒绝超限 --size（本机缺依赖也能验）。"""
+    if "--size" not in argv:
+        return
+    i = argv.index("--size")
+    if i + 1 >= len(argv):
+        return
+    try:
+        size = int(argv[i + 1])
+    except ValueError:
+        return
+    if not 1 <= size <= MAX_SIDE:
+        sys.exit(f"--size 必须在 1..={MAX_SIDE}（收到 {size}）")
+
+
+_early_size_check(sys.argv[1:])
+
+import cv2
+import numpy as np
 
 
 def load_obj(path):
