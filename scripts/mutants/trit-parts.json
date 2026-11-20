@@ -430,5 +430,77 @@
     "new": "    res > 0\n",
     "pkg": "trit-parts",
     "filter": "model::tests::backend_res_must_be_a_positive_multiple_of_four"
+  },
+  {
+    "name": "tpc: cond 不设上限（条件图按它分配）",
+    "file": "crates/trit-parts/src/tconv/io.rs",
+    "old": "        let cond = capped(\n            take(&mut it, path, \"cond\")? as usize,\n            path,\n            \"cond\",\n            MAX_COND,\n        )?;\n",
+    "new": "        let cond = take(&mut it, path, \"cond\")? as usize;\n",
+    "pkg": "trit-parts",
+    "filter": "absurd_cond_is_rejected_before_allocating"
+  },
+  {
+    "name": "tpc: nk 不设上限（Film 的 g/b 按它分配）",
+    "file": "crates/trit-parts/src/tconv/io.rs",
+    "old": "            capped(take(&mut it, path, \"nk\")? as usize, path, \"nk\", MAX_CLASSES)?\n",
+    "new": "            take(&mut it, path, \"nk\")? as usize\n",
+    "pkg": "trit-parts",
+    "filter": "absurd_class_count_is_rejected_before_film_allocates"
+  },
+  {
+    "name": "tpc: dilation 不设上限（Conv 里 as i32）",
+    "file": "crates/trit-parts/src/tconv/io.rs",
+    "old": "            capped(\n                take(&mut it, path, \"dilation\")? as usize,\n                path,\n                \"dilation\",\n                MAX_DIL,\n            )?\n            .max(1)\n",
+    "new": "            (take(&mut it, path, \"dilation\")? as usize).max(1)\n",
+    "pkg": "trit-parts",
+    "filter": "absurd_dilation_is_rejected_before_the_i32_cast"
+  },
+  {
+    "name": "tpc: FILM 声明不与网络比对（读错个数）",
+    "file": "crates/trit-parts/src/tconv/io/sections.rs",
+    "old": "        if k != nk_hdr || c != cout {\n",
+    "new": "        if false {\n",
+    "pkg": "trit-parts",
+    "filter": "film_declaration_must_match_the_network"
+  },
+  {
+    "name": "weights: 偏移不做 checked（绕回后按声明分配）",
+    "file": "crates/trit-parts/src/weights.rs",
+    "old": "            let start = off\n                .checked_mul(4)\n                .ok_or_else(|| format!(\"{name}: off 偏移 {off} 溢出\"))?;\n            let end = off\n                .checked_add(n)\n                .and_then(|s| s.checked_mul(4))\n                .ok_or_else(|| format!(\"{name}: off + n 溢出（off {off}，n {n}）\"))?;\n",
+    "new": "            let start = off * 4;\n            let end = (off + n) * 4;\n",
+    "pkg": "trit-parts",
+    "filter": "absurd_byte_offset_is_rejected_before_capacity"
+  },
+  {
+    "name": "weights: 形状相乘不做 checked（绕成 0）",
+    "file": "crates/trit-parts/src/weights/fold.rs",
+    "old": "    let n = product(wname, &[kk, kk, cin, cout])?;\n",
+    "new": "    let n = kk * kk * cin * cout;\n",
+    "pkg": "trit-parts",
+    "filter": "shape_product_overflow_is_rejected_before_allocating"
+  },
+  {
+    "name": "weights: 形状不与真实长度对账",
+    "file": "crates/trit-parts/src/weights/fold.rs",
+    "old": "    let n = product(wname, &[kk, kk, cin, cout])?;\n    expect_len(wname, w.len(), n)?;\n",
+    "new": "    let n = product(wname, &[kk, kk, cin, cout])?;\n",
+    "pkg": "trit-parts",
+    "filter": "shape_must_match_the_real_tensor_length"
+  },
+  {
+    "name": "weights: BN 四张量不与 cout 对账",
+    "file": "crates/trit-parts/src/weights/fold.rs",
+    "old": "            expect_len(&format!(\"{p}.weight\"), g.len(), cout)?;\n",
+    "new": "",
+    "pkg": "trit-parts",
+    "filter": "bn_tensors_must_match_the_channel_count"
+  },
+  {
+    "name": "weights: 转置卷积 bias 不与 cout 对账",
+    "file": "crates/trit-parts/src/weights/fold.rs",
+    "old": "    let n = product(wname, &[4, cin, cout])?;\n    expect_len(wname, w.len(), n)?;\n    let bias_raw = t.v(&wname.replace(\".weight\", \".bias\"))?;\n    expect_len(&wname.replace(\".weight\", \".bias\"), bias_raw.len(), cout)?;\n",
+    "new": "    let n = product(wname, &[4, cin, cout])?;\n    expect_len(wname, w.len(), n)?;\n    let bias_raw = t.v(&wname.replace(\".weight\", \".bias\"))?;\n",
+    "pkg": "trit-parts",
+    "filter": "convt_bias_must_match_the_channel_count"
   }
 ]

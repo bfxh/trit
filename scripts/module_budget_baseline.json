@@ -2564,11 +2564,15 @@
     },
     {
       "file": "crates/trit-parts/src/tconv/io.rs",
-      "lines": 227
+      "lines": 212
     },
     {
       "file": "crates/trit-parts/src/tconv/io/save.rs",
       "lines": 89
+    },
+    {
+      "file": "crates/trit-parts/src/tconv/io/sections.rs",
+      "lines": 113
     },
     {
       "file": "crates/trit-parts/src/tconv/mod.rs",
@@ -2620,7 +2624,11 @@
     },
     {
       "file": "crates/trit-parts/src/weights.rs",
-      "lines": 257
+      "lines": 113
+    },
+    {
+      "file": "crates/trit-parts/src/weights/fold.rs",
+      "lines": 186
     },
     {
       "file": "crates/trit-parts/tests/depthnet_e2e.rs",
@@ -2651,8 +2659,16 @@
       "lines": 22
     },
     {
+      "file": "crates/trit-parts/tests/tconv_tpc_decl.rs",
+      "lines": 94
+    },
+    {
       "file": "crates/trit-parts/tests/tconv_tpc_limits.rs",
       "lines": 51
+    },
+    {
+      "file": "crates/trit-parts/tests/weights_bounds.rs",
+      "lines": 105
     },
     {
       "file": "crates/trit-policy/src/lib.rs",

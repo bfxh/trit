@@ -507,6 +507,40 @@
       "pattern": "is_multiple_of\\(4\\)",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C030",
+      "title": "tpc 头部字段一律先查上限再用",
+      "kind": "require",
+      "covers": [
+        "L81"
+      ],
+      "scope": [
+        "crates/trit-parts/src/tconv/io.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T09:46:17+08:00",
+      "pattern": "fn capped\\(",
+      "min": 1,
+      "allow_skip": false
+    },
+    {
+      "id": "C031",
+      "title": "权重张量先与真实长度对账再分配",
+      "kind": "require",
+      "covers": [
+        "L82"
+      ],
+      "scope": [
+        "crates/trit-parts/src/weights/fold.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T10:11:04+08:00",
+      "pattern": "fn expect_len\\(",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
