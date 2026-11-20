@@ -337,7 +337,11 @@ pub fn paths_overlap(left: &str, right: &str) -> bool {
 }
 
 fn covers(scope: &str, path: &str) -> bool {
-    scope == path
+    // 尾斜杠是宿主的习惯写法（"这个目录"），不是语义的一部分。不在这里抹平，
+    // `crates/a/` 就锁不住 `crates/a/src/lib.rs` —— 两张互不冲突的锁能同时开出来。
+    let scope = scope.trim_end_matches('/');
+    let path_without_trailing = path.trim_end_matches('/');
+    scope == path_without_trailing
         || (path.len() > scope.len()
             && path.starts_with(scope)
             && path.as_bytes().get(scope.len()) == Some(&b'/'))
