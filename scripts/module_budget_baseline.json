@@ -3799,6 +3799,10 @@
       "lines": 603
     },
     {
+      "file": "crates/trit-wspace/src/audit/seal.rs",
+      "lines": 289
+    },
+    {
       "file": "crates/trit-wspace/src/certify.rs",
       "lines": 471
     },

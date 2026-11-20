@@ -23,6 +23,9 @@ pub const LOG_VERSION: u64 = 1;
 /// 创世链值。
 pub const GENESIS: u64 = 0;
 
+/// 带密钥的链头封印（第七轮 Y1–Y3）：链值仍是 FNV，只检测损坏；真实性靠封印。
+pub mod seal;
+
 /// 单条记录最多存多大的验证集（超过就报错，避免日志爆掉）。
 pub const MAX_LOGGED_ORACLE: usize = 4096;
 
@@ -200,7 +203,7 @@ impl AuditLog {
         Ok(())
     }
 
-    /// 校验序号连续、`prev` 衔接、每条 `chain` 可重算。
+    /// 校验序号/`prev`/`chain` 自洽；无密钥，只检测损坏（真实性用 [`seal::seal_head`]）。
     pub fn verify_chain(&self) -> Result<()> {
         let mut prev = GENESIS;
         for (index, entry) in self.entries.iter().enumerate() {
@@ -228,7 +231,7 @@ impl AuditLog {
         Ok(())
     }
 
-    /// 重算整条链（日志合并/手工修订后使用；不验证已有内容）。
+    /// 重算整条链（不校验内容；调用即放弃防篡改，对外交付请附 [`seal`] 封印）。
     pub fn recompute_chain(&mut self) {
         let mut prev = GENESIS;
         for entry in &mut self.entries {
@@ -535,12 +538,9 @@ pub(crate) fn canonical(entry: &LogEntry, with_chain: bool) -> Value {
 }
 
 pub(crate) fn fnv(bytes: &[u8]) -> u64 {
-    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
-    for &byte in bytes {
-        hash ^= u64::from(byte);
-        hash = hash.wrapping_mul(0x100_0000_01b3);
-    }
-    hash
+    bytes.iter().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100_0000_01b3)
+    })
 }
 
 pub(crate) fn hex(value: u64) -> String {

@@ -2766,5 +2766,13 @@
     "new": ".create(true)",
     "pkg": "trit-wspace",
     "filter": "predictable_placeholder_temp_file_is_left_alone"
+  },
+  {
+    "name": "audit: 封印的链头比对不生效",
+    "file": "crates/trit-wspace/src/audit/seal.rs",
+    "old": "if sealed.count != count || sealed.head != head {",
+    "new": "if false {",
+    "pkg": "trit-wspace",
+    "filter": "tampering_with_recompute_breaks_the_seal"
   }
 ]

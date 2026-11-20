@@ -1319,6 +1319,23 @@
       "run": "cargo test -p trit-wspace --lib cli::tempfile",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C077",
+      "title": "审计链头带密钥封印（HMAC-SHA256），无密钥链只作损坏检测",
+      "kind": "cmd",
+      "covers": [
+        "L126"
+      ],
+      "scope": [
+        "crates/trit-wspace/src/audit/seal.rs"
+      ],
+      "since": "L126",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-wspace --lib seal",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

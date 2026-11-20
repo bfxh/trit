@@ -38,7 +38,7 @@ pub fn to_wsp(net: &Net) -> String {
     format!("{body}checksum {:016x}\n", checksum(net))
 }
 
-/// 规范文本的 64 位 FNV-1a 校验和（不含 checksum 行）。
+/// 规范文本的 64 位 FNV-1a 校验和（仅检测损坏，不是认证：生日界 2^32）。
 #[must_use]
 pub fn checksum(net: &Net) -> u64 {
     let mut hash = 0xcbf2_9ce4_8422_2325_u64;
