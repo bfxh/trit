@@ -2316,7 +2316,11 @@
     },
     {
       "file": "crates/trit-parts/src/depthdata.rs",
-      "lines": 450
+      "lines": 398
+    },
+    {
+      "file": "crates/trit-parts/src/depthdata/tests.rs",
+      "lines": 115
     },
     {
       "file": "crates/trit-parts/src/depthgpu.rs",

@@ -398,5 +398,21 @@
     "new": "        \"part_cube\" => [s[0], s[1], s[2]],",
     "pkg": "trit-parts",
     "filter": "objlabel::tests::gt_diag_is_rotation_invariant"
+  },
+  {
+    "name": "depth: 采样窗口不判越界（size 比图还大）",
+    "file": "crates/trit-parts/src/depthdata.rs",
+    "old": "    size > 0 && size <= w && size <= h\n",
+    "new": "    true\n",
+    "pkg": "trit-parts",
+    "filter": "depthdata::tests::window_must_fit_inside_the_image"
+  },
+  {
+    "name": "depth: 低通因子不判可用（factor 为 0 或超网格）",
+    "file": "crates/trit-parts/src/depthdata.rs",
+    "old": "    if factor == 0 || size < factor {\n",
+    "new": "    if false {\n",
+    "pkg": "trit-parts",
+    "filter": "depthdata::tests::lowpass_with_unusable_factor_is_noop"
   }
 ]
