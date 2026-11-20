@@ -1440,6 +1440,23 @@
       "run": "cargo test -p trit-parts --lib",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C084",
+      "title": "LSP 语义 lint 对半截输入不越界",
+      "kind": "cmd",
+      "covers": [
+        "L133"
+      ],
+      "scope": [
+        "crates/trit-lsp/src/semantics.rs"
+      ],
+      "since": "L133",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-lsp",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
