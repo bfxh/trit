@@ -27,7 +27,7 @@ pub fn decode_ids(logits: &[f32], res: u32, parts: &PartList) -> Result<Vec<u32>
     }
     let hw = res as usize * res as usize;
     let k = parts.k;
-    if logits.len() % hw != 0 {
+    if !logits.len().is_multiple_of(hw) {
         return Err(format!(
             "logits 长度 {} 应为 hw={hw} 的整数倍",
             logits.len()

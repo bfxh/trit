@@ -418,8 +418,8 @@
   {
     "name": "api: 解码不判 res=0（取模除零）",
     "file": "crates/trit-parts/src/api.rs",
-    "old": "    assert!(res > 0, \"分辨率不能为 0（logits 要按 res² 分组）\");\n",
-    "new": "",
+    "old": "    if res == 0 || res > MAX_RES {\n",
+    "new": "    if res > MAX_RES {\n",
     "pkg": "trit-parts",
     "filter": "api::tests::decode_rejects_zero_res"
   },
