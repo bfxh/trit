@@ -54,5 +54,21 @@
     "new": "let byte = (outer * (bmm / 16) + (mb % bmm) / 16) + qqy / 2;",
     "pkg": "trit-export",
     "filter": "tl1_matches_python_reference_byte_for_byte"
+  },
+  {
+    "name": "tl2: 幅度 nibble 高低互换",
+    "file": "crates/trit-export/src/bitnet/tl2.rs",
+    "old": "out[byte] |= if t == 0 { mag << 4 } else { mag };",
+    "new": "out[byte] |= if t == 0 { mag } else { mag << 4 };",
+    "pkg": "trit-export",
+    "filter": "tl2_matches_python_reference_byte_for_byte"
+  },
+  {
+    "name": "tl2: 符号平面字节序反了",
+    "file": "crates/trit-export/src/bitnet/tl2.rs",
+    "old": "(base + usize::from(b >= 8), b % 8)",
+    "new": "(base + usize::from(b < 8), b % 8)",
+    "pkg": "trit-export",
+    "filter": "tl2_matches_python_reference_byte_for_byte"
   }
 ]

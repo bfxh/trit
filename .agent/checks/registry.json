@@ -1230,6 +1230,23 @@
       "run": "cargo test -p trit-export --test tl1_contract",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C072",
+      "title": "TL2 three 段索引与 Python 参考实现逐字节一致",
+      "kind": "cmd",
+      "covers": [
+        "L120"
+      ],
+      "scope": [
+        "crates/trit-export/src/bitnet/tl2.rs"
+      ],
+      "since": "L120",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-export --test tl2_contract",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

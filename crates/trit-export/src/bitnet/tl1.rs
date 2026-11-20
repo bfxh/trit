@@ -66,7 +66,7 @@ impl Tile {
     }
 }
 
-fn digit(t: Ternary) -> usize {
+pub(crate) fn digit(t: Ternary) -> usize {
     match t {
         Ternary::False => 0,
         Ternary::Unknown => 1,
@@ -74,7 +74,7 @@ fn digit(t: Ternary) -> usize {
     }
 }
 
-fn from_digit(d: usize) -> Ternary {
+pub(crate) fn from_digit(d: usize) -> Ternary {
     match d {
         0 => Ternary::False,
         1 => Ternary::Unknown,

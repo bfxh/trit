@@ -959,6 +959,10 @@
       "lines": 138
     },
     {
+      "file": "crates/trit-export/src/bitnet/tl2.rs",
+      "lines": 158
+    },
+    {
       "file": "crates/trit-export/src/error.rs",
       "lines": 39
     },
@@ -981,6 +985,10 @@
     {
       "file": "crates/trit-export/tests/tl1_contract.rs",
       "lines": 111
+    },
+    {
+      "file": "crates/trit-export/tests/tl2_contract.rs",
+      "lines": 121
     },
     {
       "file": "crates/trit-export/tests/tl_contract.rs",

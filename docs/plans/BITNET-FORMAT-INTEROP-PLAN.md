@@ -133,11 +133,12 @@ Ternary 张量 ──TL encode───▶ 1/2-bit 索引 ──GGUF──▶ �
 | J3 | scale 口径 | `quantize_scale(&[0.0, 0.5, -0.25])`；全零；override | 分别 == `0.5`、`1e-5`、override 值 |
 | J4 | TL 三值表 | 穷举 `q0,q1,q2 ∈ {-1,0,1}`（27 组） | 表项 == `b0 q0 + b1 q1 + b2 q2` |
 | J5 | TL 二值表 | 穷举 `q0,q1 ∈ {-1,1}`（4 组） | 表项 == `b0 q0 + b1 q1` |
-| J6 | 体积账 | 1M 三值 | I2_S = 0.25 B/权重；TL2 = 0.25 B/权重 + 表；5 trits/byte = 0.2 B/权重 |
+| J6 | 体积账 | 1M 三值 | I2_S = 0.25 B/权重；TL1 = 0.25 B/权重；TL2 three 段 = 每 3 值 5 bit ≈ 0.208 B/权重；5 trits/byte = 0.2 B/权重 |
 | J7 | 真实 GGUF（可选） | 读 BitNet 2B4T 的 I2_S 张量 | 与 safetensors 同张量逐元素一致 |
 | J8 | TL1 索引布局 | `tl1_encode` 与 Python `preprocess_weights_tl1` 同参数输出比 3 组夹具，再 `tl1_decode` 回三值 | 3 组逐字节全等且往返无损 |
+| J9 | TL2 索引布局 | `tl2_encode` 与 Python `preprocess_three_weights_tl2` 同参数输出比 3 组夹具，再 `tl2_decode` 回三值 | 3 组逐字节全等且往返无损 |
 
-J1–J6、J8 全部只依赖本仓代码，不需要外部运行时；J7 需要下载公开权重（MIT），
+J1–J6、J8–J9 全部只依赖本仓代码，不需要外部运行时；J7 需要下载公开权重（MIT），
 M3 再定是否纳入常规门。
 
 ## 5. 里程碑
@@ -146,7 +147,9 @@ M3 再定是否纳入常规门。
 - **M1**：I2_S 读写 + J1–J3；新增 `tests/i2s_contract.rs`。
 - **M2（本轮）**：TL1 索引读写 + `build_*_table` + J4–J5、J8；新增 `tests/tl_contract.rs`、
   `tests/tl1_contract.rs` 与 `tests/fixtures/tl1_golden.txt`。
-- **M2b**：TL2 索引读写（three/two 双段 + sign 平面 + 特定 `(M,K)` 的 padding）。
+- **M2b（本轮）**：TL2 three 段索引（4-bit 幅度 + 1-bit 符号平面）+ J9；新增
+  `tests/tl2_contract.rs` 与 `tests/fixtures/tl2_golden.txt`。two 段尾（`k % bk != 0`）
+  与特定 `(M,K)` 的 padding 未做。
 - **M3**：J6–J7；读数与负结果写进 `docs/results/` 与 `LESSONS.md`。
 
 ## 6. 风险与未决问题
