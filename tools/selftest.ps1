@@ -1636,6 +1636,285 @@ if (-not $bashExe) {
 }
 
 ""
+"== AC. watch: 事件账本、衰减分析（行为证据推断）、整盘健康、污染面 =="
+# watch 的四个面都在这里：record 自由标签 + 隐私闸；report 分桶失败率与疲劳 WARN
+# （触发与不触发两侧、分母只吃认识的标签）；health 四个报警面各带后果说明；
+# pollution 三种污染模式只列不拦。夹具全部走临时目录，git 夹具就地 init。
+$acTotal = 44
+if (-not $bashExe) {
+    "  SKIP  AC0 没有 bash，跳过 watch 检查"
+    $skipped += $acTotal
+} else {
+    $shW = Join-Path $tools 'watch.sh'
+    $acnl = [char]10
+
+    $AcR = Join-Path $Work 'ac-watch'
+    New-Item -ItemType Directory $AcR -Force | Out-Null
+    $acroot = ToPosix $AcR
+    $acFile = Join-Path $AcR '.agent\watch.jsonl'
+
+    & $bashExe $shW record cmd -AgentId sub-1 -Turn 1 -Ok -Note 'first command' -Root $acroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AC1 record exit=0' "exit=$LASTEXITCODE"
+    $ac1 = Get-Content $acFile -Raw | ConvertFrom-Json
+    Assert-True ($ac1.event -eq 'cmd' -and $ac1.agent_id -eq 'sub-1' -and $ac1.turn -eq 1 `
+        -and $ac1.verdict -eq 'ok' -and $ac1.note -eq 'first command' -and $ac1.ts) `
+        'AC1b 一行六字段 {ts,event,agent_id,turn,verdict,note} 齐全' ''
+    $acRaw = [IO.File]::ReadAllText($acFile, $enc)
+    Assert-True ((($acRaw -replace '[^\x00-\x7F]', '').Length) -eq $acRaw.Length) `
+        'AC1c 事件文件纯 ASCII（要随仓提交，任何宿主都不读坏）' ''
+
+    & $bashExe $shW record model-thought -Note 'free label' -Root $acroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AC2 自由标签照收（事件类型不设白名单）' "exit=$LASTEXITCODE"
+    $ac2 = (Get-Content $acFile | Select-Object -Last 1) | ConvertFrom-Json
+    Assert-True ($ac2.event -eq 'model-thought' -and $ac2.verdict -eq '') 'AC2b 无 verdict 的记号事件 verdict 为空' ''
+
+    # 事件文件要随仓提交，所以本机绝对路径在 record 门口就拒；拒收不落行。
+    $acCount = @(Get-Content $acFile).Count
+    & $bashExe $shW record cmd -Note 'see D:\elsewhere\note.py' -Root $acroot 2>&1 | Out-Null
+    $ac3a = $LASTEXITCODE
+    $acPosix = '/home/' + 'tester' + '/x.py'
+    & $bashExe $shW record cmd -AgentId $acPosix -Root $acroot 2>&1 | Out-Null
+    Assert-True ($ac3a -ne 0 -and $LASTEXITCODE -ne 0) 'AC3 盘符/家目录形态的本机路径拒收（fail-closed）' "a=$ac3a b=$LASTEXITCODE"
+    Assert-True (@(Get-Content $acFile).Count -eq $acCount) 'AC3b 拒收时不落任何行' ''
+
+    # AC4: 分桶失败率上行且两个桶样本都够 → WARN。early=1..10（1 失败，10%），
+    # late=30..34（3 失败，60%），上行 50 个百分点。
+    $AcF = Join-Path $Work 'ac-fatigue'
+    New-Item -ItemType Directory $AcF -Force | Out-Null
+    $froot = ToPosix $AcF
+    foreach ($t in 1..10) {
+        if ($t -eq 3) { & $bashExe $shW record cmd -AgentId main -Turn $t -Fail -Root $froot 2>&1 | Out-Null }
+        else { & $bashExe $shW record cmd -AgentId main -Turn $t -Ok -Root $froot 2>&1 | Out-Null }
+    }
+    & $bashExe $shW record cmd -AgentId main -Turn 30 -Ok -Root $froot 2>&1 | Out-Null
+    & $bashExe $shW record cmd -AgentId main -Turn 31 -Fail -Root $froot 2>&1 | Out-Null
+    & $bashExe $shW record cmd -AgentId main -Turn 32 -Fail -Root $froot 2>&1 | Out-Null
+    & $bashExe $shW record cmd -AgentId main -Turn 33 -Fail -Root $froot 2>&1 | Out-Null
+    & $bashExe $shW record cmd -AgentId main -Turn 34 -Ok -Root $froot 2>&1 | Out-Null
+    $ac4 = @(& $bashExe $shW report -Root $froot 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1) 'AC4 分桶失败率上行且样本足够时 report exit=1' "exit=$LASTEXITCODE"
+    Assert-True ((@($ac4) -join ' ') -match 'fatigue suspected at turn 34 \(fail-rate 60\.0% vs 10\.0% early\)') `
+        'AC4b WARN 行原文：轮位与两个分桶失败率都对' (@($ac4) -join ' / ')
+    Assert-True ((@($ac4) -join ' ') -match 'not mind-reading') 'AC4c 边界句在输出里（行为证据推断不是读心）' ''
+
+    # AC5: 后期桶样本不足 4 不触发——把单个失败当疲劳会让 WARN 失去意义
+    $AcN = Join-Path $Work 'ac-thin'
+    New-Item -ItemType Directory $AcN -Force | Out-Null
+    $nroot = ToPosix $AcN
+    foreach ($t in 1..5) { & $bashExe $shW record cmd -Turn $t -Ok -Root $nroot 2>&1 | Out-Null }
+    & $bashExe $shW record cmd -Turn 30 -Fail -Root $nroot 2>&1 | Out-Null
+    & $bashExe $shW report -Root $nroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AC5 后期桶样本不足时不触发 WARN' "exit=$LASTEXITCODE"
+
+    # AC6: 上行不足 20 个百分点不触发——early 20% vs late 30% 只是波动
+    $AcM = Join-Path $Work 'ac-margin'
+    New-Item -ItemType Directory $AcM -Force | Out-Null
+    $mroot = ToPosix $AcM
+    foreach ($t in 1..10) {
+        if ($t -eq 3 -or $t -eq 7) { & $bashExe $shW record cmd -Turn $t -Fail -Root $mroot 2>&1 | Out-Null }
+        else { & $bashExe $shW record cmd -Turn $t -Ok -Root $mroot 2>&1 | Out-Null }
+    }
+    foreach ($t in 30..39) {
+        if ($t -eq 31 -or $t -eq 32 -or $t -eq 35) { & $bashExe $shW record cmd -Turn $t -Fail -Root $mroot 2>&1 | Out-Null }
+        else { & $bashExe $shW record cmd -Turn $t -Ok -Root $mroot 2>&1 | Out-Null }
+    }
+    $ac6 = & $bashExe $shW report -Root $mroot 2>&1
+    Assert-True ($LASTEXITCODE -eq 0 -and (@($ac6) -join ' ') -notmatch 'fatigue suspected') `
+        'AC6 上行不足阈值（20 个百分点）不触发 WARN' "exit=$LASTEXITCODE"
+
+    # AC7: 自由标签不进分母——noise 标签全失败，分桶失败率也一分不动
+    $AcL = Join-Path $Work 'ac-freelabel'
+    New-Item -ItemType Directory $AcL -Force | Out-Null
+    $lroot = ToPosix $AcL
+    foreach ($t in 1..10) {
+        if ($t -eq 3) { & $bashExe $shW record cmd -Turn $t -Fail -Root $lroot 2>&1 | Out-Null }
+        else { & $bashExe $shW record cmd -Turn $t -Ok -Root $lroot 2>&1 | Out-Null }
+    }
+    & $bashExe $shW record cmd -Turn 30 -Ok -Root $lroot 2>&1 | Out-Null
+    & $bashExe $shW record cmd -Turn 31 -Fail -Root $lroot 2>&1 | Out-Null
+    & $bashExe $shW record cmd -Turn 32 -Fail -Root $lroot 2>&1 | Out-Null
+    & $bashExe $shW record cmd -Turn 33 -Fail -Root $lroot 2>&1 | Out-Null
+    & $bashExe $shW record cmd -Turn 34 -Ok -Root $lroot 2>&1 | Out-Null
+    foreach ($t in 31..35) { & $bashExe $shW record noise -Turn $t -Fail -Note 'not an outcome label' -Root $lroot 2>&1 | Out-Null }
+    $ac7 = ((& $bashExe $shW report --json -Root $lroot) -join "`n") | ConvertFrom-Json
+    Assert-True ($ac7.late.obs -eq 5 -and $ac7.late.fails -eq 3 -and $ac7.late.fail_rate -eq 60.0) `
+        'AC7 noise 标签不进分桶（late 仍是 3/5=60%）' "late=$($ac7.late | ConvertTo-Json -Compress)"
+    Assert-True ($ac7.counted -eq 15 -and $ac7.events_total -eq 20) 'AC7b counted 与总数分开报（15 计入 / 20 落盘）' "counted=$($ac7.counted) total=$($ac7.events_total)"
+
+    # AC8: json 口径的字段全部对得上
+    $ac8 = ((& $bashExe $shW report --json -Root $froot) -join "`n") | ConvertFrom-Json
+    Assert-True ($ac8.early.obs -eq 10 -and $ac8.early.fails -eq 1 -and $ac8.early.fail_rate -eq 10.0 `
+        -and $ac8.late.obs -eq 5 -and $ac8.late.fails -eq 3 -and $ac8.late.fail_rate -eq 60.0) `
+        'AC8 json 分桶数字精确' ''
+    Assert-True ($ac8.fail_streak.longest -eq 3 -and $ac8.fail_streak.trailing -eq 0) `
+        'AC8b 连续失败串：最长 3（31-33）、尾部 0（34 是 ok）' ''
+    Assert-True ($ac8.commands_per_turn.max -eq 1 -and $ac8.agents.main -eq 15 `
+        -and $ac8.warn.turn -eq 34 -and $ac8.warn.fired) 'AC8c 每轮命令数、按 agent 分组、warn 轮位' ''
+
+    # AC9: 按 agent_id 分组是免费能力——过滤后口径只算该子代理的
+    $AcA = Join-Path $Work 'ac-agents'
+    New-Item -ItemType Directory $AcA -Force | Out-Null
+    $aroot = ToPosix $AcA
+    foreach ($t in 1..10) { & $bashExe $shW record cmd -AgentId alpha -Turn $t -Ok -Root $aroot 2>&1 | Out-Null }
+    foreach ($t in 30..33) { & $bashExe $shW record cmd -AgentId beta -Turn $t -Fail -Root $aroot 2>&1 | Out-Null }
+    & $bashExe $shW report -Root $aroot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 1) 'AC9 全量口径：alpha 全 ok + beta 全失败 → 触发' "exit=$LASTEXITCODE"
+    $ac9 = ((& $bashExe $shW report --json -AgentId beta -Root $aroot) -join "`n") | ConvertFrom-Json
+    Assert-True ($LASTEXITCODE -eq 0 -and $ac9.counted -eq 4 -and $ac9.agent_filter -eq 'beta') `
+        'AC9b --agent-id 过滤后只算 beta 的（early 桶空 → 不触发）' "exit=$LASTEXITCODE counted=$($ac9.counted)"
+
+    # health: 四个报警面，每个都带"再这么干会发生什么"
+    $AcC = Join-Path $Work 'ac-clean'
+    New-Item -ItemType Directory $AcC -Force | Out-Null
+    & $bashExe $shW record test -Ok -Root (ToPosix $AcC) 2>&1 | Out-Null
+    $ac10 = & $bashExe $shW health -Root (ToPosix $AcC) 2>&1
+    Assert-True ($LASTEXITCODE -eq 0 -and (@($ac10) -join ' ') -match 'alarms=0') 'AC10 干净根 exit=0' "exit=$LASTEXITCODE"
+
+    $AcS = Join-Path $Work 'ac-streak'
+    New-Item -ItemType Directory $AcS -Force | Out-Null
+    foreach ($i in 1..3) { & $bashExe $shW record cmd -Fail -Note "step $i failed" -Root (ToPosix $AcS) 2>&1 | Out-Null }
+    $ac11 = & $bashExe $shW health -Root (ToPosix $AcS) 2>&1
+    Assert-True ($LASTEXITCODE -eq 1 -and (@($ac11) -join ' ') -match 'fail-streak') 'AC11 连续失败串报警' (@($ac11) -join ' / ')
+    Assert-True ((@($ac11) -join ' ') -match 'checkpoint and fix') 'AC11b 报警带后果说明（继续跑会怎样）' ''
+
+    $AcD = Join-Path $Work 'ac-dirty'
+    New-Item -ItemType Directory $AcD -Force | Out-Null
+    New-File (Join-Path $AcD 'base.txt') "base$acnl"
+    & git -C $AcD init -q 2>&1 | Out-Null
+    & git -C $AcD -c user.email=s@t -c user.name=s add -A 2>&1 | Out-Null
+    & git -C $AcD -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    foreach ($i in 1..30) { New-File (Join-Path $AcD "dirty$i.txt") "d$acnl" }
+    $ac12raw = ((& $bashExe $shW health --json -Root (ToPosix $AcD)) -join "`n")
+    $ac12 = $ac12raw | ConvertFrom-Json
+    Assert-True ($LASTEXITCODE -eq 1 -and @($ac12.alarms).Count -eq 1 -and $ac12.alarms[0].kind -eq 'dirty-drift') `
+        'AC12 30 个脏路径 → dirty-drift 且只报这一条' "alarms=$($ac12raw.Substring(0, [math]::Min(160, $ac12raw.Length)))"
+    Assert-True ($ac12.alarms[0].consequence -match 'cannot be restored cleanly') `
+        'AC12b 脏漂移的后果说明在场（断粮时现场无法干净恢复）' ''
+
+    $AcG = Join-Path $Work 'ac-giant'
+    New-Item -ItemType Directory $AcG -Force | Out-Null
+    New-File (Join-Path $AcG 'small.txt') ("l1$acnl" + "l2$acnl")
+    & git -C $AcG init -q 2>&1 | Out-Null
+    & git -C $AcG -c user.email=s@t -c user.name=s add -A 2>&1 | Out-Null
+    & git -C $AcG -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    [IO.File]::WriteAllText((Join-Path $AcG 'small.txt'), ((1..720 | ForEach-Object { "line$_" }) -join $acnl) + $acnl, $enc)
+    $ac13 = ((& $bashExe $shW health --json -Root (ToPosix $AcG)) -join "`n") | ConvertFrom-Json
+    Assert-True ($LASTEXITCODE -eq 1 -and @($ac13.alarms).Count -eq 1 -and $ac13.alarms[0].kind -eq 'giant-diff') `
+        'AC13 700+ 行 diff → giant-diff 且不误报其他面' ''
+
+    $AcU = Join-Path $Work 'ac-uncommitted'
+    New-Item -ItemType Directory $AcU -Force | Out-Null
+    New-File (Join-Path $AcU 'f.txt') "x$acnl"
+    & git -C $AcU init -q 2>&1 | Out-Null
+    & git -C $AcU -c user.email=s@t -c user.name=s add -A 2>&1 | Out-Null
+    $acOld = (Get-Date).AddDays(-10).ToString('yyyy-MM-ddTHH:mm:ss')
+    $env:GIT_AUTHOR_DATE = $acOld; $env:GIT_COMMITTER_DATE = $acOld
+    & git -C $AcU -c user.email=s@t -c user.name=s commit -qm old 2>&1 | Out-Null
+    Remove-Item Env:GIT_AUTHOR_DATE -ErrorAction SilentlyContinue
+    Remove-Item Env:GIT_COMMITTER_DATE -ErrorAction SilentlyContinue
+    [IO.File]::AppendAllText((Join-Path $AcU 'f.txt'), "y$acnl", $enc)
+    $ac14 = ((& $bashExe $shW health --json -Root (ToPosix $AcU)) -join "`n") | ConvertFrom-Json
+    Assert-True ($LASTEXITCODE -eq 1 -and $ac14.alarms[0].kind -eq 'uncommitted' -and $ac14.alarms[0].detail -match 'days ago') `
+        'AC14 十天前的提交 + 脏文件 → uncommitted 报警' ''
+
+    # pollution: 三种污染模式，只列不拦
+    $AcP = Join-Path $Work 'ac-pollution'
+    New-Item -ItemType Directory $AcP -Force | Out-Null
+    $proot = ToPosix $AcP
+    & $bashExe $shW record policy -Fail -Note 'refused by policy' -Root $proot 2>&1 | Out-Null
+    & $bashExe $shW record cmd -Note 'retry with workaround' -Root $proot 2>&1 | Out-Null
+    & $bashExe $shW record commit -Note 'git commit --no-verify quick' -Root $proot 2>&1 | Out-Null
+    & $bashExe $shW record commit -Note 'changed-lines=912 across 12 files' -Root $proot 2>&1 | Out-Null
+    & $bashExe $shW record test -Ok -Root $proot 2>&1 | Out-Null
+    $ac16 = @(& $bashExe $shW pollution -Root $proot 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1) 'AC16 污染面命中时 exit=1' "exit=$LASTEXITCODE"
+    $ac16j = ((& $bashExe $shW pollution --json -Root $proot) -join "`n") | ConvertFrom-Json
+    $acKinds = @($ac16j.findings | ForEach-Object { $_.kind })
+    Assert-True ((@($acKinds) -contains 'no-verify') -and (@($acKinds) -contains 'refused-then-bypass') `
+        -and (@($acKinds) -contains 'giant-diff')) 'AC16b 三种模式都挑出来（--no-verify/被拒后绕行/巨型 diff）' ($acKinds -join ',')
+    Assert-True ((@($ac16) -join ' ') -match 'hooks were skipped' -and (@($ac16) -join ' ') -match 'boundary, not an obstacle') `
+        'AC17 每条污染带后果说明' ''
+    $ac18 = & $bashExe $shW pollution -Root (ToPosix $AcC) 2>&1
+    Assert-True ($LASTEXITCODE -eq 0 -and (@($ac18) -join ' ') -match 'division of labor') `
+        'AC18 干净根 pollution exit=0，分工声明在输出里（只观测不拦）' "exit=$LASTEXITCODE"
+
+    # AC19: 参数校验 fail-closed，且什么都没落
+    $acCount2 = @(Get-Content $acFile).Count
+    & $bashExe $shW record cmd -Turn -1 -Root $acroot 2>&1 | Out-Null
+    $ac19a = $LASTEXITCODE
+    & $bashExe $shW record cmd -Turn abc -Root $acroot 2>&1 | Out-Null
+    $ac19b = $LASTEXITCODE
+    & $bashExe $shW record cmd -Ok -Fail -Root $acroot 2>&1 | Out-Null
+    Assert-True ($ac19a -ne 0 -and $ac19b -ne 0 -and $LASTEXITCODE -ne 0) 'AC19 负轮位/非整数轮位/--ok --fail 冲突都拒' "a=$ac19a b=$ac19b c=$LASTEXITCODE"
+    Assert-True (@(Get-Content $acFile).Count -eq $acCount2) 'AC19b 校验拒绝时不落行' ''
+
+    # AC20: 入口互通——PS 转发器写的台账，bash 读得懂
+    $AcI = Join-Path $Work 'ac-interop'
+    New-Item -ItemType Directory $AcI -Force | Out-Null
+    & pwsh -NoProfile -File (Join-Path $tools 'watch.ps1') record test -Ok -Root $AcI 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AC20 pwsh 转发器 record 成功' "exit=$LASTEXITCODE"
+    $ac20 = ((& $bashExe $shW report --json -Root (ToPosix $AcI)) -join "`n") | ConvertFrom-Json
+    Assert-True ($ac20.events_total -eq 1) 'AC20b PS 写的事件账本 bash 读得懂（互通）' "events=$($ac20.events_total)"
+
+    # AC21: git worktree 形态——.git 是文件不是目录，affected 不得误判 no git history（L105）
+    $AcW2 = Join-Path $Work 'ac-worktree'
+    New-Item -ItemType Directory "$AcW2\pkg", "$AcW2\tests" -Force | Out-Null
+    New-File (Join-Path $AcW2 '.git') "gitdir: ../.git/worktrees/ac$acnl"
+    New-File (Join-Path $AcW2 'pkg\core.py') "def f(): return 1$acnl"
+    New-File (Join-Path $AcW2 'pkg\__init__.py') "from .core import f$acnl"
+    New-File (Join-Path $AcW2 'tests\test_core.py') ("from pkg.core import f" + $acnl + "def test_f(): assert f() == 1" + $acnl)
+    $ac21 = @(& $bashExe (Join-Path $tools 'affected.sh') -Path (ToPosix $AcW2) -Changed 'pkg/core.py' -Lang python 2>&1)
+    Assert-True ((@($ac21) -join ' ') -match 'proven=True' -and (@($ac21) -join ' ') -notmatch 'no git history') `
+        'AC21 worktree 形态（.git 是文件）不误判 no git history，proven 照判' (@($ac21) -join ' / ')
+
+    # AC22: ledger 每行可选 agent_id——追加式，旧行没有该字段照常读
+    $shL2 = Join-Path $tools 'ledger.sh'
+    $AcLed = Join-Path $Work 'ac-ledger.json'
+    & $bashExe $shL2 add -Ledger (ToPosix $AcLed) -Task split -Key 'k|old' -Tokens 100 -Wall 1 2>&1 | Out-Null
+    & $bashExe $shL2 add -Ledger (ToPosix $AcLed) -Task split -Key 'k|sub' -Tokens 200 -Wall 2 --agent-id 'sub-7' 2>&1 | Out-Null
+    $ac22 = @(([IO.File]::ReadAllText($AcLed, $enc) | ConvertFrom-Json).entries)
+    Assert-True (@($ac22).Count -eq 2 -and ($ac22[0].PSObject.Properties.Name -notcontains 'agent_id')) `
+        'AC22 旧条目形状不变（无 agent_id 键）' ''
+    Assert-True ($ac22[1].agent_id -eq 'sub-7') 'AC22b 新条目带 agent_id（子代理参与记账）' ''
+    $ac22rep = @(& $bashExe $shL2 report -Ledger (ToPosix $AcLed) 2>&1)
+    Assert-True ((@($ac22rep) -join ' ') -match 'total tokens:\s*300') 'AC22c 旧数据 + 新字段混读，合计照算' (@($ac22rep) -join ' / ')
+
+    # AC23/AC24: agent-verify --agent-id——回执顶层与 run[] 追加 agent_id，旧字段一个不动；
+    # 不带 flag 时与现状完全一致
+    $AcV = Join-Path $Work 'ac-av'
+    New-File (Join-Path $AcV '.git\HEAD') "ref: refs/heads/main`n"
+    New-File (Join-Path $AcV 'conftest.py') ''
+    New-File (Join-Path $AcV 'pkg\core.py') "def f(): return 1`n"
+    New-File (Join-Path $AcV 'pkg\__init__.py') "from .core import f`n"
+    New-File (Join-Path $AcV 'tests\test_core.py') "from pkg.core import f`ndef test_f(): assert f() == 1`n"
+    $shAv2 = Join-Path $tools 'agent-verify.sh'
+    $acRc = Join-Path $Work 'ac-av-rc.json'
+    & $bashExe $shAv2 -Root (ToPosix $AcV) -Changed 'pkg/core.py' -Lang python --agent-id 'sub-9' `
+        -Receipt (ToPosix $acRc) -Store (Join-Path $Work 'ac-av-store') 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AC23 带 --agent-id 全链路 exit=0' "exit=$LASTEXITCODE"
+    $ac23 = Get-Content $acRc -Raw | ConvertFrom-Json
+    $ac23core = (@($ac23.steps | ForEach-Object { $_.step }) |
+        Where-Object { $_ -ne 'memory-brief' -and $_ -ne 'memory-note' }) -join ','
+    Assert-True ($ac23.agent_id -eq 'sub-9' -and $ac23.run[0].agent_id -eq 'sub-9') `
+        'AC23b 回执顶层与 run[0] 都带 agent_id' ''
+    Assert-True ($ac23core -eq 'timeline-due,preflight,checks,affected,policy,constraints,journal-begin,run,journal-end') `
+        'AC23c 步骤序列与 I2b 完全一致（只追加不改旧）' $ac23core
+
+    $acRc2 = Join-Path $Work 'ac-av-rc2.json'
+    & $bashExe $shAv2 -Root (ToPosix $AcV) -Changed 'pkg/core.py' -Lang python `
+        -Receipt (ToPosix $acRc2) -Store (Join-Path $Work 'ac-av-store') 2>&1 | Out-Null
+    $ac24 = Get-Content $acRc2 -Raw | ConvertFrom-Json
+    $ac24runIds = @($ac24.run | ForEach-Object { $_.PSObject.Properties.Name -contains 'agent_id' })
+    Assert-True ($LASTEXITCODE -eq 0 -and ($ac24.PSObject.Properties.Name -notcontains 'agent_id') `
+        -and ($ac24runIds -notcontains $true)) 'AC24 不带 flag 时回执没有任何 agent_id 键（回归保护）' "exit=$LASTEXITCODE"
+    Assert-True ($ac24.verdict -match 'proven subset') 'AC24b verdict 与 I4 同口径' $ac24.verdict
+
+    & $bashExe $shAv2 -Root (ToPosix $AcV) -Changed 'pkg/core.py' -Lang python --agent-id 'D:\elsewhere\x' `
+        -Receipt (ToPosix (Join-Path $Work 'ac-av-rc3.json')) 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2 -and -not (Test-Path (Join-Path $Work 'ac-av-rc3.json'))) `
+        'AC25 agent-id 带盘符路径 exit=2 拒收且不落回执' "exit=$LASTEXITCODE"
+}
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 if ($failed -gt 0) { exit 1 }
 exit 0

@@ -60,6 +60,11 @@ from datetime import datetime
 LANGS = {"rust", "python", "node", "go"}
 PROFILES = {"read-only", "workspace-write", "full"}
 
+# The receipt may be committed with the repo, so the same shapes privacy_scan hunts for
+# are refused at the door of the one field a caller types by hand.
+MACHINE_PATH_RX = re.compile(
+    r"[A-Za-z]:[\\/]|/Users/[A-Za-z0-9._-]+/|/home/[A-Za-z0-9._-]+/|/mnt/[a-z]/")
+
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
 RESUME = os.path.join(TOOLS, "resume.py")
@@ -82,6 +87,12 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
                     [-Receipt out.json] [-Store <dir>] [-Plan plan.json]
   budget gate:  --budget-token N --task-id <id>
   caps:         --caps [--caps-mem-mb N] [--caps-procs N] [--caps-seconds S]
+  subagent:     --agent-id <id>
+
+Subagent usage: a subagent running a task passes its own id (--agent-id sub-7). The id is
+recorded in the receipt (top level and every run[] line, appended fields only -- old
+receipt fields untouched) and, via `ledger.py add --agent-id`, on each cost line. With no
+flag the receipt is exactly what it always was.
 
 Budget gate (honest scope): the tool layer cannot measure model-side token usage.
 --budget-token N is a DECLARATION by the caller. A declared value <= 0 refuses before
@@ -98,7 +109,7 @@ Exit codes: 0 all good; 1 a guard refused or the command failed; 2 bad invocatio
 def parse_args(argv):
     out = {"root": "", "changed": [], "lang": "", "profile": "workspace-write",
            "allow_network": False, "dry_run": False, "receipt": "", "store": "", "plan": "",
-           "allow": []}
+           "allow": [], "agent_id": ""}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -121,7 +132,8 @@ def parse_args(argv):
             out["allow"].extend([x for x in val.replace(",", " ").split() if x])
         else:
             out[{"root": "root", "lang": "lang", "profile": "profile", "receipt": "receipt",
-                 "store": "store", "plan": "plan"}.get(name, name)] = val
+                 "store": "store", "plan": "plan", "agent-id": "agent_id",
+                 "agentid": "agent_id"}.get(name, name)] = val
         i += 2
     return out
 
@@ -192,6 +204,10 @@ def main(argv):
     if a["profile"].lower() not in PROFILES:
         print(f"agent-verify: -Profile 必须是 {sorted(PROFILES)} 之一")
         return 2
+    agent_id = str(a.get("agent_id", "")).strip()
+    if agent_id and MACHINE_PATH_RX.search(agent_id):
+        print("agent-verify: --agent-id 带本机绝对路径 -- 回执可能随仓提交，请用仓库相对的 id")
+        return 2
 
     root = os.path.abspath(root_in)
     lang = a["lang"].lower()
@@ -219,6 +235,9 @@ def main(argv):
 
     doc = {"root": root, "lang": lang, "profile": profile, "changed": a["changed"],
            "at": datetime.now().astimezone().isoformat(timespec="microseconds")}
+    if agent_id:
+        # appended field only: subagent participation recorded on the receipt; no flag, no key
+        doc["agent_id"] = agent_id
     if caps:
         doc["caps"] = dict(caps, note=CAPS_NOTE)
     steps = []
@@ -391,6 +410,8 @@ def main(argv):
         # Appended field only: the caps parameters are evidence, the old shape is untouched.
         if caps:
             entry["caps"] = dict(caps)
+        if agent_id:
+            entry["agent_id"] = agent_id
         run_log.append(entry)
         if r["code"] != 0:
             ran_ok = False
