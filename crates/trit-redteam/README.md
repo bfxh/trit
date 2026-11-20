@@ -21,7 +21,7 @@
 | `fuzz <blob>` | TRB2 **差分** fuzz：Rust 解析器 vs C 运行时（`trit-build/runtime/trit_runtime.c`） | 5 个种子 × 5000 个确定性变异 = **25,000 例，0 分歧**。第一轮就抓到本工具自己的解析器**比生产工具宽松**（漏了 `len == 3^nvars` 校验），已按契约收紧 |
 | `chain <jobs.json>` | `--manifest` 的执行面静态清点（`kind: binary` 会被直接执行，无 allowlist/沙箱） | 标出 shell 包装、网络工具、绝对路径、`cwd` 越界；ternary-only 清单无发现 |
 | `sidechannel <design.v>` | 双导轨的一阶静态模型：`True/False` 各拉高 1 根线、`Unknown` 0 根 | 真实导出 27 个合法输入：`H(输出)=1.506 bit`、`H(输出｜重量)=0.531 bit` ⇒ **泄漏 0.975 bit**；重量 0 的 11 行**全是 Unknown**（重量 1 的 16 行里 true/false 各 11/5，所以重量只能判"是否未知"，判不出取值） |
-| `binary <file>` | PE/ELF 硬化（ASLR/NX/执行栈/W+X/RELRO/BIND_NOW）+ 密钥形态 + 构建路径泄漏 | 自家 `trit-build.exe`（PE64）：ASLR ✓、NX ✓、无 W+X、CFG ✗；**嵌了 `C:\Users\<用户名>\.rustup\...`**（std 的 panic 路径）；修法：`--remap-path-prefix` |
+| `binary <file>` | PE/ELF 硬化（ASLR/NX/执行栈/W+X/RELRO/BIND_NOW）+ 密钥形态 + 构建路径泄漏 | 自家 `trit-build.exe`（PE64）：ASLR ✓、NX ✓、无 W+X、CFG ✗；**嵌了 `%USERPROFILE%\.rustup\...`**（std 的 panic 路径）；修法：`--remap-path-prefix` |
 
 ```bash
 trit-build e.tri --out out --emit-verilog
@@ -51,7 +51,7 @@ trit-redteam binary target/release/trit-build.exe
 | 差分 fuzz 出现分歧 | `project` — 两份实现里至少一边与格式契约不符 |
 
 修复前（`target/release/trit-build.exe`，PE64）：`findings` 只有 1 条 `rust-toolchain-path`
-（`C:\Users\<用户名>\.rustup\...\library\core\...`），CFG 缺失在 `warnings` 里记为
+（`%USERPROFILE%\.rustup\...\library\core\...`），CFG 缺失在 `warnings` 里记为
 `rust-toolchain` ⇒ **没有属于我们代码的硬化/泄密发现**。
 
 **已修**：Release 工作流与本地发布构建都加 `RUSTFLAGS=--remap-path-prefix=$HOME=~`

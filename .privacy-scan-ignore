@@ -1,0 +1,4 @@
+# 整文件豁免（正则 + 必填理由）。只给"必须引用这段路径形态才能工作"的安全工具与合成夹具。
+crates/trit-redteam/src/(binary|attrib)\.rs  泄漏检测器的 needle 常量与合成夹具：规则本身要写字面 `Users\` 形态才能检测它
+scripts/sync_handoff_snapshot\.py  脱敏器的自测夹具：输入必须是未脱敏样本
+crates/trit-wspace/src/cli/safe_path\.rs  路径穿越夹具：`x` 是占位用户名

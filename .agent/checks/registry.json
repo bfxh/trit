@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "owner_root": "D:\\KF\\trit-inv",
+  "owner_root": ".",
   "baseline": "2026-11-19",
   "checks": [
     {
@@ -47,7 +47,7 @@
         "L58"
       ],
       "scope": [
-        "C:/Users/lbx13/bin/copyright-guard/pre-push"
+        "~/bin/copyright-guard/pre-push"
       ],
       "since": "2026-11-19",
       "tier": "fast",
@@ -66,7 +66,7 @@
         "L58"
       ],
       "scope": [
-        "C:/Users/lbx13/bin/copyright-guard/pre-push"
+        "~/bin/copyright-guard/pre-push"
       ],
       "since": "2026-11-19",
       "tier": "fast",
@@ -729,6 +729,23 @@
         "crates/trit-parts/src/bin/parts_3d/meshtex.rs"
       ],
       "pattern": "side::check\\(n\\)"
+    },
+    {
+      "id": "C043",
+      "title": "公开树的隐私门禁接到 CI 里",
+      "kind": "require",
+      "covers": [
+        "L93"
+      ],
+      "scope": [
+        ".github/workflows/ci.yml"
+      ],
+      "since": "L93",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "privacy_scan.py",
+      "min": 2,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

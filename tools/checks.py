@@ -109,6 +109,11 @@ def select_files(root, scope):
     """Expand globs against the working tree. Returns existing files only."""
     hits = []
     for pat in scope:
+        if pat.startswith("~"):
+            full = os.path.expanduser(pat)
+            if os.path.isfile(full):
+                hits.append(full)
+            continue
         if os.path.isabs(pat):
             if os.path.isfile(pat):
                 hits.append(pat)

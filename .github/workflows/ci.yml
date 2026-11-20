@@ -455,6 +455,18 @@ jobs:
       - name: Scan repository for high-confidence secrets
         run: python3 scripts/secret_scan.py
 
+  privacy:
+    name: privacy (public tree)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Self-test (user path / task doc / data file / ratchet)
+        run: python3 scripts/privacy_scan.py --self-test
+      # 与 secret scan 正交：那边认密钥形态，这边认内容性质（任务文档/本机路径/数据产物）
+      - name: Scan tracked tree for private material
+        run: python3 scripts/privacy_scan.py
+
   ci-integrity:
     name: ci integrity (protection ↔ workflows)
     runs-on: ubuntu-latest
