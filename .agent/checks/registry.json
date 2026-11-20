@@ -473,6 +473,23 @@
       "pattern": "checked_mul\\(stride\\)",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C028",
+      "title": "depth 采样窗口必须在分配前判越界",
+      "kind": "require",
+      "covers": [
+        "L79"
+      ],
+      "scope": [
+        "crates/trit-parts/src/depthdata.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T08:51:57+08:00",
+      "pattern": "window_is_usable\\(size, w, h\\)",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

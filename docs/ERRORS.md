@@ -118,6 +118,8 @@
 
 | L78 | `splat::read_ply_3dgs` 的长度检查写成 `body.len() < n * stride` —— `n` 来自 PLY 头的 `element vertex`，`stride = props.len() * 4` 来自头里的 property 条数，两个都是外部文本，裸乘 | `n = usize::MAX / 2` 时 `n * stride` 在 32/64 位都溢出绕成小值，长度校验直接通过，紧接着 `Vec::with_capacity(n)` 就是一次 OOM；`get` 闭包里的 `row * stride + need[k] * 4` 也只有在这层长度检查成立之后才安全 | `n.checked_mul(stride).ok_or_else(...)` 求出 `need_bytes` 再比 `body.len()`；`write_ply_3dgs` 与 `logit` 下沉到 `splat/io/write.rs` 腾预算（`io.rs` 348 → 310）；`tests/splat_ply_limits.rs` 用 `usize::MAX/2` 个顶点钉住"必须在 `with_capacity` 之前因溢出被拒" | C027 |
 
+| L79 | `depthdata::load_sample` 的 `size` 直接来自 `--size`：`let (x0, y0) = ((w - size) / 2, (h - size) / 2)`、`if full { let (sx, sy) = (w / size, h / size) }`、三处 `vec![…; size * size]` —— `w`/`h` 是真实图尺寸，`size` 是命令行数字，中间没有一步验证 | `--size 0` 让 `w / size` 除零；`--size 9000` 在一张 384² 的图上让 `w - size` 下溢绕成 `usize::MAX`，`(w - size) / 2` 于是指向一张不存在的巨大图，三处 `size²` 缓冲在 64² 时是 3×16 KB、在 9000² 时是 972 MB —— 顺序是先分配后越界，用户看到的是 OOM 或 panic 而不是「参数错了」；同一个入口还被 `parts-depth` / `parts-depth-gpu` / `parts-depth-verify` 三条线共用 | 抽 `pub fn window_is_usable(size, w, h) -> bool`（`size > 0 && size <= w && size <= h`），`load_sample` 在 `read_rgb` 之后、读 `depth`/`seg` 之前用它判空返回；`size == 0` 连 PNG 都不必读。同时 `add_lowpass` 加 `factor == 0 || size < factor` 守卫 —— 调用方的 `4^lvl` 在 `--pyr ≥ 32` 时回绕成 0（`size / 0` 除零）、在 `--pyr 16` 时是 `2^32 > size`（`s = size / factor` 成为 0、`coarse[...]` 立刻越界）；测试下沉到 `depthdata/tests.rs` 腾预算（`depthdata.rs` 450 → 398） | C028 |
+
 
 
 
