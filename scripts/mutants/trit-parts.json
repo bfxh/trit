@@ -550,5 +550,29 @@
     "new": "    v.max(4)\n",
     "pkg": "trit-parts",
     "filter": "legal_widths_scale_as_documented"
+  },
+  {
+    "name": "planes: 位数不校验（1e9 级直接进 3^n 与 vec![...; n]）",
+    "file": "crates/trit-parts/src/planes.rs",
+    "old": "    if n > MAX_PLANES {\n",
+    "new": "    if false {\n",
+    "pkg": "trit-parts",
+    "filter": "planes_above_the_cap_are_rejected"
+  },
+  {
+    "name": "planes: 头部通道在 u32 里绕回（n*3 = u32::MAX 时补零回到 0）",
+    "file": "crates/trit-parts/src/planes.rs",
+    "old": "    let need = n.saturating_mul(3);\n    need + (4 - need % 4) % 4\n",
+    "new": "    let need = (n as u32).wrapping_mul(3);\n    need.wrapping_add((4 - need % 4) % 4) as usize\n",
+    "pkg": "trit-parts",
+    "filter": "head_cout_does_not_wrap_at_the_old_overflow_point"
+  },
+  {
+    "name": "planes: 级数用裸 pow（usize 溢出 / debug panic）",
+    "file": "crates/trit-parts/src/planes.rs",
+    "old": "    (0..n).fold(1usize, |a, _| a.saturating_mul(3))\n",
+    "new": "    3usize.pow(n as u32)\n",
+    "pkg": "trit-parts",
+    "filter": "levels_saturate_instead_of_panicking_above_the_cap"
   }
 ]

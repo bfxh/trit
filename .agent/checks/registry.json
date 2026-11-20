@@ -575,6 +575,23 @@
       "pattern": "width > MAX_WIDTH",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C034",
+      "title": "深度平面位数先判上限，级数不用裸 pow",
+      "kind": "require",
+      "covers": [
+        "L85"
+      ],
+      "scope": [
+        "crates/trit-parts/src/planes.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "n > MAX_PLANES",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

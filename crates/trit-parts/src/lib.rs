@@ -6,7 +6,6 @@
 //! 本 crate 是「模型归 trit 仓」的落点：权重加载、BN 折叠、WGSL 前向都在这里，
 //! 不再依赖 `.yanagent/` 里的实验目录。当前只完成**前向**；反向内核与训练循环
 //! 见 `README.md` 的缺口表。
-
 #![forbid(unsafe_code)]
 pub mod api;
 pub mod atlas;
@@ -38,6 +37,7 @@ pub mod occ;
 pub mod ood;
 pub mod parts;
 pub mod partsrun;
+pub mod planes;
 pub mod ridge;
 pub mod scenefp;
 pub mod splat;

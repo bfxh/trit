@@ -2300,7 +2300,7 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_train/args.rs",
-      "lines": 206
+      "lines": 204
     },
     {
       "file": "crates/trit-parts/src/bin/parts_train/eval.rs",
@@ -2511,6 +2511,10 @@
       "lines": 404
     },
     {
+      "file": "crates/trit-parts/src/planes.rs",
+      "lines": 56
+    },
+    {
       "file": "crates/trit-parts/src/ridge.rs",
       "lines": 134
     },
@@ -2657,6 +2661,10 @@
     {
       "file": "crates/trit-parts/tests/models_e2e.rs",
       "lines": 264
+    },
+    {
+      "file": "crates/trit-parts/tests/planes_bounds.rs",
+      "lines": 91
     },
     {
       "file": "crates/trit-parts/tests/splat_ply_limits.rs",
@@ -3624,7 +3632,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_verify.rs",
-      "lines": 49
+      "lines": 47
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_wsp2.rs",
@@ -3720,7 +3728,7 @@
     },
     {
       "file": "crates/trit-wspace/src/mcp/load.rs",
-      "lines": 94
+      "lines": 93
     },
     {
       "file": "crates/trit-wspace/src/mcp/load/fsread.rs",
