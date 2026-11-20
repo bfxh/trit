@@ -120,7 +120,7 @@ pub fn var_names(n: usize) -> Vec<String> {
             if i < 26 {
                 String::from((b'a' + i as u8) as char)
             } else {
-                String::from((b'a' + i as u8) as char)
+                format!("v{i}")
             }
         })
         .collect()
