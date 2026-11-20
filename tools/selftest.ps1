@@ -1336,6 +1336,155 @@ if (-not $bashExe) {
     }
 }
 
+""
+"== AB. declutter: 密度报表、LANDMINE 豁免、导出不动源码树、clean 先进回收站、预算棘轮 =="
+# declutter 的剥注释器是三态扫描（代码/字符串/注释），这里每条"字符串里的注释形态"用例
+# 都是给它钉的：错一次就是吃掉用户代码或静默留垃圾。LANDMINE 用例钉豁免通道。
+if (-not $bashExe) {
+    "  SKIP  AB0 没有 bash，跳过 declutter 检查"
+    $skipped += 20
+} else {
+    $shDec = Join-Path $tools 'declutter.sh'
+    $abnl = [char]10
+    $Ab = Join-Path $Work 'ab-declutter'
+    New-Item -ItemType Directory "$Ab\src" -Force | Out-Null
+    [IO.File]::WriteAllText("$Ab\src\a.py", (@(
+        '#!/usr/bin/env python3',
+        '# a normal comment',
+        'VALUE = 1  # trailing comment',
+        'TEXT = "string with # hash and // slashes"',
+        '# LANDMINE: 三态切错字符串整个系统就瘫 -- 保留',
+        'MORE = 2') -join $abnl) + $abnl, $enc)
+    [IO.File]::WriteAllText("$Ab\src\a.rs", (@(
+        '// rust line comment',
+        '/* block /* nested */ still */',
+        'pub fn f() -> i32 { 1 } // trailing',
+        'pub const S: &str = "not // a comment";') -join $abnl) + $abnl, $enc)
+    [IO.File]::WriteAllText("$Ab\src\a.js", (@(
+        '// js comment',
+        'const s = "also // not";',
+        '/* block */') -join $abnl) + $abnl, $enc)
+    [IO.File]::WriteAllText("$Ab\src\c.js", 'let t = `x${ /* } brace */ y }`;' + $abnl, $enc)
+    [IO.File]::WriteAllText("$Ab\src\b.json", (@(
+        '{',
+        '  // jsonc comment',
+        '  "a": 1',
+        '}') -join $abnl) + $abnl, $enc)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $shaPyBefore = [BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes("$Ab\src\a.py"))).Replace('-', '')
+    $shaJsBefore = [BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes("$Ab\src\a.js"))).Replace('-', '')
+
+    $abAudit = @(& $bashExe $shDec audit --json -Root (ToPosix $Ab) 2>&1)
+    $abDoc = (@($abAudit) -join "`n") | ConvertFrom-Json
+    $abPy = @($abDoc.files | Where-Object { $_.path -eq 'src/a.py' })[0]
+    Assert-True ($null -ne $abPy -and $abPy.comments -eq 4 -and $abPy.code -eq 3) `
+        'AB1 audit 密度正确（a.py comments=4 code=3，纯注释行不计代码）' "comments=$($abPy.comments) code=$($abPy.code)"
+    Assert-True ($abDoc.files[0].path -eq 'src/a.js' -and $abDoc.files[-1].path -eq 'src/b.json') `
+        'AB2 按密度降序排序（密者在前）' ((@($abDoc.files | ForEach-Object { $_.path }) -join ','))
+    Assert-True ($abDoc.totals.files -eq 5 -and $abDoc.totals.comments -eq 11 -and $abDoc.totals.code -eq 10) `
+        'AB3 库级汇总（files/comments/code）' "files=$($abDoc.totals.files) comments=$($abDoc.totals.comments) code=$($abDoc.totals.code)"
+    $abLm = @($abDoc.landmines)[0]
+    Assert-True ($null -ne $abLm -and $abLm.path -eq 'src/a.py' -and $abLm.line -eq 5 -and $abLm.text -match 'LANDMINE') `
+        'AB4 LANDMINE 单列（路径/行号/文本），不带标记的一律视为可清理' "path=$($abLm.path) line=$($abLm.line)"
+
+    $AbOut = Join-Path $Work 'ab-export-out'
+    & $bashExe $shDec export --strip --out (ToPosix $AbOut) -Root (ToPosix $Ab) 2>&1 | Out-Null
+    $abExp = $LASTEXITCODE
+    Assert-True ($abExp -eq 0 -and (Test-Path "$AbOut\src\a.py")) 'AB5 export --strip exit=0 且产物落盘' "exit=$abExp"
+    $abOutPy = [IO.File]::ReadAllText("$AbOut\src\a.py", $enc)
+    Assert-True (($abOutPy -notmatch '# a normal comment') -and ($abOutPy -match 'VALUE = 1') `
+        -and ($abOutPy -notmatch 'trailing comment')) 'AB6 普通注释被剥、代码行原样保留' ($abOutPy.Trim())
+    Assert-True (((@($abOutPy -split $abnl))[0] -eq '#!/usr/bin/env python3') -and ($abOutPy -match 'LANDMINE')) `
+        'AB7 LANDMINE 注释与 shebang 原样保留' (($abOutPy -split $abnl) -join ' | ')
+    Assert-True (($abOutPy -match [regex]::Escape('TEXT = "string with # hash and // slashes"')) `
+        -and (([IO.File]::ReadAllText("$AbOut\src\a.js", $enc)) -match [regex]::Escape('const s = "also // not";')) `
+        -and (([IO.File]::ReadAllText("$AbOut\src\b.json", $enc)) -match '"a": 1') `
+        -and (([IO.File]::ReadAllText("$AbOut\src\b.json", $enc)) -notmatch 'jsonc comment')) `
+        'AB8 字符串里的注释形态不被误剥（py/js/json），jsonc 注释照剥' ''
+    $abOutRs = [IO.File]::ReadAllText("$AbOut\src\a.rs", $enc)
+    Assert-True (($abOutRs -notmatch [regex]::Escape('still */')) `
+        -and ($abOutRs -match [regex]::Escape('pub fn f() -> i32 { 1 }'))) `
+        'AB9 rust 嵌套块注释整段剥净（残片即错）' (($abOutRs -split $abnl) -join ' | ')
+    $abOutCjs = [IO.File]::ReadAllText("$AbOut\src\c.js", $enc)
+    Assert-True ($abOutCjs -match [regex]::Escape('let t = `x${  y }`;')) `
+        'AB10 模板插值里的注释被剥且插值结构完好（内含 } 的注释不提前闭合）' ($abOutCjs.Trim())
+    $shaPyAfter = [BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes("$Ab\src\a.py"))).Replace('-', '')
+    $shaJsAfter = [BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes("$Ab\src\a.js"))).Replace('-', '')
+    Assert-True ($shaPyAfter -eq $shaPyBefore -and $shaJsAfter -eq $shaJsBefore) `
+        'AB10b export 不碰源码树（sha 前后一致）' ''
+    & $bashExe $shDec export --strip --out (ToPosix "$Ab\inside") -Root (ToPosix $Ab) 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 1 -and -not (Test-Path "$Ab\inside")) `
+        'AB11 --out 落在 --root 内拒绝（导出永不写进源码树边界）' "exit=$LASTEXITCODE"
+
+    $AbC = Join-Path $Work 'ab-clean'
+    New-Item -ItemType Directory "$AbC\src" -Force | Out-Null
+    $origPy = (@('#!/usr/bin/env python3', '# keep me', '# LANDMINE: 地雷保留', 'X = 1  # trail') -join $abnl) + $abnl
+    [IO.File]::WriteAllText("$AbC\src\c.py", $origPy, $enc)
+    & $bashExe $shDec clean -Root (ToPosix $AbC) 2>&1 | Out-Null
+    $abNoGate = $LASTEXITCODE
+    Assert-True ($abNoGate -eq 1 -and ([IO.File]::ReadAllText("$AbC\src\c.py", $enc)) -eq $origPy) `
+        'AB12 clean 缺 --in-place 直接拒绝且文件未动（破坏档默认关）' "exit=$abNoGate"
+    & $bashExe $shDec clean --in-place -Root (ToPosix $AbC) 2>&1 | Out-Null
+    $abClean = $LASTEXITCODE
+    $cleanedPy = [IO.File]::ReadAllText("$AbC\src\c.py", $enc)
+    $abMan = Join-Path $AbC '.journal\trash\manifest.json'
+    $abEntry = $null
+    if (Test-Path $abMan) {
+        $abEntry = @(((Get-Content $abMan -Raw | ConvertFrom-Json).entries) |
+            Where-Object { $_.path -eq 'src/c.py' })[0]
+    }
+    Assert-True ($abClean -eq 0 -and $cleanedPy -notmatch '# keep me' -and $cleanedPy -match 'LANDMINE' `
+        -and $cleanedPy -match '#!/usr/bin/env python3' `
+        -and $null -ne $abEntry -and $abEntry.reason -eq 'declutter-clean' -and $abEntry.state -eq 'kept') `
+        'AB13 in-place 逐文件先 trash.put（reason=declutter-clean）再剥注释写回' "exit=$abClean reason=$($abEntry.reason)"
+    Move-Item "$AbC\src\c.py" "$AbC\cleaned-aside.py"
+    & $bashExe (Join-Path $tools 'trash.sh') restore $abEntry.id -Root (ToPosix $AbC) 2>&1 | Out-Null
+    $abRest = $LASTEXITCODE
+    $abBack = [IO.File]::ReadAllText("$AbC\src\c.py", $enc)
+    Assert-True ($abRest -eq 0 -and $abBack -eq $origPy) `
+        'AB14 已进回收站的原件可 restore 且逐字节一致' "exit=$abRest same=$($abBack -eq $origPy)"
+
+    $AbB = Join-Path $Work 'ab-budget'
+    New-Item -ItemType Directory "$AbB\src" -Force | Out-Null
+    $abBasePy = (@('# base one', '# base two', 'V = 1') -join $abnl) + $abnl
+    [IO.File]::WriteAllText("$AbB\src\m.py", $abBasePy, $enc)
+    [IO.File]::WriteAllText("$AbB\src\m2.py", (@('# only', 'W = 2') -join $abnl) + $abnl, $enc)
+    & $bashExe $shDec budget init -Root (ToPosix $AbB) 2>&1 | Out-Null
+    $abInit = $LASTEXITCODE
+    $bud = [IO.File]::ReadAllText("$AbB\.agent\comment-budget.json", $enc) | ConvertFrom-Json
+    Assert-True ($abInit -eq 0 -and $bud.files.'src/m.py' -eq 2 -and $bud.files.'src/m2.py' -eq 1) `
+        'AB15 budget init 建基线（每文件注释行数，.agent/comment-budget.json）' "exit=$abInit m=$($bud.files.'src/m.py')"
+    & $bashExe $shDec budget check -Root (ToPosix $AbB) 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AB15b 基线未变时 check 绿' "exit=$LASTEXITCODE"
+    [IO.File]::AppendAllText("$AbB\src\m.py", '# extra line' + $abnl, $enc)
+    & $bashExe $shDec budget check -Root (ToPosix $AbB) 2>&1 | Out-Null
+    $abChk = $LASTEXITCODE
+    & $bashExe $shDec budget init -Root (ToPosix $AbB) 2>&1 | Out-Null
+    $abInit2 = $LASTEXITCODE
+    $bud2 = [IO.File]::ReadAllText("$AbB\.agent\comment-budget.json", $enc) | ConvertFrom-Json
+    Assert-True ($abChk -eq 1 -and $abInit2 -eq 1 -and $bud2.files.'src/m.py' -eq 2) `
+        'AB16 只紧不松：新增注释 check 红、init 拒绝抬高、台账未动' "check=$abChk init=$abInit2 cap=$($bud2.files.'src/m.py')"
+    [IO.File]::WriteAllText("$AbB\src\m.py", $abBasePy, $enc)
+    Remove-Item "$AbB\src\m2.py"
+    & $bashExe $shDec budget init -Root (ToPosix $AbB) 2>&1 | Out-Null
+    $abInit3 = $LASTEXITCODE
+    $bud3 = [IO.File]::ReadAllText("$AbB\.agent\comment-budget.json", $enc) | ConvertFrom-Json
+    $abKeys = @($bud3.files.PSObject.Properties.Name) -join ','
+    & $bashExe $shDec budget check -Root (ToPosix $AbB) 2>&1 | Out-Null
+    Assert-True ($abInit3 -eq 0 -and $abKeys -eq 'src/m.py' -and $LASTEXITCODE -eq 0) `
+        'AB17 收紧：孤儿随 init 移除，收紧后 check 绿' "init=$abInit3 keys=$abKeys check=$LASTEXITCODE"
+    [IO.File]::WriteAllText("$AbB\.agent\comment-budget.json", '{oops', $enc)
+    $abBad = @(& $bashExe $shDec budget check -Root (ToPosix $AbB) 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($abBad) -join ' ') -match 'unreadable')) `
+        'AB18 坏 JSON fail-closed（不通过、明说读不了）' "exit=$LASTEXITCODE"
+
+    $abPs = @(& pwsh -NoProfile -File (Join-Path $tools 'declutter.ps1') audit --json -Root $Ab 2>&1)
+    $abPsDoc = (@($abPs) -join "`n") | ConvertFrom-Json
+    Assert-True ($LASTEXITCODE -eq 0 -and $abPsDoc.totals.files -eq 5) `
+        'AB19 PS 转发器与 bash 入口互通（同一份 JSON）' "exit=$LASTEXITCODE files=$($abPsDoc.totals.files)"
+}
+
+""
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 if ($failed -gt 0) { exit 1 }
 exit 0
