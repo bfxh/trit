@@ -490,6 +490,23 @@
       "pattern": "window_is_usable\\(size, w, h\\)",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C029",
+      "title": "后端 res 必须是 4 的整数倍",
+      "kind": "require",
+      "covers": [
+        "L80"
+      ],
+      "scope": [
+        "crates/trit-parts/src/model.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20T09:17:48+08:00",
+      "pattern": "is_multiple_of\\(4\\)",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

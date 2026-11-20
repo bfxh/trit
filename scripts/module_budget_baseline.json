@@ -2076,7 +2076,11 @@
     },
     {
       "file": "crates/trit-parts/src/api.rs",
-      "lines": 88
+      "lines": 77
+    },
+    {
+      "file": "crates/trit-parts/src/api/tests.rs",
+      "lines": 42
     },
     {
       "file": "crates/trit-parts/src/atlas/bake.rs",
@@ -2444,7 +2448,11 @@
     },
     {
       "file": "crates/trit-parts/src/model.rs",
-      "lines": 348
+      "lines": 339
+    },
+    {
+      "file": "crates/trit-parts/src/model/tests.rs",
+      "lines": 40
     },
     {
       "file": "crates/trit-parts/src/net/layer.rs",
@@ -2469,10 +2477,6 @@
     {
       "file": "crates/trit-parts/src/objmesh.rs",
       "lines": 253
-    },
-    {
-      "file": "crates/trit-parts/src/occ.rs",
-      "lines": 538
     },
     {
       "file": "crates/trit-parts/src/occ/mlp.rs",
