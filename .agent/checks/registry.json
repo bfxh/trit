@@ -1282,6 +1282,26 @@
       "run": "cargo test -p trit-export --test gguf_i2s",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C075",
+      "title": "第 13–21 轮审计修复（预算、路径围栏、YARA 语义）",
+      "kind": "cmd",
+      "covers": [
+        "L124"
+      ],
+      "scope": [
+        "crates/trit-export/src/gguf_codec.rs",
+        "crates/trit-re/src/pe.rs",
+        "crates/trit-re/src/yaraparse.rs",
+        "crates/trit-wspace/src/wsp2/index_io.rs"
+      ],
+      "since": "L124",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-export --test gguf_limits --test gguf_i2s",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

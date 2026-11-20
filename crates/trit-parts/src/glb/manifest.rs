@@ -8,7 +8,7 @@
 //! 打包器去读包外的任意文件，再把它原样塞进输出的 `.glb`（第三方资源包场景下
 //! 这就是一条信息外带通道）。
 
-use std::path::{Component, Path, PathBuf};
+pub(super) use super::path::resolve;
 
 pub(super) fn field(txt: &str, key: &str) -> Option<String> {
     let pat = format!("\"{key}\": \"");
@@ -70,40 +70,6 @@ pub(super) fn object_block<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
     None
 }
 
-pub(super) fn resolve(base: &Path, p: String) -> Result<PathBuf, String> {
-    let rel = PathBuf::from(&p);
-    // Windows 上 `/abs/x` 是"root-relative"而不是 absolute（is_absolute 为 false），
-    // 但语义上仍然不是从包目录出发的相对路径，所以 has_root 也要算进来。
-    if rel.is_absolute() || rel.has_root() {
-        return Ok(rel);
-    }
-    let joined = base.join(&rel);
-    // 词法折叠 . 与 ..，再跟"包目录的上一级"比 —— 不读盘，所以对不存在的路径
-    // 也成立。真实产物的清单就写在 `../objects.manifest.json`（清单在包目录的上
-    // 级），所以 `..` 本身合法，越出包目录才不合法。
-    let norm = fold(&joined);
-    let fence = fold(base.parent().unwrap_or(base));
-    if !norm.starts_with(&fence) {
-        return Err(format!("清单里的路径越出包目录：{p}"));
-    }
-    Ok(joined)
-}
-
-/// 纯词法折叠 `.` 与 `..`，不触碰文件系统。
-fn fold(p: &Path) -> PathBuf {
-    let mut out = PathBuf::new();
-    for c in p.components() {
-        match c {
-            Component::ParentDir => {
-                out.pop();
-            }
-            Component::CurDir => {}
-            other => out.push(other.as_os_str()),
-        }
-    }
-    out
-}
-
 pub(super) fn read(p: &std::path::Path) -> Result<String, String> {
     std::fs::read_to_string(p).map_err(|e| format!("{}: {e}", p.display()))
 }
@@ -129,22 +95,4 @@ pub(super) fn mesh_entries(txt: &str) -> Vec<MeshEntry> {
         });
     }
     out
-}
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn manifest_paths_cannot_escape_the_package_dir() {
-        let base = Path::new("pkg/meshes");
-        // 真实产物就是这样引用上级的对象清单，必须放行。
-        assert!(resolve(base, "../objects.manifest.json".into()).is_ok());
-        assert!(resolve(base, "obj-1.obj".into()).is_ok());
-        assert!(resolve(base, "sub/obj-1.obj".into()).is_ok());
-        // 越出包目录就不行。
-        assert!(resolve(base, "../../etc/passwd".into()).is_err());
-        assert!(resolve(base, "a/../../../etc/passwd".into()).is_err());
-        // 绝对路径是清单作者显式写的，不当作穿越。
-        assert!(resolve(base, "/abs/obj-1.obj".into()).is_ok());
-    }
 }

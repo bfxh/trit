@@ -8,8 +8,8 @@
 use std::collections::HashMap;
 
 use crate::mesh::Mesh;
-
 mod manifest;
+mod path;
 mod scene;
 pub use scene::{Loaded, load_scene};
 

@@ -33,7 +33,7 @@ pub enum Error {
     /// 张量字段长度不符。
     #[error("GGUF 张量 {0} 字段长度不符")]
     Field(String),
-    /// 张量数超过文件剩余长度。
-    #[error("张量数 {count} 超过文件剩余长度")]
+    /// 张量数超过预算或文件剩余长度。
+    #[error("张量数 {count} 超过预算（100000）或文件剩余长度")]
     TooMany { count: usize },
 }

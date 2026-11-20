@@ -78,5 +78,13 @@
     "new": "out.resize(payload + I2S_TAIL + 4, 0);",
     "pkg": "trit-export",
     "filter": "i2s_body_is_quarter_size_plus_tail"
+  },
+  {
+    "name": "gguf: 张量数预算不卡",
+    "file": "crates/trit-export/src/gguf_codec.rs",
+    "old": "if tensor_count > MAX_TENSORS || tensor_count > bytes.len().saturating_sub(pos) / 40 {",
+    "new": "if false {",
+    "pkg": "trit-export",
+    "filter": "rejects_huge_tensor_count_before_allocation"
   }
 ]

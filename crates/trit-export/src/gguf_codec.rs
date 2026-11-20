@@ -1,7 +1,5 @@
-//! GGUF v3 编解码（从 `lib.rs` 拆出，控制单文件行数）。
-//!
-//! 支持两种张量类型：本仓 `TYPE_TRIT`（per-row `scales` + `bias`）与上游 `TYPE_I2_S`
-//! （2 bit/trit + per-tensor f32 scale + 32 字节尾）。
+//! GGUF v3 编解码（从 `lib.rs` 拆出）：本仓 `TYPE_TRIT`（per-row）与上游 `TYPE_I2_S`
+//! （2 bit/trit + per-tensor scale + 32 B 尾）。
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -13,6 +11,8 @@ use crate::{Error, MetaValue, Model, TYPE_I2_S, TYPE_TRIT, Tensor};
 const MAGIC: &[u8; 4] = b"GGUF";
 const VERSION: u32 = 3;
 const ALIGNMENT: usize = 32;
+/// 单文件张量数上限（与 `trit-texture` 的 GGUF 导入器同口径）。
+const MAX_TENSORS: usize = 100_000;
 const META_U32: u32 = 4;
 const META_F32: u32 = 6;
 const META_STR: u32 = 8;
@@ -264,7 +264,7 @@ pub fn read(bytes: &[u8]) -> Result<Model, Error> {
     }
     let tensor_count = usize::try_from(read_u64(bytes, &mut pos)?).map_err(|_| Error::Truncated)?;
     let meta_count = usize::try_from(read_u64(bytes, &mut pos)?).map_err(|_| Error::Truncated)?;
-    if tensor_count > bytes.len().saturating_sub(pos) / 40 {
+    if tensor_count > MAX_TENSORS || tensor_count > bytes.len().saturating_sub(pos) / 40 {
         return Err(Error::TooMany {
             count: tensor_count,
         });

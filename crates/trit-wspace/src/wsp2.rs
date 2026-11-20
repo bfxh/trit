@@ -8,7 +8,7 @@
 
 use crate::error::{Error, Result};
 use crate::net::{Layer, Net};
-
+mod budget;
 pub(super) const MAGIC: &[u8; 4] = b"WSP2";
 pub(super) const VERSION: u8 = 2;
 const MAX_LAYERS: usize = 4096;
