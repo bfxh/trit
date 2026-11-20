@@ -25,10 +25,17 @@ impl Tensors {
             let off: usize = field_num(blk, "off").ok_or("weights.json 缺 off")?;
             let n: usize = field_num(blk, "n").ok_or("weights.json 缺 n")?;
             let shape = field_shape(blk).ok_or("weights.json 缺 shape")?;
-            let bytes = raw
-                .get(off * 4..(off + n) * 4)
-                .ok_or_else(|| format!("{name}: 越界"))?;
-            let mut v = Vec::with_capacity(n);
+            let start = off
+                .checked_mul(4)
+                .ok_or_else(|| format!("{name}: off 偏移 {off} 溢出"))?;
+            let end = off
+                .checked_add(n)
+                .and_then(|s| s.checked_mul(4))
+                .ok_or_else(|| format!("{name}: off + n 溢出（off {off}，n {n}）"))?;
+            let bytes = raw.get(start..end).ok_or_else(|| format!("{name}: 越界"))?;
+            // 容量只认真实字节数。`n` 已被上式约束成 `n * 4 == end - start`，
+            // 但这里不拿它当真：分配依据只剩 `weights.bin` 的实际长度。
+            let mut v = Vec::with_capacity(bytes.len() / 4);
             for c in bytes.as_chunks::<4>().0 {
                 v.push(f32::from_le_bytes(*c));
             }
@@ -102,156 +109,5 @@ pub struct ConvW {
     pub kk: u32,
 }
 
-/// 3x3 / 1x1 卷积 + BN（可选）。BN 折叠成每通道 scale 与偏移。
-pub fn conv_w(t: &Tensors, wname: &str, bn: Option<&str>, relu: bool) -> Result<ConvW, String> {
-    let (w, shape) = t.get(wname)?;
-    if shape.len() != 4 {
-        return Err(format!("{wname} 形状不是 4 维: {shape:?}"));
-    }
-    let (cout, cin, kh, kw) = (shape[0], shape[1], shape[2], shape[3]);
-    let kk = kh;
-    if kh != kw {
-        return Err(format!("{wname} 非方核 {kh}x{kw}"));
-    }
-    let bias_raw = t.v(&wname.replace(".weight", ".bias"))?;
-    if bias_raw.len() != cout {
-        return Err(format!("{wname} bias 长度不符"));
-    }
-    let _ = relu;
-
-    let (scale, shift) = match bn {
-        Some(p) => {
-            let g = t.v(&format!("{p}.weight"))?;
-            let b = t.v(&format!("{p}.bias"))?;
-            let mean = t.v(&format!("{p}.running_mean"))?;
-            let var = t.v(&format!("{p}.running_var"))?;
-            let mut s = vec![0f32; cout];
-            let mut sh = vec![0f32; cout];
-            for c in 0..cout {
-                let sc = g[c] / (var[c] + EPS).sqrt();
-                s[c] = sc;
-                sh[c] = b[c] - mean[c] * sc;
-            }
-            (s, sh)
-        }
-        None => (vec![1f32; cout], vec![0f32; cout]),
-    };
-
-    let n = kk * kk * cin * cout;
-    let mut wf = vec![0f32; n];
-    let mut wt = vec![0i32; n];
-    let mut ws = vec![0f32; cout];
-
-    for oc in 0..cout {
-        // 每输出通道的三值 scale：该通道 |w| 的均值
-        let mut acc = 0f32;
-        for ic in 0..cin {
-            for ky in 0..kk {
-                for kx in 0..kk {
-                    acc += w[((oc * cin + ic) * kk + ky) * kk + kx].abs();
-                }
-            }
-        }
-        let s = acc / (cin * kk * kk) as f32;
-        let s = if s > 1e-12 { s } else { 1.0 };
-        ws[oc] = s * scale[oc];
-        for ic in 0..cin {
-            for ky in 0..kk {
-                for kx in 0..kk {
-                    let idx = (ky * kk + kx) * cin * cout + ic * cout + oc;
-                    let wv = w[((oc * cin + ic) * kk + ky) * kk + kx];
-                    wf[idx] = wv * scale[oc];
-                    let q = (wv / s).round().clamp(-1.0, 1.0);
-                    wt[idx] = q as i32;
-                }
-            }
-        }
-    }
-
-    let mut bias = vec![0f32; cout];
-    for oc in 0..cout {
-        bias[oc] = bias_raw[oc] * scale[oc] + shift[oc];
-    }
-
-    Ok(ConvW {
-        wf,
-        wt,
-        ws,
-        bias,
-        cin: cin as u32,
-        cout: cout as u32,
-        kk: kk as u32,
-    })
-}
-
-/// ConvTranspose2d(k=2, stride=2)：无 BN。权重布局 `[(kh*2+kw)*cin + ci][cout]`。
-pub fn convt_w(t: &Tensors, wname: &str) -> Result<ConvW, String> {
-    let (w, shape) = t.get(wname)?;
-    if shape.len() != 4 || shape[2] != 2 || shape[3] != 2 {
-        return Err(format!("{wname} 不是 k=2 转置卷积: {shape:?}"));
-    }
-    let (cin, cout) = (shape[0], shape[1]);
-    let n = 4 * cin * cout;
-    let mut wf = vec![0f32; n];
-    let mut wt = vec![0i32; n];
-    let mut ws = vec![0f32; cout];
-    for co in 0..cout {
-        let mut acc = 0f32;
-        for ci in 0..cin {
-            for kh in 0..2 {
-                for kw in 0..2 {
-                    acc += w[((ci * cout + co) * 2 + kh) * 2 + kw].abs();
-                }
-            }
-        }
-        let s = acc / (cin * 4) as f32;
-        let s = if s > 1e-12 { s } else { 1.0 };
-        ws[co] = s;
-        for ci in 0..cin {
-            for kh in 0..2 {
-                for kw in 0..2 {
-                    let idx = (kh * 2 + kw) * cin * cout + ci * cout + co;
-                    let wv = w[((ci * cout + co) * 2 + kh) * 2 + kw];
-                    wf[idx] = wv;
-                    wt[idx] = (wv / s).round().clamp(-1.0, 1.0) as i32;
-                }
-            }
-        }
-    }
-    let bias_raw = t.v(&wname.replace(".weight", ".bias"))?;
-    Ok(ConvW {
-        wf,
-        wt,
-        ws,
-        bias: bias_raw.to_vec(),
-        cin: cin as u32,
-        cout: cout as u32,
-        kk: 2,
-    })
-}
-
-/// 把卷积有效权重转成「oc 外、ic 内」布局：`[(k·cout + oc)·cin + ic]`。
-pub fn transpose_conv(eff: &[f32], cin: usize, cout: usize, kk: usize) -> Vec<f32> {
-    let mut out = vec![0f32; eff.len()];
-    for k in 0..kk * kk {
-        for ic in 0..cin {
-            for oc in 0..cout {
-                out[(k * cout + oc) * cin + ic] = eff[(k * cin + ic) * cout + oc];
-            }
-        }
-    }
-    out
-}
-
-/// 转置卷积有效权重：`[(sub·cin + ci)·cout + co]` → `[(sub·cout + co)·cin + ci]`。
-pub fn transpose_convt(eff: &[f32], cin: usize, cout: usize) -> Vec<f32> {
-    let mut out = vec![0f32; eff.len()];
-    for sub in 0..4usize {
-        for ci in 0..cin {
-            for co in 0..cout {
-                out[(sub * cout + co) * cin + ci] = eff[(sub * cin + ci) * cout + co];
-            }
-        }
-    }
-    out
-}
+mod fold;
+pub use fold::{conv_w, convt_w, transpose_conv, transpose_convt};
