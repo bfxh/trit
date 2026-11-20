@@ -2160,7 +2160,7 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_3d/meshtex.rs",
-      "lines": 574
+      "lines": 573
     },
     {
       "file": "crates/trit-parts/src/bin/parts_3d/objects_export.rs",
@@ -2632,7 +2632,7 @@
     },
     {
       "file": "crates/trit-parts/src/tex/quilt.rs",
-      "lines": 282
+      "lines": 281
     },
     {
       "file": "crates/trit-parts/src/tex/style.rs",
@@ -2705,6 +2705,10 @@
     {
       "file": "crates/trit-parts/tests/planes_bounds.rs",
       "lines": 91
+    },
+    {
+      "file": "crates/trit-parts/tests/quilt_bounds.rs",
+      "lines": 28
     },
     {
       "file": "crates/trit-parts/tests/side_bounds.rs",
