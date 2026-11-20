@@ -246,5 +246,21 @@
   "new": "    let remaining = deadline - elapsed;",
   "pkg": "trit-net",
   "filter": "sleep_budget"
+ },
+ {
+  "name": "net: 层宽不判",
+  "file": "crates/trit-net/src/model.rs",
+  "old": "if self.inputs > MAX_WIDTH || self.outputs > MAX_WIDTH {",
+  "new": "if false {",
+  "pkg": "trit-net",
+  "filter": "layer_width_above_the_cap_is_rejected"
+ },
+ {
+  "name": "net: 层宽上限抬高",
+  "file": "crates/trit-net/src/model.rs",
+  "old": "if self.inputs > MAX_WIDTH || self.outputs > MAX_WIDTH {",
+  "new": "if self.inputs > MAX_WIDTH * 2 || self.outputs > MAX_WIDTH * 2 {",
+  "pkg": "trit-net",
+  "filter": "layer_width_above_the_cap_is_rejected"
  }
 ]

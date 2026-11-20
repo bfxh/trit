@@ -1792,7 +1792,7 @@
     },
     {
       "file": "crates/trit-net/src/model.rs",
-      "lines": 130
+      "lines": 126
     },
     {
       "file": "crates/trit-net/src/netsec/attack.rs",
@@ -1885,6 +1885,10 @@
     {
       "file": "crates/trit-net/tests/ttx_compat.rs",
       "lines": 71
+    },
+    {
+      "file": "crates/trit-net/tests/width_bounds.rs",
+      "lines": 21
     },
     {
       "file": "crates/trit-num/src/impute.rs",

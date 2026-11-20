@@ -883,6 +883,23 @@
       "pattern": "dim > 0 && dim <= MAX_DIM",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C052",
+      "title": "trit-net 层宽在构造前限 MAX_WIDTH",
+      "kind": "require",
+      "covers": [
+        "L100"
+      ],
+      "scope": [
+        "crates/trit-net/src/model.rs"
+      ],
+      "since": "L100",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "self.inputs > MAX_WIDTH \\|\\| self.outputs > MAX_WIDTH",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
