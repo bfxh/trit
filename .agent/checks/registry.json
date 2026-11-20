@@ -592,6 +592,23 @@
       "pattern": "n > MAX_PLANES",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C035",
+      "title": "预览拼图宽高与像素数先 checked 再分配",
+      "kind": "require",
+      "covers": [
+        "L86"
+      ],
+      "scope": [
+        "crates/trit-parts/src/splat/sheet.rs"
+      ],
+      "since": "2026-11-20",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "px > MAX_SHEET_PIXELS",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"
