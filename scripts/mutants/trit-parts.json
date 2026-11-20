@@ -249,7 +249,7 @@
   },
   {
     "name": "preview: 拼图行列颠倒",
-    "file": "crates/trit-parts/src/splat/preview.rs",
+    "file": "crates/trit-parts/src/splat/sheet.rs",
     "old": "        let (cx, cy) = (fi % cols, fi / cols);",
     "new": "        let (cx, cy) = (fi / cols, fi % cols);",
     "pkg": "trit-parts",
