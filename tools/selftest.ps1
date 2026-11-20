@@ -1350,7 +1350,7 @@ if (-not $bashExe) {
 "== AD. 主库删除审批 / 污染 WARN 族 / pitfalls 痛点语料 =="
 if (-not $bashExe) {
     "  SKIP  AD0 没有 bash，跳过 AD 组检查"
-    $skipped += 16
+    $skipped += 24
 } else {
     $shPolAD = Join-Path $tools 'policy.sh'
     $shConAD = Join-Path $tools 'constraints.sh'
@@ -1452,8 +1452,7 @@ if (-not $bashExe) {
         -and ((@($ad11) -join ' ') -match 'BLOCK \[main-tree-raw-delete\]')) `
         'AD11 主库上回收站有账仍 BLOCK（bin 保内容，不抵扣审批）' "put=$ad11put out=$(@($ad11) -join ' ')"
 
-    # AD12-AD15: 污染 WARN 族各触发一次，全部只提醒不拦截（exit 0）——提醒作者你怎么干
-    # 会出什么事情；WARN 本来就不拦，所以没有 -Allow 出口
+    # AD12-AD15: 污染 WARN 族各触发一次，全部只提醒不拦截（exit 0）
     $ad12 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'git commit --no-verify -m x' 2>&1)
     Assert-True ($LASTEXITCODE -eq 0 -and ((@($ad12) -join ' ') -match 'pollution\[no-verify\]')) `
         'AD12 WARN commit --no-verify：绕门禁进坏基线的后果提醒且不拦截' (@($ad12) -join ' / ')
@@ -1473,6 +1472,59 @@ if (-not $bashExe) {
     $ad15 = @(& $bashExe $shPolAD -Profile workspace-write -Root (ToPosix $ADm) -Command 'git add .env' 2>&1)
     Assert-True ($LASTEXITCODE -eq 0 -and ((@($ad15) -join ' ') -match 'pollution\[secret-path\]')) `
         'AD15 WARN 密钥形态文件（.env）：凭据进公开树的提醒且不拦截' (@($ad15) -join ' / ')
+
+    # AD16-AD20: pitfalls 痛点语料库
+    $ADp = Join-Path $Work 'ad-pit'
+    New-Item -ItemType Directory $ADp -Force | Out-Null
+    $pfRoot = ToPosix $ADp
+    & $bashExe $shPfAD add --cat git --trigger 'staged-only file lost by git reset --hard' `
+        --consequence 'work is gone without a trace' --prevention 'stash or segment the commit chain' `
+        --source 'docs/ERRORS.md L15' -Root $pfRoot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AD16a pitfalls add exit=0' "exit=$LASTEXITCODE"
+    & $bashExe $shPfAD add --cat nosuch --trigger t --consequence c --prevention p -Root $pfRoot 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AD16b 未知 cat 拒绝（exit 2）' "exit=$LASTEXITCODE"
+    $pfList = @(& $bashExe $shPfAD list -Root $pfRoot 2>&1)
+    Assert-True ((@($pfList) -join ' ') -match 'staged-only file lost') `
+        'AD16c list 读回 trigger（ASCII 转义渲染，不丢内容）' (@($pfList) -join ' / ')
+
+    & $bashExe $shPfAD seed -Root $pfRoot 2>&1 | Out-Null
+    $ad17a = $LASTEXITCODE
+    & $bashExe $shPfAD seed -Root $pfRoot 2>&1 | Out-Null
+    $ad17b = $LASTEXITCODE
+    $pfCount = (@(& $bashExe $shPfAD count -Root $pfRoot 2>&1) -join ' ')
+    $n17 = if ($pfCount -match 'count=(\d+)') { [int]$Matches[1] } else { -1 }
+    Assert-True ($ad17a -eq 0 -and $ad17b -eq 0 -and $n17 -ge 8) `
+        'AD17 seed 两次幂等且 ≥8 条（种子提炼自真实台账）' "rc=$ad17a/$ad17b count=$n17"
+
+    $pfExp = Join-Path $Work 'ad-pit-export.jsonl'
+    & $bashExe $shPfAD export --jsonl (ToPosix $pfExp) -Root $pfRoot 2>&1 | Out-Null
+    $ad18 = $LASTEXITCODE
+    $expLines = @([IO.File]::ReadAllLines($pfExp, $enc) | Where-Object { $_.Trim() })
+    Assert-True ($ad18 -eq 0 -and $expLines.Count -eq $n17) `
+        'AD18 export --jsonl 行数 == count（ML 训练就绪格式）' "lines=$($expLines.Count) count=$n17"
+    $expRaw = [IO.File]::ReadAllText($pfExp, $enc)
+    $ghN = @([regex]::Matches($expRaw, '"cat":\s*"github"')).Count
+    Assert-True ($ghN -ge 2) 'AD19 种子含 ≥2 条 github 域痛点（不只 git）' "github=$ghN"
+
+    $pfCountBefore = $n17
+    # 伪造的用户路径在运行时拼出来：源码里不出现完整的"盘符+Users+反斜杠"形态，
+    # 免得 privacy_scan 的硬规则打红这条夹具本身（路径是假的，闸是真的）
+    $upFake = ('C:' + '\' + 'Users' + '\' + 'somebody' + '\' + 'box' + '\todo.txt')
+    & $bashExe $shPfAD add --cat git --trigger "see notes at $upFake" `
+        --consequence c --prevention p -Root $pfRoot 2>&1 | Out-Null
+    $ad20 = $LASTEXITCODE
+    $pfCount2 = (@(& $bashExe $shPfAD count -Root $pfRoot 2>&1) -join ' ')
+    Assert-True ($ad20 -eq 1 -and $pfCount2 -match "count=$pfCountBefore") `
+        'AD20 带本机用户路径的条目拒收且不落盘（隐私门，语料要进公开树）' "rc=$ad20 $pfCount2"
+
+    # AD21: 内核规则不许从表里悄悄消失——旧表缺 no-raw-delete 时 check 现场补回并大声说明
+    $ADt = Join-Path $ADwt '.agent\constraints.json'
+    [IO.File]::WriteAllText($ADt, '[{"id":"no-new-unwrap","severity":"warn","scope":["**"],"on":"added","pattern":"unwrap","message":"x"}]' + "`n", $enc)
+    $ad21 = @(& $bashExe $shConAD check -Root (ToPosix $ADwt) 2>&1)
+    $ad21j = (@($ad21) -join ' ')
+    Assert-True ($LASTEXITCODE -eq 1 -and $ad21j -match 'restored for this run' `
+        -and $ad21j -match 'no-raw-delete' -and $ad21j -match 'BLOCK \[no-raw-delete\]') `
+        'AD21 旧表缺内核规则时 check 现场补回并判红（约束不许静默变窄）' (@($ad21) -join ' / ')
 }
 
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
