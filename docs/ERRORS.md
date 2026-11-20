@@ -136,6 +136,8 @@
 
 | L88 | `occ --hid`、`texgen --hid`、`texgen2 --hid`（经 `diffuse::PatchMlp`）三条 CLI 链共用 `occ::Mlp::new(nin, nhid, seed)`，`nhid` 与 `nin*nhid` 都没有校验 | `new` 里 `let n1 = nin * nhid;` 裸乘后 `w1: (0..n1).map(...).collect()`，再加 `b1: vec![0.0; nhid]`。`--hid 1000000000` 让 `nin*1e9` 变成 TB 级；`--hid 18446744073709551615`（`usize::MAX`）让 `nin*nhid` 溢出——debug 直接 panic，release 绕成 `usize::MAX-1` 后 `(0..n1).map().collect()` 一行吃掉全部内存。`--hid 0` 则 `forward` 的 `vec![0.0; 0]` 与 `w2` 全空 | `Mlp::new` 改返回 `Result<Self, String>`：**第一行** `crate::hidden::check(nhid)?`（复用 `--hidden` 的 `MAX_HIDDEN = 256`，一个上限两个用户），`n1` 改成 `nin.checked_mul(nhid).ok_or("权重矩阵 nin×nhid 溢出")?`；`diffuse::PatchMlp::new` 同步返回 `Result` 并 `?` 转发；三个 CLI 调用点 `unwrap_or_else(|e| fail(&e))`，`occ/mod.rs` 7 处测试补 `.unwrap()` | C037 |
 
+| L89 | `texgen2 --patch`（`texgen2.rs:37`，默认 3）直通 `diffuse::PatchMlp::new` 的 `let nin = patch * patch + cond + 1`，零校验 | `patch²` 是裸乘，而 `nin` 又立刻进 `Mlp::new` 的 `nin×nhid`（L88 刚加的 `checked_mul` **只挡 usize 绕回**）。`--patch 65536` 给出 4.3e9 个特征——乘法干干净净地过，然后按 550 GB 去分配；`--patch 4294967297` 让 `patch²` 溢出，debug panic / release 绕回。还有一条更安静的：`features` 里 `r = patch / 2`、循环是 `(2r+1)²` 个位置，**偶数** `patch`（如 4）让 `(2r+1)² = 25 ≠ patch² = 16`，多出的 9 个特征被 `Mlp::forward` 的 `take(nin)` 静默丢掉 | `PatchMlp` 从 `diffuse.rs` 拆到 `diffuse/patch.rs`（352 → 209 + 172，不抬 cap），新增 `MAX_PATCH = 15` 与 `check(patch, cond)`：必须奇数、`≤ MAX_PATCH`、`patch²+cond+1` 三段 `checked`；`new` 第一行 `check(patch, cond)?`；`input_dim()` 改成 `self.mlp.nin`（顺手消掉第二处 `patch*patch` 裸乘） | C038 |
+
 
 
 

@@ -641,10 +641,34 @@
   },
   {
     "name": "mlp: PatchMlp 不转发 Err",
-    "file": "crates/trit-parts/src/diffuse.rs",
+    "file": "crates/trit-parts/src/diffuse/patch.rs",
     "old": "            mlp: Mlp::new(nin, hid, seed)?,",
     "new": "            mlp: Mlp::new(nin, hid, seed).expect(\"mlp\"),",
     "pkg": "trit-parts",
     "filter": "patch_mlp_forwards_the_hid_check"
+  },
+  {
+    "name": "patch: new 不调 check",
+    "file": "crates/trit-parts/src/diffuse/patch.rs",
+    "old": "        let nin = check(patch, cond)?; // = patch² + cond + 1（+1 = t/T）",
+    "new": "        let nin = patch * patch + cond + 1; // +1 = t/T",
+    "pkg": "trit-parts",
+    "filter": "patch_above_the_cap_is_rejected"
+  },
+  {
+    "name": "patch: 上限不判",
+    "file": "crates/trit-parts/src/diffuse/patch.rs",
+    "old": "patch == 0 || patch.is_multiple_of(2) || patch > MAX_PATCH",
+    "new": "patch.is_multiple_of(2)",
+    "pkg": "trit-parts",
+    "filter": "huge_patch_is_rejected_before_the_multiply"
+  },
+  {
+    "name": "patch: 偶数不判",
+    "file": "crates/trit-parts/src/diffuse/patch.rs",
+    "old": "patch == 0 || patch.is_multiple_of(2) || patch > MAX_PATCH",
+    "new": "patch == 0 || patch > MAX_PATCH",
+    "pkg": "trit-parts",
+    "filter": "even_patch_is_rejected"
   }
 ]
