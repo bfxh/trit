@@ -1,10 +1,9 @@
 //! 保持集副作用证书：违规检出、五分类、空操作/重复目标、编辑集门禁、CLI 端到端。
 
+use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-
-use serde_json::Value;
 use trit_wspace::certify::{self, CertifyOptions, Verdict};
 use trit_wspace::{Edit, Layer, Net, Oracle, Patch, Trit, to_wsp};
 
@@ -251,6 +250,7 @@ fn cli_certify_gates_and_accepts_edited_artifact() {
         &path_string(&edited),
         "--certificate",
         &path_string(&certificate),
+        "--advisory",
     ]));
     assert_eq!(report["certified"], false);
     assert_eq!(report["schema"], "trit-wspace.certificate.v1");

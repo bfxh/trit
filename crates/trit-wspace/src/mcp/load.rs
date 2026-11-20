@@ -1,11 +1,14 @@
-//! mcp 的参数/路径装载 + 工作区根限界（从 src/mcp.rs 拆出，控制行数预算）。
+//! mcp 的参数/路径装载（工作区根与只读装载在 `load/fsread.rs`）。
 
 use crate::codec::from_wsp;
 use crate::net::Net;
 use crate::oracle::Oracle;
 use crate::wire;
 use serde_json::Value;
-use std::path::{Path, PathBuf};
+
+mod fsread;
+use fsread::{confined, read_text};
+pub(crate) use fsread::{refuse_wide_default_root, set_root};
 
 pub(super) fn read_log(raw: &str) -> Result<String, String> {
     if raw.trim().is_empty() {
@@ -14,7 +17,7 @@ pub(super) fn read_log(raw: &str) -> Result<String, String> {
     if raw.trim_start().starts_with('{') || raw.contains('\n') {
         Ok(raw.to_string())
     } else {
-        std::fs::read_to_string(confined(raw)?).map_err(|_| "读取失败".to_string())
+        read_text(&confined(raw)?)
     }
 }
 
@@ -48,13 +51,13 @@ pub(super) fn parse_or_path(raw: &str) -> Result<Net, String> {
     let text = if raw.trim_start().starts_with("wsp1") || raw.contains('\n') {
         raw.to_string()
     } else {
-        std::fs::read_to_string(confined(raw)?).map_err(|_| "读取失败".to_string())?
+        read_text(&confined(raw)?)?
     };
     from_wsp(&text).map_err(err)
 }
 
 pub(super) fn read_path(path: &str) -> Result<Net, String> {
-    let text = std::fs::read_to_string(confined(path)?).map_err(|_| "读取失败".to_string())?;
+    let text = read_text(&confined(path)?)?;
     from_wsp(&text).map_err(err)
 }
 
@@ -87,63 +90,4 @@ pub(super) fn opt_u64(args: &Value, name: &str, default: u64) -> u64 {
 
 pub(super) fn err(error: crate::error::Error) -> String {
     error.to_string()
-}
-
-/// 工作区根 = 进程 cwd（MCP server 通常在工作区根启动）。
-fn workspace_root() -> Result<PathBuf, String> {
-    std::env::current_dir().map_err(|_| "无法确定工作区根".to_string())
-}
-
-/// 把输入路径限制在工作区根内（canonicalize 后比对前缀）；越界 / 不可解析一律拒绝（M19）。
-/// 用 `root` 参数便于单测（不依赖进程 cwd）。
-fn confined_in(root: &Path, path: &str) -> Result<PathBuf, String> {
-    let root = root
-        .canonicalize()
-        .map_err(|_| "工作区根不可用".to_string())?;
-    let candidate = if Path::new(path).is_absolute() {
-        PathBuf::from(path)
-    } else {
-        root.join(path)
-    };
-    let real = candidate
-        .canonicalize()
-        .map_err(|_| "路径不可用（不存在或非法）".to_string())?;
-    if real.starts_with(&root) {
-        Ok(real)
-    } else {
-        Err("路径越出工作区范围".into())
-    }
-}
-
-/// 只允许读工作区根内的文件；错误不回显路径/内容（M19）。
-fn confined(path: &str) -> Result<PathBuf, String> {
-    confined_in(&workspace_root()?, path)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn confined_rejects_escapes_and_accepts_inside() {
-        // M19：工作区根内的相对路径放行；绝对外部路径、`..` 越界一律拒绝。
-        let base = std::env::temp_dir().join(format!("trit-mcp-conf-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&base);
-        let root = base.join("ws");
-        std::fs::create_dir_all(root.join("sub")).unwrap();
-        std::fs::write(root.join("sub/ok.wsp"), "wsp1").unwrap();
-        let outside = base.join("outside.txt");
-        std::fs::write(&outside, "secret").unwrap();
-
-        assert!(confined_in(&root, "sub/ok.wsp").is_ok(), "根内相对路径放行");
-        assert!(
-            confined_in(&root, outside.to_str().unwrap()).is_err(),
-            "绝对外部路径拒绝"
-        );
-        assert!(
-            confined_in(&root, "../outside.txt").is_err(),
-            "`..` 越界拒绝"
-        );
-        let _ = std::fs::remove_dir_all(&base);
-    }
 }

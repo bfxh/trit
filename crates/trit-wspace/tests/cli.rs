@@ -1,10 +1,9 @@
 //! CLI 端到端：读 → 验证 → 打坏 → 修补 → 落盘。
 
+use serde_json::Value;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
-
-use serde_json::Value;
 use trit_wspace::{Layer, Net, checksum, from_wsp, to_wsp};
 
 fn xor_net() -> Net {
@@ -93,6 +92,7 @@ fn cli_read_verify_patch_repair_round_trip() {
         &path_string(&broken),
         "--oracle",
         &path_string(&oracle),
+        "--advisory",
     ]));
     assert_eq!(broken_verify["exact"], false);
 

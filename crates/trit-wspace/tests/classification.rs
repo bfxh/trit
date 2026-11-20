@@ -1,10 +1,9 @@
 //! 分类读数：per-class 精度与混淆矩阵。
 
+use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 use std::process::{Command, Output};
-
-use serde_json::{Value, json};
 use trit_wspace::mcp::Mcp;
 use trit_wspace::wire::classification_value;
 use trit_wspace::{Layer, Net, Oracle, Trit, to_wsp};
@@ -120,6 +119,7 @@ fn cli_verify_reports_classification() {
         &path_string(&artifact_path),
         "--oracle",
         &path_string(&oracle_path),
+        "--advisory",
     ]));
     assert_eq!(output["classification"]["classes"], json!(2));
     assert_eq!(output["classification"]["per_class"][1]["count"], json!(2));

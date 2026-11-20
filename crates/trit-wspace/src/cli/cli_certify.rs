@@ -9,12 +9,12 @@ use super::{
 };
 
 pub(super) fn certify(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &["strict"])?;
+    let parsed = parse(args, &["strict", "advisory"])?;
     let path = one(
         &parsed,
         "certify <artifact|-> (--keep <oracle|-> | --keep-samples N [--seed S]) \
          (--patch <json|-> | --edited <artifact|->) [--edit <oracle|->] [--allow N] \
-         [--limit N] [--strict] [--out <path>] [--certificate <path>]",
+         [--limit N] [--strict|--advisory] [--out <path>] [--certificate <path>]",
     )?;
     let keep_path = parsed.values.get("keep").map(String::as_str);
     let keep_samples = parsed.values.get("keep-samples").map(String::as_str);
@@ -54,7 +54,7 @@ pub(super) fn certify(args: &[String]) -> Result<(), String> {
         allow: opt_usize(&parsed, "allow", 0)?,
         rows: opt_usize(&parsed, "limit", certify::DEFAULT_ROWS)?,
     };
-
+    super::cli_verify::warn_if_allow(options.allow);
     let (certificate, edited) = match patch_path {
         Some(patch_source) => {
             let patch = wire::patch_from_value(&load_json(patch_source)?).map_err(err)?;
@@ -78,7 +78,7 @@ pub(super) fn certify(args: &[String]) -> Result<(), String> {
     }
     let passed = certificate.passed();
     emit(&report)?;
-    if !passed && parsed.switches.contains("strict") {
+    if !passed && !parsed.switches.contains("advisory") {
         let edit_loss = certificate.edit.as_ref().map_or(0, |one| one.after_loss);
         return Err(format!(
             "证书不成立：keep violations={}（允许 {}），edit loss={}",

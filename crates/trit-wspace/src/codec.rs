@@ -63,7 +63,7 @@ pub fn from_wsp(text: &str) -> Result<Net> {
     if magic != MAGIC {
         return Err(Error::Parse {
             line: 1,
-            msg: format!("期望 {MAGIC}，得到 {magic}"),
+            msg: format!("期望 {MAGIC}，得到 {} 字节的非 wsp1 首行", magic.len()),
         });
     }
 

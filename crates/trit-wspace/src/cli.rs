@@ -11,7 +11,7 @@ use crate::edit::Patch;
 use crate::merge::{merge_aligned, merge_vote};
 use crate::net::Net;
 use crate::ops;
-use crate::oracle::{Behavior, Oracle};
+use crate::oracle::Oracle;
 use crate::wire;
 
 mod cli_artifact_shard;
@@ -23,6 +23,7 @@ mod cli_learned;
 mod cli_repair;
 mod cli_safetensors;
 mod cli_task;
+mod cli_verify;
 mod cli_wsp2;
 mod cli_wspm;
 mod fsutil;
@@ -52,7 +53,7 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
     };
     match command {
         "read" => cmd_read(&args[1..]),
-        "verify" => cmd_verify(&args[1..]),
+        "verify" => cli_verify::verify(&args[1..]),
         "certify" => cli_certify::certify(&args[1..]),
         "task-merge" => cli_task::task_merge(&args[1..]),
         "task-scale" => cli_task::task_scale(&args[1..]),
@@ -92,8 +93,16 @@ pub(crate) fn run(args: &[String]) -> Result<(), String> {
         "unpack-artifact" => cli_wsp2::unpack(&args[1..]),
         "pack-model" => cli_wspm::pack(&args[1..]),
         "unpack-model" => cli_wspm::unpack(&args[1..]),
-        "mcp" => crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
-            .map_err(|error| error.to_string()),
+        "mcp" => {
+            let parsed = parse(&args[1..], &[])?;
+            if let Some(root) = parsed.values.get("root") {
+                crate::mcp::load::set_root(root)?;
+            } else {
+                crate::mcp::load::refuse_wide_default_root()?;
+            }
+            crate::mcp::serve(std::io::stdin().lock(), std::io::stdout().lock())
+                .map_err(|error| error.to_string())
+        }
         "--help" | "-h" | "help" => {
             println!("{USAGE}");
             Ok(())
@@ -110,25 +119,6 @@ fn cmd_read(args: &[String]) -> Result<(), String> {
     emit(&json!({
         "summary": wire::net_summary(&net),
         "wsp1": to_wsp(&net),
-    }))
-}
-
-fn cmd_verify(args: &[String]) -> Result<(), String> {
-    let parsed = parse(args, &[])?;
-    let path = one(&parsed, "verify <artifact|-> --oracle <json|->")?;
-    let oracle_path = value(&parsed, "oracle")?;
-    no_double_stdin(&[path, oracle_path])?;
-    let net = load_net(path)?;
-    let oracle = load_oracle(oracle_path)?;
-    let limit = opt_usize(&parsed, "limit", 32)?;
-    emit(&json!({
-        "exact": oracle.exact(&net).map_err(err)?,
-        "loss": oracle.loss(&net).map_err(err)?,
-        "accuracy": oracle.accuracy(&net).map_err(err)?,
-        "signature": format!("{:016x}", Behavior::of(&net, &oracle).map_err(err)?.signature()),
-        "summary": wire::net_summary(&net),
-        "mismatches": wire::mismatches_value(&net, &oracle, limit).map_err(err)?,
-        "classification": wire::classification_value(&net, &oracle).map_err(err)?,
     }))
 }
 
