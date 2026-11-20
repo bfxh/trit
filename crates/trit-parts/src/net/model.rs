@@ -85,8 +85,8 @@ impl Net {
         let cin = self.layers[D1B].cout;
         let mut s = seed | 1;
         // 输出通道要补到 4 的倍数（vec4 反向内核）；多出来的补零通道不参与损失。
-        let need = planes * 3;
-        let cout = need + (4 - need % 4) % 4;
+        let n = (planes as usize).min(crate::planes::MAX_PLANES); // 越限截断：旧算法在 u32 里绕过 0
+        let cout = crate::planes::head_cout(n) as u32;
         // 实测 1×1 在留出集上比 3×3 好（MAE 1.09/1.31 m vs 1.20/1.48 m，3000 步）。
         self.layers.push(Layer::random(cin, cout, 1, false, &mut s));
     }

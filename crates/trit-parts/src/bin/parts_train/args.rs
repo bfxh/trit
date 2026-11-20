@@ -161,9 +161,7 @@ pub(crate) fn parse() -> Result<Args, String> {
                     other => return Err(format!("未知 STE {other}")),
                 }
             }
-            "--depth-planes" => {
-                a.depth_planes = val()?.parse().map_err(|_| "--depth-planes 非整数")?
-            }
+            "--depth-planes" => a.depth_planes = trit_parts::planes::parse_arg(&val()?)?,
             "--depth-weight" => {
                 a.depth_weight = val()?.parse().map_err(|_| "--depth-weight 非数字")?
             }

@@ -71,6 +71,7 @@ pub fn depth_planes(
     lo: f32,
     hi: f32,
 ) -> Result<(Vec<Vec<u8>>, Vec<u8>), String> {
+    let levels = crate::planes::levels_checked(dplanes)?;
     let stem = file
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
@@ -80,7 +81,6 @@ pub fn depth_planes(
     if dep.len() < npix || seg.len() < npix {
         return Err("深度/分割比图像小".into());
     }
-    let levels = 3usize.pow(dplanes as u32) - 1;
     let span = (hi - lo).max(1e-6);
     let mut planes = vec![vec![0u8; npix]; dplanes];
     let mut valid = vec![0u8; npix];
@@ -93,7 +93,7 @@ pub fn depth_planes(
         let lvl = ((t * levels as f32).round() as usize).min(levels);
         valid[p] = 1;
         for (i, plane) in planes.iter_mut().enumerate() {
-            plane[p] = ((lvl / 3usize.pow((dplanes - 1 - i) as u32)) % 3) as u8;
+            plane[p] = ((lvl / crate::planes::pow3(dplanes - 1 - i)) % 3) as u8;
         }
     }
     Ok((planes, valid))

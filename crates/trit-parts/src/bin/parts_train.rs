@@ -139,7 +139,7 @@ fn main() {
         println!(
             "独立深度头：{} 条平面（{} 级），输入 {} 通道、输出 {} 通道",
             args.depth_planes,
-            3usize.pow(args.depth_planes as u32),
+            trit_parts::planes::levels(args.depth_planes),
             net.layers[trit_parts::net::D1B].cout,
             net.depth_cout()
         );
