@@ -1341,7 +1341,7 @@ if (-not $bashExe) {
 # watch 的四个面都在这里：record 自由标签 + 隐私闸；report 分桶失败率与疲劳 WARN
 # （触发与不触发两侧、分母只吃认识的标签）；health 四个报警面各带后果说明；
 # pollution 三种污染模式只列不拦。夹具全部走临时目录，git 夹具就地 init。
-$acTotal = 35
+$acTotal = 44
 if (-not $bashExe) {
     "  SKIP  AC0 没有 bash，跳过 watch 检查"
     $skipped += $acTotal
@@ -1567,6 +1567,53 @@ if (-not $bashExe) {
     $ac21 = @(& $bashExe (Join-Path $tools 'affected.sh') -Path (ToPosix $AcW2) -Changed 'pkg/core.py' -Lang python 2>&1)
     Assert-True ((@($ac21) -join ' ') -match 'proven=True' -and (@($ac21) -join ' ') -notmatch 'no git history') `
         'AC21 worktree 形态（.git 是文件）不误判 no git history，proven 照判' (@($ac21) -join ' / ')
+
+    # AC22: ledger 每行可选 agent_id——追加式，旧行没有该字段照常读
+    $shL2 = Join-Path $tools 'ledger.sh'
+    $AcLed = Join-Path $Work 'ac-ledger.json'
+    & $bashExe $shL2 add -Ledger (ToPosix $AcLed) -Task split -Key 'k|old' -Tokens 100 -Wall 1 2>&1 | Out-Null
+    & $bashExe $shL2 add -Ledger (ToPosix $AcLed) -Task split -Key 'k|sub' -Tokens 200 -Wall 2 --agent-id 'sub-7' 2>&1 | Out-Null
+    $ac22 = @(([IO.File]::ReadAllText($AcLed, $enc) | ConvertFrom-Json).entries)
+    Assert-True (@($ac22).Count -eq 2 -and ($ac22[0].PSObject.Properties.Name -notcontains 'agent_id')) `
+        'AC22 旧条目形状不变（无 agent_id 键）' ''
+    Assert-True ($ac22[1].agent_id -eq 'sub-7') 'AC22b 新条目带 agent_id（子代理参与记账）' ''
+    $ac22rep = @(& $bashExe $shL2 report -Ledger (ToPosix $AcLed) 2>&1)
+    Assert-True ((@($ac22rep) -join ' ') -match 'total tokens:\s*300') 'AC22c 旧数据 + 新字段混读，合计照算' (@($ac22rep) -join ' / ')
+
+    # AC23/AC24: agent-verify --agent-id——回执顶层与 run[] 追加 agent_id，旧字段一个不动；
+    # 不带 flag 时与现状完全一致
+    $AcV = Join-Path $Work 'ac-av'
+    New-File (Join-Path $AcV '.git\HEAD') "ref: refs/heads/main`n"
+    New-File (Join-Path $AcV 'conftest.py') ''
+    New-File (Join-Path $AcV 'pkg\core.py') "def f(): return 1`n"
+    New-File (Join-Path $AcV 'pkg\__init__.py') "from .core import f`n"
+    New-File (Join-Path $AcV 'tests\test_core.py') "from pkg.core import f`ndef test_f(): assert f() == 1`n"
+    $shAv2 = Join-Path $tools 'agent-verify.sh'
+    $acRc = Join-Path $Work 'ac-av-rc.json'
+    & $bashExe $shAv2 -Root (ToPosix $AcV) -Changed 'pkg/core.py' -Lang python --agent-id 'sub-9' `
+        -Receipt (ToPosix $acRc) -Store (Join-Path $Work 'ac-av-store') 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AC23 带 --agent-id 全链路 exit=0' "exit=$LASTEXITCODE"
+    $ac23 = Get-Content $acRc -Raw | ConvertFrom-Json
+    $ac23core = (@($ac23.steps | ForEach-Object { $_.step }) |
+        Where-Object { $_ -ne 'memory-brief' -and $_ -ne 'memory-note' }) -join ','
+    Assert-True ($ac23.agent_id -eq 'sub-9' -and $ac23.run[0].agent_id -eq 'sub-9') `
+        'AC23b 回执顶层与 run[0] 都带 agent_id' ''
+    Assert-True ($ac23core -eq 'timeline-due,preflight,checks,affected,policy,constraints,journal-begin,run,journal-end') `
+        'AC23c 步骤序列与 I2b 完全一致（只追加不改旧）' $ac23core
+
+    $acRc2 = Join-Path $Work 'ac-av-rc2.json'
+    & $bashExe $shAv2 -Root (ToPosix $AcV) -Changed 'pkg/core.py' -Lang python `
+        -Receipt (ToPosix $acRc2) -Store (Join-Path $Work 'ac-av-store') 2>&1 | Out-Null
+    $ac24 = Get-Content $acRc2 -Raw | ConvertFrom-Json
+    $ac24runIds = @($ac24.run | ForEach-Object { $_.PSObject.Properties.Name -contains 'agent_id' })
+    Assert-True ($LASTEXITCODE -eq 0 -and ($ac24.PSObject.Properties.Name -notcontains 'agent_id') `
+        -and ($ac24runIds -notcontains $true)) 'AC24 不带 flag 时回执没有任何 agent_id 键（回归保护）' "exit=$LASTEXITCODE"
+    Assert-True ($ac24.verdict -match 'proven subset') 'AC24b verdict 与 I4 同口径' $ac24.verdict
+
+    & $bashExe $shAv2 -Root (ToPosix $AcV) -Changed 'pkg/core.py' -Lang python --agent-id 'D:\elsewhere\x' `
+        -Receipt (ToPosix (Join-Path $Work 'ac-av-rc3.json')) 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2 -and -not (Test-Path (Join-Path $Work 'ac-av-rc3.json'))) `
+        'AC25 agent-id 带盘符路径 exit=2 拒收且不落回执' "exit=$LASTEXITCODE"
 }
 
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"

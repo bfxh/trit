@@ -12,6 +12,9 @@ Same accounting rule as costprobe: entries carry a key, and a key recorded twice
 once. Totals are derived from entries, never accumulated -- an accumulator turns a double
 count into a permanent lie, while a derived total just recomputes.
 
+Subagents record participation: add --agent-id <id> and the entry carries it. The field is
+appended only -- old ledgers without it read unchanged, old field semantics untouched.
+
 Ported from ledger.ps1; messages and exit codes are kept identical.
 """
 
@@ -24,7 +27,8 @@ MODES = {"add", "report"}
 
 
 def parse_args(argv):
-    out = {"mode": "", "ledger": "", "task": "", "key": "", "tokens": -1.0, "wall": -1.0}
+    out = {"mode": "", "ledger": "", "task": "", "key": "", "tokens": -1.0, "wall": -1.0,
+           "agent_id": ""}
     positional = [x for x in argv if not x.startswith("-")]
     i = 0
     while i < len(argv):
@@ -40,7 +44,8 @@ def parse_args(argv):
             except ValueError:
                 out[name] = -1.0
         else:
-            out[{"ledger": "ledger", "task": "task", "key": "key"}.get(name, name)] = val
+            out[{"ledger": "ledger", "task": "task", "key": "key",
+                 "agent-id": "agent_id", "agentid": "agent_id"}.get(name, name)] = val
         i += 2
     if not out["mode"] and positional and positional[0] in MODES:
         out["mode"] = positional[0]
@@ -96,15 +101,22 @@ def cmd_add(a, entries):
         print(f"ledger: key '{a['key']}' already recorded -- kept the earlier entry, "
               f"discarded this one")
     else:
-        entries.append({
+        entry = {
             "task": a["task"], "key": a["key"],
             "tokens": a["tokens"] if a["tokens"] >= 0 else None,
             "wall_s": a["wall"] if a["wall"] >= 0 else None,
             "at": datetime.now().astimezone().isoformat(timespec="microseconds"),
-        })
+        }
+        agent = str(a.get("agent_id", "")).strip()
+        # appended field only: entries without it keep the exact old shape, and readers of
+        # old ledgers never see a key they did not know
+        if agent:
+            entry["agent_id"] = agent
+        entries.append(entry)
         tok = fmt_num(a["tokens"]) if a["tokens"] >= 0 else "-"
         wal = (fmt_num(a["wall"]) + "s") if a["wall"] >= 0 else "-"
-        print(f"ledger: recorded '{a['key']}' (tokens={tok}, wall={wal})")
+        who = f", agent={agent}" if agent else ""
+        print(f"ledger: recorded '{a['key']}' (tokens={tok}, wall={wal}{who})")
     save(a["ledger"], entries)
     return 0
 
