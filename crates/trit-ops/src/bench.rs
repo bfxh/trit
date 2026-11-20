@@ -7,6 +7,9 @@ use crate::simd;
 use crate::trit::Trit;
 use std::time::Instant;
 
+mod q4;
+pub use q4::pack_q4;
+
 /// 基准夹具的元素上限：三值权重按 rows×cols 展开。
 pub const MAX_ELEMS: usize = 1 << 24;
 
@@ -56,7 +59,12 @@ pub fn gemv_f16(w: &[u16], rows: usize, cols: usize, x: &[f32], out: &mut [f32])
 pub fn gemv_q4(w: &[u8], rows: usize, cols: usize, x: &[f32], out: &mut [f32]) {
     assert_eq!(out.len(), rows, "输出长度必须是 rows");
     let bpr = cols.div_ceil(32) * 18;
+    assert!(w.len() >= rows.saturating_mul(bpr), "Q4_0 权重字节不足");
     let (qx, dx) = simd::quantize_act_q8(x);
+    assert!(
+        qx.len() >= cols && dx.len() >= cols.div_ceil(32),
+        "激活量化不足以覆盖 {cols} 列"
+    );
     let wp = Ptr::new(w.as_ptr() as *mut u8);
     let qp = Ptr::new(qx.as_ptr() as *mut i8);
     let dp = Ptr::new(dx.as_ptr() as *mut f32);
@@ -77,32 +85,6 @@ where
 {
     // SAFETY: out 有 out.len() 个元素，各线程写不同行。
     unsafe { crate::pool::par_rows_mut(out.as_mut_ptr(), out.len(), f) };
-}
-
-/// 把 f32 权重按 Q4_0 打包（每块 32：f16 scale + 16 字节 nibble）。
-pub fn pack_q4(w: &[f32]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(w.len() / 32 * 18);
-    for blk in w.as_chunks::<32>().0 {
-        let amax = blk.iter().fold(0.0f32, |a, v| a.max(v.abs()));
-        let d = if amax > 0.0 { amax / 7.0 } else { 0.0 };
-        out.extend_from_slice(&to_f16(d).to_le_bytes());
-        let mut bytes = [0u8; 16];
-        for i in 0..16 {
-            let q0 = if d > 0.0 {
-                (blk[i] / d).round().clamp(-8.0, 7.0) as i32 + 8
-            } else {
-                8
-            };
-            let q1 = if d > 0.0 {
-                (blk[i + 16] / d).round().clamp(-8.0, 7.0) as i32 + 8
-            } else {
-                8
-            };
-            bytes[i] = ((q0 as u8) & 0x0f) | (((q1 as u8) & 0x0f) << 4);
-        }
-        out.extend_from_slice(&bytes);
-    }
-    out
 }
 
 /// f32 -> f16 位模式。
@@ -171,7 +153,7 @@ fn prepare(rows: usize, cols: usize) -> Prepared {
     // 权重按各精度展开
     let f32_w: Vec<f32> = trits.iter().flatten().map(|t| t.get() as f32).collect();
     let f16_w: Vec<u16> = f32_w.iter().map(|v| to_f16(*v)).collect();
-    let q4_w = pack_q4(&f32_w);
+    let q4_w = pack_q4(&f32_w, rows, cols);
 
     let rail = TernaryMatrix::from_rows(&trits, cols);
     let trytes = TryteMatrix::from_rows(&trits, cols);

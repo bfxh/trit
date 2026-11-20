@@ -2,11 +2,11 @@
 
 use std::path::PathBuf;
 
-use trit_immune::NodeId;
 use trit_immune::delta::{Delta, Stamped};
 use trit_immune::hlc::Hlc;
 use trit_immune::journal::Journal;
 use trit_immune::trit::Trit;
+use trit_immune::NodeId;
 
 fn scratch(tag: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("trit-adopt-{tag}-{}", std::process::id()));

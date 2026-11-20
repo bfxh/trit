@@ -374,17 +374,17 @@ pub use scalar::{row_dot_f16, row_dot_f32, row_dot_mask, row_dot_mask2, row_dot_
 
 /// 把 f32 激活量化成 Q8（每 32 元素一个 scale），供 Q4 基线使用。
 pub fn quantize_act_q8(x: &[f32]) -> (Vec<i8>, Vec<f32>) {
-    let nb = x.len() / 32;
+    // 按 ceil(cols/32) 出块并补零：解包按 `cols.div_ceil(32)` 读，floor 会越界（S1）。
+    let nb = x.len().div_ceil(32);
     let mut qs = vec![0i8; nb * 32];
     let mut ds = vec![0.0f32; nb];
-    for b in 0..nb {
-        let seg = &x[b * 32..(b + 1) * 32];
+    for (b, seg) in x.chunks(32).enumerate() {
         let amax = seg.iter().fold(0.0f32, |a, v| a.max(v.abs()));
         let d = if amax > 0.0 { amax / 127.0 } else { 0.0 };
         ds[b] = d;
         let inv = if d > 0.0 { 1.0 / d } else { 0.0 };
-        for i in 0..32 {
-            qs[b * 32 + i] = (seg[i] * inv).round().clamp(-127.0, 127.0) as i8;
+        for (i, v) in seg.iter().enumerate() {
+            qs[b * 32 + i] = (*v * inv).round().clamp(-127.0, 127.0) as i8;
         }
     }
     (qs, ds)
@@ -489,7 +489,7 @@ mod tests {
         let w: Vec<f32> = (0..cols)
             .map(|i| ((i * 5 % 13) as f32 - 6.0) * 0.2)
             .collect();
-        let packed = crate::bench::pack_q4(&w);
+        let packed = crate::bench::pack_q4(&w, 1, cols);
         let x: Vec<f32> = (0..cols)
             .map(|i| ((i * 3 % 9) as f32 - 4.0) * 0.1)
             .collect();

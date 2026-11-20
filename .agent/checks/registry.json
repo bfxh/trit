@@ -1353,6 +1353,24 @@
       "run": "cargo test -p trit-immune --test adopt_guard",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C079",
+      "title": "Q4_0 打包/解包/量化的长度口径一致且 unsafe 前有断言",
+      "kind": "cmd",
+      "covers": [
+        "L128"
+      ],
+      "scope": [
+        "crates/trit-ops/src/bench/q4.rs",
+        "crates/trit-ops/src/simd.rs"
+      ],
+      "since": "L128",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-ops --test q4_layout",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

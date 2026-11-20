@@ -2028,7 +2028,11 @@
     },
     {
       "file": "crates/trit-ops/src/bench.rs",
-      "lines": 515
+      "lines": 497
+    },
+    {
+      "file": "crates/trit-ops/src/bench/q4.rs",
+      "lines": 40
     },
     {
       "file": "crates/trit-ops/src/bin/bench.rs",
@@ -2073,6 +2077,10 @@
     {
       "file": "crates/trit-ops/tests/bench_bounds.rs",
       "lines": 11
+    },
+    {
+      "file": "crates/trit-ops/tests/q4_layout.rs",
+      "lines": 39
     },
     {
       "file": "crates/trit-orch/examples/dispatch_metrics.rs",
