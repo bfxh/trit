@@ -26,11 +26,11 @@ mod cli_task;
 mod cli_verify;
 mod cli_wsp2;
 mod cli_wspm;
-mod fsutil;
 mod lock;
 mod safe_path;
+pub(crate) mod tempfile;
 mod usage;
-pub(crate) use fsutil::{atomic_write, atomic_write_bytes};
+pub(crate) use tempfile::{atomic_write, atomic_write_bytes};
 use usage::USAGE;
 
 /// 进程入口：返回退出码（0 成功，1 失败）。

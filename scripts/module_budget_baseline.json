@@ -3812,7 +3812,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_artifact_shard.rs",
-      "lines": 66
+      "lines": 65
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_block.rs",
@@ -3824,7 +3824,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_gguf.rs",
-      "lines": 161
+      "lines": 160
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_gradient.rs",
@@ -3868,11 +3868,7 @@
     },
     {
       "file": "crates/trit-wspace/src/cli/cli_wspm.rs",
-      "lines": 142
-    },
-    {
-      "file": "crates/trit-wspace/src/cli/fsutil.rs",
-      "lines": 23
+      "lines": 140
     },
     {
       "file": "crates/trit-wspace/src/cli/lock.rs",
@@ -3881,6 +3877,10 @@
     {
       "file": "crates/trit-wspace/src/cli/safe_path.rs",
       "lines": 55
+    },
+    {
+      "file": "crates/trit-wspace/src/cli/tempfile.rs",
+      "lines": 83
     },
     {
       "file": "crates/trit-wspace/src/cli/usage.rs",
@@ -4040,7 +4040,7 @@
     },
     {
       "file": "crates/trit-wspace/src/safetensors.rs",
-      "lines": 496
+      "lines": 488
     },
     {
       "file": "crates/trit-wspace/src/scale.rs",

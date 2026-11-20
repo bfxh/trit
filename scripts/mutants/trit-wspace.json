@@ -2758,5 +2758,13 @@
     "new": "if false {",
     "pkg": "trit-wspace",
     "filter": "oversize_line_is_rejected_without_parsing_it"
+  },
+  {
+    "name": "wspace: 临时文件可被预置复用",
+    "file": "crates/trit-wspace/src/cli/tempfile.rs",
+    "old": ".create_new(true)",
+    "new": ".create(true)",
+    "pkg": "trit-wspace",
+    "filter": "predictable_placeholder_temp_file_is_left_alone"
   }
 ]

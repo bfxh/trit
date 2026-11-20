@@ -1302,6 +1302,23 @@
       "run": "cargo test -p trit-export --test gguf_limits --test gguf_i2s",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C076",
+      "title": "写路径原子写不跟随符号链接、join 走路径围栏",
+      "kind": "cmd",
+      "covers": [
+        "L125"
+      ],
+      "scope": [
+        "crates/trit-wspace/src/cli/tempfile.rs"
+      ],
+      "since": "L125",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "run": "cargo test -p trit-wspace --lib cli::tempfile",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
