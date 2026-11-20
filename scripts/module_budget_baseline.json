@@ -2504,7 +2504,11 @@
     },
     {
       "file": "crates/trit-parts/src/splat/io.rs",
-      "lines": 348
+      "lines": 310
+    },
+    {
+      "file": "crates/trit-parts/src/splat/io/write.rs",
+      "lines": 52
     },
     {
       "file": "crates/trit-parts/src/splat/layout.rs",
@@ -2613,6 +2617,10 @@
     {
       "file": "crates/trit-parts/tests/models_e2e.rs",
       "lines": 264
+    },
+    {
+      "file": "crates/trit-parts/tests/splat_ply_limits.rs",
+      "lines": 31
     },
     {
       "file": "crates/trit-parts/tests/tconv_contract.rs",
