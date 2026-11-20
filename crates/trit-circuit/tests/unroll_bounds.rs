@@ -2,9 +2,7 @@
 //!
 //! `MAX_UNROLL = 4096`；测试用一个 1 锁存器的最小电路，只验证越界分支。
 
-use trit_circuit::sequential::{
-    Latch, Literal, MAX_UNROLL, SequentialCircuit, SequentialError,
-};
+use trit_circuit::sequential::{Latch, Literal, MAX_UNROLL, SequentialCircuit, SequentialError};
 
 fn tiny() -> SequentialCircuit {
     SequentialCircuit {

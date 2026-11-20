@@ -508,7 +508,7 @@
     },
     {
       "file": "crates/trit-circuit/tests/unroll_bounds.rs",
-      "lines": 25
+      "lines": 23
     },
     {
       "file": "crates/trit-clean/src/bdd.rs",
@@ -3437,6 +3437,10 @@
     {
       "file": "crates/trit-texture/tests/ttx3.rs",
       "lines": 224
+    },
+    {
+      "file": "crates/trit-texture/tests/ttx3_dims.rs",
+      "lines": 21
     },
     {
       "file": "crates/trit-texture/tests/ttx3_malformed.rs",
