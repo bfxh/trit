@@ -49,7 +49,7 @@ python scripts/branch-hygiene.py --strict   # 有违规就 rc=1（CI 用）
 
 | 类 | 判定 | 建议 |
 |---|---|---|
-| `merged` | 已合并进 `main` | 删（本地 + 远端） |
+| `merged` | `git branch --merged main` 列得出 | 删（本地 + 远端） |
 | `empty` | `main..branch` 无提交（内容已在 main） | 删 |
 | `stale` | 未合并且最后提交 > 30 天 | 归档后删 |
 | `badname` | 命名不在 §1 白名单 | 改名或删 |
