@@ -643,6 +643,23 @@
       "pattern": "crate::hidden::check\\(nhid\\)",
       "min": 1,
       "allow_skip": false
+    },
+    {
+      "id": "C038",
+      "title": "PatchMlp 补丁边长先判奇数与上限再算特征维",
+      "kind": "require",
+      "covers": [
+        "L89"
+      ],
+      "scope": [
+        "crates/trit-parts/src/diffuse/patch.rs"
+      ],
+      "since": "L89",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "patch > MAX_PATCH",
+      "min": 1,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

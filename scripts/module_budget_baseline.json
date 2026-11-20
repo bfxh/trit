@@ -2355,8 +2355,12 @@
       "lines": 429
     },
     {
-      "file": "crates/trit-parts/src/diffuse.rs",
-      "lines": 352
+      "file": "crates/trit-parts/src/diffuse/mod.rs",
+      "lines": 209
+    },
+    {
+      "file": "crates/trit-parts/src/diffuse/patch.rs",
+      "lines": 172
     },
     {
       "file": "crates/trit-parts/src/expand.rs",
@@ -2677,6 +2681,10 @@
     {
       "file": "crates/trit-parts/tests/models_e2e.rs",
       "lines": 264
+    },
+    {
+      "file": "crates/trit-parts/tests/patch_bounds.rs",
+      "lines": 51
     },
     {
       "file": "crates/trit-parts/tests/planes_bounds.rs",
