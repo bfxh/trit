@@ -116,7 +116,6 @@ fn ca_demo(args: &[String]) -> Result<(), String> {
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
     Ok(())
 }
-
 fn snn_demo(args: &[String]) -> Result<(), String> {
     let size = number(args, "--size", 100)?;
     let ticks = number(args, "--ticks", 200)?;
@@ -124,7 +123,7 @@ fn snn_demo(args: &[String]) -> Result<(), String> {
     let kick = number(args, "--kick", 3)? as i32;
     let drive = number(args, "--drive", 0)? as i32;
     let threshold = number(args, "--threshold", 3)? as i32;
-    let mut network = snn::Network::random(size, seed);
+    let mut network = snn::Network::random(size, seed).map_err(|error| error.to_string())?;
     network.threshold = threshold;
     let external: Vec<i32> = if drive > 0 {
         vec![drive; ticks]
@@ -155,7 +154,7 @@ fn graded_demo(args: &[String]) -> Result<(), String> {
     let seed = number(args, "--seed", 7)? as u64;
     let groups = number(args, "--groups", 2)?;
     let rounds = number(args, "--rounds", 16)?;
-    let network = snn::Network::random(size, seed);
+    let network = snn::Network::random(size, seed).map_err(|error| error.to_string())?;
     let config = graded::GradeConfig {
         groups,
         rounds,

@@ -1,7 +1,5 @@
 //! TPM1 部署包的外部尺寸：层数、权重长度、通道数都先验后分。
-//!
-//! 文件头里的 `n` / `nw` / `cout` 是 u32，直接进 `with_capacity` 或
-//! `vec![0.0; cout]` 能把进程打爆；校验必须在分配之前。
+//! `n` / `nw` / `cout` 是 u32，直接进 `with_capacity` 或 `vec![0.0; cout]` 能把进程打爆。
 
 use trit_parts::tpm::TpmModel;
 

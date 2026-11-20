@@ -62,5 +62,21 @@
   "new": "queue.push((pc + 1, stack.clone()));",
   "pkg": "trit-machines",
   "filter": "branch_on_unknown_with_different_outputs_is_ambiguous"
+ },
+ {
+  "name": "snn: random 规模闸不判",
+  "file": "crates/trit-machines/src/snn.rs",
+  "old": "pub fn random(size: usize, seed: u64) -> Result<Self, NetworkError> {\n        check_size(size)?;",
+  "new": "pub fn random(size: usize, seed: u64) -> Result<Self, NetworkError> {\n        let _ = size;",
+  "pkg": "trit-machines",
+  "filter": "random_above_the_cap_is_rejected_before_allocating"
+ },
+ {
+  "name": "snn: 神经元上限抬高",
+  "file": "crates/trit-machines/src/snn.rs",
+  "old": "if size > MAX_NEURONS {",
+  "new": "if size > MAX_NEURONS * 2 {",
+  "pkg": "trit-machines",
+  "filter": "random_above_the_cap_is_rejected_before_allocating"
  }
 ]

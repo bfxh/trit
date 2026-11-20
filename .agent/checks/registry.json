@@ -849,6 +849,23 @@
       "pattern": "saturating_sub\\(\\*?at\\)",
       "min": 2,
       "allow_skip": false
+    },
+    {
+      "id": "C050",
+      "title": "SNN 随机网络在分配前限神经元数",
+      "kind": "require",
+      "covers": [
+        "L98"
+      ],
+      "scope": [
+        "crates/trit-machines/src/snn.rs"
+      ],
+      "since": "L98",
+      "tier": "fast",
+      "added": "2026-11-20",
+      "pattern": "check_size\\(size\\)\\?;",
+      "min": 2,
+      "allow_skip": false
     }
   ],
   "ledger_from": "L56"

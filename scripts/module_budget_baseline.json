@@ -1728,7 +1728,7 @@
     },
     {
       "file": "crates/trit-machines/src/main.rs",
-      "lines": 204
+      "lines": 203
     },
     {
       "file": "crates/trit-machines/src/snn.rs",
@@ -1741,6 +1741,10 @@
     {
       "file": "crates/trit-machines/tests/cli.rs",
       "lines": 68
+    },
+    {
+      "file": "crates/trit-machines/tests/snn_bounds.rs",
+      "lines": 16
     },
     {
       "file": "crates/trit-mmap/src/lib.rs",

@@ -86,22 +86,28 @@ impl std::fmt::Display for NetworkError {
 
 impl std::error::Error for NetworkError {}
 
-/// 一个脉冲网络。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Network {
-    /// `weights[i][j]`：`j` 到 `i` 的突触，取值 `-1/0/1`。
+    /// `weights[i][j]`：`j` 到 `i` 的突触。
     pub weights: Vec<Vec<i8>>,
-    /// 触发脉冲的绝对值阈值。
     pub threshold: i32,
-    /// 泄漏：每 tick 膜电位先乘 `decay_num / decay_den`。
     pub decay: (i32, i32),
-    /// 不应期 tick 数。
     pub refractory: u32,
+}
+
+fn check_size(size: usize) -> Result<(), NetworkError> {
+    if size > MAX_NEURONS {
+        return Err(NetworkError::Limit(format!(
+            "神经元数 {size} 超过上限 {MAX_NEURONS}"
+        )));
+    }
+    Ok(())
 }
 
 impl Network {
     /// 随机稀疏网络（确定性种子）。
-    pub fn random(size: usize, seed: u64) -> Self {
+    pub fn random(size: usize, seed: u64) -> Result<Self, NetworkError> {
+        check_size(size)?;
         let mut state = seed | 1;
         let mut next = || {
             state ^= state << 13;
@@ -120,29 +126,23 @@ impl Network {
                     .collect()
             })
             .collect();
-        Self {
+        Ok(Self {
             weights,
             threshold: 3,
             decay: (3, 4),
             refractory: 1,
-        }
+        })
     }
 
-    /// 神经元数。
     pub fn size(&self) -> usize {
         self.weights.len()
     }
 
     /// 校验结构：方阵、权重 `{-1,0,1}`、阈值 > 0、decay 非负分子/正分母、规模预算。
-    ///
     /// `weights` 是公开字段，`simulate` 不能再假定调用方构造的是合法网络（复审 M10）。
     pub fn validate(&self) -> Result<(), NetworkError> {
         let size = self.size();
-        if size > MAX_NEURONS {
-            return Err(NetworkError::Limit(format!(
-                "神经元数 {size} 超过上限 {MAX_NEURONS}"
-            )));
-        }
+        check_size(size)?;
         for (neuron, row) in self.weights.iter().enumerate() {
             if row.len() != size {
                 return Err(NetworkError::Shape {
