@@ -165,6 +165,15 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
                 [--derivations (default on) | --no-derivations]  (audit model statements;
                 number claims carrying derivations are re-executed by mre, REJECTED refuses)
   receipt:      [--compact]         (single-line machine receipt; default stays full)
+  delta:        [--delta --against <prev-receipt>] [--delta-full <path>]
+                (subagent chains: only changed fields + hash refs for unchanged ones;
+                --rebuild <delta> --against <prev> [--out <full.json>] reconstructs
+                the receipt byte-identically -- lossless, hash-verified, fail-closed)
+  gates:        [--parallel-gates]  (affected/policy/constraints concurrent; opt-in)
+  watchdog:     [--gate-deadline-affected S] [--gate-deadline-policy S]
+                [--gate-deadline-constraints S]   (default 600s each)
+                affected timeout -> sound fallback: full run, unproven (not a skip);
+                policy/constraints timeout -> fail-closed refusal naming the gate
 
 Subagent usage: a subagent running a task passes its own id (--agent-id sub-7). The id is
 recorded in the receipt (top level and every run[] line, appended fields only -- old
@@ -198,7 +207,19 @@ even start on top of claims that contradict reality.
 Caps (honest scope): {CAPS_NOTE}
 Defaults when --caps is given without parameters: mem 2048 MB, 64 procs, 1800 s.
 
+Delta receipt (--delta --against <prev-receipt>, opt-in; subagent chains): the receipt
+is diffed field-by-field against the previous receipt of the same task -- changed
+fields travel in full, unchanged fields as bare uppercase sha256 refs (the same
+digest family/format as the journal manifest, so any hash can be pulled with
+`journal.py get -Hash <hex>`). Lossless by construction: `--rebuild <delta>
+--against <prev> -Out <full>` reconstructs the receipt byte-identically (the delta
+records the new key order; every unchanged ref is hash-verified at rebuild and a
+mismatch refuses). --delta-full <path> additionally writes the full-shape receipt
+of this run (audit companion). Diff granularity: two levels -- an unchanged
+top-level key is one hash ref; a changed dict key (e.g. `volatile`) is diffed one
+level deeper so its stable sub-fields also become refs.
 
+Receipt shape note: steps entries carry step/verdict/exit/output and run entries
 command/exit/tail(/caps/agent_id); the per-step and per-run walls live in
 volatile.steps_seconds / volatile.run_seconds, index-aligned with those arrays.
 
@@ -218,7 +239,9 @@ def parse_args(argv):
            "allow": [], "agent_id": "", "spent_token": "", "compact": False,
            "parallel_gates": False, "claims_file": "", "claims_receipts": [],
            "second_opinion": False, "no_derivations": False, "delta": False,
-           "against": "", "rebuild": "", "delta_full": "", "out": ""}
+           "against": "", "rebuild": "", "delta_full": "", "out": "",
+           "gate_deadline_affected": "600", "gate_deadline_policy": "600",
+           "gate_deadline_constraints": "600"}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -260,16 +283,27 @@ def parse_args(argv):
                  "agentid": "agent_id", "spent-token": "spent_token",
                  "spenttoken": "spent_token", "claims-file": "claims_file",
                  "claimsfile": "claims_file", "delta-full": "delta_full",
-                 "deltafull": "delta_full"}.get(name, name)] = val
+                 "deltafull": "delta_full", "gate-deadline-affected": "gate_deadline_affected",
+                 "gate-deadline-policy": "gate_deadline_policy",
+                 "gate-deadline-constraints": "gate_deadline_constraints"}.get(name, name)] = val
         i += 2
     return out
 
 
-def step(args):
-    """Run one tool module and report (output lines, exit code, seconds)."""
+def step(args, timeout=None):
+    """Run one tool module and report (output lines, exit code, seconds).
+
+    timeout (watchdog, L123): when the gate subprocess exceeds its deadline it is
+    killed and reported as exit 124 -- the caller decides the fallback direction
+    (affected -> sound unproven fallback; policy/constraints -> fail-closed refusal).
+    """
     t0 = time.time()
-    p = subprocess.run([PY] + args, capture_output=True, text=True,
-                       encoding="utf-8", errors="replace")
+    try:
+        p = subprocess.run([PY] + args, capture_output=True, text=True,
+                           encoding="utf-8", errors="replace", timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return {"out": [f"watchdog: gate deadline {timeout}s exceeded, process killed"],
+                "code": 124, "seconds": round(time.time() - t0, 2)}
     lines = ((p.stdout or "") + (p.stderr or "")).splitlines()
     return {"out": lines, "code": p.returncode, "seconds": round(time.time() - t0, 2)}
 
@@ -795,6 +829,21 @@ def main(argv):
         delta_ctx = {"prev_path": prev_path, "compact": bool(a.get("compact")),
                      "full_path": a.get("delta_full", "")}
 
+    # --- gate watchdog deadlines: validated up front (0/negative is a bad invocation) ---
+    deadlines = {}
+    try:
+        for g in ("affected", "policy", "constraints"):
+            deadlines[g] = float(a.get(f"gate_deadline_{g}", "600"))
+    except ValueError:
+        print("agent-verify: --gate-deadline-* values must be numbers (seconds)")
+        return 2
+    bad = [g for g, v in deadlines.items() if v <= 0]
+    if bad:
+        print(f"agent-verify: --gate-deadline-{bad[0]} must be > 0 seconds "
+              f"(a deadline of 0 would hang every gate; lower it to a small "
+              f"positive value instead)")
+        return 2
+
     # --- chain lock: one chain per root, fail-closed ------------------------------------
     # Held for the chain's whole life; the leftover lock of a killed process is the
     # dirty-state marker the next run diagnoses (never auto-broken -- breaking a lock
@@ -982,7 +1031,8 @@ def main(argv):
         p_path = os.path.join(os.environ.get("TEMP", "/tmp"),
                               f"av-plan-{uuid.uuid4().hex[:8]}.json")
         ap = step([os.path.join(TOOLS, "affected.py"), "-Path", root,
-                   "-Changed", ",".join(a["changed"]), "-Lang", lang, "-Out", p_path])
+                   "-Changed", ",".join(a["changed"]), "-Lang", lang, "-Out", p_path],
+                  timeout=deadlines["affected"])
         return ap, p_path
 
     def policy_gate():
@@ -994,12 +1044,13 @@ def main(argv):
               "-Root", root, "-CommandsFile", b_path]
         if a["allow_network"]:
             pa.append("-AllowNetwork")
-        return step(pa)
+        return step(pa, timeout=deadlines["policy"])
 
     def constraints_gate():
         c_init = os.path.exists(os.path.join(root, ".agent", "constraints.json"))
         return (step([os.path.join(TOOLS, "constraints.py"), "-Mode", "check", "-Root", root]
-                     + (["-Allow", " , ".join(a["allow"])] if a["allow"] else []))
+                     + (["-Allow", " , ".join(a["allow"])] if a["allow"] else []),
+                     timeout=deadlines["constraints"])
                 if c_init else skipped("constraints: 未初始化（没有 .agent/constraints.json），跳过"))
 
     pool = None
@@ -1009,39 +1060,62 @@ def main(argv):
         ck_future = pool.submit(constraints_gate)
     try:
         ap, plan_path = affected_gate()
-        add("affected", ap, "ok")
-        plan = None
-        if os.path.exists(plan_path):
-            try:
-                with open(plan_path, "r", encoding="utf-8-sig") as fh:
-                    plan = json.load(fh)
-            except ValueError:
-                # a plan that cannot parse must not silently become an empty (hence
-                # all-pass) policy check -- that would be refuse-nothing and run-nothing
-                print("agent-verify: 拒绝 -- plan 文件无法解析（坏 JSON 不许静默变成空计划）")
-                return finish("refused by plan", 1)
-        commands = plan.get("commands", []) if plan else []
-        proven = bool(plan.get("proven")) if plan else False
-        doc["plan"] = {"proven": proven, "commands": commands,
-                       "unproven": plan.get("unproven", ["plan unavailable"]) if plan else ["plan unavailable"]}
+        if ap["code"] == 124:
+            # watchdog: the affected gate is a classifier, not evidence -- its timeout
+            # falls back to the sound shape (full run, unproven), never to a skip.
+            add("affected", ap, "timeout")
+            doc.setdefault("watchdog", {})["affected"] = (
+                f"deadline {deadlines['affected']}s exceeded -> sound fallback: "
+                f"full run, unproven (fallback, not a skip)")
+            print(f"agent-verify: affected 门看门狗超时（deadline {deadlines['affected']}s）"
+                  f"-- sound 回退全量 unproven（不是跳过）")
+            doc["plan"] = {"proven": False, "commands": [],
+                           "unproven": [f"affected gate deadline exceeded "
+                                        f"({deadlines['affected']}s) -- sound fallback to "
+                                        f"full run, unproven"]}
+            commands, proven = [], False
+        else:
+            add("affected", ap, "ok")
+            plan = None
+            if os.path.exists(plan_path):
+                try:
+                    with open(plan_path, "r", encoding="utf-8-sig") as fh:
+                        plan = json.load(fh)
+                except ValueError:
+                    # a plan that cannot parse must not silently become an empty (hence
+                    # all-pass) policy check -- that would be refuse-nothing and run-nothing
+                    print("agent-verify: 拒绝 -- plan 文件无法解析（坏 JSON 不许静默变成空计划）")
+                    return finish("refused by plan", 1)
+            commands = plan.get("commands", []) if plan else []
+            proven = bool(plan.get("proven")) if plan else False
+            doc["plan"] = {"proven": proven, "commands": commands,
+                           "unproven": plan.get("unproven", ["plan unavailable"]) if plan else ["plan unavailable"]}
 
         # --- 4. policy: are we even allowed to run it (one batch call) ------------------
         if not commands:
             # nothing to classify -- the gate is vacuously ok, same as the old walk over
-            # an empty command list (the affected fallback shape lands here)
+            # an empty command list (the affected-watchdog fallback lands here)
             doc["policy"] = []
             add("policy", {"out": [], "code": 0, "seconds": 0}, "ok")
         else:
             pb = policy_gate()
+            if pb["code"] == 124:
+                add("policy", pb, "timeout")
+                doc.setdefault("watchdog", {})["policy"] = (
+                    f"deadline {deadlines['policy']}s exceeded -> fail-closed refusal "
+                    f"(batch classification killed)")
+                print(f"agent-verify: 拒绝 -- policy 门看门狗超时（deadline "
+                      f"{deadlines['policy']}s），fail-closed 拒绝整链")
+                return finish("refused by policy watchdog", 1)
             batch = None
-        for ln in pb["out"]:
-            ln_s = ln.strip()
-            if ln_s.startswith("{") and ln_s.endswith("}"):
-                try:
-                    batch = json.loads(ln_s)
-                    break
-                except ValueError:
-                    batch = None
+            for ln in pb["out"]:
+                s = ln.strip()
+                if s.startswith("{") and s.endswith("}"):
+                    try:
+                        batch = json.loads(s)
+                        break
+                    except ValueError:
+                        batch = None
             prs = batch.get("results") if isinstance(batch, dict) else None
             if not isinstance(prs, list):
                 add("policy", pb, "refused")
@@ -1059,8 +1133,16 @@ def main(argv):
 
         # --- 5. constraints: is this change allowed at all ------------------------------
         ck = ck_future.result() if ck_future is not None else constraints_gate()
-        ck_verdict = ("ok" if os.path.exists(os.path.join(root, ".agent", "constraints.json"))
-                      else "skipped") if ck["code"] == 0 else "refused"
+        c_init = os.path.exists(os.path.join(root, ".agent", "constraints.json"))
+        if ck["code"] == 124:
+            add("constraints", ck, "timeout")
+            doc.setdefault("watchdog", {})["constraints"] = (
+                f"deadline {deadlines['constraints']}s exceeded -> fail-closed refusal "
+                f"(check killed)")
+            print(f"agent-verify: 拒绝 -- constraints 门看门狗超时（deadline "
+                  f"{deadlines['constraints']}s），fail-closed 拒绝整链")
+            return finish("refused by constraints watchdog", 1)
+        ck_verdict = ("ok" if c_init else "skipped") if ck["code"] == 0 else "refused"
         add("constraints", ck, ck_verdict)
         if ck["code"] != 0:
             for ln in ck["out"]:

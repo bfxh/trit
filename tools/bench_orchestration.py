@@ -11,11 +11,33 @@ Core numbers, each a median over repeated rounds on a throwaway fixture:
   4. crash recovery         kill the chain mid-run; then dirty-state detection wall
                             (next run refuses on the chain lock) + journal restore wall
 
-  5. fake-claim capture     N=100 planted false claims (nonexistent files, numbers
+Token-economics numbers (L123, prefix-stable receipts; industry prompt caching --
+Prompt Cache MLSys'24 arXiv:2311.04934, CacheBlend EuroSys'25: provider discounts on
+cached input 50-90%, agentic deployments report 41-80% API-cost savings; a hit
+depends on the artifact's prefix stability, which is what the tool layer controls):
+
+  5. lcp_ratio              longest common byte prefix of receipt 2..N vs receipt 1,
+                            as a share of each receipt (same task, consecutive runs)
+  6. cacheable_bytes_ratio  that shared prefix as a share of the base receipt -- the
+                            bytes a provider could serve from cache. HONEST BOUNDARY:
+                            the tool layer manufactures the cacheable prefix; whether
+                            and how much a provider discounts it is the provider's
+                            decision and is NOT measurable locally -- hit rate is
+                            claimed nowhere.
+  7. delta_receipt_ratio    --delta --against <prev> receipt bytes vs the full receipt
+                            bytes of the same run (subagent-chained scenario)
+  8. policy_batch_wall      N policy subprocess spawns (the old orchestration shape)
+                            vs ONE -CommandsFile batch call, same commands -- the
+                            wall-clock fix behind the guard overhead ratio.
+
+Plus an adversarial section (self-planted attacks, programmatic -- honest boundary:
+real attackers are more cunning, this bounds nothing about the wild):
+
+  9. fake-claim capture     N=100 planted false claims (nonexistent files, numbers
                             with no or lying provenance, test-pass against a receipt
                             that recorded RED) -> claim_audit capture rate and the
                             leaked-sample list (anything classified VERIFIED)
- 6. duplicate-spend attack the same spend appended to the attest chain N times ->
+ 10. duplicate-spend attack the same spend appended to the attest chain N times ->
                             every replay refused, chain verify intact, balance unchanged
 
 Honesty rules: a warm-up round is run and excluded; each round is measured fresh and
@@ -42,6 +64,7 @@ AV = os.path.join(TOOLS, "agent_verify.py")
 JOURNAL = os.path.join(TOOLS, "journal.py")
 ATTEST = os.path.join(TOOLS, "attest.py")
 CLAIM_AUDIT = os.path.join(TOOLS, "claim_audit.py")
+POLICY = os.path.join(TOOLS, "policy.py")
 
 
 def parse_args(argv):
@@ -145,6 +168,34 @@ def non_gate_seconds(receipt_path):
 def median(values):
     s = sorted(values)
     return s[len(s) // 2] if s else 0.0
+
+
+def lcp_bytes(b1, b2):
+    n = min(len(b1), len(b2))
+    i = 0
+    while i < n and b1[i] == b2[i]:
+        i += 1
+    return i
+
+
+def policy_walls(fixture, sample):
+    """(serial wall, batch wall) for the same commands: serial = one policy.py spawn
+    per command (the old orchestration shape, the 4.5x-overhead dominant term);
+    batch = one -CommandsFile spawn. Per-command results are equivalent by selftest;
+    here only the wall is measured."""
+    t0 = time.time()
+    for cmd in sample:
+        sh([PY, POLICY, "-Profile", "workspace-write", "-Root", fixture, "-Command", cmd])
+    serial = time.time() - t0
+    bf = os.path.join(fixture, "bench-batch.json")
+    with open(bf, "w", encoding="ascii", newline="\n") as fh:
+        json.dump({"commands": sample}, fh, ensure_ascii=True)
+    t0 = time.time()
+    p = sh([PY, POLICY, "-Profile", "workspace-write", "-Root", fixture,
+            "-CommandsFile", bf])
+    batch = time.time() - t0
+    assert p.returncode == 0, f"policy batch exit {p.returncode}"
+    return serial, batch
 
 
 def crash_round(fixture, slow_plan, store, py):
@@ -342,6 +393,50 @@ def main(argv):
     det = median([c[0] for c in crashes]) if crashes else 0.0
     res = median([c[1] for c in crashes]) if crashes else 0.0
 
+    # L123 token economics: prefix-stable receipts measured on consecutive full runs,
+    # then delta rounds against the previous run's full receipt, then the policy batch
+    # wall on a sample of the plan's commands.
+    lcp_blobs = []
+    for i in range(3):
+        rc_l = os.path.join(work, f"rc-lcp-{i}.json")
+        _, code = chain_wall(fixture, plan_path, store, rc_l)
+        assert code == 0, f"lcp round {i} exit {code}"
+        with open(rc_l, "rb") as fh:
+            lcp_blobs.append(fh.read())
+    base_blob = lcp_blobs[0]
+    lcp_shares, cache_shares = [], []
+    for b in lcp_blobs[1:]:
+        l = lcp_bytes(base_blob, b)
+        lcp_shares.append(l / len(b) if b else 0.0)
+        cache_shares.append(l / len(base_blob) if base_blob else 0.0)
+    lcp_ratio = median(lcp_shares)
+    cache_ratio = median(cache_shares)
+
+    delta_shares = []
+    prev_rc = os.path.join(work, "rc-lcp-2.json")
+    for i in range(2):
+        d_path = os.path.join(work, f"rc-delta-{i}.json")
+        f_path = os.path.join(work, f"rc-delta-full-{i}.json")
+        _, code = chain_wall(fixture, plan_path, store, d_path,
+                             extra=("--delta", "--against", prev_rc,
+                                    "--delta-full", f_path))
+        assert code == 0, f"delta round {i} exit {code}"
+        fb = os.path.getsize(f_path)
+        delta_shares.append(os.path.getsize(d_path) / fb if fb else 0.0)
+        prev_rc = f_path
+    delta_ratio = median(delta_shares)
+
+    pol_serial, pol_batch = policy_walls(fixture, commands[:10])
+    pol_speedup = pol_serial / pol_batch if pol_batch else 0.0
+
+    # adversarial section: self-planted attacks against claim_audit and the attest
+    # chain. These numbers describe THIS generator's attacks only -- a self-made
+    # adversarial set is a floor-check of the auditors, never a bound on real ones.
+    adv = adversarial_round(work)
+    adv_captured = adv["unverified"] + adv["fabricated"]
+    adv_rate = adv_captured / adv["total"] if adv["total"] else 0.0
+    adv_accept_rate = adv["accepted"] / adv["replays"] if adv["replays"] else 0.0
+
     print()
     print(f"bench_orchestration  commands={a['commands']}  rounds={a['rounds']} "
           f"(median, warm-up excluded)  fixture={work}")
@@ -349,12 +444,25 @@ def main(argv):
     print(f"{'metric':<30}{'value':>10}   detail")
     print("-" * 96)
     print(f"{'guard_overhead_ratio':<30}{overhead_ratio:>9.2f}x   "
-          f"chain {fmt(s_med)}s vs direct {fmt(d_med)}s (same plan, wall)")
+          f"chain {fmt(s_med)}s vs direct {fmt(d_med)}s (same plan, wall; policy "
+          f"batched since L123)")
     print(f"{'receipt_full_bytes':<30}{fb:>10}   proxy tokens {fb // 4} "
           f"(bytes/4 -- proxy, NOT a model-side count)")
     print(f"{'receipt_compact_bytes':<30}{cb:>10}   proxy tokens {cb // 4}")
     print(f"{'compact_ratio':<30}{cb / fb:>9.3f}x   "
           f"compact saves {100 * (1 - cb / fb):.1f}% of receipt bytes")
+    print(f"{'lcp_ratio':<30}{lcp_ratio:>9.3f}   longest common byte prefix, receipt "
+          f"2..N vs receipt 1 (same task, consecutive full runs)")
+    print(f"{'cacheable_bytes_ratio':<30}{cache_ratio:>9.3f}   shared prefix / base "
+          f"receipt bytes -- the cacheable prefix is manufactured HERE; provider "
+          f"discount is the provider's decision (hit rate not locally measurable)")
+    print(f"{'delta_receipt_ratio':<30}{delta_ratio:>9.3f}   --delta --against <prev> "
+          f"bytes / full receipt bytes of the same run (subagent chain)")
+    print(f"{'policy_serial_wall':<30}{fmt(pol_serial):>9}s   "
+          f"{min(10, len(commands))} commands, one spawn each (old orchestration shape)")
+    print(f"{'policy_batch_wall':<30}{fmt(pol_batch):>9}s   same commands via ONE "
+          f"-CommandsFile spawn, speedup {pol_speedup:.1f}x (per-command results "
+          f"equivalent by selftest)")
     print(f"{'gates_wall_serial':<30}{fmt(gates_serial):>9}s   "
           f"derived: chain wall minus recorded non-gate step walls")
     print(f"{'gates_wall_parallel':<30}{fmt(gates_parallel):>9}s   "
@@ -381,7 +489,12 @@ def main(argv):
     print("honesty: proxy tokens are context-size bytes/4, not model-side token counts; "
           "commands are `true` (no build cache); medians over fresh rounds, nothing "
           "accumulated; the adversarial set is self-made and programmatic -- real "
-          "attackers are more cunning, so the capture rate bounds nothing about the wild")
+          "attackers are more cunning, so the capture rate bounds nothing about the "
+          "wild; LCP/cacheable numbers describe the tool layer's prefix stability only "
+          "-- provider cache discounts are the provider's decision and are not "
+          "measured or claimed here (industry figures: Prompt Cache MLSys'24 "
+          "arXiv:2311.04934, CacheBlend EuroSys'25; 50-90% cached-input discounts, "
+          "41-80% agentic API-cost savings)")
     if not a["keep"]:
         shutil.rmtree(work, ignore_errors=True)
     else:

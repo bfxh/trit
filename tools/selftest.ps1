@@ -4132,6 +4132,452 @@ print("ak-gen ok")
         'AK28 对抗自测：20 条"数字在工件里、假推导背书"的声明 20/20 FABRICATED，逐条点名失配步 step 2 (s2)，derivations rejected=20' "e=$ak28 top=$ak28top named=$ak28named"
 }
 
+# =============================================================================="== AL. 编排 token 无损削减：前缀稳定回执 / delta / 按路径裁剪 / policy 批处理 / 看门狗（L123） =="
+# 出处（同 agent_verify usage 与台账 L123）：业界前缀缓存（Prompt Cache MLSys'24
+# arXiv:2311.04934；CacheBlend EuroSys'25）对 agentic 负载实测省 41–80% API 成本、
+# 供应商对缓存输入给 50–90% 折扣——命中取决于工件的前缀稳定性。本组钉死工具层的
+# 确定性结构：同一任务连续 run 的回执最长公共前缀最大化、delta 重建逐字节无损、
+# 裁剪与逐字评估等价、批分类与逐条调用等价、看门狗两类回退方向各自钉死。
+$alPy = $null
+foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
+    if (-not $c) { continue }
+    $alSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    if (-not $alSrc) { continue }
+    if ((& $alSrc -c 'print(1)' 2>$null) -eq '1') { $alPy = $alSrc; break }
+}
+$alTotal = 26
+if (-not $alPy) {
+    "  SKIP  AL0 找不到可用的 Python，跳过编排 token 削减检查"
+    $skipped += $alTotal
+} else {
+    $alEnc = New-Object System.Text.UTF8Encoding($false)
+    $alGen = Join-Path $Work 'al-gen.py'
+    New-File $alGen @'
+import hashlib
+import json
+import os
+import random
+import re
+import subprocess
+import sys
+
+work, tools = sys.argv[1], sys.argv[2]
+PY = sys.executable
+AV = os.path.join(tools, "agent_verify.py")
+POLICY = os.path.join(tools, "policy.py")
+CONSTS = os.path.join(tools, "constraints.py")
+JOURNAL = os.path.join(tools, "journal.py")
+CLAIM_AUDIT = os.path.join(tools, "claim_audit.py")
+HEX64 = re.compile(r"^[0-9A-F]{64}$")
+
+
+def sh(args):
+    return subprocess.run(args, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace")
+
+
+def say(line):
+    print("ALDRV " + line, flush=True)
+
+
+def w(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+
+def jdump(path, doc):
+    w(path, json.dumps(doc, ensure_ascii=True, indent=2) + "\n")
+
+
+def lcp(b1, b2):
+    n = min(len(b1), len(b2))
+    i = 0
+    while i < n and b1[i] == b2[i]:
+        i += 1
+    return i
+
+
+def section(key, fn):
+    try:
+        fn()
+    except Exception as e:
+        say(f"{key}=CRASH {type(e).__name__}: {e}"[:220])
+
+
+FX = os.path.join(work, "al-fx")
+STORE = os.path.join(work, "al-store")
+
+
+def build_fx():
+    os.makedirs(os.path.join(FX, "pkg"), exist_ok=True)
+    os.makedirs(os.path.join(FX, "tests"), exist_ok=True)
+    w(os.path.join(FX, "pkg", "core.py"), "def f(): return 1\n")
+    w(os.path.join(FX, "pkg", "__init__.py"), "")
+    w(os.path.join(FX, "tests", "test_core.py"),
+      "from pkg.core import f\n\n\ndef test_f():\n    assert f() == 1\n")
+    w(os.path.join(FX, "conftest.py"), "")
+    sh(["git", "-C", FX, "init", "-q"])
+    sh(["git", "-C", FX, "add", "-A"])
+    sh(["git", "-C", FX, "-c", "user.email=a@b", "-c", "user.name=al",
+        "commit", "-qm", "init"])
+    jdump(os.path.join(FX, "plan.json"),
+          {"proven": True, "commands": ["true", "true", "true"], "unproven": []})
+
+
+def chain(receipt, extra=(), cwd=FX):
+    p = subprocess.run([PY, AV, "-Root", cwd, "-Changed", "pkg/core.py",
+                        "-Lang", "python", "-Plan", os.path.join(cwd, "plan.json"),
+                        "-Store", STORE, "-Receipt", receipt] + list(extra),
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    return p.returncode
+
+
+def sec_shape():
+    build_fx()
+    rc1, rc2, rc3 = (os.path.join(work, f"al-rc{i}.json") for i in (1, 2, 3))
+    for rc in (rc1, rc2, rc3):
+        assert chain(rc) == 0, rc
+    doc1 = json.load(open(rc1, encoding="utf-8-sig"))
+    doc2 = json.load(open(rc2, encoding="utf-8-sig"))
+    keys1 = list(doc1.keys())
+    say(f"shape={'ok' if keys1[-1] == 'volatile' and keys1[:4] == ['root', 'lang', 'profile', 'changed'] else 'BAD'}")
+    ss1 = doc1["volatile"]["steps_seconds"]
+    ok_steps = (all("seconds" not in s for s in doc1["steps"])
+                and len(ss1) == len(doc1["steps"])
+                and all(isinstance(x, (int, float)) for x in ss1))
+    say(f"steps-volatile={'ok' if ok_steps else 'BAD'}")
+    ok_run = (all("seconds" not in r for r in doc1["run"])
+              and len(doc1["volatile"]["run_seconds"]) == len(doc1["run"])
+              and set(doc1["run"][0].keys()) == {"command", "exit", "tail"})
+    say(f"run-volatile={'ok' if ok_run else 'BAD'}")
+    have = set(keys1) | set(doc1["volatile"].keys())
+    need = {"root", "lang", "profile", "changed", "plan", "policy", "steps", "run",
+            "changes", "verdict", "exit", "at", "wall_s", "cost", "steps_seconds",
+            "run_seconds"}
+    say(f"fields={'ok' if need <= have else 'BAD missing=' + ','.join(sorted(need - have))}")
+    b1 = open(rc1, "rb").read()
+    shares = [lcp(b1, open(rc, "rb").read()) / max(len(open(rc, "rb").read()), 1)
+              for rc in (rc2, rc3)]
+    say(f"lcp={min(shares):.3f}")
+
+
+def sec_delta():
+    rc3 = os.path.join(work, "al-rc3.json")
+    d1, f1 = os.path.join(work, "al-d1.json"), os.path.join(work, "al-df1.json")
+    assert chain(d1, ("--delta", "--against", rc3, "--delta-full", f1)) == 0
+    reb1 = os.path.join(work, "al-reb1.json")
+    p1 = sh([PY, AV, "--rebuild", d1, "--against", rc3, "--out", reb1])
+    d2, f2 = os.path.join(work, "al-d2.json"), os.path.join(work, "al-df2.json")
+    assert chain(d2, ("--delta", "--against", f1, "--delta-full", f2)) == 0
+    reb2 = os.path.join(work, "al-reb2.json")
+    p2 = sh([PY, AV, "--rebuild", d2, "--against", f1, "--out", reb2])
+    ident1 = open(reb1, "rb").read() == open(f1, "rb").read()
+    ident2 = open(reb2, "rb").read() == open(f2, "rb").read()
+    say(f"delta-rebuild={'ok' if p1.returncode == 0 and p2.returncode == 0 and ident1 and ident2 else 'BAD'}")
+
+    tb = os.path.join(work, "al-tb.json")
+    doc3 = json.load(open(rc3, encoding="utf-8-sig"))
+    doc3["lang"] = "rust"
+    jdump(tb, doc3)
+    pt = sh([PY, AV, "--rebuild", d1, "--against", tb, "--out", os.path.join(work, "al-x1.json")])
+    say(f"delta-tamper-base={'refused' if pt.returncode == 1 else 'BAD e=' + str(pt.returncode)}")
+
+    dd = json.load(open(d1, encoding="utf-8-sig"))
+    d1bad = os.path.join(work, "al-d1bad.json")
+
+    def walk_strs(v):
+        if isinstance(v, str):
+            yield v
+        elif isinstance(v, dict):
+            for x in v.values():
+                yield from walk_strs(x)
+        elif isinstance(v, list):
+            for x in v:
+                yield from walk_strs(x)
+
+    refs = list(walk_strs(dd["unchanged"]))
+    if refs:
+        dd["unchanged"] = json.loads(json.dumps(dd["unchanged"]).replace(refs[0], "0" * 64, 1))
+    jdump(d1bad, dd)
+    ph = sh([PY, AV, "--rebuild", d1bad, "--against", rc3, "--out", os.path.join(work, "al-x2.json")])
+    say(f"delta-tamper-hash={'refused' if ph.returncode == 1 else 'BAD e=' + str(ph.returncode)}")
+    say(f"delta-ref-format={'ok' if refs and all(HEX64.match(r) for r in refs) else 'BAD'}")
+
+    ratios = [os.path.getsize(d1) / max(os.path.getsize(f1), 1),
+              os.path.getsize(d2) / max(os.path.getsize(f2), 1)]
+    say(f"delta-ratio={max(ratios):.3f}")
+
+    rc_c1 = os.path.join(work, "al-rcc1.json")
+    cd, cf = os.path.join(work, "al-cd.json"), os.path.join(work, "al-cf.json")
+    assert chain(rc_c1, ("--compact",)) == 0
+    assert chain(cd, ("--compact", "--delta", "--against", rc_c1, "--delta-full", cf)) == 0
+    crb = os.path.join(work, "al-crb.json")
+    pc = sh([PY, AV, "--rebuild", cd, "--against", rc_c1, "--out", crb])
+    env = json.load(open(cd, encoding="utf-8-sig"))
+    okc = (pc.returncode == 0 and env.get("mode") == "compact" and env.get("delta") is True
+           and open(crb, "rb").read() == open(cf, "rb").read())
+    say(f"compact-delta={'ok' if okc else 'BAD'}")
+
+
+def sec_journal():
+    man = json.load(open(os.path.join(STORE, "latest", "manifest.json"),
+                         encoding="utf-8-sig"))
+    entry = next(e for e in man["files"]
+                 if e["rel"].replace("\\", "/") == "pkg/core.py")
+    p = sh([PY, JOURNAL, "get", "-Root", FX, "-Store", STORE, "-Hash", entry["sha256"]])
+    hit = p.returncode == 0 and os.path.isfile(p.stdout.strip())
+    got = hashlib.sha256(open(p.stdout.strip(), "rb").read()).hexdigest().upper() if hit else ""
+    say(f"journal-get-hit={'ok' if hit and got == entry['sha256'] else 'BAD'}")
+    pm = sh([PY, JOURNAL, "get", "-Root", FX, "-Store", STORE, "-Hash", "0" * 64])
+    pz = sh([PY, JOURNAL, "get", "-Root", FX, "-Store", STORE, "-Hash", "zz"])
+    say(f"journal-get-miss={'ok' if pm.returncode == 1 and pz.returncode == 2 else 'BAD'}")
+
+
+PFX = os.path.join(work, "al-prune")
+
+
+def build_prune_fx():
+    for d in ("crates/x/src", "crates/x/tests", "docs"):
+        os.makedirs(os.path.join(PFX, d), exist_ok=True)
+    w(os.path.join(PFX, "crates/x/src/lib.rs"), "pub fn a() {}\n")
+    w(os.path.join(PFX, "docs/readme.md"), "doc\n")
+    sh(["git", "-C", PFX, "init", "-q"])
+    sh(["git", "-C", PFX, "add", "-A"])
+    sh(["git", "-C", PFX, "-c", "user.email=a@b", "-c", "user.name=al", "commit", "-qm", "init"])
+    sh([PY, CONSTS, "init", "-Root", PFX])
+
+
+def sec_prune():
+    build_prune_fx()
+    w(os.path.join(PFX, "docs/readme.md"), "doc\nmore\n")
+    r = sh([PY, CONSTS, "check", "-Root", PFX])
+    m = re.search(r"scope-matched (\d+)/(\d+) rule\(s\) \(pruned (\d+) out-of-scope\)",
+                  r.stdout + r.stderr)
+    ok = bool(m) and int(m.group(1)) < int(m.group(2)) and int(m.group(3)) > 0
+    say(f"prune-summary={'ok' if ok else 'BAD'}")
+
+    snippets = ['#[test] fn t() {}', 'fn g() { unsafe { } }', 'pub fn h() {}',
+                'fn w() { dbg!(1); }', 'fn u() { let x: Option<i32> = None; x.unwrap(); }',
+                '// Forecast only', 'plain', '', 'fn s() { println!("x"); }']
+    paths = ['crates/x/src/lib.rs', 'crates/x/tests/t.rs', 'docs/readme.md',
+             'crates/x/src/verdict.rs']
+    random.seed(20261121)
+    good = 0
+    for _ in range(100):
+        for rel in paths:
+            body = "\n".join(random.choice(snippets)
+                             for _ in range(random.randint(0, 4))) + "\n"
+            w(os.path.join(PFX, rel), body)
+        sigs = []
+        for extra in ([], ["--no-prune"]):
+            rr = sh([PY, CONSTS, "check", "-Root", PFX] + extra)
+            sig = (rr.returncode, tuple(l for l in (rr.stdout + rr.stderr).splitlines()
+                                        if "BLOCK" in l or "WARN" in l))
+            sigs.append(sig)
+        good += 1 if sigs[0] == sigs[1] else 0
+    say(f"prune-equiv={good}/100")
+
+    tbl = os.path.join(PFX, ".agent", "constraints.json")
+    rules = json.load(open(tbl, encoding="utf-8-sig"))
+    w(tbl, json.dumps([x for x in rules if x["id"] != "no-debug-output"],
+                      ensure_ascii=False, indent=2) + "\n")
+    w(os.path.join(PFX, "docs/readme.md"), "doc\nmore\n")
+    w(os.path.join(PFX, "crates/x/src/lib.rs"), "fn z() { dbg!(1); }\n")
+    res = []
+    for extra in ([], ["--no-prune"]):
+        rr = sh([PY, CONSTS, "check", "-Root", PFX] + extra)
+        txt = rr.stdout + rr.stderr
+        res.append((rr.returncode, "kernel rule(s) absent" in txt,
+                    "BLOCK [no-debug-output]" in txt))
+    okk = res[0] == res[1] and res[0][1] and res[0][2] and res[0][0] == 1
+    say(f"kernel-restore={'ok' if okk else 'BAD ' + repr(res)}")
+
+
+def sec_batch():
+    fams = ["cargo test", "cargo build --release", "pytest -q",
+            "python -m pytest tests/test_core.py -q", "node server.js", "go test ./...",
+            "echo hello", "echo x > out.txt", "git status", "git add -A",
+            "git commit --no-verify -m x", "git push --force origin main", "git fetch",
+            "git branch -D feat", "git tag -f v1", "git remote prune origin",
+            "git checkout -- file", "git restore file", "git rebase main", "git rm file",
+            "curl https://example.com", "wget https://example.com/x", "npm install",
+            "cargo publish", "ssh host", "rm file.txt", "del file.txt",
+            "Remove-Item file.txt", "unlink file", "bash -c 'rm file'",
+            "find . -name f -delete", "perl -e 'unlink f'", "mv f /dev/null",
+            "python -c \"import os; os.remove('f')\"",
+            "python tools/trash.py put f --reason why", "format c:", "shutdown /s", ""]
+    cmds = [fams[i % len(fams)] for i in range(210)]
+    bf = os.path.join(work, "al-batch.json")
+    jdump(bf, {"commands": cmds})
+    p = sh([PY, POLICY, "-Profile", "workspace-write", "-Root", PFX, "-CommandsFile", bf])
+    jline = next((l for l in (p.stdout + p.stderr).splitlines()
+                  if l.strip().startswith("{")), "")
+    results = json.loads(jline)["results"] if jline else []
+    mism = 0
+    for cmd, res in zip(cmds, results):
+        s = sh([PY, POLICY, "-Profile", "workspace-write", "-Root", PFX, "-Command", cmd])
+        lines = (s.stdout + s.stderr).splitlines()
+        if s.returncode != res["exit"] or lines != res["lines"]:
+            mism += 1
+            say(f"batch-mismatch {cmd!r} exit {s.returncode} vs {res['exit']}")
+    say(f"batch-equiv={len(cmds) - mism}/{len(cmds)}")
+    ef = os.path.join(work, "al-batch-empty.json")
+    jdump(ef, {"commands": []})
+    pe = sh([PY, POLICY, "-Profile", "workspace-write", "-Root", PFX, "-CommandsFile", ef])
+    say(f"batch-empty={'refused' if pe.returncode == 2 else 'BAD e=' + str(pe.returncode)}")
+
+
+def sec_compat():
+    claims = os.path.join(work, "al-claims.jsonl")
+    w(claims, json.dumps({"claim": "tests/test_core.py all green (al26)",
+                          "kind": "test-pass"}) + "\n")
+    rcnew = os.path.join(work, "al-synth-new.json")
+    jdump(rcnew, {"root": "synthetic", "lang": "python", "profile": "workspace-write",
+                  "verdict": "passed on proven subset", "exit": 0,
+                  "steps": [{"step": "run", "verdict": "ok", "exit": 0}],
+                  "run": [{"command": "python -m pytest tests/test_core.py -q", "exit": 0}],
+                  "volatile": {"steps_seconds": [0.1], "run_seconds": [0.1],
+                               "at": "al-synthetic"}})
+    rcold = os.path.join(work, "al-synth-old.json")
+    jdump(rcold, {"root": "synthetic", "lang": "python", "profile": "workspace-write",
+                  "verdict": "passed on proven subset", "exit": 0,
+                  "steps": [{"step": "run", "verdict": "ok", "exit": 0, "seconds": 0.1}],
+                  "run": [{"command": "python -m pytest tests/test_core.py -q",
+                           "exit": 0, "seconds": 0.1}]})
+
+    def audit(rc):
+        p = sh([PY, CLAIM_AUDIT, "-Claims", claims, "-Root", FX, "-Receipts", rc])
+        base = os.path.basename(rc)
+        lines = tuple(l.replace(base, "<rc>") for l in p.stdout.splitlines()
+                      if "VERIFIED" in l)
+        return p.returncode, lines
+
+    vnew, vold = audit(rcnew), audit(rcold)
+    say(f"claim-audit-compat={'ok' if vnew == vold and vnew[0] == 0 and vnew[1] else 'BAD'}")
+
+    sys.path.insert(0, tools)
+    import bench_orchestration as bo
+    s1 = bo.non_gate_seconds(rcnew)
+    s2 = bo.non_gate_seconds(rcold)
+    say(f"bench-compat={'ok' if abs(s1 - 0.1) < 1e-6 and abs(s2 - 0.1) < 1e-6 else 'BAD'}")
+
+
+section("shape", sec_shape)
+section("delta", sec_delta)
+section("journal-get-hit", sec_journal)
+section("prune-summary", sec_prune)
+section("batch-equiv", sec_batch)
+section("claim-audit-compat", sec_compat)
+print("ALDRV done")
+'@
+    $alOut = @(& $alPy $alGen $Work $tools 2>&1)
+    $alDrv = (@($alOut) | Where-Object { $_ -match "^ALDRV " }) -join "`n"
+    function Get-AlVal([string]$k) {
+        $m = [regex]::Match($script:alDrv, [regex]::Escape($k) + "=(\S*)")
+        if ($m.Success) { $m.Groups[1].Value } else { "" }
+    }
+
+    Assert-True ((Get-AlVal 'shape') -eq 'ok') 'AL1 回执前缀稳定序：稳定头在前、volatile 段收尾' (Get-AlVal 'shape')
+    Assert-True ((Get-AlVal 'steps-volatile') -eq 'ok') 'AL2 步骤墙钟归 volatile.steps_seconds 且按下标对齐（判定字段一个不删）' (Get-AlVal 'steps-volatile')
+    Assert-True ((Get-AlVal 'run-volatile') -eq 'ok') 'AL3 run 段留 command/exit/tail，墙钟归 volatile.run_seconds（换段不减数据）' (Get-AlVal 'run-volatile')
+    Assert-True ((Get-AlVal 'fields') -eq 'ok') 'AL4 历史字段一个不少（字段集超集回归）' (Get-AlVal 'fields')
+    $alLcp = 0.0
+    [void][double]::TryParse((Get-AlVal 'lcp'), [ref]$alLcp)
+    Assert-True ($alLcp -ge 0.80) 'AL5 同任务连续 run 回执 LCP ≥ 0.80（实测值进 detail，bench 报数）' "lcp=$alLcp"
+    Assert-True ((Get-AlVal 'delta-rebuild') -eq 'ok') 'AL6 delta 重建逐字节无损（含链式 delta：d2 以 d1 的 full 视图为基线）' (Get-AlVal 'delta-rebuild')
+    Assert-True ((Get-AlVal 'delta-tamper-base') -eq 'refused') 'AL7 delta 基线被改→重建拒绝（fail-closed，不输出半份回执）' (Get-AlVal 'delta-tamper-base')
+    Assert-True ((Get-AlVal 'delta-tamper-hash') -eq 'refused') 'AL8 unchanged 哈希引用被改→重建拒绝（fail-closed）' (Get-AlVal 'delta-tamper-hash')
+    $alDr = 0.0
+    [void][double]::TryParse((Get-AlVal 'delta-ratio'), [ref]$alDr)
+    Assert-True ($alDr -gt 0 -and $alDr -lt 0.7) 'AL9 delta 回执显著小于 full（小夹具实测值进 detail，大计划更低，bench 报数）' "delta-ratio=$alDr"
+    Assert-True ((Get-AlVal 'delta-ref-format') -eq 'ok') 'AL10 unchanged 哈希引用 = 64 位大写十六进制（与 journal manifest sha256 同格式，能对上就能取回）' (Get-AlVal 'delta-ref-format')
+    Assert-True ((Get-AlVal 'journal-get-hit') -eq 'ok') 'AL11 journal get 按哈希取回工件：取回件重算哈希 = manifest 哈希（哈希可寻址证据面）' (Get-AlVal 'journal-get-hit')
+    Assert-True ((Get-AlVal 'journal-get-miss') -eq 'ok') 'AL12 journal get 未命中 exit 1、坏哈希 exit 2（干净拒绝不是 traceback）' (Get-AlVal 'journal-get-miss')
+    Assert-True ((Get-AlVal 'prune-summary') -eq 'ok') 'AL13 裁剪汇总行如实（scope-matched X/Y，pruned Z>0）' (Get-AlVal 'prune-summary')
+    Assert-True ((Get-AlVal 'prune-equiv') -eq '100/100') 'AL14 裁剪等价：100 组随机变更集 BLOCK/WARN 与逐字评估完全一致（正确性不因裁剪而变）' (Get-AlVal 'prune-equiv')
+    Assert-True ((Get-AlVal 'kernel-restore') -eq 'ok') 'AL15 内核规则还原不受裁剪影响（表缺内核规则两边都还原、都判红）' (Get-AlVal 'kernel-restore')
+    Assert-True ((Get-AlVal 'batch-equiv') -eq '210/210') 'AL16 policy 批分类等价：210 命令逐条 exit+输出与单次调用完全一致' (Get-AlVal 'batch-equiv')
+    Assert-True ((Get-AlVal 'batch-empty') -eq 'refused') 'AL17 空 commands 批量调用 exit 2（fail-closed）' (Get-AlVal 'batch-empty')
+    Assert-True ((Get-AlVal 'compact-delta') -eq 'ok') 'AL23 compact 与 delta 组合：mode=compact 的 delta 重建逐字节还原 compact 视图' (Get-AlVal 'compact-delta')
+    Assert-True ((Get-AlVal 'claim-audit-compat') -eq 'ok') 'AL26 claim_audit 读新形态回执：证据路径与旧形态判定逐字一致（老消费者回归）' (Get-AlVal 'claim-audit-compat')
+    Assert-True ((Get-AlVal 'bench-compat') -eq 'ok') 'AL25 bench non_gate_seconds 兼容新旧两形态（换段回归保护）' (Get-AlVal 'bench-compat')
+
+    # --- 链级断言：批分类下 policy 日志对齐、delta 机读件、看门狗两类回退 ---
+    function Read-AlReceipt([string]$path) {
+        return [IO.File]::ReadAllText($path, $alEnc) | ConvertFrom-Json
+    }
+    $al18doc = Read-AlReceipt (Join-Path $Work 'al-rc1.json')
+    $al18plan = @($al18doc.plan.commands)
+    $al18pol = @($al18doc.policy | ForEach-Object { $_.command })
+    Assert-True ((@($al18pol) -join "|") -eq (@($al18plan) -join "|") `
+        -and (@($al18doc.policy | Where-Object { $_.exit -ne 0 }).Count -eq 0)) `
+        "AL18 批分类下 policy 日志与 plan 命令逐位对齐（链序记账不变）" (@($al18pol) -join ",")
+    $al24raw = [IO.File]::ReadAllText((Join-Path $Work "al-d1.json"), $alEnc)
+    Assert-True ($al24raw.Trim().IndexOf("`n") -lt 0 -and $al24raw -notmatch "[^\x00-\x7F]") `
+        "AL24 delta 回执单行且纯 ASCII（机读件任何解码器读不坏）" ""
+
+    $AlW = Join-Path $Work 'al-wd'
+    New-Item -ItemType Directory -Force -Path (Join-Path $AlW 'pkg'), (Join-Path $AlW 'tests') | Out-Null
+    New-File (Join-Path $AlW "pkg\core.py") "def f(): return 1$nl"
+    New-File (Join-Path $AlW "pkg\__init__.py") ""
+    New-File (Join-Path $AlW "tests\test_core.py") "from pkg.core import f${nl}def test_f(): assert f() == 1$nl"
+    New-File (Join-Path $AlW "conftest.py") ""
+    Push-Location $AlW
+    & git init -q 2>&1 | Out-Null
+    & git add -A 2>&1 | Out-Null
+    & git -c user.email=a@b -c user.name=al commit -qm init 2>&1 | Out-Null
+    Pop-Location
+    New-File (Join-Path $AlW "plan.json") '{"proven":true,"commands":["true","true"],"unproven":[]}'
+    & $alPy (Join-Path $tools 'constraints.py') init -Root $AlW | Out-Null
+
+    function Invoke-AlAv([string]$receipt, [string[]]$extra, [switch]$NoPlan) {
+        $argsAv = @((Join-Path $tools "agent_verify.py"), "-Root", $AlW,
+                    "-Changed", "pkg/core.py", "-Lang", "python",
+                    "-Store", (Join-Path $Work "al-wd-store"), "-Receipt", $receipt)
+        if (-not $NoPlan) { $argsAv += @("-Plan", (Join-Path $AlW "plan.json")) }
+        $argsAv += $extra
+        & $alPy @argsAv 2>&1 | Out-Null
+        return $LASTEXITCODE
+    }
+
+    $al19rc = Join-Path $Work "al-wd19.json"
+    $al19 = Invoke-AlAv $al19rc @('--gate-deadline-affected', '0.001') -NoPlan
+    $al19doc = Read-AlReceipt $al19rc
+    $al19steps = @($al19doc.steps | ForEach-Object { $_.step })
+    $al19aff = @($al19doc.steps | Where-Object { $_.step -eq "affected" })[0]
+    Assert-True ($al19 -eq 0 -and $al19doc.verdict -eq "passed on full run (plan was unproven)" `
+        -and $al19doc.plan.proven -eq $false `
+        -and $al19doc.watchdog.affected -match "sound fallback" `
+        -and $al19aff.verdict -eq 'timeout' `
+        -and ($al19steps -contains 'journal-begin') -and ($al19steps -contains 'run') `
+        -and ($al19steps -contains 'journal-end')) `
+        "AL19 affected 门超时→sound 回退全量 unproven（链跑完、run/journal 在场，不是跳过）" "e=$al19 v=$($al19doc.verdict)"
+
+    $al20rc = Join-Path $Work "al-wd20.json"
+    $al20 = Invoke-AlAv $al20rc @('--gate-deadline-policy', '0.001')
+    $al20doc = Read-AlReceipt $al20rc
+    $al20steps = @($al20doc.steps | ForEach-Object { $_.step })
+    Assert-True ($al20 -eq 1 -and $al20doc.verdict -eq "refused by policy watchdog" `
+        -and $al20doc.watchdog.policy -match "fail-closed" `
+        -and ($al20steps -notcontains 'run')) `
+        "AL20 policy 门超时→fail-closed 拒绝并点名门（整链拒绝在 run 前）" "e=$al20 v=$($al20doc.verdict)"
+
+    $al21rc = Join-Path $Work "al-wd21.json"
+    $al21 = Invoke-AlAv $al21rc @('--gate-deadline-constraints', '0.001')
+    $al21doc = Read-AlReceipt $al21rc
+    $al21steps = @($al21doc.steps | ForEach-Object { $_.step })
+    Assert-True ($al21 -eq 1 -and $al21doc.verdict -eq "refused by constraints watchdog" `
+        -and $al21doc.watchdog.constraints -match "fail-closed" `
+        -and ($al21steps -notcontains 'run')) `
+        "AL21 constraints 门超时→fail-closed 拒绝并点名门" "e=$al21 v=$($al21doc.verdict)"
+
+    & $alPy (Join-Path $tools 'agent_verify.py') -Root $AlW -Changed 'pkg/core.py' `
+        -Lang python --gate-deadline-affected 0 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) "AL22 deadline 0/负数→exit 2（坏调用，不是关掉看门狗）" "e=$LASTEXITCODE"
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped
 if ($failed -gt 0) { exit 1 }
