@@ -96,4 +96,9 @@
   主库删除审批与痛点语料（`.git` 目录=主检出、删除要人批；`tools/pitfalls.py` 语料只启不发）。
 - 单一入口 `tools/agent_verify.py`：编排链任一闸拒绝整体拒绝，回执纯 ASCII；子智能体带
   `--agent-id`；快速命令块与回执读法见护栏手册 §快速命令块、§验收口径
-  （`pwsh tools/selftest.ps1` 410 条全绿）。
+  （`pwsh tools/selftest.ps1` 667 条全绿）。
+- 多智能体协调（2026-11-22）：认领不是文档规矩而是闸——`--claim-gate --claim-who <宿主:会话id>`
+  要求本次 `-Changed` 的路径被在效认领完整覆盖，false/unknown 都拒绝；跨会话交接用
+  `tools/handoff.py create` 写包（base_commit + state_hash），接活时
+  `agent_verify --handoff <包.json>`，过期/挪树/坏包一律拒绝。账本是协调文件不是 ACL，
+  state_hash 只覆盖 `-Root` 下 git 看得见的东西；边界见 `AGENT-GUARDRAILS.md`。

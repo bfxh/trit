@@ -127,7 +127,8 @@
 | 文档 | 一句话 |
 |---|---|
 | [BUILD-PERF.md](engineering/BUILD-PERF.md) | 构建性能：本机 / CI 实测、缓存边界、采纳与未采纳项 |
-| [DOCTOR-V2.md](engineering/DOCTOR-V2.md) | doctor 开销治理：门缓存 1.26 s → 0.54 s（2.3×），Rust / 三进制 / 四进制评估与编排待办 |
+| [DOCTOR-V2.md](engineering/DOCTOR-V2.md) | doctor 开销治理：门缓存 1.26 s → 0.54 s（2.3×）、simchain 第七面接入（AI30–AI35）、ledger/registry 成本实测与不扩缓存的理由、Rust / 三进制 / 四进制评估与剩余待办 |
+| [AGENT-COORDINATION.md](engineering/AGENT-COORDINATION.md) | 多智能体认领门与交接门：`--claim-gate` / `--handoff` 的三态语义、state_hash 口径、开销实测（53 / 271 ms）与未落地项 |
 | [WORKTREES.md](engineering/WORKTREES.md) | worktree 负责人表（`git worktree list` 实时生成） |
 | [AUTO-UPDATE.md](engineering/AUTO-UPDATE.md) | 自动更新与一键更新（`--check` / `--apply`） |
 | [VCS-BRANCH-ISSUES.md](engineering/VCS-BRANCH-ISSUES.md) | trit-vcs 分支与更新问题清单（主库侧观察，只记录不修） |

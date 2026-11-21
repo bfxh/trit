@@ -122,6 +122,8 @@ MACHINE_PATH_RX = re.compile(
 TOOLS = os.path.dirname(os.path.abspath(__file__))
 PY = sys.executable
 RESUME = os.path.join(TOOLS, "resume.py")
+HANDOFF = os.path.join(TOOLS, "handoff.py")
+CLAIMS = os.path.join(os.path.dirname(TOOLS), "scripts", "agent_claims.py")
 RUN_CAPS = os.path.join(TOOLS, "run_caps.py")
 
 BUDGET_NOTE = ("declaration-based gate: the tool layer cannot measure model-side token "
@@ -164,6 +166,12 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
   claims:       [--claims-file f.jsonl] [--claims-receipts glob]... [--second-opinion]
                 [--derivations (default on) | --no-derivations]  (audit model statements;
                 number claims carrying derivations are re-executed by mre, REJECTED refuses)
+  coordination: [--claim-gate --claim-who <host:session> [--claims-ledger <CLAIMS.md>]]
+                [--handoff <packet.json>]
+                (multi-agent gate: the changed paths must be fully claimed by --claim-who
+                (false or unknown refuses); a handoff packet's base_commit/state_hash must
+                match this tree (unknown or false refuses). Both are opt-in; no flag means
+                the chain is exactly what it was.)
   receipt:      [--compact]         (single-line machine receipt; default stays full)
   delta:        [--delta --against <prev-receipt>] [--delta-full <path>]
                 (subagent chains: only changed fields + hash refs for unchanged ones;
@@ -204,6 +212,16 @@ Claim audit (--claims-file, honest scope): {CLAIMS_NOTE}
 The audit runs after constraints and before journal-begin: a run is not allowed to
 even start on top of claims that contradict reality.
 
+Coordination gates (multi-agent, opt-in; honest scope): --claim-gate answers "am I
+allowed to write these paths?" with the same tri-state table as trit-orch's ClaimStore
+(true = every changed path is covered by my live claim; false = another owner overlaps;
+unknown = not claimed / only partly covered / ledger unreadable). False and unknown
+both refuse -- an unclaimed path is not a permission. --handoff answers "is this the
+same tree the previous agent handed over?" with trit-orch::handoff_gate's table
+(true = valid, unexpired, base_commit and state_hash match; unknown = moved/expired/
+state unprovable; false = malformed). Both gates are host-side checks before run;
+they are not a security boundary (the claim ledger is a coordination file, not an ACL).
+
 Caps (honest scope): {CAPS_NOTE}
 Defaults when --caps is given without parameters: mem 2048 MB, 64 procs, 1800 s.
 
@@ -238,6 +256,7 @@ def parse_args(argv):
            "allow_network": False, "dry_run": False, "receipt": "", "store": "", "plan": "",
            "allow": [], "agent_id": "", "spent_token": "", "compact": False,
            "parallel_gates": False, "claims_file": "", "claims_receipts": [],
+           "claim_gate": False, "claim_who": "", "claims_ledger": "", "handoff": "",
            "second_opinion": False, "no_derivations": False, "delta": False,
            "against": "", "rebuild": "", "delta_full": "", "out": "",
            "gate_deadline_affected": "600", "gate_deadline_policy": "600",
@@ -254,7 +273,7 @@ def parse_args(argv):
         # parse -Root as the caps value).
         if name in ("dryrun", "allownetwork", "caps", "compact", "secondopinion",
                     "second-opinion", "derivations", "noderivations", "no-derivations",
-                    "delta"):
+                    "delta", "claimgate", "claim-gate"):
             # --derivations is the default-on no-op; --no-derivations opts out of the
             # mre re-execution pass (legacy single-source shape).
             out["no_derivations"] = name in ("noderivations", "no-derivations")
@@ -263,6 +282,7 @@ def parse_args(argv):
                 else "caps" if name == "caps"
                 else "compact" if name == "compact"
                 else "delta" if name == "delta"
+                else "claim_gate" if name in ("claimgate", "claim-gate")
                 else "second_opinion"] = True
             i += 1
             continue
@@ -283,7 +303,10 @@ def parse_args(argv):
                  "agentid": "agent_id", "spent-token": "spent_token",
                  "spenttoken": "spent_token", "claims-file": "claims_file",
                  "claimsfile": "claims_file", "delta-full": "delta_full",
-                 "deltafull": "delta_full", "gate-deadline-affected": "gate_deadline_affected",
+                 "deltafull": "delta_full", "claim-who": "claim_who",
+                 "claimwho": "claim_who", "claims-ledger": "claims_ledger",
+                 "claimsledger": "claims_ledger", "handoff": "handoff",
+                 "gate-deadline-affected": "gate_deadline_affected",
                  "gate-deadline-policy": "gate_deadline_policy",
                  "gate-deadline-constraints": "gate_deadline_constraints"}.get(name, name)] = val
         i += 2
@@ -310,6 +333,35 @@ def step(args, timeout=None):
 
 def skipped(msg):
     return {"out": [msg], "code": 0, "seconds": 0}
+
+
+def json_tail(result):
+    """Last parseable JSON object in a step's merged stdout/stderr.
+
+    Gates print human lines before the machine line (or after), so scanning from the
+    tail is deliberate; an unparseable gate result is None and the caller refuses.
+    """
+    for line in reversed(result["out"]):
+        text = line.strip()
+        if text.startswith("{") and text.endswith("}"):
+            try:
+                return json.loads(text)
+            except ValueError:
+                continue
+    return None
+
+
+def repo_relative(root, paths):
+    """Changed paths as claim keys. Absolute paths outside -Root are unclaimable."""
+    out, bad = [], []
+    for raw in paths:
+        full = raw if os.path.isabs(raw) else os.path.join(root, raw)
+        rel = os.path.relpath(os.path.abspath(full), root)
+        if rel == os.pardir or rel.startswith(os.pardir + os.sep):
+            bad.append(raw)
+            continue
+        out.append(rel.replace("\\", "/"))
+    return out, bad
 
 
 def int_or(val, default):
@@ -339,7 +391,8 @@ def session_file(root, task_id):
     return os.path.join(root, ".agent", "resume", f"{task_id}.json")
 
 
-STABLE_HEAD = ("root", "lang", "profile", "changed", "agent_id", "caps", "plan",
+STABLE_HEAD = ("root", "lang", "profile", "changed", "agent_id", "handoff", "claim",
+               "caps", "plan",
                "policy", "steps", "run", "changes", "claims", "watchdog",
                "verdict", "exit")
 VOLATILE_ORDER = ("budget", "cost", "wall_s", "steps_seconds", "run_seconds",
@@ -415,6 +468,16 @@ def compact_view(doc, steps):
         c["proven"] = bool(doc["plan"].get("proven"))
     if "agent_id" in doc:
         c["agent_id"] = doc["agent_id"]
+    if "handoff" in doc:
+        # routing only: id/verdict/hashes are small; reason is free text and stays in full
+        c["handoff"] = {k: v for k, v in doc["handoff"].items()
+                        if k in ("id", "verdict", "base_commit", "state_hash")}
+    if "claim" in doc:
+        # paths can be long; count + owner + verdict are the routing information
+        c["claim"] = {"who": doc["claim"].get("who"),
+                      "verdict": doc["claim"].get("verdict"),
+                      "paths": len(doc["claim"].get("paths", [])),
+                      "ledger": doc["claim"].get("ledger")}
     if "claims" in doc:
         c["claims"] = doc["claims"]
     volatile = {}
@@ -794,6 +857,23 @@ def main(argv):
     if a.get("second_opinion") and not a.get("claims_file"):
         print("agent-verify: --second-opinion needs --claims-file (the two sources re-derive a claims set)")
         return 2
+    if a.get("claim_gate"):
+        claim_who = str(a.get("claim_who", "")).strip()
+        if not claim_who:
+            print("agent-verify: --claim-gate needs --claim-who <host:session> "
+                  "(the claim ledger compares owners literally; --agent-id is a run label, not a claim owner)")
+            return 2
+        if MACHINE_PATH_RX.search(claim_who):
+            print("agent-verify: --claim-who 带本机绝对路径 -- 用规范形 <host:session>（例 qoder:abc12345）")
+            return 2
+    elif a.get("claim_who") or a.get("claims_ledger"):
+        print("agent-verify: --claim-who/--claims-ledger only carry meaning with --claim-gate")
+        return 2
+    if a.get("handoff"):
+        packet = str(a["handoff"]).strip()
+        if not os.path.isfile(packet):
+            print(f"agent-verify: --handoff 包不存在或读不到：{packet}")
+            return 2
 
     root = os.path.abspath(root_in)
     lang = a["lang"].lower()
@@ -936,6 +1016,66 @@ def main(argv):
             print(ln)
         print("agent-verify: 拒绝 -- preflight 判红，坏代码不要落到磁盘上")
         return finish("refused by preflight", 1)
+
+    # --- 2.2 handoff gate: is this the same tree the previous agent handed over? ------
+    # trit-orch::handoff_gate's tri-state table, host-side. Unknown is NOT permission:
+    # an expired/moved/unprovable state must be reconciled first, not waved through.
+    if a.get("handoff"):
+        hr = step([HANDOFF, "gate", "-Root", root, "-Packet", a["handoff"], "--json"])
+        hdoc = json_tail(hr) or {}
+        hverdict = str(hdoc.get("verdict", "")).lower()
+        add("handoff", hr, "ok" if hverdict == "true" else "refused")
+        doc["handoff"] = {"packet": os.path.basename(str(a["handoff"])),
+                          "id": hdoc.get("id"), "verdict": hdoc.get("verdict"),
+                          "reason": hdoc.get("reason"),
+                          "base_commit": hdoc.get("base_commit"),
+                          "state_hash": hdoc.get("state_hash")}
+        if hverdict != "true":
+            for ln in hr["out"]:
+                print(ln)
+            print("agent-verify: 拒绝 -- 交接包与本树对不上（unknown 不是通行证，"
+                  "先对账或用 handoff.py 重写包）")
+            return finish("refused by handoff", 1)
+
+    # --- 2.25 claim gate: am I allowed to write these paths? ---------------------------
+    # The ledger is a coordination file, not an ACL; but "not claimed" is Unknown and
+    # Unknown refuses -- an unclaimed path is not a default permission.
+    if a.get("claim_gate"):
+        who = str(a["claim_who"]).strip()
+        paths, outside = repo_relative(root, a["changed"])
+        claims_ledger = str(a.get("claims_ledger", "")).strip()
+        if claims_ledger:
+            rel = os.path.relpath(os.path.abspath(claims_ledger), root)
+            label = rel.replace("\\", "/") if not rel.startswith(os.pardir) else os.path.basename(claims_ledger)
+        else:
+            label = "default"
+        doc["claim"] = {"who": who, "paths": paths, "ledger": label}
+        if outside:
+            cr = {"out": [f"claim-gate: changed path outside -Root is unclaimable: {outside}"],
+                  "code": 1, "seconds": 0}
+            cverdict, creason = "unknown", "changed path outside -Root"
+        else:
+            args = [CLAIMS, "gate", "--who", who, "--paths", *paths, "--json"]
+            if claims_ledger:
+                args += ["--claims", claims_ledger]
+            cr = step(args)
+            cdoc = json_tail(cr) or {}
+            cverdict = str(cdoc.get("verdict", "")).lower()
+            creason = ("" if cverdict == "true"
+                       else "path held by another active claim" if cverdict == "false"
+                       else "paths are not fully claimed by this owner")
+            if cverdict == "true" and cdoc.get("claims") is not None:
+                doc["claim"]["ledger_claims"] = cdoc.get("claims")
+        add("claim-gate", cr, "ok" if cverdict == "true" else "refused")
+        doc["claim"]["verdict"] = cverdict or "unreadable"
+        if cverdict != "true":
+            for ln in cr["out"]:
+                print(ln)
+            print(f"agent-verify: 拒绝 -- 认领门不通过（{creason or 'gate unreadable'}）："
+                  f"先 `python scripts/agent_claims.py claim --who {who} --repo <o/r> "
+                  f"--paths {' '.join(paths) or '<paths>'} --plan <方案>`；"
+                  f"重叠时 compare 后由败方 release/收窄")
+            return finish("refused by claim gate", 1)
 
     # --- 2.5 budget gate: suspend before run when the declared budget is empty ----------
     # Honest by construction: no tool can measure the model's remaining tokens, so this

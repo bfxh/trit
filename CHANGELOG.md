@@ -2,6 +2,67 @@
 
 ## [Unreleased]
 
+### Added（多智能体协调：认领门前置 + 交接门宿主侧）
+
+- `tools/handoff.py`（stdlib only，新建）：`create/gate/state/show/list` 五条子命令。
+  包字段严格镜像 `crates/trit-orch` 的 `HandoffPacket::validate`（8 个必填非空字段 + 4 个
+  非空列表项 + `expires_at` 为正整数且晚于 `now`）；`state_hash` = HEAD + 过滤本机账本后的
+  `git status --porcelain -z --no-renames` + `git diff HEAD --binary` + 未跟踪文件内容哈希；
+  `gate` 三态 True/Unknown/False（结构不合法=False，过期/base 漂移/指纹不一致/状态不可证=Unknown，
+  全对上=True），退出码 0/1/2；默认落 `<Root>/.agent/handoff/<id>.json`，同 idempotency_key 幂等、
+  不同 key 拒绝覆盖；包内禁止本机盘符/UNC 路径。不计入指纹的本机账本：`.journal/`、
+  `.agent/handoff/`、`.agent/resume/`、`.agent/memory/`、`.agent/signals.jsonl`、
+  `.agent/last-*.json`、`.agent/doctor-cache.json`。
+- `tools/agent_verify.py`：新增 `--claim-gate` / `--claim-who` / `--claims-ledger` / `--handoff`
+  四个参数，在 preflight 之后、budget 之前串入 **handoff → claim-gate** 两步：
+  `--handoff` 调 `handoff.py gate`，非 True 即 `refused by handoff`；
+  `--claim-gate` 把 `-Changed` 转仓库相对后调 `scripts/agent_claims.py gate --json`，
+  false/unknown 都 `refused by claim gate`（Unknown 不是默认许可）。回执 `STABLE_HEAD` 新增
+  `handoff` / `claim` 字段（full 保留路径/reason，compact 只留 id/verdict/base_commit/state_hash
+  与 who/verdict/paths 计数/ledger）。两门都是 opt-in，不传时行为不变。
+- `.gitignore`：新增 `.agent/handoff/`（交接包，本机协调状态）与 `.agent/resume/`
+  （断粮续跑账本），两者都不进公开树。
+- `tools/selftest.ps1`：AF 组新增 `New-AvCoordFixture` 与 8 条断言——AF23a/AF23/AF23b/AF23c
+  （认领后放行/未认领拒绝/他人占用 `false` 拒绝/缺 `--claim-who` 参数拒绝）、
+  AF24a/AF24/AF24b/AF24c（同树放行/改文件 `Unknown`/坏包 `False`/过期或 base 改坏 `Unknown`）；
+  AF 组 `$skipped` 从 38 校正到 46（实测段内 46 条断言）。
+- 同机开销（真实仓库 9 个脏文件，各 5 次）：`handoff.py gate` 均值 **271.0 ms**
+  （286.7/275.4/268.5/262.9/261.5）；`agent_claims.py gate` 均值 **53.3 ms**
+  （53.1/52.5/51.7/56.2/52.9）。两者含解释器启动 ~24 ms；handoff 大头是
+  `git diff HEAD --binary`，脏树越大越慢，**不做缓存**（状态指纹每次重算）。
+- `docs/engineering/AGENT-COORDINATION.md`（新建）：两门的三态语义、state_hash 口径、
+  开销读数、边界与未落地项（DeliveryReceipt 四态、自动 claim/release、dispatch 环、跨机签名）；
+  `docs/README.md` 索引同步；`AGENT-GUARDRAILS.md` verdict 表/边界表/命令块与 `AGENTS.md`
+  §护栏工具链同步。
+
+### Fixed（接入认领门时发现：局部名遮蔽预算台账模块）
+
+- `tools/agent_verify.py` 的 `main` 里用 `ledger` 做局部变量名，遮蔽了模块级
+  `import ledger`；`--budget-token` 分支执行 `ledger.load(...)` 时 `UnboundLocalError`，
+  selftest Y17 因回执未落盘才暴露。局部名改 `claims_ledger`，Y17/Y18 复跑绿；
+  台账记 L127（跨门组合路径必须有一条走完整链的断言）。
+
+### Added（doctor v2 ②：simchain 第七面接入 + ledger/registry 成本实测）
+
+- `tools/doctor.py` 新增 **simchain 面**（第七面，`face_simchain`）：只读
+  `.agent/last-simchain.json`（`tools/simchain.py simulate` 的落盘报告），`violations > 0`
+  判 FAIL；文件缺失 / 坏 JSON / 自相矛盾（`invariants_ok + violations != scenarios`、
+  `scenario_details` 行数不等于 `scenarios`、逐场景违规数与顶层不一致）判 UNAVAILABLE
+  并给重跑命令；`at` 只打进 evidence/detail，**不判新鲜度**——与 selftest 面同一纪律。
+  doctor 不跑模拟器（200 场景分钟级）。selftest AI30–AI35 六条断言：缺报告点名重跑 /
+  全绿 OK / 违规 FAIL 但 exit 仍 0 / 自相矛盾 UNAVAILABLE / 坏 JSON UNAVAILABLE / 真仓两态；
+  AI1b 从六面改七面。
+- 同机同命令复测（2026-11-22，加入第七面后）：强制重验中位 **1.312 s**（n=3，1.303–1.336）、
+  命中中位 **0.538 s**（n=4，0.533–0.553），2.4×；simchain 面本身 **0.34 ms**（n=7），
+  不是开销来源。
+- **缓存不扩到 ledger/registry**（量过再决定）：`parse_ledger` 0.28 ms、face_ledger 104 ms
+  （300.8 KB selftest 源码的断言号扫描）、face_registry 32 ms；两面合计 136 ms，占命中档
+  25%。registry 语义是"当前环境能不能跑"，缓存会在装好缺失命令后继续报旧 WARN；ledger
+  单独缓存只省 19% 且新增一套失效面。结论写进 `docs/engineering/DOCTOR-V2.md` §5。
+- `docs/engineering/DOCTOR-V2.md`：§1 补复测读数、§2 补 simchain 面与行号、§4 换成七面的
+  分量读数、§5 第 1/2 项改成已落地 + 读数与决定、§7 补两条未证（新鲜度、真实违规报告）。
+  `docs/ERRORS.md` L126 并账；`docs/README.md` 索引同步。
+
 ### Changed（doctor v2：门结果 stat 指纹缓存 + L124 收口）
 
 - `tools/doctor.py` 的 gates 面加**验证轨迹缓存**：`-Root` 全树 `(rel, mtime_ns, size)` 指纹

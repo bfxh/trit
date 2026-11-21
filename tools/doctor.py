@@ -28,6 +28,10 @@ have a problem" is answered with a chain of evidence, not a vibe:
             on no remote ref. Collected from git; UNAVAILABLE outside a repository.
   gates     scripts/privacy_scan.py and scripts/docs_hygiene.py, run in place (both are
             seconds-fast). Their exit codes are the evidence; doctor adds no opinion.
+  simchain  .agent/last-simchain.json written by tools/simchain.py simulate (scenario
+            counts, invariants, violations). violations > 0 -> FAIL; missing, corrupt or
+            self-contradictory -> UNAVAILABLE with the rerun command. doctor never runs
+            the simulator: 50 seeds x 4 fault families is minutes, not seconds.
 
 Statuses: OK / WARN / FAIL / UNAVAILABLE. A face degrades to UNAVAILABLE when its
 evidence source is missing, unreadable, or structurally unrecognizable -- a broken
@@ -378,6 +382,63 @@ def face_gates(root, refresh=False):
     return face
 
 
+SIMCHAIN_REL = ".agent/last-simchain.json"
+SIMCHAIN_RERUN = ("rerun: python tools/simchain.py simulate --seed 0 "
+                  "--faults kill,corrupt,concurrent,truncate --runs 50")
+
+
+def face_simchain(root):
+    """Read the simulator's last report. The report is machine-local and the run is
+    minutes-long, so doctor only reads what simchain left on disk -- same discipline
+    as the selftest face. Freshness is not judged (the report timestamp is surfaced
+    in evidence/detail); violations are the verdict."""
+    path = root / SIMCHAIN_REL
+    if not path.is_file():
+        return mk_face("simchain", "UNAVAILABLE", SIMCHAIN_REL,
+                       "no report on disk; " + SIMCHAIN_RERUN)
+    try:
+        doc = json.loads(read_text(path))
+        if not isinstance(doc, dict) or doc.get("tool") != "simchain":
+            raise ValueError("not a simchain report")
+        seeds = int(doc["seeds"])
+        faults = int(doc["faults"])
+        scenarios = int(doc["scenarios"])
+        ok = int(doc["invariants_ok"])
+        bad = int(doc["violations"])
+        kinds = [str(k) for k in (doc.get("violation_kinds") or [])]
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        return mk_face("simchain", "UNAVAILABLE", SIMCHAIN_REL,
+                       "unreadable (%s: %.60s); %s"
+                       % (type(e).__name__, str(e), SIMCHAIN_RERUN))
+    if scenarios <= 0 or ok + bad != scenarios:
+        return mk_face("simchain", "UNAVAILABLE", SIMCHAIN_REL,
+                       "inconsistent report: scenarios=%d invariants_ok=%d violations=%d; %s"
+                       % (scenarios, ok, bad, SIMCHAIN_RERUN))
+    rows = doc.get("scenario_details")
+    if rows is not None:
+        if not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows):
+            return mk_face("simchain", "UNAVAILABLE", SIMCHAIN_REL,
+                           "inconsistent report: scenario_details shape; " + SIMCHAIN_RERUN)
+        if len(rows) != scenarios:
+            return mk_face("simchain", "UNAVAILABLE", SIMCHAIN_REL,
+                           "inconsistent report: scenario_details rows=%d but scenarios=%d; %s"
+                           % (len(rows), scenarios, SIMCHAIN_RERUN))
+        row_bad = sum(1 for r in rows
+                      if not r.get("invariants_ok") or bool(r.get("violations")))
+        if row_bad != bad:
+            return mk_face("simchain", "UNAVAILABLE", SIMCHAIN_REL,
+                           "inconsistent report: per-scenario rows say violations=%d, "
+                           "top-level says %d; %s" % (row_bad, bad, SIMCHAIN_RERUN))
+    at = str(doc.get("at", "?"))
+    detail = ("seeds=%d faults=%d scenarios=%d invariants_ok=%d violations=%d duration_s=%s"
+              % (seeds, faults, scenarios, ok, bad, doc.get("duration_s", "?")))
+    if kinds:
+        detail += " kinds=" + ",".join(kinds[:8])
+    detail += " at=" + at
+    return mk_face("simchain", "FAIL" if bad else "OK",
+                   SIMCHAIN_REL + " at=" + at, detail)
+
+
 def safe(builder, *args):
     try:
         return builder(*args)
@@ -438,6 +499,7 @@ def main(argv):
         safe(face_backlog, entries, d_rows),
         safe(face_git, root),
         safe(face_gates, root, bool(a.refresh)),
+        safe(face_simchain, root),
     ]
     for f in faces:
         if f["face"] == "?":

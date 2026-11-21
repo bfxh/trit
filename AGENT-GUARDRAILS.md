@@ -592,7 +592,7 @@ policy/constraints 的活；这是**下一个模型读的东西**。条目内容
 | constraints | diff 里的禁止操作（整删 `/dev/null` 盲区已修）；主检出整删已跟踪文件要人批（`main-tree-raw-delete`） | 只看 diff 与给定命令文本；规则没写的问题不响 |
 | resume | 断粮/中断丢上下文：有账、有续跑块 | `budget` 是声明制，测不了模型侧真实 token；账本不替你记计划本身 |
 | run_caps | 已放行命令的爆炸半径（内存/进程数/超时） | **不是安全边界**：不隔离文件系统/网络，防不了蓄意逃脱；POSIX 无 procs 帽等价物（如实说明） |
-| agent-verify | 调用者跳步：单一入口、闸门串联、回执可审计；run 段实际消耗自动上账（台账 + `cost:` 行）；同 root 并发链 fail-closed；journal-begin 判红不放 run | 回执写完之后的事它管不着；不传 `--budget-token` 就没有预算闸；tokens 是声明不是测量；compact 砍掉的是自由文本证据（审计要全量回执）；并行门只覆盖三个只读分类器，写面永远串行 |
+| agent-verify | 调用者跳步：单一入口、闸门串联、回执可审计；run 段实际消耗自动上账（台账 + `cost:` 行）；同 root 并发链 fail-closed；journal-begin 判红不放 run；多智能体协调门（`--claim-gate` / `--handoff`）opt-in 且 false/unknown 都拒绝 | 回执写完之后的事它管不着；不传 `--budget-token` 就没有预算闸；tokens 是声明不是测量；compact 砍掉的是自由文本证据（审计要全量回执）；并行门只覆盖三个只读分类器，写面永远串行；认领账本是协调文件不是 ACL（能写它的人也能改它）；handoff 的 state_hash 只覆盖 `-Root` 下 git 看得见的东西，树外写入不在范围 |
 | signal | （观测面）分诊与惩罚信号记账，给 harness 与未来模型训练用 | 规则分诊不是模型判断，查全率/误报率未知；**改不了模型行为**——它只改变 harness 下一步做什么；`--with-text` 语料树内拒收，但树外仍靠人自律 |
 | declutter | 注释债只紧不松（budget 棘轮）；clean 的每个原件先进回收站 | 字符串里的注释形态不保证识别；unterminated string 时宁可不动；audit/budget/export 本身不改正本 |
 | watch | （观测面）失败率按轮位分桶、整盘健康四报警、污染模式点名 | 行为证据推断，不是读心；**什么也不拦**——exit 1 只表示"有东西要看"；事件标签自由，认不出的标签进不了分母 |
@@ -637,6 +637,14 @@ python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
   --parallel-gates -Receipt .agent/last-receipt.json # 三个只读门并发（写面仍串行）
 python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
   --spent-token <本次实测 token> --agent-id <id> -Receipt .agent/last-receipt.json
+python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
+  --claim-gate --claim-who <宿主:会话id> --claims-ledger <CLAIMS.md> \
+  -Receipt .agent/last-receipt.json                  # 多智能体：没认领的路径不许跑
+python tools/handoff.py create -Root . --id <交接id> --from <谁> --to <谁> \
+  --goal "<目标>" --next-action "<下一步>"             # 交接包（默认落 .agent/handoff/）
+python tools/handoff.py gate -Root . -Packet <包.json> --json  # True/Unknown/False 三态
+python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
+  --handoff <包.json> -Receipt .agent/last-receipt.json  # 状态对不上就拒绝接活
 python tools/bench_orchestration.py                  # 护栏开销/回执体积/并行加速/崩溃恢复
 
 # 崩溃恢复（锁 + 快照都在时）
@@ -686,7 +694,7 @@ python tools/terminology.py check   # 术语契约：锚点漂移/混用/孤儿 
 结尾行必须长这样（实测）：
 
 ```text
-selftest: passed=473 failed=0 skipped=0
+selftest: passed=667 failed=0 skipped=0
 ```
 
 ```text
@@ -694,13 +702,14 @@ terms: files=27 terms=17 anchors=35 drift=0
 terms: clean -- authorities still say what the registry cites
 ```
 
-**必须 473 条全绿 + terminology check 干净。**（编排链成熟轮 +37：AF 组——并发锁/崩溃恢复/畸形存储/超大计划/
+**必须 667 条全绿 + terminology check 干净。**（编排链成熟轮 +37：AF 组——并发锁/崩溃恢复/畸形存储/超大计划/
 compact 一致性/并行门一致性；此前 affected 的 rust 减集下沉到 cargo target 级时 +16：
-B 组新增 B5 与 B(续) B6–B19，组数不变；cognition/collect 落地时 +32：AE 组；防偷换概念 +26：AH 组） 33 组：
+B 组新增 B5 与 B(续) B6–B19，组数不变；cognition/collect 落地时 +32：AE 组；防偷换概念 +26：AH 组；
+多智能体协调门 +8：AF23/AF24 认领/交接，AF 组从 38 到 46） 33 组：
 A–Z 26 组 + AA/AB/AC/AD/AE/AF/AH 七组（W 组 trash 19 条、X 组 git_safe、
 Y 组 resume 32 条、Z 组 run_caps；AA 组 signal 35 条、AB 组 declutter 21 条、AC 组 watch 44 条、
 AD 组主库删除审批 / 污染 WARN 族 / pitfalls 24 条、AE 组 cognition 32 条、
-AF 组编排链稳定性 37 条、AH 组术语契约 26 条，是新增的七个观测、审批、稳定性与概念契约面）。护栏的断言全部
+AF 组编排链稳定性 46 条、AH 组术语契约 26 条，是新增的七个观测、审批、稳定性与概念契约面）。护栏的断言全部
 遵循"先看着它响，才算数"：每条拒绝路径都有对应的判红用例（W13/W14 journal restore 走
 回收站、W20/W21 no-raw-delete、Z1/Z4/Z5 run_caps 内核帽、I2b 编排顺序、M9 bash/PS 台账
 互通、AA12/AA14 signal 默认路径拒绝崩溃、AB1 audit 行计数精确数、AC4/AC5/AC6 疲劳 WARN
@@ -738,6 +747,8 @@ agent-verify 的回执（`-Receipt` 指定的 JSON，或 stdout 尾部）按三�
 | `refused by chain lock` | 同 root 已有另一条链（或上次崩溃留下的锁）——fail-closed 不竞争；诊断带恢复命令 | 1 |
 | `refused by budget ledger` | 预算台账损坏，剩余预算无法核算——不降级成弱闸 | 1 |
 | `refused by journal` | journal 快照建不起来——没有证据链的 run 不发生 | 1 |
+| `refused by claim gate` | 改动路径没有被 `--claim-who` 的在效认领完整覆盖（false=别人占着，unknown=没登记） | 1 |
+| `refused by handoff` | 交接包与本树对不上（Unknown=过期/挪树/状态不可证；False=包结构不合法） | 1 |
 | `refused by plan` | 注入的 plan 文件无法解析（坏 JSON 不许静默变成空计划） | 1 |
 
 2. **`steps[]`**——每步 `{step, verdict, exit, seconds, output(尾部≤6行)}`；

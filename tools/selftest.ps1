@@ -2416,13 +2416,15 @@ foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
 }
 if (-not $afPy) {
     "  SKIP  AF0 找不到可用的 Python，跳过编排链稳定性检查"
-    $skipped += 38
+    $skipped += 46
 } else {
     $afEnc = New-Object System.Text.UTF8Encoding($false)
     $avPy = Join-Path $tools 'agent_verify.py'
     $jrPy = Join-Path $tools 'journal.py'
     $ldPy = Join-Path $tools 'ledger.py'
     $rsPy = Join-Path $tools 'resume.py'
+    $hoPy = Join-Path $tools 'handoff.py'
+    $acPy = Join-Path $repo 'scripts\agent_claims.py'
 
     function New-AvFixture([string]$root) {
         New-Item -ItemType Directory -Force -Path (Join-Path $root 'pkg'), (Join-Path $root 'tests') | Out-Null
@@ -2446,6 +2448,16 @@ if (-not $afPy) {
     }
     function Read-Receipt([string]$path) {
         return [IO.File]::ReadAllText($path, $afEnc) | ConvertFrom-Json
+    }
+    function New-AvCoordFixture([string]$root) {
+        New-AvFixture $root
+        New-File (Join-Path $root '.gitignore') ".journal/$nl.agent/handoff/$nl"
+        New-File (Join-Path $root 'pkg\other.py') "def g(): return 2$nl"
+        Push-Location $root
+        & git add -A 2>&1 | Out-Null
+        & git -c user.email=a@b -c user.name=t commit -qm ignore 2>&1 | Out-Null
+        Pop-Location
+        New-File (Join-Path $root 'plan.json') '{"proven":true,"commands":["echo coord"],"unproven":[]}'
     }
 
     # --- AF1: 同 root 并发两条链，第二条 fail-closed（行为钉死：不竞争 journal-begin）---
@@ -2735,6 +2747,78 @@ if (-not $afPy) {
         -and (@($afFullDoc.changes) -match 'added\s+a\.txt').Count -gt 0) `
         'AF22 chain.lock 不进 changes（.journal 在 SKIP 集里），changes 仍看得见命令写的文件' `
         (@($afFullDoc.changes) -join ';')
+
+    # --- AF23: 多智能体认领门：认领过才放行，未认领/被别人占都 fail-closed ---
+    # 三态表与 scripts/agent_claims.py gate 同源；unknown 不是通行证（没登记 ≠ 没人）。
+    $AfCoord = Join-Path $Work 'af-coord'
+    New-AvCoordFixture $AfCoord
+    $afCoordOut = Join-Path $Work 'af-coord-out'
+    New-Item -ItemType Directory -Force -Path $afCoordOut | Out-Null
+    $afLedger = Join-Path $afCoordOut 'CLAIMS.md'
+    & $afPy $acPy claim --who qoder:af --repo bfxh/trit --paths pkg/core.py `
+        --plan 'AF 认领门：只改 pkg/core.py' --no-impact --claims $afLedger 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0 -and (Test-Path $afLedger)) `
+        'AF23a 认领账本可建（claim 写入共享表）' "exit=$LASTEXITCODE"
+    $afStoreC = Join-Path $afCoordOut 'store'
+    $null = Invoke-Av $AfCoord $afStoreC (Join-Path $afCoordOut 'coord-pass.json') `
+        @('--claim-gate', '--claim-who', 'qoder:af', '--claims-ledger', $afLedger, '-DryRun')
+    $afCoord1 = Read-Receipt (Join-Path $afCoordOut 'coord-pass.json')
+    Assert-True ($LASTEXITCODE -eq 0 -and $afCoord1.verdict -eq 'dry-run' `
+        -and $afCoord1.claim.verdict -eq 'true' `
+        -and (@($afCoord1.steps | ForEach-Object { $_.step }) -contains 'claim-gate')) `
+        'AF23 已认领路径放行：claim-gate=true 且步骤在回执里' "verdict=$($afCoord1.verdict) claim=$($afCoord1.claim.verdict)"
+    $null = Invoke-Av $AfCoord $afStoreC (Join-Path $afCoordOut 'coord-unknown.json') `
+        @('--claim-gate', '--claim-who', 'qoder:af', '--claims-ledger', $afLedger) -lang 'python' -changed 'pkg\other.py'
+    $afCoord2 = Read-Receipt (Join-Path $afCoordOut 'coord-unknown.json')
+    Assert-True ($LASTEXITCODE -eq 1 -and $afCoord2.verdict -eq 'refused by claim gate' `
+        -and $afCoord2.claim.verdict -eq 'unknown' `
+        -and (@($afCoord2.steps | ForEach-Object { $_.step }) -notcontains 'run') `
+        -and (@($afCoord2.steps | ForEach-Object { $_.step }) -notcontains 'journal-begin')) `
+        'AF23b 未认领路径：unknown 也拒绝（没登记不是默认许可），run/journal 都不发生' "verdict=$($afCoord2.verdict)"
+    & $afPy $acPy claim --who zcode:rival --repo bfxh/trit --paths pkg/core.py `
+        --no-impact --claims $afLedger 2>&1 | Out-Null
+    $afRivalRc = $LASTEXITCODE
+    $null = Invoke-Av $AfCoord $afStoreC (Join-Path $afCoordOut 'coord-false.json') `
+        @('--claim-gate', '--claim-who', 'qoder:af', '--claims-ledger', $afLedger)
+    $afCoord3 = Read-Receipt (Join-Path $afCoordOut 'coord-false.json')
+    Assert-True ($afRivalRc -eq 1 -and $LASTEXITCODE -eq 1 `
+        -and $afCoord3.verdict -eq 'refused by claim gate' -and $afCoord3.claim.verdict -eq 'false') `
+        'AF23c 别人占着同一路径：false 拒绝（先到先得不是规则，先对齐再动手）' "claim=$($afCoord3.claim.verdict)"
+
+    # --- AF24: 交接门：同一棵树才接，改过/坏包都拒绝 ---
+    $AfH = Join-Path $Work 'af-handoff'
+    New-AvCoordFixture $AfH
+    $afHOut = Join-Path $Work 'af-handoff-out'
+    New-Item -ItemType Directory -Force -Path $afHOut | Out-Null
+    $afPacket = Join-Path $afHOut 'packet.json'
+    & $afPy $hoPy create -Root $AfH --id h1 --from qoder:af --to zcode:next `
+        --goal 'continue the task' --next-action 'run the plan' --out $afPacket 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0 -and (Test-Path $afPacket)) `
+        'AF24a 交接包可建且带 base_commit/state_hash' "exit=$LASTEXITCODE"
+    # 本机 resume 账本不是源码状态：写它不许把交接包判失效（state_hash 显式跳过 .agent/resume/）
+    New-Item -ItemType Directory -Force -Path (Join-Path $AfH '.agent\resume') | Out-Null
+    New-File (Join-Path $AfH '.agent\resume\prev.json') '{}'
+    $afHStore = Join-Path $afHOut 'store'
+    $null = Invoke-Av $AfH $afHStore (Join-Path $afHOut 'handoff-pass.json') @('--handoff', $afPacket, '-DryRun')
+    $afH1 = Read-Receipt (Join-Path $afHOut 'handoff-pass.json')
+    Assert-True ($LASTEXITCODE -eq 0 -and $afH1.verdict -eq 'dry-run' `
+        -and $afH1.handoff.verdict -eq 'True' `
+        -and (@($afH1.steps | ForEach-Object { $_.step }) -contains 'handoff')) `
+        'AF24 交接包与树一致：handoff=True 且步骤在回执里' "verdict=$($afH1.verdict) gate=$($afH1.handoff.verdict)"
+    [IO.File]::AppendAllText((Join-Path $AfH 'pkg\core.py'), "$nl# moved$nl", $afEnc)
+    $null = Invoke-Av $AfH $afHStore (Join-Path $afHOut 'handoff-moved.json') @('--handoff', $afPacket)
+    $afH2 = Read-Receipt (Join-Path $afHOut 'handoff-moved.json')
+    Assert-True ($LASTEXITCODE -eq 1 -and $afH2.verdict -eq 'refused by handoff' `
+        -and $afH2.handoff.verdict -eq 'Unknown' `
+        -and (@($afH2.steps | ForEach-Object { $_.step }) -notcontains 'run')) `
+        'AF24b 树被改过：state_hash 不一致判 Unknown 并拒绝（先对账，不许硬接）' "gate=$($afH2.handoff.verdict)"
+    $afBadPacket = Join-Path $afHOut 'bad-packet.json'
+    [IO.File]::WriteAllText($afBadPacket, '{bad', $afEnc)
+    $null = Invoke-Av $AfH $afHStore (Join-Path $afHOut 'handoff-bad.json') @('--handoff', $afBadPacket)
+    $afH3 = Read-Receipt (Join-Path $afHOut 'handoff-bad.json')
+    Assert-True ($LASTEXITCODE -eq 1 -and $afH3.verdict -eq 'refused by handoff' `
+        -and $afH3.handoff.verdict -eq 'False') `
+        'AF24c 坏包判 False 并拒绝（结构不合法不是 Unknown）' "gate=$($afH3.handoff.verdict)"
 }
 
 # =====================================================================================
@@ -3201,7 +3285,7 @@ foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $aiSrc) { continue }
     if ((& $aiSrc -c 'print(1)' 2>$null) -eq '1') { $aiPy = $aiSrc; break }
 }
-$aiTotal = 30
+$aiTotal = 38
 if (-not $aiPy) {
     "  SKIP  AI0 找不到可用的 Python，跳过 doctor 检查"
     $skipped += $aiTotal
@@ -3282,7 +3366,7 @@ if (-not $aiPy) {
     $aiDoc1 = ($aiOut1 -join "`n") | ConvertFrom-Json
     Assert-True ($aiExit1 -eq 0 -and $null -ne $aiDoc1.faces) 'AI1 空根：exit=0 且 JSON 可解析（缺证据不崩）' "exit=$aiExit1"
     $aiUnav = @($aiDoc1.faces | Where-Object { $_.status -eq 'UNAVAILABLE' })
-    Assert-True (@($aiDoc1.faces).Count -eq 6 -and $aiUnav.Count -eq 6) 'AI1b 空根：六面全部 UNAVAILABLE（缺出处不许冒充绿）' (($aiDoc1.faces | ForEach-Object { "$($_.face)=$($_.status)" }) -join ',')
+    Assert-True (@($aiDoc1.faces).Count -eq 7 -and $aiUnav.Count -eq 7) 'AI1b 空根：七面全部 UNAVAILABLE（缺出处不许冒充绿）' (($aiDoc1.faces | ForEach-Object { "$($_.face)=$($_.status)" }) -join ',')
     $aiSelf1 = Get-AiFace $aiDoc1 'selftest'
     Assert-True ($aiSelf1.detail -match 'rerun') 'AI2 selftest 面缺记录时点名重跑命令' $aiSelf1.detail
 
@@ -3406,6 +3490,71 @@ if (-not $aiPy) {
         'AI29b 缓存落地：.agent/doctor-cache.json 存在且指纹是 16 位（机器状态可对账）' `
         "fp=$($aiCacheDoc.fp)"
 
+    # --- simchain 面（第七面）：读落盘报告，不跑模拟器；四种形态 ---
+    $aiS = Join-Path $aiDocRoot 's-simchain'
+    New-AiRoot $aiS | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $aiS '.agent') | Out-Null
+    $aiDocS0 = ((Invoke-AiDoctor $aiS) -join "`n") | ConvertFrom-Json
+    $aiSimS0 = Get-AiFace $aiDocS0 'simchain'
+    Assert-True ($aiSimS0.status -eq 'UNAVAILABLE' -and $aiSimS0.detail -match 'simchain\.py simulate') `
+        'AI30 simchain 面缺报告：UNAVAILABLE 并点名重跑命令（缺证据不许冒充绿）' $aiSimS0.detail
+
+    $aiSimOk = @{
+        tool = 'simchain'; at = '2026-11-22T01:37:44+08:00'; seeds = 2; faults = 1
+        scenarios = 2; invariants_ok = 2; violations = 0; duration_s = 1.5
+        scenario_details = @(
+            @{ invariants_ok = $true; violations = '' },
+            @{ invariants_ok = $true; violations = '' })
+    }
+    [IO.File]::WriteAllText((Join-Path $aiS '.agent\last-simchain.json'),
+        ($aiSimOk | ConvertTo-Json -Compress -Depth 4), $aiEnc)
+    $aiDocS1 = ((Invoke-AiDoctor $aiS) -join "`n") | ConvertFrom-Json
+    $aiSimS1 = Get-AiFace $aiDocS1 'simchain'
+    Assert-True ($aiSimS1.status -eq 'OK' -and
+        $aiSimS1.detail -match 'scenarios=2 invariants_ok=2 violations=0' -and
+        $aiSimS1.evidence -match 'last-simchain\.json') `
+        'AI31 simchain 全绿报告：OK 并清点场景/不变量/违规（证据指针指向落盘文件）' "$($aiSimS1.status) $($aiSimS1.detail)"
+
+    $aiSimBad = @{
+        tool = 'simchain'; at = '2026-11-22T01:37:44+08:00'; seeds = 2; faults = 1
+        scenarios = 2; invariants_ok = 1; violations = 1; duration_s = 1.5
+        violation_kinds = @('journal:restore-damaged')
+        scenario_details = @(
+            @{ invariants_ok = $true; violations = '' },
+            @{ invariants_ok = $false; violations = 'journal:restore-damaged' })
+    }
+    [IO.File]::WriteAllText((Join-Path $aiS '.agent\last-simchain.json'),
+        ($aiSimBad | ConvertTo-Json -Compress -Depth 4), $aiEnc)
+    $aiOutS2 = Invoke-AiDoctor $aiS
+    $aiExitS2 = $LASTEXITCODE
+    $aiDocS2 = ($aiOutS2 -join "`n") | ConvertFrom-Json
+    $aiSimS2 = Get-AiFace $aiDocS2 'simchain'
+    Assert-True ($aiSimS2.status -eq 'FAIL' -and $aiExitS2 -eq 0 -and
+        $aiSimS2.detail -match 'violations=1' -and
+        $aiSimS2.detail -match 'kinds=journal:restore-damaged') `
+        'AI32 simchain 违规报告：FAIL 并点名违规族，exit 仍 0（观测面不是闸）' ("exit=$aiExitS2 $($aiSimS2.detail)")
+
+    $aiSimInc = @{
+        tool = 'simchain'; at = '2026-11-22T01:37:44+08:00'; seeds = 2; faults = 1
+        scenarios = 2; invariants_ok = 2; violations = 0; duration_s = 1.5
+        scenario_details = @(
+            @{ invariants_ok = $true; violations = '' },
+            @{ invariants_ok = $false; violations = 'journal:restore-damaged' })
+    }
+    [IO.File]::WriteAllText((Join-Path $aiS '.agent\last-simchain.json'),
+        ($aiSimInc | ConvertTo-Json -Compress -Depth 4), $aiEnc)
+    $aiDocS3 = ((Invoke-AiDoctor $aiS) -join "`n") | ConvertFrom-Json
+    $aiSimS3 = Get-AiFace $aiDocS3 'simchain'
+    Assert-True ($aiSimS3.status -eq 'UNAVAILABLE' -and
+        $aiSimS3.detail -match 'per-scenario rows say violations=1') `
+        'AI33 顶层说 0 违规但逐场景行有违规：UNAVAILABLE（自相矛盾的报告不许冒充绿）' $aiSimS3.detail
+
+    [IO.File]::WriteAllText((Join-Path $aiS '.agent\last-simchain.json'), '{bad', $aiEnc)
+    $aiDocS4 = ((Invoke-AiDoctor $aiS) -join "`n") | ConvertFrom-Json
+    $aiSimS4 = Get-AiFace $aiDocS4 'simchain'
+    Assert-True ($aiSimS4.status -eq 'UNAVAILABLE' -and $aiSimS4.detail -match 'unreadable') `
+        'AI34 simchain 报告是坏 JSON：UNAVAILABLE（不是崩也不是绿）' $aiSimS4.detail
+
     New-Item -ItemType Directory -Force -Path (Join-Path $aiP 'scripts'), (Join-Path $aiP 'docs\plans') | Out-Null
     Copy-Item (Join-Path $repo 'scripts\privacy_scan.py') (Join-Path $aiP 'scripts\privacy_scan.py')
     [IO.File]::WriteAllText((Join-Path $aiP 'docs\plans\violation.md'), "task doc`n", $aiEnc)
@@ -3462,6 +3611,11 @@ if (-not $aiPy) {
     $aiSelfR = Get-AiFace $aiDocR 'selftest'
     Assert-True ($aiSelfR.detail -match ('passed=' + $aiP0 + ' failed=' + $aiF0)) `
         'AI26 真仓 selftest 记录往返：doctor 读到的计数与落盘时刻的快照一致' $aiSelfR.detail
+    $aiSimR = Get-AiFace $aiDocR 'simchain'
+    Assert-True (($aiSimR.status -in @('OK', 'FAIL') -or
+        ($aiSimR.status -eq 'UNAVAILABLE' -and $aiSimR.detail -match 'rerun')) -and
+        $aiSimR.evidence -match 'last-simchain\.json') `
+        'AI35 真仓 simchain 面在场：有报告就清点（OK/FAIL），没报告就 UNAVAILABLE 点名重跑（两态都不冒充）' "$($aiSimR.status) $($aiSimR.evidence)"
     $aiBkR = Get-AiFace $aiDocR 'backlog'
     Assert-True ($aiBkR.status -eq 'WARN' -and $aiBkR.detail -match 'L37') `
         'AI27 真仓欠账节在场且被清点（D 节不许悄悄消失）' $aiBkR.detail
