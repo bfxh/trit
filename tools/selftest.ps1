@@ -2711,6 +2711,265 @@ if (-not $afPy) {
         (@($afFullDoc.changes) -join ';')
 }
 
+# =====================================================================================
+"== AG. 反造假核心层：attest 哈希链（防篡改防重复）/ claim_audit 三态 / 编排链集成 =="
+# 每条断言对着一个造假面：账改不了（payload 复算）、丢不了（断链即报）、数不了两遍
+# （去重键结构性拒绝）；声明不许当真（无证据=UNVERIFIED）、与现实矛盾=FABRICATED 最响
+# 警报且全链拒绝。夹具全部现建，真实仓零接触。
+$agPy = $null
+foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
+    if (-not $c) { continue }
+    $agSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    if (-not $agSrc) { continue }
+    if ((& $agSrc -c 'print(1)' 2>$null) -eq '1') { $agPy = $agSrc; break }
+}
+if (-not $agPy) {
+    "  SKIP  AG0 找不到可用的 Python，跳过反造假核心层检查"
+    $skipped += 30
+} else {
+    $agEnc = New-Object System.Text.UTF8Encoding($false)
+    $atPy = Join-Path $tools 'attest.py'
+    $caPy = Join-Path $tools 'claim_audit.py'
+    $avPy = Join-Path $tools 'agent_verify.py'
+    $ldPy = Join-Path $tools 'ledger.py'
+
+    function Invoke-At([string[]]$atArgs) {
+        $script:agOut = @(& $agPy $atPy @atArgs 2>&1)
+        return $LASTEXITCODE
+    }
+    function Invoke-Ca([string[]]$caArgs) {
+        $script:agOut = @(& $agPy $caPy @caArgs 2>&1)
+        return $LASTEXITCODE
+    }
+    function New-AgFixture([string]$root) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $root 'pkg'), (Join-Path $root 'tests') | Out-Null
+        New-File (Join-Path $root 'pkg\core.py') "def f(): return 1$nl"
+        New-File (Join-Path $root 'pkg\__init__.py') ''
+        New-File (Join-Path $root 'tests\test_core.py') "from pkg.core import f${nl}def test_f(): assert f() == 1$nl"
+        New-File (Join-Path $root 'conftest.py') ''
+        Push-Location $root
+        & git init -q 2>&1 | Out-Null
+        & git add -A 2>&1 | Out-Null
+        & git -c user.email=a@b -c user.name=t commit -qm init 2>&1 | Out-Null
+        Pop-Location
+    }
+    function Invoke-AgAv([string]$root, [string]$store, [string]$receipt, [string[]]$extra) {
+        $argsAv = @($avPy, '-Root', $root, '-Changed', (Join-Path $root 'pkg\core.py'), '-Lang', 'python',
+                    '-Plan', (Join-Path $root 'plan.json'), '-Store', $store, '-Receipt', $receipt) + $extra
+        & $agPy @argsAv 2>&1 | Out-Null
+        return $LASTEXITCODE
+    }
+    function Read-AgReceipt([string]$path) {
+        return [IO.File]::ReadAllText($path, $agEnc) | ConvertFrom-Json
+    }
+
+    # --- AG1-AG3: 链 append/verify/balance 往返 ---
+    $AgS1 = Join-Path $Work 'ag-chain1'
+    $ag1a = Invoke-At @('append', '--store', $AgS1, '--kind', 'spend', '--task-id', 't1', '--agent-id', 'ag1', '--runid', 'r1', '--claimed-tokens', '100')
+    $ag1b = Invoke-At @('append', '--store', $AgS1, '--kind', 'grant', '--task-id', 't1', '--agent-id', 'ag1', '--runid', 'r2', '--claimed-tokens', '50')
+    $ag1c = Invoke-At @('append', '--store', $AgS1, '--kind', 'correction', '--task-id', 't1', '--agent-id', 'ag1', '--runid', 'r3', '--claimed-tokens', '-20')
+    Assert-True ($ag1a -eq 0 -and $ag1b -eq 0 -and $ag1c -eq 0) `
+        'AG1 链 append x3 全成（spend/grant/correction 各一）' "e=$ag1a/$ag1b/$ag1c"
+    $ag2 = Invoke-At @('verify', '--store', $AgS1)
+    Assert-True ($ag2 -eq 0 -and ($agOut -join ' ') -match 'chain OK \(3 entries') `
+        'AG2 verify 全链复算逐条验 OK 且条数锚点' (($agOut -join ' '))
+    $ag3 = Invoke-At @('balance', '--store', $AgS1, '--task', 't1')
+    $ag3txt = $agOut -join ' '
+    Assert-True ($ag3 -eq 0 -and $ag3txt -match 'spent: 100' -and $ag3txt -match 'granted: 50' `
+        -and $ag3txt -match 'corrections: -20' -and $ag3txt -match 'spent_net \(budget-gate facing\): 80') `
+        'AG3 balance --task 逐数正确（spent_net=spent+corrections 是闸面口径）' $ag3txt
+    $ag3b = Invoke-At @('balance', '--store', $AgS1, '--agent', 'ag1')
+    Assert-True ($ag3b -eq 0 -and (($agOut -join ' ') -match 'spent: 100')) `
+        'AG3b balance --agent 认同一本账' (($agOut -join ' '))
+
+    # --- AG4: 断链检测报第一条断点（篡改/删行/重放三种断法）---
+    $agLines = [IO.File]::ReadAllLines((Join-Path $AgS1 'attest-ledger.jsonl'), $agEnc)
+    $AgS1t = Join-Path $Work 'ag-chain1-tamper'
+    New-Item -ItemType Directory -Force -Path $AgS1t | Out-Null
+    [IO.File]::WriteAllLines((Join-Path $AgS1t 'attest-ledger.jsonl'),
+        @($agLines[0], $agLines[1].Replace('"claimed_tokens":50', '"claimed_tokens":999'), $agLines[2]), $agEnc)
+    $ag4 = Invoke-At @('verify', '--store', $AgS1t)
+    Assert-True ($ag4 -eq 1 -and ($agOut -join ' ') -match 'payload_hash mismatch at seq 2') `
+        'AG4 篡改中段字段→verify 报第一条断点 seq 2（payload 复算不符，改过的账藏不住）' (($agOut -join ' '))
+    $AgS1g = Join-Path $Work 'ag-chain1-gap'
+    New-Item -ItemType Directory -Force -Path $AgS1g | Out-Null
+    [IO.File]::WriteAllLines((Join-Path $AgS1g 'attest-ledger.jsonl'), @($agLines[0], $agLines[2]), $agEnc)
+    $ag4b = Invoke-At @('verify', '--store', $AgS1g)
+    Assert-True ($ag4b -eq 1 -and ($agOut -join ' ') -match 'seq 3 out of order at position 2') `
+        'AG4b 删中段→seq 断报第一条断点（账凭空消失即报）' (($agOut -join ' '))
+    $AgS1r = Join-Path $Work 'ag-chain1-replay'
+    New-Item -ItemType Directory -Force -Path $AgS1r | Out-Null
+    [IO.File]::WriteAllLines((Join-Path $AgS1r 'attest-ledger.jsonl'),
+        @($agLines[0], $agLines[1], $agLines[2], $agLines[0]), $agEnc)
+    $ag4c = Invoke-At @('verify', '--store', $AgS1r)
+    Assert-True ($ag4c -eq 1 -and ($agOut -join ' ') -match 'position 4') `
+        'AG4c 重放旧行（重复 payload）→拒并点名断点' (($agOut -join ' '))
+
+    # --- AG5: 同一 (agent,task,runid,kind) 重复 spend 拒 ---
+    $ag5 = Invoke-At @('append', '--store', $AgS1, '--kind', 'spend', '--task-id', 't1', '--agent-id', 'ag1', '--runid', 'r1', '--claimed-tokens', '100')
+    $ag5lines = [IO.File]::ReadAllLines((Join-Path $AgS1 'attest-ledger.jsonl'), $agEnc)
+    Assert-True ($ag5 -eq 1 -and @($ag5lines).Count -eq 3) `
+        'AG5 同一 spend 重复 append 拒且账面行数不变（重复记账结构性不可能）' "e=$ag5 lines=$(@($ag5lines).Count)"
+
+    # --- AG6: import 收编 cost-ledger 已有 spent 账 ---
+    $AgLed = Join-Path $Work 'ag-import-cost.json'
+    & $agPy $ldPy -Mode add -Ledger $AgLed -Task 'av|t9' -Key 'av|rimp1|spent' -Tokens 4321 -Agent-Id 'imp9' 2>&1 | Out-Null
+    & $agPy $ldPy -Mode add -Ledger $AgLed -Task 'av|t9' -Key 'av|rimp2|cmd1|aa' -Wall 2.5 2>&1 | Out-Null
+    $AgS3 = Join-Path $Work 'ag-import'
+    $ag6 = Invoke-At @('import', '--store', $AgS3, '--from-ledger', $AgLed)
+    Assert-True ($ag6 -eq 0 -and ($agOut -join ' ') -match 'imported=1 skipped=0') `
+        'AG6 import 收编 cost-ledger spent 行（wall-only 行不是 token 账不收）' (($agOut -join ' '))
+    $ag6b = Invoke-At @('balance', '--store', $AgS3, '--task', 't9')
+    Assert-True ($ag6b -eq 0 -and (($agOut -join ' ') -match 'spent: 4321')) `
+        'AG6b balance 认收编后的旧账（已有账不凭空消失）' (($agOut -join ' '))
+    $ag6c = Invoke-At @('import', '--store', $AgS3, '--from-ledger', $AgLed)
+    $ag6lines = [IO.File]::ReadAllLines((Join-Path $AgS3 'attest-ledger.jsonl'), $agEnc)
+    Assert-True ($ag6c -eq 0 -and ($agOut -join ' ') -match 'imported=0 skipped=1' -and @($ag6lines).Count -eq 1) `
+        'AG6c 重导入全跳过（同一笔账不数两遍）' "e=$ag6c lines=$(@($ag6lines).Count)"
+
+    # --- AG7: 坏 JSONL fail-closed ---
+    $AgS1c = Join-Path $Work 'ag-chain1-corrupt'
+    New-Item -ItemType Directory -Force -Path $AgS1c | Out-Null
+    [IO.File]::WriteAllLines((Join-Path $AgS1c 'attest-ledger.jsonl'),
+        @($agLines[0], '{bad', $agLines[2]), $agEnc)
+    $ag7 = Invoke-At @('append', '--store', $AgS1c, '--kind', 'spend', '--task-id', 'x', '--agent-id', 'y', '--runid', 'z', '--claimed-tokens', '5')
+    Assert-True ($ag7 -eq 1) 'AG7 坏 JSONL：append 拒（不在半截账上记新账）' "e=$ag7"
+    $ag7b = Invoke-At @('balance', '--store', $AgS1c)
+    Assert-True ($ag7b -eq 1) 'AG7b 坏 JSONL：balance 拒（破账上没有数字）' "e=$ag7b"
+    $ag7c = Invoke-At @('verify', '--store', $AgS1c)
+    Assert-True ($ag7c -eq 1 -and ($agOut -join ' ') -match 'line 2') `
+        'AG7c 坏 JSONL：verify 点名坏行行号' (($agOut -join ' '))
+
+    # --- AG8-AG10: claim_audit 三态各至少 2 条 ---
+    $AgC = Join-Path $Work 'ag-claims-root'
+    New-Item -ItemType Directory -Force -Path (Join-Path $AgC 'pkg'), (Join-Path $AgC 'tests'), `
+        (Join-Path $AgC 'artifacts'), (Join-Path $Work 'ag-rc') | Out-Null
+    New-File (Join-Path $AgC 'pkg\core.py') "def f(): return 1$nl"
+    New-File (Join-Path $AgC 'tests\test_core.py') "def test_f(): assert 1$nl"
+    New-File (Join-Path $AgC 'tests\test_other.py') "def test_o(): assert 1$nl"
+    New-File (Join-Path $AgC 'tests\test_red.py') "def test_r(): assert 0$nl"
+    New-File (Join-Path $AgC 'artifacts\bench.txt') "guard_overhead_ratio 2.35x receipt_full_bytes 4800$nl"
+    New-File (Join-Path $Work 'ag-rc\rc-green.json') '{"at":"fixture","run":[{"command":"python -m pytest tests/test_core.py -q","exit":0}]}'
+    New-File (Join-Path $Work 'ag-rc\rc-red.json') '{"at":"fixture","run":[{"command":"python -m pytest tests/test_red.py -q","exit":1}]}'
+    $agRcGlob = Join-Path $Work 'ag-rc\*.json'
+
+    New-File (Join-Path $Work 'ag-claims-v.jsonl') ((@(
+        '{"claim":"pkg/core.py exists on disk","kind":"file-exists"}',
+        '{"claim":"tests/test_core.py all green","kind":"test-pass"}') -join $nl) + $nl)
+    $ag8 = Invoke-Ca @('-Claims', (Join-Path $Work 'ag-claims-v.jsonl'), '-Root', $AgC, '-Receipts', $agRcGlob)
+    $ag8v = @($agOut | Where-Object { $_ -match '\] VERIFIED' }).Count
+    Assert-True ($ag8 -eq 0 -and $ag8v -eq 2) `
+        'AG8 VERIFIED x2（file-exists 带内容哈希 + test-pass 有绿 receipt）exit 0' "e=$ag8 v=$ag8v"
+
+    New-File (Join-Path $Work 'ag-claims-u.jsonl') ((@(
+        '{"claim":"session spent 777 tokens","kind":"number"}',
+        '{"claim":"tests/test_other.py all green","kind":"test-pass"}') -join $nl) + $nl)
+    $ag9 = Invoke-Ca @('-Claims', (Join-Path $Work 'ag-claims-u.jsonl'), '-Root', $AgC, '-Receipts', $agRcGlob)
+    $ag9u = @($agOut | Where-Object { $_ -match '\] UNVERIFIED' }).Count
+    Assert-True ($ag9 -eq 1 -and $ag9u -eq 2) `
+        'AG9 UNVERIFIED x2（数字无出处 + 测试存在但 receipt 无 verdict）exit 1（不许当真）' "e=$ag9 u=$ag9u"
+
+    New-File (Join-Path $Work 'ag-claims-f.jsonl') ((@(
+        '{"claim":"tests/ghost_rs.rs all green","kind":"test-pass"}',
+        '{"claim":"tests/test_red.py all green","kind":"test-pass"}') -join $nl) + $nl)
+    $ag10 = Invoke-Ca @('-Claims', (Join-Path $Work 'ag-claims-f.jsonl'), '-Root', $AgC, '-Receipts', $agRcGlob)
+    $ag10f = @($agOut | Where-Object { $_ -match '\] FABRICATED' }).Count
+    Assert-True ($ag10 -eq 2 -and $ag10f -eq 2 -and (($agOut -join ' ') -match 'is RED')) `
+        'AG10 FABRICATED x2（测试文件不存在 + 声称绿实际最近 verdict 是红）exit 2（最响警报）' "e=$ag10 f=$ag10f"
+
+    # --- AG11: claims 文件自身 fail-closed ---
+    New-File (Join-Path $Work 'ag-claims-bad.jsonl') ((@(
+        '{"claim":"ok line","kind":"file-exists"}', '{bad') -join $nl) + $nl)
+    $ag11 = Invoke-Ca @('-Claims', (Join-Path $Work 'ag-claims-bad.jsonl'), '-Root', $AgC)
+    Assert-True ($ag11 -eq 3) 'AG11 claims 坏行→exit 3 拒整份（半读的声明集不许有一半被当真）' "e=$ag11"
+    # 机器路径形态运行期拼接（L106：夹具原文不许出现隐私闸认识的连续命中串）
+    $agMp = 'X' + ':/Us' + 'ers/someone/notes.md'
+    New-File (Join-Path $Work 'ag-claims-mp.jsonl') ('{"claim":"see ' + $agMp + ' for detail","kind":"file-exists"}' + $nl)
+    $ag11b = Invoke-Ca @('-Claims', (Join-Path $Work 'ag-claims-mp.jsonl'), '-Root', $AgC)
+    Assert-True ($ag11b -eq 3) 'AG11b claims 带机器路径→exit 3 拒（审计可能随仓提交，盘符形态不进门）' "e=$ag11b"
+
+    # --- AG12/AG13: agent_verify --claims-file 集成 ---
+    $AgA = Join-Path $Work 'ag-av'
+    New-AgFixture $AgA
+    New-File (Join-Path $AgA 'plan.json') '{"proven":true,"commands":["echo ag > ag.txt"],"unproven":[]}'
+    $storeA = Join-Path $Work 'ag-store-av'
+    $storeB = Join-Path $Work 'ag-store-decl'
+    $storeC = Join-Path $Work 'ag-store-import'
+    $storeCon = Join-Path $Work 'ag-store-con'
+    New-File (Join-Path $Work 'ag-av-f.jsonl') ('{"claim":"tests/ghost_rs.rs all green","kind":"test-pass"}' + $nl)
+    $ag12 = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-fab.json') @('--claims-file', (Join-Path $Work 'ag-av-f.jsonl'))
+    $ag12doc = Read-AgReceipt (Join-Path $Work 'ag-rc-fab.json')
+    $ag12steps = @($ag12doc.steps | ForEach-Object { $_.step })
+    Assert-True ($ag12 -eq 1 -and $ag12doc.verdict -eq 'rejected: fabricated claims' -and ($ag12steps -notcontains 'run')) `
+        'AG12 --claims-file 含 FABRICATED→全链拒绝在 run 前（模型说什么不算什么）' "e=$ag12 v=$($ag12doc.verdict)"
+    New-File (Join-Path $Work 'ag-av-ok.jsonl') ('{"claim":"pkg/core.py exists","kind":"file-exists"}' + $nl)
+    $ag13 = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-ok.json') @('--claims-file', (Join-Path $Work 'ag-av-ok.jsonl'))
+    $ag13doc = Read-AgReceipt (Join-Path $Work 'ag-rc-ok.json')
+    Assert-True ($ag13 -eq 0 -and $ag13doc.claims.total -eq 1 -and $ag13doc.claims.verified -eq 1) `
+        'AG13 --claims-file 全 VERIFIED→链通过且回执带 claims 汇总（appended 字段）' "e=$ag13 v=$($ag13doc.verdict)"
+    $ag13b = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-ok-c.json') @('--claims-file', (Join-Path $Work 'ag-av-ok.jsonl'), '--compact')
+    $ag13bdoc = Read-AgReceipt (Join-Path $Work 'ag-rc-ok-c.json')
+    Assert-True ($ag13b -eq 0 -and ($ag13bdoc.PSObject.Properties.Name -contains 'claims') -and $ag13bdoc.claims.verified -eq 1) `
+        'AG13b compact 回执同样携带 claims 汇总（compact 只砍文本不砍判定）' "e=$ag13b"
+
+    # --- AG14/AG15: --spent-token 上链 + 预算闸走链余额 ---
+    $ag14 = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-sp1.json') @('--task-id', 'agt1', '--spent-token', '777')
+    $ag14doc = Read-AgReceipt (Join-Path $Work 'ag-rc-sp1.json')
+    Assert-True ($ag14 -eq 0 -and $ag14doc.attest.appended -eq $true -and $ag14doc.attest.seq -eq 1 `
+        -and (Test-Path (Join-Path $storeA 'attest-ledger.jsonl'))) `
+        'AG14 --spent-token 落认证链（回执 attest.appended=true、seq=1、链文件在 store）' "e=$ag14 seq=$($ag14doc.attest.seq)"
+    $ag15 = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-bg1.json') @('--task-id', 'agt1', '--budget-token', '5000')
+    $ag15doc = Read-AgReceipt (Join-Path $Work 'ag-rc-bg1.json')
+    Assert-True ($ag15 -eq 0 -and $ag15doc.budget.recorded_tokens -eq 777 `
+        -and $ag15doc.budget.remaining -eq 4223 -and $ag15doc.budget.source -eq 'attest-chain') `
+        'AG15 预算闸消费认证链余额（777 已认证，4223=5000-777，source=attest-chain）' "src=$($ag15doc.budget.source) rem=$($ag15doc.budget.remaining)"
+    $ag15b = Invoke-AgAv $AgA $storeB (Join-Path $Work 'ag-rc-bg2.json') @('--task-id', 'agt2', '--budget-token', '5000')
+    $ag15bdoc = Read-AgReceipt (Join-Path $Work 'ag-rc-bg2.json')
+    Assert-True ($ag15b -eq 0 -and $ag15bdoc.budget.source -eq 'declared-only' -and $null -eq $ag15bdoc.budget.recorded_tokens) `
+        'AG15b 无链维持声明制并如实标注 declared-only（recorded 如实为空）' "src=$($ag15bdoc.budget.source)"
+
+    # --- AG16: 并发 append 链不断 ---
+    $ag16procs = @()
+    for ($i = 1; $i -le 6; $i++) {
+        $ag16procs += Start-Process -FilePath $agPy -ArgumentList @($atPy, 'append', '--store', $storeCon, `
+            '--kind', 'spend', '--task-id', 'tc', '--agent-id', 'ac', '--runid', "r$i", '--claimed-tokens', '10') `
+            -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work "ag-con$i.out") -RedirectStandardError (Join-Path $Work "ag-con$i.err")
+    }
+    foreach ($p in $ag16procs) { $null = $p.WaitForExit() }
+    $ag16exits = @($ag16procs | ForEach-Object { $_.ExitCode })
+    $ag16b = Invoke-At @('verify', '--store', $storeCon)
+    Assert-True (@($ag16exits | Where-Object { $_ -ne 0 }).Count -eq 0) `
+        'AG16 并发 6 append 全成功（锁窗口内排队，不拒不丢）' "exits=$($ag16exits -join ',')"
+    Assert-True ($ag16b -eq 0 -and ($agOut -join ' ') -match 'chain OK \(6 entries') `
+        'AG16b 并发产物链完整（seq 连续、无重键、逐条复算过）' (($agOut -join ' '))
+
+    # --- AG17: import 收编后预算闸认旧账 ---
+    & $agPy $ldPy -Mode add -Ledger (Join-Path $storeC 'cost-ledger.json') -Task 'av|agt3' -Key 'av|rimp1|spent' -Tokens 600 -Agent-Id 'imp9' 2>&1 | Out-Null
+    $ag17imp = Invoke-At @('import', '--store', $storeC, '--from-ledger', (Join-Path $storeC 'cost-ledger.json'))
+    $ag17 = Invoke-AgAv $AgA $storeC (Join-Path $Work 'ag-rc-imp.json') @('--task-id', 'agt3', '--budget-token', '1000')
+    $ag17doc = Read-AgReceipt (Join-Path $Work 'ag-rc-imp.json')
+    Assert-True ($ag17imp -eq 0 -and $ag17 -eq 0 -and $ag17doc.budget.recorded_tokens -eq 600 `
+        -and $ag17doc.budget.remaining -eq 400) `
+        'AG17 import 收编旧账→预算闸认（600 已认证，400=1000-600，旧账不算 air）' "imp=$ag17imp e=$ag17 rem=$($ag17doc.budget.remaining)"
+
+    # --- AG18: 多次 spend 累计入闸 ---
+    $ag18 = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-sp2.json') @('--task-id', 'agt1', '--spent-token', '888')
+    $ag18b = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-bg3.json') @('--task-id', 'agt1', '--budget-token', '9999')
+    $ag18doc = Read-AgReceipt (Join-Path $Work 'ag-rc-bg3.json')
+    Assert-True ($ag18 -eq 0 -and $ag18b -eq 0 -and $ag18doc.budget.recorded_tokens -eq 1665 `
+        -and $ag18doc.budget.remaining -eq 8334) `
+        'AG18 两次 spend 累计（1665=777+888，链余额逐次累加不丢）' "rem=$($ag18doc.budget.remaining)"
+
+    # --- AG15c: 链被篡改→预算闸 fail-closed（放最后：改坏 storeA 的账）---
+    $agChain = Join-Path $storeA 'attest-ledger.jsonl'
+    [IO.File]::WriteAllText($agChain,
+        [IO.File]::ReadAllText($agChain, $agEnc).Replace('"claimed_tokens":777', '"claimed_tokens":111'), $agEnc)
+    $ag15c = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-bg4.json') @('--task-id', 'agt1', '--budget-token', '5000')
+    $ag15cdoc = Read-AgReceipt (Join-Path $Work 'ag-rc-bg4.json')
+    Assert-True ($ag15c -eq 1 -and $ag15cdoc.verdict -eq 'refused by attest ledger') `
+        'AG15c 链被篡改→预算闸 fail-closed 拒（闸不信任自己的账就不放行）' "e=$ag15c v=$($ag15cdoc.verdict)"
+}
+
 
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 if ($failed -gt 0) { exit 1 }

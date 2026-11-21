@@ -122,6 +122,10 @@ CAPS_NOTE = ("kernel-level resource caps (memory and process count enforced by t
 COST_NOTE = ("wall is tool-measured per command; tokens are caller-declared (--spent-token) "
              "or harness-written ledger entries -- the tool layer cannot measure model-side "
              "token usage")
+CLAIMS_NOTE = ("model statements are audited against recorded evidence (receipts, disk, "
+               "cited artifacts), not believed; VERIFIED/UNVERIFIED/FABRICATED per claim, "
+               "FABRICATED refuses the whole chain -- what the model says carries zero "
+               "evidential weight on its own")
 ATTEST_NOTE = ("--spent-token also lands on the attest hash chain (<Store>/attest-ledger.jsonl): "
                "tamper-evident bookkeeping and dedup (a repeated spend is structurally "
                "impossible), NOT model-side ground truth -- claimed_tokens stay a declaration; "
@@ -137,6 +141,7 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
   caps:         --caps [--caps-mem-mb N] [--caps-procs N] [--caps-seconds S]
   subagent:     --agent-id <id>
   cost:         [--spent-token N]   (declared model-side tokens of this run)
+  claims:       [--claims-file f.jsonl] [--claims-receipts glob]...  (audit model statements)
   receipt:      [--compact]         (single-line machine receipt; default stays full)
   gates:        [--parallel-gates]  (affected/policy/constraints concurrent; opt-in)
 
@@ -165,6 +170,10 @@ spent entries onto the chain so already-recorded spend is neither lost nor count
 twice (identity derivation is shared: task-id, or agent-id, or anon -- same rule in
 both writers).
 
+Claim audit (--claims-file, honest scope): {CLAIMS_NOTE}
+The audit runs after constraints and before journal-begin: a run is not allowed to
+even start on top of claims that contradict reality.
+
 Caps (honest scope): {CAPS_NOTE}
 Defaults when --caps is given without parameters: mem 2048 MB, 64 procs, 1800 s.
 
@@ -176,7 +185,7 @@ def parse_args(argv):
     out = {"root": "", "changed": [], "lang": "", "profile": "workspace-write",
            "allow_network": False, "dry_run": False, "receipt": "", "store": "", "plan": "",
            "allow": [], "agent_id": "", "spent_token": "", "compact": False,
-           "parallel_gates": False}
+           "parallel_gates": False, "claims_file": "", "claims_receipts": []}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -203,11 +212,14 @@ def parse_args(argv):
             out["changed"].extend([x for x in val.split(",") if x.strip()])
         elif name == "allow":
             out["allow"].extend([x for x in val.replace(",", " ").split() if x])
+        elif name in ("claims-receipts", "claimsreceipts"):
+            out["claims_receipts"].extend([x for x in val.split(",") if x.strip()])
         else:
             out[{"root": "root", "lang": "lang", "profile": "profile", "receipt": "receipt",
                  "store": "store", "plan": "plan", "agent-id": "agent_id",
                  "agentid": "agent_id", "spent-token": "spent_token",
-                 "spenttoken": "spent_token"}.get(name, name)] = val
+                 "spenttoken": "spent_token", "claims-file": "claims_file",
+                 "claimsfile": "claims_file"}.get(name, name)] = val
         i += 2
     return out
 
@@ -287,8 +299,9 @@ def compact_receipt(doc, steps):
         c["resume"] = {k: v for k, v in doc["resume"].items() if k != "output"}
     if "cost" in doc:
         c["cost"] = {k: v for k, v in doc["cost"].items() if k != "note"}
-    if "attest" in doc:
-        c["attest"] = doc["attest"]
+    for k in ("claims", "attest"):
+        if k in doc:
+            c[k] = doc[k]
     return c
 
 
@@ -719,6 +732,35 @@ def main(argv):
     finally:
         if pool is not None:
             pool.shutdown(wait=True)
+
+    # --- 5.5 claim audit: model statements are checked against reality -----------------
+    # After constraints, before journal-begin: a run does not get to start on top of
+    # claims that contradict reality. UNVERIFIED claims pass but are recorded (they
+    # must not be taken as true); FABRICATED claims refuse the whole chain -- the
+    # loudest alarm this chain has. A claims file that cannot be audited (bad line,
+    # machine path) refuses too: nothing is believed from a half-readable claim set.
+    if a.get("claims_file"):
+        ca_args = [os.path.join(TOOLS, "claim_audit.py"), "-Claims", a["claims_file"],
+                   "-Root", root]
+        for g in a.get("claims_receipts", []):
+            ca_args += ["-Receipts", g]
+        ca = step(ca_args)
+        add("claim-audit", ca, {0: "ok", 1: "unverified", 2: "fabricated",
+                                3: "refused"}.get(ca["code"], "refused"))
+        m = re.search(r"summary: total=(\d+) verified=(\d+) unverified=(\d+) "
+                      r"fabricated=(\d+)", "\n".join(ca["out"]))
+        if m:
+            doc["claims"] = {"file": os.path.basename(a["claims_file"]),
+                             "total": int(m.group(1)), "verified": int(m.group(2)),
+                             "unverified": int(m.group(3)), "fabricated": int(m.group(4))}
+        if ca["code"] in (2, 3):
+            for ln in ca["out"]:
+                print(ln)
+            if ca["code"] == 2:
+                print("agent-verify: 拒绝 -- 声明与现实矛盾（FABRICATED）：模型说什么不算什么")
+                return finish("rejected: fabricated claims", 1)
+            print("agent-verify: 拒绝 -- claims 文件不可审计（fail-closed）")
+            return finish("refused by claims", 1)
 
     # --- dry-run: report and stop, before anything is written --------------------------
     if a["dry_run"]:
