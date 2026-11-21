@@ -115,3 +115,43 @@ store 是手改得了的，knowledge 要随仓提交。
   机器用户路径（扫**解析后的字符串值**，不扫原始行——JSON 会把反斜杠成双编码，扫原始
   行对盘符用户路径结构性失明，闸看起来在工作实则空转）；
 - 幂等：store 不变 → 字节不变。
+
+## 5. attest-ledger.jsonl（token 认证链）
+
+位置：`<Store>/attest-ledger.jsonl`（attest.py 写，**仓库外**，与 cost-ledger.json /
+journal store 同站点口径——整份 store 按私有对待，gitignore 的本机目录，克隆不带它）。
+一行一个 JSON 对象（JSONL），ASCII 转义写出；**坏行 fail-closed**——append/verify/
+balance 拒整份账并点名行号，不跳过、不半读。写入方：`attest.py append`（编排链的
+`--spent-token` 落账）、`attest.py import`（收编 cost-ledger 旧账）。collect.py 不读
+这份账（它是运行期预算账本，不是训练语料）；契约在此只记录**数据形状**。
+
+链式语义（防篡改的全部机制所在）：
+
+- `payload_hash = sha256(除 prev_hash 外全字段规范化 JSON)`（sort_keys + 紧凑分隔符）；
+  `prev_hash = 上一条 payload_hash`；**创世行 prev_hash 是固定常量**（64 个 0）。
+- 除 `prev_hash` 外任何一字被改 → payload 复算不符；删行/重排 → seq 与 prev_hash
+  双断。verify 全链复算逐条验，**报第一条断点**。
+- 防重复计数：去重键 `(agent_id, task_id, runid, kind)` 全链唯一，`payload_hash`
+  全链唯一——同一笔 spend 重复记账在 append 门口被**结构性拒绝**（不是警告不是合并），
+  这是 Claude /cost 恢复会话重复计数的直接解法。
+- **诚实边界（写死在 usage，也写在这份契约里）：认证 = 防篡改的记账与去重，不是模型
+  侧 ground truth。工具层永远测不了模型侧 token；`claimed_tokens` 仍是调用方申报。链
+  保证的是"申报过的账改不了、丢不了、数不了两遍"，仅此三件。**
+
+| 字段 | 类型 | 含义 | 隐私级别 |
+|---|---|---|---|
+| `seq` | int ≥ 1 | 链上序号，从 1 连续递增；断号即链断 | public-safe |
+| `ts` | str | 记账时间（ISO 8601 本地偏移，微秒精度） | public-safe |
+| `agent_id` | str | 申报消耗的（子）代理标识；可为 `""` | public-safe |
+| `task_id` | str | 消耗归属作用域：agent_verify 的 task-id，无则 agent-id，再无则 `"anon"`（与 cost-ledger 的 `av|` 标签同源推导——import 收编时按同规则还原，两本账身份不同源就会双扣） | public-safe |
+| `runid` | str | 调用方选的本次记账动作唯一 id；去重键成员，重放同一笔必须撞键被拒 | public-safe |
+| `claimed_tokens` | int | 调用方**申报**的 token 数：spend/grant > 0，correction 非零可负（负数即下修）；不是测量值 | public-safe |
+| `kind` | str | `spend`（消耗）/ `grant`（补给）/ `correction`（带符号修正） | public-safe |
+| `note` | str | 自由文本备注；import 行写明来源账（含原账记账时间） | public-safe |
+| `prev_hash` | str | 上一条 `payload_hash`；创世行是 64 个 0 的固定常量 | public-safe |
+| `payload_hash` | str | `sha256(除 prev_hash 外全字段规范化 JSON)`，全链唯一 | public-safe |
+
+预算闸口径：agent_verify 的 `--budget-token` 在链存在时消费**链余额**
+（`spent_net = Σ spend + Σ correction`，grant 不进闸面——补给是记录不是扣除）；无链
+维持声明制并在回执 `budget.source` 如实标注 `declared-only`；链 verify 不过 → 闸整体
+拒绝（闸不信任自己的账就不放行）。

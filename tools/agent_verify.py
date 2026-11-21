@@ -94,6 +94,7 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
+import attest  # same tools directory; the budget gate consumes the attest chain balance
 import ledger  # same tools directory; the chain appends cost entries, one writer per chain
 
 LANGS = {"rust", "python", "node", "go"}
@@ -121,6 +122,11 @@ CAPS_NOTE = ("kernel-level resource caps (memory and process count enforced by t
 COST_NOTE = ("wall is tool-measured per command; tokens are caller-declared (--spent-token) "
              "or harness-written ledger entries -- the tool layer cannot measure model-side "
              "token usage")
+ATTEST_NOTE = ("--spent-token also lands on the attest hash chain (<Store>/attest-ledger.jsonl): "
+               "tamper-evident bookkeeping and dedup (a repeated spend is structurally "
+               "impossible), NOT model-side ground truth -- claimed_tokens stay a declaration; "
+               "the budget gate consumes the chain balance when it exists, stays "
+               "declaration-based (labeled declared-only) when it does not")
 
 HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audited receipt.
 
@@ -149,8 +155,15 @@ stays pure declaration -- recorded WALL never substitutes for tokens.
 
 Cost accounting (honest scope): {COST_NOTE}. Entries land in <Store>/cost-ledger.json
 (command-level key + agent-id) and the verdict tail gains one appended `cost:` line.
-costprobe keeps its own independent measurement surface; the chain is only another
-ledger writer.
+Additionally --spent-token appends one spend entry to the attest hash chain
+(<Store>/attest-ledger.jsonl, {ATTEST_NOTE}). The budget gate consumes the ATTEST
+CHAIN BALANCE when the chain exists (remaining = declared - chain spent_net for the
+scope); with no chain it keeps the old cost-ledger/declaration behavior, labeled
+declared-only in the receipt budget.source. A chain that fails verify refuses the
+gate outright (fail-closed). `attest.py import --from-ledger` brings old cost-ledger
+spent entries onto the chain so already-recorded spend is neither lost nor counted
+twice (identity derivation is shared: task-id, or agent-id, or anon -- same rule in
+both writers).
 
 Caps (honest scope): {CAPS_NOTE}
 Defaults when --caps is given without parameters: mem 2048 MB, 64 procs, 1800 s.
@@ -274,6 +287,8 @@ def compact_receipt(doc, steps):
         c["resume"] = {k: v for k, v in doc["resume"].items() if k != "output"}
     if "cost" in doc:
         c["cost"] = {k: v for k, v in doc["cost"].items() if k != "note"}
+    if "attest" in doc:
+        c["attest"] = doc["attest"]
     return c
 
 
@@ -541,10 +556,13 @@ def main(argv):
     # A declared value <= 0 means "do not even start": the session is suspended with
     # reason=budget -- censoring, which is not failure -- and the continuation block is
     # printed for whoever picks the task up in a fresh session.
-    # Ledger integration: with a session scope (task-id/agent-id), token values already
-    # recorded for that scope are subtracted from the declaration. Wall-only records do
-    # NOT count (seconds are not tokens); a corrupt ledger refuses the gate outright --
-    # a gate that cannot read its own books must not silently degrade to a weaker mode.
+    # Book-of-record precedence: when an attest chain exists for this store it IS the
+    # spend book (tamper-evident, dedup-enforced); the gate consumes its verified
+    # balance for the scope. No chain -> the old cost-ledger/declaration behavior,
+    # labeled declared-only (the recorded numbers there are caller declarations).
+    # Either book corrupt or broken refuses the gate outright -- a gate that cannot
+    # trust its own books must not silently degrade to a weaker mode. Wall-only
+    # records do NOT count (seconds are not tokens).
     if "budget-token" in a:
         try:
             budget = int(a["budget-token"])
@@ -553,7 +571,19 @@ def main(argv):
             return 2
         scope = cost_scope(task_id, agent_id)
         recorded = None
-        if scope != "av|anon":
+        budget_source = "declared-only"
+        attest_path = os.path.join(store, "attest-ledger.jsonl")
+        if os.path.exists(attest_path):
+            entries, err = attest.load_chain(attest_path)
+            ok, reason = (attest.verify_chain(entries) if entries is not None
+                          else (False, err))
+            if not ok:
+                print(f"agent-verify: 拒绝 -- attest 链损坏且无法信任（{reason}），"
+                      f"认证余额无法核算，fail-closed")
+                return finish("refused by attest ledger", 1)
+            recorded = attest.spent_net_for(entries, task_id, agent_id)
+            budget_source = "attest-chain"
+        elif scope != "av|anon":
             cost_ledger_path = os.path.join(store, "cost-ledger.json")
             prev_entries = ledger.load(cost_ledger_path)
             if prev_entries is None:
@@ -563,7 +593,8 @@ def main(argv):
             recorded = ledger_tokens_for(prev_entries, scope)
         remaining = budget if recorded is None else round(budget - recorded, 2)
         doc["budget"] = {"declared": budget, "gate": BUDGET_NOTE,
-                         "recorded_tokens": recorded, "remaining": remaining}
+                         "recorded_tokens": recorded, "remaining": remaining,
+                         "source": budget_source}
         if remaining <= 0:
             why = (f"declared {budget} <= 0" if recorded is None
                    else f"declared {budget} - recorded {recorded} = {remaining} <= 0")
@@ -787,6 +818,25 @@ def main(argv):
     if not cost_ok:
         doc["cost"]["error"] = cost_err
         print(f"agent-verify: cost 记账失败（{cost_err}）-- 消耗没上账，回执 cost 字段已标注")
+
+    # --- 8.6 attest spend: the declared tokens land on the authentication chain -------
+    # Identity derivation shared with attest import (L116): task-id, else agent-id,
+    # else anon -- import reconstructs the same key from cost-ledger rows, so a
+    # re-import skips what the live run already recorded instead of double counting.
+    # Loud, not fatal (the run is done by now), but a failed append means the next
+    # budget gate will UNDERCOUNT this run -- the receipt names it.
+    if spent_token is not None:
+        attest_task = task_id or agent_id or "anon"
+        entry, attest_err = attest.append_entry(
+            store, "spend", agent_id, attest_task, runid, spent_token,
+            note=f"agent-verify run (task={task_id or '-'}, agent={agent_id or '-'})")
+        doc["attest"] = {"appended": entry is not None,
+                         "seq": entry["seq"] if entry else None,
+                         "task_id": attest_task, "runid": runid}
+        if entry is None:
+            doc["attest"]["error"] = attest_err
+            print(f"agent-verify: attest 记账失败（{attest_err}）-- 本次 spend 没上认证链，"
+                  f"后续预算闸会少算这次消耗")
 
     verdict = ("command failed" if not ran_ok else
                ("passed on full run (plan was unproven)" if not proven else "passed on proven subset"))
