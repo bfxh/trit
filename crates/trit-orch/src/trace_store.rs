@@ -9,7 +9,9 @@ use crate::{Error, TraceStep};
 
 /// 一行一个 `TraceEvent` 的追加式存储。
 ///
-/// 同一文件的并发追加由宿主串行化；这里只保证单次 append 的字节完整落盘。
+/// 单次 append 是**一次原子 write**：追加模式下 Windows（`FILE_APPEND_DATA`）与 POSIX
+/// （`O_APPEND`）都保证每次 write 挂到当前文件尾，多线程并发追加不会交错出半行——
+/// 但调用顺序不定义事件先后，重建日志时由 `TraceLog` 按 `seq` 归位。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TraceEventStore {
     path: PathBuf,
@@ -46,7 +48,10 @@ impl TraceEventStore {
             .append(true)
             .open(&self.path)
             .map_err(|error| self.io(error))?;
-        writeln!(file, "{line}").map_err(|error| self.io(error))?;
+        // 一行一次写全（JSON 里不会有裸换行）；拆成多次 write 会让并发追加交错出半行。
+        let mut bytes = line.into_bytes();
+        bytes.push(b'\n');
+        file.write_all(&bytes).map_err(|error| self.io(error))?;
         // 审计事件按“写成功即可见”处理：每次追加都同步到存储。
         file.sync_data().map_err(|error| self.io(error))
     }
