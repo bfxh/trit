@@ -701,6 +701,14 @@ def main(argv):
     # --- 6. journal: so we can prove and undo what happens next -----------------------
     jm = step([os.path.join(TOOLS, "journal.py"), "-Mode", "begin", "-Root", root, "-Store", store])
     add("journal-begin", jm, "ok" if jm["code"] == 0 else "failed")
+    if jm["code"] != 0:
+        # journal-begin is a gate, not decoration: a run without a snapshot has no proof
+        # of what it wrote and no undo. Proceeding used to produce exactly that -- a run
+        # with no evidence chain, and journal-end then reading no manifest at all.
+        for ln in jm["out"]:
+            print(ln)
+        print("agent-verify: 拒绝 -- journal 快照建不起来，没有证据链的 run 不许发生")
+        return finish("refused by journal", 1)
 
     # --- 7. run ------------------------------------------------------------------------
     if caps:
@@ -756,7 +764,11 @@ def main(argv):
     # --- 8. journal end: what did it actually write -----------------------------------
     je = step([os.path.join(TOOLS, "journal.py"), "-Mode", "end", "-Root", root, "-Store", store])
     changes = [ln for ln in je["out"] if re.search(r"journal:\s+(added|deleted|modified)", ln)]
-    add("journal-end", je, "clean" if je["code"] == 0 else "changed")
+    # Exit codes 0/1/else map to clean/changed/failed explicitly: journal.py exits 2 on
+    # "no snapshot" and 2 on a corrupt manifest -- folding every non-zero into "changed"
+    # classified a broken audit chain as a routine write (the receipt lied, L114).
+    add("journal-end", je,
+        "clean" if je["code"] == 0 else ("changed" if je["code"] == 1 else "failed"))
     doc["changes"] = changes
     doc["wall_s"] = total_run
 

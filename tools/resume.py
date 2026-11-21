@@ -59,6 +59,7 @@ from datetime import datetime
 MODES = ("begin", "progress", "suspend", "resume", "finish", "status", "list")
 REASONS = ("budget", "deadline", "manual")
 TASK_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+CORRUPT = object()  # sentinel: session file exists but is not valid JSON
 
 # Flags that take a value vs flags that do not (proven/unproven are the only booleans).
 VALUE_FLAGS = {"budget-token": "budget", "note": "note", "reason": "reason", "root": "root"}
@@ -111,8 +112,12 @@ def load_session(root, task):
     p = session_path(root, task)
     if not os.path.isfile(p):
         return None
-    with open(p, "r", encoding="utf-8-sig") as fh:
-        return json.load(fh)
+    try:
+        with open(p, "r", encoding="utf-8-sig") as fh:
+            return json.load(fh)
+    except ValueError as e:
+        print(f"resume: session file for '{task}' is corrupt (not valid JSON: {e})")
+        return CORRUPT
 
 
 def save_session(root, doc):
@@ -151,6 +156,8 @@ def require_session(root, task):
               f"<= 64 chars (a session id must never be a path)")
         return None
     doc = load_session(root, task)
+    if doc is CORRUPT:
+        return None  # load_session already printed the refusal; exit 2 comes from the caller
     if doc is None:
         print(f"resume: no session '{task}' (expected .agent/resume/{task}.json under "
               f"-Root) -- run: resume.py begin {task}")
@@ -238,6 +245,10 @@ def cmd_begin(a, root):
         print(f"resume: illegal task-id '{task}' -- use [A-Za-z0-9._-] only, <= 64 chars")
         return 2
     existing = load_session(root, task)
+    if existing is CORRUPT:
+        # load_session printed the diagnosis; a corrupt session is refuse-coverage, not
+        # free space -- begin must not overwrite evidence of a half-finished run
+        return 2
     if existing is not None:
         print(f"resume: session '{task}' already exists (status={existing['status']}) -- "
               f"refusing to overwrite; use resume/suspend/status, or a new task-id")

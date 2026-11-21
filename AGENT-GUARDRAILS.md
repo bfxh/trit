@@ -15,7 +15,7 @@
 护栏链上任何一道闸拒绝，整体拒绝——这是本手册最重要的性质。
 
 任何在本仓干活的智能体：读完本手册再动手。动手规则（什么能做、什么不能做）见 `AGENTS.md`；
-本手册讲的是**怎么安全地做**。真实事故台账见 `docs/ERRORS.md`（本轮对应 L95–L108）。
+本手册讲的是**怎么安全地做**。真实事故台账见 `docs/ERRORS.md`（本轮对应 L95–L108 与 L114）。
 
 ## 顺序即安全属性：一条链，四件工具
 
@@ -257,12 +257,45 @@ agent-verify: suspended (budget) before run -- censored is not a failure
 cannot measure model-side token usage; ..."}`。**不传这个 flag 就没有闸**——闸门诚实于它
 能知道什么；声明错了它救不了你，所以声明要保守。
 
+与成本台账打通（agent-verify 自动把每次 run 的实际消耗记进 `<Store>/cost-ledger.json`，
+见下"成本台账"）：当本会话 scope（`--task-id` / `--agent-id`）在台账里已有 token 记录
+（来自此前 run 的 `--spent-token` 声明），闸自动扣减——**剩余预算 = 声明值 - 已记值**；
+没有 token 记录就维持纯声明制并如实标注（`recorded_tokens` 为空）。wall 记录不参与
+扣减——秒不是 token，ledger.py 分列就是为了这个。台账损坏时闸 fail-closed
+（`refused by budget ledger`），绝不静默降级成弱闸。
+
 ### 命令失败自动挂起
 
 `--task-id` 下 run 段任何命令失败：自动 `progress run:<序号> --unproven --note "exit N: <命令>"`
 + `suspend --reason manual`。回执 verdict 保持 `command failed`，只**追加**字段（旧字段不动），
 并给出 `doc["resume_checkpoint"] = "task <id> suspended (manual) -- next session:
 python tools/resume.py resume <task-id>"`。
+
+### 成本台账：run 段实际消耗自动上账（journal-end 后、memory-note 前）
+
+agent-verify 每次跑完自动把实际消耗写进 `<Store>/cost-ledger.json`（ledger.py 的读改写，
+同一 accounting 规则：totals derived, never accumulated）：每条 run 命令一条 entry
+（命令级 key = runid|cmd<序>|内容哈希——重跑同命令是新 entry，不是去重命中）+ 一条
+overhead entry（台账墙钟总和 = 链墙钟）+ 可选一条 tokens entry。`--agent-id` 落到每条
+entry；verdict 尾部**追加**一行 `cost: wall=...s +...s overhead tokens=... ledger=... scope=...`
+（旧回执字段零改动）。诚实口径跟着走（回执 `cost.note` 原文）：wall 是工具实测；
+tokens 只在调用者声明时记录（`--spent-token N` = harness 实测的模型侧消耗）——**工具层
+测不了模型侧 token**。costprobe 的测量面保持独立（measure-in-place、fail-closed、单
+mtime、derived totals 四条硬规不被编排链碰）；编排链只是另一个 ledger **写入方**。
+并发正确性：编排链全程持有 `<Root>/.journal/chain.lock`（O_CREAT|O_EXCL）——同 root
+第二条链 fail-closed 拒绝（verdict `refused by chain lock`，诊断点名持锁 pid 与
+`journal.py status/restore` 恢复命令），不与它竞争 journal-begin；被杀进程**故意**留下
+锁 + 快照——那就是下轮运行的脏状态标记，清锁后快照仍可还原。
+
+### 只读门并行化（--parallel-gates，可证独立才并行）
+
+affected / policy / constraints 三个只读分类门在 opt-in 下并发：三门均无共享状态
+（affected 只写自己唯一的临时 plan 文件，policy/constraints 只读），policy 逐命令再
+扇出到线程池（它的开销是每命令一次子进程生成）。任一拒绝整体拒绝语义不变——拒绝按
+链序评估，回执步骤按链序记账（不是完成序）；policy 拒绝时并发已完成的 constraints
+结果被丢弃不记账（串行语义没走到它的判定点）。journal-begin 及其后**严格串行**（写
+面）。保守声明：preflight/预算闸/checks 带顺序语义不并行；任何门将来长出共享状态就
+回到串行。串行仍是默认（老回执逐字节不变）。
 
 ## 协议四：资源帽协议（何时开 --caps）
 
@@ -559,7 +592,7 @@ policy/constraints 的活；这是**下一个模型读的东西**。条目内容
 | constraints | diff 里的禁止操作（整删 `/dev/null` 盲区已修）；主检出整删已跟踪文件要人批（`main-tree-raw-delete`） | 只看 diff 与给定命令文本；规则没写的问题不响 |
 | resume | 断粮/中断丢上下文：有账、有续跑块 | `budget` 是声明制，测不了模型侧真实 token；账本不替你记计划本身 |
 | run_caps | 已放行命令的爆炸半径（内存/进程数/超时） | **不是安全边界**：不隔离文件系统/网络，防不了蓄意逃脱；POSIX 无 procs 帽等价物（如实说明） |
-| agent-verify | 调用者跳步：单一入口、闸门串联、回执可审计 | 回执写完之后的事它管不着；不传 `--budget-token` 就没有预算闸 |
+| agent-verify | 调用者跳步：单一入口、闸门串联、回执可审计；run 段实际消耗自动上账（台账 + `cost:` 行）；同 root 并发链 fail-closed；journal-begin 判红不放 run | 回执写完之后的事它管不着；不传 `--budget-token` 就没有预算闸；tokens 是声明不是测量；compact 砍掉的是自由文本证据（审计要全量回执）；并行门只覆盖三个只读分类器，写面永远串行 |
 | signal | （观测面）分诊与惩罚信号记账，给 harness 与未来模型训练用 | 规则分诊不是模型判断，查全率/误报率未知；**改不了模型行为**——它只改变 harness 下一步做什么；`--with-text` 语料树内拒收，但树外仍靠人自律 |
 | declutter | 注释债只紧不松（budget 棘轮）；clean 的每个原件先进回收站 | 字符串里的注释形态不保证识别；unterminated string 时宁可不动；audit/budget/export 本身不改正本 |
 | watch | （观测面）失败率按轮位分桶、整盘健康四报警、污染模式点名 | 行为证据推断，不是读心；**什么也不拦**——exit 1 只表示"有东西要看"；事件标签自由，认不出的标签进不了分母 |
@@ -598,6 +631,18 @@ python tools/agent_verify.py -Root . -Changed <逗号分隔的改动文件> -Lan
 python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
   --budget-token <剩余额度> --task-id <task-id> --caps \
   -Receipt .agent/last-receipt.json
+python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
+  --compact -Receipt .agent/last-receipt.json        # 单行机读回执（子代理协作）
+python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
+  --parallel-gates -Receipt .agent/last-receipt.json # 三个只读门并发（写面仍串行）
+python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
+  --spent-token <本次实测 token> --agent-id <id> -Receipt .agent/last-receipt.json
+python tools/bench_orchestration.py                  # 护栏开销/回执体积/并行加速/崩溃恢复
+
+# 崩溃恢复（锁 + 快照都在时）
+python tools/journal.py status -Root .               # 看快照还在不在
+python tools/journal.py restore -Root .              # 把树放回快照
+rm .journal/chain.lock                               # 确认死进程后清锁重跑
 
 # E. 单条命令套资源帽
 python tools/run_caps.py --mem-mb 2048 --procs 64 --seconds 1800 -- <命令>
@@ -640,17 +685,24 @@ pwsh tools/selftest.ps1
 结尾行必须长这样（实测）：
 
 ```text
-selftest: passed=410 failed=0 skipped=0
+selftest: passed=447 failed=0 skipped=0
 ```
 
-**必须 410 条全绿。**（affected 的 rust 减集下沉到 cargo target 级时 +16：B 组新增 B5 与 B(续) B6–B19，组数不变；cognition/collect 落地时 +32：AE 组） 31 组：A–Z 26 组 + AA/AB/AC/AD/AE 五组（W 组 trash 19 条、X 组 git_safe、
+**必须 447 条全绿。**（编排链成熟轮 +37：AF 组——并发锁/崩溃恢复/畸形存储/超大计划/
+compact 一致性/并行门一致性；此前 affected 的 rust 减集下沉到 cargo target 级时 +16：
+B 组新增 B5 与 B(续) B6–B19，组数不变；cognition/collect 落地时 +32：AE 组） 32 组：
+A–Z 26 组 + AA/AB/AC/AD/AE/AF 六组（W 组 trash 19 条、X 组 git_safe、
 Y 组 resume 32 条、Z 组 run_caps；AA 组 signal 35 条、AB 组 declutter 21 条、AC 组 watch 44 条、
-AD 组主库删除审批 / 污染 WARN 族 / pitfalls 24 条、AE 组 cognition 32 条，是新增的五个观测与审批面）。护栏的断言全部
+AD 组主库删除审批 / 污染 WARN 族 / pitfalls 24 条、AE 组 cognition 32 条、
+AF 组编排链稳定性 37 条，是新增的六个观测、审批与稳定性面）。护栏的断言全部
 遵循"先看着它响，才算数"：每条拒绝路径都有对应的判红用例（W13/W14 journal restore 走
 回收站、W20/W21 no-raw-delete、Z1/Z4/Z5 run_caps 内核帽、I2b 编排顺序、M9 bash/PS 台账
 互通、AA12/AA14 signal 默认路径拒绝崩溃、AB1 audit 行计数精确数、AC4/AC5/AC6 疲劳 WARN
-双桶阈值、AD3/AD9 主库删除无注记必红、AD11 回收站有账不抵扣）。本轮真实台账在
-`docs/ERRORS.md` L95–L108：
+双桶阈值、AD3/AD9 主库删除无注记必红、AD11 回收站有账不抵扣、AF1 并发链恰好一胜一拒、
+AF2c 崩溃脏状态必诊断、AF4c journal-begin 判红不放 run、AF5b 坏账预算闸 fail-closed、
+AF7/AF8 五百条计划顺序保持、AF10 compact/full 关键字段逐项相等、AF19 并行门 verdict
+逐项相等）。本轮真实台账在
+`docs/ERRORS.md` L95–L108 与 L114：
 L95 journal restore 裸删改走回收站；L96 整删盲区与 no-raw-delete 内核规则；
 L97 run_caps 两个内核常量凭记忆写错；L98 selftest 断言与编排层漂移；L99 夹具写死本机路径；
 L100 中文控制台编码伪红；L101 signal 默认路径读未初始化键直接崩溃（AA12/AA14）；
@@ -658,7 +710,8 @@ L102/L105/L108 worktree 检出的 `.git` 是**文件**形态，isdir 探测三�
 归宿是 policy 的 `checkout_kind`（AC21/N1/N2/AD0）；L103 declutter 模板字符串插值吞真
 注释（AB10）；L104 audit 行计数按段标行错（AB1）；L106 隐私夹具输入拆形，坏输入原文不落
 selftest.ps1（AC3/AC3b）；L107 `Get-Item` 看不见 Hidden 的 `.git` 文件，形态判定走 .NET
-存在性检查（W18f/AD0）。
+存在性检查（W18f/AD0）；L114 journal-end 把崩溃记成 "changed"、journal-begin 失败照旧
+放 run——退出码三分支显式化 + begin 升级为闸（AF4/AF4b/AF4c）。
 
 ### 回执怎么读
 
@@ -672,11 +725,25 @@ agent-verify 的回执（`-Receipt` 指定的 JSON，或 stdout 尾部）按三�
 | `passed on proven subset` | 在带证明的子集上通过 | 0 |
 | `passed on full run (plan was unproven)` | 没有证明，跑的是全量——通过了也算全量成绩 | 0 |
 | `refused by preflight / checks / policy / constraints` | 对应闸拒绝，run 未开始 | 1 |
-| `suspended (budget) before run` | 声明额度 ≤0，run 前挂起（censored，不是失败） | 1 |
+| `suspended (budget) before run` | 声明额度（扣减台账已记后）≤0，run 前挂起（censored，不是失败） | 1 |
 | `command failed` | 命令真跑了且失败（有 `--task-id` 时已自动挂起） | 1 |
+| `refused by chain lock` | 同 root 已有另一条链（或上次崩溃留下的锁）——fail-closed 不竞争；诊断带恢复命令 | 1 |
+| `refused by budget ledger` | 预算台账损坏，剩余预算无法核算——不降级成弱闸 | 1 |
+| `refused by journal` | journal 快照建不起来——没有证据链的 run 不发生 | 1 |
+| `refused by plan` | 注入的 plan 文件无法解析（坏 JSON 不许静默变成空计划） | 1 |
 
 2. **`steps[]`**——每步 `{step, verdict, exit, seconds, output(尾部≤6行)}`；
    跳过的步骤以 `skipped` 留痕（跳过也算一步，不允许"跳了就消失"）。
+   journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）——
+   工具崩溃不再被记成"改了东西"（L114）。
 
 3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的
    `added/modified/deleted`，这就是"改了什么"的证据链。
+
+4. **`cost`（追加字段）+ stdout 尾部的 `cost:` 行**——`wall_s`/`overhead_s`/`tokens`/
+   `recorded`/`scope` + 诚实 note；对应台账 `<Store>/cost-ledger.json` 的本轮 entry。
+
+5. **`--compact` 单行回执**（opt-in，全量仍是默认与审计面）——保留路由字段
+   （verdict/exit/proven/wall_s）、每步 `{step,verdict,exit,seconds}`、每条 run 命令
+   `{command,exit,seconds}`、budget 数字、cost、agent_id、changes 计数；砍掉自由文本
+   证据。实测见 `python tools/bench_orchestration.py`。

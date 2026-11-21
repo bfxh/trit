@@ -90,7 +90,30 @@ def load_manifest(manifest_path):
         return json.load(fh)
 
 
+def manifest_or_refuse(manifest_path, action):
+    """Manifest or exit 2 with a clean diagnosis. A half-written manifest (a run killed
+    between begin and end) must not raise a traceback that a caller's verdict mapping
+    then misreads -- journal end previously exited 1 on the crash and agent-verify
+    recorded that as verdict "changed", i.e. the audit chain broke and the receipt LIED
+    about it (docs/ERRORS.md L114)."""
+    try:
+        return load_manifest(manifest_path)
+    except (OSError, ValueError) as e:
+        print(f"journal: manifest corrupt or unreadable ({e}) -- refusing to {action} "
+              f"(fail-closed: a half-written snapshot must not read as clean)")
+        sys.exit(2)
+
+
 def cmd_begin(root, latest):
+    manifest_path = os.path.join(latest, "manifest.json")
+    if os.path.exists(manifest_path):
+        try:
+            load_manifest(manifest_path)
+        except (OSError, ValueError) as e:
+            print(f"journal: existing manifest is corrupt ({e}) -- a previous run did "
+                  f"not finish cleanly; inspect .journal/latest (status) or remove it, "
+                  f"then rerun (a corrupt snapshot must not be silently overwritten)")
+            return 2
     files_dir = os.path.join(latest, "files")
     os.makedirs(files_dir, exist_ok=True)
     entries = []
@@ -114,7 +137,7 @@ def cmd_end(root, latest):
     if not os.path.exists(manifest_path):
         print("journal: no snapshot, run -Mode begin first")
         return 2
-    man = load_manifest(manifest_path)
+    man = manifest_or_refuse(manifest_path, "diff against it")
     prev = {e["rel"]: e["sha256"] for e in man["files"]}
     now = {rel: sha256_of(full) for rel, full, _ in walk_files(root)}
 
@@ -139,7 +162,7 @@ def cmd_restore(root, latest, store):
     if not os.path.exists(manifest_path):
         print("journal: no snapshot to restore")
         return 2
-    man = load_manifest(manifest_path)
+    man = manifest_or_refuse(manifest_path, "restore from it")
     keep = {e["rel"]: e for e in man["files"]}
 
     # files that appeared after the snapshot are not unlinked: they move into the recycle
@@ -186,7 +209,7 @@ def cmd_status(latest):
     if not os.path.exists(manifest_path):
         print("journal: no snapshot")
         return 2
-    man = load_manifest(manifest_path)
+    man = manifest_or_refuse(manifest_path, "report on it")
     print(f"journal: snapshot of {man['count']} files at {man['at']} from {man['root']}")
     return 0
 

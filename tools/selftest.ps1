@@ -2386,6 +2386,332 @@ if (-not $aePy) {
         'AE19 corpus 重跑覆盖且行数一致' "exit=$LASTEXITCODE"
 }
 
+# =====================================================================================
+"== AF. 编排链稳定性：并发锁、崩溃恢复、畸形存储、超大计划、compact/并行一致性 =="
+# 每条断言都对着一个真实失效模式：并发链竞争 journal-begin、被杀进程留下的脏状态、
+# 半截存储被读成空账、500 条命令的计划、同一 run 两种回执/两种门序必须可比。
+$afPy = $null
+foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
+    if (-not $c) { continue }
+    $afSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    if (-not $afSrc) { continue }
+    if ((& $afSrc -c 'print(1)' 2>$null) -eq '1') { $afPy = $afSrc; break }
+}
+if (-not $afPy) {
+    "  SKIP  AF0 找不到可用的 Python，跳过编排链稳定性检查"
+    $skipped += 38
+} else {
+    $afEnc = New-Object System.Text.UTF8Encoding($false)
+    $avPy = Join-Path $tools 'agent_verify.py'
+    $jrPy = Join-Path $tools 'journal.py'
+    $ldPy = Join-Path $tools 'ledger.py'
+    $rsPy = Join-Path $tools 'resume.py'
+
+    function New-AvFixture([string]$root) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $root 'pkg'), (Join-Path $root 'tests') | Out-Null
+        New-File (Join-Path $root 'pkg\core.py') "def f(): return 1$nl"
+        New-File (Join-Path $root 'pkg\__init__.py') ''
+        New-File (Join-Path $root 'tests\test_core.py') "from pkg.core import f${nl}def test_f(): assert f() == 1$nl"
+        New-File (Join-Path $root 'conftest.py') ''
+        Push-Location $root
+        & git init -q 2>&1 | Out-Null
+        & git add -A 2>&1 | Out-Null
+        & git -c user.email=a@b -c user.name=t commit -qm init 2>&1 | Out-Null
+        Pop-Location
+    }
+    function Invoke-Av([string]$root, [string]$store, [string]$receipt, [string[]]$extra,
+                       [string]$lang = 'python', [string]$changed = 'pkg\core.py') {
+        $plan = if (Test-Path (Join-Path $root 'plan.json')) { Join-Path $root 'plan.json' } else { '' }
+        $argsAv = @($avPy, '-Root', $root, '-Changed', (Join-Path $root $changed), '-Lang', $lang)
+        if ($plan) { $argsAv += @('-Plan', $plan) }
+        $argsAv += @('-Store', $store, '-Receipt', $receipt) + $extra
+        & $afPy @argsAv 2>&1
+    }
+    function Read-Receipt([string]$path) {
+        return [IO.File]::ReadAllText($path, $afEnc) | ConvertFrom-Json
+    }
+
+    # --- AF1: 同 root 并发两条链，第二条 fail-closed（行为钉死：不竞争 journal-begin）---
+    $AfA = Join-Path $Work 'af-conc'
+    New-AvFixture $AfA
+    New-File (Join-Path $AfA 'plan.json') '{"proven":true,"commands":["sleep 6"],"unproven":[]}'
+    $storeA = Join-Path $Work 'af-store-conc'
+    $avArgs = @($avPy, '-Root', $AfA, '-Changed', (Join-Path $AfA 'pkg\core.py'), '-Lang', 'python',
+                '-Plan', (Join-Path $AfA 'plan.json'), '-Store', $storeA)
+    $p1 = Start-Process -FilePath $afPy -ArgumentList ($avArgs + @('-Receipt', (Join-Path $Work 'af-c1.json'))) `
+        -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work 'af-c1.out') -RedirectStandardError (Join-Path $Work 'af-c1.err')
+    $p2 = Start-Process -FilePath $afPy -ArgumentList ($avArgs + @('-Receipt', (Join-Path $Work 'af-c2.json'))) `
+        -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work 'af-c2.out') -RedirectStandardError (Join-Path $Work 'af-c2.err')
+    $null = $p1.WaitForExit(); $null = $p2.WaitForExit()
+    Assert-True (($p1.ExitCode -eq 0 -and $p2.ExitCode -eq 1) -or ($p1.ExitCode -eq 1 -and $p2.ExitCode -eq 0)) `
+        'AF1 同 root 并发两链：恰好一胜一拒（fail-closed，不竞争 journal-begin）' "e1=$($p1.ExitCode) e2=$($p2.ExitCode)"
+    $afLoserOut = [IO.File]::ReadAllText((Join-Path $Work ("af-c{0}.out" -f ($(if ($p1.ExitCode -eq 1) { 1 } else { 2 })))), $afEnc)
+    Assert-True ($afLoserOut -match 'chain\.lock' -and $afLoserOut -match 'journal\.py (status|restore)') `
+        'AF1b 拒者点名 chain lock 脏状态与恢复命令' (($afLoserOut -split "`r?`n" | Select-Object -First 2) -join ' / ')
+
+    # --- AF2/AF3: 崩溃恢复：杀进程 → 锁与快照留下 → 下次运行诊断 → 清锁后可还原 ---
+    $AfB = Join-Path $Work 'af-crash'
+    New-AvFixture $AfB
+    New-File (Join-Path $AfB 'plan.json') '{"proven":true,"commands":["sleep 8"],"unproven":[]}'
+    $storeB = Join-Path $Work 'af-store-crash'
+    $pB = Start-Process -FilePath $afPy -ArgumentList @($avPy, '-Root', $AfB, '-Changed', (Join-Path $AfB 'pkg\core.py'), `
+        '-Lang', 'python', '-Plan', (Join-Path $AfB 'plan.json'), '-Store', $storeB, '-Receipt', (Join-Path $Work 'af-crash.json')) `
+        -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work 'af-crash.out') -RedirectStandardError (Join-Path $Work 'af-crash.err')
+    Start-Sleep -Seconds 4
+    $afWasAlive = (-not $pB.HasExited)
+    if (-not $pB.HasExited) { $pB.Kill() }
+    $null = $pB.WaitForExit()
+    Assert-True ($afWasAlive -and (Test-Path (Join-Path $AfB '.journal\chain.lock'))) `
+        'AF2 run 中途杀进程：锁留下（故意成为脏状态标记）' "alive=$afWasAlive"
+    Assert-True (Test-Path (Join-Path $storeB 'latest\manifest.json')) `
+        'AF2b 崩溃后 journal 快照还在（可诊断可还原）' ''
+    $afNextOut = @(Invoke-Av $AfB $storeB (Join-Path $Work 'af-crash2.json'))
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($afNextOut) -join ' ') -match 'chain\.lock')) `
+        'AF2c 下次运行检测出脏状态并给清晰诊断（exit 1）' "exit=$LASTEXITCODE"
+    Remove-Item (Join-Path $AfB '.journal\chain.lock') -Force
+    & $afPy $jrPy -Mode restore -Root $AfB -Store $storeB 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AF3 清锁后快照可还原（崩溃不留死账）' "exit=$LASTEXITCODE"
+
+    # --- AF4: journal manifest 畸形 → 全链 fail-closed，不静默不抛栈 ---
+    $AfM = Join-Path $Work 'af-manifest'
+    New-AvFixture $AfM
+    New-File (Join-Path $AfM 'plan.json') '{"proven":true,"commands":["echo m > m.txt"],"unproven":[]}'
+    $storeM = Join-Path $Work 'af-store-manifest'
+    $null = Invoke-Av $AfM $storeM (Join-Path $Work 'af-m1.json')
+    [IO.File]::WriteAllText((Join-Path $storeM 'latest\manifest.json'), '{corrupt json', $afEnc)
+    & $afPy $jrPy -Mode end -Root $AfM -Store $storeM 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AF4 journal end 对坏 manifest exit=2（不是 traceback 不是 changed）' "exit=$LASTEXITCODE"
+    & $afPy $jrPy -Mode status -Root $AfM -Store $storeM 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AF4b journal status 对坏 manifest exit=2' "exit=$LASTEXITCODE"
+    $null = Invoke-Av $AfM $storeM (Join-Path $Work 'af-m2.json')
+    $afM2 = Read-Receipt (Join-Path $Work 'af-m2.json')
+    $afM2steps = @($afM2.steps | ForEach-Object { $_.step })
+    Assert-True ($LASTEXITCODE -eq 1 -and $afM2.verdict -eq 'refused by journal' -and ($afM2steps -notcontains 'run')) `
+        'AF4c 全链拒绝：journal-begin 判红就不许 run（没有证据链的 run 不发生）' "verdict=$($afM2.verdict)"
+
+    # --- AF5: ledger 畸形 → 闸 fail-closed，不读成空账 ---
+    $AfL = Join-Path $Work 'af-ledger'
+    New-AvFixture $AfL
+    New-File (Join-Path $AfL 'plan.json') '{"proven":true,"commands":["echo l > l.txt"],"unproven":[]}'
+    $storeL = Join-Path $Work 'af-store-ledger'
+    New-Item -ItemType Directory -Force -Path $storeL | Out-Null
+    [IO.File]::WriteAllText((Join-Path $storeL 'cost-ledger.json'), '{bad', $afEnc)
+    & $afPy $ldPy -Mode add -Ledger (Join-Path $storeL 'cost-ledger.json') -Task t -Key k -Wall 1 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AF5 ledger add 对坏账 exit=2（半截账不读成空账）' "exit=$LASTEXITCODE"
+    $null = Invoke-Av $AfL $storeL (Join-Path $Work 'af-l1.json') @('--budget-token', '5000', '--task-id', 'afl')
+    $afL1 = Read-Receipt (Join-Path $Work 'af-l1.json')
+    Assert-True ($LASTEXITCODE -eq 1 -and $afL1.verdict -eq 'refused by budget ledger' `
+        -and (@($afL1.steps | ForEach-Object { $_.step }) -notcontains 'run')) `
+        'AF5b 预算闸遇坏账 fail-closed（不降级成弱闸不静默）' "verdict=$($afL1.verdict)"
+
+    # --- AF6: resume 会话文件坏 → 直接拒绝 + 链上检查点失败被点名 ---
+    $AfR = Join-Path $Work 'af-resume'
+    New-AvFixture $AfR
+    New-Item -ItemType Directory -Force -Path (Join-Path $AfR '.agent\resume') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $AfR '.agent\resume\badtask.json'), '{bad', $afEnc)
+    & $afPy $rsPy status badtask -Root $AfR 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AF6 resume status 对坏会话 exit=2（干净拒绝不是 traceback）' "exit=$LASTEXITCODE"
+    & $afPy $rsPy begin badtask -Root $AfR 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AF6b resume begin 拒绝覆盖坏会话（fail-closed）' "exit=$LASTEXITCODE"
+    New-File (Join-Path $AfR 'plan.json') '{"proven":true,"commands":["false"],"unproven":[]}'
+    $storeR = Join-Path $Work 'af-store-resume'
+    $null = Invoke-Av $AfR $storeR (Join-Path $Work 'af-r1.json') @('--task-id', 'badtask')
+    $afR1 = Read-Receipt (Join-Path $Work 'af-r1.json')
+    $afR1steps = @($afR1.steps | ForEach-Object { "$($_.step)=$($_.verdict)" })
+    Assert-True ($LASTEXITCODE -eq 1 -and $afR1.verdict -eq 'command failed' `
+        -and ($afR1steps -contains 'resume-progress=failed') -and ($afR1steps -contains 'resume-suspend=failed')) `
+        'AF6c 命令失败+坏会话：检查点失败被回执点名（不静默吞掉）' ($afR1steps -join ',')
+
+    # --- AF7/AF8: 超大计划 500 条（并行门）：不崩、顺序保持、逐条过 policy ---
+    $AfBig = Join-Path $Work 'af-big'
+    New-AvFixture $AfBig
+    $afBigCmds = 0..499 | ForEach-Object { "echo b$_ > b$_.txt" }
+    [IO.File]::WriteAllText((Join-Path $AfBig 'plan.json'),
+        (@{ proven = $true; commands = $afBigCmds; unproven = @() } | ConvertTo-Json -Compress), $afEnc)
+    $storeBig = Join-Path $Work 'af-store-big'
+    $null = Invoke-Av $AfBig $storeBig (Join-Path $Work 'af-big.json') @('--parallel-gates')
+    $afBigDoc = Read-Receipt (Join-Path $Work 'af-big.json')
+    $afRunCmds = @($afBigDoc.run | ForEach-Object { $_.command })
+    $afPolCmds = @($afBigDoc.policy | ForEach-Object { $_.command })
+    Assert-True ($LASTEXITCODE -eq 0 -and @($afRunCmds).Count -eq 500 `
+        -and $afRunCmds[0] -eq 'echo b0 > b0.txt' -and $afRunCmds[250] -eq 'echo b250 > b250.txt' `
+        -and $afRunCmds[499] -eq 'echo b499 > b499.txt') `
+        'AF7 500 条计划不崩、run 逐条执行且顺序锚点保持' "exit=$LASTEXITCODE run=$(@($afRunCmds).Count)"
+    $afAlignOk = $true
+    for ($i = 0; $i -lt 500; $i++) { if ($afPolCmds[$i] -ne $afRunCmds[$i]) { $afAlignOk = $false; break } }
+    Assert-True ($afAlignOk -and @($afPolCmds).Count -eq 500 `
+        -and (@($afBigDoc.policy | Where-Object { $_.exit -ne 0 }).Count -eq 0)) `
+        'AF8 policy 500 条逐条过且与 run 顺序逐位对齐（按链序记账不是完成序）' "pol=$(@($afPolCmds).Count)"
+
+    # --- AF9-AF12: compact 与 full 回执字段一致性 + 单行 ASCII + stdout 零感知 ---
+    $AfC = Join-Path $Work 'af-cmp'
+    New-AvFixture $AfC
+    New-File (Join-Path $AfC 'plan.json') '{"proven":true,"commands":["echo a > a.txt","echo b > b.txt","echo c > c.txt"],"unproven":[]}'
+    $storeC = Join-Path $Work 'af-store-cmp'
+    $rcF = Join-Path $Work 'af-rc-full.json'; $rcCp = Join-Path $Work 'af-rc-compact.json'
+    $afOutFull = @(Invoke-Av $AfC $storeC $rcF)
+    $afExitFull = $LASTEXITCODE
+    Remove-Item (Join-Path $AfC 'a.txt'), (Join-Path $AfC 'b.txt'), (Join-Path $AfC 'c.txt') -Force
+    $afOutCmp = @(Invoke-Av $AfC $storeC $rcCp @('--compact'))
+    $afExitCmp = $LASTEXITCODE
+    $afFullDoc = Read-Receipt $rcF
+    $afCmpDoc = Read-Receipt $rcCp
+    $afFullSteps = @($afFullDoc.steps | ForEach-Object { "$($_.step)|$($_.verdict)|$($_.exit)" })
+    $afCmpSteps = @($afCmpDoc.steps | ForEach-Object { "$($_.step)|$($_.verdict)|$($_.exit)" })
+    $afFullRun = @($afFullDoc.run | ForEach-Object { "$($_.command)|$($_.exit)" })
+    $afCmpRun = @($afCmpDoc.run | ForEach-Object { "$($_.command)|$($_.exit)" })
+    Assert-True ($afExitFull -eq 0 -and $afExitCmp -eq 0 `
+        -and $afFullDoc.verdict -eq $afCmpDoc.verdict -and $afFullDoc.exit -eq $afCmpDoc.exit `
+        -and $afFullDoc.plan.proven -eq $afCmpDoc.proven) `
+        'AF9 同一 run 两种回执：verdict/exit/proven 逐项相等' "v=$($afCmpDoc.verdict)"
+    Assert-True ((@($afFullSteps) -join ';') -eq (@($afCmpSteps) -join ';') `
+        -and (@($afFullRun) -join ';') -eq (@($afCmpRun) -join ';')) `
+        'AF10 步骤序列与 run 序列逐项相等（compact 只砍文本不砍判定）' ''
+    $afCmpRunKeys = (@($afCmpDoc.run[0].PSObject.Properties.Name | Sort-Object) -join ',')
+    Assert-True ($afCmpRunKeys -eq 'command,exit,seconds') `
+        'AF11 compact 的 run 段只留 command+exit+seconds（契约钉死）' $afCmpRunKeys
+    $afCpRaw = [IO.File]::ReadAllText($rcCp, $afEnc)
+    Assert-True ($afCpRaw.Trim().IndexOf("`n") -lt 0 -and $afCpRaw -notmatch '[^\x00-\x7F]') `
+        'AF12 compact 单行且纯 ASCII（任何解码器都读不坏）' ''
+    $afNormFull = (@($afOutFull) -join "`n") -replace '[0-9]+\.[0-9]+', 'N'
+    $afNormCmp = (@($afOutCmp) -join "`n") -replace '[0-9]+\.[0-9]+', 'N'
+    Assert-True ($afNormFull -eq $afNormCmp) `
+        'AF13 compact 的 stdout 与 full 一致（规整计时后逐字符相等，默认路径零变化）' ''
+
+    # --- AF13: compact 与 full 的体积比（有记忆留痕的代表性 run）---
+    $AfC2 = Join-Path $Work 'af-cmp2'
+    New-AvFixture $AfC2
+    & $afPy (Join-Path $tools 'memory.py') -Mode init -Root $AfC2 2>&1 | Out-Null
+    & $afPy (Join-Path $tools 'timeline.py') -Mode init -Root $AfC2 2>&1 | Out-Null
+    $af20 = 0..29 | ForEach-Object { "echo e$_ > e$_.txt" }
+    [IO.File]::WriteAllText((Join-Path $AfC2 'plan.json'),
+        (@{ proven = $true; commands = $af20; unproven = @() } | ConvertTo-Json -Compress), $afEnc)
+    $storeC2 = Join-Path $Work 'af-store-cmp2'
+    $null = Invoke-Av $AfC2 $storeC2 (Join-Path $Work 'af-rc2-full.json')
+    $null = Invoke-Av $AfC2 $storeC2 (Join-Path $Work 'af-rc2-compact.json') @('--compact')
+    $fb = (Get-Item (Join-Path $Work 'af-rc2-full.json')).Length
+    $cb = (Get-Item (Join-Path $Work 'af-rc2-compact.json')).Length
+    Assert-True ($cb * 4 -lt $fb) 'AF14 compact 显著小于 full（≥4 倍；典型 run 实测由 bench 报数）' "full=$fb compact=$cb"
+
+    # --- AF15-AF18: cost 记账往返与预算闸打通 ---
+    $AfCost = Join-Path $Work 'af-cost'
+    New-AvFixture $AfCost
+    New-File (Join-Path $AfCost 'plan.json') '{"proven":true,"commands":["echo c1 > c1.txt","echo c2 > c2.txt"],"unproven":[]}'
+    $storeCost = Join-Path $Work 'af-store-cost'
+    $afCostOut = @(Invoke-Av $AfCost $storeCost (Join-Path $Work 'af-cost1.json') `
+        @('--agent-id', 'sub-a', '--spent-token', '12345', '--task-id', 'cost1'))
+    $afCost1 = Read-Receipt (Join-Path $Work 'af-cost1.json')
+    Assert-True ($LASTEXITCODE -eq 0 -and $afCost1.cost.tokens -eq 12345 -and $afCost1.cost.recorded -eq $true) `
+        'AF15 cost 记账：回执 cost 字段如实（tokens=声明值 recorded=true）' "tokens=$($afCost1.cost.tokens)"
+    Assert-True ((@($afCostOut) -join "`n") -match 'cost: wall=') 'AF15b verdict 尾部有 cost: 行' ''
+    $afLed1 = Read-Receipt (Join-Path $storeCost 'cost-ledger.json')
+    $afCostEntries = @($afLed1.entries)
+    Assert-True (@($afCostEntries).Count -eq 4 `
+        -and (@($afCostEntries | Where-Object { $_.agent_id -ne 'sub-a' }).Count -eq 0)) `
+        'AF16 台账 4 条（2 命令 + overhead + spent）且全部带 agent-id' "n=$(@($afCostEntries).Count)"
+    Assert-True ((@($afCostEntries | Where-Object { $_.tokens -eq 12345 }).Count -eq 1)) `
+        'AF16b tokens 只落在 spent entry（wall 不冒充 token）' ''
+    $null = Invoke-Av $AfCost $storeCost (Join-Path $Work 'af-cost2.json') @('--budget-token', '100000', '--task-id', 'cost1')
+    $afCost2 = Read-Receipt (Join-Path $Work 'af-cost2.json')
+    Assert-True ($LASTEXITCODE -eq 0 -and $afCost2.budget.recorded_tokens -eq 12345 `
+        -and $afCost2.budget.remaining -eq 87655) `
+        'AF17 剩余预算 = 声明 - 台账已记（87655 = 100000 - 12345）' "remaining=$($afCost2.budget.remaining)"
+    $afLed2 = Read-Receipt (Join-Path $storeCost 'cost-ledger.json')
+    Assert-True (@($afLed2.entries).Count -eq 7) `
+        'AF17b 第二跑 wall 继续上账且键唯一不去重（4+3=7 条）' "n=$(@($afLed2.entries).Count)"
+    $null = Invoke-Av $AfCost $storeCost (Join-Path $Work 'af-cost3.json') @('--budget-token', '100', '--task-id', 'cost1')
+    $afCost3 = Read-Receipt (Join-Path $Work 'af-cost3.json')
+    Assert-True ($LASTEXITCODE -eq 1 -and $afCost3.verdict -eq 'suspended (budget) before run' `
+        -and (@($afCost3.steps | ForEach-Object { $_.step }) -notcontains 'run')) `
+        'AF17c 剩余不足挂起在 run 前（censored 不是失败）' "verdict=$($afCost3.verdict)"
+    $storePure = Join-Path $Work 'af-store-pure'
+    $null = Invoke-Av $AfCost $storePure (Join-Path $Work 'af-cost4.json') @('--budget-token', '0', '--task-id', 'pure1')
+    $afCost4 = Read-Receipt (Join-Path $Work 'af-cost4.json')
+    Assert-True ($LASTEXITCODE -eq 1 -and $afCost4.verdict -eq 'suspended (budget) before run' `
+        -and ($null -eq $afCost4.budget.recorded_tokens)) `
+        'AF18 无台账记录维持纯声明制（recorded_tokens 如实为空）' "verdict=$($afCost4.verdict)"
+
+    # --- AF19: 并行门与串行门 verdict 逐项相等 ---
+    # 与 AF13 同理：清掉输出文件让两条 run 看到同一棵干净基树——journal-end 的
+    # verdict 才可比（clean/changed 是树状态的函数，不是门序的函数）
+    $rcPar = Join-Path $Work 'af-rc-parallel.json'
+    Remove-Item (Join-Path $AfC 'a.txt'), (Join-Path $AfC 'b.txt'), (Join-Path $AfC 'c.txt') -Force
+    $null = Invoke-Av $AfC $storeC $rcPar @('--parallel-gates')
+    $afParDoc = Read-Receipt $rcPar
+    $afParSteps = @($afParDoc.steps | ForEach-Object { "$($_.step)|$($_.verdict)|$($_.exit)" })
+    Assert-True ($LASTEXITCODE -eq 0 -and ((@($afParSteps) -join ';') -eq (@($afFullSteps) -join ';'))) `
+        'AF19 并行门与串行门步骤 verdict 逐项相等（按链序记账，不是完成序）' ''
+
+    # --- AF20: 两种拒绝在并行下语义与回执形状不变 ---
+    $AfP = Join-Path $Work 'af-polref'
+    New-AvFixture $AfP
+    New-File (Join-Path $AfP 'plan.json') '{"proven":true,"commands":["echo p > p.txt"],"unproven":[]}'
+    $storeP = Join-Path $Work 'af-store-polref'
+    $null = Invoke-Av $AfP $storeP (Join-Path $Work 'af-p-s.json') @('-Profile', 'read-only')
+    $afPs = Read-Receipt (Join-Path $Work 'af-p-s.json')
+    $afPsSteps = @($afPs.steps | ForEach-Object { $_.step })
+    $null = Invoke-Av $AfP $storeP (Join-Path $Work 'af-p-p.json') @('-Profile', 'read-only', '--parallel-gates')
+    $afPp = Read-Receipt (Join-Path $Work 'af-p-p.json')
+    $afPpSteps = @($afPp.steps | ForEach-Object { $_.step })
+    Assert-True ($LASTEXITCODE -eq 1 -and $afPs.verdict -eq 'refused by policy' `
+        -and $afPp.verdict -eq 'refused by policy' `
+        -and ((@($afPsSteps) -join ',') -eq (@($afPpSteps) -join ','))) `
+        'AF20 policy 拒绝：并行与串行 verdict/步骤形状一致（并行跑完的 constraints 不记账）' "v=$($afPp.verdict)"
+    $AfCon = Join-Path $Work 'af-conref'
+    New-Item -ItemType Directory -Force -Path (Join-Path $AfCon 'crates\x\src') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $AfCon 'crates\x\src\a.rs'), "pub fn a() {}$nl", $afEnc)
+    & $afPy (Join-Path $tools 'constraints.py') -Mode init -Root $AfCon 2>&1 | Out-Null
+    Push-Location $AfCon
+    & git init -q 2>&1 | Out-Null
+    & git add -A 2>&1 | Out-Null
+    & git -c user.email=a@b -c user.name=t commit -qm init 2>&1 | Out-Null
+    Pop-Location
+    New-File (Join-Path $AfCon 'plan.json') '{"proven":true,"commands":["true"],"unproven":[]}'
+    [IO.File]::WriteAllText((Join-Path $AfCon 'crates\x\src\a.rs'),
+        "pub fn a() {}$nl pub fn b() { println!(`"hi`"); }$nl", $afEnc)
+    $storeCon = Join-Path $Work 'af-store-conref'
+    $null = Invoke-Av $AfCon $storeCon (Join-Path $Work 'af-con-s.json') @('-Lang', 'rust', '-Changed', 'crates\x\src\a.rs')
+    $afConS = Read-Receipt (Join-Path $Work 'af-con-s.json')
+    $null = Invoke-Av $AfCon $storeCon (Join-Path $Work 'af-con-p.json') @('-Lang', 'rust', '-Changed', 'crates\x\src\a.rs', '--parallel-gates')
+    $afConP = Read-Receipt (Join-Path $Work 'af-con-p.json')
+    Assert-True ($LASTEXITCODE -eq 1 -and $afConS.verdict -eq 'refused by constraints' `
+        -and $afConP.verdict -eq 'refused by constraints' `
+        -and (@($afConP.steps | ForEach-Object { $_.step }) -notcontains 'run')) `
+        'AF20b constraints 拒绝：并行语义不变，run 不出现' "v=$($afConP.verdict)"
+
+    # --- AF21: 并发不同 root 两链（compact + agent-id）互不干扰 ---
+    $AfSA = Join-Path $Work 'af-sub-a'; New-AvFixture $AfSA
+    $AfSB = Join-Path $Work 'af-sub-b'; New-AvFixture $AfSB
+    New-File (Join-Path $AfSA 'plan.json') '{"proven":true,"commands":["echo sa > sa.txt"],"unproven":[]}'
+    New-File (Join-Path $AfSB 'plan.json') '{"proven":true,"commands":["echo sb > sb.txt"],"unproven":[]}'
+    $pA = Start-Process -FilePath $afPy -ArgumentList @($avPy, '-Root', $AfSA, '-Changed', (Join-Path $AfSA 'pkg\core.py'), `
+        '-Lang', 'python', '-Plan', (Join-Path $AfSA 'plan.json'), '-Store', (Join-Path $Work 'af-store-sa'), `
+        '-Receipt', (Join-Path $Work 'af-sa.json'), '--compact', '--agent-id', 'sub-a') `
+        -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work 'af-sa.out') -RedirectStandardError (Join-Path $Work 'af-sa.err')
+    $pB = Start-Process -FilePath $afPy -ArgumentList @($avPy, '-Root', $AfSB, '-Changed', (Join-Path $AfSB 'pkg\core.py'), `
+        '-Lang', 'python', '-Plan', (Join-Path $AfSB 'plan.json'), '-Store', (Join-Path $Work 'af-store-sb'), `
+        '-Receipt', (Join-Path $Work 'af-sb.json'), '--compact', '--agent-id', 'sub-b') `
+        -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work 'af-sb.out') -RedirectStandardError (Join-Path $Work 'af-sb.err')
+    $null = $pA.WaitForExit(); $null = $pB.WaitForExit()
+    Assert-True ($pA.ExitCode -eq 0 -and $pB.ExitCode -eq 0) `
+        'AF21 并发不同 root 两链都成功（链锁不误伤独立 root）' "a=$($pA.ExitCode) b=$($pB.ExitCode)"
+    $afSaDoc = Read-Receipt (Join-Path $Work 'af-sa.json')
+    $afSbDoc = Read-Receipt (Join-Path $Work 'af-sb.json')
+    Assert-True ($afSaDoc.agent_id -eq 'sub-a' -and $afSbDoc.agent_id -eq 'sub-b') `
+        'AF21b 各自 compact 回执带各自 agent-id（互不干扰）' ''
+    $afSaLed = Read-Receipt (Join-Path (Join-Path $Work 'af-store-sa') 'cost-ledger.json')
+    Assert-True ((@($afSaLed.entries | Where-Object { $_.agent_id -ne 'sub-a' }).Count -eq 0) `
+        -and @($afSaLed.entries).Count -eq 2) `
+        'AF21c 各自台账行 agent-id 归属正确（1 命令 + overhead）' "n=$(@($afSaLed.entries).Count)" 
+
+    # --- AF22: chain.lock 不进快照不进 diff（SKIP 集成员）---
+    Assert-True ((@($afFullDoc.changes) | Where-Object { $_ -match 'chain\.lock' }).Count -eq 0 `
+        -and (@($afFullDoc.changes) -match 'added\s+a\.txt').Count -gt 0) `
+        'AF22 chain.lock 不进 changes（.journal 在 SKIP 集里），changes 仍看得见命令写的文件' `
+        (@($afFullDoc.changes) -join ';')
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 if ($failed -gt 0) { exit 1 }
 exit 0
