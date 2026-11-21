@@ -42,3 +42,7 @@ scripts/.mutation-check.lock/
 # cognition/ 训练层的交互语料（cognition/collect.py 的投影产物）：私有，不出克隆；
 # 公开知识（knowledge/）才入库。搬去模型仓库后由 cognition/.gitignore 接管
 cognition/corpus/
+
+# selftest 的落盘记录（tools/selftest.ps1 尾部写入，tools/doctor.py 读取）：机器状态，
+# 不进公开树；doctor 的 selftest 面在没这份记录时会明确 UNAVAILABLE 并给重跑命令
+.agent/last-selftest.json
