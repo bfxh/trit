@@ -6,6 +6,9 @@ tool layer can prove what a command actually wrote.
     journal.py end     -Root D:\\proj   -> diff; exit 1 on change
     journal.py restore -Root D:\\proj   -> put the tree back
     journal.py status  -Root D:\\proj
+    journal.py get     -Root D:\\proj -Hash <sha256>   -> hash-addressable retrieval:
+                        prints the stored copy whose content hashes to <hex>
+                        (verified, not just manifest-claimed); exit 1 on miss
 
 Why this exists: a permission model that only says "deny"/"allow" is a promise. The journal
 is the proof -- it records content hashes and copies every file before a risky step, so
@@ -23,12 +26,15 @@ import datetime
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 
 import trash  # same tools directory; restore never unlinks outright, it bins (see below)
 
-MODES = {"begin", "end", "restore", "status"}
+MODES = {"begin", "end", "restore", "status", "get"}
+
+HEX64 = re.compile(r"^[0-9a-fA-F]{64}$")
 
 SKIP = {"node_modules", "target", ".git", ".journal", "__pycache__", ".venv", "dist", "build",
         "obj", ".qoder", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".turbo", ".next", "coverage"}
@@ -37,7 +43,7 @@ MAX_BYTES = 8 * 1024 * 1024
 
 
 def parse_args(argv):
-    out = {"store": ""}
+    out = {"store": "", "hash": ""}
     positional = [x for x in argv if not x.startswith("-")]
     i = 0
     while i < len(argv):
@@ -46,7 +52,7 @@ def parse_args(argv):
             i += 1
             continue
         name = a.lstrip("-").lower()
-        key = {"mode": "mode", "root": "root", "store": "store"}.get(name, name)
+        key = {"mode": "mode", "root": "root", "store": "store", "hash": "hash"}.get(name, name)
         out[key] = argv[i + 1] if i + 1 < len(argv) else ""
         i += 2
     if "mode" not in out and positional and positional[0] in MODES:
@@ -204,6 +210,42 @@ def cmd_restore(root, latest, store):
     return 1 if blocked else 0
 
 
+def find_by_hash(store, digest):
+    """Hash-addressable retrieval over the latest snapshot: the manifest entry names
+    the content, the stored copy must actually hash to it (a manifest claim alone is
+    not proof). Returns the stored copy's path, or None. Digest form matches the
+    manifest's own sha256 (uppercase hex); consumer hashes (e.g. delta receipts)
+    use the same family, so one surface answers every hash."""
+    want = (digest or "").strip().upper()
+    try:
+        man = load_manifest(os.path.join(store, "latest", "manifest.json"))
+    except (OSError, ValueError):
+        return None
+    for e in man.get("files", []):
+        if str(e.get("sha256", "")).upper() != want:
+            continue
+        copy = os.path.join(store, "latest", "files", e["rel"])
+        if os.path.isfile(copy):
+            try:
+                if sha256_of(copy) == want:
+                    return copy
+            except OSError:
+                return None
+    return None
+
+
+def cmd_get(root, store, digest):
+    if not HEX64.match((digest or "").strip()):
+        print("journal: get needs a 64-hex sha256 (-Hash <hex>)")
+        return 2
+    hit = find_by_hash(store, digest)
+    if hit is None:
+        print(f"journal: no snapshot artifact hashes to {digest.strip().upper()}")
+        return 1
+    print(hit)
+    return 0
+
+
 def cmd_status(latest):
     manifest_path = os.path.join(latest, "manifest.json")
     if not os.path.exists(manifest_path):
@@ -233,6 +275,8 @@ def main(argv):
         return cmd_end(root, latest)
     if mode == "restore":
         return cmd_restore(root, latest, store)
+    if mode == "get":
+        return cmd_get(root, store, a.get("hash", ""))
     return cmd_status(latest)
 
 

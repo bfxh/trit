@@ -217,7 +217,8 @@ def parse_args(argv):
            "allow_network": False, "dry_run": False, "receipt": "", "store": "", "plan": "",
            "allow": [], "agent_id": "", "spent_token": "", "compact": False,
            "parallel_gates": False, "claims_file": "", "claims_receipts": [],
-           "second_opinion": False, "no_derivations": False}
+           "second_opinion": False, "no_derivations": False, "delta": False,
+           "against": "", "rebuild": "", "delta_full": "", "out": ""}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -229,7 +230,8 @@ def parse_args(argv):
         # value-branch swallows the NEXT argument as its value (--caps -Root ... would
         # parse -Root as the caps value).
         if name in ("dryrun", "allownetwork", "caps", "compact", "secondopinion",
-                    "second-opinion", "derivations", "noderivations", "no-derivations"):
+                    "second-opinion", "derivations", "noderivations", "no-derivations",
+                    "delta"):
             # --derivations is the default-on no-op; --no-derivations opts out of the
             # mre re-execution pass (legacy single-source shape).
             out["no_derivations"] = name in ("noderivations", "no-derivations")
@@ -237,6 +239,7 @@ def parse_args(argv):
                 else "allow_network" if name == "allownetwork"
                 else "caps" if name == "caps"
                 else "compact" if name == "compact"
+                else "delta" if name == "delta"
                 else "second_opinion"] = True
             i += 1
             continue
@@ -256,7 +259,8 @@ def parse_args(argv):
                  "store": "store", "plan": "plan", "agent-id": "agent_id",
                  "agentid": "agent_id", "spent-token": "spent_token",
                  "spenttoken": "spent_token", "claims-file": "claims_file",
-                 "claimsfile": "claims_file"}.get(name, name)] = val
+                 "claimsfile": "claims_file", "delta-full": "delta_full",
+                 "deltafull": "delta_full"}.get(name, name)] = val
         i += 2
     return out
 
@@ -420,6 +424,182 @@ def emit_receipt(path, doc, steps, compact):
     write_view(path, view, compact)
 
 
+def canon(obj):
+    return json.dumps(obj, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+
+
+def value_hash(v):
+    """Bare uppercase sha256 of the canonical JSON form -- the same digest family and
+    format as the journal manifest's per-file sha256, so one retrieval surface
+    (journal.py get -Hash <hex>) answers every hash a consumer may hold."""
+    return hashlib.sha256(canon(v).encode("utf-8")).hexdigest().upper()
+
+
+def file_hash(path):
+    with open(path, "rb") as fh:
+        return hashlib.sha256(fh.read()).hexdigest().upper()
+
+
+def diff_views(prev, new):
+    """Two-level field diff: an unchanged top-level key is one hash ref; a changed
+    dict key is diffed one level deeper so its stable sub-fields also become refs.
+    Returns the delta envelope body (added/changed/unchanged/removed/removed_sub/
+    orders) -- lossless with the base receipt: rebuild replays key_order through
+    these three maps, hash-verifying every ref."""
+    added, changed, unchanged, removed, removed_sub, orders = {}, {}, {}, [], {}, {}
+    for k, v in new.items():
+        if k not in prev:
+            added[k] = v
+        elif canon(prev[k]) == canon(v):
+            unchanged[k] = value_hash(prev[k])
+        elif isinstance(v, dict) and isinstance(prev[k], dict):
+            sc, sa, su = {}, {}, {}
+            for sk, sv in v.items():
+                if sk not in prev[k]:
+                    sa[sk] = sv
+                elif canon(prev[k][sk]) == canon(sv):
+                    su[sk] = value_hash(prev[k][sk])
+                else:
+                    sc[sk] = sv
+            sr = [sk for sk in prev[k] if sk not in v]
+            changed[k] = sc
+            orders[k] = list(v.keys())
+            if su:
+                unchanged[k] = su
+            if sa:
+                added[k] = sa
+            if sr:
+                removed_sub[k] = sr
+        else:
+            changed[k] = v
+    removed = [k for k in prev if k not in new]
+    return {"added": added, "changed": changed, "unchanged": unchanged,
+            "removed": removed, "removed_sub": removed_sub, "orders": orders}
+
+
+def delta_envelope(prev_path, new_view, mode):
+    body = diff_views(json.loads(open(prev_path, "r", encoding="utf-8-sig").read()),
+                      new_view)
+    counts = {name: len(body[name]) for name in ("added", "changed", "unchanged",
+                                                 "removed", "removed_sub", "orders")}
+    env = {"delta": True, "schema": "av-delta/1", "mode": mode,
+           "against": file_hash(prev_path),
+           "verdict": new_view.get("verdict"), "exit": new_view.get("exit"),
+           "counts": counts}
+    env.update(body)
+    env["key_order"] = list(new_view.keys())
+    env["rebuild"] = ("python tools/agent_verify.py --rebuild <delta.json> "
+                      "--against <prev-receipt> --out <full.json>")
+    return env
+
+
+def rebuild_from_delta(delta, base, base_digest):
+    """Reconstruct the receipt the delta was computed from. Fail-closed: the base
+    file must hash to delta['against'], every unchanged ref must hash-verify against
+    the base, every key_order key must be covered, and removed keys must match."""
+    if delta.get("schema") != "av-delta/1" or not delta.get("delta"):
+        raise ValueError("not an av-delta/1 envelope")
+    if delta.get("against") != base_digest:
+        raise ValueError("base hash mismatch: --against is not the receipt this "
+                         "delta was computed against")
+    if not isinstance(delta.get("key_order"), list):
+        raise ValueError("delta carries no key_order")
+    added, changed, unchanged = delta.get("added", {}), delta.get("changed", {}), \
+        delta.get("unchanged", {})
+    orders = delta.get("orders", {})
+    out = {}
+    for k in delta["key_order"]:
+        if k in changed and isinstance(changed[k], dict) and k in orders:
+            base_seg = base.get(k)
+            if not isinstance(base_seg, dict):
+                raise ValueError(f"changed key '{k}' has no dict base to diff against")
+            seg = {}
+            for sk in orders[k]:
+                if sk in changed[k]:
+                    seg[sk] = changed[k][sk]
+                elif sk in added.get(k, {}):
+                    seg[sk] = added[k][sk]
+                elif sk in unchanged.get(k, {}):
+                    h = unchanged[k][sk]
+                    if sk not in base_seg or value_hash(base_seg[sk]) != h:
+                        raise ValueError(f"unchanged ref does not verify: {k}.{sk}")
+                    seg[sk] = base_seg[sk]
+                else:
+                    raise ValueError(f"key_order sub-key not covered: {k}.{sk}")
+            out[k] = seg
+        elif k in unchanged and isinstance(unchanged[k], str):
+            if k not in base or value_hash(base[k]) != unchanged[k]:
+                raise ValueError(f"unchanged ref does not verify: {k}")
+            out[k] = base[k]
+        elif k in added:
+            out[k] = added[k]
+        elif k in changed:
+            out[k] = changed[k]
+        else:
+            raise ValueError(f"key_order key not covered: {k}")
+    extra = sorted(set(base) - set(delta["key_order"]))
+    if extra != sorted(delta.get("removed", [])):
+        raise ValueError("removed keys do not match the base")
+    for k, subs in delta.get("removed_sub", {}).items():
+        if k in out and isinstance(out[k], dict):
+            still = sorted(set(base.get(k, {})) - set(out[k]))
+            if still != sorted(subs):
+                raise ValueError(f"removed sub-keys do not match the base: {k}")
+    return out
+
+
+def rebuild_receipts(delta_path, base_path, out_path):
+    """--rebuild entry: delta + base receipt -> the original receipt, byte-identical."""
+    try:
+        base_bytes = open(base_path, "rb").read()
+    except OSError as e:
+        print(f"agent-verify: --against 不可读（{e}）")
+        return 2
+    try:
+        base = json.loads(base_bytes.decode("utf-8-sig"))
+    except (UnicodeDecodeError, ValueError) as e:
+        print(f"agent-verify: --against 不是合法 JSON（{e}）")
+        return 2
+    try:
+        delta = json.loads(open(delta_path, "r", encoding="utf-8-sig").read())
+    except (OSError, UnicodeDecodeError, ValueError) as e:
+        print(f"agent-verify: delta 回执不可读（{e}）")
+        return 2
+    try:
+        view = rebuild_from_delta(delta, base,
+                                  hashlib.sha256(base_bytes).hexdigest().upper())
+    except ValueError as e:
+        print(f"agent-verify: 拒绝 -- 重建失败（{e}）；fail-closed 不输出半份回执")
+        return 1
+    compact = delta.get("mode") == "compact"
+    if out_path:
+        write_view(out_path, view, compact)
+    else:
+        with open(1, "w", encoding="ascii", newline="\n") as fh:
+            if compact:
+                json.dump(view, fh, ensure_ascii=True, separators=(",", ":"))
+            else:
+                json.dump(view, fh, ensure_ascii=True, indent=2)
+            fh.write("\n")
+    return 0
+
+
+def emit_delta(path, doc, steps, ctx):
+    """--delta surface: the receipt diffed against the previous receipt. Writes the
+    envelope to path; when ctx['full_path'] is set, also writes this run's plain
+    view there (the audit companion the rebuild is checked against)."""
+    mode = "compact" if ctx["compact"] else "full"
+    view = compact_view(doc, steps) if ctx["compact"] else receipt_view(doc)
+    if ctx["full_path"]:
+        write_view(ctx["full_path"], view, ctx["compact"])
+    if not path:
+        return
+    env = delta_envelope(ctx["prev_path"], view, mode)
+    with open(path, "w", encoding="ascii", newline="\n") as fh:
+        json.dump(env, fh, ensure_ascii=True, separators=(",", ":"))
+        fh.write("\n")
+
+
 def sha8(text):
     return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:8]
 
@@ -537,6 +717,19 @@ def main(argv):
         print(HELP)
         return 0
     a = parse_args(argv)
+    if a.get("rebuild"):
+        if not a.get("against"):
+            print("agent-verify: --rebuild needs --against <prev-receipt> (fail-closed: "
+                  "a delta without its base cannot be verified)")
+            return 2
+        return rebuild_receipts(a["rebuild"], a["against"], a.get("out", ""))
+    if a.get("against") and not a.get("delta"):
+        print("agent-verify: --against only carries meaning with --delta or --rebuild")
+        return 2
+    if a.get("delta") and not a.get("against"):
+        print("agent-verify: --delta needs --against <prev-receipt> (the diff base is "
+              "not optional -- without it nothing is verifiable)")
+        return 2
     root_in = a["root"].strip()
     if not root_in or not os.path.isdir(root_in):
         print("agent-verify: -Root 必须是已存在的目录")
@@ -575,6 +768,32 @@ def main(argv):
     store = a["store"].strip() or os.path.join(
         os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "agent-verify",
         root.replace("\\", "_").replace(":", "_"))
+
+    # --- delta base: validated before the chain lock, fail-closed -----------------------
+    delta_ctx = None
+    if a.get("delta"):
+        prev_path = a["against"]
+        try:
+            with open(prev_path, "rb") as fh:
+                prev_doc = json.loads(fh.read().decode("utf-8-sig"))
+        except (OSError, UnicodeDecodeError, ValueError) as e:
+            print(f"agent-verify: --against 不可用（{e}）-- delta 没有可验证的基线就拒绝开跑")
+            return 2
+        if not isinstance(prev_doc, dict):
+            print("agent-verify: --against 不是回执 JSON（delta 基线必须是上一次回执）")
+            return 2
+        # shape match: a compact view diffed against a full base (or the reverse) would
+        # produce refs that can never verify at rebuild -- refuse at the door
+        base_shape = ("full" if ("plan" in prev_doc and "proven" not in prev_doc)
+                      else "compact" if ("proven" in prev_doc and "plan" not in prev_doc)
+                      else None)
+        want_shape = "compact" if a.get("compact") else "full"
+        if base_shape is not None and base_shape != want_shape:
+            print(f"agent-verify: 拒绝 -- --against 是 {base_shape} 形回执，本次 delta 是 "
+                  f"{want_shape} 形（基线与本次回执必须同形，否则重建必然失配）")
+            return 2
+        delta_ctx = {"prev_path": prev_path, "compact": bool(a.get("compact")),
+                     "full_path": a.get("delta_full", "")}
 
     # --- chain lock: one chain per root, fail-closed ------------------------------------
     # Held for the chain's whole life; the leftover lock of a killed process is the
@@ -637,7 +856,10 @@ def main(argv):
         doc["steps"] = steps
         doc["verdict"] = verdict
         doc["exit"] = code
-        emit_receipt(a["receipt"], doc, steps, a.get("compact"))
+        if delta_ctx is not None:
+            emit_delta(a["receipt"], doc, steps, delta_ctx)
+        else:
+            emit_receipt(a["receipt"], doc, steps, a.get("compact"))
         return code
 
     # --- 0. memory brief: what this project already knows ------------------------------
