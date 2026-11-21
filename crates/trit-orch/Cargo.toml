@@ -17,6 +17,7 @@ harness = false
 
 [dependencies]
 trit-core.workspace = true
+trit-ops.workspace = true
 trit-schedule.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"

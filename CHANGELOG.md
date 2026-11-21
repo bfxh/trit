@@ -72,6 +72,25 @@
   没人处理。`checks.py` 新增 C045 钉住基准锁文件 zip ≥ 9.0.5（回退即红）；给 CI
   加 cargo-audit / cargo-deny 盯全仓锁文件的建议**另立任务**，本次不动 CI。详见
   docs/ERRORS.md L109。
+### Added（trit 级纠错码：GF(3) 域 + q-ary Hamming + 三元 Golay，trace_store 可选 ECC 帧）
+
+- `trit-ops::gf3`：GF(3) 域算术（平衡 trit 表示，乘法即 `Trit::mul`）+ q-ary Hamming
+  系统码 `r=3 → [13,10,3]`、`r=4 → [40,36,3]`（射影代表元校验矩阵）+ 扩展
+  `[14,10,4]`/`[41,36,4]`（整体校验位，教科书 SECDED 的 q-ary 版本）。真值表：
+  r=3 全码字空间 59049×39 全枚举单错全纠；双错伴随式恒非零、误纠 100% 如实钉进测试。
+- `trit-ops::golay`：三元 Golay `[11,6,5]` 完美码（Paley QR 构造 mod 11 导出系统形
+  `G=[I6|B]`，d=5 重量指纹钉死）；243 伴随式查表与重量 ≤2 错型双射；729×243=177147
+  全真值表，1 错/2 错确定区分（d≥5 ⇒ 二错伴随式不与单错碰撞）。
+- `trit-ops::frame`：ECC 帧封装 `TRE1 <tag> <len> <hex>`（bytes↔6 trit/字节、tryte 打包、
+  m-序列加权帧校验）。消费语义：块内单错确定自愈、双错确定拒（fail-closed）、单块内
+  ≥3 错伪装被帧校验确定性拦截（Krylov 秩论证），多块同时伪装残差 3⁻⁶≈0.13% 实测钉住。
+- `trit-orch::TraceEventStore`：可选 ECC（`with_ecc`/`with_ecc_code`，默认关闭=字节级零
+  变化）；单错自愈打 WARN、双错 fail-closed 拒（新 `Error::TraceEcc`，
+  kind=`trace_ecc_rejected`）；帧行自带码 tag，未开 ECC 的存储读 ECC 文件照常校验。
+- 基准 `benches/ecc.rs`（harness=false 零新依赖）：n=13/n=40 两档 encode/syndrome/decode
+  + Golay + 帧层 10 万次取中位 + r=3 全码字枚举耗时。动机与界限声明：与黎曼猜想**无关**
+  （RH 是素数分布定理，对内核构造没有推论）；这是三进制硬件路线下 trit 级存储完整性
+  （ECC 内存的 q-ary 对应物），依据标准 q-ary 编码理论。
 
 ### Added（输出行架构级冗余：行复制 + 分歧告警——#557 未证栏修复落地）
 

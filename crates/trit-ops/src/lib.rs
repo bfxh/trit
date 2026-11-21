@@ -17,6 +17,14 @@
 //! 服务于 SAT / BDD / 电路。本库是**平衡算术** `{-1, 0, +1}`，服务于
 //! 矩阵乘。两者的映射是 `False -> -1`、`Unknown -> 0`、`True -> +1`，
 //! 由 [`Trit::from_ternary`] / [`Trit::to_ternary`] 提供，不复用同一个类型。
+//!
+//! # trit 级纠错（ECC 的角色）
+//!
+//! [`gf3`] / [`golay`] / [`frame`] 提供三进制硬件路线下的 trit 级存储完整性：
+//! GF(3) 域算术 + q-ary Hamming `[13,10,3]`/`[40,36,3]`、三元 Golay
+//! `[11,6,5]`（标准 q-ary 编码理论，教科书构造；与黎曼猜想**无关**——RH 是
+//! 素数分布定理，对内核构造没有推论）。[`frame`] 给出可直接落盘的帧封装，
+//! `trit-orch` 的轨迹存储是首个消费方。
 #![allow(unsafe_op_in_unsafe_fn)]
 
 // SIMD 模块整体是 `#[target_feature] unsafe fn`，内部每条 intrinsic 再套一层
@@ -24,14 +32,20 @@
 // 前置条件保证，故在 crate 级关闭该 lint。
 
 pub mod bench;
+pub mod frame;
 pub mod gemv;
+pub mod gf3;
+pub mod golay;
 pub mod pack;
 pub mod pool;
 pub mod quant;
 pub mod simd;
 pub mod trit;
 
+pub use frame::{FrameCode, FrameCodec, FrameReject, FrameResult, decode_line, encode_line};
 pub use gemv::{Kernel, TernaryMatrix, TryteMatrix};
+pub use gf3::{ExtendedDecode, ExtendedHamming, HammingCode, HammingDecode};
+pub use golay::{Golay11, GolayDecode};
 pub use pack::{Rail, Trytes};
 pub use quant::{QuantReport, Scheme};
 pub use trit::Trit;
