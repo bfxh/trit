@@ -187,3 +187,17 @@ balance 拒整份账并点名行号，不跳过、不半读。写入方：`attes
 claim+kind）→ 整份 fail-closed（exit 3）。出处：过程监督优于结果监督——OpenAI "Let's
 Verify Step by Step"（2023）。编排链把分解规模透传进回执（`claims.aggregates`/`claims.atoms`，
 appended 字段）。
+
+### second-opinion（独立复核，opt-in）——同一声明两条独立证据路径
+
+`claim_audit.py second-opinion` 不"帮看看"，而是重新推导再 diff：src1 = 最近回执单独作证
+（mtime 最新者优先）；src2 = 盘上现实 + cost-ledger 的运行痕迹（entry key 内嵌
+sha8(command)，与 agent_verify 写账同源推导）/ 回执 journal changes（added/modified/deleted）。
+判定口径：两源都给出一致证据 → VERIFIED 并标注 `dual-source`；任一源与现实矛盾 →
+FABRICATED（双证据并列打印）；任一源无证据 → UNVERIFIED（缺证据永不升级）。kind=number
+没有第二条独立路径（被引工件是唯一出处），永不升级。被点名但解析不了的回执/台账 → 整份
+exit 3 fail-closed。出处：独立复推——arXiv:2610.12234 式（第三方重新推导再 diff，不是
+"再看一眼"——同一本账投两票是伪复核）。编排链 `--second-opinion`（opt-in）让 claims 步骤
+自动跑两源，结果进回执 `claims.second`（appended 字段）；复核判 FABRICATED 与主审计同级
+拒绝全链。回执 JSON 的机器路径纪律对 `claims.second` 同样适用（appended 字段只带计数，
+不带本地路径）。

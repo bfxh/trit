@@ -51,7 +51,7 @@
       "mix": "co",
       "anchors": [
         "AGENT-GUARDRAILS.md:745:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
-        "tools/agent_verify.py:851:\"changed\" if je[\"code\"] == 1 else \"failed\"))"
+        "tools/agent_verify.py:894:\"changed\" if je[\"code\"] == 1 else \"failed\"))"
       ],
       "status": "active"
     },
@@ -86,7 +86,7 @@
       "mix": "exclusive",
       "anchors": [
         "tools/agent_verify.py:113:declaration-based gate: the tool layer cannot measure model-side token",
-        "tools/agent_verify.py:154:--budget-token N is a DECLARATION by the caller."
+        "tools/agent_verify.py:156:--budget-token N is a DECLARATION by the caller."
       ],
       "status": "active"
     },
@@ -203,7 +203,7 @@
       "mix": "none",
       "anchors": [
         "AGENT-GUARDRAILS.md:728:1. **`verdict`**——只有这几种，各是什么一眼定论：",
-        "tools/agent_verify.py:890:verdict = (\"command failed\" if not ran_ok else"
+        "tools/agent_verify.py:933:verdict = (\"command failed\" if not ran_ok else"
       ],
       "status": "active"
     },
@@ -436,6 +436,27 @@
       "action": "update",
       "term": "verdict",
       "reason": "stale line after claim-decomposition pass-through in claims step (re-anchored to 890)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T20:32:59+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "stale line after second-opinion step insertion in claims flow (re-anchored to 894)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T20:32:59+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "stale line after second-opinion flag parsing above HELP (re-anchored to 156)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T20:32:59+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "stale line after second-opinion step insertion in claims flow (re-anchored to 933)",
       "loosened": "drop-anchor"
     }
   ]

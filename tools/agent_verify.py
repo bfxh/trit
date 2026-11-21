@@ -125,7 +125,9 @@ COST_NOTE = ("wall is tool-measured per command; tokens are caller-declared (--s
 CLAIMS_NOTE = ("model statements are audited against recorded evidence (receipts, disk, "
                "cited artifacts), not believed; VERIFIED/UNVERIFIED/FABRICATED per claim, "
                "FABRICATED refuses the whole chain -- what the model says carries zero "
-               "evidential weight on its own")
+               "evidential weight on its own; --second-opinion re-derives the same claims "
+               "through two independent evidence paths (freshest receipt vs disk + cost "
+               "ledger run records), dual-source upgrade or FABRICATED downgrade")
 ATTEST_NOTE = ("--spent-token also lands on the attest hash chain (<Store>/attest-ledger.jsonl): "
                "tamper-evident bookkeeping and dedup (a repeated spend is structurally "
                "impossible), NOT model-side ground truth -- claimed_tokens stay a declaration; "
@@ -141,7 +143,7 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
   caps:         --caps [--caps-mem-mb N] [--caps-procs N] [--caps-seconds S]
   subagent:     --agent-id <id>
   cost:         [--spent-token N]   (declared model-side tokens of this run)
-  claims:       [--claims-file f.jsonl] [--claims-receipts glob]...  (audit model statements)
+  claims:       [--claims-file f.jsonl] [--claims-receipts glob]... [--second-opinion]  (audit model statements)
   receipt:      [--compact]         (single-line machine receipt; default stays full)
   gates:        [--parallel-gates]  (affected/policy/constraints concurrent; opt-in)
 
@@ -185,7 +187,8 @@ def parse_args(argv):
     out = {"root": "", "changed": [], "lang": "", "profile": "workspace-write",
            "allow_network": False, "dry_run": False, "receipt": "", "store": "", "plan": "",
            "allow": [], "agent_id": "", "spent_token": "", "compact": False,
-           "parallel_gates": False, "claims_file": "", "claims_receipts": []}
+           "parallel_gates": False, "claims_file": "", "claims_receipts": [],
+           "second_opinion": False}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -196,11 +199,13 @@ def parse_args(argv):
         # Boolean flags must be listed here: a bool flag that falls through to the
         # value-branch swallows the NEXT argument as its value (--caps -Root ... would
         # parse -Root as the caps value).
-        if name in ("dryrun", "allownetwork", "caps", "compact"):
+        if name in ("dryrun", "allownetwork", "caps", "compact", "secondopinion",
+                    "second-opinion"):
             out["dry_run" if name == "dryrun"
                 else "allow_network" if name == "allownetwork"
                 else "caps" if name == "caps"
-                else "compact"] = True
+                else "compact" if name == "compact"
+                else "second_opinion"] = True
             i += 1
             continue
         if name == "parallelgates" or name == "parallel-gates":
@@ -464,6 +469,9 @@ def main(argv):
         if spent_token < 0:
             print("agent-verify: --spent-token must be >= 0 (it is a declaration, not a measurement)")
             return 2
+    if a.get("second_opinion") and not a.get("claims_file"):
+        print("agent-verify: --second-opinion needs --claims-file (the two sources re-derive a claims set)")
+        return 2
 
     root = os.path.abspath(root_in)
     lang = a["lang"].lower()
@@ -768,6 +776,41 @@ def main(argv):
                 return finish("rejected: fabricated claims", 1)
             print("agent-verify: 拒绝 -- claims 文件不可审计（fail-closed）")
             return finish("refused by claims", 1)
+
+    # --- 5.6 second opinion (opt-in --second-opinion): the claims step runs both sources
+    # The same claims set is re-derived independently: src1 = the freshest receipt alone,
+    # src2 = disk reality + the store's cost ledger run records. VERIFIED only survives
+    # as dual-source when BOTH paths walk through; a contradiction downgrades to
+    # FABRICATED and refuses the chain exactly like the primary audit does. UNVERIFIED
+    # claims pass but are recorded (they must not be taken as true).
+    if a.get("second_opinion"):
+        so_args = [os.path.join(TOOLS, "claim_audit.py"), "second-opinion",
+                   "-Claims", a["claims_file"], "-Root", root,
+                   "-Ledger", os.path.join(store, "cost-ledger.json")]
+        for g in a.get("claims_receipts", []):
+            so_args += ["-Receipts", g]
+        so = step(so_args)
+        add("claim-second-opinion", so, {0: "ok", 1: "unverified", 2: "fabricated",
+                                        3: "refused"}.get(so["code"], "refused"))
+        so_text = "\n".join(so["out"])
+        m2 = re.search(r"summary: total=(\d+) verified=(\d+) unverified=(\d+) "
+                       r"fabricated=(\d+)", so_text)
+        if m2 and "claims" in doc:
+            doc["claims"]["second"] = {"total": int(m2.group(1)),
+                                       "verified": int(m2.group(2)),
+                                       "unverified": int(m2.group(3)),
+                                       "fabricated": int(m2.group(4))}
+            m3 = re.search(r"dual-source=(\d+)", so_text)
+            if m3:
+                doc["claims"]["second"]["dual_source"] = int(m3.group(1))
+        if so["code"] in (2, 3):
+            for ln in so["out"]:
+                print(ln)
+            if so["code"] == 2:
+                print("agent-verify: 拒绝 -- 独立复核与现实矛盾（second opinion FABRICATED）")
+                return finish("rejected: fabricated claims (second opinion)", 1)
+            print("agent-verify: 拒绝 -- 独立复核不可审计（fail-closed）")
+            return finish("refused by claims (second opinion)", 1)
 
     # --- dry-run: report and stop, before anything is written --------------------------
     if a["dry_run"]:

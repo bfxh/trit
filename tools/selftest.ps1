@@ -3436,7 +3436,7 @@ if (-not $aiPy) {
 
 # =====================================================================================
 "== AJ. 声明分解 + 独立复核：聚合声明过闸前必须拆条，同一声明两条独立证据路径都要走通 =="
-# 出处写进 claim_audit usage：①过程监督优于结果监督（OpenAI "Let's Verify Step
+# 出处写进 claim_audit usage（台账 L120）：①过程监督优于结果监督（OpenAI "Let's Verify Step
 # by Step", 2023）——聚合判定只吃逐原子判定，"全绿"一句话没有资格过闸；②独立复推
 # （arXiv:2610.12234 式）——第三方不是"帮看看"，是重新推导再 diff：最近回执一条路、
 # 盘上现实 + 台账运行痕迹另一条路，两源一致才 dual-source，矛盾降级 FABRICATED。
@@ -3447,7 +3447,7 @@ foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
     if (-not $ajSrc) { continue }
     if ((& $ajSrc -c 'print(1)' 2>$null) -eq '1') { $ajPy = $ajSrc; break }
 }
-$ajTotal = 13
+$ajTotal = 27
 if (-not $ajPy) {
     "  SKIP  AJ0 找不到可用的 Python，跳过声明分解与独立复核检查"
     $skipped += $ajTotal
@@ -3489,7 +3489,8 @@ if (-not $ajPy) {
 
     $AjC = Join-Path $Work 'aj-root'
     New-Item -ItemType Directory -Force -Path (Join-Path $AjC 'pkg'), (Join-Path $AjC 'tests'), `
-        (Join-Path $Work 'aj-rc'), (Join-Path $Work 'aj-rc-both'), (Join-Path $Work 'aj-rc-orch') | Out-Null
+        (Join-Path $Work 'aj-rc'), (Join-Path $Work 'aj-rc-both'), (Join-Path $Work 'aj-rc-orch'), `
+        (Join-Path $Work 'aj-rc-del') | Out-Null
     New-File (Join-Path $AjC 'pkg\core.py') "def f(): return 1$nl"
     New-File (Join-Path $AjC 'tests\test_core.py') "def test_f(): assert 1$nl"
 
@@ -3501,7 +3502,7 @@ if (-not $ajPy) {
     Start-Sleep -Milliseconds 20
     New-File (Join-Path $Work 'aj-rc-both\rc-red.json') '{"at":"fixture","run":[{"command":"python -m pytest tests/test_core.py -q","exit":1}]}'
     New-File (Join-Path $Work 'aj-rc-orch\rc-full.json') '{"at":"fixture","run":[{"command":"python -m pytest tests/test_core.py -q","exit":0}],"changes":["journal: added    pkg/core.py"]}'
-    New-File (Join-Path $Work 'aj-rc-orch\rc-del.json') '{"at":"fixture","run":[],"changes":["journal: deleted    pkg/core.py"]}'
+    New-File (Join-Path $Work 'aj-rc-del\rc-del.json') '{"at":"fixture","run":[],"changes":["journal: deleted    pkg/core.py"]}'
     New-File (Join-Path $Work 'aj-rc\rc-ghostgreen.json') '{"at":"fixture","run":[{"command":"python -m pytest tests/ghost_rs.rs -q","exit":0}]}'
 
     # 台账夹具：cost-ledger 里那条运行痕迹的 key 带 sha8(command)，与 agent_verify 写账同源推导。
@@ -3589,6 +3590,115 @@ if (-not $ajPy) {
     $aj12 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-old-f.jsonl'), '-Root', $AjC, '-Receipts', (Join-Path $Work 'aj-rc\rc-green.json'))
     Assert-True ($aj12 -eq 2) `
         'AJ12 旧格式回归：幽灵测试照旧 FABRICATED exit 2（三态 exit 语义 0/1/2 保持）' "e=$aj12"
+
+    # --- AJ13-AJ18: second-opinion 独立复核（同一声明两条独立证据路径都要走通）---
+    New-File (Join-Path $Work 'aj-tp.jsonl') ('{"claim":"tests/test_core.py all green","kind":"test-pass"}' + $nl)
+    New-File (Join-Path $Work 'aj-fe.jsonl') ('{"claim":"pkg/core.py exists on disk","kind":"file-exists"}' + $nl)
+    $aj13 = Invoke-AjCa @('second-opinion', '-Claims', (Join-Path $Work 'aj-tp.jsonl'), '-Root', $AjC,
+        '-Receipts', (Join-Path $Work 'aj-rc\rc-green.json'), '-Ledger', (Join-Path $ajLed 'cost-ledger.json'))
+    Assert-True ($aj13 -eq 0 -and (($ajOut -join ' ') -match 'dual-source') `
+        -and (($ajOut -join "`n") -match 'summary: dual-source=1')) `
+        'AJ13 双源一致→VERIFIED 升级标注 dual-source exit 0（receipt 一路 + 盘上文件与台账运行痕迹一路）' "e=$aj13"
+
+    New-File (Join-Path $Work 'aj-tp-ghost.jsonl') ('{"claim":"tests/ghost_rs.rs all green","kind":"test-pass"}' + $nl)
+    $aj14 = Invoke-AjCa @('second-opinion', '-Claims', (Join-Path $Work 'aj-tp-ghost.jsonl'), '-Root', $AjC,
+        '-Receipts', (Join-Path $Work 'aj-rc\rc-ghostgreen.json'), '-Ledger', (Join-Path $ajLed 'cost-ledger.json'))
+    Assert-True ($aj14 -eq 2 -and (@($ajOut | Where-Object { $_ -match 'src1:' }).Count -ge 1) `
+        -and (@($ajOut | Where-Object { $_ -match 'src2:' }).Count -ge 1)) `
+        'AJ14 双源矛盾→降级 FABRICATED exit 2 且附双证据（src1 回执判词与 src2 盘上现实并列打印）' "e=$aj14"
+
+    $aj15 = Invoke-AjCa @('second-opinion', '-Claims', (Join-Path $Work 'aj-tp.jsonl'), '-Root', $AjC,
+        '-Receipts', (Join-Path $Work 'aj-rc\rc-green.json'), '-Ledger', (Join-Path $ajLedEmpty 'cost-ledger.json'))
+    Assert-True ($aj15 -eq 1 -and (($ajOut -join ' ') -match 'left no ledger trace')) `
+        'AJ15 台账无该命令的运行痕迹→UNVERIFIED exit 1（两源都要走通，缺一路不许升级）' "e=$aj15"
+
+    $aj16 = Invoke-AjCa @('second-opinion', '-Claims', (Join-Path $Work 'aj-tp.jsonl'), '-Root', $AjC,
+        '-Receipts', (Join-Path $Work 'aj-rc-both\*.json'), '-Ledger', (Join-Path $ajLed 'cost-ledger.json'))
+    Assert-True ($aj16 -eq 2 -and (($ajOut -join ' ') -match 'is RED')) `
+        'AJ16 最近回执判红→FABRICATED exit 2（src1 取 mtime 最新回执，最新证据压过挑出来的旧绿）' "e=$aj16"
+
+    $aj17 = Invoke-AjCa @('second-opinion', '-Claims', (Join-Path $Work 'aj-tp.jsonl'), '-Root', $AjC,
+        '-Receipts', (Join-Path $Work 'aj-rc\rc-green.json'), '-Ledger', (Join-Path $ajLedBad 'cost-ledger.json'))
+    Assert-True ($aj17 -eq 3) `
+        'AJ17 台账损坏→exit 3 拒（复核不信任自己的第二证据源就整体拒绝，不是降级继续）' "e=$aj17"
+
+    New-File (Join-Path $Work 'aj-agg-dual.jsonl') ('{"claim":"fixture: pkg and tests all green","kind":"aggregate","decomposition":[' +
+        '{"claim":"pkg/core.py exists on disk","kind":"file-exists"},' +
+        '{"claim":"tests/test_core.py all green","kind":"test-pass"}]}' + $nl)
+    $aj18 = Invoke-AjCa @('second-opinion', '-Claims', (Join-Path $Work 'aj-agg-dual.jsonl'), '-Root', $AjC,
+        '-Receipts', (Join-Path $Work 'aj-rc-orch\rc-full.json'), '-Ledger', (Join-Path $ajLed 'cost-ledger.json'))
+    Assert-True ($aj18 -eq 0 -and (($ajOut -join ' ') -match 'all VERIFIED \(dual-source\)')) `
+        'AJ18 聚合在独立复核下逐原子双源全过→聚合 VERIFIED（dual-source）exit 0（分解规则在复核层同样成立）' "e=$aj18"
+
+    # --- AJ19/AJ19b: file-exists 的第二证据源 = 回执 journal changes（added↔deleted）---
+    $aj19 = Invoke-AjCa @('second-opinion', '-Claims', (Join-Path $Work 'aj-fe.jsonl'), '-Root', $AjC,
+        '-Receipts', (Join-Path $Work 'aj-rc-orch\rc-full.json'))
+    Assert-True ($aj19 -eq 0 -and (($ajOut -join ' ') -match 'dual-source')) `
+        'AJ19 file-exists 双源：盘上 stat 一路 + 回执 journal 记 added 一路→dual-source VERIFIED exit 0' "e=$aj19"
+    $aj19b = Invoke-AjCa @('second-opinion', '-Claims', (Join-Path $Work 'aj-fe.jsonl'), '-Root', $AjC,
+        '-Receipts', (Join-Path $Work 'aj-rc-del\rc-del.json'))
+    Assert-True ($aj19b -eq 2 -and (($ajOut -join ' ') -match 'DELETED')) `
+        'AJ19b 回执 journal 记 deleted 而声称存在→两源矛盾 FABRICATED exit 2' "e=$aj19b"
+
+    # --- AJ20/AJ21: --second-opinion 编排集成（claims 步骤自动跑两源）---
+    $AjO = Join-Path $Work 'aj-orch'
+    New-AjFixture $AjO
+    New-File (Join-Path $AjO 'plan.json') '{"proven":true,"commands":["echo aj > aj.txt"],"unproven":[]}'
+    $storeAj = Join-Path $Work 'aj-store-orch'
+    New-Item -ItemType Directory -Force -Path $storeAj | Out-Null
+    & $ajPy $ldPy -Mode add -Ledger (Join-Path $storeAj 'cost-ledger.json') -Task 'av|ajorch' `
+        -Key ('av|ajorch|cmd1|' + (Get-AjSha8 $ajCmd)) -Wall 1.0 2>&1 | Out-Null
+    New-File (Join-Path $Work 'aj-orch-claims.jsonl') ((@(
+        '{"claim":"pkg/core.py exists on disk","kind":"file-exists"}',
+        '{"claim":"tests/test_core.py all green","kind":"test-pass"}') -join $nl) + $nl)
+    $aj20 = Invoke-AjAv $AjO $storeAj (Join-Path $Work 'aj-rc-orch.json') `
+        @('--claims-file', (Join-Path $Work 'aj-orch-claims.jsonl'),
+          '--claims-receipts', (Join-Path $Work 'aj-rc-orch\*.json'), '--second-opinion')
+    $aj20doc = Read-AjReceipt (Join-Path $Work 'aj-rc-orch.json')
+    $aj20steps = @($aj20doc.steps | ForEach-Object { $_.step })
+    Assert-True ($aj20 -eq 0 -and ($aj20steps -contains 'claim-second-opinion') `
+        -and $aj20doc.claims.second.dual_source -eq 2 -and $aj20doc.claims.second.fabricated -eq 0) `
+        'AJ20 编排 --second-opinion：claims 步骤自动跑两源，双源全过→链通过且回执 claims.second 带 dual_source（appended 字段）' "e=$aj20 second=$($aj20doc.claims.second | ConvertTo-Json -Compress)"
+    New-File (Join-Path $Work 'aj-orch-fe.jsonl') ('{"claim":"pkg/core.py exists on disk","kind":"file-exists"}' + $nl)
+    $aj21 = Invoke-AjAv $AjO $storeAj (Join-Path $Work 'aj-rc-orch2.json') `
+        @('--claims-file', (Join-Path $Work 'aj-orch-fe.jsonl'),
+          '--claims-receipts', (Join-Path $Work 'aj-rc-del\*.json'), '--second-opinion')
+    $aj21doc = Read-AjReceipt (Join-Path $Work 'aj-rc-orch2.json')
+    $aj21steps = @($aj21doc.steps | ForEach-Object { $_.step })
+    Assert-True ($aj21 -eq 1 -and $aj21doc.verdict -eq 'rejected: fabricated claims (second opinion)' `
+        -and ($aj21steps -contains 'claim-second-opinion') -and ($aj21steps -notcontains 'run')) `
+        'AJ21 独立复核抓到矛盾→全链拒绝在 run 前（主审计过了不等于复核过——两条证据路径都要走通）' "e=$aj21 v=$($aj21doc.verdict)"
+    $aj22 = Invoke-AjAv $AjO $storeAj (Join-Path $Work 'aj-rc-orch3.json') @('--second-opinion')
+    Assert-True ($aj22 -eq 2) `
+        'AJ22 --second-opinion 不带 --claims-file→exit 2（复核没有对象就是坏调用）' "e=$aj22"
+
+    # --- AJ23/AJ23b: 1000 原子大文件不崩；同文件双进程并发不崩 ---
+    $ajAtoms = 1..1000 | ForEach-Object { '{"claim":"pkg/core.py exists on disk","kind":"file-exists"}' }
+    New-File (Join-Path $Work 'aj-big.jsonl') ('{"claim":"all 1000 parts exist","kind":"aggregate","decomposition":[' + ($ajAtoms -join ',') + ']}' + $nl)
+    $aj23 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-big.jsonl'), '-Root', $AjC)
+    Assert-True ($aj23 -eq 0 -and (($ajOut -join "`n") -match 'summary: aggregates=1 atoms=1000') `
+        -and (($ajOut -join "`n") -match 'summary: total=1 verified=1 unverified=0 fabricated=0')) `
+        'AJ23 1000 原子聚合一次核验完成（大文件不崩，判定与规模都如实上报）' "e=$aj23"
+    $ajC1 = Start-Process -FilePath $ajPy -ArgumentList @($caPy, '-Claims', (Join-Path $Work 'aj-big.jsonl'), '-Root', $AjC) `
+        -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work 'aj-c1.out') -RedirectStandardError (Join-Path $Work 'aj-c1.err')
+    $ajC2 = Start-Process -FilePath $ajPy -ArgumentList @($caPy, '-Claims', (Join-Path $Work 'aj-big.jsonl'), '-Root', $AjC) `
+        -NoNewWindow -PassThru -RedirectStandardOutput (Join-Path $Work 'aj-c2.out') -RedirectStandardError (Join-Path $Work 'aj-c2.err')
+    $null = $ajC1.WaitForExit(); $null = $ajC2.WaitForExit()
+    Assert-True ($ajC1.ExitCode -eq 0 -and $ajC2.ExitCode -eq 0) `
+        'AJ23b 同一 1000 原子文件双进程并发核验都成功（claim_audit 只读无共享状态，并发不崩不互伤）' "c1=$($ajC1.ExitCode) c2=$($ajC2.ExitCode)"
+
+    # --- AJ24: 对抗自测——30 条"聚合糊弄"声明，每条大声明包 3 条假原子 ---
+    $ajFool = 1..30 | ForEach-Object {
+        '{"claim":"wave ' + $_ + ': all green, all checked, nothing missing","kind":"aggregate","decomposition":[' +
+        '{"claim":"tests/ghost_a_' + $_ + '.rs all green","kind":"test-pass"},' +
+        '{"claim":"tests/ghost_b_' + $_ + '.rs all green","kind":"test-pass"},' +
+        '{"claim":"pkg/ghost_c_' + $_ + '.py exists","kind":"file-exists"}]}'
+    }
+    New-File (Join-Path $Work 'aj-fool.jsonl') (($ajFool -join $nl) + $nl)
+    $aj24 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-fool.jsonl'), '-Root', $AjC)
+    $aj24top = @($ajOut | Where-Object { $_ -match '^\s*\[\d+\] FABRICATED' }).Count
+    Assert-True ($aj24 -eq 2 -and $aj24top -eq 30 -and (($ajOut -join ' ') -match 'fabricated=30')) `
+        'AJ24 对抗自测：30 条聚合糊弄声明（大声明包 3 条假原子）分解后 30/30 FABRICATED 捕获，exit 2（糊弄句没有拆条豁免权）' "e=$aj24 top=$aj24top"
 }
 
 

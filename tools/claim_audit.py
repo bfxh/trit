@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """claim_audit: model statements are checked against reality, not believed.
 
-    claim_audit.py -Claims <claims.jsonl> -Root <dir> [-Receipts <glob>...] 
+    claim_audit.py -Claims <claims.jsonl> -Root <dir> [-Receipts <glob>...]
+    claim_audit.py second-opinion -Claims <f> -Root <dir> [-Receipts <g>...] [-Ledger <cost-ledger.json>]
 
 Claims file: JSON lines, one claim per line:
 
@@ -51,11 +52,40 @@ decomposition does not recurse); a decomposition that is present but malformed
 Attribution: judging the steps beats judging the summary -- OpenAI, "Let's Verify
 Step by Step" (2023), process supervision over result supervision.
 
+Second opinion -- independent re-derivation, not a helper's nod:
+
+    claim_audit.py second-opinion -Claims <f> -Root <dir> [-Receipts <glob>...]
+                                  [-Receipt <recent.json>] [-Ledger <cost-ledger.json>]
+
+The same claims are re-derived through two INDEPENDENT evidence paths and diffed;
+both paths must walk through, and the third party re-derives rather than re-reads
+the first audit:
+
+    src1  the freshest receipt alone (what the newest recorded run testifies;
+          receipts are sorted by mtime, newest wins)
+    src2  reality: the file/test present on disk under root + the cost ledger's own
+          record that the command actually ran (entry key carries sha8(command),
+          the same derivation agent_verify writes when a chain runs); for
+          file-exists the receipt's journal changes[] (added/modified/deleted) is
+          the second capture mechanism instead of bare disk
+
+    both paths produce agreeing evidence   -> VERIFIED, annotated dual-source
+    either path contradicts reality        -> FABRICATED (both evidences printed)
+    either path produces no evidence       -> UNVERIFIED (never upgraded on absence)
+
+kind=number has no second path (the cited artifact is the only source) and never
+upgrades. A receipt or ledger that was named but cannot be parsed refuses the mode
+(exit 3, fail-closed) -- a second opinion that cannot trust its own sources is not
+an opinion. Attribution: the third party re-derives and diffs, it does not "take
+another look" -- independent recomputation, arXiv:2610.12234-style.
+
 Exit codes: 0 all VERIFIED; 1 contains UNVERIFIED; 2 contains FABRICATED -- the
 loudest alarm, treat the whole claim set as hostile; 3 bad input (malformed claims
 line, machine path in a claim, bad invocation -- fail-closed, nothing is believed
-from an unreadable claim set). Receipts that fail to parse are counted and noted,
-never used as evidence.
+from an unreadable claim set). Both modes share these codes. Receipts that fail to
+parse are counted and noted, never used as evidence (audit mode); named second-
+opinion sources refuse instead (fail-closed where the mode's whole point is
+cross-checking).
 
 Output is pure ASCII (claims are printed backslash-escaped). Machine-path shapes
 in any claim field refuse the whole audit: receipts and audits may be committed,
@@ -68,6 +98,13 @@ import json
 import os
 import re
 import sys
+
+try:
+    import ledger  # same tools directory; the second source reads the cost ledger's run keys
+except ImportError:
+    # A traceback exit would masquerade as exit 1 (UNVERIFIED) and silently pass gates;
+    # degrading here keeps the tri-state contract, and -Ledger then refuses loudly.
+    ledger = None
 
 # Same shapes privacy_scan hunts for; a claims file quoting local paths would see
 # them echoed into receipts. Scan PARSED string values, not raw lines -- JSON
@@ -84,7 +121,7 @@ VERIFIED, UNVERIFIED, FABRICATED = "VERIFIED", "UNVERIFIED", "FABRICATED"
 
 
 def parse_args(argv):
-    out = {"claims": "", "root": "", "receipts": []}
+    out = {"claims": "", "root": "", "receipts": [], "receipt": "", "ledger": ""}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -95,8 +132,9 @@ def parse_args(argv):
         val = argv[i + 1] if i + 1 < len(argv) else ""
         if name == "receipts":
             out["receipts"].extend([x for x in val.split(",") if x.strip()])
-        elif name in ("claims", "root"):
-            out[name] = val
+        elif name in ("claims", "root", "receipt", "ledger",
+                      "claims-file", "claimsfile"):
+            out[{"claims-file": "claims", "claimsfile": "claims"}.get(name, name)] = val
         else:
             return None, f"unknown flag {a}"
         i += 2
@@ -271,15 +309,17 @@ def verify_one(kind, claim, root, receipts):
     return UNVERIFIED, f"no verifier for kind '{claim['kind']}' (unknown kinds certify nothing)"
 
 
-def verify_atom(atom, root, receipts):
+def verify_atom(atom, root, receipts, so_ctx=None):
     kind = str(atom.get("kind", "")).strip().lower()
     if kind == AGGREGATE_KIND:
         return UNVERIFIED, ("aggregate cannot serve as its own atom "
                             "(decomposition does not recurse)")
+    if so_ctx is not None:
+        return so_verdict(kind, atom, root, so_ctx[0], so_ctx[1])
     return verify_one(kind, atom, root, receipts)
 
 
-def verify_aggregate(claim, root, receipts):
+def verify_aggregate(claim, root, receipts, so_ctx=None):
     """Process supervision: the aggregate verdict is computed from atom verdicts,
     never from the aggregate sentence itself. Rules pinned (see usage):
     any F -> F; all V -> V; any U (incl. missing/empty decomposition) -> U."""
@@ -290,7 +330,7 @@ def verify_aggregate(claim, root, receipts):
                             "no pass: 'all green' has no standing as one sentence)"), []
     subs = []
     for i, atom in enumerate(dec, start=1):
-        v, ev = verify_atom(atom, root, receipts)
+        v, ev = verify_atom(atom, root, receipts, so_ctx)
         subs.append((i, str(atom.get("claim", "")), v, ev))
     f_idx = [str(i) for i, _t, v, _e in subs if v == FABRICATED]
     if f_idx:
@@ -300,7 +340,148 @@ def verify_aggregate(claim, root, receipts):
     if u_idx:
         return UNVERIFIED, (f"atom(s) {', '.join(u_idx)} lack evidence -- an aggregate "
                             f"with an unevidenced atom is UNVERIFIED"), subs
-    return VERIFIED, f"conjunction of {len(dec)} atom(s), all VERIFIED", subs
+    tail = " (dual-source)" if so_ctx is not None else ""
+    return VERIFIED, f"conjunction of {len(dec)} atom(s), all VERIFIED{tail}", subs
+
+
+def cmd_sha8(text):
+    """Same derivation agent_verify writes into cost-ledger run keys
+    (av|<runid>|cmd<idx>|sha8(command)) -- the ledger can therefore testify that a
+    command actually ran without storing the command text itself."""
+    return hashlib.sha256(str(text).encode("utf-8", "replace")).hexdigest()[:8]
+
+
+def ledger_records(keys, command):
+    """The ledger's own key embeds sha8(command) as its command-identifying part,
+    so corroboration is containment, not equality."""
+    h = cmd_sha8(command)
+    return any(h in k for k in keys)
+
+
+def load_so_receipts(a):
+    """(receipts newest-first, "") for the second opinion, or (None, reason).
+
+    Unlike load_receipts, a receipt without run[] is still loaded (its journal
+    changes[] can testify for file-exists). A source that was named but cannot be
+    parsed refuses -- the mode's whole point is cross-checking, and a second
+    opinion must not silently run on fewer sources than it was given."""
+    paths = []
+    if a.get("receipt"):
+        paths.append(a["receipt"])
+    for pat in a.get("receipts", []):
+        matches = [pat] if os.path.isfile(pat) else sorted(glob.glob(pat))
+        if not matches:
+            return None, f"receipt path/glob matched nothing: {pat}"
+        paths.extend(matches)
+    out = []
+    for p in dict.fromkeys(paths):
+        try:
+            with open(p, "r", encoding="utf-8-sig") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as ex:
+            return None, f"receipt unreadable ({os.path.basename(p)}): {ex}"
+        if not isinstance(doc, dict):
+            return None, f"receipt is not a JSON object: {os.path.basename(p)}"
+        runs = [(r.get("command", ""), r.get("exit")) for r in doc.get("run", [])
+                if isinstance(r, dict)]
+        chg = []
+        changes = doc.get("changes")
+        if isinstance(changes, list):
+            for c in changes:
+                m = (re.match(r"\s*journal:\s+(added|deleted|modified)\s+(\S+)", c)
+                     if isinstance(c, str) else None)
+                if m:
+                    chg.append((m.group(1), m.group(2).replace("\\", "/")))
+        out.append({"path": p, "mtime": os.path.getmtime(p), "runs": runs, "changes": chg})
+    out.sort(key=lambda r: -r["mtime"])
+    return out, ""
+
+
+def load_ledger_keys(path):
+    """(key set, "") from the cost ledger; (None, "") when no -Ledger was given
+    (the second source then cannot corroborate command-ran/test-pass runs);
+    (None, reason) when the ledger exists but is corrupt (caller refuses)."""
+    if not path:
+        return None, ""
+    if ledger is None:
+        return None, "ledger module unavailable (second-opinion expects tools/ledger.py beside it)"
+    entries = ledger.load(path)
+    if entries is None:
+        return None, "cost ledger is corrupt -- refusing (a broken book certifies nothing)"
+    return {str(e.get("key", "")) for e in entries if isinstance(e, dict)}, ""
+
+
+def so_rederive(kind, claim, root, rc, keys):
+    """Source 2 re-derivation: disk reality + ledger run records (or the receipt's
+    journal changes for file-exists). VERIFIED only from positive evidence."""
+    if kind == "test-pass":
+        target = find_test_target(claim)
+        if not target:
+            return UNVERIFIED, "src2: no test file identifiable in the claim"
+        full = under_root(root, target)
+        if not full or not os.path.isfile(full):
+            return FABRICATED, f"src2: disk -- claimed test file does not exist under root: {target}"
+        if rc is None:
+            return UNVERIFIED, "src2: ledger -- no receipt given, no command to trace"
+        tn = target.replace("\\", "/")
+        cmds = [c for c, _e in rc["runs"] if tn in normalize_cmd(c).replace("\\", "/")]
+        if not cmds:
+            return UNVERIFIED, "src2: ledger -- the receipt records no command for this test"
+        if keys is None:
+            return UNVERIFIED, "src2: ledger -- none given (pass -Ledger cost-ledger.json)"
+        hits = [c for c in cmds if ledger_records(keys, c)]
+        if not hits:
+            return UNVERIFIED, ("src2: ledger -- does not record the receipt's test "
+                                "command (the run left no ledger trace)")
+        return VERIFIED, (f"src2: disk+ledger -- file present, ledger records "
+                          f"sha8 {cmd_sha8(hits[0])}")
+    if kind == "command-ran":
+        cmd = claim.get("command")
+        if not (isinstance(cmd, str) and cmd.strip()):
+            cmd = str(claim.get("claim", ""))
+        cmd = normalize_cmd(cmd)
+        if not cmd:
+            return UNVERIFIED, "src2: no command identifiable in the claim"
+        if keys is None:
+            return UNVERIFIED, "src2: ledger -- none given (pass -Ledger cost-ledger.json)"
+        if ledger_records(keys, cmd):
+            return VERIFIED, f"src2: ledger -- records sha8 {cmd_sha8(cmd)} (the chain ran it)"
+        return UNVERIFIED, "src2: ledger -- does not record this command"
+    if kind == "file-exists":
+        target = file_target(claim)
+        if not target:
+            return UNVERIFIED, "src2: no file path identifiable in the claim"
+        full = under_root(root, target)
+        if not full or not os.path.isfile(full):
+            return FABRICATED, f"src2: disk -- claimed file does not exist under root: {target}"
+        if rc is None:
+            return UNVERIFIED, "src2: journal -- no receipt given, nothing to cross-check"
+        tn = target.replace("\\", "/")
+        acts = [(ac, p) for ac, p in rc["changes"]
+                if p == tn or p.endswith("/" + tn) or tn.endswith("/" + p)]
+        if not acts:
+            return UNVERIFIED, "src2: journal -- the receipt records nothing for this file"
+        if any(ac == "deleted" for ac, _p in acts):
+            return FABRICATED, "src2: journal -- the receipt records this file DELETED"
+        return VERIFIED, ("src2: journal -- the receipt records "
+                          + "/".join(sorted({ac for ac, _p in acts})) + " for this file")
+    if kind == "number":
+        return UNVERIFIED, ("src2: no independent second path exists for kind number "
+                            "(the cited artifact is the only source)")
+    return UNVERIFIED, f"src2: no verifier for kind '{claim.get('kind')}'"
+
+
+def so_verdict(kind, claim, root, rc, keys):
+    """Diff of two independent re-derivations. VERIFIED only when BOTH sources
+    produce agreeing evidence (dual-source); any contradiction is FABRICATED with
+    both evidences attached; absence degrades to UNVERIFIED, never an upgrade."""
+    v1, ev1 = verify_one(kind, claim, root, [rc] if rc is not None else [])
+    v2, ev2 = so_rederive(kind, claim, root, rc, keys)
+    if v1 == FABRICATED or v2 == FABRICATED:
+        return FABRICATED, f"downgraded -- src1: {ev1} | {ev2}"
+    if v1 == VERIFIED and v2 == VERIFIED:
+        return VERIFIED, f"dual-source -- src1: {ev1} | {ev2}"
+    return UNVERIFIED, f"not corroborated -- src1: {ev1} | {ev2}"
 
 
 def load_claims(path):
@@ -358,7 +539,12 @@ def load_claims(path):
 
 
 def main(argv):
-    a, err = parse_args(argv)
+    mode = "audit"
+    rest = list(argv)
+    if rest and rest[0].lstrip("-").lower() in ("second-opinion", "secondopinion"):
+        mode = "second-opinion"
+        rest = rest[1:]
+    a, err = parse_args(rest)
     if err:
         print(f"claim_audit: {err}")
         return 3
@@ -373,6 +559,12 @@ def main(argv):
         print(f"claim_audit: REFUSED -- claims file untrustworthy: {err} "
               f"(fail-closed: nothing is believed from a half-readable claim set)")
         return 3
+    if mode == "audit":
+        return run_audit(a, claims)
+    return run_second_opinion(a, claims)
+
+
+def run_audit(a, claims):
     receipts, unreadable = load_receipts(a["receipts"])
 
     print(f"claim_audit: {len(claims)} claim(s) from {os.path.basename(a['claims'])}, "
@@ -411,6 +603,60 @@ def main(argv):
               "taken as true")
         return 1
     print("verdict: all claims verified against recorded evidence")
+    return 0
+
+
+def run_second_opinion(a, claims):
+    rcs, err = load_so_receipts(a)
+    if rcs is None:
+        print(f"claim_audit: REFUSED -- second-opinion source unusable: {err}")
+        return 3
+    keys, err = load_ledger_keys(a["ledger"])
+    if keys is None and err:
+        print(f"claim_audit: REFUSED -- second-opinion source unusable: {err}")
+        return 3
+    rc = rcs[0] if rcs else None
+    src1 = os.path.basename(rc["path"]) if rc else "none"
+    src2 = os.path.basename(a["ledger"]) if a["ledger"] else "none"
+    print(f"claim_audit second-opinion: {len(claims)} claim(s) from "
+          f"{os.path.basename(a['claims'])}, src1 receipt={src1} (freshest), "
+          f"src2 ledger={src2} + disk under root")
+    counts = {VERIFIED: 0, UNVERIFIED: 0, FABRICATED: 0}
+    dual = 0
+    agg_count = 0
+    atom_total = 0
+    for idx, claim in enumerate(claims, start=1):
+        kind = claim["kind"].strip().lower()
+        subs = []
+        if kind == AGGREGATE_KIND:
+            verdict, ev, subs = verify_aggregate(claim, a["root"], [], (rc, keys))
+            agg_count += 1
+            atom_total += len(subs)
+        else:
+            verdict, ev = so_verdict(kind, claim, a["root"], rc, keys)
+        counts[verdict] += 1
+        if verdict == VERIFIED and "dual-source" in ev:
+            dual += 1
+        print(f"  [{idx}] {verdict:<10} {ascii_safe(claim['claim'])}")
+        # 240, not the audit mode's 160: the two-source evidence must survive printing
+        # whole -- a truncated reason reads as no reason.
+        print(f"      {verdict}: {ascii_safe(ev, 240)}")
+        for si, stext, sv, sev in subs:
+            print(f"      atom[{si}] {sv:<10} {ascii_safe(stext, 60)}")
+            print(f"        {sv}: {ascii_safe(sev, 200)}")
+    print(f"summary: total={len(claims)} verified={counts[VERIFIED]} "
+          f"unverified={counts[UNVERIFIED]} fabricated={counts[FABRICATED]}")
+    extra = (f" aggregates={agg_count} atoms={atom_total}" if agg_count else "")
+    print(f"summary: dual-source={dual}{extra}")
+    if counts[FABRICATED]:
+        print("verdict: FABRICATED present -- the second source contradicts the "
+              "claim(s); treat the whole claim set as hostile")
+        return 2
+    if counts[UNVERIFIED]:
+        print("verdict: UNVERIFIED present -- claims the independent re-derivation "
+              "could not double-confirm must not be taken as true")
+        return 1
+    print("verdict: all claims re-derived through two independent evidence paths")
     return 0
 
 
