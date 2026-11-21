@@ -19,6 +19,7 @@ mod selection;
 mod shadow;
 mod status;
 mod trace;
+pub mod trace_invariants;
 mod trace_store;
 
 pub use admission::{admit, admit_with_claim, dependency_gate};
@@ -58,6 +59,7 @@ pub use trace::{
     Actor, AppendOutcome, EventId, LogicalTime, SpanId, TraceEvent, TraceEventKind, TraceFold,
     TraceId, TraceLog, TracePayload,
 };
+pub use trace_invariants::{TraceInvariant, TraceReport, TraceViolation, check as check_trace};
 pub use trace_store::{TraceEventStore, events_from_step};
 pub use trit_core::value::Ternary;
 pub use trit_schedule::{Dependency, MAX_TASKS, Resources, Task};
