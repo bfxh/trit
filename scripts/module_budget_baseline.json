@@ -1915,6 +1915,10 @@
       "lines": 774
     },
     {
+      "file": "crates/trit-ops/src/interval.rs",
+      "lines": 766
+    },
+    {
       "file": "crates/trit-ops/src/lib.rs",
       "lines": 37
     },

@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added（内核数值完整性 ①：双精度保守区间算术）
+
+- `trit-ops::interval`：f64 保守区间（活区间 `lo≤hi` 且两端有限；Empty 是唯一
+  合法的 NaN 形态 `NaN,NaN`），语义决策表定死并测试——构造端点 NaN/±Inf/倒序
+  Empty 化、div 含零分母（含端点 0）Empty（拒绝而非全区间：全区间=信息全丢还
+  假装有答案，Empty 强制调用方显式处理）、sqrt 负域 Empty、端点溢出（含加宽
+  自身溢出）Empty；add/sub/mul/div/sqrt 每次运算后 lo/hi 各向外加宽 1 ulp
+  （无定向舍入时用位操作 nextafter 补足，跨 ±0 平台落 ±最小 subnormal；
+  LANDMINE 注释：加宽是正确性代价不是精度特性）。出处只给名字：Moore 1966；
+  Moore–Kearfott–Cloud 2009；IEEE 1788-2015（rigorous numerics 标准文本）。
+- 常量 π/e 按"最近 double ±1 ulp"夹逼（真值与最近 double 相距 ≤0.5 ulp，
+  ±1 ulp 必夹住）。
+- property 测试（手写 xorshift64*，零新依赖）：随机区间运算与 i128 精确有理
+  真值逐例对照（add/sub 端点精确、mul/div 四端点组合、sqrt 平方精确回代），
+  1 万例/运算 × 5；含包含单调（x⊆y ⟹ x∘z ⊆ y∘z 且 z∘x ⊆ z∘y，除法右参限于
+  同号非零定义域）。
+- 如实界限：溢出/未定义折叠 Empty 是中断语义，不参与包含单调（确定性测试
+  钉住）；真实坑记录 docs/ERRORS.md L122（±0 平台的 ulp 加宽跳档，配测试名）。
+
 ### Added（资源硬帽：run-caps.py 内核级资源上限 + agent-verify --caps 包裹）
 
 - `tools/run_caps.py`（+`run-caps.sh`/`run-caps.ps1` 转发器，stdlib only，ctypes）：
