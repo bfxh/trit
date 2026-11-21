@@ -96,4 +96,4 @@
   主库删除审批与痛点语料（`.git` 目录=主检出、删除要人批；`tools/pitfalls.py` 语料只启不发）。
 - 单一入口 `tools/agent_verify.py`：编排链任一闸拒绝整体拒绝，回执纯 ASCII；子智能体带
   `--agent-id`；快速命令块与回执读法见护栏手册 §快速命令块、§验收口径
-  （`pwsh tools/selftest.ps1` 362 条全绿）。
+  （`pwsh tools/selftest.ps1` 410 条全绿）。
