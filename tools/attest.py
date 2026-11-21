@@ -38,6 +38,30 @@ bounded retry; a holder that will not release within the window makes appenders
 refuse (fail-closed) -- the lock is never broken automatically, same discipline as
 agent_verify's chain.lock.
 
+Durability (crash consistency, honest Windows boundary): an append is one
+full write of the line plus its newline, followed by os.fsync on the file
+handle before close. os.fsync on Windows is FlushFileBuffers on that handle --
+the closest stdlib equivalent of fsync(2); a directory-level fsync does not
+exist in the Windows stdlib surface (there is no openable directory fd), so
+name-entry durability after a power cut is a stated boundary, not a promise.
+A process kill does not lose OS-buffered writes, so within-simulator kills
+already preserve every confirmed line; fsync covers the power-loss class.
+
+Recovery scan (load time, physical truncation only): a load that finds the
+LAST line unparseable AND without its terminating newline treats it as a
+truncated tail (the crash/power-loss signature -- a full write persists any
+prefix of "line\n", so a real truncation artifact never carries the newline).
+The bad tail is quarantined whole-line into the recycle bin
+(<store>/trash, via trash.put_paths -- never raw-deleted), the ledger file is
+truncated to the last intact line, and the load prints
+"recovered: truncated N bytes (quarantined at <path>)". Nothing is silently
+dropped and a bad tail never wedges the book forever; the recovered prefix is
+still fully re-verified by verify_chain, and an append may continue on it.
+A bad line anywhere BEFORE the tail, or a bad tail line that still has its
+newline, is logical corruption -- no recovery, the load refuses (fail-closed)
+and verify keeps gatekeeping (that division is deliberate: the scan repairs
+physics, the chain verifies logic).
+
 Exit codes: append 0 recorded / 1 refused (broken chain, duplicate, lock, corrupt
 file) / 2 bad invocation; verify 0 intact / 1 broken or missing (an audit refuses
 to say OK about nothing); balance 0 (zero is an honest answer, message says why)
@@ -59,6 +83,7 @@ import time
 from datetime import datetime
 
 import ledger  # same tools directory; one loader for the cost-ledger shape on import
+import trash   # same tools directory; the recovery scan quarantines bad tails, never raw-deletes
 
 GENESIS_PREV = "0" * 64
 KINDS = ("spend", "grant", "correction")
@@ -111,29 +136,119 @@ def ledger_path(store):
     return os.path.join(store, LEDGER_NAME)
 
 
+def _quarantine_bytes(site_root, payload, tag):
+    """(bin_relpath, byte_count, "") or ("", 0, error): move the bad-tail bytes into the
+    recycle bin under <site_root>/trash -- the bin's iron rule, never a raw delete. The
+    bytes land as one .part file, ledgered with a reason, so nothing vanishes."""
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    tmp = os.path.join(site_root, f"{tag}.tail-{stamp}-{os.getpid()}.part")
+    try:
+        with open(tmp, "wb") as fh:
+            fh.write(payload)
+            fh.flush()
+            os.fsync(fh.fileno())
+        entries, err = trash.put_paths(site_root, site_root, [tmp],
+                                       f"{tag}-tail-recovery:{now_iso()}")
+        if err:
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            return "", 0, err
+        e = entries[0]
+        return f"trash/{e['blob']}", len(payload), ""
+    except OSError as ex:
+        try:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+        except OSError:
+            pass
+        return "", 0, f"quarantine write failed ({ex})"
+
+
+def _truncate_file(path, keep_bytes):
+    """Cut the file down to keep_bytes and flush that fact to the handle (fsync)."""
+    fd = os.open(path, os.O_WRONLY)
+    try:
+        os.ftruncate(fd, keep_bytes)
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
 def load_chain(path):
     """(entries, "") or (None, reason). One bad line refuses the WHOLE file -- a
     partially-read chain would let a verifier bless the intact prefix while the tail
-    rots, which is the exact lie the chain exists to prevent."""
+    rots, which is the exact lie the chain exists to prevent. The one exception is
+    physical truncation (see module docstring): an unparseable LAST line with no
+    terminating newline is quarantined whole into the bin, the file is truncated to
+    the last intact line, and the load proceeds on the verified prefix.
+
+    Read in binary and decoded per line: a bit flip that breaks UTF-8 must be a clean
+    per-line refusal (or tail recovery), never a traceback from a whole-file decode.
+    """
     if not os.path.exists(path):
         return [], ""
-    entries = []
     try:
-        with open(path, "r", encoding="utf-8-sig") as fh:
-            for ln, raw in enumerate(fh, start=1):
-                raw = raw.strip()
-                if not raw:
-                    continue
-                try:
-                    e = json.loads(raw)
-                except ValueError as ex:
-                    return None, f"line {ln} is not valid JSON ({ex})"
-                if not isinstance(e, dict) or "payload_hash" not in e:
-                    return None, f"line {ln} is not a chain entry"
-                entries.append(e)
+        with open(path, "rb") as fh:
+            raw = fh.read()
     except OSError as ex:
         return None, f"unreadable ({ex})"
+    pieces = raw.split(b"\n")
+    if pieces and pieces[-1] == b"":
+        pieces.pop()  # a trailing newline ends the last real line; the empty piece is not one
+    entries = []
+    for idx, chunk in enumerate(pieces):
+        ln = idx + 1
+        text = chunk.strip()
+        if not text:
+            continue
+        try:
+            line_text = text.decode("utf-8-sig")
+        except UnicodeDecodeError as ex:
+            return _load_chain_on_bad_line(path, raw, pieces, idx, ln,
+                                           f"line {ln} is not decodable ({ex})")
+        try:
+            e = json.loads(line_text)
+        except ValueError as ex:
+            return _load_chain_on_bad_line(path, raw, pieces, idx, ln,
+                                           f"line {ln} is not valid JSON ({ex})")
+        if not isinstance(e, dict) or "payload_hash" not in e:
+            return None, f"line {ln} is not a chain entry"
+        entries.append(e)
     return entries, ""
+
+
+def _load_chain_on_bad_line(path, raw, pieces, idx, ln, reason):
+    """Route one bad line: physical truncation of the tail -> quarantine + truncate +
+    reload; anything else -> refuse with the line named (fail-closed).
+
+    Truncation signature: the bad line is the LAST line AND the file does not end with
+    a newline. A newline-terminated bad line was written whole by something, not cut
+    by physics -- that is logical corruption and stays refuse-only.
+    """
+    is_last_line = idx == len(pieces) - 1
+    ends_with_newline = raw.endswith(b"\n")
+    if not (is_last_line and not ends_with_newline):
+        return None, reason
+    keep = sum(len(p) + 1 for p in pieces[:idx])  # bytes of every intact line plus its newline
+    bad = raw[keep:]
+    if not bad.strip():
+        return None, reason
+    site_root = os.path.dirname(os.path.abspath(path)) or "."
+    os.makedirs(site_root, exist_ok=True)
+    rel, n, err = _quarantine_bytes(site_root, bad, "attest-ledger")
+    if err:
+        return None, (f"line {ln} looks like a truncated tail but the recycle bin refused "
+                      f"the quarantine ({err}) -- load refuses, bytes untouched (fail-closed)")
+    try:
+        _truncate_file(path, keep)
+    except OSError as ex:
+        return None, (f"truncated tail seen but the file could not be truncated back "
+                      f"({ex}) -- load refuses, quarantine entry {rel} holds the bytes")
+    print(f"attest: recovered: truncated {n} bytes (quarantined at {rel}) -- "
+          f"load continues on the intact prefix, verify still gatekeeps it")
+    return load_chain(path)
 
 
 def verify_chain(entries):
@@ -281,7 +396,15 @@ def append_entry(store, kind, agent_id, task_id, runid, claimed_tokens, note="")
                               ensure_ascii=True) + "\n"
             fd = os.open(path, os.O_APPEND | os.O_CREAT | os.O_WRONLY)
             try:
-                os.write(fd, line.encode("ascii"))
+                data = line.encode("ascii")
+                while data:
+                    # full-write loop: a short write would splice the next line into
+                    # the middle of this one (same failure shape as L115's two-write
+                    # writeln); os.fsync on the handle is the Windows FlushFileBuffers
+                    # semantics -- the power-loss boundary the module docstring states
+                    n = os.write(fd, data)
+                    data = data[n:]
+                os.fsync(fd)
             finally:
                 os.close(fd)
         except OSError as ex:

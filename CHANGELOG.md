@@ -36,6 +36,33 @@
   功能在无数故障组合下先模拟后上线，Jepsen 全过；单进程种子化故障注入，每个 bug 从
   种子可复现）+ WarpStream 把同一纪律用于整个 SaaS。本工具引入的是纪律，不是代码。
 
+### Added（稳定性 v2 ②：账本崩溃一致性——fsync 落盘纪律 + 坏尾恢复扫描）
+
+- **fsync 落盘纪律（Windows 语义边界如实标注）**：attest.py append 改为整行一次全写
+  （短写循环，短写会把下一行拼进上一行——L115 同族）+ `os.fsync` 句柄后才关；
+  ledger.py save flush + fsync。os.fsync 在 Windows 上是对句柄的 FlushFileBuffers——
+  stdlib 里最接近 fsync(2) 的等价物；目录级 fsync 在 Windows stdlib 无对应（目录句柄
+  不可开），断电后的名字项持久性是**声明的边界不是承诺**。进程击杀不丢 OS 缓冲写，
+  所以模拟器内 kill 已能检验"已确认的账不丢"（AM19）。
+- **恢复扫描（load 时，只修物理截断）**：attest JSONL 的**尾行**不完整（最后一行不可
+  解析且缺结尾换行——真实截断的签名：整行写持久化的任何前缀都不带换行）→ 坏尾字节
+  **整行隔离进回收站**（trash.put_paths，reason 记账，绝不裸删）+ 原路径 `ftruncate`
+  到最后完好行 + 报文 `recovered: truncated N bytes (quarantined at <path>)`；cost-ledger
+  JSON 文档账本 → 保留到最后一个完整 entry 并补 5 字节收尾脚手架（结构不是账目），
+  超出它的字节全部进回收站。绝不静默丢账（字节账本 kept+quarantined == loader 见到的
+  字节，AM18 钉死），也绝不因坏尾永久拒载（恢复后 append/add 立即可用，AM10/AM20c）。
+- **分工钉死**：恢复扫描只修**物理**（截断尾），**逻辑**坏链照旧 fail-closed——中段
+  位翻转、坏行、断链仍由 verify_chain 把关（AM16/AM23：拒绝时文件字节不动、零隔离、
+  无崩溃栈）；语义篡改对无哈希链的账本（cost-ledger 的 entry 值）设计上不可检——
+  防篡改账本是 attest 链（预算闸在有链时消费链余额），边界写进两工具 usage。
+- 配套加固（同一崩溃面）：ledger.load 对"合法 JSON 但非账本文档"（裸数组等）干净拒绝
+  exit 2（原实现 AttributeError 栈）；attest.load_chain 改二进制逐行解码——位翻转打出
+  坏 UTF-8 时按行点名拒绝或走尾恢复，不再整文件解码崩栈；中段坏行维持 AG7 的
+  fail-closed 原样（恢复不越权）。
+- selftest AM 组内恢复面断言：恢复三态（完好不动 / 截断隔离恢复 / 逻辑坏拒）、隔离
+  文件必在回收目录且 blob 落盘、字节账本、fsync 后 kill 不丢已确认账、cost-ledger
+  前缀保全与二次 load 幂等。
+
 ### Added（数学推理引擎 mre：推导图重执行器 + number 声明的推导第二证据路径）
 
 - `tools/mre.py`（stdlib only，fractions）：**精确算术推导图重执行器**——模型把计算过程
