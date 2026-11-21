@@ -34,6 +34,23 @@ Per-kind verifiers:
                  contradiction -- the command may have run outside the chain)
     anything else  UNVERIFIED (a verifier that does not exist cannot certify)
 
+Aggregate claims (kind=aggregate) -- a big statement is not evidence. "All green",
+"everything works" must carry "decomposition": a non-empty list of atomic claims,
+each with its own kind + claim (+ the fields that kind needs). The aggregate is
+judged ONLY through its atoms, rules pinned:
+
+    any atom FABRICATED                                -> aggregate FABRICATED
+    all atoms VERIFIED (the aggregate is a conjunction) -> aggregate VERIFIED
+    any atom UNVERIFIED, or no/empty decomposition      -> aggregate UNVERIFIED
+
+An aggregate without decomposition can never be VERIFIED -- the sentence "all
+green" has no standing at this gate until it is broken into checkable steps.
+Atoms must be atomic kinds: a kind=aggregate atom has no verifier (UNVERIFIED,
+decomposition does not recurse); a decomposition that is present but malformed
+(non-list, atom without claim/kind) refuses the whole file (exit 3, fail-closed).
+Attribution: judging the steps beats judging the summary -- OpenAI, "Let's Verify
+Step by Step" (2023), process supervision over result supervision.
+
 Exit codes: 0 all VERIFIED; 1 contains UNVERIFIED; 2 contains FABRICATED -- the
 loudest alarm, treat the whole claim set as hostile; 3 bad input (malformed claims
 line, machine path in a claim, bad invocation -- fail-closed, nothing is believed
@@ -175,13 +192,18 @@ def verify_test_pass(claim, root, receipts):
                         f"(not green just because it is claimed)")
 
 
-def verify_file_exists(claim, root):
+def file_target(claim):
     target = claim.get("file")
     if not (isinstance(target, str) and target.strip()):
         for tok in PATH_LIKE_RX.findall(str(claim.get("claim", ""))):
             target = tok
             break
-    if not (isinstance(target, str) and target.strip()):
+    return target if isinstance(target, str) and target.strip() else ""
+
+
+def verify_file_exists(claim, root):
+    target = file_target(claim)
+    if not target:
         return UNVERIFIED, "no file path identifiable in the claim"
     full = under_root(root, target)
     if not full or not os.path.isfile(full):
@@ -231,6 +253,56 @@ def verify_command_ran(claim, receipts):
     return UNVERIFIED, "no execution record for this command in receipts (absence of evidence is not proof it ran)"
 
 
+AGGREGATE_KIND = "aggregate"
+
+
+def verify_one(kind, claim, root, receipts):
+    """The per-kind dispatch every verdict (top-level claim or decomposition atom)
+    goes through. In audit mode `receipts` is the receipt corpus; in second-opinion
+    mode it is the single freshest receipt and so_verdict wraps this call."""
+    if kind == "test-pass":
+        return verify_test_pass(claim, root, receipts)
+    if kind == "file-exists":
+        return verify_file_exists(claim, root)
+    if kind == "number":
+        return verify_number(claim, root)
+    if kind == "command-ran":
+        return verify_command_ran(claim, receipts)
+    return UNVERIFIED, f"no verifier for kind '{claim['kind']}' (unknown kinds certify nothing)"
+
+
+def verify_atom(atom, root, receipts):
+    kind = str(atom.get("kind", "")).strip().lower()
+    if kind == AGGREGATE_KIND:
+        return UNVERIFIED, ("aggregate cannot serve as its own atom "
+                            "(decomposition does not recurse)")
+    return verify_one(kind, atom, root, receipts)
+
+
+def verify_aggregate(claim, root, receipts):
+    """Process supervision: the aggregate verdict is computed from atom verdicts,
+    never from the aggregate sentence itself. Rules pinned (see usage):
+    any F -> F; all V -> V; any U (incl. missing/empty decomposition) -> U."""
+    dec = claim.get("decomposition")
+    if not isinstance(dec, list) or not dec:
+        return UNVERIFIED, ("aggregate without decomposition -- an undecomposed "
+                            "aggregate claim cannot be VERIFIED (no decomposition, "
+                            "no pass: 'all green' has no standing as one sentence)"), []
+    subs = []
+    for i, atom in enumerate(dec, start=1):
+        v, ev = verify_atom(atom, root, receipts)
+        subs.append((i, str(atom.get("claim", "")), v, ev))
+    f_idx = [str(i) for i, _t, v, _e in subs if v == FABRICATED]
+    if f_idx:
+        return FABRICATED, (f"atom(s) {', '.join(f_idx)} contradict reality -- any "
+                            f"FABRICATED atom makes the aggregate FABRICATED"), subs
+    u_idx = [str(i) for i, _t, v, _e in subs if v == UNVERIFIED]
+    if u_idx:
+        return UNVERIFIED, (f"atom(s) {', '.join(u_idx)} lack evidence -- an aggregate "
+                            f"with an unevidenced atom is UNVERIFIED"), subs
+    return VERIFIED, f"conjunction of {len(dec)} atom(s), all VERIFIED", subs
+
+
 def load_claims(path):
     """(claims, "") or (None, reason). A bad line refuses the WHOLE file: half-read
     claim sets let the readable half pose as audited (fail-closed, line named)."""
@@ -253,9 +325,20 @@ def load_claims(path):
                     return None, f"line {ln}: 'claim' must be a non-empty string"
                 if not isinstance(k, str) or not k.strip():
                     return None, f"line {ln}: 'kind' must be a non-empty string"
+                if k.strip().lower() == AGGREGATE_KIND:
+                    dec = obj.get("decomposition")
+                    # Present-but-malformed refuses the whole file; absent/empty is a
+                    # verdict (aggregate UNVERIFIED), not a syntax error.
+                    if isinstance(dec, list) and dec and not all(
+                            isinstance(x, dict)
+                            and isinstance(x.get("claim"), str) and x["claim"].strip()
+                            and isinstance(x.get("kind"), str) and x["kind"].strip()
+                            for x in dec):
+                        return None, (f"line {ln}: aggregate decomposition must be a "
+                                      f"list of atoms, each with claim+kind")
                 strings = [c, k]
                 stack = [obj.get("source"), obj.get("test"), obj.get("file"),
-                         obj.get("command")]
+                         obj.get("command"), obj.get("decomposition")]
                 while stack:
                     item = stack.pop()
                     if isinstance(item, str):
@@ -295,26 +378,30 @@ def main(argv):
     print(f"claim_audit: {len(claims)} claim(s) from {os.path.basename(a['claims'])}, "
           f"{len(receipts)} receipt(s) scanned as evidence")
     counts = {VERIFIED: 0, UNVERIFIED: 0, FABRICATED: 0}
+    agg_count = 0
+    atom_total = 0
     for idx, claim in enumerate(claims, start=1):
         kind = claim["kind"].strip().lower()
-        if kind == "test-pass":
-            verdict, ev = verify_test_pass(claim, a["root"], receipts)
-        elif kind == "file-exists":
-            verdict, ev = verify_file_exists(claim, a["root"])
-        elif kind == "number":
-            verdict, ev = verify_number(claim, a["root"])
-        elif kind == "command-ran":
-            verdict, ev = verify_command_ran(claim, receipts)
+        subs = []
+        if kind == AGGREGATE_KIND:
+            verdict, ev, subs = verify_aggregate(claim, a["root"], receipts)
+            agg_count += 1
+            atom_total += len(subs)
         else:
-            verdict, ev = UNVERIFIED, f"no verifier for kind '{claim['kind']}' (unknown kinds certify nothing)"
+            verdict, ev = verify_one(kind, claim, a["root"], receipts)
         counts[verdict] += 1
         print(f"  [{idx}] {verdict:<10} {ascii_safe(claim['claim'])}")
         print(f"      {verdict}: {ascii_safe(ev, 160)}")
+        for si, stext, sv, sev in subs:
+            print(f"      atom[{si}] {sv:<10} {ascii_safe(stext, 60)}")
+            print(f"        {sv}: {ascii_safe(sev, 140)}")
     if unreadable:
         print(f"note: {unreadable} receipt path(s) unreadable or not receipts -- "
               f"counted, never used as evidence")
     print(f"summary: total={len(claims)} verified={counts[VERIFIED]} "
           f"unverified={counts[UNVERIFIED]} fabricated={counts[FABRICATED]}")
+    if agg_count:
+        print(f"summary: aggregates={agg_count} atoms={atom_total}")
     if counts[FABRICATED]:
         print("verdict: FABRICATED present -- claims contradict reality; treat the "
               "whole claim set as hostile")

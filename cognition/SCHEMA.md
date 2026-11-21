@@ -1,7 +1,7 @@
 # cognition/ 语料契约（SCHEMA）
 
-训练层与 owner 仓之间唯一的耦合是**数据形状**：四份 JSONL 契约的字段、类型、含义与隐私
-级别。本文以写入方工具的真实存储实现为准（`tools/signal.py`、`tools/watch.py`、
+训练层与 owner 仓之间唯一的耦合是**数据形状**：四份语料 JSONL 契约的字段、类型、含义与隐私
+级别（外加第 6 节的声明集契约——它是审计闸的输入形状，不是语料）。本文以写入方工具的真实存储实现为准（`tools/signal.py`、`tools/watch.py`、
 `tools/pitfalls.py`），collect.py 按这份契约读取，不 import 任何一方。
 
 ## 总则
@@ -155,3 +155,35 @@ balance 拒整份账并点名行号，不跳过、不半读。写入方：`attes
 （`spent_net = Σ spend + Σ correction`，grant 不进闸面——补给是记录不是扣除）；无链
 维持声明制并在回执 `budget.source` 如实标注 `declared-only`；链 verify 不过 → 闸整体
 拒绝（闸不信任自己的账就不放行）。
+
+## 6. claims 文件（声明分解契约）
+
+位置：由调用方传给 `tools/claim_audit.py -Claims <f>` 的 JSONL 声明集。审计产物可能随仓
+提交，所以 load 门口就拒收机器绝对路径（盘符 / 家目录 / /mnt/ 形态）——扫**解析后的字符串
+值**（含 decomposition 内部），不扫原始行（L110 同族纪律）。一行一条声明，两种行型：
+
+### 原子行（kind ∈ test-pass / file-exists / number / command-ran）
+
+| 字段 | 类型 | 含义 | 隐私级别 |
+|---|---|---|---|
+| `claim` | str | 声明正文；必须 root 相对，机器路径形态在门口被拒 | public-safe |
+| `kind` | str | verifier 名字；未知 kind 一律 UNVERIFIED（不存在的 verifier 作不了证） | public-safe |
+| `test` / `file` / `command` / `source.path` | str | 各 kind 的证据指针；缺省时从 claim 文本抽取 | public-safe |
+| `value` | int/float | number 行的显式数值（缺省时抽 claim 文本里的数字） | public-safe |
+
+### 聚合行（kind = "aggregate"）
+
+聚合声明是合取语义（"全部都成立"）。判定只吃逐原子判词，不吃结论句本身：
+
+| 字段 | 类型 | 含义 | 隐私级别 |
+|---|---|---|---|
+| `claim` | str | 聚合结论句。**零证据效力**——判定不经由它 | public-safe |
+| `kind` | str | `"aggregate"` | public-safe |
+| `decomposition` | list[atom] | 原子声明列表，每条 atom 自带 `claim`+`kind`（+该 kind 的证据字段）；**缺省或空列表 → 聚合 UNVERIFIED，永不 VERIFIED** | public-safe |
+
+聚合判定规则（钉死，无裁量）：任一原子 FABRICATED → 聚合 FABRICATED；全部原子 VERIFIED →
+聚合 VERIFIED；有任何 UNVERIFIED 原子 → 聚合 UNVERIFIED。atom 不许再是 aggregate（分解不
+递归，嵌套层没有 verifier → UNVERIFIED）；`decomposition` 在场但形状坏（非列表 / atom 缺
+claim+kind）→ 整份 fail-closed（exit 3）。出处：过程监督优于结果监督——OpenAI "Let's
+Verify Step by Step"（2023）。编排链把分解规模透传进回执（`claims.aggregates`/`claims.atoms`，
+appended 字段）。

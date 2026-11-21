@@ -3434,6 +3434,164 @@ if (-not $aiPy) {
 }
 
 
+# =====================================================================================
+"== AJ. 声明分解 + 独立复核：聚合声明过闸前必须拆条，同一声明两条独立证据路径都要走通 =="
+# 出处写进 claim_audit usage：①过程监督优于结果监督（OpenAI "Let's Verify Step
+# by Step", 2023）——聚合判定只吃逐原子判定，"全绿"一句话没有资格过闸；②独立复推
+# （arXiv:2610.12234 式）——第三方不是"帮看看"，是重新推导再 diff：最近回执一条路、
+# 盘上现实 + 台账运行痕迹另一条路，两源一致才 dual-source，矛盾降级 FABRICATED。
+$ajPy = $null
+foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
+    if (-not $c) { continue }
+    $ajSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    if (-not $ajSrc) { continue }
+    if ((& $ajSrc -c 'print(1)' 2>$null) -eq '1') { $ajPy = $ajSrc; break }
+}
+$ajTotal = 13
+if (-not $ajPy) {
+    "  SKIP  AJ0 找不到可用的 Python，跳过声明分解与独立复核检查"
+    $skipped += $ajTotal
+} else {
+    $caPy = Join-Path $tools 'claim_audit.py'
+    $avPy = Join-Path $tools 'agent_verify.py'
+    $ldPy = Join-Path $tools 'ledger.py'
+    $ajEnc = New-Object System.Text.UTF8Encoding($false)
+
+    function Invoke-AjCa([string[]]$caArgs) {
+        $script:ajOut = @(& $script:ajPy $caPy @caArgs 2>&1)
+        return $LASTEXITCODE
+    }
+    function Get-AjSha8([string]$s) {
+        $h = [System.Security.Cryptography.SHA256]::Create().ComputeHash([Text.Encoding]::UTF8.GetBytes($s))
+        return ([BitConverter]::ToString($h) -replace '-', '').Substring(0, 8).ToLowerInvariant()
+    }
+    function New-AjFixture([string]$root) {
+        New-Item -ItemType Directory -Force -Path (Join-Path $root 'pkg'), (Join-Path $root 'tests') | Out-Null
+        New-File (Join-Path $root 'pkg\core.py') "def f(): return 1$nl"
+        New-File (Join-Path $root 'pkg\__init__.py') ''
+        New-File (Join-Path $root 'tests\test_core.py') "from pkg.core import f${nl}def test_f(): assert f() == 1$nl"
+        New-File (Join-Path $root 'conftest.py') ''
+        Push-Location $root
+        & git init -q 2>&1 | Out-Null
+        & git add -A 2>&1 | Out-Null
+        & git -c user.email=a@b -c user.name=t commit -qm init 2>&1 | Out-Null
+        Pop-Location
+    }
+    function Invoke-AjAv([string]$root, [string]$store, [string]$receipt, [string[]]$extra) {
+        $argsAv = @($avPy, '-Root', $root, '-Changed', (Join-Path $root 'pkg\core.py'), '-Lang', 'python',
+                    '-Plan', (Join-Path $root 'plan.json'), '-Store', $store, '-Receipt', $receipt) + $extra
+        & $script:ajPy @argsAv 2>&1 | Out-Null
+        return $LASTEXITCODE
+    }
+    function Read-AjReceipt([string]$path) {
+        return [IO.File]::ReadAllText($path, $script:ajEnc) | ConvertFrom-Json
+    }
+
+    $AjC = Join-Path $Work 'aj-root'
+    New-Item -ItemType Directory -Force -Path (Join-Path $AjC 'pkg'), (Join-Path $AjC 'tests'), `
+        (Join-Path $Work 'aj-rc'), (Join-Path $Work 'aj-rc-both'), (Join-Path $Work 'aj-rc-orch') | Out-Null
+    New-File (Join-Path $AjC 'pkg\core.py') "def f(): return 1$nl"
+    New-File (Join-Path $AjC 'tests\test_core.py') "def test_f(): assert 1$nl"
+
+    # 回执夹具：同一命令的三种最近判词（绿/红）与 journal changes 两种（added/deleted）。
+    New-File (Join-Path $Work 'aj-rc\rc-green.json') '{"at":"fixture","run":[{"command":"python -m pytest tests/test_core.py -q","exit":0}]}'
+    Start-Sleep -Milliseconds 20
+    New-File (Join-Path $Work 'aj-rc\rc-red.json') '{"at":"fixture","run":[{"command":"python -m pytest tests/test_core.py -q","exit":1}]}'
+    [IO.File]::Copy((Join-Path $Work 'aj-rc\rc-green.json'), (Join-Path $Work 'aj-rc-both\rc-green.json'))
+    Start-Sleep -Milliseconds 20
+    New-File (Join-Path $Work 'aj-rc-both\rc-red.json') '{"at":"fixture","run":[{"command":"python -m pytest tests/test_core.py -q","exit":1}]}'
+    New-File (Join-Path $Work 'aj-rc-orch\rc-full.json') '{"at":"fixture","run":[{"command":"python -m pytest tests/test_core.py -q","exit":0}],"changes":["journal: added    pkg/core.py"]}'
+    New-File (Join-Path $Work 'aj-rc-orch\rc-del.json') '{"at":"fixture","run":[],"changes":["journal: deleted    pkg/core.py"]}'
+    New-File (Join-Path $Work 'aj-rc\rc-ghostgreen.json') '{"at":"fixture","run":[{"command":"python -m pytest tests/ghost_rs.rs -q","exit":0}]}'
+
+    # 台账夹具：cost-ledger 里那条运行痕迹的 key 带 sha8(command)，与 agent_verify 写账同源推导。
+    $ajCmd = 'python -m pytest tests/test_core.py -q'
+    $ajLed = Join-Path $Work 'aj-ledger'
+    New-Item -ItemType Directory -Force -Path $ajLed | Out-Null
+    & $ajPy $ldPy -Mode add -Ledger (Join-Path $ajLed 'cost-ledger.json') -Task 'av|ajt' `
+        -Key ('av|ajr1|cmd1|' + (Get-AjSha8 $ajCmd)) -Wall 1.5 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AJ0a 台账夹具落盘（key 含 sha8(command)，独立复核的第二证据源）' ''
+    $ajLedEmpty = Join-Path $Work 'aj-ledger-empty'
+    New-Item -ItemType Directory -Force -Path $ajLedEmpty | Out-Null
+    & $ajPy $ldPy -Mode add -Ledger (Join-Path $ajLedEmpty 'cost-ledger.json') -Task 'av|other' `
+        -Key 'av|other|cmd1|deadbeef00' -Wall 0.5 2>&1 | Out-Null
+    $ajLedBad = Join-Path $Work 'aj-ledger-bad'
+    New-Item -ItemType Directory -Force -Path $ajLedBad | Out-Null
+    [IO.File]::WriteAllText((Join-Path $ajLedBad 'cost-ledger.json'), '{bad', $ajEnc)
+
+    # --- AJ1-AJ4: 聚合判定三态规则（全 V→V / 一 F→F / 有 U→U / 缺分解→U）---
+    New-File (Join-Path $Work 'aj-agg-v.jsonl') ('{"claim":"fixture: pkg and tests all green","kind":"aggregate","decomposition":[' +
+        '{"claim":"pkg/core.py exists on disk","kind":"file-exists"},' +
+        '{"claim":"tests/test_core.py all green","kind":"test-pass"}]}' + $nl)
+    $aj1 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-agg-v.jsonl'), '-Root', $AjC, '-Receipts', (Join-Path $Work 'aj-rc\rc-green.json'))
+    $aj1v = @($ajOut | Where-Object { $_ -match '\] VERIFIED' }).Count
+    Assert-True ($aj1 -eq 0 -and $aj1v -eq 3 -and (($ajOut -join ' ') -match 'conjunction of 2 atom')) `
+        'AJ1 全原子 VERIFIED→聚合 VERIFIED exit 0（合取语义，逐原子判词都在输出里）' "e=$aj1 v=$aj1v"
+
+    New-File (Join-Path $Work 'aj-agg-f.jsonl') ('{"claim":"one fake atom inside","kind":"aggregate","decomposition":[' +
+        '{"claim":"pkg/core.py exists","kind":"file-exists"},' +
+        '{"claim":"tests/ghost_rs.rs all green","kind":"test-pass"}]}' + $nl)
+    $aj2 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-agg-f.jsonl'), '-Root', $AjC, '-Receipts', (Join-Path $Work 'aj-rc\rc-green.json'))
+    Assert-True ($aj2 -eq 2 -and (($ajOut -join ' ') -match 'any FABRICATED atom makes the aggregate FABRICATED')) `
+        'AJ2 一原子 FABRICATED→聚合 FABRICATED exit 2（任一 F 即 F，最响警报不因包装降级）' "e=$aj2"
+
+    New-File (Join-Path $Work 'aj-agg-u.jsonl') ('{"claim":"one unverifiable atom inside","kind":"aggregate","decomposition":[' +
+        '{"claim":"pkg/core.py exists","kind":"file-exists"},' +
+        '{"claim":"overhead 9.99x","kind":"number"}]}' + $nl)
+    $aj3 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-agg-u.jsonl'), '-Root', $AjC, '-Receipts', (Join-Path $Work 'aj-rc\rc-green.json'))
+    Assert-True ($aj3 -eq 1 -and (($ajOut -join ' ') -match 'unevidenced atom is UNVERIFIED')) `
+        'AJ3 有 UNVERIFIED 原子→聚合 UNVERIFIED exit 1（缺证据的部分不许被结论句吸收）' "e=$aj3"
+
+    New-File (Join-Path $Work 'aj-agg-nd.jsonl') ('{"claim":"all green everywhere, trust me","kind":"aggregate"}' + $nl)
+    $aj4 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-agg-nd.jsonl'), '-Root', $AjC, '-Receipts', (Join-Path $Work 'aj-rc\rc-green.json'))
+    Assert-True ($aj4 -eq 1 -and (($ajOut -join ' ') -match 'cannot be VERIFIED')) `
+        'AJ4 聚合缺 decomposition→UNVERIFIED exit 1（聚合级没有分解就不许 VERIFIED——"全绿"没有拆条没有资格过闸）' "e=$aj4"
+
+    # --- AJ5/AJ6: 空分解等同缺分解；原子级判词逐条可见 ---
+    New-File (Join-Path $Work 'aj-agg-e.jsonl') ('{"claim":"empty decomposition","kind":"aggregate","decomposition":[]}' + $nl)
+    $aj5 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-agg-e.jsonl'), '-Root', $AjC)
+    Assert-True ($aj5 -eq 1) 'AJ5 空 decomposition 数组→UNVERIFIED exit 1（空与缺同罪，不许拿空列表冒充拆条）' "e=$aj5"
+    $aj6 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-agg-v.jsonl'), '-Root', $AjC, '-Receipts', (Join-Path $Work 'aj-rc\rc-green.json'))
+    $aj6a = @($ajOut | Where-Object { $_ -match 'atom\[1\]' }).Count + @($ajOut | Where-Object { $_ -match 'atom\[2\]' }).Count
+    Assert-True ($aj6 -eq 0 -and $aj6a -ge 2) `
+        'AJ6 分解原子逐条打印判词（atom[1]/atom[2] 各带三态之一，过程可见而不是只给结论）' "e=$aj6 atoms=$aj6a"
+
+    # --- AJ7-AJ9: 分解形状坏/原子缺 kind/原子带机器路径 → 整份 fail-closed exit 3 ---
+    New-File (Join-Path $Work 'aj-agg-bad1.jsonl') ('{"claim":"atom not a dict","kind":"aggregate","decomposition":["just-a-string"]}' + $nl)
+    $aj7 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-agg-bad1.jsonl'), '-Root', $AjC)
+    Assert-True ($aj7 -eq 3) 'AJ7 decomposition 原子不是对象→exit 3 拒整份（半读的声明集不许有一半被当真）' "e=$aj7"
+    New-File (Join-Path $Work 'aj-agg-bad2.jsonl') ('{"claim":"atom missing kind","kind":"aggregate","decomposition":[{"claim":"only claim"}]}' + $nl)
+    $aj8 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-agg-bad2.jsonl'), '-Root', $AjC)
+    Assert-True ($aj8 -eq 3) 'AJ8 原子缺 kind→exit 3（没有 verifier 名字的原子不能作证）' "e=$aj8"
+    $ajMp = 'X' + ':/Us' + 'ers/someone/n.md'
+    New-File (Join-Path $Work 'aj-agg-mp.jsonl') ('{"claim":"mp in atom","kind":"aggregate","decomposition":[{"claim":"see ' + $ajMp + ' for detail","kind":"file-exists"}]}' + $nl)
+    $aj9 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-agg-mp.jsonl'), '-Root', $AjC)
+    Assert-True ($aj9 -eq 3) 'AJ9 机器路径藏在原子里→exit 3（隐私闸扫进 decomposition，拆条不许成为盘符路径的密道）' "e=$aj9"
+
+    # --- AJ10: 原子不许再是聚合（无递归 verifier→UNVERIFIED）---
+    New-File (Join-Path $Work 'aj-agg-nest.jsonl') ('{"claim":"nested aggregate","kind":"aggregate","decomposition":[' +
+        '{"claim":"inner agg","kind":"aggregate","decomposition":[{"claim":"pkg/core.py exists","kind":"file-exists"}]}]}' + $nl)
+    $aj10 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-agg-nest.jsonl'), '-Root', $AjC)
+    Assert-True ($aj10 -eq 1 -and (($ajOut -join ' ') -match 'cannot serve as its own atom')) `
+        'AJ10 原子嵌套 aggregate→UNVERIFIED exit 1（分解不递归，嵌套层没有 verifier 就不许作证）' "e=$aj10"
+
+    # --- AJ11/AJ12: 旧格式回归——纯原子声明文件行为与 summary 行形状不变 ---
+    New-File (Join-Path $Work 'aj-old-v.jsonl') ((@(
+        '{"claim":"pkg/core.py exists on disk","kind":"file-exists"}',
+        '{"claim":"tests/test_core.py all green","kind":"test-pass"}') -join $nl) + $nl)
+    $aj11 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-old-v.jsonl'), '-Root', $AjC, '-Receipts', (Join-Path $Work 'aj-rc\rc-green.json'))
+    Assert-True ($aj11 -eq 0 -and (($ajOut -join "`n") -match 'summary: total=2 verified=2 unverified=0 fabricated=0') `
+        -and (@($ajOut | Where-Object { $_ -match 'aggregates=' }).Count -eq 0)) `
+        'AJ11 旧格式回归：纯原子两 VERIFIED exit 0，summary 行逐字不变且不出现 aggregates 行（追加不改建）' "e=$aj11"
+    New-File (Join-Path $Work 'aj-old-f.jsonl') ((@(
+        '{"claim":"tests/ghost_rs.rs all green","kind":"test-pass"}',
+        '{"claim":"tests/test_red.py all green","kind":"test-pass"}') -join $nl) + $nl)
+    $aj12 = Invoke-AjCa @('-Claims', (Join-Path $Work 'aj-old-f.jsonl'), '-Root', $AjC, '-Receipts', (Join-Path $Work 'aj-rc\rc-green.json'))
+    Assert-True ($aj12 -eq 2) `
+        'AJ12 旧格式回归：幽灵测试照旧 FABRICATED exit 2（三态 exit 语义 0/1/2 保持）' "e=$aj12"
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped
 if ($failed -gt 0) { exit 1 }

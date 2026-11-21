@@ -753,6 +753,13 @@ def main(argv):
             doc["claims"] = {"file": os.path.basename(a["claims_file"]),
                              "total": int(m.group(1)), "verified": int(m.group(2)),
                              "unverified": int(m.group(3)), "fabricated": int(m.group(4))}
+        # decomposition pass-through, appended fields only: an aggregate-heavy claims
+        # set shows in the receipt how many sentences were decomposed into how many
+        # atoms (the aggregate verdict itself is computed inside claim_audit)
+        ma = re.search(r"summary: aggregates=(\d+) atoms=(\d+)", "\n".join(ca["out"]))
+        if ma and "claims" in doc:
+            doc["claims"]["aggregates"] = int(ma.group(1))
+            doc["claims"]["atoms"] = int(ma.group(2))
         if ca["code"] in (2, 3):
             for ln in ca["out"]:
                 print(ln)
