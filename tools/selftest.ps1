@@ -66,6 +66,123 @@ $cmdB = $planB.commands[0]
 Assert-True ($cmdB -match 'test_core\.py') 'B2 选中直接导入它的测试' $cmdB
 Assert-True ($cmdB -match 'test_dynamic\.py') 'B3 动态导入测试被强制纳入（用纳入消除未知）' $cmdB
 Assert-True ($cmdB -notmatch 'test_other\.py') 'B4 无关测试未被选中' $cmdB
+Assert-True ($planB.PSObject.Properties.Name -notcontains 'targets') 'B5 python 计划不新增 targets 字段（字段只追加，不改旧形态）' (($planB.PSObject.Properties.Name) -join ',')
+
+# =====================================================================================
+"== B(续). affected(rust): 减集下沉到 cargo target 级（ERRORS L37 的欠账） =="
+# 每个夹具是独立 cargo 工程（[workspace] 兜底）；cargo metadata 只解析清单，不编译源码，
+# 所以夹具的 .rs 只需要真实到"能表达 mod 结构"。断言钉死 soundness 行为本身：
+# 可达才选 target；cfg/path/macro/include/文件数上限 不可证就回退包级并留下 unproven 理由。
+$nl = [char]10
+$R1 = Join-Path $Work 'rs-targets'
+New-File (Join-Path $R1 '.git\HEAD') "ref: refs/heads/main`n"
+New-File (Join-Path $R1 'Cargo.toml') "[package]`nname = 'bx'`nversion = '0.1.0'`nedition = '2021'`n`n[workspace]`n"
+New-File (Join-Path $R1 'src\lib.rs') ((@(
+    'pub fn f() -> i32 { 1 }', '',
+    '#[cfg(feature = "gpu")]',
+    'mod gpu;', '',
+    '#[cfg(test)]',
+    'mod tests;') -join $nl) + $nl)
+New-File (Join-Path $R1 'src\gpu.rs') "pub fn g() {}`n"
+New-File (Join-Path $R1 'src\tests.rs') "#[test] fn t_lib() { assert_eq!(super::f(), 1); }`n"
+New-File (Join-Path $R1 'src\bin\only.rs') "fn main() {}`n"
+New-File (Join-Path $R1 'src\bin\other.rs') "fn main() {}`n"
+New-File (Join-Path $R1 'tests\t.rs') "#[test] fn t_int() { assert_eq!(bx::f(), 1); }`n"
+
+$outR1 = Join-Path $Work 'plan-r1.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R1 -Changed (Join-Path $R1 'src\bin\only.rs') -Lang rust -Out $outR1 | Out-Null
+$planR1 = Get-Content $outR1 -Raw | ConvertFrom-Json
+Assert-True ($planR1.proven -eq $true) 'B6 rust 单 bin 可达→proven 且只跑该 bin' ($planR1.unproven -join ';')
+Assert-True ($planR1.commands[0] -match '--bin only' -and $planR1.commands[0] -notmatch '--lib|--bin other|--test') 'B7 单 bin 命令不含 lib/其他 bin/test 选择器' $planR1.commands[0]
+Assert-True ($planR1.targets[0].mode -eq 'target-level' -and $planR1.targets[0].selected[0].kind -eq 'bin' -and $planR1.targets[0].selected[0].name -eq 'only' -and $planR1.targets[0].total -eq 4) 'B8 targets 数组形状：mode/selected/total' (($planR1.targets | ConvertTo-Json -Compress))
+
+$outR2 = Join-Path $Work 'plan-r2.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R1 -Changed (Join-Path $R1 'src\lib.rs') -Lang rust -Out $outR2 | Out-Null
+$planR2 = Get-Content $outR2 -Raw | ConvertFrom-Json
+Assert-True ($planR2.proven -eq $true -and $planR2.commands[0] -eq 'cargo test -p bx --no-fail-fast') 'B9 lib 变更→包级写法不退化（tests 对 lib 是 extern，全包受影响）' "$($planR2.commands[0]) / $($planR2.unproven -join ';')"
+Assert-True ($planR2.targets[0].mode -eq 'package-level' -and $planR2.targets[0].reason -match 'lib') 'B9b targets 数组写明包级原因' (($planR2.targets | ConvertTo-Json -Compress))
+
+$outR3 = Join-Path $Work 'plan-r3.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R1 -Changed (Join-Path $R1 'src\tests.rs') -Lang rust -Out $outR3 | Out-Null
+$planR3 = Get-Content $outR3 -Raw | ConvertFrom-Json
+Assert-True ($planR3.proven -eq $true -and $planR3.commands[0] -match '--lib' -and $planR3.commands[0] -notmatch '--bin|--test') 'B10 cfg(test) 单测文件变更→只选 --lib（不进 rlib，集成测试不受影响）' "$($planR3.commands[0]) / $($planR3.unproven -join ';')"
+
+$outR4 = Join-Path $Work 'plan-r4.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R1 -Changed (Join-Path $R1 'src\gpu.rs') -Lang rust -Out $outR4 | Out-Null
+$planR4 = Get-Content $outR4 -Raw | ConvertFrom-Json
+Assert-True ($planR4.proven -eq $true -and $planR4.commands[0] -eq 'cargo test -p bx --no-fail-fast') 'B11 cfg(feature) mod 文件按可达计（不冒进剔除，任何 feature 组合下都健全）' "$($planR4.commands[0]) / $($planR4.unproven -join ';')"
+
+$R2 = Join-Path $Work 'rs-cfgmiss'
+New-File (Join-Path $R2 '.git\HEAD') "ref: refs/heads/main`n"
+New-File (Join-Path $R2 'Cargo.toml') "[package]`nname = 'cx'`nversion = '0.1.0'`nedition = '2021'`n`n[workspace]`n"
+New-File (Join-Path $R2 'src\lib.rs') ((@('#[cfg(feature = "nope")]', 'mod ghost;', 'pub fn f() -> i32 { 1 }') -join $nl) + $nl)
+New-File (Join-Path $R2 'src\bin\only.rs') "fn main() {}`n"
+New-File (Join-Path $R2 'src\bin\other.rs') "fn main() {}`n"
+$outR5 = Join-Path $Work 'plan-r5.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R2 -Changed (Join-Path $R2 'src\bin\only.rs') -Lang rust -Out $outR5 | Out-Null
+$planR5 = Get-Content $outR5 -Raw | ConvertFrom-Json
+Assert-True ($planR5.proven -eq $true -and $planR5.commands[0] -match '--bin only') 'B12 cfg 关闭时 mod 文件可不存在：不算走查失败' ($planR5.unproven -join ';')
+
+$R3 = Join-Path $Work 'rs-pathmod'
+New-File (Join-Path $R3 '.git\HEAD') "ref: refs/heads/main`n"
+New-File (Join-Path $R3 'Cargo.toml') "[package]`nname = 'dx'`nversion = '0.1.0'`nedition = '2021'`n`n[workspace]`n"
+New-File (Join-Path $R3 'src\lib.rs') "pub fn f() -> i32 { 1 }`n"
+New-File (Join-Path $R3 'src\bin\big.rs') ((@('#[path = "big/asset.rs"]', 'mod asset;', 'fn main() { asset::run(); }') -join $nl) + $nl)
+New-File (Join-Path $R3 'src\bin\big\asset.rs') "pub fn run() {}`n"
+New-File (Join-Path $R3 'src\bin\other.rs') "fn main() {}`n"
+New-File (Join-Path $R3 'tests\t.rs') "#[test] fn t_int() { assert_eq!(dx::f(), 1); }`n"
+$outR6 = Join-Path $Work 'plan-r6.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R3 -Changed (Join-Path $R3 'src\bin\big\asset.rs') -Lang rust -Out $outR6 | Out-Null
+$planR6 = Get-Content $outR6 -Raw | ConvertFrom-Json
+Assert-True ($planR6.proven -eq $true -and $planR6.commands[0] -match '--bin big' -and $planR6.commands[0] -notmatch '--lib|--bin other|--test') 'B13 #[path] 字面量按静态路径解析→只选该 bin' "$($planR6.commands[0]) / $($planR6.unproven -join ';')"
+$outR7 = Join-Path $Work 'plan-r7.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R3 -Changed (Join-Path $R3 'src\bin\big.rs') -Lang rust -Out $outR7 | Out-Null
+$planR7 = Get-Content $outR7 -Raw | ConvertFrom-Json
+Assert-True ($planR7.proven -eq $true -and $planR7.commands[0] -match '--bin big' -and $planR7.commands[0] -notmatch '--lib') 'B14 target root 自身变更直接判可达（无需走查）' ($planR7.unproven -join ';')
+
+$R4 = Join-Path $Work 'rs-macro'
+New-File (Join-Path $R4 '.git\HEAD') "ref: refs/heads/main`n"
+New-File (Join-Path $R4 'Cargo.toml') "[package]`nname = 'mx'`nversion = '0.1.0'`nedition = '2021'`n`n[workspace]`n"
+New-File (Join-Path $R4 'src\lib.rs') "macro_rules! m { () => { mod gen; } }`n"
+New-File (Join-Path $R4 'src\bin\only.rs') "fn main() {}`n"
+New-File (Join-Path $R4 'src\bin\other.rs') "fn main() {}`n"
+$outR8 = Join-Path $Work 'plan-r8.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R4 -Changed (Join-Path $R4 'src\bin\only.rs') -Lang rust -Out $outR8 | Out-Null
+$planR8 = Get-Content $outR8 -Raw | ConvertFrom-Json
+Assert-True ($planR8.proven -eq $false -and $planR8.commands[0] -eq 'cargo test -p mx --no-fail-fast' -and (@($planR8.unproven) -match 'macro').Count -gt 0) 'B15 宏体声明 mod→回退包级 unproven（宏生成面不可证）' "$($planR8.commands[0]) / $($planR8.unproven -join ';')"
+
+$R5 = Join-Path $Work 'rs-include'
+New-File (Join-Path $R5 '.git\HEAD') "ref: refs/heads/main`n"
+New-File (Join-Path $R5 'Cargo.toml') "[package]`nname = 'ix'`nversion = '0.1.0'`nedition = '2021'`n`n[workspace]`n"
+New-File (Join-Path $R5 'src\lib.rs') "include!(`"extra.rs`");`n"
+New-File (Join-Path $R5 'src\bin\only.rs') "fn main() {}`n"
+New-File (Join-Path $R5 'src\bin\other.rs') "fn main() {}`n"
+$outR9 = Join-Path $Work 'plan-r9.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R5 -Changed (Join-Path $R5 'src\bin\only.rs') -Lang rust -Out $outR9 | Out-Null
+$planR9 = Get-Content $outR9 -Raw | ConvertFrom-Json
+Assert-True ($planR9.proven -eq $false -and (@($planR9.unproven) -match 'include').Count -gt 0 -and $planR9.commands[0] -eq 'cargo test -p ix --no-fail-fast') 'B16 include!() 粘贴条目→回退包级 unproven' "$($planR9.commands[0]) / $($planR9.unproven -join ';')"
+$outR10 = Join-Path $Work 'plan-r10.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R5 -Changed (Join-Path $R5 'src\lib.rs') -Lang rust -Out $outR10 | Out-Null
+$planR10 = Get-Content $outR10 -Raw | ConvertFrom-Json
+Assert-True ($planR10.proven -eq $true -and $planR10.commands[0] -eq 'cargo test -p ix --no-fail-fast') 'B17 root 自身变更无需走查→包级 proven（毒标记不误伤）' ($planR10.unproven -join ';')
+
+$outR11 = Join-Path $Work 'plan-r11.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R1 -Changed (Join-Path $R1 'src\bin\only.rs') -Lang rust -MaxFiles 2 -Out $outR11 | Out-Null
+$planR11 = Get-Content $outR11 -Raw | ConvertFrom-Json
+Assert-True ($planR11.proven -eq $false -and (@($planR11.unproven) -match 'cap').Count -gt 0 -and $planR11.commands[0] -eq 'cargo test -p bx --no-fail-fast') 'B18 文件访问数超上限→fail-closed 回退包级并注明原因' "$($planR11.commands[0]) / $($planR11.unproven -join ';')"
+
+$R6 = Join-Path $Work 'rs-deps'
+New-File (Join-Path $R6 '.git\HEAD') "ref: refs/heads/main`n"
+New-File (Join-Path $R6 'Cargo.toml') "[workspace]`nresolver = '2'`nmembers = ['a', 'b']`n"
+New-File (Join-Path $R6 'a\Cargo.toml') "[package]`nname = 'ax'`nversion = '0.1.0'`nedition = '2021'`n"
+New-File (Join-Path $R6 'a\src\lib.rs') "pub fn f() -> i32 { 1 }`n"
+New-File (Join-Path $R6 'a\src\bin\only.rs') "fn main() {}`n"
+New-File (Join-Path $R6 'b\Cargo.toml') "[package]`nname = 'bxx'`nversion = '0.1.0'`nedition = '2021'`n`n[dependencies]`nax = { path = '../a' }`n"
+New-File (Join-Path $R6 'b\src\lib.rs') "pub fn g() -> i32 { ax::f() }`n"
+$outR12 = Join-Path $Work 'plan-r12.json'
+& pwsh -NoProfile -File (Join-Path $tools 'affected.ps1') -Path $R6 -Changed (Join-Path $R6 'a\src\bin\only.rs') -Lang rust -Out $outR12 | Out-Null
+$planR12 = Get-Content $outR12 -Raw | ConvertFrom-Json
+Assert-True ($planR12.proven -eq $true -and $planR12.commands[0] -match '--bin only' -and $planR12.commands.Count -eq 2 -and $planR12.commands[1] -eq 'cargo test -p bxx --no-fail-fast') 'B19 目标级命令与依赖包命令分列（-p 选择器不能跨包混用）' (($planR12.commands) -join ' | ')
 
 # =====================================================================================
 "== C. affected(python): 没人导入的改动判 unproven（不允许 跑 0 个算通过）=="

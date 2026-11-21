@@ -640,10 +640,10 @@ pwsh tools/selftest.ps1
 结尾行必须长这样（实测）：
 
 ```text
-selftest: passed=362 failed=0 skipped=0
+selftest: passed=378 failed=0 skipped=0
 ```
 
-**必须 362 条全绿。** 30 组：A–Z 26 组 + AA/AB/AC/AD 四组（W 组 trash 19 条、X 组 git_safe、
+**必须 378 条全绿。**（affected 的 rust 减集下沉到 cargo target 级时 +16：B 组新增 B5 与 B(续) B6–B19，组数不变） 30 组：A–Z 26 组 + AA/AB/AC/AD 四组（W 组 trash 19 条、X 组 git_safe、
 Y 组 resume 32 条、Z 组 run_caps；AA 组 signal 35 条、AB 组 declutter 21 条、AC 组 watch 44 条、
 AD 组主库删除审批 / 污染 WARN 族 / pitfalls 24 条，是新增的四个观测与审批面）。护栏的断言全部
 遵循"先看着它响，才算数"：每条拒绝路径都有对应的判红用例（W13/W14 journal restore 走
