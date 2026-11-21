@@ -55,7 +55,7 @@
 | 文档 | 一句话 |
 |---|---|
 | [RESULTS.md](results/RESULTS.md) | 结果总目录（自动生成）：各族读到哪一步 |
-| [DOCTOR-V2.md](results/DOCTOR-V2.md) | doctor 开销治理：门缓存 1.26 s → 0.54 s（2.3×），Rust / 三进制 / 四进制评估与编排待办 |
+| [TEST-MATRIX.md](TEST-MATRIX.md) | 测试扩面：为什么是这些格子（四 crate 补测的读数与判据） |
 | [DEPTH-RESULTS.md](results/DEPTH-RESULTS.md) | 深度头结果（自动生成） |
 | [PARTS-RESULTS.md](results/PARTS-RESULTS.md) | 部件头结果（自动生成） |
 | [TEXTURE-RESULTS.md](results/TEXTURE-RESULTS.md) | 纹理容器结果（自动生成） |
@@ -127,6 +127,7 @@
 | 文档 | 一句话 |
 |---|---|
 | [BUILD-PERF.md](engineering/BUILD-PERF.md) | 构建性能：本机 / CI 实测、缓存边界、采纳与未采纳项 |
+| [DOCTOR-V2.md](engineering/DOCTOR-V2.md) | doctor 开销治理：门缓存 1.26 s → 0.54 s（2.3×），Rust / 三进制 / 四进制评估与编排待办 |
 | [WORKTREES.md](engineering/WORKTREES.md) | worktree 负责人表（`git worktree list` 实时生成） |
 | [AUTO-UPDATE.md](engineering/AUTO-UPDATE.md) | 自动更新与一键更新（`--check` / `--apply`） |
 | [VCS-BRANCH-ISSUES.md](engineering/VCS-BRANCH-ISSUES.md) | trit-vcs 分支与更新问题清单（主库侧观察，只记录不修） |

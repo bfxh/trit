@@ -14,7 +14,7 @@
   拒绝非 list 的 files 表、坏条目点名跳过且 restore 红、有损坏时不 bin 新文件（无法区分
   "快照后新增"与"被改坏的条目"就不猜）。同时记 L125：Windows 原生反斜杠是分隔符不是损坏
   （修 L124 时把正常快照全判 damaged，G5/G8 回归）。selftest 新增 AM25/AM25b/AM26 三条钉子。
-- `docs/results/DOCTOR-V2.md`：开销读数、机制、边界、Rust / 三进制 / 四进制评估（不替换）与
+- `docs/engineering/DOCTOR-V2.md`：开销读数、机制、边界、Rust / 三进制 / 四进制评估（不替换）与
   编排待办（doctor 的 simchain 面未接、缓存只覆盖 gates、journal 跨平台路径未测等）。
 
 ### Added（稳定性 v2 ①：simchain 链路确定性模拟测试器——黑盒 DST + 模拟报告落盘）
