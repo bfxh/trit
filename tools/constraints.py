@@ -34,6 +34,13 @@ Kernel rules (the DEFAULT_RULES ids) cannot be dropped by editing the table: a c
 a table missing one restores it for that run, loudly. A rule that silently narrows is a
 rule that silently does not exist.
 
+Scope pruning (default): a rule whose path scope intersects none of the changed files
+cannot trigger (the per-file loop would have skipped it), so it is not evaluated and
+not printed -- the finding surface only ever named in-scope rules, and now the noise
+is gone too. Correctness is pinned by selftest: pruned vs --no-prune must agree on
+BLOCK/WARN for randomized change sets. --no-prune restores the exhaustive walk for
+that one invocation.
+
 Ported from constraints.ps1; refusal texts and exit codes are kept identical.
 """
 
@@ -105,7 +112,7 @@ DEFAULT_RULES = [
 
 
 def parse_args(argv):
-    out = {"allow": []}
+    out = {"allow": [], "no_prune": False}
     positional = [x for x in argv if not x.startswith("-")]
     i = 0
     while i < len(argv):
@@ -114,6 +121,10 @@ def parse_args(argv):
             i += 1
             continue
         name = a.lstrip("-")
+        if name in ("no-prune", "noprune", "NoPrune"):
+            out["no_prune"] = True
+            i += 1
+            continue
         key = {"Mode": "mode", "Root": "root", "Diff": "diff", "Allow": "allow",
                "Commands": "commands", "ApprovalNote": "approval_note",
                "approval-note": "approval_note"}.get(name, name.replace("-", "_").lower())
@@ -283,6 +294,18 @@ def cmd_check(root, rules_file, a):
         print("constraints: clean (no diff against HEAD)")
         return 0
 
+    # Scope pruning: a rule whose scope intersects no changed path can never fire (the
+    # per-file loop skips it), so dropping it from the walk changes nothing -- pinned by
+    # selftest on randomized change sets (pruned vs --no-prune BLOCK/WARN identical).
+    if a.get("no_prune"):
+        applicable = rules
+        print(f"constraints: scope-matched {len(rules)}/{len(rules)} rule(s) (--no-prune)")
+    else:
+        applicable = [r for r in rules
+                      if any(in_scope(p, r.get("scope", [])) for p in files)]
+        print(f"constraints: scope-matched {len(applicable)}/{len(rules)} rule(s) "
+              f"(pruned {len(rules) - len(applicable)} out-of-scope)")
+
     blocks, warns = [], []
     allow = a.get("allow", [])
     approval_note = a.get("approval_note", "").strip()
@@ -296,7 +319,7 @@ def cmd_check(root, rules_file, a):
     for path in sorted(files.keys()):
         added = files[path]["added"]
         removed = files[path]["removed"]
-        for r in rules:
+        for r in applicable:
             if not in_scope(path, r.get("scope", [])):
                 continue
             if r.get("on") == "file-deleted":

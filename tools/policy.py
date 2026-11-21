@@ -3,6 +3,7 @@
 
     policy.py -Profile read-only -Command "curl https://example.com"
     policy.py -Profile workspace-write -Root D:\\proj -Command "cargo test"
+    policy.py -Profile workspace-write -Root D:\\proj -CommandsFile batch.json   (batch)
 
 Why two axes: "should I ask the human" and "what may the process touch" are independent
 questions. Codex CLI keeps them orthogonal on purpose -- a command can be pre-approved and
@@ -46,6 +47,14 @@ approval protocol:
 not an approval. A linked worktree keeps the old bar (bin requirement only) -- branches
 are cheap, main-line state is not.
 
+Batch mode (-CommandsFile <json>): one process classifies a whole plan's commands and
+prints one JSON line {"results": [{command, exit, lines}...]} -- per command, exit and
+lines are EXACTLY what a single -Command invocation would print and exit (pinned by
+selftest on randomized command samples). This is the orchestration wall-clock fix: one
+spawn instead of N (the dominant term of the old guard overhead). Overall batch exit:
+0 all allowed, 1 any denial, 2 bad invocation (unreadable file, missing/empty
+commands). -Explain stays a single-command option.
+
 The WARN family (pollution) is advisory: it never blocks, prints one line of consequence,
 and has no -Allow escape -- a warning you could waive would be a deny in a friendly name.
 It covers `git commit --no-verify` (bypassed gate -> bad baseline in history), tree-wide
@@ -59,6 +68,7 @@ command will produce, and the secret scan reads filename shapes, not file conten
 Ported from policy.ps1; decisions, wording and exit codes are kept identical.
 """
 
+import json
 import os
 import re
 import subprocess
@@ -120,7 +130,7 @@ SECRET_BASENAME = re.compile(
 
 def parse_args(argv):
     out = {"profile": "read-only", "command": "", "root": "", "allow_network": False,
-           "explain": False, "allow": [], "approval_note": ""}
+           "explain": False, "allow": [], "approval_note": "", "commands_file": ""}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -145,7 +155,8 @@ def parse_args(argv):
             out["approval_note"] = argv[i + 1] if i + 1 < len(argv) else ""
             i += 2
             continue
-        key = {"profile": "profile", "command": "command", "root": "root"}.get(name, name)
+        key = {"profile": "profile", "command": "command", "root": "root",
+               "commandsfile": "commands_file", "commands-file": "commands_file"}.get(name, name)
         out[key] = argv[i + 1] if i + 1 < len(argv) else ""
         i += 2
     return out
@@ -448,35 +459,15 @@ def outside_root(segment, root_path):
     return out
 
 
-def main(argv):
-    a = parse_args(argv)
-    profile = a.get("profile", "read-only")
-    if profile.lower() not in PROFILES:
-        print(f"policy: -Profile 必须是 {sorted(PROFILES)} 之一")
-        return 2
-    profile = profile.lower()
-    segments = split_command(a.get("command", ""))
-    if not segments:
-        print("policy: empty command")
-        return 2
-
-    root_in = a.get("root", "").strip()
-    if root_in:
-        if not os.path.isdir(root_in):
-            # fail closed: an unreadable root would make every "inside" check meaningless
-            print("policy: -Root 必须是已存在的目录（无法确认边界时不允许放行）")
-            return 2
-        root_path = os.path.normpath(os.path.abspath(root_in))
-        if len(root_path) > 2:
-            root_path = root_path.rstrip("/\\")
-    else:
-        root_path = ""
-
+def classify_one(profile, command, root_path, current_branch, kind, allow,
+                 allow_network, approval_note):
+    """One command's classification: the exact lines and exit a single -Command
+    invocation produces. One home for the decision so batch and single cannot drift
+    (the batch equivalence is pinned by selftest on randomized command samples)."""
     denials, notes, warns = [], [], []
-    current_branch = git_branch(root_path)
-    kind = checkout_kind(root_path)
-    allow = a.get("allow", [])
-    approval_note = a.get("approval_note", "").strip()
+    segments = split_command(command)
+    if not segments:
+        return ["policy: empty command"], 2
     for seg in segments:
         d = decision(seg, current_branch)
         if d is None:
@@ -518,7 +509,7 @@ def main(argv):
                 continue
             notes.append(f"deletion via trash.py allowed: {d['why']}")
             continue
-        if d["kind"] == "network" and not a.get("allow_network"):
+        if d["kind"] == "network" and not allow_network:
             denials.append(f"network: {d['why']}  (profile {profile}, network off -- "
                            f"pass -AllowNetwork to grant it explicitly)")
             continue
@@ -540,21 +531,87 @@ def main(argv):
             continue
         notes.append(f"allowed: {d['why']}")
 
+    lines = []
     for n in notes:
-        print(f"policy: OK    {n}")
+        lines.append(f"policy: OK    {n}")
     for w in warns:
-        print(f"policy: WARN  {w}")
+        lines.append(f"policy: WARN  {w}")
     if denials:
         for dn in denials:
-            print(f"policy: DENY  {dn}")
-        print("policy: 拒绝执行")
-        return 1
-    net = "on" if a.get("allow_network") else "off"
-    print(f"policy: allow ({profile}, network={net})")
-    if a.get("explain"):
+            lines.append(f"policy: DENY  {dn}")
+        lines.append("policy: 拒绝执行")
+        return lines, 1
+    net = "on" if allow_network else "off"
+    lines.append(f"policy: allow ({profile}, network={net})")
+    return lines, 0
+
+
+def cmd_batch(profile, root_path, current_branch, kind, allow, allow_network,
+              approval_note, path):
+    """-CommandsFile: one process, one JSON line of per-command verdicts. Per-command
+    exit and lines equal the single invocation's exactly; overall exit 1 on any denial
+    (2 reserved for bad invocation)."""
+    try:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            batch = json.load(fh)
+    except (OSError, ValueError) as e:
+        print(f"policy: commands file unreadable ({e})")
+        return 2
+    commands = batch.get("commands") if isinstance(batch, dict) else None
+    if not isinstance(commands, list) or not commands:
+        print("policy: commands file must carry a non-empty 'commands' list")
+        return 2
+    results = []
+    for cmd in commands:
+        lines, code = classify_one(profile, str(cmd), root_path, current_branch, kind,
+                                   allow, allow_network, approval_note)
+        results.append({"command": cmd, "exit": code, "lines": lines})
+    print(json.dumps({"results": results}, ensure_ascii=True))
+    return 1 if any(r["exit"] != 0 for r in results) else 0
+
+
+def main(argv):
+    a = parse_args(argv)
+    profile = a.get("profile", "read-only")
+    if profile.lower() not in PROFILES:
+        print(f"policy: -Profile 必须是 {sorted(PROFILES)} 之一")
+        return 2
+    profile = profile.lower()
+    batch_path = a.get("commands_file", "")
+    if not batch_path:
+        segments = split_command(a.get("command", ""))
+        if not segments:
+            print("policy: empty command")
+            return 2
+
+    root_in = a.get("root", "").strip()
+    if root_in:
+        if not os.path.isdir(root_in):
+            # fail closed: an unreadable root would make every "inside" check meaningless
+            print("policy: -Root 必须是已存在的目录（无法确认边界时不允许放行）")
+            return 2
+        root_path = os.path.normpath(os.path.abspath(root_in))
+        if len(root_path) > 2:
+            root_path = root_path.rstrip("/\\")
+    else:
+        root_path = ""
+
+    current_branch = git_branch(root_path)
+    kind = checkout_kind(root_path)
+    allow = a.get("allow", [])
+    approval_note = a.get("approval_note", "").strip()
+    allow_network = a.get("allow_network", False)
+    if batch_path:
+        return cmd_batch(profile, root_path, current_branch, kind, allow,
+                         allow_network, approval_note, batch_path)
+    lines, code = classify_one(profile, a.get("command", ""), root_path,
+                               current_branch, kind, allow, allow_network, approval_note)
+    for ln in lines:
+        print(ln)
+    if a.get("explain") and code == 0:
         print("policy: 边界 -- 这是命令分类器 + 目录日志，不是内核沙箱："
               "越界写入只能由 journal 事后证明，不能由这里事前阻止")
-    return 0
+    return code
 
 
 if __name__ == "__main__":

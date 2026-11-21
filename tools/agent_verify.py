@@ -966,19 +966,14 @@ def main(argv):
         return finish("refused by checks", 1)
 
     # --- 4. affected + policy + constraints: the three read-only classifier gates -------
-    # Serial is the historical shape and stays the default. --parallel-gates runs them
-    # concurrently: all three are read-only classifiers with no shared state (affected
-    # writes only its own unique temp plan file; policy/constraints only read the tree,
-    # git and the rules tables), so any interleaving is safe. Receipt steps are recorded
-    # in CHAIN order, not completion order, and refusals are evaluated in chain order --
-    # same verdict, same exit, same receipt shape as serial. On a policy refusal the
-    # concurrently-finished constraints result is discarded and NOT recorded: serial
-    # semantics never reached constraints' verdict point, and the receipt describes the
-    # chain's decision. journal-begin and everything after it stay strictly serial --
-    # that is the write side; nothing past this block is ever parallel.
-    # NOT parallelized (conservative, stated in usage): preflight/budget/checks carry
-    # order semantics before this block; any gate that ever grows shared state loses its
-    # place here and goes back to serial.
+    # Serial is the historical shape and stays the default. --parallel-gates runs the
+    # read-only classifiers concurrently where they have no shared state. The policy
+    # gate itself is ONE batch call since L123: a single policy.py process classifies
+    # the whole plan (-CommandsFile), per-command results identical to the old
+    # one-subprocess-per-command walk (pinned by selftest) -- that spawn-per-command
+    # walk was the dominant term of the guard overhead. Receipt steps are recorded in
+    # CHAIN order, refusals evaluated in chain order -- same verdict, same exit, same
+    # receipt shape. The write side (journal-begin, run, journal-end) is NEVER parallel.
     def affected_gate():
         if a["plan"]:
             # replaying a plan is allowed on purpose: it is how the chain is tested without
@@ -990,9 +985,13 @@ def main(argv):
                    "-Changed", ",".join(a["changed"]), "-Lang", lang, "-Out", p_path])
         return ap, p_path
 
-    def policy_one(cmd):
-        pa = [os.path.join(TOOLS, "policy.py"), "-Profile", profile, "-Command", cmd,
-              "-Root", root]
+    def policy_gate():
+        b_path = os.path.join(os.environ.get("TEMP", "/tmp"),
+                              f"av-policy-{uuid.uuid4().hex[:8]}.json")
+        with open(b_path, "w", encoding="ascii", newline="\n") as fh:
+            json.dump({"commands": commands}, fh, ensure_ascii=True)
+        pa = [os.path.join(TOOLS, "policy.py"), "-Profile", profile,
+              "-Root", root, "-CommandsFile", b_path]
         if a["allow_network"]:
             pa.append("-AllowNetwork")
         return step(pa)
@@ -1026,23 +1025,37 @@ def main(argv):
         doc["plan"] = {"proven": proven, "commands": commands,
                        "unproven": plan.get("unproven", ["plan unavailable"]) if plan else ["plan unavailable"]}
 
-        # --- 4. policy: are we even allowed to run it ----------------------------------
-        if a.get("parallel_gates") and len(commands) > 1:
-            with ThreadPoolExecutor(max_workers=min(8, len(commands))) as ppool:
-                prs = list(ppool.map(policy_one, commands))
-            pol_secs = round(sum(p["seconds"] for p in prs), 2)
+        # --- 4. policy: are we even allowed to run it (one batch call) ------------------
+        if not commands:
+            # nothing to classify -- the gate is vacuously ok, same as the old walk over
+            # an empty command list (the affected fallback shape lands here)
+            doc["policy"] = []
+            add("policy", {"out": [], "code": 0, "seconds": 0}, "ok")
         else:
-            prs = [policy_one(cmd) for cmd in commands]
-            pol_secs = 0
-        policy_log = [{"command": cmd, "exit": pr["code"], "output": pr["out"][-3:]}
-                      for cmd, pr in zip(commands, prs)]
-        policy_ok = all(pr["code"] == 0 for pr in prs)
-        doc["policy"] = policy_log
-        add("policy", {"out": [], "code": 0 if policy_ok else 1, "seconds": pol_secs},
-            "ok" if policy_ok else "refused")
-        if not policy_ok:
-            print(f"agent-verify: 拒绝 -- 权限档 {profile} 不允许这些命令")
-            return finish("refused by policy", 1)
+            pb = policy_gate()
+            batch = None
+        for ln in pb["out"]:
+            ln_s = ln.strip()
+            if ln_s.startswith("{") and ln_s.endswith("}"):
+                try:
+                    batch = json.loads(ln_s)
+                    break
+                except ValueError:
+                    batch = None
+            prs = batch.get("results") if isinstance(batch, dict) else None
+            if not isinstance(prs, list):
+                add("policy", pb, "refused")
+                print("agent-verify: 拒绝 -- policy 批量分类结果不可解析（fail-closed，不许静默放行）")
+                return finish("refused by policy", 1)
+            policy_log = [{"command": r.get("command"), "exit": r.get("exit"),
+                           "output": (r.get("lines") or [])[-3:]} for r in prs]
+            policy_ok = all(r.get("exit") == 0 for r in prs)
+            doc["policy"] = policy_log
+            add("policy", {"out": [], "code": 0 if policy_ok else 1, "seconds": pb["seconds"]},
+                "ok" if policy_ok else "refused")
+            if not policy_ok:
+                print(f"agent-verify: 拒绝 -- 权限档 {profile} 不允许这些命令")
+                return finish("refused by policy", 1)
 
         # --- 5. constraints: is this change allowed at all ------------------------------
         ck = ck_future.result() if ck_future is not None else constraints_gate()
