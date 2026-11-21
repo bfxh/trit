@@ -1903,6 +1903,10 @@
       "lines": 90
     },
     {
+      "file": "crates/trit-ops/benches/interval_bench.rs",
+      "lines": 281
+    },
+    {
       "file": "crates/trit-ops/src/bench.rs",
       "lines": 515
     },
@@ -1949,6 +1953,10 @@
     {
       "file": "crates/trit-ops/src/trit.rs",
       "lines": 202
+    },
+    {
+      "file": "crates/trit-ops/tests/burgers_governance.rs",
+      "lines": 346
     },
     {
       "file": "crates/trit-orch/benches/trace_bench.rs",
