@@ -763,6 +763,23 @@
       "added": "2026-11-20",
       "pattern": "\\bres\\s*\\*\\s*res\\b",
       "allow_skip": false
+    },
+    {
+      "id": "C045",
+      "title": "基准锁文件 zip ≥ 9.0.5（GHSA-m665-v7pm-7grj / GHSA-8hxf-qr8p-62x4 修复线）",
+      "kind": "cmd",
+      "covers": [
+        "L109"
+      ],
+      "scope": [
+        "benchmarks/wsp-no-transformer/Cargo.lock"
+      ],
+      "since": "2026-11-21",
+      "tier": "fast",
+      "added": "2026-11-21T08:39:44+08:00",
+      "run": "grep -A1 '^name = \"zip\"$' benchmarks/wsp-no-transformer/Cargo.lock | grep -qE '^version = \"(9\\.0\\.[5-9]|9\\.0\\.[1-9][0-9]+|9\\.[1-9][0-9]*\\.[0-9]+|[1-9][0-9]+\\.[0-9]+\\.[0-9]+)\"$'",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

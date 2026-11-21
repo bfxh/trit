@@ -2,7 +2,6 @@
 
 use std::path::Path;
 
-use npyz::npz::NpzArchive;
 mod apply;
 mod gpu;
 mod gpu_prep;
@@ -15,7 +14,7 @@ mod topk;
 mod weights;
 
 use model::{O_LEN, Q_LEN, argmax, forward};
-use weights::{load_weights, read_i64};
+use weights::{load_weights, open_npz, read_i64};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -27,7 +26,7 @@ fn main() {
     apply::run(&mut w);
 
     let mut npz =
-        NpzArchive::open(&args[2]).unwrap_or_else(|e| panic!("打开 {} 失败：{e}", args[2]));
+        open_npz(&args[2]).unwrap_or_else(|e| panic!("打开 {} 失败：{e}", args[2]));
     let q = read_i64(&mut npz, "q");
     let o = read_i64(&mut npz, "o");
     let y = read_i64(&mut npz, "y");
