@@ -19,3 +19,8 @@ path = "src/bin/bench.rs"
 name = "ecc"
 path = "benches/ecc.rs"
 harness = false
+
+[[bench]]
+name = "interval"
+path = "benches/interval_bench.rs"
+harness = false

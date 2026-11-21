@@ -38,6 +38,48 @@
   失配步定位、区间夹逼、规模护栏、claim_audit 升级路径、编排回执、旧 number 回归、
   10000 步边界、坏 JSON）；对抗自测：20 条"数字撒谎但附假推导"声明全部 FABRICATED 且
   逐条定位失配步。
+### Added（内核数值完整性 ②：Burgers 治理示范 + 区间算术基准）
+
+- `tests/burgers_governance.rs`——数值实验与普通命令一样过闸：这是**治理结构
+  的演示**，不是 NS 定理的任何声明、不声称证明任何流体力学命题；对 NS 主题
+  的诚实致敬方式是治理数值实验，不是声称定理。放 `tests/` 不放 `examples/`
+  的理由：tests 进 `cargo test` 收工门，示范的每次回归都被闸真正执行——
+  不被闸跑的治理示范不成立。
+- 治理面（与 trit-orch 同构）：**准入帽**先于执行（扩散 CFL≤0.45 / 对流
+  CFL≤0.9，解析稳定界 0.5/1.0 收紧 10%——帽不是稳定边界本身；CFL 数按
+  `interval` 保守包络核对，点区间进、加宽 1 ulp 出，边界处宁可拒；超帽拒绝
+  启动；dt 逐步供给、每步再准入，umax 实测自当前状态不信任最大值原理——
+  run_caps/policy 的数值世界同构）+ **能量漂移不变量**（每步能量对解析衰减
+  界 E(t)≤E(0)e^(−2νk₁²t)（周期域 Poincaré）比对，越界 panic=实验作废——
+  trace invariants 同构；1% 余量是连续命题不逐步传递到离散解的治理余量，
+  如实注明本口径实测零松弛也绿）+ **结论带证据**（RunRecord 回报
+  cfl/e0/e_final/界，断言可对账）。
+- 4 个治理测试：CFL 违规拒绝启动（含帽边界两侧行为）、合规跑通且能量界
+  保持（1000 步，终点能量 ≤ 界且真实衰减）、违规 dt 注入中途判红、CFL 合规
+  的状态污染（u×1.5）被能量账本识破。
+- `benches/interval_bench.rs`（harness=false 零新依赖）：四则+sqrt 单次耗时
+  （计时分辨率 ~100ns、单次运算远低于它——按 64 次/样本批计量取中位）、
+  10 万次混合链吞吐（add+mul+sub ≈ 14ns/步）、加宽 vs 不加宽对照如实报占比
+  （本输入分布下 ~30-38%：加宽是正确性代价不是精度特性）。
+
+### Added（内核数值完整性 ①：双精度保守区间算术）
+
+- `trit-ops::interval`：f64 保守区间（活区间 `lo≤hi` 且两端有限；Empty 是唯一
+  合法的 NaN 形态 `NaN,NaN`），语义决策表定死并测试——构造端点 NaN/±Inf/倒序
+  Empty 化、div 含零分母（含端点 0）Empty（拒绝而非全区间：全区间=信息全丢还
+  假装有答案，Empty 强制调用方显式处理）、sqrt 负域 Empty、端点溢出（含加宽
+  自身溢出）Empty；add/sub/mul/div/sqrt 每次运算后 lo/hi 各向外加宽 1 ulp
+  （无定向舍入时用位操作 nextafter 补足，跨 ±0 平台落 ±最小 subnormal；
+  LANDMINE 注释：加宽是正确性代价不是精度特性）。出处只给名字：Moore 1966；
+  Moore–Kearfott–Cloud 2009；IEEE 1788-2015（rigorous numerics 标准文本）。
+- 常量 π/e 按"最近 double ±1 ulp"夹逼（真值与最近 double 相距 ≤0.5 ulp，
+  ±1 ulp 必夹住）。
+- property 测试（手写 xorshift64*，零新依赖）：随机区间运算与 i128 精确有理
+  真值逐例对照（add/sub 端点精确、mul/div 四端点组合、sqrt 平方精确回代），
+  1 万例/运算 × 5；含包含单调（x⊆y ⟹ x∘z ⊆ y∘z 且 z∘x ⊆ z∘y，除法右参限于
+  同号非零定义域）。
+- 如实界限：溢出/未定义折叠 Empty 是中断语义，不参与包含单调（确定性测试
+  钉住）；真实坑记录 docs/ERRORS.md L122（±0 平台的 ulp 加宽跳档，配测试名）。
 
 ### Added（资源硬帽：run-caps.py 内核级资源上限 + agent-verify --caps 包裹）
 

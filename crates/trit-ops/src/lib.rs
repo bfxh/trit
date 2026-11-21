@@ -25,6 +25,13 @@
 //! `[11,6,5]`（标准 q-ary 编码理论，教科书构造；与黎曼猜想**无关**——RH 是
 //! 素数分布定理，对内核构造没有推论）。[`frame`] 给出可直接落盘的帧封装，
 //! `trit-orch` 的轨迹存储是首个消费方。
+//!
+//! # 数值完整性（区间算术的角色）
+//!
+//! [`interval`] 与存储完整性互补——一个管落盘的 bit，一个管算出的数：
+//! 双精度保守区间算术（1 ulp 加宽、未定义/溢出折叠 Empty），给数值实验
+//! "真值落在算出的区间里"的保证；首个消费方是 `tests/burgers_governance.rs`
+//! 的治理示范（数值实验与普通命令一样过准入/不变量闸）。
 #![allow(unsafe_op_in_unsafe_fn)]
 
 // SIMD 模块整体是 `#[target_feature] unsafe fn`，内部每条 intrinsic 再套一层
@@ -36,6 +43,7 @@ pub mod frame;
 pub mod gemv;
 pub mod gf3;
 pub mod golay;
+pub mod interval;
 pub mod pack;
 pub mod pool;
 pub mod quant;
@@ -46,6 +54,7 @@ pub use frame::{FrameCode, FrameCodec, FrameReject, FrameResult, decode_line, en
 pub use gemv::{Kernel, TernaryMatrix, TryteMatrix};
 pub use gf3::{ExtendedDecode, ExtendedHamming, HammingCode, HammingDecode};
 pub use golay::{Golay11, GolayDecode};
+pub use interval::Interval;
 pub use pack::{Rail, Trytes};
 pub use quant::{QuantReport, Scheme};
 pub use trit::Trit;
