@@ -49,6 +49,29 @@
   censored≠failed 措辞、journal 快照 id 探测、额度闸 verdict、失败自动挂起且回执旧
   字段不变、非法 task-id 拒收等。I2b 修正：checks 步是无条件 add，期望序列补上它
   （此前该断言永远红，见 docs/ERRORS.md L98）。
+### Fixed（deps：公开仓库锁文件携带 zip 0.6.6——RCE 级解析绕过两条告警收口）
+
+- `benchmarks/wsp-no-transformer/Cargo.lock`（#506 引入的独立 workspace）自 2026-11-17
+  起携带 zip 0.6.6，同时落在两条 Dependabot 告警影响面里：**GHSA-m665-v7pm-7grj
+  （critical）** zip ≤9.0.4——Zip Cloaking 解析器差异 + 安全控制绕过 → 任意文件覆盖
+  & RCE（修复版 9.0.5）；**GHSA-8hxf-qr8p-62x4（medium）** zip ≥0.6.0 <9.0.0——AES
+  Entry HMAC 认证绕过（修复版 9.0.0）。到本次修复共裸奔 4 天。
+- 引入路径：`wsp-no-transformer → npyz 0.8.4 的 "npz" feature → zip 0.6.6`。主
+  workspace 锁文件从未含 zip；time 告警（GHSA-r6v5-fh4h-64xc，栈耗尽 DoS）已由
+  eb8f29af（2026-11-02，主锁 0.3.41→0.3.47）关闭，无需再动。
+- 升级被上游钉死：npyz 全系版本（含 git master）把 zip 钉在 `^0.6`，`cargo update
+  -p zip --precise 9.0.5` 实测报 `failed to select a version for the requirement
+  zip = "^0.6"`——锁文件层面无解，只能换依赖形态。
+- 修法：npyz 0.8.4→0.9.1 且不再启用 "npz" feature，改走 npyz 自带的
+  npz-without-feature 模式；本 crate 直连 `zip = "9.0.5"`（default-features = false，
+  只留 deflate，`time`/aes/zstd 等旧传递面出树）。`weights.rs`/`main.rs` 把
+  `NpzArchive` 换成本地 `open_npz`/`read_entry`（`zip::ZipArchive` + `NpyFile`）：
+  缺条目映射回 `None` 语义、panic 文案逐条保留；合成 npz 端到端读取跑通（9 个数组
+  全过）。`cargo test --workspace` 全绿，基准不进 CI 不影响主门。
+- 根因与欠账：传递依赖没有定期审计面——Dependabot 报了但没人看，两条告警开着
+  没人处理。`checks.py` 新增 C045 钉住基准锁文件 zip ≥ 9.0.5（回退即红）；给 CI
+  加 cargo-audit / cargo-deny 盯全仓锁文件的建议**另立任务**，本次不动 CI。详见
+  docs/ERRORS.md L109。
 
 ### Added（输出行架构级冗余：行复制 + 分歧告警——#557 未证栏修复落地）
 
