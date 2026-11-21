@@ -69,10 +69,21 @@ def median(values):
 
 
 def load(path):
+    """Entries, or None when the file exists but is not valid JSON.
+
+    A corrupt ledger must never silently read as empty: an empty read makes the
+    budget gate re-spend a budget that was already recorded. Callers fail closed
+    on None (agent-verify's budget gate refuses; cost recording reports failed).
+    """
     if not os.path.exists(path):
         return []
-    with open(path, "r", encoding="utf-8-sig") as fh:
-        doc = json.load(fh)
+    try:
+        with open(path, "r", encoding="utf-8-sig") as fh:
+            doc = json.load(fh)
+    except ValueError as e:
+        print(f"ledger: file is corrupt (not valid JSON): {e} -- refusing to read "
+              f"(a half-written ledger must not read as empty)")
+        return None
     return doc.get("entries", []) or []
 
 
@@ -154,6 +165,8 @@ def main(argv):
         print("ledger: -Ledger is required")
         return 2
     entries = load(a["ledger"])
+    if entries is None:
+        return 2
     if a["mode"] == "add":
         return cmd_add(a, entries)
     return cmd_report(a, entries)

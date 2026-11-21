@@ -26,6 +26,25 @@ value <= 0 suspends the whole run before anything executes (verdict "suspended (
 before run"), records the session as censored in resume.py -- censoring is not failure
 -- and prints the continuation block. The gate fires only when the flag is given.
 
+Cost accounting (the chain is a ledger CLIENT, never a meter): after journal-end every
+run command's wall-clock is appended to <Store>/cost-ledger.json under a command-level
+key (+ --agent-id when given), plus one overhead entry so ledger totals equal chain
+wall. Tokens are recorded only when the caller declares them (--spent-token N = model
+side usage the harness measured; the tool layer cannot measure it). The budget gate
+then reads the same ledger: remaining = declared - recorded tokens of this session
+scope (task-id or agent-id); with no token records the gate stays pure declaration --
+recorded wall never substitutes for tokens (ledger.py keeps the two columns apart on
+purpose). costprobe keeps its own measurement surface (measure-in-place, fail-closed,
+one-mtime, derived totals); the chain does not call it and does not alter it -- the
+chain is only another ledger WRITER, same accounting rule: totals derived, never
+accumulated.
+
+Chain lock: the chain takes <Root>/.journal/chain.lock (O_CREAT|O_EXCL) for its whole
+life. A second chain on the same root refuses (fail-closed, verdict "refused by chain
+lock") instead of racing journal-begin. The lock is released via atexit on every
+normal exit; a killed process leaves it behind ON PURPOSE -- the leftover lock plus
+the surviving .journal snapshot is the dirty-state marker the next run diagnoses.
+
 Caps (--caps): each run command executes under run_caps.py kernel-level resource caps
 (memory / process count on Windows, RLIMIT_AS on POSIX). That is a runaway limiter, NOT
 a security boundary: no filesystem/network isolation, no defense against deliberate
@@ -48,6 +67,8 @@ Ported from agent-verify.ps1. Steps now call the python implementations directly
 process spawn, and no dependency on whichever PowerShell is on PATH).
 """
 
+import atexit
+import hashlib
 import json
 import os
 import re
@@ -56,6 +77,8 @@ import sys
 import time
 import uuid
 from datetime import datetime
+
+import ledger  # same tools directory; the chain appends cost entries, one writer per chain
 
 LANGS = {"rust", "python", "node", "go"}
 PROFILES = {"read-only", "workspace-write", "full"}
@@ -79,6 +102,9 @@ CAPS_NOTE = ("kernel-level resource caps (memory and process count enforced by t
              "filesystem/network isolation, no defense against deliberate escape; "
              "complements policy -- policy pre-classifies commands to stop misuse, "
              "run-caps bounds the damage if a permitted command runs away")
+COST_NOTE = ("wall is tool-measured per command; tokens are caller-declared (--spent-token) "
+             "or harness-written ledger entries -- the tool layer cannot measure model-side "
+             "token usage")
 
 HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audited receipt.
 
@@ -88,6 +114,8 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
   budget gate:  --budget-token N --task-id <id>
   caps:         --caps [--caps-mem-mb N] [--caps-procs N] [--caps-seconds S]
   subagent:     --agent-id <id>
+  cost:         [--spent-token N]   (declared model-side tokens of this run)
+  receipt:      [--compact]         (single-line machine receipt; default stays full)
 
 Subagent usage: a subagent running a task passes its own id (--agent-id sub-7). The id is
 recorded in the receipt (top level and every run[] line, appended fields only -- old
@@ -97,7 +125,15 @@ flag the receipt is exactly what it always was.
 Budget gate (honest scope): the tool layer cannot measure model-side token usage.
 --budget-token N is a DECLARATION by the caller. A declared value <= 0 refuses before
 run, suspends the session (reason=budget, censored -- not a failure) and prints the
-continuation block. No flag, no gate.
+continuation block. No flag, no gate. When the session's cost ledger already carries
+token records (--spent-token from earlier runs of the same task-id/agent-id scope), the
+gate subtracts them: remaining = declared - recorded. With no token records the gate
+stays pure declaration -- recorded WALL never substitutes for tokens.
+
+Cost accounting (honest scope): {COST_NOTE}. Entries land in <Store>/cost-ledger.json
+(command-level key + agent-id) and the verdict tail gains one appended `cost:` line.
+costprobe keeps its own independent measurement surface; the chain is only another
+ledger writer.
 
 Caps (honest scope): {CAPS_NOTE}
 Defaults when --caps is given without parameters: mem 2048 MB, 64 procs, 1800 s.
@@ -109,7 +145,7 @@ Exit codes: 0 all good; 1 a guard refused or the command failed; 2 bad invocatio
 def parse_args(argv):
     out = {"root": "", "changed": [], "lang": "", "profile": "workspace-write",
            "allow_network": False, "dry_run": False, "receipt": "", "store": "", "plan": "",
-           "allow": [], "agent_id": ""}
+           "allow": [], "agent_id": "", "spent_token": ""}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -133,7 +169,8 @@ def parse_args(argv):
         else:
             out[{"root": "root", "lang": "lang", "profile": "profile", "receipt": "receipt",
                  "store": "store", "plan": "plan", "agent-id": "agent_id",
-                 "agentid": "agent_id"}.get(name, name)] = val
+                 "agentid": "agent_id", "spent-token": "spent_token",
+                 "spenttoken": "spent_token"}.get(name, name)] = val
         i += 2
     return out
 
@@ -186,7 +223,119 @@ def write_receipt(path, doc):
         fh.write("\n")
 
 
+def sha8(text):
+    return hashlib.sha256(text.encode("utf-8", "replace")).hexdigest()[:8]
+
+
+def cost_scope(task_id, agent_id):
+    """Ledger task tag for this chain run: the session the spend belongs to.
+
+    task-id wins (the resume session), agent-id is the subagent fallback; with neither
+    there is no session scope -- entries still land (task=av|anon) but the budget gate
+    will not subtract them (an anonymous scope shared by unrelated runs must never
+    silently shrink anyone's declared budget).
+    """
+    if task_id:
+        return f"av|{task_id}"
+    if agent_id:
+        return f"av|{agent_id}"
+    return "av|anon"
+
+
+def ledger_tokens_for(entries, scope):
+    """Sum of token values recorded under this scope, or None when there are none.
+
+    Wall-only entries do not count -- subtracting seconds from a token budget is the
+    category error ledger.py exists to prevent.
+    """
+    vals = [float(e["tokens"]) for e in entries
+            if e.get("task") == scope and e.get("tokens") is not None]
+    return round(sum(vals), 2) if vals else None
+
+
+def append_cost_entries(ledger_path, scope, agent_id, runid, run_log, overhead_s,
+                        spent_token):
+    """Append this run's actual consumption to the cost ledger. Returns (ok, error).
+
+    Entries: one per run command (command-level key: runid + index + content hash, so a
+    re-run of the same command is a new entry, never a dedup hit), one overhead entry
+    (ledger wall totals equal chain wall), one tokens entry when the caller declares
+    --spent-token. Uses ledger.py's own load/save so the file shape and the
+    derived-totals accounting rule stay single-homed.
+    """
+    try:
+        entries = ledger.load(ledger_path)
+        if entries is None:
+            return False, "ledger corrupt -- refusing to append (fail-closed)"
+        ts = datetime.now().astimezone().isoformat(timespec="microseconds")
+        for idx, l in enumerate(run_log, start=1):
+            e = {"task": scope, "key": f"av|{runid}|cmd{idx}|{sha8(l['command'])}",
+                 "tokens": None, "wall_s": l["seconds"], "at": ts}
+            if agent_id:
+                e["agent_id"] = agent_id
+            entries.append(e)
+        ov = {"task": scope, "key": f"av|{runid}|overhead", "tokens": None,
+              "wall_s": overhead_s, "at": ts}
+        if agent_id:
+            ov["agent_id"] = agent_id
+        entries.append(ov)
+        if spent_token is not None:
+            sp = {"task": scope, "key": f"av|{runid}|spent", "tokens": spent_token,
+                  "wall_s": None, "at": ts}
+            if agent_id:
+                sp["agent_id"] = agent_id
+            entries.append(sp)
+        ledger.save(ledger_path, entries)
+        return True, ""
+    except OSError as e:
+        return False, f"ledger write failed: {e}"
+
+
+def acquire_chain_lock(root):
+    """(lock_path, None) on success; (None, held_info) when another chain holds it.
+
+    The lock lives in <Root>/.journal (journal.py's SKIP set keeps it out of every
+    snapshot and every diff). Released via atexit; a killed process leaves it behind
+    on purpose -- that leftover is the dirty-state marker, not garbage.
+    """
+    lock_dir = os.path.join(root, ".journal")
+    lock_path = os.path.join(lock_dir, "chain.lock")
+    try:
+        os.makedirs(lock_dir, exist_ok=True)
+        fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        try:
+            os.write(fd, json.dumps({
+                "pid": os.getpid(), "root": root,
+                "at": datetime.now().astimezone().isoformat(timespec="microseconds"),
+            }).encode("ascii"))
+        finally:
+            os.close(fd)
+    except FileExistsError:
+        held = {"lock": ".journal/chain.lock"}
+        try:
+            with open(lock_path, "r", encoding="utf-8-sig") as fh:
+                held.update(json.load(fh))
+        except (OSError, ValueError):
+            held["content"] = "unreadable"
+        return None, held
+    except OSError as e:
+        # Only a filesystem that cannot host the lock gets here; say so loudly and run
+        # unguarded rather than refuse every dry-run on a read-only root.
+        return f"warn:{e}", None
+    return lock_path, None
+
+
+def release_chain_lock(lock_path):
+    if not lock_path or lock_path == "warn":
+        return
+    try:
+        os.remove(lock_path)
+    except OSError:
+        pass
+
+
 def main(argv):
+    t_chain_start = time.time()
     if "--help" in argv or "-h" in argv:
         print(HELP)
         return 0
@@ -208,6 +357,16 @@ def main(argv):
     if agent_id and MACHINE_PATH_RX.search(agent_id):
         print("agent-verify: --agent-id 带本机绝对路径 -- 回执可能随仓提交，请用仓库相对的 id")
         return 2
+    spent_token = None
+    if str(a.get("spent_token", "")).strip():
+        try:
+            spent_token = int(a["spent_token"])
+        except ValueError:
+            print("agent-verify: --spent-token must be an integer")
+            return 2
+        if spent_token < 0:
+            print("agent-verify: --spent-token must be >= 0 (it is a declaration, not a measurement)")
+            return 2
 
     root = os.path.abspath(root_in)
     lang = a["lang"].lower()
@@ -216,6 +375,32 @@ def main(argv):
     store = a["store"].strip() or os.path.join(
         os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "agent-verify",
         root.replace("\\", "_").replace(":", "_"))
+
+    # --- chain lock: one chain per root, fail-closed ------------------------------------
+    # Held for the chain's whole life; the leftover lock of a killed process is the
+    # dirty-state marker the next run diagnoses (never auto-broken -- breaking a lock
+    # you did not verify dead is how two chains race journal-begin).
+    lock_path, held = acquire_chain_lock(root)
+    if held is not None:
+        print("agent-verify: 拒绝 -- 另一条 agent_verify 链正在占用此 root（fail-closed，不与它竞争 journal-begin）")
+        print(f"  dirty-state evidence: {held.get('lock')} held by pid={held.get('pid')} "
+              f"since {held.get('at')}")
+        print("  a killed run leaves the lock AND its journal snapshot behind -- inspect with:")
+        print("    python tools/journal.py status -Root <root>")
+        print("    python tools/journal.py restore -Root <root>   # 把树放回快照")
+        print("  then remove <root>/.journal/chain.lock and rerun")
+        if a["receipt"]:
+            write_receipt(a["receipt"], {
+                "root": root, "lang": lang, "profile": profile, "changed": a["changed"],
+                "at": datetime.now().astimezone().isoformat(timespec="microseconds"),
+                "agent_id": agent_id, "steps": [], "verdict": "refused by chain lock",
+                "exit": 1, "dirty": held})
+        return 1
+    if lock_path == "warn" or (isinstance(lock_path, str) and lock_path.startswith("warn:")):
+        print(f"agent-verify: 警告 -- chain lock 不可用（{lock_path.split(':', 1)[1]}），"
+              f"本次运行没有并发护栏（只影响并发竞争，不影响闸门语义）")
+    else:
+        atexit.register(release_chain_lock, lock_path)
 
     # --- caps: kernel-level resource caps around the run segment ------------------------
     # Validated up front (bad invocation exits 2 before anything runs) and recorded in
@@ -288,15 +473,33 @@ def main(argv):
     # A declared value <= 0 means "do not even start": the session is suspended with
     # reason=budget -- censoring, which is not failure -- and the continuation block is
     # printed for whoever picks the task up in a fresh session.
+    # Ledger integration: with a session scope (task-id/agent-id), token values already
+    # recorded for that scope are subtracted from the declaration. Wall-only records do
+    # NOT count (seconds are not tokens); a corrupt ledger refuses the gate outright --
+    # a gate that cannot read its own books must not silently degrade to a weaker mode.
     if "budget-token" in a:
         try:
             budget = int(a["budget-token"])
         except ValueError:
             print("agent-verify: --budget-token must be an integer")
             return 2
-        doc["budget"] = {"declared": budget, "gate": BUDGET_NOTE}
-        if budget <= 0:
-            print(f"agent-verify: budget gate -- declared {budget} <= 0, suspend before run")
+        scope = cost_scope(task_id, agent_id)
+        recorded = None
+        if scope != "av|anon":
+            cost_ledger_path = os.path.join(store, "cost-ledger.json")
+            prev_entries = ledger.load(cost_ledger_path)
+            if prev_entries is None:
+                print(f"agent-verify: 拒绝 -- 预算台账损坏且无法读取（{os.path.basename(store)}/cost-ledger.json），"
+                      f"剩余预算无法核算，fail-closed")
+                return finish("refused by budget ledger", 1)
+            recorded = ledger_tokens_for(prev_entries, scope)
+        remaining = budget if recorded is None else round(budget - recorded, 2)
+        doc["budget"] = {"declared": budget, "gate": BUDGET_NOTE,
+                         "recorded_tokens": recorded, "remaining": remaining}
+        if remaining <= 0:
+            why = (f"declared {budget} <= 0" if recorded is None
+                   else f"declared {budget} - recorded {recorded} = {remaining} <= 0")
+            print(f"agent-verify: budget gate -- {why}, suspend before run")
             if task_id:
                 if not os.path.exists(session_file(root, task_id)):
                     # The session records what this run observed: nothing yet, budget 0.
@@ -447,6 +650,22 @@ def main(argv):
     doc["changes"] = changes
     doc["wall_s"] = total_run
 
+    # --- 8.5 cost recording: this run's actual consumption goes on the ledger ----------
+    # journal-end 后、memory-note 前。失败也只记账面（cost 记账不是闸）：loud, not fatal.
+    runid = uuid.uuid4().hex[:8]
+    scope = cost_scope(task_id, agent_id)
+    chain_wall = round(time.time() - t_chain_start, 2)
+    overhead_s = max(0.0, round(chain_wall - total_run, 2))
+    cost_ok, cost_err = append_cost_entries(
+        os.path.join(store, "cost-ledger.json"), scope, agent_id, runid, run_log,
+        overhead_s, spent_token)
+    doc["cost"] = {"wall_s": total_run, "overhead_s": overhead_s,
+                   "tokens": spent_token, "recorded": cost_ok, "scope": scope,
+                   "note": COST_NOTE}
+    if not cost_ok:
+        doc["cost"]["error"] = cost_err
+        print(f"agent-verify: cost 记账失败（{cost_err}）-- 消耗没上账，回执 cost 字段已标注")
+
     verdict = ("command failed" if not ran_ok else
                ("passed on full run (plan was unproven)" if not proven else "passed on proven subset"))
 
@@ -502,6 +721,11 @@ def main(argv):
     # Appended tail, appended receipt field only -- the existing output above is unchanged.
     if "resume_checkpoint" in doc:
         print(f"  resume checkpoint: {doc['resume_checkpoint']}")
+    cost = doc.get("cost") or {}
+    if cost:
+        print(f"  cost: wall={cost.get('wall_s')}s +{cost.get('overhead_s')}s overhead "
+              f"tokens={cost.get('tokens') if cost.get('tokens') is not None else '-'} "
+              f"ledger={'recorded' if cost.get('recorded') else 'FAILED'} scope={cost.get('scope')}")
     return finish(verdict, 0 if ran_ok else 1)
 
 
