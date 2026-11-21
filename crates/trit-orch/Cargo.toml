@@ -11,6 +11,10 @@ description = "三值准入与当前快照的可派发批次选择"
 name = "trit-orch"
 path = "src/bin/trit-orch.rs"
 
+[[bench]]
+name = "trace_bench"
+harness = false
+
 [dependencies]
 trit-core.workspace = true
 trit-schedule.workspace = true

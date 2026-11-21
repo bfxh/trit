@@ -49,7 +49,7 @@ pub fn replay(
     };
     for (index, step) in steps.iter().enumerate() {
         let plan = Plan::new(step.revision, step.tasks.clone())?;
-        let selection = plan.select(&step.snapshot, &step.limits)?;
+        let selection = plan.select_with_effects(&step.snapshot, &step.limits, &step.ledger)?;
         let context = crate::policy::ShadowContext {
             selection: &selection,
             tasks: &step.tasks,

@@ -1947,6 +1947,10 @@
       "lines": 202
     },
     {
+      "file": "crates/trit-orch/benches/trace_bench.rs",
+      "lines": 253
+    },
+    {
       "file": "crates/trit-orch/examples/dispatch_metrics.rs",
       "lines": 121
     },
@@ -2023,6 +2027,10 @@
       "lines": 470
     },
     {
+      "file": "crates/trit-orch/src/trace_invariants.rs",
+      "lines": 292
+    },
+    {
       "file": "crates/trit-orch/tests/admission.rs",
       "lines": 105
     },
@@ -2033,6 +2041,10 @@
     {
       "file": "crates/trit-orch/tests/cli.rs",
       "lines": 563
+    },
+    {
+      "file": "crates/trit-orch/tests/common/mod.rs",
+      "lines": 246
     },
     {
       "file": "crates/trit-orch/tests/context.rs",
@@ -2077,6 +2089,14 @@
     {
       "file": "crates/trit-orch/tests/trace.rs",
       "lines": 275
+    },
+    {
+      "file": "crates/trit-orch/tests/trace_invariants.rs",
+      "lines": 557
+    },
+    {
+      "file": "crates/trit-orch/tests/trace_storage_stability.rs",
+      "lines": 311
     },
     {
       "file": "crates/trit-parts/src/api.rs",
