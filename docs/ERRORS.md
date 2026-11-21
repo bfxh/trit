@@ -189,6 +189,7 @@
 | L41 | `policy` 是分类器不是沙箱 | 越界写入只能事后证明 | 已用 `-Explain` 明说（R8），不假装是沙箱 |
 | L42 | `Calibrated` 的 `coverage_bp` 是声明不是证据 | 要等 P6.3 conformal 实测才能判红 | 保留为"声明"，不许当证据用 |
 | L43 | 记忆条目 `m3389ae79` 写"79 条全绿" | 严重过期（实际 142） | `-Mode revise` 更正 |
+| L124 | journal restore 对"合法 JSON 但内容被改"的 manifest 直接崩：rel 路径被改 → `copy2` 源文件不存在抛 FileNotFoundError 栈（exit 1 带崩溃栈）；sha256 字段被改 → 不校验、按错账照样还原；`status` 对这两种损坏照常报 OK——"快照声称健康"与"快照可还原"两种状态同形，崩栈顶替了干净拒绝 | simchain 50 种子 × corrupt 族实测命中 2/50（seed 13/35，manifest bit-flip 落进 rel 路径与 sha256 字段）；simchain 的 corrupt 族已把"status 报 OK 但 restore 失败"钉成不变量违规——修复前每次命中必报 | journal 线（L114 的后续）：restore 逐文件 try 并点名条目（坏条目跳过且明确报损，与 trash 拒收留痕同纪律），status 增加"manifest 可解析但 files 表与盘对不上"的明确损失报告 |
 
 ---
 
