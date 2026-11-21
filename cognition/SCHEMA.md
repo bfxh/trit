@@ -195,9 +195,72 @@ appended 字段）。
 sha8(command)，与 agent_verify 写账同源推导）/ 回执 journal changes（added/modified/deleted）。
 判定口径：两源都给出一致证据 → VERIFIED 并标注 `dual-source`；任一源与现实矛盾 →
 FABRICATED（双证据并列打印）；任一源无证据 → UNVERIFIED（缺证据永不升级）。kind=number
-没有第二条独立路径（被引工件是唯一出处），永不升级。被点名但解析不了的回执/台账 → 整份
-exit 3 fail-closed。出处：独立复推——arXiv:2610.12234 式（第三方重新推导再 diff，不是
-"再看一眼"——同一本账投两票是伪复核）。编排链 `--second-opinion`（opt-in）让 claims 步骤
-自动跑两源，结果进回执 `claims.second`（appended 字段）；复核判 FABRICATED 与主审计同级
-拒绝全链。回执 JSON 的机器路径纪律对 `claims.second` 同样适用（appended 字段只带计数，
-不带本地路径）。
+没有内建的第二条独立路径（被引工件是唯一出处）：无 derivation 的 number 永不升级；携带
+derivation 的 number 在 mre 重执行 VERIFIED 时获得第二证据路径（工件出处 + 推导重算），
+可升 dual-source，REJECTED 则直接 FABRICATED（附第一个失配步，见 §7）。被点名但解析不了
+的回执/台账 → 整份 exit 3 fail-closed。出处：独立复推——arXiv:2610.12234 式（第三方重新
+推导再 diff，不是"再看一眼"——同一本账投两票是伪复核）。编排链 `--second-opinion`
+（opt-in）让 claims 步骤自动跑两源，结果进回执 `claims.second`（appended 字段）；复核判
+FABRICATED 与主审计同级拒绝全链。回执 JSON 的机器路径纪律对 `claims.second` 同样适用
+（appended 字段只带计数，不带本地路径）。
+
+## 7. derivation 文件（数学推理引擎 mre 的推导图契约）
+
+位置：`tools/mre.py` 的输入。number 声明可携带 `derivation` 字段——root 相对的推导文件
+路径，或直接内嵌推导对象；独立调用 `python tools/mre.py -Derivation <f>`。推导图是"模型
+把计算过程摆出来给机器重算"的形状：引擎用 Fraction 精确有理数**重执行整张 DAG**，每步
+重算并与声明的 output 比对，最终 target 与重算值比对。**判定的是推导一致性，不是前提
+真实性**——前提对不对由上游证据面管（工件出处仍是第一路径）；与证明助手的角色区分：
+Lean 一类系统验收**命题**（在公理下验收陈述），mre 验收**算术**（在精确重算下验收步骤），
+互不代替。
+
+### 字段
+
+| 字段 | 类型 | 含义 | 隐私级别 |
+|---|---|---|---|
+| `id` / `claim` | str | 推导标识与结论句；结论句**零证据效力**——判定只吃重执行 | public-safe |
+| `target` | `{value, tol?}` | 声明的最终结果，对**最后一步**的重算值判定；无 tol 即要求精确相等 | public-safe |
+| `steps` | list[step] | 推导步列表；≤ 10000（规模护栏，超出 exit 3） | public-safe |
+| `steps[].op` | str | `add`/`sub`/`mul`/`div`/`sqrt`/`pow`；add/mul ≥2 输入折叠，sub/div/pow 恰 2，sqrt 恰 1 | public-safe |
+| `steps[].inputs` | list | 数字字面量（int / 十进制串 / 比值串如 `"3/7"`）或其它 step 的 `output_id`（字符串命中 output_id 即引用——output_id 别起成裸数字的样子） | public-safe |
+| `steps[].output` | num | 该步**声明值**——重执行比对的对象；不是数字的声明 → exit 3 | public-safe |
+| `steps[].tol` | num? | 容差；结果**非精确时必填**（精度边界=声明容差，缺失 → REJECTED），碰巧精确（`sqrt(4)`、`4^(1/2)`）时免 | public-safe |
+| `steps[].note` | str | 每步推理注记，**必填**——缺 note 的推导不是可审计的过程数据（→ UNVERIFIED），这正是过程监督的落点 | public-safe |
+
+### 精确性口径（无浮点谎言）
+
+- add/sub/mul/div/整数指数 pow：Fraction 精确重算，与声明**精确相等**（声明 tol 时按
+  `|声明−重算| ≤ tol` 判）。
+- sqrt / 分数指数 pow：结果一般无理——引擎用**保守区间**夹逼（纯有理数二分，区间宽 ≤
+  声明 tol），要求声明值落在区间内；不开浮点，引擎不自加精度。
+- 声明值按**十进制字面量**解释（JSON float 经 repr 往返还原字面量）；超出 float 精度的
+  精确值必须写成字符串。非精确步的区间向后传播——下游每步的判定仍然 sound。
+
+### 判定（三态 + 拒绝）
+
+- **VERIFIED**（exit 0）：每步重算吻合、target 吻合，附每步核对清单；
+- **UNVERIFIED**（exit 1）：无 steps / 空 steps / 无 target / 任一步缺 note——没查的东西
+  不许当真；
+- **REJECTED**（exit 2）：重算与声明不符，或运算无定义（除零、负数开方、负底分数次幂、
+  非精确步未声明 tol）——**点名第一个失配步**，比笼统的伪造更具体；
+- **REFUSED**（exit 3）：坏 JSON、结构坏（未知 op / 元数不符 / 缺或重 output_id / 未解析
+  引用 / 引用环 / 非数字声明 / 负 tol）、规模护栏（steps>10000、每步输入>256、值位数
+  >100000、二分>4096 轮、分数指数分母>1024）——工件本身不可信，什么都不信。
+- DAG 规则：引用可指向任意 step（拓扑序执行，Kahn 序）；环 → exit 3 并点名未解步。
+
+### 接入与分级
+
+- claim_audit：number 声明带 derivation → 重执行 VERIFIED 给该数字**第二证据路径**
+  （工件出处 + 推导重算），second-opinion 可升 dual-source；REJECTED → 直接 FABRICATED
+  （附失配步）；无 derivation 的 number 行为逐字不变；`-NoDerivations` 整关这一层。
+  机器路径闸扫进 derivation（内嵌对象的全部字符串值与文件路径都在门口被扫）。
+- 编排：agent_verify `--derivations` 默认开（`--no-derivations` 关）；重执行结果进回执
+  `claims.derivations={verified, rejected}`（appended 字段）；REJECTED 与 FABRICATED
+  同级拒绝全链（verdict `rejected: derivation mismatch`）。
+- 隐私分级：推导文件与内嵌推导随声明集同口径——root 相对路径、无机器路径 → public-safe；
+  note 是过程数据、会随审计产物提交，同样只许 public-safe。
+- 训练语料形状：逐步 note + 三态判定 = 过程监督的天然数据形状（业界 "Let's Verify Step
+  by Step" 实证：逐过程判定优于只看结果）——未来编程模型学着产出"自带推导的声明"，
+  声明即证据。出处：业界把数学声明变成机器可核验对象的探索（NS 奇性声明配 Lean 4 形式
+  化，Alpöge–Buckmaster 线，假设态探索——本引擎不依赖也不裁决该声明真假，只取其工程
+  形态）。

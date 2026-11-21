@@ -3702,6 +3702,427 @@ if (-not $ajPy) {
 }
 
 
+# =====================================================================================
+"== AK. 数学推理引擎 mre：推导图重执行——附推导的数字声明要么算得通，要么点名失配步 =="
+# 出处写进 mre usage 与 cognition/SCHEMA.md §7（台账 L121）：①业界过程监督实证（"Let's
+# Verify Step by Step", 2023）——每步带 note 的推导轨迹就是过程监督的训练数据形状；
+# ②业界把数学声明变成机器可核验对象的探索（NS 奇性声明配 Lean 4 形式化，假设态探索，
+# 工程不依赖该声明真假）。mre 验收的是推导一致性，不是前提真实性——工件出处仍是
+# number 的第一证据路径，推导重执行是补上来的第二路径（number 单源孤儿的缺口，L121）。
+$akPy = $null
+foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
+    if (-not $c) { continue }
+    $akSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    if (-not $akSrc) { continue }
+    if ((& $akSrc -c 'print(1)' 2>$null) -eq '1') { $akPy = $akSrc; break }
+}
+$akTotal = 34
+if (-not $akPy) {
+    "  SKIP  AK0 找不到可用的 Python，跳过数学推理引擎检查"
+    $skipped += $akTotal
+} else {
+    $mrPy = Join-Path $tools 'mre.py'
+    $caPy = Join-Path $tools 'claim_audit.py'
+    $avPy = Join-Path $tools 'agent_verify.py'
+    $akEnc = New-Object System.Text.UTF8Encoding($false)
+
+    function Invoke-AkMr([string]$path) {
+        $script:akOut = @(& $script:akPy $script:akMrPy '-Derivation' $path 2>&1)
+        return $LASTEXITCODE
+    }
+    function Invoke-AkCa([string[]]$caArgs) {
+        $script:akOut = @(& $script:akPy $script:akCaPy @caArgs 2>&1)
+        return $LASTEXITCODE
+    }
+    function Invoke-AkAv([string]$root, [string]$store, [string]$receipt, [string[]]$extra) {
+        $argsAv = @($script:akAvPy, '-Root', $root, '-Changed', (Join-Path $root 'pkg\core.py'),
+                    '-Lang', 'python', '-Plan', (Join-Path $root 'plan.json'), '-Store', $store,
+                    '-Receipt', $receipt) + $extra
+        & $script:akPy @argsAv 2>&1 | Out-Null
+        return $LASTEXITCODE
+    }
+    function Read-AkReceipt([string]$path) {
+        return [IO.File]::ReadAllText($path, $script:akEnc) | ConvertFrom-Json
+    }
+
+    # 夹具生成器：全部推导 JSON / 声明集 / 对抗样本由一段 Python 生成（Windows 路径经
+    # argv 传入，避免 MSYS 路径翻译歧义）。
+    $akGen = Join-Path $Work 'ak-gen.py'
+    New-File $akGen @'
+import json, os, sys
+
+work, akr, ako = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def w(path, doc):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        json.dump(doc, fh, ensure_ascii=True)
+
+def wt(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write(text)
+
+D = os.path.join(work, "ak-der")
+
+w(os.path.join(D, "roundtrip.json"), {
+    "id": "ak-roundtrip", "claim": "exact rational chain", "target": {"value": "17/35"},
+    "steps": [
+        {"op": "add", "inputs": [1, 2], "output_id": "s1", "output": "3", "note": "1+2"},
+        {"op": "div", "inputs": [1, 3], "output_id": "s2", "output": "1/3", "note": "one third"},
+        {"op": "mul", "inputs": ["s1", "s2"], "output_id": "s3", "output": "1", "note": "3 * 1/3"},
+        {"op": "sub", "inputs": ["s3", "1/35"], "output_id": "s4", "output": "34/35", "note": "minus 1/35"},
+        {"op": "mul", "inputs": ["s4", "1/2"], "output_id": "s5", "output": "17/35", "note": "half"}]})
+
+w(os.path.join(D, "mismatch.json"), {
+    "id": "ak-mismatch", "claim": "one step lies", "target": {"value": "999"},
+    "steps": [
+        {"op": "add", "inputs": [2, 3], "output_id": "s1", "output": "5", "note": "2+3"},
+        {"op": "mul", "inputs": ["s1", 4], "output_id": "s2", "output": "20", "note": "5*4"},
+        {"op": "sub", "inputs": ["s2", 1], "output_id": "s3", "output": "999", "note": "declared wrongly"}]})
+
+w(os.path.join(D, "sqrt-ok.json"), {
+    "id": "ak-sqrt-ok", "claim": "sqrt(2) to declared tolerance",
+    "target": {"value": "1.4142136", "tol": "0.00001"},
+    "steps": [{"op": "sqrt", "inputs": [2], "output_id": "r", "output": "1.4142136",
+               "tol": "0.00001", "note": "bracketed in exact rational arithmetic"}]})
+
+w(os.path.join(D, "sqrt-lie.json"), {
+    "id": "ak-sqrt-lie", "claim": "sqrt(2) claimed as 1.5",
+    "target": {"value": "1.5", "tol": "0.00001"},
+    "steps": [{"op": "sqrt", "inputs": [2], "output_id": "r", "output": "1.5",
+               "tol": "0.00001", "note": "outside the bracket"}]})
+
+w(os.path.join(D, "pow-int.json"), {
+    "id": "ak-pow-int", "claim": "2^10 = 1024", "target": {"value": "1024"},
+    "steps": [{"op": "pow", "inputs": [2, 10], "output_id": "p", "output": "1024",
+               "note": "integer exponent is exact"}]})
+
+w(os.path.join(D, "pow-frac.json"), {
+    "id": "ak-pow-frac", "claim": "2^(1/2) to declared tolerance",
+    "target": {"value": "1.4142136", "tol": "0.00001"},
+    "steps": [{"op": "pow", "inputs": [2, "1/2"], "output_id": "p", "output": "1.4142136",
+               "tol": "0.00001", "note": "fractional exponent bracketed"}]})
+
+w(os.path.join(D, "pow-neg.json"), {
+    "id": "ak-pow-neg", "claim": "cube root of -8", "target": {"value": "2"},
+    "steps": [{"op": "pow", "inputs": [-8, "1/3"], "output_id": "p", "output": "2",
+               "tol": "0.001", "note": "negative base fractional power"}]})
+
+w(os.path.join(D, "divzero.json"), {
+    "id": "ak-divzero", "claim": "divide by zero", "target": {"value": "1"},
+    "steps": [
+        {"op": "add", "inputs": [1, 1], "output_id": "z", "output": "2", "note": "2"},
+        {"op": "sub", "inputs": ["z", "z"], "output_id": "zero", "output": "0", "note": "0"},
+        {"op": "div", "inputs": [1, "zero"], "output_id": "boom", "output": "5", "note": "1/0"}]})
+
+w(os.path.join(D, "sqrtneg.json"), {
+    "id": "ak-sqrtneg", "claim": "sqrt of a negative", "target": {"value": "2"},
+    "steps": [
+        {"op": "sub", "inputs": [1, 3], "output_id": "d", "output": "-2", "note": "1-3"},
+        {"op": "sqrt", "inputs": ["d"], "output_id": "r", "output": "2", "tol": "0.01",
+         "note": "sqrt(-2) is undefined"}]})
+
+w(os.path.join(D, "cycle.json"), {
+    "id": "ak-cycle", "claim": "cyclic references", "target": {"value": "1"},
+    "steps": [
+        {"op": "add", "inputs": ["s2", 1], "output_id": "s1", "output": "2", "note": "needs s2"},
+        {"op": "add", "inputs": ["s1", 1], "output_id": "s2", "output": "3", "note": "needs s1"}]})
+
+w(os.path.join(D, "ghost.json"), {
+    "id": "ak-ghost", "claim": "unresolved reference", "target": {"value": "2"},
+    "steps": [{"op": "add", "inputs": ["ghost", 1], "output_id": "s1", "output": "2",
+               "note": "ghost is neither a literal nor an output_id"}]})
+
+w(os.path.join(D, "tolband.json"), {
+    "id": "ak-tolband", "claim": "exact op within declared band",
+    "target": {"value": "3.0005", "tol": "0.001"},
+    "steps": [{"op": "add", "inputs": [1, 2], "output_id": "s1", "output": "3.0005",
+               "tol": "0.001", "note": "|3 - 3.0005| <= 0.001"}]})
+
+w(os.path.join(D, "tolband-bad.json"), {
+    "id": "ak-tolband-bad", "claim": "exact op beyond declared band",
+    "target": {"value": "3.0005", "tol": "0.0001"},
+    "steps": [{"op": "add", "inputs": [1, 2], "output_id": "s1", "output": "3.0005",
+               "tol": "0.0001", "note": "|3 - 3.0005| > 0.0001"}]})
+
+w(os.path.join(D, "nonote.json"), {
+    "id": "ak-nonote", "claim": "a step without note", "target": {"value": "3"},
+    "steps": [{"op": "add", "inputs": [1, 2], "output_id": "s1", "output": "3"}]})
+
+wt(os.path.join(D, "nosteps.json"),
+   '{"id":"ak-nosteps","claim":"no derivation graph at all","target":{"value":"1"}}')
+wt(os.path.join(D, "bad.json"), '{bad')
+
+def big(n):
+    return {"id": "ak-big", "claim": str(n) + " exact adds", "target": {"value": "2"},
+            "steps": [{"op": "add", "inputs": [1, 1], "output_id": "s" + str(i),
+                       "output": "2", "note": "1+1"} for i in range(1, n + 1)]}
+w(os.path.join(D, "big10000.json"), big(10000))
+w(os.path.join(D, "big10001.json"), big(10001))
+
+# claims root: bench artifact carries 2.35 and the 20 adversarial lie numbers
+lies = ["9.99", "9.98", "9.97", "9.96", "9.95", "9.94", "9.93", "9.92", "9.91", "9.90",
+        "8.99", "8.98", "8.97", "8.96", "8.95", "8.94", "8.93", "8.92", "8.91", "8.90"]
+wt(os.path.join(akr, "artifacts", "bench.txt"),
+   "guard_overhead_ratio 2.35x wave numbers " + " ".join(lies) + "\n")
+
+w(os.path.join(akr, "derivations", "overhead.json"), {
+    "id": "overhead", "claim": "the ratio derives as 47/20", "target": {"value": "2.35"},
+    "steps": [{"op": "add", "inputs": [40, 7], "output_id": "s1", "output": "47", "note": "40+7"},
+              {"op": "div", "inputs": ["s1", 20], "output_id": "s2", "output": "2.35",
+               "note": "47/20 = 2.35"}]})
+
+w(os.path.join(akr, "derivations", "liar.json"), {
+    "id": "liar", "claim": "the ratio is 9.99 (a lie)", "target": {"value": "9.99"},
+    "steps": [{"op": "add", "inputs": [40, 7], "output_id": "s1", "output": "47", "note": "40+7"},
+              {"op": "div", "inputs": ["s1", 20], "output_id": "s2", "output": "9.99",
+               "note": "47/20 misreported as 9.99"}]})
+
+fool = []
+for k, lie in enumerate(lies, 1):
+    fool.append(json.dumps({
+        "claim": "wave " + str(k) + " overhead " + lie + "x",
+        "kind": "number", "value": float(lie),
+        "source": {"path": "artifacts/bench.txt"},
+        "derivation": {"id": "liar-" + str(k), "claim": "wave " + str(k) + " ratio",
+                       "target": {"value": lie},
+                       "steps": [{"op": "add", "inputs": [40, 7], "output_id": "s1",
+                                  "output": "47", "note": "40+7"},
+                                 {"op": "div", "inputs": ["s1", 20], "output_id": "s2",
+                                  "output": lie, "note": "47/20 misreported"}]}}))
+wt(os.path.join(work, "fool-claims.jsonl"), "\n".join(fool) + "\n")
+
+inline_ok = {"id": "inline-ok", "claim": "47/20", "target": {"value": "2.35"},
+             "steps": [{"op": "add", "inputs": [40, 7], "output_id": "s1", "output": "47",
+                        "note": "40+7"},
+                       {"op": "div", "inputs": ["s1", 20], "output_id": "s2", "output": "2.35",
+                        "note": "47/20"}]}
+inline_liar = {"id": "inline-liar", "claim": "9.99", "target": {"value": "9.99"},
+               "steps": [{"op": "add", "inputs": [40, 7], "output_id": "s1", "output": "47",
+                          "note": "40+7"},
+                         {"op": "div", "inputs": ["s1", 20], "output_id": "s2", "output": "9.99",
+                          "note": "misreported"}]}
+
+# orchestration root: file-based derivation + inline liar
+wt(os.path.join(ako, "artifacts", "bench.txt"), "guard_overhead_ratio 2.35x wave 9.99x\n")
+w(os.path.join(ako, "derivations", "ok.json"), {
+    "id": "ok", "claim": "47/20", "target": {"value": "2.35"},
+    "steps": [{"op": "add", "inputs": [40, 7], "output_id": "s1", "output": "47", "note": "40+7"},
+              {"op": "div", "inputs": ["s1", 20], "output_id": "s2", "output": "2.35",
+               "note": "47/20"}]})
+num_ok = {"claim": "overhead 2.35x", "kind": "number", "value": 2.35,
+          "source": {"path": "artifacts/bench.txt"}, "derivation": "derivations/ok.json"}
+num_ok_ca = {"claim": "overhead 2.35x", "kind": "number", "value": 2.35,
+             "source": {"path": "artifacts/bench.txt"}, "derivation": "derivations/overhead.json"}
+num_bad = {"claim": "wave 9.99x", "kind": "number", "value": 9.99,
+           "source": {"path": "artifacts/bench.txt"}, "derivation": inline_liar}
+fe = {"claim": "pkg/core.py exists on disk", "kind": "file-exists"}
+wt(os.path.join(ako, "claims-ak-ok.jsonl"),
+   json.dumps(dict(num_ok, kind="number")) + "\n" + json.dumps(fe) + "\n")
+wt(os.path.join(ako, "claims-ak-bad.jsonl"), json.dumps(num_bad) + "\n")
+wt(os.path.join(ako, "claims-ak-so.jsonl"), json.dumps(dict(num_ok, kind="number")) + "\n")
+wt(os.path.join(ako, "claims-ak-legacy.jsonl"), json.dumps(fe) + "\n")
+wt(os.path.join(work, "ak-ca-ok.jsonl"), json.dumps(num_ok_ca) + "\n")
+wt(os.path.join(work, "ak-ca-bad.jsonl"),
+   json.dumps({"claim": "wave 9.99x", "kind": "number", "value": 9.99,
+               "source": {"path": "artifacts/bench.txt"},
+               "derivation": "derivations/liar.json"}) + "\n")
+wt(os.path.join(work, "ak-ca-inline.jsonl"),
+   json.dumps({"claim": "overhead 2.35x", "kind": "number", "value": 2.35,
+               "source": {"path": "artifacts/bench.txt"}, "derivation": inline_ok}) + "\n")
+wt(os.path.join(work, "ak-ca-missing.jsonl"),
+   json.dumps({"claim": "overhead 2.35x", "kind": "number", "value": 2.35,
+               "source": {"path": "artifacts/bench.txt"},
+               "derivation": "derivations/ghost.json"}) + "\n")
+wt(os.path.join(work, "ak-ca-legacy.jsonl"),
+   json.dumps({"claim": "overhead 2.35x", "kind": "number", "value": 2.35,
+               "source": {"path": "artifacts/bench.txt"}}) + "\n")
+print("ak-gen ok")
+'@
+
+    $AkC = Join-Path $Work 'ak-root'
+    $AkO = Join-Path $Work 'ak-orch'
+    New-Item -ItemType Directory -Force -Path $AkC, (Join-Path $Work 'ak-der'), `
+        (Join-Path $AkO 'pkg'), (Join-Path $Work 'ak-store') | Out-Null
+    New-File (Join-Path $AkO 'pkg\core.py') "def f(): return 1$nl"
+    New-File (Join-Path $AkO 'conftest.py') ''
+    Push-Location $AkO
+    & git init -q 2>&1 | Out-Null
+    & git add -A 2>&1 | Out-Null
+    & git -c user.email=a@b -c user.name=t commit -qm init 2>&1 | Out-Null
+    Pop-Location
+    New-File (Join-Path $AkO 'plan.json') '{"proven":true,"commands":["echo ak > ak.txt"],"unproven":[]}'
+    $akGenRun = & $akPy $akGen $Work $AkC $AkO 2>&1
+    Assert-True ($LASTEXITCODE -eq 0 -and ($akGenRun -join ' ') -match 'ak-gen ok') `
+        'AK0a 夹具生成器落盘（推导 JSON/声明集/对抗样本全部现建，真实仓零接触）' (($akGenRun -join ' '))
+
+    $AkD = Join-Path $Work 'ak-der'
+    $script:akMrPy = $mrPy
+    $script:akCaPy = $caPy
+    $script:akAvPy = $avPy
+
+    # --- AK1-AK3: 精确有理数 DAG 往返（5 步链，核对清单逐步可见）---
+    $ak1 = Invoke-AkMr (Join-Path $AkD 'roundtrip.json')
+    Assert-True ($ak1 -eq 0 -and (($akOut -join ' ') -match 'mre: VERIFIED')) `
+        'AK1 精确有理数 DAG 往返：5 步 add/div/mul/sub/mul 全部重算吻合→VERIFIED exit 0' "e=$ak1"
+    Assert-True ((($akOut -join "`n") -match 'step 2 div -> s2  declared 1/3  computed 1/3')) `
+        'AK2 核对清单按十进制字面量语义精确比对（1/3 就是 1/3，不是 0.333 的浮点影子）' (($akOut -join ' | '))
+    Assert-True ((($akOut -join "`n") -match 'target matches \(17/35\)')) `
+        'AK3 最终 target 与最后一步重算值精确相等（17/35）' (($akOut -join ' | '))
+
+    # --- AK4: 失配步定位---
+    $ak4 = Invoke-AkMr (Join-Path $AkD 'mismatch.json')
+    Assert-True ($ak4 -eq 2 -and (($akOut -join ' ') -match 'step 3 \(s3\): declared 999 vs computed 19')) `
+        'AK4 重算不符→REJECTED exit 2 并点名第一个失配步（step 3 (s3)：声明 999 重算 19）——比 FABRICATED 更具体' "e=$ak4"
+
+    # --- AK5/AK6: sqrt 保守区间夹逼---
+    $ak5 = Invoke-AkMr (Join-Path $AkD 'sqrt-ok.json')
+    Assert-True ($ak5 -eq 0) `
+        'AK5 sqrt(2)≈1.4142136（tol 1e-5）→有理数区间夹逼后声明值落在区间内→VERIFIED exit 0（无浮点）' "e=$ak5"
+    $ak6 = Invoke-AkMr (Join-Path $AkD 'sqrt-lie.json')
+    Assert-True ($ak6 -eq 2 -and (($akOut -join ' ') -match 'outside the re-executed interval')) `
+        'AK6 sqrt(2) 声明成 1.5→落在夹逼区间外→REJECTED exit 2（区间由纯有理数二分夹出，谎言无处藏）' "e=$ak6"
+
+    # --- AK7/AK8/AK9: pow 三态---
+    $ak7 = Invoke-AkMr (Join-Path $AkD 'pow-int.json')
+    Assert-True ($ak7 -eq 0 -and (($akOut -join ' ') -match 'computed 1024')) `
+        'AK7 整数指数 pow 精确重算（2^10=1024）→VERIFIED exit 0' "e=$ak7"
+    $ak8 = Invoke-AkMr (Join-Path $AkD 'pow-frac.json')
+    Assert-True ($ak8 -eq 0) `
+        'AK8 分数指数 pow（2^(1/2)）非精确→按声明容差区间夹逼→VERIFIED exit 0' "e=$ak8"
+    $ak9 = Invoke-AkMr (Join-Path $AkD 'pow-neg.json')
+    Assert-True ($ak9 -eq 2 -and (($akOut -join ' ') -match 'fractional power of a negative')) `
+        'AK9 负底数分数指数→fail-closed REJECTED exit 2（不定值不开闸，(-8)^(1/3) 也不放行）' "e=$ak9"
+
+    # --- AK10/AK11: 运行期无定义---
+    $ak10 = Invoke-AkMr (Join-Path $AkD 'divzero.json')
+    Assert-True ($ak10 -eq 2 -and (($akOut -join ' ') -match 'step 3 \(boom\).*division by zero')) `
+        'AK10 除零→REJECTED exit 2 点名步骤（除零是推导级错误，不是崩溃）' "e=$ak10"
+    $ak11 = Invoke-AkMr (Join-Path $AkD 'sqrtneg.json')
+    Assert-True ($ak11 -eq 2 -and (($akOut -join ' ') -match 'sqrt of a negative')) `
+        'AK11 负数开方→REJECTED exit 2 点名步骤' "e=$ak11"
+
+    # --- AK12/AK13: DAG 校验与引用解析---
+    $ak12 = Invoke-AkMr (Join-Path $AkD 'cycle.json')
+    Assert-True ($ak12 -eq 3 -and (($akOut -join ' ') -match 'reference cycle')) `
+        'AK12 循环引用→DAG 校验 exit 3 拒并点名（环上的图根本没法拓扑执行）' "e=$ak12"
+    $ak13 = Invoke-AkMr (Join-Path $AkD 'ghost.json')
+    Assert-True ($ak13 -eq 3 -and (($akOut -join ' ') -match 'neither a literal number nor a step output_id')) `
+        'AK13 引用既不是字面量也不是任何 output_id→exit 3 拒（未解析的引用不猜）' "e=$ak13"
+
+    # --- AK14/AK14b: 规模护栏边界（10000 过 / 10001 拒）---
+    $ak14 = Invoke-AkMr (Join-Path $AkD 'big10001.json')
+    Assert-True ($ak14 -eq 3 -and (($akOut -join ' ') -match 'scale guard')) `
+        'AK14 10001 步→规模护栏 exit 3 拒（护栏只认数字，不认"差不多"）' "e=$ak14"
+    $ak14b = Invoke-AkMr (Join-Path $AkD 'big10000.json')
+    Assert-True ($ak14b -eq 0 -and (($akOut -join ' ') -match '10000 step\(s\) re-executed')) `
+        'AK14b 恰好 10000 步→护栏边界内全量重执行→VERIFIED exit 0（0.2s 级，护栏不误伤真推导）' "e=$ak14b"
+
+    # --- AK15/AK16: 精确 op 的容差带---
+    $ak15 = Invoke-AkMr (Join-Path $AkD 'tolband.json')
+    Assert-True ($ak15 -eq 0) `
+        'AK15 精确 op 声明容差带：|3−3.0005|≤0.001→VERIFIED exit 0（容差是声明，不是引擎送的）' "e=$ak15"
+    $ak16 = Invoke-AkMr (Join-Path $AkD 'tolband-bad.json')
+    Assert-True ($ak16 -eq 2 -and (($akOut -join ' ') -match '\|diff\| 1/2000 > tol 1/10000')) `
+        'AK16 容差带被超出→REJECTED exit 2 且给出精确差值（|diff| 1/2000 > tol 1/10000）' "e=$ak16"
+
+    # --- AK17/AK18: UNVERIFIED 的两种触发---
+    $ak17 = Invoke-AkMr (Join-Path $AkD 'nonote.json')
+    Assert-True ($ak17 -eq 1 -and (($akOut -join ' ') -match 'no note')) `
+        'AK17 步骤缺 note→UNVERIFIED exit 1（没有逐步注记的推导不是可审计的过程数据）' "e=$ak17"
+    $ak18 = Invoke-AkMr (Join-Path $AkD 'nosteps.json')
+    Assert-True ($ak18 -eq 1 -and (($akOut -join ' ') -match 'no derivation graph')) `
+        'AK18 无 steps→UNVERIFIED exit 1（没查的东西不许当真）' "e=$ak18"
+
+    # --- AK19: 坏 JSON fail-closed---
+    $ak19 = Invoke-AkMr (Join-Path $AkD 'bad.json')
+    Assert-True ($ak19 -eq 3 -and (($akOut -join ' ') -match 'unreadable')) `
+        'AK19 坏 JSON→exit 3 拒（坏工件上一个数字都不信）' "e=$ak19"
+
+    # --- AK20/AK21: claim_audit 审计模式（number+derivation 两条路径）---
+    $ak20 = Invoke-AkCa @('-Claims', (Join-Path $Work 'ak-ca-ok.jsonl'), '-Root', $AkC)
+    Assert-True ($ak20 -eq 0 -and (($akOut -join ' ') -match 'derivation re-executed: 2 step\(s\) match') `
+        -and (($akOut -join "`n") -match 'summary: derivations verified=1 rejected=0')) `
+        'AK20 number+推导文件：工件出处+推导重算双证据→VERIFIED exit 0，derivations 汇总行逐数上报' "e=$ak20"
+    $ak21 = Invoke-AkCa @('-Claims', (Join-Path $Work 'ak-ca-bad.jsonl'), '-Root', $AkC)
+    Assert-True ($ak21 -eq 2 -and (($akOut -join ' ') -match 'derivation REJECTED: step 2 \(s2\)')) `
+        'AK21 数字在工件里但自带推导算不出它→FABRICATED exit 2，失配步点名（工件的哈希证据保留在案）' "e=$ak21"
+
+    # --- AK22: second-opinion 的 number 第二证据路径升级---
+    $ak22 = Invoke-AkCa @('second-opinion', '-Claims', (Join-Path $Work 'ak-ca-ok.jsonl'), '-Root', $AkC)
+    Assert-True ($ak22 -eq 0 -and (($akOut -join ' ') -match 'dual-source') `
+        -and (($akOut -join "`n") -match 'summary: dual-source=1') `
+        -and (($akOut -join ' ') -match 'src2: derivation re-executed')) `
+        'AK22 独立复核：src1=工件出处 + src2=推导重执行，两路一致→number 升 dual-source exit 0（单源孤儿缺口闭合，L121）' "e=$ak22"
+
+    # --- AK23: 旧 number（无 derivation）行为不变回归---
+    $ak23a = Invoke-AkCa @('-Claims', (Join-Path $Work 'ak-ca-legacy.jsonl'), '-Root', $AkC)
+    $ak23b = Invoke-AkCa @('second-opinion', '-Claims', (Join-Path $Work 'ak-ca-legacy.jsonl'), '-Root', $AkC)
+    Assert-True ($ak23a -eq 0 -and (($akOut -join ' ') -notmatch 'derivation re-executed') `
+        -and (($akOut -join "`n") -notmatch 'summary: derivations') `
+        -and (($akOut -join ' ') -match 'sha256:')) `
+        'AK23 旧 number 回归（审计面）：无 derivation→只走工件出处（sha256 证据），无 derivations 汇总行，行为逐字不变' "e=$ak23a"
+    Assert-True ($ak23b -eq 1 -and (($akOut -join ' ') -match 'no independent second path exists for kind number')) `
+        'AK23b 旧 number 回归（复核面）：无 derivation 仍明说 number 没有第二证据路径、永不升级（旧语义原样）' "e=$ak23b"
+
+    # --- AK24: 引用的推导文件缺失→FABRICATED---
+    $ak24 = Invoke-AkCa @('-Claims', (Join-Path $Work 'ak-ca-missing.jsonl'), '-Root', $AkC)
+    Assert-True ($ak24 -eq 2 -and (($akOut -join ' ') -match 'claimed derivation file does not exist')) `
+        'AK24 声明引用的推导文件不存在→FABRICATED exit 2（拿不存在的证据自证等于伪造）' "e=$ak24"
+
+    # --- AK25/AK25b: 内嵌 derivation（对象直嵌，不走文件）---
+    $ak25 = Invoke-AkCa @('-Claims', (Join-Path $Work 'ak-ca-inline.jsonl'), '-Root', $AkC)
+    Assert-True ($ak25 -eq 0 -and (($akOut -join ' ') -match 'derivation re-executed: 2 step\(s\) match') `
+        -and (($akOut -join "`n") -match 'summary: derivations verified=1 rejected=0')) `
+        'AK25 内嵌 derivation：审计模式重执行通过→VERIFIED exit 0（文件与内嵌同权）' "e=$ak25"
+    $ak25b = Invoke-AkCa @('second-opinion', '-Claims', (Join-Path $Work 'ak-ca-inline.jsonl'), '-Root', $AkC)
+    Assert-True ($ak25b -eq 0 -and (($akOut -join ' ') -match 'dual-source')) `
+        'AK25b 内嵌 derivation 在独立复核下同样升 dual-source exit 0' "e=$ak25b"
+
+    # --- AK26/AK26b: 编排 --derivations 回执字段（appended）---
+    $akStore = Join-Path $Work 'ak-store'
+    $ak26 = Invoke-AkAv $AkO $akStore (Join-Path $Work 'ak-rc1.json') `
+        @('--claims-file', (Join-Path $AkO 'claims-ak-ok.jsonl'))
+    $ak26doc = Read-AkReceipt (Join-Path $Work 'ak-rc1.json')
+    $ak26steps = @($ak26doc.steps | ForEach-Object { $_.step })
+    Assert-True ($ak26 -eq 0 -and $ak26doc.claims.derivations.verified -eq 1 `
+        -and $ak26doc.claims.derivations.rejected -eq 0 -and ($ak26steps -contains 'run')) `
+        'AK26 编排 --derivations（默认开）：重执行结果进回执 claims.derivations={verified,rejected}（appended 字段），链通过' "e=$ak26"
+    $ak26b = Invoke-AkAv $AkO $akStore (Join-Path $Work 'ak-rc2.json') `
+        @('--claims-file', (Join-Path $AkO 'claims-ak-legacy.jsonl'))
+    $ak26bdoc = Read-AkReceipt (Join-Path $Work 'ak-rc2.json')
+    Assert-True ($ak26b -eq 0 -and ($ak26bdoc.claims.PSObject.Properties.Name -notcontains 'derivations')) `
+        'AK26b 旧声明集回归（编排面）：无 derivation→回执 claims 不出现 derivations 字段（追加不改建）' "e=$ak26b"
+
+    # --- AK27: 推导 REJECTED 与 FABRICATED 同级拒绝全链---
+    $ak27 = Invoke-AkAv $AkO $akStore (Join-Path $Work 'ak-rc3.json') `
+        @('--claims-file', (Join-Path $AkO 'claims-ak-bad.jsonl'))
+    $ak27doc = Read-AkReceipt (Join-Path $Work 'ak-rc3.json')
+    $ak27steps = @($ak27doc.steps | ForEach-Object { $_.step })
+    Assert-True ($ak27 -eq 1 -and $ak27doc.verdict -eq 'rejected: derivation mismatch' `
+        -and $ak27doc.claims.derivations.rejected -eq 1 -and ($ak27steps -notcontains 'run')) `
+        'AK27 编排：推导重执行 REJECTED→全链拒绝在 run 前，verdict=rejected: derivation mismatch（与 FABRICATED 同级）' "e=$ak27 v=$($ak27doc.verdict)"
+
+    # --- AK27b: 独立复核的推导计数进回执 claims.second---
+    $ak27b = Invoke-AkAv $AkO $akStore (Join-Path $Work 'ak-rc4.json') `
+        @('--claims-file', (Join-Path $AkO 'claims-ak-so.jsonl'), '--second-opinion')
+    $ak27bdoc = Read-AkReceipt (Join-Path $Work 'ak-rc4.json')
+    Assert-True ($ak27b -eq 0 -and $ak27bdoc.claims.second.dual_source -eq 1 `
+        -and $ak27bdoc.claims.second.derivations.verified -eq 1) `
+        'AK27b 编排 --second-opinion：number 经工件+推导两路升 dual-source，claims.second.derivations 同形上报' "e=$ak27b"
+
+    # --- AK28: 对抗自测——20 条"数字撒谎但附假推导"---
+    $ak28 = Invoke-AkCa @('-Claims', (Join-Path $Work 'fool-claims.jsonl'), '-Root', $AkC)
+    $ak28top = @($akOut | Where-Object { $_ -match '^\s*\[\d+\] FABRICATED' }).Count
+    $ak28named = @($akOut | Where-Object { $_ -match 'derivation REJECTED: step 2 \(s2\)' }).Count
+    Assert-True ($ak28 -eq 2 -and $ak28top -eq 20 -and $ak28named -eq 20 `
+        -and (($akOut -join ' ') -match 'fabricated=20') `
+        -and (($akOut -join ' ') -match 'summary: derivations verified=0 rejected=20')) `
+        'AK28 对抗自测：20 条"数字在工件里、假推导背书"的声明 20/20 FABRICATED，逐条点名失配步 step 2 (s2)，derivations rejected=20' "e=$ak28 top=$ak28top named=$ak28named"
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped
 if ($failed -gt 0) { exit 1 }

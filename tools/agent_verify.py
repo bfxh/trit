@@ -127,7 +127,11 @@ CLAIMS_NOTE = ("model statements are audited against recorded evidence (receipts
                "FABRICATED refuses the whole chain -- what the model says carries zero "
                "evidential weight on its own; --second-opinion re-derives the same claims "
                "through two independent evidence paths (freshest receipt vs disk + cost "
-               "ledger run records), dual-source upgrade or FABRICATED downgrade")
+               "ledger run records), dual-source upgrade or FABRICATED downgrade; "
+               "--derivations (default on) re-executes number-claim derivation graphs in "
+               "exact rational arithmetic (tools/mre.py): a REJECTED re-execution refuses "
+               "the chain as 'rejected: derivation mismatch' with the first mismatching "
+               "step, --no-derivations restores the legacy single-source shape")
 ATTEST_NOTE = ("--spent-token also lands on the attest hash chain (<Store>/attest-ledger.jsonl): "
                "tamper-evident bookkeeping and dedup (a repeated spend is structurally "
                "impossible), NOT model-side ground truth -- claimed_tokens stay a declaration; "
@@ -143,7 +147,9 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
   caps:         --caps [--caps-mem-mb N] [--caps-procs N] [--caps-seconds S]
   subagent:     --agent-id <id>
   cost:         [--spent-token N]   (declared model-side tokens of this run)
-  claims:       [--claims-file f.jsonl] [--claims-receipts glob]... [--second-opinion]  (audit model statements)
+  claims:       [--claims-file f.jsonl] [--claims-receipts glob]... [--second-opinion]
+                [--derivations (default on) | --no-derivations]  (audit model statements;
+                number claims carrying derivations are re-executed by mre, REJECTED refuses)
   receipt:      [--compact]         (single-line machine receipt; default stays full)
   gates:        [--parallel-gates]  (affected/policy/constraints concurrent; opt-in)
 
@@ -188,7 +194,7 @@ def parse_args(argv):
            "allow_network": False, "dry_run": False, "receipt": "", "store": "", "plan": "",
            "allow": [], "agent_id": "", "spent_token": "", "compact": False,
            "parallel_gates": False, "claims_file": "", "claims_receipts": [],
-           "second_opinion": False}
+           "second_opinion": False, "no_derivations": False}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -200,7 +206,10 @@ def parse_args(argv):
         # value-branch swallows the NEXT argument as its value (--caps -Root ... would
         # parse -Root as the caps value).
         if name in ("dryrun", "allownetwork", "caps", "compact", "secondopinion",
-                    "second-opinion"):
+                    "second-opinion", "derivations", "noderivations", "no-derivations"):
+            # --derivations is the default-on no-op; --no-derivations opts out of the
+            # mre re-execution pass (legacy single-source shape).
+            out["no_derivations"] = name in ("noderivations", "no-derivations")
             out["dry_run" if name == "dryrun"
                 else "allow_network" if name == "allownetwork"
                 else "caps" if name == "caps"
@@ -750,13 +759,16 @@ def main(argv):
     if a.get("claims_file"):
         ca_args = [os.path.join(TOOLS, "claim_audit.py"), "-Claims", a["claims_file"],
                    "-Root", root]
+        if a.get("no_derivations"):
+            ca_args.append("-NoDerivations")
         for g in a.get("claims_receipts", []):
             ca_args += ["-Receipts", g]
         ca = step(ca_args)
+        ca_text = "\n".join(ca["out"])
         add("claim-audit", ca, {0: "ok", 1: "unverified", 2: "fabricated",
                                 3: "refused"}.get(ca["code"], "refused"))
         m = re.search(r"summary: total=(\d+) verified=(\d+) unverified=(\d+) "
-                      r"fabricated=(\d+)", "\n".join(ca["out"]))
+                      r"fabricated=(\d+)", ca_text)
         if m:
             doc["claims"] = {"file": os.path.basename(a["claims_file"]),
                              "total": int(m.group(1)), "verified": int(m.group(2)),
@@ -764,14 +776,24 @@ def main(argv):
         # decomposition pass-through, appended fields only: an aggregate-heavy claims
         # set shows in the receipt how many sentences were decomposed into how many
         # atoms (the aggregate verdict itself is computed inside claim_audit)
-        ma = re.search(r"summary: aggregates=(\d+) atoms=(\d+)", "\n".join(ca["out"]))
+        ma = re.search(r"summary: aggregates=(\d+) atoms=(\d+)", ca_text)
         if ma and "claims" in doc:
             doc["claims"]["aggregates"] = int(ma.group(1))
             doc["claims"]["atoms"] = int(ma.group(2))
+        # derivation pass-through, appended fields only: derivation-bearing number
+        # claims show how many re-executions matched and how many contradicted
+        md = re.search(r"summary: derivations verified=(\d+) rejected=(\d+)", ca_text)
+        if md and "claims" in doc:
+            doc["claims"]["derivations"] = {"verified": int(md.group(1)),
+                                            "rejected": int(md.group(2))}
         if ca["code"] in (2, 3):
             for ln in ca["out"]:
                 print(ln)
             if ca["code"] == 2:
+                if re.search(r"derivation REJECTED", ca_text):
+                    print("agent-verify: 拒绝 -- 推导重执行与现实矛盾（derivation REJECTED）："
+                          "附推导的数字声明算不出它声称的结果")
+                    return finish("rejected: derivation mismatch", 1)
                 print("agent-verify: 拒绝 -- 声明与现实矛盾（FABRICATED）：模型说什么不算什么")
                 return finish("rejected: fabricated claims", 1)
             print("agent-verify: 拒绝 -- claims 文件不可审计（fail-closed）")
@@ -803,10 +825,17 @@ def main(argv):
             m3 = re.search(r"dual-source=(\d+)", so_text)
             if m3:
                 doc["claims"]["second"]["dual_source"] = int(m3.group(1))
+        md2 = re.search(r"summary: derivations verified=(\d+) rejected=(\d+)", so_text)
+        if md2 and "claims" in doc and "second" in doc["claims"]:
+            doc["claims"]["second"]["derivations"] = {"verified": int(md2.group(1)),
+                                                      "rejected": int(md2.group(2))}
         if so["code"] in (2, 3):
             for ln in so["out"]:
                 print(ln)
             if so["code"] == 2:
+                if re.search(r"derivation REJECTED", so_text):
+                    print("agent-verify: 拒绝 -- 独立复核抓到推导重执行矛盾（derivation REJECTED）")
+                    return finish("rejected: derivation mismatch (second opinion)", 1)
                 print("agent-verify: 拒绝 -- 独立复核与现实矛盾（second opinion FABRICATED）")
                 return finish("rejected: fabricated claims (second opinion)", 1)
             print("agent-verify: 拒绝 -- 独立复核不可审计（fail-closed）")

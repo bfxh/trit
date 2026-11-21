@@ -2,6 +2,43 @@
 
 ## [Unreleased]
 
+### Added（数学推理引擎 mre：推导图重执行器 + number 声明的推导第二证据路径）
+
+- `tools/mre.py`（stdlib only，fractions）：**精确算术推导图重执行器**——模型把计算过程
+  摆成推导图（steps：add/sub/mul/div/sqrt/pow，inputs 是字面量或先前 step 的
+  output_id，每步声明 output + note），引擎用 Fraction **重执行整张 DAG**（Kahn 拓扑序，
+  引用可指向任意 step，环 → 拒），每步与声明 output 比对（精确相等或容差内），最终
+  target 与重算值比对。三态输出：VERIFIED（附每步核对清单）/ UNVERIFIED（无 steps、
+  无 target、缺 note——没查的不许当真）/ REJECTED（**点名第一个失配步**，比笼统伪造
+  更具体）；结构坏/超限一律 exit 3 拒（steps≤10000、每步输入≤256、值位数≤100000、
+  二分≤4096 轮、分数指数分母≤1024——规模护栏 fail-closed）。
+- **无浮点谎言**：sqrt/pow 非精确结果用**保守区间**夹逼（纯有理数二分到声明容差，精度
+  边界=声明容差，引擎不自加精度），区间向后传播、下游判定保持 sound；碰巧精确
+  （sqrt(4)、4^(1/2)）按精确处理免 tol；声明值按十进制字面量解释（JSON float 经 repr
+  往返），超 float 精度的精确值必须写成字符串。除零/负数开方/负底分数次幂/0^0/非精确
+  步未声明 tol → REJECTED 点名步骤。
+- **诚实边界（写死 usage）**：mre 核验的是**推导一致性**（给的步骤算不出声称的结果），
+  不是推导前提的真实性——前提对不对由上游证据面管；角色区分：Lean 一类证明助手验收
+  **命题**，mre 验收**算术**。出处：业界过程监督实证（"Let's Verify Step by Step"，
+  2023）——推导轨迹（逐步 note + 判定）就是过程监督的训练数据形状；业界把数学声明变成
+  机器可核验对象的探索（NS 奇性声明配 Lean 4 形式化，Alpöge–Buckmaster 线，假设态探索
+  ——工程不依赖该声明真假）。
+- claim_audit 接入（补"number 单源孤儿"缺口）：number 声明可携带 `derivation`
+  （root 相对文件路径或内嵌 steps）——重执行 VERIFIED 给该数字**第二证据路径**（工件
+  出处 + 推导重算），second-opinion 允许升 dual-source；REJECTED → 直接 FABRICATED
+  （附失配步）；推导文件缺失/坏 JSON/结构坏 → FABRICATED；**无 derivation 的 number
+  行为逐字不变**（`-NoDerivations` 整关）。机器路径闸扫进 derivation（内嵌对象字符串值
+  与文件路径都在门口被扫）。
+- agent_verify 编排：`--derivations` 默认开（`--no-derivations` 关），claims 步骤透传；
+  回执 appended 字段 `claims.derivations={verified, rejected}`（second-opinion 下
+  `claims.second.derivations` 同形）；REJECTED 与 FABRICATED 同级拒绝全链
+  （verdict `rejected: derivation mismatch`）。
+- cognition/SCHEMA.md 新增 §7 derivation 契约（字段/DAG 规则/精确性口径/三态判定/
+  public-safe 分级）；docs/ERRORS.md L121 并账；selftest 新增 AK 组 34 断言（引擎三态、
+  失配步定位、区间夹逼、规模护栏、claim_audit 升级路径、编排回执、旧 number 回归、
+  10000 步边界、坏 JSON）；对抗自测：20 条"数字撒谎但附假推导"声明全部 FABRICATED 且
+  逐条定位失配步。
+
 ### Added（资源硬帽：run-caps.py 内核级资源上限 + agent-verify --caps 包裹）
 
 - `tools/run_caps.py`（+`run-caps.sh`/`run-caps.ps1` 转发器，stdlib only，ctypes）：

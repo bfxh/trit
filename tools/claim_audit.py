@@ -52,6 +52,26 @@ decomposition does not recurse); a decomposition that is present but malformed
 Attribution: judging the steps beats judging the summary -- OpenAI, "Let's Verify
 Step by Step" (2023), process supervision over result supervision.
 
+Derivation re-execution (kind=number) -- a number can show its work:
+
+    {"claim": "overhead 2.35x", "kind": "number", "source": {...},
+     "derivation": "derivations/overhead.json"}                  (root-relative path)
+    {"claim": "...", "kind": "number", "source": {...},
+     "derivation": {"id": "...", "target": {...}, "steps": [...]}}  (inline object)
+
+The cited derivation graph is re-executed by tools/mre.py in exact rational
+arithmetic (Fraction; sqrt/pow bracketed between rational bounds to the declared
+tolerance -- no floats). A REJECTED re-execution refuses the claim as FABRICATED
+with the first mismatching step named -- more specific than a bare fabrication.
+A VERIFIED re-execution does NOT replace provenance: the artifact check above
+still decides. What it buys is a SECOND evidence path, which is exactly what
+lets second-opinion upgrade a derivation-bearing number to dual-source (artifact
+provenance + derivation re-execution). A number without a derivation behaves
+exactly as before; -NoDerivations turns the pass off wholesale (legacy shape).
+The derivation contract lives in tools/mre.py's usage and cognition/SCHEMA.md
+section 7. Honest boundary: re-execution verifies derivation CONSISTENCY, not
+the truth of the premises -- premises stay upstream evidence's job.
+
 Second opinion -- independent re-derivation, not a helper's nod:
 
     claim_audit.py second-opinion -Claims <f> -Root <dir> [-Receipts <glob>...]
@@ -73,8 +93,10 @@ the first audit:
     either path contradicts reality        -> FABRICATED (both evidences printed)
     either path produces no evidence       -> UNVERIFIED (never upgraded on absence)
 
-kind=number has no second path (the cited artifact is the only source) and never
-upgrades. A receipt or ledger that was named but cannot be parsed refuses the mode
+kind=number has no second path of its own (the cited artifact is the only source)
+and never upgrades -- unless the claim carries a derivation, whose mre re-execution
+IS the second path: VERIFIED upgrades to dual-source, REJECTED refuses as FABRICATED.
+A receipt or ledger that was named but cannot be parsed refuses the mode
 (exit 3, fail-closed) -- a second opinion that cannot trust its own sources is not
 an opinion. Attribution: the third party re-derives and diffs, it does not "take
 another look" -- independent recomputation, arXiv:2610.12234-style.
@@ -106,6 +128,19 @@ except ImportError:
     # degrading here keeps the tri-state contract, and -Ledger then refuses loudly.
     ledger = None
 
+try:
+    import mre  # same tools directory; the derivation re-executor for number claims
+except ImportError:
+    # Same degradation rule: without the module, derivation-bearing numbers keep the
+    # legacy single-source behavior (no second path, no fabrication) and every claim's
+    # evidence says the derivation was not re-executed -- fail-quiet here is safer than
+    # a traceback that reads as UNVERIFIED.
+    mre = None
+
+# Re-execution counters for the receipt-facing summary line; "other" = derivations that
+# ran but produced neither a match nor a mismatch (not auditable / structurally refused).
+DERIV_STATE = {"enabled": True, "verified": 0, "rejected": 0, "other": 0}
+
 # Same shapes privacy_scan hunts for; a claims file quoting local paths would see
 # them echoed into receipts. Scan PARSED string values, not raw lines -- JSON
 # doubles backslashes, so raw-line scanning is structurally blind to drive paths
@@ -121,7 +156,8 @@ VERIFIED, UNVERIFIED, FABRICATED = "VERIFIED", "UNVERIFIED", "FABRICATED"
 
 
 def parse_args(argv):
-    out = {"claims": "", "root": "", "receipts": [], "receipt": "", "ledger": ""}
+    out = {"claims": "", "root": "", "receipts": [], "receipt": "", "ledger": "",
+           "no_derivations": False}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -132,6 +168,10 @@ def parse_args(argv):
         val = argv[i + 1] if i + 1 < len(argv) else ""
         if name == "receipts":
             out["receipts"].extend([x for x in val.split(",") if x.strip()])
+        elif name in ("noderivations", "no-derivations"):
+            out["no_derivations"] = True
+            i += 1
+            continue
         elif name in ("claims", "root", "receipt", "ledger",
                       "claims-file", "claimsfile"):
             out[{"claims-file": "claims", "claimsfile": "claims"}.get(name, name)] = val
@@ -249,7 +289,56 @@ def verify_file_exists(claim, root):
     return VERIFIED, f"sha256:{sha12(full)} {target}"
 
 
-def verify_number(claim, root):
+def derivation_verdict(claim, root):
+    """(status, evidence) for a claim's "derivation" field; (None, "") when the claim
+    carries none (or the pass is off / the module is missing).
+
+    VERIFIED     re-execution matched -- the number gains a SECOND evidence path
+                 (artifact provenance stays the first; second-opinion may dual-source)
+    FABRICATED   re-execution contradicted the claim (mismatching step named) or the
+                 cited derivation itself is unreadable/refused
+    UNVERIFIED   the derivation is not auditable (no steps / no target / missing note):
+                 no upgrade, no refusal -- the artifact check alone still decides
+    """
+    d = claim.get("derivation")
+    if d is None or mre is None or not DERIV_STATE["enabled"]:
+        return None, ""
+    if isinstance(d, str):
+        if not d.strip():
+            return FABRICATED, "derivation path is empty"
+        full = under_root(root, d)
+        if not full or not os.path.isfile(full):
+            return FABRICATED, f"claimed derivation file does not exist: {d}"
+        try:
+            with open(full, "r", encoding="utf-8-sig") as fh:
+                doc = json.load(fh)
+        except (OSError, ValueError) as ex:
+            return FABRICATED, f"derivation unreadable ({d}): {ex}"
+    elif isinstance(d, dict):
+        doc = d
+    else:
+        return FABRICATED, "derivation must be a root-relative file path or an inline object"
+    res = mre.evaluate(doc)
+    v = res["verdict"]
+    reason = ascii_safe(res.get("reason", ""), 220)
+    if v == mre.VERIFIED:
+        DERIV_STATE["verified"] += 1
+        tail = reason.split("; ", 1)[-1]  # the step count is already stated outside
+        return VERIFIED, (f"derivation re-executed: {res.get('n_steps', '?')} step(s) match "
+                          f"in exact rational arithmetic; {tail}")
+    if v == mre.REJECTED:
+        DERIV_STATE["rejected"] += 1
+        return FABRICATED, f"derivation REJECTED: {reason}"
+    if v == mre.REFUSED:
+        DERIV_STATE["other"] += 1
+        return FABRICATED, f"derivation refused: {reason}"
+    DERIV_STATE["other"] += 1
+    return UNVERIFIED, f"derivation not auditable ({reason})"
+
+
+def verify_number_artifact(claim, root):
+    """The provenance check, unchanged since day one: the number must be found in its
+    own cited artifact. Derivation re-execution is layered on top in verify_number."""
     text = str(claim.get("claim", ""))
     numbers = []
     v = claim.get("value")
@@ -276,6 +365,20 @@ def verify_number(claim, root):
     return VERIFIED, f"sha256:{sha12(full)} {src['path']} (all {len(numbers)} number(s) found)"
 
 
+def verify_number(claim, root, deriv=True):
+    verdict, ev = verify_number_artifact(claim, root)
+    if not deriv:
+        return verdict, ev
+    dv, dev = derivation_verdict(claim, root)
+    if dv is None:
+        return verdict, ev
+    if dv == FABRICATED:
+        # The claim's own witness contradicts the claim: refuse with the mismatching
+        # step named, artifact evidence kept in view for the record.
+        return FABRICATED, f"{dev} | artifact: {ev}"
+    return verdict, f"{ev} | {dev}"
+
+
 def verify_command_ran(claim, receipts):
     cmd = claim.get("command")
     if not (isinstance(cmd, str) and cmd.strip()):
@@ -294,16 +397,18 @@ def verify_command_ran(claim, receipts):
 AGGREGATE_KIND = "aggregate"
 
 
-def verify_one(kind, claim, root, receipts):
+def verify_one(kind, claim, root, receipts, deriv=True):
     """The per-kind dispatch every verdict (top-level claim or decomposition atom)
     goes through. In audit mode `receipts` is the receipt corpus; in second-opinion
-    mode it is the single freshest receipt and so_verdict wraps this call."""
+    mode it is the single freshest receipt and so_verdict wraps this call -- with
+    deriv=False there, because the derivation re-execution is the SECOND source and
+    must not be double-run (nor double-counted) as part of the first."""
     if kind == "test-pass":
         return verify_test_pass(claim, root, receipts)
     if kind == "file-exists":
         return verify_file_exists(claim, root)
     if kind == "number":
-        return verify_number(claim, root)
+        return verify_number(claim, root, deriv=deriv)
     if kind == "command-ran":
         return verify_command_ran(claim, receipts)
     return UNVERIFIED, f"no verifier for kind '{claim['kind']}' (unknown kinds certify nothing)"
@@ -466,8 +571,15 @@ def so_rederive(kind, claim, root, rc, keys):
         return VERIFIED, ("src2: journal -- the receipt records "
                           + "/".join(sorted({ac for ac, _p in acts})) + " for this file")
     if kind == "number":
-        return UNVERIFIED, ("src2: no independent second path exists for kind number "
-                            "(the cited artifact is the only source)")
+        dv, dev = derivation_verdict(claim, root)
+        if dv is None:
+            return UNVERIFIED, ("src2: no independent second path exists for kind number "
+                                "(the cited artifact is the only source)")
+        if dv == FABRICATED:
+            return FABRICATED, f"src2: {dev}"
+        if dv == VERIFIED:
+            return VERIFIED, f"src2: {dev}"
+        return UNVERIFIED, f"src2: {dev}"
     return UNVERIFIED, f"src2: no verifier for kind '{claim.get('kind')}'"
 
 
@@ -475,7 +587,7 @@ def so_verdict(kind, claim, root, rc, keys):
     """Diff of two independent re-derivations. VERIFIED only when BOTH sources
     produce agreeing evidence (dual-source); any contradiction is FABRICATED with
     both evidences attached; absence degrades to UNVERIFIED, never an upgrade."""
-    v1, ev1 = verify_one(kind, claim, root, [rc] if rc is not None else [])
+    v1, ev1 = verify_one(kind, claim, root, [rc] if rc is not None else [], deriv=False)
     v2, ev2 = so_rederive(kind, claim, root, rc, keys)
     if v1 == FABRICATED or v2 == FABRICATED:
         return FABRICATED, f"downgraded -- src1: {ev1} | {ev2}"
@@ -519,7 +631,8 @@ def load_claims(path):
                                       f"list of atoms, each with claim+kind")
                 strings = [c, k]
                 stack = [obj.get("source"), obj.get("test"), obj.get("file"),
-                         obj.get("command"), obj.get("decomposition")]
+                         obj.get("command"), obj.get("decomposition"),
+                         obj.get("derivation")]
                 while stack:
                     item = stack.pop()
                     if isinstance(item, str):
@@ -559,6 +672,7 @@ def main(argv):
         print(f"claim_audit: REFUSED -- claims file untrustworthy: {err} "
               f"(fail-closed: nothing is believed from a half-readable claim set)")
         return 3
+    DERIV_STATE["enabled"] = not a.get("no_derivations", False)
     if mode == "audit":
         return run_audit(a, claims)
     return run_second_opinion(a, claims)
@@ -594,6 +708,9 @@ def run_audit(a, claims):
           f"unverified={counts[UNVERIFIED]} fabricated={counts[FABRICATED]}")
     if agg_count:
         print(f"summary: aggregates={agg_count} atoms={atom_total}")
+    if DERIV_STATE["verified"] + DERIV_STATE["rejected"]:
+        print(f"summary: derivations verified={DERIV_STATE['verified']} "
+              f"rejected={DERIV_STATE['rejected']}")
     if counts[FABRICATED]:
         print("verdict: FABRICATED present -- claims contradict reality; treat the "
               "whole claim set as hostile")
@@ -648,6 +765,9 @@ def run_second_opinion(a, claims):
           f"unverified={counts[UNVERIFIED]} fabricated={counts[FABRICATED]}")
     extra = (f" aggregates={agg_count} atoms={atom_total}" if agg_count else "")
     print(f"summary: dual-source={dual}{extra}")
+    if DERIV_STATE["verified"] + DERIV_STATE["rejected"]:
+        print(f"summary: derivations verified={DERIV_STATE['verified']} "
+              f"rejected={DERIV_STATE['rejected']}")
     if counts[FABRICATED]:
         print("verdict: FABRICATED present -- the second source contradicts the "
               "claim(s); treat the whole claim set as hostile")
