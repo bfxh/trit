@@ -470,6 +470,10 @@ fn receipt_cli_walks_four_states_and_rejects_skip() {
     );
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["receipt"]["state"], "Sent");
+    assert_eq!(
+        value["obligation"]["kind"], "handoff",
+        "Sent 只证明邮局工作"
+    );
     let ledger = value["ledger"].clone();
 
     let (code, value) = run(
@@ -478,6 +482,7 @@ fn receipt_cli_walks_four_states_and_rejects_skip() {
     );
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["receipt"]["state"], "Delivered");
+    assert_eq!(value["obligation"]["kind"], "handoff");
     let ledger = value["ledger"].clone();
 
     let (code, value) = run(
@@ -486,6 +491,22 @@ fn receipt_cli_walks_four_states_and_rejects_skip() {
     );
     assert_eq!(code, 1, "ORCH_CLI_RECEIPT_SKIP: 不能跳过 Read");
     assert_eq!(value["kind"], "receipt_skip");
+
+    let (code, value) = run(
+        "receipt",
+        &json!({"ledger": ledger, "action": "advance", "key": "k1", "state": "Read"}),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["obligation"]["kind"], "handoff", "Read 不等于 Acted");
+    let ledger = value["ledger"].clone();
+
+    let (code, value) = run(
+        "receipt",
+        &json!({"ledger": ledger, "action": "advance", "key": "k1", "state": "Acted"}),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["receipt"]["state"], "Acted");
+    assert!(value["obligation"].is_null(), "Acted 才关闭交接义务");
 }
 
 #[test]
@@ -511,6 +532,7 @@ fn handoff_gate_cli_three_states() {
     );
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["gate"], "True");
+    assert!(value["obligation"].is_null());
 
     let (code, value) = run(
         "handoff-gate",
@@ -518,6 +540,7 @@ fn handoff_gate_cli_three_states() {
     );
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["gate"], "Unknown", "ORCH_CLI_HANDOFF_STATE");
+    assert_eq!(value["obligation"]["kind"], "handoff");
 }
 
 #[test]
@@ -560,4 +583,60 @@ fn admit_with_claim_cli_is_k3_and() {
     );
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["gate"], "False", "ORCH_CLI_ADMIT_CLAIM");
+}
+
+#[test]
+fn select_with_in_doubt_ledger_reports_reconcile_obligation() {
+    let ledger = json!({"records": {"a": {
+        "attempt": {"operation": "a", "task": "a", "epoch": 0, "attempt": 1, "fence": 1},
+        "state": "Sending"
+    }}});
+    let (code, value) = run(
+        "select",
+        &json!({
+            "revision": 1,
+            "tasks": [task("a")],
+            "snapshot": snapshot(&["a"]),
+            "limits": limits(),
+            "ledger": ledger
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["selection"]["selected"], json!([]));
+    assert_eq!(value["selection"]["decisions"][0]["admission"], "Unknown");
+    assert_eq!(
+        value["selection"]["decisions"][0]["obligations"][0]["kind"], "reconcile",
+        "ORCH_CLI_EFFECT_RECONCILE"
+    );
+}
+
+#[test]
+fn obligations_command_schedules_with_deadline_and_budget() {
+    let mut stale = observation();
+    stale["freshness"] = json!("Unknown");
+    let (code, value) = run(
+        "select",
+        &json!({
+            "revision": 1,
+            "tasks": [task("a")],
+            "snapshot": {"revision": 1, "observations": {"a": stale}},
+            "limits": limits()
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    let selection = value["selection"].clone();
+
+    let (code, value) = run(
+        "obligations",
+        &json!({
+            "selection": selection,
+            "policy": {"ttl": 10},
+            "now": 100,
+            "budget": {"tokens": 1000, "human": 0}
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["batch"]["scheduled"][0]["kind"], "rebasis");
+    assert_eq!(value["batch"]["scheduled"][0]["deadline"], 110);
+    assert_eq!(value["batch"]["tokens_used"], 1000);
 }

@@ -109,6 +109,37 @@ fn evidence_requires_checks_and_matching_revision() {
 }
 
 #[test]
+fn evidence_judgment_keeps_conflict_separate_from_unknown() {
+    let report = |result| CheckReport {
+        epoch: 7,
+        checks: 1,
+        result,
+    };
+    assert_eq!(
+        report(CheckResult::Passed).judgment(7),
+        EvidenceVerdict::Proved
+    );
+    assert_eq!(
+        report(CheckResult::Refuted).judgment(7),
+        EvidenceVerdict::Refuted
+    );
+    assert_eq!(
+        report(CheckResult::Inconclusive).judgment(7),
+        EvidenceVerdict::Neither
+    );
+    let conflicted = report(CheckResult::Conflicted);
+    assert_eq!(conflicted.judgment(7), EvidenceVerdict::Conflicted);
+    assert_eq!(conflicted.judgment(8), EvidenceVerdict::Neither);
+    assert_eq!(conflicted.verdict(7), Ternary::Unknown);
+    let zero_checks = CheckReport {
+        epoch: 7,
+        checks: 0,
+        result: CheckResult::Conflicted,
+    };
+    assert_eq!(zero_checks.judgment(7), EvidenceVerdict::Neither);
+}
+
+#[test]
 fn every_declared_edge_is_validated() {
     for required in Ternary::ALL {
         let mut task = spec("a");

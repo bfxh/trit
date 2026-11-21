@@ -10,9 +10,10 @@ use std::io::Read;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use trit_orch::{
-    ClaimStore, ContextFacts, HandoffPacket, Ledger, Limits, Plan, PlanPatch, Progress,
-    ReceiptLedger, ReceiptState, RoundReport, Selection, Snapshot, TaskSpec, Ternary, TraceStep,
-    TraceStore, admit_with_claim, builtin, compaction_gate, dispatch_ready, handoff_gate, replay,
+    ClaimStore, ContextFacts, HandoffPacket, Ledger, Limits, ObligationBudget, ObligationPolicy,
+    Plan, PlanPatch, Progress, ReceiptLedger, ReceiptState, RoundReport, Selection, Snapshot,
+    TaskSpec, Ternary, TraceStep, TraceStore, admit_with_claim, builtin, compaction_gate,
+    dispatch_ready, handoff_gate, handoff_obligation, receipt_obligation, replay,
 };
 
 #[derive(Deserialize)]
@@ -32,6 +33,8 @@ struct SelectInput {
     /// patch 的在途保护必须看到**打补丁前**的快照。
     #[serde(default)]
     base_snapshot: Option<Snapshot>,
+    #[serde(default)]
+    ledger: Ledger,
 }
 
 #[derive(Deserialize)]
@@ -39,6 +42,15 @@ struct DispatchInput {
     selection: Selection,
     tasks: Vec<TaskSpec>,
     ledger: Ledger,
+}
+
+#[derive(Deserialize)]
+struct ObligationInput {
+    selection: Selection,
+    #[serde(default)]
+    policy: ObligationPolicy,
+    now: u64,
+    budget: ObligationBudget,
 }
 
 #[derive(Deserialize)]
@@ -223,7 +235,8 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                 }
                 None => plan,
             };
-            let selection = plan.select(&request.snapshot, &request.limits)?;
+            let selection =
+                plan.select_with_effects(&request.snapshot, &request.limits, &request.ledger)?;
             if let Some(path) = &capture {
                 TraceStore::new(path).append(&TraceStep {
                     revision: selection.revision,
@@ -246,6 +259,18 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
             Ok(json!({
                 "ok": true,
                 "ready": attempts,
+            }))
+        }
+        "obligations" => {
+            let request: ObligationInput = parse(input)?;
+            let batch = request.selection.schedule_obligations(
+                &request.policy,
+                request.now,
+                &request.budget,
+            );
+            Ok(json!({
+                "ok": true,
+                "batch": batch,
             }))
         }
         "finish" => {
@@ -366,18 +391,23 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                     });
                 }
             };
+            let obligation = receipt_obligation(&receipt);
             Ok(json!({
                 "ok": true,
                 "ledger": request.ledger,
                 "receipt": receipt,
+                "obligation": obligation,
             }))
         }
         "handoff-gate" => {
             let request: HandoffGateInput = parse(input)?;
             let gate = handoff_gate(&request.packet, &request.receiver_state_hash, request.now);
+            let obligation =
+                handoff_obligation(&request.packet, &request.receiver_state_hash, request.now);
             Ok(json!({
                 "ok": true,
                 "gate": format!("{gate:?}"),
+                "obligation": obligation,
             }))
         }
         "admit-with-claim" => {
@@ -403,7 +433,7 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
         }
         other => Err(trit_orch::Error::InputParse {
             message: format!(
-                "未知子命令 {other:?}（可用：plan/select/dispatch/finish/recover/shadow/shadow-jsonl/compact-gate/claim/renew/release/claim-gate/receipt/handoff-gate/admit-with-claim）"
+                "未知子命令 {other:?}（可用：plan/select/dispatch/obligations/finish/recover/shadow/shadow-jsonl/compact-gate/claim/renew/release/claim-gate/receipt/handoff-gate/admit-with-claim）"
             ),
         }),
     }
