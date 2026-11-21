@@ -780,6 +780,24 @@
       "run": "grep -A1 '^name = \"zip\"$' benchmarks/wsp-no-transformer/Cargo.lock | grep -qE '^version = \"(9\\.0\\.[5-9]|9\\.0\\.[1-9][0-9]+|9\\.[1-9][0-9]*\\.[0-9]+|[1-9][0-9]+\\.[0-9]+\\.[0-9]+)\"$'",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C046",
+      "title": "术语契约 check：锚点漂移/混用/孤儿三类漂移门禁级（L117）",
+      "kind": "cmd",
+      "covers": [
+        "L117"
+      ],
+      "scope": [
+        "tools/terminology.py",
+        ".agent/terms.json"
+      ],
+      "since": "2026-11-21",
+      "tier": "fast",
+      "added": "2026-11-21T19:06:40+08:00",
+      "run": "python tools/terminology.py check",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"

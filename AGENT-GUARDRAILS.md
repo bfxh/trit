@@ -15,7 +15,7 @@
 护栏链上任何一道闸拒绝，整体拒绝——这是本手册最重要的性质。
 
 任何在本仓干活的智能体：读完本手册再动手。动手规则（什么能做、什么不能做）见 `AGENTS.md`；
-本手册讲的是**怎么安全地做**。真实事故台账见 `docs/ERRORS.md`（本轮对应 L95–L108 与 L114）。
+本手册讲的是**怎么安全地做**。真实事故台账见 `docs/ERRORS.md`（本轮对应 L95–L108、L114 与 L117）。
 
 ## 顺序即安全属性：一条链，四件工具
 
@@ -676,33 +676,40 @@ python tools/pitfalls.py export --jsonl <ML训练就绪路径> -Root .
 
 ## 验收口径
 
-改完任何护栏相关的东西，验收只有一条命令：
+改完任何护栏相关的东西，验收是两条命令，**双绿才算过**（术语漂移是门禁级，不是文档装饰）：
 
 ```bash
 pwsh tools/selftest.ps1
+python tools/terminology.py check   # 术语契约：锚点漂移/混用/孤儿 三类漂移机器可查
 ```
 
 结尾行必须长这样（实测）：
 
 ```text
-selftest: passed=447 failed=0 skipped=0
+selftest: passed=473 failed=0 skipped=0
 ```
 
-**必须 447 条全绿。**（编排链成熟轮 +37：AF 组——并发锁/崩溃恢复/畸形存储/超大计划/
+```text
+terms: files=27 terms=17 anchors=35 drift=0
+terms: clean -- authorities still say what the registry cites
+```
+
+**必须 473 条全绿 + terminology check 干净。**（编排链成熟轮 +37：AF 组——并发锁/崩溃恢复/畸形存储/超大计划/
 compact 一致性/并行门一致性；此前 affected 的 rust 减集下沉到 cargo target 级时 +16：
-B 组新增 B5 与 B(续) B6–B19，组数不变；cognition/collect 落地时 +32：AE 组） 32 组：
-A–Z 26 组 + AA/AB/AC/AD/AE/AF 六组（W 组 trash 19 条、X 组 git_safe、
+B 组新增 B5 与 B(续) B6–B19，组数不变；cognition/collect 落地时 +32：AE 组；防偷换概念 +26：AH 组） 33 组：
+A–Z 26 组 + AA/AB/AC/AD/AE/AF/AH 七组（W 组 trash 19 条、X 组 git_safe、
 Y 组 resume 32 条、Z 组 run_caps；AA 组 signal 35 条、AB 组 declutter 21 条、AC 组 watch 44 条、
 AD 组主库删除审批 / 污染 WARN 族 / pitfalls 24 条、AE 组 cognition 32 条、
-AF 组编排链稳定性 37 条，是新增的六个观测、审批与稳定性面）。护栏的断言全部
+AF 组编排链稳定性 37 条、AH 组术语契约 26 条，是新增的七个观测、审批、稳定性与概念契约面）。护栏的断言全部
 遵循"先看着它响，才算数"：每条拒绝路径都有对应的判红用例（W13/W14 journal restore 走
 回收站、W20/W21 no-raw-delete、Z1/Z4/Z5 run_caps 内核帽、I2b 编排顺序、M9 bash/PS 台账
 互通、AA12/AA14 signal 默认路径拒绝崩溃、AB1 audit 行计数精确数、AC4/AC5/AC6 疲劳 WARN
 双桶阈值、AD3/AD9 主库删除无注记必红、AD11 回收站有账不抵扣、AF1 并发链恰好一胜一拒、
 AF2c 崩溃脏状态必诊断、AF4c journal-begin 判红不放 run、AF5b 坏账预算闸 fail-closed、
 AF7/AF8 五百条计划顺序保持、AF10 compact/full 关键字段逐项相等、AF19 并行门 verdict
-逐项相等）。本轮真实台账在
-`docs/ERRORS.md` L95–L108 与 L114：
+逐项相等；AH5 混用必中、AH6 对照行不误报、AH7/AH8 改坏锚点必报、AH10 棘轮缺 --reason 必拒）。
+本轮真实台账在
+`docs/ERRORS.md` L95–L108、L114 与 L117：
 L95 journal restore 裸删改走回收站；L96 整删盲区与 no-raw-delete 内核规则；
 L97 run_caps 两个内核常量凭记忆写错；L98 selftest 断言与编排层漂移；L99 夹具写死本机路径；
 L100 中文控制台编码伪红；L101 signal 默认路径读未初始化键直接崩溃（AA12/AA14）；
@@ -711,7 +718,8 @@ L102/L105/L108 worktree 检出的 `.git` 是**文件**形态，isdir 探测三�
 注释（AB10）；L104 audit 行计数按段标行错（AB1）；L106 隐私夹具输入拆形，坏输入原文不落
 selftest.ps1（AC3/AC3b）；L107 `Get-Item` 看不见 Hidden 的 `.git` 文件，形态判定走 .NET
 存在性检查（W18f/AD0）；L114 journal-end 把崩溃记成 "changed"、journal-begin 失败照旧
-放 run——退出码三分支显式化 + begin 升级为闸（AF4/AF4b/AF4c）。
+放 run——退出码三分支显式化 + begin 升级为闸（AF4/AF4b/AF4c）；L117 概念漂移没有机器面，
+术语注册表 + 三类漂移检查落地（C046/AH 组）。
 
 ### 回执怎么读
 
