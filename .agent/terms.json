@@ -50,8 +50,8 @@
       ],
       "mix": "co",
       "anchors": [
-        "tools/agent_verify.py:771:\"changed\" if je[\"code\"] == 1 else \"failed\"))",
-        "AGENT-GUARDRAILS.md:745:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）"
+        "AGENT-GUARDRAILS.md:745:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
+        "tools/agent_verify.py:844:\"changed\" if je[\"code\"] == 1 else \"failed\"))"
       ],
       "status": "active"
     },
@@ -85,8 +85,8 @@
       ],
       "mix": "exclusive",
       "anchors": [
-        "tools/agent_verify.py:112:declaration-based gate: the tool layer cannot measure model-side token",
-        "tools/agent_verify.py:143:--budget-token N is a DECLARATION by the caller."
+        "tools/agent_verify.py:113:declaration-based gate: the tool layer cannot measure model-side token",
+        "tools/agent_verify.py:154:--budget-token N is a DECLARATION by the caller."
       ],
       "status": "active"
     },
@@ -105,7 +105,7 @@
       ],
       "anchors": [
         "tools/ledger.py:2:keep token cost and wall-clock cost in separate columns, on purpose",
-        "tools/agent_verify.py:121:wall is tool-measured per command; tokens are caller-declared"
+        "tools/agent_verify.py:122:wall is tool-measured per command; tokens are caller-declared"
       ],
       "status": "active"
     },
@@ -202,8 +202,8 @@
       ],
       "mix": "none",
       "anchors": [
-        "tools/agent_verify.py:791:verdict = (\"command failed\" if not ran_ok else",
-        "AGENT-GUARDRAILS.md:728:1. **`verdict`**——只有这几种，各是什么一眼定论："
+        "AGENT-GUARDRAILS.md:728:1. **`verdict`**——只有这几种，各是什么一眼定论：",
+        "tools/agent_verify.py:883:verdict = (\"command failed\" if not ran_ok else"
       ],
       "status": "active"
     },
@@ -352,6 +352,76 @@
       "action": "update",
       "term": "verdict",
       "reason": "同上：验收口径节扩行，锚点重定位",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:32:34+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "attest merge moved agent_verify lines (claims step)",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-21T19:32:34+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "attest merge moved agent_verify lines",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-21T19:32:34+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "attest merge moved agent_verify lines",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-21T19:32:34+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "attest merge moved agent_verify lines",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-21T19:32:34+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "attest merge moved agent_verify lines",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-21T19:32:52+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "stale line after attest merge (re-anchored to 844)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:32:52+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "stale line after attest merge (re-anchored to 113)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:32:52+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "stale line after attest merge (re-anchored to 154)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:32:52+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "stale line after attest merge (re-anchored to 122)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:32:52+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "stale line after attest merge (re-anchored to 883)",
       "loosened": "drop-anchor"
     }
   ]
