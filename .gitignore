@@ -46,3 +46,7 @@ cognition/corpus/
 # selftest 的落盘记录（tools/selftest.ps1 尾部写入，tools/doctor.py 读取）：机器状态，
 # 不进公开树；doctor 的 selftest 面在没这份记录时会明确 UNAVAILABLE 并给重跑命令
 .agent/last-selftest.json
+
+# simchain 的模拟报告落盘（tools/simchain.py simulate 写入）：机器状态与本次扫描时长，
+# 不进公开树；是给 tools/doctor.py 未来 simchain 面的前向接口（usage 已注明）
+.agent/last-simchain.json

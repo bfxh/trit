@@ -2,6 +2,67 @@
 
 ## [Unreleased]
 
+### Added（稳定性 v2 ①：simchain 链路确定性模拟测试器——黑盒 DST + 模拟报告落盘）
+
+- `tools/simchain.py`（stdlib only）：**种子化故障调度器**，对整条 agent_verify 链做
+  **黑盒**故障注入——不 import、不打补丁、不改被测工具，只从外部驱动真实子进程
+  （agent_verify/attest/ledger/journal/resume/trash）在一次性 fixture 仓里跑，然后对
+  现场遗留物断言全局不变量。`simulate --seed N --faults kill,corrupt,concurrent,truncate
+  --runs 50`：默认 50 种子 × 4 故障族 = 200 场景（实测 5-8 分钟，随负载浮动）。
+- 四故障族：**kill**（在种子选中的耐用标记物上杀真实进程——chain.lock 出现/journal 快照
+  出现/第 k 条 run 命令的标记文件出现，观察窗 ≥0.3s 远宽于击杀延迟；锁/快照恢复沿用
+  AF 组机制）/ **corrupt**（四 store × 三模式：journal manifest、attest 链、cost-ledger、
+  resume 会话 × 坏 JSON / 半行截断 / 字节位翻转）/ **concurrent**（双链同 root 竞争）/
+  **truncate**（账本文件按种子字节截断，断电模型）。
+- 全局不变量逐场景断言：attest verify 通过或明确拒收（不静默坏账）、journal 快照可还原
+  或明确报损、无半截回执（回执要么完整要么不存在）、chain.lock 可恢复、resume 会话无
+  半状态、证据链无假账（恢复扫描留下的账面必须是磁盘前缀；回执声称的 changes 可复核）；
+  读者崩溃（Traceback）本身就是违规。
+- **确定性机制**：每场景私有 `random.Random(f"simchain:{seed}:{family}")`（字符串 sha512
+  播种，跨进程跨版本稳定），场景间零共享状态；kill 击杀点落在宽窗标记物上；报告只记
+  与竞争无关的分类布尔（胜者身份、墙钟等易变值一律不进场景行）——同种子两次实跑报告
+  逐字节全同（selftest AM2 钉死）。种子空间说明进 usage。
+- 违规处理纪律：发现真 bug → 本线能修就修配断言，修不了的入台账。首轮 50 种子全量实跑
+  200 场景命中 2 例真 bug（journal restore 对内容级损坏 manifest 崩溃栈，seed 13/35）——
+  属 journal 线（L114 后续），本线不越界，入 docs/ERRORS.md **L124** 列为债务；simchain
+  把该失效钉成不变量违规，修复前命中必报。
+- 模拟报告固化 `.agent/last-simchain.json`（seeds/faults/scenarios/invariants_ok/violations/
+  duration_s）：**tools/doctor.py 的前向接口**——doctor 现在读 last-selftest.json，将来
+  simchain 面直接读这份文件，本次不动 doctor.py；路径与 last-selftest.json 同纪律进
+  .gitignore。stdout 纯 ASCII（机读报告纪律，AM22 钉死）。
+- selftest 新增 **AM 组 24 断言**：模拟器同种子两次全同、四故障族故障注入后不变量成立、
+  汇总表数学自洽、DEFAULT_SEEDS=50 钉死、落盘报告七键、AM 组实测 <120s。
+- 出处（写进 usage）：业界确定性模拟测试的标杆是 FoundationDB（SIGMOD 2021——全部新
+  功能在无数故障组合下先模拟后上线，Jepsen 全过；单进程种子化故障注入，每个 bug 从
+  种子可复现）+ WarpStream 把同一纪律用于整个 SaaS。本工具引入的是纪律，不是代码。
+
+### Added（稳定性 v2 ②：账本崩溃一致性——fsync 落盘纪律 + 坏尾恢复扫描）
+
+- **fsync 落盘纪律（Windows 语义边界如实标注）**：attest.py append 改为整行一次全写
+  （短写循环，短写会把下一行拼进上一行——L115 同族）+ `os.fsync` 句柄后才关；
+  ledger.py save flush + fsync。os.fsync 在 Windows 上是对句柄的 FlushFileBuffers——
+  stdlib 里最接近 fsync(2) 的等价物；目录级 fsync 在 Windows stdlib 无对应（目录句柄
+  不可开），断电后的名字项持久性是**声明的边界不是承诺**。进程击杀不丢 OS 缓冲写，
+  所以模拟器内 kill 已能检验"已确认的账不丢"（AM19）。
+- **恢复扫描（load 时，只修物理截断）**：attest JSONL 的**尾行**不完整（最后一行不可
+  解析且缺结尾换行——真实截断的签名：整行写持久化的任何前缀都不带换行）→ 坏尾字节
+  **整行隔离进回收站**（trash.put_paths，reason 记账，绝不裸删）+ 原路径 `ftruncate`
+  到最后完好行 + 报文 `recovered: truncated N bytes (quarantined at <path>)`；cost-ledger
+  JSON 文档账本 → 保留到最后一个完整 entry 并补 5 字节收尾脚手架（结构不是账目），
+  超出它的字节全部进回收站。绝不静默丢账（字节账本 kept+quarantined == loader 见到的
+  字节，AM18 钉死），也绝不因坏尾永久拒载（恢复后 append/add 立即可用，AM10/AM20c）。
+- **分工钉死**：恢复扫描只修**物理**（截断尾），**逻辑**坏链照旧 fail-closed——中段
+  位翻转、坏行、断链仍由 verify_chain 把关（AM16/AM23：拒绝时文件字节不动、零隔离、
+  无崩溃栈）；语义篡改对无哈希链的账本（cost-ledger 的 entry 值）设计上不可检——
+  防篡改账本是 attest 链（预算闸在有链时消费链余额），边界写进两工具 usage。
+- 配套加固（同一崩溃面）：ledger.load 对"合法 JSON 但非账本文档"（裸数组等）干净拒绝
+  exit 2（原实现 AttributeError 栈）；attest.load_chain 改二进制逐行解码——位翻转打出
+  坏 UTF-8 时按行点名拒绝或走尾恢复，不再整文件解码崩栈；中段坏行维持 AG7 的
+  fail-closed 原样（恢复不越权）。
+- selftest AM 组内恢复面断言：恢复三态（完好不动 / 截断隔离恢复 / 逻辑坏拒）、隔离
+  文件必在回收目录且 blob 落盘、字节账本、fsync 后 kill 不丢已确认账、cost-ledger
+  前缀保全与二次 load 幂等。
+
 ### Added（数学推理引擎 mre：推导图重执行器 + number 声明的推导第二证据路径）
 
 - `tools/mre.py`（stdlib only，fractions）：**精确算术推导图重执行器**——模型把计算过程

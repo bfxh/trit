@@ -4578,6 +4578,282 @@ print("ALDRV done")
 }
 
 
+# =====================================================================================
+"== AM. 确定性模拟测试 + 账本崩溃一致性：黑盒 DST、恢复扫描三态、fsync 后 kill 不丢已确认账 =="
+# 出处（simchain usage 与台账 L124）：业界确定性模拟测试的标杆是 FoundationDB（SIGMOD 2021，
+# 全部新功能在无数故障组合下先模拟后上线、单进程种子化故障注入，每个 bug 从种子可复现）+
+# WarpStream 把同一纪律用于整个 SaaS。本组钉死：模拟器同种子两次全同（bug 可复现的根基）、
+# 四故障族故障注入后全局不变量成立、恢复扫描三态（完好/截断恢复/逻辑坏拒）、隔离文件必须
+# 落在回收目录（回收站铁律）、fsync 落账后 kill 不丢已确认账。simchain 对 agent_verify/
+# mre/policy 是纯黑盒（外部驱动子进程），这正是模拟测试的价值所在。
+$amPy = $null
+foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
+    if (-not $c) { continue }
+    $amSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    if (-not $amSrc) { continue }
+    if ((& $amSrc -c 'print(1)' 2>$null) -eq '1') { $amPy = $amSrc; break }
+}
+$amTotal = 24
+$amSw = [System.Diagnostics.Stopwatch]::StartNew()
+if (-not $amPy) {
+    "  SKIP  AM0 找不到可用的 Python，跳过模拟测试组"
+    $skipped += $amTotal
+} else {
+    $amEnc = New-Object System.Text.UTF8Encoding($false)
+    $smPy = Join-Path $tools 'simchain.py'
+    $atPy = Join-Path $tools 'attest.py'
+    $ldPy = Join-Path $tools 'ledger.py'
+    $jrPy = Join-Path $tools 'journal.py'
+    $rsPy = Join-Path $tools 'resume.py'
+    $trPy = Join-Path $tools 'trash.py'
+
+    function Invoke-AmSim([string]$report, [string[]]$extra) {
+        $script:amSimOut = @(& $amPy $smPy simulate --report $report @extra 2>&1)
+        return $LASTEXITCODE
+    }
+    function Invoke-Am([string[]]$atArgs) {
+        $script:amOut = @(& $amPy $atArgs 2>&1)
+        return $LASTEXITCODE
+    }
+    function New-AmAttestStore([string]$store) {
+        New-Item -ItemType Directory -Force -Path $store | Out-Null
+        foreach ($i in 1..3) {
+            $null = Invoke-Am @($atPy, 'append', '--store', $store, '--kind', 'spend',
+                '--task-id', 'am-task', '--runid', "am-r$i", '--claimed-tokens', (5 + $i))
+            if ($LASTEXITCODE -ne 0) { throw "attest append fixture failed" }
+        }
+        return Join-Path $store 'attest-ledger.jsonl'
+    }
+    function Get-AmTrashCount([string]$store) {
+        $m = Join-Path $store 'trash\manifest.json'
+        if (-not (Test-Path $m)) { return 0 }
+        $q = Get-Content $m -Raw | ConvertFrom-Json
+        if ($null -eq $q.entries) { return 0 }
+        return @($q.entries).Count
+    }
+
+    # --- AM1-AM3: 模拟器同种子两次全同（4 族实跑，报告逐字段相同）---
+    $amRepA = Join-Path $Work 'am-rep-a.json'
+    $amRepB = Join-Path $Work 'am-rep-b.json'
+    $am1 = Invoke-AmSim $amRepA @('--seed', '9700', '--faults', 'kill,corrupt,concurrent,truncate', '--runs', '2')
+    $am1aDoc = Get-Content $amRepA -Raw | ConvertFrom-Json
+    Assert-True ($am1 -eq 0 -and $am1aDoc.violations -eq 0 -and $am1aDoc.scenario_details.Count -eq 8) `
+        'AM1 模拟器 4 故障族实跑 8 场景：exit 0、invariants 全成立（kill/corrupt/concurrent/truncate）' "e=$am1 v=$($am1aDoc.violations)"
+    $am2 = Invoke-AmSim $amRepB @('--seed', '9700', '--faults', 'kill,corrupt,concurrent,truncate', '--runs', '1')
+    $am2aDoc = Get-Content $amRepB -Raw | ConvertFrom-Json
+    $amScA = @($am1aDoc.scenario_details | Select-Object -First 4 | ForEach-Object { $_ | ConvertTo-Json -Depth 12 -Compress })
+    $amScB = @($am2aDoc.scenario_details | ForEach-Object { $_ | ConvertTo-Json -Depth 12 -Compress })
+    $amSame = $amScA.Count -eq 4 -and $amScB.Count -eq 4
+    for ($i = 0; $i -lt 4; $i++) { if ($amScA[$i] -ne $amScB[$i]) { $amSame = $false } }
+    Assert-True ($am2 -eq 0 -and $amSame) `
+        'AM2 模拟器确定性：同种子两次实跑，场景报告逐字节全同（chain_outcome/invariants/violations）' "a=$($amScA.Count) b=$($amScB.Count)"
+    $amFauldA = @($am1aDoc.scenario_details | Select-Object -First 4 | ForEach-Object {
+            $o = $_.chain_outcome
+            "$($_.family)|$(if ($o.hook) { $o.hook } else { '-' })|$(if ($o.store) { "$($o.store)/$($o.mode)" } else { '-' })|$(if ($null -ne $o.frac) { $o.frac } else { '-' })" })
+    $amFauldB = @($am2aDoc.scenario_details | ForEach-Object {
+            $o = $_.chain_outcome
+            "$($_.family)|$(if ($o.hook) { $o.hook } else { '-' })|$(if ($o.store) { "$($o.store)/$($o.mode)" } else { '-' })|$(if ($null -ne $o.frac) { $o.frac } else { '-' })" })
+    Assert-True (($amFauldA -join ';') -eq ($amFauldB -join ';') -and $amFauldA.Count -eq 4) `
+        'AM3 故障调度种子化：kill hook / corrupt store+mode / truncate 截断点由种子决定且两次一致' ($amFauldA -join ' ')
+
+    # --- AM4-AM5: kill 族——AF 组的锁/快照恢复机制在模拟器内成立 ---
+    $amKill = @($am1aDoc.scenario_details | Where-Object { $_.family -eq 'kill' })
+    $amKill0 = $amKill[0].chain_outcome
+    Assert-True ($amKill.Count -ge 1 -and $amKill[0].invariants_ok `
+        -and $amKill0.lock.lock_left -eq $true -and $amKill0.lock.next_refused -eq $true `
+        -and ($amKill0.lock.restore -eq 'ok' -or $amKill0.lock.restore -eq 'exit-2') `
+        -and $amKill0.lock.rerun -eq 'ok') `
+        'AM4 kill 族：杀进程留锁→下次运行拒→清锁还原→再跑通（AF 机制的模拟器内复现）' ($amKill0 | ConvertTo-Json -Depth 5 -Compress)
+    Assert-True ($amKill0.receipt -in @('absent', 'complete') -and `
+        ($amKill0.snapshot -in @('present', 'absent')) -and $amKill0.artifact_seen) `
+        'AM5 kill 族：回执要么完整要么不存在（无半截回执），快照状态与 kill 点一致' "receipt=$($amKill0.receipt) snapshot=$($amKill0.snapshot)"
+
+    # --- AM6-AM7: corrupt 族——坏 store 注入后读者要么验证要么明确拒 ---
+    $amCorr = @($am1aDoc.scenario_details | Where-Object { $_.family -eq 'corrupt' })
+    $amCorrPairs = @($amCorr | ForEach-Object { "$($_.chain_outcome.store)/$($_.chain_outcome.mode)" })
+    Assert-True ($amCorr.Count -ge 2 -and (@($amCorr | Where-Object { $_.invariants_ok }).Count -eq $amCorr.Count) `
+        -and (@($amCorrPairs | ForEach-Object { ($_ -split '/')[0] } | Sort-Object -Unique).Count -ge 2)) `
+        'AM6 corrupt 族：坏 store 注入（journal-manifest/attest-chain/cost-ledger/resume-session 空间在册）后不变量全成立' ($amCorrPairs -join ',')
+    $amCorrExitOk = $true
+    foreach ($cr in $amCorr) {
+        foreach ($key in @('attest', 'journal', 'ledger', 'resume')) {
+            $e = $cr.chain_outcome.$key.exit
+            if ($e -eq $null -or ("$e" -notin @('0', '1', '2', 'absent'))) { $amCorrExitOk = $false }
+        }
+    }
+    Assert-True $amCorrExitOk `
+        'AM7 corrupt 族：每个读者的退出码封闭于 {0 通过, 1/2 明确拒, absent}——不静默坏账不崩溃' (($amCorr | ForEach-Object { "$($_.chain_outcome.store):$($_.chain_outcome.attest.exit)/$($_.chain_outcome.journal.exit)" }) -join ' ')
+
+    # --- AM8: concurrent 族——同 root 竞争恰好一胜一拒 ---
+    $amConc = @($am1aDoc.scenario_details | Where-Object { $_.family -eq 'concurrent' })
+    Assert-True ($amConc.Count -ge 1 -and $amConc[0].invariants_ok `
+        -and $amConc[0].chain_outcome.one_winner -and $amConc[0].chain_outcome.loser_refused `
+        -and $amConc[0].chain_outcome.winner_receipt) `
+        'AM8 concurrent 族：双链同 root 恰好一胜一拒，败者回执 verdict=refused by chain lock，胜者账本可验' ''
+
+    # --- AM9-AM10: truncate 族——恢复=磁盘前缀、两次 load 一致、坏尾不永久拒载 ---
+    $amTrunc = @($am1aDoc.scenario_details | Where-Object { $_.family -eq 'truncate' })
+    Assert-True ($amTrunc.Count -ge 1 -and (@($amTrunc | Where-Object { $_.chain_outcome.loads_equal -and $_.chain_outcome.prefix_ok }).Count -eq $amTrunc.Count)) `
+        'AM9 truncate 族：任意字节截断后两次 load 结果一致（确定性）且恢复账面=原始前缀（无假账）' (($amTrunc | ForEach-Object { "$($_.chain_outcome.file):$($_.chain_outcome.frac)" }) -join ',')
+    $amTruncOk = $true
+    foreach ($tr in $amTrunc) {
+        $to = $tr.chain_outcome
+        if ($to.load1_exit -eq 0 -and -not $to.append_after) { $amTruncOk = $false }
+    }
+    Assert-True $amTruncOk `
+        'AM10 truncate 族：load 通过的截断账本随后必须接受新账（append_after）——坏尾不永久拒载' ''
+
+    # --- AM11-AM13: 汇总行数学、默认规模 50 钉死、doctor 前向接口形状 ---
+    $amTblTotal = ($am1aDoc.table -split "`r?`n") | Where-Object { $_ -match '^TOTAL' }
+    $amMathOk = ($am1aDoc.summary.total.scenarios -eq $am1aDoc.config.runs * $am1aDoc.config.faults.Count) `
+        -and ($am1aDoc.summary.total.scenarios -eq 8) `
+        -and ($amTblTotal -match 'TOTAL\s+8\s+8\s+0')
+    Assert-True $amMathOk `
+        'AM11 汇总表数学自洽：scenarios = runs × families，TOTAL 行 = 族行之和（50 种子默认规模的同形行）' "$amTblTotal"
+    $amDefault = & $amPy -c "import sys; sys.path.insert(0, r'$tools'); import simchain; print(simchain.DEFAULT_SEEDS, ','.join(simchain.FAMILIES))"
+    Assert-True ("$amDefault" -eq '50 kill,corrupt,concurrent,truncate') `
+        'AM12 模拟器默认规模钉死：DEFAULT_SEEDS=50 且默认全四族（usage 的种子空间说明与之同源）' "$amDefault"
+    Assert-True (@($am1aDoc.PSObject.Properties.Name) -contains 'seeds' -and
+        @($am1aDoc.PSObject.Properties.Name) -contains 'faults' -and
+        @($am1aDoc.PSObject.Properties.Name) -contains 'scenarios' -and
+        @($am1aDoc.PSObject.Properties.Name) -contains 'invariants_ok' -and
+        @($am1aDoc.PSObject.Properties.Name) -contains 'violations' -and
+        @($am1aDoc.PSObject.Properties.Name) -contains 'duration_s' -and
+        $am1aDoc.tool -eq 'simchain') `
+        'AM13 落盘报告七键在场：tool/seeds/faults/scenarios/invariants_ok/violations/duration_s（doctor 前向接口）' (($am1aDoc.PSObject.Properties.Name) -join ',')
+
+    # --- AM14-AM18: 恢复扫描三态 + 回收目录 + 字节账本（直连 attest.py，不经链）---
+    $amStore = Join-Path $Work 'am-store-a'
+    $amLedg = New-AmAttestStore $amStore
+    $amOrigA = [IO.File]::ReadAllBytes($amLedg)
+    $amTrashM = Join-Path $amStore 'trash\manifest.json'
+    $am14 = Invoke-Am @($atPy, 'verify', '--store', $amStore)
+    $am14Bytes = [IO.File]::ReadAllBytes($amLedg)
+    Assert-True ($am14 -eq 0 -and (($amOut -join ' ') -notmatch 'recovered:') `
+        -and ($am14Bytes.Length -eq $amOrigA.Length)) `
+        'AM14 恢复三态之一（完好）：load 无 recovered 报文、文件字节不动' "e=$am14 bytes=$($am14Bytes.Length)"
+    $amCut = [int]($amOrigA.Length * 0.7)
+    [IO.File]::WriteAllBytes($amLedg, $amOrigA[0..($amCut - 1)])
+    $am15 = Invoke-Am @($atPy, 'verify', '--store', $amStore)
+    $am15Txt = $amOut -join ' '
+    $am15m = if ($am15Txt -match 'recovered: truncated (\d+) bytes \(quarantined at ([^)]+)\)') { $Matches } else { $null }
+    $am15Size = (Get-Item $amLedg).Length
+    $amQ = if (Test-Path $amTrashM) { Get-Content $amTrashM -Raw | ConvertFrom-Json } else { $null }
+    $amQe = @($amQ.entries | Where-Object { $_.reason -match 'tail-recovery' })
+    $amQblob = if ($amQe.Count -gt 0) { Test-Path (Join-Path $amStore ('trash\' + $amQe[-1].blob.Replace('/', '\'))) } else { $false }
+    Assert-True ($am15 -eq 0 -and $am15m -and $am15Size -lt $amCut `
+        -and $am15Txt -match 'chain OK \(2 entries') `
+        'AM15 恢复三态之二（截断恢复）：报文 recovered: truncated N bytes (quarantined at ...)，原路径截到完好前缀且 verify 通过' "e=$am15 n=$($am15m[1]) size=$am15Size"
+    Assert-True ($amQe.Count -ge 1 -and $amQblob -and $amQe[-1].bytes -eq [int]$am15m[1]) `
+        'AM17 隔离文件在回收目录：tail-recovery entry 在 trash 清单、blob 落盘、bytes 与报文一致（回收站铁律）' "entries=$($amQe.Count) blob=$amQblob"
+    Assert-True ($am15Size + [int]$am15m[1] -eq $amCut) `
+        'AM18 字节账本：kept + quarantined == loader 看到的字节数（不丢不造）' "$($am15Size)+$($am15m[1])!=$amCut"
+    $am16 = Invoke-Am @($atPy, 'verify', '--store', $amStore)
+    $am16Size = (Get-Item $amLedg).Length
+    Assert-True ($am16 -eq 0 -and (($amOut -join ' ') -notmatch 'recovered:') -and $am16Size -eq $am15Size) `
+        'AM15b 二次 load 与首次一致：已恢复的账本不再重复修复（幂等，确定性）' "e=$am16 size=$am16Size"
+
+    $amStoreC = Join-Path $Work 'am-store-c'
+    $amLedgC = New-AmAttestStore $amStoreC
+    $amOrigC = [IO.File]::ReadAllText($amLedgC, $amEnc)
+    [IO.File]::WriteAllText($amLedgC, $amOrigC.Replace('"claimed_tokens":6', '"claimed_tokens":9'), $amEnc)
+    $amTrashBefore = Get-AmTrashCount $amStoreC
+    $am16b = Invoke-Am @($atPy, 'verify', '--store', $amStoreC)
+    $am16bTxt = $amOut -join ' '
+    $am16bBytes = [IO.File]::ReadAllBytes($amLedgC)
+    $amTrashAfter = Get-AmTrashCount $amStoreC
+    Assert-True ($am16b -eq 1 -and $am16bTxt -match 'payload_hash mismatch' -and `
+        $am16bBytes.Length -eq $amOrigC.Length -and $amTrashAfter -eq $amTrashBefore) `
+        'AM16 恢复三态之三（逻辑坏拒）：中段改账 verify 拒并点名断点，文件字节不动、零隔离（恢复扫描不越权修逻辑账）' "e=$am16b bytes=$($am16bBytes.Length) trash=$amTrashAfter"
+    Assert-True (($amOut -join ' ') -notmatch 'Traceback') `
+        'AM23 拒绝是干净单行报文不是崩溃栈：坏链 load/verify 全程无 Traceback' ''
+
+    # --- AM19: fsync 落账后 kill（模拟器内）不丢已确认账 ---
+    $amStoreK = Join-Path $Work 'am-store-kill'
+    New-Item -ItemType Directory -Force -Path $amStoreK | Out-Null
+    $amChildPy = Join-Path $Work 'am-fsync-child.py'
+    $amChildLog = Join-Path $Work 'am-fsync-log.jsonl'
+    New-File $amChildPy (@(
+        "import json, sys, time",
+        "sys.path.insert(0, r'$tools')",
+        "import attest",
+        "store, log = sys.argv[1], sys.argv[2]",
+        "with open(log, 'a', encoding='ascii') as lf:",
+        "    for i in range(50):",
+        "        e, err = attest.append_entry(store, 'spend', 'am-child', 't-am-fsync', 'k' + str(i), i + 1, '')",
+        "        if e is None:",
+        "            lf.write(json.dumps({'refused': i, 'err': err}) + chr(10))",
+        "            break",
+        "        lf.write(json.dumps({'confirmed': e['seq']}) + chr(10))",
+        "        lf.flush()",
+        "        time.sleep(0.01)",
+        "    time.sleep(60)") -join "`n") 
+    $amChild = Start-Process -FilePath $amPy -ArgumentList @($amChildPy, $amStoreK, $amChildLog) `
+        -NoNewWindow -PassThru
+    Start-Sleep -Milliseconds 600
+    if (-not $amChild.HasExited) { $amChild.Kill() }
+    $null = $amChild.WaitForExit()
+    $amConfirmed = @(Get-Content $amChildLog -ErrorAction SilentlyContinue | ForEach-Object {
+            ($_ | ConvertFrom-Json).confirmed } | Where-Object { $_ })
+    $am19 = Invoke-Am @($atPy, 'verify', '--store', $amStoreK)
+    $amChainSeqs = @(Get-Content (Join-Path $amStoreK 'attest-ledger.jsonl') | ForEach-Object {
+            ($_ | ConvertFrom-Json).seq })
+    $amAllPresent = ($amConfirmed.Count -ge 1) -and (@($amConfirmed | Where-Object { $amChainSeqs -notcontains $_ }).Count -eq 0)
+    Assert-True ($am19 -eq 0 -and $amAllPresent) `
+        'AM19 fsync 后 kill（模拟器内）：被杀子进程已确认的每一笔都在链上且全链 verify 通过（不丢已确认账）' "confirmed=$($amConfirmed.Count) chain=$($amChainSeqs.Count) e=$am19"
+
+    # --- AM20: cost-ledger 截断恢复：前缀保全 + 两次 load 一致 + 可继续记账 ---
+    $amLedgL = Join-Path $Work 'am-store-l\cost-ledger.json'
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $amLedgL) | Out-Null
+    foreach ($i in 1..3) {
+        $null = Invoke-Am @($ldPy, '-Mode', 'add', '-Ledger', $amLedgL, '-Task', 'am-ledger',
+            '-Key', "am-l$i", '-Wall', "1.$i")
+        if ($LASTEXITCODE -ne 0) { throw "ledger add fixture failed" }
+    }
+    $amLedgDoc = Get-Content $amLedgL -Raw | ConvertFrom-Json
+    $amLedgPre = @($amLedgDoc.entries)
+    $amLedgRaw = [IO.File]::ReadAllBytes($amLedgL)
+    $amCutL = [int]($amLedgRaw.Length * 0.6)
+    [IO.File]::WriteAllBytes($amLedgL, $amLedgRaw[0..($amCutL - 1)])
+    $am20 = Invoke-Am @($ldPy, '-Mode', 'report', '-Ledger', $amLedgL)
+    $am20Txt = $amOut -join ' '
+    $am20m = if ($am20Txt -match 'recovered: truncated (\d+) bytes \(quarantined at ([^)]+)\)') { $Matches } else { $null }
+    $amLedgPost = @((Get-Content $amLedgL -Raw | ConvertFrom-Json).entries)
+    $amPreCut = @($amLedgPre | Select-Object -First $amLedgPost.Count)
+    $amPrefixOk = ($null -ne $am20m) -and ($amLedgPost.Count -ge 1) -and `
+        (($amLedgPost | ConvertTo-Json -Depth 8 -Compress) -eq ($amPreCut | ConvertTo-Json -Depth 8 -Compress))
+    Assert-True ($am20 -eq 0 -and $amPrefixOk) `
+        'AM20 cost-ledger 截断恢复：恢复账面=原始 entries 前缀（JSON 文档账的前缀保全，无假账）' "e=$am20 n=$($am20m[1]) entries=$($amLedgPost.Count)"
+    $am20b = Invoke-Am @($ldPy, '-Mode', 'report', '-Ledger', $amLedgL)
+    Assert-True ($am20b -eq 0 -and (($amOut -join ' ') -notmatch 'recovered:')) `
+        'AM20b 二次 load 不再修复（幂等）：恢复后的文件自洽，两次 load 结果一致' "e=$am20b"
+    $am20c = Invoke-Am @($ldPy, '-Mode', 'add', '-Ledger', $amLedgL, '-Task', 'after', '-Key', 'after-am', '-Wall', '2')
+    Assert-True ($am20c -eq 0) 'AM20c 恢复后的账本继续接受新账（坏尾不永久拒载）' "e=$am20c"
+
+    # --- AM21: resume 会话无半状态：坏会话拒读拒覆盖 ---
+    $amResRoot = Join-Path $Work 'am-resume-root'
+    New-Item -ItemType Directory -Force -Path $amResRoot | Out-Null
+    $null = Invoke-Am @($rsPy, 'begin', 'am-task', '-Root', $amResRoot)
+    [IO.File]::WriteAllText((Join-Path $amResRoot '.agent\resume\am-task.json'), '{bad json', $amEnc)
+    $am21a = Invoke-Am @($rsPy, 'status', 'am-task', '-Root', $amResRoot)
+    $am21b = Invoke-Am @($rsPy, 'begin', 'am-task', '-Root', $amResRoot)
+    Assert-True ($am21a -eq 2 -and $am21b -eq 2 -and (($amOut -join ' ') -notmatch 'Traceback')) `
+        'AM21 resume 会话坏 JSON：status 干净拒（exit 2）+ begin 拒绝覆盖证据，无半状态无崩溃栈' "s=$am21a b=$am21b"
+
+    # --- AM22: stdout 纯 ASCII（机读报告纪律）---
+    $amRepC = Join-Path $Work 'am-rep-c.json'
+    $am22 = Invoke-AmSim $amRepC @('--seed', '9705', '--faults', 'corrupt', '--runs', '1')
+    $amNonAscii = @($amSimOut | Where-Object { $_ -match '[^\u0000-\u007F]' })
+    Assert-True ($am22 -eq 0 -and $amNonAscii.Count -eq 0) `
+        'AM22 模拟器 stdout 纯 ASCII：场景行与汇总表机器可读，任意控制台解码不再坏字' "nonascii=$($amNonAscii.Count)"
+
+    $amSw.Stop()
+    Assert-True ($amSw.Elapsed.TotalSeconds -lt 120) `
+        'AM24 AM 组实测时长 <120s（模拟器场景瘦身到最小充分集，全量 50 种子由 usage 说明）' ("seconds=" + [math]::Round($amSw.Elapsed.TotalSeconds, 1))
+    "  AM 组实测: $([math]::Round($amSw.Elapsed.TotalSeconds, 1))s（27 断言，模拟器 13 场景 + 恢复面直连夹具）"
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped
 if ($failed -gt 0) { exit 1 }
