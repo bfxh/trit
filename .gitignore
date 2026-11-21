@@ -38,3 +38,7 @@ scripts/.mutation-check.lock/
 # 快照/回收站底座（tools/journal.py、tools/trash.py 的默认 store）：本机状态，
 # 不进公开树；trash.py 的 put 在站点未被 ignore 时会 fail-closed 拒绝
 .journal/
+
+# cognition/ 训练层的交互语料（cognition/collect.py 的投影产物）：私有，不出克隆；
+# 公开知识（knowledge/）才入库。搬去模型仓库后由 cognition/.gitignore 接管
+cognition/corpus/

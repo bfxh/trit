@@ -2106,6 +2106,169 @@ if (-not $bashExe) {
         'AD21 旧表缺内核规则时 check 现场补回并判红（约束不许静默变窄）' (@($ad21) -join ' / ')
 }
 
+""
+"== AE. cognition/collect: 独立训练层收集器（语料契约见 cognition/SCHEMA.md）=="
+# 独立层的硬约束在这里钉住：stdlib 直跑（不经 tools/ 任何入口）、corpus 永远无原文
+# （没有 --with-text 后门）、knowledge 是可入库的公开快照（幂等 + 用户路径隐私闸）、
+# 全部 store 缺失时骨架可收集。夹具全在临时目录；AE17 故意用默认输出写进仓库的
+# cognition/corpus/，验证 gitignore 后 git status 无感，跑完即清理。
+$aePy = $null
+foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
+    if (-not $c) { continue }
+    $aeSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    if (-not $aeSrc) { continue }
+    if ((& $aeSrc -c 'print(1)' 2>$null) -eq '1') { $aePy = $aeSrc; break }
+}
+if (-not $aePy) {
+    "  SKIP  AE0 找不到可用的 Python，跳过 cognition 收集器检查"
+    $skipped += 32
+} else {
+    $col = Join-Path $repo 'cognition\collect.py'
+    $aenl = [char]10
+    $Ae = Join-Path $Work 'ae-cognition'
+    New-Item -ItemType Directory $Ae -Force | Out-Null
+
+    # AE1-AE3: 全部 store 缺失 = 骨架可收集（没有数据不是错误），且不写空文件冒充数据
+    $Ae0 = Join-Path $Ae 'empty-root'
+    New-Item -ItemType Directory $Ae0 -Force | Out-Null
+    $AeOut0 = Join-Path $Ae 'out-empty'
+    $ae1 = @(& $aePy $col --root $Ae0 --out $AeOut0 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0) 'AE1 全部 store 缺失时骨架可收集 exit=0' "exit=$LASTEXITCODE"
+    Assert-True ((@($ae1) -join ' ') -match 'collect: corpus=0 events knowledge=0 pitfalls \(skipped: signals absent, watch absent, pitfalls absent\)') `
+        'AE2 摘要点名三家缺席（跳过是明说的，不是静默）' (@($ae1) -join ' ')
+    Assert-True (-not (Test-Path (Join-Path $AeOut0 'corpus\events.jsonl')) -and -not (Test-Path (Join-Path $AeOut0 'knowledge'))) `
+        'AE3 缺席的源不写 0 行文件冒充数据' ''
+
+    # AE4-AE9: corpus 投影 = signal export 形状 + watch 行加 event/verdict/agent_id/turn；无原文
+    $AeB = Join-Path $Ae 'owner-root'
+    New-Item -ItemType Directory (Join-Path $AeB '.agent') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $AeB '.agent\signals.jsonl'), (@(
+            '{"ts": "2026-11-21T09:00:00+08:00", "kind": "task", "emotion_score": 0, "signals": ["imperative"], "task_hints": ["fix"], "text_len": 20, "text": "fix the thing please"}',
+            '{"ts": "2026-11-21T09:05:00+08:00", "kind": "penalty", "score": 2, "reason": "argued with user intent"}'
+        ) -join $aenl) + $aenl, $enc)
+    [IO.File]::WriteAllText((Join-Path $AeB '.agent\watch.jsonl'), (@(
+            '{"ts": "2026-11-21T09:10:00+08:00", "event": "cmd", "agent_id": "sub-1", "turn": 1, "verdict": "ok", "note": "first"}',
+            '{"ts": "2026-11-21T09:11:00+08:00", "event": "test", "agent_id": "", "turn": null, "verdict": "fail", "note": ""}'
+        ) -join $aenl) + $aenl, $enc)
+    $AeOutB = Join-Path $Ae 'out-owner'
+    $ae4 = @(& $aePy $col --root $AeB --out $AeOutB 2>&1)
+    Assert-True ($LASTEXITCODE -eq 0 -and ((@($ae4) -join ' ') -match 'collect: corpus=4 events knowledge=0 pitfalls \(skipped: pitfalls absent\)')) `
+        'AE4 signals+watch 合并出 4 行、pitfalls 缺席被点名' (@($ae4) -join ' ')
+    $aeCorpus = Join-Path $AeOutB 'corpus\events.jsonl'
+    $aeDocs = @(([IO.File]::ReadAllLines($aeCorpus, $enc) | Where-Object { $_.Trim() }) | ForEach-Object { $_ | ConvertFrom-Json })
+    Assert-True ($aeDocs.Count -eq 4) 'AE5 corpus 行数=4（signals 2 + watch 2，账本序）' "rows=$($aeDocs.Count)"
+    $aeKeys = @($aeDocs | ForEach-Object { (@($_.PSObject.Properties.Name | Sort-Object) -join ',') })
+    Assert-True ($aeKeys[0] -eq 'emotion_score,kind,penalty,signals,text_len,ts') 'AE6 signals 行字段与 SCHEMA 完全一致（export 投影六字段）' $aeKeys[0]
+    Assert-True ($aeKeys[1] -eq $aeKeys[0]) 'AE6b penalty 行同形（同一份投影契约）' $aeKeys[1]
+    Assert-True ($aeDocs[1].penalty -eq 2 -and $aeDocs[1].emotion_score -eq 2 -and $aeDocs[1].text_len -eq 23) `
+        'AE6c penalty 行把 score 双写进 penalty/emotion_score，reason 只留长度' ''
+    Assert-True ($aeDocs[0].text_len -eq 20) 'AE6d classify 行 text_len 原样来自台账（collect 不重算）' ''
+    Assert-True ($aeKeys[2] -eq 'agent_id,emotion_score,event,kind,penalty,signals,text_len,ts,turn,verdict') `
+        'AE7 watch 行在六字段之外加 event/verdict/agent_id/turn' $aeKeys[2]
+    Assert-True ($aeDocs[2].kind -eq 'watch' -and $aeDocs[2].agent_id -eq 'sub-1' -and $aeDocs[2].turn -eq 1 -and $aeDocs[2].verdict -eq 'ok') `
+        'AE7b watch 行字段值逐项正确' ''
+    Assert-True ($null -eq $aeDocs[3].turn -and $aeDocs[3].verdict -eq 'fail') 'AE7c 无轮位 watch 行 turn=null 照写（不是丢字段）' ''
+    $aeRaw = [IO.File]::ReadAllText($aeCorpus, $enc)
+    Assert-True ($aeRaw -notmatch '"text"|"task_hints"|"reason"|"note"' `
+        -and $aeRaw -notmatch 'fix the thing|argued with user intent|first') `
+        'AE8 corpus 无原文（无 text/task_hints/reason/note 键，也无原文片段）' ''
+    Assert-True ((($aeRaw -replace '[^\x00-\x7F]', '').Length) -eq $aeRaw.Length) 'AE8b corpus 纯 ASCII（任何宿主都读不坏）' ''
+    Assert-True (-not (Test-Path (Join-Path $AeOutB 'knowledge\pitfalls.jsonl'))) 'AE9 pitfalls 缺席时 knowledge 不写（快照不冒充数据）' ''
+
+    # AE10-AE11: knowledge 快照（公开知识、入库）与幂等
+    $AeC = Join-Path $Ae 'pit-root'
+    New-Item -ItemType Directory (Join-Path $AeC '.agent') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $AeC '.agent\pitfalls.jsonl'), (@(
+            '{"id": "pfix-001", "cat": "git", "trigger": "staged-only file lost", "consequence": "work gone", "prevention": "stash first", "source": "docs/ERRORS.md L15", "ts": "2026-11-21T00:00:00+08:00"}',
+            '{"id": "pfix-002", "cat": "api", "trigger": "win32 常量凭记忆写", "consequence": "错误指错层", "prevention": "全零 buffer 扫描", "source": "", "ts": "2026-11-21T00:00:00+08:00"}'
+        ) -join $aenl) + $aenl, $enc)
+    $AeOutC = Join-Path $Ae 'out-pit'
+    & $aePy $col --root $AeC --out $AeOutC 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AE10 knowledge 快照落盘 exit=0' "exit=$LASTEXITCODE"
+    $aeK = Join-Path $AeOutC 'knowledge\pitfalls.jsonl'
+    $aeKDocs = @(([IO.File]::ReadAllLines($aeK, $enc) | Where-Object { $_.Trim() }) | ForEach-Object { $_ | ConvertFrom-Json })
+    Assert-True ($aeKDocs.Count -eq 2 -and $aeKDocs[0].id -eq 'pfix-001' -and $aeKDocs[1].cat -eq 'api') 'AE10b 快照逐行保真（id/cat 原样）' ''
+    Assert-True (([IO.File]::ReadAllText($aeK, $enc)) -match '凭记忆写') 'AE10c 非 ASCII 内容按 UTF-8 原样保留（不转义不丢字）' ''
+    $aeKBefore = [IO.File]::ReadAllBytes($aeK)
+    & $aePy $col --root $AeC --out $AeOutC 2>&1 | Out-Null
+    $aeKAfter = [IO.File]::ReadAllBytes($aeK)
+    Assert-True ($LASTEXITCODE -eq 0 -and (Compare-Object $aeKBefore $aeKAfter).Count -eq 0) `
+        'AE11 重跑幂等：覆盖写且字节一致' "exit=$LASTEXITCODE"
+
+    # AE12/AE13: 坏行 fail-closed 拒收并指出行号（半读的语料教一半的真相）
+    $AeD = Join-Path $Ae 'bad-sig'
+    New-Item -ItemType Directory (Join-Path $AeD '.agent') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $AeD '.agent\signals.jsonl'), (@(
+            '{"ts": "2026-11-21T09:00:00+08:00", "kind": "task", "emotion_score": 0, "signals": [], "task_hints": [], "text_len": 1, "text": "x"}',
+            'not json at all'
+        ) -join $aenl) + $aenl, $enc)
+    $ae12 = @(& $aePy $col --root $AeD --out (Join-Path $Ae 'out-bad') 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ae12) -join ' ') -match 'signals line 2')) `
+        'AE12 signals 坏行拒收且带行号' (@($ae12) -join ' ')
+    $AeE = Join-Path $Ae 'bad-watch'
+    New-Item -ItemType Directory (Join-Path $AeE '.agent') -Force | Out-Null
+    [IO.File]::WriteAllText((Join-Path $AeE '.agent\watch.jsonl'), (@(
+            '{"ts": "2026-11-21T09:00:00+08:00", "event": "cmd", "agent_id": "a", "turn": "1", "verdict": "ok", "note": ""}'
+        ) -join $aenl) + $aenl, $enc)
+    $ae13 = @(& $aePy $col --root $AeE --out (Join-Path $Ae 'out-bad2') 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ae13) -join ' ') -match 'watch line 1')) `
+        'AE13 watch 形状漂移拒收且带行号（turn 必须是 null 或整数）' (@($ae13) -join ' ')
+
+    # AE14/AE15: knowledge 是入库面——用户路径与坏条目都在快照门口拦。
+    # 夹具输入运行期拼接（privacy_scan 不打红本文件）；反斜杠按 JSON 编码双写——
+    # 磁盘上的真实泄漏行永远是合法 JSON，单反斜杠会让 json.loads 先死、断言以错误的
+    # 理由变绿（见 L110）。
+    $AeF = Join-Path $Ae 'pit-leak'
+    New-Item -ItemType Directory (Join-Path $AeF '.agent') -Force | Out-Null
+    $upFake = ('C:' + '\' + 'Users' + '\' + 'somebody' + '\' + 'notes.txt')
+    $upFakeJson = $upFake.Replace('\', '\\')
+    [IO.File]::WriteAllText((Join-Path $AeF '.agent\pitfalls.jsonl'), (@(
+            '{"id": "pok-001", "cat": "git", "trigger": "t", "consequence": "c", "prevention": "p", "source": "s", "ts": "2026-11-21T00:00:00+08:00"}',
+            ('{"id": "pleak-001", "cat": "git", "trigger": "see notes at ' + $upFakeJson + '", "consequence": "c", "prevention": "p", "source": "s", "ts": "2026-11-21T00:00:00+08:00"}')
+        ) -join $aenl) + $aenl, $enc)
+    $ae14 = @(& $aePy $col --root $AeF --out (Join-Path $Ae 'out-leak') 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ae14) -join ' ') -match 'pitfalls line 2') -and ((@($ae14) -join ' ') -match 'user path')) `
+        'AE14 用户路径进公开知识被拦（拒收带行号，且理由是隐私而不是坏 JSON）' (@($ae14) -join ' ')
+    Assert-True (-not (Test-Path (Join-Path $Ae 'out-leak\knowledge\pitfalls.jsonl'))) 'AE14b 拒收时不落快照（fail-closed，先于任何写盘）' ''
+    [IO.File]::WriteAllText((Join-Path $AeF '.agent\pitfalls.jsonl'), (@(
+            '{"id": "pok-001", "cat": "git", "trigger": "t", "consequence": "c", "prevention": "p", "source": "s", "ts": "2026-11-21T00:00:00+08:00"}',
+            '{"id": "", "cat": "git"}'
+        ) -join $aenl) + $aenl, $enc)
+    $ae15 = @(& $aePy $col --root $AeF --out (Join-Path $Ae 'out-mal') 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ae15) -join ' ') -match 'pitfalls line 2')) `
+        'AE15 坏条目（缺 trigger 等）拒收带行号' (@($ae15) -join ' ')
+
+    # AE16: 没有 --with-text 后门（原文要用户自己手动交付，工具不代劳）
+    & $aePy $col --root $AeB --out (Join-Path $Ae 'out-wt') --with-text 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AE16 --with-text 不是本工具的旗标（exit 2，原文不走工具）' "exit=$LASTEXITCODE"
+
+    # AE17: corpus 落点被 gitignore——默认输出写进仓库 cognition/corpus/，git status 无感
+    $stBefore = @(& git -C $repo status --porcelain -- cognition/)
+    & $aePy $col --root $AeB 2>&1 | Out-Null
+    $ae17code = $LASTEXITCODE
+    $stAfter = @(& git -C $repo status --porcelain -- cognition/)
+    Assert-True ($ae17code -eq 0 -and (Test-Path (Join-Path $repo 'cognition\corpus\events.jsonl'))) `
+        'AE17 默认输出落在 cognition/corpus/（跟文件夹走，无硬编码路径）' "exit=$ae17code"
+    & git -C $repo check-ignore -q cognition/corpus/events.jsonl 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0) 'AE17b corpus 被 gitignore 命中（克隆不带私有语料）' "check-ignore=$LASTEXITCODE"
+    Assert-True ((@($stBefore) -join "`n") -eq (@($stAfter) -join "`n")) `
+        'AE17c collect 产出后 git status（限 cognition/）零变化（语料不进 status）' ''
+    Remove-Item (Join-Path $repo 'cognition\corpus') -Recurse -Force -ErrorAction SilentlyContinue
+
+    # AE18: 调用面 fail-closed
+    & $aePy $col 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AE18 缺 --root exit=2' "exit=$LASTEXITCODE"
+    & $aePy $col --root (Join-Path $Ae 'no-such-root') 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AE18b --root 不是存在的目录 exit=2（不猜 cwd）' "exit=$LASTEXITCODE"
+    & $aePy $col --root $AeB --wat x 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 2) 'AE18c 未知旗标拒绝' "exit=$LASTEXITCODE"
+
+    # AE19: corpus 也是快照语义——重跑覆盖、行数一致
+    & $aePy $col --root $AeB --out $AeOutB 2>&1 | Out-Null
+    Assert-True ($LASTEXITCODE -eq 0 -and @(([IO.File]::ReadAllLines((Join-Path $AeOutB 'corpus\events.jsonl'), $enc) | Where-Object { $_.Trim() })).Count -eq 4) `
+        'AE19 corpus 重跑覆盖且行数一致' "exit=$LASTEXITCODE"
+}
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 if ($failed -gt 0) { exit 1 }
 exit 0
