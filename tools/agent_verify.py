@@ -45,6 +45,13 @@ lock") instead of racing journal-begin. The lock is released via atexit on every
 normal exit; a killed process leaves it behind ON PURPOSE -- the leftover lock plus
 the surviving .journal snapshot is the dirty-state marker the next run diagnoses.
 
+Compact receipt (--compact, opt-in -- full stays the default and the audit artifact):
+a single-line machine JSON with the routing fields (verdict/exit/proven/wall_s), one
+entry per step (step, verdict, exit, seconds), one per run command (command, exit,
+seconds), plus budget numbers / cost / agent_id / changes count. Free-text evidence is
+dropped, which is where the order of magnitude goes; subagents each pass --agent-id
+and get their own compact receipt and their own ledger lines.
+
 Caps (--caps): each run command executes under run_caps.py kernel-level resource caps
 (memory / process count on Windows, RLIMIT_AS on POSIX). That is a runaway limiter, NOT
 a security boundary: no filesystem/network isolation, no defense against deliberate
@@ -145,7 +152,7 @@ Exit codes: 0 all good; 1 a guard refused or the command failed; 2 bad invocatio
 def parse_args(argv):
     out = {"root": "", "changed": [], "lang": "", "profile": "workspace-write",
            "allow_network": False, "dry_run": False, "receipt": "", "store": "", "plan": "",
-           "allow": [], "agent_id": "", "spent_token": ""}
+           "allow": [], "agent_id": "", "spent_token": "", "compact": False}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -156,9 +163,11 @@ def parse_args(argv):
         # Boolean flags must be listed here: a bool flag that falls through to the
         # value-branch swallows the NEXT argument as its value (--caps -Root ... would
         # parse -Root as the caps value).
-        if name in ("dryrun", "allownetwork", "caps"):
+        if name in ("dryrun", "allownetwork", "caps", "compact"):
             out["dry_run" if name == "dryrun"
-                else "allow_network" if name == "allownetwork" else "caps"] = True
+                else "allow_network" if name == "allownetwork"
+                else "caps" if name == "caps"
+                else "compact"] = True
             i += 1
             continue
         val = argv[i + 1] if i + 1 < len(argv) else ""
@@ -221,6 +230,51 @@ def write_receipt(path, doc):
     with open(path, "w", encoding="ascii", newline="\n") as fh:
         json.dump(doc, fh, ensure_ascii=True, indent=2)
         fh.write("\n")
+
+
+def compact_receipt(doc, steps):
+    """The --compact shape: one line, the chain's decision plus per-step verdict/exit/wall.
+
+    Keeps every field a machine needs to route on the result (verdict/exit, per-step
+    verdicts, per-command exit/wall, proven, cost, budget numbers, agent_id); drops the
+    free-text evidence (output tails, policy output, resume block text, notes) that makes
+    the full receipt an audit artifact. Full mode stays the default and the audit record.
+    """
+    c = {"root": doc["root"], "lang": doc["lang"], "profile": doc["profile"],
+         "at": doc["at"], "verdict": doc["verdict"], "exit": doc["exit"],
+         "wall_s": doc.get("wall_s"),
+         "steps": [{"step": s["step"], "verdict": s["verdict"], "exit": s["exit"],
+                    "seconds": s["seconds"]} for s in steps],
+         "run": [{"command": r["command"], "exit": r["exit"], "seconds": r["seconds"]}
+                 for r in doc.get("run", [])],
+         "changes": len(doc.get("changes", []))}
+    if "plan" in doc:
+        c["proven"] = bool(doc["plan"].get("proven"))
+    for k in ("agent_id", "dirty"):
+        if k in doc:
+            c[k] = doc[k]
+    if "budget" in doc:
+        c["budget"] = {k: v for k, v in doc["budget"].items() if k != "gate"}
+    if "resume" in doc:
+        c["resume"] = {k: v for k, v in doc["resume"].items() if k != "output"}
+    if "cost" in doc:
+        c["cost"] = {k: v for k, v in doc["cost"].items() if k != "note"}
+    return c
+
+
+def emit_receipt(path, doc, steps, compact):
+    """One write surface for both receipt modes: full (indent=2, the historical shape) or
+    compact (single line, separators without whitespace). Old consumers read full by
+    default and see byte-identical receipts; --compact is an opt-in artifact."""
+    if not path:
+        return
+    if compact:
+        with open(path, "w", encoding="ascii", newline="\n") as fh:
+            json.dump(compact_receipt(doc, steps), fh, ensure_ascii=True,
+                      separators=(",", ":"))
+            fh.write("\n")
+    else:
+        write_receipt(path, doc)
 
 
 def sha8(text):
@@ -390,11 +444,11 @@ def main(argv):
         print("    python tools/journal.py restore -Root <root>   # 把树放回快照")
         print("  then remove <root>/.journal/chain.lock and rerun")
         if a["receipt"]:
-            write_receipt(a["receipt"], {
+            emit_receipt(a["receipt"], {
                 "root": root, "lang": lang, "profile": profile, "changed": a["changed"],
                 "at": datetime.now().astimezone().isoformat(timespec="microseconds"),
-                "agent_id": agent_id, "steps": [], "verdict": "refused by chain lock",
-                "exit": 1, "dirty": held})
+                "agent_id": agent_id, "verdict": "refused by chain lock", "exit": 1,
+                "dirty": held}, [], a.get("compact"))
         return 1
     if lock_path == "warn" or (isinstance(lock_path, str) and lock_path.startswith("warn:")):
         print(f"agent-verify: 警告 -- chain lock 不可用（{lock_path.split(':', 1)[1]}），"
@@ -437,8 +491,7 @@ def main(argv):
         doc["steps"] = steps
         doc["verdict"] = verdict
         doc["exit"] = code
-        if a["receipt"]:
-            write_receipt(a["receipt"], doc)
+        emit_receipt(a["receipt"], doc, steps, a.get("compact"))
         return code
 
     # --- 0. memory brief: what this project already knows ------------------------------
