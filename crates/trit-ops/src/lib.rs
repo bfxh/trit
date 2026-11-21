@@ -24,14 +24,20 @@
 // 前置条件保证，故在 crate 级关闭该 lint。
 
 pub mod bench;
+pub mod frame;
 pub mod gemv;
+pub mod gf3;
+pub mod golay;
 pub mod pack;
 pub mod pool;
 pub mod quant;
 pub mod simd;
 pub mod trit;
 
+pub use frame::{FrameCode, FrameCodec, FrameReject, FrameResult, decode_line, encode_line};
 pub use gemv::{Kernel, TernaryMatrix, TryteMatrix};
+pub use gf3::{ExtendedDecode, ExtendedHamming, HammingCode, HammingDecode};
+pub use golay::{Golay11, GolayDecode};
 pub use pack::{Rail, Trytes};
 pub use quant::{QuantReport, Scheme};
 pub use trit::Trit;
