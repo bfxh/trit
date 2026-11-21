@@ -38,6 +38,22 @@ function New-File([string]$path, [string]$content) {
     [IO.File]::WriteAllText($path, $content, (New-Object System.Text.UTF8Encoding($false)))
 }
 
+# 跑完落盘：汇总行 + UTC 时间戳写进 .agent/last-selftest.json（gitignore，不进公开树）。
+# doctor.py 的 selftest 面只读这份记录（doctor 不自己跑 selftest）；AI 组用同一函数做
+# 落盘往返，保证写与读同源。汇总串刻意不含 work 目录——本机路径不留痕（L93/L107 同族纪律）。
+function Write-SelftestRecord([string]$Root, [int]$Passed, [int]$Failed, [int]$Skipped) {
+    $dir = Join-Path $Root '.agent'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    $at = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+    $rec = [ordered]@{
+        tool = 'selftest'; at = $at; passed = $Passed; failed = $Failed; skipped = $Skipped
+        summary = ('selftest: passed={0} failed={1} skipped={2}' -f $Passed, $Failed, $Skipped)
+    }
+    $line = $rec | ConvertTo-Json -Compress
+    [IO.File]::WriteAllText((Join-Path $dir 'last-selftest.json'), ($line + "`n"),
+        (New-Object System.Text.UTF8Encoding($false)))
+}
+
 # =============================================================================="== A. affected: 没有 git 历史时必须回退全量 =="
 $A = Join-Path $Work 'no-git'
 New-File (Join-Path $A 'Cargo.toml') "`n[package]`nname = 'x'`n"
@@ -2711,7 +2727,263 @@ if (-not $afPy) {
         (@($afFullDoc.changes) -join ';')
 }
 
+# =====================================================================================
+"== AI. doctor: 项目自感知快照 -- 聚合有出处的证据面，不是闸 =="
+# doctor.py 读的是落盘证据：selftest 汇总记录（本文件尾部写入）、台账固化列 vs selftest
+# 断言号（双向对账：台账声称的断言号必须真实存在；selftest 引用的 L 号必须还在台账里）、
+# registry 可跑性、欠账+git、privacy/docs 门。任何一面 FAIL 都不改变 doctor 的退出码——
+# 它是观测面，判定闸在 policy/constraints。台账回归清点的真实缺口数记录在 docs/ERRORS.md L118。
+$aiPy = $null
+foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
+    if (-not $c) { continue }
+    $aiSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    if (-not $aiSrc) { continue }
+    if ((& $aiSrc -c 'print(1)' 2>$null) -eq '1') { $aiPy = $aiSrc; break }
+}
+$aiTotal = 30
+if (-not $aiPy) {
+    "  SKIP  AI0 找不到可用的 Python，跳过 doctor 检查"
+    $skipped += $aiTotal
+} else {
+    $aiEnc = New-Object System.Text.UTF8Encoding($false)
+    $aiDocRoot = Join-Path $Work 'ai-doctor'
+    $aiG = Join-Path $aiDocRoot 'g-clean'
+    $aiD = Join-Path $aiDocRoot 'd-debt'
+    $aiX = Join-Path $aiDocRoot 'x-ghost'
+    $aiF = Join-Path $aiDocRoot 'f-record'
+    $aiP = Join-Path $aiDocRoot 'p-gates'
+    # 夹具 selftest 基础内容只含 W13/W14；反漂移夹具（$aiX 专用）才引用一个 fixture 台账里
+    # 不存在的 L 号——用运行期拼接写出 'L77'，真 selftest.ps1 源码里不出现该字面量，
+    # 真仓反向对账不会把它当成真的引用（L106 同法）。
+    $aiSelfFx = ("Assert-True (`$true) 'W13 sample pin' ''`n" +
+                 "Assert-True (`$true) 'W14 sample pin two' ''`n")
+    $aiSelfFxDrift = ($aiSelfFx + "# reverse pin: docs/ERRORS.md L" + "77`n")
+    function New-AiRoot([string]$root) {
+        New-Item -ItemType Directory -Force -Path $root | Out-Null
+    }
+    function New-AiLedgerRoot([string]$root, [string]$ledgerBody, [string]$registryJson) {
+        New-Item -ItemType Directory -Force -Path `
+            (Join-Path $root 'docs'), (Join-Path $root 'tools'), (Join-Path $root '.agent\checks') | Out-Null
+        [IO.File]::WriteAllText((Join-Path $root 'docs\ERRORS.md'), $ledgerBody, $script:aiEnc)
+        [IO.File]::WriteAllText((Join-Path $root 'tools\selftest.ps1'), $script:aiSelfFx, $script:aiEnc)
+        if ($registryJson) {
+            [IO.File]::WriteAllText((Join-Path $root '.agent\checks\registry.json'),
+                ($registryJson + "`n"), $script:aiEnc)
+        }
+    }
+    function Invoke-AiDoctor([string]$root) {
+        return @(& $script:aiPy (Join-Path $script:tools 'doctor.py') --root $root --json 2>&1)
+    }
+    function Get-AiFace($doc, [string]$name) {
+        return @($doc.faces | Where-Object { $_.face -eq $name })[0]
+    }
+
+    # 三种台账形态：无债务 / 有债务 / 断言号被删（任务要求的形态各验一次）
+    $aiLedGood = @(
+        '# fixture: clean ledger', '',
+        '## A. fixture', '',
+        '| # | a | b | c | pin |',
+        '|---|---|---|---|---|',
+        '| L01 | x | y | z | W13 |',
+        '| L02 | x | y | z | W14 |') -join "`n"
+    $aiLedDebt = @(
+        '# fixture: debt ledger', '',
+        '## A. fixture', '',
+        '| # | a | b | c | pin |',
+        '|---|---|---|---|---|',
+        '| L01 | x | y | z | - |',
+        '| L02 | x | y | z | N 组 |', '',
+        '## D. fixture backlog', '',
+        '| # | debt | now | plan |',
+        '|---|---|---|---|',
+        '| L37 | x | y | z |') -join "`n"
+    $aiLedGhost = @(
+        '# fixture: ghost ledger', '',
+        '## A. fixture', '',
+        '| # | a | b | c | pin |',
+        '|---|---|---|---|---|',
+        '| L01 | x | y | z | W99 |',
+        '| L02 | x | y | z | C999 |') -join "`n"
+
+    New-AiRoot $aiF | Out-Null
+    New-AiLedgerRoot $aiG $aiLedGood '[{"id":"C901","kind":"require","scope":["docs/ERRORS.md"]}]'
+    New-AiLedgerRoot $aiD $aiLedDebt ('[{"id":"C901","kind":"require","scope":["docs/ERRORS.md"]},' +
+        '{"id":"C902","kind":"cmd","run":"ai-missing-cmd-xyz --flag"}]')
+    New-AiLedgerRoot $aiX $aiLedGhost '[{"id":"C901","kind":"require","scope":["docs/ERRORS.md"]}]'
+    # $aiX 专用：selftest 引用 fixture 台账里不存在的 L 号 → 反向漂移（AI9）
+    [IO.File]::WriteAllText((Join-Path $aiX 'tools\selftest.ps1'), $aiSelfFxDrift, $aiEnc)
+
+    # --- UNAVAILABLE 形态：空根，什么证据都没有，六个面全部如实缺席 ---
+    $aiE = Join-Path $aiDocRoot 'e-empty'
+    New-AiRoot $aiE | Out-Null
+    $aiOut1 = Invoke-AiDoctor $aiE
+    $aiExit1 = $LASTEXITCODE
+    $aiDoc1 = ($aiOut1 -join "`n") | ConvertFrom-Json
+    Assert-True ($aiExit1 -eq 0 -and $null -ne $aiDoc1.faces) 'AI1 空根：exit=0 且 JSON 可解析（缺证据不崩）' "exit=$aiExit1"
+    $aiUnav = @($aiDoc1.faces | Where-Object { $_.status -eq 'UNAVAILABLE' })
+    Assert-True (@($aiDoc1.faces).Count -eq 6 -and $aiUnav.Count -eq 6) 'AI1b 空根：六面全部 UNAVAILABLE（缺出处不许冒充绿）' (($aiDoc1.faces | ForEach-Object { "$($_.face)=$($_.status)" }) -join ',')
+    $aiSelf1 = Get-AiFace $aiDoc1 'selftest'
+    Assert-True ($aiSelf1.detail -match 'rerun') 'AI2 selftest 面缺记录时点名重跑命令' $aiSelf1.detail
+
+    # --- last-selftest.json 落盘往返：写入用与文件尾部同一个函数（写读同源） ---
+    Write-SelftestRecord -Root $aiG -Passed 447 -Failed 0 -Skipped 3
+    $aiOutG = Invoke-AiDoctor $aiG
+    $aiExitG = $LASTEXITCODE
+    $aiDocG = ($aiOutG -join "`n") | ConvertFrom-Json
+    $aiSelfG = Get-AiFace $aiDocG 'selftest'
+    Assert-True ($aiExitG -eq 0 -and $aiSelfG.status -eq 'OK' -and
+        $aiSelfG.detail -match 'passed=447 failed=0' -and $aiSelfG.evidence -match 'last-selftest\.json') `
+        'AI3 落盘往返：Write-SelftestRecord 写入后 doctor 读回计数与证据指针' ("exit=$aiExitG $($aiSelfG.status) $($aiSelfG.detail)")
+
+    Write-SelftestRecord -Root $aiF -Passed 4 -Failed 3 -Skipped 0
+    $aiOutF = Invoke-AiDoctor $aiF
+    $aiExitF = $LASTEXITCODE
+    $aiDocF = ($aiOutF -join "`n") | ConvertFrom-Json
+    $aiSelfF = Get-AiFace $aiDocF 'selftest'
+    Assert-True ($aiSelfF.status -eq 'FAIL' -and $aiExitF -eq 0) 'AI4 selftest FAIL 面成立但 exit 仍 0（FAIL 不阻塞 exit，观测面不是闸）' "exit=$aiExitF status=$($aiSelfF.status)"
+
+    New-Item -ItemType Directory -Force -Path (Join-Path $aiX '.agent') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $aiX '.agent\last-selftest.json'), '{bad', $aiEnc)
+    $aiDocX1 = ((Invoke-AiDoctor $aiX) -join "`n") | ConvertFrom-Json
+    $aiSelfX1 = Get-AiFace $aiDocX1 'selftest'
+    Assert-True ($aiSelfX1.status -eq 'UNAVAILABLE') 'AI5 坏 JSON 的 selftest 记录：UNAVAILABLE（不是崩也不是绿）' $aiSelfX1.detail
+
+    # --- 台账三形态 ---
+    $aiLedG = Get-AiFace $aiDocG 'ledger'
+    Assert-True ($aiLedG.status -eq 'OK' -and $aiLedG.detail -match 'entries=2 pinned=2 unpinned=0 ghost=0') `
+        'AI6 无债务台账：ledger OK（固化列里的断言号在 selftest 里真实存在）' $aiLedG.detail
+
+    $aiDocD = ((Invoke-AiDoctor $aiD) -join "`n") | ConvertFrom-Json
+    $aiLedD = Get-AiFace $aiDocD 'ledger'
+    Assert-True ($aiLedD.status -eq 'WARN' -and $aiLedD.detail -match 'unpinned=2 ghost=0' -and $aiLedD.detail -match 'group_only=1') `
+        'AI7 有债务台账：空固化与组号引用都算缺口（组号不是断言钉住，缺口是已知债务不是失败）' $aiLedD.detail
+
+    $aiDocX = ((Invoke-AiDoctor $aiX) -join "`n") | ConvertFrom-Json
+    $aiExitX = $LASTEXITCODE
+    $aiLedX = Get-AiFace $aiDocX 'ledger'
+    Assert-True ($aiLedX.status -eq 'FAIL' -and $aiExitX -eq 0 -and $aiLedX.detail -match 'ghost=L01:W99;L02:C999') `
+        'AI8 断言号被删：selftest 与 registry 都不认领的幽灵号让 ledger FAIL，exit 仍 0' ("exit=$aiExitX $($aiLedX.detail)")
+    Assert-True ($aiLedX.detail -match 'reverse_missing=1' -and $aiLedX.detail -match 'reverse=L77') `
+        'AI9 反向漂移：selftest 引用的 L 号不在台账里同样 FAIL（台账不许变薄）' $aiLedX.detail
+
+    # --- registry 面 ---
+    $aiRegG = Get-AiFace $aiDocG 'registry'
+    Assert-True ($aiRegG.status -eq 'OK' -and $aiRegG.detail -match 'checks=1 runnable=1') 'AI10 registry 面：全部可跑时 OK' $aiRegG.detail
+    $aiRegD = Get-AiFace $aiDocD 'registry'
+    Assert-True ($aiRegD.status -eq 'WARN' -and $aiRegD.detail -match 'checks=2' -and $aiRegD.detail -match 'C902:command missing') `
+        'AI11 registry 面：命令缺失的检查被点名（存在性探测，不执行任何检查）' $aiRegD.detail
+    New-Item -ItemType Directory -Force -Path (Join-Path $aiF '.agent\checks') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $aiF '.agent\checks\registry.json'), '{oops', $aiEnc)
+    $aiDocF2 = ((Invoke-AiDoctor $aiF) -join "`n") | ConvertFrom-Json
+    $aiRegF = Get-AiFace $aiDocF2 'registry'
+    Assert-True ($aiRegF.status -eq 'UNAVAILABLE') 'AI12 坏 JSON 的 registry：UNAVAILABLE（半份数据不冒充全貌）' $aiRegF.detail
+
+    # --- backlog / git / gates 面 ---
+    $aiBkD = Get-AiFace $aiDocD 'backlog'
+    Assert-True ($aiBkD.status -eq 'WARN' -and $aiBkD.detail -match 'd_section=1' -and $aiBkD.detail -match 'L37') `
+        'AI13 欠账节单列的条目进 backlog 面（D 节不许混进已固化）' $aiBkD.detail
+    $aiBkG = Get-AiFace $aiDocG 'backlog'
+    Assert-True ($aiBkG.status -eq 'OK') 'AI14 无欠账台账：backlog 面 OK' $aiBkG.detail
+    $aiGitD = Get-AiFace $aiDocD 'git'
+    Assert-True ($aiGitD.status -eq 'UNAVAILABLE') 'AI15 无仓库：git 面 UNAVAILABLE' $aiGitD.detail
+
+    # gates OK 形态与 git 仓库一起备好：门脚本 + 合规 CHANGELOG 先落盘并提交；两道门各自
+    # 就地建档（docs_hygiene --update 建棘轮基线、privacy --init 冻结存量——夹具里的
+    # docs_hygiene.py 盘符命中在真仓是被 privacy 基线冻结的，夹具同口径）；建档产物二次
+    # 提交，之后 doctor 才能断言 dirty=0 与两门皆绿。
+    New-Item -ItemType Directory -Force -Path (Join-Path $aiG 'scripts') | Out-Null
+    Copy-Item (Join-Path $repo 'scripts\privacy_scan.py') (Join-Path $aiG 'scripts\privacy_scan.py')
+    Copy-Item (Join-Path $repo 'scripts\docs_hygiene.py') (Join-Path $aiG 'scripts\docs_hygiene.py')
+    [IO.File]::WriteAllText((Join-Path $aiG 'CHANGELOG.md'), ("# Changelog`n`n## [Unreleased]`nfixture`n"), $aiEnc)
+    Push-Location $aiG
+    & git init -q 2>&1 | Out-Null
+    & git add -A 2>&1 | Out-Null
+    & git -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    & $aiPy (Join-Path $aiG 'scripts\docs_hygiene.py') --update 2>&1 | Out-Null
+    & $aiPy (Join-Path $aiG 'scripts\privacy_scan.py') --init 2>&1 | Out-Null
+    & git add -A 2>&1 | Out-Null
+    & git -c user.email=s@t -c user.name=s commit -qm baselines 2>&1 | Out-Null
+    Pop-Location
+    $aiOutG2 = Invoke-AiDoctor $aiG
+    $aiDocG2 = ($aiOutG2 -join "`n") | ConvertFrom-Json
+    $aiGitG = Get-AiFace $aiDocG2 'git'
+    Assert-True ($aiGitG.status -eq 'WARN' -and $aiGitG.detail -match 'dirty=0' -and $aiGitG.detail -match 'unpushed=1') `
+        'AI16 无远端的本地分支算未推送（tip 不在任何 remote ref 上，事实口径不是猜测）' $aiGitG.detail
+    $aiGatesG = Get-AiFace $aiDocG2 'gates'
+    Assert-True ($aiGatesG.status -eq 'OK' -and $aiGatesG.evidence -match 'privacy exit=0' -and $aiGatesG.evidence -match 'docs exit=0') `
+        'AI17 privacy/docs 门现场快跑：都绿则 gates OK（秒级，证据就是退出码）' $aiGatesG.evidence
+
+    [IO.File]::WriteAllText((Join-Path $aiG 'dirty.txt'), "d`n", $aiEnc)
+    $aiOutG3 = Invoke-AiDoctor $aiG
+    $aiDocG3 = ($aiOutG3 -join "`n") | ConvertFrom-Json
+    $aiGitG3 = Get-AiFace $aiDocG3 'git'
+    Assert-True ($aiGitG3.detail -match 'dirty=1') 'AI18 未跟踪文件进 dirty 计数（git 采集，不是状态文件）' $aiGitG3.detail
+
+    New-Item -ItemType Directory -Force -Path (Join-Path $aiP 'scripts'), (Join-Path $aiP 'docs\plans') | Out-Null
+    Copy-Item (Join-Path $repo 'scripts\privacy_scan.py') (Join-Path $aiP 'scripts\privacy_scan.py')
+    [IO.File]::WriteAllText((Join-Path $aiP 'docs\plans\violation.md'), "task doc`n", $aiEnc)
+    Push-Location $aiP
+    & git init -q 2>&1 | Out-Null
+    & git add -A 2>&1 | Out-Null
+    & git -c user.email=s@t -c user.name=s commit -qm base 2>&1 | Out-Null
+    Pop-Location
+    $aiDocP = ((Invoke-AiDoctor $aiP) -join "`n") | ConvertFrom-Json
+    $aiGatesP = Get-AiFace $aiDocP 'gates'
+    Assert-True ($aiGatesP.status -eq 'FAIL' -and $aiGatesP.evidence -match 'privacy exit=1') `
+        'AI19 privacy 门红时 gates FAIL（doctor 如实转述门禁退出码，不加自己的意见）' $aiGatesP.evidence
+    $aiGatesD = Get-AiFace $aiDocD 'gates'
+    Assert-True ($aiGatesD.status -eq 'UNAVAILABLE') 'AI20 门脚本缺失：gates UNAVAILABLE（不是绿）' $aiGatesD.detail
+
+    # --- --json 机器可读契约 ---
+    $aiLine = @($aiOutG3)[0]
+    $aiFaceKeysOk = $true
+    $aiStatusOk = $true
+    foreach ($f in $aiDocG3.faces) {
+        $fn = @($f.PSObject.Properties.Name)
+        if (($fn -notcontains 'face') -or ($fn -notcontains 'status') -or
+            ($fn -notcontains 'evidence') -or ($fn -notcontains 'detail')) { $aiFaceKeysOk = $false }
+        if (@('OK', 'WARN', 'FAIL', 'UNAVAILABLE') -notcontains $f.status) { $aiStatusOk = $false }
+    }
+    Assert-True ((@($aiOutG3).Count -eq 1) -and ((($aiLine -replace '[^\x00-\x7F]', '').Length) -eq $aiLine.Length)) `
+        'AI21 --json 单行且纯 ASCII（机器可读契约，任何宿主都读不坏）' "lines=$(@($aiOutG3).Count)"
+    Assert-True ((@($aiDocG3.PSObject.Properties.Name) -contains 'tool') -and
+        (@($aiDocG3.PSObject.Properties.Name) -contains 'at') -and
+        (@($aiDocG3.PSObject.Properties.Name) -contains 'faces') -and
+        $aiFaceKeysOk -and $aiStatusOk) `
+        'AI21b --json 形状：tool/at/faces，每面 face/status/evidence/detail，status 取值封闭' ''
+
+    # --- 真仓一次实跑：先落一份当前真实计数快照（与文件尾部同一函数），再读回清点 ---
+    $aiP0 = $passed; $aiF0 = $failed; $aiS0 = $skipped
+    Write-SelftestRecord -Root $repo -Passed $aiP0 -Failed $aiF0 -Skipped $aiS0
+    $aiSw = [System.Diagnostics.Stopwatch]::StartNew()
+    $aiOutR = Invoke-AiDoctor $repo
+    $aiSw.Stop()
+    $aiExitR = $LASTEXITCODE
+    $aiDocR = ($aiOutR -join "`n") | ConvertFrom-Json
+    Assert-True ($aiExitR -eq 0) 'AI22 真仓 doctor exit=0' "exit=$aiExitR"
+    $aiLedR = Get-AiFace $aiDocR 'ledger'
+    $aiPinned = if ($aiLedR.detail -match 'pinned=(\d+)') { [int]$Matches[1] } else { -1 }
+    $aiEntries = if ($aiLedR.detail -match 'entries=(\d+)') { [int]$Matches[1] } else { -1 }
+    Assert-True ($aiLedR.detail -match 'ghost=0' -and $aiLedR.detail -match 'reverse_missing=0') `
+        'AI23 真仓台账：无幽灵断言号、selftest 引用的 L 号全部存在（双向不漂移）' $aiLedR.detail
+    Assert-True ($aiPinned -ge 73 -and $aiEntries -ge 108) `
+        'AI24 台账回归清点棘轮：有固化断言号的条目只增不减（首次真实清点数见 docs/ERRORS.md L118）' "pinned=$aiPinned entries=$aiEntries"
+    $aiRegR = Get-AiFace $aiDocR 'registry'
+    $aiRegCount = if ($aiRegR.detail -match 'checks=(\d+)') { [int]$Matches[1] } else { -1 }
+    Assert-True (($aiRegR.status -eq 'OK' -or $aiRegR.status -eq 'WARN') -and $aiRegCount -ge 45) `
+        'AI25 真仓 registry 检查可清点（本机缺依赖的条目 WARN，不算崩不算 UNAVAILABLE）' "$($aiRegR.status) $($aiRegR.detail)"
+    $aiSelfR = Get-AiFace $aiDocR 'selftest'
+    Assert-True ($aiSelfR.detail -match ('passed=' + $aiP0 + ' failed=' + $aiF0)) `
+        'AI26 真仓 selftest 记录往返：doctor 读到的计数与落盘时刻的快照一致' $aiSelfR.detail
+    $aiBkR = Get-AiFace $aiDocR 'backlog'
+    Assert-True ($aiBkR.status -eq 'WARN' -and $aiBkR.detail -match 'L37') `
+        'AI27 真仓欠账节在场且被清点（D 节不许悄悄消失）' $aiBkR.detail
+    Assert-True ($aiSw.Elapsed.TotalSeconds -lt 60) `
+        'AI28 doctor 秒级（不跑 cargo/selftest，只读落盘 + 轻量门）' ("seconds=" + [math]::Round($aiSw.Elapsed.TotalSeconds, 1))
+}
+
 
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
+Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped
 if ($failed -gt 0) { exit 1 }
 exit 0
