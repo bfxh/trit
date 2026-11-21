@@ -119,6 +119,12 @@ pub enum Error {
     },
     #[error("unsupported trace schema {found} (expected {expected})")]
     TraceSchema { found: u32, expected: u32 },
+    #[error("trace ECC rejected at {path}:{line}: {reason}")]
+    TraceEcc {
+        path: String,
+        line: usize,
+        reason: String,
+    },
     #[error("trace id mismatch: expected {expected:?}, found {found:?}")]
     TraceMismatch { expected: String, found: String },
     #[error("trace seq {seq} already has a different event")]
@@ -241,6 +247,7 @@ impl Error {
             Error::TraceIo { .. } => "trace_io",
             Error::TraceParse { .. } => "trace_parse",
             Error::TraceSchema { .. } => "trace_schema",
+            Error::TraceEcc { .. } => "trace_ecc_rejected",
             Error::TraceMismatch { .. } => "trace_mismatch",
             Error::TraceSeqConflict { .. } => "trace_seq_conflict",
             Error::TraceIncomplete { .. } => "trace_incomplete",
