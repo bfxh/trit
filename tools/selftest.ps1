@@ -2971,6 +2971,198 @@ if (-not $agPy) {
 }
 
 
+# =====================================================================================
+"== AH. terminology: 概念契约（防偷换概念）——锚点漂移/混用/孤儿三类漂移机器可查 =="
+# 术语表是概念契约：同一个词在权威定义、回执、断言之间悄悄换义是造假的温床。每条断言
+# 对着一个真实失效模式：权威行被改写（ANCHOR-LOST）、代码挪行使锚点错位（ANCHOR-MOVED）、
+# 某词与它不许混用的词在同一行出现（MIX）、登记处比词表活得久（ORPHAN）、棘轮被绕过
+# （改定义不带 --reason）。纪律：本段里凡枚举术语或正反对照的行必须自带守卫词
+# （严禁/不是/不许），否则本组会被自己钉住的 MIX 规则拦下——这正是被检验的行为。
+$ahPy = $null
+foreach ($c in @($env:PYTHON, 'python', 'python3', 'py')) {
+    if (-not $c) { continue }
+    $ahSrc = (Get-Command $c -ErrorAction SilentlyContinue).Source
+    if (-not $ahSrc) { continue }
+    if ((& $ahSrc -c 'print(1)' 2>$null) -eq '1') { $ahPy = $ahSrc; break }
+}
+if (-not $ahPy) {
+    "  SKIP  AH0 找不到可用的 Python，跳过术语契约检查"
+    $skipped += 26
+} else {
+    $termPy = Join-Path $tools 'terminology.py'
+    $ahEnc = New-Object System.Text.UTF8Encoding($false)
+
+    function Invoke-Terms {
+        param([string]$root, [string]$registry, [string]$files)
+        $argz = @($termPy, 'check', '--root', $root)
+        if ($registry) { $argz += @('--registry', $registry) }
+        if ($files) { $argz += @('--files', $files) }
+        & $ahPy @argz 2>&1
+    }
+
+    # --- 夹具：按注册表 anchors 把权威文件逐字复制到临时根（复制真实文件来测漂移检出）---
+    $ahTermsDoc = [IO.File]::ReadAllText((Join-Path $repo '.agent\terms.json'), $ahEnc) | ConvertFrom-Json
+    $AhFx = Join-Path $Work 'ah-fixture'
+    $ahFiles = @('docs\ERRORS.md', 'tools\selftest.ps1')
+    foreach ($t in $ahTermsDoc.terms) {
+        foreach ($a in $t.anchors) {
+            $ahFiles += (($a -split ':', 2)[0] -replace '/', '\')
+        }
+    }
+    foreach ($f in ($ahFiles | Select-Object -Unique)) {
+        $dst = Join-Path $AhFx $f
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $dst) | Out-Null
+        Copy-Item (Join-Path $repo $f) $dst -Force
+    }
+    $ahRegFx = Join-Path $AhFx 'reg.json'
+    Copy-Item (Join-Path $repo '.agent\terms.json') $ahRegFx -Force
+    function Copy-AhFixture([string]$dst) {
+        New-Item -ItemType Directory -Force -Path $dst | Out-Null
+        Copy-Item (Join-Path $AhFx '*') $dst -Recurse -Force
+    }
+
+    # AH1 全绿路径：真仓 check exit 0（默认面=护栏手册+ERRORS+tools/*.py+selftest 断言名）
+    $null = Invoke-Terms $repo ''
+    Assert-True ($LASTEXITCODE -eq 0) 'AH1 真仓 check 全绿（17 术语 35 锚点全部仍在权威位置）' "exit=$LASTEXITCODE"
+
+    # AH2/AH3 契约形状
+    Assert-True ($ahTermsDoc.terms.Count -ge 12) 'AH2 注册表至少 12 条术语（概念契约不许缩水）' "n=$($ahTermsDoc.terms.Count)"
+    $ahShapeOk = $true
+    foreach ($t in $ahTermsDoc.terms) {
+        if (-not $t.term -or -not $t.definition -or -not $t.status -or @($t.anchors).Count -lt 1) { $ahShapeOk = $false }
+        if ($t.mix -notin @('co', 'forms', 'exclusive', 'none')) { $ahShapeOk = $false }
+    }
+    Assert-True $ahShapeOk 'AH3 每条术语 term/definition/status/anchors/mix 齐全（登记处形状钉死）' ''
+
+    # AH4/AH4b 核心概念逐一在册（枚举行自带守卫词，防自吞 MIX）
+    # 词与词严禁混用，所以下面两行枚举同线出现不构成混用——守卫词就是给枚举行的。
+    $ahCore = @('proven', 'censored', 'failed', 'sound', 'declared', 'wall', 'token', 'caps', 'owner_root', 'change', 'verdict', 'fail-closed', 'ratchet', 'gate', 'triage', 'worktree')  # 词表本体：词与词严禁混用，同线枚举不是偷换
+    $ahMissing = @($ahCore | Where-Object { $ahTermsDoc.terms.term -notcontains $_ })
+    Assert-True ($ahMissing.Count -eq 0) 'AH4 核心概念逐一在册（16 个，词与词严禁混用：proven、censored、failed、sound、declared、wall、token、caps、owner_root、change、verdict、fail-closed、ratchet、gate、triage、worktree）' ($ahMissing -join ',')
+    Assert-True ($ahTermsDoc.terms.term -contains '已跑通') 'AH4b 完成度状态词（已跑通/已实现未测/组件/已否证）的代表词在册——声明审计词族' ''
+
+    # AH4c 锚点逐一真实存在：文件在、行号对、引文逐字落在登记的行上（登记处不说谎）
+    $ahAnchorBad = @()
+    foreach ($t in $ahTermsDoc.terms) {
+        foreach ($a in $t.anchors) {
+            $p1 = $a -split ':', 2
+            $p2 = $p1[1] -split ':', 2
+            $apath = Join-Path $repo ($p1[0] -replace '/', '\')
+            if (-not ([IO.File]::Exists($apath))) { $ahAnchorBad += $a; continue }
+            $aline = [IO.File]::ReadAllLines($apath, $ahEnc)
+            if ([int]$p2[0] -gt $aline.Count -or -not $aline[[int]$p2[0] - 1].Contains($p2[1])) { $ahAnchorBad += $a }
+        }
+    }
+    Assert-True ($ahAnchorBad.Count -eq 0) 'AH4c 每条锚点：文件存在且引文逐字落在登记的行上' ($ahAnchorBad -join ' | ')
+
+    # AH5/AH6 混用正反例：夹具文本把 censored 冒充 failed——不许（MIX 必中）；带守卫的对照行放行
+    $ahTheft = 'resume ledger status: censored means the task already ' + 'fai' + 'led completely'
+    New-File (Join-Path $AhFx 'ah-bad.md') ($ahTheft + $nl)
+    $ahBadOut = @(Invoke-Terms $AhFx $ahRegFx 'ah-bad.md')
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ahBadOut) -join "`n") -match 'MIX censored')) `
+        'AH5 混用正例：censored 不许写成 failed——这样的文本必中（exit 1）' "exit=$LASTEXITCODE"
+    New-File (Join-Path $AhFx 'ah-good.md') "censored is not a failure; the resume ledger has no failed status$nl"
+    $null = Invoke-Terms $AhFx $ahRegFx 'ah-good.md'
+    Assert-True ($LASTEXITCODE -eq 0) 'AH6 混用反例：对照行（censored 不是 failed）不误报' "exit=$LASTEXITCODE"
+
+    # AH7 锚点失效：把权威文件里的定义行改坏（正文里把"不是失败"改成"是失败"的真实偷换形态）
+    $AhLost = Join-Path $Work 'ah-lost'
+    Copy-AhFixture $AhLost
+    $ahRp = Join-Path $AhLost 'tools\resume.py'
+    $ahOldTxt = [IO.File]::ReadAllText($ahRp, $ahEnc)
+    $ahNewTxt = $ahOldTxt.Replace('explicitly not a failure', 'explicitly a failure')
+    [IO.File]::WriteAllText($ahRp, $ahNewTxt, $ahEnc)
+    $ahLostOut = @(Invoke-Terms $AhLost (Join-Path $AhLost 'reg.json'))
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ahLostOut) -join "`n") -match 'ANCHOR-LOST censored')) `
+        'AH7 锚点失效：权威行被改写必报 ANCHOR-LOST（exit 1）' "exit=$LASTEXITCODE"
+
+    # AH8 锚点移位：引文还在但代码挪行，锚点行号错位必报
+    $AhMoved = Join-Path $Work 'ah-moved'
+    Copy-AhFixture $AhMoved
+    $ahRp2 = Join-Path $AhMoved 'tools\resume.py'
+    $ahKept = @([IO.File]::ReadAllLines($ahRp2, $ahEnc) | Where-Object { $_ -notmatch '^Why censoring is not failure' })
+    [IO.File]::WriteAllLines($ahRp2, $ahKept, $ahEnc)
+    $ahMovedOut = @(Invoke-Terms $AhMoved (Join-Path $AhMoved 'reg.json'))
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ahMovedOut) -join "`n") -match 'ANCHOR-MOVED censored')) `
+        'AH8 锚点移位：引文仍在但不在登记行必报 ANCHOR-MOVED（exit 1）' "exit=$LASTEXITCODE"
+
+    # AH9 孤儿术语：登记处收下死词，check 审出"登记处比词表活得久"。
+    # 死词与匹配串都拆形构造（L106 口径）——夹具里的 selftest.ps1 副本若含连续词面，
+    # 孤儿检查会把它当成"词还活着"，检验就被检验者自己放走了。
+    $AhOrp = Join-Path $Work 'ah-orphan'
+    Copy-AhFixture $AhOrp
+    $ahOrpReg = Join-Path $AhOrp 'reg.json'
+    $ahDeadWord = 'zzz-orphan-' + 'qx'
+    $null = & $ahPy $termPy add --root $AhOrp --registry $ahOrpReg --term $ahDeadWord --definition 'a word the vocabulary forgot' --anchor 'tools/resume.py:23:censored   closed without finishing -- explicitly not a failure' 2>&1
+    Assert-True ($LASTEXITCODE -eq 0) 'AH9a add 死词收下（锚点仍真实，先登记再由 check 审腐烂）' "exit=$LASTEXITCODE"
+    $ahOrpOut = @(Invoke-Terms $AhOrp $ahOrpReg)
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ahOrpOut) -join "`n") -match ('ORPHAN ' + $ahDeadWord))) `
+        'AH9 孤儿术语：词在代码/扫描面/家都不存在必报（登记处腐烂机器可查）' "exit=$LASTEXITCODE"
+
+    # AH10 棘轮：概念契约只紧不松
+    $AhRat = Join-Path $Work 'ah-ratchet'
+    Copy-AhFixture $AhRat
+    $ahRatReg = Join-Path $AhRat 'reg.json'
+    $null = & $ahPy $termPy update --root $AhRat --registry $ahRatReg --term censored --definition 'new meaning, same word' 2>&1
+    Assert-True ($LASTEXITCODE -eq 2) 'AH10 definition 改动缺 --reason 直接拒绝（概念不许悄悄换义）' "exit=$LASTEXITCODE"
+    $null = & $ahPy $termPy update --root $AhRat --registry $ahRatReg --term censored --forbidden 'failure' 2>&1  # 收窄禁词不许：基线只紧不松
+    Assert-True ($LASTEXITCODE -eq 2) 'AH10b forbidden 收窄缺 --reason 直接拒绝（基线只紧不松）' "exit=$LASTEXITCODE"
+    $null = & $ahPy $termPy update --root $AhRat --registry $ahRatReg --term censored --definition 'new meaning, same word' --reason '口径由 owner 明示更新' 2>&1
+    Assert-True ($LASTEXITCODE -eq 0) 'AH10c definition 改动带 --reason 放行' "exit=$LASTEXITCODE"
+    $ahHist = [IO.File]::ReadAllText($ahRatReg, $ahEnc) | ConvertFrom-Json
+    Assert-True (@($ahHist.history | Where-Object { $_.term -eq 'censored' -and $_.reason -match 'owner' }).Count -ge 1) `
+        'AH10d 改动理由落进 history（概念变动可审计）' ''
+
+    # AH11 add 的两道 fail-closed
+    $AhAdd = Join-Path $Work 'ah-add'
+    Copy-AhFixture $AhAdd
+    $ahAddReg = Join-Path $AhAdd 'reg.json'
+    $null = & $ahPy $termPy add --root $AhAdd --registry $ahAddReg --term censored --definition dup --anchor 'tools/resume.py:23:censored   closed without finishing -- explicitly not a failure' 2>&1
+    Assert-True ($LASTEXITCODE -eq 2) 'AH11 add 重复术语拒绝（术语不许静默重定义）' "exit=$LASTEXITCODE"
+    $null = & $ahPy $termPy add --root $AhAdd --registry $ahAddReg --term never-was --definition x --anchor 'tools/resume.py:999:this line does not exist' 2>&1
+    Assert-True ($LASTEXITCODE -eq 2) 'AH11b add 假锚点 fail-closed 拒绝（登记处永不记谎）' "exit=$LASTEXITCODE"
+
+    # AH12/AH13 exit 2 两面：坏注册表 fail-closed、扫描文件缺失
+    $AhBadReg = Join-Path $Work 'ah-badreg'
+    New-Item -ItemType Directory -Force -Path (Join-Path $AhBadReg '.agent') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $AhBadReg '.agent\terms.json'), '{bad json', $ahEnc)
+    $ahBadRegOut = @(Invoke-Terms $AhBadReg '')
+    Assert-True ($LASTEXITCODE -eq 2 -and ((@($ahBadRegOut) -join ' ') -match 'fail closed') -and ((@($ahBadRegOut) -join ' ') -notmatch 'Traceback')) `
+        'AH12 坏注册表 JSON fail-closed：干净拒绝不是崩溃栈（exit 2）' "exit=$LASTEXITCODE"
+    $null = Invoke-Terms $AhFx $ahRegFx 'ah-nope.md'
+    Assert-True ($LASTEXITCODE -eq 2) 'AH13 扫描文件缺失 exit 2（文件缺失与漂移分开记账）' "exit=$LASTEXITCODE"
+
+    # AH14/AH15 机读面与精确计数
+    $ahJsonOut = (& $ahPy $termPy check --root $repo --json 2>&1 | Out-String).Trim()
+    Assert-True ($LASTEXITCODE -eq 0 -and $ahJsonOut.IndexOf("`n") -lt 0 -and $ahJsonOut -notmatch '[^\x00-\x7F]') `
+        'AH14 --json 单行纯 ASCII 机读（任何解码器都读不坏）' ''
+    $ahCleanOut = @(Invoke-Terms $repo '')
+    Assert-True ($LASTEXITCODE -eq 0 -and (@($ahCleanOut | Where-Object { $_ -match 'terms=17 anchors=35 drift=0' }).Count -eq 1)) `
+        'AH15 全绿报表精确计数行 terms=17 anchors=35 drift=0（数字是契约的一部分）' (@($ahCleanOut | Select-Object -Last 2) -join ' / ')
+
+    # AH16/AH16b 认证与声明：外来词形态必中；严禁混用的对照行放行
+    $ahFw = 'the budget is ' + 'att' + 'ested by the ledger'
+    New-File (Join-Path $AhFx 'ah-foreign.md') ($ahFw + $nl)
+    $ahForOut = @(Invoke-Terms $AhFx $ahRegFx 'ah-foreign.md')
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ahForOut) -join ' ') -match 'MIX declared')) `
+        'AH16 认证账本冒充声明制：声明制条目的禁词形态必中（exclusive）' "exit=$LASTEXITCODE"
+    New-File (Join-Path $AhFx 'ah-foreign-ok.md') "attested 与 declared 严禁混用：声明是声明，认证是认证$nl"
+    $null = Invoke-Terms $AhFx $ahRegFx 'ah-foreign-ok.md'
+    Assert-True ($LASTEXITCODE -eq 0) 'AH16b 严禁混用的对照行不误报' "exit=$LASTEXITCODE"
+
+    # AH17 wall 被写成模型侧消耗的形态必中（秒与 token 不许互相冒充）
+    $ahWtTheft = 'the cost note: wall is ' + 'mod' + 'el-side usage, tokens included'
+    New-File (Join-Path $AhFx 'ah-wall.md') ($ahWtTheft + $nl)
+    $ahWtOut = @(Invoke-Terms $AhFx $ahRegFx 'ah-wall.md')
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($ahWtOut) -join ' ') -match 'MIX wall')) `
+        'AH17 wall 被写成模型侧消耗的形态必中（wall 与 token 不许互相冒充）' "exit=$LASTEXITCODE"
+
+    # AH18 默认扫描面宽度（护栏手册+ERRORS+tools/*.py+selftest 断言名）
+    $ahFilesN = if (@($ahCleanOut | Where-Object { $_ -match 'terms: files=(\d+)' })) { [int]$Matches[1] } else { 0 }
+    Assert-True ($ahFilesN -ge 25) 'AH18 默认扫描面至少 25 个文件（文档+工具 usage/docstring+selftest 断言名都在面上）' "files=$ahFilesN"
+}
+
+
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 if ($failed -gt 0) { exit 1 }
 exit 0
