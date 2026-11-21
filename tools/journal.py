@@ -91,6 +91,43 @@ def sha256_of(path):
     return h.hexdigest().upper()
 
 
+def safe_rel(rel):
+    """Normalize a manifest rel into path components, or None when it is damaged.
+
+    The journal writes rels with os.path.join, so on Windows a backslash is a
+    legitimate separator -- reading "\\" as corruption marked every normal Windows
+    snapshot damaged: restore skipped the copies it had just made (regression G5/G8)
+    and status libelled a healthy store. A rel is damaged only when it is empty,
+    absolute (POSIX root, drive-relative or UNC), or carries an empty, "." or ".."
+    component -- the shapes that turn a corrupted manifest into a write outside the
+    root. Both separators are read as separators so either flavor of manifest works.
+    """
+    if not isinstance(rel, str) or not rel.strip():
+        return None
+    if rel.startswith(("/", "\\")) or os.path.isabs(rel):
+        return None
+    if len(rel) > 1 and rel[1] == ":":  # C:foo is drive-relative, not root-relative
+        return None
+    parts = re.split(r"[\\/]", rel)
+    if any(p in ("", ".", "..") for p in parts):
+        return None
+    return parts
+
+
+def rel_key(rel):
+    """Canonical comparison key: separators unified. A manifest written with one
+    separator flavor must not make the other flavor look like a different file."""
+    return "/".join(re.split(r"[\\/]", str(rel)))
+
+
+def manifest_files(man):
+    """The manifest's files table, or None when the shape itself is damaged.
+    A store that lost its table is not a store with zero files: restoring from it
+    would bin every file in the root, so each caller refuses instead."""
+    files = man.get("files") if isinstance(man, dict) else None
+    return files if isinstance(files, list) else None
+
+
 def load_manifest(manifest_path):
     with open(manifest_path, "r", encoding="utf-8-sig") as fh:
         return json.load(fh)
@@ -144,8 +181,24 @@ def cmd_end(root, latest):
         print("journal: no snapshot, run -Mode begin first")
         return 2
     man = manifest_or_refuse(manifest_path, "diff against it")
-    prev = {e["rel"]: e["sha256"] for e in man["files"]}
-    now = {rel: sha256_of(full) for rel, full, _ in walk_files(root)}
+    files = manifest_files(man)
+    if files is None:
+        print("journal: manifest files table is not a list -- refusing to diff against "
+              "it (damaged manifest: a lost table would read as every file added)")
+        return 2
+    prev = {}
+    damaged = 0
+    for e in files:
+        if isinstance(e, dict) and isinstance(e.get("sha256"), str) \
+                and HEX64.match(e.get("sha256")) and safe_rel(e.get("rel")) is not None:
+            prev[rel_key(e["rel"])] = e["sha256"]
+        else:
+            damaged += 1
+    if damaged:
+        print(f"journal: {damaged} damaged manifest entr(y/ies) -- refusing to diff "
+              f"(a broken snapshot must not be read as a changed tree)")
+        return 2
+    now = {rel_key(rel): sha256_of(full) for rel, full, _ in walk_files(root)}
 
     added = sorted((k for k in now if k not in prev), key=str.lower)
     deleted = sorted((k for k in prev if k not in now), key=str.lower)
@@ -169,35 +222,76 @@ def cmd_restore(root, latest, store):
         print("journal: no snapshot to restore")
         return 2
     man = manifest_or_refuse(manifest_path, "restore from it")
-    keep = {e["rel"]: e for e in man["files"]}
+    files = manifest_files(man)
+    if files is None:
+        print("journal: manifest files table is not a list -- refusing to restore "
+              "(damaged manifest: restoring would read as zero files and bin the root)")
+        return 2
+    keep = {}
+    damaged = []
+    for e in files:
+        if not isinstance(e, dict):
+            damaged.append("<malformed entry>")
+            continue
+        rel = str(e.get("rel", ""))
+        parts = safe_rel(rel)
+        # a bit-flipped rel must never become a write path: absolute, traversal,
+        # drive-letter or empty-component forms are damaged entries, named and
+        # skipped -- restore refuses to turn store corruption into writes outside
+        # the root. Windows-native backslashes are separators, not damage.
+        if parts is None or not isinstance(e.get("sha256"), str) \
+                or not HEX64.match(e.get("sha256")):
+            damaged.append(rel or "<missing rel>")
+            continue
+        keep[rel_key(rel)] = (parts, e)
 
     # files that appeared after the snapshot are not unlinked: they move into the recycle
     # bin (same store as the snapshot), so a restore never destroys content and every
     # removal carries the reason it happened. A refused move leaves the file in place and
     # turns the restore red -- an incomplete restore must not look like success.
-    reason = f"journal-restore:{man['at']}"
+    reason = f"journal-restore:{man.get('at', 'unknown')}"
     removed = 0
     trashed = []
     blocked = []
-    for rel, full, _ in list(walk_files(root)):
-        if rel not in keep:
-            entries, err = trash.put_paths(root, store, [full], reason)
-            if err:
-                blocked.append(rel)
-                continue
-            removed += 1
-            trashed.extend(entries)
+    # a damaged manifest cannot tell "added after the snapshot" from "entry the
+    # corruption lost", so with damage present nothing is binned at all: the restore
+    # is already red, and guessing would move files the snapshot may still claim.
+    bin_new = not damaged
+    if not bin_new:
+        print("journal: damaged entries present -- not binning post-snapshot files "
+              "(cannot distinguish 'added after' from 'lost entry')")
+    if bin_new:
+        for rel, full, _ in list(walk_files(root)):
+            if rel_key(rel) not in keep:
+                entries, err = trash.put_paths(root, store, [full], reason)
+                if err:
+                    blocked.append(rel)
+                    continue
+                removed += 1
+                trashed.extend(entries)
     for rel in blocked:
         print(f"journal: kept in place (trash refused): {rel}")
+    for rel in damaged:
+        # named, not silent: a corrupted manifest entry is damage the user must see
+        print(f"journal: damaged entry skipped: {rel}")
 
     back = 0
-    for rel, e in keep.items():
-        src = os.path.join(latest, "files", rel)
-        dst = os.path.join(root, rel)
+    for parts, e in keep.values():
+        src = os.path.join(latest, "files", *parts)
+        dst = os.path.join(root, *parts)
         cur = sha256_of(dst) if os.path.exists(dst) else ""
         if cur != e["sha256"]:
             os.makedirs(os.path.dirname(dst) or root, exist_ok=True)
-            shutil.copy2(src, dst)
+            try:
+                shutil.copy2(src, dst)
+            except OSError as exc:
+                # the stored copy may be damaged or absent even when rel looks safe:
+                # a per-file failure is named and counted, never a crash, and the
+                # restore stays red -- an incomplete restore must not look like success.
+                name = str(e.get("rel", "")) or "<missing rel>"
+                damaged.append(f"{name} ({exc})")
+                print(f"journal: damaged entry skipped: {name} ({exc})")
+                continue
             # copy2 keeps the snapshot's mtime, and a stale mtime makes cargo believe
             # nothing changed -- the tree would be correct and the build still wrong.
             now_ts = datetime.datetime.now().timestamp()
@@ -207,7 +301,9 @@ def cmd_restore(root, latest, store):
     print(f"journal: restore -- removed {removed} new file(s), restored {back} file(s)")
     for e in trashed:
         print(f"journal: trash {e['id']} {e['path']}")
-    return 1 if blocked else 0
+    # damaged entries turn the restore red even when nothing was blocked: an
+    # incomplete restore must not look like success (L124).
+    return 1 if (blocked or damaged) else 0
 
 
 def find_by_hash(store, digest):
@@ -221,10 +317,16 @@ def find_by_hash(store, digest):
         man = load_manifest(os.path.join(store, "latest", "manifest.json"))
     except (OSError, ValueError):
         return None
-    for e in man.get("files", []):
-        if str(e.get("sha256", "")).upper() != want:
+    files = manifest_files(man)
+    if files is None:
+        return None
+    for e in files:
+        if not isinstance(e, dict) or str(e.get("sha256", "")).upper() != want:
             continue
-        copy = os.path.join(store, "latest", "files", e["rel"])
+        parts = safe_rel(e.get("rel"))
+        if parts is None:
+            continue  # damaged entry never becomes a read/write path
+        copy = os.path.join(store, "latest", "files", *parts)
         if os.path.isfile(copy):
             try:
                 if sha256_of(copy) == want:
@@ -252,8 +354,32 @@ def cmd_status(latest):
         print("journal: no snapshot")
         return 2
     man = manifest_or_refuse(manifest_path, "report on it")
-    print(f"journal: snapshot of {man['count']} files at {man['at']} from {man['root']}")
-    return 0
+    files = manifest_files(man)
+    if files is None:
+        print("journal: manifest files table is not a list -- damaged snapshot, "
+              "cannot be enumerated or restored")
+        return 1
+    # a healthy-looking count with damaged entries behind it is the L124 lie: status
+    # verifies each entry's stored copy exists (cheap stat walk, no content hashing)
+    # and reports damage explicitly instead of cosplaying health.
+    missing = []
+    for e in files:
+        rel = str(e.get("rel", "")) if isinstance(e, dict) else ""
+        parts = safe_rel(rel) if isinstance(e, dict) else None
+        sha = e.get("sha256") if isinstance(e, dict) else None
+        if parts is None or not isinstance(sha, str) or not HEX64.match(sha) \
+                or not os.path.isfile(os.path.join(latest, "files", *parts)):
+            missing.append(rel or "<malformed entry>")
+    damage = f", damaged: {len(missing)} entr(y/ies)" if missing else ""
+    for rel in missing[:5]:
+        print(f"journal: damaged entry: {rel or '<missing rel>'}")
+    if len(missing) > 5:
+        print(f"journal: ... and {len(missing) - 5} more damaged entries")
+    count = man.get("count")
+    count = count if isinstance(count, int) else len(files)
+    print(f"journal: snapshot of {count} files at {man.get('at', 'unknown')} "
+          f"from {man.get('root', 'unknown')}{damage}")
+    return 1 if missing else 0
 
 
 def main(argv):

@@ -42,6 +42,7 @@ block, doctor shows.
 
 import argparse
 import glob
+import hashlib
 import json
 import os
 import re
@@ -280,7 +281,56 @@ def face_git(root):
     return mk_face("git", status, "; ".join(ev), detail)
 
 
-def face_gates(root):
+CACHE_REL = ".agent/doctor-cache.json"
+# same skip discipline as tools/journal.py: local build/interpreter artifacts are not
+# gate inputs, and counting them makes the fingerprint churn every time a gate runs
+# (a gate that writes __pycache__ would invalidate its own cache).
+SCAN_SKIP = {".git", ".journal", ".agent", "target", "node_modules", ".trash", ".qoder",
+             "__pycache__", ".venv", "dist", "build", "obj", ".pytest_cache",
+             ".ruff_cache", ".mypy_cache", ".turbo", ".next", "coverage"}
+
+
+def tree_fingerprint(root):
+    """git-index discipline: (rel, mtime_ns, size) stat walk over the scanned tree.
+    mtime+size can theoretically miss an edit that preserves both -- --refresh
+    re-verifies on demand, same trade git itself makes with its index."""
+    h = hashlib.sha256()
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = sorted(d for d in dirnames if d not in SCAN_SKIP)
+        for fn in sorted(filenames):
+            p = Path(dirpath) / fn
+            try:
+                st = p.stat()
+                h.update(("%s|%d|%d\n" % (p.relative_to(root).as_posix(),
+                                          st.st_mtime_ns, st.st_size)).encode())
+            except OSError:
+                h.update(("%s|gone\n" % p.relative_to(root).as_posix()).encode())
+    return h.hexdigest()[:16]
+
+
+def load_gate_cache(root):
+    try:
+        doc = json.loads((root / CACHE_REL).read_text(encoding="utf-8"))
+        if isinstance(doc, dict) and isinstance(doc.get("faces"), dict):
+            return doc
+    except (OSError, ValueError):
+        pass
+    return None
+
+
+def save_gate_cache(root, fp, faces):
+    (root / CACHE_REL).parent.mkdir(parents=True, exist_ok=True)
+    (root / CACHE_REL).write_text(json.dumps({"fp": fp, "faces": faces}, sort_keys=True),
+                                  encoding="utf-8")
+
+
+def face_gates(root, refresh=False):
+    fp = tree_fingerprint(root)
+    cache = None if refresh else load_gate_cache(root)
+    if cache and cache.get("fp") == fp and "gates" in cache.get("faces", {}):
+        f = cache["faces"]["gates"]
+        return mk_face("gates", f["status"], f["evidence"],
+                       f["detail"] + " [cached fp=%s --refresh to re-verify]" % fp[:8])
     results, missing = [], []
     for name, rel in GATE_SCRIPTS:
         script = root / rel
@@ -304,8 +354,12 @@ def face_gates(root):
     if failed:
         rerun = "privacy_scan.py" if failed[0] == "privacy" else "docs_hygiene.py"
         detail += "; rerun: python scripts/" + rerun
-        return mk_face("gates", "FAIL", ev, detail)
-    return mk_face("gates", "OK", ev, detail)
+        face = mk_face("gates", "FAIL", ev, detail)
+    else:
+        face = mk_face("gates", "OK", ev, detail)
+    save_gate_cache(root, fp, {"gates": {"status": face["status"], "evidence": face["evidence"],
+                                         "detail": detail}})
+    return face
 
 
 def safe(builder, *args):
@@ -319,6 +373,8 @@ def main(argv):
     ap = argparse.ArgumentParser(prog="doctor", add_help=True,
                                  description="project health snapshot (observation, not a gate)")
     ap.add_argument("--root", default="", help="project root (default: this repo)")
+    ap.add_argument("--refresh", action="store_true",
+                    help="re-run gates even when the tree fingerprint is unchanged")
     ap.add_argument("--json", action="store_true", help="one ASCII JSON line")
     a = ap.parse_args(argv)
     root = Path(a.root) if a.root else Path(__file__).resolve().parents[1]
@@ -365,7 +421,7 @@ def main(argv):
         safe(face_registry, root, registry_doc),
         safe(face_backlog, entries, d_rows),
         safe(face_git, root),
-        safe(face_gates, root),
+        safe(face_gates, root, bool(a.refresh)),
     ]
     for f in faces:
         if f["face"] == "?":

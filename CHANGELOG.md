@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Changed（doctor v2：门结果 stat 指纹缓存 + L124 收口）
+
+- `tools/doctor.py` 的 gates 面加**验证轨迹缓存**：`-Root` 全树 `(rel, mtime_ns, size)` 指纹
+  （目录跳过集与 `tools/journal.py` 同纪律）+ SHA-256 前 16 位；命中即复用 gates 面结果，
+  `--refresh` 强制重验。读数（同机同命令）：强制重验中位 **1.257 s**（n=3，1.230–1.257，
+  首跑冷盘 2.155）、命中中位 **0.536 s**（n=4，0.516–0.560），**2.3×**；两个门合计 0.743 s，
+  占强制重验的 59%。缓存文件 `.agent/doctor-cache.json` 进 `.gitignore`（机器状态，不进公开树）。
+- L124 收口：`tools/journal.py` 的 restore/status/end 对"合法 JSON 但内容被改"的 manifest
+  fail-closed——`safe_rel` 校验 rel（空 / 绝对 / 盘符 / `..` / 空组件）、`manifest_files`
+  拒绝非 list 的 files 表、坏条目点名跳过且 restore 红、有损坏时不 bin 新文件（无法区分
+  "快照后新增"与"被改坏的条目"就不猜）。同时记 L125：Windows 原生反斜杠是分隔符不是损坏
+  （修 L124 时把正常快照全判 damaged，G5/G8 回归）。selftest 新增 AM25/AM25b/AM26 三条钉子。
+- `docs/results/DOCTOR-V2.md`：开销读数、机制、边界、Rust / 三进制 / 四进制评估（不替换）与
+  编排待办（doctor 的 simchain 面未接、缓存只覆盖 gates、journal 跨平台路径未测等）。
+
 ### Added（稳定性 v2 ①：simchain 链路确定性模拟测试器——黑盒 DST + 模拟报告落盘）
 
 - `tools/simchain.py`（stdlib only）：**种子化故障调度器**，对整条 agent_verify 链做

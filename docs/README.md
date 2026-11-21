@@ -55,6 +55,7 @@
 | 文档 | 一句话 |
 |---|---|
 | [RESULTS.md](results/RESULTS.md) | 结果总目录（自动生成）：各族读到哪一步 |
+| [DOCTOR-V2.md](results/DOCTOR-V2.md) | doctor 开销治理：门缓存 1.26 s → 0.54 s（2.3×），Rust / 三进制 / 四进制评估与编排待办 |
 | [DEPTH-RESULTS.md](results/DEPTH-RESULTS.md) | 深度头结果（自动生成） |
 | [PARTS-RESULTS.md](results/PARTS-RESULTS.md) | 部件头结果（自动生成） |
 | [TEXTURE-RESULTS.md](results/TEXTURE-RESULTS.md) | 纹理容器结果（自动生成） |

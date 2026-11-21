@@ -50,3 +50,7 @@ cognition/corpus/
 # simchain 的模拟报告落盘（tools/simchain.py simulate 写入）：机器状态与本次扫描时长，
 # 不进公开树；是给 tools/doctor.py 未来 simchain 面的前向接口（usage 已注明）
 .agent/last-simchain.json
+
+# doctor 的门结果缓存（tools/doctor.py 写入）：本机状态，指纹一变就重验；
+# 不进公开树，也不许让 doctor 自己把 git status 弄脏
+.agent/doctor-cache.json

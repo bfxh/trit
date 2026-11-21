@@ -4851,6 +4851,32 @@ if (-not $amPy) {
     Assert-True ($amSw.Elapsed.TotalSeconds -lt 120) `
         'AM24 AM 组实测时长 <120s（模拟器场景瘦身到最小充分集，全量 50 种子由 usage 说明）' ("seconds=" + [math]::Round($amSw.Elapsed.TotalSeconds, 1))
     "  AM 组实测: $([math]::Round($amSw.Elapsed.TotalSeconds, 1))s（27 断言，模拟器 13 场景 + 恢复面直连夹具）"
+
+    # L124 修复钉子：journal restore/status 对"合法 JSON 但内容被改"的 manifest
+    # （simchain corrupt 族 2/50 命中的真 bug）不崩、点名受损条目、restore 红、
+    # status 明确报损——审计链断了不许装健康。
+    $amJ = Join-Path $Work 'am-l124'
+    New-Item -ItemType Directory "$amJ\src" -Force | Out-Null
+    [IO.File]::WriteAllText("$amJ\src\a.txt", "payload`n", $enc)
+    & git -C $amJ init -q 2>&1 | Out-Null
+    & $bashExe (Join-Path $tools 'journal.sh') begin -Root (ToPosix $amJ) 2>&1 | Out-Null
+    & $bashExe (Join-Path $tools 'journal.sh') end -Root (ToPosix $amJ) 2>&1 | Out-Null
+    $amMan = Join-Path $amJ '.journal\latest\manifest.json'
+    $amDoc = [IO.File]::ReadAllText($amMan, $enc) | ConvertFrom-Json
+    # bit-flip 一个 rel 为穿越形态（合法 JSON、内容被改）：旧代码会拿它当写路径崩栈或写出根外
+    $amDoc.files[0].rel = '../outside-escape'
+    [IO.File]::WriteAllText($amMan, ($amDoc | ConvertTo-Json -Depth 8), $enc)
+    New-Item -ItemType Directory "$amJ\extra" -Force | Out-Null
+    [IO.File]::WriteAllText("$amJ\extra\new.txt", "added after snapshot`n", $enc)
+    $amRst = @(& $bashExe (Join-Path $tools 'journal.sh') restore -Root (ToPosix $amJ) 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1 -and (@($amRst) -join ' ') -match 'damaged entry skipped' `
+        -and (@($amRst) -join ' ') -notmatch 'Traceback|FileNotFoundError') `
+        'AM25 内容级损坏 manifest：restore 不崩、点名受损条目、exit=1（不完整的还原不许装成功）' "exit=$LASTEXITCODE"
+    Assert-True (-not (Test-Path (Join-Path $amJ 'outside-escape'))) `
+        'AM25b 穿越形态的 rel 不落写路径（根外无文件）' ''
+    $amSt = @(& $bashExe (Join-Path $tools 'journal.sh') status -Root (ToPosix $amJ) 2>&1)
+    Assert-True ($LASTEXITCODE -eq 1 -and ((@($amSt) -join ' ') -match 'damaged')) `
+        'AM26 status 对受损 manifest 明确报损（exit=1，不 cosplay 健康）' "exit=$LASTEXITCODE"
 }
 
 

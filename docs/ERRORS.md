@@ -63,6 +63,8 @@
 | L28 | 成本数字比实际偏高约 0.3s/段 | 旧 `costprobe` 每段经 `pwsh -NoProfile -Command`，**把测量工具的启动成本算进被测项目** | 直接起子进程；同时把结论改成"旧数字偏高"而不是"新实现更快" | N5/N6 |
 | L29 | 减集在热点文件上几乎减不动 | 改 `registry.py` 时 affected 195、选入 130 ≈ 全量 | 减集只对长尾有效；热点文件老实跑全量 | 记忆条目 |
 | L30 | 同一改动两次测量差很多 | 冷/热缓存交替污染 | 严格交替、同 target、同参数，并且记录"第几轮" | BUILD-PERF |
+| L124 | `journal restore` 对"合法 JSON 但内容被改"的 manifest 直接崩：rel 被改 → `copy2` 源文件不存在抛 FileNotFoundError 栈（exit 1 带崩溃栈）；sha256 被改 → 不校验、按错账照样还原；`status` 对这两种损坏照常报 OK——"快照声称健康"与"快照可还原"两种状态同形，崩栈顶替了干净拒绝 | restore/status 把 manifest 当可信输入：rel 直接落写路径、sha256 不校验形状、没有逐文件容错；健康判定只看"能解析"。simchain 的 corrupt 族已把"status 报 OK 但 restore 失败"钉成不变量违规（50 种子命中 2/50，seed 13/35） | `tools/journal.py:94` 的 `safe_rel` 拒绝空/绝对/盘符/`..`/空组件；`tools/journal.py:123` 的 `manifest_files` 对"files 表非 list"直接拒；`tools/journal.py:219` 的 restore 逐文件 try 并点名受损条目，有损坏时不 bin 新文件；`tools/journal.py:351` 的 status 明确报损并 exit 1，end 对坏条目 fail-closed | AM25、AM25b、AM26 |
+| L125 | 修复 L124 时，`safe_rel` 把 Windows 原生反斜杠 rel 一律判成"受损"：正常快照的每个文件都被跳过，restore 把文件打进回收站却报 exit=1，status 把健康快照整册标成 damaged（G5/G8 红） | rel 由 `os.path.join` 生成，Windows 上分隔符就是 `\`；校验器照 POSIX 习惯写，把合法分隔符当成路径穿越形态——**校验器把合法输入误判成攻击**，是 L124 同族的镜像面 | `safe_rel` 只拒绝真正越界的形态，两种分隔符都按分隔符读；`rel_key` 统一比较口径；G5/G8 钉正常还原、AM25 钉越界拒绝，两侧同时成立才算修好 | G5、G8、AM25 |
 
 ---
 
@@ -190,7 +192,6 @@
 | L41 | `policy` 是分类器不是沙箱 | 越界写入只能事后证明 | 已用 `-Explain` 明说（R8），不假装是沙箱 |
 | L42 | `Calibrated` 的 `coverage_bp` 是声明不是证据 | 要等 P6.3 conformal 实测才能判红 | 保留为"声明"，不许当证据用 |
 | L43 | 记忆条目 `m3389ae79` 写"79 条全绿" | 严重过期（实际 142） | `-Mode revise` 更正 |
-| L124 | journal restore 对"合法 JSON 但内容被改"的 manifest 直接崩：rel 路径被改 → `copy2` 源文件不存在抛 FileNotFoundError 栈（exit 1 带崩溃栈）；sha256 字段被改 → 不校验、按错账照样还原；`status` 对这两种损坏照常报 OK——"快照声称健康"与"快照可还原"两种状态同形，崩栈顶替了干净拒绝 | simchain 50 种子 × corrupt 族实测命中 2/50（seed 13/35，manifest bit-flip 落进 rel 路径与 sha256 字段）；simchain 的 corrupt 族已把"status 报 OK 但 restore 失败"钉成不变量违规——修复前每次命中必报 | journal 线（L114 的后续）：restore 逐文件 try 并点名条目（坏条目跳过且明确报损，与 trash 拒收留痕同纪律），status 增加"manifest 可解析但 files 表与盘对不上"的明确损失报告 |
 
 ---
 
