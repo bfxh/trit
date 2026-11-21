@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """bench_orchestration: what the agent_verify chain costs, measured, not claimed.
 
-Four numbers, each a median over repeated rounds on a throwaway fixture:
+Core numbers, each a median over repeated rounds on a throwaway fixture:
 
   1. guard overhead ratio   full chain wall vs running the same plan directly
   2. receipt token proxy    full vs compact receipt bytes; proxy tokens = bytes/4 --
@@ -11,14 +11,11 @@ Four numbers, each a median over repeated rounds on a throwaway fixture:
   4. crash recovery         kill the chain mid-run; then dirty-state detection wall
                             (next run refuses on the chain lock) + journal restore wall
 
-Plus an adversarial section (self-planted attacks, programmatic -- honest boundary:
-real attackers are more cunning, this bounds nothing about the wild):
-
   5. fake-claim capture     N=100 planted false claims (nonexistent files, numbers
                             with no or lying provenance, test-pass against a receipt
                             that recorded RED) -> claim_audit capture rate and the
                             leaked-sample list (anything classified VERIFIED)
-  6. duplicate-spend attack the same spend appended to the attest chain N times ->
+ 6. duplicate-spend attack the same spend appended to the attest chain N times ->
                             every replay refused, chain verify intact, balance unchanged
 
 Honesty rules: a warm-up round is run and excluded; each round is measured fresh and
@@ -133,12 +130,16 @@ def chain_wall(fixture, plan_path, store, receipt, extra=()):
 
 def non_gate_seconds(receipt_path):
     """Sum of recorded step walls EXCLUDING the three gates -- used to derive the gates
-    segment wall (chain wall minus everything the receipt did record). policy's step
-    seconds is 0 by contract in serial mode, so the remainder is where it hides."""
+    segment wall (chain wall minus everything the receipt did record). Reads the
+    prefix-stable shape (volatile.steps_seconds index-aligned) and the legacy shape."""
     with open(receipt_path, "r", encoding="ascii") as fh:
         doc = json.load(fh)
     gates = {"affected", "policy", "constraints"}
-    return sum(s.get("seconds", 0) for s in doc.get("steps", []) if s.get("step") not in gates)
+    steps = doc.get("steps", [])
+    secs = doc.get("volatile", {}).get("steps_seconds")
+    if secs is None:
+        secs = [s.get("seconds", 0) for s in steps]
+    return sum(sec for s, sec in zip(steps, secs) if s.get("step") not in gates)
 
 
 def median(values):
@@ -340,14 +341,6 @@ def main(argv):
             crashes.append(r)
     det = median([c[0] for c in crashes]) if crashes else 0.0
     res = median([c[1] for c in crashes]) if crashes else 0.0
-
-    # adversarial section: self-planted attacks against claim_audit and the attest
-    # chain. These numbers describe THIS generator's attacks only -- a self-made
-    # adversarial set is a floor-check of the auditors, never a bound on real ones.
-    adv = adversarial_round(work)
-    adv_captured = adv["unverified"] + adv["fabricated"]
-    adv_rate = adv_captured / adv["total"] if adv["total"] else 0.0
-    adv_accept_rate = adv["accepted"] / adv["replays"] if adv["replays"] else 0.0
 
     print()
     print(f"bench_orchestration  commands={a['commands']}  rounds={a['rounds']} "

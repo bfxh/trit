@@ -1338,8 +1338,9 @@ if (-not $bashExe) {
         'Y17 --budget-token 0 在 run 前整体拒绝，verdict 正确' "exit=$y17 verdict=$($yDoc.verdict)"
     Assert-True ($yNames -notcontains 'run' -and $yNames -notcontains 'affected') `
         'Y17b 拒绝发生在 run 之前（连受影响分析都没跑）' ($yNames -join ',')
-    Assert-True ($yDoc.budget.declared -eq 0 -and $yDoc.budget.gate -match 'cannot measure model-side token usage') `
-        'Y18 回执带着声明制闸门的诚实边界说明' ''
+    # L123 换段：budget 属易变段，回执形态重排后读 volatile.budget（语义不变）
+    Assert-True ($yDoc.volatile.budget.declared -eq 0 -and $yDoc.volatile.budget.gate -match 'cannot measure model-side token usage') `
+        'Y18 回执带着声明制闸门的诚实边界说明（budget 在 volatile 段，L123 换段）' ''
     $yRaw = [IO.File]::ReadAllText($yrc, (New-Object System.Text.UTF8Encoding($false)))
     Assert-True ((($yRaw -replace '[^\x00-\x7F]', '').Length) -eq $yRaw.Length) 'Y18b 回执纯 ASCII' ''
     $ySession = Get-Content (Join-Path $Yav '.agent\resume\t-budget.json') -Raw | ConvertFrom-Json
@@ -1358,10 +1359,10 @@ if (-not $bashExe) {
     $yDoc2 = Get-Content $yrc2 -Raw | ConvertFrom-Json
     Assert-True ($y20 -eq 1 -and $yDoc2.verdict -eq 'command failed') `
         'Y20 失败自动挂起但 verdict 仍是 command failed' "exit=$y20 verdict=$($yDoc2.verdict)"
-    Assert-True ($yDoc2.resume_checkpoint -match 't-fail suspended \(manual\)' `
-        -and $yDoc2.resume.suspend -eq 0 `
+    Assert-True ($yDoc2.volatile.resume_checkpoint -match 't-fail suspended \(manual\)' `
+        -and $yDoc2.volatile.resume.suspend -eq 0 `
         -and @($yDoc2.steps | ForEach-Object { $_.step }) -contains 'resume-suspend') `
-        'Y20b 回执尾部追加了 resume checkpoint（旧字段一个没动）' ''
+        'Y20b 回执尾部追加了 resume checkpoint（旧字段一个没动，L123 归入 volatile 段）' ''
     Assert-True ($yDoc2.run[0].exit -ne 0 `
         -and (@($yDoc2.steps | ForEach-Object { $_.step }) -contains 'journal-end') `
         -and $yDoc2.plan.proven -ne $null) 'Y20c run/plan/链路原有字段语义不变' ''
@@ -2583,9 +2584,16 @@ if (-not $afPy) {
     Assert-True ((@($afFullSteps) -join ';') -eq (@($afCmpSteps) -join ';') `
         -and (@($afFullRun) -join ';') -eq (@($afCmpRun) -join ';')) `
         'AF10 步骤序列与 run 序列逐项相等（compact 只砍文本不砍判定）' ''
+    # L123 断言迁移：前缀稳定序列化把易变字段（每命令墙钟）归入尾部 volatile 段
+    # （volatile.run_seconds 与 run 数组按下标对齐），run 段只留稳定判定字段。
+    # 语义等价：秒数一个不少，只是换了归属段——换段是 L123 交付 1 的明文许可范围。
     $afCmpRunKeys = (@($afCmpDoc.run[0].PSObject.Properties.Name | Sort-Object) -join ',')
-    Assert-True ($afCmpRunKeys -eq 'command,exit,seconds') `
-        'AF11 compact 的 run 段只留 command+exit+seconds（契约钉死）' $afCmpRunKeys
+    Assert-True ($afCmpRunKeys -eq 'command,exit') `
+        'AF11 compact 的 run 段只留 command+exit（墙钟归尾部 volatile.run_seconds，L123 换段）' $afCmpRunKeys
+    $afCmpRunSecs = @($afCmpDoc.volatile.run_seconds)
+    Assert-True ($afCmpRunSecs.Count -eq @($afCmpDoc.run).Count `
+        -and ($afCmpRunSecs | Where-Object { $_ -isnot [double] -and $_ -isnot [int] }).Count -eq 0) `
+        'AF11b compact 的 volatile.run_seconds 与 run 段按下标对齐且全为数值（换段不减数据）' "$($afCmpRunSecs.Count)/$(@($afCmpDoc.run).Count)"
     $afCpRaw = [IO.File]::ReadAllText($rcCp, $afEnc)
     Assert-True ($afCpRaw.Trim().IndexOf("`n") -lt 0 -and $afCpRaw -notmatch '[^\x00-\x7F]') `
         'AF12 compact 单行且纯 ASCII（任何解码器都读不坏）' ''
@@ -2617,8 +2625,8 @@ if (-not $afPy) {
     $afCostOut = @(Invoke-Av $AfCost $storeCost (Join-Path $Work 'af-cost1.json') `
         @('--agent-id', 'sub-a', '--spent-token', '12345', '--task-id', 'cost1'))
     $afCost1 = Read-Receipt (Join-Path $Work 'af-cost1.json')
-    Assert-True ($LASTEXITCODE -eq 0 -and $afCost1.cost.tokens -eq 12345 -and $afCost1.cost.recorded -eq $true) `
-        'AF15 cost 记账：回执 cost 字段如实（tokens=声明值 recorded=true）' "tokens=$($afCost1.cost.tokens)"
+    Assert-True ($LASTEXITCODE -eq 0 -and $afCost1.volatile.cost.tokens -eq 12345 -and $afCost1.volatile.cost.recorded -eq $true) `
+        'AF15 cost 记账：回执 cost 字段如实（tokens=声明值 recorded=true）' "tokens=$($afCost1.volatile.cost.tokens)"
     Assert-True ((@($afCostOut) -join "`n") -match 'cost: wall=') 'AF15b verdict 尾部有 cost: 行' ''
     $afLed1 = Read-Receipt (Join-Path $storeCost 'cost-ledger.json')
     $afCostEntries = @($afLed1.entries)
@@ -2627,11 +2635,13 @@ if (-not $afPy) {
         'AF16 台账 4 条（2 命令 + overhead + spent）且全部带 agent-id' "n=$(@($afCostEntries).Count)"
     Assert-True ((@($afCostEntries | Where-Object { $_.tokens -eq 12345 }).Count -eq 1)) `
         'AF16b tokens 只落在 spent entry（wall 不冒充 token）' ''
+    # L123 换段共释：budget/attest/cost 属每次 run 会变的易变段，回执形态重排后统一读
+    # volatile.*（本组 AF15/AF17/AF18 与 AG14/AG15/AG15b/AG17/AG18 的路径更新同此一条理由）。
     $null = Invoke-Av $AfCost $storeCost (Join-Path $Work 'af-cost2.json') @('--budget-token', '100000', '--task-id', 'cost1')
     $afCost2 = Read-Receipt (Join-Path $Work 'af-cost2.json')
-    Assert-True ($LASTEXITCODE -eq 0 -and $afCost2.budget.recorded_tokens -eq 12345 `
-        -and $afCost2.budget.remaining -eq 87655) `
-        'AF17 剩余预算 = 声明 - 台账已记（87655 = 100000 - 12345）' "remaining=$($afCost2.budget.remaining)"
+    Assert-True ($LASTEXITCODE -eq 0 -and $afCost2.volatile.budget.recorded_tokens -eq 12345 `
+        -and $afCost2.volatile.budget.remaining -eq 87655) `
+        'AF17 剩余预算 = 声明 - 台账已记（87655 = 100000 - 12345）' "remaining=$($afCost2.volatile.budget.remaining)"
     $afLed2 = Read-Receipt (Join-Path $storeCost 'cost-ledger.json')
     Assert-True (@($afLed2.entries).Count -eq 7) `
         'AF17b 第二跑 wall 继续上账且键唯一不去重（4+3=7 条）' "n=$(@($afLed2.entries).Count)"
@@ -2644,7 +2654,7 @@ if (-not $afPy) {
     $null = Invoke-Av $AfCost $storePure (Join-Path $Work 'af-cost4.json') @('--budget-token', '0', '--task-id', 'pure1')
     $afCost4 = Read-Receipt (Join-Path $Work 'af-cost4.json')
     Assert-True ($LASTEXITCODE -eq 1 -and $afCost4.verdict -eq 'suspended (budget) before run' `
-        -and ($null -eq $afCost4.budget.recorded_tokens)) `
+        -and ($null -eq $afCost4.volatile.budget.recorded_tokens)) `
         'AF18 无台账记录维持纯声明制（recorded_tokens 如实为空）' "verdict=$($afCost4.verdict)"
 
     # --- AF19: 并行门与串行门 verdict 逐项相等 ---
@@ -2931,18 +2941,18 @@ if (-not $agPy) {
     # --- AG14/AG15: --spent-token 上链 + 预算闸走链余额 ---
     $ag14 = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-sp1.json') @('--task-id', 'agt1', '--spent-token', '777')
     $ag14doc = Read-AgReceipt (Join-Path $Work 'ag-rc-sp1.json')
-    Assert-True ($ag14 -eq 0 -and $ag14doc.attest.appended -eq $true -and $ag14doc.attest.seq -eq 1 `
+    Assert-True ($ag14 -eq 0 -and $ag14doc.volatile.attest.appended -eq $true -and $ag14doc.volatile.attest.seq -eq 1 `
         -and (Test-Path (Join-Path $storeA 'attest-ledger.jsonl'))) `
-        'AG14 --spent-token 落认证链（回执 attest.appended=true、seq=1、链文件在 store）' "e=$ag14 seq=$($ag14doc.attest.seq)"
+        'AG14 --spent-token 落认证链（回执 attest.appended=true、seq=1、链文件在 store）' "e=$ag14 seq=$($ag14doc.volatile.attest.seq)"
     $ag15 = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-bg1.json') @('--task-id', 'agt1', '--budget-token', '5000')
     $ag15doc = Read-AgReceipt (Join-Path $Work 'ag-rc-bg1.json')
-    Assert-True ($ag15 -eq 0 -and $ag15doc.budget.recorded_tokens -eq 777 `
-        -and $ag15doc.budget.remaining -eq 4223 -and $ag15doc.budget.source -eq 'attest-chain') `
-        'AG15 预算闸消费认证链余额（777 已认证，4223=5000-777，source=attest-chain）' "src=$($ag15doc.budget.source) rem=$($ag15doc.budget.remaining)"
+    Assert-True ($ag15 -eq 0 -and $ag15doc.volatile.budget.recorded_tokens -eq 777 `
+        -and $ag15doc.volatile.budget.remaining -eq 4223 -and $ag15doc.volatile.budget.source -eq 'attest-chain') `
+        'AG15 预算闸消费认证链余额（777 已认证，4223=5000-777，source=attest-chain）' "src=$($ag15doc.volatile.budget.source) rem=$($ag15doc.volatile.budget.remaining)"
     $ag15b = Invoke-AgAv $AgA $storeB (Join-Path $Work 'ag-rc-bg2.json') @('--task-id', 'agt2', '--budget-token', '5000')
     $ag15bdoc = Read-AgReceipt (Join-Path $Work 'ag-rc-bg2.json')
-    Assert-True ($ag15b -eq 0 -and $ag15bdoc.budget.source -eq 'declared-only' -and $null -eq $ag15bdoc.budget.recorded_tokens) `
-        'AG15b 无链维持声明制并如实标注 declared-only（recorded 如实为空）' "src=$($ag15bdoc.budget.source)"
+    Assert-True ($ag15b -eq 0 -and $ag15bdoc.volatile.budget.source -eq 'declared-only' -and $null -eq $ag15bdoc.volatile.budget.recorded_tokens) `
+        'AG15b 无链维持声明制并如实标注 declared-only（recorded 如实为空）' "src=$($ag15bdoc.volatile.budget.source)"
 
     # --- AG16: 并发 append 链不断 ---
     $ag16procs = @()
@@ -2964,17 +2974,17 @@ if (-not $agPy) {
     $ag17imp = Invoke-At @('import', '--store', $storeC, '--from-ledger', (Join-Path $storeC 'cost-ledger.json'))
     $ag17 = Invoke-AgAv $AgA $storeC (Join-Path $Work 'ag-rc-imp.json') @('--task-id', 'agt3', '--budget-token', '1000')
     $ag17doc = Read-AgReceipt (Join-Path $Work 'ag-rc-imp.json')
-    Assert-True ($ag17imp -eq 0 -and $ag17 -eq 0 -and $ag17doc.budget.recorded_tokens -eq 600 `
-        -and $ag17doc.budget.remaining -eq 400) `
-        'AG17 import 收编旧账→预算闸认（600 已认证，400=1000-600，旧账不算 air）' "imp=$ag17imp e=$ag17 rem=$($ag17doc.budget.remaining)"
+    Assert-True ($ag17imp -eq 0 -and $ag17 -eq 0 -and $ag17doc.volatile.budget.recorded_tokens -eq 600 `
+        -and $ag17doc.volatile.budget.remaining -eq 400) `
+        'AG17 import 收编旧账→预算闸认（600 已认证，400=1000-600，旧账不算 air）' "imp=$ag17imp e=$ag17 rem=$($ag17doc.volatile.budget.remaining)"
 
     # --- AG18: 多次 spend 累计入闸 ---
     $ag18 = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-sp2.json') @('--task-id', 'agt1', '--spent-token', '888')
     $ag18b = Invoke-AgAv $AgA $storeA (Join-Path $Work 'ag-rc-bg3.json') @('--task-id', 'agt1', '--budget-token', '9999')
     $ag18doc = Read-AgReceipt (Join-Path $Work 'ag-rc-bg3.json')
-    Assert-True ($ag18 -eq 0 -and $ag18b -eq 0 -and $ag18doc.budget.recorded_tokens -eq 1665 `
-        -and $ag18doc.budget.remaining -eq 8334) `
-        'AG18 两次 spend 累计（1665=777+888，链余额逐次累加不丢）' "rem=$($ag18doc.budget.remaining)"
+    Assert-True ($ag18 -eq 0 -and $ag18b -eq 0 -and $ag18doc.volatile.budget.recorded_tokens -eq 1665 `
+        -and $ag18doc.volatile.budget.remaining -eq 8334) `
+        'AG18 两次 spend 累计（1665=777+888，链余额逐次累加不丢）' "rem=$($ag18doc.volatile.budget.remaining)"
 
     # --- AG15c: 链被篡改→预算闸 fail-closed（放最后：改坏 storeA 的账）---
     $agChain = Join-Path $storeA 'attest-ledger.jsonl'
@@ -4121,7 +4131,6 @@ print("ak-gen ok")
         -and (($akOut -join ' ') -match 'summary: derivations verified=0 rejected=20')) `
         'AK28 对抗自测：20 条"数字在工件里、假推导背书"的声明 20/20 FABRICATED，逐条点名失配步 step 2 (s2)，derivations rejected=20' "e=$ak28 top=$ak28top named=$ak28named"
 }
-
 
 "selftest: passed=$passed failed=$failed skipped=$skipped  (work dir: $Work)"
 Write-SelftestRecord -Root $repo -Passed $passed -Failed $failed -Skipped $skipped

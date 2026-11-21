@@ -46,11 +46,25 @@ normal exit; a killed process leaves it behind ON PURPOSE -- the leftover lock p
 the surviving .journal snapshot is the dirty-state marker the next run diagnoses.
 
 Compact receipt (--compact, opt-in -- full stays the default and the audit artifact):
-a single-line machine JSON with the routing fields (verdict/exit/proven/wall_s), one
-entry per step (step, verdict, exit, seconds), one per run command (command, exit,
-seconds), plus budget numbers / cost / agent_id / changes count. Free-text evidence is
-dropped, which is where the order of magnitude goes; subagents each pass --agent-id
-and get their own compact receipt and their own ledger lines.
+a single-line machine JSON with the routing fields (verdict/exit/proven), one entry
+per step (step, verdict, exit), one per run command (command, exit), plus budget
+numbers / cost / agent_id / changes count. Free-text evidence is dropped, which is
+where the order of magnitude goes; subagents each pass --agent-id and get their own
+compact receipt and their own ledger lines.
+
+Prefix-stable serialization (industry prompt caching: MLSys'24 Prompt Cache
+arXiv:2311.04934, EuroSys'25 CacheBlend -- providers discount cached input 50-90%
+and agentic deployments report 41-80% API-cost savings, but a hit depends on the
+ARTIFACT's prefix stability). So both receipt modes are written deterministic and
+prefix-stable: fixed key order, stable fields first, and every per-run volatile
+value (timestamp, wall clocks, per-step/per-run seconds, budget/attest/cost state)
+re-homed into one tail `volatile` segment -- nothing is dropped, fields only move
+(步骤/命令判定信息一个不删). Two consecutive runs of the same task then share the
+longest possible byte prefix, and bench_orchestration.py measures that LCP share.
+Honest boundary: the tool layer builds the cacheable prefix; whether the provider
+honors it with a discount is the provider's decision and cannot be measured locally.
+Task-identity fields (root/changed/agent_id) are stable across a task's runs and
+stay in the stable head; the volatile segment is the per-run machine state.
 
 Parallel gates (--parallel-gates, opt-in -- serial stays the default): affected, policy
 and constraints are read-only classifiers with no shared state, so they run
@@ -151,7 +165,6 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
                 [--derivations (default on) | --no-derivations]  (audit model statements;
                 number claims carrying derivations are re-executed by mre, REJECTED refuses)
   receipt:      [--compact]         (single-line machine receipt; default stays full)
-  gates:        [--parallel-gates]  (affected/policy/constraints concurrent; opt-in)
 
 Subagent usage: a subagent running a task passes its own id (--agent-id sub-7). The id is
 recorded in the receipt (top level and every run[] line, appended fields only -- old
@@ -184,6 +197,16 @@ even start on top of claims that contradict reality.
 
 Caps (honest scope): {CAPS_NOTE}
 Defaults when --caps is given without parameters: mem 2048 MB, 64 procs, 1800 s.
+
+
+command/exit/tail(/caps/agent_id); the per-step and per-run walls live in
+volatile.steps_seconds / volatile.run_seconds, index-aligned with those arrays.
+
+出处 (usage provenance, for the prefix-stable work): industry prompt caching --
+Prompt Cache (MLSys'24, arXiv:2311.04934), CacheBlend (EuroSys'25); provider
+cached-input discounts 50-90%; measured agentic savings 41-80%. The cacheable
+prefix is manufactured here deterministically; provider hit rate is not locally
+measurable and is claimed nowhere.
 
 Exit codes: 0 all good; 1 a guard refused or the command failed; 2 bad invocation.
 """
@@ -278,60 +301,123 @@ def session_file(root, task_id):
     return os.path.join(root, ".agent", "resume", f"{task_id}.json")
 
 
-def write_receipt(path, doc):
-    # ensure_ascii=True is the point, not a detail: a reader that decodes UTF-8 as ANSI can
-    # mangle Chinese and even break the closing quote, turning a valid receipt into garbage.
-    with open(path, "w", encoding="ascii", newline="\n") as fh:
-        json.dump(doc, fh, ensure_ascii=True, indent=2)
-        fh.write("\n")
+STABLE_HEAD = ("root", "lang", "profile", "changed", "agent_id", "caps", "plan",
+               "policy", "steps", "run", "changes", "claims", "watchdog",
+               "verdict", "exit")
+VOLATILE_ORDER = ("budget", "cost", "wall_s", "steps_seconds", "run_seconds",
+                  "resume", "resume_checkpoint", "attest", "dirty", "at")
+BUDGET_ORDER = ("declared", "gate", "source", "recorded_tokens", "remaining")
+COST_ORDER = ("note", "scope", "tokens", "recorded", "wall_s", "overhead_s")
+STEP_STABLE = ("step", "verdict", "exit", "output")
+RUN_STABLE = ("command", "exit", "tail", "caps", "agent_id")
 
 
-def compact_receipt(doc, steps):
-    """The --compact shape: one line, the chain's decision plus per-step verdict/exit/wall.
+def ordered_dict(d, order):
+    out = {k: d[k] for k in order if k in d}
+    for k in d:
+        if k not in out:
+            out[k] = d[k]
+    return out
+
+
+def receipt_view(doc):
+    """Prefix-stable full receipt: stable head first, one tail volatile segment.
+
+    Same fields as always, re-homed only: the per-step and per-run walls move into
+    volatile.steps_seconds / volatile.run_seconds (index-aligned), and every per-run
+    value (timestamp, wall_s, budget/attest/cost/resume/dirty state) moves into the
+    tail segment. Inside the volatile segment the order is chosen for the LCP metric
+    too: static text (cost/budget notes, declared budget, scope) first, the wall
+    clocks and the timestamp last -- everything that changes every run sits at the
+    very end of the receipt. Consecutive runs of one task then share the longest
+    byte prefix, which is what provider prompt caches key on.
+    """
+    view = {}
+    for k in STABLE_HEAD:
+        if k in doc:
+            view[k] = doc[k]
+    volatile = {}
+    for k in VOLATILE_ORDER:
+        if k not in doc:
+            continue
+        if k == "budget":
+            volatile[k] = ordered_dict(doc[k], BUDGET_ORDER)
+        elif k == "cost":
+            volatile[k] = ordered_dict(doc[k], COST_ORDER)
+        else:
+            volatile[k] = doc[k]
+    if "steps" in doc:
+        view["steps"] = [{k: e[k] for k in STEP_STABLE if k in e} for e in doc["steps"]]
+        volatile["steps_seconds"] = [e.get("seconds") for e in doc["steps"]]
+    if "run" in doc:
+        view["run"] = [{k: e[k] for k in RUN_STABLE if k in e} for e in doc["run"]]
+        volatile["run_seconds"] = [e.get("seconds") for e in doc["run"]]
+    if volatile:
+        view["volatile"] = volatile
+    return view
+
+
+def compact_view(doc, steps):
+    """Prefix-stable --compact shape: one line, routing fields first, volatile tail.
 
     Keeps every field a machine needs to route on the result (verdict/exit, per-step
-    verdicts, per-command exit/wall, proven, cost, budget numbers, agent_id); drops the
-    free-text evidence (output tails, policy output, resume block text, notes) that makes
-    the full receipt an audit artifact. Full mode stays the default and the audit record.
+    verdicts, per-command exit, proven, cost, budget numbers, agent_id); drops the
+    free-text evidence (output tails, policy output, resume block text, notes) that
+    makes the full receipt an audit artifact. Walls land in the volatile segment,
+    index-aligned, exactly like the full shape.
     """
     c = {"root": doc["root"], "lang": doc["lang"], "profile": doc["profile"],
-         "at": doc["at"], "verdict": doc["verdict"], "exit": doc["exit"],
-         "wall_s": doc.get("wall_s"),
-         "steps": [{"step": s["step"], "verdict": s["verdict"], "exit": s["exit"],
-                    "seconds": s["seconds"]} for s in steps],
-         "run": [{"command": r["command"], "exit": r["exit"], "seconds": r["seconds"]}
+         "verdict": doc["verdict"], "exit": doc["exit"],
+         "steps": [{"step": s["step"], "verdict": s["verdict"], "exit": s["exit"]}
+                   for s in steps],
+         "run": [{"command": r["command"], "exit": r["exit"]}
                  for r in doc.get("run", [])],
          "changes": len(doc.get("changes", []))}
     if "plan" in doc:
         c["proven"] = bool(doc["plan"].get("proven"))
-    for k in ("agent_id", "dirty"):
-        if k in doc:
-            c[k] = doc[k]
+    if "agent_id" in doc:
+        c["agent_id"] = doc["agent_id"]
+    if "claims" in doc:
+        c["claims"] = doc["claims"]
+    volatile = {}
     if "budget" in doc:
-        c["budget"] = {k: v for k, v in doc["budget"].items() if k != "gate"}
-    if "resume" in doc:
-        c["resume"] = {k: v for k, v in doc["resume"].items() if k != "output"}
+        volatile["budget"] = ordered_dict({k: v for k, v in doc["budget"].items()
+                                           if k != "gate"}, BUDGET_ORDER)
     if "cost" in doc:
-        c["cost"] = {k: v for k, v in doc["cost"].items() if k != "note"}
-    for k in ("claims", "attest"):
+        volatile["cost"] = ordered_dict({k: v for k, v in doc["cost"].items()
+                                         if k != "note"}, COST_ORDER)
+    if "wall_s" in doc:
+        volatile["wall_s"] = doc["wall_s"]
+    volatile["steps_seconds"] = [s["seconds"] for s in steps]
+    volatile["run_seconds"] = [r["seconds"] for r in doc.get("run", [])]
+    if "resume" in doc:
+        volatile["resume"] = {k: v for k, v in doc["resume"].items() if k != "output"}
+    for k in ("attest", "dirty"):
         if k in doc:
-            c[k] = doc[k]
+            volatile[k] = doc[k]
+    volatile["at"] = doc["at"]
+    c["volatile"] = volatile
     return c
 
 
+def write_view(path, view, compact):
+    # ensure_ascii=True is the point, not a detail: a reader that decodes UTF-8 as ANSI can
+    # mangle Chinese and even break the closing quote, turning a valid receipt into garbage.
+    with open(path, "w", encoding="ascii", newline="\n") as fh:
+        if compact:
+            json.dump(view, fh, ensure_ascii=True, separators=(",", ":"))
+        else:
+            json.dump(view, fh, ensure_ascii=True, indent=2)
+        fh.write("\n")
+
+
 def emit_receipt(path, doc, steps, compact):
-    """One write surface for both receipt modes: full (indent=2, the historical shape) or
-    compact (single line, separators without whitespace). Old consumers read full by
-    default and see byte-identical receipts; --compact is an opt-in artifact."""
+    """One write surface for both receipt modes: full (indent=2) or compact (single
+    line), both prefix-stable (stable head, tail volatile segment)."""
     if not path:
         return
-    if compact:
-        with open(path, "w", encoding="ascii", newline="\n") as fh:
-            json.dump(compact_receipt(doc, steps), fh, ensure_ascii=True,
-                      separators=(",", ":"))
-            fh.write("\n")
-    else:
-        write_receipt(path, doc)
+    view = compact_view(doc, steps) if compact else receipt_view(doc)
+    write_view(path, view, compact)
 
 
 def sha8(text):
