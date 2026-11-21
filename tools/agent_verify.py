@@ -52,6 +52,14 @@ seconds), plus budget numbers / cost / agent_id / changes count. Free-text evide
 dropped, which is where the order of magnitude goes; subagents each pass --agent-id
 and get their own compact receipt and their own ledger lines.
 
+Parallel gates (--parallel-gates, opt-in -- serial stays the default): affected, policy
+and constraints are read-only classifiers with no shared state, so they run
+concurrently (policy also fans out per command); receipt steps are recorded in chain
+order and refusals are evaluated in chain order, so verdict, exit and receipt shape
+match the serial run exactly. The write side (journal-begin, run, journal-end) is
+NEVER parallel. Deliberately not parallelized: preflight/budget/checks (order
+semantics), and any gate that ever grows shared state must go back to serial.
+
 Caps (--caps): each run command executes under run_caps.py kernel-level resource caps
 (memory / process count on Windows, RLIMIT_AS on POSIX). That is a runaway limiter, NOT
 a security boundary: no filesystem/network isolation, no defense against deliberate
@@ -83,6 +91,7 @@ import subprocess
 import sys
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 import ledger  # same tools directory; the chain appends cost entries, one writer per chain
@@ -123,6 +132,7 @@ HELP = f"""agent-verify: chain preflight -> policy -> run -> journal, one audite
   subagent:     --agent-id <id>
   cost:         [--spent-token N]   (declared model-side tokens of this run)
   receipt:      [--compact]         (single-line machine receipt; default stays full)
+  gates:        [--parallel-gates]  (affected/policy/constraints concurrent; opt-in)
 
 Subagent usage: a subagent running a task passes its own id (--agent-id sub-7). The id is
 recorded in the receipt (top level and every run[] line, appended fields only -- old
@@ -152,7 +162,8 @@ Exit codes: 0 all good; 1 a guard refused or the command failed; 2 bad invocatio
 def parse_args(argv):
     out = {"root": "", "changed": [], "lang": "", "profile": "workspace-write",
            "allow_network": False, "dry_run": False, "receipt": "", "store": "", "plan": "",
-           "allow": [], "agent_id": "", "spent_token": "", "compact": False}
+           "allow": [], "agent_id": "", "spent_token": "", "compact": False,
+           "parallel_gates": False}
     i = 0
     while i < len(argv):
         a = argv[i]
@@ -168,6 +179,10 @@ def parse_args(argv):
                 else "allow_network" if name == "allownetwork"
                 else "caps" if name == "caps"
                 else "compact"] = True
+            i += 1
+            continue
+        if name == "parallelgates" or name == "parallel-gates":
+            out["parallel_gates"] = True
             i += 1
             continue
         val = argv[i + 1] if i + 1 < len(argv) else ""
@@ -581,56 +596,98 @@ def main(argv):
         print("agent-verify: 拒绝 -- 已固化的检查判红，这条缺陷又回来了")
         return finish("refused by checks", 1)
 
-    # --- 4. affected plan: subset only when it carries a proof --------------------------
-    if a["plan"]:
-        # replaying a plan is allowed on purpose: it is how the chain is tested without
-        # invoking a real build, and it keeps the run/journal steps observable.
-        plan_path = a["plan"]
-        ap = skipped(f"affected: 使用给定 plan ({plan_path})")
-    else:
-        plan_path = os.path.join(os.environ.get("TEMP", "/tmp"),
-                                 f"av-plan-{uuid.uuid4().hex[:8]}.json")
+    # --- 4. affected + policy + constraints: the three read-only classifier gates -------
+    # Serial is the historical shape and stays the default. --parallel-gates runs them
+    # concurrently: all three are read-only classifiers with no shared state (affected
+    # writes only its own unique temp plan file; policy/constraints only read the tree,
+    # git and the rules tables), so any interleaving is safe. Receipt steps are recorded
+    # in CHAIN order, not completion order, and refusals are evaluated in chain order --
+    # same verdict, same exit, same receipt shape as serial. On a policy refusal the
+    # concurrently-finished constraints result is discarded and NOT recorded: serial
+    # semantics never reached constraints' verdict point, and the receipt describes the
+    # chain's decision. journal-begin and everything after it stay strictly serial --
+    # that is the write side; nothing past this block is ever parallel.
+    # NOT parallelized (conservative, stated in usage): preflight/budget/checks carry
+    # order semantics before this block; any gate that ever grows shared state loses its
+    # place here and goes back to serial.
+    def affected_gate():
+        if a["plan"]:
+            # replaying a plan is allowed on purpose: it is how the chain is tested without
+            # invoking a real build, and it keeps the run/journal steps observable.
+            return skipped(f"affected: 使用给定 plan ({a['plan']})"), a["plan"]
+        p_path = os.path.join(os.environ.get("TEMP", "/tmp"),
+                              f"av-plan-{uuid.uuid4().hex[:8]}.json")
         ap = step([os.path.join(TOOLS, "affected.py"), "-Path", root,
-                   "-Changed", ",".join(a["changed"]), "-Lang", lang, "-Out", plan_path])
-    add("affected", ap, "ok")
-    plan = None
-    if os.path.exists(plan_path):
-        with open(plan_path, "r", encoding="utf-8-sig") as fh:
-            plan = json.load(fh)
-    commands = plan.get("commands", []) if plan else []
-    proven = bool(plan.get("proven")) if plan else False
-    doc["plan"] = {"proven": proven, "commands": commands,
-                   "unproven": plan.get("unproven", ["plan unavailable"]) if plan else ["plan unavailable"]}
+                   "-Changed", ",".join(a["changed"]), "-Lang", lang, "-Out", p_path])
+        return ap, p_path
 
-    # --- 4. policy: are we even allowed to run it --------------------------------------
-    policy_log, policy_ok = [], True
-    for cmd in commands:
-        pa = [os.path.join(TOOLS, "policy.py"), "-Profile", profile, "-Command", cmd, "-Root", root]
+    def policy_one(cmd):
+        pa = [os.path.join(TOOLS, "policy.py"), "-Profile", profile, "-Command", cmd,
+              "-Root", root]
         if a["allow_network"]:
             pa.append("-AllowNetwork")
-        pr = step(pa)
-        policy_log.append({"command": cmd, "exit": pr["code"], "output": pr["out"][-3:]})
-        if pr["code"] != 0:
-            policy_ok = False
-    doc["policy"] = policy_log
-    add("policy", {"out": [], "code": 0 if policy_ok else 1, "seconds": 0},
-        "ok" if policy_ok else "refused")
-    if not policy_ok:
-        print(f"agent-verify: 拒绝 -- 权限档 {profile} 不允许这些命令")
-        return finish("refused by policy", 1)
+        return step(pa)
 
-    # --- 5. constraints: is this change allowed at all ---------------------------------
-    c_init = os.path.exists(os.path.join(root, ".agent", "constraints.json"))
-    ck = (step([os.path.join(TOOLS, "constraints.py"), "-Mode", "check", "-Root", root]
-               + (["-Allow", " , ".join(a["allow"])] if a["allow"] else []))
-          if c_init else skipped("constraints: 未初始化（没有 .agent/constraints.json），跳过"))
-    ck_verdict = ("ok" if c_init else "skipped") if ck["code"] == 0 else "refused"
-    add("constraints", ck, ck_verdict)
-    if ck["code"] != 0:
-        for ln in ck["out"]:
-            print(ln)
-        print("agent-verify: 拒绝 -- 改动触碰了本仓的禁止操作（见上）")
-        return finish("refused by constraints", 1)
+    def constraints_gate():
+        c_init = os.path.exists(os.path.join(root, ".agent", "constraints.json"))
+        return (step([os.path.join(TOOLS, "constraints.py"), "-Mode", "check", "-Root", root]
+                     + (["-Allow", " , ".join(a["allow"])] if a["allow"] else []))
+                if c_init else skipped("constraints: 未初始化（没有 .agent/constraints.json），跳过"))
+
+    pool = None
+    ck_future = None
+    if a.get("parallel_gates"):
+        pool = ThreadPoolExecutor(max_workers=2)
+        ck_future = pool.submit(constraints_gate)
+    try:
+        ap, plan_path = affected_gate()
+        add("affected", ap, "ok")
+        plan = None
+        if os.path.exists(plan_path):
+            try:
+                with open(plan_path, "r", encoding="utf-8-sig") as fh:
+                    plan = json.load(fh)
+            except ValueError:
+                # a plan that cannot parse must not silently become an empty (hence
+                # all-pass) policy check -- that would be refuse-nothing and run-nothing
+                print("agent-verify: 拒绝 -- plan 文件无法解析（坏 JSON 不许静默变成空计划）")
+                return finish("refused by plan", 1)
+        commands = plan.get("commands", []) if plan else []
+        proven = bool(plan.get("proven")) if plan else False
+        doc["plan"] = {"proven": proven, "commands": commands,
+                       "unproven": plan.get("unproven", ["plan unavailable"]) if plan else ["plan unavailable"]}
+
+        # --- 4. policy: are we even allowed to run it ----------------------------------
+        if a.get("parallel_gates") and len(commands) > 1:
+            with ThreadPoolExecutor(max_workers=min(8, len(commands))) as ppool:
+                prs = list(ppool.map(policy_one, commands))
+            pol_secs = round(sum(p["seconds"] for p in prs), 2)
+        else:
+            prs = [policy_one(cmd) for cmd in commands]
+            pol_secs = 0
+        policy_log = [{"command": cmd, "exit": pr["code"], "output": pr["out"][-3:]}
+                      for cmd, pr in zip(commands, prs)]
+        policy_ok = all(pr["code"] == 0 for pr in prs)
+        doc["policy"] = policy_log
+        add("policy", {"out": [], "code": 0 if policy_ok else 1, "seconds": pol_secs},
+            "ok" if policy_ok else "refused")
+        if not policy_ok:
+            print(f"agent-verify: 拒绝 -- 权限档 {profile} 不允许这些命令")
+            return finish("refused by policy", 1)
+
+        # --- 5. constraints: is this change allowed at all ------------------------------
+        ck = ck_future.result() if ck_future is not None else constraints_gate()
+        ck_verdict = ("ok" if os.path.exists(os.path.join(root, ".agent", "constraints.json"))
+                      else "skipped") if ck["code"] == 0 else "refused"
+        add("constraints", ck, ck_verdict)
+        if ck["code"] != 0:
+            for ln in ck["out"]:
+                print(ln)
+            print("agent-verify: 拒绝 -- 改动触碰了本仓的禁止操作（见上）")
+            return finish("refused by constraints", 1)
+    finally:
+        if pool is not None:
+            pool.shutdown(wait=True)
 
     # --- dry-run: report and stop, before anything is written --------------------------
     if a["dry_run"]:
