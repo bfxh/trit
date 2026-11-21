@@ -8,7 +8,10 @@
   （目录跳过集与 `tools/journal.py` 同纪律）+ SHA-256 前 16 位；命中即复用 gates 面结果，
   `--refresh` 强制重验。读数（同机同命令）：强制重验中位 **1.257 s**（n=3，1.230–1.257，
   首跑冷盘 2.155）、命中中位 **0.536 s**（n=4，0.516–0.560），**2.3×**；两个门合计 0.743 s，
-  占强制重验的 59%。缓存文件 `.agent/doctor-cache.json` 进 `.gitignore`（机器状态，不进公开树）。
+  占强制重验的 59%。缓存只在树能忽略它时落盘（`git check-ignore`；没有 `.gitignore` 的仓库
+  不写，体检不许弄脏体检对象），缓存文件 `.agent/doctor-cache.json` 进 `.gitignore`
+  （机器状态，不进公开树）。selftest 新增 AI29/AI29b：同指纹命中、`--refresh` 与改文件都重验、
+  缓存文件指纹 16 位。
 - L124 收口：`tools/journal.py` 的 restore/status/end 对"合法 JSON 但内容被改"的 manifest
   fail-closed——`safe_rel` 校验 rel（空 / 绝对 / 盘符 / `..` / 空组件）、`manifest_files`
   拒绝非 list 的 files 表、坏条目点名跳过且 restore 红、有损坏时不 bin 新文件（无法区分
@@ -16,6 +19,9 @@
   （修 L124 时把正常快照全判 damaged，G5/G8 回归）。selftest 新增 AM25/AM25b/AM26 三条钉子。
 - `docs/engineering/DOCTOR-V2.md`：开销读数、机制、边界、Rust / 三进制 / 四进制评估（不替换）与
   编排待办（doctor 的 simchain 面未接、缓存只覆盖 gates、journal 跨平台路径未测等）。
+- `tools/simchain.py` 的 journal 不变量跟上 L124 的新契约：`status` exit=1 **且输出点名 damaged**
+  才算"如实报损"，不再按裸 exit 判违规；没有 loss 字样的 1 仍判红。50 种子 × 4 故障族复跑
+  **200/200 不变量成立、0 违规**（`--runs 50`，report 落 `.agent/last-simchain.json`）。
 
 ### Added（稳定性 v2 ①：simchain 链路确定性模拟测试器——黑盒 DST + 模拟报告落盘）
 

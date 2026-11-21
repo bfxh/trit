@@ -187,7 +187,7 @@
       "mix": "none",
       "anchors": [
         "AGENT-GUARDRAILS.md:748:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的",
-        "tools/journal.py:161:journal: end -- "
+        "tools/journal.py:214:journal: end -- "
       ],
       "status": "active"
     },
@@ -541,6 +541,13 @@
       "action": "update",
       "term": "verdict",
       "reason": "L123 policy-batch empty-command skip moved lines",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T01:08:15+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "L124 修复在 journal.py 前置了 safe_rel / manifest_files，restore 改为逐条校验；cmd_end 末尾的 journal: end -- 打印从 161 行移到 214 行，引文逐字未变，只重锚。",
       "loosened": "drop-anchor"
     }
   ]

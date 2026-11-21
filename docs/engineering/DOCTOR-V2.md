@@ -22,11 +22,13 @@
 
 ## 2. 机制：stat 指纹当验证轨迹
 
-- 指纹（`tools/doctor.py:288`）：对 `-Root` 下每个文件取 `(相对路径, mtime_ns, size)`，排序后
+- 指纹（`tools/doctor.py:293`）：对 `-Root` 下每个文件取 `(相对路径, mtime_ns, size)`，排序后
   SHA-256，取前 16 位十六进制。目录跳过集与 `tools/journal.py` 同纪律（`.git`、`target`、
   `__pycache__` 等本地产物不算门输入——否则门自己写 `__pycache__` 就会把自己的缓存作废）。
-- 缓存（`tools/doctor.py:284`、`:322`）：`.agent/doctor-cache.json` 只存 gates 面
-  `{status, evidence, detail}` + 指纹；指纹一致才复用，`--refresh`（`:371`）强制重跑并重写。
+- 缓存（`tools/doctor.py:284`、`:342`）：`.agent/doctor-cache.json` 只存 gates 面
+  `{status, evidence, detail}` + 指纹；指纹一致才复用，`--refresh`（`:392`）强制重跑并重写。
+  落盘前过 `tools/doctor.py:327` 的 `cache_allowed`：树能忽略这个文件（`git check-ignore`）才写，
+  没有 `.gitignore` 的仓库不写——体检工具不许把体检对象弄脏。
 - 语义：**只缓存 gates 面**。selftest / ledger / registry / backlog / git 五面每次现算，
   所以"缓存命中"不会让台账、分支、自检记录的新鲜度失真。
 - 这就是 build system 文献里的 *verifying trace*：存依赖的哈希而不是结果，验证通过就跳过任务；
@@ -64,7 +66,9 @@ State University*）。落到本工具：64 位指纹 = 41 个 trit，按 5 trit
 强行三值化是 **[B] 模拟税**。
 
 **四进制**。2 bit/位，与二进制天然兼容；多值逻辑的硬件红利（连线数、面积、功耗）出现在
-器件层（CNTFET / MTJ 一类，见 IEEE 四值 FPGA / 四值门电路研究），x86 软件里"四进制"就是
+器件层（Chaudhuri, *Beyond Bits: A Quaternary FPGA Architecture Using Multi-Vt Multi-Vdd
+FDSOI Devices*, ISMVL 2018, DOI `10.1109/ISMVL.2018.00015`；MTJ + CNTFET 的非易失版本见
+*IEEE Access* 13:46810, 2025, DOI `10.1109/ACCESS.2025.3550778`），x86 软件里"四进制"就是
 2-bit 打包，等于 base4 文本编码，对 SHA-256 没有加速。归类 **[C] 生态路径依赖 + [D]**。
 
 **结论**：只保留 Rust 试点这一条候选；三进制 / 四进制**不采纳**到 doctor（不是"已否证"——
@@ -72,8 +76,9 @@ State University*）。落到本工具：64 位指纹 = 41 个 trit，按 5 trit
 
 ## 5. 编排还差什么（清单，未落地）
 
-1. **doctor 的 simchain 面未接**。`.agent/last-simchain.json` 已在写，CHANGELOG 明确说它是
-   "doctor 的前向接口"，但 `tools/doctor.py:419`–`:424` 只有六面，没有读这份报告。下一步：
+1. **doctor 的 simchain 面未接**。`.agent/last-simchain.json` 已经能落盘（50 种子 × 4 故障族
+   200/200 不变量成立、0 违规），CHANGELOG 明确说它是"doctor 的前向接口"，但
+   `tools/doctor.py:435`–`:440` 只有六面，没有读这份报告。下一步：
    `violations > 0` 判 FAIL、文件缺失判 UNAVAILABLE 并给重跑命令——照 selftest 面的同一纪律。
 2. **缓存只覆盖 gates**。ledger 面每次解析 88 KB 台账、registry 面解析 20 KB JSON；是否值得
    上同一机制，先量再决定（本仓规矩：先证伪再采纳）。

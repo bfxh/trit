@@ -324,6 +324,21 @@ def save_gate_cache(root, fp, faces):
                                   encoding="utf-8")
 
 
+def cache_allowed(root):
+    """Only cache where the tree can ignore it. A clone lists the cache in .gitignore;
+    a scratch repo may not -- and a health check must not leave dirt it then reports."""
+    try:
+        chk = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=str(root),
+                             capture_output=True, text=True, timeout=30)
+        if chk.returncode != 0 or chk.stdout.strip() != "true":
+            return True  # not a work tree: there is no status to dirty
+        ign = subprocess.run(["git", "check-ignore", "-q", CACHE_REL], cwd=str(root),
+                             capture_output=True, timeout=30)
+        return ign.returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def face_gates(root, refresh=False):
     fp = tree_fingerprint(root)
     cache = None if refresh else load_gate_cache(root)
@@ -357,8 +372,9 @@ def face_gates(root, refresh=False):
         face = mk_face("gates", "FAIL", ev, detail)
     else:
         face = mk_face("gates", "OK", ev, detail)
-    save_gate_cache(root, fp, {"gates": {"status": face["status"], "evidence": face["evidence"],
-                                         "detail": detail}})
+    if cache_allowed(root):
+        save_gate_cache(root, fp, {"gates": {"status": face["status"], "evidence": face["evidence"],
+                                             "detail": detail}})
     return face
 
 

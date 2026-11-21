@@ -291,11 +291,16 @@ def check_attest(scen, violations):
 
 def check_journal(scen, violations):
     r = tool([JOURNAL, "-Mode", "status", "-Root", scen["root"], "-Store", scen["store"]])
+    text = combined(r)
     if has_traceback(r):
         violations.append("journal-status-traceback")
-    if r[0] not in (0, 2):
+    # exit 1 is the L124 contract for "manifest parses but entries are damaged",
+    # provided the output names the loss. 0 = healthy, 2 = clean refusal (bad JSON /
+    # missing manifest). A bare 1 without "damaged" is still the old silent lie.
+    loss = r[0] == 1 and "damaged" in text.lower()
+    if r[0] not in (0, 2) and not loss:
         violations.append(f"journal-status-exit:{r[0]}")
-    return {"exit": r[0], "out": combined(r)}
+    return {"exit": r[0], "out": text, "loss_reported": loss}
 
 
 def check_ledger(scen, violations):

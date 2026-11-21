@@ -3380,6 +3380,32 @@ if (-not $aiPy) {
     $aiGitG3 = Get-AiFace $aiDocG3 'git'
     Assert-True ($aiGitG3.detail -match 'dirty=1') 'AI18 未跟踪文件进 dirty 计数（git 采集，不是状态文件）' $aiGitG3.detail
 
+    # --- 门缓存：同指纹才复用；--refresh 与改文件都重验；树能忽略才落盘 ---
+    [IO.File]::WriteAllText((Join-Path $aiG '.gitignore'), ".agent/doctor-cache.json`n", $aiEnc)
+    Push-Location $aiG
+    & git add -A 2>&1 | Out-Null
+    & git -c user.email=s@t -c user.name=s commit -qm ignore 2>&1 | Out-Null
+    Pop-Location
+    $aiC1Doc = ((Invoke-AiDoctor $aiG) -join "`n") | ConvertFrom-Json
+    $aiGateC1 = Get-AiFace $aiC1Doc 'gates'
+    $aiC2Doc = ((Invoke-AiDoctor $aiG) -join "`n") | ConvertFrom-Json
+    $aiGateC2 = Get-AiFace $aiC2Doc 'gates'
+    $aiC3Doc = ((@(& $script:aiPy (Join-Path $script:tools 'doctor.py') --root $aiG --json --refresh) `
+        -join "`n") | ConvertFrom-Json)
+    $aiGateC3 = Get-AiFace $aiC3Doc 'gates'
+    [IO.File]::WriteAllText((Join-Path $aiG 'finger.txt'), "1`n", $aiEnc)
+    $aiC4Doc = ((Invoke-AiDoctor $aiG) -join "`n") | ConvertFrom-Json
+    $aiGateC4 = Get-AiFace $aiC4Doc 'gates'
+    Assert-True (($aiGateC1.detail -notmatch '\[cached fp=') -and ($aiGateC2.detail -match '\[cached fp=') `
+        -and ($aiGateC3.detail -notmatch '\[cached fp=') -and ($aiGateC4.detail -notmatch '\[cached fp=')) `
+        'AI29 门缓存：同指纹命中、--refresh 与改文件都重验（缓存不许跨指纹复用）' `
+        "C1=$($aiGateC1.detail) C2=$($aiGateC2.detail) C3=$($aiGateC3.detail) C4=$($aiGateC4.detail)"
+    $aiCacheDoc = (Get-Content (Join-Path $aiG '.agent\doctor-cache.json') -Raw -ErrorAction SilentlyContinue) |
+        ConvertFrom-Json -ErrorAction SilentlyContinue
+    Assert-True ($null -ne $aiCacheDoc -and "$($aiCacheDoc.fp)".Length -eq 16) `
+        'AI29b 缓存落地：.agent/doctor-cache.json 存在且指纹是 16 位（机器状态可对账）' `
+        "fp=$($aiCacheDoc.fp)"
+
     New-Item -ItemType Directory -Force -Path (Join-Path $aiP 'scripts'), (Join-Path $aiP 'docs\plans') | Out-Null
     Copy-Item (Join-Path $repo 'scripts\privacy_scan.py') (Join-Path $aiP 'scripts\privacy_scan.py')
     [IO.File]::WriteAllText((Join-Path $aiP 'docs\plans\violation.md'), "task doc`n", $aiEnc)
