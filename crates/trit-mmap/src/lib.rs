@@ -2,35 +2,26 @@
 //!
 //! 用途：大文件（数据集 / 模型 / 指纹表）的一次性只读访问，避免把整文件读进堆。
 //!
-//! **安全边界**（与所有 mmap 库相同）：映射建立后文件内容被外部进程改写属于未定义行为；
-//! 本 crate 只承诺“只读视图”，不阻止别的进程改文件。要改就先复制。
+//! **安全边界**（与所有 mmap 库相同）：
+//!
+//! - 映射建立后**不得截断、收缩或替换**底层文件。`MAP_PRIVATE` / `PAGE_READONLY`
+//!   只保证写时复制，**不钉住文件大小**；文件收缩后访问落在新 EOF 之后的整页会
+//!   确定性 `SIGBUS`（Windows 上是访问违例），Rust 侧无法捕获（#589）。
+//! - 不可信或会被外部轮转/清理的文件，读之前先 [`MappedFile::recheck_len`]；
+//!   仍需要消除 TOCTOU 时，应把文件读入堆内存或持有不可变副本。
+//! - 本 crate 只承诺“只读视图”，不阻止别的进程改文件。要改就先复制。
 //!
 //! 空文件返回空切片（不建立映射；`mmap` 长度为 0 是无效调用）。
 
 #![allow(unsafe_code)]
 
+mod error;
+mod recheck;
+
+pub use error::MmapError;
+
 use std::fs::File;
 use std::path::Path;
-
-/// 映射错误。
-#[derive(Debug, thiserror::Error)]
-pub enum MmapError {
-    /// 打开/查询文件失败。
-    #[error("IO 错误：{0}")]
-    Io(#[from] std::io::Error),
-    /// 文件长度超出 `usize`（32 位平台上的大文件）。
-    #[error("文件过大（{len} 字节，超出 usize）")]
-    TooLarge {
-        /// 文件长度。
-        len: u64,
-    },
-    /// 系统映射调用失败。
-    #[error("映射失败（系统错误码 {code}）")]
-    Map {
-        /// 系统错误码。
-        code: i32,
-    },
-}
 
 /// 只读映射文件；`Drop` 时释放映射。
 pub struct MappedFile {
@@ -169,7 +160,10 @@ impl MappedFile {
         self.len == 0
     }
 
-    /// 底层文件句柄。
+    /// 底层文件句柄（只读打开）。
+    ///
+    /// **不要**用它或另开的可写句柄在映射存活期截断文件：那会让 [`bytes`](Self::bytes)
+    /// 越界页 SIGBUS，且无法在 Rust 侧恢复。诊断与 `metadata` 查询是安全的用法。
     #[must_use]
     pub fn file(&self) -> &File {
         &self.file

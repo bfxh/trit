@@ -28,9 +28,9 @@ pub mod gemv;
 pub mod pack;
 pub mod pool;
 pub mod quant;
+pub mod shape;
 pub mod simd;
 pub mod trit;
-
 pub use gemv::{Kernel, TernaryMatrix, TryteMatrix};
 pub use pack::{Rail, Trytes};
 pub use quant::{QuantReport, Scheme};

@@ -3,6 +3,7 @@
 use std::process::ExitCode;
 use std::time::Instant;
 
+use trit_dot::cli::{check_len, number};
 use trit_dot::{
     BLOCK_BITS, OPS, TernaryBits, bipolar_dot, bipolar_dot_portable, dot_words_unrolled, float_dot,
     float_dot_4acc, pack_bipolar, scalar_dot,
@@ -37,17 +38,6 @@ impl Rng {
     }
 }
 
-fn number(args: &[String], name: &str, default: usize) -> Result<usize, String> {
-    match args.iter().position(|arg| arg == name) {
-        Some(index) => args
-            .get(index + 1)
-            .ok_or_else(|| format!("{name} 缺少参数"))?
-            .parse()
-            .map_err(|_| format!("{name} 不是整数")),
-        None => Ok(default),
-    }
-}
-
 fn time<T>(iters: usize, mut body: impl FnMut() -> T) -> u128 {
     // 预热一次，避免把首次分配的抖动算进去。
     std::hint::black_box(body());
@@ -64,6 +54,7 @@ fn bench(args: &[String]) -> Result<(), String> {
     if len == 0 || iters == 0 {
         return Err("--len/--iters 必须大于 0".to_string());
     }
+    check_len(len)?;
 
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     let a: Vec<i32> = (0..len).map(|_| rng.ternary()).collect();
@@ -120,7 +111,7 @@ fn bench(args: &[String]) -> Result<(), String> {
     let sparse = sparse_bits_a.dot_sparse(&sparse_bits_b).expect("同长度");
     let sparse_expected = scalar_dot(&sparse_a, &sparse_b);
     let block_expected = scalar_dot(&block_sparse, &b);
-    let bipolar = bipolar_dot(&packed_a, &packed_b, len);
+    let bipolar = bipolar_dot(&packed_a, &packed_b, len).expect("同长度");
     let bipolar_expected = scalar_dot(&bipolar_a, &bipolar_b);
     let block_sparse_result = block_bits_a.dot_sparse(&block_bits_b).expect("同长度");
     if dense != expected
@@ -145,8 +136,12 @@ fn bench(args: &[String]) -> Result<(), String> {
     let ns_block_sparse = time(iters, || {
         block_bits_a.dot_sparse(&block_bits_b).expect("同长度")
     });
-    let ns_bipolar = time(iters, || bipolar_dot(&packed_a, &packed_b, len));
-    let ns_bipolar_portable = time(iters, || bipolar_dot_portable(&packed_a, &packed_b, len));
+    let ns_bipolar = time(iters, || {
+        bipolar_dot(&packed_a, &packed_b, len).expect("同长度")
+    });
+    let ns_bipolar_portable = time(iters, || {
+        bipolar_dot_portable(&packed_a, &packed_b, len).expect("同长度")
+    });
     let ns_float = time(iters, || float_dot(&float_a, &float_b));
     let ns_float4 = time(iters, || float_dot_4acc(&float_a, &float_b));
     let per = |ns: u128| ns as f64 / len as f64;

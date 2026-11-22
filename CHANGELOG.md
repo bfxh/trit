@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+### Fixed（第 38 轮 9 条报告：#588–#596）
+
+- **#588 `trit-ops::bench::gemv_*` 长度不校验**：入口先 `checked_mul` 再断言权重/激活/输出
+  三者对得上；Q4_0 另要求 `cols % 32 == 0`（不足一块的尾巴不会被 `quantize_act_q8` 覆盖）。
+  短缓冲不再进入 `from_raw_parts`。新增 `tests/shape_guards.rs` 7 条 `should_panic` 断言。
+- **#590 `trit-dot::bipolar_dot` 谎报 len 返回错值**：新增 `check_bipolar`，要求两平面等长且
+  `words.len()*64 >= len`；`bipolar_dot` / `bipolar_dot_portable` 返回
+  `Result<i64, DotError>`。新增契约测试。**未证**：`len` 在尾部 1..=63 位内与真实 trit 数
+  不符时不可检测（`pack_bipolar` 尾部补 1），需调用方不谎报。
+- **#591 `trit-count` DPLL 计数溢出**：4 处裸 `u128` 乘/加改为饱和乘加，`CountStats` 新增
+  `overflows`；`crosscheck` 在 `overflows > 0` 时不再声称 `matches`；`--big` 输出
+  `dpll_overflowed` 并跳过与 BDD 的 MISMATCH 判定。新增 `tests/saturation.rs`
+  （`nvars=200` 饱和到 `u128::MAX`、`nvars=8` 不报溢出）。
+- **#589 `trit-mmap` 截断 SIGBUS**：文档明确“映射存活期不得截断、收缩或替换”，新增
+  `recheck_len()`（截断返回 `MmapError::Truncated`）与平台测试（Unix 截断检测；
+  Windows `SetEndOfFile` 返回 1224，截断型 SIGBUS 不可达）。已发生的 SIGBUS 仍无法在
+  Rust 侧捕获。
+- **#592–#596 无上界分配**：`trit-dot --len` ≤ 2^24、`trit-attn --pairs` ≤ 2^16 /
+  `--dim` ≤ 2^12 / `--hidden` ≤ 2^12、`trit-ops bench --rows/--cols` ≤ 2^16 且乘积 ≤ 2^23、
+  `trit-redteam fuzz --iterations` ≤ 2^20。超界返回结构化错误（退出 1/2），不再 134 abort；
+  逐条用 issue 的原始命令复验退出码。
+- 代价：新增 6 个模块文件 + 3 个测试文件，全部按 `module_budget.py` 登记；改动 crate
+  `cargo test` 全绿、`cargo clippy --all-targets -D warnings` 干净、`module_budget` /
+  `docs_hygiene` / `publish_graph` / `secret_scan` / `hazard_gate` 绿。
+
 ### Fixed（deps：公开仓库锁文件携带 zip 0.6.6——RCE 级解析绕过两条告警收口）
 
 - `benchmarks/wsp-no-transformer/Cargo.lock`（#506 引入的独立 workspace）自 2026-11-17

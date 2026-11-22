@@ -4,6 +4,7 @@
 
 use crate::gemv::{Kernel, TernaryMatrix, TryteMatrix};
 use crate::pool::Ptr;
+use crate::shape::{check_gemv_shape, check_q4_shape};
 use crate::simd;
 use crate::trit::Trit;
 use std::time::Instant;
@@ -27,7 +28,7 @@ pub struct Measurement {
 
 /// f32 权重矩阵向量乘。
 pub fn gemv_f32(w: &[f32], rows: usize, cols: usize, x: &[f32], out: &mut [f32]) {
-    assert_eq!(out.len(), rows, "输出长度必须是 rows");
+    check_gemv_shape(w.len(), rows, cols, x.len(), out.len());
     let wp = Ptr::new(w.as_ptr() as *mut f32);
     let xp = Ptr::new(x.as_ptr() as *mut f32);
     par_rows(out, move |o, r| {
@@ -42,7 +43,7 @@ pub fn gemv_f32(w: &[f32], rows: usize, cols: usize, x: &[f32], out: &mut [f32])
 
 /// f16 权重矩阵向量乘。
 pub fn gemv_f16(w: &[u16], rows: usize, cols: usize, x: &[f32], out: &mut [f32]) {
-    assert_eq!(out.len(), rows, "输出长度必须是 rows");
+    check_gemv_shape(w.len(), rows, cols, x.len(), out.len());
     let wp = Ptr::new(w.as_ptr() as *mut u16);
     let xp = Ptr::new(x.as_ptr() as *mut f32);
     par_rows(out, move |o, r| {
@@ -57,8 +58,7 @@ pub fn gemv_f16(w: &[u16], rows: usize, cols: usize, x: &[f32], out: &mut [f32])
 
 /// Q4_0 权重矩阵向量乘（每 32 元素 18 字节）。
 pub fn gemv_q4(w: &[u8], rows: usize, cols: usize, x: &[f32], out: &mut [f32]) {
-    assert_eq!(out.len(), rows, "输出长度必须是 rows");
-    let bpr = cols.div_ceil(32) * 18;
+    let bpr = check_q4_shape(w.len(), rows, cols, x.len(), out.len());
     let (qx, dx) = simd::quantize_act_q8(x);
     let wp = Ptr::new(w.as_ptr() as *mut u8);
     let qp = Ptr::new(qx.as_ptr() as *mut i8);
