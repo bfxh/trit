@@ -4,12 +4,12 @@ use crate::model::{Bert, BertConfig};
 use crate::report::{compare, layer_refs};
 use crate::scales::load_scales;
 use crate::sidecar;
+mod data;
 use crate::stats::{input_stats, random_like};
 use crate::sts::{load_pairs, metrics, sentence_vectors};
 use args::Args;
 use serde_json::{Map, json};
 mod args;
-use trit_wspace::activations;
 pub(crate) fn run() {
     let Args {
         file,
@@ -19,16 +19,15 @@ pub(crate) fn run() {
         activation: activation_arg,
         gptq,
     } = args::parse();
-    let gptq_dir = gptq.as_ref().map(|_| format!("{data_dir}/gptq"));
-    let gptq_group = gptq.unwrap_or(0);
-    let (batch, seq, mask) = activations::read_mask(format!("{data_dir}/mask.u8")).expect("mask");
-    let (input_rows, hidden, input) =
-        activations::read_matrix(format!("{data_dir}/input.f32")).expect("input");
-    let (ref_rows, ref_cols, reference) =
-        activations::read_matrix(format!("{data_dir}/reference.f32")).expect("reference");
-    assert_eq!(input_rows, batch * seq);
-    assert_eq!(ref_rows, batch * seq);
-    assert_eq!(ref_cols, hidden);
+    let (gptq_dir, gptq_group) = (gptq.map(|_| format!("{data_dir}/gptq")), gptq.unwrap_or(0));
+    let data::Corpus {
+        batch,
+        seq,
+        hidden,
+        mask,
+        input,
+        reference,
+    } = data::load(&data_dir);
     let pairs = load_pairs(&data_dir);
     let scales = load_scales(&data_dir);
     let (heads, eps) = (12usize, 1e-12f32);
@@ -37,7 +36,7 @@ pub(crate) fn run() {
         &file,
         BertConfig::new(hidden, eps, false, ActivationMode::F32),
     );
-    let (f32_out, _, f32_layers) = f32_bert.forward(&input, &mask, batch, seq, false);
+    let (f32_out, _, f32_layers) = f32_bert.forward(&input, &mask, batch, seq, data::keep_layers());
     let f32_sts = metrics(
         &sentence_vectors(&f32_out, &mask, batch, seq, hidden),
         &pairs,
@@ -65,7 +64,8 @@ pub(crate) fn run() {
         if mode == ActivationMode::TernaryAllChannel {
             quant.set_scales(scales.clone());
         }
-        let (real_out, real_stages, _) = quant.forward(&input, &mask, batch, seq, true);
+        let capture = mode == ActivationMode::TernaryAll;
+        let (real_out, real_stages, _) = quant.forward(&input, &mask, batch, seq, capture);
         let (random_out, random_stages, _) = quant.forward(&random_input, &mask, batch, seq, true);
         modes.insert(
             mode.key().to_string(),

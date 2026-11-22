@@ -549,6 +549,20 @@
   censored≠failed 措辞、journal 快照 id 探测、额度闸 verdict、失败自动挂起且回执旧
   字段不变、非法 task-id 拒收等。I2b 修正：checks 步是无条件 add，期望序列补上它
   （此前该断言永远红，见 docs/ERRORS.md L98）。
+### Added（trit-wspace：全量 STS 1379 对复验——GPTQ +0.025、per-group 几乎无效）
+
+- 全量 STS test 1379 对（2758 句）：导出加 `--no-layers`（逐层快照 6×271 MB），评测用
+  `TRIT_NO_LAYERS=1` 关逐层输出，三组串行（并行会 OOM）。
+- 读数：f32 基线 **0.8274**；absmean `rel_l2 1.1803 / Pearson 0.6870`；GPTQ per-row
+  `1.1432 / 0.7123`；GPTQ group=32 `1.1365 / 0.7143`（Spearman 0.7190）。
+- 结论：f32 基线本身随子集从 0.9230 降到 0.8274（前 128 句是容易样本）；GPTQ 净增益
+  +0.0735 → +0.0491 → **+0.0253** 逐级收窄；per-group 在全量上只 +0.0020，§3.12 的
+  +0.02~+0.04 是子集特异。三值化代价（全量）：absmean −0.1404、GPTQ −0.1151。
+- `activations::read_matrix_with_limit`：默认 `MAX_ELEMENTS`（16.7M）护栏不变，全量
+  67.8M 元素由调用方显式声明上限；`tests/activations_limit.rs` 守着这条边界。
+- 验证：`cargo test -p trit-wspace`、`clippy -D warnings`、`module_budget`、`docs_hygiene`、
+  `doc_pointers`、`privacy_scan`、`claims_evidence` 全绿。
+
 ### Added（trit-wspace：128 对复验——0.829 是 64 对的偏乐观读数）
 
 - 数据从 128 句 / 64 对扩到 256 句 / 128 对（`export_bert6.py <dir> 256`），口径与 Hessian
