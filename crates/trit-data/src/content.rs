@@ -5,8 +5,8 @@
 
 use crate::lang_filter::LangFilter;
 use crate::script::primary_language;
-use crate::semantics::{SemanticKind, detect as detect_semantics};
-use crate::style::{StyleKind, detect as detect_style};
+use crate::semantics::detect as detect_semantics;
+use crate::style::detect as detect_style;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ContentKind {
@@ -179,6 +179,7 @@ pub struct ContentFilter {
     pub style: LabelFilter,
     pub semantics: LabelFilter,
     pub formats: LabelFilter,
+    pub bits: LabelFilter,
     pub code_quality: bool,
     pub code_quality_limits: crate::code_quality::Limits,
     pub edu_min: f64,
@@ -197,6 +198,7 @@ impl Default for ContentFilter {
             style: LabelFilter::default(),
             semantics: LabelFilter::default(),
             formats: LabelFilter::default(),
+            bits: LabelFilter::default(),
             code_quality: false,
             code_quality_limits: crate::code_quality::Limits::default(),
             edu_min: 0.0,
@@ -204,34 +206,7 @@ impl Default for ContentFilter {
     }
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct ContentVerdict {
-    pub content: Content,
-    pub style: StyleKind,
-    pub semantics: SemanticKind,
-    pub code_filtered: bool,
-    pub natural_filtered: bool,
-    pub lang_denied: bool,
-    pub style_filtered: bool,
-    pub semantics_filtered: bool,
-    pub code_quality_filtered: bool,
-    pub edu_filtered: bool,
-    pub formats: Vec<&'static str>,
-    pub format_filtered: bool,
-}
-
-impl ContentVerdict {
-    pub fn filtered(&self) -> bool {
-        self.code_filtered
-            || self.natural_filtered
-            || self.lang_denied
-            || self.style_filtered
-            || self.semantics_filtered
-            || self.code_quality_filtered
-            || self.edu_filtered
-            || self.format_filtered
-    }
-}
+pub use crate::content_verdict::ContentVerdict;
 
 impl ContentFilter {
     pub fn eval(&self, text: &str) -> ContentVerdict {
@@ -249,6 +224,8 @@ impl ContentFilter {
         let edu_filtered = self.edu_min > 0.0 && crate::edu::score(text) < self.edu_min;
         let formats = crate::format::detect(text);
         let format_filtered = crate::format_filter::denied(&self.formats, &formats);
+        let bits = crate::bits::labels(text);
+        let bits_filtered = crate::format_filter::denied(&self.bits, &bits);
         ContentVerdict {
             content,
             style,
@@ -262,6 +239,8 @@ impl ContentFilter {
             edu_filtered,
             formats,
             format_filtered,
+            bits,
+            bits_filtered,
         }
     }
 }

@@ -1,3 +1,5 @@
+#[path = "gate_bits_opts.rs"]
+mod gate_bits_opts;
 #[path = "gate_format_opts.rs"]
 mod gate_format_opts;
 #[path = "gate_label_opts.rs"]

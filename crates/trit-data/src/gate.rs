@@ -40,6 +40,7 @@ pub struct Config {
     pub style: LabelFilter,
     pub semantics: LabelFilter,
     pub formats: LabelFilter,
+    pub bits: LabelFilter,
     pub code_quality: bool,
     pub code_quality_limits: crate::code_quality::Limits,
     pub edu_min: f64,
@@ -65,6 +66,7 @@ impl Default for Config {
             style: LabelFilter::default(),
             semantics: LabelFilter::default(),
             formats: LabelFilter::default(),
+            bits: LabelFilter::default(),
             code_quality: false,
             code_quality_limits: crate::code_quality::Limits::default(),
             edu_min: 0.0,
@@ -76,11 +78,9 @@ impl Default for Config {
         }
     }
 }
-
 pub fn evaluate(t: &Trajectory, cfg: &Config, seen: &mut BTreeSet<String>) -> Verdict {
     let mut hard: Vec<&'static str> = Vec::new();
     let mut soft: Vec<&'static str> = Vec::new();
-
     if t.task_id.trim().is_empty()
         || t.model.trim().is_empty()
         || t.steps.is_empty()

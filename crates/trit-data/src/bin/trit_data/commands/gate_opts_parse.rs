@@ -1,4 +1,3 @@
-//! `gate` 参数解析。
 use super::super::die;
 use super::Opts;
 use std::path::PathBuf;
@@ -42,6 +41,7 @@ pub fn parse(argv: &[String]) -> Opts {
                     && !super::gate_label_opts::apply(&mut cfg, other, argv, &mut i)
                     && !super::gate_quality_opts::apply(&mut cfg, other, argv, &mut i)
                     && !super::gate_format_opts::apply(&mut cfg, other, argv, &mut i)
+                    && !super::gate_bits_opts::apply(&mut cfg, other, argv, &mut i)
                 {
                     die(&format!("未知参数 {other}"));
                 }

@@ -899,8 +899,16 @@
       "lines": 25
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/bits_opts.rs",
+      "lines": 39
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/card.rs",
       "lines": 46
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/card_bits.rs",
+      "lines": 15
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/card_json.rs",
@@ -912,11 +920,15 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/card_quality.rs",
-      "lines": 41
+      "lines": 40
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/compare.rs",
       "lines": 60
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/content_base_opts.rs",
+      "lines": 29
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/counts.rs",
@@ -941,6 +953,10 @@
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate.rs",
       "lines": 133
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/gate_bits_opts.rs",
+      "lines": 39
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate_format_opts.rs",
@@ -992,7 +1008,7 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/lang_opts_content.rs",
-      "lines": 37
+      "lines": 20
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/limit_opts.rs",
@@ -1019,8 +1035,16 @@
       "lines": 35
     },
     {
+      "file": "crates/trit-data/src/bits.rs",
+      "lines": 103
+    },
+    {
       "file": "crates/trit-data/src/code_langs.rs",
-      "lines": 154
+      "lines": 12
+    },
+    {
+      "file": "crates/trit-data/src/code_langs_data.rs",
+      "lines": 152
     },
     {
       "file": "crates/trit-data/src/code_quality.rs",
@@ -1036,11 +1060,15 @@
     },
     {
       "file": "crates/trit-data/src/content.rs",
-      "lines": 271
+      "lines": 250
     },
     {
       "file": "crates/trit-data/src/content_tests.rs",
       "lines": 93
+    },
+    {
+      "file": "crates/trit-data/src/content_verdict.rs",
+      "lines": 37
     },
     {
       "file": "crates/trit-data/src/decontaminate.rs",
@@ -1052,11 +1080,19 @@
     },
     {
       "file": "crates/trit-data/src/format.rs",
-      "lines": 125
+      "lines": 119
     },
     {
       "file": "crates/trit-data/src/format_filter.rs",
       "lines": 49
+    },
+    {
+      "file": "crates/trit-data/src/format_office.rs",
+      "lines": 19
+    },
+    {
+      "file": "crates/trit-data/src/format_table.rs",
+      "lines": 9
     },
     {
       "file": "crates/trit-data/src/format_tests.rs",
@@ -1065,6 +1101,10 @@
     {
       "file": "crates/trit-data/src/gate.rs",
       "lines": 231
+    },
+    {
+      "file": "crates/trit-data/src/gate_bits.rs",
+      "lines": 10
     },
     {
       "file": "crates/trit-data/src/gate_content.rs",

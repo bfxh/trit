@@ -48,10 +48,10 @@ pub fn detect(text: &str) -> Vec<&'static str> {
     if lower.contains("<html") || lower.contains("<!doctype") || lower.contains("<div") {
         out.push("html");
     }
-    if is_table(&lines, ',') {
+    if crate::format_table::is_table(&lines, ',') {
         out.push("csv");
     }
-    if is_table(&lines, '\t') {
+    if crate::format_table::is_table(&lines, '\t') {
         out.push("tsv");
     }
     if lines
@@ -109,16 +109,10 @@ pub fn detect(text: &str) -> Vec<&'static str> {
     if control > 0.1 || text.contains('\0') {
         out.push("binary");
     }
+    out.extend(crate::format_office::detect(t));
     out
 }
 
-fn is_table(lines: &[&str], sep: char) -> bool {
-    if lines.len() < 2 {
-        return false;
-    }
-    let cols: Vec<usize> = lines.iter().map(|l| l.matches(sep).count()).collect();
-    cols[0] >= 1 && cols.iter().all(|c| *c == cols[0])
-}
 
 #[cfg(test)]
 #[path = "format_tests.rs"]

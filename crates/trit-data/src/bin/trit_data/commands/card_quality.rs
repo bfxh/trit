@@ -3,6 +3,9 @@
 use std::collections::BTreeMap;
 
 use super::counts::map_json;
+
+#[path = "card_bits.rs"]
+mod card_bits;
 use trit_learn::json::Json;
 
 #[derive(Default)]
@@ -11,6 +14,7 @@ pub struct QualityStats {
     pub edu: BTreeMap<String, usize>,
     pub formats: BTreeMap<String, usize>,
     pub radix: BTreeMap<String, usize>,
+    pub bits: BTreeMap<String, usize>,
 }
 
 impl QualityStats {
@@ -22,13 +26,7 @@ impl QualityStats {
         let lo = e.floor() as u32;
         let bucket = format!("{lo}-{}", (lo + 1).min(5));
         *self.edu.entry(bucket).or_insert(0) += 1;
-        for f in trit_data::format::detect(text) {
-            *self.formats.entry(f.to_string()).or_insert(0) += 1;
-        }
-        *self
-            .radix
-            .entry(trit_data::radix::detect(text).as_str().to_string())
-            .or_insert(0) += 1;
+        card_bits::add(self, text);
     }
 
     pub fn json(&self) -> Json {
@@ -37,5 +35,6 @@ impl QualityStats {
             .put("edu", map_json(&self.edu))
             .put("formats", map_json(&self.formats))
             .put("radix", map_json(&self.radix))
+            .put("bits", map_json(&self.bits))
     }
 }
