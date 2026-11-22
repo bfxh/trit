@@ -103,6 +103,10 @@
       "lines": 95
     },
     {
+      "file": "benchmarks/wsp-no-transformer/src/npz.rs",
+      "lines": 30
+    },
+    {
       "file": "benchmarks/wsp-no-transformer/src/prepare.rs",
       "lines": 105
     },

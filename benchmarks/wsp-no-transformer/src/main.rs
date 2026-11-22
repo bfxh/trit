@@ -2,12 +2,12 @@
 
 use std::path::Path;
 
-use npyz::npz::NpzArchive;
 mod apply;
 mod gpu;
 mod gpu_prep;
 mod model;
 mod model_fixed;
+mod npz;
 mod quant;
 mod quantize;
 mod rows;
@@ -15,6 +15,7 @@ mod topk;
 mod weights;
 
 use model::{O_LEN, Q_LEN, argmax, forward};
+use npz::open_npz;
 use weights::{load_weights, read_i64};
 
 fn main() {
@@ -26,8 +27,7 @@ fn main() {
     let mut w = load_weights(Path::new(&args[1]));
     apply::run(&mut w);
 
-    let mut npz =
-        NpzArchive::open(&args[2]).unwrap_or_else(|e| panic!("打开 {} 失败：{e}", args[2]));
+    let mut npz = open_npz(&args[2]).unwrap_or_else(|e| panic!("打开 {} 失败：{e}", args[2]));
     let q = read_i64(&mut npz, "q");
     let o = read_i64(&mut npz, "o");
     let y = read_i64(&mut npz, "y");

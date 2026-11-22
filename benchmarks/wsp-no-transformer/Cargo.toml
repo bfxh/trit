@@ -9,7 +9,13 @@ publish = false
 [workspace]
 
 [dependencies]
-npyz = { version = "0.8", features = ["npz"] }
+# npy 解析用 npyz 核心（NpyFile，无 feature 依赖）；不再启用 npyz 的 "npz" feature——
+# 它把 zip 钉死在 ^0.6（npyz 全系版本包括 git master 都如此，上游无解），正是
+# Dependabot 两条 zip 告警（GHSA-m665-v7pm-7grj 修复版 9.0.5、GHSA-8hxf-qr8p-62x4
+# 修复版 9.0.0）的源头。改为直连 zip 9.0.5（两条告警的共同修复版），走 npyz 自带的
+# npz-without-feature 模式（zip::ZipArchive + NpyFile），见 src/weights.rs。
+npyz = { version = "0.9.1", default-features = false }
+zip = { version = "9.0.5", default-features = false, features = ["deflate"] }
 wgpu = "30"
 pollster = "0.4"
 bytemuck = { version = "1", features = ["derive"] }

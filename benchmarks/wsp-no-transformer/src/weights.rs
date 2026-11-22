@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use npyz::npz::NpzArchive;
+use crate::npz::{open_npz, read_entry};
 
 pub struct Weights {
     /// 词 id → 概念 id（0 表示无概念）。
@@ -21,20 +21,22 @@ pub struct Weights {
     pub mix: f32,
 }
 
-pub fn read_i64<R: std::io::Read + std::io::Seek>(npz: &mut NpzArchive<R>, name: &str) -> Vec<i64> {
-    npz.by_name(name)
-        .unwrap_or_else(|e| panic!("读 {name} 失败：{e}"))
-        .unwrap_or_else(|| panic!("{name} 不存在"))
+pub fn read_i64<R: std::io::Read + std::io::Seek>(
+    npz: &mut zip::ZipArchive<R>,
+    name: &str,
+) -> Vec<i64> {
+    read_entry(npz, name)
         .data::<i64>()
         .unwrap_or_else(|e| panic!("解析 {name} 失败：{e}"))
         .collect::<Result<Vec<_>, _>>()
         .unwrap_or_else(|e| panic!("读 {name} 数据失败：{e}"))
 }
 
-fn read_f32<R: std::io::Read + std::io::Seek>(npz: &mut NpzArchive<R>, name: &str) -> Vec<f32> {
-    npz.by_name(name)
-        .unwrap_or_else(|e| panic!("读 {name} 失败：{e}"))
-        .unwrap_or_else(|| panic!("{name} 不存在"))
+fn read_f32<R: std::io::Read + std::io::Seek>(
+    npz: &mut zip::ZipArchive<R>,
+    name: &str,
+) -> Vec<f32> {
+    read_entry(npz, name)
         .data::<f32>()
         .unwrap_or_else(|e| panic!("解析 {name} 失败：{e}"))
         .collect::<Result<Vec<_>, _>>()
@@ -42,8 +44,7 @@ fn read_f32<R: std::io::Read + std::io::Seek>(npz: &mut NpzArchive<R>, name: &st
 }
 
 pub fn load_weights(path: &Path) -> Weights {
-    let mut npz =
-        NpzArchive::open(path).unwrap_or_else(|e| panic!("打开 {} 失败：{e}", path.display()));
+    let mut npz = open_npz(path).unwrap_or_else(|e| panic!("打开 {} 失败：{e}", path.display()));
     let concept = read_i64(&mut npz, "concept");
     let idf = read_f32(&mut npz, "idf");
     let a = read_f32(&mut npz, "A");
@@ -53,9 +54,8 @@ pub fn load_weights(path: &Path) -> Weights {
     let c = idf.len();
     assert_eq!(a.len(), c * c, "A 形状与 idf 不一致");
     assert_eq!(row_ids.len(), row_w.len(), "二阶表长度不一致");
-    // npy 里 row_ids 是 (H, R)；npz 头不在这里解析，R 从 build.py 的常量推断：
-    // gen5 的 mem_assoc2 是 16，第一代是 40。用 H = len / R 反推需要先知道 R，
-    // 所以让调用方通过环境变量覆盖，默认 16。
+    // npy 里 row_ids 是 (H, R)；npz 头不在这里解析，R 从 build.py 常量推断
+    //（gen5 的 mem_assoc2 是 16，第一代 40）；调用方可用 WSP_R 覆盖，默认 16。
     let r = std::env::var("WSP_R")
         .ok()
         .and_then(|v| v.parse().ok())
