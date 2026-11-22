@@ -5,6 +5,11 @@ use std::path::Path;
 use crate::code_langs::code_languages;
 use crate::code_quality::check;
 
+pub mod deps;
+mod imports;
+mod imports_rust;
+pub mod paths;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unit {
     pub repo: String,
@@ -15,6 +20,10 @@ pub struct Unit {
     pub license: Option<String>,
     pub imports: Vec<String>,
     pub imports_known: bool,
+    pub imports_resolved: Vec<String>,
+    pub unresolved: Vec<String>,
+    pub tests: Vec<String>,
+    pub tests_for: Vec<String>,
     pub is_test: bool,
 }
 
@@ -29,6 +38,7 @@ pub fn scan(root: &Path) -> Result<Vec<Unit>, String> {
     let mut out = Vec::new();
     walk(&root, &root, &repo, license.as_deref(), &mut out)?;
     out.sort_by(|a, b| a.path.cmp(&b.path));
+    deps::annotate(&mut out);
     Ok(out)
 }
 
@@ -70,7 +80,7 @@ fn walk(
             let lang = detect_lang(&p, &head);
             let q = check(&head);
             let generated = q.auto_generated || is_generated_path(&p);
-            let (imports, imports_known) = parse_imports(&head, &lang);
+            let (imports, imports_known) = imports::parse(&head, &lang);
             let is_test = is_test_path(&p);
             out.push(Unit {
                 repo: repo.to_string(),
@@ -81,6 +91,10 @@ fn walk(
                 license: license.map(|s| s.to_string()),
                 imports,
                 imports_known,
+                imports_resolved: Vec::new(),
+                unresolved: Vec::new(),
+                tests: Vec::new(),
+                tests_for: Vec::new(),
                 is_test,
             });
         }
@@ -210,63 +224,9 @@ fn detect_license(root: &Path) -> Option<String> {
     None
 }
 
-fn parse_imports(head: &str, lang: &str) -> (Vec<String>, bool) {
-    let known = matches!(lang, "rust" | "python" | "javascript" | "typescript" | "go" | "java" | "kotlin" | "scala" | "c" | "cpp" | "cuda" | "opencl" | "csharp");
-    let mut out = Vec::new();
-    for line in head.lines() {
-        let t = line.trim();
-        let imp = match lang {
-            "rust" => t
-                .strip_prefix("use ")
-                .map(|s| s.trim_end_matches(';').to_string()),
-            "python" => t
-                .strip_prefix("import ")
-                .or_else(|| t.strip_prefix("from "))
-                .map(|s| s.split_whitespace().next().unwrap_or("").to_string()),
-            "javascript" | "typescript" => t
-                .strip_prefix("import ")
-                .map(|s| {
-                    s.split(" from ")
-                        .next()
-                        .unwrap_or(s)
-                        .trim_matches(|c| c == '"' || c == '\'' || c == ';')
-                        .to_string()
-                })
-                .or_else(|| {
-                    t.split("require(").nth(1).map(|s| {
-                        s.split(')')
-                            .next()
-                            .unwrap_or("")
-                            .trim_matches(|c| c == '"' || c == '\'')
-                            .to_string()
-                    })
-                }),
-            "go" => t
-                .strip_prefix("import ")
-                .map(|s| s.trim_matches('"').to_string()),
-            "java" | "kotlin" | "scala" => t
-                .strip_prefix("import ")
-                .map(|s| s.trim_end_matches(';').to_string()),
-            "c" | "cpp" | "cuda" | "opencl" => t.strip_prefix("#include ").map(|s| {
-                s.trim_matches(|c| c == '<' || c == '>' || c == '"')
-                    .to_string()
-            }),
-            "csharp" => t
-                .strip_prefix("using ")
-                .map(|s| s.trim_end_matches(';').to_string()),
-            _ => None,
-        };
-        if let Some(i) = imp
-            && !i.is_empty()
-            && !out.contains(&i)
-            && out.len() < 50
-        {
-            out.push(i);
-        }
-    }
-    (out, known)
-}
-
 #[cfg(test)]
 #[path = "repo_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+mod deps_tests;

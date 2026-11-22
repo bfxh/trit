@@ -1,87 +1,42 @@
-//! `repo` 子命令：扫描本地源码树，输出 RepoUnit。
+//! `repo` 子命令：扫描本地源码树，输出 RepoUnit、依赖图与依赖闭包。
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
-
-use trit_data::repo::scan;
+use trit_data::repo;
 use trit_learn::json::write_json;
 
-use super::{die, usage, write_lines};
-
-#[path = "repo_units.rs"]
-mod repo_units;
-
-#[path = "repo_report.rs"]
-mod repo_report;
+use super::{die, repo_opts, repo_stats, usage, write_lines};
 
 pub fn run(argv: &[String]) {
-    let mut root: Option<PathBuf> = None;
-    let mut out: Option<PathBuf> = None;
-    let mut i = 0;
-    while i < argv.len() {
-        match argv[i].as_str() {
-            "--repo" => {
-                root = argv.get(i + 1).map(PathBuf::from);
-                i += 2;
-            }
-            "--out" => {
-                out = argv.get(i + 1).map(PathBuf::from);
-                i += 2;
-            }
-            other => die(&format!("未知参数 {other}")),
-        }
-    }
-    let root = root.unwrap_or_else(|| usage());
-    let units = scan(&root).unwrap_or_else(|e| die(&e));
-    let mut langs: BTreeMap<String, usize> = BTreeMap::new();
-    let mut licenses: BTreeMap<String, usize> = BTreeMap::new();
-    let (mut generated, mut tests, mut with_imports) = (0usize, 0usize, 0usize);
-    let (mut license_missing, mut imports_unknown) = (0usize, 0usize);
-    for u in &units {
-        *langs.entry(u.lang.clone()).or_insert(0) += 1;
-        *licenses
-            .entry(u.license.clone().unwrap_or_else(|| "missing".into()))
-            .or_insert(0) += 1;
-        if u.generated {
-            generated += 1;
-        }
-        if u.is_test {
-            tests += 1;
-        }
-        if !u.imports.is_empty() {
-            with_imports += 1;
-        }
-        if u.license.is_none() {
-            license_missing += 1;
-        }
-        if !u.imports_known {
-            imports_unknown += 1;
-        }
-    }
-    let lines = repo_units::lines(&units);
+    let o = repo_opts::parse(argv);
+    let root = o.root.clone().unwrap_or_else(|| usage());
+    let units = repo::scan(&root).unwrap_or_else(|e| die(&e));
+    let s = repo_stats::stats(&units);
+    let d = repo::deps::summarize(&units);
     println!(
-        "仓库 {}：文件 {}（生成 {}，测试 {}，有依赖 {}）",
+        "仓库 {}：文件 {}（生成 {}，测试 {}，依赖边 {}，测试关联 {}，环上 {}）",
         root.display(),
         units.len(),
-        generated,
-        tests,
-        with_imports
+        s.generated,
+        s.tests,
+        d.edges,
+        d.test_links,
+        d.cyclic
     );
-    if let Some(dir) = out {
+    if let Some(start) = &o.closure {
+        let json = repo_stats::closure_json(&units, start, o.max_files);
+        println!("闭包 {}：{} 个文件", start, json.dump());
+    }
+    if let Some(dir) = o.out {
         std::fs::create_dir_all(&dir)
             .unwrap_or_else(|e| die(&format!("建不了 {}: {e}", dir.display())));
-        write_lines(&dir.join("repo.units.jsonl"), &lines);
-        let report = repo_report::build(&repo_report::Stats {
-            repo: &root.display().to_string(),
-            files: units.len(),
-            languages: &langs,
-            licenses: &licenses,
-            generated,
-            tests,
-            with_imports,
-            license_missing,
-            imports_unknown,
-        });
+        write_lines(&dir.join("repo.units.jsonl"), &repo_stats::units_lines(&units));
+        let root_s = root.display().to_string();
+        let deps = repo_stats::deps_document(&root_s, &units, &d);
+        write_json(&dir.join("repo.deps.json"), &deps).unwrap_or_else(|e| die(&e));
+        let report = repo_stats::report(&root_s, &units, &s, &d);
         write_json(&dir.join("repo.report.json"), &report).unwrap_or_else(|e| die(&e));
+        if let Some(start) = &o.closure {
+            let c = repo_stats::closure_json(&units, start, o.max_files);
+            write_json(&dir.join("repo.closure.json"), &c).unwrap_or_else(|e| die(&e));
+        }
     }
 }

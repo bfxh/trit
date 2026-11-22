@@ -1040,15 +1040,15 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/repo.rs",
-      "lines": 87
+      "lines": 42
     },
     {
-      "file": "crates/trit-data/src/bin/trit_data/commands/repo_report.rs",
-      "lines": 41
+      "file": "crates/trit-data/src/bin/trit_data/commands/repo_opts.rs",
+      "lines": 34
     },
     {
-      "file": "crates/trit-data/src/bin/trit_data/commands/repo_units.rs",
-      "lines": 29
+      "file": "crates/trit-data/src/bin/trit_data/commands/repo_stats.rs",
+      "lines": 144
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/report_extra.rs",
@@ -1192,7 +1192,27 @@
     },
     {
       "file": "crates/trit-data/src/repo.rs",
-      "lines": 272
+      "lines": 232
+    },
+    {
+      "file": "crates/trit-data/src/repo/deps.rs",
+      "lines": 328
+    },
+    {
+      "file": "crates/trit-data/src/repo/deps_tests.rs",
+      "lines": 116
+    },
+    {
+      "file": "crates/trit-data/src/repo/imports.rs",
+      "lines": 83
+    },
+    {
+      "file": "crates/trit-data/src/repo/imports_rust.rs",
+      "lines": 36
+    },
+    {
+      "file": "crates/trit-data/src/repo/paths.rs",
+      "lines": 105
     },
     {
       "file": "crates/trit-data/src/repo_tests.rs",
