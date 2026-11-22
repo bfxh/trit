@@ -1,3 +1,4 @@
+#![cfg_attr(not(feature = "tritdb"), allow(dead_code))]
 use serde::Deserialize;
 use serde_json::{Value, json};
 #[cfg(feature = "tritdb")]
@@ -12,7 +13,6 @@ mod actions;
 mod actions_gc;
 mod actions_sync;
 
-#[allow(dead_code)]
 #[derive(Deserialize)]
 struct TraceInput {
     action: String,

@@ -30,7 +30,7 @@ GitHub 拉取。
 scripts/vendor-tritdb.sh <上游 git rev>
 ```
 
-脚本从 `TRIT_DB_SRC`（默认 `D:/KF/trit-db`）按给定 rev 重新导出上面这些 crate，
+脚本从 `TRIT_DB_SRC`（必须显式设置，无默认值）按给定 rev 重新导出上面这些 crate，
 并刷新 `NOTICE.md` 与 `rustfmt.toml`。更新后跑：
 
 ```bash

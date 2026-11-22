@@ -3,11 +3,11 @@
 #
 #   scripts/vendor-tritdb.sh [rev]
 #
-# 默认 rev 是当前 vendored 的版本；TRIT_DB_SRC 指向上游工作副本（默认 D:/KF/trit-db）。
+# 默认 rev 是当前 vendored 的版本；TRIT_DB_SRC 必须指向上游工作副本（无默认值）。
 set -euo pipefail
 
 rev="${1:-aca718880e0d918a064c878b39564225e46db80a}"
-src="${TRIT_DB_SRC:-D:/KF/trit-db}"
+src="${TRIT_DB_SRC:?请设置 TRIT_DB_SRC 指向 trit-db 工作副本}"
 root="$(cd "$(dirname "$0")/.." && pwd)"
 out="$root/third_party/trit-db"
 

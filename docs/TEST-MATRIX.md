@@ -111,7 +111,7 @@ tryte 整表/拆表/映射三条路径互相对拍（映射只是省掉 `%9`/`/9
 
 ## 测出来的三个真问题
 
-1. **`claim::covers` 尾斜杠锁不住子路径**（真缺陷，已修，机制见 `crates/trit-orch/src/claim.rs:421`；台账 `L50`）
+1. **`claim::covers` 尾斜杠锁不住子路径**（真缺陷，已修，机制见 `crates/trit-orch/src/claim/core.rs:349`；台账 `L50`）
    `path.as_bytes().get(scope.len()) == Some(&b'/')` 在 `scope` 带尾斜杠时下标错位。
    后果：宿主写 `crates/a/` 就能对同一目录开出**两张互不冲突的锁**。
 

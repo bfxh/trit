@@ -102,8 +102,8 @@ FDSOI Devices*, ISMVL 2018, DOI `10.1109/ISMVL.2018.00015`；MTJ + CNTFET 的非
    结论：缓存保持只覆盖 gates；ledger 面若将来变重，先重新量再议。
 3. **journal 的跨平台路径语义未测**。`safe_rel`（`tools/journal.py:94`）在 Windows 上由
    G5/G8/AM25 钉住；POSIX 上反斜杠是合法文件名字符，两种语义没有实机读数。
-4. **ECC 帧在编排默认路径仍是关闭**。`crates/trit-orch/src/trace_store.rs:37` 的 `ecc: None`
-   是默认构造；开启要显式走 opt-in 构造函数（同文件 `crates/trit-orch/src/trace_store.rs:43`）。
+4. **ECC 帧在编排默认路径仍是关闭**。`crates/trit-orch/src/trace_store/core.rs:59` 的 `ecc: None`
+   是默认构造；开启要显式走 opt-in 构造函数（同文件 `crates/trit-orch/src/trace_store/core.rs:87`）。
    默认开不开、开了对既有账本字节的影响，没有决策记录。
 5. **断粮仍要人接**。`tools/resume.py` 只负责挂起/续跑账本，跨会话把活捡起来仍靠人读账；
    这不是缺陷，是协议三的边界，但没有"自动接续"的承诺。

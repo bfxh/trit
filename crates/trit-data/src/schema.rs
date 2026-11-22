@@ -1,4 +1,4 @@
-//! 轨迹的统一 schema：JSONL 一行一条，字段见 `docs/plans/AGENT-DATA-PLAN.md`。
+//! 轨迹的统一 schema：JSONL 一行一条，字段见 `docs/reference/AGENT-DATA.md`。
 
 use trit_learn::json::Json;
 
