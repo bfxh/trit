@@ -161,7 +161,7 @@ pub fn classify(f: &Features, l: &Limits) -> LangClass {
     LangClass::Good
 }
 
-fn tokens(text: &str) -> Vec<String> {
+pub(crate) fn tokens(text: &str) -> Vec<String> {
     let mut out = Vec::new();
     let mut cur = String::new();
     for c in text.chars() {

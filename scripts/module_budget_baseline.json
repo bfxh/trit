@@ -907,6 +907,10 @@
       "lines": 91
     },
     {
+      "file": "crates/trit-data/src/decontaminate.rs",
+      "lines": 77
+    },
+    {
       "file": "crates/trit-data/src/gate.rs",
       "lines": 288
     },
@@ -921,6 +925,10 @@
     {
       "file": "crates/trit-data/src/manifest.rs",
       "lines": 44
+    },
+    {
+      "file": "crates/trit-data/src/mix.rs",
+      "lines": 117
     },
     {
       "file": "crates/trit-data/src/rewrite.rs",
