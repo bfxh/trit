@@ -87,6 +87,12 @@ def main():
 
     for index, layer in enumerate(model.encoder.layer):
         layer.attention.self.query.register_forward_hook(hook(f"q{index}"))
+        layer.attention.self.query.register_forward_hook(hook(f"gq{index}"))
+        layer.attention.self.key.register_forward_hook(hook(f"gk{index}"))
+        layer.attention.self.value.register_forward_hook(hook(f"gv{index}"))
+        layer.attention.output.dense.register_forward_hook(hook(f"go{index}"))
+        layer.intermediate.dense.register_forward_hook(hook(f"gi{index}"))
+        layer.output.dense.register_forward_hook(hook(f"gf{index}"))
         layer.register_forward_hook(
             lambda _m, _inp, out, index=index: layers.append(
                 (index, (out[0] if isinstance(out, tuple) else out).detach())
@@ -146,6 +152,19 @@ def main():
         )
     with open(os.path.join(out_dir, "scales.json"), "w", encoding="utf-8") as handle:
         json.dump({"layers": layer_scales}, handle, indent=2, ensure_ascii=False)
+
+    gptq_dir = os.path.join(out_dir, "gptq")
+    os.makedirs(gptq_dir, exist_ok=True)
+    flat_mask = mask.reshape(-1)
+    for short in ["q", "k", "v", "o", "i", "f"]:
+        for index in range(config.num_hidden_layers):
+            key = f"g{short}{index}"
+            if key not in captured:
+                continue
+            tensor = captured[key]
+            matrix = tensor.reshape(-1, tensor.shape[-1])[flat_mask][:2048]
+            hessian = (matrix.T @ matrix).float().numpy()
+            write_matrix(os.path.join(gptq_dir, f"{short}{index}.f32"), hessian)
 
     with open(os.path.join(out_dir, "pairs.json"), "w", encoding="utf-8") as handle:
         json.dump({"pairs": pairs}, handle, indent=2, ensure_ascii=False)

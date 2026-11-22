@@ -198,6 +198,46 @@ matmul 输入在进入线性层前符号三值化；attention context 保持 f32
 3. 三值激活这条线已经到顶：纯 sign 0.247 → per-token 0.358 → per-channel 0.432 →
    matmul 输入三值 0.219；int8 是唯一不损失激活精度的低比特方案。
 
+## 3.11 权重侧 GPTQ 逐列补偿：STS 0.7330 → 0.8065
+
+`--gptq`：用 f32 校准集的 `H = XᵀX`（6 层 × 6 段线性层，128 句、mask 后的 2048 个 token）
+逐列量化三值权重并把量化误差补偿到尚未处理的列：
+
+```text
+q_j = clamp(round(w_j / s), -1, 1)
+e_j = (w_j - s·q_j) / [H⁻¹]_jj
+w_k -= e_j · [H⁻¹]_jk              (k 尚未量化)
+```
+
+列顺序按 `diag(H)` 降序（GPTQ 的 act-order），`H` 加 1% 对角阻尼保证可逆；`s` 仍是
+逐行 absmean，所以两边的 `trits` 只差补偿/重排带来的少数列，可直接对照。
+
+导出 Hessian 与复算：
+
+```bash
+TRIT_DATA=<数据根> HF_HUB_OFFLINE=1   python crates/trit-wspace/examples/export_bert6.py "$TRIT_DATA/miniLM-bert6-sts" 128
+cargo run --release -p trit-wspace --example bert6 --   --file "$HF_HOME/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/model.safetensors"   --data-dir "$TRIT_DATA/miniLM-bert6-sts" --activation-mode f32 --gptq
+```
+
+| 权重三值化 | `rel_l2` | `cosine` | STS Pearson | STS Spearman |
+|---|---:|---:|---:|---:|
+| absmean 逐行（上一节基线） | 1.1660 | 0.4695 | 0.7330 | 0.7437 |
+| **GPTQ 逐列补偿** | **1.0491** | **0.5551** | **0.8065** | **0.8320** |
+| PyTorch f32 对照 | — | — | 0.9230 | — |
+
+读法：
+
+1. **GPTQ 把权重侧 Pearson 从 0.7330 拉到 0.8065**（+0.0735，相对 +10.0%），
+   Spearman 0.7437 → 0.8320，`rel_l2 1.1660 → 1.0491`、`cosine 0.4695 → 0.5551`；
+   这是第一次在**不改激活**的前提下把 0.733 推过 0.8。
+2. **补偿系数必须用 `H⁻¹` 而不是 `H`**。第一版实现按 `H[j,k]/H[j,j]` 补偿（漏了求逆），
+   H 加权误差从 absmean 的 `0.266` **涨到** `0.860`（36 个矩阵全部变大），端到端
+   Pearson 掉到 **0.4924**——比 absmean 的 0.733 还低。修正后 36 个矩阵的 H 加权误差
+   全部下降（query 段 `0.266 → 0.167`，−37%）。这条负结果留在
+   `crates/trit-wspace/src/gptq.rs` 的模块文档里，并有 `tests/gptq.rs` 的方向性断言守着。
+3. 与 PyTorch f32 的 0.9230 还差 **0.1165**；剩下的缺口在权重侧（更大 rank 侧车、
+   混合权重、per-group scale、QAT），激活侧已经证明不是瓶颈（§3.10）。
+
 ## 4. 未证栏
 
 - 只有 8 句、`8×64` token；不是大规模语料。
