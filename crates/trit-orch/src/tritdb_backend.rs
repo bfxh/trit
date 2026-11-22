@@ -1,15 +1,15 @@
 #![cfg(feature = "tritdb")]
 //! 可选 trit-db 后端；key 布局见下方，HMAC 只防改数据库文件的攻击者。
-
 #[cfg(feature = "tritdb-cas")]
 pub mod cas;
 #[cfg(feature = "tritdb-pgwire")]
 pub mod pgwire;
 #[cfg(feature = "tritdb-sql")]
+pub mod pgwire_sqlite;
+#[cfg(feature = "tritdb-sql")]
 pub mod sql;
 #[cfg(feature = "tritdb-sql")]
 pub mod sqlite_materialize;
-
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 

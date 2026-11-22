@@ -74,11 +74,13 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
 - `trace sync`：把事件增量物化进**独立 SQLite**（`<wal>.sqlite`，`trit_trace` 表）。
   读轨迹 WAL 只短暂持锁，写物化表走 SQLite 自己的锁，所以它能和轨迹写入方并发；
   水位取 `max(chain_seq)`，重复执行不会重复插入。
-- `tritdb-pgwire`：`trace serve` 启动时物化一次，再在 `listen` 上起服务。**服务
-  进程会持续持有轨迹 WAL 的排他锁**，所以服务期间不能再有第二个进程写同一个
-  WAL（`trace sync` 也会被拒）。这一点是实测确认的：曾经的「后台按间隔刷新」
-  每次都会报 `wal is locked by process`，因此已移除；需要更新数据请先停服，
-  或改用 SQLite 物化（`trace sync`）另接一个只读物化库的服务。
+- `tritdb-pgwire`：`trace serve` 若发现 `<wal>.sqlite`（`trace sync` 的产物），
+  就用**自研只读 pgwire 服务**直接查 SQLite——完全不碰轨迹 WAL，因此服务期间
+  仍可 `append` 轨迹、跑 `trace sync`，客户端立刻看到新行（实测 3 → 4）。该服务
+  只实现简单查询协议（`Q`）、只读、无认证/TLS（`SSLRequest` 回 `N`），不支持
+  扩展查询（Parse/Bind/Execute）与 COPY。
+- 没有 SQLite 物化库时，`trace serve` 回退直读轨迹 WAL：启动时物化一次，服务
+  进程持续持有 WAL 排他锁，期间写不了同一个 WAL（`trace sync` 也会被拒）。
 
 ## CAS 快照与 anchor 链
 
@@ -116,6 +118,8 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
   anchor 放到攻击者写不到的位置，或由外部 KMS/透明日志跨系统锚定。
 - `TritDbTraceStore` 的 `load` 会重算内容摘要、验证每个 trace 的写入序与元数据；
   元数据 HMAC 只防“改数据库文件”的攻击者，拥有密钥的宿主仍可重写。
+- 自研 SQLite 只读服务不实现认证与 TLS：`TRIT_PG_PASSWORD` / `TRIT_PG_TLS_CERT`
+  只对「回退直读轨迹 WAL」的旧路径生效。需要认证时请走旧路径，或在前置代理上做。
 - 两个后端都建立在“宿主可信”的模型上；执行器/模型自报问题仍由完成闸的
   `Receipt` provenance 负责。
 

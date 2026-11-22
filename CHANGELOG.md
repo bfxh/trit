@@ -27,6 +27,9 @@
   启动时物化一次）。
 - 新增 `trace sync`：把事件增量物化进独立 SQLite（`<wal>.sqlite`，`rusqlite`
   可选依赖），与轨迹 WAL 解耦，可与轨迹写入方并发。
+- 新增自研只读 pgwire 服务（`pgwire_sqlite.rs`）：存在 `<wal>.sqlite` 时
+  `trace serve` 直接查 SQLite，服务期间可写入与 sync、客户端实时可见；
+  仅支持简单查询、只读、无认证/TLS。
 - 移除 pgwire 的后台刷新：实测 `tritdb-txn` 的 WAL 锁是进程级排他的，
   服务持有期间第二个连接必然报 `wal is locked by process`。
 - `tritdb-*` 依赖改为 **vendored 源码**（`third_party/trit-db`，rev `aca71888`，
