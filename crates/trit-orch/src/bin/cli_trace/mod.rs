@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 #[cfg(feature = "tritdb")]
 use trit_orch::tritdb_backend::TritDbTraceStore;
-use trit_orch::{Error, TraceEvent, TraceEventStore, TraceLog, check_trace};
+use trit_orch::{Error, TraceBackend, TraceEvent, TraceEventStore, check_trace};
 
 #[cfg(feature = "tritdb")]
 #[path = "route.rs"]
@@ -32,36 +32,7 @@ struct TraceInput {
     listen: Option<String>,
 }
 
-enum Backend {
-    Jsonl(TraceEventStore),
-    #[cfg(feature = "tritdb")]
-    TritDb(Box<TritDbTraceStore>),
-}
-impl Backend {
-    fn append(&self, event: &TraceEvent) -> Result<(), Error> {
-        match self {
-            Self::Jsonl(store) => store.append(event),
-            #[cfg(feature = "tritdb")]
-            Self::TritDb(store) => store.append(event),
-        }
-    }
-
-    fn load(&self) -> Result<Vec<TraceEvent>, Error> {
-        match self {
-            Self::Jsonl(store) => store.load(),
-            #[cfg(feature = "tritdb")]
-            Self::TritDb(store) => store.load(),
-        }
-    }
-
-    fn load_log(&self, trace_id: &str) -> Result<TraceLog, Error> {
-        match self {
-            Self::Jsonl(store) => store.load_log(trace_id),
-            #[cfg(feature = "tritdb")]
-            Self::TritDb(store) => store.load_log(trace_id),
-        }
-    }
-}
+type Backend = Box<dyn TraceBackend>;
 fn arg_value(flag: &str) -> Option<String> {
     let mut args = std::env::args().skip(2);
     while let Some(arg) = args.next() {
@@ -93,7 +64,7 @@ pub(crate) fn run(input: &str) -> Result<Value, Error> {
         });
     }
     match backend.as_str() {
-        "jsonl" => run_with(Backend::Jsonl(TraceEventStore::new(&path)), &request),
+        "jsonl" => run_with(Box::new(TraceEventStore::new(&path)), &request),
         #[cfg(feature = "tritdb")]
         "tritdb" => route::run(&path, &request),
         other => Err(Error::InputParse {

@@ -6,15 +6,15 @@
 //! 双错 fail-closed 拒（[`Error::TraceEcc`]）。写入机制保持与本文件既有
 //! `writeln!` + `sync_data` 全量落盘语义一致。帧行自带码 tag（`TRE1 G11 …`），
 //! 未开 ECC 的存储读到 ECC 行也能按 tag 译码。
-
+use crate::trace::{TraceEvent, TraceLog};
+use crate::{Error, TraceStep};
 use std::fs;
 use std::io::{ErrorKind, Read, Seek, SeekFrom};
 use std::path::PathBuf;
-
 use trit_ops::{FrameCode, FrameResult, decode_line};
-
-use crate::trace::{TraceEvent, TraceLog};
-use crate::{Error, TraceStep};
+#[path = "trait_store.rs"]
+mod trait_store;
+pub use trait_store::TraceBackend;
 
 #[path = "accessors.rs"]
 mod accessors;

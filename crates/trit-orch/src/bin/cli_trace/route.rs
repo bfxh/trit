@@ -6,14 +6,11 @@ use trit_orch::Error;
 use super::actions::{restore_action, serve_action, snapshot_action, sql_action};
 use super::actions_gc::{compact_action, gc_action};
 use super::actions_sync::sync_action;
-use super::{Backend, TraceInput, run_with};
+use super::{TraceInput, run_with};
 
 pub(super) fn run(path: &str, request: &TraceInput) -> Result<Value, Error> {
     match request.action.as_str() {
-        "append" | "load" | "check" => run_with(
-            Backend::TritDb(Box::new(TritDbTraceStore::open(path)?)),
-            request,
-        ),
+        "append" | "load" | "check" => run_with(Box::new(TritDbTraceStore::open(path)?), request),
         "sql" => sql_action(request),
         "snapshot" => snapshot_action(request),
         "restore" => restore_action(request),

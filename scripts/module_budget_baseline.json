@@ -2048,11 +2048,11 @@
     },
     {
       "file": "crates/trit-orch/src/bin/cli_trace/mod.rs",
-      "lines": 148
+      "lines": 119
     },
     {
       "file": "crates/trit-orch/src/bin/cli_trace/route.rs",
-      "lines": 28
+      "lines": 25
     },
     {
       "file": "crates/trit-orch/src/bin/trit-orch.rs",
@@ -2349,6 +2349,10 @@
     {
       "file": "crates/trit-orch/src/trace_store/time.rs",
       "lines": 36
+    },
+    {
+      "file": "crates/trit-orch/src/trace_store/trait_store.rs",
+      "lines": 39
     },
     {
       "file": "crates/trit-orch/src/trace_store/watermark.rs",

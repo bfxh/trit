@@ -33,7 +33,7 @@ pub use crate::trace::{
 pub use crate::trace_invariants::{
     TraceInvariant, TraceReport, TraceViolation, check as check_trace,
 };
-pub use crate::trace_store::{TraceEventStore, events_from_step};
+pub use crate::trace_store::{TraceBackend, TraceEventStore, events_from_step};
 pub use trit_core::value::Ternary;
 pub use trit_schedule::{Dependency, MAX_TASKS, Resources, Task};
 
