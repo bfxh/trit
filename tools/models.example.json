@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "models": [
+    {
+      "id": "provider-default",
+      "provider": "openai-chat",
+      "base_url": "https://api.example.com/v1",
+      "model": "your-model-name",
+      "api_key_env": "MODEL_API_KEY",
+      "roles": ["docs", "code", "review", "sandbox"],
+      "priority": 10,
+      "context": 65536,
+      "cost": "paid",
+      "capabilities": ["text"],
+      "enabled": true
+    },
+    {
+      "id": "local-fast",
+      "provider": "command",
+      "command": ["python", "tools/my_model_cli.py"],
+      "roles": ["docs"],
+      "priority": 5,
+      "context": 8192,
+      "cost": "free",
+      "capabilities": ["text"],
+      "enabled": false
+    }
+  ],
+  "routes": {
+    "default": ["provider-default"],
+    "docs": ["provider-default"],
+    "code": ["provider-default"],
+    "review": ["provider-default"],
+    "sandbox": ["provider-default"]
+  }
+}

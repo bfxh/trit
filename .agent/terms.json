@@ -50,8 +50,8 @@
       ],
       "mix": "co",
       "anchors": [
-        "AGENT-GUARDRAILS.md:756:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）",
-        "tools/agent_verify.py:1466:\"changed\" if je[\"code\"] == 1 else \"failed\"))"
+        "tools/agent_verify.py:1466:\"changed\" if je[\"code\"] == 1 else \"failed\"))",
+        "AGENT-GUARDRAILS.md:775:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）"
       ],
       "status": "active"
     },
@@ -186,8 +186,8 @@
       ],
       "mix": "none",
       "anchors": [
-        "AGENT-GUARDRAILS.md:759:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的",
-        "tools/journal.py:214:journal: end -- "
+        "tools/journal.py:214:journal: end -- ",
+        "AGENT-GUARDRAILS.md:778:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
       ],
       "status": "active"
     },
@@ -202,8 +202,8 @@
       ],
       "mix": "none",
       "anchors": [
-        "AGENT-GUARDRAILS.md:737:1. **`verdict`**——只有这几种，各是什么一眼定论：",
-        "tools/agent_verify.py:1505:verdict = (\"command failed\" if not ran_ok else"
+        "tools/agent_verify.py:1505:verdict = (\"command failed\" if not ran_ok else",
+        "AGENT-GUARDRAILS.md:756:1. **`verdict`**——只有这几种，各是什么一眼定论："
       ],
       "status": "active"
     },
@@ -548,6 +548,48 @@
       "action": "update",
       "term": "change",
       "reason": "L124 修复在 journal.py 前置了 safe_rel / manifest_files，restore 改为逐条校验；cmd_end 末尾的 journal: end -- 打印从 161 行移到 214 行，引文逐字未变，只重锚。",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T03:50:02+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "AGENT-GUARDRAILS 边界表/命令块新增行，journal-end 权威行整体下移 3 行，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T03:50:02+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "AGENT-GUARDRAILS 边界表/命令块新增行，changes 权威行整体下移 3 行，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T03:50:11+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "AGENT-GUARDRAILS 边界表/命令块新增行，verdict 权威行整体下移 3 行，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T04:52:53+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "AGENT-GUARDRAILS.md 边界表新增 context-guard 行，回执读法整体下移 8 行；引文未改，按锚点规范重记",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T04:52:53+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "AGENT-GUARDRAILS.md 边界表新增 context-guard 行，回执读法整体下移 8 行；引文未改，按锚点规范重记",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T04:52:53+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "AGENT-GUARDRAILS.md 边界表新增 context-guard 行，回执读法整体下移 8 行；引文未改，按锚点规范重记",
       "loosened": "drop-anchor"
     }
   ]

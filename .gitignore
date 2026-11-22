@@ -47,6 +47,25 @@ scripts/.mutation-check.lock/
 # handoff 的 state_hash 也显式跳过它（见 tools/handoff.py SKIP_UNTRACKED）
 .agent/resume/
 
+# 模型路由配置（tools/model_router.py）：只写 provider/模型名/环境变量名，
+# 密钥在环境里；本机配置不进公开树，模板见 tools/models.example.json
+.agent/models.json
+
+# 沙盒 workdir 与调用回执（tools/sandbox_run.py）：默认落 %TEMP%，若显式指到
+# 仓内 .agent/sandbox/ 也不入库；回执同样只留本机证据
+.agent/sandbox/
+.agent/model-receipt*.json
+
+# 子智能体派发回执与逐任务模型回执（tools/subagent_dispatch.py）：本机协调证据，
+# 不进公开树；任务产物本身仍按计划里的 out 路径落盘
+.agent/subagent/
+.agent/subagent-dispatch*.json
+
+# 文字污染门回执（tools/context_guard.py）：只记哈希、计数与判定，不复制正文；
+# 本机证据不进公开树
+.agent/context-guard*.json
+.agent/text-guard*.json
+
 # cognition/ 训练层的交互语料（cognition/collect.py 的投影产物）：私有，不出克隆；
 # 公开知识（knowledge/）才入库。搬去模型仓库后由 cognition/.gitignore 接管
 cognition/corpus/

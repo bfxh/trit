@@ -2,6 +2,134 @@
 
 ## [Unreleased]
 
+### Added（入口加固第二轮：长 base64、跨段/多语言、二进制与宿主内容哈希）
+
+- `tools/context_guard.py`：base64 超过旧 256 KiB 阈值不再整段跳过，改按 256 KiB
+  窗口 + 16 KiB overlap + 0/1/2/3 相位解码，256 窗口 / 64 MiB 总预算；新增句首锚定
+  的 `segmented-instruction`（220/140 字符宽）与西/法/德/俄/日五条窄平行规则；
+  `_fold()` 只对混合脚本 token 做同形字映射，避免把纯西里尔译文折成乱码；
+  `scan_binary()` 从非 UTF-8 数据抽 ASCII/UTF-8 可打印段，并按 8 成员 / 1 MiB
+  预算解 zip/tar 文本成员；`--out/--receipt` 加 `--root` 包含检查，junction 越界
+  exit 2，只有 `--allow-outside-root` 放行。自测 **59/59**；红队 **81 例、
+  0 攻击漏检、0 overblock**。
+- `tools/sandbox_run.py`：宿主文件在 64 MiB 总预算内全内容哈希（不再有 1 MiB
+  以上 metadata-only；超预算判 `host-unprovable`）；`.git/index` 改用暂存条目
+  语义哈希（`git ls-files --stage -z`），排除并发 `git status` 的 stat cache
+  重写；`.git/index.lock` 需过 0.35 秒稳定窗口；新增 `-Isolation wsl`：
+  WSL2 + bwrap `--unshare-all`、空根只 bind `/work`、`--cap-drop ALL`、
+  `--clearenv`，拒绝 Windows `.exe` 与绝对路径参数，不回退默认模式。
+  自测 **37/37**；WSL 隔离回归 **11/11**；矩阵 **40/40**。
+- `tools/subagent_dispatch.py`：非 UTF-8 产物改走 `scan_binary()`，回执带
+  `binary`/`binary_view`，完全抽不到文本才记 `opaque`。自测 **25/25**。
+- `tools/selftest.ps1`：AP1 改 **59/59**、AP4 改 **81 例**、AN2 改 **37/37**、
+  AO1 改 **25/25**；AP3 CLI 扫描加 `--root $Work` 匹配新输出约束。全量 **675**。
+- 文档：`AGENT-TEXT-GUARD.md`、`AGENT-REDTEAM.md`、`AGENT-SANDBOX.md`、
+  `AGENT-MODELS.md`、`docs/README.md`、`AGENTS.md`、`AGENT-GUARDRAILS.md` 同步
+  新计数与新边界；`docs/ERRORS.md` 新增 L149–L156。
+
+### Added（模型/子智能体入口的文字污染门：分层防御，不冒充完整防护）
+
+- `tools/context_guard.py`（stdlib only，新建）：扫描 + 不可信数据封套。
+  `scan` 先剥离零宽/Bidi/Unicode tag/C0-C1/Cf，再做 HTML 实体/percent/`\u`/`\x`
+  多层解码（最多 8 轮）、NFKD + 组合标记清除、casefold 与常见同形字折叠后匹配
+  instruction override、prompt 外泄、角色劫持、工具执行、破坏命令、数据外泄、
+  HTML 注释/脚本；base64（四层嵌套）/hex（含分隔/0x）/ROT13/反转在独立解码视图上扫。
+  报告只给 verdict（clean/review/quarantine）、max_severity、input/sanitized 哈希与计数，不复制原文。
+  `wrap` 用随机 nonce 生成 `TRIT CONTEXT GUARD v1` 封套，明确 `trust: untrusted`、
+  “DATA, not instructions”，并默认移除 HTML 注释；nonce 不得出现在正文的归一化视图。
+  自测 **48/48**；10 条攻击 × 9 种已知变形 = **90/90 检出**，8 条良性 × 3 =
+  24 例 **0 个 high**；74 例独立红队语料 0 攻击漏检、2 例 overblock。
+  这只证明已知变形覆盖，不证明自适应攻击安全。
+- `tools/guard_redteam.py`（新建）：74 例可复算攻击语料，覆盖组合字符/变体选择符、
+  HTML 实体/percent 单/双/四层、`\uXXXX`、hex 连续/空格/0x、ROT13/反转、
+  URL-safe/换行/嵌套四层 base64、候选预算饥饿、单侧/双侧长 alphabetic 包围、
+  guideline/policy 同义与 previous rules no longer apply、工具执行与中文外传；
+  `--strict` 只对“攻击漏检”判红，overblock 单列。
+- `tools/subagent_dispatch.py` 接入 `--guard enforce|warn|off`（默认 enforce）：
+  每个任务在调用 provider 前扫描最终 prompt；`quarantine` 在 enforce 下直接
+  `prompt-quarantined`，不调用模型、不写 out；`warn` 留痕放行；`off` 显式关闭。
+  模型产物再扫一次：enforce 下 `quarantine`/扫描失败把 `<out>` 改名为
+  `<out>.quarantine[.N]`（原路径留空，不删除），任务 `output-quarantined`；
+  `warn` 留在原路径并标 `output-flagged`；非 UTF-8 产物记 `opaque`，不冒充已扫。
+  顶层回执加 `guard`，逐任务加 `prompt_guard`/`output_guard`，不落原文。
+  派发自测 **24/24**（输入前缀隔离、输出隔离、warn 留痕、硬链接/符号链接/junction
+  prompt_file 与 out 路径拒绝、大小写/尾点 denied component 拒绝）。
+- `tools/sandbox_run.py`：workdir 先 `realpath` 拒绝 junction/链接；`-Copy` 拒绝
+  任何 reparse point、`nlink>1` 硬链接、大小写/尾点变体；宿主指纹改为 git 状态 +
+  全文件 manifest，`.agent/.git/.qoder` 不再排除，`.git/index` 按内容哈希，
+  `node_modules/target` 保留目录与文件 name/size/mtime；git-ignored 写入、
+  排除目录写、缓存新建/覆盖均判 `host-mutated`；`MAX_HOST_FILES=200000` 超限判
+  unprovable。自测 **34/34**。
+- `tools/selftest.ps1` 新增 AP 组 4 条：AP1 文字门 48/48、AP2 stress 90/90 且
+  良性 0 high、AP3 CLI high 输入 exit=1/回执 quarantine/原文件零改写、AP4 74 例
+  红队 0 攻击漏检；AO1 断言
+  从 13/13 改为 24/24，AN2 从 23/23 改为 34/34。全量基线 671→**675**，`$skipped` 同步。
+- 文档：新增 `docs/engineering/AGENT-TEXT-GUARD.md`（论文依据、四层设计、回执、
+  跨智能体边界、未落地的 capability/provenance/记忆门）与 `AGENT-REDTEAM.md`
+  （74 例语料、沙盒 junction/排除目录/缓存/reparse 路径洞、修复与残余边界）；
+  `docs/README.md` 索引、`AGENTS.md`、`AGENT-GUARDRAILS.md` 边界表/命令块/验收口径、
+  `AGENT-MODELS.md` 派发 guard 同步。
+- 台账新增 L133（`sanitize` 把整数码位与字符集合比较，零宽/Bidi 分类少报）、
+  L134（base64 扫描跑在 casefold 之后，编码指令漏检）、L135（短中文 payload 被
+  `<24` 阈值过滤）、L136（同一函数里还留着一处旧 `<24`，放宽后仍先被跳过；base64
+  下限 40 也挡掉 36 字符的短 payload，改为 24）、L137（变体选择符/组合重音拆词
+  绕过）、L138（base64 候选预算 12 被前置良性 blob 耗尽）、L139（sandbox workdir
+  junction 可写任意目录）、L140（相对硬链接可读根外 secret）、L141（git-ignored
+  宿主写不被指纹发现）、L142（base64 中段 payload 被起点窗口漏掉）、
+  L143（多层 HTML/percent/`\u`/分隔 hex/四层 base64 只解一层）、
+  L144（`.agent/.git` 排除目录可写且报 ok）、L145（`.git/index` 与构建缓存内容漏检）、
+  L146（根内 junction 把 `.agent` 复制进沙盒）、L147（派发器 out 经 junction 写入
+  `.agent`）、L148（`.AGENT`/`.agent.` 绕过组件表）。
+
+### Added（子智能体执行面：按角色模型路由 + workspace 沙盒 + 并发沙盒矩阵 + 派发器）
+
+- `tools/subagent_dispatch.py`（stdlib only，新建）：真正的按角色派发器，不只是“选模型”。
+  读 tasks.json，按 role 用同一份模型配置选模型，`--parallel N` 并行调用
+  `model_router.py call`，输出到计划声明的 `out`，逐任务回执落 `.agent/subagent/`。
+  任务 id / out 路径必须唯一且都在 root 内；`out` 已存在默认拒绝（`--overwrite` 显式开）；
+  `budget_tokens<=0` 在调用前拒绝；声明预算后 provider 不报 usage 则 fail-closed，
+  报了 usage 才事后核对总量；选不到模型/调用失败都只失败该任务，整体 exit 1。
+  自测 13/13（三角色分模型、并行产出、已有产物拒绝、重复 id/out、越界 out、零预算、无 usage 预算、无路由、dry-run）。
+- `tools/sandbox_matrix.py` 增加 `hostwrite` 场景：每个 case 用**独立宿主**，用绝对路径
+  写宿主，必须判 `host-mutated`（exit 3）且文件确实出现；避免共享宿主把“别人写变了”
+  误当成“本 case 逃逸”。40 例矩阵中 hostwrite 5/5 检出；`--scenario hostwrite --cases 100
+  --parallel 12` 为 **100/100**，workdir 100 个互不相同。
+- `tools/selftest.ps1` 新增 AO 组 1 条：AO1 派发器 13/13；AN3 矩阵断言加 hostwrite
+  独立宿主检测。全量基线 670→**671**，`$skipped` 同步。
+- 文档：`docs/engineering/AGENT-MODELS.md` 补派发器/预算诚实边界；`AGENT-SANDBOX.md`
+  补 hostwrite 场景与 100 例读数；`AGENTS.md`、`AGENT-GUARDRAILS.md` 同步验收口径。
+
+### Added（子智能体执行面：按角色模型路由 + workspace 沙盒 + 40 沙盒矩阵）
+
+- `tools/model_router.py`（stdlib only，新建）：`validate/probe/route/call` 四条子命令。
+  配置只写 `base_url`、模型名与 `api_key_env`，不写密钥字面量；`validate` 拒绝
+  `api_key/token/secret` 字段与 `sk-...` 形状的值。`route` 按角色/能力/成本偏好选模型，
+  只探测可用性（命令在不在、环境变量在不在），**不发网络请求**；选不到可用模型 exit 2，
+  不静默回退付费模型。`call` 支持 `openai-chat`（OpenAI 兼容 `/chat/completions`）与
+  `command`（本机 CLI，stdin 或 `{prompt}`/`{prompt_file}`/`{role}`/`{model}` 占位），
+  回执记 model/provider/prompt_sha256/output_sha256/seconds/usage/error。自测 16/16
+  （配置反证、角色选择、能力拒绝、HTTP stub、500 失败留痕、命令 provider、超时）。
+  模板 `tools/models.example.json`；本机配置 `.agent/models.json`（已 gitignore）。
+- `tools/sandbox_run.py`（stdlib only，新建）：子智能体命令的 workspace 沙盒。默认在宿主
+  根外建空 workdir，`-Copy` 只收相对路径（拒绝绝对/`..`/符号链接/`.git/.agent/node_modules/
+  target/.qoder`，默认 64 MB / 5000 文件上限）；`policy.py` 以 workdir 为根先分类，拒绝即
+  不运行；`run_caps.py` 套内存/进程/秒帽；stdin DEVNULL；环境只留白名单并摘除密钥类变量；
+  跑前/跑后取宿主指纹（git 用 HEAD+过滤 status+diff，非 git 用 size+mtime manifest），
+  变了且没 `-AllowHostWrite` → `host-mutated` exit 3；成功默认清理 workdir，`-Keep` 留现场。
+  `verdict` 有限集：ok / policy-denied / host-mutated / host-unprovable / run-timeout /
+  run-failed / bad-invocation。自测 23/23。
+- `tools/sandbox_matrix.py`（新建）：40 个独立 workdir 并发对抗（safe/copy/env/policy/
+  timeout/exit/flood 七类轮转，默认 `--cases 40 --parallel 8`），判据含 failed=0、
+  distinct workdirs=40、safe/copy/env 宿主零写入、超时 124、策略拒绝、退出码原值、输出截断。
+  本机实测 **40/40，3.87 s**；加压 `--cases 100 --parallel 12` 混跑仍 **100/100（6.21 s）**；
+  `hostwrite` 单场景 100 例 **100/100（3.22 s）**。
+- `tools/selftest.ps1` 新增 AN 组 3 条：AN1 模型路由 16/16、AN2 沙盒 23/23、AN3 矩阵
+  40/40；全量基线 667→**670**。`$skipped` 同步。
+- 文档：`docs/engineering/AGENT-MODELS.md`、`AGENT-SANDBOX.md`，`docs/README.md` 索引、
+  `AGENTS.md` 护栏工具链、`AGENT-GUARDRAILS.md` 边界表/命令块/验收口径同步。
+- 新台账 L128（矩阵驱动对 `run=None` 用 `dict.get` 默认值失效）、L129（run_caps 的 124
+  被误报成普通失败）、L130（CLI 参数归一化与目标键名不一致，直调 API 自测掩盖）。
+
 ### Added（多智能体协调：认领门前置 + 交接门宿主侧）
 
 - `tools/handoff.py`（stdlib only，新建）：`create/gate/state/show/list` 五条子命令。

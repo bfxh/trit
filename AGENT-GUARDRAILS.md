@@ -593,6 +593,10 @@ policy/constraints 的活；这是**下一个模型读的东西**。条目内容
 | resume | 断粮/中断丢上下文：有账、有续跑块 | `budget` 是声明制，测不了模型侧真实 token；账本不替你记计划本身 |
 | run_caps | 已放行命令的爆炸半径（内存/进程数/超时） | **不是安全边界**：不隔离文件系统/网络，防不了蓄意逃脱；POSIX 无 procs 帽等价物（如实说明） |
 | agent-verify | 调用者跳步：单一入口、闸门串联、回执可审计；run 段实际消耗自动上账（台账 + `cost:` 行）；同 root 并发链 fail-closed；journal-begin 判红不放 run；多智能体协调门（`--claim-gate` / `--handoff`）opt-in 且 false/unknown 都拒绝 | 回执写完之后的事它管不着；不传 `--budget-token` 就没有预算闸；tokens 是声明不是测量；compact 砍掉的是自由文本证据（审计要全量回执）；并行门只覆盖三个只读分类器，写面永远串行；认领账本是协调文件不是 ACL（能写它的人也能改它）；handoff 的 state_hash 只覆盖 `-Root` 下 git 看得见的东西，树外写入不在范围 |
+| model-router | 子智能体按角色选模型：只探测可用性、不发网络请求；配置拒绝密钥字面量；选不到可用模型 exit 2 | 不是质量评测器（可用 ≠ 聪明）；`call` 会真实计费；`command` provider 继承环境，不适合不可信提示词；没有 keychain/secret manager |
+| subagent-dispatch | 批量任务按 role 分模型、真并行；id/out 唯一、out 在 root 内、已存在默认拒绝；硬链接/符号链接/junction、大小写/尾点 denied component 全部拒绝；`budget_tokens<=0` 调用前拒绝，无 usage 的预算 fail-closed；默认 `--guard enforce` 在调用 provider 前隔离 `context_guard` 判 `quarantine` 的 prompt，并把高风险管理产物移到 `.quarantine`（原路径留空） | 不验证产出质量；预算 prompt 侧不可测，usage 只能事后核对；文字扫描是启发式，不能保证模型不被语义改写绕过；不自动套 `sandbox_run`，也不替代 `agent_verify`；二进制产物只抽可打印段与有限 zip/tar 文本成员，不做 OCR、不递归嵌套归档 |
+| context-guard | 外部文字入口卫生：剥离隐形/控制字符、HTML 实体/percent/`\u`/`\x` 多层解码、NFKD+组合标记清除、同形字折叠后扫描，并解 URL-safe/换行/嵌套四层/任意位置 base64 与分隔 hex/ROT13；带 nonce 的不可信数据封套；`quarantine` 默认 exit 1，`wrap` 明确标记隔离 | **不是模型对齐/训练去毒**；静态规则会被翻译、开放式语义改写绕过，base64 仍受 64 MiB 总预算限制（adaptive attack 可绕多数防御）；`clean` 只表示规则集没发现；不自动获得工具动作权限控制 |
+| sandbox-run | 子智能体命令的 workspace 边界：cwd 在宿主外、只复制声明输入（拒绝 reparse point/硬链接/大小写尾点）、policy 先拒、run_caps 兜底、宿主指纹事后判 `host-mutated`（exit 3，含 `.agent/.git/.qoder`、git index 语义哈希、构建缓存 name/size/mtime；64 MiB 总预算内大文件也内容哈希）；`-Isolation wsl` 走 WSL+bwrap 真内核命名空间（user/pid/net/ipc/uts/cgroup 全切、空根只 bind `/work`、`--cap-drop ALL`） | **默认模式不是内核隔离**：绝对路径/网络 socket/子进程/ctypes 可逃出；要真隔离必须显式 `-Isolation wsl`，且它只接受 Linux 命令、拒绝 Windows `.exe`/绝对路径参数；宿主写完改回 size/mtime 在构建缓存和超 64 MiB 预算时仍可逃；`-AllowNetwork` 在 WSL 模式不可用；POSIX 无 procs 帽等价物 |
 | signal | （观测面）分诊与惩罚信号记账，给 harness 与未来模型训练用 | 规则分诊不是模型判断，查全率/误报率未知；**改不了模型行为**——它只改变 harness 下一步做什么；`--with-text` 语料树内拒收，但树外仍靠人自律 |
 | declutter | 注释债只紧不松（budget 棘轮）；clean 的每个原件先进回收站 | 字符串里的注释形态不保证识别；unterminated string 时宁可不动；audit/budget/export 本身不改正本 |
 | watch | （观测面）失败率按轮位分桶、整盘健康四报警、污染模式点名 | 行为证据推断，不是读心；**什么也不拦**——exit 1 只表示"有东西要看"；事件标签自由，认不出的标签进不了分母 |
@@ -646,6 +650,17 @@ python tools/handoff.py gate -Root . -Packet <包.json> --json  # True/Unknown/F
 python tools/agent_verify.py -Root . -Changed <改动文件> -Lang python \
   --handoff <包.json> -Receipt .agent/last-receipt.json  # 状态对不上就拒绝接活
 python tools/bench_orchestration.py                  # 护栏开销/回执体积/并行加速/崩溃恢复
+python tools/model_router.py route --role docs --json  # 按角色选模型（不发网络请求）
+python tools/model_router.py call --role docs --prompt-file <任务.md> \
+  --out <草稿.md> --receipt .agent/model-receipt-docs.json
+python tools/subagent_dispatch.py --plan <tasks.json> --parallel 3 \
+  --receipt .agent/subagent-dispatch.json               # 按 role 分模型；默认 --guard enforce
+python tools/context_guard.py scan --file <外部文本> --json \
+  --receipt .agent/context-guard.json                   # high → exit 1；不写原文件
+python tools/context_guard.py wrap --file <外部文本> --out <封套.md> \
+  --label <来源>                                        # 不可信数据封套 + nonce
+python tools/sandbox_run.py -Root . -Copy <相对输入> -- <命令>  # cwd 在宿主外；宿主变了 exit 3
+python tools/sandbox_matrix.py --cases 40 --parallel 8 --json   # 40 个独立沙盒并发对抗
 
 # 崩溃恢复（锁 + 快照都在时）
 python tools/journal.py status -Root .               # 看快照还在不在
@@ -702,14 +717,18 @@ terms: files=27 terms=17 anchors=35 drift=0
 terms: clean -- authorities still say what the registry cites
 ```
 
-**必须 667 条全绿 + terminology check 干净。**（编排链成熟轮 +37：AF 组——并发锁/崩溃恢复/畸形存储/超大计划/
+**必须 675 条全绿 + terminology check 干净。**（编排链成熟轮 +37：AF 组——并发锁/崩溃恢复/畸形存储/超大计划/
 compact 一致性/并行门一致性；此前 affected 的 rust 减集下沉到 cargo target 级时 +16：
 B 组新增 B5 与 B(续) B6–B19，组数不变；cognition/collect 落地时 +32：AE 组；防偷换概念 +26：AH 组；
-多智能体协调门 +8：AF23/AF24 认领/交接，AF 组从 38 到 46） 33 组：
-A–Z 26 组 + AA/AB/AC/AD/AE/AF/AH 七组（W 组 trash 19 条、X 组 git_safe、
+多智能体协调门 +8：AF23/AF24 认领/交接，AF 组从 38 到 46；子智能体执行面 +5：AN1/AN2/AN3、AO1、
+AP1–AP3） 36 组：
+A–Z 26 组 + AA/AB/AC/AD/AE/AF/AH/AN/AO/AP 十组（W 组 trash 19 条、X 组 git_safe、
 Y 组 resume 32 条、Z 组 run_caps；AA 组 signal 35 条、AB 组 declutter 21 条、AC 组 watch 44 条、
 AD 组主库删除审批 / 污染 WARN 族 / pitfalls 24 条、AE 组 cognition 32 条、
-AF 组编排链稳定性 46 条、AH 组术语契约 26 条，是新增的七个观测、审批、稳定性与概念契约面）。护栏的断言全部
+AF 组编排链稳定性 46 条、AH 组术语契约 26 条、AN 组 3 条（模型路由 16/16、沙盒 37/37、
+40 沙盒矩阵 40/40）、AO 组 1 条（派发器 25/25）、AP 组 4 条（文字门 59/59、
+90 例 stress 90/90、malicious CLI 隔离/良性不误杀、81 例红队 0 攻击漏检），是新增的十个观测、审批、稳定性、
+概念契约与入口污染面）。护栏的断言全部
 遵循"先看着它响，才算数"：每条拒绝路径都有对应的判红用例（W13/W14 journal restore 走
 回收站、W20/W21 no-raw-delete、Z1/Z4/Z5 run_caps 内核帽、I2b 编排顺序、M9 bash/PS 台账
 互通、AA12/AA14 signal 默认路径拒绝崩溃、AB1 audit 行计数精确数、AC4/AC5/AC6 疲劳 WARN
