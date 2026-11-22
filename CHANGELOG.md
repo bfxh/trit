@@ -27,6 +27,10 @@
   启动时物化一次）。
 - 新增 `trace sync`：把事件增量物化进独立 SQLite（`<wal>.sqlite`，`rusqlite`
   可选依赖），与轨迹 WAL 解耦，可与轨迹写入方并发。
+- 新增 `trace compact`：CAS 链压成单层，旧 head 追加到
+  `<cas_root>/trit-trace.compacted`（旧 manifest 仍可手工恢复，单层时幂等）。
+- 新增 `trace gc`：物化表按条数保留最近 N（默认 10000，`--trace-keep-last`），
+  永不删最大 `chain_seq` 行，避免 sync 回填。
 - 新增自研只读 pgwire 服务（`pgwire_sqlite.rs`）：存在 `<wal>.sqlite` 时
   `trace serve` 直接查 SQLite，服务期间可写入与 sync、客户端实时可见；
   仅支持简单查询、只读、无认证/TLS。

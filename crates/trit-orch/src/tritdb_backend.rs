@@ -9,15 +9,15 @@ pub mod pgwire_sqlite;
 #[cfg(feature = "tritdb-sql")]
 pub mod sql;
 #[cfg(feature = "tritdb-sql")]
+pub mod sqlite_gc;
+#[cfg(feature = "tritdb-sql")]
 pub mod sqlite_materialize;
-use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
-
-use serde::{Deserialize, Serialize};
-use tritdb_txn::{TxnError, TxnStore};
-
 use crate::digest;
 use crate::{Error, TraceEvent, TraceLog, TraceStep};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
+use tritdb_txn::{TxnError, TxnStore};
 
 const META_SCHEMA: u32 = 1;
 const RETRIES: usize = 8;

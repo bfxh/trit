@@ -1,15 +1,15 @@
 use serde::Deserialize;
 use serde_json::{Value, json};
-use trit_orch::{Error, TraceEvent, TraceEventStore, TraceLog, check_trace};
-
 #[cfg(feature = "tritdb")]
 use trit_orch::tritdb_backend::TritDbTraceStore;
+use trit_orch::{Error, TraceEvent, TraceEventStore, TraceLog, check_trace};
 
 #[cfg(feature = "tritdb")]
 #[path = "route.rs"]
 mod route;
 
 mod actions;
+mod actions_gc;
 mod actions_sync;
 
 #[allow(dead_code)]

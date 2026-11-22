@@ -57,6 +57,13 @@ printf '{"action":"sync","path":"trace.wal"}' \
 printf '{"action":"serve","path":"trace.wal","listen":"127.0.0.1:5433"}' \
   | trit-orch trace --trace-backend tritdb
 
+# CAS 链压缩（features = ["tritdb-cas"]）：N 层压成单层，旧 head 记到
+# <cas_root>/trit-trace.compacted
+printf '{"action":"compact","path":"trace.wal","cas_root":"cas"}'   | trit-orch trace --trace-backend tritdb
+
+# 物化表 GC（features = ["tritdb-sql"]）：保留最近 N 条，--trace-keep-last 覆盖
+printf '{"action":"gc","path":"trace.wal"}'   | trit-orch trace --trace-backend tritdb --trace-keep-last 10000
+
 # CAS 快照/恢复（features = ["tritdb-cas"]）
 printf '{"action":"snapshot","path":"trace.wal","cas_root":"cas"}' \
   | trit-orch trace --trace-backend tritdb
@@ -65,7 +72,7 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
 ```
 
 `path` 也可以由 `--trace-path <path>` 覆盖。`trace` 的 action：
-`append` / `load` / `check` / `sql` / `snapshot` / `restore` / `serve`。
+`append` / `load` / `check` / `sql` / `snapshot` / `restore` / `serve` / `sync` / `compact` / `gc`。
 
 ## SQL 物化与远程查询
 
@@ -74,6 +81,8 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
 - `trace sync`：把事件增量物化进**独立 SQLite**（`<wal>.sqlite`，`trit_trace` 表）。
   读轨迹 WAL 只短暂持锁，写物化表走 SQLite 自己的锁，所以它能和轨迹写入方并发；
   水位取 `max(chain_seq)`，重复执行不会重复插入。
+- `gc` 按 `chain_seq` 保留最近 N 条（默认 10000）：**永不删除最大 `chain_seq`
+  那行**——否则 `sync` 的水位会回退，把删掉的行重新插回来。
 - `tritdb-pgwire`：`trace serve` 若发现 `<wal>.sqlite`（`trace sync` 的产物），
   就用**自研只读 pgwire 服务**直接查 SQLite——完全不碰轨迹 WAL，因此服务期间
   仍可 `append` 轨迹、跑 `trace sync`，客户端立刻看到新行（实测 3 → 4）。该服务
@@ -93,6 +102,9 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
   一致，否则 `trace_anchor_mismatch`。恢复前用 `verify_chain` 验整条 manifest 链，
   再沿 `parent` 把各层合并成完整快照（子层覆盖父层，tombstone 剔除对应键），最后
   用单事务改 WAL。旧的全量 manifest 也能沿链合并（后层覆盖前层）。
+- `compact` 把 `head` 所在链压成单层（新 manifest，`parent=None`），并在
+  `<cas_root>/trit-trace.compacted` 追加 `<unix 秒> <旧 head>`；旧 manifest 仍在
+  CAS chunk 里，凭这条记录可手工恢复。已是单层时不动（幂等）。
 
 ## 两种后端的分工
 

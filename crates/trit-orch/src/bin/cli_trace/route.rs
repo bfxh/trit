@@ -1,12 +1,10 @@
-//! tritdb 后端动作路由：各 action 各自打开自己的存储；不能先建 `TritDbTraceStore`
-//! 再让 action 二次打开同一 WAL（txn 的 WAL 锁进程级排他，会报 `wal is locked`）。
-
+//! tritdb 后端动作路由：各 action 各自打开存储，避免同进程双持 WAL 锁。
+use super::TritDbTraceStore;
 use serde_json::Value;
 use trit_orch::Error;
 
-use super::TritDbTraceStore;
-
 use super::actions::{restore_action, serve_action, snapshot_action, sql_action};
+use super::actions_gc::{compact_action, gc_action};
 use super::actions_sync::sync_action;
 use super::{Backend, TraceInput, run_with};
 
@@ -21,6 +19,8 @@ pub(super) fn run(path: &str, request: &TraceInput) -> Result<Value, Error> {
         "restore" => restore_action(request),
         "serve" => serve_action(request),
         "sync" => sync_action(request),
+        "compact" => compact_action(request),
+        "gc" => gc_action(request),
         other => Err(Error::InputParse {
             message: format!("未知 trace action {other:?}"),
         }),
