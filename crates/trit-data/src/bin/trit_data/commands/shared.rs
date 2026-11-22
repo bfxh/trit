@@ -1,5 +1,5 @@
-//! 共享辅助。
-
+#[path = "input.rs"]
+pub mod input;
 use std::path::Path;
 
 pub(crate) fn write_lines(path: &Path, lines: &[String]) {

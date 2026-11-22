@@ -928,7 +928,7 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/decontaminate.rs",
-      "lines": 131
+      "lines": 130
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/dispatch.rs",
@@ -940,7 +940,7 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate.rs",
-      "lines": 134
+      "lines": 133
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate_format_opts.rs",
@@ -971,6 +971,10 @@
       "lines": 29
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/input.rs",
+      "lines": 32
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/json.rs",
       "lines": 21
     },
@@ -996,7 +1000,7 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/mix.rs",
-      "lines": 63
+      "lines": 62
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/mix_opts.rs",

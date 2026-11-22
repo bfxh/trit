@@ -18,8 +18,7 @@ pub fn run(argv: &[String]) {
     let out = opts.out;
     let cfg = opts.cfg;
     let path = opts.jsonl.unwrap_or_else(|| usage());
-    let text = std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| die(&format!("读不了 {}: {e}", path.display())));
+    let text = super::shared::input::read_text(&path).unwrap_or_else(|e| die(&e));
     let input_bytes = text.len() as u64;
     let input_sha = file_sha256(&path).unwrap_or_default();
 

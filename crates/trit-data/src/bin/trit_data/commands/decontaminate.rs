@@ -54,8 +54,7 @@ pub fn run(argv: &[String]) {
     }
     let jsonl = jsonl.unwrap_or_else(|| usage());
     let bench = bench.unwrap_or_else(|| usage());
-    let traces = std::fs::read_to_string(&jsonl)
-        .unwrap_or_else(|e| die(&format!("读不了 {}: {e}", jsonl.display())));
+    let traces = super::shared::input::read_text(&jsonl).unwrap_or_else(|e| die(&e));
     let bench_text = std::fs::read_to_string(&bench)
         .unwrap_or_else(|e| die(&format!("读不了 {}: {e}", bench.display())));
     let refs: Vec<String> = bench_text

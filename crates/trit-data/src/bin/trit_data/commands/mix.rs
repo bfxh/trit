@@ -16,8 +16,7 @@ pub fn run(argv: &[String]) {
     let opts = mix_opts::parse(argv);
     let jsonl = opts.jsonl.unwrap_or_else(|| usage());
     let mut skipped = 0usize;
-    let text = std::fs::read_to_string(&jsonl)
-        .unwrap_or_else(|e| die(&format!("读不了 {}: {e}", jsonl.display())));
+    let text = super::shared::input::read_text(&jsonl).unwrap_or_else(|e| die(&e));
     let mut counts: BTreeMap<String, usize> = BTreeMap::new();
     for line in text.lines().filter(|l| !l.trim().is_empty()) {
         let j = Json::parse(line).unwrap_or_else(|e| die(&format!("{}: {e}", jsonl.display())));
