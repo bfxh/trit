@@ -1644,11 +1644,15 @@
     },
     {
       "file": "crates/trit-learn/src/lib.rs",
-      "lines": 26
+      "lines": 25
     },
     {
       "file": "crates/trit-learn/src/loss.rs",
       "lines": 228
+    },
+    {
+      "file": "crates/trit-learn/src/manifest.rs",
+      "lines": 152
     },
     {
       "file": "crates/trit-learn/src/metrics.rs",
@@ -3156,7 +3160,7 @@
     },
     {
       "file": "crates/trit-parts/src/partsrun.rs",
-      "lines": 404
+      "lines": 317
     },
     {
       "file": "crates/trit-parts/src/planes.rs",
