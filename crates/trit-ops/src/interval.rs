@@ -33,7 +33,7 @@
 //!
 //! # 不变量
 //!
-//! 1. **非空**：活区间 `lo <= hi`（构造收口保证；运算经 [`Interval::finish`]
+//! 1. **非空**：活区间 `lo <= hi`（构造收口保证；运算经 `Interval::finish`
 //!    收口）。
 //! 2. **有限性**：活区间两端有限（NaN/Inf 在构造处 Empty 化；运算端点溢出
 //!    Empty 化——包括加宽自身把端点推出 `±f64::MAX` 的情形）。
@@ -48,7 +48,7 @@
 //! Rust 的 `f64` 没有定向舍入（IEEE 754 rounding-direction mode 不经 unsafe
 //! 或平台内在函数不可达），四则按 round-to-nearest 计算，真值可能落在计算
 //! 端点的任一侧 ±0.5 ulp 内。因此**每次运算后**把 lo 向 −∞、hi 向 +∞ 各
-//! 加宽 1 ulp（[`widen_down`] / [`widen_up`]，位操作实现），使结果区间
+//! 加宽 1 ulp（`widen_down` / `widen_up`，位操作实现），使结果区间
 //! 无条件覆盖真值；开销由基准如实报数（`benches/interval_bench.rs` 的
 //! 加宽/不加宽对照）。
 
