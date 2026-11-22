@@ -1,6 +1,7 @@
 //! 报告工具：误差汇总、输入分布统计、随机输入生成。
 
 use serde_json::{Value, json};
+
 use trit_wspace::activations;
 
 pub(crate) struct Acc {
@@ -60,7 +61,6 @@ pub(crate) fn compare(output: &[f32], reference: &[f32], mask: &[u8], hidden: us
     acc.add(output, reference, mask, hidden);
     acc.finish()
 }
-
 /// 逐层 f32 输出与导出的 `layerN.f32` 对拍；缺文件就停。
 pub(crate) fn layer_refs(
     data_dir: &str,

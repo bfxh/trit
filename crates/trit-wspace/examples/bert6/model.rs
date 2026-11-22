@@ -1,108 +1,10 @@
 //! MiniLM BERT 6 层的 f32 / 三值前向（只三值化线性权重，LN/GELU/softmax 保持 f32）。
 
-use trit_wspace::safetensors::{self, Weights};
+use trit_wspace::safetensors;
 
-use crate::activation::{ActivationMode, NormKind, quantize_activation};
+use crate::activation::{ActivationMode, LayerScales, NormKind, quantize_activation};
 
-pub(crate) struct F32Linear {
-    pub(crate) rows: usize,
-    pub(crate) cols: usize,
-    pub(crate) weight: Vec<f32>,
-    pub(crate) bias: Vec<f32>,
-}
-
-impl F32Linear {
-    fn forward(&self, input: &[f32], out: &mut [f32]) {
-        for (row, slot) in out.iter_mut().enumerate().take(self.rows) {
-            let mut acc = f64::from(self.bias[row]);
-            let line = &self.weight[row * self.cols..(row + 1) * self.cols];
-            for (&weight, &value) in line.iter().zip(input) {
-                acc += f64::from(weight) * f64::from(value);
-            }
-            *slot = acc as f32;
-        }
-    }
-
-    fn forward_seq(&self, input: &[f32], seq: usize, out: &mut [f32]) {
-        for token in 0..seq {
-            self.forward(
-                &input[token * self.cols..(token + 1) * self.cols],
-                &mut out[token * self.rows..(token + 1) * self.rows],
-            );
-        }
-    }
-}
-
-pub(crate) struct QuantLinear {
-    rows: usize,
-    cols: usize,
-    trits: Vec<i8>,
-    scales: Vec<f32>,
-    bias: Vec<f32>,
-}
-
-impl QuantLinear {
-    fn from(linear: &F32Linear) -> Self {
-        let weights = Weights {
-            rows: linear.rows,
-            cols: linear.cols,
-            values: linear.weight.clone(),
-        };
-        let layer = weights
-            .to_layer_with_bias(Some(&linear.bias))
-            .expect("三值化失败");
-        let mut trits = Vec::with_capacity(linear.rows * linear.cols);
-        let mut scales = Vec::with_capacity(linear.rows);
-        for row in 0..linear.rows {
-            scales.push(layer.scale(row).expect("scale"));
-            for col in 0..linear.cols {
-                trits.push(layer.trit(row, col).expect("trit").to_i8());
-            }
-        }
-        Self {
-            rows: linear.rows,
-            cols: linear.cols,
-            trits,
-            scales,
-            bias: linear.bias.clone(),
-        }
-    }
-
-    fn forward(&self, input: &[f32], out: &mut [f32]) {
-        for (row, slot) in out.iter_mut().enumerate().take(self.rows) {
-            let mut acc = 0.0f64;
-            let line = &self.trits[row * self.cols..(row + 1) * self.cols];
-            for (&trit, &value) in line.iter().zip(input) {
-                acc += f64::from(trit) * f64::from(value);
-            }
-            *slot = (f64::from(self.scales[row]) * acc + f64::from(self.bias[row])) as f32;
-        }
-    }
-
-    fn forward_seq(&self, input: &[f32], seq: usize, out: &mut [f32]) {
-        for token in 0..seq {
-            self.forward(
-                &input[token * self.cols..(token + 1) * self.cols],
-                &mut out[token * self.rows..(token + 1) * self.rows],
-            );
-        }
-    }
-}
-
-enum Linear {
-    F32(F32Linear),
-    Quant(QuantLinear),
-}
-
-impl Linear {
-    fn forward_seq(&self, input: &[f32], seq: usize, out: &mut [f32]) {
-        match self {
-            Self::F32(linear) => linear.forward_seq(input, seq, out),
-            Self::Quant(linear) => linear.forward_seq(input, seq, out),
-        }
-    }
-}
-
+use crate::linear::{F32Linear, Linear, QuantLinear};
 pub(crate) struct BertLayer {
     query: Linear,
     key: Linear,
@@ -130,6 +32,7 @@ pub(crate) struct Bert {
     heads: usize,
     head_dim: usize,
     layers: Vec<BertLayer>,
+    scales: Option<Vec<LayerScales>>,
 }
 
 impl Bert {
@@ -190,7 +93,12 @@ impl Bert {
             heads,
             head_dim: hidden / heads,
             layers: built,
+            scales: None,
         }
+    }
+
+    pub(crate) fn set_scales(&mut self, scales: Vec<LayerScales>) {
+        self.scales = Some(scales);
     }
 
     /// 前向；`capture` 为真时返回每层 FFN 输出段（GELU 后）的输入快照。
@@ -214,6 +122,7 @@ impl Bert {
             let mut current = input[base..base + seq * self.hidden].to_vec();
             let item_mask = &mask[item * seq..(item + 1) * seq];
             for (index, layer) in self.layers.iter().enumerate() {
+                let layer_scales = self.scales.as_ref().map(|all| &all[index]);
                 let captured = layer.forward(
                     &mut current,
                     item_mask,
@@ -221,6 +130,7 @@ impl Bert {
                     self.hidden,
                     self.heads,
                     self.head_dim,
+                    layer_scales,
                 );
                 if capture {
                     snapshots[index].extend_from_slice(&captured);
@@ -234,6 +144,7 @@ impl Bert {
 }
 
 impl BertLayer {
+    #[allow(clippy::too_many_arguments)]
     fn forward(
         &self,
         x: &mut [f32],
@@ -242,6 +153,7 @@ impl BertLayer {
         hidden: usize,
         heads: usize,
         head_dim: usize,
+        scales: Option<&LayerScales>,
     ) -> Vec<f32> {
         let mut q = vec![0.0f32; seq * hidden];
         let mut k = vec![0.0f32; seq * hidden];
@@ -284,7 +196,7 @@ impl BertLayer {
             x[index] += projected[index];
         }
         self.norm1
-            .forward_seq(x, seq, self.activation.ternary_activation());
+            .forward_seq(x, seq, self.activation, scales.map(|s| s.norm1.as_slice()));
 
         let intermediate = hidden * 4;
         let mut ffn = vec![0.0f32; seq * intermediate];
@@ -293,7 +205,7 @@ impl BertLayer {
             *value = gelu(*value);
         }
         if self.activation.ternary_activation() {
-            quantize_activation(&mut ffn);
+            quantize_activation(&mut ffn, self.activation, scales.map(|s| s.ffn.as_slice()));
         }
         let snapshot = ffn.clone();
         let mut out = vec![0.0f32; seq * hidden];
@@ -302,7 +214,7 @@ impl BertLayer {
             x[index] += out[index];
         }
         self.norm2
-            .forward_seq(x, seq, self.activation.ternary_activation());
+            .forward_seq(x, seq, self.activation, scales.map(|s| s.norm2.as_slice()));
         snapshot
     }
 }

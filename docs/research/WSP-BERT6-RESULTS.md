@@ -110,6 +110,32 @@ output 段（FFN 的 GELU 后输入）统计：
 3. 任务头方向与 hidden 读数一致：越往激活侧三值化，相关性越低；`ternary-all`
    的 0.247 已经是“弱相关”而不是可用的句向量。
 
+## 3.7 激活 scale：per-token vs per-channel
+
+在 `ternary-all`（LN/GELU 输出纯 sign）之上加两种幅度 scale：
+
+- `ternary-all-scale`：每个 token 的 `mean(|x|)`（per-token）；
+- `ternary-all-channel`：用 f32 forward 在校准集上统计的 per-channel absmean
+  （`scales.json`，由 `export_bert6.py` 导出）。
+
+| 模式 | `rel_l2` | `cosine` | STS Pearson | STS Spearman |
+|---|---:|---:|---:|---:|
+| 仅线性权重（f32 激活） | 1.1660 | 0.4695 | **0.7330** | **0.7437** |
+| ternary-ln | 1.3999 | 0.3583 | 0.5461 | 0.5310 |
+| ternary-all（纯 sign） | 2.5051 | 0.0275 | 0.2472 | 0.2494 |
+| ternary-all-scale（per-token） | 1.5598 | 0.1837 | 0.3576 | 0.3846 |
+| ternary-all-channel（per-channel，f32 校准） | 1.2373 | 0.0100 | **0.4322** | 0.3889 |
+
+读法：
+
+1. per-token scale 把 STS Pearson 从 0.247 拉到 **0.358**（+0.11），cosine 0.03→0.18；
+2. per-channel scale 再拉到 **0.432**，**超过 0.4 目标**（Pearson），但 Spearman 0.389 仍差一点；
+   cosine 只有 0.01——固定 per-channel 幅度能把排序救回一些，但 hidden 方向仍严重偏离；
+3. 学习式 scale 的闭式解 `s=(q·y)/(q·q)`：当 `q=sign(y)` 时它**就是** per-channel absmean，
+   所以 `ternary-all-channel` 的 0.432 已经是最小二乘闭式解在这个量化口径下的读数；
+   用三值模型的 q 与 f32 目标 y 求 scale 会更小，需要额外对齐，未做；
+4. 距仅线性权重的 0.733 仍有 0.30；要逼近它，需要残差侧车或混合精度，而不是继续调激活 scale。
+
 ## 4. 未证栏
 
 - 只有 8 句、`8×64` token；不是大规模语料。

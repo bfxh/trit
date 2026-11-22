@@ -11,8 +11,10 @@
 //! ```
 
 mod activation;
+mod linear;
 mod model;
 mod report;
+mod scales;
 mod stats;
 mod sts;
 
@@ -22,6 +24,7 @@ use trit_wspace::activations;
 use activation::ActivationMode;
 use model::{Bert, BertConfig};
 use report::{compare, layer_refs};
+use scales::load_scales;
 use stats::{input_stats, random_like};
 use sts::{load_pairs, metrics, sentence_vectors};
 
@@ -57,12 +60,9 @@ fn main() {
     assert_eq!(ref_cols, hidden);
 
     let pairs = load_pairs(&data_dir);
+    let scales = load_scales(&data_dir);
     let (heads, eps) = (12usize, 1e-12f32);
-    let requested = if activation_arg == "all" {
-        None
-    } else {
-        Some(ActivationMode::parse(&activation_arg))
-    };
+    let requested = (activation_arg != "all").then(|| ActivationMode::parse(&activation_arg));
     let f32_bert = Bert::load(
         &file,
         BertConfig {
@@ -89,11 +89,13 @@ fn main() {
         ActivationMode::F32,
         ActivationMode::TernaryLn,
         ActivationMode::TernaryAll,
+        ActivationMode::TernaryAllScale,
+        ActivationMode::TernaryAllChannel,
     ] {
         if requested.is_some_and(|wanted| wanted != mode) {
             continue;
         }
-        let quant = Bert::load(
+        let mut quant = Bert::load(
             &file,
             BertConfig {
                 layers: 6,
@@ -105,6 +107,9 @@ fn main() {
                 activation: mode,
             },
         );
+        if mode == ActivationMode::TernaryAllChannel {
+            quant.set_scales(scales.clone());
+        }
         let (real_out, real_stages, _) = quant.forward(&input, &mask, batch, seq, true);
         let (random_out, random_stages, _) = quant.forward(&random_input, &mask, batch, seq, true);
         modes.insert(
@@ -124,16 +129,10 @@ fn main() {
     let layer_refs = layer_refs(&data_dir, &f32_layers, &mask, hidden);
     let report = json!({
         "source": {
-            "file": file,
-            "data_dir": data_dir,
-            "batch": batch,
             "seq": seq,
             "hidden": hidden,
             "heads": heads,
-            "layers": 6,
             "activation_mode": activation_arg,
-            "linear_weights": "ternary (absmean per-row scale, f32 bias)",
-            "activation_options": "f32 / ternary-ln / ternary-all",
             "pairs": pairs.len(),
         },
         "f32_vs_reference": compare(&f32_out, &reference, &mask, hidden),

@@ -3504,19 +3504,31 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/activation.rs",
-      "lines": 168
+      "lines": 106
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear.rs",
+      "lines": 102
     },
     {
       "file": "crates/trit-wspace/examples/bert6/main.rs",
-      "lines": 159
+      "lines": 158
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model.rs",
-      "lines": 339
+      "lines": 251
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/norm.rs",
+      "lines": 124
     },
     {
       "file": "crates/trit-wspace/examples/bert6/report.rs",
       "lines": 83
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/scales.rs",
+      "lines": 43
     },
     {
       "file": "crates/trit-wspace/examples/bert6/stats.rs",
