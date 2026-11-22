@@ -14,6 +14,7 @@ pub struct Unit {
     pub generated: bool,
     pub license: Option<String>,
     pub imports: Vec<String>,
+    pub imports_known: bool,
     pub is_test: bool,
 }
 
@@ -69,7 +70,7 @@ fn walk(
             let lang = detect_lang(&p, &head);
             let q = check(&head);
             let generated = q.auto_generated || is_generated_path(&p);
-            let imports = parse_imports(&head, &lang);
+            let (imports, imports_known) = parse_imports(&head, &lang);
             let is_test = is_test_path(&p);
             out.push(Unit {
                 repo: repo.to_string(),
@@ -79,6 +80,7 @@ fn walk(
                 generated,
                 license: license.map(|s| s.to_string()),
                 imports,
+                imports_known,
                 is_test,
             });
         }
@@ -176,23 +178,19 @@ fn detect_lang(p: &Path, head: &str) -> String {
     lang.to_string()
 }
 
+const GENERATED_MARKS: &[&str] = &["/generated/", "_generated.", ".gen.", ".pb.go", "_pb2.py"];
+const TEST_MARKS: &[&str] = &["/test/", "/tests/", "_test.", ".test.", ".spec.", "/spec/"];
+
+fn norm_path(p: &Path) -> String { p.to_string_lossy().to_lowercase().replace('\\', "/") }
+
 fn is_generated_path(p: &Path) -> bool {
-    let s = p.to_string_lossy().to_lowercase().replace('\\', "/");
-    s.contains("/generated/")
-        || s.contains("_generated.")
-        || s.contains(".gen.")
-        || s.ends_with(".pb.go")
-        || s.ends_with("_pb2.py")
+    let s = norm_path(p);
+    GENERATED_MARKS.iter().any(|m| s.contains(m))
 }
 
 fn is_test_path(p: &Path) -> bool {
-    let s = p.to_string_lossy().to_lowercase().replace('\\', "/");
-    s.contains("/test/")
-        || s.contains("/tests/")
-        || s.contains("_test.")
-        || s.contains(".test.")
-        || s.contains(".spec.")
-        || s.contains("/spec/")
+    let s = norm_path(p);
+    TEST_MARKS.iter().any(|m| s.contains(m))
 }
 
 fn detect_license(root: &Path) -> Option<String> {
@@ -212,7 +210,8 @@ fn detect_license(root: &Path) -> Option<String> {
     None
 }
 
-fn parse_imports(head: &str, lang: &str) -> Vec<String> {
+fn parse_imports(head: &str, lang: &str) -> (Vec<String>, bool) {
+    let known = matches!(lang, "rust" | "python" | "javascript" | "typescript" | "go" | "java" | "kotlin" | "scala" | "c" | "cpp" | "cuda" | "opencl" | "csharp");
     let mut out = Vec::new();
     for line in head.lines() {
         let t = line.trim();
@@ -265,7 +264,7 @@ fn parse_imports(head: &str, lang: &str) -> Vec<String> {
             out.push(i);
         }
     }
-    out
+    (out, known)
 }
 
 #[cfg(test)]

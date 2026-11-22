@@ -4,9 +4,15 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use trit_data::repo::scan;
-use trit_learn::json::{Json, write_json};
+use trit_learn::json::write_json;
 
 use super::{die, usage, write_lines};
+
+#[path = "repo_units.rs"]
+mod repo_units;
+
+#[path = "repo_report.rs"]
+mod repo_report;
 
 pub fn run(argv: &[String]) {
     let mut root: Option<PathBuf> = None;
@@ -30,7 +36,7 @@ pub fn run(argv: &[String]) {
     let mut langs: BTreeMap<String, usize> = BTreeMap::new();
     let mut licenses: BTreeMap<String, usize> = BTreeMap::new();
     let (mut generated, mut tests, mut with_imports) = (0usize, 0usize, 0usize);
-    let mut lines = Vec::new();
+    let (mut license_missing, mut imports_unknown) = (0usize, 0usize);
     for u in &units {
         *langs.entry(u.lang.clone()).or_insert(0) += 1;
         *licenses
@@ -45,25 +51,14 @@ pub fn run(argv: &[String]) {
         if !u.imports.is_empty() {
             with_imports += 1;
         }
-        lines.push(
-            Json::obj()
-                .put("repo", u.repo.clone())
-                .put("path", u.path.clone())
-                .put("lang", u.lang.clone())
-                .put("bytes", u.bytes)
-                .put("generated", u.generated)
-                .put(
-                    "license",
-                    u.license.clone().unwrap_or_else(|| "missing".into()),
-                )
-                .put(
-                    "imports",
-                    Json::arr(u.imports.iter().map(Json::str).collect()),
-                )
-                .put("is_test", u.is_test)
-                .dump(),
-        );
+        if u.license.is_none() {
+            license_missing += 1;
+        }
+        if !u.imports_known {
+            imports_unknown += 1;
+        }
     }
+    let lines = repo_units::lines(&units);
     println!(
         "仓库 {}：文件 {}（生成 {}，测试 {}，有依赖 {}）",
         root.display(),
@@ -76,24 +71,17 @@ pub fn run(argv: &[String]) {
         std::fs::create_dir_all(&dir)
             .unwrap_or_else(|e| die(&format!("建不了 {}: {e}", dir.display())));
         write_lines(&dir.join("repo.units.jsonl"), &lines);
-        let mut lang_json = Json::obj();
-        for (k, v) in &langs {
-            lang_json = lang_json.put(k.clone(), *v as u64);
-        }
-        let mut lic_json = Json::obj();
-        for (k, v) in &licenses {
-            lic_json = lic_json.put(k.clone(), *v as u64);
-        }
-        let report = Json::obj()
-            .put("schema", 1u32)
-            .put("kind", "trit-data-repo")
-            .put("repo", root.display().to_string())
-            .put("files", units.len() as u64)
-            .put("languages", lang_json)
-            .put("licenses", lic_json)
-            .put("generated", generated as u64)
-            .put("tests", tests as u64)
-            .put("with_imports", with_imports as u64);
+        let report = repo_report::build(&repo_report::Stats {
+            repo: &root.display().to_string(),
+            files: units.len(),
+            languages: &langs,
+            licenses: &licenses,
+            generated,
+            tests,
+            with_imports,
+            license_missing,
+            imports_unknown,
+        });
         write_json(&dir.join("repo.report.json"), &report).unwrap_or_else(|e| die(&e));
     }
 }

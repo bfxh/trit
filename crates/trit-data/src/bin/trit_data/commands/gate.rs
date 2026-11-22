@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-
 use trit_core::fingerprint::file_sha256;
 use trit_data::gate::{Decision, evaluate};
 use trit_data::manifest::dataset_manifest;
@@ -118,6 +117,7 @@ pub fn run(argv: &[String]) {
                     .put("defer", decisions[2] as u64),
             )
             .put("reasons", reasons_json(&reasons))
+            .put("rates", super::report_extra::rates_json(&decisions, records))
             .put("dataset_card", card.json())
             .put(
                 "manifest",

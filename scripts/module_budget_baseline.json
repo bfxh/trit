@@ -904,11 +904,19 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/card.rs",
-      "lines": 46
+      "lines": 36
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/card_add.rs",
+      "lines": 25
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/card_bits.rs",
       "lines": 15
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/card_coverage.rs",
+      "lines": 54
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/card_json.rs",
@@ -1032,7 +1040,19 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/repo.rs",
-      "lines": 99
+      "lines": 87
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/repo_report.rs",
+      "lines": 41
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/repo_units.rs",
+      "lines": 29
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/report_extra.rs",
+      "lines": 11
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/shared.rs",
@@ -1064,7 +1084,11 @@
     },
     {
       "file": "crates/trit-data/src/compare.rs",
-      "lines": 91
+      "lines": 71
+    },
+    {
+      "file": "crates/trit-data/src/compare_tests.rs",
+      "lines": 35
     },
     {
       "file": "crates/trit-data/src/content.rs",
@@ -1168,7 +1192,7 @@
     },
     {
       "file": "crates/trit-data/src/repo.rs",
-      "lines": 273
+      "lines": 272
     },
     {
       "file": "crates/trit-data/src/repo_tests.rs",

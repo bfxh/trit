@@ -22,3 +22,5 @@ mod project;
 mod shared;
 #[path = "repo.rs"]
 mod repo;
+#[path = "report_extra.rs"]
+mod report_extra;

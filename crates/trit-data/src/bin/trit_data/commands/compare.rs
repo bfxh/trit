@@ -33,8 +33,8 @@ pub fn run(argv: &[String]) {
     }
     let k = cohen_kappa(&la, &lb).unwrap_or_else(|e| die(&e));
     println!(
-        "n {}：observed {:.4}，expected {:.4}，Cohen κ {:.4}",
-        k.n, k.observed, k.expected, k.kappa
+        "n {}：observed {:.4}，expected {:.4}，Cohen κ {:.4}（95% CI {:.3}..{:.3}）",
+        k.n, k.observed, k.expected, k.kappa, k.ci_low, k.ci_high
     );
     for ((x, y), n) in &k.counts {
         println!("  {x} / {y}: {n}");

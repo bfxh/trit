@@ -1,7 +1,6 @@
 //! Card 的 JSON 输出。
 
-use super::Card;
-use super::counts::map_json;
+use super::Card; use super::counts::map_json;
 use trit_learn::json::Json;
 
 pub fn build(card: &Card) -> Json {
@@ -15,4 +14,5 @@ pub fn build(card: &Card) -> Json {
         .put("styles", map_json(&card.content_stats.styles))
         .put("semantics", map_json(&card.content_stats.semantics))
         .put("quality", card.content_stats.quality.json())
+        .put("coverage", card.coverage.json())
 }
