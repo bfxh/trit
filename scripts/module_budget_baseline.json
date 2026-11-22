@@ -143,6 +143,10 @@
       "lines": 24
     },
     {
+      "file": "crates/trit-attn/src/limits.rs",
+      "lines": 30
+    },
+    {
       "file": "crates/trit-attn/src/main.rs",
       "lines": 97
     },
@@ -855,6 +859,10 @@
       "lines": 80
     },
     {
+      "file": "crates/trit-count/src/big.rs",
+      "lines": 71
+    },
+    {
       "file": "crates/trit-count/src/cnf.rs",
       "lines": 256
     },
@@ -863,12 +871,16 @@
       "lines": 652
     },
     {
+      "file": "crates/trit-count/src/dpll/saturate.rs",
+      "lines": 45
+    },
+    {
       "file": "crates/trit-count/src/lib.rs",
       "lines": 186
     },
     {
       "file": "crates/trit-count/src/main.rs",
-      "lines": 494
+      "lines": 435
     },
     {
       "file": "crates/trit-count/src/oracle.rs",
@@ -891,12 +903,24 @@
       "lines": 167
     },
     {
+      "file": "crates/trit-count/tests/saturation.rs",
+      "lines": 27
+    },
+    {
+      "file": "crates/trit-dot/src/bipolar.rs",
+      "lines": 71
+    },
+    {
+      "file": "crates/trit-dot/src/cli.rs",
+      "lines": 30
+    },
+    {
       "file": "crates/trit-dot/src/lib.rs",
       "lines": 644
     },
     {
       "file": "crates/trit-dot/src/main.rs",
-      "lines": 210
+      "lines": 205
     },
     {
       "file": "crates/trit-dot/tests/cli.rs",
@@ -1747,8 +1771,20 @@
       "lines": 68
     },
     {
+      "file": "crates/trit-mmap/src/error.rs",
+      "lines": 29
+    },
+    {
       "file": "crates/trit-mmap/src/lib.rs",
-      "lines": 270
+      "lines": 264
+    },
+    {
+      "file": "crates/trit-mmap/src/recheck.rs",
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-mmap/tests/truncate.rs",
+      "lines": 79
     },
     {
       "file": "crates/trit-mv/src/lib.rs",
@@ -1912,7 +1948,7 @@
     },
     {
       "file": "crates/trit-ops/src/bin/bench.rs",
-      "lines": 381
+      "lines": 373
     },
     {
       "file": "crates/trit-ops/src/gemv.rs",
@@ -1943,12 +1979,20 @@
       "lines": 62
     },
     {
+      "file": "crates/trit-ops/src/shape.rs",
+      "lines": 87
+    },
+    {
       "file": "crates/trit-ops/src/simd.rs",
       "lines": 506
     },
     {
       "file": "crates/trit-ops/src/trit.rs",
       "lines": 202
+    },
+    {
+      "file": "crates/trit-ops/tests/shape_guards.rs",
+      "lines": 76
     },
     {
       "file": "crates/trit-orch/examples/dispatch_metrics.rs",
@@ -3121,6 +3165,10 @@
     {
       "file": "crates/trit-redteam/src/fuzz.rs",
       "lines": 437
+    },
+    {
+      "file": "crates/trit-redteam/src/fuzz_cli.rs",
+      "lines": 16
     },
     {
       "file": "crates/trit-redteam/src/main.rs",

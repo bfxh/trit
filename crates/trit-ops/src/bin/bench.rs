@@ -22,19 +22,7 @@ use trit_ops::bench::{
     tryte_split_lookup,
 };
 use trit_ops::pool;
-
-fn arg_usize(args: &[String], name: &str) -> Option<usize> {
-    args.iter()
-        .position(|a| a == name)
-        .and_then(|i| args.get(i + 1))
-        .and_then(|s| s.parse::<usize>().ok())
-}
-
-/// 取 `--pair A B` 的两个值。
-fn arg_pair<'a>(args: &'a [String], name: &str) -> Option<(&'a str, &'a str)> {
-    let i = args.iter().position(|a| a == name)?;
-    Some((args.get(i + 1)?.as_str(), args.get(i + 2)?.as_str()))
-}
+use trit_ops::shape::{arg_pair, arg_usize};
 
 /// 立即刷出，保证长跑时能看到进展。
 fn emit(line: &str) {
@@ -148,6 +136,10 @@ fn print_pair(med: &[Measurement], history: &[Vec<Measurement>], a: &str, b: &st
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Err(message) = trit_ops::shape::check_bench_args(&args) {
+        eprintln!("{message}");
+        std::process::exit(2);
+    }
     let threads = arg_usize(&args, "--threads").unwrap_or(8);
     pool::set_threads(threads);
     emit(&format!(

@@ -15,16 +15,15 @@ mod blob;
 mod chain;
 mod crc;
 mod fuzz;
+mod fuzz_cli;
 mod rail;
 mod secrets;
 mod sidechannel;
 
-use std::fs;
-use std::path::PathBuf;
-
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-
+use std::fs;
+use std::path::PathBuf;
 #[derive(Parser)]
 #[command(name = "trit-redteam", about = "三进制产物红队检查器（只打自家格式）")]
 struct Cli {
@@ -221,6 +220,7 @@ fn run_rail(path: &PathBuf) -> Result<(serde_json::Value, bool)> {
 }
 
 fn run_fuzz(path: &PathBuf, iterations: usize, seed: u64) -> Result<(serde_json::Value, bool)> {
+    let iterations = fuzz_cli::checked(iterations)?;
     let bytes = fs::read(path).with_context(|| format!("读 {} 失败", path.display()))?;
     fuzz::run(&bytes, iterations, seed)
 }
