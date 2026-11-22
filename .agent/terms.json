@@ -51,7 +51,7 @@
       "mix": "co",
       "anchors": [
         "tools/agent_verify.py:1466:\"changed\" if je[\"code\"] == 1 else \"failed\"))",
-        "AGENT-GUARDRAILS.md:775:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）"
+        "AGENT-GUARDRAILS.md:788:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）"
       ],
       "status": "active"
     },
@@ -149,7 +149,7 @@
         "(?:\\brun[-_ ]?caps\\b|\\bcaps?\\b)[^\\n]{0,50}(sandbox|沙箱|security boundary|安全边界)"
       ],
       "anchors": [
-        "tools/run_caps.py:28:Honest strength statement -- this is a resource cap, NOT a security boundary:",
+        "tools/run_caps.py:32:Honest strength statement -- this is a resource cap, NOT a security boundary:",
         "AGENT-GUARDRAILS.md:300:## 协议四：资源帽协议（何时开 --caps）"
       ],
       "status": "active"
@@ -187,7 +187,7 @@
       "mix": "none",
       "anchors": [
         "tools/journal.py:214:journal: end -- ",
-        "AGENT-GUARDRAILS.md:778:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
+        "AGENT-GUARDRAILS.md:791:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
       ],
       "status": "active"
     },
@@ -203,7 +203,7 @@
       "mix": "none",
       "anchors": [
         "tools/agent_verify.py:1505:verdict = (\"command failed\" if not ran_ok else",
-        "AGENT-GUARDRAILS.md:756:1. **`verdict`**——只有这几种，各是什么一眼定论："
+        "AGENT-GUARDRAILS.md:769:1. **`verdict`**——只有这几种，各是什么一眼定论："
       ],
       "status": "active"
     },
@@ -590,6 +590,55 @@
       "action": "update",
       "term": "verdict",
       "reason": "AGENT-GUARDRAILS.md 边界表新增 context-guard 行，回执读法整体下移 8 行；引文未改，按锚点规范重记",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T13:46:18+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "容量租约表格插入导致 AGENT-GUARDRAILS 锚点下移 9 行（L157/C047 新增行），定义未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T13:46:18+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "容量租约表格插入导致 AGENT-GUARDRAILS 锚点下移 9 行（L157/C047 新增行），定义未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T13:46:18+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "容量租约表格插入导致 AGENT-GUARDRAILS 锚点下移 9 行（L157/C047 新增行），定义未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T14:20:00+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "AGENT-GUARDRAILS 命令块新增 sandbox 租约示例，verdict 权威行 765->769，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T14:20:00+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "同上：命令块新增 sandbox 租约示例，changes 权威行 787->791，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T14:20:00+08:00",
+      "action": "update",
+      "term": "caps",
+      "reason": "run_caps 文档头新增 --lease 四行，权威行 28->32，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T14:20:00+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "AGENT-GUARDRAILS 命令块新增行，failed 权威行 784->788，引文逐字未变",
       "loosened": "drop-anchor"
     }
   ]

@@ -109,6 +109,11 @@ python tools/subagent_dispatch.py --plan tasks.json --root . --parallel 3 `
 
 - 每个任务走同一份 `model_router` 配置选模型；选不到就只失败该任务（`no-model`），
   不静默换默认模型。不同任务可以落到不同模型，`--parallel N` 真并行。
+- 高并发前先过容量准入：默认 `--capacity auto` 在 `--parallel > 2` 时向
+  `tools/capacity_lease.py` 申请 worker/内存/GPU/磁盘/IO 租约，失败整批拒绝；
+  `--capacity enforce` 对任意并行数都申请。批准后把五类预算/deadline 写成
+  CAPACITY CONTRACT 注入 prompt，运行中 heartbeat 续租、结束先停再释放。
+  详见 `AGENT-CAPACITY.md`。
 - 每个任务在调用 provider 前默认过一次 `tools/context_guard.py`（`--guard enforce`）：
   prompt 被判 `quarantine` 时任务在调用前变成 `prompt-quarantined`，不落 `out`；
   `--guard warn` 只记录 `prompt_guard` 并继续调用；`--guard off` 关闭。回执带
@@ -126,9 +131,10 @@ python tools/subagent_dispatch.py --plan tasks.json --root . --parallel 3 `
   （例如本机 CLI）=> `budget-unmetered` 失败；报了 `usage` 才事后核对，超了标
   `budget-exceeded`。prompt 侧 token 调用前不可测，这一点不装成“已强制”。
 - `--dry-run` 只路由、不调用、不写输出；回执顶层含 `plan_sha256/config_sha256/models`
-  和逐任务 `model/status/usage/output_sha256`。
+  和逐任务 `model/status/usage/output_sha256`。`--dry-run` 下的容量准入只模拟，不落租约。
 - 边界：派发器不替代 `agent_verify` 的验证链，也不自动套 `sandbox_run`；`command`
-  provider 是本机 CLI，可信度由接入者负责（不可信提示词请外包裹沙盒）。
+  provider 是本机 CLI，可信度由接入者负责（不可信提示词请外包裹沙盒）。容量租约
+  是探针估算 + 协调文件，不是 cgroup/Job Object；绕过派发器仍可超。
 
 ## 5. 证据与边界
 

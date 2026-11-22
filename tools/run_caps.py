@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """run-caps: run one command under kernel-level resource caps. stdlib only (ctypes).
 
-    run-caps --mem-mb N --procs N --seconds S -- <cmd> [args...]
+    run-caps --mem-mb N --procs N --seconds S [--lease ID --capacity-dir DIR] -- <cmd> [args...]
 
 At least one cap must be requested: running with no cap at all would silently differ
 from the promise this tool makes. Caps that are not given simply do not apply.
+
+--lease attaches the run to an existing capacity lease. The lease must still be alive
+(not past expires_at); its memory budget becomes the ceiling, and a larger --mem-mb is
+refused instead of silently overcommitting the host.
 
 Caps, stated one by one:
   --mem-mb   per-process committed-memory ceiling. On Windows this is the job object's
@@ -49,6 +53,9 @@ import subprocess
 import sys
 
 MB = 1024 * 1024
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import capacity_lease as cap  # noqa: E402  (same-directory tool, stdlib only)
 
 if os.name == "nt":
     import ctypes
@@ -215,9 +222,8 @@ def _run_posix(cmd, mem_bytes, procs, seconds):
         return p.wait(timeout=seconds if seconds else None)
     except subprocess.TimeoutExpired:
         try:
-            # 9 is SIGKILL on POSIX. Do not `import signal` here: the script's own
-            # directory is sys.path[0] and this repo also has tools/signal.py, so
-            # the bare import resolves to the project module, not the stdlib.
+            # 9 is SIGKILL on POSIX. Do not `import signal` here: this repo's
+            # tools/signal.py would shadow the stdlib module on sys.path[0].
             os.killpg(os.getpgid(p.pid), 9)
         except OSError:
             p.kill()
@@ -228,7 +234,8 @@ def _run_posix(cmd, mem_bytes, procs, seconds):
 
 def parse_args(argv):
     """Returns (caps, cmd, error). Flags before '--', the command is everything after."""
-    caps = {"mem_mb": None, "procs": None, "seconds": None}
+    caps = {"mem_mb": None, "procs": None, "seconds": None,
+            "lease": "", "capacity_dir": ""}
     i = 0
     while i < len(argv) and argv[i] != "--":
         raw = argv[i]
@@ -240,6 +247,12 @@ def parse_args(argv):
         if name in ("help", "h"):
             print(__doc__.strip())
             sys.exit(0)
+        if name in ("lease", "capacity-dir"):
+            if i + 1 >= len(argv):
+                return None, None, f"{raw} needs a value"
+            caps["lease" if name == "lease" else "capacity_dir"] = argv[i + 1]
+            i += 2
+            continue
         if name not in ("mem-mb", "procs", "seconds"):
             return None, None, f"unknown flag {raw}"
         if i + 1 >= len(argv):
@@ -263,6 +276,30 @@ def main(argv):
     if not cmd:
         print("run-caps: no command after '--'")
         return 2
+    lease = None
+    if caps["lease"]:
+        try:
+            loaded = cap.load_lease(caps["lease"], caps["capacity_dir"])
+        except Exception as exc:  # fail closed: a broken broker must not uncap the run
+            print(f"run-caps: lease lookup failed -- {type(exc).__name__}: {exc}")
+            return 2
+        if not loaded.get("ok"):
+            print(f"run-caps: lease {caps['lease']} not found or unreadable")
+            return 2
+        lease = loaded["lease"]
+        deadline = int(lease.get("deadline_at") or lease["expires_at"])
+        if cap.now_epoch() >= float(lease["expires_at"]):
+            print(f"run-caps: lease {caps['lease']} already expired")
+            return 2
+        if cap.now_epoch() >= deadline:
+            print(f"run-caps: lease {caps['lease']} reached its hard deadline")
+            return 2
+        lease_mem = int(lease.get("resources", {}).get("memory_mb", 0))
+        if caps["mem_mb"] is None:
+            caps["mem_mb"] = lease_mem
+        elif caps["mem_mb"] > lease_mem:
+            print(f"run-caps: --mem-mb {caps['mem_mb']} exceeds lease memory {lease_mem}")
+            return 2
     if caps["mem_mb"] is not None and caps["mem_mb"] <= 0:
         print("run-caps: --mem-mb must be >= 1")
         return 2
@@ -272,9 +309,9 @@ def main(argv):
     if caps["seconds"] is not None and caps["seconds"] < 0:
         print("run-caps: --seconds must be >= 0 (0 disables the watchdog)")
         return 2
-    if all(v is None for v in caps.values()):
+    if all(caps[k] is None for k in ("mem_mb", "procs", "seconds")):
         print("run-caps: no cap requested -- refuse (give at least one of "
-              "--mem-mb/--procs/--seconds; an uncapped run would be a silent lie)")
+              "--mem-mb/--procs/--seconds/--lease; an uncapped run would be a silent lie)")
         return 2
 
     mem_bytes = caps["mem_mb"] * MB if caps["mem_mb"] else None

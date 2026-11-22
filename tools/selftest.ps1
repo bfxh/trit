@@ -5082,8 +5082,8 @@ if (-not $anPy) {
 
     $anOut2 = @(& $anPy (Join-Path $tools 'sandbox_run.py') --self-test 2>&1)
     $anRc2 = $LASTEXITCODE
-    Assert-True ($anRc2 -eq 0 -and (($anOut2 -join ' ') -match 'sandbox-run self-test: 37/37')) `
-        'AN2 workspace 沙盒自测 37/37（宿主写检测/超时/内存帽/密钥环境/复制穿越/硬链接拒绝/workdir junction 拒绝/忽略文件写检测/根内 junction 与大小写/尾点拒绝/排除目录与缓存覆盖检测/同 size+恢复 mtime 内容哈希/大于 1 MiB 内容哈希/index.lock/并发隔离）' "e=$anRc2"
+    Assert-True ($anRc2 -eq 0 -and (($anOut2 -join ' ') -match 'sandbox-run self-test: 41/41')) `
+        'AN2 workspace 沙盒自测 41/41（宿主写检测/超时/内存帽/容量租约附着与超额拒绝/密钥环境/复制穿越/硬链接拒绝/workdir junction 拒绝/忽略文件写检测/根内 junction 与大小写/尾点拒绝/排除目录与缓存覆盖检测/同 size+恢复 mtime 内容哈希/大于 1 MiB 内容哈希/index.lock/并发隔离）' "e=$anRc2"
 
     $anMatrix = Join-Path $Work 'an-sandbox-matrix.json'
     $anOut3 = @(& $anPy (Join-Path $tools 'sandbox_matrix.py') --cases 40 --parallel 8 --receipt $anMatrix 2>&1)

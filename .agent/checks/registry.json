@@ -800,6 +800,24 @@
       "expect_exit": 0
     },
     {
+      "id": "C047",
+      "title": "容量租约：硬件探针/跨项目 TTL/派发前准入与 CAPACITY CONTRACT（L157）",
+      "kind": "cmd",
+      "covers": [
+        "L157"
+      ],
+      "scope": [
+        "tools/capacity_lease.py",
+        "tools/subagent_dispatch.py"
+      ],
+      "since": "2026-11-22",
+      "tier": "fast",
+      "added": "2026-11-22T13:10:00+08:00",
+      "run": "python tools/capacity_lease.py --self-test",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
       "id": "C048",
       "title": "入口文字污染门自测（59/59）",
       "kind": "cmd",
