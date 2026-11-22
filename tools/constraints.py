@@ -12,7 +12,34 @@ What a rule is: a pattern over the diff, scoped by path glob, with a severity.
   block -> the change is refused (exit 1)
   warn  -> the change is allowed but the finding is printed and must be acknowledged
 Some rules also demand a companion (e.g. "unsafe needs a // SAFETY: note"), because the
-real failure is not "used unsafe", it is "used unsafe and said nothing about why".
+real failure is not "used unsafe", it is "used unsafe and said nothing about why". The
+companion can also be a fact outside the diff: `no-raw-delete` is satisfied by a trash
+manifest entry, not by anything the patch itself could say.
+
+Two whole-file-deletion rules are checkout-aware, and the checkout is judged by the same
+machine-independent form test as policy's (one home: `.git` is a DIRECTORY at the main
+checkout's root, a FILE in a linked worktree; imported from policy.py, not re-implemented):
+
+  main checkout  -> `main-tree-raw-delete`: a tracked file may not be deleted at all
+                    without a human. No companion satisfies it -- the bin's entry keeps
+                    content, it does not decide main-line state. `-Allow
+                    main-tree-raw-delete` plus `-ApprovalNote "<who approved what>"` is
+                    the only route; the flag without the note is not an approval.
+  worktree / no repo -> `no-raw-delete` as before (trash entry satisfies it).
+
+LANDMINE: reading a main checkout as a worktree would let a bin entry buy a main-line
+deletion -- the dangerous direction; the reverse only costs one extra approval.
+
+Kernel rules (the DEFAULT_RULES ids) cannot be dropped by editing the table: a check on
+a table missing one restores it for that run, loudly. A rule that silently narrows is a
+rule that silently does not exist.
+
+Scope pruning (default): a rule whose path scope intersects none of the changed files
+cannot trigger (the per-file loop would have skipped it), so it is not evaluated and
+not printed -- the finding surface only ever named in-scope rules, and now the noise
+is gone too. Correctness is pinned by selftest: pruned vs --no-prune must agree on
+BLOCK/WARN for randomized change sets. --no-prune restores the exhaustive walk for
+that one invocation.
 
 Ported from constraints.ps1; refusal texts and exit codes are kept identical.
 """
@@ -65,11 +92,27 @@ DEFAULT_RULES = [
         "pattern": r"\.(unwrap|expect)\(",
         "message": "内核里 panic 会打断判定链，宁可返回 Err；确实不会失败的路径请加注释",
     },
+    {
+        "id": "no-raw-delete", "title": "删已跟踪文件必须先进回收站（清单里要有对应 entry）",
+        "severity": "block", "scope": ["**"], "on": "file-deleted",
+        "companion": "trash-entry",
+        "pattern": r"",
+        "message": "裸删 = 内容无处可寻；先 python tools/trash.py put <path> --reason <why>，"
+                  "回收站清单里有这条路径的 entry 才放行（命令侧对应 policy 的 DELETION 家族）",
+    },
+    {
+        "id": "main-tree-raw-delete", "title": "主检出（主库）整删已跟踪文件要人批",
+        "severity": "block", "scope": ["**"], "on": "file-deleted",
+        "pattern": r"",
+        "message": "主库整删 = 主线状态被人改走，要人批：-Allow main-tree-raw-delete "
+                   "-ApprovalNote \"<谁批的批什么>\" 是唯一放行口，回收站有账不抵扣"
+                   "（分支 worktree 上这条不响，走 no-raw-delete）",
+    },
 ]
 
 
 def parse_args(argv):
-    out = {"allow": []}
+    out = {"allow": [], "no_prune": False}
     positional = [x for x in argv if not x.startswith("-")]
     i = 0
     while i < len(argv):
@@ -78,7 +121,13 @@ def parse_args(argv):
             i += 1
             continue
         name = a.lstrip("-")
-        key = {"Mode": "mode", "Root": "root", "Diff": "diff", "Allow": "allow"}.get(name, name.lower())
+        if name in ("no-prune", "noprune", "NoPrune"):
+            out["no_prune"] = True
+            i += 1
+            continue
+        key = {"Mode": "mode", "Root": "root", "Diff": "diff", "Allow": "allow",
+               "Commands": "commands", "ApprovalNote": "approval_note",
+               "approval-note": "approval_note"}.get(name, name.replace("-", "_").lower())
         val = argv[i + 1] if i + 1 < len(argv) else ""
         if key == "allow":
             out["allow"].extend([x for x in val.replace(",", " ").split() if x])
@@ -128,13 +177,28 @@ def diff_files(root, diff_file):
         raw = p.stdout + p.stderr
     files = {}
     cur = ""
+    pending = ""  # the --- a/<path> of the current header, kept until its +++ line says
+                  # whether the file was modified (b/<path>) or deleted (/dev/null)
     for line in raw.split("\n"):
+        m = re.match(r"^--- a/(.*)$", line)
+        if m:
+            pending = m.group(1).strip()
+            continue
+        if re.match(r"^\+\+\+ /dev/null", line):
+            # whole-file deletion: git prints no `+++ b/` line here, so the old parser
+            # never registered the file at all and every rule scoped to it silently
+            # skipped -- deleting a whole test file would not even trip no-test-deletion
+            if pending:
+                cur = pending
+                files.setdefault(cur, {"added": [], "removed": []})
+                files[cur]["deleted"] = True
+            pending = ""
+            continue
         m = re.match(r"^\+\+\+ b/(.*)$", line)
         if m:
             cur = m.group(1).strip()
             files.setdefault(cur, {"added": [], "removed": []})
-            continue
-        if re.match(r"^--- a/", line):
+            pending = ""
             continue
         if not cur:
             continue
@@ -146,6 +210,43 @@ def diff_files(root, diff_file):
         if m:
             files[cur]["removed"].append(m.group(1))
     return files
+
+
+def trash_entry_exists(root, rel):
+    """Companion for no-raw-delete: does the bin manifest carry an entry for this exact
+    path (any state -- a purged entry still proves the deletion went through the bin)?
+
+    The manifest is read from the DEFAULT store (<root>/.journal/trash), the same store
+    journal.py and trash.py fall back to; a custom -Store site cannot be seen from here
+    and reads as "no entry" -- fail closed, because a false block costs one retry while
+    a false pass loses content.
+    """
+    manifest = os.path.join(root, ".journal", "trash", "manifest.json")
+    try:
+        with open(manifest, "r", encoding="utf-8-sig") as fh:
+            entries = json.load(fh).get("entries", [])
+    except (OSError, ValueError):
+        return False
+    want = rel.replace("\\", "/")
+    return any(e.get("path") == want for e in entries)
+
+
+def command_deletion_segments(text):
+    """Segments that policy's DELETION family would refuse. One family, one home: the
+    classification itself lives in policy.py and is imported, not re-implemented."""
+    import policy  # same tools directory; the DELETION family has exactly one classifier
+    out = []
+    for seg in policy.split_command(text):
+        d = policy.decision(seg)
+        if d and d["kind"] == "deletion":
+            out.append((seg, d["why"]))
+    return out
+
+
+def checkout_kind(root):
+    """The .git dir/file form test, imported from policy.py -- one home, not two."""
+    import policy  # same tools directory
+    return policy.checkout_kind(root)
 
 
 def cmd_init(store, root, rules_file):
@@ -176,19 +277,74 @@ def cmd_check(root, rules_file, a):
         print("constraints: not initialised, run -Mode init")
         return 2
     rules = json.loads(read_text(rules_file))
+    # kernel rules cannot be dropped by editing the table: a table missing one gets it
+    # restored for this run, loudly -- a rule that silently narrows is one that silently
+    # does not exist
+    have = {r.get("id") for r in rules}
+    missing = [r for r in DEFAULT_RULES if r["id"] not in have]
+    if missing:
+        rules = rules + missing
+        print("constraints: kernel rule(s) absent from the table, restored for this run: "
+              + ", ".join(r["id"] for r in missing))
+    kind = checkout_kind(root)
     files = diff_files(root, a.get("diff", ""))
+    cmd_segs = command_deletion_segments(a.get("commands", "")) if a.get("commands", "").strip() else []
 
-    if not files:
+    if not files and not cmd_segs:
         print("constraints: clean (no diff against HEAD)")
         return 0
 
+    # Scope pruning: a rule whose scope intersects no changed path can never fire (the
+    # per-file loop skips it), so dropping it from the walk changes nothing -- pinned by
+    # selftest on randomized change sets (pruned vs --no-prune BLOCK/WARN identical).
+    if a.get("no_prune"):
+        applicable = rules
+        print(f"constraints: scope-matched {len(rules)}/{len(rules)} rule(s) (--no-prune)")
+    else:
+        applicable = [r for r in rules
+                      if any(in_scope(p, r.get("scope", [])) for p in files)]
+        print(f"constraints: scope-matched {len(applicable)}/{len(rules)} rule(s) "
+              f"(pruned {len(rules) - len(applicable)} out-of-scope)")
+
     blocks, warns = [], []
     allow = a.get("allow", [])
+    approval_note = a.get("approval_note", "").strip()
+    for seg, why in cmd_segs:
+        finding = {"id": "no-raw-delete", "severity": "block", "file": "(command)",
+                   "lines": 1, "sample": seg, "message": "命令侧裸删被拦：" + why}
+        if "no-raw-delete" in allow:
+            print(f"constraints: ALLOWED-BY-FLAG [no-raw-delete] (command) {seg}")
+            continue
+        blocks.append(finding)
     for path in sorted(files.keys()):
         added = files[path]["added"]
         removed = files[path]["removed"]
-        for r in rules:
+        for r in applicable:
             if not in_scope(path, r.get("scope", [])):
+                continue
+            if r.get("on") == "file-deleted":
+                # whole-file deletion; the companion is not a comment but a trash entry.
+                # Which deletion rule governs is decided by the checkout, not the caller:
+                # main checkout -> approval gate (no companion buys it), worktree or no
+                # repo -> the bin rule as before.
+                if not files[path].get("deleted"):
+                    continue
+                if r["id"] == "no-raw-delete" and kind == "main":
+                    continue
+                if r["id"] == "main-tree-raw-delete" and kind != "main":
+                    continue
+                if r.get("companion") == "trash-entry" and trash_entry_exists(root, path):
+                    continue  # the bin holds the content, rule is satisfied
+                finding = {"id": r["id"], "severity": r["severity"], "file": path,
+                           "lines": 1, "sample": "(file deleted)", "message": r.get("message", "")}
+                if r["id"] in allow:
+                    if r["id"] == "main-tree-raw-delete" and not approval_note:
+                        print("constraints: main-tree-raw-delete needs -ApprovalNote "
+                              "<who approved what> -- an approval without a note is not an approval")
+                    else:
+                        print(f"constraints: ALLOWED-BY-FLAG [{r['id']}] {path} (file deleted)")
+                        continue
+                (blocks if r["severity"] == "block" else warns).append(finding)
                 continue
             side = {"added": added, "removed": removed}.get(r.get("on"), added + removed)
             hits = [ln for ln in side if re.search(r["pattern"], ln)]

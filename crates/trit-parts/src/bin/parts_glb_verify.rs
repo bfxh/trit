@@ -9,6 +9,8 @@
 
 use std::path::{Path, PathBuf};
 
+use trit_learn::json::Json;
+use trit_learn::verify::publish_base;
 use trit_parts::glb::{build_with, load_scene};
 use trit_parts::partsrun::{created_unix, git_out, json_str};
 
@@ -28,51 +30,12 @@ fn usage() -> ! {
     std::process::exit(2);
 }
 
-fn field(txt: &str, key: &str) -> Option<String> {
-    let pat = format!("\"{key}\": \"");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+fn num(j: &Json, key: &str) -> Option<f64> {
+    j.get(key).and_then(Json::as_f64)
 }
 
-fn number(txt: &str, key: &str) -> Option<f64> {
-    let pat = format!("\"{key}\": ");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest
-        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == '+'))
-        .unwrap_or(rest.len());
-    rest[..end].parse().ok()
-}
-
-fn block<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\": {{");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let mut depth = 1usize;
-    let (mut in_str, mut esc) = (false, false);
-    for (j, ch) in rest.char_indices() {
-        if in_str {
-            if esc {
-                esc = false;
-            } else if ch == '\\' {
-                esc = true;
-            } else if ch == '"' {
-                in_str = false;
-            }
-        } else if ch == '"' {
-            in_str = true;
-        } else if ch == '{' {
-            depth += 1;
-        } else if ch == '}' {
-            depth -= 1;
-            if depth == 0 {
-                return Some(&rest[..j]);
-            }
-        }
-    }
-    None
+fn sha_ok(j: &Json, p: &Path) -> bool {
+    j.get_str("sha256").is_some_and(|s| s == sha(p))
 }
 
 fn resolve(base: &Path, p: String) -> PathBuf {
@@ -84,9 +47,9 @@ fn sha(p: &Path) -> String {
     trit_core::fingerprint::file_sha256(p).unwrap_or_default()
 }
 
-fn read(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_else(|e| {
-        eprintln!("读不了 {}: {e}", p.display());
+fn read(p: &Path) -> Json {
+    trit_learn::json::read_json(p).unwrap_or_else(|e| {
+        eprintln!("读不了 {e}");
         std::process::exit(2);
     })
 }
@@ -102,31 +65,23 @@ fn main() {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     let manifest = read(&mpath);
-    let cfg = block(&manifest, "config").unwrap_or_else(|| usage());
-    let inputs = block(&manifest, "inputs").unwrap_or_else(|| usage());
-    let gb = block(&manifest, "glb").unwrap_or_else(|| usage());
-    let generator = field(cfg, "generator").unwrap_or_else(|| "trit-parts".into());
-    let spin = number(cfg, "spin").unwrap_or(0.0) as f32;
-    let mesh_in = block(inputs, "objects_mesh").unwrap_or_else(|| usage());
-    let obj_in = block(inputs, "objects_manifest").unwrap_or_else(|| usage());
-    let lay_in = block(inputs, "layout").unwrap_or_else(|| usage());
-    let mesh_p = resolve(&base, field(mesh_in, "path").unwrap_or_else(|| usage()));
-    let obj_p = resolve(&base, field(obj_in, "path").unwrap_or_else(|| usage()));
-    let lay_p = resolve(&base, field(lay_in, "path").unwrap_or_else(|| usage()));
-    let ok_inputs = field(mesh_in, "sha256")
-        .map(|s| s == sha(&mesh_p))
-        .unwrap_or(false)
-        && field(obj_in, "sha256")
-            .map(|s| s == sha(&obj_p))
-            .unwrap_or(false)
-        && field(lay_in, "sha256")
-            .map(|s| s == sha(&lay_p))
-            .unwrap_or(false);
-
+    let cfg = manifest.get("config").unwrap_or_else(|| usage());
+    let inputs = manifest.get("inputs").unwrap_or_else(|| usage());
+    let gb = manifest.get("glb").unwrap_or_else(|| usage());
+    let generator = cfg.get_str("generator").unwrap_or("trit-parts").to_string();
+    let spin = num(cfg, "spin").unwrap_or(0.0) as f32;
+    let mesh_in = inputs.get("objects_mesh").unwrap_or_else(|| usage());
+    let obj_in = inputs.get("objects_manifest").unwrap_or_else(|| usage());
+    let lay_in = inputs.get("layout").unwrap_or_else(|| usage());
+    let path = |j: &Json| j.get_str("path").unwrap_or_else(|| usage()).to_string();
+    let mesh_p = resolve(&base, path(mesh_in));
+    let obj_p = resolve(&base, path(obj_in));
+    let lay_p = resolve(&base, path(lay_in));
+    let ok_inputs = sha_ok(mesh_in, &mesh_p) && sha_ok(obj_in, &obj_p) && sha_ok(lay_in, &lay_p);
     let (want_parts, want_verts, want_tris) = (
-        number(gb, "parts").unwrap_or(-1.0) as usize,
-        number(gb, "verts").unwrap_or(-1.0) as usize,
-        number(gb, "tris").unwrap_or(-1.0) as usize,
+        num(gb, "parts").unwrap_or(-1.0) as usize,
+        num(gb, "verts").unwrap_or(-1.0) as usize,
+        num(gb, "tris").unwrap_or(-1.0) as usize,
     );
     let mesh_dir = mesh_p.parent().unwrap_or_else(|| usage());
     let loaded = load_scene(mesh_dir, Some(&lay_p)).unwrap_or_else(|e| fail(&e));
@@ -138,8 +93,8 @@ fn main() {
     );
     let delivered = std::fs::read(&glb).unwrap_or_default();
     let ok_bytes = delivered == rebuilt
-        && field(gb, "sha256").map(|s| s == sha(&glb)).unwrap_or(false)
-        && number(gb, "bytes") == Some(delivered.len() as f64);
+        && gb.get_str("sha256").is_some_and(|s| s == sha(&glb))
+        && num(gb, "bytes") == Some(delivered.len() as f64);
     let ok_stats =
         want_parts == loaded.parts.len() && want_verts == loaded.verts && want_tris == loaded.tris;
     let (ok_struct, detail) = match chunks(&delivered) {
@@ -203,28 +158,7 @@ fn main() {
         if pass { "pass" } else { "reject" }
     );
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
-    let vp = custom.clone().unwrap_or_else(|| {
-        let mut s = glb.as_os_str().to_owned();
-        s.push(if pass {
-            ".verify.json"
-        } else {
-            ".verify.reject.json"
-        });
-        PathBuf::from(s)
-    });
-    if custom.is_none() {
-        let mut s = glb.as_os_str().to_owned();
-        s.push(if pass {
-            ".verify.reject.json"
-        } else {
-            ".verify.json"
-        });
-        let _ = std::fs::remove_file(PathBuf::from(s));
-    }
-    std::fs::write(&vp, body).unwrap_or_else(|e| {
-        eprintln!("写复核记录 {}: {e}", vp.display());
-        std::process::exit(2);
-    });
+    let vp = publish_base(&glb, pass, custom.as_deref(), &body).unwrap_or_else(|e| fail(&e));
     println!(
         "复核记录 {}（{}）",
         vp.display(),
@@ -245,19 +179,14 @@ mod tests {
     use super::*;
     #[test]
     fn manifest_fields_parse() {
-        let man = "{\"config\": {\"generator\": \"trit-parts\"}, \"inputs\": {\"objects_mesh\": {\"path\": \"a.json\", \"sha256\": \"m\"}, \"objects_manifest\": {\"path\": \"../o.json\", \"sha256\": \"o\"}, \"layout\": {\"path\": \"../l.json\", \"sha256\": \"l\"}}, \"glb\": {\"path\": \"s.glb\", \"sha256\": \"g\", \"bytes\": 10, \"parts\": 7, \"verts\": 100, \"tris\": 50}}";
-        let g = block(man, "glb").unwrap();
+        let man = r#"{"config": {"generator": "trit-parts"}, "inputs": {"objects_mesh": {"path": "a.json", "sha256": "m"}, "objects_manifest": {"path": "../o.json", "sha256": "o"}, "layout": {"path": "../l.json", "sha256": "l"}}, "glb": {"path": "s.glb", "sha256": "g", "bytes": 10, "parts": 7, "verts": 100, "tris": 50}}"#;
+        let m = Json::parse(man).unwrap();
+        let g = m.get("glb").unwrap();
+        assert_eq!((num(g, "parts"), num(g, "verts")), (Some(7.0), Some(100.0)));
+        let inp = m.get("inputs").unwrap();
+        assert_eq!(inp.get("layout").unwrap().get_str("sha256"), Some("l"));
         assert_eq!(
-            (number(g, "parts"), number(g, "verts")),
-            (Some(7.0), Some(100.0))
-        );
-        let inp = block(man, "inputs").unwrap();
-        assert_eq!(
-            field(block(inp, "layout").unwrap(), "sha256").as_deref(),
-            Some("l")
-        );
-        assert_eq!(
-            field(block(man, "config").unwrap(), "generator").as_deref(),
+            m.get("config").unwrap().get_str("generator"),
             Some("trit-parts")
         );
     }

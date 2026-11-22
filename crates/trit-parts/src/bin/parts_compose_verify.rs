@@ -11,6 +11,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use trit_learn::json::Json;
+use trit_learn::verify::publish;
 use trit_parts::partsrun::{created_unix, git_out, json_str};
 use trit_parts::scenefp::norm_root;
 use trit_parts::splat::{Item, Placement, Splat, apply, overlap_volume, pack_best, read_ply_3dgs};
@@ -28,65 +30,22 @@ fn usage() -> ! {
     std::process::exit(2);
 }
 
-fn field(txt: &str, key: &str) -> Option<String> {
-    let pat = format!("\"{key}\": \"");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+fn num(j: &Json, key: &str) -> Option<f64> {
+    j.get(key).and_then(Json::as_f64)
 }
 
-fn number(txt: &str, key: &str) -> Option<f64> {
-    let pat = format!("\"{key}\": ");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest
-        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == '+'))
-        .unwrap_or(rest.len());
-    rest[..end].parse().ok()
-}
-
-fn nums(txt: &str, key: &str) -> Vec<f64> {
-    let pat = format!("\"{key}\": [");
-    let Some(i) = txt.find(&pat) else {
-        return Vec::new();
-    };
-    let rest = &txt[i + pat.len()..];
-    let end = rest.find(']').unwrap_or(rest.len());
-    rest[..end]
-        .split(',')
-        .filter_map(|s| s.trim().parse().ok())
-        .collect()
-}
-
-/// 取 `"key": { ... }` 的对象体（支持嵌套，跳过字符串）。
-fn block<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\": {{");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let mut depth = 1usize;
-    let (mut in_str, mut esc) = (false, false);
-    for (j, ch) in rest.char_indices() {
-        if in_str {
-            if esc {
-                esc = false;
-            } else if ch == '\\' {
-                esc = true;
-            } else if ch == '"' {
-                in_str = false;
-            }
-        } else if ch == '"' {
-            in_str = true;
-        } else if ch == '{' {
-            depth += 1;
-        } else if ch == '}' {
-            depth -= 1;
-            if depth == 0 {
-                return Some(&rest[..j]);
-            }
-        }
+fn nums3(j: &Json, key: &str) -> Option<[f64; 3]> {
+    let v: Vec<f64> = j
+        .get(key)?
+        .as_array()?
+        .iter()
+        .filter_map(Json::as_f64)
+        .collect();
+    if v.len() == 3 {
+        Some([v[0], v[1], v[2]])
+    } else {
+        None
     }
-    None
 }
 
 struct Obj {
@@ -97,28 +56,26 @@ struct Obj {
     bbox_max: [f64; 3],
 }
 
-fn objects(txt: &str) -> Vec<Obj> {
-    let mut out = Vec::new();
-    for seg in txt.split("{\"id\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        let id = seg
-            .split(',')
-            .next()
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(0);
-        let (lo, hi) = (nums(seg, "bbox_min"), nums(seg, "bbox_max"));
-        if lo.len() != 3 || hi.len() != 3 {
-            continue;
-        }
-        out.push(Obj {
-            id,
-            path: field(seg, "path").unwrap_or_default(),
-            count: number(seg, "count").unwrap_or(0.0) as usize,
-            bbox_min: [lo[0], lo[1], lo[2]],
-            bbox_max: [hi[0], hi[1], hi[2]],
-        });
-    }
-    out
+fn objects(v: &Json) -> Vec<Obj> {
+    let Some(items) = v.get("objects").and_then(Json::as_array) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|e| {
+            Some(Obj {
+                id: num(e, "id").unwrap_or(0.0) as u32,
+                path: e
+                    .get("path")
+                    .and_then(Json::as_str)
+                    .unwrap_or_default()
+                    .to_string(),
+                count: num(e, "count").unwrap_or(0.0) as usize,
+                bbox_min: nums3(e, "bbox_min")?,
+                bbox_max: nums3(e, "bbox_max")?,
+            })
+        })
+        .collect()
 }
 
 struct LayoutRow {
@@ -130,31 +87,23 @@ struct LayoutRow {
     count: usize,
 }
 
-fn layout(txt: &str) -> Vec<LayoutRow> {
-    let mut out = Vec::new();
-    for seg in txt.split("{\"id\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        let id = seg
-            .split(',')
-            .next()
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(0);
-        let tr = nums(seg, "translate");
-        let lo = nums(seg, "bbox_min");
-        let hi = nums(seg, "bbox_max");
-        if tr.len() != 3 || lo.len() != 3 || hi.len() != 3 {
-            continue;
-        }
-        out.push(LayoutRow {
-            id,
-            yaw: number(seg, "yaw").unwrap_or(0.0) as u32,
-            translate: [tr[0], tr[1], tr[2]],
-            bbox_min: [lo[0], lo[1], lo[2]],
-            bbox_max: [hi[0], hi[1], hi[2]],
-            count: number(seg, "count").unwrap_or(0.0) as usize,
-        });
-    }
-    out
+fn layout(v: &Json) -> Vec<LayoutRow> {
+    let Some(items) = v.get("layout").and_then(Json::as_array) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|e| {
+            Some(LayoutRow {
+                id: num(e, "id").unwrap_or(0.0) as u32,
+                yaw: num(e, "yaw").unwrap_or(0.0) as u32,
+                translate: nums3(e, "translate")?,
+                bbox_min: nums3(e, "bbox_min")?,
+                bbox_max: nums3(e, "bbox_max")?,
+                count: num(e, "count").unwrap_or(0.0) as usize,
+            })
+        })
+        .collect()
 }
 
 fn resolve(base: &Path, p: String) -> PathBuf {
@@ -202,9 +151,9 @@ fn hash(p: &Path) -> String {
     trit_core::fingerprint::file_sha256(p).unwrap_or_default()
 }
 
-fn read(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_else(|e| {
-        eprintln!("读不了 {}: {e}", p.display());
+fn read(p: &Path) -> Json {
+    trit_learn::json::read_json(p).unwrap_or_else(|e| {
+        eprintln!("读不了 {e}");
         std::process::exit(2);
     })
 }
@@ -222,25 +171,28 @@ fn main() {
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
     let manifest = read(&mpath);
-    let cfg = block(&manifest, "config").unwrap_or_else(|| usage());
-    let inputs = block(&manifest, "inputs").unwrap_or_else(|| usage());
-    let oman = block(inputs, "objects_manifest").unwrap_or_else(|| usage());
-    let gate = block(&manifest, "gate").unwrap_or_else(|| usage());
-    let gap = number(cfg, "gap").unwrap_or(0.05);
-    let cov_min = number(cfg, "cov_min").unwrap_or(0.4);
-    let want_cov = number(gate, "coverage").unwrap_or(f64::NAN);
+    let cfg = manifest.get("config").unwrap_or_else(|| usage());
+    let inputs = manifest.get("inputs").unwrap_or_else(|| usage());
+    let oman = inputs.get("objects_manifest").unwrap_or_else(|| usage());
+    let gate = manifest.get("gate").unwrap_or_else(|| usage());
+    let gap = num(cfg, "gap").unwrap_or(0.05);
+    let cov_min = num(cfg, "cov_min").unwrap_or(0.4);
+    let want_cov = num(gate, "coverage").unwrap_or(f64::NAN);
     let want_rows = layout(&manifest);
 
     let ompath = arg(&argv, "--objects")
         .map(|d| PathBuf::from(d).join("objects.manifest.json"))
-        .unwrap_or_else(|| resolve(&base, field(oman, "path").unwrap_or_else(|| usage())));
+        .unwrap_or_else(|| {
+            resolve(
+                &base,
+                oman.get_str("path").unwrap_or_else(|| usage()).to_string(),
+            )
+        });
     let objdir = ompath
         .parent()
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."));
-    let ok_oman = field(oman, "sha256")
-        .map(|s| s == hash(&ompath))
-        .unwrap_or(false);
+    let ok_oman = oman.get_str("sha256").is_some_and(|s| s == hash(&ompath));
     let om = read(&ompath);
     let objs = objects(&om);
 
@@ -282,16 +234,16 @@ fn main() {
         eprintln!("读 composed.ply 失败: {e}");
         std::process::exit(2);
     });
-    let comp_block = block(&manifest, "composed").unwrap_or_else(|| usage());
-    let ok_file = field(comp_block, "sha256")
-        .map(|s| s == hash(&base.join("composed.ply")))
-        .unwrap_or(false)
-        && number(comp_block, "count") == Some(comp.len() as f64)
+    let comp_block = manifest.get("composed").unwrap_or_else(|| usage());
+    let ok_file = comp_block
+        .get_str("sha256")
+        .is_some_and(|s| s == hash(&base.join("composed.ply")))
+        && num(comp_block, "count") == Some(comp.len() as f64)
         && splats_match(&comp, &want);
     let ok_counts = want_rows.iter().map(|r| r.count).sum::<usize>() == comp.len();
     let ok_gate = gate_ok(&placements, cov, cov_min)
         && (want_cov - cov).abs() <= 1e-9
-        && gate.contains("\"ok\": true");
+        && gate.get("ok").and_then(Json::as_bool) == Some(true);
 
     let pass = ok_oman && ok_obj_counts && ok_layout && ok_file && ok_counts && ok_gate;
     println!(
@@ -329,22 +281,8 @@ fn main() {
         if pass { "pass" } else { "reject" }
     );
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
-    let vp = custom.clone().unwrap_or_else(|| {
-        base.join(if pass {
-            "compose.verify.json"
-        } else {
-            "compose.verify.reject.json"
-        })
-    });
-    if custom.is_none() {
-        let _ = std::fs::remove_file(base.join(if pass {
-            "compose.verify.reject.json"
-        } else {
-            "compose.verify.json"
-        }));
-    }
-    std::fs::write(&vp, body).unwrap_or_else(|e| {
-        eprintln!("写复核记录 {}: {e}", vp.display());
+    let vp = publish(&base, "compose", pass, custom.as_deref(), &body).unwrap_or_else(|e| {
+        eprintln!("{e}");
         std::process::exit(2);
     });
     println!(
@@ -374,20 +312,21 @@ mod tests {
 
     #[test]
     fn parses_layout_rows() {
-        let rows = layout(MAN);
+        let m = Json::parse(MAN).unwrap();
+        let rows = layout(&m);
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].id, 5);
         assert_eq!(rows[0].yaw, 90);
         assert_eq!(rows[0].translate, [-0.5, 0.5, 0.1]);
         assert_eq!(rows[0].count, 10);
         assert_eq!(rows[1].bbox_max, [2.0, 1.0, 1.0]);
-        assert_eq!(number(block(MAN, "config").unwrap(), "gap"), Some(0.05));
+        assert_eq!(num(m.get("config").unwrap(), "gap"), Some(0.05));
         assert_eq!(
-            field(
-                block(block(MAN, "inputs").unwrap(), "objects_manifest").unwrap(),
-                "sha256"
-            )
-            .as_deref(),
+            m.get("inputs")
+                .unwrap()
+                .get("objects_manifest")
+                .unwrap()
+                .get_str("sha256"),
             Some("om")
         );
     }

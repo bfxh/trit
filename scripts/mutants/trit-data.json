@@ -1,0 +1,26 @@
+[
+  {
+    "name": "data-gate: 生成文件不再被拒（generated 门失效）",
+    "file": "crates/trit-data/src/repo_gate.rs",
+    "old": "    if cfg.reject_generated && u.generated {\n        reject.push(\"generated\");\n    }",
+    "new": "    if false && u.generated {\n        reject.push(\"generated\");\n    }",
+    "pkg": "trit-data",
+    "filter": "repo_gate::tests::hard_gates_reject_generated_duplicate_and_unknown"
+  },
+  {
+    "name": "data-kind: 外部依赖与本地未解析互换（unresolved 细分失效）",
+    "file": "crates/trit-data/src/repo/kind.rs",
+    "old": "    if local || !imp.contains(\"::\") {\n        Kind::Unresolved\n    } else {\n        Kind::External\n    }",
+    "new": "    if local || !imp.contains(\"::\") {\n        Kind::External\n    } else {\n        Kind::Unresolved\n    }",
+    "pkg": "trit-data",
+    "filter": "repo::deps_tests::external_and_local_unresolved_are_split"
+  },
+  {
+    "name": "data-dup: Jaccard 恒为 0（近似重复组永远为空）",
+    "file": "crates/trit-data/src/repo/dup.rs",
+    "old": "        inter as f64 / union as f64",
+    "new": "        0.0",
+    "pkg": "trit-data",
+    "filter": "repo::dup_tests::exact_and_near_duplicates_are_grouped"
+  }
+]

@@ -12,6 +12,8 @@
 use std::path::{Path, PathBuf};
 
 use trit_core::fingerprint::file_sha256;
+use trit_learn::json::Json;
+use trit_learn::verify::{Report, sibling_exe};
 use trit_parts::partsrun::{created_unix, git_out, json_str};
 use trit_parts::scenefp::{fingerprint_scene_frames, norm_root};
 
@@ -29,51 +31,21 @@ fn usage() -> ! {
     std::process::exit(2);
 }
 
-fn field(txt: &str, key: &str) -> Option<String> {
-    let pat = format!("\"{key}\": \"");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
-}
-
-fn number(txt: &str, key: &str) -> Option<f64> {
-    let pat = format!("\"{key}\": ");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest
-        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == '+'))
-        .unwrap_or(rest.len());
-    rest[..end].parse().ok()
-}
-
-/// 取 `"key": { ... }` 的对象体（清单里的对象都不嵌套）。
-fn block<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\": {{");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    Some(&rest[..rest.find('}')?])
-}
-
-/// 取 `"key": [ ... ]` 的数组体（元素里没有 `]`）。
-fn array<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\": [");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    Some(&rest[..rest.find(']')?])
-}
-
-fn list_usize(txt: &str, key: &str) -> Option<Vec<usize>> {
-    array(txt, key)?
-        .split(',')
-        .map(|s| s.trim().parse().ok())
+fn list_usize(block: &Json, key: &str) -> Option<Vec<usize>> {
+    block
+        .get(key)?
+        .as_array()?
+        .iter()
+        .map(|v| v.as_u64().map(|n| n as usize))
         .collect()
 }
 
-fn list_f32(txt: &str, key: &str) -> Option<Vec<f32>> {
-    array(txt, key)?
-        .split(',')
-        .map(|s| s.trim().parse().ok())
+fn list_f32(block: &Json, key: &str) -> Option<Vec<f32>> {
+    block
+        .get(key)?
+        .as_array()?
+        .iter()
+        .map(|v| v.as_f64().map(|n| n as f32))
         .collect()
 }
 
@@ -89,28 +61,30 @@ struct Lv {
     unseen: usize,
 }
 
-fn levels(txt: &str) -> Vec<Lv> {
-    let mut out = Vec::new();
-    for seg in txt.split("{\"cell\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        let cell = seg
-            .split(',')
-            .next()
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(f32::NAN);
-        let n = |k: &str| number(seg, k).unwrap_or(-1.0) as usize;
-        out.push(Lv {
-            cell,
-            path: field(seg, "path").unwrap_or_default(),
-            sha: field(seg, "sha256").unwrap_or_default(),
-            verts: n("verts"),
-            tris: n("tris"),
-            boundary: n("boundary_edges"),
-            nonmanifold: n("nonmanifold_edges"),
-            unseen: n("unseen_vertices"),
-        });
-    }
-    out
+fn levels(v: Option<&Json>) -> Vec<Lv> {
+    let items = v.and_then(Json::as_array).unwrap_or(&[]);
+    items
+        .iter()
+        .map(|e| {
+            let num = |k: &str| e.get(k).and_then(Json::as_f64).unwrap_or(-1.0);
+            let text = |k: &str| {
+                e.get(k)
+                    .and_then(Json::as_str)
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            Lv {
+                cell: num("cell") as f32,
+                path: text("path"),
+                sha: text("sha256"),
+                verts: num("verts") as usize,
+                tris: num("tris") as usize,
+                boundary: num("boundary_edges") as usize,
+                nonmanifold: num("nonmanifold_edges") as usize,
+                unseen: num("unseen_vertices") as usize,
+            }
+        })
+        .collect()
 }
 
 /// 清单声称的一档 vs 重导出的一档：几何计数与档位必须逐项相等。
@@ -137,29 +111,31 @@ struct Tx {
     unseen: usize,
 }
 
-fn textures(txt: &str) -> Vec<Tx> {
-    let mut out = Vec::new();
-    for seg in txt.split("{\"cell\": ").skip(1) {
-        let seg = &seg[..seg.find('}').unwrap_or(seg.len())];
-        let cell = seg
-            .split(',')
-            .next()
-            .and_then(|s| s.trim().parse().ok())
-            .unwrap_or(f32::NAN);
-        let n = |k: &str| number(seg, k).unwrap_or(-1.0) as usize;
-        out.push(Tx {
-            cell,
-            obj: field(seg, "path").unwrap_or_default(),
-            obj_sha: field(seg, "sha256").unwrap_or_default(),
-            png: field(seg, "png_path").unwrap_or_default(),
-            png_sha: field(seg, "png_sha256").unwrap_or_default(),
-            atlas: n("atlas"),
-            charts: n("charts"),
-            texels: n("texels"),
-            unseen: n("unseen_texels"),
-        });
-    }
-    out
+fn textures(v: Option<&Json>) -> Vec<Tx> {
+    let items = v.and_then(Json::as_array).unwrap_or(&[]);
+    items
+        .iter()
+        .map(|e| {
+            let num = |k: &str| e.get(k).and_then(Json::as_f64).unwrap_or(-1.0);
+            let text = |k: &str| {
+                e.get(k)
+                    .and_then(Json::as_str)
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            Tx {
+                cell: num("cell") as f32,
+                obj: text("path"),
+                obj_sha: text("sha256"),
+                png: text("png_path"),
+                png_sha: text("png_sha256"),
+                atlas: num("atlas") as usize,
+                charts: num("charts") as usize,
+                texels: num("texels") as usize,
+                unseen: num("unseen_texels") as usize,
+            }
+        })
+        .collect()
 }
 
 fn textures_match(w: &Tx, g: &Tx) -> bool {
@@ -172,21 +148,9 @@ fn textures_match(w: &Tx, g: &Tx) -> bool {
         && w.unseen == g.unseen
 }
 
-fn sibling(name: &str) -> PathBuf {
-    let dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_default();
-    if cfg!(windows) {
-        dir.join(format!("{name}.exe"))
-    } else {
-        dir.join(name)
-    }
-}
-
-fn read_manifest(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_else(|e| {
-        eprintln!("读不了清单 {}: {e}", p.display());
+fn read_manifest(p: &Path) -> Json {
+    trit_learn::json::read_json(p).unwrap_or_else(|e| {
+        eprintln!("读不了清单 {e}");
         std::process::exit(2);
     })
 }
@@ -209,26 +173,44 @@ fn main() {
         .unwrap_or_else(|| PathBuf::from("."));
     let bin = arg(&argv, "--parts-3d")
         .map(PathBuf::from)
-        .unwrap_or_else(|| sibling("parts-3d"));
+        .unwrap_or_else(|| sibling_exe("parts-3d"));
     let manifest = read_manifest(&mpath);
 
-    let model_block = block(&manifest, "model").unwrap_or_else(|| usage());
-    let data_block = block(&manifest, "data").unwrap_or_else(|| usage());
-    let config_block = block(&manifest, "config").unwrap_or_else(|| usage());
-    let model = PathBuf::from(field(model_block, "path").unwrap_or_else(|| usage()));
-    let scene = PathBuf::from(field(data_block, "scene").unwrap_or_else(|| usage()));
-    let want_model = field(model_block, "sha256").unwrap_or_default();
-    let want_data = field(data_block, "hash").unwrap_or_default();
-    let want_files = number(data_block, "files").unwrap_or(-1.0);
-    let want_bytes = number(data_block, "bytes").unwrap_or(-1.0);
+    let model_block = manifest.get("model").unwrap_or_else(|| usage());
+    let data_block = manifest.get("data").unwrap_or_else(|| usage());
+    let config_block = manifest.get("config").unwrap_or_else(|| usage());
+    let model = PathBuf::from(model_block.get_str("path").unwrap_or_else(|| usage()));
+    let scene = PathBuf::from(data_block.get_str("scene").unwrap_or_else(|| usage()));
+    let want_model = model_block.get_str("sha256").unwrap_or_default();
+    let want_data = data_block.get_str("hash").unwrap_or_default();
+    let want_files = data_block
+        .get("files")
+        .and_then(Json::as_f64)
+        .unwrap_or(-1.0);
+    let want_bytes = data_block
+        .get("bytes")
+        .and_then(Json::as_f64)
+        .unwrap_or(-1.0);
     let frames = list_usize(config_block, "frames").unwrap_or_else(|| usage());
     let cells = list_f32(config_block, "cells").unwrap_or_else(|| usage());
-    let want_levels = levels(array(&manifest, "levels").unwrap_or(""));
-    let texture = config_block.contains("\"texture\": true");
-    let atlas_px = number(config_block, "atlas").unwrap_or(1024.0) as usize;
-    let texels_per_m = number(config_block, "texels_per_m").unwrap_or(0.0) as f32;
-    let normal_deg = number(config_block, "normal_deg").unwrap_or(45.0) as f32;
-    let want_tx = textures(array(&manifest, "textures").unwrap_or(""));
+    let want_levels = levels(manifest.get("levels"));
+    let texture = config_block
+        .get("texture")
+        .and_then(Json::as_bool)
+        .unwrap_or(false);
+    let atlas_px = config_block
+        .get("atlas")
+        .and_then(Json::as_u64)
+        .unwrap_or(1024) as usize;
+    let texels_per_m = config_block
+        .get("texels_per_m")
+        .and_then(Json::as_f64)
+        .unwrap_or(0.0) as f32;
+    let normal_deg = config_block
+        .get("normal_deg")
+        .and_then(Json::as_f64)
+        .unwrap_or(45.0) as f32;
+    let want_tx = textures(manifest.get("textures"));
 
     let fp = fingerprint_scene_frames(&scene, &frames).unwrap_or_else(|e| {
         eprintln!("语料指纹失败: {e}");
@@ -238,8 +220,8 @@ fn main() {
         eprintln!("模型哈希失败: {e}");
         std::process::exit(2);
     });
-    let ok_model = manifest.contains("\"kind\": \"extract-asset\"") && want_model == model_sha;
-    let ok_data = manifest.contains("\"algo\": \"sha256-content-v1\"")
+    let ok_model = manifest.get_str("kind") == Some("extract-asset") && want_model == model_sha;
+    let ok_data = data_block.get_str("algo") == Some("sha256-content-v1")
         && want_data == format!("sha256:{}", fp.hash)
         && want_files == fp.files as f64
         && want_bytes == fp.bytes as f64;
@@ -280,8 +262,9 @@ fn main() {
         eprint!("{}", String::from_utf8_lossy(&out.stderr));
         println!("parts-3d export-asset 退出码 {:?}", out.status.code());
     }
-    let tmp_manifest = std::fs::read_to_string(tmp.join("asset.manifest.json")).unwrap_or_default();
-    let got_levels = levels(array(&tmp_manifest, "levels").unwrap_or(""));
+    let tmp_manifest =
+        trit_learn::json::read_json(&tmp.join("asset.manifest.json")).unwrap_or(Json::Null);
+    let got_levels = levels(tmp_manifest.get("levels"));
 
     let mut matched = 0usize;
     let mut bad: Vec<String> = Vec::new();
@@ -304,7 +287,7 @@ fn main() {
         && matched == want_levels.len();
 
     // 纹理档：清单记录 = 磁盘交付 = 重导出（OBJ 与 PNG 各一份哈希）+ 图集计数。
-    let got_tx = textures(array(&tmp_manifest, "textures").unwrap_or(""));
+    let got_tx = textures(tmp_manifest.get("textures"));
     let (mut tex_matched, mut tex_bad) = (0usize, Vec::new());
     if texture {
         if out.status.success() && got_tx.len() == want_tx.len() {
@@ -334,7 +317,16 @@ fn main() {
         want_tx.is_empty()
     };
 
-    let pass = ok_model && ok_data && ok_levels && ok_tex;
+    let report = Report::new()
+        .check("model", ok_model, String::new())
+        .check("data", ok_data, String::new())
+        .check(
+            "levels",
+            ok_levels,
+            format!("{matched}/{}", want_levels.len()),
+        )
+        .check("texture", ok_tex, String::new());
+    let pass = report.ok();
     println!(
         "复核 {}：模型 {}｜语料 {}/{} 字节 {}｜档位 {}/{} 一致{}｜纹理 {}",
         mpath.display(),
@@ -396,26 +388,9 @@ fn main() {
             .join(", "),
         if pass { "pass" } else { "reject" }
     );
-    // 只有写默认位置时才维护 PASS/reject 互斥；--json-out 是旁路记录。
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
-    let vp = custom.clone().unwrap_or_else(|| {
-        asset_dir.join(if pass {
-            "asset.verify.json"
-        } else {
-            "asset.verify.reject.json"
-        })
-    });
-    if custom.is_none() {
-        let _ = std::fs::remove_file(asset_dir.join(if pass {
-            "asset.verify.reject.json"
-        } else {
-            "asset.verify.json"
-        }));
-    }
-    std::fs::write(&vp, body).unwrap_or_else(|e| {
-        eprintln!("写复核记录 {}: {e}", vp.display());
-        std::process::exit(2);
-    });
+    let vp = trit_learn::verify::publish(&asset_dir, "asset", pass, custom.as_deref(), &body)
+        .unwrap_or_else(|e| fail(&e));
     let _ = std::fs::remove_dir_all(&tmp);
     println!(
         "复核记录 {}（{}）",
@@ -440,25 +415,28 @@ mod tests {
 
     #[test]
     fn blocks_are_scoped_and_lists_parse() {
-        // "path" 先出现在 model 里，不能被 levels 的 path 抢走
+        let j = Json::parse(MAN).unwrap();
         assert_eq!(
-            field(block(MAN, "model").unwrap(), "path").as_deref(),
+            j.get("model").unwrap().get_str("path"),
             Some("D:/m/n2.occ1")
         );
         assert_eq!(
-            field(block(MAN, "data").unwrap(), "scene").as_deref(),
+            j.get("data").unwrap().get_str("scene"),
             Some("D:/r/scene0084")
         );
-        let cfg = block(MAN, "config").unwrap();
+        let cfg = j.get("config").unwrap();
         assert_eq!(list_usize(cfg, "frames"), Some(vec![0, 1]));
         assert_eq!(list_f32(cfg, "cells"), Some(vec![0.01, 0.02]));
-        assert_eq!(number(block(MAN, "data").unwrap(), "files"), Some(6.0));
+        assert_eq!(
+            j.get("data").unwrap().get("files").unwrap().as_f64(),
+            Some(6.0)
+        );
         assert_eq!(list_f32(cfg, "nope"), None);
     }
-
     #[test]
     fn levels_parse_all_metrics() {
-        let lv = levels(array(MAN, "levels").unwrap());
+        let j = Json::parse(MAN).unwrap();
+        let lv = levels(j.get("levels"));
         assert_eq!(lv.len(), 2);
         assert_eq!(lv[0].cell, 0.01);
         assert_eq!(lv[0].path, "lod-1cm.ply");
@@ -470,14 +448,14 @@ mod tests {
         assert_eq!(lv[1].path, "lod-2cm.ply");
         assert_eq!(lv[1].unseen, 4);
         // 空数组/缺键都不许崩
-        assert!(levels("").is_empty());
+        assert!(levels(None).is_empty());
     }
-
     const TMAN: &str = "{\"config\": {\"texture\": true, \"atlas\": 512}, \"textures\": [{\"cell\": 0.01, \"path\": \"lod-1cm.obj\", \"sha256\": \"o1\", \"bytes\": 5, \"png_path\": \"lod-1cm.png\", \"png_sha256\": \"p1\", \"png_bytes\": 6, \"atlas\": 512, \"charts\": 7, \"texels\": 100, \"unseen_texels\": 8}]}";
 
     #[test]
     fn texture_entries_parse_and_catch_mismatch() {
-        let tx = textures(array(TMAN, "textures").unwrap());
+        let j = Json::parse(TMAN).unwrap();
+        let tx = textures(j.get("textures"));
         assert_eq!(tx.len(), 1);
         assert_eq!(tx[0].cell, 0.01);
         assert_eq!(tx[0].obj, "lod-1cm.obj");
@@ -496,10 +474,10 @@ mod tests {
         g.png = "other.png".into();
         assert!(!textures_match(&tx[0], &g));
     }
-
     #[test]
     fn levels_match_catches_every_field() {
-        let lv = levels(array(MAN, "levels").unwrap());
+        let j = Json::parse(MAN).unwrap();
+        let lv = levels(j.get("levels"));
         assert!(levels_match(&lv[0], &lv[0]));
         let mut g = lv[0].clone();
         g.unseen = 0;

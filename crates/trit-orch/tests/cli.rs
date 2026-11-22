@@ -1,58 +1,7 @@
-use std::io::Write;
-use std::process::{Command, Stdio};
+use serde_json::json;
 
-use serde_json::{Value, json};
-
-fn run(command: &str, input: &Value) -> (i32, Value) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_trit-orch"))
-        .arg(command)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("binary should start");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(input.to_string().as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    let stdout = String::from_utf8(output.stdout).unwrap();
-    let value: Value = serde_json::from_str(stdout.trim()).expect("stdout must be json");
-    (output.status.code().unwrap_or(-1), value)
-}
-
-fn task(id: &str) -> Value {
-    json!({
-        "task": {"id": id, "priority": 0, "duration": 1, "deps": []},
-        "requirements": {"cpu": 1, "memory": 1},
-        "max_tokens": 100,
-        "epoch": 0
-    })
-}
-
-fn observation() -> Value {
-    json!({
-        "phase": "Pending",
-        "epoch": 0,
-        "authorization": "True",
-        "freshness": "True",
-        "evidence": null,
-        "usage": {"fresh": 0, "cached": 0, "output": 0}
-    })
-}
-
-fn snapshot(ids: &[&str]) -> Value {
-    let mut observations = serde_json::Map::new();
-    for id in ids {
-        observations.insert((*id).into(), observation());
-    }
-    json!({"revision": 1, "observations": observations})
-}
-
-fn limits() -> Value {
-    json!({"workers": 2, "capacity": {"cpu": 2, "memory": 2}, "tokens": 1000})
-}
+mod cli_support;
+use cli_support::*;
 
 #[test]
 fn plan_accepts_valid_graph_and_rejects_cycles() {
@@ -164,40 +113,6 @@ fn dispatch_requires_prepared_intents() {
 }
 
 #[test]
-fn finish_refuses_incomplete_plans_and_reports_complete_ones() {
-    let (code, value) = run(
-        "finish",
-        &json!({
-            "tasks": [task("a")],
-            "snapshot": snapshot(&["a"]),
-            "rounds": []
-        }),
-    );
-    assert_eq!(code, 1);
-    assert_eq!(value["kind"], "incomplete", "ORCH_CLI_FINISH_GATE");
-
-    let mut settled = snapshot(&["a"]);
-    settled["observations"]["a"] = json!({
-        "phase": "Settled",
-        "epoch": 0,
-        "authorization": "True",
-        "freshness": "True",
-        "evidence": {"epoch": 0, "checks": 2, "result": "Passed"},
-        "usage": {"fresh": 10, "cached": 0, "output": 5}
-    });
-    let (code, value) = run(
-        "finish",
-        &json!({
-            "tasks": [task("a")],
-            "snapshot": settled,
-            "rounds": []
-        }),
-    );
-    assert_eq!(code, 0);
-    assert_eq!(value["summary"]["confirmed"], 1);
-}
-
-#[test]
 fn recover_classifies_durable_states() {
     let ledger = json!({"records": {
         "ready-op": {"attempt": {"operation": "ready-op", "task": "t", "epoch": 0, "attempt": 1, "fence": 1}, "state": "Prepared"},
@@ -250,26 +165,6 @@ fn shadow_replay_reports_unsafe_proposals_without_dispatching() {
     assert_eq!(value["report"]["steps"], 1);
 }
 
-fn run_with_args(command: &str, extra: &[&str], input: &Value) -> (i32, Value) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_trit-orch"))
-        .arg(command)
-        .args(extra)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .expect("binary should start");
-    child
-        .stdin
-        .as_mut()
-        .unwrap()
-        .write_all(input.to_string().as_bytes())
-        .unwrap();
-    let output = child.wait_with_output().unwrap();
-    let value: Value =
-        serde_json::from_str(String::from_utf8(output.stdout).unwrap().trim()).unwrap();
-    (output.status.code().unwrap_or(-1), value)
-}
-
 #[test]
 fn select_can_record_traces_and_shadow_replays_them() {
     let mut trace = std::env::temp_dir();
@@ -300,24 +195,6 @@ fn select_can_record_traces_and_shadow_replays_them() {
     assert_eq!(value["report"]["steps"], 2);
     assert_eq!(value["safe"], true);
     let _ = std::fs::remove_file(&trace);
-}
-
-fn context_facts(extra: Value) -> Value {
-    let mut facts = json!({
-        "measured_tokens": 60000,
-        "context_window": 100000,
-        "threshold_bp": 5100,
-        "prunable_tokens": 0,
-        "overflow": "not_reported",
-        "durable_flushed": "Unknown",
-        "recall_reachable": "Unknown",
-        "constraints_pinned": "Unknown",
-        "progress_since_compaction": "Unknown"
-    });
-    for (key, value) in extra.as_object().unwrap() {
-        facts[key] = value.clone();
-    }
-    facts
 }
 
 #[test]
@@ -470,6 +347,10 @@ fn receipt_cli_walks_four_states_and_rejects_skip() {
     );
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["receipt"]["state"], "Sent");
+    assert_eq!(
+        value["obligation"]["kind"], "handoff",
+        "Sent 只证明邮局工作"
+    );
     let ledger = value["ledger"].clone();
 
     let (code, value) = run(
@@ -478,6 +359,7 @@ fn receipt_cli_walks_four_states_and_rejects_skip() {
     );
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["receipt"]["state"], "Delivered");
+    assert_eq!(value["obligation"]["kind"], "handoff");
     let ledger = value["ledger"].clone();
 
     let (code, value) = run(
@@ -486,6 +368,22 @@ fn receipt_cli_walks_four_states_and_rejects_skip() {
     );
     assert_eq!(code, 1, "ORCH_CLI_RECEIPT_SKIP: 不能跳过 Read");
     assert_eq!(value["kind"], "receipt_skip");
+
+    let (code, value) = run(
+        "receipt",
+        &json!({"ledger": ledger, "action": "advance", "key": "k1", "state": "Read"}),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["obligation"]["kind"], "handoff", "Read 不等于 Acted");
+    let ledger = value["ledger"].clone();
+
+    let (code, value) = run(
+        "receipt",
+        &json!({"ledger": ledger, "action": "advance", "key": "k1", "state": "Acted"}),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["receipt"]["state"], "Acted");
+    assert!(value["obligation"].is_null(), "Acted 才关闭交接义务");
 }
 
 #[test]
@@ -511,6 +409,7 @@ fn handoff_gate_cli_three_states() {
     );
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["gate"], "True");
+    assert!(value["obligation"].is_null());
 
     let (code, value) = run(
         "handoff-gate",
@@ -518,6 +417,7 @@ fn handoff_gate_cli_three_states() {
     );
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["gate"], "Unknown", "ORCH_CLI_HANDOFF_STATE");
+    assert_eq!(value["obligation"]["kind"], "handoff");
 }
 
 #[test]
@@ -560,4 +460,60 @@ fn admit_with_claim_cli_is_k3_and() {
     );
     assert_eq!(code, 0, "{value}");
     assert_eq!(value["gate"], "False", "ORCH_CLI_ADMIT_CLAIM");
+}
+
+#[test]
+fn select_with_in_doubt_ledger_reports_reconcile_obligation() {
+    let ledger = json!({"records": {"a": {
+        "attempt": {"operation": "a", "task": "a", "epoch": 0, "attempt": 1, "fence": 1},
+        "state": "Sending"
+    }}});
+    let (code, value) = run(
+        "select",
+        &json!({
+            "revision": 1,
+            "tasks": [task("a")],
+            "snapshot": snapshot(&["a"]),
+            "limits": limits(),
+            "ledger": ledger
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["selection"]["selected"], json!([]));
+    assert_eq!(value["selection"]["decisions"][0]["admission"], "Unknown");
+    assert_eq!(
+        value["selection"]["decisions"][0]["obligations"][0]["kind"], "reconcile",
+        "ORCH_CLI_EFFECT_RECONCILE"
+    );
+}
+
+#[test]
+fn obligations_command_schedules_with_deadline_and_budget() {
+    let mut stale = observation();
+    stale["freshness"] = json!("Unknown");
+    let (code, value) = run(
+        "select",
+        &json!({
+            "revision": 1,
+            "tasks": [task("a")],
+            "snapshot": {"revision": 1, "observations": {"a": stale}},
+            "limits": limits()
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    let selection = value["selection"].clone();
+
+    let (code, value) = run(
+        "obligations",
+        &json!({
+            "selection": selection,
+            "policy": {"ttl": 10},
+            "now": 100,
+            "budget": {"tokens": 1000, "human": 0}
+        }),
+    );
+    assert_eq!(code, 0, "{value}");
+    assert_eq!(value["batch"]["scheduled"][0]["kind"], "rebasis");
+    assert_eq!(value["batch"]["scheduled"][0]["deadline"], 110);
+    assert_eq!(value["batch"]["tokens_used"], 1000);
 }

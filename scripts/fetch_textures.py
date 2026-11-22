@@ -20,13 +20,20 @@ import zipfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+# 同目录工具：按 claims_audit/mutation_sweep 的口径把 scripts/ 钉进 sys.path，
+# 被当模块 import 时也找得到 fetch_guard。
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fetch_guard import safe_urlopen
+
 UA = {"User-Agent": "Mozilla/5.0 (trit-parts dataset fetch)"}
+# LANDMINE: 校验必须逐跳，重定向才是洞。
 API = "https://ambientcg.com/api/v2/full_json"
 
 
 def get_json(url: str) -> dict:
     req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=180) as r:
+    with safe_urlopen(req, timeout=180) as r:
         return json.load(r)
 
 
@@ -96,7 +103,7 @@ def download(url: str, dst: Path, retries: int = 2) -> bool:
     for i in range(retries):
         try:
             req = urllib.request.Request(url, headers=UA)
-            with urllib.request.urlopen(req, timeout=60) as r:
+            with safe_urlopen(req, timeout=60) as r:
                 data = r.read()
             if len(data) < 100_000:
                 raise RuntimeError(f"体积异常 {len(data)}")

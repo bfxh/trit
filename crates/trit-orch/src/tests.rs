@@ -1,52 +1,7 @@
 use crate::*;
 
-fn spec(id: &str) -> TaskSpec {
-    TaskSpec {
-        task: Task {
-            id: id.into(),
-            priority: 0,
-            duration: 1,
-            deps: Vec::new(),
-        },
-        requirements: Resources::new(1, 1),
-        max_tokens: 10,
-        epoch: 0,
-    }
-}
-
-fn edge(id: &str, required: Ternary) -> Dependency {
-    Dependency {
-        task: id.into(),
-        required,
-    }
-}
-
-fn snapshot(tasks: &[TaskSpec]) -> Snapshot {
-    Snapshot {
-        revision: 7,
-        observations: tasks
-            .iter()
-            .map(|spec| {
-                (
-                    spec.task.id.clone(),
-                    Observation {
-                        authorization: Ternary::True,
-                        freshness: Ternary::True,
-                        ..Observation::default()
-                    },
-                )
-            })
-            .collect(),
-    }
-}
-
-fn limits() -> Limits {
-    Limits {
-        workers: 16,
-        capacity: Resources::new(16, 16),
-        tokens: 1_000,
-    }
-}
+mod support;
+use support::*;
 
 #[test]
 fn all_dependency_and_admission_truth_tables() {
@@ -106,6 +61,37 @@ fn evidence_requires_checks_and_matching_revision() {
         report.checks = 0;
         assert_eq!(report.verdict(7), Ternary::Unknown);
     }
+}
+
+#[test]
+fn evidence_judgment_keeps_conflict_separate_from_unknown() {
+    let report = |result| CheckReport {
+        epoch: 7,
+        checks: 1,
+        result,
+    };
+    assert_eq!(
+        report(CheckResult::Passed).judgment(7),
+        EvidenceVerdict::Proved
+    );
+    assert_eq!(
+        report(CheckResult::Refuted).judgment(7),
+        EvidenceVerdict::Refuted
+    );
+    assert_eq!(
+        report(CheckResult::Inconclusive).judgment(7),
+        EvidenceVerdict::Neither
+    );
+    let conflicted = report(CheckResult::Conflicted);
+    assert_eq!(conflicted.judgment(7), EvidenceVerdict::Conflicted);
+    assert_eq!(conflicted.judgment(8), EvidenceVerdict::Neither);
+    assert_eq!(conflicted.verdict(7), Ternary::Unknown);
+    let zero_checks = CheckReport {
+        epoch: 7,
+        checks: 0,
+        result: CheckResult::Conflicted,
+    };
+    assert_eq!(zero_checks.judgment(7), EvidenceVerdict::Neither);
 }
 
 #[test]

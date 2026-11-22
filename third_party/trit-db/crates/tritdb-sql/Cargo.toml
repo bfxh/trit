@@ -1,0 +1,18 @@
+[package]
+name = "tritdb-sql"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "Minimal SQL parser and three-valued execution engine for trit-db"
+
+[dependencies]
+tritdb-exec.workspace = true
+tritdb-txn.workspace = true
+
+[dev-dependencies]
+tritdb-testkit.workspace = true
+
+[lints]
+workspace = true

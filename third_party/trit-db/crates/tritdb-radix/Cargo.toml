@@ -1,0 +1,14 @@
+[package]
+name = "tritdb-radix"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "三值序列的 3/4/16 进制打包与解包"
+
+[dev-dependencies]
+tritdb-testkit.workspace = true
+
+[lints]
+workspace = true

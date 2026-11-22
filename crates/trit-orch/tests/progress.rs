@@ -1,50 +1,11 @@
-use std::collections::BTreeMap;
-
+#![allow(deprecated)]
 use trit_orch::{
-    CheckReport, CheckResult, Error, Observation, Phase, Plan, Progress, Resources, Snapshot, Task,
-    TaskSpec, Ternary, TokenUsage,
+    CheckReport, CheckResult, Error, Phase, Plan, Progress, Resources, Snapshot, Ternary,
+    TokenUsage,
 };
 
-fn task(id: &str) -> TaskSpec {
-    TaskSpec {
-        task: Task {
-            id: id.into(),
-            priority: 0,
-            duration: 1,
-            deps: vec![],
-        },
-        requirements: Resources::new(1, 1),
-        max_tokens: 100,
-        epoch: 0,
-    }
-}
-
-fn snapshot(tasks: &[TaskSpec]) -> Snapshot {
-    Snapshot {
-        revision: 1,
-        observations: tasks
-            .iter()
-            .map(|spec| {
-                (
-                    spec.task.id.clone(),
-                    Observation {
-                        authorization: Ternary::True,
-                        freshness: Ternary::True,
-                        ..Observation::default()
-                    },
-                )
-            })
-            .collect(),
-    }
-}
-
-fn passed() -> CheckReport {
-    CheckReport {
-        epoch: 0,
-        checks: 1,
-        result: CheckResult::Passed,
-    }
-}
+mod progress_support;
+use progress_support::*;
 
 #[test]
 fn rounds_record_exact_counts_and_totals() {
@@ -87,7 +48,8 @@ fn finish_requires_every_task_to_be_decided() {
         Err(Error::Incomplete {
             pending: 1,
             in_flight: 0,
-            inconclusive: 0
+            inconclusive: 0,
+            conflicts: 0
         }),
         "ORCH_FINISH_PENDING"
     );
@@ -97,7 +59,8 @@ fn finish_requires_every_task_to_be_decided() {
         Err(Error::Incomplete {
             pending: 0,
             in_flight: 1,
-            inconclusive: 0
+            inconclusive: 0,
+            conflicts: 0
         })
     );
 }
@@ -112,7 +75,8 @@ fn settled_without_evidence_cannot_be_reported_complete() {
         Err(Error::Incomplete {
             pending: 0,
             in_flight: 0,
-            inconclusive: 1
+            inconclusive: 1,
+            conflicts: 0
         }),
         "ORCH_FINISH_INCONCLUSIVE"
     );
@@ -135,7 +99,8 @@ fn stale_definition_or_freshness_cannot_be_reported_complete() {
         Err(Error::Incomplete {
             pending: 0,
             in_flight: 0,
-            inconclusive: 1
+            inconclusive: 1,
+            conflicts: 0
         }),
         "ORCH_FINISH_STALE"
     );
@@ -176,14 +141,37 @@ fn missing_observation_counts_as_pending_not_complete() {
     let tasks = vec![task("a")];
     let state = Snapshot {
         revision: 1,
-        observations: BTreeMap::new(),
+        observations: std::collections::BTreeMap::new(),
     };
     assert_eq!(
         Progress::new().finish(&tasks, &state),
         Err(Error::Incomplete {
             pending: 1,
             in_flight: 0,
-            inconclusive: 0
+            inconclusive: 0,
+            conflicts: 0
+        })
+    );
+}
+
+#[test]
+fn conflicted_evidence_is_reported_separately_from_inconclusive() {
+    let tasks = vec![task("a")];
+    let mut state = snapshot(&tasks);
+    let a = state.observations.get_mut("a").unwrap();
+    a.phase = Phase::Settled;
+    a.evidence = Some(CheckReport {
+        epoch: 0,
+        checks: 2,
+        result: CheckResult::Conflicted,
+    });
+    assert_eq!(
+        Progress::new().finish(&tasks, &state),
+        Err(Error::Incomplete {
+            pending: 0,
+            in_flight: 0,
+            inconclusive: 0,
+            conflicts: 1
         })
     );
 }

@@ -1,130 +1,20 @@
 //! `trit-orch` 的宿主桥：stdin 收一份 JSON，stdout 回一份 JSON。
-//!
-//! 子命令：`plan` / `select` / `dispatch` / `finish` / `recover` / `shadow` / `compact-gate`
-//! 以及协调面 `claim` / `renew` / `release` / `claim-gate` / `receipt` / `handoff-gate` /
-//! `admit-with-claim`。成功退出码 0，失败退出码 1 并输出
-//! `{"ok":false,"kind":"...","error":"..."}`；成功输出永远带 `"ok":true`。
-
-use std::io::Read;
+//! 子命令：`plan` / `select` / `dispatch` / `finish` / `recover` / `shadow` / `trace` /
+//! `compact-gate` 以及协调面 `claim` / `renew` / `release` / `claim-gate` / `receipt` /
+//! `handoff-gate` / `admit-with-claim`。
 
 use serde::Deserialize;
 use serde_json::{Value, json};
 use trit_orch::{
-    ClaimStore, ContextFacts, HandoffPacket, Ledger, Limits, Plan, PlanPatch, Progress,
-    ReceiptLedger, ReceiptState, RoundReport, Selection, Snapshot, TaskSpec, Ternary, TraceStep,
-    TraceStore, admit_with_claim, builtin, compaction_gate, dispatch_ready, handoff_gate, replay,
+    ContextFacts, Ledger, Plan, ReceiptState, Ternary, TraceStep, TraceStore, admit_with_claim,
+    builtin, compaction_gate, dispatch_ready, handoff_gate, handoff_obligation, receipt_obligation,
+    replay,
 };
 
-#[derive(Deserialize)]
-struct PlanInput {
-    revision: u64,
-    tasks: Vec<TaskSpec>,
-}
-
-#[derive(Deserialize)]
-struct SelectInput {
-    revision: u64,
-    tasks: Vec<TaskSpec>,
-    snapshot: Snapshot,
-    limits: Limits,
-    #[serde(default)]
-    patch: Option<PlanPatch>,
-    /// patch 的在途保护必须看到**打补丁前**的快照。
-    #[serde(default)]
-    base_snapshot: Option<Snapshot>,
-}
-
-#[derive(Deserialize)]
-struct DispatchInput {
-    selection: Selection,
-    tasks: Vec<TaskSpec>,
-    ledger: Ledger,
-}
-
-#[derive(Deserialize)]
-struct ShadowInput {
-    policy: String,
-    steps: Vec<TraceStep>,
-}
-
-#[derive(Deserialize)]
-struct FinishInput {
-    tasks: Vec<TaskSpec>,
-    snapshot: Snapshot,
-    #[serde(default)]
-    rounds: Vec<RoundReport>,
-}
-
-#[derive(Deserialize)]
-struct ClaimInput {
-    #[serde(default)]
-    store: ClaimStore,
-    owner: String,
-    paths: Vec<String>,
-    intent: String,
-    now: u64,
-    ttl: u64,
-}
-
-#[derive(Deserialize)]
-struct RenewInput {
-    #[serde(default)]
-    store: ClaimStore,
-    id: String,
-    owner: String,
-    fencing: u64,
-    now: u64,
-    ttl: u64,
-}
-
-#[derive(Deserialize)]
-struct ReleaseInput {
-    #[serde(default)]
-    store: ClaimStore,
-    id: String,
-    owner: String,
-    fencing: u64,
-}
-
-#[derive(Deserialize)]
-struct ClaimGateInput {
-    #[serde(default)]
-    store: ClaimStore,
-    owner: String,
-    paths: Vec<String>,
-    now: u64,
-}
-
-#[derive(Deserialize)]
-struct ReceiptInput {
-    #[serde(default)]
-    ledger: ReceiptLedger,
-    action: String,
-    #[serde(default)]
-    id: String,
-    #[serde(default)]
-    key: String,
-    #[serde(default)]
-    state: Option<String>,
-    #[serde(default)]
-    reason: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct HandoffGateInput {
-    packet: HandoffPacket,
-    receiver_state_hash: String,
-    now: u64,
-}
-
-#[derive(Deserialize)]
-struct AdmitWithClaimInput {
-    dependencies: String,
-    authorization: String,
-    resources: String,
-    freshness: String,
-    claim: String,
-}
+mod cli_finish;
+mod cli_inputs;
+mod cli_trace;
+use cli_inputs::*;
 
 fn parse_ternary(raw: &str) -> Result<Ternary, trit_orch::Error> {
     match raw.trim().to_ascii_lowercase().as_str() {
@@ -151,12 +41,10 @@ fn parse_receipt_state(raw: &str) -> Result<ReceiptState, trit_orch::Error> {
 
 fn main() {
     let command = std::env::args().nth(1).unwrap_or_default();
-    let mut input = String::new();
-    if let Err(error) = std::io::stdin().read_to_string(&mut input) {
-        fail(&trit_orch::Error::InputParse {
-            message: error.to_string(),
-        });
-    }
+    let input = match cli_inputs::stdin::read_stdin() {
+        Ok(input) => input,
+        Err(error) => fail(&error),
+    };
     match run(&command, &input) {
         Ok(value) => println!("{value}"),
         Err(error) => fail(&error),
@@ -171,7 +59,6 @@ fn fail(error: &trit_orch::Error) -> ! {
     std::process::exit(1);
 }
 
-/// `select --capture <path>`：把这一步追加进轨迹文件（路径由宿主给，模型无法注入）。
 fn capture_path() -> Option<String> {
     let mut args = std::env::args().skip(2);
     while let Some(arg) = args.next() {
@@ -191,7 +78,7 @@ fn jsonl_args() -> (String, String) {
     )
 }
 
-fn parse<T: for<'de> Deserialize<'de>>(input: &str) -> Result<T, trit_orch::Error> {
+pub(crate) fn parse<T: for<'de> Deserialize<'de>>(input: &str) -> Result<T, trit_orch::Error> {
     serde_json::from_str(input).map_err(|error| trit_orch::Error::InputParse {
         message: error.to_string(),
     })
@@ -223,7 +110,8 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                 }
                 None => plan,
             };
-            let selection = plan.select(&request.snapshot, &request.limits)?;
+            let selection =
+                plan.select_with_effects(&request.snapshot, &request.limits, &request.ledger)?;
             if let Some(path) = &capture {
                 TraceStore::new(path).append(&TraceStep {
                     revision: selection.revision,
@@ -248,16 +136,20 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                 "ready": attempts,
             }))
         }
-        "finish" => {
-            let request: FinishInput = parse(input)?;
-            let progress = Progress::from_rounds(request.rounds);
-            let summary = progress.finish(&request.tasks, &request.snapshot)?;
+        "obligations" => {
+            let request: ObligationInput = parse(input)?;
+            let batch = request.selection.schedule_obligations(
+                &request.policy,
+                request.now,
+                &request.budget,
+            );
             Ok(json!({
                 "ok": true,
-                "summary": summary,
-                "brief": progress.brief(),
+                "batch": batch,
             }))
         }
+        "finish" => cli_finish::run(input),
+        "trace" => cli_trace::run(input),
         "shadow" => {
             let request: ShadowInput = parse(input)?;
             let policy = builtin(&request.policy).ok_or_else(|| trit_orch::Error::InputParse {
@@ -366,18 +258,23 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
                     });
                 }
             };
+            let obligation = receipt_obligation(&receipt);
             Ok(json!({
                 "ok": true,
                 "ledger": request.ledger,
                 "receipt": receipt,
+                "obligation": obligation,
             }))
         }
         "handoff-gate" => {
             let request: HandoffGateInput = parse(input)?;
             let gate = handoff_gate(&request.packet, &request.receiver_state_hash, request.now);
+            let obligation =
+                handoff_obligation(&request.packet, &request.receiver_state_hash, request.now);
             Ok(json!({
                 "ok": true,
                 "gate": format!("{gate:?}"),
+                "obligation": obligation,
             }))
         }
         "admit-with-claim" => {
@@ -403,7 +300,7 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
         }
         other => Err(trit_orch::Error::InputParse {
             message: format!(
-                "未知子命令 {other:?}（可用：plan/select/dispatch/finish/recover/shadow/shadow-jsonl/compact-gate/claim/renew/release/claim-gate/receipt/handoff-gate/admit-with-claim）"
+                "未知子命令 {other:?}（可用：plan/select/dispatch/obligations/finish/recover/shadow/shadow-jsonl/trace/compact-gate/claim/renew/release/claim-gate/receipt/handoff-gate/admit-with-claim）"
             ),
         }),
     }

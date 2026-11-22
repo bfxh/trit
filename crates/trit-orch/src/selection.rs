@@ -1,7 +1,7 @@
 use crate::budget::Budget;
 use crate::{
-    BlockReason, Decision, Error, Limits, Observation, Phase, Selection, Snapshot, TaskSpec,
-    Ternary, admit, dependency_gate,
+    BlockReason, Decision, Error, Ledger, Limits, Observation, Phase, Selection, Snapshot,
+    TaskSpec, Ternary, admit,
 };
 
 pub(crate) fn select(
@@ -11,6 +11,7 @@ pub(crate) fn select(
     order: &[usize],
     snapshot: &Snapshot,
     limits: &Limits,
+    ledger: &Ledger,
 ) -> Result<Selection, Error> {
     validate_snapshot(revision, tasks, snapshot)?;
     if limits.workers == 0 {
@@ -25,6 +26,7 @@ pub(crate) fn select(
             task: spec.task.id.clone(),
             admission: Ternary::Unknown,
             reasons: Vec::new(),
+            obligations: Vec::new(),
         })
         .collect();
     for &position in order {
@@ -48,6 +50,7 @@ pub(crate) fn select(
                     observation,
                     &mut budget,
                     limits,
+                    ledger,
                     decision,
                     &mut selected,
                 )?;
@@ -66,6 +69,7 @@ pub(crate) fn select(
                 observation,
                 &mut budget,
                 limits,
+                ledger,
                 decision,
                 &mut selected,
             )?,
@@ -92,6 +96,7 @@ fn admit_pending(
     observation: &Observation,
     budget: &mut Budget,
     limits: &Limits,
+    ledger: &Ledger,
     decision: &mut Decision,
     selected: &mut Vec<String>,
 ) -> Result<(), Error> {
@@ -120,12 +125,16 @@ fn admit_pending(
     };
     let remaining = budget.remaining(position);
     let resources = budget.gate(spec, remaining, limits, &mut decision.reasons)?;
+    let effects = effect_gate(&spec.task.id, ledger, &mut decision.reasons);
     decision.admission = admit(
         dependencies,
         observation.authorization,
         resources,
         freshness_gate,
-    );
+    ) & effects;
+    if decision.admission == Ternary::Unknown {
+        decision.obligations = crate::obligations_for(&spec.task.id, &decision.reasons);
+    }
     if decision.admission == Ternary::True {
         budget.reserve(spec, remaining)?;
         selected.push(spec.task.id.clone());
@@ -168,40 +177,5 @@ pub(crate) fn validate_snapshot(
     Ok(())
 }
 
-fn dependency_admission(
-    spec: &TaskSpec,
-    predecessors: &[usize],
-    tasks: &[TaskSpec],
-    observations: &[&Observation],
-    reasons: &mut Vec<BlockReason>,
-) -> Ternary {
-    let mut admission = Ternary::True;
-    for (dependency, &predecessor) in spec.task.deps.iter().zip(predecessors) {
-        let observation = observations[predecessor];
-        let predecessor_epoch = tasks[predecessor].epoch;
-        // 只有「已完成、epoch 匹配、输入仍新鲜」的结果才可信；
-        // 其余（含 freshness=False）一律 Unknown——过期证据既不能证明成功，也不能证明失败。
-        let verdict = if observation.phase == Phase::Settled
-            && observation.epoch == predecessor_epoch
-            && observation.freshness == Ternary::True
-        {
-            observation
-                .evidence
-                .as_ref()
-                .map(|report| report.verdict(predecessor_epoch))
-                .unwrap_or(Ternary::Unknown)
-        } else {
-            Ternary::Unknown
-        };
-        let gate = dependency_gate(dependency.required, verdict);
-        if gate != Ternary::True {
-            reasons.push(BlockReason::Dependency {
-                task: dependency.task.clone(),
-                required: dependency.required,
-                verdict,
-            });
-        }
-        admission = admission & gate;
-    }
-    admission
-}
+mod gates;
+use gates::{dependency_admission, effect_gate};

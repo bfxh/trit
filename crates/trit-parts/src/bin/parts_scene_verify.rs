@@ -10,6 +10,8 @@
 
 use std::path::{Path, PathBuf};
 
+use trit_learn::json::Json;
+use trit_learn::verify::{publish, sibling_exe};
 use trit_parts::partsrun::{created_unix, git_out, json_str};
 
 fn arg(argv: &[String], k: &str) -> Option<String> {
@@ -26,98 +28,24 @@ fn usage() -> ! {
     std::process::exit(2);
 }
 
-fn field(txt: &str, key: &str) -> Option<String> {
-    let pat = format!("\"{key}\": \"");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
+fn num(j: &Json, key: &str) -> Option<f64> {
+    j.get(key).and_then(Json::as_f64)
 }
 
-fn number(txt: &str, key: &str) -> Option<f64> {
-    let pat = format!("\"{key}\": ");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest
-        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == '+'))
-        .unwrap_or(rest.len());
-    rest[..end].parse().ok()
+fn text(j: &Json, key: &str) -> Option<String> {
+    j.get_str(key).map(|s| s.to_string())
 }
 
-/// 取 `"key": { ... }` 的对象体（支持嵌套，跳过字符串）。
-fn object<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\": {{");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let mut depth = 1usize;
-    let (mut in_str, mut esc) = (false, false);
-    for (j, ch) in rest.char_indices() {
-        if in_str {
-            if esc {
-                esc = false;
-            } else if ch == '\\' {
-                esc = true;
-            } else if ch == '"' {
-                in_str = false;
-            }
-        } else if ch == '"' {
-            in_str = true;
-        } else if ch == '{' {
-            depth += 1;
-        } else if ch == '}' {
-            depth -= 1;
-            if depth == 0 {
-                return Some(&rest[..j]);
-            }
-        }
-    }
-    None
-}
-
-fn count_entries(txt: &str, key: &str) -> usize {
-    let pat = format!("\"{key}\": [");
-    let Some(i) = txt.find(&pat) else {
-        return 0;
-    };
-    let rest = &txt[i + pat.len()..];
-    let end = rest.find(']').unwrap_or(rest.len());
-    rest[..end].matches("{\"cell\": ").count()
-}
-
-/// 取 `"key": [ ... ]` 的数组体（支持嵌套，跳过字符串）。
-fn array_body<'a>(txt: &'a str, key: &str) -> Option<&'a str> {
-    let pat = format!("\"{key}\": [");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let mut depth = 1usize;
-    let (mut in_str, mut esc) = (false, false);
-    for (j, ch) in rest.char_indices() {
-        if in_str {
-            if esc {
-                esc = false;
-            } else if ch == '\\' {
-                esc = true;
-            } else if ch == '"' {
-                in_str = false;
-            }
-        } else if ch == '"' {
-            in_str = true;
-        } else if ch == '[' {
-            depth += 1;
-        } else if ch == ']' {
-            depth -= 1;
-            if depth == 0 {
-                return Some(&rest[..j]);
-            }
-        }
-    }
-    None
-}
-
-fn count_ids(txt: &str, key: &str) -> usize {
-    array_body(txt, key)
-        .map(|b| b.matches("{\"id\": ").count())
+/// 数组里对象条目的数量（levels / objects 这类）。
+fn count_entries(j: &Json, key: &str) -> usize {
+    j.get(key)
+        .and_then(Json::as_array)
+        .map(|items| items.iter().filter(|v| matches!(v, Json::Obj(_))).count())
         .unwrap_or(0)
+}
+
+fn count_ids(j: &Json, key: &str) -> usize {
+    count_entries(j, key)
 }
 
 fn sha_matches(want: &str, got: &str) -> bool {
@@ -134,27 +62,19 @@ fn counts_match(want: usize, got: usize) -> bool {
     want > 0 && want == got
 }
 
-fn sibling(name: &str) -> PathBuf {
-    let dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_default();
-    if cfg!(windows) {
-        dir.join(format!("{name}.exe"))
-    } else {
-        dir.join(name)
-    }
-}
-
 fn hash(p: &Path) -> String {
     trit_core::fingerprint::file_sha256(p).unwrap_or_default()
 }
 
-fn read(p: &Path) -> String {
-    std::fs::read_to_string(p).unwrap_or_else(|e| {
-        eprintln!("读不了 {}: {e}", p.display());
+fn read(p: &Path) -> Json {
+    trit_learn::json::read_json(p).unwrap_or_else(|e| {
+        eprintln!("读不了 {e}");
         std::process::exit(2);
     })
+}
+
+fn read_text(p: &Path) -> String {
+    std::fs::read_to_string(p).unwrap_or_default()
 }
 
 fn run(bin: &Path, args: &[String], what: &str) -> std::process::Output {
@@ -183,48 +103,48 @@ fn main() {
         .unwrap_or_else(|| PathBuf::from("."));
     let asset_verify = arg(&argv, "--parts-asset-verify")
         .map(PathBuf::from)
-        .unwrap_or_else(|| sibling("parts-asset-verify"));
+        .unwrap_or_else(|| sibling_exe("parts-asset-verify"));
     let splat_verify = arg(&argv, "--parts-splat-verify")
         .map(PathBuf::from)
-        .unwrap_or_else(|| sibling("parts-splat-verify"));
+        .unwrap_or_else(|| sibling_exe("parts-splat-verify"));
     let objects_verify = arg(&argv, "--objects-verify")
         .map(PathBuf::from)
-        .unwrap_or_else(|| sibling("parts-objects-verify"));
+        .unwrap_or_else(|| sibling_exe("parts-objects-verify"));
     let compose_verify = arg(&argv, "--compose-verify")
         .map(PathBuf::from)
-        .unwrap_or_else(|| sibling("parts-compose-verify"));
+        .unwrap_or_else(|| sibling_exe("parts-compose-verify"));
     let omesh_verify = arg(&argv, "--objectmesh-verify")
         .map(PathBuf::from)
-        .unwrap_or_else(|| sibling("parts-objectmesh-verify"));
+        .unwrap_or_else(|| sibling_exe("parts-objectmesh-verify"));
     let preview_verify = arg(&argv, "--preview-verify")
         .map(PathBuf::from)
-        .unwrap_or_else(|| sibling("parts-preview-verify"));
+        .unwrap_or_else(|| sibling_exe("parts-preview-verify"));
     let glb_verify = arg(&argv, "--glb-verify")
         .map(PathBuf::from)
-        .unwrap_or_else(|| sibling("parts-glb-verify"));
+        .unwrap_or_else(|| sibling_exe("parts-glb-verify"));
     let manifest = read(&mpath);
-    let parts = object(&manifest, "parts").unwrap_or_else(|| usage());
-    let mesh = object(parts, "mesh").unwrap_or_else(|| usage());
-    let splat = object(parts, "splat").unwrap_or_else(|| usage());
-    let mman = object(mesh, "manifest").unwrap_or_else(|| usage());
-    let sman = object(splat, "manifest").unwrap_or_else(|| usage());
-    let mpath_sub = resolve(&scene_dir, field(mman, "path").unwrap_or_else(|| usage()));
-    let spath_sub = resolve(&scene_dir, field(sman, "path").unwrap_or_else(|| usage()));
-    let msha = field(mman, "sha256").unwrap_or_default();
-    let ssha = field(sman, "sha256").unwrap_or_default();
-    let want_levels = number(mesh, "levels").unwrap_or(-1.0) as usize;
-    let want_splats = number(splat, "count").unwrap_or(-1.0) as usize;
+    let parts = &manifest.get("parts").unwrap_or_else(|| usage());
+    let mesh = parts.get("mesh").unwrap_or_else(|| usage());
+    let splat = parts.get("splat").unwrap_or_else(|| usage());
+    let mman = mesh.get("manifest").unwrap_or_else(|| usage());
+    let sman = splat.get("manifest").unwrap_or_else(|| usage());
+    let mpath_sub = resolve(&scene_dir, text(mman, "path").unwrap_or_else(|| usage()));
+    let spath_sub = resolve(&scene_dir, text(sman, "path").unwrap_or_else(|| usage()));
+    let msha = text(mman, "sha256").unwrap_or_default();
+    let ssha = text(sman, "sha256").unwrap_or_default();
+    let want_levels = num(mesh, "levels").unwrap_or(-1.0) as usize;
+    let want_splats = num(splat, "count").unwrap_or(-1.0) as usize;
 
     let mtxt = read(&mpath_sub);
     let stxt = read(&spath_sub);
-    let sblock = object(&stxt, "splat").unwrap_or_else(|| usage());
+    let sblock = stxt.get("splat").unwrap_or_else(|| usage());
     let ply = spath_sub
         .parent()
-        .map(|d| d.join(field(sblock, "path").unwrap_or_else(|| usage())))
+        .map(|d| d.join(text(sblock, "path").unwrap_or_else(|| usage())))
         .unwrap_or_else(|| usage());
     let ok_man = sha_matches(&msha, &hash(&mpath_sub)) && sha_matches(&ssha, &hash(&spath_sub));
     let got_levels = count_entries(&mtxt, "levels");
-    let got_splats = number(&stxt, "count").unwrap_or(-1.0) as usize;
+    let got_splats = num(&stxt, "count").unwrap_or(-1.0) as usize;
     let ok_counts = counts_match(want_levels, got_levels) && counts_match(want_splats, got_splats);
 
     // 子复核各起一个新进程：它们会重算语料指纹并重导出/重渲。
@@ -248,13 +168,17 @@ fn main() {
         .parent()
         .map(|p| p.join("asset.verify.json"))
         .filter(|p| p.is_file())
-        .map(|p| read(&p))
+        .map(|p| read_text(&p))
         .unwrap_or_default();
     let sverdict = {
         let mut s = ply.as_os_str().to_owned();
         s.push(".verify.json");
         let p = PathBuf::from(s);
-        if p.is_file() { read(&p) } else { String::new() }
+        if p.is_file() {
+            read_text(&p)
+        } else {
+            String::new()
+        }
     };
     let ok_sub = mout.status.success()
         && sout.status.success()
@@ -264,14 +188,14 @@ fn main() {
     // `--full` 的四个子包（旧清单没有就跳过）
     let mut extra_ok = true;
     let mut extra = String::new();
-    if let Some(ob) = object(parts, "objects") {
-        let man = object(ob, "manifest").unwrap_or_else(|| usage());
-        let p = resolve(&scene_dir, field(man, "path").unwrap_or_else(|| usage()));
+    if let Some(ob) = parts.get("objects") {
+        let man = ob.get("manifest").unwrap_or_else(|| usage());
+        let p = resolve(&scene_dir, text(man, "path").unwrap_or_else(|| usage()));
         let d = p
             .parent()
             .map(|x| x.to_path_buf())
             .unwrap_or_else(|| scene_dir.clone());
-        let want = number(ob, "count").unwrap_or(-1.0) as usize;
+        let want = num(ob, "count").unwrap_or(-1.0) as usize;
         let got = count_ids(&read(&p), "objects");
         let o = run(
             &objects_verify,
@@ -279,55 +203,57 @@ fn main() {
             "parts-objects-verify",
         );
         let v = d.join("objects.verify.json");
-        let ok = sha_matches(&field(man, "sha256").unwrap_or_default(), &hash(&p))
+        let ok = sha_matches(&text(man, "sha256").unwrap_or_default(), &hash(&p))
             && counts_match(want, got)
             && o.status.success()
             && v.is_file()
-            && read(&v).contains("\"verdict\": \"pass\"");
+            && read_text(&v).contains("\"verdict\": \"pass\"");
         extra_ok &= ok;
         extra.push_str(&format!(" 对象 {got}/{want}="));
         extra.push_str(if ok { "ok" } else { "FAIL" });
     }
-    if let Some(cb) = object(parts, "compose") {
-        let man = object(cb, "manifest").unwrap_or_else(|| usage());
-        let p = resolve(&scene_dir, field(man, "path").unwrap_or_else(|| usage()));
+    if let Some(cb) = parts.get("compose") {
+        let man = cb.get("manifest").unwrap_or_else(|| usage());
+        let p = resolve(&scene_dir, text(man, "path").unwrap_or_else(|| usage()));
         let d = p
             .parent()
             .map(|x| x.to_path_buf())
             .unwrap_or_else(|| scene_dir.clone());
         let ctxt = read(&p);
-        let composed = object(&ctxt, "composed")
-            .map(|b| number(b, "count").unwrap_or(-1.0))
+        let composed = ctxt
+            .get("composed")
+            .map(|b| num(b, "count").unwrap_or(-1.0))
             .unwrap_or(-1.0) as usize;
-        let cov = object(&ctxt, "gate")
-            .map(|b| number(b, "coverage").unwrap_or(f64::NAN))
+        let cov = ctxt
+            .get("gate")
+            .map(|b| num(b, "coverage").unwrap_or(f64::NAN))
             .unwrap_or(f64::NAN);
-        let want = number(cb, "count").unwrap_or(-1.0) as usize;
-        let want_cov = number(cb, "coverage").unwrap_or(f64::NAN);
+        let want = num(cb, "count").unwrap_or(-1.0) as usize;
+        let want_cov = num(cb, "coverage").unwrap_or(f64::NAN);
         let o = run(
             &compose_verify,
             &["--scene".into(), d.display().to_string()],
             "parts-compose-verify",
         );
         let v = d.join("compose.verify.json");
-        let ok = sha_matches(&field(man, "sha256").unwrap_or_default(), &hash(&p))
+        let ok = sha_matches(&text(man, "sha256").unwrap_or_default(), &hash(&p))
             && counts_match(want, composed)
             && (want_cov - cov).abs() <= 1e-9
             && o.status.success()
             && v.is_file()
-            && read(&v).contains("\"verdict\": \"pass\"");
+            && read_text(&v).contains("\"verdict\": \"pass\"");
         extra_ok &= ok;
         extra.push_str(&format!(" 合成 {composed}/{want}="));
         extra.push_str(if ok { "ok" } else { "FAIL" });
     }
-    if let Some(mb) = object(parts, "objects_mesh") {
-        let man = object(mb, "manifest").unwrap_or_else(|| usage());
-        let p = resolve(&scene_dir, field(man, "path").unwrap_or_else(|| usage()));
+    if let Some(mb) = parts.get("objects_mesh") {
+        let man = mb.get("manifest").unwrap_or_else(|| usage());
+        let p = resolve(&scene_dir, text(man, "path").unwrap_or_else(|| usage()));
         let d = p
             .parent()
             .map(|x| x.to_path_buf())
             .unwrap_or_else(|| scene_dir.clone());
-        let want = number(mb, "count").unwrap_or(-1.0) as usize;
+        let want = num(mb, "count").unwrap_or(-1.0) as usize;
         let got = count_ids(&read(&p), "objects");
         let o = run(
             &omesh_verify,
@@ -335,26 +261,27 @@ fn main() {
             "parts-objectmesh-verify",
         );
         let v = d.join("objects-mesh.verify.json");
-        let ok = sha_matches(&field(man, "sha256").unwrap_or_default(), &hash(&p))
+        let ok = sha_matches(&text(man, "sha256").unwrap_or_default(), &hash(&p))
             && counts_match(want, got)
             && o.status.success()
             && v.is_file()
-            && read(&v).contains("\"verdict\": \"pass\"");
+            && read_text(&v).contains("\"verdict\": \"pass\"");
         extra_ok &= ok;
         extra.push_str(&format!(" 对象网格 {got}/{want}="));
         extra.push_str(if ok { "ok" } else { "FAIL" });
     }
-    if let Some(gb) = object(parts, "glb") {
-        let man = object(gb, "manifest").unwrap_or_else(|| usage());
-        let p = resolve(&scene_dir, field(man, "path").unwrap_or_else(|| usage()));
+    if let Some(gb) = parts.get("glb") {
+        let man = gb.get("manifest").unwrap_or_else(|| usage());
+        let p = resolve(&scene_dir, text(man, "path").unwrap_or_else(|| usage()));
         let glb_path = p
             .to_string_lossy()
             .strip_suffix(".manifest.json")
             .map(PathBuf::from)
             .unwrap_or_else(|| p.clone());
-        let want = number(gb, "parts").unwrap_or(-1.0) as usize;
-        let got = object(&read(&p), "glb")
-            .map(|b| number(b, "parts").unwrap_or(-1.0))
+        let want = num(gb, "parts").unwrap_or(-1.0) as usize;
+        let got = read(&p)
+            .get("glb")
+            .map(|b| num(b, "parts").unwrap_or(-1.0))
             .unwrap_or(-1.0) as usize;
         let o = run(
             &glb_verify,
@@ -364,25 +291,26 @@ fn main() {
         let mut v = glb_path.as_os_str().to_owned();
         v.push(".verify.json");
         let v = PathBuf::from(v);
-        let ok = sha_matches(&field(man, "sha256").unwrap_or_default(), &hash(&p))
+        let ok = sha_matches(&text(man, "sha256").unwrap_or_default(), &hash(&p))
             && counts_match(want, got)
             && o.status.success()
             && v.is_file()
-            && read(&v).contains("\"verdict\": \"pass\"");
+            && read_text(&v).contains("\"verdict\": \"pass\"");
         extra_ok &= ok;
         extra.push_str(&format!(" GLB {got}/{want}="));
         extra.push_str(if ok { "ok" } else { "FAIL" });
     }
-    if let Some(pb) = object(parts, "preview") {
-        let man = object(pb, "manifest").unwrap_or_else(|| usage());
-        let p = resolve(&scene_dir, field(man, "path").unwrap_or_else(|| usage()));
+    if let Some(pb) = parts.get("preview") {
+        let man = pb.get("manifest").unwrap_or_else(|| usage());
+        let p = resolve(&scene_dir, text(man, "path").unwrap_or_else(|| usage()));
         let d = p
             .parent()
             .map(|x| x.to_path_buf())
             .unwrap_or_else(|| scene_dir.clone());
-        let want = number(pb, "views").unwrap_or(-1.0) as usize;
-        let got = object(&read(&p), "config")
-            .map(|c| number(c, "views").unwrap_or(-1.0))
+        let want = num(pb, "views").unwrap_or(-1.0) as usize;
+        let got = read(&p)
+            .get("config")
+            .map(|c| num(c, "views").unwrap_or(-1.0))
             .unwrap_or(-1.0) as usize;
         let o = run(
             &preview_verify,
@@ -390,11 +318,11 @@ fn main() {
             "parts-preview-verify",
         );
         let v = d.join("preview.verify.json");
-        let ok = sha_matches(&field(man, "sha256").unwrap_or_default(), &hash(&p))
+        let ok = sha_matches(&text(man, "sha256").unwrap_or_default(), &hash(&p))
             && counts_match(want, got)
             && o.status.success()
             && v.is_file()
-            && read(&v).contains("\"verdict\": \"pass\"");
+            && read_text(&v).contains("\"verdict\": \"pass\"");
         extra_ok &= ok;
         extra.push_str(&format!(" 预览 {got}/{want}="));
         extra.push_str(if ok { "ok" } else { "FAIL" });
@@ -434,22 +362,8 @@ fn main() {
         if pass { "pass" } else { "reject" }
     );
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
-    let vp = custom.clone().unwrap_or_else(|| {
-        scene_dir.join(if pass {
-            "scene.verify.json"
-        } else {
-            "scene.verify.reject.json"
-        })
-    });
-    if custom.is_none() {
-        let _ = std::fs::remove_file(scene_dir.join(if pass {
-            "scene.verify.reject.json"
-        } else {
-            "scene.verify.json"
-        }));
-    }
-    std::fs::write(&vp, body).unwrap_or_else(|e| {
-        eprintln!("写复核记录 {}: {e}", vp.display());
+    let vp = publish(&scene_dir, "scene", pass, custom.as_deref(), &body).unwrap_or_else(|e| {
+        eprintln!("{e}");
         std::process::exit(2);
     });
     println!(
@@ -470,22 +384,18 @@ mod tests {
 
     #[test]
     fn nested_parts_parse_scoped() {
-        let parts = object(MAN, "parts").unwrap();
-        assert!(parts.contains("\"mesh\""));
-        let mesh = object(parts, "mesh").unwrap();
-        let splat = object(parts, "splat").unwrap();
-        let mman = object(mesh, "manifest").unwrap();
-        let sman = object(splat, "manifest").unwrap();
-        assert_eq!(
-            field(mman, "path").as_deref(),
-            Some("D:/o/mesh/asset.manifest.json")
-        );
-        assert_eq!(field(mman, "sha256").as_deref(), Some("m1"));
-        assert_eq!(field(sman, "sha256").as_deref(), Some("s1"));
-        assert_eq!(number(mesh, "levels"), Some(3.0));
-        assert_eq!(number(splat, "count"), Some(43219.0));
-        // 嵌套对象不能把外层截断（splat 在 mesh 之后仍能读到）
-        assert!(parts.find("splat").unwrap() > parts.find("mesh").unwrap());
+        let m = Json::parse(MAN).unwrap();
+        let parts = m.get("parts").unwrap();
+        assert!(parts.get("mesh").is_some());
+        let mesh = parts.get("mesh").unwrap();
+        let splat = parts.get("splat").unwrap();
+        let mman = mesh.get("manifest").unwrap();
+        let sman = splat.get("manifest").unwrap();
+        assert_eq!(mman.get_str("path"), Some("D:/o/mesh/asset.manifest.json"));
+        assert_eq!(mman.get_str("sha256"), Some("m1"));
+        assert_eq!(sman.get_str("sha256"), Some("s1"));
+        assert_eq!(num(mesh, "levels"), Some(3.0));
+        assert_eq!(num(splat, "count"), Some(43219.0));
     }
 
     #[test]
@@ -512,15 +422,17 @@ mod tests {
     #[test]
     fn count_ids_handles_nested_arrays() {
         let t = "{\"objects\": [{\"id\": 1, \"bbox_min\": [0,0,0], \"bbox_max\": [1,1,1]}, {\"id\": 2, \"bbox_min\": [1,0,0], \"bbox_max\": [2,1,1]}]}";
-        assert_eq!(count_ids(t, "objects"), 2);
-        assert_eq!(count_ids("{}", "objects"), 0);
+        let j = Json::parse(t).unwrap();
+        assert_eq!(count_ids(&j, "objects"), 2);
+        assert_eq!(count_ids(&Json::parse("{}").unwrap(), "objects"), 0);
     }
 
     #[test]
     fn count_entries_counts_only_objects() {
         let t = "{\"levels\": [{\"cell\": 0.01}, {\"cell\": 0.02}], \"other\": [1, 2]}";
-        assert_eq!(count_entries(t, "levels"), 2);
-        assert_eq!(count_entries(t, "other"), 0);
-        assert_eq!(count_entries("{}", "levels"), 0);
+        let j = Json::parse(t).unwrap();
+        assert_eq!(count_entries(&j, "levels"), 2);
+        assert_eq!(count_entries(&j, "other"), 0);
+        assert_eq!(count_entries(&Json::parse("{}").unwrap(), "levels"), 0);
     }
 }

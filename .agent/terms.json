@@ -1,0 +1,645 @@
+{
+  "version": 1,
+  "owner_root": ".",
+  "baseline": "2026-11-21",
+  "terms": [
+    {
+      "term": "proven",
+      "definition": "受影响减集被机器证明（导入图可达 / cargo target 可达）才 proven；证不了就 unproven 并回退全量——unproven 是诚实回退，不是失败",
+      "forbidden_interchange": [
+        "failed"
+      ],
+      "tokens": [
+        "proven",
+        "unproven"
+      ],
+      "mix": "co",
+      "anchors": [
+        "tools/affected.py:118:fail-safe: a full run is always sound, an unproven subset is not",
+        "tools/affected.py:125:\"proven\": len(unproven) == 0, \"unproven\": unproven,",
+        "AGENT-GUARDRAILS.md:33:出测试计划；没有证明就回退全量（不拒绝，如实标注 unproven）"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "censored",
+      "definition": "观测在结局之前结束（断粮/中断）：状态机 open → suspended → finished / censored，censored 明确不是失败，resume 账本里没有 failed 状态",
+      "forbidden_interchange": [
+        "failed",
+        "failure",
+        "失败"
+      ],
+      "tokens": [
+        "censored"
+      ],
+      "mix": "co",
+      "anchors": [
+        "tools/resume.py:23:censored   closed without finishing -- explicitly not a failure",
+        "tools/resume.py:31:suspended -> censored, finish on open -> finished. Closed sessions refuse everything"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "failed",
+      "definition": "failed 在本项目只允许作为 journal-end 回执的三分支之一（0=clean / 1=changed / 其余=failed，工具崩溃分类），不许进入 resume 账本的任务状态机",
+      "forbidden_interchange": [
+        "censored"
+      ],
+      "tokens": [
+        "failed"
+      ],
+      "mix": "co",
+      "anchors": [
+        "tools/agent_verify.py:1466:\"changed\" if je[\"code\"] == 1 else \"failed\"))",
+        "AGENT-GUARDRAILS.md:788:journal-end 的 verdict 是三分支：`clean`（0）/ `changed`（1）/ `failed`（其余）"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "sound",
+      "definition": "保守方向：证明不了的减集一律回退更强的命令（全量），宁可收紧绝不放松；sound 说的是回退方向安全，不是最优",
+      "forbidden_interchange": [
+        "optimal",
+        "relaxed"
+      ],
+      "tokens": [
+        "sound",
+        "soundness"
+      ],
+      "mix": "co",
+      "anchors": [
+        "tools/affected.py:27:an over-approximation that stays sound under",
+        "tools/affected.py:249:target-level soundness: cfg-gated mods count as reachable"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "declared",
+      "definition": "声明制：--budget-token / --spent-token 是调用者的声明，工具层测不了模型侧就只如实记声明并打印 gate 口径——声明不冒充测量，认证账本（attested）与声明严禁混用",
+      "forbidden_interchange": [
+        "attested"
+      ],
+      "tokens": [
+        "declared",
+        "declaration"
+      ],
+      "mix": "exclusive",
+      "anchors": [
+        "tools/agent_verify.py:129:declaration-based gate: the tool layer cannot measure model-side token",
+        "tools/agent_verify.py:192:--budget-token N is a DECLARATION by the caller."
+      ],
+      "status": "active"
+    },
+    {
+      "term": "wall",
+      "definition": "工具层实测的墙钟秒（子进程计时）——台账与 token 分列是故意的，wall 永远不冒充模型侧 token",
+      "forbidden_interchange": [
+        "token"
+      ],
+      "tokens": [
+        "wall"
+      ],
+      "mix": "forms",
+      "mix_forms": [
+        "\\bwall\\b[^\\n]{0,30}(model-side|模型侧)"
+      ],
+      "anchors": [
+        "tools/ledger.py:2:keep token cost and wall-clock cost in separate columns, on purpose",
+        "tools/agent_verify.py:138:wall is tool-measured per command; tokens are caller-declared"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "token",
+      "definition": "模型侧 token 消耗——工具层测不了，只在调用者声明 --spent-token 时记账，与 wall 分列；把 token 说成工具实测就是把声明偷换成测量",
+      "forbidden_interchange": [
+        "wall"
+      ],
+      "tokens": [
+        "token",
+        "tokens"
+      ],
+      "mix": "forms",
+      "mix_forms": [
+        "\\btokens?\\b[^\\n]{0,30}(tool-measured|工具实测|由工具实测)"
+      ],
+      "anchors": [
+        "tools/ledger.py:7:Why separate: a task can be cheap in wall-clock and ruinous in tokens",
+        "tools/agent_verify.py:23:the tool layer CANNOT measure model-side"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "caps",
+      "definition": "内核强制的资源帽（每进程内存 / 作业进程数 / 父进程看门狗秒）——限制已放行命令的爆炸半径，不是沙箱不是安全边界；LimitFlags / RLIMIT_* 是内核实现细节，不冒充对外承诺",
+      "forbidden_interchange": [
+        "sandbox",
+        "沙箱",
+        "security boundary",
+        "安全边界",
+        "limit"
+      ],
+      "tokens": [
+        "caps",
+        "run-caps",
+        "run_caps"
+      ],
+      "mix": "forms",
+      "mix_forms": [
+        "(?:\\brun[-_ ]?caps\\b|\\bcaps?\\b)[^\\n]{0,50}(sandbox|沙箱|security boundary|安全边界)"
+      ],
+      "anchors": [
+        "tools/run_caps.py:32:Honest strength statement -- this is a resource cap, NOT a security boundary:",
+        "AGENT-GUARDRAILS.md:300:## 协议四：资源帽协议（何时开 --caps）"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "owner_root",
+      "definition": "隐私与归属判定的相对根：记忆绑定 owner_root 不可跨项目搬运；树内/树外、随仓/私有、路径脱敏全部相对它判定，注册表只存仓库相对形态",
+      "forbidden_interchange": [
+        "repo root",
+        "main repo"
+      ],
+      "tokens": [
+        "owner_root",
+        "owner root",
+        "owner-root"
+      ],
+      "mix": "none",
+      "anchors": [
+        "tools/memory.py:18:meta.json records owner_root; a memory directory copied into another project is",
+        "tools/checks.py:267:\"owner_root\": a[\"root_abs\"]"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "change",
+      "definition": "journal-end 对账出的磁盘事实（added / modified / deleted 的计数与路径）是\"改了什么\"的证据链；verdict 是链的判定词——工具崩溃不许被记成 changed（L114 三分支显式化）",
+      "forbidden_interchange": [
+        "verdict"
+      ],
+      "tokens": [
+        "change",
+        "changes",
+        "changed"
+      ],
+      "mix": "none",
+      "anchors": [
+        "tools/journal.py:214:journal: end -- ",
+        "AGENT-GUARDRAILS.md:791:3. **`run[]` / `changes[]`**——每条命令的 exit 与耗时；journal-end 报告实际落盘的"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "verdict",
+      "definition": "编排链对整条 run 的判定词，只许按回执表取值（dry-run / passed on proven subset / passed on full run (plan was unproven) / refused by X / suspended (budget) before run / command failed / refused by chain lock / refused by budget ledger / refused by journal / refused by plan），不许自造",
+      "forbidden_interchange": [
+        "changed"
+      ],
+      "tokens": [
+        "verdict"
+      ],
+      "mix": "none",
+      "anchors": [
+        "tools/agent_verify.py:1505:verdict = (\"command failed\" if not ran_ok else",
+        "AGENT-GUARDRAILS.md:769:1. **`verdict`**——只有这几种，各是什么一眼定论："
+      ],
+      "status": "active"
+    },
+    {
+      "term": "fail-closed",
+      "definition": "判据建立不起来（坏 JSON / 坏台账 / 坏锚点 / scope 匹配不到文件）时选择拒绝而不是放行——宁可拒，不给静默降级留门",
+      "forbidden_interchange": [
+        "fail-open"
+      ],
+      "tokens": [
+        "fail-closed",
+        "fail closed"
+      ],
+      "mix": "exclusive",
+      "anchors": [
+        "tools/checks.py:19:A forbid/require check whose scope matches no file is NOT a pass.",
+        "cognition/SCHEMA.md:9:坏行 fail-closed"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "ratchet",
+      "definition": "基线棘轮只许收紧不许放松：init 永不抬上限、--update 遇新增直接拒绝、definition 改动必须显式 --reason——放宽基线就是把肥肉合法化",
+      "forbidden_interchange": [
+        "relax",
+        "放宽",
+        "抬升"
+      ],
+      "tokens": [
+        "ratchet",
+        "棘轮"
+      ],
+      "mix": "forms",
+      "mix_forms": [
+        "(?:\\bratchet\\b|棘轮|\\bbaselines?\\b)[^\\n]{0,40}(放松|relax|loosen|放宽|抬升|\\braises?\\b)"
+      ],
+      "anchors": [
+        "tools/declutter.py:698:declutter: budget init REFUSED -- a baseline is only ever tightened",
+        "scripts/privacy_scan.py:8:python scripts/privacy_scan.py --update    # 只减不增"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "gate",
+      "definition": "护栏链的闸：任一闸拒绝 ⇒ 整体拒绝，没有部分通过；闸与 WARN 分工固定——WARN 不拦只点名后果，闸不冒充警告，能豁免的警告就是套着友好名字的拒绝",
+      "forbidden_interchange": [
+        "warn",
+        "警告"
+      ],
+      "tokens": [
+        "gate",
+        "闸"
+      ],
+      "mix": "forms",
+      "mix_forms": [
+        "(?:\\bgates?\\b|闸)[^\\n]{0,40}(?:\\bwarns?\\b|警告)",
+        "(?:\\bwarns?\\b|警告)[^\\n]{0,40}(?:\\bgates?\\b|闸)"
+      ],
+      "anchors": [
+        "AGENT-GUARDRAILS.md:15:护栏链上任何一道闸拒绝，整体拒绝——这是本手册最重要的性质",
+        "AGENT-GUARDRAILS.md:50:闸门步骤任一拒绝 ⇒ 整体拒绝"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "triage",
+      "definition": "classify 是关键词规则分诊不是模型判断：emotion_score 是要权衡的信号，永远不是可信任的事实；分诊默认值（空列表）也不是证据",
+      "forbidden_interchange": [
+        "fact",
+        "事实"
+      ],
+      "tokens": [
+        "triage",
+        "分诊"
+      ],
+      "mix": "forms",
+      "mix_forms": [
+        "(?:\\btriage\\b|分诊|emotion_score)[^\\n]{0,40}(?:\\bfacts?\\b|事实)"
+      ],
+      "anchors": [
+        "tools/signal.py:14:Honest boundary: classify is rule triage, not a model judgment",
+        "AGENT-GUARDRAILS.md:377:classify 是规则匹配，不是模型判断"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "worktree",
+      "definition": "worktree 检出的 .git 是文件不是目录；检出形态判据只有一条且单一归宿是 policy 的 checkout_kind：目录=主检出、文件=worktree、缺席=空，不许各写一份 isdir",
+      "forbidden_interchange": [
+        "submodule"
+      ],
+      "tokens": [
+        "worktree"
+      ],
+      "mix": "none",
+      "anchors": [
+        "AGENT-GUARDRAILS.md:499:**主检出判定只有一个机器无关判据：`.git` 是目录。**",
+        "tools/policy.py:260:def checkout_kind(root_path):"
+      ],
+      "status": "active"
+    },
+    {
+      "term": "已跑通",
+      "definition": "完成度四状态词（已跑通 / 已实现未测 / 组件 / 已否证）里唯一许配完成类动词的：必须同时给出复算命令与真实读数；写不出就只能降级，不许用别的说法（如\"已验证\"）",
+      "forbidden_interchange": [
+        "已验证"
+      ],
+      "tokens": [
+        "已跑通"
+      ],
+      "mix": "exclusive",
+      "orphan_homes": [
+        "docs/positioning/STATUS.md",
+        "scripts/claims_evidence.py"
+      ],
+      "anchors": [
+        "docs/positioning/STATUS.md:13:有可执行的复算命令 + 真实读数 + 至少一条端到端断言",
+        "scripts/claims_evidence.py:6:python scripts/claims_evidence.py --update     # 收紧棘轮（变多就整体拒绝写入）"
+      ],
+      "status": "active"
+    }
+  ],
+  "history": [
+    {
+      "ts": "2026-11-21",
+      "action": "seed",
+      "term": "*",
+      "reason": "初始 17 条：种子全部从真实代码/文档的权威行提炼（anchors 即定义原文），防偷换概念=概念契约机器可查"
+    },
+    {
+      "ts": "2026-11-21T19:07:08+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "验收口径节扩为双绿（C046 术语契约），AGENT-GUARDRAILS 下游行号整体移位，锚点重定位",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:07:08+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "同上：验收口径节扩行，锚点重定位",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:07:08+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "同上：验收口径节扩行，锚点重定位",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:32:34+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "attest merge moved agent_verify lines (claims step)",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-21T19:32:34+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "attest merge moved agent_verify lines",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-21T19:32:34+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "attest merge moved agent_verify lines",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-21T19:32:34+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "attest merge moved agent_verify lines",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-21T19:32:34+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "attest merge moved agent_verify lines",
+      "loosened": ""
+    },
+    {
+      "ts": "2026-11-21T19:32:52+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "stale line after attest merge (re-anchored to 844)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:32:52+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "stale line after attest merge (re-anchored to 113)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:32:52+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "stale line after attest merge (re-anchored to 154)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:32:52+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "stale line after attest merge (re-anchored to 122)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T19:32:52+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "stale line after attest merge (re-anchored to 883)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T20:14:29+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "stale line after claim-decomposition pass-through in claims step (re-anchored to 851)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T20:14:29+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "stale line after claim-decomposition pass-through in claims step (re-anchored to 890)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T20:32:59+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "stale line after second-opinion step insertion in claims flow (re-anchored to 894)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T20:32:59+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "stale line after second-opinion flag parsing above HELP (re-anchored to 156)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T20:32:59+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "stale line after second-opinion step insertion in claims flow (re-anchored to 933)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T22:11:47+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "mre derivations: claims step grew -NoDerivations passthrough + derivations summary parse + derivation-mismatch verdict, shifting lines below (894->923)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T22:11:47+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "mre derivations: CLAIMS_NOTE/HELP grew above the HELP claims block, shifting lines (156->162)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T22:11:47+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "mre derivations: claims step grew above the verdict tail, shifting lines (933->962)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T23:41:57+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "L123 orchestration-token work moved lines (prefix-stable receipt re-home + policy batch + watchdog)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T23:42:18+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "L123 orchestration-token work moved lines (prefix-stable receipt re-home + policy batch + watchdog)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T23:42:18+08:00",
+      "action": "update",
+      "term": "wall",
+      "reason": "L123 orchestration-token work moved lines (prefix-stable receipt re-home + policy batch + watchdog)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T23:42:18+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "L123 orchestration-token work moved lines (prefix-stable receipt re-home + policy batch + watchdog)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T23:42:18+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "L123 orchestration-token work moved lines (prefix-stable receipt re-home + policy batch + watchdog)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T23:42:18+08:00",
+      "action": "update",
+      "term": "worktree",
+      "reason": "L123 orchestration-token work moved lines (prefix-stable receipt re-home + policy batch + watchdog)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-21T23:42:45+08:00",
+      "action": "update",
+      "term": "declared",
+      "reason": "L123 re-anchor cleanup: stale line 113 anchor dropped (moved to 127)",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T00:05:44+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "L123 policy-batch empty-command skip moved lines",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T00:05:44+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "L123 policy-batch empty-command skip moved lines",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T01:08:15+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "L124 修复在 journal.py 前置了 safe_rel / manifest_files，restore 改为逐条校验；cmd_end 末尾的 journal: end -- 打印从 161 行移到 214 行，引文逐字未变，只重锚。",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T03:50:02+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "AGENT-GUARDRAILS 边界表/命令块新增行，journal-end 权威行整体下移 3 行，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T03:50:02+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "AGENT-GUARDRAILS 边界表/命令块新增行，changes 权威行整体下移 3 行，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T03:50:11+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "AGENT-GUARDRAILS 边界表/命令块新增行，verdict 权威行整体下移 3 行，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T04:52:53+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "AGENT-GUARDRAILS.md 边界表新增 context-guard 行，回执读法整体下移 8 行；引文未改，按锚点规范重记",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T04:52:53+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "AGENT-GUARDRAILS.md 边界表新增 context-guard 行，回执读法整体下移 8 行；引文未改，按锚点规范重记",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T04:52:53+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "AGENT-GUARDRAILS.md 边界表新增 context-guard 行，回执读法整体下移 8 行；引文未改，按锚点规范重记",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T13:46:18+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "容量租约表格插入导致 AGENT-GUARDRAILS 锚点下移 9 行（L157/C047 新增行），定义未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T13:46:18+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "容量租约表格插入导致 AGENT-GUARDRAILS 锚点下移 9 行（L157/C047 新增行），定义未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T13:46:18+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "容量租约表格插入导致 AGENT-GUARDRAILS 锚点下移 9 行（L157/C047 新增行），定义未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T14:20:00+08:00",
+      "action": "update",
+      "term": "verdict",
+      "reason": "AGENT-GUARDRAILS 命令块新增 sandbox 租约示例，verdict 权威行 765->769，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T14:20:00+08:00",
+      "action": "update",
+      "term": "change",
+      "reason": "同上：命令块新增 sandbox 租约示例，changes 权威行 787->791，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T14:20:00+08:00",
+      "action": "update",
+      "term": "caps",
+      "reason": "run_caps 文档头新增 --lease 四行，权威行 28->32，引文逐字未变",
+      "loosened": "drop-anchor"
+    },
+    {
+      "ts": "2026-11-22T14:20:00+08:00",
+      "action": "update",
+      "term": "failed",
+      "reason": "AGENT-GUARDRAILS 命令块新增行，failed 权威行 784->788，引文逐字未变",
+      "loosened": "drop-anchor"
+    }
+  ]
+}

@@ -1,7 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
-    Error, Limits, MAX_TASKS, Observation, Phase, PlanPatch, Selection, Snapshot, TaskSpec,
+    Error, Ledger, Limits, MAX_TASKS, Observation, Phase, PlanPatch, Selection, Snapshot, TaskSpec,
     selection,
 };
 
@@ -155,6 +155,18 @@ impl Plan {
     }
 
     pub fn select(&self, snapshot: &Snapshot, limits: &Limits) -> Result<Selection, Error> {
+        self.select_with_effects(snapshot, limits, &Ledger::new())
+    }
+
+    /// 带效果台账选批：在途/未知效果不会进入批次，而是产生对账义务。
+    ///
+    /// 操作 ID 约定与 [`crate::dispatch_ready`] 一致：单效果任务用任务 ID。
+    pub fn select_with_effects(
+        &self,
+        snapshot: &Snapshot,
+        limits: &Limits,
+        ledger: &Ledger,
+    ) -> Result<Selection, Error> {
         selection::select(
             self.revision,
             &self.tasks,
@@ -162,6 +174,7 @@ impl Plan {
             &self.order,
             snapshot,
             limits,
+            ledger,
         )
     }
 }
@@ -183,81 +196,5 @@ fn same_definition(current: &crate::Task, proposed: &crate::Task) -> bool {
         && current.deps == proposed.deps
 }
 
-fn task_index(tasks: &[TaskSpec]) -> Result<BTreeMap<&str, usize>, Error> {
-    let mut index = BTreeMap::new();
-    for (position, spec) in tasks.iter().enumerate() {
-        let id = &spec.task.id;
-        if id.trim().is_empty() {
-            return Err(Error::BlankTaskId { id: id.clone() });
-        }
-        if index.insert(id.as_str(), position).is_some() {
-            return Err(Error::DuplicateTask { id: id.clone() });
-        }
-    }
-    Ok(index)
-}
-
-fn validate_graph(tasks: &[TaskSpec]) -> Result<Vec<Vec<usize>>, Error> {
-    let index = task_index(tasks)?;
-    let mut predecessors = Vec::with_capacity(tasks.len());
-    let mut dependents = vec![Vec::new(); tasks.len()];
-    for (position, spec) in tasks.iter().enumerate() {
-        let mut previous = None;
-        let mut incoming = Vec::with_capacity(spec.task.deps.len());
-        for dependency in &spec.task.deps {
-            if previous == Some(&dependency.task) {
-                return Err(Error::DuplicateDependency {
-                    task: spec.task.id.clone(),
-                    dependency: dependency.task.clone(),
-                });
-            }
-            previous = Some(&dependency.task);
-            let &predecessor =
-                index
-                    .get(dependency.task.as_str())
-                    .ok_or_else(|| Error::UnknownDependency {
-                        task: spec.task.id.clone(),
-                        dependency: dependency.task.clone(),
-                    })?;
-            incoming.push(predecessor);
-            dependents[predecessor].push(position);
-        }
-        predecessors.push(incoming);
-    }
-    validate_acyclic(tasks, &predecessors, &dependents)?;
-    Ok(predecessors)
-}
-
-fn validate_acyclic(
-    tasks: &[TaskSpec],
-    predecessors: &[Vec<usize>],
-    dependents: &[Vec<usize>],
-) -> Result<(), Error> {
-    let mut remaining: Vec<usize> = predecessors.iter().map(Vec::len).collect();
-    let mut ready: VecDeque<usize> = remaining
-        .iter()
-        .enumerate()
-        .filter_map(|(position, &count)| (count == 0).then_some(position))
-        .collect();
-    while let Some(position) = ready.pop_front() {
-        for &dependent in &dependents[position] {
-            remaining[dependent] = remaining[dependent]
-                .checked_sub(1)
-                .expect("each validated edge is removed once");
-            if remaining[dependent] == 0 {
-                ready.push_back(dependent);
-            }
-        }
-    }
-    let blocked: Vec<String> = tasks
-        .iter()
-        .zip(remaining)
-        .filter(|(_, count)| *count != 0)
-        .map(|(spec, _)| spec.task.id.clone())
-        .collect();
-    if blocked.is_empty() {
-        Ok(())
-    } else {
-        Err(Error::Cycle { blocked })
-    }
-}
+mod validate;
+use validate::validate_graph;

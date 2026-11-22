@@ -15,6 +15,9 @@ __pycache__/
 # 智能体记忆与任务日志：属本机状态，不进公开树（privacy_scan 的 task-doc 同一口径）
 .agent/memory/
 
+# 交互信号台账（tools/signal.py）：分诊原文留在本机，研究语料走 export 出口
+.agent/signals.jsonl
+
 # 快照底座的本地产物（scripts/snapshot.py）：对象库与清单不进版本库
 .trit/
 
@@ -31,3 +34,53 @@ __pycache__/
 # 变异门单实例锁（运行时目录，不入库）
 scripts/.mutation-check.lock/
 *.mutant-tmp
+
+# 快照/回收站底座（tools/journal.py、tools/trash.py 的默认 store）：本机状态，
+# 不进公开树；trash.py 的 put 在站点未被 ignore 时会 fail-closed 拒绝
+.journal/
+
+# 交接包（tools/handoff.py 的默认落点）：本机协调状态，不进公开树；
+# 包内的 evidence 只写仓库相对路径，跨机交接显式 --out 到共享位置
+.agent/handoff/
+
+# 断粮续跑账本（tools/resume.py）：本机任务状态，不进公开树；
+# handoff 的 state_hash 也显式跳过它（见 tools/handoff.py SKIP_UNTRACKED）
+.agent/resume/
+
+# 模型路由配置（tools/model_router.py）：只写 provider/模型名/环境变量名，
+# 密钥在环境里；本机配置不进公开树，模板见 tools/models.example.json
+.agent/models.json
+
+# 沙盒 workdir 与调用回执（tools/sandbox_run.py）：默认落 %TEMP%，若显式指到
+# 仓内 .agent/sandbox/ 也不入库；回执同样只留本机证据
+.agent/sandbox/
+.agent/model-receipt*.json
+
+# 子智能体派发回执与逐任务模型回执（tools/subagent_dispatch.py）：本机协调证据，
+# 不进公开树；任务产物本身仍按计划里的 out 路径落盘
+.agent/subagent/
+.agent/subagent-dispatch*.json
+
+# 文字污染门回执（tools/context_guard.py）：只记哈希、计数与判定，不复制正文；
+# 本机证据不进公开树
+.agent/context-guard*.json
+.agent/text-guard*.json
+
+# cognition/ 训练层的交互语料（cognition/collect.py 的投影产物）：私有，不出克隆；
+# 公开知识（knowledge/）才入库。搬去模型仓库后由 cognition/.gitignore 接管
+cognition/corpus/
+
+# selftest 的落盘记录（tools/selftest.ps1 尾部写入，tools/doctor.py 读取）：机器状态，
+# 不进公开树；doctor 的 selftest 面在没这份记录时会明确 UNAVAILABLE 并给重跑命令
+.agent/last-selftest.json
+
+# simchain 的模拟报告落盘（tools/simchain.py simulate 写入）：机器状态与本次扫描时长，
+# 不进公开树；是给 tools/doctor.py 未来 simchain 面的前向接口（usage 已注明）
+.agent/last-simchain.json
+
+# doctor 的门结果缓存（tools/doctor.py 写入）：本机状态，指纹一变就重验；
+# 不进公开树，也不许让 doctor 自己把 git status 弄脏
+.agent/doctor-cache.json
+
+# 数据管线产物（本地/CI 生成，不入库）
+data-pipeline-out/

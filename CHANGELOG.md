@@ -2,6 +2,471 @@
 
 ## [Unreleased]
 
+### Security（trit-orch 完成闸、轨迹链与兼容性）
+
+- `Receipt`：新增 `provenance`（`HostMeasured`/`SelfReported`）、`nonce`、`command`、
+  `authorization`/`freshness`/`usage` 与 `test_digest`；`finish` 默认只接受宿主测量回执，
+  `--allow-self-reported` 是显式兼容逃生舱。
+- `TraceEventStore`：真实 SHA-256 内容摘要 + `chain_seq` 写入序；`load` 重算校验；
+  旧格式（全空摘要）自动迁移，混合格式 fail-closed；`with_strict_hash` 拒绝旧格式。
+- `TraceAnchor`：可选 HMAC-SHA256 链头锚点，检测整链重算；`with_anchor` 默认可选、
+  `with_anchor_required` 严格；锚点文件缺失在可选模式下退化为无锚点。
+- 轨迹追加：按路径分锁 + 批量追加（`append_step` 一次写）；水位原子替换。
+- `LedgerStore`：目标损坏也回退 `.bak`；`save` 后 `sync_all`。
+- CLI：stdin 16 MiB、轨迹 256 MiB、认领 4096 条上限；`finish` 输出 `all_passed`、
+  `test_digests`；`./node` 等带路径程序名被拒绝；子进程 stdout 64 MiB 上限。
+- 轨迹写入：跨进程 `.lock`（create_new + stale 回收）；日志/水位/锚点尽力事务，
+  sidecar 失败回滚日志与水位；`TraceLog::with_tail` 报告尾部缺口；旧日志流式读取；
+  `truncate_incomplete_tail` 半行恢复。
+- 可选 trit-db 后端：`tritdb` feature + `TritDbTraceStore`（事件与元数据存进
+  `tritdb-txn` 单事务）；见 `docs/TRACE-BACKENDS.md`。
+- CLI `trace`：`--trace-backend jsonl|tritdb`，append/load/check；可选
+  `tritdb-sql`（按 `chain_seq` 增量物化后查询 `trit_trace`，重复查询不重复插入）、
+  `tritdb-cas`（**增量**快照/恢复：manifest 只记变化条目 + `!del:` tombstone，
+  沿 parent 链合并，anchor 可选 HMAC）与 `tritdb-pgwire`（pgwire 远程查询，
+  启动时物化一次）。
+- 新增 `trace sync`：把事件增量物化进独立 SQLite（`<wal>.sqlite`，`rusqlite`
+  可选依赖），与轨迹 WAL 解耦，可与轨迹写入方并发。
+- 新增 `trace compact`：CAS 链压成单层，旧 head 追加到
+  `<cas_root>/trit-trace.compacted`（旧 manifest 仍可手工恢复，单层时幂等）。
+- 新增 `trace gc`：物化表按条数保留最近 N（默认 10000，`--trace-keep-last`），
+  永不删最大 `chain_seq` 行，避免 sync 回填。
+- 新增自研只读 pgwire 服务（`pgwire_sqlite.rs`）：存在 `<wal>.sqlite` 时
+  `trace serve` 直接查 SQLite，服务期间可写入与 sync、客户端实时可见；
+  支持简单查询与扩展查询（Parse/Describe/Bind/Execute/Close/Sync + `$n` 参数），
+  只读、无认证/TLS。
+- 移除 pgwire 的后台刷新：实测 `tritdb-txn` 的 WAL 锁是进程级排他的，
+  服务持有期间第二个连接必然报 `wal is locked by process`。
+- `tritdb-*` 依赖改为 **vendored 源码**（`third_party/trit-db`，rev `aca71888`，
+  MIT OR Apache-2.0）：`cargo build --offline` 不再需要 git 网络或凭据；
+  `scripts/vendor-tritdb.sh <rev>` 负责重新导出。
+- 兼容性：`Receipt`/`TraceEvent`/`HandoffPacket` 新增字段均有 serde 默认，旧 JSON 可读；
+  源码字面量构造需补字段，推荐用 `Receipt::host_measured` / `TraceEvent::new` 等构造器；
+  `Error` 新增变体，下游穷尽 `match` 需补分支。
+
+### Added（容量租约：硬件探针 + 跨项目协调 + provider 前准入）
+
+- `tools/capacity_lease.py`（stdlib only，新建）：`probe/status/reserve/release/renew/contract/load`；
+  逻辑核/load/可用内存、GPU 卡数、磁盘空闲、IO advisory slot 五类探针；共享租约目录
+  （Windows byte-range / Unix flock 跨进程锁）+ 可续租 TTL + 不可续租 `deadline_at`
+  + 过期清理；坏租约 `capacity-unreadable` fail-closed；不把“读不出”当“没占用”。
+- `LeaseHeartbeat`：后台线程按 `max(5, ttl//3)` 续租，只延长 `expires_at` 到
+  `min(now+ttl, deadline_at)`；到硬 deadline 返回 `deadline-exceeded`，长任务不会悄悄
+  变成无限预算。
+- `tools/subagent_dispatch.py`：`--capacity off|auto|enforce`，默认 `auto` 只在
+  `--parallel > 2` 启用；provider 调用前申请 worker/内存/GPU/磁盘/IO 租约，失败整批
+  `capacity-refused`（exit 2），批准后把五类预算/deadline 写成 CAPACITY CONTRACT 注入
+  每条 prompt；运行中启 heartbeat，`finally` 先停 heartbeat 再释放；释放失败标
+  `capacity-release-failed`、续租失败标 `capacity-heartbeat-failed`（均 exit 1）。
+- `tools/run_caps.py`：新增 `--lease ID --capacity-dir DIR`，运行前校验租约存在且未过期，
+  租约内存成为上限；显式更大的 `--mem-mb` 被拒绝，不静默超预算。
+- `tools/sandbox_run.py`：新增 `--capacity-lease/--capacity-dir`，在工作目录与 policy
+  之前加载租约，过期/缺失/内存超额 fail-closed；通过后把同一 lease id 传给 `run_caps`，
+  回执 `capacity` 段记录租约与契约。
+- `C047` 钉住 `capacity_lease.py --self-test`：20/20（含 8 进程抢 4 个租约、过期/坏租约、
+  GPU/磁盘/IO 预留与拒绝、heartbeat 不移动硬 deadline、dispatch 契约注入、占满时
+  provider 前拒绝）；`subagent_dispatch` 25/25、`sandbox_run` 41/41 未回退，全量
+  `selftest` 仍 675/675。
+- 文档：新增 `AGENT-CAPACITY.md`；`AGENT-COORDINATION.md`、`AGENT-GUARDRAILS.md`、
+  `AGENTS.md`、`docs/README.md`、`docs/ERRORS.md` L157 同步。
+
+### Added（入口加固第二轮：长 base64、跨段/多语言、二进制与宿主内容哈希）
+
+- `tools/context_guard.py`：base64 超过旧 256 KiB 阈值不再整段跳过，改按 256 KiB
+  窗口 + 16 KiB overlap + 0/1/2/3 相位解码，256 窗口 / 64 MiB 总预算；新增句首锚定
+  的 `segmented-instruction`（220/140 字符宽）与西/法/德/俄/日五条窄平行规则；
+  `_fold()` 只对混合脚本 token 做同形字映射，避免把纯西里尔译文折成乱码；
+  `scan_binary()` 从非 UTF-8 数据抽 ASCII/UTF-8 可打印段，并按 8 成员 / 1 MiB
+  预算解 zip/tar 文本成员；`--out/--receipt` 加 `--root` 包含检查，junction 越界
+  exit 2，只有 `--allow-outside-root` 放行。自测 **59/59**；红队 **81 例、
+  0 攻击漏检、0 overblock**。
+- `tools/sandbox_run.py`：宿主文件在 64 MiB 总预算内全内容哈希（不再有 1 MiB
+  以上 metadata-only；超预算判 `host-unprovable`）；`.git/index` 改用暂存条目
+  语义哈希（`git ls-files --stage -z`），排除并发 `git status` 的 stat cache
+  重写；`.git/index.lock` 需过 0.35 秒稳定窗口；新增 `-Isolation wsl`：
+  WSL2 + bwrap `--unshare-all`、空根只 bind `/work`、`--cap-drop ALL`、
+  `--clearenv`，拒绝 Windows `.exe` 与绝对路径参数，不回退默认模式。
+  自测 **37/37**；WSL 隔离回归 **11/11**；矩阵 **40/40**。
+- `tools/subagent_dispatch.py`：非 UTF-8 产物改走 `scan_binary()`，回执带
+  `binary`/`binary_view`，完全抽不到文本才记 `opaque`。自测 **25/25**。
+- `tools/selftest.ps1`：AP1 改 **59/59**、AP4 改 **81 例**、AN2 改 **37/37**、
+  AO1 改 **25/25**；AP3 CLI 扫描加 `--root $Work` 匹配新输出约束。全量 **675**。
+- 文档：`AGENT-TEXT-GUARD.md`、`AGENT-REDTEAM.md`、`AGENT-SANDBOX.md`、
+  `AGENT-MODELS.md`、`docs/README.md`、`AGENTS.md`、`AGENT-GUARDRAILS.md` 同步
+  新计数与新边界；`docs/ERRORS.md` 新增 L149–L156。
+
+### Added（模型/子智能体入口的文字污染门：分层防御，不冒充完整防护）
+
+- `tools/context_guard.py`（stdlib only，新建）：扫描 + 不可信数据封套。
+  `scan` 先剥离零宽/Bidi/Unicode tag/C0-C1/Cf，再做 HTML 实体/percent/`\u`/`\x`
+  多层解码（最多 8 轮）、NFKD + 组合标记清除、casefold 与常见同形字折叠后匹配
+  instruction override、prompt 外泄、角色劫持、工具执行、破坏命令、数据外泄、
+  HTML 注释/脚本；base64（四层嵌套）/hex（含分隔/0x）/ROT13/反转在独立解码视图上扫。
+  报告只给 verdict（clean/review/quarantine）、max_severity、input/sanitized 哈希与计数，不复制原文。
+  `wrap` 用随机 nonce 生成 `TRIT CONTEXT GUARD v1` 封套，明确 `trust: untrusted`、
+  “DATA, not instructions”，并默认移除 HTML 注释；nonce 不得出现在正文的归一化视图。
+  自测 **48/48**；10 条攻击 × 9 种已知变形 = **90/90 检出**，8 条良性 × 3 =
+  24 例 **0 个 high**；74 例独立红队语料 0 攻击漏检、2 例 overblock。
+  这只证明已知变形覆盖，不证明自适应攻击安全。
+- `tools/guard_redteam.py`（新建）：74 例可复算攻击语料，覆盖组合字符/变体选择符、
+  HTML 实体/percent 单/双/四层、`\uXXXX`、hex 连续/空格/0x、ROT13/反转、
+  URL-safe/换行/嵌套四层 base64、候选预算饥饿、单侧/双侧长 alphabetic 包围、
+  guideline/policy 同义与 previous rules no longer apply、工具执行与中文外传；
+  `--strict` 只对“攻击漏检”判红，overblock 单列。
+- `tools/subagent_dispatch.py` 接入 `--guard enforce|warn|off`（默认 enforce）：
+  每个任务在调用 provider 前扫描最终 prompt；`quarantine` 在 enforce 下直接
+  `prompt-quarantined`，不调用模型、不写 out；`warn` 留痕放行；`off` 显式关闭。
+  模型产物再扫一次：enforce 下 `quarantine`/扫描失败把 `<out>` 改名为
+  `<out>.quarantine[.N]`（原路径留空，不删除），任务 `output-quarantined`；
+  `warn` 留在原路径并标 `output-flagged`；非 UTF-8 产物记 `opaque`，不冒充已扫。
+  顶层回执加 `guard`，逐任务加 `prompt_guard`/`output_guard`，不落原文。
+  派发自测 **24/24**（输入前缀隔离、输出隔离、warn 留痕、硬链接/符号链接/junction
+  prompt_file 与 out 路径拒绝、大小写/尾点 denied component 拒绝）。
+- `tools/sandbox_run.py`：workdir 先 `realpath` 拒绝 junction/链接；`-Copy` 拒绝
+  任何 reparse point、`nlink>1` 硬链接、大小写/尾点变体；宿主指纹改为 git 状态 +
+  全文件 manifest，`.agent/.git/.qoder` 不再排除，`.git/index` 按内容哈希，
+  `node_modules/target` 保留目录与文件 name/size/mtime；git-ignored 写入、
+  排除目录写、缓存新建/覆盖均判 `host-mutated`；`MAX_HOST_FILES=200000` 超限判
+  unprovable。自测 **34/34**。
+- `tools/selftest.ps1` 新增 AP 组 4 条：AP1 文字门 48/48、AP2 stress 90/90 且
+  良性 0 high、AP3 CLI high 输入 exit=1/回执 quarantine/原文件零改写、AP4 74 例
+  红队 0 攻击漏检；AO1 断言
+  从 13/13 改为 24/24，AN2 从 23/23 改为 34/34。全量基线 671→**675**，`$skipped` 同步。
+- 文档：新增 `docs/engineering/AGENT-TEXT-GUARD.md`（论文依据、四层设计、回执、
+  跨智能体边界、未落地的 capability/provenance/记忆门）与 `AGENT-REDTEAM.md`
+  （74 例语料、沙盒 junction/排除目录/缓存/reparse 路径洞、修复与残余边界）；
+  `docs/README.md` 索引、`AGENTS.md`、`AGENT-GUARDRAILS.md` 边界表/命令块/验收口径、
+  `AGENT-MODELS.md` 派发 guard 同步。
+- 台账新增 L133（`sanitize` 把整数码位与字符集合比较，零宽/Bidi 分类少报）、
+  L134（base64 扫描跑在 casefold 之后，编码指令漏检）、L135（短中文 payload 被
+  `<24` 阈值过滤）、L136（同一函数里还留着一处旧 `<24`，放宽后仍先被跳过；base64
+  下限 40 也挡掉 36 字符的短 payload，改为 24）、L137（变体选择符/组合重音拆词
+  绕过）、L138（base64 候选预算 12 被前置良性 blob 耗尽）、L139（sandbox workdir
+  junction 可写任意目录）、L140（相对硬链接可读根外 secret）、L141（git-ignored
+  宿主写不被指纹发现）、L142（base64 中段 payload 被起点窗口漏掉）、
+  L143（多层 HTML/percent/`\u`/分隔 hex/四层 base64 只解一层）、
+  L144（`.agent/.git` 排除目录可写且报 ok）、L145（`.git/index` 与构建缓存内容漏检）、
+  L146（根内 junction 把 `.agent` 复制进沙盒）、L147（派发器 out 经 junction 写入
+  `.agent`）、L148（`.AGENT`/`.agent.` 绕过组件表）。
+
+### Added（子智能体执行面：按角色模型路由 + workspace 沙盒 + 并发沙盒矩阵 + 派发器）
+
+- `tools/subagent_dispatch.py`（stdlib only，新建）：真正的按角色派发器，不只是“选模型”。
+  读 tasks.json，按 role 用同一份模型配置选模型，`--parallel N` 并行调用
+  `model_router.py call`，输出到计划声明的 `out`，逐任务回执落 `.agent/subagent/`。
+  任务 id / out 路径必须唯一且都在 root 内；`out` 已存在默认拒绝（`--overwrite` 显式开）；
+  `budget_tokens<=0` 在调用前拒绝；声明预算后 provider 不报 usage 则 fail-closed，
+  报了 usage 才事后核对总量；选不到模型/调用失败都只失败该任务，整体 exit 1。
+  自测 13/13（三角色分模型、并行产出、已有产物拒绝、重复 id/out、越界 out、零预算、无 usage 预算、无路由、dry-run）。
+- `tools/sandbox_matrix.py` 增加 `hostwrite` 场景：每个 case 用**独立宿主**，用绝对路径
+  写宿主，必须判 `host-mutated`（exit 3）且文件确实出现；避免共享宿主把“别人写变了”
+  误当成“本 case 逃逸”。40 例矩阵中 hostwrite 5/5 检出；`--scenario hostwrite --cases 100
+  --parallel 12` 为 **100/100**，workdir 100 个互不相同。
+- `tools/selftest.ps1` 新增 AO 组 1 条：AO1 派发器 13/13；AN3 矩阵断言加 hostwrite
+  独立宿主检测。全量基线 670→**671**，`$skipped` 同步。
+- 文档：`docs/engineering/AGENT-MODELS.md` 补派发器/预算诚实边界；`AGENT-SANDBOX.md`
+  补 hostwrite 场景与 100 例读数；`AGENTS.md`、`AGENT-GUARDRAILS.md` 同步验收口径。
+
+### Added（子智能体执行面：按角色模型路由 + workspace 沙盒 + 40 沙盒矩阵）
+
+- `tools/model_router.py`（stdlib only，新建）：`validate/probe/route/call` 四条子命令。
+  配置只写 `base_url`、模型名与 `api_key_env`，不写密钥字面量；`validate` 拒绝
+  `api_key/token/secret` 字段与 `sk-...` 形状的值。`route` 按角色/能力/成本偏好选模型，
+  只探测可用性（命令在不在、环境变量在不在），**不发网络请求**；选不到可用模型 exit 2，
+  不静默回退付费模型。`call` 支持 `openai-chat`（OpenAI 兼容 `/chat/completions`）与
+  `command`（本机 CLI，stdin 或 `{prompt}`/`{prompt_file}`/`{role}`/`{model}` 占位），
+  回执记 model/provider/prompt_sha256/output_sha256/seconds/usage/error。自测 16/16
+  （配置反证、角色选择、能力拒绝、HTTP stub、500 失败留痕、命令 provider、超时）。
+  模板 `tools/models.example.json`；本机配置 `.agent/models.json`（已 gitignore）。
+- `tools/sandbox_run.py`（stdlib only，新建）：子智能体命令的 workspace 沙盒。默认在宿主
+  根外建空 workdir，`-Copy` 只收相对路径（拒绝绝对/`..`/符号链接/`.git/.agent/node_modules/
+  target/.qoder`，默认 64 MB / 5000 文件上限）；`policy.py` 以 workdir 为根先分类，拒绝即
+  不运行；`run_caps.py` 套内存/进程/秒帽；stdin DEVNULL；环境只留白名单并摘除密钥类变量；
+  跑前/跑后取宿主指纹（git 用 HEAD+过滤 status+diff，非 git 用 size+mtime manifest），
+  变了且没 `-AllowHostWrite` → `host-mutated` exit 3；成功默认清理 workdir，`-Keep` 留现场。
+  `verdict` 有限集：ok / policy-denied / host-mutated / host-unprovable / run-timeout /
+  run-failed / bad-invocation。自测 23/23。
+- `tools/sandbox_matrix.py`（新建）：40 个独立 workdir 并发对抗（safe/copy/env/policy/
+  timeout/exit/flood 七类轮转，默认 `--cases 40 --parallel 8`），判据含 failed=0、
+  distinct workdirs=40、safe/copy/env 宿主零写入、超时 124、策略拒绝、退出码原值、输出截断。
+  本机实测 **40/40，3.87 s**；加压 `--cases 100 --parallel 12` 混跑仍 **100/100（6.21 s）**；
+  `hostwrite` 单场景 100 例 **100/100（3.22 s）**。
+- `tools/selftest.ps1` 新增 AN 组 3 条：AN1 模型路由 16/16、AN2 沙盒 23/23、AN3 矩阵
+  40/40；全量基线 667→**670**。`$skipped` 同步。
+- 文档：`docs/engineering/AGENT-MODELS.md`、`AGENT-SANDBOX.md`，`docs/README.md` 索引、
+  `AGENTS.md` 护栏工具链、`AGENT-GUARDRAILS.md` 边界表/命令块/验收口径同步。
+- 新台账 L128（矩阵驱动对 `run=None` 用 `dict.get` 默认值失效）、L129（run_caps 的 124
+  被误报成普通失败）、L130（CLI 参数归一化与目标键名不一致，直调 API 自测掩盖）。
+
+### Added（多智能体协调：认领门前置 + 交接门宿主侧）
+
+- `tools/handoff.py`（stdlib only，新建）：`create/gate/state/show/list` 五条子命令。
+  包字段严格镜像 `crates/trit-orch` 的 `HandoffPacket::validate`（8 个必填非空字段 + 4 个
+  非空列表项 + `expires_at` 为正整数且晚于 `now`）；`state_hash` = HEAD + 过滤本机账本后的
+  `git status --porcelain -z --no-renames` + `git diff HEAD --binary` + 未跟踪文件内容哈希；
+  `gate` 三态 True/Unknown/False（结构不合法=False，过期/base 漂移/指纹不一致/状态不可证=Unknown，
+  全对上=True），退出码 0/1/2；默认落 `<Root>/.agent/handoff/<id>.json`，同 idempotency_key 幂等、
+  不同 key 拒绝覆盖；包内禁止本机盘符/UNC 路径。不计入指纹的本机账本：`.journal/`、
+  `.agent/handoff/`、`.agent/resume/`、`.agent/memory/`、`.agent/signals.jsonl`、
+  `.agent/last-*.json`、`.agent/doctor-cache.json`。
+- `tools/agent_verify.py`：新增 `--claim-gate` / `--claim-who` / `--claims-ledger` / `--handoff`
+  四个参数，在 preflight 之后、budget 之前串入 **handoff → claim-gate** 两步：
+  `--handoff` 调 `handoff.py gate`，非 True 即 `refused by handoff`；
+  `--claim-gate` 把 `-Changed` 转仓库相对后调 `scripts/agent_claims.py gate --json`，
+  false/unknown 都 `refused by claim gate`（Unknown 不是默认许可）。回执 `STABLE_HEAD` 新增
+  `handoff` / `claim` 字段（full 保留路径/reason，compact 只留 id/verdict/base_commit/state_hash
+  与 who/verdict/paths 计数/ledger）。两门都是 opt-in，不传时行为不变。
+- `.gitignore`：新增 `.agent/handoff/`（交接包，本机协调状态）与 `.agent/resume/`
+  （断粮续跑账本），两者都不进公开树。
+- `tools/selftest.ps1`：AF 组新增 `New-AvCoordFixture` 与 8 条断言——AF23a/AF23/AF23b/AF23c
+  （认领后放行/未认领拒绝/他人占用 `false` 拒绝/缺 `--claim-who` 参数拒绝）、
+  AF24a/AF24/AF24b/AF24c（同树放行/改文件 `Unknown`/坏包 `False`/过期或 base 改坏 `Unknown`）；
+  AF 组 `$skipped` 从 38 校正到 46（实测段内 46 条断言）。
+- 同机开销（真实仓库 9 个脏文件，各 5 次）：`handoff.py gate` 均值 **271.0 ms**
+  （286.7/275.4/268.5/262.9/261.5）；`agent_claims.py gate` 均值 **53.3 ms**
+  （53.1/52.5/51.7/56.2/52.9）。两者含解释器启动 ~24 ms；handoff 大头是
+  `git diff HEAD --binary`，脏树越大越慢，**不做缓存**（状态指纹每次重算）。
+- `docs/engineering/AGENT-COORDINATION.md`（新建）：两门的三态语义、state_hash 口径、
+  开销读数、边界与未落地项（DeliveryReceipt 四态、自动 claim/release、dispatch 环、跨机签名）；
+  `docs/README.md` 索引同步；`AGENT-GUARDRAILS.md` verdict 表/边界表/命令块与 `AGENTS.md`
+  §护栏工具链同步。
+
+### Fixed（接入认领门时发现：局部名遮蔽预算台账模块）
+
+- `tools/agent_verify.py` 的 `main` 里用 `ledger` 做局部变量名，遮蔽了模块级
+  `import ledger`；`--budget-token` 分支执行 `ledger.load(...)` 时 `UnboundLocalError`，
+  selftest Y17 因回执未落盘才暴露。局部名改 `claims_ledger`，Y17/Y18 复跑绿；
+  台账记 L127（跨门组合路径必须有一条走完整链的断言）。
+
+### Added（doctor v2 ②：simchain 第七面接入 + ledger/registry 成本实测）
+
+- `tools/doctor.py` 新增 **simchain 面**（第七面，`face_simchain`）：只读
+  `.agent/last-simchain.json`（`tools/simchain.py simulate` 的落盘报告），`violations > 0`
+  判 FAIL；文件缺失 / 坏 JSON / 自相矛盾（`invariants_ok + violations != scenarios`、
+  `scenario_details` 行数不等于 `scenarios`、逐场景违规数与顶层不一致）判 UNAVAILABLE
+  并给重跑命令；`at` 只打进 evidence/detail，**不判新鲜度**——与 selftest 面同一纪律。
+  doctor 不跑模拟器（200 场景分钟级）。selftest AI30–AI35 六条断言：缺报告点名重跑 /
+  全绿 OK / 违规 FAIL 但 exit 仍 0 / 自相矛盾 UNAVAILABLE / 坏 JSON UNAVAILABLE / 真仓两态；
+  AI1b 从六面改七面。
+- 同机同命令复测（2026-11-22，加入第七面后）：强制重验中位 **1.312 s**（n=3，1.303–1.336）、
+  命中中位 **0.538 s**（n=4，0.533–0.553），2.4×；simchain 面本身 **0.34 ms**（n=7），
+  不是开销来源。
+- **缓存不扩到 ledger/registry**（量过再决定）：`parse_ledger` 0.28 ms、face_ledger 104 ms
+  （300.8 KB selftest 源码的断言号扫描）、face_registry 32 ms；两面合计 136 ms，占命中档
+  25%。registry 语义是"当前环境能不能跑"，缓存会在装好缺失命令后继续报旧 WARN；ledger
+  单独缓存只省 19% 且新增一套失效面。结论写进 `docs/engineering/DOCTOR-V2.md` §5。
+- `docs/engineering/DOCTOR-V2.md`：§1 补复测读数、§2 补 simchain 面与行号、§4 换成七面的
+  分量读数、§5 第 1/2 项改成已落地 + 读数与决定、§7 补两条未证（新鲜度、真实违规报告）。
+  `docs/ERRORS.md` L126 并账；`docs/README.md` 索引同步。
+
+### Changed（doctor v2：门结果 stat 指纹缓存 + L124 收口）
+
+- `tools/doctor.py` 的 gates 面加**验证轨迹缓存**：`-Root` 全树 `(rel, mtime_ns, size)` 指纹
+  （目录跳过集与 `tools/journal.py` 同纪律）+ SHA-256 前 16 位；命中即复用 gates 面结果，
+  `--refresh` 强制重验。读数（同机同命令）：强制重验中位 **1.257 s**（n=3，1.230–1.257，
+  首跑冷盘 2.155）、命中中位 **0.536 s**（n=4，0.516–0.560），**2.3×**；两个门合计 0.743 s，
+  占强制重验的 59%。缓存只在树能忽略它时落盘（`git check-ignore`；没有 `.gitignore` 的仓库
+  不写，体检不许弄脏体检对象），缓存文件 `.agent/doctor-cache.json` 进 `.gitignore`
+  （机器状态，不进公开树）。selftest 新增 AI29/AI29b：同指纹命中、`--refresh` 与改文件都重验、
+  缓存文件指纹 16 位。
+- L124 收口：`tools/journal.py` 的 restore/status/end 对"合法 JSON 但内容被改"的 manifest
+  fail-closed——`safe_rel` 校验 rel（空 / 绝对 / 盘符 / `..` / 空组件）、`manifest_files`
+  拒绝非 list 的 files 表、坏条目点名跳过且 restore 红、有损坏时不 bin 新文件（无法区分
+  "快照后新增"与"被改坏的条目"就不猜）。同时记 L125：Windows 原生反斜杠是分隔符不是损坏
+  （修 L124 时把正常快照全判 damaged，G5/G8 回归）。selftest 新增 AM25/AM25b/AM26 三条钉子。
+- `docs/engineering/DOCTOR-V2.md`：开销读数、机制、边界、Rust / 三进制 / 四进制评估（不替换）与
+  编排待办（doctor 的 simchain 面未接、缓存只覆盖 gates、journal 跨平台路径未测等）。
+- `tools/simchain.py` 的 journal 不变量跟上 L124 的新契约：`status` exit=1 **且输出点名 damaged**
+  才算"如实报损"，不再按裸 exit 判违规；没有 loss 字样的 1 仍判红。50 种子 × 4 故障族复跑
+  **200/200 不变量成立、0 违规**（`--runs 50`，report 落 `.agent/last-simchain.json`）。
+
+### Added（稳定性 v2 ①：simchain 链路确定性模拟测试器——黑盒 DST + 模拟报告落盘）
+
+- `tools/simchain.py`（stdlib only）：**种子化故障调度器**，对整条 agent_verify 链做
+  **黑盒**故障注入——不 import、不打补丁、不改被测工具，只从外部驱动真实子进程
+  （agent_verify/attest/ledger/journal/resume/trash）在一次性 fixture 仓里跑，然后对
+  现场遗留物断言全局不变量。`simulate --seed N --faults kill,corrupt,concurrent,truncate
+  --runs 50`：默认 50 种子 × 4 故障族 = 200 场景（实测 5-8 分钟，随负载浮动）。
+- 四故障族：**kill**（在种子选中的耐用标记物上杀真实进程——chain.lock 出现/journal 快照
+  出现/第 k 条 run 命令的标记文件出现，观察窗 ≥0.3s 远宽于击杀延迟；锁/快照恢复沿用
+  AF 组机制）/ **corrupt**（四 store × 三模式：journal manifest、attest 链、cost-ledger、
+  resume 会话 × 坏 JSON / 半行截断 / 字节位翻转）/ **concurrent**（双链同 root 竞争）/
+  **truncate**（账本文件按种子字节截断，断电模型）。
+- 全局不变量逐场景断言：attest verify 通过或明确拒收（不静默坏账）、journal 快照可还原
+  或明确报损、无半截回执（回执要么完整要么不存在）、chain.lock 可恢复、resume 会话无
+  半状态、证据链无假账（恢复扫描留下的账面必须是磁盘前缀；回执声称的 changes 可复核）；
+  读者崩溃（Traceback）本身就是违规。
+- **确定性机制**：每场景私有 `random.Random(f"simchain:{seed}:{family}")`（字符串 sha512
+  播种，跨进程跨版本稳定），场景间零共享状态；kill 击杀点落在宽窗标记物上；报告只记
+  与竞争无关的分类布尔（胜者身份、墙钟等易变值一律不进场景行）——同种子两次实跑报告
+  逐字节全同（selftest AM2 钉死）。种子空间说明进 usage。
+- 违规处理纪律：发现真 bug → 本线能修就修配断言，修不了的入台账。首轮 50 种子全量实跑
+  200 场景命中 2 例真 bug（journal restore 对内容级损坏 manifest 崩溃栈，seed 13/35）——
+  属 journal 线（L114 后续），本线不越界，入 docs/ERRORS.md **L124** 列为债务；simchain
+  把该失效钉成不变量违规，修复前命中必报。
+- 模拟报告固化 `.agent/last-simchain.json`（seeds/faults/scenarios/invariants_ok/violations/
+  duration_s）：**tools/doctor.py 的前向接口**——doctor 现在读 last-selftest.json，将来
+  simchain 面直接读这份文件，本次不动 doctor.py；路径与 last-selftest.json 同纪律进
+  .gitignore。stdout 纯 ASCII（机读报告纪律，AM22 钉死）。
+- selftest 新增 **AM 组 24 断言**：模拟器同种子两次全同、四故障族故障注入后不变量成立、
+  汇总表数学自洽、DEFAULT_SEEDS=50 钉死、落盘报告七键、AM 组实测 <120s。
+- 出处（写进 usage）：业界确定性模拟测试的标杆是 FoundationDB（SIGMOD 2021——全部新
+  功能在无数故障组合下先模拟后上线，Jepsen 全过；单进程种子化故障注入，每个 bug 从
+  种子可复现）+ WarpStream 把同一纪律用于整个 SaaS。本工具引入的是纪律，不是代码。
+
+### Added（稳定性 v2 ②：账本崩溃一致性——fsync 落盘纪律 + 坏尾恢复扫描）
+
+- **fsync 落盘纪律（Windows 语义边界如实标注）**：attest.py append 改为整行一次全写
+  （短写循环，短写会把下一行拼进上一行——L115 同族）+ `os.fsync` 句柄后才关；
+  ledger.py save flush + fsync。os.fsync 在 Windows 上是对句柄的 FlushFileBuffers——
+  stdlib 里最接近 fsync(2) 的等价物；目录级 fsync 在 Windows stdlib 无对应（目录句柄
+  不可开），断电后的名字项持久性是**声明的边界不是承诺**。进程击杀不丢 OS 缓冲写，
+  所以模拟器内 kill 已能检验"已确认的账不丢"（AM19）。
+- **恢复扫描（load 时，只修物理截断）**：attest JSONL 的**尾行**不完整（最后一行不可
+  解析且缺结尾换行——真实截断的签名：整行写持久化的任何前缀都不带换行）→ 坏尾字节
+  **整行隔离进回收站**（trash.put_paths，reason 记账，绝不裸删）+ 原路径 `ftruncate`
+  到最后完好行 + 报文 `recovered: truncated N bytes (quarantined at <path>)`；cost-ledger
+  JSON 文档账本 → 保留到最后一个完整 entry 并补 5 字节收尾脚手架（结构不是账目），
+  超出它的字节全部进回收站。绝不静默丢账（字节账本 kept+quarantined == loader 见到的
+  字节，AM18 钉死），也绝不因坏尾永久拒载（恢复后 append/add 立即可用，AM10/AM20c）。
+- **分工钉死**：恢复扫描只修**物理**（截断尾），**逻辑**坏链照旧 fail-closed——中段
+  位翻转、坏行、断链仍由 verify_chain 把关（AM16/AM23：拒绝时文件字节不动、零隔离、
+  无崩溃栈）；语义篡改对无哈希链的账本（cost-ledger 的 entry 值）设计上不可检——
+  防篡改账本是 attest 链（预算闸在有链时消费链余额），边界写进两工具 usage。
+- 配套加固（同一崩溃面）：ledger.load 对"合法 JSON 但非账本文档"（裸数组等）干净拒绝
+  exit 2（原实现 AttributeError 栈）；attest.load_chain 改二进制逐行解码——位翻转打出
+  坏 UTF-8 时按行点名拒绝或走尾恢复，不再整文件解码崩栈；中段坏行维持 AG7 的
+  fail-closed 原样（恢复不越权）。
+- selftest AM 组内恢复面断言：恢复三态（完好不动 / 截断隔离恢复 / 逻辑坏拒）、隔离
+  文件必在回收目录且 blob 落盘、字节账本、fsync 后 kill 不丢已确认账、cost-ledger
+  前缀保全与二次 load 幂等。
+
+### Added（数学推理引擎 mre：推导图重执行器 + number 声明的推导第二证据路径）
+
+- `tools/mre.py`（stdlib only，fractions）：**精确算术推导图重执行器**——模型把计算过程
+  摆成推导图（steps：add/sub/mul/div/sqrt/pow，inputs 是字面量或先前 step 的
+  output_id，每步声明 output + note），引擎用 Fraction **重执行整张 DAG**（Kahn 拓扑序，
+  引用可指向任意 step，环 → 拒），每步与声明 output 比对（精确相等或容差内），最终
+  target 与重算值比对。三态输出：VERIFIED（附每步核对清单）/ UNVERIFIED（无 steps、
+  无 target、缺 note——没查的不许当真）/ REJECTED（**点名第一个失配步**，比笼统伪造
+  更具体）；结构坏/超限一律 exit 3 拒（steps≤10000、每步输入≤256、值位数≤100000、
+  二分≤4096 轮、分数指数分母≤1024——规模护栏 fail-closed）。
+- **无浮点谎言**：sqrt/pow 非精确结果用**保守区间**夹逼（纯有理数二分到声明容差，精度
+  边界=声明容差，引擎不自加精度），区间向后传播、下游判定保持 sound；碰巧精确
+  （sqrt(4)、4^(1/2)）按精确处理免 tol；声明值按十进制字面量解释（JSON float 经 repr
+  往返），超 float 精度的精确值必须写成字符串。除零/负数开方/负底分数次幂/0^0/非精确
+  步未声明 tol → REJECTED 点名步骤。
+- **诚实边界（写死 usage）**：mre 核验的是**推导一致性**（给的步骤算不出声称的结果），
+  不是推导前提的真实性——前提对不对由上游证据面管；角色区分：Lean 一类证明助手验收
+  **命题**，mre 验收**算术**。出处：业界过程监督实证（"Let's Verify Step by Step"，
+  2023）——推导轨迹（逐步 note + 判定）就是过程监督的训练数据形状；业界把数学声明变成
+  机器可核验对象的探索（NS 奇性声明配 Lean 4 形式化，Alpöge–Buckmaster 线，假设态探索
+  ——工程不依赖该声明真假）。
+- claim_audit 接入（补"number 单源孤儿"缺口）：number 声明可携带 `derivation`
+  （root 相对文件路径或内嵌 steps）——重执行 VERIFIED 给该数字**第二证据路径**（工件
+  出处 + 推导重算），second-opinion 允许升 dual-source；REJECTED → 直接 FABRICATED
+  （附失配步）；推导文件缺失/坏 JSON/结构坏 → FABRICATED；**无 derivation 的 number
+  行为逐字不变**（`-NoDerivations` 整关）。机器路径闸扫进 derivation（内嵌对象字符串值
+  与文件路径都在门口被扫）。
+- agent_verify 编排：`--derivations` 默认开（`--no-derivations` 关），claims 步骤透传；
+  回执 appended 字段 `claims.derivations={verified, rejected}`（second-opinion 下
+  `claims.second.derivations` 同形）；REJECTED 与 FABRICATED 同级拒绝全链
+  （verdict `rejected: derivation mismatch`）。
+- cognition/SCHEMA.md 新增 §7 derivation 契约（字段/DAG 规则/精确性口径/三态判定/
+  public-safe 分级）；docs/ERRORS.md L121 并账；selftest 新增 AK 组 34 断言（引擎三态、
+  失配步定位、区间夹逼、规模护栏、claim_audit 升级路径、编排回执、旧 number 回归、
+  10000 步边界、坏 JSON）；对抗自测：20 条"数字撒谎但附假推导"声明全部 FABRICATED 且
+  逐条定位失配步。
+### Added（内核数值完整性 ②：Burgers 治理示范 + 区间算术基准）
+
+- `tests/burgers_governance.rs`——数值实验与普通命令一样过闸：这是**治理结构
+  的演示**，不是 NS 定理的任何声明、不声称证明任何流体力学命题；对 NS 主题
+  的诚实致敬方式是治理数值实验，不是声称定理。放 `tests/` 不放 `examples/`
+  的理由：tests 进 `cargo test` 收工门，示范的每次回归都被闸真正执行——
+  不被闸跑的治理示范不成立。
+- 治理面（与 trit-orch 同构）：**准入帽**先于执行（扩散 CFL≤0.45 / 对流
+  CFL≤0.9，解析稳定界 0.5/1.0 收紧 10%——帽不是稳定边界本身；CFL 数按
+  `interval` 保守包络核对，点区间进、加宽 1 ulp 出，边界处宁可拒；超帽拒绝
+  启动；dt 逐步供给、每步再准入，umax 实测自当前状态不信任最大值原理——
+  run_caps/policy 的数值世界同构）+ **能量漂移不变量**（每步能量对解析衰减
+  界 E(t)≤E(0)e^(−2νk₁²t)（周期域 Poincaré）比对，越界 panic=实验作废——
+  trace invariants 同构；1% 余量是连续命题不逐步传递到离散解的治理余量，
+  如实注明本口径实测零松弛也绿）+ **结论带证据**（RunRecord 回报
+  cfl/e0/e_final/界，断言可对账）。
+- 4 个治理测试：CFL 违规拒绝启动（含帽边界两侧行为）、合规跑通且能量界
+  保持（1000 步，终点能量 ≤ 界且真实衰减）、违规 dt 注入中途判红、CFL 合规
+  的状态污染（u×1.5）被能量账本识破。
+- `benches/interval_bench.rs`（harness=false 零新依赖）：四则+sqrt 单次耗时
+  （计时分辨率 ~100ns、单次运算远低于它——按 64 次/样本批计量取中位）、
+  10 万次混合链吞吐（add+mul+sub ≈ 14ns/步）、加宽 vs 不加宽对照如实报占比
+  （本输入分布下 ~30-38%：加宽是正确性代价不是精度特性）。
+
+### Added（内核数值完整性 ①：双精度保守区间算术）
+
+- `trit-ops::interval`：f64 保守区间（活区间 `lo≤hi` 且两端有限；Empty 是唯一
+  合法的 NaN 形态 `NaN,NaN`），语义决策表定死并测试——构造端点 NaN/±Inf/倒序
+  Empty 化、div 含零分母（含端点 0）Empty（拒绝而非全区间：全区间=信息全丢还
+  假装有答案，Empty 强制调用方显式处理）、sqrt 负域 Empty、端点溢出（含加宽
+  自身溢出）Empty；add/sub/mul/div/sqrt 每次运算后 lo/hi 各向外加宽 1 ulp
+  （无定向舍入时用位操作 nextafter 补足，跨 ±0 平台落 ±最小 subnormal；
+  LANDMINE 注释：加宽是正确性代价不是精度特性）。出处只给名字：Moore 1966；
+  Moore–Kearfott–Cloud 2009；IEEE 1788-2015（rigorous numerics 标准文本）。
+- 常量 π/e 按"最近 double ±1 ulp"夹逼（真值与最近 double 相距 ≤0.5 ulp，
+  ±1 ulp 必夹住）。
+- property 测试（手写 xorshift64*，零新依赖）：随机区间运算与 i128 精确有理
+  真值逐例对照（add/sub 端点精确、mul/div 四端点组合、sqrt 平方精确回代），
+  1 万例/运算 × 5；含包含单调（x⊆y ⟹ x∘z ⊆ y∘z 且 z∘x ⊆ z∘y，除法右参限于
+  同号非零定义域）。
+- 如实界限：溢出/未定义折叠 Empty 是中断语义，不参与包含单调（确定性测试
+  钉住）；真实坑记录 docs/ERRORS.md L122（±0 平台的 ulp 加宽跳档，配测试名）。
+
+### Added（资源硬帽：run-caps.py 内核级资源上限 + agent-verify --caps 包裹）
+
+- `tools/run_caps.py`（+`run-caps.sh`/`run-caps.ps1` 转发器，stdlib only，ctypes）：
+  `run-caps --mem-mb N --procs N --seconds S -- <cmd>`。Windows 上子进程以
+  CREATE_SUSPENDED 起进程 → 进 Job Object → 再 resume，消灭"先跑一条指令再入组"
+  的逃逸窗口：PROCESS_MEMORY 每进程内存顶（内核拒绝超帽分配）、ACTIVE_PROCESS
+  进程数顶（第 N+1 个 CreateProcess 直接失败）、KILL_ON_JOB_CLOSE 父死孙亡；
+  --seconds 是父侧 watchdog，超时 TerminateJobObject 整个 job，退出码映射
+  超时=124、其余原样透传、起不来=127。POSIX 回退：RLIMIT_AS（按进程继承）+
+  setsid 进程组收割；RLIMIT_NPROC 是按用户计数会伤及同账号其他进程，**不用**，
+  能封多少如实标注多少（`--procs` 在 POSIX 上明说不生效）。
+- **诚实强度声明（--help 与回执 caps.note）**：这是内核级资源帽（Windows 上内存/
+  进程数由内核强制），但**不是**安全边界——不做文件系统/网络隔离，不防蓄意进程
+  逃逸。与 policy 分工：policy 是事前命令分类器，防误操作（危险命令、越界写入）；
+  run-caps 管运行期，防失控（内存/进程/时长爆掉时兜底）。一个门、一个闸。
+- 校验层 fail-closed：`SetInformationJobObject` 失败即 exit 2，绝不降级成"不加帽
+  继续跑"；一个帽都不给就拒绝。常量钉死过程见 docs/ERRORS.md L97。
+- agent_verify 集成：`--caps`（默认 2048MB/64 进程/1800s）+ `--caps-mem-mb/
+  --caps-procs/--caps-seconds`；run 段每条命令经 run-caps 包裹
+  （`-- python _run.py -Root .. -Command ..`，shell 选择仍只在 _run.py 一处），
+  回执 run[] 追加 `caps` 字段与 `caps.note`，旧字段不动；不开 `--caps` 时行为
+  与现状逐字节一致。
+- selftest 新增 Z 组（13 条）：内存帽杀超大分配、进程数帽拒创建、超时=124、
+  退出码透传、参数 fail-closed、编排层 --caps 回执注记、caps 关闭回归保护。
+
+### Added（断粮续跑：resume.py 会话台账 + agent-verify 声明制额度闸）
+
+- `tools/resume.py`（+`resume.sh`/`resume.ps1` 转发器）：按任务一份会话台账
+  `<Root>/.agent/resume/<task-id>.json`，字段 task/created/status/budget/steps[]/history[]。
+  状态机 open → suspended（删失事件，带 reason）→ finished/censored——**中途断粮挂起
+  是删失（censored），不是失败**：台账里根本没有 failed 这个状态。begin 对已存在会话
+  fail-closed；非法 task-id（路径形态）拒收；会话文件不含任何本机路径。
+- `resume` 子命令输出"已完成/最后一步/下一步建议 + 逐字可复制的 ASCII 续跑命令块"，
+  接续会话的人或模型只看这一段就能接着干；suspend/resume 时探测最近一次 journal
+  快照（`.journal/latest/manifest.json` 的内容哈希前 12 位）只记 id 不复制内容。
+- agent-verify 新增 `--budget-token N --task-id <id>`：**声明制闸门**——工具层测不了
+  模型侧 token，N 是调用者声明的剩余额度；声明 ≤ 0 时 preflight 之后、run 之前整体
+  拒绝，verdict=`suspended (budget) before run`，自动把会话挂起（reason=budget）并
+  打印续跑命令块；声明为正或未声明时闸门不拦。诚实边界写死在 `--help` 与回执
+  `budget.gate` 字段。
+- run 段任一命令失败且带 `--task-id` 时自动 `progress(unproven)` + `suspend
+  --reason manual`：verdict 保持 `command failed` 不变，回执只追加
+  `resume`/`resume_checkpoint` 字段，stdout 尾部追加一行 checkpoint。
+- selftest 新增 Y 组 32 条断言（Y1–Y21，含子断言）：begin/suspend/resume 往返与字段完整性、重复 begin 拒、
+  censored≠failed 措辞、journal 快照 id 探测、额度闸 verdict、失败自动挂起且回执旧
+  字段不变、非法 task-id 拒收等。I2b 修正：checks 步是无条件 add，期望序列补上它
+  （此前该断言永远红，见 docs/ERRORS.md L98）。
 ### Added（trit-wspace：128 对复验——0.829 是 64 对的偏乐观读数）
 
 - 数据从 128 句 / 64 对扩到 256 句 / 128 对（`export_bert6.py <dir> 256`），口径与 Hessian
@@ -229,6 +694,9 @@
   zip = "^0.6"`——锁文件层面无解，只能换依赖形态。
 - 修法：npyz 0.8.4→0.9.1 且不再启用 "npz" feature，改走 npyz 自带的
   npz-without-feature 模式；本 crate 直连 `zip = "9.0.5"`（default-features = false，
+  只留 deflate，`time`/aes/zstd 等旧传递面出树）。`weights.rs`/`main.rs` 把
+  `NpzArchive` 换成本地 `open_npz`/`read_entry`（`zip::ZipArchive` + `NpyFile`）：
+  缺条目映射回 `None` 语义、panic 文案逐条保留；合成 npz 端到端读取跑通（9 个数组
   只留 deflate，`time`/aes/zstd 等旧传递面出树）。`src/npz.rs` 承接
   `open_npz`/`read_entry`（`zip::ZipArchive` + `NpyFile`），`weights.rs`/`main.rs`
   改调用；缺条目映射回 `None` 语义、panic 文案逐条保留；合成 npz 端到端读取跑通（9 个数组
@@ -237,6 +705,25 @@
   没人处理。`checks.py` 新增 C045 钉住基准锁文件 zip ≥ 9.0.5（回退即红）；给 CI
   加 cargo-audit / cargo-deny 盯全仓锁文件的建议**另立任务**，本次不动 CI。详见
   docs/ERRORS.md L109。
+### Added（trit 级纠错码：GF(3) 域 + q-ary Hamming + 三元 Golay，trace_store 可选 ECC 帧）
+
+- `trit-ops::gf3`：GF(3) 域算术（平衡 trit 表示，乘法即 `Trit::mul`）+ q-ary Hamming
+  系统码 `r=3 → [13,10,3]`、`r=4 → [40,36,3]`（射影代表元校验矩阵）+ 扩展
+  `[14,10,4]`/`[41,36,4]`（整体校验位，教科书 SECDED 的 q-ary 版本）。真值表：
+  r=3 全码字空间 59049×39 全枚举单错全纠；双错伴随式恒非零、误纠 100% 如实钉进测试。
+- `trit-ops::golay`：三元 Golay `[11,6,5]` 完美码（Paley QR 构造 mod 11 导出系统形
+  `G=[I6|B]`，d=5 重量指纹钉死）；243 伴随式查表与重量 ≤2 错型双射；729×243=177147
+  全真值表，1 错/2 错确定区分（d≥5 ⇒ 二错伴随式不与单错碰撞）。
+- `trit-ops::frame`：ECC 帧封装 `TRE1 <tag> <len> <hex>`（bytes↔6 trit/字节、tryte 打包、
+  m-序列加权帧校验）。消费语义：块内单错确定自愈、双错确定拒（fail-closed）、单块内
+  ≥3 错伪装被帧校验确定性拦截（Krylov 秩论证），多块同时伪装残差 3⁻⁶≈0.13% 实测钉住。
+- `trit-orch::TraceEventStore`：可选 ECC（`with_ecc`/`with_ecc_code`，默认关闭=字节级零
+  变化）；单错自愈打 WARN、双错 fail-closed 拒（新 `Error::TraceEcc`，
+  kind=`trace_ecc_rejected`）；帧行自带码 tag，未开 ECC 的存储读 ECC 文件照常校验。
+- 基准 `benches/ecc.rs`（harness=false 零新依赖）：n=13/n=40 两档 encode/syndrome/decode
+  + Golay + 帧层 10 万次取中位 + r=3 全码字枚举耗时。动机与界限声明：与黎曼猜想**无关**
+  （RH 是素数分布定理，对内核构造没有推论）；这是三进制硬件路线下 trit 级存储完整性
+  （ECC 内存的 q-ary 对应物），依据标准 q-ary 编码理论。
 
 ### Added（输出行架构级冗余：行复制 + 分歧告警——#557 未证栏修复落地）
 

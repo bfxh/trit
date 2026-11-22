@@ -22,7 +22,14 @@ import time
 import urllib.request
 from pathlib import Path
 
+# 同目录工具：按 claims_audit/mutation_sweep 的口径把 scripts/ 钉进 sys.path，
+# 被当模块 import 时也找得到 fetch_guard。
+if str(Path(__file__).resolve().parent) not in sys.path:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+from fetch_guard import safe_urlopen
+
 UA = {"User-Agent": "Mozilla/5.0 (trit-parts dataset fetch)"}
+# LANDMINE: 校验必须逐跳，重定向才是洞。
 BASE = "https://huggingface.co/datasets/allenai/objaverse/resolve/main"
 TREE = "https://huggingface.co/api/datasets/allenai/objaverse/tree/main"
 MIN_BYTES = 200_000
@@ -30,7 +37,7 @@ MIN_BYTES = 200_000
 
 def get(url: str, timeout: int = 120) -> bytes:
     req = urllib.request.Request(url, headers=UA)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with safe_urlopen(req, timeout=timeout) as r:
         return r.read()
 
 

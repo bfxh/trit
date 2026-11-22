@@ -10,6 +10,8 @@
 
 use std::path::PathBuf;
 
+use trit_learn::json::Json;
+use trit_learn::verify::{publish_base, sibling_exe};
 use trit_parts::partsrun::{created_unix, git_out, json_str};
 use trit_parts::scenefp::{fingerprint_scenes, norm_root};
 
@@ -27,37 +29,6 @@ fn usage() -> ! {
     std::process::exit(2);
 }
 
-fn field(txt: &str, key: &str) -> Option<String> {
-    let pat = format!("\"{key}\": \"");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find('"')?;
-    Some(rest[..end].to_string())
-}
-
-fn number(txt: &str, key: &str) -> Option<f64> {
-    let pat = format!("\"{key}\": ");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest
-        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-' || c == 'e' || c == '+'))
-        .unwrap_or(rest.len());
-    rest[..end].parse().ok()
-}
-
-fn list(txt: &str, key: &str) -> Option<Vec<usize>> {
-    let pat = format!("\"{key}\": [");
-    let i = txt.find(&pat)? + pat.len();
-    let rest = &txt[i..];
-    let end = rest.find(']')?;
-    Some(
-        rest[..end]
-            .split(',')
-            .filter_map(|s| s.trim().parse().ok())
-            .collect(),
-    )
-}
-
 fn jnum(v: f64) -> String {
     if v.is_finite() {
         format!("{v}")
@@ -66,16 +37,16 @@ fn jnum(v: f64) -> String {
     }
 }
 
-fn sibling(name: &str) -> PathBuf {
-    let dir = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_default();
-    if cfg!(windows) {
-        dir.join(format!("{name}.exe"))
-    } else {
-        dir.join(name)
-    }
+fn list(j: &Json, key: &str) -> Vec<usize> {
+    j.get(key)
+        .and_then(Json::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(|v| v.as_u64().map(|n| n as usize))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn main() {
@@ -90,25 +61,33 @@ fn main() {
         .unwrap_or_else(|| PathBuf::from(mp));
     let bin = arg(&argv, "--parts-3d")
         .map(PathBuf::from)
-        .unwrap_or_else(|| sibling("parts-3d"));
-    let manifest = std::fs::read_to_string(&mpath).unwrap_or_else(|e| {
-        eprintln!("读不了清单 {}: {e}", mpath.display());
+        .unwrap_or_else(|| sibling_exe("parts-3d"));
+    let manifest = trit_learn::json::read_json(&mpath).unwrap_or_else(|e| {
+        eprintln!("读不了清单 {e}");
         std::process::exit(2);
     });
-
-    let renders = PathBuf::from(field(&manifest, "renders").unwrap_or_else(|| usage()));
-    let scenes = PathBuf::from(field(&manifest, "scenes_root").unwrap_or_else(|| usage()));
-    let want_hash = field(&manifest, "hash").unwrap_or_default();
-    let cell = number(&manifest, "cell").unwrap_or(0.01);
-    let tau = number(&manifest, "tau").unwrap_or(0.01);
-    let seal = number(&manifest, "seal").unwrap_or(0.0) as usize;
-    let selfsup = manifest.contains("\"selfsup\": true");
-    let frames = list(&manifest, "frames").unwrap_or_default();
-    let train = list(&manifest, "train").unwrap_or_default();
-    let eval = list(&manifest, "eval").unwrap_or_default();
-    let want_iou = number(&manifest, "iou_mean").unwrap_or(f64::NAN);
-    let want_closed = number(&manifest, "closed").unwrap_or(-1.0);
-    let want_scenes = number(&manifest, "scenes").unwrap_or(-1.0);
+    let config = manifest.get("config").unwrap_or_else(|| usage());
+    let data = manifest.get("data").unwrap_or_else(|| usage());
+    let result = manifest.get("result").unwrap_or_else(|| usage());
+    let renders = PathBuf::from(data.get_str("renders").unwrap_or_else(|| usage()));
+    let scenes = PathBuf::from(data.get_str("scenes_root").unwrap_or_else(|| usage()));
+    let want_hash = data.get_str("hash").unwrap_or_default();
+    let cell = config.get("cell").and_then(Json::as_f64).unwrap_or(0.01);
+    let tau = config.get("tau").and_then(Json::as_f64).unwrap_or(0.01);
+    let seal = config.get("seal").and_then(Json::as_f64).unwrap_or(0.0) as usize;
+    let selfsup = config
+        .get("selfsup")
+        .and_then(Json::as_bool)
+        .unwrap_or(false);
+    let frames = list(config, "frames");
+    let train = list(config, "train");
+    let eval = list(config, "eval");
+    let want_iou = result
+        .get("iou_mean")
+        .and_then(Json::as_f64)
+        .unwrap_or(f64::NAN);
+    let want_closed = result.get("closed").and_then(Json::as_f64).unwrap_or(-1.0);
+    let want_scenes = result.get("scenes").and_then(Json::as_f64).unwrap_or(-1.0);
     if frames.is_empty() || eval.is_empty() {
         eprintln!("清单缺 frames / eval");
         std::process::exit(2);
@@ -125,9 +104,9 @@ fn main() {
         eprintln!("模型哈希失败: {e}");
         std::process::exit(2);
     });
-    let ok_model = manifest.contains("\"kind\": \"extract-occupancy\"")
-        && manifest.contains(&format!("\"sha256\": \"{model_sha}\""));
-    let ok_data = manifest.contains("\"algo\": \"sha256-content-v1\"")
+    let ok_model = manifest.get_str("kind") == Some("extract-occupancy")
+        && manifest.get("model").and_then(|m| m.get_str("sha256")) == Some(model_sha.as_str());
+    let ok_data = data.get_str("algo") == Some("sha256-content-v1")
         && format!("sha256:{}", fp.hash) == want_hash;
 
     // 复核不复用训练进程：用 --load-model 在新子进程里重跑评测。
@@ -175,10 +154,13 @@ fn main() {
         eprint!("{}", String::from_utf8_lossy(&out.stderr));
         println!("parts-3d occ 退出码 {:?}", out.status.code());
     }
-    let got = std::fs::read_to_string(&recheck).unwrap_or_default();
-    let iou = number(&got, "iou_mean").unwrap_or(f64::NAN);
-    let closed = number(&got, "closed").unwrap_or(-1.0);
-    let n = number(&got, "scenes").unwrap_or(-1.0);
+    let got = trit_learn::json::read_json(&recheck).unwrap_or(Json::Null);
+    let iou = got
+        .get("iou_mean")
+        .and_then(Json::as_f64)
+        .unwrap_or(f64::NAN);
+    let closed = got.get("closed").and_then(Json::as_f64).unwrap_or(-1.0);
+    let n = got.get("scenes").and_then(Json::as_f64).unwrap_or(-1.0);
     let ok_metrics = out.status.success()
         && want_iou.is_finite()
         && iou.is_finite()
@@ -222,26 +204,8 @@ fn main() {
     );
     // 只有写默认位置时才维护「PASS/reject 互斥」；--json-out 是旁路记录，不碰正式记录。
     let custom = arg(&argv, "--json-out").map(PathBuf::from);
-    let vp = custom.clone().unwrap_or_else(|| {
-        let mut s = model.as_os_str().to_owned();
-        s.push(if pass {
-            ".verify.json"
-        } else {
-            ".verify.reject.json"
-        });
-        PathBuf::from(s)
-    });
-    if custom.is_none() {
-        let mut s = model.as_os_str().to_owned();
-        s.push(if pass {
-            ".verify.reject.json"
-        } else {
-            ".verify.json"
-        });
-        let _ = std::fs::remove_file(PathBuf::from(s));
-    }
-    std::fs::write(&vp, body).unwrap_or_else(|e| {
-        eprintln!("写复核记录 {}: {e}", vp.display());
+    let vp = publish_base(&model, pass, custom.as_deref(), &body).unwrap_or_else(|e| {
+        eprintln!("{e}");
         std::process::exit(2);
     });
     println!(
@@ -262,13 +226,17 @@ mod tests {
 
     #[test]
     fn parses_manifest_fields() {
-        assert_eq!(field(MAN, "hash").as_deref(), Some("sha256:ab"));
-        assert_eq!(number(MAN, "cell"), Some(0.01));
-        assert_eq!(number(MAN, "iou_mean"), Some(0.554));
-        assert_eq!(number(MAN, "closed"), Some(2.0));
-        assert_eq!(list(MAN, "frames"), Some(vec![0, 1, 2]));
-        assert_eq!(list(MAN, "eval"), Some(vec![84, 85]));
-        assert_eq!(list(MAN, "nope"), None);
-        assert!(!MAN.contains("\"selfsup\": true"));
+        let m = Json::parse(MAN).unwrap();
+        let data = m.get("data").unwrap();
+        let config = m.get("config").unwrap();
+        let result = m.get("result").unwrap();
+        assert_eq!(data.get_str("hash"), Some("sha256:ab"));
+        assert_eq!(config.get("cell").unwrap().as_f64(), Some(0.01));
+        assert_eq!(result.get("iou_mean").unwrap().as_f64(), Some(0.554));
+        assert_eq!(result.get("closed").unwrap().as_f64(), Some(2.0));
+        assert_eq!(list(config, "frames"), vec![0, 1, 2]);
+        assert_eq!(list(config, "eval"), vec![84, 85]);
+        assert!(list(config, "nope").is_empty());
+        assert_eq!(config.get("selfsup").unwrap().as_bool(), Some(false));
     }
 }

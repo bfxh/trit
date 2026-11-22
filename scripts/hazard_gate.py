@@ -56,6 +56,14 @@ ALLOW_RAW_MEMORY: dict[str, str] = {
         "长度与映射一致；结构体 Drop 恰好释放一次；映射建立后文件被外部改写属未定义行为"
         "（crate 文档写死这一安全边界）"
     ),
+    "crates/trit-orch/src/shadow/store.rs": (
+        "影子索引：锚点更新失败时把已追加的行截断回 previous_len 并 sync_all，"
+        "属文件回滚不变量（不涉内存映射），下一次写会重读尾部长度"
+    ),
+    "crates/trit-orch/src/trace_store/commit.rs": (
+        "轨迹提交：同一事务内写入后锚点失败即截断回 previous_len 并 sync_all，"
+        "回滚语义由 WAL/锚点恢复兜底；不涉内存映射"
+    ),
 }
 
 ALLOW_SEND_SYNC: dict[str, str] = {
@@ -83,13 +91,35 @@ ALLOW_RELAXED: dict[str, str] = {
     "crates/trit-ops/src/pool.rs": (
         "线程数配置与完成计数：单变量、无同步依赖，Relaxed 是教科书正确选择"
     ),
-    "crates/trit-orch/src/effects.rs": (
+    "crates/trit-orch/src/effects/persist.rs": (
         "SAVE_SEQ 只为台账原子写生成唯一临时名；Relaxed 只用于计数，不承担同步"
     ),
     "crates/trit-count/examples/matching_alloc_probe.rs": (
         "分配口径探针（example，不在产品路径）：三个 AtomicU64 只做 alloc/free 的次数与"
         "字节累加，读数只依赖 fetch_add 自身的原子性与 main 的单线程顺序，"
         "不用于任何跨线程同步或可见性屏障"
+    ),
+    "crates/trit-orch/src/bin/cli_finish/nonce.rs": (
+        "nonce 序号：只要求 fetch_add 的原子性以生成唯一临时名，"
+        "不承担跨线程可见性顺序"
+    ),
+    "crates/trit-orch/src/effects/persist/backup.rs": (
+        "SAVE_SEQ 序号：为原子写生成唯一临时名，Relaxed 只做计数"
+    ),
+    "crates/trit-orch/src/shadow/store.rs": (
+        "SEQ 序号：影子索引临时文件名的唯一性，不承担同步"
+    ),
+    "crates/trit-orch/src/trace_store/anchor.rs": (
+        "SEQ 序号：锚点临时文件名的唯一性，不承担同步"
+    ),
+    "crates/trit-orch/src/trace_store/legacy.rs": (
+        "SEQ 序号：旧格式迁移的临时文件命名，不承担同步"
+    ),
+    "crates/trit-orch/src/trace_store/watermark.rs": (
+        "SEQ 序号：水位文件临时命名，不承担同步"
+    ),
+    "crates/trit-orch/src/tritdb_backend/cas_anchor.rs": (
+        "SEQ 序号：CAS 锚点临时命名，不承担同步"
     ),
 }
 

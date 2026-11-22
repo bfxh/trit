@@ -6,46 +6,11 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::fingerprint::{file_sha256, sha256_hex};
+pub use trit_learn::json::json_str;
+use trit_learn::manifest::Item;
+pub use trit_learn::manifest::{Fingerprint as Fp, hash_items, norm, rel_path};
 
 /// 一份数据集的内容级指纹。
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Fp {
-    pub dirs: usize,
-    pub files: usize,
-    pub bytes: u64,
-    pub hash: String,
-}
-
-/// 路径写法归一：`E:\x` 与 `E:/x` 必须得到同一指纹。
-pub fn norm(p: &Path) -> String {
-    p.to_string_lossy().replace('\\', "/")
-}
-
-/// 把 `p` 写成相对 `base` 的路径（用于可搬移的资产包清单）。
-/// 两边都尽量用绝对路径比较；相对路径原样返回。
-pub fn rel_path(base: &Path, p: &Path) -> String {
-    use std::path::Component;
-    let b: Vec<Component> = base.components().collect();
-    let q: Vec<Component> = p.components().collect();
-    let mut i = 0usize;
-    while i < b.len() && i < q.len() && b[i] == q[i] {
-        i += 1;
-    }
-    let mut out = PathBuf::new();
-    for _ in i..b.len() {
-        out.push("..");
-    }
-    for c in &q[i..] {
-        out.push(c.as_os_str());
-    }
-    if out.as_os_str().is_empty() {
-        ".".into()
-    } else {
-        norm(&out)
-    }
-}
-
 /// `--data` 的展开规则（与 parts-train 历史行为一致）：
 /// 目录含 `rgb/` 就是场景本身，否则取其下含 `rgb/` 的子目录（排序）。
 pub fn expand_scenes(root: &Path) -> Vec<PathBuf> {
@@ -110,57 +75,6 @@ pub fn seg_files(rd: &Path) -> Result<Vec<PathBuf>, String> {
     Ok(v)
 }
 
-struct Item {
-    key: String,
-    path: PathBuf,
-}
-
-fn hash_items(items: Vec<Item>, dirs: usize) -> Result<Fp, String> {
-    let mut bytes = 0u64;
-    for it in &items {
-        bytes += std::fs::metadata(&it.path)
-            .map_err(|e| format!("{}: {e}", it.path.display()))?
-            .len();
-    }
-    let nthreads = std::thread::available_parallelism()
-        .map(|n| n.get())
-        .unwrap_or(1)
-        .clamp(1, 8);
-    let chunk = items.len().div_ceil(nthreads).max(1);
-    let mut parts: Vec<Vec<String>> = Vec::new();
-    let joined: Result<(), String> = std::thread::scope(|s| {
-        let mut handles = Vec::new();
-        for c in items.chunks(chunk) {
-            handles.push(s.spawn(move || -> Result<Vec<String>, String> {
-                let mut out = Vec::with_capacity(c.len());
-                for it in c {
-                    let h = file_sha256(&it.path)?;
-                    out.push(format!("{} {h}", it.key));
-                }
-                Ok(out)
-            }));
-        }
-        for h in handles {
-            let got = h.join().map_err(|_| "指纹线程 panic".to_string())?;
-            parts.push(got?);
-        }
-        Ok(())
-    });
-    joined?;
-    // 线程数变化不影响结果：合并顺序 = items 的原顺序。
-    let mut acc: Vec<u8> = Vec::new();
-    for line in parts.iter().flatten() {
-        acc.extend_from_slice(line.as_bytes());
-        acc.push(b'\n');
-    }
-    Ok(Fp {
-        dirs,
-        files: items.len(),
-        bytes,
-        hash: sha256_hex(&acc),
-    })
-}
-
 /// 训练集指纹：每帧的 `rgb/<stem>.png` + `<seg_sub>/<stem>.npy`。
 pub fn fingerprint_train(frames: &[(PathBuf, PathBuf)], seg_sub: &str) -> Result<Fp, String> {
     let mut items = Vec::with_capacity(frames.len() * 2);
@@ -185,7 +99,7 @@ pub fn fingerprint_train(frames: &[(PathBuf, PathBuf)], seg_sub: &str) -> Result
             path: lab,
         });
     }
-    hash_items(items, scenes.len())
+    hash_items(&items, scenes.len())
 }
 
 /// 评测语料指纹：与 `parts-inst eval` 读的同一批文件
@@ -233,25 +147,7 @@ pub fn fingerprint_eval(renders: &Path, scenes: &Path, limit: usize) -> Result<F
             }
         }
     }
-    hash_items(items, sds.len())
-}
-
-/// 清单里的 JSON 字符串转义（不引 serde）。
-pub fn json_str(s: &str) -> String {
-    let mut o = String::from("\"");
-    for c in s.chars() {
-        match c {
-            '"' => o.push_str("\\\""),
-            '\\' => o.push_str("\\\\"),
-            '\n' => o.push_str("\\n"),
-            '\r' => o.push_str("\\r"),
-            '\t' => o.push_str("\\t"),
-            c if (c as u32) < 0x20 => o.push_str(&format!("\\u{:04x}", c as u32)),
-            c => o.push(c),
-        }
-    }
-    o.push('"');
-    o
+    hash_items(&items, sds.len())
 }
 
 /// `git <args>` 的 stdout（失败给空串，清单里不因此中断训练）。

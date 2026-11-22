@@ -40,14 +40,6 @@
     "filter": "parses_parts_inst_summary"
   },
   {
-    "name": "parts: 训练集指纹不覆盖路径（换目录名可骗过复核）",
-    "file": "crates/trit-parts/src/partsrun.rs",
-    "old": "                    out.push(format!(\"{} {h}\", it.key));",
-    "new": "                    out.push(format!(\"{h}\"));",
-    "pkg": "trit-parts",
-    "filter": "train_fingerprint_distinguishes_paths"
-  },
-  {
     "name": "parts: 评测语料指纹不按 limit 截断（复核评的不是同一批帧）",
     "file": "crates/trit-parts/src/partsrun.rs",
     "old": "            if limit > 0 && i >= limit {",
@@ -74,14 +66,14 @@
   {
     "name": "extract-verify: 列表字段解析忽略键名",
     "file": "crates/trit-parts/src/bin/parts_extract_verify.rs",
-    "old": "    let pat = format!(\"\\\"{key}\\\": [\");",
-    "new": "    let pat = format!(\"\\\"frames\\\": [\");",
+    "old": "fn list(j: &Json, key: &str) -> Vec<usize> {\n    j.get(key)",
+    "new": "fn list(j: &Json, _key: &str) -> Vec<usize> {\n    j.get(\"\")",
     "pkg": "trit-parts",
     "filter": "parses_manifest_fields"
   },
   {
     "name": "occ: 偶数种子与下一个奇数撞车（seed|1 回归）",
-    "file": "crates/trit-parts/src/occ.rs",
+    "file": "crates/trit-parts/src/occ/mlp.rs",
     "old": "        let mut r = if seed.is_multiple_of(2) {\n            seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1\n        } else {\n            seed\n        };",
     "new": "        let mut r = seed | 1;",
     "pkg": "trit-parts",
@@ -89,7 +81,7 @@
   },
   {
     "name": "occ: lr 衰减失效（忽略 lr-final）",
-    "file": "crates/trit-parts/src/occ.rs",
+    "file": "crates/trit-parts/src/occ/mod.rs",
     "old": "        Some(end) if steps > 1 => {\n            let frac = step as f32 / (steps - 1) as f32;\n            lr + (end - lr) * frac\n        }",
     "new": "        Some(_end) if steps > 1 => lr,",
     "pkg": "trit-parts",
@@ -98,8 +90,8 @@
   {
     "name": "asset-verify: 档位解析吞掉第一档",
     "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
-    "old": "fn levels(txt: &str) -> Vec<Lv> {\n    let mut out = Vec::new();\n    for seg in txt.split(\"{\\\"cell\\\": \").skip(1) {",
-    "new": "fn levels(txt: &str) -> Vec<Lv> {\n    let mut out = Vec::new();\n    for seg in txt.split(\"{\\\"cell\\\": \").skip(2) {",
+    "old": "fn levels(v: Option<&Json>) -> Vec<Lv> {\n    let items = v.and_then(Json::as_array).unwrap_or(&[]);",
+    "new": "fn levels(v: Option<&Json>) -> Vec<Lv> {\n    let items = v.and_then(Json::as_array).map(|a| &a[1.min(a.len())..]).unwrap_or(&[]);",
     "pkg": "trit-parts",
     "filter": "levels_parse_all_metrics"
   },
@@ -122,8 +114,8 @@
   {
     "name": "asset-verify: 纹理 PNG 哈希解析错位到 OBJ 哈希",
     "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
-    "old": "            png_sha: field(seg, \"png_sha256\").unwrap_or_default(),",
-    "new": "            png_sha: field(seg, \"sha256\").unwrap_or_default(),",
+    "old": "                png_sha: text(\"png_sha256\"),",
+    "new": "                png_sha: text(\"sha256\"),",
     "pkg": "trit-parts",
     "filter": "texture_entries_parse_and_catch_mismatch"
   },
@@ -288,18 +280,10 @@
     "filter": "tests::stats_comparison_is_deciding"
   },
   {
-    "name": "rel_path: 不回退上级目录（可搬移清单失效）",
-    "file": "crates/trit-parts/src/partsrun.rs",
-    "old": "    for _ in i..b.len() {\n        out.push(\"..\");\n    }",
-    "new": "    for _ in i..b.len() {}",
-    "pkg": "trit-parts",
-    "filter": "partsrun::tests::rel_path_walks_up_and_down"
-  },
-  {
-    "name": "scene-verify: 嵌套数组不加深（对象数只数到 1）",
+    "name": "scene-verify: 数组条目数恒为 0",
     "file": "crates/trit-parts/src/bin/parts_scene_verify.rs",
-    "old": "        } else if ch == '[' {\n            depth += 1;",
-    "new": "        } else if ch == '[' {\n            depth += 0;",
+    "old": "        .map(|items| items.iter().filter(|v| matches!(v, Json::Obj(_))).count())",
+    "new": "        .map(|_| 0)",
     "pkg": "trit-parts",
     "filter": "tests::count_ids_handles_nested_arrays"
   },
@@ -313,7 +297,7 @@
   },
   {
     "name": "glb: 法线不归一化",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "                [(v[0] / l) as f32, (v[1] / l) as f32, (v[2] / l) as f32]",
     "new": "                [v[0] as f32, v[1] as f32, v[2] as f32]",
     "pkg": "trit-parts",
@@ -321,7 +305,7 @@
   },
   {
     "name": "glb: 节点平移漏掉 c−R·c",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "    let rc = [cx * c + cz * s, -cx * s + cz * c];",
     "new": "    let rc = [cx, cz];",
     "pkg": "trit-parts",
@@ -337,7 +321,7 @@
   },
   {
     "name": "glb: 转台关键帧角度恒 0",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "        let th = k as f32 * std::f32::consts::FRAC_PI_2;",
     "new": "        let th = 0.0f32;",
     "pkg": "trit-parts",
@@ -345,7 +329,7 @@
   },
   {
     "name": "glb: 根节点把自己也挂成 child",
-    "file": "crates/trit-parts/src/glb.rs",
+    "file": "crates/trit-parts/src/glb/mod.rs",
     "old": "        let children: Vec<String> = (1..=nodes.len()).map(|i| i.to_string()).collect();",
     "new": "        let children: Vec<String> = (0..nodes.len()).map(|i| i.to_string()).collect();",
     "pkg": "trit-parts",

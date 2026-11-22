@@ -160,7 +160,7 @@ def script_findings(path: pathlib.Path, text: str) -> tuple[list[dict], int]:
 def units(root: pathlib.Path) -> dict[str, dict]:
     """每个 crate / 每个脚本一个计数单位。"""
     result: dict[str, dict] = {}
-    for path in sorted(root.glob("crates/*/src/**/*.rs")) + sorted(root.glob("crates/*/tests/*.rs")):
+    for path in sorted(root.glob("crates/*/src/**/*.rs")) + sorted(root.glob("crates/*/tests/**/*.rs")):
         rel = path.relative_to(root).as_posix()
         crate = pathlib.PurePosixPath(rel).parts[1]
         entry = result.setdefault(f"crate/{crate}", {"tests": 0, "findings": []})

@@ -1,0 +1,14 @@
+[package]
+name = "tritdb-page"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+description = "8 KiB 页容器：头 + CRC32 + 半写检测"
+
+[dev-dependencies]
+tritdb-testkit.workspace = true
+
+[lints]
+workspace = true

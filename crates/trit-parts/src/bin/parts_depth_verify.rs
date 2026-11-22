@@ -11,10 +11,12 @@
 //! ```
 
 use std::path::PathBuf;
-use std::time::{SystemTime, UNIX_EPOCH};
 
+use trit_learn::json::Json;
+use trit_learn::verify::publish_base;
 use trit_parts::depthdata::{EvalSample, data_fingerprint, eval_holdout, is_held, load_sample};
 use trit_parts::depthnet::DepthNet;
+use trit_parts::partsrun::{created_unix, git_out, json_str};
 
 fn arg(argv: &[String], k: &str) -> Option<String> {
     argv.iter()
@@ -32,32 +34,6 @@ fn usage() -> ! {
          [--size 64] [--stride 2] [--pyr 0] [--full]"
     );
     std::process::exit(2);
-}
-
-fn git_out(args: &[&str]) -> String {
-    std::process::Command::new("git")
-        .args(args)
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-        .unwrap_or_default()
-}
-
-fn jstr(s: &str) -> String {
-    let mut o = String::from("\"");
-    for c in s.chars() {
-        match c {
-            '"' => o.push_str("\\\""),
-            '\\' => o.push_str("\\\\"),
-            '\n' => o.push_str("\\n"),
-            '\r' => o.push_str("\\r"),
-            '\t' => o.push_str("\\t"),
-            c if (c as u32) < 0x20 => o.push_str(&format!("\\u{:04x}", c as u32)),
-            c => o.push(c),
-        }
-    }
-    o.push('"');
-    o
 }
 
 fn main() {
@@ -109,10 +85,7 @@ fn main() {
     let commit = git_out(&["rev-parse", "--short", "HEAD"])
         .trim()
         .to_string();
-    let created = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
+    let created = created_unix();
 
     println!(
         "复核 {}：{} 帧 / {} 像素，形状对齐 log MAE {:.4}、深度相对误差 {:.2}%（常数基线 {:.2}%），δ<1.25 {:.3}；默认尺度 {:.2}%",
@@ -131,11 +104,11 @@ fn main() {
 
     let body = format!(
         "{{\n  \"schema\": 1,\n  \"kind\": \"depth-holdout-verify\",\n  \"created_unix\": {created},\n  \"commit\": {},\n  \"model\": {{\"path\": {}, \"sha256\": \"{model_sha}\"}},\n  \"data\": {{\"dirs\": {dirs}, \"files\": {files}, \"bytes\": {bytes}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{data_hash}\"}},\n  \"holdout\": [{}],\n  \"size\": {size},\n  \"metrics\": {{\"frames\": {}, \"pixels\": {}, \"mae_log\": {}, \"rel_pct\": {}, \"base_pct\": {}, \"delta\": {}, \"deploy_pct\": {}}}\n}}\n",
-        jstr(&commit),
-        jstr(&dcn.to_string_lossy()),
+        json_str(&commit),
+        json_str(&dcn.to_string_lossy()),
         holdout
             .iter()
-            .map(|h| jstr(h))
+            .map(|h| json_str(h))
             .collect::<Vec<_>>()
             .join(", "),
         r.frames,
@@ -151,11 +124,15 @@ fn main() {
     let mp = PathBuf::from(mp);
     // 只有 PASS 才写 `<dcn>.verify.json`（目录只收可信记录）；FAIL 落 `.verify.reject.json` 留证。
     let verdict = if mp.exists() {
-        let m = std::fs::read_to_string(&mp).unwrap_or_default();
-        let ok_model = m.contains(&format!("\"sha256\": \"{model_sha}\""));
+        let m = trit_learn::json::read_json(&mp).unwrap_or(Json::Null);
+        let ok_model = m
+            .get("model")
+            .and_then(|x| x.get_str("sha256"))
+            .is_some_and(|sha| sha == model_sha.as_str());
         // 只认内容级算法标记：旧清单（名+大小）与新指纹不可比，必须重训/重写清单。
-        let ok_data = m.contains("\"algo\": \"sha256-content-v1\"")
-            && m.contains(&format!("\"hash\": \"sha256:{data_hash}\""));
+        let want_data = format!("sha256:{data_hash}");
+        let ok_data = m.get("data").and_then(|d| d.get_str("algo")) == Some("sha256-content-v1")
+            && m.get("data").and_then(|d| d.get_str("hash")) == Some(want_data.as_str());
         if ok_model && ok_data {
             println!("复核 PASS：模型与数据指纹与清单一致");
             "pass"
@@ -167,14 +144,7 @@ fn main() {
         println!("没有清单（{}），只写复核记录", mp.display());
         "pass"
     };
-    let mut vp = dcn.as_os_str().to_owned();
-    vp.push(if verdict == "pass" {
-        ".verify.json"
-    } else {
-        ".verify.reject.json"
-    });
-    let vp = PathBuf::from(vp);
-    std::fs::write(&vp, body).unwrap_or_else(|e| panic!("{}: {e}", vp.display()));
+    let vp = publish_base(&dcn, verdict == "pass", None, &body).unwrap_or_else(|e| panic!("{e}"));
     println!("复核记录 {}（{verdict}）", vp.display());
     if verdict != "pass" {
         std::process::exit(1);
