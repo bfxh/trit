@@ -7,39 +7,17 @@ use crate::{Error, Ledger};
 
 use super::LedgerStore;
 
+#[path = "load.rs"]
+mod load;
+
 impl LedgerStore {
-    /// 读台账；目标不存在**或解析失败**时回退固定 `.bak`（save 在换文件窗口期
-    /// 崩溃会留下它），两者都没有才视为空台账。
-    pub fn load(&self) -> Result<Ledger, Error> {
-        match std::fs::read_to_string(&self.path) {
-            Ok(text) => {
-                Ledger::from_json(&text).or_else(|primary| self.load_backup().or(Err(primary)))
-            }
-            Err(error) if error.kind() == ErrorKind::NotFound => {
-                self.load_backup().or_else(|_| Ok(Ledger::new()))
-            }
-            Err(error) => Err(self.io(error)),
-        }
-    }
-
-    fn load_backup(&self) -> Result<Ledger, Error> {
-        let backup = self.backup_path();
-        match std::fs::read_to_string(&backup) {
-            Ok(text) => Ledger::from_json(&text),
-            Err(error) => Err(Error::LedgerIo {
-                path: backup.display().to_string(),
-                message: error.to_string(),
-            }),
-        }
-    }
-
     /// 原子替换式保存。
     ///
     /// 先写唯一 tmp 并 `sync_all`，再把当前有效台账挪到固定 `.bak`，最后把 tmp
     /// 换到目标。任何一步崩溃：目标缺失/损坏时 [`Self::load`] 回退 `.bak`，
     /// 最坏只丢最后一次未完成的写入。
     pub fn save(&self, ledger: &Ledger) -> Result<(), Error> {
-        let _file_lock = crate::trace_store::core::lock::FileLock::acquire(&self.path)?;
+        let _file_lock = self.lock()?;
         let temporary = self.temporary_path();
         if let Some(parent) = self.path.parent()
             && !parent.as_os_str().is_empty()
@@ -73,6 +51,13 @@ impl LedgerStore {
                 Err(self.io(error))
             }
         }
+    }
+
+    /// 台账专用跨进程锁：`<path>.ledger.lock`，与轨迹锁 `<path>.lock` 分开。
+    pub(super) fn lock(&self) -> Result<crate::trace_store::core::lock::FileLock, Error> {
+        let mut name = self.path.as_os_str().to_os_string();
+        name.push(".ledger");
+        crate::trace_store::core::lock::FileLock::acquire(&PathBuf::from(name))
     }
 
     /// 每次保存都用进程内唯一的中转名。

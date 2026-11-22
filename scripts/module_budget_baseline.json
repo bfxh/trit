@@ -2080,11 +2080,15 @@
     },
     {
       "file": "crates/trit-orch/src/effects/persist/backup.rs",
-      "lines": 97
+      "lines": 82
     },
     {
       "file": "crates/trit-orch/src/effects/persist/core.rs",
       "lines": 76
+    },
+    {
+      "file": "crates/trit-orch/src/effects/persist/load.rs",
+      "lines": 35
     },
     {
       "file": "crates/trit-orch/src/error.rs",
@@ -2481,6 +2485,10 @@
     {
       "file": "crates/trit-orch/tests/handoff_signature.rs",
       "lines": 58
+    },
+    {
+      "file": "crates/trit-orch/tests/ledger_cross_process.rs",
+      "lines": 74
     },
     {
       "file": "crates/trit-orch/tests/obligations.rs",
