@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Changed（trit-wspace：补丁事实覆盖 tile / 行级编辑）
+
+- `certify::patch_facts` 的 `noop` 现在识别 `NegateRow` 全零行、`SetTile`/`FillTile` 目标
+  与当前块逐位相同、`SwapRows` 两行逐位相同（trit + bias + scale）；`repeated` 展开
+  tile/行级坐标，跨编辑覆盖同一坐标会计重复。`PatchFacts`/`patch_facts` 拆到
+  `certify/facts.rs`，`certify.rs` 371 行（原 471）。
+- 新增 `tests/certify_facts.rs` 6 条：全零行取反、tile noop/越界/长度不足、tile 坐标参与
+  repeated、相同行交换、60 组随机 patch 与「apply 后网络是否逐位不变」的暴力判定对拍。
+- 验证：`cargo test -p trit-wspace --test certify_facts` 6 passed；
+  `cargo clippy -p trit-wspace --all-targets -D warnings` 干净；`module_budget` 全仓绿。
+
 ### Fixed（#590 根治：`PackedBipolar` 把长度与字平面绑在一起）
 
 - `pack_bipolar` 返回 `PackedBipolar { words, len }`；`bipolar_dot` / `bipolar_dot_portable`

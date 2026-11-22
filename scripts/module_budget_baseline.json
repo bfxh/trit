@@ -3700,7 +3700,11 @@
     },
     {
       "file": "crates/trit-wspace/src/certify.rs",
-      "lines": 471
+      "lines": 371
+    },
+    {
+      "file": "crates/trit-wspace/src/certify/facts.rs",
+      "lines": 214
     },
     {
       "file": "crates/trit-wspace/src/certify/verdicts.rs",
@@ -4052,6 +4056,10 @@
     },
     {
       "file": "crates/trit-wspace/tests/certify.rs",
+      "lines": 322
+    },
+    {
+      "file": "crates/trit-wspace/tests/certify_facts.rs",
       "lines": 322
     },
     {
