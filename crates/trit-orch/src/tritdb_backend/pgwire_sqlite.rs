@@ -1,9 +1,7 @@
 //! 只读 pgwire 服务：把 SQLite 的 `trit_trace` 物化库直接暴露成 PostgreSQL 协议。
 //!
-//! 只实现**简单查询协议**（`Q`）：startup、AuthenticationOk、ParameterStatus、
-//! BackendKeyData、RowDescription、DataRow、CommandComplete、ErrorResponse、
-//! Terminate。不支持扩展查询（Parse/Bind/Execute）、COPY 与认证/TLS——
-//! `SSLRequest` 回 `N`，客户端会退回明文；查询连接以只读方式打开 SQLite。
+//! 支持简单查询（`Q`）与扩展查询（Parse/Describe/Bind/Execute/Close/Sync，
+//! 见 [`extended`]）；不支持 COPY 与认证/TLS——`SSLRequest` 回 `N`，客户端退回明文。
 //!
 //! 这样轨迹 WAL 完全不参与服务，写入方与 `trace sync` 都能与服务并发。
 
@@ -16,13 +14,14 @@ use rusqlite::{Connection, OpenFlags};
 
 use crate::Error;
 
+#[path = "pgwire_extended.rs"]
+mod extended;
 const PROTOCOL_V3: i32 = 196608;
 const SSL_REQUEST: i32 = 80877103;
 const MAX_STARTUP: usize = 1 << 20;
 const MAX_QUERY: usize = 1 << 22;
 /// 所有列按 text 格式返回（OID 25）：SQLite 是动态类型，文本最不容易出错。
-const TEXT_OID: u32 = 25;
-
+pub(super) const TEXT_OID: u32 = 25;
 /// 在 `listen` 上提供只读查询；阻塞直到监听关闭。
 pub fn serve(sqlite: &Path, listen: &str) -> Result<(), Error> {
     let listener = TcpListener::bind(listen).map_err(|error| io(listen, error))?;
@@ -35,7 +34,6 @@ pub fn serve(sqlite: &Path, listen: &str) -> Result<(), Error> {
     }
     Ok(())
 }
-
 fn handle_session(mut stream: TcpStream, sqlite: &Path) -> std::io::Result<()> {
     if !handshake(&mut stream)? {
         return Ok(());
@@ -49,7 +47,7 @@ fn handle_session(mut stream: TcpStream, sqlite: &Path) -> std::io::Result<()> {
             return Ok(());
         }
     };
-
+    let mut session = extended::Session::default();
     loop {
         let mut tag = [0u8; 1];
         if stream.read_exact(&mut tag).is_err() {
@@ -57,6 +55,10 @@ fn handle_session(mut stream: TcpStream, sqlite: &Path) -> std::io::Result<()> {
         }
         match tag[0] {
             b'X' => return Ok(()),
+            b'P' | b'B' | b'D' | b'E' | b'C' | b'S' => {
+                let body = read_body(&mut stream, MAX_QUERY)?;
+                session.handle(tag[0], &body, &conn, &mut stream)?;
+            }
             b'Q' => {
                 let body = read_body(&mut stream, MAX_QUERY)?;
                 let sql = c_string(&body);
@@ -74,7 +76,6 @@ fn handle_session(mut stream: TcpStream, sqlite: &Path) -> std::io::Result<()> {
         }
     }
 }
-
 /// startup（含 SSLRequest 往返）；返回 `false` 表示握手失败、不要继续。
 fn handshake(stream: &mut TcpStream) -> std::io::Result<bool> {
     let mut payload = read_startup(stream)?;
@@ -113,7 +114,6 @@ fn handshake(stream: &mut TcpStream) -> std::io::Result<bool> {
     ready(stream)?;
     Ok(true)
 }
-
 fn run_query(conn: &Connection, stream: &mut TcpStream, sql: &str) -> std::io::Result<()> {
     let trimmed = sql.trim().trim_end_matches(';').trim();
     if trimmed.is_empty() {
@@ -135,7 +135,6 @@ fn run_query(conn: &Connection, stream: &mut TcpStream, sql: &str) -> std::io::R
         )?;
         return ready(stream);
     }
-
     let names: Vec<String> = (0..columns)
         .map(|index| stmt.column_name(index).unwrap_or("?").to_string())
         .collect();
@@ -152,7 +151,6 @@ fn run_query(conn: &Connection, stream: &mut TcpStream, sql: &str) -> std::io::R
         description.extend_from_slice(&0i16.to_be_bytes()); // text format
     }
     write_message(stream, b'T', &description)?;
-
     let mut rows = match stmt.query([]) {
         Ok(rows) => rows,
         Err(error) => {
@@ -182,13 +180,11 @@ fn run_query(conn: &Connection, stream: &mut TcpStream, sql: &str) -> std::io::R
     write_message(stream, b'C', &tag)?;
     ready(stream)
 }
-
-fn push_text(body: &mut Vec<u8>, text: String) {
+pub(super) fn push_text(body: &mut Vec<u8>, text: String) {
     body.extend_from_slice(&(text.len() as i32).to_be_bytes());
     body.extend_from_slice(text.as_bytes());
 }
-
-fn push_bytes(body: &mut Vec<u8>, bytes: &[u8]) {
+pub(super) fn push_bytes(body: &mut Vec<u8>, bytes: &[u8]) {
     body.extend_from_slice(&(bytes.len() as i32).to_be_bytes());
     body.extend_from_slice(bytes);
 }
@@ -227,7 +223,7 @@ fn c_string(body: &[u8]) -> String {
     String::from_utf8_lossy(&body[..end]).into_owned()
 }
 
-fn write_message(stream: &mut TcpStream, tag: u8, body: &[u8]) -> std::io::Result<()> {
+pub(super) fn write_message(stream: &mut TcpStream, tag: u8, body: &[u8]) -> std::io::Result<()> {
     let mut buffer = Vec::with_capacity(body.len() + 5);
     buffer.push(tag);
     buffer.extend_from_slice(&((body.len() + 4) as i32).to_be_bytes());
@@ -235,11 +231,15 @@ fn write_message(stream: &mut TcpStream, tag: u8, body: &[u8]) -> std::io::Resul
     stream.write_all(&buffer)
 }
 
-fn ready(stream: &mut TcpStream) -> std::io::Result<()> {
+pub(super) fn ready(stream: &mut TcpStream) -> std::io::Result<()> {
     write_message(stream, b'Z', b"I")
 }
 
-fn error_response(stream: &mut TcpStream, code: &str, message: &str) -> std::io::Result<()> {
+pub(super) fn error_response(
+    stream: &mut TcpStream,
+    code: &str,
+    message: &str,
+) -> std::io::Result<()> {
     let mut body = Vec::new();
     body.push(b'S');
     body.extend_from_slice(b"ERROR\0");

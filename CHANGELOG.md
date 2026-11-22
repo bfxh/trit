@@ -33,7 +33,8 @@
   永不删最大 `chain_seq` 行，避免 sync 回填。
 - 新增自研只读 pgwire 服务（`pgwire_sqlite.rs`）：存在 `<wal>.sqlite` 时
   `trace serve` 直接查 SQLite，服务期间可写入与 sync、客户端实时可见；
-  仅支持简单查询、只读、无认证/TLS。
+  支持简单查询与扩展查询（Parse/Describe/Bind/Execute/Close/Sync + `$n` 参数），
+  只读、无认证/TLS。
 - 移除 pgwire 的后台刷新：实测 `tritdb-txn` 的 WAL 锁是进程级排他的，
   服务持有期间第二个连接必然报 `wal is locked by process`。
 - `tritdb-*` 依赖改为 **vendored 源码**（`third_party/trit-db`，rev `aca71888`，

@@ -86,8 +86,9 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
 - `tritdb-pgwire`：`trace serve` 若发现 `<wal>.sqlite`（`trace sync` 的产物），
   就用**自研只读 pgwire 服务**直接查 SQLite——完全不碰轨迹 WAL，因此服务期间
   仍可 `append` 轨迹、跑 `trace sync`，客户端立刻看到新行（实测 3 → 4）。该服务
-  只实现简单查询协议（`Q`）、只读、无认证/TLS（`SSLRequest` 回 `N`），不支持
-  扩展查询（Parse/Bind/Execute）与 COPY。
+  支持简单查询（`Q`）与扩展查询（Parse/Describe/Bind/Execute/Close/Sync，
+  `$n` 占位符转 SQLite `?n`）、只读、无认证/TLS（`SSLRequest` 回 `N`），
+  不支持 COPY。
 - 没有 SQLite 物化库时，`trace serve` 回退直读轨迹 WAL：启动时物化一次，服务
   进程持续持有 WAL 排他锁，期间写不了同一个 WAL（`trace sync` 也会被拒）。
 
