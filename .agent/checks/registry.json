@@ -780,6 +780,101 @@
       "run": "grep -A1 '^name = \"zip\"$' benchmarks/wsp-no-transformer/Cargo.lock | grep -qE '^version = \"(9\\.0\\.[5-9]|9\\.0\\.[1-9][0-9]+|9\\.[1-9][0-9]*\\.[0-9]+|[1-9][0-9]+\\.[0-9]+\\.[0-9]+)\"$'",
       "shell": "bash",
       "expect_exit": 0
+    },
+    {
+      "id": "C046",
+      "title": "gemv_* 入口校验权重/激活/输出形状（Q4_0 要求 cols 32 对齐）",
+      "kind": "cmd",
+      "covers": [
+        "L110"
+      ],
+      "scope": [
+        "crates/trit-ops/src/bench.rs",
+        "crates/trit-ops/src/shape.rs",
+        "crates/trit-ops/tests/shape_guards.rs"
+      ],
+      "since": "2026-11-22",
+      "tier": "fast",
+      "added": "2026-11-22T14:00:00+08:00",
+      "run": "grep -q 'fn check_gemv_shape' crates/trit-ops/src/shape.rs && grep -q 'check_gemv_shape(w.len(), rows, cols, x.len(), out.len())' crates/trit-ops/src/bench.rs && grep -q 'fn check_q4_shape' crates/trit-ops/src/shape.rs",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C047",
+      "title": "bipolar_dot 校验等长与打包覆盖并返回 Result",
+      "kind": "cmd",
+      "covers": [
+        "L111"
+      ],
+      "scope": [
+        "crates/trit-dot/src/bipolar.rs",
+        "crates/trit-dot/src/lib.rs"
+      ],
+      "since": "2026-11-22",
+      "tier": "fast",
+      "added": "2026-11-22T14:00:00+08:00",
+      "run": "grep -q 'fn check_bipolar' crates/trit-dot/src/bipolar.rs && grep -q 'Result<i64, DotError>' crates/trit-dot/src/bipolar.rs && grep -q 'words.len()' crates/trit-dot/src/bipolar.rs",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C048",
+      "title": "DPLL 计数用饱和乘加并记录 overflows",
+      "kind": "cmd",
+      "covers": [
+        "L112"
+      ],
+      "scope": [
+        "crates/trit-count/src/dpll.rs",
+        "crates/trit-count/src/dpll/saturate.rs",
+        "crates/trit-count/src/lib.rs"
+      ],
+      "since": "2026-11-22",
+      "tier": "fast",
+      "added": "2026-11-22T14:00:00+08:00",
+      "run": "grep -q 'fn mul' crates/trit-count/src/dpll/saturate.rs && grep -q 'self.mul(product, part)' crates/trit-count/src/dpll.rs && grep -q 'overflows' crates/trit-count/src/dpll.rs",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C049",
+      "title": "mmap 截断复核 recheck_len 与 Truncated",
+      "kind": "cmd",
+      "covers": [
+        "L113"
+      ],
+      "scope": [
+        "crates/trit-mmap/src/recheck.rs",
+        "crates/trit-mmap/src/error.rs",
+        "crates/trit-mmap/tests/truncate.rs"
+      ],
+      "since": "2026-11-22",
+      "tier": "fast",
+      "added": "2026-11-22T14:00:00+08:00",
+      "run": "grep -q 'pub fn recheck_len' crates/trit-mmap/src/recheck.rs && grep -q 'Truncated' crates/trit-mmap/src/error.rs && test -f crates/trit-mmap/tests/truncate.rs",
+      "shell": "bash",
+      "expect_exit": 0
+    },
+    {
+      "id": "C050",
+      "title": "5 个 CLI 的分配上界守卫",
+      "kind": "cmd",
+      "covers": [
+        "L114"
+      ],
+      "scope": [
+        "crates/trit-dot/src/cli.rs",
+        "crates/trit-attn/src/limits.rs",
+        "crates/trit-ops/src/shape.rs",
+        "crates/trit-redteam/src/fuzz_cli.rs"
+      ],
+      "since": "2026-11-22",
+      "tier": "fast",
+      "added": "2026-11-22T14:00:00+08:00",
+      "run": "grep -q 'MAX_LEN' crates/trit-dot/src/cli.rs && grep -q 'MAX_PAIRS' crates/trit-attn/src/limits.rs && grep -q 'MAX_HIDDEN' crates/trit-attn/src/limits.rs && grep -q 'MAX_CELLS' crates/trit-ops/src/shape.rs && grep -q 'MAX_ITERATIONS' crates/trit-redteam/src/fuzz_cli.rs",
+      "shell": "bash",
+      "expect_exit": 0
     }
   ],
   "ledger_from": "L56"
