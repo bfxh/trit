@@ -13,13 +13,17 @@
 mod activation;
 mod model;
 mod report;
+mod stats;
+mod sts;
 
 use serde_json::{Map, json};
 use trit_wspace::activations;
 
 use activation::ActivationMode;
 use model::{Bert, BertConfig};
-use report::{compare, input_stats, random_like};
+use report::{compare, layer_refs};
+use stats::{input_stats, random_like};
+use sts::{load_pairs, metrics, sentence_vectors};
 
 fn main() {
     let mut file = String::new();
@@ -52,8 +56,8 @@ fn main() {
     assert_eq!(ref_rows, batch * seq);
     assert_eq!(ref_cols, hidden);
 
-    let heads = 12usize;
-    let eps = 1e-12f32;
+    let pairs = load_pairs(&data_dir);
+    let (heads, eps) = (12usize, 1e-12f32);
     let requested = if activation_arg == "all" {
         None
     } else {
@@ -72,6 +76,10 @@ fn main() {
         },
     );
     let (f32_out, _, f32_layers) = f32_bert.forward(&input, &mask, batch, seq, false);
+    let f32_sts = metrics(
+        &sentence_vectors(&f32_out, &mask, batch, seq, hidden),
+        &pairs,
+    );
     let random_input = random_like(&input, seed);
     let (f32_random, _, _) = f32_bert.forward(&random_input, &mask, batch, seq, false);
 
@@ -105,6 +113,7 @@ fn main() {
                 "real_vs_f32": compare(&real_out, &f32_out, &mask, hidden),
                 "real_vs_reference": compare(&real_out, &reference, &mask, hidden),
                 "random_vs_f32": compare(&random_out, &f32_random, &mask, hidden),
+                "sts": metrics(&sentence_vectors(&real_out, &mask, batch, seq, hidden), &pairs),
             }),
         );
         if mode == ActivationMode::TernaryAll {
@@ -112,18 +121,7 @@ fn main() {
         }
     }
 
-    let mut layer_refs = Vec::new();
-    for (index, values) in f32_layers.iter().enumerate() {
-        let path = format!("{data_dir}/layer{index}.f32");
-        match activations::read_matrix(&path) {
-            Ok((rows, cols, reference_layer)) => {
-                assert_eq!(rows * cols, values.len(), "layer{index} 形状不符");
-                layer_refs.push(compare(values, &reference_layer, &mask, hidden));
-            }
-            Err(_) => break,
-        }
-    }
-
+    let layer_refs = layer_refs(&data_dir, &f32_layers, &mask, hidden);
     let report = json!({
         "source": {
             "file": file,
@@ -136,9 +134,11 @@ fn main() {
             "activation_mode": activation_arg,
             "linear_weights": "ternary (absmean per-row scale, f32 bias)",
             "activation_options": "f32 / ternary-ln / ternary-all",
+            "pairs": pairs.len(),
         },
         "f32_vs_reference": compare(&f32_out, &reference, &mask, hidden),
         "f32_layers_vs_reference": layer_refs,
+        "f32_sts": f32_sts,
         "modes": modes,
         "output_stage": match all_stages {
             Some((real, random)) => json!({
