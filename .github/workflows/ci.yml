@@ -691,8 +691,8 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           key: ${{ hashFiles('Cargo.toml') }}
-      - name: Package every crate (no build)
-        run: cargo package --workspace --no-verify --locked
+      - name: Package every publishable crate (no build)
+        run: python3 scripts/package_publishable.py
 
   wasm:
     name: wasm (wasm32 build)

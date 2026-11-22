@@ -2,14 +2,16 @@
 """发布图门：可发布 crate 不允许依赖 `publish = false` 的 crate。
 
 背景（真实踩过两次）：`cargo package --workspace` 会**连 `publish = false` 的 crate 一起打包**，
-而指向未发布 crate 的路径依赖没有版本，打包直接失败。所以：
+而指向未发布 crate 的路径依赖没有版本，打包直接失败。发布姿态是内部层不进 crates.io，
+所以 CI 的 package 步骤只打包可发布 crate（scripts/package_publishable.py 会排除全部
+不可发布 crate）。在这个姿态下：
 
 - 可发布 → 实验层：发布链断了，**红**；
-- 实验层 → 实验层：workspace 打包照样断，**红**；
+- 实验层 → 实验层：不参与打包，**绿**；
 - 实验层 → 可发布：没问题，**绿**。
 
-推论：实验层必须自包含（共享代码要么下沉到可发布 crate，要么各自保留）。
-另外顺手检查可发布 crate 的 crates.io 必填字段。
+推论：可发布 crate 必须自包含；内部 crate 之间可以互相依赖，但一进入可发布面就必须
+先补发布链。另外顺手检查可发布 crate 的 crates.io 必填字段。
 
 用法：
     python scripts/publish_graph.py            # 检查并打印发布顺序
@@ -81,10 +83,9 @@ def check(manifest_path: Path) -> list[str]:
                     f"UNRESOLVED: {package['name']} -> {dependency['name']} 有路径但不在 workspace 里"
                 )
                 continue
-            if not is_publishable(target):
-                kind = "PUBLISHABLE->UNPUBLISHABLE" if publishable else "UNPUBLISHABLE->UNPUBLISHABLE"
+            if publishable and not is_publishable(target):
                 failures.append(
-                    f"{kind}: {package['name']} 依赖了未发布的 {target['name']}"
+                    f"PUBLISHABLE->UNPUBLISHABLE: {package['name']} 依赖了未发布的 {target['name']}"
                     f"（{dependency['kind']}），会让 cargo package 失败"
                 )
     return failures
@@ -191,12 +192,12 @@ def self_test() -> int:
     run_case("green: 实验层 -> 可发布", "publish = false", "", True, True, "")
     run_case("red: 可发布 -> 实验层", "", "publish = false", True, False, "PUBLISHABLE->UNPUBLISHABLE")
     run_case(
-        "red: 实验层 -> 实验层",
+        "green: 实验层 -> 实验层（不参与 package 链）",
         "publish = false",
         "publish = false",
         True,
-        False,
-        "UNPUBLISHABLE->UNPUBLISHABLE",
+        True,
+        "",
     )
     run_case("red: 缺 license", "", "", False, False, "MISSING license")
     # dev-dependencies 不进发布链（cargo package 剥离 path dev-deps，2026-10-24 实证）：

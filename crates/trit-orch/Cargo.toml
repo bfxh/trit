@@ -6,6 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 description = "三值准入与当前快照的可派发批次选择"
+# 内部 crate：依赖同样不发布的 trit-ops ECC，不进 crates.io 发布链。
+publish = false
 
 [[bin]]
 name = "trit-orch"
