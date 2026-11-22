@@ -28,7 +28,7 @@ impl TraceEventStore {
                 path: self.path.display().to_string(),
                 message: "sidecar update failed".into(),
             });
-        let rollback_log = file.set_len(previous_len).and_then(|_| file.sync_all());
+        let rollback_log = file.set_len(previous_len).and_then(|_| file.sync_all()); // SAFETY: 回滚到追加前长度并落盘；崩溃由 WAL/锚点兜底
         let rollback_watermark = match previous_watermark {
             Some(seq) => self.write_watermark(seq),
             None => remove_watermark(&self.watermark_path()),

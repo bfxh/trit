@@ -236,7 +236,7 @@ impl TraceStore {
         if let Some(anchor) = &self.anchor
             && let Err(error) = anchor.update()
         {
-            let _ = file.set_len(previous_len);
+            let _ = file.set_len(previous_len); // SAFETY: 回滚到本次追加前长度并 sync_all；崩溃由锚点兜底
             let _ = file.sync_all();
             return Err(error);
         }
