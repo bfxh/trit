@@ -85,8 +85,10 @@ CLI/MCP、learned、gradient、写锁、GPU WF32、6 层读数。
    - 有界域上是**完全可判定**，不是抽样；补上“保证不会改坏”的一侧。
 3. **TIES trim**：`task_merge --trim k / --trim-margin m`，按票数/票差裁剪；
    `--tie keep|zero` 对齐 disjoint merge。
-4. **真实激活校准**：把 bias_e2e/三值化读数的输入从 `uniform(-1,1)` 换成
-   HF 一次 forward 的真实激活（或小语料统计）；先钉住“随机输入低估 1.5–3×”。
+4. **真实激活校准**（2026-11-22 第 0 层三段完成，见
+   [WSP-E2E-REAL-ACT.md](../results/WSP-E2E-REAL-ACT.md)）：随机输入只在 output 段低估
+   1.72×；query 不低估、intermediate 反而高估 10–13%。下一步是完整 6 层
+   （attention/LN/GELU/残差）。
 5. **三值化 scale 乘子扫描 / per-group scale**：`s/E|w| ∈ [0.6,1.6]` 与 g=64/128；
    直接对 bias_e2e 的 `rel_l2` 出读数。
 

@@ -90,7 +90,7 @@
 
 #![deny(missing_docs)]
 #![forbid(unsafe_code)]
-
+pub mod activations;
 pub mod analyze;
 pub mod artifact_shard;
 pub mod audit;
@@ -129,7 +129,6 @@ pub mod wsp2;
 pub mod wsp3;
 pub mod wsp4;
 pub mod wspm;
-
 pub use analyze::{
     Analysis, EditImpact, PairAnalysis, PairImpact, TripleAnalysis, TripleImpact, analyze,
     analyze_pairs, analyze_triples,

@@ -61,6 +61,7 @@
 | [EXTRACT-RESULTS.md](results/EXTRACT-RESULTS.md) | 提取结果（自动生成） |
 | [WSP3-RESULTS.md](results/WSP3-RESULTS.md) | WSP3（RLE 二级压缩）在真实 MiniLM 上的实测：无收益 |
 | [WSP-E2E-RESULTS.md](results/WSP-E2E-RESULTS.md) | 真实模型端到端 bias 读数（all-MiniLM-L6-v2 第 0 层） |
+| [WSP-E2E-REAL-ACT.md](results/WSP-E2E-REAL-ACT.md) | 真实激活校准：MiniLM 第 0 层三段的随机 vs 真实输入对照 |
 | [WSP-STS.md](results/WSP-STS.md) | 真句向量（STS 风格 pair）上的编辑集门禁 |
 | [WSP-STS-BENCH.md](results/WSP-STS-BENCH.md) | 真实 STS benchmark（1,379 行）上的编辑集门禁 |
 | [WSP-STS-TUNED.md](results/WSP-STS-TUNED.md) | 真实 tuned 权重（非合成 Δ）上的编辑集门禁 |
