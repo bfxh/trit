@@ -49,12 +49,11 @@ impl QuantLinear {
 
     fn forward(&self, input: &[f32], out: &mut [f32]) {
         for (row, slot) in out.iter_mut().enumerate().take(self.rows) {
-            let base = row * self.cols;
             let mut total = 0.0f64;
             for chunk in 0..self.groups {
                 let start = chunk * self.group;
                 let end = (start + self.group).min(self.cols);
-                let line = &self.trits[base + start..base + end];
+                let line = &self.trits[row * self.cols + start..row * self.cols + end];
                 let mut acc = 0.0f64;
                 for (&trit, &value) in line.iter().zip(&input[start..end]) {
                     acc += f64::from(trit) * f64::from(value);
