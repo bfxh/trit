@@ -1,11 +1,11 @@
 //! 依赖图：import → 仓库内文件边、测试文件匹配、依赖闭包。
 //!
-//! 解析是确定性的（路径归一化 + 固定候选顺序）；解析不到的 import 记入
-//! `unresolved`（外部依赖也在其中），依赖闭合率因此可复算。
+//! 解析是确定性的；未解析的 import 按 `kind` 分成外部依赖与本地失败，闭合率可复算。
 
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
-use super::paths::{JS_EXTS, file_name, norm, parent_dir, targets, up};
+use super::paths::{JS_EXTS, file_name, norm, parent_dir, up};
+use super::paths_targets::targets;
 use crate::repo::Unit;
 use super::kind::{self, Kind};
 

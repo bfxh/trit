@@ -2,7 +2,6 @@
 
 use std::path::Path;
 
-use crate::code_langs::code_languages;
 use crate::code_quality::check;
 
 pub mod deps;
@@ -11,8 +10,10 @@ mod imports;
 mod imports_lang;
 mod imports_rust;
 mod kind;
+mod lang_map;
 mod license;
 pub mod paths;
+mod paths_targets;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Unit {
@@ -83,7 +84,7 @@ fn walk(
         } else if is_source(&p) {
             let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
             let head = read_head(&p, 64 * 1024);
-            let lang = detect_lang(&p, &head);
+            let lang = lang_map::detect(&p, &head);
             let q = check(&head);
             let generated = q.auto_generated || is_generated_path(&p);
             let parsed = imports::parse(&head, &lang);
@@ -132,74 +133,6 @@ pub(crate) fn read_head(p: &Path, n: usize) -> String {
     String::from_utf8_lossy(&data[..data.len().min(n)]).into_owned()
 }
 
-fn detect_lang(p: &Path, head: &str) -> String {
-    let name = p.file_name().and_then(|s| s.to_str()).unwrap_or_default();
-    if name == "Dockerfile" {
-        return "dockerfile".into();
-    }
-    if name == "Makefile" {
-        return "makefile".into();
-    }
-    let ext = p
-        .extension()
-        .and_then(|x| x.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    let lang = match ext.as_str() {
-        "rs" => "rust",
-        "py" => "python",
-        "js" | "jsx" => "javascript",
-        "ts" | "tsx" => "typescript",
-        "go" => "go",
-        "java" => "java",
-        "c" | "h" => "c",
-        "cc" | "cpp" | "hpp" => "cpp",
-        "cs" => "csharp",
-        "php" => "php",
-        "rb" => "ruby",
-        "swift" => "swift",
-        "kt" => "kotlin",
-        "scala" => "scala",
-        "sql" => "sql",
-        "sh" | "bash" => "bash",
-        "zsh" => "zsh",
-        "fish" => "fish",
-        "ps1" | "psm1" => "powershell",
-        "lua" => "lua",
-        "r" => "r",
-        "jl" => "julia",
-        "hs" => "haskell",
-        "ex" | "exs" => "elixir",
-        "erl" => "erlang",
-        "ml" => "ocaml",
-        "lean" => "lean",
-        "glsl" => "glsl",
-        "hlsl" => "hlsl",
-        "wgsl" => "wgsl",
-        "cu" => "cuda",
-        "cl" => "opencl",
-        "metal" => "metal",
-        "asm" | "s" => "assembly",
-        "v" | "sv" => "verilog",
-        "vhd" | "vhdl" => "vhdl",
-        "md" | "markdown" => "markdown",
-        "toml" => "toml",
-        "yaml" | "yml" => "yaml",
-        "tex" => "latex",
-        "rst" => "rst",
-        "proto" => "protobuf",
-        "graphql" => "graphql",
-        _ => {
-            return code_languages(head)
-                .first()
-                .copied()
-                .unwrap_or("unknown")
-                .to_string();
-        }
-    };
-    lang.to_string()
-}
-
 const GENERATED_MARKS: &[&str] = &["/generated/", "_generated.", ".gen.", ".pb.go", "_pb2.py"];
 const TEST_MARKS: &[&str] = &["/test/", "/tests/", "_test.", ".test.", ".spec.", "/spec/"];
 
@@ -225,3 +158,5 @@ mod deps_tests;
 mod graph_tests;
 #[cfg(test)]
 mod imports_tests;
+#[cfg(test)]
+mod paths_tests;

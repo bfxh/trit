@@ -1196,7 +1196,7 @@
     },
     {
       "file": "crates/trit-data/src/repo.rs",
-      "lines": 227
+      "lines": 162
     },
     {
       "file": "crates/trit-data/src/repo/deps.rs",
@@ -1212,7 +1212,7 @@
     },
     {
       "file": "crates/trit-data/src/repo/graph_tests.rs",
-      "lines": 31
+      "lines": 30
     },
     {
       "file": "crates/trit-data/src/repo/imports.rs",
@@ -1235,12 +1235,24 @@
       "lines": 69
     },
     {
+      "file": "crates/trit-data/src/repo/lang_map.rs",
+      "lines": 72
+    },
+    {
       "file": "crates/trit-data/src/repo/license.rs",
       "lines": 26
     },
     {
       "file": "crates/trit-data/src/repo/paths.rs",
-      "lines": 105
+      "lines": 40
+    },
+    {
+      "file": "crates/trit-data/src/repo/paths_targets.rs",
+      "lines": 107
+    },
+    {
+      "file": "crates/trit-data/src/repo/paths_tests.rs",
+      "lines": 47
     },
     {
       "file": "crates/trit-data/src/repo_tests.rs",
