@@ -417,6 +417,9 @@
   只留 deflate，`time`/aes/zstd 等旧传递面出树）。`weights.rs`/`main.rs` 把
   `NpzArchive` 换成本地 `open_npz`/`read_entry`（`zip::ZipArchive` + `NpyFile`）：
   缺条目映射回 `None` 语义、panic 文案逐条保留；合成 npz 端到端读取跑通（9 个数组
+  只留 deflate，`time`/aes/zstd 等旧传递面出树）。`src/npz.rs` 承接
+  `open_npz`/`read_entry`（`zip::ZipArchive` + `NpyFile`），`weights.rs`/`main.rs`
+  改调用；缺条目映射回 `None` 语义、panic 文案逐条保留；合成 npz 端到端读取跑通（9 个数组
   全过）。`cargo test --workspace` 全绿，基准不进 CI 不影响主门。
 - 根因与欠账：传递依赖没有定期审计面——Dependabot 报了但没人看，两条告警开着
   没人处理。`checks.py` 新增 C045 钉住基准锁文件 zip ≥ 9.0.5（回退即红）；给 CI
