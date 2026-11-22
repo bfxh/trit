@@ -2,7 +2,7 @@
 //!
 //! GGUF 是 llama.cpp 生态的权重容器；本 crate 只实现**读写三值张量**所需的最小子集：
 //! 文件头、少量元数据 KV、2D 张量信息、32 字节对齐的数据区。张量类型用自定义
-//! `GGML_TYPE_TRIT = 100`（上游未占用，格式见 `docs/GGUF-TRIT.md`），数据布局：
+//! `GGML_TYPE_TRIT = 100`（上游未占用，格式见 `docs/research/GGUF-TRIT.md`），数据布局：
 //!
 //! ```text
 //! trits   : rows×cols，trit-codec 5 trits/byte（canonical padding，低位在前）

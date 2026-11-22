@@ -2,7 +2,7 @@
 //! 打包成单个二进制文件，`unpack` 逐字节还原。
 //!
 //! 与 GGUF 容器（`trit-export`）不同：WSP2 blob 保留 `biasf`（f32 偏置幅度），
-//! 往返是文本级无损的；GGUF 只存三值 bias，f32 幅度会丢（见 `docs/GGUF-TRIT.md` §4）。
+//! 往返是文本级无损的；GGUF 只存三值 bias，f32 幅度会丢（见 `docs/research/GGUF-TRIT.md` §4）。
 //!
 //! 布局（小端）：
 //! ```text
