@@ -18,6 +18,8 @@
 - 轨迹写入：跨进程 `.lock`（create_new + stale 回收）；日志/水位/锚点尽力事务，
   sidecar 失败回滚日志与水位；`TraceLog::with_tail` 报告尾部缺口；旧日志流式读取；
   `truncate_incomplete_tail` 半行恢复。
+- 可选 trit-db 后端：`tritdb` feature + `TritDbTraceStore`（事件与元数据存进
+  `tritdb-txn` 单事务）；见 `docs/TRACE-BACKENDS.md`。
 - 兼容性：`Receipt`/`TraceEvent`/`HandoffPacket` 新增字段均有 serde 默认，旧 JSON 可读；
   源码字面量构造需补字段，推荐用 `Receipt::host_measured` / `TraceEvent::new` 等构造器；
   `Error` 新增变体，下游穷尽 `match` 需补分支。

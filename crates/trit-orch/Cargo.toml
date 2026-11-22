@@ -9,6 +9,10 @@ description = "三值准入与当前快照的可派发批次选择"
 # 内部 crate：依赖同样不发布的 trit-ops ECC，不进 crates.io 发布链。
 publish = false
 
+[features]
+# 可选 trit-db 后端：轨迹事件与元数据存进 tritdb-txn 的 WAL。
+tritdb = ["dep:tritdb-txn"]
+
 [[bin]]
 name = "trit-orch"
 path = "src/bin/trit-orch.rs"
@@ -24,3 +28,5 @@ trit-schedule.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"
 serde_json = "1.0.154"
+# 只在 --features tritdb 时编译；固定到 trit-db 已推送的 HEAD。
+tritdb-txn = { git = "https://github.com/bfxh/trit-db", rev = "aca718880e0d918a064c878b39564225e46db80a", optional = true }

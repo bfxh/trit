@@ -2331,6 +2331,10 @@
       "lines": 87
     },
     {
+      "file": "crates/trit-orch/src/tritdb_backend.rs",
+      "lines": 349
+    },
+    {
       "file": "crates/trit-orch/tests/admission.rs",
       "lines": 105
     },
@@ -2561,6 +2565,10 @@
     {
       "file": "crates/trit-orch/tests/trace_time.rs",
       "lines": 272
+    },
+    {
+      "file": "crates/trit-orch/tests/trace_tritdb.rs",
+      "lines": 89
     },
     {
       "file": "crates/trit-orch/tests/unauthorized_finish.rs",

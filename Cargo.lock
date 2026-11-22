@@ -2101,6 +2101,7 @@ dependencies = [
  "trit-core",
  "trit-ops",
  "trit-schedule",
+ "tritdb-txn",
 ]
 
 [[package]]
@@ -2238,6 +2239,28 @@ dependencies = [
  "trit-export",
  "trit-learn",
  "trit-train",
+]
+
+[[package]]
+name = "tritdb-page"
+version = "0.0.1"
+source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
+
+[[package]]
+name = "tritdb-txn"
+version = "0.0.1"
+source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
+dependencies = [
+ "tritdb-page",
+ "tritdb-wal",
+]
+
+[[package]]
+name = "tritdb-wal"
+version = "0.0.1"
+source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
+dependencies = [
+ "tritdb-page",
 ]
 
 [[package]]

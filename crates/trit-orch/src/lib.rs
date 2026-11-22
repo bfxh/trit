@@ -1,5 +1,4 @@
 #![forbid(unsafe_code)]
-
 mod admission;
 mod budget;
 mod claim;
@@ -22,6 +21,7 @@ mod status;
 mod trace;
 pub mod trace_invariants;
 mod trace_store;
+pub mod tritdb_backend;
 
 mod exports;
 pub use exports::*;
