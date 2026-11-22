@@ -83,7 +83,8 @@ output 段（FFN 的 GELU 后输入）统计：
 
 1. 只把 LN 的 weight 三值化，真实 cosine 从 0.469 掉到 0.352（−25%）；
 2. 再把 LN/GELU 输出符号三值化，cosine 掉到 **0.03**，方向信息几乎全丢；
-3. **当前实现（absmean LN weight + sign 激活）不支持全三值激活**。要保留方向，
+3. **当前 absmean LN weight + sign 激活方案在 `ternary-all` 下真实 cosine 只有 0.0345**
+   （复算：`--activation-mode ternary-all`）。要保留方向，
    需要 QAT/学习式 scale、混合精度（LN 输出保 f32）或残差侧车；
 4. 随机输入在三种模式下都比真实输入更差（rel_l2 高 25%–34%），方向与 §3 一致。
 
