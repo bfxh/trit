@@ -10,6 +10,7 @@
 
 use std::path::PathBuf;
 
+use trit_learn::json::Json;
 use trit_parts::data::{read_npy_i32, read_rgb};
 use trit_parts::geo::{Camera, read_npy_f32};
 use trit_parts::mesh::{Grid, boundary_edges, non_manifold_edges, surface_nets, write_ply_rgb};
@@ -222,37 +223,36 @@ pub(crate) fn export_asset_cmd(argv: &[String]) {
     let levels_json: Vec<String> = levels
         .iter()
         .map(|l| {
-            format!(
-                "{{\"cell\": {}, \"path\": {}, \"sha256\": \"{}\", \"bytes\": {}, \"verts\": {}, \"tris\": {}, \"boundary_edges\": {}, \"nonmanifold_edges\": {}, \"unseen_vertices\": {}}}",
-                l.cell,
-                trit_parts::partsrun::json_str(&l.name),
-                l.sha256,
-                l.bytes,
-                l.verts,
-                l.tris,
-                l.boundary,
-                l.nonmanifold,
-                l.unseen
-            )
+            Json::obj()
+                .put("cell", l.cell)
+                .put("path", &l.name)
+                .put("sha256", &l.sha256)
+                .put("bytes", l.bytes)
+                .put("verts", l.verts)
+                .put("tris", l.tris)
+                .put("boundary_edges", l.boundary)
+                .put("nonmanifold_edges", l.nonmanifold)
+                .put("unseen_vertices", l.unseen)
+                .dump()
         })
         .collect();
     let textures_json: Vec<String> = levels
         .iter()
         .filter_map(|l| l.tex.as_ref().map(|t| (l.cell, t)))
         .map(|(cell, t)| {
-            format!(
-                "{{\"cell\": {cell}, \"path\": {}, \"sha256\": \"{}\", \"bytes\": {}, \"png_path\": {}, \"png_sha256\": \"{}\", \"png_bytes\": {}, \"atlas\": {}, \"charts\": {}, \"texels\": {}, \"unseen_texels\": {}}}",
-                trit_parts::partsrun::json_str(&t.obj),
-                t.obj_sha,
-                t.obj_bytes,
-                trit_parts::partsrun::json_str(&t.png),
-                t.png_sha,
-                t.png_bytes,
-                t.atlas,
-                t.charts,
-                t.texels,
-                t.unseen
-            )
+            Json::obj()
+                .put("cell", cell)
+                .put("path", &t.obj)
+                .put("sha256", &t.obj_sha)
+                .put("bytes", t.obj_bytes)
+                .put("png_path", &t.png)
+                .put("png_sha256", &t.png_sha)
+                .put("png_bytes", t.png_bytes)
+                .put("atlas", t.atlas)
+                .put("charts", t.charts)
+                .put("texels", t.texels)
+                .put("unseen_texels", t.unseen)
+                .dump()
         })
         .collect();
     let body = format!(

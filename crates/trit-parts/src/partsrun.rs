@@ -6,6 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
+pub use trit_learn::json::json_str;
 use trit_learn::manifest::Item;
 pub use trit_learn::manifest::{Fingerprint as Fp, hash_items, norm, rel_path};
 
@@ -147,24 +148,6 @@ pub fn fingerprint_eval(renders: &Path, scenes: &Path, limit: usize) -> Result<F
         }
     }
     hash_items(&items, sds.len())
-}
-
-/// 清单里的 JSON 字符串转义（不引 serde）。
-pub fn json_str(s: &str) -> String {
-    let mut o = String::from("\"");
-    for c in s.chars() {
-        match c {
-            '"' => o.push_str("\\\""),
-            '\\' => o.push_str("\\\\"),
-            '\n' => o.push_str("\\n"),
-            '\r' => o.push_str("\\r"),
-            '\t' => o.push_str("\\t"),
-            c if (c as u32) < 0x20 => o.push_str(&format!("\\u{:04x}", c as u32)),
-            c => o.push(c),
-        }
-    }
-    o.push('"');
-    o
 }
 
 /// `git <args>` 的 stdout（失败给空串，清单里不因此中断训练）。

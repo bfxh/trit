@@ -10,6 +10,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use trit_learn::json::Json;
 use trit_parts::data::{read_npy_i32, read_rgb};
 use trit_parts::fuse::View;
 use trit_parts::geo::{Camera, read_npy_f32};
@@ -90,7 +91,7 @@ pub(crate) fn objects_export_cmd(argv: &[String]) {
         ids.retain(|id| keep.contains(id));
     }
 
-    let mut entries = Vec::new();
+    let mut entries: Vec<Json> = Vec::new();
     let mut skipped = Vec::new();
     for &id in &ids {
         let mut splats = build_filtered(&views, &rgbs, cell, scale_k, |v| v == id);
@@ -117,7 +118,26 @@ pub(crate) fn objects_export_cmd(argv: &[String]) {
         for c in &mut cen {
             *c /= splats.len() as f64;
         }
-        let extra = if let Some(ls) = &labels {
+        let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
+        let sha = trit_core::fingerprint::file_sha256(&p).unwrap_or_default();
+        println!(
+            "对象 {id}: {} 个高斯，包围盒 {:.3}×{:.3}×{:.3} m，{} B → {name}",
+            splats.len(),
+            hi[0] - lo[0],
+            hi[1] - lo[1],
+            hi[2] - lo[2],
+            bytes
+        );
+        let mut entry = Json::obj()
+            .put("id", id)
+            .put("path", &name)
+            .put("sha256", &sha)
+            .put("bytes", bytes)
+            .put("count", splats.len())
+            .put("bbox_min", Json::nums(&lo))
+            .put("bbox_max", Json::nums(&hi))
+            .put("centroid", Json::nums(&cen));
+        if let Some(ls) = &labels {
             let l = ls
                 .iter()
                 .find(|l| l.pass_index == id)
@@ -132,40 +152,14 @@ pub(crate) fn objects_export_cmd(argv: &[String]) {
                 "  标签 {}，质心误差 {err:.4} m，对角线比 {ratio:.3}",
                 l.kind
             );
-            format!(
-                ", \"kind\": {}, \"gt_center\": [{}, {}, {}], \"centroid_error\": {err}, \"gt_diag\": {gd}, \"diag_ratio\": {ratio}",
-                trit_parts::partsrun::json_str(&l.kind),
-                l.center[0],
-                l.center[1],
-                l.center[2]
-            )
-        } else {
-            String::new()
-        };
-        let bytes = std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0);
-        let sha = trit_core::fingerprint::file_sha256(&p).unwrap_or_default();
-        println!(
-            "对象 {id}: {} 个高斯，包围盒 {:.3}×{:.3}×{:.3} m，{} B → {name}",
-            splats.len(),
-            hi[0] - lo[0],
-            hi[1] - lo[1],
-            hi[2] - lo[2],
-            bytes
-        );
-        entries.push(format!(
-            "{{\"id\": {id}, \"path\": {}, \"sha256\": \"{sha}\", \"bytes\": {bytes}, \"count\": {}, \"bbox_min\": [{}, {}, {}], \"bbox_max\": [{}, {}, {}], \"centroid\": [{}, {}, {}]{extra}}}",
-            trit_parts::partsrun::json_str(&name),
-            splats.len(),
-            lo[0],
-            lo[1],
-            lo[2],
-            hi[0],
-            hi[1],
-            hi[2],
-            cen[0],
-            cen[1],
-            cen[2]
-        ));
+            entry = entry
+                .put("kind", &l.kind)
+                .put("gt_center", Json::nums(&l.center))
+                .put("centroid_error", err)
+                .put("gt_diag", gd)
+                .put("diag_ratio", ratio);
+        }
+        entries.push(entry);
     }
     if entries.is_empty() {
         fail("没有任何对象有可见像素");
@@ -189,6 +183,11 @@ pub(crate) fn objects_export_cmd(argv: &[String]) {
         .map(|p| trit_parts::partsrun::json_str(&trit_parts::scenefp::norm_root(p)))
         .unwrap_or_else(|| "null".into());
     let skipped_json: Vec<String> = skipped.iter().map(|i| i.to_string()).collect();
+    let objects_json = entries
+        .iter()
+        .map(Json::dump)
+        .collect::<Vec<_>>()
+        .join(", ");
     let body = format!(
         "{{\n  \"schema\": 1,\n  \"kind\": \"extract-objects\",\n  \"created_unix\": {},\n  \"commit\": {},\n  \"dirty\": {dirty},\n  \"argv\": [{}],\n  \"config\": {{\"frames\": [{}], \"cell\": {cell}, \"scale_k\": {scale_k}, \"alpha\": {alpha}, \"scenes\": {scenes_json}}},\n  \"data\": {{\"files\": {}, \"bytes\": {}, \"algo\": \"sha256-content-v1\", \"hash\": \"sha256:{}\", \"scene\": {}}},\n  \"objects\": [{}],\n  \"skipped\": [{}]\n}}\n",
         trit_parts::partsrun::created_unix(),
@@ -199,7 +198,7 @@ pub(crate) fn objects_export_cmd(argv: &[String]) {
         fp.bytes,
         fp.hash,
         trit_parts::partsrun::json_str(&trit_parts::scenefp::norm_root(&scene)),
-        entries.join(", "),
+        objects_json,
         skipped_json.join(", ")
     );
     let mp = out.join("objects.manifest.json");

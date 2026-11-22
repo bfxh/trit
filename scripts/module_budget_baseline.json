@@ -1643,6 +1643,10 @@
       "lines": 222
     },
     {
+      "file": "crates/trit-learn/src/json.rs",
+      "lines": 511
+    },
+    {
       "file": "crates/trit-learn/src/lib.rs",
       "lines": 25
     },
@@ -1665,6 +1669,10 @@
     {
       "file": "crates/trit-learn/src/quant.rs",
       "lines": 6
+    },
+    {
+      "file": "crates/trit-learn/src/verify.rs",
+      "lines": 157
     },
     {
       "file": "crates/trit-lsp/src/analysis.rs",
@@ -2800,7 +2808,7 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_3d/objects_export.rs",
-      "lines": 213
+      "lines": 212
     },
     {
       "file": "crates/trit-parts/src/bin/parts_3d/objects_mesh.rs",
@@ -2848,7 +2856,7 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_asset_verify.rs",
-      "lines": 514
+      "lines": 492
     },
     {
       "file": "crates/trit-parts/src/bin/parts_bench.rs",
@@ -3160,7 +3168,7 @@
     },
     {
       "file": "crates/trit-parts/src/partsrun.rs",
-      "lines": 317
+      "lines": 300
     },
     {
       "file": "crates/trit-parts/src/planes.rs",

@@ -9,17 +9,17 @@
 pub mod activation;
 pub mod dense;
 pub mod forecast;
+pub mod json;
 pub mod loss;
 pub mod manifest;
 pub mod metrics;
 pub mod opt;
 pub mod quant;
-
-pub use activation::Activation;
-pub use dense::TernaryDense;
+pub mod verify;
 pub use forecast::{Ewma, Holt, mae, mape, rmse, sma};
 pub use loss::{cross_entropy, mse, softmax, softmax_backward};
 pub use manifest::{Fingerprint, Item, hash_items, norm, rel_path};
 pub use metrics::Confusion;
 pub use opt::{Adam, Optimizer, Sgd, clip_global_norm};
 pub use quant::{Quantized, Ste, quantize_with_scale, scale_grad, ternarize};
+pub use {activation::Activation, dense::TernaryDense};
