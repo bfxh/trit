@@ -186,3 +186,16 @@
 | FineWeb-Edu | 教育性过滤 1.3T token | language 质量门（教育词/信息密度/重复率） |
 | Nemotron-CC | 激进过滤删 90%；分类器集成 + 重写 | 三支决策 + 重写闭环；defer 不硬删 |
 | Magpie | 4M 生成 → 300K 高质量筛选 | 生成与筛选分离；质量门 + 数据卡 |
+
+## 10. 语言覆盖与论文阈值（2026-11-23）
+
+- **代码语言**：前后端 + GPU/着色器 + 定理证明等
+  （Python/Rust/TS/JS/Java/C/C++/C#/Go/PHP/Ruby/SQL/HTML/CSS/Shell/Kotlin/Swift/
+  Scala/Vue/GLSL/HLSL/WGSL/CUDA/OpenCL/Metal/SPIR-V/Lean/汇编/Verilog/Solidity/
+  Dart/Haskell/Lua/Julia/R）。
+- **代码质量（Stack v2 / StarCoder 规则近似）**：行长 >1000 的行比例 ≤0.2、
+  字母数字比 ≥0.25、注释比 ≤0.8、重复行 ≤0.3、无自动生成标记；
+  `--code-quality`，默认关闭。
+- **教育性（FineWeb-Edu 规则近似）**：0..5 分（教育词 0.4 / 结构 0.3 / 长度 0.3 -
+  重复惩罚 0.5），`--edu-min 3` 是常用阈值；默认关闭。
+- **数据卡**：`languages` / `styles` / `semantics` 分布已写入 `gate.report.json`。
