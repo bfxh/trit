@@ -687,6 +687,22 @@
       "lines": 149
     },
     {
+      "file": "crates/trit-codec/src/bin/codec_verify.rs",
+      "lines": 93
+    },
+    {
+      "file": "crates/trit-codec/src/bin/codec_verify/checks.rs",
+      "lines": 647
+    },
+    {
+      "file": "crates/trit-codec/src/bin/codec_verify/corpus.rs",
+      "lines": 167
+    },
+    {
+      "file": "crates/trit-codec/src/bin/codec_verify/report.rs",
+      "lines": 181
+    },
+    {
       "file": "crates/trit-codec/src/checksum.rs",
       "lines": 182
     },
@@ -1469,6 +1485,10 @@
     {
       "file": "crates/trit-eval/tests/properties.rs",
       "lines": 149
+    },
+    {
+      "file": "crates/trit-export/src/bin/gguf_verify.rs",
+      "lines": 454
     },
     {
       "file": "crates/trit-export/src/error.rs",

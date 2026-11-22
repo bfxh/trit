@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Added（三进制专项评估：编码可逆与逐位一致的独立复核）
+
+- `codec_verify`（`crates/trit-codec/src/bin/`）：9 形态 × 25 长度的确定性语料
+  （seed `0x9e3779b97f4a7c15`，225 样本 / 22,239 trit），17 项检查 / 58,323 例：
+  pack 往返 + 独立位级 oracle、balanced 边界（i64 全域 41 位）+ 独立文本解析、
+  Hamming 单符号纠错全位置、interleave 往返、RLE 往返与指标口径、delta 往返 + mod 3 独立还原、
+  gray 双射与相邻距离（n≤8）、sparse 往返 + 独立重建、CRC-3 单符号检错、plan 往返。
+- `gguf_verify`（`crates/trit-export/src/bin/`）：1..6 行 × 1..20 列全形状 + 病态张量 +
+  33×129 大张量，4 项检查 / 237 例：逐字段往返（scale 按 `to_bits`，含 `-0.0`/次正规/NaN）、
+  序列化确定性与读回再写一致、magic/版本/截断/重名/零形状拒绝、导出前后 trit 的 pack 字节逐位一致。
+- 读数：两命令均退出 0（`cargo run -q -p trit-codec --bin codec_verify -- --json`、
+  `cargo run -q -p trit-export --bin gguf_verify -- --json`）；
+  口径、A/B/C/D 归类与未证栏见 `docs/research/TERNARY-AUDIT.md`。
+
 ### Added（trit-data M1 收口：语言质量策略接入 gate + `rewrite --cmd` 外部重写闭环）
 
 - `LangPolicy { Off, Defer, Strict }`（`lang_policy.rs`，CLI `gate --lang-quality` / `--no-lang-quality`）：
