@@ -81,3 +81,6 @@ cognition/corpus/
 # doctor 的门结果缓存（tools/doctor.py 写入）：本机状态，指纹一变就重验；
 # 不进公开树，也不许让 doctor 自己把 git status 弄脏
 .agent/doctor-cache.json
+
+# 数据管线产物（本地/CI 生成，不入库）
+data-pipeline-out/

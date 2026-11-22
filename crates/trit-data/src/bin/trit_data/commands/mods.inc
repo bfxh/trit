@@ -18,12 +18,18 @@ mod lang_opts;
 mod mix;
 #[path = "pipeline.rs"]
 mod pipeline;
+#[path = "pipeline_batch.rs"]
+mod pipeline_batch;
+#[path = "pipeline_diff.rs"]
+mod pipeline_diff;
 #[path = "pipeline_report.rs"]
 mod pipeline_report;
 #[path = "project.rs"]
 mod project;
 #[path = "shared.rs"]
 mod shared;
+#[path = "pipeline_run.rs"]
+mod pipeline_run;
 #[path = "repo.rs"]
 mod repo;
 #[path = "repo_context.rs"]

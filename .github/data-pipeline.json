@@ -1,0 +1,6 @@
+{
+  "repos": [
+    { "name": "trit", "path": ".", "require_tests": true },
+    { "name": "trit-data", "path": "crates/trit-data", "require_tests": true }
+  ]
+}
