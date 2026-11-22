@@ -160,3 +160,10 @@
     `payload_hash`（空则事件内容 SHA-256）→ evidence；**不补写不存在的 thought**。
   - 真实轨迹没有 thought 字段时，用 `gate --min-thought 0`。
   - 端到端：2 条事件 → 1 条轨迹 → `gate` accept 1；数据卡显示 `trit-orch:trace`。
+
+- **语言维度可选（2026-11-23）**：
+  - `trit-data lang --text "..."`（单次）或 `--jsonl <in>`（批量）：输出主语言
+    （`zh`/`ja`/`ko`/`ru`/`ar`/`en`/`other`）与各文字系统比例；`--deny zh,ja`、
+    `--allow zh,en` 标记 `denied`；`--off` 直接关闭检测。
+  - `gate` 新增：`--no-language`（整门关闭）、`--lang-allow zh,en`、
+    `--lang-deny zh,ja`、`--no-dedup`、`--no-loop`；数据卡新增 `languages` 分布。

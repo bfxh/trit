@@ -3,8 +3,10 @@
 use std::collections::BTreeMap;
 
 use trit_data::schema::Trajectory;
+use trit_data::script::{primary_language, trajectory_text};
 use trit_learn::json::Json;
 
+use super::counts::map_json;
 #[derive(Default)]
 pub struct Card {
     pub sources: BTreeMap<String, usize>,
@@ -12,6 +14,7 @@ pub struct Card {
     pub labels: BTreeMap<String, usize>,
     pub provenance_missing: usize,
     pub rewritten: usize,
+    pub languages: BTreeMap<String, usize>,
 }
 
 impl Card {
@@ -32,6 +35,10 @@ impl Card {
         {
             self.rewritten += 1;
         }
+        *self
+            .languages
+            .entry(primary_language(&trajectory_text(t)).to_string())
+            .or_insert(0) += 1;
     }
 
     pub fn json(&self) -> Json {
@@ -41,13 +48,6 @@ impl Card {
             .put("labels", map_json(&self.labels))
             .put("provenance_missing", self.provenance_missing as u64)
             .put("rewritten", self.rewritten as u64)
+            .put("languages", map_json(&self.languages))
     }
-}
-
-fn map_json(m: &BTreeMap<String, usize>) -> Json {
-    let mut out = Json::obj();
-    for (k, v) in m {
-        out = out.put(k.clone(), *v as u64);
-    }
-    out
 }

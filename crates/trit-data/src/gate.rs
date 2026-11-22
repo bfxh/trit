@@ -6,6 +6,7 @@ use trit_core::fingerprint::sha256_hex;
 
 use crate::language::{LangClass, Limits, classify, features};
 use crate::schema::Trajectory;
+use crate::script::primary_language;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
@@ -39,6 +40,11 @@ pub struct Config {
     pub min_thought_rate: f64,
     pub max_repeat4: f64,
     pub min_nonspace: f64,
+    pub language_gate: bool,
+    pub lang_allow: Option<Vec<String>>,
+    pub lang_deny: Vec<String>,
+    pub dedup: bool,
+    pub loop_gate: bool,
 }
 
 impl Default for Config {
@@ -51,6 +57,11 @@ impl Default for Config {
             min_thought_rate: 0.5,
             max_repeat4: 0.4,
             min_nonspace: 0.6,
+            language_gate: true,
+            lang_allow: None,
+            lang_deny: Vec::new(),
+            dedup: true,
+            loop_gate: true,
         }
     }
 }
@@ -89,13 +100,15 @@ pub fn evaluate(t: &Trajectory, cfg: &Config, seen: &mut BTreeSet<String>) -> Ve
         hard.push("budget");
     }
 
-    let looped = t.steps.windows(3).any(|w| {
-        matches!((&w[0].tool, &w[1].tool, &w[2].tool), (Some(a), Some(b), Some(c)) if a == b && b == c)
-            && w[0].args == w[1].args
-            && w[1].args == w[2].args
-    });
-    if looped {
-        hard.push("loop");
+    if cfg.loop_gate {
+        let looped = t.steps.windows(3).any(|w| {
+            matches!((&w[0].tool, &w[1].tool, &w[2].tool), (Some(a), Some(b), Some(c)) if a == b && b == c)
+                && w[0].args == w[1].args
+                && w[1].args == w[2].args
+        });
+        if looped {
+            hard.push("loop");
+        }
     }
 
     if cfg.require_verified {
@@ -107,7 +120,7 @@ pub fn evaluate(t: &Trajectory, cfg: &Config, seen: &mut BTreeSet<String>) -> Ve
         }
     }
 
-    if !seen.insert(content_key(t)) {
+    if cfg.dedup && !seen.insert(content_key(t)) {
         hard.push("dedup");
     }
 
@@ -139,9 +152,20 @@ pub fn evaluate(t: &Trajectory, cfg: &Config, seen: &mut BTreeSet<String>) -> Ve
         soft.push("length");
     }
     let lang_text = collect_text(t);
-    let lang = classify(&features(&lang_text), &Limits::default());
-    if lang == LangClass::Bad {
-        soft.push("language");
+    if cfg.language_gate {
+        let lang = primary_language(&lang_text);
+        if cfg.lang_deny.iter().any(|x| x == lang) {
+            soft.push("lang_denied");
+        } else if cfg
+            .lang_allow
+            .as_ref()
+            .is_some_and(|allow| !allow.iter().any(|x| x == lang))
+        {
+            soft.push("lang_not_allowed");
+        }
+        if classify(&features(&lang_text), &Limits::default()) == LangClass::Bad {
+            soft.push("language");
+        }
     }
     if !cfg.require_verified && t.outcome.verifier.eq_ignore_ascii_case("none") {
         soft.push("unverified_soft");
@@ -207,82 +231,5 @@ fn collect_text(t: &Trajectory) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use trit_learn::json::Json;
-
-    fn td(s: &str) -> Trajectory {
-        Trajectory::from_json(&Json::parse(s).unwrap()).unwrap()
-    }
-
-    const OK: &str = r#"{"task_id":"t1","model":"m","steps":[{"role":"assistant","thought":"I will run the test suite now to check the build","action":{"tool":"bash","args":{"cmd":"pytest -q"}},"observation":"3 passed"},{"role":"assistant","thought":"All tests pass so I can finish this task","action":{"tool":"finish","args":{}},"observation":"done"}],"outcome":{"verifier":"pytest","passed":true,"evidence":["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"final":"fixed"}}"#;
-
-    #[test]
-    fn accepts_a_clean_trajectory() {
-        let mut seen = BTreeSet::new();
-        let v = evaluate(&td(OK), &Config::default(), &mut seen);
-        assert_eq!(v.decision, Decision::Accept, "{:?}", v.reasons);
-    }
-
-    #[test]
-    fn rejects_unverified_and_missing_evidence() {
-        let mut seen = BTreeSet::new();
-        let t = td(&OK.replace(r#""passed":true"#, r#""passed":false"#));
-        let v = evaluate(&t, &Config::default(), &mut seen);
-        assert_eq!(v.decision, Decision::Reject);
-        assert!(v.reasons.contains(&"verified"));
-    }
-
-    #[test]
-    fn rejects_loops_and_duplicates() {
-        let looped = r#"{"task_id":"t2","model":"m","steps":[{"role":"assistant","thought":"run","action":{"tool":"bash","args":{"cmd":"ls"}},"observation":"a"},{"role":"assistant","thought":"run","action":{"tool":"bash","args":{"cmd":"ls"}},"observation":"b"},{"role":"assistant","thought":"run","action":{"tool":"bash","args":{"cmd":"ls"}},"observation":"c"}],"outcome":{"verifier":"pytest","passed":true,"evidence":["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}}"#;
-        let mut seen = BTreeSet::new();
-        let v = evaluate(&td(looped), &Config::default(), &mut seen);
-        assert_eq!(v.decision, Decision::Reject);
-        assert!(v.reasons.contains(&"loop"));
-
-        let mut seen = BTreeSet::new();
-        assert_eq!(
-            evaluate(&td(OK), &Config::default(), &mut seen).decision,
-            Decision::Accept
-        );
-        let v = evaluate(&td(OK), &Config::default(), &mut seen);
-        assert!(v.reasons.contains(&"dedup"));
-    }
-
-    #[test]
-    fn defers_on_process_or_language_gaps() {
-        let mut seen = BTreeSet::new();
-        let no_obs = td(&OK.replace(r#""observation":"3 passed""#, r#""observation":"""#));
-        let v = evaluate(&no_obs, &Config::default(), &mut seen);
-        assert_eq!(v.decision, Decision::Defer);
-        assert!(v.reasons.contains(&"observation"));
-
-        let mut seen = BTreeSet::new();
-        let no_thought = td(&OK
-            .replace("I will run the test suite now to check the build", "")
-            .replace("All tests pass so I can finish this task", ""));
-        let v = evaluate(&no_thought, &Config::default(), &mut seen);
-        assert_eq!(v.decision, Decision::Defer);
-        assert!(v.reasons.contains(&"thought"));
-    }
-
-    #[test]
-    fn content_key_is_stable_and_order_sensitive() {
-        let a = td(OK);
-        let b = td(OK);
-        assert_eq!(content_key(&a), content_key(&b));
-        assert_eq!(content_key(&a).len(), 64);
-    }
-    #[test]
-    fn defers_on_bad_language() {
-        let bad = "重复句子。".repeat(80);
-        let json = format!(
-            r#"{{"task_id":"t3","model":"m","steps":[{{"role":"assistant","thought":"{bad}","action":{{"tool":"bash","args":{{"cmd":"ls"}}}},"observation":"{bad}"}},{{"role":"assistant","thought":"{bad}","action":{{"tool":"finish","args":{{}}}},"observation":"{bad}"}}],"outcome":{{"verifier":"pytest","passed":true,"evidence":["sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],"final":"{bad}"}}}}"#
-        );
-        let mut seen = BTreeSet::new();
-        let v = evaluate(&td(&json), &Config::default(), &mut seen);
-        assert_eq!(v.decision, Decision::Defer, "{:?}", v.reasons);
-        assert!(v.reasons.contains(&"language"));
-    }
-}
+#[path = "gate_tests.rs"]
+mod tests;
