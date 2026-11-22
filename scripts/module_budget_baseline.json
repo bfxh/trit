@@ -3503,12 +3503,20 @@
       "lines": 51
     },
     {
+      "file": "crates/trit-wspace/examples/bert6/activation.rs",
+      "lines": 168
+    },
+    {
       "file": "crates/trit-wspace/examples/bert6/main.rs",
-      "lines": 211
+      "lines": 159
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model.rs",
-      "lines": 352
+      "lines": 339
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/report.rs",
+      "lines": 111
     },
     {
       "file": "crates/trit-wspace/examples/bias_e2e/main.rs",

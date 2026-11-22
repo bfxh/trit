@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：全三值激活——LN 也三值，cosine 0.03）
+
+- `examples/bert6` 新增 `--activation-mode f32|ternary-ln|ternary-all`：
+  `ternary-ln` 把 LN 的 weight 三值化（bias 保 f32）；`ternary-all` 再把 LN/GELU
+  输出符号三值化。`activation.rs` 拆出 Norm/TernaryNorm/NormKind，`report.rs` 拆出统计。
+- 读数（8 句 STS、seq 64、只比较 mask=1）：
+
+  | 模式 | 真实 rel_l2 | 真实 cosine | 随机 rel_l2 | 随机 cosine |
+  |---|---:|---:|---:|---:|
+  | f32（仅线性权重） | 1.1594 | 0.4690 | 1.5488 | 0.3117 |
+  | ternary-ln | 1.3647 | 0.3516 | 1.6907 | 0.2312 |
+  | ternary-all | **2.4475** | **0.0345** | **3.0896** | **0.0382** |
+
+- 负结果：只三值化 LN weight 就把 cosine 从 0.47 拉到 0.35；再把 LN/GELU 输出符号化，
+  cosine **0.03**，方向信息几乎全丢。当前 absmean + sign 实现不支持全三值激活；
+  保留方向需要 QAT/学习式 scale、混合精度或残差侧车。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan` 绿。
+
 ### Added（trit-wspace：完整 6 层 f32/三值前向——随机输入方向翻转）
 
 - 新增 `examples/bert6/`：MiniLM 6 层 BERT 前向（12 heads、LN、GELU、残差），
