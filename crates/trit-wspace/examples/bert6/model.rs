@@ -25,6 +25,7 @@ pub(crate) struct BertConfig {
     pub(crate) eps: f32,
     pub(crate) quantize: bool,
     pub(crate) activation: ActivationMode,
+    pub(crate) sidecar_rank: usize,
 }
 
 pub(crate) struct Bert {
@@ -45,6 +46,7 @@ impl Bert {
             eps,
             quantize,
             activation,
+            sidecar_rank,
         } = config;
         let tensor = |name: &str| -> F32Linear {
             let weight = safetensors::read_tensor(file, name)
@@ -67,7 +69,7 @@ impl Bert {
         };
         let wrap = |linear: F32Linear| {
             if quantize {
-                Linear::Quant(QuantLinear::from(&linear))
+                Linear::Quant(QuantLinear::from(&linear, sidecar_rank))
             } else {
                 Linear::F32(linear)
             }
@@ -232,12 +234,10 @@ fn softmax(values: &mut [f32]) {
         }
     }
 }
-
 pub(crate) fn gelu(value: f32) -> f32 {
     let x = f64::from(value);
     (0.5 * x * (1.0 + erf(x / std::f64::consts::SQRT_2))) as f32
 }
-
 fn erf(x: f64) -> f64 {
     let sign = if x < 0.0 { -1.0 } else { 1.0 };
     let x = x.abs();

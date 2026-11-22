@@ -3512,7 +3512,7 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/main.rs",
-      "lines": 158
+      "lines": 16
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model.rs",
@@ -3527,8 +3527,20 @@
       "lines": 83
     },
     {
+      "file": "crates/trit-wspace/examples/bert6/run.rs",
+      "lines": 157
+    },
+    {
       "file": "crates/trit-wspace/examples/bert6/scales.rs",
       "lines": 43
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/sidecar.rs",
+      "lines": 50
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/sidecar_layer.rs",
+      "lines": 61
     },
     {
       "file": "crates/trit-wspace/examples/bert6/stats.rs",
