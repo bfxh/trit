@@ -13,4 +13,4 @@ pub const MAX_ELEMENTS: usize = 1 << 24;
 mod mask;
 mod matrix;
 pub use mask::read_mask;
-pub use matrix::read_matrix;
+pub use matrix::{read_matrix, read_matrix_with_limit};
