@@ -25,7 +25,7 @@ mod commit;
 #[path = "legacy.rs"]
 mod legacy;
 #[path = "lock.rs"]
-mod lock;
+pub(crate) mod lock;
 #[path = "recover.rs"]
 mod recover;
 #[path = "time.rs"]
@@ -121,7 +121,7 @@ impl TraceEventStore {
     }
 
     pub fn load(&self) -> Result<Vec<TraceEvent>, Error> {
-        let mut events = self.read_events()?;
+        let (mut events, lines) = self.read_events()?;
         let mut is_legacy = false;
         for (index, event) in events.iter().enumerate() {
             if event.payload_hash.is_empty() {
@@ -129,7 +129,7 @@ impl TraceEventStore {
             } else if event.payload_hash != event.computed_payload_hash() {
                 return Err(Error::TraceHashMismatch {
                     path: self.path.display().to_string(),
-                    line: index + 1,
+                    line: lines[index],
                 });
             }
         }

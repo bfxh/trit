@@ -39,6 +39,7 @@ impl LedgerStore {
     /// 换到目标。任何一步崩溃：目标缺失/损坏时 [`Self::load`] 回退 `.bak`，
     /// 最坏只丢最后一次未完成的写入。
     pub fn save(&self, ledger: &Ledger) -> Result<(), Error> {
+        let _file_lock = crate::trace_store::core::lock::FileLock::acquire(&self.path)?;
         let temporary = self.temporary_path();
         if let Some(parent) = self.path.parent()
             && !parent.as_os_str().is_empty()
@@ -49,7 +50,6 @@ impl LedgerStore {
         file.write_all(ledger.to_json().as_bytes())
             .map_err(|error| self.io(error))?;
         file.sync_all().map_err(|error| self.io(error))?;
-
         let backup = self.backup_path();
         if self.path.exists() {
             let _ = std::fs::remove_file(&backup);

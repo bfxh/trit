@@ -30,7 +30,7 @@ impl TraceEventStore {
         let lock = lock::path_lock(&self.path);
         let _guard = lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
         let _file_lock = FileLock::acquire(&self.path)?;
-        let events = self.read_events()?;
+        let events = self.read_plain_events()?;
         self.verify_chain(&events)?;
         if let Some(last) = events.iter().max_by_key(|event| event.chain_seq) {
             self.anchor_update(last)?;

@@ -1,7 +1,7 @@
 //! 旧格式兼容：没有内容摘要的历史事件按 `seq` 迁移成一条真实链；混合格式 fail-closed。
 
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
+use std::io::Write;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use trit_ops::encode_line;
@@ -9,10 +9,12 @@ use trit_ops::encode_line;
 use crate::trace::{TraceEvent, TraceEventKind, TracePayload};
 use crate::{Error, TraceStep};
 
-use super::{MAX_TRACE_BYTES, TraceEventStore};
+use super::TraceEventStore;
 
 #[path = "legacy_migrate.rs"]
 mod migrate;
+#[path = "read.rs"]
+mod read;
 pub(crate) use migrate::{has_content, migrate_in_memory};
 
 /// 旧 `TraceStep` 的迁移路径：拆成 plan / snapshot / limits / ledger 四条事件。
@@ -69,58 +71,9 @@ pub fn events_from_step(
 }
 
 impl TraceEventStore {
-    /// 解析文件为原始事件（不校验摘要），供 load 与迁移共用。
-    pub(super) fn read_events(&self) -> Result<Vec<TraceEvent>, Error> {
-        let metadata = match fs::metadata(&self.path) {
-            Ok(metadata) => metadata,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(error) => return Err(self.io(error)),
-        };
-        if metadata.len() > MAX_TRACE_BYTES {
-            return Err(Error::TraceTooLarge {
-                path: self.path.display().to_string(),
-                size: metadata.len(),
-                max: MAX_TRACE_BYTES,
-            });
-        }
-        let file = match fs::File::open(&self.path) {
-            Ok(file) => file,
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-            Err(error) => return Err(self.io(error)),
-        };
-        let reader = BufReader::new(file);
-        let mut events = Vec::new();
-        for (index, line) in reader.lines().enumerate() {
-            let line = line.map_err(|error| Error::TraceParse {
-                path: self.path.display().to_string(),
-                line: index + 1,
-                message: error.to_string(),
-            })?;
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
-            let payload = self.decode_stored_line(index, line)?;
-            let event: TraceEvent =
-                serde_json::from_str(&payload).map_err(|error| Error::TraceParse {
-                    path: self.path.display().to_string(),
-                    line: index + 1,
-                    message: error.to_string(),
-                })?;
-            if event.schema != TraceEvent::CURRENT_SCHEMA {
-                return Err(Error::TraceSchema {
-                    found: event.schema,
-                    expected: TraceEvent::CURRENT_SCHEMA,
-                });
-            }
-            events.push(event);
-        }
-        Ok(events)
-    }
-
     /// 把旧格式文件重写成按 seq 排序、带完整链的新格式。
     pub(super) fn migrate_legacy_file(&self) -> Result<(), Error> {
-        let events = self.read_events()?;
+        let events = self.read_plain_events()?;
         self.anchor_verify(&events)?;
         let events = migrate_in_memory(events);
         self.rewrite_events(&events)

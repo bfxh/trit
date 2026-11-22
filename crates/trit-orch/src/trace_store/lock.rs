@@ -30,12 +30,12 @@ pub(super) fn path_lock(path: &Path) -> Arc<Mutex<()>> {
 }
 
 /// 跨进程锁的 RAII guard；Drop 时删除 `.lock`。
-pub(super) struct FileLock {
+pub(crate) struct FileLock {
     path: PathBuf,
 }
 
 impl FileLock {
-    pub(super) fn acquire(log: &Path) -> Result<Self, Error> {
+    pub(crate) fn acquire(log: &Path) -> Result<Self, Error> {
         let mut name = log.as_os_str().to_os_string();
         name.push(".lock");
         let path = PathBuf::from(name);

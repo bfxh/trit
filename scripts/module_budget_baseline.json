@@ -2308,7 +2308,7 @@
     },
     {
       "file": "crates/trit-orch/src/trace_store/legacy.rs",
-      "lines": 181
+      "lines": 134
     },
     {
       "file": "crates/trit-orch/src/trace_store/legacy_migrate.rs",
@@ -2317,6 +2317,10 @@
     {
       "file": "crates/trit-orch/src/trace_store/lock.rs",
       "lines": 105
+    },
+    {
+      "file": "crates/trit-orch/src/trace_store/read.rs",
+      "lines": 72
     },
     {
       "file": "crates/trit-orch/src/trace_store/recover.rs",
