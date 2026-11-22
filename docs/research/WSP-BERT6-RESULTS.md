@@ -305,6 +305,44 @@ TRIT_DATA=<数据根> HF_HUB_OFFLINE=1   python crates/trit-wspace/examples/expo
    **−0.1342**（128 对口径）。
 5. 以后报读数必须写明子集大小（64 对 / 128 对），不能把不同子集上的数字混着比。
 
+## 3.14 全量 STS（1379 对）：f32 基线 0.8274，GPTQ 增益收窄，per-group 几乎消失
+
+数据是 STS test 全量 1379 对（2758 句）。全量下逐层快照要 6×271 MB，导出用 `--no-layers`
+跳过；评测用 `TRIT_NO_LAYERS=1` 关掉逐层输出，三组串行跑（并行会 OOM）。
+
+```bash
+TRIT_DATA=<数据根> HF_HUB_OFFLINE=1   python crates/trit-wspace/examples/export_bert6.py "$TRIT_DATA/miniLM-bert6-sts-full" 2758 --no-layers
+TRIT_NO_LAYERS=1 cargo run --release -p trit-wspace --example bert6 --   --file "$HF_HOME/hub/models--sentence-transformers--all-MiniLM-L6-v2/snapshots/1110a243fdf4706b3f48f1d95db1a4f5529b4d41/model.safetensors"   --data-dir "$TRIT_DATA/miniLM-bert6-sts-full" --activation-mode f32 --gptq-group 32
+```
+
+| 配置（权重三值 + 激活 f32） | `rel_l2` | `cosine` | Pearson | Spearman |
+|---|---:|---:|---:|---:|
+| f32 基线 | — | — | **0.8274** | 0.8203 |
+| absmean per-row | 1.1803 | 0.4977 | 0.6870 | 0.6950 |
+| GPTQ per-row | 1.1432 | 0.5166 | 0.7123 | 0.7153 |
+| GPTQ group=32 | 1.1365 | 0.5192 | **0.7143** | **0.7190** |
+
+子集演进（Pearson）：
+
+| 子集 | f32 基线 | absmean | GPTQ | group=32 | GPTQ−absmean | g32−GPTQ |
+|---|---:|---:|---:|---:|---:|---:|
+| 64 对（§3.11/3.12） | 0.9230 | 0.7330 | 0.8065 | 0.8272 | +0.0735 | +0.0207 |
+| 128 对（§3.13） | 0.9235 | 0.6966 | 0.7457 | 0.7893 | +0.0491 | +0.0436 |
+| **1379 对（全量）** | **0.8274** | **0.6870** | **0.7123** | **0.7143** | **+0.0253** | **+0.0020** |
+
+读法：
+
+1. **f32 基线自己随子集扩大而下降**（0.9230 / 0.9235 → 0.8274）：前 128 句是容易样本。
+   之前几节「距 f32 差 0.19 / 0.09」的对比全部建立在乐观基线上，对外引用必须换成全量口径。
+2. **GPTQ 相对 absmean 的净增益随样本扩大收窄**：+0.0735 → +0.0491 → **+0.0253**。
+   方向仍然一致（三次都是正），但量级远小于 64 对的读数。
+3. **per-group 在全量上几乎无额外收益**（+0.0020，Spearman +0.0037）：§3.12 的 +0.02~+0.04
+   是子集特异现象，不能当普适结论；per-group 的存储/实现成本换不来全量收益。
+4. 权重三值化相对 f32 的代价（全量）：absmean **−0.1404**、GPTQ **−0.1151**、
+   group=32 **−0.1131**。
+5. 全量口径下结论：**权重侧 GPTQ 是有效但收益有限的一刀（+0.025）**；per-group 无效；
+   想再往上走需要更大 rank 侧车、QAT 或混合精度，而不是继续调 scale 粒度。
+
 ## 4. 未证栏
 
 - 只有 8 句、`8×64` token；不是大规模语料。

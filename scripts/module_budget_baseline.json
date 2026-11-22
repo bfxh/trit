@@ -4679,6 +4679,10 @@
       "lines": 41
     },
     {
+      "file": "crates/trit-wspace/examples/bert6/run/data.rs",
+      "lines": 33
+    },
+    {
       "file": "crates/trit-wspace/examples/bert6/scales.rs",
       "lines": 43
     },
@@ -4892,6 +4896,10 @@
     },
     {
       "file": "crates/trit-wspace/src/activations/matrix.rs",
+      "lines": 12
+    },
+    {
+      "file": "crates/trit-wspace/src/activations/matrix/limit.rs",
       "lines": 47
     },
     {
@@ -5261,6 +5269,10 @@
     {
       "file": "crates/trit-wspace/tests/activations.rs",
       "lines": 60
+    },
+    {
+      "file": "crates/trit-wspace/tests/activations_limit.rs",
+      "lines": 42
     },
     {
       "file": "crates/trit-wspace/tests/activations_mask.rs",

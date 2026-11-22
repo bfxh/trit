@@ -40,15 +40,13 @@ impl Bert {
         capture: bool,
     ) -> (Vec<f32>, Vec<Vec<f32>>, Vec<Vec<f32>>) {
         let mut output = Vec::with_capacity(batch * seq * self.hidden);
-        let mut snapshots = if capture {
-            vec![Vec::new(); self.layers.len()]
-        } else {
-            Vec::new()
-        };
-        let mut layer_outputs = vec![Vec::new(); self.layers.len()];
-        for item in 0..batch {
-            let base = item * seq * self.hidden;
-            let mut current = input[base..base + seq * self.hidden].to_vec();
+        let (mut snapshots, mut layer_outputs) = (Vec::new(), Vec::new());
+        if capture {
+            snapshots = vec![Vec::new(); self.layers.len()];
+            layer_outputs = vec![Vec::new(); self.layers.len()];
+        }
+        for (item, chunk) in input.chunks(seq * self.hidden).enumerate() {
+            let mut current = chunk.to_vec();
             let item_mask = &mask[item * seq..(item + 1) * seq];
             for (index, layer) in self.layers.iter().enumerate() {
                 let layer_scales = self.scales.as_ref().map(|all| &all[index]);
@@ -64,7 +62,9 @@ impl Bert {
                 if capture {
                     snapshots[index].extend_from_slice(&captured);
                 }
-                layer_outputs[index].extend_from_slice(&current);
+                if capture {
+                    layer_outputs[index].extend_from_slice(&current);
+                }
             }
             output.extend_from_slice(&current);
         }

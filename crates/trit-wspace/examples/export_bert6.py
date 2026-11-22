@@ -47,6 +47,8 @@ def sha256(path):
 def main():
     out_dir = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_OUT
     batch = int(sys.argv[2]) if len(sys.argv) > 2 else 8
+    # 全量 STS 导出时逐层快照会多占 ~1.6 GB；评测只需要 input/mask/pairs/gptq。
+    no_layers = "--no-layers" in sys.argv[3:]
     seq_len = 64
 
     dataset = load_dataset("mteb/stsbenchmark-sts", split="test")
@@ -129,11 +131,12 @@ def main():
         handle.write(b"WSPMSK1\0")
         handle.write(struct.pack("<II", mask.shape[0], mask.shape[1]))
         handle.write(bytes(mask.reshape(-1).to(torch.uint8).numpy().tolist()))
-    for index, hidden in sorted(layers, key=lambda item: item[0]):
-        write_matrix(
-            os.path.join(out_dir, f"layer{index}.f32"),
-            hidden.reshape(-1, hidden.shape[-1]).numpy(),
-        )
+    if not no_layers:
+        for index, hidden in sorted(layers, key=lambda item: item[0]):
+            write_matrix(
+                os.path.join(out_dir, f"layer{index}.f32"),
+                hidden.reshape(-1, hidden.shape[-1]).numpy(),
+            )
 
     def channel_absmean(tensor):
         weight = mask.unsqueeze(-1).float()
@@ -186,7 +189,11 @@ def main():
         "files": {
             name: sha256(os.path.join(out_dir, name))
             for name in ["input.f32", "reference.f32", "mask.u8", "pairs.json"]
-            + [f"layer{index}.f32" for index in range(config.num_hidden_layers)]
+            + (
+                []
+                if no_layers
+                else [f"layer{index}.f32" for index in range(config.num_hidden_layers)]
+            )
         },
     }
     with open(os.path.join(out_dir, "manifest.json"), "w", encoding="utf-8") as handle:
