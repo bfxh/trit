@@ -152,3 +152,11 @@
     按标签配额输出 `mix.json`；
   - `gate.report.json` 新增 `dataset_card`：sources / licenses / labels 分布、
     `provenance_missing`、`rewritten`。
+
+- **真实轨迹投影已落地（2026-11-23）**：
+  - `trit-data project --events <trace.jsonl> --out <dir>`：把 `trit-orch` 的
+    TraceEvent 按 `trace_id` 分组、按 `chain_seq` 排序，机械投影成轨迹 JSONL；
+    事件 → step（actor/kind/payload），`finish_confirmed` → `verifier=trace / passed`，
+    `payload_hash`（空则事件内容 SHA-256）→ evidence；**不补写不存在的 thought**。
+  - 真实轨迹没有 thought 字段时，用 `gate --min-thought 0`。
+  - 端到端：2 条事件 → 1 条轨迹 → `gate` accept 1；数据卡显示 `trit-orch:trace`。

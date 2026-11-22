@@ -912,7 +912,11 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate.rs",
-      "lines": 152
+      "lines": 136
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/gate_opts.rs",
+      "lines": 45
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/json.rs",
@@ -921,6 +925,10 @@
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/mix.rs",
       "lines": 90
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/project.rs",
+      "lines": 52
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/shared.rs",
@@ -953,6 +961,10 @@
     {
       "file": "crates/trit-data/src/mix.rs",
       "lines": 117
+    },
+    {
+      "file": "crates/trit-data/src/project.rs",
+      "lines": 159
     },
     {
       "file": "crates/trit-data/src/rewrite.rs",

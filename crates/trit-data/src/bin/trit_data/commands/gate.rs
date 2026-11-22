@@ -1,10 +1,9 @@
 //! `gate` 子命令。
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::path::PathBuf;
 
 use trit_core::fingerprint::file_sha256;
-use trit_data::gate::{Config, Decision, evaluate};
+use trit_data::gate::{Decision, evaluate};
 use trit_data::manifest::dataset_manifest;
 use trit_data::schema::Trajectory;
 use trit_learn::json::{Json, write_json};
@@ -13,29 +12,14 @@ use super::card::Card;
 use super::json::{gate_json, reasons_json};
 use super::{created_unix, die, usage, write_lines};
 
+#[path = "gate_opts.rs"]
+mod gate_opts;
+
 pub fn run(argv: &[String]) {
-    let mut jsonl: Option<PathBuf> = None;
-    let mut out: Option<PathBuf> = None;
-    let mut cfg = Config::default();
-    let mut i = 0;
-    while i < argv.len() {
-        match argv[i].as_str() {
-            "--jsonl" => {
-                jsonl = argv.get(i + 1).map(PathBuf::from);
-                i += 2;
-            }
-            "--out" => {
-                out = argv.get(i + 1).map(PathBuf::from);
-                i += 2;
-            }
-            "--allow-unverified" => {
-                cfg.require_verified = false;
-                i += 1;
-            }
-            other => die(&format!("未知参数 {other}")),
-        }
-    }
-    let path = jsonl.unwrap_or_else(|| usage());
+    let opts = gate_opts::parse(argv);
+    let out = opts.out;
+    let cfg = opts.cfg;
+    let path = opts.jsonl.unwrap_or_else(|| usage());
     let text = std::fs::read_to_string(&path)
         .unwrap_or_else(|e| die(&format!("读不了 {}: {e}", path.display())));
     let input_bytes = text.len() as u64;
