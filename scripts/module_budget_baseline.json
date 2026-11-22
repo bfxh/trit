@@ -1672,7 +1672,11 @@
     },
     {
       "file": "crates/trit-learn/src/verify.rs",
-      "lines": 157
+      "lines": 70
+    },
+    {
+      "file": "crates/trit-learn/src/verify/paths.rs",
+      "lines": 149
     },
     {
       "file": "crates/trit-lsp/src/analysis.rs",
@@ -2868,7 +2872,7 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_compose_verify.rs",
-      "lines": 450
+      "lines": 389
     },
     {
       "file": "crates/trit-parts/src/bin/parts_depth.rs",
@@ -2888,11 +2892,11 @@
     },
     {
       "file": "crates/trit-parts/src/bin/parts_depth_verify.rs",
-      "lines": 182
+      "lines": 152
     },
     {
       "file": "crates/trit-parts/src/bin/parts_extract_verify.rs",
-      "lines": 274
+      "lines": 242
     },
     {
       "file": "crates/trit-parts/src/bin/parts_glb_verify.rs",
