@@ -158,6 +158,13 @@
   - 读数（输入为上面默认策略的 `deferred.jsonl`，1 条 Bad 轨迹）：keep → rewritten 1 / accepted 1（`rewrite.ok=true`、
     `orig_sha256` 留存）；`-Mode drop` → fidelity_failed 1（`length_ratio_ok=false`）；`-Mode sleep` + `--timeout 1`
     → failed 1（`reason=timeout`、`detail=timeout: 超过 1s`）。
+  - 聚合读数（`rewrite.report.json.metrics`，stdout 同步打印）：`fidelity{attempted,passed,rate}`、
+    `gate_decisions{accept,defer,reject,accept_share,defer_share}`、`length_ratio{p10,p50,p90,samples}`、
+    `failure_reasons[{reason,count}]`；只有 counts 看不出“重写值不值得”的问题由此关闭。
+    3 条 demo：keep → 保真通过率 100%、长度 p50=1.0000；`drop` → 0%、`failure_reasons` 为 `fidelity=3`。
+  - 超时终止**进程树**：Unix 先 `process_group(0)` 再 `kill(-pgid)`；Windows 用 `taskkill /PID <pid> /T /F`，
+    失败才退回 `Child::kill`。回归 `cargo test -p trit-data --test rewrite_kill`（Windows）：
+    孙进程 `Start-Sleep 20` 在 `--timeout 2` 后消失。
 - **κ 标注包（复算：`trit-data label ...`）**：
   - `label --jsonl <records.jsonl|目录> --sample 500 [--seed 0x…] [--out <dir>]`：每行先过默认门，
     按 `decision:主原因` 分层，比例配额 + 最大余数（每层不超过可用数），层内按 `seed ^ FNV(层名)` 洗牌取前 k；
@@ -170,7 +177,8 @@
     手填 2 行（一致 1 / 不一致 1）→ `label.apply.json agreement=0.5`；接 `compare` 得
     `n=2, observed=0.5000, κ=0.0000`。样本只验证 CSV→JSONL→κ 链路，**不构成 κ 验收读数**。
 - **CI 门（每次 PR）**：`ci.yml` 的 `check` job 在 doctest 之后加 `Audit (ternary codec + gguf verify)`
-  step，跑 `codec_verify`（17 项 58,323 例）与 `gguf_verify`（4 项 237 例）；本机两二进制运行合计 <0.5s
+  step，先产 `target/ternary-corpus` 再跑 `codec_verify --corpus`（24 项 58,945 例，含量化误差界与
+  黄金语料回灌）与 `gguf_verify`（4 项 237 例）；本机运行合计 <0.5s
   （不含编译），任一失败退出码 2 → step 直接红。`quality.yml` 仍是手工/周跑，不是 PR 门。
 - **rewrite 集成测试（复算：`cargo test -p trit-data --test rewrite_cli`）**：`tests/rewrite_cli.rs`
   用平台原生 shell 夹具（Linux `sh` / Windows `powershell`）锁死 keep（rewritten 1）、保真失败

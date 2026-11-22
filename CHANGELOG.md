@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added（复核二期：rewrite 聚合读数 + 超时进程树 + 量化有损审计 + 黄金语料回灌）
+
+- `rewrite.report.json` 新增 `metrics`（stdout 同步打印）：
+  `fidelity{attempted,passed,rate}`、`gate_decisions{accept,defer,reject,accept_share,defer_share}`、
+  `length_ratio{p10,p50,p90,samples}`、`failure_reasons[{reason,count}]`。
+  3 条 demo：keep → 保真通过率 100%、长度 p50=1.0000；`drop` → 0%、`fidelity=3`。
+- 超时终止进程树：Unix `process_group(0)` + `kill(-pgid)`；Windows `taskkill /PID <pid> /T /F`，
+  失败再退回 `Child::kill`。新增 `tests/rewrite_kill.rs`（Windows）：包装器拉起
+  `Start-Sleep 20` 孙进程，`--timeout 2` 后孙进程必须消失（1 passed）。
+- `codec_verify` 新增量化审计（4 项 / 194 例）：逐元素误差界
+  `|w − dequant(q(w))| ≤ scale·max(beta,1−beta)`（96 数据集 / 129,816 元素，max err/scale=0.899964）、
+  再量化幂等 96/96、NaN→Unknown、同种子读数可复现。
+  同比特预算读数（96 数据集加权）：三元 MSE 0.922640（双导轨 2 bit/trit）vs
+  1-bit 符号基线 1,651.408428、2-bit 四电平基线 183.252992；每比特折算 0.461320 / 91.626496。
+  归类 `[B]`；语料相关，不外推为「三进制普遍更准」。
+- `codec_verify --corpus <dir>`：消费 `ternary_corpus` 的 `truth.csv`（171 行，独立真值表代算 +
+  键集合完整性）与 `balanced.csv`（85 行，独立解析 + 库解码 + 库重编码三查）。
+  带语料 **24 项 / 58,945 例 / 0 失败**；不带 21 项 / 58,517 例。CI step 已改为先生成语料再 `--corpus`。
+- 文档：`docs/research/TERNARY-AUDIT.md` 增加量化读数表、黄金语料消费口径与新的未证栏；
+  `docs/README.md` 索引同步。
+
 ### Added（M1 外部依赖铺路：κ 标注包 `label` + 把三进制复核接进 PR CI + rewrite 集成门）
 
 - `trit-data label`（`label.rs` + `label_csv.rs`，纯 Rust 手写 CSV 编解码）：
@@ -18,8 +39,8 @@
   - 读数（3 条 demo）：`--sample 2` → 2 层 2 条；手填 2 行 → `agreement=0.5`；
     `compare` → `n=2, observed=0.5000, expected=0.5000, κ=0.0000`（只验证链路，不是 κ 读数）。
 - CI：`.github/workflows/ci.yml` 的 `check` job（`fmt + clippy + test`）在 doctest 之后新增
-  `Audit (ternary codec + gguf verify)` step，每次 PR 跑 `codec_verify`（17 项 58,323 例）
-  与 `gguf_verify`（4 项 237 例）；本机实测两二进制运行合计 <0.5s（不含编译），失败退出码 2 → 红。
+  `Audit (ternary codec + quantize + gguf verify)` step，每次 PR 跑
+  `codec_verify --corpus`（24 项 58,945 例）与 `gguf_verify`（4 项 237 例）；本机实测运行合计 <0.5s
   `quality.yml` 仍只做 cargo-audit / fuzz-smoke（手工 + 周跑），未改为 PR 门。
 - `tests/rewrite_cli.rs`：keep / 保真失败 / 超时三支的端到端门（Linux `sh`、Windows `powershell` 夹具；
   断言读 `rewrite.report.json` 与 `rewrite.failed.jsonl`，不依赖 stdout 文案）。

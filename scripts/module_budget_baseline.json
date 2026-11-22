@@ -688,7 +688,11 @@
     },
     {
       "file": "crates/trit-codec/src/bin/codec_verify.rs",
-      "lines": 93
+      "lines": 73
+    },
+    {
+      "file": "crates/trit-codec/src/bin/codec_verify/args.rs",
+      "lines": 56
     },
     {
       "file": "crates/trit-codec/src/bin/codec_verify/checks.rs",
@@ -699,8 +703,24 @@
       "lines": 167
     },
     {
+      "file": "crates/trit-codec/src/bin/codec_verify/external.rs",
+      "lines": 223
+    },
+    {
+      "file": "crates/trit-codec/src/bin/codec_verify/quantize.rs",
+      "lines": 249
+    },
+    {
       "file": "crates/trit-codec/src/bin/codec_verify/report.rs",
-      "lines": 181
+      "lines": 126
+    },
+    {
+      "file": "crates/trit-codec/src/bin/codec_verify/report_json.rs",
+      "lines": 72
+    },
+    {
+      "file": "crates/trit-codec/src/bin/codec_verify/report_text.rs",
+      "lines": 40
     },
     {
       "file": "crates/trit-codec/src/checksum.rs",
@@ -1140,7 +1160,11 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/rewrite.rs",
-      "lines": 213
+      "lines": 212
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/rewrite_metrics.rs",
+      "lines": 173
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/rewrite_opts.rs",
@@ -1412,7 +1436,7 @@
     },
     {
       "file": "crates/trit-data/src/rewrite/command.rs",
-      "lines": 149
+      "lines": 147
     },
     {
       "file": "crates/trit-data/src/rewrite/command_tests.rs",
@@ -1425,6 +1449,10 @@
     {
       "file": "crates/trit-data/src/rewrite/json.rs",
       "lines": 71
+    },
+    {
+      "file": "crates/trit-data/src/rewrite/kill.rs",
+      "lines": 48
     },
     {
       "file": "crates/trit-data/src/rewrite/tests.rs",
@@ -1449,6 +1477,10 @@
     {
       "file": "crates/trit-data/tests/rewrite_cli.rs",
       "lines": 198
+    },
+    {
+      "file": "crates/trit-data/tests/rewrite_kill.rs",
+      "lines": 117
     },
     {
       "file": "crates/trit-dot/src/bipolar.rs",

@@ -17,6 +17,10 @@ use super::{created_unix, die, usage, write_lines};
 
 #[path = "rewrite_opts.rs"]
 mod rewrite_opts;
+#[path = "rewrite_metrics.rs"]
+mod rewrite_metrics;
+
+use rewrite_metrics::Metrics;
 
 #[derive(Default)]
 struct Counts {
@@ -54,6 +58,7 @@ pub fn run(argv: &[String]) {
         .unwrap_or_else(|e| die(&e));
 
     let mut counts = Counts::default();
+    let mut metrics = Metrics::default();
     let mut reasons: BTreeMap<&'static str, usize> = BTreeMap::new();
     let mut buckets = Buckets::default();
     let mut seen = BTreeSet::new();
@@ -67,6 +72,7 @@ pub fn run(argv: &[String]) {
             Ok(t) => t,
             Err(_) => {
                 counts.failed += 1;
+                metrics.fail("parse_error");
                 buckets.failed.push(failed(line, "parse_error", "").dump());
                 continue;
             }
@@ -74,6 +80,7 @@ pub fn run(argv: &[String]) {
         match rewrite_trajectory_with(&rw, &t, &cfg, &mut seen) {
             Ok((out, fid, v)) if fid.ok => {
                 counts.rewritten += 1;
+                metrics.observe(&t, &out);
                 let rec = to_json(&out)
                     .put("rewrite", fidelity_json(&fid, &t, &rw))
                     .put("gate", super::json::gate_json(&v));
@@ -97,6 +104,7 @@ pub fn run(argv: &[String]) {
             }
             Ok((_, fid, _)) => {
                 counts.fidelity_failed += 1;
+                metrics.fail("fidelity");
                 let rec = Json::obj().put("raw", line).put(
                     "rewrite",
                     Json::obj()
@@ -110,12 +118,13 @@ pub fn run(argv: &[String]) {
             Err(e) => {
                 counts.failed += 1;
                 let kind = e.split(':').next().unwrap_or("error");
+                metrics.fail(kind);
                 buckets.failed.push(failed(line, kind, &e).dump());
             }
         }
     }
 
-    print_summary(&counts, &reasons);
+    metrics.print(&counts, &reasons, None);
     if let Some(dir) = opts.out {
         std::fs::create_dir_all(&dir)
             .unwrap_or_else(|e| die(&format!("建不了 {}: {e}", dir.display())));
@@ -163,6 +172,7 @@ pub fn run(argv: &[String]) {
                     .put("fidelity_failed", counts.fidelity_failed as u64)
                     .put("failed", counts.failed as u64),
             )
+            .put("metrics", metrics.json(&counts))
             .put("reasons", super::json::reasons_json(&reasons))
             .put(
                 "manifest",
@@ -174,17 +184,6 @@ pub fn run(argv: &[String]) {
         let rp = dir.join("rewrite.report.json");
         write_json(&rp, &report).unwrap_or_else(|e| die(&e));
         println!("报告 {}", rp.display());
-    }
-}
-
-fn print_summary(c: &Counts, reasons: &BTreeMap<&'static str, usize>) {
-    println!(
-        "重写 {}：成功 {}（accept {} / defer {} / reject {}）/ 保真失败 {} / 调用失败 {}",
-        c.records, c.rewritten, c.accepted, c.deferred, c.rejected, c.fidelity_failed, c.failed
-    );
-    if !reasons.is_empty() {
-        let s: Vec<String> = reasons.iter().map(|(k, v)| format!("{k}={v}")).collect();
-        println!("回门原因：{}", s.join(", "));
     }
 }
 

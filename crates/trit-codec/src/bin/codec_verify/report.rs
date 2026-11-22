@@ -1,4 +1,11 @@
 //! 复核报告：一条检查一行，失败留首个反例；JSON 与文本两种出口。
+//!
+//! 输出实现分在 `report_text.rs` / `report_json.rs`，本文件只管计数与数据。
+
+#[path = "report_json.rs"]
+mod report_json;
+#[path = "report_text.rs"]
+mod report_text;
 
 /// 单条检查的计数。`case` 只在失败时构造反例描述，正常路径零分配。
 pub struct Check {
@@ -44,6 +51,8 @@ pub struct Report {
     pub samples: usize,
     pub trits: usize,
     pub checks: Vec<Check>,
+    /// 聚合读数：检查管“是否成立”，读数管“值是多少”。
+    pub metrics: Vec<(String, String)>,
 }
 
 impl Report {
@@ -56,11 +65,17 @@ impl Report {
             samples: 0,
             trits: 0,
             checks: Vec::new(),
+            metrics: Vec::new(),
         }
     }
 
     pub fn finish(&mut self, check: Check) {
         self.checks.push(check);
+    }
+
+    /// 记一条读数；值按 `Display` 原样进报告（数字保持可解析）。
+    pub fn metric(&mut self, name: impl Into<String>, value: impl std::fmt::Display) {
+        self.metrics.push((name.into(), value.to_string()));
     }
 
     pub fn ok(&self) -> bool {
@@ -72,80 +87,6 @@ impl Report {
             (cases + check.cases, failed + check.failed)
         })
     }
-
-    pub fn to_text(&self) -> String {
-        let mut out = String::new();
-        out.push_str(&format!("{}\n", self.title));
-        out.push_str(&format!(
-            "kind={} seed=0x{:016x} quick={} 语料={} 样本 / {} trits\n",
-            self.kind, self.seed, self.quick, self.samples, self.trits
-        ));
-        out.push_str(&format!(
-            "{:<30} {:>10} {:>8}  {}\n",
-            "check", "cases", "failed", "note"
-        ));
-        for check in &self.checks {
-            out.push_str(&format!(
-                "{:<30} {:>10} {:>8}  {}\n",
-                check.name,
-                check.cases,
-                check.failed,
-                check.note()
-            ));
-        }
-        let (cases, failed) = self.totals();
-        let verdict = if self.ok() { "绿" } else { "红" };
-        out.push_str(&format!(
-            "结论：{verdict}（{} 项检查 / {cases} 例 / {failed} 失败）\n",
-            self.checks.len()
-        ));
-        out
-    }
-
-    pub fn to_json(&self) -> String {
-        let mut out = String::new();
-        out.push_str(&format!(
-            "{{\"schema\":1,\"kind\":\"{}\",\"seed\":\"0x{:016x}\",\"quick\":{},\"corpus\":{{\"samples\":{},\"trits\":{}}},\"checks\":[",
-            self.kind, self.seed, self.quick, self.samples, self.trits
-        ));
-        for (index, check) in self.checks.iter().enumerate() {
-            if index > 0 {
-                out.push(',');
-            }
-            out.push_str(&format!(
-                "{{\"name\":\"{}\",\"cases\":{},\"failed\":{},\"first_failure\":",
-                check.name, check.cases, check.failed
-            ));
-            match &check.first {
-                Some(text) => out.push_str(&format!("\"{}\"", escape(text))),
-                None => out.push_str("null"),
-            }
-            out.push('}');
-        }
-        let (cases, failed) = self.totals();
-        out.push_str(&format!(
-            "],\"totals\":{{\"cases\":{cases},\"failed\":{failed}}},\"ok\":{}}}\n",
-            self.ok()
-        ));
-        out
-    }
-}
-
-/// 只转义 JSON 必需字符；报告里的反例都是 ASCII 字母数字加少量标点。
-fn escape(raw: &str) -> String {
-    let mut out = String::new();
-    for ch in raw.chars() {
-        match ch {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out
 }
 
 #[cfg(test)]
@@ -161,9 +102,11 @@ mod tests {
         report.finish(check);
         report.samples = 1;
         report.trits = 5;
+        report.metric("demo.rate", 0.5);
         let text = report.to_text();
         assert!(text.contains("demo.check"));
         assert!(text.contains("首个反例: 第一个失败"));
+        assert!(text.contains("demo.rate = 0.5"));
         assert!(text.contains("结论：红"));
     }
 
@@ -173,9 +116,11 @@ mod tests {
         let mut check = Check::new("demo.check");
         check.case(false, || "对 \"x\" 与 \\n".to_string());
         report.finish(check);
+        report.metric("demo.rate", 0.5);
         let json = report.to_json();
         assert!(json.contains("\\\"x\\\""));
         assert!(json.contains("\\\\n"));
+        assert!(json.contains("\"demo.rate\":0.5"));
         assert!(json.contains("\"ok\":false"));
     }
 }

@@ -4,7 +4,7 @@
 //! 退出码非 0 / 超时 / 空输出一律算失败，调用方据此 fail-closed。
 
 use std::io::{BufReader, Read, Write};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::time::{Duration, Instant};
 
 use super::Rewriter;
@@ -93,8 +93,7 @@ pub fn run_command(
     text: &str,
     timeout: Duration,
 ) -> Result<String, String> {
-    let mut child = Command::new(prog)
-        .args(args)
+    let mut child = super::kill::command(prog, args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -125,8 +124,7 @@ pub fn run_command(
             Err(e) => return Err(format!("wait: {e}")),
         }
         if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
+            super::kill::tree(&mut child);
             return Err(format!("timeout: 超过 {}s", timeout.as_secs()));
         }
         std::thread::sleep(Duration::from_millis(10));

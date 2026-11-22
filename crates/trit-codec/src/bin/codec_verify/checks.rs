@@ -154,7 +154,7 @@ fn pow3(n: u32) -> i128 {
 }
 
 /// 独立解析：`+`=+1 / `0`=0 / `-`=-1，高位在前；不做溢出折叠。
-fn oracle_balanced(text: &str) -> Option<i128> {
+pub(crate) fn oracle_balanced(text: &str) -> Option<i128> {
     let trimmed = text.trim_start_matches('0');
     if trimmed.is_empty() {
         return Some(0);
