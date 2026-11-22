@@ -1,7 +1,5 @@
 #![cfg(feature = "tritdb")]
-//! 可选 trit-db 后端：事件与元数据存进 `tritdb-txn` 单事务。
-//! 选择：启用 `tritdb` feature，用 [`TritDbTraceStore`]；key 布局见下方。
-//! 边界：元数据 HMAC 只防改数据库文件的攻击者。
+//! 可选 trit-db 后端；key 布局见下方，HMAC 只防改数据库文件的攻击者。
 
 #[cfg(feature = "tritdb-cas")]
 pub mod cas;
@@ -9,6 +7,8 @@ pub mod cas;
 pub mod pgwire;
 #[cfg(feature = "tritdb-sql")]
 pub mod sql;
+#[cfg(feature = "tritdb-sql")]
+pub mod sqlite_materialize;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

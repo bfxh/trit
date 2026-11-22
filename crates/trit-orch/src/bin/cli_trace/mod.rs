@@ -10,6 +10,7 @@ use trit_orch::tritdb_backend::TritDbTraceStore;
 mod route;
 
 mod actions;
+mod actions_sync;
 
 #[allow(dead_code)]
 #[derive(Deserialize)]
@@ -70,7 +71,6 @@ fn arg_value(flag: &str) -> Option<String> {
     }
     None
 }
-
 fn backend_name() -> String {
     arg_value("--trace-backend").unwrap_or_else(|| "jsonl".to_string())
 }
@@ -79,7 +79,7 @@ pub(crate) fn run(input: &str) -> Result<Value, Error> {
     let path = arg_value("--trace-path")
         .or_else(|| request.path.clone())
         .ok_or_else(|| Error::InputParse {
-            message: "trace 需要 path 或 --trace-path".into(),
+            message: "trace 需要 path".into(),
         })?;
     request.path = Some(path.clone());
     let backend = backend_name();

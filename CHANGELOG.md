@@ -23,8 +23,12 @@
 - CLI `trace`：`--trace-backend jsonl|tritdb`，append/load/check；可选
   `tritdb-sql`（按 `chain_seq` 增量物化后查询 `trit_trace`，重复查询不重复插入）、
   `tritdb-cas`（**增量**快照/恢复：manifest 只记变化条目 + `!del:` tombstone，
-  沿 parent 链合并，anchor 可选 HMAC）与 `tritdb-pgwire`（pgwire 远程查询；
-  后台按 `TRIT_TRACE_SYNC_SECS` 刷新，默认 5 秒，`0` 关闭）。
+  沿 parent 链合并，anchor 可选 HMAC）与 `tritdb-pgwire`（pgwire 远程查询，
+  启动时物化一次）。
+- 新增 `trace sync`：把事件增量物化进独立 SQLite（`<wal>.sqlite`，`rusqlite`
+  可选依赖），与轨迹 WAL 解耦，可与轨迹写入方并发。
+- 移除 pgwire 的后台刷新：实测 `tritdb-txn` 的 WAL 锁是进程级排他的，
+  服务持有期间第二个连接必然报 `wal is locked by process`。
 - `tritdb-*` 依赖改为 **vendored 源码**（`third_party/trit-db`，rev `aca71888`，
   MIT OR Apache-2.0）：`cargo build --offline` 不再需要 git 网络或凭据；
   `scripts/vendor-tritdb.sh <rev>` 负责重新导出。

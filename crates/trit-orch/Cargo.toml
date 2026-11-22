@@ -13,7 +13,7 @@ publish = false
 # 可选 trit-db 后端：轨迹事件与元数据存进 tritdb-txn 的 WAL。
 tritdb = ["dep:tritdb-txn"]
 # trit-db SQL 查询审计事件。
-tritdb-sql = ["tritdb", "dep:tritdb-sql"]
+tritdb-sql = ["tritdb", "dep:tritdb-sql", "dep:rusqlite"]
 # CAS manifest 快照/恢复轨迹 WAL。
 tritdb-cas = ["tritdb", "dep:tritdb-cas"]
 # 用 tritdb-pgwire 远程查询轨迹表。
@@ -34,6 +34,8 @@ trit-schedule.workspace = true
 serde = { version = "1.0.229", features = ["derive"] }
 thiserror = "2.0.21"
 serde_json = "1.0.154"
+# 物化表用 SQLite：多进程读写，不占轨迹 WAL 的排他锁。
+rusqlite = { version = "=0.39.0", features = ["bundled"], optional = true }
 # vendor 副本（third_party/trit-db）：离线构建不再拉 git；来源 rev 见其 README。
 tritdb-txn = { path = "../../third_party/trit-db/crates/tritdb-txn", optional = true }
 tritdb-sql = { path = "../../third_party/trit-db/crates/tritdb-sql", optional = true }

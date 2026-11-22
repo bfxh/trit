@@ -2039,6 +2039,10 @@
       "lines": 127
     },
     {
+      "file": "crates/trit-orch/src/bin/cli_trace/actions_sync.rs",
+      "lines": 30
+    },
+    {
       "file": "crates/trit-orch/src/bin/cli_trace/mod.rs",
       "lines": 148
     },
@@ -2380,7 +2384,7 @@
     },
     {
       "file": "crates/trit-orch/src/tritdb_backend/pgwire_serve.rs",
-      "lines": 84
+      "lines": 27
     },
     {
       "file": "crates/trit-orch/src/tritdb_backend/sql.rs",
@@ -2389,6 +2393,10 @@
     {
       "file": "crates/trit-orch/src/tritdb_backend/sql_sync.rs",
       "lines": 94
+    },
+    {
+      "file": "crates/trit-orch/src/tritdb_backend/sqlite_materialize.rs",
+      "lines": 129
     },
     {
       "file": "crates/trit-orch/tests/admission.rs",

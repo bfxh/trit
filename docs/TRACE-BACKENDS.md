@@ -49,6 +49,10 @@ printf '{"action":"append","path":"trace.wal","events":[...]}' | trit-orch trace
 printf '{"action":"sql","path":"trace.wal","sql":"SELECT kind, count(*) FROM trit_trace GROUP BY kind"}' \
   | trit-orch trace --trace-backend tritdb
 
+# 物化到独立 SQLite（features = ["tritdb-sql"]）：<wal>.sqlite，可与写入方并发
+printf '{"action":"sync","path":"trace.wal"}' \
+  | trit-orch trace --trace-backend tritdb
+
 # pgwire 远程查询（features = ["tritdb-pgwire"]）
 printf '{"action":"serve","path":"trace.wal","listen":"127.0.0.1:5433"}' \
   | trit-orch trace --trace-backend tritdb
@@ -67,10 +71,14 @@ printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifes
 
 - `tritdb-sql`：事件先按 `chain_seq` 增量物化进 `trit_trace`（每个 trace 记水位，
   只插更新的行），再执行查询；重复查询不会重复插入，事件只读一遍。
-- `tritdb-pgwire`：`trace serve` 先做一次物化，再在 `listen` 上起 pgwire 服务；
-  之后按 `TRIT_TRACE_SYNC_SECS`（默认 `5` 秒，`0` 关闭）在后台刷新。刷新线程与
-  查询引擎并发写同一个 WAL，靠 `tritdb-txn` 的事务冲突重试（3 次、50 ms 起指数
-  退避），仍失败只记日志，不影响已建立的服务。
+- `trace sync`：把事件增量物化进**独立 SQLite**（`<wal>.sqlite`，`trit_trace` 表）。
+  读轨迹 WAL 只短暂持锁，写物化表走 SQLite 自己的锁，所以它能和轨迹写入方并发；
+  水位取 `max(chain_seq)`，重复执行不会重复插入。
+- `tritdb-pgwire`：`trace serve` 启动时物化一次，再在 `listen` 上起服务。**服务
+  进程会持续持有轨迹 WAL 的排他锁**，所以服务期间不能再有第二个进程写同一个
+  WAL（`trace sync` 也会被拒）。这一点是实测确认的：曾经的「后台按间隔刷新」
+  每次都会报 `wal is locked by process`，因此已移除；需要更新数据请先停服，
+  或改用 SQLite 物化（`trace sync`）另接一个只读物化库的服务。
 
 ## CAS 快照与 anchor 链
 
