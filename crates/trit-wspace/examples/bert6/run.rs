@@ -1,5 +1,4 @@
 //! bert6 的主流程（拆出以守住 main.rs 行数预算）。
-
 use crate::activation::ActivationMode;
 use crate::model::{Bert, BertConfig};
 use crate::report::{compare, layer_refs};
@@ -71,6 +70,7 @@ pub(crate) fn run() {
         ActivationMode::TernaryAllScale,
         ActivationMode::TernaryAllChannel,
         ActivationMode::Mixed,
+        ActivationMode::Int8,
     ] {
         if requested.is_some_and(|wanted| wanted != mode) {
             continue;

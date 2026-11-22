@@ -3507,6 +3507,18 @@
       "lines": 106
     },
     {
+      "file": "crates/trit-wspace/examples/bert6/gelu.rs",
+      "lines": 17
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/int8.rs",
+      "lines": 12
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/layer_scales.rs",
+      "lines": 9
+    },
+    {
       "file": "crates/trit-wspace/examples/bert6/linear.rs",
       "lines": 102
     },
@@ -3516,11 +3528,15 @@
     },
     {
       "file": "crates/trit-wspace/examples/bert6/model.rs",
-      "lines": 250
+      "lines": 237
     },
     {
       "file": "crates/trit-wspace/examples/bert6/norm.rs",
       "lines": 124
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/quantize_input.rs",
+      "lines": 21
     },
     {
       "file": "crates/trit-wspace/examples/bert6/report.rs",

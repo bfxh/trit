@@ -1,5 +1,6 @@
 //! MiniLM BERT 6 层的 f32 / 三值前向（只三值化线性权重，LN/GELU/softmax 保持 f32）。
 use crate::activation::{ActivationMode, LayerScales, NormKind, quantize_activation};
+use crate::gelu::gelu;
 use crate::linear::{F32Linear, Linear, QuantLinear};
 use trit_wspace::safetensors;
 pub(crate) struct BertLayer {
@@ -148,16 +149,7 @@ impl BertLayer {
         head_dim: usize,
         scales: Option<&LayerScales>,
     ) -> Vec<f32> {
-        let quantized = |values: &[f32], scales: Option<&[f32]>| -> Vec<f32> {
-            if self.activation.matmul_input() {
-                let mut copy = values.to_vec();
-                quantize_activation(&mut copy, ActivationMode::TernaryAllChannel, scales);
-                copy
-            } else {
-                values.to_vec()
-            }
-        };
-        let xq = quantized(x, None);
+        let xq = crate::quantize_input::quantize(x, hidden, self.activation, None);
         let mut q = vec![0.0f32; seq * hidden];
         let mut k = vec![0.0f32; seq * hidden];
         let mut v = vec![0.0f32; seq * hidden];
@@ -199,7 +191,12 @@ impl BertLayer {
         self.norm1
             .forward_seq(x, seq, self.activation, scales.map(|s| s.norm1.as_slice()));
         let intermediate = hidden * 4;
-        let xq_ffn = quantized(x, scales.map(|s| s.norm1.as_slice()));
+        let xq_ffn = crate::quantize_input::quantize(
+            x,
+            hidden,
+            self.activation,
+            scales.map(|s| s.norm1.as_slice()),
+        );
         let mut ffn = vec![0.0f32; seq * intermediate];
         self.intermediate.forward_seq(&xq_ffn, seq, &mut ffn);
         for value in &mut ffn {
@@ -209,7 +206,12 @@ impl BertLayer {
             quantize_activation(&mut ffn, self.activation, scales.map(|s| s.ffn.as_slice()));
         }
         let snapshot = ffn.clone();
-        let ffnq = quantized(&ffn, scales.map(|s| s.ffn.as_slice()));
+        let ffnq = crate::quantize_input::quantize(
+            &ffn,
+            intermediate,
+            self.activation,
+            scales.map(|s| s.ffn.as_slice()),
+        );
         let mut out = vec![0.0f32; seq * hidden];
         self.ffn_output.forward_seq(&ffnq, seq, &mut out);
         for index in 0..seq * hidden {
@@ -232,19 +234,4 @@ fn softmax(values: &mut [f32]) {
             *value /= sum;
         }
     }
-}
-pub(crate) fn gelu(value: f32) -> f32 {
-    let x = f64::from(value);
-    (0.5 * x * (1.0 + erf(x / std::f64::consts::SQRT_2))) as f32
-}
-fn erf(x: f64) -> f64 {
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let x = x.abs();
-    let t = 1.0 / (1.0 + 0.327_591_1 * x);
-    let y = 1.0
-        - (((((1.061_405_429 * t - 1.453_152_027) * t) + 1.421_413_741) * t - 0.284_496_736) * t
-            + 0.254_829_592)
-            * t
-            * (-x * x).exp();
-    sign * y
 }

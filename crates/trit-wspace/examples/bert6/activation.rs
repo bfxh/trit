@@ -1,5 +1,4 @@
 //! 激活侧的三值化选项：LayerNorm 参数三值、LN/GELU 输出三值。
-
 /// 激活侧模式。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ActivationMode {
@@ -13,16 +12,12 @@ pub(crate) enum ActivationMode {
     TernaryAllScale,
     /// 同 `TernaryAll`，但用 f32 校准的 per-channel absmean 作为 scale。
     TernaryAllChannel,
-    /// 混合精度：LN/残差流保持 f32，只把 matmul 的输入三值化（权重仍三值）。
     Mixed,
+    Int8,
 }
-/// 每层三处激活的 per-channel scale（LN1 / GELU 后 / LN2）。
-#[derive(Clone)]
-pub(crate) struct LayerScales {
-    pub(crate) norm1: Vec<f32>,
-    pub(crate) ffn: Vec<f32>,
-    pub(crate) norm2: Vec<f32>,
-}
+#[path = "layer_scales.rs"]
+mod layer_scales;
+pub(crate) use layer_scales::LayerScales;
 impl ActivationMode {
     pub(crate) fn parse(value: &str) -> Self {
         match value {
@@ -32,8 +27,9 @@ impl ActivationMode {
             "ternary-all-scale" => Self::TernaryAllScale,
             "ternary-all-channel" => Self::TernaryAllChannel,
             "mixed" => Self::Mixed,
+            "int8" => Self::Int8,
             other => panic!(
-                "未知 activation mode {other}（f32|ternary-ln|ternary-all|ternary-all-scale|ternary-all-channel|mixed）"
+                "未知 activation mode {other}（f32|ternary-ln|ternary-all|ternary-all-scale|ternary-all-channel|mixed|int8）"
             ),
         }
     }
@@ -45,6 +41,7 @@ impl ActivationMode {
             Self::TernaryAllScale => "ternary-all-scale",
             Self::TernaryAllChannel => "ternary-all-channel",
             Self::Mixed => "mixed",
+            Self::Int8 => "int8",
         }
     }
     fn ternary_norm(self) -> bool {
@@ -60,7 +57,7 @@ impl ActivationMode {
         )
     }
     pub(crate) fn matmul_input(self) -> bool {
-        self == Self::Mixed
+        matches!(self, Self::Mixed | Self::Int8)
     }
 }
 #[path = "norm.rs"]
@@ -104,3 +101,6 @@ pub(crate) fn quantize_activation(
         };
     }
 }
+#[path = "int8.rs"]
+mod int8;
+pub(crate) use int8::quantize_int8;
