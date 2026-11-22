@@ -2035,6 +2035,10 @@
       "lines": 23
     },
     {
+      "file": "crates/trit-orch/src/bin/cli_trace/mod.rs",
+      "lines": 223
+    },
+    {
       "file": "crates/trit-orch/src/bin/trit-orch.rs",
       "lines": 307
     },
@@ -2335,6 +2339,14 @@
       "lines": 349
     },
     {
+      "file": "crates/trit-orch/src/tritdb_backend/cas.rs",
+      "lines": 61
+    },
+    {
+      "file": "crates/trit-orch/src/tritdb_backend/sql.rs",
+      "lines": 109
+    },
+    {
       "file": "crates/trit-orch/tests/admission.rs",
       "lines": 105
     },
@@ -2361,6 +2373,14 @@
     {
       "file": "crates/trit-orch/tests/cli_support/mod.rs",
       "lines": 93
+    },
+    {
+      "file": "crates/trit-orch/tests/cli_trace.rs",
+      "lines": 59
+    },
+    {
+      "file": "crates/trit-orch/tests/cli_trace_tritdb.rs",
+      "lines": 57
     },
     {
       "file": "crates/trit-orch/tests/common/mod.rs",
@@ -2507,6 +2527,10 @@
       "lines": 37
     },
     {
+      "file": "crates/trit-orch/tests/trace_cas.rs",
+      "lines": 49
+    },
+    {
       "file": "crates/trit-orch/tests/trace_ecc.rs",
       "lines": 1
     },
@@ -2545,6 +2569,10 @@
     {
       "file": "crates/trit-orch/tests/trace_reseal.rs",
       "lines": 47
+    },
+    {
+      "file": "crates/trit-orch/tests/trace_sql.rs",
+      "lines": 41
     },
     {
       "file": "crates/trit-orch/tests/trace_stamp.rs",

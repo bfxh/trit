@@ -12,6 +12,10 @@ publish = false
 [features]
 # 可选 trit-db 后端：轨迹事件与元数据存进 tritdb-txn 的 WAL。
 tritdb = ["dep:tritdb-txn"]
+# trit-db SQL 查询审计事件。
+tritdb-sql = ["tritdb", "dep:tritdb-sql"]
+# CAS manifest 快照/恢复轨迹 WAL。
+tritdb-cas = ["tritdb", "dep:tritdb-cas"]
 
 [[bin]]
 name = "trit-orch"
@@ -30,3 +34,5 @@ thiserror = "2.0.21"
 serde_json = "1.0.154"
 # 只在 --features tritdb 时编译；固定到 trit-db 已推送的 HEAD。
 tritdb-txn = { git = "https://github.com/bfxh/trit-db", rev = "aca718880e0d918a064c878b39564225e46db80a", optional = true }
+tritdb-sql = { git = "https://github.com/bfxh/trit-db", rev = "aca718880e0d918a064c878b39564225e46db80a", optional = true }
+tritdb-cas = { git = "https://github.com/bfxh/trit-db", rev = "aca718880e0d918a064c878b39564225e46db80a", optional = true }

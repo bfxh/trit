@@ -1,9 +1,7 @@
 //! `trit-orch` 的宿主桥：stdin 收一份 JSON，stdout 回一份 JSON。
-//!
-//! 子命令：`plan` / `select` / `dispatch` / `finish` / `recover` / `shadow` / `compact-gate`
-//! 以及协调面 `claim` / `renew` / `release` / `claim-gate` / `receipt` / `handoff-gate` /
-//! `admit-with-claim`。成功退出码 0，失败退出码 1 并输出
-//! `{"ok":false,"kind":"...","error":"..."}`；成功输出永远带 `"ok":true`。
+//! 子命令：`plan` / `select` / `dispatch` / `finish` / `recover` / `shadow` / `trace` /
+//! `compact-gate` 以及协调面 `claim` / `renew` / `release` / `claim-gate` / `receipt` /
+//! `handoff-gate` / `admit-with-claim`。
 
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -15,6 +13,7 @@ use trit_orch::{
 
 mod cli_finish;
 mod cli_inputs;
+mod cli_trace;
 use cli_inputs::*;
 
 fn parse_ternary(raw: &str) -> Result<Ternary, trit_orch::Error> {
@@ -150,6 +149,7 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
             }))
         }
         "finish" => cli_finish::run(input),
+        "trace" => cli_trace::run(input),
         "shadow" => {
             let request: ShadowInput = parse(input)?;
             let policy = builtin(&request.policy).ok_or_else(|| trit_orch::Error::InputParse {
@@ -300,7 +300,7 @@ fn run(command: &str, input: &str) -> Result<Value, trit_orch::Error> {
         }
         other => Err(trit_orch::Error::InputParse {
             message: format!(
-                "未知子命令 {other:?}（可用：plan/select/dispatch/obligations/finish/recover/shadow/shadow-jsonl/compact-gate/claim/renew/release/claim-gate/receipt/handoff-gate/admit-with-claim）"
+                "未知子命令 {other:?}（可用：plan/select/dispatch/obligations/finish/recover/shadow/shadow-jsonl/trace/compact-gate/claim/renew/release/claim-gate/receipt/handoff-gate/admit-with-claim）"
             ),
         }),
     }

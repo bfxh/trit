@@ -1,12 +1,12 @@
 #![cfg(feature = "tritdb")]
-//! 可选 trit-db 后端：把轨迹事件与元数据存进 `tritdb-txn` 的单个 WAL 事务。
-//!
-//! 选择方式：启用 `tritdb` feature，使用 [`TritDbTraceStore`] 代替
-//! [`crate::TraceEventStore`]。事件按 `tr/<hex(trace)>/e/<seq>` 存储，元数据
-//! `tr/<hex(trace)>/m` 记录链尾与水位；一次 append 的“事件 + 元数据”在同一个
-//! 事务里提交，不会再出现日志与 sidecar 的半提交。
-//!
-//! 边界：元数据 HMAC 只防“只改数据库文件”的攻击者；拥有密钥的宿主仍可重写。
+//! 可选 trit-db 后端：事件与元数据存进 `tritdb-txn` 单事务。
+//! 选择：启用 `tritdb` feature，用 [`TritDbTraceStore`]；key 布局见下方。
+//! 边界：元数据 HMAC 只防改数据库文件的攻击者。
+
+#[cfg(feature = "tritdb-cas")]
+pub mod cas;
+#[cfg(feature = "tritdb-sql")]
+pub mod sql;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

@@ -20,6 +20,8 @@
   `truncate_incomplete_tail` 半行恢复。
 - 可选 trit-db 后端：`tritdb` feature + `TritDbTraceStore`（事件与元数据存进
   `tritdb-txn` 单事务）；见 `docs/TRACE-BACKENDS.md`。
+- CLI `trace`：`--trace-backend jsonl|tritdb`，append/load/check；可选
+  `tritdb-sql`（SQL 查询 `trit_trace`）与 `tritdb-cas`（快照/恢复 WAL）。
 - 兼容性：`Receipt`/`TraceEvent`/`HandoffPacket` 新增字段均有 serde 默认，旧 JSON 可读；
   源码字面量构造需补字段，推荐用 `Receipt::host_measured` / `TraceEvent::new` 等构造器；
   `Error` 新增变体，下游穷尽 `match` 需补分支。

@@ -34,6 +34,31 @@ let events = store.load()?;
 let store = TritDbTraceStore::with_anchor("trace.wal", b"host-key")?;
 ```
 
+## CLI
+
+```bash
+# JSONL（默认）
+printf '{"action":"append","path":"trace.jsonl","events":[...]}' | trit-orch trace --trace-backend jsonl
+printf '{"action":"load","path":"trace.jsonl"}' | trit-orch trace --trace-backend jsonl
+printf '{"action":"check","path":"trace.jsonl","trace_id":"t"}' | trit-orch trace --trace-backend jsonl
+
+# trit-db（features = ["tritdb"]）
+printf '{"action":"append","path":"trace.wal","events":[...]}' | trit-orch trace --trace-backend tritdb
+
+# SQL 查询（features = ["tritdb-sql"]）
+printf '{"action":"sql","path":"trace.wal","sql":"SELECT kind, count(*) FROM trit_trace GROUP BY kind"}' \
+  | trit-orch trace --trace-backend tritdb
+
+# CAS 快照/恢复（features = ["tritdb-cas"]）
+printf '{"action":"snapshot","path":"trace.wal","cas_root":"cas"}' \
+  | trit-orch trace --trace-backend tritdb
+printf '{"action":"restore","path":"trace.wal","cas_root":"cas","head":"<manifest-hex>"}' \
+  | trit-orch trace --trace-backend tritdb
+```
+
+`path` 也可以由 `--trace-path <path>` 覆盖。`trace` 的 action：
+`append` / `load` / `check` / `sql` / `snapshot` / `restore`。
+
 ## 两种后端的分工
 
 | 能力 | `TraceEventStore`（JSONL） | `TritDbTraceStore`（trit-db） |

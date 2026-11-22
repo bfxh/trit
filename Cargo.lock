@@ -2101,6 +2101,8 @@ dependencies = [
  "trit-core",
  "trit-ops",
  "trit-schedule",
+ "tritdb-cas",
+ "tritdb-sql",
  "tritdb-txn",
 ]
 
@@ -2242,9 +2244,44 @@ dependencies = [
 ]
 
 [[package]]
+name = "tritdb-cas"
+version = "0.0.1"
+source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
+
+[[package]]
+name = "tritdb-exec"
+version = "0.0.1"
+source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
+dependencies = [
+ "tritdb-tritvec",
+]
+
+[[package]]
 name = "tritdb-page"
 version = "0.0.1"
 source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
+
+[[package]]
+name = "tritdb-radix"
+version = "0.0.1"
+source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
+
+[[package]]
+name = "tritdb-sql"
+version = "0.0.1"
+source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
+dependencies = [
+ "tritdb-exec",
+ "tritdb-txn",
+]
+
+[[package]]
+name = "tritdb-tritvec"
+version = "0.0.1"
+source = "git+https://github.com/bfxh/trit-db?rev=aca718880e0d918a064c878b39564225e46db80a#aca718880e0d918a064c878b39564225e46db80a"
+dependencies = [
+ "tritdb-radix",
+]
 
 [[package]]
 name = "tritdb-txn"
