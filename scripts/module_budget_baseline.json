@@ -900,7 +900,7 @@
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/card.rs",
-      "lines": 47
+      "lines": 46
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/card_json.rs",
@@ -947,6 +947,10 @@
       "lines": 65
     },
     {
+      "file": "crates/trit-data/src/bin/trit_data/commands/gate_limit_opts.rs",
+      "lines": 43
+    },
+    {
       "file": "crates/trit-data/src/bin/trit_data/commands/gate_opts.rs",
       "lines": 16
     },
@@ -977,6 +981,10 @@
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/lang_opts_content.rs",
       "lines": 39
+    },
+    {
+      "file": "crates/trit-data/src/bin/trit_data/commands/limit_opts.rs",
+      "lines": 43
     },
     {
       "file": "crates/trit-data/src/bin/trit_data/commands/mix.rs",

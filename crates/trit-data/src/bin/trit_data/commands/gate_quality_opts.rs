@@ -1,8 +1,8 @@
-//! gate 的代码质量 / 教育性开关。
-
+use crate::commands::die;
 use trit_data::gate::Config;
 
-use crate::commands::die;
+#[path = "gate_limit_opts.rs"]
+mod gate_limit_opts;
 
 pub fn apply(cfg: &mut Config, flag: &str, argv: &[String], i: &mut usize) -> bool {
     match flag {
@@ -24,6 +24,6 @@ pub fn apply(cfg: &mut Config, flag: &str, argv: &[String], i: &mut usize) -> bo
             *i += 2;
             true
         }
-        _ => false,
+        _ => gate_limit_opts::apply(cfg, flag, argv, i),
     }
 }

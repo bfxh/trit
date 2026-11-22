@@ -1,8 +1,8 @@
-//! 内容代码质量 / 教育性开关。
-
+use crate::commands::die;
 use trit_data::content::ContentFilter;
 
-use crate::commands::die;
+#[path = "limit_opts.rs"]
+mod limit_opts;
 
 pub fn apply(filter: &mut ContentFilter, flag: &str, argv: &[String], i: &mut usize) -> bool {
     match flag {
@@ -24,6 +24,6 @@ pub fn apply(filter: &mut ContentFilter, flag: &str, argv: &[String], i: &mut us
             *i += 2;
             true
         }
-        _ => false,
+        _ => limit_opts::apply(filter, flag, argv, i),
     }
 }
