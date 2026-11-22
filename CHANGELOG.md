@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：128 对复验——0.829 是 64 对的偏乐观读数）
+
+- 数据从 128 句 / 64 对扩到 256 句 / 128 对（`export_bert6.py <dir> 256`），口径与 Hessian
+  提取不变。
+- 读数：f32 基线 0.9230 → 0.9235（稳定）；absmean 0.7330 → 0.6966；GPTQ per-row
+  0.8065 → 0.7457；GPTQ group=32 0.8272 → **0.7893**。
+- 结论：绝对值随子集下降 0.034–0.061，小样本偏乐观；排序与相对增益稳定（group=32 相对
+  per-row 在 128 对上是 +0.0436，比 64 对的 +0.0207 更大）。以后引用必须写明子集大小。
+- 验证：`cargo test -p trit-wspace`、`clippy -D warnings`、`module_budget`、`docs_hygiene`、
+  `doc_pointers`、`privacy_scan`、`claims_evidence` 全绿。
+
 ### Added（trit-wspace：per-group scale + GPTQ——STS 0.8065 → 0.8290）
 
 - `crates/trit-wspace/src/gptq.rs`：`quantize_grouped`（每 N 列一个 absmean scale，
