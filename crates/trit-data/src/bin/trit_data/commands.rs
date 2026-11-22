@@ -2,8 +2,6 @@
 mod card;
 #[path = "commands/compare.rs"]
 mod compare;
-#[path = "commands/counts.rs"]
-mod counts;
 #[path = "commands/decontaminate.rs"]
 mod decontaminate;
 #[path = "commands/dispatch.rs"]
@@ -14,6 +12,8 @@ mod gate;
 mod json;
 #[path = "commands/lang.rs"]
 mod lang;
+#[path = "commands/lang_opts.rs"]
+mod lang_opts;
 #[path = "commands/mix.rs"]
 mod mix;
 #[path = "commands/project.rs"]

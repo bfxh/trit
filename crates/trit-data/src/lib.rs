@@ -1,9 +1,9 @@
-//! 智能体轨迹 / 语言数据的**可复算质量门**（M0）。
-//! 硬门是确定性规则；软门是显式不确定信号；决策三支：`accept` / `reject` / `defer`；reject 与 defer 都保留原因码，服务负样本池与重写闭环。设计口径见 `docs/plans/AGENT-DATA-PLAN.md`。
+//! 智能体轨迹 / 语言数据的**可复算质量门**（M0）：硬门是确定性规则；软门是显式不确定信号；决策三支：`accept` / `reject` / `defer`；reject 与 defer 都保留原因码，服务负样本池与重写闭环。设计口径见 `docs/plans/AGENT-DATA-PLAN.md`。
 #![forbid(unsafe_code)]
 pub mod compare;
 pub mod decontaminate;
 pub mod gate;
+pub mod lang_filter;
 pub mod language;
 pub mod manifest;
 pub mod mix;

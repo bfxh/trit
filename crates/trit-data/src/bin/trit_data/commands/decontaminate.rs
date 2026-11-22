@@ -1,17 +1,16 @@
 //! `decontaminate` 子命令。
-
-use std::path::PathBuf;
-
-use trit_data::decontaminate::overlap;
-use trit_data::schema::Trajectory;
-use trit_learn::json::{Json, write_json};
-
 use super::{created_unix, die, usage, write_lines};
-
+use crate::commands::lang_opts;
+use std::path::PathBuf;
+use trit_data::schema::Trajectory;
+use trit_data::script::trajectory_text;
+use trit_data::{decontaminate::overlap, lang_filter::LangFilter};
+use trit_learn::json::{Json, write_json};
 pub fn run(argv: &[String]) {
     let mut jsonl: Option<PathBuf> = None;
     let mut bench: Option<PathBuf> = None;
     let mut out: Option<PathBuf> = None;
+    let mut filter = LangFilter::default();
     let mut ngram = 13usize;
     let mut threshold = 0.2f64;
     let mut i = 0;
@@ -43,7 +42,11 @@ pub fn run(argv: &[String]) {
                     .unwrap_or_else(|| die("--threshold 需要小数"));
                 i += 2;
             }
-            other => die(&format!("未知参数 {other}")),
+            other => {
+                if !lang_opts::apply(&mut filter, other, argv, &mut i) {
+                    die(&format!("未知参数 {other}"));
+                }
+            }
         }
     }
     let jsonl = jsonl.unwrap_or_else(|| usage());
@@ -62,14 +65,18 @@ pub fn run(argv: &[String]) {
                 .unwrap_or_else(|| l.to_string())
         })
         .collect();
-
     let mut flagged = 0usize;
+    let mut lang_filtered = 0usize;
     let mut lines = Vec::new();
     for line in traces.lines().filter(|l| !l.trim().is_empty()) {
         let j = Json::parse(line).unwrap_or_else(|e| die(&format!("{}: {e}", jsonl.display())));
         let t =
             Trajectory::from_json(&j).unwrap_or_else(|e| die(&format!("{}: {e}", jsonl.display())));
-        let text = text_of(&t);
+        let text = trajectory_text(&t);
+        let (lang, lang_denied) = filter.eval(&text);
+        if lang_denied {
+            lang_filtered += 1;
+        }
         let mut best = (0.0f64, 0usize, false);
         for (idx, r) in refs.iter().enumerate() {
             let o = overlap(&text, r, ngram, threshold);
@@ -80,14 +87,19 @@ pub fn run(argv: &[String]) {
         if best.2 {
             flagged += 1;
         }
-        let rec = j.put(
-            "contamination",
-            Json::obj()
-                .put("ngram", ngram as u64)
-                .put("ratio", best.0)
-                .put("bench_index", best.1 as u64)
-                .put("contaminated", best.2),
-        );
+        let rec = j
+            .put(
+                "contamination",
+                Json::obj()
+                    .put("ngram", ngram as u64)
+                    .put("ratio", best.0)
+                    .put("bench_index", best.1 as u64)
+                    .put("contaminated", best.2),
+            )
+            .put(
+                "language",
+                Json::obj().put("lang", lang).put("denied", lang_denied),
+            );
         lines.push(rec.dump());
     }
     println!(
@@ -116,23 +128,8 @@ pub fn run(argv: &[String]) {
             .put("ngram", ngram as u64)
             .put("threshold", threshold)
             .put("records", lines.len() as u64)
-            .put("contaminated", flagged as u64);
+            .put("contaminated", flagged as u64)
+            .put("language_filtered", lang_filtered as u64);
         write_json(&dir.join("decontaminate.report.json"), &report).unwrap_or_else(|e| die(&e));
     }
-}
-
-fn text_of(t: &Trajectory) -> String {
-    let mut out = String::new();
-    for s in &t.steps {
-        if let Some(x) = &s.thought {
-            out.push_str(x);
-            out.push('\n');
-        }
-        if let Some(x) = &s.observation {
-            out.push_str(x);
-            out.push('\n');
-        }
-    }
-    out.push_str(&t.outcome.final_text);
-    out
 }

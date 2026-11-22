@@ -1,12 +1,12 @@
 //! 数据卡统计：来源 / 许可证 / 标签 / 重写标记。
-
+use self::counts::map_json;
 use std::collections::BTreeMap;
-
 use trit_data::schema::Trajectory;
 use trit_data::script::{primary_language, trajectory_text};
 use trit_learn::json::Json;
+#[path = "counts.rs"]
+mod counts;
 
-use super::counts::map_json;
 #[derive(Default)]
 pub struct Card {
     pub sources: BTreeMap<String, usize>,
