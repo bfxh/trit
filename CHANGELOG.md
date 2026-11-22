@@ -467,6 +467,218 @@
   censored≠failed 措辞、journal 快照 id 探测、额度闸 verdict、失败自动挂起且回执旧
   字段不变、非法 task-id 拒收等。I2b 修正：checks 步是无条件 add，期望序列补上它
   （此前该断言永远红，见 docs/ERRORS.md L98）。
+### Added（trit-wspace：128 对复验——0.829 是 64 对的偏乐观读数）
+
+- 数据从 128 句 / 64 对扩到 256 句 / 128 对（`export_bert6.py <dir> 256`），口径与 Hessian
+  提取不变。
+- 读数：f32 基线 0.9230 → 0.9235（稳定）；absmean 0.7330 → 0.6966；GPTQ per-row
+  0.8065 → 0.7457；GPTQ group=32 0.8272 → **0.7893**。
+- 结论：绝对值随子集下降 0.034–0.061，小样本偏乐观；排序与相对增益稳定（group=32 相对
+  per-row 在 128 对上是 +0.0436，比 64 对的 +0.0207 更大）。以后引用必须写明子集大小。
+- 验证：`cargo test -p trit-wspace`、`clippy -D warnings`、`module_budget`、`docs_hygiene`、
+  `doc_pointers`、`privacy_scan`、`claims_evidence` 全绿。
+
+### Added（trit-wspace：per-group scale + GPTQ——STS 0.8065 → 0.8290）
+
+- `crates/trit-wspace/src/gptq.rs`：`quantize_grouped`（每 N 列一个 absmean scale，
+  `scales` 布局 `(row * groups + g)`）；`quantize` 是 `group = cols` 的特例。
+- `examples/bert6`：`--gptq-group N`（隐含开启 GPTQ）；`QuantLinear` 支持分组前向。
+- 读数（STS 64 对）：per-row GPTQ `0.8065 / 0.8320` → group=128 `0.8144 / 0.8333` →
+  group=64 `0.8159 / 0.8408` → group=32 `0.8272 / 0.8464` → group=16 `0.8290 / 0.8460`；
+  32 附近饱和。相对 absmean 0.7330 的 Pearson +0.0942（+12.9% 相对）。
+- 测试：`tests/gptq_group.rs`（与逐行版对齐、块内 absmean、粒度更细不变差）。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
+### Added（trit-wspace：权重侧 GPTQ 逐列补偿——STS 0.7330 → 0.8065）
+
+- `crates/trit-wspace/src/gptq.rs`：`absmean` / `quantize`（H = XᵀX 逐列补偿，act-order
+  排序，1% 对角阻尼求 `H⁻¹`）；`examples/bert6` 加 `--gptq`，校准集每层 6 段、2048 个 token。
+- 读数（STS 64 对，仅权重三值 + f32 激活）：absmean `rel_l2 1.1660 / cosine 0.4695 /
+  Pearson 0.7330 / Spearman 0.7437` → GPTQ `rel_l2 1.0491 / cosine 0.5551 /
+  Pearson 0.8065 / Spearman 0.8320`（+0.0735 Pearson，相对 +10.0%）。
+- 负结果入册：补偿系数误用 `H` 而不是 `H⁻¹` 时 H 加权误差从 0.266 涨到 0.860，端到端
+  Pearson 掉到 0.4924；修正后 36 个 H 矩阵的加权误差全部下降（query 段 −37%）。
+- 验证：`cargo test -p trit-wspace`（含 `tests/gptq.rs` 5 条性质测试）全绿；
+  `clippy -D warnings`、`module_budget`、`docs_hygiene`、`doc_pointers`、`privacy_scan`、
+  `claims_evidence` 绿。
+
+### Added（trit-wspace：int8 激活——权重三值 + 8-bit 输入，STS 0.7331）
+
+- `--activation-mode int8`：权重三值，LN/残差 f32，matmul 输入 per-token 对称 int8
+  （scale = max|x|/127，反量化后参与 matmul）；`int8.rs` 实现，`quantize_input.rs` 统一
+  三值/int8 两条输入路径。
+- 读数（STS 64 对）：int8 `rel_l2 1.1660 / cosine 0.4695 / Pearson 0.7331 / Spearman 0.7446`；
+  与 f32 激活（0.7330/0.7437）几乎完全相同。
+- 结论：8-bit 激活不损失精度，**激活带宽不是瓶颈**；权重三值化本身把 0.923 拉到 0.733。
+  要接近 0.923 必须做权重侧精度（GPTQ/更大 rank/混合权重），三值激活这条线已到顶。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
+### Added（trit-wspace：混合精度负结果——matmul 输入三值反而更差）
+
+- `--activation-mode mixed`：LN/残差流保持 f32，权重三值，Q/K/V、intermediate、FFN 输出的
+  matmul 输入符号三值化；attention context 保持 f32。
+- 读数（STS 64 对）：mixed `rel_l2 1.6053 / cosine 0.0082 / Pearson 0.2191 / Spearman 0.1896`；
+  对照全三值 + per-channel 0.4322/0.3889，仅线性权重 0.7330/0.7437。
+- 结论：只量化 matmul 输入、LN/残差保 f32，Pearson 0.219，比全三值 0.247 还低；瓶颈是
+  matmul 输入三值化本身。真正可用的混合精度是仅权重三值 + 激活 f32（0.733）；要接近
+  PyTorch 0.923 需要权重侧精度或 8-bit 激活，不是三值输入。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
+### Added（trit-wspace：残差侧车负结果——k≤16 没有把 0.432 推向 0.733）
+
+- `QuantLinear` 支持 top-k 列 f32 侧车：`R = W − s·T`，按列范数保留 k 列，
+  推理时 `y = s·T x + R_k x_k`；`sidecar.rs` 扫 k=0/4/8/16，`sidecar_layer.rs` 实现。
+- 读数（`ternary-all-channel` + 侧车，STS 64 对）：
+
+  | rank | rel_l2 | cosine | Pearson | Spearman |
+  |---:|---:|---:|---:|---:|
+  | 0 | 1.2373 | 0.0100 | 0.4322 | 0.3889 |
+  | 4 | 1.2363 | 0.0116 | 0.4091 | 0.4109 |
+  | 8 | 1.2356 | 0.0128 | 0.3940 | 0.3961 |
+  | 16 | 1.2386 | 0.0077 | 0.4259 | 0.4028 |
+
+- 结论：列侧车没有提升，`rel_l2` 几乎不变；误差主导在激活三值化，不在权重残差。
+  要逼近 0.733 需要混合精度/更大 rank/激活侧改动。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
+### Added（trit-wspace：激活 scale——per-channel 把全三值 STS 拉到 0.432）
+
+- `--activation-mode` 增加 `ternary-all-scale`（per-token absmean）与
+  `ternary-all-channel`（f32 校准的 per-channel absmean，读 `scales.json`）；
+  `export_bert6.py` 现在导出每层 LN1 / GELU 后 / LN2 的 per-channel scale。
+- 读数（STS test 64 对，真实输入）：
+
+  | 模式 | rel_l2 | cosine | Pearson | Spearman |
+  |---|---:|---:|---:|---:|
+  | 仅线性权重（f32 激活） | 1.1660 | 0.4695 | 0.7330 | 0.7437 |
+  | ternary-ln | 1.3999 | 0.3583 | 0.5461 | 0.5310 |
+  | ternary-all（纯 sign） | 2.5051 | 0.0275 | 0.2472 | 0.2494 |
+  | ternary-all-scale（per-token） | 1.5598 | 0.1837 | 0.3576 | 0.3846 |
+  | ternary-all-channel（f32 校准） | 1.2373 | 0.0100 | **0.4322** | 0.3889 |
+
+- 结论：per-channel scale 把 Pearson 从 0.247 拉到 **0.432**（超过 0.4），但 Spearman
+  0.389、cosine 0.01；学习式闭式解 `s=(q·y)/(q·q)` 在 `q=sign(y)` 时就是 per-channel
+  absmean。距仅线性权重的 0.733 仍有 0.30，下一步是残差侧车/混合精度。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
+### Added（trit-wspace：STS 任务头 + 128 句——全三值激活 Pearson 0.25）
+
+- `export_bert6.py` 扩到 128 句 / 64 对，导出 `pairs.json`（人工分）；Rust 侧新增
+  `sts.rs`：mask mean pooling + L2 normalize + Pearson/Spearman。
+- 读数（STS test 64 对）：
+
+  | 模型 | rel_l2 | cosine | Pearson | Spearman |
+  |---|---:|---:|---:|---:|
+  | PyTorch f32 参照 | — | — | 0.9230 | 0.9243 |
+  | 三值线性权重（f32 激活） | 1.1660 | 0.4695 | 0.7330 | 0.7437 |
+  | ternary-ln | 1.3999 | 0.3583 | 0.5461 | 0.5310 |
+  | ternary-all | 2.5051 | 0.0275 | 0.2472 | 0.2494 |
+
+- 结论：仅三值化线性权重保留 STS 相关性 0.733；LN 也三值降到 0.546；全三值激活
+  只剩 0.247，基本失去句向量相关性。任务头方向与 hidden 读数一致。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan`、`claims_evidence` 绿。
+
+### Added（trit-wspace：全三值激活——LN 也三值，cosine 0.03）
+
+- `examples/bert6` 新增 `--activation-mode f32|ternary-ln|ternary-all`：
+  `ternary-ln` 把 LN 的 weight 三值化（bias 保 f32）；`ternary-all` 再把 LN/GELU
+  输出符号三值化。`activation.rs` 拆出 Norm/TernaryNorm/NormKind，`report.rs` 拆出统计。
+- 读数（8 句 STS、seq 64、只比较 mask=1）：
+
+  | 模式 | 真实 rel_l2 | 真实 cosine | 随机 rel_l2 | 随机 cosine |
+  |---|---:|---:|---:|---:|
+  | f32（仅线性权重） | 1.1594 | 0.4690 | 1.5488 | 0.3117 |
+  | ternary-ln | 1.3647 | 0.3516 | 1.6907 | 0.2312 |
+  | ternary-all | **2.4475** | **0.0345** | **3.0896** | **0.0382** |
+
+- 负结果：只三值化 LN weight 就把 cosine 从 0.47 拉到 0.35；再把 LN/GELU 输出符号化，
+  cosine **0.03**，方向信息几乎全丢。当前 absmean + sign 实现不支持全三值激活；
+  保留方向需要 QAT/学习式 scale、混合精度或残差侧车。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan` 绿。
+
+### Added（trit-wspace：完整 6 层 f32/三值前向——随机输入方向翻转）
+
+- 新增 `examples/bert6/`：MiniLM 6 层 BERT 前向（12 heads、LN、GELU、残差），
+  线性权重可三值化；`examples/export_bert6.py` 导出 input/mask/reference/layer0..5。
+- `activations` 增加 `WSPMSK1` 掩码读取；矩阵/掩码读取拆到
+  `activations/{matrix,mask}.rs`，守住模块预算。
+- 读数（8 句 STS、seq 64、只比较 mask=1）：
+  - Rust f32 vs PyTorch `last_hidden_state`：`rel_l2 6.06e-7`、`cosine 1.0000`；
+  - 三值所有线性权重（真实输入）vs f32：`rel_l2 1.1594`、`cosine 0.4690`；
+  - 三值（随机输入）vs 同输入 f32：`rel_l2 1.5488`、`cosine 0.3117`
+    ——随机输入在完整 6 层上**高估** 34%，与第 0 层 output 段的“低估 1.72×”方向相反。
+- 结论：单层 output 段的结论不能外推到完整模型；output 段 layer0 的真实重尾
+  （超额峰度 99.6 / max 8.83）只是局部信号。详见 `docs/research/WSP-BERT6-RESULTS.md`。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan` 绿。
+
+### Added（trit-wspace：真实激活校准——随机输入低估只在 output 段成立）
+
+- `bias_e2e` 新增 `--activations-dir`，读取 `WSPACT1` 真实激活；新增
+  `activations::read_matrix`（魔数/长度/上限校验）与 `tests/activations.rs`。
+- 导出脚本 `examples/export_bias_activations.py`：MiniLM 第 0 层三段、STS test 512 句、
+  256 个 token 向量（只作对齐基线，不参与交付）。
+- 读数（真实激活 / 随机，`rel_l2` 比值）：query **1.02/1.02/0.98**、
+  intermediate **0.90/0.90/0.87**、output **1.72/1.72/1.73**；output 的 cosine
+  从随机 0.85 掉到真实 0.10。**“随机输入低估 1.5–3×”只对 output 段成立**，
+  query 不低估、intermediate 反而高估 10–13%。
+- f32 bias 真实激活收益：query −18.4%、intermediate −10.3%、output −0.06%
+  （随机输入下分别是 −14.4% / −7.2% / −0.8%）。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers` 绿。详见 `docs/research/WSP-E2E-REAL-ACT.md`。
+
+### Changed（trit-wspace：补丁事实覆盖 tile / 行级编辑）
+
+- `certify::patch_facts` 的 `noop` 现在识别 `NegateRow` 全零行、`SetTile`/`FillTile` 目标
+  与当前块逐位相同、`SwapRows` 两行逐位相同（trit + bias + scale）；`repeated` 展开
+  tile/行级坐标，跨编辑覆盖同一坐标会计重复。`PatchFacts`/`patch_facts` 拆到
+  `certify/facts.rs`，`certify.rs` 371 行（原 471）。
+- 新增 `tests/certify_facts.rs` 6 条：全零行取反、tile noop/越界/长度不足、tile 坐标参与
+  repeated、相同行交换、60 组随机 patch 与「apply 后网络是否逐位不变」的暴力判定对拍。
+- 验证：`cargo test -p trit-wspace --test certify_facts` 6 passed；
+  `cargo clippy -p trit-wspace --all-targets -D warnings` 干净；`module_budget` 全仓绿。
+
+### Fixed（#590 根治：`PackedBipolar` 把长度与字平面绑在一起）
+
+- `pack_bipolar` 返回 `PackedBipolar { words, len }`；`bipolar_dot` / `bipolar_dot_portable`
+  只接受该类型，`from_words(words, len)` 校验 `words.len() == len.div_ceil(64)`。
+  调用方不再有机会传与数据不符的 `len`——旧 API 的「65 trit / `len=128`」复现在类型层面不可表达。
+- 测试迁到 `tests/bipolar.rs`（4 条）：65 trit / 2 words 的内建长度、跨块对拍、
+  `from_words` 字数必须精确、不同长度拒绝。`cargo test -p trit-dot` 全绿（lib 6 + bipolar 4 + cli 3 + stress 5）。
+- C047 同步改为检查 `PackedBipolar` / `from_words`。
+
+### Fixed（第 38 轮 9 条报告：#588–#596）
+
+- **#588 `trit-ops::bench::gemv_*` 长度不校验**：入口先 `checked_mul` 再断言权重/激活/输出
+  三者对得上；Q4_0 另要求 `cols % 32 == 0`（不足一块的尾巴不会被 `quantize_act_q8` 覆盖）。
+  短缓冲不再进入 `from_raw_parts`。新增 `tests/shape_guards.rs` 7 条 `should_panic` 断言。
+- **#590 `trit-dot::bipolar_dot` 谎报 len 返回错值**：新增 `check_bipolar`，要求两平面等长且
+  `words.len()*64 >= len`；`bipolar_dot` / `bipolar_dot_portable` 返回
+  `Result<i64, DotError>`。新增契约测试。**未证**：`len` 在尾部 1..=63 位内与真实 trit 数
+  不符时不可检测（`pack_bipolar` 尾部补 1），需调用方不谎报。
+- **#591 `trit-count` DPLL 计数溢出**：4 处裸 `u128` 乘/加改为饱和乘加，`CountStats` 新增
+  `overflows`；`crosscheck` 在 `overflows > 0` 时不再声称 `matches`；`--big` 输出
+  `dpll_overflowed` 并跳过与 BDD 的 MISMATCH 判定。新增 `tests/saturation.rs`
+  （`nvars=200` 饱和到 `u128::MAX`、`nvars=8` 不报溢出）。
+- **#589 `trit-mmap` 截断 SIGBUS**：文档明确“映射存活期不得截断、收缩或替换”，新增
+  `recheck_len()`（截断返回 `MmapError::Truncated`）与平台测试（Unix 截断检测；
+  Windows `SetEndOfFile` 返回 1224，截断型 SIGBUS 不可达）。已发生的 SIGBUS 仍无法在
+  Rust 侧捕获。
+- **#592–#596 无上界分配**：`trit-dot --len` ≤ 2^24、`trit-attn --pairs` ≤ 2^16 /
+  `--dim` ≤ 2^12 / `--hidden` ≤ 2^12、`trit-ops bench --rows/--cols` ≤ 2^16 且乘积 ≤ 2^23、
+  `trit-redteam fuzz --iterations` ≤ 2^20。超界返回结构化错误（退出 1/2），不再 134 abort；
+  逐条用 issue 的原始命令复验退出码。
+- 代价：新增 6 个模块文件 + 3 个测试文件，全部按 `module_budget.py` 登记；改动 crate
+  `cargo test` 全绿、`cargo clippy --all-targets -D warnings` 干净、`module_budget` /
+  `docs_hygiene` / `publish_graph` / `secret_scan` / `hazard_gate` 绿。
+
 ### Fixed（deps：公开仓库锁文件携带 zip 0.6.6——RCE 级解析绕过两条告警收口）
 
 - `benchmarks/wsp-no-transformer/Cargo.lock`（#506 引入的独立 workspace）自 2026-11-17

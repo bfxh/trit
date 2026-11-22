@@ -14,9 +14,9 @@ pub mod interval;
 pub mod pack;
 pub mod pool;
 pub mod quant;
+pub mod shape;
 pub mod simd;
 pub mod trit;
-
 pub use frame::{FrameCode, FrameCodec, FrameReject, FrameResult, decode_line, encode_line};
 pub use gemv::{Kernel, TernaryMatrix, TryteMatrix};
 pub use gf3::{ExtendedDecode, ExtendedHamming, HammingCode, HammingDecode};

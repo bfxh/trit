@@ -78,8 +78,10 @@ all-MiniLM-L6-v2 `encoder.layer.0.attention.self.query.weight`（384×384，147,
   分布外输入不在证书范围内；
 - 没有覆盖 384 维输出的真实任务 oracle，"编辑集是否达成"这条门禁在真实权重上还没跑过；
 - 证书只回答"在这份保持集上没改坏"，不回答"编辑是否学到了目标行为"——那需要编辑集；
-- `noop`/`repeated` 只覆盖 `set_trit`/`set_bias`/`set_scale`/`swap_rows`；tile 与行级操作
-  的等价性交给 `Patch::cost` 的 `touched` 读数。
+- `noop`/`repeated` 已覆盖 `set_trit`/`set_bias`/`set_scale`/`swap_rows`（含两行逐位相同）/
+  `negate_row`/`set_tile`/`fill_tile`；`tests/certify_facts.rs` 用「apply 后网络是否逐位不变」
+  的暴力判定对拍 60 组随机 patch。`swap_rows` 的写坐标仍不参与 `repeated`（交换两行的并集
+  没有“重复写同一目标”的语义）。
 
 ## 接口
 

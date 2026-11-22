@@ -32,6 +32,8 @@ use std::collections::HashMap;
 
 use crate::cnf::Cnf;
 
+mod saturate;
+
 /// Solver counters.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CountStats {
@@ -45,6 +47,11 @@ pub struct CountStats {
     pub components: u64,
     /// Branch decisions.
     pub branches: u64,
+    /// 计数乘加达到 `u128` 上限、被饱和的次数。
+    ///
+    /// 非零表示 `count` 是 `u128::MAX`（下界），不是精确值；调用方必须如实报告，
+    /// 不能把它当成普通计数去和别的引擎对拍（#591）。
+    pub overflows: u64,
 }
 
 /// Result of counting a CNF.
@@ -193,11 +200,7 @@ impl Counter {
             Some(got) => got,
             None => return 0,
         };
-        let free = k - assigned - m;
-        debug_assert!(free < 128, "free variable count too large for u128");
-        let free_factor = 1u128
-            .checked_shl(free as u32)
-            .expect("free variable count exceeds u128 capacity");
+        let free_factor = self.exp2(k - assigned - m);
 
         if m == 0 {
             return free_factor;
@@ -208,7 +211,8 @@ impl Counter {
             let mut product = free_factor;
             for (part_vars, part_indices) in parts {
                 let local = renumber(&numbered, &part_indices, &part_vars);
-                product *= self.count_core(&local, part_vars.len());
+                let part = self.count_core(&local, part_vars.len());
+                product = self.mul(product, part);
             }
             return product;
         }
@@ -216,7 +220,7 @@ impl Counter {
         let key = cache_key(&numbered, m);
         if let Some(cached) = self.cache.get(&key) {
             self.stats.cache_hits += 1;
-            return free_factor * cached;
+            return self.mul(free_factor, *cached);
         }
         self.stats.cache_misses += 1;
 
@@ -230,9 +234,9 @@ impl Counter {
         let at = numbered.insert_unit(-(branch as i32));
         let negative = self.count_core(&numbered, m);
         numbered.remove_unit(at);
-        let total = positive + negative;
+        let total = self.add(positive, negative);
         self.cache.insert(key, total);
-        free_factor * total
+        self.mul(free_factor, total)
     }
 }
 
@@ -604,7 +608,6 @@ mod tests {
         assert_eq!((m, assigned), (2, 2), "1 与 2 被强制赋值，只剩 3、4");
         assert_invariants(&numbered, "residue");
     }
-
     #[test]
     fn renumber_preserves_the_table_invariants() {
         let nested = normalize(&[vec![1, 2], vec![-2], vec![3, 4], vec![-4, 3]], 4);
@@ -617,7 +620,6 @@ mod tests {
             assert_invariants(&local, "renumber");
         }
     }
-
     #[test]
     fn insert_unit_and_remove_round_trip_bitwise() {
         let nested = normalize(&[vec![-3, 4], vec![1, 2], vec![2, -1]], 4);
@@ -632,7 +634,6 @@ mod tests {
             assert_eq!(table.starts, before.1, "摘掉 {lit} 之后段表必须逐位还原");
         }
     }
-
     #[test]
     fn insert_unit_lands_in_sorted_position() {
         // 规范形之后的表序是 [-3,4] < [2] < [3,-4]（切片字典序按首文字的**带符号值**比）。
@@ -644,7 +645,6 @@ mod tests {
         assert_eq!(table.clause(at + 1), &[2], "后一段必须字典序更大");
         assert_invariants(&table, "插入 [1] 之后");
         table.remove_unit(at);
-
         let at = table.insert_unit(-4);
         assert_eq!(table.clause(at), &[-4]);
         assert_invariants(&table, "插入 [-4] 之后");

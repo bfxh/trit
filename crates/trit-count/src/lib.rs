@@ -167,10 +167,10 @@ pub fn crosscheck_under_with_limits(
         Err(error) => (None, Some(error.to_string())),
     };
 
+    let dpll_exact = result.stats.overflows == 0;
     let agrees = |count: u128| count == result.count;
-    let matches = agrees(exhaustive_count) && bdd_count.is_none_or(agrees);
-    let three_way = bdd_count.is_some_and(agrees);
-
+    let matches = dpll_exact && agrees(exhaustive_count) && bdd_count.is_none_or(agrees);
+    let three_way = dpll_exact && bdd_count.is_some_and(agrees);
     CrosscheckReport {
         dpll_count: result.count,
         exhaustive_count,

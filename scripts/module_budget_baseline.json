@@ -143,6 +143,10 @@
       "lines": 24
     },
     {
+      "file": "crates/trit-attn/src/limits.rs",
+      "lines": 30
+    },
+    {
       "file": "crates/trit-attn/src/main.rs",
       "lines": 97
     },
@@ -855,6 +859,10 @@
       "lines": 80
     },
     {
+      "file": "crates/trit-count/src/big.rs",
+      "lines": 71
+    },
+    {
       "file": "crates/trit-count/src/cnf.rs",
       "lines": 256
     },
@@ -863,12 +871,16 @@
       "lines": 652
     },
     {
+      "file": "crates/trit-count/src/dpll/saturate.rs",
+      "lines": 45
+    },
+    {
       "file": "crates/trit-count/src/lib.rs",
       "lines": 186
     },
     {
       "file": "crates/trit-count/src/main.rs",
-      "lines": 494
+      "lines": 435
     },
     {
       "file": "crates/trit-count/src/oracle.rs",
@@ -889,6 +901,10 @@
     {
       "file": "crates/trit-count/tests/policy.rs",
       "lines": 167
+    },
+    {
+      "file": "crates/trit-count/tests/saturation.rs",
+      "lines": 27
     },
     {
       "file": "crates/trit-data/src/bin/trit-data.rs",
@@ -1359,12 +1375,28 @@
       "lines": 221
     },
     {
+      "file": "crates/trit-dot/src/bipolar.rs",
+      "lines": 44
+    },
+    {
+      "file": "crates/trit-dot/src/cli.rs",
+      "lines": 30
+    },
+    {
       "file": "crates/trit-dot/src/lib.rs",
-      "lines": 644
+      "lines": 595
     },
     {
       "file": "crates/trit-dot/src/main.rs",
-      "lines": 210
+      "lines": 203
+    },
+    {
+      "file": "crates/trit-dot/src/packed.rs",
+      "lines": 63
+    },
+    {
+      "file": "crates/trit-dot/tests/bipolar.rs",
+      "lines": 78
     },
     {
       "file": "crates/trit-dot/tests/cli.rs",
@@ -2231,8 +2263,20 @@
       "lines": 68
     },
     {
+      "file": "crates/trit-mmap/src/error.rs",
+      "lines": 29
+    },
+    {
       "file": "crates/trit-mmap/src/lib.rs",
-      "lines": 270
+      "lines": 264
+    },
+    {
+      "file": "crates/trit-mmap/src/recheck.rs",
+      "lines": 23
+    },
+    {
+      "file": "crates/trit-mmap/tests/truncate.rs",
+      "lines": 79
     },
     {
       "file": "crates/trit-mv/src/lib.rs",
@@ -2404,7 +2448,7 @@
     },
     {
       "file": "crates/trit-ops/src/bin/bench.rs",
-      "lines": 381
+      "lines": 373
     },
     {
       "file": "crates/trit-ops/src/frame.rs",
@@ -2451,6 +2495,10 @@
       "lines": 62
     },
     {
+      "file": "crates/trit-ops/src/shape.rs",
+      "lines": 87
+    },
+    {
       "file": "crates/trit-ops/src/simd.rs",
       "lines": 506
     },
@@ -2461,6 +2509,10 @@
     {
       "file": "crates/trit-ops/tests/burgers_governance.rs",
       "lines": 346
+    },
+    {
+      "file": "crates/trit-ops/tests/shape_guards.rs",
+      "lines": 76
     },
     {
       "file": "crates/trit-orch/benches/trace_bench.rs",
@@ -4235,6 +4287,10 @@
       "lines": 437
     },
     {
+      "file": "crates/trit-redteam/src/fuzz_cli.rs",
+      "lines": 16
+    },
+    {
       "file": "crates/trit-redteam/src/main.rs",
       "lines": 279
     },
@@ -4559,8 +4615,92 @@
       "lines": 51
     },
     {
-      "file": "crates/trit-wspace/examples/bias_e2e.rs",
-      "lines": 417
+      "file": "crates/trit-wspace/examples/bert6/activation.rs",
+      "lines": 106
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/gelu.rs",
+      "lines": 17
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/int8.rs",
+      "lines": 12
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/layer_scales.rs",
+      "lines": 9
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear.rs",
+      "lines": 41
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/linear/quant.rs",
+      "lines": 79
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/main.rs",
+      "lines": 16
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model.rs",
+      "lines": 171
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/config.rs",
+      "lines": 43
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/model/loader.rs",
+      "lines": 92
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/norm.rs",
+      "lines": 124
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/quantize_input.rs",
+      "lines": 21
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/report.rs",
+      "lines": 83
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run.rs",
+      "lines": 130
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/run/args.rs",
+      "lines": 41
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/scales.rs",
+      "lines": 43
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/sidecar.rs",
+      "lines": 37
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/sidecar_layer.rs",
+      "lines": 61
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/stats.rs",
+      "lines": 53
+    },
+    {
+      "file": "crates/trit-wspace/examples/bert6/sts.rs",
+      "lines": 149
+    },
+    {
+      "file": "crates/trit-wspace/examples/bias_e2e/main.rs",
+      "lines": 188
+    },
+    {
+      "file": "crates/trit-wspace/examples/bias_e2e/model.rs",
+      "lines": 313
     },
     {
       "file": "crates/trit-wspace/examples/bias_error.rs",
@@ -4739,6 +4879,18 @@
       "lines": 727
     },
     {
+      "file": "crates/trit-wspace/src/activations.rs",
+      "lines": 16
+    },
+    {
+      "file": "crates/trit-wspace/src/activations/mask.rs",
+      "lines": 39
+    },
+    {
+      "file": "crates/trit-wspace/src/activations/matrix.rs",
+      "lines": 47
+    },
+    {
       "file": "crates/trit-wspace/src/analyze.rs",
       "lines": 365
     },
@@ -4756,7 +4908,11 @@
     },
     {
       "file": "crates/trit-wspace/src/certify.rs",
-      "lines": 471
+      "lines": 371
+    },
+    {
+      "file": "crates/trit-wspace/src/certify/facts.rs",
+      "lines": 214
     },
     {
       "file": "crates/trit-wspace/src/certify/verdicts.rs",
@@ -4879,6 +5035,14 @@
       "lines": 136
     },
     {
+      "file": "crates/trit-wspace/src/gptq.rs",
+      "lines": 117
+    },
+    {
+      "file": "crates/trit-wspace/src/gptq/inverse.rs",
+      "lines": 84
+    },
+    {
       "file": "crates/trit-wspace/src/learned.rs",
       "lines": 375
     },
@@ -4892,7 +5056,7 @@
     },
     {
       "file": "crates/trit-wspace/src/lib.rs",
-      "lines": 173
+      "lines": 172
     },
     {
       "file": "crates/trit-wspace/src/localize.rs",
@@ -5091,6 +5255,14 @@
       "lines": 264
     },
     {
+      "file": "crates/trit-wspace/tests/activations.rs",
+      "lines": 60
+    },
+    {
+      "file": "crates/trit-wspace/tests/activations_mask.rs",
+      "lines": 26
+    },
+    {
       "file": "crates/trit-wspace/tests/analyze.rs",
       "lines": 381
     },
@@ -5108,6 +5280,10 @@
     },
     {
       "file": "crates/trit-wspace/tests/certify.rs",
+      "lines": 322
+    },
+    {
+      "file": "crates/trit-wspace/tests/certify_facts.rs",
       "lines": 322
     },
     {
@@ -5141,6 +5317,14 @@
     {
       "file": "crates/trit-wspace/tests/gguf_cli.rs",
       "lines": 221
+    },
+    {
+      "file": "crates/trit-wspace/tests/gptq.rs",
+      "lines": 172
+    },
+    {
+      "file": "crates/trit-wspace/tests/gptq_group.rs",
+      "lines": 148
     },
     {
       "file": "crates/trit-wspace/tests/gradient.rs",

@@ -26,7 +26,7 @@
  {
   "name": "count: 自由变量不乘 2^free",
   "file": "crates/trit-count/src/dpll.rs",
-  "old": "        let free_factor = 1u128\n            .checked_shl(free as u32)\n            .expect(\"free variable count exceeds u128 capacity\");",
+  "old": "        let free_factor = self.exp2(k - assigned - m);",
   "new": "        let free_factor = 1u128;",
   "pkg": "trit-count",
   "filter": "unused_variables_still_count"
@@ -34,7 +34,7 @@
  {
   "name": "count: 分支只数正支",
   "file": "crates/trit-count/src/dpll.rs",
-  "old": "        let total = positive + negative;",
+  "old": "        let total = self.add(positive, negative);",
   "new": "        let total = positive;",
   "pkg": "trit-count",
   "filter": "fixed_expressions_match_exhaustive"
@@ -42,8 +42,8 @@
  {
   "name": "count: 组件乘积被最后一块覆盖",
   "file": "crates/trit-count/src/dpll.rs",
-  "old": "            for (part_vars, part_indices) in parts {\n                let local = renumber(&numbered, &part_indices, &part_vars);\n                product *= self.count_core(&local, part_vars.len());\n            }",
-  "new": "            for (part_vars, part_indices) in parts {\n                let local = renumber(&numbered, &part_indices, &part_vars);\n                product = self.count_core(&local, part_vars.len());\n            }",
+  "old": "                let part = self.count_core(&local, part_vars.len());\n                product = self.mul(product, part);",
+  "new": "                let part = self.count_core(&local, part_vars.len());\n                product = part;",
   "pkg": "trit-count",
   "filter": "component_product_multiplies_independent_parts"
  },
@@ -106,7 +106,7 @@
  {
   "name": "crosscheck: BDD 被拒也算三方一致",
   "file": "crates/trit-count/src/lib.rs",
-  "old": "    let three_way = bdd_count.is_some_and(agrees);",
+  "old": "    let three_way = dpll_exact && bdd_count.is_some_and(agrees);",
   "new": "    let three_way = true;",
   "pkg": "trit-count",
   "filter": "bdd_budget_refusal_is_not_a_mismatch"

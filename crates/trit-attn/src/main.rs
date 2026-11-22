@@ -2,6 +2,8 @@
 
 use std::process::ExitCode;
 
+mod limits;
+
 use trit_attn::RecallTrainOptions;
 
 fn main() -> ExitCode {
@@ -19,7 +21,6 @@ fn main() -> ExitCode {
         }
     }
 }
-
 fn number(args: &[String], name: &str, default: usize) -> Result<usize, String> {
     match args.iter().position(|arg| arg == name) {
         Some(index) => args
@@ -30,7 +31,6 @@ fn number(args: &[String], name: &str, default: usize) -> Result<usize, String> 
         None => Ok(default),
     }
 }
-
 fn float(args: &[String], name: &str, default: f32) -> Result<f32, String> {
     match args.iter().position(|arg| arg == name) {
         Some(index) => args
@@ -41,7 +41,6 @@ fn float(args: &[String], name: &str, default: f32) -> Result<f32, String> {
         None => Ok(default),
     }
 }
-
 fn demo(args: &[String]) -> Result<(), String> {
     let pairs = number(args, "--pairs", 32)?;
     let dim = number(args, "--dim", 16)?;
@@ -49,6 +48,7 @@ fn demo(args: &[String]) -> Result<(), String> {
     if pairs == 0 || dim == 0 {
         return Err("pairs/dim 必须大于 0".to_string());
     }
+    limits::check_demo(pairs, dim)?;
     let report = trit_attn::recall_experiment(seed, pairs, dim);
     let obj = serde_json::json!({
         "pairs": report.pairs,
@@ -64,7 +64,6 @@ fn demo(args: &[String]) -> Result<(), String> {
     println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
     Ok(())
 }
-
 fn train(args: &[String]) -> Result<(), String> {
     let epochs = number(args, "--epochs", 1200)?;
     let hidden = number(args, "--hidden", 24)?;
@@ -73,6 +72,7 @@ fn train(args: &[String]) -> Result<(), String> {
     if epochs == 0 || hidden == 0 {
         return Err("epochs/hidden 必须大于 0".to_string());
     }
+    limits::check_hidden(hidden)?;
     let report = trit_attn::train_recall(RecallTrainOptions {
         epochs,
         learning_rate: lr,

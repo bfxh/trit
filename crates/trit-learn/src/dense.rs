@@ -10,7 +10,6 @@
 //!   由外部 [`Optimizer`] 统一应用。
 //!
 //! 本层不带偏置（M0 边界）：注意力投影与 FFN 在小任务上不需要它。
-
 use crate::opt::Optimizer;
 use crate::quant::{Ste, quantize_with_scale, scale_grad};
 
@@ -47,7 +46,8 @@ impl TernaryDense {
         ste: Ste,
     ) -> Self {
         assert!(rows > 0 && cols > 0, "rows/cols 必须非零");
-        let mut latent = Vec::with_capacity(rows * cols);
+        let cells = rows.checked_mul(cols).expect("rows*cols 溢出 usize");
+        let mut latent = Vec::with_capacity(cells);
         for r in 0..rows {
             for c in 0..cols {
                 latent.push(init(r, c));
@@ -61,7 +61,7 @@ impl TernaryDense {
             ste,
             input: Vec::new(),
             batch_rows: 0,
-            grad_latent: vec![0.0; rows * cols],
+            grad_latent: vec![0.0; cells],
             grad_scale: vec![0.0; rows],
         }
     }

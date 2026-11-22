@@ -14,6 +14,13 @@
 
 use trit_core::value::Ternary;
 
+pub mod cli;
+
+mod bipolar;
+mod packed;
+pub use bipolar::{bipolar_dot, bipolar_dot_portable};
+pub use packed::{PackedBipolar, pack_bipolar};
+
 /// 一个块有多少位。
 pub const BLOCK_BITS: usize = 64;
 
@@ -361,40 +368,6 @@ mod popcnt {
     }
 }
 
-/// 二值（`±1`）向量的位打包：`1 = +1`、`0 = -1`，**尾部补 1**。
-pub fn pack_bipolar(values: &[i32]) -> Vec<u64> {
-    let blocks = values.len().div_ceil(BLOCK_BITS);
-    let mut words = vec![u64::MAX; blocks];
-    for (index, value) in values.iter().enumerate() {
-        if *value < 0 {
-            words[index / BLOCK_BITS] &= !(1u64 << (index % BLOCK_BITS));
-        }
-    }
-    words
-}
-
-/// 二值（`±1`）点积：`n - 2·popcount(a XOR b)`，也就是「XNOR + POPC」。
-///
-/// 与三值路径一样走硬件 `popcnt` 派发——对照必须同待遇，不然比的不是编码而是
-/// 谁碰巧拿到了指令。
-pub fn bipolar_dot(a: &[u64], b: &[u64], len: usize) -> i64 {
-    #[cfg(target_arch = "x86_64")]
-    if let Some(mismatches) = popcnt::bipolar_mismatches_or_zero(a, b) {
-        return len as i64 - 2 * mismatches as i64;
-    }
-    bipolar_dot_portable(a, b, len)
-}
-
-/// 便携版二值点积（不做派发），用来量派发本身值多少。
-pub fn bipolar_dot_portable(a: &[u64], b: &[u64], len: usize) -> i64 {
-    let mismatches: u64 = a
-        .iter()
-        .zip(b.iter())
-        .map(|(left, right)| u64::from((left ^ right).count_ones()))
-        .sum();
-    len as i64 - 2 * mismatches as i64
-}
-
 /// 标量参考实现。
 pub fn scalar_dot(a: &[i32], b: &[i32]) -> i64 {
     a.iter()
@@ -459,9 +432,6 @@ mod tests {
         fn ternary(&mut self) -> i32 {
             (self.next() % 3) as i32 - 1
         }
-        fn bipolar(&mut self) -> i32 {
-            if self.next().is_multiple_of(2) { 1 } else { -1 }
-        }
     }
 
     #[test]
@@ -486,26 +456,6 @@ mod tests {
                 );
             }
         }
-    }
-
-    #[test]
-    fn bipolar_dot_matches_scalar() {
-        for len in [1usize, 64, 129] {
-            let mut rng = Rng(7);
-            let a: Vec<i32> = (0..len).map(|_| rng.bipolar()).collect();
-            let b: Vec<i32> = (0..len).map(|_| rng.bipolar()).collect();
-            let packed_a = pack_bipolar(&a);
-            let packed_b = pack_bipolar(&b);
-            assert_eq!(bipolar_dot(&packed_a, &packed_b, len), scalar_dot(&a, &b));
-        }
-    }
-
-    #[test]
-    fn bipolar_formula_is_n_minus_twice_mismatches() {
-        let a = pack_bipolar(&[1, 1, 1, 1]);
-        let b = pack_bipolar(&[1, -1, 1, -1]);
-        // 两处不同：4 - 2*2 = 0。
-        assert_eq!(bipolar_dot(&a, &b, 4), 0);
     }
 
     #[test]
@@ -597,9 +547,11 @@ mod tests {
                         .expect("同长度"),
                     "blocks={blocks} seed={seed}"
                 );
+                let pa = PackedBipolar::from_words(bits_a.pos().to_vec(), len).expect("字数对齐");
+                let pb = PackedBipolar::from_words(bits_b.pos().to_vec(), len).expect("字数对齐");
                 assert_eq!(
-                    bipolar_dot(bits_a.pos(), bits_b.pos(), len),
-                    bipolar_dot_portable(bits_a.pos(), bits_b.pos(), len)
+                    bipolar_dot(&pa, &pb).expect("同长度"),
+                    bipolar_dot_portable(&pa, &pb).expect("同长度")
                 );
             }
         }
@@ -619,7 +571,6 @@ mod tests {
         );
         assert_eq!(a.dot_naive(&b), a.dot_sparse(&b));
     }
-
     #[test]
     fn invalid_planes_are_rejected_at_construction() {
         // 复审 L01：字段公开时可以把平面长度/重叠/尾部脏位拼错，dot 与 dot_portable 各错一边。
