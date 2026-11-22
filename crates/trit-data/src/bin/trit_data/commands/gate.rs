@@ -4,11 +4,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use trit_core::fingerprint::file_sha256;
-use trit_data::gate::{Config, Decision, Verdict, evaluate};
+use trit_data::gate::{Config, Decision, evaluate};
 use trit_data::manifest::dataset_manifest;
 use trit_data::schema::Trajectory;
 use trit_learn::json::{Json, write_json};
 
+use super::card::Card;
+use super::json::{gate_json, reasons_json};
 use super::{created_unix, die, usage, write_lines};
 
 pub fn run(argv: &[String]) {
@@ -40,6 +42,7 @@ pub fn run(argv: &[String]) {
     let input_sha = file_sha256(&path).unwrap_or_default();
 
     let mut seen = BTreeSet::new();
+    let mut card = Card::default();
     let mut decisions = [0usize; 3];
     let mut reasons: BTreeMap<&'static str, usize> = BTreeMap::new();
     let mut parse_errors = 0usize;
@@ -70,6 +73,7 @@ pub fn run(argv: &[String]) {
             }
         };
         let v = evaluate(&t, &cfg, &mut seen);
+        card.add(&t);
         let idx = match v.decision {
             Decision::Accept => 0,
             Decision::Reject => 1,
@@ -133,6 +137,7 @@ pub fn run(argv: &[String]) {
                     .put("defer", decisions[2] as u64),
             )
             .put("reasons", reasons_json(&reasons))
+            .put("dataset_card", card.json())
             .put(
                 "manifest",
                 Json::obj()
@@ -144,19 +149,4 @@ pub fn run(argv: &[String]) {
         write_json(&rp, &report).unwrap_or_else(|e| die(&e));
         println!("报告 {}", rp.display());
     }
-}
-
-fn gate_json(v: &Verdict) -> Json {
-    Json::obj().put("decision", v.decision.as_str()).put(
-        "reasons",
-        Json::arr(v.reasons.iter().map(|r| Json::str(*r)).collect()),
-    )
-}
-
-fn reasons_json(m: &BTreeMap<&'static str, usize>) -> Json {
-    let mut out = Json::obj();
-    for (k, v) in m {
-        out = out.put(*k, *v as u64);
-    }
-    out
 }

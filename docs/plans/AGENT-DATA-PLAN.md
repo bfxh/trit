@@ -144,3 +144,11 @@
   accept/defer 映射；CLI 尚无 `rewrite` 子命令（需要外部 rewriter 命令与超时/失败回退）。
 - **下一步**：把 `LangClass` 接进 gate（Uncertain → defer，Bad → 可配置 reject/defer），
   实现 `rewrite --cmd`，并用 500 条人工/LLM judge 标注跑 κ 与硬门一致率。
+
+- **M2 CLI 与数据卡已落地（2026-11-23）**：
+  - `trit-data decontaminate --jsonl <in> --bench <bench.jsonl> [--ngram 13] [--threshold 0.2] [--out <dir>]`：
+    逐条写 `contamination {ratio, bench_index, contaminated}`，并输出报告；
+  - `trit-data mix --jsonl <in> [--total 1000] [--weights code=0.7,writing=0.3] [--out <dir>]`：
+    按标签配额输出 `mix.json`；
+  - `gate.report.json` 新增 `dataset_card`：sources / licenses / labels 分布、
+    `provenance_missing`、`rewritten`。
