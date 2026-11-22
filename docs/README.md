@@ -76,6 +76,7 @@
 | [WSP-INTERNAL-LOGIC-RESULTS.md](research/WSP-INTERNAL-LOGIC-RESULTS.md) | M0 读数：三值网络 → 最小 DFA 的提取与参考对拍（DIFF=0，7/7 状态） |
 | [WSP-LIMITS.md](research/WSP-LIMITS.md) | `trit-wspace` 未证栏汇总（每条给来源与补证所需） |
 | [WSP-E2E-REAL-ACT.md](research/WSP-E2E-REAL-ACT.md) | 真实激活校准：MiniLM 第 0 层三段的随机 vs 真实输入对照 |
+| [WSP-BERT6-RESULTS.md](research/WSP-BERT6-RESULTS.md) | MiniLM 完整 6 层：f32 对照与三值线性权重（随机输入方向翻转） |
 | [WSP-BLOCK-INDEX.md](research/WSP-BLOCK-INDEX.md) | WSP2 块索引与随机访问 |
 | [WSP-WRITE-LOCK.md](research/WSP-WRITE-LOCK.md) | CLI 并发写锁（`--out` / `--log` 分发前加锁） |
 | [WSP-TILE-EDIT.md](research/WSP-TILE-EDIT.md) | WSP1 tile 编辑：任意矩形块的事务编辑与审计 |

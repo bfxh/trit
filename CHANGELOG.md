@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+### Added（trit-wspace：完整 6 层 f32/三值前向——随机输入方向翻转）
+
+- 新增 `examples/bert6/`：MiniLM 6 层 BERT 前向（12 heads、LN、GELU、残差），
+  线性权重可三值化；`examples/export_bert6.py` 导出 input/mask/reference/layer0..5。
+- `activations` 增加 `WSPMSK1` 掩码读取；矩阵/掩码读取拆到
+  `activations/{matrix,mask}.rs`，守住模块预算。
+- 读数（8 句 STS、seq 64、只比较 mask=1）：
+  - Rust f32 vs PyTorch `last_hidden_state`：`rel_l2 6.06e-7`、`cosine 1.0000`；
+  - 三值所有线性权重（真实输入）vs f32：`rel_l2 1.1594`、`cosine 0.4690`；
+  - 三值（随机输入）vs 同输入 f32：`rel_l2 1.5488`、`cosine 0.3117`
+    ——随机输入在完整 6 层上**高估** 34%，与第 0 层 output 段的“低估 1.72×”方向相反。
+- 结论：单层 output 段的结论不能外推到完整模型；output 段 layer0 的真实重尾
+  （超额峰度 99.6 / max 8.83）只是局部信号。详见 `docs/research/WSP-BERT6-RESULTS.md`。
+- 验证：`cargo test -p trit-wspace` 全绿；`clippy -D warnings`、`module_budget`、
+  `docs_hygiene`、`doc_pointers`、`privacy_scan` 绿。
+
 ### Added（trit-wspace：真实激活校准——随机输入低估只在 output 段成立）
 
 - `bias_e2e` 新增 `--activations-dir`，读取 `WSPACT1` 真实激活；新增
